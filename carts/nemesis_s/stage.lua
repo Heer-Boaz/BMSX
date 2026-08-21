@@ -475,13 +475,14 @@ function stage:build_tape()
 			if sint_pop_group ~= nil then
 				local column<const> = stage_x - 1
 				local spawn_y<const> = (stage_y - 1) * self.tile_size
+				local formation<const> = { remaining = sint_pop_group_size }
 				for group_index = 0, sint_pop_group_size - 1 do
 					actor_spawns[#actor_spawns + 1] = {
 						column = column,
 						definition_id = ids_sint_pop_def,
 						options = {
 							stage = self,
-							group_id = column,
+							formation = formation,
 							group_type = sint_pop_group,
 							pos = {
 								x = playfield_width + (group_index * sint_pop_width),

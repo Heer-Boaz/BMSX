@@ -7,11 +7,13 @@ local timeline_component<const> = require('cartlib/timeline/timeline_component')
 local prefab<const> = require('cartlib/world/prefab')
 local world<const> = require('cartlib/world/world')
 local enemy<const> = require('enemies/enemy')
+local foe<const> = require('enemies/foe')
 local stage_scroll_follower_component<const> = require('stage_scroll_follower_component')
 require('constants')
 
 local zak_foe<const> = {}
 zak_foe.__index = zak_foe
+zak_foe.destroyed_event = 'enemy.zak.destroyed'
 
 local fire_effect_id<const> = 'nemesis_s.enemy.zak_foe.fire'
 local players_view
@@ -143,7 +145,7 @@ local register_definition<const> = function()
 	prefab.define({
 		def_id = ids_zak_foe_def,
 		class = zak_foe,
-		base = enemy,
+		base = foe,
 		components = {
 			enemy.new_collider,
 			stage_scroll_follower_component.new,
@@ -155,6 +157,7 @@ local register_definition<const> = function()
 			imgid = assets_zak_foe_stand,
 			max_health = zak_foe_health,
 			small_fry = true,
+			drop_definition_id = ids_roodje_def,
 			direction = zak_foe_direction_left,
 			vertical_speed = 0,
 			z = zak_foe_draw_z,

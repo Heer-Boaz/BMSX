@@ -47,11 +47,15 @@ function __bmsx_host_test.update()
 			'flash activation did not restart and admit its animated sprite')
 		test.snowman = snowman
 		test.animation = animation
+		test.gameplay_time_ms = world.gameplay_time_ms
 		test.phase = 'animation'
 		return false
 	end
 
 	if test.phase == 'animation' then
+		if world.gameplay_time_ms == test.gameplay_time_ms then
+			return false
+		end
 		assert(test.animation.frame_index == 2,
 			'the retained sprite-animation lane did not advance one frame')
 		test.snowman.state_machines:transition_to('/firing')

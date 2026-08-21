@@ -44,9 +44,13 @@ function __bmsx_host_test.update()
 		end
 		assert(stage.tape_head - 1 == 34, 'SintPop group missed its authored XNA stage column')
 		assert(#sint_pops == sint_pop_group_size, 'SintPop marker did not spawn one complete XNA group')
+		local formation<const> = sint_pops[1].formation
+		assert(formation.remaining == sint_pop_group_size,
+			'SintPop formation did not retain its authored member count')
 		for index = 1, sint_pop_group_size do
 			local sint_pop<const> = sint_pops[index]
-			assert(sint_pop.group_id == 34, 'SintPop group identity no longer follows the marker column')
+			assert(sint_pop.formation == formation,
+				'SintPop group members did not share one formation state')
 			assert(sint_pop.group_type == sint_pop_group_up, 'lowercase p did not produce the upward group')
 			assert(sint_pop.x == playfield_width + ((index - 1) * sint_pop_width),
 				'SintPop group spacing no longer matches the XNA formation')

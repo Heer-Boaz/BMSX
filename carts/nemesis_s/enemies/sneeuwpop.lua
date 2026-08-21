@@ -8,6 +8,7 @@ local timeline_component<const> = require('cartlib/timeline/timeline_component')
 local world<const> = require('cartlib/world/world')
 local assets<const> = require('bmsx/assets')
 local enemy<const> = require('enemies/enemy')
+local ground_foe<const> = require('enemies/ground_foe')
 local stage_scroll_follower_component<const> = require('stage_scroll_follower_component')
 require('constants')
 
@@ -68,7 +69,7 @@ function sneeuwpop:on_destroyed(projectile)
 		stage = self.stage,
 		pos = { x = self.x, y = self.y },
 	})
-	enemy.on_destroyed(self, projectile)
+	ground_foe.on_destroyed(self, projectile)
 end
 
 local define_fsm<const> = function()
@@ -129,7 +130,7 @@ local register_definition<const> = function()
 	prefab.define({
 		def_id = ids_sneeuwpop_def,
 		class = sneeuwpop,
-		base = enemy,
+		base = ground_foe,
 		components = {
 			enemy.new_collider,
 			new_flash_animation,

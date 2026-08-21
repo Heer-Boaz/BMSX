@@ -5,6 +5,7 @@ local fsm_library<const> = require('cartlib/fsm/library')
 local prefab<const> = require('cartlib/world/prefab')
 local world<const> = require('cartlib/world/world')
 local enemy<const> = require('enemies/enemy')
+local foe<const> = require('enemies/foe')
 local rook_animation_system<const> = require('enemies/rook_animation_system')
 local stage_scroll_follower_component<const> = require('stage_scroll_follower_component')
 require('constants')
@@ -76,7 +77,7 @@ local register_definition<const> = function()
 	prefab.define({
 		def_id = ids_rook_def,
 		class = rook,
-		base = enemy,
+		base = foe,
 		components = {
 			enemy.new_collider,
 			fixed_point_velocity_component.new,

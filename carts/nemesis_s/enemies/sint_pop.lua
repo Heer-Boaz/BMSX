@@ -2,7 +2,9 @@ local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local prefab<const> = require('cartlib/world/prefab')
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
+local world<const> = require('cartlib/world/world')
 local enemy<const> = require('enemies/enemy')
+local foe<const> = require('enemies/foe')
 require('constants')
 
 local sint_pop<const> = {}
@@ -45,6 +47,23 @@ function sint_pop:update_move_away_from_player()
 	end
 end
 
+function sint_pop:on_destroyed(projectile)
+	local formation<const> = self.formation
+	local remaining<const> = formation.remaining - 1
+	formation.remaining = remaining
+	local drop_definition_id
+	if remaining == 0 then
+		drop_definition_id = ids_roodje_def
+	end
+	world:spawn(ids_small_explosion_def, {
+		stage = self.stage,
+		drop_definition_id = drop_definition_id,
+		pos = { x = self.x, y = self.y + 8 },
+	})
+	self.events:emit('enemy.small.destroyed')
+	enemy.on_destroyed(self, projectile)
+end
+
 function sint_pop.register()
 	fsm_library.register(ids_sint_pop_fsm, {
 		initial = 'move_to_player',
@@ -63,7 +82,7 @@ function sint_pop.register()
 	prefab.define({
 		def_id = ids_sint_pop_def,
 		class = sint_pop,
-		base = enemy,
+		base = foe,
 		components = {
 			enemy.new_collider,
 			fsm_component.factory({ ids_sint_pop_fsm }),
@@ -71,7 +90,6 @@ function sint_pop.register()
 		defaults = {
 			imgid = assets_sint_pop,
 			group_type = sint_pop_group_up,
-			group_id = 0,
 			vertical_speed = 0,
 			max_health = 1,
 			small_fry = true,

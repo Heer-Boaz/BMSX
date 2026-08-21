@@ -5,6 +5,7 @@ local collider_2d_component<const> = require('cartlib/collision/collider_2d_comp
 local fixed_point_velocity_component<const> = require('cartlib/physics/fixed_point_velocity_component')
 local world<const> = require('cartlib/world/world')
 local enemy<const> = require('enemies/enemy')
+local foe<const> = require('enemies/foe')
 require('constants')
 
 local mijter_foe<const> = {}
@@ -39,6 +40,9 @@ end
 function mijter_foe:onspawn()
 	self.images = images_by_type[self.mijter_type]
 	self:set_imgid(self.images.neutral)
+	if self.mijter_type == mijter_foe_type_red then
+		self.drop_definition_id = ids_roodje_def
+	end
 	self.moved_before_attack = 0
 	self.move_before_attack = math.random(
 		mijter_foe_attack_distance_min,
@@ -101,7 +105,7 @@ function mijter_foe.register()
 	prefab.define({
 		def_id = ids_mijter_foe_def,
 		class = mijter_foe,
-		base = enemy,
+		base = foe,
 		components = {
 			enemy.new_collider,
 			fixed_point_velocity_component.new,

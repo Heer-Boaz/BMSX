@@ -5,6 +5,7 @@ local fsm_library<const> = require('cartlib/fsm/library')
 local prefab<const> = require('cartlib/world/prefab')
 local world<const> = require('cartlib/world/world')
 local enemy<const> = require('enemies/enemy')
+local foe<const> = require('enemies/foe')
 require('constants')
 
 local noot<const> = {}
@@ -51,16 +52,6 @@ function noot:update_flying()
 	end
 end
 
-function noot:on_destroyed(projectile)
-	world:spawn(ids_small_explosion_def, {
-		stage = self.stage,
-		drop_definition_id = self.drop_definition_id,
-		pos = { x = self.x, y = self.y },
-	})
-	self.events:emit('enemy.small.destroyed')
-	enemy.on_destroyed(self, projectile)
-end
-
 local define_fsm<const> = function()
 	fsm_library.register(ids_noot_fsm, {
 		initial = 'flying',
@@ -77,7 +68,7 @@ local register_definition<const> = function()
 	prefab.define({
 		def_id = ids_noot_def,
 		class = noot,
-		base = enemy,
+		base = foe,
 		components = {
 			enemy.new_collider,
 			fixed_point_velocity_component.new,

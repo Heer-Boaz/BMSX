@@ -3,8 +3,8 @@ local fixed_point_velocity_component<const> = require('cartlib/physics/fixed_poi
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local prefab<const> = require('cartlib/world/prefab')
-local world<const> = require('cartlib/world/world')
 local enemy<const> = require('enemies/enemy')
+local foe<const> = require('enemies/foe')
 require('constants')
 
 local mini_moon<const> = {}
@@ -45,16 +45,6 @@ function mini_moon:update_flying()
 	end
 end
 
-function mini_moon:on_destroyed(projectile)
-	world:spawn(ids_small_explosion_def, {
-		stage = self.stage,
-		drop_definition_id = self.drop_definition_id,
-		pos = { x = self.x, y = self.y },
-	})
-	self.events:emit('enemy.small.destroyed')
-	enemy.on_destroyed(self, projectile)
-end
-
 local define_fsm<const> = function()
 	fsm_library.register(ids_mini_moon_fsm, {
 		initial = 'flying',
@@ -70,7 +60,7 @@ local register_definition<const> = function()
 	prefab.define({
 		def_id = ids_mini_moon_def,
 		class = mini_moon,
-		base = enemy,
+		base = foe,
 		components = {
 			enemy.new_collider,
 			fixed_point_velocity_component.new,

@@ -7,6 +7,7 @@ local prefab<const> = require('cartlib/world/prefab')
 local world<const> = require('cartlib/world/world')
 local assets<const> = require('bmsx/assets')
 local enemy<const> = require('enemies/enemy')
+local ground_foe<const> = require('enemies/ground_foe')
 local stage_scroll_follower_component<const> = require('stage_scroll_follower_component')
 require('constants')
 
@@ -100,7 +101,7 @@ local register_definition<const> = function()
 	prefab.define({
 		def_id = ids_rook_generator_def,
 		class = rook_generator,
-		base = enemy,
+		base = ground_foe,
 		components = {
 			enemy.new_collider,
 			stage_scroll_follower_component.new,

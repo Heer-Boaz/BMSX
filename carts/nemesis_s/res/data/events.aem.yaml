@@ -225,6 +225,24 @@ events:
             - go:
                   audio_id: nemesis2_foe_death
 
+    enemy.zak.destroyed:
+        channel: sfx
+        rules:
+            - go:
+                  audio_id: nemesis2_torendood
+
+    enemy.structure.hit:
+        channel: sfx
+        rules:
+            - go:
+                  audio_id: nemesis2_structure_hit
+
+    enemy.structure.destroyed:
+        channel: sfx
+        rules:
+            - go:
+                  audio_id: nemesis2_structure_explosion
+
     pickup.powerup:
         channel: sfx
         rules:
