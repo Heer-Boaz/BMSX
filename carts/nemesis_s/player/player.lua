@@ -948,7 +948,15 @@ end
 
 function player:enter_flying()
 	self.vessel_visual.visible = true
-	self.body_collider:set_enabled(true)
+	local body_collider<const> = self.body_collider
+	body_collider.mask = collision_player_mask
+	body_collider:set_enabled(true)
+end
+
+function player:enter_respawning()
+	local body_collider<const> = self.body_collider
+	body_collider.mask = collision_pickup_layer
+	body_collider:set_enabled(true)
 end
 
 function player:enter_dying()
@@ -1100,6 +1108,7 @@ local define_player_fsm<const> = function()
 						update = player.update_flying,
 					},
 					respawning = {
+						entering_state = player.enter_respawning,
 						update = player.update_runtime,
 						timelines = {
 							[player_respawn_timeline_id] = {

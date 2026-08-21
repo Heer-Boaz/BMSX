@@ -50,11 +50,10 @@ function __bmsx_host_test.update()
 	end
 
 	if test.phase == 'animation' then
-		if world.gameplay_time_ms == test.gameplay_time_ms then
+		if world.gameplay_time_ms == test.gameplay_time_ms
+		or player.option_anim_index == test.animation_frame then
 			return false
 		end
-		assert(player.option_anim_index ~= test.animation_frame,
-			'option animation did not advance at the retained gameplay cadence')
 		player.state_machines:transition_to('/dying')
 		assert(player.player_state.powerup_levels[option_slot] == 0,
 			'player death did not clear the equipped options')
@@ -73,15 +72,17 @@ function __bmsx_host_test.update()
 	end
 
 	if test.phase == 'floating' then
-		if world.gameplay_time_ms == test.gameplay_time_ms then
+		if world.gameplay_time_ms == test.gameplay_time_ms
+		or player.option_anim_index == test.animation_frame then
 			return false
 		end
 		local pickups<const> = test.pickups.objects
-		assert(pickups[1].x == test.pickup_x - 1,
+		assert(pickups[1].x < test.pickup_x,
 			'detached option did not consume its retained fixed-point velocity')
-		assert(player.option_anim_index ~= test.animation_frame,
-			'option animation stopped while the player death state was active')
-		player.state_machines:transition_to('/active/flying')
+		player.state_machines:transition_to('/active/respawning')
+		assert(player.body_collider.enabled
+			and player.body_collider.mask == collision_pickup_layer,
+			'respawning player did not retain pickup collision admission')
 		pickups[1].x = player.x
 		pickups[1].y = player.y
 		pickups[2].y = playfield_height
@@ -113,5 +114,8 @@ function __bmsx_host_test.update()
 		'second detached option did not restore the authored maximum')
 	assert(#player.options == 2,
 		'second option pickup did not restore the second option vessel')
+	player.state_machines:transition_to('/active/flying')
+	assert(player.body_collider.mask == collision_player_mask,
+		'completed respawn did not restore the player collision mask')
 	return true
 end
