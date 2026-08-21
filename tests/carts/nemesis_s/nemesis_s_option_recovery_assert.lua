@@ -44,6 +44,8 @@ function __bmsx_host_test.update()
 		player.options[1].y = 40
 		player.options[2].x = 200
 		player.options[2].y = 80
+		player:spawn_laser(player.options[2], 1)
+		test.option_laser = player.primary_projectiles[3]
 		test.animation_frame = player.option_anim_index
 		test.gameplay_time_ms = world.gameplay_time_ms
 		test.phase = 'animation'
@@ -59,6 +61,8 @@ function __bmsx_host_test.update()
 		assert(player.player_state.powerup_levels[option_slot] == 0,
 			'player death did not clear the equipped options')
 		assert(#player.options == 0, 'player death retained attached option vessels')
+		assert(test.option_laser.type ~= 0 and test.option_laser.collider.enabled,
+			'player death removed an independently admitted option projectile')
 		local pickups<const> = test.pickups.objects
 		assert(#pickups == 2, 'player death did not publish one pickup per option')
 		assert(pickups[1].x == 148 and pickups[1].y == 40,

@@ -67,7 +67,7 @@ function __bmsx_host_test.update()
 	player.y = 25
 	local primary<const> = player.primary_projectiles[1]
 	local secondary<const> = player.secondary_projectiles[1]
-	player:spawn_bullet(1, primary)
+	player:spawn_bullet(player, primary)
 	assert(*selected_apu_source == bullet_audio_source,
 		'the retained bullet spawn did not emit its XNA fire cue')
 	assert(primary.x == 48 and primary.y == 31,
@@ -78,7 +78,7 @@ function __bmsx_host_test.update()
 	assert(primary.type ~= 0 and primary.x == 60,
 		'the MSX bullet did not advance twelve pixels per gameplay tick')
 	player:despawn_slot_projectile(primary, 'test_reset')
-	player:spawn_bullet(1, primary)
+	player:spawn_bullet(player, primary)
 	assert(player.primary_projectiles[1] == primary,
 		'firing allocated a replacement projectile instead of reusing the retained vessel slot')
 	local bullet_collision_column<const> = ((primary.x + player_bullet_movement_speed
@@ -101,25 +101,36 @@ function __bmsx_host_test.update()
 	player:despawn_slot_projectile(primary, 'test_reset')
 	player:despawn_slot_projectile(secondary, 'test_reset')
 
-	player:spawn_laser(1, 1)
+	player:spawn_laser(player, 1)
 	assert(*selected_apu_source == laser_audio_source,
 		'the retained laser spawn did not emit its XNA fire cue')
 	assert(primary.collider.local_area.right == 0 and primary.collider.local_area.bottom == 2,
 		'the laser did not publish its empty expansion record at admission')
-	for expected_length = 4, 12, 4 do
+	player.x = 49
+	player.y = 29
+	player:update_weapons()
+	assert(primary.length_tiles == 4 and primary.x == 64 and primary.y == 35,
+		'the expanding laser did not follow its source vessel')
+	player.x = 57
+	player.y = 33
+	for expected_length = 8, 12, 4 do
 		player:update_weapons()
 		assert(primary.length_tiles == expected_length,
 			'the laser did not expand by four retained tiles per gameplay tick')
 	end
 	player:update_weapons()
-	assert(primary.length_tiles == 15 and primary.x == 56 and primary.y == 31,
+	assert(primary.length_tiles == 15 and primary.x == 72 and primary.y == 39,
 		'the level-one laser did not retain the fifteen-tile MSX extent')
+	player.x = 1
+	player.y = 1
 	player:update_weapons()
-	assert(primary.x == 88 and primary.length_tiles == 15,
-		'the completed laser did not enter its 32-pixel travel phase')
+	assert(primary.x == 104 and primary.y == 39 and primary.length_tiles == 15,
+		'the completed laser remained attached instead of entering its independent 32-pixel travel phase')
 	player:despawn_slot_projectile(primary, 'test_reset')
 
-	player:spawn_missile(1, 1)
+	player.x = 41
+	player.y = 25
+	player:spawn_missile(player, 1)
 	local missile<const> = player.missile_projectiles[1]
 	assert(missile.collider.local_area.right == 8 and missile.collider.local_area.bottom == 2,
 		'the missile did not publish its original collision record at admission')
@@ -127,7 +138,7 @@ function __bmsx_host_test.update()
 	assert(missile.x == 50 and missile.y == 36,
 		'the level-one missile did not use the MSX 1px/4px falling vector')
 	player:despawn_missile(missile, 'test_reset')
-	player:spawn_missile(1, 2)
+	player:spawn_missile(player, 2)
 	player:update_weapons()
 	assert(missile.x == 50 and missile.fraction_x == 0x80 and missile.y == 38,
 		'the level-two missile did not retain its Q8.8 one-and-a-half-pixel falling motion')
@@ -139,14 +150,14 @@ function __bmsx_host_test.update()
 	local floor_row<const> = stage.solid_tape[((32 + 8) // stage.tile_size) + 1]
 	local missile_column<const> = ((49 + stage.total_scroll_px) // stage.tile_size) + 1
 	floor_row[missile_column + 1] = 1
-	player:spawn_missile(1, 1)
+	player:spawn_missile(player, 1)
 	player:update_weapons()
 	assert(missile.x == 53 and missile.y == 32,
 		'the missile ignored the second tile in its original floor probe')
 	player:despawn_missile(missile, 'test_reset')
 	floor_row[missile_column] = 1
 	floor_row[missile_column + 1] = 0
-	player:spawn_missile(1, 1)
+	player:spawn_missile(player, 1)
 	player:update_weapons()
 	assert(missile.x == 53 and missile.y == 36,
 		'the missile did not traverse an original floor-edge sample')
@@ -154,7 +165,7 @@ function __bmsx_host_test.update()
 	floor_row[missile_column + 1] = 1
 	local missile_row<const> = stage.solid_tape[(32 // stage.tile_size) + 1]
 	missile_row[missile_column + 1] = 1
-	player:spawn_missile(1, 1)
+	player:spawn_missile(player, 1)
 	player:update_weapons()
 	assert(missile.type == 0,
 		'the missile skipped the second tile in its original body probe')

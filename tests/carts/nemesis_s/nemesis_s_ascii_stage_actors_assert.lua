@@ -109,7 +109,7 @@ function __bmsx_host_test.update()
 		snowman.y = 32
 		player.x = 41
 		player.y = 25
-		player:spawn_bullet(1, player.primary_projectiles[1])
+		player:spawn_bullet(player, player.primary_projectiles[1])
 		test.snowman = snowman
 		test.initial_health = snowman.health
 		test.gameplay_time_ms = world.gameplay_time_ms

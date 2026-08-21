@@ -190,14 +190,6 @@ function player:emit_event(name, extra)
 	print(string.format('%s|kind=player|f=%d|name=%s', telemetry_event_prefix, self.frame, name))
 end
 
-function player:get_vessel_snapshot(vessel_id)
-	if vessel_id == 1 then
-		return self.x, self.y
-	end
-	local option<const> = self.options[vessel_id - 1]
-	return option.x, option.y
-end
-
 local get_projectile_metrics<const> = function(projectiles, projectile_type, alternate_type)
 	local count = 0
 	local x = -1
@@ -334,6 +326,7 @@ function player:reset_runtime()
 		local missile<const> = self.missile_projectiles[vessel_id]
 		local secondary<const> = self.secondary_projectiles[vessel_id]
 		primary.type = projectile_type_none
+		primary.source_vessel = nil
 		missile.type = projectile_type_none
 		secondary.type = projectile_type_none
 		primary.collider:set_enabled(false)
@@ -537,12 +530,12 @@ function player:bind()
 	})
 end
 
-function player:spawn_bullet(vessel_id, bullet)
-	local vessel_x<const> , vessel_y<const> = self:get_vessel_snapshot(vessel_id)
+function player:spawn_bullet(vessel, bullet)
+	local vessel_id<const> = vessel.vessel_id
 	bullet.type = projectile_type_bullet
 	bullet.pierces_small_fry = false
-	bullet.x = ((vessel_x + player_bullet_spawn_offset_x) // 8) * 8
-	bullet.y = (vessel_y + player_bullet_spawn_offset_y) // 1
+	bullet.x = ((vessel.x + player_bullet_spawn_offset_x) // 8) * 8
+	bullet.y = (vessel.y + player_bullet_spawn_offset_y) // 1
 	set_projectile_collider(self, bullet, 8, 2)
 	bullet.collider:set_enabled(true)
 	self.events:emit('player.bullet_fired')
@@ -567,14 +560,18 @@ function player:spawn_bullet(vessel_id, bullet)
 	end
 end
 
-function player:spawn_laser(vessel_id, level)
-	local vessel_x<const> , vessel_y<const> = self:get_vessel_snapshot(vessel_id)
+function player:spawn_laser(vessel, level)
+	local vessel_id<const> = vessel.vessel_id
 	local laser<const> = self.primary_projectiles[vessel_id]
 	laser.type = projectile_type_laser
 	laser.pierces_small_fry = true
-	laser.x = ((vessel_x + weapons_laser.spawn_offset_x) // weapons_laser.tile_width) *
+	-- The normal laser follows its firing vessel throughout expansion. Removing
+	-- an option stops updating that retained vessel record; it does not end an
+	-- already admitted projectile. Travel begins from the last expanded pose.
+	laser.source_vessel = vessel
+	laser.x = ((vessel.x + weapons_laser.spawn_offset_x) // weapons_laser.tile_width) *
 		weapons_laser.tile_width
-	laser.y = (vessel_y + weapons_laser.spawn_offset_y) // 1
+	laser.y = (vessel.y + weapons_laser.spawn_offset_y) // 1
 	laser.state = laser_state_expand
 	laser.length_tiles = 0
 	laser.expansion_tiles_remaining = weapons_laser.length_tiles_by_level[level]
@@ -595,14 +592,14 @@ function player:spawn_laser(vessel_id, level)
 	end
 end
 
-function player:spawn_missile(vessel_id, level)
-	local vessel_x<const> , vessel_y<const> = self:get_vessel_snapshot(vessel_id)
+function player:spawn_missile(vessel, level)
+	local vessel_id<const> = vessel.vessel_id
 	local motion<const> = weapons_missile_motion_by_level[level]
 	local missile<const> = self.missile_projectiles[vessel_id]
 	missile.type = projectile_type_missile
 	missile.pierces_small_fry = false
-	missile.x = (vessel_x + weapons_missile_spawn_offset_x) // 1
-	missile.y = (vessel_y + weapons_missile_spawn_offset_y) // 1
+	missile.x = (vessel.x + weapons_missile_spawn_offset_x) // 1
+	missile.y = (vessel.y + weapons_missile_spawn_offset_y) // 1
 	missile.fraction_x = 0
 	missile.fraction_y = 0
 	missile.fall_velocity_x_q8 = motion.fall_velocity_x_q8
@@ -625,14 +622,14 @@ function player:spawn_missile(vessel_id, level)
 	end
 end
 
-function player:spawn_uplaser(vessel_id, level)
-	local vessel_x<const> , vessel_y<const> = self:get_vessel_snapshot(vessel_id)
+function player:spawn_uplaser(vessel, level)
+	local vessel_id<const> = vessel.vessel_id
 	local uplaser<const> = self.secondary_projectiles[vessel_id]
 	uplaser.type = uplaser_projectile_type_by_level[level]
 	uplaser.pierces_small_fry = true
-	uplaser.x = ((vessel_x + weapons_uplaser.spawn_offset_x) // weapons_uplaser.tile_width) *
+	uplaser.x = ((vessel.x + weapons_uplaser.spawn_offset_x) // weapons_uplaser.tile_width) *
 		weapons_uplaser.tile_width
-	uplaser.y = (vessel_y + weapons_uplaser.spawn_offset_y) // 1
+	uplaser.y = (vessel.y + weapons_uplaser.spawn_offset_y) // 1
 	uplaser.gate_counter = weapons_uplaser.level2_gate_frames
 	uplaser.length_tiles = weapons_uplaser.initial_length_tiles
 	set_projectile_collider(
@@ -658,18 +655,24 @@ function player:spawn_uplaser(vessel_id, level)
 end
 
 function player:fire_weapon_salvo()
-	local vessel_count<const> = #self.options + 1
+	local options<const> = self.options
+	local vessel_count<const> = #options + 1
 	local powerup_levels<const> = self.powerup_levels
 	local laser_level<const> = powerup_levels[powerup_slot_laser]
 	local missile_level<const> = powerup_levels[powerup_slot_missile]
 	local uplaser_level<const> = powerup_levels[powerup_slot_uplaser]
 	for vessel_id = 1, vessel_count do
-		local vessel_x<const> , vessel_y<const> = self:get_vessel_snapshot(vessel_id)
+		local vessel = self
+		if vessel_id > 1 then
+			vessel = options[vessel_id - 1]
+		end
+		local vessel_x<const> = vessel.x
+		local vessel_y<const> = vessel.y
 		local primary<const> = self.primary_projectiles[vessel_id]
 		if vessel_y < 166 and vessel_x < 217 then
 			if laser_level > 0 then
 				if primary.type == projectile_type_none then
-					self:spawn_laser(vessel_id, laser_level)
+					self:spawn_laser(vessel, laser_level)
 				elseif telemetry_enabled then
 					self:emit_event(
 						'weapon_blocked',
@@ -679,9 +682,9 @@ function player:fire_weapon_salvo()
 			else
 				local secondary<const> = self.secondary_projectiles[vessel_id]
 				if primary.type == projectile_type_none then
-					self:spawn_bullet(vessel_id, primary)
+					self:spawn_bullet(vessel, primary)
 				elseif secondary.type == projectile_type_none then
-					self:spawn_bullet(vessel_id, secondary)
+					self:spawn_bullet(vessel, secondary)
 				elseif telemetry_enabled then
 					self:emit_event(
 						'weapon_blocked',
@@ -693,14 +696,14 @@ function player:fire_weapon_salvo()
 
 		local missile<const> = self.missile_projectiles[vessel_id]
 		if missile_level > 0 and missile.type == projectile_type_none and vessel_y < 165 and vessel_x < 232 then
-			self:spawn_missile(vessel_id, missile_level)
+			self:spawn_missile(vessel, missile_level)
 		elseif telemetry_enabled and missile_level > 0 and missile.type ~= projectile_type_none then
 			self:emit_event('weapon_blocked', 'weapon=missile|vessel=' .. tostring(vessel_id) .. '|active=1|max=1')
 		end
 
 		local uplaser<const> = self.secondary_projectiles[vessel_id]
 		if uplaser_level > 0 and uplaser.type == projectile_type_none and vessel_y < 166 and vessel_x < 217 then
-			self:spawn_uplaser(vessel_id, uplaser_level)
+			self:spawn_uplaser(vessel, uplaser_level)
 		elseif telemetry_enabled and uplaser_level > 0 and uplaser.type ~= projectile_type_none then
 			self:emit_event('weapon_blocked', 'weapon=uplaser|vessel=' .. tostring(vessel_id) .. '|active=1|max=1')
 		end
@@ -710,6 +713,7 @@ end
 function player:despawn_slot_projectile(projectile, reason)
 	local projectile_type<const> = projectile.type
 	projectile.type = projectile_type_none
+	projectile.source_vessel = nil
 	projectile.collider:set_enabled(false)
 	if telemetry_enabled then
 		local weapon<const> = projectile_name_by_type[projectile_type]
@@ -763,10 +767,10 @@ end
 function player:update_laser(laser)
 	local state<const> = laser.state
 	if state == laser_state_expand then
-		local origin_x<const> , origin_y<const> = self:get_vessel_snapshot(laser.vessel_id)
-		laser.x = ((origin_x + weapons_laser.spawn_offset_x) // weapons_laser.tile_width) *
+		local source_vessel<const> = laser.source_vessel
+		laser.x = ((source_vessel.x + weapons_laser.spawn_offset_x) // weapons_laser.tile_width) *
 			weapons_laser.tile_width
-		laser.y = (origin_y + weapons_laser.spawn_offset_y) // 1
+		laser.y = (source_vessel.y + weapons_laser.spawn_offset_y) // 1
 		if laser.x >= playfield_width - weapons_laser.tile_width then
 			self:despawn_slot_projectile(laser, 'screen_edge')
 			return
@@ -781,6 +785,7 @@ function player:update_laser(laser)
 		laser.expansion_tiles_remaining = expansion - step
 		if laser.expansion_tiles_remaining == 0 then
 			laser.state = laser_state_travel
+			laser.source_vessel = nil
 		end
 
 		local visible_tiles<const> = (playfield_width - laser.x) // weapons_laser.tile_width
@@ -1207,6 +1212,7 @@ local register_player_definition<const> = function()
 		},
 		defaults = {
 			player_index = 1,
+			vessel_id = 1,
 			z = 70,
 			frame = 0,
 			last_dx = 0,

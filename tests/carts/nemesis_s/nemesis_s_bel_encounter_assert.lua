@@ -107,7 +107,7 @@ function __bmsx_host_test.update()
 		test.bell.state_machines:transition_to('/ringing/left')
 		test.player.x = 40
 		test.player.y = 94
-		test.player:spawn_laser(1, 1)
+		test.player:spawn_laser(test.player, 1)
 		test.phase = 'laser'
 		return false
 	end
