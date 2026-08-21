@@ -22,5 +22,13 @@ test('host and programmatic supervisor requests drive independent wired-OR sourc
 	assert.equal(input.supervisorRequestLineHigh(), true);
 	input.setProgrammaticSupervisorRequestLine(false);
 	assert.equal(input.supervisorRequestLineHigh(), false);
+
+	input.inputButton('keyboard:0', 'Backspace', true, 1, 1, 1);
+	input.inputButton('keyboard:0', 'ShiftLeft', true, 1, 1, 2);
+	input.pollInput();
+	assert.equal(input.supervisorRequestLineHigh(), true);
+
+	input.resetInput();
+	assert.equal(input.supervisorRequestLineHigh(), false);
 	input.dispose();
 });

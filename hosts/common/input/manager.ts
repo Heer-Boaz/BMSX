@@ -32,22 +32,6 @@ const EMPTY_BUTTON_STATE_PATCH: Readonly<Partial<ButtonState>> = Object.freeze({
 const SUPERVISOR_REQUEST_CHORD = ['select', 'lb'] as const;
 
 /**
- * Resets the properties of an object by deleting all keys except for the ones specified in the `except` array.
- * If no `except` array is provided, all keys will be deleted.
- * Used for resetting the UI of the onscreen gamepad for events such as button releases.
- *
- * @param obj - The object to reset.
- * @param except - An optional array of keys to exclude from deletion.
- */
-export function resetObject(obj: any, except?: string[]) {
-	for (const key in obj) {
-		if (!except || !except.includes(key)) {
-			delete obj[key];
-		}
-	}
-};
-
-/**
  * Returns the pressed state of a key or button, and optionally checks if it was clicked.
  * @param stateMap - The state map to check for the key or button.
  * @param consumedStateMap - The click state map to check for the key or button.
@@ -146,7 +130,7 @@ export class Input implements InputControllerInputSource, InputEventSink {
 	private readonly pendingVibrationDevices: GamepadDevice[] = [];
 	public resetInput(): void {
 		this.hostSupervisorRequestLine = false;
-		this.programmaticSupervisorRequestLine = false;
+		this.controlSupervisorRequestLine = false;
 		this.updateSupervisorRequestLine();
 		for (let i = 0; i < this.playerInputs.length; i++) {
 			const player = this.playerInputs[i];
@@ -162,6 +146,7 @@ export class Input implements InputControllerInputSource, InputEventSink {
 
 	public debugHotkeysPaused = false;
 	private hostSupervisorRequestLine = false;
+	private controlSupervisorRequestLine = false;
 	private programmaticSupervisorRequestLine = false;
 	private supervisorRequestLine = false;
 	private readonly additionalCaptureKeys: Set<string> = new Set();
@@ -254,8 +239,8 @@ export class Input implements InputControllerInputSource, InputEventSink {
 		this.globalShortcuts.registerControlChord(
 			defaultPlayerIndex,
 			SUPERVISOR_REQUEST_CHORD,
-			() => this.setProgrammaticSupervisorRequestLine(true),
-			() => this.setProgrammaticSupervisorRequestLine(false),
+			() => this.setControlSupervisorRequestLine(true),
+			() => this.setControlSupervisorRequestLine(false),
 		);
 		const player = this.getPlayerInput(defaultPlayerIndex);
 		const keyboard = new KeyboardInput(this.clock, 'keyboard:0');
@@ -306,6 +291,7 @@ export class Input implements InputControllerInputSource, InputEventSink {
 		this.pendingVibrationDevices.length = 0;
 		this.debugHotkeysPaused = false;
 		this.hostSupervisorRequestLine = false;
+		this.controlSupervisorRequestLine = false;
 		this.programmaticSupervisorRequestLine = false;
 		this.supervisorRequestLine = false;
 		this.additionalCaptureKeys.clear();
@@ -321,8 +307,14 @@ export class Input implements InputControllerInputSource, InputEventSink {
 		this.updateSupervisorRequestLine();
 	}
 
+	private setControlSupervisorRequestLine(down: boolean): void {
+		this.controlSupervisorRequestLine = down;
+		this.updateSupervisorRequestLine();
+	}
+
 	private updateSupervisorRequestLine(): void {
 		this.supervisorRequestLine = this.hostSupervisorRequestLine
+			|| this.controlSupervisorRequestLine
 			|| this.programmaticSupervisorRequestLine;
 	}
 

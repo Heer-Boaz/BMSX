@@ -125,10 +125,10 @@ export class GlobalShortcutRegistry {
 		if (keyboardEntries && keyboard) {
 			for (let i = 0; i < keyboardEntries.length; i++) {
 				const entry = keyboardEntries[i];
-				const shift = keyboard.getButtonState('ShiftLeft').pressed || keyboard.getButtonState('ShiftRight').pressed;
-				const ctrl = keyboard.getButtonState('ControlLeft').pressed || keyboard.getButtonState('ControlRight').pressed;
-				const alt = keyboard.getButtonState('AltLeft').pressed || keyboard.getButtonState('AltRight').pressed;
-				const meta = keyboard.getButtonState('MetaLeft').pressed || keyboard.getButtonState('MetaRight').pressed;
+				const shift = keyboard.getKeyState('ShiftLeft').pressed || keyboard.getKeyState('ShiftRight').pressed;
+				const ctrl = keyboard.getKeyState('ControlLeft').pressed || keyboard.getKeyState('ControlRight').pressed;
+				const alt = keyboard.getKeyState('AltLeft').pressed || keyboard.getKeyState('AltRight').pressed;
+				const meta = keyboard.getKeyState('MetaLeft').pressed || keyboard.getKeyState('MetaRight').pressed;
 				if (((entry.modifiers & KeyModifier.shift) !== 0 && !shift)
 					|| ((entry.modifiers & KeyModifier.ctrl) !== 0 && !ctrl)
 					|| ((entry.modifiers & KeyModifier.alt) !== 0 && !alt)
@@ -136,7 +136,7 @@ export class GlobalShortcutRegistry {
 					this.release(entry.latchKey);
 					continue;
 				}
-				const state = keyboard.getButtonState(entry.key);
+				const state = keyboard.getKeyState(entry.key);
 				if (this.shouldAccept(entry.latchKey, state)) {
 					entry.handler();
 				}

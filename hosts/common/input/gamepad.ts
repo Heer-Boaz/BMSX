@@ -1,4 +1,4 @@
-import { getPressedState, resetObject } from './manager';
+import { getPressedState } from './manager';
 import type { ButtonState, GamepadInputHandler, KeyOrButtonId2ButtonState } from './models';
 import { inputControllerGamepadButtonBit } from './gamepad_buttons';
 import type { HostClock } from '../clock';
@@ -14,6 +14,8 @@ export class GamepadInput implements GamepadInputHandler {
 	private readonly buttonStates: KeyOrButtonId2ButtonState = {};
 	private inputControllerButtons = 0;
 	private readonly inputControllerAxesQ16 = new Uint32Array(INPUT_CONTROLLER_PAD_AXIS_COUNT);
+	private routedInputControllerButtons = 0;
+	private readonly routedInputControllerAxesQ16 = new Uint32Array(INPUT_CONTROLLER_PAD_AXIS_COUNT);
 	private readonly leftAxis: [number, number] = [0, 0];
 	private readonly rightAxis: [number, number] = [0, 0];
 	private lastPollTime = 0;
@@ -35,9 +37,12 @@ export class GamepadInput implements GamepadInputHandler {
 		const now = this.clock.now();
 		const prevPollTime = this.lastPollTime;
 		this.lastPollTime = now;
+		this.routedInputControllerButtons = this.inputControllerButtons;
+		this.routedInputControllerAxesQ16.set(this.inputControllerAxesQ16);
 
 		for (const key in this.buttonStates) {
 			const state = this.buttonStates[key];
+			state.consumed = false;
 			if (state.pressed) {
 				state.presstime = now - state.pressedAtMs;
 				if (prevPollTime > 0 && state.justpressed && state.timestamp <= prevPollTime) {
@@ -59,8 +64,8 @@ export class GamepadInput implements GamepadInputHandler {
 	}
 
 	public writeInputControllerPadSnapshot(snapshot: InputControllerPadSnapshot): void {
-		snapshot.buttons = this.inputControllerButtons;
-		snapshot.axesQ16.set(this.inputControllerAxesQ16);
+		snapshot.buttons = this.routedInputControllerButtons;
+		snapshot.axesQ16.set(this.routedInputControllerAxesQ16);
 	}
 
 	public ingestButton(code: string, down: boolean, value: number, timestamp: number, pressId: number): void {
@@ -146,55 +151,28 @@ export class GamepadInput implements GamepadInputHandler {
 		}
 		const bit = inputControllerGamepadButtonBit(button);
 		if (bit >= 0) {
-			this.inputControllerButtons = (this.inputControllerButtons & ~(1 << bit)) >>> 0;
+			this.routedInputControllerButtons = (this.routedInputControllerButtons & ~(1 << bit)) >>> 0;
 		}
 		if (button === 'lt') {
-			this.inputControllerAxesQ16[4] = 0;
+			this.routedInputControllerAxesQ16[4] = 0;
 		} else if (button === 'rt') {
-			this.inputControllerAxesQ16[5] = 0;
+			this.routedInputControllerAxesQ16[5] = 0;
 		}
 	}
 
-	public reset(except?: string[]): void {
-		if (!except) {
-			for (const key in this.buttonStates) {
-				delete this.buttonStates[key];
-			}
-			this.inputControllerButtons = 0;
-			this.inputControllerAxesQ16.fill(0);
-			this.leftAxis[0] = 0;
-			this.leftAxis[1] = 0;
-			this.rightAxis[0] = 0;
-			this.rightAxis[1] = 0;
-			this.lastPollTime = 0;
-			return;
+	public reset(): void {
+		for (const key in this.buttonStates) {
+			delete this.buttonStates[key];
 		}
-		resetObject(this.buttonStates, except);
-		this.rebuildInputControllerState();
-	}
-
-	private rebuildInputControllerState(): void {
 		this.inputControllerButtons = 0;
 		this.inputControllerAxesQ16.fill(0);
-		for (const code in this.buttonStates) {
-			const state = this.buttonStates[code];
-			if (state.pressed && !state.consumed) {
-				const bit = inputControllerGamepadButtonBit(code);
-				if (bit >= 0) {
-					this.inputControllerButtons = (this.inputControllerButtons | (1 << bit)) >>> 0;
-				}
-			}
-			if (code === 'ls' && state.value2d) {
-				this.inputControllerAxesQ16[0] = encodeSignedFix16(state.value2d[0]);
-				this.inputControllerAxesQ16[1] = encodeSignedFix16(state.value2d[1]);
-			} else if (code === 'rs' && state.value2d) {
-				this.inputControllerAxesQ16[2] = encodeSignedFix16(state.value2d[0]);
-				this.inputControllerAxesQ16[3] = encodeSignedFix16(state.value2d[1]);
-			} else if ((code === 'lt' || code === 'rt') && !state.consumed) {
-				const axis = code === 'lt' ? 4 : 5;
-				this.inputControllerAxesQ16[axis] = state.pressed ? encodeSignedFix16(state.value) : 0;
-			}
-		}
+		this.routedInputControllerButtons = 0;
+		this.routedInputControllerAxesQ16.fill(0);
+		this.leftAxis[0] = 0;
+		this.leftAxis[1] = 0;
+		this.rightAxis[0] = 0;
+		this.rightAxis[1] = 0;
+		this.lastPollTime = 0;
 	}
 
 	public applyVibrationEffect(durationMs: number, intensity: number): void {

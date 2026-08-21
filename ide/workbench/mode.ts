@@ -124,7 +124,7 @@ export function registerRuntimeShortcuts(
 		),
 	));
 	disposers.push(registry.registerKeyboardShortcut(1, 'KeyT', () => {
-		input.getPlayerInput(1).inputHandlers.keyboard?.consumeButton('KeyT');
+		input.getPlayerInput(1).inputHandlers.keyboard?.consumeKey('KeyT');
 		const next = state.editor.fontVariant === 'tiny' ? 'msx' : 'tiny';
 		state.editor.setFontVariant(next);
 	}, KeyModifier.ctrl | KeyModifier.shift));

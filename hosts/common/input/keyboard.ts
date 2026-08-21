@@ -1,27 +1,21 @@
-import { getPressedState, Input, makeButtonState, resetObject } from './manager';
+import { getPressedState, Input, makeButtonState } from './manager';
 import { inputBindingId, type ButtonState, type KeyboardButtonId, type KeyboardInputHandler, type KeyOrButtonId2ButtonState } from './models';
 import type { HostClock } from '../clock';
 import { INPUT_CONTROLLER_KEY_WORD_COUNT } from '../../../machine/ts/machine/devices/input/contracts';
 import { hidKeyUsageForCode } from './hid_keys';
 
 
-/**
- * Represents a keyboard input handler that implements the IInputHandler interface.
- *
- * This class manages the state of keyboard keys, allowing for key press detection,
- * consumption of key events, and resetting of input states. It listens for keydown
- * and keyup events to update the state of keys accordingly.
- *
- * @implements {InputHandler}
- */
+/** Retains physical keyboard input and its normalized host-control projection. */
 export class KeyboardInput implements KeyboardInputHandler {
 	/**
-	 * The state of each keyboard key.
+	 * Event-latched physical key state. pollInput publishes this into the
+	 * host-facing key and mapped-button views once per host frame.
 	 */
-	public keyStates: KeyOrButtonId2ButtonState = {};
+	private keyStates: KeyOrButtonId2ButtonState = {};
+	private polledKeyStates: KeyOrButtonId2ButtonState = {};
+	private mappedButtonStates: KeyOrButtonId2ButtonState = {};
 	private readonly keyUsageWords = new Uint32Array(INPUT_CONTROLLER_KEY_WORD_COUNT);
-
-	public gamepadButtonStates: KeyOrButtonId2ButtonState = {};
+	private readonly routedKeyUsageWords = new Uint32Array(INPUT_CONTROLLER_KEY_WORD_COUNT);
 
 	private nextPressId = 1;
 
@@ -29,26 +23,15 @@ export class KeyboardInput implements KeyboardInputHandler {
 		private readonly clock: HostClock,
 		public readonly deviceId: string = 'keyboard:0',
 	) {
-		this.keyStates = {};
-		this.gamepadButtonStates = {};
 		this.reset();
 	}
 
-	/**
-	 * Resets the state of all input keys and gamepad buttons.
-	 * @param except An optional array of keys or buttons to exclude from the reset.
-	 */
-	public reset(except?: string[]): void {
-		if (!except) {
-			this.keyStates = {};
-			this.gamepadButtonStates = {};
-			this.keyUsageWords.fill(0);
-		}
-		else {
-			resetObject(this.keyStates, except);
-			resetObject(this.gamepadButtonStates, except);
-			this.rebuildKeyUsageWords();
-		}
+	public reset(): void {
+		this.keyStates = {};
+		this.polledKeyStates = {};
+		this.mappedButtonStates = {};
+		this.keyUsageWords.fill(0);
+		this.routedKeyUsageWords.fill(0);
 	}
 
 	private setKeyUsageWord(code: string, pressed: boolean): void {
@@ -59,74 +42,72 @@ export class KeyboardInput implements KeyboardInputHandler {
 		this.keyUsageWords[word] = pressed ? ((this.keyUsageWords[word] | mask) >>> 0) : ((this.keyUsageWords[word] & ~mask) >>> 0);
 	}
 
-	private rebuildKeyUsageWords(): void {
-		this.keyUsageWords.fill(0);
-		for (const code in this.keyStates) {
-			if (this.keyStates[code].pressed) {
-				this.setKeyUsageWord(code, true);
+	/**
+	 * Consumes a mapped console control without hiding its physical key from host
+	 * keyboard owners. The matching HID usages are removed from this frame's ICU
+	 * view so a host chord cannot leak into the guest.
+	 *
+	 * @param button - The mapped console control to consume.
+	 * @returns void
+	 */
+	public consumeButton(button: string): void {
+		const state = this.mappedButtonStates[button];
+		if (state) {
+			state.consumed = true;
+		}
+		const bindings = Input.DEFAULT_INPUT_MAPPING.keyboard[button];
+		if (bindings) {
+			for (let index = 0; index < bindings.length; index += 1) {
+				const code = inputBindingId(bindings[index]);
+				this.hideKeyUsage(code);
 			}
 		}
 	}
 
-	/**
-	 * Marks the specified key as consumed, preventing further processing of its state.
-	 *
-	 * @param key - The identifier of the key to be consumed.
-	 * @returns void
-	 */
-	public consumeButton(key: string): void {
-		const state = this.gamepadButtonStates[key];
+	/** Consumes one physical key for later host owners and the current ICU view. */
+	public consumeKey(code: string): void {
+		const state = this.polledKeyStates[code];
 		if (state) {
 			state.consumed = true;
 		}
-		this.setKeyUsageWord(key, false);
-		const bindings = Input.DEFAULT_INPUT_MAPPING.keyboard[key];
-		if (bindings) {
-			for (let index = 0; index < bindings.length; index += 1) {
-				const code = inputBindingId(bindings[index]);
-				const boundState = this.gamepadButtonStates[code];
-				if (boundState) {
-					boundState.consumed = true;
-				}
-				this.setKeyUsageWord(code, false);
-			}
-		}
-		const keyMappedToCorrespondingGamepadButtonId = Input.KEYBOARDKEY2GAMEPADBUTTON[key as keyof typeof Input.KEYBOARDKEY2GAMEPADBUTTON];
-		if (keyMappedToCorrespondingGamepadButtonId) {
-			const mappedState = this.gamepadButtonStates[keyMappedToCorrespondingGamepadButtonId];
+		this.hideKeyUsage(code);
+		const mapped = Input.KEYBOARDKEY2GAMEPADBUTTON[code as keyof typeof Input.KEYBOARDKEY2GAMEPADBUTTON];
+		if (mapped) {
+			const mappedState = this.mappedButtonStates[mapped];
 			if (mappedState) {
 				mappedState.consumed = true;
 			}
 		}
 	}
 
-	/**
-	 * Retrieves the current state of a specified button.
-	 *
-	 * @param key - The identifier for the button whose state is to be retrieved.
-	 * @returns The current state of the button as a ButtonState object.
-	 *          If the provided key is null, a default ButtonState is returned.
-	 */
-	public getButtonState(key: string): ButtonState {
-		return getPressedState(this.gamepadButtonStates, key);
+	private hideKeyUsage(code: string): void {
+		const usage = hidKeyUsageForCode(code);
+		if (usage < 0) return;
+		const word = usage >>> 5;
+		this.routedKeyUsageWords[word] = (this.routedKeyUsageWords[word] & ~(1 << (usage & 31))) >>> 0;
+	}
+
+	/** Returns a normalized console-control view used by host control chords. */
+	public getButtonState(button: string): ButtonState {
+		return getPressedState(this.mappedButtonStates, button);
+	}
+
+	/** Returns the polled physical key view used by keyboard-oriented host UI. */
+	public getKeyState(code: string): ButtonState {
+		return getPressedState(this.polledKeyStates, code);
 	}
 
 	public writeInputControllerKeyWords(keyWords: Uint32Array): void {
 		for (let i = 0; i < INPUT_CONTROLLER_KEY_WORD_COUNT; i += 1) {
-			keyWords[i] = (keyWords[i] | this.keyUsageWords[i]) >>> 0;
+			keyWords[i] = (keyWords[i] | this.routedKeyUsageWords[i]) >>> 0;
 		}
 	}
 
-	/**
-	 * Polls the input from the keyboard.
-	 * This function should be called once per frame to ensure that keyboard input is up-to-date.
-	 * It updates the state of each key based on the current keydown and keyup events.
-	 * @returns void
-	 */
-	pollInput(): void {
+	public pollInput(): void {
 		const now = this.clock.now();
+		this.routedKeyUsageWords.set(this.keyUsageWords);
 		for (const buttonId in this.keyStates) {
-			const state = getPressedState(this.gamepadButtonStates, buttonId);
+			const state = getPressedState(this.polledKeyStates, buttonId);
 			const current = this.keyStates[buttonId];
 			const isDown = current.pressed;
 			const wasDown = state.pressed;
@@ -135,7 +116,6 @@ export class KeyboardInput implements KeyboardInputHandler {
 			const previousTimestamp = state.timestamp;
 			const previousReleasedAtMs = state.releasedAtMs;
 			const previousPressId = state.pressId;
-			const previousConsumed = state.consumed;
 			const justpressed = current.justpressed;
 			const justreleased = current.justreleased;
 
@@ -158,7 +138,7 @@ export class KeyboardInput implements KeyboardInputHandler {
 				state.timestamp = justpressed ? current.timestamp : previousTimestamp;
 				state.pressId = pressId;
 				state.value = 1;
-				state.consumed = previousConsumed;
+				state.consumed = false;
 			} else {
 				state.pressed = false;
 				state.justpressed = justpressed;
@@ -176,13 +156,13 @@ export class KeyboardInput implements KeyboardInputHandler {
 
 			const mapped = Input.KEYBOARDKEY2GAMEPADBUTTON[buttonId as keyof typeof Input.KEYBOARDKEY2GAMEPADBUTTON];
 			if (mapped) {
-				const dst = getPressedState(this.gamepadButtonStates, mapped);
+				const dst = getPressedState(this.mappedButtonStates, mapped);
 				dst.pressed = state.pressed;
 				dst.justpressed = state.justpressed;
 				dst.justreleased = state.justreleased;
 				dst.waspressed = state.waspressed;
 				dst.wasreleased = state.wasreleased;
-				dst.consumed = state.consumed;
+				dst.consumed = false;
 				dst.presstime = state.presstime;
 				dst.timestamp = state.timestamp;
 				dst.pressedAtMs = state.pressedAtMs;

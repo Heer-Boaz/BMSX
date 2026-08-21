@@ -135,7 +135,7 @@ function buttonEdge(player: PlayerInput, button: HostMenuButton): boolean {
 
 function consumeButton(player: PlayerInput, button: HostMenuButton): void {
 	player.inputHandlers.gamepad?.consumeButton(button.gamepad);
-	player.inputHandlers.keyboard?.consumeButton(button.keyboard);
+	player.inputHandlers.keyboard?.consumeKey(button.keyboard);
 }
 
 function consumeButtons(player: PlayerInput, buttons: readonly HostMenuButton[]): void {

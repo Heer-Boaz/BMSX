@@ -2,7 +2,7 @@ import { KeyModifier, type PlayerInput } from '../../../hosts/common/input/playe
 
 export function isKeyJustPressed(code: string, playerInput: PlayerInput): boolean {
 	const keyboard = playerInput.inputHandlers.keyboard;
-	const state = keyboard.getButtonState(code);
+	const state = keyboard.getKeyState(code);
 	return state.justpressed;
 }
 
@@ -11,7 +11,7 @@ export function shouldRepeatKeyFromPlayer(code: string, playerInput: PlayerInput
 }
 
 export function consumeIdeKey(code: string, playerInput: PlayerInput): void {
-	playerInput.inputHandlers.keyboard?.consumeButton(code);
+	playerInput.inputHandlers.keyboard?.consumeKey(code);
 }
 
 export function isCtrlDown(playerInput: PlayerInput): boolean {

@@ -90,14 +90,13 @@ export interface InputHandler {
 	 */
 	consumeButton(button: ButtonId): void;
 
-	/**
-	 * Resets the input, optionally excluding specified buttons.
-	 * @param except - An optional array of button names to exclude from the reset.
-	 */
-	reset(except?: string[]): void;
+	/** Clears retained physical and host-facing input state. */
+	reset(): void;
 }
 
 export interface KeyboardInputHandler extends InputHandler {
+	getKeyState(code: ButtonId): ButtonState;
+	consumeKey(code: ButtonId): void;
 	writeInputControllerKeyWords(keyWords: Uint32Array): void;
 }
 

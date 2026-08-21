@@ -74,16 +74,16 @@ export class PlayerInput {
 			return KeyModifier.none;
 		}
 		let modifiers = KeyModifier.none;
-		if (keyboard.getButtonState('ShiftLeft').pressed || keyboard.getButtonState('ShiftRight').pressed) {
+		if (keyboard.getKeyState('ShiftLeft').pressed || keyboard.getKeyState('ShiftRight').pressed) {
 			modifiers |= KeyModifier.shift;
 		}
-		if (keyboard.getButtonState('ControlLeft').pressed || keyboard.getButtonState('ControlRight').pressed) {
+		if (keyboard.getKeyState('ControlLeft').pressed || keyboard.getKeyState('ControlRight').pressed) {
 			modifiers |= KeyModifier.ctrl;
 		}
-		if (keyboard.getButtonState('AltLeft').pressed || keyboard.getButtonState('AltRight').pressed) {
+		if (keyboard.getKeyState('AltLeft').pressed || keyboard.getKeyState('AltRight').pressed) {
 			modifiers |= KeyModifier.alt;
 		}
-		if (keyboard.getButtonState('MetaLeft').pressed || keyboard.getButtonState('MetaRight').pressed) {
+		if (keyboard.getKeyState('MetaLeft').pressed || keyboard.getKeyState('MetaRight').pressed) {
 			modifiers |= KeyModifier.meta;
 		}
 		return modifiers;
@@ -91,8 +91,13 @@ export class PlayerInput {
 
 	/** Live button state straight from the device handler. */
 	public getRawButtonState(button: ButtonId, source: InputSource): ButtonState {
+		if (source === 'keyboard') {
+			const keyboard = this.inputHandlers.keyboard;
+			return keyboard ? keyboard.getKeyState(button) : this.unboundButtonState;
+		}
 		const handler = this.inputHandlers[source];
-		return handler ? handler.getButtonState(button) : this.unboundButtonState;
+		if (!handler) return this.unboundButtonState;
+		return handler.getButtonState(button);
 	}
 
 	public get pollFrame(): number {
@@ -204,13 +209,9 @@ export class PlayerInput {
 		this.frameDurationMs = frameDurationMs;
 	}
 
-	/**
-	 * Resets the state of all input keys and gamepad buttons.
-	 * @param except An optional array of keys or buttons to exclude from the reset.
-	 */
-	public reset(except?: string[]): void {
+	public reset(): void {
 		for (let i = 0; i < INPUT_SOURCES.length; i += 1) {
-			this.inputHandlers[INPUT_SOURCES[i]]?.reset(except);
+			this.inputHandlers[INPUT_SOURCES[i]]?.reset();
 		}
 		for (let i = 0; i < INPUT_SOURCES.length; i += 1) {
 			this.rawActionRepeatRecords[INPUT_SOURCES[i]].clear();

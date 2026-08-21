@@ -1,4 +1,4 @@
-import { getPressedState, makeButtonState, resetObject } from './manager';
+import { getPressedState, makeButtonState } from './manager';
 import type { ButtonState, KeyOrButtonId2ButtonState, PointerInputHandler } from './models';
 import type { HostClock } from '../clock';
 import {
@@ -115,6 +115,7 @@ export class PointerInput implements PointerInputHandler {
 
 		for (let index = 0; index < POINTER_DEFAULT_CODES.length; index += 1) {
 			const state = this.buttonStates[POINTER_DEFAULT_CODES[index]];
+			state.consumed = false;
 			if (index < POINTER_BUTTON_CODE_COUNT) {
 				const mask = 1 << index;
 				state.justpressed = (this.pendingButtonPressEdges & mask) !== 0;
@@ -141,28 +142,6 @@ export class PointerInput implements PointerInputHandler {
 		snapshot.pointerXQ16 = this.inputControllerXQ16;
 		snapshot.pointerYQ16 = this.inputControllerYQ16;
 		snapshot.pointerWheelQ16 = this.inputControllerWheelQ16;
-	}
-
-	private rebuildInputControllerState(): void {
-		this.inputControllerButtons = 0;
-		for (const code in this.buttonStates) {
-			if (this.buttonStates[code].pressed) {
-				const bit = pointerButtonBit(code);
-				if (bit >= 0) {
-					this.inputControllerButtons = (this.inputControllerButtons | (1 << bit)) >>> 0;
-				}
-			}
-		}
-		const position = this.buttonStates['pointer_position'];
-		if (position && position.value2d) {
-			this.inputControllerXQ16 = encodeSignedFix16(position.value2d[0]);
-			this.inputControllerYQ16 = encodeSignedFix16(position.value2d[1]);
-		} else {
-			this.inputControllerXQ16 = 0;
-			this.inputControllerYQ16 = 0;
-		}
-		const wheel = this.buttonStates['pointer_wheel'];
-		this.inputControllerWheelQ16 = wheel ? encodeSignedFix16(wheel.value) : 0;
 	}
 
 	public ingestButton(code: string, down: boolean, value: number, timestamp: number, pressId: number): void {
@@ -250,45 +229,35 @@ export class PointerInput implements PointerInputHandler {
 		}
 	}
 
-	public reset(except?: string[]): void {
-		if (!except) {
-			this.buttonStates = {};
-			for (let i = 0; i < POINTER_DEFAULT_CODES.length; i += 1) {
-				const code = POINTER_DEFAULT_CODES[i];
-				const state = makeButtonState();
-				if (code === 'pointer_position') {
-					state.value2d = this.pointerPosition;
-				} else if (code === 'pointer_delta') {
-					state.value2d = this.pointerDelta;
-				}
-				this.buttonStates[code] = state;
+	public reset(): void {
+		this.buttonStates = {};
+		for (let i = 0; i < POINTER_DEFAULT_CODES.length; i += 1) {
+			const code = POINTER_DEFAULT_CODES[i];
+			const state = makeButtonState();
+			if (code === 'pointer_position') {
+				state.value2d = this.pointerPosition;
+			} else if (code === 'pointer_delta') {
+				state.value2d = this.pointerDelta;
 			}
-			this.pointerPosition[0] = 0;
-			this.pointerPosition[1] = 0;
-			this.pointerDelta[0] = 0;
-			this.pointerDelta[1] = 0;
-			this.lastPositionX = 0;
-			this.lastPositionY = 0;
-			this.lastPositionValid = false;
-			this.pendingButtonPressEdges = 0;
-			this.pendingButtonReleaseEdges = 0;
-			this.pendingDeltaX = 0;
-			this.pendingDeltaY = 0;
-			this.pendingDeltaTimestamp = 0;
-			this.pendingWheel = 0;
-			this.pendingWheelTimestamp = 0;
-			this.inputControllerButtons = 0;
-			this.inputControllerXQ16 = 0;
-			this.inputControllerYQ16 = 0;
-			this.inputControllerWheelQ16 = 0;
-			return;
+			this.buttonStates[code] = state;
 		}
-		resetObject(this.buttonStates, except);
+		this.pointerPosition[0] = 0;
+		this.pointerPosition[1] = 0;
+		this.pointerDelta[0] = 0;
+		this.pointerDelta[1] = 0;
+		this.lastPositionX = 0;
+		this.lastPositionY = 0;
+		this.lastPositionValid = false;
 		this.pendingButtonPressEdges = 0;
 		this.pendingButtonReleaseEdges = 0;
 		this.pendingDeltaX = 0;
 		this.pendingDeltaY = 0;
+		this.pendingDeltaTimestamp = 0;
 		this.pendingWheel = 0;
-		this.rebuildInputControllerState();
+		this.pendingWheelTimestamp = 0;
+		this.inputControllerButtons = 0;
+		this.inputControllerXQ16 = 0;
+		this.inputControllerYQ16 = 0;
+		this.inputControllerWheelQ16 = 0;
 	}
 }
