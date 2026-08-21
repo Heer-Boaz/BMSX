@@ -12,6 +12,10 @@ local update_interval_vblanks<const> = 2
 
 return {
 	update_milliseconds = clock.configure_update_interval(update_interval_vblanks),
+	gameplay_clock_rate = {
+		numerator = 5,
+		denominator = 6,
+	},
 	spaces = {
 		'intro',
 		'story',

@@ -87,6 +87,22 @@
   - Since `E202` starts at `1`, the `RLCA` sequence is `2,4,8,16,32,64,128,1`, so gate-open occurs every 8 updates in gated mode.
 - Therefore, scroll cadence should be modeled as **frame/tick-gated**, not as a fixed millisecond timer constant.
 
+The deterministic stage-1 route also establishes why the cart must not run the
+gameplay schedule at its unconstrained nominal 25 Hz. On the Japanese MSX1
+machine the original game admitted 174 top-level game passes over 500 VBlanks:
+an average of 2.867 VBlanks per pass, or 20.93 Hz at 60 Hz. The same trace observed stage
+tile advances at 20.73 pixels per second. The work spans multiple VBlanks; this
+is CPU saturation in the original 3.58 MHz machine, not an authored delay in an
+individual enemy.
+
+The BMSX cart therefore accumulates virtual gameplay time at an exact `5/6`
+rate while retaining its fixed two-VBlank, 40.192 ms simulation quantum. That
+yields 20.73 admitted gameplay updates per second on the machine's 49.76 Hz
+VBlank cadence. Frame-clock input, presentation and cinematics remain at their
+existing cadence. Combined with the original eight-update `E202` gate,
+foreground scrolling becomes 20.73 pixels per second without per-enemy speed
+corrections or a millisecond scroll timer.
+
 ## Stage-4 ray chimney and cloud volcano
 
 The relevant stage-4 actor code is mapped as bank `0x0b` in the CPU

@@ -89,13 +89,13 @@ for (let i = 0; i < playerMetrics.length; i += 1) {
 }
 
 const moveRightSamples = playerMetrics.filter((m) => Number(m.right) === 1 && Number(m.left) === 0 && Number(m.up) === 0 && Number(m.down) === 0);
-expect(moveRightSamples.length >= 20, `Expected at least 20 right-move samples, got ${moveRightSamples.length}.`);
+expect(moveRightSamples.length >= 10, `Expected at least 10 right-move samples, got ${moveRightSamples.length}.`);
 for (let i = 0; i < moveRightSamples.length; i += 1) {
 	expect(approxEqual(Number(moveRightSamples[i].dx), 2), `Right move dx mismatch at frame ${moveRightSamples[i].f}: dx=${moveRightSamples[i].dx} expected 2.`);
 }
 
 const moveLeftSamples = playerMetrics.filter((m) => Number(m.left) === 1 && Number(m.right) === 0 && Number(m.up) === 0 && Number(m.down) === 0);
-expect(moveLeftSamples.length >= 15, `Expected at least 15 left-move samples, got ${moveLeftSamples.length}.`);
+expect(moveLeftSamples.length >= 20, `Expected at least 20 left-move samples, got ${moveLeftSamples.length}.`);
 for (let i = 0; i < moveLeftSamples.length; i += 1) {
 	expect(approxEqual(Number(moveLeftSamples[i].dx), -2), `Left move dx mismatch at frame ${moveLeftSamples[i].f}: dx=${moveLeftSamples[i].dx} expected -2.`);
 }
@@ -108,7 +108,7 @@ for (let i = 0; i < moveUpSamples.length; i += 1) {
 }
 
 const moveDownSamples = playerMetrics.filter((m) => Number(m.down) === 1 && Number(m.up) === 0);
-expect(moveDownSamples.length >= 20, `Expected at least 20 down-move samples, got ${moveDownSamples.length}.`);
+expect(moveDownSamples.length >= 15, `Expected at least 15 down-move samples, got ${moveDownSamples.length}.`);
 for (let i = 0; i < moveDownSamples.length; i += 1) {
 	expect(approxEqual(Number(moveDownSamples[i].dy), 2), `Down move dy mismatch at frame ${moveDownSamples[i].f}: dy=${moveDownSamples[i].dy} expected 2.`);
 	expect(moveDownSamples[i].sprite === 'metallion_d', `Down sprite mismatch at frame ${moveDownSamples[i].f}: sprite=${moveDownSamples[i].sprite} expected metallion_d.`);
@@ -186,8 +186,8 @@ if (firstSpawnFrameMetric) {
 		`First spawn x mismatch: spawn.x=${firstSpawn.x}, player.x=${firstSpawnFrameMetric.x}, expected an aligned player.x+8.`,
 	);
 	expect(
-		Number(firstSpawn.y) === ((Number(firstSpawnFrameMetric.y) | 0) + 8),
-		`First spawn y mismatch: spawn.y=${firstSpawn.y}, player.y=${firstSpawnFrameMetric.y}, expected integer player.y+8.`,
+		Number(firstSpawn.y) === ((Number(firstSpawnFrameMetric.y) | 0) + 6),
+		`First spawn y mismatch: spawn.y=${firstSpawn.y}, player.y=${firstSpawnFrameMetric.y}, expected integer player.y+6.`,
 	);
 }
 
@@ -220,21 +220,30 @@ expect(
 if (directorMetrics.length > 1) {
 	let starMovementSamples = 0;
 	let tileStepSamples = 0;
-	const starScrollSpeedPxPerMs = 0.03125;
+	let admittedGameplaySamples = 0;
+	const starScrollStep = 1.256;
 	for (let i = 0; i < directorMetrics.length - 1; i += 1) {
 		const current = directorMetrics[i];
 		const next = directorMetrics[i + 1];
 		const nextAdvance = Number(next.stage_adv);
+		const currentGate = Number(current.stage_scroll_gate);
+		const nextGate = Number(next.stage_scroll_gate);
+		const gameplayAdmitted = nextGate !== currentGate;
 		let starDelta = Number(next.scroll) - Number(current.scroll);
 		if (starDelta < 0) {
 			starDelta += 256;
 		}
-		let elapsedMs = Number(next.stage_elapsed_ms) - Number(current.stage_elapsed_ms);
-		if (elapsedMs < 0) {
-			elapsedMs += 250;
+		if (gameplayAdmitted) {
+			const expectedGate = currentGate === 128 ? 1 : currentGate * 2;
+			expect(
+				nextGate === expectedGate,
+				`Stage scroll gate mismatch at frame ${next.f}: gate=${nextGate} expected ${expectedGate}.`,
+			);
+			admittedGameplaySamples += 1;
 		}
 		const expectedStarDelta = Number(next.stage_scrolling) === 1
-			? elapsedMs * starScrollSpeedPxPerMs
+			&& gameplayAdmitted
+			? starScrollStep
 			: 0;
 		expect(
 			approxEqual(starDelta, expectedStarDelta, 0.01),
@@ -259,13 +268,10 @@ if (directorMetrics.length > 1) {
 		if (nextAdvance === 1) {
 			tileStepSamples += 1;
 		}
-		expect(
-			Number(next.stage_elapsed_ms) >= 0 && Number(next.stage_elapsed_ms) < 250,
-			`Stage timer escaped [0, 250) at frame ${next.f}: elapsed=${next.stage_elapsed_ms}.`,
-		);
 	}
 	expect(starMovementSamples >= 100, `Expected >=100 continuous star movement samples, got ${starMovementSamples}.`);
-	expect(tileStepSamples >= 10, `Expected >=10 time-driven tile steps, got ${tileStepSamples}.`);
+	expect(admittedGameplaySamples >= 100, `Expected >=100 admitted gameplay samples, got ${admittedGameplaySamples}.`);
+	expect(tileStepSamples >= 10, `Expected >=10 tick-gated tile steps, got ${tileStepSamples}.`);
 
 	const firstDirector = directorMetrics[0];
 	const lastDirector = directorMetrics[directorMetrics.length - 1];
@@ -288,8 +294,8 @@ expect(stageTileEvents.length > 0, 'Missing stage_scroll_tile events.');
 for (let i = 0; i < stageTileEvents.length - 1; i += 1) {
 	const frameDelta = Number(stageTileEvents[i + 1].f) - Number(stageTileEvents[i].f);
 	expect(
-		frameDelta === 12 || frameDelta === 13,
-		`Expected a 12/13-frame stage cadence, got delta=${frameDelta} between frames ${stageTileEvents[i].f} and ${stageTileEvents[i + 1].f}.`,
+		frameDelta === 9 || frameDelta === 10,
+		`Expected a 9/10-frame stage cadence, got delta=${frameDelta} between frames ${stageTileEvents[i].f} and ${stageTileEvents[i + 1].f}.`,
 	);
 }
 

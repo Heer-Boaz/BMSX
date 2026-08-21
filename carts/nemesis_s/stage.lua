@@ -1,5 +1,6 @@
 local clamp<const> = require('cartlib/util/clamp')
 local clock<const> = require('cartlib/clock')
+local rol8<const> = require('cartlib/util/rol8')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local image<const> = require('cartlib/gx/image')
@@ -16,8 +17,7 @@ local assets<const> = require('bmsx/assets')
 local stage<const> = {}
 stage.__index = stage
 
-local frame_duration_ms<const> = clock.update_milliseconds()
-local star_scroll_step<const> = stage_star_scroll_speed_px_per_second * frame_duration_ms * 0.001
+local star_scroll_step<const> = stage_star_scroll_speed_px_per_second * clock.update_milliseconds() * 0.001
 local resume_scrolling_event<const> = 'stage.resume_scrolling'
 
 local house_roof_base_chars<const> = { ['@'] = true, ['/'] = true, ['\\'] = true, ['^'] = true }
@@ -647,7 +647,7 @@ function stage:reset_runtime()
 	self.tile_steps = start_column
 	self.total_scroll_px = start_column * self.tile_size
 	self.star_scroll_px = 0
-	self.scroll_elapsed_ms = 0
+	self.scroll_gate = 0x01
 	self.scrolling = true
 	reset_star_positions(self.yellow_stars, stars_yellow)
 	reset_star_positions(self.blue_stars, stars_blue)
@@ -730,12 +730,10 @@ function stage:update_runtime()
 		return '/running/stopped'
 	end
 
-	local elapsed_ms<const> = self.scroll_elapsed_ms + frame_duration_ms
-	if elapsed_ms >= stage_scroll_interval_ms then
-		self.scroll_elapsed_ms = elapsed_ms - stage_scroll_interval_ms
+	local scroll_gate<const> = rol8(self.scroll_gate)
+	self.scroll_gate = scroll_gate
+	if (scroll_gate & 1) ~= 0 then
 		self:advance_tape()
-	else
-		self.scroll_elapsed_ms = elapsed_ms
 	end
 
 	if not self.scrolling then

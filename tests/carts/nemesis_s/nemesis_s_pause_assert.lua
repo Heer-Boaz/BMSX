@@ -63,7 +63,7 @@ function __bmsx_host_test.update()
 		test.gameplay_time_ms = world.gameplay_time_ms
 		test.stage_tape_head = stage.tape_head
 		test.stage_scroll_px = stage.total_scroll_px
-		test.stage_scroll_elapsed_ms = stage.scroll_elapsed_ms
+		test.stage_scroll_gate = stage.scroll_gate
 		test.player_frame = player.frame
 		test.player_x = player.x
 		test.player_y = player.y
@@ -81,7 +81,7 @@ function __bmsx_host_test.update()
 			'pause replaced the retained gameplay objects')
 		assert(stage.tape_head == test.stage_tape_head
 			and stage.total_scroll_px == test.stage_scroll_px
-			and stage.scroll_elapsed_ms == test.stage_scroll_elapsed_ms,
+			and stage.scroll_gate == test.stage_scroll_gate,
 			'stage simulation advanced during pause')
 		assert(player.frame == test.player_frame
 			and player.x == test.player_x
@@ -118,10 +118,21 @@ function __bmsx_host_test.update()
 			'resume restarted or discarded the retained music voice')
 		test.resumed_gameplay_time_ms = world.gameplay_time_ms
 		test.resumed_player_frame = player.frame
+		test.rate_sample_frames = 0
+		test.rate_gameplay_updates = 0
 		test.phase = 'resumed'
 		return false
 	end
 
-	return world.gameplay_time_ms > test.resumed_gameplay_time_ms
-		and player.frame > test.resumed_player_frame
+	test.rate_sample_frames = test.rate_sample_frames + 1
+	if world.gameplay_time_ms ~= test.resumed_gameplay_time_ms then
+		test.resumed_gameplay_time_ms = world.gameplay_time_ms
+		test.rate_gameplay_updates = test.rate_gameplay_updates + 1
+	end
+	if test.rate_sample_frames < 120 then
+		return false
+	end
+	assert(test.rate_gameplay_updates == 50,
+		'5/6 gameplay clock did not admit 50 fixed steps over 60 world updates')
+	return player.frame > test.resumed_player_frame
 end

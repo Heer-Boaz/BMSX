@@ -34,7 +34,7 @@ function system_manager.new(world)
 	}, system_manager)
 end
 
-function system_manager:configure(system_classes, update_milliseconds)
+function system_manager:configure(system_classes, update_milliseconds, gameplay_clock_rate)
 	local systems<const> = {}
 	local tick_functions<const> = {}
 	for system_index = 1, #system_classes do
@@ -66,7 +66,27 @@ function system_manager:configure(system_classes, update_milliseconds)
 		),
 		'[world.system_schedule]'
 	)()
-	return factory(self._world, systems)
+	local update_with_gameplay<const>, update_without_gameplay<const> = factory(self._world, systems)
+	if gameplay_clock_rate == nil then
+		return update_with_gameplay, update_without_gameplay
+	end
+
+	-- Virtual gameplay time accumulates at an exact rational rate while each
+	-- admitted simulation step retains the cart's fixed update quantum. Frame
+	-- work remains admitted on every world update. Pausing bypasses this runner,
+	-- which also freezes its accumulated phase.
+	local numerator<const> = gameplay_clock_rate.numerator
+	local denominator<const> = gameplay_clock_rate.denominator
+	local phase = denominator - 1
+	local update_at_gameplay_rate<const> = function()
+		phase = phase + numerator
+		if phase >= denominator then
+			phase = phase - denominator
+			return update_with_gameplay()
+		end
+		return update_without_gameplay()
+	end
+	return update_at_gameplay_rate, update_without_gameplay
 end
 
 function system_manager:reset()

@@ -181,7 +181,7 @@ function director:update_telemetry()
 	local stage_advanced<const> = stage_head ~= self.telemetry_stage_head
 	self.telemetry_stage_head = stage_head
 	print(string.format(
-		'%s|kind=director|f=%d|scroll=%.3f|yellow_blink=%d|blue_blink=%d|yellow_count=%d|blue_count=%d|stage_left=%d|stage_head=%d|stage_px=%.3f|stage_scrolling=%d|stage_elapsed_ms=%.3f|stage_adv=%d',
+		'%s|kind=director|f=%d|scroll=%.3f|yellow_blink=%d|blue_blink=%d|yellow_count=%d|blue_count=%d|stage_left=%d|stage_head=%d|stage_px=%.3f|stage_scrolling=%d|stage_scroll_gate=%d|stage_adv=%d',
 		telemetry_metric_prefix,
 		self.frame,
 		stage.star_scroll_px % playfield_width,
@@ -193,7 +193,7 @@ function director:update_telemetry()
 		stage_head,
 		stage.total_scroll_px,
 		bool01(stage.scrolling),
-		stage.scroll_elapsed_ms,
+		stage.scroll_gate,
 		bool01(stage_advanced)
 	))
 	self.frame = self.frame + 1
