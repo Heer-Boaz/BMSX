@@ -38,6 +38,19 @@ function __bmsx_host_test.update()
 	if world.active_space_id ~= 'main' or stage == nil then
 		return false
 	end
+	if test.phase == 'shooter_destroyed' then
+		if registry:get(test.foe.id) ~= nil then
+			return false
+		end
+		local bullet<const> = registry:get(test.retained_bullet_id)
+		assert(bullet ~= nil, 'destroying ZakFoe also removed its admitted projectile')
+		if world.gameplay_time_ms == test.shooter_destroyed_time_ms then
+			return false
+		end
+		assert(bullet.x ~= test.retained_bullet_x or bullet.y ~= test.retained_bullet_y,
+			'ZakFoe projectile stopped updating after its shooter was destroyed')
+		return true
+	end
 
 	if test.phase == 'spawn' then
 		stage.scrolling = false
@@ -145,13 +158,20 @@ function __bmsx_host_test.update()
 
 	for index = 1, #bullets do
 		if bullets[index].id ~= test.first_bullet_id then
+			local bullet<const> = bullets[index]
 			local repeat_delay_ms<const> = world.gameplay_time_ms - test.first_shot_time_ms
 			assert(test.recovered_time_ms ~= nil, 'ZakFoe phase cycle did not complete')
 			assert(repeat_delay_ms >= zak_foe_fire_min_ms,
 				'ZakFoe repeated before the authored random cooldown')
 			assert(repeat_delay_ms <= zak_foe_fire_max_ms + clock.update_milliseconds(),
 				'ZakFoe exceeded the authored random cooldown')
-			return true
+			test.retained_bullet_id = bullet.id
+			test.retained_bullet_x = bullet.x
+			test.retained_bullet_y = bullet.y
+			test.foe:on_destroyed()
+			test.shooter_destroyed_time_ms = world.gameplay_time_ms
+			test.phase = 'shooter_destroyed'
+			return false
 		end
 	end
 	return false
