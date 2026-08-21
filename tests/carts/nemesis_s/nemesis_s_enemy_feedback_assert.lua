@@ -111,6 +111,17 @@ function __bmsx_host_test.update()
 			'GroundFoe fatal damage did not select the XNA structure-explosion cue')
 		assert(#test.large_explosions.objects == 1,
 			'GroundFoe fatal damage did not spawn one retained large explosion')
+
+		local generator<const> = world:spawn(ids_rook_generator_def, {
+			stage = stage,
+			pos = { x = 128, y = 96 },
+		})
+		generator.health = 1
+		generator.vulnerable = true
+		generator:receive_player_projectile(projectile)
+		local generator_explosion<const> = test.large_explosions.objects[2]
+		assert(generator_explosion.x == 124 and generator_explosion.y == 92,
+			'RookGenerator death lost its XNA explosion origin')
 		assert(#test.small_explosions.objects == sint_pop_group_size + 2,
 			'Foe destruction did not spawn the expected retained small explosions')
 		test.phase = 'drops'

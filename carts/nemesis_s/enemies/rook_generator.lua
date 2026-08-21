@@ -77,6 +77,12 @@ function rook_generator:spawn_rook()
 	end
 end
 
+function rook_generator:on_destroyed(projectile)
+	self.x = self.x - 4
+	self.y = self.y - 4
+	ground_foe.on_destroyed(self, projectile)
+end
+
 local define_fsm<const> = function()
 	fsm_library.register(ids_rook_generator_fsm, {
 		initial = 'idle',
