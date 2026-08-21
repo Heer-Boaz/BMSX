@@ -824,8 +824,7 @@ end
 
 function player:update_missile(missile)
 	local stage<const> = self.stage
-	local row_tile_count<const> = stage.tile_columns
-	if stage:first_solid_tile_offset(missile.x, missile.y + 8, row_tile_count) == row_tile_count then
+	if stage:first_solid_tile_offset(missile.x, missile.y + 8, 2) == 2 then
 		missile.sprite = weapon_sources.missile_falling
 		local x<const> = missile.fraction_x + missile.fall_velocity_x_q8
 		local y<const> = missile.fraction_y + missile.fall_velocity_y_q8
@@ -833,11 +832,7 @@ function player:update_missile(missile)
 		missile.fraction_y = y & 0xff
 		missile.x = missile.x + (x >> 8)
 		missile.y = missile.y + (y >> 8)
-	elseif stage:first_solid_tile_offset(
-		(missile.x + 8) & 0xff,
-		missile.y + 8,
-		row_tile_count
-	) == row_tile_count then
+	elseif stage:first_solid_tile_offset((missile.x + 8) & 0xff, missile.y + 8, 2) == 2 then
 		missile.sprite = weapon_sources.missile_flying
 		local x<const> = missile.fraction_x + missile.surface_velocity_x_q8
 		local y<const> = missile.fraction_y + missile.fall_velocity_y_q8
@@ -845,11 +840,7 @@ function player:update_missile(missile)
 		missile.fraction_y = y & 0xff
 		missile.x = missile.x + (x >> 8)
 		missile.y = missile.y + (y >> 8)
-	elseif stage:first_solid_tile_offset(
-		(missile.x + 8) & 0xff,
-		missile.y,
-		row_tile_count
-	) < row_tile_count then
+	elseif stage:first_solid_tile_offset((missile.x + 8) & 0xff, missile.y, 2) < 2 then
 		self:despawn_missile(missile, 'stage_collision')
 		return
 	else
@@ -863,7 +854,7 @@ function player:update_missile(missile)
 		self:despawn_missile(missile, 'screen_edge')
 		return
 	end
-	if stage:first_solid_tile_offset(missile.x, missile.y, row_tile_count) < row_tile_count then
+	if stage:first_solid_tile_offset(missile.x, missile.y, 2) < 2 then
 		self:despawn_missile(missile, 'stage_collision')
 	end
 end
