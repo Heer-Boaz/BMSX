@@ -10,12 +10,6 @@ horen niet in deze lijst.
 | --- | --- | --- |
 | `PERF-RUNTIME-01` | Kies per iteratie één gemeten hot-pathowner en verwijder daar herhaalde decode, conversie, validatie, allocatie of dispatch bij de producer. Dit is een paraplu, geen enkele megaslice. | Analyzers blokkeren nieuwe overtredingen, parity blijft exact en representatieve low-end hardware houdt 50 Hz zonder oplopende backlog. |
 
-## Na de lopende cartlib-slices
-
-| ID | Geobserveerd probleem | Klaar wanneer |
-| --- | --- | --- |
-| `NEMESIS-PRESENTATION-01` | Story-panelen en title/ship/burst lopen sneller dan Nemesis 2; de geselecteerde een-/tweespeleroptie knippert niet. De cart gebruikt daarnaast nog een update per twee VBlanks. Een te toetsen hypothese is 60 Hz met drie VBlank-waits; dit is nog geen gekozen contract. De intro hoeft zijn milliseconde-timing niet te verliezen, maar voor de overige MSX-presentatie mag de huidige milliseconde-authoring worden vervangen door de oorspronkelijke VBlank-cadence als de ROM dat contract aantoont. | Gameplaypacing, intro-timing en oorspronkelijke MSX-presentatiecadence zijn afzonderlijk gemodelleerd. Story-panelen volgen voor de behouden panelwissels de ROM-timing; title, ship, burst en selection blink volgen de ROM zonder globale rate-hack. Daarna is expliciet vastgesteld of de dubbele-VBlank-gameplayclock nog een machinecontract vervult. |
-
 ## Vereist een interactieve backend of fysieke target
 
 | ID | Nog te bewijzen | Vereist |
