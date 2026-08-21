@@ -6,6 +6,9 @@ local world<const> = require('cartlib/world/world')
 local apu_slot<const>: *word = 0x08000148
 local selected_apu_source<const>: *word = 0x0800018c
 local end_demo_music_source<const> = rom_dir.audio('music_end_demo').addr
+local intro_reveal_timeline_id<const> = 'nemesis_s.intro.logo_reveal'
+local intro_hold_timeline_id<const> = 'nemesis_s.intro.logo_hold'
+local konami_logo_hold_frames<const> = 256
 local end_demo_timeline_id<const> = 'nemesis_s.end_demo.presentation'
 local first_curtain_start_ms<const> = 18240
 local first_curtain_end_ms<const> = 19440
@@ -43,44 +46,32 @@ function __bmsx_host_test.setup()
 	assert(world.active_space_id == 'intro', 'intro did not own the active presentation space')
 
 	local intro<const> = registry:get('nemesis_s.intro')
-	assert(intro.nicolaas.offset_x == -224 and intro.boaz.offset_x == 256,
-		'intro logos did not start at the XNA tile positions')
-	local move_step_milliseconds<const> = clock.frame_delta_milliseconds() * 2
-	local nicolaas_move_end_ms<const> = 2000 + 30 * move_step_milliseconds
-	local boaz_move_start_ms<const> = nicolaas_move_end_ms + 3000
-	local boaz_move_end_ms<const> = boaz_move_start_ms + 28 * move_step_milliseconds
-	local blackout_start_ms<const> = boaz_move_end_ms + 6000
-	intro.timelines:advance_time_to(
-		'nemesis_s.intro.presentation',
-		2000 + 18.5 * move_step_milliseconds
-	)
-	assert(intro.nicolaas.offset_x == -80,
-		'Sinterklaas logo did not advance once per Nemesis update: '
-			.. tostring(intro.nicolaas.offset_x) .. ' / ' .. tostring(move_step_milliseconds))
-	intro.timelines:advance_time_to(
-		'nemesis_s.intro.presentation',
-		nicolaas_move_end_ms + 0.5 * move_step_milliseconds
-	)
-	assert(intro.nicolaas.offset_x == 16, 'Sinterklaas logo did not finish at XNA tile x=2')
-	intro.timelines:advance_time_to(
-		'nemesis_s.intro.presentation',
-		boaz_move_start_ms + 4.5 * move_step_milliseconds
-	)
-	assert(intro.boaz.offset_x == 224,
-		'Boaz logo did not advance once per Nemesis update')
-	intro.timelines:advance_time_to(
-		'nemesis_s.intro.presentation',
-		boaz_move_end_ms + 0.5 * move_step_milliseconds
-	)
-	assert(intro.boaz.offset_x == 32, 'Boaz logo did not finish at XNA tile x=4')
-	intro.timelines:advance_time_to('nemesis_s.intro.presentation', blackout_start_ms - 1)
-	assert(intro.visible, 'intro blackout started before the authored XNA wait elapsed')
-	intro.timelines:advance_time_to(
-		'nemesis_s.intro.presentation',
-		blackout_start_ms + 0.5 * move_step_milliseconds
-	)
-	assert(not intro.visible, 'intro blackout did not hide the logos')
-	intro.events:emit('intro_done')
+	intro.state_machines:transition_to('/hidden')
+	intro.state_machines:transition_to('/playing/blank')
+	local logo<const> = intro.sprite_component
+	assert(logo.imgid == 'intro_konami'
+		and logo.offset_x == 40 and logo.offset_y == 64
+		and logo.region_width == 168 and logo.region_height == 1
+		and not logo.visible,
+		'Konami logo did not enter the source-derived blank presentation')
+	intro.state_machines:transition_to('/playing/reveal')
+	local reveal<const> = intro.timelines:get(intro_reveal_timeline_id)
+	assert(reveal.frame_duration == clock.frame_delta_milliseconds() * 2,
+		'Konami logo reveal did not retain its two-VBlank row cadence')
+	assert(logo.visible and logo.region_height == 1,
+		'Konami logo did not reveal its first scanline')
+	intro.timelines:advance_to(intro_reveal_timeline_id, 23)
+	assert(logo.region_height == 24,
+		'Konami logo midpoint differs from the Metal Gear row copier')
+	intro.timelines:advance_to(intro_reveal_timeline_id, 47)
+	assert(logo.region_height == 48,
+		'Konami logo did not reveal all source scanlines')
+	intro.state_machines:transition_to('/playing/hold')
+	assert(intro.timelines:get(intro_hold_timeline_id).duration_ms
+		== konami_logo_hold_frames * clock.frame_delta_milliseconds(),
+		'Konami logo hold did not retain the zero-counter wrap duration')
+	intro:finish()
+	assert(not logo.visible, 'completed Konami logo remained visible')
 	assert(director.state_machines:matches_state(test.story_state), 'intro did not advance to story')
 	assert(world.active_space_id == 'story', 'story did not own the active presentation space')
 

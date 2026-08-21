@@ -215,6 +215,26 @@ timeline frame boundaries, and the ray remains an independent world object.
   distributed over the observed VBlank spans; the runtime does not recreate
   the old XNA millisecond timers.
 
+## MSX2 Konami logo presentation
+
+- The replacement intro is reconstructed from the annotated Metal Gear MSX2
+  sources at `/home/boaz/assembler/MetalGear-master`:
+  `logic/konamilogo.asm`, `gfx/konamilogo.asm`, and the game-status dispatcher
+  in `Banks0123.asm`.
+- `InitKonamiLogo` composes a `168x48` four-color logo at `(40,64)`. The checked
+  PNG retains those exact source pixels and V9938 3-bit palette levels.
+- `DrawKonamiLogo` initializes counters `60` and `49`, consumes the first
+  VBlank without a copy, and then exposes one scanline every two VBlanks. The
+  cart consequently uses one blank frame followed by 48 two-VBlank reveal
+  samples; it does not approximate the sequence with millisecond movement.
+- Logo completion writes zero to `WaitCounter`. The next state decrements that
+  byte until it wraps back to zero, retaining the completed logo for 256
+  VBlanks before admitting the story.
+- `ChkAnykeyStart` reads held gameplay controls throughout the logo/menu states.
+  The cart mirrors that level-triggered behavior through its semantic
+  direction, fire, power-up and start actions, so keyboard and gamepad can both
+  interrupt the logo without a host key check.
+
 ## Stage-1 Sodom steering
 
 - The stage-1 flying-disc formation is actor type `0x09`. The visual identity

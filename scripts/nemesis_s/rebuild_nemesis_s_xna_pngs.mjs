@@ -141,14 +141,6 @@ function writePng(filePath, image) {
 function getMappings() {
 	const mappings = [
 		{
-			source: 'OtherMisc/Sinterklaas_Entertainment.bmp',
-			target: 'intro_sinterklaas@atlas=1.png',
-		},
-		{
-			source: 'OtherMisc/Boaz_Entertainment.bmp',
-			target: 'intro_boaz@atlas=1.png',
-		},
-		{
 			source: 'OtherMisc/CurtainPart.bmp',
 			target: 'game_over_curtain@atlas=18.png',
 		},
