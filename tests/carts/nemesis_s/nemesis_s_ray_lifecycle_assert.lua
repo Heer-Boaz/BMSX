@@ -20,20 +20,20 @@ function __bmsx_host_test.ready()
 end
 
 function __bmsx_host_test.setup()
+	local test<const> = __bmsx_host_test
 	local director<const> = registry:get(ids_director_instance)
 	director.state_machines:transition_to('/game_start')
-	director.state_machines:transition_to('/gameplay')
+	test.players = world:active_definition_view(ids_player_def)
 end
 
 function __bmsx_host_test.update()
 	local test<const> = __bmsx_host_test
-	test.frames = test.frames + 1
-	assert(test.frames < 40, 'Nemesis S ray-lifecycle scenario timed out phase=' .. test.phase)
-
 	local stage<const> = registry:get(ids_stage_instance)
-	if world.active_space_id ~= 'main' or stage == nil then
+	if world.active_space_id ~= 'main' or stage == nil or #test.players.objects == 0 then
 		return false
 	end
+	test.frames = test.frames + 1
+	assert(test.frames < 40, 'Nemesis S ray-lifecycle scenario timed out phase=' .. test.phase)
 
 	if test.phase == 'spawn' then
 		stage.scrolling = false

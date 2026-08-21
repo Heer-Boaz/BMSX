@@ -11,7 +11,7 @@ local retreat_step_x<const> = sint_pop_move_away_speed_x_px_per_second * update_
 
 __bmsx_host_test = {
 	frames = 0,
-	phase = 'spawn',
+	phase = 'await_gameplay',
 }
 
 function __bmsx_host_test.ready()
@@ -22,19 +22,22 @@ function __bmsx_host_test.setup()
 	local test<const> = __bmsx_host_test
 	local director<const> = registry:get(ids_director_instance)
 	director.state_machines:transition_to('/game_start')
-	director.state_machines:transition_to('/gameplay')
-	local players<const> = director.players
-	for index = 1, #players do
-		players[index].body_collider:set_enabled(false)
-	end
 	test.sint_pops = world:active_definition_view(ids_sint_pop_def)
-	test.gameplay_time_ms = world.gameplay_time_ms
 end
 
 function __bmsx_host_test.update()
 	local test<const> = __bmsx_host_test
 	local stage<const> = registry:get(ids_stage_instance)
 	if world.active_space_id ~= 'main' or stage == nil then
+		return false
+	end
+	if test.phase == 'await_gameplay' then
+		local players<const> = registry:get(ids_director_instance).players
+		for index = 1, #players do
+			players[index].body_collider:set_enabled(false)
+		end
+		test.gameplay_time_ms = world.gameplay_time_ms
+		test.phase = 'spawn'
 		return false
 	end
 	if world.gameplay_time_ms == test.gameplay_time_ms then

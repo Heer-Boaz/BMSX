@@ -26,7 +26,6 @@ function __bmsx_host_test.setup()
 	local test<const> = __bmsx_host_test
 	local director<const> = registry:get(ids_director_instance)
 	director.state_machines:transition_to('/game_start')
-	director.state_machines:transition_to('/gameplay')
 	test.bullets = world:active_definition_view(ids_enemy_bullet_def)
 end
 
