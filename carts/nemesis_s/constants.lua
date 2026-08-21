@@ -286,7 +286,9 @@ sneeuwpop_ray_draw_z = 55
 weapons_laser = {
 	tile_width = 8,
 	spawn_offset_x = 16,
-	spawn_offset_y = 8,
+	-- The ROM anchors the beam eight pixels below the vessel record. Its visible
+	-- pixels begin two rows below that record; this trimmed image begins there.
+	spawn_offset_y = 6,
 	expansion_tiles_per_tick = 4,
 	travel_speed = 32,
 	collision_retract_tiles = 4,

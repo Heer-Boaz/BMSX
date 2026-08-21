@@ -88,26 +88,37 @@ function __bmsx_host_test.update()
 		})
 		test.player = player
 		test.bell = bell
+		test.bell_id = bell.id
 		test.phase = 'pickup'
 		return false
 	end
 
-	if test.player.player_state.current_powerup_slot == 0 then
+	if test.phase == 'pickup' then
+		if test.player.player_state.current_powerup_slot == 0 then
+			return false
+		end
+		assert(test.player.player_state.current_powerup_slot == 1,
+			'the red pickup did not advance the player powerup selection')
+		assert(test.player.body_collider.enabled,
+			'the pickup overlap incorrectly killed the player')
+		assert(registry:get(test.bottom_note_id) == nil,
+			'the bell note remained live below the playfield rectangle')
+
+		test.bell.state_machines:transition_to('/ringing/left')
+		test.player.x = 40
+		test.player.y = 94
+		test.player:spawn_laser(1, 1)
+		test.phase = 'laser'
 		return false
 	end
-	assert(test.player.player_state.current_powerup_slot == 1,
-		'the red pickup did not advance the player powerup selection')
-	assert(test.player.body_collider.enabled,
-		'the pickup overlap incorrectly killed the player')
-	assert(registry:get(test.bottom_note_id) == nil,
-		'the bell note remained live below the playfield rectangle')
-	test.bell:receive_player_projectile({
-		damage = 1,
-		x = test.bell.x,
-		y = test.bell.y,
-	})
+
+	if registry:get(test.bell_id) ~= nil then
+		return false
+	end
+	assert(test.player.primary_projectiles[1].type == 0,
+		'the bell collision did not consume the retained laser record')
 	assert(stage.scrolling,
-		'destroying the bell did not resume stage-owned scrolling')
+		'a laser collision with the bell did not resume stage-owned scrolling')
 	local scrolling_path<const> = stage.state_machines:bind_state_path('/running/scrolling')
 	assert(stage.state_machines:matches_state(scrolling_path),
 		'the resume command left the stage FSM in its stopped state')

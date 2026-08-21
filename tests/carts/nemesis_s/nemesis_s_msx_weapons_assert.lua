@@ -109,7 +109,7 @@ function __bmsx_host_test.update()
 			'the laser did not expand by four retained tiles per gameplay tick')
 	end
 	player:update_weapons()
-	assert(primary.length_tiles == 15 and primary.x == 56 and primary.y == 33,
+	assert(primary.length_tiles == 15 and primary.x == 56 and primary.y == 31,
 		'the level-one laser did not retain the fifteen-tile MSX extent')
 	player:update_weapons()
 	assert(primary.x == 88 and primary.length_tiles == 15,
