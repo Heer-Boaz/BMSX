@@ -63,6 +63,13 @@ function __bmsx_host_test.update()
 			assert(motion.velocity_x <= 0,
 				'a bell note lost its retained leftward XNA launch vector')
 		end
+		local bottom_note<const> = world:spawn(ids_noot_def, {
+			stage = stage,
+			velocity_x = 0,
+			velocity_y = 0,
+			pos = { x = 128, y = playfield_height + 1 },
+		})
+		test.bottom_note_id = bottom_note.id
 		for index = #notes, 1, -1 do
 			notes[index]:mark_for_disposal()
 		end
@@ -92,6 +99,8 @@ function __bmsx_host_test.update()
 		'the red pickup did not advance the player powerup selection')
 	assert(test.player.body_collider.enabled,
 		'the pickup overlap incorrectly killed the player')
+	assert(registry:get(test.bottom_note_id) == nil,
+		'the bell note remained live below the playfield rectangle')
 	test.bell:receive_player_projectile({
 		damage = 1,
 		x = test.bell.x,

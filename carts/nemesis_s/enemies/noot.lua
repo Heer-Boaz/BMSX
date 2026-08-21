@@ -47,7 +47,7 @@ function noot:update_flying()
 	if self.x < -noot_width
 	or self.x > playfield_width
 	or self.y < -noot_height
-	or self.y > playfield_width then
+	or self.y > playfield_height then
 		self:mark_for_disposal()
 	end
 end
