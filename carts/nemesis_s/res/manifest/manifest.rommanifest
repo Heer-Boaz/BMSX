@@ -17,6 +17,8 @@ gx_vram_layout:
             texture: { x: 0, y: 512, width: 512, height: 32 }
         font:
             texture: { x: 512, y: 512, width: 64, height: 64 }
+        curtain:
+            texture: { x: 576, y: 512, width: 8, height: 192 }
     groups:
         0: { mode: direct16, slots: [stage], page_local: true }
         1: { mode: direct16, slots: [overlay], page_local: true }
@@ -36,11 +38,12 @@ gx_vram_layout:
         15: { mode: direct16, slots: [hud], page_local: true }
         16: { mode: direct16, slots: [screen_a], page_local: true }
         17: { mode: direct16, slots: [screen_a], page_local: true }
+        18: { mode: direct16, slots: [curtain], page_local: true }
     working_sets:
         stage: [stage]
         intro: [overlay]
         story: [screen_a, font]
         title: [title, overlay]
         game_start: [hud, font]
-        gameplay: [stage, hud, font]
+        gameplay: [stage, hud, font, curtain]
         end_demo: [screen_a, font]

@@ -7,9 +7,15 @@ tile_rows: 22
 tape_length_tiles: 554
 scroll_stop_columns: [492, 551]
 music_cues:
-  - { column: 0, event: stage.music.intro }
-  - { column: 138, event: stage.music.main }
-  - { column: 480, event: stage.music.boss }
+  - { column: 0, event: stage.music.intro, restart_event: stage.music.restart.intro }
+  - { column: 138, event: stage.music.main, restart_event: stage.music.restart.main }
+  - { column: 480, event: stage.music.boss, restart_event: stage.music.restart.boss }
+restart_points:
+  - { trigger_column: 0, start_column: 0 }
+  - { trigger_column: 120, start_column: 120 }
+  - { trigger_column: 250, start_column: 227 }
+  - { trigger_column: 421, start_column: 420 }
+  - { trigger_column: 493, start_column: 485 }
 map_rows:
   - "                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          "
   - "                                                                                                                                                                                                                                                                 m          Z      Z      Z     Z                     m                t1t                                                                                                                                                                                                                                "

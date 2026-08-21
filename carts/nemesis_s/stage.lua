@@ -410,6 +410,7 @@ function stage:apply_stage_config(stage_data)
 	self.tile_size = stage_data.tile_size
 	self.tile_columns = stage_data.tile_columns
 	self.music_cues = stage_data.music_cues
+	self.restart_points = stage_data.restart_points
 	self.scroll_stop_columns = stage_data.scroll_stop_columns
 	self.scroll_stop_count = #stage_data.scroll_stop_columns
 	self.star_visual:set_offset_z(stage_data.draw_z)
@@ -611,22 +612,38 @@ function stage:reset_runtime()
 	if self.stage_tiles.tile_count == 0 then
 		self:build_tape()
 	end
-	self.left_tile = 1
-	self.stage_tiles:set_visible_columns(1, self.tile_columns + 2)
-	self.tape_head = self.tile_columns
-	self.music_cue_index = 1
-	self.scroll_stop_index = 1
+	local start_column<const> = self.start_column
+	self.left_tile = start_column + 1
+	self.stage_tiles:set_visible_columns(self.left_tile, self.tile_columns + 2)
+	self.tape_head = self.left_tile + self.tile_columns - 1
+	local current_column<const> = self.tape_head - 1
+	local music_cues<const> = self.music_cues
+	local current_music_cue_index = 1
+	for cue_index = 2, #music_cues do
+		if music_cues[cue_index].column > current_column then
+			break
+		end
+		current_music_cue_index = cue_index
+	end
+	self.start_music_cue = music_cues[current_music_cue_index]
+	self.music_cue_index = current_music_cue_index + 1
+	local scroll_stop_index = 1
+	local scroll_stop_columns<const> = self.scroll_stop_columns
+	while scroll_stop_index <= self.scroll_stop_count
+	and scroll_stop_columns[scroll_stop_index] <= current_column do
+		scroll_stop_index = scroll_stop_index + 1
+	end
+	self.scroll_stop_index = scroll_stop_index
 	local actor_spawn_index = 1
 	local actor_spawns<const> = self.actor_spawns
 	local actor_spawn_count<const> = self.actor_spawn_count
-	local current_column<const> = self.tape_head - 1
 	while actor_spawn_index <= actor_spawn_count
 	and actor_spawns[actor_spawn_index].column <= current_column do
 		actor_spawn_index = actor_spawn_index + 1
 	end
 	self.actor_spawn_index = actor_spawn_index
-	self.tile_steps = 0
-	self.total_scroll_px = 0
+	self.tile_steps = start_column
+	self.total_scroll_px = start_column * self.tile_size
 	self.star_scroll_px = 0
 	self.scroll_elapsed_ms = 0
 	self.scrolling = true
@@ -638,9 +655,28 @@ function stage:reset_runtime()
 end
 
 function stage:begin_play()
-	self:advance_music_cues(self.tape_head - 1)
+	local cue<const> = self.start_music_cue
+	if self.restarting then
+		self.events:emit(cue.restart_event)
+	else
+		self.events:emit(cue.event)
+	end
 	self:update_runtime()
 	return '/running/scrolling'
+end
+
+function stage:restart_column()
+	local tape_head<const> = self.tape_head - 1
+	local restart_points<const> = self.restart_points
+	local start_column = restart_points[1].start_column
+	for point_index = 2, #restart_points do
+		local point<const> = restart_points[point_index]
+		if tape_head < point.trigger_column then
+			break
+		end
+		start_column = point.start_column
+	end
+	return start_column
 end
 
 function stage:advance_tape()
@@ -830,6 +866,10 @@ local register_stage_definition<const> = function()
 			tile_layer_component.new,
 			timeline_component.new,
 			fsm_component.factory({ ids_stage_fsm }),
+		},
+		defaults = {
+			start_column = 0,
+			restarting = false,
 		},
 	})
 end

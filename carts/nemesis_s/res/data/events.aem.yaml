@@ -50,6 +50,13 @@ events:
                   stop:
                       fade_ms: 0
 
+    game_over:
+        channel: music
+        rules:
+            - go:
+                  stop:
+                      fade_ms: 0
+
     stage.music.intro:
         channel: music
         rules:
@@ -77,6 +84,30 @@ events:
                       fade_ms: 4000
                       sync:
                           stinger: music_boss_intro
+
+    stage.music.restart.intro:
+        channel: music
+        rules:
+            - go:
+                  music_transition:
+                      audio_id: music_stage_intro
+                      start_fresh: true
+
+    stage.music.restart.main:
+        channel: music
+        rules:
+            - go:
+                  music_transition:
+                      audio_id: music_stage
+                      start_fresh: true
+
+    stage.music.restart.boss:
+        channel: music
+        rules:
+            - go:
+                  music_transition:
+                      audio_id: music_boss
+                      start_fresh: true
 
     player.death:
         channel: sfx

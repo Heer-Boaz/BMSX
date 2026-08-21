@@ -8,11 +8,24 @@ const sourcePath = path.join(
 	workspaceRoot,
 	'.external/nemesis-s-bdx/UltimateMechSpaceWar/UltimateMechSpaceWar/Models/Stages/StageFactory.cs',
 );
+const stageSourcePath = path.join(
+	workspaceRoot,
+	'.external/nemesis-s-bdx/UltimateMechSpaceWar/UltimateMechSpaceWar/Models/Stages/Stage.cs',
+);
 const outputPath = path.join(workspaceRoot, 'carts/nemesis_s/res/data/nemesis_s_stage.yaml');
-const musicEventBySourceName = {
-	StageIntro: 'stage.music.intro',
-	Stage: 'stage.music.main',
-	Boss: 'stage.music.boss',
+const musicCueBySourceName = {
+	StageIntro: {
+		event: 'stage.music.intro',
+		restartEvent: 'stage.music.restart.intro',
+	},
+	Stage: {
+		event: 'stage.music.main',
+		restartEvent: 'stage.music.restart.main',
+	},
+	Boss: {
+		event: 'stage.music.boss',
+		restartEvent: 'stage.music.restart.boss',
+	},
 };
 
 function assert(condition, message) {
@@ -53,9 +66,13 @@ function extractStage0Events(sourceText) {
 	const body = sourceText.slice(start, end);
 	const musicCues = [];
 	for (const match of body.matchAll(/new ChangeMusicStageEvent\((\d+), SoundContent\.Music\.([A-Za-z0-9_]+)\)/g)) {
-		const event = musicEventBySourceName[match[2]];
-		assert(event !== undefined, `Unsupported Stage0 music cue '${match[2]}'.`);
-		musicCues.push({ column: Number(match[1]), event });
+		const cue = musicCueBySourceName[match[2]];
+		assert(cue !== undefined, `Unsupported Stage0 music cue '${match[2]}'.`);
+		musicCues.push({
+			column: Number(match[1]),
+			event: cue.event,
+			restartEvent: cue.restartEvent,
+		});
 	}
 
 	const scrollStops = [];
@@ -68,7 +85,28 @@ function extractStage0Events(sourceText) {
 	return { musicCues, scrollStops };
 }
 
-function toYaml(rows, events) {
+function extractRestartPoints(sourceText) {
+	const propertyStart = sourceText.indexOf('public int RestartLocation');
+	assert(propertyStart >= 0, 'Could not find Stage.RestartLocation');
+	const propertyEnd = sourceText.indexOf('public S.Music MusicBeforeGameOver', propertyStart);
+	assert(propertyEnd >= 0, 'Could not find the end of Stage.RestartLocation');
+	const body = sourceText.slice(propertyStart, propertyEnd);
+	const branches = [...body.matchAll(/(?:if|else if) \(this\.TapeHead (<|<=) (\d+)\)\s*return (\d+);/g)];
+	const finalBranch = body.match(/else return (\d+);/);
+	assert(branches.length > 0 && finalBranch !== null, 'Could not decode Stage.RestartLocation branches');
+
+	const points = [{ triggerColumn: 0, startColumn: Number(branches[0][3]) }];
+	let triggerColumn = Number(branches[0][2]) + (branches[0][1] === '<=' ? 1 : 0);
+	for (let index = 1; index < branches.length; index += 1) {
+		const branch = branches[index];
+		points.push({ triggerColumn, startColumn: Number(branch[3]) });
+		triggerColumn = Number(branch[2]) + (branch[1] === '<=' ? 1 : 0);
+	}
+	points.push({ triggerColumn, startColumn: Number(finalBranch[1]) });
+	return points;
+}
+
+function toYaml(rows, events, restartPoints) {
 	const width = rows[0].length;
 	const out = [];
 
@@ -83,7 +121,12 @@ function toYaml(rows, events) {
 	out.push('music_cues:');
 	for (let i = 0; i < events.musicCues.length; i += 1) {
 		const cue = events.musicCues[i];
-		out.push(`  - { column: ${cue.column}, event: ${cue.event} }`);
+		out.push(`  - { column: ${cue.column}, event: ${cue.event}, restart_event: ${cue.restartEvent} }`);
+	}
+	out.push('restart_points:');
+	for (let i = 0; i < restartPoints.length; i += 1) {
+		const point = restartPoints[i];
+		out.push(`  - { trigger_column: ${point.triggerColumn}, start_column: ${point.startColumn} }`);
 	}
 	out.push('map_rows:');
 
@@ -97,10 +140,13 @@ function toYaml(rows, events) {
 
 function main() {
 	assert(fs.existsSync(sourcePath), `Source file not found: ${sourcePath}`);
+	assert(fs.existsSync(stageSourcePath), `Source file not found: ${stageSourcePath}`);
 	const sourceText = fs.readFileSync(sourcePath, 'utf8');
+	const stageSourceText = fs.readFileSync(stageSourcePath, 'utf8');
 	const rows = extractStage0Rows(sourceText);
 	const events = extractStage0Events(sourceText);
-	const yaml = toYaml(rows, events);
+	const restartPoints = extractRestartPoints(stageSourceText);
+	const yaml = toYaml(rows, events, restartPoints);
 	fs.mkdirSync(path.dirname(outputPath), { recursive: true });
 	fs.writeFileSync(outputPath, yaml, 'utf8');
 	console.log(`Exported ${rows.length} stage rows to ${outputPath}`);

@@ -149,6 +149,10 @@ function getMappings() {
 			target: 'intro_boaz@atlas=1.png',
 		},
 		{
+			source: 'OtherMisc/CurtainPart.bmp',
+			target: 'game_over_curtain@atlas=18.png',
+		},
+		{
 			source: 'Story/KasteelSint3.bmp',
 			target: 'story_coup@atlas=2.png',
 		},
