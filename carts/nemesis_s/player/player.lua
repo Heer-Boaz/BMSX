@@ -427,20 +427,6 @@ local collides_at<const> = function(self, x, y)
 	return false
 end
 
-local move_x<const> = function(self, dx, max_x)
-	if dx == 0 then
-		return
-	end
-	self.x = clamp(self.x + dx, 0, max_x)
-end
-
-local move_y<const> = function(self, dy, max_y)
-	if dy == 0 then
-		return
-	end
-	self.y = clamp(self.y + dy, 0, max_y)
-end
-
 function player:update_position()
 	local visual_sources<const> = self.visual_sources
 	local max_x<const> = playfield_width - player_width
@@ -452,18 +438,24 @@ function player:update_position()
 	local strong_force_field<const> = self.force_field_strength > 1
 	self.last_speed = movement_speed
 
-	if self.left_held then
-		move_x(self, -movement_speed, max_x)
-	end
-	if self.right_held then
-		move_x(self, movement_speed, max_x)
+	if self.left_held ~= self.right_held then
+		if self.left_held then
+			self.x = clamp(self.x - movement_speed, 0, max_x)
+		else
+			self.x = clamp(self.x + movement_speed, 0, max_x)
+		end
 	end
 
+	if self.up_held ~= self.down_held then
+		if self.up_held then
+			self.y = clamp(self.y - movement_speed, 0, max_y)
+		else
+			self.y = clamp(self.y + movement_speed, 0, max_y)
+		end
+	end
 	if self.up_held then
-		move_y(self, -movement_speed, max_y)
 		self.sprite = visual_sources.up
 	elseif self.down_held then
-		move_y(self, movement_speed, max_y)
 		self.sprite = strong_force_field and visual_sources.down_shield or visual_sources.down
 	else
 		self.sprite = strong_force_field and visual_sources.neutral_shield or visual_sources.neutral
