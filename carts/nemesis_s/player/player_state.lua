@@ -3,14 +3,17 @@ local event_emitter<const> = require('cartlib/event_emitter')
 local player_state<const> = {}
 player_state.__index = player_state
 
+-- The original extra-step UP LASER is unlocked in this cart and therefore
+-- occupies its own gauge slot immediately after LASER.
 local powerup_slot<const> = {
 	speed = 1,
 	missile = 2,
 	laser = 3,
-	option = 4,
-	shield = 5,
+	uplaser = 4,
+	option = 5,
+	shield = 6,
 }
-local powerup_max_levels<const> = { 3, 2, 2, 2, 1 }
+local powerup_max_levels<const> = { 3, 2, 2, 2, 2, 1 }
 local player_state_ids<const> = {
 	'nemesis_s.player_state.1',
 	'nemesis_s.player_state.2',
@@ -28,7 +31,6 @@ local reset_powerup_values<const> = function(self, selected_slot)
 		levels[slot] = 0
 	end
 	self.current_powerup_slot = selected_slot
-	self.uplaser_level = 0
 end
 
 local has_powerup_capacity<const> = function(self, slot)
@@ -102,8 +104,7 @@ function player_state.new(player_index)
 		player_index = player_index,
 		lives = initial_lives,
 		current_powerup_slot = no_powerup_slot,
-		powerup_levels = { 0, 0, 0, 0, 0 },
-		uplaser_level = 0,
+		powerup_levels = { 0, 0, 0, 0, 0, 0 },
 	}, player_state)
 	self.events = event_emitter.events_of(self)
 	return self

@@ -59,6 +59,9 @@ function __bmsx_host_test.update()
 		'the standard missile lost its two MSX speed levels')
 	assert(max_levels[player_state_module.powerup_slot.laser] == 2,
 		'the standard laser lost its two MSX length levels')
+	assert(player_state_module.powerup_slot.uplaser == player_state_module.powerup_slot.laser + 1
+		and max_levels[player_state_module.powerup_slot.uplaser] == 2,
+		'the unlocked up-laser lost its MSX gauge position or two weapon levels')
 
 	player.x = 41
 	player.y = 25
@@ -159,7 +162,14 @@ function __bmsx_host_test.update()
 	floor_row[missile_column] = 0
 	floor_row[missile_column + 1] = 0
 
-	player:spawn_uplaser(1, 2)
+	local uplaser_slot<const> = player_state_module.powerup_slot.uplaser
+	player.player_state.current_powerup_slot = uplaser_slot
+	assert(player.player_state:activate_selected_powerup() == uplaser_slot,
+		'the unlocked up-laser could not be selected from the power-up gauge')
+	player.player_state.current_powerup_slot = uplaser_slot
+	assert(player.player_state:activate_selected_powerup() == uplaser_slot,
+		'the second up-laser level could not be selected from the power-up gauge')
+	player:fire_weapon_salvo()
 	local uplaser<const> = player.secondary_projectiles[1]
 	assert(uplaser.x == 40 and uplaser.y == 31,
 		'the up-laser did not retain its original vessel anchor')

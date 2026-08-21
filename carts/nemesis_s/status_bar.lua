@@ -31,6 +31,7 @@ local sources<const> = {
 		image.resolve('status_description_speed'),
 		image.resolve('status_description_missile'),
 		image.resolve('status_description_laser'),
+		image.resolve('status_description_uplaser'),
 		image.resolve('status_description_option'),
 		image.resolve('status_description_shield'),
 	},

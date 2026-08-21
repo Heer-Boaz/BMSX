@@ -107,6 +107,7 @@ local powerup_slot<const> = player_state_module.powerup_slot
 local powerup_slot_speed<const> = powerup_slot.speed
 local powerup_slot_missile<const> = powerup_slot.missile
 local powerup_slot_laser<const> = powerup_slot.laser
+local powerup_slot_uplaser<const> = powerup_slot.uplaser
 local powerup_slot_option<const> = powerup_slot.option
 local powerup_slot_shield<const> = powerup_slot.shield
 local player_sources<const> = {
@@ -353,7 +354,7 @@ function player:reset_runtime()
 				self.powerup_levels[powerup_slot_option],
 				self.powerup_levels[powerup_slot_laser],
 				self.powerup_levels[powerup_slot_missile],
-				self.player_state.uplaser_level
+				self.powerup_levels[powerup_slot_uplaser]
 			)
 		)
 	end
@@ -660,7 +661,7 @@ function player:fire_weapon_salvo()
 	local powerup_levels<const> = self.powerup_levels
 	local laser_level<const> = powerup_levels[powerup_slot_laser]
 	local missile_level<const> = powerup_levels[powerup_slot_missile]
-	local uplaser_level<const> = self.player_state.uplaser_level
+	local uplaser_level<const> = powerup_levels[powerup_slot_uplaser]
 	for vessel_id = 1, vessel_count do
 		local vessel_x<const> , vessel_y<const> = self:get_vessel_snapshot(vessel_id)
 		local primary<const> = self.primary_projectiles[vessel_id]
