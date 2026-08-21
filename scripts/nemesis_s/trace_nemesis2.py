@@ -33,6 +33,7 @@ ACTOR_RECORD_MASK = 0xFFC0
 @dataclass(frozen=True, slots=True)
 class TraceProfile:
     actor_type: int | None
+    forced_stage: int | None
     memory_first: int
     memory_last: int
     trace_first_frame: int
@@ -44,8 +45,21 @@ class TraceProfile:
 
 
 TRACE_PROFILES = {
+    "stage1_sodom": TraceProfile(
+        actor_type=0x09,
+        forced_stage=None,
+        memory_first=ACTOR_TABLE_FIRST,
+        memory_last=ACTOR_TABLE_LAST,
+        trace_first_frame=2920,
+        trace_last_frame=3180,
+        capture_first_frame=2920,
+        capture_last_frame=3180,
+        capture_stride=4,
+        history_length=128,
+    ),
     "stage4_ray_open": TraceProfile(
         actor_type=0x41,
+        forced_stage=4,
         memory_first=ACTOR_TABLE_FIRST,
         memory_last=ACTOR_TABLE_LAST,
         trace_first_frame=5740,
@@ -57,6 +71,7 @@ TRACE_PROFILES = {
     ),
     "stage4_ray_lifecycle": TraceProfile(
         actor_type=None,
+        forced_stage=4,
         memory_first=0xE740,
         memory_last=0xE77F,
         trace_first_frame=9470,
@@ -68,6 +83,7 @@ TRACE_PROFILES = {
     ),
     "stage4_volcano": TraceProfile(
         actor_type=0x40,
+        forced_stage=4,
         memory_first=ACTOR_TABLE_FIRST,
         memory_last=ACTOR_TABLE_LAST,
         trace_first_frame=7420,
@@ -107,7 +123,7 @@ class MappedInstructionHistory(DebugLogger):
         ))
 
 
-class Nemesis2Stage4Trace:
+class Nemesis2Trace:
     def __init__(self, machine, profile: TraceProfile) -> None:
         self.machine = machine
         self.profile = profile
@@ -133,8 +149,14 @@ class Nemesis2Stage4Trace:
             self.machine.cpu._logger = self.history
 
     def write_memory(self, address: int, value: int) -> None:
-        if address == 0xE201 and value == 1 and not self.stage_forced:
-            value = 4
+        forced_stage = self.profile.forced_stage
+        if (
+            address == 0xE201
+            and value == 1
+            and forced_stage is not None
+            and not self.stage_forced
+        ):
+            value = forced_stage
             self.stage_forced = True
 
         profile = self.profile
@@ -201,7 +223,7 @@ class Nemesis2Stage4Trace:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Replay the deterministic Nemesis 2 stage-4 research route, record "
+            "Replay a deterministic Nemesis 2 research route, record "
             "mapper-aware actor writes, and capture native RGB24 PPM frames."
         ),
     )
@@ -226,7 +248,7 @@ def main() -> None:
         cartridge=args.rom.read_bytes(),
         mapper="auto",
     )
-    trace = Nemesis2Stage4Trace(machine, profile)
+    trace = Nemesis2Trace(machine, profile)
     output_dir = args.output_root / args.profile
     output_dir.mkdir(parents=True, exist_ok=True)
 

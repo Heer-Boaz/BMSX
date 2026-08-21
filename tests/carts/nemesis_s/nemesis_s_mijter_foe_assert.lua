@@ -1,10 +1,6 @@
-local clock<const> = require('cartlib/clock')
 local registry<const> = require('cartlib/registry')
 local world<const> = require('cartlib/world/world')
 require('constants')
-
-local update_seconds<const> = clock.update_milliseconds() * 0.001
-local movement_tolerance<const> = 1
 
 __bmsx_host_test = {
 	frames = 0,
@@ -49,40 +45,55 @@ function __bmsx_host_test.update()
 		assert(foe.sprite_component.imgid == assets_mijter_foe_red_neutral, 'MijterFoe started with the wrong image')
 		assert(foe.x == playfield_width, 'MijterFoe no longer enters at the playfield edge')
 		assert(foe.y == 40, 'MijterFoe no longer uses the XNA row offset')
+		assert(foe.drop_definition_id == ids_roodje_def, 'red MijterFoe no longer drops a capsule')
+		assert(foe.motion.velocity_x == mijter_foe_velocity_x_q8,
+			'MijterFoe did not acquire the Nemesis 2 Sodom horizontal word')
+		assert(foe.motion.velocity_y == 0, 'MijterFoe did not start with zero vertical velocity')
 		stage.scrolling = false
 		test.previous_x = foe.x
 		test.previous_y = foe.y
-		test.phase = 'default'
+		test.previous_velocity_y = foe.motion.velocity_y
+		test.tracking_updates = 0
+		test.phase = 'tracking_down'
 		return false
 	end
 
-	if test.phase == 'default' then
+	if test.phase == 'tracking_down' then
 		local foe<const> = mijter_foes[1]
 		local dx<const> = foe.x - test.previous_x
-		local dy<const> = foe.y - test.previous_y
 		test.previous_x = foe.x
 		test.previous_y = foe.y
-		assert(math.abs(
-			dx + mijter_foe_default_speed_px_per_second * update_seconds
-		) <= movement_tolerance, 'MijterFoe approach speed changed')
-		assert(dy == 0, 'MijterFoe moved vertically before choosing its attack line')
-		if foe.sprite_component.imgid == assets_mijter_foe_red_neutral then
+		assert(dx == -3, 'MijterFoe lost the Sodom three-pixel horizontal step')
+		assert(foe.motion.velocity_y
+			== test.previous_velocity_y + mijter_foe_tracking_acceleration_y_q8,
+			'MijterFoe no longer accelerates toward a lower player')
+		test.previous_velocity_y = foe.motion.velocity_y
+		assert(foe.sprite_component.imgid == assets_mijter_foe_red_down,
+			'MijterFoe selected the wrong image while descending')
+		test.tracking_updates = test.tracking_updates + 1
+		if test.tracking_updates < 8 then
 			return false
 		end
-		assert(foe.sprite_component.imgid == assets_mijter_foe_red_down,
-			'MijterFoe selected the wrong attack image for a target below it')
-		test.phase = 'attack'
+		foe.target.y = foe.y - 32
+		test.phase = 'tracking_up'
 		return false
 	end
 
-	if test.phase == 'attack' then
+	if test.phase == 'tracking_up' then
 		local foe<const> = mijter_foes[1]
 		local dx<const> = foe.x - test.previous_x
-		assert(math.abs(
-			dx + mijter_foe_attack_speed_px_per_second * update_seconds
-		) <= movement_tolerance, 'MijterFoe attack vector lost its dominant-axis speed')
-		assert(foe.motion.velocity_y > 0 and foe.motion.velocity_y < -foe.motion.velocity_x,
-			'MijterFoe attack vector no longer targets the selected player')
+		test.previous_x = foe.x
+		assert(dx == -3, 'MijterFoe horizontal step changed while steering')
+		assert(foe.motion.velocity_y
+			== test.previous_velocity_y - mijter_foe_tracking_acceleration_y_q8,
+			'MijterFoe no longer accelerates toward a higher player')
+		test.previous_velocity_y = foe.motion.velocity_y
+		if foe.motion.velocity_y >= 0 then
+			return false
+		end
+		assert(foe.sprite_component.imgid == assets_mijter_foe_red_up,
+			'MijterFoe selected the wrong image while ascending')
+		foe.x = -mijter_foe_width - 1
 		test.phase = 'dispose'
 		return false
 	end

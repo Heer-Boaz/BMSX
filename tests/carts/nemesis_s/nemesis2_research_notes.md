@@ -30,6 +30,7 @@
   - physical ROM offset = `bank * 0x2000 + (cpu_address & 0x1fff)`
 - Runtime branch/state traces and screenshots use the same pinned emulator:
   - `scripts/nemesis_s/trace_nemesis2.py`
+  - `python3 -m scripts.nemesis_s.trace_nemesis2 stage1_sodom`
   - `python3 -m scripts.nemesis_s.trace_nemesis2 stage4_ray_open`
   - `python3 -m scripts.nemesis_s.trace_nemesis2 stage4_ray_lifecycle`
   - `python3 -m scripts.nemesis_s.trace_nemesis2 stage4_volcano`
@@ -142,6 +143,25 @@ it does not shorten the ten-update expansion phase.
   the source ROM interpretation by themselves.
 - The custom XNA stage layout, art, multiplayer extensions and audio assets
   remain cart-owned where the original MSX game has no corresponding content.
+
+## Stage-1 Sodom steering
+
+- The stage-1 flying-disc formation is actor type `0x09`. The visual identity
+  matches Sodom, the Nemesis 2 flying-disc enemy; motion facts below come from
+  the ROM trace and disassembly rather than from the enemy catalog.
+- Initializer `0x9B4C` writes raw horizontal Q8.8 velocity `-0x0300` and zero
+  vertical velocity. The four observed actors entered at X `248`; the actor
+  table was already partially occupied, so this capture does not establish the
+  formation's authored admission count.
+- Update `0x9B59` falls through to `0x9B62`. It compares retained player Y at
+  `E404` with actor Y at `IX+4`, selects signed raw acceleration `+/-0x0016`,
+  and adds it to the actor's vertical velocity.
+- The common actor pass then integrates both Q8.8 axes through `0x64E1` and
+  `0x6509`. Horizontal speed stays at three pixels per admitted actor update;
+  vertical motion continuously curves toward the player's current Y.
+- `mijter_foe` retains its cart-owned red/blue art and red capsule drop, but its
+  movement now follows this Sodom datapath instead of the unrelated XNA
+  random-distance/dominant-axis attack.
 
 ## Stage data loading model
 

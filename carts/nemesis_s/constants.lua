@@ -118,10 +118,10 @@ sint_pop_draw_z = 60
 
 mijter_foe_type_blue = 0
 mijter_foe_type_red = 1
-mijter_foe_default_speed_px_per_second = 100
-mijter_foe_attack_speed_px_per_second = 200
-mijter_foe_attack_distance_min = 32
-mijter_foe_attack_distance_max = 95
+-- Nemesis 2 Sodom actor 0x09: 0x9B4C initializes raw X velocity; 0x9B62
+-- steers raw Y velocity toward the retained player coordinate every update.
+mijter_foe_velocity_x_q8 = -0x0300
+mijter_foe_tracking_acceleration_y_q8 = 0x0016
 mijter_foe_width = 24
 mijter_foe_height = 16
 mijter_foe_draw_z = 60

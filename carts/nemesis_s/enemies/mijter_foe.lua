@@ -43,45 +43,28 @@ function mijter_foe:onspawn()
 	if self.mijter_type == mijter_foe_type_red then
 		self.drop_definition_id = ids_roodje_def
 	end
-	self.attack_x = self.x - math.random(
-		mijter_foe_attack_distance_min,
-		mijter_foe_attack_distance_max
-	)
-	self.motion:set_velocity_pixels_per_second(
-		-mijter_foe_default_speed_px_per_second,
-		0
-	)
-end
-
-function mijter_foe:update_default()
-	if self.x >= self.attack_x then
-		return
-	end
-
 	local players<const> = players_view.objects
-	local target
 	if #players == 1 then
-		target = players[1]
+		self.target = players[1]
 	else
-		target = players[math.random(1, #players)]
+		self.target = players[math.random(1, #players)]
 	end
-	local dx<const> = target.x - self.x
-	local dy<const> = target.y - self.y
 	local motion<const> = self.motion
-	motion:set_dominant_axis_speed_pixels_per_second(
-		dx,
-		dy,
-		mijter_foe_attack_speed_px_per_second
-	)
-	if motion.velocity_y > 0 then
-		self:set_imgid(self.images.down)
-	else
-		self:set_imgid(self.images.up)
-	end
-	return '/attacking_player'
+	motion.velocity_x = mijter_foe_velocity_x_q8
+	motion.velocity_y = 0
 end
 
-function mijter_foe:update_attacking_player()
+function mijter_foe:update_flying()
+	local motion<const> = self.motion
+	if self.target.y < self.y then
+		motion.velocity_y = motion.velocity_y - mijter_foe_tracking_acceleration_y_q8
+	else
+		motion.velocity_y = motion.velocity_y + mijter_foe_tracking_acceleration_y_q8
+	end
+	local imgid<const> = motion.velocity_y > 0 and self.images.down or self.images.up
+	if self.sprite_component.imgid ~= imgid then
+		self:set_imgid(imgid)
+	end
 	if self.x < -mijter_foe_width
 	or self.x > playfield_width
 	or self.y < -mijter_foe_height
@@ -93,13 +76,10 @@ end
 function mijter_foe.register()
 	players_view = world:active_definition_view(ids_player_def)
 	fsm_library.register(ids_mijter_foe_fsm, {
-		initial = 'default',
+		initial = 'flying',
 		states = {
-			default = {
-				update = mijter_foe.update_default,
-			},
-			attacking_player = {
-				update = mijter_foe.update_attacking_player,
+			flying = {
+				update = mijter_foe.update_flying,
 			},
 		},
 	})
