@@ -178,7 +178,6 @@ zak_foe_initial_vertical_speed_px_per_second = -50
 zak_foe_vertical_acceleration_px_per_second_squared = 500
 zak_foe_width = 16
 zak_foe_draw_z = 60
-enemy_bullet_speed_px_per_second = 75
 enemy_bullet_size = 4
 enemy_bullet_draw_z = 65
 

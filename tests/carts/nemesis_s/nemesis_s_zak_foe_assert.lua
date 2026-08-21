@@ -1,5 +1,6 @@
 local clock<const> = require('cartlib/clock')
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
+local enemy_bullet<const> = require('enemies/enemy_bullet')
 local registry<const> = require('cartlib/registry')
 local world<const> = require('cartlib/world/world')
 require('constants')
@@ -27,6 +28,11 @@ function __bmsx_host_test.setup()
 	local director<const> = registry:get(ids_director_instance)
 	director.state_machines:transition_to('/game_start')
 	test.bullets = world:active_definition_view(ids_enemy_bullet_def)
+	local velocity_x<const>, velocity_y<const> = enemy_bullet.aim_velocity(-124, -16)
+	assert(velocity_x == -0x0273 and velocity_y == -0x006e,
+		'Nemesis 2 enemy-shot direction table changed')
+	assert(enemy_bullet.aim_velocity(16, 16) == nil,
+		'Nemesis 2 close-range enemy-shot admission changed')
 end
 
 function __bmsx_host_test.update()

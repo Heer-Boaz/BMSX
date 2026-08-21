@@ -273,3 +273,18 @@ it does not shorten the ten-update expansion phase.
   that fallthrough path. They do not form a row loop. Each missile probe
   therefore covers at most two adjacent tiles without allocating collision
   geometry per update.
+
+## Enemy aimed-shot datapath
+
+- `938F` offsets the source X coordinate by eight pixels, selects a base speed
+  of `0x50 + 2 * difficulty` (capped at `0x60`), and calls the shared aimed-shot
+  setup at `93F8`. Normal difficulty therefore uses `0x50`.
+- `945B..94BA` takes the absolute player delta, rejects targets whose coarse X
+  distance plus exact Y distance is below `0x30`, and indexes the 16x16 angle
+  table at `94D9` with `(abs_x & 0xf0) + (abs_y >> 4)`.
+- `93FD..9456` reads the two complementary entries from the 64-byte sine table
+  at `95D9`; `94BB..94CC` multiplies each sample by the retained speed and emits
+  signed Q8.8 X/Y velocity words at `F012` and `F014`.
+- The cart retains the resulting normal-difficulty angle and velocity tables as
+  ROM data. Enemy bullets write those raw Q8.8 words once when admitted; their
+  scheduled update performs no trigonometry, normalization, or division.
