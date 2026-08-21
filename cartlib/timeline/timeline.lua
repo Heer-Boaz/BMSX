@@ -98,6 +98,14 @@ local range<const> = function(frame_count)
 	}
 end
 
+-- Authored source cadences do not always divide the presentation cadence.
+-- Lower an elapsed source-unit boundary to the first destination frame which
+-- reaches it; repeated calls retain the non-uniform frame spacing instead of
+-- accumulating a rounded interval.
+local frame_at_or_after<const> = function(position_units, units_per_frame)
+	return (position_units + units_per_frame - 1) // units_per_frame
+end
+
 -- Playback mode is immutable program data. Frame traversal retains one
 -- mode-specific datapath instead of decoding once, loop and pingpong policy on
 -- every frame.
@@ -950,6 +958,7 @@ return {
 	playback_boundary = playback_boundary,
 	timeline = timeline,
 	range = range,
+	frame_at_or_after = frame_at_or_after,
 	build_frame_sequence = build_frame_sequence,
 	build_pingpong_frames = build_pingpong_frames,
 }

@@ -19,7 +19,7 @@ local director<const> = {}
 director.__index = director
 
 local game_start_timeline_id<const> = 'nemesis_s.director.game_start'
-local game_start_duration_frames<const> = 47
+local game_start_duration_frames<const> = 41
 local game_over_curtain_timeline_id<const> = 'nemesis_s.director.game_over_curtain'
 local game_over_blackout_timeline_id<const> = 'nemesis_s.director.game_over_blackout'
 local game_over_curtain_visual_id<const> = 'game_over_curtain'

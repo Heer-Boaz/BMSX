@@ -88,20 +88,27 @@ function __bmsx_host_test.setup()
 	assert(story.sprite_component.imgid == 'story_coup', 'story did not start on the coup image')
 	assert(story.primary_text.static_text_line_count == 4 and story.primary_text.offset_y == 144,
 		'first story caption differs from the XNA layout')
-	story.timelines:advance_time_to('nemesis_s.story.slide.1', 240)
+	local story_panel_frames<const> = { 1270, 538, 481, 418, 362, 1019, 2101, 1263, 761 }
+	local story_frame_ms<const> = clock.frame_delta_milliseconds()
+	for index = 1, #story_panel_frames do
+		assert(story.timelines:get('nemesis_s.story.slide.' .. tostring(index)).duration_ms
+			== story_panel_frames[index] * story_frame_ms,
+			'story panel duration left its observed Nemesis 2 VBlank boundary')
+	end
+	story.timelines:advance_to('nemesis_s.story.slide.1', 18)
 	assert(story.primary_text.glyph_visible_height == nil, 'story glyph-row reveal did not reach full height')
 	story.state_machines:transition_to('/playing/slide_6')
 	assert(story.secondary_text.visible and story.sprite_component.imgid == nil,
 		'Pieton interlude did not start from its authored black frame')
-	story.timelines:advance_time_to('nemesis_s.story.slide.6', 240)
+	story.timelines:advance_to('nemesis_s.story.slide.6', 18)
 	assert(story.sprite_component.imgid == 'story_piet2', 'Pieton interlude did not reveal its image')
-	story.timelines:advance_time_to('nemesis_s.story.slide.6', 840)
+	story.timelines:advance_to('nemesis_s.story.slide.6', 61)
 	assert(story.curtain_start == 78 and story.curtain_end == 62,
-		'Pieton curtain did not reach the XNA upper reveal bounds')
-	story.timelines:advance_time_to('nemesis_s.story.slide.6', 2740)
+		'Pieton curtain did not reach its retained upper reveal bounds')
+	story.timelines:advance_to('nemesis_s.story.slide.6', 198)
 	assert(story.curtain_start == 126 and story.curtain_end == 110,
-		'Pieton curtain did not return to the XNA lower bounds')
-	story.timelines:advance_time_to('nemesis_s.story.slide.6', 5020)
+		'Pieton curtain did not return to its retained lower bounds')
+	story.timelines:advance_to('nemesis_s.story.slide.6', 362)
 	assert(story.curtain_end == 4 and story.secondary_text.glyph_visible_height == nil,
 		'Pieton wipe did not reveal the complete second caption')
 	story.events:emit('story_done')
@@ -128,13 +135,13 @@ function __bmsx_host_test.setup()
 	title.state_machines:transition_to('/startup/hangar_blackout')
 	assert(not title.visible, 'hangar transition did not begin on the ROM black frame')
 	title.state_machines:transition_to('/startup/flight/lift')
-	title.timelines:advance_to('nemesis_s.title_screen.lift', 5)
+	title.timelines:advance_to('nemesis_s.title_screen.lift', 4)
 	assert(title.normal_ship.offset_y == 121 and title.burst_ship.offset_y == 121,
 		'Metalion lift did not retain the first ROM position boundary')
-	title.timelines:advance_to('nemesis_s.title_screen.hangar', 14)
+	title.timelines:advance_to('nemesis_s.title_screen.hangar', 4)
 	assert(title.sprite_component.imgid == 'title_hangar_2',
 		'hangar lights did not retain the first observed ROM boundary')
-	title.timelines:advance_to('nemesis_s.title_screen.lift', 51)
+	title.timelines:advance_to('nemesis_s.title_screen.lift', 49)
 	assert(title.normal_ship.offset_y == 81 and title.burst_ship.offset_y == 81,
 		'Metalion lift did not retain its final visible ROM step')
 	title.state_machines:transition_to('/startup/flight/ignition')
@@ -279,7 +286,7 @@ function __bmsx_host_test.update()
 		return false
 	end
 	local game_start_timeline<const> = director.timelines:get('nemesis_s.director.game_start')
-	assert(game_start_timeline.duration_ms == 47 * clock.frame_delta_milliseconds()
+	assert(game_start_timeline.duration_ms == 41 * clock.frame_delta_milliseconds()
 		and game_start_timeline.ended,
 		'game-start wait did not complete on the ROM ship-admission boundary')
 	assert(world.active_space_id == 'main', 'gameplay did not activate the stage space')

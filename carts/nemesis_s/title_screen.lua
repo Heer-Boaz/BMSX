@@ -29,12 +29,12 @@ local metalion_start_x<const> = 48
 local metalion_start_y<const> = 129
 local metalion_end_y<const> = 73
 local selection_flash_cycles<const> = 10
-local hangar_blackout_duration_frames<const> = 10
-local hangar_duration_frames<const> = 196
-local lift_duration_frames<const> = 60
+local hangar_blackout_duration_frames<const> = 8
+local hangar_duration_frames<const> = 194
+local lift_duration_frames<const> = 58
 local ignition_cycles<const> = 15
 local burst_hold_duration_frames<const> = 49
-local departure_blackout_duration_frames<const> = 104
+local departure_blackout_duration_frames<const> = 107
 local ship_images<const> = {
 	[0] = 'title_startup_metalion',
 	[1] = 'title_startup_metalion_burst_1',
@@ -43,12 +43,12 @@ local ship_images<const> = {
 }
 local ship_position_keys<const> = {
 	{ frame = 0, value = 129 },
-	{ frame = 5, value = 121 },
-	{ frame = 15, value = 113 },
-	{ frame = 24, value = 105 },
-	{ frame = 33, value = 97 },
-	{ frame = 42, value = 89 },
-	{ frame = 51, value = 81 },
+	{ frame = 4, value = 121 },
+	{ frame = 13, value = 113 },
+	{ frame = 22, value = 105 },
+	{ frame = 31, value = 97 },
+	{ frame = 40, value = 89 },
+	{ frame = 49, value = 81 },
 }
 local selection_flash_frames<const> = timeline.build_frame_sequence({
 	{
@@ -73,24 +73,22 @@ local burst_cooldown_frames<const> = timeline.build_frame_sequence({
 	{ value = 2, hold = 8 },
 	{ value = 1, hold = 7 },
 })
--- These are physical VBlank boundaries observed in the Nemesis 2 ROM. The
--- lift's VRAM work makes its early light intervals deliberately non-uniform.
+-- These are physical VBlank boundaries observed in the 50 Hz Nemesis 2 ROM.
+-- The lift's VRAM work makes its early light intervals deliberately non-uniform.
 local hangar_background_keys<const> = {
 	{ frame = 0, value = 1 },
-	{ frame = 14, value = 2 },
-	{ frame = 23, value = 1 },
-	{ frame = 32, value = 2 },
-	{ frame = 41, value = 1 },
-	{ frame = 50, value = 2 },
-	{ frame = 59, value = 1 },
-	{ frame = 68, value = 2 },
-	{ frame = 84, value = 1 },
-	{ frame = 100, value = 2 },
-	{ frame = 116, value = 1 },
-	{ frame = 132, value = 2 },
-	{ frame = 148, value = 1 },
-	{ frame = 164, value = 2 },
-	{ frame = 180, value = 1 },
+	{ frame = 4, value = 2 },
+	{ frame = 21, value = 1 },
+	{ frame = 39, value = 2 },
+	{ frame = 57, value = 1 },
+	{ frame = 74, value = 2 },
+	{ frame = 90, value = 1 },
+	{ frame = 106, value = 2 },
+	{ frame = 122, value = 1 },
+	{ frame = 138, value = 2 },
+	{ frame = 154, value = 1 },
+	{ frame = 170, value = 2 },
+	{ frame = 187, value = 1 },
 }
 
 local draw_selection_hider<const> = function(component, draw)
