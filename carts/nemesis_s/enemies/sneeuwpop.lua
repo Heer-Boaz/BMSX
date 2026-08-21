@@ -43,28 +43,29 @@ function sneeuwpop:update_idle()
 end
 
 function sneeuwpop:fire_ray()
-	self.ray = world:spawn(ids_sneeuwpop_ray_def, {
-		originator = self,
+	local ray<const> = world:spawn(ids_sneeuwpop_ray_def, {
 		pos = {
 			x = self.x + sneeuwpop_ray_offset_x,
 			y = self.y + sneeuwpop_ray_offset_y,
 		},
 	})
+	ray.events:on({
+		event = 'enemy.ray.finished',
+		subscriber = self,
+		handler = sneeuwpop.ray_finished,
+		once = true,
+	})
+	self.ray = ray
 	self.events:emit('enemy.ray_fired')
 	return '/firing'
 end
 
-function sneeuwpop:ray_disposed()
+function sneeuwpop:ray_finished()
 	self.ray = nil
 	self.state_machines:transition_to('/cooling_down')
 end
 
 function sneeuwpop:on_destroyed(projectile)
-	local ray<const> = self.ray
-	if ray ~= nil then
-		ray:mark_for_disposal()
-		self.ray = nil
-	end
 	world:spawn(ids_destroyed_sneeuwpop_def, {
 		stage = self.stage,
 		pos = { x = self.x, y = self.y },

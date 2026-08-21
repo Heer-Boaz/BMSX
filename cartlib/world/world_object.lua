@@ -31,6 +31,9 @@
 --          self.events:on({ event = 'something', emitter = 'src',
 --              handler = self.on_something })
 --      end
+--    A one-shot connection to an emitter created after bind() belongs at that
+--    creation boundary. Set subscriber = self and once = true; unbind() still
+--    owns early cleanup if the subscriber dies before the event is emitted.
 --
 --    Override unbind() only when you need extra cleanup beyond event
 --    unsubscription (e.g. releasing external resources).  Always call

@@ -29,8 +29,7 @@ local new_ray_collider<const> = tile_strip_collider_2d_component.factory({
 })
 
 function schoorsteen_ray:finish()
-	local originator<const> = self.originator
-	originator:ray_disposed()
+	self.events:emit('enemy.ray.finished')
 	self:mark_for_disposal()
 end
 

@@ -84,29 +84,26 @@ function schoorsteen_foe:enter_ready_to_fire()
 end
 
 function schoorsteen_foe:fire_ray()
-	self.ray = world:spawn(ids_schoorsteen_ray_def, {
-		originator = self,
+	local ray<const> = world:spawn(ids_schoorsteen_ray_def, {
 		pos = {
 			x = self.x + schoorsteen_ray_offset_x,
 			y = self.y + schoorsteen_ray_offset_y,
 		},
 	})
+	ray.events:on({
+		event = 'enemy.ray.finished',
+		subscriber = self,
+		handler = schoorsteen_foe.ray_finished,
+		once = true,
+	})
+	self.ray = ray
 	self.events:emit('enemy.ray_fired')
 	return '/firing'
 end
 
-function schoorsteen_foe:ray_disposed()
+function schoorsteen_foe:ray_finished()
 	self.ray = nil
 	self.state_machines:transition_to('/cooling_down')
-end
-
-function schoorsteen_foe:on_destroyed(projectile)
-	local ray<const> = self.ray
-	if ray ~= nil then
-		ray:mark_for_disposal()
-		self.ray = nil
-	end
-	ground_foe.on_destroyed(self, projectile)
 end
 
 local define_fsm<const> = function()

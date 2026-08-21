@@ -211,6 +211,8 @@ end
 --                                    by remove_subscriber().
 --   emitter             (id)      — filter; only fire for this emitter.
 --                                    Always supply for non-unique event names.
+--   once                (boolean) — remove this subscription before its first
+--                                    dispatch, including recursive emission.
 function event_emitter:on(spec, default_subscriber, default_emitter)
 	local name<const> = spec.event
 	local subscriber = spec.subscriber
@@ -250,6 +252,7 @@ function event_emitter:on(spec, default_subscriber, default_emitter)
 	append_listener(self, list, {
 		handler = spec.handler,
 		subscriber = subscriber,
+		once = spec.once,
 	})
 end
 
@@ -293,12 +296,18 @@ function event_emitter:emit(event_type, emitter, payload, emitter_id)
 	for i = 1, scoped_count do
 		local entry<const> = scoped_list[i]
 		if entry then
+			if entry.once then
+				remove_listener(self, entry)
+			end
 			entry.handler(entry.subscriber, event_type, emitter, payload, emitter_id)
 		end
 	end
 	for i = 1, global_count do
 		local entry<const> = global_list[i]
 		if entry then
+			if entry.once then
+				remove_listener(self, entry)
+			end
 			entry.handler(entry.subscriber, event_type, emitter, payload, emitter_id)
 		end
 	end
