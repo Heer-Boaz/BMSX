@@ -12,6 +12,10 @@ fixed_point_velocity_component.unique = true
 fixed_point_velocity_component._tick_clocks = clock.gameplay
 setmetatable(fixed_point_velocity_component, { __index = base_component })
 
+local velocity_q8_scale<const> = function()
+	return clock.update_milliseconds() * 0.001 * 0x100
+end
+
 function fixed_point_velocity_component.new(opts)
 	local self<const> = setmetatable(base_component.new(opts), fixed_point_velocity_component)
 	self.velocity_x = 0
@@ -21,11 +25,13 @@ function fixed_point_velocity_component.new(opts)
 	return self
 end
 
--- Converts authored pixel velocity once at the fixed-point owner. Runtime
--- integration continues to consume only signed Q8.8 words.
-function fixed_point_velocity_component:set_velocity_pixels_per_tick(velocity_x, velocity_y)
-	self.velocity_x = math.round(velocity_x * 0x100)
-	self.velocity_y = math.round(velocity_y * 0x100)
+-- Converts authored wall-clock velocity once at the fixed-point owner. Runtime
+-- integration continues to consume only signed Q8.8 words at the cart's fixed
+-- gameplay cadence.
+function fixed_point_velocity_component:set_velocity_pixels_per_second(velocity_x, velocity_y)
+	local scale<const> = velocity_q8_scale()
+	self.velocity_x = math.round(velocity_x * scale)
+	self.velocity_y = math.round(velocity_y * scale)
 end
 
 -- Retains a direction in signed Q8.8 while making its dominant axis equal to
@@ -52,6 +58,18 @@ function fixed_point_velocity_component:set_dominant_axis_velocity(delta_x, delt
 	end
 	self.velocity_x = div_toward_zero(delta_x * magnitude_q8, abs_y)
 	self.velocity_y = delta_y > 0 and magnitude_q8 or -magnitude_q8
+end
+
+function fixed_point_velocity_component:set_dominant_axis_speed_pixels_per_second(
+	delta_x,
+	delta_y,
+	pixels_per_second
+)
+	self:set_dominant_axis_velocity(
+		delta_x,
+		delta_y,
+		math.round(pixels_per_second * velocity_q8_scale())
+	)
 end
 
 return fixed_point_velocity_component

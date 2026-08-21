@@ -1,3 +1,4 @@
+local clock<const> = require('cartlib/clock')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local prefab<const> = require('cartlib/world/prefab')
@@ -9,6 +10,11 @@ require('constants')
 
 local sint_pop<const> = {}
 sint_pop.__index = sint_pop
+local update_seconds<const> = clock.update_milliseconds() * 0.001
+local approach_step_x<const> = sint_pop_move_to_player_speed_x_px_per_second * update_seconds
+local vertical_up_step_y<const> = sint_pop_move_vertical_up_speed_y_px_per_second * update_seconds
+local vertical_down_step_y<const> = sint_pop_move_vertical_down_speed_y_px_per_second * update_seconds
+local retreat_step_x<const> = sint_pop_move_away_speed_x_px_per_second * update_seconds
 local hit_area<const> = {
 	left = 0,
 	top = 0,
@@ -21,27 +27,27 @@ function sint_pop:ctor()
 end
 
 function sint_pop:update_move_to_player()
-	self.x = self.x + sint_pop_move_to_player_speed_x
-	if self.x <= sint_pop_vertical_start_x then
-		if self.group_type == sint_pop_group_up then
-			self.vertical_speed = sint_pop_move_vertical_up_speed_y
-		else
-			self.vertical_speed = sint_pop_move_vertical_down_speed_y
-		end
-		return '/move_vertical'
+	self.x = self.x + approach_step_x
+	if self.x > sint_pop_vertical_start_x then
+		return
 	end
+	self.vertical_step_y = self.group_type == sint_pop_group_up
+		and vertical_up_step_y
+		or vertical_down_step_y
+	return '/move_vertical'
 end
 
 function sint_pop:update_move_vertical()
-	self.x = self.x + sint_pop_move_to_player_speed_x
-	self.y = self.y + self.vertical_speed
-	if self.x <= sint_pop_retreat_start_x then
-		return '/move_away_from_player'
+	self.x = self.x + approach_step_x
+	self.y = self.y + self.vertical_step_y
+	if self.x > sint_pop_retreat_start_x then
+		return
 	end
+	return '/move_away_from_player'
 end
 
 function sint_pop:update_move_away_from_player()
-	self.x = self.x + sint_pop_move_away_speed_x
+	self.x = self.x + retreat_step_x
 	if self.x > playfield_width then
 		self:mark_for_disposal()
 	end
@@ -90,7 +96,6 @@ function sint_pop.register()
 		defaults = {
 			imgid = assets_sint_pop,
 			group_type = sint_pop_group_up,
-			vertical_speed = 0,
 			max_health = 1,
 			small_fry = true,
 			z = sint_pop_draw_z,

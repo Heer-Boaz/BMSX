@@ -36,10 +36,7 @@ local new_visual<const> = custom_visual_component.factory({ draw = draw_option }
 
 function option_pickup:ctor()
 	self.motion = self:get_component(fixed_point_velocity_component)
-end
-
-function option_pickup:onspawn()
-	self.motion.velocity_x = player_option_pickup_velocity_x_q8
+	self.motion:set_velocity_pixels_per_second(player_option_pickup_speed_x_px_per_second, 0)
 end
 
 function option_pickup:update_active()

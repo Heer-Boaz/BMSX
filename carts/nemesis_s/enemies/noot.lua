@@ -40,7 +40,7 @@ function noot:ctor(options)
 		self.drop_definition_id = ids_roodje_def
 	end
 	local motion<const> = self:get_component(fixed_point_velocity_component)
-	motion:set_velocity_pixels_per_tick(options.velocity_x, options.velocity_y)
+	motion:set_velocity_pixels_per_second(options.velocity_x, options.velocity_y)
 end
 
 function noot:update_flying()

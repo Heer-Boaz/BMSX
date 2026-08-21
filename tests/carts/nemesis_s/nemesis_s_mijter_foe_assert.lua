@@ -1,6 +1,10 @@
+local clock<const> = require('cartlib/clock')
 local registry<const> = require('cartlib/registry')
 local world<const> = require('cartlib/world/world')
 require('constants')
+
+local update_seconds<const> = clock.update_milliseconds() * 0.001
+local movement_tolerance<const> = 1
 
 __bmsx_host_test = {
 	frames = 0,
@@ -58,7 +62,9 @@ function __bmsx_host_test.update()
 		local dy<const> = foe.y - test.previous_y
 		test.previous_x = foe.x
 		test.previous_y = foe.y
-		assert(dx == -mijter_foe_default_speed, 'MijterFoe approach speed changed')
+		assert(math.abs(
+			dx + mijter_foe_default_speed_px_per_second * update_seconds
+		) <= movement_tolerance, 'MijterFoe approach speed changed')
 		assert(dy == 0, 'MijterFoe moved vertically before choosing its attack line')
 		if foe.sprite_component.imgid == assets_mijter_foe_red_neutral then
 			return false
@@ -72,8 +78,10 @@ function __bmsx_host_test.update()
 	if test.phase == 'attack' then
 		local foe<const> = mijter_foes[1]
 		local dx<const> = foe.x - test.previous_x
-		assert(dx == -(mijter_foe_attack_speed_q8 >> 8), 'MijterFoe attack vector lost its dominant-axis speed')
-		assert(foe.motion.velocity_y > 0 and foe.motion.velocity_y < mijter_foe_attack_speed_q8,
+		assert(math.abs(
+			dx + mijter_foe_attack_speed_px_per_second * update_seconds
+		) <= movement_tolerance, 'MijterFoe attack vector lost its dominant-axis speed')
+		assert(foe.motion.velocity_y > 0 and foe.motion.velocity_y < -foe.motion.velocity_x,
 			'MijterFoe attack vector no longer targets the selected player')
 		test.phase = 'dispose'
 		return false

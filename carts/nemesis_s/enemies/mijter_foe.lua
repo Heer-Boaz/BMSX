@@ -43,17 +43,18 @@ function mijter_foe:onspawn()
 	if self.mijter_type == mijter_foe_type_red then
 		self.drop_definition_id = ids_roodje_def
 	end
-	self.moved_before_attack = 0
-	self.move_before_attack = math.random(
+	self.attack_x = self.x - math.random(
 		mijter_foe_attack_distance_min,
 		mijter_foe_attack_distance_max
+	)
+	self.motion:set_velocity_pixels_per_second(
+		-mijter_foe_default_speed_px_per_second,
+		0
 	)
 end
 
 function mijter_foe:update_default()
-	self.x = self.x - mijter_foe_default_speed
-	self.moved_before_attack = self.moved_before_attack + mijter_foe_default_speed
-	if self.moved_before_attack <= self.move_before_attack then
+	if self.x >= self.attack_x then
 		return
 	end
 
@@ -67,10 +68,10 @@ function mijter_foe:update_default()
 	local dx<const> = target.x - self.x
 	local dy<const> = target.y - self.y
 	local motion<const> = self.motion
-	motion:set_dominant_axis_velocity(
+	motion:set_dominant_axis_speed_pixels_per_second(
 		dx,
 		dy,
-		mijter_foe_attack_speed_q8
+		mijter_foe_attack_speed_px_per_second
 	)
 	if motion.velocity_y > 0 then
 		self:set_imgid(self.images.down)

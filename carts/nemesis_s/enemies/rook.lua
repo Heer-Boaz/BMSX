@@ -27,11 +27,13 @@ function rook:ctor()
 	self:set_imgid(rook_animation_system.current_imgid)
 end
 
+function rook:onspawn()
+	self.chimney_exit_y = self.y - rook_leave_distance
+	self.motion:set_velocity_pixels_per_second(0, -rook_leave_speed_px_per_second)
+end
+
 function rook:update_leaving_chimney()
-	self.y = self.y - rook_leave_speed
-	local distance<const> = self.distance_left_chimney + rook_leave_speed
-	self.distance_left_chimney = distance
-	if distance <= rook_leave_distance then
+	if self.y >= self.chimney_exit_y then
 		return
 	end
 	local players<const> = players_view.objects
@@ -41,10 +43,10 @@ function rook:update_leaving_chimney()
 	else
 		target = players[math.random(1, #players)]
 	end
-	self.motion:set_dominant_axis_velocity(
+	self.motion:set_dominant_axis_speed_pixels_per_second(
 		target.x - self.x,
 		target.y - self.y,
-		rook_attack_speed_q8
+		rook_attack_speed_px_per_second
 	)
 	self.stage_scroll_follower:set_enabled(false)
 	return '/attacking_player'
@@ -88,7 +90,6 @@ local register_definition<const> = function()
 			imgid = assets_rook_1,
 			max_health = rook_health,
 			small_fry = true,
-			distance_left_chimney = 0,
 			z = rook_draw_z,
 		},
 	})

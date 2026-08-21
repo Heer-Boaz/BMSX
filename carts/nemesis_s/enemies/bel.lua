@@ -52,8 +52,8 @@ function bel:ring()
 		world:spawn(ids_noot_def, {
 			stage = self.stage,
 			velocity_x = math.cos(angle + math.pi * 0.5) *
-				(math.random() + 0.5) * noot_velocity_scale,
-			velocity_y = math.sin(angle - math.pi * 0.5) * noot_velocity_scale,
+				(math.random() + 0.5) * noot_velocity_scale_px_per_second,
+			velocity_y = math.sin(angle - math.pi * 0.5) * noot_velocity_scale_px_per_second,
 			pos = { x = spawn_x, y = spawn_y },
 		})
 	end

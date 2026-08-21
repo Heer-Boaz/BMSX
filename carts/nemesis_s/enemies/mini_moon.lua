@@ -28,10 +28,10 @@ function mini_moon:onspawn()
 		self.drop_definition_id = ids_roodje_def
 	end
 	local target<const> = self.target
-	self.motion:set_dominant_axis_velocity(
+	self.motion:set_dominant_axis_speed_pixels_per_second(
 		target.x - self.x,
 		target.y - self.y,
-		mini_moon_speed_q8
+		mini_moon_speed_px_per_second
 	)
 	self.target = nil
 end

@@ -1,6 +1,13 @@
+local clock<const> = require('cartlib/clock')
 local registry<const> = require('cartlib/registry')
 local world<const> = require('cartlib/world/world')
 require('constants')
+
+local update_seconds<const> = clock.update_milliseconds() * 0.001
+local movement_tolerance<const> = 1
+local approach_step_x<const> = sint_pop_move_to_player_speed_x_px_per_second * update_seconds
+local vertical_step_y<const> = sint_pop_move_vertical_up_speed_y_px_per_second * update_seconds
+local retreat_step_x<const> = sint_pop_move_away_speed_x_px_per_second * update_seconds
 
 __bmsx_host_test = {
 	frames = 0,
@@ -70,11 +77,14 @@ function __bmsx_host_test.update()
 		test.previous_x = sint_pop.x
 		test.previous_y = sint_pop.y
 		if dy == 0 then
-			assert(dx == sint_pop_move_to_player_speed_x, 'SintPop approach speed changed')
+			assert(math.abs(dx - approach_step_x) <= movement_tolerance,
+				'SintPop approach speed changed')
 			return false
 		end
-		assert(dx == sint_pop_move_to_player_speed_x, 'SintPop lost horizontal speed during vertical movement')
-		assert(dy == sint_pop_move_vertical_up_speed_y, 'upward SintPop group used the wrong vertical speed')
+		assert(math.abs(dx - approach_step_x) <= movement_tolerance,
+			'SintPop lost horizontal speed during vertical movement')
+		assert(math.abs(dy - vertical_step_y) <= movement_tolerance,
+			'upward SintPop group used the wrong vertical speed')
 		test.phase = 'vertical'
 		return false
 	end
@@ -85,13 +95,17 @@ function __bmsx_host_test.update()
 		local dy<const> = sint_pop.y - test.previous_y
 		test.previous_x = sint_pop.x
 		test.previous_y = sint_pop.y
-		if dx == sint_pop_move_away_speed_x then
+		if dx > 0 then
+			assert(math.abs(dx - retreat_step_x) <= movement_tolerance,
+				'SintPop retreat speed changed')
 			assert(dy == 0, 'SintPop retained vertical movement while leaving the player')
 			test.phase = 'retreat'
 			return false
 		end
-		assert(dx == sint_pop_move_to_player_speed_x, 'SintPop vertical pass used the wrong horizontal speed')
-		assert(dy == sint_pop_move_vertical_up_speed_y, 'SintPop vertical pass used the wrong vertical speed')
+		assert(math.abs(dx - approach_step_x) <= movement_tolerance,
+			'SintPop vertical pass used the wrong horizontal speed')
+		assert(math.abs(dy - vertical_step_y) <= movement_tolerance,
+			'SintPop vertical pass used the wrong vertical speed')
 		return false
 	end
 

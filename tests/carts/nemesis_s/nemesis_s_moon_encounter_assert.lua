@@ -7,6 +7,9 @@ require('constants')
 
 local mini_moons<const> = world:active_definition_view(ids_mini_moon_def)
 local small_rays<const> = world:active_definition_view(ids_moon_small_ray_def)
+local mini_moon_velocity_q8<const> = math.round(
+	mini_moon_speed_px_per_second * clock.update_milliseconds() * 0.001 * 0x100
+)
 
 __bmsx_host_test = {
 	frames = 0,
@@ -92,8 +95,8 @@ function __bmsx_host_test.update()
 		end
 		local mini<const> = minis[1]
 		local motion<const> = mini:get_component(fixed_point_velocity_component)
-		assert(math.abs(motion.velocity_x) == mini_moon_speed_q8
-			or math.abs(motion.velocity_y) == mini_moon_speed_q8,
+		assert(math.abs(motion.velocity_x) == mini_moon_velocity_q8
+			or math.abs(motion.velocity_y) == mini_moon_velocity_q8,
 			'Mini Moon did not retain the XNA dominant-axis launch speed')
 		boss.x = 0
 		boss.y = playfield_height - moon_height

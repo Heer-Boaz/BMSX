@@ -190,10 +190,10 @@ function zak_foe.register()
 				stage = self.stage,
 				pos = { x = bullet_x, y = bullet_y },
 			})
-			bullet.motion:set_dominant_axis_velocity(
+			bullet.motion:set_dominant_axis_speed_pixels_per_second(
 				target.x - bullet_x,
 				target.y - bullet_y,
-				enemy_bullet_speed_q8
+				enemy_bullet_speed_px_per_second
 			)
 		end,
 	})
