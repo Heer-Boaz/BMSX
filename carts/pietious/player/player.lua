@@ -193,6 +193,8 @@ local player_shrine_exit_timeline_id<const> = 'p.tl.sx'
 local player_pause_wait_timeline_id<const> = 'p.tl.pw'
 local player_pause_animation_timeline_id<const> = 'p.tl.pa'
 local player_victory_dance_timeline_id<const> = 'p.tl.vd'
+local player_hit_recovery_timeline_id<const> = 'p.tl.hr'
+local player_dying_timeline_id<const> = 'p.tl.d'
 local player_pause_offset_x<const> = -2
 local player_pause_offset_y<const> = -8
 local victory_dance_jump_count<const> = 8
@@ -443,7 +445,6 @@ function player:land_from_hit()
 	self:snap_feet_y_to_floor_grid()
 	self.events:emit('fall')
 	self.hit_substate = 0
-	self.hit_recovery_timer = 0
 	self.last_dx = 0
 	self.last_dy = 0
 	self.events:emit('hit_ground')
@@ -464,24 +465,8 @@ function player:apply_color(color)
 end
 
 function player:define_runtime_timelines()
-	self.timelines:define('p.tl.d', {
-		frames = timeline.build_frame_sequence({
-			{ value = { imgid = 'pietolon_dying_1' }, hold = 8 },
-			{ value = { imgid = 'pietolon_dying_2' }, hold = 8 },
-			{ value = { imgid = 'pietolon_dying_3' }, hold = 8 },
-			{ value = { imgid = 'pietolon_dying_4' }, hold = 8 },
-			{ value = { imgid = 'pietolon_dying_5' }, hold = 8 },
-		}),
-		playback_mode = 'once',
-	})
 	self.timelines:define('p.tl.hf', {
 		frames = player_hit_fall_frames,
-		playback_mode = 'once',
-	})
-	self.timelines:define('p.tl.hr', {
-		frames = timeline.build_frame_sequence({
-			{ value = { imgid = 'pietolon_recover_r' }, hold = damage_hit_recovery_frames },
-		}),
 		playback_mode = 'once',
 	})
 	self.timelines:define('p.seq.s', {
@@ -691,15 +676,11 @@ end
 function player:get_damage_state_imgid()
 	if self:has_tag(state_tags.group.damage_visual) then
 		if self:has_tag(state_tags.variant.dying) then
-			local dying_timeline<const> = self.timelines:get('p.tl.d')
-			dying_timeline:set_frame(self.death_timer)
-			return dying_timeline:value().imgid
+			return self.timelines:get(player_dying_timeline_id):value()
 		end
 
 		if self:has_tag(state_tags.variant.hit_recovery) then
-			local hit_recovery_timeline<const> = self.timelines:get('p.tl.hr')
-			hit_recovery_timeline:set_frame(self.hit_recovery_timer)
-			return hit_recovery_timeline:value().imgid
+			return self.timelines:get(player_hit_recovery_timeline_id):value()
 		end
 
 		local hit_fall_timeline<const> = self.timelines:get('p.tl.hf')
@@ -814,7 +795,6 @@ end
 function player:restart_after_death()
 	self.health = self.max_health
 	self:emit_health_changed()
-	self.death_timer = 0
 	self:reset_hit_invulnerability_sequence()
 	self.events:emit('respawn')
 	self:apply_presentation_state()
@@ -904,8 +884,6 @@ function player:start_dying()
 	self:cancel_sword()
 	self.hit_direction = 0
 	self.hit_substate = 0
-	self.hit_recovery_timer = 0
-	self.death_timer = 0
 	self.hit_stairs_lock = false
 	self:reset_hit_invulnerability_sequence()
 	self:zero_motion()
@@ -957,7 +935,6 @@ function player:take_hit(amount, source_x, source_y, reason)
 	self.hit_stairs_lock = hit_on_stairs
 	self.hit_direction = hit_direction
 	self.hit_substate = 0
-	self.hit_recovery_timer = 0
 	self:start_hit_invulnerability_sequence()
 
 	if hit_direction ~= 0 then
@@ -2740,27 +2717,10 @@ function player:update_hit_collision()
 	self.hit_substate = self.hit_substate + 1
 end
 
-function player:update_hit_recovery()
-	self:zero_motion()
-	self.hit_recovery_timer = self.hit_recovery_timer + 1
-
-	if self.hit_recovery_timer < damage_hit_recovery_frames then
-		return
-	end
-
-	self.hit_recovery_timer = 0
+function player:finish_hit_recovery()
 	self.hit_substate = 0
 	self.hit_stairs_lock = false
-	self.events:emit('hit_recovered')
-end
-
-function player:update_dying()
-	self:zero_motion()
-	self.death_timer = self.death_timer + 1
-	if self.death_timer < damage_death_frames then
-		return
-	end
-	self.director.events:emit('death_done')
+	return '/quiet'
 end
 
 function player:update_common_frame()
@@ -3166,17 +3126,45 @@ local define_player_fsm<const> = function()
 		},
 		hit_recovery = {
 			tags = { state_tags.variant.hit_recovery, state_tags.group.damage_lock },
-			on = {
-				['hit_recovered'] = '/quiet',
+			timelines = {
+				[player_hit_recovery_timeline_id] = {
+					def = {
+						frames = timeline.build_frame_sequence({
+							{
+								value = 'pietolon_recover_r',
+								hold = damage_hit_recovery_frames,
+							},
+						}),
+						playback_mode = 'once',
+					},
+					on_finished = player.finish_hit_recovery,
+				},
 			},
-			update = player.update_hit_recovery,
+			update = player.zero_motion,
 		},
 		dying = {
 			tags = { state_tags.variant.dying, state_tags.group.damage_lock },
 			on = {
 				['respawn'] = '/quiet',
 			},
-			update = player.update_dying,
+			timelines = {
+				[player_dying_timeline_id] = {
+					def = {
+						frames = timeline.build_frame_sequence({
+							{ value = 'pietolon_dying_1', hold = damage_death_pose_frames },
+							{ value = 'pietolon_dying_2', hold = damage_death_pose_frames },
+							{ value = 'pietolon_dying_3', hold = damage_death_pose_frames },
+							{ value = 'pietolon_dying_4', hold = damage_death_pose_frames },
+							{ value = 'pietolon_dying_5', hold = damage_death_pose_frames },
+						}),
+						playback_mode = 'once',
+					},
+					on_finished = function(self)
+						self.director.events:emit('death_done')
+					end,
+				},
+			},
+			update = player.zero_motion,
 		},
 		daemon_defeated = {
 			tags = {
@@ -3482,8 +3470,6 @@ local register_player_definition<const> = function()
 			hit_blink_on = false,
 			hit_substate = 0,
 			hit_direction = 0,
-			hit_recovery_timer = 0,
-			death_timer = 0,
 			enter_leave_world_target = nil,
 			inventory_items = nil,
 			secondary_weapon = nil,

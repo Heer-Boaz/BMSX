@@ -40,6 +40,8 @@ function __bmsx_host_test.setup()
 	intro.timelines:seek('intro.presentation', 333)
 	assert(not intro.visible, 'intro blackout did not hide both logos')
 	intro.events:emit('intro_done')
+	assert(registry:get('narrative').text_component.offset_y == screen_height,
+		'story did not start below the screen')
 	test.phase = 'story'
 end
 
@@ -65,7 +67,6 @@ function __bmsx_host_test.update()
 		assert(*selected_apu_source == 0, 'XNA prelude audio continued after leaving the intro')
 		local narrative<const> = registry:get('narrative')
 		assert(narrative.text_component.static_text_line_count == 54, 'story did not bind the complete XNA text')
-		assert(narrative.text_component.offset_y == screen_height, 'story did not start below the screen')
 		test.story_requested_state = narrative.state_machines:bind_state_path('/story/requested')
 		narrative.events:emit('narrative.story.reached_end')
 		assert(narrative.state_machines:matches_state(test.story_requested_state),

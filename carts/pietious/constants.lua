@@ -88,7 +88,7 @@ damage_knockback_dx = 4
 damage_knockup_px = 2
 damage_enemy_contact_damage = 2
 damage_hit_recovery_frames = 8
-damage_death_frames = 40
+damage_death_pose_frames = 8
 -- Original Bat state at 0x7d5f-0x7e14: 0x50 hanging updates,
 -- 0x0a takeoff updates, random 0x60..0x7f flight and 0x10..0x1f heading
 -- intervals, with sprite-origin bounds X=0x08..0xe8 and Y=0x28..0xb0.

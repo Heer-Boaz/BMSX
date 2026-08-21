@@ -3,10 +3,18 @@ local registry<const> = require('cartlib/registry')
 local world<const> = require('cartlib/world/world')
 local castle_map<const> = require('castle/map')
 
+local dying_imgids<const> = {
+	'pietolon_dying_1',
+	'pietolon_dying_2',
+	'pietolon_dying_3',
+	'pietolon_dying_4',
+	'pietolon_dying_5',
+}
+
 __bmsx_host_test = {
 	frames = 0,
 	phase = 'enter_world',
-	saw_dying_tick = false,
+	dying_pose = 1,
 	saw_curtain = false,
 	saw_transition = false,
 	death_screen_frames = 0,
@@ -77,17 +85,20 @@ function __bmsx_host_test.update()
 		assert(world.active_space_id == 'main', 'death animation left gameplay before the curtain')
 		assert(player.state_machines:matches_state(test.dying_state),
 			'player left dying before the death animation completed')
+		local imgid<const> = player.sprite_component.imgid
+		if imgid == dying_imgids[test.dying_pose + 1] then
+			test.dying_pose = test.dying_pose + 1
+		else
+			assert(imgid == dying_imgids[test.dying_pose], 'death animation skipped or reversed a pose')
+		end
 		if director.state_machines:matches_state(test.death_curtain_state) then
 			test.saw_curtain = true
-			assert(test.saw_dying_tick, 'death animation never advanced in the gameplay space')
+			assert(test.dying_pose == #dying_imgids, 'death animation ended before its final pose')
 			assert(registry:get(test.item_id) == test.item,
 				'death curtain disposed the room before it finished closing')
 			test.last_curtain_width = director.curtain_width
 			test.phase = 'curtain'
 			return false
-		end
-		if player.death_timer > 0 then
-			test.saw_dying_tick = true
 		end
 		return false
 	end
