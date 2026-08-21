@@ -1,12 +1,17 @@
+local clock<const> = require('cartlib/clock')
 local registry<const> = require('cartlib/registry')
 local rom_dir<const> = require('cartlib/rom_dir')
 local player_state_module<const> = require('player/player_state')
+local world<const> = require('cartlib/world/world')
 
 local selected_apu_source<const>: *word = 0x0800018c
 local bullet_audio_source<const> = rom_dir.audio('nemesis2_kogeltje').addr
 local laser_audio_source<const> = rom_dir.audio('nemesis2_laser').addr
+local fire_effect_id<const> = 'fire_salvo'
 
-__bmsx_host_test = {}
+__bmsx_host_test = {
+	phase = 'weapons',
+}
 
 function __bmsx_host_test.ready()
 	return registry:get('nemesis_s.director') ~= nil
@@ -15,12 +20,31 @@ end
 function __bmsx_host_test.setup()
 	local director<const> = registry:get('nemesis_s.director')
 	director.state_machines:transition_to('/game_start')
+	director.state_machines:transition_to('/gameplay')
 end
 
 function __bmsx_host_test.update()
+	local test<const> = __bmsx_host_test
 	local player<const> = registry:get('nemesis_s.player.1')
 	if player == nil then
 		return false
+	end
+	if test.phase == 'repeat' then
+		local repeat_period_ms<const> = 15 * clock.update_milliseconds()
+		local repeat_deadline_ms<const> = repeat_period_ms + clock.update_milliseconds()
+		local elapsed_ms<const> = world.gameplay_time_ms - test.repeat_start_ms
+		if elapsed_ms < repeat_period_ms
+		or (test.salvo_count == 1 and elapsed_ms <= repeat_deadline_ms) then
+			assert(test.salvo_count == 1,
+				'the held-fire effect repeated before the original E437 counter reached fifteen')
+			return false
+		end
+		assert(test.salvo_count == 2,
+			'the held-fire effect did not repeat at the original E437 cadence')
+		assert(elapsed_ms <= repeat_deadline_ms,
+			'the held-fire effect skipped its first repeat boundary')
+		player.actioneffects:deactivate(fire_effect_id)
+		return true
 	end
 	local stage<const> = player.stage
 	for row_index = 1, stage.tile_rows do
@@ -110,5 +134,15 @@ function __bmsx_host_test.update()
 	end
 	assert(uplaser.y == 9 and uplaser.x == 32 and uplaser.length_tiles == 4,
 		'the level-two up-laser did not apply its four-tick symmetric growth gate')
-	return true
+
+	test.salvo_count = 0
+	player.fire_weapon_salvo = function()
+		test.salvo_count = test.salvo_count + 1
+	end
+	player.actioneffects:activate(fire_effect_id)
+	player.actioneffects:trigger(fire_effect_id)
+	assert(test.salvo_count == 1, 'the initial fire edge did not admit its immediate salvo')
+	test.repeat_start_ms = world.gameplay_time_ms
+	test.phase = 'repeat'
+	return false
 end

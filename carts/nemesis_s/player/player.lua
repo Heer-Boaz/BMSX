@@ -946,6 +946,7 @@ end
 
 function player:update_runtime()
 	local player_index<const> = self.player_index
+	local fire_was_held<const> = self.fire_held
 	self.left_held = input.is_action_pressed(player_index, 'left')
 	self.right_held = input.is_action_pressed(player_index, 'right')
 	self.up_held = input.is_action_pressed(player_index, 'up')
@@ -959,8 +960,16 @@ function player:update_runtime()
 	and self.player_state:activate_selected_powerup() ~= nil then
 		self.events:emit('player.powerup_activated')
 	end
+	local fire_effect_id<const> = player_actioneffects.effect_ids.fire_salvo
+	if self.fire_held ~= fire_was_held then
+		if self.fire_held then
+			self.actioneffects:activate(fire_effect_id)
+		else
+			self.actioneffects:deactivate(fire_effect_id)
+		end
+	end
 	if self.fire_pressed then
-		self.actioneffects:trigger(player_actioneffects.effect_ids.fire_salvo)
+		self.actioneffects:trigger(fire_effect_id)
 	end
 	self:emit_metric()
 	self.frame = self.frame + 1
@@ -987,6 +996,9 @@ function player:enter_respawning()
 end
 
 function player:enter_dying()
+	if self.fire_held then
+		self.actioneffects:deactivate(player_actioneffects.effect_ids.fire_salvo)
+	end
 	local options<const> = self.options
 	local animation_frames<const> = self.visual_sources.options
 	for index = 1, #options do

@@ -79,6 +79,9 @@ player_bullet_movement_speed = 12
 player_bullet_spawn_offset_x = 8
 player_bullet_spawn_offset_y = 8
 player_bullet_collision_backtrack = 8
+-- ABE5 retains the held-fire counter in E437 and admits another complete
+-- weapon salvo when that counter reaches fifteen gameplay updates.
+player_fire_repeat_updates = 15
 player_hitcheck_x = { 4, 8, 14, 4, 8, 8 }
 
 player_hitcheck_y = { 4, 4, 5, 7, 5, 7 }
