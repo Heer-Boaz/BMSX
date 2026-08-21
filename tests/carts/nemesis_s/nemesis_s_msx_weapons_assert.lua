@@ -1,5 +1,10 @@
 local registry<const> = require('cartlib/registry')
+local rom_dir<const> = require('cartlib/rom_dir')
 local player_state_module<const> = require('player/player_state')
+
+local selected_apu_source<const>: *word = 0x0800018c
+local bullet_audio_source<const> = rom_dir.audio('nemesis2_kogeltje').addr
+local laser_audio_source<const> = rom_dir.audio('nemesis2_laser').addr
 
 __bmsx_host_test = {}
 
@@ -34,6 +39,8 @@ function __bmsx_host_test.update()
 	player.x = 41
 	player.y = 25
 	player:spawn_bullet(1)
+	assert(*selected_apu_source == bullet_audio_source,
+		'the retained bullet spawn did not emit its XNA fire cue')
 	local primary<const> = player.primary_projectiles[1]
 	assert(primary.x == 48 and primary.y == 33,
 		'the MSX bullet spawn anchor was not restored')
@@ -52,6 +59,8 @@ function __bmsx_host_test.update()
 	stage.solid_tape[(33 // stage.tile_size) + 1][bullet_collision_column] = 0
 
 	player:spawn_laser(1, 1)
+	assert(*selected_apu_source == laser_audio_source,
+		'the retained laser spawn did not emit its XNA fire cue')
 	for expected_length = 4, 12, 4 do
 		player:update_weapons()
 		assert(primary.length_tiles == expected_length,

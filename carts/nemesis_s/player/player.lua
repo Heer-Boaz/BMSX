@@ -540,6 +540,7 @@ function player:spawn_bullet(vessel_id)
 	bullet.x = ((vessel_x + player_bullet_spawn_offset_x) // 8) * 8
 	bullet.y = (vessel_y + player_bullet_spawn_offset_y) // 1
 	bullet.collider:set_enabled(true)
+	self.events:emit('player.bullet_fired')
 	if telemetry_enabled then
 		self:emit_event(
 			'weapon_spawn',
@@ -565,6 +566,7 @@ function player:spawn_laser(vessel_id, level)
 	laser.length_tiles = 0
 	laser.expansion_tiles_remaining = weapons_laser.length_tiles_by_level[level]
 	laser.collider:set_enabled(true)
+	self.events:emit('player.laser_fired')
 	if telemetry_enabled then
 		self:emit_event(
 			'weapon_spawn',

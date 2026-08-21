@@ -1,8 +1,12 @@
 local clock<const> = require('cartlib/clock')
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 local registry<const> = require('cartlib/registry')
+local rom_dir<const> = require('cartlib/rom_dir')
 local world<const> = require('cartlib/world/world')
 require('constants')
+
+local selected_apu_source<const>: *word = 0x0800018c
+local spawn_audio_source<const> = rom_dir.audio('parodius_enemy_spawn').addr
 
 __bmsx_host_test = {
 	frames = 0,
@@ -76,6 +80,8 @@ function __bmsx_host_test.update()
 	if test.phase == 'burst' then
 		local spawn_count<const> = test.spawn_count
 		if spawn_count > 0 then
+			assert(*selected_apu_source == spawn_audio_source,
+				'RookGenerator spawn did not emit its XNA enemy-spawn cue')
 			local previous_time_ms = test.generation_time_ms
 			if spawn_count > 1 then
 				previous_time_ms = test.spawn_times[spawn_count - 1]

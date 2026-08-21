@@ -1,8 +1,12 @@
 local sprite_animation_component<const> = require('cartlib/component/sprite_animation_component')
 local tile_strip_component<const> = require('cartlib/component/tile_strip_component')
 local registry<const> = require('cartlib/registry')
+local rom_dir<const> = require('cartlib/rom_dir')
 local world<const> = require('cartlib/world/world')
 require('constants')
+
+local selected_apu_source<const>: *word = 0x0800018c
+local ray_audio_source<const> = rom_dir.audio('nemesis2_foe_laser').addr
 
 __bmsx_host_test = {
 	frames = 0,
@@ -54,10 +58,10 @@ function __bmsx_host_test.update()
 		assert(not test.animation.enabled,
 			'leaving the flash state did not retire its visual and tick work')
 
-		local ray<const> = world:spawn(ids_sneeuwpop_ray_def, {
-			originator = test.snowman,
-			pos = { x = 80, y = 64 },
-		})
+		test.snowman:fire_ray()
+		assert(*selected_apu_source == ray_audio_source,
+			'Sneeuwpop firing did not emit its XNA ray cue')
+		local ray<const> = test.snowman.ray
 		local strip<const> = ray:get_component(tile_strip_component)
 		assert(ray.top_y == nil,
 			'the ray still shadows derived strip geometry on its world object')

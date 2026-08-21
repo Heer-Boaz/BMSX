@@ -112,10 +112,14 @@ function __bmsx_host_test.update()
 		player:spawn_bullet(1)
 		test.snowman = snowman
 		test.initial_health = snowman.health
+		test.gameplay_time_ms = world.gameplay_time_ms
 		test.phase = 'collision'
 		return false
 	end
 
+	if world.gameplay_time_ms == test.gameplay_time_ms then
+		return false
+	end
 	assert(test.snowman.health == test.initial_health - 1,
 		'the fixed projectile lane did not hit the authored tile collision shape')
 	assert(not player.primary_projectiles[1].collider.enabled,

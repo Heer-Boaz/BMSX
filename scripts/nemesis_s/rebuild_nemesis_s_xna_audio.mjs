@@ -11,6 +11,10 @@ const sourceDir = path.join(
 );
 
 const mappings = [
+	['Nemesis2_Kogeltje.wav', 'nemesis2_kogeltje@p=1.wav'],
+	['Nemesis2_Laser.wav', 'nemesis2_laser@p=1.wav'],
+	['Nemesis2_FoeLaser.wav', 'nemesis2_foe_laser@p=10.wav'],
+	['Parodius_EnemySpawn.wav', 'parodius_enemy_spawn@p=5.wav'],
 	['Nemesis2_SomethingFell.wav', 'nemesis2_something_fell@p=10.wav'],
 	['Nemesis2_Bosshit.wav', 'nemesis2_boss_hit@p=8.wav'],
 	['Nemesis2_StructureHit.wav', 'nemesis2_structure_hit@p=5.wav'],
