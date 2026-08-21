@@ -113,6 +113,8 @@ function __bmsx_host_test.update()
 	state.current_powerup_slot = shield_slot
 	assert(state:activate_selected_powerup() ~= nil,
 		'depleted shield power-up could not be acquired again')
+	assert(player.force_field_visual == visual and visual.enabled,
+		'shield reacquisition replaced its retained visual component')
 	state.current_powerup_slot = shield_slot
 	assert(state:activate_selected_powerup() == nil
 		and state.current_powerup_slot == shield_slot,

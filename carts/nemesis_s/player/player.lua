@@ -29,6 +29,7 @@ local player_body_collider_id<const> = 0
 local player_vessel_visual_id<const> = 'vessel'
 local player_projectile_visual_id<const> = 'projectiles'
 local player_death_visual_id<const> = 'death'
+local player_force_field_visual_id<const> = 'force_field'
 local force_field_animation_strong<const> = 'strong'
 local force_field_animation_weak<const> = 'weak'
 local player_hit_area<const> = {
@@ -51,6 +52,7 @@ local new_death_visual<const> = sprite_component.factory({
 	enabled = false,
 })
 local new_force_field_visual<const> = sprite_animation_component.factory({
+	id_local = player_force_field_visual_id,
 	animation = force_field_animation_strong,
 	animations = {
 		strong = {
@@ -456,24 +458,14 @@ end
 
 function player:activate_force_field()
 	self.force_field_strength = player_force_field_strength
-	local visual = self.force_field_visual
-	if visual == nil then
-		visual = new_force_field_visual({ parent = self })
-		self.force_field_visual = visual
-		self:add_component(visual)
-	end
+	local visual<const> = self.force_field_visual
 	visual:set_animation(force_field_animation_strong)
 	visual:activate()
 end
 
 function player:deactivate_force_field()
 	self.force_field_strength = 0
-	local visual<const> = self.force_field_visual
-	if visual ~= nil then
-		self.force_field_visual = nil
-		visual:deactivate()
-		self:remove_component(visual)
-	end
+	self.force_field_visual:deactivate()
 end
 
 function player:damage_force_field(destroys_in_one_blow)
@@ -1023,7 +1015,10 @@ end
 function player:ctor()
 	self.vessel_visual = self:get_component(custom_visual_component, player_vessel_visual_id)
 	self.death_visual = self:get_component(sprite_component, player_death_visual_id)
-	self.force_field_visual = nil
+	self.force_field_visual = self:get_component(
+		sprite_animation_component,
+		player_force_field_visual_id
+	)
 	self.body_collider = self:get_component(collider_2d_component, player_body_collider_id)
 	self.visual_sources = player_sources[self.player_index]
 	self.powerup_levels = self.player_state.powerup_levels
@@ -1155,6 +1150,7 @@ local register_player_definition<const> = function()
 			new_vessel_visual,
 			new_projectile_visual,
 			new_death_visual,
+			new_force_field_visual,
 			new_player_collider,
 			timeline_component.new,
 			fsm_component.factory({ ids_player_fsm }),
