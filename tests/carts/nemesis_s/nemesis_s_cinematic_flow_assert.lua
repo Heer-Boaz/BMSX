@@ -111,31 +111,55 @@ function __bmsx_host_test.setup()
 	local title<const> = registry:get('nemesis_s.title_screen')
 	assert(title.sprite_component.imgid == 'title_screen_1' and title.selector.offset_y == 136,
 		'title did not enter its authored idle presentation')
+	title.timelines:advance_to('nemesis_s.title_screen.idle', 8)
+	assert(title.sprite_component.imgid == 'title_screen_2',
+		'title logo did not enter its four-VBlank palette phase')
+	title.timelines:advance_to('nemesis_s.title_screen.idle', 12)
+	assert(title.sprite_component.imgid == 'title_screen_1' and not title.selector.visible,
+		'title idle presentation did not retain the ROM 8/4 and 12/12 cadences')
 	title:toggle_player_count()
-	assert(title.selected_player_count == 2 and title.selector.offset_y == 152,
+	assert(title.selected_player_count == 2 and title.selector.offset_y == 152
+		and title.selector.visible,
 		'title selector did not retain the two-player selection')
-	title.state_machines:transition_to('/startup/selection')
-	title.timelines:advance_time_to('nemesis_s.title_screen.selection', 20)
-	assert(not title.selection_hider.visible, 'selection flash did not alternate at 20 ms')
-	title.state_machines:transition_to('/startup/flight/launch')
-	title.timelines:advance_time_to('nemesis_s.title_screen.launch', 700)
+	title.state_machines:transition_to('/startup/confirmation')
+	title.timelines:advance_to('nemesis_s.title_screen.confirmation', 4)
+	assert(not title.selection_hider.visible,
+		'selection confirmation did not alternate after four VBlanks')
+	title.state_machines:transition_to('/startup/hangar_blackout')
+	assert(not title.visible, 'hangar transition did not begin on the ROM black frame')
+	title.state_machines:transition_to('/startup/flight/lift')
+	title.timelines:advance_to('nemesis_s.title_screen.lift', 5)
+	assert(title.normal_ship.offset_y == 121 and title.burst_ship.offset_y == 121,
+		'Metalion lift did not retain the first ROM position boundary')
+	title.timelines:advance_to('nemesis_s.title_screen.hangar', 14)
+	assert(title.sprite_component.imgid == 'title_hangar_2',
+		'hangar lights did not retain the first observed ROM boundary')
+	title.timelines:advance_to('nemesis_s.title_screen.lift', 51)
+	assert(title.normal_ship.offset_y == 81 and title.burst_ship.offset_y == 81,
+		'Metalion lift did not retain its final visible ROM step')
+	title.state_machines:transition_to('/startup/flight/ignition')
 	assert(title.normal_ship.offset_y == 73 and title.burst_ship.offset_y == 73,
-		'Metalion launch did not reach the XNA hangar endpoint')
-	title.state_machines:transition_to('/startup/flight/flicker')
-	title.timelines:advance_time_to('nemesis_s.title_screen.flicker', 0)
+		'Metalion ignition did not enter at the hangar endpoint')
+	title.timelines:advance_to('nemesis_s.title_screen.ignition', 0)
 	assert(title.burst_ship.imgid == 'title_startup_metalion_burst_1',
 		'Metalion startup flicker did not begin on the burst frame')
-	title.timelines:advance_time_to('nemesis_s.title_screen.flicker', 20)
+	title.timelines:advance_to('nemesis_s.title_screen.ignition', 2)
 	assert(title.burst_ship.imgid == 'title_startup_metalion',
-		'Metalion startup flicker did not alternate at 20 ms')
-	title.state_machines:transition_to('/startup/flight/full_burst')
-	title.timelines:advance_time_to('nemesis_s.title_screen.full_burst', 60)
+		'Metalion ignition did not alternate after two VBlanks')
+	title.state_machines:transition_to('/startup/flight/burst_ramp')
+	title.timelines:advance_to('nemesis_s.title_screen.burst_ramp', 8)
+	assert(title.burst_ship.imgid == 'title_startup_metalion_burst_2',
+		'Metalion burst ramp did not retain its third four-VBlank pose')
+	title.state_machines:transition_to('/startup/flight/burst_hold')
 	assert(title.burst_ship.imgid == 'title_startup_metalion_burst_3',
 		'Metalion startup did not reach full burst')
-	title.state_machines:transition_to('/startup/flight/cooldown')
-	title.timelines:advance_time_to('nemesis_s.title_screen.cooldown', 150)
-	assert(title.burst_ship.imgid == 'title_startup_metalion',
-		'Metalion startup did not cool down to its base image')
+	title.state_machines:transition_to('/startup/flight/burst_cooldown')
+	title.timelines:advance_to('nemesis_s.title_screen.burst_cooldown', 0)
+	assert(title.burst_ship.imgid == 'title_startup_metalion_burst_2',
+		'Metalion cooldown did not begin on its second burst image')
+	title.timelines:advance_to('nemesis_s.title_screen.burst_cooldown', 8)
+	assert(title.burst_ship.imgid == 'title_startup_metalion_burst_1',
+		'Metalion cooldown did not enter its final seven-VBlank pose')
 	title.state_machines:transition_to('/startup/blackout')
 	assert(not title.visible, 'title blackout kept presentation sprites visible')
 	title.events:emit('title_screen_done', { player_count = 2 })
@@ -254,7 +278,10 @@ function __bmsx_host_test.update()
 			'director left game-start through an unexpected state')
 		return false
 	end
-	assert(test.frames > 70, 'game-start wait completed before the authored 1500 ms')
+	local game_start_timeline<const> = director.timelines:get('nemesis_s.director.game_start')
+	assert(game_start_timeline.duration_ms == 47 * clock.frame_delta_milliseconds()
+		and game_start_timeline.ended,
+		'game-start wait did not complete on the ROM ship-admission boundary')
 	assert(world.active_space_id == 'main', 'gameplay did not activate the stage space')
 	assert(registry:get('nemesis_s.status_bar').space_id == 'main',
 		'status bar did not move into the gameplay presentation space')

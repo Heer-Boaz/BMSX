@@ -19,6 +19,7 @@ local director<const> = {}
 director.__index = director
 
 local game_start_timeline_id<const> = 'nemesis_s.director.game_start'
+local game_start_duration_frames<const> = 47
 local game_over_curtain_timeline_id<const> = 'nemesis_s.director.game_over_curtain'
 local game_over_blackout_timeline_id<const> = 'nemesis_s.director.game_over_blackout'
 local game_over_curtain_visual_id<const> = 'game_over_curtain'
@@ -324,9 +325,7 @@ local define_director_fsm<const> = function()
 				timelines = {
 					[game_start_timeline_id] = {
 						def = {
-							continuous = true,
-							duration_ms = 1500,
-							playback_mode = 'once',
+							duration_frames = game_start_duration_frames,
 							clock_source = timeline_clock_source.frame,
 						},
 						autoplay = true,
