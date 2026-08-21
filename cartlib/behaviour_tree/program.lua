@@ -1,5 +1,6 @@
 local blackboard<const> = require('cartlib/behaviour_tree/blackboard')
 local blackboard_program<const> = require('cartlib/behaviour_tree/blackboard_program')
+local decorator_program<const> = require('cartlib/behaviour_tree/decorator_program')
 local execution_layout<const> = require('cartlib/behaviour_tree/execution_layout')
 local observer_program<const> = require('cartlib/behaviour_tree/observer_program')
 local result<const> = require('cartlib/behaviour_tree/result')
@@ -682,7 +683,7 @@ compile_node = function(node, layout)
 	local branch
 	local decorators<const> = node.decorators
 	if decorators ~= nil then
-		evaluate, operand, reset, branch = observer_program.compile_decorators(
+		evaluate, operand, reset, branch = decorator_program.compile(
 			decorators,
 			layout,
 			execution_index,

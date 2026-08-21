@@ -78,6 +78,7 @@ const CART_MODULE_FILES = [
 	['cartlib/behaviour_tree/task_program', 'cartlib/behaviour_tree/task_program.lua'],
 	['cartlib/behaviour_tree/blackboard_program', 'cartlib/behaviour_tree/blackboard_program.lua'],
 	['cartlib/behaviour_tree/observer_program', 'cartlib/behaviour_tree/observer_program.lua'],
+	['cartlib/behaviour_tree/decorator_program', 'cartlib/behaviour_tree/decorator_program.lua'],
 	['cartlib/behaviour_tree/service_program', 'cartlib/behaviour_tree/service_program.lua'],
 	['cartlib/behaviour_tree/program', 'cartlib/behaviour_tree/program.lua'],
 	['cartlib/behaviour_tree/bt_component', 'cartlib/behaviour_tree/bt_component.lua'],

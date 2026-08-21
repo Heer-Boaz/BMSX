@@ -88,7 +88,7 @@ local compile_condition<const> = function(definitions, layout)
 	end
 end
 
-function observer_program.compile_decorators(
+function observer_program.compile_blackboard_decorators(
 	definitions,
 	layout,
 	execution_index,

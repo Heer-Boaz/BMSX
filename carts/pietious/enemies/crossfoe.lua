@@ -81,20 +81,10 @@ function crossfoe:ctor()
 	apply_spin_state(self)
 end
 
-function crossfoe.await_takeoff(self, node_memory)
+function crossfoe.player_overlaps_takeoff_lane(self)
 	local player<const> = self.player
-	if player.y + player.height >= self.y
-	and player.y <= self.y + upright_collision_bottom then
-		local elapsed_ticks<const> = node_memory.elapsed_ticks or 0
-		if elapsed_ticks < enemy_cross_wait_before_fly_steps then
-			node_memory.elapsed_ticks = elapsed_ticks + 1
-			return bt_running
-		end
-		node_memory.elapsed_ticks = 0
-		return bt_success
-	end
-	node_memory.elapsed_ticks = 0
-	return bt_running
+	return player.y + player.height >= self.y
+		and player.y <= self.y + upright_collision_bottom
 end
 
 function crossfoe.execute_flight(self, node_memory)
@@ -180,21 +170,23 @@ function crossfoe.register()
 	local tree_id<const> = 'enemy_crossfoe'
 	behaviour_tree_library.register(tree_id, {
 		root = {
-			type = 'loop',
-			child = {
-				type = 'sequence',
-				children = {
-					{
-						type = 'task',
-						node_memory = true,
-						tick = crossfoe.await_takeoff,
+			type = 'sequence',
+			children = {
+				{
+					type = 'wait',
+					duration_ticks = enemy_cross_wait_before_fly_steps,
+					decorators = {
+						{
+							type = 'condition',
+							condition = crossfoe.player_overlaps_takeoff_lane,
+						},
 					},
-					{
-						type = 'task',
-						node_memory = true,
-						execute = crossfoe.execute_flight,
-						tick = crossfoe.tick_flight,
-					},
+				},
+				{
+					type = 'task',
+					node_memory = true,
+					execute = crossfoe.execute_flight,
+					tick = crossfoe.tick_flight,
 				},
 			},
 		},
