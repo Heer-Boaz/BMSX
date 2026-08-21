@@ -120,7 +120,6 @@ mijter_foe_draw_z = 60
 
 schoorsteen_foe_health = 15
 schoorsteen_foe_animation_frame_ms = 50
-schoorsteen_foe_cooldown_ms = 500
 schoorsteen_foe_fire_left = -24
 schoorsteen_foe_fire_right = 48
 schoorsteen_foe_width = 32
@@ -262,7 +261,6 @@ large_explosion_draw_z = 50
 
 sneeuwpop_health = 30
 sneeuwpop_ready_ms = 500
-sneeuwpop_firing_ms = 1000
 sneeuwpop_cooldown_ms = 1000
 sneeuwpop_width = 48
 sneeuwpop_draw_z = 50

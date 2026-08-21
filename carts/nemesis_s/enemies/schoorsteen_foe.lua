@@ -132,18 +132,7 @@ local define_fsm<const> = function()
 					},
 				},
 			},
-			firing = {
-				timelines = {
-					firing = {
-						def = {
-							continuous = true,
-							duration_ms = schoorsteen_foe_cooldown_ms,
-							playback_mode = 'once',
-						},
-						on_finished = '/cooling_down',
-					},
-				},
-			},
+			firing = {},
 			cooling_down = {
 				timelines = {
 					close = {
