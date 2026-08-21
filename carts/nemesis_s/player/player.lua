@@ -550,6 +550,7 @@ function player:spawn_bullet(vessel_id, bullet)
 	bullet.pierces_small_fry = false
 	bullet.x = ((vessel_x + player_bullet_spawn_offset_x) // 8) * 8
 	bullet.y = (vessel_y + player_bullet_spawn_offset_y) // 1
+	set_projectile_collider(self, bullet, 8, 2)
 	bullet.collider:set_enabled(true)
 	self.events:emit('player.bullet_fired')
 	if telemetry_enabled then
@@ -584,6 +585,7 @@ function player:spawn_laser(vessel_id, level)
 	laser.state = laser_state_expand
 	laser.length_tiles = 0
 	laser.expansion_tiles_remaining = weapons_laser.length_tiles_by_level[level]
+	set_projectile_collider(self, laser, 0, 2)
 	laser.collider:set_enabled(true)
 	self.events:emit('player.laser_fired')
 	if telemetry_enabled then
@@ -614,6 +616,7 @@ function player:spawn_missile(vessel_id, level)
 	missile.fall_velocity_y_q8 = motion.fall_velocity_y_q8
 	missile.surface_velocity_x_q8 = motion.surface_velocity_x_q8
 	missile.sprite = weapon_sources.missile_falling
+	set_projectile_collider(self, missile, 8, 2)
 	missile.collider:set_enabled(true)
 	if telemetry_enabled then
 		self:emit_event(
@@ -639,6 +642,12 @@ function player:spawn_uplaser(vessel_id, level)
 	uplaser.y = (vessel_y + weapons_uplaser.spawn_offset_y) // 1
 	uplaser.gate_counter = weapons_uplaser.level2_gate_frames
 	uplaser.length_tiles = weapons_uplaser.initial_length_tiles
+	set_projectile_collider(
+		self,
+		uplaser,
+		uplaser.length_tiles * weapons_uplaser.tile_width,
+		8
+	)
 	uplaser.collider:set_enabled(true)
 	if telemetry_enabled then
 		self:emit_event(
@@ -897,7 +906,7 @@ function player:update_weapons()
 				self:update_laser(primary)
 			end
 			if primary.type == projectile_type_bullet then
-				set_projectile_collider(self, primary, 6, 2)
+				set_projectile_collider(self, primary, 8, 2)
 			elseif primary.type == projectile_type_laser then
 				set_projectile_collider(self, primary, primary.length_tiles * weapons_laser.tile_width, 2)
 			end
@@ -907,7 +916,7 @@ function player:update_weapons()
 			if secondary.type == projectile_type_bullet then
 				self:update_bullet(secondary)
 				if secondary.type == projectile_type_bullet then
-					set_projectile_collider(self, secondary, 6, 2)
+					set_projectile_collider(self, secondary, 8, 2)
 				end
 			else
 				self:update_uplaser(secondary)
@@ -927,8 +936,7 @@ function player:update_weapons()
 		if missile.type ~= projectile_type_none then
 			self:update_missile(missile)
 			if missile.type ~= projectile_type_none then
-				local height<const> = missile.sprite == weapon_sources.missile_falling and 8 or 4
-				set_projectile_collider(self, missile, 8, height)
+				set_projectile_collider(self, missile, 8, 2)
 			end
 		end
 	end

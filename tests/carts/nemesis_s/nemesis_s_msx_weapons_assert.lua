@@ -69,6 +69,8 @@ function __bmsx_host_test.update()
 		'the retained bullet spawn did not emit its XNA fire cue')
 	assert(primary.x == 48 and primary.y == 33,
 		'the MSX bullet spawn anchor was not restored')
+	assert(primary.collider.local_area.right == 8 and primary.collider.local_area.bottom == 2,
+		'the bullet did not publish its original collision record at admission')
 	player:update_weapons()
 	assert(primary.type ~= 0 and primary.x == 60,
 		'the MSX bullet did not advance twelve pixels per gameplay tick')
@@ -99,6 +101,8 @@ function __bmsx_host_test.update()
 	player:spawn_laser(1, 1)
 	assert(*selected_apu_source == laser_audio_source,
 		'the retained laser spawn did not emit its XNA fire cue')
+	assert(primary.collider.local_area.right == 0 and primary.collider.local_area.bottom == 2,
+		'the laser did not publish its empty expansion record at admission')
 	for expected_length = 4, 12, 4 do
 		player:update_weapons()
 		assert(primary.length_tiles == expected_length,
@@ -114,6 +118,8 @@ function __bmsx_host_test.update()
 
 	player:spawn_missile(1, 1)
 	local missile<const> = player.missile_projectiles[1]
+	assert(missile.collider.local_area.right == 8 and missile.collider.local_area.bottom == 2,
+		'the missile did not publish its original collision record at admission')
 	player:update_weapons()
 	assert(missile.x == 50 and missile.y == 37,
 		'the level-one missile did not use the MSX 1px/4px falling vector')
@@ -153,6 +159,8 @@ function __bmsx_host_test.update()
 
 	player:spawn_uplaser(1, 2)
 	local uplaser<const> = player.secondary_projectiles[1]
+	assert(uplaser.collider.local_area.right == 16 and uplaser.collider.local_area.bottom == 8,
+		'the up-laser did not publish its original collision record at admission')
 	for _ = 1, 4 do
 		player:update_weapons()
 	end
