@@ -302,10 +302,14 @@ weapons_laser = {
 	-- The ROM anchors the beam eight pixels below the vessel record. Its visible
 	-- pixels begin two rows below that record; this trimmed image begins there.
 	spawn_offset_y = 6,
-	expansion_tiles_per_tick = 4,
 	travel_speed = 32,
 	collision_retract_tiles = 4,
-	length_tiles_by_level = { 15, 28 },
+	extended_level = 3,
+	levels = {
+		{ length_tiles = 15, expansion_tiles_per_tick = 4, height = 2 },
+		{ length_tiles = 28, expansion_tiles_per_tick = 4, height = 2 },
+		{ length_tiles = 28, expansion_tiles_per_tick = 5, height = 8 },
+	},
 }
 
 weapons_missile_spawn_offset_x = 8
@@ -323,6 +327,24 @@ weapons_missile_motion_by_level = {
 		fall_velocity_x_q8 = 0x0180,
 		fall_velocity_y_q8 = 0x0600,
 		surface_velocity_x_q8 = 0x0600,
+	},
+	{
+		fall_velocity_x_q8 = 0x0180,
+		fall_velocity_y_q8 = 0x0600,
+		surface_velocity_x_q8 = 0x0600,
+	},
+}
+weapons_napalm = {
+	level = 3,
+	blast_width = 24,
+	blast_height = 24,
+	blast_phase_ticks = 5,
+	fragment_lifetime_ticks = 3,
+	fragment_offsets = {
+		{ x = -8, y = -8 },
+		{ x = 8, y = 8 },
+		{ x = 8, y = -8 },
+		{ x = -8, y = 8 },
 	},
 }
 weapons_uplaser = {
@@ -427,8 +449,13 @@ assets_large_explosion_1 = 'large_explosion_1'
 assets_large_explosion_2 = 'large_explosion_2'
 assets_large_explosion_3 = 'large_explosion_3'
 assets_laser = 'laser'
+assets_extended_laser = 'extended_laser'
 assets_missile1 = 'missile1'
 assets_missile2 = 'missile2'
+assets_napalm_missile_falling = 'napalm_missile_falling'
+assets_napalm_missile_flying = 'napalm_missile_flying'
+assets_napalm_blast_1 = 'napalm_blast_1'
+assets_napalm_blast_2 = 'napalm_blast_2'
 assets_star_blue = 'star_blue'
 assets_star_yellow = 'star_yellow'
 assets_house_tile_1 = 'house_tile_1'

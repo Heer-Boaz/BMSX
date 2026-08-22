@@ -7,6 +7,8 @@ local world<const> = require('cartlib/world/world')
 local selected_apu_source<const>: *word = 0x0800018c
 local bullet_audio_source<const> = rom_dir.audio('nemesis2_kogeltje').addr
 local laser_audio_source<const> = rom_dir.audio('nemesis2_laser').addr
+local uplaser_audio_source<const> = rom_dir.audio('nemesis2_uplaser').addr
+local extended_laser_audio_source<const> = rom_dir.audio('nemesis2_extended_laser').addr
 local fire_effect_id<const> = 'fire_salvo'
 
 __bmsx_host_test = {
@@ -61,10 +63,10 @@ function __bmsx_host_test.update()
 	end
 
 	local max_levels<const> = player_state_module.powerup_max_levels
-	assert(max_levels[player_state_module.powerup_slot.missile] == 2,
-		'the standard missile lost its two MSX speed levels')
-	assert(max_levels[player_state_module.powerup_slot.laser] == 2,
-		'the standard laser lost its two MSX length levels')
+	assert(max_levels[player_state_module.powerup_slot.missile] == 3,
+		'the power-up gauge lost the third-level Napalm missile')
+	assert(max_levels[player_state_module.powerup_slot.laser] == 3,
+		'the power-up gauge lost the third-level Extended Laser')
 	assert(player_state_module.powerup_slot.uplaser == player_state_module.powerup_slot.laser + 1
 		and max_levels[player_state_module.powerup_slot.uplaser] == 2,
 		'the unlocked up-laser lost its MSX gauge position or two weapon levels')
@@ -152,6 +154,60 @@ function __bmsx_host_test.update()
 	assert(missile.x == 52 and missile.fraction_x == 0 and missile.y == 44,
 		'the level-two missile did not consume its retained Q8.8 fraction')
 	player:despawn_missile(missile, 'test_reset')
+	player:spawn_missile(player, 3)
+	assert(missile.type == 5,
+		'the third missile level did not admit the source ROM Napalm record')
+	player:update_weapons()
+	assert(missile.x == 50 and missile.fraction_x == 0x80 and missile.y == 38,
+		'the Napalm missile diverged from the level-two MSX flight vector')
+	local napalm_hit_count = 0
+	local napalm_target<const> = {
+		receive_player_projectile = function(_self, projectile)
+			assert(projectile == missile, 'the Napalm overlap resolved a different retained slot')
+			napalm_hit_count = napalm_hit_count + 1
+			return true
+		end,
+	}
+	player:resolve_projectile_overlap(
+		missile.collider.id_local,
+		napalm_target,
+		0,
+		{ x = 0, y = 0 },
+		'begin'
+	)
+	assert(missile.type == 6
+		and missile.collider.local_area.right == weapons_napalm.blast_width
+		and missile.collider.local_area.bottom == weapons_napalm.blast_height,
+		'the Napalm impact did not convert its retained missile slot into the 24px blast')
+	player:resolve_projectile_overlap(
+		missile.collider.id_local,
+		napalm_target,
+		0,
+		{ x = 0, y = 0 },
+		'stay'
+	)
+	assert(napalm_hit_count == 2,
+		'the retained Napalm blast did not continue damaging an overlapping target')
+	player:update_weapons()
+	assert(missile.blast_phase == 1 and missile.blast_frame == 2
+		and missile.fragment_ticks == weapons_napalm.fragment_lifetime_ticks
+		and missile.fragment_offset_x == -8 and missile.fragment_offset_y == -8,
+		'the Napalm blast did not admit its first ROM-authored fragment phase')
+	local scroll_before_napalm<const> = stage.total_scroll_px
+	stage.total_scroll_px = scroll_before_napalm + stage.tile_size
+	local blast_x<const> = missile.x
+	player:update_weapons()
+	assert(missile.x == blast_x - stage.tile_size,
+		'the retained Napalm blast did not follow the source stage-scroll step')
+	for _ = 3, 20 do
+		player:update_weapons()
+	end
+	assert(missile.type == 6 and missile.blast_phase == 4,
+		'the four Napalm fragment phases ended before their source cadence')
+	player:update_weapons()
+	assert(missile.type == 0,
+		'the Napalm blast remained resident after its fourth source phase')
+	stage.total_scroll_px = scroll_before_napalm
 	player.y = playfield_height - player_height
 	player:spawn_missile(player, 1)
 	assert(missile.type == 0,
@@ -193,6 +249,8 @@ function __bmsx_host_test.update()
 		'the second up-laser level could not be selected from the power-up gauge')
 	player:fire_weapon_salvo()
 	local uplaser<const> = player.secondary_projectiles[1]
+	assert(*selected_apu_source == uplaser_audio_source,
+		'the up-laser did not emit its dedicated Nemesis 2 sound command')
 	assert(uplaser.x == 40 and uplaser.y == 31,
 		'the up-laser did not retain its original vessel anchor')
 	assert(uplaser.collider.local_area.right == 16 and uplaser.collider.local_area.bottom == 8,
@@ -202,6 +260,30 @@ function __bmsx_host_test.update()
 	end
 	assert(uplaser.y == 7 and uplaser.x == 32 and uplaser.length_tiles == 4,
 		'the level-two up-laser did not apply its four-tick symmetric growth gate')
+	player:despawn_slot_projectile(uplaser, 'test_reset')
+
+	player.x = 1
+	player.y = 25
+	player:spawn_laser(player, 3)
+	assert(*selected_apu_source == extended_laser_audio_source,
+		'the Extended Laser did not supersede the up-laser sound channel')
+	assert(primary.type == 8 and primary.collider.local_area.bottom == 8,
+		'the third laser level did not admit the source ROM thick-beam record')
+	for expected_length = 5, 25, 5 do
+		player:update_weapons()
+		assert(primary.length_tiles == expected_length,
+			'the Extended Laser did not expand by five retained tiles per gameplay tick')
+	end
+	player:update_weapons()
+	assert(primary.length_tiles == 28 and primary.x == 16
+		and primary.collider.local_area.right == 224
+		and primary.collider.local_area.bottom == 8,
+		'the Extended Laser did not retain its 28x8-tile source extent')
+	player.x = 121
+	player:update_weapons()
+	assert(primary.x == 48 and primary.length_tiles == 26,
+		'the completed Extended Laser did not enter its independent travel phase')
+	player:despawn_slot_projectile(primary, 'test_reset')
 
 	test.salvo_count = 0
 	player.fire_weapon_salvo = function()

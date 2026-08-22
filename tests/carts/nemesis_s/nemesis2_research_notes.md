@@ -348,19 +348,30 @@ timeline frame boundaries, and the ray remains an independent world object.
   ROM data. Enemy bullets write those raw Q8.8 words once when admitted; their
   scheduled update performs no trigonometry, normalization, or division.
 
-## Open parity slices
+## Completed parity slices
 
-These observed cart gaps still require source tracing before implementation:
-
-- Tile-collision actors must block player lasers by default. This includes the
-  bell, both chimney types and the Moon. The Moon's complete tile body must also
-  block the player, and that physical body remains after its defeat; later
-  actors may explicitly opt out when the game requires laser transmission.
-- Slow the Moon's player-facing vertical movement and its vertical laser rays
-  slightly without changing the already retained attack structure.
-- Restore the XNA cart's limit of four options per player rather than inheriting
-  the original MSX limit of two.
-- Trace and add the Nemesis 2 napalm missile upgrade after Missile 2, including
-  its source sprites and retained post-impact blast.
-- Trace and add the Nemesis 2 Extended Laser upgrade after Laser 2, including
-  its thick green beam representation and collision behavior.
+- Tile-collision actors now retain their physical bodies independently from
+  vulnerable hit regions. The bell, chimneys and Moon consequently consume
+  player lasers, and the Moon body remains after defeat.
+- The Moon's player-facing vertical movement and vertical rays use the eased
+  cart-owned tuning without changing its retained attack structure.
+- Each player owns four retained option records, matching the XNA cart rather
+  than the original MSX two-option limit.
+- `B0B4` admits level-three missiles as type `0x05`. On an accepted enemy hit,
+  `8A0C` converts that same record to the type-`0x06` Napalm blast; no second
+  projectile record is allocated.
+- `B1AF` advances the Napalm blast through four five-update phases. Each phase
+  admits a three-update child visual at `(-8,-8)`, `(8,8)`, `(8,-8)` and
+  `(-8,8)`. The retained 24x24 blast continues to participate in the weapon
+  overlap pass throughout those phases and follows stage scroll.
+- `AD85` admits the level-three laser as type `0x08`, with a 28-tile extent,
+  five-tile expansion step and eight-pixel beam height. It otherwise retains
+  the established laser-family source-follow, travel and collision datapath.
+- The weapon commands dispatched by the source sound routine are `0x03` for
+  the normal laser, `0x0E` for up-laser and `0x1A` for Extended Laser. The
+  extracted AEM assets retain their corresponding priority order: bullet,
+  normal laser, up-laser, Extended Laser.
+- `scripts/nemesis_s/rebuild_nemesis2_weapon_pngs.mjs` rebuilds the exact TMS
+  sprite and Graphic-2 source records. `extract_nemesis2_weapon_audio.py`
+  reproduces the source-machine fire paths and captures only their dedicated
+  PSG/SCC effect channel, excluding the retained stage-music channels.

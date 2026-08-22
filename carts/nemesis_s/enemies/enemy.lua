@@ -61,11 +61,12 @@ function enemy:on_overlap(_event_type, _emitter, event)
 			event.other_collider_local_id,
 			self,
 			event.collider_local_id,
-			event.contact.point
+			event.contact.point,
+			event.phase
 		)
 		return
 	end
-	if self.small_fry and self.vulnerable then
+	if event.phase == 'begin' and self.small_fry and self.vulnerable then
 		self.health = self.health - 1
 		if self.health <= 0 then
 			self.health = 0
@@ -77,6 +78,10 @@ end
 function enemy:bind()
 	self.events:on({
 		event = 'overlap.begin',
+		handler = enemy.on_overlap,
+	})
+	self.events:on({
+		event = 'overlap.stay',
 		handler = enemy.on_overlap,
 	})
 end

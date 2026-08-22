@@ -88,12 +88,27 @@ local player_respawn_frames<const> = {
 local projectile_type_none<const> = 0
 local projectile_type_bullet<const> = 1
 local projectile_type_missile<const> = 4
+local projectile_type_napalm_missile<const> = 5
+local projectile_type_napalm_blast<const> = 6
 local projectile_type_laser<const> = 7
+local projectile_type_extended_laser<const> = 8
 local projectile_type_uplaser_level_1<const> = 10
 local projectile_type_uplaser_level_2<const> = 12
+local projectile_bullet_type_mask<const> = 1 << projectile_type_bullet
+local projectile_missile_type_mask<const> = (1 << projectile_type_missile)
+	| (1 << projectile_type_napalm_missile)
+	| (1 << projectile_type_napalm_blast)
+local projectile_laser_type_mask<const> = (1 << projectile_type_laser)
+	| (1 << projectile_type_extended_laser)
+local projectile_uplaser_type_mask<const> = (1 << projectile_type_uplaser_level_1)
+	| (1 << projectile_type_uplaser_level_2)
 local projectile_name_by_type<const> = {
 	[projectile_type_bullet] = 'bullet',
+	[projectile_type_missile] = 'missile',
+	[projectile_type_napalm_missile] = 'napalm',
+	[projectile_type_napalm_blast] = 'napalm',
 	[projectile_type_laser] = 'laser',
+	[projectile_type_extended_laser] = 'extended_laser',
 	[projectile_type_uplaser_level_1] = 'uplaser',
 	[projectile_type_uplaser_level_2] = 'uplaser',
 }
@@ -187,8 +202,15 @@ local no_powerup_slot<const> = player_state_module.no_powerup_slot
 local weapon_sources<const> = {
 	bullet = image.resolve(assets_projectile),
 	laser = image.resolve(assets_laser),
+	extended_laser = image.resolve(assets_extended_laser),
 	missile_falling = image.resolve(assets_missile1),
 	missile_flying = image.resolve(assets_missile2),
+	napalm_missile_falling = image.resolve(assets_napalm_missile_falling),
+	napalm_missile_flying = image.resolve(assets_napalm_missile_flying),
+	napalm_blast = {
+		image.resolve(assets_napalm_blast_1),
+		image.resolve(assets_napalm_blast_2),
+	},
 }
 
 local set_projectile_collider<const> = function(owner, projectile, width, height)
@@ -222,13 +244,13 @@ function player:emit_event(name, extra)
 	print(string.format('%s|kind=player|f=%d|name=%s', telemetry_event_prefix, self.frame, name))
 end
 
-local get_projectile_metrics<const> = function(projectiles, projectile_type, alternate_type)
+local get_projectile_metrics<const> = function(projectiles, projectile_type_mask)
 	local count = 0
 	local x = -1
 	local y = -1
 	for vessel_id = 1, player_vessel_capacity do
 		local projectile<const> = projectiles[vessel_id]
-		if projectile.type == projectile_type or projectile.type == alternate_type then
+		if ((1 << projectile.type) & projectile_type_mask) ~= 0 then
 			count = count + 1
 			if x < 0 then
 				x = projectile.x
@@ -244,22 +266,24 @@ function player:emit_metric()
 		return
 	end
 	local primary_bullet_count<const> , primary_bullet_x<const> , primary_bullet_y<const> =
-		get_projectile_metrics(self.primary_projectiles, projectile_type_bullet)
+		get_projectile_metrics(self.primary_projectiles, projectile_bullet_type_mask)
 	local secondary_bullet_count<const> , secondary_bullet_x<const> , secondary_bullet_y<const> =
-		get_projectile_metrics(self.secondary_projectiles, projectile_type_bullet)
+		get_projectile_metrics(self.secondary_projectiles, projectile_bullet_type_mask)
 	local bullet_count<const> = primary_bullet_count + secondary_bullet_count
 	local b0x<const> = primary_bullet_count > 0 and primary_bullet_x or secondary_bullet_x
 	local b0y<const> = primary_bullet_count > 0 and primary_bullet_y or secondary_bullet_y
-	local laser_count<const> , l0x<const> , l0y<const> =
-		get_projectile_metrics(self.primary_projectiles, projectile_type_laser)
-	local missile_count<const> , m0x<const> , m0y<const> =
-		get_projectile_metrics(self.missile_projectiles, projectile_type_missile)
-	local uplaser_count<const> , u0x<const> , u0y<const> =
-		get_projectile_metrics(
-			self.secondary_projectiles,
-			projectile_type_uplaser_level_1,
-			projectile_type_uplaser_level_2
-		)
+	local laser_count<const> , l0x<const> , l0y<const> = get_projectile_metrics(
+		self.primary_projectiles,
+		projectile_laser_type_mask
+	)
+	local missile_count<const> , m0x<const> , m0y<const> = get_projectile_metrics(
+		self.missile_projectiles,
+		projectile_missile_type_mask
+	)
+	local uplaser_count<const> , u0x<const> , u0y<const> = get_projectile_metrics(
+		self.secondary_projectiles,
+		projectile_uplaser_type_mask
+	)
 	print(string.format(
 		'%s|kind=player|f=%d|x=%.3f|y=%.3f|dx=%.3f|dy=%.3f|sprite=%s|speed=%.3f|left=%d|right=%d|up=%d|down=%d|fire=%d|fire_press=%d|options=%d|bullet=%d|laser=%d|missile=%d|uplaser=%d|b0x=%.3f|b0y=%.3f|l0x=%.3f|l0y=%.3f|m0x=%.3f|m0y=%.3f|u0x=%.3f|u0y=%.3f',
 		telemetry_metric_prefix,
@@ -393,7 +417,7 @@ local draw_player_projectiles<const> = function(component, draw)
 				weapon_sources.bullet:blit(draw, projectile.x, projectile.y)
 			else
 				for tile_index = 0, projectile.length_tiles - 1 do
-					weapon_sources.laser:blit(
+					projectile.source:blit(
 						draw,
 						projectile.x + tile_index * weapons_laser.tile_width,
 						projectile.y
@@ -418,7 +442,17 @@ local draw_player_projectiles<const> = function(component, draw)
 	end
 	for vessel_id = 1, player_vessel_capacity do
 		local missile<const> = self.missile_projectiles[vessel_id]
-		if missile.type ~= projectile_type_none then
+		if missile.type == projectile_type_napalm_blast then
+			local source<const> = weapon_sources.napalm_blast[missile.blast_frame]
+			source:blit(draw, missile.x, missile.y)
+			if missile.fragment_ticks > 0 then
+				source:blit(
+					draw,
+					missile.x + missile.fragment_offset_x,
+					missile.y + missile.fragment_offset_y
+				)
+			end
+		elseif missile.type ~= projectile_type_none then
 			missile.sprite:blit(draw, missile.x, missile.y)
 		end
 	end
@@ -621,7 +655,9 @@ end
 function player:spawn_laser(vessel, level)
 	local vessel_id<const> = vessel.vessel_id
 	local laser<const> = self.primary_projectiles[vessel_id]
-	laser.type = projectile_type_laser
+	local level_config<const> = weapons_laser.levels[level]
+	local extended<const> = level == weapons_laser.extended_level
+	laser.type = extended and projectile_type_extended_laser or projectile_type_laser
 	laser.pierces_small_fry = true
 	-- The normal laser follows its firing vessel throughout expansion. Removing
 	-- an option stops updating that retained vessel record; it does not end an
@@ -631,11 +667,18 @@ function player:spawn_laser(vessel, level)
 		weapons_laser.tile_width
 	laser.y = (vessel.y + weapons_laser.spawn_offset_y) // 1
 	laser.state = laser_state_expand
+	laser.source = extended and weapon_sources.extended_laser or weapon_sources.laser
+	laser.height = level_config.height
+	laser.expansion_tiles_per_tick = level_config.expansion_tiles_per_tick
 	laser.length_tiles = 0
-	laser.expansion_tiles_remaining = weapons_laser.length_tiles_by_level[level]
-	set_projectile_collider(self, laser, 0, 2)
+	laser.expansion_tiles_remaining = level_config.length_tiles
+	set_projectile_collider(self, laser, 0, level_config.height)
 	laser.collider:set_enabled(true)
-	self.events:emit('player.laser_fired')
+	if extended then
+		self.events:emit('player.extended_laser_fired')
+	else
+		self.events:emit('player.laser_fired')
+	end
 	if telemetry_enabled then
 		self:emit_event(
 			'weapon_spawn',
@@ -658,8 +701,10 @@ function player:spawn_missile(vessel, level)
 	if missile_y >= weapons_missile_despawn_y then
 		return
 	end
-	missile.type = projectile_type_missile
+	local napalm<const> = level == weapons_napalm.level
+	missile.type = napalm and projectile_type_napalm_missile or projectile_type_missile
 	missile.pierces_small_fry = false
+	missile.continuous_damage = false
 	missile.x = (vessel.x + weapons_missile_spawn_offset_x) // 1
 	missile.y = missile_y
 	missile.fraction_x = 0
@@ -667,7 +712,14 @@ function player:spawn_missile(vessel, level)
 	missile.fall_velocity_x_q8 = motion.fall_velocity_x_q8
 	missile.fall_velocity_y_q8 = motion.fall_velocity_y_q8
 	missile.surface_velocity_x_q8 = motion.surface_velocity_x_q8
-	missile.sprite = weapon_sources.missile_falling
+	if napalm then
+		missile.falling_source = weapon_sources.napalm_missile_falling
+		missile.flying_source = weapon_sources.napalm_missile_flying
+	else
+		missile.falling_source = weapon_sources.missile_falling
+		missile.flying_source = weapon_sources.missile_flying
+	end
+	missile.sprite = missile.falling_source
 	set_projectile_collider(self, missile, 8, 2)
 	missile.collider:set_enabled(true)
 	if telemetry_enabled then
@@ -701,6 +753,7 @@ function player:spawn_uplaser(vessel, level)
 		8
 	)
 	uplaser.collider:set_enabled(true)
+	self.events:emit('player.uplaser_fired')
 	if telemetry_enabled then
 		self:emit_event(
 			'weapon_spawn',
@@ -794,13 +847,16 @@ function player:despawn_slot_projectile(projectile, reason)
 end
 
 function player:despawn_missile(missile, reason)
+	local projectile_type<const> = missile.type
 	missile.type = projectile_type_none
 	missile.collider:set_enabled(false)
 	if telemetry_enabled then
+		local weapon<const> = projectile_name_by_type[projectile_type]
 		self:emit_event(
 			'weapon_despawn',
 			string.format(
-				'weapon=missile|vessel=%d|active=0|x=%.3f|y=%.3f|reason=%s',
+				'weapon=%s|vessel=%d|active=0|x=%.3f|y=%.3f|reason=%s',
+				weapon,
 				missile.vessel_id,
 				missile.x,
 				missile.y,
@@ -839,7 +895,7 @@ function player:update_laser(laser)
 		end
 
 		local expansion<const> = laser.expansion_tiles_remaining
-		local step = weapons_laser.expansion_tiles_per_tick
+		local step = laser.expansion_tiles_per_tick
 		if expansion < step then
 			step = expansion
 		end
@@ -893,7 +949,7 @@ end
 function player:update_missile(missile)
 	local stage<const> = self.stage
 	if stage:first_solid_tile_offset(missile.x, missile.y + 8, 2) == 2 then
-		missile.sprite = weapon_sources.missile_falling
+		missile.sprite = missile.falling_source
 		local x<const> = missile.fraction_x + missile.fall_velocity_x_q8
 		local y<const> = missile.fraction_y + missile.fall_velocity_y_q8
 		missile.fraction_x = x & 0xff
@@ -901,7 +957,7 @@ function player:update_missile(missile)
 		missile.x = missile.x + (x >> 8)
 		missile.y = missile.y + (y >> 8)
 	elseif stage:first_solid_tile_offset((missile.x + 8) & 0xff, missile.y + 8, 2) == 2 then
-		missile.sprite = weapon_sources.missile_flying
+		missile.sprite = missile.flying_source
 		local x<const> = missile.fraction_x + missile.surface_velocity_x_q8
 		local y<const> = missile.fraction_y + missile.fall_velocity_y_q8
 		missile.fraction_x = x & 0xff
@@ -912,7 +968,7 @@ function player:update_missile(missile)
 		self:despawn_missile(missile, 'stage_collision')
 		return
 	else
-		missile.sprite = weapon_sources.missile_flying
+		missile.sprite = missile.flying_source
 		local x<const> = missile.fraction_x + missile.surface_velocity_x_q8
 		missile.fraction_x = x & 0xff
 		missile.x = missile.x + (x >> 8)
@@ -925,6 +981,47 @@ function player:update_missile(missile)
 	if stage:first_solid_tile_offset(missile.x, missile.y, 2) < 2 then
 		self:despawn_missile(missile, 'stage_collision')
 	end
+end
+
+function player:detonate_napalm(missile)
+	missile.type = projectile_type_napalm_blast
+	missile.continuous_damage = true
+	missile.blast_frame = 1
+	missile.blast_phase = 0
+	missile.blast_ticks = 1
+	missile.fragment_ticks = 0
+	missile.stage_scroll_px = self.stage.total_scroll_px
+	set_projectile_collider(self, missile, weapons_napalm.blast_width, weapons_napalm.blast_height)
+end
+
+function player:update_napalm_blast(missile)
+	local stage_scroll_px<const> = self.stage.total_scroll_px
+	missile.x = missile.x - (stage_scroll_px - missile.stage_scroll_px)
+	missile.stage_scroll_px = stage_scroll_px
+	missile.blast_frame = 3 - missile.blast_frame
+
+	local fragment_ticks<const> = missile.fragment_ticks
+	if fragment_ticks > 0 then
+		missile.fragment_ticks = fragment_ticks - 1
+	end
+
+	local blast_ticks<const> = missile.blast_ticks - 1
+	if blast_ticks > 0 then
+		missile.blast_ticks = blast_ticks
+		return
+	end
+	local phase<const> = missile.blast_phase
+	if phase == #weapons_napalm.fragment_offsets then
+		self:despawn_missile(missile, 'exhausted')
+		return
+	end
+	local next_phase<const> = phase + 1
+	local offset<const> = weapons_napalm.fragment_offsets[next_phase]
+	missile.blast_phase = next_phase
+	missile.blast_ticks = weapons_napalm.blast_phase_ticks
+	missile.fragment_ticks = weapons_napalm.fragment_lifetime_ticks
+	missile.fragment_offset_x = offset.x
+	missile.fragment_offset_y = offset.y
 end
 
 function player:update_uplaser(uplaser)
@@ -967,8 +1064,13 @@ function player:update_weapons()
 			end
 			if primary.type == projectile_type_bullet then
 				set_projectile_collider(self, primary, 8, 2)
-			elseif primary.type == projectile_type_laser then
-				set_projectile_collider(self, primary, primary.length_tiles * weapons_laser.tile_width, 2)
+			elseif primary.type ~= projectile_type_none then
+				set_projectile_collider(
+					self,
+					primary,
+					primary.length_tiles * weapons_laser.tile_width,
+					primary.height
+				)
 			end
 		end
 		local secondary<const> = self.secondary_projectiles[vessel_id]
@@ -994,21 +1096,47 @@ function player:update_weapons()
 	for vessel_id = 1, player_vessel_capacity do
 		local missile<const> = self.missile_projectiles[vessel_id]
 		if missile.type ~= projectile_type_none then
-			self:update_missile(missile)
+			if missile.type == projectile_type_napalm_blast then
+				self:update_napalm_blast(missile)
+			else
+				self:update_missile(missile)
+			end
 			if missile.type ~= projectile_type_none then
-				set_projectile_collider(self, missile, 8, 2)
+				if missile.type == projectile_type_napalm_blast then
+					set_projectile_collider(
+						self,
+						missile,
+						weapons_napalm.blast_width,
+						weapons_napalm.blast_height
+					)
+				else
+					set_projectile_collider(self, missile, 8, 2)
+				end
 			end
 		end
 	end
 end
 
-function player:resolve_projectile_overlap(collider_local_id, enemy, enemy_collider_local_id, hit_point)
+function player:resolve_projectile_overlap(
+	collider_local_id,
+	enemy,
+	enemy_collider_local_id,
+	hit_point,
+	overlap_phase
+)
 	local projectile<const> = self.projectiles_by_collider_local_id[collider_local_id]
 	if projectile.type == projectile_type_none then
 		return
 	end
+	if overlap_phase == 'stay' and not projectile.continuous_damage then
+		return
+	end
 	if enemy:receive_player_projectile(projectile, enemy_collider_local_id, hit_point) then
-		projectile.despawn(self, projectile, 'enemy_collision')
+		if projectile.type == projectile_type_napalm_missile then
+			self:detonate_napalm(projectile)
+		elseif projectile.type ~= projectile_type_napalm_blast then
+			projectile.despawn(self, projectile, 'enemy_collision')
+		end
 	end
 end
 
@@ -1157,18 +1285,21 @@ function player:ctor()
 			type = projectile_type_none,
 			vessel_id = vessel_id,
 			damage = 1,
+			continuous_damage = false,
 			despawn = player.despawn_slot_projectile,
 		}
 		local missile<const> = {
 			type = projectile_type_none,
 			vessel_id = vessel_id,
 			damage = 1,
+			continuous_damage = false,
 			despawn = player.despawn_missile,
 		}
 		local secondary<const> = {
 			type = projectile_type_none,
 			vessel_id = vessel_id,
 			damage = 1,
+			continuous_damage = false,
 			despawn = player.despawn_slot_projectile,
 		}
 		self.primary_projectiles[vessel_id] = primary

@@ -128,6 +128,18 @@ events:
             - go:
                   audio_id: nemesis2_laser
 
+    player.uplaser_fired:
+        channel: sfx
+        rules:
+            - go:
+                  audio_id: nemesis2_uplaser
+
+    player.extended_laser_fired:
+        channel: sfx
+        rules:
+            - go:
+                  audio_id: nemesis2_extended_laser
+
     enemy.spawned:
         channel: sfx
         rules:
