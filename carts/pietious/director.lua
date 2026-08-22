@@ -576,7 +576,10 @@ local define_director_fsm<const> = function()
 					leave = {
 						entering_state = director.begin_world_transition,
 						on = {
-							['room.switched'] = '/world_transition/castle_emerge_showing',
+							['room.switched'] = {
+								emitter = 'pietolon',
+								go = '/world_transition/castle_emerge_showing',
+							},
 						},
 					},
 					world_prewait = {
