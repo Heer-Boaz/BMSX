@@ -12,6 +12,8 @@ local result<const> = require('cartlib/behaviour_tree/result')
 -- advanced by one behaviour-tree tick. Admission retains both integers; the
 -- runtime uses a remainder accumulator to preserve non-integral tick periods
 -- without floating-point scheduler state or drift.
+-- Activation initializes that accumulator; only tick_on_search_start invokes
+-- the callback during the admitting search.
 -- Stateless callbacks receive (target, execution, elapsed_ticks); callbacks on
 -- a Service with node_memory receive
 -- (target, node_memory, execution, elapsed_ticks).
@@ -111,9 +113,6 @@ local compile_service<const> = function(definition, layout)
 			local active_service_count<const> = execution._active_service_count + 1
 			execution._active_service_count = active_service_count
 			execution._active_services[active_service_count] = tick
-			-- A newly admitted Service consumes the current tree tick once,
-			-- just like an auxiliary node added by a completed UE search.
-			tick(target, execution)
 		end
 	end
 	local stop

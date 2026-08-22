@@ -6,7 +6,9 @@ local result<const> = require('cartlib/behaviour_tree/result')
 -- call. Latent tasks retain one activity slot so branch abortion can distinguish
 -- an executing task from an already completed task. An authored interval is
 -- lowered into a dedicated countdown evaluator; skipped updates do not enter
--- the cart callback and do not allocate task memory.
+-- the cart callback and do not allocate task memory. A ticking task without an
+-- Execute callback begins its interval on admission and receives its first Tick
+-- only when that interval expires.
 --
 -- Stateless callbacks receive (target, execution). A task with node_memory
 -- receives (target, node_memory, execution). Authored task identity is carried
@@ -121,7 +123,11 @@ local compile_latent_task<const> = function(
 					execution_state[remaining_slot] = interval_ticks
 					status = tick(target, execution_state[memory_slot], execution)
 				else
-					status = execute(target, execution_state[memory_slot], execution)
+					if execute == nil then
+						status = result_running
+					else
+						status = execute(target, execution_state[memory_slot], execution)
+					end
 					if status < result_success then
 						execution_state[remaining_slot] = interval_ticks
 					end
@@ -146,7 +152,11 @@ local compile_latent_task<const> = function(
 				execution_state[remaining_slot] = interval_ticks
 				status = tick(target, execution)
 			else
-				status = execute(target, execution)
+				if execute == nil then
+					status = result_running
+				else
+					status = execute(target, execution)
+				end
 				if status < result_success then
 					execution_state[remaining_slot] = interval_ticks
 				end
@@ -200,7 +210,8 @@ function task_program.compile(node, layout)
 		return node.execute
 	end
 	local execute<const> = node.execute
-	if execute == nil then
+	local interval_ticks<const> = node.interval_ticks
+	if execute == nil and interval_ticks == nil then
 		return compile_ticking_task(layout, tick, node.abort, node.node_memory)
 	end
 	return compile_latent_task(
@@ -209,7 +220,7 @@ function task_program.compile(node, layout)
 		tick,
 		node.abort,
 		node.node_memory,
-		node.interval_ticks
+		interval_ticks
 	)
 end
 
