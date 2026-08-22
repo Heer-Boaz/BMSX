@@ -221,8 +221,13 @@ timeline frame boundaries, and the ray remains an independent world object.
   sources at `/home/boaz/assembler/MetalGear-master`:
   `logic/konamilogo.asm`, `gfx/konamilogo.asm`, and the game-status dispatcher
   in `Banks0123.asm`.
-- `InitKonamiLogo` composes a `168x48` four-color logo at `(40,64)`. The checked
-  PNG retains those exact source pixels and V9938 3-bit palette levels.
+- `InitKonamiLogo` composes a `168x48` four-color logo at `(40,64)` and writes
+  white to VDP register 7. Color zero therefore resolves to the white backdrop
+  throughout the active presentation rather than to an opaque black image.
+- `DrawTileList` saves each row origin and applies `0xFE` offsets cumulatively
+  to that retained origin. The checked PNG is rebuilt by
+  `scripts/nemesis_s/extract_metal_gear_konami_logo.mjs`; treating every offset
+  as relative to the first row misaligns the lower four tile rows.
 - `DrawKonamiLogo` initializes counters `60` and `49`, consumes the first
   VBlank without a copy, and then exposes one scanline every two VBlanks. The
   cart consequently uses one blank frame followed by 48 two-VBlank reveal

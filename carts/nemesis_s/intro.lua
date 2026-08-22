@@ -1,4 +1,5 @@
 local clock<const> = require('cartlib/clock')
+local custom_visual_component<const> = require('cartlib/component/custom_visual_component')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local gx_texture<const> = require('cartlib/gx/texture')
@@ -17,11 +18,21 @@ local intro_fsm_id<const> = 'nemesis_s.intro.fsm'
 local logo_blank_timeline_id<const> = 'nemesis_s.intro.blank'
 local logo_reveal_timeline_id<const> = 'nemesis_s.intro.logo_reveal'
 local logo_hold_timeline_id<const> = 'nemesis_s.intro.logo_hold'
+local logo_background_id<const> = 'background'
 local logo_x<const> = 40
 local logo_y<const> = 64
 local logo_width<const> = 168
 local logo_height<const> = 48
 local logo_hold_frames<const> = 256
+
+local draw_logo_background<const> = function(_component, draw)
+	draw:rect(0, 0, presentation_width, presentation_height, 0xffffffff)
+end
+local new_logo_background<const> = custom_visual_component.factory({
+	id_local = logo_background_id,
+	draw = draw_logo_background,
+	offset_z = -1,
+})
 
 function intro:ctor()
 	local logo<const> = self.sprite_component
@@ -128,6 +139,7 @@ local register_definition<const> = function()
 		class = intro,
 		base = sprite_object,
 		components = {
+			new_logo_background,
 			timeline_component.new,
 			fsm_component.factory({ intro_fsm_id }),
 		},
