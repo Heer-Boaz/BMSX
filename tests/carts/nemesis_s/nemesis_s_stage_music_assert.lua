@@ -46,6 +46,7 @@ function __bmsx_host_test.update()
 			return false
 		end
 		assert(stage.tape_head - 1 == 31, 'stage boot changed the XNA tape-head origin')
+		stage.actor_spawn_index = stage.actor_spawn_count + 1
 		while stage.tape_head - 1 < 138 do
 			stage:advance_tape()
 		end

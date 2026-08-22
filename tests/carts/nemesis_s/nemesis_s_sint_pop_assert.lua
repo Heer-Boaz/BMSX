@@ -1,13 +1,18 @@
-local clock<const> = require('cartlib/clock')
+local fixed_point_velocity_component<const> = require('cartlib/physics/fixed_point_velocity_component')
 local registry<const> = require('cartlib/registry')
+local velocity<const> = require('cartlib/velocity')
 local world<const> = require('cartlib/world/world')
 require('constants')
 
-local update_seconds<const> = clock.gameplay_delta_milliseconds() * 0.001
-local movement_tolerance<const> = 1
-local approach_step_x<const> = sint_pop_move_to_player_speed_x_px_per_second * update_seconds
-local vertical_step_y<const> = sint_pop_move_vertical_up_speed_y_px_per_second * update_seconds
-local retreat_step_x<const> = sint_pop_move_away_speed_x_px_per_second * update_seconds
+local approach_velocity_x<const> = velocity.pixels_per_second_to_velocity_q8(
+	sint_pop_move_to_player_speed_x_px_per_second
+)
+local vertical_velocity_y<const> = velocity.pixels_per_second_to_velocity_q8(
+	sint_pop_move_vertical_up_speed_y_px_per_second
+)
+local retreat_velocity_x<const> = velocity.pixels_per_second_to_velocity_q8(
+	sint_pop_move_away_speed_x_px_per_second
+)
 
 __bmsx_host_test = {
 	frames = 0,
@@ -69,65 +74,75 @@ function __bmsx_host_test.update()
 			assert(sint_pop.y == 16, 'SintPop group no longer uses the authored map row')
 		end
 		stage.scrolling = false
-		test.previous_x = sint_pops[1].x
-		test.previous_y = sint_pops[1].y
+		local sint_pop<const> = sint_pops[1]
+		test.sint_pop = sint_pop
+		test.move_to_player_state = sint_pop.state_machines:bind_state_path('/move_to_player')
+		test.move_vertical_state = sint_pop.state_machines:bind_state_path('/move_vertical')
+		test.move_away_state = sint_pop.state_machines:bind_state_path('/move_away_from_player')
+		local motion<const> = sint_pop:get_component(fixed_point_velocity_component)
+		assert(motion.velocity_x == approach_velocity_x and motion.velocity_y == 0,
+			'SintPop approach retained the wrong velocity')
+		test.previous_x = sint_pop.x
+		test.previous_y = sint_pop.y
 		test.phase = 'approach'
 		return false
 	end
+	test.gameplay_time_ms = gameplay_time_ms
+	test.frames = test.frames + 1
+	assert(test.frames < 500, 'Nemesis S SintPop scenario timed out phase=' .. test.phase)
 
 	if test.phase == 'approach' then
-		local sint_pop<const> = sint_pops[1]
-		local dx<const> = sint_pop.x - test.previous_x
-		local dy<const> = sint_pop.y - test.previous_y
-		if dx == 0 and dy == 0 then
+		local sint_pop<const> = test.sint_pop
+		local state_machines<const> = sint_pop.state_machines
+		if state_machines:matches_state(test.move_to_player_state) then
+			assert(sint_pop.x <= test.previous_x and sint_pop.y == test.previous_y,
+				'SintPop approach moved outside its retained velocity')
+			test.previous_x = sint_pop.x
 			return false
 		end
-		test.gameplay_time_ms = gameplay_time_ms
-		test.frames = test.frames + 1
-		assert(test.frames < 500, 'Nemesis S SintPop scenario timed out phase=' .. test.phase)
+		assert(state_machines:matches_state(test.move_vertical_state),
+			'SintPop skipped its vertical pass')
+		assert(sint_pop.x <= sint_pop_vertical_start_x,
+			'SintPop began its vertical pass before the authored X threshold')
+		local motion<const> = sint_pop:get_component(fixed_point_velocity_component)
+		assert(motion.velocity_x == approach_velocity_x
+			and motion.velocity_y == vertical_velocity_y,
+			'SintPop vertical pass retained the wrong velocity')
 		test.previous_x = sint_pop.x
 		test.previous_y = sint_pop.y
-		if dy == 0 then
-			assert(math.abs(dx - approach_step_x) <= movement_tolerance,
-				'SintPop approach speed changed')
-			return false
-		end
-		assert(math.abs(dx - approach_step_x) <= movement_tolerance,
-			'SintPop lost horizontal speed during vertical movement')
-		assert(math.abs(dy - vertical_step_y) <= movement_tolerance,
-			'upward SintPop group used the wrong vertical speed')
 		test.phase = 'vertical'
 		return false
 	end
 
 	if test.phase == 'vertical' then
-		local sint_pop<const> = sint_pops[1]
-		local dx<const> = sint_pop.x - test.previous_x
-		local dy<const> = sint_pop.y - test.previous_y
-		if dx == 0 and dy == 0 then
+		local sint_pop<const> = test.sint_pop
+		local state_machines<const> = sint_pop.state_machines
+		if state_machines:matches_state(test.move_vertical_state) then
+			assert(sint_pop.x <= test.previous_x and sint_pop.y >= test.previous_y,
+				'SintPop vertical pass moved outside its retained velocity')
+			test.previous_x = sint_pop.x
+			test.previous_y = sint_pop.y
 			return false
 		end
-		test.gameplay_time_ms = gameplay_time_ms
-		test.frames = test.frames + 1
-		assert(test.frames < 500, 'Nemesis S SintPop scenario timed out phase=' .. test.phase)
+		assert(state_machines:matches_state(test.move_away_state),
+			'SintPop skipped its retreat')
+		assert(sint_pop.x <= sint_pop_retreat_start_x,
+			'SintPop began its retreat before the authored X threshold')
+		local motion<const> = sint_pop:get_component(fixed_point_velocity_component)
+		assert(motion.velocity_x == retreat_velocity_x and motion.velocity_y == 0,
+			'SintPop retreat retained the wrong velocity')
 		test.previous_x = sint_pop.x
 		test.previous_y = sint_pop.y
-		if dx > 0 then
-			assert(math.abs(dx - retreat_step_x) <= movement_tolerance,
-				'SintPop retreat speed changed')
-			assert(dy == 0, 'SintPop retained vertical movement while leaving the player')
-			test.phase = 'retreat'
-			return false
-		end
-		assert(math.abs(dx - approach_step_x) <= movement_tolerance,
-			'SintPop vertical pass used the wrong horizontal speed')
-		assert(math.abs(dy - vertical_step_y) <= movement_tolerance,
-			'SintPop vertical pass used the wrong vertical speed')
+		test.phase = 'retreat'
 		return false
 	end
 
-	if #sint_pops == 0 then
+	local sint_pop<const> = test.sint_pop
+	if not sint_pop.active then
 		return true
 	end
+	assert(sint_pop.x >= test.previous_x and sint_pop.y == test.previous_y,
+		'SintPop retreat moved outside its retained velocity')
+	test.previous_x = sint_pop.x
 	return false
 end
