@@ -1,5 +1,6 @@
 local aem<const> = require('cartlib/aem')
 local actioneffect_system<const> = require('cartlib/actioneffects/actioneffect_system')
+local behaviour_tree_system<const> = require('cartlib/behaviour_tree/bt_system')
 local overlap_2d_system<const> = require('cartlib/collision/overlap_2d_system')
 local sprite_animation_system<const> = require('cartlib/component/sprite_animation_system')
 local fsm_system<const> = require('cartlib/fsm/fsm_system')
@@ -29,6 +30,7 @@ return {
 	systems = {
 		input_system,
 		input_actioneffect_system,
+		behaviour_tree_system,
 		velocity_system,
 		aem,
 		fsm_system,

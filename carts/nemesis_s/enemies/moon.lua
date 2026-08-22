@@ -1,5 +1,6 @@
-local actioneffects<const> = require('cartlib/actioneffects')
-local actioneffect_component<const> = require('cartlib/actioneffects/actioneffect_component')
+local behaviour_tree_component<const> = require('cartlib/behaviour_tree/bt_component')
+local behaviour_tree_library<const> = require('cartlib/behaviour_tree/library')
+local behaviour_tree_result<const> = require('cartlib/behaviour_tree/result')
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 local sprite_animation_component<const> = require('cartlib/component/sprite_animation_component')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
@@ -14,20 +15,12 @@ require('constants')
 local moon<const> = {}
 moon.__index = moon
 
-local enter_step_effect_id<const> = 'nemesis_s.enemy.moon.enter_step'
-local mini_moon_effect_id<const> = 'nemesis_s.enemy.moon.mini_moon'
-local small_ray_move_effect_id<const> = 'nemesis_s.enemy.moon.small_ray_move'
-local small_ray_volley_effect_id<const> = 'nemesis_s.enemy.moon.small_ray_volley'
-local slow_playfield_move_effect_id<const> = 'nemesis_s.enemy.moon.slow_playfield_move'
-local entered_event<const> = 'enemy.moon.entered'
-local death_ray_requested_event<const> = 'enemy.moon.death_ray.requested'
+local moon_tree_id<const> = 'nemesis_s.enemy.moon'
 local defeated_event<const> = 'enemy.moon.defeated'
-local small_ray_flash_timeline_id<const> = 'nemesis_s.enemy.moon.small_ray_flash'
-local death_ray_cycle_timeline_id<const> = 'nemesis_s.enemy.moon.death_ray_cycle'
-local death_ray_move_pause_timeline_id<const> = 'nemesis_s.enemy.moon.death_ray_move_pause'
-local wait_for_attack_timeline_id<const> = 'nemesis_s.enemy.moon.wait_for_attack'
 local wait_for_explosion_timeline_id<const> = 'nemesis_s.enemy.moon.wait_for_explosion'
 local wait_for_end_demo_timeline_id<const> = 'nemesis_s.enemy.moon.wait_for_end_demo'
+local bt_running<const> = behaviour_tree_result.running
+local bt_success<const> = behaviour_tree_result.success
 local players_view
 local roodjes_view
 
@@ -146,6 +139,7 @@ function moon:rotate_counterclockwise()
 end
 
 function moon:ctor()
+	self.behaviour = self:get_component(behaviour_tree_component)
 	self.core_collider = self:get_component(collider_2d_component, moon_core_collider_id)
 	self.armor_collider = self:get_component(collider_2d_component, moon_armor_collider_id)
 	self.flash_left = self:get_component(sprite_animation_component, moon_flash_left_id)
@@ -158,41 +152,42 @@ function moon:onspawn()
 	self.vulnerable = false
 end
 
-function moon:step_entering()
-	self.x = self.x - moon_enter_step_x
+function moon:tick_entering()
+	self.x = self.x - self.stage.tile_size
 	if self.x <= moon_enter_target_x then
 		self.vulnerable = true
-		return entered_event
+		return bt_success
 	end
+	return bt_running
 end
 
-function moon:update_fly_left()
+function moon:tick_fly_left()
 	self:rotate_counterclockwise()
-	self.x = self.x - moon_fly_step
+	self.x = self.x - self.stage.tile_size
 	if self.x <= 0 then
-		if math.random(1, 2) == 1 then
-			return '/combat/fly_attack/up'
-		end
-		return '/combat/fly_attack/down'
+		return bt_success
 	end
+	return bt_running
 end
 
-function moon:update_fly_up()
+function moon:tick_fly_up()
 	self:rotate_counterclockwise()
-	self.y = self.y - moon_fly_step
+	self.y = self.y - self.stage.tile_size
 	if self.y <= 0 then
 		self.vertical_direction = moon_vertical_direction_down
-		return '/combat/small_rays_down/rotating'
+		return bt_success
 	end
+	return bt_running
 end
 
-function moon:update_fly_down()
+function moon:tick_fly_down()
 	self:rotate_counterclockwise()
-	self.y = self.y + moon_fly_step
+	self.y = self.y + self.stage.tile_size
 	if self.y >= playfield_height - moon_height then
 		self.vertical_direction = moon_vertical_direction_up
-		return '/combat/small_rays_up/rotating'
+		return bt_success
 	end
+	return bt_running
 end
 
 function moon:spawn_mini_moon()
@@ -211,25 +206,22 @@ function moon:spawn_mini_moon()
 	})
 end
 
-function moon:step_small_rays()
-	self.x = self.x + moon_small_ray_move_step_x
+function moon:tick_small_ray_pass()
+	self.x = self.x + self.stage.tile_size
 	if self.x >= playfield_width - moon_width then
-		return death_ray_requested_event
+		return bt_success
 	end
+	return bt_running
 end
 
-function moon:update_rotate_to_up()
-	if self.rotation == moon_rotation_up then
-		return '../flashing'
+function moon:tick_rotate_to_small_ray_direction()
+	local target_rotation<const> = self.vertical_direction == moon_vertical_direction_down
+		and moon_rotation_up or moon_rotation_down
+	if self.rotation == target_rotation then
+		return bt_success
 	end
 	self:rotate_counterclockwise()
-end
-
-function moon:update_rotate_to_down()
-	if self.rotation == moon_rotation_down then
-		return '../flashing'
-	end
-	self:rotate_counterclockwise()
+	return bt_running
 end
 
 function moon:activate_small_ray_flashes()
@@ -262,22 +254,19 @@ function moon:fire_small_ray_volley()
 		pos = { x = self.x + 44, y = self.y + offset_y },
 	})
 	self.events:emit('enemy.moon.small_ray_fired')
+	return bt_success
 end
 
-function moon:begin_small_ray_volley()
-	self:fire_small_ray_volley()
-	return '../firing'
-end
-
-function moon:update_rotate_to_right()
+function moon:tick_rotate_to_right()
 	if self.rotation == moon_rotation_right then
-		return '../attack'
+		return bt_success
 	end
 	self:rotate_clockwise()
+	return bt_running
 end
 
-function moon:step_vertical_playfield()
-	self.y = self.y + self.vertical_direction * moon_slow_vertical_step
+function moon:tick_vertical_playfield()
+	self.y = self.y + self.vertical_direction * self.stage.tile_size
 	if self.vertical_direction == moon_vertical_direction_up then
 		if self.y <= 0 then
 			self.vertical_direction = moon_vertical_direction_down
@@ -296,42 +285,44 @@ function moon:begin_death_ray()
 		},
 	})
 	self.events:emit('enemy.moon.death_ray_fired')
+	return bt_success
 end
 
 -- The Stage-7 Abaddon controller chooses a direction toward the primary
 -- player only at the start of each movement segment. Its byte accumulator and
 -- pre-decremented step counter are retained directly so the translated Moon
 -- keeps the source boss's discrete, readable movement rhythm.
-function moon:begin_death_ray_movement()
+function moon:begin_death_ray_movement(node_memory)
 	local player<const> = players_view.objects[1]
 	if self.y < 0 or self.y + moon_death_ray_move_target_offset_y < player.y then
 		self.vertical_direction = moon_vertical_direction_down
 	else
 		self.vertical_direction = moon_vertical_direction_up
 	end
-	self.death_ray_move_phase = moon_death_ray_move_phase_initial
-	self.death_ray_move_counter = math.random(
+	node_memory.phase = moon_death_ray_move_phase_initial
+	node_memory.remaining_steps = math.random(
 		moon_death_ray_move_counter_min,
 		moon_death_ray_move_counter_max
 	)
+	return bt_running
 end
 
-function moon:update_death_ray_movement()
-	local phase<const> = self.death_ray_move_phase + moon_death_ray_move_phase_step
+function moon:tick_death_ray_movement(node_memory)
+	local phase<const> = node_memory.phase + moon_death_ray_move_phase_step
 	if phase < 0x100 then
-		self.death_ray_move_phase = phase
-		return
+		node_memory.phase = phase
+		return bt_running
 	end
-	self.death_ray_move_phase = phase - 0x100
+	node_memory.phase = phase - 0x100
 
-	local counter<const> = self.death_ray_move_counter - 1
-	self.death_ray_move_counter = counter
+	local counter<const> = node_memory.remaining_steps - 1
+	node_memory.remaining_steps = counter
 	if counter == 0 then
-		return '../waiting'
+		return bt_success
 	end
 
 	local direction<const> = self.vertical_direction
-	local y<const> = self.y + direction * moon_death_ray_move_step
+	local y<const> = self.y + direction * self.stage.tile_size
 	self.y = y
 	if direction == moon_vertical_direction_down then
 		if y >= moon_death_ray_move_bottom_y then
@@ -340,13 +331,7 @@ function moon:update_death_ray_movement()
 	elseif y <= moon_death_ray_move_top_y then
 		self.vertical_direction = moon_vertical_direction_down
 	end
-end
-
-function moon:choose_next_attack()
-	if math.random(1, 100) <= moon_fly_attack_chance_percent then
-		return '/combat/fly_attack/left'
-	end
-	return '/combat/death_ray/rotating'
+	return bt_running
 end
 
 function moon:receive_player_projectile(projectile, collider_local_id, hit_point)
@@ -371,8 +356,8 @@ function moon:on_destroyed()
 end
 
 function moon:begin_dying()
+	self.behaviour:stop()
 	self.vulnerable = false
-	self:deactivate_flashes()
 end
 
 function moon:explode()
@@ -390,159 +375,203 @@ function moon:explode()
 	return '/dying/wait_for_end_demo'
 end
 
+local define_tree<const> = function()
+	local fly_attack<const> = {
+		type = 'sequence',
+		services = {
+			{
+				interval = {
+					period_units = moon_mini_spawn_interval_ticks,
+					units_per_tick = 1,
+				},
+				restart_timer_on_each_activation = true,
+				on_tick = moon.spawn_mini_moon,
+			},
+		},
+		children = {
+			{
+				type = 'task',
+				tick = moon.tick_fly_left,
+				interval_ticks = 1,
+			},
+			{
+				type = 'random_selector',
+				children = {
+					{
+						type = 'task',
+						tick = moon.tick_fly_up,
+						interval_ticks = 1,
+					},
+					{
+						type = 'task',
+						tick = moon.tick_fly_down,
+						interval_ticks = 1,
+					},
+				},
+			},
+			{
+				type = 'parallel_one',
+				children = {
+					{
+						type = 'task',
+						tick = moon.tick_small_ray_pass,
+						interval_ticks = moon_small_ray_move_interval_ticks,
+					},
+					{
+						type = 'sequence',
+						children = {
+							{
+								type = 'task',
+								tick = moon.tick_rotate_to_small_ray_direction,
+								interval_ticks = 1,
+							},
+							{
+								type = 'sequence',
+								services = {
+									{
+										on_become_relevant = moon.activate_small_ray_flashes,
+										on_cease_relevant = moon.deactivate_flashes,
+									},
+								},
+								children = {
+									{
+										type = 'wait',
+										duration_ticks = moon_small_ray_flash_ticks,
+									},
+									{
+										type = 'task',
+										execute = moon.fire_small_ray_volley,
+									},
+									{
+										type = 'loop',
+										child = {
+											type = 'sequence',
+											children = {
+												{
+													type = 'wait',
+													duration_ticks = moon_small_ray_volley_interval_ticks,
+												},
+												{
+													type = 'task',
+													execute = moon.fire_small_ray_volley,
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	local death_ray_attack<const> = {
+		type = 'sequence',
+		children = {
+			{
+				type = 'task',
+				tick = moon.tick_rotate_to_right,
+				interval_ticks = 1,
+			},
+			{
+				type = 'task',
+				execute = moon.begin_death_ray,
+			},
+			{
+				type = 'parallel_one',
+				children = {
+					{
+						type = 'wait',
+						duration_ticks = moon_death_ray_cycle_ticks,
+					},
+					{
+						type = 'loop',
+						child = {
+							type = 'sequence',
+							children = {
+								{
+									type = 'task',
+									node_memory = true,
+									execute = moon.begin_death_ray_movement,
+									tick = moon.tick_death_ray_movement,
+								},
+								{
+									type = 'wait',
+									duration_ticks = moon_death_ray_move_pause_ticks,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	behaviour_tree_library.register(moon_tree_id, {
+		root = {
+			type = 'sequence',
+			children = {
+				{
+					type = 'task',
+					tick = moon.tick_entering,
+					interval_ticks = moon_enter_interval_ticks,
+				},
+				fly_attack,
+				death_ray_attack,
+				{
+					type = 'loop',
+					child = {
+						type = 'sequence',
+						children = {
+							{
+								type = 'wait',
+								duration_ticks = moon_wait_for_attack_ticks,
+								services = {
+									{
+						interval = {
+							period_units = moon_slow_vertical_period_units,
+							units_per_tick = moon_slow_vertical_units_per_tick,
+										},
+										restart_timer_on_each_activation = true,
+										on_tick = moon.tick_vertical_playfield,
+									},
+								},
+							},
+							{
+								type = 'weighted_random_selector',
+								choices = {
+									{
+										weight = moon_fly_attack_weight,
+										child = {
+											type = 'sequence',
+											children = {
+												fly_attack,
+												death_ray_attack,
+											},
+										},
+									},
+									{
+										weight = moon_death_ray_attack_weight,
+										child = death_ray_attack,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	})
+end
+
 local define_fsm<const> = function()
 	fsm_library.register(ids_moon_fsm, {
-		initial = 'entering',
+		initial = 'active',
 		on = {
-			[entered_event] = '/combat/fly_attack/left',
-			[death_ray_requested_event] = '/combat/death_ray/rotating',
 			[defeated_event] = '/dying/wait_for_explosion',
 		},
-		timelines = {
-			[small_ray_flash_timeline_id] = {
-				def = {
-					continuous = true,
-					duration_ms = moon_small_ray_flash_ms,
-					playback_mode = 'once',
-				},
-				autoplay = false,
-			},
-		},
 		states = {
-			entering = {
-				actioneffects = { enter_step_effect_id },
-			},
-			combat = {
-				initial = 'fly_attack',
-				states = {
-					fly_attack = {
-						initial = 'left',
-						actioneffects = { mini_moon_effect_id },
-						states = {
-							left = {
-								update = moon.update_fly_left,
-							},
-							up = {
-								update = moon.update_fly_up,
-							},
-							down = {
-								update = moon.update_fly_down,
-							},
-						},
-					},
-					small_rays_up = {
-						initial = 'rotating',
-						actioneffects = {
-							mini_moon_effect_id,
-							small_ray_move_effect_id,
-						},
-						exiting_state = moon.deactivate_flashes,
-						states = {
-							rotating = {
-								update = moon.update_rotate_to_down,
-							},
-							flashing = {
-								entering_state = moon.activate_small_ray_flashes,
-								timelines = {
-									[small_ray_flash_timeline_id] = {
-										autoplay = true,
-										stop_on_exit = true,
-										on_finished = moon.begin_small_ray_volley,
-									},
-								},
-							},
-							firing = {
-								actioneffects = { small_ray_volley_effect_id },
-							},
-						},
-					},
-					small_rays_down = {
-						initial = 'rotating',
-						actioneffects = {
-							mini_moon_effect_id,
-							small_ray_move_effect_id,
-						},
-						exiting_state = moon.deactivate_flashes,
-						states = {
-							rotating = {
-								update = moon.update_rotate_to_up,
-							},
-							flashing = {
-								entering_state = moon.activate_small_ray_flashes,
-								timelines = {
-									[small_ray_flash_timeline_id] = {
-										autoplay = true,
-										stop_on_exit = true,
-										on_finished = moon.begin_small_ray_volley,
-									},
-								},
-							},
-							firing = {
-								actioneffects = { small_ray_volley_effect_id },
-							},
-						},
-					},
-					death_ray = {
-						initial = 'rotating',
-						states = {
-							rotating = {
-								update = moon.update_rotate_to_right,
-							},
-							attack = {
-								initial = 'firing',
-								states = {
-									firing = {
-										entering_state = moon.begin_death_ray,
-										timelines = {
-											[death_ray_cycle_timeline_id] = {
-												def = {
-													duration_frames = moon_death_ray_cycle_updates,
-													playback_mode = 'once',
-												},
-												on_finished = '/combat/wait_for_new_attack',
-											},
-										},
-									},
-									movement = {
-										is_concurrent = true,
-										initial = 'moving',
-										states = {
-											moving = {
-												entering_state = moon.begin_death_ray_movement,
-												update = moon.update_death_ray_movement,
-											},
-											waiting = {
-												timelines = {
-													[death_ray_move_pause_timeline_id] = {
-														def = {
-															duration_frames = moon_death_ray_move_pause_updates,
-															playback_mode = 'once',
-														},
-														on_finished = '../moving',
-													},
-												},
-											},
-										},
-									},
-								},
-							},
-						},
-					},
-					wait_for_new_attack = {
-						actioneffects = { slow_playfield_move_effect_id },
-						timelines = {
-							[wait_for_attack_timeline_id] = {
-								def = {
-									continuous = true,
-									duration_ms = moon_wait_for_attack_ms,
-									playback_mode = 'once',
-								},
-								on_finished = moon.choose_next_attack,
-							},
-						},
-					},
-				},
-			},
+			active = {},
 			dying = {
 				initial = 'wait_for_explosion',
 				entering_state = moon.begin_dying,
@@ -551,9 +580,7 @@ local define_fsm<const> = function()
 						timelines = {
 							[wait_for_explosion_timeline_id] = {
 								def = {
-									continuous = true,
-									duration_ms = moon_wait_for_explosion_ms,
-									playback_mode = 'once',
+									duration_frames = moon_wait_for_explosion_ticks,
 								},
 								on_finished = moon.explode,
 							},
@@ -563,9 +590,7 @@ local define_fsm<const> = function()
 						timelines = {
 							[wait_for_end_demo_timeline_id] = {
 								def = {
-									continuous = true,
-									duration_ms = moon_wait_for_end_demo_ms,
-									playback_mode = 'once',
+									duration_frames = moon_wait_for_end_demo_ticks,
 								},
 								on_finished = function(self)
 									self.stage.events:emit('stage.completed')
@@ -591,13 +616,7 @@ local register_definition<const> = function()
 			new_armor_collider,
 			new_flash_left,
 			new_flash_right,
-			actioneffect_component.factory({
-				enter_step_effect_id,
-				mini_moon_effect_id,
-				small_ray_move_effect_id,
-				small_ray_volley_effect_id,
-				slow_playfield_move_effect_id,
-			}),
+			behaviour_tree_component.factory(moon_tree_id),
 			timeline_component.new,
 			fsm_component.factory({ ids_moon_fsm }),
 		},
@@ -613,26 +632,7 @@ local register_definition<const> = function()
 end
 
 function moon.register()
-	actioneffects.register_effect(enter_step_effect_id, {
-		period_ms = moon_enter_step_ms,
-		handler = moon.step_entering,
-	})
-	actioneffects.register_effect(mini_moon_effect_id, {
-		period_ms = moon_mini_spawn_ms,
-		handler = moon.spawn_mini_moon,
-	})
-	actioneffects.register_effect(small_ray_move_effect_id, {
-		period_ms = moon_small_ray_move_ms,
-		handler = moon.step_small_rays,
-	})
-	actioneffects.register_effect(small_ray_volley_effect_id, {
-		period_ms = moon_small_ray_volley_ms,
-		handler = moon.fire_small_ray_volley,
-	})
-	actioneffects.register_effect(slow_playfield_move_effect_id, {
-		period_ms = moon_slow_vertical_step_ms,
-		handler = moon.step_vertical_playfield,
-	})
+	define_tree()
 	define_fsm()
 	register_definition()
 end

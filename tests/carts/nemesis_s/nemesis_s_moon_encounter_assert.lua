@@ -18,7 +18,16 @@ local mini_moon_velocity_q8<const> = math.round(
 __bmsx_host_test = {
 	frames = 0,
 	phase = 'spawn',
+	volley_count = 0,
 }
+
+function __bmsx_host_test.on_small_ray_fired(self)
+	self.volley_count = self.volley_count + 1
+	self.volley_time_ms = world.gameplay_time_ms
+	if self.volley_count == 1 then
+		self.first_volley_time_ms = self.volley_time_ms
+	end
+end
 
 function __bmsx_host_test.ready()
 	return registry:get(ids_director_instance) ~= nil
@@ -39,7 +48,7 @@ function __bmsx_host_test.update()
 	end
 	local test<const> = __bmsx_host_test
 	test.frames = test.frames + 1
-	assert(test.frames < 700, 'Nemesis S Moon encounter scenario timed out phase=' .. test.phase)
+	assert(test.frames < 1200, 'Nemesis S Moon encounter scenario timed out phase=' .. test.phase)
 
 	local stage<const> = registry:get(ids_stage_instance)
 	local player<const> = registry:get('nemesis_s.player.1')
@@ -56,19 +65,17 @@ function __bmsx_host_test.update()
 			pos = { x = moon_spawn_x, y = moon_spawn_y },
 		})
 		test.boss = boss
-		test.entering = boss.state_machines:bind_state_path('/entering')
-		test.fly_attack = boss.state_machines:bind_state_path('/combat/fly_attack')
-		test.small_rays_up = boss.state_machines:bind_state_path('/combat/small_rays_up')
-		test.death_ray_attack = boss.state_machines:bind_state_path('/combat/death_ray/attack')
-		test.death_ray_moving = boss.state_machines:bind_state_path(
-			'/combat/death_ray/attack/movement/moving'
-		)
-		test.wait_for_attack = boss.state_machines:bind_state_path('/combat/wait_for_new_attack')
+		test.active = boss.state_machines:bind_state_path('/active')
 		test.dying = boss.state_machines:bind_state_path('/dying')
+		boss.events:on({
+			event = 'enemy.moon.small_ray_fired',
+			subscriber = test,
+			handler = test.on_small_ray_fired,
+		})
 		assert(boss.health == moon_health and not boss.vulnerable,
 			'Moon did not enter armored with its one-player XNA health')
-		assert(boss.state_machines:matches_state(test.entering),
-			'Moon did not start in its authored entrance state')
+		assert(boss.state_machines:matches_state(test.active) and boss.behaviour.enabled,
+			'Moon lifecycle and combat tree did not start together')
 		local core<const> = boss:get_component(collider_2d_component, moon_core_collider_id)
 		local armor<const> = boss:get_component(collider_2d_component, moon_armor_collider_id)
 		assert(core.shape_ref ~= nil and armor.shape_ref ~= nil and core.shape_ref ~= armor.shape_ref,
@@ -103,12 +110,13 @@ function __bmsx_host_test.update()
 
 	local boss<const> = test.boss
 	if test.phase == 'entering' then
-		if boss.state_machines:matches_state(test.entering) then
+		if not boss.vulnerable then
 			return false
 		end
-		assert(boss.state_machines:matches_state(test.fly_attack)
-			and boss.x == moon_enter_target_x and boss.vulnerable,
-			'Moon entrance did not stop at the XNA combat boundary')
+		assert(boss.x == moon_enter_target_x
+			and boss.state_machines:matches_state(test.active)
+			and boss.behaviour.enabled,
+			'Moon entrance did not stop at the authored combat boundary')
 		test.phase = 'mini_moon'
 		return false
 	end
@@ -133,29 +141,28 @@ function __bmsx_host_test.update()
 			return false
 		end
 		local spawn_interval<const> = world.gameplay_time_ms - test.first_mini_spawn_time_ms
-		assert(spawn_interval >= moon_mini_spawn_ms
-			and spawn_interval <= moon_mini_spawn_ms + clock.gameplay_delta_milliseconds(),
+		local expected_interval<const> = (
+			moon_mini_spawn_interval_ticks * clock.gameplay_delta_milliseconds()
+		)
+		assert(spawn_interval == expected_interval,
 			'Moon did not retain the reduced Mini Moon admission cadence')
 		boss.x = 0
-		boss.y = playfield_height - moon_height
-		boss.vertical_direction = moon_vertical_direction_up
-		boss.state_machines:transition_to('/combat/small_rays_up/rotating')
-		assert(boss.state_machines:matches_state(test.small_rays_up),
-			'Moon did not enter the upward small-ray pass')
+		boss.y = 0
 		test.phase = 'small_rays'
 		return false
 	end
 
 	if test.phase == 'small_rays' then
 		local rays<const> = small_rays.objects
-		if #rays < 2 then
+		if test.volley_count == 0 or #rays < 2 then
 			return false
 		end
-		assert(rays[1].direction == moon_vertical_direction_up
-			and rays[2].direction == moon_vertical_direction_up,
-			'Moon upward volley emitted a ray in the wrong direction')
-		assert(rays[1].y == boss.y + 8 and rays[2].y == boss.y + 8,
-			'Moon upward volley lost the XNA lower-rotation muzzle anchors')
+		local direction<const> = rays[1].direction
+		assert(direction == boss.vertical_direction and rays[2].direction == direction,
+			'Moon volley emitted a ray in the wrong direction')
+		local offset_y<const> = direction == moon_vertical_direction_down and 56 or 8
+		assert(rays[1].y == boss.y + offset_y and rays[2].y == boss.y + offset_y,
+			'Moon volley lost its authored muzzle anchors')
 		test.small_ray = rays[1]
 		test.small_ray_moving = rays[1].state_machines:bind_state_path('/moving')
 		test.phase = 'small_ray_moving'
@@ -177,7 +184,7 @@ function __bmsx_host_test.update()
 		if world.gameplay_time_ms == test.small_ray_time_ms then
 			return false
 		end
-		assert(test.small_ray_y - test.small_ray.y == moon_small_ray_speed,
+		assert(math.abs(test.small_ray_y - test.small_ray.y) == moon_small_ray_speed,
 			'Moon small ray did not retain its balanced movement step')
 		test.small_ray_pass_previous_x = boss.x
 		test.phase = 'small_ray_pass_start'
@@ -188,7 +195,8 @@ function __bmsx_host_test.update()
 		if boss.x == test.small_ray_pass_previous_x then
 			return false
 		end
-		assert(boss.x == test.small_ray_pass_previous_x + moon_small_ray_move_step_x,
+		local tile_size<const> = boss.stage.tile_size
+		assert(boss.x == test.small_ray_pass_previous_x + tile_size,
 			'Moon small-ray pass skipped a retained horizontal tile step')
 		test.small_ray_pass_start_x = boss.x
 		test.small_ray_pass_start_time_ms = world.gameplay_time_ms
@@ -197,33 +205,39 @@ function __bmsx_host_test.update()
 	end
 
 	if test.phase == 'small_ray_pass_speed' then
-		local expected_x<const> = test.small_ray_pass_start_x + moon_small_ray_move_step_x * 5
+		local expected_x<const> = test.small_ray_pass_start_x + boss.stage.tile_size * 5
 		if boss.x < expected_x then
 			return false
 		end
 		assert(boss.x == expected_x,
 			'Moon small-ray pass skipped a retained horizontal tile step')
 		local elapsed_ms<const> = world.gameplay_time_ms - test.small_ray_pass_start_time_ms
-		local expected_ms<const> = moon_small_ray_move_ms * 5
-		local gameplay_delta_ms<const> = clock.gameplay_delta_milliseconds()
-		assert(elapsed_ms >= expected_ms - gameplay_delta_ms
-			and elapsed_ms <= expected_ms + gameplay_delta_ms,
+		local expected_ms<const> = (
+			moon_small_ray_move_interval_ticks * clock.gameplay_delta_milliseconds() * 5
+		)
+		assert(elapsed_ms == expected_ms,
 			'Moon small-ray pass did not retain its halved horizontal speed')
-		boss.rotation = moon_rotation_right
-		boss:apply_rotation()
+		test.phase = 'small_ray_volley_cadence'
+		return false
+	end
+
+	if test.phase == 'small_ray_volley_cadence' then
+		if test.volley_count < 2 then
+			return false
+		end
+		local expected_ms<const> = (
+			moon_small_ray_volley_interval_ticks * clock.gameplay_delta_milliseconds()
+		)
+		assert(test.volley_time_ms - test.first_volley_time_ms == expected_ms,
+			'Moon vertical-ray cadence was not halved at its authored BT interval')
 		boss.x = playfield_width - moon_width
 		boss.y = 0
-		boss.vertical_direction = moon_vertical_direction_down
 		player.y = playfield_height - player_height
-		boss.state_machines:transition_to('/combat/death_ray/rotating')
 		test.phase = 'death_ray'
 		return false
 	end
 
 	if test.phase == 'death_ray' then
-		if not boss.state_machines:matches_state(test.death_ray_attack) then
-			return false
-		end
 		local rays<const> = death_rays.objects
 		if #rays == 0 then
 			return false
@@ -238,15 +252,9 @@ function __bmsx_host_test.update()
 		test.death_ray_previous_tiles = ray.ray_strip.last_tile
 		test.death_ray_update_count = 0
 		test.gameplay_time_ms = world.gameplay_time_ms
-		assert(boss.state_machines:matches_state(test.death_ray_moving),
-			'Moon death-ray movement did not enter its concurrent source controller')
-		assert(boss.vertical_direction == moon_vertical_direction_down,
-			'Moon death-ray segment did not select the primary player direction')
-		assert(boss.death_ray_move_counter >= moon_death_ray_move_counter_min
-			and boss.death_ray_move_counter <= moon_death_ray_move_counter_max,
-			'Moon death-ray segment did not retain the source random step counter')
-		assert(ray.x == boss.x + moon_death_ray_offset_x
-			and ray.originator == boss,
+		assert(boss.behaviour.enabled and boss.vertical_direction == moon_vertical_direction_down,
+			'Moon death-ray task did not select the primary player direction')
+		assert(ray.x == boss.x + moon_death_ray_offset_x and ray.originator == boss,
 			'Moon death ray lost its authored muzzle or source actor binding')
 		assert(ray.ray_strip.last_tile == 2
 			and ray.ray_strip.enabled and ray.ray_strip_collider.enabled,
@@ -273,7 +281,7 @@ function __bmsx_host_test.update()
 			'Moon death ray did not follow its source actor while expanding')
 		local update_count<const> = test.death_ray_update_count
 		if update_count == 1 then
-			assert(boss.y == test.death_ray_start_y + 8,
+			assert(boss.y == test.death_ray_start_y + boss.stage.tile_size,
 				'Moon death-ray movement did not consume the source accumulator overflow')
 		elseif update_count == 2 or update_count == 3 then
 			assert(boss.y == test.death_ray_previous_y,
@@ -291,11 +299,10 @@ function __bmsx_host_test.update()
 	end
 
 	if test.phase == 'death_ray_holding' then
-		local rays<const> = death_rays.objects
-		if #rays ~= 0 then
+		if #death_rays.objects ~= 0 then
 			local ray<const> = test.ray
-			assert(boss.state_machines:matches_state(test.death_ray_attack),
-				'Moon left its source firing cycle before the beam hold completed')
+			assert(boss.behaviour.enabled,
+				'Moon combat tree stopped before the death-ray attack completed')
 			assert(ray.ray_strip.last_tile == moon_death_ray_tile_count
 				and test.ray_cap.enabled and test.ray_cap_collider.enabled,
 				'Moon death ray contracted instead of retaining the source hold')
@@ -306,10 +313,7 @@ function __bmsx_host_test.update()
 		assert(world.gameplay_time_ms - test.hold_start_time_ms
 			>= (moon_death_ray_hold_updates - 1) * clock.gameplay_delta_milliseconds(),
 			'Moon death ray ended before its source hold boundary')
-		if not boss.state_machines:matches_state(test.wait_for_attack) then
-			return false
-		end
-		boss.state_machines:transition_to('/combat/death_ray/attack')
+		boss:begin_death_ray()
 		test.phase = 'dying_with_ray'
 		return false
 	end
@@ -325,6 +329,8 @@ function __bmsx_host_test.update()
 		boss:receive_player_projectile({ damage = 1, x = boss.x, y = boss.y }, moon_core_collider_id)
 		assert(boss.health == 0 and boss.state_machines:matches_state(test.dying),
 			'Moon core destruction did not enter the authored death sequence')
+		assert(not boss.behaviour.enabled,
+			'Moon combat tree remained active after the lifecycle entered death')
 		assert(boss.core_collider.enabled and boss.armor_collider.enabled,
 			'Moon death removed its hitmap before the visible body disappeared')
 		assert(death_rays.objects[1] == ray
