@@ -111,7 +111,7 @@ local powerup_slot_laser<const> = powerup_slot.laser
 local powerup_slot_uplaser<const> = powerup_slot.uplaser
 local powerup_slot_option<const> = powerup_slot.option
 local powerup_slot_shield<const> = powerup_slot.shield
-local player_sources<const> = {
+local player_vessel_sources<const> = {
 	{
 		neutral = { imgid = assets_player_n, source = image.resolve(assets_player_n) },
 		neutral_shield = {
@@ -123,12 +123,6 @@ local player_sources<const> = {
 		down_shield = {
 			imgid = assets_player_d_shield,
 			source = image.resolve(assets_player_d_shield),
-		},
-		options = {
-			image.resolve(assets_option1),
-			image.resolve(assets_option2),
-			image.resolve(assets_option3),
-			image.resolve(assets_option4),
 		},
 	},
 	{
@@ -143,12 +137,20 @@ local player_sources<const> = {
 			imgid = assets_player_d_shield_p2,
 			source = image.resolve(assets_player_d_shield_p2),
 		},
-		options = {
-			image.resolve(assets_player_2_option_1),
-			image.resolve(assets_player_2_option_2),
-			image.resolve(assets_player_2_option_3),
-			image.resolve(assets_player_2_option_4),
-		},
+	},
+}
+local player_option_sources<const> = {
+	{
+		image.resolve(assets_option1),
+		image.resolve(assets_option2),
+		image.resolve(assets_option3),
+		image.resolve(assets_option4),
+	},
+	{
+		image.resolve(assets_player_2_option_1),
+		image.resolve(assets_player_2_option_2),
+		image.resolve(assets_player_2_option_3),
+		image.resolve(assets_player_2_option_4),
 	},
 }
 local no_powerup_slot<const> = player_state_module.no_powerup_slot
@@ -320,7 +322,7 @@ function player:reset_runtime()
 	self.fire_held = false
 	self.fire_pressed = false
 	self:deactivate_force_field()
-	self.sprite = self.visual_sources.neutral
+	self.sprite = self.vessel_sources.neutral
 	for vessel_id = 1, player_vessel_capacity do
 		local primary<const> = self.primary_projectiles[vessel_id]
 		local missile<const> = self.missile_projectiles[vessel_id]
@@ -400,7 +402,7 @@ local new_projectile_visual<const> = custom_visual_component.factory({
 
 local draw_player_vessel<const> = function(component, draw)
 	local owner<const> = component.parent
-	local option_source<const> = owner.visual_sources.options[owner.option_anim_index]
+	local option_source<const> = owner.option_sources[owner.option_anim_index]
 	for i = 1, #owner.options do
 		local option<const> = owner.options[i]
 		option_source:blit(draw, option.x, option.y)
@@ -422,7 +424,7 @@ local collides_at<const> = function(self, x, y)
 end
 
 function player:update_position()
-	local visual_sources<const> = self.visual_sources
+	local vessel_sources<const> = self.vessel_sources
 	local max_x<const> = playfield_width - player_width
 	local max_y<const> = playfield_height - player_height
 	local previous_x<const> = self.x
@@ -448,11 +450,11 @@ function player:update_position()
 		end
 	end
 	if self.up_held then
-		self.sprite = visual_sources.up
+		self.sprite = vessel_sources.up
 	elseif self.down_held then
-		self.sprite = strong_force_field and visual_sources.down_shield or visual_sources.down
+		self.sprite = strong_force_field and vessel_sources.down_shield or vessel_sources.down
 	else
-		self.sprite = strong_force_field and visual_sources.neutral_shield or visual_sources.neutral
+		self.sprite = strong_force_field and vessel_sources.neutral_shield or vessel_sources.neutral
 	end
 
 	self.last_dx = self.x - previous_x
@@ -470,6 +472,15 @@ end
 function player:deactivate_force_field()
 	self.force_field_strength = 0
 	self.force_field_visual:deactivate()
+end
+
+function player:activate_metalion_mode()
+	self.metalion_mode_active = true
+	local vessel_sources<const> = player_vessel_sources[2]
+	self.vessel_sources = vessel_sources
+	self.sprite = self.force_field_strength > 1
+		and vessel_sources.neutral_shield
+		or vessel_sources.neutral
 end
 
 function player:apply_force_field_hit(hit)
@@ -525,6 +536,13 @@ function player:on_powerups_reset()
 end
 
 function player:bind()
+	if self.player_index == 1 then
+		self.events:on({
+			event = 'metalion_mode_activated',
+			emitter = ids_director_instance,
+			handler = player.activate_metalion_mode,
+		})
+	end
 	self.events:on({
 		event = player_state_module.events.powerup_level_changed,
 		emitter = self.player_state.id,
@@ -1017,7 +1035,7 @@ function player:enter_dying()
 		self.actioneffects:deactivate(player_actioneffects.effect_ids.fire_salvo)
 	end
 	local options<const> = self.options
-	local animation_frames<const> = self.visual_sources.options
+	local animation_frames<const> = self.option_sources
 	for index = 1, #options do
 		local option<const> = options[index]
 		local pickup_x = option.x + player_option_pickup_offset_x
@@ -1051,7 +1069,7 @@ function player:finish_dying()
 	end
 	local start<const> = player_starts[self.player_index]
 	self:set_pos(start.x, start.y)
-	self.sprite = self.visual_sources.neutral
+	self.sprite = self.vessel_sources.neutral
 	self:initialize_options()
 	return '/active/respawning'
 end
@@ -1060,6 +1078,15 @@ function player:on_body_overlap(_state, event)
 	if event.collider_local_id ~= player_body_collider_id
 	or event.other_layer == collision_pickup_layer then
 		return
+	end
+	if self.metalion_mode_active then
+		if event.other_layer == collision_enemy_projectile_layer then
+			return
+		end
+		local other<const> = registry:get(event.other_id)
+		if other.small_fry then
+			return
+		end
 	end
 	if self.force_field_strength > 0 then
 		if event.other_layer == collision_enemy_projectile_layer then
@@ -1081,7 +1108,8 @@ function player:ctor()
 		player_force_field_visual_id
 	)
 	self.body_collider = self:get_component(collider_2d_component, player_body_collider_id)
-	self.visual_sources = player_sources[self.player_index]
+	self.vessel_sources = player_vessel_sources[self.player_index]
+	self.option_sources = player_option_sources[self.player_index]
 	self.powerup_levels = self.player_state.powerup_levels
 	self.primary_projectiles = {}
 	self.missile_projectiles = {}
@@ -1230,6 +1258,7 @@ local register_player_definition<const> = function()
 			down_held = false,
 			fire_held = false,
 			fire_pressed = false,
+			metalion_mode_active = false,
 			force_field_strength = 0,
 			option_anim_index = 1,
 		},

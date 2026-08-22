@@ -85,7 +85,7 @@ local input_slots<const> = {
 local effect_kind<const> = {
 	trigger = 1,
 	consume = 2,
-	gameplay = 3,
+	event = 3,
 	command = 4,
 }
 evaluation_program_syntax.effect_kind = effect_kind
@@ -110,7 +110,7 @@ local emit_effect<const> = function(statements, effect, player_index, clock_sour
 			numeric_literal(clock_source),
 			operand_expression(effect.operand_index),
 		}))
-	elseif effect.kind == effect_kind.gameplay then
+	elseif effect.kind == effect_kind.event then
 		statements[#statements + 1] = assignment_statement(
 			reference(symbols.queued_event_count),
 			binary_expression(

@@ -1,10 +1,8 @@
 local input<const> = require('cartlib/input/input')
 local evaluation_program<const> = require('cartlib/input/actioneffect/evaluation_program')
-local clock<const> = require('cartlib/clock')
 
 local compiler<const> = {}
 local no_custom_bindings<const> = {}
-local gameplay_clock<const> = clock.gameplay
 
 local append_effects<const> = function(target, source)
 	if source == nil then
@@ -46,7 +44,14 @@ local compile_modes<const> = function(owner, binding)
 	return modes
 end
 
-local compile_binding<const> = function(owner, player_index, binding, source_index, effects)
+local compile_binding<const> = function(
+	owner,
+	player_index,
+	clock_source,
+	binding,
+	source_index,
+	effects
+)
 	local on<const> = binding.on
 	local binding_effects<const> = binding.go
 	local priority = binding.priority
@@ -55,20 +60,20 @@ local compile_binding<const> = function(owner, player_index, binding, source_ind
 	end
 	local press
 	if on.press ~= nil then
-		press = input.bind(player_index, gameplay_clock, on.press)
+		press = input.bind(player_index, clock_source, on.press)
 	end
 	local hold
 	if on.hold ~= nil then
-		hold = input.bind(player_index, gameplay_clock, on.hold)
+		hold = input.bind(player_index, clock_source, on.hold)
 	end
 	local release
 	if on.release ~= nil then
-		release = input.bind(player_index, gameplay_clock, on.release)
+		release = input.bind(player_index, clock_source, on.release)
 	end
 	local combo
 	local combo_reset
 	if on.combo ~= nil then
-		combo, combo_reset = input.bind_combo(player_index, gameplay_clock, on.combo)
+		combo, combo_reset = input.bind_combo(player_index, clock_source, on.combo)
 	end
 	local custom = no_custom_bindings
 	local custom_source<const> = on.custom
@@ -78,7 +83,7 @@ local compile_binding<const> = function(owner, player_index, binding, source_ind
 			local entry<const> = custom_source[i]
 			local effect_start<const> = #effects + 1
 			custom[i] = {
-				input = input.bind(player_index, gameplay_clock, entry.pattern),
+				input = input.bind(player_index, clock_source, entry.pattern),
 				effect_start = effect_start,
 				effect_end = append_effects(effects, binding_effects[entry.name]),
 				slot = entry.name,
@@ -121,7 +126,7 @@ local binding_precedes<const> = function(left, right)
 	return left.order < right.order
 end
 
-function compiler.compile_program(owner, program)
+function compiler.compile_program(owner, program, clock_source)
 	local player_index<const> = owner.player_index
 	local source<const> = program.bindings
 	local bindings<const> = {}
@@ -133,7 +138,14 @@ function compiler.compile_program(owner, program)
 	local has_hold
 	local has_combo
 	for i = 1, #source do
-		local binding<const> = compile_binding(owner, player_index, source[i], i, effects)
+		local binding<const> = compile_binding(
+			owner,
+			player_index,
+			clock_source,
+			source[i],
+			i,
+			effects
+		)
 		bindings[i] = binding
 		if binding.press ~= nil then
 			has_press = true
@@ -165,7 +177,7 @@ function compiler.compile_program(owner, program)
 		max_custom_count = max_custom_count,
 	}
 	local evaluate<const>, uses_effect_triggers<const>, queued_event_capacity<const>, queued_command_capacity<const>
-		= evaluation_program.compile(compiled, effects, player_index, gameplay_clock)
+		= evaluation_program.compile(compiled, effects, player_index, clock_source)
 	compiled.evaluate = evaluate
 	compiled.queued_event_capacity = queued_event_capacity
 	compiled.queued_command_capacity = queued_command_capacity

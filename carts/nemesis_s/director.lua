@@ -1,8 +1,10 @@
 local bool01<const> = require('cartlib/util/bool01')
+local clock<const> = require('cartlib/clock')
 local custom_visual_component<const> = require('cartlib/component/custom_visual_component')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local gx_texture<const> = require('cartlib/gx/texture')
+local input_actioneffect_component<const> = require('cartlib/input/actioneffect/actioneffect_component')
 local prefab<const> = require('cartlib/world/prefab')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timeline_clock_source<const> = require('cartlib/timeline/clock_source')
@@ -23,6 +25,43 @@ local game_start_duration_frames<const> = 41
 local game_over_curtain_timeline_id<const> = 'nemesis_s.director.game_over_curtain'
 local game_over_blackout_timeline_id<const> = 'nemesis_s.director.game_over_blackout'
 local game_over_curtain_visual_id<const> = 'game_over_curtain'
+local metalion_input_program<const> = {
+	bindings = {
+		{
+			name = 'metalion',
+			when = {
+				mode = { path = '/gameplay/pause' },
+			},
+			on = {
+				combo = {
+					steps = {
+						'key_m[jp]',
+						'key_e[jp]',
+						'key_t[jp]',
+						'key_a[jp]',
+						'key_l[jp]',
+						'key_i[jp]',
+						'key_o[jp]',
+						'key_n[jp]',
+						'key_enter[jp]',
+					},
+					cancel = 'key_letter[jp] || key_enter[jp]',
+				},
+			},
+			go = {
+				combo = {
+					['emit.event'] = {
+						event = 'metalion_mode_activated',
+					},
+				},
+			},
+		},
+	},
+}
+local new_metalion_input<const> = input_actioneffect_component.factory({
+	clock_source = clock.frame,
+	program = metalion_input_program,
+})
 local draw_game_over_curtain<const> = function(component, draw)
 	draw:rect(0, 0, component.parent.game_over_curtain_width, presentation_height, 0xff000000)
 end
@@ -401,6 +440,7 @@ local register_director_definition<const> = function()
 			new_game_over_curtain,
 			timeline_component.new,
 			fsm_component.factory({ ids_director_fsm }),
+			new_metalion_input,
 		},
 		defaults = {
 			id = ids_director_instance,

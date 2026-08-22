@@ -41,13 +41,13 @@ local compile_effect<const> = function(program, effect, slot)
 			operand_index = add_operand(program, consume),
 		}
 	end
-	local gameplay<const> = effect['emit.gameplay']
-	if gameplay ~= nil then
+	local event<const> = effect['emit.event']
+	if event ~= nil then
 		program.queued_event_capacity = program.queued_event_capacity + 1
 		return {
-			kind = effect_kind.gameplay,
-			event_operand_index = add_operand(program, gameplay.event),
-			payload_operand_index = add_operand(program, gameplay.payload),
+			kind = effect_kind.event,
+			event_operand_index = add_operand(program, event.event),
+			payload_operand_index = add_operand(program, event.payload),
 		}
 	end
 	local command<const> = effect['dispatch.command']

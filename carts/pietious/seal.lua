@@ -23,7 +23,7 @@ function seal:ctor()
 					},
 					go = {
 						combo = {
-							['emit.gameplay'] = {
+							['emit.event'] = {
 								event = 'seal.incantation_completed',
 							},
 						},

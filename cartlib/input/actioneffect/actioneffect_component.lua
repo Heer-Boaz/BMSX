@@ -1,21 +1,39 @@
 local compiler<const> = require('cartlib/input/actioneffect/compiler')
 local base_component<const> = require('cartlib/component/base_component')
+local clock<const> = require('cartlib/clock')
 
 local input_actioneffect_component<const> = {}
 input_actioneffect_component.__index = input_actioneffect_component
 input_actioneffect_component.unique = true
 setmetatable(input_actioneffect_component, { __index = base_component })
 
-function input_actioneffect_component.new(opts)
+local create<const> = function(opts, definition)
 	local self<const> = setmetatable(base_component.new(opts), input_actioneffect_component)
-	self.source_program = opts.program
+	self.id_local = definition.id_local or self.id_local
+	self.source_program = definition.program
+	self.clock_source = definition.clock_source or clock.gameplay
+	self:set_tick_clock_enabled(self.clock_source, true)
 	return self
+end
+
+function input_actioneffect_component.new(opts)
+	return create(opts, opts)
+end
+
+function input_actioneffect_component.factory(definition)
+	return function(opts)
+		return create(opts, definition)
+	end
 end
 
 function input_actioneffect_component:on_activate()
 	if self.program == nil then
 		local owner<const> = self.parent
-		local program<const>, uses_effect_triggers<const> = compiler.compile_program(owner, self.source_program)
+		local program<const>, uses_effect_triggers<const> = compiler.compile_program(
+			owner,
+			self.source_program,
+			self.clock_source
+		)
 		if uses_effect_triggers and not owner.actioneffects then
 			error('input effects on "' .. owner.id .. '" trigger an action-effect component that is not attached.')
 		end
