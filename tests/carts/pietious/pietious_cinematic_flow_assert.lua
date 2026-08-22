@@ -1,3 +1,4 @@
+local clock<const> = require('cartlib/clock')
 local registry<const> = require('cartlib/registry')
 local rom_dir<const> = require('cartlib/rom_dir')
 local text_component<const> = require('cartlib/text/text_component')
@@ -7,6 +8,9 @@ require('constants')
 local apu_slot_select<const>: *word = 0x08000148
 local selected_apu_source<const>: *word = 0x0800018c
 local end_demo_source_address<const> = rom_dir.audio('enddemo').addr
+local intro_logo_reveal_timeline_id<const> = 'intro.logo.reveal'
+local intro_logo_hold_timeline_id<const> = 'intro.logo.hold'
+local intro_logo_hold_frames<const> = 128
 
 __bmsx_host_test = {
 	frames = 0,
@@ -31,6 +35,30 @@ function __bmsx_host_test.setup()
 	assert(world.active_space_id == 'intro', 'intro did not own the presentation space')
 
 	local intro<const> = registry:get('intro')
+	intro.state_machines:transition_to('/hidden')
+	intro.state_machines:transition_to('/playing/logo/blank')
+	local logo<const> = intro.sprite_component
+	assert(logo.imgid == 'intro_konami'
+		and logo.offset_x == 40 and logo.offset_y == 64
+		and logo.region_width == 168 and logo.region_height == 1
+		and not logo.visible and intro.logo_background.visible,
+		'Konami logo did not enter its source-derived white presentation')
+	intro.state_machines:transition_to('/playing/logo/reveal')
+	local reveal<const> = intro.timelines:get(intro_logo_reveal_timeline_id)
+	assert(reveal.frame_duration == clock.frame_delta_milliseconds(),
+		'Konami logo reveal did not match Pietious two-VBlank presentation cadence')
+	intro.timelines:advance_to(intro_logo_reveal_timeline_id, 23)
+	assert(logo.visible and logo.region_height == 24,
+		'Konami logo midpoint differs from the Metal Gear row copier')
+	intro.timelines:advance_to(intro_logo_reveal_timeline_id, 47)
+	assert(logo.region_height == 48, 'Konami logo did not reveal all source scanlines')
+	intro.state_machines:transition_to('/playing/logo/hold')
+	assert(intro.timelines:get(intro_logo_hold_timeline_id).duration_ms
+		== intro_logo_hold_frames * clock.frame_delta_milliseconds(),
+		'Konami logo hold did not retain its 256-VBlank duration')
+	intro.state_machines:transition_to('/playing/presentation')
+	assert(not logo.visible and not intro.logo_background.visible,
+		'Konami logo presentation remained visible over the Pietious intro')
 	assert(intro.sinterklaas.offset_x == -28 * room_tile_size, 'Sinterklaas intro logo started at the wrong x')
 	assert(intro.boaz.offset_x == 32 * room_tile_size, 'Boaz intro logo started at the wrong x')
 	intro.timelines:seek('intro.presentation', 80)
@@ -86,15 +114,15 @@ function __bmsx_host_test.update()
 		assert(world.active_space_id == 'title', 'title did not own the presentation space')
 		test.first_director = director
 		test.phase = 'title_start'
-		return host.press('Enter', 2)
+		return host.press('AltRight', 2)
 	end
 
 	if test.phase == 'title_start' then
-		if world.active_space_id ~= 'main' then
+		if world.active_space_id ~= 'main'
+		or registry:get('c').current_room_number ~= 1 then
 			return false
 		end
 		assert(registry:get('d') ~= test.first_director, 'title start reused the completed game session')
-		assert(registry:get('c').current_room_number == 1, 'fresh gameplay session did not start in the castle')
 		bind_completion_states(test, director)
 		test.gameplay_settle_frames = 50
 		test.phase = 'gameplay_settle'
