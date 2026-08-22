@@ -179,6 +179,36 @@ function __bmsx_host_test.update()
 		end
 		assert(test.small_ray_y - test.small_ray.y == moon_small_ray_speed,
 			'Moon small ray did not retain its balanced movement step')
+		test.small_ray_pass_previous_x = boss.x
+		test.phase = 'small_ray_pass_start'
+		return false
+	end
+
+	if test.phase == 'small_ray_pass_start' then
+		if boss.x == test.small_ray_pass_previous_x then
+			return false
+		end
+		assert(boss.x == test.small_ray_pass_previous_x + moon_small_ray_move_step_x,
+			'Moon small-ray pass skipped a retained horizontal tile step')
+		test.small_ray_pass_start_x = boss.x
+		test.small_ray_pass_start_time_ms = world.gameplay_time_ms
+		test.phase = 'small_ray_pass_speed'
+		return false
+	end
+
+	if test.phase == 'small_ray_pass_speed' then
+		local expected_x<const> = test.small_ray_pass_start_x + moon_small_ray_move_step_x * 5
+		if boss.x < expected_x then
+			return false
+		end
+		assert(boss.x == expected_x,
+			'Moon small-ray pass skipped a retained horizontal tile step')
+		local elapsed_ms<const> = world.gameplay_time_ms - test.small_ray_pass_start_time_ms
+		local expected_ms<const> = moon_small_ray_move_ms * 5
+		local gameplay_delta_ms<const> = clock.gameplay_delta_milliseconds()
+		assert(elapsed_ms >= expected_ms - gameplay_delta_ms
+			and elapsed_ms <= expected_ms + gameplay_delta_ms,
+			'Moon small-ray pass did not retain its halved horizontal speed')
 		boss.rotation = moon_rotation_right
 		boss:apply_rotation()
 		boss.x = playfield_width - moon_width
@@ -243,7 +273,7 @@ function __bmsx_host_test.update()
 			'Moon death ray did not follow its source actor while expanding')
 		local update_count<const> = test.death_ray_update_count
 		if update_count == 1 then
-			assert(boss.y == test.death_ray_start_y + moon_death_ray_move_step,
+			assert(boss.y == test.death_ray_start_y + 8,
 				'Moon death-ray movement did not consume the source accumulator overflow')
 		elseif update_count == 2 or update_count == 3 then
 			assert(boss.y == test.death_ray_previous_y,
