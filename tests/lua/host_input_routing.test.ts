@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import type { HostClock } from '../../hosts/common/clock';
 import { HostMenuInput, HostOverlayMenu } from '../../hosts/common/host_overlay_menu';
-import type { InputSource } from '../../hosts/common/input/contracts';
+import type { GamepadDevice, InputSource } from '../../hosts/common/input/contracts';
 import { Input } from '../../hosts/common/input/manager';
 import {
 	HOST_IDE_BUTTON,
@@ -135,5 +135,69 @@ test('quick menu accepts navigation after consuming its opening frame', () => {
 	input.pollInput();
 	assert.equal(menu.tickInput(), HostMenuInput.Active);
 	assert.equal(presenter.show_resource_usage_gizmo, true);
+	input.dispose();
+});
+
+test('quick menu reassigns an onscreen-style gamepad and remains controllable on its new port', () => {
+	let currentTime = 0;
+	const clock = {
+		now: () => currentTime,
+	} as HostClock;
+	const gamepad: GamepadDevice = {
+		id: 'gamepad:2147483646',
+		kind: 'gamepad',
+		gamepadIndex: 2147483646,
+		label: 'TOUCH',
+		vibrationInitialization: null,
+		supportsVibration: false,
+		setVibration: () => {},
+	};
+	const source: InputSource = {
+		devices: () => [gamepad],
+		subscribe: () => () => {},
+	};
+	const input = new Input(clock, source, gamepad.gamepadIndex);
+	const presenter = {
+		show_resource_usage_gizmo: false,
+	} as VideoPresenter;
+	const menu = new HostOverlayMenu(presenter, {} as Runtime, input);
+
+	input.inputButton(gamepad.id, 'select', true, 1, currentTime, 1);
+	input.inputButton(gamepad.id, 'start', true, 1, currentTime, 2);
+	input.pollInput();
+	assert.equal(menu.tickInput(), HostMenuInput.Active);
+	currentTime += 1;
+	input.inputButton(gamepad.id, 'select', false, 0, currentTime, 1);
+	input.inputButton(gamepad.id, 'start', false, 0, currentTime, 2);
+	input.pollInput();
+	menu.tickInput();
+
+	for (let step = 0; step < 5; step += 1) {
+		currentTime += 1;
+		const pressId = step + 3;
+		input.inputButton(gamepad.id, 'up', true, 1, currentTime, pressId);
+		input.pollInput();
+		menu.tickInput();
+		currentTime += 1;
+		input.inputButton(gamepad.id, 'up', false, 0, currentTime, pressId);
+		input.pollInput();
+		menu.tickInput();
+	}
+
+	currentTime += 1;
+	input.inputButton(gamepad.id, 'right', true, 1, currentTime, 8);
+	input.pollInput();
+	menu.tickInput();
+	assert.equal(input.getPlayerInput(1).inputHandlers.gamepad, null);
+	assert.equal(input.getPlayerInput(2).inputHandlers.gamepad?.device, gamepad);
+
+	currentTime += 1;
+	input.inputButton(gamepad.id, 'right', false, 0, currentTime, 8);
+	input.pollInput();
+	menu.tickInput();
+	currentTime += 1;
+	input.inputButton(gamepad.id, 'b', true, 1, currentTime, 9);
+	input.pollInput();
+	assert.equal(menu.tickInput(), HostMenuInput.Inactive);
 	input.dispose();
 });

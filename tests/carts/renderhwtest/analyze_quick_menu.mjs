@@ -31,7 +31,7 @@ assert.equal(menu.width, game.width);
 assert.equal(menu.height, game.height);
 
 const menuTextPixels = countPixels(menu, 88, 72, 220, 184, (red, green, blue) => red === green && green === blue && red > 150);
-const menuTitlePixels = countPixels(menu, 94, 48, 190, 70, (red, green, blue) => red > 80 && red < 110 && green > 180 && green < 215 && blue > 240);
+const menuTitlePixels = countPixels(menu, 80, 32, 220, 70, (red, green, blue) => red > 80 && red < 110 && green > 180 && green < 215 && blue > 240);
 assert(menuTextPixels > 100, `quick menu option text is missing: ${menuTextPixels} pixels`);
 assert(menuTitlePixels > 30, `quick menu title is missing: ${menuTitlePixels} pixels`);
 

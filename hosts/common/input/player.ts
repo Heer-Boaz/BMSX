@@ -134,17 +134,10 @@ export class PlayerInput {
 		return state.justpressed || repeat.lastResult;
 	}
 
-	assignGamepadToPlayer(gamepadInput: GamepadInput): void {
-		if (this.inputHandlers['gamepad'] && this.inputHandlers['gamepad'] !== gamepadInput) {
-			this.inputHandlers['gamepad']?.reset();
-		}
+	public setGamepad(gamepadInput: GamepadInput | null): void {
 		this.inputHandlers['gamepad'] = gamepadInput;
-	}
-
-	public clearGamepad(handler: GamepadInput): void {
-		if (this.inputHandlers['gamepad'] !== handler) return;
-		this.inputHandlers['gamepad'] = null;
-		handler.reset();
+		this.rawActionRepeatRecords.gamepad.clear();
+		this.controlRepeatRecords.gamepad.clear();
 	}
 
 	/** Polls the input for the player for each input source (keyboard, gamepad, ...). */

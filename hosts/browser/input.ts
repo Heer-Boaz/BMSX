@@ -20,6 +20,7 @@ class GamepadDevice implements HostGamepadDevice {
 	readonly id: string;
 	readonly kind = 'gamepad';
 	readonly gamepadIndex: number;
+	readonly label: string;
 	private readonly mappedButtonCount: number;
 	private readonly mappedAxisCount: number;
 	private lastTimestamp = -1;
@@ -42,6 +43,7 @@ class GamepadDevice implements HostGamepadDevice {
 	constructor(source: Gamepad, clock: HostClock) {
 		this.gamepadIndex = source.index;
 		this.id = 'gamepad:' + this.gamepadIndex;
+		this.label = `GAMEPAD ${this.gamepadIndex + 1}`;
 		const sonyProductId = sonyGamepadProductId(source.id);
 		this.mappedButtonCount = Math.min(
 			source.buttons.length,

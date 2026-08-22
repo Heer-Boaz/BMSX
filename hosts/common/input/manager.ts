@@ -12,7 +12,6 @@ import {
 	HOST_TERMINAL_BUTTON,
 } from './shortcuts';
 
-import { PendingAssignmentProcessor } from './host/assignment_processor';
 import { PlayerInput } from './player';
 import { PointerInput } from './pointer';
 import type { HostClock } from '../clock';
@@ -73,6 +72,13 @@ export function makeButtonState(partialState?: Partial<ButtonState>): ButtonStat
 	return { pressed, justpressed, justreleased, waspressed, wasreleased, repeatpressed, repeatcount, consumed, presstime, timestamp, pressedAtMs, releasedAtMs, pressId, value, value2d };
 }
 
+type GamepadDeviceBinding = {
+	handler: GamepadInput;
+	source: 'gamepad';
+	assignedPlayer: number | null;
+	device: GamepadDevice;
+};
+
 type DeviceBinding =
 	| {
 		handler: KeyboardInput;
@@ -84,12 +90,7 @@ type DeviceBinding =
 		source: 'pointer';
 		assignedPlayer: number;
 	}
-	| {
-		handler: GamepadInput;
-		source: 'gamepad';
-		assignedPlayer: number | null;
-		device: GamepadDevice;
-	};
+	| GamepadDeviceBinding;
 
 /**
  * Represents the Input class, which manages player inputs and gamepad assignments.
@@ -120,13 +121,8 @@ export class Input implements InputControllerInputSource, InputEventSink {
 	private readonly deviceBindingList: DeviceBinding[] = [];
 	private readonly inputControllerKeyboardHandlers: KeyboardInput[] = [];
 	private readonly inputControllerPointerHandlers: PointerInput[] = [];
-	public startupGamepadIndex = -1;
-
-	/**
-	 * Represents an array of pending gamepad assignments.
-	 * @see PendingAssignmentProcessor
-	 */
-	public pendingGamepadAssignments: PendingAssignmentProcessor[] = [];
+	public readonly connectedGamepads: GamepadInput[] = [];
+	public controllerPortRevision = 0;
 
 	private readonly unsubscribeHostInput: () => void;
 	private readonly pendingVibrationDevices: GamepadDevice[] = [];
@@ -233,7 +229,6 @@ export class Input implements InputControllerInputSource, InputEventSink {
 		inputSource: InputSource,
 		startingGamepadIndex: number,
 	) {
-		this.startupGamepadIndex = startingGamepadIndex;
 		for (let index = 0; index < Input.PLAYERS_MAX; index += 1) {
 			this.playerInputs[index] = new PlayerInput(index + 1, this.frameDurationMs);
 		}
@@ -258,6 +253,15 @@ export class Input implements InputControllerInputSource, InputEventSink {
 		this.inputControllerKeyboardHandlers.push(keyboard);
 		this.inputControllerPointerHandlers.push(pointer);
 		const devices = inputSource.devices();
+		if (startingGamepadIndex >= 0) {
+			const startingGamepadId = `gamepad:${startingGamepadIndex}`;
+			for (let index = 0; index < devices.length; index += 1) {
+				if (devices[index].id === startingGamepadId) {
+					this.connectInputDevice(devices[index]);
+					break;
+				}
+			}
+		}
 		for (let index = 0; index < devices.length; index += 1) {
 			if (!this.deviceBindings.has(devices[index].id)) {
 				this.connectInputDevice(devices[index]);
@@ -279,13 +283,9 @@ export class Input implements InputControllerInputSource, InputEventSink {
 	}
 
 	/**
-	 * Disposes the input system by removing all pending gamepad assignments,
-	 * player inputs, event subscriptions, and deregistering the input system.
+	 * Disposes the input system by removing player inputs and event subscriptions.
 	 */
 	public dispose(): void {
-		// Remove all pending gamepad assignments
-		this.pendingGamepadAssignments = [];
-
 		// Remove all player inputs
 		this.playerInputs = [];
 		this.unsubscribeHostInput();
@@ -384,6 +384,9 @@ export class Input implements InputControllerInputSource, InputEventSink {
 	}
 
 	public connectInputDevice(device: InputDevice): void {
+		if (this.deviceBindings.has(device.id)) {
+			return;
+		}
 		const defaultPlayerIndex = Input.DEFAULT_KEYBOARD_PLAYER_INDEX;
 		if (device.kind === 'gamepad') {
 			const handler = new GamepadInput(
@@ -391,22 +394,24 @@ export class Input implements InputControllerInputSource, InputEventSink {
 				device.id,
 				device,
 			);
-			const binding: DeviceBinding = { handler, source: 'gamepad', assignedPlayer: null, device };
+			const binding: GamepadDeviceBinding = { handler, source: 'gamepad', assignedPlayer: null, device };
 			this.deviceBindings.set(device.id, binding);
 			this.deviceBindingList.push(binding);
-			const autoAssign = this.startupGamepadIndex >= 0 && device.id === `gamepad:${this.startupGamepadIndex}`;
-			if (autoAssign) {
-				this.startupGamepadIndex = -1;
-				this.assignGamepadToPlayer(handler, defaultPlayerIndex);
-				if (device.vibrationInitialization) {
-					this.pendingVibrationDevices.push(device);
-				}
-			} else {
-				this.pendingGamepadAssignments.push(new PendingAssignmentProcessor(this, handler, null));
+			this.connectedGamepads.push(handler);
+			if (device.vibrationInitialization) {
+				this.pendingVibrationDevices.push(device);
 			}
-			return;
-		}
-		if (this.deviceBindings.has(device.id)) {
+			let assigned = false;
+			for (let index = 0; index < this.playerInputs.length; index += 1) {
+				if (this.playerInputs[index].inputHandlers.gamepad === null) {
+					this.assignGamepadToPlayer(handler, index + 1);
+					assigned = true;
+					break;
+				}
+			}
+			if (!assigned) {
+				this.controllerPortRevision += 1;
+			}
 			return;
 		}
 		switch (device.kind) {
@@ -435,11 +440,11 @@ export class Input implements InputControllerInputSource, InputEventSink {
 	public disconnectInputDevice(deviceId: string): void {
 		const binding = this.deviceBindings.get(deviceId);
 		if (!binding) return;
+		let vacatedPlayer = 0;
 		if (binding.source === 'gamepad') {
 			if (binding.assignedPlayer) {
-				this.getPlayerInput(binding.assignedPlayer).clearGamepad(binding.handler);
-			} else {
-				this.removePendingGamepadAssignment(binding.handler.gamepadIndex);
+				vacatedPlayer = binding.assignedPlayer;
+				this.getPlayerInput(binding.assignedPlayer).setGamepad(null);
 			}
 			const vibrationIndex = this.pendingVibrationDevices.indexOf(binding.device);
 			if (vibrationIndex >= 0) {
@@ -450,6 +455,10 @@ export class Input implements InputControllerInputSource, InputEventSink {
 		this.deviceBindings.delete(deviceId);
 		const bindingIndex = this.deviceBindingList.indexOf(binding);
 		this.deviceBindingList.splice(bindingIndex, 1);
+		if (binding.source === 'gamepad') {
+			const gamepadIndex = this.connectedGamepads.indexOf(binding.handler);
+			this.connectedGamepads.splice(gamepadIndex, 1);
+		}
 		if (binding.source === 'keyboard') {
 			const handlerIndex = this.inputControllerKeyboardHandlers.indexOf(binding.handler);
 			this.inputControllerKeyboardHandlers.splice(handlerIndex, 1);
@@ -457,10 +466,24 @@ export class Input implements InputControllerInputSource, InputEventSink {
 			const handlerIndex = this.inputControllerPointerHandlers.indexOf(binding.handler);
 			this.inputControllerPointerHandlers.splice(handlerIndex, 1);
 		}
+		let reassigned = false;
+		if (vacatedPlayer !== 0) {
+			for (let index = 0; index < this.deviceBindingList.length; index += 1) {
+				const waiting = this.deviceBindingList[index];
+				if (waiting.source === 'gamepad' && waiting.assignedPlayer === null) {
+					this.assignGamepadToPlayer(waiting.handler, vacatedPlayer);
+					reassigned = true;
+					break;
+				}
+			}
+		}
+		if (binding.source === 'gamepad' && !reassigned) {
+			this.controllerPortRevision += 1;
+		}
 	}
 
 	/**
-	 * Polls the input for each player and processes gamepad assignments.
+	 * Polls the input for each player.
 	 */
 	public pollInput(): void {
 		const now = this.clock.now();
@@ -468,21 +491,6 @@ export class Input implements InputControllerInputSource, InputEventSink {
 			const player = this.playerInputs[index];
 			player.pollInput(now);
 			this.globalShortcuts.pollPlayer(player);
-			const gamepadInput = player.inputHandlers['gamepad'];
-			if (gamepadInput) {
-				const buttonState = gamepadInput.getButtonState('start');
-				if (!buttonState.consumed && buttonState.pressed && buttonState.presstime >= 50) {
-					player.clearGamepad(gamepadInput);
-					this.deviceBindings.get(gamepadInput.deviceId)!.assignedPlayer = null;
-					this.pendingGamepadAssignments.push(new PendingAssignmentProcessor(this, gamepadInput, null));
-				}
-			}
-		}
-		for (let index = 0; index < this.pendingGamepadAssignments.length; index += 1) {
-			const gamepadInput = this.pendingGamepadAssignments[index].run();
-			if (gamepadInput?.device.vibrationInitialization) {
-				this.pendingVibrationDevices.push(gamepadInput.device);
-			}
 		}
 	}
 
@@ -542,63 +550,24 @@ export class Input implements InputControllerInputSource, InputEventSink {
 		return this.globalShortcuts;
 	}
 
-	/**
-	 * Returns the first available player index for gamepad assignment starting from a specified index.
-	 * A player is considered available if there is a connected gamepad that is not already assigned to a player.
-	 *
-	 * @param from The index to start searching from. Defaults to 1.
-	 * @returns The first available player index for gamepad assignment, or null if none is available.
-	 */
-	public getFirstAvailablePlayerIndexForGamepadAssignment(from: number = 1, reverse: boolean = false): number {
-		if (reverse) {
-			for (let i = from; i >= 1; i--) {
-				if (this.isPlayerIndexAvailableForGamepadAssignment(i)) return i;
-			}
-		}
-		else {
-			for (let i = from; i <= Input.PLAYERS_MAX; i++) {
-				if (this.isPlayerIndexAvailableForGamepadAssignment(i)) return i;
-			}
-		}
-		return null;
-	}
-
-	/**
-	 * Checks if the specified player index is available for gamepad assignment.
-	 * @param playerIndex - The player index to check.
-	 * @returns `true` if the player index is available for gamepad assignment, `false` otherwise.
-	 */
-	public isPlayerIndexAvailableForGamepadAssignment(playerIndex: number): boolean {
-		const playerInput = this.getPlayerInput(playerIndex);
-		return (!playerInput.inputHandlers['gamepad'] && !this.pendingGamepadAssignments.some(pending => pending.proposedPlayerIndex === playerInput.playerIndex));
-	}
-
-	/**
-	 * Adds a pending gamepad assignment.
-	 *
-	 * @param gamepad - The gamepad waiting to be assigned.
-	 */
-	/**
-	 * Remove a pending gamepad assignment.
-	 *
-	 * @param gamepad - The gamepad waiting to be assigned.
-	 */
-	public removePendingGamepadAssignment(gamepadIndex: number): void {
-		const index = this.pendingGamepadAssignments.findIndex(pending => pending.inputHandler.gamepadIndex === gamepadIndex);
-		if (index !== -1) {
-			this.pendingGamepadAssignments.splice(index, 1);
-		}
-	}
-
-	/**
-	 * Assigns a gamepad to a player.
-	 *
-	 * @param gamepad The gamepad to assign.
-	 * @param playerIndex The index of the player.
-	 */
 	public assignGamepadToPlayer(gamepad: GamepadInput, playerIndex: number): void {
-		const player = this.getPlayerInput(playerIndex);
-		player.assignGamepadToPlayer(gamepad);
-		this.deviceBindings.get(gamepad.deviceId)!.assignedPlayer = playerIndex;
+		const binding = this.deviceBindings.get(gamepad.deviceId)! as GamepadDeviceBinding;
+		if (binding.assignedPlayer === playerIndex) {
+			return;
+		}
+		const target = this.getPlayerInput(playerIndex);
+		const displaced = target.inputHandlers.gamepad;
+		const sourcePlayer = binding.assignedPlayer;
+		if (sourcePlayer !== null) {
+			this.getPlayerInput(sourcePlayer).setGamepad(displaced);
+		} else if (displaced !== null) {
+			this.deviceBindings.get(displaced.deviceId)!.assignedPlayer = null;
+		}
+		if (displaced !== null && sourcePlayer !== null) {
+			this.deviceBindings.get(displaced.deviceId)!.assignedPlayer = sourcePlayer;
+		}
+		target.setGamepad(gamepad);
+		binding.assignedPlayer = playerIndex;
+		this.controllerPortRevision += 1;
 	}
 }

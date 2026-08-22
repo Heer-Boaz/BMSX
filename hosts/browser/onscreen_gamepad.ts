@@ -203,6 +203,7 @@ export class BrowserOnscreenGamepad implements GamepadDevice {
 	public readonly id = `gamepad:${BrowserOnscreenGamepad.GAMEPAD_INDEX}`;
 	public readonly kind = 'gamepad';
 	public readonly gamepadIndex = BrowserOnscreenGamepad.GAMEPAD_INDEX;
+	public readonly label = 'TOUCH';
 	public readonly vibrationInitialization = null;
 	public readonly supportsVibration = navigator.vibrate != null;
 	public readonly dpadElement: HTMLElement;

@@ -23,6 +23,7 @@ interface InputDeviceIdentity {
 export interface GamepadDevice extends InputDeviceIdentity {
 	kind: 'gamepad';
 	gamepadIndex: number;
+	label: string;
 	vibrationInitialization: VibrationInitialization | null;
 	supportsVibration: boolean;
 	setVibration(durationMs: number, intensity: number): void;

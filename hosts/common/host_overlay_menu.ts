@@ -1,7 +1,7 @@
 import { RectRenderKind, TextAlign, TextBaseline, type GlyphRenderSubmission, type RectRenderSubmission } from '../../machine/ts/render/shared/submissions';
 import { LAYER_2D_IDE } from '../../machine/ts/render/shared/layers';
 import { Host2DKind, type Host2DRef } from '../../machine/ts/render/host_overlay/commands';
-import type { Input } from './input/manager';
+import { Input } from './input/manager';
 import type { PlayerInput } from './input/player';
 import type { BGamepadButton } from './input/models';
 import {
@@ -38,7 +38,13 @@ type HostMenuActionOption = {
 	readonly action: HostMenuInput.RebootCart | HostMenuInput.ExitGame;
 };
 
-type HostMenuOption = HostMenuValueOption | HostMenuActionOption;
+type HostMenuGamepadOption = {
+	readonly kind: 'gamepad';
+	readonly label: string;
+	readonly playerIndex: number;
+};
+
+type HostMenuOption = HostMenuValueOption | HostMenuGamepadOption | HostMenuActionOption;
 
 type HostMenuButton = BGamepadButton;
 
@@ -103,7 +109,7 @@ function boolFromIndex(index: number): boolean {
 	return index !== 0;
 }
 
-function readButtonState(player: PlayerInput, button: HostMenuButton): number {
+function readPlayerButtonState(player: PlayerInput, button: HostMenuButton): number {
 	let result = 0;
 	const gamepadState = player.inputHandlers.gamepad?.getButtonState(button);
 	if (gamepadState && !gamepadState.consumed) {
@@ -126,20 +132,36 @@ function readButtonState(player: PlayerInput, button: HostMenuButton): number {
 	return result;
 }
 
-function buttonEdge(player: PlayerInput, button: HostMenuButton): boolean {
-	const gamepadEdge = player.controlButtonRepeatEdge(button, 'gamepad');
-	const keyboardEdge = player.controlButtonRepeatEdge(button, 'keyboard');
-	return gamepadEdge || keyboardEdge;
+function readButtonState(input: Input, button: HostMenuButton): number {
+	let result = 0;
+	for (let playerIndex = 1; playerIndex <= Input.PLAYERS_MAX; playerIndex += 1) {
+		result |= readPlayerButtonState(input.getPlayerInput(playerIndex), button);
+	}
+	return result;
 }
 
-function consumeButton(player: PlayerInput, button: HostMenuButton): void {
-	player.inputHandlers.gamepad?.consumeButton(button);
-	player.inputHandlers.keyboard?.consumeButton(button);
+function buttonEdge(input: Input, button: HostMenuButton): boolean {
+	let edge = false;
+	for (let playerIndex = 1; playerIndex <= Input.PLAYERS_MAX; playerIndex += 1) {
+		const player = input.getPlayerInput(playerIndex);
+		if (player.controlButtonRepeatEdge(button, 'gamepad')) {
+			edge = true;
+		}
+		if (player.controlButtonRepeatEdge(button, 'keyboard')) {
+			edge = true;
+		}
+	}
+	return edge;
 }
 
-function consumeButtons(player: PlayerInput, buttons: readonly HostMenuButton[]): void {
-	for (let index = 0; index < buttons.length; index += 1) {
-		consumeButton(player, buttons[index]);
+function consumeButtons(input: Input, buttons: readonly HostMenuButton[]): void {
+	for (let playerIndex = 1; playerIndex <= Input.PLAYERS_MAX; playerIndex += 1) {
+		const player = input.getPlayerInput(playerIndex);
+		for (let index = 0; index < buttons.length; index += 1) {
+			const button = buttons[index];
+			player.inputHandlers.gamepad?.consumeButton(button);
+			player.inputHandlers.keyboard?.consumeButton(button);
+		}
 	}
 }
 
@@ -211,6 +233,7 @@ export class HostOverlayMenu {
 	private fpsTextTenths = FPS_TEXT_TENTHS_INVALID;
 	private fpsTextWidth = 0;
 	private showFps = false;
+	private controllerPortRevision = -1;
 	private readonly options: readonly HostMenuOption[] = [
 		{
 			kind: 'value',
@@ -289,6 +312,10 @@ export class HostOverlayMenu {
 			getIndex: () => boolIndex(this.showFps),
 			setIndex: index => { this.showFps = boolFromIndex(index); },
 		},
+		{ kind: 'gamepad', label: 'PLAYER 1 GAMEPAD', playerIndex: 1 },
+		{ kind: 'gamepad', label: 'PLAYER 2 GAMEPAD', playerIndex: 2 },
+		{ kind: 'gamepad', label: 'PLAYER 3 GAMEPAD', playerIndex: 3 },
+		{ kind: 'gamepad', label: 'PLAYER 4 GAMEPAD', playerIndex: 4 },
 		{
 			kind: 'action',
 			label: 'REBOOT CART',
@@ -307,11 +334,13 @@ export class HostOverlayMenu {
 		private readonly input: Input,
 	) {
 		this.presenter = presenter;
-		input.getGlobalShortcutRegistry().registerControlShortcut(
-			1,
-			BUTTON_START,
-			() => this.toggle(),
-		);
+		for (let playerIndex = 1; playerIndex <= Input.PLAYERS_MAX; playerIndex += 1) {
+			input.getGlobalShortcutRegistry().registerControlShortcut(
+				playerIndex,
+				BUTTON_START,
+				() => this.toggle(),
+			);
+		}
 		this.optionGlyphs = new Array(this.options.length);
 		for (let index = 0; index < this.options.length; index += 1) {
 			this.optionGlyphs[index] = { x: 0, y: 0, z: 922, items: '', item_start: 0, item_end: 0, font: null, color: COLOR_TEXT, has_background_color: false, background_color: 0xff000000, wrap_chars: 0, center_block_width: 0, align: TextAlign.Start, baseline: TextBaseline.Alphabetic, layer: LAYER_2D_IDE };
@@ -329,33 +358,36 @@ export class HostOverlayMenu {
 	}
 
 	public tickInput(): HostMenuInput {
-		const player = this.input.getPlayerInput(1);
 		if (!this.active) {
 			return HostMenuInput.Inactive;
 		}
-		if ((readButtonState(player, BUTTON_B) & HostButtonState.JustPressed) !== 0) {
+		if (this.controllerPortRevision !== this.input.controllerPortRevision) {
+			this.controllerPortRevision = this.input.controllerPortRevision;
+			this.dirtyText = true;
+		}
+		if ((readButtonState(this.input, BUTTON_B) & HostButtonState.JustPressed) !== 0) {
 			this.toggle();
-			consumeButtons(player, MENU_NAV_BUTTONS);
+			consumeButtons(this.input, MENU_NAV_BUTTONS);
 			return HostMenuInput.Inactive;
 		}
-		if (buttonEdge(player, BUTTON_UP)) {
+		if (buttonEdge(this.input, BUTTON_UP)) {
 			this.selected = this.selected === 0 ? this.options.length - 1 : this.selected - 1;
 			this.dirtyText = true;
 		}
-		if (buttonEdge(player, BUTTON_DOWN)) {
+		if (buttonEdge(this.input, BUTTON_DOWN)) {
 			this.selected = (this.selected + 1) % this.options.length;
 			this.dirtyText = true;
 		}
-		if (buttonEdge(player, BUTTON_LEFT)) {
+		if (buttonEdge(this.input, BUTTON_LEFT)) {
 			this.changeSelected(-1);
 		}
-		if (buttonEdge(player, BUTTON_RIGHT)) {
+		if (buttonEdge(this.input, BUTTON_RIGHT)) {
 			this.changeSelected(1);
 		}
-		const result = (readButtonState(player, BUTTON_A) & HostButtonState.JustPressed) !== 0
+		const result = (readButtonState(this.input, BUTTON_A) & HostButtonState.JustPressed) !== 0
 			? this.activateSelected()
 			: HostMenuInput.Active;
-		consumeButtons(player, MENU_NAV_BUTTONS);
+		consumeButtons(this.input, MENU_NAV_BUTTONS);
 		return result;
 	}
 
@@ -504,12 +536,28 @@ export class HostOverlayMenu {
 	private toggle(): void {
 		this.active = !this.active;
 		this.selected = 0;
+		this.controllerPortRevision = this.input.controllerPortRevision;
 		this.dirtyText = true;
 	}
 
 	private changeSelected(direction: number): void {
 		const option = this.options[this.selected];
 		if (option.kind === 'action') {
+			return;
+		}
+		if (option.kind === 'gamepad') {
+			const gamepads = this.input.connectedGamepads;
+			if (gamepads.length === 0) {
+				return;
+			}
+			const current = this.input.getPlayerInput(option.playerIndex).inputHandlers.gamepad;
+			const currentIndex = current === null ? -1 : gamepads.indexOf(current);
+			const nextIndex = currentIndex < 0
+				? (direction > 0 ? 0 : gamepads.length - 1)
+				: (currentIndex + gamepads.length + direction) % gamepads.length;
+			this.input.assignGamepadToPlayer(gamepads[nextIndex], option.playerIndex);
+			this.controllerPortRevision = this.input.controllerPortRevision;
+			this.dirtyText = true;
 			return;
 		}
 		const next = (option.getIndex() + option.values.length + direction) % option.values.length;
@@ -535,9 +583,15 @@ export class HostOverlayMenu {
 	private rebuildText(): void {
 		for (let index = 0; index < this.options.length; index += 1) {
 			const option = this.options[index];
-			const line = option.kind === 'action'
-				? option.label
-				: `${option.label}  ${option.values[option.getIndex()].label}`;
+			let line: string;
+			if (option.kind === 'action') {
+				line = option.label;
+			} else if (option.kind === 'gamepad') {
+				const gamepad = this.input.getPlayerInput(option.playerIndex).inputHandlers.gamepad;
+				line = `${option.label}  ${gamepad === null ? 'NONE' : gamepad.device.label}`;
+			} else {
+				line = `${option.label}  ${option.values[option.getIndex()].label}`;
+			}
 			this.lineText[index] = line;
 			const items = this.optionGlyphs[index];
 			items.items = line;
