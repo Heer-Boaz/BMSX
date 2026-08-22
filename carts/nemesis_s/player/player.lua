@@ -951,12 +951,12 @@ function player:update_weapons()
 	end
 end
 
-function player:resolve_projectile_overlap(collider_local_id, enemy, enemy_collider_local_id)
+function player:resolve_projectile_overlap(collider_local_id, enemy, enemy_collider_local_id, hit_point)
 	local projectile<const> = self.projectiles_by_collider_local_id[collider_local_id]
 	if projectile.type == projectile_type_none then
 		return
 	end
-	if enemy:receive_player_projectile(projectile, enemy_collider_local_id) then
+	if enemy:receive_player_projectile(projectile, enemy_collider_local_id, hit_point) then
 		projectile.despawn(self, projectile, 'enemy_collision')
 	end
 end

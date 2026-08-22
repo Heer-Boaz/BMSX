@@ -60,7 +60,8 @@ function enemy:on_overlap(_event_type, _emitter, event)
 		player:resolve_projectile_overlap(
 			event.other_collider_local_id,
 			self,
-			event.collider_local_id
+			event.collider_local_id,
+			event.contact.point
 		)
 		return
 	end

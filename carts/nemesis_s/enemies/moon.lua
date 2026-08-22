@@ -349,7 +349,7 @@ function moon:choose_next_attack()
 	return '/combat/death_ray/rotating'
 end
 
-function moon:receive_player_projectile(projectile, collider_local_id)
+function moon:receive_player_projectile(projectile, collider_local_id, hit_point)
 	if collider_local_id ~= moon_core_collider_id or not self.vulnerable then
 		self.events:emit('enemy.moon.armored_hit')
 		return true
@@ -359,7 +359,7 @@ function moon:receive_player_projectile(projectile, collider_local_id)
 		self.events:emit('enemy.moon.hit')
 		world:spawn(ids_small_explosion_def, {
 			stage = self.stage,
-			pos = { x = projectile.x, y = projectile.y },
+			pos = { x = hit_point.x, y = hit_point.y },
 		})
 	end
 	return true

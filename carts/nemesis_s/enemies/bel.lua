@@ -111,7 +111,7 @@ function bel:finish_right()
 	return '/ringing/middle_to_left'
 end
 
-function bel:receive_player_projectile(projectile)
+function bel:receive_player_projectile(projectile, _collider_local_id, hit_point)
 	if not self.vulnerable then
 		self.events:emit('enemy.bel.armored_hit')
 		return true
@@ -121,7 +121,7 @@ function bel:receive_player_projectile(projectile)
 		self.events:emit('enemy.bel.hit')
 		world:spawn(ids_small_explosion_def, {
 			stage = self.stage,
-			pos = { x = projectile.x, y = projectile.y },
+			pos = { x = hit_point.x, y = hit_point.y },
 		})
 	end
 	return true

@@ -6,6 +6,7 @@ require('constants')
 
 local notes_view<const> = world:active_definition_view(ids_noot_def)
 local explosions_view<const> = world:active_definition_view(ids_large_explosion_def)
+local hit_explosions_view<const> = world:active_definition_view(ids_small_explosion_def)
 
 __bmsx_host_test = {
 	frames = 0,
@@ -80,13 +81,19 @@ function __bmsx_host_test.update()
 			notes[index]:mark_for_disposal()
 		end
 
+		local hit_point<const> = { x = bell.x + 12, y = bell.y + 12 }
 		bell:receive_player_projectile({
 			damage = bel_health - 1,
-			x = bell.x,
-			y = bell.y,
-		})
+			x = player.x,
+			y = player.y,
+		}, bell.collider.id_local, hit_point)
 		assert(bell.health == 1 and not stage.scrolling,
 			'a non-fatal bell hit resumed the stage')
+		local hit_explosions<const> = hit_explosions_view.objects
+		assert(#hit_explosions == 1
+			and hit_explosions[1].x == hit_point.x
+			and hit_explosions[1].y == hit_point.y,
+			'the bell hit feedback did not use the retained collision contact')
 		world:spawn(ids_small_explosion_def, {
 			stage = stage,
 			drop_definition_id = ids_roodje_def,
