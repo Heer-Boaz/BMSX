@@ -120,7 +120,20 @@ function __bmsx_host_test.update()
 		local motion<const> = mini:get_component(fixed_point_velocity_component)
 		assert(math.abs(motion.velocity_x) == mini_moon_velocity_q8
 			or math.abs(motion.velocity_y) == mini_moon_velocity_q8,
-			'Mini Moon did not retain the XNA dominant-axis launch speed')
+			'Mini Moon did not retain the balanced dominant-axis launch speed')
+		test.first_mini_spawn_time_ms = world.gameplay_time_ms
+		test.phase = 'mini_moon_cadence'
+		return false
+	end
+
+	if test.phase == 'mini_moon_cadence' then
+		if #mini_moons.objects < 2 then
+			return false
+		end
+		local spawn_interval<const> = world.gameplay_time_ms - test.first_mini_spawn_time_ms
+		assert(spawn_interval >= moon_mini_spawn_ms
+			and spawn_interval <= moon_mini_spawn_ms + clock.gameplay_delta_milliseconds(),
+			'Moon did not retain the reduced Mini Moon admission cadence')
 		boss.x = 0
 		boss.y = playfield_height - moon_height
 		boss.vertical_direction = moon_vertical_direction_up
@@ -141,6 +154,29 @@ function __bmsx_host_test.update()
 			'Moon upward volley emitted a ray in the wrong direction')
 		assert(rays[1].y == boss.y + 8 and rays[2].y == boss.y + 8,
 			'Moon upward volley lost the XNA lower-rotation muzzle anchors')
+		test.small_ray = rays[1]
+		test.small_ray_moving = rays[1].state_machines:bind_state_path('/moving')
+		test.phase = 'small_ray_moving'
+		return false
+	end
+
+	if test.phase == 'small_ray_moving' then
+		local ray<const> = test.small_ray
+		if not ray.state_machines:matches_state(test.small_ray_moving) then
+			return false
+		end
+		test.small_ray_y = ray.y
+		test.small_ray_time_ms = world.gameplay_time_ms
+		test.phase = 'small_ray_speed'
+		return false
+	end
+
+	if test.phase == 'small_ray_speed' then
+		if world.gameplay_time_ms == test.small_ray_time_ms then
+			return false
+		end
+		assert(test.small_ray_y - test.small_ray.y == moon_small_ray_speed,
+			'Moon small ray did not retain its balanced movement step')
 		boss.rotation = moon_rotation_right
 		boss:apply_rotation()
 		boss.x = playfield_width - moon_width
