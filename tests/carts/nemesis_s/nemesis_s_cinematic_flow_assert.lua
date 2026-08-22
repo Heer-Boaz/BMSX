@@ -222,6 +222,9 @@ function __bmsx_host_test.update()
 		if test.gameplay_frames < 20 then
 			return false
 		end
+		director:toggle_metalion_cheat()
+		assert(director.metalion_cheat_active,
+			'Metalion did not enter the completed run before the end demo')
 		local stage<const> = director.stage
 		stage.events:emit('stage.completed')
 		assert(director.state_machines:matches_state(test.end_demo_state),
@@ -275,6 +278,20 @@ function __bmsx_host_test.update()
 			'end-demo completion did not return to the title presentation')
 		assert(read_music_source() == end_demo_music_source,
 			'title entry stopped the non-looping XNA end-demo music')
+		local title<const> = registry:get('nemesis_s.title_screen')
+		title.events:emit('title_screen_done', { player_count = 1 })
+		assert(not director.metalion_cheat_active,
+			'new-run admission retained the completed run Metalion state')
+		test.phase = 'new_game'
+		return false
+	end
+	if test.phase == 'new_game' then
+		local player<const> = registry:get('nemesis_s.player.1')
+		if director.status_bar == nil or player == nil then
+			return false
+		end
+		assert(not player.metalion_cheat_active and player.sprite.imgid == assets_player_n,
+			'new game inherited the completed run Metalion vessel')
 		return true
 	end
 	if not director.state_machines:matches_state(test.gameplay_state) then

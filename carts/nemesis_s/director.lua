@@ -222,6 +222,7 @@ function director:accept_title_selection(_state, event)
 	self.player_count = event.player_count
 	self.stage_start_column = 0
 	self.restarting = false
+	self.metalion_cheat_active = false
 	return '/game_start'
 end
 
