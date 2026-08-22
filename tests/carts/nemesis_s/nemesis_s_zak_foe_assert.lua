@@ -65,8 +65,10 @@ function __bmsx_host_test.update()
 			stage = stage,
 			pos = { x = 200, y = 112 },
 		})
-		foe:get_component(collider_2d_component):set_enabled(false)
+		local foe_collider<const> = foe:get_component(collider_2d_component)
+		foe_collider:set_enabled(false)
 		test.foe = foe
+		test.foe_collider_local_id = foe_collider.id_local
 		test.jumping_state = foe.state_machines:bind_state_path('/jumping')
 		test.recovering_state = foe.state_machines:bind_state_path('/recovering')
 		test.prepare_state = foe.state_machines:bind_state_path('/prepare_jump')
@@ -174,7 +176,18 @@ function __bmsx_host_test.update()
 			test.retained_bullet_id = bullet.id
 			test.retained_bullet_x = bullet.x
 			test.retained_bullet_y = bullet.y
-			test.foe:on_destroyed()
+			local player<const> = registry:get('nemesis_s.player.1')
+			local projectile<const> = player.primary_projectiles[1]
+			player:spawn_bullet(player, projectile)
+			test.foe.events:emit('overlap.begin', {
+				other_id = player.id,
+				other_collider_local_id = projectile.collider.id_local,
+				other_layer = collision_player_projectile_layer,
+				collider_local_id = test.foe_collider_local_id,
+				contact = {
+					point = { x = test.foe.x, y = test.foe.y },
+				},
+			})
 			test.shooter_destroyed_time_ms = world.gameplay_time_ms
 			test.phase = 'shooter_destroyed'
 			return false

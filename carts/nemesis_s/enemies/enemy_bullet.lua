@@ -108,10 +108,7 @@ local define_fsm<const> = function()
 			flying = {
 				update = enemy_bullet.update_flying,
 				on = {
-					['overlap.begin'] = {
-						emitter = false,
-						go = sprite_object.mark_for_disposal,
-					},
+					['overlap.begin'] = sprite_object.mark_for_disposal,
 				},
 			},
 		},

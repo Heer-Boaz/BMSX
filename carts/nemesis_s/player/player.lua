@@ -1154,10 +1154,7 @@ local define_player_fsm<const> = function()
 				initial = 'flying',
 				tags = { active_state_tag },
 				on = {
-					['overlap.begin'] = {
-						emitter = false,
-						go = player.on_body_overlap,
-					},
+					['overlap.begin'] = player.on_body_overlap,
 				},
 				states = {
 					flying = {
