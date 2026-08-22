@@ -243,6 +243,7 @@ function director:apply_game_over_curtain_frame(frame)
 end
 
 function director:enter_game_over()
+	self.metalion_cheat_active = false
 	self.game_over_curtain_width = 0
 	self.game_over_curtain:set_enabled(false)
 	self.events:emit('game_over')

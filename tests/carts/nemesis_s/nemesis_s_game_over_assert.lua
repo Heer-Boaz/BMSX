@@ -66,10 +66,15 @@ function __bmsx_host_test.update()
 
 		stage.tape_head = 251
 		local previous_stage<const> = stage
+		director:toggle_metalion_cheat()
+		assert(director.metalion_cheat_active and director.players[1].metalion_cheat_active,
+			'Metalion cheat did not activate before the terminal player death')
 		director.player_states[1]:set_lives(0)
 		director.players[1].state_machines:transition_to('/dying')
 		assert(director.state_machines:matches_state(test.game_over_curtain_state),
 			'terminal player death did not begin the XNA curtain')
+		assert(not director.metalion_cheat_active,
+			'game-over retained the run-scoped Metalion cheat')
 		assert(not director.status_bar.rows[1].powerups_visible,
 			'exhausted player retained the XNA power-up row')
 		assert(director.stage == previous_stage and registry:get(ids_stage_instance) == previous_stage,
@@ -105,6 +110,8 @@ function __bmsx_host_test.update()
 			'restarted stage did not rebuild its tape from checkpoint column 227')
 		assert(director.player_states[1].lives == 9,
 			'game-over restart did not restore the XNA player life count')
+		assert(not director.players[1].metalion_cheat_active,
+			'game-over restart applied Metalion to the replacement player')
 		assert(not director.game_over_curtain.enabled,
 			'game-over curtain remained active over the status-only game start')
 

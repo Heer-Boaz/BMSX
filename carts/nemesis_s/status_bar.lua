@@ -22,18 +22,31 @@ local row_height<const> = 8
 local description_x<const> = 160
 local life_x<const> = 240
 local ship_x<const> = 248
+local speed_description<const> = image.resolve('status_description_speed')
+local option_description<const> = image.resolve('status_description_option')
 local sources<const> = {
 	empty = image.resolve('status_powerup_empty'),
 	filled = image.resolve('status_powerup_filled'),
 	taken = image.resolve('status_powerup_taken'),
 	taken_current = image.resolve('status_powerup_taken_current'),
 	description = {
-		image.resolve('status_description_speed'),
-		image.resolve('status_description_missile'),
-		image.resolve('status_description_laser'),
-		image.resolve('status_description_uplaser'),
-		image.resolve('status_description_option'),
-		image.resolve('status_description_shield'),
+		{ speed_description, speed_description, speed_description },
+		{
+			image.resolve('status_description_missile_1'),
+			image.resolve('status_description_missile_2'),
+			image.resolve('status_description_napalm'),
+		},
+		{
+			image.resolve('status_description_laser_1'),
+			image.resolve('status_description_laser_2'),
+			image.resolve('status_description_extended_laser'),
+		},
+		{
+			image.resolve('status_description_uplaser_1'),
+			image.resolve('status_description_uplaser_2'),
+		},
+		{ option_description, option_description, option_description, option_description },
+		{ image.resolve('status_description_shield') },
 	},
 	enabled = image.resolve('status_description_enabled'),
 	ship = image.resolve('status_ship'),
@@ -79,7 +92,7 @@ local select_description_source<const> = function(row)
 		or state.powerup_levels[slot_index] >= powerup_max_levels[slot_index] then
 		return sources.enabled
 	end
-	return sources.description[slot_index]
+	return sources.description[slot_index][state.powerup_levels[slot_index] + 1]
 end
 
 local refresh_lives<const> = function(self, _event, source)

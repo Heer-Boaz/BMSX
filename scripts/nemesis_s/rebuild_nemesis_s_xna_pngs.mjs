@@ -250,14 +250,6 @@ function getMappings() {
 			target: 'status_description_speed@atlas=15.png',
 		},
 		{
-			source: 'Misc/Powerup_Missile.bmp',
-			target: 'status_description_missile@atlas=15.png',
-		},
-		{
-			source: 'Misc/Powerup_Laser.bmp',
-			target: 'status_description_laser@atlas=15.png',
-		},
-		{
 			source: 'Misc/Powerup_Option.bmp',
 			target: 'status_description_option@atlas=15.png',
 		},

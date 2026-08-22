@@ -1,4 +1,5 @@
 local clock<const> = require('cartlib/clock')
+local image<const> = require('cartlib/gx/image')
 local registry<const> = require('cartlib/registry')
 local rom_dir<const> = require('cartlib/rom_dir')
 local player_state_module<const> = require('player/player_state')
@@ -70,6 +71,42 @@ function __bmsx_host_test.update()
 	assert(player_state_module.powerup_slot.uplaser == player_state_module.powerup_slot.laser + 1
 		and max_levels[player_state_module.powerup_slot.uplaser] == 2,
 		'the unlocked up-laser lost its MSX gauge position or two weapon levels')
+
+	local description_assets<const> = {
+		{
+			'status_description_speed',
+			'status_description_speed',
+			'status_description_speed',
+		},
+		{
+			'status_description_missile_1',
+			'status_description_missile_2',
+			'status_description_napalm',
+		},
+		{
+			'status_description_laser_1',
+			'status_description_laser_2',
+			'status_description_extended_laser',
+		},
+		{
+			'status_description_uplaser_1',
+			'status_description_uplaser_2',
+		},
+	}
+	local state<const> = player.player_state
+	local description_row<const> = registry:get(ids_director_instance).status_bar.rows[1]
+	for slot = player_state_module.powerup_slot.speed, player_state_module.powerup_slot.uplaser do
+		local assets<const> = description_assets[slot]
+		state.current_powerup_slot = slot
+		for level = 0, #assets - 1 do
+			state.powerup_levels[slot] = level
+			state.events:emit(player_state_module.events.powerup_loadout_changed)
+			assert(description_row.description_source == image.resolve(assets[level + 1]),
+				'power-up gauge selected the wrong next-level description for slot '
+				.. tostring(slot) .. ' level ' .. tostring(level))
+		end
+	end
+	state:reset_powerups()
 
 	player.x = 41
 	player.y = 25
