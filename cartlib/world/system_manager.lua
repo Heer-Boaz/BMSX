@@ -31,6 +31,10 @@ function system_manager.new(world)
 	return setmetatable({
 		_world = world,
 		_systems = {},
+		_clock_resume_callbacks = {
+			[clock.gameplay] = {},
+			[clock.frame] = {},
+		},
 	}, system_manager)
 end
 
@@ -42,6 +46,7 @@ function system_manager:configure(
 )
 	local systems<const> = {}
 	local tick_functions<const> = {}
+	local clock_resume_callbacks<const> = self._clock_resume_callbacks
 	for system_index = 1, #system_classes do
 		local instance<const> = system_classes[system_index].new(self._world)
 		systems[system_index] = instance
@@ -53,6 +58,11 @@ function system_manager:configure(
 				system_index = system_index,
 				function_index = function_index,
 			}
+			local on_clock_resumed<const> = definition.on_clock_resumed
+			if on_clock_resumed ~= nil then
+				local callbacks<const> = clock_resume_callbacks[definition.clock_source]
+				callbacks[#callbacks + 1] = on_clock_resumed
+			end
 		end
 	end
 	table.sort(tick_functions, tick_function_less)
@@ -93,6 +103,16 @@ function system_manager:configure(
 		return update_without_gameplay()
 	end
 	return update_at_gameplay_rate, update_without_gameplay
+end
+
+-- Clock-bound systems publish resume ownership on their static tick-function
+-- records. Dispatch is paid only at the explicit clock boundary; ordinary
+-- frame execution retains the compiled straight-line schedule.
+function system_manager:resume_clock(clock_source)
+	local callbacks<const> = self._clock_resume_callbacks[clock_source]
+	for callback_index = 1, #callbacks do
+		callbacks[callback_index]()
+	end
 end
 
 function system_manager:reset()

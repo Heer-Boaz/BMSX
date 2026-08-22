@@ -26,6 +26,7 @@ input_system.gameplay_tick = {
 	clock_source = clock.gameplay,
 	method = 'update_gameplay',
 	prerequisites = { input_system.frame_tick },
+	on_clock_resumed = input.synchronize_gameplay_clock,
 }
 
 function input_system.new()

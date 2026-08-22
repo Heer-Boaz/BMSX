@@ -415,6 +415,18 @@ local create_action_state<const> = function(player, clock_state, action)
 	return state
 end
 
+local reset_action_evaluation<const> = function(state, frame)
+	state.guard_last_press_id = -1
+	state.guard_last_accepted_frame = frame - guard_window_frames - 1
+	state.guard_last_result = false
+	state.repeat_active = false
+	state.repeat_count = 0
+	state.repeat_press_start_frame = -1
+	state.repeat_last_frame = -1
+	state.repeat_last_result = false
+	state.repeat_last_repeat_frame = -1
+end
+
 local clear_action_evaluation_state<const> = function(player)
 	local frame<const> = *frame_serial
 	local clock_state_list<const> = player.clock_state_list
@@ -424,15 +436,7 @@ local clear_action_evaluation_state<const> = function(player)
 		local action_states<const> = clock_state.action_state_list
 		for i = 1, clock_state.action_state_count do
 			local state<const> = action_states[i]
-			state.guard_last_press_id = -1
-			state.guard_last_accepted_frame = frame - guard_window_frames - 1
-			state.guard_last_result = false
-			state.repeat_active = false
-			state.repeat_count = 0
-			state.repeat_press_start_frame = -1
-			state.repeat_last_frame = -1
-			state.repeat_last_result = false
-			state.repeat_last_repeat_frame = -1
+			reset_action_evaluation(state, frame)
 			rebuild_action_bindings(player, state)
 		end
 	end
@@ -646,6 +650,28 @@ function input.advance_gameplay()
 		clock_state.edge_id = player.next_edge_id - 1
 		clock_state.sample_frame = frame
 		clock_state.evaluation_serial = clock_state.evaluation_serial + 1
+	end
+end
+
+-- A suspended consumer clock does not receive transitions recorded by the raw
+-- frame sampler while it is absent. Resuming advances that clock's edge cursor
+-- to the current producer sequence while retaining the sampled button levels.
+-- A held direction therefore remains held, but a key used by a modal action is
+-- not replayed as a fresh gameplay press or repeat.
+function input.synchronize_gameplay_clock()
+	local frame<const> = *frame_serial
+	for player_index = 1, player_count do
+		local player<const> = player_list[player_index]
+		local edge_id<const> = player.next_edge_id - 1
+		local clock_state<const> = player.clock_states[clock.gameplay]
+		clock_state.previous_edge_id = edge_id
+		clock_state.edge_id = edge_id
+		clock_state.sample_frame = frame
+		clock_state.evaluation_serial = clock_state.evaluation_serial + 1
+		local action_states<const> = clock_state.action_state_list
+		for state_index = 1, clock_state.action_state_count do
+			reset_action_evaluation(action_states[state_index], frame)
+		end
 	end
 end
 

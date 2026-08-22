@@ -299,6 +299,7 @@ function world_class:_commit_gameplay_clock(running)
 	end
 	self.gameplay_clock_running = running
 	if running then
+		self._system_manager:resume_clock(clock.gameplay)
 		self.update = self._update_with_gameplay
 	else
 		self.update = self._update_without_gameplay
