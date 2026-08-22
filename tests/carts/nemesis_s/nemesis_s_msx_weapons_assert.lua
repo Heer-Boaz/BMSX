@@ -267,15 +267,16 @@ function __bmsx_host_test.update()
 	player:spawn_laser(player, 3)
 	assert(*selected_apu_source == extended_laser_audio_source,
 		'the Extended Laser did not supersede the up-laser sound channel')
-	assert(primary.type == 8 and primary.collider.local_area.bottom == 8,
-		'the third laser level did not admit the source ROM thick-beam record')
+	assert(primary.type == 8 and primary.y == 24
+		and primary.collider.local_area.bottom == 8,
+		'the third laser level did not admit its tile-aligned source ROM beam')
 	for expected_length = 5, 25, 5 do
 		player:update_weapons()
 		assert(primary.length_tiles == expected_length,
 			'the Extended Laser did not expand by five retained tiles per gameplay tick')
 	end
 	player:update_weapons()
-	assert(primary.length_tiles == 28 and primary.x == 16
+	assert(primary.length_tiles == 28 and primary.x == 16 and primary.y == 24
 		and primary.collider.local_area.right == 224
 		and primary.collider.local_area.bottom == 8,
 		'the Extended Laser did not retain its 28x8-tile source extent')
@@ -283,6 +284,20 @@ function __bmsx_host_test.update()
 	player:update_weapons()
 	assert(primary.x == 48 and primary.length_tiles == 26,
 		'the completed Extended Laser did not enter its independent travel phase')
+	player:despawn_slot_projectile(primary, 'test_reset')
+
+	player.x = 1
+	player.y = 25
+	player:spawn_laser(player, 3)
+	local extended_laser_row<const> = stage.solid_tape[(primary.y // stage.tile_size) + 1]
+	local extended_laser_column<const> =
+		((primary.x + stage.total_scroll_px) // stage.tile_size) + 1
+	extended_laser_row[extended_laser_column + 2] = 1
+	player:update_weapons()
+	assert(primary.type == 8 and primary.y == 24 and primary.length_tiles == 1
+		and primary.collider.local_area.right == 8,
+		'the tile-aligned Extended Laser did not stop at its authored stage row')
+	extended_laser_row[extended_laser_column + 2] = 0
 	player:despawn_slot_projectile(primary, 'test_reset')
 
 	test.salvo_count = 0
