@@ -21,7 +21,6 @@ local new_ray_strip<const> = tile_strip_component.factory({
 	step_x = -moon_death_ray_tile_size,
 	step_y = 0,
 	first_tile = 1,
-	offset_z = moon_death_ray_draw_z,
 	enabled = false,
 })
 local new_ray_strip_collider<const> = tile_strip_collider_2d_component.factory({
@@ -34,7 +33,6 @@ local new_ray_strip_collider<const> = tile_strip_collider_2d_component.factory({
 local new_ray_cap<const> = sprite_component.factory({
 	id_local = moon_death_ray_cap_id,
 	imgid = assets_moon_death_ray_start,
-	offset_z = moon_death_ray_draw_z,
 })
 local new_ray_cap_collider<const> = collider_2d_component.factory({
 	id_local = moon_death_ray_cap_id,
@@ -123,6 +121,7 @@ local register_definition<const> = function()
 		},
 		defaults = {
 			force_field_hit = player_force_field_hit_overload,
+			z = name_table_weapon_draw_z,
 		},
 	})
 end

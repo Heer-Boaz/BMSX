@@ -135,7 +135,7 @@ local register_definition<const> = function()
 		defaults = {
 			force_field_hit = player_force_field_hit_overload,
 			direction = -1,
-			z = schoorsteen_ray_draw_z,
+			z = name_table_weapon_draw_z,
 		},
 	})
 end

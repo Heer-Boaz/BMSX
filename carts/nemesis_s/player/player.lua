@@ -29,7 +29,8 @@ local player_death_timeline_id<const> = 'player_death'
 local player_respawn_timeline_id<const> = 'player_respawn'
 local player_body_collider_id<const> = 0
 local player_vessel_visual_id<const> = 'vessel'
-local player_projectile_visual_id<const> = 'projectiles'
+local player_name_table_weapon_visual_id<const> = 'name_table_weapons'
+local player_sprite_projectile_visual_id<const> = 'sprite_projectiles'
 local player_death_visual_id<const> = 'death'
 local player_force_field_visual_id<const> = 'force_field'
 local force_field_animation_strong<const> = 'strong'
@@ -410,39 +411,50 @@ function player:reset_runtime()
 	end
 end
 
-local draw_player_projectiles<const> = function(component, draw)
+local draw_player_name_table_weapons<const> = function(component, draw)
 	local self<const> = component.parent
 	for vessel_id = 1, player_vessel_capacity do
 		local projectile<const> = self.primary_projectiles[vessel_id]
-		if projectile.type ~= projectile_type_none then
-			if projectile.type == projectile_type_bullet then
-				weapon_sources.bullet:blit(draw, projectile.x, projectile.y)
-			else
-				for tile_index = 0, projectile.length_tiles - 1 do
-					projectile.source:blit(
-						draw,
-						projectile.x + tile_index * weapons_laser.tile_width,
-						projectile.y
-					)
-				end
+		if projectile.type ~= projectile_type_none
+		and projectile.type ~= projectile_type_bullet then
+			for tile_index = 0, projectile.length_tiles - 1 do
+				projectile.source:blit(
+					draw,
+					projectile.x + tile_index * weapons_laser.tile_width,
+					projectile.y
+				)
 			end
 		end
 		local secondary<const> = self.secondary_projectiles[vessel_id]
-		if secondary.type ~= projectile_type_none then
-			if secondary.type == projectile_type_bullet then
-				weapon_sources.bullet:blit(draw, secondary.x, secondary.y)
-			else
-				for tile_index = 0, secondary.length_tiles - 1 do
-					weapon_sources.laser:blit(
-						draw,
-						secondary.x + tile_index * weapons_uplaser.tile_width,
-						secondary.y
-					)
-				end
+		if secondary.type ~= projectile_type_none
+		and secondary.type ~= projectile_type_bullet then
+			for tile_index = 0, secondary.length_tiles - 1 do
+				weapon_sources.laser:blit(
+					draw,
+					secondary.x + tile_index * weapons_uplaser.tile_width,
+					secondary.y
+				)
 			end
 		end
 	end
+end
+local new_name_table_weapon_visual<const> = custom_visual_component.factory({
+	id_local = player_name_table_weapon_visual_id,
+	draw = draw_player_name_table_weapons,
+	offset_z = name_table_weapon_draw_z - player_draw_z,
+})
+
+local draw_player_sprite_projectiles<const> = function(component, draw)
+	local self<const> = component.parent
 	for vessel_id = 1, player_vessel_capacity do
+		local primary<const> = self.primary_projectiles[vessel_id]
+		if primary.type == projectile_type_bullet then
+			weapon_sources.bullet:blit(draw, primary.x, primary.y)
+		end
+		local secondary<const> = self.secondary_projectiles[vessel_id]
+		if secondary.type == projectile_type_bullet then
+			weapon_sources.bullet:blit(draw, secondary.x, secondary.y)
+		end
 		local missile<const> = self.missile_projectiles[vessel_id]
 		if missile.type == projectile_type_napalm_blast then
 			local source<const> = weapon_sources.napalm_blast[missile.blast_frame]
@@ -459,9 +471,9 @@ local draw_player_projectiles<const> = function(component, draw)
 		end
 	end
 end
-local new_projectile_visual<const> = custom_visual_component.factory({
-	id_local = player_projectile_visual_id,
-	draw = draw_player_projectiles,
+local new_sprite_projectile_visual<const> = custom_visual_component.factory({
+	id_local = player_sprite_projectile_visual_id,
+	draw = draw_player_sprite_projectiles,
 })
 
 local draw_player_vessel<const> = function(component, draw)
@@ -1408,8 +1420,9 @@ local register_player_definition<const> = function()
 		def_id = ids_player_def,
 		class = player,
 		components = {
+			new_name_table_weapon_visual,
 			new_vessel_visual,
-			new_projectile_visual,
+			new_sprite_projectile_visual,
 			new_death_visual,
 			new_force_field_visual,
 			new_player_collider,
@@ -1420,7 +1433,7 @@ local register_player_definition<const> = function()
 		defaults = {
 			player_index = 1,
 			vessel_id = 1,
-			z = 70,
+			z = player_draw_z,
 			frame = 0,
 			last_dx = 0,
 			last_dy = 0,
