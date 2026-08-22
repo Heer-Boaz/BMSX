@@ -347,3 +347,20 @@ timeline frame boundaries, and the ray remains an independent world object.
 - The cart retains the resulting normal-difficulty angle and velocity tables as
   ROM data. Enemy bullets write those raw Q8.8 words once when admitted; their
   scheduled update performs no trigonometry, normalization, or division.
+
+## Open parity slices
+
+These observed cart gaps still require source tracing before implementation:
+
+- Tile-collision actors must block player lasers by default. This includes the
+  bell, both chimney types and the Moon. The Moon's complete tile body must also
+  block the player, and that physical body remains after its defeat; later
+  actors may explicitly opt out when the game requires laser transmission.
+- Slow the Moon's player-facing vertical movement and its vertical laser rays
+  slightly without changing the already retained attack structure.
+- Restore the XNA cart's limit of four options per player rather than inheriting
+  the original MSX limit of two.
+- Trace and add the Nemesis 2 napalm missile upgrade after Missile 2, including
+  its source sprites and retained post-impact blast.
+- Trace and add the Nemesis 2 Extended Laser upgrade after Laser 2, including
+  its thick green beam representation and collision behavior.
