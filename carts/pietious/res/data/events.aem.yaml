@@ -48,19 +48,6 @@ events:
                   stop:
                       fade_ms: 0
 
-    intro:
-        channel: sfx
-        rules:
-            - go:
-                  audio_id: prelude
-
-    intro_done:
-        channel: sfx
-        rules:
-            - go:
-                  stop:
-                      fade_ms: 0
-
     story:
         channel: music
         rules:

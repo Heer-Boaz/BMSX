@@ -5,7 +5,6 @@ local text_component<const> = require('cartlib/text/text_component')
 local world<const> = require('cartlib/world/world')
 require('constants')
 
-local apu_slot_select<const>: *word = 0x08000148
 local selected_apu_source<const>: *word = 0x0800018c
 local end_demo_source_address<const> = rom_dir.audio('enddemo').addr
 local intro_logo_reveal_timeline_id<const> = 'intro.logo.reveal'
@@ -31,19 +30,19 @@ function __bmsx_host_test.setup()
 	test.intro_state = director.state_machines:bind_state_path('/intro')
 	test.story_state = director.state_machines:bind_state_path('/story')
 	test.title_state = director.state_machines:bind_state_path('/title_screen')
-	assert(director.state_machines:matches_state(test.intro_state), 'Pietious did not boot into the XNA intro')
+	assert(director.state_machines:matches_state(test.intro_state), 'Pietious did not boot into the Konami intro')
 	assert(world.active_space_id == 'intro', 'intro did not own the presentation space')
 
 	local intro<const> = registry:get('intro')
 	intro.state_machines:transition_to('/hidden')
-	intro.state_machines:transition_to('/playing/logo/blank')
+	intro.state_machines:transition_to('/playing/blank')
 	local logo<const> = intro.sprite_component
 	assert(logo.imgid == 'intro_konami'
 		and logo.offset_x == 40 and logo.offset_y == 64
 		and logo.region_width == 168 and logo.region_height == 1
 		and not logo.visible and intro.logo_background.visible,
 		'Konami logo did not enter its source-derived white presentation')
-	intro.state_machines:transition_to('/playing/logo/reveal')
+	intro.state_machines:transition_to('/playing/reveal')
 	local reveal<const> = intro.timelines:get(intro_logo_reveal_timeline_id)
 	assert(reveal.frame_duration == clock.frame_delta_milliseconds(),
 		'Konami logo reveal did not match Pietious two-VBlank presentation cadence')
@@ -52,22 +51,13 @@ function __bmsx_host_test.setup()
 		'Konami logo midpoint differs from the Metal Gear row copier')
 	intro.timelines:advance_to(intro_logo_reveal_timeline_id, 47)
 	assert(logo.region_height == 48, 'Konami logo did not reveal all source scanlines')
-	intro.state_machines:transition_to('/playing/logo/hold')
+	intro.state_machines:transition_to('/playing/hold')
 	assert(intro.timelines:get(intro_logo_hold_timeline_id).duration_ms
 		== intro_logo_hold_frames * clock.frame_delta_milliseconds(),
 		'Konami logo hold did not retain its 256-VBlank duration')
-	intro.state_machines:transition_to('/playing/presentation')
-	assert(not logo.visible and not intro.logo_background.visible,
-		'Konami logo presentation remained visible over the Pietious intro')
-	assert(intro.sinterklaas.offset_x == -28 * room_tile_size, 'Sinterklaas intro logo started at the wrong x')
-	assert(intro.boaz.offset_x == 32 * room_tile_size, 'Boaz intro logo started at the wrong x')
-	intro.timelines:seek('intro.presentation', 80)
-	assert(intro.sinterklaas.offset_x == 2 * room_tile_size, 'Sinterklaas intro slide did not end at XNA x=2')
-	intro.timelines:seek('intro.presentation', 183)
-	assert(intro.boaz.offset_x == 4 * room_tile_size, 'Boaz intro slide did not end at XNA x=4')
-	intro.timelines:seek('intro.presentation', 333)
-	assert(not intro.visible, 'intro blackout did not hide both logos')
-	intro.events:emit('intro_done')
+	intro:finish()
+	assert(not intro.visible and not intro.logo_background.visible,
+		'finishing the Konami logo retained its presentation')
 	assert(registry:get('narrative').text_component.offset_y == screen_height,
 		'story did not start below the screen')
 	test.phase = 'story'
@@ -91,8 +81,6 @@ function __bmsx_host_test.update()
 	if test.phase == 'story' then
 		assert(director.state_machines:matches_state(test.story_state), 'intro did not advance to the story')
 		assert(world.active_space_id == 'narrative', 'story did not own the narrative presentation space')
-		*apu_slot_select = 0
-		assert(*selected_apu_source == 0, 'XNA prelude audio continued after leaving the intro')
 		local narrative<const> = registry:get('narrative')
 		assert(narrative.text_component.static_text_line_count == 54, 'story did not bind the complete XNA text')
 		test.story_requested_state = narrative.state_machines:bind_state_path('/story/requested')
