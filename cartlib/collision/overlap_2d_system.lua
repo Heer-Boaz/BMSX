@@ -206,15 +206,26 @@ function overlap_2d_system:update()
 			row = acquire_pair_row(self)
 			new_pairs[key_a] = row
 		end
-		row[key_b] = true
+		local activation_revision<const> =
+			key_a._activation_revision + key_b._activation_revision
+		row[key_b] = activation_revision
 		local prev_row<const> = prev_pairs[key_a]
-		if prev_row ~= nil and prev_row[key_b] then
+		local previous_activation_revision
+		if prev_row ~= nil then
+			previous_activation_revision = prev_row[key_b]
+		end
+		if previous_activation_revision == activation_revision then
 			if owner_a.active and owner_b.active then
 				emit_overlap_event(overlap_payload, 'overlap.stay', 'stay', owner_a, a, owner_b, b, pair.contact)
 				emit_overlap_event(overlap_payload, 'overlap.stay', 'stay', owner_b, b, owner_a, a, pair.contact_other)
 			end
 		else
 			if owner_a.active and owner_b.active then
+				if previous_activation_revision ~= nil then
+					prev_row[key_b] = nil
+					emit_overlap_event(overlap_payload, 'overlap.end', 'end', owner_a, a, owner_b, b, nil)
+					emit_overlap_event(overlap_payload, 'overlap.end', 'end', owner_b, b, owner_a, a, nil)
+				end
 				emit_overlap_event(overlap_payload, 'overlap.begin', 'begin', owner_a, a, owner_b, b, pair.contact)
 				emit_overlap_event(overlap_payload, 'overlap.begin', 'begin', owner_b, b, owner_a, a, pair.contact_other)
 			end

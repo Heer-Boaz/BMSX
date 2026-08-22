@@ -16,6 +16,7 @@ end
 
 local create<const> = function(opts, definition)
 	local self<const> = setmetatable(base_component.new(opts), collider_2d_component)
+	self._activation_revision = 0
 	self.id_local = definition.id_local or self.id_local
 	self.layer = definition.layer or 1
 	self.mask = definition.mask or 0xffffffff
@@ -26,6 +27,17 @@ local create<const> = function(opts, definition)
 		self.enabled = definition.enabled
 	end
 	return self
+end
+
+-- A retained collider may leave and re-enter the active component view between
+-- two overlap passes. Its object identity stays stable, so the overlap history
+-- also retains this activation revision to distinguish the new contact
+-- lifecycle from the previous one.
+function collider_2d_component:set_enabled(enabled)
+	if enabled and not self.enabled then
+		self._activation_revision = self._activation_revision + 1
+	end
+	return base_component.set_enabled(self, enabled)
 end
 
 function collider_2d_component.new(opts)
