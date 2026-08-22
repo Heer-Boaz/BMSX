@@ -4,6 +4,7 @@ local fsm_library<const> = require('cartlib/fsm/library')
 local prefab<const> = require('cartlib/world/prefab')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 local world<const> = require('cartlib/world/world')
+local assets<const> = require('bmsx/assets')
 local enemy<const> = require('enemies/enemy')
 local stage_scroll_follower_component<const> = require('stage_scroll_follower_component')
 require('constants')
@@ -11,17 +12,10 @@ require('constants')
 local bel<const> = {}
 bel.__index = bel
 
-local hit_area<const> = {
-	left = 8,
-	top = 0,
-	right = 16,
-	bottom = 24,
-}
 local players_view
 
 function bel:ctor()
 	self.collider = self:get_component(collider_2d_component)
-	self.collider.local_area = hit_area
 end
 
 function bel:onspawn()
@@ -37,6 +31,7 @@ function bel:center()
 	sprite.offset_y = 0
 	self.collider.shape_offset_x = 0
 	self.collider.shape_offset_y = 0
+	self.collider:set_shape_asset(assets.collision_shape_bel_middle_body_addr)
 end
 
 function bel:ring()
@@ -79,6 +74,7 @@ function bel:enter_left()
 	sprite.offset_y = bel_side_offset_y
 	self.collider.shape_offset_x = -bel_side_offset_x
 	self.collider.shape_offset_y = bel_side_offset_y
+	self.collider:set_shape_asset(assets.collision_shape_bel_side_body_addr)
 	self.ring_count = self.ring_count + 1
 	self:ring()
 end
@@ -91,6 +87,8 @@ function bel:enter_right()
 	sprite.offset_y = bel_side_offset_y
 	self.collider.shape_offset_x = bel_side_offset_x
 	self.collider.shape_offset_y = bel_side_offset_y
+	self.collider:set_shape_asset(assets.collision_shape_bel_side_body_addr)
+	self.collider:set_shape_flip(true, false)
 	self.ring_count = self.ring_count + 1
 	self:ring()
 end
@@ -198,7 +196,7 @@ local register_definition<const> = function()
 		class = bel,
 		base = enemy,
 		components = {
-			enemy.new_collider,
+			enemy.collider_factory(assets.collision_shape_bel_middle_body_addr),
 			stage_scroll_follower_component.new,
 			timeline_component.new,
 			fsm_component.factory({ ids_bel_fsm }),

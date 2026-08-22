@@ -73,6 +73,8 @@ function __bmsx_host_test.update()
 		local armor<const> = boss:get_component(collider_2d_component, moon_armor_collider_id)
 		assert(core.shape_ref ~= nil and armor.shape_ref ~= nil and core.shape_ref ~= armor.shape_ref,
 			'Moon did not bind its separate retained core and armor hitmaps')
+		assert(core.mask == collision_enemy_mask,
+			'Moon core tilemap did not block both players and their projectiles')
 		boss:receive_player_projectile({ damage = 1, x = boss.x, y = boss.y }, moon_core_collider_id)
 		assert(boss.health == moon_health,
 			'Moon core accepted damage during the armored entrance')
@@ -293,8 +295,8 @@ function __bmsx_host_test.update()
 		boss:receive_player_projectile({ damage = 1, x = boss.x, y = boss.y }, moon_core_collider_id)
 		assert(boss.health == 0 and boss.state_machines:matches_state(test.dying),
 			'Moon core destruction did not enter the authored death sequence')
-		assert(not boss.core_collider.enabled and not boss.armor_collider.enabled,
-			'Moon death retained active hitmap colliders')
+		assert(boss.core_collider.enabled and boss.armor_collider.enabled,
+			'Moon death removed its hitmap before the visible body disappeared')
 		assert(death_rays.objects[1] == ray
 			and ray:get_component(sprite_component, moon_death_ray_cap_id).enabled,
 			'Moon death removed its independently retained death ray')
@@ -308,6 +310,11 @@ function __bmsx_host_test.update()
 		end
 		assert(boss.state_machines:matches_state(test.dying),
 			'Moon death-ray completion escaped the active death sequence')
+		if boss.visible then
+			return false
+		end
+		assert(not boss.core_collider.enabled and not boss.armor_collider.enabled,
+			'Moon retained its hitmap after the visible body disappeared')
 		boss:mark_for_disposal()
 		return true
 	end

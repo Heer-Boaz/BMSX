@@ -34,7 +34,7 @@ local roodjes_view
 local new_core_collider<const> = collider_2d_component.factory({
 	id_local = moon_core_collider_id,
 	layer = collision_enemy_layer,
-	mask = collision_player_projectile_layer,
+	mask = collision_enemy_mask,
 })
 local new_armor_collider<const> = collider_2d_component.factory({
 	id_local = moon_armor_collider_id,
@@ -372,13 +372,13 @@ end
 
 function moon:begin_dying()
 	self.vulnerable = false
-	self.core_collider:set_enabled(false)
-	self.armor_collider:set_enabled(false)
 	self:deactivate_flashes()
 end
 
 function moon:explode()
 	self.visible = false
+	self.core_collider:set_enabled(false)
+	self.armor_collider:set_enabled(false)
 	self.events:emit('enemy.moon.explosion')
 	world:spawn(ids_large_explosion_def, {
 		stage = self.stage,
