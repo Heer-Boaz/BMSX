@@ -70,11 +70,11 @@ player_height = 10
 -- each original gameplay update.
 player_base_movement_step = 2
 player_movement_step_increase = 0.5
-player_option_history_count = 16
+player_option_history_count = 32
 player_option_history_spacing = 8
 player_option_pickup_offset_x = 128
 player_option_pickup_speed_x_px_per_second = -25
-player_vessel_capacity = 3
+player_vessel_capacity = 5
 player_bullet_movement_speed = 12
 player_bullet_spawn_offset_x = 8
 -- Name-table projectiles originate eight pixels below the original vessel

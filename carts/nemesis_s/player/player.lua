@@ -303,23 +303,21 @@ end
 
 local place_options_from_history<const> = function(self)
 	local options<const> = self.options
-	if #options == 0 then
+	local option_count<const> = #options
+	if option_count == 0 then
 		return
-	end
-	local history_index<const> = self.option_history_index
-	local first_history_index = history_index - player_option_history_spacing
-	if first_history_index <= 0 then
-		first_history_index = first_history_index + player_option_history_count
 	end
 	local history_x<const> = self.option_history_x
 	local history_y<const> = self.option_history_y
-	local first<const> = options[1]
-	first.x = history_x[first_history_index]
-	first.y = history_y[first_history_index]
-	if #options == 2 then
-		local second<const> = options[2]
-		second.x = history_x[history_index]
-		second.y = history_y[history_index]
+	local history_index = self.option_history_index - player_option_history_spacing
+	for option_index = 1, option_count do
+		if history_index <= 0 then
+			history_index = history_index + player_option_history_count
+		end
+		local option<const> = options[option_index]
+		option.x = history_x[history_index]
+		option.y = history_y[history_index]
+		history_index = history_index - player_option_history_spacing
 	end
 end
 
@@ -538,10 +536,9 @@ function player:apply_force_field_hit(hit)
 end
 
 function player:update_options()
-	-- Nemesis 2 retains sixteen player positions in E450-E46F. The write
-	-- cursor advances only when at least one input axis has a direction; the
-	-- first and second options consume the samples eight and sixteen entries
-	-- behind that cursor respectively.
+	-- Each option consumes the next eight-sample segment of one retained ring.
+	-- The write cursor advances only when at least one input axis has a
+	-- direction, preserving the source game's movement-dependent trail.
 	if self.left_held == self.right_held and self.up_held == self.down_held then
 		return
 	end

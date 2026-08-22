@@ -130,7 +130,7 @@ function __bmsx_host_test.update()
 		return false
 	end
 	assert(player.player_state.powerup_levels[option_slot] == 2,
-		'second detached option did not restore the authored maximum')
+		'second detached option did not restore its equipped level')
 	assert(#player.options == 2,
 		'second option pickup did not restore the second option vessel')
 	assert(*selected_apu_source == option_pickup_source,
