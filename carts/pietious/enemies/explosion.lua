@@ -3,6 +3,7 @@ local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local prefab<const> = require('cartlib/world/prefab')
 local world<const> = require('cartlib/world/world')
 local sprite_object<const> = require('cartlib/sprite')
+local timeline<const> = require('cartlib/timeline/timeline')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 require('constants')
 local world_object<const> = require('cartlib/world/world_object')
@@ -10,16 +11,16 @@ local world_object<const> = require('cartlib/world/world_object')
 local enemy_explosion<const> = {}
 enemy_explosion.__index = enemy_explosion
 
-local explosion_frames<const> = {
-	'explosion_2',
-	'explosion_3',
-	'explosion_1',
-	'explosion_2',
-	'explosion_3',
-	'explosion_1',
-	'explosion_2',
-	'explosion_3',
-}
+local explosion_frames<const> = timeline.build_frame_sequence({
+	{ value = 'explosion_2', hold = enemy_explosion_pose_frames },
+	{ value = 'explosion_3', hold = enemy_explosion_pose_frames },
+	{ value = 'explosion_1', hold = enemy_explosion_pose_frames },
+	{ value = 'explosion_2', hold = enemy_explosion_pose_frames },
+	{ value = 'explosion_3', hold = enemy_explosion_pose_frames },
+	{ value = 'explosion_1', hold = enemy_explosion_pose_frames },
+	{ value = 'explosion_2', hold = enemy_explosion_pose_frames },
+	{ value = 'explosion_3', hold = enemy_explosion_pose_frames },
+})
 
 local loot_spawn_sequence = 0
 local explosion_timeline_id<const> = 'enemy_explosion.timeline.explosion'
@@ -67,7 +68,6 @@ local define_enemy_explosion_fsm<const> = function()
 			[explosion_timeline_id] = {
 				def = {
 					frames = explosion_frames,
-					frame_duration = enemy_explosion_frame_duration,
 					playback_mode = 'once',
 					apply = enemy_explosion.sync_explosion_sprite,
 				},

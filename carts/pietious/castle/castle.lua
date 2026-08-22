@@ -828,6 +828,12 @@ local define_castle_fsm<const> = function()
 					self.world_entrance_states[event.target].state = 'opening_2'
 				end,
 			},
+			['world_entrance.opening_3'] = {
+				emitter = 'c',
+				go = function(self, _state, event)
+					self.world_entrance_states[event.target].state = 'opening_3'
+				end,
+			},
 			['world_entrance.opened'] = {
 				emitter = 'c',
 				go = function(self, _state, event)

@@ -10,11 +10,13 @@ local world_entrance_sprite_ids<const> = {
 	closed = 'world_entrance',
 	opening_1 = 'world_entrance',
 	opening_2 = 'world_entrance_half_open',
+	opening_3 = 'world_entrance_open',
 	open = 'world_entrance_open',
 }
 
 local opening_timeline_id<const> = 'world_entrance.opening'
 local opening_half_event<const> = 'world_entrance.opening.half'
+local opening_visual_event<const> = 'world_entrance.opening.visual'
 
 local world_entrance<const> = {}
 world_entrance.__index = world_entrance
@@ -31,8 +33,15 @@ function world_entrance:mark_half_open()
 	})
 end
 
+function world_entrance:mark_visually_open()
+	self:set_entrance_state('opening_3')
+	self.castle.events:emit('world_entrance.opening_3', {
+		target = self.target,
+	})
+end
+
 function world_entrance:finish_opening()
-	self:set_entrance_state('open')
+	self.entrance_state = 'open'
 	self.castle.events:emit('world_entrance.opened', {
 		target = self.target,
 	})
@@ -61,13 +70,22 @@ local define_world_entrance_fsm<const> = function()
 				timelines = {
 					[opening_timeline_id] = {
 						def = {
-							frames = timeline.range(world_entrance_open_step_frames * 2),
+							frames = timeline.range(world_entrance_open_phase_frames * 3),
 							playback_mode = 'once',
 							tracks = {
 								{
 									kind = 'event',
 									keys = {
-										{ frame = world_entrance_open_step_frames, event = opening_half_event, direction = 'forward' },
+										{
+											frame = world_entrance_open_phase_frames,
+											event = opening_half_event,
+											direction = 'forward',
+										},
+										{
+											frame = world_entrance_open_phase_frames * 2,
+											event = opening_visual_event,
+											direction = 'forward',
+										},
 									},
 								},
 							},
@@ -87,6 +105,9 @@ local define_world_entrance_fsm<const> = function()
 				on = {
 					[opening_half_event] = function(self)
 						self:mark_half_open()
+					end,
+					[opening_visual_event] = function(self)
+						self:mark_visually_open()
 					end,
 				},
 			},

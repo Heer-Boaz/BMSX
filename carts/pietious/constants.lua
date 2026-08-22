@@ -186,7 +186,10 @@ enemy_muziek_drop_health_chance_pct = 10
 enemy_muziek_drop_ammo_chance_pct = 20
 enemy_marspein_drop_health_chance_pct = 10
 enemy_marspein_drop_ammo_chance_pct = 20
-enemy_explosion_frame_duration = 3 * 20
+-- MoG killed-item type 0x5b initializes its pose counter at 0x6a05 to three
+-- bottom-half updates. Pietious advances the same gameplay cadence directly;
+-- the timeline therefore retains the source counter as authored frames.
+enemy_explosion_pose_frames = 3
 enemy_loot_life_regen = 12
 enemy_loot_ammo_regen = 10
 rock_width = 16
@@ -372,7 +375,11 @@ lithograph_hit_bottom_px = 16
 world_entrance_trigger_x_offset = room_tile_size
 world_entrance_trigger_half_width = 4
 world_entrance_trigger_y_offset = room_tile_size
-world_entrance_open_step_frames = 4
+-- MoG's world-door state at 0xe68d advances through opening states 1..3 after
+-- six bottom-half updates each. State 1 retains the closed graphic, state 2
+-- selects the half-open graphic and state 3 selects the open graphic; entry is
+-- not admitted until the third six-update phase completes.
+world_entrance_open_phase_frames = 6
 -- MoG moves the player by 0x40 of its 8.8 position word per VBlank. A world
 -- passage lasts 0x80 VBlanks, a shrine passage 0x40, and the ladder pose bit
 -- changes every eight VBlanks. Pietious advances once per two VBlanks.
