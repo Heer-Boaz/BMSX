@@ -895,7 +895,6 @@ local register_stage_definition<const> = function()
 			fsm_component.factory({ ids_stage_fsm }),
 		},
 		defaults = {
-			start_column = 0,
 			restarting = false,
 		},
 	})
