@@ -25,7 +25,9 @@ local game_start_duration_frames<const> = 41
 local game_over_curtain_timeline_id<const> = 'nemesis_s.director.game_over_curtain'
 local game_over_blackout_timeline_id<const> = 'nemesis_s.director.game_over_blackout'
 local game_over_curtain_visual_id<const> = 'game_over_curtain'
-local metalion_input_program<const> = {
+local metalion_cheat_command<const> = 'cheat.metalion'
+local full_loadout_cheat_command<const> = 'cheat.lars18th'
+local cheat_input_program<const> = {
 	bindings = {
 		{
 			name = 'metalion',
@@ -45,22 +47,51 @@ local metalion_input_program<const> = {
 						'key_n[jp]',
 						'key_enter[jp]',
 					},
-					cancel = 'key_letter[jp] || key_enter[jp]',
+					cancel = 'key_character[jp] || key_enter[jp]',
 				},
 			},
 			go = {
 				combo = {
-					['emit.event'] = {
-						event = 'metalion_mode_activated',
+					['dispatch.command'] = {
+						event = metalion_cheat_command,
+					},
+				},
+			},
+		},
+		{
+			name = 'lars18th',
+			when = {
+				mode = { path = '/gameplay/pause' },
+			},
+			on = {
+				combo = {
+					steps = {
+						'key_l[jp]',
+						'key_a[jp]',
+						'key_r[jp]',
+						'key_s[jp]',
+						'key_1[jp]',
+						'key_8[jp]',
+						'key_t[jp]',
+						'key_h[jp]',
+						'key_enter[jp]',
+					},
+					cancel = 'key_character[jp] || key_enter[jp]',
+				},
+			},
+			go = {
+				combo = {
+					['dispatch.command'] = {
+						event = full_loadout_cheat_command,
 					},
 				},
 			},
 		},
 	},
 }
-local new_metalion_input<const> = input_actioneffect_component.factory({
+local new_cheat_input<const> = input_actioneffect_component.factory({
 	clock_source = clock.frame,
-	program = metalion_input_program,
+	program = cheat_input_program,
 })
 local draw_game_over_curtain<const> = function(component, draw)
 	draw:rect(0, 0, component.parent.game_over_curtain_width, presentation_height, 0xff000000)
@@ -118,6 +149,7 @@ function director:populate_game_start()
 			id = start.id,
 			player_index = player_index,
 			player_state = player_states[player_index],
+			metalion_cheat_active = self.metalion_cheat_active,
 			space_id = 'main',
 			stage = stage,
 			pos = { x = start.x, y = start.y },
@@ -153,6 +185,20 @@ end
 function director:leave_pause()
 	world:set_gameplay_clock_running(true)
 	self.events:emit('pause_exited')
+end
+
+function director:toggle_metalion_cheat()
+	local active<const> = not self.metalion_cheat_active
+	self.metalion_cheat_active = active
+	for player_index = 1, #self.players do
+		self.players[player_index]:set_metalion_cheat(active)
+	end
+end
+
+function director:grant_full_loadout()
+	for player_index = 1, #self.player_states do
+		self.player_states[player_index]:grant_full_loadout()
+	end
 end
 
 function director:populate_end_demo()
@@ -246,41 +292,42 @@ function director:emit_telemetry_event(name, extra)
 	print(string.format('%s|kind=director|f=%d|name=%s', telemetry_event_prefix, self.frame, name))
 end
 
-local telemetry_event_handlers
+local director_event_handlers<const> = {
+	[metalion_cheat_command] = director.toggle_metalion_cheat,
+	[full_loadout_cheat_command] = director.grant_full_loadout,
+}
 if telemetry_enabled then
-	telemetry_event_handlers = {
-		['star_blink_toggle'] = {
-			emitter = ids_stage_instance,
-			go = function(self, _state, _event, stage)
-				self:emit_telemetry_event(
-					'star_blink_toggle',
-					string.format(
-						'turn=%s|yellow_blink=%d|blue_blink=%d',
-						stage.blink_turn,
-						bool01(stage.yellow_blink),
-						bool01(stage.blue_blink)
-					)
+	director_event_handlers['star_blink_toggle'] = {
+		emitter = ids_stage_instance,
+		go = function(self, _state, _event, stage)
+			self:emit_telemetry_event(
+				'star_blink_toggle',
+				string.format(
+					'turn=%s|yellow_blink=%d|blue_blink=%d',
+					stage.blink_turn,
+					bool01(stage.yellow_blink),
+					bool01(stage.blue_blink)
 				)
-			end,
-		},
-		['stage_scroll_stop'] = {
-			emitter = ids_stage_instance,
-			go = function(self, _state, event)
-				self:emit_telemetry_event(
-					'stage_scroll_stop',
-					string.format('left=%d|head=%d', event.left, event.head)
-				)
-			end,
-		},
-		['stage_scroll_tile'] = {
-			emitter = ids_stage_instance,
-			go = function(self, _state, event)
-				self:emit_telemetry_event(
-					'stage_scroll_tile',
-					string.format('left=%d|head=%d', event.left, event.head)
-				)
-			end,
-		},
+			)
+		end,
+	}
+	director_event_handlers['stage_scroll_stop'] = {
+		emitter = ids_stage_instance,
+		go = function(self, _state, event)
+			self:emit_telemetry_event(
+				'stage_scroll_stop',
+				string.format('left=%d|head=%d', event.left, event.head)
+			)
+		end,
+	}
+	director_event_handlers['stage_scroll_tile'] = {
+		emitter = ids_stage_instance,
+		go = function(self, _state, event)
+			self:emit_telemetry_event(
+				'stage_scroll_tile',
+				string.format('left=%d|head=%d', event.left, event.head)
+			)
+		end,
 	}
 end
 
@@ -325,7 +372,7 @@ local define_director_fsm<const> = function()
 	fsm_library.register(ids_director_fsm, {
 		clock_source = timeline_clock_source.frame,
 		initial = 'boot',
-		on = telemetry_event_handlers,
+		on = director_event_handlers,
 		states = {
 			boot = {
 				entering_state = function()
@@ -440,7 +487,7 @@ local register_director_definition<const> = function()
 			new_game_over_curtain,
 			timeline_component.new,
 			fsm_component.factory({ ids_director_fsm }),
-			new_metalion_input,
+			new_cheat_input,
 		},
 		defaults = {
 			id = ids_director_instance,
@@ -450,6 +497,7 @@ local register_director_definition<const> = function()
 			stage_start_column = 0,
 			restarting = false,
 			game_over_curtain_width = 0,
+			metalion_cheat_active = false,
 		},
 	})
 end

@@ -123,7 +123,7 @@ function status_bar:bind()
 			handler = refresh_powerups,
 		})
 		self.events:on({
-			event = player_state_events.powerups_reset,
+			event = player_state_events.powerup_loadout_changed,
 			emitter = state.id,
 			handler = refresh_powerups,
 		})

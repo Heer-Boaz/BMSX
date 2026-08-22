@@ -111,31 +111,61 @@ local powerup_slot_laser<const> = powerup_slot.laser
 local powerup_slot_uplaser<const> = powerup_slot.uplaser
 local powerup_slot_option<const> = powerup_slot.option
 local powerup_slot_shield<const> = powerup_slot.shield
-local player_vessel_sources<const> = {
+local player_vessel_source_sets<const> = {
 	{
-		neutral = { imgid = assets_player_n, source = image.resolve(assets_player_n) },
-		neutral_shield = {
-			imgid = assets_player_n_shield,
-			source = image.resolve(assets_player_n_shield),
+		standard = {
+			neutral = { imgid = assets_player_n, source = image.resolve(assets_player_n) },
+			neutral_shield = {
+				imgid = assets_player_n_shield,
+				source = image.resolve(assets_player_n_shield),
+			},
+			up = { imgid = assets_player_u, source = image.resolve(assets_player_u) },
+			down = { imgid = assets_player_d, source = image.resolve(assets_player_d) },
+			down_shield = {
+				imgid = assets_player_d_shield,
+				source = image.resolve(assets_player_d_shield),
+			},
 		},
-		up = { imgid = assets_player_u, source = image.resolve(assets_player_u) },
-		down = { imgid = assets_player_d, source = image.resolve(assets_player_d) },
-		down_shield = {
-			imgid = assets_player_d_shield,
-			source = image.resolve(assets_player_d_shield),
+		cheat = {
+			neutral = { imgid = assets_player_cheat_n, source = image.resolve(assets_player_cheat_n) },
+			neutral_shield = {
+				imgid = assets_player_cheat_n_shield,
+				source = image.resolve(assets_player_cheat_n_shield),
+			},
+			up = { imgid = assets_player_cheat_u, source = image.resolve(assets_player_cheat_u) },
+			down = { imgid = assets_player_cheat_d, source = image.resolve(assets_player_cheat_d) },
+			down_shield = {
+				imgid = assets_player_cheat_d_shield,
+				source = image.resolve(assets_player_cheat_d_shield),
+			},
 		},
 	},
 	{
-		neutral = { imgid = assets_player_2_n, source = image.resolve(assets_player_2_n) },
-		neutral_shield = {
-			imgid = assets_player_n_shield_p2,
-			source = image.resolve(assets_player_n_shield_p2),
+		standard = {
+			neutral = { imgid = assets_player_2_n, source = image.resolve(assets_player_2_n) },
+			neutral_shield = {
+				imgid = assets_player_n_shield_p2,
+				source = image.resolve(assets_player_n_shield_p2),
+			},
+			up = { imgid = assets_player_2_u, source = image.resolve(assets_player_2_u) },
+			down = { imgid = assets_player_2_d, source = image.resolve(assets_player_2_d) },
+			down_shield = {
+				imgid = assets_player_d_shield_p2,
+				source = image.resolve(assets_player_d_shield_p2),
+			},
 		},
-		up = { imgid = assets_player_2_u, source = image.resolve(assets_player_2_u) },
-		down = { imgid = assets_player_2_d, source = image.resolve(assets_player_2_d) },
-		down_shield = {
-			imgid = assets_player_d_shield_p2,
-			source = image.resolve(assets_player_d_shield_p2),
+		cheat = {
+			neutral = { imgid = assets_player_2_cheat_n, source = image.resolve(assets_player_2_cheat_n) },
+			neutral_shield = {
+				imgid = assets_player_2_cheat_n_shield,
+				source = image.resolve(assets_player_2_cheat_n_shield),
+			},
+			up = { imgid = assets_player_2_cheat_u, source = image.resolve(assets_player_2_cheat_u) },
+			down = { imgid = assets_player_2_cheat_d, source = image.resolve(assets_player_2_cheat_d) },
+			down_shield = {
+				imgid = assets_player_2_cheat_d_shield,
+				source = image.resolve(assets_player_2_cheat_d_shield),
+			},
 		},
 	},
 }
@@ -474,13 +504,22 @@ function player:deactivate_force_field()
 	self.force_field_visual:deactivate()
 end
 
-function player:activate_metalion_mode()
-	self.metalion_mode_active = true
-	local vessel_sources<const> = player_vessel_sources[2]
+function player:set_metalion_cheat(active)
+	self.metalion_cheat_active = active
+	local source_set<const> = self.vessel_source_set
+	local vessel_sources<const> = active and source_set.cheat or source_set.standard
 	self.vessel_sources = vessel_sources
-	self.sprite = self.force_field_strength > 1
-		and vessel_sources.neutral_shield
-		or vessel_sources.neutral
+	if self.up_held then
+		self.sprite = vessel_sources.up
+	elseif self.down_held then
+		self.sprite = self.force_field_strength > 1
+			and vessel_sources.down_shield
+			or vessel_sources.down
+	else
+		self.sprite = self.force_field_strength > 1
+			and vessel_sources.neutral_shield
+			or vessel_sources.neutral
+	end
 end
 
 function player:apply_force_field_hit(hit)
@@ -530,28 +569,25 @@ function player:on_powerup_level_changed(_event, _source, slot)
 	end
 end
 
-function player:on_powerups_reset()
+function player:on_powerup_loadout_changed()
 	self:initialize_options()
-	self:deactivate_force_field()
+	if self.powerup_levels[powerup_slot_shield] > 0 then
+		self:activate_force_field()
+	else
+		self:deactivate_force_field()
+	end
 end
 
 function player:bind()
-	if self.player_index == 1 then
-		self.events:on({
-			event = 'metalion_mode_activated',
-			emitter = ids_director_instance,
-			handler = player.activate_metalion_mode,
-		})
-	end
 	self.events:on({
 		event = player_state_module.events.powerup_level_changed,
 		emitter = self.player_state.id,
 		handler = player.on_powerup_level_changed,
 	})
 	self.events:on({
-		event = player_state_module.events.powerups_reset,
+		event = player_state_module.events.powerup_loadout_changed,
 		emitter = self.player_state.id,
-		handler = player.on_powerups_reset,
+		handler = player.on_powerup_loadout_changed,
 	})
 end
 
@@ -1079,7 +1115,7 @@ function player:on_body_overlap(_state, event)
 	or event.other_layer == collision_pickup_layer then
 		return
 	end
-	if self.metalion_mode_active then
+	if self.metalion_cheat_active then
 		if event.other_layer == collision_enemy_projectile_layer then
 			return
 		end
@@ -1108,7 +1144,11 @@ function player:ctor()
 		player_force_field_visual_id
 	)
 	self.body_collider = self:get_component(collider_2d_component, player_body_collider_id)
-	self.vessel_sources = player_vessel_sources[self.player_index]
+	local vessel_source_set<const> = player_vessel_source_sets[self.player_index]
+	self.vessel_source_set = vessel_source_set
+	self.vessel_sources = self.metalion_cheat_active
+		and vessel_source_set.cheat
+		or vessel_source_set.standard
 	self.option_sources = player_option_sources[self.player_index]
 	self.powerup_levels = self.player_state.powerup_levels
 	self.primary_projectiles = {}
@@ -1258,7 +1298,7 @@ local register_player_definition<const> = function()
 			down_held = false,
 			fire_held = false,
 			fire_pressed = false,
-			metalion_mode_active = false,
+			metalion_cheat_active = false,
 			force_field_strength = 0,
 			option_anim_index = 1,
 		},

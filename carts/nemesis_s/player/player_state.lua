@@ -22,7 +22,7 @@ local events<const> = {
 	lives_changed = 'player_state.lives_changed',
 	powerup_selection_changed = 'player_state.powerup_selection_changed',
 	powerup_level_changed = 'player_state.powerup_level_changed',
-	powerups_reset = 'player_state.powerups_reset',
+	powerup_loadout_changed = 'player_state.powerup_loadout_changed',
 }
 local initial_lives<const> = 9
 local no_powerup_slot<const> = 0
@@ -88,7 +88,15 @@ end
 
 function player_state:reset_powerups()
 	reset_powerup_values(self, no_powerup_slot)
-	self.events:emit(events.powerups_reset)
+	self.events:emit(events.powerup_loadout_changed)
+end
+
+function player_state:grant_full_loadout()
+	local levels<const> = self.powerup_levels
+	for slot = powerup_slot.missile, #powerup_max_levels do
+		levels[slot] = powerup_max_levels[slot]
+	end
+	self.events:emit(events.powerup_loadout_changed)
 end
 
 function player_state:lose_life()
@@ -96,7 +104,7 @@ function player_state:lose_life()
 	self:set_lives(lives)
 	local selected_slot<const> = lives < 0 and no_powerup_slot or powerup_slot.speed
 	reset_powerup_values(self, selected_slot)
-	self.events:emit(events.powerups_reset)
+	self.events:emit(events.powerup_loadout_changed)
 	return lives
 end
 
