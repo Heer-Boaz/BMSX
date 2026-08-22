@@ -3,6 +3,10 @@ import { LAYER_2D_IDE } from '../../machine/ts/render/shared/layers';
 import { Host2DKind, type Host2DRef } from '../../machine/ts/render/host_overlay/commands';
 import type { Input } from './input/manager';
 import type { PlayerInput } from './input/player';
+import type { BGamepadButton } from './input/models';
+import {
+	HOST_MENU_BUTTON,
+} from './input/shortcuts';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { DeviceQuantizeMode } from '../../machine/ts/render/post/device_quantize/mode';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
@@ -36,21 +40,16 @@ type HostMenuActionOption = {
 
 type HostMenuOption = HostMenuValueOption | HostMenuActionOption;
 
-type HostMenuButton = {
-	readonly gamepad: string;
-	readonly keyboard: string;
-};
+type HostMenuButton = BGamepadButton;
 
-const BUTTON_START: HostMenuButton = { gamepad: 'start', keyboard: 'Enter' };
-const BUTTON_SELECT: HostMenuButton = { gamepad: 'select', keyboard: 'Backspace' };
-const BUTTON_UP: HostMenuButton = { gamepad: 'up', keyboard: 'ArrowUp' };
-const BUTTON_DOWN: HostMenuButton = { gamepad: 'down', keyboard: 'ArrowDown' };
-const BUTTON_LEFT: HostMenuButton = { gamepad: 'left', keyboard: 'ArrowLeft' };
-const BUTTON_RIGHT: HostMenuButton = { gamepad: 'right', keyboard: 'ArrowRight' };
-const BUTTON_A: HostMenuButton = { gamepad: 'a', keyboard: 'KeyX' };
-const BUTTON_B: HostMenuButton = { gamepad: 'b', keyboard: 'KeyC' };
+const BUTTON_START: HostMenuButton = HOST_MENU_BUTTON;
+const BUTTON_UP: HostMenuButton = 'up';
+const BUTTON_DOWN: HostMenuButton = 'down';
+const BUTTON_LEFT: HostMenuButton = 'left';
+const BUTTON_RIGHT: HostMenuButton = 'right';
+const BUTTON_A: HostMenuButton = 'a';
+const BUTTON_B: HostMenuButton = 'b';
 
-const MENU_TOGGLE_BUTTONS = [BUTTON_START, BUTTON_SELECT] as const;
 const MENU_NAV_BUTTONS = [BUTTON_UP, BUTTON_DOWN, BUTTON_LEFT, BUTTON_RIGHT, BUTTON_A, BUTTON_B, BUTTON_START] as const;
 
 const TITLE_TEXT = 'CORE OPTIONS';
@@ -106,8 +105,8 @@ function boolFromIndex(index: number): boolean {
 
 function readButtonState(player: PlayerInput, button: HostMenuButton): number {
 	let result = 0;
-	const gamepadState = player.getRawButtonState(button.gamepad, 'gamepad');
-	if (!gamepadState.consumed) {
+	const gamepadState = player.inputHandlers.gamepad?.getButtonState(button);
+	if (gamepadState && !gamepadState.consumed) {
 		if (gamepadState.pressed) {
 			result |= HostButtonState.Pressed;
 		}
@@ -115,8 +114,8 @@ function readButtonState(player: PlayerInput, button: HostMenuButton): number {
 			result |= HostButtonState.JustPressed;
 		}
 	}
-	const keyboardState = player.getRawButtonState(button.keyboard, 'keyboard');
-	if (!keyboardState.consumed) {
+	const keyboardState = player.inputHandlers.keyboard?.getButtonState(button);
+	if (keyboardState && !keyboardState.consumed) {
 		if (keyboardState.pressed) {
 			result |= HostButtonState.Pressed;
 		}
@@ -128,14 +127,14 @@ function readButtonState(player: PlayerInput, button: HostMenuButton): number {
 }
 
 function buttonEdge(player: PlayerInput, button: HostMenuButton): boolean {
-	const gamepadEdge = player.buttonRepeatEdge(button.gamepad, 'gamepad');
-	const keyboardEdge = player.buttonRepeatEdge(button.keyboard, 'keyboard');
+	const gamepadEdge = player.controlButtonRepeatEdge(button, 'gamepad');
+	const keyboardEdge = player.controlButtonRepeatEdge(button, 'keyboard');
 	return gamepadEdge || keyboardEdge;
 }
 
 function consumeButton(player: PlayerInput, button: HostMenuButton): void {
-	player.inputHandlers.gamepad?.consumeButton(button.gamepad);
-	player.inputHandlers.keyboard?.consumeKey(button.keyboard);
+	player.inputHandlers.gamepad?.consumeButton(button);
+	player.inputHandlers.keyboard?.consumeButton(button);
 }
 
 function consumeButtons(player: PlayerInput, buttons: readonly HostMenuButton[]): void {
@@ -308,6 +307,11 @@ export class HostOverlayMenu {
 		private readonly input: Input,
 	) {
 		this.presenter = presenter;
+		input.getGlobalShortcutRegistry().registerControlShortcut(
+			1,
+			BUTTON_START,
+			() => this.toggle(),
+		);
 		this.optionGlyphs = new Array(this.options.length);
 		for (let index = 0; index < this.options.length; index += 1) {
 			this.optionGlyphs[index] = { x: 0, y: 0, z: 922, items: '', item_start: 0, item_end: 0, font: null, color: COLOR_TEXT, has_background_color: false, background_color: 0xff000000, wrap_chars: 0, center_block_width: 0, align: TextAlign.Start, baseline: TextBaseline.Alphabetic, layer: LAYER_2D_IDE };
@@ -326,15 +330,6 @@ export class HostOverlayMenu {
 
 	public tickInput(): HostMenuInput {
 		const player = this.input.getPlayerInput(1);
-		const startState = readButtonState(player, BUTTON_START);
-		const selectState = readButtonState(player, BUTTON_SELECT);
-		const comboEdge = (startState & HostButtonState.Pressed) !== 0
-			&& (selectState & HostButtonState.Pressed) !== 0
-			&& ((startState | selectState) & HostButtonState.JustPressed) !== 0;
-		if (comboEdge) {
-			this.toggle();
-			consumeButtons(player, MENU_TOGGLE_BUTTONS);
-		}
 		if (!this.active) {
 			return HostMenuInput.Inactive;
 		}

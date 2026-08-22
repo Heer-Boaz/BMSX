@@ -427,7 +427,7 @@ set(BMSX_LIBRETRO_CORE_SOURCES
 	${BMSX_LIBRETRO_DIR}/mem_snapshot.cpp
 	${BMSX_LIBRETRO_DIR}/presentation_state.cpp
 	${BMSX_LIBRETRO_DIR}/runtime_error.cpp
-	${BMSX_LIBRETRO_DIR}/supervisor_chord.c
+	${BMSX_LIBRETRO_DIR}/host_shortcuts.c
 	${BMSX_LIBRETRO_DIR}/video_output.cpp
 )
 
@@ -502,7 +502,6 @@ if(BMSX_BUILD_LIBRETRO_HOST)
 		${BMSX_LIBRETRO_HOST_DIR}/keyboard_input.c
 		${BMSX_LIBRETRO_HOST_DIR}/screenshot.c
 		${BMSX_LIBRETRO_HOST_DIR}/software_frame_blitter.c
-		${BMSX_LIBRETRO_DIR}/supervisor_chord.c
 		${BMSX_LIBRETRO_HOST_DIR}/video_context.c
 		${BMSX_LIBRETRO_HOST_DIR}/video_presenter.c
 	)
@@ -566,14 +565,14 @@ if(BMSX_BUILD_TESTS)
 	)
 	add_test(NAME bmsx_libretro_host_core_options_tests COMMAND bmsx_libretro_host_core_options_tests)
 
-	add_executable(bmsx_libretro_supervisor_chord_tests
-		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_supervisor_chord_test.c
-		${BMSX_LIBRETRO_DIR}/supervisor_chord.c
+	add_executable(bmsx_libretro_host_shortcuts_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_host_shortcuts_test.c
+		${BMSX_LIBRETRO_DIR}/host_shortcuts.c
 	)
-	target_include_directories(bmsx_libretro_supervisor_chord_tests PRIVATE
+	target_include_directories(bmsx_libretro_host_shortcuts_tests PRIVATE
 		${BMSX_LIBRETRO_DIR}
 	)
-	add_test(NAME bmsx_libretro_supervisor_chord_tests COMMAND bmsx_libretro_supervisor_chord_tests)
+	add_test(NAME bmsx_libretro_host_shortcuts_tests COMMAND bmsx_libretro_host_shortcuts_tests)
 
 	add_executable(bmsx_libretro_host_software_frame_blitter_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/libretro_host_software_frame_blitter_test.c
@@ -685,7 +684,7 @@ if(BMSX_BUILD_TESTS)
 		${BMSX_TEST_ROM_SOURCE}
 		${BMSX_LIBRETRO_DIR}/input.cpp
 		${BMSX_LIBRETRO_DIR}/libretro_state.cpp
-		${BMSX_LIBRETRO_DIR}/supervisor_chord.c
+		${BMSX_LIBRETRO_DIR}/host_shortcuts.c
 	)
 	target_link_libraries(bmsx_libretro_save_state_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	target_include_directories(bmsx_libretro_save_state_tests PRIVATE

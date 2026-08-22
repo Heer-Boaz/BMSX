@@ -5,6 +5,9 @@ import type { HostClock } from '../../hosts/common/clock';
 import { HostMenuInput, HostOverlayMenu } from '../../hosts/common/host_overlay_menu';
 import type { InputSource } from '../../hosts/common/input/contracts';
 import { Input } from '../../hosts/common/input/manager';
+import {
+	HOST_IDE_BUTTON,
+} from '../../hosts/common/input/shortcuts';
 import { createInputControllerSnapshot } from '../../machine/ts/machine/devices/input/contracts';
 import { hidKeyUsageForCode } from '../../hosts/common/input/hid_keys';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
@@ -30,47 +33,56 @@ function keyWordContains(words: Uint32Array, code: string): boolean {
 	return (words[usage >>> 5] & (1 << (usage & 31))) !== 0;
 }
 
-test('mapped host chords consume their physical keys from later host and guest owners', () => {
+test('host control routing reserves Select without leaking split-frame shortcuts', () => {
 	const { input, setTime } = createInput();
-	let chordCount = 0;
+	let shortcutCount = 0;
 	let releaseCount = 0;
-	const dispose = input.getGlobalShortcutRegistry().registerControlChord(
+	const dispose = input.getGlobalShortcutRegistry().registerControlShortcut(
 		1,
-		['select', 'rb'],
-		() => { chordCount += 1; },
+		HOST_IDE_BUTTON,
+		() => { shortcutCount += 1; },
 		() => { releaseCount += 1; },
 	);
+	const keyboard = input.getPlayerInput(1).inputHandlers.keyboard!;
+	const snapshot = createInputControllerSnapshot();
 
 	setTime(10);
-	input.inputButton('keyboard:0', 'Backspace', true, 1, 10, 1);
-	input.inputButton('keyboard:0', 'ShiftRight', true, 1, 10, 2);
+	input.inputButton('keyboard:0', 'ControlRight', true, 1, 10, 1);
 	input.pollInput();
-
-	const keyboard = input.getPlayerInput(1).inputHandlers.keyboard!;
-	assert.equal(chordCount, 1);
+	assert.equal(shortcutCount, 0);
 	assert.equal(keyboard.getButtonState('select').consumed, true);
-	assert.equal(keyboard.getButtonState('rb').consumed, true);
-	assert.equal(keyboard.getKeyState('Backspace').consumed, true);
-	assert.equal(keyboard.getKeyState('ShiftRight').consumed, true);
-
-	const snapshot = createInputControllerSnapshot();
 	input.sampleInputControllerSnapshot(snapshot);
-	assert.equal(keyWordContains(snapshot.keyWords, 'Backspace'), false);
-	assert.equal(keyWordContains(snapshot.keyWords, 'ShiftRight'), false);
+	assert.equal(keyWordContains(snapshot.keyWords, 'ControlRight'), false);
 
 	setTime(20);
-	input.inputButton('keyboard:0', 'Backspace', false, 0, 20, 1);
-	input.inputButton('keyboard:0', 'ShiftRight', false, 0, 20, 2);
+	input.inputButton('keyboard:0', 'ShiftRight', true, 1, 20, 2);
 	input.pollInput();
-	assert.equal(releaseCount, 1);
-	assert.equal(input.getPlayerInput(1).getRawButtonState('Backspace', 'keyboard').consumed, false);
+	assert.equal(shortcutCount, 1);
+	assert.equal(keyboard.getButtonState('rb').consumed, true);
+	assert.equal(keyboard.getKeyState('ControlRight').consumed, true);
+	assert.equal(keyboard.getKeyState('ShiftRight').consumed, true);
+	input.sampleInputControllerSnapshot(snapshot);
+	assert.equal(keyWordContains(snapshot.keyWords, 'ControlRight'), false);
+	assert.equal(keyWordContains(snapshot.keyWords, 'ShiftRight'), false);
 
 	setTime(30);
-	input.inputButton('keyboard:0', 'Backspace', true, 1, 30, 3);
+	input.inputButton('keyboard:0', 'ControlRight', false, 0, 30, 1);
+	input.pollInput();
+	assert.equal(releaseCount, 1);
+	input.sampleInputControllerSnapshot(snapshot);
+	assert.equal(keyWordContains(snapshot.keyWords, 'ShiftRight'), false);
+
+	setTime(40);
+	input.inputButton('keyboard:0', 'ShiftRight', false, 0, 40, 2);
+	input.pollInput();
+
+	setTime(50);
+	input.inputButton('keyboard:0', 'Backspace', true, 1, 50, 3);
+	input.inputButton('keyboard:0', 'Enter', true, 1, 50, 4);
 	input.pollInput();
 	input.sampleInputControllerSnapshot(snapshot);
 	assert.equal(keyWordContains(snapshot.keyWords, 'Backspace'), true);
-	assert.equal(keyWordContains(snapshot.keyWords, 'ShiftRight'), false);
+	assert.equal(keyWordContains(snapshot.keyWords, 'Enter'), true);
 	assert.equal(keyboard.getKeyState('Backspace').consumed, false);
 
 	dispose();
@@ -107,14 +119,14 @@ test('quick menu accepts navigation after consuming its opening frame', () => {
 	const menu = new HostOverlayMenu(presenter, {} as Runtime, input);
 
 	setTime(10);
-	input.inputButton('keyboard:0', 'Enter', true, 1, 10, 1);
-	input.inputButton('keyboard:0', 'Backspace', true, 1, 10, 2);
+	input.inputButton('keyboard:0', 'ControlRight', true, 1, 10, 1);
+	input.inputButton('keyboard:0', 'AltRight', true, 1, 10, 2);
 	input.pollInput();
 	assert.equal(menu.tickInput(), HostMenuInput.Active);
 
 	setTime(20);
-	input.inputButton('keyboard:0', 'Enter', false, 0, 20, 1);
-	input.inputButton('keyboard:0', 'Backspace', false, 0, 20, 2);
+	input.inputButton('keyboard:0', 'ControlRight', false, 0, 20, 1);
+	input.inputButton('keyboard:0', 'AltRight', false, 0, 20, 2);
 	input.pollInput();
 	assert.equal(menu.tickInput(), HostMenuInput.Active);
 

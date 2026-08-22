@@ -4,6 +4,16 @@ import type { BGamepadButton, ButtonState, InputHandler } from './models';
 
 export type ShortcutDisposer = () => void;
 
+export const HOST_CONTROL_MODIFIER: BGamepadButton = 'select';
+export const HOST_TERMINAL_BUTTON: BGamepadButton = 'lb';
+export const HOST_IDE_BUTTON: BGamepadButton = 'rb';
+export const HOST_MENU_BUTTON: BGamepadButton = 'start';
+
+const enum ControlSource {
+	Keyboard = 1,
+	Gamepad = 2,
+}
+
 type KeyboardShortcutEntry = {
 	key: string;
 	modifiers: KeyModifier;
@@ -11,54 +21,42 @@ type KeyboardShortcutEntry = {
 	latchKey: string;
 };
 
-type ControlChordEntry = {
-	buttons: readonly BGamepadButton[];
+type ControlShortcutEntry = {
+	button: BGamepadButton;
 	onPressed: () => void;
 	onReleased?: () => void;
-	keyboardActive: boolean;
-	gamepadActive: boolean;
+	activeSources: number;
+	blockedSources: number;
+	notifiedActive: boolean;
 };
 
-const pollControlChordSource = (
-	handler: InputHandler | null,
-	buttons: readonly BGamepadButton[],
-	active: boolean,
-): boolean => {
-	if (handler === null) {
-		return false;
-	}
-	let anyPressed = false;
-	let allPressed = true;
-	for (let index = 0; index < buttons.length; index += 1) {
-		const state = handler.getButtonState(buttons[index]);
-		if (state.pressed) {
-			anyPressed = true;
-			if (!active && state.consumed) {
-				allPressed = false;
-			}
-		} else {
-			allPressed = false;
-		}
-	}
-	if (active) {
-		if (!anyPressed) {
-			return false;
-		}
-	} else if (!allPressed) {
-		return false;
-	}
-	for (let index = 0; index < buttons.length; index += 1) {
-		handler.consumeButton(buttons[index]);
-	}
-	return true;
+type ControlShortcutSet = {
+	entries: ControlShortcutEntry[];
+	capturedSources: number;
 };
 
 export class GlobalShortcutRegistry {
 	private readonly keyboardShortcuts = new Map<number, KeyboardShortcutEntry[]>();
-	private readonly controlChords = new Map<number, ControlChordEntry[]>();
+	private readonly controlShortcuts = new Map<number, ControlShortcutSet>();
 	private readonly latch = new Map<string, number | null>();
 
 	public constructor(private readonly input: Input) {
+	}
+
+	public reset(): void {
+		this.latch.clear();
+		for (const shortcuts of this.controlShortcuts.values()) {
+			shortcuts.capturedSources = 0;
+			for (let index = 0; index < shortcuts.entries.length; index += 1) {
+				const entry = shortcuts.entries[index];
+				entry.activeSources = 0;
+				entry.blockedSources = 0;
+				if (entry.notifiedActive) {
+					entry.notifiedActive = false;
+					entry.onReleased?.();
+				}
+			}
+		}
 	}
 
 	public registerKeyboardShortcut(playerIndex: number, key: string, handler: () => void, modifiers: KeyModifier = KeyModifier.none): ShortcutDisposer {
@@ -85,36 +83,40 @@ export class GlobalShortcutRegistry {
 		};
 	}
 
-	public registerControlChord(
+	public registerControlShortcut(
 		playerIndex: number,
-		buttons: readonly BGamepadButton[],
+		button: BGamepadButton,
 		onPressed: () => void,
 		onReleased?: () => void,
 	): ShortcutDisposer {
-		let entries = this.controlChords.get(playerIndex);
-		if (!entries) {
-			entries = [];
-			this.controlChords.set(playerIndex, entries);
+		let shortcuts = this.controlShortcuts.get(playerIndex);
+		if (!shortcuts) {
+			shortcuts = {
+				entries: [],
+				capturedSources: 0,
+			};
+			this.controlShortcuts.set(playerIndex, shortcuts);
 		}
-		const entry: ControlChordEntry = {
-			buttons,
+		const entry: ControlShortcutEntry = {
+			button,
 			onPressed,
 			onReleased,
-			keyboardActive: false,
-			gamepadActive: false,
+			activeSources: 0,
+			blockedSources: 0,
+			notifiedActive: false,
 		};
-		entries.push(entry);
+		shortcuts.entries.push(entry);
 		return () => {
-			const target = this.controlChords.get(playerIndex);
+			const target = this.controlShortcuts.get(playerIndex);
 			if (!target) {
 				return;
 			}
-			const idx = target.indexOf(entry);
-			if (idx >= 0) {
-				target.splice(idx, 1);
+			const entryIndex = target.entries.indexOf(entry);
+			if (entryIndex >= 0) {
+				target.entries.splice(entryIndex, 1);
 			}
-			if (target.length === 0) {
-				this.controlChords.delete(playerIndex);
+			if (target.entries.length === 0) {
+				this.controlShortcuts.delete(playerIndex);
 			}
 		};
 	}
@@ -126,8 +128,8 @@ export class GlobalShortcutRegistry {
 			for (let i = 0; i < keyboardEntries.length; i++) {
 				const entry = keyboardEntries[i];
 				const shift = keyboard.getKeyState('ShiftLeft').pressed || keyboard.getKeyState('ShiftRight').pressed;
-				const ctrl = keyboard.getKeyState('ControlLeft').pressed || keyboard.getKeyState('ControlRight').pressed;
-				const alt = keyboard.getKeyState('AltLeft').pressed || keyboard.getKeyState('AltRight').pressed;
+				const ctrl = keyboard.getKeyState('ControlLeft').pressed;
+				const alt = keyboard.getKeyState('AltLeft').pressed;
 				const meta = keyboard.getKeyState('MetaLeft').pressed || keyboard.getKeyState('MetaRight').pressed;
 				if (((entry.modifiers & KeyModifier.shift) !== 0 && !shift)
 					|| ((entry.modifiers & KeyModifier.ctrl) !== 0 && !ctrl)
@@ -142,34 +144,100 @@ export class GlobalShortcutRegistry {
 				}
 			}
 		}
-		const chords = this.controlChords.get(player.playerIndex);
-		if (chords) {
-			for (let i = 0; i < chords.length; i++) {
-				this.pollControlChord(player, chords[i]);
+		const shortcuts = this.controlShortcuts.get(player.playerIndex);
+		if (shortcuts) {
+			this.pollControlShortcut(player, shortcuts);
+		}
+	}
+
+	private pollControlShortcut(player: PlayerInput, shortcuts: ControlShortcutSet): void {
+		const entries = shortcuts.entries;
+		this.pollControlShortcutSource(
+			player.inputHandlers.keyboard,
+			shortcuts,
+			ControlSource.Keyboard,
+		);
+		this.pollControlShortcutSource(
+			player.inputHandlers.gamepad,
+			shortcuts,
+			ControlSource.Gamepad,
+		);
+		for (let index = 0; index < entries.length; index += 1) {
+			const entry = entries[index];
+			const active = entry.activeSources !== 0;
+			if (active === entry.notifiedActive) {
+				continue;
+			}
+			entry.notifiedActive = active;
+			if (active) {
+				entry.onPressed();
+			} else {
+				entry.onReleased?.();
 			}
 		}
 	}
 
-	private pollControlChord(player: PlayerInput, entry: ControlChordEntry): void {
-		const wasActive = entry.keyboardActive || entry.gamepadActive;
-		entry.keyboardActive = pollControlChordSource(
-			player.inputHandlers.keyboard,
-			entry.buttons,
-			entry.keyboardActive,
-		);
-		entry.gamepadActive = pollControlChordSource(
-			player.inputHandlers.gamepad,
-			entry.buttons,
-			entry.gamepadActive,
-		);
-		const active = entry.keyboardActive || entry.gamepadActive;
-		if (active === wasActive) {
+	private pollControlShortcutSource(
+		handler: InputHandler | null,
+		shortcuts: ControlShortcutSet,
+		source: ControlSource,
+	): void {
+		const entries = shortcuts.entries;
+		if (handler === null) {
+			shortcuts.capturedSources &= ~source;
+			for (let index = 0; index < entries.length; index += 1) {
+				entries[index].activeSources &= ~source;
+				entries[index].blockedSources &= ~source;
+			}
 			return;
 		}
-		if (active) {
-			entry.onPressed();
-		} else {
-			entry.onReleased?.();
+		const modifier = handler.getButtonState(HOST_CONTROL_MODIFIER);
+		let captured = (shortcuts.capturedSources & source) !== 0;
+		if (!captured && modifier.pressed) {
+			captured = true;
+			shortcuts.capturedSources |= source;
+			for (let index = 0; index < entries.length; index += 1) {
+				const entry = entries[index];
+				const button = handler.getButtonState(entry.button);
+				if (button.pressed && !button.justpressed) {
+					entry.blockedSources |= source;
+				} else {
+					entry.blockedSources &= ~source;
+				}
+			}
+		}
+		if (!captured) {
+			for (let index = 0; index < entries.length; index += 1) {
+				entries[index].activeSources &= ~source;
+				entries[index].blockedSources &= ~source;
+			}
+			return;
+		}
+
+		handler.consumeButton(HOST_CONTROL_MODIFIER);
+		let anyButtonPressed = false;
+		for (let index = 0; index < entries.length; index += 1) {
+			const entry = entries[index];
+			const button = handler.getButtonState(entry.button);
+			if (!button.pressed) {
+				entry.blockedSources &= ~source;
+			} else {
+				anyButtonPressed = true;
+				if (!modifier.pressed) {
+					entry.blockedSources |= source;
+				}
+			}
+			if (modifier.pressed
+				&& button.pressed
+				&& (entry.blockedSources & source) === 0) {
+				entry.activeSources |= source;
+			} else {
+				entry.activeSources &= ~source;
+			}
+			handler.consumeButton(entry.button);
+		}
+		if (!modifier.pressed && !anyButtonPressed) {
+			shortcuts.capturedSources &= ~source;
 		}
 	}
 

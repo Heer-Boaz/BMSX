@@ -17,14 +17,10 @@
 
 #include "host_fatal.h"
 #include "keyboard_input.h"
-#include "supervisor_chord.h"
 #include "video_presenter.h"
 
 enum {
 	kMaximumInputDevices = KEYBOARD_INPUT_EVDEV_SOURCE_COUNT,
-	kSupervisorChordMask =
-		(1u << RETRO_DEVICE_ID_JOYPAD_L) |
-		(1u << RETRO_DEVICE_ID_JOYPAD_SELECT),
 	kRetroMouseIdX = 0,
 	kRetroMouseIdY = 1,
 	kRetroMouseIdLeft = 2,
@@ -82,7 +78,6 @@ typedef struct InputDevices {
 	int32_t mouse_wheel_y;
 	uint8_t mouse_buttons;
 	bool mouse_position_valid;
-	bool supervisor_request_line_high;
 	int16_t pointer_x;
 	int16_t pointer_y;
 	bool pointer_inside_game_viewport;
@@ -176,67 +171,44 @@ static uint8_t map_evdev_key_to_mouse(uint16_t code) {
 
 static uint16_t map_evdev_key_to_pad(uint16_t code) {
 	switch (code) {
-		case KEY_UP:
-		case KEY_KP8:
 #ifdef BTN_TRIGGER_HAPPY3
 		case BTN_TRIGGER_HAPPY3:
 #endif
 		case BTN_DPAD_UP:
 			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_UP);
-		case KEY_DOWN:
-		case KEY_KP2:
 #ifdef BTN_TRIGGER_HAPPY4
 		case BTN_TRIGGER_HAPPY4:
 #endif
 		case BTN_DPAD_DOWN:
 			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_DOWN);
-		case KEY_LEFT:
-		case KEY_KP4:
 #ifdef BTN_TRIGGER_HAPPY1
 		case BTN_TRIGGER_HAPPY1:
 #endif
 		case BTN_DPAD_LEFT:
 			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_LEFT);
-		case KEY_RIGHT:
-		case KEY_KP6:
 #ifdef BTN_TRIGGER_HAPPY2
 		case BTN_TRIGGER_HAPPY2:
 #endif
 		case BTN_DPAD_RIGHT:
 			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_RIGHT);
 		case BTN_TL:
-		case KEY_LEFTSHIFT:
 			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_L);
 		case BTN_TR:
-		case KEY_RIGHTSHIFT:
 			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_R);
 		case BTN_TL2:
-		case KEY_LEFTCTRL:
 			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_L2);
 		case BTN_TR2:
-		case KEY_RIGHTCTRL:
 			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_R2);
 		case BTN_START:
-		case KEY_ENTER:
-		case KEY_KPENTER:
 			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_START);
 		case BTN_SELECT:
-		case KEY_BACKSPACE:
 			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_SELECT);
-		case KEY_Q:
-			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_L3);
-		case KEY_E:
-			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_R3);
-		case KEY_X:
 		case BTN_SOUTH:
 			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_A);
-		case KEY_C:
 		case BTN_EAST:
 			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_B);
-		case KEY_Z:
 		case BTN_NORTH:
 			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_X);
-		case KEY_S:
 		case BTN_WEST:
 			return (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_Y);
 		default:
@@ -365,10 +337,7 @@ static void close_evdev_device(InputDevice* device, size_t index) {
 
 static void finalize_pad_state(uint16_t pad_state) {
 	InputDevices* input = &g_input_devices;
-	input->pad_state = (uint16_t)bmsx_supervisor_chord_update(
-			&input->supervisor_request_line_high,
-			pad_state,
-			kSupervisorChordMask);
+	input->pad_state = pad_state;
 	const bool exit_combo_down =
 			(input->pad_state & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_START)) &&
 			(input->pad_state & (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_L)) &&
@@ -571,11 +540,6 @@ static void poll_evdev_devices(void) {
 }
 
 #ifdef BMSX_LIBRETRO_HOST_SDL
-typedef struct SdlKeyboardPadBinding {
-	SDL_Scancode scancode;
-	uint16_t pad_button;
-} SdlKeyboardPadBinding;
-
 typedef struct SdlControllerPadBinding {
 	SDL_GameControllerButton controller_button;
 	uint16_t pad_button;
@@ -655,37 +619,6 @@ static void update_sdl_mouse_position(void) {
 			&input->pointer_x,
 			&input->pointer_y,
 			&input->pointer_inside_game_viewport);
-}
-
-static uint16_t sdl_keyboard_pad_state(void) {
-	static const SdlKeyboardPadBinding bindings[] = {
-		{SDL_SCANCODE_UP, (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_UP)},
-		{SDL_SCANCODE_DOWN, (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_DOWN)},
-		{SDL_SCANCODE_LEFT, (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_LEFT)},
-		{SDL_SCANCODE_RIGHT, (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_RIGHT)},
-		{SDL_SCANCODE_LSHIFT, (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_L)},
-		{SDL_SCANCODE_RSHIFT, (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_R)},
-		{SDL_SCANCODE_LCTRL, (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_L2)},
-		{SDL_SCANCODE_RCTRL, (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_R2)},
-		{SDL_SCANCODE_BACKSPACE, (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_SELECT)},
-		{SDL_SCANCODE_RETURN, (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_START)},
-		{SDL_SCANCODE_X, (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_A)},
-		{SDL_SCANCODE_C, (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_B)},
-		{SDL_SCANCODE_Z, (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_X)},
-		{SDL_SCANCODE_S, (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_Y)},
-		{SDL_SCANCODE_Q, (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_L3)},
-		{SDL_SCANCODE_E, (uint16_t)(1u << RETRO_DEVICE_ID_JOYPAD_R3)},
-	};
-	const Uint8* keyboard = SDL_GetKeyboardState(NULL);
-	uint16_t pad_state = 0;
-	for (size_t index = 0;
-			index < sizeof(bindings) / sizeof(bindings[0]);
-			++index) {
-		if (keyboard[bindings[index].scancode]) {
-			pad_state |= bindings[index].pad_button;
-		}
-	}
-	return pad_state;
 }
 
 static uint16_t sdl_controller_pad_state(void) {
@@ -801,9 +734,8 @@ static void poll_sdl_devices(void) {
 	}
 	uint16_t pad_state = 0;
 	if (input->focused) {
-		pad_state = sdl_keyboard_pad_state();
 		if (input->controller) {
-			pad_state |= sdl_controller_pad_state();
+			pad_state = sdl_controller_pad_state();
 		}
 	}
 	finalize_pad_state(pad_state);
@@ -926,10 +858,6 @@ int16_t input_devices_state(
 		}
 	}
 	return 0;
-}
-
-bool RETRO_CALLCONV input_devices_supervisor_request_line_high(void) {
-	return g_input_devices.supervisor_request_line_high;
 }
 
 bool input_devices_quit_requested(void) {

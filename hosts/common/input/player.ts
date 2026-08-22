@@ -1,6 +1,7 @@
 import { makeButtonState } from './manager';
 import {
 	INPUT_SOURCES,
+	type BGamepadButton,
 	type ButtonId,
 	type ButtonState,
 	type InputSource,
@@ -23,6 +24,8 @@ type RawActionRepeatRecord = {
 	lastResult: boolean;
 	lastRepeatAtMs: number;
 };
+
+type ControlInputSource = 'keyboard' | 'gamepad';
 
 /** Bitwise flags representing keyboard modifier keys. */
 export enum KeyModifier {
@@ -57,6 +60,10 @@ export class PlayerInput {
 		gamepad: new Map(),
 		pointer: new Map(),
 	};
+	private readonly controlRepeatRecords: { [source in ControlInputSource]: Map<ButtonId, RawActionRepeatRecord> } = {
+		keyboard: new Map(),
+		gamepad: new Map(),
+	};
 	private readonly unboundButtonState = makeButtonState();
 	private lastPollTimestampMs = 0;
 	private frameCounter = 0;
@@ -77,10 +84,10 @@ export class PlayerInput {
 		if (keyboard.getKeyState('ShiftLeft').pressed || keyboard.getKeyState('ShiftRight').pressed) {
 			modifiers |= KeyModifier.shift;
 		}
-		if (keyboard.getKeyState('ControlLeft').pressed || keyboard.getKeyState('ControlRight').pressed) {
+		if (keyboard.getKeyState('ControlLeft').pressed) {
 			modifiers |= KeyModifier.ctrl;
 		}
-		if (keyboard.getKeyState('AltLeft').pressed || keyboard.getKeyState('AltRight').pressed) {
+		if (keyboard.getKeyState('AltLeft').pressed) {
 			modifiers |= KeyModifier.alt;
 		}
 		if (keyboard.getKeyState('MetaLeft').pressed || keyboard.getKeyState('MetaRight').pressed) {
@@ -110,9 +117,21 @@ export class PlayerInput {
 		if (rawState.consumed) {
 			return false;
 		}
-		const repeat = this.ensureRawRepeatState(button, source);
+		const repeat = this.repeatState(this.rawActionRepeatRecords[source], button);
 		this.evaluateRawActionRepeat(repeat, rawState, this.frameCounter);
 		return rawState.justpressed || repeat.lastResult;
+	}
+
+	/** Returns repeat/edge info for a normalized console control. */
+	public controlButtonRepeatEdge(button: BGamepadButton, source: ControlInputSource): boolean {
+		const handler = this.inputHandlers[source];
+		const state = handler ? handler.getButtonState(button) : this.unboundButtonState;
+		if (state.consumed) {
+			return false;
+		}
+		const repeat = this.repeatState(this.controlRepeatRecords[source], button);
+		this.evaluateRawActionRepeat(repeat, state, this.frameCounter);
+		return state.justpressed || repeat.lastResult;
 	}
 
 	assignGamepadToPlayer(gamepadInput: GamepadInput): void {
@@ -183,8 +202,10 @@ export class PlayerInput {
 		repeat.lastResult = result;
 	}
 
-	private ensureRawRepeatState(button: ButtonId, source: InputSource): RawActionRepeatRecord {
-		const records = this.rawActionRepeatRecords[source];
+	private repeatState(
+		records: Map<ButtonId, RawActionRepeatRecord>,
+		button: ButtonId,
+	): RawActionRepeatRecord {
 		let record = records.get(button);
 		if (!record) {
 			record = {
@@ -216,6 +237,8 @@ export class PlayerInput {
 		for (let i = 0; i < INPUT_SOURCES.length; i += 1) {
 			this.rawActionRepeatRecords[INPUT_SOURCES[i]].clear();
 		}
+		this.controlRepeatRecords.keyboard.clear();
+		this.controlRepeatRecords.gamepad.clear();
 		this.lastPollTimestampMs = 0;
 		this.frameCounter = 0;
 	}

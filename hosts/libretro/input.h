@@ -1,6 +1,7 @@
 #pragma once
 
 #include "bmsx_libretro.h"
+#include "host_shortcuts.h"
 #include "machine/devices/input/contracts.h"
 
 #include <array>
@@ -17,7 +18,9 @@ constexpr u8 HID_USAGE_ARROW_LEFT = 80u;
 constexpr u8 HID_USAGE_ARROW_DOWN = 81u;
 constexpr u8 HID_USAGE_ARROW_UP = 82u;
 constexpr u8 HID_USAGE_SHIFT_LEFT = 225u;
+constexpr u8 HID_USAGE_CONTROL_RIGHT = 228u;
 constexpr u8 HID_USAGE_SHIFT_RIGHT = 229u;
+constexpr u8 HID_USAGE_ALT_RIGHT = 230u;
 
 class LibretroInput final : public InputControllerInputSource {
 public:
@@ -36,6 +39,7 @@ public:
 	bool gamepadButtonPressed(
 		u8 deviceSlot,
 		InputControllerGamepadButtonBit button) const;
+	bool hostShortcutJustPressed(InputControllerGamepadButtonBit button) const;
 	f64 frameDurationMs() const { return m_frame_duration_ms; }
 	void setFrameDurationMs(f64 frameDurationMs) {
 		m_frame_duration_ms = frameDurationMs;
@@ -61,6 +65,7 @@ private:
 	std::array<unsigned, INPUT_CONTROLLER_PAD_COUNT> m_controller_devices{};
 	std::array<f64, INPUT_CONTROLLER_PAD_COUNT> m_rumble_deadlines_ms{};
 	std::array<u32, INPUT_CONTROLLER_KEY_WORD_COUNT> m_keyboard_usage_words{};
+	std::array<u32, INPUT_CONTROLLER_KEY_WORD_COUNT> m_routed_keyboard_usage_words{};
 	std::array<InputControllerPadSnapshot, INPUT_CONTROLLER_PAD_COUNT> m_gamepads{};
 	u32 m_pointer_buttons = 0u;
 	i32 m_pointer_x = 0;
@@ -74,7 +79,9 @@ private:
 	f64 m_frame_duration_ms = 1000.0 / 60.0;
 	bool m_pointer_position_valid = false;
 	bool m_host_supervisor_request_high = false;
-	bool m_supervisor_chord_active = false;
+	BmsxHostShortcutState m_gamepad_shortcuts{};
+	BmsxHostShortcutState m_keyboard_shortcuts{};
+	u32 m_just_pressed_host_shortcuts = 0u;
 };
 
 } // namespace bmsx

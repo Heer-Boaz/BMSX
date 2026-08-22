@@ -1,5 +1,4 @@
 #include "input.h"
-#include "supervisor_chord.h"
 
 #include "machine/common/numeric.h"
 
@@ -50,9 +49,13 @@ constexpr std::array<InputControllerGamepadButtonBit, kLibretroButtonCount> kLib
 	InputControllerGamepadButtonBit::RightStick,
 };
 
-constexpr u32 kSupervisorChordMask =
-	(1u << static_cast<u32>(InputControllerGamepadButtonBit::Select)) |
-	(1u << static_cast<u32>(InputControllerGamepadButtonBit::LeftBumper));
+constexpr u32 kTerminalShortcutMask =
+	1u << static_cast<u32>(InputControllerGamepadButtonBit::LeftBumper);
+constexpr u32 kMenuShortcutMask =
+	1u << static_cast<u32>(InputControllerGamepadButtonBit::Start);
+constexpr u32 kHostShortcutModifier =
+	1u << static_cast<u32>(InputControllerGamepadButtonBit::Select);
+constexpr u32 kHostShortcutTargets = kTerminalShortcutMask | kMenuShortcutMask;
 
 constexpr unsigned kRetroMouseIdX = 0u;
 constexpr unsigned kRetroMouseIdY = 1u;
@@ -159,6 +162,20 @@ i32 pointerAxisToViewport(i16 value, i32 extent) {
 		/ 65534);
 }
 
+bool keyUsagePressed(
+		const std::array<u32, INPUT_CONTROLLER_KEY_WORD_COUNT>& words,
+		u8 usage) {
+	const size_t word = static_cast<size_t>(usage) >> 5u;
+	return (words[word] & (1u << (static_cast<u32>(usage) & 31u))) != 0u;
+}
+
+void clearKeyUsage(
+		std::array<u32, INPUT_CONTROLLER_KEY_WORD_COUNT>& words,
+		u8 usage) {
+	const size_t word = static_cast<size_t>(usage) >> 5u;
+	words[word] &= ~(1u << (static_cast<u32>(usage) & 31u));
+}
+
 } // namespace
 
 LibretroInput::LibretroInput(
@@ -183,6 +200,34 @@ void LibretroInput::poll(
 
 	m_input_poll_callback();
 	m_host_supervisor_request_high = m_supervisor_request_line();
+	m_routed_keyboard_usage_words = m_keyboard_usage_words;
+	u32 keyboardButtons = 0u;
+	if (keyUsagePressed(m_keyboard_usage_words, HID_USAGE_CONTROL_RIGHT)) {
+		keyboardButtons |= kHostShortcutModifier;
+	}
+	if (keyUsagePressed(m_keyboard_usage_words, HID_USAGE_SHIFT_LEFT)) {
+		keyboardButtons |= kTerminalShortcutMask;
+	}
+	if (keyUsagePressed(m_keyboard_usage_words, HID_USAGE_ALT_RIGHT)) {
+		keyboardButtons |= kMenuShortcutMask;
+	}
+	const BmsxHostShortcutResult keyboardShortcuts =
+		bmsx_host_shortcuts_update(
+			&m_keyboard_shortcuts,
+			keyboardButtons,
+			kHostShortcutModifier,
+			kHostShortcutTargets);
+	if ((keyboardShortcuts.routed_buttons & kHostShortcutModifier) == 0u) {
+		clearKeyUsage(m_routed_keyboard_usage_words, HID_USAGE_CONTROL_RIGHT);
+	}
+	if ((keyboardShortcuts.routed_buttons & kTerminalShortcutMask) == 0u) {
+		clearKeyUsage(m_routed_keyboard_usage_words, HID_USAGE_SHIFT_LEFT);
+	}
+	if ((keyboardShortcuts.routed_buttons & kMenuShortcutMask) == 0u) {
+		clearKeyUsage(m_routed_keyboard_usage_words, HID_USAGE_ALT_RIGHT);
+	}
+	u32 activeHostShortcuts = keyboardShortcuts.active_targets;
+	m_just_pressed_host_shortcuts = keyboardShortcuts.just_pressed_targets;
 
 	for (u8 player = 0u; player < INPUT_CONTROLLER_PAD_COUNT; player += 1u) {
 		InputControllerPadSnapshot& gamepad = m_gamepads[player];
@@ -198,10 +243,15 @@ void LibretroInput::poll(
 			}
 		}
 		if (player == 0u) {
-			buttons = bmsx_supervisor_chord_update(
-				&m_supervisor_chord_active,
+			const BmsxHostShortcutResult shortcuts =
+				bmsx_host_shortcuts_update(
+				&m_gamepad_shortcuts,
 				buttons,
-				kSupervisorChordMask);
+				kHostShortcutModifier,
+				kHostShortcutTargets);
+			buttons = shortcuts.routed_buttons;
+			activeHostShortcuts |= shortcuts.active_targets;
+			m_just_pressed_host_shortcuts |= shortcuts.just_pressed_targets;
 		}
 		gamepad.buttons = buttons;
 		gamepad.axesQ16[0] = encodeSignedFix16(normalizeAxis(m_input_state_callback(
@@ -236,7 +286,8 @@ void LibretroInput::poll(
 			: 0u;
 	}
 	m_host_supervisor_request_high =
-		m_host_supervisor_request_high || m_supervisor_chord_active;
+		m_host_supervisor_request_high ||
+		(activeHostShortcuts & kTerminalShortcutMask) != 0u;
 
 	const i16 mouseDeltaX =
 		m_input_state_callback(0u, RETRO_DEVICE_MOUSE, 0u, kRetroMouseIdX);
@@ -325,9 +376,7 @@ void LibretroInput::poll(
 }
 
 bool LibretroInput::keyboardUsagePressed(u8 usage) const {
-	const size_t word = static_cast<size_t>(usage) >> 5u;
-	return (m_keyboard_usage_words[word]
-		& (1u << (static_cast<u32>(usage) & 31u))) != 0u;
+	return keyUsagePressed(m_routed_keyboard_usage_words, usage);
 }
 
 bool LibretroInput::gamepadButtonPressed(
@@ -337,9 +386,14 @@ bool LibretroInput::gamepadButtonPressed(
 		& (1u << static_cast<u32>(button))) != 0u;
 }
 
+bool LibretroInput::hostShortcutJustPressed(
+		InputControllerGamepadButtonBit button) const {
+	return (m_just_pressed_host_shortcuts & (1u << static_cast<u32>(button))) != 0u;
+}
+
 void LibretroInput::sampleInputControllerSnapshot(
 		InputControllerSnapshot& snapshot) {
-	snapshot.keyWords = m_keyboard_usage_words;
+	snapshot.keyWords = m_routed_keyboard_usage_words;
 	snapshot.pointerButtons = m_pointer_buttons;
 	snapshot.pointerXQ16 = m_pointer_x_q16;
 	snapshot.pointerYQ16 = m_pointer_y_q16;
@@ -449,6 +503,7 @@ void LibretroInput::reset() {
 	}
 	m_active_rumble_mask = 0u;
 	m_keyboard_usage_words.fill(0u);
+	m_routed_keyboard_usage_words.fill(0u);
 	m_gamepads.fill({});
 	m_pointer_buttons = 0u;
 	m_pointer_x = 0;
@@ -458,7 +513,9 @@ void LibretroInput::reset() {
 	m_pointer_wheel_q16 = 0u;
 	m_pointer_position_valid = false;
 	m_host_supervisor_request_high = false;
-	m_supervisor_chord_active = false;
+	m_gamepad_shortcuts = {};
+	m_keyboard_shortcuts = {};
+	m_just_pressed_host_shortcuts = 0u;
 }
 
 } // namespace bmsx

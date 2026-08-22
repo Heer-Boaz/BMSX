@@ -39,8 +39,6 @@ struct HostMenuButton {
 };
 
 constexpr auto kHostMenuButtons = std::to_array<HostMenuButton>({
-	{InputControllerGamepadButtonBit::Start, HID_USAGE_ENTER},
-	{InputControllerGamepadButtonBit::Select, HID_USAGE_BACKSPACE},
 	{InputControllerGamepadButtonBit::Up, HID_USAGE_ARROW_UP},
 	{InputControllerGamepadButtonBit::Down, HID_USAGE_ARROW_DOWN},
 	{InputControllerGamepadButtonBit::Left, HID_USAGE_ARROW_LEFT},
@@ -271,11 +269,7 @@ void HostOverlayMenu::queueCommand(Host2DKind kind, Host2DRef ref) {
 }
 
 HostMenuInput HostOverlayMenu::tickInput(const LibretroInput& input, VideoPresenter& presenter, f64 currentTimeMs) {
-	const bool comboEdge = buttonPressed(input, HostMenuButtonId::Start) &&
-		buttonPressed(input, HostMenuButtonId::Select) &&
-		(buttonJustPressed(input, HostMenuButtonId::Start) ||
-			buttonJustPressed(input, HostMenuButtonId::Select));
-	if (comboEdge) {
+	if (input.hostShortcutJustPressed(InputControllerGamepadButtonBit::Start)) {
 		toggle();
 	}
 	HostMenuInput result = m_active ? HostMenuInput::Active : HostMenuInput::Inactive;

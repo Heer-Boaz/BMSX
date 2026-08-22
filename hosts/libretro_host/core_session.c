@@ -202,9 +202,7 @@ bool core_session_environment(unsigned command, void* data) {
 			session->gx_upload_profile_interface_set = true;
 			return true;
 		case BMSX_ENVIRONMENT_GET_SUPERVISOR_REQUEST_INTERFACE_V1:
-			((BmsxSupervisorRequestInterfaceV1*)data)->request_line_high =
-					input_devices_supervisor_request_line_high;
-			return true;
+			return false;
 		case BMSX_ENVIRONMENT_GET_AUDIO_TRANSPORT_INTERFACE:
 			((BmsxAudioTransportInterface*)data)->set_suspended =
 					audio_output_set_suspended;

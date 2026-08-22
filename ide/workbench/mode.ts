@@ -10,7 +10,9 @@ import type { KeyValueStorage } from '../workspace/key_value_storage';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import type { EditorDisplay, Viewport } from '../common/viewport';
 import * as constants from '../common/constants';
-import { EDITOR_TOGGLE_CHORD } from '../common/constants';
+import {
+	HOST_IDE_BUTTON,
+} from '../../hosts/common/input/shortcuts';
 import { seedDefaultLuaBuiltins } from '../runtime/lua_builtins';
 import { api as overlay_api } from '../runtime/overlay_api';
 import {
@@ -112,9 +114,9 @@ export function registerRuntimeShortcuts(
 	disposeShortcutHandlers(state);
 	const registry = input.getGlobalShortcutRegistry();
 	const disposers: Array<() => void> = [];
-	disposers.push(registry.registerControlChord(
+	disposers.push(registry.registerControlShortcut(
 		1,
-		EDITOR_TOGGLE_CHORD,
+		HOST_IDE_BUTTON,
 		() => toggleEditor(
 			state.editor,
 			state.sources,

@@ -114,7 +114,10 @@ void testLibretroStateEnvelopeRoundTrip() {
 
 void testInputSnapshotReflectsHeldKey() {
 	bmsx::LibretroInput input(readSupervisorRequestLine);
+	input.setInputPollCallback(discardInputPoll);
+	input.setInputStateCallback(gamepadInputState);
 	input.postKeyboardEvent(RETROK_x, true);
+	input.poll(256, 240, 0.0);
 	bmsx::InputControllerSnapshot snapshot;
 	input.sampleInputControllerSnapshot(snapshot);
 
@@ -137,17 +140,17 @@ void testLibretroSupervisorRequestChordAndGuestInput() {
 	const uint32_t supervisorChordButtons = leftShoulderButton | selectButton;
 	bmsx::InputControllerSnapshot snapshot;
 
-	gamepadState = 1u << RETRO_DEVICE_ID_JOYPAD_L;
+	gamepadState = 1u << RETRO_DEVICE_ID_JOYPAD_SELECT;
 	input.poll(256, 240, 0.0);
 	require(
 		!input.supervisorRequestLineHigh(),
-		"a partial supervisor chord must remain ordinary gameplay");
+		"the reserved modifier alone must not assert the supervisor line");
 	input.sampleInputControllerSnapshot(snapshot);
 	require(
-		(snapshot.pads[0].buttons & leftShoulderButton) != 0u,
-		"a partial supervisor chord must remain cart-visible");
+		(snapshot.pads[0].buttons & selectButton) == 0u,
+		"the reserved modifier must be masked before command selection");
 
-	gamepadState |= 1u << RETRO_DEVICE_ID_JOYPAD_SELECT;
+	gamepadState |= 1u << RETRO_DEVICE_ID_JOYPAD_L;
 	input.poll(256, 240, 0.0);
 	require(
 		input.supervisorRequestLineHigh(),
@@ -157,21 +160,21 @@ void testLibretroSupervisorRequestChordAndGuestInput() {
 		(snapshot.pads[0].buttons & supervisorChordButtons) == 0u,
 		"a completed supervisor chord must be masked from cart input");
 
-	gamepadState = 1u << RETRO_DEVICE_ID_JOYPAD_SELECT;
+	gamepadState = 1u << RETRO_DEVICE_ID_JOYPAD_L;
 	input.poll(256, 240, 0.0);
 	require(
-		input.supervisorRequestLineHigh(),
-		"the supervisor chord must remain latched until full release");
+		!input.supervisorRequestLineHigh(),
+		"releasing the modifier must lower the supervisor line");
 	input.sampleInputControllerSnapshot(snapshot);
 	require(
 		(snapshot.pads[0].buttons & supervisorChordButtons) == 0u,
-		"a latched supervisor chord must remain masked until full release");
+		"the command target must remain masked until release");
 
 	gamepadState = 0u;
 	input.poll(256, 240, 0.0);
 	require(
 		!input.supervisorRequestLineHigh(),
-		"full chord release must lower and rearm the core-owned line");
+		"full release must rearm the core-owned shortcut");
 
 	supervisorRequestLineHigh = true;
 	input.poll(256, 240, 0.0);
@@ -202,6 +205,7 @@ void testLibretroSupervisorRequestChordAndGuestInput() {
 		"the negotiated host line should remain independent of held guest keys");
 
 	input.postKeyboardEvent(RETROK_F2, false);
+	input.poll(256, 240, 0.0);
 	input.sampleInputControllerSnapshot(snapshot);
 	require(
 		(snapshot.keyWords[bmsx::HID_USAGE_F2 >> 5u]
@@ -215,6 +219,56 @@ void testLibretroSupervisorRequestChordAndGuestInput() {
 	require(
 		!input.supervisorRequestLineHigh(),
 		"lowering the negotiated host line should deassert the supervisor request");
+
+	input.postKeyboardEvent(RETROK_RCTRL, true);
+	input.poll(256, 240, 0.0);
+	input.sampleInputControllerSnapshot(snapshot);
+	require(
+		(snapshot.keyWords[bmsx::HID_USAGE_CONTROL_RIGHT >> 5u]
+			& (1u << (bmsx::HID_USAGE_CONTROL_RIGHT & 31u))) == 0u,
+		"keyboard Select must be reserved before a host command is selected");
+	input.postKeyboardEvent(RETROK_LSHIFT, true);
+	input.poll(256, 240, 0.0);
+	require(
+		input.supervisorRequestLineHigh(),
+		"keyboard Select plus L1 must assert the supervisor line across frames");
+	input.sampleInputControllerSnapshot(snapshot);
+	require(
+		(snapshot.keyWords[bmsx::HID_USAGE_SHIFT_LEFT >> 5u]
+			& (1u << (bmsx::HID_USAGE_SHIFT_LEFT & 31u))) == 0u,
+		"an active keyboard host command must be masked from the guest");
+	input.postKeyboardEvent(RETROK_RCTRL, false);
+	input.poll(256, 240, 0.0);
+	require(
+		!input.supervisorRequestLineHigh(),
+		"releasing keyboard Select must lower the supervisor line");
+	input.postKeyboardEvent(RETROK_LSHIFT, false);
+	input.poll(256, 240, 0.0);
+
+	input.postKeyboardEvent(RETROK_RCTRL, true);
+	input.postKeyboardEvent(RETROK_RALT, true);
+	input.poll(256, 240, 0.0);
+	require(
+		input.hostShortcutJustPressed(bmsx::InputControllerGamepadButtonBit::Start),
+		"keyboard Select plus Start must publish one quick-menu activation edge");
+	input.poll(256, 240, 0.0);
+	require(
+		!input.hostShortcutJustPressed(bmsx::InputControllerGamepadButtonBit::Start),
+		"a held quick-menu shortcut must not retrigger");
+	input.postKeyboardEvent(RETROK_RCTRL, false);
+	input.postKeyboardEvent(RETROK_RALT, false);
+	input.poll(256, 240, 0.0);
+
+	input.postKeyboardEvent(RETROK_BACKSPACE, true);
+	input.postKeyboardEvent(RETROK_RETURN, true);
+	input.poll(256, 240, 0.0);
+	input.sampleInputControllerSnapshot(snapshot);
+	require(
+		(snapshot.keyWords[bmsx::HID_USAGE_BACKSPACE >> 5u]
+			& (1u << (bmsx::HID_USAGE_BACKSPACE & 31u))) != 0u &&
+		(snapshot.keyWords[bmsx::HID_USAGE_ENTER >> 5u]
+			& (1u << (bmsx::HID_USAGE_ENTER & 31u))) != 0u,
+		"Backspace and Enter must remain ordinary keyboard input");
 }
 
 } // namespace

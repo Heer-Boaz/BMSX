@@ -7,7 +7,10 @@ import type {
 	KeyOrButtonId2ButtonState,
 } from './models';
 import { KeyboardInput } from './keyboard';
-import { GlobalShortcutRegistry } from './shortcuts';
+import {
+	GlobalShortcutRegistry,
+	HOST_TERMINAL_BUTTON,
+} from './shortcuts';
 
 import { PendingAssignmentProcessor } from './host/assignment_processor';
 import { PlayerInput } from './player';
@@ -29,7 +32,6 @@ import {
 } from '../../../machine/ts/machine/devices/input/contracts';
 
 const EMPTY_BUTTON_STATE_PATCH: Readonly<Partial<ButtonState>> = Object.freeze({});
-const SUPERVISOR_REQUEST_CHORD = ['select', 'lb'] as const;
 
 /**
  * Returns the pressed state of a key or button, and optionally checks if it was clicked.
@@ -129,6 +131,7 @@ export class Input implements InputControllerInputSource, InputEventSink {
 	private readonly unsubscribeHostInput: () => void;
 	private readonly pendingVibrationDevices: GamepadDevice[] = [];
 	public resetInput(): void {
+		this.globalShortcuts.reset();
 		this.hostSupervisorRequestLine = false;
 		this.controlSupervisorRequestLine = false;
 		this.updateSupervisorRequestLine();
@@ -197,8 +200,8 @@ export class Input implements InputControllerInputSource, InputEventSink {
 	public static readonly DEFAULT_INPUT_MAPPING: InputMap = Object.freeze({
 		keyboard: Object.freeze({
 			a: ['KeyX'], b: ['KeyC'], x: ['KeyZ'], y: ['KeyS'],
-			lb: ['ShiftLeft'], rb: ['ShiftRight'], lt: ['ControlLeft'], rt: ['ControlRight'],
-			select: ['Backspace'], start: ['Enter'], ls: ['KeyQ'], rs: ['KeyE'],
+			lb: ['ShiftLeft'], rb: ['ShiftRight'], lt: ['ControlLeft'], rt: ['AltLeft'],
+			select: ['ControlRight'], start: ['AltRight'], ls: ['KeyQ'], rs: ['KeyE'],
 			up: ['ArrowUp'], down: ['ArrowDown'], left: ['ArrowLeft'], right: ['ArrowRight'],
 			home: ['Escape'], touch: ['Space'],
 		}),
@@ -236,9 +239,9 @@ export class Input implements InputControllerInputSource, InputEventSink {
 		}
 		this.globalShortcuts = new GlobalShortcutRegistry(this);
 		const defaultPlayerIndex = Input.DEFAULT_KEYBOARD_PLAYER_INDEX;
-		this.globalShortcuts.registerControlChord(
+		this.globalShortcuts.registerControlShortcut(
 			defaultPlayerIndex,
-			SUPERVISOR_REQUEST_CHORD,
+			HOST_TERMINAL_BUTTON,
 			() => this.setControlSupervisorRequestLine(true),
 			() => this.setControlSupervisorRequestLine(false),
 		);
@@ -468,7 +471,7 @@ export class Input implements InputControllerInputSource, InputEventSink {
 			const gamepadInput = player.inputHandlers['gamepad'];
 			if (gamepadInput) {
 				const buttonState = gamepadInput.getButtonState('start');
-				if (buttonState.pressed && buttonState.presstime >= 50) {
+				if (!buttonState.consumed && buttonState.pressed && buttonState.presstime >= 50) {
 					player.clearGamepad(gamepadInput);
 					this.deviceBindings.get(gamepadInput.deviceId)!.assignedPlayer = null;
 					this.pendingGamepadAssignments.push(new PendingAssignmentProcessor(this, gamepadInput, null));
