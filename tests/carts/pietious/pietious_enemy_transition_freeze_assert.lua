@@ -3,7 +3,7 @@ local world<const> = require('cartlib/world/world')
 
 __bmsx_host_test = { frames = 0 }
 function __bmsx_host_test.setup()
-	new_game()
+	registry:get('d').request_new_game()
 end
 function __bmsx_host_test.ready()
 	return registry:get('c') ~= nil and registry:get('room') ~= nil and registry:get('d') ~= nil and registry:get('pietolon') ~= nil

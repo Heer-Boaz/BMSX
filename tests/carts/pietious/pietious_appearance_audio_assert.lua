@@ -18,7 +18,7 @@ local record_appearance<const> = function(test)
 end
 
 function __bmsx_host_test.setup()
-	new_game()
+	registry:get('d').request_new_game()
 end
 
 function __bmsx_host_test.ready()
