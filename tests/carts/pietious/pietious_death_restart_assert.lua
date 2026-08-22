@@ -74,6 +74,7 @@ function __bmsx_host_test.update()
 		ui.hud_health_level = 0
 		ui.hud_health_target = 0
 		player.health = 0
+		test.pre_dying_imgid = player.sprite_component.imgid
 		player:start_dying()
 		assert(player.state_machines:matches_state(test.dying_state), 'player did not enter dying state')
 		test.phase = 'dying'
@@ -85,6 +86,9 @@ function __bmsx_host_test.update()
 		assert(player.state_machines:matches_state(test.dying_state),
 			'player left dying before the death animation completed')
 		local imgid<const> = player.sprite_component.imgid
+		if test.dying_pose == 1 and imgid == test.pre_dying_imgid then
+			return false
+		end
 		if imgid == dying_imgids[test.dying_pose + 1] then
 			test.dying_pose = test.dying_pose + 1
 		else

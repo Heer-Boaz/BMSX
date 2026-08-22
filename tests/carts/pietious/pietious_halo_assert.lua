@@ -45,7 +45,7 @@ function __bmsx_host_test.update()
 			return false
 		end
 		test.phase = 'activate_halo'
-		return host.press('Enter', 2)
+		return host.press('AltRight', 2)
 	end
 
 	if test.phase == 'activate_halo' then
