@@ -122,7 +122,7 @@ local register_definition<const> = function()
 			fsm_component.factory({ ids_moon_death_ray_fsm }),
 		},
 		defaults = {
-			destroys_shield = true,
+			force_field_hit = player_force_field_hit_overload,
 		},
 	})
 end

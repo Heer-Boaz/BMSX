@@ -107,7 +107,7 @@ local register_definition<const> = function()
 			fsm_component.factory({ ids_moon_small_ray_fsm }),
 		},
 		defaults = {
-			destroys_shield = true,
+			force_field_hit = player_force_field_hit_overload,
 			direction = moon_vertical_direction_up,
 			z = moon_small_ray_draw_z,
 		},

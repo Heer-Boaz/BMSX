@@ -133,7 +133,7 @@ local register_definition<const> = function()
 			fsm_component.factory({ ids_schoorsteen_ray_fsm }),
 		},
 		defaults = {
-			destroys_shield = true,
+			force_field_hit = player_force_field_hit_overload,
 			direction = -1,
 			z = schoorsteen_ray_draw_z,
 		},

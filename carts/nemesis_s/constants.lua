@@ -90,6 +90,8 @@ player_hitcheck_y = { 4, 4, 5, 7, 5, 7 }
 player_respawn_invulnerability_ms = 2000
 player_respawn_blink_ms = 50
 player_force_field_strength = 5
+player_force_field_hit_standard = 0
+player_force_field_hit_overload = 1
 player_force_field_animation_frame_ms = 100
 player_force_field_offset_y = -2
 

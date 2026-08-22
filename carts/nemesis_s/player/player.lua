@@ -472,17 +472,17 @@ function player:deactivate_force_field()
 	self.force_field_visual:deactivate()
 end
 
-function player:damage_force_field(destroys_in_one_blow)
-	local strength = self.force_field_strength - 1
-	if destroys_in_one_blow then
-		strength = 0
+function player:apply_force_field_hit(hit)
+	local remaining = self.force_field_strength - 1
+	if hit == player_force_field_hit_overload and remaining > 0 then
+		remaining = 1
 	end
-	self.force_field_strength = strength
-	if strength == 1 then
+	self.force_field_strength = remaining
+	if remaining == 1 then
 		local visual<const> = self.force_field_visual
 		visual:set_animation(force_field_animation_weak)
 		visual:set_playback_position(self.world.gameplay_time_ms - clock.gameplay_delta_milliseconds())
-	elseif strength <= 0 then
+	elseif remaining == 0 then
 		self.player_state:remove_powerup(powerup_slot_shield)
 	end
 end
@@ -1061,16 +1061,13 @@ function player:on_body_overlap(_state, event)
 	or event.other_layer == collision_pickup_layer then
 		return
 	end
-	local other<const> = registry:get(event.other_id)
-	if event.other_layer == collision_enemy_projectile_layer then
-		if self.force_field_strength > 0 then
-			self:damage_force_field(other.destroys_shield)
-			return
+	if self.force_field_strength > 0 then
+		if event.other_layer == collision_enemy_projectile_layer then
+			local other<const> = registry:get(event.other_id)
+			self:apply_force_field_hit(other.force_field_hit)
+		else
+			self:apply_force_field_hit(player_force_field_hit_standard)
 		end
-		return '/dying'
-	end
-	if other.small_fry and self.force_field_strength > 0 then
-		self:damage_force_field(false)
 		return
 	end
 	return '/dying'

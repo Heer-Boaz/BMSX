@@ -91,14 +91,23 @@ function __bmsx_host_test.update()
 	assert(player.sprite.imgid == assets_player_n_shield,
 		'strong force field did not select the XNA neutral vessel sprite')
 
+	local kerk<const> = world:spawn(ids_kerk_def, {
+		stage = player.stage,
+		pos = { x = player.x, y = player.y },
+	})
+	assert(collide_with(player, kerk, collision_enemy_layer) == nil
+		and player.force_field_strength == player_force_field_strength - 1,
+		'large enemy collision bypassed the equipped force field')
+	kerk:mark_for_disposal()
+
 	local bullet<const> = world:spawn(ids_enemy_bullet_def, {
 		stage = player.stage,
 		pos = { x = player.x, y = player.y },
 	})
-	assert(not bullet.destroys_shield,
-		'ordinary enemy bullet acquired destructive force-field damage')
+	assert(bullet.force_field_hit == player_force_field_hit_standard,
+		'ordinary enemy bullet lost its standard force-field impact')
 	assert(collide_with(player, bullet, collision_enemy_projectile_layer) == nil
-		and player.force_field_strength == player_force_field_strength - 1,
+		and player.force_field_strength == player_force_field_strength - 2,
 		'ordinary projectile was not absorbed for one force-field strength')
 	bullet:mark_for_disposal()
 
@@ -108,12 +117,11 @@ function __bmsx_host_test.update()
 		pos = { x = player.x, y = player.y },
 	})
 	assert(collide_with(player, rook, collision_enemy_layer) == nil
-		and player.force_field_strength == player_force_field_strength - 2,
+		and player.force_field_strength == player_force_field_strength - 3,
 		'small-fry collision bypassed the equipped force field')
 	rook:mark_for_disposal()
 
-	player:damage_force_field(false)
-	player:damage_force_field(false)
+	player:apply_force_field_hit(player_force_field_hit_standard)
 	assert(player.force_field_strength == 1 and visual.animation == 'weak'
 		and visual.imgid == visual.frames[visual.frame_index],
 		'last force-field strength did not switch to the weak animation')
@@ -121,25 +129,23 @@ function __bmsx_host_test.update()
 	assert(player.sprite.imgid == assets_player_n,
 		'weak force field retained the strong vessel sprite')
 
-	local kerk<const> = world:spawn(ids_kerk_def, {
-		stage = player.stage,
-		pos = { x = player.x, y = player.y },
-	})
-	assert(collide_with(player, kerk, collision_enemy_layer) == '/dying',
-		'large enemy collision was incorrectly absorbed by the force field')
-	kerk:mark_for_disposal()
-
 	local ray<const> = world:spawn(ids_sneeuwpop_ray_def, {
 		originator = { ray_disposed = function() end },
 		pos = { x = player.x, y = player.y },
 	})
-	assert(ray.destroys_shield,
-		'Sneeuwpop ray lost its one-blow force-field damage contract')
+	assert(ray.force_field_hit == player_force_field_hit_overload,
+		'Sneeuwpop ray lost its overload force-field impact')
+	player:activate_force_field()
+	assert(collide_with(player, ray, collision_enemy_projectile_layer) == nil
+		and player.force_field_strength == 1
+		and state.powerup_levels[shield_slot] == 1
+		and visual.enabled and visual.animation == 'weak',
+		'destructive ray did not leave a strong force field at critical strength')
 	assert(collide_with(player, ray, collision_enemy_projectile_layer) == nil
 		and player.force_field_strength == 0
 		and state.powerup_levels[shield_slot] == 0
 		and not visual.enabled,
-		'destructive ray did not consume and retire the force field')
+		'second destructive ray hit did not retire the critical force field')
 	ray:mark_for_disposal()
 
 	state.current_powerup_slot = shield_slot
