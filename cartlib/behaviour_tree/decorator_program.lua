@@ -2,11 +2,13 @@ local execution_layout<const> = require('cartlib/behaviour_tree/execution_layout
 local observer_program<const> = require('cartlib/behaviour_tree/observer_program')
 local result<const> = require('cartlib/behaviour_tree/result')
 
--- Decorators are lowered at tree admission. Blackboard decorators retain the
--- event-driven observer path; target predicates are evaluated directly while
--- their branch owns execution, then abort that branch as soon as the predicate
--- stops holding. Predicate evaluation allocates no node memory and introduces
--- no Blackboard shadow state for values already owned by the target.
+-- Decorators are lowered at tree admission. Custom decorator types own their
+-- predicate; a tree placement selects the type. Blackboard decorators retain
+-- the event-driven observer path. Target predicates are evaluated directly
+-- while their branch owns execution, then abort that branch as soon as the
+-- predicate stops holding. Predicate evaluation allocates no node memory and
+-- introduces no Blackboard shadow state for values already owned by the
+-- target.
 
 local decorator_program<const> = {}
 local result_success<const> = result.success
@@ -16,11 +18,11 @@ local allocate_flag<const> = execution_layout.allocate_flag
 local compile_predicate<const> = function(definitions)
 	local count<const> = #definitions
 	if count == 1 then
-		return definitions[1].condition
+		return definitions[1].decorator.evaluate
 	end
 	local predicates<const> = {}
 	for index = 1, count do
-		predicates[index] = definitions[index].condition
+		predicates[index] = definitions[index].decorator.evaluate
 	end
 	return function(target, execution)
 		for index = 1, count do

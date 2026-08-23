@@ -173,6 +173,11 @@ local tasks<const> = {
 		tick = crossfoe.tick_flight,
 	},
 }
+local decorators<const> = {
+	player_overlaps_takeoff_lane = {
+		evaluate = crossfoe.player_overlaps_takeoff_lane,
+	},
+}
 
 function crossfoe.register()
 	local tree_id<const> = 'enemy_crossfoe'
@@ -186,7 +191,7 @@ function crossfoe.register()
 					decorators = {
 						{
 							type = 'condition',
-							condition = crossfoe.player_overlaps_takeoff_lane,
+							decorator = decorators.player_overlaps_takeoff_lane,
 						},
 					},
 				},
