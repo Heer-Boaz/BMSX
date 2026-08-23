@@ -2,6 +2,9 @@ host = {
 	press = function(code, frames)
 		return { press = code, hold_frames = frames or 1 }
 	end,
+	gamepad_press = function(player_index, code, frames)
+		return { gamepad = player_index, press = code, hold_frames = frames or 1 }
+	end,
 	down = function(code)
 		return { down = code }
 	end,

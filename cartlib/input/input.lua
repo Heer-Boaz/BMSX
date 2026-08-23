@@ -23,12 +23,24 @@ local pointer_buttons<const>: *word = icu.pointer_buttons_address
 local pointer_position_x_q16<const>: *word = icu.pointer_x_q16_address
 local pointer_position_y_q16<const>: *word = icu.pointer_y_q16_address
 local pointer_wheel_q16<const>: *word = icu.pointer_wheel_q16_address
+local word_sign_mask<const> = 0x80000000
+local word_range<const> = 0x100000000
 local gamepad_bits<const> = {
 	['a'] = 0x00000000, ['b'] = 0x00000001, ['x'] = 0x00000002, ['y'] = 0x00000003,
 	['lb'] = 0x00000004, ['rb'] = 0x00000005, ['lt'] = 0x00000006, ['rt'] = 0x00000007,
 	['select'] = 0x00000008, ['start'] = 0x00000009, ['ls'] = 0x0000000a, ['rs'] = 0x0000000b,
 	['up'] = 0x0000000c, ['down'] = 0x0000000d, ['left'] = 0x0000000e, ['right'] = 0x0000000f,
 	['home'] = 0x00000010, ['touch'] = 0x00000011,
+}
+local gamepad_stick_axes<const> = {
+	ls = {
+		x = icu.gamepad_left_x_q16_offset,
+		y = icu.gamepad_left_y_q16_offset,
+	},
+	rs = {
+		x = icu.gamepad_right_x_q16_offset,
+		y = icu.gamepad_right_y_q16_offset,
+	},
 }
 
 local pointer_bits<const> = {
@@ -110,7 +122,7 @@ local player_list<const> = {}
 local player_count = 0
 bss frame_serial: word
 
-local new_button_state<const> = function()
+local new_binding_state<const> = function()
 	return {
 		-- raw read plan, resolved per binding by resolve_binding
 		level_addr = 0,
@@ -118,6 +130,9 @@ local new_button_state<const> = function()
 		value_addr = 0,
 		value_x_addr = 0,
 		value_y_addr = 0,
+		axis_addr = 0,
+		axis_positive = false,
+		axis_actuation_q16 = 0,
 		pressed_from_value = false,
 		is_pointer_delta = false,
 		prev_x_q16 = 0,
@@ -135,9 +150,9 @@ local new_button_state<const> = function()
 	}
 end
 
-local resolve_binding<const> = function(player, source_index, button, state)
+local resolve_binding<const> = function(player, source_index, binding, state)
 	if source_index == source_keyboard then
-		local usage<const> = keys[button]
+		local usage<const> = keys[binding]
 		if usage then
 			state.level_addr = icu.keyboard_bitmap_address + ((usage >> 5) << 2)
 			state.level_mask = 1 << (usage & 31)
@@ -145,35 +160,41 @@ local resolve_binding<const> = function(player, source_index, button, state)
 		return
 	end
 	if source_index == source_gamepad then
-		local bit<const> = gamepad_bits[button]
+		local pad_base<const> = icu.gamepad_base_address + (player.index - 1) * icu.gamepad_stride
+		if type(binding) == 'table' then
+			state.axis_addr = pad_base + binding.axis_offset
+			state.axis_positive = binding.positive
+			state.axis_actuation_q16 = binding.actuation_q16
+			return
+		end
+		local bit<const> = gamepad_bits[binding]
 		if bit then
-			local pad_base<const> = icu.gamepad_base_address + (player.index - 1) * icu.gamepad_stride
 			state.level_addr = pad_base + icu.gamepad_buttons_offset
 			state.level_mask = 1 << bit
-			if button == 'ls' then
+			if binding == 'ls' then
 				state.value_x_addr = pad_base + icu.gamepad_left_x_q16_offset
 				state.value_y_addr = pad_base + icu.gamepad_left_y_q16_offset
-			elseif button == 'rs' then
+			elseif binding == 'rs' then
 				state.value_x_addr = pad_base + icu.gamepad_right_x_q16_offset
 				state.value_y_addr = pad_base + icu.gamepad_right_y_q16_offset
-			elseif button == 'lt' then
+			elseif binding == 'lt' then
 				state.value_addr = pad_base + icu.gamepad_left_trigger_q16_offset
-			elseif button == 'rt' then
+			elseif binding == 'rt' then
 				state.value_addr = pad_base + icu.gamepad_right_trigger_q16_offset
 			end
 		end
 		return
 	end
-	local bit<const> = pointer_bits[button]
+	local bit<const> = pointer_bits[binding]
 	if bit then
 		state.level_addr = pointer_buttons
 		state.level_mask = 1 << bit
-	elseif button == 'pointer_position' then
+	elseif binding == 'pointer_position' then
 		state.value_x_addr = pointer_position_x_q16
 		state.value_y_addr = pointer_position_y_q16
-	elseif button == 'pointer_delta' then
+	elseif binding == 'pointer_delta' then
 		state.is_pointer_delta = true
-	elseif button == 'pointer_wheel' then
+	elseif binding == 'pointer_wheel' then
 		state.value_addr = pointer_wheel_q16
 		state.pressed_from_value = true
 	end
@@ -222,13 +243,6 @@ local new_action_state<const> = function(action, clock_state)
 	}
 end
 
-local binding_id<const> = function(binding)
-	if type(binding) == 'table' then
-		return binding.id
-	end
-	return binding
-end
-
 local context_less<const> = function(a, b)
 	if a.priority ~= b.priority then
 		return a.priority < b.priority
@@ -252,10 +266,40 @@ local apply_digital_edge<const> = function(player, state, pressed_now, frame)
 	state.pressed = pressed_now
 end
 
+local sample_axis_group<const> = function(player, group, frame)
+	local axis<const>: *word = group.addr
+	local raw_value<const> = *axis
+	local positive_q16 = 0
+	local negative_q16 = 0
+	if raw_value & word_sign_mask == 0 then
+		positive_q16 = raw_value
+	else
+		negative_q16 = word_range - raw_value
+	end
+	local positive_states<const> = group.positive_states
+	for i = 1, #positive_states do
+		local state<const> = positive_states[i]
+		state.value_q16 = positive_q16
+		local pressed<const> = positive_q16 >= state.axis_actuation_q16
+		if pressed ~= state.pressed then
+			apply_digital_edge(player, state, pressed, frame)
+		end
+	end
+	local negative_states<const> = group.negative_states
+	for i = 1, #negative_states do
+		local state<const> = negative_states[i]
+		state.value_q16 = negative_q16
+		local pressed<const> = negative_q16 >= state.axis_actuation_q16
+		if pressed ~= state.pressed then
+			apply_digital_edge(player, state, pressed, frame)
+		end
+	end
+end
+
 -- Analog/pointer inputs: read their value(s) every frame. Hybrid buttons
 -- (trigger/stick) already had pressed/edges set by the digital pass and only
 -- need the value here; pure value inputs derive pressed from the value/delta.
-local sample_value_button<const> = function(player, state, frame)
+local sample_value_binding<const> = function(player, state, frame)
 	if state.value_addr ~= 0 then
 		local value<const>: *word = state.value_addr
 		state.value_q16 = *value
@@ -288,7 +332,7 @@ local sample_value_button<const> = function(player, state, frame)
 	end
 end
 
-local sample_new_button_state<const> = function(player, state, frame)
+local sample_new_binding_state<const> = function(player, state, frame)
 	if state.level_addr ~= 0 then
 		local level<const>: *word = state.level_addr
 		local pressed<const> = (*level & state.level_mask) ~= 0
@@ -296,13 +340,30 @@ local sample_new_button_state<const> = function(player, state, frame)
 			apply_digital_edge(player, state, pressed, frame)
 		end
 	end
-	sample_value_button(player, state, frame)
+	if state.axis_addr ~= 0 then
+		local axis<const>: *word = state.axis_addr
+		local raw_value<const> = *axis
+		local magnitude_q16 = 0
+		if state.axis_positive then
+			if raw_value & word_sign_mask == 0 then
+				magnitude_q16 = raw_value
+			end
+		elseif raw_value & word_sign_mask ~= 0 then
+			magnitude_q16 = word_range - raw_value
+		end
+		state.value_q16 = magnitude_q16
+		local pressed<const> = magnitude_q16 >= state.axis_actuation_q16
+		if pressed ~= state.pressed then
+			apply_digital_edge(player, state, pressed, frame)
+		end
+	end
+	sample_value_binding(player, state, frame)
 end
 
 -- Address lookup remains source-local while new word groups and value-bearing
 -- states join dense sampling lists. `dirty` makes the next sample initialise a
 -- button added to an existing group.
-local register_button_sampling<const> = function(player, source_index, state)
+local register_binding_sampling<const> = function(player, source_index, state)
 	if state.level_addr ~= 0 then
 		local by_addr<const> = player.word_by_addr[source_index]
 		local group = by_addr[state.level_addr]
@@ -316,13 +377,29 @@ local register_button_sampling<const> = function(player, source_index, state)
 		local states<const> = group.states
 		states[#states + 1] = state
 	end
+	if state.axis_addr ~= 0 then
+		local by_addr<const> = player.axis_by_addr
+		local group = by_addr[state.axis_addr]
+		if not group then
+			group = {
+				addr = state.axis_addr,
+				positive_states = {},
+				negative_states = {},
+			}
+			by_addr[state.axis_addr] = group
+			local groups<const> = player.axis_groups
+			groups[#groups + 1] = group
+		end
+		local states<const> = state.axis_positive and group.positive_states or group.negative_states
+		states[#states + 1] = state
+	end
 	if state.value_addr ~= 0 or state.value_x_addr ~= 0 or state.is_pointer_delta then
 		local vlist<const> = player.value_states
 		vlist[#vlist + 1] = state
 	end
 	local frame<const> = *frame_serial
 	if player.sample_frame == frame then
-		sample_new_button_state(player, state, frame)
+		sample_new_binding_state(player, state, frame)
 		local edge_id<const> = player.next_edge_id - 1
 		local frame_clock_state<const> = player.clock_states[clock.frame]
 		frame_clock_state.edge_id = edge_id
@@ -333,16 +410,16 @@ local register_button_sampling<const> = function(player, source_index, state)
 	end
 end
 
-local track_button<const> = function(player, source_index, button)
-	local source_buttons<const> = player.buttons[source_index]
-	local state = source_buttons[button]
+local track_binding<const> = function(player, source_index, binding)
+	local source_bindings<const> = player.binding_states[source_index]
+	local state = source_bindings[binding]
 	if state then
 		return state
 	end
-	state = new_button_state()
-	resolve_binding(player, source_index, button, state)
-	source_buttons[button] = state
-	register_button_sampling(player, source_index, state)
+	state = new_binding_state()
+	resolve_binding(player, source_index, binding, state)
+	source_bindings[binding] = state
+	register_binding_sampling(player, source_index, state)
 	return state
 end
 
@@ -352,11 +429,11 @@ local source_mapping<const> = function(ctx, source_index)
 	return ctx.pointer
 end
 
-local seen_binding<const> = function(player, button)
-	if player.binding_seen[button] == player.binding_generation then
+local seen_binding<const> = function(player, binding)
+	if player.binding_seen[binding] == player.binding_generation then
 		return true
 	end
-	player.binding_seen[button] = player.binding_generation
+	player.binding_seen[binding] = player.binding_generation
 	return false
 end
 
@@ -375,9 +452,9 @@ local build_resolved_source<const> = function(player, action, source_index, list
 			local bindings<const> = source_mapping(ctx, source_index)[action]
 			if bindings then
 				for j = 1, #bindings do
-					local button<const> = binding_id(bindings[j])
-					if not seen_binding(player, button) then
-						list[#list + 1] = track_button(player, source_index, button)
+					local binding<const> = bindings[j]
+					if not seen_binding(player, binding) then
+						list[#list + 1] = track_binding(player, source_index, binding)
 					end
 				end
 				return
@@ -478,7 +555,7 @@ local new_player<const> = function(index)
 	}
 	local player<const> = {
 		index = index,
-		buttons = {
+		binding_states = {
 			[source_keyboard] = {},
 			[source_gamepad] = {},
 			[source_pointer] = {},
@@ -491,6 +568,9 @@ local new_player<const> = function(index)
 			[source_gamepad] = {},
 			[source_pointer] = {},
 		},
+		-- Directional axis bindings share one raw word read per admitted axis.
+		axis_groups = {},
+		axis_by_addr = {},
 		-- Analog/pointer inputs (a handful) that need a value read every frame.
 		value_states = {},
 		contexts = {},
@@ -538,10 +618,14 @@ local sample_player<const> = function(player, frame)
 			group.dirty = false
 		end
 	end
+	local axis_groups<const> = player.axis_groups
+	for a = 1, #axis_groups do
+		sample_axis_group(player, axis_groups[a], frame)
+	end
 	-- Value pass: the few analog/pointer inputs.
 	local value_states<const> = player.value_states
 	for v = 1, #value_states do
-		sample_value_button(player, value_states[v], frame)
+		sample_value_binding(player, value_states[v], frame)
 	end
 	player.sample_frame = frame
 	clock_state.edge_id = player.next_edge_id - 1
@@ -623,6 +707,35 @@ local admit_action_state<const> = function(player, clock_state, action, requirem
 		state.evaluation_serial = -1
 	end
 	return state
+end
+
+-- Builds four gamepad bindings from one retained stick. The cart chooses the
+-- actuation threshold and composes these bindings with its authored actions;
+-- raw ICU axes therefore remain distinct from the D-pad hardware buttons.
+function input.stick_directions(stick, actuation_q16)
+	local axes<const> = gamepad_stick_axes[stick]
+	return {
+		left = {
+			axis_offset = axes.x,
+			positive = false,
+			actuation_q16 = actuation_q16,
+		},
+		right = {
+			axis_offset = axes.x,
+			positive = true,
+			actuation_q16 = actuation_q16,
+		},
+		up = {
+			axis_offset = axes.y,
+			positive = false,
+			actuation_q16 = actuation_q16,
+		},
+		down = {
+			axis_offset = axes.y,
+			positive = true,
+			actuation_q16 = actuation_q16,
+		},
+	}
 end
 
 function input.add_player(index)

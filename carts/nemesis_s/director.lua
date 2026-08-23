@@ -187,6 +187,16 @@ function director:leave_pause()
 	self.events:emit('pause_exited')
 end
 
+function director:can_pause()
+	local players<const> = self.players
+	for player_index = 1, #players do
+		if players[player_index]:has_tag(player_module.active_state_tag) then
+			return true
+		end
+	end
+	return false
+end
+
 function director:toggle_metalion_cheat()
 	local active<const> = not self.metalion_cheat_active
 	self.metalion_cheat_active = active
@@ -336,7 +346,16 @@ end
 local define_director_fsm<const> = function()
 	local gameplay_running_state<const> = {
 		input_event_handlers = {
-			{ pattern = 'pause[jp]', go = '/gameplay/pause' },
+			{
+				pattern = 'pause[jp]',
+				player_index = 1,
+				go = '/gameplay/pause',
+			},
+			{
+				pattern = 'pause[jp]',
+				player_index = 2,
+				go = '/gameplay/pause',
+			},
 		},
 	}
 	local gameplay_state<const> = {
@@ -358,12 +377,19 @@ local define_director_fsm<const> = function()
 				entering_state = director.enter_pause,
 				exiting_state = director.leave_pause,
 				transition_guards = {
-					can_enter = function(self)
-						return self.players[1]:has_tag(player_module.active_state_tag)
-					end,
+					can_enter = director.can_pause,
 				},
 				input_event_handlers = {
-					{ pattern = 'pause[jp]', go = '/gameplay/running' },
+					{
+						pattern = 'pause[jp]',
+						player_index = 1,
+						go = '/gameplay/running',
+					},
+					{
+						pattern = 'pause[jp]',
+						player_index = 2,
+						go = '/gameplay/running',
+					},
 				},
 			},
 		},

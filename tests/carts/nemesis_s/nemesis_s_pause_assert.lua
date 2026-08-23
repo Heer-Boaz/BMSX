@@ -27,6 +27,7 @@ end
 function __bmsx_host_test.setup()
 	local test<const> = __bmsx_host_test
 	local director<const> = registry:get(ids_director_instance)
+	director.player_count = 2
 	director.state_machines:transition_to('/game_start')
 	test.director = director
 	test.running_state = director.state_machines:bind_state_path('/gameplay/running')
@@ -48,6 +49,7 @@ function __bmsx_host_test.update()
 	local director<const> = test.director
 	local stage<const> = director.stage
 	local player<const> = director.players[1]
+	local player_2<const> = director.players[2]
 	if test.phase == 'boot' then
 		if world.active_space_id ~= 'main'
 		or not director.state_machines:matches_state(test.running_state)
@@ -55,7 +57,7 @@ function __bmsx_host_test.update()
 			return false
 		end
 		test.phase = 'enter_pause'
-		return host.press('F1', 4)
+		return host.gamepad_press(2, 'start', 4)
 	end
 
 	if test.phase == 'enter_pause' then
@@ -66,6 +68,7 @@ function __bmsx_host_test.update()
 		assert(world.active_space_id == 'main', 'pause changed the retained gameplay space')
 		test.stage = stage
 		test.player = player
+		test.player_2 = player_2
 		test.gameplay_time_ms = world.gameplay_time_ms
 		test.stage_tape_head = stage.tape_head
 		test.stage_scroll_px = stage.total_scroll_px
@@ -83,7 +86,9 @@ function __bmsx_host_test.update()
 		assert(not world.gameplay_clock_running, 'pause resumed the gameplay schedule')
 		assert(world.gameplay_time_ms == test.gameplay_time_ms,
 			'gameplay time advanced while the gameplay clock was suspended')
-		assert(director.stage == test.stage and director.players[1] == test.player,
+		assert(director.stage == test.stage
+			and director.players[1] == test.player
+			and director.players[2] == test.player_2,
 			'pause replaced the retained gameplay objects')
 		assert(stage.tape_head == test.stage_tape_head
 			and stage.total_scroll_px == test.stage_scroll_px
@@ -117,7 +122,8 @@ function __bmsx_host_test.update()
 		end
 		assert(world.active_space_id == 'main'
 			and director.stage == test.stage
-			and director.players[1] == test.player,
+			and director.players[1] == test.player
+			and director.players[2] == test.player_2,
 			'resume rebuilt the retained gameplay scene')
 		assert(read_slot_source(1) == stage_music_source
 			and (*apu_active_mask & music_slot_mask) ~= 0,

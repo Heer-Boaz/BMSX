@@ -32,6 +32,7 @@ export interface HostTestRunnerOptions {
 type ScheduledHostCommand = {
 	log: string | null;
 	capture: string | null;
+	gamepadPlayer: number;
 	down: string | null;
 	up: string | null;
 	press: string | null;
@@ -55,6 +56,7 @@ export class HostTestRunner {
 	private downKey!: StringId;
 	private upKey!: StringId;
 	private holdFramesKey!: StringId;
+	private gamepadKey!: StringId;
 	private captureKey!: StringId;
 	private logKey!: StringId;
 	private doneKey!: StringId;
@@ -68,6 +70,7 @@ export class HostTestRunner {
 	private supervisorFaultSequence = 0;
 	private nextInputPressId = 1;
 	private readonly activeInputPressIds = new Map<string, number>();
+	private connectedGamepadCount = 0;
 	private stopped = false;
 	private readonly completion: Promise<void>;
 	private readonly resolveCompletion: () => void;
@@ -193,6 +196,7 @@ export class HostTestRunner {
 		this.downKey = cpu.stringPool.intern('down');
 		this.upKey = cpu.stringPool.intern('up');
 		this.holdFramesKey = cpu.stringPool.intern('hold_frames');
+		this.gamepadKey = cpu.stringPool.intern('gamepad');
 		this.captureKey = cpu.stringPool.intern('capture');
 		this.logKey = cpu.stringPool.intern('log');
 		this.doneKey = cpu.stringPool.intern('done');
@@ -233,6 +237,7 @@ export class HostTestRunner {
 		const downValue = command.getStringKey(this.downKey);
 		const upValue = command.getStringKey(this.upKey);
 		const holdFramesValue = command.getStringKey(this.holdFramesKey);
+		const gamepadValue = command.getStringKey(this.gamepadKey);
 		const captureValue = command.getStringKey(this.captureKey);
 		const logValue = command.getStringKey(this.logKey);
 		if (pressValue === null && downValue === null && upValue === null && captureValue === null && logValue === null) {
@@ -264,6 +269,7 @@ export class HostTestRunner {
 			? null
 			: stringPool.toString(asStringId(logValue as StringValue));
 		const holdFrames = holdFramesValue === null ? 1 : holdFramesValue as number;
+		const gamepadPlayer = gamepadValue as number || 0;
 		if (frameValue !== null && (frameValue as number) > 0) {
 			const dueFrame = this.updateFrames + (frameValue as number);
 			let commands = this.scheduledCommands.get(dueFrame);
@@ -271,10 +277,10 @@ export class HostTestRunner {
 				commands = [];
 				this.scheduledCommands.set(dueFrame, commands);
 			}
-			commands.push({ log, capture, down, up, press, holdFrames });
+			commands.push({ log, capture, gamepadPlayer, down, up, press, holdFrames });
 			return;
 		}
-		this.applyCommand(log, capture, down, up, press, holdFrames);
+		this.applyCommand(log, capture, gamepadPlayer, down, up, press, holdFrames);
 	}
 
 	private applyScheduledCommands(): void {
@@ -285,48 +291,98 @@ export class HostTestRunner {
 		this.scheduledCommands.delete(this.updateFrames);
 		for (let index = 0; index < commands.length; index += 1) {
 			const command = commands[index];
-			this.applyCommand(command.log, command.capture, command.down, command.up, command.press, command.holdFrames);
+			this.applyCommand(
+				command.log,
+				command.capture,
+				command.gamepadPlayer,
+				command.down,
+				command.up,
+				command.press,
+				command.holdFrames,
+			);
 		}
 	}
 
-	private applyCommand(log: string | null, capture: string | null, down: string | null, up: string | null, press: string | null, holdFrames: number): void {
+	private applyCommand(
+		log: string | null,
+		capture: string | null,
+		gamepadPlayer: number,
+		down: string | null,
+		up: string | null,
+		press: string | null,
+		holdFrames: number,
+	): void {
 		if (log !== null) {
 			this.options.logger(`test:${this.label} ${log}`);
 		}
 		if (capture !== null) {
 			this.capture(capture);
 		}
+		let deviceId = 'keyboard:0';
+		if (gamepadPlayer > 0) {
+			this.connectGamepadsThrough(gamepadPlayer);
+			deviceId = `gamepad:${gamepadPlayer - 1}`;
+		}
 		if (down !== null) {
-			this.postKey(down, true);
+			this.postButton(deviceId, down, true);
 		}
 		if (up !== null) {
-			this.postKey(up, false);
+			this.postButton(deviceId, up, false);
 		}
 		if (press !== null) {
-			this.postKey(press, true);
+			this.postButton(deviceId, press, true);
 			const dueFrame = this.updateFrames + holdFrames;
 			let commands = this.scheduledCommands.get(dueFrame);
 			if (!commands) {
 				commands = [];
 				this.scheduledCommands.set(dueFrame, commands);
 			}
-			commands.push({ log: null, capture: null, down: null, up: press, press: null, holdFrames: 1 });
+			commands.push({
+				log: null,
+				capture: null,
+				gamepadPlayer,
+				down: null,
+				up: press,
+				press: null,
+				holdFrames: 1,
+			});
 		}
 	}
 
-	private postKey(code: string, down: boolean): void {
-		let pressId = this.activeInputPressIds.get(code);
+	private connectGamepadsThrough(playerIndex: number): void {
+		while (this.connectedGamepadCount < playerIndex) {
+			const gamepadIndex = this.connectedGamepadCount;
+			this.options.input.post({
+				type: 'connect',
+				device: {
+					id: `gamepad:${gamepadIndex}`,
+					kind: 'gamepad',
+					gamepadIndex,
+					label: `TEST GAMEPAD ${gamepadIndex + 1}`,
+					vibrationInitialization: null,
+					supportsVibration: false,
+					setVibration: () => {},
+				},
+				timestamp: this.tickTimestampMs,
+			});
+			this.connectedGamepadCount += 1;
+		}
+	}
+
+	private postButton(deviceId: string, code: string, down: boolean): void {
+		const inputId = `${deviceId}/${code}`;
+		let pressId = this.activeInputPressIds.get(inputId);
 		if (!pressId) {
 			pressId = this.nextInputPressId++;
 		}
 		if (down) {
-			this.activeInputPressIds.set(code, pressId);
+			this.activeInputPressIds.set(inputId, pressId);
 		} else {
-			this.activeInputPressIds.delete(code);
+			this.activeInputPressIds.delete(inputId);
 		}
 		this.options.input.post({
 			type: 'button',
-			deviceId: 'keyboard:0',
+			deviceId,
 			code,
 			down,
 			value: down ? 1 : 0,

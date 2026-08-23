@@ -311,6 +311,7 @@ function state_definition.new(id, def, root, parent)
 	self.input_event_handlers = input_event_handlers
 	self.input_handler_count = #input_event_handlers
 	self.input_patterns = nil
+	self.input_player_indices = nil
 	self.input_transition_kinds = nil
 	self.input_transitions = nil
 	self.event_list = def.event_list
@@ -519,9 +520,12 @@ local build_input_bindings<const> = function(target, definition)
 	end
 	local player_index<const> = target.player_index
 	local clock_source<const> = definition.root.clock_source
+	local input_player_indices<const> = definition.input_player_indices
 	local bindings<const> = {}
 	for i = 1, #input_patterns do
-		bindings[i] = input.bind(player_index, clock_source, input_patterns[i])
+		local binding_player_index<const> = input_player_indices and input_player_indices[i]
+			or player_index
+		bindings[i] = input.bind(binding_player_index, clock_source, input_patterns[i])
 	end
 	return bindings
 end
@@ -1264,14 +1268,23 @@ compile_definition_transitions = function(definition)
 	local input_count<const> = definition.input_handler_count
 	if input_count ~= 0 then
 		local patterns<const> = {}
+		local player_indices
 		local kinds<const> = {}
 		local transitions<const> = {}
 		for i = 1, input_count do
 			local entry<const> = input_handlers[i]
 			patterns[i] = entry.pattern
+			local entry_player_index<const> = entry.player_index
+			if entry_player_index ~= nil then
+				if player_indices == nil then
+					player_indices = {}
+				end
+				player_indices[i] = entry_player_index
+			end
 			kinds[i], transitions[i] = compile_transition(definition, entry)
 		end
 		definition.input_patterns = patterns
+		definition.input_player_indices = player_indices
 		definition.input_transition_kinds = kinds
 		definition.input_transitions = transitions
 	end

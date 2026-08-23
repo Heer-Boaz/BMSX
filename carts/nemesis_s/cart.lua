@@ -3,6 +3,7 @@ local gx_display<const> = require('cartlib/gx/display')
 local vblank<const> = require('cartlib/gx/vblank')
 gx_display.reset_256x192()
 local input<const> = require('cartlib/input/input')
+local left_stick<const> = input.stick_directions('ls', 0x00008000)
 input.add_player(1)
 input.add_player(2)
 input.push_context(1, 'nemesis_s', {
@@ -47,6 +48,10 @@ input.push_context(1, 'nemesis_s', {
 		'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9',
 	},
 }, {
+	up = { 'up', left_stick.up },
+	right = { 'right', left_stick.right },
+	down = { 'down', left_stick.down },
+	left = { 'left', left_stick.left },
 	fire = { 'a' },
 	pause = { 'start' },
 	powerup = { 'x' },
@@ -59,7 +64,12 @@ input.push_context(2, 'nemesis_s', {
 	fire = { 'ControlLeft' },
 	powerup = { 'AltLeft' },
 }, {
+	up = { 'up', left_stick.up },
+	right = { 'right', left_stick.right },
+	down = { 'down', left_stick.down },
+	left = { 'left', left_stick.left },
 	fire = { 'a' },
+	pause = { 'start' },
 	powerup = { 'x' },
 })
 local world<const> = require('cartlib/world/world')
