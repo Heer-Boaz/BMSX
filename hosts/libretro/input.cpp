@@ -236,49 +236,51 @@ void LibretroInput::poll(
 		std::array<u32, INPUT_CONTROLLER_PAD_AXIS_COUNT>& physicalAxes =
 			m_physical_gamepad_axes_q16[player];
 		u32 buttons = 0u;
-		for (u8 button = 0u; button < kLibretroButtonCount; button += 1u) {
-			if (m_input_state_callback(
-				player,
-				RETRO_DEVICE_JOYPAD,
-				0u,
-				button
-			)) {
-				buttons |= 1u << static_cast<u32>(kLibretroButtons[button]);
+		if (m_controller_devices[player] == RETRO_DEVICE_JOYPAD) {
+			for (u8 button = 0u; button < kLibretroButtonCount; button += 1u) {
+				if (m_input_state_callback(
+					player,
+					RETRO_DEVICE_JOYPAD,
+					0u,
+					button
+				)) {
+					buttons |= 1u << static_cast<u32>(kLibretroButtons[button]);
+				}
 			}
+			physicalAxes[0] = encodeSignedFix16(normalizeAxis(m_input_state_callback(
+				player,
+				RETRO_DEVICE_ANALOG,
+				RETRO_DEVICE_INDEX_ANALOG_LEFT,
+				RETRO_DEVICE_ID_ANALOG_X)));
+			physicalAxes[1] = encodeSignedFix16(normalizeAxis(m_input_state_callback(
+				player,
+				RETRO_DEVICE_ANALOG,
+				RETRO_DEVICE_INDEX_ANALOG_LEFT,
+				RETRO_DEVICE_ID_ANALOG_Y)));
+			physicalAxes[2] = encodeSignedFix16(normalizeAxis(m_input_state_callback(
+				player,
+				RETRO_DEVICE_ANALOG,
+				RETRO_DEVICE_INDEX_ANALOG_RIGHT,
+				RETRO_DEVICE_ID_ANALOG_X)));
+			physicalAxes[3] = encodeSignedFix16(normalizeAxis(m_input_state_callback(
+				player,
+				RETRO_DEVICE_ANALOG,
+				RETRO_DEVICE_INDEX_ANALOG_RIGHT,
+				RETRO_DEVICE_ID_ANALOG_Y)));
+		} else {
+			physicalAxes.fill(0u);
 		}
 		m_physical_gamepad_buttons[player] = buttons;
-		if (player == 0u) {
-			const BmsxHostShortcutResult shortcuts =
-				bmsx_host_shortcuts_update(
-				&m_gamepad_shortcuts,
+		const BmsxHostShortcutResult shortcuts =
+			bmsx_host_shortcuts_update(
+				&m_gamepad_shortcuts[player],
 				buttons,
 				kHostShortcutModifier,
 				m_gamepad_host_shortcut_targets);
-			buttons = shortcuts.routed_buttons;
-			activeHostShortcuts |= shortcuts.active_targets;
-			m_just_pressed_host_shortcuts |= shortcuts.just_pressed_targets;
-		}
+		buttons = shortcuts.routed_buttons;
+		activeHostShortcuts |= shortcuts.active_targets;
+		m_just_pressed_host_shortcuts |= shortcuts.just_pressed_targets;
 		gamepad.buttons = buttons;
-		physicalAxes[0] = encodeSignedFix16(normalizeAxis(m_input_state_callback(
-			player,
-			RETRO_DEVICE_ANALOG,
-			RETRO_DEVICE_INDEX_ANALOG_LEFT,
-			RETRO_DEVICE_ID_ANALOG_X)));
-		physicalAxes[1] = encodeSignedFix16(normalizeAxis(m_input_state_callback(
-			player,
-			RETRO_DEVICE_ANALOG,
-			RETRO_DEVICE_INDEX_ANALOG_LEFT,
-			RETRO_DEVICE_ID_ANALOG_Y)));
-		physicalAxes[2] = encodeSignedFix16(normalizeAxis(m_input_state_callback(
-			player,
-			RETRO_DEVICE_ANALOG,
-			RETRO_DEVICE_INDEX_ANALOG_RIGHT,
-			RETRO_DEVICE_ID_ANALOG_X)));
-		physicalAxes[3] = encodeSignedFix16(normalizeAxis(m_input_state_callback(
-			player,
-			RETRO_DEVICE_ANALOG,
-			RETRO_DEVICE_INDEX_ANALOG_RIGHT,
-			RETRO_DEVICE_ID_ANALOG_Y)));
 		physicalAxes[4] =
 			(m_physical_gamepad_buttons[player] & (1u << static_cast<u32>(
 				InputControllerGamepadButtonBit::LeftTrigger)))
@@ -421,20 +423,24 @@ void LibretroInput::consumeGamepadInput(u8 deviceSlot) {
 void LibretroInput::setExclusiveGamepadHostShortcut(
 		InputControllerGamepadButtonBit button) {
 	m_gamepad_host_shortcut_targets = 1u << static_cast<u32>(button);
-	bmsx_host_shortcuts_retarget(
-		&m_gamepad_shortcuts,
-		m_physical_gamepad_buttons[0],
-		kHostShortcutModifier,
-		m_gamepad_host_shortcut_targets);
+	for (u8 player = 0u; player < INPUT_CONTROLLER_PAD_COUNT; player += 1u) {
+		bmsx_host_shortcuts_retarget(
+			&m_gamepad_shortcuts[player],
+			m_physical_gamepad_buttons[player],
+			kHostShortcutModifier,
+			m_gamepad_host_shortcut_targets);
+	}
 }
 
 void LibretroInput::clearExclusiveGamepadHostShortcut() {
 	m_gamepad_host_shortcut_targets = kHostShortcutTargets;
-	bmsx_host_shortcuts_retarget(
-		&m_gamepad_shortcuts,
-		m_physical_gamepad_buttons[0],
-		kHostShortcutModifier,
-		m_gamepad_host_shortcut_targets);
+	for (u8 player = 0u; player < INPUT_CONTROLLER_PAD_COUNT; player += 1u) {
+		bmsx_host_shortcuts_retarget(
+			&m_gamepad_shortcuts[player],
+			m_physical_gamepad_buttons[player],
+			kHostShortcutModifier,
+			m_gamepad_host_shortcut_targets);
+	}
 }
 
 bool LibretroInput::pointerPosition(i32& x, i32& y) const {
@@ -595,7 +601,7 @@ void LibretroInput::reset() {
 	m_pointer_wheel_q16 = 0u;
 	m_pointer_position_valid = false;
 	m_host_supervisor_request_high = false;
-	m_gamepad_shortcuts = {};
+	m_gamepad_shortcuts.fill({});
 	m_keyboard_shortcuts = {};
 	m_gamepad_host_shortcut_targets = kHostShortcutTargets;
 	m_just_pressed_host_shortcuts = 0u;

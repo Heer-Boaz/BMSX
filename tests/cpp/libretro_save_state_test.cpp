@@ -10,6 +10,7 @@
 #include "spec/bmsx/model.h"
 #include "support/boot_rom_fixture.h"
 
+#include <array>
 #include <cstdint>
 #include <stdexcept>
 #include <vector>
@@ -31,14 +32,14 @@ bool RETRO_CALLCONV readSupervisorRequestLine() {
 	return supervisorRequestLineHigh;
 }
 
-uint16_t gamepadState = 0u;
+std::array<uint16_t, bmsx::INPUT_CONTROLLER_PAD_COUNT> gamepadStates{};
 int16_t pointerX = 0;
 int16_t pointerY = 0;
 bool pointerPressed = false;
 
 int16_t hostInputState(unsigned port, unsigned device, unsigned, unsigned id) {
-	if (port == 0u && device == RETRO_DEVICE_JOYPAD) {
-		return (gamepadState & (1u << id)) != 0u ? 1 : 0;
+	if (device == RETRO_DEVICE_JOYPAD) {
+		return (gamepadStates[port] & (1u << id)) != 0u ? 1 : 0;
 	}
 	if (port == 0u && device == RETRO_DEVICE_POINTER) {
 		switch (id) {
@@ -199,18 +200,21 @@ void testHostPointerConsumptionMasksGuestSnapshot() {
 
 void testLibretroSupervisorRequestChordAndGuestInput() {
 	supervisorRequestLineHigh = false;
+	gamepadStates.fill(0u);
 	bmsx::LibretroInput input(readSupervisorRequestLine);
 	input.setInputPollCallback(discardInputPoll);
 	input.setInputStateCallback(hostInputState);
 
 	const uint32_t leftShoulderButton = 1u << static_cast<uint32_t>(
 		bmsx::InputControllerGamepadButtonBit::LeftBumper);
+	constexpr bmsx::InputControllerGamepadButtonBit quickMenuButton =
+		bmsx::InputControllerGamepadButtonBit::Start;
 	const uint32_t selectButton = 1u << static_cast<uint32_t>(
 		bmsx::InputControllerGamepadButtonBit::Select);
 	const uint32_t supervisorChordButtons = leftShoulderButton | selectButton;
 	bmsx::InputControllerSnapshot snapshot;
 
-	gamepadState = 1u << RETRO_DEVICE_ID_JOYPAD_SELECT;
+	gamepadStates[0] = 1u << RETRO_DEVICE_ID_JOYPAD_SELECT;
 	input.poll(256, 240, 0.0);
 	require(
 		!input.supervisorRequestLineHigh(),
@@ -220,7 +224,7 @@ void testLibretroSupervisorRequestChordAndGuestInput() {
 		(snapshot.pads[0].buttons & selectButton) == 0u,
 		"the reserved modifier must be masked before command selection");
 
-	gamepadState |= 1u << RETRO_DEVICE_ID_JOYPAD_L;
+	gamepadStates[0] |= 1u << RETRO_DEVICE_ID_JOYPAD_L;
 	input.poll(256, 240, 0.0);
 	require(
 		input.supervisorRequestLineHigh(),
@@ -230,7 +234,7 @@ void testLibretroSupervisorRequestChordAndGuestInput() {
 		(snapshot.pads[0].buttons & supervisorChordButtons) == 0u,
 		"a completed supervisor chord must be masked from cart input");
 
-	gamepadState = 1u << RETRO_DEVICE_ID_JOYPAD_L;
+	gamepadStates[0] = 1u << RETRO_DEVICE_ID_JOYPAD_L;
 	input.poll(256, 240, 0.0);
 	require(
 		!input.supervisorRequestLineHigh(),
@@ -240,7 +244,7 @@ void testLibretroSupervisorRequestChordAndGuestInput() {
 		(snapshot.pads[0].buttons & supervisorChordButtons) == 0u,
 		"the command target must remain masked until release");
 
-	gamepadState = 0u;
+	gamepadStates[0] = 0u;
 	input.poll(256, 240, 0.0);
 	require(
 		!input.supervisorRequestLineHigh(),
@@ -319,11 +323,11 @@ void testLibretroSupervisorRequestChordAndGuestInput() {
 	input.postKeyboardEvent(RETROK_RALT, true);
 	input.poll(256, 240, 0.0);
 	require(
-		input.hostShortcutJustPressed(bmsx::InputControllerGamepadButtonBit::Start),
+		input.hostShortcutJustPressed(quickMenuButton),
 		"keyboard Select plus Start must publish one quick-menu activation edge");
 	input.poll(256, 240, 0.0);
 	require(
-		!input.hostShortcutJustPressed(bmsx::InputControllerGamepadButtonBit::Start),
+		!input.hostShortcutJustPressed(quickMenuButton),
 		"a held quick-menu shortcut must not retrigger");
 	input.postKeyboardEvent(RETROK_RCTRL, false);
 	input.postKeyboardEvent(RETROK_RALT, false);
@@ -339,6 +343,41 @@ void testLibretroSupervisorRequestChordAndGuestInput() {
 		(snapshot.keyWords[bmsx::hid_key_usage::Enter >> 5u]
 			& (1u << (bmsx::hid_key_usage::Enter & 31u))) != 0u,
 		"Backspace and Enter must remain ordinary keyboard input");
+	input.postKeyboardEvent(RETROK_BACKSPACE, false);
+	input.postKeyboardEvent(RETROK_RETURN, false);
+
+	const uint32_t startButton = 1u << static_cast<uint32_t>(
+		quickMenuButton);
+	const uint32_t rightButton = 1u << static_cast<uint32_t>(
+		bmsx::InputControllerGamepadButtonBit::Right);
+
+	gamepadStates[1] = 1u << RETRO_DEVICE_ID_JOYPAD_SELECT;
+	input.poll(256, 240, 0.0);
+	input.sampleInputControllerSnapshot(snapshot);
+	require(
+		(snapshot.pads[1].buttons & selectButton) == 0u,
+		"every libretro port must reserve the host shortcut modifier");
+
+	gamepadStates[1] |= 1u << RETRO_DEVICE_ID_JOYPAD_START;
+	input.poll(256, 240, 1.0);
+	require(
+		input.hostShortcutJustPressed(quickMenuButton),
+		"a non-primary libretro port must publish the quick-menu activation edge");
+	input.sampleInputControllerSnapshot(snapshot);
+	require(
+		(snapshot.pads[1].buttons & (selectButton | startButton)) == 0u,
+		"a non-primary host shortcut chord must remain hidden from the cart");
+
+	gamepadStates[1] = 0u;
+	input.poll(256, 240, 2.0);
+	gamepadStates[1] = 1u << RETRO_DEVICE_ID_JOYPAD_RIGHT;
+	input.poll(256, 240, 3.0);
+	input.sampleInputControllerSnapshot(snapshot);
+	require(
+		(snapshot.pads[1].buttons & rightButton) != 0u
+			&& snapshot.pads[0].buttons == 0u,
+		"ordinary input must retain its libretro port after host shortcut routing");
+	gamepadStates.fill(0u);
 }
 
 } // namespace

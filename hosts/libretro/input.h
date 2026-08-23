@@ -83,7 +83,8 @@ private:
 	f64 m_frame_duration_ms = 1000.0 / 60.0;
 	bool m_pointer_position_valid = false;
 	bool m_host_supervisor_request_high = false;
-	BmsxHostShortcutState m_gamepad_shortcuts{};
+	std::array<BmsxHostShortcutState, INPUT_CONTROLLER_PAD_COUNT>
+		m_gamepad_shortcuts{};
 	BmsxHostShortcutState m_keyboard_shortcuts{};
 	u32 m_gamepad_host_shortcut_targets = 0u;
 	u32 m_just_pressed_host_shortcuts = 0u;

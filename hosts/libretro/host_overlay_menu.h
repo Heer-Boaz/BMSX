@@ -2,6 +2,7 @@
 
 #include "common/primitives.h"
 #include "host_on_screen_keyboard.h"
+#include "machine/devices/input/contracts.h"
 #include "render/host_overlay/commands.h"
 #include "render/shared/submissions.h"
 #include <array>
@@ -84,10 +85,23 @@ private:
 	bool tickPointerInput(LibretroInput& input);
 	i32 selectPointerTargetAt(i32 x, i32 y);
 	void resetPointerPress();
-	bool buttonPressed(const LibretroInput& input, HostMenuButtonId button) const;
 	bool buttonJustPressed(const LibretroInput& input, HostMenuButtonId button) const;
-	bool gamepadButtonPressed(const LibretroInput& input, HostMenuButtonId button) const;
-	bool gamepadButtonJustPressed(const LibretroInput& input, HostMenuButtonId button) const;
+	bool gamepadButtonPressed(
+		const LibretroInput& input,
+		u8 deviceSlot,
+		HostMenuButtonId button) const;
+	bool buttonRepeatEdge(
+		const LibretroInput& input,
+		HostMenuButtonId button,
+		HostMenuRepeatId repeat,
+		f64 currentTimeMs,
+		f64 frameDurationMs);
+	bool gamepadButtonRepeatEdge(
+		const LibretroInput& input,
+		HostMenuButtonId button,
+		HostMenuRepeatId repeat,
+		f64 currentTimeMs,
+		f64 frameDurationMs);
 	OnScreenKeyboardCommand onScreenKeyboardCommand(
 		const LibretroInput& input,
 		f64 currentTimeMs,
@@ -116,10 +130,18 @@ private:
 	std::array<GlyphRenderSubmission, OptionCount> m_optionGlyphs;
 	std::array<Host2DKind, CommandCapacity> m_commandKinds;
 	std::array<Host2DRef, CommandCapacity> m_commandRefs;
-	std::array<bool, static_cast<size_t>(HostMenuButtonId::Count)> m_previousButtonStates{};
-	std::array<bool, static_cast<size_t>(HostMenuButtonId::Count)> m_previousGamepadButtonStates{};
-	u32 m_previous_physical_gamepad_buttons = 0u;
-	std::array<ButtonRepeatRecord, static_cast<size_t>(HostMenuRepeatId::Count)> m_buttonRepeats;
+	std::array<bool, static_cast<size_t>(HostMenuButtonId::Count)>
+		m_previousKeyboardButtonStates{};
+	std::array<
+		std::array<bool, static_cast<size_t>(HostMenuButtonId::Count)>,
+		INPUT_CONTROLLER_PAD_COUNT> m_previousGamepadButtonStates{};
+	std::array<u32, INPUT_CONTROLLER_PAD_COUNT>
+		m_previousPhysicalGamepadButtons{};
+	std::array<ButtonRepeatRecord, static_cast<size_t>(HostMenuRepeatId::Count)>
+		m_keyboardButtonRepeats{};
+	std::array<
+		std::array<ButtonRepeatRecord, static_cast<size_t>(HostMenuRepeatId::Count)>,
+		INPUT_CONTROLLER_PAD_COUNT> m_gamepadButtonRepeats{};
 	RectBounds m_optionHitRect;
 	i32 m_optionLineHeight = 0;
 	i32 m_pointerX = 0;
