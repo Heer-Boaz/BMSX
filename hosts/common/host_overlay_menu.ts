@@ -13,6 +13,11 @@ import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import type { HostMenuFrame } from '../../machine/ts/render/host_overlay/overlay_queue';
 import { BASE_RAM_USED_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { HostOnScreenKeyboard } from './host_on_screen_keyboard';
+import {
+	create_rect_bounds,
+	point_in_rect,
+	write_rect_bounds,
+} from '../../machine/ts/common/rect';
 
 type HostMenuValue = {
 	readonly label: string;
@@ -256,8 +261,12 @@ export class HostOverlayMenu {
 	private readonly presenter: VideoPresenter;
 	private page = HostOverlayPage.Closed;
 	private readonly keyboard: HostOnScreenKeyboard;
-	private readonly keyboardPointerPosition = { x: 0, y: 0 };
-	private keyboardPointerTimestamp = -1;
+	private readonly pointerPosition = { x: 0, y: 0 };
+	private pointerTimestamp = -1;
+	private pointerPressPage = HostOverlayPage.Closed;
+	private pointerPressTarget = -1;
+	private readonly optionHitRect = create_rect_bounds();
+	private optionLineHeight = 0;
 	private selected = 0;
 	private dirtyText = true;
 	private readonly lineText: string[] = [];
@@ -420,18 +429,22 @@ export class HostOverlayMenu {
 			this.controllerPortRevision = this.input.controllerPortRevision;
 			this.dirtyText = true;
 		}
+		const pointerActivated = this.tickPointerInput();
 		if ((readButtonState(this.input, BUTTON_B) & HostButtonState.JustPressed) !== 0) {
 			this.toggle();
 			consumeButtons(this.input, MENU_NAV_BUTTONS);
 			return HostMenuInput.Inactive;
 		}
+		if (pointerActivated) {
+			const result = this.activateSelected();
+			consumeButtons(this.input, MENU_NAV_BUTTONS);
+			return result;
+		}
 		if (buttonEdge(this.input, BUTTON_UP)) {
 			this.selected = this.selected === 0 ? this.options.length - 1 : this.selected - 1;
-			this.dirtyText = true;
 		}
 		if (buttonEdge(this.input, BUTTON_DOWN)) {
 			this.selected = (this.selected + 1) % this.options.length;
-			this.dirtyText = true;
 		}
 		if (buttonEdge(this.input, BUTTON_LEFT)) {
 			this.changeSelected(-1);
@@ -493,6 +506,14 @@ export class HostOverlayMenu {
 		const left = (presenter.viewportSize.x - boxWidth) / 2;
 		const top = (presenter.viewportSize.y - totalHeight) / 2;
 		const boxTop = top + titleHeight + titleGap;
+		write_rect_bounds(
+			this.optionHitRect,
+			left,
+			boxTop + padding,
+			left + boxWidth,
+			boxTop + padding + this.options.length * lineHeight,
+		);
+		this.optionLineHeight = lineHeight;
 		this.panelRect.area.left = left;
 		this.panelRect.area.top = boxTop;
 		this.panelRect.area.right = left + boxWidth;
@@ -599,12 +620,13 @@ export class HostOverlayMenu {
 	private toggle(): void {
 		if (this.page === HostOverlayPage.Closed) {
 			this.page = HostOverlayPage.Options;
-		} else {
-			this.close();
+			this.selected = 0;
+			this.resetPointerPress();
+			this.controllerPortRevision = this.input.controllerPortRevision;
+			this.dirtyText = true;
+			return;
 		}
-		this.selected = 0;
-		this.controllerPortRevision = this.input.controllerPortRevision;
-		this.dirtyText = true;
+		this.close();
 	}
 
 	private changeSelected(direction: number): void {
@@ -637,13 +659,15 @@ export class HostOverlayMenu {
 		if (option.kind === 'keyboard') {
 			this.page = HostOverlayPage.Keyboard;
 			this.keyboard.open();
-			this.keyboardPointerTimestamp = -1;
+			this.pointerTimestamp = -1;
+			this.resetPointerPress();
 			return HostMenuInput.Inactive;
 		}
 		if (option.kind === 'action') {
 			this.close();
 			return option.action;
 		}
+		this.changeSelected(1);
 		return HostMenuInput.Active;
 	}
 
@@ -651,6 +675,7 @@ export class HostOverlayMenu {
 		this.keyboard.close();
 		this.page = HostOverlayPage.Closed;
 		this.selected = 0;
+		this.resetPointerPress();
 		this.dirtyText = true;
 	}
 
@@ -677,11 +702,18 @@ export class HostOverlayMenu {
 
 	private tickKeyboardInput(): HostMenuInput {
 		this.keyboard.releasePulse();
+		const pointerActivated = this.tickPointerInput();
 		if ((readGamepadButtonState(this.input, BUTTON_B) & HostButtonState.JustPressed) !== 0) {
 			this.keyboard.close();
 			this.page = HostOverlayPage.Options;
+			this.resetPointerPress();
 			consumeGamepadButtons(this.input, MENU_NAV_BUTTONS);
 			return HostMenuInput.Active;
+		}
+		if (pointerActivated) {
+			this.keyboard.activate();
+			consumeGamepadButtons(this.input, MENU_NAV_BUTTONS);
+			return HostMenuInput.Inactive;
 		}
 		if (gamepadButtonEdge(this.input, BUTTON_UP)) {
 			this.keyboard.moveVertical(-1);
@@ -695,33 +727,68 @@ export class HostOverlayMenu {
 		if (gamepadButtonEdge(this.input, BUTTON_RIGHT)) {
 			this.keyboard.moveHorizontal(1);
 		}
-		const pointer = this.input.getPlayerInput(1).inputHandlers.pointer!;
-		const pointerPosition = pointer.getButtonState('pointer_position');
-		const pointerPrimary = pointer.getButtonState('pointer_primary');
-		const pointerPressed = pointerPrimary.justpressed && !pointerPrimary.consumed;
-		let activated = false;
-		if (pointer.positionValid
-			&& (pointerPosition.timestamp !== this.keyboardPointerTimestamp || pointerPressed)) {
-			this.keyboardPointerTimestamp = pointerPosition.timestamp;
-			const screenPosition = pointerPosition.value2d!;
-			if (this.presenter.mapDisplayPointToViewport(
-				screenPosition[0],
-				screenPosition[1],
-				this.keyboardPointerPosition,
-			) && this.keyboard.selectAt(
-				this.keyboardPointerPosition.x,
-				this.keyboardPointerPosition.y,
-			) && pointerPressed) {
-				this.keyboard.activate();
-				activated = true;
-			}
-		}
-		pointer.consumeButton('pointer_primary');
-		if (!activated
-			&& (readGamepadButtonState(this.input, BUTTON_A) & HostButtonState.JustPressed) !== 0) {
+		if ((readGamepadButtonState(this.input, BUTTON_A) & HostButtonState.JustPressed) !== 0) {
 			this.keyboard.activate();
 		}
 		consumeGamepadButtons(this.input, MENU_NAV_BUTTONS);
 		return HostMenuInput.Inactive;
+	}
+
+	private tickPointerInput(): boolean {
+		const pointer = this.input.getPlayerInput(1).inputHandlers.pointer!;
+		const pointerPosition = pointer.getButtonState('pointer_position');
+		const pointerPrimary = pointer.getButtonState('pointer_primary');
+		const pressed = pointerPrimary.justpressed && !pointerPrimary.consumed;
+		const released = pointerPrimary.justreleased && !pointerPrimary.consumed;
+		let target = -1;
+		if (pointer.positionValid
+			&& (pointerPosition.timestamp !== this.pointerTimestamp || pressed || released)) {
+			this.pointerTimestamp = pointerPosition.timestamp;
+			const screenPosition = pointerPosition.value2d!;
+			if (this.presenter.mapDisplayPointToViewport(
+				screenPosition[0],
+				screenPosition[1],
+				this.pointerPosition,
+			)) {
+				target = this.selectPointerTargetAt(
+					this.pointerPosition.x,
+					this.pointerPosition.y,
+				);
+			}
+		}
+		if (pressed) {
+			this.pointerPressPage = this.page;
+			this.pointerPressTarget = target;
+		}
+		let activated = false;
+		if (released) {
+			if (target >= 0
+				&& this.pointerPressPage === this.page
+				&& this.pointerPressTarget === target) {
+				activated = true;
+			}
+			this.resetPointerPress();
+		}
+		pointer.consumeButton('pointer_primary');
+		return activated;
+	}
+
+	private selectPointerTargetAt(x: number, y: number): number {
+		if (this.page === HostOverlayPage.Keyboard) {
+			return this.keyboard.selectAt(x, y);
+		}
+		if (!point_in_rect(x, y, this.optionHitRect)) {
+			return -1;
+		}
+		const index = ((y - this.optionHitRect.top) / this.optionLineHeight) | 0;
+		if (index !== this.selected) {
+			this.selected = index;
+		}
+		return index;
+	}
+
+	private resetPointerPress(): void {
+		this.pointerPressPage = HostOverlayPage.Closed;
+		this.pointerPressTarget = -1;
 	}
 }

@@ -1,5 +1,6 @@
 #include "host_overlay_menu.h"
 
+#include "common/rect.h"
 #include "hid_keys.h"
 #include "input.h"
 #include "render/shared/bitmap_font.h"
@@ -283,10 +284,14 @@ HostMenuInput HostOverlayMenu::tickInput(LibretroInput& input, VideoPresenter& p
 	const bool keyboardInputActive = m_page == Page::Keyboard;
 	if (keyboardInputActive) {
 		m_keyboard.releasePulse(input);
+		const bool pointerActivated = tickPointerInput(input);
 		if (gamepadButtonJustPressed(input, HostMenuButtonId::B)) {
 			m_keyboard.close(input);
 			m_page = Page::Options;
+			resetPointerPress();
 			result = HostMenuInput::Active;
+		} else if (pointerActivated) {
+			m_keyboard.activate(input);
 		} else {
 			const f64 frameDurationMs = input.frameDurationMs();
 			if (advanceButtonRepeat(
@@ -325,38 +330,17 @@ HostMenuInput HostOverlayMenu::tickInput(LibretroInput& input, VideoPresenter& p
 			)) {
 				m_keyboard.moveHorizontal(1);
 			}
-			i32 pointerX = 0;
-			i32 pointerY = 0;
-			const bool pointerPrimary = input.pointerButtonPressed(
-				INP_POINTER_BUTTON_PRIMARY);
-			const bool pointerPrimaryJustPressed = pointerPrimary
-				&& !m_previousPointerPrimary;
-			bool activated = false;
-			if (input.pointerPosition(pointerX, pointerY)
-				&& (!m_keyboardPointerValid
-					|| pointerX != m_keyboardPointerX
-					|| pointerY != m_keyboardPointerY
-					|| pointerPrimaryJustPressed)) {
-				m_keyboardPointerX = pointerX;
-				m_keyboardPointerY = pointerY;
-				m_keyboardPointerValid = true;
-				if (m_keyboard.selectAt(pointerX, pointerY)
-					&& pointerPrimaryJustPressed) {
-					m_keyboard.activate(input);
-					activated = true;
-				}
-			}
-			input.consumePointerButton(INP_POINTER_BUTTON_PRIMARY);
-			if (!activated
-				&& gamepadButtonJustPressed(input, HostMenuButtonId::A)) {
+			if (gamepadButtonJustPressed(input, HostMenuButtonId::A)) {
 				m_keyboard.activate(input);
 			}
-			m_previousPointerPrimary = pointerPrimary;
 		}
 	} else if (m_page == Page::Options) {
+		const bool pointerActivated = tickPointerInput(input);
 		if (buttonJustPressed(input, HostMenuButtonId::B)) {
 			toggle(input);
 			result = HostMenuInput::Inactive;
+		} else if (pointerActivated) {
+			result = activateSelected(input, presenter);
 		} else {
 			const f64 frameDurationMs = input.frameDurationMs();
 			if (advanceButtonRepeat(
@@ -367,7 +351,6 @@ HostMenuInput HostOverlayMenu::tickInput(LibretroInput& input, VideoPresenter& p
 				frameDurationMs
 			)) {
 				m_selected = m_selected == 0 ? kMenuOptionCount - 1 : m_selected - 1;
-				m_dirtyText = true;
 			}
 			if (advanceButtonRepeat(
 				buttonPressed(input, HostMenuButtonId::Down),
@@ -377,7 +360,6 @@ HostMenuInput HostOverlayMenu::tickInput(LibretroInput& input, VideoPresenter& p
 				frameDurationMs
 			)) {
 				m_selected = (m_selected + 1) % kMenuOptionCount;
-				m_dirtyText = true;
 			}
 			if (advanceButtonRepeat(
 				buttonPressed(input, HostMenuButtonId::Left),
@@ -398,7 +380,7 @@ HostMenuInput HostOverlayMenu::tickInput(LibretroInput& input, VideoPresenter& p
 				changeSelected(presenter, 1);
 			}
 			if (buttonJustPressed(input, HostMenuButtonId::A)) {
-				result = activateSelected(input);
+				result = activateSelected(input, presenter);
 			}
 		}
 	}
@@ -423,8 +405,9 @@ void HostOverlayMenu::resetInputState(LibretroInput& input) {
 	m_dirtyText = true;
 	m_previousButtonStates.fill(false);
 	m_previousGamepadButtonStates.fill(false);
-	m_keyboardPointerValid = false;
+	m_pointerValid = false;
 	m_previousPointerPrimary = false;
+	resetPointerPress();
 	resetButtonRepeats();
 }
 
@@ -457,6 +440,14 @@ void HostOverlayMenu::queueRenderCommands(VideoPresenter& presenter) {
 	const i32 left = (static_cast<i32>(presenter.viewportSize.x) - boxWidth) / 2;
 	const i32 top = (static_cast<i32>(presenter.viewportSize.y) - totalHeight) / 2;
 	const i32 boxTop = top + titleHeight + titleGap;
+	m_optionHitRect = RectBounds{
+		static_cast<f32>(left),
+		static_cast<f32>(boxTop + padding),
+		static_cast<f32>(left + boxWidth),
+		static_cast<f32>(boxTop + padding + kMenuOptionCount * lineHeight),
+		0.0f,
+	};
+	m_optionLineHeight = lineHeight;
 	m_panelRect.area = RectBounds{static_cast<f32>(left), static_cast<f32>(boxTop), static_cast<f32>(left + boxWidth), static_cast<f32>(boxTop + boxHeight), 920.0f};
 	queueCommand(rectKind, Host2DRef{.rect = &m_panelRect});
 	m_titleGlyphs.font = font;
@@ -562,18 +553,20 @@ bool HostOverlayMenu::queueFrameOverlayCommands(Runtime& runtime, VideoPresenter
 void HostOverlayMenu::toggle(LibretroInput& input) {
 	if (m_page == Page::Closed) {
 		m_page = Page::Options;
-	} else {
-		close(input);
+		m_selected = 0;
+		resetPointerPress();
+		m_dirtyText = true;
+		resetButtonRepeats();
+		return;
 	}
-	m_selected = 0;
-	m_dirtyText = true;
-	resetButtonRepeats();
+	close(input);
 }
 
 void HostOverlayMenu::close(LibretroInput& input) {
 	m_keyboard.close(input);
 	m_page = Page::Closed;
 	m_selected = 0;
+	resetPointerPress();
 	m_dirtyText = true;
 	resetButtonRepeats();
 }
@@ -662,14 +655,15 @@ void HostOverlayMenu::changeSelected(VideoPresenter& presenter, i32 direction) {
 	m_dirtyText = true;
 }
 
-HostMenuInput HostOverlayMenu::activateSelected(LibretroInput& input) {
+HostMenuInput HostOverlayMenu::activateSelected(
+		LibretroInput& input,
+		VideoPresenter& presenter) {
 	switch (kOptions[static_cast<size_t>(m_selected)].id) {
 		case HostMenuOptionId::OnScreenKeyboard:
 			m_page = Page::Keyboard;
 			m_keyboard.open();
-			m_keyboardPointerValid = false;
-			m_previousPointerPrimary = input.pointerButtonPressed(
-				INP_POINTER_BUTTON_PRIMARY);
+			m_pointerValid = false;
+			resetPointerPress();
 			resetButtonRepeats();
 			return HostMenuInput::Inactive;
 		case HostMenuOptionId::RebootCart:
@@ -679,8 +673,64 @@ HostMenuInput HostOverlayMenu::activateSelected(LibretroInput& input) {
 			close(input);
 			return HostMenuInput::ExitGame;
 		default:
+			changeSelected(presenter, 1);
 			return HostMenuInput::Active;
 	}
+}
+
+bool HostOverlayMenu::tickPointerInput(LibretroInput& input) {
+	i32 pointerX = 0;
+	i32 pointerY = 0;
+	const bool primary = input.pointerButtonPressed(INP_POINTER_BUTTON_PRIMARY);
+	const bool pressed = primary && !m_previousPointerPrimary;
+	const bool released = !primary && m_previousPointerPrimary;
+	i32 target = -1;
+	if (input.pointerPosition(pointerX, pointerY)
+		&& (!m_pointerValid
+			|| pointerX != m_pointerX
+			|| pointerY != m_pointerY
+			|| pressed
+			|| released)) {
+		m_pointerX = pointerX;
+		m_pointerY = pointerY;
+		m_pointerValid = true;
+		target = selectPointerTargetAt(pointerX, pointerY);
+	}
+	if (pressed) {
+		m_pointerPressPage = m_page;
+		m_pointerPressTarget = target;
+	}
+	bool activated = false;
+	if (released) {
+		if (target >= 0
+			&& m_pointerPressPage == m_page
+			&& m_pointerPressTarget == target) {
+			activated = true;
+		}
+		resetPointerPress();
+	}
+	m_previousPointerPrimary = primary;
+	input.consumePointerButton(INP_POINTER_BUTTON_PRIMARY);
+	return activated;
+}
+
+i32 HostOverlayMenu::selectPointerTargetAt(i32 x, i32 y) {
+	if (m_page == Page::Keyboard) {
+		return m_keyboard.selectAt(x, y);
+	}
+	if (!point_in_rect(static_cast<f32>(x), static_cast<f32>(y), m_optionHitRect)) {
+		return -1;
+	}
+	const i32 index = static_cast<i32>(
+		(static_cast<f32>(y) - m_optionHitRect.top)
+		/ static_cast<f32>(m_optionLineHeight));
+	m_selected = index;
+	return index;
+}
+
+void HostOverlayMenu::resetPointerPress() {
+	m_pointerPressPage = Page::Closed;
+	m_pointerPressTarget = -1;
 }
 
 void HostOverlayMenu::rebuildText(VideoPresenter& presenter) {

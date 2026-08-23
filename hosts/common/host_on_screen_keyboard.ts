@@ -9,6 +9,7 @@ import {
 import { Host2DKind, type Host2DRef } from '../../machine/ts/render/host_overlay/commands';
 import type { HostMenuFrame } from '../../machine/ts/render/host_overlay/overlay_queue';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
+import { point_in_rect } from '../../machine/ts/common/rect';
 import type { Input } from './input/manager';
 
 type OnScreenKeyDefinition = {
@@ -259,22 +260,22 @@ export class HostOnScreenKeyboard {
 		this.pulseCode = key.code;
 	}
 
-	public selectAt(x: number, y: number): boolean {
+	public selectAt(x: number, y: number): number {
 		for (let rowIndex = 0; rowIndex < ROWS.length; rowIndex += 1) {
 			const row = ROWS[rowIndex];
 			for (let index = row.start; index < row.start + row.count; index += 1) {
 				const area = this.keyRects[index].area;
-				if (x >= area.left && x < area.right && y >= area.top && y < area.bottom) {
+				if (point_in_rect(x, y, area)) {
 					if (index !== this.selectedKey) {
 						this.selectedRow = rowIndex;
 						this.selectedKey = index;
 						this.updateKeyColors();
 					}
-					return true;
+					return index;
 				}
 			}
 		}
-		return false;
+		return -1;
 	}
 
 	public queueRenderCommands(): void {

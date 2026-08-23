@@ -247,6 +247,92 @@ test('quick menu reassigns an onscreen-style gamepad and remains controllable on
 	input.dispose();
 });
 
+test('quick menu routes pointer taps through retained option actions', () => {
+	const { input, setTime } = createInput();
+	const hostOverlayQueue = new HostOverlayQueue();
+	const displayBounds = { width: 512, height: 424, left: 10, top: 20 };
+	const presenter = {
+		show_resource_usage_gizmo: false,
+		deviceQuantizeMode: 0,
+		viewportSize: { x: 256, y: 212 },
+		default_font: {
+			lineHeight: 8,
+			measure: (value: string) => value.length * 6,
+		},
+		hostOverlayQueue,
+		mapDisplayPointToViewport: (
+			x: number,
+			y: number,
+			target: { x: number; y: number },
+		) => mapDisplayPointToViewport(
+			displayBounds,
+			256,
+			212,
+			x,
+			y,
+			target,
+		) === DisplayPointMappingResult.Inside,
+	} as VideoPresenter;
+	const menu = new HostOverlayMenu(presenter, {} as Runtime, input);
+	const snapshot = createInputControllerSnapshot();
+	const pointerMask = 1 << INP_POINTER_BUTTON_PRIMARY;
+	let pressId = 1;
+	let currentTime = 10;
+
+	setTime(currentTime);
+	input.inputButton('keyboard:0', 'ControlRight', true, 1, currentTime, pressId++);
+	input.inputButton('keyboard:0', 'AltRight', true, 1, currentTime, pressId++);
+	assert.equal(tickMenu(input, menu), HostMenuInput.Active);
+	currentTime += 1;
+	setTime(currentTime);
+	input.inputButton('keyboard:0', 'ControlRight', false, 0, currentTime, 1);
+	input.inputButton('keyboard:0', 'AltRight', false, 0, currentTime, 2);
+	tickMenu(input, menu);
+
+	const tapOption = (label: string): HostMenuInput => {
+		menu.queueRenderCommands();
+		const frame = hostOverlayQueue.consumeHostMenuFrame();
+		let optionGlyph: GlyphRenderSubmission | null = null;
+		for (let index = 0; index < frame.commandCount; index += 1) {
+			if (frame.commandKinds[index] === Host2DKind.Glyphs) {
+				const glyphs = frame.commandRefs[index] as GlyphRenderSubmission;
+				if ((glyphs.items as string).startsWith(label)) {
+					optionGlyph = glyphs;
+					break;
+				}
+			}
+		}
+		assert.ok(optionGlyph);
+		currentTime += 1;
+		setTime(currentTime);
+		input.inputAxis2(
+			'pointer:0',
+			'pointer_position',
+			displayBounds.left + optionGlyph.x * 2,
+			displayBounds.top + optionGlyph.y * 2,
+			currentTime,
+		);
+		input.inputButton('pointer:0', 'pointer_primary', true, 1, currentTime, pressId);
+		assert.equal(tickMenu(input, menu), HostMenuInput.Active);
+		input.sampleInputControllerSnapshot(snapshot);
+		assert.equal(snapshot.pointerButtons & pointerMask, 0);
+		currentTime += 1;
+		setTime(currentTime);
+		input.inputButton('pointer:0', 'pointer_primary', false, 0, currentTime, pressId);
+		pressId += 1;
+		return tickMenu(input, menu);
+	};
+
+	assert.equal(tapOption('Show Usage Gizmo'), HostMenuInput.Active);
+	assert.equal(presenter.show_resource_usage_gizmo, true);
+	assert.equal(tapOption('ON-SCREEN KEYBOARD'), HostMenuInput.Inactive);
+	menu.queueRenderCommands();
+	const keyboardFrame = hostOverlayQueue.consumeHostMenuFrame();
+	const titleGlyphs = keyboardFrame.commandRefs[1] as GlyphRenderSubmission;
+	assert.equal(titleGlyphs.items, 'ON-SCREEN KEYBOARD');
+	input.dispose();
+});
+
 test('on-screen keyboard publishes gamepad and pointer HID key pulses', () => {
 	let currentTime = 0;
 	const clock = { now: () => currentTime } as HostClock;
@@ -345,14 +431,20 @@ test('on-screen keyboard publishes gamepad and pointer HID key pulses', () => {
 	tickMenu(input, menu);
 	input.sampleInputControllerSnapshot(snapshot);
 	const primaryPointerMask = 1 << INP_POINTER_BUTTON_PRIMARY;
-	assert.equal(keyWordContains(snapshot.keyWords, 'KeyQ'), true);
+	assert.equal(keyWordContains(snapshot.keyWords, 'KeyQ'), false);
 	assert.equal(snapshot.pointerButtons & primaryPointerMask, 0);
 
 	currentTime += 1;
 	input.inputButton('pointer:0', 'pointer_primary', false, 0, currentTime, pressId);
 	tickMenu(input, menu);
+	currentTime += 1;
+	tickMenu(input, menu);
+	input.sampleInputControllerSnapshot(snapshot);
+	assert.equal(keyWordContains(snapshot.keyWords, 'KeyQ'), true);
+	assert.equal(snapshot.pointerButtons & primaryPointerMask, 0);
+	currentTime += 1;
+	tickMenu(input, menu);
 	input.sampleInputControllerSnapshot(snapshot);
 	assert.equal(keyWordContains(snapshot.keyWords, 'KeyQ'), false);
-	assert.equal(snapshot.pointerButtons & primaryPointerMask, 0);
 	input.dispose();
 });

@@ -26,7 +26,7 @@ public:
 	void moveHorizontal(i32 direction);
 	void moveVertical(i32 direction);
 	void activate(LibretroInput& input);
-	bool selectAt(i32 x, i32 y);
+	i32 selectAt(i32 x, i32 y);
 	void queueRenderCommands(VideoPresenter& presenter);
 
 private:
