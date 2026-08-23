@@ -68,6 +68,17 @@ function zakfoe.choose_drop_type(self)
 	return nil
 end
 
+local tasks<const> = {
+	jump = {
+		node_memory = true,
+		execute = zakfoe.execute_jump,
+		tick = zakfoe.tick_jump,
+	},
+	finish_recovery = {
+		execute = zakfoe.finish_recovery,
+	},
+}
+
 function zakfoe.register()
 	local tree_id<const> = 'enemy_zakfoe'
 	behaviour_tree_library.register(tree_id, {
@@ -80,9 +91,7 @@ function zakfoe.register()
 				},
 				{
 					type = 'task',
-					node_memory = true,
-					execute = zakfoe.execute_jump,
-					tick = zakfoe.tick_jump,
+					task = tasks.jump,
 				},
 				{
 					type = 'wait',
@@ -90,7 +99,7 @@ function zakfoe.register()
 				},
 				{
 					type = 'task',
-					execute = zakfoe.finish_recovery,
+					task = tasks.finish_recovery,
 				},
 			},
 		},

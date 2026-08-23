@@ -1,12 +1,14 @@
 local execution_layout<const> = require('cartlib/behaviour_tree/execution_layout')
 local result<const> = require('cartlib/behaviour_tree/result')
 
--- Services are immutable auxiliary nodes attached to a task or composite. The
--- execution component owns their activity, integer cadence accumulator,
--- optional node memory and a preallocated dense lane of active tick callbacks.
--- That lane is advanced before Blackboard execution requests and the tree
--- evaluator. A branch transition changes the retained lane; recursive subtree
--- traversal is not used as a Service scheduler.
+-- Service definitions are immutable shared auxiliary node types. They own
+-- lifecycle callbacks and their node-memory requirement; a tree placement
+-- selects the Service and authors its scheduling policy. The execution
+-- component owns activity, integer cadence accumulators, optional per-agent
+-- node memory and a preallocated dense lane of active tick callbacks. That lane
+-- is advanced before Blackboard execution requests and the tree evaluator. A
+-- branch transition changes the retained lane; recursive subtree traversal is
+-- not used as a Service scheduler.
 --
 -- An authored interval carries a period and the amount of timebase units
 -- advanced by one behaviour-tree tick. Admission retains both integers; the
@@ -39,13 +41,14 @@ local remove_active_service<const> = function(execution, tick)
 end
 
 local compile_service<const> = function(definition, layout)
-	local on_search_start<const> = definition.on_search_start
-	local on_become_relevant<const> = definition.on_become_relevant
-	local on_tick<const> = definition.on_tick
-	local on_cease_relevant<const> = definition.on_cease_relevant
+	local service<const> = definition.service
+	local on_search_start<const> = service.on_search_start
+	local on_become_relevant<const> = service.on_become_relevant
+	local on_tick<const> = service.on_tick
+	local on_cease_relevant<const> = service.on_cease_relevant
 	local tick_on_search_start<const> = definition.tick_on_search_start
 	local restart_timer_on_each_activation<const> = definition.restart_timer_on_each_activation
-	local uses_node_memory<const> = definition.node_memory
+	local uses_node_memory<const> = service.node_memory
 	local memory_slot
 	if uses_node_memory then
 		memory_slot = allocate_node_memory(layout)

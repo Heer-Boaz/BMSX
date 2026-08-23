@@ -166,6 +166,14 @@ function crossfoe.choose_drop_type(_self)
 	return nil
 end
 
+local tasks<const> = {
+	flight = {
+		node_memory = true,
+		execute = crossfoe.execute_flight,
+		tick = crossfoe.tick_flight,
+	},
+}
+
 function crossfoe.register()
 	local tree_id<const> = 'enemy_crossfoe'
 	behaviour_tree_library.register(tree_id, {
@@ -184,9 +192,7 @@ function crossfoe.register()
 				},
 				{
 					type = 'task',
-					node_memory = true,
-					execute = crossfoe.execute_flight,
-					tick = crossfoe.tick_flight,
+					task = tasks.flight,
 				},
 			},
 		},

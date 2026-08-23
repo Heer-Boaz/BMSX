@@ -39,6 +39,12 @@ end
 
 vlokspawner.bind = enemy_base.bind_lifecycle
 
+local tasks<const> = {
+	spawn_vlok = {
+		execute = vlokspawner.spawn_vlok,
+	},
+}
+
 function vlokspawner.register()
 	local tree_id<const> = 'enemy_vlokspawner'
 	behaviour_tree_library.register(tree_id, {
@@ -51,7 +57,7 @@ function vlokspawner.register()
 				},
 				{
 					type = 'task',
-					execute = vlokspawner.spawn_vlok,
+					task = tasks.spawn_vlok,
 				},
 			},
 		},

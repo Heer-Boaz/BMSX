@@ -16,10 +16,11 @@ local no_spawn_run_count_key<const> = blackboard.key('no_spawn_run_count', 0)
 
 function world1_daemon_tree.register()
 	local timeline_id<const> = world1_daemon_tree.timeline_id
+	local tasks<const> = world1_daemon.tasks
+	local services<const> = world1_daemon.services
 	local move_out_backward<const> = {
 		type = 'task',
-		execute = world1_daemon.execute_walk,
-		tick = world1_daemon.tick_walk_backward_out_of_room,
+		task = tasks.walk_backward_out_of_room,
 		interval_ticks = boss_world1_walk_step_ticks,
 	}
 	local spawn_attack<const> = {
@@ -34,20 +35,12 @@ function world1_daemon_tree.register()
 				duration_ticks = boss_world1_spawn_duration_ticks,
 				services = {
 					{
+						service = services.spawn_attack,
 						interval = {
 							period_units = boss_world1_spawn_interval_units,
 							units_per_tick = boss_world1_time_units_per_tick,
 						},
-						node_memory = true,
 						restart_timer_on_each_activation = true,
-						on_become_relevant = function(_target, node_memory)
-							node_memory.burst_count = 0
-						end,
-						on_tick = function(target, node_memory)
-							local burst_count<const> = node_memory.burst_count
-							target:spawn_attack_burst(burst_count)
-							node_memory.burst_count = burst_count + 1
-						end,
 					},
 				},
 			},
@@ -74,8 +67,7 @@ function world1_daemon_tree.register()
 			},
 			{
 				type = 'task',
-				execute = world1_daemon.execute_pounce,
-				tick = world1_daemon.tick_pounce,
+				task = tasks.pounce,
 			},
 			{
 				type = 'wait',
@@ -87,8 +79,7 @@ function world1_daemon_tree.register()
 			},
 			{
 				type = 'task',
-				execute = world1_daemon.execute_walk,
-				tick = world1_daemon.tick_walk_forward_out_of_room,
+				task = tasks.walk_forward_out_of_room,
 				interval_ticks = boss_world1_walk_step_ticks,
 			},
 		},
@@ -127,8 +118,7 @@ function world1_daemon_tree.register()
 			children = {
 				{
 					type = 'task',
-					execute = world1_daemon.execute_walk,
-					tick = world1_daemon.tick_walk_into_room,
+					task = tasks.walk_into_room,
 					interval_ticks = boss_world1_walk_step_ticks,
 				},
 				{
@@ -212,11 +202,11 @@ function world1_daemon_tree.register()
 					duration_ticks = boss_world1_reentry_ticks,
 					services = {
 						{
+							service = services.spawn_zak,
 							interval = {
 								period_units = boss_world1_zak_interval_units,
 								units_per_tick = boss_world1_time_units_per_tick,
 							},
-							on_tick = world1_daemon.spawn_zak,
 						},
 					},
 				},
@@ -227,7 +217,7 @@ function world1_daemon_tree.register()
 				},
 				{
 					type = 'task',
-					execute = world1_daemon.choose_entrance,
+					task = tasks.choose_entrance,
 				},
 			},
 		},

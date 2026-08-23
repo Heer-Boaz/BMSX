@@ -102,6 +102,17 @@ function muziekfoe.choose_drop_type(_self)
 	return nil
 end
 
+local tasks<const> = {
+	move = {
+		node_memory = true,
+		execute = muziekfoe.execute_move,
+		tick = muziekfoe.tick_move,
+	},
+	spawn_note = {
+		execute = muziekfoe.spawn_note,
+	},
+}
+
 function muziekfoe.register()
 	local tree_id<const> = 'enemy_muziekfoe'
 	behaviour_tree_library.register(tree_id, {
@@ -110,9 +121,7 @@ function muziekfoe.register()
 			children = {
 				{
 					type = 'task',
-					node_memory = true,
-					execute = muziekfoe.execute_move,
-					tick = muziekfoe.tick_move,
+					task = tasks.move,
 				},
 				{
 					type = 'sequence',
@@ -128,7 +137,7 @@ function muziekfoe.register()
 								children = {
 									{
 										type = 'task',
-										execute = muziekfoe.spawn_note,
+										task = tasks.spawn_note,
 									},
 									{
 										type = 'wait',

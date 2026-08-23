@@ -59,6 +59,18 @@ function boekfoe.choose_drop_type(_self)
 	return nil
 end
 
+local tasks<const> = {
+	open_cover = {
+		execute = boekfoe.open_cover,
+	},
+	spawn_paper = {
+		execute = boekfoe.spawn_paper,
+	},
+	close_cover = {
+		execute = boekfoe.close_cover,
+	},
+}
+
 function boekfoe.register()
 	local tree_id<const> = 'enemy_boekfoe'
 	behaviour_tree_library.register(tree_id, {
@@ -71,7 +83,7 @@ function boekfoe.register()
 				},
 				{
 					type = 'task',
-					execute = boekfoe.open_cover,
+					task = tasks.open_cover,
 				},
 				{
 					type = 'parallel_one',
@@ -87,7 +99,7 @@ function boekfoe.register()
 									},
 									{
 										type = 'task',
-										execute = boekfoe.spawn_paper,
+										task = tasks.spawn_paper,
 									},
 								},
 							},
@@ -100,7 +112,7 @@ function boekfoe.register()
 				},
 				{
 					type = 'task',
-					execute = boekfoe.close_cover,
+					task = tasks.close_cover,
 				},
 			},
 		},

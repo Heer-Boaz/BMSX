@@ -441,6 +441,49 @@ function world1_daemon:spawn_zak()
 	end
 end
 
+local spawn_attack_service<const> = {
+	node_memory = true,
+}
+
+function spawn_attack_service.on_become_relevant(_target, node_memory)
+	node_memory.burst_count = 0
+end
+
+function spawn_attack_service.on_tick(target, node_memory)
+	local burst_count<const> = node_memory.burst_count
+	target:spawn_attack_burst(burst_count)
+	node_memory.burst_count = burst_count + 1
+end
+
+world1_daemon.tasks = {
+	walk_into_room = {
+		execute = world1_daemon.execute_walk,
+		tick = world1_daemon.tick_walk_into_room,
+	},
+	walk_forward_out_of_room = {
+		execute = world1_daemon.execute_walk,
+		tick = world1_daemon.tick_walk_forward_out_of_room,
+	},
+	walk_backward_out_of_room = {
+		execute = world1_daemon.execute_walk,
+		tick = world1_daemon.tick_walk_backward_out_of_room,
+	},
+	pounce = {
+		execute = world1_daemon.execute_pounce,
+		tick = world1_daemon.tick_pounce,
+	},
+	choose_entrance = {
+		execute = world1_daemon.choose_entrance,
+	},
+}
+
+world1_daemon.services = {
+	spawn_attack = spawn_attack_service,
+	spawn_zak = {
+		on_tick = world1_daemon.spawn_zak,
+	},
+}
+
 function world1_daemon:apply_damage(request)
 	local previous_health<const> = self.health
 	local health<const> = previous_health - 1

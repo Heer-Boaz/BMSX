@@ -291,7 +291,13 @@ end
 -- player only at the start of each movement segment. Its byte accumulator and
 -- pre-decremented step counter are retained directly so the translated Moon
 -- keeps the source boss's discrete, readable movement rhythm.
-function moon:begin_death_ray_movement(node_memory)
+local death_ray_movement_task<const> = {
+	node_memory = true,
+	minimum_steps = moon_death_ray_move_counter_min,
+	maximum_steps = moon_death_ray_move_counter_max,
+}
+
+function death_ray_movement_task.execute(self, node_memory)
 	local player<const> = players_view.objects[1]
 	if self.y < 0 or self.y + moon_death_ray_move_target_offset_y < player.y then
 		self.vertical_direction = moon_vertical_direction_down
@@ -300,13 +306,13 @@ function moon:begin_death_ray_movement(node_memory)
 	end
 	node_memory.phase = moon_death_ray_move_phase_initial
 	node_memory.remaining_steps = math.random(
-		moon_death_ray_move_counter_min,
-		moon_death_ray_move_counter_max
+		death_ray_movement_task.minimum_steps,
+		death_ray_movement_task.maximum_steps
 	)
 	return bt_running
 end
 
-function moon:tick_death_ray_movement(node_memory)
+function death_ray_movement_task.tick(self, node_memory)
 	local phase<const> = node_memory.phase + moon_death_ray_move_phase_step
 	if phase < 0x100 then
 		node_memory.phase = phase
@@ -332,6 +338,50 @@ function moon:tick_death_ray_movement(node_memory)
 	end
 	return bt_running
 end
+
+moon.tasks = {
+	enter = {
+		tick = moon.tick_entering,
+	},
+	fly_left = {
+		tick = moon.tick_fly_left,
+	},
+	fly_up = {
+		tick = moon.tick_fly_up,
+	},
+	fly_down = {
+		tick = moon.tick_fly_down,
+	},
+	small_ray_pass = {
+		tick = moon.tick_small_ray_pass,
+	},
+	rotate_to_small_ray_direction = {
+		tick = moon.tick_rotate_to_small_ray_direction,
+	},
+	fire_small_ray_volley = {
+		execute = moon.fire_small_ray_volley,
+	},
+	rotate_to_right = {
+		tick = moon.tick_rotate_to_right,
+	},
+	begin_death_ray = {
+		execute = moon.begin_death_ray,
+	},
+	death_ray_movement = death_ray_movement_task,
+}
+
+moon.services = {
+	spawn_mini_moon = {
+		on_tick = moon.spawn_mini_moon,
+	},
+	small_ray_flashes = {
+		on_become_relevant = moon.activate_small_ray_flashes,
+		on_cease_relevant = moon.deactivate_flashes,
+	},
+	vertical_playfield_movement = {
+		on_tick = moon.tick_vertical_playfield,
+	},
+}
 
 function moon:receive_player_projectile(projectile, collider_local_id, hit_point)
 	if collider_local_id ~= moon_core_collider_id or not self.vulnerable then

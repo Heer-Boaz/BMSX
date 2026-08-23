@@ -1,6 +1,5 @@
 local prefab<const> = require('cartlib/world/prefab')
 require('constants')
-local blackboard<const> = require('cartlib/behaviour_tree/blackboard')
 local bt_result<const> = require('cartlib/behaviour_tree/result')
 local bt_running<const> = bt_result.running
 local bt_success<const> = bt_result.success
@@ -11,7 +10,6 @@ local enemy_base<const> = require('enemies/enemy_base')
 
 local mijterfoe<const> = {}
 mijterfoe.__index = mijterfoe
-local direction_ticks_key<const> = blackboard.key('direction_ticks', 0)
 
 -- The original Bat's sixteen signed Q8.8 flight vectors, decoded from the
 -- tables at 0x7e49 and 0x7e69 and multiplied by the enemy's speed factor 2.
@@ -47,7 +45,10 @@ local set_direction_sprite<const> = function(self, direction_index)
 	sprite.flip_v = visual.flip_v
 end
 
-local advance_flight_direction<const> = function(self, node_memory)
+-- The direction cadence survives free flight into the next ceiling seek. It
+-- belongs to the enemy's flight controller; only one task activation's total
+-- flight duration belongs in node memory.
+local advance_flight_direction<const> = function(self)
 	local motion<const> = self.motion
 	local direction_index = self.direction_index
 	local reflected = false
@@ -82,7 +83,7 @@ local advance_flight_direction<const> = function(self, node_memory)
 		direction_ticks = enemy_mijter_direction_min_steps
 		set_direction_sprite(self, direction_index)
 	else
-		direction_ticks = node_memory.direction_ticks
+		direction_ticks = self.flight_direction_ticks
 	end
 	direction_ticks = direction_ticks - 1
 	if direction_ticks == 0 then
@@ -95,7 +96,7 @@ local advance_flight_direction<const> = function(self, node_memory)
 		motion.velocity_y = velocity_y_by_direction[direction_index + 1]
 		set_direction_sprite(self, direction_index)
 	end
-	node_memory.direction_ticks = direction_ticks
+	self.flight_direction_ticks = direction_ticks
 end
 
 function mijterfoe:ctor()
@@ -103,20 +104,15 @@ function mijterfoe:ctor()
 	set_direction_sprite(self, 12)
 end
 
-function mijterfoe.initialize_direction_cycle(_self, execution)
-	execution.blackboard:set(
-		direction_ticks_key,
-		math.random(enemy_mijter_direction_min_steps, enemy_mijter_direction_max_steps)
+function mijterfoe.initialize_direction_cycle(self)
+	self.flight_direction_ticks = math.random(
+		enemy_mijter_direction_min_steps,
+		enemy_mijter_direction_max_steps
 	)
 	return bt_success
 end
 
-function mijterfoe.execute_seek_ceiling(self, node_memory, execution)
-	node_memory.direction_ticks = execution.blackboard:get(direction_ticks_key)
-	return mijterfoe.tick_seek_ceiling(self, node_memory)
-end
-
-function mijterfoe.tick_seek_ceiling(self, node_memory)
+function mijterfoe.tick_seek_ceiling(self)
 	local rm<const> = self.room
 	local x<const> = self.x
 	local y<const> = self.y
@@ -135,7 +131,7 @@ function mijterfoe.tick_seek_ceiling(self, node_memory)
 		set_direction_sprite(self, 12)
 		return bt_success
 	end
-	advance_flight_direction(self, node_memory)
+	advance_flight_direction(self)
 	return bt_running
 end
 
@@ -147,26 +143,25 @@ function mijterfoe.begin_takeoff(self)
 	return bt_success
 end
 
-function mijterfoe.execute_free_flight(_self, node_memory)
+function mijterfoe.execute_free_flight(self, node_memory)
 	node_memory.flight_ticks = math.random(
 		enemy_mijter_flight_min_steps,
 		enemy_mijter_flight_max_steps
 	)
-	node_memory.direction_ticks = math.random(
+	self.flight_direction_ticks = math.random(
 		enemy_mijter_direction_min_steps,
 		enemy_mijter_direction_max_steps
 	)
 	return bt_running
 end
 
-function mijterfoe.tick_free_flight(self, node_memory, execution)
+function mijterfoe.tick_free_flight(self, node_memory)
 	local flight_ticks<const> = node_memory.flight_ticks - 1
 	if flight_ticks == 0 then
-		execution.blackboard:set(direction_ticks_key, node_memory.direction_ticks)
 		return bt_success
 	end
 	node_memory.flight_ticks = flight_ticks
-	advance_flight_direction(self, node_memory)
+	advance_flight_direction(self)
 	return bt_running
 end
 
@@ -180,18 +175,32 @@ function mijterfoe.choose_drop_type(_self)
 	return nil
 end
 
+local tasks<const> = {
+	initialize_direction_cycle = {
+		execute = mijterfoe.initialize_direction_cycle,
+	},
+	seek_ceiling = {
+		tick = mijterfoe.tick_seek_ceiling,
+	},
+	begin_takeoff = {
+		execute = mijterfoe.begin_takeoff,
+	},
+	free_flight = {
+		node_memory = true,
+		execute = mijterfoe.execute_free_flight,
+		tick = mijterfoe.tick_free_flight,
+	},
+}
+
 function mijterfoe.register()
 	local tree_id<const> = 'enemy_mijterfoe'
 	behaviour_tree_library.register(tree_id, {
-		blackboard = {
-			direction_ticks_key,
-		},
 		root = {
 			type = 'sequence',
 			children = {
 				{
 					type = 'task',
-					execute = mijterfoe.initialize_direction_cycle,
+					task = tasks.initialize_direction_cycle,
 				},
 				{
 					type = 'loop',
@@ -200,9 +209,7 @@ function mijterfoe.register()
 						children = {
 							{
 								type = 'task',
-								node_memory = true,
-								execute = mijterfoe.execute_seek_ceiling,
-								tick = mijterfoe.tick_seek_ceiling,
+								task = tasks.seek_ceiling,
 							},
 							{
 								type = 'wait',
@@ -210,7 +217,7 @@ function mijterfoe.register()
 							},
 							{
 								type = 'task',
-								execute = mijterfoe.begin_takeoff,
+								task = tasks.begin_takeoff,
 							},
 							{
 								type = 'wait',
@@ -218,9 +225,7 @@ function mijterfoe.register()
 							},
 							{
 								type = 'task',
-								node_memory = true,
-								execute = mijterfoe.execute_free_flight,
-								tick = mijterfoe.tick_free_flight,
+								task = tasks.free_flight,
 							},
 						},
 					},

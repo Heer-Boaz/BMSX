@@ -117,6 +117,17 @@ function cloud.choose_drop_type(_self)
 	return nil
 end
 
+local tasks<const> = {
+	move = {
+		node_memory = true,
+		execute = cloud.execute_move,
+		tick = cloud.tick_move,
+	},
+	spawn_vlok_burst = {
+		execute = cloud.spawn_vlok_burst,
+	},
+}
+
 function cloud.register()
 	local tree_id<const> = 'enemy_cloud'
 	behaviour_tree_library.register(tree_id, {
@@ -125,9 +136,7 @@ function cloud.register()
 			children = {
 				{
 					type = 'task',
-					node_memory = true,
-					execute = cloud.execute_move,
-					tick = cloud.tick_move,
+					task = tasks.move,
 				},
 				{
 					type = 'sequence',
@@ -143,7 +152,7 @@ function cloud.register()
 								children = {
 									{
 										type = 'task',
-										execute = cloud.spawn_vlok_burst,
+										task = tasks.spawn_vlok_burst,
 									},
 									{
 										type = 'wait',

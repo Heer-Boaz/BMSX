@@ -9,22 +9,24 @@ moon_tree.id = moon.tree_id
 -- The complete immutable combat graph stays together. Actor methods implement
 -- its domain tasks; the lifecycle FSM remains owned by moon.lua.
 function moon_tree.register()
+	local tasks<const> = moon.tasks
+	local services<const> = moon.services
 	local fly_attack<const> = {
 		type = 'sequence',
 		services = {
 			{
+				service = services.spawn_mini_moon,
 				interval = {
 					period_units = moon_mini_spawn_interval_ticks,
 					units_per_tick = 1,
 				},
 				restart_timer_on_each_activation = true,
-				on_tick = moon.spawn_mini_moon,
 			},
 		},
 		children = {
 			{
 				type = 'task',
-				tick = moon.tick_fly_left,
+				task = tasks.fly_left,
 				interval_ticks = 1,
 			},
 			{
@@ -32,12 +34,12 @@ function moon_tree.register()
 				children = {
 					{
 						type = 'task',
-						tick = moon.tick_fly_up,
+						task = tasks.fly_up,
 						interval_ticks = 1,
 					},
 					{
 						type = 'task',
-						tick = moon.tick_fly_down,
+						task = tasks.fly_down,
 						interval_ticks = 1,
 					},
 				},
@@ -47,7 +49,7 @@ function moon_tree.register()
 				children = {
 					{
 						type = 'task',
-						tick = moon.tick_small_ray_pass,
+						task = tasks.small_ray_pass,
 						interval_ticks = moon_small_ray_move_interval_ticks,
 					},
 					{
@@ -55,15 +57,14 @@ function moon_tree.register()
 						children = {
 							{
 								type = 'task',
-								tick = moon.tick_rotate_to_small_ray_direction,
+								task = tasks.rotate_to_small_ray_direction,
 								interval_ticks = 1,
 							},
 							{
 								type = 'sequence',
 								services = {
 									{
-										on_become_relevant = moon.activate_small_ray_flashes,
-										on_cease_relevant = moon.deactivate_flashes,
+										service = services.small_ray_flashes,
 									},
 								},
 								children = {
@@ -73,7 +74,7 @@ function moon_tree.register()
 									},
 									{
 										type = 'task',
-										execute = moon.fire_small_ray_volley,
+										task = tasks.fire_small_ray_volley,
 									},
 									{
 										type = 'loop',
@@ -86,7 +87,7 @@ function moon_tree.register()
 												},
 												{
 													type = 'task',
-													execute = moon.fire_small_ray_volley,
+													task = tasks.fire_small_ray_volley,
 												},
 											},
 										},
@@ -104,12 +105,12 @@ function moon_tree.register()
 		children = {
 			{
 				type = 'task',
-				tick = moon.tick_rotate_to_right,
+				task = tasks.rotate_to_right,
 				interval_ticks = 1,
 			},
 			{
 				type = 'task',
-				execute = moon.begin_death_ray,
+				task = tasks.begin_death_ray,
 			},
 			{
 				type = 'parallel_one',
@@ -125,9 +126,7 @@ function moon_tree.register()
 							children = {
 								{
 									type = 'task',
-									node_memory = true,
-									execute = moon.begin_death_ray_movement,
-									tick = moon.tick_death_ray_movement,
+									task = tasks.death_ray_movement,
 								},
 								{
 									type = 'wait',
@@ -146,7 +145,7 @@ function moon_tree.register()
 			children = {
 				{
 					type = 'task',
-					tick = moon.tick_entering,
+					task = tasks.enter,
 					interval_ticks = moon_enter_interval_ticks,
 				},
 				fly_attack,
@@ -161,12 +160,12 @@ function moon_tree.register()
 								duration_ticks = moon_wait_for_attack_ticks,
 								services = {
 									{
+										service = services.vertical_playfield_movement,
 										interval = {
 											period_units = moon_slow_vertical_period_units,
 											units_per_tick = moon_slow_vertical_units_per_tick,
 										},
 										restart_timer_on_each_activation = true,
-										on_tick = moon.tick_vertical_playfield,
 									},
 								},
 							},

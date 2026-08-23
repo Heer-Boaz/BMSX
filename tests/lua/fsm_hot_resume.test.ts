@@ -329,6 +329,9 @@ local old_action<const> = function(_, execution)
 	active_blackboard:set(ticks_key, active_blackboard:get(ticks_key) + 1)
 	return 'SUCCESS'
 end
+local old_task<const> = {
+	execute = old_action,
+}
 behaviour_tree_library.register('enemy_hot', {
 	blackboard = {
 		ticks_key,
@@ -336,7 +339,7 @@ behaviour_tree_library.register('enemy_hot', {
 	},
 	root = {
 		type = 'task',
-		execute = old_action,
+		task = old_task,
 	},
 })
 local make_old_tree<const> = behaviour_tree_component.factory('enemy_hot')
@@ -353,6 +356,9 @@ local new_action<const> = function(_, execution)
 	active_blackboard:set(ticks_key, active_blackboard:get(ticks_key) + 10)
 	return 'SUCCESS'
 end
+local new_task<const> = {
+	execute = new_action,
+}
 behaviour_tree_library.register('enemy_hot', {
 	blackboard = {
 		retained_key,
@@ -360,7 +366,7 @@ behaviour_tree_library.register('enemy_hot', {
 	},
 	root = {
 		type = 'task',
-		execute = new_action,
+		task = new_task,
 	},
 })
 assert(behaviour_tree_instance.evaluate == new_action)

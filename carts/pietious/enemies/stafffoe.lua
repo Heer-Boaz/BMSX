@@ -47,6 +47,12 @@ function stafffoe.choose_drop_type(_self)
 	return 'life'
 end
 
+local tasks<const> = {
+	spawn_burst = {
+		execute = stafffoe.spawn_burst,
+	},
+}
+
 function stafffoe.register()
 	local tree_id<const> = 'enemy_stafffoe'
 	behaviour_tree_library.register(tree_id, {
@@ -69,7 +75,7 @@ function stafffoe.register()
 							},
 							{
 								type = 'task',
-								execute = stafffoe.spawn_burst,
+								task = tasks.spawn_burst,
 							},
 						},
 					},

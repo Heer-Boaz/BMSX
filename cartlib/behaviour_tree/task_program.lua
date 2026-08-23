@@ -1,8 +1,10 @@
 local execution_layout<const> = require('cartlib/behaviour_tree/execution_layout')
 local result<const> = require('cartlib/behaviour_tree/result')
 
--- Tasks are immutable program records. Only tasks that declare node_memory
--- allocate a per-agent table; stateless ticking tasks remain a direct evaluator
+-- Task definitions are immutable shared node types. They own their lifecycle
+-- callbacks and whether their implementation needs per-agent node memory; a
+-- tree placement only selects the task and authors generic placement policy
+-- such as its tick interval. Stateless ticking tasks remain a direct evaluator
 -- call. Latent tasks retain one activity slot so branch abortion can distinguish
 -- an executing task from an already completed task. An authored interval is
 -- lowered into a dedicated countdown evaluator; skipped updates do not enter
@@ -205,21 +207,22 @@ local compile_latent_task<const> = function(
 end
 
 function task_program.compile(node, layout)
-	local tick<const> = node.tick
+	local task<const> = node.task
+	local tick<const> = task.tick
 	if tick == nil then
-		return node.execute
+		return task.execute
 	end
-	local execute<const> = node.execute
+	local execute<const> = task.execute
 	local interval_ticks<const> = node.interval_ticks
 	if execute == nil and interval_ticks == nil then
-		return compile_ticking_task(layout, tick, node.abort, node.node_memory)
+		return compile_ticking_task(layout, tick, task.abort, task.node_memory)
 	end
 	return compile_latent_task(
 		layout,
 		execute,
 		tick,
-		node.abort,
-		node.node_memory,
+		task.abort,
+		task.node_memory,
 		interval_ticks
 	)
 end
