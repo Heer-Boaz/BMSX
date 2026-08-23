@@ -1,6 +1,5 @@
 local fsm_library<const> = require('cartlib/fsm/library')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
-local gp0<const> = require('cartlib/gx/gp0')
 local prefab<const> = require('cartlib/world/prefab')
 local rect_overlaps<const> = require('cartlib/util/rect_overlaps')
 require('constants')
@@ -844,8 +843,9 @@ local draw_room_effect<const> = function(component, draw)
 	if not director:has_tag('d.seal.flash') then
 		return
 	end
-	draw:mode(gp0.draw_mode_blend_half)
-	draw:semitransparent_rect(0, room_tile_origin_y, screen_width, screen_height, 0xffffffff)
+	-- MoG T9F68 writes color 14 to VDP register 7. Retain that backdrop
+	-- beneath the Graphic 2 surfaces rather than blending over their pixels.
+	draw:rect(0, 0, screen_width, screen_height, 0xffcccccc)
 end
 
 function room_object:ctor()
@@ -881,7 +881,7 @@ function room_object:ctor()
 	self:add_component(self.water_tile_layer)
 	self.tiles_visible = false
 	local room_effect<const> = self:get_component(custom_visual_component)
-	room_effect:set_offset_z(draw_z_room_effect)
+	room_effect:set_offset_z(draw_z_room_backdrop)
 	room_effect:set_draw_function(draw_room_effect)
 end
 

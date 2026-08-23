@@ -17,7 +17,6 @@ local cloud_positions<const> = {
 	96, 128,
 	128, 96,
 	112, 64,
-	152, 96,
 }
 
 __bmsx_host_test = {
@@ -41,7 +40,7 @@ end
 function __bmsx_host_test.update()
 	local test<const> = __bmsx_host_test
 	test.frames = test.frames + 1
-	assert(test.frames < 500, 'daemon appearance scenario timed out phase=' .. test.phase)
+	assert(test.frames < 700, 'daemon appearance scenario timed out phase=' .. test.phase)
 	if world.active_space_id ~= 'main' then
 		return false
 	end
@@ -112,6 +111,11 @@ function __bmsx_host_test.update()
 			assert(projectile.x == test.projectile_x and projectile.y == test.projectile_y,
 				'projectile moved while the summon state paused gameplay')
 			local frame<const> = seal_timeline.head
+			if frame < flow_seal_flash_frames then
+				local flash<const> = director:has_tag('d.seal.flash') ~= nil
+				assert(flash == ((frame & 3) < 2),
+					'daemon backdrop flash differs from the MSX two-update phase')
+			end
 			*apu_slot = 1
 			if frame >= 0 and *selected_apu_source == seal_source_address then
 				test.saw_seal_audio = true
@@ -177,12 +181,13 @@ function __bmsx_host_test.update()
 						and cloud.y == cloud_positions[position_index + 1],
 						'daemon cloud used the wrong fixed MSX coordinate')
 					assert(daemon_timeline.head - animation.head
-						== (index - 1) * flow_daemon_cloud_spawn_interval_frames,
+						== flow_daemon_cloud_first_spawn_frame
+							+ (index - 1) * flow_daemon_cloud_spawn_interval_frames,
 						'daemon cloud spawned on the wrong countdown frame')
 					test.seen_clouds[index] = true
 					test.seen_cloud_count = test.seen_cloud_count + 1
 				end
-				local image<const> = ((animation.head // 5) & 1) == 0
+				local image<const> = ((animation.head // 10) & 1) == 0
 					and 'daemon_smoke_small' or 'daemon_smoke_large'
 				assert(cloud.sprite_component.imgid == image,
 					'daemon cloud animation did not alternate every ten VBlanks')
@@ -194,7 +199,7 @@ function __bmsx_host_test.update()
 	assert(test.saw_appearance_audio, 'daemon appearance cue did not start at thaw')
 	assert(test.saw_gameplay_resume, 'gameplay did not resume during the cloud sequence')
 	assert(test.seen_cloud_count == flow_daemon_cloud_count,
-		'daemon appearance did not spawn all nine MSX clouds')
+		'daemon appearance did not spawn all eight MSX clouds')
 	for index = 1, flow_daemon_cloud_count do
 		assert(not director.daemon_clouds[index].visible,
 			'daemon cloud remained visible after the appearance sequence')

@@ -21,21 +21,27 @@ flow_death_curtain_columns_per_frame = 2
 flow_death_screen_frames = 50
 flow_narrative_scroll_pixels_num = 2
 flow_narrative_scroll_pixels_den = 5
--- The MSX summon state flashes for 60 VBlanks, dissolves the seal-pattern
--- range for 25 VBlanks, then dissolves two background ranges for 25 VBlanks
--- each. Pietious advances one gameplay frame per two VBlanks.
-flow_seal_flash_frames = 30
-flow_seal_sprite_dissolve_frames = 13
-flow_seal_room_dissolve_frames = 25
+-- MoG state F advances these counters in the admitted interrupt bottom half:
+-- T9F61/T9F68 retain 0x3c updates of backdrop flashing, and TBE1C retains
+-- three 25-update dissolve ranges. Pietious already admits that same bottom
+-- half cadence once per two VBlanks, so these are the raw MSX counters.
+flow_seal_flash_frames = 0x3c
+flow_seal_sprite_dissolve_frames = 25
+flow_seal_room_dissolve_frames = 50
 flow_seal_dissolution_frames = flow_seal_flash_frames
 	+ flow_seal_sprite_dissolve_frames
 	+ flow_seal_room_dissolve_frames
 flow_seal_room_dissolve_steps = 7
 flow_seal_sprite_dissolve_steps = 6
-flow_daemon_cloud_count = 9
-flow_daemon_cloud_spawn_interval_frames = 4
-flow_daemon_cloud_lifetime_frames = 20
-flow_daemon_cloud_last_spawn_frame = (flow_daemon_cloud_count - 1) * flow_daemon_cloud_spawn_interval_frames
+-- T7FD0 initializes the smoke countdown to 0x41. T7FDB emits enemy 0x63
+-- after the first decrement and every eight admitted bottom halves thereafter.
+-- Enemy 0x63 advances each of its four poses after ten such updates.
+flow_daemon_cloud_count = 8
+flow_daemon_cloud_first_spawn_frame = 1
+flow_daemon_cloud_spawn_interval_frames = 8
+flow_daemon_cloud_lifetime_frames = 40
+flow_daemon_cloud_last_spawn_frame = flow_daemon_cloud_first_spawn_frame
+	+ (flow_daemon_cloud_count - 1) * flow_daemon_cloud_spawn_interval_frames
 flow_daemon_appearance_frames = flow_daemon_cloud_last_spawn_frame + flow_daemon_cloud_lifetime_frames + 1
 room_width = 256
 room_height = 192
@@ -45,7 +51,7 @@ room_hud_height = 32
 room_tile_size = 8
 draw_z_environment_wall = 140
 draw_z_enemy = 140
-draw_z_room_effect = 500
+draw_z_room_backdrop = -1
 draw_z_hud = 1000
 draw_z_director_effect = 1100
 room_tile_columns = 32

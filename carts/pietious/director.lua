@@ -307,9 +307,11 @@ end
 --   'player.world_emerge'          → player (begins emergence animation)
 local define_director_fsm<const> = function()
 	local apply_daemon_frame<const> = function(self, frame_value)
-		if frame_value <= flow_daemon_cloud_last_spawn_frame
-		and (frame_value % flow_daemon_cloud_spawn_interval_frames) == 0 then
-			local index<const> = (frame_value // flow_daemon_cloud_spawn_interval_frames) + 1
+		local spawn_frame<const> = frame_value - flow_daemon_cloud_first_spawn_frame
+		if spawn_frame >= 0
+		and frame_value <= flow_daemon_cloud_last_spawn_frame
+		and (spawn_frame % flow_daemon_cloud_spawn_interval_frames) == 0 then
+			local index<const> = (spawn_frame // flow_daemon_cloud_spawn_interval_frames) + 1
 			local position_index<const> = index & 7
 			local coordinate_index<const> = position_index * 2 + 1
 			self.daemon_clouds[index]:play_once_at(
@@ -320,7 +322,9 @@ local define_director_fsm<const> = function()
 	end
 	local apply_seal_frame<const> = function(self, frame_value)
 		if frame_value < flow_seal_flash_frames then
-			if (frame_value & 1) == 0 then
+			-- T9F68 selects VDP backdrop 14 while countdown bit 1 is set,
+			-- retaining each color for two admitted bottom halves.
+			if (frame_value & 3) < 2 then
 				self:add_tag('d.seal.flash')
 			else
 				self:remove_tag('d.seal.flash')

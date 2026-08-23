@@ -40,10 +40,10 @@ local define_daemon_cloud_fsm<const> = function()
 					[anim_timeline_id] = {
 						def = {
 							frames = timeline.build_frame_sequence({
-								{ value = 'daemon_smoke_small', hold = 5 },
-								{ value = 'daemon_smoke_large', hold = 5 },
-								{ value = 'daemon_smoke_small', hold = 5 },
-								{ value = 'daemon_smoke_large', hold = 5 },
+								{ value = 'daemon_smoke_small', hold = 10 },
+								{ value = 'daemon_smoke_large', hold = 10 },
+								{ value = 'daemon_smoke_small', hold = 10 },
+								{ value = 'daemon_smoke_large', hold = 10 },
 							}),
 							playback_mode = 'once',
 							apply = sprite_object.set_imgid,
