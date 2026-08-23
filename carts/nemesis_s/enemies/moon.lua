@@ -1,5 +1,4 @@
 local behaviour_tree_component<const> = require('cartlib/behaviour_tree/bt_component')
-local behaviour_tree_library<const> = require('cartlib/behaviour_tree/library')
 local behaviour_tree_result<const> = require('cartlib/behaviour_tree/result')
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 local sprite_animation_component<const> = require('cartlib/component/sprite_animation_component')
@@ -14,8 +13,8 @@ require('constants')
 
 local moon<const> = {}
 moon.__index = moon
+moon.tree_id = 'nemesis_s.enemy.moon'
 
-local moon_tree_id<const> = 'nemesis_s.enemy.moon'
 local defeated_event<const> = 'enemy.moon.defeated'
 local wait_for_explosion_timeline_id<const> = 'nemesis_s.enemy.moon.wait_for_explosion'
 local wait_for_end_demo_timeline_id<const> = 'nemesis_s.enemy.moon.wait_for_end_demo'
@@ -375,195 +374,6 @@ function moon:explode()
 	return '/dying/wait_for_end_demo'
 end
 
-local define_tree<const> = function()
-	local fly_attack<const> = {
-		type = 'sequence',
-		services = {
-			{
-				interval = {
-					period_units = moon_mini_spawn_interval_ticks,
-					units_per_tick = 1,
-				},
-				restart_timer_on_each_activation = true,
-				on_tick = moon.spawn_mini_moon,
-			},
-		},
-		children = {
-			{
-				type = 'task',
-				tick = moon.tick_fly_left,
-				interval_ticks = 1,
-			},
-			{
-				type = 'random_selector',
-				children = {
-					{
-						type = 'task',
-						tick = moon.tick_fly_up,
-						interval_ticks = 1,
-					},
-					{
-						type = 'task',
-						tick = moon.tick_fly_down,
-						interval_ticks = 1,
-					},
-				},
-			},
-			{
-				type = 'parallel_one',
-				children = {
-					{
-						type = 'task',
-						tick = moon.tick_small_ray_pass,
-						interval_ticks = moon_small_ray_move_interval_ticks,
-					},
-					{
-						type = 'sequence',
-						children = {
-							{
-								type = 'task',
-								tick = moon.tick_rotate_to_small_ray_direction,
-								interval_ticks = 1,
-							},
-							{
-								type = 'sequence',
-								services = {
-									{
-										on_become_relevant = moon.activate_small_ray_flashes,
-										on_cease_relevant = moon.deactivate_flashes,
-									},
-								},
-								children = {
-									{
-										type = 'wait',
-										duration_ticks = moon_small_ray_flash_ticks,
-									},
-									{
-										type = 'task',
-										execute = moon.fire_small_ray_volley,
-									},
-									{
-										type = 'loop',
-										child = {
-											type = 'sequence',
-											children = {
-												{
-													type = 'wait',
-													duration_ticks = moon_small_ray_volley_interval_ticks,
-												},
-												{
-													type = 'task',
-													execute = moon.fire_small_ray_volley,
-												},
-											},
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-	local death_ray_attack<const> = {
-		type = 'sequence',
-		children = {
-			{
-				type = 'task',
-				tick = moon.tick_rotate_to_right,
-				interval_ticks = 1,
-			},
-			{
-				type = 'task',
-				execute = moon.begin_death_ray,
-			},
-			{
-				type = 'parallel_one',
-				children = {
-					{
-						type = 'wait',
-						duration_ticks = moon_death_ray_cycle_ticks,
-					},
-					{
-						type = 'loop',
-						child = {
-							type = 'sequence',
-							children = {
-								{
-									type = 'task',
-									node_memory = true,
-									execute = moon.begin_death_ray_movement,
-									tick = moon.tick_death_ray_movement,
-								},
-								{
-									type = 'wait',
-									duration_ticks = moon_death_ray_move_pause_ticks,
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-	behaviour_tree_library.register(moon_tree_id, {
-		root = {
-			type = 'sequence',
-			children = {
-				{
-					type = 'task',
-					tick = moon.tick_entering,
-					interval_ticks = moon_enter_interval_ticks,
-				},
-				fly_attack,
-				death_ray_attack,
-				{
-					type = 'loop',
-					child = {
-						type = 'sequence',
-						children = {
-							{
-								type = 'wait',
-								duration_ticks = moon_wait_for_attack_ticks,
-								services = {
-									{
-						interval = {
-							period_units = moon_slow_vertical_period_units,
-							units_per_tick = moon_slow_vertical_units_per_tick,
-										},
-										restart_timer_on_each_activation = true,
-										on_tick = moon.tick_vertical_playfield,
-									},
-								},
-							},
-							{
-								type = 'weighted_random_selector',
-								choices = {
-									{
-										weight = moon_fly_attack_weight,
-										child = {
-											type = 'sequence',
-											children = {
-												fly_attack,
-												death_ray_attack,
-											},
-										},
-									},
-									{
-										weight = moon_death_ray_attack_weight,
-										child = death_ray_attack,
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	})
-end
-
 local define_fsm<const> = function()
 	fsm_library.register(ids_moon_fsm, {
 		initial = 'active',
@@ -616,7 +426,7 @@ local register_definition<const> = function()
 			new_armor_collider,
 			new_flash_left,
 			new_flash_right,
-			behaviour_tree_component.factory(moon_tree_id),
+			behaviour_tree_component.factory(moon.tree_id),
 			timeline_component.new,
 			fsm_component.factory({ ids_moon_fsm }),
 		},
@@ -632,7 +442,6 @@ local register_definition<const> = function()
 end
 
 function moon.register()
-	define_tree()
 	define_fsm()
 	register_definition()
 end
