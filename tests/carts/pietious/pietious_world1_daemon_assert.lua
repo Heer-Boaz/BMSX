@@ -2,6 +2,9 @@ local combat_damage<const> = require('combat/damage')
 local registry<const> = require('cartlib/registry')
 local world<const> = require('cartlib/world/world')
 
+local apu_slot<const>: *word = 0x08000148
+local selected_apu_source<const>: *word = 0x0800018c
+
 __bmsx_host_test = {
 	frames = 0,
 	phase = 'setup',
@@ -82,6 +85,11 @@ function __bmsx_host_test.update()
 		assert(daemon.potatoes[1].drop_health_chance_pct == 0
 			and daemon.potatoes[1].drop_ammo_chance_pct == 0,
 			'boss potato retained ordinary enemy drops')
+		*apu_slot = 0
+		local sfx_source<const> = *selected_apu_source
+		daemon:spawn_zak()
+		assert(*selected_apu_source == sfx_source,
+			'daemon minion spawn emitted an unrelated appearance cue')
 		daemon.health = 1
 		local request<const> = {
 			source_id = player.id,

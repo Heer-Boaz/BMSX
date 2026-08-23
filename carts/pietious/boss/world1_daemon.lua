@@ -435,7 +435,6 @@ function world1_daemon:spawn_zak()
 				drop_health_chance_pct = boss_world1_zak_drop_health_chance_pct,
 				drop_ammo_chance_pct = boss_world1_zak_drop_ammo_chance_pct,
 			})
-			self.events:emit('daemon.minion_appeared')
 			return
 		end
 	end
