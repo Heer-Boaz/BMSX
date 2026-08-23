@@ -476,65 +476,6 @@ compile_by_type.weighted_random_selector = function(node, layout)
 	end, nil, reset
 end
 
--- A Loop is authored flow control, not an enemy-local counter hidden inside a
--- task. Finite loops may complete several synchronous iterations in one tree
--- update. An infinite loop starts at most one iteration per update, matching
--- the search-id boundary used by UE behaviour trees and guaranteeing that a
--- synchronous child cannot monopolize the game thread.
-compile_by_type.loop = function(node, layout)
-	local evaluate<const>, operand<const>, reset_child<const> = compile_node(node.child, layout)
-	local count<const> = node.count
-	if count == nil then
-		local reset<const> = function(target, execution, execution_state)
-			if reset_child ~= nil then
-				reset_child(target, execution, execution_state)
-			end
-		end
-		return function(target, execution)
-			local status<const> = evaluate(target, execution, operand)
-			if status < result_success then
-				return status
-			end
-			if reset_child ~= nil then
-				reset_child(target, execution, execution._execution_state)
-			end
-			if status == result_failure then
-				return result_failure
-			end
-			return result_running
-		end, nil, reset
-	end
-
-	local completed_slot<const> = allocate_state_slot(layout)
-	local reset<const> = function(target, execution, execution_state)
-		execution_state[completed_slot] = nil
-		if reset_child ~= nil then
-			reset_child(target, execution, execution_state)
-		end
-	end
-	return function(target, execution)
-		local execution_state<const> = execution._execution_state
-		local completed = execution_state[completed_slot] or 0
-		while completed < count do
-			local status<const> = evaluate(target, execution, operand)
-			if status < result_success then
-				execution_state[completed_slot] = completed
-				return status
-			end
-			if reset_child ~= nil then
-				reset_child(target, execution, execution_state)
-			end
-			if status == result_failure then
-				execution_state[completed_slot] = nil
-				return result_failure
-			end
-			completed = completed + 1
-		end
-		execution_state[completed_slot] = nil
-		return result_success
-	end, nil, reset
-end
-
 compile_by_type.limit = function(node, layout)
 	local evaluate<const>, operand<const>, reset_child<const> = compile_node(node.child, layout)
 	local limit<const> = node.limit

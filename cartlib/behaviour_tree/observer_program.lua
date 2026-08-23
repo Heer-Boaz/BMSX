@@ -94,7 +94,8 @@ function observer_program.compile_blackboard_decorators(
 	execution_index,
 	evaluate_child,
 	operand,
-	reset_child
+	reset_child,
+	track_admission
 )
 	local condition<const> = compile_condition(definitions, layout)
 	local observed_by_slot<const> = {}
@@ -226,6 +227,29 @@ function observer_program.compile_blackboard_decorators(
 		end
 	end
 
+	if track_admission then
+		return function(target, execution)
+			local execution_state<const> = execution._execution_state
+			if not execution_state[active_slot] then
+				if not condition(execution.blackboard._values) then
+					return result_failure, false
+				end
+				execution_state[active_slot] = true
+				if lower_priority_slot ~= nil then
+					execution_state[lower_priority_slot] = false
+				end
+			end
+			local status<const> = evaluate_child(target, execution, operand)
+			if status >= result_success then
+				execution_state[active_slot] = false
+				if self_request_slot ~= nil then
+					execution_state[self_request_slot] = false
+					execution_state[self_processing_slot] = false
+				end
+			end
+			return status, true
+		end, nil, reset, branch
+	end
 	return function(target, execution)
 		local execution_state<const> = execution._execution_state
 		if not execution_state[active_slot] then

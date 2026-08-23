@@ -77,18 +77,21 @@ function moon_tree.register()
 									task = tasks.fire_small_ray_volley,
 								},
 								{
-									type = 'loop',
-									child = {
-										type = 'sequence',
-										children = {
-											{
-												type = 'wait',
-												duration_ticks = moon_small_ray_volley_interval_ticks,
-											},
-											{
-												type = 'task',
-												task = tasks.fire_small_ray_volley,
-											},
+									type = 'sequence',
+									decorators = {
+										{
+											type = 'loop',
+											infinite_loop = true,
+										},
+									},
+									children = {
+										{
+											type = 'wait',
+											duration_ticks = moon_small_ray_volley_interval_ticks,
+										},
+										{
+											type = 'task',
+											task = tasks.fire_small_ray_volley,
 										},
 									},
 								},
@@ -119,18 +122,15 @@ function moon_tree.register()
 					duration_ticks = moon_death_ray_cycle_ticks,
 				},
 				background_tree = {
-					type = 'loop',
-					child = {
-						type = 'sequence',
-						children = {
-							{
-								type = 'task',
-								task = tasks.death_ray_movement,
-							},
-							{
-								type = 'wait',
-								duration_ticks = moon_death_ray_move_pause_ticks,
-							},
+					type = 'sequence',
+					children = {
+						{
+							type = 'task',
+							task = tasks.death_ray_movement,
+						},
+						{
+							type = 'wait',
+							duration_ticks = moon_death_ray_move_pause_ticks,
 						},
 					},
 				},
@@ -149,41 +149,44 @@ function moon_tree.register()
 				fly_attack,
 				death_ray_attack,
 				{
-					type = 'loop',
-					child = {
-						type = 'sequence',
-						children = {
-							{
-								type = 'wait',
-								duration_ticks = moon_wait_for_attack_ticks,
-								services = {
-									{
-										service = services.vertical_playfield_movement,
-										interval = {
-											period_units = moon_slow_vertical_period_units,
-											units_per_tick = moon_slow_vertical_units_per_tick,
-										},
-										restart_timer_on_each_activation = true,
+					type = 'sequence',
+					decorators = {
+						{
+							type = 'loop',
+							infinite_loop = true,
+						},
+					},
+					children = {
+						{
+							type = 'wait',
+							duration_ticks = moon_wait_for_attack_ticks,
+							services = {
+								{
+									service = services.vertical_playfield_movement,
+									interval = {
+										period_units = moon_slow_vertical_period_units,
+										units_per_tick = moon_slow_vertical_units_per_tick,
 									},
+									restart_timer_on_each_activation = true,
 								},
 							},
-							{
-								type = 'weighted_random_selector',
-								choices = {
-									{
-										weight = moon_fly_attack_weight,
-										child = {
-											type = 'sequence',
-											children = {
-												fly_attack,
-												death_ray_attack,
-											},
+						},
+						{
+							type = 'weighted_random_selector',
+							choices = {
+								{
+									weight = moon_fly_attack_weight,
+									child = {
+										type = 'sequence',
+										children = {
+											fly_attack,
+											death_ray_attack,
 										},
 									},
-									{
-										weight = moon_death_ray_attack_weight,
-										child = death_ray_attack,
-									},
+								},
+								{
+									weight = moon_death_ray_attack_weight,
+									child = death_ray_attack,
 								},
 							},
 						},

@@ -146,20 +146,8 @@ function cloud.register()
 						duration_ticks = enemy_cloud_spawn_vlok_steps - 1,
 					},
 					{
-						type = 'loop',
-						child = {
-							type = 'sequence',
-							children = {
-								{
-									type = 'task',
-									task = tasks.spawn_vlok_burst,
-								},
-								{
-									type = 'wait',
-									duration_ticks = enemy_cloud_spawn_vlok_steps - 1,
-								},
-							},
-						},
+						type = 'task',
+						task = tasks.spawn_vlok_burst,
 					},
 				},
 			},

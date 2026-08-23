@@ -93,18 +93,15 @@ function boekfoe.register()
 						duration_ticks = enemy_boek_wait_close_steps,
 					},
 					background_tree = {
-						type = 'loop',
-						child = {
-							type = 'sequence',
-							children = {
-								{
-									type = 'wait',
-									duration_ticks = enemy_boek_spawn_paper_steps - 1,
-								},
-								{
-									type = 'task',
-									task = tasks.spawn_paper,
-								},
+						type = 'sequence',
+						children = {
+							{
+								type = 'wait',
+								duration_ticks = enemy_boek_spawn_paper_steps - 1,
+							},
+							{
+								type = 'task',
+								task = tasks.spawn_paper,
 							},
 						},
 					},

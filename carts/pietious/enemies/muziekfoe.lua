@@ -131,20 +131,8 @@ function muziekfoe.register()
 						duration_ticks = enemy_muziek_spawn_noot_steps - 1,
 					},
 					{
-						type = 'loop',
-						child = {
-							type = 'sequence',
-							children = {
-								{
-									type = 'task',
-									task = tasks.spawn_note,
-								},
-								{
-									type = 'wait',
-									duration_ticks = enemy_muziek_spawn_noot_steps - 1,
-								},
-							},
-						},
+						type = 'task',
+						task = tasks.spawn_note,
 					},
 				},
 			},

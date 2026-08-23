@@ -64,19 +64,21 @@ function stafffoe.register()
 					duration_ticks = enemy_staff_wait_before_spawn_state_steps - 1,
 				},
 				{
-					type = 'loop',
-					count = enemy_staff_spawn_burst_count,
-					child = {
-						type = 'sequence',
-						children = {
-							{
-								type = 'wait',
-								duration_ticks = enemy_staff_wait_before_spawn_steps,
-							},
-							{
-								type = 'task',
-								task = tasks.spawn_burst,
-							},
+					type = 'sequence',
+					decorators = {
+						{
+							type = 'loop',
+							num_loops = enemy_staff_spawn_burst_count,
+						},
+					},
+					children = {
+						{
+							type = 'wait',
+							duration_ticks = enemy_staff_wait_before_spawn_steps,
+						},
+						{
+							type = 'task',
+							task = tasks.spawn_burst,
 						},
 					},
 				},

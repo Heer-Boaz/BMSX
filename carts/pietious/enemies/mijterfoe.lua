@@ -203,30 +203,33 @@ function mijterfoe.register()
 					task = tasks.initialize_direction_cycle,
 				},
 				{
-					type = 'loop',
-					child = {
-						type = 'sequence',
-						children = {
-							{
-								type = 'task',
-								task = tasks.seek_ceiling,
-							},
-							{
-								type = 'wait',
-								duration_ticks = enemy_mijter_hang_steps,
-							},
-							{
-								type = 'task',
-								task = tasks.begin_takeoff,
-							},
-							{
-								type = 'wait',
-								duration_ticks = enemy_mijter_takeoff_steps,
-							},
-							{
-								type = 'task',
-								task = tasks.free_flight,
-							},
+					type = 'sequence',
+					decorators = {
+						{
+							type = 'loop',
+							infinite_loop = true,
+						},
+					},
+					children = {
+						{
+							type = 'task',
+							task = tasks.seek_ceiling,
+						},
+						{
+							type = 'wait',
+							duration_ticks = enemy_mijter_hang_steps,
+						},
+						{
+							type = 'task',
+							task = tasks.begin_takeoff,
+						},
+						{
+							type = 'wait',
+							duration_ticks = enemy_mijter_takeoff_steps,
+						},
+						{
+							type = 'task',
+							task = tasks.free_flight,
 						},
 					},
 				},
