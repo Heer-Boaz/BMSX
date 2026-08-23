@@ -31,6 +31,7 @@ import {
 } from '../../../machine/ts/machine/devices/input/contracts';
 
 const EMPTY_BUTTON_STATE_PATCH: Readonly<Partial<ButtonState>> = Object.freeze({});
+const HOST_OVERLAY_KEYBOARD_SOURCE = 'keyboard:host-overlay';
 
 /**
  * Returns the pressed state of a key or button, and optionally checks if it was clicked.
@@ -79,12 +80,15 @@ type GamepadDeviceBinding = {
 	device: GamepadDevice;
 };
 
+type KeyboardDeviceBinding = {
+	handler: KeyboardInput;
+	source: 'keyboard';
+	assignedPlayer: number;
+	deviceId: string;
+};
+
 type DeviceBinding =
-	| {
-		handler: KeyboardInput;
-		source: 'keyboard';
-		assignedPlayer: number;
-	}
+	| KeyboardDeviceBinding
 	| {
 		handler: PointerInput;
 		source: 'pointer';
@@ -119,7 +123,7 @@ export class Input implements InputControllerInputSource, InputEventSink {
 
 	private readonly deviceBindings = new Map<string, DeviceBinding>();
 	private readonly deviceBindingList: DeviceBinding[] = [];
-	private readonly inputControllerKeyboardHandlers: KeyboardInput[] = [];
+	private readonly keyboardInput: KeyboardInput;
 	private readonly inputControllerPointerHandlers: PointerInput[] = [];
 	public readonly connectedGamepads: GamepadInput[] = [];
 	public controllerPortRevision = 0;
@@ -241,16 +245,16 @@ export class Input implements InputControllerInputSource, InputEventSink {
 			() => this.setControlSupervisorRequestLine(false),
 		);
 		const player = this.getPlayerInput(defaultPlayerIndex);
-		const keyboard = new KeyboardInput(this.clock, 'keyboard:0');
+		const keyboard = new KeyboardInput(this.clock);
+		this.keyboardInput = keyboard;
 		const pointer = new PointerInput(this.clock, 'pointer:0');
 		player.inputHandlers['keyboard'] = keyboard;
 		player.inputHandlers['pointer'] = pointer;
-		const keyboardBinding: DeviceBinding = { handler: keyboard, source: 'keyboard', assignedPlayer: defaultPlayerIndex };
+		const keyboardBinding: DeviceBinding = { handler: keyboard, source: 'keyboard', assignedPlayer: defaultPlayerIndex, deviceId: 'keyboard:0' };
 		const pointerBinding: DeviceBinding = { handler: pointer, source: 'pointer', assignedPlayer: defaultPlayerIndex };
 		this.deviceBindings.set('keyboard:0', keyboardBinding);
 		this.deviceBindings.set('pointer:0', pointerBinding);
 		this.deviceBindingList.push(keyboardBinding, pointerBinding);
-		this.inputControllerKeyboardHandlers.push(keyboard);
 		this.inputControllerPointerHandlers.push(pointer);
 		const devices = inputSource.devices();
 		if (startingGamepadIndex >= 0) {
@@ -289,7 +293,7 @@ export class Input implements InputControllerInputSource, InputEventSink {
 		// Remove all player inputs
 		this.playerInputs = [];
 		this.unsubscribeHostInput();
-		this.inputControllerKeyboardHandlers.length = 0;
+		this.keyboardInput.reset();
 		this.inputControllerPointerHandlers.length = 0;
 		this.pendingVibrationDevices.length = 0;
 		this.debugHotkeysPaused = false;
@@ -334,6 +338,15 @@ export class Input implements InputControllerInputSource, InputEventSink {
 		this.routeButtonEvent(binding, code, down, value, timestamp, pressId);
 	}
 
+	/** Publishes one host-owned virtual keyboard source through PlayerInput and the ICU snapshot. */
+	public setVirtualKeyboardKey(code: string, down: boolean): void {
+		if (down) {
+			this.keyboardInput.keydown(HOST_OVERLAY_KEYBOARD_SOURCE, code);
+		} else {
+			this.keyboardInput.keyup(HOST_OVERLAY_KEYBOARD_SOURCE, code);
+		}
+	}
+
 	public inputAxis1(deviceId: string, code: string, x: number, timestamp: number): void {
 		const binding = this.deviceBindings.get(deviceId);
 		if (!binding) return;
@@ -356,7 +369,7 @@ export class Input implements InputControllerInputSource, InputEventSink {
 	): void {
 		switch (binding.source) {
 			case 'keyboard':
-				if (down) binding.handler.keydown(code); else binding.handler.keyup(code);
+				if (down) binding.handler.keydown(binding.deviceId, code); else binding.handler.keyup(binding.deviceId, code);
 				break;
 			case 'pointer':
 				binding.handler.ingestButton(code, down, value, timestamp, pressId);
@@ -416,11 +429,10 @@ export class Input implements InputControllerInputSource, InputEventSink {
 		}
 		switch (device.kind) {
 			case 'keyboard': {
-				const handler = new KeyboardInput(this.clock, device.id);
-				const binding: DeviceBinding = { handler, source: 'keyboard', assignedPlayer: defaultPlayerIndex };
+				const handler = this.keyboardInput;
+				const binding: DeviceBinding = { handler, source: 'keyboard', assignedPlayer: defaultPlayerIndex, deviceId: device.id };
 				this.deviceBindings.set(device.id, binding);
 				this.deviceBindingList.push(binding);
-				this.inputControllerKeyboardHandlers.push(handler);
 				return;
 			}
 			case 'pointer':
@@ -451,7 +463,11 @@ export class Input implements InputControllerInputSource, InputEventSink {
 				this.pendingVibrationDevices.splice(vibrationIndex, 1);
 			}
 		}
-		binding.handler.reset();
+		if (binding.source === 'keyboard') {
+			binding.handler.disconnectSource(binding.deviceId);
+		} else {
+			binding.handler.reset();
+		}
 		this.deviceBindings.delete(deviceId);
 		const bindingIndex = this.deviceBindingList.indexOf(binding);
 		this.deviceBindingList.splice(bindingIndex, 1);
@@ -459,10 +475,7 @@ export class Input implements InputControllerInputSource, InputEventSink {
 			const gamepadIndex = this.connectedGamepads.indexOf(binding.handler);
 			this.connectedGamepads.splice(gamepadIndex, 1);
 		}
-		if (binding.source === 'keyboard') {
-			const handlerIndex = this.inputControllerKeyboardHandlers.indexOf(binding.handler);
-			this.inputControllerKeyboardHandlers.splice(handlerIndex, 1);
-		} else if (binding.source === 'pointer') {
+		if (binding.source === 'pointer') {
 			const handlerIndex = this.inputControllerPointerHandlers.indexOf(binding.handler);
 			this.inputControllerPointerHandlers.splice(handlerIndex, 1);
 		}
@@ -527,9 +540,7 @@ export class Input implements InputControllerInputSource, InputEventSink {
 		for (let i = 0; i < INPUT_CONTROLLER_KEY_WORD_COUNT; i += 1) {
 			keyWords[i] = 0;
 		}
-		for (let i = 0; i < this.inputControllerKeyboardHandlers.length; i += 1) {
-			this.inputControllerKeyboardHandlers[i].writeInputControllerKeyWords(keyWords);
-		}
+		this.keyboardInput.writeInputControllerKeyWords(keyWords);
 	}
 
 	private samplePadSnapshot(pad: number, snapshot: InputControllerSnapshot): void {

@@ -5,15 +5,17 @@ import { INPUT_CONTROLLER_KEY_WORD_COUNT } from '../../../machine/ts/machine/dev
 import { hidKeyUsageForCode } from './hid_keys';
 
 
-/** Retains physical keyboard input and its normalized host-control projection. */
+/** Retains the combined keyboard state of every keyboard source assigned to player one. */
 export class KeyboardInput implements KeyboardInputHandler {
 	/**
-	 * Event-latched physical key state. pollInput publishes this into the
+	 * Event-latched aggregate key state. pollInput publishes this into the
 	 * host-facing key and mapped-button views once per host frame.
 	 */
 	private keyStates: KeyOrButtonId2ButtonState = {};
 	private polledKeyStates: KeyOrButtonId2ButtonState = {};
 	private mappedButtonStates: KeyOrButtonId2ButtonState = {};
+	private readonly pressedKeysBySource = new Map<string, Set<string>>();
+	private keySourceCounts: Record<string, number> = {};
 	private readonly keyUsageWords = new Uint32Array(INPUT_CONTROLLER_KEY_WORD_COUNT);
 	private readonly routedKeyUsageWords = new Uint32Array(INPUT_CONTROLLER_KEY_WORD_COUNT);
 
@@ -21,7 +23,6 @@ export class KeyboardInput implements KeyboardInputHandler {
 
 	constructor(
 		private readonly clock: HostClock,
-		public readonly deviceId: string = 'keyboard:0',
 	) {
 		this.reset();
 	}
@@ -30,6 +31,8 @@ export class KeyboardInput implements KeyboardInputHandler {
 		this.keyStates = {};
 		this.polledKeyStates = {};
 		this.mappedButtonStates = {};
+		this.pressedKeysBySource.clear();
+		this.keySourceCounts = {};
 		this.keyUsageWords.fill(0);
 		this.routedKeyUsageWords.fill(0);
 	}
@@ -184,33 +187,70 @@ export class KeyboardInput implements KeyboardInputHandler {
 	 * Sets the key state to true when a key is pressed.
 	 * @param key_code - The button ID or string representing the key.
 	 */
-	keydown(key_code: KeyboardButtonId | string): void {
-		const now = this.clock.now();
-		const state = this.keyStates[key_code] ?? (this.keyStates[key_code] = makeButtonState());
-		if (!state.pressed) {
-			state.pressed = true;
-			state.timestamp = now;
-			state.pressedAtMs = now;
-			state.releasedAtMs = 0;
-			state.pressId = this.nextPressId++;
-			state.justpressed = true;
-			this.setKeyUsageWord(key_code, true);
+	public keydown(sourceId: string, keyCode: KeyboardButtonId | string): void {
+		let pressedKeys = this.pressedKeysBySource.get(sourceId);
+		if (!pressedKeys) {
+			pressedKeys = new Set<string>();
+			this.pressedKeysBySource.set(sourceId, pressedKeys);
 		}
+		if (pressedKeys.has(keyCode)) {
+			return;
+		}
+		pressedKeys.add(keyCode);
+		const sourceCount = this.keySourceCounts[keyCode] || 0;
+		this.keySourceCounts[keyCode] = sourceCount + 1;
+		if (sourceCount !== 0) {
+			return;
+		}
+		const now = this.clock.now();
+		const state = this.keyStates[keyCode] ?? (this.keyStates[keyCode] = makeButtonState());
+		state.pressed = true;
+		state.timestamp = now;
+		state.pressedAtMs = now;
+		state.releasedAtMs = 0;
+		state.pressId = this.nextPressId++;
+		state.justpressed = true;
+		this.setKeyUsageWord(keyCode, true);
 	}
 
 	/**
 	 * Handles the keyup event for a given key.
 	 * @param key_code - The key identifier or name.
 	 */
-	keyup(key_code: KeyboardButtonId | string): void {
-		const state = this.keyStates[key_code];
-		if (!state || (!state.pressed && !state.justpressed)) return;
+	public keyup(sourceId: string, keyCode: KeyboardButtonId | string): void {
+		const pressedKeys = this.pressedKeysBySource.get(sourceId);
+		if (!pressedKeys || !pressedKeys.delete(keyCode)) {
+			return;
+		}
+		this.releaseKey(keyCode);
+	}
+
+	/** Releases every key retained by a disconnected keyboard source. */
+	public disconnectSource(sourceId: string): void {
+		const pressedKeys = this.pressedKeysBySource.get(sourceId);
+		if (!pressedKeys) {
+			return;
+		}
+		for (const keyCode of pressedKeys) {
+			this.releaseKey(keyCode);
+		}
+		this.pressedKeysBySource.delete(sourceId);
+	}
+
+	private releaseKey(keyCode: KeyboardButtonId | string): void {
+		const sourceCount = this.keySourceCounts[keyCode] - 1;
+		if (sourceCount !== 0) {
+			this.keySourceCounts[keyCode] = sourceCount;
+			return;
+		}
+		delete this.keySourceCounts[keyCode];
+		const state = this.keyStates[keyCode];
 		state.pressed = false;
 		state.timestamp = this.clock.now();
 		state.pressedAtMs = 0;
 		state.releasedAtMs = state.timestamp;
 		state.justreleased = true;
-		this.setKeyUsageWord(key_code, false);
+		this.setKeyUsageWord(keyCode, false);
 	}
 
 }

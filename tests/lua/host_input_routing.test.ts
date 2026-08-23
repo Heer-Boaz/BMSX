@@ -111,6 +111,35 @@ test('host key repeat survives frame-local key consumption', () => {
 	input.dispose();
 });
 
+test('physical and host overlay keyboards retain independent key ownership', () => {
+	const { input, setTime } = createInput();
+	const keyboard = input.getPlayerInput(1).inputHandlers.keyboard!;
+	const snapshot = createInputControllerSnapshot();
+
+	input.inputButton('keyboard:0', 'KeyA', true, 1, 0, 1);
+	input.setVirtualKeyboardKey('KeyA', true);
+	input.pollInput();
+	input.sampleInputControllerSnapshot(snapshot);
+	assert.equal(keyboard.getKeyState('KeyA').pressed, true);
+	assert.equal(keyWordContains(snapshot.keyWords, 'KeyA'), true);
+
+	setTime(10);
+	input.setVirtualKeyboardKey('KeyA', false);
+	input.pollInput();
+	input.sampleInputControllerSnapshot(snapshot);
+	assert.equal(keyboard.getKeyState('KeyA').pressed, true);
+	assert.equal(keyboard.getKeyState('KeyA').justreleased, false);
+	assert.equal(keyWordContains(snapshot.keyWords, 'KeyA'), true);
+
+	setTime(20);
+	input.inputButton('keyboard:0', 'KeyA', false, 0, 20, 1);
+	input.pollInput();
+	input.sampleInputControllerSnapshot(snapshot);
+	assert.equal(keyboard.getKeyState('KeyA').justreleased, true);
+	assert.equal(keyWordContains(snapshot.keyWords, 'KeyA'), false);
+	input.dispose();
+});
+
 test('quick menu accepts navigation after consuming its opening frame', () => {
 	const { input, setTime } = createInput();
 	const presenter = {
