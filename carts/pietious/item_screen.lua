@@ -166,19 +166,18 @@ end
 function item_screen:shift_secondary_weapon_selection(direction)
 	local player<const> = self.player
 	local previous_index<const> = self.secondary_weapon_selection_index
-	if direction > 0 then
-		for i = self.secondary_weapon_selection_index + 2, #secondary_weapon_order do
-			if player.inventory_items[secondary_weapon_order[i]] then
-				self.secondary_weapon_selection_index = i - 1
-				break
-			end
+	local weapon_count<const> = #secondary_weapon_order
+	local index = previous_index
+	for _ = 1, weapon_count do
+		index = index + direction
+		if index < 0 then
+			index = weapon_count - 1
+		elseif index == weapon_count then
+			index = 0
 		end
-	elseif direction < 0 then
-		for i = self.secondary_weapon_selection_index, 1, -1 do
-			if player.inventory_items[secondary_weapon_order[i]] then
-				self.secondary_weapon_selection_index = i - 1
-				break
-			end
+		if player.inventory_items[secondary_weapon_order[index + 1]] then
+			self.secondary_weapon_selection_index = index
+			break
 		end
 	end
 	if self.secondary_weapon_selection_index ~= previous_index then
