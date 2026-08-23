@@ -85,27 +85,27 @@ function __bmsx_host_test.update()
 
 	if step < draaideur_push_steps then
 		assert(door.state_machines:matches_state(test.active_state),
-			'draaideur opened before the 0x1e-VBlank push boundary')
+			'draaideur opened before the 0x1e-update push boundary')
 		assert(door.collision_enabled, 'draaideur released collision while still closed')
 		return false
 	end
 
 	if step == draaideur_push_steps then
 		assert(door.state_machines:matches_state(test.opening_state),
-			'draaideur did not open at the 0x1e-VBlank push boundary')
+			'draaideur did not open at the 0x1e-update push boundary')
 		assert(not door.collision_enabled, 'opening draaideur retained room collision')
 		assert(player.doorpass_count == 1, 'draaideur did not admit exactly one player passage')
 		assert(*selected_apu_source == rotatedoor_source_address,
 			'draaideur admission did not select its authored sound')
 		assert(door.sprite_component.imgid == 'draaideur_1_closed',
-			'draaideur rotated before its first six-VBlank phase elapsed')
+			'draaideur rotated before its first six-update phase elapsed')
 		return false
 	end
 
 	local opening_step<const> = step - draaideur_push_steps
 	if opening_step < draaideur_pose_steps then
 		assert(door.sprite_component.imgid == 'draaideur_1_closed',
-			'draaideur left its closed pose before six VBlanks')
+			'draaideur left its closed pose before six updates')
 		return false
 	end
 	if opening_step < draaideur_pose_steps * 2 then

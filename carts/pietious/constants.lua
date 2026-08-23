@@ -392,14 +392,14 @@ world_entrance_open_phase_frames = 6
 player_world_transition_frames = 64
 player_shrine_transition_frames = 32
 player_transition_animation_hold_frames = 4
--- MoG trap type 4 initializes its push counter to 0x1e VBlanks and advances
--- each of the four rotating-door poses after six VBlanks. Pietious admits one
--- gameplay update per two VBlanks, so the authored gameplay counts are halved.
-draaideur_push_steps = 15
-draaideur_pose_steps = 3
-draaideur_pass_steps = 12
-draaideur_pass_dx = 2
-draaideur_walk_pose_steps = 2
+-- MoG trap type 4 advances its push, rotation and passage counters in the
+-- admitted interrupt bottom half. Pietious already runs that gameplay cadence
+-- once per two VBlanks, so retain the original update counts and pixel step.
+draaideur_push_steps = 0x1e
+draaideur_pose_steps = 6
+draaideur_pass_steps = 24
+draaideur_pass_dx = 1
+draaideur_walk_pose_steps = 4
 shrine_hit_left_px = room_tile_size
 shrine_hit_top_px = room_tile_size
 shrine_hit_right_px = room_tile_size2
