@@ -242,6 +242,7 @@ end
 
 init()
 gx_texture.upload('pietolon_stand_r')
+gx_texture.upload('world1_daemon_walk_1')
 new_game()
 vblank.wait()
 
