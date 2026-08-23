@@ -45,50 +45,49 @@ function moon_tree.register()
 				},
 			},
 			{
-				type = 'parallel_one',
-				children = {
-					{
-						type = 'task',
-						task = tasks.small_ray_pass,
-						interval_ticks = moon_small_ray_move_interval_ticks,
-					},
-					{
-						type = 'sequence',
-						children = {
-							{
-								type = 'task',
-								task = tasks.rotate_to_small_ray_direction,
-								interval_ticks = 1,
-							},
-							{
-								type = 'sequence',
-								services = {
-									{
-										service = services.small_ray_flashes,
-									},
+				type = 'simple_parallel',
+				finish_mode = 'abort_background',
+				main_task = {
+					type = 'task',
+					task = tasks.small_ray_pass,
+					interval_ticks = moon_small_ray_move_interval_ticks,
+				},
+				background_tree = {
+					type = 'sequence',
+					children = {
+						{
+							type = 'task',
+							task = tasks.rotate_to_small_ray_direction,
+							interval_ticks = 1,
+						},
+						{
+							type = 'sequence',
+							services = {
+								{
+									service = services.small_ray_flashes,
 								},
-								children = {
-									{
-										type = 'wait',
-										duration_ticks = moon_small_ray_flash_ticks,
-									},
-									{
-										type = 'task',
-										task = tasks.fire_small_ray_volley,
-									},
-									{
-										type = 'loop',
-										child = {
-											type = 'sequence',
-											children = {
-												{
-													type = 'wait',
-													duration_ticks = moon_small_ray_volley_interval_ticks,
-												},
-												{
-													type = 'task',
-													task = tasks.fire_small_ray_volley,
-												},
+							},
+							children = {
+								{
+									type = 'wait',
+									duration_ticks = moon_small_ray_flash_ticks,
+								},
+								{
+									type = 'task',
+									task = tasks.fire_small_ray_volley,
+								},
+								{
+									type = 'loop',
+									child = {
+										type = 'sequence',
+										children = {
+											{
+												type = 'wait',
+												duration_ticks = moon_small_ray_volley_interval_ticks,
+											},
+											{
+												type = 'task',
+												task = tasks.fire_small_ray_volley,
 											},
 										},
 									},
@@ -113,25 +112,24 @@ function moon_tree.register()
 				task = tasks.begin_death_ray,
 			},
 			{
-				type = 'parallel_one',
-				children = {
-					{
-						type = 'wait',
-						duration_ticks = moon_death_ray_cycle_ticks,
-					},
-					{
-						type = 'loop',
-						child = {
-							type = 'sequence',
-							children = {
-								{
-									type = 'task',
-									task = tasks.death_ray_movement,
-								},
-								{
-									type = 'wait',
-									duration_ticks = moon_death_ray_move_pause_ticks,
-								},
+				type = 'simple_parallel',
+				finish_mode = 'abort_background',
+				main_task = {
+					type = 'wait',
+					duration_ticks = moon_death_ray_cycle_ticks,
+				},
+				background_tree = {
+					type = 'loop',
+					child = {
+						type = 'sequence',
+						children = {
+							{
+								type = 'task',
+								task = tasks.death_ray_movement,
+							},
+							{
+								type = 'wait',
+								duration_ticks = moon_death_ray_move_pause_ticks,
 							},
 						},
 					},

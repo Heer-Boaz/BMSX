@@ -34,12 +34,6 @@ function execution_layout.allocate_slot(layout)
 	return slot
 end
 
-function execution_layout.allocate_slots(layout, count)
-	local first_slot<const> = layout.state_slot_count + 1
-	layout.state_slot_count = layout.state_slot_count + count
-	return first_slot
-end
-
 function execution_layout.allocate_flag(layout)
 	local slot<const> = execution_layout.allocate_slot(layout)
 	local flag_slots<const> = layout.flag_slots

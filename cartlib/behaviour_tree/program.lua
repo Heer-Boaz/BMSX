@@ -10,12 +10,13 @@ local timeline_task<const> = require('cartlib/behaviour_tree/timeline_task')
 
 -- Admission-only lowering. Sequence/selector programs retain their running
 -- child; Blackboard observers enqueue branch execution requests instead of
--- rescanning reactive composites every frame. Parallel programs retain
--- terminal children. Tasks requesting node memory receive one component-owned
--- state table; active Services occupy a preallocated component-owned lane and
--- run before queued flow changes. Externally completed tasks suspend only the
--- evaluator; its retained Service lane keeps the component scheduled. The frame
--- path allocates nothing and never interprets definitions or resolves keys.
+-- rescanning reactive composites every frame. Simple Parallel programs select
+-- their finish policy at admission. Tasks requesting node memory receive one
+-- component-owned state table; active Services occupy a preallocated
+-- component-owned lane and run before queued flow changes. Externally completed
+-- tasks suspend only the evaluator; its retained Service lane keeps the
+-- component scheduled. The frame path allocates nothing and never interprets
+-- definitions or resolves keys.
 
 local program<const> = {}
 local result_waiting<const> = result.waiting
@@ -26,7 +27,6 @@ local compile_by_type<const> = {}
 local compile_node
 
 local allocate_state_slot<const> = execution_layout.allocate_slot
-local allocate_state_slots<const> = execution_layout.allocate_slots
 local allocate_flag<const> = execution_layout.allocate_flag
 
 local return_success<const> = function()
@@ -35,28 +35,6 @@ end
 
 local return_failure<const> = function()
 	return result_failure
-end
-
-local compile_subtree_resetter<const> = function(resetters, resetter_count)
-	local active<const> = {}
-	for index = 1, resetter_count do
-		local reset<const> = resetters[index]
-		if reset then
-			active[#active + 1] = reset
-		end
-	end
-	local active_count<const> = #active
-	if active_count == 0 then
-		return nil
-	end
-	if active_count == 1 then
-		return active[1]
-	end
-	return function(target, execution, execution_state)
-		for index = 1, active_count do
-			active[index](target, execution, execution_state)
-		end
-	end
 end
 
 local compile_children<const> = function(children, layout)
@@ -258,169 +236,177 @@ compile_by_type.selector = function(node, layout, execution_index)
 	end, nil, reset
 end
 
-local compile_parallel_all<const> = function(children, layout)
-	local event_driven_task_count<const> = layout.event_driven_task_count
-	local evaluators<const>, operands<const>, resetters<const>, child_count<const> = compile_children(children, layout)
-	if child_count == 0 then
-		return return_success
-	end
-	if child_count == 1 then
-		return evaluators[1], operands[1], resetters[1]
-	end
-	local first_state_slot<const> = allocate_state_slots(layout, child_count)
-	local reset_children<const> = compile_subtree_resetter(resetters, child_count)
-	local reset<const> = function(target, execution, execution_state)
-		for child_index = 1, child_count do
-			execution_state[first_state_slot + child_index - 1] = nil
+local compile_simple_parallel_reset<const> = function(reset_main, reset_background, main_status_slot)
+	return function(target, execution, execution_state)
+		if main_status_slot ~= nil then
+			execution_state[main_status_slot] = nil
 		end
-		if reset_children ~= nil then
-			reset_children(target, execution, execution_state)
+		if reset_main ~= nil then
+			reset_main(target, execution, execution_state)
+		end
+		if reset_background ~= nil then
+			reset_background(target, execution, execution_state)
 		end
 	end
-	-- Keep ordinary parallel trees on their two-state active path. Only a
-	-- subtree containing an event-driven task pays to merge waiting/running.
-	if layout.event_driven_task_count == event_driven_task_count then
+end
+
+local compile_simple_parallel_abort_background<const> = function(
+	_layout,
+	evaluate_main,
+	main_operand,
+	reset_main,
+	evaluate_background,
+	background_operand,
+	reset_background,
+	has_event_driven_task
+)
+	local reset<const> = compile_simple_parallel_reset(reset_main, reset_background)
+	if not has_event_driven_task then
+		return function(target, execution)
+			local main_status<const> = evaluate_main(target, execution, main_operand)
+			if main_status ~= result_running then
+				reset(target, execution, execution._execution_state)
+				return main_status
+			end
+			local background_status<const> = evaluate_background(target, execution, background_operand)
+			if background_status ~= result_running and reset_background ~= nil then
+				reset_background(target, execution, execution._execution_state)
+			end
+			return result_running
+		end, nil, reset
+	end
+	return function(target, execution)
+		local main_status<const> = evaluate_main(target, execution, main_operand)
+		if main_status >= result_success then
+			reset(target, execution, execution._execution_state)
+			return main_status
+		end
+		local background_status<const> = evaluate_background(target, execution, background_operand)
+		if background_status >= result_success then
+			if reset_background ~= nil then
+				reset_background(target, execution, execution._execution_state)
+			end
+			return result_running
+		end
+		if main_status == result_running or background_status == result_running then
+			return result_running
+		end
+		return result_waiting
+	end, nil, reset
+end
+
+local compile_simple_parallel_wait_for_background<const> = function(
+	layout,
+	evaluate_main,
+	main_operand,
+	reset_main,
+	evaluate_background,
+	background_operand,
+	reset_background,
+	has_event_driven_task
+)
+	-- An already-running main Task leaves an admitted background tree to finish
+	-- regardless of its eventual result. A main Task that fails on its first
+	-- search never admits the background; UE only forces that first background
+	-- search for immediate success.
+	local main_status_slot<const> = allocate_state_slot(layout)
+	local reset<const> = compile_simple_parallel_reset(reset_main, reset_background, main_status_slot)
+	if not has_event_driven_task then
 		return function(target, execution)
 			local execution_state<const> = execution._execution_state
-			local any_running
-			for child_index = 1, child_count do
-				local state_slot<const> = first_state_slot + child_index - 1
-				local status = execution_state[state_slot]
-				if status == nil then
-					status = evaluators[child_index](target, execution, operands[child_index])
+			local previous_main_status<const> = execution_state[main_status_slot]
+			local main_status = previous_main_status
+			if main_status == nil or main_status == result_running then
+				main_status = evaluate_main(target, execution, main_operand)
+				if previous_main_status == nil and main_status == result_failure then
+					reset(target, execution, execution_state)
+					return result_failure
 				end
-				if status ~= result_success then
-					if status == result_running then
-						any_running = true
-					else
-						reset(target, execution, execution_state)
-						return status
+				if main_status == result_running then
+					if previous_main_status == nil then
+						execution_state[main_status_slot] = result_running
 					end
 				else
-					execution_state[state_slot] = result_success
+					execution_state[main_status_slot] = main_status
 				end
 			end
-			if any_running then
-				return result_running
+			local background_status<const> = evaluate_background(target, execution, background_operand)
+			if background_status ~= result_running then
+				if main_status >= result_success then
+					reset(target, execution, execution_state)
+					return main_status
+				end
+				if reset_background ~= nil then
+					reset_background(target, execution, execution_state)
+				end
 			end
-			reset(target, execution, execution_state)
-			return result_success
+			return result_running
 		end, nil, reset
 	end
 	return function(target, execution)
 		local execution_state<const> = execution._execution_state
-		local active_status
-		for child_index = 1, child_count do
-			local state_slot<const> = first_state_slot + child_index - 1
-			local status = execution_state[state_slot]
-			if status == nil then
-				status = evaluators[child_index](target, execution, operands[child_index])
+		local previous_main_status<const> = execution_state[main_status_slot]
+		local main_status = previous_main_status
+		if main_status == nil or main_status == result_running then
+			main_status = evaluate_main(target, execution, main_operand)
+			if previous_main_status == nil and main_status == result_failure then
+				reset(target, execution, execution_state)
+				return result_failure
 			end
-			if status ~= result_success then
-				if status < result_success then
-					if active_status == nil or status > active_status then
-						active_status = status
-					end
-				else
-					reset(target, execution, execution_state)
-					return status
+			if main_status < result_success then
+				if previous_main_status == nil then
+					execution_state[main_status_slot] = result_running
 				end
 			else
-				execution_state[state_slot] = result_success
+				execution_state[main_status_slot] = main_status
 			end
 		end
-		if active_status ~= nil then
-			return active_status
+		local background_status<const> = evaluate_background(target, execution, background_operand)
+		if main_status >= result_success then
+			if background_status >= result_success then
+				reset(target, execution, execution_state)
+				return main_status
+			end
+			return background_status
 		end
-		reset(target, execution, execution_state)
-		return result_success
+		if background_status >= result_success then
+			if reset_background ~= nil then
+				reset_background(target, execution, execution_state)
+			end
+			return result_running
+		end
+		if main_status == result_running or background_status == result_running then
+			return result_running
+		end
+		return result_waiting
 	end, nil, reset
 end
 
-local compile_parallel_one<const> = function(children, layout)
+local compile_simple_parallel_by_finish_mode<const> = {
+	abort_background = compile_simple_parallel_abort_background,
+	wait_for_background = compile_simple_parallel_wait_for_background,
+}
+
+-- UE Simple Parallel admits one main Task and one background subtree. The main
+-- Task is evaluated first; a completed background subtree is restarted on the
+-- following tree update while the main Task remains active. Finish mode is
+-- resolved here so the 50 Hz evaluator contains neither a mode branch nor a
+-- child loop/state array.
+compile_by_type.simple_parallel = function(node, layout)
 	local event_driven_task_count<const> = layout.event_driven_task_count
-	local evaluators<const>, operands<const>, resetters<const>, child_count<const> = compile_children(children, layout)
-	if child_count == 0 then
-		return return_failure
-	end
-	if child_count == 1 then
-		return evaluators[1], operands[1], resetters[1]
-	end
-	local first_state_slot<const> = allocate_state_slots(layout, child_count)
-	local reset_children<const> = compile_subtree_resetter(resetters, child_count)
-	local reset<const> = function(target, execution, execution_state)
-		for child_index = 1, child_count do
-			execution_state[first_state_slot + child_index - 1] = nil
-		end
-		if reset_children ~= nil then
-			reset_children(target, execution, execution_state)
-		end
-	end
-	-- See parallel_all: event-driven status merging is admission-specialized.
-	if layout.event_driven_task_count == event_driven_task_count then
-		return function(target, execution)
-			local execution_state<const> = execution._execution_state
-			local any_running
-			for child_index = 1, child_count do
-				local state_slot<const> = first_state_slot + child_index - 1
-				local status = execution_state[state_slot]
-				if status == nil then
-					status = evaluators[child_index](target, execution, operands[child_index])
-				end
-				if status ~= result_failure then
-					if status == result_running then
-						any_running = true
-					else
-						reset(target, execution, execution_state)
-						return status
-					end
-				else
-					execution_state[state_slot] = result_failure
-				end
-			end
-			if any_running then
-				return result_running
-			end
-			reset(target, execution, execution_state)
-			return result_failure
-		end, nil, reset
-	end
-	return function(target, execution)
-		local execution_state<const> = execution._execution_state
-		local active_status
-		for child_index = 1, child_count do
-			local state_slot<const> = first_state_slot + child_index - 1
-			local status = execution_state[state_slot]
-			if status == nil then
-				status = evaluators[child_index](target, execution, operands[child_index])
-			end
-			if status ~= result_failure then
-				if status < result_success then
-					if active_status == nil or status > active_status then
-						active_status = status
-					end
-				else
-					reset(target, execution, execution_state)
-					return status
-				end
-			else
-				execution_state[state_slot] = result_failure
-			end
-		end
-		if active_status ~= nil then
-			return active_status
-		end
-		reset(target, execution, execution_state)
-		return result_failure
-	end, nil, reset
-end
-
-compile_by_type.parallel_all = function(node, layout)
-	return compile_parallel_all(node.children, layout)
-end
-
-compile_by_type.parallel_one = function(node, layout)
-	return compile_parallel_one(node.children, layout)
+	local evaluate_main<const>, main_operand<const>, reset_main<const> = compile_node(node.main_task, layout)
+	local evaluate_background<const>, background_operand<const>, reset_background<const> =
+		compile_node(node.background_tree, layout)
+	return compile_simple_parallel_by_finish_mode[node.finish_mode](
+		layout,
+		evaluate_main,
+		main_operand,
+		reset_main,
+		evaluate_background,
+		background_operand,
+		reset_background,
+		layout.event_driven_task_count ~= event_driven_task_count
+	)
 end
 
 local compile_random_children<const> = function(children, layout)

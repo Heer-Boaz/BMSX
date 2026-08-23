@@ -86,27 +86,26 @@ function boekfoe.register()
 					task = tasks.open_cover,
 				},
 				{
-					type = 'parallel_one',
-					children = {
-						{
-							type = 'loop',
-							child = {
-								type = 'sequence',
-								children = {
-									{
-										type = 'wait',
-										duration_ticks = enemy_boek_spawn_paper_steps - 1,
-									},
-									{
-										type = 'task',
-										task = tasks.spawn_paper,
-									},
+					type = 'simple_parallel',
+					finish_mode = 'abort_background',
+					main_task = {
+						type = 'wait',
+						duration_ticks = enemy_boek_wait_close_steps,
+					},
+					background_tree = {
+						type = 'loop',
+						child = {
+							type = 'sequence',
+							children = {
+								{
+									type = 'wait',
+									duration_ticks = enemy_boek_spawn_paper_steps - 1,
+								},
+								{
+									type = 'task',
+									task = tasks.spawn_paper,
 								},
 							},
-						},
-						{
-							type = 'wait',
-							duration_ticks = enemy_boek_wait_close_steps,
 						},
 					},
 				},

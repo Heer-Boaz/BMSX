@@ -117,32 +117,31 @@ function muziekfoe.register()
 	local tree_id<const> = 'enemy_muziekfoe'
 	behaviour_tree_library.register(tree_id, {
 		root = {
-			type = 'parallel_all',
-			children = {
-				{
-					type = 'task',
-					task = tasks.move,
-				},
-				{
-					type = 'sequence',
-					children = {
-						{
-							type = 'wait',
-							duration_ticks = enemy_muziek_spawn_noot_steps - 1,
-						},
-						{
-							type = 'loop',
-							child = {
-								type = 'sequence',
-								children = {
-									{
-										type = 'task',
-										task = tasks.spawn_note,
-									},
-									{
-										type = 'wait',
-										duration_ticks = enemy_muziek_spawn_noot_steps - 1,
-									},
+			type = 'simple_parallel',
+			finish_mode = 'abort_background',
+			main_task = {
+				type = 'task',
+				task = tasks.move,
+			},
+			background_tree = {
+				type = 'sequence',
+				children = {
+					{
+						type = 'wait',
+						duration_ticks = enemy_muziek_spawn_noot_steps - 1,
+					},
+					{
+						type = 'loop',
+						child = {
+							type = 'sequence',
+							children = {
+								{
+									type = 'task',
+									task = tasks.spawn_note,
+								},
+								{
+									type = 'wait',
+									duration_ticks = enemy_muziek_spawn_noot_steps - 1,
 								},
 							},
 						},
