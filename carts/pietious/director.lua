@@ -58,7 +58,6 @@ local halo_teleport_timeline_id<const> = 'director.halo.transition'
 local banner_world_timeline_id<const> = 'director.banner.world'
 local banner_castle_timeline_id<const> = 'director.banner.castle'
 local banner_pre_delay_timeline_id<const> = 'director.banner.prewait'
-local banner_prewait_cue_event<const> = 'd.bp.c'
 local banner_world_show_event<const> = 'd.bw.s'
 local banner_castle_show_event<const> = 'd.bc.s'
 local room_switch_passthrough_dirs<const> = {
@@ -350,14 +349,6 @@ local define_director_fsm<const> = function()
 					frames = timeline.range(flow_banner_prewait_frames),
 					playback_mode = 'once',
 					clock_source = timeline_clock_source.frame,
-					tracks = {
-						{
-							kind = 'event',
-							keys = {
-								{ frame = 0, event = banner_prewait_cue_event, direction = 'forward' },
-							},
-						},
-					},
 				},
 				autoplay = false,
 			},

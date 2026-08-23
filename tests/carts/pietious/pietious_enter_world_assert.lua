@@ -1,7 +1,13 @@
 local world<const> = require('cartlib/world/world')
 local registry<const> = require('cartlib/registry')
+local rom_dir<const> = require('cartlib/rom_dir')
 require('constants')
 local castle_map<const> = require('castle/map')
+
+local apu_slot<const>: *word = 0x08000148
+local selected_apu_source<const>: *word = 0x0800018c
+local appearance_source_address<const> = rom_dir.audio('appearance').addr
+local game_start_source_address<const> = rom_dir.audio('gamestart').addr
 
 __bmsx_host_test = __bmsx_host_test or {
 	frame_count = 0,
@@ -72,6 +78,14 @@ function __bmsx_host_test.update(_frame, _current_music)
 		return host.press('ArrowDown', 2)
 	end
 
+	*apu_slot = 0
+	local selected_source<const> = *selected_apu_source
+	assert(selected_source ~= appearance_source_address,
+		'world entry emitted the unrelated appearance cue')
+	if selected_source == game_start_source_address then
+		__bmsx_host_test.saw_game_start = true
+	end
+
 	local castle<const> = registry:get('c')
 	local room<const> = registry:get('room')
 	local player<const> = registry:get('pietolon')
@@ -98,6 +112,8 @@ function __bmsx_host_test.update(_frame, _current_music)
 		and __bmsx_host_test.saw_hidden_player
 
 	if final_outcome then
+		assert(__bmsx_host_test.saw_game_start,
+			'world banner did not select the game-start cue')
 		__bmsx_host_test.stable_frames = __bmsx_host_test.stable_frames + 1
 		return __bmsx_host_test.stable_frames >= 10
 	end
