@@ -3,15 +3,16 @@ local observer_program<const> = require('cartlib/behaviour_tree/observer_program
 local result<const> = require('cartlib/behaviour_tree/result')
 
 -- Decorators are lowered at tree admission. Custom decorator types own their
--- predicate; a tree placement selects the type. Blackboard decorators retain
--- the event-driven observer path. Target predicates are evaluated directly
--- while their branch owns execution, then abort that branch as soon as the
--- predicate stops holding. Loop decorators restart the complete decorated
--- branch, including its admission conditions and Services. Finite loops can
--- complete synchronous iterations in one search; infinite loops admit at most
--- one iteration per behaviour update. Predicate evaluation allocates no node
--- memory and introduces no Blackboard shadow state for values already owned by
--- the target.
+-- predicate; a tree placement selects the type and its observation policy.
+-- Admission-only predicates are not polled after their branch starts. A
+-- predicate authored with `observer_aborts = 'self'` is evaluated while its
+-- branch owns execution and aborts that branch as soon as it stops holding.
+-- Blackboard decorators retain the event-driven observer path. Loop
+-- decorators restart the complete decorated branch, including its admission
+-- conditions and Services. Finite loops can complete synchronous iterations
+-- in one search; infinite loops admit at most one iteration per behaviour
+-- update. Predicate evaluation allocates no node memory and introduces no
+-- Blackboard shadow state for values already owned by the target.
 
 local decorator_program<const> = {}
 local result_success<const> = result.success
@@ -39,6 +40,27 @@ local compile_predicate<const> = function(definitions)
 	end
 end
 
+local compile_predicate_set<const> = function(definitions)
+	local definition_count<const> = #definitions
+	local observed_definitions<const> = {}
+	local observed_count = 0
+	for index = 1, definition_count do
+		local definition<const> = definitions[index]
+		if definition.observer_aborts == 'self' then
+			observed_count = observed_count + 1
+			observed_definitions[observed_count] = definition
+		end
+	end
+	local admission_predicate<const> = compile_predicate(definitions)
+	if observed_count == 0 then
+		return admission_predicate
+	end
+	if observed_count == definition_count then
+		return admission_predicate, admission_predicate
+	end
+	return admission_predicate, compile_predicate(observed_definitions)
+end
+
 local compile_predicate_decorators<const> = function(
 	definitions,
 	layout,
@@ -49,7 +71,7 @@ local compile_predicate_decorators<const> = function(
 	track_admission,
 	child_tracks_admission
 )
-	local predicate<const> = compile_predicate(definitions)
+	local predicate<const>, observed_predicate<const> = compile_predicate_set(definitions)
 	if reset_child == nil then
 		if track_admission then
 			return function(target, execution)
@@ -78,13 +100,35 @@ local compile_predicate_decorators<const> = function(
 		end
 	end
 	if track_admission then
+		if observed_predicate == nil then
+			return function(target, execution)
+				local execution_state<const> = execution._execution_state
+				if not execution_state[active_slot] then
+					if not predicate(target, execution) then
+						return result_failure, false
+					end
+					execution_state[active_slot] = true
+				end
+				local status, admitted
+				if child_tracks_admission then
+					status, admitted = evaluate_child(target, execution, operand)
+				else
+					status = evaluate_child(target, execution, operand)
+					admitted = true
+				end
+				execution_state[active_slot] = admitted and status < result_success
+				return status, admitted
+			end, nil, reset, branch
+		end
 		return function(target, execution)
 			local execution_state<const> = execution._execution_state
-			if not predicate(target, execution) then
-				if execution_state[active_slot] then
+			if execution_state[active_slot] then
+				if not observed_predicate(target, execution) then
 					execution_state[active_slot] = false
 					reset_child(target, execution, execution_state)
+					return result_failure, false
 				end
+			elseif not predicate(target, execution) then
 				return result_failure, false
 			end
 			local status, admitted
@@ -98,13 +142,29 @@ local compile_predicate_decorators<const> = function(
 			return status, admitted
 		end, nil, reset, branch
 	end
+	if observed_predicate == nil then
+		return function(target, execution)
+			local execution_state<const> = execution._execution_state
+			if not execution_state[active_slot] then
+				if not predicate(target, execution) then
+					return result_failure
+				end
+				execution_state[active_slot] = true
+			end
+			local status<const> = evaluate_child(target, execution, operand)
+			execution_state[active_slot] = status < result_success
+			return status
+		end, nil, reset, branch
+	end
 	return function(target, execution)
 		local execution_state<const> = execution._execution_state
-		if not predicate(target, execution) then
-			if execution_state[active_slot] then
+		if execution_state[active_slot] then
+			if not observed_predicate(target, execution) then
 				execution_state[active_slot] = false
 				reset_child(target, execution, execution_state)
+				return result_failure
 			end
+		elseif not predicate(target, execution) then
 			return result_failure
 		end
 		local status<const> = evaluate_child(target, execution, operand)

@@ -192,6 +192,7 @@ function crossfoe.register()
 						{
 							type = 'condition',
 							decorator = decorators.player_overlaps_takeoff_lane,
+							observer_aborts = 'self',
 						},
 					},
 				},
