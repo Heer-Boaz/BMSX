@@ -7,6 +7,7 @@ import type { GamepadDevice, InputSource } from '../../hosts/common/input/contra
 import { Input } from '../../hosts/common/input/manager';
 import {
 	HOST_IDE_BUTTON,
+	HOST_ON_SCREEN_KEYBOARD_BUTTON,
 } from '../../hosts/common/input/shortcuts';
 import {
 	createInputControllerSnapshot,
@@ -35,6 +36,26 @@ function createInput(): { input: Input; setTime(time: number): void } {
 	return {
 		input: new Input(clock, source, -1),
 		setTime: time => { currentTime = time; },
+	};
+}
+
+function createGamepadInput(clock: HostClock): { input: Input; gamepad: GamepadDevice } {
+	const gamepad: GamepadDevice = {
+		id: 'gamepad:0',
+		kind: 'gamepad',
+		gamepadIndex: 0,
+		label: 'GAMEPAD',
+		vibrationInitialization: null,
+		supportsVibration: false,
+		setVibration: () => {},
+	};
+	const source: InputSource = {
+		devices: () => [gamepad],
+		subscribe: () => () => {},
+	};
+	return {
+		input: new Input(clock, source, gamepad.gamepadIndex),
+		gamepad,
 	};
 }
 
@@ -117,6 +138,46 @@ test('host control routing reserves Select without leaking split-frame shortcuts
 	assert.equal(keyboard.getKeyState('Backspace').consumed, false);
 
 	dispose();
+	input.dispose();
+});
+
+test('on-screen keyboard shortcut context retains keyboard shortcuts and excludes gamepad peers', () => {
+	let currentTime = 0;
+	const clock = { now: () => currentTime } as HostClock;
+	const { input, gamepad } = createGamepadInput(clock);
+	const shortcuts = input.getGlobalShortcutRegistry();
+	let ideShortcutCount = 0;
+	shortcuts.registerControlShortcut(1, HOST_IDE_BUTTON, () => { ideShortcutCount += 1; });
+	shortcuts.registerControlShortcut(1, HOST_ON_SCREEN_KEYBOARD_BUTTON, () => {});
+	shortcuts.setExclusiveGamepadControlShortcut(HOST_ON_SCREEN_KEYBOARD_BUTTON);
+
+	input.inputButton(gamepad.id, 'select', true, 1, currentTime, 1);
+	input.inputButton(gamepad.id, 'rb', true, 1, currentTime, 2);
+	input.pollInput();
+	assert.equal(ideShortcutCount, 0);
+	assert.equal(input.getPlayerInput(1).inputHandlers.gamepad!.getButtonState('rb').consumed, false);
+
+	currentTime += 1;
+	input.inputButton('keyboard:0', 'ControlRight', true, 1, currentTime, 3);
+	input.inputButton('keyboard:0', 'ShiftRight', true, 1, currentTime, 4);
+	input.pollInput();
+	assert.equal(ideShortcutCount, 1);
+
+	shortcuts.setExclusiveGamepadControlShortcut(null);
+	currentTime += 1;
+	input.pollInput();
+	assert.equal(ideShortcutCount, 1);
+	currentTime += 1;
+	input.inputButton(gamepad.id, 'select', false, 0, currentTime, 1);
+	input.inputButton(gamepad.id, 'rb', false, 0, currentTime, 2);
+	input.inputButton('keyboard:0', 'ControlRight', false, 0, currentTime, 3);
+	input.inputButton('keyboard:0', 'ShiftRight', false, 0, currentTime, 4);
+	input.pollInput();
+	currentTime += 1;
+	input.inputButton(gamepad.id, 'select', true, 1, currentTime, 5);
+	input.inputButton(gamepad.id, 'rb', true, 1, currentTime, 6);
+	input.pollInput();
+	assert.equal(ideShortcutCount, 2);
 	input.dispose();
 });
 
@@ -333,23 +394,10 @@ test('quick menu routes pointer taps through retained option actions', () => {
 	input.dispose();
 });
 
-test('on-screen keyboard publishes gamepad and pointer HID key pulses', () => {
+test('on-screen keyboard owns controller navigation and emits retained HID commands', () => {
 	let currentTime = 0;
 	const clock = { now: () => currentTime } as HostClock;
-	const gamepad: GamepadDevice = {
-		id: 'gamepad:0',
-		kind: 'gamepad',
-		gamepadIndex: 0,
-		label: 'GAMEPAD',
-		vibrationInitialization: null,
-		supportsVibration: false,
-		setVibration: () => {},
-	};
-	const source: InputSource = {
-		devices: () => [gamepad],
-		subscribe: () => () => {},
-	};
-	const input = new Input(clock, source, 0);
+	const { input, gamepad } = createGamepadInput(clock);
 	const hostOverlayQueue = new HostOverlayQueue();
 	const displayBounds = { width: 512, height: 424, left: 10, top: 20 };
 	const presenter = {
@@ -376,10 +424,16 @@ test('on-screen keyboard publishes gamepad and pointer HID key pulses', () => {
 	const menu = new HostOverlayMenu(presenter, {} as Runtime, input);
 	const snapshot = createInputControllerSnapshot();
 	let pressId = 1;
+	const tickCaptured = (): HostMenuInput => {
+		const result = tickMenu(input, menu);
+		input.sampleInputControllerSnapshot(snapshot);
+		assert.equal(snapshot.pads[0].buttons, 0);
+		return result;
+	};
 
 	const press = (button: string): HostMenuInput => {
 		input.inputButton(gamepad.id, button, true, 1, currentTime, pressId);
-		const result = tickMenu(input, menu);
+		const result = tickCaptured();
 		currentTime += 1;
 		input.inputButton(gamepad.id, button, false, 0, currentTime, pressId);
 		pressId += 1;
@@ -387,31 +441,90 @@ test('on-screen keyboard publishes gamepad and pointer HID key pulses', () => {
 		currentTime += 1;
 		return result;
 	};
+	const chord = (modifier: string, button: string): HostMenuInput => {
+		const modifierPressId = pressId++;
+		const buttonPressId = pressId++;
+		input.inputButton(gamepad.id, modifier, true, 1, currentTime, modifierPressId);
+		input.inputButton(gamepad.id, button, true, 1, currentTime, buttonPressId);
+		const result = tickCaptured();
+		currentTime += 1;
+		input.inputButton(gamepad.id, modifier, false, 0, currentTime, modifierPressId);
+		input.inputButton(gamepad.id, button, false, 0, currentTime, buttonPressId);
+		tickMenu(input, menu);
+		currentTime += 1;
+		return result;
+	};
+	const assertPulse = (button: string, code: string): void => {
+		press(button);
+		input.sampleInputControllerSnapshot(snapshot);
+		assert.equal(keyWordContains(snapshot.keyWords, code), true, `${button} emits ${code}`);
+		tickMenu(input, menu);
+		input.sampleInputControllerSnapshot(snapshot);
+		assert.equal(keyWordContains(snapshot.keyWords, code), false, `${button} releases ${code}`);
+		currentTime += 1;
+	};
+	const assertChordPulse = (modifier: string, button: string, code: string): void => {
+		chord(modifier, button);
+		input.sampleInputControllerSnapshot(snapshot);
+		assert.equal(keyWordContains(snapshot.keyWords, code), true, `${modifier}+${button} emits ${code}`);
+		tickMenu(input, menu);
+		input.sampleInputControllerSnapshot(snapshot);
+		assert.equal(keyWordContains(snapshot.keyWords, code), false, `${modifier}+${button} releases ${code}`);
+		currentTime += 1;
+	};
 
-	openMenuWithGamepad(input, menu, gamepad.id, currentTime, pressId++, pressId++);
-	currentTime += 2;
+	assert.equal(chord('select', 'x'), HostMenuInput.Inactive);
+	assertPulse('a', 'KeyQ');
+	press('right');
+	assertPulse('a', 'KeyW');
+	press('left');
+	assertPulse('b', 'Backspace');
+	assertPulse('x', 'Space');
+	assertPulse('lb', 'ArrowLeft');
+	assertPulse('rb', 'ArrowRight');
+	assertPulse('lt', 'Home');
+	assertPulse('rt', 'End');
+	assertPulse('start', 'Enter');
+	assertChordPulse('select', 'b', 'Delete');
+	assertChordPulse('select', 'lb', 'Home');
+	assert.equal(input.supervisorRequestLineHigh(), false);
+	assertChordPulse('select', 'rb', 'End');
 
-	for (let step = 0; step < 3; step += 1) {
-		press('up');
-	}
-	assert.equal(press('a'), HostMenuInput.Inactive);
-	press('a');
-
+	press('y');
 	input.sampleInputControllerSnapshot(snapshot);
+	assert.equal(keyWordContains(snapshot.keyWords, 'ShiftLeft'), true);
+	menu.queueRenderCommands();
+	let keyboardFrame = hostOverlayQueue.consumeHostMenuFrame();
+	assert.ok(keyboardFrame.commandRefs.some((ref, index) =>
+		index < keyboardFrame.commandCount
+		&& (ref as GlyphRenderSubmission).items === 'Q'));
+	press('a');
+	input.sampleInputControllerSnapshot(snapshot);
+	assert.equal(keyWordContains(snapshot.keyWords, 'ShiftLeft'), true);
 	assert.equal(keyWordContains(snapshot.keyWords, 'KeyQ'), true);
-	assert.equal(input.getPlayerInput(1).inputHandlers.keyboard!.getKeyState('KeyQ').justpressed, true);
-
 	tickMenu(input, menu);
 	input.sampleInputControllerSnapshot(snapshot);
+	assert.equal(keyWordContains(snapshot.keyWords, 'ShiftLeft'), false);
 	assert.equal(keyWordContains(snapshot.keyWords, 'KeyQ'), false);
+	currentTime += 1;
+
+	input.inputAxis2(gamepad.id, 'ls', 1, 0, currentTime);
+	tickMenu(input, menu);
+	input.sampleInputControllerSnapshot(snapshot);
+	assert.equal(snapshot.pads[0].axesQ16[0], 0);
+	currentTime += 1;
+	input.inputAxis2(gamepad.id, 'ls', 0, 0, currentTime);
+	tickMenu(input, menu);
+	currentTime += 1;
+	assertPulse('a', 'KeyW');
 
 	menu.queueRenderCommands();
-	const keyboardFrame = hostOverlayQueue.consumeHostMenuFrame();
+	keyboardFrame = hostOverlayQueue.consumeHostMenuFrame();
 	let qGlyph: GlyphRenderSubmission | null = null;
 	for (let index = 0; index < keyboardFrame.commandCount; index += 1) {
 		if (keyboardFrame.commandKinds[index] === Host2DKind.Glyphs) {
 			const glyphs = keyboardFrame.commandRefs[index] as GlyphRenderSubmission;
-			if (glyphs.items === 'Q') {
+			if (glyphs.items === 'q') {
 				qGlyph = glyphs;
 				break;
 			}
@@ -446,5 +559,9 @@ test('on-screen keyboard publishes gamepad and pointer HID key pulses', () => {
 	tickMenu(input, menu);
 	input.sampleInputControllerSnapshot(snapshot);
 	assert.equal(keyWordContains(snapshot.keyWords, 'KeyQ'), false);
+	currentTime += 1;
+	assert.equal(chord('select', 'x'), HostMenuInput.Inactive);
+	menu.queueFrameOverlayCommands(60);
+	assert.equal(hostOverlayQueue.hasPendingHostMenuFrame(), false);
 	input.dispose();
 });

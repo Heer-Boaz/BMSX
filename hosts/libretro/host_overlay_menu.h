@@ -36,7 +36,14 @@ enum class HostMenuRepeatId : u8 {
 	Down,
 	Left,
 	Right,
+	Backspace,
+	Space,
+	CursorLeft,
+	CursorRight,
+	Home,
+	End,
 	Count,
+	None = 0xff,
 };
 
 class HostOverlayMenu {
@@ -70,6 +77,7 @@ private:
 	void queueCommand(Host2DKind kind, Host2DRef ref);
 	void toggle(LibretroInput& input);
 	void close(LibretroInput& input);
+	void openKeyboard(LibretroInput& input);
 	void changeSelected(VideoPresenter& presenter, i32 direction);
 	HostMenuInput activateSelected(LibretroInput& input, VideoPresenter& presenter);
 	void rebuildText(VideoPresenter& presenter);
@@ -80,6 +88,10 @@ private:
 	bool buttonJustPressed(const LibretroInput& input, HostMenuButtonId button) const;
 	bool gamepadButtonPressed(const LibretroInput& input, HostMenuButtonId button) const;
 	bool gamepadButtonJustPressed(const LibretroInput& input, HostMenuButtonId button) const;
+	OnScreenKeyboardCommand onScreenKeyboardCommand(
+		const LibretroInput& input,
+		f64 currentTimeMs,
+		f64 frameDurationMs);
 	void latchButtonStates(const LibretroInput& input);
 	void consumeGamepadButtons(LibretroInput& input);
 	bool advanceButtonRepeat(bool pressed, bool justPressed, ButtonRepeatRecord& repeat, f64 currentTimeMs, f64 frameDurationMs);
@@ -106,6 +118,7 @@ private:
 	std::array<Host2DRef, CommandCapacity> m_commandRefs;
 	std::array<bool, static_cast<size_t>(HostMenuButtonId::Count)> m_previousButtonStates{};
 	std::array<bool, static_cast<size_t>(HostMenuButtonId::Count)> m_previousGamepadButtonStates{};
+	u32 m_previous_physical_gamepad_buttons = 0u;
 	std::array<ButtonRepeatRecord, static_cast<size_t>(HostMenuRepeatId::Count)> m_buttonRepeats;
 	RectBounds m_optionHitRect;
 	i32 m_optionLineHeight = 0;

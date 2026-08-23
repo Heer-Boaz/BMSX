@@ -153,11 +153,30 @@ export class GamepadInput implements GamepadInputHandler {
 		if (bit >= 0) {
 			this.routedInputControllerButtons = (this.routedInputControllerButtons & ~(1 << bit)) >>> 0;
 		}
-		if (button === 'lt') {
-			this.routedInputControllerAxesQ16[4] = 0;
-		} else if (button === 'rt') {
-			this.routedInputControllerAxesQ16[5] = 0;
+		switch (button) {
+			case 'lt':
+				this.routedInputControllerAxesQ16[4] = 0;
+				break;
+			case 'rt':
+				this.routedInputControllerAxesQ16[5] = 0;
+				break;
+			case 'ls':
+				this.routedInputControllerAxesQ16[0] = 0;
+				this.routedInputControllerAxesQ16[1] = 0;
+				break;
+			case 'rs':
+				this.routedInputControllerAxesQ16[2] = 0;
+				this.routedInputControllerAxesQ16[3] = 0;
+				break;
 		}
+	}
+
+	public consumeAllInput(): void {
+		for (const key in this.buttonStates) {
+			this.buttonStates[key].consumed = true;
+		}
+		this.routedInputControllerButtons = 0;
+		this.routedInputControllerAxesQ16.fill(0);
 	}
 
 	public reset(): void {
@@ -172,6 +191,8 @@ export class GamepadInput implements GamepadInputHandler {
 		this.leftAxis[1] = 0;
 		this.rightAxis[0] = 0;
 		this.rightAxis[1] = 0;
+		getPressedState(this.buttonStates, 'ls').value2d = this.leftAxis;
+		getPressedState(this.buttonStates, 'rs').value2d = this.rightAxis;
 		this.lastPollTime = 0;
 	}
 

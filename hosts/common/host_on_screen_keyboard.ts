@@ -14,10 +14,25 @@ import type { Input } from './input/manager';
 
 type OnScreenKeyDefinition = {
 	readonly label: string;
+	readonly shiftLabel?: string;
 	readonly code: string;
 	readonly span: number;
 	readonly modifier: number;
 };
+
+export const enum OnScreenKeyboardCommand {
+	None,
+	Activate,
+	Backspace,
+	Delete,
+	Space,
+	Shift,
+	Left,
+	Right,
+	Home,
+	End,
+	Enter,
+}
 
 type OnScreenKeyboardRow = {
 	readonly start: number;
@@ -33,60 +48,60 @@ const MODIFIER_CODES = ['ShiftLeft', 'ControlLeft', 'AltLeft'] as const;
 
 const KEY_DEFINITIONS: readonly OnScreenKeyDefinition[] = [
 	{ label: 'ESC', code: 'Escape', span: 2, modifier: NO_MODIFIER },
-	{ label: '1', code: 'Digit1', span: 1, modifier: NO_MODIFIER },
-	{ label: '2', code: 'Digit2', span: 1, modifier: NO_MODIFIER },
-	{ label: '3', code: 'Digit3', span: 1, modifier: NO_MODIFIER },
-	{ label: '4', code: 'Digit4', span: 1, modifier: NO_MODIFIER },
-	{ label: '5', code: 'Digit5', span: 1, modifier: NO_MODIFIER },
-	{ label: '6', code: 'Digit6', span: 1, modifier: NO_MODIFIER },
-	{ label: '7', code: 'Digit7', span: 1, modifier: NO_MODIFIER },
-	{ label: '8', code: 'Digit8', span: 1, modifier: NO_MODIFIER },
-	{ label: '9', code: 'Digit9', span: 1, modifier: NO_MODIFIER },
-	{ label: '0', code: 'Digit0', span: 1, modifier: NO_MODIFIER },
-	{ label: '-', code: 'Minus', span: 1, modifier: NO_MODIFIER },
-	{ label: '=', code: 'Equal', span: 1, modifier: NO_MODIFIER },
+	{ label: '1', shiftLabel: '!', code: 'Digit1', span: 1, modifier: NO_MODIFIER },
+	{ label: '2', shiftLabel: '@', code: 'Digit2', span: 1, modifier: NO_MODIFIER },
+	{ label: '3', shiftLabel: '#', code: 'Digit3', span: 1, modifier: NO_MODIFIER },
+	{ label: '4', shiftLabel: '$', code: 'Digit4', span: 1, modifier: NO_MODIFIER },
+	{ label: '5', shiftLabel: '%', code: 'Digit5', span: 1, modifier: NO_MODIFIER },
+	{ label: '6', shiftLabel: '^', code: 'Digit6', span: 1, modifier: NO_MODIFIER },
+	{ label: '7', shiftLabel: '&', code: 'Digit7', span: 1, modifier: NO_MODIFIER },
+	{ label: '8', shiftLabel: '*', code: 'Digit8', span: 1, modifier: NO_MODIFIER },
+	{ label: '9', shiftLabel: '(', code: 'Digit9', span: 1, modifier: NO_MODIFIER },
+	{ label: '0', shiftLabel: ')', code: 'Digit0', span: 1, modifier: NO_MODIFIER },
+	{ label: '-', shiftLabel: '_', code: 'Minus', span: 1, modifier: NO_MODIFIER },
+	{ label: '=', shiftLabel: '+', code: 'Equal', span: 1, modifier: NO_MODIFIER },
 	{ label: 'BKSP', code: 'Backspace', span: 2, modifier: NO_MODIFIER },
 
 	{ label: 'TAB', code: 'Tab', span: 2, modifier: NO_MODIFIER },
-	{ label: 'Q', code: 'KeyQ', span: 1, modifier: NO_MODIFIER },
-	{ label: 'W', code: 'KeyW', span: 1, modifier: NO_MODIFIER },
-	{ label: 'E', code: 'KeyE', span: 1, modifier: NO_MODIFIER },
-	{ label: 'R', code: 'KeyR', span: 1, modifier: NO_MODIFIER },
-	{ label: 'T', code: 'KeyT', span: 1, modifier: NO_MODIFIER },
-	{ label: 'Y', code: 'KeyY', span: 1, modifier: NO_MODIFIER },
-	{ label: 'U', code: 'KeyU', span: 1, modifier: NO_MODIFIER },
-	{ label: 'I', code: 'KeyI', span: 1, modifier: NO_MODIFIER },
-	{ label: 'O', code: 'KeyO', span: 1, modifier: NO_MODIFIER },
-	{ label: 'P', code: 'KeyP', span: 1, modifier: NO_MODIFIER },
-	{ label: '[', code: 'BracketLeft', span: 1, modifier: NO_MODIFIER },
-	{ label: ']', code: 'BracketRight', span: 1, modifier: NO_MODIFIER },
-	{ label: '\\', code: 'Backslash', span: 1, modifier: NO_MODIFIER },
+	{ label: 'q', shiftLabel: 'Q', code: 'KeyQ', span: 1, modifier: NO_MODIFIER },
+	{ label: 'w', shiftLabel: 'W', code: 'KeyW', span: 1, modifier: NO_MODIFIER },
+	{ label: 'e', shiftLabel: 'E', code: 'KeyE', span: 1, modifier: NO_MODIFIER },
+	{ label: 'r', shiftLabel: 'R', code: 'KeyR', span: 1, modifier: NO_MODIFIER },
+	{ label: 't', shiftLabel: 'T', code: 'KeyT', span: 1, modifier: NO_MODIFIER },
+	{ label: 'y', shiftLabel: 'Y', code: 'KeyY', span: 1, modifier: NO_MODIFIER },
+	{ label: 'u', shiftLabel: 'U', code: 'KeyU', span: 1, modifier: NO_MODIFIER },
+	{ label: 'i', shiftLabel: 'I', code: 'KeyI', span: 1, modifier: NO_MODIFIER },
+	{ label: 'o', shiftLabel: 'O', code: 'KeyO', span: 1, modifier: NO_MODIFIER },
+	{ label: 'p', shiftLabel: 'P', code: 'KeyP', span: 1, modifier: NO_MODIFIER },
+	{ label: '[', shiftLabel: '{', code: 'BracketLeft', span: 1, modifier: NO_MODIFIER },
+	{ label: ']', shiftLabel: '}', code: 'BracketRight', span: 1, modifier: NO_MODIFIER },
+	{ label: '\\', shiftLabel: '|', code: 'Backslash', span: 1, modifier: NO_MODIFIER },
 
 	{ label: 'CAPS', code: 'CapsLock', span: 2, modifier: NO_MODIFIER },
-	{ label: 'A', code: 'KeyA', span: 1, modifier: NO_MODIFIER },
-	{ label: 'S', code: 'KeyS', span: 1, modifier: NO_MODIFIER },
-	{ label: 'D', code: 'KeyD', span: 1, modifier: NO_MODIFIER },
-	{ label: 'F', code: 'KeyF', span: 1, modifier: NO_MODIFIER },
-	{ label: 'G', code: 'KeyG', span: 1, modifier: NO_MODIFIER },
-	{ label: 'H', code: 'KeyH', span: 1, modifier: NO_MODIFIER },
-	{ label: 'J', code: 'KeyJ', span: 1, modifier: NO_MODIFIER },
-	{ label: 'K', code: 'KeyK', span: 1, modifier: NO_MODIFIER },
-	{ label: 'L', code: 'KeyL', span: 1, modifier: NO_MODIFIER },
-	{ label: ';', code: 'Semicolon', span: 1, modifier: NO_MODIFIER },
-	{ label: "'", code: 'Quote', span: 1, modifier: NO_MODIFIER },
+	{ label: 'a', shiftLabel: 'A', code: 'KeyA', span: 1, modifier: NO_MODIFIER },
+	{ label: 's', shiftLabel: 'S', code: 'KeyS', span: 1, modifier: NO_MODIFIER },
+	{ label: 'd', shiftLabel: 'D', code: 'KeyD', span: 1, modifier: NO_MODIFIER },
+	{ label: 'f', shiftLabel: 'F', code: 'KeyF', span: 1, modifier: NO_MODIFIER },
+	{ label: 'g', shiftLabel: 'G', code: 'KeyG', span: 1, modifier: NO_MODIFIER },
+	{ label: 'h', shiftLabel: 'H', code: 'KeyH', span: 1, modifier: NO_MODIFIER },
+	{ label: 'j', shiftLabel: 'J', code: 'KeyJ', span: 1, modifier: NO_MODIFIER },
+	{ label: 'k', shiftLabel: 'K', code: 'KeyK', span: 1, modifier: NO_MODIFIER },
+	{ label: 'l', shiftLabel: 'L', code: 'KeyL', span: 1, modifier: NO_MODIFIER },
+	{ label: ';', shiftLabel: ':', code: 'Semicolon', span: 1, modifier: NO_MODIFIER },
+	{ label: "'", shiftLabel: '"', code: 'Quote', span: 1, modifier: NO_MODIFIER },
 	{ label: 'ENTER', code: 'Enter', span: 2, modifier: NO_MODIFIER },
 
 	{ label: 'SHIFT', code: 'ShiftLeft', span: 2, modifier: MODIFIER_SHIFT },
-	{ label: 'Z', code: 'KeyZ', span: 1, modifier: NO_MODIFIER },
-	{ label: 'X', code: 'KeyX', span: 1, modifier: NO_MODIFIER },
-	{ label: 'C', code: 'KeyC', span: 1, modifier: NO_MODIFIER },
-	{ label: 'V', code: 'KeyV', span: 1, modifier: NO_MODIFIER },
-	{ label: 'B', code: 'KeyB', span: 1, modifier: NO_MODIFIER },
-	{ label: 'N', code: 'KeyN', span: 1, modifier: NO_MODIFIER },
-	{ label: 'M', code: 'KeyM', span: 1, modifier: NO_MODIFIER },
-	{ label: ',', code: 'Comma', span: 1, modifier: NO_MODIFIER },
-	{ label: '.', code: 'Period', span: 1, modifier: NO_MODIFIER },
-	{ label: '/', code: 'Slash', span: 1, modifier: NO_MODIFIER },
+	{ label: 'z', shiftLabel: 'Z', code: 'KeyZ', span: 1, modifier: NO_MODIFIER },
+	{ label: 'x', shiftLabel: 'X', code: 'KeyX', span: 1, modifier: NO_MODIFIER },
+	{ label: 'c', shiftLabel: 'C', code: 'KeyC', span: 1, modifier: NO_MODIFIER },
+	{ label: 'v', shiftLabel: 'V', code: 'KeyV', span: 1, modifier: NO_MODIFIER },
+	{ label: 'b', shiftLabel: 'B', code: 'KeyB', span: 1, modifier: NO_MODIFIER },
+	{ label: 'n', shiftLabel: 'N', code: 'KeyN', span: 1, modifier: NO_MODIFIER },
+	{ label: 'm', shiftLabel: 'M', code: 'KeyM', span: 1, modifier: NO_MODIFIER },
+	{ label: ',', shiftLabel: '<', code: 'Comma', span: 1, modifier: NO_MODIFIER },
+	{ label: '.', shiftLabel: '>', code: 'Period', span: 1, modifier: NO_MODIFIER },
+	{ label: '/', shiftLabel: '?', code: 'Slash', span: 1, modifier: NO_MODIFIER },
 	{ label: 'DEL', code: 'Delete', span: 2, modifier: NO_MODIFIER },
 
 	{ label: 'CTRL', code: 'ControlLeft', span: 2, modifier: MODIFIER_CONTROL },
@@ -107,7 +122,7 @@ const ROWS: readonly OnScreenKeyboardRow[] = [
 ];
 
 const TITLE = 'ON-SCREEN KEYBOARD';
-const HELP = 'DPAD MOVE   A/TAP TYPE   B BACK';
+const HELP = 'A TYPE  B BKSP  X SPACE  Y SHIFT';
 const INITIAL_ROW = 1;
 const INITIAL_KEY = 15;
 const UNIT_WIDTH = 13;
@@ -129,6 +144,7 @@ export class HostOnScreenKeyboard {
 	private selectedRow = INITIAL_ROW;
 	private selectedKey = INITIAL_KEY;
 	private pulseCode = '';
+	private releaseShiftAfterPulse = false;
 	private readonly modifierStates = [false, false, false];
 	private readonly panelRect: RectRenderSubmission = {
 		kind: RectRenderKind.Fill,
@@ -207,7 +223,10 @@ export class HostOnScreenKeyboard {
 
 	public close(): void {
 		this.releasePulse();
-		for (let modifier = 0; modifier < MODIFIER_CODES.length; modifier += 1) {
+		if (this.modifierStates[MODIFIER_SHIFT]) {
+			this.setShift(false);
+		}
+		for (let modifier = MODIFIER_CONTROL; modifier < MODIFIER_CODES.length; modifier += 1) {
 			if (this.modifierStates[modifier]) {
 				this.modifierStates[modifier] = false;
 				this.input.setVirtualKeyboardKey(MODIFIER_CODES[modifier], false);
@@ -220,6 +239,10 @@ export class HostOnScreenKeyboard {
 		if (this.pulseCode.length !== 0) {
 			this.input.setVirtualKeyboardKey(this.pulseCode, false);
 			this.pulseCode = '';
+		}
+		if (this.releaseShiftAfterPulse) {
+			this.releaseShiftAfterPulse = false;
+			this.setShift(false);
 		}
 	}
 
@@ -250,14 +273,54 @@ export class HostOnScreenKeyboard {
 	public activate(): void {
 		const key = KEY_DEFINITIONS[this.selectedKey];
 		if (key.modifier !== NO_MODIFIER) {
+			if (key.modifier === MODIFIER_SHIFT) {
+				this.setShift(!this.modifierStates[MODIFIER_SHIFT]);
+				return;
+			}
 			const down = !this.modifierStates[key.modifier];
 			this.modifierStates[key.modifier] = down;
 			this.input.setVirtualKeyboardKey(key.code, down);
 			this.updateKeyColors();
 			return;
 		}
-		this.input.setVirtualKeyboardKey(key.code, true);
-		this.pulseCode = key.code;
+		this.pulseKey(key.code);
+	}
+
+	public command(command: OnScreenKeyboardCommand): void {
+		switch (command) {
+			case OnScreenKeyboardCommand.None:
+				return;
+			case OnScreenKeyboardCommand.Activate:
+				this.activate();
+				return;
+			case OnScreenKeyboardCommand.Backspace:
+				this.pulseKey('Backspace');
+				return;
+			case OnScreenKeyboardCommand.Delete:
+				this.pulseKey('Delete');
+				return;
+			case OnScreenKeyboardCommand.Space:
+				this.pulseKey('Space');
+				return;
+			case OnScreenKeyboardCommand.Shift:
+				this.setShift(!this.modifierStates[MODIFIER_SHIFT]);
+				return;
+			case OnScreenKeyboardCommand.Left:
+				this.pulseKey('ArrowLeft');
+				return;
+			case OnScreenKeyboardCommand.Right:
+				this.pulseKey('ArrowRight');
+				return;
+			case OnScreenKeyboardCommand.Home:
+				this.pulseKey('Home');
+				return;
+			case OnScreenKeyboardCommand.End:
+				this.pulseKey('End');
+				return;
+			case OnScreenKeyboardCommand.Enter:
+				this.pulseKey('Enter');
+				return;
+		}
 	}
 
 	public selectAt(x: number, y: number): number {
@@ -313,6 +376,28 @@ export class HostOnScreenKeyboard {
 		}
 	}
 
+	private pulseKey(code: string): void {
+		this.input.setVirtualKeyboardKey(code, true);
+		this.pulseCode = code;
+		this.releaseShiftAfterPulse = this.modifierStates[MODIFIER_SHIFT];
+	}
+
+	private setShift(down: boolean): void {
+		this.modifierStates[MODIFIER_SHIFT] = down;
+		this.input.setVirtualKeyboardKey(MODIFIER_CODES[MODIFIER_SHIFT], down);
+		for (let index = 0; index < KEY_DEFINITIONS.length; index += 1) {
+			const definition = KEY_DEFINITIONS[index];
+			const label = down && definition.shiftLabel !== undefined
+				? definition.shiftLabel
+				: definition.label;
+			const glyphs = this.keyGlyphs[index];
+			glyphs.items = label;
+			glyphs.item_end = label.length;
+		}
+		this.layoutWidth = -1;
+		this.updateKeyColors();
+	}
+
 	private layoutKeys(): void {
 		const presenter = this.presenter;
 		const font = presenter.default_font;
@@ -346,7 +431,7 @@ export class HostOnScreenKeyboard {
 				rect.area.right = keyLeft + width;
 				rect.area.bottom = keyY + keyHeight;
 				const glyphs = this.keyGlyphs[index];
-				const textWidth = font.measure(KEY_DEFINITIONS[index].label);
+				const textWidth = font.measure(glyphs.items as string);
 				glyphs.font = font;
 				glyphs.x = keyLeft + (((width - textWidth) / 2) | 0);
 				glyphs.y = keyY + (((keyHeight - lineHeight) / 2) | 0);

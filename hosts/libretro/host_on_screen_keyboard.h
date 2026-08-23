@@ -13,6 +13,20 @@ class BFont;
 class LibretroInput;
 class VideoPresenter;
 
+enum class OnScreenKeyboardCommand : u8 {
+	None,
+	Activate,
+	Backspace,
+	Delete,
+	Space,
+	Shift,
+	Left,
+	Right,
+	Home,
+	End,
+	Enter,
+};
+
 class HostOnScreenKeyboard {
 public:
 	static constexpr size_t KeyCount = 60u;
@@ -26,17 +40,21 @@ public:
 	void moveHorizontal(i32 direction);
 	void moveVertical(i32 direction);
 	void activate(LibretroInput& input);
+	void command(LibretroInput& input, OnScreenKeyboardCommand command);
 	i32 selectAt(i32 x, i32 y);
 	void queueRenderCommands(VideoPresenter& presenter);
 
 private:
 	i32 keyCenterUnits(i32 rowIndex, i32 keyIndex) const;
+	void pulseKey(LibretroInput& input, u8 usage);
+	void setShift(LibretroInput& input, bool down);
 	void updateKeyColors();
 	void layoutKeys(VideoPresenter& presenter);
 
 	i32 m_selected_row = 1;
 	i32 m_selected_key = 15;
 	i16 m_pulse_usage = -1;
+	bool m_release_shift_after_pulse = false;
 	std::array<bool, ModifierCount> m_modifier_states{};
 	RectRenderSubmission m_panel_rect;
 	GlyphRenderSubmission m_title_glyphs;

@@ -8,6 +8,7 @@ export const HOST_CONTROL_MODIFIER: BGamepadButton = 'select';
 export const HOST_TERMINAL_BUTTON: BGamepadButton = 'lb';
 export const HOST_IDE_BUTTON: BGamepadButton = 'rb';
 export const HOST_MENU_BUTTON: BGamepadButton = 'start';
+export const HOST_ON_SCREEN_KEYBOARD_BUTTON: BGamepadButton = 'x';
 
 const enum ControlSource {
 	Keyboard = 1,
@@ -39,19 +40,33 @@ export class GlobalShortcutRegistry {
 	private readonly keyboardShortcuts = new Map<number, KeyboardShortcutEntry[]>();
 	private readonly controlShortcuts = new Map<number, ControlShortcutSet>();
 	private readonly latch = new Map<string, number | null>();
+	private exclusiveGamepadControlShortcut: BGamepadButton | null = null;
 
 	public constructor(private readonly input: Input) {
 	}
 
 	public reset(): void {
 		this.latch.clear();
+		this.exclusiveGamepadControlShortcut = null;
+		this.resetControlShortcutSources(ControlSource.Keyboard | ControlSource.Gamepad);
+	}
+
+	public setExclusiveGamepadControlShortcut(button: BGamepadButton | null): void {
+		if (button === this.exclusiveGamepadControlShortcut) {
+			return;
+		}
+		this.exclusiveGamepadControlShortcut = button;
+		this.resetControlShortcutSources(ControlSource.Gamepad);
+	}
+
+	private resetControlShortcutSources(sources: number): void {
 		for (const shortcuts of this.controlShortcuts.values()) {
-			shortcuts.capturedSources = 0;
+			shortcuts.capturedSources &= ~sources;
 			for (let index = 0; index < shortcuts.entries.length; index += 1) {
 				const entry = shortcuts.entries[index];
-				entry.activeSources = 0;
-				entry.blockedSources = 0;
-				if (entry.notifiedActive) {
+				entry.activeSources &= ~sources;
+				entry.blockedSources &= ~sources;
+				if (entry.notifiedActive && entry.activeSources === 0) {
 					entry.notifiedActive = false;
 					entry.onReleased?.();
 				}
@@ -183,6 +198,9 @@ export class GlobalShortcutRegistry {
 		source: ControlSource,
 	): void {
 		const entries = shortcuts.entries;
+		const exclusiveShortcut = source === ControlSource.Gamepad
+			? this.exclusiveGamepadControlShortcut
+			: null;
 		if (handler === null) {
 			shortcuts.capturedSources &= ~source;
 			for (let index = 0; index < entries.length; index += 1) {
@@ -218,6 +236,11 @@ export class GlobalShortcutRegistry {
 		let anyButtonPressed = false;
 		for (let index = 0; index < entries.length; index += 1) {
 			const entry = entries[index];
+			if (exclusiveShortcut !== null && entry.button !== exclusiveShortcut) {
+				entry.activeSources &= ~source;
+				entry.blockedSources &= ~source;
+				continue;
+			}
 			const button = handler.getButtonState(entry.button);
 			if (!button.pressed) {
 				entry.blockedSources &= ~source;

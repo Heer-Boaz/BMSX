@@ -1,7 +1,6 @@
 import { makeButtonState } from './manager';
 import {
 	INPUT_SOURCES,
-	type BGamepadButton,
 	type ButtonId,
 	type ButtonState,
 	type InputSource,
@@ -118,20 +117,54 @@ export class PlayerInput {
 			return false;
 		}
 		const repeat = this.repeatState(this.rawActionRepeatRecords[source], button);
-		this.evaluateRawActionRepeat(repeat, rawState, this.frameCounter);
+		this.evaluateRepeat(
+			repeat,
+			rawState.pressed,
+			rawState.justpressed,
+			rawState.pressedAtMs,
+			this.frameCounter,
+		);
 		return rawState.justpressed || repeat.lastResult;
 	}
 
 	/** Returns repeat/edge info for a normalized console control. */
-	public controlButtonRepeatEdge(button: BGamepadButton, source: ControlInputSource): boolean {
+	public controlButtonRepeatEdge(button: ButtonId, source: ControlInputSource): boolean {
 		const handler = this.inputHandlers[source];
 		const state = handler ? handler.getButtonState(button) : this.unboundButtonState;
 		if (state.consumed) {
 			return false;
 		}
 		const repeat = this.repeatState(this.controlRepeatRecords[source], button);
-		this.evaluateRawActionRepeat(repeat, state, this.frameCounter);
+		this.evaluateRepeat(
+			repeat,
+			state.pressed,
+			state.justpressed,
+			state.pressedAtMs,
+			this.frameCounter,
+		);
 		return state.justpressed || repeat.lastResult;
+	}
+
+	public controlSignalRepeatEdge(
+		signal: ButtonId,
+		source: ControlInputSource,
+		pressed: boolean,
+	): boolean {
+		const repeat = this.repeatState(this.controlRepeatRecords[source], signal);
+		const acquired = pressed && !repeat.active;
+		this.evaluateRepeat(
+			repeat,
+			pressed,
+			acquired,
+			this.lastPollTimestampMs,
+			this.frameCounter,
+		);
+		return acquired || repeat.lastResult;
+	}
+
+	public resetControlButtonRepeats(): void {
+		this.controlRepeatRecords.keyboard.clear();
+		this.controlRepeatRecords.gamepad.clear();
 	}
 
 	public setGamepad(gamepadInput: GamepadInput | null): void {
@@ -150,23 +183,28 @@ export class PlayerInput {
 		}
 	}
 
-	private evaluateRawActionRepeat(repeat: RawActionRepeatRecord, state: ButtonState, frameId: number): void {
+	private evaluateRepeat(
+		repeat: RawActionRepeatRecord,
+		pressed: boolean,
+		justPressed: boolean,
+		pressedAtMs: number,
+		frameId: number,
+	): void {
 		if (repeat.lastFrameEvaluated === frameId) {
 			return;
 		}
 
 		let result = false;
 		const now = this.lastPollTimestampMs;
-		const startMs = state.pressedAtMs;
 		const initialDelayMs = INITIAL_REPEAT_DELAY_FRAMES * this.frameDurationMs;
 		const repeatIntervalMs = REPEAT_INTERVAL_FRAMES * this.frameDurationMs;
 
-		if (state.justpressed) {
+		if (justPressed) {
 			repeat.active = true;
 			repeat.repeatCount = 0;
-			repeat.pressStartMs = startMs;
-			repeat.lastRepeatAtMs = startMs;
-		} else if (!state.pressed) {
+			repeat.pressStartMs = pressedAtMs;
+			repeat.lastRepeatAtMs = pressedAtMs;
+		} else if (!pressed) {
 			repeat.active = false;
 			repeat.repeatCount = 0;
 			repeat.pressStartMs = -1;
@@ -175,11 +213,11 @@ export class PlayerInput {
 			if (!repeat.active) {
 				repeat.active = true;
 				repeat.repeatCount = 0;
-				repeat.pressStartMs = startMs;
-				repeat.lastRepeatAtMs = startMs;
+				repeat.pressStartMs = pressedAtMs;
+				repeat.lastRepeatAtMs = pressedAtMs;
 			}
 			if (repeat.pressStartMs < 0) {
-				repeat.pressStartMs = startMs;
+				repeat.pressStartMs = pressedAtMs;
 			}
 			const nextAt = repeat.repeatCount === 0
 				? repeat.pressStartMs + initialDelayMs
@@ -230,8 +268,7 @@ export class PlayerInput {
 		for (let i = 0; i < INPUT_SOURCES.length; i += 1) {
 			this.rawActionRepeatRecords[INPUT_SOURCES[i]].clear();
 		}
-		this.controlRepeatRecords.keyboard.clear();
-		this.controlRepeatRecords.gamepad.clear();
+		this.resetControlButtonRepeats();
 		this.lastPollTimestampMs = 0;
 		this.frameCounter = 0;
 	}

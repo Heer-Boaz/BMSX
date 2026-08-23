@@ -27,9 +27,14 @@ public:
 	bool gamepadButtonPressed(
 		u8 deviceSlot,
 		InputControllerGamepadButtonBit button) const;
+	u32 physicalGamepadButtonsWord(u8 deviceSlot) const;
+	u32 physicalGamepadAxisWord(u8 deviceSlot, u8 axis) const;
 	void consumeGamepadButton(
 		u8 deviceSlot,
 		InputControllerGamepadButtonBit button);
+	void consumeGamepadInput(u8 deviceSlot);
+	void setExclusiveGamepadHostShortcut(InputControllerGamepadButtonBit button);
+	void clearExclusiveGamepadHostShortcut();
 	bool pointerPosition(i32& x, i32& y) const;
 	bool pointerButtonPressed(u32 button) const;
 	void consumePointerButton(u32 button);
@@ -61,6 +66,9 @@ private:
 	std::array<u32, INPUT_CONTROLLER_KEY_WORD_COUNT> m_keyboard_usage_words{};
 	std::array<u32, INPUT_CONTROLLER_KEY_WORD_COUNT> m_virtual_keyboard_usage_words{};
 	std::array<u32, INPUT_CONTROLLER_KEY_WORD_COUNT> m_routed_keyboard_usage_words{};
+	std::array<u32, INPUT_CONTROLLER_PAD_COUNT> m_physical_gamepad_buttons{};
+	std::array<std::array<u32, INPUT_CONTROLLER_PAD_AXIS_COUNT>, INPUT_CONTROLLER_PAD_COUNT>
+		m_physical_gamepad_axes_q16{};
 	std::array<InputControllerPadSnapshot, INPUT_CONTROLLER_PAD_COUNT> m_gamepads{};
 	u32 m_pointer_buttons = 0u;
 	u32 m_routed_pointer_buttons = 0u;
@@ -77,6 +85,7 @@ private:
 	bool m_host_supervisor_request_high = false;
 	BmsxHostShortcutState m_gamepad_shortcuts{};
 	BmsxHostShortcutState m_keyboard_shortcuts{};
+	u32 m_gamepad_host_shortcut_targets = 0u;
 	u32 m_just_pressed_host_shortcuts = 0u;
 };
 

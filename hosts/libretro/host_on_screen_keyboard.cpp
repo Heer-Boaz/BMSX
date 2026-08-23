@@ -18,6 +18,7 @@ struct KeyDefinition {
 	u8 usage;
 	i32 span;
 	i32 modifier;
+	const char* shiftLabel = nullptr;
 };
 
 struct KeyboardRow {
@@ -38,60 +39,60 @@ constexpr std::array<u8, HostOnScreenKeyboard::ModifierCount> kModifierUsages{
 
 constexpr std::array<KeyDefinition, HostOnScreenKeyboard::KeyCount> kKeys{{
 	{"ESC", hid_key_usage::Escape, 2, kNoModifier},
-	{"1", hid_key_usage::Digit1, 1, kNoModifier},
-	{"2", hid_key_usage::Digit2, 1, kNoModifier},
-	{"3", hid_key_usage::Digit3, 1, kNoModifier},
-	{"4", hid_key_usage::Digit4, 1, kNoModifier},
-	{"5", hid_key_usage::Digit5, 1, kNoModifier},
-	{"6", hid_key_usage::Digit6, 1, kNoModifier},
-	{"7", hid_key_usage::Digit7, 1, kNoModifier},
-	{"8", hid_key_usage::Digit8, 1, kNoModifier},
-	{"9", hid_key_usage::Digit9, 1, kNoModifier},
-	{"0", hid_key_usage::Digit0, 1, kNoModifier},
-	{"-", hid_key_usage::Minus, 1, kNoModifier},
-	{"=", hid_key_usage::Equal, 1, kNoModifier},
+	{"1", hid_key_usage::Digit1, 1, kNoModifier, "!"},
+	{"2", hid_key_usage::Digit2, 1, kNoModifier, "@"},
+	{"3", hid_key_usage::Digit3, 1, kNoModifier, "#"},
+	{"4", hid_key_usage::Digit4, 1, kNoModifier, "$"},
+	{"5", hid_key_usage::Digit5, 1, kNoModifier, "%"},
+	{"6", hid_key_usage::Digit6, 1, kNoModifier, "^"},
+	{"7", hid_key_usage::Digit7, 1, kNoModifier, "&"},
+	{"8", hid_key_usage::Digit8, 1, kNoModifier, "*"},
+	{"9", hid_key_usage::Digit9, 1, kNoModifier, "("},
+	{"0", hid_key_usage::Digit0, 1, kNoModifier, ")"},
+	{"-", hid_key_usage::Minus, 1, kNoModifier, "_"},
+	{"=", hid_key_usage::Equal, 1, kNoModifier, "+"},
 	{"BKSP", hid_key_usage::Backspace, 2, kNoModifier},
 
 	{"TAB", hid_key_usage::Tab, 2, kNoModifier},
-	{"Q", hid_key_usage::Q, 1, kNoModifier},
-	{"W", hid_key_usage::W, 1, kNoModifier},
-	{"E", hid_key_usage::E, 1, kNoModifier},
-	{"R", hid_key_usage::R, 1, kNoModifier},
-	{"T", hid_key_usage::T, 1, kNoModifier},
-	{"Y", hid_key_usage::Y, 1, kNoModifier},
-	{"U", hid_key_usage::U, 1, kNoModifier},
-	{"I", hid_key_usage::I, 1, kNoModifier},
-	{"O", hid_key_usage::O, 1, kNoModifier},
-	{"P", hid_key_usage::P, 1, kNoModifier},
-	{"[", hid_key_usage::BracketLeft, 1, kNoModifier},
-	{"]", hid_key_usage::BracketRight, 1, kNoModifier},
-	{"\\", hid_key_usage::Backslash, 1, kNoModifier},
+	{"q", hid_key_usage::Q, 1, kNoModifier, "Q"},
+	{"w", hid_key_usage::W, 1, kNoModifier, "W"},
+	{"e", hid_key_usage::E, 1, kNoModifier, "E"},
+	{"r", hid_key_usage::R, 1, kNoModifier, "R"},
+	{"t", hid_key_usage::T, 1, kNoModifier, "T"},
+	{"y", hid_key_usage::Y, 1, kNoModifier, "Y"},
+	{"u", hid_key_usage::U, 1, kNoModifier, "U"},
+	{"i", hid_key_usage::I, 1, kNoModifier, "I"},
+	{"o", hid_key_usage::O, 1, kNoModifier, "O"},
+	{"p", hid_key_usage::P, 1, kNoModifier, "P"},
+	{"[", hid_key_usage::BracketLeft, 1, kNoModifier, "{"},
+	{"]", hid_key_usage::BracketRight, 1, kNoModifier, "}"},
+	{"\\", hid_key_usage::Backslash, 1, kNoModifier, "|"},
 
 	{"CAPS", hid_key_usage::CapsLock, 2, kNoModifier},
-	{"A", hid_key_usage::A, 1, kNoModifier},
-	{"S", hid_key_usage::S, 1, kNoModifier},
-	{"D", hid_key_usage::D, 1, kNoModifier},
-	{"F", hid_key_usage::F, 1, kNoModifier},
-	{"G", hid_key_usage::G, 1, kNoModifier},
-	{"H", hid_key_usage::H, 1, kNoModifier},
-	{"J", hid_key_usage::J, 1, kNoModifier},
-	{"K", hid_key_usage::K, 1, kNoModifier},
-	{"L", hid_key_usage::L, 1, kNoModifier},
-	{";", hid_key_usage::Semicolon, 1, kNoModifier},
-	{"'", hid_key_usage::Quote, 1, kNoModifier},
+	{"a", hid_key_usage::A, 1, kNoModifier, "A"},
+	{"s", hid_key_usage::S, 1, kNoModifier, "S"},
+	{"d", hid_key_usage::D, 1, kNoModifier, "D"},
+	{"f", hid_key_usage::F, 1, kNoModifier, "F"},
+	{"g", hid_key_usage::G, 1, kNoModifier, "G"},
+	{"h", hid_key_usage::H, 1, kNoModifier, "H"},
+	{"j", hid_key_usage::J, 1, kNoModifier, "J"},
+	{"k", hid_key_usage::K, 1, kNoModifier, "K"},
+	{"l", hid_key_usage::L, 1, kNoModifier, "L"},
+	{";", hid_key_usage::Semicolon, 1, kNoModifier, ":"},
+	{"'", hid_key_usage::Quote, 1, kNoModifier, "\""},
 	{"ENTER", hid_key_usage::Enter, 2, kNoModifier},
 
 	{"SHIFT", hid_key_usage::ShiftLeft, 2, kModifierShift},
-	{"Z", hid_key_usage::Z, 1, kNoModifier},
-	{"X", hid_key_usage::X, 1, kNoModifier},
-	{"C", hid_key_usage::C, 1, kNoModifier},
-	{"V", hid_key_usage::V, 1, kNoModifier},
-	{"B", hid_key_usage::B, 1, kNoModifier},
-	{"N", hid_key_usage::N, 1, kNoModifier},
-	{"M", hid_key_usage::M, 1, kNoModifier},
-	{",", hid_key_usage::Comma, 1, kNoModifier},
-	{".", hid_key_usage::Period, 1, kNoModifier},
-	{"/", hid_key_usage::Slash, 1, kNoModifier},
+	{"z", hid_key_usage::Z, 1, kNoModifier, "Z"},
+	{"x", hid_key_usage::X, 1, kNoModifier, "X"},
+	{"c", hid_key_usage::C, 1, kNoModifier, "C"},
+	{"v", hid_key_usage::V, 1, kNoModifier, "V"},
+	{"b", hid_key_usage::B, 1, kNoModifier, "B"},
+	{"n", hid_key_usage::N, 1, kNoModifier, "N"},
+	{"m", hid_key_usage::M, 1, kNoModifier, "M"},
+	{",", hid_key_usage::Comma, 1, kNoModifier, "<"},
+	{".", hid_key_usage::Period, 1, kNoModifier, ">"},
+	{"/", hid_key_usage::Slash, 1, kNoModifier, "?"},
 	{"DEL", hid_key_usage::Delete, 2, kNoModifier},
 
 	{"CTRL", hid_key_usage::ControlLeft, 2, kModifierControl},
@@ -112,7 +113,7 @@ constexpr std::array<KeyboardRow, 5> kRows{{
 }};
 
 constexpr const char* kTitle = "ON-SCREEN KEYBOARD";
-constexpr const char* kHelp = "DPAD MOVE   A/TAP TYPE   B BACK";
+constexpr const char* kHelp = "A TYPE  B BKSP  X SPACE  Y SHIFT";
 constexpr i32 kInitialRow = 1;
 constexpr i32 kInitialKey = 15;
 constexpr i32 kUnitWidth = 13;
@@ -187,7 +188,11 @@ void HostOnScreenKeyboard::open() {
 
 void HostOnScreenKeyboard::close(LibretroInput& input) {
 	releasePulse(input);
-	for (size_t modifier = 0u; modifier < m_modifier_states.size(); modifier += 1u) {
+	if (m_modifier_states[static_cast<size_t>(kModifierShift)]) {
+		setShift(input, false);
+	}
+	for (size_t modifier = static_cast<size_t>(kModifierControl);
+			modifier < m_modifier_states.size(); modifier += 1u) {
 		if (m_modifier_states[modifier]) {
 			m_modifier_states[modifier] = false;
 			input.setVirtualKeyboardKey(kModifierUsages[modifier], false);
@@ -200,6 +205,10 @@ void HostOnScreenKeyboard::releasePulse(LibretroInput& input) {
 	if (m_pulse_usage >= 0) {
 		input.setVirtualKeyboardKey(static_cast<u8>(m_pulse_usage), false);
 		m_pulse_usage = -1;
+	}
+	if (m_release_shift_after_pulse) {
+		m_release_shift_after_pulse = false;
+		setShift(input, false);
 	}
 }
 
@@ -231,6 +240,10 @@ void HostOnScreenKeyboard::moveVertical(i32 direction) {
 void HostOnScreenKeyboard::activate(LibretroInput& input) {
 	const KeyDefinition& key = kKeys[static_cast<size_t>(m_selected_key)];
 	if (key.modifier != kNoModifier) {
+		if (key.modifier == kModifierShift) {
+			setShift(input, !m_modifier_states[static_cast<size_t>(kModifierShift)]);
+			return;
+		}
 		const size_t modifier = static_cast<size_t>(key.modifier);
 		const bool down = !m_modifier_states[modifier];
 		m_modifier_states[modifier] = down;
@@ -238,8 +251,46 @@ void HostOnScreenKeyboard::activate(LibretroInput& input) {
 		updateKeyColors();
 		return;
 	}
-	input.setVirtualKeyboardKey(key.usage, true);
-	m_pulse_usage = key.usage;
+	pulseKey(input, key.usage);
+}
+
+void HostOnScreenKeyboard::command(
+		LibretroInput& input,
+		OnScreenKeyboardCommand command) {
+	switch (command) {
+		case OnScreenKeyboardCommand::None:
+			return;
+		case OnScreenKeyboardCommand::Activate:
+			activate(input);
+			return;
+		case OnScreenKeyboardCommand::Backspace:
+			pulseKey(input, hid_key_usage::Backspace);
+			return;
+		case OnScreenKeyboardCommand::Delete:
+			pulseKey(input, hid_key_usage::Delete);
+			return;
+		case OnScreenKeyboardCommand::Space:
+			pulseKey(input, hid_key_usage::Space);
+			return;
+		case OnScreenKeyboardCommand::Shift:
+			setShift(input, !m_modifier_states[static_cast<size_t>(kModifierShift)]);
+			return;
+		case OnScreenKeyboardCommand::Left:
+			pulseKey(input, hid_key_usage::ArrowLeft);
+			return;
+		case OnScreenKeyboardCommand::Right:
+			pulseKey(input, hid_key_usage::ArrowRight);
+			return;
+		case OnScreenKeyboardCommand::Home:
+			pulseKey(input, hid_key_usage::Home);
+			return;
+		case OnScreenKeyboardCommand::End:
+			pulseKey(input, hid_key_usage::End);
+			return;
+		case OnScreenKeyboardCommand::Enter:
+			pulseKey(input, hid_key_usage::Enter);
+			return;
+	}
 }
 
 i32 HostOnScreenKeyboard::selectAt(i32 x, i32 y) {
@@ -300,6 +351,28 @@ void HostOnScreenKeyboard::updateKeyColors() {
 				? kActiveKeyColor
 				: kKeyColor;
 	}
+}
+
+void HostOnScreenKeyboard::pulseKey(LibretroInput& input, u8 usage) {
+	input.setVirtualKeyboardKey(usage, true);
+	m_pulse_usage = usage;
+	m_release_shift_after_pulse = m_modifier_states[static_cast<size_t>(kModifierShift)];
+}
+
+void HostOnScreenKeyboard::setShift(LibretroInput& input, bool down) {
+	m_modifier_states[static_cast<size_t>(kModifierShift)] = down;
+	input.setVirtualKeyboardKey(hid_key_usage::ShiftLeft, down);
+	for (size_t index = 0u; index < kKeys.size(); index += 1u) {
+		const KeyDefinition& key = kKeys[index];
+		const char* label = down && key.shiftLabel != nullptr
+			? key.shiftLabel
+			: key.label;
+		GlyphRenderSubmission& glyphs = m_key_glyphs[index];
+		glyphs.items[0] = label;
+		glyphs.item_end = static_cast<i32>(glyphs.items[0].size());
+	}
+	m_layout_width = -1;
+	updateKeyColors();
 }
 
 void HostOnScreenKeyboard::layoutKeys(VideoPresenter& presenter) {

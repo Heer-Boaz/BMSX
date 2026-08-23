@@ -27,6 +27,12 @@ BmsxHostShortcutResult bmsx_host_shortcuts_update(
 		uint32_t modifier,
 		uint32_t targets);
 
+void bmsx_host_shortcuts_retarget(
+		BmsxHostShortcutState* state,
+		uint32_t buttons,
+		uint32_t modifier,
+		uint32_t targets);
+
 #ifdef __cplusplus
 }
 #endif

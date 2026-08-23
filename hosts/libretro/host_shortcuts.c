@@ -40,3 +40,14 @@ BmsxHostShortcutResult bmsx_host_shortcuts_update(
 	}
 	return result;
 }
+
+void bmsx_host_shortcuts_retarget(
+		BmsxHostShortcutState* state,
+		uint32_t buttons,
+		uint32_t modifier,
+		uint32_t targets) {
+	state->previous_buttons = buttons;
+	state->blocked_targets = buttons & targets;
+	state->active_targets = 0u;
+	state->captured = (buttons & modifier) != 0u;
+}

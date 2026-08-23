@@ -3,16 +3,20 @@ import { LAYER_2D_IDE } from '../../machine/ts/render/shared/layers';
 import { Host2DKind, type Host2DRef } from '../../machine/ts/render/host_overlay/commands';
 import { Input } from './input/manager';
 import type { PlayerInput } from './input/player';
-import type { BGamepadButton } from './input/models';
+import type { BGamepadButton, ButtonId } from './input/models';
 import {
 	HOST_MENU_BUTTON,
+	HOST_ON_SCREEN_KEYBOARD_BUTTON,
 } from './input/shortcuts';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { DeviceQuantizeMode } from '../../machine/ts/render/post/device_quantize/mode';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import type { HostMenuFrame } from '../../machine/ts/render/host_overlay/overlay_queue';
 import { BASE_RAM_USED_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
-import { HostOnScreenKeyboard } from './host_on_screen_keyboard';
+import {
+	HostOnScreenKeyboard,
+	OnScreenKeyboardCommand,
+} from './host_on_screen_keyboard';
 import {
 	create_rect_bounds,
 	point_in_rect,
@@ -66,8 +70,42 @@ const BUTTON_LEFT: HostMenuButton = 'left';
 const BUTTON_RIGHT: HostMenuButton = 'right';
 const BUTTON_A: HostMenuButton = 'a';
 const BUTTON_B: HostMenuButton = 'b';
+const BUTTON_X: HostMenuButton = 'x';
+const BUTTON_Y: HostMenuButton = 'y';
+const BUTTON_LEFT_BUMPER: HostMenuButton = 'lb';
+const BUTTON_RIGHT_BUMPER: HostMenuButton = 'rb';
+const BUTTON_LEFT_TRIGGER: HostMenuButton = 'lt';
+const BUTTON_RIGHT_TRIGGER: HostMenuButton = 'rt';
+const BUTTON_SELECT: HostMenuButton = 'select';
+const LEFT_STICK_LEFT_SIGNAL = 'on-screen-keyboard:left-stick-left';
+const LEFT_STICK_RIGHT_SIGNAL = 'on-screen-keyboard:left-stick-right';
+const LEFT_STICK_UP_SIGNAL = 'on-screen-keyboard:left-stick-up';
+const LEFT_STICK_DOWN_SIGNAL = 'on-screen-keyboard:left-stick-down';
+const NAVIGATION_AXIS_THRESHOLD = 0.5;
 
 const MENU_NAV_BUTTONS = [BUTTON_UP, BUTTON_DOWN, BUTTON_LEFT, BUTTON_RIGHT, BUTTON_A, BUTTON_B, BUTTON_START] as const;
+
+type OnScreenKeyboardCommandBinding = {
+	readonly button: HostMenuButton;
+	readonly command: OnScreenKeyboardCommand;
+	readonly repeat: boolean;
+	readonly requiresSelect: boolean;
+};
+
+const ON_SCREEN_KEYBOARD_COMMAND_BINDINGS: readonly OnScreenKeyboardCommandBinding[] = [
+	{ button: BUTTON_B, command: OnScreenKeyboardCommand.Delete, repeat: false, requiresSelect: true },
+	{ button: BUTTON_LEFT_BUMPER, command: OnScreenKeyboardCommand.Home, repeat: true, requiresSelect: true },
+	{ button: BUTTON_RIGHT_BUMPER, command: OnScreenKeyboardCommand.End, repeat: true, requiresSelect: true },
+	{ button: BUTTON_B, command: OnScreenKeyboardCommand.Backspace, repeat: true, requiresSelect: false },
+	{ button: BUTTON_X, command: OnScreenKeyboardCommand.Space, repeat: true, requiresSelect: false },
+	{ button: BUTTON_Y, command: OnScreenKeyboardCommand.Shift, repeat: false, requiresSelect: false },
+	{ button: BUTTON_LEFT_BUMPER, command: OnScreenKeyboardCommand.Left, repeat: true, requiresSelect: false },
+	{ button: BUTTON_RIGHT_BUMPER, command: OnScreenKeyboardCommand.Right, repeat: true, requiresSelect: false },
+	{ button: BUTTON_LEFT_TRIGGER, command: OnScreenKeyboardCommand.Home, repeat: true, requiresSelect: false },
+	{ button: BUTTON_RIGHT_TRIGGER, command: OnScreenKeyboardCommand.End, repeat: true, requiresSelect: false },
+	{ button: BUTTON_START, command: OnScreenKeyboardCommand.Enter, repeat: false, requiresSelect: false },
+	{ button: BUTTON_A, command: OnScreenKeyboardCommand.Activate, repeat: false, requiresSelect: false },
+];
 
 const TITLE_TEXT = 'CORE OPTIONS';
 const FPS_PREFIX = 'HOST: ';
@@ -157,22 +195,6 @@ function readButtonState(input: Input, button: HostMenuButton): number {
 	return result;
 }
 
-function readGamepadButtonState(input: Input, button: HostMenuButton): number {
-	let result = 0;
-	for (let playerIndex = 1; playerIndex <= Input.PLAYERS_MAX; playerIndex += 1) {
-		const state = input.getPlayerInput(playerIndex).inputHandlers.gamepad?.getButtonState(button);
-		if (state && !state.consumed) {
-			if (state.pressed) {
-				result |= HostButtonState.Pressed;
-			}
-			if (state.justpressed) {
-				result |= HostButtonState.JustPressed;
-			}
-		}
-	}
-	return result;
-}
-
 function buttonEdge(input: Input, button: HostMenuButton): boolean {
 	let edge = false;
 	for (let playerIndex = 1; playerIndex <= Input.PLAYERS_MAX; playerIndex += 1) {
@@ -187,10 +209,34 @@ function buttonEdge(input: Input, button: HostMenuButton): boolean {
 	return edge;
 }
 
-function gamepadButtonEdge(input: Input, button: HostMenuButton): boolean {
+function gamepadButtonEdge(input: Input, button: ButtonId): boolean {
 	let edge = false;
 	for (let playerIndex = 1; playerIndex <= Input.PLAYERS_MAX; playerIndex += 1) {
 		if (input.getPlayerInput(playerIndex).controlButtonRepeatEdge(button, 'gamepad')) {
+			edge = true;
+		}
+	}
+	return edge;
+}
+
+function gamepadAxisEdge(
+	input: Input,
+	signal: ButtonId,
+	component: 0 | 1,
+	direction: -1 | 1,
+): boolean {
+	let edge = false;
+	for (let playerIndex = 1; playerIndex <= Input.PLAYERS_MAX; playerIndex += 1) {
+		const player = input.getPlayerInput(playerIndex);
+		const gamepad = player.inputHandlers.gamepad;
+		let pressed = false;
+		if (gamepad !== null) {
+			const value = gamepad.getButtonState('ls').value2d![component];
+			pressed = direction < 0
+				? value <= -NAVIGATION_AXIS_THRESHOLD
+				: value >= NAVIGATION_AXIS_THRESHOLD;
+		}
+		if (player.controlSignalRepeatEdge(signal, 'gamepad', pressed)) {
 			edge = true;
 		}
 	}
@@ -208,13 +254,37 @@ function consumeButtons(input: Input, buttons: readonly HostMenuButton[]): void 
 	}
 }
 
-function consumeGamepadButtons(input: Input, buttons: readonly HostMenuButton[]): void {
+function consumeGamepadInput(input: Input): void {
 	for (let playerIndex = 1; playerIndex <= Input.PLAYERS_MAX; playerIndex += 1) {
-		const gamepad = input.getPlayerInput(playerIndex).inputHandlers.gamepad;
-		for (let index = 0; index < buttons.length; index += 1) {
-			gamepad?.consumeButton(buttons[index]);
+		input.getPlayerInput(playerIndex).inputHandlers.gamepad?.consumeAllInput();
+	}
+}
+
+function resetControlButtonRepeats(input: Input): void {
+	for (let playerIndex = 1; playerIndex <= Input.PLAYERS_MAX; playerIndex += 1) {
+		input.getPlayerInput(playerIndex).resetControlButtonRepeats();
+	}
+}
+
+function onScreenKeyboardCommand(input: Input): OnScreenKeyboardCommand {
+	for (let bindingIndex = 0; bindingIndex < ON_SCREEN_KEYBOARD_COMMAND_BINDINGS.length; bindingIndex += 1) {
+		const binding = ON_SCREEN_KEYBOARD_COMMAND_BINDINGS[bindingIndex];
+		for (let playerIndex = 1; playerIndex <= Input.PLAYERS_MAX; playerIndex += 1) {
+			const player = input.getPlayerInput(playerIndex);
+			const gamepad = player.inputHandlers.gamepad;
+			if (gamepad === null
+				|| gamepad.getButtonState(BUTTON_SELECT).pressed !== binding.requiresSelect) {
+				continue;
+			}
+			const active = binding.repeat
+				? player.controlButtonRepeatEdge(binding.button, 'gamepad')
+				: gamepad.getButtonState(binding.button).justpressed;
+			if (active) {
+				return binding.command;
+			}
 		}
 	}
+	return OnScreenKeyboardCommand.None;
 }
 
 function usageColor(ratio: number): number {
@@ -293,6 +363,7 @@ export class HostOverlayMenu {
 	private fpsTextWidth = 0;
 	private showFps = false;
 	private controllerPortRevision = -1;
+	private onScreenKeyboardShortcutRequested = false;
 	private readonly options: readonly HostMenuOption[] = [
 		{
 			kind: 'value',
@@ -395,11 +466,17 @@ export class HostOverlayMenu {
 	) {
 		this.presenter = presenter;
 		this.keyboard = new HostOnScreenKeyboard(presenter, input);
+		const shortcuts = input.getGlobalShortcutRegistry();
 		for (let playerIndex = 1; playerIndex <= Input.PLAYERS_MAX; playerIndex += 1) {
-			input.getGlobalShortcutRegistry().registerControlShortcut(
+			shortcuts.registerControlShortcut(
 				playerIndex,
 				BUTTON_START,
 				() => this.toggle(),
+			);
+			shortcuts.registerControlShortcut(
+				playerIndex,
+				HOST_ON_SCREEN_KEYBOARD_BUTTON,
+				() => { this.onScreenKeyboardShortcutRequested = true; },
 			);
 		}
 		this.optionGlyphs = new Array(this.options.length);
@@ -419,6 +496,15 @@ export class HostOverlayMenu {
 	}
 
 	public tickInput(): HostMenuInput {
+		if (this.onScreenKeyboardShortcutRequested) {
+			this.onScreenKeyboardShortcutRequested = false;
+			if (this.page === HostOverlayPage.Keyboard) {
+				this.close();
+			} else {
+				this.openKeyboard();
+			}
+			return HostMenuInput.Inactive;
+		}
 		if (this.page === HostOverlayPage.Closed) {
 			return HostMenuInput.Inactive;
 		}
@@ -657,10 +743,7 @@ export class HostOverlayMenu {
 	private activateSelected(): HostMenuInput {
 		const option = this.options[this.selected];
 		if (option.kind === 'keyboard') {
-			this.page = HostOverlayPage.Keyboard;
-			this.keyboard.open();
-			this.pointerTimestamp = -1;
-			this.resetPointerPress();
+			this.openKeyboard();
 			return HostMenuInput.Inactive;
 		}
 		if (option.kind === 'action') {
@@ -673,10 +756,24 @@ export class HostOverlayMenu {
 
 	private close(): void {
 		this.keyboard.close();
+		this.input.getGlobalShortcutRegistry().setExclusiveGamepadControlShortcut(null);
+		resetControlButtonRepeats(this.input);
 		this.page = HostOverlayPage.Closed;
 		this.selected = 0;
 		this.resetPointerPress();
 		this.dirtyText = true;
+	}
+
+	private openKeyboard(): void {
+		this.page = HostOverlayPage.Keyboard;
+		this.keyboard.open();
+		this.input.getGlobalShortcutRegistry().setExclusiveGamepadControlShortcut(
+			HOST_ON_SCREEN_KEYBOARD_BUTTON,
+		);
+		resetControlButtonRepeats(this.input);
+		consumeGamepadInput(this.input);
+		this.pointerTimestamp = -1;
+		this.resetPointerPress();
 	}
 
 	private rebuildText(): void {
@@ -703,34 +800,36 @@ export class HostOverlayMenu {
 	private tickKeyboardInput(): HostMenuInput {
 		this.keyboard.releasePulse();
 		const pointerActivated = this.tickPointerInput();
-		if ((readGamepadButtonState(this.input, BUTTON_B) & HostButtonState.JustPressed) !== 0) {
-			this.keyboard.close();
-			this.page = HostOverlayPage.Options;
-			this.resetPointerPress();
-			consumeGamepadButtons(this.input, MENU_NAV_BUTTONS);
-			return HostMenuInput.Active;
-		}
 		if (pointerActivated) {
 			this.keyboard.activate();
-			consumeGamepadButtons(this.input, MENU_NAV_BUTTONS);
+			consumeGamepadInput(this.input);
 			return HostMenuInput.Inactive;
 		}
-		if (gamepadButtonEdge(this.input, BUTTON_UP)) {
+		const dpadUp = gamepadButtonEdge(this.input, BUTTON_UP);
+		const stickUp = gamepadAxisEdge(this.input, LEFT_STICK_UP_SIGNAL, 1, -1);
+		if (dpadUp || stickUp) {
 			this.keyboard.moveVertical(-1);
 		}
-		if (gamepadButtonEdge(this.input, BUTTON_DOWN)) {
+		const dpadDown = gamepadButtonEdge(this.input, BUTTON_DOWN);
+		const stickDown = gamepadAxisEdge(this.input, LEFT_STICK_DOWN_SIGNAL, 1, 1);
+		if (dpadDown || stickDown) {
 			this.keyboard.moveVertical(1);
 		}
-		if (gamepadButtonEdge(this.input, BUTTON_LEFT)) {
+		const dpadLeft = gamepadButtonEdge(this.input, BUTTON_LEFT);
+		const stickLeft = gamepadAxisEdge(this.input, LEFT_STICK_LEFT_SIGNAL, 0, -1);
+		if (dpadLeft || stickLeft) {
 			this.keyboard.moveHorizontal(-1);
 		}
-		if (gamepadButtonEdge(this.input, BUTTON_RIGHT)) {
+		const dpadRight = gamepadButtonEdge(this.input, BUTTON_RIGHT);
+		const stickRight = gamepadAxisEdge(this.input, LEFT_STICK_RIGHT_SIGNAL, 0, 1);
+		if (dpadRight || stickRight) {
 			this.keyboard.moveHorizontal(1);
 		}
-		if ((readGamepadButtonState(this.input, BUTTON_A) & HostButtonState.JustPressed) !== 0) {
-			this.keyboard.activate();
+		const command = onScreenKeyboardCommand(this.input);
+		if (command !== OnScreenKeyboardCommand.None) {
+			this.keyboard.command(command);
 		}
-		consumeGamepadButtons(this.input, MENU_NAV_BUTTONS);
+		consumeGamepadInput(this.input);
 		return HostMenuInput.Inactive;
 	}
 

@@ -19,6 +19,7 @@ int main(void) {
 	const uint32_t start = 1u << RETRO_DEVICE_ID_JOYPAD_START;
 	const uint32_t select = 1u << RETRO_DEVICE_ID_JOYPAD_SELECT;
 	const uint32_t a = 1u << RETRO_DEVICE_ID_JOYPAD_A;
+	const uint32_t x = 1u << RETRO_DEVICE_ID_JOYPAD_X;
 	const uint32_t targets = left_shoulder | start;
 	BmsxHostShortcutState state = {0};
 	BmsxHostShortcutResult result;
@@ -76,6 +77,40 @@ int main(void) {
 		targets);
 	require(result.just_pressed_targets == start,
 		"a simultaneous modifier and target press activates the command");
+
+	state = (BmsxHostShortcutState){0};
+	result = bmsx_host_shortcuts_update(
+		&state,
+		select | x,
+		select,
+		targets | x);
+	require(result.just_pressed_targets == x,
+		"the keyboard shortcut opens from the ordinary host target set");
+	bmsx_host_shortcuts_retarget(&state, select | x, select, x);
+	result = bmsx_host_shortcuts_update(&state, select | x, select, x);
+	require(result.active_targets == 0u && result.just_pressed_targets == 0u,
+		"retargeting blocks the held opening chord");
+
+	bmsx_host_shortcuts_retarget(
+		&state,
+		select | left_shoulder,
+		select,
+		targets | x);
+	result = bmsx_host_shortcuts_update(
+		&state,
+		select | left_shoulder,
+		select,
+		targets | x);
+	require(result.active_targets == 0u,
+		"restoring targets cannot activate a shoulder button that was already held");
+	bmsx_host_shortcuts_update(&state, 0u, select, targets | x);
+	result = bmsx_host_shortcuts_update(
+		&state,
+		select | left_shoulder,
+		select,
+		targets | x);
+	require(result.just_pressed_targets == left_shoulder,
+		"the restored target rearms after a full release");
 
 	return 0;
 }
