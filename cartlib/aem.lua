@@ -624,18 +624,17 @@ end
 
 local begin_music_request<const> = function()
 	*music_request_seq = *music_request_seq + 1
-	local cancelled_stinger_slot
+	-- A stinger is the active music segment until its retained transition hands
+	-- off to the loop. Superseding that transition must therefore keep the
+	-- physical segment as the source of an authored fade instead of cutting it
+	-- before the replacement request is evaluated.
 	if *stinger_source_addr ~= 0
 	and slot_source_matches(*stinger_slot, *stinger_source_addr) then
-		cancelled_stinger_slot = *stinger_slot
-		apu.stop_slot(cancelled_stinger_slot, 0)
-		clear_slot_active(cancelled_stinger_slot)
+		*current_music_source_addr = *stinger_source_addr
+		*current_music_slot = *stinger_slot
 	end
 	clear_slot_queue(slot_music_a)
 	clear_slot_queue(slot_music_b)
-	if cancelled_stinger_slot ~= nil then
-		play_next_queued(cancelled_stinger_slot)
-	end
 	clear_stinger()
 	clear_pending_music()
 	clear_pending_stop(slot_music_a)

@@ -19,6 +19,10 @@ local castle_tags<const> = {
 	seal_broken = 'c.seal.broken',
 	daemon_fight = 'c.daemon.fight',
 }
+local room_music_suppressed_directions<const> = {
+	world_leave = true,
+	halo = true,
+}
 
 local set_tag_flag<const> = function(owner, tag, enabled)
 	if enabled then
@@ -609,8 +613,9 @@ function castle:create_room_enter_payload(suppress_room_music)
 	}
 	if suppress_room_music ~= nil then
 		payload.suppress_room_music = suppress_room_music
-	elseif room.last_room_switch ~= nil and room.last_room_switch.direction == 'world_leave' then
-		payload.suppress_room_music = true
+	elseif room.last_room_switch ~= nil then
+		local direction<const> = room.last_room_switch.direction
+		payload.suppress_room_music = room_music_suppressed_directions[direction] ~= nil
 	else
 		payload.suppress_room_music = false
 	end

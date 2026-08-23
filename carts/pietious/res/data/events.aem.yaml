@@ -1,8 +1,48 @@
 events:
     # --- Music routing (no room-id checks) ---
+    # The XNA fast route lowered gain after every admitted 75 ms interval.
+    # Pietious admits that interval on its next 40 ms frame boundary; the APU
+    # owns the equivalent continuous fade instead of a cart-side volume loop.
     room.enter:
         channel: music
-        rules: &room_music_rules
+        rules:
+            - when:
+                  equals:
+                      daemon_fight_active: true
+                      suppress_room_music: false
+              go:
+                  music_transition:
+                      audio_id: music_daemonfight
+                      fade_ms: &room_music_fade_ms 1600
+            - when:
+                  equals:
+                      has_active_seal: true
+                      suppress_room_music: false
+              go:
+                  music_transition:
+                      audio_id: music_seal_2
+                      fade_ms: *room_music_fade_ms
+                      sync:
+                          stinger: music_seal_1
+            - when:
+                  equals:
+                      world_number: 0
+                      suppress_room_music: false
+              go:
+                  music_transition:
+                      audio_id: music_castle
+                      fade_ms: *room_music_fade_ms
+            - when:
+                  equals:
+                      suppress_room_music: false
+              go:
+                  music_transition:
+                      audio_id: music_world
+                      fade_ms: *room_music_fade_ms
+
+    shrine_exit_done:
+        channel: music
+        rules: &room_music_restore_rules
             - when:
                   equals:
                       daemon_fight_active: true
@@ -33,13 +73,9 @@ events:
                   music_transition:
                       audio_id: music_world
 
-    shrine_exit_done:
-        channel: music
-        rules: *room_music_rules
-
     lithograph_exit_done:
         channel: music
-        rules: *room_music_rules
+        rules: *room_music_restore_rules
 
     title:
         channel: music
@@ -275,11 +311,7 @@ events:
         channel: sfx
         rules:
             - go:
-                  sequence:
-                      - stop:
-                            channel: music
-                            fade_ms: 0
-                      - audio_id: enterleave
+                  audio_id: enterleave
 
     world_emerge_done:
         channel: music
