@@ -288,13 +288,10 @@ function moon:begin_death_ray()
 end
 
 -- The Stage-7 Abaddon controller chooses a direction toward the primary
--- player only at the start of each movement segment. Its byte accumulator and
--- pre-decremented step counter are retained directly so the translated Moon
--- keeps the source boss's discrete, readable movement rhythm.
+-- player only at the start of each movement segment. Its movement accumulator
+-- and remaining movement count belong to that active Task instance.
 local death_ray_movement_task<const> = {
 	node_memory = true,
-	minimum_steps = moon_death_ray_move_counter_min,
-	maximum_steps = moon_death_ray_move_counter_max,
 }
 
 function death_ray_movement_task.execute(self, node_memory)
@@ -304,27 +301,28 @@ function death_ray_movement_task.execute(self, node_memory)
 	else
 		self.vertical_direction = moon_vertical_direction_up
 	end
-	node_memory.phase = moon_death_ray_move_phase_initial
-	node_memory.remaining_steps = math.random(
-		death_ray_movement_task.minimum_steps,
-		death_ray_movement_task.maximum_steps
+	node_memory.movement_accumulator = moon_death_ray_move_accumulator_initial
+	node_memory.remaining_moves = math.random(
+		moon_death_ray_move_count_min,
+		moon_death_ray_move_count_max
 	)
 	return bt_running
 end
 
 function death_ray_movement_task.tick(self, node_memory)
-	local phase<const> = node_memory.phase + moon_death_ray_move_phase_step
-	if phase < 0x100 then
-		node_memory.phase = phase
+	local movement_accumulator<const> = node_memory.movement_accumulator
+		+ moon_death_ray_move_accumulator_step
+	if movement_accumulator < 0x100 then
+		node_memory.movement_accumulator = movement_accumulator
 		return bt_running
 	end
-	node_memory.phase = phase - 0x100
+	node_memory.movement_accumulator = movement_accumulator - 0x100
 
-	local counter<const> = node_memory.remaining_steps - 1
-	node_memory.remaining_steps = counter
-	if counter == 0 then
+	local remaining_moves<const> = node_memory.remaining_moves
+	if remaining_moves == 0 then
 		return bt_success
 	end
+	node_memory.remaining_moves = remaining_moves - 1
 
 	local direction<const> = self.vertical_direction
 	local y<const> = self.y + direction * self.stage.tile_size

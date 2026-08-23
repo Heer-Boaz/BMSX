@@ -7,6 +7,7 @@ local result<const> = require('cartlib/behaviour_tree/result')
 local service_program<const> = require('cartlib/behaviour_tree/service_program')
 local task_program<const> = require('cartlib/behaviour_tree/task_program')
 local timeline_task<const> = require('cartlib/behaviour_tree/timeline_task')
+local wait_task<const> = require('cartlib/behaviour_tree/wait_task')
 
 -- Admission-only lowering. Sequence/selector programs retain their running
 -- child; Blackboard observers enqueue branch execution requests instead of
@@ -476,61 +477,9 @@ compile_by_type.weighted_random_selector = function(node, layout)
 	end, nil, reset
 end
 
-compile_by_type.limit = function(node, layout)
-	local evaluate<const>, operand<const>, reset_child<const> = compile_node(node.child, layout)
-	local limit<const> = node.limit
-	local state_slot<const> = allocate_state_slot(layout)
-	return function(target, execution)
-		local execution_state<const> = execution._execution_state
-		local count<const> = execution_state[state_slot] or 0
-		if count < limit then
-			local status<const> = evaluate(target, execution, operand)
-			if status >= result_success then
-				execution_state[state_slot] = count + 1
-			end
-			return status
-		end
-		return result_failure
-	end, nil, reset_child
-end
-
-compile_by_type.wait = function(node, layout)
-	local duration_ticks<const> = node.duration_ticks
-	local state_slot<const> = allocate_state_slot(layout)
-	local reset<const> = function(_target, _execution, execution_state)
-		execution_state[state_slot] = nil
-	end
-	if duration_ticks == nil then
-		local minimum_duration_ticks<const> = node.minimum_duration_ticks
-		local maximum_duration_ticks<const> = node.maximum_duration_ticks
-		return function(_target, execution)
-			local execution_state<const> = execution._execution_state
-			local remaining = execution_state[state_slot]
-			if remaining == nil then
-				remaining = math.random(minimum_duration_ticks, maximum_duration_ticks)
-			end
-			if remaining > 0 then
-				execution_state[state_slot] = remaining - 1
-				return result_running
-			end
-			execution_state[state_slot] = nil
-			return result_success
-		end, nil, reset
-	end
-	return function(_target, execution)
-		local execution_state<const> = execution._execution_state
-		local elapsed<const> = execution_state[state_slot] or 0
-		if elapsed < duration_ticks then
-			execution_state[state_slot] = elapsed + 1
-			return result_running
-		end
-		execution_state[state_slot] = nil
-		return result_success
-	end, nil, reset
-end
-
 compile_by_type.task = task_program.compile
 compile_by_type.timeline = timeline_task.compile
+compile_by_type.wait = wait_task.compile
 
 compile_by_type.set_blackboard = blackboard_program.compile_set
 compile_by_type.add_blackboard = blackboard_program.compile_add
