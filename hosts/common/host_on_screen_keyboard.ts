@@ -106,7 +106,7 @@ const ROWS: readonly OnScreenKeyboardRow[] = [
 ];
 
 const TITLE = 'ON-SCREEN KEYBOARD';
-const HELP = 'DPAD MOVE   A TYPE   B BACK';
+const HELP = 'DPAD MOVE   A/TAP TYPE   B BACK';
 const INITIAL_ROW = 1;
 const INITIAL_KEY = 15;
 const UNIT_WIDTH = 13;
@@ -257,6 +257,24 @@ export class HostOnScreenKeyboard {
 		}
 		this.input.setVirtualKeyboardKey(key.code, true);
 		this.pulseCode = key.code;
+	}
+
+	public selectAt(x: number, y: number): boolean {
+		for (let rowIndex = 0; rowIndex < ROWS.length; rowIndex += 1) {
+			const row = ROWS[rowIndex];
+			for (let index = row.start; index < row.start + row.count; index += 1) {
+				const area = this.keyRects[index].area;
+				if (x >= area.left && x < area.right && y >= area.top && y < area.bottom) {
+					if (index !== this.selectedKey) {
+						this.selectedRow = rowIndex;
+						this.selectedKey = index;
+						this.updateKeyColors();
+					}
+					return true;
+				}
+			}
+		}
+		return false;
 	}
 
 	public queueRenderCommands(): void {

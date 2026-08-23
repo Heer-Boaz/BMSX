@@ -32,10 +32,21 @@ bool RETRO_CALLCONV readSupervisorRequestLine() {
 }
 
 uint16_t gamepadState = 0u;
+int16_t pointerX = 0;
+int16_t pointerY = 0;
+bool pointerPressed = false;
 
-int16_t gamepadInputState(unsigned port, unsigned device, unsigned, unsigned id) {
+int16_t hostInputState(unsigned port, unsigned device, unsigned, unsigned id) {
 	if (port == 0u && device == RETRO_DEVICE_JOYPAD) {
 		return (gamepadState & (1u << id)) != 0u ? 1 : 0;
+	}
+	if (port == 0u && device == RETRO_DEVICE_POINTER) {
+		switch (id) {
+			case 0u: return pointerX;
+			case 1u: return pointerY;
+			case 2u: return pointerPressed ? 1 : 0;
+			default: return 0;
+		}
 	}
 	return 0;
 }
@@ -116,7 +127,7 @@ void testLibretroStateEnvelopeRoundTrip() {
 void testInputSnapshotReflectsHeldKey() {
 	bmsx::LibretroInput input(readSupervisorRequestLine);
 	input.setInputPollCallback(discardInputPoll);
-	input.setInputStateCallback(gamepadInputState);
+	input.setInputStateCallback(hostInputState);
 	input.postKeyboardEvent(RETROK_x, true);
 	input.poll(256, 240, 0.0);
 	bmsx::InputControllerSnapshot snapshot;
@@ -143,11 +154,54 @@ void testInputSnapshotReflectsHeldKey() {
 		"releasing the final keyboard source should clear the ICU key bit");
 }
 
+void testHostPointerConsumptionMasksGuestSnapshot() {
+	bmsx::LibretroInput input(readSupervisorRequestLine);
+	input.setInputPollCallback(discardInputPoll);
+	input.setInputStateCallback(hostInputState);
+	pointerX = 16384;
+	pointerY = -16384;
+	pointerPressed = true;
+	input.poll(256, 240, 0.0);
+
+	bmsx::i32 x = 0;
+	bmsx::i32 y = 0;
+	require(
+		input.pointerPosition(x, y),
+		"a libretro pointer press should publish a viewport position");
+	require(
+		x == 191 && y == 60,
+		"libretro pointer coordinates should map directly into the retained viewport");
+	require(
+		input.pointerButtonPressed(bmsx::INP_POINTER_BUTTON_PRIMARY),
+		"the host overlay should observe the physical primary pointer button");
+
+	input.consumePointerButton(bmsx::INP_POINTER_BUTTON_PRIMARY);
+	bmsx::InputControllerSnapshot snapshot;
+	input.sampleInputControllerSnapshot(snapshot);
+	require(
+		(snapshot.pointerButtons
+			& (1u << bmsx::INP_POINTER_BUTTON_PRIMARY)) == 0u,
+		"a host-owned pointer press must not leak into the ICU snapshot");
+	require(
+		input.pointerButtonPressed(bmsx::INP_POINTER_BUTTON_PRIMARY),
+		"routing consumption must not mutate the physical pointer source");
+
+	input.poll(256, 240, 1.0);
+	input.sampleInputControllerSnapshot(snapshot);
+	require(
+		(snapshot.pointerButtons
+			& (1u << bmsx::INP_POINTER_BUTTON_PRIMARY)) != 0u,
+		"each input poll should republish unconsumed physical pointer state");
+	pointerX = 0;
+	pointerY = 0;
+	pointerPressed = false;
+}
+
 void testLibretroSupervisorRequestChordAndGuestInput() {
 	supervisorRequestLineHigh = false;
 	bmsx::LibretroInput input(readSupervisorRequestLine);
 	input.setInputPollCallback(discardInputPoll);
-	input.setInputStateCallback(gamepadInputState);
+	input.setInputStateCallback(hostInputState);
 
 	const uint32_t leftShoulderButton = 1u << static_cast<uint32_t>(
 		bmsx::InputControllerGamepadButtonBit::LeftBumper);
@@ -292,6 +346,7 @@ void testLibretroSupervisorRequestChordAndGuestInput() {
 int main() {
 	testLibretroStateEnvelopeRoundTrip();
 	testInputSnapshotReflectsHeldKey();
+	testHostPointerConsumptionMasksGuestSnapshot();
 	testLibretroSupervisorRequestChordAndGuestInput();
 	return 0;
 }

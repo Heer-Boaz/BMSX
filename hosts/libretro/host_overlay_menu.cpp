@@ -325,9 +325,33 @@ HostMenuInput HostOverlayMenu::tickInput(LibretroInput& input, VideoPresenter& p
 			)) {
 				m_keyboard.moveHorizontal(1);
 			}
-			if (gamepadButtonJustPressed(input, HostMenuButtonId::A)) {
+			i32 pointerX = 0;
+			i32 pointerY = 0;
+			const bool pointerPrimary = input.pointerButtonPressed(
+				INP_POINTER_BUTTON_PRIMARY);
+			const bool pointerPrimaryJustPressed = pointerPrimary
+				&& !m_previousPointerPrimary;
+			bool activated = false;
+			if (input.pointerPosition(pointerX, pointerY)
+				&& (!m_keyboardPointerValid
+					|| pointerX != m_keyboardPointerX
+					|| pointerY != m_keyboardPointerY
+					|| pointerPrimaryJustPressed)) {
+				m_keyboardPointerX = pointerX;
+				m_keyboardPointerY = pointerY;
+				m_keyboardPointerValid = true;
+				if (m_keyboard.selectAt(pointerX, pointerY)
+					&& pointerPrimaryJustPressed) {
+					m_keyboard.activate(input);
+					activated = true;
+				}
+			}
+			input.consumePointerButton(INP_POINTER_BUTTON_PRIMARY);
+			if (!activated
+				&& gamepadButtonJustPressed(input, HostMenuButtonId::A)) {
 				m_keyboard.activate(input);
 			}
+			m_previousPointerPrimary = pointerPrimary;
 		}
 	} else if (m_page == Page::Options) {
 		if (buttonJustPressed(input, HostMenuButtonId::B)) {
@@ -399,6 +423,8 @@ void HostOverlayMenu::resetInputState(LibretroInput& input) {
 	m_dirtyText = true;
 	m_previousButtonStates.fill(false);
 	m_previousGamepadButtonStates.fill(false);
+	m_keyboardPointerValid = false;
+	m_previousPointerPrimary = false;
 	resetButtonRepeats();
 }
 
@@ -641,6 +667,9 @@ HostMenuInput HostOverlayMenu::activateSelected(LibretroInput& input) {
 		case HostMenuOptionId::OnScreenKeyboard:
 			m_page = Page::Keyboard;
 			m_keyboard.open();
+			m_keyboardPointerValid = false;
+			m_previousPointerPrimary = input.pointerButtonPressed(
+				INP_POINTER_BUTTON_PRIMARY);
 			resetButtonRepeats();
 			return HostMenuInput::Inactive;
 		case HostMenuOptionId::RebootCart:

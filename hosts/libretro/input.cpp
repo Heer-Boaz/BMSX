@@ -342,6 +342,7 @@ void LibretroInput::poll(
 			kRetroMouseIdButton5) != 0
 			? 1u << INP_POINTER_BUTTON_FORWARD
 			: 0u);
+	m_routed_pointer_buttons = m_pointer_buttons;
 
 	const bool hasAbsolutePointer =
 		pointerRawX != 0 || pointerRawY != 0 || pointerPressed;
@@ -395,6 +396,23 @@ void LibretroInput::consumeGamepadButton(
 	m_gamepads[deviceSlot].buttons &= ~(1u << static_cast<u32>(button));
 }
 
+bool LibretroInput::pointerPosition(i32& x, i32& y) const {
+	if (!m_pointer_position_valid) {
+		return false;
+	}
+	x = m_pointer_x;
+	y = m_pointer_y;
+	return true;
+}
+
+bool LibretroInput::pointerButtonPressed(u32 button) const {
+	return (m_pointer_buttons & (1u << button)) != 0u;
+}
+
+void LibretroInput::consumePointerButton(u32 button) {
+	m_routed_pointer_buttons &= ~(1u << button);
+}
+
 bool LibretroInput::hostShortcutJustPressed(
 		InputControllerGamepadButtonBit button) const {
 	return (m_just_pressed_host_shortcuts & (1u << static_cast<u32>(button))) != 0u;
@@ -403,7 +421,7 @@ bool LibretroInput::hostShortcutJustPressed(
 void LibretroInput::sampleInputControllerSnapshot(
 		InputControllerSnapshot& snapshot) {
 	snapshot.keyWords = m_routed_keyboard_usage_words;
-	snapshot.pointerButtons = m_pointer_buttons;
+	snapshot.pointerButtons = m_routed_pointer_buttons;
 	snapshot.pointerXQ16 = m_pointer_x_q16;
 	snapshot.pointerYQ16 = m_pointer_y_q16;
 	snapshot.pointerWheelQ16 = m_pointer_wheel_q16;
@@ -524,6 +542,7 @@ void LibretroInput::reset() {
 	m_routed_keyboard_usage_words.fill(0u);
 	m_gamepads.fill({});
 	m_pointer_buttons = 0u;
+	m_routed_pointer_buttons = 0u;
 	m_pointer_x = 0;
 	m_pointer_y = 0;
 	m_pointer_x_q16 = 0u;

@@ -50,6 +50,7 @@ export class PointerInput implements PointerInputHandler {
 	private pendingWheel = 0;
 	private pendingWheelTimestamp = 0;
 	private inputControllerButtons = 0;
+	private routedInputControllerButtons = 0;
 	private inputControllerXQ16 = 0;
 	private inputControllerYQ16 = 0;
 	private inputControllerWheelQ16 = 0;
@@ -63,6 +64,7 @@ export class PointerInput implements PointerInputHandler {
 
 	public pollInput(): void {
 		const now = this.clock.now();
+		this.routedInputControllerButtons = this.inputControllerButtons;
 		const delta = this.buttonStates['pointer_delta'];
 		const deltaX = this.pendingDeltaX;
 		const deltaY = this.pendingDeltaY;
@@ -137,8 +139,12 @@ export class PointerInput implements PointerInputHandler {
 		return getPressedState(this.buttonStates, btn);
 	}
 
+	public get positionValid(): boolean {
+		return this.lastPositionValid;
+	}
+
 	public writeInputControllerPointerSnapshot(snapshot: InputControllerSnapshot): void {
-		snapshot.pointerButtons = (snapshot.pointerButtons | this.inputControllerButtons) >>> 0;
+		snapshot.pointerButtons = (snapshot.pointerButtons | this.routedInputControllerButtons) >>> 0;
 		snapshot.pointerXQ16 = this.inputControllerXQ16;
 		snapshot.pointerYQ16 = this.inputControllerYQ16;
 		snapshot.pointerWheelQ16 = this.inputControllerWheelQ16;
@@ -227,6 +233,12 @@ export class PointerInput implements PointerInputHandler {
 				state.justreleased = false;
 			}
 		}
+		const bit = pointerButtonBit(button);
+		if (bit >= 0) {
+			this.routedInputControllerButtons = (
+				this.routedInputControllerButtons & ~(1 << bit)
+			) >>> 0;
+		}
 	}
 
 	public reset(): void {
@@ -256,6 +268,7 @@ export class PointerInput implements PointerInputHandler {
 		this.pendingWheel = 0;
 		this.pendingWheelTimestamp = 0;
 		this.inputControllerButtons = 0;
+		this.routedInputControllerButtons = 0;
 		this.inputControllerXQ16 = 0;
 		this.inputControllerYQ16 = 0;
 		this.inputControllerWheelQ16 = 0;

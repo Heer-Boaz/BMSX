@@ -5,7 +5,11 @@ import { RGBA8_LINEAR_TEXTURE_PARAMS, RGBA8_SRGB_TEXTURE_PARAMS } from './backen
 import { RenderPassLibrary } from './backend/pass/library';
 import { DeviceQuantizeMode } from './post/device_quantize/mode';
 import { RenderGraphRuntime, type FrameData } from './graph/graph';
-import type { VideoOutput } from './video_output';
+import {
+	DisplayPointMappingResult,
+	mapDisplayPointToViewport,
+	type VideoOutput,
+} from './video_output';
 import type { GxGpuDeviceOutput } from '../machine/devices/gx/device_output';
 import { HostOverlayQueue } from './host_overlay/overlay_queue';
 
@@ -95,6 +99,17 @@ export class VideoPresenter {
 		this.backend.resizePresentationTarget(width, height);
 		this.output.setDisplaySize(width, height);
 		this.rebuildGraph();
+	}
+
+	public mapDisplayPointToViewport(screenX: number, screenY: number, target: vec2): boolean {
+		return mapDisplayPointToViewport(
+			this.output.measureDisplay(),
+			this.viewportSize.x,
+			this.viewportSize.y,
+			screenX,
+			screenY,
+			target,
+		) === DisplayPointMappingResult.Inside;
 	}
 
 	public present(output: GxGpuDeviceOutput, timeSeconds: number, deltaSeconds: number): void {

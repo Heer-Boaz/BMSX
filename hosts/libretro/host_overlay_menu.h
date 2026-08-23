@@ -104,6 +104,10 @@ private:
 	std::array<bool, static_cast<size_t>(HostMenuButtonId::Count)> m_previousButtonStates{};
 	std::array<bool, static_cast<size_t>(HostMenuButtonId::Count)> m_previousGamepadButtonStates{};
 	std::array<ButtonRepeatRecord, static_cast<size_t>(HostMenuRepeatId::Count)> m_buttonRepeats;
+	i32 m_keyboardPointerX = 0;
+	i32 m_keyboardPointerY = 0;
+	bool m_keyboardPointerValid = false;
+	bool m_previousPointerPrimary = false;
 	size_t m_commandCount = 0;
 	std::string m_fpsText;
 	i32 m_fpsTextTenths = -1;

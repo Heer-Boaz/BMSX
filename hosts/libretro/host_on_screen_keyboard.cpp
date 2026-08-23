@@ -111,7 +111,7 @@ constexpr std::array<KeyboardRow, 5> kRows{{
 }};
 
 constexpr const char* kTitle = "ON-SCREEN KEYBOARD";
-constexpr const char* kHelp = "DPAD MOVE   A TYPE   B BACK";
+constexpr const char* kHelp = "DPAD MOVE   A/TAP TYPE   B BACK";
 constexpr i32 kInitialRow = 1;
 constexpr i32 kInitialKey = 15;
 constexpr i32 kUnitWidth = 13;
@@ -239,6 +239,29 @@ void HostOnScreenKeyboard::activate(LibretroInput& input) {
 	}
 	input.setVirtualKeyboardKey(key.usage, true);
 	m_pulse_usage = key.usage;
+}
+
+bool HostOnScreenKeyboard::selectAt(i32 x, i32 y) {
+	const f32 pointX = static_cast<f32>(x);
+	const f32 pointY = static_cast<f32>(y);
+	for (size_t rowIndex = 0u; rowIndex < kRows.size(); rowIndex += 1u) {
+		const KeyboardRow& row = kRows[rowIndex];
+		for (i32 index = row.start; index < row.start + row.count; index += 1) {
+			const RectBounds& area = m_key_rects[static_cast<size_t>(index)].area;
+			if (pointX >= area.left
+				&& pointX < area.right
+				&& pointY >= area.top
+				&& pointY < area.bottom) {
+				if (index != m_selected_key) {
+					m_selected_row = static_cast<i32>(rowIndex);
+					m_selected_key = index;
+					updateKeyColors();
+				}
+				return true;
+			}
+		}
+	}
+	return false;
 }
 
 void HostOnScreenKeyboard::queueRenderCommands(VideoPresenter& presenter) {

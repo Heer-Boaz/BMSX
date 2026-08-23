@@ -30,6 +30,9 @@ public:
 	void consumeGamepadButton(
 		u8 deviceSlot,
 		InputControllerGamepadButtonBit button);
+	bool pointerPosition(i32& x, i32& y) const;
+	bool pointerButtonPressed(u32 button) const;
+	void consumePointerButton(u32 button);
 	bool hostShortcutJustPressed(InputControllerGamepadButtonBit button) const;
 	f64 frameDurationMs() const { return m_frame_duration_ms; }
 	void setFrameDurationMs(f64 frameDurationMs) {
@@ -60,6 +63,7 @@ private:
 	std::array<u32, INPUT_CONTROLLER_KEY_WORD_COUNT> m_routed_keyboard_usage_words{};
 	std::array<InputControllerPadSnapshot, INPUT_CONTROLLER_PAD_COUNT> m_gamepads{};
 	u32 m_pointer_buttons = 0u;
+	u32 m_routed_pointer_buttons = 0u;
 	i32 m_pointer_x = 0;
 	i32 m_pointer_y = 0;
 	u32 m_pointer_x_q16 = 0u;

@@ -256,6 +256,8 @@ export class HostOverlayMenu {
 	private readonly presenter: VideoPresenter;
 	private page = HostOverlayPage.Closed;
 	private readonly keyboard: HostOnScreenKeyboard;
+	private readonly keyboardPointerPosition = { x: 0, y: 0 };
+	private keyboardPointerTimestamp = -1;
 	private selected = 0;
 	private dirtyText = true;
 	private readonly lineText: string[] = [];
@@ -635,6 +637,7 @@ export class HostOverlayMenu {
 		if (option.kind === 'keyboard') {
 			this.page = HostOverlayPage.Keyboard;
 			this.keyboard.open();
+			this.keyboardPointerTimestamp = -1;
 			return HostMenuInput.Inactive;
 		}
 		if (option.kind === 'action') {
@@ -692,7 +695,30 @@ export class HostOverlayMenu {
 		if (gamepadButtonEdge(this.input, BUTTON_RIGHT)) {
 			this.keyboard.moveHorizontal(1);
 		}
-		if ((readGamepadButtonState(this.input, BUTTON_A) & HostButtonState.JustPressed) !== 0) {
+		const pointer = this.input.getPlayerInput(1).inputHandlers.pointer!;
+		const pointerPosition = pointer.getButtonState('pointer_position');
+		const pointerPrimary = pointer.getButtonState('pointer_primary');
+		const pointerPressed = pointerPrimary.justpressed && !pointerPrimary.consumed;
+		let activated = false;
+		if (pointer.positionValid
+			&& (pointerPosition.timestamp !== this.keyboardPointerTimestamp || pointerPressed)) {
+			this.keyboardPointerTimestamp = pointerPosition.timestamp;
+			const screenPosition = pointerPosition.value2d!;
+			if (this.presenter.mapDisplayPointToViewport(
+				screenPosition[0],
+				screenPosition[1],
+				this.keyboardPointerPosition,
+			) && this.keyboard.selectAt(
+				this.keyboardPointerPosition.x,
+				this.keyboardPointerPosition.y,
+			) && pointerPressed) {
+				this.keyboard.activate();
+				activated = true;
+			}
+		}
+		pointer.consumeButton('pointer_primary');
+		if (!activated
+			&& (readGamepadButtonState(this.input, BUTTON_A) & HostButtonState.JustPressed) !== 0) {
 			this.keyboard.activate();
 		}
 		consumeGamepadButtons(this.input, MENU_NAV_BUTTONS);

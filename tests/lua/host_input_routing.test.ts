@@ -8,10 +8,20 @@ import { Input } from '../../hosts/common/input/manager';
 import {
 	HOST_IDE_BUTTON,
 } from '../../hosts/common/input/shortcuts';
-import { createInputControllerSnapshot } from '../../machine/ts/machine/devices/input/contracts';
+import {
+	createInputControllerSnapshot,
+	INP_POINTER_BUTTON_PRIMARY,
+} from '../../machine/ts/machine/devices/input/contracts';
 import { hidKeyUsageForCode } from '../../hosts/common/input/hid_keys';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
+import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
+import { HostOverlayQueue } from '../../machine/ts/render/host_overlay/overlay_queue';
+import type { GlyphRenderSubmission } from '../../machine/ts/render/shared/submissions';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
+import {
+	DisplayPointMappingResult,
+	mapDisplayPointToViewport,
+} from '../../machine/ts/render/video_output';
 
 function createInput(): { input: Input; setTime(time: number): void } {
 	let currentTime = 0;
@@ -31,6 +41,27 @@ function createInput(): { input: Input; setTime(time: number): void } {
 function keyWordContains(words: Uint32Array, code: string): boolean {
 	const usage = hidKeyUsageForCode(code);
 	return (words[usage >>> 5] & (1 << (usage & 31))) !== 0;
+}
+
+function tickMenu(input: Input, menu: HostOverlayMenu): HostMenuInput {
+	input.pollInput();
+	return menu.tickInput();
+}
+
+function openMenuWithGamepad(
+	input: Input,
+	menu: HostOverlayMenu,
+	deviceId: string,
+	time: number,
+	selectPressId: number,
+	startPressId: number,
+): void {
+	input.inputButton(deviceId, 'select', true, 1, time, selectPressId);
+	input.inputButton(deviceId, 'start', true, 1, time, startPressId);
+	assert.equal(tickMenu(input, menu), HostMenuInput.Active);
+	input.inputButton(deviceId, 'select', false, 0, time + 1, selectPressId);
+	input.inputButton(deviceId, 'start', false, 0, time + 1, startPressId);
+	tickMenu(input, menu);
 }
 
 test('host control routing reserves Select without leaking split-frame shortcuts', () => {
@@ -150,19 +181,16 @@ test('quick menu accepts navigation after consuming its opening frame', () => {
 	setTime(10);
 	input.inputButton('keyboard:0', 'ControlRight', true, 1, 10, 1);
 	input.inputButton('keyboard:0', 'AltRight', true, 1, 10, 2);
-	input.pollInput();
-	assert.equal(menu.tickInput(), HostMenuInput.Active);
+	assert.equal(tickMenu(input, menu), HostMenuInput.Active);
 
 	setTime(20);
 	input.inputButton('keyboard:0', 'ControlRight', false, 0, 20, 1);
 	input.inputButton('keyboard:0', 'AltRight', false, 0, 20, 2);
-	input.pollInput();
-	assert.equal(menu.tickInput(), HostMenuInput.Active);
+	assert.equal(tickMenu(input, menu), HostMenuInput.Active);
 
 	setTime(30);
 	input.inputButton('keyboard:0', 'ArrowRight', true, 1, 30, 3);
-	input.pollInput();
-	assert.equal(menu.tickInput(), HostMenuInput.Active);
+	assert.equal(tickMenu(input, menu), HostMenuInput.Active);
 	assert.equal(presenter.show_resource_usage_gizmo, true);
 	input.dispose();
 });
@@ -191,47 +219,35 @@ test('quick menu reassigns an onscreen-style gamepad and remains controllable on
 	} as VideoPresenter;
 	const menu = new HostOverlayMenu(presenter, {} as Runtime, input);
 
-	input.inputButton(gamepad.id, 'select', true, 1, currentTime, 1);
-	input.inputButton(gamepad.id, 'start', true, 1, currentTime, 2);
-	input.pollInput();
-	assert.equal(menu.tickInput(), HostMenuInput.Active);
+	openMenuWithGamepad(input, menu, gamepad.id, currentTime, 1, 2);
 	currentTime += 1;
-	input.inputButton(gamepad.id, 'select', false, 0, currentTime, 1);
-	input.inputButton(gamepad.id, 'start', false, 0, currentTime, 2);
-	input.pollInput();
-	menu.tickInput();
 
 	for (let step = 0; step < 6; step += 1) {
 		currentTime += 1;
 		const pressId = step + 3;
 		input.inputButton(gamepad.id, 'up', true, 1, currentTime, pressId);
-		input.pollInput();
-		menu.tickInput();
+		tickMenu(input, menu);
 		currentTime += 1;
 		input.inputButton(gamepad.id, 'up', false, 0, currentTime, pressId);
-		input.pollInput();
-		menu.tickInput();
+		tickMenu(input, menu);
 	}
 
 	currentTime += 1;
 	input.inputButton(gamepad.id, 'right', true, 1, currentTime, 9);
-	input.pollInput();
-	menu.tickInput();
+	tickMenu(input, menu);
 	assert.equal(input.getPlayerInput(1).inputHandlers.gamepad, null);
 	assert.equal(input.getPlayerInput(2).inputHandlers.gamepad?.device, gamepad);
 
 	currentTime += 1;
 	input.inputButton(gamepad.id, 'right', false, 0, currentTime, 9);
-	input.pollInput();
-	menu.tickInput();
+	tickMenu(input, menu);
 	currentTime += 1;
 	input.inputButton(gamepad.id, 'b', true, 1, currentTime, 10);
-	input.pollInput();
-	assert.equal(menu.tickInput(), HostMenuInput.Inactive);
+	assert.equal(tickMenu(input, menu), HostMenuInput.Inactive);
 	input.dispose();
 });
 
-test('on-screen keyboard publishes a gamepad-authored HID key pulse', () => {
+test('on-screen keyboard publishes gamepad and pointer HID key pulses', () => {
 	let currentTime = 0;
 	const clock = { now: () => currentTime } as HostClock;
 	const gamepad: GamepadDevice = {
@@ -248,38 +264,50 @@ test('on-screen keyboard publishes a gamepad-authored HID key pulse', () => {
 		subscribe: () => () => {},
 	};
 	const input = new Input(clock, source, 0);
-	const presenter = { show_resource_usage_gizmo: false } as VideoPresenter;
+	const hostOverlayQueue = new HostOverlayQueue();
+	const displayBounds = { width: 512, height: 424, left: 10, top: 20 };
+	const presenter = {
+		show_resource_usage_gizmo: false,
+		viewportSize: { x: 256, y: 212 },
+		default_font: {
+			lineHeight: 8,
+			measure: (value: string) => value.length * 6,
+		},
+		hostOverlayQueue,
+		mapDisplayPointToViewport: (
+			x: number,
+			y: number,
+			target: { x: number; y: number },
+		) => mapDisplayPointToViewport(
+			displayBounds,
+			256,
+			212,
+			x,
+			y,
+			target,
+		) === DisplayPointMappingResult.Inside,
+	} as VideoPresenter;
 	const menu = new HostOverlayMenu(presenter, {} as Runtime, input);
 	const snapshot = createInputControllerSnapshot();
 	let pressId = 1;
 
 	const press = (button: string): HostMenuInput => {
 		input.inputButton(gamepad.id, button, true, 1, currentTime, pressId);
-		input.pollInput();
-		const result = menu.tickInput();
+		const result = tickMenu(input, menu);
 		currentTime += 1;
 		input.inputButton(gamepad.id, button, false, 0, currentTime, pressId);
 		pressId += 1;
-		input.pollInput();
-		menu.tickInput();
+		tickMenu(input, menu);
 		currentTime += 1;
 		return result;
 	};
 
-	input.inputButton(gamepad.id, 'select', true, 1, currentTime, pressId++);
-	input.inputButton(gamepad.id, 'start', true, 1, currentTime, pressId++);
-	input.pollInput();
-	assert.equal(menu.tickInput(), HostMenuInput.Active);
-	currentTime += 1;
-	input.inputButton(gamepad.id, 'select', false, 0, currentTime, 1);
-	input.inputButton(gamepad.id, 'start', false, 0, currentTime, 2);
-	input.pollInput();
-	menu.tickInput();
-	currentTime += 1;
+	openMenuWithGamepad(input, menu, gamepad.id, currentTime, pressId++, pressId++);
+	currentTime += 2;
 
-	press('up');
-	press('up');
-	press('up');
+	for (let step = 0; step < 3; step += 1) {
+		press('up');
+	}
 	assert.equal(press('a'), HostMenuInput.Inactive);
 	press('a');
 
@@ -287,9 +315,44 @@ test('on-screen keyboard publishes a gamepad-authored HID key pulse', () => {
 	assert.equal(keyWordContains(snapshot.keyWords, 'KeyQ'), true);
 	assert.equal(input.getPlayerInput(1).inputHandlers.keyboard!.getKeyState('KeyQ').justpressed, true);
 
-	input.pollInput();
-	menu.tickInput();
+	tickMenu(input, menu);
 	input.sampleInputControllerSnapshot(snapshot);
 	assert.equal(keyWordContains(snapshot.keyWords, 'KeyQ'), false);
+
+	menu.queueRenderCommands();
+	const keyboardFrame = hostOverlayQueue.consumeHostMenuFrame();
+	let qGlyph: GlyphRenderSubmission | null = null;
+	for (let index = 0; index < keyboardFrame.commandCount; index += 1) {
+		if (keyboardFrame.commandKinds[index] === Host2DKind.Glyphs) {
+			const glyphs = keyboardFrame.commandRefs[index] as GlyphRenderSubmission;
+			if (glyphs.items === 'Q') {
+				qGlyph = glyphs;
+				break;
+			}
+		}
+	}
+	assert.ok(qGlyph);
+	input.inputAxis2(
+		'pointer:0',
+		'pointer_position',
+		displayBounds.left + qGlyph.x * 2,
+		displayBounds.top + qGlyph.y * 2,
+		currentTime,
+	);
+	input.inputButton('pointer:0', 'pointer_primary', true, 1, currentTime, pressId);
+	tickMenu(input, menu);
+	currentTime += 1;
+	tickMenu(input, menu);
+	input.sampleInputControllerSnapshot(snapshot);
+	const primaryPointerMask = 1 << INP_POINTER_BUTTON_PRIMARY;
+	assert.equal(keyWordContains(snapshot.keyWords, 'KeyQ'), true);
+	assert.equal(snapshot.pointerButtons & primaryPointerMask, 0);
+
+	currentTime += 1;
+	input.inputButton('pointer:0', 'pointer_primary', false, 0, currentTime, pressId);
+	tickMenu(input, menu);
+	input.sampleInputControllerSnapshot(snapshot);
+	assert.equal(keyWordContains(snapshot.keyWords, 'KeyQ'), false);
+	assert.equal(snapshot.pointerButtons & primaryPointerMask, 0);
 	input.dispose();
 });
