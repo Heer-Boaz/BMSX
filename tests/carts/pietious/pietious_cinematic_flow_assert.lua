@@ -106,11 +106,18 @@ function __bmsx_host_test.update()
 	end
 
 	if test.phase == 'title_start' then
-		if world.active_space_id ~= 'main'
-		or registry:get('c').current_room_number ~= 1 then
+		-- The cart replaces the complete object graph after the title request.
+		-- Observe the newly published session identity before reading any of its
+		-- objects; the outgoing graph and the incoming admissions intentionally do
+		-- not coexist in Registry.
+		local castle<const> = registry:get('c')
+		if director == nil
+		or director == test.first_director
+		or castle == nil
+		or world.active_space_id ~= 'main'
+		or castle.current_room_number ~= 1 then
 			return false
 		end
-		assert(registry:get('d') ~= test.first_director, 'title start reused the completed game session')
 		bind_completion_states(test, director)
 		test.gameplay_settle_frames = 50
 		test.phase = 'gameplay_settle'
