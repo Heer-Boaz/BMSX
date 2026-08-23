@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/primitives.h"
+#include "host_on_screen_keyboard.h"
 #include "render/host_overlay/commands.h"
 #include "render/shared/submissions.h"
 #include <array>
@@ -39,16 +40,22 @@ enum class HostMenuRepeatId : u8 {
 };
 
 class HostOverlayMenu {
+	enum class Page : u8 {
+		Closed,
+		Options,
+		Keyboard,
+	};
+
 public:
 	HostOverlayMenu();
-	HostMenuInput tickInput(const LibretroInput& input, VideoPresenter& presenter, f64 currentTimeMs);
-	void resetInputState();
+	HostMenuInput tickInput(LibretroInput& input, VideoPresenter& presenter, f64 currentTimeMs);
+	void resetInputState(LibretroInput& input);
 	void queueRenderCommands(VideoPresenter& presenter);
 	bool queueFrameOverlayCommands(Runtime& runtime, VideoPresenter& presenter, f64 hostFps);
-	bool active() const { return m_active; }
+	bool active() const { return m_page != Page::Closed; }
 
 private:
-	static constexpr i32 OptionCount = 13;
+	static constexpr i32 OptionCount = 14;
 	static constexpr i32 UsageBarCount = 3;
 	static constexpr size_t CommandCapacity = 128;
 	struct ButtonRepeatRecord {
@@ -61,18 +68,22 @@ private:
 	void clearRenderCommands(VideoPresenter& presenter);
 	void publishRenderCommands(VideoPresenter& presenter);
 	void queueCommand(Host2DKind kind, Host2DRef ref);
-	void toggle();
-	void close();
+	void toggle(LibretroInput& input);
+	void close(LibretroInput& input);
 	void changeSelected(VideoPresenter& presenter, i32 direction);
-	HostMenuInput activateSelected();
+	HostMenuInput activateSelected(LibretroInput& input);
 	void rebuildText(VideoPresenter& presenter);
 	bool buttonPressed(const LibretroInput& input, HostMenuButtonId button) const;
 	bool buttonJustPressed(const LibretroInput& input, HostMenuButtonId button) const;
+	bool gamepadButtonPressed(const LibretroInput& input, HostMenuButtonId button) const;
+	bool gamepadButtonJustPressed(const LibretroInput& input, HostMenuButtonId button) const;
 	void latchButtonStates(const LibretroInput& input);
+	void consumeGamepadButtons(LibretroInput& input);
 	bool advanceButtonRepeat(bool pressed, bool justPressed, ButtonRepeatRecord& repeat, f64 currentTimeMs, f64 frameDurationMs);
 	void resetButtonRepeats();
 
-	bool m_active = false;
+	Page m_page = Page::Closed;
+	HostOnScreenKeyboard m_keyboard;
 	bool m_showFps = false;
 	i32 m_selected = 0;
 	bool m_dirtyText = true;
@@ -91,6 +102,7 @@ private:
 	std::array<Host2DKind, CommandCapacity> m_commandKinds;
 	std::array<Host2DRef, CommandCapacity> m_commandRefs;
 	std::array<bool, static_cast<size_t>(HostMenuButtonId::Count)> m_previousButtonStates{};
+	std::array<bool, static_cast<size_t>(HostMenuButtonId::Count)> m_previousGamepadButtonStates{};
 	std::array<ButtonRepeatRecord, static_cast<size_t>(HostMenuRepeatId::Count)> m_buttonRepeats;
 	size_t m_commandCount = 0;
 	std::string m_fpsText;

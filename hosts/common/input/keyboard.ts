@@ -98,7 +98,7 @@ export class KeyboardInput implements KeyboardInputHandler {
 		return getPressedState(this.mappedButtonStates, button);
 	}
 
-	/** Returns the polled physical key view used by keyboard-oriented host UI. */
+	/** Returns the polled aggregate key view used by keyboard-oriented host UI. */
 	public getKeyState(code: string): ButtonState {
 		return getPressedState(this.polledKeyStates, code);
 	}

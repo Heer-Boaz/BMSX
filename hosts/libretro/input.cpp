@@ -1,5 +1,6 @@
 #include "input.h"
 
+#include "hid_keys.h"
 #include "machine/common/numeric.h"
 
 #include <algorithm>
@@ -81,9 +82,9 @@ constexpr std::array<i16, RETROK_LAST> makeRetroKeyHidUsages() {
 		usages[key] = static_cast<i16>(30u + key - RETROK_1);
 	}
 	usages[RETROK_0] = 39;
-	usages[RETROK_RETURN] = HID_USAGE_ENTER;
+	usages[RETROK_RETURN] = hid_key_usage::Enter;
 	usages[RETROK_ESCAPE] = 41;
-	usages[RETROK_BACKSPACE] = HID_USAGE_BACKSPACE;
+	usages[RETROK_BACKSPACE] = hid_key_usage::Backspace;
 	usages[RETROK_TAB] = 43;
 	usages[RETROK_SPACE] = 44;
 	usages[RETROK_MINUS] = 45;
@@ -110,10 +111,10 @@ constexpr std::array<i16, RETROK_LAST> makeRetroKeyHidUsages() {
 	usages[RETROK_DELETE] = 76;
 	usages[RETROK_END] = 77;
 	usages[RETROK_PAGEDOWN] = 78;
-	usages[RETROK_RIGHT] = HID_USAGE_ARROW_RIGHT;
-	usages[RETROK_LEFT] = HID_USAGE_ARROW_LEFT;
-	usages[RETROK_DOWN] = HID_USAGE_ARROW_DOWN;
-	usages[RETROK_UP] = HID_USAGE_ARROW_UP;
+	usages[RETROK_RIGHT] = hid_key_usage::ArrowRight;
+	usages[RETROK_LEFT] = hid_key_usage::ArrowLeft;
+	usages[RETROK_DOWN] = hid_key_usage::ArrowDown;
+	usages[RETROK_UP] = hid_key_usage::ArrowUp;
 	usages[RETROK_NUMLOCK] = 83;
 	usages[RETROK_KP_DIVIDE] = 84;
 	usages[RETROK_KP_MULTIPLY] = 85;
@@ -133,12 +134,12 @@ constexpr std::array<i16, RETROK_LAST> makeRetroKeyHidUsages() {
 		usages[key] = static_cast<i16>(104u + key - RETROK_F13);
 	}
 	usages[RETROK_LCTRL] = 224;
-	usages[RETROK_LSHIFT] = HID_USAGE_SHIFT_LEFT;
+	usages[RETROK_LSHIFT] = hid_key_usage::ShiftLeft;
 	usages[RETROK_LALT] = 226;
 	usages[RETROK_LMETA] = 227;
 	usages[RETROK_LSUPER] = 227;
 	usages[RETROK_RCTRL] = 228;
-	usages[RETROK_RSHIFT] = HID_USAGE_SHIFT_RIGHT;
+	usages[RETROK_RSHIFT] = hid_key_usage::ShiftRight;
 	usages[RETROK_RALT] = 230;
 	usages[RETROK_RMETA] = 231;
 	usages[RETROK_RSUPER] = 231;
@@ -169,13 +170,6 @@ bool keyUsagePressed(
 	return (words[word] & (1u << (static_cast<u32>(usage) & 31u))) != 0u;
 }
 
-void clearKeyUsage(
-		std::array<u32, INPUT_CONTROLLER_KEY_WORD_COUNT>& words,
-		u8 usage) {
-	const size_t word = static_cast<size_t>(usage) >> 5u;
-	words[word] &= ~(1u << (static_cast<u32>(usage) & 31u));
-}
-
 } // namespace
 
 LibretroInput::LibretroInput(
@@ -202,13 +196,13 @@ void LibretroInput::poll(
 	m_host_supervisor_request_high = m_supervisor_request_line();
 	m_routed_keyboard_usage_words = m_keyboard_usage_words;
 	u32 keyboardButtons = 0u;
-	if (keyUsagePressed(m_keyboard_usage_words, HID_USAGE_CONTROL_RIGHT)) {
+	if (keyUsagePressed(m_keyboard_usage_words, hid_key_usage::ControlRight)) {
 		keyboardButtons |= kHostShortcutModifier;
 	}
-	if (keyUsagePressed(m_keyboard_usage_words, HID_USAGE_SHIFT_LEFT)) {
+	if (keyUsagePressed(m_keyboard_usage_words, hid_key_usage::ShiftLeft)) {
 		keyboardButtons |= kTerminalShortcutMask;
 	}
-	if (keyUsagePressed(m_keyboard_usage_words, HID_USAGE_ALT_RIGHT)) {
+	if (keyUsagePressed(m_keyboard_usage_words, hid_key_usage::AltRight)) {
 		keyboardButtons |= kMenuShortcutMask;
 	}
 	const BmsxHostShortcutResult keyboardShortcuts =
@@ -218,13 +212,16 @@ void LibretroInput::poll(
 			kHostShortcutModifier,
 			kHostShortcutTargets);
 	if ((keyboardShortcuts.routed_buttons & kHostShortcutModifier) == 0u) {
-		clearKeyUsage(m_routed_keyboard_usage_words, HID_USAGE_CONTROL_RIGHT);
+		consumePhysicalKeyboardUsage(hid_key_usage::ControlRight);
 	}
 	if ((keyboardShortcuts.routed_buttons & kTerminalShortcutMask) == 0u) {
-		clearKeyUsage(m_routed_keyboard_usage_words, HID_USAGE_SHIFT_LEFT);
+		consumePhysicalKeyboardUsage(hid_key_usage::ShiftLeft);
 	}
 	if ((keyboardShortcuts.routed_buttons & kMenuShortcutMask) == 0u) {
-		clearKeyUsage(m_routed_keyboard_usage_words, HID_USAGE_ALT_RIGHT);
+		consumePhysicalKeyboardUsage(hid_key_usage::AltRight);
+	}
+	for (size_t word = 0u; word < m_routed_keyboard_usage_words.size(); word += 1u) {
+		m_routed_keyboard_usage_words[word] |= m_virtual_keyboard_usage_words[word];
 	}
 	u32 activeHostShortcuts = keyboardShortcuts.active_targets;
 	m_just_pressed_host_shortcuts = keyboardShortcuts.just_pressed_targets;
@@ -375,8 +372,14 @@ void LibretroInput::poll(
 		- static_cast<i32>(mouseWheelUp)));
 }
 
-bool LibretroInput::keyboardUsagePressed(u8 usage) const {
-	return keyUsagePressed(m_routed_keyboard_usage_words, usage);
+bool LibretroInput::physicalKeyboardUsagePressed(u8 usage) const {
+	return keyUsagePressed(m_keyboard_usage_words, usage);
+}
+
+void LibretroInput::consumePhysicalKeyboardUsage(u8 usage) {
+	const size_t word = static_cast<size_t>(usage) >> 5u;
+	m_routed_keyboard_usage_words[word] &=
+		~(1u << (static_cast<u32>(usage) & 31u));
 }
 
 bool LibretroInput::gamepadButtonPressed(
@@ -384,6 +387,12 @@ bool LibretroInput::gamepadButtonPressed(
 		InputControllerGamepadButtonBit button) const {
 	return (m_gamepads[deviceSlot].buttons
 		& (1u << static_cast<u32>(button))) != 0u;
+}
+
+void LibretroInput::consumeGamepadButton(
+		u8 deviceSlot,
+		InputControllerGamepadButtonBit button) {
+	m_gamepads[deviceSlot].buttons &= ~(1u << static_cast<u32>(button));
 }
 
 bool LibretroInput::hostShortcutJustPressed(
@@ -495,6 +504,14 @@ void LibretroInput::postKeyboardEvent(unsigned keycode, bool down) {
 		: m_keyboard_usage_words[word] & ~mask;
 }
 
+void LibretroInput::setVirtualKeyboardKey(u8 usage, bool down) {
+	const size_t word = static_cast<size_t>(usage) >> 5u;
+	const u32 mask = 1u << (static_cast<u32>(usage) & 31u);
+	m_virtual_keyboard_usage_words[word] = down
+		? m_virtual_keyboard_usage_words[word] | mask
+		: m_virtual_keyboard_usage_words[word] & ~mask;
+}
+
 void LibretroInput::reset() {
 	for (unsigned port = 0u; port < m_rumble_deadlines_ms.size(); port += 1u) {
 		if ((m_active_rumble_mask & (1u << port)) != 0u) {
@@ -503,6 +520,7 @@ void LibretroInput::reset() {
 	}
 	m_active_rumble_mask = 0u;
 	m_keyboard_usage_words.fill(0u);
+	m_virtual_keyboard_usage_words.fill(0u);
 	m_routed_keyboard_usage_words.fill(0u);
 	m_gamepads.fill({});
 	m_pointer_buttons = 0u;

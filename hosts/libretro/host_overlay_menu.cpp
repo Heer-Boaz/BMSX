@@ -1,5 +1,6 @@
 #include "host_overlay_menu.h"
 
+#include "hid_keys.h"
 #include "input.h"
 #include "render/shared/bitmap_font.h"
 #include "machine/runtime/runtime.h"
@@ -12,7 +13,7 @@
 namespace bmsx {
 namespace {
 
-constexpr i32 kMenuOptionCount = 13;
+constexpr i32 kMenuOptionCount = 14;
 constexpr const char* kToggleValues[] = {"OFF", "ON"};
 constexpr const char* kDeviceQuantizeValues[] = {"OFF", "RGB565", "MSX10 3:4:3"};
 constexpr const char* kTitleText = "CORE OPTIONS";
@@ -39,12 +40,12 @@ struct HostMenuButton {
 };
 
 constexpr auto kHostMenuButtons = std::to_array<HostMenuButton>({
-	{InputControllerGamepadButtonBit::Up, HID_USAGE_ARROW_UP},
-	{InputControllerGamepadButtonBit::Down, HID_USAGE_ARROW_DOWN},
-	{InputControllerGamepadButtonBit::Left, HID_USAGE_ARROW_LEFT},
-	{InputControllerGamepadButtonBit::Right, HID_USAGE_ARROW_RIGHT},
-	{InputControllerGamepadButtonBit::A, HID_USAGE_KEY_X},
-	{InputControllerGamepadButtonBit::B, HID_USAGE_KEY_C},
+	{InputControllerGamepadButtonBit::Up, hid_key_usage::ArrowUp},
+	{InputControllerGamepadButtonBit::Down, hid_key_usage::ArrowDown},
+	{InputControllerGamepadButtonBit::Left, hid_key_usage::ArrowLeft},
+	{InputControllerGamepadButtonBit::Right, hid_key_usage::ArrowRight},
+	{InputControllerGamepadButtonBit::A, hid_key_usage::X},
+	{InputControllerGamepadButtonBit::B, hid_key_usage::C},
 });
 static_assert(kHostMenuButtons.size() == static_cast<size_t>(HostMenuButtonId::Count));
 
@@ -72,6 +73,7 @@ enum class HostMenuOptionId : i32 {
 	CrtAperture,
 	DeviceQuantize,
 	HostShowFps,
+	OnScreenKeyboard,
 	RebootCart,
 	ExitGame,
 };
@@ -95,6 +97,7 @@ constexpr std::array<HostMenuOptionDef, kMenuOptionCount> kOptions{{
 	{HostMenuOptionId::CrtAperture, "CRT Aperture", kToggleValues, 2},
 	{HostMenuOptionId::DeviceQuantize, "Output Quantize", kDeviceQuantizeValues, 3},
 	{HostMenuOptionId::HostShowFps, "HOST: SHOW FPS", kToggleValues, 2},
+	{HostMenuOptionId::OnScreenKeyboard, "ON-SCREEN KEYBOARD", nullptr, 0},
 	{HostMenuOptionId::RebootCart, "REBOOT CART", nullptr, 0},
 	{HostMenuOptionId::ExitGame, "EXIT GAME", nullptr, 0},
 }};
@@ -120,6 +123,7 @@ i32 optionIndex(bool showFps, VideoPresenter& presenter, i32 option) {
 		case HostMenuOptionId::CrtAperture: return boolIndex(presenter.applyAperture);
 		case HostMenuOptionId::DeviceQuantize: return static_cast<i32>(presenter.deviceQuantizeMode());
 		case HostMenuOptionId::HostShowFps: return boolIndex(showFps);
+		case HostMenuOptionId::OnScreenKeyboard: return 0;
 		case HostMenuOptionId::RebootCart: return 0;
 		case HostMenuOptionId::ExitGame: return 0;
 	}
@@ -139,6 +143,7 @@ void setOptionIndex(bool& showFps, VideoPresenter& presenter, i32 option, i32 va
 		case HostMenuOptionId::CrtAperture: presenter.applyAperture = boolFromIndex(value); break;
 		case HostMenuOptionId::DeviceQuantize: presenter.setDeviceQuantizeMode(static_cast<DeviceQuantizeMode>(value)); break;
 		case HostMenuOptionId::HostShowFps: showFps = boolFromIndex(value); break;
+		case HostMenuOptionId::OnScreenKeyboard: break;
 		case HostMenuOptionId::RebootCart: break;
 		case HostMenuOptionId::ExitGame: break;
 	}
@@ -268,14 +273,65 @@ void HostOverlayMenu::queueCommand(Host2DKind kind, Host2DRef ref) {
 	m_commandCount += 1;
 }
 
-HostMenuInput HostOverlayMenu::tickInput(const LibretroInput& input, VideoPresenter& presenter, f64 currentTimeMs) {
+HostMenuInput HostOverlayMenu::tickInput(LibretroInput& input, VideoPresenter& presenter, f64 currentTimeMs) {
 	if (input.hostShortcutJustPressed(InputControllerGamepadButtonBit::Start)) {
-		toggle();
+		toggle(input);
 	}
-	HostMenuInput result = m_active ? HostMenuInput::Active : HostMenuInput::Inactive;
-	if (m_active) {
+	HostMenuInput result = m_page == Page::Options
+		? HostMenuInput::Active
+		: HostMenuInput::Inactive;
+	const bool keyboardInputActive = m_page == Page::Keyboard;
+	if (keyboardInputActive) {
+		m_keyboard.releasePulse(input);
+		if (gamepadButtonJustPressed(input, HostMenuButtonId::B)) {
+			m_keyboard.close(input);
+			m_page = Page::Options;
+			result = HostMenuInput::Active;
+		} else {
+			const f64 frameDurationMs = input.frameDurationMs();
+			if (advanceButtonRepeat(
+				gamepadButtonPressed(input, HostMenuButtonId::Up),
+				gamepadButtonJustPressed(input, HostMenuButtonId::Up),
+				m_buttonRepeats[static_cast<size_t>(HostMenuRepeatId::Up)],
+				currentTimeMs,
+				frameDurationMs
+			)) {
+				m_keyboard.moveVertical(-1);
+			}
+			if (advanceButtonRepeat(
+				gamepadButtonPressed(input, HostMenuButtonId::Down),
+				gamepadButtonJustPressed(input, HostMenuButtonId::Down),
+				m_buttonRepeats[static_cast<size_t>(HostMenuRepeatId::Down)],
+				currentTimeMs,
+				frameDurationMs
+			)) {
+				m_keyboard.moveVertical(1);
+			}
+			if (advanceButtonRepeat(
+				gamepadButtonPressed(input, HostMenuButtonId::Left),
+				gamepadButtonJustPressed(input, HostMenuButtonId::Left),
+				m_buttonRepeats[static_cast<size_t>(HostMenuRepeatId::Left)],
+				currentTimeMs,
+				frameDurationMs
+			)) {
+				m_keyboard.moveHorizontal(-1);
+			}
+			if (advanceButtonRepeat(
+				gamepadButtonPressed(input, HostMenuButtonId::Right),
+				gamepadButtonJustPressed(input, HostMenuButtonId::Right),
+				m_buttonRepeats[static_cast<size_t>(HostMenuRepeatId::Right)],
+				currentTimeMs,
+				frameDurationMs
+			)) {
+				m_keyboard.moveHorizontal(1);
+			}
+			if (gamepadButtonJustPressed(input, HostMenuButtonId::A)) {
+				m_keyboard.activate(input);
+			}
+		}
+	} else if (m_page == Page::Options) {
 		if (buttonJustPressed(input, HostMenuButtonId::B)) {
-			toggle();
+			toggle(input);
 			result = HostMenuInput::Inactive;
 		} else {
 			const f64 frameDurationMs = input.frameDurationMs();
@@ -318,20 +374,39 @@ HostMenuInput HostOverlayMenu::tickInput(const LibretroInput& input, VideoPresen
 				changeSelected(presenter, 1);
 			}
 			if (buttonJustPressed(input, HostMenuButtonId::A)) {
-				result = activateSelected();
+				result = activateSelected(input);
 			}
 		}
 	}
+	const bool keyboardOpened = !keyboardInputActive
+		&& m_page == Page::Keyboard;
 	latchButtonStates(input);
+	if (keyboardInputActive || keyboardOpened) {
+		consumeGamepadButtons(input);
+	}
+	if (keyboardOpened) {
+		for (const HostMenuButton& button : kHostMenuButtons) {
+			input.consumePhysicalKeyboardUsage(button.keyboardUsage);
+		}
+	}
 	return result;
 }
 
-void HostOverlayMenu::resetInputState() {
+void HostOverlayMenu::resetInputState(LibretroInput& input) {
+	m_keyboard.close(input);
+	m_page = Page::Closed;
+	m_selected = 0;
+	m_dirtyText = true;
 	m_previousButtonStates.fill(false);
+	m_previousGamepadButtonStates.fill(false);
 	resetButtonRepeats();
 }
 
 void HostOverlayMenu::queueRenderCommands(VideoPresenter& presenter) {
+	if (m_page == Page::Keyboard) {
+		m_keyboard.queueRenderCommands(presenter);
+		return;
+	}
 	clearRenderCommands(presenter);
 	const Host2DKind rectKind = Host2DKind::Rect;
 	const Host2DKind itemsKind = Host2DKind::Glyphs;
@@ -379,10 +454,14 @@ void HostOverlayMenu::queueRenderCommands(VideoPresenter& presenter) {
 }
 
 bool HostOverlayMenu::queueFrameOverlayCommands(Runtime& runtime, VideoPresenter& presenter, f64 hostFps) {
+	if (m_page == Page::Keyboard) {
+		m_keyboard.queueRenderCommands(presenter);
+		return true;
+	}
 	clearRenderCommands(presenter);
 	const Host2DKind rectKind = Host2DKind::Rect;
 	const Host2DKind itemsKind = Host2DKind::Glyphs;
-	if (m_active) {
+	if (m_page == Page::Options) {
 		return false;
 	}
 	bool queued = false;
@@ -454,15 +533,20 @@ bool HostOverlayMenu::queueFrameOverlayCommands(Runtime& runtime, VideoPresenter
 	return queued;
 }
 
-void HostOverlayMenu::toggle() {
-	m_active = !m_active;
+void HostOverlayMenu::toggle(LibretroInput& input) {
+	if (m_page == Page::Closed) {
+		m_page = Page::Options;
+	} else {
+		close(input);
+	}
 	m_selected = 0;
 	m_dirtyText = true;
 	resetButtonRepeats();
 }
 
-void HostOverlayMenu::close() {
-	m_active = false;
+void HostOverlayMenu::close(LibretroInput& input) {
+	m_keyboard.close(input);
+	m_page = Page::Closed;
 	m_selected = 0;
 	m_dirtyText = true;
 	resetButtonRepeats();
@@ -470,7 +554,7 @@ void HostOverlayMenu::close() {
 
 bool HostOverlayMenu::buttonPressed(const LibretroInput& input, HostMenuButtonId button) const {
 	const HostMenuButton& binding = kHostMenuButtons[static_cast<size_t>(button)];
-	return input.gamepadButtonPressed(0u, binding.gamepad) || input.keyboardUsagePressed(binding.keyboardUsage);
+	return input.gamepadButtonPressed(0u, binding.gamepad) || input.physicalKeyboardUsagePressed(binding.keyboardUsage);
 }
 
 bool HostOverlayMenu::buttonJustPressed(const LibretroInput& input, HostMenuButtonId button) const {
@@ -478,9 +562,28 @@ bool HostOverlayMenu::buttonJustPressed(const LibretroInput& input, HostMenuButt
 	return buttonPressed(input, button) && !m_previousButtonStates[index];
 }
 
+bool HostOverlayMenu::gamepadButtonPressed(const LibretroInput& input, HostMenuButtonId button) const {
+	return input.gamepadButtonPressed(
+		0u,
+		kHostMenuButtons[static_cast<size_t>(button)].gamepad);
+}
+
+bool HostOverlayMenu::gamepadButtonJustPressed(const LibretroInput& input, HostMenuButtonId button) const {
+	const size_t index = static_cast<size_t>(button);
+	return gamepadButtonPressed(input, button) && !m_previousGamepadButtonStates[index];
+}
+
 void HostOverlayMenu::latchButtonStates(const LibretroInput& input) {
 	for (size_t button = 0u; button < m_previousButtonStates.size(); button += 1u) {
-		m_previousButtonStates[button] = buttonPressed(input, static_cast<HostMenuButtonId>(button));
+		const HostMenuButtonId id = static_cast<HostMenuButtonId>(button);
+		m_previousButtonStates[button] = buttonPressed(input, id);
+		m_previousGamepadButtonStates[button] = gamepadButtonPressed(input, id);
+	}
+}
+
+void HostOverlayMenu::consumeGamepadButtons(LibretroInput& input) {
+	for (const HostMenuButton& button : kHostMenuButtons) {
+		input.consumeGamepadButton(0u, button.gamepad);
 	}
 }
 
@@ -533,13 +636,18 @@ void HostOverlayMenu::changeSelected(VideoPresenter& presenter, i32 direction) {
 	m_dirtyText = true;
 }
 
-HostMenuInput HostOverlayMenu::activateSelected() {
+HostMenuInput HostOverlayMenu::activateSelected(LibretroInput& input) {
 	switch (kOptions[static_cast<size_t>(m_selected)].id) {
+		case HostMenuOptionId::OnScreenKeyboard:
+			m_page = Page::Keyboard;
+			m_keyboard.open();
+			resetButtonRepeats();
+			return HostMenuInput::Inactive;
 		case HostMenuOptionId::RebootCart:
-			close();
+			close(input);
 			return HostMenuInput::RebootCart;
 		case HostMenuOptionId::ExitGame:
-			close();
+			close(input);
 			return HostMenuInput::ExitGame;
 		default:
 			return HostMenuInput::Active;

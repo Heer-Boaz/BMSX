@@ -8,20 +8,6 @@
 
 namespace bmsx {
 
-constexpr u8 HID_USAGE_KEY_C = 6u;
-constexpr u8 HID_USAGE_KEY_X = 27u;
-constexpr u8 HID_USAGE_ENTER = 40u;
-constexpr u8 HID_USAGE_BACKSPACE = 42u;
-constexpr u8 HID_USAGE_F2 = 59u;
-constexpr u8 HID_USAGE_ARROW_RIGHT = 79u;
-constexpr u8 HID_USAGE_ARROW_LEFT = 80u;
-constexpr u8 HID_USAGE_ARROW_DOWN = 81u;
-constexpr u8 HID_USAGE_ARROW_UP = 82u;
-constexpr u8 HID_USAGE_SHIFT_LEFT = 225u;
-constexpr u8 HID_USAGE_CONTROL_RIGHT = 228u;
-constexpr u8 HID_USAGE_SHIFT_RIGHT = 229u;
-constexpr u8 HID_USAGE_ALT_RIGHT = 230u;
-
 class LibretroInput final : public InputControllerInputSource {
 public:
 	explicit LibretroInput(
@@ -33,12 +19,17 @@ public:
 	void installRumbleInterface(retro_rumble_interface rumbleInterface);
 	void setControllerDevice(unsigned port, unsigned device);
 	void postKeyboardEvent(unsigned keycode, bool down);
+	void setVirtualKeyboardKey(u8 usage, bool down);
 	void reset();
 
-	bool keyboardUsagePressed(u8 usage) const;
+	bool physicalKeyboardUsagePressed(u8 usage) const;
+	void consumePhysicalKeyboardUsage(u8 usage);
 	bool gamepadButtonPressed(
 		u8 deviceSlot,
 		InputControllerGamepadButtonBit button) const;
+	void consumeGamepadButton(
+		u8 deviceSlot,
+		InputControllerGamepadButtonBit button);
 	bool hostShortcutJustPressed(InputControllerGamepadButtonBit button) const;
 	f64 frameDurationMs() const { return m_frame_duration_ms; }
 	void setFrameDurationMs(f64 frameDurationMs) {
@@ -65,6 +56,7 @@ private:
 	std::array<unsigned, INPUT_CONTROLLER_PAD_COUNT> m_controller_devices{};
 	std::array<f64, INPUT_CONTROLLER_PAD_COUNT> m_rumble_deadlines_ms{};
 	std::array<u32, INPUT_CONTROLLER_KEY_WORD_COUNT> m_keyboard_usage_words{};
+	std::array<u32, INPUT_CONTROLLER_KEY_WORD_COUNT> m_virtual_keyboard_usage_words{};
 	std::array<u32, INPUT_CONTROLLER_KEY_WORD_COUNT> m_routed_keyboard_usage_words{};
 	std::array<InputControllerPadSnapshot, INPUT_CONTROLLER_PAD_COUNT> m_gamepads{};
 	u32 m_pointer_buttons = 0u;

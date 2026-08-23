@@ -201,7 +201,7 @@ test('quick menu reassigns an onscreen-style gamepad and remains controllable on
 	input.pollInput();
 	menu.tickInput();
 
-	for (let step = 0; step < 5; step += 1) {
+	for (let step = 0; step < 6; step += 1) {
 		currentTime += 1;
 		const pressId = step + 3;
 		input.inputButton(gamepad.id, 'up', true, 1, currentTime, pressId);
@@ -214,19 +214,82 @@ test('quick menu reassigns an onscreen-style gamepad and remains controllable on
 	}
 
 	currentTime += 1;
-	input.inputButton(gamepad.id, 'right', true, 1, currentTime, 8);
+	input.inputButton(gamepad.id, 'right', true, 1, currentTime, 9);
 	input.pollInput();
 	menu.tickInput();
 	assert.equal(input.getPlayerInput(1).inputHandlers.gamepad, null);
 	assert.equal(input.getPlayerInput(2).inputHandlers.gamepad?.device, gamepad);
 
 	currentTime += 1;
-	input.inputButton(gamepad.id, 'right', false, 0, currentTime, 8);
+	input.inputButton(gamepad.id, 'right', false, 0, currentTime, 9);
 	input.pollInput();
 	menu.tickInput();
 	currentTime += 1;
-	input.inputButton(gamepad.id, 'b', true, 1, currentTime, 9);
+	input.inputButton(gamepad.id, 'b', true, 1, currentTime, 10);
 	input.pollInput();
 	assert.equal(menu.tickInput(), HostMenuInput.Inactive);
+	input.dispose();
+});
+
+test('on-screen keyboard publishes a gamepad-authored HID key pulse', () => {
+	let currentTime = 0;
+	const clock = { now: () => currentTime } as HostClock;
+	const gamepad: GamepadDevice = {
+		id: 'gamepad:0',
+		kind: 'gamepad',
+		gamepadIndex: 0,
+		label: 'GAMEPAD',
+		vibrationInitialization: null,
+		supportsVibration: false,
+		setVibration: () => {},
+	};
+	const source: InputSource = {
+		devices: () => [gamepad],
+		subscribe: () => () => {},
+	};
+	const input = new Input(clock, source, 0);
+	const presenter = { show_resource_usage_gizmo: false } as VideoPresenter;
+	const menu = new HostOverlayMenu(presenter, {} as Runtime, input);
+	const snapshot = createInputControllerSnapshot();
+	let pressId = 1;
+
+	const press = (button: string): HostMenuInput => {
+		input.inputButton(gamepad.id, button, true, 1, currentTime, pressId);
+		input.pollInput();
+		const result = menu.tickInput();
+		currentTime += 1;
+		input.inputButton(gamepad.id, button, false, 0, currentTime, pressId);
+		pressId += 1;
+		input.pollInput();
+		menu.tickInput();
+		currentTime += 1;
+		return result;
+	};
+
+	input.inputButton(gamepad.id, 'select', true, 1, currentTime, pressId++);
+	input.inputButton(gamepad.id, 'start', true, 1, currentTime, pressId++);
+	input.pollInput();
+	assert.equal(menu.tickInput(), HostMenuInput.Active);
+	currentTime += 1;
+	input.inputButton(gamepad.id, 'select', false, 0, currentTime, 1);
+	input.inputButton(gamepad.id, 'start', false, 0, currentTime, 2);
+	input.pollInput();
+	menu.tickInput();
+	currentTime += 1;
+
+	press('up');
+	press('up');
+	press('up');
+	assert.equal(press('a'), HostMenuInput.Inactive);
+	press('a');
+
+	input.sampleInputControllerSnapshot(snapshot);
+	assert.equal(keyWordContains(snapshot.keyWords, 'KeyQ'), true);
+	assert.equal(input.getPlayerInput(1).inputHandlers.keyboard!.getKeyState('KeyQ').justpressed, true);
+
+	input.pollInput();
+	menu.tickInput();
+	input.sampleInputControllerSnapshot(snapshot);
+	assert.equal(keyWordContains(snapshot.keyWords, 'KeyQ'), false);
 	input.dispose();
 });

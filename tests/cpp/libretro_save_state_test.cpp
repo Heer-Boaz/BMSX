@@ -1,3 +1,4 @@
+#include "hid_keys.h"
 #include "input.h"
 #include "libretro_state.h"
 #include "machine/devices/gx/gpu.h"
@@ -121,10 +122,25 @@ void testInputSnapshotReflectsHeldKey() {
 	bmsx::InputControllerSnapshot snapshot;
 	input.sampleInputControllerSnapshot(snapshot);
 
-	constexpr uint32_t usage = 27u;
+	constexpr uint32_t usage = bmsx::hid_key_usage::X;
 	require(
 		(snapshot.keyWords[usage >> 5u] & (1u << (usage & 31u))) != 0u,
 		"raw ICU snapshot should set the keyboard bit for a held key");
+
+	input.setVirtualKeyboardKey(bmsx::hid_key_usage::X, true);
+	input.postKeyboardEvent(RETROK_x, false);
+	input.poll(256, 240, 1.0);
+	input.sampleInputControllerSnapshot(snapshot);
+	require(
+		(snapshot.keyWords[usage >> 5u] & (1u << (usage & 31u))) != 0u,
+		"virtual and physical keyboard sources must retain independent ownership");
+
+	input.setVirtualKeyboardKey(bmsx::hid_key_usage::X, false);
+	input.poll(256, 240, 2.0);
+	input.sampleInputControllerSnapshot(snapshot);
+	require(
+		(snapshot.keyWords[usage >> 5u] & (1u << (usage & 31u))) == 0u,
+		"releasing the final keyboard source should clear the ICU key bit");
 }
 
 void testLibretroSupervisorRequestChordAndGuestInput() {
@@ -194,8 +210,8 @@ void testLibretroSupervisorRequestChordAndGuestInput() {
 		"a cart-visible F2 press must not assert the supervisor-request line");
 	input.sampleInputControllerSnapshot(snapshot);
 	require(
-		(snapshot.keyWords[bmsx::HID_USAGE_F2 >> 5u]
-			& (1u << (bmsx::HID_USAGE_F2 & 31u))) != 0u,
+		(snapshot.keyWords[bmsx::hid_key_usage::F2 >> 5u]
+			& (1u << (bmsx::hid_key_usage::F2 & 31u))) != 0u,
 		"libretro F2 must remain an ordinary cart-visible HID key");
 
 	supervisorRequestLineHigh = true;
@@ -208,8 +224,8 @@ void testLibretroSupervisorRequestChordAndGuestInput() {
 	input.poll(256, 240, 0.0);
 	input.sampleInputControllerSnapshot(snapshot);
 	require(
-		(snapshot.keyWords[bmsx::HID_USAGE_F2 >> 5u]
-			& (1u << (bmsx::HID_USAGE_F2 & 31u))) == 0u,
+		(snapshot.keyWords[bmsx::hid_key_usage::F2 >> 5u]
+			& (1u << (bmsx::hid_key_usage::F2 & 31u))) == 0u,
 		"releasing libretro F2 must clear its ordinary HID key");
 	require(
 		input.supervisorRequestLineHigh(),
@@ -224,8 +240,8 @@ void testLibretroSupervisorRequestChordAndGuestInput() {
 	input.poll(256, 240, 0.0);
 	input.sampleInputControllerSnapshot(snapshot);
 	require(
-		(snapshot.keyWords[bmsx::HID_USAGE_CONTROL_RIGHT >> 5u]
-			& (1u << (bmsx::HID_USAGE_CONTROL_RIGHT & 31u))) == 0u,
+		(snapshot.keyWords[bmsx::hid_key_usage::ControlRight >> 5u]
+			& (1u << (bmsx::hid_key_usage::ControlRight & 31u))) == 0u,
 		"keyboard Select must be reserved before a host command is selected");
 	input.postKeyboardEvent(RETROK_LSHIFT, true);
 	input.poll(256, 240, 0.0);
@@ -234,8 +250,8 @@ void testLibretroSupervisorRequestChordAndGuestInput() {
 		"keyboard Select plus L1 must assert the supervisor line across frames");
 	input.sampleInputControllerSnapshot(snapshot);
 	require(
-		(snapshot.keyWords[bmsx::HID_USAGE_SHIFT_LEFT >> 5u]
-			& (1u << (bmsx::HID_USAGE_SHIFT_LEFT & 31u))) == 0u,
+		(snapshot.keyWords[bmsx::hid_key_usage::ShiftLeft >> 5u]
+			& (1u << (bmsx::hid_key_usage::ShiftLeft & 31u))) == 0u,
 		"an active keyboard host command must be masked from the guest");
 	input.postKeyboardEvent(RETROK_RCTRL, false);
 	input.poll(256, 240, 0.0);
@@ -264,10 +280,10 @@ void testLibretroSupervisorRequestChordAndGuestInput() {
 	input.poll(256, 240, 0.0);
 	input.sampleInputControllerSnapshot(snapshot);
 	require(
-		(snapshot.keyWords[bmsx::HID_USAGE_BACKSPACE >> 5u]
-			& (1u << (bmsx::HID_USAGE_BACKSPACE & 31u))) != 0u &&
-		(snapshot.keyWords[bmsx::HID_USAGE_ENTER >> 5u]
-			& (1u << (bmsx::HID_USAGE_ENTER & 31u))) != 0u,
+		(snapshot.keyWords[bmsx::hid_key_usage::Backspace >> 5u]
+			& (1u << (bmsx::hid_key_usage::Backspace & 31u))) != 0u &&
+		(snapshot.keyWords[bmsx::hid_key_usage::Enter >> 5u]
+			& (1u << (bmsx::hid_key_usage::Enter & 31u))) != 0u,
 		"Backspace and Enter must remain ordinary keyboard input");
 }
 

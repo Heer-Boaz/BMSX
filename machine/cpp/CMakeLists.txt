@@ -421,6 +421,7 @@ set(BMSX_LIBRETRO_CORE_SOURCES
 	${BMSX_LIBRETRO_DIR}/audio_output.cpp
 	${BMSX_LIBRETRO_DIR}/content.cpp
 	${BMSX_LIBRETRO_DIR}/host_frame.cpp
+	${BMSX_LIBRETRO_DIR}/host_on_screen_keyboard.cpp
 	${BMSX_LIBRETRO_DIR}/host_overlay_menu.cpp
 	${BMSX_LIBRETRO_DIR}/input.cpp
 	${BMSX_LIBRETRO_DIR}/libretro_state.cpp
