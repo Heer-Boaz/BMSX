@@ -29,6 +29,7 @@ function lithograph_screen:ctor()
 	local text<const> = self:get_component(text_component)
 	text:set_font(font_module.get('pietious'))
 	text.color = 0xffffffff
+	text.background_color = 0xff000000
 	text.offset_y = room_tile_origin_y + (room_tile_size * 6)
 	text:set_offset_z(1)
 	text.center_block_width = screen_width

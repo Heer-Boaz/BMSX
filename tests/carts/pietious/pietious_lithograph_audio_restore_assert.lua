@@ -57,6 +57,10 @@ function __bmsx_host_test.update()
 		if not state_machines:matches_state(test.viewing_state) then
 			return false
 		end
+		assert(
+			registry:get('lithograph').text_component.background_color == 0xff000000,
+			'lithograph text cells did not retain their opaque Graphic 2 background'
+		)
 		state_machines:transition_to('/lithograph/closing')
 		test.phase = 'wait_room'
 		return false
