@@ -12,7 +12,6 @@
 #include "rompack/tooling/toc_encode.h"
 
 #include <algorithm>
-#include <bit>
 #include <cstring>
 #include <span>
 #include <unordered_map>
@@ -244,9 +243,9 @@ auto encodeImage(
 				record + BLUA32_CONSTANT_TAG_OFFSET,
 				static_cast<u32>(Blua32ConstantTag::Number)
 			);
-			writeLE64(
+			writeF64LE(
 				record + BLUA32_CONSTANT_PAYLOAD_OFFSET,
-				std::bit_cast<u64>(*number)
+				*number
 			);
 		} else {
 			const StringRecord string = stringRecords.at(std::get<std::string>(constant));

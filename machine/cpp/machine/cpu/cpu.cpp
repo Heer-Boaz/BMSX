@@ -8,7 +8,6 @@
 #include "machine/memory/memory.h"
 #include "common/utf8.h"
 #include <algorithm>
-#include <bit>
 #include <cctype>
 #include <stdexcept>
 #include <unordered_set>
@@ -484,9 +483,8 @@ std::vector<Value> CPU::decodeConstantPool(
 				constPool[index] = valueBool(true);
 				break;
 			case Blua32ConstantTag::Number:
-				constPool[index] = valueNumber(std::bit_cast<f64>(
-					readLE64(record + BLUA32_CONSTANT_PAYLOAD_OFFSET)
-				));
+				constPool[index] = valueNumber(readF64LE(
+					record + BLUA32_CONSTANT_PAYLOAD_OFFSET));
 				break;
 			case Blua32ConstantTag::String:
 				constPool[index] = valueString(internExecutionString(

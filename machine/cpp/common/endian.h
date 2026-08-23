@@ -2,6 +2,8 @@
 
 #include "common/primitives.h"
 
+#include <cstring>
+
 namespace bmsx {
 
 inline auto readLE16(const u8* data) -> u16 {
@@ -30,6 +32,14 @@ inline auto readLE64(const u8* data) -> u64 {
 		| (static_cast<u64>(data[7]) << 56);
 }
 
+inline auto readF64LE(const u8* data) -> f64 {
+	const u64 word = readLE64(data);
+	f64 value;
+	static_assert(sizeof(value) == sizeof(word));
+	std::memcpy(&value, &word, sizeof(value));
+	return value;
+}
+
 inline void writeLE16(u8* data, u32 value) {
 	for (u32 byte = 0; byte < 2U; ++byte) {
 		data[byte] = static_cast<u8>((value >> (byte * 8U)) & 0xffU);
@@ -46,6 +56,13 @@ inline void writeLE64(u8* data, u64 value) {
 	for (u32 byte = 0; byte < 8U; ++byte) {
 		data[byte] = static_cast<u8>((value >> (byte * 8U)) & 0xffU);
 	}
+}
+
+inline void writeF64LE(u8* data, f64 value) {
+	u64 word;
+	static_assert(sizeof(word) == sizeof(value));
+	std::memcpy(&word, &value, sizeof(word));
+	writeLE64(data, word);
 }
 
 } // namespace bmsx

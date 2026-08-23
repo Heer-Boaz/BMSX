@@ -4,7 +4,6 @@
 #include "spec/blua32/image_format.h"
 #include "spec/bmsx/rom_header.h"
 
-#include <bit>
 #include <utility>
 
 namespace bmsx {
@@ -247,9 +246,8 @@ auto decodeBlua32Image(std::span<const u8> bytes, u32 imageAddress) -> Blua32Ima
 				image.constants.emplace_back(true);
 				break;
 			case Blua32ConstantTag::Number:
-				image.constants.emplace_back(std::bit_cast<f64>(
-					readLE64(record + BLUA32_CONSTANT_PAYLOAD_OFFSET)
-				));
+				image.constants.emplace_back(readF64LE(
+					record + BLUA32_CONSTANT_PAYLOAD_OFFSET));
 				break;
 			case Blua32ConstantTag::String:
 				image.constants.emplace_back(decodeString(
