@@ -648,16 +648,24 @@ bool HostOverlayMenu::gamepadButtonPressed(
 	}
 	switch (button) {
 		case HostMenuButtonId::Up:
-			return toSignedWord(input.physicalGamepadAxisWord(deviceSlot, 1u))
+			return toSignedWord(input.physicalGamepadAxisWord(
+				deviceSlot,
+				InputControllerGamepadAxis::LeftY))
 				<= -kNavigationAxisThreshold;
 		case HostMenuButtonId::Down:
-			return toSignedWord(input.physicalGamepadAxisWord(deviceSlot, 1u))
+			return toSignedWord(input.physicalGamepadAxisWord(
+				deviceSlot,
+				InputControllerGamepadAxis::LeftY))
 				>= kNavigationAxisThreshold;
 		case HostMenuButtonId::Left:
-			return toSignedWord(input.physicalGamepadAxisWord(deviceSlot, 0u))
+			return toSignedWord(input.physicalGamepadAxisWord(
+				deviceSlot,
+				InputControllerGamepadAxis::LeftX))
 				<= -kNavigationAxisThreshold;
 		case HostMenuButtonId::Right:
-			return toSignedWord(input.physicalGamepadAxisWord(deviceSlot, 0u))
+			return toSignedWord(input.physicalGamepadAxisWord(
+				deviceSlot,
+				InputControllerGamepadAxis::LeftX))
 				>= kNavigationAxisThreshold;
 		case HostMenuButtonId::A:
 		case HostMenuButtonId::B:

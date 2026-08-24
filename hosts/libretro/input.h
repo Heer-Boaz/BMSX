@@ -28,7 +28,9 @@ public:
 		u8 deviceSlot,
 		InputControllerGamepadButtonBit button) const;
 	u32 physicalGamepadButtonsWord(u8 deviceSlot) const;
-	u32 physicalGamepadAxisWord(u8 deviceSlot, u8 axis) const;
+	u32 physicalGamepadAxisWord(
+		u8 deviceSlot,
+		InputControllerGamepadAxis axis) const;
 	void consumeGamepadButton(
 		u8 deviceSlot,
 		InputControllerGamepadButtonBit button);

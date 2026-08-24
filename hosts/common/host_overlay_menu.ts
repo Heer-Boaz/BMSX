@@ -5,6 +5,12 @@ import { Input } from './input/manager';
 import type { PlayerInput } from './input/player';
 import type { BGamepadButton, ButtonId } from './input/models';
 import {
+	GAMEPAD_REMAP_CONTROLS,
+	gamepadRemapChoiceIndex,
+	setGamepadRemapChoice,
+	type GamepadRemapControl,
+} from './input/gamepad_remap_controls';
+import {
 	HOST_MENU_BUTTON,
 	HOST_ON_SCREEN_KEYBOARD_BUTTON,
 } from './input/shortcuts';
@@ -54,12 +60,40 @@ type HostMenuGamepadOption = {
 	readonly playerIndex: number;
 };
 
+type HostMenuRemapGamepadOption = {
+	readonly kind: 'remap-gamepad';
+	readonly label: string;
+};
+
 type HostMenuKeyboardOption = {
 	readonly kind: 'keyboard';
 	readonly label: string;
 };
 
-type HostMenuOption = HostMenuValueOption | HostMenuGamepadOption | HostMenuKeyboardOption | HostMenuActionOption;
+type HostMenuRemapOption = {
+	readonly kind: 'remap';
+	readonly control: GamepadRemapControl;
+};
+
+type HostMenuResetRemapOption = {
+	readonly kind: 'reset-remap';
+	readonly label: string;
+};
+
+type HostMenuBackOption = {
+	readonly kind: 'back';
+	readonly label: string;
+};
+
+type HostMenuOption =
+	| HostMenuValueOption
+	| HostMenuGamepadOption
+	| HostMenuRemapGamepadOption
+	| HostMenuKeyboardOption
+	| HostMenuActionOption
+	| HostMenuRemapOption
+	| HostMenuResetRemapOption
+	| HostMenuBackOption;
 
 type HostMenuButton = BGamepadButton;
 
@@ -153,6 +187,7 @@ const enum HostButtonState {
 const enum HostOverlayPage {
 	Closed,
 	Options,
+	GamepadRemap,
 	Keyboard,
 }
 
@@ -364,7 +399,9 @@ export class HostOverlayMenu {
 	private showFps = false;
 	private controllerPortRevision = -1;
 	private onScreenKeyboardShortcutRequested = false;
-	private readonly options: readonly HostMenuOption[] = [
+	private remapPlayerIndex = 1;
+	private rootSelection = 0;
+	private readonly rootOptions: readonly HostMenuOption[] = [
 		{
 			kind: 'value',
 			label: 'Show Usage Gizmo',
@@ -442,10 +479,10 @@ export class HostOverlayMenu {
 			getIndex: () => boolIndex(this.showFps),
 			setIndex: index => { this.showFps = boolFromIndex(index); },
 		},
-		{ kind: 'gamepad', label: 'PLAYER 1 GAMEPAD', playerIndex: 1 },
-		{ kind: 'gamepad', label: 'PLAYER 2 GAMEPAD', playerIndex: 2 },
-		{ kind: 'gamepad', label: 'PLAYER 3 GAMEPAD', playerIndex: 3 },
-		{ kind: 'gamepad', label: 'PLAYER 4 GAMEPAD', playerIndex: 4 },
+		{ kind: 'gamepad', label: 'PLAYER 1 CONTROLS', playerIndex: 1 },
+		{ kind: 'gamepad', label: 'PLAYER 2 CONTROLS', playerIndex: 2 },
+		{ kind: 'gamepad', label: 'PLAYER 3 CONTROLS', playerIndex: 3 },
+		{ kind: 'gamepad', label: 'PLAYER 4 CONTROLS', playerIndex: 4 },
 		{ kind: 'keyboard', label: 'ON-SCREEN KEYBOARD' },
 		{
 			kind: 'action',
@@ -458,6 +495,12 @@ export class HostOverlayMenu {
 			action: HostMenuInput.ExitGame,
 		},
 	];
+	private readonly remapGamepadOption: HostMenuRemapGamepadOption = {
+		kind: 'remap-gamepad',
+		label: 'GAMEPAD',
+	};
+	private readonly remapOptions: readonly HostMenuOption[];
+	private options: readonly HostMenuOption[];
 
 	public constructor(
 		presenter: VideoPresenter,
@@ -466,6 +509,26 @@ export class HostOverlayMenu {
 	) {
 		this.presenter = presenter;
 		this.keyboard = new HostOnScreenKeyboard(presenter, input);
+		const remapOptions: HostMenuOption[] = new Array(
+			GAMEPAD_REMAP_CONTROLS.length + 3,
+		);
+		remapOptions[0] = this.remapGamepadOption;
+		for (let index = 0; index < GAMEPAD_REMAP_CONTROLS.length; index += 1) {
+			remapOptions[index + 1] = {
+				kind: 'remap',
+				control: GAMEPAD_REMAP_CONTROLS[index],
+			};
+		}
+		remapOptions[GAMEPAD_REMAP_CONTROLS.length + 1] = {
+			kind: 'reset-remap',
+			label: 'RESET CONTROLS',
+		};
+		remapOptions[GAMEPAD_REMAP_CONTROLS.length + 2] = {
+			kind: 'back',
+			label: 'BACK',
+		};
+		this.remapOptions = remapOptions;
+		this.options = this.rootOptions;
 		const shortcuts = input.getGlobalShortcutRegistry();
 		for (let playerIndex = 1; playerIndex <= Input.PLAYERS_MAX; playerIndex += 1) {
 			shortcuts.registerControlShortcut(
@@ -479,8 +542,12 @@ export class HostOverlayMenu {
 				() => { this.onScreenKeyboardShortcutRequested = true; },
 			);
 		}
-		this.optionGlyphs = new Array(this.options.length);
-		for (let index = 0; index < this.options.length; index += 1) {
+		const optionCapacity = Math.max(
+			this.rootOptions.length,
+			this.remapOptions.length,
+		);
+		this.optionGlyphs = new Array(optionCapacity);
+		for (let index = 0; index < optionCapacity; index += 1) {
 			this.optionGlyphs[index] = { x: 0, y: 0, z: 922, items: '', item_start: 0, item_end: 0, font: null, color: COLOR_TEXT, has_background_color: false, background_color: 0xff000000, wrap_chars: 0, center_block_width: 0, align: TextAlign.Start, baseline: TextBaseline.Alphabetic, layer: LAYER_2D_IDE };
 			this.lineText[index] = '';
 		}
@@ -517,7 +584,13 @@ export class HostOverlayMenu {
 		}
 		const pointerActivated = this.tickPointerInput();
 		if ((readButtonState(this.input, BUTTON_B) & HostButtonState.JustPressed) !== 0) {
-			this.toggle();
+			if (this.page === HostOverlayPage.GamepadRemap) {
+				this.openOptions();
+				consumeButtons(this.input, MENU_NAV_BUTTONS);
+				return HostMenuInput.Active;
+			} else {
+				this.toggle();
+			}
 			consumeButtons(this.input, MENU_NAV_BUTTONS);
 			return HostMenuInput.Inactive;
 		}
@@ -580,7 +653,7 @@ export class HostOverlayMenu {
 		const titleHeight = lineHeight;
 		const titleGap = 4;
 		let boxWidth = font.measure(this.titleGlyphs.items as string);
-		for (let index = 0; index < this.lineText.length; index += 1) {
+		for (let index = 0; index < this.options.length; index += 1) {
 			const width = font.measure(this.lineText[index]);
 			if (width > boxWidth) {
 				boxWidth = width;
@@ -601,7 +674,7 @@ export class HostOverlayMenu {
 		);
 		this.optionLineHeight = lineHeight;
 		this.panelRect.area.left = left;
-		this.panelRect.area.top = boxTop;
+		this.panelRect.area.top = top - 2;
 		this.panelRect.area.right = left + boxWidth;
 		this.panelRect.area.bottom = boxTop + boxHeight;
 		this.queueCommand(Host2DKind.Rect, this.panelRect);
@@ -634,7 +707,7 @@ export class HostOverlayMenu {
 			return true;
 		}
 		this.clearRenderCommands();
-		if (this.page === HostOverlayPage.Options) {
+		if (this.page !== HostOverlayPage.Closed) {
 			return false;
 		}
 		const presenter = this.presenter;
@@ -705,11 +778,8 @@ export class HostOverlayMenu {
 
 	private toggle(): void {
 		if (this.page === HostOverlayPage.Closed) {
-			this.page = HostOverlayPage.Options;
-			this.selected = 0;
-			this.resetPointerPress();
-			this.controllerPortRevision = this.input.controllerPortRevision;
-			this.dirtyText = true;
+			this.rootSelection = 0;
+			this.openOptions();
 			return;
 		}
 		this.close();
@@ -717,27 +787,50 @@ export class HostOverlayMenu {
 
 	private changeSelected(direction: number): void {
 		const option = this.options[this.selected];
-		if (option.kind === 'action' || option.kind === 'keyboard') {
-			return;
-		}
-		if (option.kind === 'gamepad') {
-			const gamepads = this.input.connectedGamepads;
-			if (gamepads.length === 0) {
+		switch (option.kind) {
+			case 'action':
+			case 'keyboard':
+			case 'reset-remap':
+			case 'back':
+				return;
+			case 'remap': {
+				const remap = this.input.gamepadPortRemaps[this.remapPlayerIndex - 1];
+				const choices = option.control.choices;
+				const next = (
+					gamepadRemapChoiceIndex(remap, option.control)
+					+ choices.length
+					+ direction
+				) % choices.length;
+				setGamepadRemapChoice(remap, option.control, next);
+				this.dirtyText = true;
 				return;
 			}
-			const current = this.input.getPlayerInput(option.playerIndex).inputHandlers.gamepad;
-			const currentIndex = current === null ? -1 : gamepads.indexOf(current);
-			const nextIndex = currentIndex < 0
-				? (direction > 0 ? 0 : gamepads.length - 1)
-				: (currentIndex + gamepads.length + direction) % gamepads.length;
-			this.input.assignGamepadToPlayer(gamepads[nextIndex], option.playerIndex);
-			this.controllerPortRevision = this.input.controllerPortRevision;
-			this.dirtyText = true;
-			return;
+			case 'gamepad':
+			case 'remap-gamepad': {
+				const gamepads = this.input.connectedGamepads;
+				if (gamepads.length === 0) {
+					return;
+				}
+				const playerIndex = option.kind === 'gamepad'
+					? option.playerIndex
+					: this.remapPlayerIndex;
+				const current = this.input.getPlayerInput(playerIndex).inputHandlers.gamepad;
+				const currentIndex = current === null ? -1 : gamepads.indexOf(current);
+				const nextIndex = currentIndex < 0
+					? (direction > 0 ? 0 : gamepads.length - 1)
+					: (currentIndex + gamepads.length + direction) % gamepads.length;
+				this.input.assignGamepadToPlayer(gamepads[nextIndex], playerIndex);
+				this.controllerPortRevision = this.input.controllerPortRevision;
+				this.dirtyText = true;
+				return;
+			}
+			case 'value': {
+				const next = (option.getIndex() + option.values.length + direction) % option.values.length;
+				option.setIndex(next);
+				this.dirtyText = true;
+				return;
+			}
 		}
-		const next = (option.getIndex() + option.values.length + direction) % option.values.length;
-		option.setIndex(next);
-		this.dirtyText = true;
 	}
 
 	private activateSelected(): HostMenuInput {
@@ -750,8 +843,46 @@ export class HostOverlayMenu {
 			this.close();
 			return option.action;
 		}
+		if (option.kind === 'back') {
+			this.openOptions();
+			return HostMenuInput.Active;
+		}
+		if (option.kind === 'reset-remap') {
+			this.input.gamepadPortRemaps[this.remapPlayerIndex - 1].reset();
+			this.dirtyText = true;
+			return HostMenuInput.Active;
+		}
+		if (option.kind === 'gamepad'
+			&& this.page === HostOverlayPage.Options) {
+			this.openGamepadRemap(option.playerIndex);
+			return HostMenuInput.Active;
+		}
 		this.changeSelected(1);
 		return HostMenuInput.Active;
+	}
+
+	private openOptions(): void {
+		this.page = HostOverlayPage.Options;
+		this.options = this.rootOptions;
+		this.selected = this.rootSelection;
+		this.titleGlyphs.items = TITLE_TEXT;
+		this.titleGlyphs.item_end = TITLE_TEXT.length;
+		this.resetPointerPress();
+		this.controllerPortRevision = this.input.controllerPortRevision;
+		this.dirtyText = true;
+	}
+
+	private openGamepadRemap(playerIndex: number): void {
+		this.rootSelection = this.selected;
+		this.remapPlayerIndex = playerIndex;
+		this.page = HostOverlayPage.GamepadRemap;
+		this.options = this.remapOptions;
+		this.selected = 0;
+		const title = `PLAYER ${playerIndex} CONTROLS`;
+		this.titleGlyphs.items = title;
+		this.titleGlyphs.item_end = title.length;
+		this.resetPointerPress();
+		this.dirtyText = true;
 	}
 
 	private close(): void {
@@ -759,6 +890,9 @@ export class HostOverlayMenu {
 		this.input.getGlobalShortcutRegistry().setExclusiveGamepadControlShortcut(null);
 		resetControlButtonRepeats(this.input);
 		this.page = HostOverlayPage.Closed;
+		this.options = this.rootOptions;
+		this.titleGlyphs.items = TITLE_TEXT;
+		this.titleGlyphs.item_end = TITLE_TEXT.length;
 		this.selected = 0;
 		this.resetPointerPress();
 		this.dirtyText = true;
@@ -777,16 +911,36 @@ export class HostOverlayMenu {
 	}
 
 	private rebuildText(): void {
+		const remap = this.input.gamepadPortRemaps[this.remapPlayerIndex - 1];
 		for (let index = 0; index < this.options.length; index += 1) {
 			const option = this.options[index];
 			let line: string;
-			if (option.kind === 'action' || option.kind === 'keyboard') {
-				line = option.label;
-			} else if (option.kind === 'gamepad') {
-				const gamepad = this.input.getPlayerInput(option.playerIndex).inputHandlers.gamepad;
-				line = `${option.label}  ${gamepad === null ? 'NONE' : gamepad.device.label}`;
-			} else {
-				line = `${option.label}  ${option.values[option.getIndex()].label}`;
+			switch (option.kind) {
+				case 'action':
+				case 'keyboard':
+				case 'reset-remap':
+				case 'back':
+					line = option.label;
+					break;
+				case 'gamepad':
+				case 'remap-gamepad': {
+					const playerIndex = option.kind === 'gamepad'
+						? option.playerIndex
+						: this.remapPlayerIndex;
+					const gamepad = this.input.getPlayerInput(playerIndex).inputHandlers.gamepad;
+					line = `${option.label}  ${gamepad === null ? 'NONE' : gamepad.device.label}`;
+					break;
+				}
+				case 'remap': {
+					const choice = option.control.choices[
+						gamepadRemapChoiceIndex(remap, option.control)
+					];
+					line = `${option.control.label}  <-  ${choice.label}`;
+					break;
+				}
+				case 'value':
+					line = `${option.label}  ${option.values[option.getIndex()].label}`;
+					break;
 			}
 			this.lineText[index] = line;
 			const items = this.optionGlyphs[index];

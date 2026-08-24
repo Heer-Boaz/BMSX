@@ -14,6 +14,7 @@ import {
 
 import { PlayerInput } from './player';
 import { PointerInput } from './pointer';
+import { GamepadPortRemap } from './gamepad_port_remap';
 import type { HostClock } from '../clock';
 import type {
 	GamepadDevice,
@@ -27,6 +28,7 @@ import {
 	INPUT_CONTROLLER_PAD_AXIS_COUNT,
 	INPUT_CONTROLLER_PAD_COUNT,
 	type InputControllerInputSource,
+	type InputControllerPadSnapshot,
 	type InputControllerSnapshot,
 } from '../../../machine/ts/machine/devices/input/contracts';
 
@@ -127,6 +129,16 @@ export class Input implements InputControllerInputSource, InputEventSink {
 	private readonly inputControllerPointerHandlers: PointerInput[] = [];
 	public readonly connectedGamepads: GamepadInput[] = [];
 	public controllerPortRevision = 0;
+	public readonly gamepadPortRemaps: readonly GamepadPortRemap[] = [
+		new GamepadPortRemap(),
+		new GamepadPortRemap(),
+		new GamepadPortRemap(),
+		new GamepadPortRemap(),
+	];
+	private readonly remapSourceSnapshot: InputControllerPadSnapshot = {
+		buttons: 0,
+		axesQ16: new Uint32Array(INPUT_CONTROLLER_PAD_AXIS_COUNT),
+	};
 
 	private readonly unsubscribeHostInput: () => void;
 	private readonly pendingVibrationDevices: GamepadDevice[] = [];
@@ -170,6 +182,7 @@ export class Input implements InputControllerInputSource, InputEventSink {
 		return this.playerInputs[index];
 	}
 
+	// disable-next-line single_line_method_pattern -- ICU output addresses a player port; Input resolves that port's current physical device.
 	public applyInputControllerVibrationEffect(padIndex: number, durationMs: number, intensity: number): void {
 		this.getPlayerInput(padIndex + 1).applyInputControllerVibrationEffect(durationMs, intensity);
 	}
@@ -554,7 +567,14 @@ export class Input implements InputControllerInputSource, InputEventSink {
 		if (handler.supportsVibrationEffect) {
 			snapshot.rumbleSupportMask = (snapshot.rumbleSupportMask | (1 << pad)) >>> 0;
 		}
-		handler.writeInputControllerPadSnapshot(padSnapshot);
+		const remap = this.gamepadPortRemaps[pad];
+		if (remap.isIdentity) {
+			handler.writeInputControllerPadSnapshot(padSnapshot);
+			return;
+		}
+		const sourceSnapshot = this.remapSourceSnapshot;
+		handler.writeInputControllerPadSnapshot(sourceSnapshot);
+		remap.apply(sourceSnapshot, padSnapshot);
 	}
 
 	public getGlobalShortcutRegistry(): GlobalShortcutRegistry {

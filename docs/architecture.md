@@ -1,6 +1,6 @@
 # BMSX Architecture Contract
 
-Last checked: 2026-07-31.
+Last checked: 2026-08-25.
 
 This document is the current machine/host boundary contract. It is not a work
 log, a prompt, or a migration diary. If implementation changes land, this file
@@ -3393,16 +3393,25 @@ The host input layer implements those ports and remains outside the device.
 Host input adapters publish the supervisor-request line as a separate
 retained input signal without turning it into a guest key. The browser runtime
 keeps its shortcut, device-assignment, and PlayerInput state under
-`hosts/common/input`. Browser DOM, hit testing, control styling, and control
-layout remain in `hosts/browser`; the retained onscreen controller enters common
-input as an ordinary `GamepadDevice`, not as a DOM proxy contract. Native
-frontends normalize their external input ABI once into BMSX-owned numeric
-source/device/control records; `hosts/libretro/input` retains fixed keyboard,
-pad, and pointer state, and the native quick menu owns its own fixed edge/repeat
-records. Those host implementations are intentionally target-specific. Only the
-raw ICU source-port contract—snapshot input, supervisor line and vibration
-output—is mirrored machine semantics. Host repeat timing never flows back
-through `Runtime` or a machine input interface.
+`hosts/common/input`. Its quick menu assigns devices and edits one retained
+normalized-control map per player port. Host shortcuts and overlay navigation
+consume the unremapped device view; only the pad words published through that
+port's ICU snapshot are remapped. An unchanged map keeps the direct snapshot
+write path. A changed map uses retained numeric button/axis selectors and does
+no string lookup, mapping construction, or allocation while sampling. The
+profile belongs to the port, so changing the physical or onscreen device does
+not change that player's controls. Browser DOM, hit testing, control styling,
+and control layout remain in `hosts/browser`; the retained onscreen controller
+enters common input as an ordinary `GamepadDevice`, not as a DOM proxy contract.
+Native frontends normalize their external input ABI once into BMSX-owned
+numeric source/device/control records; `hosts/libretro/input` retains fixed
+keyboard, pad, and pointer state, and the native quick menu owns its own fixed
+edge/repeat records. Libretro does not apply the browser port map: frontend port
+assignment and core/game remaps already determine the normalized RetroPad words
+received by the core. Those host implementations are intentionally
+target-specific. Only the raw ICU source-port contract—snapshot input,
+supervisor line and vibration output—is mirrored machine semantics. Host repeat
+timing never flows back through `Runtime` or a machine input interface.
 
 Normal gameplay carts may build retained input semantics on top of the raw
 snapshot. Bare-metal carts may intentionally read the raw keyboard, pointer and

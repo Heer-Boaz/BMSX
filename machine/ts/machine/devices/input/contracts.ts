@@ -7,7 +7,17 @@ import { FIX16_ONE } from '../../common/numeric';
 
 export const INPUT_CONTROLLER_KEY_WORD_COUNT = 8; // 256 HID usage bits
 export const INPUT_CONTROLLER_PAD_COUNT = 4;
-export const INPUT_CONTROLLER_PAD_AXIS_COUNT = 6; // lx, ly, rx, ry, lt, rt
+
+// Raw word indices in each latched pad-axes array.
+export const enum InputControllerGamepadAxis {
+	LeftX = 0,
+	LeftY = 1,
+	RightX = 2,
+	RightY = 3,
+	LeftTrigger = 4,
+	RightTrigger = 5,
+}
+export const INPUT_CONTROLLER_PAD_AXIS_COUNT = InputControllerGamepadAxis.RightTrigger + 1;
 
 // Raw bit positions in each latched pad-buttons word.
 export const enum InputControllerGamepadButtonBit {

@@ -5,6 +5,7 @@ import type { HostClock } from '../clock';
 import type { GamepadDevice } from './contracts';
 import {
 	INPUT_CONTROLLER_PAD_AXIS_COUNT,
+	InputControllerGamepadAxis,
 	type InputControllerPadSnapshot,
 } from '../../../machine/ts/machine/devices/input/contracts';
 import { encodeSignedFix16 } from '../../../machine/ts/machine/common/numeric';
@@ -59,6 +60,7 @@ export class GamepadInput implements GamepadInputHandler {
 		}
 	}
 
+	// disable-next-line single_line_method_pattern -- GamepadInputHandler keeps lazy button-state ownership inside the physical device adapter.
 	public getButtonState(btn: string): ButtonState {
 		return getPressedState(this.buttonStates, btn);
 	}
@@ -100,9 +102,11 @@ export class GamepadInput implements GamepadInputHandler {
 			this.inputControllerButtons = down ? ((this.inputControllerButtons | mask) >>> 0) : ((this.inputControllerButtons & ~mask) >>> 0);
 		}
 		if (code === 'lt') {
-			this.inputControllerAxesQ16[4] = down ? encodeSignedFix16(value) : 0;
+			this.inputControllerAxesQ16[InputControllerGamepadAxis.LeftTrigger] =
+				down ? encodeSignedFix16(value) : 0;
 		} else if (code === 'rt') {
-			this.inputControllerAxesQ16[5] = down ? encodeSignedFix16(value) : 0;
+			this.inputControllerAxesQ16[InputControllerGamepadAxis.RightTrigger] =
+				down ? encodeSignedFix16(value) : 0;
 		}
 	}
 
@@ -136,11 +140,15 @@ export class GamepadInput implements GamepadInputHandler {
 		}
 		state.timestamp = timestamp;
 		if (code === 'ls') {
-			this.inputControllerAxesQ16[0] = encodeSignedFix16(x);
-			this.inputControllerAxesQ16[1] = encodeSignedFix16(y);
+			this.inputControllerAxesQ16[InputControllerGamepadAxis.LeftX] =
+				encodeSignedFix16(x);
+			this.inputControllerAxesQ16[InputControllerGamepadAxis.LeftY] =
+				encodeSignedFix16(y);
 		} else if (code === 'rs') {
-			this.inputControllerAxesQ16[2] = encodeSignedFix16(x);
-			this.inputControllerAxesQ16[3] = encodeSignedFix16(y);
+			this.inputControllerAxesQ16[InputControllerGamepadAxis.RightX] =
+				encodeSignedFix16(x);
+			this.inputControllerAxesQ16[InputControllerGamepadAxis.RightY] =
+				encodeSignedFix16(y);
 		}
 	}
 
@@ -155,18 +163,18 @@ export class GamepadInput implements GamepadInputHandler {
 		}
 		switch (button) {
 			case 'lt':
-				this.routedInputControllerAxesQ16[4] = 0;
+				this.routedInputControllerAxesQ16[InputControllerGamepadAxis.LeftTrigger] = 0;
 				break;
 			case 'rt':
-				this.routedInputControllerAxesQ16[5] = 0;
+				this.routedInputControllerAxesQ16[InputControllerGamepadAxis.RightTrigger] = 0;
 				break;
 			case 'ls':
-				this.routedInputControllerAxesQ16[0] = 0;
-				this.routedInputControllerAxesQ16[1] = 0;
+				this.routedInputControllerAxesQ16[InputControllerGamepadAxis.LeftX] = 0;
+				this.routedInputControllerAxesQ16[InputControllerGamepadAxis.LeftY] = 0;
 				break;
 			case 'rs':
-				this.routedInputControllerAxesQ16[2] = 0;
-				this.routedInputControllerAxesQ16[3] = 0;
+				this.routedInputControllerAxesQ16[InputControllerGamepadAxis.RightX] = 0;
+				this.routedInputControllerAxesQ16[InputControllerGamepadAxis.RightY] = 0;
 				break;
 		}
 	}
@@ -196,6 +204,7 @@ export class GamepadInput implements GamepadInputHandler {
 		this.lastPollTime = 0;
 	}
 
+	// disable-next-line single_line_method_pattern -- GamepadInputHandler routes retained player-port output to the currently attached physical device.
 	public applyVibrationEffect(durationMs: number, intensity: number): void {
 		this.device.setVibration(durationMs, intensity);
 	}

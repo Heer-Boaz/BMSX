@@ -33,6 +33,7 @@ import {
 	INP_POINTER_BUTTON_SECONDARY,
 	INPUT_CONTROLLER_KEY_WORD_COUNT,
 	INPUT_CONTROLLER_OUTPUT_INTENSITY_Q16_ONE,
+	InputControllerGamepadAxis,
 	type InputControllerInputSource,
 	type InputControllerSnapshot,
 } from '../../machine/ts/machine/devices/input/contracts';
@@ -57,8 +58,10 @@ function writeSample(snapshot: InputControllerSnapshot, keyWords: Uint32Array): 
 	snapshot.pointerWheelQ16 = encodeSignedFix16(1.5);
 	snapshot.rumbleSupportMask = 1 << 2;
 	snapshot.pads[0].buttons = 1 << PAD_A_BIT;
-	snapshot.pads[0].axesQ16[0] = encodeSignedFix16(-0.5);
-	snapshot.pads[0].axesQ16[1] = encodeSignedFix16(0.25);
+	snapshot.pads[0].axesQ16[InputControllerGamepadAxis.LeftX] =
+		encodeSignedFix16(-0.5);
+	snapshot.pads[0].axesQ16[InputControllerGamepadAxis.LeftY] =
+		encodeSignedFix16(0.25);
 }
 
 function createHarness(): {
@@ -170,6 +173,7 @@ test('input controller exposes the VBlank sample edge without leaking the sample
 
 test('input controller raises one supervisor request edge and the device fence vectors NMI', () => {
 	const harness = createHarness();
+	const noInterrupt = AcceptedInterruptKind.None;
 	const restoredState = harness.controller.captureState();
 	restoredState.supervisorRequestLineHigh = true;
 	harness.controller.restoreState(restoredState);
@@ -179,17 +183,17 @@ test('input controller raises one supervisor request edge and the device fence v
 	assert.equal(harness.samples(), 0);
 	assert.equal(harness.memory.readIoU32(IO_INP_STATUS), 0);
 	assert.equal(harness.memory.readIoU32(IO_INP_KEYS + (HID_KEY_F2 >>> 5) * IO_WORD_SIZE), 0);
-	assert.equal(harness.machine.cpu.peekPendingInterrupt(), AcceptedInterruptKind.None);
+	assert.equal(harness.machine.cpu.peekPendingInterrupt(), noInterrupt);
 	harness.memory.writeMappedWord(IO_INP_CTRL, INP_CTRL_RESET);
 	harness.controller.onVblankEdge(2);
-	assert.equal(harness.machine.cpu.peekPendingInterrupt(), AcceptedInterruptKind.None);
+	assert.equal(harness.machine.cpu.peekPendingInterrupt(), noInterrupt);
 
 	harness.setSupervisorRequestLine(false);
 	harness.controller.onVblankEdge(3);
 	harness.setSupervisorRequestLine(true);
 	harness.controller.onVblankEdge(4);
 
-	assert.equal(harness.machine.cpu.peekPendingInterrupt(), AcceptedInterruptKind.None);
+	assert.equal(harness.machine.cpu.peekPendingInterrupt(), noInterrupt);
 	harness.machine.systemController.onService();
 	assert.equal(harness.machine.cpu.peekPendingInterrupt(), AcceptedInterruptKind.NonMaskable);
 	assert.equal(harness.controller.captureState().supervisorRequestLineHigh, true);

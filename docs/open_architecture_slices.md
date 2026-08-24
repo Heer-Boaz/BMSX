@@ -18,6 +18,9 @@ De huidige inputgrenzen zijn:
 - de browserhost bezit fysieke devices en expliciete toewijzing aan player
   1--4. De onscreen gamepad neemt als gewoon device aan diezelfde toewijzing
   deel;
+- de TypeScript-host bezit per playerport één retained controlremap. Quick menu
+  en shortcuts blijven de onbewerkte genormaliseerde devicecontrols lezen;
+  alleen het gepubliceerde ICU-padsnapshot gebruikt de remap;
 - libretro ontvangt reeds genormaliseerde logische frontendports. Iedere
   geconfigureerde JOYPAD-port kan de quick menu, terminal en onscreen keyboard
   besturen; pad 0 heeft geen speciale overlayrol meer;
@@ -30,83 +33,6 @@ De huidige inputgrenzen zijn:
 De verborgen hold-Start-assignmentflow is geen open herstelpunt. Browserdevices
 worden zichtbaar via de quick menu toegewezen; bij libretro blijft fysieke
 controller-naar-port-toewijzing eigendom van de frontend.
-
-## Eerstvolgende ontwerpslice
-
-### `HOST-INPUT-REMAP-01` — remapping zonder ownervermenging
-
-De quick menu kan volledige gamepads aan players toewijzen, maar bezit nog geen
-contract voor het remappen van afzonderlijke D-pad-, button-, stick- en
-triggercontrols. Dit is eerst een owner- en representatievraag; implementeer nog
-niets voordat deze tabel voor browser en libretro is ingevuld:
-
-| Grens | Voorbeelden | Beoogde owner |
-| --- | --- | --- |
-| Fysiek device | browser Gamepad, onscreen pad, frontendcontroller | host/frontend |
-| Genormaliseerde padcontrol | `BGamepadButton`, axis, libretro RetroPad-control | host input adapter |
-| Device-to-player | browser `DeviceBinding`, libretro port | browserhost respectievelijk frontend |
-| Logische gameplayactie | bewegen, vuren, pauze | cart/cartlib |
-
-Lees daarvoor eerst de actuele owners
-`hosts/common/input/{manager,player,shortcuts}.ts`,
-`hosts/common/host_overlay_menu.ts`,
-`hosts/libretro/{input,host_overlay_menu}.{h,cpp}` en
-`cartlib/input/input.lua`. Benoem vóór een mirrored edit expliciet de
-frame-hot-paths `Input.pollInput()`, `HostOverlayMenu.tickInput()`,
-`LibretroInput::poll()` en `HostOverlayMenu::tickInput()`; een remap mag daar
-alleen een reeds gecompileerde retained lookup zijn.
-
-Onderzoek als productiereferenties minimaal SDL's
-[`SDL_gamepad.c`](https://github.com/libsdl-org/SDL/blob/main/src/joystick/SDL_gamepad.c),
-RetroArchs
-[`input-and-controls`](https://github.com/libretro/docs/blob/master/docs/guides/input-and-controls.md)
-en Godots
-[`InputMap`](https://github.com/godotengine/godot/blob/master/core/input/input_map.cpp).
-Classificeer daarbij apart:
-
-1. device-normalisatie/autoconfig;
-2. user-remapping van genormaliseerde controls;
-3. device-to-player-assignment;
-4. cart-authored logical-action binding.
-
-Het owneronderzoek levert de volgende grens op:
-
-- SDL-achtige autoconfiguratie normaliseert een fysiek browserdevice eerst naar
-  de vaste BMSX-padcontrols. Dit is geen user-remap;
-- een browser-user-remap hoort daarna per playerport te werken, zodat een ander
-  toegewezen fysiek of onscreen device hetzelfde portprofiel gebruikt;
-- de ongeremapte genormaliseerde view blijft eigenaar van hostshortcuts en
-  overlaybediening. Alleen het naar ICU gepubliceerde padsnapshot wordt geremapt;
-- libretro krijgt geen tweede BMSX-remapper. RetroArch bezit al fysieke
-  autoconfiguratie, portassignment, per-core/per-game remaps en afzonderlijke
-  hotkeys; de core consumeert de resulterende RetroPad-port rechtstreeks;
-- cartlib blijft uitsluitend actions aan ICU-controls binden. Een cart kan via
-  `input.stick_directions` bewust stickrichtingen naast D-padcontrols binden;
-  host- of cartlibdefaults voegen die twee niet samen.
-
-Een latere browserimplementatie hoort daarom bij de per-player snapshotowner,
-niet bij `GamepadDevice`, ICU of cartlib. Compileer een gewijzigd profiel één
-keer naar vaste button-lookupwords en zes axisselectors. De framepath past die
-retained tabellen rechtstreeks toe nadat het toegewezen device zijn fysieke
-genormaliseerde snapshot heeft geschreven. Zo blijven consumption en
-hostshortcuts op de fysieke view werken en bevat de framepath geen strings,
-mappingconstructie of allocatie. Triggerbuttons/-assen en stickbuttons/-assen
-blijven daarbij afzonderlijke representaties; de editor mag ze als één control
-presenteren, maar de runtime mag ze niet impliciet samenvoegen.
-
-De productbeslissing om deze browserremapper daadwerkelijk aan de quick menu toe
-te voegen staat nog open; deze slice legt alleen de owner en runtimevorm vast.
-
-Klaar wanneer de gekozen grens browserdevices, touchscreen en libretroports
-kan representeren zonder een tweede frontendremapper in libretro, zonder een
-globale stick-naar-D-pad-default en zonder fysieke controls in cartcode. De
-runtime-hot-path gebruikt retained tabellen/records en doet geen stringmatching,
-allocatie of herhaalde mappingcompilatie per frame.
-
-Verboden richtingen zijn remapping in ICU/MMIO, een cartlib-default die sticks
-en D-pad samenvoegt, cart-specifieke hostcode, een legacy-dual-path en een
-facade die browserassignment en libretroports ten onrechte hetzelfde device-
-lifecyclecontract geeft.
 
 ## Validatiebasis voor inputwerk
 
@@ -144,7 +70,7 @@ vervangt de hieronder genoemde fysieke SNES Mini-validatie niet.
 | `HOST-GX-LIVE-01` | IDE, quick menu, BIOS-terminal, `bare_metal_cart` en `2025` tonen stabiele opeenvolgende frames met correcte input, glyphs en terminalcellen, zonder flashes, zwart beeld of halve commandstreams. | WebGL2 en WebGPU; de terminal ook op GLES2. |
 | `GX-READ-01` | GPUREAD wrap, padding, fences, DREQ en zichtbare VRAM-inhoud komen live overeen met de softwarevectoren. | WebGL2, GLES2 en WebGPU. |
 | `GX-RASTER-01` | Polygonen, lijnen, clipping, textures, CLUT, mask, blend, dither en stores komen live exact overeen met software en GPUREAD. | WebGL2, GLES2 en WebGPU. |
-| `HOST-OSK-LIVE-01` | Touch en iedere toegewezen/aangesloten controller openen en besturen quick menu en onscreen keyboard. Shift, Backspace, Delete, spatie, Enter, cursor, Home/End en lowercase/uppercase labels werken; sluiten lekt geen chord of letter naar cart, terminal of IDE. Cheat-/sealtekst kan zonder fysiek keyboard worden ingevoerd. | iPhone/browser en echte SNES Mini. |
+| `HOST-OSK-LIVE-01` | Touch en iedere toegewezen/aangesloten controller openen en besturen quick menu en onscreen keyboard. Shift, Backspace, Delete, spatie, Enter, cursor, Home/End en lowercase/uppercase labels werken; sluiten lekt geen chord of letter naar cart, terminal of IDE. Browser-portremaps werken voor fysieke en onscreen devices zonder quick-menu-/shortcutcontrols mee te remappen. Cheat-/sealtekst kan zonder fysiek keyboard worden ingevoerd. | iPhone/browser en echte SNES Mini. |
 | `HOST-SUPERVISOR-01` | Select+L opent en sluit de terminal vanaf iedere aangesloten frontendport exact eenmaal zonder gameplayinput te lekken. | Echte SNES Mini. |
 | `PERF-03` | De op de echte target geselecteerde ARM-fetch-, NV-barrier- of dependency-copyroute rendert exact en houdt 50 Hz zonder backlog. | Windows RetroArch en echte SNES Mini. |
 | `PERF-04` | De 16k audio-/presentatiesoak houdt 50 Hz zonder sampleverlies, backlog of periodieke hitch. | Zichtbare frontend en daarna SNES Mini. |

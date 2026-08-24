@@ -23,7 +23,8 @@ public:
 		snapshot.keyWords = keyWords;
 		snapshot.pointerXQ16 = 0x000c8000u;
 		snapshot.pointerYQ16 = 0xfffcc000u;
-		snapshot.pads[0].axesQ16[0] = 0xffff8000u;
+		snapshot.pads[0].axesQ16[static_cast<size_t>(
+			bmsx::InputControllerGamepadAxis::LeftX)] = 0xffff8000u;
 	}
 
 	auto supervisorRequestLineHigh() const -> bool override {
@@ -65,28 +66,32 @@ struct InputControllerHarness {
 
 void testSystemNmiEdgeDoesNotPublishAnUnarmedSnapshot() {
 	InputControllerHarness harness;
+	TestInput& input = harness.input;
+	bmsx::CPU& cpu = harness.machine.cpu;
 	bmsx::InputController& controller = harness.machine.inputController;
+	constexpr bmsx::AcceptedInterruptKind noInterrupt =
+		bmsx::AcceptedInterruptKind::None;
 	bmsx::InputControllerState restored = controller.captureState();
 	restored.supervisorRequestLineHigh = true;
 	controller.restoreState(restored);
-	harness.input.supervisorRequestLine = true;
+	input.supervisorRequestLine = true;
 	controller.onVblankEdge(1u);
 
-	require(harness.input.fullSampleCount == 0, "unarmed VBlank does not sample the full input frame");
+	require(input.fullSampleCount == 0, "unarmed VBlank does not sample the full input frame");
 	require(harness.memory.readIoU32(bmsx::IO_INP_STATUS) == 0u, "unarmed VBlank leaves the sample sequence unchanged");
-	require(harness.machine.cpu.peekPendingInterrupt() == bmsx::AcceptedInterruptKind::None, "a restored high request line is not a new edge");
+	require(cpu.peekPendingInterrupt() == noInterrupt, "a restored high request line is not a new edge");
 
 	harness.memory.writeMappedU32LE(bmsx::IO_INP_CTRL, bmsx::INP_CTRL_RESET);
 	controller.onVblankEdge(2u);
-	require(harness.machine.cpu.peekPendingInterrupt() == bmsx::AcceptedInterruptKind::None, "guest ICU reset cannot synthesize a physical edge");
+	require(cpu.peekPendingInterrupt() == noInterrupt, "guest ICU reset cannot synthesize a physical edge");
 
-	harness.input.supervisorRequestLine = false;
+	input.supervisorRequestLine = false;
 	controller.onVblankEdge(3u);
-	harness.input.supervisorRequestLine = true;
+	input.supervisorRequestLine = true;
 	controller.onVblankEdge(4u);
-	require(harness.machine.cpu.peekPendingInterrupt() == bmsx::AcceptedInterruptKind::None, "the ICU edge waits for the common device fence");
+	require(cpu.peekPendingInterrupt() == noInterrupt, "the ICU edge waits for the common device fence");
 	harness.machine.systemController.onService();
-	require(harness.machine.cpu.peekPendingInterrupt() == bmsx::AcceptedInterruptKind::NonMaskable, "the completed fence requests NMI");
+	require(cpu.peekPendingInterrupt() == bmsx::AcceptedInterruptKind::NonMaskable, "the completed fence requests NMI");
 	require(controller.captureState().supervisorRequestLineHigh, "save-state retains the physical edge level");
 }
 

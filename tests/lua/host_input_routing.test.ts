@@ -12,6 +12,8 @@ import {
 import {
 	createInputControllerSnapshot,
 	INP_POINTER_BUTTON_PRIMARY,
+	InputControllerGamepadAxis,
+	InputControllerGamepadButtonBit,
 } from '../../machine/ts/machine/devices/input/contracts';
 import { hidKeyUsageForCode } from '../../hosts/common/input/hid_keys';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
@@ -511,7 +513,7 @@ test('on-screen keyboard owns controller navigation and emits retained HID comma
 	input.inputAxis2(gamepad.id, 'ls', 1, 0, currentTime);
 	tickMenu(input, menu);
 	input.sampleInputControllerSnapshot(snapshot);
-	assert.equal(snapshot.pads[0].axesQ16[0], 0);
+	assert.equal(snapshot.pads[0].axesQ16[InputControllerGamepadAxis.LeftX], 0);
 	currentTime += 1;
 	input.inputAxis2(gamepad.id, 'ls', 0, 0, currentTime);
 	tickMenu(input, menu);
@@ -563,5 +565,45 @@ test('on-screen keyboard owns controller navigation and emits retained HID comma
 	assert.equal(chord('select', 'x'), HostMenuInput.Inactive);
 	menu.queueFrameOverlayCommands(60);
 	assert.equal(hostOverlayQueue.hasPendingHostMenuFrame(), false);
+	input.dispose();
+});
+
+test('quick menu edits the retained player-port control map', () => {
+	let currentTime = 0;
+	const clock = { now: () => currentTime } as HostClock;
+	const { input, gamepad } = createGamepadInput(clock);
+	const presenter = { show_resource_usage_gizmo: false } as VideoPresenter;
+	const menu = new HostOverlayMenu(presenter, {} as Runtime, input);
+	let pressId = 1;
+	const press = (button: string): HostMenuInput => {
+		input.inputButton(gamepad.id, button, true, 1, currentTime, pressId);
+		const result = tickMenu(input, menu);
+		currentTime += 1;
+		input.inputButton(gamepad.id, button, false, 0, currentTime, pressId);
+		pressId += 1;
+		tickMenu(input, menu);
+		currentTime += 1;
+		return result;
+	};
+
+	openMenuWithGamepad(input, menu, gamepad.id, currentTime, pressId++, pressId++);
+	currentTime += 2;
+	for (let index = 0; index < 11; index += 1) {
+		press('down');
+	}
+	assert.equal(press('a'), HostMenuInput.Active);
+	press('down');
+	press('right');
+	assert.equal(press('b'), HostMenuInput.Active);
+	assert.equal(press('b'), HostMenuInput.Inactive);
+
+	input.inputButton(gamepad.id, 'b', true, 1, currentTime, pressId);
+	input.pollInput();
+	const snapshot = createInputControllerSnapshot();
+	input.sampleInputControllerSnapshot(snapshot);
+	assert.notEqual(
+		snapshot.pads[0].buttons & (1 << InputControllerGamepadButtonBit.A),
+		0,
+	);
 	input.dispose();
 });
