@@ -104,6 +104,16 @@ constexpr std::array<KeyDefinition, HostOnScreenKeyboard::KeyCount> kKeys{{
 	{">", hid_key_usage::ArrowRight, 1, kNoModifier},
 }};
 
+constexpr std::array<u8, 256> makeKeyIndexByUsage() {
+	std::array<u8, 256> indices{};
+	for (size_t index = 0u; index < kKeys.size(); index += 1u) {
+		indices[kKeys[index].usage] = static_cast<u8>(index + 1u);
+	}
+	return indices;
+}
+
+constexpr auto kKeyIndexByUsage = makeKeyIndexByUsage();
+
 constexpr std::array<KeyboardRow, 5> kRows{{
 	{0, 14, 16},
 	{14, 14, 15},
@@ -113,7 +123,7 @@ constexpr std::array<KeyboardRow, 5> kRows{{
 }};
 
 constexpr const char* kTitle = "ON-SCREEN KEYBOARD";
-constexpr const char* kHelp = "A TYPE  B BKSP  X SPACE  Y SHIFT";
+constexpr const char* kHelp = "A TYPE  B SPACE  X BKSP  Y SHIFT";
 constexpr i32 kInitialRow = 1;
 constexpr i32 kInitialKey = 15;
 constexpr i32 kUnitWidth = 13;
@@ -126,6 +136,7 @@ constexpr u32 kPanelColor = 0xe0101010u;
 constexpr u32 kKeyColor = 0xff252525u;
 constexpr u32 kActiveKeyColor = 0xff35551fu;
 constexpr u32 kSelectedKeyColor = 0xff1e6a95u;
+constexpr u32 kPressedKeyColor = 0xff2d91c5u;
 constexpr u32 kTextColor = 0xffefefefu;
 constexpr u32 kDimColor = 0xffb2b2b2u;
 constexpr u32 kTitleColor = 0xff5bc6ffu;
@@ -202,13 +213,17 @@ void HostOnScreenKeyboard::close(LibretroInput& input) {
 }
 
 void HostOnScreenKeyboard::releasePulse(LibretroInput& input) {
+	const i32 pulseKey = m_pulse_key;
 	if (m_pulse_usage >= 0) {
 		input.setVirtualKeyboardKey(static_cast<u8>(m_pulse_usage), false);
 		m_pulse_usage = -1;
 	}
+	m_pulse_key = -1;
 	if (m_release_shift_after_pulse) {
 		m_release_shift_after_pulse = false;
 		setShift(input, false);
+	} else if (pulseKey >= 0) {
+		updateKeyColors();
 	}
 }
 
@@ -345,7 +360,9 @@ i32 HostOnScreenKeyboard::keyCenterUnits(i32 rowIndex, i32 keyIndex) const {
 void HostOnScreenKeyboard::updateKeyColors() {
 	for (size_t index = 0u; index < kKeys.size(); index += 1u) {
 		const i32 modifier = kKeys[index].modifier;
-		m_key_rects[index].color = static_cast<i32>(index) == m_selected_key
+		m_key_rects[index].color = static_cast<i32>(index) == m_pulse_key
+			? kPressedKeyColor
+			: static_cast<i32>(index) == m_selected_key
 			? kSelectedKeyColor
 			: modifier != kNoModifier && m_modifier_states[static_cast<size_t>(modifier)]
 				? kActiveKeyColor
@@ -356,7 +373,11 @@ void HostOnScreenKeyboard::updateKeyColors() {
 void HostOnScreenKeyboard::pulseKey(LibretroInput& input, u8 usage) {
 	input.setVirtualKeyboardKey(usage, true);
 	m_pulse_usage = usage;
+	m_pulse_key = static_cast<i32>(kKeyIndexByUsage[usage]) - 1;
 	m_release_shift_after_pulse = m_modifier_states[static_cast<size_t>(kModifierShift)];
+	if (m_pulse_key >= 0) {
+		updateKeyColors();
+	}
 }
 
 void HostOnScreenKeyboard::setShift(LibretroInput& input, bool down) {

@@ -478,8 +478,8 @@ test('on-screen keyboard owns controller navigation and emits retained HID comma
 	press('right');
 	assertPulse('a', 'KeyW');
 	press('left');
-	assertPulse('b', 'Backspace');
-	assertPulse('x', 'Space');
+	assertPulse('b', 'Space');
+	assertPulse('x', 'Backspace');
 	assertPulse('lb', 'ArrowLeft');
 	assertPulse('rb', 'ArrowRight');
 	assertPulse('lt', 'Home');

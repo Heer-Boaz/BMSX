@@ -54,6 +54,7 @@ private:
 	i32 m_selected_row = 1;
 	i32 m_selected_key = 15;
 	i16 m_pulse_usage = -1;
+	i32 m_pulse_key = -1;
 	bool m_release_shift_after_pulse = false;
 	std::array<bool, ModifierCount> m_modifier_states{};
 	RectRenderSubmission m_panel_rect;

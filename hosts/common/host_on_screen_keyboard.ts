@@ -113,6 +113,11 @@ const KEY_DEFINITIONS: readonly OnScreenKeyDefinition[] = [
 	{ label: '>', code: 'ArrowRight', span: 1, modifier: NO_MODIFIER },
 ];
 
+const KEY_INDEX_BY_CODE = new Map<string, number>();
+for (let index = 0; index < KEY_DEFINITIONS.length; index += 1) {
+	KEY_INDEX_BY_CODE.set(KEY_DEFINITIONS[index].code, index);
+}
+
 const ROWS: readonly OnScreenKeyboardRow[] = [
 	{ start: 0, count: 14, units: 16 },
 	{ start: 14, count: 14, units: 15 },
@@ -122,7 +127,7 @@ const ROWS: readonly OnScreenKeyboardRow[] = [
 ];
 
 const TITLE = 'ON-SCREEN KEYBOARD';
-const HELP = 'A TYPE  B BKSP  X SPACE  Y SHIFT';
+const HELP = 'A TYPE  B SPACE  X BKSP  Y SHIFT';
 const INITIAL_ROW = 1;
 const INITIAL_KEY = 15;
 const UNIT_WIDTH = 13;
@@ -135,6 +140,7 @@ const COLOR_PANEL = 0xe0101010;
 const COLOR_KEY = 0xff252525;
 const COLOR_KEY_ACTIVE = 0xff35551f;
 const COLOR_KEY_SELECTED = 0xff1e6a95;
+const COLOR_KEY_PRESSED = 0xff2d91c5;
 const COLOR_TEXT = 0xffefefef;
 const COLOR_DIM = 0xffb2b2b2;
 const COLOR_TITLE = 0xff5bc6ff;
@@ -144,6 +150,7 @@ export class HostOnScreenKeyboard {
 	private selectedRow = INITIAL_ROW;
 	private selectedKey = INITIAL_KEY;
 	private pulseCode = '';
+	private pulseKeyIndex = -1;
 	private releaseShiftAfterPulse = false;
 	private readonly modifierStates = [false, false, false];
 	private readonly panelRect: RectRenderSubmission = {
@@ -236,13 +243,17 @@ export class HostOnScreenKeyboard {
 	}
 
 	public releasePulse(): void {
+		const pulseKeyIndex = this.pulseKeyIndex;
 		if (this.pulseCode.length !== 0) {
 			this.input.setVirtualKeyboardKey(this.pulseCode, false);
 			this.pulseCode = '';
 		}
+		this.pulseKeyIndex = -1;
 		if (this.releaseShiftAfterPulse) {
 			this.releaseShiftAfterPulse = false;
 			this.setShift(false);
+		} else if (pulseKeyIndex >= 0) {
+			this.updateKeyColors();
 		}
 	}
 
@@ -283,7 +294,7 @@ export class HostOnScreenKeyboard {
 			this.updateKeyColors();
 			return;
 		}
-		this.pulseKey(key.code);
+		this.pulseKey(key.code, this.selectedKey);
 	}
 
 	public command(command: OnScreenKeyboardCommand): void {
@@ -368,7 +379,9 @@ export class HostOnScreenKeyboard {
 	private updateKeyColors(): void {
 		for (let index = 0; index < KEY_DEFINITIONS.length; index += 1) {
 			const modifier = KEY_DEFINITIONS[index].modifier;
-			this.keyRects[index].color = index === this.selectedKey
+			this.keyRects[index].color = index === this.pulseKeyIndex
+				? COLOR_KEY_PRESSED
+				: index === this.selectedKey
 				? COLOR_KEY_SELECTED
 				: modifier !== NO_MODIFIER && this.modifierStates[modifier]
 					? COLOR_KEY_ACTIVE
@@ -376,10 +389,14 @@ export class HostOnScreenKeyboard {
 		}
 	}
 
-	private pulseKey(code: string): void {
+	private pulseKey(code: string, keyIndex = KEY_INDEX_BY_CODE.get(code)): void {
 		this.input.setVirtualKeyboardKey(code, true);
 		this.pulseCode = code;
+		this.pulseKeyIndex = keyIndex === undefined ? -1 : keyIndex;
 		this.releaseShiftAfterPulse = this.modifierStates[MODIFIER_SHIFT];
+		if (this.pulseKeyIndex >= 0) {
+			this.updateKeyColors();
+		}
 	}
 
 	private setShift(down: boolean): void {
