@@ -186,7 +186,7 @@ local define_title_screen_fsm<const> = function()
 				},
 				input_event_handlers = {
 					{
-						pattern = 'touch[jp] || start[jp] || a[jp]',
+						pattern = 'confirm[jp]',
 						go = function(self)
 							self.sparkle_sprite:set_enabled(false)
 							self.events:emit('title_start')

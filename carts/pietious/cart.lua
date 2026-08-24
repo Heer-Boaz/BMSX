@@ -6,6 +6,7 @@ gx_display.reset_256x192()
 local input<const> = require('cartlib/input/input')
 input.add_player(1)
 input.push_context(1, 'pietious', {
+	confirm = { 'KeyX', 'AltRight', 'Space' },
 	pause = { 'F2' },
 	key_a = { 'KeyA' },
 	key_b = { 'KeyB' },
@@ -39,6 +40,8 @@ input.push_context(1, 'pietious', {
 		'KeyO', 'KeyP', 'KeyQ', 'KeyR', 'KeyS', 'KeyT', 'KeyU',
 		'KeyV', 'KeyW', 'KeyX', 'KeyY', 'KeyZ',
 	},
+}, {
+	confirm = { 'a', 'start', 'touch' },
 })
 local world<const> = require('cartlib/world/world')
 local world_module<const> = require('world_module')

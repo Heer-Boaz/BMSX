@@ -109,7 +109,7 @@ local define_narrative_screen_fsm<const> = function()
 							['narrative.story.reached_end'] = request_story_finish,
 						},
 						input_event_handlers = {
-							{ pattern = 'touch[jp] || start[jp] || a[jp]', go = request_story_finish },
+							{ pattern = 'confirm[jp]', go = request_story_finish },
 						},
 					},
 					requested = {},
@@ -138,7 +138,7 @@ local define_narrative_screen_fsm<const> = function()
 							['narrative.epilogue.reached_end'] = request_epilogue_finish,
 						},
 						input_event_handlers = {
-							{ pattern = 'touch[jp] || start[jp] || a[jp]', go = request_epilogue_finish },
+							{ pattern = 'confirm[jp]', go = request_epilogue_finish },
 						},
 					},
 					requested = {},

@@ -13,6 +13,7 @@ local keyboard_input<const> = {
 	left = { 'ArrowLeft' },
 	a = { 'KeyA' },
 	b = { 'KeyB' },
+	confirm = { 'KeyA', 'KeyB' },
 }
 local gamepad_input<const> = {
 	up = { 'up' },
@@ -21,6 +22,7 @@ local gamepad_input<const> = {
 	left = { 'left' },
 	a = { 'a' },
 	b = { 'b' },
+	confirm = { 'a', 'b' },
 }
 input.add_player(1)
 input.push_context(1, 'sint2024', keyboard_input, gamepad_input)

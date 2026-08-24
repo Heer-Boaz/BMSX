@@ -93,7 +93,7 @@ function dialogue.register_states(states)
 		input_eval = 'first',
 		input_event_handlers = {
 			{
-				pattern = 'a[jp]',
+				pattern = 'confirm[jp]',
 				go = function(self)
 					local node<const> = story[self.node_id]
 					self.node_id = node.next
@@ -150,12 +150,12 @@ function dialogue.register_states(states)
 				end
 			},
 			{
-				pattern = 'a[jp]',
-					go = function(self)
-						if self.stagger_blocked then return end
-						if self.text_main:is_typing() then return end
+				pattern = 'confirm[jp]',
+				go = function(self)
+					if self.stagger_blocked then return end
+					if self.text_main:is_typing() then return end
 
-						if self.page_index < #self.pages then
+					if self.page_index < #self.pages then
 						self.page_index = self.page_index + 1
 						local node<const> = story[self.node_id]
 						local prompt_lines<const> = node.typed and prompt_skip or dialogue_completion_prompt(self)
@@ -245,11 +245,11 @@ function dialogue.register_states(states)
 				end
 			},
 			{
-				pattern = 'a[jp]',
-					go = function(self)
-						if self.stagger_blocked then return end
-						if self.text_main:is_typing() then return end
-						if self.page_index < #self.pages then
+				pattern = 'confirm[jp]',
+				go = function(self)
+					if self.stagger_blocked then return end
+					if self.text_main:is_typing() then return end
+					if self.page_index < #self.pages then
 						self.page_index = self.page_index + 1
 						local node<const> = story[self.node_id]
 						local prompt_lines
@@ -321,7 +321,7 @@ function dialogue.register_states(states)
 				end
 			},
 			{
-				pattern = 'a[jp]',
+				pattern = 'confirm[jp]',
 				go = function(self)
 					if self.stagger_blocked then return end
 					if self.text_main:is_typing() then return end

@@ -7,6 +7,7 @@ local left_stick<const> = input.stick_directions('ls', 0x00008000)
 input.add_player(1)
 input.add_player(2)
 input.push_context(1, 'nemesis_s', {
+	confirm = { 'Space', 'AltRight' },
 	fire = { 'Space' },
 	pause = { 'F1' },
 	powerup = { 'KeyM', 'KeyN' },
@@ -48,6 +49,7 @@ input.push_context(1, 'nemesis_s', {
 		'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9',
 	},
 }, {
+	confirm = { 'a', 'start', 'touch' },
 	up = { 'up', left_stick.up },
 	right = { 'right', left_stick.right },
 	down = { 'down', left_stick.down },

@@ -656,7 +656,7 @@ function combat.define_fsm()
 				end,
 			},
 			{
-				pattern = 'a[jp]',
+				pattern = 'confirm[jp]',
 				go = function(self)
 					if self.stagger_blocked then return end
 					if self.text_main:is_typing() then return end
@@ -1044,13 +1044,13 @@ function combat.define_fsm()
 					end
 				end
 			},
-				{
-					pattern = 'a[jp]',
-					go = function(self)
-						if self.text_main:is_typing() then return end
-						return '/combat_all_out'
-					end,
-				},
+			{
+				pattern = 'confirm[jp]',
+				go = function(self)
+					if self.text_main:is_typing() then return end
+					return '/combat_all_out'
+				end,
+			},
 		},
 		exiting_state = function(self)
 			self.timelines:stop(combat_hover_timeline_id)
@@ -1287,7 +1287,7 @@ function combat.define_fsm()
 		input_eval = 'first',
 		input_event_handlers = {
 			{
-				pattern = 'a[jp]',
+				pattern = 'confirm[jp]',
 				go = function(self)
 					local node<const> = story[self.node_id]
 					self.node_id = node.next

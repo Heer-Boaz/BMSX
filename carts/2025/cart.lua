@@ -7,6 +7,11 @@ local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local input<const> = require('cartlib/input/input')
 input.add_player(1)
+input.push_context(1, '2025', {
+	confirm = { 'KeyX' },
+}, {
+	confirm = { 'a' },
+})
 local irq_module<const> = require('cartlib/irq')
 local irq_source<const> = require('cartlib/irq/source')
 local prefab<const> = require('cartlib/world/prefab')

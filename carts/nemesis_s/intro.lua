@@ -85,7 +85,7 @@ local define_fsm<const> = function()
 				entering_state = intro.begin,
 				input_event_handlers = {
 					{
-						pattern = '?(up, down, left, right, fire, powerup, start)',
+						pattern = 'confirm[jp]',
 						go = intro.finish,
 					},
 				},

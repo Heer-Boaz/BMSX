@@ -90,7 +90,7 @@ local define_intro_fsm<const> = function()
 				entering_state = intro.begin,
 				input_event_handlers = {
 					{
-						pattern = '?(up, down, left, right, a, b, x, y, lb, rb, lt, rt, start, home, touch, pause, key_letter)',
+						pattern = 'confirm[jp]',
 						go = intro.finish,
 					},
 				},

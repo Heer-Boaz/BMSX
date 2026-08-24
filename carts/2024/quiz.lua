@@ -130,7 +130,7 @@ local define_fsm<const> = function()
 				end,
 				update = type_next_character,
 				input_event_handlers = {
-					{ pattern = 'a[jp] || b[jp]', go = begin_quiz },
+					{ pattern = 'confirm[jp]', go = begin_quiz },
 					{ pattern = 'right[jp]', go = '/' .. question_state },
 					{ pattern = 'down[jp]', go = '/' .. complete_state },
 				},
@@ -159,7 +159,7 @@ local define_fsm<const> = function()
 				end,
 				update = type_next_character,
 				input_event_handlers = {
-					{ pattern = 'a[jp] || b[jp]', go = next_after_answer },
+					{ pattern = 'confirm[jp]', go = next_after_answer },
 				},
 			},
 			[complete_state] = {
