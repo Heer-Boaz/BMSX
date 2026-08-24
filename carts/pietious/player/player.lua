@@ -301,7 +301,7 @@ local build_world_enter_frames<const> = function()
 	append_transition_frame(
 		sequence,
 		0,
-		player_world_transition_frames - first_frame,
+		player_world_enter_frame_count - first_frame,
 		true
 	)
 	return timeline.build_frame_sequence(sequence)
@@ -309,12 +309,9 @@ end
 
 local build_world_emerge_frames<const> = function()
 	local sequence<const> = {}
-	local hidden_frames<const> = player_world_transition_frames - player_height * 2 + 1
-	append_transition_frame(sequence, 0, hidden_frames, true)
-	for visible_rows = 1, player_height - 1 do
+	for visible_rows = 1, player_height do
 		append_transition_frame(sequence, visible_rows, 2, true)
 	end
-	append_transition_frame(sequence, player_height, 1, true)
 	return timeline.build_frame_sequence(sequence)
 end
 
@@ -356,22 +353,22 @@ local build_transition_animation_keys<const> = function(frame_count, first_imgid
 end
 
 local world_enter_animation_keys<const> = build_transition_animation_keys(
-	player_world_transition_frames,
+	#player_world_enter_frames,
 	'pietolon_stairs_up_1',
 	'pietolon_stairs_up_2'
 )
 local world_emerge_animation_keys<const> = build_transition_animation_keys(
-	player_world_transition_frames,
+	#player_world_emerge_frames,
 	'pietolon_stairs_down_1',
 	'pietolon_stairs_down_2'
 )
 local shrine_enter_animation_keys<const> = build_transition_animation_keys(
-	player_shrine_transition_frames,
+	#player_shrine_enter_frames,
 	'pietolon_stairs_up_1',
 	'pietolon_stairs_up_2'
 )
 local shrine_exit_animation_keys<const> = build_transition_animation_keys(
-	player_shrine_transition_frames,
+	#player_shrine_exit_frames,
 	'pietolon_stairs_down_1',
 	'pietolon_stairs_down_2'
 )

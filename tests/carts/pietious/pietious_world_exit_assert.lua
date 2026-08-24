@@ -80,6 +80,12 @@ function __bmsx_host_test.update()
 			'player emergence did not render in the main space')
 		assert(not world.gameplay_clock_running,
 			'gameplay advanced during the player emergence')
+		local emergence<const> = player.timelines:get('p.tl.wx')
+		if emergence.head == 0 then
+			assert(sprite.visible and sprite.region_height == 1,
+				'world emergence retained a hidden pre-roll after the castle banner')
+			test.saw_first_emerge_sample = true
+		end
 		if sprite.region_height ~= nil
 		and sprite.region_height > 0
 		and sprite.region_height < player.height then
@@ -93,6 +99,8 @@ function __bmsx_host_test.update()
 	and player.state_machines:matches_state(test.quiet_state) then
 		assert(test.saw_banner, 'castle banner state was skipped')
 		assert(test.saw_emerge_state, 'director emergence state was skipped')
+		assert(test.saw_first_emerge_sample,
+			'world emergence did not publish its first scanline sample')
 		assert(test.saw_partial_player, 'player scanline emergence was not presented')
 		assert(world.gameplay_clock_running, 'gameplay did not resume after world exit')
 		assert(world.active_space_id == 'main', 'main space was not restored')

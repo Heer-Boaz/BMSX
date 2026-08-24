@@ -386,11 +386,10 @@ world_entrance_trigger_y_offset = room_tile_size
 -- selects the half-open graphic and state 3 selects the open graphic; entry is
 -- not admitted until the third six-update phase completes.
 world_entrance_open_phase_frames = 6
--- MoG moves the player by 0x40 of its 8.8 position word per VBlank. A world
--- passage lasts 0x80 VBlanks, a shrine passage 0x40, and the ladder pose bit
--- changes every eight VBlanks. Pietious advances once per two VBlanks.
-player_world_transition_frames = 64
-player_shrine_transition_frames = 32
+-- MoG's world-entry routine moves the player by 0x40 of its 8.8 position word
+-- for 0x80 VBlanks. Pietious advances once per two VBlanks.
+player_world_enter_frame_count = 64
+-- The ladder pose bit changes every eight VBlanks, or four Pietious updates.
 player_transition_animation_hold_frames = 4
 -- MoG trap type 4 advances its push, rotation and passage counters in the
 -- admitted interrupt bottom half. Pietious already runs that gameplay cadence

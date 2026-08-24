@@ -121,7 +121,7 @@ function __bmsx_host_test.update(_frame, _current_music)
 	__bmsx_host_test.stable_frames = 0
 	__bmsx_host_test.frame_count = __bmsx_host_test.frame_count + 1
 	local transition_timeout_frames<const> = (
-		player_world_transition_frames
+		player_world_enter_frame_count
 		+ flow_banner_prewait_frames
 		+ flow_world_banner_frames
 		+ flow_room_transition_frames
