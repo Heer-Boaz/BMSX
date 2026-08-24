@@ -84,9 +84,18 @@ function __bmsx_host_test.update()
 		local narrative<const> = registry:get('narrative')
 		assert(narrative.text_component.static_text_line_count == 54, 'story did not bind the complete XNA text')
 		test.story_requested_state = narrative.state_machines:bind_state_path('/story/requested')
-		narrative.events:emit('narrative.story.reached_end')
-		assert(narrative.state_machines:matches_state(test.story_requested_state),
-			'story completion did not enter its one-shot request state')
+		test.story_skip_frames = 0
+		test.phase = 'story_skip'
+		return host.gamepad_press(1, 'a', 2)
+	end
+
+	if test.phase == 'story_skip' then
+		local narrative<const> = registry:get('narrative')
+		test.story_skip_frames = test.story_skip_frames + 1
+		assert(test.story_skip_frames < 10, 'gamepad primary action did not skip the story')
+		if not narrative.state_machines:matches_state(test.story_requested_state) then
+			return false
+		end
 		test.story_fade_frames = 0
 		test.phase = 'story_fade'
 		return false

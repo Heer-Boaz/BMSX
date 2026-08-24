@@ -293,7 +293,7 @@ local define_fsm<const> = function()
 						go = title_screen.toggle_player_count,
 					},
 					{
-						pattern = 'touch[jp] || start[jp]',
+						pattern = 'touch[jp] || start[jp] || fire[jp]',
 						go = '/startup',
 					},
 				},

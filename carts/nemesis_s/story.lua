@@ -395,7 +395,7 @@ local define_fsm<const> = function()
 					gx_texture.upload('font_a')
 				end,
 				input_event_handlers = {
-					{ pattern = 'touch[jp]', go = finish_story },
+					{ pattern = 'touch[jp] || start[jp] || fire[jp]', go = finish_story },
 				},
 				states = build_slide_states(),
 			},
