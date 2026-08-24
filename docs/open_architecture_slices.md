@@ -69,6 +69,34 @@ Classificeer daarbij apart:
 3. device-to-player-assignment;
 4. cart-authored logical-action binding.
 
+Het owneronderzoek levert de volgende grens op:
+
+- SDL-achtige autoconfiguratie normaliseert een fysiek browserdevice eerst naar
+  de vaste BMSX-padcontrols. Dit is geen user-remap;
+- een browser-user-remap hoort daarna per playerport te werken, zodat een ander
+  toegewezen fysiek of onscreen device hetzelfde portprofiel gebruikt;
+- de ongeremapte genormaliseerde view blijft eigenaar van hostshortcuts en
+  overlaybediening. Alleen het naar ICU gepubliceerde padsnapshot wordt geremapt;
+- libretro krijgt geen tweede BMSX-remapper. RetroArch bezit al fysieke
+  autoconfiguratie, portassignment, per-core/per-game remaps en afzonderlijke
+  hotkeys; de core consumeert de resulterende RetroPad-port rechtstreeks;
+- cartlib blijft uitsluitend actions aan ICU-controls binden. Een cart kan via
+  `input.stick_directions` bewust stickrichtingen naast D-padcontrols binden;
+  host- of cartlibdefaults voegen die twee niet samen.
+
+Een latere browserimplementatie hoort daarom bij de per-player snapshotowner,
+niet bij `GamepadDevice`, ICU of cartlib. Compileer een gewijzigd profiel één
+keer naar vaste button-lookupwords en zes axisselectors. De framepath past die
+retained tabellen rechtstreeks toe nadat het toegewezen device zijn fysieke
+genormaliseerde snapshot heeft geschreven. Zo blijven consumption en
+hostshortcuts op de fysieke view werken en bevat de framepath geen strings,
+mappingconstructie of allocatie. Triggerbuttons/-assen en stickbuttons/-assen
+blijven daarbij afzonderlijke representaties; de editor mag ze als één control
+presenteren, maar de runtime mag ze niet impliciet samenvoegen.
+
+De productbeslissing om deze browserremapper daadwerkelijk aan de quick menu toe
+te voegen staat nog open; deze slice legt alleen de owner en runtimevorm vast.
+
 Klaar wanneer de gekozen grens browserdevices, touchscreen en libretroports
 kan representeren zonder een tweede frontendremapper in libretro, zonder een
 globale stick-naar-D-pad-default en zonder fysieke controls in cartcode. De
