@@ -123,7 +123,12 @@ constexpr std::array<KeyboardRow, 5> kRows{{
 }};
 
 constexpr const char* kTitle = "ON-SCREEN KEYBOARD";
-constexpr const char* kHelp = "A TYPE  B SPACE  X BKSP  Y SHIFT";
+constexpr std::array<const char*, HostOnScreenKeyboard::HelpLineCount> kHelpLines{{
+	"A TYPE  B SPACE  X BKSP  Y SHIFT",
+	"L/R CURSOR  LT/RT HOME/END",
+	"START ENTER  SEL+B DEL",
+	"SEL+X CLOSE  SEL+L/R HOME/END",
+}};
 constexpr i32 kInitialRow = 1;
 constexpr i32 kInitialKey = 15;
 constexpr i32 kUnitWidth = 13;
@@ -132,6 +137,7 @@ constexpr i32 kRowGap = 2;
 constexpr i32 kPanelPadding = 4;
 constexpr i32 kTitleGap = 3;
 constexpr i32 kHelpGap = 3;
+constexpr i32 kHelpLineGap = 1;
 constexpr u32 kPanelColor = 0xe0101010u;
 constexpr u32 kKeyColor = 0xff252525u;
 constexpr u32 kActiveKeyColor = 0xff35551fu;
@@ -154,13 +160,6 @@ HostOnScreenKeyboard::HostOnScreenKeyboard() {
 	m_title_glyphs.align = TextAlign::Start;
 	m_title_glyphs.baseline = TextBaseline::Alphabetic;
 	m_title_glyphs.layer = Layer2D::IDE;
-	m_help_glyphs.items.emplace_back(kHelp);
-	m_help_glyphs.item_end = static_cast<i32>(m_help_glyphs.items[0].size());
-	m_help_glyphs.z = 922.0f;
-	m_help_glyphs.color = kDimColor;
-	m_help_glyphs.align = TextAlign::Start;
-	m_help_glyphs.baseline = TextBaseline::Alphabetic;
-	m_help_glyphs.layer = Layer2D::IDE;
 	m_command_kinds[0] = Host2DKind::Rect;
 	m_command_refs[0] = Host2DRef{.rect = &m_panel_rect};
 	m_command_kinds[1] = Host2DKind::Glyphs;
@@ -186,8 +185,19 @@ HostOnScreenKeyboard::HostOnScreenKeyboard() {
 		m_command_refs[command] = Host2DRef{.glyphs = &glyphs};
 		command += 1u;
 	}
-	m_command_kinds[command] = Host2DKind::Glyphs;
-	m_command_refs[command] = Host2DRef{.glyphs = &m_help_glyphs};
+	for (size_t index = 0u; index < kHelpLines.size(); index += 1u) {
+		GlyphRenderSubmission& glyphs = m_help_glyphs[index];
+		glyphs.items.emplace_back(kHelpLines[index]);
+		glyphs.item_end = static_cast<i32>(glyphs.items[0].size());
+		glyphs.z = 922.0f;
+		glyphs.color = kDimColor;
+		glyphs.align = TextAlign::Start;
+		glyphs.baseline = TextBaseline::Alphabetic;
+		glyphs.layer = Layer2D::IDE;
+		m_command_kinds[command] = Host2DKind::Glyphs;
+		m_command_refs[command] = Host2DRef{.glyphs = &glyphs};
+		command += 1u;
+	}
 	updateKeyColors();
 }
 
@@ -404,9 +414,11 @@ void HostOnScreenKeyboard::layoutKeys(VideoPresenter& presenter) {
 	const i32 keyboardWidth = maxUnits * (kUnitWidth + kKeyGap) - kKeyGap;
 	const i32 keysHeight = static_cast<i32>(kRows.size()) * keyHeight
 		+ (static_cast<i32>(kRows.size()) - 1) * kRowGap;
+	const i32 helpHeight = static_cast<i32>(kHelpLines.size()) * lineHeight
+		+ (static_cast<i32>(kHelpLines.size()) - 1) * kHelpLineGap;
 	const i32 panelWidth = keyboardWidth + kPanelPadding * 2;
 	const i32 panelHeight = kPanelPadding * 2 + lineHeight + kTitleGap
-		+ keysHeight + kHelpGap + lineHeight;
+		+ keysHeight + kHelpGap + helpHeight;
 	const i32 viewportWidth = static_cast<i32>(presenter.viewportSize.x);
 	const i32 viewportHeight = static_cast<i32>(presenter.viewportSize.y);
 	const i32 left = (viewportWidth - panelWidth) / 2;
@@ -445,10 +457,14 @@ void HostOnScreenKeyboard::layoutKeys(VideoPresenter& presenter) {
 			keyLeft += width + kKeyGap;
 		}
 	}
-	m_help_glyphs.font = font;
-	m_help_glyphs.x = static_cast<f32>(
-		viewportWidth - font->measure(m_help_glyphs.items[0])) * 0.5f;
-	m_help_glyphs.y = static_cast<f32>(keyTop + keysHeight + kHelpGap);
+	const i32 helpTop = keyTop + keysHeight + kHelpGap;
+	for (size_t index = 0u; index < kHelpLines.size(); index += 1u) {
+		GlyphRenderSubmission& glyphs = m_help_glyphs[index];
+		glyphs.font = font;
+		glyphs.x = static_cast<f32>(viewportWidth - font->measure(glyphs.items[0])) * 0.5f;
+		glyphs.y = static_cast<f32>(
+			helpTop + static_cast<i32>(index) * (lineHeight + kHelpLineGap));
+	}
 }
 
 } // namespace bmsx

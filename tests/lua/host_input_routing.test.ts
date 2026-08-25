@@ -522,16 +522,21 @@ test('on-screen keyboard owns controller navigation and emits retained HID comma
 
 	menu.queueRenderCommands();
 	keyboardFrame = hostOverlayQueue.consumeHostMenuFrame();
+	const helpLines = new Set<string>();
 	let qGlyph: GlyphRenderSubmission | null = null;
 	for (let index = 0; index < keyboardFrame.commandCount; index += 1) {
 		if (keyboardFrame.commandKinds[index] === Host2DKind.Glyphs) {
 			const glyphs = keyboardFrame.commandRefs[index] as GlyphRenderSubmission;
+			helpLines.add(glyphs.items as string);
 			if (glyphs.items === 'q') {
 				qGlyph = glyphs;
-				break;
 			}
 		}
 	}
+	assert.equal(helpLines.has('A TYPE  B SPACE  X BKSP  Y SHIFT'), true);
+	assert.equal(helpLines.has('L/R CURSOR  LT/RT HOME/END'), true);
+	assert.equal(helpLines.has('START ENTER  SEL+B DEL'), true);
+	assert.equal(helpLines.has('SEL+X CLOSE  SEL+L/R HOME/END'), true);
 	assert.ok(qGlyph);
 	input.inputAxis2(
 		'pointer:0',

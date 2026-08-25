@@ -31,7 +31,8 @@ class HostOnScreenKeyboard {
 public:
 	static constexpr size_t KeyCount = 60u;
 	static constexpr size_t ModifierCount = 3u;
-	static constexpr size_t CommandCount = 3u + KeyCount * 2u;
+	static constexpr size_t HelpLineCount = 4u;
+	static constexpr size_t CommandCount = 2u + KeyCount * 2u + HelpLineCount;
 
 	HostOnScreenKeyboard();
 	void open();
@@ -59,7 +60,7 @@ private:
 	std::array<bool, ModifierCount> m_modifier_states{};
 	RectRenderSubmission m_panel_rect;
 	GlyphRenderSubmission m_title_glyphs;
-	GlyphRenderSubmission m_help_glyphs;
+	std::array<GlyphRenderSubmission, HelpLineCount> m_help_glyphs;
 	std::array<RectRenderSubmission, KeyCount> m_key_rects;
 	std::array<GlyphRenderSubmission, KeyCount> m_key_glyphs;
 	std::array<Host2DKind, CommandCount> m_command_kinds;

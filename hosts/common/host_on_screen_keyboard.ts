@@ -127,7 +127,12 @@ const ROWS: readonly OnScreenKeyboardRow[] = [
 ];
 
 const TITLE = 'ON-SCREEN KEYBOARD';
-const HELP = 'A TYPE  B SPACE  X BKSP  Y SHIFT';
+const HELP_LINES = [
+	'A TYPE  B SPACE  X BKSP  Y SHIFT',
+	'L/R CURSOR  LT/RT HOME/END',
+	'START ENTER  SEL+B DEL',
+	'SEL+X CLOSE  SEL+L/R HOME/END',
+] as const;
 const INITIAL_ROW = 1;
 const INITIAL_KEY = 15;
 const UNIT_WIDTH = 13;
@@ -136,6 +141,7 @@ const ROW_GAP = 2;
 const PANEL_PADDING = 4;
 const TITLE_GAP = 3;
 const HELP_GAP = 3;
+const HELP_LINE_GAP = 1;
 const COLOR_PANEL = 0xe0101010;
 const COLOR_KEY = 0xff252525;
 const COLOR_KEY_ACTIVE = 0xff35551f;
@@ -144,7 +150,7 @@ const COLOR_KEY_PRESSED = 0xff2d91c5;
 const COLOR_TEXT = 0xffefefef;
 const COLOR_DIM = 0xffb2b2b2;
 const COLOR_TITLE = 0xff5bc6ff;
-const COMMAND_COUNT = 3 + KEY_DEFINITIONS.length * 2;
+const COMMAND_COUNT = 2 + KEY_DEFINITIONS.length * 2 + HELP_LINES.length;
 
 export class HostOnScreenKeyboard {
 	private selectedRow = INITIAL_ROW;
@@ -165,12 +171,7 @@ export class HostOnScreenKeyboard {
 		background_color: 0xff000000, wrap_chars: 0, center_block_width: 0,
 		align: TextAlign.Start, baseline: TextBaseline.Alphabetic, layer: LAYER_2D_IDE,
 	};
-	private readonly helpGlyphs: GlyphRenderSubmission = {
-		x: 0, y: 0, z: 922, items: HELP, item_start: 0, item_end: HELP.length,
-		font: null, color: COLOR_DIM, has_background_color: false,
-		background_color: 0xff000000, wrap_chars: 0, center_block_width: 0,
-		align: TextAlign.Start, baseline: TextBaseline.Alphabetic, layer: LAYER_2D_IDE,
-	};
+	private readonly helpGlyphs = new Array<GlyphRenderSubmission>(HELP_LINES.length);
 	private readonly keyRects = new Array<RectRenderSubmission>(KEY_DEFINITIONS.length);
 	private readonly keyGlyphs = new Array<GlyphRenderSubmission>(KEY_DEFINITIONS.length);
 	private readonly commandKinds = new Array<Host2DKind>(COMMAND_COUNT);
@@ -217,8 +218,19 @@ export class HostOnScreenKeyboard {
 			this.commandRefs[command] = glyphs;
 			command += 1;
 		}
-		this.commandKinds[command] = Host2DKind.Glyphs;
-		this.commandRefs[command] = this.helpGlyphs;
+		for (let index = 0; index < HELP_LINES.length; index += 1) {
+			const line = HELP_LINES[index];
+			const glyphs: GlyphRenderSubmission = {
+				x: 0, y: 0, z: 922, items: line, item_start: 0, item_end: line.length,
+				font: null, color: COLOR_DIM, has_background_color: false,
+				background_color: 0xff000000, wrap_chars: 0, center_block_width: 0,
+				align: TextAlign.Start, baseline: TextBaseline.Alphabetic, layer: LAYER_2D_IDE,
+			};
+			this.helpGlyphs[index] = glyphs;
+			this.commandKinds[command] = Host2DKind.Glyphs;
+			this.commandRefs[command] = glyphs;
+			command += 1;
+		}
 		this.updateKeyColors();
 	}
 
@@ -423,8 +435,9 @@ export class HostOnScreenKeyboard {
 		const maxUnits = ROWS[0].units;
 		const keyboardWidth = maxUnits * (UNIT_WIDTH + KEY_GAP) - KEY_GAP;
 		const keysHeight = ROWS.length * keyHeight + (ROWS.length - 1) * ROW_GAP;
+		const helpHeight = HELP_LINES.length * lineHeight + (HELP_LINES.length - 1) * HELP_LINE_GAP;
 		const panelWidth = keyboardWidth + PANEL_PADDING * 2;
-		const panelHeight = PANEL_PADDING * 2 + lineHeight + TITLE_GAP + keysHeight + HELP_GAP + lineHeight;
+		const panelHeight = PANEL_PADDING * 2 + lineHeight + TITLE_GAP + keysHeight + HELP_GAP + helpHeight;
 		const left = ((presenter.viewportSize.x - panelWidth) / 2) | 0;
 		const top = ((presenter.viewportSize.y - panelHeight) / 2) | 0;
 		this.panelRect.area.left = left;
@@ -455,8 +468,12 @@ export class HostOnScreenKeyboard {
 				keyLeft += width + KEY_GAP;
 			}
 		}
-		this.helpGlyphs.font = font;
-		this.helpGlyphs.x = ((presenter.viewportSize.x - font.measure(HELP)) / 2) | 0;
-		this.helpGlyphs.y = keyTop + keysHeight + HELP_GAP;
+		const helpTop = keyTop + keysHeight + HELP_GAP;
+		for (let index = 0; index < HELP_LINES.length; index += 1) {
+			const glyphs = this.helpGlyphs[index];
+			glyphs.font = font;
+			glyphs.x = ((presenter.viewportSize.x - font.measure(HELP_LINES[index])) / 2) | 0;
+			glyphs.y = helpTop + index * (lineHeight + HELP_LINE_GAP);
+		}
 	}
 }
