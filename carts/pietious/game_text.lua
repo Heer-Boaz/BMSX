@@ -4,212 +4,206 @@ struct game_text_record
 	death_screen: string
 	victory_message: string
 	end_demo_message: string
+	story_text: string
+	epilogue_text: string
 end
 
 rodata game_text: game_text_record = {
 	death_screen = 'PROBEER HET NOG EENS...',
 	victory_message = '   NU KRIJG IK VAST OPSLAG!   ',
 	end_demo_message = 'DAT HEB JE BEST REDELIJK GEDAAN! ',
-}
-
-rodata story_text: string[] = {
-	'',
-	'',
-	'              STORY',
-	'',
-	'',
-	' ZOALS IEDER JAAR KWAM DE       ',
-	'',
-	' GOEDHEILIGMAN MET ZIJN ZWARTE  ',
-	'',
-	' PIETEN NAAR DE NEDERLANDEN OM  ',
-	'',
-	' CADEAUTJES TE GEVEN AAN LIEVE  ',
-	'',
-	' KINDERTJES.                    ',
-	'',
-	'',
-	' ECHTER BLEEK SINTERKLAAS DIT   ',
-	'',
-	' JAAR IN EEN VAL TE ZIJN GELOKT.',
-	'',
-	'',
-	' DE KWAADAARDIGE EN OVERBETAALDE',
-	'',
-	' PIETIOUS HEEFT, IN AFWEZIGHEID ',
-	'',
-	' VAN DE SINT, KASTEEL NICOLAAS  ',
-	'',
-	' INGENOMEN!',
-	'',
-	'',
-	' DAARBIJ HEEFT PIETIOUS         ',
-	'',
-	' DE HEILIGE ZAK VAN SINTERKLAAS ',
-	'',
-	' GEOPEND EN ZO EEN HORDE VAN    ',
-	'',
-	' SNOEPGOED EN SPEELGOED         ',
-	'',
-	' LOSGELATEN IN HET KASTEEL, WELK',
-	'',
-	' EEN GEVAAR VORMT VOOR IEDER DIE',
-	'',
-	' HET KASTEEL DURFT TE BETREDEN. ',
-	'',
-	'',
-	' SINT NICOLAAS HEEFT BESLOTEN OM',
-	'',
-	' DE ALMACHTIGE PIETOLON HET     ',
-	'',
-	' KASTEEL TE LATEN BESTORMEN OM  ',
-	'',
-	' EEN EIND TE MAKEN AAN          ',
-	'',
-	' DE TERREUR VAN PIETIOUS!       ',
-}
-
-rodata epilogue_text: string[] = {
-	'',
-	'',
-	'            EPILOGUE            ',
-	'',
-	'',
-	'',
-	'',
-	' HET KASTEEL VAN DE SINT IS     ',
-	'',
-	' BEVRIJD VAN DE KWAADAARDIGE EN ',
-	'',
-	' OVERBETAALDE PIETIOUS!         ',
-	'',
-	' DUS KAN DE SINT ZONDER ZORGEN, ',
-	'',
-	' BEHALVE VAN ECONOMISCHE AARD,  ',
-	'',
-	' ZIJN RENTREE MAKEN IN SPANJE.  ',
-	'',
-	'',
-	'',
-	'',
-	' UITERAARD WORDT PIETOLON       ',
-	'',
-	' OVERLADEN MET SNOEPGOED EN     ',
-	'',
-	' SPEELGOED VOOR ZIJN WERK EN ZAL',
-	'',
-	' HIJ EEN EXTRA DAG VRIJ KRIJGEN.',
-	'',
-	'',
-	'',
-	'',
-	' ZO, DAT WAS WEER EEN HOOP WERK!',
-	'',
-	' HET BOUWEN VAN DEZE SPELLETJES ',
-	'',
-	' ZAL SINTERKLAAS NIET IEDER JAAR',
-	'',
-	' AAN ZIJN PIETEN VRAGEN.        ',
-	'',
-	'',
-	'',
-	'',
-	' SINTERKLAAS WIL GRAAG IEDEREEN ',
-	'',
-	' BEDANKEN DIE HEEFT BIJGEDRAGEN ',
-	'',
-	' AAN HET TOTSTANDKOMEN VAN DEZE ',
-	'',
-	' FANTASTISCHE CREATIE...        ',
-	'',
-	'',
-	'',
-	'',
-	'',
-	' OORSPRONKELIJKE DESIGN EN BOUW ',
-	'',
-	'',
-	'             KONAMI             ',
-	'',
-	'',
-	'',
-	'',
-	'          PROGRAMMEREN          ',
-	'',
-	'',
-	'       VISUAL STUDIO PIET       ',
-	'',
-	'           .NET PIET            ',
-	'',
-	'          CSHARP PIET           ',
-	'',
-	'            XNA PIET            ',
-	'',
-	'',
-	'',
-	'',
-	'           GRAPHISCH            ',
-	'',
-	'',
-	'          MSPAINT PIET          ',
-	'',
-	'         PAINT.NET PIET         ',
-	'',
-	'          BLUEMSX PIET          ',
-	'',
-	'',
-	'',
-	'',
-	'             GELUID             ',
-	'',
-	'',
-	'      NERO WAVE EDITOR PIET     ',
-	'',
-	'          BLUEMSX PIET          ',
-	'',
-	'',
-	'',
-	'',
-	'          MORELE STEUN          ',
-	'',
-	'',
-	'          HOCKEY PIET           ',
-	'',
-	'     BALLROOM EN LATIN PIET     ',
-	'',
-	'         SOMERTIJD PIET         ',
-	'',
-	'         TECNOMAN PIET          ',
-	'',
-	'         EREDIVISIE PIET        ',
-	'',
-	'',
-	'',
-	'',
-	'         EN NATUURLIJK...       ',
-	'',
-	'',
-	'   SINTERKLAAS EN ZWARTE PIET!  ',
-	'',
-	'',
-	'',
-	'',
-	'',
-	'',
-	'           ...EN JULLIE!        ',
-	'',
-	'',
-	'',
-	'',
-	'',
-	'',
-	'',
-	'',
-	'     DAT WAS HET WEER! DOEI!    ',
+	story_text = '\n'
+		.. '\n'
+		.. '              STORY\n'
+		.. '\n'
+		.. '\n'
+		.. ' ZOALS IEDER JAAR KWAM DE       \n'
+		.. '\n'
+		.. ' GOEDHEILIGMAN MET ZIJN ZWARTE  \n'
+		.. '\n'
+		.. ' PIETEN NAAR DE NEDERLANDEN OM  \n'
+		.. '\n'
+		.. ' CADEAUTJES TE GEVEN AAN LIEVE  \n'
+		.. '\n'
+		.. ' KINDERTJES.                    \n'
+		.. '\n'
+		.. '\n'
+		.. ' ECHTER BLEEK SINTERKLAAS DIT   \n'
+		.. '\n'
+		.. ' JAAR IN EEN VAL TE ZIJN GELOKT.\n'
+		.. '\n'
+		.. '\n'
+		.. ' DE KWAADAARDIGE EN OVERBETAALDE\n'
+		.. '\n'
+		.. ' PIETIOUS HEEFT, IN AFWEZIGHEID \n'
+		.. '\n'
+		.. ' VAN DE SINT, KASTEEL NICOLAAS  \n'
+		.. '\n'
+		.. ' INGENOMEN!\n'
+		.. '\n'
+		.. '\n'
+		.. ' DAARBIJ HEEFT PIETIOUS         \n'
+		.. '\n'
+		.. ' DE HEILIGE ZAK VAN SINTERKLAAS \n'
+		.. '\n'
+		.. ' GEOPEND EN ZO EEN HORDE VAN    \n'
+		.. '\n'
+		.. ' SNOEPGOED EN SPEELGOED         \n'
+		.. '\n'
+		.. ' LOSGELATEN IN HET KASTEEL, WELK\n'
+		.. '\n'
+		.. ' EEN GEVAAR VORMT VOOR IEDER DIE\n'
+		.. '\n'
+		.. ' HET KASTEEL DURFT TE BETREDEN. \n'
+		.. '\n'
+		.. '\n'
+		.. ' SINT NICOLAAS HEEFT BESLOTEN OM\n'
+		.. '\n'
+		.. ' DE ALMACHTIGE PIETOLON HET     \n'
+		.. '\n'
+		.. ' KASTEEL TE LATEN BESTORMEN OM  \n'
+		.. '\n'
+		.. ' EEN EIND TE MAKEN AAN          \n'
+		.. '\n'
+		.. ' DE TERREUR VAN PIETIOUS!       ',
+	epilogue_text = '\n'
+		.. '\n'
+		.. '            EPILOGUE            \n'
+		.. '\n'
+		.. '\n'
+		.. '\n'
+		.. '\n'
+		.. ' HET KASTEEL VAN DE SINT IS     \n'
+		.. '\n'
+		.. ' BEVRIJD VAN DE KWAADAARDIGE EN \n'
+		.. '\n'
+		.. ' OVERBETAALDE PIETIOUS!         \n'
+		.. '\n'
+		.. ' DUS KAN DE SINT ZONDER ZORGEN, \n'
+		.. '\n'
+		.. ' BEHALVE VAN ECONOMISCHE AARD,  \n'
+		.. '\n'
+		.. ' ZIJN RENTREE MAKEN IN SPANJE.  \n'
+		.. '\n'
+		.. '\n'
+		.. '\n'
+		.. '\n'
+		.. ' UITERAARD WORDT PIETOLON       \n'
+		.. '\n'
+		.. ' OVERLADEN MET SNOEPGOED EN     \n'
+		.. '\n'
+		.. ' SPEELGOED VOOR ZIJN WERK EN ZAL\n'
+		.. '\n'
+		.. ' HIJ EEN EXTRA DAG VRIJ KRIJGEN.\n'
+		.. '\n'
+		.. '\n'
+		.. '\n'
+		.. '\n'
+		.. ' ZO, DAT WAS WEER EEN HOOP WERK!\n'
+		.. '\n'
+		.. ' HET BOUWEN VAN DEZE SPELLETJES \n'
+		.. '\n'
+		.. ' ZAL SINTERKLAAS NIET IEDER JAAR\n'
+		.. '\n'
+		.. ' AAN ZIJN PIETEN VRAGEN.        \n'
+		.. '\n'
+		.. '\n'
+		.. '\n'
+		.. '\n'
+		.. ' SINTERKLAAS WIL GRAAG IEDEREEN \n'
+		.. '\n'
+		.. ' BEDANKEN DIE HEEFT BIJGEDRAGEN \n'
+		.. '\n'
+		.. ' AAN HET TOTSTANDKOMEN VAN DEZE \n'
+		.. '\n'
+		.. ' FANTASTISCHE CREATIE...        \n'
+		.. '\n'
+		.. '\n'
+		.. '\n'
+		.. '\n'
+		.. '\n'
+		.. ' OORSPRONKELIJKE DESIGN EN BOUW \n'
+		.. '\n'
+		.. '\n'
+		.. '             KONAMI             \n'
+		.. '\n'
+		.. '\n'
+		.. '\n'
+		.. '\n'
+		.. '          PROGRAMMEREN          \n'
+		.. '\n'
+		.. '\n'
+		.. '       VISUAL STUDIO PIET       \n'
+		.. '\n'
+		.. '           .NET PIET            \n'
+		.. '\n'
+		.. '          CSHARP PIET           \n'
+		.. '\n'
+		.. '            XNA PIET            \n'
+		.. '\n'
+		.. '\n'
+		.. '\n'
+		.. '\n'
+		.. '           GRAPHISCH            \n'
+		.. '\n'
+		.. '\n'
+		.. '          MSPAINT PIET          \n'
+		.. '\n'
+		.. '         PAINT.NET PIET         \n'
+		.. '\n'
+		.. '          BLUEMSX PIET          \n'
+		.. '\n'
+		.. '\n'
+		.. '\n'
+		.. '\n'
+		.. '             GELUID             \n'
+		.. '\n'
+		.. '\n'
+		.. '      NERO WAVE EDITOR PIET     \n'
+		.. '\n'
+		.. '          BLUEMSX PIET          \n'
+		.. '\n'
+		.. '\n'
+		.. '\n'
+		.. '\n'
+		.. '          MORELE STEUN          \n'
+		.. '\n'
+		.. '\n'
+		.. '          HOCKEY PIET           \n'
+		.. '\n'
+		.. '     BALLROOM EN LATIN PIET     \n'
+		.. '\n'
+		.. '         SOMERTIJD PIET         \n'
+		.. '\n'
+		.. '         TECNOMAN PIET          \n'
+		.. '\n'
+		.. '         EREDIVISIE PIET        \n'
+		.. '\n'
+		.. '\n'
+		.. '\n'
+		.. '\n'
+		.. '         EN NATUURLIJK...       \n'
+		.. '\n'
+		.. '\n'
+		.. '   SINTERKLAAS EN ZWARTE PIET!  \n'
+		.. '\n'
+		.. '\n'
+		.. '\n'
+		.. '\n'
+		.. '\n'
+		.. '\n'
+		.. '           ...EN JULLIE!        \n'
+		.. '\n'
+		.. '\n'
+		.. '\n'
+		.. '\n'
+		.. '\n'
+		.. '\n'
+		.. '\n'
+		.. '\n'
+		.. '     DAT WAS HET WEER! DOEI!    ',
 }
 
 return {
 	game_text = game_text,
-	story_text = story_text,
-	epilogue_text = epilogue_text,
 }

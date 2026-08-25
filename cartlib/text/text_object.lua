@@ -224,7 +224,8 @@ local write_glyph_lines<const> = function(font, lines, glyph_lines, widths)
 			glyphs = {}
 			glyph_lines[i] = glyphs
 		end
-		widths[i] = font_module.write_glyph_line(font, lines[i], glyphs)
+		local line<const> = lines[i]
+		widths[i] = font_module.write_glyph_range(font, line, 1, #line, glyphs)
 	end
 end
 

@@ -77,7 +77,7 @@ function __bmsx_host_test.setup()
 
 	local story<const> = registry:get('nemesis_s.story')
 	assert(story.sprite_component.imgid == 'story_coup', 'story did not start on the coup image')
-	assert(story.primary_text.static_text_line_count == 4 and story.primary_text.offset_y == 144,
+	assert(story.primary_text.glyph_line_count == 4 and story.primary_text.offset_y == 144,
 		'first story caption differs from the XNA layout')
 	local story_panel_frames<const> = { 1257, 538, 480, 419, 367, 1014, 2101, 1202, 839 }
 	local story_frame_ms<const> = clock.frame_delta_milliseconds()
@@ -245,7 +245,7 @@ function __bmsx_host_test.update()
 		local presentation<const> = registry:get('nemesis_s.end_demo')
 		assert(presentation.sprite_component.imgid == 'end_demo_sint_duim',
 			'end demo did not start on the authored Sint image')
-		assert(presentation.caption.static_text_line_count == 21
+		assert(presentation.caption.glyph_line_count == 21
 			and presentation.caption.offset_x == 0
 			and presentation.caption.offset_y == 8,
 			'first end-demo caption differs from the XNA layout')
@@ -261,7 +261,7 @@ function __bmsx_host_test.update()
 		presentation.timelines:advance_time_to(end_demo_timeline_id, second_slide_start_ms)
 		assert(presentation.visible
 			and presentation.sprite_component.imgid == 'end_demo_boaz'
-			and presentation.caption.static_text_line_count == 16
+			and presentation.caption.glyph_line_count == 16
 			and presentation.caption.offset_x == 128
 			and presentation.caption.glyph_visible_height == 0,
 			'second end-demo slide differs from the XNA image and caption layout')

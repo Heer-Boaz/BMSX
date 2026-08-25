@@ -6,8 +6,15 @@ local text_component<const> = require('cartlib/text/text_component')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timeline_clock_source<const> = require('cartlib/timeline/clock_source')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
-local game_text<const> = require('game_text')
+local text_util<const> = require('cartlib/util/text')
+local game_text_module<const> = require('game_text')
 require('constants')
+
+local game_text<const>: *game_text_record = game_text_module.game_text
+local story_text<const> = game_text[0].story_text
+local epilogue_text<const> = game_text[0].epilogue_text
+local story_line_count<const> = text_util.count_lines(story_text)
+local epilogue_line_count<const> = text_util.count_lines(epilogue_text)
 
 local narrative_screen<const> = {}
 narrative_screen.__index = narrative_screen
@@ -90,13 +97,13 @@ local define_narrative_screen_fsm<const> = function()
 				initial = 'active',
 				entering_state = function(self)
 					local text<const> = self.text_component
-					text:set_static_text(game_text.story_text, #game_text.story_text)
+					text:set_text(story_text)
 					text.visible = true
 				end,
 				timelines = {
 					[story_timeline_id] = {
 						def = build_scroll_timeline(
-							#game_text.story_text,
+							story_line_count,
 							'narrative.story.reached_end'
 						),
 						autoplay = true,
@@ -119,13 +126,13 @@ local define_narrative_screen_fsm<const> = function()
 				initial = 'active',
 				entering_state = function(self)
 					local text<const> = self.text_component
-					text:set_static_text(game_text.epilogue_text, #game_text.epilogue_text)
+					text:set_text(epilogue_text)
 					text.visible = true
 				end,
 				timelines = {
 					[epilogue_timeline_id] = {
 						def = build_scroll_timeline(
-							#game_text.epilogue_text,
+							epilogue_line_count,
 							'narrative.epilogue.reached_end'
 						),
 						autoplay = true,

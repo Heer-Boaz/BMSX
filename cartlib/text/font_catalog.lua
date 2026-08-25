@@ -95,12 +95,12 @@ function font_catalog.get(id)
 	return resolved_font
 end
 
-function font_catalog.write_glyph_line(resolved_font, line, target)
+function font_catalog.write_glyph_range(resolved_font, text, first_byte, last_byte, target)
 	local items<const> = resolved_font.items
 	local advances<const> = resolved_font.advances
 	local fallback<const> = items[0x3f]
 	local fallback_advance<const> = advances[0x3f]
-	local length<const> = #line
+	local length<const> = last_byte - first_byte + 1
 	local x_offsets = target.x_offsets
 	if x_offsets == nil then
 		x_offsets = {}
@@ -108,7 +108,7 @@ function font_catalog.write_glyph_line(resolved_font, line, target)
 	end
 	local width = 0
 	for index = 1, length do
-		local codepoint<const> = byte(line, index)
+		local codepoint<const> = byte(text, first_byte + index - 1)
 		local glyph<const> = items[codepoint] or fallback
 		target[index] = glyph
 		x_offsets[index] = width

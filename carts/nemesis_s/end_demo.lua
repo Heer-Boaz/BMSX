@@ -9,9 +9,11 @@ local text_component<const> = require('cartlib/text/text_component')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timeline_clock_source<const> = require('cartlib/timeline/clock_source')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
-local game_text<const> = require('game_text')
+local game_text_module<const> = require('game_text')
 local nemesis_font<const> = require('nemesis_font')
 require('constants')
+
+local game_text<const>: *game_text_record = game_text_module.game_text
 
 local end_demo<const> = {}
 end_demo.__index = end_demo
@@ -35,14 +37,12 @@ local second_curtain_end_ms<const> = second_curtain_start_ms + curtain_duration_
 local slides<const> = {
 	{
 		imgid = 'end_demo_sint_duim',
-		text = game_text.end_demo_sint_text,
-		line_count = #game_text.end_demo_sint_text,
+		text = game_text[0].end_demo_sint_text,
 		text_x = 0,
 	},
 	{
 		imgid = 'end_demo_boaz',
-		text = game_text.end_demo_boaz_text,
-		line_count = #game_text.end_demo_boaz_text,
+		text = game_text[0].end_demo_boaz_text,
 		text_x = 128,
 	},
 }
@@ -63,7 +63,7 @@ local apply_slide<const> = function(target, slide_index)
 	target:set_imgid(slide.imgid)
 	local caption<const> = target.caption
 	caption.offset_x = slide.text_x
-	caption:set_static_text(slide.text, slide.line_count)
+	caption:set_text(slide.text)
 end
 
 local apply_reveal<const> = function(target, height)

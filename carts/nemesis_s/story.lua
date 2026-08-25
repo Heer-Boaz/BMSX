@@ -10,9 +10,11 @@ local text_component<const> = require('cartlib/text/text_component')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timeline_clock_source<const> = require('cartlib/timeline/clock_source')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
-local game_text<const> = require('game_text')
+local game_text_module<const> = require('game_text')
 local nemesis_font<const> = require('nemesis_font')
 require('constants')
+
+local game_text<const>: *game_text_record = game_text_module.game_text
 
 local story<const> = {}
 story.__index = story
@@ -31,15 +33,15 @@ local curtain_venom<const> = 2
 -- The cart replaces the original pictures and captions, but each authored
 -- panel still owns the corresponding original presentation interval.
 local story_slides<const> = {
-	{ imgid = 'story_coup', text = game_text.story_1_text, line_count = #game_text.story_1_text, text_y = 144, duration_frames = 1257 },
-	{ imgid = 'story_piet1', text = game_text.story_2_text, line_count = #game_text.story_2_text, text_y = 128, duration_frames = 538 },
-	{ imgid = 'story_escape', text = game_text.story_3_text, line_count = #game_text.story_3_text, text_y = 144, duration_frames = 480 },
-	{ imgid = 'story_boot', text = game_text.story_4_text, line_count = #game_text.story_4_text, text_y = 152, duration_frames = 419 },
-	{ imgid = 'story_winterstad', text = game_text.story_5_text, line_count = #game_text.story_5_text, text_y = 160, duration_frames = 367 },
-	{ text = game_text.story_6_text, line_count = #game_text.story_6_text, text_y = 128, duration_frames = 1014 },
-	{ imgid = 'story_map', text = game_text.story_7_text, line_count = #game_text.story_7_text, text_y = 144, duration_frames = 2101 },
-	{ imgid = 'story_metalion', text = game_text.story_8_text, line_count = #game_text.story_8_text, text_y = 144, duration_frames = 1202 },
-	{ imgid = 'story_pilot', text = game_text.story_9_text, line_count = #game_text.story_9_text, text_y = 128, duration_frames = 839 },
+	{ imgid = 'story_coup', text = game_text[0].story_1_text, text_y = 144, duration_frames = 1257 },
+	{ imgid = 'story_piet1', text = game_text[0].story_2_text, text_y = 128, duration_frames = 538 },
+	{ imgid = 'story_escape', text = game_text[0].story_3_text, text_y = 144, duration_frames = 480 },
+	{ imgid = 'story_boot', text = game_text[0].story_4_text, text_y = 152, duration_frames = 419 },
+	{ imgid = 'story_winterstad', text = game_text[0].story_5_text, text_y = 160, duration_frames = 367 },
+	{ text = game_text[0].story_6_text, text_y = 128, duration_frames = 1014 },
+	{ imgid = 'story_map', text = game_text[0].story_7_text, text_y = 144, duration_frames = 2101 },
+	{ imgid = 'story_metalion', text = game_text[0].story_8_text, text_y = 144, duration_frames = 1202 },
+	{ imgid = 'story_pilot', text = game_text[0].story_9_text, text_y = 128, duration_frames = 839 },
 }
 
 local reveal_keys<const> = {
@@ -302,7 +304,7 @@ function story:begin_slide(state)
 		atlas.load(image.atlas_id(imgid))
 	end
 	local primary_text<const> = self.primary_text
-	primary_text:set_static_text(slide.text, slide.line_count)
+	primary_text:set_text(slide.text)
 	primary_text.offset_y = slide.text_y
 	primary_text:set_glyph_visible_height(0)
 	local secondary_text<const> = self.secondary_text
@@ -335,7 +337,7 @@ function story:ctor()
 		offset_z = 2,
 	})
 	secondary_text:set_font(font.get(nemesis_font.font_id))
-	secondary_text:set_static_text(game_text.story_piet_text, #game_text.story_piet_text)
+	secondary_text:set_text(game_text[0].story_piet_text)
 	secondary_text:set_glyph_visible_height(0)
 	secondary_text.visible = false
 	self:add_component(secondary_text)

@@ -1,4 +1,18 @@
 local wrap_whitespace_chars<const> = { [' '] = true, ['\t'] = true }
+local find<const> = string.find
+
+local count_lines<const> = function(text)
+	local count = 1
+	local line_start = 1
+	while true do
+		local newline<const> = find(text, '\n', line_start, true)
+		if newline == nil then
+			return count
+		end
+		count = count + 1
+		line_start = newline + 1
+	end
+end
 
 local wrap_text_lines<const> = function(text, max_chars, first_prefix, next_prefix)
 	local lines<const> = {}
@@ -93,6 +107,7 @@ local split_lines<const> = function(value)
 end
 
 return {
+	count_lines = count_lines,
 	split_lines = split_lines,
 	wrap_text_lines = wrap_text_lines
 }

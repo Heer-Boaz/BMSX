@@ -4,6 +4,7 @@ local gx_vram<const> = require('cartlib/gx/vram')
 local visual_component<const> = require('cartlib/component/visual_component')
 local wrap_text_lines<const> = require('cartlib/util/text').wrap_text_lines
 local empty_text_lines<const> = {}
+local find<const> = string.find
 
 local text_component<const> = {}
 text_component.__index = text_component
@@ -21,8 +22,6 @@ function text_component.new(opts)
 	self.line_x_offsets = opts.line_x_offsets
 	self.center_block_width = opts.center_block_width
 	self.text = nil
-	self.static_text_lines = nil
-	self.static_text_line_count = 0
 	self.glyph_lines = {}
 	self.layout_line_widths = {}
 	self.glyph_line_count = 0
@@ -42,10 +41,55 @@ local write_lines<const> = function(self, lines, first_index, line_count)
 			glyph_line = {}
 			glyph_lines[i] = glyph_line
 		end
-		layout_line_widths[i] = font_catalog.write_glyph_line(self.font, line, glyph_line)
+		layout_line_widths[i] = font_catalog.write_glyph_range(self.font, line, 1, #line, glyph_line)
 		if #line ~= 0 then
 			has_glyphs = true
 		end
+	end
+	self.glyph_line_count = line_count
+	if has_glyphs then
+		self:set_draw_function(text_component.draw_visual)
+	else
+		self:set_draw_function(nil)
+	end
+end
+
+-- Authored line breaks remain part of one string resource. Layout writes each
+-- source range directly into its retained glyph row; it never allocates
+-- substring or split tables just to discover the text's line structure.
+local write_string_lines<const> = function(self, text)
+	local glyph_lines<const> = self.glyph_lines
+	local layout_line_widths<const> = self.layout_line_widths
+	local text_length<const> = #text
+	local line_start = 1
+	local line_count = 0
+	local has_glyphs = false
+	while true do
+		local newline<const> = find(text, '\n', line_start, true)
+		local line_end = text_length
+		if newline ~= nil then
+			line_end = newline - 1
+		end
+		line_count = line_count + 1
+		local glyph_line = glyph_lines[line_count]
+		if glyph_line == nil then
+			glyph_line = {}
+			glyph_lines[line_count] = glyph_line
+		end
+		layout_line_widths[line_count] = font_catalog.write_glyph_range(
+			self.font,
+			text,
+			line_start,
+			line_end,
+			glyph_line
+		)
+		if line_end >= line_start then
+			has_glyphs = true
+		end
+		if newline == nil then
+			break
+		end
+		line_start = newline + 1
 	end
 	self.glyph_line_count = line_count
 	if has_glyphs then
@@ -57,70 +101,17 @@ end
 
 function text_component:set_text(text)
 	self.text = text
-	self.static_text_lines = nil
-	self.static_text_line_count = 0
 	if type(text) == 'string' then
 		if self.wrap_chars ~= nil and self.wrap_chars > 0 then
 			local lines<const> = wrap_text_lines(text, self.wrap_chars)
 			write_lines(self, lines, 1, #lines)
 			return
 		end
-		local glyph_line = self.glyph_lines[1]
-		if glyph_line == nil then
-			glyph_line = {}
-			self.glyph_lines[1] = glyph_line
-		end
-		self.layout_line_widths[1] = font_catalog.write_glyph_line(self.font, text, glyph_line)
-		self.glyph_line_count = 1
-		if #text ~= 0 then
-			self:set_draw_function(text_component.draw_visual)
-		else
-			self:set_draw_function(nil)
-		end
+		write_string_lines(self, text)
 		return
 	end
 	local lines<const> = text or empty_text_lines
 	write_lines(self, lines, 1, #lines)
-end
-
--- Static language arrays have no guest table header and retain their authored
--- zero-based storage directly. The component consumes that representation at
--- admission instead of making a Lua table copy for long narrative text.
-function text_component:set_static_text(lines, line_count)
-	local source<const>: *string = lines
-	self.text = nil
-	self.static_text_lines = lines
-	self.static_text_line_count = line_count
-	local glyph_lines<const> = self.glyph_lines
-	local layout_line_widths<const> = self.layout_line_widths
-	local has_glyphs = false
-	for i = 1, line_count do
-		local line<const> = source[i - 1]
-		local glyph_line = glyph_lines[i]
-		if glyph_line == nil then
-			glyph_line = {}
-			glyph_lines[i] = glyph_line
-		end
-		layout_line_widths[i] = font_catalog.write_glyph_line(self.font, line, glyph_line)
-		if #line ~= 0 then
-			has_glyphs = true
-		end
-	end
-	self.glyph_line_count = line_count
-	if has_glyphs then
-		self:set_draw_function(text_component.draw_visual)
-	else
-		self:set_draw_function(nil)
-	end
-end
-
-local rebuild_text<const> = function(self)
-	local lines<const> = self.static_text_lines
-	if lines ~= nil then
-		self:set_static_text(lines, self.static_text_line_count)
-		return
-	end
-	self:set_text(self.text)
 end
 
 function text_component:set_font(font)
@@ -129,7 +120,7 @@ function text_component:set_font(font)
 	end
 	self.font = font
 	self.line_height = font.line_height
-	rebuild_text(self)
+	self:set_text(self.text)
 end
 
 function text_component:set_wrap_chars(wrap_chars)
@@ -137,7 +128,7 @@ function text_component:set_wrap_chars(wrap_chars)
 		return
 	end
 	self.wrap_chars = wrap_chars
-	rebuild_text(self)
+	self:set_text(self.text)
 end
 
 function text_component:draw_visual(draw)

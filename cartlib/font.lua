@@ -4,7 +4,7 @@ local registry<const> = require('cartlib/registry')
 
 local font<const> = {
 	get = font_catalog.get,
-	write_glyph_line = font_catalog.write_glyph_line,
+	write_glyph_range = font_catalog.write_glyph_range,
 }
 
 function font.define(id, definition)

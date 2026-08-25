@@ -82,7 +82,7 @@ function __bmsx_host_test.update()
 		assert(director.state_machines:matches_state(test.story_state), 'intro did not advance to the story')
 		assert(world.active_space_id == 'narrative', 'story did not own the narrative presentation space')
 		local narrative<const> = registry:get('narrative')
-		assert(narrative.text_component.static_text_line_count == 54, 'story did not bind the complete XNA text')
+		assert(narrative.text_component.glyph_line_count == 54, 'story did not bind the complete XNA text')
 		test.story_requested_state = narrative.state_machines:bind_state_path('/story/requested')
 		test.story_skip_frames = 0
 		test.phase = 'story_skip'
@@ -192,7 +192,7 @@ function __bmsx_host_test.update()
 		assert(director.state_machines:matches_state(test.epilogue_state), 'end-demo curtain did not advance to the epilogue')
 		assert(world.active_space_id == 'narrative', 'epilogue did not own the narrative presentation space')
 		local narrative<const> = registry:get('narrative')
-		assert(narrative.text_component.static_text_line_count == 136, 'epilogue did not bind the complete XNA text')
+		assert(narrative.text_component.glyph_line_count == 136, 'epilogue did not bind the complete XNA text')
 		test.epilogue_requested_state = narrative.state_machines:bind_state_path('/epilogue/requested')
 		narrative.events:emit('narrative.epilogue.reached_end')
 		assert(narrative.state_machines:matches_state(test.epilogue_requested_state),
