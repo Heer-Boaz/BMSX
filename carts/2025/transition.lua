@@ -3,6 +3,7 @@ require('globals')
 local surface_component<const> = require('cartlib/component/surface_component')
 local gp0<const> = require('cartlib/gx/gp0')
 local atlas<const> = require('cartlib/gx/atlas')
+local image<const> = require('cartlib/gx/image')
 local story<const> = require('story')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timelinebuilders<const> = require('timelinebuilders')
@@ -168,7 +169,7 @@ function transition.register_states(states)
 			transition_text.text_component.offset_x = screen_width
 			self.transition_needs_post_fade = false
 			if not self.skip_transition_fade and self.transition_target_bg ~= nil then
-				atlas.load(next_node.atlas_id)
+				atlas.load(image.atlas_id(next_node.bg))
 			end
 			local style<const> = resolve_transition_style(node, next_node.kind)
 			self.transition_style = style
@@ -373,7 +374,7 @@ function transition.register_states(states)
 			end
 			self.fade_target_bg = target_node.bg
 			if self.fade_target_bg ~= nil then
-				atlas.load(target_node.atlas_id)
+				atlas.load(image.atlas_id(target_node.bg))
 			end
 			show_background(self.background, nil)
 			hide_transition_layers(self.transition_visual)

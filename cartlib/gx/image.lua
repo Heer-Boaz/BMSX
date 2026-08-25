@@ -6,6 +6,12 @@ local atlas<const> = require('cartlib/gx/atlas')
 local image<const> = {}
 local image_by_id<const> = {}
 
+-- Packed image metadata owns atlas membership. Admission boundaries query that
+-- relationship here instead of repeating an atlas id beside every image id.
+function image.atlas_id(id)
+	return rom_dir.image(id).imgmeta.gx_atlas_id
+end
+
 -- Image resolution selects transformed packet writers and binds ordinary blit
 -- packet words once. Ordinary draws never redispatch on texture mode or scan
 -- page tiles; explicitly producer-split large surfaces are handled by

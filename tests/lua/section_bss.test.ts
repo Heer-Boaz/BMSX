@@ -644,6 +644,32 @@ return { columns = columns, rows = rows }
 	assert.deepEqual(runColdCompiled(compiled).values, [12]);
 });
 
+test('BLua static storage exposes exported array dimensions to const-module consumers', () => {
+	const entrySource = `return require('consumer')`;
+	const consumerSource = `
+local storage<const> = require('storage')
+return #storage.scratch + #storage.values + #storage.labels
+`;
+	const compiled = compileLuaChunkToProgram(
+		parseSource(entrySource, 'entry.lua'),
+		[
+			constModule('storage', `
+bss scratch: word[2]
+data values: word[3] = { 1, 2, 3 }
+rodata labels: string[] = { 'ONE', 'TWO', 'THREE', 'FOUR' }
+return {
+	scratch = scratch,
+	values = values,
+	labels = labels,
+}
+`),
+			{ path: 'consumer', chunk: parseSource(consumerSource, 'consumer.lua'), source: consumerSource },
+		],
+		{ entrySource, programDomain: 'system' },
+	);
+	assert.deepEqual(runColdCompiled(compiled).values, [9]);
+});
+
 test('BLua .rodata records infer array length and load immutable string fields without tables', () => {
 	const source = `
 struct monitor_command

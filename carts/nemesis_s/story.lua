@@ -3,6 +3,7 @@ local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local font<const> = require('cartlib/font')
 local atlas<const> = require('cartlib/gx/atlas')
+local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/world/prefab')
 local sprite_object<const> = require('cartlib/sprite')
 local text_component<const> = require('cartlib/text/text_component')
@@ -30,15 +31,15 @@ local curtain_venom<const> = 2
 -- The cart replaces the original pictures and captions, but each authored
 -- panel still owns the corresponding original presentation interval.
 local story_slides<const> = {
-	{ atlas_id = 'story_1', imgid = 'story_coup', text = game_text.story_1_text, line_count = 4, text_y = 144, duration_frames = 1257 },
-	{ atlas_id = 'story_1', imgid = 'story_piet1', text = game_text.story_2_text, line_count = 5, text_y = 128, duration_frames = 538 },
-	{ atlas_id = 'story_1', imgid = 'story_escape', text = game_text.story_3_text, line_count = 4, text_y = 144, duration_frames = 480 },
-	{ atlas_id = 'story_1', imgid = 'story_boot', text = game_text.story_4_text, line_count = 3, text_y = 152, duration_frames = 419 },
-	{ atlas_id = 'story_1', imgid = 'story_winterstad', text = game_text.story_5_text, line_count = 4, text_y = 160, duration_frames = 367 },
-	{ atlas_id = 'story_1', text = game_text.story_6_text, line_count = 1, text_y = 128, duration_frames = 1014 },
-	{ atlas_id = 'story_2', imgid = 'story_map', text = game_text.story_7_text, line_count = 6, text_y = 144, duration_frames = 2101 },
-	{ atlas_id = 'story_2', imgid = 'story_metalion', text = game_text.story_8_text, line_count = 5, text_y = 144, duration_frames = 1202 },
-	{ atlas_id = 'story_2', imgid = 'story_pilot', text = game_text.story_9_text, line_count = 6, text_y = 128, duration_frames = 839 },
+	{ imgid = 'story_coup', text = game_text.story_1_text, line_count = #game_text.story_1_text, text_y = 144, duration_frames = 1257 },
+	{ imgid = 'story_piet1', text = game_text.story_2_text, line_count = #game_text.story_2_text, text_y = 128, duration_frames = 538 },
+	{ imgid = 'story_escape', text = game_text.story_3_text, line_count = #game_text.story_3_text, text_y = 144, duration_frames = 480 },
+	{ imgid = 'story_boot', text = game_text.story_4_text, line_count = #game_text.story_4_text, text_y = 152, duration_frames = 419 },
+	{ imgid = 'story_winterstad', text = game_text.story_5_text, line_count = #game_text.story_5_text, text_y = 160, duration_frames = 367 },
+	{ text = game_text.story_6_text, line_count = #game_text.story_6_text, text_y = 128, duration_frames = 1014 },
+	{ imgid = 'story_map', text = game_text.story_7_text, line_count = #game_text.story_7_text, text_y = 144, duration_frames = 2101 },
+	{ imgid = 'story_metalion', text = game_text.story_8_text, line_count = #game_text.story_8_text, text_y = 144, duration_frames = 1202 },
+	{ imgid = 'story_pilot', text = game_text.story_9_text, line_count = #game_text.story_9_text, text_y = 128, duration_frames = 839 },
 }
 
 local reveal_keys<const> = {
@@ -95,6 +96,7 @@ end
 
 local apply_venom_image<const> = function(target, visible)
 	if visible then
+		atlas.load(image.atlas_id('story_piet2'))
 		target:set_imgid('story_piet2')
 	else
 		target:set_imgid(nil)
@@ -295,7 +297,10 @@ end
 
 function story:begin_slide(state)
 	local slide<const> = story_slides[state.data.slide_index]
-	atlas.load(slide.atlas_id)
+	local imgid<const> = slide.imgid
+	if imgid ~= nil then
+		atlas.load(image.atlas_id(imgid))
+	end
 	local primary_text<const> = self.primary_text
 	primary_text:set_static_text(slide.text, slide.line_count)
 	primary_text.offset_y = slide.text_y
@@ -330,7 +335,7 @@ function story:ctor()
 		offset_z = 2,
 	})
 	secondary_text:set_font(font.get(nemesis_font.font_id))
-	secondary_text:set_static_text(game_text.story_piet_text, 5)
+	secondary_text:set_static_text(game_text.story_piet_text, #game_text.story_piet_text)
 	secondary_text:set_glyph_visible_height(0)
 	secondary_text.visible = false
 	self:add_component(secondary_text)

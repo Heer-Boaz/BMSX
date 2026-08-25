@@ -1,13 +1,13 @@
 module<const>
 
-rodata story_1_text: string[4] = {
+rodata story_1_text: string[] = {
 	'    DR.PIETON, DE NASA-PIET,',
 	'    HEEFT EEN POGING GEDAAN',
 	"  OM EEN COUP D'ETAT TE PLEGEN",
 	'      TEGEN SINTERKLAAS.',
 }
 
-rodata story_2_text: string[5] = {
+rodata story_2_text: string[] = {
 	'  DE COUP MISLUKTE. DR.PIETON',
 	'   WERD IN DE ZAK GESTOPT EN ',
 	'     GEVANGEN GEZET IN DE',
@@ -15,31 +15,31 @@ rodata story_2_text: string[5] = {
 	'        VAN SINTERKLAAS.',
 }
 
-rodata story_3_text: string[4] = {
+rodata story_3_text: string[] = {
 	'   ECHTER, EEN JAAR LATER WEET',
 	'   DR.PIETON UIT DE CATACOMBEN',
 	'     TE BREKEN EN VLUCHT',
 	'         HET LAND UIT.',
 }
 
-rodata story_4_text: string[3] = {
+rodata story_4_text: string[] = {
 	'    HIJ WORDT NIET GEVONDEN,',
 	'  ONDANKS EEN GROOTSE ZOEKTOCHT',
 	'         VAN DE SINT.',
 }
 
-rodata story_5_text: string[4] = {
+rodata story_5_text: string[] = {
 	' PLOTS IS ER GEEN ENKEL CONTACT',
 	'    MEER MET DE INWONERS VAN',
 	'   STADSBURG. DE STAD BLIJKT',
 	'    TE ZIJN BINNENGEVALLEN...',
 }
 
-rodata story_6_text: string[1] = {
+rodata story_6_text: string[] = {
 	'  DR.PIETON IS DE BOOSDOENER.',
 }
 
-rodata story_piet_text: string[5] = {
+rodata story_piet_text: string[] = {
 	'',
 	' DR.PIETON IS STADSBURG BINNEN-',
 	' GEVALLEN EN HEEFT HET VERBOUWD',
@@ -47,7 +47,7 @@ rodata story_piet_text: string[5] = {
 	'         TEGEN DE SINT.',
 }
 
-rodata story_7_text: string[6] = {
+rodata story_7_text: string[] = {
 	'  DAT KAN NATUURLIJK NIET!!!1',
 	'    DE SINT HEEFT DAAROM DE ',
 	'   OPDRACHT GEGEVEN AAN ZIJN ',
@@ -56,7 +56,7 @@ rodata story_7_text: string[6] = {
 	'   STADSBURG TE BEVRIJDEN...',
 }
 
-rodata story_8_text: string[5] = {
+rodata story_8_text: string[] = {
 	'   GELUKKIG KRIJGEN ZE HULP--',
 	'   DE SURPRISE-PIETEN HEBBEN',
 	'    DE KARTONION ONTWIKKELD.',
@@ -64,7 +64,7 @@ rodata story_8_text: string[5] = {
 	'     DR.PIETON ZAL VERASSEN!',
 }
 
-rodata story_9_text: string[6] = {
+rodata story_9_text: string[] = {
 	'     DE PILOOTPIET ZAL DE',
 	'      KARTONION BESTUREN.',
 	'',
@@ -73,7 +73,7 @@ rodata story_9_text: string[6] = {
 	' GAAN DE MUZIEK NIET AFWACHTEN.',
 }
 
-rodata end_demo_sint_text: string[21] = {
+rodata end_demo_sint_text: string[] = {
 	'REDELIJK WERK,',
 	'PILOOTPIET!!',
 	'',
@@ -97,7 +97,7 @@ rodata end_demo_sint_text: string[21] = {
 	'VERRADEN...',
 }
 
-rodata end_demo_boaz_text: string[16] = {
+rodata end_demo_boaz_text: string[] = {
 	'ZO, DAT WAS HET',
 	'DAN ALWEER!',
 	'',

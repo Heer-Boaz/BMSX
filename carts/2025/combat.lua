@@ -10,6 +10,7 @@ local primitives<const> = require('cartlib/gx/primitives')
 local prefab<const> = require('cartlib/world/prefab')
 local story<const> = require('story')
 local atlas<const> = require('cartlib/gx/atlas')
+local image<const> = require('cartlib/gx/image')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timelinebuilders<const> = require('timelinebuilders')
 local stagger<const> = require('stagger')
@@ -354,7 +355,8 @@ function combat.define_fsm()
 		hide_combat_visuals(self.combat_visuals)
 		local next_kind<const> = story[self.node_id].kind
 		if next_kind == 'transition' then
-			atlas.load(story[story[self.node_id].next].atlas_id)
+			local target_node<const> = story[story[self.node_id].next]
+			atlas.load(image.atlas_id(target_node.bg))
 			self.skip_transition_fade = true
 			return '/combat_done'
 		end
@@ -365,7 +367,7 @@ function combat.define_fsm()
 			target_node = story[self.node_id]
 		end
 		self.combat_exit_target_bg = target_node.bg
-		atlas.load(target_node.atlas_id)
+		atlas.load(image.atlas_id(target_node.bg))
 		return '/combat_exit_fade_in'
 	end
 
@@ -455,7 +457,7 @@ function combat.define_fsm()
 			self.combat_max_points = #node.rounds
 
 			local monster<const> = self.monster
-			atlas.load(node.atlas_id)
+			atlas.load(image.atlas_id(node.monster_imgid))
 			monster:set_imgid(node.monster_imgid)
 			monster.visible = false
 			monster.sprite_component.color = p3_white_color

@@ -2,7 +2,6 @@ story = {
 	title = {
 		kind = 'bg_only',
 		bg = 'titel',
-		atlas_id = 'monday',
 		typed = false,
 		pages = nil,
 		next = 'intro',
@@ -25,7 +24,6 @@ story = {
 	klas = {
 		kind = 'dialogue',
 		bg = 'klas1',
-		atlas_id = 'monday',
 		typed = true,
 		pages = {
 			{ 'Het is een dag zoals andere dagen.', 'Gehaast en gestrest naar school.' },
@@ -43,7 +41,6 @@ story = {
 	schoolplein = {
 		kind = 'dialogue',
 		bg = 'vriendin',
-		atlas_id = 'monday',
 		typed = true,
 		pages = {
 			{ 'Op het schoolplein spreek je met je vriendin.', 'Ze lijkt bezorgd.' },
@@ -55,7 +52,6 @@ story = {
 	vriendin_choice = {
 		kind = 'choice',
 		bg = 'vriendin',
-		atlas_id = 'monday',
 		prompt = { 'Wat zeg je?' },
 		options = {
 			{
@@ -87,7 +83,6 @@ story = {
 	monday_evening = {
 		kind = 'dialogue',
 		bg = 'gamen',
-		atlas_id = 'home_routine',
 		typed = true,
 		pages = {
 			{ 'Maya besluit thuis lekker Persona 4 te spelen.' },
@@ -107,7 +102,6 @@ story = {
 	monday_night = {
 		kind = 'dialogue',
 		bg = 'slaap_n',
-		atlas_id = 'home_routine',
 		typed = true,
 		pages = {
 			{ 'Maya ligt s\'avonds lekker te ronken.', },
@@ -125,7 +119,6 @@ story = {
 	igor = {
 		kind = 'dialogue',
 		bg = 'igor',
-		atlas_id = 'monday',
 		typed = true,
 		pages = {
 			{ 'Een mysterieus figuur verschijnt.', 'Hij noemt zichzelf "Sintigor".' },
@@ -139,7 +132,6 @@ story = {
 	igor_choice = {
 		kind = 'choice',
 		bg = 'igor',
-		atlas_id = 'monday',
 		prompt = { 'Sintigor: "Je zult het snel genoeg ontdekken."',},
 		options = {
 			{
@@ -173,7 +165,6 @@ story = {
 	ochtendpijn = {
 		kind = 'dialogue',
 		bg = 'ochtendpijn',
-		atlas_id = 'tuesday',
 		typed = true,
 		pages = {
 			{ 'De wekker gaat af.', 'Maya wordt semi-wakker.' },
@@ -187,7 +178,6 @@ story = {
 	combat_wekker = {
 		kind = 'combat',
 		monster_imgid = 'monster_snoozer',
-		atlas_id = 'combat',
 		rounds = {
 			{
 				prompt = { 'De wekker gaat af.', 'Tijd voor een snooze?' },
@@ -223,7 +213,6 @@ story = {
 	after_combat_wekker = {
 		kind = 'dialogue',
 		bg = 'ochtendpijn',
-		atlas_id = 'tuesday',
 		typed = true,
 		pages = {
 			{ 'De wekker is verslagen...', 'maar de dag is nog lang niet gedaan.' },
@@ -241,7 +230,6 @@ story = {
 	tuesday_schoolday = {
 		kind = 'dialogue',
 		bg = 'klas_dinsdag',
-		atlas_id = 'tuesday',
 		typed = true,
 		pages = {
 			{ 'Maya zit in de klas.', 'Ze probeert echt te volgen.' },
@@ -260,7 +248,6 @@ story = {
 	tuesday_evening_choice = {
 		kind = 'choice',
 		bg = 'kamer_avond',
-		atlas_id = 'study_routine',
 		prompt = { 'Dinsdagavond.', 'Wat doe je?' },
 		options = {
 			{
@@ -311,7 +298,6 @@ story = {
 	tuesday_evening_study = {
 		kind = 'dialogue',
 		bg = 'huiswerk',
-		atlas_id = 'study_routine',
 		typed = true,
 		pages = {
 			{ 'Je kijkt naar je planning.', 'Het is saai.', 'Dat is het punt.' },
@@ -324,7 +310,6 @@ story = {
 	tuesday_evening_gamen = {
 		kind = 'dialogue',
 		bg = 'gamen',
-		atlas_id = 'home_routine',
 		typed = true,
 		pages = {
 			{ 'Je gamet.', 'Het is heerlijk.' },
@@ -337,7 +322,6 @@ story = {
 	tuesday_evening_makeup = {
 		kind = 'dialogue',
 		bg = 'badkamer_makeup',
-		atlas_id = 'home_routine',
 		typed = true,
 		pages = {
 			{ 'Alles ligt klaar.', 'Het voelt bijna professioneel.' },
@@ -356,7 +340,6 @@ story = {
 	tuesday_night = {
 		kind = 'dialogue',
 		bg = 'slaap_n',
-		atlas_id = 'home_routine',
 		typed = true,
 		pages = {
 			{ 'Maya ligt te slapen.', 'Lekker te ronken.' },
@@ -375,7 +358,6 @@ story = {
 	spiegel = {
 		kind = 'dialogue',
 		bg = 'badkamer_makeup',
-		atlas_id = 'home_routine',
 		typed = true,
 		pages = {
 			{ 'Nieuwe dag. Nieuwe vijand.' },
@@ -388,7 +370,6 @@ story = {
 	combat_spiegel = {
 		kind = 'combat',
 		monster_imgid = 'monster_spiegel',
-		atlas_id = 'combat',
 		rounds = {
 			{
 				prompt = { 'Wat wordt het vandaag?', 'Extra eyeliner of lipstick?' },
@@ -423,7 +404,6 @@ story = {
 	after_combat_spiegel = {
 		kind = 'dialogue',
 		bg = 'badkamer_spiegel',
-		atlas_id = 'wednesday',
 		typed = true,
 		pages = {
 			{ 'YES, JE ZIET ER WEER GOED UIT!' },
@@ -441,7 +421,6 @@ story = {
 	wednesday_schoolday = {
 		kind = 'dialogue',
 		bg = 'klas_woensdag',
-		atlas_id = 'wednesday',
 		typed = true,
 		pages = {
 			{ 'Maya zit in de klas.', 'Ze voelt zich… verrassend aanwezig.' },
@@ -460,7 +439,6 @@ story = {
 	wednesday_evening_choice = {
 		kind = 'choice',
 		bg = 'kamer_avond',
-		atlas_id = 'study_routine',
 		prompt = { 'Laatste avond voor de ubertoets.', 'Wat doe je?' },
 		options = {
 			{
@@ -511,7 +489,6 @@ story = {
 	wednesday_evening_study = {
 		kind = 'dialogue',
 		bg = 'huiswerk',
-		atlas_id = 'study_routine',
 		typed = true,
 		pages = {
 			{ 'Je herhaalt nog eens.', 'Niet alles.', 'Maar genoeg.' },
@@ -524,7 +501,6 @@ story = {
 	wednesday_evening_gamen = {
 		kind = 'dialogue',
 		bg = 'gamen',
-		atlas_id = 'home_routine',
 		typed = true,
 		pages = {
 			{ 'Je gamet.', 'Het werkt… even.' },
@@ -537,7 +513,6 @@ story = {
 	wednesday_evening_makeup = {
 		kind = 'dialogue',
 		bg = 'badkamer_makeup',
-		atlas_id = 'home_routine',
 		typed = true,
 		pages = {
 			{ 'Je checkt je outfit.', 'Je checkt je haar.', 'Eén keer.' },
@@ -556,7 +531,6 @@ story = {
 	wednesday_night = {
 		kind = 'dialogue',
 		bg = 'slaap_n',
-		atlas_id = 'home_routine',
 		typed = true,
 		pages = {
 			{ 'Maya slaapt.', 'Dit keer met minder chaos in haar hoofd.' },
@@ -575,7 +549,6 @@ story = {
 	thursday_morning = {
 		kind = 'dialogue',
 		bg = 'kamer_ochtend_ubertoets',
-		atlas_id = 'thursday',
 		typed = true,
 		pages = {
 			{ 'Ubertoets-dag.', 'Maya staat op.' },
@@ -589,7 +562,6 @@ story = {
 	schoolpoort = {
 		kind = 'dialogue',
 		bg = 'schoolpoort_klok',
-		atlas_id = 'thursday',
 		typed = true,
 		pages = {
 			{ 'Voor de schoolpoort hangen er allemaal klokken.',},
@@ -605,7 +577,6 @@ story = {
 	combat_heer_later = {
 		kind = 'combat',
 		monster_imgid = 'monster_heer_later',
-		atlas_id = 'combat',
 		rounds = {
 			{
 				prompt = { 'EINDTOETS MODE.', 'Je ziet ALLE vragen ineens.', 'Je brein wil alles tegelijk lezen.' },
@@ -663,7 +634,6 @@ story = {
 	after_combat_heer_later = {
 		kind = 'dialogue',
 		bg = 'schoolpoort_klok',
-		atlas_id = 'thursday',
 		typed = true,
 		pages = {
 			{ 'Heer Later wankelt.', 'De klokken vallen op de grond.' },
@@ -687,7 +657,6 @@ story = {
 	ending = {
 		kind = 'dialogue',
 		bg = 'sint_blij',
-		atlas_id = 'thursday',
 		typed = true,
 		pages = {
 			{ 'Maya, dat heb je toch weer redelijk gedaan!' },
@@ -701,7 +670,6 @@ story = {
 	theend = {
 		kind = 'ending',
 		bg = 'sint_blij',
-		atlas_id = 'thursday',
 		typed = false,
 		pages = nil,
 		next = nil,

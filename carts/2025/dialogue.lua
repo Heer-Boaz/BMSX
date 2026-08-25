@@ -2,6 +2,7 @@ local dialogue<const> = {}
 require('globals')
 local story<const> = require('story')
 local atlas<const> = require('cartlib/gx/atlas')
+local image<const> = require('cartlib/gx/image')
 local stagger<const> = require('stagger')
 local input<const> = require('cartlib/input/input')
 local gameplay_clock<const> = require('cartlib/clock').gameplay
@@ -84,7 +85,7 @@ function dialogue.register_states(states)
 			show_background(self.background, node.bg)
 			local next_node<const> = background_node_at_or_after(node.next)
 			if next_node.bg ~= node.bg then
-				atlas.load(next_node.atlas_id)
+				atlas.load(image.atlas_id(next_node.bg))
 			end
 			hide_combat_visuals(self.combat_visuals)
 			clear_texts(self.texts)
@@ -111,7 +112,7 @@ function dialogue.register_states(states)
 			if node.kind ~= 'dialogue_inline' then
 				local next_node<const> = background_node_at_or_after(node.next)
 				if next_node.bg ~= node.bg then
-					atlas.load(next_node.atlas_id)
+					atlas.load(image.atlas_id(next_node.bg))
 				end
 			end
 			reset_text_colors(self)
@@ -329,7 +330,7 @@ function dialogue.register_states(states)
 					local option<const> = node.options[self.choice_index]
 					local next_node<const> = background_node_at_or_after(option.next)
 					if next_node.bg ~= node.bg then
-						atlas.load(next_node.atlas_id)
+						atlas.load(image.atlas_id(next_node.bg))
 					end
 					self:apply_effects(option.effects)
 					self.inline_pages = option.result_pages

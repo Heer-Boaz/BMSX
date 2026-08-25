@@ -90,13 +90,13 @@ local define_narrative_screen_fsm<const> = function()
 				initial = 'active',
 				entering_state = function(self)
 					local text<const> = self.text_component
-					text:set_static_text(game_text.story_text, game_text.story_text_line_count)
+					text:set_static_text(game_text.story_text, #game_text.story_text)
 					text.visible = true
 				end,
 				timelines = {
 					[story_timeline_id] = {
 						def = build_scroll_timeline(
-							game_text.story_text_line_count,
+							#game_text.story_text,
 							'narrative.story.reached_end'
 						),
 						autoplay = true,
@@ -119,13 +119,13 @@ local define_narrative_screen_fsm<const> = function()
 				initial = 'active',
 				entering_state = function(self)
 					local text<const> = self.text_component
-					text:set_static_text(game_text.epilogue_text, game_text.epilogue_text_line_count)
+					text:set_static_text(game_text.epilogue_text, #game_text.epilogue_text)
 					text.visible = true
 				end,
 				timelines = {
 					[epilogue_timeline_id] = {
 						def = build_scroll_timeline(
-							game_text.epilogue_text_line_count,
+							#game_text.epilogue_text,
 							'narrative.epilogue.reached_end'
 						),
 						autoplay = true,

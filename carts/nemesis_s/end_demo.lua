@@ -36,13 +36,13 @@ local slides<const> = {
 	{
 		imgid = 'end_demo_sint_duim',
 		text = game_text.end_demo_sint_text,
-		line_count = 21,
+		line_count = #game_text.end_demo_sint_text,
 		text_x = 0,
 	},
 	{
 		imgid = 'end_demo_boaz',
 		text = game_text.end_demo_boaz_text,
-		line_count = 16,
+		line_count = #game_text.end_demo_boaz_text,
 		text_x = 128,
 	},
 }

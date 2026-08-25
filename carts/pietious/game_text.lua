@@ -12,8 +12,7 @@ rodata game_text: game_text_record = {
 	end_demo_message = 'DAT HEB JE BEST REDELIJK GEDAAN! ',
 }
 
-local story_text_line_count<const> = 54
-rodata story_text: string[story_text_line_count] = {
+rodata story_text: string[] = {
 	'',
 	'',
 	'              STORY',
@@ -70,8 +69,7 @@ rodata story_text: string[story_text_line_count] = {
 	' DE TERREUR VAN PIETIOUS!       ',
 }
 
-local epilogue_text_line_count<const> = 136
-rodata epilogue_text: string[epilogue_text_line_count] = {
+rodata epilogue_text: string[] = {
 	'',
 	'',
 	'            EPILOGUE            ',
@@ -213,7 +211,5 @@ rodata epilogue_text: string[epilogue_text_line_count] = {
 return {
 	game_text = game_text,
 	story_text = story_text,
-	story_text_line_count = story_text_line_count,
 	epilogue_text = epilogue_text,
-	epilogue_text_line_count = epilogue_text_line_count,
 }

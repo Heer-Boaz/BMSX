@@ -24,6 +24,7 @@ world:configure(world_module)
 local pietsona_font<const> = require('pietsona_font')
 pietsona_font.register_fonts()
 local atlas<const> = require('cartlib/gx/atlas')
+local image<const> = require('cartlib/gx/image')
 require('globals')
 local story<const> = require('story')
 local start_node<const> = 'title'
@@ -428,7 +429,7 @@ end
 
 init()
 atlas.load('font')
-atlas.load(story.title.atlas_id)
+atlas.load(image.atlas_id(story.title.bg))
 new_game()
 -- Pietsona intentionally advances one gameplay tick across two display frames.
 while true do

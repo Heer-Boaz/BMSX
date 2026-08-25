@@ -5032,17 +5032,46 @@ class FunctionBuilder {
 		}
 
 	private resolveStaticStorageArrayLength(expression: LuaExpression): number | undefined {
-		if (expression.kind !== LuaSyntaxKind.IdentifierExpression) {
+		if (expression.kind === LuaSyntaxKind.IdentifierExpression) {
+			const reference = getResolvedIdentifierReference(this.semantics, expression as LuaIdentifierExpression);
+			const binding = this.resolveReferenceBssBinding(reference)
+				?? this.resolveReferenceDataBinding(reference)
+				?? this.resolveReferenceRodataBinding(reference);
+			if (!binding || binding.type.dimensions.length === 0) {
+				return undefined;
+			}
+			return binding.type.dimensions[0];
+		}
+		const exported = this.resolveModuleExportConstValue(expression);
+		if (!exported) {
 			return undefined;
 		}
-		const reference = getResolvedIdentifierReference(this.semantics, expression as LuaIdentifierExpression);
-		const binding = this.resolveReferenceBssBinding(reference)
-			?? this.resolveReferenceDataBinding(reference)
-			?? this.resolveReferenceRodataBinding(reference);
-		if (!binding || binding.type.dimensions.length === 0) {
-			return undefined;
+		const value = exported.value;
+		switch (value.kind) {
+			case 'bss_addr': {
+				const binding = this.program.bssBindingsBySymbolHandle.get(value.symbolHandle);
+				if (!binding) {
+					throw new Error(`Static module .bss symbol '${value.symbolHandle}' was not recorded.`);
+				}
+				return binding.type.dimensions[0];
+			}
+			case 'data_addr': {
+				const binding = this.program.dataBindingsBySymbolHandle.get(value.symbolHandle);
+				if (!binding) {
+					throw new Error(`Static module .data symbol '${value.symbolHandle}' was not recorded.`);
+				}
+				return binding.type.dimensions[0];
+			}
+			case 'rodata_addr': {
+				const binding = this.program.rodataBindingsBySymbolHandle.get(value.symbolHandle);
+				if (!binding) {
+					throw new Error(`Static module .rodata symbol '${value.symbolHandle}' was not recorded.`);
+				}
+				return binding.type.dimensions[0];
+			}
+			default:
+				return undefined;
 		}
-		return binding.type.dimensions[0];
 	}
 
 	private resolveStructScalarAddress(expression: LuaExpression): StructAddress | undefined {
@@ -5173,7 +5202,7 @@ class FunctionBuilder {
 		}
 		if (expression.operator === LuaUnaryOperator.Length) {
 			const arrayLength = this.resolveStaticStorageArrayLength(expression.operand);
-			if (arrayLength) {
+			if (arrayLength !== undefined) {
 				this.emitLoadConst(target, arrayLength);
 				if (resultCount > 1) this.emitLoadNil(target + 1, resultCount - 1);
 				return;
