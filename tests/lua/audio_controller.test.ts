@@ -357,6 +357,10 @@ test('APU raw Q14 biquad has exact signed decode, wrap, saturation, and retained
 		[filter.outputLeft, filter.outputRight, filter.l1, filter.l2, filter.r1, filter.r2],
 		[0x7fff, 0x7fff, 0x3fffffff, -0x40000000, 0x3fffffff, -0x40000000],
 	);
+	assert.equal(interpolateApuPcmSample(0x7fff, -0x8000, 0), 0x7fff);
+	assert.equal(interpolateApuPcmSample(0, -1, 1), -1);
+	assert.equal(interpolateApuPcmSample(-0x8000, 0x7fff, 0xffff), 0x7ffe);
+	assert.equal(interpolateApuPcmSample(0x7fff, -0x8000, 0xffff), -0x8000);
 	assert.equal(interpolateApuPcmSample(0x7fff, -0x8000, 0x8000), -1);
 });
 

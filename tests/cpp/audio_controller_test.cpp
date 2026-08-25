@@ -754,8 +754,16 @@ void testRawBiquadDatapath() {
 	require(filter.outputLeft == 0x7fff && filter.outputRight == 0x7fff, "raw biquad output should saturate to signed 16-bit");
 	require(filter.l1 == 0x3fffffff && filter.l2 == -0x40000000 && filter.r1 == 0x3fffffff && filter.r2 == -0x40000000,
 		"raw biquad delay writes should wrap to signed 32-bit");
+	require(bmsx::interpolateApuPcmSample(0x7fff, -0x8000, 0u) == 0x7fff,
+		"zero APU interpolation phase should retain the first sample");
+	require(bmsx::interpolateApuPcmSample(0, -1, 1u) == -1,
+		"negative APU interpolation should use arithmetic Q16 extraction");
+	require(bmsx::interpolateApuPcmSample(-0x8000, 0x7fff, 0xffffu) == 0x7ffe,
+		"positive APU interpolation should preserve the full signed sample range");
+	require(bmsx::interpolateApuPcmSample(0x7fff, -0x8000, 0xffffu) == -0x8000,
+		"negative APU interpolation should preserve the full signed sample range");
 	require(bmsx::interpolateApuPcmSample(0x7fff, -0x8000, 0x8000u) == -1,
-		"APU interpolation should use exact signed Q16 arithmetic");
+		"half-phase APU interpolation should use exact signed Q16 arithmetic");
 }
 
 void testFixedPointMixerVectors() {
