@@ -4,7 +4,7 @@
 #include "spec/gx/vram.h"
 #include "render/backend/backend.h"
 #include "render/backend/pass/library.h"
-#include "render/backend/software/gx_gpu_vram.h"
+#include "render/backend/software/gx_gpu_scanout_palette.h"
 
 #include <algorithm>
 
@@ -37,12 +37,6 @@ inline u32 rawWordAtAddress(
 	return software.vram[static_cast<size_t>(address) & software.vramWordMask];
 }
 
-inline u32 rgb555Color(u32 word) {
-	return static_cast<u32>(gxGpuSoftwareRgb555ChannelTo8(word & 0x1fu))
-		| (static_cast<u32>(gxGpuSoftwareRgb555ChannelTo8((word >> 5u) & 0x1fu)) << 8u)
-		| (static_cast<u32>(gxGpuSoftwareRgb555ChannelTo8((word >> 10u) & 0x1fu)) << 16u);
-}
-
 template<u32 StoragePath>
 inline u32 circuitPixel(
 	const GxGpuSoftwareState& software,
@@ -70,12 +64,12 @@ inline u32 circuitPixel(
 		const u32 address = gxGpuLocalMemoryAddress16(
 			circuit.framebufferBaseWord, circuit.framebufferPagesPerRow, sourceX, sourceY);
 		const u32 word = rawWordAtAddress(software, address);
-		return rgb555Color(word) | ((word & 0x8000u) << 16u);
+		return GX_GPU_SOFTWARE_RGB555_RGBA[word];
 	} else if constexpr (StoragePath == GX_GPU_PCRTC_STORAGE_CT16S) {
 		const u32 address = gxGpuLocalMemoryAddress16S(
 			circuit.framebufferBaseWord, circuit.framebufferPagesPerRow, sourceX, sourceY);
 		const u32 word = rawWordAtAddress(software, address);
-		return rgb555Color(word) | ((word & 0x8000u) << 16u);
+		return GX_GPU_SOFTWARE_RGB555_RGBA[word];
 	} else if constexpr (StoragePath == GX_GPU_PCRTC_STORAGE_GPU24) {
 		const u32 first = rawWordAtAddress(software, gxGpuLocalMemoryAddressGpu24(
 			circuit.framebufferBaseWord, circuit.framebufferPagesPerRow, sourceX, sourceY, 0u));
@@ -91,7 +85,7 @@ inline u32 circuitPixel(
 			circuit.framebufferWidth,
 			sourceX,
 			sourceY));
-		return rgb555Color(word) | ((word & 0x8000u) << 16u);
+		return GX_GPU_SOFTWARE_RGB555_RGBA[word];
 	} else if constexpr (StoragePath == GX_GPU_PCRTC_STORAGE_ZERO) {
 		return 0u;
 	}
@@ -147,22 +141,22 @@ void writeGx16CircuitRows(
 				|| Operation == Gx16CircuitOperation::BlendConstantRgba) {
 				if constexpr (Operation == Gx16CircuitOperation::BlendConstantRgba) {
 					*output = blendOutputArgb(
-						*output, rgb555Color(word), scanout.blendAlpha, (word & 0x8000u) << 16u);
+						*output, GX_GPU_SOFTWARE_RGB555_RGBA[word], scanout.blendAlpha, (word & 0x8000u) << 16u);
 				} else {
 					*output = blendOutputArgb(
-						*output, rgb555Color(word), scanout.blendAlpha, *output & 0xff000000u);
+						*output, GX_GPU_SOFTWARE_RGB555_RGBA[word], scanout.blendAlpha, *output & 0xff000000u);
 				}
 			} else {
-				const u32 sourceRgb = outputArgb(rgb555Color(word));
+				const u32 sourceRgba = outputArgb(GX_GPU_SOFTWARE_RGB555_RGBA[word]);
 				if constexpr (Operation == Gx16CircuitOperation::WriteRgb) {
-					*output = sourceRgb | (*output & 0xff000000u);
+					*output = (sourceRgba & 0x00ffffffu) | (*output & 0xff000000u);
 				} else if constexpr (Operation == Gx16CircuitOperation::WriteRgba) {
-					*output = sourceRgb | ((word & 0x8000u) << 16u);
+					*output = sourceRgba;
 				} else if constexpr (Operation == Gx16CircuitOperation::BlendSourceRgb
 					|| Operation == Gx16CircuitOperation::BlendSourceRgba) {
 					const u32 sourceMask = 0u - (word >> 15u);
 					const u32 destination = *output;
-					const u32 rgb = (sourceRgb & sourceMask)
+					const u32 rgb = (sourceRgba & sourceMask & 0x00ffffffu)
 						| (destination & ~sourceMask & 0x00ffffffu);
 					if constexpr (Operation == Gx16CircuitOperation::BlendSourceRgba) {
 						*output = rgb | ((word & 0x8000u) << 16u);

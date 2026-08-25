@@ -13,14 +13,14 @@ const operations = [
 		generic: `const source = READ_PIXEL;
 			target[output] = (source & 0x00ffffff) | (target[output] & 0xff000000);`,
 		gx16: `const word = rawWordAtAddress(software, address);
-			target[output] = (rgb555Color(word) | (target[output] & 0xff000000)) >>> 0;`,
+			target[output] = (GX_GPU_SOFTWARE_RGB555_RGBA[word] & 0x00ffffff) | (target[output] & 0xff000000);`,
 	},
 	{
 		name: 'RawRgba',
 		constant: 'GX_GPU_PCRTC_SCANOUT_DRAW_RAW_RGBA',
 		generic: 'target[output] = READ_PIXEL >>> 0;',
 		gx16: `const word = rawWordAtAddress(software, address);
-			target[output] = (rgb555Color(word) | ((word & 0x8000) << 16)) >>> 0;`,
+			target[output] = GX_GPU_SOFTWARE_RGB555_RGBA[word];`,
 	},
 	{
 		name: 'RawAlpha',
@@ -40,7 +40,7 @@ const operations = [
 		gx16: `const word = rawWordAtAddress(software, address);
 			const sourceMask = -(word >>> 15);
 			const destination = target[output];
-			const rgb = (rgb555Color(word) & sourceMask) | (destination & ~sourceMask & 0x00ffffff);
+			const rgb = (GX_GPU_SOFTWARE_RGB555_RGBA[word] & sourceMask & 0x00ffffff) | (destination & ~sourceMask & 0x00ffffff);
 			target[output] = (rgb | (destination & 0xff000000)) >>> 0;`,
 	},
 	{
@@ -53,7 +53,7 @@ const operations = [
 		gx16: `const word = rawWordAtAddress(software, address);
 			const sourceMask = -(word >>> 15);
 			const destination = target[output];
-			const rgb = (rgb555Color(word) & sourceMask) | (destination & ~sourceMask & 0x00ffffff);
+			const rgb = (GX_GPU_SOFTWARE_RGB555_RGBA[word] & sourceMask & 0x00ffffff) | (destination & ~sourceMask & 0x00ffffff);
 			target[output] = (rgb | ((word & 0x8000) << 16)) >>> 0;`,
 	},
 	{
@@ -64,7 +64,7 @@ const operations = [
 			target[output] = blendOutputRgba(destination, source, blendAlpha, destination & 0xff000000);`,
 		gx16: `const word = rawWordAtAddress(software, address);
 			const destination = target[output];
-			target[output] = blendOutputRgba(destination, rgb555Color(word), blendAlpha, destination & 0xff000000);`,
+			target[output] = blendOutputRgba(destination, GX_GPU_SOFTWARE_RGB555_RGBA[word], blendAlpha, destination & 0xff000000);`,
 	},
 	{
 		name: 'BlendConstantRgba',
@@ -74,7 +74,7 @@ const operations = [
 		gx16: `const word = rawWordAtAddress(software, address);
 			target[output] = blendOutputRgba(
 				target[output],
-				rgb555Color(word),
+				GX_GPU_SOFTWARE_RGB555_RGBA[word],
 				blendAlpha,
 				(word & 0x8000) << 16,
 			);`,
@@ -227,16 +227,10 @@ import {
 } from '../../../machine/devices/gx/gpu_local_memory';
 import type { GxGpuPipelineState } from '../backend';
 import type { GxGpuSoftwareState } from './gx_gpu_state';
-import { gxGpuSoftwareRgb555ChannelTo8 } from './gx_gpu_vram';
+import { GX_GPU_SOFTWARE_RGB555_RGBA } from './gx_gpu_scanout_palette';
 
 function rawWordAtAddress(software: GxGpuSoftwareState, address: number): number {
 	return software.vram[address & software.vramWordMask];
-}
-
-function rgb555Color(word: number): number {
-	return gxGpuSoftwareRgb555ChannelTo8(word & 0x1f)
-		| (gxGpuSoftwareRgb555ChannelTo8((word >>> 5) & 0x1f) << 8)
-		| (gxGpuSoftwareRgb555ChannelTo8((word >>> 10) & 0x1f) << 16);
 }
 
 function blendOutputRgba(destination: number, source: number, blendAlpha: number, outputAlpha: number): number {
@@ -273,13 +267,13 @@ function circuitPixelCt24(software: GxGpuSoftwareState, circuit: GxGpuPcrtcCircu
 function circuitPixelCt16(software: GxGpuSoftwareState, circuit: GxGpuPcrtcCircuit, sourceX: number, sourceY: number): number {
 	const word = rawWordAtAddress(software, gxGpuLocalMemoryAddress16(
 		circuit.framebufferBaseWord, circuit.framebufferPagesPerRow, sourceX, sourceY));
-	return rgb555Color(word) | ((word & 0x8000) << 16);
+	return GX_GPU_SOFTWARE_RGB555_RGBA[word];
 }
 
 function circuitPixelCt16S(software: GxGpuSoftwareState, circuit: GxGpuPcrtcCircuit, sourceX: number, sourceY: number): number {
 	const word = rawWordAtAddress(software, gxGpuLocalMemoryAddress16S(
 		circuit.framebufferBaseWord, circuit.framebufferPagesPerRow, sourceX, sourceY));
-	return rgb555Color(word) | ((word & 0x8000) << 16);
+	return GX_GPU_SOFTWARE_RGB555_RGBA[word];
 }
 
 function circuitPixelGpu24(software: GxGpuSoftwareState, circuit: GxGpuPcrtcCircuit, sourceX: number, sourceY: number): number {
@@ -296,7 +290,7 @@ function circuitPixelGpu24(software: GxGpuSoftwareState, circuit: GxGpuPcrtcCirc
 function circuitPixelGx16(software: GxGpuSoftwareState, circuit: GxGpuPcrtcCircuit, sourceX: number, sourceY: number): number {
 	const word = rawWordAtAddress(software, gxGpuLocalMemoryAddressGx16(
 		circuit.framebufferBaseWord, circuit.framebufferWidth, sourceX, sourceY));
-	return rgb555Color(word) | ((word & 0x8000) << 16);
+	return GX_GPU_SOFTWARE_RGB555_RGBA[word];
 }
 
 ${gx16Functions}

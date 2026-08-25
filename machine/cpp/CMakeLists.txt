@@ -325,6 +325,7 @@ add_library(bmsx_host_support STATIC
 	render/backend/software/gx_gpu_commands.cpp
 	render/backend/software/gx_gpu_rasterizer.cpp
 	render/backend/software/gx_gpu_scanout.cpp
+	render/backend/software/gx_gpu_scanout_palette.cpp
 	render/backend/software/gx_gpu_vram.cpp
 	render/backend/frame_uniforms.cpp
 	render/backend/pass/library.cpp
