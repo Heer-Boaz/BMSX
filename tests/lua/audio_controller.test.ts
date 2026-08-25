@@ -115,7 +115,7 @@ import {
 	IRQ_APU,
 } from '../../machine/ts/spec/bmsx/io';
 import { AudioController } from '../../machine/ts/machine/devices/audio/controller';
-import { BiquadFilterState, configureBiquadFilter } from '../../machine/ts/machine/devices/audio/biquad_filter';
+import { BiquadFilterState } from '../../machine/ts/machine/devices/audio/biquad_filter';
 import { ApuOutputMixer } from '../../machine/ts/machine/devices/audio/output';
 import { APU_OUTPUT_RING_CAPACITY_FRAMES } from '../../machine/ts/machine/devices/audio/output_ring';
 import { interpolateApuPcmSample } from '../../machine/ts/machine/devices/audio/pcm_decoder_hot_path';
@@ -335,7 +335,7 @@ test('APU contract constants keep hardware command values', () => {
 
 test('APU raw Q14 biquad has exact signed decode, wrap, saturation, and retained delay state', () => {
 	const filter = new BiquadFilterState();
-	configureBiquadFilter(filter, 0xffff0001, 0x10002000, 0xe000f000, 0xdead0800);
+	filter.configure(0xffff0001, 0x10002000, 0xe000f000, 0xdead0800);
 	assert.equal(filter.enabled, true);
 	assert.deepEqual([filter.b0, filter.b1, filter.b2, filter.a1, filter.a2], [8192, 4096, -4096, -8192, 2048]);
 	filter.processStereo(16384, -16384);
@@ -344,7 +344,7 @@ test('APU raw Q14 biquad has exact signed decode, wrap, saturation, and retained
 		[8192, -8192, 134217728, -83886080, -134217728, 83886080],
 	);
 
-	configureBiquadFilter(filter, 0, 0x80008000, 0x80008000, 0xbeef8000);
+	filter.configure(0, 0x80008000, 0x80008000, 0xbeef8000);
 	assert.equal(filter.enabled, false);
 	assert.deepEqual([filter.l1, filter.l2, filter.r1, filter.r2], [134217728, -83886080, -134217728, 83886080]);
 

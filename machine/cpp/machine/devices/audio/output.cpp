@@ -44,12 +44,11 @@ void ApuOutputMixer::playVoice(
 ) {
 	VoiceRecord& record = m_voices[slot];
 	record.filter.reset();
-	configureRecordFilter(record, registerWords);
 	buildVoiceFromData(
 		record,
 		source,
 		sourceBytes,
-		registerWords[APU_PARAMETER_RATE_STEP_Q16_INDEX],
+		registerWords,
 		static_cast<i64>(registerWords[APU_PARAMETER_START_SAMPLE_INDEX]) * static_cast<i64>(APU_RATE_STEP_Q16_ONE),
 		0
 	);
@@ -74,11 +73,10 @@ void ApuOutputMixer::replaceVoiceSource(
 		record,
 		source,
 		sourceBytes,
-		registerWords[APU_PARAMETER_RATE_STEP_Q16_INDEX],
+		registerWords,
 		record.cursorQ16,
 		record.phaseRemainder
 	);
-	configureRecordFilter(record, registerWords);
 }
 
 void ApuOutputMixer::restoreVoice(
@@ -89,16 +87,15 @@ void ApuOutputMixer::restoreVoice(
 	const ApuOutputVoiceState& state
 ) {
 	VoiceRecord& record = m_voices[slot];
+	record.filter.reset();
 	buildVoiceFromData(
 		record,
 		source,
 		sourceBytes,
-		registerWords[APU_PARAMETER_RATE_STEP_Q16_INDEX],
+		registerWords,
 		state.cursorQ16,
 		state.phaseRemainder
 	);
-	record.filter.reset();
-	configureRecordFilter(record, registerWords);
 	restoreApuOutputVoiceState(record, state);
 	record.resident = true;
 	record.active = true;
@@ -132,7 +129,12 @@ void ApuOutputMixer::writeSlotRegisterWord(
 		case APU_PARAMETER_FILTER_B0_B1_INDEX:
 		case APU_PARAMETER_FILTER_B2_A1_INDEX:
 		case APU_PARAMETER_FILTER_A2_INDEX:
-			configureRecordFilter(record, registerWords);
+			record.filter.configure(
+				registerWords[APU_PARAMETER_FILTER_CONTROL_INDEX],
+				registerWords[APU_PARAMETER_FILTER_B0_B1_INDEX],
+				registerWords[APU_PARAMETER_FILTER_B2_A1_INDEX],
+				registerWords[APU_PARAMETER_FILTER_A2_INDEX]
+			);
 			return;
 		default:
 			return;
@@ -178,8 +180,7 @@ i64 ApuOutputMixer::samplesUntilNextEvent(i64 limit) const {
 			continue;
 		}
 		const i64 frameEndQ16 = static_cast<i64>(record.frames) * static_cast<i64>(APU_RATE_STEP_Q16_ONE);
-		i64 cursorQ16 = record.cursorQ16;
-		i32 phaseRemainder = record.phaseRemainder;
+		const i64 cursorQ16 = record.cursorQ16;
 		if (cursorQ16 < 0 || cursorQ16 >= frameEndQ16) {
 			return 1;
 		}
@@ -199,17 +200,12 @@ i64 ApuOutputMixer::samplesUntilNextEvent(i64 limit) const {
 			}
 		}
 		for (i64 sample = 1; sample <= earliest; sample += 1) {
-			phaseRemainder += record.phaseStepRemainder;
-			i32 phaseCarry = 0;
-			if (phaseRemainder >= static_cast<i32>(APU_SAMPLE_RATE_HZ)) {
-				phaseRemainder -= static_cast<i32>(APU_SAMPLE_RATE_HZ);
-				phaseCarry = 1;
-			} else if (phaseRemainder <= -static_cast<i32>(APU_SAMPLE_RATE_HZ)) {
-				phaseRemainder += static_cast<i32>(APU_SAMPLE_RATE_HZ);
-				phaseCarry = -1;
-			}
-			cursorQ16 += record.phaseStepQ16 + phaseCarry;
-			if (cursorQ16 < 0 || cursorQ16 >= frameEndQ16) {
+			const i64 phaseTotal = static_cast<i64>(record.phaseRemainder)
+				+ static_cast<i64>(record.phaseStepRemainder) * sample;
+			const i64 phaseResidual = phaseTotal % static_cast<i64>(APU_SAMPLE_RATE_HZ);
+			const i64 phaseCarry = (phaseTotal - phaseResidual) / static_cast<i64>(APU_SAMPLE_RATE_HZ);
+			const i64 predictedCursorQ16 = cursorQ16 + record.phaseStepQ16 * sample + phaseCarry;
+			if (predictedCursorQ16 < 0 || predictedCursorQ16 >= frameEndQ16) {
 				earliest = sample;
 				break;
 			}
@@ -244,6 +240,12 @@ u32 ApuOutputMixer::renderMachineBatch(size_t frameCount, i64 startSequence) {
 		}
 		const i64 framesInRecordQ16 = static_cast<i64>(record.frames) * static_cast<i64>(APU_RATE_STEP_Q16_ONE);
 		const bool hasLoop = record.loopEndQ16 > record.loopStartQ16;
+		const i64 loopStartFrame = hasLoop
+			? record.loopStartQ16 / static_cast<i64>(APU_RATE_STEP_Q16_ONE)
+			: 0;
+		const i64 loopEndFrame = hasLoop
+			? record.loopEndQ16 / static_cast<i64>(APU_RATE_STEP_Q16_ONE)
+			: 0;
 		i64 cursorQ16 = record.cursorQ16;
 		i32 phaseRemainder = record.phaseRemainder;
 		i32 gainQ12 = record.gainQ12;
@@ -256,15 +258,16 @@ u32 ApuOutputMixer::renderMachineBatch(size_t frameCount, i64 startSequence) {
 			? -1
 			: (record.fadeStepRemainder > 0 ? 1 : 0);
 		bool ended = false;
+		if (hasLoop) {
+			cursorQ16 = wrapLoopCursor(cursorQ16, record.loopStartQ16, record.loopEndQ16);
+		} else if (cursorQ16 < 0 || cursorQ16 >= framesInRecordQ16) {
+			record.active = false;
+			record.resident = false;
+			endedMask |= 1u << slot;
+			continue;
+		}
 
 		for (size_t frame = 0; frame < frameCount; frame += 1u) {
-			if (hasLoop) {
-				cursorQ16 = wrapLoopCursor(cursorQ16, record.loopStartQ16, record.loopEndQ16);
-			} else if (cursorQ16 < 0 || cursorQ16 >= framesInRecordQ16) {
-				ended = true;
-				break;
-			}
-
 			i32 leftSample = 0;
 			i32 rightSample = 0;
 			if (record.generatorKind == APU_GENERATOR_SQUARE) {
@@ -276,13 +279,13 @@ u32 ApuOutputMixer::renderMachineBatch(size_t frameCount, i64 startSequence) {
 				leftSample = sample;
 				rightSample = sample;
 			} else {
-				const i64 frameIndex = audioFrameIndex(cursorQ16);
 				const u32 fractionQ16 = static_cast<u32>(cursorQ16 % static_cast<i64>(APU_RATE_STEP_Q16_ONE));
+				const i64 frameIndex = (cursorQ16 - static_cast<i64>(fractionQ16))
+					/ static_cast<i64>(APU_RATE_STEP_Q16_ONE);
 				i64 nextFrame = frameIndex + 1;
 				if (hasLoop) {
-					const i64 loopEndFrame = record.loopEndQ16 / static_cast<i64>(APU_RATE_STEP_Q16_ONE);
 					if (nextFrame >= loopEndFrame) {
-						nextFrame = record.loopStartQ16 / static_cast<i64>(APU_RATE_STEP_Q16_ONE);
+						nextFrame = loopStartFrame;
 					}
 				} else if (nextFrame >= static_cast<i64>(record.frames)) {
 					nextFrame = frameIndex;
@@ -373,7 +376,7 @@ void ApuOutputMixer::buildVoiceFromData(
 	VoiceRecord& record,
 	const ApuAudioSource& source,
 	const ApuSourceByteView& sourceBytes,
-	u32 rateStepQ16Word,
+	const ApuParameterRegisterWords& registerWords,
 	i64 cursorQ16,
 	i32 phaseRemainder
 ) {
@@ -395,8 +398,14 @@ void ApuOutputMixer::buildVoiceFromData(
 	record.generatorDutyQ12 = source.generatorDutyQ12;
 	record.cursorQ16 = cursorQ16;
 	record.phaseRemainder = phaseRemainder;
-	configurePhaseStep(record, rateStepQ16Word, source.sampleRateHz);
+	configurePhaseStep(record, registerWords[APU_PARAMETER_RATE_STEP_Q16_INDEX], source.sampleRateHz);
 	applyVoiceLoopBounds(record, source);
+	record.filter.configure(
+		registerWords[APU_PARAMETER_FILTER_CONTROL_INDEX],
+		registerWords[APU_PARAMETER_FILTER_B0_B1_INDEX],
+		registerWords[APU_PARAMETER_FILTER_B2_A1_INDEX],
+		registerWords[APU_PARAMETER_FILTER_A2_INDEX]
+	);
 	record.usesBadp = usesBadp;
 	if (record.usesBadp) {
 		resetApuBadpDecoder(
@@ -491,16 +500,6 @@ i64 ApuOutputMixer::wrapLoopCursor(i64 cursorQ16, i64 loopStartQ16, i64 loopEndQ
 		wrapped += lengthQ16;
 	}
 	return loopStartQ16 + wrapped;
-}
-
-void ApuOutputMixer::configureRecordFilter(VoiceRecord& record, const ApuParameterRegisterWords& registerWords) {
-	configureBiquadFilter(
-		record.filter,
-		registerWords[APU_PARAMETER_FILTER_CONTROL_INDEX],
-		registerWords[APU_PARAMETER_FILTER_B0_B1_INDEX],
-		registerWords[APU_PARAMETER_FILTER_B2_A1_INDEX],
-		registerWords[APU_PARAMETER_FILTER_A2_INDEX]
-	);
 }
 
 } // namespace bmsx

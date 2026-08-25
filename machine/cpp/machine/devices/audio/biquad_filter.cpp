@@ -17,19 +17,13 @@ void BiquadFilterState::reset() {
 	outputRight = 0;
 }
 
-void configureBiquadFilter(
-	BiquadFilterState& state,
-	u32 controlWord,
-	u32 b0B1Word,
-	u32 b2A1Word,
-	u32 a2Word
-) {
-	state.enabled = (controlWord & APU_FILTER_CONTROL_ENABLE) != 0U;
-	state.b0 = lowSignedHalfword(b0B1Word);
-	state.b1 = highSignedHalfword(b0B1Word);
-	state.b2 = lowSignedHalfword(b2A1Word);
-	state.a1 = highSignedHalfword(b2A1Word);
-	state.a2 = lowSignedHalfword(a2Word);
+void BiquadFilterState::configure(u32 controlWord, u32 b0B1Word, u32 b2A1Word, u32 a2Word) {
+	enabled = (controlWord & APU_FILTER_CONTROL_ENABLE) != 0u;
+	b0 = lowSignedHalfword(b0B1Word);
+	b1 = highSignedHalfword(b0B1Word);
+	b2 = lowSignedHalfword(b2A1Word);
+	a1 = highSignedHalfword(b2A1Word);
+	a2 = lowSignedHalfword(a2Word);
 }
 
 } // namespace bmsx

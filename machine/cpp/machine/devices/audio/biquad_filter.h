@@ -20,6 +20,7 @@ struct BiquadFilterState {
 	i32 outputRight = 0;
 
 	void reset();
+	void configure(u32 controlWord, u32 b0B1Word, u32 b2A1Word, u32 a2Word);
 
 	void processStereo(i32 left, i32 right) {
 		const i32 outputL = static_cast<i32>(shiftRightSigned(
@@ -49,13 +50,5 @@ private:
 		return value;
 	}
 };
-
-void configureBiquadFilter(
-	BiquadFilterState& state,
-	u32 controlWord,
-	u32 b0B1Word,
-	u32 b2A1Word,
-	u32 a2Word
-);
 
 } // namespace bmsx

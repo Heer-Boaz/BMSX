@@ -96,7 +96,7 @@ private:
 		VoiceRecord& record,
 		const ApuAudioSource& source,
 		const ApuSourceByteView& sourceBytes,
-		u32 rateStepQ16Word,
+		const ApuParameterRegisterWords& registerWords,
 		i64 cursorQ16,
 		i32 phaseRemainder
 	);
@@ -107,7 +107,6 @@ private:
 	void seekVoice(VoiceRecord& record, u32 startFrame);
 	void readVoiceFrame(VoiceRecord& record, size_t frame);
 	static auto wrapLoopCursor(i64 cursorQ16, i64 loopStartQ16, i64 loopEndQ16) -> i64;
-	void configureRecordFilter(VoiceRecord& record, const ApuParameterRegisterWords& registerWords);
 
 	std::array<VoiceRecord, APU_SLOT_COUNT> m_voices{};
 	std::array<i64, MIX_BATCH_SAMPLES> m_mixBuffer{};

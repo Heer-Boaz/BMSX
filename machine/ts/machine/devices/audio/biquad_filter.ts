@@ -44,6 +44,15 @@ export class BiquadFilterState {
 		this.outputRight = 0;
 	}
 
+	public configure(controlWord: number, b0B1Word: number, b2A1Word: number, a2Word: number): void {
+		this.enabled = (controlWord & APU_FILTER_CONTROL_ENABLE) !== 0;
+		this.b0 = lowSignedHalfword(b0B1Word);
+		this.b1 = highSignedHalfword(b0B1Word);
+		this.b2 = lowSignedHalfword(b2A1Word);
+		this.a1 = highSignedHalfword(b2A1Word);
+		this.a2 = lowSignedHalfword(a2Word);
+	}
+
 	public processStereo(left: number, right: number): void {
 		const outputL = shiftRightSigned(this.b0 * left + this.l1, APU_FILTER_COEFFICIENT_FRACTION_BITS);
 		const outputR = shiftRightSigned(this.b0 * right + this.r1, APU_FILTER_COEFFICIENT_FRACTION_BITS);
@@ -54,19 +63,4 @@ export class BiquadFilterState {
 		this.outputLeft = saturateFilterSample(outputL);
 		this.outputRight = saturateFilterSample(outputR);
 	}
-}
-
-export function configureBiquadFilter(
-	state: BiquadFilterState,
-	controlWord: number,
-	b0B1Word: number,
-	b2A1Word: number,
-	a2Word: number,
-): void {
-	state.enabled = (controlWord & APU_FILTER_CONTROL_ENABLE) !== 0;
-	state.b0 = lowSignedHalfword(b0B1Word);
-	state.b1 = highSignedHalfword(b0B1Word);
-	state.b2 = lowSignedHalfword(b2A1Word);
-	state.a1 = highSignedHalfword(b2A1Word);
-	state.a2 = lowSignedHalfword(a2Word);
 }

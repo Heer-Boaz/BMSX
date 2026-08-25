@@ -733,7 +733,7 @@ void programConstantSquareVoice(AudioHarness& harness, bmsx::ApuAudioSlot slot, 
 
 void testRawBiquadDatapath() {
 	bmsx::BiquadFilterState filter;
-	bmsx::configureBiquadFilter(filter, 0xffff0001u, 0x10002000u, 0xe000f000u, 0xdead0800u);
+	filter.configure(0xffff0001u, 0x10002000u, 0xe000f000u, 0xdead0800u);
 	require(filter.enabled, "raw biquad control bit should enable the datapath");
 	require(filter.b0 == 8192 && filter.b1 == 4096 && filter.b2 == -4096 && filter.a1 == -8192 && filter.a2 == 2048,
 		"raw biquad coefficient halfwords should decode as signed Q14");
@@ -742,7 +742,7 @@ void testRawBiquadDatapath() {
 	require(filter.l1 == 134217728 && filter.l2 == -83886080 && filter.r1 == -134217728 && filter.r2 == 83886080,
 		"raw biquad should retain exact transposed delay words");
 
-	bmsx::configureBiquadFilter(filter, 0u, 0x80008000u, 0x80008000u, 0xbeef8000u);
+	filter.configure(0u, 0x80008000u, 0x80008000u, 0xbeef8000u);
 	require(!filter.enabled, "cleared control bit should bypass the datapath");
 	require(filter.l1 == 134217728 && filter.l2 == -83886080 && filter.r1 == -134217728 && filter.r2 == 83886080,
 		"raw coefficient writes should preserve delay words");
