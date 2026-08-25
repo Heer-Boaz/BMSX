@@ -4,7 +4,9 @@ import path from 'node:path';
 import { PNG } from 'pngjs';
 
 const screenshotDir = process.argv[2] || path.join('tests', 'carts', 'pietious', 'screenshots');
-const screenshot = PNG.sync.read(fs.readFileSync(path.join(screenshotDir, 'frame_00621.png')));
+const screenshotFiles = fs.readdirSync(screenshotDir).filter(filename => /^frame_\d+\.png$/.test(filename));
+assert.equal(screenshotFiles.length, 1, `expected one gameplay scanout, found ${screenshotFiles.length}`);
+const screenshot = PNG.sync.read(fs.readFileSync(path.join(screenshotDir, screenshotFiles[0])));
 assert.equal(screenshot.width, 256);
 assert.equal(screenshot.height, 192);
 
