@@ -9,7 +9,7 @@ local gp0<const> = require('cartlib/gx/gp0')
 local primitives<const> = require('cartlib/gx/primitives')
 local prefab<const> = require('cartlib/world/prefab')
 local story<const> = require('story')
-local gx_texture<const> = require('cartlib/gx/texture')
+local atlas<const> = require('cartlib/gx/atlas')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timelinebuilders<const> = require('timelinebuilders')
 local stagger<const> = require('stagger')
@@ -354,16 +354,18 @@ function combat.define_fsm()
 		hide_combat_visuals(self.combat_visuals)
 		local next_kind<const> = story[self.node_id].kind
 		if next_kind == 'transition' then
-			gx_texture.upload(story[story[self.node_id].next].bg)
+			atlas.load(story[story[self.node_id].next].atlas_id)
 			self.skip_transition_fade = true
 			return '/combat_done'
 		end
+		local target_node
 		if next_kind == 'fade' then
-			self.combat_exit_target_bg = story[story[self.node_id].next].bg
+			target_node = story[story[self.node_id].next]
 		else
-			self.combat_exit_target_bg = story[self.node_id].bg
+			target_node = story[self.node_id]
 		end
-		gx_texture.upload(self.combat_exit_target_bg)
+		self.combat_exit_target_bg = target_node.bg
+		atlas.load(target_node.atlas_id)
 		return '/combat_exit_fade_in'
 	end
 
@@ -453,7 +455,7 @@ function combat.define_fsm()
 			self.combat_max_points = #node.rounds
 
 			local monster<const> = self.monster
-			gx_texture.upload(node.monster_imgid)
+			atlas.load(node.atlas_id)
 			monster:set_imgid(node.monster_imgid)
 			monster.visible = false
 			monster.sprite_component.color = p3_white_color
@@ -1076,7 +1078,7 @@ function combat.define_fsm()
 			self:disable_combat_parallax()
 			clear_texts(self.texts)
 			local all_out<const> = self.all_out
-			gx_texture.upload('all_out')
+			atlas.load('all_out')
 			all_out.visible = true
 			all_out.x = 0
 			all_out.y = 0

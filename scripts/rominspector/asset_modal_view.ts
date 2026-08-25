@@ -264,9 +264,9 @@ export async function buildAssetModalView(selected: RomAsset, ctx: BuildAssetMod
 	switch (selected.type) {
 	case 'image': {
 			let imagePreview: GxDecodedImage;
-			if (imgmeta.gx_texture_resid) {
+			if (imgmeta.gx_atlas_id) {
 				const textureAsset = ctx.assetList.find(asset =>
-					asset.type === 'texture' && asset.resid === imgmeta.gx_texture_resid)!;
+					asset.type === 'texture' && asset.resid === imgmeta.gx_atlas_id)!;
 				let decodedTexture = ctx.decodedTexture.current;
 				if (!decodedTexture || decodedTexture.resid !== textureAsset.resid) {
 					decodedTexture = {

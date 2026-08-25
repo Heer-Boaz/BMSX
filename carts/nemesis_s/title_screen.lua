@@ -1,7 +1,7 @@
 local custom_visual_component<const> = require('cartlib/component/custom_visual_component')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
-local gx_texture<const> = require('cartlib/gx/texture')
+local atlas<const> = require('cartlib/gx/atlas')
 local prefab<const> = require('cartlib/world/prefab')
 local sprite_component<const> = require('cartlib/component/sprite_component')
 local sprite_object<const> = require('cartlib/sprite')
@@ -114,8 +114,7 @@ local apply_ship_position<const> = function(target, y)
 end
 
 function title_screen:enter_idle()
-	gx_texture.upload('title_screen_1')
-	gx_texture.upload('title_selector')
+	atlas.load('title')
 	self.visible = true
 	self.selected_player_count = 1
 	self:set_imgid('title_screen_1')
@@ -149,7 +148,6 @@ function title_screen:begin_selection_flash()
 end
 
 function title_screen:begin_flight()
-	gx_texture.upload('title_hangar_1')
 	self.visible = true
 	self:set_imgid('title_hangar_1')
 	self.selector.visible = false

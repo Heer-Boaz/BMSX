@@ -44,11 +44,10 @@ import {
 } from '../../toolchain/ts/rompack/system';
 import { encodeAudioAssetToAdpcm } from './adpcm';
 import { buildBlua32Image, type GeneratedLuaModule } from './blua32_image_builder';
-import { createTextureAtlas, resolveTextureGroupId } from './atlasbuilder';
+import { createTextureAtlas, resolveTextureAtlasName } from './atlasbuilder';
 import {
-	GX_SYSTEM_TEXTURE_GROUP_ID,
+	GX_SYSTEM_TEXTURE_ATLAS_NAME,
 	GX_TEXTURE_PAGE_PIXELS,
-	textureGroupResourceName,
 } from './texture_atlas_contract';
 import {
 	GX_GPU_TRANSFER_MAX_HEIGHT,
@@ -319,7 +318,7 @@ export function parseAudioMeta(filename: string) {
 export function parseImageMeta(filenameWithoutExt: string): {
 	sanitizedName: string,
 	collisionType: 'concave' | 'convex' | 'aabb',
-	targetAtlasId: number,
+	targetAtlasName: string | undefined,
 } {
 	const collisionMatch = filenameWithoutExt.match(/@(cc|cx)/i);
 	let collisionType: 'concave' | 'convex' | 'aabb' = 'aabb';
@@ -327,14 +326,14 @@ export function parseImageMeta(filenameWithoutExt: string): {
 		const code = collisionMatch[1].toLowerCase();
 		collisionType = code === 'cc' ? 'concave' : code === 'cx' ? 'convex' : 'aabb';
 	}
-	const atlasMatch = filenameWithoutExt.match(/@atlas=(\d+)/i);
-	const targetAtlasId = atlasMatch ? parseInt(atlasMatch[1], 10) : 0;
+	const atlasMatch = filenameWithoutExt.match(/@atlas=([a-z0-9_-]+)/i);
+	const targetAtlasName = atlasMatch?.[1].toLowerCase();
 
 	const sanitizedName = filenameWithoutExt
 		.replace(/@(cc|cx)/ig, '')
-		.replace(/@atlas=\d+/ig, '');
+		.replace(/@atlas=[a-z0-9_-]+/ig, '');
 
-	return { sanitizedName, collisionType, targetAtlasId };
+	return { sanitizedName, collisionType, targetAtlasName };
 }
 
 function flipPolygons(polys: Polygon[], flipH: boolean, flipV: boolean, imgW: number, imgH: number): Polygon[] {
@@ -452,11 +451,11 @@ function buildImgMetaFromCollisionBuild(res: ImageResource, collision: ImageColl
 		centerpoint: collision.centerpoint,
 		hitpolygons: collision.hitpolygons,
 	};
-	if (res.targetAtlasId === GX_SYSTEM_TEXTURE_GROUP_ID) {
+	if (res.targetAtlasName === GX_SYSTEM_TEXTURE_ATLAS_NAME) {
 		imgmeta.gx_source_x = GX_SYSTEM_TEXTURE_X + res.textureU!;
 		imgmeta.gx_source_y = GX_SYSTEM_TEXTURE_Y + res.textureV!;
 	} else {
-		imgmeta.gx_texture_resid = textureGroupResourceName(res.targetAtlasId);
+		imgmeta.gx_atlas_id = res.targetAtlasName;
 	}
 	if (res.gxPageTiles) {
 		imgmeta.gx_page_tiles = res.gxPageTiles;
@@ -687,7 +686,7 @@ export async function getResMetaList(respaths: string[], _romname?: string, opti
 	resourceFiles.sort((a, b) => a.localeCompare(b));
 
 	const result: Array<Resource> = [];
-	const targetAtlasIdSet = new Set<number>();
+	const targetAtlasNames = new Set<string>();
 	const imageNameRegistry = new Map<string, { filepath?: string }>();
 
 	let imgid = 1;
@@ -722,8 +721,12 @@ export async function getResMetaList(respaths: string[], _romname?: string, opti
 					}
 					throw new Error(`[RomPacker] Duplicate image resource "${name}" defined by "${existingImage.filepath}" and "${filepath}".`);
 				}
-				const targetAtlasId = resolveTextureGroupId(filepath, systemResourceRoots, imgMeta.targetAtlasId);
-				targetAtlasIdSet.add(targetAtlasId);
+				const targetAtlasName = resolveTextureAtlasName(
+					filepath,
+					systemResourceRoots,
+					imgMeta.targetAtlasName,
+				);
+				targetAtlasNames.add(targetAtlasName);
 				result.push({
 					filepath,
 					name,
@@ -731,7 +734,7 @@ export async function getResMetaList(respaths: string[], _romname?: string, opti
 					type,
 					id: imgid,
 					collisionType: imgMeta.collisionType,
-					targetAtlasId,
+					targetAtlasName,
 					sourcePath,
 				});
 				imageNameRegistry.set(name, { filepath });
@@ -785,14 +788,12 @@ export async function getResMetaList(respaths: string[], _romname?: string, opti
 		}
 	}
 
-	for (const id of Array.from(targetAtlasIdSet).sort((a, b) => a - b)) {
-		const name = textureGroupResourceName(id);
+	for (const name of Array.from(targetAtlasNames).sort((left, right) => left.localeCompare(right))) {
 		result.push({
 			name,
 			ext: '.atlas',
 			type: 'atlas',
 			id: imgid++,
-			atlasId: id,
 		});
 	}
 
@@ -904,8 +905,8 @@ export async function getResourcesList(resMetaList: Resource[]): Promise<Resourc
  * Processes an array of resources to produce asset metadata and allocate buffer ranges.
  *
  * This function processes each loaded resource, extracting relevant metadata and buffer data,
- * and constructs a RomAsset for each. Producer-only image packing groups are omitted;
- * each cart texture group becomes an explicit texture resource and image records refer to it by id.
+ * and constructs a RomAsset for each. Producer-only atlas records are omitted;
+ * each named cart atlas becomes an explicit texture resource and image records refer to it by id.
  * The resulting RomAsset array is used for ROM packing and serialization.
  *
  * @param resources - The array of resources to process.
@@ -919,7 +920,7 @@ export async function generateRomAssets(
 	const romAssets: RomAsset[] = [];
 	const compileErrors: string[] = [];
 	const systemAtlas = resources.find((resource): resource is TextureAtlasResource =>
-		resource.type === 'atlas' && resource.atlasId === GX_SYSTEM_TEXTURE_GROUP_ID);
+		resource.type === 'atlas' && resource.name === GX_SYSTEM_TEXTURE_ATLAS_NAME);
 	if (systemAtlas) {
 		const systemTexture = systemAtlas.gxTexture as Direct16GxTexture;
 		romAssets.push({
@@ -1110,7 +1111,7 @@ export async function generateRomAssets(
 			}
 				break;
 			case 'atlas': {
-				if (res.atlasId !== GX_SYSTEM_TEXTURE_GROUP_ID) {
+				if (res.name !== GX_SYSTEM_TEXTURE_ATLAS_NAME) {
 					const texture = res.gxTexture!;
 					const texturemeta: TextureMeta = {
 						mode: texture.mode,
@@ -1310,25 +1311,25 @@ export function buildRomBlua32Tail(
 	};
 }
 
-/** Builds producer-only image packing groups and destination-free GX texture payloads. */
+/** Builds producer-only atlases and destination-free GX texture payloads. */
 export async function createTextureAtlases(
 	resources: Resource[],
 	reportProgress?: ProgressNote,
 ): Promise<void> {
 	const atlases: TextureAtlasResource[] = [];
-	const imagesByAtlas = new Map<number, ImageResource[]>();
+	const imagesByAtlas = new Map<string, ImageResource[]>();
 	let imageCount = 0;
 	for (let resourceIndex = 0; resourceIndex < resources.length; resourceIndex += 1) {
 		const resource = resources[resourceIndex];
 		if (resource.type === 'atlas') {
 			atlases.push(resource);
 		} else if (resource.type === 'image') {
-			let groupImages = imagesByAtlas.get(resource.targetAtlasId);
-			if (groupImages == null) {
-				groupImages = [];
-				imagesByAtlas.set(resource.targetAtlasId, groupImages);
+			let atlasImages = imagesByAtlas.get(resource.targetAtlasName);
+			if (atlasImages == null) {
+				atlasImages = [];
+				imagesByAtlas.set(resource.targetAtlasName, atlasImages);
 			}
-			groupImages.push(resource);
+			atlasImages.push(resource);
 			imageCount += 1;
 		}
 	}
@@ -1337,18 +1338,18 @@ export async function createTextureAtlases(
 	}
 	for (let atlasIndex = 0; atlasIndex < atlases.length; atlasIndex += 1) {
 		const atlas = atlases[atlasIndex];
-		const groupImages = imagesByAtlas.get(atlas.atlasId)!;
-		const systemTexture = atlas.atlasId === GX_SYSTEM_TEXTURE_GROUP_ID;
+		const atlasImages = imagesByAtlas.get(atlas.name)!;
+		const systemTexture = atlas.name === GX_SYSTEM_TEXTURE_ATLAS_NAME;
 		let pageLocal = true;
-		for (let imageIndex = 0; imageIndex < groupImages.length; imageIndex += 1) {
-			const image = groupImages[imageIndex];
+		for (let imageIndex = 0; imageIndex < atlasImages.length; imageIndex += 1) {
+			const image = atlasImages[imageIndex];
 			if (image.img!.width > GX_TEXTURE_PAGE_PIXELS || image.img!.height > GX_TEXTURE_PAGE_PIXELS) {
 				pageLocal = false;
 				break;
 			}
 		}
-		reportProgress?.(`texture group ${atlas.atlasId} (${groupImages.length} images)`);
-		let canvas = createTextureAtlas(groupImages, {
+		reportProgress?.(`texture atlas ${atlas.name} (${atlasImages.length} images)`);
+		let canvas = createTextureAtlas(atlasImages, {
 			maxPixelWidth: systemTexture ? GX_SYSTEM_TEXTURE_WIDTH : GX_GPU_TRANSFER_MAX_WIDTH << 2,
 			maxHeight: systemTexture ? GX_SYSTEM_TEXTURE_HEIGHT : GX_GPU_TRANSFER_MAX_HEIGHT,
 			pageLocal,
@@ -1364,7 +1365,7 @@ export async function createTextureAtlases(
 				atlas.gxTexture = encodeDirect16GxTexture(canvas.width, canvas.height, rgba);
 				break;
 			}
-			canvas = createTextureAtlas(groupImages, {
+			canvas = createTextureAtlas(atlasImages, {
 				maxPixelWidth: GX_GPU_TRANSFER_MAX_WIDTH,
 				maxHeight: GX_GPU_TRANSFER_MAX_HEIGHT,
 				pageLocal,

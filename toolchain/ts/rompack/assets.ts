@@ -45,7 +45,7 @@ export interface ImgMeta {
 	height: number;
 	texture_u: number;
 	texture_v: number;
-	gx_texture_resid?: AssetId;
+	gx_atlas_id?: AssetId;
 	gx_source_x?: number;
 	gx_source_y?: number;
 	gx_page_tiles?: GxTexturePageTile[];

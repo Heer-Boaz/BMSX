@@ -3,8 +3,7 @@ import { resolve as resolvePath, sep as pathSep } from 'path';
 import type { GxTexturePageTile } from '../../toolchain/ts/rompack/assets';
 import type { ImageResource } from './rompacker.rompack';
 import {
-	GX_CART_TEXTURE_GROUP_ID_LIMIT,
-	GX_SYSTEM_TEXTURE_GROUP_ID,
+	GX_SYSTEM_TEXTURE_ATLAS_NAME,
 	GX_TEXTURE_PAGE_PIXELS,
 } from './texture_atlas_contract';
 
@@ -59,18 +58,22 @@ function buildTexturePageTiles(image: ImageResource, x: number, y: number): GxTe
 	return tiles;
 }
 
-export function resolveTextureGroupId(filepath: string, systemResourceRoots: readonly string[], current = 0): number {
+export function resolveTextureAtlasName(
+	filepath: string,
+	systemResourceRoots: readonly string[],
+	authoredName: string | undefined,
+): string {
 	const absolutePath = resolvePath(filepath);
 	for (let index = 0; index < systemResourceRoots.length; index += 1) {
 		const absoluteSystemRoot = resolvePath(systemResourceRoots[index]);
 		if (absolutePath === absoluteSystemRoot || absolutePath.startsWith(absoluteSystemRoot + pathSep)) {
-			return GX_SYSTEM_TEXTURE_GROUP_ID;
+			return GX_SYSTEM_TEXTURE_ATLAS_NAME;
 		}
 	}
-	if (current >= GX_CART_TEXTURE_GROUP_ID_LIMIT) {
-		throw new Error(`[RomPacker] Cart texture group id ${current} collides with reserved system texture group id ${GX_SYSTEM_TEXTURE_GROUP_ID}.`);
+	if (authoredName == null) {
+		throw new Error(`[RomPacker] Cart image '${filepath}' must declare a named @atlas=<name> residency group.`);
 	}
-	return current;
+	return authoredName;
 }
 
 function sortedImages(images: ImageResource[]): ImageResource[] {

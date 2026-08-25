@@ -11,7 +11,7 @@ if (!sourceRoot) {
 }
 const outputPath = process.argv[3] || path.join(
 	workspaceRoot,
-	'carts/nemesis_s/res/img/intro_konami@atlas=1.png',
+	'carts/nemesis_s/res/img/intro_konami@atlas=intro.png',
 );
 
 const tileSources = [

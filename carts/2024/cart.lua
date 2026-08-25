@@ -1,7 +1,7 @@
 module<entry>
 
 local gx_display<const> = require('cartlib/gx/display')
-local gx_texture<const> = require('cartlib/gx/texture')
+local atlas<const> = require('cartlib/gx/atlas')
 local vblank<const> = require('cartlib/gx/vblank')
 gx_display.reset_256x192()
 
@@ -69,8 +69,8 @@ function new_game()
 end
 
 init()
-gx_texture.upload('quiz')
-gx_texture.upload('goed')
+atlas.load('quiz')
+atlas.load('ui')
 new_game()
 vblank.wait()
 

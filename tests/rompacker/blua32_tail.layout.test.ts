@@ -74,7 +74,7 @@ test('BLua32-tail rebuild preserves immutable asset metadata addresses and bytes
 					height: 1,
 					texture_u: 0,
 					texture_v: 0,
-					gx_texture_resid: 'texture',
+					gx_atlas_id: 'texture',
 				},
 			},
 			{

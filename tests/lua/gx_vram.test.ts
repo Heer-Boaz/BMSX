@@ -52,36 +52,41 @@ return vram.configure(2)
 	assert.deepEqual(result, [0, gxGpuPair16(0, 480), gxGpuPair16(640, 480)]);
 });
 
-test('GX VRAM aligns palette residency, retains its CLUT, and reuses an explicit release', () => {
+test('GX VRAM honors two-axis alignment and reuses an explicit release', () => {
 	const result = runVram(`
 local vram<const> = require('cartlib/gx/vram')
 vram.configure(2)
-local first<const> = vram.allocate_texture(128, 192, true)
-local second<const> = vram.allocate_texture(256, 192, false)
-local first_destination<const> = first.destination
-local first_clut_destination<const> = first.clut_destination
+local first<const> = vram.allocate(128, 193, 64, 256)
+local second<const> = vram.allocate(256, 192, 256, 256)
+local first_destination<const> = first.x | (first.y << 16)
+local first_index<const> = first._allocation_index
 vram.release(first)
-local replacement<const> = vram.allocate_texture(128, 192, true)
-return first_destination, first_clut_destination, second.destination, replacement.destination
+local replacement<const> = vram.allocate(128, 193, 64, 256)
+return first_destination,
+	second.x | (second.y << 16),
+	replacement.x | (replacement.y << 16),
+	first_index,
+	replacement._allocation_index
 `, gxGpuPair16(256, 192));
 
 	assert.deepEqual(result, [
 		gxGpuPair16(512, 0),
-		gxGpuPair16(512, 192),
 		gxGpuPair16(768, 0),
 		gxGpuPair16(512, 0),
+		4,
+		5,
 	]);
 });
 
-test('GX VRAM replaces the allocation that creates a valid texture placement', () => {
+test('GX VRAM replaces the allocation that creates a valid aligned placement', () => {
 	const result = runVram(`
 local vram<const> = require('cartlib/gx/vram')
 vram.configure(1)
-local retained<const> = vram.allocate_texture(16, 8, true)
-local replaced<const> = vram.allocate_texture(640, 480, false)
-local replacement<const> = vram.replace_texture(replaced, 1024, 256, false)
-return retained.destination,
-	replacement.destination,
+local retained<const> = vram.allocate(16, 9, 64, 256)
+local replaced<const> = vram.allocate(640, 480, 256, 256)
+local replacement<const> = vram.replace(replaced, 1024, 256, 256, 256)
+return retained.x | (retained.y << 16),
+	replacement.x | (replacement.y << 16),
 	retained._allocation_index,
 	replacement._allocation_index
 `, gxGpuPair16(320, 240));

@@ -6,7 +6,7 @@ import {
 	getResourcesList,
 } from '../rompacker/rombuilder';
 import type { Resource, TextureAtlasResource } from '../rompacker/rompacker.rompack';
-import { GX_SYSTEM_TEXTURE_GROUP_ID } from '../rompacker/texture_atlas_contract';
+import { GX_SYSTEM_TEXTURE_ATLAS_NAME } from '../rompacker/texture_atlas_contract';
 
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -40,13 +40,13 @@ const GENERATED_FILE_HEADER = [
 
 function buildHostAtlasFromResources(resources: readonly Resource[]): HostAtlasBuild {
 	const atlas = resources.find((resource): resource is TextureAtlasResource => (
-		resource.type === 'atlas' && resource.atlasId === GX_SYSTEM_TEXTURE_GROUP_ID
+		resource.type === 'atlas' && resource.name === GX_SYSTEM_TEXTURE_ATLAS_NAME
 	))!;
 	const rgba = atlas.img!.getContext('2d').getImageData(0, 0, atlas.img!.width, atlas.img!.height).data;
 	const images: HostAtlasImage[] = [];
 	for (let index = 0; index < resources.length; index += 1) {
 		const resource = resources[index];
-		if (resource.type === 'image' && resource.targetAtlasId === GX_SYSTEM_TEXTURE_GROUP_ID) {
+		if (resource.type === 'image' && resource.targetAtlasName === GX_SYSTEM_TEXTURE_ATLAS_NAME) {
 			images.push({
 				id: resource.name,
 				width: resource.img!.width,

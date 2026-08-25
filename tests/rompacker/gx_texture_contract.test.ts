@@ -37,7 +37,7 @@ import {
 } from '../../machine/ts/spec/gx/gp0';
 import { layoutRomPrefix } from '../../toolchain/ts/rompack/rom_prefix_layout';
 import { buildAssetModalView } from '../../scripts/rominspector/asset_modal_view';
-import { resolveTextureGroupId } from '../../scripts/rompacker/atlasbuilder';
+import { resolveTextureAtlasName } from '../../scripts/rompacker/atlasbuilder';
 import { decodeImgDecStream, encodeImgDecStream } from '../../toolchain/ts/rompack/imgdec_codec';
 import {
 	buildRomBlua32Tail,
@@ -48,22 +48,23 @@ import {
 	parseImageMeta,
 } from '../../scripts/rompacker/rombuilder';
 import type { ImageResource, Resource, TextureAtlasResource } from '../../scripts/rompacker/rompacker.rompack';
-import {
-	GX_CART_TEXTURE_GROUP_ID_LIMIT,
-	GX_SYSTEM_TEXTURE_GROUP_ID,
-	textureGroupResourceName,
-} from '../../scripts/rompacker/texture_atlas_contract';
+import { GX_SYSTEM_TEXTURE_ATLAS_NAME } from '../../scripts/rompacker/texture_atlas_contract';
 import { SYSTEM_ROM_ASSET_OFFSET } from '../../toolchain/ts/rompack/system';
 
 const PACKED_TEXTURE_ROM_ROOT = join(process.cwd(), 'tmp', 'gx-texture-rom-contract-test');
 
-test('texture group 254 belongs exclusively to the system producer', () => {
-	assert.equal(resolveTextureGroupId('/workspace/system/font.png', ['/workspace/system']), GX_SYSTEM_TEXTURE_GROUP_ID);
-	assert.equal(resolveTextureGroupId('/workspace/cart/player.png', ['/workspace/system']), 0);
-	assert.equal(GX_CART_TEXTURE_GROUP_ID_LIMIT, GX_SYSTEM_TEXTURE_GROUP_ID);
+test('system and cart producers resolve distinct named atlases', () => {
+	assert.equal(
+		resolveTextureAtlasName('/workspace/system/font.png', ['/workspace/system'], undefined),
+		GX_SYSTEM_TEXTURE_ATLAS_NAME,
+	);
+	assert.equal(
+		resolveTextureAtlasName('/workspace/cart/player@atlas=gameplay.png', ['/workspace/system'], 'gameplay'),
+		'gameplay',
+	);
 	assert.throws(
-		() => resolveTextureGroupId('/workspace/cart/player@atlas=254.png', ['/workspace/system'], GX_SYSTEM_TEXTURE_GROUP_ID),
-		/collides with reserved system texture group id/,
+		() => resolveTextureAtlasName('/workspace/cart/player.png', ['/workspace/system'], undefined),
+		/must declare a named @atlas=<name>/,
 	);
 });
 
@@ -150,11 +151,11 @@ test('palette4 production rejects a seventeenth RGB555 STP color', () => {
 
 test('image annotations retain only semantic collision and atlas metadata', () => {
 	assert.deepEqual(
-		parseImageMeta('intro@atlas=7@cc'),
+		parseImageMeta('intro@atlas=story@cc'),
 		{
 			sanitizedName: 'intro',
 			collisionType: 'concave',
-			targetAtlasId: 7,
+			targetAtlasName: 'story',
 		},
 	);
 });
@@ -181,16 +182,15 @@ test('a packed cart texture resolves through the ROM loader, inspector, and cart
 	secondContext.fillRect(0, 0, 16, 16);
 	const group: TextureAtlasResource = {
 		type: 'atlas',
-		name: '_atlas_00',
+		name: 'story',
 		id: 1,
-		atlasId: 0,
 	};
 	const first: ImageResource = {
 		type: 'image',
 		name: 'first',
 		id: 2,
 		collisionType: 'aabb',
-		targetAtlasId: 0,
+		targetAtlasName: 'story',
 		img: firstCanvas as unknown as ImageResource['img'],
 	};
 	const second: ImageResource = {
@@ -198,7 +198,7 @@ test('a packed cart texture resolves through the ROM loader, inspector, and cart
 		name: 'second',
 		id: 3,
 		collisionType: 'aabb',
-		targetAtlasId: 0,
+		targetAtlasName: 'story',
 		img: secondCanvas as unknown as ImageResource['img'],
 	};
 	const resources: Resource[] = [group, first, second];
@@ -210,7 +210,7 @@ test('a packed cart texture resolves through the ROM loader, inspector, and cart
 	assert.deepEqual([second.textureU, second.textureV], [16, 0]);
 
 	const assets = await generateRomAssets(resources);
-	const textureId = textureGroupResourceName(0);
+	const textureId = 'story';
 	assert.deepEqual(assets.map(asset => asset.resid), [textureId, 'first', 'second']);
 	const texture = assets[0];
 	assert.equal(texture.type, 'texture');
@@ -221,8 +221,8 @@ test('a packed cart texture resolves through the ROM loader, inspector, and cart
 		texture_word_count: group.gxTexture.textureWordCount,
 		clut_word_count: group.gxTexture.clutWordCount,
 	});
-	assert.equal(assets[1].imgmeta!.gx_texture_resid, textureId);
-	assert.equal(assets[2].imgmeta!.gx_texture_resid, textureId);
+	assert.equal(assets[1].imgmeta!.gx_atlas_id, textureId);
+	assert.equal(assets[2].imgmeta!.gx_atlas_id, textureId);
 	const payloadLayout = layoutRomAssetPayloads(assets, true);
 	assert.equal(payloadLayout.entries[0].start, payloadLayout.ranges[0].start);
 	assert.equal(payloadLayout.entries[0].end, payloadLayout.ranges[0].end);
@@ -288,17 +288,17 @@ cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRES
 		);
 
 		const cartEntrySource = `module<entry>
-local texture<const> = require('cartlib/gx/texture')
+local atlas<const> = require('cartlib/gx/atlas')
 local image<const> = require('cartlib/gx/image')
 local imgdec<const> = require('cartlib/gx/imgdec')
 local vram<const> = require('cartlib/gx/vram')
 vram.configure(1)
 local first_image<const> = image.resolve('first')
 local second_image<const> = image.resolve('second')
-texture.upload('first')
+atlas.load('story')
 local allocation<const> = first_image._texture._allocation
 local first_destination<const> = imgdec.destination()
-texture.upload('second')
+atlas.load('story')
 return first_image._texture == second_image._texture and 1 or 0,
 	allocation == first_image._texture._allocation and 1 or 0,
 	imgdec.upload_count(), first_destination, imgdec.last_upload()
@@ -340,7 +340,7 @@ end
 return imgdec
 `],
 			['cartlib/gx/vram', readFileSync('cartlib/gx/vram.lua', 'utf8')],
-			['cartlib/gx/texture', readFileSync('cartlib/gx/texture.lua', 'utf8')],
+			['cartlib/gx/atlas', readFileSync('cartlib/gx/atlas.lua', 'utf8')],
 			['cartlib/gx/image', readFileSync('cartlib/gx/image.lua', 'utf8')],
 		] as const;
 		const cartExecutableSources: RomAsset[] = [{
@@ -384,8 +384,8 @@ return imgdec
 		const loadedSecond = loaded.entries.find(asset => asset.resid === second.name)!;
 		assert.equal(loadedTexture.resid, textureId);
 		assert.deepEqual(loadedTexture.texturemeta, texture.texturemeta);
-		assert.equal(loadedFirst.imgmeta!.gx_texture_resid, textureId);
-		assert.equal(loadedSecond.imgmeta!.gx_texture_resid, textureId);
+		assert.equal(loadedFirst.imgmeta!.gx_atlas_id, textureId);
+		assert.equal(loadedSecond.imgmeta!.gx_atlas_id, textureId);
 
 		const decodedTexture = {};
 		const modalContext = {

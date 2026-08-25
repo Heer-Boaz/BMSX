@@ -45,17 +45,16 @@ interface BaseResource<TType extends resourcetype> {
 export interface ImageResource extends BaseResource<'image'> {
 	id: number;
 	collisionType: collisiontype;
-	targetAtlasId: number;
+	targetAtlasName: string;
 	img?: NodeCanvasImage;
 	textureU?: number;
 	textureV?: number;
 	gxPageTiles?: GxTexturePageTile[];
 }
 
-// Rombuilder-only packing group. Its canonical texture becomes one generated ROM resource.
+// Rombuilder-only named atlas. Its canonical texture becomes one generated ROM resource.
 export interface TextureAtlasResource extends BaseResource<'atlas'> {
 	id: number;
-	atlasId: number;
 	gxTexture?: NativeGxTexture;
 	img?: Canvas;
 }

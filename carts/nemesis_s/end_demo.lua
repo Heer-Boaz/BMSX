@@ -2,7 +2,7 @@ local custom_visual_component<const> = require('cartlib/component/custom_visual_
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local font<const> = require('cartlib/font')
-local gx_texture<const> = require('cartlib/gx/texture')
+local atlas<const> = require('cartlib/gx/atlas')
 local prefab<const> = require('cartlib/world/prefab')
 local sprite_object<const> = require('cartlib/sprite')
 local text_component<const> = require('cartlib/text/text_component')
@@ -61,7 +61,6 @@ end
 local apply_slide<const> = function(target, slide_index)
 	local slide<const> = slides[slide_index]
 	target:set_imgid(slide.imgid)
-	gx_texture.upload(slide.imgid)
 	local caption<const> = target.caption
 	caption.offset_x = slide.text_x
 	caption:set_static_text(slide.text, slide.line_count)
@@ -211,7 +210,8 @@ local define_fsm<const> = function()
 			hidden = {},
 			playing = {
 				entering_state = function()
-					gx_texture.upload('font_a')
+					atlas.load('font')
+					atlas.load('end_demo')
 				end,
 				timelines = {
 					[presentation_timeline_id] = {

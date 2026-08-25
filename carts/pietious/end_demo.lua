@@ -2,7 +2,7 @@ local custom_visual_component<const> = require('cartlib/component/custom_visual_
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local font<const> = require('cartlib/font')
-local gx_texture<const> = require('cartlib/gx/texture')
+local atlas<const> = require('cartlib/gx/atlas')
 local prefab<const> = require('cartlib/world/prefab')
 local sprite_object<const> = require('cartlib/sprite')
 local text_component<const> = require('cartlib/text/text_component')
@@ -36,7 +36,7 @@ local define_end_demo_fsm<const> = function()
 			['end_demo'] = {
 				emitter = 'd',
 				go = function()
-					gx_texture.upload('end_demo')
+					atlas.load('end_demo')
 				end,
 			},
 		},

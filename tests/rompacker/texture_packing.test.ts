@@ -12,7 +12,7 @@ function imageResource(name: string, id: number, width: number, height: number):
 		name,
 		id,
 		collisionType: 'aabb',
-		targetAtlasId: 0,
+		targetAtlasName: 'test',
 		img: createCanvas(width, height) as unknown as ImageResource['img'],
 	};
 }

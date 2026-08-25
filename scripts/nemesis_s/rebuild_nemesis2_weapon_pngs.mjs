@@ -101,27 +101,27 @@ const graphic2Indices = (patterns, colors) => {
 
 // Source pattern/color records captured from the Nemesis 2 VRAM after the
 // level-three MISSILE and LASER paths at B0B4 and AD85 had been admitted.
-writeIndexedPng('napalm_missile_falling.png', 8, 8, spriteIndices(
+writeIndexedPng('napalm_missile_falling@atlas=gameplay.png', 8, 8, spriteIndices(
 	[0x10, 0x08, 0x30, 0xa4, 0x4c, 0x1e, 0x07, 0x03],
 	15,
 ), tmsPalette, 0);
-writeIndexedPng('napalm_missile_flying.png', 8, 8, spriteIndices(
+writeIndexedPng('napalm_missile_flying@atlas=gameplay.png', 8, 8, spriteIndices(
 	[0xa0, 0x6e, 0xef, 0x6e, 0xa0, 0x00, 0x00, 0x00],
 	15,
 ), tmsPalette, 0);
-writeIndexedPng('napalm_blast_1.png', 16, 16, spriteIndices([
+writeIndexedPng('napalm_blast_1@atlas=gameplay.png', 16, 16, spriteIndices([
 	0x80, 0x09, 0x00, 0x05, 0x35, 0xa1, 0x1a, 0x07,
 	0xab, 0x35, 0x0b, 0x35, 0x14, 0x63, 0x00, 0x10,
 	0x10, 0x80, 0x02, 0x00, 0x30, 0x52, 0xe0, 0xc0,
 	0xc0, 0xe0, 0xd0, 0x8c, 0x28, 0x26, 0x00, 0x40,
 ], 15), tmsPalette, 0);
-writeIndexedPng('napalm_blast_2.png', 16, 16, spriteIndices([
+writeIndexedPng('napalm_blast_2@atlas=gameplay.png', 16, 16, spriteIndices([
 	0x00, 0x04, 0x04, 0x00, 0x18, 0x19, 0x01, 0x01,
 	0x0e, 0x1f, 0x2f, 0x1f, 0x2e, 0x00, 0x00, 0x00,
 	0x00, 0x00, 0x80, 0x58, 0xfc, 0xf4, 0xf0, 0xf0,
 	0xf6, 0x26, 0x70, 0x70, 0x20, 0x80, 0x00, 0x00,
 ], 15), tmsPalette, 0);
-writeIndexedPng('extended_laser.png', 8, 8, graphic2Indices(
+writeIndexedPng('extended_laser@atlas=gameplay.png', 8, 8, graphic2Indices(
 	[0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55],
 	[0x73, 0xba, 0x54, 0x00, 0x00, 0x73, 0xba, 0x54],
 ), tmsPalette, -1);
@@ -130,14 +130,14 @@ writeIndexedPng('extended_laser.png', 8, 8, graphic2Indices(
 // The cart retains its established status-bar palette while sourcing the glyph
 // masks and weapon-level names from the original ROM.
 const statusDescriptions = [
-	[3, 'status_description_missile_1@atlas=15.png'],
-	[4, 'status_description_missile_2@atlas=15.png'],
-	[5, 'status_description_napalm@atlas=15.png'],
-	[10, 'status_description_uplaser_1@atlas=15.png'],
-	[11, 'status_description_uplaser_2@atlas=15.png'],
-	[14, 'status_description_laser_1@atlas=15.png'],
-	[15, 'status_description_laser_2@atlas=15.png'],
-	[16, 'status_description_extended_laser@atlas=15.png'],
+	[3, 'status_description_missile_1@atlas=status.png'],
+	[4, 'status_description_missile_2@atlas=status.png'],
+	[5, 'status_description_napalm@atlas=status.png'],
+	[10, 'status_description_uplaser_1@atlas=status.png'],
+	[11, 'status_description_uplaser_2@atlas=status.png'],
+	[14, 'status_description_laser_1@atlas=status.png'],
+	[15, 'status_description_laser_2@atlas=status.png'],
+	[16, 'status_description_extended_laser@atlas=status.png'],
 ];
 for (const [assetId, name] of statusDescriptions) {
 	writeIndexedPng(name, 64, 8, statusDescriptionIndices(assetId), statusDescriptionPalette, -1);

@@ -26,7 +26,7 @@ test('extractDetailedConvexPieces keeps opaque blocks on integer coordinates', (
 });
 
 test('@cc extraction on pietious jumpslash emits no triangulation warnings', async () => {
-	const filepath = join(process.cwd(), 'carts/pietious/res/img/pietolon/pietolon_jumpslash_r@cc.png');
+	const filepath = join(process.cwd(), 'carts/pietious/res/img/pietolon/pietolon_jumpslash_r@cc@atlas=gameplay.png');
 	const img = await loadImage(filepath);
 	const originalWarn = console.warn;
 	const warnings: string[] = [];

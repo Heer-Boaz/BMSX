@@ -3,7 +3,7 @@ local clock<const> = require('cartlib/clock')
 local custom_visual_component<const> = require('cartlib/component/custom_visual_component')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
-local gx_texture<const> = require('cartlib/gx/texture')
+local atlas<const> = require('cartlib/gx/atlas')
 local input_actioneffect_component<const> = require('cartlib/input/actioneffect/actioneffect_component')
 local prefab<const> = require('cartlib/world/prefab')
 local timeline<const> = require('cartlib/timeline/timeline')
@@ -138,9 +138,9 @@ function director:populate_game_start()
 	self.player_states = player_states
 	self.players = players
 	self.status_bar = status_bar
-	gx_texture.upload('status_powerup_empty')
-	gx_texture.upload('font_a')
-	gx_texture.upload('ground')
+	atlas.load('status')
+	atlas.load('font')
+	atlas.load('gameplay')
 	self.events:emit('game_start')
 end
 

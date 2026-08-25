@@ -1,6 +1,6 @@
 module<entry>
 local gx_display<const> = require('cartlib/gx/display')
-local gx_texture<const> = require('cartlib/gx/texture')
+local atlas<const> = require('cartlib/gx/atlas')
 local vblank<const> = require('cartlib/gx/vblank')
 gx_display.reset_256x192()
 local input<const> = require('cartlib/input/input')
@@ -212,8 +212,8 @@ local function init<init>()
 end
 
 init()
-gx_texture.upload('pietolon_stand_r')
-gx_texture.upload('world1_daemon_walk_1')
+atlas.load('gameplay')
+atlas.load('world1_daemon')
 new_game()
 vblank.wait()
 

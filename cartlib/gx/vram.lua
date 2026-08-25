@@ -4,19 +4,12 @@ local vram<const> = {}
 
 local vram_width<const> = 1024
 local vram_height<const> = 1024
-local texture_page_span<const> = 256
-local palette4_page_word_span<const> = 64
-local palette4_clut_word_count<const> = 16
+local system_x<const> = 704
+local system_y<const> = 720
+local system_width<const> = 320
+local system_height<const> = 304
 
-local system_reservation<const> = {
-	x = 704,
-	y = 720,
-	width = 320,
-	height = 304,
-	_allocation_index = 1,
-}
-
-local allocations<const> = { system_reservation }
+local allocations<const> = {}
 local allocation_count
 
 local align_at_or_after<const> = function(value, alignment)
@@ -30,7 +23,7 @@ local overlaps<const> = function(x, y, width, height, allocation)
 		and allocation.y < y + height
 end
 
-local allocate<const> = function(width, height, x_alignment, y_alignment, replaced)
+local place<const> = function(width, height, x_alignment, y_alignment, replaced)
 	local selected_x
 	local selected_y
 	for y_edge_index = 0, allocation_count do
@@ -80,39 +73,42 @@ local allocate<const> = function(width, height, x_alignment, y_alignment, replac
 	return allocation
 end
 
-local texture_layout<const> = function(word_width, height, palette4)
-	local width = word_width
-	local allocation_height = height
-	local x_alignment = texture_page_span
-	if palette4 then
-		if width < palette4_clut_word_count then
-			width = palette4_clut_word_count
-		end
-		allocation_height = allocation_height + 1
-		x_alignment = palette4_page_word_span
-	end
-	return width, allocation_height, x_alignment
+function vram.allocate(width, height, x_alignment, y_alignment)
+	return place(width, height, x_alignment, y_alignment, nil)
 end
 
-local finish_texture_allocation<const> = function(allocation, texture_height, palette4)
-	allocation.destination = allocation.x | (allocation.y << 16)
-	if palette4 then
-		allocation.clut_destination = allocation.x | ((allocation.y + texture_height) << 16)
-	else
-		allocation.clut_destination = 0
+function vram.reserve(x, y, width, height)
+	if x < 0 or y < 0 or x + width > vram_width or y + height > vram_height then
+		error('GX VRAM reservation exceeds the installed 1024x1024 word store.')
 	end
+	for allocation_index = 1, allocation_count do
+		if overlaps(x, y, width, height, allocations[allocation_index]) then
+			error('GX VRAM reservation overlaps an owned region.')
+		end
+	end
+	local index<const> = allocation_count + 1
+	local allocation<const> = {
+		x = x,
+		y = y,
+		width = width,
+		height = height,
+		_allocation_index = index,
+	}
+	allocations[index] = allocation
+	allocation_count = index
 	return allocation
 end
 
 function vram.configure(framebuffer_count)
-	allocation_count = 1
+	allocation_count = 0
+	vram.reserve(system_x, system_y, system_width, system_height)
 	local page_size<const> = gx_display.read_size_word()
 	local page_width<const> = page_size & 0x0000ffff
 	local page_height<const> = page_size >> 16
-	local page_1<const> = allocate(page_width, page_height, 1, 1)
+	local page_1<const> = vram.allocate(page_width, page_height, 1, 1)
 	local page_2 = page_1
 	if framebuffer_count == 2 then
-		page_2 = allocate(page_width, page_height, 1, 1)
+		page_2 = vram.allocate(page_width, page_height, 1, 1)
 	end
 	vram.page_size = page_size
 	vram.page_1 = page_1.x | (page_1.y << 16)
@@ -120,35 +116,11 @@ function vram.configure(framebuffer_count)
 	return vram.page_1, vram.page_2, page_size
 end
 
-function vram.allocate_texture(word_width, height, palette4)
-	local width<const>, allocation_height<const>, x_alignment<const> = texture_layout(
-		word_width, height, palette4)
-	local allocation<const> = allocate(
-		width,
-		allocation_height,
-		x_alignment,
-		texture_page_span,
-		nil
-	)
-	if allocation == nil then return nil end
-	return finish_texture_allocation(allocation, height, palette4)
-end
-
 -- Reuses one cache allocation only when removing that allocation creates a
 -- valid placement. Other retained allocations never need to be released just
 -- to discover whether this replacement fits.
-function vram.replace_texture(allocation, word_width, height, palette4)
-	local width<const>, allocation_height<const>, x_alignment<const> = texture_layout(
-		word_width, height, palette4)
-	local replacement<const> = allocate(
-		width,
-		allocation_height,
-		x_alignment,
-		texture_page_span,
-		allocation
-	)
-	if replacement == nil then return nil end
-	return finish_texture_allocation(replacement, height, palette4)
+function vram.replace(allocation, width, height, x_alignment, y_alignment)
+	return place(width, height, x_alignment, y_alignment, allocation)
 end
 
 function vram.release(allocation)

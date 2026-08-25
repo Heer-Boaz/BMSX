@@ -6,21 +6,21 @@ import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { runCompiledTestSystem } from '../helpers/blua32';
 import { materializeCpuCompletionValues, parseLuaChunk } from './cpu_test_harness';
 
-const textureSource = readFileSync('cartlib/gx/texture.lua', 'utf8');
+const atlasSource = readFileSync('cartlib/gx/atlas.lua', 'utf8');
 
-function runTextureResidency(entrySource: string, vramSource = `local active_count = 0
+function runAtlasResidency(entrySource: string, vramSource = `local active_count = 0
 local destination = 0
 return {
-	allocate_texture = function()
+	allocate = function()
 		if active_count == 2 then return nil end
 		active_count = active_count + 1
 		destination = destination + 0x100
 		return {
-			destination = destination,
-			clut_destination = 0,
+			x = destination,
+			y = 0,
 		}
 	end,
-	replace_texture = function()
+	replace = function()
 		return nil
 	end,
 	release = function()
@@ -33,6 +33,7 @@ return {
 			source: `return {
 	texture_mode_palette4 = 0,
 	texture_mode_direct16 = 2,
+	texture_page_span = 256,
 	draw_mode_blend_half = 1,
 }`,
 		},
@@ -62,17 +63,9 @@ local textures<const> = {
 	second = { addr = 0x2000, len = 16, texturemeta = texture_meta },
 	third = { addr = 0x3000, len = 16, texturemeta = texture_meta },
 }
-local images<const> = {
-	first = { imgmeta = { gx_texture_resid = 'first' } },
-	second = { imgmeta = { gx_texture_resid = 'second' } },
-	third = { imgmeta = { gx_texture_resid = 'third' } },
-}
 return {
 	texture = function(id)
 		return textures[id]
-	end,
-	image = function(id)
-		return images[id]
 	end,
 }`,
 		},
@@ -81,8 +74,8 @@ return {
 			source: vramSource,
 		},
 		{
-			path: 'cartlib/gx/texture',
-			source: textureSource,
+			path: 'cartlib/gx/atlas',
+			source: atlasSource,
 		},
 	].map(module => ({
 		path: module.path,
@@ -97,23 +90,23 @@ return {
 	return materializeCpuCompletionValues(runCompiledTestSystem(compiled, 1_000_000));
 }
 
-test('GX texture admission retains one allocation per atlas and evicts by upload recency', () => {
-	const result = runTextureResidency(`
-local texture<const> = require('cartlib/gx/texture')
+test('GX atlas admission retains one allocation per atlas and evicts by load recency', () => {
+	const result = runAtlasResidency(`
+local atlas<const> = require('cartlib/gx/atlas')
 local imgdec<const> = require('cartlib/gx/imgdec')
-local first<const> = texture.resolve('first')
-local second<const> = texture.resolve('second')
-local third<const> = texture.resolve('third')
+local first<const> = atlas.resolve('first')
+local second<const> = atlas.resolve('second')
+local third<const> = atlas.resolve('third')
 
-texture.upload('first')
-texture.upload('second')
-texture.upload('first')
-texture.upload('third')
+atlas.load('first')
+atlas.load('second')
+atlas.load('first')
+atlas.load('third')
 local first_after_third<const> = first._allocation ~= nil and 1 or 0
 local second_after_third<const> = second._allocation ~= nil and 1 or 0
 local third_after_third<const> = third._allocation ~= nil and 1 or 0
 
-texture.upload('second')
+atlas.load('second')
 return first_after_third,
 	second_after_third,
 	third_after_third,
@@ -126,35 +119,35 @@ return first_after_third,
 	assert.deepEqual(result, [1, 0, 1, 0, 1, 1, 4]);
 });
 
-test('GX texture admission replaces a fitting cache allocation before evicting unrelated residency', () => {
-	const result = runTextureResidency(`
-local texture<const> = require('cartlib/gx/texture')
+test('GX atlas admission replaces a fitting cache allocation before evicting unrelated residency', () => {
+	const result = runAtlasResidency(`
+local atlas<const> = require('cartlib/gx/atlas')
 local imgdec<const> = require('cartlib/gx/imgdec')
-local first<const> = texture.resolve('first')
-local second<const> = texture.resolve('second')
-local third<const> = texture.resolve('third')
+local first<const> = atlas.resolve('first')
+local second<const> = atlas.resolve('second')
+local third<const> = atlas.resolve('third')
 
-texture.upload('first')
-texture.upload('second')
-texture.upload('third')
+atlas.load('first')
+atlas.load('second')
+atlas.load('third')
 return first._allocation ~= nil and 1 or 0,
 	second._allocation ~= nil and 1 or 0,
 	third._allocation ~= nil and 1 or 0,
 	imgdec.upload_count()
 `, `local active_count = 0
 return {
-	allocate_texture = function()
+	allocate = function()
 		if active_count == 2 then return nil end
 		active_count = active_count + 1
 		return {
-			destination = active_count * 0x100,
-			clut_destination = 0,
+			x = active_count * 0x100,
+			y = 0,
 			replaceable = active_count == 2,
 		}
 	end,
-	replace_texture = function(allocation)
+	replace = function(allocation)
 		if not allocation.replaceable then return nil end
-		allocation.destination = 0x300
+		allocation.x = 0x300
 		return allocation
 	end,
 	release = function()

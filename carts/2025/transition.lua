@@ -2,7 +2,7 @@ local transition<const> = {}
 require('globals')
 local surface_component<const> = require('cartlib/component/surface_component')
 local gp0<const> = require('cartlib/gx/gp0')
-local gx_texture<const> = require('cartlib/gx/texture')
+local atlas<const> = require('cartlib/gx/atlas')
 local story<const> = require('story')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timelinebuilders<const> = require('timelinebuilders')
@@ -163,12 +163,12 @@ function transition.register_states(states)
 			reset_text_colors(self)
 			local transition_text<const> = self.text_transition
 			self.transition_center_x = transition_text.text_component.offset_x
-			self.transition_target_bg = story[node.next].bg
+			local next_node<const> = story[node.next]
+			self.transition_target_bg = next_node.bg
 			transition_text.text_component.offset_x = screen_width
 			self.transition_needs_post_fade = false
-			local next_node<const> = story[node.next]
 			if not self.skip_transition_fade and self.transition_target_bg ~= nil then
-				gx_texture.upload(self.transition_target_bg)
+				atlas.load(next_node.atlas_id)
 			end
 			local style<const> = resolve_transition_style(node, next_node.kind)
 			self.transition_style = style
@@ -367,13 +367,13 @@ function transition.register_states(states)
 			end
 			self.fade_style = resolve_transition_style(next_node, target_kind)
 			self.fade_palette = build_transition_palette(self.fade_style)
+			local target_node = next_node
 			if next_kind == 'transition' then
-				self.fade_target_bg = story[next_node.next].bg
-			else
-				self.fade_target_bg = next_node.bg
+				target_node = story[next_node.next]
 			end
+			self.fade_target_bg = target_node.bg
 			if self.fade_target_bg ~= nil then
-				gx_texture.upload(self.fade_target_bg)
+				atlas.load(target_node.atlas_id)
 			end
 			show_background(self.background, nil)
 			hide_transition_layers(self.transition_visual)

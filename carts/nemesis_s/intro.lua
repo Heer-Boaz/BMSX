@@ -2,7 +2,7 @@ local clock<const> = require('cartlib/clock')
 local custom_visual_component<const> = require('cartlib/component/custom_visual_component')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
-local gx_texture<const> = require('cartlib/gx/texture')
+local atlas<const> = require('cartlib/gx/atlas')
 local prefab<const> = require('cartlib/world/prefab')
 local sprite_object<const> = require('cartlib/sprite')
 local timeline<const> = require('cartlib/timeline/timeline')
@@ -46,7 +46,7 @@ function intro:begin()
 	local logo<const> = self.sprite_component
 	logo.visible = false
 	logo.region_height = 1
-	gx_texture.upload('intro_konami')
+	atlas.load('intro')
 end
 
 function intro:begin_reveal()

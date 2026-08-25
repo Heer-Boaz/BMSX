@@ -1,7 +1,7 @@
 local rom_dir<const> = require('cartlib/rom_dir')
 local command_list<const> = require('cartlib/gx/command_list')
 local gp0<const> = require('cartlib/gx/gp0')
-local gx_texture<const> = require('cartlib/gx/texture')
+local atlas<const> = require('cartlib/gx/atlas')
 
 local image<const> = {}
 local image_by_id<const> = {}
@@ -189,13 +189,13 @@ function image.resolve(id)
 	local source_x
 	local source_y
 	if meta.gx_source_x then
-		texture = gx_texture.fixed_direct16
-		bind_source = gx_texture.bind_fixed_source
+		texture = atlas.fixed_direct16
+		bind_source = atlas.bind_fixed_source
 		source_x = meta.gx_source_x
 		source_y = meta.gx_source_y
 	else
-		texture = gx_texture.resolve(meta.gx_texture_resid)
-		bind_source = gx_texture.bind_source
+		texture = atlas.resolve(meta.gx_atlas_id)
+		bind_source = atlas.bind_source
 		source_x = meta.texture_u
 		source_y = meta.texture_v
 	end

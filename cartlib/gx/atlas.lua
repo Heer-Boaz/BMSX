@@ -3,11 +3,15 @@ local imgdec<const> = require('cartlib/gx/imgdec')
 local rom_dir<const> = require('cartlib/rom_dir')
 local vram<const> = require('cartlib/gx/vram')
 
-local gx_texture<const> = {}
-local texture_by_id<const> = {}
+local atlas<const> = {}
+local atlas_by_id<const> = {}
 local oldest_resident
 local newest_resident
-gx_texture.fixed_direct16 = {
+local texture_page_span<const> = gp0.texture_page_span
+local palette4_page_word_span<const> = texture_page_span >> 2
+local palette4_clut_word_count<const> = 16
+
+atlas.fixed_direct16 = {
 	mode = gp0.texture_mode_direct16,
 	x = 0,
 	y = 0,
@@ -50,13 +54,23 @@ end
 -- may therefore observe old, partial or uninitialized VRAM while transfer is
 -- still in flight.
 
-function gx_texture.resolve(texture_id)
-	local texture<const> = texture_by_id[texture_id]
+function atlas.resolve(atlas_id)
+	local texture<const> = atlas_by_id[atlas_id]
 	if texture then
 		return texture
 	end
-	local resource<const> = rom_dir.texture(texture_id)
+	local resource<const> = rom_dir.texture(atlas_id)
 	local meta<const> = resource.texturemeta
+	local allocation_width = meta.word_width
+	local allocation_height = meta.height
+	local x_alignment = texture_page_span
+	if meta.mode == gp0.texture_mode_palette4 then
+		if allocation_width < palette4_clut_word_count then
+			allocation_width = palette4_clut_word_count
+		end
+		allocation_height = allocation_height + 1
+		x_alignment = palette4_page_word_span
+	end
 	local resolved<const> = {
 		source_addr = resource.addr,
 		stream_word_count = resource.len >> 2,
@@ -69,12 +83,15 @@ function gx_texture.resolve(texture_id)
 		y = 0,
 		clut_x = 0,
 		clut_y = 0,
+		_allocation_width = allocation_width,
+		_allocation_height = allocation_height,
+		_x_alignment = x_alignment,
 		_allocation = nil,
 		_sources = {},
 		_source_count = 0,
 		_draw_mode_span_bindings = {},
 	}
-	texture_by_id[texture_id] = resolved
+	atlas_by_id[atlas_id] = resolved
 	return resolved
 end
 
@@ -82,7 +99,7 @@ end
 -- refreshes those words once, before IMGDEC starts, so every renderer consumes
 -- the newly published destination directly without rebuilding page or CLUT
 -- state for each draw.
-function gx_texture.bind_source(texture, source)
+function atlas.bind_source(texture, source)
 	local source_count<const> = texture._source_count + 1
 	texture._source_count = source_count
 	texture._sources[source_count] = source
@@ -95,7 +112,7 @@ end
 
 -- Fixed BIOS atlas sources are admitted once and never need a relocation
 -- reverse-list entry.
-function gx_texture.bind_fixed_source(texture, source)
+function atlas.bind_fixed_source(texture, source)
 	refresh_direct16_source(texture, source)
 end
 
@@ -103,8 +120,8 @@ end
 -- Texture relocation refreshes the binding after its source words, so the
 -- renderer can select a uniform state writer once per run instead of comparing
 -- state for every packet. Spans crossing texture pages retain the stateful
--- writer; upload_raw may move a span between those representations.
-function gx_texture.bind_draw_mode_span(binding)
+-- writer when a resident atlas is relocated.
+function atlas.bind_draw_mode_span(binding)
 	local textures<const> = {}
 	local texture_count = 0
 	local sources<const> = binding.sources
@@ -126,7 +143,7 @@ function gx_texture.bind_draw_mode_span(binding)
 	refresh_draw_mode_span_binding(binding)
 end
 
-function gx_texture.unbind_draw_mode_span(binding)
+function atlas.unbind_draw_mode_span(binding)
 	local textures<const> = binding.textures
 	for texture_index = 1, binding.texture_count do
 		local bindings<const> = textures[texture_index]._draw_mode_span_bindings
@@ -140,16 +157,14 @@ function gx_texture.unbind_draw_mode_span(binding)
 	end
 end
 
-local resolve_image_texture<const> = function(imgid)
-	return gx_texture.resolve(rom_dir.image(imgid).imgmeta.gx_texture_resid)
-end
-
-local upload_texture<const> = function(texture, destination, clut_destination)
+local load_texture<const> = function(texture, allocation)
+	local destination<const> = allocation.x | (allocation.y << 16)
 	texture.x = destination & 0x0000ffff
 	texture.y = destination >> 16
 	local clut = 0
 	local refresh_source = refresh_direct16_source
 	if texture.mode == gp0.texture_mode_palette4 then
+		local clut_destination<const> = allocation.x | ((allocation.y + texture.height) << 16)
 		texture.clut_x = clut_destination & 0x0000ffff
 		texture.clut_y = clut_destination >> 16
 		clut = clut_destination
@@ -214,12 +229,17 @@ local evict_oldest<const> = function()
 	texture._allocation = nil
 end
 
-local replace_resident_allocation<const> = function(word_width, height, palette4)
+local replace_resident_allocation<const> = function(replacement)
 	local texture = oldest_resident
 	while texture ~= nil do
 		local next_texture<const> = texture._resident_next
-		local allocation<const> = vram.replace_texture(
-			texture._allocation, word_width, height, palette4)
+		local allocation<const> = vram.replace(
+			texture._allocation,
+			replacement._allocation_width,
+			replacement._allocation_height,
+			replacement._x_alignment,
+			texture_page_span
+		)
 		if allocation ~= nil then
 			unlink_resident(texture)
 			texture._allocation = nil
@@ -230,38 +250,34 @@ local replace_resident_allocation<const> = function(word_width, height, palette4
 	return nil
 end
 
-function gx_texture.upload(imgid)
-	local texture<const> = resolve_image_texture(imgid)
+function atlas.load(atlas_id)
+	local texture<const> = atlas.resolve(atlas_id)
 	local allocation = texture._allocation
 	if allocation ~= nil then
 		retain_recently_used(texture)
 		return
 	end
-	local palette4<const> = texture.mode == gp0.texture_mode_palette4
-	local word_width<const> = texture.word_width
-	local height<const> = texture.height
-	allocation = vram.allocate_texture(word_width, height, palette4)
+	allocation = vram.allocate(
+		texture._allocation_width,
+		texture._allocation_height,
+		texture._x_alignment,
+		texture_page_span
+	)
 	while allocation == nil do
-		allocation = replace_resident_allocation(word_width, height, palette4)
+		allocation = replace_resident_allocation(texture)
 		if allocation == nil then
 			evict_oldest()
-			allocation = vram.allocate_texture(word_width, height, palette4)
+			allocation = vram.allocate(
+				texture._allocation_width,
+				texture._allocation_height,
+				texture._x_alignment,
+				texture_page_span
+			)
 		end
 	end
 	texture._allocation = allocation
 	retain_recently_used(texture)
-	upload_texture(texture, allocation.destination, allocation.clut_destination)
+	load_texture(texture, allocation)
 end
 
-function gx_texture.upload_raw(imgid, destination, clut_destination)
-	local texture<const> = resolve_image_texture(imgid)
-	local allocation<const> = texture._allocation
-	if allocation ~= nil then
-		unlink_resident(texture)
-		vram.release(allocation)
-		texture._allocation = nil
-	end
-	upload_texture(texture, destination, clut_destination)
-end
-
-return gx_texture
+return atlas

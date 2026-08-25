@@ -764,10 +764,10 @@ it does not select executable source.
 
 The packer emits one immutable prefix: ordinary asset payload spans, per-entry
 metadata, and the manifest. It derives final TOC records from that layout
-without using build-input assets as mutable offset storage. A cart texture group
+without using build-input assets as mutable offset storage. A named cart atlas
 owns one explicit `texture` TOC entry and one compressed `IMD1` payload span.
-Each image entry owns only its image metadata, including `gx_texture_resid` and
-its local texture coordinates; images never impersonate owners of a shared
+Each image entry owns only its image metadata, including `gx_atlas_id` and its
+local texture coordinates; images never impersonate owners of a shared
 physical span. A model may still own its own auxiliary texture span as part of
 that model entry. The file writer consumes completed spans; it does not
 interpret payload kinds or publish TOC fields while performing I/O.
@@ -2926,14 +2926,14 @@ command set and are added only after the affected PSX-style behavior is fixed.
 #### Texture production and VRAM residency
 
 The ROM producer encodes images as native direct16 or palette payloads, wraps
-each cart texture group in a compressed `IMD1` stream, and emits that stream as
+each named cart atlas in a compressed `IMD1` stream, and emits that stream as
 one explicit `texture` resource. Its metadata owns `mode`, `word_width`,
 `height`, `texture_word_count` and `clut_word_count`; its ordinary TOC range owns
 the only physical payload span. Each packed image stores integer texture-local
-coordinates and a stable `gx_texture_resid` reference to that resource.
+coordinates and a stable `gx_atlas_id` reference to that resource.
 Palette placement is derived from the native texture extent rather than
-serialized as a second offset. A filename `@atlas=N` suffix is the sole producer
-grouping directive. It is removed from the `imgid`; the group produces exactly
+serialized as a second offset. A filename `@atlas=name` suffix is the sole producer
+grouping directive. It is removed from the `imgid`; the atlas produces exactly
 one destination-free texture resource and never build-time copies for physical
 slots. Packing is deterministic and evaluates compact atlas widths before
 selecting the smallest native rectangle. The producer selects palette4 only
@@ -2942,24 +2942,26 @@ it emits direct16.
 
 After the cart resets the display, its world configures one or two framebuffer
 pages from the retained display size. The GX VRAM owner allocates those pages
-and texture rectangles around the fixed bottom-right system reservation. Texture
-upload resolves an `imgid` to its shared atlas record. A resident atlas reuses
+and raw rectangles around the fixed bottom-right system reservation. The atlas
+owner converts its native texture extent into a generic VRAM allocation and
+`atlas.load(atlas_id)` admits that named resource. A resident atlas reuses
 its one allocation without another transfer; a new admission allocates or
 reuses the oldest retained allocation whose removal creates a valid placement.
 Only when no single retained allocation admits the texture does the cache purge
-in upload-recency order. Residency management does not run from draw loops and
+in load-recency order. Residency management does not run from draw loops and
 does not inspect scenes or objects. Admission
 publishes the selected coordinates and refreshes retained packet words before
 IMGDEC starts, so drawing may deliberately observe old, partial or
 uninitialized VRAM while DMA or IMGDEC is still active.
 
-DMA moves compressed ROM words and IMGDEC emits the GP0 transfer packets; a
-deliberately uncompressed native GP0 stream remains a valid direct bypass.
+DMA moves compressed ROM words and IMGDEC emits the GP0 transfer packets.
 Ordinary sprite and tile images stay within one hardware texture page. A group
 containing an explicitly oversized surface retains producer-built page records
 for that surface component; ordinary image draws never scan for possible page
-splits. Raw uploads leave managed residency and program their caller-selected
-physical destination directly. There is no cartridge VRAM-layout manifest,
+splits. Cart-owned streaming storage uses `vram.allocate` or `vram.reserve` once
+and programs the resulting physical addresses through the ordinary DMA/device
+interfaces; transfer commands do not revalidate allocator ownership. There is
+no cartridge VRAM-layout manifest,
 generated slot/presentation module, host image decoder, mapped RGBA staging
 aperture or firmware residency policy.
 

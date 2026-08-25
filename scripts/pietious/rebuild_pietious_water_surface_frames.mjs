@@ -4,7 +4,7 @@ import { PNG } from 'pngjs';
 
 const workspaceRoot = process.cwd();
 const outputDir = path.join(workspaceRoot, 'carts/pietious/res/img/castle_stuff');
-const basePath = path.join(outputDir, 'water_surface_msx.png');
+const basePath = path.join(outputDir, 'water_surface_msx@atlas=gameplay.png');
 const frameCount = 64;
 
 function readPng(filePath) {
@@ -61,7 +61,7 @@ const frame = clonePng(base);
 
 for (let tick = 1; tick < frameCount; tick++) {
 	applyMsxWaterSurfaceTick(frame, tick);
-	writePng(path.join(outputDir, `water_surface_msx_${String(tick).padStart(2, '0')}.png`), frame);
+	writePng(path.join(outputDir, `water_surface_msx_${String(tick).padStart(2, '0')}@atlas=gameplay.png`), frame);
 }
 
 applyMsxWaterSurfaceTick(frame, frameCount);
