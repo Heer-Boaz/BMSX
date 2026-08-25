@@ -79,6 +79,7 @@ beide vervangt de zichtbare targetmetingen hieronder.
 | `HOST-GX-LIVE-01` | IDE, quick menu, BIOS-terminal, `bare_metal_cart` en `2025` tonen stabiele opeenvolgende frames met correcte input, glyphs en terminalcellen, zonder flashes, zwart beeld of halve commandstreams. | WebGL2 en WebGPU; de terminal ook op GLES2. |
 | `GX-READ-01` | GPUREAD wrap, padding, fences, DREQ en zichtbare VRAM-inhoud komen live overeen met de softwarevectoren. | WebGL2, GLES2 en WebGPU. |
 | `GX-RASTER-01` | Polygonen, lijnen, clipping, textures, CLUT, mask, blend, dither en stores komen live exact overeen met software en GPUREAD. | WebGL2, GLES2 en WebGPU. |
+| `GX-CART-RESIDENCY-LIVE-01` | Doorloop atlaswissels in `2024`, `2025`, `nemesis_s` en `pietious`; framebufferpages, vaste system-VRAM, palette-CLUTs en hergebruikte cart-atlassen mogen elkaar niet zichtbaar beschadigen. | WebGL2 en GLES2; daarna echte SNES Mini. |
 | `HOST-OSK-LIVE-01` | Touch en iedere toegewezen/aangesloten controller openen en besturen quick menu en onscreen keyboard. Shift, Backspace, Delete, spatie, Enter, cursor, Home/End en lowercase/uppercase labels werken; sluiten lekt geen chord of letter naar cart, terminal of IDE. Browser-portremaps werken voor fysieke en onscreen devices zonder quick-menu-/shortcutcontrols mee te remappen. Cheat-/sealtekst kan zonder fysiek keyboard worden ingevoerd. | iPhone/browser en echte SNES Mini. |
 | `HOST-SUPERVISOR-01` | Select+L opent en sluit de terminal vanaf iedere aangesloten frontendport exact eenmaal zonder gameplayinput te lekken. | Echte SNES Mini. |
 | `PERF-03` | De op de echte target geselecteerde ARM-fetch-, NV-barrier- of dependency-copyroute rendert exact en houdt 50 Hz zonder backlog. | Windows RetroArch en echte SNES Mini. |
@@ -92,42 +93,3 @@ beide vervangt de zichtbare targetmetingen hieronder.
 | `GX-REVISION-OWNER-01` | Meerdere gelijktijdige machines of een behouden backend over machinevervanging een concrete revision-collision kan observeren. |
 | `GX-SW-01` | Een profiel op representatieve low-end ARM-hardware een concrete software-rasterizerhotspot aanwijst. |
 | `BIOS-TERM-EXT-01` | Er een concrete behoefte is en de command-, call/return- en terminal-output-ABI voor een door firmware geselecteerde developer-cartridge is ontworpen. |
-
-### `GX-CART-LAYOUT-01` — filename-driven cartridge-VRAM-layout
-
-De huidige producergrens blijft voorlopig behouden. Een imagebestand bepaalt met
-`@atlas=N` zijn atlaslidmaatschap; de rompacker verwijdert dit suffix uit het
-uiteindelijke `imgid`, bouwt de atlas en genereert de fysieke bindings.
-Gameplay gebruikt uitsluitend `imgid` en logische sourceregio's. Een
-cart-authored fysieke layout aan de ROM-buildgrens is daarmee niet hetzelfde als
-fysieke VRAM-coordinaten die naar gameplaycode lekken: zij vervult de rol van
-een linker-layout voor beperkt consolegeheugen.
-
-Een vervanging door YAML-lijsten met assets, streams, capacities of semantische
-working sets is expliciet verworpen. Die aanpak dupliceert informatie die de
-filename-driven importer al bezit en maakt de cartridgeproducer omslachtiger.
-Een toekomstige slice moet daarom het bestaande contract veld voor veld
-classificeren en alleen verkeerd eigendom of echte duplicatie verwijderen:
-
-- atlaslidmaatschap blijft filename-owned;
-- concrete atlasinhoud en afmetingen worden door rompacker en atlasbuilder
-  afgeleid;
-- de system-VRAM-reservering en GX-alignment zijn machine/tooling-owned en horen
-  niet per cartridge te worden herhaald;
-- bewuste framebufferplaatsing, slot-aliasing en gelijktijdige residency mogen
-  cart-ROM-layoutbeslissingen blijven;
-- runtime-uploadmomenten blijven gameplay-owned;
-- `gx_texture.upload(imgid)`, logische sourceregio's, `upload_raw` en directe
-  raw-GX-programmering blijven beschikbaar.
-
-Verboden oplossingsrichtingen voor deze slice zijn een runtime-VRAM-allocator,
-per-frame residencygraphs of stringmatching, een `GameView`, dubbele
-filename/YAML-assetregistratie, een legacy-dual-path en readinessguards rond
-IMGDEC. Uploadadmission mag de vooraf berekende bestemming publiceren voordat
-IMGDEC gereed is; tijdelijk ongeinitialiseerde VRAM is bedoeld hardwaregedrag.
-
-Hervatten wanneer de huidige fysieke layout opnieuw concreet producerwerk
-dupliceert of een nieuwe cartridge niet zonder handmatige coordinaten kan worden
-gepakt. Begin dan met een live inventaris van `framebuffers`, `reserved`,
-`slots`, `groups` en `working_sets`; behoud ieder veld dat een bewuste
-cartridge-linkbeslissing vertegenwoordigt.

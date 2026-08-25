@@ -1,13 +1,1 @@
 title: Sinterklaas 2024
-gx_vram_layout:
-    framebuffers:
-        - { x: 0, y: 0, width: 256, height: 192 }
-    reserved:
-        system: { x: 704, y: 720, width: 320, height: 304 }
-    slots:
-        assets:
-            texture: { x: 0, y: 256, width: 1024, height: 384 }
-    groups:
-        0: { mode: direct16, slots: [assets], page_local: true }
-    working_sets:
-        quiz: [assets]

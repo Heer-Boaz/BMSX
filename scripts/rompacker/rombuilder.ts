@@ -24,8 +24,8 @@ import { writeCartRomHeader } from '../../toolchain/ts/rompack/header_encode';
 import {
 	encodeDirect16GxTexture,
 	encodePalette4GxTexture,
+	gxTextureFitsPalette4,
 	type Direct16GxTexture,
-	type NativeGxTexture,
 } from '../../toolchain/ts/rompack/gx_texture_codec';
 import { encodeDirect16GxUpload } from '../../toolchain/ts/rompack/gp0_encode';
 import { encodeImgDecStream } from '../../toolchain/ts/rompack/imgdec_codec';
@@ -46,11 +46,14 @@ import { encodeAudioAssetToAdpcm } from './adpcm';
 import { buildBlua32Image, type GeneratedLuaModule } from './blua32_image_builder';
 import { createTextureAtlas, resolveTextureGroupId } from './atlasbuilder';
 import {
-	GX_CART_TEXTURE_GROUP_ID_LIMIT,
 	GX_SYSTEM_TEXTURE_GROUP_ID,
 	GX_TEXTURE_PAGE_PIXELS,
 	textureGroupResourceName,
 } from './texture_atlas_contract';
+import {
+	GX_GPU_TRANSFER_MAX_HEIGHT,
+	GX_GPU_TRANSFER_MAX_WIDTH,
+} from '../../machine/ts/spec/gx/gp0';
 import { BIOS_TERMINAL_GLYPHS_ASSET_ID, buildBiosTerminalGlyphTable } from './bios_terminal_font';
 import {
 	GX_SYSTEM_TEXTURE_ASSET_ID,
@@ -59,12 +62,6 @@ import {
 	GX_SYSTEM_TEXTURE_X,
 	GX_SYSTEM_TEXTURE_Y,
 } from './system_texture';
-import {
-	type GxTextureGroupLayout,
-	type GxVramLayout,
-	type GxTextureSlot,
-	validateGxVramLayout,
-} from './gx_vram_layout';
 import { BoundingBoxExtractor } from './boundingbox_extractor';
 import { collectGLTFExternalBufferFileSet, loadGLTFModel } from './gltfloader';
 import type { TextureAtlasResource, ImageResource, Resource, resourcetype } from './rompacker.rompack';
@@ -267,11 +264,7 @@ export async function getFiles(dirPath: string, arrayOfFiles?: string[], filterE
 	return array;
 }
 
-export type RomBuildManifest = RomManifest & {
-	gx_vram_layout?: GxVramLayout;
-};
-
-export async function getRomManifest(dirPath: string): Promise<RomBuildManifest | null> {
+export async function getRomManifest(dirPath: string): Promise<RomManifest | null> {
 	const files = await getFiles(dirPath, [], '.rommanifest');
 
 	if (files.length > 1) {
@@ -328,7 +321,6 @@ export function parseImageMeta(filenameWithoutExt: string): {
 	collisionType: 'concave' | 'convex' | 'aabb',
 	targetAtlasId: number,
 } {
-	// Match @cc or @cx for collision type, and @atlas=n for texture atlas assignment (order-insensitive)
 	const collisionMatch = filenameWithoutExt.match(/@(cc|cx)/i);
 	let collisionType: 'concave' | 'convex' | 'aabb' = 'aabb';
 	if (collisionMatch) {
@@ -338,7 +330,6 @@ export function parseImageMeta(filenameWithoutExt: string): {
 	const atlasMatch = filenameWithoutExt.match(/@atlas=(\d+)/i);
 	const targetAtlasId = atlasMatch ? parseInt(atlasMatch[1], 10) : 0;
 
-	// Remove all @cc, @cx, and @atlas=n (in any order)
 	const sanitizedName = filenameWithoutExt
 		.replace(/@(cc|cx)/ig, '')
 		.replace(/@atlas=\d+/ig, '');
@@ -796,7 +787,13 @@ export async function getResMetaList(respaths: string[], _romname?: string, opti
 
 	for (const id of Array.from(targetAtlasIdSet).sort((a, b) => a - b)) {
 		const name = textureGroupResourceName(id);
-		result.push({ name, ext: '.atlas', type: 'atlas', id: imgid++, atlasId: id });
+		result.push({
+			name,
+			ext: '.atlas',
+			type: 'atlas',
+			id: imgid++,
+			atlasId: id,
+		});
 	}
 
 	result.sort((left, right) => {
@@ -1313,114 +1310,67 @@ export function buildRomBlua32Tail(
 	};
 }
 
-function textureGroupBuild(
-	groupId: number,
-	layout?: GxVramLayout,
-): { group: GxTextureGroupLayout; slots: GxTextureSlot[]; maxPixelWidth: number; maxHeight: number } {
-	if (groupId === GX_SYSTEM_TEXTURE_GROUP_ID) {
-		return {
-			group: { mode: 'direct16', slots: [], page_local: true },
-			slots: [],
-			maxPixelWidth: GX_SYSTEM_TEXTURE_WIDTH,
-			maxHeight: GX_SYSTEM_TEXTURE_HEIGHT,
-		};
-	}
-	if (groupId >= GX_CART_TEXTURE_GROUP_ID_LIMIT) {
-		throw new Error(`[RomPacker] Cart texture group id ${groupId} collides with reserved system texture group id ${GX_SYSTEM_TEXTURE_GROUP_ID}.`);
-	}
-	if (!layout) {
-		throw new Error(`[RomPacker] Cart images require a gx_vram_layout in the ROM manifest.`);
-	}
-	const group = layout.groups[String(groupId)];
-	if (!group) {
-		throw new Error(`[RomPacker] GX texture group ${groupId} has no entry in gx_vram_layout.groups.`);
-	}
-	const slots = group.slots.map(slotName => layout.slots[slotName]);
-	let maxWordWidth = slots[0].texture.width;
-	let maxHeight = slots[0].texture.height;
-	for (let slotIndex = 1; slotIndex < slots.length; slotIndex += 1) {
-		const slot = slots[slotIndex];
-		if (slot.texture.width < maxWordWidth) maxWordWidth = slot.texture.width;
-		if (slot.texture.height < maxHeight) maxHeight = slot.texture.height;
-	}
-	return {
-		group,
-		slots,
-		maxPixelWidth: group.mode === 'palette4' ? maxWordWidth * 4 : maxWordWidth,
-		maxHeight,
-	};
-}
-
-function assertTextureFitsSlots(
-	groupId: number,
-	group: GxTextureGroupLayout,
-	slots: GxTextureSlot[],
-	texture: NativeGxTexture,
-	images: ImageResource[],
-): void {
-	for (let slotIndex = 0; slotIndex < slots.length; slotIndex += 1) {
-		const slot = slots[slotIndex];
-		if (texture.wordWidth > slot.texture.width || texture.height > slot.texture.height) {
-			throw new Error(`[RomPacker] GX texture group ${groupId} does not fit slot '${group.slots[slotIndex]}'.`);
-		}
-		if (!group.page_local) {
-			continue;
-		}
-		for (let imageIndex = 0; imageIndex < images.length; imageIndex += 1) {
-			const image = images[imageIndex];
-			const sourceX = group.mode === 'palette4' ? image.textureU! : slot.texture.x + image.textureU!;
-			const sourceY = slot.texture.y + image.textureV!;
-			if ((sourceX & 0xff) + image.img!.width > GX_TEXTURE_PAGE_PIXELS
-				|| (sourceY & 0xff) + image.img!.height > GX_TEXTURE_PAGE_PIXELS) {
-				throw new Error(`[RomPacker] GX image '${image.name}' crosses a texture page in slot '${group.slots[slotIndex]}'.`);
-			}
-		}
-	}
-}
-
 /** Builds producer-only image packing groups and destination-free GX texture payloads. */
 export async function createTextureAtlases(
 	resources: Resource[],
-	layout?: GxVramLayout,
 	reportProgress?: ProgressNote,
 ): Promise<void> {
-	const atlases = resources.filter((resource): resource is TextureAtlasResource => resource.type === 'atlas');
-	const images = resources.filter((resource): resource is ImageResource => resource.type === 'image');
-	if (images.length === 0) {
-		return;
+	const atlases: TextureAtlasResource[] = [];
+	const imagesByAtlas = new Map<number, ImageResource[]>();
+	let imageCount = 0;
+	for (let resourceIndex = 0; resourceIndex < resources.length; resourceIndex += 1) {
+		const resource = resources[resourceIndex];
+		if (resource.type === 'atlas') {
+			atlases.push(resource);
+		} else if (resource.type === 'image') {
+			let groupImages = imagesByAtlas.get(resource.targetAtlasId);
+			if (groupImages == null) {
+				groupImages = [];
+				imagesByAtlas.set(resource.targetAtlasId, groupImages);
+			}
+			groupImages.push(resource);
+			imageCount += 1;
+		}
 	}
-	if (layout) {
-		validateGxVramLayout(layout);
+	if (imageCount === 0) {
+		return;
 	}
 	for (let atlasIndex = 0; atlasIndex < atlases.length; atlasIndex += 1) {
 		const atlas = atlases[atlasIndex];
-		const groupImages = images.filter(image => image.targetAtlasId === atlas.atlasId);
-		const build = textureGroupBuild(atlas.atlasId, layout);
-		reportProgress?.(`texture group ${atlas.atlasId} (${groupImages.length} images)`);
-		const canvas = createTextureAtlas(groupImages, {
-			maxPixelWidth: build.maxPixelWidth,
-			maxHeight: build.maxHeight,
-			pageLocal: build.group.page_local,
-		});
-		atlas.img = canvas;
-		const rgba = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
-		let texture: NativeGxTexture;
-		if (atlas.atlasId === GX_SYSTEM_TEXTURE_GROUP_ID) {
-			texture = encodeDirect16GxTexture(canvas.width, canvas.height, rgba);
-		} else {
-			texture = build.group.mode === 'palette4'
-				? encodePalette4GxTexture(canvas.width, canvas.height, rgba)
-				: encodeDirect16GxTexture(canvas.width, canvas.height, rgba);
-		}
-		atlas.gxTexture = texture;
-		assertTextureFitsSlots(atlas.atlasId, build.group, build.slots, texture, groupImages);
-	}
-	if (layout) {
-		for (const groupId of Object.keys(layout.groups)) {
-			if (!atlases.some(atlas => atlas.atlasId === Number(groupId))) {
-				throw new Error(`[RomPacker] gx_vram_layout.groups.${groupId} has no images.`);
+		const groupImages = imagesByAtlas.get(atlas.atlasId)!;
+		const systemTexture = atlas.atlasId === GX_SYSTEM_TEXTURE_GROUP_ID;
+		let pageLocal = true;
+		for (let imageIndex = 0; imageIndex < groupImages.length; imageIndex += 1) {
+			const image = groupImages[imageIndex];
+			if (image.img!.width > GX_TEXTURE_PAGE_PIXELS || image.img!.height > GX_TEXTURE_PAGE_PIXELS) {
+				pageLocal = false;
+				break;
 			}
 		}
+		reportProgress?.(`texture group ${atlas.atlasId} (${groupImages.length} images)`);
+		let canvas = createTextureAtlas(groupImages, {
+			maxPixelWidth: systemTexture ? GX_SYSTEM_TEXTURE_WIDTH : GX_GPU_TRANSFER_MAX_WIDTH << 2,
+			maxHeight: systemTexture ? GX_SYSTEM_TEXTURE_HEIGHT : GX_GPU_TRANSFER_MAX_HEIGHT,
+			pageLocal,
+		});
+		while (true) {
+			const context = canvas.getContext('2d');
+			const rgba = context.getImageData(0, 0, canvas.width, canvas.height).data;
+			if (!systemTexture && gxTextureFitsPalette4(rgba)) {
+				atlas.gxTexture = encodePalette4GxTexture(canvas.width, canvas.height, rgba);
+				break;
+			}
+			if (systemTexture || canvas.width <= GX_GPU_TRANSFER_MAX_WIDTH) {
+				atlas.gxTexture = encodeDirect16GxTexture(canvas.width, canvas.height, rgba);
+				break;
+			}
+			canvas = createTextureAtlas(groupImages, {
+				maxPixelWidth: GX_GPU_TRANSFER_MAX_WIDTH,
+				maxHeight: GX_GPU_TRANSFER_MAX_HEIGHT,
+				pageLocal,
+			});
+		}
+		atlas.img = canvas;
 	}
 }
 

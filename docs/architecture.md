@@ -2932,20 +2932,36 @@ one explicit `texture` resource. Its metadata owns `mode`, `word_width`,
 the only physical payload span. Each packed image stores integer texture-local
 coordinates and a stable `gx_texture_resid` reference to that resource.
 Palette placement is derived from the native texture extent rather than
-serialized as a second offset. A filename `@atlas=N` suffix is only a producer
-packing-group directive: its numeric value is not serialized into the image ABI
-and is not visible to BIOS, GPU or DMA.
+serialized as a second offset. A filename `@atlas=N` suffix is the sole producer
+grouping directive. It is removed from the `imgid`; the group produces exactly
+one destination-free texture resource and never build-time copies for physical
+slots. Packing is deterministic and evaluates compact atlas widths before
+selecting the smallest native rectangle. The producer selects palette4 only
+when the complete atlas has at most sixteen distinct RGB555/STP words; otherwise
+it emits direct16.
 
-Each cart declares physical VRAM destinations, reserved regions and simultaneous
-working sets in `gx_vram_layout`. The producer validates the complete layout.
-The generated presentation and texture-placement records do not expose manifest
-slot names to cart code. DMA moves compressed ROM words and IMGDEC emits the GP0
-transfer packets; a deliberately uncompressed native GP0 stream remains a
-valid direct bypass. Ordinary sprite/tile images stay within one hardware
-texture page. Explicit large image groups are producer-partitioned into
-retained page-local records; firmware never discovers or splits image pages at
-draw time. There is no runtime semantic slot manager, scene-aware firmware
-policy, host image decoder or mapped RGBA staging aperture.
+After the cart resets the display, its world configures one or two framebuffer
+pages from the retained display size. The GX VRAM owner allocates those pages
+and texture rectangles around the fixed bottom-right system reservation. Texture
+upload resolves an `imgid` to its shared atlas record. A resident atlas reuses
+its one allocation without another transfer; a new admission allocates or
+reuses the oldest retained allocation whose removal creates a valid placement.
+Only when no single retained allocation admits the texture does the cache purge
+in upload-recency order. Residency management does not run from draw loops and
+does not inspect scenes or objects. Admission
+publishes the selected coordinates and refreshes retained packet words before
+IMGDEC starts, so drawing may deliberately observe old, partial or
+uninitialized VRAM while DMA or IMGDEC is still active.
+
+DMA moves compressed ROM words and IMGDEC emits the GP0 transfer packets; a
+deliberately uncompressed native GP0 stream remains a valid direct bypass.
+Ordinary sprite and tile images stay within one hardware texture page. A group
+containing an explicitly oversized surface retains producer-built page records
+for that surface component; ordinary image draws never scan for possible page
+splits. Raw uploads leave managed residency and program their caller-selected
+physical destination directly. There is no cartridge VRAM-layout manifest,
+generated slot/presentation module, host image decoder, mapped RGBA staging
+aperture or firmware residency policy.
 
 #### Accelerated backend execution
 
@@ -3479,7 +3495,7 @@ code reads those packed words as physical system-texture coordinates and emits
 ordinary GP0 textured rectangles; it does not inspect an atlas layout. Tiny is the only
 standard font in the BIOS resource package. The MSX 6-pixel font is an
 aesthetic cart/host asset, not a machine or BIOS primitive: carts that want that
-style ship the glyph resources, reserve their own VRAM slot and define the font
+style ship the glyph resources, group them in a cart atlas and define the font
 explicitly. Firmware retains no compatibility alias, automatic MSX resource
 inclusion, or missing-glyph fallback into the removed set.
 

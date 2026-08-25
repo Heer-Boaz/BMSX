@@ -1,7 +1,7 @@
 local dialogue<const> = {}
 require('globals')
 local story<const> = require('story')
-local texture_residency<const> = require('texture_residency')
+local gx_texture<const> = require('cartlib/gx/texture')
 local stagger<const> = require('stagger')
 local input<const> = require('cartlib/input/input')
 local gameplay_clock<const> = require('cartlib/clock').gameplay
@@ -84,7 +84,7 @@ function dialogue.register_states(states)
 			show_background(self.background, node.bg)
 			local next_background<const> = background_at_or_after(node.next)
 			if next_background ~= node.bg then
-				texture_residency.preload_background(next_background)
+				gx_texture.upload(next_background)
 			end
 			hide_combat_visuals(self.combat_visuals)
 			clear_texts(self.texts)
@@ -111,7 +111,7 @@ function dialogue.register_states(states)
 			if node.kind ~= 'dialogue_inline' then
 				local next_background<const> = background_at_or_after(node.next)
 				if next_background ~= node.bg then
-					texture_residency.preload_background(next_background)
+					gx_texture.upload(next_background)
 				end
 			end
 			reset_text_colors(self)
@@ -329,7 +329,7 @@ function dialogue.register_states(states)
 					local option<const> = node.options[self.choice_index]
 					local next_background<const> = background_at_or_after(option.next)
 					if next_background ~= node.bg then
-						texture_residency.preload_background(next_background)
+						gx_texture.upload(next_background)
 					end
 					self:apply_effects(option.effects)
 					self.inline_pages = option.result_pages

@@ -29,11 +29,15 @@ import {
 	decodeGxTextureImage,
 	encodeDirect16GxTexture,
 	encodePalette4GxTexture,
+	gxTextureFitsPalette4,
 } from '../../toolchain/ts/rompack/gx_texture_codec';
+import {
+	GX_GPU_TEXTURE_MODE_PALETTE4,
+	gxGpuPair16,
+} from '../../machine/ts/spec/gx/gp0';
 import { layoutRomPrefix } from '../../toolchain/ts/rompack/rom_prefix_layout';
 import { buildAssetModalView } from '../../scripts/rominspector/asset_modal_view';
 import { resolveTextureGroupId } from '../../scripts/rompacker/atlasbuilder';
-import { buildPresentationConfigModuleSource, buildTextureBindingsModuleSource, validateGxVramLayout, type GxVramLayout } from '../../scripts/rompacker/gx_vram_layout';
 import { decodeImgDecStream, encodeImgDecStream } from '../../toolchain/ts/rompack/imgdec_codec';
 import {
 	buildRomBlua32Tail,
@@ -41,6 +45,7 @@ import {
 	createTextureAtlases,
 	finalizeRompack,
 	generateRomAssets,
+	parseImageMeta,
 } from '../../scripts/rompacker/rombuilder';
 import type { ImageResource, Resource, TextureAtlasResource } from '../../scripts/rompacker/rompacker.rompack';
 import {
@@ -48,25 +53,9 @@ import {
 	GX_SYSTEM_TEXTURE_GROUP_ID,
 	textureGroupResourceName,
 } from '../../scripts/rompacker/texture_atlas_contract';
-import {
-	GX_SYSTEM_VRAM_HEIGHT,
-	GX_SYSTEM_VRAM_WIDTH,
-	GX_SYSTEM_VRAM_X,
-	GX_SYSTEM_VRAM_Y,
-} from '../../scripts/rompacker/system_texture';
 import { SYSTEM_ROM_ASSET_OFFSET } from '../../toolchain/ts/rompack/system';
-import { TEXTURE_BINDINGS_MODULE_PATH } from '../../toolchain/ts/rompack/generated_modules';
 
 const PACKED_TEXTURE_ROM_ROOT = join(process.cwd(), 'tmp', 'gx-texture-rom-contract-test');
-
-const GX_SYSTEM_VRAM_RESERVATION = {
-	system: {
-		x: GX_SYSTEM_VRAM_X,
-		y: GX_SYSTEM_VRAM_Y,
-		width: GX_SYSTEM_VRAM_WIDTH,
-		height: GX_SYSTEM_VRAM_HEIGHT,
-	},
-};
 
 test('texture group 254 belongs exclusively to the system producer', () => {
 	assert.equal(resolveTextureGroupId('/workspace/system/font.png', ['/workspace/system']), GX_SYSTEM_TEXTURE_GROUP_ID);
@@ -159,161 +148,26 @@ test('palette4 production rejects a seventeenth RGB555 STP color', () => {
 	);
 });
 
-test('GX layout validation rejects overlapping slots in one cart-authored working set', () => {
-	const layout: GxVramLayout = {
-		framebuffers: [],
-		reserved: GX_SYSTEM_VRAM_RESERVATION,
-		slots: {
-			left: { texture: { x: 0, y: 256, width: 128, height: 128 } },
-			right: { texture: { x: 64, y: 256, width: 128, height: 128 } },
+test('image annotations retain only semantic collision and atlas metadata', () => {
+	assert.deepEqual(
+		parseImageMeta('intro@atlas=7@cc'),
+		{
+			sanitizedName: 'intro',
+			collisionType: 'concave',
+			targetAtlasId: 7,
 		},
-		groups: {},
-		working_sets: { scene: ['left', 'right'] },
-	};
-	assert.throws(
-		() => validateGxVramLayout(layout),
-		/working set 'scene' overlaps slots 'left' and 'right'/,
 	);
 });
 
-test('presentation config emits one physical page as both display and draw page', () => {
-	const layout: GxVramLayout = {
-		framebuffers: [
-			{ x: 32, y: 16, width: 320, height: 240 },
-		],
-		reserved: GX_SYSTEM_VRAM_RESERVATION,
-		slots: {},
-		groups: {},
-		working_sets: {},
-	};
-	validateGxVramLayout(layout);
-	const source = buildPresentationConfigModuleSource(layout);
-	assert.match(source, /display_page = 1048608/);
-	assert.match(source, /draw_page = 1048608/);
-	assert.match(source, /page_size = 15728960/);
-	assert.doesNotMatch(source, /framebuffer|page_count/);
-});
-
-test('presentation config emits distinct physical display and draw pages', () => {
-	const layout: GxVramLayout = {
-		framebuffers: [
-			{ x: 0, y: 0, width: 256, height: 192 },
-			{ x: 256, y: 0, width: 256, height: 192 },
-		],
-		reserved: GX_SYSTEM_VRAM_RESERVATION,
-		slots: {},
-		groups: {},
-		working_sets: {},
-	};
-	validateGxVramLayout(layout);
-	const source = buildPresentationConfigModuleSource(layout);
-	assert.match(source, /display_page = 0/);
-	assert.match(source, /draw_page = 256/);
-	assert.match(source, /page_size = 12583168/);
-	assert.doesNotMatch(source, /framebuffer|page_count/);
-});
-
-test('GX layout validation rejects excessive or differently sized display page sets', () => {
-	assert.throws(
-		() => validateGxVramLayout({
-			framebuffers: [
-				{ x: 0, y: 0, width: 256, height: 192 },
-				{ x: 256, y: 0, width: 256, height: 192 },
-				{ x: 512, y: 0, width: 256, height: 192 },
-			],
-			reserved: GX_SYSTEM_VRAM_RESERVATION,
-			slots: {},
-			groups: {},
-			working_sets: {},
-		}),
-		/supports at most two display framebuffers/,
-	);
-	assert.throws(
-		() => validateGxVramLayout({
-			framebuffers: [
-				{ x: 0, y: 0, width: 256, height: 192 },
-				{ x: 256, y: 0, width: 320, height: 192 },
-			],
-			reserved: GX_SYSTEM_VRAM_RESERVATION,
-			slots: {},
-			groups: {},
-			working_sets: {},
-		}),
-		/must have identical dimensions/,
-	);
-});
-
-test('GX layout validation rejects texture storage outside physical VRAM', () => {
-	const layout: GxVramLayout = {
-		framebuffers: [],
-		reserved: GX_SYSTEM_VRAM_RESERVATION,
-		slots: {
-		main: { texture: { x: 1024, y: 0, width: 1, height: 1 } },
-		},
-		groups: {},
-		working_sets: {},
-	};
-	assert.throws(
-		() => validateGxVramLayout(layout),
-		/outside 1024x1024 VRAM/,
-	);
-});
-
-test('GX layout validation rejects a palette4 CLUT that cannot be encoded exactly', () => {
-	const layout: GxVramLayout = {
-		framebuffers: [],
-		reserved: GX_SYSTEM_VRAM_RESERVATION,
-		slots: {
-			main: {
-				texture: { x: 512, y: 256, width: 128, height: 128 },
-				clut: { x: 513, y: 448, width: 16, height: 1 },
-			},
-		},
-		groups: {
-			0: { mode: 'palette4', slots: ['main'], page_local: true },
-		},
-		working_sets: {},
-	};
-	assert.throws(
-		() => validateGxVramLayout(layout),
-		/not aligned for a PSX texture page and 16-word CLUT/,
-	);
-});
-
-test('GX layout validation reserves the system group id from cart manifests', () => {
-	const layout: GxVramLayout = {
-		framebuffers: [],
-		reserved: GX_SYSTEM_VRAM_RESERVATION,
-		slots: {
-			main: { texture: { x: 0, y: 256, width: 256, height: 256 } },
-		},
-		groups: {
-			254: { mode: 'direct16', slots: ['main'], page_local: true },
-		},
-		working_sets: {},
-	};
-	assert.throws(
-		() => validateGxVramLayout(layout),
-		/not a cart texture group id below 254/,
-	);
-});
-
-test('GX layout validation rejects unknown texture modes at the manifest boundary', () => {
-	const layout = {
-		framebuffers: [],
-		reserved: GX_SYSTEM_VRAM_RESERVATION,
-		slots: {
-			main: { texture: { x: 0, y: 256, width: 256, height: 256 } },
-		},
-		groups: {
-			0: { mode: 'rgb777', slots: ['main'], page_local: true },
-		},
-		working_sets: {},
-	} as unknown as GxVramLayout;
-	assert.throws(
-		() => validateGxVramLayout(layout),
-		/unknown mode 'rgb777'/,
-	);
+test('palette4 admission is selected only when the native GX palette is lossless', () => {
+	const rgba = new Uint8ClampedArray(17 * 4);
+	for (let color = 0; color < 17; color += 1) {
+		const offset = color * 4;
+		rgba[offset] = color << 3;
+		rgba[offset + 3] = 0xff;
+	}
+	assert.equal(gxTextureFitsPalette4(rgba.subarray(0, 16 * 4)), true);
+	assert.equal(gxTextureFitsPalette4(rgba), false);
 });
 
 test('a packed cart texture resolves through the ROM loader, inspector, and cart library', async () => {
@@ -348,22 +202,10 @@ test('a packed cart texture resolves through the ROM loader, inspector, and cart
 		img: secondCanvas as unknown as ImageResource['img'],
 	};
 	const resources: Resource[] = [group, first, second];
-	const layout: GxVramLayout = {
-		framebuffers: [],
-		reserved: GX_SYSTEM_VRAM_RESERVATION,
-		slots: {
-			main: { texture: { x: 64, y: 256, width: 256, height: 256 } },
-		},
-		groups: {
-			0: { mode: 'direct16', slots: ['main'], page_local: true },
-		},
-		working_sets: {
-			main: ['main'],
-		},
-	};
 
-	await createTextureAtlases(resources, layout);
+	await createTextureAtlases(resources);
 	assert.ok(group.gxTexture);
+	assert.equal(group.gxTexture.mode, GX_GPU_TEXTURE_MODE_PALETTE4);
 	assert.deepEqual([first.textureU, first.textureV], [0, 0]);
 	assert.deepEqual([second.textureU, second.textureV], [16, 0]);
 
@@ -449,24 +291,35 @@ cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRES
 local texture<const> = require('cartlib/gx/texture')
 local image<const> = require('cartlib/gx/image')
 local imgdec<const> = require('cartlib/gx/imgdec')
+local vram<const> = require('cartlib/gx/vram')
+vram.configure(1)
 local first_image<const> = image.resolve('first')
 local second_image<const> = image.resolve('second')
 texture.upload('first')
-return first_image._texture == second_image._texture and 1 or 0, imgdec.last_upload()
+local allocation<const> = first_image._texture._allocation
+local first_destination<const> = imgdec.destination()
+texture.upload('second')
+return first_image._texture == second_image._texture and 1 or 0,
+	allocation == first_image._texture._allocation and 1 or 0,
+	imgdec.upload_count(), first_destination, imgdec.last_upload()
 `;
 		const cartModuleSources = [
-			[TEXTURE_BINDINGS_MODULE_PATH, buildTextureBindingsModuleSource(layout)],
 			['cartlib/memory', readFileSync('cartlib/memory.lua', 'utf8')],
 			['string/float/decode', readFileSync('machine/bios/string/float/decode.lua', 'utf8')],
 			['cartlib/bin', readFileSync('cartlib/bin.lua', 'utf8')],
 			['cartlib/rom_dir', readFileSync('cartlib/rom_dir.lua', 'utf8')],
-			['cartlib/gx/gpu', 'return { texture_mode_palette4 = 0 }'],
+			['cartlib/gx/display', `return {
+	read_size_word = function()
+		return ${gxGpuPair16(320, 240)}
+	end,
+}`],
 			['cartlib/gx/gp0', readFileSync('cartlib/gx/gp0.lua', 'utf8')],
 			['cartlib/gx/command_list', 'return { blit = function() end }'],
-			['cartlib/gx/imgdec', `
-local imgdec<const> = {}
+			['cartlib/gx/imgdec', `local imgdec<const> = {}
+local count = 0
 local source_addr, source_word_count, texture_word_count, clut_word_count, destination, size, clut_destination = 0, 0, 0, 0, 0, 0, 0
 function imgdec.upload(source, source_words, texture_words, clut_words, target, target_size, clut_target)
+	count = count + 1
 	source_addr = source
 	source_word_count = source_words
 	texture_word_count = texture_words
@@ -478,8 +331,15 @@ end
 function imgdec.last_upload()
 	return source_addr, source_word_count, texture_word_count, clut_word_count, destination, size, clut_destination
 end
+function imgdec.upload_count()
+	return count
+end
+function imgdec.destination()
+	return destination
+end
 return imgdec
 `],
+			['cartlib/gx/vram', readFileSync('cartlib/gx/vram.lua', 'utf8')],
 			['cartlib/gx/texture', readFileSync('cartlib/gx/texture.lua', 'utf8')],
 			['cartlib/gx/image', readFileSync('cartlib/gx/image.lua', 'utf8')],
 		] as const;
@@ -550,17 +410,22 @@ return imgdec
 		cpu.reset();
 		cpu.installBootPrimitives();
 		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+		const textureDestination = gxGpuPair16(320, 0);
+		const clutDestination = gxGpuPair16(320, 16);
 		assert.deepEqual(materializeCpuCompletionValues(cpu).map(value => (value as number) >>> 0), [
 			1,
+			1,
+			1,
+			textureDestination,
 			CART_ROM_BASE + loadedTexture.start!,
 			(loadedTexture.end! - loadedTexture.start!) >> 2,
 			loadedTexture.texturemeta!.texture_word_count,
 			loadedTexture.texturemeta!.clut_word_count,
-			0x01000040,
+			textureDestination,
 			loadedTexture.texturemeta!.word_width | (loadedTexture.texturemeta!.height << 16),
-			0,
+			clutDestination,
 		]);
-		} finally {
-			await rm(PACKED_TEXTURE_ROM_ROOT, { recursive: true, force: true });
-		}
-	});
+	} finally {
+		await rm(PACKED_TEXTURE_ROM_ROOT, { recursive: true, force: true });
+	}
+});

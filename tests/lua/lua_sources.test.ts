@@ -1,21 +1,11 @@
-import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
-import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { encodeBinary } from '../../machine/ts/common/serializer/binencoder';
-import { RomSourceStack, type RawRomSource } from '../../toolchain/ts/rompack/source';
-import {
-	CART_ROM_HEADER_MAGIC_OFFSET,
-	CART_ROM_HEADER_SIZE,
-	CART_ROM_MAGIC,
-} from '../../machine/ts/spec/bmsx/rom_package';
+import type { RawRomSource } from '../../toolchain/ts/rompack/source';
 import {
 	BLUA32_FIRMWARE_MODULE_PATH,
 	BLUA32_FIRMWARE_SOURCE_PATH,
 	ROM_ASSET_SYMBOL_MODULE_PATH,
-	TEXTURE_BINDINGS_MODULE_PATH,
-	TEXTURE_BINDINGS_SOURCE_PATH,
 } from '../../toolchain/ts/rompack/generated_modules';
 import { BLUA32_FIRMWARE_MODULE_SOURCE } from '../../toolchain/ts/rompack/blua32_firmware_module';
 import type {
@@ -24,23 +14,14 @@ import type {
 } from '../../toolchain/ts/rompack/assets';
 import type { RomImageDomain } from '../../machine/ts/rompack/image';
 import { buildLuaSources } from '../../ide/runtime/source_registry';
-import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
-import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import { BLUA32_IMAGE_ID } from '../../toolchain/ts/rompack/blua32_image';
-import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
-import { Memory } from '../../machine/ts/machine/memory/memory';
 import { toLuaModulePath } from '../../toolchain/ts/lua/module_path';
-import { parseCartridgeIndex } from '../../toolchain/ts/rompack/loader';
 import {
 	ROM_TOC_HEADER_SIZE,
 	ROM_TOC_INVALID_U32,
 } from '../../machine/ts/spec/bmsx/rom_toc';
 import { decodeRomToc } from '../../machine/ts/rompack/toc';
 import { encodeRomToc } from '../../toolchain/ts/rompack/toc_encode';
-import { buildTextureBindingsModuleSource, type GxVramLayout } from '../../scripts/rompacker/gx_vram_layout';
-import { linkTestSystemBlua32 } from '../helpers/blua32';
-import { materializeCpuCompletionValues, parseLuaChunk } from './cpu_test_harness';
 
 const textEncoder = new TextEncoder();
 
@@ -116,15 +97,12 @@ function luaEntry(resid: string, sourcePath: string, payloadId: RomImageDomain, 
 test('buildLuaSources registers real Lua assets in one pass', () => {
 	const cartEntry = luaEntry('main', 'cart.lua', 'cart', 11);
 	const activeEntry = luaEntry('main', 'cart.lua', 'cart', 22);
-	const generatedEntry = luaEntry(TEXTURE_BINDINGS_MODULE_PATH, TEXTURE_BINDINGS_SOURCE_PATH, 'cart', 0);
 	const systemEntry = luaEntry('sys', 'kernel/interrupts.lua', 'system', 0);
-	const cartSource = new TestRomSource([cartEntry, generatedEntry], {
+	const cartSource = new TestRomSource([cartEntry], {
 		main: 'module<entry>\nreturn 1',
-		[TEXTURE_BINDINGS_MODULE_PATH]: 'return { source_addr = 1 }',
 	});
-	const activeSource = new TestRomSource([activeEntry, generatedEntry, systemEntry], {
+	const activeSource = new TestRomSource([activeEntry, systemEntry], {
 		main: 'module<entry>\nreturn 2',
-		[TEXTURE_BINDINGS_MODULE_PATH]: 'return { source_addr = 1 }',
 		sys: 'return 3',
 	});
 
@@ -137,7 +115,6 @@ test('buildLuaSources registers real Lua assets in one pass', () => {
 	assert.equal(record.module_path, 'cart');
 	assert.equal(record.update_timestamp, 22);
 	assert.equal(record.generated, false);
-	assert.equal(registry.module2lua[TEXTURE_BINDINGS_MODULE_PATH].generated, true);
 	assert.equal(registry.module2lua[ROM_ASSET_SYMBOL_MODULE_PATH].generated, true);
 	assert.equal(registry.module2lua.cart, record);
 	assert.equal(registry.path2lua['kernel/interrupts.lua'], undefined);
@@ -164,89 +141,6 @@ test('system source registry retains the BLua32 compile-time firmware module', (
 	assert.equal(firmware.source_path, BLUA32_FIRMWARE_SOURCE_PATH);
 	assert.equal(firmware.src, BLUA32_FIRMWARE_MODULE_SOURCE);
 	assert.equal(firmware.generated, true);
-});
-
-test('debug package source boot resolves the persisted texture bindings module', async () => {
-	const layout: GxVramLayout = {
-		framebuffers: [],
-		reserved: {},
-		slots: {
-			scene: { texture: { x: 64, y: 256, width: 128, height: 128 } },
-		},
-		groups: {
-			0: { mode: 'direct16', slots: ['scene'], page_local: true },
-		},
-		working_sets: {
-			gameplay: ['scene'],
-		},
-	};
-	const cartSource = [
-		'module<entry>',
-		`local texture_bindings<const> = require('${TEXTURE_BINDINGS_MODULE_PATH}')`,
-		'return texture_bindings.placement_pools[1][1]',
-	].join('\n');
-	const layoutSource = buildTextureBindingsModuleSource(layout);
-	const cartBytes = textEncoder.encode(cartSource);
-	const layoutBytes = textEncoder.encode(layoutSource);
-	const cartStart = CART_ROM_HEADER_SIZE;
-	const layoutStart = cartStart + cartBytes.byteLength;
-	const cartEntry: RomAsset = {
-		...luaEntry('cart', 'cart.lua', 'cart', 1),
-		start: cartStart,
-		end: layoutStart,
-	};
-	const layoutEntry: RomAsset = {
-		...luaEntry(TEXTURE_BINDINGS_MODULE_PATH, TEXTURE_BINDINGS_SOURCE_PATH, 'cart', 0),
-		start: layoutStart,
-		end: layoutStart + layoutBytes.byteLength,
-	};
-	const manifest = encodeBinary({ title: 'Source Boot Test' });
-	const manifestStart = layoutStart + layoutBytes.byteLength;
-	const toc = encodeRomToc({ entries: [cartEntry, layoutEntry], projectRootPath: 'carts/source_boot_test' });
-	const tocStart = manifestStart + manifest.byteLength;
-	const payload = new Uint8Array(tocStart + toc.byteLength);
-	payload.set(cartBytes, cartStart);
-	payload.set(layoutBytes, layoutStart);
-	payload.set(manifest, manifestStart);
-	payload.set(toc, tocStart);
-	const header = new DataView(payload.buffer);
-	header.setUint32(CART_ROM_HEADER_MAGIC_OFFSET, CART_ROM_MAGIC, true);
-	header.setUint32(4, CART_ROM_HEADER_SIZE, true);
-	header.setUint32(8, manifestStart, true);
-	header.setUint32(12, manifest.byteLength, true);
-	header.setUint32(16, tocStart, true);
-	header.setUint32(20, toc.byteLength, true);
-	header.setUint32(24, CART_ROM_HEADER_SIZE, true);
-	header.setUint32(28, cartBytes.byteLength + layoutBytes.byteLength, true);
-	const index = await parseCartridgeIndex(payload);
-	const source = new RomSourceStack([{ id: 'cart', index, bytes: payload }]);
-	const registry = buildLuaSources(source, source, index, 'cart');
-	const entryRecord = registry.module2lua.cart;
-	const modules = registry.records
-		.filter(record => record !== entryRecord)
-		.map(record => ({
-			path: record.module_path,
-			chunk: parseLuaChunk(record.src, record.source_path),
-			source: record.src,
-		}));
-	const compiled = compileLuaChunkToProgram(
-		parseLuaChunk(entryRecord.src, entryRecord.source_path),
-		modules,
-			{
-				entrySource: entryRecord.src,
-				optLevel: 3,
-				programDomain: 'system',
-			},
-	);
-	const image = linkTestSystemBlua32(compiled);
-	const memory = new Memory({ systemRom: image.romBytes, cartridgeSlots: cartridgeSlots(payload) }, PSX_MACHINE_SPEC.ramBytes);
-	const executionAddressSpace = new ExecutionAddressSpace(memory);
-	const cpu = new CPU(memory, new IrqController(memory), executionAddressSpace);
-	cpu.reset();
-
-	assert.equal(registry.module2lua[TEXTURE_BINDINGS_MODULE_PATH].src, layoutSource);
-	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [64 | (256 << 16)]);
 });
 
 test('ROM TOC decode gives Lua assets an explicit zero update timestamp', () => {

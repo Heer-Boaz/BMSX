@@ -9,7 +9,7 @@ local gp0<const> = require('cartlib/gx/gp0')
 local primitives<const> = require('cartlib/gx/primitives')
 local prefab<const> = require('cartlib/world/prefab')
 local story<const> = require('story')
-local texture_residency<const> = require('texture_residency')
+local gx_texture<const> = require('cartlib/gx/texture')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timelinebuilders<const> = require('timelinebuilders')
 local stagger<const> = require('stagger')
@@ -354,7 +354,7 @@ function combat.define_fsm()
 		hide_combat_visuals(self.combat_visuals)
 		local next_kind<const> = story[self.node_id].kind
 		if next_kind == 'transition' then
-			texture_residency.replace_background(story[story[self.node_id].next].bg)
+			gx_texture.upload(story[story[self.node_id].next].bg)
 			self.skip_transition_fade = true
 			return '/combat_done'
 		end
@@ -363,7 +363,7 @@ function combat.define_fsm()
 		else
 			self.combat_exit_target_bg = story[self.node_id].bg
 		end
-		texture_residency.replace_background(self.combat_exit_target_bg)
+		gx_texture.upload(self.combat_exit_target_bg)
 		return '/combat_exit_fade_in'
 	end
 
@@ -453,7 +453,7 @@ function combat.define_fsm()
 			self.combat_max_points = #node.rounds
 
 			local monster<const> = self.monster
-			texture_residency.load_combat_workset(node.monster_imgid)
+			gx_texture.upload(node.monster_imgid)
 			monster:set_imgid(node.monster_imgid)
 			monster.visible = false
 			monster.sprite_component.color = p3_white_color
@@ -1076,7 +1076,7 @@ function combat.define_fsm()
 			self:disable_combat_parallax()
 			clear_texts(self.texts)
 			local all_out<const> = self.all_out
-			texture_residency.load_all_out()
+			gx_texture.upload('all_out')
 			all_out.visible = true
 			all_out.x = 0
 			all_out.y = 0

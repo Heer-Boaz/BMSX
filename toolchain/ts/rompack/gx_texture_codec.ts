@@ -47,6 +47,22 @@ function rgbaToDirect16(r: number, g: number, b: number, a: number): number {
 	return (r >> 3) | ((g >> 3) << 5) | ((b >> 3) << 10) | 0x8000;
 }
 
+export function gxTextureFitsPalette4(rgba: Uint8ClampedArray): boolean {
+	const palette = new Set<number>();
+	for (let pixelOffset = 0; pixelOffset < rgba.length; pixelOffset += 4) {
+		palette.add(rgbaToDirect16(
+			rgba[pixelOffset],
+			rgba[pixelOffset + 1],
+			rgba[pixelOffset + 2],
+			rgba[pixelOffset + 3],
+		));
+		if (palette.size > GX_GPU_CLUT_4BIT_WORDS) {
+			return false;
+		}
+	}
+	return true;
+}
+
 export function encodeDirect16GxTexture(
 	width: number,
 	height: number,

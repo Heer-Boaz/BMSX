@@ -1,25 +1,18 @@
 local gp0<const> = require('cartlib/gx/gp0')
 local imgdec<const> = require('cartlib/gx/imgdec')
 local rom_dir<const> = require('cartlib/rom_dir')
-local texture_bindings<const> = require('bmsx/texture_bindings')
+local vram<const> = require('cartlib/gx/vram')
 
 local gx_texture<const> = {}
 local texture_by_id<const> = {}
+local oldest_resident
+local newest_resident
 gx_texture.fixed_direct16 = {
 	mode = gp0.texture_mode_direct16,
 	x = 0,
 	y = 0,
 	_draw_mode_span_bindings = {},
 }
-local binding_pools<const> = {}
-local placement_pools<const> = texture_bindings.placement_pools
-for pool_index = 1, #placement_pools do
-	binding_pools[pool_index] = {
-		placement_words = placement_pools[pool_index],
-		next_index = 1,
-	}
-end
-
 local refresh_direct16_source<const> = function(texture, source)
 	local source_x<const> = texture.x + source.source_x
 	local source_y<const> = texture.y + source.source_y
@@ -76,7 +69,7 @@ function gx_texture.resolve(texture_id)
 		y = 0,
 		clut_x = 0,
 		clut_y = 0,
-		binding_pool = binding_pools[texture_bindings.pool_index_by_texture[texture_id]],
+		_allocation = nil,
 		_sources = {},
 		_source_count = 0,
 		_draw_mode_span_bindings = {},
@@ -180,18 +173,95 @@ local upload_texture<const> = function(texture, destination, clut_destination)
 		clut)
 end
 
+local unlink_resident<const> = function(texture)
+	local previous<const> = texture._resident_previous
+	local next_texture<const> = texture._resident_next
+	if previous == nil then
+		oldest_resident = next_texture
+	else
+		previous._resident_next = next_texture
+	end
+	if next_texture == nil then
+		newest_resident = previous
+	else
+		next_texture._resident_previous = previous
+	end
+	texture._resident_previous = nil
+	texture._resident_next = nil
+end
+
+local retain_recently_used<const> = function(texture)
+	if texture == newest_resident then return end
+	if texture._resident_previous ~= nil or texture == oldest_resident then
+		unlink_resident(texture)
+	end
+	texture._resident_previous = newest_resident
+	if newest_resident == nil then
+		oldest_resident = texture
+	else
+		newest_resident._resident_next = texture
+	end
+	newest_resident = texture
+end
+
+local evict_oldest<const> = function()
+	local texture<const> = oldest_resident
+	if texture == nil then
+		error('GX texture does not fit the installed 1024x1024 word store.')
+	end
+	unlink_resident(texture)
+	vram.release(texture._allocation)
+	texture._allocation = nil
+end
+
+local replace_resident_allocation<const> = function(word_width, height, palette4)
+	local texture = oldest_resident
+	while texture ~= nil do
+		local next_texture<const> = texture._resident_next
+		local allocation<const> = vram.replace_texture(
+			texture._allocation, word_width, height, palette4)
+		if allocation ~= nil then
+			unlink_resident(texture)
+			texture._allocation = nil
+			return allocation
+		end
+		texture = next_texture
+	end
+	return nil
+end
+
 function gx_texture.upload(imgid)
 	local texture<const> = resolve_image_texture(imgid)
-	local pool<const> = texture.binding_pool
-	local placement_words<const> = pool.placement_words
-	local placement_index<const> = pool.next_index
-	local next_index<const> = placement_index + 2
-	pool.next_index = next_index > #placement_words and 1 or next_index
-	upload_texture(texture, placement_words[placement_index], placement_words[placement_index + 1])
+	local allocation = texture._allocation
+	if allocation ~= nil then
+		retain_recently_used(texture)
+		return
+	end
+	local palette4<const> = texture.mode == gp0.texture_mode_palette4
+	local word_width<const> = texture.word_width
+	local height<const> = texture.height
+	allocation = vram.allocate_texture(word_width, height, palette4)
+	while allocation == nil do
+		allocation = replace_resident_allocation(word_width, height, palette4)
+		if allocation == nil then
+			evict_oldest()
+			allocation = vram.allocate_texture(word_width, height, palette4)
+		end
+	end
+	texture._allocation = allocation
+	retain_recently_used(texture)
+	upload_texture(texture, allocation.destination, allocation.clut_destination)
 end
 
 function gx_texture.upload_raw(imgid, destination, clut_destination)
-	upload_texture(resolve_image_texture(imgid), destination, clut_destination)
+	local texture<const> = resolve_image_texture(imgid)
+	local allocation<const> = texture._allocation
+	if allocation ~= nil then
+		unlink_resident(texture)
+		vram.release(allocation)
+		texture._allocation = nil
+	end
+	upload_texture(texture, destination, clut_destination)
 end
 
 return gx_texture

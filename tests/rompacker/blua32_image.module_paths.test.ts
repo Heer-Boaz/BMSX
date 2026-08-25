@@ -2,17 +2,17 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
-	TEXTURE_BINDINGS_MODULE_PATH,
-	TEXTURE_BINDINGS_SOURCE_PATH,
+	ROM_ASSET_SYMBOL_MODULE_PATH,
+	ROM_ASSET_SYMBOL_SOURCE_PATH,
 } from '../../toolchain/ts/rompack/generated_modules';
 import type { RomAsset } from '../../toolchain/ts/rompack/assets';
 import { SYSTEM_ROM_ASSET_OFFSET } from '../../toolchain/ts/rompack/system';
 import { buildRomBlua32Tail, compileLuaChunkBuffer } from '../../scripts/rompacker/rombuilder';
 
-test('BLua32 image rejects a cart Lua module that collides with persisted texture bindings', () => {
+test('BLua32 image rejects a cart Lua module that collides with generated asset symbols', () => {
 	const entrySource = 'module<entry>\nreturn true';
-	const cartLayoutSource = 'return { scene = 1 }';
-	const generatedLayoutSource = 'return { scene = 2 }';
+	const cartAssetSource = 'return { scene = 1 }';
+	const generatedAssetSource = 'return { scene = 2 }';
 	const assets: RomAsset[] = [
 		{
 			resid: 'cart',
@@ -22,23 +22,19 @@ test('BLua32 image rejects a cart Lua module that collides with persisted textur
 			source_path: 'cart.lua',
 		},
 		{
-			resid: 'cart_layout',
+			resid: 'cart_assets',
 			type: 'lua',
-			buffer: Buffer.from(cartLayoutSource),
-			compiled_buffer: compileLuaChunkBuffer(cartLayoutSource, TEXTURE_BINDINGS_MODULE_PATH),
-			source_path: TEXTURE_BINDINGS_SOURCE_PATH,
-		},
-		{
-			resid: TEXTURE_BINDINGS_MODULE_PATH,
-			type: 'lua',
-			buffer: Buffer.from(generatedLayoutSource),
-			compiled_buffer: compileLuaChunkBuffer(generatedLayoutSource, TEXTURE_BINDINGS_MODULE_PATH),
-			source_path: TEXTURE_BINDINGS_SOURCE_PATH,
+			buffer: Buffer.from(cartAssetSource),
+			compiled_buffer: compileLuaChunkBuffer(cartAssetSource, ROM_ASSET_SYMBOL_MODULE_PATH),
+			source_path: ROM_ASSET_SYMBOL_SOURCE_PATH,
 		},
 	];
 	assert.throws(
 		() => buildRomBlua32Tail(assets, {
-			generatedLuaModules: [],
+			generatedLuaModules: [{
+				path: ROM_ASSET_SYMBOL_MODULE_PATH,
+				source: generatedAssetSource,
+			}],
 			includeSymbols: true,
 			optLevel: 3,
 			systemAssetEndOffset: SYSTEM_ROM_ASSET_OFFSET,
@@ -46,6 +42,6 @@ test('BLua32 image rejects a cart Lua module that collides with persisted textur
 			ramByteCount: 0x00400000,
 			biosExports: [],
 		}),
-		/ROM Lua module 'bmsx\/texture_bindings' is defined more than once/,
+		/Generated Lua module 'bmsx\/assets' conflicts with a ROM Lua asset/,
 	);
 });

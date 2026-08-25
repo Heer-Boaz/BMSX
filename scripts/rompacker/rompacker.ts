@@ -12,19 +12,14 @@ import { findExistingDirectory, getParamOrEnv, normalizePathKey, parseArgsVector
 import { createCliUi } from '../lib/cli_ui';
 import { compileAudioEventResources } from './audioeventcompiler';
 import { lintCartSources } from './cart_lua_linter_runtime';
-import { biosSourcePath, BLUA32_SYMBOLS_SIDECAR_SUFFIX, buildRomBlua32Tail, biosResPath, cartlibLuaPath, compileLuaChunkBuffer, createTextureAtlases, finalizeRompack, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired } from './rombuilder';
-import { buildPresentationConfigModuleSource, buildTextureBindingsModuleSource } from './gx_vram_layout';
+import { biosSourcePath, BLUA32_SYMBOLS_SIDECAR_SUFFIX, buildRomBlua32Tail, biosResPath, cartlibLuaPath, createTextureAtlases, finalizeRompack, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired } from './rombuilder';
 import type { TaskProgressReporter as ProgressReporter } from '../lib/task_progress';
 import type { RomPackerOptions } from './rompacker.rompack';
 import { buildRomAssetSymbolModuleSourceFromSymbols, collectRomAssetSymbols } from '../../toolchain/ts/rompack/asset_symbols';
 import {
 	BLUA32_FIRMWARE_MODULE_PATH,
-	PRESENTATION_CONFIG_MODULE_PATH,
-	PRESENTATION_CONFIG_SOURCE_PATH,
 	ROM_ASSET_SYMBOL_MODULE_PATH,
 	SYSTEM_ASSET_SYMBOL_MODULE_PATH,
-	TEXTURE_BINDINGS_MODULE_PATH,
-	TEXTURE_BINDINGS_SOURCE_PATH,
 } from '../../toolchain/ts/rompack/generated_modules';
 import { BLUA32_FIRMWARE_MODULE_SOURCE } from '../../toolchain/ts/rompack/blua32_firmware_module';
 import { resolveCartridgeHeaderWords } from '../../toolchain/ts/rompack/manifest';
@@ -499,7 +494,6 @@ async function main() {
 		if (!title) throw new Error("Missing parameter for title ('title', e.g. 'Sintervania'.");
 		const romManifest = await getRomManifest(respath);
 		if (!romManifest) throw new Error(`Rom manifest not found at "${respath}"!`);
-		const { gx_vram_layout, ...runtimeRomManifest } = romManifest;
 		title = romManifest.title ?? title;
 		romOutputPath = join(outputDirectory, `${rom_name}${romPackDebug ? '.debug' : ''}.rom`);
 
@@ -575,12 +569,11 @@ async function main() {
 			}));
 			await progress.taskCompleted();
 			// Build resources
-			let resources = await progress.runWithDetail('Load resources', () => getResourcesList(romResMetaList));
+			const resources = await progress.runWithDetail('Load resources', () => getResourcesList(romResMetaList));
 			await progress.taskCompleted();
 
 			await progress.runWithDetail('Generate GX textures', () => createTextureAtlases(
 				resources,
-				gx_vram_layout,
 				message => progress.setDetail(message),
 			));
 			await progress.taskCompleted();
@@ -589,30 +582,8 @@ async function main() {
 			compileAudioEventResources(resources);
 
 			const romAssets = await progress.runWithDetail('Generate ROM assets', () => generateRomAssets(resources, message => progress.setDetail(message)));
-			if (gx_vram_layout) {
-				const source = buildTextureBindingsModuleSource(gx_vram_layout);
-				romAssets.push({
-					resid: TEXTURE_BINDINGS_MODULE_PATH,
-					type: 'lua',
-					buffer: Buffer.from(source),
-					compiled_buffer: compileLuaChunkBuffer(source, TEXTURE_BINDINGS_MODULE_PATH),
-					source_path: TEXTURE_BINDINGS_SOURCE_PATH,
-					update_timestamp: 0,
-				});
-				if (gx_vram_layout.framebuffers.length > 0) {
-					const presentationConfigSource = buildPresentationConfigModuleSource(gx_vram_layout);
-					romAssets.push({
-						resid: PRESENTATION_CONFIG_MODULE_PATH,
-						type: 'lua',
-						buffer: Buffer.from(presentationConfigSource),
-						compiled_buffer: compileLuaChunkBuffer(presentationConfigSource, PRESENTATION_CONFIG_MODULE_PATH),
-						source_path: PRESENTATION_CONFIG_SOURCE_PATH,
-						update_timestamp: 0,
-					});
-				}
-			}
 			const biosImports = decodeBlua32BiosImports(readFileSync(biosImportsPath));
-			const romLayout = layoutRomPrefix(romAssets, romPackDebug, runtimeRomManifest);
+			const romLayout = layoutRomPrefix(romAssets, romPackDebug, romManifest);
 			const assetSymbols = collectRomAssetSymbols(romLayout.entries, 'cart');
 			const assetSymbolModuleSource = buildRomAssetSymbolModuleSourceFromSymbols(assetSymbols);
 			const blua32 = buildRomBlua32Tail(romAssets, {
@@ -622,7 +593,10 @@ async function main() {
 				ramByteCount: PSX_MACHINE_SPEC.ramBytes,
 				domain: 'cart',
 				biosImports,
-				generatedLuaModules: [{ path: ROM_ASSET_SYMBOL_MODULE_PATH, source: assetSymbolModuleSource }],
+				generatedLuaModules: [{
+					path: ROM_ASSET_SYMBOL_MODULE_PATH,
+					source: assetSymbolModuleSource,
+				}],
 			});
 			const cartridgeHeaderWords = resolveCartridgeHeaderWords(romManifest);
 			await progress.taskCompleted();

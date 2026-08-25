@@ -12,8 +12,6 @@ input.push_context(1, '2025', {
 }, {
 	confirm = { 'a' },
 })
-local irq_module<const> = require('cartlib/irq')
-local irq_source<const> = require('cartlib/irq/source')
 local prefab<const> = require('cartlib/world/prefab')
 local custom_visual_component<const> = require('cartlib/component/custom_visual_component')
 local surface_component<const> = require('cartlib/component/surface_component')
@@ -25,7 +23,7 @@ local world_module<const> = require('world_module')
 world:configure(world_module)
 local pietsona_font<const> = require('pietsona_font')
 pietsona_font.register_fonts()
-local texture_residency<const> = require('texture_residency')
+local gx_texture<const> = require('cartlib/gx/texture')
 require('globals')
 local story<const> = require('story')
 local start_node<const> = 'title'
@@ -291,7 +289,6 @@ local register_director<const> = function()
 end
 
 local function init<init>()
-	irq_module.register(irq_source.imgdec, texture_residency.complete_upload)
 	combat_module.define_fsm()
 	build_director_fsm()
 	combat_module.register_director()
@@ -430,8 +427,8 @@ function new_game()
 end
 
 init()
-texture_residency.load_font('msx_6b_font_space')
-texture_residency.replace_background(story.title.bg)
+gx_texture.upload('msx_6b_font_space')
+gx_texture.upload(story.title.bg)
 new_game()
 -- Pietsona intentionally advances one gameplay tick across two display frames.
 while true do
@@ -440,5 +437,4 @@ while true do
 	world:update()
 	vblank.wait()
 	world:render()
-	texture_residency.submit_pending_background()
 end

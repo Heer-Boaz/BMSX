@@ -70,6 +70,7 @@ end
 
 init()
 gx_texture.upload('quiz')
+gx_texture.upload('goed')
 new_game()
 vblank.wait()
 

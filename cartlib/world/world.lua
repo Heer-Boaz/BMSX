@@ -36,8 +36,8 @@ local command_list<const> = require('cartlib/gx/command_list')
 local clock<const> = require('cartlib/clock')
 local gx_display<const> = require('cartlib/gx/display')
 local gx_gpu<const> = require('cartlib/gx/gpu')
+local gx_vram<const> = require('cartlib/gx/vram')
 local gp0<const> = require('cartlib/gx/gp0')
-local presentation_config<const> = require('bmsx/presentation_config')
 local component_class_chain<const> = require('cartlib/component/component_class').chain
 local prefab<const> = require('cartlib/world/prefab')
 local registry<const> = require('cartlib/registry')
@@ -148,24 +148,6 @@ function world_class.new()
 	self._render_visuals = {}
 	self._render_visual_count = 0
 	self._render_visual_revision = -1
-	self._page_size = presentation_config.page_size
-	local display_page<const> = presentation_config.display_page
-	local draw_page<const> = presentation_config.draw_page
-	self._draw_page = draw_page
-	if display_page == draw_page then
-		self.render = world_class._render_single_page
-		gx_display.origin(draw_page)
-		gx_gpu.draw_target(draw_page, self._page_size)
-		gx_gpu.clear_color(draw_page, self._page_size, clear_color)
-	else
-		self.render = world_class._render_double_page
-		self._display_page = display_page
-		gx_display.origin(display_page)
-		gx_gpu.draw_target(display_page, self._page_size)
-		gx_gpu.clear_color(display_page, self._page_size, clear_color)
-		gx_gpu.draw_target(draw_page, self._page_size)
-		gx_gpu.clear_color(draw_page, self._page_size, clear_color)
-	end
 	return self
 end
 
@@ -210,6 +192,26 @@ function world_class:_commit_active_space(space_id)
 end
 
 function world_class:configure(world_module)
+	local page_1<const>, page_2<const>, page_size<const> = gx_vram.configure(
+		world_module.framebuffer_count
+	)
+	self._page_size = page_size
+	if world_module.framebuffer_count == 1 then
+		self.render = world_class._render_single_page
+		self._draw_page = page_1
+		gx_display.origin(page_1)
+		gx_gpu.draw_target(page_1, page_size)
+		gx_gpu.clear_color(page_1, page_size, clear_color)
+	else
+		self.render = world_class._render_double_page
+		self._display_page = page_1
+		self._draw_page = page_2
+		gx_display.origin(page_1)
+		gx_gpu.draw_target(page_1, page_size)
+		gx_gpu.clear_color(page_1, page_size, clear_color)
+		gx_gpu.draw_target(page_2, page_size)
+		gx_gpu.clear_color(page_2, page_size, clear_color)
+	end
 	local gameplay_delta_milliseconds<const>, frame_delta_milliseconds<const> = clock.configure_tick_intervals(
 		world_module.gameplay_interval_vblanks,
 		world_module.frame_interval_vblanks

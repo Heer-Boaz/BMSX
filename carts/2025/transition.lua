@@ -2,7 +2,7 @@ local transition<const> = {}
 require('globals')
 local surface_component<const> = require('cartlib/component/surface_component')
 local gp0<const> = require('cartlib/gx/gp0')
-local texture_residency<const> = require('texture_residency')
+local gx_texture<const> = require('cartlib/gx/texture')
 local story<const> = require('story')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timelinebuilders<const> = require('timelinebuilders')
@@ -168,7 +168,7 @@ function transition.register_states(states)
 			self.transition_needs_post_fade = false
 			local next_node<const> = story[node.next]
 			if not self.skip_transition_fade and self.transition_target_bg ~= nil then
-				texture_residency.preload_background(self.transition_target_bg)
+				gx_texture.upload(self.transition_target_bg)
 			end
 			local style<const> = resolve_transition_style(node, next_node.kind)
 			self.transition_style = style
@@ -373,7 +373,7 @@ function transition.register_states(states)
 				self.fade_target_bg = next_node.bg
 			end
 			if self.fade_target_bg ~= nil then
-				texture_residency.preload_background(self.fade_target_bg)
+				gx_texture.upload(self.fade_target_bg)
 			end
 			show_background(self.background, nil)
 			hide_transition_layers(self.transition_visual)

@@ -12,6 +12,7 @@ local timeline_system<const> = require('cartlib/timeline/timeline_system')
 local gameplay_interval_vblanks<const> = 2
 
 return {
+	framebuffer_count = 1,
 	gameplay_interval_vblanks = gameplay_interval_vblanks,
 	frame_interval_vblanks = 1,
 	gameplay_clock_rate = {

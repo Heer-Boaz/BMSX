@@ -42,6 +42,22 @@ test('surface texture packing keeps an intentionally oversized image contiguous'
 
 	assert.deepEqual([wide.textureU, wide.textureV], [0, 0]);
 	assert.deepEqual([ordinary.textureU, ordinary.textureV], [264, 0]);
+	assert.equal(wide.gxPageTiles?.length, 2);
+	assert.equal(ordinary.gxPageTiles, undefined);
+});
+
+test('surface texture groups keep ordinary images inside one hardware page', () => {
+	const tall = imageResource('tall', 1, 96, 320);
+	const ordinary = imageResource('ordinary', 2, 192, 160);
+	createTextureAtlas([tall, ordinary], {
+		maxPixelWidth: 512,
+		maxHeight: 512,
+		pageLocal: false,
+	});
+
+	assert.deepEqual([ordinary.textureU, ordinary.textureV], [0, 320]);
+	assert.equal(tall.gxPageTiles?.length, 2);
+	assert.equal(ordinary.gxPageTiles, undefined);
 });
 
 test('page-local texture packing rejects surfaces wider than one hardware page', () => {
@@ -55,13 +71,13 @@ test('page-local texture packing rejects surfaces wider than one hardware page',
 	);
 });
 
-test('texture packing rejects an image larger than its physical texture slots', () => {
+test('texture packing rejects an image larger than its transfer bounds', () => {
 	assert.throws(
 		() => createTextureAtlas([imageResource('wide', 1, 513, 1)], {
 			maxPixelWidth: 512,
 			maxHeight: 256,
 			pageLocal: true,
 		}),
-		/does not fit its 512x256 pixel slots/,
+		/does not fit its 512x256 transfer bounds/,
 	);
 });

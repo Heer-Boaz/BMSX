@@ -23,6 +23,12 @@ type PackedImage = {
 	y: number;
 };
 
+type PackedAtlas = {
+	images: PackedImage[];
+	width: number;
+	height: number;
+};
+
 type SkylineNode = {
 	x: number;
 	y: number;
@@ -78,34 +84,91 @@ function sortedImages(images: ImageResource[]): ImageResource[] {
 	});
 }
 
-function packPageLocal(images: ImageResource[], bounds: TexturePackingBounds): PackedImage[] {
-	let skyline: SkylineNode[] = [{ x: 0, y: 0, width: bounds.maxPixelWidth }];
-	const packed: PackedImage[] = [];
-	for (const image of sortedImages(images)) {
+function validateImages(
+	images: readonly ImageResource[],
+	bounds: TexturePackingBounds,
+): void {
+	for (let imageIndex = 0; imageIndex < images.length; imageIndex += 1) {
+		const image = images[imageIndex];
 		const width = image.img!.width;
 		const height = image.img!.height;
 		if (width > bounds.maxPixelWidth || height > bounds.maxHeight) {
-			throw new Error(`[RomPacker] GX image '${image.name}' does not fit its ${bounds.maxPixelWidth}x${bounds.maxHeight} pixel slots.`);
+			throw new Error(`[RomPacker] GX image '${image.name}' does not fit its ${bounds.maxPixelWidth}x${bounds.maxHeight} transfer bounds.`);
 		}
-		if (width > GX_TEXTURE_PAGE_PIXELS || height > GX_TEXTURE_PAGE_PIXELS) {
+		if (bounds.pageLocal
+			&& (width > GX_TEXTURE_PAGE_PIXELS || height > GX_TEXTURE_PAGE_PIXELS)) {
 			throw new Error(`[RomPacker] Page-local GX image '${image.name}' does not fit one ${GX_TEXTURE_PAGE_PIXELS}x${GX_TEXTURE_PAGE_PIXELS} texture page.`);
 		}
+	}
+}
+
+function packingWidths(
+	images: readonly ImageResource[],
+	bounds: TexturePackingBounds,
+): number[] {
+	const candidates = new Set<number>();
+	if (bounds.pageLocal) {
+		for (let width = GX_TEXTURE_PAGE_PIXELS;
+			width < bounds.maxPixelWidth;
+			width += GX_TEXTURE_PAGE_PIXELS) {
+			candidates.add(width);
+		}
+	} else {
+		let widest = 0;
+		let rowWidth = 0;
+		for (let imageIndex = 0; imageIndex < images.length; imageIndex += 1) {
+			const width = images[imageIndex].img!.width;
+			if (width > widest) widest = width;
+			rowWidth += width;
+			if (rowWidth <= bounds.maxPixelWidth) candidates.add(rowWidth);
+		}
+		candidates.add(widest);
+		let powerOfTwoWidth = 1;
+		while (powerOfTwoWidth < widest) powerOfTwoWidth <<= 1;
+		while (powerOfTwoWidth < bounds.maxPixelWidth) {
+			candidates.add(powerOfTwoWidth);
+			powerOfTwoWidth <<= 1;
+		}
+	}
+	candidates.add(bounds.maxPixelWidth);
+	return Array.from(candidates).sort((left, right) => left - right);
+}
+
+function packSkyline(
+	images: readonly ImageResource[],
+	maxWidth: number,
+	maxHeight: number,
+	pageLocal: boolean,
+): PackedAtlas | undefined {
+	let skyline: SkylineNode[] = [{ x: 0, y: 0, width: maxWidth }];
+	const packed: PackedImage[] = [];
+	let packedWidth = 1;
+	let packedHeight = 1;
+	for (let imageIndex = 0; imageIndex < images.length; imageIndex += 1) {
+		const image = images[imageIndex];
+		const width = image.img!.width;
+		const height = image.img!.height;
+		const constrainToPage = pageLocal
+			|| (width <= GX_TEXTURE_PAGE_PIXELS && height <= GX_TEXTURE_PAGE_PIXELS);
 
 		const candidateXs = new Set<number>();
 		for (let nodeIndex = 0; nodeIndex < skyline.length; nodeIndex += 1) {
 			candidateXs.add(skyline[nodeIndex].x);
 		}
-		for (let pageX = 0; pageX < bounds.maxPixelWidth; pageX += GX_TEXTURE_PAGE_PIXELS) {
-			candidateXs.add(pageX);
+		if (constrainToPage) {
+			for (let pageX = 0; pageX < maxWidth; pageX += GX_TEXTURE_PAGE_PIXELS) {
+				candidateXs.add(pageX);
+			}
 		}
 
 		let bestX = -1;
-		let bestY = bounds.maxHeight + 1;
+		let bestY = maxHeight + 1;
 		const sortedCandidateXs = Array.from(candidateXs).sort((left, right) => left - right);
 		for (let candidateIndex = 0; candidateIndex < sortedCandidateXs.length; candidateIndex += 1) {
 			const x = sortedCandidateXs[candidateIndex];
-			if (x + width > bounds.maxPixelWidth
-				|| (x & (GX_TEXTURE_PAGE_PIXELS - 1)) + width > GX_TEXTURE_PAGE_PIXELS) {
+			if (x + width > maxWidth
+				|| (constrainToPage
+					&& (x & (GX_TEXTURE_PAGE_PIXELS - 1)) + width > GX_TEXTURE_PAGE_PIXELS)) {
 				continue;
 			}
 
@@ -117,16 +180,17 @@ function packPageLocal(images: ImageResource[], bounds: TexturePackingBounds): P
 					y = node.y;
 				}
 			}
-			if ((y & (GX_TEXTURE_PAGE_PIXELS - 1)) + height > GX_TEXTURE_PAGE_PIXELS) {
+			if (constrainToPage
+				&& (y & (GX_TEXTURE_PAGE_PIXELS - 1)) + height > GX_TEXTURE_PAGE_PIXELS) {
 				y = (y + GX_TEXTURE_PAGE_PIXELS) & ~(GX_TEXTURE_PAGE_PIXELS - 1);
 			}
-			if (y + height <= bounds.maxHeight && (y < bestY || (y === bestY && x < bestX))) {
+			if (y + height <= maxHeight && (y < bestY || (y === bestY && x < bestX))) {
 				bestX = x;
 				bestY = y;
 			}
 		}
 		if (bestX < 0) {
-			throw new Error(`[RomPacker] Page-local GX texture group does not fit its ${bounds.maxPixelWidth}x${bounds.maxHeight} pixel slots.`);
+			return undefined;
 		}
 
 		const placementRight = bestX + width;
@@ -174,61 +238,70 @@ function packPageLocal(images: ImageResource[], bounds: TexturePackingBounds): P
 		}
 		skyline = mergedSkyline;
 		packed.push({ image, x: bestX, y: bestY });
+		const right = bestX + width;
+		const bottom = bestY + height;
+		if (right > packedWidth) packedWidth = right;
+		if (bottom > packedHeight) packedHeight = bottom;
 	}
-	return packed;
+	return {
+		images: packed,
+		width: packedWidth,
+		height: packedHeight,
+	};
 }
 
-function packSurfaceImages(images: ImageResource[], bounds: TexturePackingBounds): PackedImage[] {
-	const packed: PackedImage[] = [];
-	let x = 0;
-	let y = 0;
-	let rowHeight = 0;
-	for (const image of sortedImages(images)) {
-		const width = image.img!.width;
-		const height = image.img!.height;
-		if (width > bounds.maxPixelWidth || height > bounds.maxHeight) {
-			throw new Error(`[RomPacker] GX image '${image.name}' does not fit its ${bounds.maxPixelWidth}x${bounds.maxHeight} pixel slots.`);
-		}
-		if (x + width > bounds.maxPixelWidth) {
-			x = 0;
-			y += rowHeight;
-			rowHeight = 0;
-		}
-		if (y + height > bounds.maxHeight) {
-			throw new Error(`[RomPacker] GX texture group does not fit its ${bounds.maxPixelWidth}x${bounds.maxHeight} pixel slots.`);
-		}
-		packed.push({ image, x, y });
-		x += width;
-		if (height > rowHeight) {
-			rowHeight = height;
+function packImages(images: ImageResource[], bounds: TexturePackingBounds): PackedAtlas {
+	const orderedImages = sortedImages(images);
+	validateImages(orderedImages, bounds);
+	const widths = packingWidths(orderedImages, bounds);
+	let selected: PackedAtlas | undefined;
+	let selectedArea = 0;
+	for (let widthIndex = 0; widthIndex < widths.length; widthIndex += 1) {
+		const packed = packSkyline(
+			orderedImages,
+			widths[widthIndex],
+			bounds.maxHeight,
+			bounds.pageLocal,
+		);
+		if (packed == null) continue;
+		const area = packed.width * packed.height;
+		if (selected == null
+			|| area < selectedArea
+			|| (area === selectedArea && packed.height < selected.height)
+			|| (area === selectedArea
+				&& packed.height === selected.height
+				&& packed.width < selected.width)) {
+			selected = packed;
+			selectedArea = area;
 		}
 	}
-	return packed;
+	if (selected == null) {
+		const prefix = bounds.pageLocal ? 'Page-local GX' : 'GX';
+		throw new Error(`[RomPacker] ${prefix} texture group does not fit its ${bounds.maxPixelWidth}x${bounds.maxHeight} transfer bounds.`);
+	}
+	return selected;
 }
 
 export function createTextureAtlas(images: ImageResource[], bounds: TexturePackingBounds): Canvas {
 	if (images.length === 0) {
 		throw new Error('[RomPacker] GX texture packing group has no images.');
 	}
-	const packed = bounds.pageLocal ? packPageLocal(images, bounds) : packSurfaceImages(images, bounds);
-	let width = 1;
-	let height = 1;
-	for (let index = 0; index < packed.length; index += 1) {
-		const item = packed[index];
-		const right = item.x + item.image.img!.width;
-		const bottom = item.y + item.image.img!.height;
-		if (right > width) width = right;
-		if (bottom > height) height = bottom;
-	}
-	const canvas: Canvas = createCanvas(width, height);
+	const packed = packImages(images, bounds);
+	const canvas: Canvas = createCanvas(packed.width, packed.height);
 	const context: CanvasRenderingContext2D = canvas.getContext('2d');
-	for (let index = 0; index < packed.length; index += 1) {
-		const item = packed[index];
+	for (let index = 0; index < packed.images.length; index += 1) {
+		const item = packed.images[index];
 		context.drawImage(item.image.img!, item.x, item.y);
 		item.image.textureU = item.x;
 		item.image.textureV = item.y;
-		if (!bounds.pageLocal) {
+		const imageWidth = item.image.img!.width;
+		const imageHeight = item.image.img!.height;
+		const crossesPage = (item.x & (GX_TEXTURE_PAGE_PIXELS - 1)) + imageWidth > GX_TEXTURE_PAGE_PIXELS
+			|| (item.y & (GX_TEXTURE_PAGE_PIXELS - 1)) + imageHeight > GX_TEXTURE_PAGE_PIXELS;
+		if (!bounds.pageLocal && crossesPage) {
 			item.image.gxPageTiles = buildTexturePageTiles(item.image, item.x, item.y);
+		} else {
+			delete item.image.gxPageTiles;
 		}
 	}
 	return canvas;

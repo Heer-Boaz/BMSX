@@ -1,10 +1,9 @@
 local font_catalog<const> = require('cartlib/text/font_catalog')
 local gp0<const> = require('cartlib/gx/gp0')
-local presentation_config<const> = require('bmsx/presentation_config')
+local gx_vram<const> = require('cartlib/gx/vram')
 local visual_component<const> = require('cartlib/component/visual_component')
 local wrap_text_lines<const> = require('cartlib/util/text').wrap_text_lines
 local empty_text_lines<const> = {}
-local page_height<const> = presentation_config.page_size >> 16
 
 local text_component<const> = {}
 text_component.__index = text_component
@@ -27,6 +26,7 @@ function text_component.new(opts)
 	self.glyph_lines = {}
 	self.layout_line_widths = {}
 	self.glyph_line_count = 0
+	self._page_height = gx_vram.page_size >> 16
 	self:set_text(opts.text)
 	return self
 end
@@ -145,6 +145,7 @@ function text_component:draw_visual(draw)
 	local x<const> = obj.x + self.offset_x + self.draw_offset_x
 	local y<const> = obj.y + self.offset_y + self.draw_offset_y
 	local glyphs<const> = self.glyph_lines
+	local page_height<const> = self._page_height
 	local first_line = 1
 	local last_line = self.glyph_line_count
 	local line_offsets<const> = self.line_offsets
