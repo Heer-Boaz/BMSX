@@ -1780,7 +1780,7 @@ void retro_cheat_set(unsigned, bool, const char*) {}
  */
 
 unsigned retro_get_region(void) {
-	// TODO: Detect region from ROM
+	// Cartridges are regionless. Dynamic PCRTC timing is published through AV info.
 	return RETRO_REGION_PAL;
 }
 

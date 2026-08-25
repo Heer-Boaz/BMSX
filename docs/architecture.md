@@ -3738,6 +3738,12 @@ extra conversion to its existing hot paths. CLI parsing, POSIX signals,
 multi-owner startup/shutdown ordering, pacing and measurement counters remain
 stack/runloop state in `main.c`.
 
+BMSX cartridges carry no PAL/NTSC region bit. The libretro core reports the
+installed machine's PAL-rate reset class through `retro_get_region()`; a cart
+may subsequently program arbitrary valid PCRTC timing, which the core publishes
+through `RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO`. Cartridge names, paths and ROM
+payload patterns never select machine timing.
+
 Libretro keyboard input enters through
 `RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK`. The direct host retains source bits
 for each physical key source, so releasing one source cannot clear a still-held
