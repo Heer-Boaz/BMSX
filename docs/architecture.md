@@ -27,17 +27,12 @@ and its own native GTE+ and GPU. It is not intended to remain a PSX emulator or
 to accumulate compatibility wrappers around PSX command packets.
 
 The PSX GTE emulation is nevertheless the deliberate hardware foundation for
-GTE+. That foundation was formally accepted on 2026-07-18: all 22 canonical
-opcodes were audited against DuckStation, Mednafen, and MAME; both runtime
-owners matched all 64 output register words in each of the 1,100 runs in the
-pinned JaCzekanski hardware log; and the mirrored focused suites cover raw
-register behavior, fixed-point stages, saturation, flags, divide, MAC/IR
-ordering, timing, and save-state latches. The evidence and exact pinned input
-remain in the [GX workplan](gx_psx_replacement_workplan.tmp.md#4-gte-parity),
-the [TS vectors](../tests/lua/gx_gte.test.ts), and the
-[C++ vectors](../tests/cpp/gx_gte_test.cpp). A later PSX discrepancy is a
-foundation regression to fix, not a reason to reinterpret the accepted raw
-words through a compatibility path.
+GTE+. The mirrored [TS vectors](../tests/lua/gx_gte.test.ts) and
+[C++ vectors](../tests/cpp/gx_gte_test.cpp) pin the accepted raw register
+behavior, fixed-point stages, saturation, flags, divide, MAC/IR ordering,
+timing, and save-state latches. A later PSX discrepancy is a foundation
+regression to fix, not a reason to reinterpret the accepted raw words through a
+compatibility path.
 
 GTE+ extends that accepted register/opcode model explicitly; it does not replace
 it with host geometry, material, morphing, or renderer objects, and it never
