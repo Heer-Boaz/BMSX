@@ -94,11 +94,13 @@ export class KeyboardInput implements KeyboardInputHandler {
 	}
 
 	/** Returns a normalized console-control view used by host control chords. */
+	// disable-next-line single_line_method_pattern -- KeyboardInputHandler exposes normalized console controls separately from physical key state.
 	public getButtonState(button: string): ButtonState {
 		return getPressedState(this.mappedButtonStates, button);
 	}
 
 	/** Returns the polled aggregate key view used by keyboard-oriented host UI. */
+	// disable-next-line single_line_method_pattern -- KeyboardInputHandler keeps physical key state distinct from its normalized console-control view.
 	public getKeyState(code: string): ButtonState {
 		return getPressedState(this.polledKeyStates, code);
 	}

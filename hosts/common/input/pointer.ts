@@ -135,6 +135,7 @@ export class PointerInput implements PointerInputHandler {
 		this.pendingButtonReleaseEdges = 0;
 	}
 
+	// disable-next-line single_line_method_pattern -- PointerInputHandler keeps lazy retained pointer-button state behind the source-specific contract.
 	public getButtonState(btn: string): ButtonState {
 		return getPressedState(this.buttonStates, btn);
 	}

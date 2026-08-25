@@ -8,8 +8,8 @@ import { GAMEPAD_BUTTON_IDS } from './gamepad_buttons';
 
 // Host-owned input vocabulary. The machine ICU only sees raw snapshot words;
 // key names, button names, and rich button state live at the host layer.
-export const INPUT_SOURCES = ['keyboard', 'gamepad', 'pointer'] as const;
-export type InputSource = typeof INPUT_SOURCES[number];
+export const INPUT_HANDLER_SOURCES = ['keyboard', 'gamepad', 'pointer'] as const;
+export type InputHandlerSource = typeof INPUT_HANDLER_SOURCES[number];
 
 export type ButtonId = string;
 export type BGamepadButton = (typeof GAMEPAD_BUTTON_IDS)[number];

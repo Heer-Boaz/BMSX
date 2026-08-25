@@ -1,16 +1,13 @@
 import { makeButtonState } from './manager';
 import {
-	INPUT_SOURCES,
+	INPUT_HANDLER_SOURCES,
 	type ButtonId,
 	type ButtonState,
-	type InputSource,
+	type InputHandlerSource,
 } from './models';
 import type { GamepadInput } from './gamepad';
 import type { KeyboardInput } from './keyboard';
 import type { PointerInput } from './pointer';
-
-export { INPUT_SOURCES };
-export type { InputSource };
 
 const INITIAL_REPEAT_DELAY_FRAMES = 15;
 const REPEAT_INTERVAL_FRAMES = 4;
@@ -54,7 +51,7 @@ export class PlayerInput {
 		pointer: null,
 	};
 
-	private readonly rawActionRepeatRecords: { [source in InputSource]: Map<ButtonId, RawActionRepeatRecord> } = {
+	private readonly rawActionRepeatRecords: { [source in InputHandlerSource]: Map<ButtonId, RawActionRepeatRecord> } = {
 		keyboard: new Map(),
 		gamepad: new Map(),
 		pointer: new Map(),
@@ -96,7 +93,7 @@ export class PlayerInput {
 	}
 
 	/** Live button state straight from the device handler. */
-	public getRawButtonState(button: ButtonId, source: InputSource): ButtonState {
+	public getRawButtonState(button: ButtonId, source: InputHandlerSource): ButtonState {
 		if (source === 'keyboard') {
 			const keyboard = this.inputHandlers.keyboard;
 			return keyboard ? keyboard.getKeyState(button) : this.unboundButtonState;
@@ -111,7 +108,7 @@ export class PlayerInput {
 	}
 
 	/** Returns repeat/edge info for a raw button using the built-in repeat cadence. */
-	public buttonRepeatEdge(button: ButtonId, source: InputSource): boolean {
+	public buttonRepeatEdge(button: ButtonId, source: InputHandlerSource): boolean {
 		const rawState = this.getRawButtonState(button, source);
 		if (rawState.consumed) {
 			return false;
@@ -177,8 +174,8 @@ export class PlayerInput {
 	pollInput(currentTime: number): void {
 		this.frameCounter += 1;
 		this.lastPollTimestampMs = currentTime;
-		for (let i = 0; i < INPUT_SOURCES.length; i += 1) {
-			const source = INPUT_SOURCES[i];
+		for (let i = 0; i < INPUT_HANDLER_SOURCES.length; i += 1) {
+			const source = INPUT_HANDLER_SOURCES[i];
 			this.inputHandlers[source]?.pollInput();
 		}
 	}
@@ -262,11 +259,10 @@ export class PlayerInput {
 	}
 
 	public reset(): void {
-		for (let i = 0; i < INPUT_SOURCES.length; i += 1) {
-			this.inputHandlers[INPUT_SOURCES[i]]?.reset();
-		}
-		for (let i = 0; i < INPUT_SOURCES.length; i += 1) {
-			this.rawActionRepeatRecords[INPUT_SOURCES[i]].clear();
+		for (let i = 0; i < INPUT_HANDLER_SOURCES.length; i += 1) {
+			const source = INPUT_HANDLER_SOURCES[i];
+			this.inputHandlers[source]?.reset();
+			this.rawActionRepeatRecords[source].clear();
 		}
 		this.resetControlButtonRepeats();
 		this.lastPollTimestampMs = 0;
