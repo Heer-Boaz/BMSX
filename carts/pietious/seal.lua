@@ -5,11 +5,6 @@ local seal<const> = {}
 seal.__index = seal
 
 function seal:ctor()
-	local command<const> = self.command
-	local steps<const> = {}
-	for index = 1, #command do
-		steps[index] = 'key_' .. command:sub(index, index) .. '[jp]'
-	end
 	self:add_component(input_actioneffect_component.new({
 		program = {
 			bindings = {
@@ -17,8 +12,7 @@ function seal:ctor()
 					name = 'incantation',
 					on = {
 						combo = {
-							steps = steps,
-							cancel = 'key_letter[jp]',
+							keyboard = self.command,
 						},
 					},
 					go = {

@@ -36,18 +36,8 @@ local cheat_input_program<const> = {
 			},
 			on = {
 				combo = {
-					steps = {
-						'key_m[jp]',
-						'key_e[jp]',
-						'key_t[jp]',
-						'key_a[jp]',
-						'key_l[jp]',
-						'key_i[jp]',
-						'key_o[jp]',
-						'key_n[jp]',
-						'key_enter[jp]',
-					},
-					cancel = 'key_character[jp] || key_enter[jp]',
+					keyboard = 'metalion',
+					submit = true,
 				},
 			},
 			go = {
@@ -65,18 +55,8 @@ local cheat_input_program<const> = {
 			},
 			on = {
 				combo = {
-					steps = {
-						'key_l[jp]',
-						'key_a[jp]',
-						'key_r[jp]',
-						'key_s[jp]',
-						'key_1[jp]',
-						'key_8[jp]',
-						'key_t[jp]',
-						'key_h[jp]',
-						'key_enter[jp]',
-					},
-					cancel = 'key_character[jp] || key_enter[jp]',
+					keyboard = 'lars18th',
+					submit = true,
 				},
 			},
 			go = {

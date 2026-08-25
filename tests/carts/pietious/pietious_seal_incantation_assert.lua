@@ -52,6 +52,9 @@ function __bmsx_host_test.update()
 	local room<const> = registry:get('room')
 	local player<const> = registry:get('pietolon')
 	local director<const> = registry:get('d')
+	if director == nil or director.state_machines == nil then
+		return false
+	end
 	if test.room_state == nil then
 		test.room_state = director.state_machines:bind_state_path('/room')
 		test.seal_state = director.state_machines:bind_state_path('/seal_dissolution')

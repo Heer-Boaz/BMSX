@@ -1,8 +1,11 @@
 -- cartlib/input/keys.lua
--- W3C KeyboardEvent.code name -> USB HID usage ID (usage page 0x07).
--- The ICU keyboard bitmap is indexed by these usage IDs.
+-- KeyboardEvent.code and command-character admission into the ICU's USB HID
+-- usage-page-0x07 representation. The binding cache is keyed by raw usages;
+-- source strings are converted once when an authored binding is admitted.
 
-return {
+local key<const> = {}
+
+key.usage_by_code = {
 	['KeyA'] = 4, ['KeyB'] = 5, ['KeyC'] = 6, ['KeyD'] = 7, ['KeyE'] = 8, ['KeyF'] = 9,
 	['KeyG'] = 10, ['KeyH'] = 11, ['KeyI'] = 12, ['KeyJ'] = 13, ['KeyK'] = 14, ['KeyL'] = 15,
 	['KeyM'] = 16, ['KeyN'] = 17, ['KeyO'] = 18, ['KeyP'] = 19, ['KeyQ'] = 20, ['KeyR'] = 21,
@@ -32,3 +35,20 @@ return {
 	['ControlLeft'] = 224, ['ShiftLeft'] = 225, ['AltLeft'] = 226, ['MetaLeft'] = 227,
 	['ControlRight'] = 228, ['ShiftRight'] = 229, ['AltRight'] = 230, ['MetaRight'] = 231,
 }
+
+key.alphanumeric_first_usage = 4
+key.alphanumeric_last_usage = 39
+key.enter_usage = 40
+
+local alphanumeric_usage_by_byte<const> = {}
+for usage = 4, 29 do
+	alphanumeric_usage_by_byte[usage + 61] = usage
+	alphanumeric_usage_by_byte[usage + 93] = usage
+end
+for usage = 30, 38 do
+	alphanumeric_usage_by_byte[usage + 19] = usage
+end
+alphanumeric_usage_by_byte[48] = 39
+key.alphanumeric_usage_by_byte = alphanumeric_usage_by_byte
+
+return key

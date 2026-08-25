@@ -73,7 +73,11 @@ local compile_binding<const> = function(
 	local combo
 	local combo_reset
 	if on.combo ~= nil then
-		combo, combo_reset = input.bind_combo(player_index, clock_source, on.combo)
+		if on.combo.keyboard ~= nil then
+			combo, combo_reset = input.bind_keyboard_sequence(player_index, clock_source, on.combo)
+		else
+			combo, combo_reset = input.bind_combo(player_index, clock_source, on.combo)
+		end
 	end
 	local custom = no_custom_bindings
 	local custom_source<const> = on.custom

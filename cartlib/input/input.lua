@@ -12,13 +12,14 @@ local action_state_program<const> = require('cartlib/input/action_state_program'
 local action_syntax<const> = require('cartlib/input/action_syntax')
 local clock<const> = require('cartlib/clock')
 local icu<const> = require('cartlib/input/icu')
-local keys<const> = require('cartlib/input/keys')
+local key<const> = require('cartlib/input/keys')
 
 local input<const> = {}
 
 local source_keyboard<const> = 1
 local source_gamepad<const> = 2
 local source_pointer<const> = 3
+local keys<const> = key.usage_by_code
 local pointer_buttons<const>: *word = icu.pointer_buttons_address
 local pointer_position_x_q16<const>: *word = icu.pointer_x_q16_address
 local pointer_position_y_q16<const>: *word = icu.pointer_y_q16_address
@@ -124,7 +125,7 @@ bss frame_serial: word
 
 local new_binding_state<const> = function()
 	return {
-		-- raw read plan, resolved per binding by resolve_binding
+		-- raw read plan, resolved per binding at admission
 		level_addr = 0,
 		level_mask = 0,
 		value_addr = 0,
@@ -150,15 +151,7 @@ local new_binding_state<const> = function()
 	}
 end
 
-local resolve_binding<const> = function(player, source_index, binding, state)
-	if source_index == source_keyboard then
-		local usage<const> = keys[binding]
-		if usage then
-			state.level_addr = icu.keyboard_bitmap_address + ((usage >> 5) << 2)
-			state.level_mask = 1 << (usage & 31)
-		end
-		return
-	end
+local resolve_non_keyboard_binding<const> = function(player, source_index, binding, state)
 	if source_index == source_gamepad then
 		local pad_base<const> = icu.gamepad_base_address + (player.index - 1) * icu.gamepad_stride
 		if type(binding) == 'table' then
@@ -410,14 +403,31 @@ local register_binding_sampling<const> = function(player, source_index, state)
 	end
 end
 
+local track_keyboard_usage<const> = function(player, usage)
+	local source_bindings<const> = player.binding_states[source_keyboard]
+	local state = source_bindings[usage]
+	if state then
+		return state
+	end
+	state = new_binding_state()
+	state.level_addr = icu.keyboard_bitmap_address + ((usage >> 5) << 2)
+	state.level_mask = 1 << (usage & 31)
+	source_bindings[usage] = state
+	register_binding_sampling(player, source_keyboard, state)
+	return state
+end
+
 local track_binding<const> = function(player, source_index, binding)
+	if source_index == source_keyboard then
+		return track_keyboard_usage(player, keys[binding])
+	end
 	local source_bindings<const> = player.binding_states[source_index]
 	local state = source_bindings[binding]
 	if state then
 		return state
 	end
 	state = new_binding_state()
-	resolve_binding(player, source_index, binding, state)
+	resolve_non_keyboard_binding(player, source_index, binding, state)
 	source_bindings[binding] = state
 	register_binding_sampling(player, source_index, state)
 	return state
@@ -854,6 +864,93 @@ function input.bind(player_index, clock_source, pattern)
 		clock_state.expression_bindings[pattern] = evaluate
 	end
 	return evaluate
+end
+
+-- Command strings are admitted as physical alphanumeric HID usages rather than
+-- manufacturing one semantic action per character. The retained matcher visits
+-- the two keyboard bitmap words only through the ordinary grouped sampler and
+-- scans its dense key-state view solely when the selected clock observed an
+-- input edge. A compiled prefix table preserves overlapping command prefixes.
+function input.bind_keyboard_sequence(player_index, clock_source, definition)
+	local player<const> = players[player_index]
+	local clock_state<const> = player.clock_states[clock_source]
+	local sequence<const> = {}
+	local text<const> = definition.keyboard
+	local usage_by_byte<const> = key.alphanumeric_usage_by_byte
+	for index = 1, #text do
+		sequence[index] = usage_by_byte[string.byte(text, index)]
+	end
+	if definition.submit then
+		sequence[#sequence + 1] = key.enter_usage
+	end
+	local sequence_count<const> = #sequence
+	local prefix<const> = { 0 }
+	local prefix_length = 0
+	for index = 2, sequence_count do
+		local usage<const> = sequence[index]
+		while prefix_length > 0 and sequence[prefix_length + 1] ~= usage do
+			prefix_length = prefix[prefix_length]
+		end
+		if sequence[prefix_length + 1] == usage then
+			prefix_length = prefix_length + 1
+		end
+		prefix[index] = prefix_length
+	end
+	local first_usage<const> = key.alphanumeric_first_usage
+	local states = player.alphanumeric_key_states
+	if states == nil then
+		states = {}
+		for usage = first_usage, key.enter_usage do
+			states[usage - first_usage + 1] = track_keyboard_usage(player, usage)
+		end
+		player.alphanumeric_key_states = states
+	end
+	local state_count<const> = definition.submit
+		and #states
+		or key.alphanumeric_last_usage - first_usage + 1
+	local matched_prefix = 0
+	local reset_sequence<const> = function()
+		matched_prefix = 0
+	end
+	local evaluate_sequence<const> = function()
+		local previous_edge_id<const> = clock_state.previous_edge_id
+		local edge_id<const> = clock_state.edge_id
+		if previous_edge_id == edge_id then
+			return false
+		end
+		local cursor = previous_edge_id
+		local completed = false
+		while cursor < edge_id do
+			local next_edge_id = edge_id + 1
+			local next_usage = 0
+			for state_index = 1, state_count do
+				local state<const> = states[state_index]
+				local press_edge_id<const> = state.press_edge_id
+				if press_edge_id > cursor
+				and press_edge_id < next_edge_id
+				and state.consumed_press_id ~= press_edge_id then
+					next_edge_id = press_edge_id
+					next_usage = state_index + first_usage - 1
+				end
+			end
+			if next_usage == 0 then
+				return completed
+			end
+			cursor = next_edge_id
+			while matched_prefix > 0 and sequence[matched_prefix + 1] ~= next_usage do
+				matched_prefix = prefix[matched_prefix]
+			end
+			if sequence[matched_prefix + 1] == next_usage then
+				matched_prefix = matched_prefix + 1
+			end
+			if matched_prefix == sequence_count then
+				completed = true
+				matched_prefix = prefix[matched_prefix]
+			end
+		end
+		return completed
+	end
+	return evaluate_sequence, reset_sequence
 end
 
 -- Ordered action combos retain only the current step. Each step and optional
