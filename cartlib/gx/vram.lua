@@ -1,13 +1,10 @@
 local gx_display<const> = require('cartlib/gx/display')
+local system_vram_region<const> = require('gpu/system_vram_region')
 
 local vram<const> = {}
 
 local vram_width<const> = 1024
 local vram_height<const> = 1024
-local system_x<const> = 704
-local system_y<const> = 720
-local system_width<const> = 320
-local system_height<const> = 304
 
 local allocations<const> = {}
 local allocation_count
@@ -101,7 +98,13 @@ end
 
 function vram.configure(framebuffer_count)
 	allocation_count = 0
-	vram.reserve(system_x, system_y, system_width, system_height)
+	local system_origin<const>, system_size<const> = system_vram_region()
+	vram.reserve(
+		system_origin & 0x0000ffff,
+		system_origin >> 16,
+		system_size & 0x0000ffff,
+		system_size >> 16
+	)
 	local page_size<const> = gx_display.read_size_word()
 	local page_width<const> = page_size & 0x0000ffff
 	local page_height<const> = page_size >> 16

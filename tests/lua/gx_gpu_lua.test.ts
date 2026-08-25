@@ -17,7 +17,9 @@ import {
 } from '../../machine/ts/machine/devices/gx/gpu_pcrtc';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
-import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { CART_ROM_BASE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
+import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
+import { gxGpuPair16 } from '../../machine/ts/spec/gx/gp0';
 import { materializeCpuCompletionValues, parseLuaChunk } from './cpu_test_harness';
 import {
 	createTestBlua32PairCpu,
@@ -27,6 +29,7 @@ import {
 } from '../helpers/blua32';
 
 const MODE_SELECTOR_ADDRESS = 0x08040000;
+const SYSTEM_TEXTURE_UPLOAD_ADDRESS = RAM_BASE + PSX_MACHINE_SPEC.ramBytes - 0x100;
 const SYSTEM_BOOT_SOURCE = `
 math = require('math')
 cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]
@@ -55,6 +58,7 @@ return gx_display.size()
 `;
 const BIOS_ENTRY_SOURCE = `
 local bios_gpu<const> = require('gpu/gpu')
+local system_vram_region<const> = require('gpu/system_vram_region')
 local pmode<const>: *word = 0x08010354
 local smode1_low<const>: *word = 0x080103ac
 local display2_low<const>: *word = 0x08010374
@@ -65,7 +69,8 @@ local display2_high<const>: *word = 0x08010378
 *display2_high = 319 | (239 << 12)
 local width<const>, height<const> = bios_gpu.prepare_supervisor(0, 320, 240)
 bios_gpu.enable_display()
-return width, height
+local system_origin<const>, system_size<const> = system_vram_region()
+return width, height, system_origin, system_size
 `;
 const SYSTEM_MODULE_FILES = [
 	['math', 'machine/bios/math.lua'],
@@ -77,7 +82,9 @@ const CART_MODULE_FILES = [
 	['cartlib/gx/gp0', 'cartlib/gx/gp0.lua'],
 ] as const;
 const BIOS_MODULE_FILES = [
+	['tty/layout', 'machine/bios/tty/layout.lua'],
 	['gpu/gpu', 'machine/bios/gpu/gpu.lua'],
+	['gpu/system_vram_region', 'machine/bios/gpu/system_vram_region.lua'],
 ] as const;
 
 function sourceModules(files: ReadonlyArray<readonly [string, string]>) {
@@ -89,7 +96,19 @@ function sourceModules(files: ReadonlyArray<readonly [string, string]>) {
 
 const systemModules = sourceModules(SYSTEM_MODULE_FILES);
 const cartModules = sourceModules(CART_MODULE_FILES);
-const biosModules = sourceModules(BIOS_MODULE_FILES);
+const systemAssetsSource = `module<const>
+local bin_gx_system_texture_addr<const> = ${SYSTEM_TEXTURE_UPLOAD_ADDRESS}
+return {
+	bin_gx_system_texture_addr = bin_gx_system_texture_addr,
+}`;
+const biosModules = [
+	{
+		path: 'bmsx/system_assets',
+		chunk: parseLuaChunk(systemAssetsSource, 'bmsx/system_assets.lua'),
+		source: systemAssetsSource,
+	},
+	...sourceModules(BIOS_MODULE_FILES),
+];
 const systemCompiled = compileLuaChunkToProgram(
 	parseLuaChunk(SYSTEM_BOOT_SOURCE, 'boot.lua'),
 	systemModules,
@@ -158,8 +177,15 @@ test('GX cart SDK programs native PSX widths and PS2 SD interlaced outputs', () 
 
 test('BIOS GX code aligns the source-alpha supervisor circuit to a retained PS2 DTV origin', () => {
 	const { memory, cpu } = createTestSystemCpu(biosImage);
+	memory.writeMappedU32LE(SYSTEM_TEXTURE_UPLOAD_ADDRESS + 4, gxGpuPair16(768, 960));
+	memory.writeMappedU32LE(SYSTEM_TEXTURE_UPLOAD_ADDRESS + 8, gxGpuPair16(256, 64));
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
-	assert.deepEqual(materializeCpuCompletionValues(cpu), [320, 240]);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [
+		320,
+		240,
+		gxGpuPair16(704, 720),
+		gxGpuPair16(320, 304),
+	]);
 	assert.equal(memory.readMappedU32LE(gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_PMODE_LOW)), 0x00000003);
 	assert.equal(memory.readMappedU32LE(gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_DISPLAY1_LOW)), 420 | (40 << 12));
 	assert.equal(memory.readMappedU32LE(gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_DISPLAY1_HIGH)), 319 | (239 << 12));

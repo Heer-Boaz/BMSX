@@ -308,6 +308,9 @@ return first_image._texture == second_image._texture and 1 or 0,
 			['string/float/decode', readFileSync('machine/bios/string/float/decode.lua', 'utf8')],
 			['cartlib/bin', readFileSync('cartlib/bin.lua', 'utf8')],
 			['cartlib/rom_dir', readFileSync('cartlib/rom_dir.lua', 'utf8')],
+			['gpu/system_vram_region', `return function()
+	return ${gxGpuPair16(704, 720)}, ${gxGpuPair16(320, 304)}
+end`],
 			['cartlib/gx/display', `return {
 	read_size_word = function()
 		return ${gxGpuPair16(320, 240)}

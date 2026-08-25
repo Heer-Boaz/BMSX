@@ -15,6 +15,9 @@ function runVram(entrySource: string, displaySize: number): unknown[] {
 		return ${displaySize}
 	end,
 }`;
+	const systemVramRegionSource = `return function()
+	return ${gxGpuPair16(704, 720)}, ${gxGpuPair16(320, 304)}
+end`;
 	const compiled = compileLuaChunkToProgram(
 		parseLuaChunk(entrySource, 'test.lua'),
 		[
@@ -22,6 +25,11 @@ function runVram(entrySource: string, displaySize: number): unknown[] {
 				path: 'cartlib/gx/display',
 				chunk: parseLuaChunk(displaySource, 'cartlib/gx/display.lua'),
 				source: displaySource,
+			},
+			{
+				path: 'gpu/system_vram_region',
+				chunk: parseLuaChunk(systemVramRegionSource, 'gpu/system_vram_region.lua'),
+				source: systemVramRegionSource,
 			},
 			{
 				path: 'cartlib/gx/vram',

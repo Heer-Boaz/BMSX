@@ -15,6 +15,10 @@ export const BIOS_FUNCTION_EXPORTS: ReadonlyArray<Blua32BiosFunctionExport> = [
 		path: 'string/float/decode',
 		exportPathKey: '',
 	},
+	{
+		path: 'gpu/system_vram_region',
+		exportPathKey: '',
+	},
 ];
 
 export function assertSystemBlua32ImageFits(imageEndOffset: number): void {

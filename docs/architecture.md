@@ -2081,7 +2081,10 @@ The standard machine layout reserves a 320x304 rectangle at x=704..1023,
 y=720..1023. Its upper 320x240 words hold the terminal surface at `(704,720)`;
 its bottom-right 256x64 words hold the packed system texture at `(768,960)`.
 This is a 190 KiB convention inside the shared 2 MiB VRAM, not protected or
-additional memory. The rompacker rejects overlap for ordinary cart layouts.
+additional memory. The BIOS publishes the bounding rectangle through its
+function-import boundary, deriving the texture extent from the same GP0 upload
+record that it submits. Software using the standard allocator reserves that
+published region rather than carrying a second copy of the coordinates.
 Bare-metal cart code can still address those words and accepts that doing so
 may corrupt firmware rendering; hardware does not hide, restore or redirect
 the region. Every other installed VRAM word is an ordinary cart resource.
@@ -2942,7 +2945,7 @@ it emits direct16.
 
 After the cart resets the display, its world configures one or two framebuffer
 pages from the retained display size. The GX VRAM owner allocates those pages
-and raw rectangles around the fixed bottom-right system reservation. The atlas
+and raw rectangles around the BIOS-published system reservation. The atlas
 owner converts its native texture extent into a generic VRAM allocation and
 `atlas.load(atlas_id)` admits that named resource. A resident atlas reuses
 its one allocation without another transfer; a new admission allocates or
