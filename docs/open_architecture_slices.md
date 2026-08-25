@@ -63,6 +63,15 @@ vervangt de hieronder genoemde fysieke SNES Mini-validatie niet.
 | --- | --- | --- |
 | `PERF-RUNTIME-01` | Kies per iteratie één gemeten hot-pathowner en verwijder daar herhaalde decode, conversie, validatie, allocatie of dispatch bij de producer. Dit is een paraplu, geen enkele megaslice. | Analyzers blokkeren nieuwe overtredingen, parity blijft exact en representatieve low-end hardware houdt 50 Hz zonder oplopende backlog. |
 
+Houd throughput en fysieke pacing als twee afzonderlijke metingen. De
+`profile:libretro-particle-benchmark-offscreen-wsl`-opdracht eindigt op de
+particle-scene en draait zonder throttle of audio; zij meet hoeveel werk de
+emulator en GLES2-route kunnen verwerken, niet of een frontend vloeiend paced.
+De `profile:libretro-gx-dependency-soak-offscreen-wsl`-opdracht doorloopt alle
+GX-scenes, eindigt op framebuffer-feedback en blijft paced, maar schakelt audio
+uit zodat een dummy-audiodevice geen fictieve underruns rapporteert. Geen van
+beide vervangt de zichtbare targetmetingen hieronder.
+
 ## Vereist een interactieve backend of fysieke target
 
 | ID | Nog te bewijzen | Vereist |
