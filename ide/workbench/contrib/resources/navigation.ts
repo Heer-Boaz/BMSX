@@ -5,7 +5,7 @@ import type { ResourceDomain, ResourceIdentity } from '../../../common/resource'
 import {
 	activateNavigationEntryContext,
 	applyNavigationEntryPosition,
-	completeNavigationHistoryJump,
+	createNavigationEntry,
 	takeBackwardNavigationEntry,
 	takeForwardNavigationEntry,
 	withNavigationCaptureSuspended,
@@ -68,7 +68,7 @@ export class EditorNavigationController {
 	}
 
 	public goBackward(): void {
-		const target = takeBackwardNavigationEntry();
+		const target = takeBackwardNavigationEntry(createNavigationEntry());
 		if (!target) {
 			return;
 		}
@@ -76,7 +76,7 @@ export class EditorNavigationController {
 	}
 
 	public goForward(): void {
-		const target = takeForwardNavigationEntry();
+		const target = takeForwardNavigationEntry(createNavigationEntry());
 		if (!target) {
 			return;
 		}
@@ -91,6 +91,5 @@ export class EditorNavigationController {
 			}
 			applyNavigationEntryPosition(this.resourcePanel, target);
 		});
-		completeNavigationHistoryJump(target);
 	}
 }

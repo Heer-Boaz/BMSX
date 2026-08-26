@@ -21,14 +21,12 @@ export type NavigationHistoryEntry = {
 export const navigationState = {
 	back: [] as NavigationHistoryEntry[],
 	forward: [] as NavigationHistoryEntry[],
-	current: null as NavigationHistoryEntry,
 	captureSuspended: false,
 };
 
 export function initializeNavigationState(): void {
 	navigationState.back.length = 0;
 	navigationState.forward.length = 0;
-	navigationState.current = createNavigationEntry();
 	navigationState.captureSuspended = false;
 }
 
@@ -39,26 +37,17 @@ export function clearForwardNavigationHistory(): void {
 export function resetNavigationHistoryState(): void {
 	navigationState.back.length = 0;
 	navigationState.forward.length = 0;
-	navigationState.current = null;
 	navigationState.captureSuspended = false;
 }
 
-export function beginNavigationCapture(): NavigationHistoryEntry {
+export function beginNavigationCapture(): NavigationHistoryEntry | null {
 	if (navigationState.captureSuspended) {
 		return null;
 	}
-	if (!navigationState.current) {
-		navigationState.current = createNavigationEntry();
-	}
-	const current = createNavigationEntry();
-	if (current) {
-		navigationState.current = current;
-		return { ...current };
-	}
-	return null;
+	return createNavigationEntry();
 }
 
-export function completeNavigation(previous: NavigationHistoryEntry): void {
+export function completeNavigation(previous: NavigationHistoryEntry | null): void {
 	if (navigationState.captureSuspended) {
 		return;
 	}
@@ -73,7 +62,6 @@ export function completeNavigation(previous: NavigationHistoryEntry): void {
 	} else if (previous === null && next) {
 		navigationState.forward.length = 0;
 	}
-	navigationState.current = next;
 }
 
 export function pushUniqueNavigationEntry(stack: NavigationHistoryEntry[], entry: NavigationHistoryEntry): void {
@@ -99,7 +87,7 @@ export function areNavigationEntriesEqual(a: NavigationHistoryEntry, b: Navigati
 		&& a.column === b.column;
 }
 
-export function createNavigationEntry(): NavigationHistoryEntry {
+export function createNavigationEntry(): NavigationHistoryEntry | null {
 	if (!isCodeTabActive()) {
 		return null;
 	}
@@ -163,28 +151,22 @@ export function applyNavigationEntryPosition(
 	ensureCursorVisible();
 }
 
-export function takeBackwardNavigationEntry(): NavigationHistoryEntry | null {
+export function takeBackwardNavigationEntry(currentEntry: NavigationHistoryEntry | null): NavigationHistoryEntry | null {
 	if (navigationState.back.length === 0) {
 		return null;
 	}
-	const currentEntry = navigationState.current ?? createNavigationEntry();
 	if (currentEntry) {
 		pushUniqueNavigationEntry(navigationState.forward, currentEntry);
 	}
 	return navigationState.back.pop()!;
 }
 
-export function takeForwardNavigationEntry(): NavigationHistoryEntry | null {
+export function takeForwardNavigationEntry(currentEntry: NavigationHistoryEntry | null): NavigationHistoryEntry | null {
 	if (navigationState.forward.length === 0) {
 		return null;
 	}
-	const currentEntry = navigationState.current ?? createNavigationEntry();
 	if (currentEntry) {
 		pushUniqueNavigationEntry(navigationState.back, currentEntry);
 	}
 	return navigationState.forward.pop()!;
-}
-
-export function completeNavigationHistoryJump(target: NavigationHistoryEntry): void {
-	navigationState.current = createNavigationEntry() ?? target;
 }

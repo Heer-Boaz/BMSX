@@ -1,4 +1,7 @@
-import type { RuntimeSourceState } from '../../../runtime/sources';
+import {
+	developmentCartridgeSource,
+	type RuntimeSourceState,
+} from '../../../runtime/sources';
 import { editorDocumentState } from '../../../editor/editing/document_state';
 import type {
 	EditorRuntimeSyncState,
@@ -11,8 +14,10 @@ import { computeResourceTabTitle } from '../tab/titles';
 import { codeTabSessionState } from './session_state';
 import { tabSessionState } from '../tab/session_state';
 import {
+	SYSTEM_RESOURCE_DOMAIN,
 	resourceIdentityEquals,
 	resourceIdentityKey,
+	resourceIdentityKeyFromParts,
 	type ResourceIdentity,
 	type RuntimeResource,
 } from '../../../common/resource';
@@ -91,11 +96,13 @@ export function upsertCodeEditorTab(context: CodeTabContext): EditorTabDescripto
 }
 
 export function createEntryTabContext(sources: RuntimeSourceState): CodeTabContext {
-	const resource = sources.activeResources.find(r =>
-		r.domain === sources.activeCartridgeSlot
-		&& r.path === sources.activeLuaSources.entrySourcePath
-		&& r.source.type === 'lua'
-	)!;
+	const cartridge = developmentCartridgeSource(sources);
+	const domain = cartridge ? cartridge.domain : SYSTEM_RESOURCE_DOMAIN;
+	const registry = cartridge ? cartridge.luaSources : sources.systemLuaSources;
+	const resource = sources.resourceByIdentity.get(resourceIdentityKeyFromParts(
+		domain,
+		registry.entrySourcePath,
+	))!;
 	return createLuaCodeTabContext(sources, resource);
 }
 

@@ -24,7 +24,10 @@ import { createTestRuntimeSourceState } from '../helpers/runtime_sources';
 import { buildResourcePanelItems } from '../../ide/workbench/contrib/resources/panel/items';
 import { refreshResourceCatalog } from '../../ide/workbench/contrib/resources/search/catalog';
 import { resourceSearchState } from '../../ide/workbench/contrib/resources/widget_state';
-import { createLuaCodeTabContext } from '../../ide/workbench/ui/code_tab/contexts';
+import {
+	createEntryTabContext,
+	createLuaCodeTabContext,
+} from '../../ide/workbench/ui/code_tab/contexts';
 
 function luaSource(path: string, resid: string, source: string): LuaSourceRecord {
 	return {
@@ -135,6 +138,27 @@ test('resource panel, search, and code tabs consume the retained owner resource'
 
 	const context = createLuaCodeTabContext(sources, retained);
 	assert.strictEqual(context.resource, retained);
+});
+
+test('workspace entry tab opens the development cartridge instead of the booting BIOS', () => {
+	const systemRegistry = sourceRegistry('machine/bios', [
+		luaSource('system/main.lua', 'system-main', 'return 1'),
+	]);
+	systemRegistry.entrySourcePath = 'system/main.lua';
+	const cartridgeRegistry = sourceRegistry('carts/test', [
+		luaSource('cart.lua', 'cart-main', 'return 2'),
+	]);
+	cartridgeRegistry.entrySourcePath = 'cart.lua';
+	const sources = createTestRuntimeSourceState(
+		systemRegistry,
+		[cartridgeRegistry, null],
+		SYSTEM_RESOURCE_DOMAIN,
+	);
+	sources.cartridgeSlots[0]!.rom.header.blua32ImageOffset = 64;
+
+	const context = createEntryTabContext(sources);
+	assert.equal(context.resource.domain, 0);
+	assert.equal(context.resource.path, 'cart.lua');
 });
 
 test('active resource catalog exposes AEM only from the active source domain', () => {
