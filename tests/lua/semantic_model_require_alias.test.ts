@@ -70,3 +70,37 @@ test('semantic workspace preserves require-alias member paths', async () => {
 	assert.equal(drawTarget!.decl.file, 'constants.lua');
 	assert.deepEqual(drawTarget!.decl.namePath, ['constants', 'hud', 'draw']);
 });
+
+test('semantic workspace resolves fields exported by module table literals', async () => {
+	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const directorSource = [
+		'local director = {}',
+		'local function register_director() end',
+		'function director.update() end',
+		'return {',
+		'\tdirector = director,',
+		'\tregister = register_director,',
+		'}',
+	].join('\n');
+	const mainLines = [
+		'module<entry>',
+		"local director_module<const> = require('director')",
+		'director_module.register()',
+		'director_module.director.update()',
+	];
+	const mainSource = mainLines.join('\n');
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('main.lua', mainSource);
+	workspace.updateFile('director.lua', directorSource);
+	const snapshot = workspace.getSnapshot();
+	const registerColumn = mainLines[2].indexOf('register') + 1;
+	const registerTarget = snapshot.symbolAt('main.lua', 3, registerColumn);
+	assert.ok(registerTarget, 'module table export target');
+	assert.equal(registerTarget!.decl.file, 'director.lua');
+	assert.deepEqual(registerTarget!.decl.namePath, ['register']);
+	const updateColumn = mainLines[3].indexOf('update') + 1;
+	const updateTarget = snapshot.symbolAt('main.lua', 4, updateColumn);
+	assert.ok(updateTarget, 'nested module table member target');
+	assert.equal(updateTarget!.decl.file, 'director.lua');
+	assert.deepEqual(updateTarget!.decl.namePath, ['director', 'update']);
+});

@@ -610,9 +610,9 @@ export class LuaProjectIndex {
 		for (let i = 0; i < data.decls.length; i += 1) {
 			const decl = data.decls[i];
 			this.symbols.set(decl.id, decl);
-			if (decl.namePath.length > 1) {
+			if (decl.kind === 'property' || decl.namePath.length > 1) {
 				this.memberDeclByFileAndKey.set(fileSymbolKey(decl.file, decl.symbolKey), decl.id);
-			} else if (decl.kind !== 'property') {
+			} else {
 				this.directDeclByFileAndKey.set(fileSymbolKey(decl.file, decl.symbolKey), decl.id);
 			}
 		}
@@ -634,9 +634,9 @@ export class LuaProjectIndex {
 		for (let i = 0; i < data.decls.length; i += 1) {
 			const decl = data.decls[i];
 			this.symbols.delete(decl.id);
-			if (decl.namePath.length > 1) {
+			if (decl.kind === 'property' || decl.namePath.length > 1) {
 				this.memberDeclByFileAndKey.delete(fileSymbolKey(decl.file, decl.symbolKey));
-			} else if (decl.kind !== 'property') {
+			} else {
 				this.directDeclByFileAndKey.delete(fileSymbolKey(decl.file, decl.symbolKey));
 			}
 			if (decl.isGlobal) {
@@ -712,6 +712,10 @@ export class LuaProjectIndex {
 	private indexReferenceDependencies(ref: Ref): void {
 		if (ref.receiverSymbolKey && ref.receiverSymbolKey.length > 0) {
 			getOrCreateRefSet(this.refsByReceiverSymbolKey, ref.receiverSymbolKey).add(ref);
+			const rootKey = receiverRootSymbolKey(ref.receiverSymbolKey);
+			if (rootKey !== ref.receiverSymbolKey) {
+				getOrCreateRefSet(this.refsByReceiverSymbolKey, rootKey).add(ref);
+			}
 		}
 		if (ref.receiverHintKey && ref.receiverHintKey.length > 0) {
 			getOrCreateRefSet(this.refsByReceiverHintKey, ref.receiverHintKey).add(ref);
@@ -720,12 +724,11 @@ export class LuaProjectIndex {
 
 	private unindexReferenceDependencies(ref: Ref): void {
 		if (ref.receiverSymbolKey && ref.receiverSymbolKey.length > 0) {
-			const bucket = this.refsByReceiverSymbolKey.get(ref.receiverSymbolKey);
-			if (bucket) {
-				bucket.delete(ref);
-				if (bucket.size === 0) {
-					this.refsByReceiverSymbolKey.delete(ref.receiverSymbolKey);
-				}
+			const receiverSymbolKey = ref.receiverSymbolKey;
+			const rootKey = receiverRootSymbolKey(receiverSymbolKey);
+			removeReferenceDependency(this.refsByReceiverSymbolKey, receiverSymbolKey, ref);
+			if (rootKey !== receiverSymbolKey) {
+				removeReferenceDependency(this.refsByReceiverSymbolKey, rootKey, ref);
 			}
 		}
 		if (ref.receiverHintKey && ref.receiverHintKey.length > 0) {
@@ -2575,6 +2578,23 @@ function resolveReferenceReceiverPathHintKey(
 			return resolved;
 		}
 	}
+	const rootSymbolKey = receiverRootSymbolKey(ref.receiverSymbolKey);
+	if (rootSymbolKey !== ref.receiverSymbolKey) {
+		const rootDeclId = directDeclByFileAndKey.get(fileSymbolKey(file, rootSymbolKey));
+		const rootHint = rootDeclId && declHints.get(rootDeclId);
+		if (rootHint) {
+			const resolved = resolveHintKeyToPathHintKey(rootHint, prefabClasses, objectClasses);
+			if (resolved) {
+				return buildPathHintKey(
+					getPathHintFile(resolved),
+					appendSymbolKey(
+						getPathHintSymbolKey(resolved),
+						ref.receiverSymbolKey.slice(rootSymbolKey.length + 1),
+					),
+				);
+			}
+		}
+	}
 	const memberDeclId = memberDeclByFileAndKey.get(fileSymbolKey(file, ref.receiverSymbolKey));
 	if (memberDeclId) {
 		const resolved = declHints.get(memberDeclId);
@@ -2611,7 +2631,7 @@ function recordModuleAliasPathHints(
 	if (data.moduleAliases.length === 0) {
 		return;
 	}
-	const declsByName = buildTopLevelDeclsByName(data.decls);
+	const declsByName = buildTopLevelDeclsByName(data.decls, data.chunk.range);
 	for (let index = 0; index < data.moduleAliases.length; index += 1) {
 		const alias = data.moduleAliases[index];
 		const decl = declsByName.get(alias.alias);
@@ -2636,11 +2656,19 @@ function recordModuleAliasPathHints(
 	}
 }
 
-function buildTopLevelDeclsByName(decls: readonly Decl[]): Map<string, Decl> {
+function buildTopLevelDeclsByName(
+	decls: readonly Decl[],
+	moduleScope: LuaSourceRange,
+): Map<string, Decl> {
 	const result = new Map<string, Decl>();
 	for (let index = 0; index < decls.length; index += 1) {
 		const decl = decls[index];
-		if (decl.namePath.length !== 1 || decl.scope.start.line !== 1 || decl.scope.start.column !== 1 || result.has(decl.name)) {
+		if (decl.namePath.length !== 1
+			|| decl.scope.start.line !== moduleScope.start.line
+			|| decl.scope.start.column !== moduleScope.start.column
+			|| decl.scope.end.line !== moduleScope.end.line
+			|| decl.scope.end.column !== moduleScope.end.column
+			|| result.has(decl.name)) {
 			continue;
 		}
 		result.set(decl.name, decl);
@@ -2661,7 +2689,30 @@ function resolveModuleReturnNamePath(chunk: LuaChunk): string[] | null {
 	if (returnStatement.expressions.length !== 1) {
 		return null;
 	}
-	return extractStaticMemberPath(returnStatement.expressions[0]);
+	const expression = returnStatement.expressions[0];
+	return expression.kind === LuaSyntaxKind.TableConstructorExpression
+		? []
+		: extractStaticMemberPath(expression);
+}
+
+function receiverRootSymbolKey(symbolKey: string): string {
+	const separator = symbolKey.indexOf('.');
+	return separator < 0 ? symbolKey : symbolKey.slice(0, separator);
+}
+
+function removeReferenceDependency(
+	dependencies: Map<string, Set<Ref>>,
+	key: string,
+	ref: Ref,
+): void {
+	const bucket = dependencies.get(key);
+	if (!bucket) {
+		return;
+	}
+	bucket.delete(ref);
+	if (bucket.size === 0) {
+		dependencies.delete(key);
+	}
 }
 
 function extractStaticMemberPath(expression: LuaExpression): string[] | null {
