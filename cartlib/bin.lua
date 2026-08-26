@@ -25,24 +25,21 @@ local new_reader<const> = function(addr, label)
 	}
 end
 
-local read_u8<const> = function(reader)
-	local source<const>: *u8 = reader.pos
-	local value<const> = *source
-	reader.pos = reader.pos + 1
-	return value
-end
-
 local read_varuint<const> = function(reader)
 	local value = 0
 	local shift = 0
+	local source: *u8 = reader.pos
 	for _ = 1, 5 do
-		local byte<const> = read_u8(reader)
+		local byte<const> = *source
+		source = source + 1
 		value = value | ((byte & 0x7f) << shift)
 		if (byte & 0x80) == 0 then
+			reader.pos = source
 			return value
 		end
 		shift = shift + 7
 	end
+	reader.pos = source
 	return value
 end
 
@@ -109,43 +106,44 @@ local read_object<const> = function(reader)
 end
 
 read_value = function(reader)
-	local tag<const> = read_u8(reader)
-	local value
+	local source<const>: *u8 = reader.pos
+	local tag<const> = *source
+	reader.pos = source + 1
 	if tag == tag_null then
-		value = nil
+		return nil
 	elseif tag == tag_true then
-		value = true
+		return true
 	elseif tag == tag_false then
-		value = false
+		return false
 	elseif tag == tag_f64 then
-		value = decode_float(read_u32le(reader.pos + 4), read_u32le(reader.pos), 8)
+		local value<const> = decode_float(read_u32le(reader.pos + 4), read_u32le(reader.pos), 8)
 		reader.pos = reader.pos + 8
+		return value
 	elseif tag == tag_str then
-		value = read_string(reader, 'string')
+		return read_string(reader)
 	elseif tag == tag_arr then
-		value = read_array(reader)
+		return read_array(reader)
 	elseif tag == tag_ref then
-		value = { r = read_varuint(reader) }
+		return { r = read_varuint(reader) }
 	elseif tag == tag_obj then
-		value = read_object(reader)
+		return read_object(reader)
 	elseif tag == tag_bin then
-		value = read_binary(reader)
+		return read_binary(reader)
 	elseif tag == tag_int then
-		value = read_varint(reader)
+		return read_varint(reader)
 	elseif tag == tag_f32 then
-		value = decode_float(read_u32le(reader.pos), 0, 4)
+		local value<const> = decode_float(read_u32le(reader.pos), 0, 4)
 		reader.pos = reader.pos + 4
+		return value
 	elseif tag == tag_set then
-		value = read_array(reader)
+		return read_array(reader)
 	else
 		error(reader.label .. ' has unsupported bin tag ' .. tostring(tag) .. '.')
 	end
-	return value
 end
 
 function bin.decode(addr, label)
-	local reader<const> = new_reader(addr, label)
-	read_u8(reader)
+	local reader<const> = new_reader(addr + 1, label)
 	reader.prop_names = read_prop_names(reader)
 	local value<const> = read_value(reader)
 	return value
