@@ -790,6 +790,11 @@ export class WebGLBackend implements GPUBackend {
 	getFrameStats() {
 		return this.frameStats;
 	}
+	executeGxGpuCommandDrain(gxGpu: GxGpu): void {
+		const output = gxGpu.readDeviceOutput();
+		executeGxGpuVramCommands(this.gxGpuState, output, output.commandBuffer.executedCommandCount);
+		gxGpu.retireExecutedCommands();
+	}
 	executeGxGpuReadback(gxGpu: GxGpu): void {
 		const output = gxGpu.readDeviceOutput();
 		executeGxGpuVramCommands(this.gxGpuState, output, output.readbackPort.fenceCommandCount);

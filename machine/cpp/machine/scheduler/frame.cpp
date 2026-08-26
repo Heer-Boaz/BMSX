@@ -14,7 +14,7 @@ void FrameSchedulerState::accumulateHostTime(f64 deltaMs) {
 }
 
 bool FrameSchedulerState::canRunScheduledUpdate(const Runtime& runtime) const {
-	if (runtime.machine.gxGpu.backendReadbackBlocksMachine()) {
+	if (runtime.machine.gxGpu.backendServiceBlocksMachine()) {
 		return false;
 	}
 	return (runtime.frameLoop.frameActive && runtime.frameLoop.frameState.cycleBudgetRemaining > 0)
@@ -33,7 +33,7 @@ i64 FrameSchedulerState::takeScheduledCycleBudget(const Runtime& runtime) {
 }
 
 bool FrameSchedulerState::beginHostExecution(Runtime& runtime, f64 hostDeltaMs) {
-	if (runtime.machine.gxGpu.backendReadbackBlocksMachine()) {
+	if (runtime.machine.gxGpu.backendServiceBlocksMachine()) {
 		m_backendServiceSuspended = true;
 		return false;
 	}
@@ -47,7 +47,7 @@ bool FrameSchedulerState::beginHostExecution(Runtime& runtime, f64 hostDeltaMs) 
 }
 
 void FrameSchedulerState::endHostExecution(Runtime& runtime) {
-	if (runtime.machine.gxGpu.backendReadbackBlocksMachine()) {
+	if (runtime.machine.gxGpu.backendServiceBlocksMachine()) {
 		m_backendServiceSuspended = true;
 	}
 }

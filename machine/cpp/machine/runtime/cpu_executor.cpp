@@ -20,7 +20,7 @@ bool CpuExecutionState::runStoppedCpu(Runtime& runtime, FrameState& frameState) 
 	auto& system = runtime.machine.systemController;
 	i64& cycleBudgetRemaining = frameState.cycleBudgetRemaining;
 	bool tickCompleted = runDueRuntimeTimers(runtime);
-	if (gxGpu.backendReadbackBlocksMachine()) {
+	if (gxGpu.backendServiceBlocksMachine()) {
 		return tickCompleted;
 	}
 	if (!cpu.isHaltedUntilIrq() && !system.cpuHeld()) {
@@ -49,7 +49,7 @@ bool CpuExecutionState::runStoppedCpu(Runtime& runtime, FrameState& frameState) 
 			const i64 cyclesToTarget = nextDeadline - scheduler.nowCycles();
 			if (cyclesToTarget <= 0) {
 				tickCompleted = runDueRuntimeTimers(runtime);
-				if (gxGpu.backendReadbackBlocksMachine()) {
+				if (gxGpu.backendServiceBlocksMachine()) {
 					return tickCompleted;
 				}
 				continue;
@@ -60,7 +60,7 @@ bool CpuExecutionState::runStoppedCpu(Runtime& runtime, FrameState& frameState) 
 			cycleBudgetRemaining -= idleCycles;
 			frameState.cycleBudgetRemaining = cycleBudgetRemaining;
 			tickCompleted = advanceRuntimeTime(runtime, idleCycles);
-			if (gxGpu.backendReadbackBlocksMachine()) {
+			if (gxGpu.backendServiceBlocksMachine()) {
 				return tickCompleted;
 			}
 			continue;
@@ -120,7 +120,7 @@ InstructionStepResult CpuExecutionState::runInstruction(Runtime& runtime, FrameS
 		|| (result == CpuSliceResult::InstructionHalted && !cpu.isMemoryWriteBlocked())
 		|| m_sliceCycleBudgetRemaining <= 0
 		|| runtime.vblank.tickCompleted()
-		|| runtime.machine.gxGpu.backendReadbackBlocksMachine()
+		|| runtime.machine.gxGpu.backendServiceBlocksMachine()
 		|| runtime.machine.systemController.cpuHeld()
 		|| cpu.isHaltedUntilIrq();
 	if (runCompleted) {
@@ -152,7 +152,7 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 	m_instructionRunActive = false;
 	runDueRuntimeTimers(runtime);
 	while (cpu.getFrameDepth() > targetDepth) {
-		if (machine.gxGpu.backendReadbackBlocksMachine()
+		if (machine.gxGpu.backendServiceBlocksMachine()
 			|| machine.systemController.cpuHeld()) {
 			return CpuSuspendedRunResult::Halted;
 		}
@@ -210,7 +210,7 @@ CpuSuspendedRunResult CpuExecutionState::runSuspendedUntilDepth(
 			}
 			bool advancedDeadline = false;
 			while (cpu.isHaltedUntilIrq()) {
-				if (machine.gxGpu.backendReadbackBlocksMachine()) {
+				if (machine.gxGpu.backendServiceBlocksMachine()) {
 					return CpuSuspendedRunResult::Halted;
 				}
 				const bool cpuHeld = machine.systemController.cpuHeld();
@@ -261,7 +261,7 @@ CpuExecutionState::CpuSliceResult CpuExecutionState::runSlice(
 	bool tickCompleted = runDueRuntimeTimers(runtime);
 	while (remaining > 0
 		&& !tickCompleted
-		&& !machine.gxGpu.backendReadbackBlocksMachine()
+		&& !machine.gxGpu.backendServiceBlocksMachine()
 		&& !machine.systemController.cpuHeld()) {
 		if (cpu.isMemoryWriteBlocked()) {
 			const i64 nextDeadline = scheduler.nextDeadline();

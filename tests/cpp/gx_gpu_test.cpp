@@ -625,6 +625,48 @@ void testCommandLogIsPresentableOnlyAfterVblankFrameSeal() {
 	require(commands.presentCommandCount == 1u, "GX-GPU seals next-frame command on the next VBLANK frame boundary");
 }
 
+void testSaturatedCommandLogDrainsExecutedPrefixIntoRetainedBackendVram() {
+	GpuHarness harness;
+	bmsx::GxGpu& gpu = harness.gpu;
+	const bmsx::GxGpuCommandBuffer& commands = gpu.readDeviceOutput().commandBuffer;
+	bmsx::SoftwareBackend backend(256, 212, bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
+	for (size_t commandIndex = 0u; commandIndex < bmsx::GX_GPU_COMMAND_CAPACITY; commandIndex += 1u) {
+		const bool finalCommand = commandIndex == bmsx::GX_GPU_COMMAND_CAPACITY - 1u;
+		gpu.writeGp0((bmsx::GX_GPU_GP0_FILL_RECTANGLE << 24u) | (finalCommand ? 0x00ff00u : 0x0000ffu));
+		gpu.writeGp0(finalCommand ? 16u : 0u);
+		gpu.writeGp0((1u << 16u) | 1u);
+		if (!finalCommand) {
+			completeGpuCommands(harness);
+		}
+	}
+
+	require(commands.commandCount == bmsx::GX_GPU_COMMAND_CAPACITY, "GX-GPU saturation retains the full command log");
+	require(commands.executedCommandCount == bmsx::GX_GPU_COMMAND_CAPACITY - 1u, "GX-GPU saturation leaves only the active command behind its timing frontier");
+	require(gpu.backendCommandDrainPending(), "GX-GPU saturation requests backend command materialization");
+	require(gpu.backendServiceBlocksMachine(), "GX-GPU saturation stops machine execution before another command can be admitted");
+	backend.executeGxGpuCommandDrain(gpu);
+	require(commands.commandCount == 1u, "GX-GPU command drain retains the active command suffix");
+	require(commands.executedCommandCount == 0u, "GX-GPU command drain rebases the execution frontier");
+	require(commands.wordCount == 3u, "GX-GPU command drain retains the active command words");
+	require(commands.commandWordStart[0] == 0u, "GX-GPU command drain rebases the active command word address");
+	require(!gpu.backendCommandDrainPending(), "GX-GPU command drain releases the capacity boundary");
+	require(!gpu.backendServiceBlocksMachine(), "GX-GPU command drain resumes machine execution at the same machine time");
+
+	completeGpuCommands(harness);
+	gpu.writeGp0(bmsx::GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24u);
+	gpu.writeGp0(0u);
+	gpu.writeGp0((1u << 16u) | 17u);
+	completeGpuCommands(harness);
+	backend.executeGxGpuReadback(gpu);
+	for (size_t wordIndex = 0u; wordIndex < 8u; wordIndex += 1u) {
+		require(gpu.readGp0() == 0x001f001fu, "GX-GPU command drain preserves materialized prefix pixels");
+	}
+	require(gpu.readGp0() == 0x000003e0u, "GX-GPU command drain executes the retained suffix against materialized VRAM");
+
+	gpu.presentReadyFrameOnVblankEdge();
+	require(gpu.lastFrameCommitted(), "GX-GPU command drain publishes materialized VRAM at the next VBlank");
+}
+
 void testPartialPresentationSnapshotDoesNotExposeQueuedCommands() {
 	bmsx::GxGpuSoftwareState software(bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes, 0u);
 	GpuHarness harness;
@@ -4469,6 +4511,7 @@ int main() {
 	testStateRestorePreservesInterlacedFieldLatches();
 	testInterlacedRenderCommandWords();
 	testCommandLogIsPresentableOnlyAfterVblankFrameSeal();
+	testSaturatedCommandLogDrainsExecutedPrefixIntoRetainedBackendVram();
 	testPartialPresentationSnapshotDoesNotExposeQueuedCommands();
 	testRetirePreservesCommandsAppendedAfterSealedVblankSnapshot();
 	testDisplayDisableAndDmaDirectionStatusBits();

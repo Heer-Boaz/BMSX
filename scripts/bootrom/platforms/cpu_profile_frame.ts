@@ -80,10 +80,15 @@ export function runCpuProfileHostFrame(
 			if (result === InstructionStepResult.Advanced) {
 				continue;
 			}
-			if (!runtime.machine.gxGpu.backendReadbackPending()) {
+			const gxGpu = runtime.machine.gxGpu;
+			if (!gxGpu.backendServicePending()) {
 				break;
 			}
-			presenter.backend.executeGxGpuReadback(runtime.machine.gxGpu);
+			if (gxGpu.backendCommandDrainPending()) {
+				presenter.backend.executeGxGpuCommandDrain(gxGpu);
+			} else {
+				presenter.backend.executeGxGpuReadback(gxGpu);
+			}
 		}
 		syncAfterRuntimeUpdate(
 			frameSession,

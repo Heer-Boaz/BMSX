@@ -33,6 +33,7 @@ import {
 	gxGpuSigned11,
 } from '../../machine/ts/spec/gx/gp0';
 import {
+	GX_GPU_COMMAND_CAPACITY,
 	GX_GPU_COMMAND_COPY_VRAM_TO_VRAM,
 	GX_GPU_COMMAND_DRAW_POLYGON,
 	GX_GPU_COMMAND_DRAW_LINE,
@@ -1146,6 +1147,51 @@ test('GX-GPU command log is presentable only after VBLANK frame seal', () => {
 	completeGpuCommands(gpu);
 	gpu.presentReadyFrameOnVblankEdge();
 	assert.equal(commands.presentCommandCount, 1);
+});
+
+test('GX-GPU drains a saturated executed prefix into retained backend VRAM', () => {
+	const { gpu } = createGpu();
+	const commands = gpu.readDeviceOutput().commandBuffer;
+	const backend = new HeadlessGPUBackend(
+		256,
+		212,
+		PSX_MACHINE_SPEC.gxGpuVramBytes,
+	);
+	for (let commandIndex = 0; commandIndex < GX_GPU_COMMAND_CAPACITY; commandIndex += 1) {
+		const finalCommand = commandIndex === GX_GPU_COMMAND_CAPACITY - 1;
+		gpu.writeGp0((GX_GPU_GP0_FILL_RECTANGLE << 24) | (finalCommand ? 0x00ff00 : 0x0000ff));
+		gpu.writeGp0(finalCommand ? 16 : 0);
+		gpu.writeGp0((1 << 16) | 1);
+		if (!finalCommand) {
+			completeGpuCommands(gpu);
+		}
+	}
+
+	assert.equal(commands.commandCount, GX_GPU_COMMAND_CAPACITY);
+	assert.equal(commands.executedCommandCount, GX_GPU_COMMAND_CAPACITY - 1);
+	assert.equal(gpu.backendCommandDrainPending(), true);
+	assert.equal(gpu.backendServiceBlocksMachine(), true);
+	backend.executeGxGpuCommandDrain(gpu);
+	assert.equal(commands.commandCount, 1);
+	assert.equal(commands.executedCommandCount, 0);
+	assert.equal(commands.wordCount, 3);
+	assert.equal(commands.commandWordStart[0], 0);
+	assert.equal(gpu.backendCommandDrainPending(), false);
+	assert.equal(gpu.backendServiceBlocksMachine(), false);
+
+	completeGpuCommands(gpu);
+	gpu.writeGp0(GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24);
+	gpu.writeGp0(0);
+	gpu.writeGp0((1 << 16) | 17);
+	completeGpuCommands(gpu);
+	backend.executeGxGpuReadback(gpu);
+	for (let wordIndex = 0; wordIndex < 8; wordIndex += 1) {
+		assert.equal(gpu.readGp0(), 0x001f001f);
+	}
+	assert.equal(gpu.readGp0(), 0x000003e0);
+
+	gpu.presentReadyFrameOnVblankEdge();
+	assert.equal(gpu.lastFrameCommitted(), true);
 });
 
 test('GX-GPU partial presentation snapshot does not expose queued commands', () => {

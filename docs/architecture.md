@@ -2691,6 +2691,20 @@ Save-state preserves the DMA ingress buffer, sequencer phase, command FIFO,
 packet assembly, execution frontier, and active deadline relative to scheduler
 time.
 
+The retained backend stream is a fixed staging window, not another guest-visible
+FIFO. When its 4096 command records are occupied, machine execution stops at the
+current cycle before another command can be admitted. The active backend executes
+the completed prefix into its already-owned physical VRAM resource, GX retires
+that exact prefix and rebases only the pending suffix, and the machine resumes at
+the same cycle. This boundary neither drops a command nor copies the full VRAM
+snapshot. It follows MAME's packet-completion model, where
+[`gpu_write`](https://github.com/mamedev/mame/blob/30a7a6bf72913cc849e0078813bdf74f67db4cb5/src/devices/video/psx.cpp#L2723-L3226)
+executes complete packets directly into device-owned VRAM, and
+DuckStation's [`EnsureVertexBufferSpace`](https://github.com/stenzek/duckstation/blob/c776dee9ed161503359f33c917d37c2531d0677b/src/core/gpu_hw.cpp#L3333-L3384)
+capacity flush before it reuses bounded submission storage.
+The ordinary VBlank presentation edge remains the sole scanout publication
+boundary; a mid-frame drain only marks the materialized VRAM for that next edge.
+
 The ingress sequencer tracks fixed packets, CPU-to-VRAM headers and payload
 length, and mono/Gouraud polyline vertex phase before deciding whether an
 accepted word reaches the FIFO. At a proven command boundary GP0(00h),

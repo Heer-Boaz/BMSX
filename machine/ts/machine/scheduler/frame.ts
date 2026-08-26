@@ -57,7 +57,7 @@ export class FrameSchedulerState {
 
 	private canRunScheduledUpdate(): boolean {
 		const runtime = this.runtime;
-		if (runtime.machine.gxGpu.backendReadbackBlocksMachine()) {
+		if (runtime.machine.gxGpu.backendServiceBlocksMachine()) {
 			return false;
 		}
 		return (runtime.frameLoop.frameActive && runtime.frameLoop.frameState.cycleBudgetRemaining > 0)
@@ -77,7 +77,7 @@ export class FrameSchedulerState {
 
 	private beginHostExecution(hostDeltaMs: number): boolean {
 		const runtime = this.runtime;
-		if (runtime.machine.gxGpu.backendReadbackBlocksMachine()) {
+		if (runtime.machine.gxGpu.backendServiceBlocksMachine()) {
 			this.backendServiceSuspended = true;
 			return false;
 		}
@@ -91,7 +91,7 @@ export class FrameSchedulerState {
 	}
 
 	private endHostExecution(): void {
-		if (this.runtime.machine.gxGpu.backendReadbackBlocksMachine()) {
+		if (this.runtime.machine.gxGpu.backendServiceBlocksMachine()) {
 			this.backendServiceSuspended = true;
 		}
 	}

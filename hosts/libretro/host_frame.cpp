@@ -40,8 +40,13 @@ LibretroFrameResult runLibretroFrame(
 	if (runtime.isDrawPending() && !hostMenuActive) {
 		const i64 previousTickSequence = runtime.frameScheduler.lastTickSequence;
 		runtime.frameScheduler.run(runtime, hostDeltaMs);
-		while (runtime.machine.gxGpu.backendReadbackPending()) {
-			presenter.backend().executeGxGpuReadback(runtime.machine.gxGpu);
+		GxGpu& gxGpu = runtime.machine.gxGpu;
+		while (gxGpu.backendServicePending()) {
+			if (gxGpu.backendCommandDrainPending()) {
+				presenter.backend().executeGxGpuCommandDrain(gxGpu);
+			} else {
+				presenter.backend().executeGxGpuReadback(gxGpu);
+			}
 			runtime.frameScheduler.run(runtime, 0.0);
 		}
 		presentation.syncAfterRuntimeUpdate(runtime, previousTickSequence);

@@ -256,6 +256,7 @@ export interface GPUBackend {
 	beginFrame(): void;
 	endFrame(): void;
 	getFrameStats(): { draws: number; drawIndexed: number; drawsInstanced: number; drawIndexedInstanced: number; bytesUploaded: number };
+	executeGxGpuCommandDrain(gxGpu: GxGpu): void;
 	executeGxGpuReadback(gxGpu: GxGpu): void;
 	captureGxGpuVramSnapshot(gxGpu: GxGpu): void | Promise<void>;
 	// Optional: fine-grained upload accounting for HUD

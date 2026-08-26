@@ -204,6 +204,7 @@ public:
 	virtual void beginFrame() = 0;
 	virtual void endFrame() = 0;
 	virtual FrameStats getFrameStats() const = 0;
+	virtual void executeGxGpuCommandDrain(GxGpu& gxGpu) = 0;
 	virtual void executeGxGpuReadback(GxGpu& gxGpu) = 0;
 	virtual void captureGxGpuVramSnapshot(GxGpu& gxGpu) = 0;
 
@@ -273,6 +274,7 @@ public:
 	void beginFrame() override;
 	void endFrame() override;
 	FrameStats getFrameStats() const override { return m_stats; }
+	void executeGxGpuCommandDrain(GxGpu& gxGpu) override;
 	void executeGxGpuReadback(GxGpu& gxGpu) override;
 	void captureGxGpuVramSnapshot(GxGpu& gxGpu) override;
 

@@ -34,6 +34,7 @@ import {
 } from '../../../spec/gx/gp0';
 import {
 	GX_GPU_COMMAND_COPY_VRAM_TO_VRAM,
+	GX_GPU_COMMAND_CAPACITY,
 	GX_GPU_COMMAND_DRAW_LINE,
 	GX_GPU_COMMAND_DRAW_POLYGON,
 	GX_GPU_COMMAND_DRAW_POLYLINE,
@@ -1434,12 +1435,24 @@ export class GxGpu {
 		return this.deviceOutput;
 	}
 
-	public backendReadbackPending(): boolean {
-		return this.commandBuffer.readback.phase === GX_GPU_READBACK_PENDING;
+	public backendCommandDrainPending(): boolean {
+		return this.commandBuffer.readback.phase === GX_GPU_READBACK_IDLE
+			&& this.commandBuffer.commandCount === GX_GPU_COMMAND_CAPACITY;
 	}
 
-	public backendReadbackBlocksMachine(): boolean {
+	public backendServicePending(): boolean {
 		const phase = this.commandBuffer.readback.phase;
+		if (phase === GX_GPU_READBACK_IDLE) {
+			return this.commandBuffer.commandCount === GX_GPU_COMMAND_CAPACITY;
+		}
+		return phase === GX_GPU_READBACK_PENDING;
+	}
+
+	public backendServiceBlocksMachine(): boolean {
+		const phase = this.commandBuffer.readback.phase;
+		if (phase === GX_GPU_READBACK_IDLE) {
+			return this.commandBuffer.commandCount === GX_GPU_COMMAND_CAPACITY;
+		}
 		return phase === GX_GPU_READBACK_PENDING || phase === GX_GPU_READBACK_SUBMITTED;
 	}
 
@@ -1475,6 +1488,12 @@ export class GxGpu {
 		const retiredCommands = this.commandBuffer.presentCommandCount;
 		this.retireCommandPrefix(retiredCommands);
 		this.vramPresentationPending = false;
+		this.notifySupervisorBoundary();
+	}
+
+	public retireExecutedCommands(): void {
+		this.retireCommandPrefix(this.commandBuffer.executedCommandCount);
+		this.vramPresentationPending = true;
 		this.notifySupervisorBoundary();
 	}
 

@@ -51,6 +51,7 @@ import {
 } from '../../machine/ts/spec/bmsx/io';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { GX_GPU_GP0_VRAM_TO_CPU_FIRST } from '../../machine/ts/spec/gx/gp0';
+import { GX_GPU_READBACK_PENDING } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
 import { Machine } from '../../machine/ts/machine/machine';
 import { captureMachineSaveState, captureMachineState, restoreMachineSaveState, restoreMachineState } from '../../machine/ts/machine/save_state';
 import { Memory } from '../../machine/ts/machine/memory/memory';
@@ -240,7 +241,7 @@ function makeRuntime(cpu: CPU, irqController: IrqController, sliceStats?: { begi
 				cpuHeld: () => false,
 				takeResetRequest: () => false,
 				},
-				gxGpu: { backendReadbackBlocksMachine: () => false },
+				gxGpu: { backendServiceBlocksMachine: () => false },
 			scheduler,
 			advanceDevices: (cycles: number) => {
 				scheduler.nowCycles += cycles;
@@ -574,7 +575,7 @@ function makeHaltFrameRuntime(): Runtime {
 				cpuHeld: () => false,
 				takeResetRequest: () => false,
 			},
-			gxGpu: { backendReadbackBlocksMachine: () => false },
+			gxGpu: { backendServiceBlocksMachine: () => false },
 			scheduler,
 			advanceDevices: (cycles: number) => {
 				scheduler.nowCycles += cycles;
@@ -658,7 +659,7 @@ function makeCompiledIrqRuntime(source: string): { cpu: CPU; irqController: IrqC
 			memory,
 			irqController,
 			systemController: { cpuHeld: () => false },
-			gxGpu: { backendReadbackBlocksMachine: () => false },
+			gxGpu: { backendServiceBlocksMachine: () => false },
 			scheduler,
 			advanceDevices: (cycles: number) => { scheduler.nowCycles += cycles; },
 		},
@@ -1813,7 +1814,7 @@ test('frame scheduler does not burn active CPU budget while halted for IRQ witho
 test('frame scheduler discards host time spent waiting for GPU backend execution', () => {
 	const runtime = makeHaltFrameRuntime();
 	let backendBlocked = true;
-	(runtime.machine.gxGpu as unknown as { backendReadbackBlocksMachine(): boolean }).backendReadbackBlocksMachine = () => backendBlocked;
+	(runtime.machine.gxGpu as unknown as { backendServiceBlocksMachine(): boolean }).backendServiceBlocksMachine = () => backendBlocked;
 	runtime.frameScheduler = new FrameSchedulerState(runtime);
 
 	runtime.frameScheduler.run(runtime.timing.frameDurationMs);
@@ -1862,7 +1863,7 @@ test('CPU execution stops at the device deadline that activates GPUREAD', () => 
 
 	new CpuExecutionState(runtime).runWithBudget(state);
 
-	assert.equal(machine.gxGpu.backendReadbackPending(), true);
+	assert.equal(machine.gxGpu.readDeviceOutput().readbackPort.phase, GX_GPU_READBACK_PENDING);
 	assert.equal(machine.scheduler.nowCycles, readbackDeadline);
 	assert.equal(cpu.getFrameDepth(), 1);
 	assert.equal(state.cycleBudgetRemaining > 0, true);

@@ -523,6 +523,12 @@ export class HeadlessGPUBackend implements GPUBackend {
 		return this.frameStats;
 	}
 
+	executeGxGpuCommandDrain(gxGpu: GxGpu): void {
+		const output = gxGpu.readDeviceOutput();
+		executeGxGpuSoftwareVramCommands(this.gxGpuSoftware, output, output.commandBuffer.executedCommandCount);
+		gxGpu.retireExecutedCommands();
+	}
+
 	executeGxGpuReadback(gxGpu: GxGpu): void {
 		const output = gxGpu.readDeviceOutput();
 		executeGxGpuSoftwareVramCommands(this.gxGpuSoftware, output, output.readbackPort.fenceCommandCount);

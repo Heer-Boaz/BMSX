@@ -298,7 +298,7 @@ test('host machine-cycle grants remain exact while PCRTC is stopped', () => {
 		timing: { cpuHz: 5_000_000, cpuCyclesPerMillisecond: 5_000, pcrtcRunning: false },
 		machine: {
 			gxGpu: {
-				backendReadbackBlocksMachine: () => false,
+				backendServiceBlocksMachine: () => false,
 				lastFrameCommitted: () => false,
 			},
 		},

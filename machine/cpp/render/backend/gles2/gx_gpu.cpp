@@ -3825,6 +3825,13 @@ void OpenGLES2Backend::executeGxGpuReadback(GxGpu& gxGpu) {
 	executeGxGpuVramCommands(gx, output.commandBuffer, output.readbackPort, output.vramSnapshotBytes, output.vramSnapshotSerial, output.readbackPort.fenceCommandCount());
 }
 
+void OpenGLES2Backend::executeGxGpuCommandDrain(GxGpu& gxGpu) {
+	OpenGLES2GxGpuState& gx = *m_gx_gpu;
+	const GxGpuDeviceOutput& output = gxGpu.readDeviceOutput();
+	executeGxGpuVramCommands(gx, output.commandBuffer, output.readbackPort, output.vramSnapshotBytes, output.vramSnapshotSerial, output.commandBuffer.executedCommandCount);
+	gxGpu.retireExecutedCommands();
+}
+
 void OpenGLES2Backend::captureGxGpuVramSnapshot(GxGpu& gxGpu) {
 	OpenGLES2GxGpuState& gx = *m_gx_gpu;
 	const GxGpuDeviceOutput& output = gxGpu.readDeviceOutput();

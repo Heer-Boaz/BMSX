@@ -98,6 +98,18 @@ void SoftwareBackend::executeGxGpuReadback(GxGpu& gxGpu) {
 		output.readbackPort.fenceCommandCount());
 }
 
+void SoftwareBackend::executeGxGpuCommandDrain(GxGpu& gxGpu) {
+	const GxGpuDeviceOutput& output = gxGpu.readDeviceOutput();
+	executeGxGpuSoftwareVramCommands(
+		m_gx_gpu_software,
+		output.commandBuffer,
+		output.readbackPort,
+		output.vramSnapshotBytes,
+		output.vramSnapshotSerial,
+		output.commandBuffer.executedCommandCount);
+	gxGpu.retireExecutedCommands();
+}
+
 void SoftwareBackend::captureGxGpuVramSnapshot(GxGpu& gxGpu) {
 	const GxGpuDeviceOutput& output = gxGpu.readDeviceOutput();
 	executeGxGpuSoftwareVramCommands(

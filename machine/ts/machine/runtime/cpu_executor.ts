@@ -49,7 +49,7 @@ export class CpuExecutionState {
 		const gxGpu = machine.gxGpu;
 		let cycleBudgetRemaining = state.cycleBudgetRemaining;
 		let tickCompleted = runDueRuntimeTimers(runtime);
-		if (gxGpu.backendReadbackBlocksMachine()) {
+		if (gxGpu.backendServiceBlocksMachine()) {
 			return tickCompleted;
 		}
 		if (!cpu.isHaltedUntilIrq() && !machine.systemController.cpuHeld()) {
@@ -78,7 +78,7 @@ export class CpuExecutionState {
 				const cyclesToTarget = nextDeadline - scheduler.nowCycles;
 				if (cyclesToTarget <= 0) {
 					tickCompleted = runDueRuntimeTimers(runtime);
-					if (gxGpu.backendReadbackBlocksMachine()) {
+					if (gxGpu.backendServiceBlocksMachine()) {
 						return tickCompleted;
 					}
 					continue;
@@ -88,7 +88,7 @@ export class CpuExecutionState {
 				cycleBudgetRemaining -= idleCycles;
 				state.cycleBudgetRemaining = cycleBudgetRemaining;
 				tickCompleted = advanceRuntimeTime(runtime, idleCycles);
-				if (gxGpu.backendReadbackBlocksMachine()) {
+				if (gxGpu.backendServiceBlocksMachine()) {
 					return tickCompleted;
 				}
 				continue;
@@ -149,7 +149,7 @@ export class CpuExecutionState {
 			|| (result === CpuSliceResult.InstructionHalted && !cpu.isMemoryWriteBlocked())
 			|| this.sliceCycleBudgetRemaining <= 0
 			|| runtime.vblank.tickCompleted
-			|| runtime.machine.gxGpu.backendReadbackBlocksMachine()
+			|| runtime.machine.gxGpu.backendServiceBlocksMachine()
 			|| runtime.machine.systemController.cpuHeld()
 			|| cpu.isHaltedUntilIrq();
 		if (runCompleted) {
@@ -178,7 +178,7 @@ export class CpuExecutionState {
 		this.instructionRunActive = false;
 		runDueRuntimeTimers(runtime);
 		while (cpu.getFrameDepth() > targetDepth) {
-			if (machine.gxGpu.backendReadbackBlocksMachine()
+			if (machine.gxGpu.backendServiceBlocksMachine()
 				|| machine.systemController.cpuHeld()) {
 				return CpuSuspendedRunResult.Halted;
 			}
@@ -234,7 +234,7 @@ export class CpuExecutionState {
 				}
 				let advancedDeadline = false;
 				while (cpu.isHaltedUntilIrq()) {
-					if (machine.gxGpu.backendReadbackBlocksMachine()) {
+					if (machine.gxGpu.backendServiceBlocksMachine()) {
 						return CpuSuspendedRunResult.Halted;
 					}
 					const cpuHeld = machine.systemController.cpuHeld();
@@ -282,7 +282,7 @@ export class CpuExecutionState {
 		let tickCompleted = runDueRuntimeTimers(runtime);
 		while (remaining > 0
 			&& !tickCompleted
-			&& !runtime.machine.gxGpu.backendReadbackBlocksMachine()
+			&& !runtime.machine.gxGpu.backendServiceBlocksMachine()
 			&& !runtime.machine.systemController.cpuHeld()) {
 			if (cpu.isMemoryWriteBlocked()) {
 				const nextDeadline = scheduler.nextDeadline();

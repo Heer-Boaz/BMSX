@@ -985,6 +985,12 @@ void GxGpu::retirePresentedCommands() {
 	notifySupervisorBoundary();
 }
 
+void GxGpu::retireExecutedCommands() {
+	retireCommandPrefix(m_commandBuffer.executedCommandCount);
+	m_vramPresentationPending = true;
+	notifySupervisorBoundary();
+}
+
 void GxGpu::retireCommandPrefix(size_t retiredCommands) {
 	const size_t retiredWords = m_commandBuffer.retireCommandsPreservingVram(retiredCommands);
 	if (m_pendingCommandTargetCount != 0u) {

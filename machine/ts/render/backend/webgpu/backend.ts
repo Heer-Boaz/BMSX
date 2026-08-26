@@ -107,6 +107,11 @@ export class WebGPUBackend implements GPUBackend {
 	beginFrame(): void { this._bytesUploaded = 0; }
 	endFrame(): void { }
 	getFrameStats() { return { draws: 0, drawIndexed: 0, drawsInstanced: 0, drawIndexedInstanced: 0, bytesUploaded: this._bytesUploaded, vertexBytes: 0, indexBytes: 0, uniformBytes: this._bytesUploaded, textureBytes: 0 }; }
+	executeGxGpuCommandDrain(gxGpu: GxGpu): void {
+		const output = gxGpu.readDeviceOutput();
+		executeGxGpuVramCommands(this.gxGpuState, output, output.commandBuffer.executedCommandCount, false);
+		gxGpu.retireExecutedCommands();
+	}
 	executeGxGpuReadback(gxGpu: GxGpu): void {
 		const output = gxGpu.readDeviceOutput();
 		serviceGxGpuReadback(this.gxGpuState, gxGpu, output);

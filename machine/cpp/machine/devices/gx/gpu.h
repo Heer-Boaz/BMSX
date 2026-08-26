@@ -247,14 +247,28 @@ public:
 	u32 readGpuReadWord() const;
 	const GxGpuPcrtcTiming& readPcrtcTiming() const { return m_pcrtc.timing; }
 	const GxGpuDeviceOutput& readDeviceOutput();
-	bool backendReadbackPending() const { return m_commandBuffer.readback.phase() == GX_GPU_READBACK_PENDING; }
-	bool backendReadbackBlocksMachine() const {
+	bool backendCommandDrainPending() const {
+		return m_commandBuffer.readback.phase() == GX_GPU_READBACK_IDLE
+			&& m_commandBuffer.commandCount == GX_GPU_COMMAND_CAPACITY;
+	}
+	bool backendServicePending() const {
 		const u8 phase = m_commandBuffer.readback.phase();
+		if (phase == GX_GPU_READBACK_IDLE) {
+			return m_commandBuffer.commandCount == GX_GPU_COMMAND_CAPACITY;
+		}
+		return phase == GX_GPU_READBACK_PENDING;
+	}
+	bool backendServiceBlocksMachine() const {
+		const u8 phase = m_commandBuffer.readback.phase();
+		if (phase == GX_GPU_READBACK_IDLE) {
+			return m_commandBuffer.commandCount == GX_GPU_COMMAND_CAPACITY;
+		}
 		return phase == GX_GPU_READBACK_PENDING || phase == GX_GPU_READBACK_SUBMITTED;
 	}
 	void presentReadyFrameOnVblankEdge();
 	bool lastFrameCommitted() const { return m_lastFrameCommitted; }
 	void retirePresentedCommands();
+	void retireExecutedCommands();
 	u32 readDrawModeWord() const;
 	u32 readTextureWindowWord() const;
 	u32 readDrawingAreaTopLeftWord() const;

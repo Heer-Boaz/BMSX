@@ -263,8 +263,13 @@ export function executeHostUpdate(
 ): void {
 	const previousTickSequence = runtime.frameScheduler.lastTickSequence;
 	runtime.frameScheduler.run(hostDeltaMs);
-	while (runtime.machine.gxGpu.backendReadbackPending()) {
-		presenter.backend.executeGxGpuReadback(runtime.machine.gxGpu);
+	const gxGpu = runtime.machine.gxGpu;
+	while (gxGpu.backendServicePending()) {
+		if (gxGpu.backendCommandDrainPending()) {
+			presenter.backend.executeGxGpuCommandDrain(gxGpu);
+		} else {
+			presenter.backend.executeGxGpuReadback(gxGpu);
+		}
 		runtime.frameScheduler.run(0);
 	}
 	syncAfterRuntimeUpdate(
