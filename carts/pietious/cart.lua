@@ -213,6 +213,7 @@ end
 
 init()
 atlas.load('gameplay')
+atlas.load('font')
 atlas.load('world1_daemon')
 new_game()
 vblank.wait()
