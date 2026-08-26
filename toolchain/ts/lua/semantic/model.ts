@@ -507,6 +507,7 @@ export class LuaProjectIndex {
 	private declPathHints: Map<SymbolID, SemanticHintKey> = new Map();
 	private prefabHintsById: Map<string, SemanticHintKey> = new Map();
 	private objectHintsById: Map<string, SemanticHintKey> = new Map();
+	private classBaseHints: Map<SemanticHintKey, SemanticHintKey> = new Map();
 	private version = 0;
 	private nextFileOrder = 1;
 
@@ -865,17 +866,30 @@ export class LuaProjectIndex {
 		if (!receiverPathHintKey) {
 			return null;
 		}
-		const targetKey = appendSymbolKey(getPathHintSymbolKey(receiverPathHintKey), ref.name);
-		return this.memberDeclByFileAndKey.get(fileSymbolKey(getPathHintFile(receiverPathHintKey), targetKey));
+		let classHintKey = receiverPathHintKey;
+		while (classHintKey) {
+			const targetKey = appendSymbolKey(getPathHintSymbolKey(classHintKey), ref.name);
+			const target = this.memberDeclByFileAndKey.get(
+				fileSymbolKey(getPathHintFile(classHintKey), targetKey),
+			);
+			if (target) {
+				return target;
+			}
+			classHintKey = this.classBaseHints.get(classHintKey);
+		}
+		return null;
 	}
 
 	private refreshResolvedHintMaps(
+		changedFile: string,
 		dirtyReceiverSymbolKeys: Set<string>,
 		dirtyReceiverHintKeys: Set<SemanticHintKey>,
+		filesToRebind: Set<string>,
 	): void {
 		const previousPrefabHintsById = this.prefabHintsById;
 		const previousObjectHintsById = this.objectHintsById;
 		const previousDeclPathHints = this.declPathHints;
+		const previousClassBaseHints = this.classBaseHints;
 		const orderedFiles = this.listFiles();
 		orderedFiles.sort((left, right) => this.fileOrder.get(left)! - this.fileOrder.get(right)!);
 		const moduleFiles = buildModuleFileMap(orderedFiles);
@@ -921,13 +935,67 @@ export class LuaProjectIndex {
 			const data = this.files.get(orderedFiles[fileIndex])!.data;
 			recordModuleAliasPathHints(data, this.files, moduleFiles, nextDeclPathHints);
 		}
+		const nextClassBaseHints = buildWorkspaceClassBaseHints(
+			orderedFiles,
+			this.files,
+			nextDeclPathHints,
+		);
 
 		this.collectDirtyHintKeys(previousPrefabHintsById, nextPrefabHintsById, buildPrefabHintKey, dirtyReceiverHintKeys);
 		this.collectDirtyHintKeys(previousObjectHintsById, nextObjectHintsById, buildObjectHintKey, dirtyReceiverHintKeys);
 		this.collectDirtyDeclHintSymbolKeys(previousDeclPathHints, nextDeclPathHints, dirtyReceiverSymbolKeys);
+		const affectedClasses = collectAffectedClassHints(
+			changedFile,
+			previousClassBaseHints,
+			nextClassBaseHints,
+			dirtyReceiverSymbolKeys,
+		);
+		if (affectedClasses.size > 0) {
+			this.collectFilesForClassReferences(
+				affectedClasses,
+				nextClassBaseHints,
+				nextDeclPathHints,
+				nextPrefabHintsById,
+				nextObjectHintsById,
+				filesToRebind,
+			);
+		}
 		this.prefabHintsById = nextPrefabHintsById;
 		this.objectHintsById = nextObjectHintsById;
 		this.declPathHints = nextDeclPathHints;
+		this.classBaseHints = nextClassBaseHints;
+	}
+
+	private collectFilesForClassReferences(
+		affectedClasses: ReadonlySet<SemanticHintKey>,
+		classBases: ReadonlyMap<SemanticHintKey, SemanticHintKey>,
+		declHints: ReadonlyMap<SymbolID, SemanticHintKey>,
+		prefabHints: ReadonlyMap<string, SemanticHintKey>,
+		objectHints: ReadonlyMap<string, SemanticHintKey>,
+		files: Set<string>,
+	): void {
+		for (const record of this.files.values()) {
+			const refs = record.data.refs;
+			for (let refIndex = 0; refIndex < refs.length; refIndex += 1) {
+				let classHint = resolveReferenceReceiverPathHintKey(
+					refs[refIndex],
+					record.data.model.file,
+					this.directDeclByFileAndKey,
+					this.memberDeclByFileAndKey,
+					declHints,
+					prefabHints,
+					objectHints,
+					this.globalsByKey,
+				);
+				while (classHint) {
+					if (affectedClasses.has(classHint)) {
+						files.add(record.data.model.file);
+						break;
+					}
+					classHint = classBases.get(classHint);
+				}
+			}
+		}
 	}
 
 	private collectDirtyHintKeys(
@@ -1043,8 +1111,8 @@ export class LuaProjectIndex {
 		this.collectDirtySymbolKeysForFile(data, dirtySymbolKeys);
 		this.applyFileData(data);
 		const dirtyReceiverHintKeys = new Set<SemanticHintKey>();
-		this.refreshResolvedHintMaps(dirtySymbolKeys, dirtyReceiverHintKeys);
 		const filesToRebind = new Set<string>([file]);
+		this.refreshResolvedHintMaps(file, dirtySymbolKeys, dirtyReceiverHintKeys, filesToRebind);
 		this.collectFilesForGlobalKeys(dirtySymbolKeys, filesToRebind);
 		this.collectFilesForReceiverSymbolKeys(dirtySymbolKeys, filesToRebind);
 		this.collectFilesForReceiverHintKeys(dirtyReceiverHintKeys, filesToRebind);
@@ -2732,6 +2800,120 @@ function buildModuleFileMap(files: readonly string[]): Map<string, string> {
 		}
 	}
 	return modules;
+}
+
+function collectAffectedClassHints(
+	changedFile: string,
+	previousBases: ReadonlyMap<SemanticHintKey, SemanticHintKey>,
+	nextBases: ReadonlyMap<SemanticHintKey, SemanticHintKey>,
+	dirtySymbolKeys: ReadonlySet<string>,
+): Set<SemanticHintKey> {
+	const affectedClasses = new Set<SemanticHintKey>();
+	for (const [classHint, baseHint] of previousBases) {
+		if (nextBases.get(classHint) !== baseHint) {
+			affectedClasses.add(classHint);
+		}
+	}
+	for (const [classHint, baseHint] of nextBases) {
+		if (previousBases.get(classHint) !== baseHint) {
+			affectedClasses.add(classHint);
+		}
+	}
+	collectClassesWithDirtyMembers(changedFile, previousBases, dirtySymbolKeys, affectedClasses);
+	collectClassesWithDirtyMembers(changedFile, nextBases, dirtySymbolKeys, affectedClasses);
+	return affectedClasses;
+}
+
+function collectClassesWithDirtyMembers(
+	changedFile: string,
+	bases: ReadonlyMap<SemanticHintKey, SemanticHintKey>,
+	dirtySymbolKeys: ReadonlySet<string>,
+	affectedClasses: Set<SemanticHintKey>,
+): void {
+	for (const [classHint, baseHint] of bases) {
+		if (classHasDirtyMember(changedFile, classHint, dirtySymbolKeys)) {
+			affectedClasses.add(classHint);
+		}
+		if (classHasDirtyMember(changedFile, baseHint, dirtySymbolKeys)) {
+			affectedClasses.add(baseHint);
+		}
+	}
+}
+
+function classHasDirtyMember(
+	changedFile: string,
+	classHint: SemanticHintKey,
+	dirtySymbolKeys: ReadonlySet<string>,
+): boolean {
+	if (getPathHintFile(classHint) !== changedFile) {
+		return false;
+	}
+	const classSymbolKey = getPathHintSymbolKey(classHint);
+	for (const dirtySymbolKey of dirtySymbolKeys) {
+		if (dirtySymbolKey === classSymbolKey
+			|| (dirtySymbolKey.startsWith(classSymbolKey)
+				&& dirtySymbolKey.charCodeAt(classSymbolKey.length) === 0x2e)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+function buildWorkspaceClassBaseHints(
+	files: readonly string[],
+	records: ReadonlyMap<string, FileRecord>,
+	declPathHints: ReadonlyMap<SymbolID, SemanticHintKey>,
+): Map<SemanticHintKey, SemanticHintKey> {
+	const bases = new Map<SemanticHintKey, SemanticHintKey>();
+	for (let fileIndex = 0; fileIndex < files.length; fileIndex += 1) {
+		const file = files[fileIndex];
+		const data = records.get(file)!.data;
+		for (let statementIndex = 0; statementIndex < data.chunk.body.length; statementIndex += 1) {
+			const relation = extractClassBaseRelation(data.chunk.body[statementIndex]);
+			if (!relation) {
+				continue;
+			}
+			const classDecl = findDeclBySymbolKey(data.decls, joinNamePath(relation.classPath));
+			const baseDecl = findDeclBySymbolKey(data.decls, joinNamePath(relation.basePath));
+			if (!classDecl || !baseDecl) {
+				continue;
+			}
+			bases.set(
+				buildPathHintKey(file, classDecl.symbolKey),
+				declPathHints.get(baseDecl.id) ?? buildPathHintKey(file, baseDecl.symbolKey),
+			);
+		}
+	}
+	return bases;
+}
+
+function extractClassBaseRelation(statement: LuaStatement): {
+	classPath: string[];
+	basePath: string[];
+} {
+	if (statement.kind !== LuaSyntaxKind.CallStatement
+		|| statement.expression.kind !== LuaSyntaxKind.CallExpression) {
+		return null;
+	}
+	const call = statement.expression;
+	if (call.methodName
+		|| resolveDirectCallName(call.callee) !== 'setmetatable'
+		|| call.arguments.length !== 2) {
+		return null;
+	}
+	const classPath = extractStaticMemberPath(call.arguments[0]);
+	const metatable = call.arguments[1];
+	if (!classPath || metatable.kind !== LuaSyntaxKind.TableConstructorExpression) {
+		return null;
+	}
+	for (let fieldIndex = 0; fieldIndex < metatable.fields.length; fieldIndex += 1) {
+		const field = metatable.fields[fieldIndex];
+		if (field.kind === LuaTableFieldKind.IdentifierKey && field.name === '__index') {
+			const basePath = extractStaticMemberPath(field.value);
+			return basePath ? { classPath, basePath } : null;
+		}
+	}
+	return null;
 }
 
 function recordModuleAliasPathHints(

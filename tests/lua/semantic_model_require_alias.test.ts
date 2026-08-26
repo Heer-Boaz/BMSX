@@ -136,3 +136,67 @@ test('semantic workspace resolves methods on module-owned class instances', asyn
 	assert.equal(runTarget!.decl.file, 'service.lua');
 	assert.deepEqual(runTarget!.decl.namePath, ['service_class', 'run']);
 });
+
+test('semantic workspace resolves inherited module members through class metatables', async () => {
+	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const baseSource = [
+		'local base<const> = {}',
+		'function base:dispose() end',
+		'return base',
+	].join('\n');
+	const middleSource = [
+		"local base<const> = require('base')",
+		'local middle<const> = {}',
+		'middle.__index = middle',
+		'setmetatable(middle, { __index = base })',
+		'return middle',
+	].join('\n');
+	const leafSource = [
+		"local middle<const> = require('middle')",
+		'local leaf<const> = {}',
+		'leaf.__index = leaf',
+		'setmetatable(leaf, { __index = middle })',
+		'return leaf',
+	].join('\n');
+	const mainLines = [
+		"local leaf<const> = require('leaf')",
+		'leaf:dispose()',
+		'leaf:activate()',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('main.lua', mainLines.join('\n'));
+	workspace.updateFile('leaf.lua', leafSource);
+	workspace.updateFile('middle.lua', middleSource);
+	workspace.updateFile('base.lua', baseSource);
+	const disposeTarget = workspace.getSnapshot().symbolAt(
+		'main.lua',
+		2,
+		mainLines[1].indexOf('dispose') + 1,
+	);
+
+	assert.ok(disposeTarget, 'inherited module method target');
+	assert.equal(disposeTarget!.decl.file, 'base.lua');
+	assert.deepEqual(disposeTarget!.decl.namePath, ['base', 'dispose']);
+	assert.equal(
+		workspace.getSnapshot().symbolAt(
+			'main.lua',
+			3,
+			mainLines[2].indexOf('activate') + 1,
+		),
+		null,
+	);
+	workspace.updateFile('base.lua', [
+		'local base<const> = {}',
+		'function base:dispose() end',
+		'function base:activate() end',
+		'return base',
+	].join('\n'));
+	const activateTarget = workspace.getSnapshot().symbolAt(
+		'main.lua',
+		3,
+		mainLines[2].indexOf('activate') + 1,
+	);
+	assert.ok(activateTarget, 'incrementally added inherited method target');
+	assert.equal(activateTarget!.decl.file, 'base.lua');
+	assert.deepEqual(activateTarget!.decl.namePath, ['base', 'activate']);
+});
