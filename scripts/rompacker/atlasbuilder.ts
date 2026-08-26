@@ -4,6 +4,7 @@ import type { GxTexturePageTile } from '../../toolchain/ts/rompack/assets';
 import type { ImageResource } from './rompacker.rompack';
 import {
 	GX_SYSTEM_TEXTURE_ATLAS_NAME,
+	GX_TEXTURE_PAGE_PIXEL_SHIFT,
 	GX_TEXTURE_PAGE_PIXELS,
 } from './texture_atlas_contract';
 
@@ -33,6 +34,12 @@ type SkylineNode = {
 	y: number;
 	width: number;
 };
+
+function texturePageCount(width: number, height: number): number {
+	const columns = ((width - 1) >>> GX_TEXTURE_PAGE_PIXEL_SHIFT) + 1;
+	const rows = ((height - 1) >>> GX_TEXTURE_PAGE_PIXEL_SHIFT) + 1;
+	return columns * rows;
+}
 
 function buildTexturePageTiles(image: ImageResource, x: number, y: number): GxTexturePageTile[] {
 	const tiles: GxTexturePageTile[] = [];
@@ -110,27 +117,26 @@ function packingWidths(
 	bounds: TexturePackingBounds,
 ): number[] {
 	const candidates = new Set<number>();
+	let widest = 0;
+	let rowWidth = 0;
+	for (let imageIndex = 0; imageIndex < images.length; imageIndex += 1) {
+		const width = images[imageIndex].img!.width;
+		if (width > widest) widest = width;
+		rowWidth += width;
+		if (rowWidth <= bounds.maxPixelWidth) candidates.add(rowWidth);
+	}
+	candidates.add(widest);
+	let powerOfTwoWidth = 1;
+	while (powerOfTwoWidth < widest) powerOfTwoWidth <<= 1;
+	while (powerOfTwoWidth < bounds.maxPixelWidth) {
+		candidates.add(powerOfTwoWidth);
+		powerOfTwoWidth <<= 1;
+	}
 	if (bounds.pageLocal) {
 		for (let width = GX_TEXTURE_PAGE_PIXELS;
 			width < bounds.maxPixelWidth;
 			width += GX_TEXTURE_PAGE_PIXELS) {
 			candidates.add(width);
-		}
-	} else {
-		let widest = 0;
-		let rowWidth = 0;
-		for (let imageIndex = 0; imageIndex < images.length; imageIndex += 1) {
-			const width = images[imageIndex].img!.width;
-			if (width > widest) widest = width;
-			rowWidth += width;
-			if (rowWidth <= bounds.maxPixelWidth) candidates.add(rowWidth);
-		}
-		candidates.add(widest);
-		let powerOfTwoWidth = 1;
-		while (powerOfTwoWidth < widest) powerOfTwoWidth <<= 1;
-		while (powerOfTwoWidth < bounds.maxPixelWidth) {
-			candidates.add(powerOfTwoWidth);
-			powerOfTwoWidth <<= 1;
 		}
 	}
 	candidates.add(bounds.maxPixelWidth);
@@ -259,6 +265,7 @@ function packImages(images: ImageResource[], bounds: TexturePackingBounds): Pack
 	const widths = packingWidths(orderedImages, bounds);
 	let selected: PackedAtlas | undefined;
 	let selectedArea = 0;
+	let selectedPageCount = 0;
 	for (let widthIndex = 0; widthIndex < widths.length; widthIndex += 1) {
 		const packed = packSkyline(
 			orderedImages,
@@ -268,14 +275,20 @@ function packImages(images: ImageResource[], bounds: TexturePackingBounds): Pack
 		);
 		if (packed == null) continue;
 		const area = packed.width * packed.height;
+		const pageCount = texturePageCount(packed.width, packed.height);
 		if (selected == null
 			|| area < selectedArea
-			|| (area === selectedArea && packed.height < selected.height)
+			|| (area === selectedArea && pageCount < selectedPageCount)
 			|| (area === selectedArea
+				&& pageCount === selectedPageCount
+				&& packed.height < selected.height)
+			|| (area === selectedArea
+				&& pageCount === selectedPageCount
 				&& packed.height === selected.height
 				&& packed.width < selected.width)) {
 			selected = packed;
 			selectedArea = area;
+			selectedPageCount = pageCount;
 		}
 	}
 	if (selected == null) {

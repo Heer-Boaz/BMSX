@@ -1,3 +1,4 @@
 export const TEXTURE_ATLAS_RGBA_BYTES_PER_PIXEL = 4;
+export const GX_TEXTURE_PAGE_PIXEL_SHIFT = 8;
 export const GX_TEXTURE_PAGE_PIXELS = 256;
 export const GX_SYSTEM_TEXTURE_ATLAS_NAME = '$system';

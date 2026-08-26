@@ -31,6 +31,21 @@ test('page-local texture packing moves an image to the next hardware page instea
 	assert.deepEqual([second.textureU, second.textureV], [256, 0]);
 });
 
+test('equally compact texture packing prefers fewer hardware pages', () => {
+	const glyphs: ImageResource[] = [];
+	for (let index = 0; index < 50; index += 1) {
+		glyphs.push(imageResource(`glyph_${index}`, index, 8, 8));
+	}
+	const texture = createTextureAtlas(glyphs, {
+		maxPixelWidth: 1024,
+		maxHeight: 1024,
+		pageLocal: true,
+	});
+
+	assert.equal(texture.width, 200);
+	assert.equal(texture.height, 16);
+});
+
 test('surface texture packing keeps an intentionally oversized image contiguous', () => {
 	const wide = imageResource('wide', 1, 264, 32);
 	const ordinary = imageResource('ordinary', 2, 128, 64);
