@@ -70,6 +70,7 @@ end
 
 init()
 atlas.load('quiz')
+atlas.load('font')
 atlas.load('ui')
 new_game()
 vblank.wait()

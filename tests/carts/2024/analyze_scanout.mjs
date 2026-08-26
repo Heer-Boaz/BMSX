@@ -51,7 +51,7 @@ function readPng(filePath) {
 
 const glyphs = {};
 for (const [character, imageName] of Object.entries(glyphNames)) {
-	glyphs[character] = readPng(path.join(fontDirectory, `${imageName}.png`));
+	glyphs[character] = readPng(path.join(fontDirectory, `${imageName}@atlas=font.png`));
 }
 
 // This is the historical TypeScript engine's wrapGlyphs algorithm. Explicit
@@ -110,14 +110,14 @@ function blitDirect16(target, source, destinationX, destinationY) {
 	}
 }
 
-function renderExpectedFrame(imageId, text) {
+function renderExpectedFrame(imageFile, text) {
 	const frame = new PNG({ width: screenWidth, height: screenHeight });
 	frame.data.fill(0);
 	for (let offset = 3; offset < frame.data.length; offset += 4) {
 		frame.data[offset] = 255;
 	}
 
-	const portrait = readPng(path.join(imageDirectory, `${imageId}.png`));
+	const portrait = readPng(path.join(imageDirectory, imageFile));
 	blitDirect16(frame, portrait, screenWidth - portrait.width, screenHeight - portrait.height);
 
 	const lines = wrapHistoricalText(text);
@@ -157,20 +157,20 @@ function questionText(questionIndex) {
 }
 
 const expectedFrames = [
-	['frame_00240.png', 'quiz', quizData.intro.join('\n')],
-	['frame_00480.png', 'film', questionText(0)],
-	['frame_00730.png', 'film', questionText(1)],
-	['frame_01000.png', 'goed', quizData.questions[1].reaction_a],
-	['frame_01250.png', 'hmm', questionText(2)],
-	['frame_01600.png', 'sport', questionText(11)],
-	['frame_01900.png', 'goed', quizData.questions[11].reaction_b],
-	['frame_02300.png', 'hmm', questionText(26)],
-	['frame_02900.png', 'klaar', quizData.complete.join('\n')],
+	['frame_00240.png', 'quiz@atlas=quiz.png', quizData.intro.join('\n')],
+	['frame_00480.png', 'film@atlas=quiz.png', questionText(0)],
+	['frame_00730.png', 'film@atlas=quiz.png', questionText(1)],
+	['frame_01000.png', 'goed@atlas=ui.png', quizData.questions[1].reaction_a],
+	['frame_01250.png', 'hmm@atlas=ui.png', questionText(2)],
+	['frame_01600.png', 'sport@atlas=quiz.png', questionText(11)],
+	['frame_01900.png', 'goed@atlas=ui.png', quizData.questions[11].reaction_b],
+	['frame_02300.png', 'hmm@atlas=ui.png', questionText(26)],
+	['frame_02900.png', 'klaar@atlas=ui.png', quizData.complete.join('\n')],
 ];
 
-for (const [fileName, imageId, text] of expectedFrames) {
+for (const [fileName, imageFile, text] of expectedFrames) {
 	const actual = readPng(path.join(screenshotDirectory, fileName));
-	const expected = renderExpectedFrame(imageId, text);
+	const expected = renderExpectedFrame(imageFile, text);
 	assert.equal(actual.width, expected.width, `${fileName} width`);
 	assert.equal(actual.height, expected.height, `${fileName} height`);
 	let differentChannels = 0;
