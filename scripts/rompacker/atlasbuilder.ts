@@ -275,17 +275,20 @@ function packImages(images: ImageResource[], bounds: TexturePackingBounds): Pack
 		);
 		if (packed == null) continue;
 		const area = packed.width * packed.height;
-		const pageCount = texturePageCount(packed.width, packed.height);
-		if (selected == null
-			|| area < selectedArea
-			|| (area === selectedArea && pageCount < selectedPageCount)
-			|| (area === selectedArea
-				&& pageCount === selectedPageCount
-				&& packed.height < selected.height)
-			|| (area === selectedArea
-				&& pageCount === selectedPageCount
-				&& packed.height === selected.height
-				&& packed.width < selected.width)) {
+		const pageCount = bounds.pageLocal ? texturePageCount(packed.width, packed.height) : 0;
+		let betterPacking = selected == null;
+		if (!betterPacking) {
+			if (bounds.pageLocal && pageCount !== selectedPageCount) {
+				betterPacking = pageCount < selectedPageCount;
+			} else if (area !== selectedArea) {
+				betterPacking = area < selectedArea;
+			} else if (packed.height !== selected.height) {
+				betterPacking = packed.height < selected.height;
+			} else {
+				betterPacking = packed.width < selected.width;
+			}
+		}
+		if (betterPacking) {
 			selected = packed;
 			selectedArea = area;
 			selectedPageCount = pageCount;

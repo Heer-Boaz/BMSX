@@ -2939,7 +2939,9 @@ serialized as a second offset. A filename `@atlas=name` suffix is the sole produ
 grouping directive. It is removed from the `imgid`; the atlas produces exactly
 one destination-free texture resource and never build-time copies for physical
 slots. Packing is deterministic and evaluates compact atlas widths before
-selecting the smallest native rectangle. The producer selects palette4 only
+selecting the fewest hardware pages and then the smallest native rectangle for
+page-local groups; groups containing an oversized surface select the smallest
+native rectangle directly. The producer selects palette4 only
 when the complete atlas has at most sixteen distinct RGB555/STP words; otherwise
 it emits direct16.
 
