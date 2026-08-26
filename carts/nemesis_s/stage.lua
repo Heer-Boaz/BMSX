@@ -13,24 +13,84 @@ local stage_scroll_follower_component<const> = require('stage_scroll_follower_co
 require('constants')
 local bin<const> = require('cartlib/bin')
 local assets<const> = require('bmsx/assets')
+local string_byte<const> = string.byte
+local string_char<const> = string.char
 
 local stage<const> = {}
 stage.__index = stage
 
 local resume_scrolling_event<const> = 'stage.resume_scrolling'
 
-local house_roof_base_chars<const> = { ['@'] = true, ['/'] = true, ['\\'] = true, ['^'] = true }
-local snow_surface_chars<const> = { ['='] = true, ['-'] = true }
-local empty_stage_chars<const> = { p = true, ['P'] = true, m = true, ['M'] = true }
-local chimney_chars<const> = { s = true, ['S'] = true, ['R'] = true }
-local transparent_overlay_chars<const> = { ['K'] = true, ["'"] = true }
+-- The YAML map stays author-facing ASCII; decoding consumes byte tokens directly.
+local stage_char_space<const> = 32 -- space
+local stage_char_collision<const> = 33 -- !
+local stage_char_house<const> = 35 -- #
+local stage_char_ground_variant<const> = 37 -- %
+local stage_char_moon<const> = 39 -- '
+local stage_char_house_left<const> = 40 -- (
+local stage_char_house_right<const> = 41 -- )
+local stage_char_house_center<const> = 43 -- +
+local stage_char_ground<const> = 45 -- -
+local stage_char_house_left_slope<const> = 47 -- /
+local stage_char_tree_1<const> = 49 -- 1
+local stage_char_tree_2<const> = 50 -- 2
+local stage_char_tree_3<const> = 51 -- 3
+local stage_char_tree_4<const> = 52 -- 4
+local stage_char_tree_5<const> = 53 -- 5
+local stage_char_tree_6<const> = 54 -- 6
+local stage_char_tree_7<const> = 55 -- 7
+local stage_char_ground_alt<const> = 61 -- =
+local stage_char_roof<const> = 64 -- @
+local stage_char_kerk<const> = 75 -- K
+local stage_char_mijter_red<const> = 77 -- M
+local stage_char_sneeuwpop<const> = 78 -- N
+local stage_char_sint_pop_down<const> = 80 -- P
+local stage_char_rook_generator<const> = 82 -- R
+local stage_char_schoorsteen_foe<const> = 83 -- S
+local stage_char_zak_foe<const> = 90 -- Z
+local stage_char_house_right_slope<const> = 92 -- \
+local stage_char_house_peak<const> = 94 -- ^
+local stage_char_ground_vertical<const> = 95 -- _
+local stage_char_door<const> = 100 -- d
+local stage_char_mijter_blue<const> = 109 -- m
+local stage_char_lantaarn<const> = 111 -- o
+local stage_char_sint_pop_up<const> = 112 -- p
+local stage_char_chimney<const> = 115 -- s
+local stage_char_tree<const> = 116 -- t
+local stage_char_window<const> = 119 -- w
+local stage_char_lantaarn_post<const> = 124 -- |
+local house_roof_base_chars<const> = {
+	[stage_char_roof] = true,
+	[stage_char_house_left_slope] = true,
+	[stage_char_house_right_slope] = true,
+	[stage_char_house_peak] = true,
+}
+local snow_surface_chars<const> = {
+	[stage_char_ground_alt] = true,
+	[stage_char_ground] = true,
+}
+local empty_stage_chars<const> = {
+	[stage_char_sint_pop_up] = true,
+	[stage_char_sint_pop_down] = true,
+	[stage_char_mijter_blue] = true,
+	[stage_char_mijter_red] = true,
+}
+local chimney_chars<const> = {
+	[stage_char_chimney] = true,
+	[stage_char_schoorsteen_foe] = true,
+	[stage_char_rook_generator] = true,
+}
+local transparent_overlay_chars<const> = {
+	[stage_char_kerk] = true,
+	[stage_char_moon] = true,
+}
 local sint_pop_group_by_symbol<const> = {
-	p = sint_pop_group_up,
-	['P'] = sint_pop_group_down,
+	[stage_char_sint_pop_up] = sint_pop_group_up,
+	[stage_char_sint_pop_down] = sint_pop_group_down,
 }
 local mijter_foe_type_by_symbol<const> = {
-	m = mijter_foe_type_blue,
-	['M'] = mijter_foe_type_red,
+	[stage_char_mijter_blue] = mijter_foe_type_blue,
+	[stage_char_mijter_red] = mijter_foe_type_red,
 }
 local stage_scroll_follower_view
 
@@ -150,116 +210,119 @@ local reset_star_positions<const> = function(target, source)
 	end
 end
 
-local char_at<const> = function(map_rows, x, y)
-	if y < 1 or y > #map_rows then
-		return ' '
+local decode_stage_tile<const> = function(above_row, row, below_row, x, y, width, ch)
+	local above = stage_char_space
+	if above_row ~= nil then
+		above = string_byte(above_row, x)
 	end
-	local row<const> = map_rows[y]
-	if x < 1 or x > string.len(row) then
-		return ' '
+	local below = stage_char_space
+	if below_row ~= nil then
+		below = string_byte(below_row, x)
 	end
-	return string.sub(row, x, x)
-end
+	local left = stage_char_space
+	local left_down = stage_char_space
+	if x > 1 then
+		left = string_byte(row, x - 1)
+		if below_row ~= nil then
+			left_down = string_byte(below_row, x - 1)
+		end
+	end
+	local right = stage_char_space
+	local right_down = stage_char_space
+	if x < width then
+		right = string_byte(row, x + 1)
+		if below_row ~= nil then
+			right_down = string_byte(below_row, x + 1)
+		end
+	end
 
-local should_snow_from_neighbors<const> = function(below, left_down, right_down)
-	return snow_surface_chars[below] and left_down ~= ' ' and right_down ~= ' '
-end
-
-local decode_stage_tile<const> = function(map_rows, x, y, ch)
-	local above<const> = char_at(map_rows, x, y - 1)
-	local below<const> = char_at(map_rows, x, y + 1)
-	local left<const> = char_at(map_rows, x - 1, y)
-	local right<const> = char_at(map_rows, x + 1, y)
-	local left_down<const> = char_at(map_rows, x - 1, y + 1)
-	local right_down<const> = char_at(map_rows, x + 1, y + 1)
-
-	if ch == '!' then
+	if ch == stage_char_collision then
 		return 'collision'
 	end
-	if ch == '#' then
+	if ch == stage_char_house then
 		if house_roof_base_chars[above] then
 			return 'house_13'
 		end
 		return 'house_8'
 	end
-	if ch == '@' then
+	if ch == stage_char_roof then
 		return 'house_12'
 	end
-	if ch == 'd' then
+	if ch == stage_char_door then
 		return 'house_door'
 	end
-	if ch == 'w' then
-		if right == '@' then
+	if ch == stage_char_window then
+		if right == stage_char_roof then
 			return 'house_window2'
 		end
 		return 'house_window'
 	end
-	if ch == '/' then
-		if below == '/' then
+	if ch == stage_char_house_left_slope then
+		if below == stage_char_house_left_slope then
 			return 'house_1'
 		end
 		return 'house_5'
 	end
-	if ch == '\\' then
-		if below == '\\' then
+	if ch == stage_char_house_right_slope then
+		if below == stage_char_house_right_slope then
 			return 'house_4'
 		end
 		return 'house_6'
 	end
-	if ch == '^' then
+	if ch == stage_char_house_peak then
 		return 'house_2'
 	end
-	if ch == '+' then
+	if ch == stage_char_house_center then
 		return 'house_3'
 	end
-	if ch == '(' then
+	if ch == stage_char_house_left then
 		if house_roof_base_chars[above] then
 			return 'house_7'
 		end
 		return 'house_10'
 	end
-	if ch == ')' then
+	if ch == stage_char_house_right then
 		if house_roof_base_chars[above] then
 			return 'house_9'
 		end
 		return 'house_11'
 	end
-	if ch == '|' then
+	if ch == stage_char_lantaarn_post then
 		if snow_surface_chars[below] then
 			return 'lantaarn3'
 		end
 		return 'lantaarn2'
 	end
-	if ch == 'o' then
+	if ch == stage_char_lantaarn then
 		return 'lantaarn1'
 	end
 	if empty_stage_chars[ch] then
 		return nil
 	end
-	if ch == '-' then
-		if left ~= ' ' and right ~= ' ' then
+	if ch == stage_char_ground then
+		if left ~= stage_char_space and right ~= stage_char_space then
 			return 'ground'
 		end
-		if left == ' ' then
+		if left == stage_char_space then
 			return 'ground_start'
 		end
 		return 'ground_end'
 	end
-	if ch == '=' then
-		if left ~= ' ' and right ~= ' ' then
+	if ch == stage_char_ground_alt then
+		if left ~= stage_char_space and right ~= stage_char_space then
 			return 'ground2'
 		end
-		if left == ' ' then
+		if left == stage_char_space then
 			return 'ground_start'
 		end
 		return 'ground_end'
 	end
-	if ch == '_' then
+	if ch == stage_char_ground_vertical then
 		local parity_even<const> = ((x - 1) % 2) == 0
-		if left == ' ' then
+		if left == stage_char_space then
 			return 'ground_start_v'
 		end
-		if right == ' ' then
+		if right == stage_char_space then
 			return 'ground_end_v'
 		end
 		if parity_even then
@@ -267,7 +330,7 @@ local decode_stage_tile<const> = function(map_rows, x, y, ch)
 		end
 		return 'ground2_v'
 	end
-	if ch == '%' then
+	if ch == stage_char_ground_variant then
 		local parity_even<const> = ((x - 1) % 2) == 0
 		if parity_even then
 			return 'ground3'
@@ -275,115 +338,107 @@ local decode_stage_tile<const> = function(map_rows, x, y, ch)
 		return 'ground4'
 	end
 	if chimney_chars[ch] then
-		if above == ' ' then
+		if above == stage_char_space then
 			return 'schoorsteen1'
 		end
-		if left == ' ' or right == ' ' then
+		if left == stage_char_space or right == stage_char_space then
 			return 'schoorsteen3'
 		end
 		return 'schoorsteen2'
 	end
-	if ch == ' ' then
-		if should_snow_from_neighbors(below, left_down, right_down) then
+	if ch == stage_char_space
+	or ch == stage_char_zak_foe
+	or ch == stage_char_sneeuwpop then
+		if snow_surface_chars[below]
+		and left_down ~= stage_char_space
+		and right_down ~= stage_char_space then
 			return 'snow'
 		end
 		return nil
 	end
-	if ch == 'Z' then
-		if should_snow_from_neighbors(below, left_down, right_down) then
-			return 'snow'
-		end
-		return nil
-	end
-	if ch == 'N' then
-		if should_snow_from_neighbors(below, left_down, right_down) then
-			return 'snow'
-		end
-		return nil
-	end
-	if ch == 't' then
-		if right == '1' then
+	if ch == stage_char_tree then
+		if right == stage_char_tree_1 then
 			return 'snowtree1'
 		end
-		if right == '2' then
+		if right == stage_char_tree_2 then
 			return 'snowtree4'
 		end
-		if right == '3' then
+		if right == stage_char_tree_3 then
 			return 'snowtree7'
 		end
-		if right == '4' then
+		if right == stage_char_tree_4 then
 			return 'snowtree10'
 		end
-		if right == '5' then
+		if right == stage_char_tree_5 then
 			return 'snowtree13'
 		end
-		if right == '6' then
+		if right == stage_char_tree_6 then
 			return 'snowtree16'
 		end
-		if right == '7' then
+		if right == stage_char_tree_7 then
 			return 'snowtree19'
 		end
-		if left == '1' then
+		if left == stage_char_tree_1 then
 			return 'snowtree3'
 		end
-		if left == '2' then
+		if left == stage_char_tree_2 then
 			return 'snowtree6'
 		end
-		if left == '3' then
+		if left == stage_char_tree_3 then
 			return 'snowtree9'
 		end
-		if left == '4' then
+		if left == stage_char_tree_4 then
 			return 'snowtree12'
 		end
-		if left == '5' then
+		if left == stage_char_tree_5 then
 			return 'snowtree15'
 		end
-		if left == '6' then
+		if left == stage_char_tree_6 then
 			return 'snowtree18'
 		end
-		if left == '7' then
+		if left == stage_char_tree_7 then
 			return 'snowtree21'
 		end
 		return nil
 	end
-	if ch == '1' then
-		if left == 't' then
+	if ch == stage_char_tree_1 then
+		if left == stage_char_tree then
 			return 'snowtree2'
 		end
 		return nil
 	end
-	if ch == '2' then
-		if left == 't' then
+	if ch == stage_char_tree_2 then
+		if left == stage_char_tree then
 			return 'snowtree5'
 		end
 		return nil
 	end
-	if ch == '3' then
-		if left == 't' then
+	if ch == stage_char_tree_3 then
+		if left == stage_char_tree then
 			return 'snowtree8'
 		end
 		return nil
 	end
-	if ch == '4' then
-		if left == 't' then
+	if ch == stage_char_tree_4 then
+		if left == stage_char_tree then
 			return 'snowtree11'
 		end
 		return nil
 	end
-	if ch == '5' then
-		if left == 't' then
+	if ch == stage_char_tree_5 then
+		if left == stage_char_tree then
 			return 'snowtree14'
 		end
 		return nil
 	end
-	if ch == '6' then
-		if left == 't' then
+	if ch == stage_char_tree_6 then
+		if left == stage_char_tree then
 			return 'snowtree17'
 		end
 		return nil
 	end
-	if ch == '7' then
-		if left == 't' then
+	if ch == stage_char_tree_7 then
+		if left == stage_char_tree then
 			return 'snowtree20'
 		end
 		return nil
@@ -391,7 +446,7 @@ local decode_stage_tile<const> = function(map_rows, x, y, ch)
 	if transparent_overlay_chars[ch] then
 		return nil
 	end
-	error('nemesis_s unsupported stage symbol "' .. ch .. '" at x=' .. tostring(x) .. ', y=' .. tostring(y))
+	error('nemesis_s unsupported stage symbol "' .. string_char(ch) .. '" at x=' .. tostring(x) .. ', y=' .. tostring(y))
 end
 
 local resolve_tile_material<const> = function(tile_key)
@@ -446,7 +501,7 @@ function stage:build_tape()
 	self:apply_stage_config(stage_data)
 	local map_rows<const> = stage_data.map_rows
 
-	local width<const> = string.len(map_rows[1])
+	local width<const> = #map_rows[1]
 	local height<const> = #map_rows
 
 	self.tile_rows = height
@@ -458,9 +513,18 @@ function stage:build_tape()
 
 	for stage_y = 1, height do
 		local map_row<const> = map_rows[stage_y]
+		local above_row
+		if stage_y > 1 then
+			above_row = map_rows[stage_y - 1]
+		end
+		local below_row
+		if stage_y < height then
+			below_row = map_rows[stage_y + 1]
+		end
 		for stage_x = 1, width do
-			local symbol<const> = string.sub(map_row, stage_x, stage_x)
-			local tile_key<const> = decode_stage_tile(map_rows, stage_x, stage_y, symbol)
+			local symbol<const> = string_byte(map_row, stage_x)
+			local tile_key<const> = decode_stage_tile(
+				above_row, map_row, below_row, stage_x, stage_y, width, symbol)
 			local imgid<const> , solid<const> = resolve_tile_material(tile_key)
 			stage_tiles:set_tile(((stage_y - 1) * width) + stage_x, imgid)
 			self.solid_tape[stage_y][stage_x] = solid
@@ -470,7 +534,7 @@ function stage:build_tape()
 	local actor_spawns<const> = {}
 	for stage_x = 1, width do
 		for stage_y = 1, height do
-			local symbol<const> = string.sub(map_rows[stage_y], stage_x, stage_x)
+			local symbol<const> = string_byte(map_rows[stage_y], stage_x)
 			local sint_pop_group<const> = sint_pop_group_by_symbol[symbol]
 			if sint_pop_group ~= nil then
 				local column<const> = stage_x - 1
@@ -506,7 +570,7 @@ function stage:build_tape()
 							},
 						},
 					}
-				elseif symbol == 'S' then
+				elseif symbol == stage_char_schoorsteen_foe then
 					actor_spawns[#actor_spawns + 1] = {
 						column = stage_x - 2,
 						definition_id = ids_schoorsteen_foe_def,
@@ -518,7 +582,7 @@ function stage:build_tape()
 							},
 						},
 					}
-				elseif symbol == 'R' then
+				elseif symbol == stage_char_rook_generator then
 					actor_spawns[#actor_spawns + 1] = {
 						column = stage_x - 1,
 						definition_id = ids_rook_generator_def,
@@ -530,7 +594,7 @@ function stage:build_tape()
 							},
 						},
 					}
-				elseif symbol == 'Z' then
+				elseif symbol == stage_char_zak_foe then
 					actor_spawns[#actor_spawns + 1] = {
 						column = stage_x - 1,
 						definition_id = ids_zak_foe_def,
@@ -543,7 +607,7 @@ function stage:build_tape()
 							},
 						},
 					}
-				elseif symbol == 'N' then
+				elseif symbol == stage_char_sneeuwpop then
 					actor_spawns[#actor_spawns + 1] = {
 						column = stage_x - 1,
 						definition_id = ids_sneeuwpop_def,
@@ -555,7 +619,7 @@ function stage:build_tape()
 							},
 						},
 					}
-				elseif symbol == 'K' then
+				elseif symbol == stage_char_kerk then
 					local kerk_y<const> = stage_y * self.tile_size - kerk_height
 					actor_spawns[#actor_spawns + 1] = {
 						column = stage_x - 1,
@@ -579,7 +643,7 @@ function stage:build_tape()
 							},
 						},
 					}
-				elseif symbol == "'" then
+				elseif symbol == stage_char_moon then
 					actor_spawns[#actor_spawns + 1] = {
 						column = stage_x - 1,
 						definition_id = ids_moon_def,
