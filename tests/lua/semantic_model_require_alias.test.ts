@@ -104,3 +104,35 @@ test('semantic workspace resolves fields exported by module table literals', asy
 	assert.equal(updateTarget!.decl.file, 'director.lua');
 	assert.deepEqual(updateTarget!.decl.namePath, ['director', 'update']);
 });
+
+test('semantic workspace resolves methods on module-owned class instances', async () => {
+	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const serviceSource = [
+		'local service',
+		'local service_class<const> = {}',
+		'service_class.__index = service_class',
+		'function service_class.new()',
+		'\tlocal self<const> = setmetatable({}, service_class)',
+		'\treturn self',
+		'end',
+		'function service_class:run() end',
+		'service = service_class.new()',
+		'return service',
+	].join('\n');
+	const mainLines = [
+		"local service<const> = require('service')",
+		'service:run()',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('main.lua', mainLines.join('\n'));
+	workspace.updateFile('service.lua', serviceSource);
+	const runTarget = workspace.getSnapshot().symbolAt(
+		'main.lua',
+		2,
+		mainLines[1].indexOf('run') + 1,
+	);
+
+	assert.ok(runTarget, 'module-owned instance method target');
+	assert.equal(runTarget!.decl.file, 'service.lua');
+	assert.deepEqual(runTarget!.decl.namePath, ['service_class', 'run']);
+});

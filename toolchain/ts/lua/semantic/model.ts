@@ -384,6 +384,12 @@ type ExpressionContext = {
 	tableBasePath: readonly string[];
 };
 
+type FunctionReturnHintState = {
+	hintKey: SemanticHintKey;
+	observed: boolean;
+	consistent: boolean;
+};
+
 type AssignmentTargetInfo = {
 	decl: InternalDecl;
 	namePath: readonly string[];
@@ -910,6 +916,9 @@ export class LuaProjectIndex {
 					nextDeclPathHints.set(entry.declId, pathHintKey);
 				}
 			}
+		}
+		for (let fileIndex = 0; fileIndex < orderedFiles.length; fileIndex += 1) {
+			const data = this.files.get(orderedFiles[fileIndex])!.data;
 			recordModuleAliasPathHints(data, this.files, moduleFiles, nextDeclPathHints);
 		}
 
@@ -1254,6 +1263,9 @@ class SemanticBuilder {
 	private readonly moduleAliasesByDeclId: Map<SymbolID, ModuleAliasTarget> = new Map();
 	private readonly immutableModuleAliasesByDeclId: Map<SymbolID, ModuleAliasTarget> = new Map();
 	private readonly moduleAliasesByName: Map<string, ModuleAliasEntry> = new Map();
+	private readonly functionReturnHints: Map<SymbolID, SemanticHintKey> = new Map();
+	private readonly functionReturnHintStack: FunctionReturnHintState[] = [];
+	private readonly metatableIndexHints: Map<string, SemanticHintKey> = new Map();
 	private readonly moduleAliasLookup = (name: string): ModuleAliasTarget => this.moduleAliasForName(name);
 	private readonly immutableModuleAliasLookup = (name: string): ModuleAliasTarget => this.immutableModuleAliasForName(name);
 	private nextScopeId = 1;
@@ -1354,9 +1366,9 @@ class SemanticBuilder {
 			}
 			case LuaSyntaxKind.LocalFunctionStatement: {
 				const localFunction = statement;
-				this.declareLocal(localFunction.name, 'function', true);
+				const decl = this.declareLocal(localFunction.name, 'function', true);
 				this.recordFunctionSignature(localFunction.name.name, localFunction.functionExpression, 'function');
-				this.visitFunctionExpression(localFunction.functionExpression);
+				this.visitFunctionExpression(localFunction.functionExpression, undefined, decl);
 				break;
 			}
 			case LuaSyntaxKind.FunctionDeclarationStatement: {
@@ -1396,7 +1408,7 @@ class SemanticBuilder {
 					: basePath;
 				this.recordFunctionSignature(declarationPath, functionDeclaration.functionExpression, methodName ? 'method' : 'function');
 				const methodSelfPath = methodName ? functionDeclaration.name.identifiers.slice() : undefined;
-				this.visitFunctionExpression(functionDeclaration.functionExpression, methodSelfPath);
+				this.visitFunctionExpression(functionDeclaration.functionExpression, methodSelfPath, decl);
 				break;
 			}
 			case LuaSyntaxKind.AssignmentStatement: {
@@ -1421,6 +1433,9 @@ class SemanticBuilder {
 					if (targetInfo?.decl && valueInfo?.hintKey) {
 						this.setDeclValueHint(targetInfo.decl, valueInfo.hintKey);
 					}
+					if (targetInfo) {
+						this.recordMetatableIndexAssignment(targetInfo, valueInfo);
+					}
 				}
 				for (let index = 0; index < assignment.left.length; index += 1) {
 					const target = assignment.left[index];
@@ -1443,9 +1458,19 @@ class SemanticBuilder {
 			}
 			case LuaSyntaxKind.ReturnStatement: {
 				const returnStatement = statement;
+				let returnHint: SemanticHintKey = null;
 				for (let index = 0; index < returnStatement.expressions.length; index += 1) {
-					this.visitExpression(returnStatement.expressions[index], { tableBaseDecl: null, tableBasePath: null });
+					const valueInfo = this.visitExpression(
+						returnStatement.expressions[index],
+						{ tableBaseDecl: null, tableBasePath: null },
+					);
+					if (index === 0) {
+						returnHint = valueInfo?.hintKey;
+					}
 				}
+				this.recordFunctionReturnHint(
+					returnStatement.expressions.length === 1 ? returnHint : null,
+				);
 				break;
 			}
 			case LuaSyntaxKind.IfStatement: {
@@ -1597,17 +1622,29 @@ class SemanticBuilder {
 				if (callExpression.methodName) {
 					this.recordMethodReference(callExpression, calleeInfo);
 				}
+				let secondArgumentInfo: ResolvedNamePath = null;
 				for (let index = 0; index < callExpression.arguments.length; index += 1) {
-					this.visitExpression(callExpression.arguments[index], { tableBaseDecl: null, tableBasePath: null });
+					const argumentInfo = this.visitExpression(
+						callExpression.arguments[index],
+						{ tableBaseDecl: null, tableBasePath: null },
+					);
+					if (index === 1) {
+						secondArgumentInfo = argumentInfo;
+					}
 				}
 				this.callExpressions.push(callExpression);
-				const hintKey = this.recordCartlibCallMetadata(callExpression);
+				const cartlibHint = this.recordCartlibCallMetadata(callExpression);
+				const hintKey = this.resolveCallResultHint(
+					callExpression,
+					calleeInfo,
+					secondArgumentInfo,
+				) ?? cartlibHint;
 				return hintKey
 					? { namePath: null, decl: null, hintKey }
 					: null;
 			}
 			case LuaSyntaxKind.FunctionExpression: {
-				this.visitFunctionExpression(expression);
+				this.visitFunctionExpression(expression, undefined, context.tableBaseDecl);
 				return null;
 			}
 			case LuaSyntaxKind.TableConstructorExpression: {
@@ -1674,19 +1711,36 @@ class SemanticBuilder {
 		}
 	}
 
-	private visitFunctionExpression(expression: LuaFunctionExpression, methodSelfPath?: readonly string[]): void {
+	private visitFunctionExpression(
+		expression: LuaFunctionExpression,
+		methodSelfPath?: readonly string[],
+		functionDecl?: InternalDecl,
+	): void {
 		const block = expression.body;
 		const scopeRange = block.range;
 		this.enterScope(scopeRange, 'function');
 		const inheritedMethodSelfPath = this.currentMethodSelfPath();
 		const effectiveMethodSelfPath = methodSelfPath ?? inheritedMethodSelfPath;
 		this.methodSelfPathStack.push(effectiveMethodSelfPath?.slice());
+		this.functionReturnHintStack.push({
+			hintKey: null,
+			observed: false,
+			consistent: true,
+		});
 		for (let index = 0; index < expression.parameters.length; index += 1) {
 			this.declareParameter(expression.parameters[index], expression.range);
 		}
 		this.visitBlock(block);
+		const returnHint = this.functionReturnHintStack.pop()!;
 		this.methodSelfPathStack.pop();
 		this.leaveScope();
+		if (functionDecl) {
+			if (returnHint.observed && returnHint.consistent) {
+				this.functionReturnHints.set(functionDecl.id, returnHint.hintKey);
+			} else {
+				this.functionReturnHints.delete(functionDecl.id);
+			}
+		}
 	}
 
 	private currentMethodSelfPath(): readonly string[] | undefined {
@@ -2193,6 +2247,64 @@ class SemanticBuilder {
 		return this.declValueHints.get(decl.id);
 	}
 
+	private recordFunctionReturnHint(hintKey: SemanticHintKey): void {
+		if (this.functionReturnHintStack.length === 0) {
+			return;
+		}
+		const state = this.functionReturnHintStack[this.functionReturnHintStack.length - 1];
+		if (!state.observed) {
+			state.hintKey = hintKey;
+			state.observed = true;
+			state.consistent = hintKey !== null;
+			return;
+		}
+		if (hintKey === null || hintKey !== state.hintKey) {
+			state.consistent = false;
+		}
+	}
+
+	private recordMetatableIndexAssignment(
+		target: AssignmentTargetInfo,
+		value: ResolvedNamePath,
+	): void {
+		const targetPath = target.namePath;
+		if (this.currentScope().kind !== 'path'
+			|| !targetPath
+			|| targetPath.length < 2
+			|| targetPath[targetPath.length - 1] !== '__index') {
+			return;
+		}
+		const metatableKey = joinNamePath(targetPath.slice(0, targetPath.length - 1));
+		const indexHint = value?.hintKey
+			?? (value?.namePath ? buildPathHintKey(this.path, joinNamePath(value.namePath)) : null);
+		if (indexHint) {
+			this.metatableIndexHints.set(metatableKey, indexHint);
+		} else {
+			this.metatableIndexHints.delete(metatableKey);
+		}
+	}
+
+	private resolveCallResultHint(
+		callExpression: LuaCallExpression,
+		callee: ResolvedNamePath,
+		secondArgument: ResolvedNamePath,
+	): SemanticHintKey {
+		if (callee?.decl) {
+			const functionHint = this.functionReturnHints.get(callee.decl.id);
+			if (functionHint) {
+				return functionHint;
+			}
+		}
+		if (callExpression.methodName
+			|| callExpression.arguments.length !== 2
+			|| resolveDirectCallName(callExpression.callee) !== 'setmetatable'
+			|| callee?.decl
+			|| !secondArgument?.namePath) {
+			return null;
+		}
+		return this.metatableIndexHints.get(joinNamePath(secondArgument.namePath));
+	}
+
 	private recordCartlibCallMetadata(callExpression: LuaCallExpression): SemanticHintKey {
 		const callKind = this.classifyCartlibCall(callExpression);
 		if (callKind === CARTLIB_CALL_PREFAB_DEFINE) {
@@ -2647,13 +2759,31 @@ function recordModuleAliasPathHints(
 		if (!moduleRoot) {
 			continue;
 		}
-		const symbolPath = moduleRoot.slice();
+		let targetFile = moduleFile;
+		let symbolPath = moduleRoot.slice();
+		if (symbolPath.length > 0) {
+			const rootDecl = findDeclBySymbolKey(moduleRecord.data.decls, joinNamePath(symbolPath));
+			const rootHint = rootDecl && hints.get(rootDecl.id);
+			if (rootHint) {
+				targetFile = getPathHintFile(rootHint);
+				symbolPath = getPathHintSymbolKeyParts(rootHint);
+			}
+		}
 		const memberPath = alias.memberPath;
 		for (let memberIndex = 0; memberIndex < memberPath.length; memberIndex += 1) {
 			symbolPath.push(memberPath[memberIndex]);
 		}
-		hints.set(decl.id, buildPathHintKey(moduleFile, joinNamePath(symbolPath)));
+		hints.set(decl.id, buildPathHintKey(targetFile, joinNamePath(symbolPath)));
 	}
+}
+
+function findDeclBySymbolKey(decls: readonly Decl[], symbolKey: string): Decl {
+	for (let index = 0; index < decls.length; index += 1) {
+		if (decls[index].symbolKey === symbolKey) {
+			return decls[index];
+		}
+	}
+	return null;
 }
 
 function buildTopLevelDeclsByName(
