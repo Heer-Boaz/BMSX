@@ -131,11 +131,11 @@ struct GxGpuIngressContextState {
 	size_t gp0ImageLoadCommandWordStart = 0u;
 	u32 gp0ImageLoadCommandWordCount = 0u;
 	u8 gp0ImageLoadCommandOpcode = 0u;
-	u32 gp0PolylineWordsPerVertex = 0u;
 	u32 gp0PolylinePayloadPhase = 0u;
-	size_t gp0PolylineCommandWordStart = 0u;
-	u32 gp0PolylineCommandWordCount = 0u;
-	u8 gp0PolylineCommandOpcode = 0u;
+	u8 gp0PolylineOpcode = 0u;
+	u32 gp0PolylineColorWord = 0u;
+	u32 gp0PolylinePositionWord = 0u;
+	u32 gp0PolylineNextColorWord = 0u;
 	std::vector<u32> commandBufferWords;
 };
 
@@ -151,11 +151,11 @@ struct GxGpuIngressContextBank {
 	size_t gp0ImageLoadCommandWordStart = 0u;
 	u32 gp0ImageLoadCommandWordCount = 0u;
 	u8 gp0ImageLoadCommandOpcode = 0u;
-	u32 gp0PolylineWordsPerVertex = 0u;
 	u32 gp0PolylinePayloadPhase = 0u;
-	size_t gp0PolylineCommandWordStart = 0u;
-	u32 gp0PolylineCommandWordCount = 0u;
-	u8 gp0PolylineCommandOpcode = 0u;
+	u8 gp0PolylineOpcode = 0u;
+	u32 gp0PolylineColorWord = 0u;
+	u32 gp0PolylinePositionWord = 0u;
+	u32 gp0PolylineNextColorWord = 0u;
 	size_t commandBufferWordCount = 0u;
 	std::unique_ptr<std::array<u32, GX_GPU_COMMAND_WORD_CAPACITY>> commandBufferWords;
 };
@@ -180,11 +180,11 @@ struct GxGpuState {
 	size_t gp0ImageLoadCommandWordStart = 0;
 	u32 gp0ImageLoadCommandWordCount = 0;
 	u8 gp0ImageLoadCommandOpcode = 0;
-	u32 gp0PolylineWordsPerVertex = 0;
 	u32 gp0PolylinePayloadPhase = 0;
-	size_t gp0PolylineCommandWordStart = 0;
-	u32 gp0PolylineCommandWordCount = 0;
-	u8 gp0PolylineCommandOpcode = 0;
+	u8 gp0PolylineOpcode = 0;
+	u32 gp0PolylineColorWord = 0;
+	u32 gp0PolylinePositionWord = 0;
+	u32 gp0PolylineNextColorWord = 0;
 	u32 gpuReadWord = 0;
 	u32 drawModeWord = 0;
 	u32 textureWindowWord = 0;
@@ -249,19 +249,21 @@ public:
 	const GxGpuDeviceOutput& readDeviceOutput();
 	bool backendCommandDrainPending() const {
 		return m_commandBuffer.readback.phase() == GX_GPU_READBACK_IDLE
-			&& m_commandBuffer.commandCount == GX_GPU_COMMAND_CAPACITY;
+			&& commandBufferDrainRequired()
+			&& m_commandBuffer.executedCommandCount != 0u;
 	}
 	bool backendServicePending() const {
 		const u8 phase = m_commandBuffer.readback.phase();
 		if (phase == GX_GPU_READBACK_IDLE) {
-			return m_commandBuffer.commandCount == GX_GPU_COMMAND_CAPACITY;
+			return backendCommandDrainPending();
 		}
 		return phase == GX_GPU_READBACK_PENDING;
 	}
 	bool backendServiceBlocksMachine() const {
 		const u8 phase = m_commandBuffer.readback.phase();
 		if (phase == GX_GPU_READBACK_IDLE) {
-			return m_commandBuffer.commandCount == GX_GPU_COMMAND_CAPACITY;
+			return m_commandBuffer.executedCommandCount != 0u
+				&& commandBufferDrainRequired();
 		}
 		return phase == GX_GPU_READBACK_PENDING || phase == GX_GPU_READBACK_SUBMITTED;
 	}
@@ -313,11 +315,11 @@ private:
 	size_t m_gp0ImageLoadCommandWordStart = 0u;
 	u32 m_gp0ImageLoadCommandWordCount = 0u;
 	u8 m_gp0ImageLoadCommandOpcode = 0u;
-	u32 m_gp0PolylineWordsPerVertex = 0u;
 	u32 m_gp0PolylinePayloadPhase = 0u;
-	size_t m_gp0PolylineCommandWordStart = 0u;
-	u32 m_gp0PolylineCommandWordCount = 0u;
-	u8 m_gp0PolylineCommandOpcode = 0u;
+	u8 m_gp0PolylineOpcode = 0u;
+	u32 m_gp0PolylineColorWord = 0u;
+	u32 m_gp0PolylinePositionWord = 0u;
+	u32 m_gp0PolylineNextColorWord = 0u;
 	u32 m_gpuReadWord = 0u;
 	u32 m_drawModeWord = 0u;
 	u32 m_textureWindowWord = 0u;
@@ -382,7 +384,7 @@ private:
 	void flushImageLoadToVram(i64 commandStartCycle);
 	void consumeImageLoadWord(u32 word, i64 commandStartCycle);
 	void consumeGp0PolylinePayloadWord(u32 word, i64 commandStartCycle);
-	void beginPolylinePayload(u32 opcode, u32 commandWordCount);
+	void beginPolylinePayload(u32 opcode, u32 commandWordCount, i64 commandStartCycle);
 	bool acceptGp0Word(u32 word);
 	void processGp0Pipeline(i64 commandStartCycle);
 	void consumeGp0Fifo(i64 commandStartCycle);
@@ -397,6 +399,7 @@ private:
 	void emitFixedGp0Command(u8 kind, u32 opcode, u32 commandWordCount, i64 commandStartCycle);
 	void pushGpuCommand(u8 kind, u32 opcode, size_t wordStart, u32 commandWordCount, i64 commandStartCycle);
 	void beginImageLoadToVram(u32 opcode, u32 commandWordCount);
+	bool commandBufferDrainRequired() const;
 	void writeDrawModeWord(u32 word);
 	void updateDrawModeStatusBits();
 	void writeMaskBitModeWord(u32 word);

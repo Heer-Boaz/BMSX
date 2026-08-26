@@ -730,11 +730,11 @@ BinValue encodeGxGpuIngressContextState(const GxGpuIngressContextState& state) {
 	object["gp0ImageLoadCommandWordStart"] = static_cast<i64>(state.gp0ImageLoadCommandWordStart);
 	object["gp0ImageLoadCommandWordCount"] = static_cast<i64>(state.gp0ImageLoadCommandWordCount);
 	object["gp0ImageLoadCommandOpcode"] = static_cast<i64>(state.gp0ImageLoadCommandOpcode);
-	object["gp0PolylineWordsPerVertex"] = static_cast<i64>(state.gp0PolylineWordsPerVertex);
 	object["gp0PolylinePayloadPhase"] = static_cast<i64>(state.gp0PolylinePayloadPhase);
-	object["gp0PolylineCommandWordStart"] = static_cast<i64>(state.gp0PolylineCommandWordStart);
-	object["gp0PolylineCommandWordCount"] = static_cast<i64>(state.gp0PolylineCommandWordCount);
-	object["gp0PolylineCommandOpcode"] = static_cast<i64>(state.gp0PolylineCommandOpcode);
+	object["gp0PolylineOpcode"] = static_cast<i64>(state.gp0PolylineOpcode);
+	object["gp0PolylineColorWord"] = static_cast<i64>(state.gp0PolylineColorWord);
+	object["gp0PolylinePositionWord"] = static_cast<i64>(state.gp0PolylinePositionWord);
+	object["gp0PolylineNextColorWord"] = static_cast<i64>(state.gp0PolylineNextColorWord);
 	object["commandBufferWords"] = encodeVector(state.commandBufferWords, encodeScalar<i64, u32>);
 	return BinValue(std::move(object));
 }
@@ -752,11 +752,11 @@ GxGpuIngressContextState decodeGxGpuIngressContextState(const BinValue& value, c
 	state.gp0ImageLoadCommandWordStart = requireBoundedU32(requireField(object, "gp0ImageLoadCommandWordStart", label), "machine.gxGpu.userIngressContext.gp0ImageLoadCommandWordStart", 0u, GX_GPU_COMMAND_WORD_CAPACITY);
 	state.gp0ImageLoadCommandWordCount = requireBoundedU32(requireField(object, "gp0ImageLoadCommandWordCount", label), "machine.gxGpu.userIngressContext.gp0ImageLoadCommandWordCount", 0u, GX_GPU_COMMAND_WORD_CAPACITY);
 	state.gp0ImageLoadCommandOpcode = static_cast<u8>(requireBoundedU32(requireField(object, "gp0ImageLoadCommandOpcode", label), "machine.gxGpu.userIngressContext.gp0ImageLoadCommandOpcode", 0u, 0xffu));
-	state.gp0PolylineWordsPerVertex = requireBoundedU32(requireField(object, "gp0PolylineWordsPerVertex", label), "machine.gxGpu.userIngressContext.gp0PolylineWordsPerVertex", 0u, GX_GPU_GP0_COMMAND_BUFFER_WORDS);
-	state.gp0PolylinePayloadPhase = requireBoundedU32(requireField(object, "gp0PolylinePayloadPhase", label), "machine.gxGpu.userIngressContext.gp0PolylinePayloadPhase", 0u, GX_GPU_GP0_COMMAND_BUFFER_WORDS);
-	state.gp0PolylineCommandWordStart = requireBoundedU32(requireField(object, "gp0PolylineCommandWordStart", label), "machine.gxGpu.userIngressContext.gp0PolylineCommandWordStart", 0u, GX_GPU_COMMAND_WORD_CAPACITY);
-	state.gp0PolylineCommandWordCount = requireBoundedU32(requireField(object, "gp0PolylineCommandWordCount", label), "machine.gxGpu.userIngressContext.gp0PolylineCommandWordCount", 0u, GX_GPU_COMMAND_WORD_CAPACITY);
-	state.gp0PolylineCommandOpcode = static_cast<u8>(requireBoundedU32(requireField(object, "gp0PolylineCommandOpcode", label), "machine.gxGpu.userIngressContext.gp0PolylineCommandOpcode", 0u, 0xffu));
+	state.gp0PolylinePayloadPhase = requireBoundedU32(requireField(object, "gp0PolylinePayloadPhase", label), "machine.gxGpu.userIngressContext.gp0PolylinePayloadPhase", 0u, 1u);
+	state.gp0PolylineOpcode = static_cast<u8>(requireBoundedU32(requireField(object, "gp0PolylineOpcode", label), "machine.gxGpu.userIngressContext.gp0PolylineOpcode", 0u, 0xffu));
+	state.gp0PolylineColorWord = requireU32(requireField(object, "gp0PolylineColorWord", label), "machine.gxGpu.userIngressContext.gp0PolylineColorWord");
+	state.gp0PolylinePositionWord = requireU32(requireField(object, "gp0PolylinePositionWord", label), "machine.gxGpu.userIngressContext.gp0PolylinePositionWord");
+	state.gp0PolylineNextColorWord = requireU32(requireField(object, "gp0PolylineNextColorWord", label), "machine.gxGpu.userIngressContext.gp0PolylineNextColorWord");
 	state.commandBufferWords = decodeU32VectorWithMaxLength(requireField(object, "commandBufferWords", label), "machine.gxGpu.userIngressContext.commandBufferWords", GX_GPU_COMMAND_WORD_CAPACITY);
 	return state;
 }
@@ -813,11 +813,11 @@ BinValue encodeGxGpuState(const GxGpuState& state) {
 	object["gp0ImageLoadCommandWordStart"] = static_cast<i64>(state.gp0ImageLoadCommandWordStart);
 	object["gp0ImageLoadCommandWordCount"] = static_cast<i64>(state.gp0ImageLoadCommandWordCount);
 	object["gp0ImageLoadCommandOpcode"] = static_cast<i64>(state.gp0ImageLoadCommandOpcode);
-	object["gp0PolylineWordsPerVertex"] = static_cast<i64>(state.gp0PolylineWordsPerVertex);
 	object["gp0PolylinePayloadPhase"] = static_cast<i64>(state.gp0PolylinePayloadPhase);
-	object["gp0PolylineCommandWordStart"] = static_cast<i64>(state.gp0PolylineCommandWordStart);
-	object["gp0PolylineCommandWordCount"] = static_cast<i64>(state.gp0PolylineCommandWordCount);
-	object["gp0PolylineCommandOpcode"] = static_cast<i64>(state.gp0PolylineCommandOpcode);
+	object["gp0PolylineOpcode"] = static_cast<i64>(state.gp0PolylineOpcode);
+	object["gp0PolylineColorWord"] = static_cast<i64>(state.gp0PolylineColorWord);
+	object["gp0PolylinePositionWord"] = static_cast<i64>(state.gp0PolylinePositionWord);
+	object["gp0PolylineNextColorWord"] = static_cast<i64>(state.gp0PolylineNextColorWord);
 	object["gpuReadWord"] = static_cast<i64>(state.gpuReadWord);
 	object["drawModeWord"] = static_cast<i64>(state.drawModeWord);
 	object["textureWindowWord"] = static_cast<i64>(state.textureWindowWord);
@@ -870,11 +870,11 @@ GxGpuState decodeGxGpuState(const BinValue& value, const char* label) {
 	state.gp0ImageLoadCommandWordStart = requireBoundedU32(requireField(object, "gp0ImageLoadCommandWordStart", label), "machine.gxGpu.gp0ImageLoadCommandWordStart", 0u, GX_GPU_COMMAND_WORD_CAPACITY);
 	state.gp0ImageLoadCommandWordCount = requireBoundedU32(requireField(object, "gp0ImageLoadCommandWordCount", label), "machine.gxGpu.gp0ImageLoadCommandWordCount", 0u, GX_GPU_COMMAND_WORD_CAPACITY);
 	state.gp0ImageLoadCommandOpcode = static_cast<u8>(requireBoundedU32(requireField(object, "gp0ImageLoadCommandOpcode", label), "machine.gxGpu.gp0ImageLoadCommandOpcode", 0u, 0xffu));
-	state.gp0PolylineWordsPerVertex = requireBoundedU32(requireField(object, "gp0PolylineWordsPerVertex", label), "machine.gxGpu.gp0PolylineWordsPerVertex", 0u, GX_GPU_GP0_COMMAND_BUFFER_WORDS);
-	state.gp0PolylinePayloadPhase = requireBoundedU32(requireField(object, "gp0PolylinePayloadPhase", label), "machine.gxGpu.gp0PolylinePayloadPhase", 0u, GX_GPU_GP0_COMMAND_BUFFER_WORDS);
-	state.gp0PolylineCommandWordStart = requireBoundedU32(requireField(object, "gp0PolylineCommandWordStart", label), "machine.gxGpu.gp0PolylineCommandWordStart", 0u, GX_GPU_COMMAND_WORD_CAPACITY);
-	state.gp0PolylineCommandWordCount = requireBoundedU32(requireField(object, "gp0PolylineCommandWordCount", label), "machine.gxGpu.gp0PolylineCommandWordCount", 0u, GX_GPU_COMMAND_WORD_CAPACITY);
-	state.gp0PolylineCommandOpcode = static_cast<u8>(requireBoundedU32(requireField(object, "gp0PolylineCommandOpcode", label), "machine.gxGpu.gp0PolylineCommandOpcode", 0u, 0xffu));
+	state.gp0PolylinePayloadPhase = requireBoundedU32(requireField(object, "gp0PolylinePayloadPhase", label), "machine.gxGpu.gp0PolylinePayloadPhase", 0u, 1u);
+	state.gp0PolylineOpcode = static_cast<u8>(requireBoundedU32(requireField(object, "gp0PolylineOpcode", label), "machine.gxGpu.gp0PolylineOpcode", 0u, 0xffu));
+	state.gp0PolylineColorWord = requireU32(requireField(object, "gp0PolylineColorWord", label), "machine.gxGpu.gp0PolylineColorWord");
+	state.gp0PolylinePositionWord = requireU32(requireField(object, "gp0PolylinePositionWord", label), "machine.gxGpu.gp0PolylinePositionWord");
+	state.gp0PolylineNextColorWord = requireU32(requireField(object, "gp0PolylineNextColorWord", label), "machine.gxGpu.gp0PolylineNextColorWord");
 	state.gpuReadWord = requireU32(requireField(object, "gpuReadWord", label), "machine.gxGpu.gpuReadWord");
 	state.drawModeWord = requireU32(requireField(object, "drawModeWord", label), "machine.gxGpu.drawModeWord");
 	state.textureWindowWord = requireU32(requireField(object, "textureWindowWord", label), "machine.gxGpu.textureWindowWord");

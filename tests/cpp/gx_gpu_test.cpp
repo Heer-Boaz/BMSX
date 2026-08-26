@@ -667,6 +667,72 @@ void testSaturatedCommandLogDrainsExecutedPrefixIntoRetainedBackendVram() {
 	require(gpu.lastFrameCommitted(), "GX-GPU command drain publishes materialized VRAM at the next VBlank");
 }
 
+void testCommandWordStorageReservesOneMaximalCpuUpload() {
+	GpuHarness harness;
+	bmsx::GxGpu& gpu = harness.gpu;
+	const bmsx::GxGpuCommandBuffer& commands = gpu.readDeviceOutput().commandBuffer;
+	bmsx::SoftwareBackend backend(256, 212, bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
+	require(
+		bmsx::GX_GPU_COMMAND_WORD_DRAIN_THRESHOLD + bmsx::GX_GPU_COMMAND_MAX_UPLOAD_WORD_COUNT
+			== bmsx::GX_GPU_COMMAND_WORD_CAPACITY,
+		"GX-GPU command word threshold reserves one maximal upload");
+	for (bmsx::u32 transferIndex = 0u; transferIndex < 2u; transferIndex += 1u) {
+		gpu.writeGp0(bmsx::GX_GPU_GP0_CPU_TO_VRAM_FIRST << 24u);
+		gpu.writeGp0(transferIndex << 16u);
+		gpu.writeGp0(0u);
+		const bmsx::u32 payloadWord = transferIndex == 0u ? 0x11111111u : 0x22222222u;
+		for (size_t wordIndex = 3u; wordIndex < bmsx::GX_GPU_COMMAND_MAX_UPLOAD_WORD_COUNT; wordIndex += 1u) {
+			gpu.writeGp0(payloadWord);
+		}
+		require(commands.commandCount == 1u, "GX-GPU maximal upload emits one command");
+		require(commands.wordCount == bmsx::GX_GPU_COMMAND_MAX_UPLOAD_WORD_COUNT, "GX-GPU maximal upload consumes its reserved words");
+		require(!gpu.backendCommandDrainPending(), "GX-GPU maximal upload waits for execution before drain");
+		require(!gpu.backendServicePending(), "GX-GPU maximal upload exposes no empty-prefix backend service");
+		require(!gpu.backendServiceBlocksMachine(), "GX-GPU maximal upload timing advances machine time before drain");
+		completeGpuCommands(harness);
+		require(gpu.backendCommandDrainPending(), "GX-GPU completed maximal upload requests word drain");
+		require(gpu.backendServicePending(), "GX-GPU completed maximal upload exposes backend service");
+		require(gpu.backendServiceBlocksMachine(), "GX-GPU completed maximal upload blocks before word reuse");
+		backend.executeGxGpuCommandDrain(gpu);
+		require(commands.commandCount == 0u, "GX-GPU maximal upload drain releases command storage");
+		require(commands.wordCount == 0u, "GX-GPU maximal upload drain releases word storage");
+	}
+}
+
+void testActivePolylineStateSurvivesSaturatedCommandDrain() {
+	GpuHarness harness;
+	bmsx::GxGpu& gpu = harness.gpu;
+	const bmsx::GxGpuCommandBuffer& commands = gpu.readDeviceOutput().commandBuffer;
+	bmsx::SoftwareBackend backend(256, 212, bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
+	gpu.writeGp0((0x48u << 24u) | 0x0000ffu);
+	gpu.writeGp0(0u);
+	gpu.writeGp0(1u);
+	completeGpuCommands(harness);
+	bmsx::u32 finalEndpoint = 1u;
+	for (size_t commandIndex = 1u; commandIndex < bmsx::GX_GPU_COMMAND_CAPACITY; commandIndex += 1u) {
+		finalEndpoint = static_cast<bmsx::u32>(commandIndex & 1u);
+		gpu.writeGp0(finalEndpoint);
+		if (commandIndex + 1u < bmsx::GX_GPU_COMMAND_CAPACITY) {
+			completeGpuCommands(harness);
+		}
+	}
+	require(commands.commandCount == bmsx::GX_GPU_COMMAND_CAPACITY, "GX-GPU active polyline reaches command saturation");
+	require(commands.executedCommandCount == bmsx::GX_GPU_COMMAND_CAPACITY - 1u, "GX-GPU active polyline retains one executing segment");
+	require(gpu.backendCommandDrainPending(), "GX-GPU active polyline requests executed prefix drain");
+	backend.executeGxGpuCommandDrain(gpu);
+	require(commands.commandCount == 1u, "GX-GPU active polyline drain retains executing segment");
+	require(commands.executedCommandCount == 0u, "GX-GPU active polyline drain rebases execution frontier");
+	completeGpuCommands(harness);
+	const bmsx::u32 nextEndpoint = finalEndpoint ^ 1u;
+	gpu.writeGp0(nextEndpoint);
+	require(commands.commandCount == 2u, "GX-GPU active polyline continues after drain");
+	require(commands.commandKind[1] == bmsx::GX_GPU_COMMAND_DRAW_LINE, "GX-GPU post-drain polyline command kind");
+	require(commands.words[commands.commandWordStart[1] + 1u] == finalEndpoint, "GX-GPU post-drain polyline retains prior endpoint");
+	require(commands.words[commands.commandWordStart[1] + 2u] == nextEndpoint, "GX-GPU post-drain polyline accepts next endpoint");
+	completeGpuCommands(harness);
+	gpu.writeGp0(0x50005000u);
+}
+
 void testPartialPresentationSnapshotDoesNotExposeQueuedCommands() {
 	bmsx::GxGpuSoftwareState software(bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes, 0u);
 	GpuHarness harness;
@@ -841,11 +907,13 @@ void testGpustatReadinessTracksGp0PacketAssemblyAndPayloadPhases() {
 	gpu.writeGp0(0x50005000u);
 	status = gpu.readStatus();
 	require((status & bmsx::GX_GPU_STATUS_GPU_IDLE) == 0u, "GX-GPU GPUSTAT polyline remains busy during execution");
-	require((status & bmsx::GX_GPU_STATUS_READY_TO_RECEIVE_DMA) == bmsx::GX_GPU_STATUS_READY_TO_RECEIVE_DMA, "GX-GPU polyline terminator reopens the command front end");
-	require((status & bmsx::GX_GPU_STATUS_DMA_DATA_REQUEST) == bmsx::GX_GPU_STATUS_DMA_DATA_REQUEST, "GX-GPU CPU-to-GP0 request rises after polyline dispatch");
+	require((status & bmsx::GX_GPU_STATUS_READY_TO_RECEIVE_DMA) == 0u, "GX-GPU queued polyline terminator waits behind segment execution");
+	require((status & bmsx::GX_GPU_STATUS_DMA_DATA_REQUEST) == 0u, "GX-GPU CPU-to-GP0 request stays low until the polyline terminator executes");
 	require(commands.commandCount == 3u, "GX-GPU polyline command emitted");
 	completeGpuCommands(harness);
 	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_GPU_IDLE) == bmsx::GX_GPU_STATUS_GPU_IDLE, "GX-GPU polyline reaches idle at completion");
+	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_READY_TO_RECEIVE_DMA) == bmsx::GX_GPU_STATUS_READY_TO_RECEIVE_DMA, "GX-GPU polyline terminator reopens the command front end");
+	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_DMA_DATA_REQUEST) == bmsx::GX_GPU_STATUS_DMA_DATA_REQUEST, "GX-GPU CPU-to-GP0 request rises after polyline completion");
 
 	gpu.writeGp0(bmsx::GX_GPU_GP0_FILL_RECTANGLE << 24u);
 	status = gpu.readStatus();
@@ -1306,7 +1374,7 @@ void testSupervisorContextPreservesPartialCpuToVramPacket() {
 	require(commands.words[start + 4u] == finalPayloadWord, "GX-GPU restored upload accepts its final payload word");
 }
 
-void testGp0PolylineConsumesPayloadUntilTerminator() {
+void testGp0PolylineExecutesIncrementallyWithRetainedEndpointState() {
 	GpuHarness harness;
 	bmsx::GxGpu& gpu = harness.gpu;
 	const bmsx::GxGpuCommandBuffer& commands = gpu.readDeviceOutput().commandBuffer;
@@ -1314,38 +1382,70 @@ void testGp0PolylineConsumesPayloadUntilTerminator() {
 	gpu.writeGp0((0x48u << 24u) | 0x0000ffu);
 	gpu.writeGp0(0x00010002u);
 	gpu.writeGp0(0x00020003u);
-	require(commands.commandCount == 0u, "GX-GPU GP0 polyline waits for terminator");
-	gpu.writeGp0(0x50005000u);
+	require(commands.commandCount == 1u, "GX-GPU GP0 polyline emits its first segment");
 	completeGpuCommands(harness);
-	require(commands.commandCount == 1u, "GX-GPU GP0 polyline emitted command count");
+	gpu.writeGp0(0x00030004u);
+	require(commands.commandCount == 2u, "GX-GPU GP0 polyline emits its next segment");
+	completeGpuCommands(harness);
+	gpu.writeGp0(0x50005000u);
+	require(commands.commandCount == 2u, "GX-GPU GP0 polyline terminator emits no command");
 	require(commands.commandKind[0] == bmsx::GX_GPU_COMMAND_DRAW_POLYLINE, "GX-GPU GP0 polyline command kind");
 	require(commands.commandOpcode[0] == 0x48u, "GX-GPU GP0 polyline opcode");
 	require(commands.commandWordCount[0] == 3u, "GX-GPU GP0 polyline command words");
 	require(commands.words[commands.commandWordStart[0] + 1u] == 0x00010002u, "GX-GPU GP0 polyline first vertex word");
+	require(commands.commandKind[1] == bmsx::GX_GPU_COMMAND_DRAW_LINE, "GX-GPU GP0 continuation command kind");
+	require(commands.commandOpcode[1] == 0x48u, "GX-GPU GP0 continuation opcode");
+	require(commands.commandWordCount[1] == 3u, "GX-GPU GP0 continuation command words");
+	require(commands.words[commands.commandWordStart[1]] == 0x480000ffu, "GX-GPU GP0 continuation retains color");
+	require(commands.words[commands.commandWordStart[1] + 1u] == 0x00020003u, "GX-GPU GP0 continuation retains previous endpoint");
+	require(commands.words[commands.commandWordStart[1] + 2u] == 0x00030004u, "GX-GPU GP0 continuation appends next endpoint");
 	require(gpu.readDrawModeWord() == 0u, "GX-GPU GP0 polyline payload does not execute draw mode");
 
 	gpu.writeGp0((bmsx::GX_GPU_GP0_DRAW_MODE << 24u) | 0x000222u);
 	completeGpuCommands(harness);
-	require(commands.commandCount == 1u, "GX-GPU GP0 post-polyline environment command does not emit GPU command");
+	require(commands.commandCount == 2u, "GX-GPU GP0 post-polyline environment command does not emit GPU command");
 	require(gpu.readDrawModeWord() == 0x000222u, "GX-GPU GP0 command processing resumes after polyline terminator");
 
 	gpu.writeGp0(((0x40u | bmsx::GX_GPU_GP0_RENDER_QUAD_OR_POLYLINE_BIT | bmsx::GX_GPU_GP0_RENDER_GOURAUD_BIT) << 24u) | 0x0000ffu);
 	gpu.writeGp0(0x00010002u);
 	gpu.writeGp0(0x00010000u);
 	gpu.writeGp0(0x00020003u);
-	require(commands.commandCount == 1u, "GX-GPU GP0 shaded polyline waits for terminator");
-	gpu.writeGp0(0x50005000u);
+	require(commands.commandCount == 3u, "GX-GPU GP0 shaded polyline emits its first segment");
 	completeGpuCommands(harness);
-	require(commands.commandCount == 2u, "GX-GPU GP0 shaded polyline emitted command count");
-	require(commands.commandKind[1] == bmsx::GX_GPU_COMMAND_DRAW_POLYLINE, "GX-GPU GP0 shaded polyline command kind");
-	require(commands.commandOpcode[1] == 0x58u, "GX-GPU GP0 shaded polyline opcode");
-	require(commands.commandWordCount[1] == 4u, "GX-GPU GP0 shaded polyline command words");
-	require(commands.words[commands.commandWordStart[1] + 2u] == 0x00010000u, "GX-GPU GP0 shaded polyline second color word");
+	gpu.writeGp0(0x00040506u);
+	gpu.writeGp0(0x00030004u);
+	require(commands.commandCount == 4u, "GX-GPU GP0 shaded polyline emits its next segment");
+	completeGpuCommands(harness);
+	gpu.writeGp0(0x50005000u);
+	require(commands.commandCount == 4u, "GX-GPU GP0 shaded polyline terminator emits no command");
+	require(commands.commandKind[2] == bmsx::GX_GPU_COMMAND_DRAW_POLYLINE, "GX-GPU GP0 shaded polyline command kind");
+	require(commands.commandOpcode[2] == 0x58u, "GX-GPU GP0 shaded polyline opcode");
+	require(commands.commandWordCount[2] == 4u, "GX-GPU GP0 shaded polyline command words");
+	require(commands.words[commands.commandWordStart[2] + 2u] == 0x00010000u, "GX-GPU GP0 shaded polyline second color word");
+	require(commands.commandKind[3] == bmsx::GX_GPU_COMMAND_DRAW_LINE, "GX-GPU GP0 shaded continuation command kind");
+	require(commands.commandOpcode[3] == 0x58u, "GX-GPU GP0 shaded continuation opcode");
+	require(commands.commandWordCount[3] == 4u, "GX-GPU GP0 shaded continuation command words");
+	require(commands.words[commands.commandWordStart[3]] == 0x00010000u, "GX-GPU GP0 shaded continuation retains color");
+	require(commands.words[commands.commandWordStart[3] + 1u] == 0x00020003u, "GX-GPU GP0 shaded continuation retains endpoint");
+	require(commands.words[commands.commandWordStart[3] + 2u] == 0x00040506u, "GX-GPU GP0 shaded continuation accepts color");
+	require(commands.words[commands.commandWordStart[3] + 3u] == 0x00030004u, "GX-GPU GP0 shaded continuation accepts endpoint");
 
 	gpu.writeGp0((bmsx::GX_GPU_GP0_DRAW_MODE << 24u) | 0x000333u);
 	completeGpuCommands(harness);
-	require(commands.commandCount == 2u, "GX-GPU GP0 post-shaded-polyline environment command does not emit GPU command");
+	require(commands.commandCount == 4u, "GX-GPU GP0 post-shaded-polyline environment command does not emit GPU command");
 	require(gpu.readDrawModeWord() == 0x000333u, "GX-GPU GP0 command processing resumes after shaded polyline terminator");
+}
+
+void testZeroCoverageLineCompletesWithoutZeroCycleDeadline() {
+	GpuHarness harness;
+	bmsx::GxGpu& gpu = harness.gpu;
+	const bmsx::GxGpuCommandBuffer& commands = gpu.readDeviceOutput().commandBuffer;
+	gpu.writeGp0((bmsx::GX_GPU_GP0_LINE_FIRST << 24u) | 0x0000ffu);
+	gpu.writeGp0(10u);
+	gpu.writeGp0(11u);
+	require(commands.commandCount == 1u, "GX-GPU zero-coverage line emits one command");
+	require(commands.executedCommandCount == 1u, "GX-GPU zero-coverage line completes at admission");
+	require((gpu.readStatus() & bmsx::GX_GPU_STATUS_GPU_IDLE) == bmsx::GX_GPU_STATUS_GPU_IDLE, "GX-GPU zero-coverage line leaves no zero-cycle deadline");
 }
 
 void testSaveStateRestoresPartialFixedGp0Command() {
@@ -1397,16 +1497,22 @@ void testSaveStateRestoresPartialPolylineCommand() {
 	polylineGpu.writeGp0((0x48u << 24u) | 0x0000ffu);
 	polylineGpu.writeGp0(0x00010002u);
 	polylineGpu.writeGp0(0x00020003u);
+	completeGpuCommands(polylineHarness);
 
 	GpuHarness restoredPolylineHarness;
 	bmsx::GxGpu& restoredPolylineGpu = restoredPolylineHarness.gpu;
 	restoredPolylineGpu.restoreState(polylineGpu.captureState());
+	restoredPolylineGpu.writeGp0(0x00030004u);
+	completeGpuCommands(restoredPolylineHarness);
 	restoredPolylineGpu.writeGp0(0x50005000u);
 	const bmsx::GxGpuCommandBuffer& polylineCommands = restoredPolylineGpu.readDeviceOutput().commandBuffer;
-	require(polylineCommands.commandCount == 1u, "GX-GPU save-state restores partial polyline command");
+	require(polylineCommands.commandCount == 2u, "GX-GPU save-state restores active polyline state");
 	require(polylineCommands.commandKind[0] == bmsx::GX_GPU_COMMAND_DRAW_POLYLINE, "GX-GPU restored polyline command kind");
 	require(polylineCommands.commandWordCount[0] == 3u, "GX-GPU restored polyline command word count");
 	require(polylineCommands.words[polylineCommands.commandWordStart[0] + 2u] == 0x00020003u, "GX-GPU restored polyline keeps last vertex word");
+	require(polylineCommands.commandKind[1] == bmsx::GX_GPU_COMMAND_DRAW_LINE, "GX-GPU restored polyline continuation kind");
+	require(polylineCommands.words[polylineCommands.commandWordStart[1] + 1u] == 0x00020003u, "GX-GPU restored polyline retains previous endpoint");
+	require(polylineCommands.words[polylineCommands.commandWordStart[1] + 2u] == 0x00030004u, "GX-GPU restored polyline accepts next endpoint");
 }
 
 void testSaveStateRestoresGouraudPolylineIngressPhase() {
@@ -1416,19 +1522,22 @@ void testSaveStateRestoresGouraudPolylineIngressPhase() {
 	gouraudPolylineGpu.writeGp0(0x00010002u);
 	gouraudPolylineGpu.writeGp0(0x00010203u);
 	gouraudPolylineGpu.writeGp0(0x00020003u);
+	completeGpuCommands(gouraudPolylineHarness);
 	gouraudPolylineGpu.writeGp0(0x00040506u);
 
 	GpuHarness restoredGouraudPolylineHarness;
 	bmsx::GxGpu& restoredGouraudPolylineGpu = restoredGouraudPolylineHarness.gpu;
 	restoredGouraudPolylineGpu.restoreState(gouraudPolylineGpu.captureState());
 	restoredGouraudPolylineGpu.writeGp0(0x50005000u);
-	require(restoredGouraudPolylineGpu.readDeviceOutput().commandBuffer.commandCount == 0u, "GX-GPU restored Gouraud coordinate phase keeps terminator-shaped data");
+	completeGpuCommands(restoredGouraudPolylineHarness);
 	restoredGouraudPolylineGpu.writeGp0(0x50005000u);
 	const bmsx::GxGpuCommandBuffer& gouraudPolylineCommands = restoredGouraudPolylineGpu.readDeviceOutput().commandBuffer;
-	require(gouraudPolylineCommands.commandCount == 1u, "GX-GPU restored Gouraud color phase accepts terminator");
+	require(gouraudPolylineCommands.commandCount == 2u, "GX-GPU restored Gouraud color phase accepts terminator");
 	require(gouraudPolylineCommands.commandKind[0] == bmsx::GX_GPU_COMMAND_DRAW_POLYLINE, "GX-GPU restored Gouraud polyline command kind");
-	require(gouraudPolylineCommands.commandWordCount[0] == 6u, "GX-GPU restored Gouraud polyline retains phase-one coordinate");
-	require(gouraudPolylineCommands.words[gouraudPolylineCommands.commandWordStart[0] + 5u] == 0x50005000u, "GX-GPU restored Gouraud coordinate stores terminator-shaped word");
+	require(gouraudPolylineCommands.commandKind[1] == bmsx::GX_GPU_COMMAND_DRAW_LINE, "GX-GPU restored Gouraud continuation kind");
+	require(gouraudPolylineCommands.commandWordCount[1] == 4u, "GX-GPU restored Gouraud continuation word count");
+	require(gouraudPolylineCommands.words[gouraudPolylineCommands.commandWordStart[1] + 2u] == 0x00040506u, "GX-GPU restored Gouraud continuation retains pending color");
+	require(gouraudPolylineCommands.words[gouraudPolylineCommands.commandWordStart[1] + 3u] == 0x50005000u, "GX-GPU restored Gouraud coordinate stores terminator-shaped word");
 }
 
 void testSaveStateRestoresCommandTimeAndFifoSuffixRelativeToSchedulerTime() {
@@ -1588,20 +1697,21 @@ void testGp1ClearFifoClearsPartialGp0PacketsAndFlushesPartialCpuToVramUploads() 
 	gpu.writeGp0((0x48u << 24u) | 0x0000ffu);
 	gpu.writeGp0(0x00010002u);
 	gpu.writeGp0(0x00020003u);
+	completeGpuCommands(harness);
 	gpu.writeGp0(0x00030004u);
-	require(commands.wordCount == 9u, "GX-GPU partial polyline appends uncommitted command words");
+	require(commands.wordCount == 11u, "GX-GPU active polyline materializes completed segments");
 	gpu.writeGp1(bmsx::GX_GPU_GP1_CLEAR_FIFO << 24u);
-	require(commands.commandCount == 1u, "GX-GPU GP1 clear FIFO preserves committed commands before partial polyline");
-	require(commands.wordCount == 5u, "GX-GPU GP1 clear FIFO discards partial polyline words");
+	require(commands.commandCount == 3u, "GX-GPU GP1 clear FIFO preserves completed polyline segments");
+	require(commands.wordCount == 11u, "GX-GPU GP1 clear FIFO has no uncommitted polyline words");
 
 	gpu.writeGp0((bmsx::GX_GPU_GP0_FILL_RECTANGLE << 24u) | 0x0000ffu);
 	gpu.writeGp0(32u);
 	gpu.writeGp0((1u << 16u) | 1u);
-	require(commands.commandCount == 2u, "GX-GPU command processing resumes after partial polyline discard");
-	require(commands.commandWordStart[1] == 5u, "GX-GPU next command reuses discarded polyline suffix");
+	require(commands.commandCount == 4u, "GX-GPU command processing resumes after active polyline discard");
+	require(commands.commandWordStart[3] == 11u, "GX-GPU next command follows completed polyline segments");
 
 	gpu.writeGp0((bmsx::GX_GPU_GP0_DRAW_MODE << 24u) | 0x000444u);
-	require(commands.commandCount == 2u, "GX-GPU GP0 command processing resumes after FIFO reset");
+	require(commands.commandCount == 4u, "GX-GPU GP0 command processing resumes after FIFO reset");
 	completeGpuCommands(harness);
 	require(gpu.readDrawModeWord() == 0x000444u, "GX-GPU GP0 draw mode resumes after partial CPU-to-VRAM flush");
 }
@@ -4512,6 +4622,8 @@ int main() {
 	testInterlacedRenderCommandWords();
 	testCommandLogIsPresentableOnlyAfterVblankFrameSeal();
 	testSaturatedCommandLogDrainsExecutedPrefixIntoRetainedBackendVram();
+	testCommandWordStorageReservesOneMaximalCpuUpload();
+	testActivePolylineStateSurvivesSaturatedCommandDrain();
 	testPartialPresentationSnapshotDoesNotExposeQueuedCommands();
 	testRetirePreservesCommandsAppendedAfterSealedVblankSnapshot();
 	testDisplayDisableAndDmaDirectionStatusBits();
@@ -4528,7 +4640,8 @@ int main() {
 	testGp0FixedLengthRenderAndBlitPacketAssembly();
 	testGp0CpuToVramImagePayloadConsumption();
 	testSupervisorContextPreservesPartialCpuToVramPacket();
-	testGp0PolylineConsumesPayloadUntilTerminator();
+	testGp0PolylineExecutesIncrementallyWithRetainedEndpointState();
+	testZeroCoverageLineCompletesWithoutZeroCycleDeadline();
 	testSaveStateRestoresPartialFixedGp0Command();
 	testSaveStateRestoresPartialCpuToVramUpload();
 	testSaveStateRestoresPartialPolylineCommand();

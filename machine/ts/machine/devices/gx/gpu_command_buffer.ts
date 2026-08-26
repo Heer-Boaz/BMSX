@@ -2,6 +2,7 @@ import { DMA_REQUEST_GX_READ } from '../../../spec/bmsx/io';
 import type { DmaController } from '../dma/controller';
 import {
 	GX_GPU_TRANSFER_MAX_BYTE_COUNT,
+	GX_GPU_TRANSFER_MAX_PIXEL_COUNT,
 	gxGpuTransferHeight,
 	gxGpuTransferWidth,
 } from '../../../spec/gx/gp0';
@@ -9,6 +10,8 @@ import { GX_GPU_VRAM_X_ADDRESS_PERIOD, gxGpuVramYAddress } from '../../../spec/g
 
 export const GX_GPU_COMMAND_CAPACITY = 4096;
 export const GX_GPU_COMMAND_WORD_CAPACITY = 0x80000;
+export const GX_GPU_COMMAND_MAX_UPLOAD_WORD_COUNT = 3 + (GX_GPU_TRANSFER_MAX_PIXEL_COUNT >>> 1);
+export const GX_GPU_COMMAND_WORD_DRAIN_THRESHOLD = GX_GPU_COMMAND_WORD_CAPACITY - GX_GPU_COMMAND_MAX_UPLOAD_WORD_COUNT;
 export const GX_GPU_SKIPPED_LINE_NONE = 2;
 
 export const GX_GPU_COMMAND_DRAW_POLYGON = 1;

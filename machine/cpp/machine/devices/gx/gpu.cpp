@@ -165,11 +165,11 @@ void GxGpu::clearIngressContext(GxGpuIngressContextBank& context) {
 	context.gp0ImageLoadCommandWordStart = 0u;
 	context.gp0ImageLoadCommandWordCount = 0u;
 	context.gp0ImageLoadCommandOpcode = 0u;
-	context.gp0PolylineWordsPerVertex = 0u;
 	context.gp0PolylinePayloadPhase = 0u;
-	context.gp0PolylineCommandWordStart = 0u;
-	context.gp0PolylineCommandWordCount = 0u;
-	context.gp0PolylineCommandOpcode = 0u;
+	context.gp0PolylineOpcode = 0u;
+	context.gp0PolylineColorWord = 0u;
+	context.gp0PolylinePositionWord = 0u;
+	context.gp0PolylineNextColorWord = 0u;
 	context.commandBufferWordCount = 0u;
 }
 
@@ -185,11 +185,11 @@ void GxGpu::storeLiveIngressContext(GxGpuIngressContextBank& context) const {
 	context.gp0ImageLoadCommandWordStart = m_gp0ImageLoadCommandWordStart;
 	context.gp0ImageLoadCommandWordCount = m_gp0ImageLoadCommandWordCount;
 	context.gp0ImageLoadCommandOpcode = m_gp0ImageLoadCommandOpcode;
-	context.gp0PolylineWordsPerVertex = m_gp0PolylineWordsPerVertex;
 	context.gp0PolylinePayloadPhase = m_gp0PolylinePayloadPhase;
-	context.gp0PolylineCommandWordStart = m_gp0PolylineCommandWordStart;
-	context.gp0PolylineCommandWordCount = m_gp0PolylineCommandWordCount;
-	context.gp0PolylineCommandOpcode = m_gp0PolylineCommandOpcode;
+	context.gp0PolylineOpcode = m_gp0PolylineOpcode;
+	context.gp0PolylineColorWord = m_gp0PolylineColorWord;
+	context.gp0PolylinePositionWord = m_gp0PolylinePositionWord;
+	context.gp0PolylineNextColorWord = m_gp0PolylineNextColorWord;
 	context.commandBufferWordCount = m_commandBuffer.wordCount;
 	std::copy(m_commandBuffer.words.begin(), m_commandBuffer.words.begin() + static_cast<std::ptrdiff_t>(m_commandBuffer.wordCount), context.commandBufferWords->begin());
 }
@@ -206,11 +206,11 @@ void GxGpu::loadLiveIngressContext(const GxGpuIngressContextBank& context) {
 	m_gp0ImageLoadCommandWordStart = context.gp0ImageLoadCommandWordStart;
 	m_gp0ImageLoadCommandWordCount = context.gp0ImageLoadCommandWordCount;
 	m_gp0ImageLoadCommandOpcode = context.gp0ImageLoadCommandOpcode;
-	m_gp0PolylineWordsPerVertex = context.gp0PolylineWordsPerVertex;
 	m_gp0PolylinePayloadPhase = context.gp0PolylinePayloadPhase;
-	m_gp0PolylineCommandWordStart = context.gp0PolylineCommandWordStart;
-	m_gp0PolylineCommandWordCount = context.gp0PolylineCommandWordCount;
-	m_gp0PolylineCommandOpcode = context.gp0PolylineCommandOpcode;
+	m_gp0PolylineOpcode = context.gp0PolylineOpcode;
+	m_gp0PolylineColorWord = context.gp0PolylineColorWord;
+	m_gp0PolylinePositionWord = context.gp0PolylinePositionWord;
+	m_gp0PolylineNextColorWord = context.gp0PolylineNextColorWord;
 	m_commandBuffer.wordCount = context.commandBufferWordCount;
 	std::copy(context.commandBufferWords->begin(), context.commandBufferWords->begin() + static_cast<std::ptrdiff_t>(context.commandBufferWordCount), m_commandBuffer.words.begin());
 }
@@ -227,11 +227,11 @@ GxGpuIngressContextState GxGpu::captureIngressContext(const GxGpuIngressContextB
 	state.gp0ImageLoadCommandWordStart = context.gp0ImageLoadCommandWordStart;
 	state.gp0ImageLoadCommandWordCount = context.gp0ImageLoadCommandWordCount;
 	state.gp0ImageLoadCommandOpcode = context.gp0ImageLoadCommandOpcode;
-	state.gp0PolylineWordsPerVertex = context.gp0PolylineWordsPerVertex;
 	state.gp0PolylinePayloadPhase = context.gp0PolylinePayloadPhase;
-	state.gp0PolylineCommandWordStart = context.gp0PolylineCommandWordStart;
-	state.gp0PolylineCommandWordCount = context.gp0PolylineCommandWordCount;
-	state.gp0PolylineCommandOpcode = context.gp0PolylineCommandOpcode;
+	state.gp0PolylineOpcode = context.gp0PolylineOpcode;
+	state.gp0PolylineColorWord = context.gp0PolylineColorWord;
+	state.gp0PolylinePositionWord = context.gp0PolylinePositionWord;
+	state.gp0PolylineNextColorWord = context.gp0PolylineNextColorWord;
 	state.commandBufferWords.assign(context.commandBufferWords->begin(), context.commandBufferWords->begin() + static_cast<std::ptrdiff_t>(context.commandBufferWordCount));
 	return state;
 }
@@ -248,11 +248,11 @@ void GxGpu::restoreIngressContext(GxGpuIngressContextBank& context, const GxGpuI
 	context.gp0ImageLoadCommandWordStart = state.gp0ImageLoadCommandWordStart;
 	context.gp0ImageLoadCommandWordCount = state.gp0ImageLoadCommandWordCount;
 	context.gp0ImageLoadCommandOpcode = state.gp0ImageLoadCommandOpcode;
-	context.gp0PolylineWordsPerVertex = state.gp0PolylineWordsPerVertex;
 	context.gp0PolylinePayloadPhase = state.gp0PolylinePayloadPhase;
-	context.gp0PolylineCommandWordStart = state.gp0PolylineCommandWordStart;
-	context.gp0PolylineCommandWordCount = state.gp0PolylineCommandWordCount;
-	context.gp0PolylineCommandOpcode = state.gp0PolylineCommandOpcode;
+	context.gp0PolylineOpcode = state.gp0PolylineOpcode;
+	context.gp0PolylineColorWord = state.gp0PolylineColorWord;
+	context.gp0PolylinePositionWord = state.gp0PolylinePositionWord;
+	context.gp0PolylineNextColorWord = state.gp0PolylineNextColorWord;
 	context.commandBufferWordCount = state.commandBufferWords.size();
 	std::copy(state.commandBufferWords.begin(), state.commandBufferWords.end(), context.commandBufferWords->begin());
 }
@@ -326,11 +326,11 @@ GxGpuState GxGpu::captureState() {
 	state.gp0ImageLoadCommandWordStart = m_gp0ImageLoadCommandWordStart;
 	state.gp0ImageLoadCommandWordCount = m_gp0ImageLoadCommandWordCount;
 	state.gp0ImageLoadCommandOpcode = m_gp0ImageLoadCommandOpcode;
-	state.gp0PolylineWordsPerVertex = m_gp0PolylineWordsPerVertex;
 	state.gp0PolylinePayloadPhase = m_gp0PolylinePayloadPhase;
-	state.gp0PolylineCommandWordStart = m_gp0PolylineCommandWordStart;
-	state.gp0PolylineCommandWordCount = m_gp0PolylineCommandWordCount;
-	state.gp0PolylineCommandOpcode = m_gp0PolylineCommandOpcode;
+	state.gp0PolylineOpcode = m_gp0PolylineOpcode;
+	state.gp0PolylineColorWord = m_gp0PolylineColorWord;
+	state.gp0PolylinePositionWord = m_gp0PolylinePositionWord;
+	state.gp0PolylineNextColorWord = m_gp0PolylineNextColorWord;
 	state.gpuReadWord = m_gpuReadWord;
 	state.drawModeWord = m_drawModeWord;
 	state.textureWindowWord = m_textureWindowWord;
@@ -382,11 +382,11 @@ void GxGpu::restoreState(const GxGpuState& state) {
 	m_gp0ImageLoadCommandWordStart = state.gp0ImageLoadCommandWordStart;
 	m_gp0ImageLoadCommandWordCount = state.gp0ImageLoadCommandWordCount;
 	m_gp0ImageLoadCommandOpcode = state.gp0ImageLoadCommandOpcode;
-	m_gp0PolylineWordsPerVertex = state.gp0PolylineWordsPerVertex;
 	m_gp0PolylinePayloadPhase = state.gp0PolylinePayloadPhase;
-	m_gp0PolylineCommandWordStart = state.gp0PolylineCommandWordStart;
-	m_gp0PolylineCommandWordCount = state.gp0PolylineCommandWordCount;
-	m_gp0PolylineCommandOpcode = state.gp0PolylineCommandOpcode;
+	m_gp0PolylineOpcode = state.gp0PolylineOpcode;
+	m_gp0PolylineColorWord = state.gp0PolylineColorWord;
+	m_gp0PolylinePositionWord = state.gp0PolylinePositionWord;
+	m_gp0PolylineNextColorWord = state.gp0PolylineNextColorWord;
 	m_gpuReadWord = state.gpuReadWord;
 	m_drawModeWord = state.drawModeWord;
 	m_textureWindowWord = state.textureWindowWord;
@@ -723,11 +723,26 @@ void GxGpu::consumeGp0Fifo(i64 commandStartCycle) {
 			consumeImageLoadWord(m_gp0Fifo.pop(), commandStartCycle);
 			continue;
 		}
-		if (m_gp0PolylineWordsPerVertex != 0u) {
+		if (m_gp0PolylineOpcode != 0u) {
+			const u32 word = m_gp0Fifo.peek();
+			if (m_gp0PolylinePayloadPhase == 0u && (word & 0xf000f000u) == 0x50005000u) {
+				m_gp0Fifo.pop();
+				clearPolylineState();
+				continue;
+			}
+			if ((m_gp0PolylineOpcode & GX_GPU_GP0_RENDER_GOURAUD_BIT) == 0u
+				|| m_gp0PolylinePayloadPhase != 0u) {
+				if (commandBufferDrainRequired()) {
+					return;
+				}
+			}
 			consumeGp0PolylinePayloadWord(m_gp0Fifo.pop(), commandStartCycle);
 			continue;
 		}
 		if (m_gp0CommandTargetWordCount == 0u) {
+			if (commandBufferDrainRequired()) {
+				return;
+			}
 			m_gp0CommandTargetWordCount = gp0CommandWordCountForOpcode(m_gp0Fifo.peek() >> GX_GPU_GP0_OPCODE_SHIFT);
 		}
 		while (m_gp0CommandWordCount < m_gp0CommandTargetWordCount && !m_gp0Fifo.empty()) {
@@ -803,7 +818,7 @@ void GxGpu::executeGp0Command(i64 commandStartCycle) {
 			emitFixedGp0Command(GX_GPU_COMMAND_DRAW_POLYGON, opcode, commandWordCount, commandStartCycle);
 		} else if (opcode >= GX_GPU_GP0_LINE_FIRST && opcode <= GX_GPU_GP0_LINE_LAST) {
 			if ((opcode & GX_GPU_GP0_RENDER_QUAD_OR_POLYLINE_BIT) != 0u) {
-				beginPolylinePayload(opcode, commandWordCount);
+				beginPolylinePayload(opcode, commandWordCount, commandStartCycle);
 			} else {
 				emitFixedGp0Command(GX_GPU_COMMAND_DRAW_LINE, opcode, commandWordCount, commandStartCycle);
 			}
@@ -1000,9 +1015,6 @@ void GxGpu::retireCommandPrefix(size_t retiredCommands) {
 		if (m_gp0ImageLoadCommandWordCount != 0u) {
 			m_gp0ImageLoadCommandWordStart -= retiredWords;
 		}
-		if (m_gp0PolylineCommandWordCount != 0u) {
-			m_gp0PolylineCommandWordStart -= retiredWords;
-		}
 	}
 }
 
@@ -1074,9 +1086,6 @@ void GxGpu::clearGp0Fifo(i64 nowCycles) {
 	m_gp0Fifo.reset();
 	clearGp0IngressState();
 	flushImageLoadToVram(nowCycles);
-	if (m_gp0PolylineCommandWordCount != 0u) {
-		m_commandBuffer.wordCount = m_gp0PolylineCommandWordStart;
-	}
 	m_commandBuffer.abortReadbackAndQueuedCommands();
 	// GP1(01h) completes accepted raster/upload work, but not a C0 removed above.
 	if (m_pendingCommandTargetCount > m_commandBuffer.executedCommandCount
@@ -1101,11 +1110,11 @@ void GxGpu::clearGp0IngressState() {
 }
 
 void GxGpu::clearPolylineState() {
-	m_gp0PolylineWordsPerVertex = 0u;
 	m_gp0PolylinePayloadPhase = 0u;
-	m_gp0PolylineCommandWordStart = 0u;
-	m_gp0PolylineCommandWordCount = 0u;
-	m_gp0PolylineCommandOpcode = 0u;
+	m_gp0PolylineOpcode = 0u;
+	m_gp0PolylineColorWord = 0u;
+	m_gp0PolylinePositionWord = 0u;
+	m_gp0PolylineNextColorWord = 0u;
 }
 
 void GxGpu::clearImageLoadState() {
@@ -1147,30 +1156,48 @@ void GxGpu::consumeImageLoadWord(u32 word, i64 commandStartCycle) {
 }
 
 void GxGpu::consumeGp0PolylinePayloadWord(u32 word, i64 commandStartCycle) {
-	if (m_gp0PolylinePayloadPhase == 0u && (word & 0xf000f000u) == 0x50005000u) {
-		pushGpuCommand(
-			GX_GPU_COMMAND_DRAW_POLYLINE,
-			m_gp0PolylineCommandOpcode,
-			m_gp0PolylineCommandWordStart,
-			m_gp0PolylineCommandWordCount,
-			commandStartCycle);
-		clearPolylineState();
+	if ((m_gp0PolylineOpcode & GX_GPU_GP0_RENDER_GOURAUD_BIT) != 0u) {
+		if (m_gp0PolylinePayloadPhase == 0u) {
+			m_gp0PolylineNextColorWord = word;
+			m_gp0PolylinePayloadPhase = 1u;
+			return;
+		}
+		m_gp0CommandWords[0] = m_gp0PolylineColorWord;
+		m_gp0CommandWords[1] = m_gp0PolylinePositionWord;
+		m_gp0CommandWords[2] = m_gp0PolylineNextColorWord;
+		m_gp0CommandWords[3] = word;
+		emitFixedGp0Command(GX_GPU_COMMAND_DRAW_LINE, m_gp0PolylineOpcode, 4u, commandStartCycle);
+		m_gp0PolylineColorWord = m_gp0PolylineNextColorWord;
+		m_gp0PolylinePositionWord = word;
+		m_gp0PolylineNextColorWord = 0u;
+		m_gp0PolylinePayloadPhase = 0u;
 		return;
 	}
-	m_commandBuffer.appendWord(word);
-	m_gp0PolylineCommandWordCount += 1u;
-	m_gp0PolylinePayloadPhase += 1u;
-	if (m_gp0PolylinePayloadPhase == m_gp0PolylineWordsPerVertex) {
-		m_gp0PolylinePayloadPhase = 0u;
-	}
+	m_gp0CommandWords[0] = m_gp0PolylineColorWord;
+	m_gp0CommandWords[1] = m_gp0PolylinePositionWord;
+	m_gp0CommandWords[2] = word;
+	emitFixedGp0Command(GX_GPU_COMMAND_DRAW_LINE, m_gp0PolylineOpcode, 3u, commandStartCycle);
+	m_gp0PolylinePositionWord = word;
 }
 
-void GxGpu::beginPolylinePayload(u32 opcode, u32 commandWordCount) {
-	m_gp0PolylineCommandWordStart = m_commandBuffer.appendWords(m_gp0CommandWords.data(), commandWordCount);
-	m_gp0PolylineCommandWordCount = commandWordCount;
-	m_gp0PolylineCommandOpcode = static_cast<u8>(opcode);
-	m_gp0PolylineWordsPerVertex = (opcode & GX_GPU_GP0_RENDER_GOURAUD_BIT) != 0u ? 2u : 1u;
+void GxGpu::beginPolylinePayload(u32 opcode, u32 commandWordCount, i64 commandStartCycle) {
+	emitFixedGp0Command(GX_GPU_COMMAND_DRAW_POLYLINE, opcode, commandWordCount, commandStartCycle);
+	m_gp0PolylineOpcode = static_cast<u8>(opcode);
 	m_gp0PolylinePayloadPhase = 0u;
+	if ((opcode & GX_GPU_GP0_RENDER_GOURAUD_BIT) != 0u) {
+		m_gp0PolylineColorWord = m_gp0CommandWords[2];
+		m_gp0PolylinePositionWord = m_gp0CommandWords[3];
+	} else {
+		m_gp0PolylineColorWord = m_gp0CommandWords[0];
+		m_gp0PolylinePositionWord = m_gp0CommandWords[2];
+	}
+	m_gp0PolylineNextColorWord = 0u;
+}
+
+bool GxGpu::commandBufferDrainRequired() const {
+	return m_commandBuffer.commandCount == GX_GPU_COMMAND_CAPACITY
+		|| (m_gp0ImageLoadWordsRemaining == 0u
+			&& m_commandBuffer.wordCount > GX_GPU_COMMAND_WORD_DRAIN_THRESHOLD);
 }
 
 u32 GxGpu::gp0CommandWordCountForOpcode(u32 opcode) const {
@@ -1330,7 +1357,7 @@ void GxGpu::updateCommandStatusBits() {
 	if (readbackIdle && !m_supervisorIngressStopped && m_gp0DmaIngress.empty()) {
 		if (m_gp0ImageLoadWordsRemaining != 0u) {
 			readyToReceiveDma = m_gp0Fifo.count() < GX_GPU_COMMAND_FIFO_WORD_CAPACITY;
-		} else if (m_gp0PolylineWordsPerVertex != 0u) {
+		} else if (m_gp0PolylineOpcode != 0u) {
 			readyToReceiveDma = false;
 		} else if (m_gp0CommandWordCount == 0u && m_gp0Fifo.empty()) {
 			readyToReceiveDma = true;
@@ -1355,7 +1382,7 @@ void GxGpu::updateCommandStatusBits() {
 		&& m_gp0Fifo.empty()
 		&& m_gp0CommandWordCount == 0u
 		&& m_gp0ImageLoadWordsRemaining == 0u
-		&& m_gp0PolylineWordsPerVertex == 0u) {
+		&& m_gp0PolylineOpcode == 0u) {
 		commandStatusBits |= GX_GPU_STATUS_GPU_IDLE;
 	}
 	m_statusWord = (m_statusWord & ~GX_GPU_STATUS_COMMAND_STATE_MASK) | commandStatusBits;

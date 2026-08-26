@@ -2692,12 +2692,15 @@ packet assembly, execution frontier, and active deadline relative to scheduler
 time.
 
 The retained backend stream is a fixed staging window, not another guest-visible
-FIFO. When its 4096 command records are occupied, machine execution stops at the
-current cycle before another command can be admitted. The active backend executes
-the completed prefix into its already-owned physical VRAM resource, GX retires
-that exact prefix and rebases only the pending suffix, and the machine resumes at
-the same cycle. This boundary neither drops a command nor copies the full VRAM
-snapshot. It follows MAME's packet-completion model, where
+FIFO. Admission stops when its 4096 command records are occupied or when its
+word cursor reaches the boundary that reserves one complete 1024-by-512 A0
+upload. An active command keeps advancing on the GPU execution clock; only when
+the window has a completed prefix does machine execution stop at the current
+cycle for backend service. The active backend executes that prefix into its
+already-owned physical VRAM resource, GX retires the exact prefix and rebases
+only the pending suffix, and the machine resumes at the same cycle. This
+boundary neither drops a command, splits one image upload, nor copies the full
+VRAM snapshot. It follows MAME's packet-completion model, where
 [`gpu_write`](https://github.com/mamedev/mame/blob/30a7a6bf72913cc849e0078813bdf74f67db4cb5/src/devices/video/psx.cpp#L2723-L3226)
 executes complete packets directly into device-owned VRAM, and
 DuckStation's [`EnsureVertexBufferSpace`](https://github.com/stenzek/duckstation/blob/c776dee9ed161503359f33c917d37c2531d0677b/src/core/gpu_hw.cpp#L3333-L3384)
@@ -2711,9 +2714,18 @@ accepted word reaches the FIFO. At a proven command boundary GP0(00h),
 GP0(04h--1Eh), GP0(E0h), and GP0(E7h--EFh) are discarded as physical NOPs.
 GP0(E3h--E5h) enter the command FIFO and update the drawing-area and
 drawing-offset register latches at their ordered execution point, so older
-raster packets retain the state that preceded them. Fixed parameters, image
-headers/payload, and polyline payload are opaque; a polyline terminator is still
-stored so the execution-side packet owner consumes the same stream boundary.
+raster packets retain the state that preceded them. Fixed parameters and image
+payload remain raw words. For polylines, GX recognizes only the packet phase and
+terminator needed to materialize the first completed segment, then retains only
+its last endpoint and, for Gouraud input, its last and pending colors. Every
+later endpoint becomes an ordered line command immediately; the terminator
+clears that rolling state and occupies no backend word. Thus an
+arbitrarily long polyline uses constant device state and can cross any number
+of backend drains without an unbounded host packet. This matches MAME's
+incremental mono/Gouraud polyline execution in
+[`gpu_write`](https://github.com/mamedev/mame/blob/30a7a6bf72913cc849e0078813bdf74f67db4cb5/src/devices/video/psx.cpp#L2958-L3140),
+rather than DuckStation's acknowledged temporary whole-polyline buffer in
+[`GPU::HandleGP0Command`](https://github.com/stenzek/duckstation/blob/c776dee9ed161503359f33c917d37c2531d0677b/src/core/gpu.cpp#L2730-L2805).
 GP0(03h) occupies one FIFO word like other unknown commands.
 
 Non-final words of a DMA block enter only the DMA ingress buffer. `BLOCK_END`
@@ -2777,7 +2789,8 @@ only machine reset clears that latch.
 Already accepted backend commands and received image payload remain in the
 retained execution log. The surviving accepted execution frontier completes at
 the GP1 transition and its old device deadline is removed, while an incomplete
-packet/polyline and an active readback suffix are discarded. GP1(00h) preserves
+packet, rolling polyline continuation and active readback suffix are discarded.
+Already materialized polyline segments remain accepted commands. GP1(00h) preserves
 both the GPUREAD data latch and the installed VRAM contents; machine reset clears
 the latch to zero. Every render backend consumes the same raw snapshot revision;
 the command buffer has no second VRAM-clear signal or backend-specific reset
@@ -2786,11 +2799,13 @@ route.
 GP1(01h) clears in-progress GP0 packet/FIFO state and aborts an active
 VRAM-to-CPU transfer. Commands before a still-pending C0 fence remain in their
 stable retained prefix; the C0 marker and its queued suffix are discarded.
-Abandoned image headers and partial polylines truncate their uncommitted word
-suffix; already received image payload remains one partial upload command and
-completes at the reset edge. A surviving accepted raster command likewise
-advances the execution frontier immediately, whereas a removed C0 marker never
-activates readback. In every case the pre-reset GPU deadline is cancelled.
+Abandoned image headers truncate their uncommitted word suffix; an active
+polyline clears only its rolling endpoint/color continuation because every
+complete segment is already a retained command. Already received image payload
+remains one partial upload command and completes at the reset edge. A surviving
+accepted raster command likewise advances the execution frontier immediately,
+whereas a removed C0 marker never activates readback. In every case the
+pre-reset GPU deadline is cancelled.
 Submitted or ready readback state is invalidated by generation, lowers the DMA
 ready line, and cannot be completed by a stale backend callback. The GPUREAD
 data latch and raw VRAM remain unchanged.
