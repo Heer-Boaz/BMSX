@@ -1786,27 +1786,38 @@ test('GX-GPU emits PSX GP0 fixed-length render and blit packets into the GPU com
 	assert.equal(commands.commandKind[3], GX_GPU_COMMAND_DRAW_RECTANGLE);
 	assert.equal(commands.commandWordCount[3], 4);
 
+	const rawTexturedRectangle8x8 = GX_GPU_GP0_RECTANGLE_FIRST
+		| GX_GPU_GP0_RENDER_TEXTURE_BIT | 0x10 | 0x01;
+	gpu.writeGp0(rawTexturedRectangle8x8 << 24);
+	gpu.writeGp0(0x00070008);
+	gpu.writeGp0(0x0009000a);
+	completeGpuCommands(gpu);
+	assert.equal(commands.commandCount, 5);
+	assert.equal(commands.commandKind[4], GX_GPU_COMMAND_DRAW_RECTANGLE);
+	assert.equal(commands.commandOpcode[4], rawTexturedRectangle8x8);
+	assert.equal(commands.commandWordCount[4], 3);
+
 	gpu.writeGp0(GX_GPU_GP0_VRAM_TO_VRAM_FIRST << 24);
 	gpu.writeGp0((GX_GPU_GP0_DRAW_MODE << 24) | 0x000444);
 	gpu.writeGp0(0x00030004);
 	gpu.writeGp0(0x00050006);
 	completeGpuCommands(gpu);
-	assert.equal(commands.commandCount, 5);
-	assert.equal(commands.commandKind[4], GX_GPU_COMMAND_COPY_VRAM_TO_VRAM);
-	assert.equal(commands.commandWordCount[4], 4);
+	assert.equal(commands.commandCount, 6);
+	assert.equal(commands.commandKind[5], GX_GPU_COMMAND_COPY_VRAM_TO_VRAM);
+	assert.equal(commands.commandWordCount[5], 4);
 
 	gpu.writeGp0((GX_GPU_GP0_DRAW_MODE << 24) | 0x0007ff);
 	completeGpuCommands(gpu);
-	assert.equal(commands.commandCount, 5);
+	assert.equal(commands.commandCount, 6);
 	assert.equal(gpu.readDrawModeWord(), 0x0007ff);
 
 	gpu.writeGp0(0x40 << 24);
 	gpu.writeGp0(0x00010002);
 	gpu.writeGp0(0x00030004);
 	completeGpuCommands(gpu);
-	assert.equal(commands.commandCount, 6);
-	assert.equal(commands.commandKind[5], GX_GPU_COMMAND_DRAW_LINE);
-	assert.equal(commands.commandDrawModeWord[5], 0x0007ff);
+	assert.equal(commands.commandCount, 7);
+	assert.equal(commands.commandKind[6], GX_GPU_COMMAND_DRAW_LINE);
+	assert.equal(commands.commandDrawModeWord[6], 0x0007ff);
 });
 
 test('GX-GPU emits PSX CPU-to-VRAM image payload words into the GPU command buffer', () => {

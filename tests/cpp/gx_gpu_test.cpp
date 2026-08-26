@@ -1276,27 +1276,38 @@ void testGp0FixedLengthRenderAndBlitPacketAssembly() {
 	require(commands.commandKind[3] == bmsx::GX_GPU_COMMAND_DRAW_RECTANGLE, "GX-GPU GP0 textured variable rectangle command kind");
 	require(commands.commandWordCount[3] == 4u, "GX-GPU GP0 textured variable rectangle command words");
 
+	constexpr uint32_t rawTexturedRectangle8x8 = bmsx::GX_GPU_GP0_RECTANGLE_FIRST
+		| bmsx::GX_GPU_GP0_RENDER_TEXTURE_BIT | 0x10u | 0x01u;
+	gpu.writeGp0(rawTexturedRectangle8x8 << 24u);
+	gpu.writeGp0(0x00070008u);
+	gpu.writeGp0(0x0009000au);
+	completeGpuCommands(harness);
+	require(commands.commandCount == 5u, "GX-GPU GP0 textured 8x8 rectangle emitted command count");
+	require(commands.commandKind[4] == bmsx::GX_GPU_COMMAND_DRAW_RECTANGLE, "GX-GPU GP0 textured 8x8 rectangle command kind");
+	require(commands.commandOpcode[4] == rawTexturedRectangle8x8, "GX-GPU GP0 textured 8x8 rectangle opcode");
+	require(commands.commandWordCount[4] == 3u, "GX-GPU GP0 textured 8x8 rectangle command words");
+
 	gpu.writeGp0(bmsx::GX_GPU_GP0_VRAM_TO_VRAM_FIRST << 24u);
 	gpu.writeGp0((bmsx::GX_GPU_GP0_DRAW_MODE << 24u) | 0x000444u);
 	gpu.writeGp0(0x00030004u);
 	gpu.writeGp0(0x00050006u);
 	completeGpuCommands(harness);
-	require(commands.commandCount == 5u, "GX-GPU GP0 VRAM-to-VRAM emitted command count");
-	require(commands.commandKind[4] == bmsx::GX_GPU_COMMAND_COPY_VRAM_TO_VRAM, "GX-GPU GP0 VRAM-to-VRAM command kind");
-	require(commands.commandWordCount[4] == 4u, "GX-GPU GP0 VRAM-to-VRAM command words");
+	require(commands.commandCount == 6u, "GX-GPU GP0 VRAM-to-VRAM emitted command count");
+	require(commands.commandKind[5] == bmsx::GX_GPU_COMMAND_COPY_VRAM_TO_VRAM, "GX-GPU GP0 VRAM-to-VRAM command kind");
+	require(commands.commandWordCount[5] == 4u, "GX-GPU GP0 VRAM-to-VRAM command words");
 
 	gpu.writeGp0((bmsx::GX_GPU_GP0_DRAW_MODE << 24u) | 0x0007ffu);
 	completeGpuCommands(harness);
-	require(commands.commandCount == 5u, "GX-GPU GP0 environment command does not emit GPU command");
+	require(commands.commandCount == 6u, "GX-GPU GP0 environment command does not emit GPU command");
 	require(gpu.readDrawModeWord() == 0x0007ffu, "GX-GPU GP0 command processing resumes after fixed packets");
 
 	gpu.writeGp0(0x40u << 24u);
 	gpu.writeGp0(0x00010002u);
 	gpu.writeGp0(0x00030004u);
 	completeGpuCommands(harness);
-	require(commands.commandCount == 6u, "GX-GPU GP0 line emitted command count");
-	require(commands.commandKind[5] == bmsx::GX_GPU_COMMAND_DRAW_LINE, "GX-GPU GP0 line command kind");
-	require(commands.commandDrawModeWord[5] == 0x0007ffu, "GX-GPU GP0 line captures draw mode state");
+	require(commands.commandCount == 7u, "GX-GPU GP0 line emitted command count");
+	require(commands.commandKind[6] == bmsx::GX_GPU_COMMAND_DRAW_LINE, "GX-GPU GP0 line command kind");
+	require(commands.commandDrawModeWord[6] == 0x0007ffu, "GX-GPU GP0 line captures draw mode state");
 }
 
 void testGp0CpuToVramImagePayloadConsumption() {

@@ -32,6 +32,12 @@ struct gp0_textured_rectangle_packet
 	size: word
 end
 
+struct gp0_fixed_textured_rectangle_packet
+	command: word
+	position: word
+	uv: word
+end
+
 struct gp0_rectangle_packet
 	command: word
 	position: word
@@ -39,7 +45,9 @@ struct gp0_rectangle_packet
 end
 
 local textured_rectangle_packet_size<const> = sizeof(gp0_textured_rectangle_packet)
+local fixed_textured_rectangle_packet_size<const> = sizeof(gp0_fixed_textured_rectangle_packet)
 local rectangle_packet_size<const> = sizeof(gp0_rectangle_packet)
+local neutral_texture_color<const> = 0x00808080
 
 function command_list.submit(draw)
 	dma.wait0_idle()
@@ -246,12 +254,48 @@ function command_list.blit(source, draw, x, y)
 		draw.draw_mode = draw_mode
 	end
 	local packet<const>: *gp0_textured_rectangle_packet = target
-	packet.command = gp0.draw_raw_textured_rectangle | 0x00808080
+	packet.command = gp0.draw_raw_textured_rectangle | neutral_texture_color
 	packet.position = gp0.pair16(x, y)
 	packet.uv = source._blit_uv_word
 	packet.size = source._size_word
 	target = target + textured_rectangle_packet_size
 	draw.word_count = (target - words) >> 2
+end
+
+local blit_fixed<const> = function(source, draw, x, y)
+	local words<const>: *word = draw.words
+	local target: *word = words + draw.word_count * sizeof(word)
+	local draw_mode<const> = source._blit_draw_mode
+	if draw_mode ~= draw.draw_mode then
+		*target = gp0.draw_mode | draw_mode
+		target = target + sizeof(word)
+		draw.draw_mode = draw_mode
+	end
+	local packet<const>: *gp0_fixed_textured_rectangle_packet = target
+	packet.command = source._blit_command
+	packet.position = gp0.pair16(x, y)
+	packet.uv = source._blit_uv_word
+	target = target + fixed_textured_rectangle_packet_size
+	draw.word_count = (target - words) >> 2
+end
+
+-- Image admission selects the native GP0 packet shape once. Ordinary frame
+-- rendering therefore writes the hardware's three-word fixed-size sprite
+-- packets without rechecking image dimensions at every draw.
+function command_list.bind_blit(source)
+	local size_word<const> = source._size_word
+	local writer = command_list.blit
+	if size_word == gp0.rectangle_size_1x1 then
+		source._blit_command = gp0.draw_raw_textured_rectangle_1x1 | neutral_texture_color
+		writer = blit_fixed
+	elseif size_word == gp0.rectangle_size_8x8 then
+		source._blit_command = gp0.draw_raw_textured_rectangle_8x8 | neutral_texture_color
+		writer = blit_fixed
+	elseif size_word == gp0.rectangle_size_16x16 then
+		source._blit_command = gp0.draw_raw_textured_rectangle_16x16 | neutral_texture_color
+		writer = blit_fixed
+	end
+	source.blit = writer
 end
 
 -- Producer-split surfaces retain one ordered source list with integral offsets.
@@ -344,6 +388,39 @@ function command_list.blit_span(draw, glyphs, x_offsets, first_index, last_index
 	draw.draw_mode = draw_mode
 end
 
+local blit_fixed_span<const> = function(draw, glyphs, x_offsets, first_index, last_index, x, y, color)
+	local words<const>: *word = draw.words
+	local target: *word = words + draw.word_count * sizeof(word)
+	local draw_mode = draw.draw_mode
+	local base_position<const> = gp0.pair16(x, y)
+	local base_x<const> = base_position & 0x0000ffff
+	local position_y<const> = base_position & 0xffff0000
+	local raw_command<const> = glyphs[first_index]._blit_command
+	local command
+	if (color & 0x00ffffff) == 0x00ffffff then
+		command = raw_command
+	else
+		command = (raw_command & gp0.modulated_texture_opcode_mask)
+			| gp0.argb_to_texture_rgb(color)
+	end
+	for glyph_index = first_index, last_index do
+		local source<const> = glyphs[glyph_index]
+		local next_draw_mode<const> = source._blit_draw_mode
+		if next_draw_mode ~= draw_mode then
+			*target = gp0.draw_mode | next_draw_mode
+			target = target + sizeof(word)
+			draw_mode = next_draw_mode
+		end
+		local packet<const>: *gp0_fixed_textured_rectangle_packet = target
+		packet.command = command
+		packet.position = position_y | ((base_x + x_offsets[glyph_index]) & 0x0000ffff)
+		packet.uv = source._blit_uv_word
+		target = target + fixed_textured_rectangle_packet_size
+	end
+	draw.word_count = (target - words) >> 2
+	draw.draw_mode = draw_mode
+end
+
 -- Fonts with variable glyph dimensions still retain one draw mode per span.
 -- Keep that shape separate so fixed-size fonts do not reload size state for
 -- every packet and variable-size fonts do not gain a per-glyph mode branch.
@@ -409,6 +486,47 @@ function command_list.blit_uniform_span(draw, glyphs, x_offsets, first_index, la
 		target = target + textured_rectangle_packet_size
 	end
 	draw.word_count = (target - words) >> 2
+end
+
+local blit_fixed_uniform_span<const> = function(draw, glyphs, x_offsets, first_index, last_index, x, y, color, uniform_draw_mode_source)
+	local words<const>: *word = draw.words
+	local target: *word = words + draw.word_count * sizeof(word)
+	local draw_mode<const> = uniform_draw_mode_source._blit_draw_mode
+	if draw_mode ~= draw.draw_mode then
+		*target = gp0.draw_mode | draw_mode
+		target = target + sizeof(word)
+		draw.draw_mode = draw_mode
+	end
+	local base_position<const> = gp0.pair16(x, y)
+	local base_x<const> = base_position & 0x0000ffff
+	local position_y<const> = base_position & 0xffff0000
+	local raw_command<const> = uniform_draw_mode_source._blit_command
+	local command
+	if (color & 0x00ffffff) == 0x00ffffff then
+		command = raw_command
+	else
+		command = (raw_command & gp0.modulated_texture_opcode_mask)
+			| gp0.argb_to_texture_rgb(color)
+	end
+	for glyph_index = first_index, last_index do
+		local source<const> = glyphs[glyph_index]
+		local packet<const>: *gp0_fixed_textured_rectangle_packet = target
+		packet.command = command
+		packet.position = position_y | ((base_x + x_offsets[glyph_index]) & 0x0000ffff)
+		packet.uv = source._blit_uv_word
+		target = target + fixed_textured_rectangle_packet_size
+	end
+	draw.word_count = (target - words) >> 2
+end
+
+-- Font admission consumes the same retained packet classification as ordinary
+-- image blits. Variable glyph dimensions keep the four-word rectangle writers;
+-- native fixed sizes share the three-word sprite writers above.
+function command_list.span_writers(source)
+	if source.blit == command_list.blit then
+		return command_list.blit_span, command_list.blit_uniform_span
+	end
+	return blit_fixed_span, blit_fixed_uniform_span
 end
 
 -- Retained tile rows preserve authored row-major order. The common single

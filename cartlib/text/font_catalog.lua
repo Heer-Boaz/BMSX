@@ -47,14 +47,15 @@ local build_resolved_font<const> = function(id, definition)
 		advances[0x09] = advances[0x20] * 4
 	end
 	local line_glyph<const> = items[0x41] or items[0x61] or items[0x3f]
-	local uniform_writer = command_list.blit_uniform_span
+	local per_source_writer, uniform_writer = command_list.span_writers(sources[1])
 	if not uniform_size then
+		per_source_writer = command_list.blit_span
 		uniform_writer = command_list.blit_uniform_draw_mode_span
 	end
 	local span_binding<const> = {
 		sources = sources,
 		source_count = source_count,
-		per_source_writer = command_list.blit_span,
+		per_source_writer = per_source_writer,
 		uniform_writer = uniform_writer,
 	}
 	atlas.bind_draw_mode_span(span_binding)

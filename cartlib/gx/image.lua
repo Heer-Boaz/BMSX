@@ -24,8 +24,6 @@ local direct16_draw<const> = function(source, draw, x, y, color, flip_flags, ble
 		x, y, source.width, source.height, color, flip_flags << 12, blend_mode)
 end
 
-local blit<const> = command_list.blit
-
 local direct16_draw_source_rect<const> = function(source, draw, source_x, source_y, width, height, x, y, color, flip_flags, blend_mode)
 	local texture<const> = source._texture
 	draw:direct16_rect(
@@ -243,8 +241,8 @@ function image.resolve(id)
 				offset_x = tile.x,
 				offset_y = tile.y,
 				draw = draw,
-				blit = blit,
 			}
+			command_list.bind_blit(tile_source)
 			bind_source(texture, tile_source)
 			tiles[index] = tile_source
 		end
@@ -252,7 +250,7 @@ function image.resolve(id)
 	else
 		bind_source(texture, source)
 		source.draw = draw
-		source.blit = blit
+		command_list.bind_blit(source)
 		source.draw_source_rect = draw_source_rect
 		source.draw_affine = draw_affine
 		source.draw_quad = draw_quad

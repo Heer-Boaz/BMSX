@@ -317,7 +317,11 @@ end`],
 	end,
 }`],
 			['cartlib/gx/gp0', readFileSync('cartlib/gx/gp0.lua', 'utf8')],
-			['cartlib/gx/command_list', 'return { blit = function() end }'],
+			['cartlib/gx/command_list', `return {
+	bind_blit = function(source)
+		source.blit = function() end
+	end,
+}`],
 			['cartlib/gx/imgdec', `local imgdec<const> = {}
 local count = 0
 local source_addr, source_word_count, texture_word_count, clut_word_count, destination, size, clut_destination = 0, 0, 0, 0, 0, 0, 0
