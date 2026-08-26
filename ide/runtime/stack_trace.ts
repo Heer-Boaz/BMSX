@@ -1,4 +1,7 @@
-import { buildLuaFrameRawLabel } from '../../toolchain/ts/lua/stack_frame_label';
+import {
+	buildLuaFrameRawLabel,
+	luaFunctionDisplayName,
+} from '../../toolchain/ts/lua/stack_frame_label';
 import {
 	blua32InlineCallSitesAtPc,
 	blua32SourceRangeAtPc,
@@ -23,30 +26,6 @@ export type StackTraceFrame = {
 	workspacePath?: string;
 };
 
-function luaFunctionNameFromId(protoId: string): string {
-	const slashIndex = protoId.lastIndexOf('/');
-	const hint = slashIndex >= 0 ? protoId.slice(slashIndex + 1) : protoId;
-	const colonIndex = hint.indexOf(':');
-	if (colonIndex < 0) {
-		return hint;
-	}
-	const kind = hint.slice(0, colonIndex);
-	const name = hint.slice(colonIndex + 1);
-	switch (kind) {
-		case 'decl':
-		case 'assign':
-			return name;
-		case 'local': {
-			const hashIndex = name.indexOf('#');
-			return hashIndex >= 0 ? name.slice(0, hashIndex) : name;
-		}
-		case 'anon':
-			return 'anonymous';
-		default:
-			return hint;
-	}
-}
-
 function resolveLuaFunctionName(
 	symbols: Blua32SymbolsImage | null,
 	functionIndex: number,
@@ -54,7 +33,7 @@ function resolveLuaFunctionName(
 ): string {
 	return symbols === null || functionIndex < 0
 		? `function@${functionAddress.toString(16)}`
-		: luaFunctionNameFromId(symbols.metadata.functionIds[functionIndex]);
+		: luaFunctionDisplayName(symbols.metadata.functionIds[functionIndex]);
 }
 
 function buildLuaInstructionStackFrame(
@@ -125,7 +104,7 @@ export function buildLuaStackFrames(
 					sources,
 					entry.executionDomainId,
 					inlineRange,
-					luaFunctionNameFromId(inlineCallSites[inlineIndex].calleeFunctionId),
+					luaFunctionDisplayName(inlineCallSites[inlineIndex].calleeFunctionId),
 				));
 			}
 			frames.push(buildLuaSourceStackFrame(
