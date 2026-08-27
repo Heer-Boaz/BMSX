@@ -2,6 +2,7 @@ import type { SymbolID } from './model';
 import type {
 	ComponentAttachmentCallEntry,
 	ComponentCompositionContract,
+	ComponentLookupCallEntry,
 	ComponentMountEntry,
 	ComponentPublicationEntry,
 } from './component_composition';
@@ -379,6 +380,7 @@ export type WorkspaceValueGraphInput = {
 	componentPublications: readonly ComponentPublicationEntry[];
 	componentMounts: readonly ComponentMountEntry[];
 	componentAttachmentCalls: readonly ComponentAttachmentCallEntry[];
+	componentLookupCalls: readonly ComponentLookupCallEntry[];
 	componentCompositionContract: ComponentCompositionContract;
 	bindingValues: ReadonlyMap<string, SemanticValueSource>;
 	globalValues: ReadonlyMap<string, SymbolID>;
@@ -397,6 +399,7 @@ export class WorkspaceValueGraph {
 	private readonly bindingNodes: Map<string, SemanticValueID> = new Map();
 	private readonly ownedNodes: Map<string, SemanticValueID> = new Map();
 	private readonly members: Map<SemanticValueID, Map<string, MemberValue>> = new Map();
+	private readonly memberProjections: Map<SemanticValueID, Map<string, SemanticValueID>> = new Map();
 	private readonly elements: Map<SemanticValueID, SemanticValueID> = new Map();
 	private readonly instances: Map<SemanticValueID, SemanticValueID> = new Map();
 	private readonly callResults: Map<SemanticValueID, SemanticValueID> = new Map();
@@ -433,8 +436,10 @@ export class WorkspaceValueGraph {
 	private readonly returnSourceScratch: SemanticValueSource[] = [];
 	private readonly returnParameterScratch: (readonly SymbolID[] | undefined)[] = [];
 	private readonly memberValueScratch: SemanticValueID[] = [];
+	private readonly memberValueIdentityScratch: boolean[] = [];
 	private readonly memberNodeScratch: SemanticValueID[] = [];
 	private readonly memberTraversalMarks: number[] = [];
+	private readonly memberTraversalIdentityMarks: number[] = [];
 	private memberTraversalGeneration = 0;
 	// Reverse traversal dependencies select dirty owners while preserving the
 	// resolver's deterministic materialization order.
@@ -470,6 +475,10 @@ export class WorkspaceValueGraph {
 			options.componentAttachmentCalls,
 			options.componentCompositionContract,
 			componentMounts,
+		);
+		this.materializeComponentLookupCalls(
+			options.componentLookupCalls,
+			options.componentCompositionContract,
 		);
 		this.materializeComponentPublications(
 			options.componentPublications,
@@ -672,18 +681,56 @@ export class WorkspaceValueGraph {
 		create: boolean,
 	): SemanticValueID | undefined {
 		const values = this.memberValueScratch;
+		const identityValues = this.memberValueIdentityScratch;
 		values.length = 0;
+		identityValues.length = 0;
 		const generation = this.memberTraversalGeneration + 1;
 		this.memberTraversalGeneration = generation;
-		this.collectMemberValues(owner, name, generation, values);
+		this.collectMemberValues(owner, name, generation, true);
 		if (values.length > 0) {
-			const value = values[0];
-			for (let index = 1; index < values.length; index += 1) {
-				if (values[index] !== value) {
-					this.addIdentity(value, values[index]);
+			// Alias paths denote the same member and retain identity. Runtime value
+			// alternatives instead feed one projection; unifying their declarations
+			// would permanently publish every union member on every alternative.
+			let first: SemanticValueID | undefined;
+			for (let index = 0; index < values.length; index += 1) {
+				if (!identityValues[index]) {
+					continue;
+				}
+				if (!first) {
+					first = values[index];
+				} else if (values[index] !== first) {
+					this.addIdentity(first, values[index]);
 				}
 			}
-			return value;
+			let projection: SemanticValueID | undefined;
+			for (let index = 0; index < values.length; index += 1) {
+				if (identityValues[index]) {
+					continue;
+				}
+				const value = values[index];
+				if (!first) {
+					first = value;
+					continue;
+				}
+				if (value === first) {
+					continue;
+				}
+				if (!projection) {
+					let projections = this.memberProjections.get(owner);
+					if (!projections) {
+						projections = new Map();
+						this.memberProjections.set(owner, projections);
+					}
+					projection = projections.get(name);
+					if (!projection) {
+						projection = this.createNode();
+						projections.set(name, projection);
+					}
+					this.addValueBase(projection, first);
+				}
+				this.addValueBase(projection, value);
+			}
+			return projection ?? first;
 		}
 		return create ? this.ensureMember(owner, name).value : undefined;
 	}
@@ -692,23 +739,32 @@ export class WorkspaceValueGraph {
 		owner: SemanticValueID,
 		name: string,
 		generation: number,
-		values: SemanticValueID[],
+		identityPath: boolean,
 	): boolean {
-		if (this.memberTraversalMarks[owner] === generation) {
+		if (this.memberTraversalMarks[owner] === generation
+			&& (!identityPath || this.memberTraversalIdentityMarks[owner] === generation)) {
 			return false;
 		}
 		const nodes = this.memberNodeScratch;
 		const nodeStart = nodes.length;
 		this.memberTraversalMarks[owner] = generation;
+		if (identityPath) {
+			this.memberTraversalIdentityMarks[owner] = generation;
+		}
 		nodes.push(owner);
 		for (let nodeIndex = nodeStart; nodeIndex < nodes.length; nodeIndex += 1) {
 			const node = nodes[nodeIndex];
 			for (let edge = this.identityValues.first(node); edge !== 0; edge = this.identityValues.next(edge)) {
 				const identity = this.identityValues.target(edge);
-				if (this.memberTraversalMarks[identity] !== generation) {
-					this.memberTraversalMarks[identity] = generation;
-					nodes.push(identity);
+				if (this.memberTraversalMarks[identity] === generation
+					&& (!identityPath || this.memberTraversalIdentityMarks[identity] === generation)) {
+					continue;
 				}
+				this.memberTraversalMarks[identity] = generation;
+				if (identityPath) {
+					this.memberTraversalIdentityMarks[identity] = generation;
+				}
+				nodes.push(identity);
 			}
 		}
 		const nodeEnd = nodes.length;
@@ -716,7 +772,8 @@ export class WorkspaceValueGraph {
 		for (let nodeIndex = nodeStart; nodeIndex < nodeEnd; nodeIndex += 1) {
 			const member = this.members.get(nodes[nodeIndex])?.get(name);
 			if (member) {
-				values.push(member.value);
+				this.memberValueScratch.push(member.value);
+				this.memberValueIdentityScratch.push(identityPath);
 				declared = declared || member.declaration !== undefined;
 			}
 		}
@@ -728,14 +785,14 @@ export class WorkspaceValueGraph {
 					node,
 					name,
 					generation,
-					values,
+					false,
 				) || declared;
 				declared = this.collectMemberValuesFromBases(
 					this.projectionBases,
 					node,
 					name,
 					generation,
-					values,
+					identityPath,
 				) || declared;
 			}
 		}
@@ -747,7 +804,7 @@ export class WorkspaceValueGraph {
 						prototype,
 						name,
 						generation,
-						values,
+						identityPath,
 					) || declared;
 				}
 			}
@@ -759,7 +816,7 @@ export class WorkspaceValueGraph {
 					nodes[nodeIndex],
 					name,
 					generation,
-					values,
+					false,
 				) || declared;
 			}
 		}
@@ -772,7 +829,7 @@ export class WorkspaceValueGraph {
 		owner: SemanticValueID,
 		name: string,
 		generation: number,
-		values: SemanticValueID[],
+		identityPath: boolean,
 	): boolean {
 		let declared = false;
 		for (let edge = bases.first(owner); edge !== 0; edge = bases.next(edge)) {
@@ -780,7 +837,7 @@ export class WorkspaceValueGraph {
 				bases.target(edge),
 				name,
 				generation,
-				values,
+				identityPath,
 			) || declared;
 		}
 		return declared;
@@ -1283,7 +1340,7 @@ export class WorkspaceValueGraph {
 		contract: ComponentCompositionContract,
 		mounts: { owner: SemanticValueID; component: SemanticValueID }[],
 	): void {
-		const contractOwner = this.resolveSource(contract.attachmentOwner, false);
+		const contractOwner = this.resolveSource(contract.compositionOwner, false);
 		if (!contractOwner) {
 			return;
 		}
@@ -1294,23 +1351,7 @@ export class WorkspaceValueGraph {
 		for (let index = 0; index < entries.length; index += 1) {
 			const entry = entries[index];
 			const owner = this.resolveSource(entry.owner, false);
-			if (!owner) {
-				continue;
-			}
-			const methods = this.findMembers(owner, contract.attachmentMethodName);
-			let matchesContract = false;
-			for (let methodIndex = 0; methodIndex < methods.length; methodIndex += 1) {
-				for (let contractIndex = 0; contractIndex < contractMethods.length; contractIndex += 1) {
-					if (methods[methodIndex] === contractMethods[contractIndex]) {
-						matchesContract = true;
-						break;
-					}
-				}
-				if (matchesContract) {
-					break;
-				}
-			}
-			if (!matchesContract) {
+			if (!owner || !this.matchesMethodContract(owner, contract.attachmentMethodName, contractMethods)) {
 				continue;
 			}
 			const component = this.resolveSource(entry.component, true);
@@ -1318,6 +1359,48 @@ export class WorkspaceValueGraph {
 				mounts.push({ owner, component });
 			}
 		}
+	}
+
+	private materializeComponentLookupCalls(
+		entries: readonly ComponentLookupCallEntry[],
+		contract: ComponentCompositionContract,
+	): void {
+		const contractOwner = this.resolveSource(contract.compositionOwner, false);
+		if (!contractOwner) {
+			return;
+		}
+		const contractMethods = this.findMembers(contractOwner, contract.lookupMethodName);
+		if (contractMethods.length === 0) {
+			return;
+		}
+		for (let index = 0; index < entries.length; index += 1) {
+			const entry = entries[index];
+			const owner = this.resolveSource(entry.owner, false);
+			if (!owner || !this.matchesMethodContract(owner, contract.lookupMethodName, contractMethods)) {
+				continue;
+			}
+			const componentClass = this.resolveSource(entry.componentClass, false);
+			const result = this.resolveSource(entry.result, true);
+			if (componentClass && result) {
+				this.addValueBase(result, this.ensureInstance(componentClass));
+			}
+		}
+	}
+
+	private matchesMethodContract(
+		owner: SemanticValueID,
+		methodName: string,
+		contractMethods: readonly SymbolID[],
+	): boolean {
+		const methods = this.findMembers(owner, methodName);
+		for (let methodIndex = 0; methodIndex < methods.length; methodIndex += 1) {
+			for (let contractIndex = 0; contractIndex < contractMethods.length; contractIndex += 1) {
+				if (methods[methodIndex] === contractMethods[contractIndex]) {
+					return true;
+				}
+			}
+		}
+		return false;
 	}
 
 	private materializeComponentPublications(

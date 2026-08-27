@@ -27,9 +27,16 @@ export type ComponentMountEntry = {
 
 export type ComponentAttachmentCallEntry = ComponentMountEntry;
 
+export type ComponentLookupCallEntry = {
+	owner: SemanticValueSource;
+	componentClass: SemanticValueSource;
+	result: SemanticValueSource;
+};
+
 export type ComponentCompositionContract = {
-	attachmentOwner: SemanticValueSource;
+	compositionOwner: SemanticValueSource;
 	attachmentMethodName: string;
+	lookupMethodName: string;
 	lifecycleMethodName: string;
 };
 
@@ -55,11 +62,12 @@ export class ComponentCompositionSemanticCollector {
 	public readonly publications: ComponentPublicationEntry[] = [];
 	public readonly mounts: ComponentMountEntry[] = [];
 	public readonly attachmentCalls: ComponentAttachmentCallEntry[] = [];
+	public readonly lookupCalls: ComponentLookupCallEntry[] = [];
 	private readonly lifecycleScopes: (ComponentLifecycleScope | undefined)[] = [];
 
 	constructor(
 		private readonly host: ComponentCompositionSemanticHost,
-		private readonly attachmentMethodName: string,
+		private readonly contract: ComponentCompositionContract,
 	) {}
 
 	public enterFunction(lifecycle: ComponentLifecycleScope | undefined): void {
@@ -88,15 +96,20 @@ export class ComponentCompositionSemanticCollector {
 		});
 	}
 
-	public recordAttachmentCall(
+	public recordMethodCall(
 		methodName: string | null,
 		owner: SemanticValueSource | undefined,
-		component: SemanticValueSource | undefined,
+		componentClass: SemanticValueSource | undefined,
+		result: SemanticValueSource,
 	): void {
-		if (methodName !== this.attachmentMethodName || !owner || !component) {
+		if (!owner || !componentClass) {
 			return;
 		}
-		this.attachmentCalls.push({ owner, component });
+		if (methodName === this.contract.attachmentMethodName) {
+			this.attachmentCalls.push({ owner, component: componentClass });
+		} else if (methodName === this.contract.lookupMethodName) {
+			this.lookupCalls.push({ owner, componentClass, result });
+		}
 	}
 
 	public recordPrefabComponents(

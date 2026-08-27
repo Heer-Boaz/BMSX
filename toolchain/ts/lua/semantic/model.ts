@@ -80,6 +80,7 @@ import {
 	type ComponentAttachmentCallEntry,
 	type ComponentCompositionSemanticHost,
 	type ComponentCompositionContract,
+	type ComponentLookupCallEntry,
 	type ComponentMountEntry,
 	type ComponentPublicationEntry,
 } from './component_composition';
@@ -200,6 +201,7 @@ export type FileSemanticData = {
 	componentPublications: readonly ComponentPublicationEntry[];
 	componentMounts: readonly ComponentMountEntry[];
 	componentAttachmentCalls: readonly ComponentAttachmentCallEntry[];
+	componentLookupCalls: readonly ComponentLookupCallEntry[];
 };
 
 const EMPTY_CALL_EXPRESSIONS: readonly LuaCallExpression[] = [];
@@ -414,8 +416,9 @@ const CARTLIB_PREFAB_MODULE = 'cartlib/world/prefab';
 const CARTLIB_WORLD_MODULE = 'cartlib/world/world';
 const CARTLIB_WORLD_OBJECT_MODULE = 'cartlib/world/world_object';
 const CARTLIB_COMPONENT_COMPOSITION_CONTRACT: ComponentCompositionContract = {
-	attachmentOwner: moduleValueSource(CARTLIB_WORLD_OBJECT_MODULE),
+	compositionOwner: moduleValueSource(CARTLIB_WORLD_OBJECT_MODULE),
 	attachmentMethodName: 'add_component',
+	lookupMethodName: 'get_component',
 	lifecycleMethodName: 'on_attach',
 };
 
@@ -452,6 +455,7 @@ type SemanticBuildResult = {
 	componentPublications: ComponentPublicationEntry[];
 	componentMounts: ComponentMountEntry[];
 	componentAttachmentCalls: ComponentAttachmentCallEntry[];
+	componentLookupCalls: ComponentLookupCallEntry[];
 	moduleAliases: ModuleAliasEntry[];
 };
 
@@ -528,6 +532,7 @@ export function buildLuaFileSemanticData(
 		componentPublications: result.componentPublications,
 		componentMounts: result.componentMounts,
 		componentAttachmentCalls: result.componentAttachmentCalls,
+		componentLookupCalls: result.componentLookupCalls,
 	};
 }
 
@@ -759,6 +764,7 @@ class LuaProjectIndex {
 		const componentPublications: ComponentPublicationEntry[] = [];
 		const componentMounts: ComponentMountEntry[] = [];
 		const componentAttachmentCalls: ComponentAttachmentCallEntry[] = [];
+		const componentLookupCalls: ComponentLookupCallEntry[] = [];
 		const orderedData = new Array<FileSemanticData>(orderedFiles.length);
 		for (let fileIndex = 0; fileIndex < orderedFiles.length; fileIndex += 1) {
 			const data = this.files.get(orderedFiles[fileIndex])!;
@@ -816,6 +822,9 @@ class LuaProjectIndex {
 			}
 			for (let index = 0; index < data.componentAttachmentCalls.length; index += 1) {
 				componentAttachmentCalls.push(data.componentAttachmentCalls[index]);
+			}
+			for (let index = 0; index < data.componentLookupCalls.length; index += 1) {
+				componentLookupCalls.push(data.componentLookupCalls[index]);
 			}
 		}
 		const stringValues = new WorkspaceStringValueResolver({
@@ -946,6 +955,7 @@ class LuaProjectIndex {
 			componentPublications,
 			componentMounts,
 			componentAttachmentCalls,
+			componentLookupCalls,
 			componentCompositionContract: CARTLIB_COMPONENT_COMPOSITION_CONTRACT,
 			bindingValues,
 			globalValues: globals,
@@ -1181,7 +1191,7 @@ class SemanticBuilder implements ComponentProgramSemanticHost, ComponentComposit
 		this.componentPrograms = new ComponentProgramSemanticCollector(this);
 		this.componentComposition = new ComponentCompositionSemanticCollector(
 			this,
-			CARTLIB_COMPONENT_COMPOSITION_CONTRACT.attachmentMethodName,
+			CARTLIB_COMPONENT_COMPOSITION_CONTRACT,
 		);
 	}
 
@@ -1233,6 +1243,7 @@ class SemanticBuilder implements ComponentProgramSemanticHost, ComponentComposit
 			componentPublications: this.componentComposition.publications,
 			componentMounts: this.componentComposition.mounts,
 			componentAttachmentCalls: this.componentComposition.attachmentCalls,
+			componentLookupCalls: this.componentComposition.lookupCalls,
 			moduleAliases: Array.from(this.moduleAliasesByName.values()),
 		};
 	}
@@ -1703,10 +1714,11 @@ class SemanticBuilder implements ComponentProgramSemanticHost, ComponentComposit
 						result: callResult,
 					});
 				}
-				this.componentComposition.recordAttachmentCall(
+				this.componentComposition.recordMethodCall(
 					methodName,
 					calleeInfo?.valueSource,
 					argumentValues[0],
+					callResult,
 				);
 				this.recordMetatableClassBase(callExpression);
 				this.callExpressions.push(callExpression);

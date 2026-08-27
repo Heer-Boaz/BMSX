@@ -50,10 +50,13 @@ test('semantic workspace retains every same-name method definition across value 
 		'function right:run() end',
 		'local selected<const> = left or right',
 		'selected:run()',
+		'left:run()',
+		'right:run()',
 	];
 	const workspace = new LuaSemanticWorkspace();
 	workspace.updateFile('main.lua', lines.join('\n'));
-	const targets = workspace.getSnapshot().symbolsAt(
+	const snapshot = workspace.getSnapshot();
+	const targets = snapshot.symbolsAt(
 		'main.lua',
 		6,
 		memberColumn(lines[5], 'run'),
@@ -63,6 +66,8 @@ test('semantic workspace retains every same-name method definition across value 
 		targets.map((target) => target.decl.range.start.line),
 		[2, 4],
 	);
+	assert.equal(snapshot.symbolAt('main.lua', 7, memberColumn(lines[6], 'run'))!.decl.range.start.line, 2);
+	assert.equal(snapshot.symbolAt('main.lua', 8, memberColumn(lines[7], 'run'))!.decl.range.start.line, 4);
 });
 
 test('semantic workspace hides base methods overridden by a derived class', async () => {
