@@ -2,7 +2,13 @@ import type { ParsedLuaChunk } from '../../../../../../toolchain/ts/lua/analysis
 import { splitText } from '../../../../../../machine/ts/common/text_lines';
 import { getOrCreateSemanticWorkspace, syncSemanticWorkspacePath, type SemanticWorkspacePathInput } from './state';
 import type { LuaDefinitionInfo } from '../../../../../../toolchain/ts/lua/syntax/ast/index';
-import type { FileSemanticData, LuaSemanticModel, LuaSemanticWorkspace, LuaSemanticWorkspaceSnapshot } from '../../../../../../toolchain/ts/lua/semantic/model';
+import {
+	buildLuaFileSemanticData,
+	type FileSemanticData,
+	type LuaSemanticModel,
+	type LuaSemanticWorkspace,
+	type LuaSemanticWorkspaceSnapshot,
+} from '../../../../../../toolchain/ts/lua/semantic/model';
 import type { LuaSourceRegistry } from '../../../../../runtime/source_registry';
 import {
 	SYSTEM_RESOURCE_DOMAIN,
@@ -105,6 +111,7 @@ export function primeRuntimeSemanticWorkspaceProjectSources(
 		? [systemRegistry]
 		: [primaryRegistry, systemRegistry];
 	const seenPaths = new Set<string>();
+	const changedAnalyses: FileSemanticData[] = [];
 	for (let registryIndex = 0; registryIndex < registries.length; registryIndex += 1) {
 		const registry = registries[registryIndex];
 		for (let recordIndex = 0; recordIndex < registry.records.length; recordIndex += 1) {
@@ -122,10 +129,22 @@ export function primeRuntimeSemanticWorkspaceProjectSources(
 			const cachedSource = cacheEntry?.source === source ? cacheEntry : null;
 			const lines = cachedSource?.lines ?? splitText(source);
 			const parsed = cachedSource?.parsed;
-			workspace.updateFile(path, source, lines, parsed, undefined);
-			const data = workspace.getFileData(path);
-			cacheRuntimeSemanticWorkspaceAnalysis(domain, path, source, data, parsed);
+			changedAnalyses.push(
+				cachedSource?.analysis
+					?? buildLuaFileSemanticData(source, path, lines, parsed),
+			);
 		}
+	}
+	workspace.updateFiles(changedAnalyses);
+	for (let index = 0; index < changedAnalyses.length; index += 1) {
+		const analysis = changedAnalyses[index];
+		cacheRuntimeSemanticWorkspaceAnalysis(
+			domain,
+			analysis.model.file,
+			analysis.source,
+			workspace.getFileData(analysis.model.file),
+			analysis.parsed,
+		);
 	}
 	primedWorkspaceStates.set(workspace, {
 		primaryRegistry,

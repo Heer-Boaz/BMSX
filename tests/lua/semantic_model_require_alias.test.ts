@@ -201,6 +201,62 @@ test('semantic workspace resolves inherited module members through class metatab
 	assert.deepEqual(activateTarget!.decl.namePath, ['base', 'activate']);
 });
 
+test('semantic workspace batch retargets inherited members through reverse class dependencies', async () => {
+	const { buildLuaFileSemanticData, LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const baseLeftSource = [
+		'local base_left<const> = {}',
+		'function base_left:left_action() end',
+		'return base_left',
+	].join('\n');
+	const baseRightSource = [
+		'local base_right<const> = {}',
+		'function base_right:right_action() end',
+		'return base_right',
+	].join('\n');
+	const derivedLeftSource = [
+		"local base_left<const> = require('base_left')",
+		'local derived<const> = {}',
+		'derived.__index = derived',
+		'setmetatable(derived, { __index = base_left })',
+		'return derived',
+	].join('\n');
+	const derivedRightSource = [
+		"local base_right<const> = require('base_right')",
+		'local derived<const> = {}',
+		'derived.__index = derived',
+		'setmetatable(derived, { __index = base_right })',
+		'return derived',
+	].join('\n');
+	const mainLines = [
+		"local derived<const> = require('derived')",
+		'derived:left_action()',
+		'derived:right_action()',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFiles([
+		buildLuaFileSemanticData(mainLines.join('\n'), 'main.lua'),
+		buildLuaFileSemanticData(derivedLeftSource, 'derived.lua'),
+		buildLuaFileSemanticData(baseLeftSource, 'base_left.lua'),
+		buildLuaFileSemanticData(baseRightSource, 'base_right.lua'),
+	]);
+	assert.equal(workspace.version, 1, 'one workspace version per source batch');
+	const leftColumn = mainLines[1].indexOf('left_action') + 1;
+	const rightColumn = mainLines[2].indexOf('right_action') + 1;
+	const leftTarget = workspace.getSnapshot().symbolAt('main.lua', 2, leftColumn);
+	assert.ok(leftTarget, 'initial inherited member target');
+	assert.equal(leftTarget!.decl.file, 'base_left.lua');
+	assert.equal(workspace.getSnapshot().symbolAt('main.lua', 3, rightColumn), null);
+
+	workspace.updateFiles([
+		buildLuaFileSemanticData(derivedRightSource, 'derived.lua'),
+	]);
+	assert.equal(workspace.version, 2, 'incremental batch commits once');
+	assert.equal(workspace.getSnapshot().symbolAt('main.lua', 2, leftColumn), null);
+	const rightTarget = workspace.getSnapshot().symbolAt('main.lua', 3, rightColumn);
+	assert.ok(rightTarget, 'retargeted inherited member target');
+	assert.equal(rightTarget!.decl.file, 'base_right.lua');
+});
+
 test('semantic workspace retains exported table identity across local shadowing', async () => {
 	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
 	const signatureSource = [

@@ -1,6 +1,11 @@
 import type { ParsedLuaChunk } from '../../../../../../toolchain/ts/lua/analysis/parse';
 import { getCachedLuaParse } from '../../../../../../toolchain/ts/lua/analysis/cache';
-import { LuaSemanticWorkspace, type FileSemanticData, type LuaSemanticWorkspaceSnapshot } from '../../../../../../toolchain/ts/lua/semantic/model';
+import {
+	buildLuaFileSemanticData,
+	LuaSemanticWorkspace,
+	type FileSemanticData,
+	type LuaSemanticWorkspaceSnapshot,
+} from '../../../../../../toolchain/ts/lua/semantic/model';
 import type { ResourceDomain } from '../../../../../common/resource';
 
 export type SemanticWorkspacePathInput = {
@@ -53,8 +58,28 @@ export function syncSemanticWorkspacePaths(
 	inputs: ReadonlyArray<SemanticWorkspacePathInput>,
 	workspace: LuaSemanticWorkspace,
 ): LuaSemanticWorkspaceSnapshot {
+	const changedAnalyses: FileSemanticData[] = [];
 	for (let index = 0; index < inputs.length; index += 1) {
-		syncSemanticWorkspacePath(inputs[index], workspace);
+		const input = inputs[index];
+		const parseEntry = getCachedLuaParse({
+			path: input.path,
+			source: input.source,
+			lines: input.lines,
+			version: input.version,
+			withSyntaxError: false,
+			parsed: input.parsed,
+		});
+		const existing = workspace.getFileData(input.path);
+		if (!existing || existing.source !== parseEntry.source) {
+			changedAnalyses.push(buildLuaFileSemanticData(
+				parseEntry.source,
+				input.path,
+				parseEntry.lines,
+				parseEntry.parsed,
+				input.version,
+			));
+		}
 	}
+	workspace.updateFiles(changedAnalyses);
 	return workspace.getSnapshot();
 }
