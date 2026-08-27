@@ -532,6 +532,59 @@ test('explicit self receivers project writes without adopting call argument memb
 	);
 });
 
+test('state machine definitions contextually bind callbacks to every prefab receiver', async () => {
+	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const sourceLines = [
+		"local fsm_library<const> = require('cartlib/fsm/library')",
+		"local fsm_component<const> = require('cartlib/fsm/fsm_component')",
+		"local prefab<const> = require('cartlib/world/prefab')",
+		"local machine_id<const> = 'shared'",
+		'local left<const> = {}',
+		'function left:left_only() end',
+		'function left:probe()',
+		'\treturn self.right_only',
+		'end',
+		'local right<const> = {}',
+		'function right:right_only() end',
+		'local named_callback<const> = function(self)',
+		'\tself:left_only()',
+		'\tself:right_only()',
+		'end',
+		'fsm_library.register(machine_id, {',
+		'\tstates = {',
+		'\t\tactive = {',
+		'\t\t\tentering_state = function(self)',
+		'\t\t\t\tself:left_only()',
+		'\t\t\t\tself:right_only()',
+		'\t\t\tend,',
+		'\t\t\texiting_state = named_callback,',
+		'\t\t},',
+		'\t},',
+		'})',
+		"prefab.define({ def_id = 'left', class = left, components = { fsm_component.factory({ machine_id }) } })",
+		"prefab.define({ def_id = 'right', class = right, components = { fsm_component.factory({ machine_id }) } })",
+		'return left',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('shared_machine.lua', sourceLines.join('\n'));
+	const snapshot = workspace.getSnapshot();
+	const targetAt = (line: number, name: string) => snapshot.symbolAt(
+		'shared_machine.lua',
+		line,
+		sourceLines[line - 1].indexOf(name) + 1,
+	);
+
+	assert.equal(targetAt(13, 'left_only')!.decl.namePath.join('.'), 'left.left_only');
+	assert.equal(targetAt(14, 'right_only')!.decl.namePath.join('.'), 'right.right_only');
+	assert.equal(targetAt(20, 'left_only')!.decl.namePath.join('.'), 'left.left_only');
+	assert.equal(targetAt(21, 'right_only')!.decl.namePath.join('.'), 'right.right_only');
+	assert.equal(
+		targetAt(8, 'right_only'),
+		null,
+		'shared callback receivers remain alternatives instead of merging prefab identities',
+	);
+});
+
 test('semantic workspace applies the prefab runtime default base', async () => {
 	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
 	const worldObjectSource = [
