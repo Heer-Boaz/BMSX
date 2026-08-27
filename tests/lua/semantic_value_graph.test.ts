@@ -150,6 +150,34 @@ test('semantic workspace propagates values through higher-order calls', async ()
 	assert.equal(ready!.decl.range.start.line, 5);
 });
 
+test('semantic workspace evaluates every dynamic callee before resolving argument and return paths', async () => {
+	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const lines = [
+		'local left<const> = {}',
+		'function left.new(world)',
+		'\treturn world.left',
+		'end',
+		'local right<const> = {}',
+		'function right.new(world)',
+		'\treturn world.right',
+		'end',
+		'local classes<const> = { left, right }',
+		'local manager<const> = { world = { left = { left_value = 1 }, right = { right_value = 2 } } }',
+		'local selected<const> = classes[1].new(manager.world)',
+		'return selected.left_value, selected.right_value',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('main.lua', lines.join('\n'));
+	const snapshot = workspace.getSnapshot();
+	const left = snapshot.symbolAt('main.lua', 12, lines[11].indexOf('left_value') + 1);
+	const right = snapshot.symbolAt('main.lua', 12, lines[11].indexOf('right_value') + 1);
+
+	assert.ok(left, 'return path from the first callee');
+	assert.equal(left!.decl.range.start.line, 10);
+	assert.ok(right, 'return path from the second callee');
+	assert.equal(right!.decl.range.start.line, 10);
+});
+
 test('semantic workspace retains every object-return branch', async () => {
 	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
 	const lines = [

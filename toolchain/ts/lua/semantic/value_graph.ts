@@ -78,6 +78,35 @@ type MemberDeclaration = {
 const EMPTY_MEMBER_DECLARATIONS: readonly MemberDeclaration[] = [];
 const EMPTY_MEMBER_IDS: readonly SymbolID[] = [];
 
+class IndexWorklist<Value extends number> {
+	private readonly values: Value[] = [];
+	private readonly queued: boolean[] = [];
+	private head = 0;
+
+	public get length(): number {
+		return this.values.length - this.head;
+	}
+
+	public add(value: Value): void {
+		if (this.queued[value]) {
+			return;
+		}
+		this.queued[value] = true;
+		this.values.push(value);
+	}
+
+	public take(): Value {
+		const value = this.values[this.head];
+		this.head += 1;
+		this.queued[value] = false;
+		if (this.head === this.values.length) {
+			this.values.length = 0;
+			this.head = 0;
+		}
+		return value;
+	}
+}
+
 export function declarationValueSource(declId: SymbolID): SemanticValueSource {
 	return {
 		root: { kind: 'declaration', declId },
@@ -275,6 +304,7 @@ export class WorkspaceValueGraph {
 	private readonly moduleValues: ReadonlyMap<string, SemanticValueSource>;
 	private readonly bindingValues: ReadonlyMap<string, SemanticValueSource>;
 	private readonly globalValues: ReadonlyMap<string, SymbolID>;
+	private readonly calls: readonly CallValueEntry[];
 	private readonly declarationNodes: Map<SymbolID, SemanticValueID> = new Map();
 	private readonly moduleNodes: Map<string, SemanticValueID> = new Map();
 	private readonly bindingNodes: Map<string, SemanticValueID> = new Map();
@@ -301,12 +331,23 @@ export class WorkspaceValueGraph {
 	private readonly unresolvedMemberOwners: SemanticValueID[] = [];
 	private readonly unresolvedMemberNames: string[] = [];
 	private readonly unresolvedMemberValues: MemberValue[] = [];
+	private readonly unresolvedMemberHeadByOwner: number[] = [];
+	private readonly unresolvedMemberNext: number[] = [];
+	private readonly callDependencyValues: SemanticValueID[] = [];
+	private readonly callDependencyCallIndices: number[] = [];
+	private readonly callDependencyNextByCall: number[] = [];
+	private readonly callDependencyNextByValue: number[] = [];
+	private readonly callDependencyHeadByCall: number[] = [];
+	private readonly callDependencyHeadByValue: number[] = [];
+	private readonly callDependencyScratch: SemanticValueID[] = [];
+	private readonly pendingCalls: IndexWorklist<number> = new IndexWorklist();
+	private readonly parameterDeclarationScratch: SymbolID[] = [];
+	private readonly parameterArgumentIndexScratch: number[] = [];
+	private readonly returnSourceScratch: SemanticValueSource[] = [];
 	// Reverse traversal dependencies select dirty owners; these parallel arrays
 	// retain the resolver's deterministic materialization order.
 	private readonly traversalDependents: Map<SemanticValueID, SemanticValueID[]> = new Map();
-	private readonly dirtyTraversalValues: SemanticValueID[] = [];
-	private readonly dirtyTraversalFlags: boolean[] = [];
-	private readonly dirtyUnresolvedOwnerMarks: number[] = [];
+	private readonly dirtyTraversalValues: IndexWorklist<SemanticValueID> = new IndexWorklist();
 	private readonly dirtyPropagationStack: SemanticValueID[] = [];
 	private readonly dirtyPropagationMarks: number[] = [];
 	private traversalGeneration = 0;
@@ -322,15 +363,14 @@ export class WorkspaceValueGraph {
 		this.identityDeclarations = options.identityDeclarations;
 		this.bindingValues = options.bindingValues;
 		this.globalValues = options.globalValues;
+		this.calls = options.calls;
 		this.materializeMembers(options.memberValues);
 		this.materializeFunctionReturns(options.functionReturns);
 		this.materializeFunctionParameters(options.functionParameters);
 		this.materializeRootValues();
 		this.materializeBases(options.baseValues);
 		this.materializeValueAssignments(options.valueAssignments);
-		this.inferCallArgumentValues(
-			options.calls,
-		);
+		this.solveCallArgumentValues();
 	}
 
 	public resolve(source: SemanticValueSource | undefined): SemanticValueID | undefined {
@@ -460,7 +500,11 @@ export class WorkspaceValueGraph {
 		}
 	}
 
-	private resolveSource(source: SemanticValueSource, createMembers: boolean): SemanticValueID | undefined {
+	private resolveSource(
+		source: SemanticValueSource,
+		createMembers: boolean,
+		dependencies?: SemanticValueID[],
+	): SemanticValueID | undefined {
 		let value: SemanticValueID | undefined;
 		switch (source.root.kind) {
 			case 'declaration':
@@ -483,6 +527,9 @@ export class WorkspaceValueGraph {
 			}
 		}
 		for (let index = 0; value && index < source.steps.length; index += 1) {
+			if (dependencies) {
+				dependencies.push(value);
+			}
 			const step = source.steps[index];
 			switch (step.kind) {
 				case 'member':
@@ -498,6 +545,9 @@ export class WorkspaceValueGraph {
 					value = this.ensureInstance(value);
 					break;
 			}
+		}
+		if (value && dependencies) {
+			dependencies.push(value);
 		}
 		return value;
 	}
@@ -543,6 +593,7 @@ export class WorkspaceValueGraph {
 		if (!result) {
 			result = this.createNode();
 			this.callResults.set(value, result);
+			this.markTraversalChanged(value);
 		}
 		return result;
 	}
@@ -588,52 +639,37 @@ export class WorkspaceValueGraph {
 		if (!member) {
 			member = { value: this.createNode() };
 			ownerMembers.set(name, member);
+			const unresolvedIndex = this.unresolvedMemberValues.length;
 			this.unresolvedMemberOwners.push(owner);
 			this.unresolvedMemberNames.push(name);
 			this.unresolvedMemberValues.push(member);
+			this.unresolvedMemberNext.push(this.unresolvedMemberHeadByOwner[owner]);
+			this.unresolvedMemberHeadByOwner[owner] = unresolvedIndex + 1;
 			this.markTraversalChanged(owner);
+			this.projectMember(owner, name, member.value);
 		}
 		return member;
 	}
 
-	private refreshUnresolvedMembers(): boolean {
-		if (this.dirtyTraversalValues.length === 0) {
-			return false;
-		}
-		const generation = this.collectDirtyUnresolvedOwners();
-		let changed = false;
-		for (let index = 0; index < this.unresolvedMemberValues.length; index += 1) {
-			const owner = this.unresolvedMemberOwners[index];
-			const member = this.unresolvedMemberValues[index];
-			if (member.declaration || this.dirtyUnresolvedOwnerMarks[owner] !== generation) {
-				continue;
-			}
-			changed = this.refreshUnresolvedMember(
-				owner,
-				this.unresolvedMemberNames[index],
-				member,
-			) || changed;
-		}
-		return changed;
-	}
-
-	private collectDirtyUnresolvedOwners(): number {
+	private processDirtyTraversalValues(): void {
 		const generation = this.dirtyPropagationGeneration + 1;
 		this.dirtyPropagationGeneration = generation;
 		const stack = this.dirtyPropagationStack;
-		for (let index = 0; index < this.dirtyTraversalValues.length; index += 1) {
-			const value = this.dirtyTraversalValues[index];
-			this.dirtyTraversalFlags[value] = false;
-			stack.push(value);
+		while (this.dirtyTraversalValues.length > 0) {
+			stack.push(this.dirtyTraversalValues.take());
 		}
-		this.dirtyTraversalValues.length = 0;
 		while (stack.length > 0) {
 			const value = stack.pop()!;
 			if (this.dirtyPropagationMarks[value] === generation) {
 				continue;
 			}
 			this.dirtyPropagationMarks[value] = generation;
-			this.dirtyUnresolvedOwnerMarks[value] = generation;
+			this.refreshUnresolvedMembers(value);
+			this.queueCalls(value);
+			const callResult = this.callResults.get(value);
+			if (callResult) {
+				this.refreshCallResult(value, callResult);
+			}
 			const dependents = this.traversalDependents.get(value);
 			if (dependents) {
 				for (let index = 0; index < dependents.length; index += 1) {
@@ -641,11 +677,25 @@ export class WorkspaceValueGraph {
 				}
 			}
 		}
-		return generation;
 	}
 
-	private refreshUnresolvedMember(owner: SemanticValueID, name: string, member: MemberValue): boolean {
-		let changed = false;
+	private refreshUnresolvedMembers(owner: SemanticValueID): void {
+		let link = this.unresolvedMemberHeadByOwner[owner];
+		while (link !== 0) {
+			const index = link - 1;
+			const member = this.unresolvedMemberValues[index];
+			if (!member.declaration) {
+				this.refreshUnresolvedMember(
+					this.unresolvedMemberOwners[index],
+					this.unresolvedMemberNames[index],
+					member,
+				);
+			}
+			link = this.unresolvedMemberNext[index];
+		}
+	}
+
+	private refreshUnresolvedMember(owner: SemanticValueID, name: string, member: MemberValue): void {
 		const generation = this.traversalGeneration + 1;
 		this.traversalGeneration = generation;
 		const stack = this.traversalStack;
@@ -659,14 +709,13 @@ export class WorkspaceValueGraph {
 			this.traversalMarks[candidate] = generation;
 			const inherited = this.members.get(candidate)?.get(name);
 			if (inherited) {
-				changed = this.addIdentity(member.value, inherited.value) || changed;
+				this.addIdentity(member.value, inherited.value);
 				if (inherited.declaration) {
 					continue;
 				}
 			}
 			this.pushTraversalBases(stack, candidate);
 		}
-		return changed;
 	}
 
 	private resolveElementValue(owner: SemanticValueID, create: boolean): SemanticValueID | undefined {
@@ -724,7 +773,10 @@ export class WorkspaceValueGraph {
 			element = this.createNode();
 			this.elementsByIdentityRoot.set(root, element);
 		}
-		this.elements.set(owner, element);
+		if (this.elements.get(owner) !== element) {
+			this.elements.set(owner, element);
+			this.projectElement(owner, element);
+		}
 		return element;
 	}
 
@@ -745,13 +797,13 @@ export class WorkspaceValueGraph {
 			const valueBases = this.valueBases.get(classValue);
 			if (valueBases) {
 				for (let index = 0; index < valueBases.length; index += 1) {
-					this.addInstanceBase(instance, this.ensureInstance(valueBases[index]));
+					this.addEdge(this.instanceBases, instance, this.ensureInstance(valueBases[index]));
 				}
 			}
 			const aliases = this.identityValues.get(classValue);
 			if (aliases) {
 				for (let index = 0; index < aliases.length; index += 1) {
-					this.addInstanceBase(instance, this.ensureInstance(aliases[index]));
+					this.addEdge(this.instanceBases, instance, this.ensureInstance(aliases[index]));
 				}
 			}
 		}
@@ -767,11 +819,11 @@ export class WorkspaceValueGraph {
 		const componentsChanged = this.unionIdentityComponents(left, right);
 		const leftInstance = this.instances.get(left);
 		if (leftInstance) {
-			this.addInstanceBase(leftInstance, this.ensureInstance(right));
+			this.addEdge(this.instanceBases, leftInstance, this.ensureInstance(right));
 		}
 		const rightInstance = this.instances.get(right);
 		if (rightInstance) {
-			this.addInstanceBase(rightInstance, this.ensureInstance(left));
+			this.addEdge(this.instanceBases, rightInstance, this.ensureInstance(left));
 		}
 		return leftChanged || rightChanged || componentsChanged;
 	}
@@ -858,11 +910,7 @@ export class WorkspaceValueGraph {
 	}
 
 	private markTraversalChanged(value: SemanticValueID): void {
-		if (this.dirtyTraversalFlags[value]) {
-			return;
-		}
-		this.dirtyTraversalFlags[value] = true;
-		this.dirtyTraversalValues.push(value);
+		this.dirtyTraversalValues.add(value);
 	}
 
 	private setPrototypeBase(owner: SemanticValueID, base: SemanticValueID): void {
@@ -879,13 +927,45 @@ export class WorkspaceValueGraph {
 		}
 		const instance = this.instances.get(owner);
 		if (instance) {
-			this.addInstanceBase(instance, this.ensureInstance(base));
+			this.addEdge(this.instanceBases, instance, this.ensureInstance(base));
 		}
 		return true;
 	}
 
-	private addInstanceBase(owner: SemanticValueID, base: SemanticValueID): void {
-		this.addEdge(this.instanceBases, owner, base);
+	private addProjectionBase(owner: SemanticValueID, base: SemanticValueID): void {
+		if (!this.addEdge(this.projectionBases, owner, base)) {
+			return;
+		}
+		const members = this.members.get(owner);
+		if (members) {
+			for (const [name, member] of members) {
+				this.addIdentity(member.value, this.ensureMember(base, name).value);
+			}
+		}
+		const element = this.elements.get(owner);
+		if (element) {
+			this.addIdentity(element, this.ensureElement(base));
+		}
+	}
+
+	private projectMember(owner: SemanticValueID, name: string, value: SemanticValueID): void {
+		const bases = this.projectionBases.get(owner);
+		if (!bases) {
+			return;
+		}
+		for (let index = 0; index < bases.length; index += 1) {
+			this.addIdentity(value, this.ensureMember(bases[index], name).value);
+		}
+	}
+
+	private projectElement(owner: SemanticValueID, element: SemanticValueID): void {
+		const bases = this.projectionBases.get(owner);
+		if (!bases) {
+			return;
+		}
+		for (let index = 0; index < bases.length; index += 1) {
+			this.addIdentity(element, this.ensureElement(bases[index]));
+		}
 	}
 
 	private materializeMembers(entries: readonly MemberValueEntry[]): void {
@@ -1001,103 +1081,107 @@ export class WorkspaceValueGraph {
 		}
 	}
 
-	private inferCallArgumentValues(
-		entries: readonly CallValueEntry[],
-	): void {
-		while (true) {
-			const unresolvedMemberCount = this.unresolvedMemberValues.length;
-			const callResultCount = this.callResults.size;
-			let changed = this.refreshMemberProjections();
-			changed = this.refreshElementProjections() || changed;
-			changed = this.refreshUnresolvedMembers() || changed;
-			changed = this.refreshCallResults() || changed;
-			for (let entryIndex = 0; entryIndex < entries.length; entryIndex += 1) {
-				const entry = entries[entryIndex];
-				const callee = this.resolveSource(entry.callee, false);
-				if (!callee) {
-					continue;
-				}
-				changed = this.applyCallArguments(callee, entry.arguments) || changed;
+	private solveCallArgumentValues(): void {
+		this.materializeCalls();
+		while (this.dirtyTraversalValues.length > 0 || this.pendingCalls.length > 0) {
+			this.processDirtyTraversalValues();
+			this.processPendingCalls();
+		}
+	}
+
+	private materializeCalls(): void {
+		for (let callIndex = 0; callIndex < this.calls.length; callIndex += 1) {
+			this.callDependencyHeadByCall.push(0);
+			this.pendingCalls.add(callIndex);
+		}
+	}
+
+	private queueCalls(dependency: SemanticValueID): void {
+		let link = this.callDependencyHeadByValue[dependency];
+		while (link !== 0) {
+			const entryIndex = link - 1;
+			this.pendingCalls.add(this.callDependencyCallIndices[entryIndex]);
+			link = this.callDependencyNextByValue[entryIndex];
+		}
+	}
+
+	private processPendingCalls(): void {
+		while (this.pendingCalls.length > 0) {
+			const callIndex = this.pendingCalls.take();
+			const call = this.calls[callIndex];
+			const dependencies = this.callDependencyScratch;
+			dependencies.length = 0;
+			const callee = this.resolveSource(call.callee, false, dependencies);
+			for (let dependencyIndex = 0; dependencyIndex < dependencies.length; dependencyIndex += 1) {
+				this.retainCallDependency(callIndex, dependencies[dependencyIndex]);
 			}
-			changed = this.unresolvedMemberValues.length !== unresolvedMemberCount
-				|| this.callResults.size !== callResultCount
-				|| changed;
-			if (!changed) {
+			if (callee) {
+				this.applyCallArguments(callee, call.arguments);
+			}
+		}
+	}
+
+	private retainCallDependency(callIndex: number, dependency: SemanticValueID): void {
+		let link = this.callDependencyHeadByCall[callIndex];
+		while (link !== 0) {
+			const entryIndex = link - 1;
+			if (this.callDependencyValues[entryIndex] === dependency) {
 				return;
 			}
+			link = this.callDependencyNextByCall[entryIndex];
 		}
+		const entryIndex = this.callDependencyValues.length;
+		this.callDependencyValues.push(dependency);
+		this.callDependencyCallIndices.push(callIndex);
+		this.callDependencyNextByCall.push(this.callDependencyHeadByCall[callIndex]);
+		this.callDependencyNextByValue.push(this.callDependencyHeadByValue[dependency]);
+		this.callDependencyHeadByCall[callIndex] = entryIndex + 1;
+		this.callDependencyHeadByValue[dependency] = entryIndex + 1;
 	}
 
-	private refreshMemberProjections(): boolean {
-		let changed = false;
-		for (const [owner, members] of this.members) {
-			const bases = this.projectionBases.get(owner);
-			if (!bases) {
-				continue;
-			}
-			for (const [name, member] of members) {
-				for (let baseIndex = 0; baseIndex < bases.length; baseIndex += 1) {
-					const projected = this.ensureMember(bases[baseIndex], name);
-					changed = this.addIdentity(member.value, projected.value) || changed;
-				}
-			}
-		}
-		return changed;
-	}
-
-	private refreshElementProjections(): boolean {
-		let changed = false;
-		for (const [owner, element] of this.elements) {
-			const bases = this.projectionBases.get(owner);
-			if (!bases) {
-				continue;
-			}
-			for (let index = 0; index < bases.length; index += 1) {
-				changed = this.addIdentity(element, this.ensureElement(bases[index])) || changed;
-			}
-		}
-		return changed;
-	}
-
-	private refreshCallResults(): boolean {
-		let changed = false;
-		for (const [callee, result] of this.callResults) {
-			const generation = this.traversalGeneration + 1;
-			this.traversalGeneration = generation;
-			const stack = this.traversalStack;
-			stack.length = 0;
-			stack.push(callee);
-			while (stack.length > 0) {
-				const candidate = stack.pop()!;
-				if (this.traversalMarks[candidate] === generation) {
-					continue;
-				}
-				this.traversalMarks[candidate] = generation;
-				const returnSources = this.functionReturnsByValue.get(candidate);
-				if (returnSources) {
-					for (let sourceIndex = 0; sourceIndex < returnSources.length; sourceIndex += 1) {
-						const returned = this.resolveSource(returnSources[sourceIndex], true);
-						if (returned && returned !== result) {
-							changed = this.addValueBase(result, returned) || changed;
-						}
-					}
-				}
-				this.pushTraversalBases(stack, candidate);
-			}
-		}
-		return changed;
-	}
-
-	private applyCallArguments(
-		callee: SemanticValueID,
-		arguments_: readonly (SemanticValueSource | undefined)[],
-	): boolean {
+	private refreshCallResult(callee: SemanticValueID, result: SemanticValueID): void {
+		const sources = this.returnSourceScratch;
+		sources.length = 0;
 		const generation = this.traversalGeneration + 1;
 		this.traversalGeneration = generation;
 		const stack = this.traversalStack;
 		stack.length = 0;
 		stack.push(callee);
-		let changed = false;
+		while (stack.length > 0) {
+			const candidate = stack.pop()!;
+			if (this.traversalMarks[candidate] === generation) {
+				continue;
+			}
+			this.traversalMarks[candidate] = generation;
+			const returnSources = this.functionReturnsByValue.get(candidate);
+			if (returnSources) {
+				for (let sourceIndex = 0; sourceIndex < returnSources.length; sourceIndex += 1) {
+					sources.push(returnSources[sourceIndex]);
+				}
+			}
+			this.pushTraversalBases(stack, candidate);
+		}
+		for (let sourceIndex = 0; sourceIndex < sources.length; sourceIndex += 1) {
+			const returned = this.resolveSource(sources[sourceIndex], true);
+			if (returned && returned !== result) {
+				this.addValueBase(result, returned);
+			}
+		}
+	}
+
+	private applyCallArguments(
+		callee: SemanticValueID,
+		arguments_: readonly (SemanticValueSource | undefined)[],
+	): void {
+		const parameterDeclarations = this.parameterDeclarationScratch;
+		const argumentIndices = this.parameterArgumentIndexScratch;
+		parameterDeclarations.length = 0;
+		argumentIndices.length = 0;
+		const generation = this.traversalGeneration + 1;
+		this.traversalGeneration = generation;
+		const stack = this.traversalStack;
+		stack.length = 0;
+		stack.push(callee);
 		while (stack.length > 0) {
 			const candidate = stack.pop()!;
 			if (this.traversalMarks[candidate] === generation) {
@@ -1108,18 +1192,21 @@ export class WorkspaceValueGraph {
 			if (parameters) {
 				const count = Math.min(parameters.length, arguments_.length);
 				for (let argumentIndex = 0; argumentIndex < count; argumentIndex += 1) {
-					const source = arguments_[argumentIndex];
-					if (source && this.addDeclarationSource(parameters[argumentIndex], source)) {
-						changed = true;
+					if (arguments_[argumentIndex]) {
+						parameterDeclarations.push(parameters[argumentIndex]);
+						argumentIndices.push(argumentIndex);
 					}
 				}
 			}
 			this.pushTraversalBases(stack, candidate);
 		}
-		return changed;
+		for (let index = 0; index < parameterDeclarations.length; index += 1) {
+			const source = arguments_[argumentIndices[index]]!;
+			this.addDeclarationSource(parameterDeclarations[index], source);
+		}
 	}
 
-	private addDeclarationSource(declId: SymbolID, source: SemanticValueSource): boolean {
+	private addDeclarationSource(declId: SymbolID, source: SemanticValueSource): void {
 		let sources = this.declarationValues.get(declId);
 		if (!sources) {
 			sources = [];
@@ -1127,16 +1214,16 @@ export class WorkspaceValueGraph {
 		}
 		for (let index = 0; index < sources.length; index += 1) {
 			if (semanticValueSourcesEqual(sources[index], source)) {
-				return false;
+				return;
 			}
 		}
 		sources.push(source);
 		const target = this.nodeFor(this.declarationNodes, declId);
 		const sourceValue = this.resolveSource(source, true);
-		if (sourceValue && sourceValue !== target) {
-			this.addEdge(this.projectionBases, target, sourceValue);
+		if (!sourceValue || sourceValue === target) {
+			return;
 		}
-		return true;
+		this.addProjectionBase(target, sourceValue);
 	}
 
 	private materializeBases(entries: readonly BaseValueEntry[]): void {
@@ -1152,11 +1239,11 @@ export class WorkspaceValueGraph {
 				if (!owner || !base || owner === base) {
 					continue;
 				}
-				if (origin === 'instance') {
-					this.addInstanceBase(owner, base);
-				} else {
-					this.setPrototypeBase(owner, base);
-					this.addInstanceBase(this.ensureInstance(owner), this.ensureInstance(base));
+			if (origin === 'instance') {
+				this.addEdge(this.instanceBases, owner, base);
+			} else {
+				this.setPrototypeBase(owner, base);
+				this.addEdge(this.instanceBases, this.ensureInstance(owner), this.ensureInstance(base));
 				}
 			}
 		}
@@ -1187,6 +1274,8 @@ export class WorkspaceValueGraph {
 		this.nextValueId += 1;
 		this.identityParents[value] = value;
 		this.identitySizes[value] = 1;
+		this.unresolvedMemberHeadByOwner[value] = 0;
+		this.callDependencyHeadByValue[value] = 0;
 		return value;
 	}
 }
