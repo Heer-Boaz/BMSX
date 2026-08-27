@@ -594,6 +594,77 @@ test('state machine definitions contextually bind callbacks to every prefab rece
 	);
 });
 
+test('state machine callback context follows iterator composition and later state extensions', async () => {
+	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const sourceLines = [
+		"local fsm_library<const> = require('cartlib/fsm/library')",
+		"local fsm_component<const> = require('cartlib/fsm/fsm_component')",
+		"local prefab<const> = require('cartlib/world/prefab')",
+		'local actor<const> = {}',
+		'function actor:base_update() end',
+		'function actor:wrapped_update() end',
+		'function actor:input_pressed() end',
+		'local input_event_handlers<const> = {',
+		'\t{',
+		"\t\tpattern = 'a[jp]',",
+		'\t\tgo = function(target)',
+		'\t\t\ttarget:input_pressed()',
+		'\t\tend,',
+		'\t},',
+		'\t{',
+		"\t\tpattern = 'a[jr]',",
+		'\t\tgo = function(target)',
+		'\t\t\ttarget:input_pressed()',
+		'\t\tend,',
+		'\t},',
+		'}',
+		'local wrap_update<const> = function(update)',
+		'\treturn function(target)',
+		'\t\ttarget:wrapped_update()',
+		'\t\treturn update(target)',
+		'\tend',
+		'end',
+		'local states<const> = {',
+		'\tidle = {',
+		'\t\tupdate = function(target)',
+		'\t\t\ttarget:base_update()',
+		'\t\tend,',
+		'\t},',
+		'}',
+		'for _, state in pairs(states) do',
+		'\tstate.update = wrap_update(state.update)',
+		'\tstate.input_event_handlers = input_event_handlers',
+		'end',
+		'function actor:parallel_update() end',
+		'states.concurrent = {',
+		'\tupdate = function(target)',
+		'\t\ttarget:parallel_update()',
+		'\tend,',
+		'}',
+		"local machine_id<const> = 'actor'",
+		'fsm_library.register(machine_id, { states = states })',
+		"prefab.define({ def_id = 'actor', class = actor, components = { fsm_component.factory({ machine_id }) } })",
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('actor.lua', sourceLines.join('\n'));
+	const snapshot = workspace.getSnapshot();
+	const targetAt = (line: number, name: string) => snapshot.symbolAt(
+		'actor.lua',
+		line,
+		sourceLines[line - 1].indexOf(name) + 1,
+	);
+
+	assert.equal(targetAt(12, 'input_pressed')!.decl.namePath.join('.'), 'actor.input_pressed');
+	assert.equal(targetAt(18, 'input_pressed')!.decl.namePath.join('.'), 'actor.input_pressed');
+	assert.equal(targetAt(24, 'wrapped_update')!.decl.namePath.join('.'), 'actor.wrapped_update');
+	assert.equal(targetAt(31, 'base_update')!.decl.namePath.join('.'), 'actor.base_update');
+	const parallelUpdateLine = sourceLines.indexOf('\t\ttarget:parallel_update()') + 1;
+	assert.equal(
+		targetAt(parallelUpdateLine, 'parallel_update')!.decl.namePath.join('.'),
+		'actor.parallel_update',
+	);
+});
+
 test('state machine callback context follows the authored definition role and timeline target path', async () => {
 	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
 	const sourceLines = [

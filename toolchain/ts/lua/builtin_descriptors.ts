@@ -1,5 +1,10 @@
 import type { LuaBuiltinDescriptor } from './semantic_contracts';
 
+export const LUA_BUILTIN_TABLE_ITERATOR_ARGUMENTS: Readonly<Record<string, number | undefined>> = {
+	ipairs: 0,
+	pairs: 0,
+};
+
 export const DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<LuaBuiltinDescriptor> = [
 	{ name: 'assert', params: ['value', 'message?'], signature: 'assert(value [, message])' },
 	{ name: 'error', params: ['message', 'level?'], signature: 'error(message [, level])' },

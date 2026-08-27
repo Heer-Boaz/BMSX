@@ -125,6 +125,58 @@ test('semantic workspace retains member writes through reused table elements', a
 	assert.equal(counts!.decl.range.start.line, 5);
 });
 
+test('semantic workspace propagates table elements through standard generic iterators', async () => {
+	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const lines = [
+		'local actor<const> = {}',
+		'function actor:run() end',
+		'local entries<const> = { actor }',
+		'for _, entry in pairs(entries) do',
+		'\tentry:run()',
+		'end',
+		'for _, entry in ipairs(entries) do',
+		'\tentry:run()',
+		'end',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('main.lua', lines.join('\n'));
+	const target = workspace.getSnapshot().symbolAt(
+		'main.lua',
+		5,
+		memberColumn(lines[4], 'run'),
+	);
+
+	assert.ok(target, 'table entry receiver from pairs');
+	assert.equal(target!.decl.range.start.line, 2);
+	const indexedTarget = workspace.getSnapshot().symbolAt(
+		'main.lua',
+		8,
+		memberColumn(lines[7], 'run'),
+	);
+	assert.ok(indexedTarget, 'table entry receiver from ipairs');
+	assert.equal(indexedTarget!.decl.range.start.line, 2);
+});
+
+test('semantic workspace does not assign builtin iterator semantics to a shadowing function', async () => {
+	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const lines = [
+		'local actor<const> = {}',
+		'function actor:run() end',
+		'local entries<const> = { actor }',
+		'local pairs<const> = function() end',
+		'for _, entry in pairs(entries) do',
+		'\tentry:run()',
+		'end',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('main.lua', lines.join('\n'));
+
+	assert.equal(
+		workspace.getSnapshot().symbolAt('main.lua', 6, memberColumn(lines[5], 'run')),
+		null,
+	);
+});
+
 test('semantic workspace propagates values through higher-order calls', async () => {
 	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
 	const lines = [

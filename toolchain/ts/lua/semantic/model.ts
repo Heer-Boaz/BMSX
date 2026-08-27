@@ -14,6 +14,7 @@ import {
 	type LuaIndexExpression,
 	type LuaCallExpression,
 	type LuaFunctionExpression,
+	type LuaForGenericStatement,
 	type LuaTableConstructorExpression,
 	type LuaReturnStatement,
 	type LuaStructDeclarationStatement,
@@ -35,6 +36,7 @@ import { semanticNamePathMatches, type SemanticSymbolKind } from './symbols';
 import type { SemanticAnnotations, SemanticRole } from './tokens';
 import { methodPathToPropertyPath } from './common';
 import { toLuaModulePath } from '../module_path';
+import { LUA_BUILTIN_TABLE_ITERATOR_ARGUMENTS } from '../builtin_descriptors';
 import {
 	resolveModuleAliasInitializer,
 	type ModuleAliasEntry,
@@ -383,6 +385,8 @@ type AssignmentTargetInfo = {
 	path: string | null;
 	valueTarget?: SemanticValueSource;
 	moduleAlias?: ModuleAliasTarget;
+	memberBaseDecl?: InternalDecl;
+	memberOwner?: SemanticValueSource;
 };
 
 const CARTLIB_CALL_NONE = 0;
@@ -1101,6 +1105,7 @@ class SemanticBuilder implements ComponentProgramSemanticHost {
 	private readonly methodSelfScopeStack: (Scope | undefined)[] = [];
 	private readonly declarationValues: Map<SymbolID, SemanticValueSource[]> = new Map();
 	private readonly projectionValueDeclarations: Set<SymbolID> = new Set();
+	private readonly projectionSourcesByDeclId: Map<SymbolID, SemanticValueSource[]> = new Map();
 	private readonly memberValues: Map<SymbolID, MemberValueEntry> = new Map();
 	private readonly functionReturnValues: Map<string, FunctionReturnValueEntry[]> = new Map();
 	private readonly functionParameterValues: Map<string, FunctionParameterValueEntry> = new Map();
@@ -1377,6 +1382,7 @@ class SemanticBuilder implements ComponentProgramSemanticHost {
 						if (targetInfo?.valueTarget) {
 							this.recordValueAssignment(targetInfo.valueTarget, functionValue);
 						}
+						this.recordComponentProgramMemberAssignment(targetInfo, valueExpression);
 						continue;
 					}
 					const valueInfo = this.visitExpression(valueExpression, context);
@@ -1386,6 +1392,7 @@ class SemanticBuilder implements ComponentProgramSemanticHost {
 					if (targetInfo?.valueTarget && valueInfo?.valueSource) {
 						this.recordValueAssignment(targetInfo.valueTarget, valueInfo.valueSource);
 					}
+					this.recordComponentProgramMemberAssignment(targetInfo, valueExpression);
 					if (targetInfo) {
 						this.recordMetatableIndexAssignment(targetInfo, valueInfo);
 					}
@@ -1484,9 +1491,17 @@ class SemanticBuilder implements ComponentProgramSemanticHost {
 				for (let index = 0; index < forGeneric.iterators.length; index += 1) {
 					this.visitExpression(forGeneric.iterators[index], { tableBaseDecl: null, tableBasePath: null });
 				}
+				const tableSource = this.resolveGenericForTableSource(forGeneric);
 				this.enterScope(forGeneric.block.range, 'loop');
+				let valueVariable: InternalDecl | undefined;
 				for (let index = 0; index < forGeneric.variables.length; index += 1) {
-					this.declareLocal(forGeneric.variables[index], 'local', true);
+					const variable = this.declareLocal(forGeneric.variables[index], 'local', true);
+					if (index === 1) {
+						valueVariable = variable;
+					}
+				}
+				if (tableSource && valueVariable) {
+					this.setDeclarationProjection(valueVariable, appendValueElement(tableSource));
 				}
 				this.visitBlock(forGeneric.block);
 				this.leaveScope();
@@ -1844,8 +1859,7 @@ class SemanticBuilder implements ComponentProgramSemanticHost {
 				&& methodSelfPath.length > 0) {
 				const classValue = this.resolveValueSourceFromNamePath(methodSelfPath);
 				if (classValue) {
-					this.setDeclarationValue(parameter, appendValueInstance(classValue));
-					this.projectionValueDeclarations.add(parameter.id);
+					this.setDeclarationProjection(parameter, appendValueInstance(classValue));
 				}
 			}
 		}
@@ -1948,7 +1962,13 @@ class SemanticBuilder implements ComponentProgramSemanticHost {
 			receiverSymbolKey: baseDecl?.symbolKey || (baseInfo?.namePath && joinNamePath(baseInfo.namePath)),
 			receiverValue: baseInfo?.valueSource,
 		});
-		return { decl, namePath, path: joinNamePath(namePath) };
+		return {
+			decl,
+			namePath,
+			path: joinNamePath(namePath),
+			memberBaseDecl: baseDecl,
+			memberOwner: baseInfo?.valueSource,
+		};
 	}
 
 	private assignIndex(indexExpression: LuaIndexExpression): AssignmentTargetInfo {
@@ -1979,6 +1999,8 @@ class SemanticBuilder implements ComponentProgramSemanticHost {
 				decl,
 				namePath: fieldPath,
 				path: joinNamePath(fieldPath),
+				memberBaseDecl: baseInfo?.decl,
+				memberOwner: baseInfo?.valueSource,
 			};
 		}
 		return {
@@ -2351,6 +2373,37 @@ class SemanticBuilder implements ComponentProgramSemanticHost {
 		return decl;
 	}
 
+	private recordComponentProgramMemberAssignment(
+		target: AssignmentTargetInfo | undefined,
+		expression: LuaExpression,
+	): void {
+		if (!target?.decl || !target.memberOwner) {
+			return;
+		}
+		this.componentPrograms.recordMemberAssignment(
+			target.memberOwner,
+			target.decl.name,
+			target.decl.id,
+			expression,
+		);
+		const baseDecl = target.memberBaseDecl;
+		if (!baseDecl) {
+			return;
+		}
+		const projections = this.projectionSourcesByDeclId.get(baseDecl.id);
+		if (!projections) {
+			return;
+		}
+		for (let projectionIndex = 0; projectionIndex < projections.length; projectionIndex += 1) {
+			this.componentPrograms.recordMemberAssignment(
+				projections[projectionIndex],
+				target.decl.name,
+				target.decl.id,
+				expression,
+			);
+		}
+	}
+
 	private memberOwnerKey(owner: SemanticValueSource, name: string): string {
 		return `${semanticValueSourceKey(owner)}\0${name}`;
 	}
@@ -2504,6 +2557,22 @@ class SemanticBuilder implements ComponentProgramSemanticHost {
 		sources.push(source);
 	}
 
+	private setDeclarationProjection(decl: InternalDecl, source: SemanticValueSource): void {
+		this.setDeclarationValue(decl, source);
+		this.projectionValueDeclarations.add(decl.id);
+		let sources = this.projectionSourcesByDeclId.get(decl.id);
+		if (!sources) {
+			sources = [];
+			this.projectionSourcesByDeclId.set(decl.id, sources);
+		}
+		for (let index = 0; index < sources.length; index += 1) {
+			if (semanticValueSourcesEqual(sources[index], source)) {
+				return;
+			}
+		}
+		sources.push(source);
+	}
+
 	private recordValueAssignment(target: SemanticValueSource, source: SemanticValueSource): void {
 		this.valueAssignments.push({ target, source });
 	}
@@ -2599,6 +2668,25 @@ class SemanticBuilder implements ComponentProgramSemanticHost {
 			}
 		}
 		state.sources.push(valueSource);
+	}
+
+	private resolveGenericForTableSource(
+		statement: LuaForGenericStatement,
+	): SemanticValueSource | undefined {
+		const iterator = statement.iterators[0];
+		if (iterator.kind === LuaSyntaxKind.CallExpression
+			&& !iterator.methodName) {
+			const name = resolveDirectCallName(iterator.callee);
+			const tableArgument = LUA_BUILTIN_TABLE_ITERATOR_ARGUMENTS[name];
+			if (tableArgument !== undefined
+				&& !this.resolveStaticExpressionDeclaration(iterator.callee)) {
+				const tableExpression = iterator.arguments[tableArgument];
+				return tableExpression
+					? this.resolveExpressionValueSource(tableExpression)
+					: undefined;
+			}
+		}
+		return undefined;
 	}
 
 	private recordMetatableIndexAssignment(

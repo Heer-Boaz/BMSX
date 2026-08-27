@@ -9,6 +9,7 @@ import {
 import { walkLuaExpressionTree } from '../syntax/ast/traversal';
 import type { StaticStringSource, SymbolID } from './model';
 import {
+	appendValueElement,
 	appendValueMember,
 	declarationValueSource,
 	semanticValueSourceKey,
@@ -90,6 +91,12 @@ type ResolvedComponentProgramTable = {
 	owner: SemanticValueSource;
 };
 
+type AssignedMember = {
+	name: string;
+	declId: SymbolID;
+	expression: LuaExpression;
+};
+
 // Declarative component programs invoke authored callbacks with the mounted
 // object as their first argument. Retain that runtime contract as ordinary
 // call edges so parameter and return inference stay owned by the value graph.
@@ -97,11 +104,33 @@ export class ComponentProgramSemanticCollector {
 	public readonly mounts: ComponentProgramMountEntry[] = [];
 	public readonly callbacks: ComponentProgramCallbackEntry[] = [];
 	private readonly tableInitializerByDeclId: Map<SymbolID, LuaTableConstructorExpression> = new Map();
+	private readonly assignedMembersByOwner: Map<string, AssignedMember[]> = new Map();
 
 	constructor(private readonly host: ComponentProgramSemanticHost) {}
 
 	public recordTableInitializer(declId: SymbolID, table: LuaTableConstructorExpression): void {
 		this.tableInitializerByDeclId.set(declId, table);
+	}
+
+	public recordMemberAssignment(
+		owner: SemanticValueSource,
+		name: string,
+		declId: SymbolID,
+		expression: LuaExpression,
+	): void {
+		const ownerKey = semanticValueSourceKey(owner);
+		let members = this.assignedMembersByOwner.get(ownerKey);
+		if (!members) {
+			members = [];
+			this.assignedMembersByOwner.set(ownerKey, members);
+		}
+		for (let index = 0; index < members.length; index += 1) {
+			const member = members[index];
+			if (member.declId === declId && member.expression === expression) {
+				return;
+			}
+		}
+		members.push({ name, declId, expression });
 	}
 
 	public recordProgram(
@@ -288,30 +317,14 @@ export class ComponentProgramSemanticCollector {
 			if (!fieldName) {
 				continue;
 			}
-			const fieldOwner = this.host.resolveMemberValueSource(owner, fieldName);
-			switch (fieldName) {
-				case 'entering_state':
-				case 'exiting_state':
-				case 'update':
-					this.recordCallback(fieldOwner, field.value, scan);
-					break;
-				case 'states':
-					this.scanTable(field.value, fieldOwner, TABLE_ROLE_STATES, scan);
-					break;
-				case 'on':
-					this.scanTable(field.value, fieldOwner, TABLE_ROLE_TRANSITIONS, scan);
-					break;
-				case 'input_event_handlers':
-					this.scanTable(field.value, fieldOwner, TABLE_ROLE_INPUT_HANDLERS, scan);
-					break;
-				case 'transition_guards':
-					this.scanTable(field.value, fieldOwner, TABLE_ROLE_GUARDS, scan);
-					break;
-				case 'timelines':
-					this.scanTable(field.value, fieldOwner, TABLE_ROLE_TIMELINES, scan);
-					break;
-			}
+			this.scanStateMember(
+				fieldName,
+				field.value,
+				this.host.resolveMemberValueSource(owner, fieldName),
+				scan,
+			);
 		}
+		this.scanAssignedStateMembers(owner, scan);
 	}
 
 	private scanStates(
@@ -328,6 +341,70 @@ export class ComponentProgramSemanticCollector {
 				TABLE_ROLE_STATE,
 				scan,
 			);
+		}
+		this.scanAssignedStates(owner, scan);
+		this.scanAssignedStateMembers(appendValueElement(owner), scan);
+	}
+
+	private scanAssignedStates(owner: SemanticValueSource, scan: ComponentProgramScan): void {
+		const members = this.assignedMembersByOwner.get(semanticValueSourceKey(owner));
+		if (!members) {
+			return;
+		}
+		for (let memberIndex = 0; memberIndex < members.length; memberIndex += 1) {
+			const member = members[memberIndex];
+			this.scanTable(
+				member.expression,
+				declarationValueSource(member.declId),
+				TABLE_ROLE_STATE,
+				scan,
+			);
+		}
+	}
+
+	private scanAssignedStateMembers(owner: SemanticValueSource, scan: ComponentProgramScan): void {
+		const members = this.assignedMembersByOwner.get(semanticValueSourceKey(owner));
+		if (!members) {
+			return;
+		}
+		for (let memberIndex = 0; memberIndex < members.length; memberIndex += 1) {
+			const member = members[memberIndex];
+			this.scanStateMember(
+				member.name,
+				member.expression,
+				declarationValueSource(member.declId),
+				scan,
+			);
+		}
+	}
+
+	private scanStateMember(
+		name: string,
+		expression: LuaExpression,
+		owner: SemanticValueSource,
+		scan: ComponentProgramScan,
+	): void {
+		switch (name) {
+			case 'entering_state':
+			case 'exiting_state':
+			case 'update':
+				this.recordCallback(owner, expression, scan);
+				break;
+			case 'states':
+				this.scanTable(expression, owner, TABLE_ROLE_STATES, scan);
+				break;
+			case 'on':
+				this.scanTable(expression, owner, TABLE_ROLE_TRANSITIONS, scan);
+				break;
+			case 'input_event_handlers':
+				this.scanTable(expression, owner, TABLE_ROLE_INPUT_HANDLERS, scan);
+				break;
+			case 'transition_guards':
+				this.scanTable(expression, owner, TABLE_ROLE_GUARDS, scan);
+				break;
+			case 'timelines':
+				this.scanTable(expression, owner, TABLE_ROLE_TIMELINES, scan);
+				break;
 		}
 	}
 
