@@ -695,6 +695,7 @@ class LuaProjectIndex {
 		const moduleFiles = buildModuleFileMap(orderedFiles);
 		const declarationValues = new Map<SymbolID, SemanticValueSource[]>();
 		const identityDeclarations = new Set<SymbolID>();
+		const projectionDeclarations = new Set<SymbolID>();
 		const moduleValues = new Map<string, SemanticValueSource>();
 		const memberValues: MemberValueEntry[] = [];
 		const functionReturns: FunctionReturnValueEntry[] = [];
@@ -709,8 +710,10 @@ class LuaProjectIndex {
 			orderedData[fileIndex] = data;
 			for (let index = 0; index < data.declarationValues.length; index += 1) {
 				const entry = data.declarationValues[index];
-				if (entry.identity) {
+				if (entry.relation === 'identity') {
 					identityDeclarations.add(entry.declId);
+				} else if (entry.relation === 'projection') {
+					projectionDeclarations.add(entry.declId);
 				}
 				let sources = declarationValues.get(entry.declId);
 				if (!sources) {
@@ -821,6 +824,7 @@ class LuaProjectIndex {
 		const valueGraphInput = {
 			declarationValues,
 			identityDeclarations,
+			projectionDeclarations,
 			moduleValues,
 			memberValues,
 			functionReturns,
@@ -1022,7 +1026,7 @@ class SemanticBuilder {
 	private readonly methodSelfPathStack: (readonly string[] | undefined)[] = [];
 	private readonly methodSelfScopeStack: (Scope | undefined)[] = [];
 	private readonly declarationValues: Map<SymbolID, SemanticValueSource[]> = new Map();
-	private readonly identityValueDeclarations: Set<SymbolID> = new Set();
+	private readonly projectionValueDeclarations: Set<SymbolID> = new Set();
 	private readonly memberValues: Map<SymbolID, MemberValueEntry> = new Map();
 	private readonly functionReturnValues: Map<SymbolID, SemanticValueSource[]> = new Map();
 	private readonly functionParameterValues: Map<SymbolID, FunctionParameterValueEntry> = new Map();
@@ -1072,9 +1076,12 @@ class SemanticBuilder {
 			functionSignatures: this.functionSignatures,
 			declarationValues: Array.from(this.declarationValues.entries()).flatMap(
 				([declId, sources]) => {
-					const identity = this.declById.get(declId)?.kind === 'constant'
-						|| this.identityValueDeclarations.has(declId);
-					return sources.map(source => ({ declId, source, identity }));
+					const relation = this.declById.get(declId)?.kind === 'constant'
+						? 'identity' as const
+						: this.projectionValueDeclarations.has(declId)
+							? 'projection' as const
+							: 'value' as const;
+					return sources.map(source => ({ declId, source, relation }));
 				},
 			),
 			moduleValues: this.moduleValue
@@ -1732,7 +1739,7 @@ class SemanticBuilder {
 				const classValue = this.resolveValueSourceFromNamePath(methodSelfPath);
 				if (classValue) {
 					this.setDeclarationValue(parameter, appendValueInstance(classValue));
-					this.identityValueDeclarations.add(parameter.id);
+					this.projectionValueDeclarations.add(parameter.id);
 				}
 			}
 		}

@@ -22,10 +22,12 @@ export type SemanticValueSource = {
 	steps: readonly SemanticValueStep[];
 };
 
+export type DeclarationValueRelation = 'value' | 'identity' | 'projection';
+
 export type DeclarationValueEntry = {
 	declId: SymbolID;
 	source: SemanticValueSource;
-	identity: boolean;
+	relation: DeclarationValueRelation;
 };
 
 export type ModuleValueEntry = {
@@ -359,6 +361,7 @@ export function semanticValueSourcesEqual(
 export type WorkspaceValueGraphInput = {
 	declarationValues: ReadonlyMap<SymbolID, readonly SemanticValueSource[]>;
 	identityDeclarations: ReadonlySet<SymbolID>;
+	projectionDeclarations: ReadonlySet<SymbolID>;
 	moduleValues: ReadonlyMap<string, SemanticValueSource>;
 	memberValues: readonly MemberValueEntry[];
 	functionReturns: readonly FunctionReturnValueEntry[];
@@ -373,6 +376,7 @@ export type WorkspaceValueGraphInput = {
 export class WorkspaceValueGraph {
 	private readonly declarationValues: Map<SymbolID, SemanticValueSource[]>;
 	private readonly identityDeclarations: ReadonlySet<SymbolID>;
+	private readonly projectionDeclarations: ReadonlySet<SymbolID>;
 	private readonly moduleValues: ReadonlyMap<string, SemanticValueSource>;
 	private readonly bindingValues: ReadonlyMap<string, SemanticValueSource>;
 	private readonly globalValues: ReadonlyMap<string, SymbolID>;
@@ -434,6 +438,7 @@ export class WorkspaceValueGraph {
 		}
 		this.moduleValues = options.moduleValues;
 		this.identityDeclarations = options.identityDeclarations;
+		this.projectionDeclarations = options.projectionDeclarations;
 		this.bindingValues = options.bindingValues;
 		this.globalValues = options.globalValues;
 		this.calls = options.calls;
@@ -1076,33 +1081,40 @@ export class WorkspaceValueGraph {
 	private materializeRootValues(): void {
 		for (const [declId, sources] of this.declarationValues) {
 			const target = this.nodeFor(this.declarationNodes, declId);
+			const relation: DeclarationValueRelation = this.identityDeclarations.has(declId)
+				? 'identity'
+				: this.projectionDeclarations.has(declId)
+					? 'projection'
+					: 'value';
 			for (let index = 0; index < sources.length; index += 1) {
 				const source = this.resolveSource(sources[index], true);
-				this.attachResolvedValue(target, source, this.identityDeclarations.has(declId));
+				this.attachResolvedValue(target, source, relation);
 			}
 		}
 		for (const [module, sourceValue] of this.moduleValues) {
 			const source = this.resolveSource(sourceValue, true);
 			const target = this.nodeFor(this.moduleNodes, module);
-			this.attachResolvedValue(target, source, true);
+			this.attachResolvedValue(target, source, 'identity');
 		}
 		for (const [bindingId, sourceValue] of this.bindingValues) {
 			const source = this.resolveSource(sourceValue, true);
 			const target = this.nodeFor(this.bindingNodes, bindingId);
-			this.attachResolvedValue(target, source, true);
+			this.attachResolvedValue(target, source, 'identity');
 		}
 	}
 
 	private attachResolvedValue(
 		target: SemanticValueID,
 		source: SemanticValueID | undefined,
-		identity: boolean,
+		relation: DeclarationValueRelation,
 	): void {
 		if (!source || source === target) {
 			return;
 		}
-		if (identity) {
+		if (relation === 'identity') {
 			this.addIdentity(target, source);
+		} else if (relation === 'projection') {
+			this.addProjectionBase(target, source);
 		} else {
 			this.addValueBase(target, source);
 		}

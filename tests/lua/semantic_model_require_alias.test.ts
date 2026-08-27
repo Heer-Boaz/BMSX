@@ -499,6 +499,39 @@ test('semantic workspace retains fields initialized through an explicit self rec
 	assert.deepEqual(eventsTarget!.decl.namePath, ['self', 'events']);
 });
 
+test('explicit self receivers project writes without adopting call argument members', async () => {
+	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const sourceLines = [
+		'local actor<const> = {}',
+		'function actor.initialize(self)',
+		'\tself.events = {}',
+		'end',
+		'local foreign<const> = { foreign_only = true }',
+		'actor.initialize(foreign)',
+		'local projected<const> = foreign.events',
+		'function actor:read()',
+		'\treturn self.foreign_only',
+		'end',
+		'return actor',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('actor.lua', sourceLines.join('\n'));
+	const snapshot = workspace.getSnapshot();
+	const projectedTarget = snapshot.symbolAt(
+		'actor.lua',
+		7,
+		sourceLines[6].indexOf('events') + 1,
+	);
+
+	assert.ok(projectedTarget, 'receiver write projected onto the explicit call argument');
+	assert.deepEqual(projectedTarget!.decl.namePath, ['self', 'events']);
+	assert.equal(
+		snapshot.symbolAt('actor.lua', 9, sourceLines[8].indexOf('foreign_only') + 1),
+		null,
+		'foreign argument members do not become actor instance members',
+	);
+});
+
 test('semantic workspace applies the prefab runtime default base', async () => {
 	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
 	const worldObjectSource = [
