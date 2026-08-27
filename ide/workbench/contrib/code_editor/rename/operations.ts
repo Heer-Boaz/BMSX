@@ -36,8 +36,8 @@ export function commitRename(
 	let updatedTotal = 0;
 
 	const snapshot = workspace.getSnapshot();
-	const decl = info.definitionKey ? snapshot.getDecl(info.definitionKey) : null;
-	const references = info.definitionKey ? snapshot.getReferences(info.definitionKey) : [];
+	const decl = info.definitionKey ? snapshot.symbolResolver.getDeclaration(info.definitionKey) : null;
+	const references = info.definitionKey ? snapshot.symbolResolver.getReferences(info.definitionKey) : [];
 	type RangeBucket = { path: string; ranges: LuaSourceRange[]; seen: Set<string> };
 	const rangeMap = new Map<string, RangeBucket>();
 	const addRange = (range: LuaSourceRange): void => {

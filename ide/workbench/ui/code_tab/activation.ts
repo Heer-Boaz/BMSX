@@ -1,6 +1,4 @@
 import type { RuntimeSourceState } from '../../../runtime/sources';
-import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
-import type { RuntimeFaultState } from '../../../runtime/fault_state';
 import type { CartEditor } from '../../../cart_editor';
 import type { CodeTabContext } from './model';
 import { editorDocumentState, restoreDocumentStateFromContext, storeDocumentStateInContext } from '../../../editor/editing/document_state';
@@ -8,12 +6,10 @@ import { editorDiagnosticsState } from '../../../editor/contrib/diagnostics/stat
 import { editorViewState } from '../../../editor/ui/view/state';
 import { syncRuntimeErrorOverlayFromContext } from '../../../runtime_error/navigation';
 import type { LuaDefinitionLocation } from '../../../../toolchain/ts/lua/semantic_contracts';
-import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import { ensureCursorVisible, updateDesiredColumn } from '../../../editor/ui/view/caret/caret';
-import { editorCaretState } from '../../../editor/ui/view/caret/state';
 import { refreshActiveDiagnostics } from '../../contrib/code_editor/diagnostics/controller';
 import { markDiagnosticsDirty } from '../../../editor/contrib/diagnostics/state';
-import { clearGotoHoverHighlight, clearHoverTooltip, clearReferenceHighlights, requestSemanticRefresh, resolveDefinitionAt } from '../../../editor/contrib/intellisense/engine';
+import { clearGotoHoverHighlight, clearHoverTooltip, clearReferenceHighlights, requestSemanticRefresh } from '../../../editor/contrib/intellisense/engine';
 import { resetBlink } from '../../../editor/render/caret';
 import { getTextSnapshot } from '../../../editor/text/source_text';
 import { editorPointerState } from '../../../input/pointer/state';
@@ -196,26 +192,8 @@ export function activateCodeEditorTab(tabId: string, selection?: CodeTabSelectio
 	refreshActiveDiagnostics();
 }
 
-export function gotoDefinitionAt(
-	bridge: RuntimeLuaTooling,
-	fault: RuntimeFaultState,
-	editor: CartEditor,
-	sources: RuntimeSourceState,
-	runtime: Runtime,
-	row: number,
-	column: number,
-): boolean {
-	const definition = resolveDefinitionAt(bridge, fault, runtime, getActiveCodeTabContext(), row, column);
-	if (!definition) {
-		return false;
-	}
-	navigateToLuaDefinition(editor, sources, definition);
-	return true;
-}
-
 export function navigateToLuaDefinition(
 	editor: CartEditor,
-	sources: RuntimeSourceState,
 	definition: LuaDefinitionLocation,
 ): void {
 	clearReferenceHighlights();

@@ -13,7 +13,7 @@ export function closeSymbolSearch(clearQuery: boolean): void {
 	symbolSearchState.visible = false;
 	symbolSearchState.global = false;
 	symbolSearchState.mode = 'symbols';
-	symbolSearchState.referenceCatalog = [];
+	symbolSearchState.locationCatalog = [];
 	symbolSearchState.matches = [];
 	symbolSearchState.selectionIndex = -1;
 	symbolSearchState.displayOffset = 0;
@@ -42,6 +42,17 @@ export function focusEditorFromSymbolSearch(): void {
 export function applySymbolSearchFieldText(value: string, moveCursorToEnd: boolean): void {
 	symbolSearchState.query = value;
 	setFieldText(symbolSearchState.field, value, moveCursorToEnd);
+}
+
+export function symbolSearchFieldLabel(): string {
+	switch (symbolSearchState.mode) {
+		case 'references':
+			return 'REFS :';
+		case 'definitions':
+			return 'DEFS :';
+		case 'symbols':
+			return symbolSearchState.global ? 'SYMBOL #:' : 'SYMBOL @:';
+	}
 }
 
 export function getActiveSymbolSearchMatch(): SymbolSearchResult {

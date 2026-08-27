@@ -3,24 +3,19 @@ import { setSingleCursorSelectionAnchor } from '../../../editor/editing/cursor/s
 import { focusPrimaryEditorSurface } from '../../../workbench/ui/focus';
 import { resolvePointerTextPosition } from '../../../editor/ui/view/view';
 import type { CodeAreaBounds } from '../../../editor/ui/view/view';
-import { gotoDefinitionAt } from '../../../workbench/ui/code_tab/activation';
+import { openDefinitionSearch } from '../../../workbench/contrib/code_editor/definitions/search/index';
+import { renameController } from '../../../workbench/contrib/code_editor/rename/controller';
 import type { PointerSnapshot } from '../../../common/models';
 import * as TextEditing from '../../../editor/editing/text_editing_and_selection';
 import * as constants from '../../../common/constants';
 import { editorPointerState, stopPointerSelectionAndResetClicks } from '../state';
 import { editorDocumentState } from '../../../editor/editing/document_state';
-import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import type { CartEditor } from '../../../cart_editor';
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
-import type { RuntimeFaultState } from '../../../runtime/fault_state';
-import type { RuntimeSourceState } from '../../../runtime/sources';
 
 export function handleCodeAreaPrimaryPressPointer(
 	editor: CartEditor,
-	sources: RuntimeSourceState,
 	bridge: RuntimeLuaTooling,
-	fault: RuntimeFaultState,
-	runtime: Runtime,
 	snapshot: PointerSnapshot,
 	justPressed: boolean,
 	insideCodeArea: boolean,
@@ -35,12 +30,10 @@ export function handleCodeAreaPrimaryPressPointer(
 	const target = resolvePointerTextPosition(snapshot.viewportX, snapshot.viewportY, bounds);
 	const targetRow = target.row;
 	const targetColumn = target.column;
-	if (gotoModifierActive && gotoDefinitionAt(
+	if (gotoModifierActive && openDefinitionSearch(
 		bridge,
-		fault,
+		renameController,
 		editor,
-		sources,
-		runtime,
 		targetRow,
 		targetColumn,
 	)) {

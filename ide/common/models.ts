@@ -301,9 +301,9 @@ export type SymbolSearchState = {
 	visible: boolean;
 	query: string;
 	global: boolean;
-	mode: 'symbols' | 'references';
+	mode: 'symbols' | 'references' | 'definitions';
 	catalog: SymbolCatalogEntry[];
-	referenceCatalog: SymbolCatalogEntry[];
+	locationCatalog: SymbolCatalogEntry[];
 	catalogContext: { scope: 'local' | 'global'; domain: ResourceDomain; path: string };
 	matches: SymbolSearchResult[];
 	selectionIndex: number;

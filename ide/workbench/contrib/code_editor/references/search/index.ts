@@ -8,9 +8,9 @@ import { resolveReferenceLookup } from '../../../../../editor/contrib/references
 import { editorDocumentState } from '../../../../../editor/editing/document_state';
 import { symbolSearchState } from '../../symbols/search/state';
 import { referenceState } from '../../../../../editor/contrib/references/state';
-import { buildReferenceSearchCatalog, showReferenceSearchStatusMessage, updateReferenceSearchMatches } from './catalog';
+import { buildReferenceSearchCatalog, showReferenceSearchStatusMessage } from './catalog';
+import { updateSymbolSearchMatches } from '../../symbols/search/catalog';
 import type { RuntimeLuaTooling } from '../../../../../runtime/lua_tooling';
-import type { RuntimeSourceState } from '../../../../../runtime/sources';
 import type { RenameController } from '../../rename/controller';
 import type { CartEditor } from '../../../../../cart_editor';
 
@@ -39,8 +39,8 @@ export function openReferenceSearchPopup(bridge: RuntimeLuaTooling, rename: Rena
 	}
 	const { info, initialIndex } = result;
 	referenceState.apply(info, initialIndex);
-	symbolSearchState.referenceCatalog = buildReferenceSearchCatalog(bridge, info, context);
-	if (symbolSearchState.referenceCatalog.length === 0) {
+	symbolSearchState.locationCatalog = buildReferenceSearchCatalog(bridge, info, context);
+	if (symbolSearchState.locationCatalog.length === 0) {
 		showEditorMessage('No references found', constants.COLOR_STATUS_WARNING, 1.6);
 		return;
 	}
@@ -50,7 +50,7 @@ export function openReferenceSearchPopup(bridge: RuntimeLuaTooling, rename: Rena
 	symbolSearchState.active = true;
 	applySymbolSearchFieldText('', true);
 	symbolSearchState.query = '';
-	updateReferenceSearchMatches();
+	updateSymbolSearchMatches(bridge);
 	symbolSearchState.hoverIndex = -1;
 	ensureSymbolSearchSelectionVisible();
 	resetBlink();
@@ -59,7 +59,6 @@ export function openReferenceSearchPopup(bridge: RuntimeLuaTooling, rename: Rena
 
 export function applyReferenceSearchSelection(
 	editor: CartEditor,
-	sources: RuntimeSourceState,
 	index: number,
 ): void {
 	if (index < 0 || index >= symbolSearchState.matches.length) {
@@ -69,10 +68,10 @@ export function applyReferenceSearchSelection(
 	const match = symbolSearchState.matches[index];
 	const symbol = match.entry.symbol;
 	const entryIndex = match.catalogIndex;
-	const total = symbolSearchState.referenceCatalog.length;
+	const total = symbolSearchState.locationCatalog.length;
 	const expressionLabel = referenceState.getExpression() ?? symbol.name;
 	closeSymbolSearch(true);
 	referenceState.clear();
-	navigateToLuaDefinition(editor, sources, symbol.location);
+	navigateToLuaDefinition(editor, symbol.location);
 	showEditorMessage(`Reference ${entryIndex + 1}/${total} for ${expressionLabel}`, constants.COLOR_STATUS_SUCCESS, 1.6);
 }

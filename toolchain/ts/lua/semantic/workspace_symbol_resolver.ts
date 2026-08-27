@@ -2,6 +2,7 @@ import type { Decl, FileSemanticData, Ref, SymbolID } from './model';
 import { WorkspaceValueGraph, type WorkspaceValueGraphInput } from './value_graph';
 
 const EMPTY_REFS: readonly Ref[] = [];
+const EMPTY_SYMBOLS: readonly SymbolID[] = [];
 
 // A resolver belongs to exactly one immutable workspace version. File analyses
 // retain lexical bindings; workspace-dependent module, value-flow and global
@@ -33,29 +34,35 @@ export class WorkspaceSymbolResolver {
 	}
 
 	public resolveReference(ref: Ref): SymbolID | undefined {
+		const targets = this.resolveReferenceTargets(ref);
+		return targets.length === 1 ? targets[0] : undefined;
+	}
+
+	public resolveReferenceTargets(ref: Ref): readonly SymbolID[] {
 		if (ref.lexicalTarget) {
-			return ref.lexicalTarget;
+			return [ref.lexicalTarget];
 		}
 		if (ref.referenceKind === 'self') {
-			return undefined;
+			return EMPTY_SYMBOLS;
 		}
 		if (ref.referenceKind === 'identifier' && ref.target) {
-			return ref.target;
+			return [ref.target];
 		}
 		if (ref.referenceKind === 'member' || ref.referenceKind === 'method') {
 			const valueGraph = this.getValueGraph();
 			const receiver = valueGraph.resolve(ref.receiverValue);
 			if (receiver) {
-				const member = valueGraph.findMember(receiver, ref.name);
-				if (member) {
-					return member;
+				const members = valueGraph.findMembers(receiver, ref.name);
+				if (members.length > 0) {
+					return members;
 				}
 			}
 		}
 		if (ref.symbolKey.length === 0) {
-			return undefined;
+			return EMPTY_SYMBOLS;
 		}
-		return this.globals.get(ref.symbolKey);
+		const global = this.globals.get(ref.symbolKey);
+		return global ? [global] : EMPTY_SYMBOLS;
 	}
 
 	private getValueGraph(): WorkspaceValueGraph {
@@ -78,16 +85,16 @@ export class WorkspaceSymbolResolver {
 			const refs = this.files[fileIndex].refs;
 			for (let refIndex = 0; refIndex < refs.length; refIndex += 1) {
 				const ref = refs[refIndex];
-				const target = this.resolveReference(ref);
-				if (!target) {
-					continue;
+				const targets = this.resolveReferenceTargets(ref);
+				for (let targetIndex = 0; targetIndex < targets.length; targetIndex += 1) {
+					const target = targets[targetIndex];
+					let bucket = references.get(target);
+					if (!bucket) {
+						bucket = [];
+						references.set(target, bucket);
+					}
+					bucket.push(ref);
 				}
-				let bucket = references.get(target);
-				if (!bucket) {
-					bucket = [];
-					references.set(target, bucket);
-				}
-				bucket.push(ref);
 			}
 		}
 		return references;

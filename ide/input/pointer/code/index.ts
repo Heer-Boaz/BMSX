@@ -14,12 +14,10 @@ import { editorPointerState } from '../state';
 import type { CartEditor } from '../../../cart_editor';
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import type { RuntimeFaultState } from '../../../runtime/fault_state';
-import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { Clipboard } from '../../../common/clipboard';
 
 export function handleCodeAreaPointerInput(
 	editor: CartEditor,
-	sources: RuntimeSourceState,
 	bridge: RuntimeLuaTooling,
 	fault: RuntimeFaultState,
 	runtime: Runtime,
@@ -63,10 +61,7 @@ export function handleCodeAreaPointerInput(
 	}
 	if (handleCodeAreaPrimaryPressPointer(
 		editor,
-		sources,
 		bridge,
-		fault,
-		runtime,
 		snapshot,
 		justPressed,
 		insideCodeArea,

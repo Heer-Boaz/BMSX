@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { buildLuaSemanticFrontend } from '../../toolchain/ts/lua/semantic/frontend';
+import { buildLuaSemanticFrontend, type LuaSemanticFrontendFile, type LuaSemanticNavigationTarget } from '../../toolchain/ts/lua/semantic/frontend';
 import { createLuaSemanticFrontendFromSnapshot } from '../../ide/editor/contrib/intellisense/semantic/workspace/index';
 import { LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
 
@@ -53,7 +53,7 @@ test('LuaSemanticFrontend follows compiler scoping for recursive const closures'
 	].join('\n');
 	const frontend = buildLuaSemanticFrontend([{ path: 'recursive_const.lua', source }]);
 	const recursiveCall = findPosition(source, '\treturn recurse', 'recurse');
-	const target = frontend.getFile('recursive_const.lua').getNavigationTargetAt(
+	const target = firstNavigationTarget(frontend.getFile('recursive_const.lua'),
 		recursiveCall.line,
 		recursiveCall.column,
 	);
@@ -85,6 +85,28 @@ test('LuaSemanticFrontend does not flag member access on call results as undefin
 	].join('\n');
 	const frontend = buildLuaSemanticFrontend([{ path: 'members.lua', source }]);
 	assert.deepEqual(frontend.getFile('members.lua').diagnostics, []);
+});
+
+test('LuaSemanticFrontend returns every valid definition target', () => {
+	const source = [
+		'local left<const> = {}',
+		'function left:run() end',
+		'local right<const> = {}',
+		'function right:run() end',
+		'local selected<const> = left or right',
+		'selected:run()',
+	].join('\n');
+	const frontend = buildLuaSemanticFrontend([{ path: 'alternatives.lua', source }]);
+	const position = findPosition(source, 'selected:run()', 'run');
+	const targets = frontend.getFile('alternatives.lua').getNavigationTargetsAt(
+		position.line,
+		position.column,
+	);
+
+	assert.deepEqual(
+		targets.map((target) => target.range.start.line),
+		[2, 4],
+	);
 });
 
 test('LuaSemanticFrontend treats implicit global writes inside nested scopes as globals', () => {
@@ -155,13 +177,13 @@ test('LuaSemanticFrontend resolves navigation targets by lexical scope instead o
 	const frontend = buildLuaSemanticFrontend([{ path: 'scope.lua', source }]);
 	const file = frontend.getFile('scope.lua');
 	const innerPosition = findPosition(source, '\treturn value', 'value');
-	const innerTarget = file.getNavigationTargetAt(innerPosition.line, innerPosition.column);
+	const innerTarget = firstNavigationTarget(file, innerPosition.line, innerPosition.column);
 	assert.deepEqual(innerTarget.range, {
 		path: 'scope.lua',
 		start: { line: 3, column: 8 },
 		end: { line: 3, column: 12 },
 	});
-	const outerTarget = file.getNavigationTargetAt(6, 8);
+	const outerTarget = firstNavigationTarget(file, 6, 8);
 	assert.deepEqual(outerTarget.range, {
 		path: 'scope.lua',
 		start: { line: 1, column: 7 },
@@ -176,13 +198,13 @@ test('LuaSemanticFrontend keeps table field definitions out of unqualified stora
 	].join('\n');
 	const frontend = buildLuaSemanticFrontend([{ path: 'storage.lua', source }]);
 	const file = frontend.getFile('storage.lua');
-	const keyTarget = file.getNavigationTargetAt(2, 10);
+	const keyTarget = firstNavigationTarget(file, 2, 10);
 	assert.deepEqual(keyTarget.range, {
 		path: 'storage.lua',
 		start: { line: 2, column: 10 },
 		end: { line: 2, column: 16 },
 	});
-	const valueTarget = file.getNavigationTargetAt(2, 20);
+	const valueTarget = firstNavigationTarget(file, 2, 20);
 	assert.deepEqual(valueTarget.range, {
 		path: 'storage.lua',
 		start: { line: 1, column: 5 },
@@ -202,9 +224,9 @@ test('LuaSemanticFrontend keeps ordinary strings and comments out of identifier 
 	const commentPosition = findPosition(source, '-- target', 'target');
 	const stringPosition = findPosition(source, 'local text = "target"', 'target');
 	const livePosition = findPosition(source, 'return target', 'target');
-	assert.equal(file.getNavigationTargetAt(commentPosition.line, commentPosition.column), null);
-	assert.equal(file.getNavigationTargetAt(stringPosition.line, stringPosition.column), null);
-	const liveTarget = file.getNavigationTargetAt(livePosition.line, livePosition.column);
+	assert.deepEqual(file.getNavigationTargetsAt(commentPosition.line, commentPosition.column), []);
+	assert.deepEqual(file.getNavigationTargetsAt(stringPosition.line, stringPosition.column), []);
+	const liveTarget = firstNavigationTarget(file, livePosition.line, livePosition.column);
 	assert.deepEqual(liveTarget.range, {
 		path: 'literals.lua',
 		start: { line: 1, column: 7 },
@@ -227,7 +249,7 @@ test('LuaSemanticFrontend resolves require strings to their target module files'
 	]);
 	const file = frontend.getFile('main.lua');
 	const requirePosition = findPosition(entrySource, 'require("lib/util")', 'lib/util');
-	const target = file.getNavigationTargetAt(requirePosition.line, requirePosition.column);
+	const target = firstNavigationTarget(file, requirePosition.line, requirePosition.column);
 	assert.deepEqual(target, {
 		kind: 'require_module',
 		moduleName: 'lib/util',
@@ -257,7 +279,7 @@ test('LuaSemanticFrontend can build from immutable analysis snapshots without re
 		{ path: 'lib/util.lua', source: utilSource, analysis: workspace.getFileData('lib/util.lua') },
 	]);
 	const requirePosition = findPosition(mainSource, 'require("lib/util")', 'lib/util');
-	const target = frontend.getFile('main.lua').getNavigationTargetAt(requirePosition.line, requirePosition.column);
+	const target = firstNavigationTarget(frontend.getFile('main.lua'), requirePosition.line, requirePosition.column);
 	assert.deepEqual(target, {
 		kind: 'require_module',
 		moduleName: 'lib/util',
@@ -280,7 +302,7 @@ test('workspace semantic frontends are cached per version and remain immutable a
 	const firstAgain = createLuaSemanticFrontendFromSnapshot(firstSnapshot);
 	assert.equal(first.snapshot, firstSnapshot, 'frontend retains the prepared workspace program');
 	assert.equal(first, firstAgain);
-	const oldTarget = first.getFile('main.lua').getNavigationTargetAt(2, 8);
+	const oldTarget = firstNavigationTarget(first.getFile('main.lua'), 2, 8);
 	assert.ok(oldTarget);
 	assert.deepEqual(oldTarget.range, {
 		path: 'main.lua',
@@ -294,8 +316,8 @@ test('workspace semantic frontends are cached per version and remain immutable a
 	].join('\n'));
 	const second = createLuaSemanticFrontendFromSnapshot(workspace.getSnapshot());
 	assert.notEqual(first, second);
-	const preservedTarget = first.getFile('main.lua').getNavigationTargetAt(2, 8);
-	const updatedTarget = second.getFile('main.lua').getNavigationTargetAt(2, 8);
+	const preservedTarget = firstNavigationTarget(first.getFile('main.lua'), 2, 8);
+	const updatedTarget = firstNavigationTarget(second.getFile('main.lua'), 2, 8);
 	assert.ok(preservedTarget);
 	assert.deepEqual(preservedTarget.range, {
 		path: 'main.lua',
@@ -356,7 +378,7 @@ test('workspace resolves global receiver members per immutable snapshot without 
 	const usageData = workspace.getFileData('usage.lua');
 	const firstSnapshot = workspace.getSnapshot();
 	const first = createLuaSemanticFrontendFromSnapshot(firstSnapshot);
-	const firstTarget = first.getFile('usage.lua').getNavigationTargetAt(1, 13);
+	const firstTarget = firstNavigationTarget(first.getFile('usage.lua'), 1, 13);
 	assert.ok(firstTarget);
 	assert.deepEqual(firstTarget.range, {
 		path: 'globals.lua',
@@ -376,8 +398,8 @@ test('workspace resolves global receiver members per immutable snapshot without 
 	assert.equal(workspace.getFileData('usage.lua'), usageData, 'unchanged file analysis is retained');
 	assert.equal(first.snapshot, firstSnapshot);
 	assert.equal(second.snapshot, secondSnapshot);
-	const preservedTarget = first.getFile('usage.lua').getNavigationTargetAt(1, 13);
-	const updatedTarget = second.getFile('usage.lua').getNavigationTargetAt(1, 13);
+	const preservedTarget = firstNavigationTarget(first.getFile('usage.lua'), 1, 13);
+	const updatedTarget = firstNavigationTarget(second.getFile('usage.lua'), 1, 13);
 	assert.ok(preservedTarget);
 	assert.deepEqual(preservedTarget.range, {
 		path: 'globals.lua',
@@ -393,7 +415,7 @@ test('workspace rebinds direct global lookups immutably across updates', () => {
 	workspace.updateFile('usage.lua', 'return hero');
 
 	const first = createLuaSemanticFrontendFromSnapshot(workspace.getSnapshot());
-	const firstTarget = first.getFile('usage.lua').getNavigationTargetAt(1, 8);
+	const firstTarget = firstNavigationTarget(first.getFile('usage.lua'), 1, 8);
 	assert.ok(firstTarget);
 	assert.deepEqual(firstTarget.range, {
 		path: 'globals.lua',
@@ -404,8 +426,8 @@ test('workspace rebinds direct global lookups immutably across updates', () => {
 	workspace.updateFile('globals.lua', 'villain = 1');
 
 	const second = createLuaSemanticFrontendFromSnapshot(workspace.getSnapshot());
-	const preservedTarget = first.getFile('usage.lua').getNavigationTargetAt(1, 8);
-	const updatedTarget = second.getFile('usage.lua').getNavigationTargetAt(1, 8);
+	const preservedTarget = firstNavigationTarget(first.getFile('usage.lua'), 1, 8);
+	const updatedTarget = firstNavigationTarget(second.getFile('usage.lua'), 1, 8);
 	assert.ok(preservedTarget);
 	assert.deepEqual(preservedTarget.range, {
 		path: 'globals.lua',
@@ -414,6 +436,16 @@ test('workspace rebinds direct global lookups immutably across updates', () => {
 	});
 	assert.equal(updatedTarget, null);
 });
+
+function firstNavigationTarget(
+	file: LuaSemanticFrontendFile,
+	line: number,
+	column: number,
+): LuaSemanticNavigationTarget | null {
+	const targets = file.getNavigationTargetsAt(line, column);
+	assert.ok(targets.length <= 1, 'expected at most one navigation target');
+	return targets.length === 0 ? null : targets[0];
+}
 
 function findPosition(source: string, lineFragment: string, needle: string): { line: number; column: number } {
 	const lines = source.split('\n');

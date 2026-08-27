@@ -140,6 +140,7 @@ export function isSymbolSearchCompactMode(): boolean {
 export function symbolSearchEntryHeight(): number {
 	switch (symbolSearchState.mode) {
 		case 'references':
+		case 'definitions':
 			return editorViewState.lineHeight * 2;
 		case 'symbols':
 			return symbolSearchState.global && isSymbolSearchCompactMode()
@@ -151,6 +152,7 @@ export function symbolSearchEntryHeight(): number {
 export function symbolSearchPageSize(): number {
 	switch (symbolSearchState.mode) {
 		case 'references':
+		case 'definitions':
 			return constants.REFERENCE_SEARCH_MAX_RESULTS;
 		case 'symbols':
 			if (!symbolSearchState.global) {
@@ -297,6 +299,9 @@ function computeInlineBarLayoutStamp(): number {
 			break;
 		case 'references':
 			stamp = addLayoutStamp(stamp, 2);
+			break;
+		case 'definitions':
+			stamp = addLayoutStamp(stamp, 3);
 			break;
 	}
 	stamp = addLayoutStamp(stamp, renameController.isVisible() ? 1 : 0);

@@ -3,7 +3,7 @@ import type { LuaDefinitionLocation } from '../../../../toolchain/ts/lua/semanti
 import {
 	SYSTEM_RESOURCE_DOMAIN,
 } from '../../../common/resource';
-import type { SearchMatch, SymbolCatalogEntry, SymbolSearchResult } from '../../../common/models';
+import type { SearchMatch, SymbolCatalogEntry } from '../../../common/models';
 import type { EditorDocumentContext } from '../../editing/document_state';
 import { parseLuaIdentifierChain } from '../../../language/lua/identifier_chain';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
@@ -16,6 +16,7 @@ import { getLinesSnapshot, getTextSnapshot } from '../../text/source_text';
 import type { Decl, LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
 import { computeSourceLabel } from '../../../common/paths';
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
+import { definitionLocationFromSourceRange } from '../../navigation/definition_location';
 
 type FileMetadata = {
 	path: string;
@@ -66,7 +67,7 @@ export function buildReferenceCatalogForExpression(bridge: RuntimeLuaTooling, op
 		}
 	}
 
-	const decl = frontend.snapshot.getDecl(options.info.definitionKey);
+	const decl = frontend.snapshot.symbolResolver.getDeclaration(options.info.definitionKey);
 	if (decl) {
 		const meta = metadata.get(decl.file);
 		if (meta) {
@@ -75,7 +76,7 @@ export function buildReferenceCatalogForExpression(bridge: RuntimeLuaTooling, op
 				const entry = createCatalogEntry({
 					meta,
 					match,
-					location: toDefinitionLocation(decl.range),
+					location: definitionLocationFromSourceRange(decl.range),
 					expression: options.info.expression,
 				});
 				appendCatalogEntry(entries, existingKeys, entry);
@@ -83,7 +84,7 @@ export function buildReferenceCatalogForExpression(bridge: RuntimeLuaTooling, op
 		}
 	}
 
-	const references = frontend.snapshot.getReferences(options.info.definitionKey);
+	const references = frontend.snapshot.symbolResolver.getReferences(options.info.definitionKey);
 	for (let index = 0; index < references.length; index += 1) {
 		const reference = references[index];
 		const meta = metadata.get(reference.file);
@@ -97,7 +98,7 @@ export function buildReferenceCatalogForExpression(bridge: RuntimeLuaTooling, op
 		const entry = createCatalogEntry({
 			meta,
 			match,
-			location: toDefinitionLocation(reference.range),
+			location: definitionLocationFromSourceRange(reference.range),
 			expression: options.info.expression,
 		});
 		appendCatalogEntry(entries, existingKeys, entry);
@@ -141,50 +142,7 @@ export function resolveDefinitionLocationForExpression(bridge: RuntimeLuaTooling
 	if (!best) {
 		return null;
 	}
-	return toDefinitionLocation(best.range);
-}
-
-export function filterReferenceCatalog(options: {
-	catalog: readonly SymbolCatalogEntry[];
-	query: string;
-	activeCatalogIndex: number;
-	pageSize: number;
-}): {
-	matches: SymbolSearchResult[];
-	selectionIndex: number;
-	displayOffset: number;
-} {
-	const normalized = options.query.trim();
-	const matches: SymbolSearchResult[] = [];
-	for (let index = 0; index < options.catalog.length; index += 1) {
-		const entry = options.catalog[index];
-		const matchIndex = normalized.length === 0 ? 0 : entry.searchKey.indexOf(normalized);
-		if (normalized.length === 0 || matchIndex !== -1) {
-			matches.push({
-				entry,
-				matchIndex: matchIndex === -1 ? Number.MAX_SAFE_INTEGER : matchIndex,
-				catalogIndex: index,
-			});
-		}
-	}
-	if (matches.length === 0) {
-		return { matches: [], selectionIndex: -1, displayOffset: 0 };
-	}
-	matches.sort(compareReferenceSearchResult);
-	let selectionIndex = 0;
-	for (let index = 0; index < matches.length; index += 1) {
-		if (matches[index].catalogIndex === options.activeCatalogIndex) {
-			selectionIndex = index;
-			break;
-		}
-	}
-	// start value-or-boundary -- reference result window offset is bounded once against the current filtered list.
-	let displayOffset = clamp(selectionIndex - Math.floor(options.pageSize / 2), 0, Math.max(0, matches.length - options.pageSize));
-	// end value-or-boundary
-	if (selectionIndex >= displayOffset + options.pageSize) {
-		displayOffset = selectionIndex - options.pageSize + 1;
-	}
-	return { matches, selectionIndex, displayOffset };
+	return definitionLocationFromSourceRange(best.range);
 }
 
 function prepareProjectSemanticFrontend(
@@ -268,20 +226,6 @@ function registerProjectFile(
 	});
 }
 
-function toDefinitionLocation(
-	range: { path: string; start: { line: number; column: number }; end: { line: number; column: number } },
-): LuaDefinitionLocation {
-	return {
-		path: range.path,
-		range: {
-			startLine: range.start.line,
-			startColumn: range.start.column,
-			endLine: range.end.line,
-			endColumn: range.end.column,
-		},
-	};
-}
-
 function rangeToSearchMatch(
 	range: { start: { line: number; column: number }; end: { line: number; column: number } },
 	lines: readonly string[],
@@ -311,7 +255,7 @@ function createCatalogEntry(args: {
 			location: args.location,
 		},
 		displayName: snippet,
-		searchKey: [snippet, symbolName, args.meta.sourceLabel].join(' ').trim(),
+		searchKey: [snippet, symbolName, args.meta.sourceLabel].join(' ').trim().toLowerCase(),
 		line: args.match.row + 1,
 		kindLabel: 'REF',
 		sourceLabel: args.meta.sourceLabel,
@@ -361,19 +305,4 @@ function preferDeclaration(candidate: Decl, current: Decl): boolean {
 		return candidate.range.start.column < current.range.start.column;
 	}
 	return candidate.name.localeCompare(current.name) < 0;
-}
-
-function compareReferenceSearchResult(left: SymbolSearchResult, right: SymbolSearchResult): number {
-	if (left.matchIndex !== right.matchIndex) {
-		return left.matchIndex - right.matchIndex;
-	}
-	const leftSymbol = left.entry.symbol;
-	const rightSymbol = right.entry.symbol;
-	if (leftSymbol.location.range.startLine !== rightSymbol.location.range.startLine) {
-		return leftSymbol.location.range.startLine - rightSymbol.location.range.startLine;
-	}
-	if (leftSymbol.location.range.startColumn !== rightSymbol.location.range.startColumn) {
-		return leftSymbol.location.range.startColumn - rightSymbol.location.range.startColumn;
-	}
-	return left.entry.displayName.localeCompare(right.entry.displayName);
 }

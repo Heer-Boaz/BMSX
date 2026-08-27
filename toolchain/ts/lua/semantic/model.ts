@@ -207,8 +207,8 @@ export class LuaSemanticWorkspaceSnapshot {
 	public readonly version: number;
 	public readonly files: readonly string[];
 	public readonly sources: readonly LuaSemanticWorkspaceSourceSnapshot[];
+	public readonly symbolResolver: WorkspaceSymbolResolver;
 	private readonly dataByPath: ReadonlyMap<string, FileSemanticData>;
-	private readonly symbolResolver: WorkspaceSymbolResolver;
 	private readonly globalDecls: readonly Decl[];
 
 	constructor(
@@ -241,50 +241,44 @@ export class LuaSemanticWorkspaceSnapshot {
 		return this.dataByPath.get(path);
 	}
 
-	public getDecl(symbolId: SymbolID): Decl {
-		return this.symbolResolver.getDeclaration(symbolId);
-	}
-
-	public resolveReference(ref: Ref): SymbolID | undefined {
-		return this.symbolResolver.resolveReference(ref);
-	}
-
-	public getReferences(symbolId: SymbolID): readonly Ref[] {
-		return this.symbolResolver.getReferences(symbolId);
-	}
-
 	public listGlobalDecls(): readonly Decl[] {
 		return this.globalDecls;
 	}
 
 	public symbolAt(path: string, row: number, column: number): { id: SymbolID; decl: Decl } {
+		const symbols = this.symbolsAt(path, row, column);
+		return symbols.length === 1 ? symbols[0] : null;
+	}
+
+	public symbolsAt(path: string, row: number, column: number): readonly { id: SymbolID; decl: Decl }[] {
 		const data = this.dataByPath.get(path);
 		if (!data) {
-			return null;
+			return [];
 		}
 		for (let declIndex = 0; declIndex < data.decls.length; declIndex += 1) {
 			const decl = data.decls[declIndex];
 			if (!sourcePositionInRange(row, column, decl.range)) {
 				continue;
 			}
-			return { id: decl.id, decl };
+			return [{ id: decl.id, decl }];
 		}
 		for (let refIndex = 0; refIndex < data.refs.length; refIndex += 1) {
 			const ref = data.refs[refIndex];
 			if (!sourcePositionInRange(row, column, ref.range)) {
 				continue;
 			}
-			const target = this.symbolResolver.resolveReference(ref);
-			if (!target) {
-				continue;
+			const targets = this.symbolResolver.resolveReferenceTargets(ref);
+			const symbols: { id: SymbolID; decl: Decl }[] = [];
+			for (let targetIndex = 0; targetIndex < targets.length; targetIndex += 1) {
+				const target = targets[targetIndex];
+				const decl = this.symbolResolver.getDeclaration(target);
+				if (decl) {
+					symbols.push({ id: target, decl });
+				}
 			}
-			const decl = this.symbolResolver.getDeclaration(target);
-			if (!decl) {
-				continue;
-			}
-			return { id: target, decl };
+			return symbols;
 		}
-		return null;
+		return [];
 	}
 }
 
@@ -3971,6 +3965,8 @@ export class LuaSemanticWorkspace {
 
 export function symbolPriority(kind: LuaSymbolEntry['kind']): number {
 	switch (kind) {
+		case 'module':
+			return 7;
 		case 'table_field':
 			return 6;
 		case 'function':
@@ -3989,6 +3985,8 @@ export function symbolPriority(kind: LuaSymbolEntry['kind']): number {
 
 export function symbolKindLabel(kind: LuaSymbolEntry['kind']): string {
 	switch (kind) {
+		case 'module':
+			return 'MODULE';
 		case 'function':
 			return 'FUNC';
 		case 'table_field':

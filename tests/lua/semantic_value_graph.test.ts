@@ -22,10 +22,13 @@ test('semantic workspace projects observed parameter members without merging arg
 	const workspace = new LuaSemanticWorkspace();
 	workspace.updateFile('main.lua', lines.join('\n'));
 	const snapshot = workspace.getSnapshot();
-	const common = snapshot.symbolAt('main.lua', 4, memberColumn(lines[3], 'common'));
+	const common = snapshot.symbolsAt('main.lua', 4, memberColumn(lines[3], 'common'));
 
-	assert.ok(common, 'member observed through a parameter');
-	assert.equal(common!.decl.range.start.line, 1);
+	assert.deepEqual(
+		common.map((symbol) => symbol.decl.range.start.line),
+		[1, 2],
+		'member observed through every parameter value alternative',
+	);
 	assert.equal(
 		snapshot.symbolAt('main.lua', 8, lines[7].indexOf('right_only') + 1),
 		null,
@@ -36,6 +39,63 @@ test('semantic workspace projects observed parameter members without merging arg
 		null,
 		'right does not acquire unrelated left members',
 	);
+});
+
+test('semantic workspace retains every same-name method definition across value alternatives', async () => {
+	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const lines = [
+		'local left<const> = {}',
+		'function left:run() end',
+		'local right<const> = {}',
+		'function right:run() end',
+		'local selected<const> = left or right',
+		'selected:run()',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('main.lua', lines.join('\n'));
+	const targets = workspace.getSnapshot().symbolsAt(
+		'main.lua',
+		6,
+		memberColumn(lines[5], 'run'),
+	);
+
+	assert.deepEqual(
+		targets.map((target) => target.decl.range.start.line),
+		[2, 4],
+	);
+});
+
+test('semantic workspace hides base methods overridden by a derived class', async () => {
+	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('base.lua', [
+		'local base<const> = {}',
+		'function base:run() end',
+		'return base',
+	].join('\n'));
+	workspace.updateFile('derived.lua', [
+		"local prefab<const> = require('cartlib/world/prefab')",
+		"local base<const> = require('base')",
+		'local derived<const> = {}',
+		'function derived:run() end',
+		"prefab.define({ def_id = 'derived', class = derived, base = base })",
+		'return derived',
+	].join('\n'));
+	const mainLines = [
+		"local world<const> = require('cartlib/world/world')",
+		"local object<const> = world:spawn('derived', {})",
+		'object:run()',
+	];
+	workspace.updateFile('main.lua', mainLines.join('\n'));
+	const targets = workspace.getSnapshot().symbolsAt(
+		'main.lua',
+		3,
+		memberColumn(mainLines[2], 'run'),
+	);
+
+	assert.equal(targets.length, 1);
+	assert.equal(targets[0].decl.file, 'derived.lua');
+	assert.equal(targets[0].decl.range.start.line, 4);
 });
 
 test('semantic workspace retains member writes through reused table elements', async () => {

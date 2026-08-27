@@ -24,7 +24,7 @@ export function updateCodeAreaPointerFeedback(
 ): void {
 	if (isCodeTabActive() && !snapshot.primaryPressed && !pointerSelecting && insideCodeArea && gotoModifierActive) {
 		const hover = resolvePointerTextPosition(snapshot.viewportX, snapshot.viewportY, bounds);
-			refreshGotoHoverHighlight(bridge, fault, runtime, hover.row, hover.column, activeContext);
+			refreshGotoHoverHighlight(bridge, hover.row, hover.column, activeContext);
 	} else if (!gotoModifierActive || !insideCodeArea || snapshot.primaryPressed || pointerSelecting || !isCodeTabActive()) {
 		clearGotoHoverHighlight();
 	}

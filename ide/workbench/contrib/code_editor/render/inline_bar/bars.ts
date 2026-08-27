@@ -26,6 +26,7 @@ import { renderInlineBarField, renderInlineBarFrame } from './common';
 import { problemsPanel } from '../../../problems/panel/controller';
 import { renameController } from '../../rename/controller';
 import { symbolSearchState } from '../../symbols/search/state';
+import { symbolSearchFieldLabel } from '../../symbols/shared';
 import { createResourceState, resourceSearchState } from '../../../resources/widget_state';
 import type { SymbolSearchResult } from '../../../../../common/models';
 
@@ -82,14 +83,14 @@ const drawResourceSearchResultRow = (match: InlineResourceSearchResult, rowTop: 
 
 const drawSymbolSearchResultRow = (match: SymbolSearchResult, rowTop: number): void => {
 	const mode = symbolSearchState.mode;
-	const compactMode = mode === 'references'
+	const compactMode = mode !== 'symbols'
 		? true
 		: (symbolSearchState.global && isSymbolSearchCompactMode());
 	let textX = constants.SYMBOL_SEARCH_RESULT_PADDING_X;
 	const kindText = match.entry.kindLabel;
 	const referenceColumn = match.entry.symbol.location.range.startColumn;
 	const lineValue = match.entry.line;
-	const lineText = mode === 'references'
+	const lineText = mode !== 'symbols'
 		? `:${lineValue}:${referenceColumn}`
 		: `:${lineValue}`;
 	const lineWidth = measureText(lineText);
@@ -234,12 +235,16 @@ export function renderSymbolSearchBar(): void {
 	const bounds = getSymbolSearchBarBounds();
 	if (!bounds) return;
 	renderInlineBarFrame(bounds.left, bounds.top, bounds.right, bounds.bottom, constants.COLOR_SYMBOL_SEARCH_BACKGROUND, constants.COLOR_SYMBOL_SEARCH_OUTLINE);
-	const mode = symbolSearchState.mode ?? 'symbols';
+	const mode = symbolSearchState.mode;
 	const active = !!symbolSearchState.active;
-	const placeholder = mode === 'references' ? 'FILTER REFERENCES' : 'TYPE TO FILTER';
+	const placeholder = mode === 'references'
+		? 'FILTER REFERENCES'
+		: mode === 'definitions'
+			? 'FILTER DEFINITIONS'
+			: 'TYPE TO FILTER';
 	renderInlineBarField(
 		symbolSearchState.field,
-		mode === 'references' ? 'REFS :' : symbolSearchState.global ? 'SYMBOL #:' : 'SYMBOL @:',
+		symbolSearchFieldLabel(),
 		4,
 		bounds.top + constants.SYMBOL_SEARCH_BAR_MARGIN_Y,
 		active,

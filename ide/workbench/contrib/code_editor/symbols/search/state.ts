@@ -8,7 +8,7 @@ export const symbolSearchState: SymbolSearchState = {
 	global: false,
 	mode: 'symbols',
 	catalog: [],
-	referenceCatalog: [],
+	locationCatalog: [],
 	catalogContext: null,
 	matches: [],
 	selectionIndex: -1,

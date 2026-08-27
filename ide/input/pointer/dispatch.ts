@@ -76,7 +76,6 @@ export function handleTextEditorPointerInput(
 	}
 	handleCodeAreaPointerInput(
 		editor,
-		sources,
 		luaTooling,
 		fault,
 		runtime,

@@ -15,6 +15,7 @@ export type LuaDefinitionLocation = {
 };
 
 export type LuaSymbolKind =
+	| 'module'
 	| 'variable'
 	| 'constant'
 	| 'function'

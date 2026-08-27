@@ -6,19 +6,17 @@ import { getSymbolSearchBarBounds, symbolSearchEntryHeight, symbolSearchVisibleR
 import type { PointerSnapshot } from '../../../common/models';
 import { closeLineJump } from '../../../workbench/contrib/code_editor/find/line_jump';
 import { applySymbolSearchSelection } from '../../../workbench/contrib/code_editor/symbols/search/index';
-import { ensureSymbolSearchSelectionVisible } from '../../../workbench/contrib/code_editor/symbols/shared';
+import { ensureSymbolSearchSelectionVisible, symbolSearchFieldLabel } from '../../../workbench/contrib/code_editor/symbols/shared';
 import { activateQuickInputField, finishQuickInputPointer, quickInputTextLeft } from '../pointer/common';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { symbolSearchState } from '../../../workbench/contrib/code_editor/symbols/search/state';
 import type { CartEditor } from '../../../cart_editor';
-import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { MicrotaskQueue } from '../../../common/microtask_queue';
 
 export function handleSymbolSearchPointer(
 	microtasks: MicrotaskQueue,
 	resourcePanel: ResourcePanelController,
 	editor: CartEditor,
-	sources: RuntimeSourceState,
 	snapshot: PointerSnapshot,
 	justPressed: boolean,
 ): boolean {
@@ -43,7 +41,7 @@ export function handleSymbolSearchPointer(
 			symbolSearchState.active = true;
 			activateQuickInputField(resourcePanel);
 		}
-		const label = symbolSearchState.global ? 'SYMBOL #:' : 'SYMBOL @:';
+		const label = symbolSearchFieldLabel();
 		processInlineFieldPointer(symbolSearchState.field, quickInputTextLeft(label), snapshot.viewportX, justPressed, snapshot.primaryPressed);
 		finishQuickInputPointer(snapshot);
 		return true;
@@ -55,7 +53,7 @@ export function handleSymbolSearchPointer(
 			symbolSearchState.selectionIndex = hoverIndex;
 			ensureSymbolSearchSelectionVisible();
 		}
-		applySymbolSearchSelection(microtasks, editor, sources, hoverIndex);
+		applySymbolSearchSelection(microtasks, editor, hoverIndex);
 		finishQuickInputPointer(snapshot);
 		return true;
 	}

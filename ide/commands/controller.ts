@@ -75,10 +75,7 @@ export class IdeCommandController {
 		if (isEditorSymbolNavigationCommand(command)) {
 			executeEditorSymbolNavigationCommand(
 				this.editor,
-				this.sources,
 				this.luaTooling,
-				this.fault,
-				this.runtime,
 				command,
 			);
 			return;

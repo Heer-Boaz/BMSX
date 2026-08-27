@@ -75,6 +75,9 @@ type MemberDeclaration = {
 	order: number;
 };
 
+const EMPTY_MEMBER_DECLARATIONS: readonly MemberDeclaration[] = [];
+const EMPTY_MEMBER_IDS: readonly SymbolID[] = [];
+
 export function declarationValueSource(declId: SymbolID): SemanticValueSource {
 	return {
 		root: { kind: 'declaration', declId },
@@ -285,7 +288,8 @@ export class WorkspaceValueGraph {
 	private readonly identityValues: Map<SemanticValueID, SemanticValueID[]> = new Map();
 	private readonly identityParents: SemanticValueID[] = [];
 	private readonly identitySizes: number[] = [];
-	private readonly memberDeclarationsByIdentityRoot: Map<SemanticValueID, MemberDeclaration> = new Map();
+	private readonly memberDeclarationsByIdentityRoot: Map<SemanticValueID, MemberDeclaration[]> = new Map();
+	private readonly memberResolutionCache: Map<SemanticValueID, Map<string, readonly SymbolID[]>> = new Map();
 	private readonly elementsByIdentityRoot: Map<SemanticValueID, SemanticValueID> = new Map();
 	private readonly projectionBases: Map<SemanticValueID, SemanticValueID[]> = new Map();
 	private readonly valueBases: Map<SemanticValueID, SemanticValueID[]> = new Map();
@@ -333,30 +337,127 @@ export class WorkspaceValueGraph {
 		return source ? this.resolveSource(source, false) : undefined;
 	}
 
-	public findMember(owner: SemanticValueID, name: string): SymbolID | undefined {
-		const generation = this.traversalGeneration + 1;
-		this.traversalGeneration = generation;
-		const stack = this.traversalStack;
-		stack.length = 0;
-		stack.push(owner);
-		while (stack.length > 0) {
-			const value = stack.pop()!;
-			if (this.traversalMarks[value] === generation) {
+	public findMembers(owner: SemanticValueID, name: string): readonly SymbolID[] {
+		let ownerCache = this.memberResolutionCache.get(owner);
+		if (!ownerCache) {
+			ownerCache = new Map();
+			this.memberResolutionCache.set(owner, ownerCache);
+		}
+		const cached = ownerCache.get(name);
+		if (cached) {
+			return cached;
+		}
+
+		const declarations: MemberDeclaration[] = [];
+		this.collectMemberDeclarations(owner, name, new Set(), declarations);
+		if (declarations.length === 0) {
+			ownerCache.set(name, EMPTY_MEMBER_IDS);
+			return EMPTY_MEMBER_IDS;
+		}
+		declarations.sort((left, right) => left.order - right.order);
+		const ids = new Array<SymbolID>(declarations.length);
+		for (let index = 0; index < declarations.length; index += 1) {
+			ids[index] = declarations[index].id;
+		}
+		ownerCache.set(name, ids);
+		return ids;
+	}
+
+	// A semantic value can denote several runtime alternatives. Direct members
+	// shadow inherited members on each alternative, while value-flow and
+	// parameter projections retain every valid definition. This mirrors Lua's
+	// table lookup instead of selecting whichever declaration was materialized
+	// first by the workspace.
+	private collectMemberDeclarations(
+		owner: SemanticValueID,
+		name: string,
+		visited: Set<SemanticValueID>,
+		out: MemberDeclaration[],
+	): void {
+		const identityValues: SemanticValueID[] = [];
+		const identityStack: SemanticValueID[] = [owner];
+		while (identityStack.length > 0) {
+			const value = identityStack.pop()!;
+			if (visited.has(value)) {
 				continue;
 			}
-			this.traversalMarks[value] = generation;
-			const member = this.members.get(value)?.get(name);
-			if (member) {
-				const declaration = this.memberDeclarationsByIdentityRoot.get(
-					this.findIdentityRoot(member.value),
-				);
-				if (declaration) {
-					return declaration.id;
+			visited.add(value);
+			identityValues.push(value);
+			const aliases = this.identityValues.get(value);
+			if (aliases) {
+				for (let index = aliases.length - 1; index >= 0; index -= 1) {
+					identityStack.push(aliases[index]);
 				}
 			}
-			this.pushTraversalBases(stack, value);
 		}
-		return undefined;
+
+		const directStart = out.length;
+		for (let index = 0; index < identityValues.length; index += 1) {
+			const member = this.members.get(identityValues[index])?.get(name);
+			if (member) {
+				this.appendMemberDeclarations(member.value, out);
+			}
+		}
+		if (out.length !== directStart) {
+			return;
+		}
+
+		const alternativeStart = out.length;
+		for (let index = 0; index < identityValues.length; index += 1) {
+			const value = identityValues[index];
+			this.collectMemberDeclarationsFromBases(this.valueBases.get(value), name, visited, out);
+			this.collectMemberDeclarationsFromBases(this.projectionBases.get(value), name, visited, out);
+		}
+		if (out.length !== alternativeStart) {
+			return;
+		}
+
+		const prototypeStart = out.length;
+		for (let index = 0; index < identityValues.length; index += 1) {
+			const prototype = this.prototypeBases.get(identityValues[index]);
+			if (prototype) {
+				this.collectMemberDeclarations(prototype, name, visited, out);
+			}
+		}
+		if (out.length !== prototypeStart) {
+			return;
+		}
+
+		for (let index = 0; index < identityValues.length; index += 1) {
+			this.collectMemberDeclarationsFromBases(this.instanceBases.get(identityValues[index]), name, visited, out);
+		}
+	}
+
+	private collectMemberDeclarationsFromBases(
+		bases: readonly SemanticValueID[] | undefined,
+		name: string,
+		visited: Set<SemanticValueID>,
+		out: MemberDeclaration[],
+	): void {
+		if (!bases) {
+			return;
+		}
+		for (let index = 0; index < bases.length; index += 1) {
+			this.collectMemberDeclarations(bases[index], name, visited, out);
+		}
+	}
+
+	private appendMemberDeclarations(value: SemanticValueID, out: MemberDeclaration[]): void {
+		const declarations = this.memberDeclarationsByIdentityRoot.get(this.findIdentityRoot(value))
+			?? EMPTY_MEMBER_DECLARATIONS;
+		for (let index = 0; index < declarations.length; index += 1) {
+			const declaration = declarations[index];
+			let duplicate = false;
+			for (let resultIndex = 0; resultIndex < out.length; resultIndex += 1) {
+				if (out[resultIndex].id === declaration.id) {
+					duplicate = true;
+					break;
+				}
+			}
+			if (!duplicate) {
+				out.push(declaration);
+			}
+		}
 	}
 
 	private resolveSource(source: SemanticValueSource, createMembers: boolean): SemanticValueID | undefined {
@@ -690,15 +791,19 @@ export class WorkspaceValueGraph {
 		this.identitySizes[leftRoot] += this.identitySizes[rightRoot];
 		const leftElement = this.elementsByIdentityRoot.get(leftRoot);
 		const rightElement = this.elementsByIdentityRoot.get(rightRoot);
-		const leftMemberDeclaration = this.memberDeclarationsByIdentityRoot.get(leftRoot);
-		const rightMemberDeclaration = this.memberDeclarationsByIdentityRoot.get(rightRoot);
+		const leftMemberDeclarations = this.memberDeclarationsByIdentityRoot.get(leftRoot);
+		const rightMemberDeclarations = this.memberDeclarationsByIdentityRoot.get(rightRoot);
 		this.elementsByIdentityRoot.delete(rightRoot);
 		this.memberDeclarationsByIdentityRoot.delete(rightRoot);
-		if (!leftMemberDeclaration
-			|| (rightMemberDeclaration && rightMemberDeclaration.order < leftMemberDeclaration.order)) {
-			if (rightMemberDeclaration) {
-				this.memberDeclarationsByIdentityRoot.set(leftRoot, rightMemberDeclaration);
+		if (!leftMemberDeclarations) {
+			if (rightMemberDeclarations) {
+				this.memberDeclarationsByIdentityRoot.set(leftRoot, rightMemberDeclarations);
 			}
+		} else if (rightMemberDeclarations) {
+			this.memberDeclarationsByIdentityRoot.set(
+				leftRoot,
+				this.mergeMemberDeclarations(leftMemberDeclarations, rightMemberDeclarations),
+			);
 		}
 		if (!leftElement && rightElement) {
 			this.elementsByIdentityRoot.set(leftRoot, rightElement);
@@ -802,15 +907,40 @@ export class WorkspaceValueGraph {
 
 	private retainMemberDeclaration(value: SemanticValueID, id: SymbolID): void {
 		const root = this.findIdentityRoot(value);
-		const candidate = {
-			id,
-			order: this.nextMemberDeclarationOrder,
-		};
-		this.nextMemberDeclarationOrder += 1;
-		const current = this.memberDeclarationsByIdentityRoot.get(root);
-		if (!current || candidate.order < current.order) {
-			this.memberDeclarationsByIdentityRoot.set(root, candidate);
+		let declarations = this.memberDeclarationsByIdentityRoot.get(root);
+		if (!declarations) {
+			declarations = [];
+			this.memberDeclarationsByIdentityRoot.set(root, declarations);
 		}
+		for (let index = 0; index < declarations.length; index += 1) {
+			if (declarations[index].id === id) {
+				return;
+			}
+		}
+		declarations.push({ id, order: this.nextMemberDeclarationOrder });
+		this.nextMemberDeclarationOrder += 1;
+	}
+
+	private mergeMemberDeclarations(
+		left: readonly MemberDeclaration[],
+		right: readonly MemberDeclaration[],
+	): MemberDeclaration[] {
+		const merged = left.slice();
+		for (let rightIndex = 0; rightIndex < right.length; rightIndex += 1) {
+			const candidate = right[rightIndex];
+			let duplicate = false;
+			for (let leftIndex = 0; leftIndex < merged.length; leftIndex += 1) {
+				if (merged[leftIndex].id === candidate.id) {
+					duplicate = true;
+					break;
+				}
+			}
+			if (!duplicate) {
+				merged.push(candidate);
+			}
+		}
+		merged.sort((a, b) => a.order - b.order);
+		return merged;
 	}
 
 	private materializeFunctionReturns(entries: readonly FunctionReturnValueEntry[]): void {

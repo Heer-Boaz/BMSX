@@ -3,15 +3,12 @@ import { showEditorMessage } from '../../../../../common/feedback_state';
 import type { ReferenceMatchInfo } from '../../../../../editor/contrib/references/state';
 import type { SymbolCatalogEntry } from '../../../../../common/models';
 import type { CodeTabContext } from '../../../../ui/code_tab/model';
-import { symbolSearchPageSize } from '../../../../common/layout';
 import { getLinesSnapshot, getTextSnapshot } from '../../../../../editor/text/source_text';
 import { editorDocumentState } from '../../../../../editor/editing/document_state';
 import { getCodeTabContexts } from '../../../../ui/code_tab/contexts';
-import { symbolSearchState } from '../../symbols/search/state';
 import { referenceState } from '../../../../../editor/contrib/references/state';
 import {
 	buildReferenceCatalogForExpression as buildProjectReferenceCatalog,
-	filterReferenceCatalog,
 } from '../../../../../editor/contrib/references/sources';
 import { getOrCreateSemanticWorkspace } from '../../../../../editor/contrib/intellisense/semantic/workspace/state';
 import type { RuntimeLuaTooling } from '../../../../../runtime/lua_tooling';
@@ -29,19 +26,6 @@ export function buildReferenceSearchCatalog(bridge: RuntimeLuaTooling, info: Ref
 		activeContext: context,
 		codeTabContexts: getCodeTabContexts(),
 	});
-}
-
-export function updateReferenceSearchMatches(): void {
-	const { matches, selectionIndex, displayOffset } = filterReferenceCatalog({
-		catalog: symbolSearchState.referenceCatalog,
-		query: symbolSearchState.query,
-		activeCatalogIndex: referenceState.getActiveIndex(),
-		pageSize: symbolSearchPageSize(),
-	});
-	symbolSearchState.matches = matches;
-	symbolSearchState.selectionIndex = selectionIndex;
-	symbolSearchState.displayOffset = displayOffset;
-	symbolSearchState.hoverIndex = -1;
 }
 
 export function showReferenceSearchStatusMessage(): void {

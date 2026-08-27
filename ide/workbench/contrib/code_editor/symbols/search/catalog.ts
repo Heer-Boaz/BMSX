@@ -1,16 +1,29 @@
 import { advanceQuickInputSelection } from '../../../../../editor/navigation/quick_input_navigation';
-import { updateReferenceSearchMatches } from '../../references/search/catalog';
 import { resetBlink } from '../../../../../editor/render/caret';
 import { symbolPriority } from '../../../../../../toolchain/ts/lua/semantic/model';
 import { refreshSymbolCatalog } from '../catalog';
+import { filterLocationCatalog } from './location_catalog';
+import { referenceState } from '../../../../../editor/contrib/references/state';
 import type { SymbolSearchResult } from '../../../../../common/models';
 import { ensureSymbolSearchSelectionVisible } from '../shared';
 import { symbolSearchState } from './state';
+import { symbolSearchPageSize } from '../../../../common/layout';
 import type { RuntimeLuaTooling } from '../../../../../runtime/lua_tooling';
 
 export function updateSymbolSearchMatches(bridge: RuntimeLuaTooling): void {
-	if (symbolSearchState.mode === 'references') {
-		updateReferenceSearchMatches();
+	if (symbolSearchState.mode !== 'symbols') {
+		const { matches, selectionIndex, displayOffset } = filterLocationCatalog({
+			catalog: symbolSearchState.locationCatalog,
+			query: symbolSearchState.query,
+			activeCatalogIndex: symbolSearchState.mode === 'references'
+				? referenceState.getActiveIndex()
+				: 0,
+			pageSize: symbolSearchPageSize(),
+		});
+		symbolSearchState.matches = matches;
+		symbolSearchState.selectionIndex = selectionIndex;
+		symbolSearchState.displayOffset = displayOffset;
+		symbolSearchState.hoverIndex = -1;
 		return;
 	}
 	refreshSymbolCatalog(bridge, false);

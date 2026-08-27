@@ -8,7 +8,6 @@ import { consumeIdeKey, isKeyJustPressed, isShiftDown, shouldRepeatKeyFromPlayer
 import { symbolSearchPageSize } from '../../../workbench/common/layout';
 import { symbolSearchState } from '../../../workbench/contrib/code_editor/symbols/search/state';
 import type { CartEditor } from '../../../cart_editor';
-import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 import type { Clipboard } from '../../../common/clipboard';
@@ -19,7 +18,6 @@ export function handleSymbolSearchInput(
 	clipboard: Clipboard,
 	microtasks: MicrotaskQueue,
 	editor: CartEditor,
-	sources: RuntimeSourceState,
 	bridge: RuntimeLuaTooling,
 ): void {
 	const shiftDown = isShiftDown(playerInput);
@@ -30,7 +28,7 @@ export function handleSymbolSearchInput(
 			return;
 		}
 		if (symbolSearchState.selectionIndex >= 0) {
-			applySymbolSearchSelection(microtasks, editor, sources, symbolSearchState.selectionIndex);
+			applySymbolSearchSelection(microtasks, editor, symbolSearchState.selectionIndex);
 		} else {
 			showEditorMessage('No symbol selected', constants.COLOR_STATUS_WARNING, 1.5);
 		}

@@ -4,6 +4,7 @@ import { createEditorSemanticFrontend } from '../intellisense/frontend';
 import type { LuaSemanticWorkspaceSnapshot, SymbolID } from '../../../../toolchain/ts/lua/semantic/model';
 import { computeSourceLabel } from '../../../common/paths';
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
+import { definitionLocationFromSourceRange } from '../../navigation/definition_location';
 
 export type CallHierarchyViewNodeKind = 'root' | 'caller' | 'call';
 
@@ -28,7 +29,7 @@ export function buildIncomingCallHierarchyView(bridge: RuntimeLuaTooling, option
 	allowedPaths?: ReadonlySet<string>;
 }): CallHierarchyView {
 	const frontend = createEditorSemanticFrontend(bridge, options.snapshot);
-	const rootDecl = frontend.snapshot.getDecl(options.rootSymbolId);
+	const rootDecl = frontend.snapshot.symbolResolver.getDeclaration(options.rootSymbolId);
 	if (!rootDecl) {
 		return null;
 	}
@@ -39,7 +40,7 @@ export function buildIncomingCallHierarchyView(bridge: RuntimeLuaTooling, option
 	if (nodes.length === 0) {
 		return null;
 	}
-	const rootLocation = toDefinitionLocation(rootDecl.range);
+	const rootLocation = definitionLocationFromSourceRange(rootDecl.range);
 	const children = new Array<CallHierarchyViewNode>(nodes.length);
 	for (let index = 0; index < nodes.length; index += 1) {
 		children[index] = convertCallHierarchyNode(nodes[index]);
@@ -67,7 +68,7 @@ function convertCallHierarchyNode(node: LuaIncomingCallHierarchyNode): CallHiera
 			id: buildCallNodeId(call),
 			kind: 'call',
 			label: `${call.name} (${computeSourceLabel(call.file)}:${call.range.start.line})`,
-			location: toDefinitionLocation(call.range),
+			location: definitionLocationFromSourceRange(call.range),
 			children: [],
 		};
 		childIndex += 1;
@@ -76,7 +77,7 @@ function convertCallHierarchyNode(node: LuaIncomingCallHierarchyNode): CallHiera
 		children[childIndex] = convertCallHierarchyNode(node.children[index]);
 		childIndex += 1;
 	}
-	const callerLocation = toDefinitionLocation(node.caller.range);
+	const callerLocation = definitionLocationFromSourceRange(node.caller.range);
 	return {
 		id: node.caller.key,
 		kind: 'caller',
@@ -92,16 +93,4 @@ function buildLocationLabel(location: LuaDefinitionLocation): string {
 
 function buildCallNodeId(call: { file: string; range: { start: { line: number; column: number }; end: { line: number; column: number } } }): string {
 	return `call:${call.file}:${call.range.start.line}:${call.range.start.column}:${call.range.end.line}:${call.range.end.column}`;
-}
-
-function toDefinitionLocation(range: { path: string; start: { line: number; column: number }; end: { line: number; column: number } }): LuaDefinitionLocation {
-	return {
-		path: range.path,
-		range: {
-			startLine: range.start.line,
-			startColumn: range.start.column,
-			endLine: range.end.line,
-			endColumn: range.end.column,
-		},
-	};
 }

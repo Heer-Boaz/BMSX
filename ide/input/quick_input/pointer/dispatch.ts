@@ -23,7 +23,7 @@ export function handleQuickInputPointer(
 	if (handleResourceSearchPointer(microtasks, editor, resourcePanel, snapshot, justPressed)) {
 		return true;
 	}
-	if (handleSymbolSearchPointer(microtasks, resourcePanel, editor, sources, snapshot, justPressed)) {
+	if (handleSymbolSearchPointer(microtasks, resourcePanel, editor, snapshot, justPressed)) {
 		return true;
 	}
 	if (handleRenamePointer(resourcePanel, snapshot, justPressed)) {

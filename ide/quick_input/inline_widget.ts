@@ -58,7 +58,7 @@ export function handleInlineWidgetInput(
 		return true;
 	}
 	if (symbolSearchState.active) {
-		handleSymbolSearchInput(playerInput, clipboard, microtasks, editor, sources, luaTooling);
+		handleSymbolSearchInput(playerInput, clipboard, microtasks, editor, luaTooling);
 		return true;
 	}
 	if (lineJumpState.active) {

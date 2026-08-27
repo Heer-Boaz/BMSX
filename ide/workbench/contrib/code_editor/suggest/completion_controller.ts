@@ -943,6 +943,7 @@ export class CompletionController {
 
 	private formatSymbolKind(kind: LuaSymbolEntry['kind']): string {
 		switch (kind) {
+			case 'module': return 'module';
 			case 'function': return 'function';
 			case 'variable': return 'variable';
 			case 'constant': return 'constant';

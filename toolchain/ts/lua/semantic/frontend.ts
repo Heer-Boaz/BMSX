@@ -46,11 +46,17 @@ export type LuaBoundReference = {
 	isImplicitGlobal: boolean;
 };
 
-export type LuaSemanticNavigationTarget = {
-	kind: 'declaration' | 'require_module';
-	range: LuaSourceRange;
-	moduleName?: string;
-};
+export type LuaSemanticNavigationTarget =
+	| {
+		kind: 'declaration';
+		declaration: Decl;
+		range: LuaSourceRange;
+	}
+	| {
+		kind: 'require_module';
+		range: LuaSourceRange;
+		moduleName: string;
+	};
 
 export type LuaSemanticResolution = {
 	id: SymbolID;
@@ -75,7 +81,7 @@ export type LuaSemanticFrontendFile = {
 	diagnostics: readonly LuaStaticDiagnostic[];
 	getDeclaration(range: LuaSourceRange): Decl;
 	getReference(range: LuaSourceRange): LuaBoundReference;
-	getNavigationTargetAt(line: number, column: number): LuaSemanticNavigationTarget | null;
+	getNavigationTargetsAt(line: number, column: number): readonly LuaSemanticNavigationTarget[];
 	findFirstReferenceByStartRange(
 		start: LuaSourceRange['start'],
 		endExclusive: LuaSourceRange['start'],
@@ -199,7 +205,7 @@ class SnapshotSemanticFrontend implements LuaSemanticFrontend {
 				return {
 					id: decl.id,
 					decl,
-					references: this.snapshot.getReferences(decl.id),
+					references: this.snapshot.symbolResolver.getReferences(decl.id),
 				};
 			}
 		}
@@ -208,18 +214,18 @@ class SnapshotSemanticFrontend implements LuaSemanticFrontend {
 			if (!sourcePositionInRange(line, column, ref.range)) {
 				continue;
 			}
-			const target = this.snapshot.resolveReference(ref);
+			const target = this.snapshot.symbolResolver.resolveReference(ref);
 			if (!target) {
 				continue;
 			}
-			const decl = this.snapshot.getDecl(target);
+			const decl = this.snapshot.symbolResolver.getDeclaration(target);
 			if (!decl) {
 				continue;
 			}
 			return {
 				id: target,
 				decl,
-				references: this.snapshot.getReferences(target),
+				references: this.snapshot.symbolResolver.getReferences(target),
 			};
 		}
 		return null;
@@ -232,7 +238,7 @@ class SnapshotSemanticFrontend implements LuaSemanticFrontend {
 			allowedPaths?: ReadonlySet<string>;
 		},
 	): readonly LuaIncomingCallHierarchyNode[] {
-		const rootDecl = this.snapshot.getDecl(rootSymbolId);
+		const rootDecl = this.snapshot.symbolResolver.getDeclaration(rootSymbolId);
 		if (!rootDecl) {
 			return [];
 		}
@@ -305,7 +311,7 @@ function collectIncomingCallerGroups(options: {
 	allowedPaths?: ReadonlySet<string>;
 }): IncomingCallerGroup[] {
 	const grouped = new Map<string, IncomingCallerGroup>();
-	const references = options.snapshot.getReferences(options.symbolId);
+	const references = options.snapshot.symbolResolver.getReferences(options.symbolId);
 	for (let index = 0; index < references.length; index += 1) {
 		const reference = references[index];
 		if (reference.isWrite || !reference.file) {
@@ -376,7 +382,7 @@ function getCallHierarchyIndex(
 		const callerDecl = resolveCallerDeclaration(functionDecls, call.range.start.line, call.range.start.column);
 		const caller = callerDecl ? buildDeclCallerScope(callerDecl) : buildChunkCallerScope(path);
 		if (caller.symbolId) {
-			const current = snapshot.getDecl(caller.symbolId);
+			const current = snapshot.symbolResolver.getDeclaration(caller.symbolId);
 			if (current) {
 				index.callerByPosition.set(positionKey, buildDeclCallerScope(current));
 				continue;
@@ -544,14 +550,15 @@ function createBoundFile(
 				?? referencesByStart.get(sourceRangeStartKey(range));
 			return ref ? bindReference(ref) : undefined;
 		},
-		getNavigationTargetAt(line: number, column: number): LuaSemanticNavigationTarget | null {
+		getNavigationTargetsAt(line: number, column: number): readonly LuaSemanticNavigationTarget[] {
 			for (let index = 0; index < decls.length; index += 1) {
 				const decl = decls[index];
 				if (sourcePositionInRange(line, column, decl.range)) {
-					return {
+					return [{
 						kind: 'declaration',
+						declaration: decl,
 						range: decl.range,
-					};
+					}];
 				}
 			}
 			for (let index = 0; index < refsByStart.length; index += 1) {
@@ -559,27 +566,32 @@ function createBoundFile(
 				if (!sourcePositionInRange(line, column, ref.range)) {
 					continue;
 				}
-				const reference = bindReference(ref);
-				if (!reference.decl) {
-					return null;
+				const targetIds = snapshot.symbolResolver.resolveReferenceTargets(ref);
+				const targets: LuaSemanticNavigationTarget[] = [];
+				for (let targetIndex = 0; targetIndex < targetIds.length; targetIndex += 1) {
+					const declaration = snapshot.symbolResolver.getDeclaration(targetIds[targetIndex]);
+					if (declaration) {
+						targets.push({
+							kind: 'declaration',
+							declaration,
+							range: declaration.range,
+						});
+					}
 				}
-				return {
-					kind: 'declaration',
-					range: reference.decl.range,
-				};
+				return targets;
 			}
 			for (let index = 0; index < requireTargetsByStart.length; index += 1) {
 				const target = requireTargetsByStart[index];
 				if (!sourcePositionInRange(line, column, target.range)) {
 					continue;
 				}
-				return {
+				return [{
 					kind: 'require_module',
 					range: target.target,
 					moduleName: target.moduleName,
-				};
+				}];
 			}
-			return null;
+			return [];
 		},
 		findFirstReferenceByStartRange(
 			start: LuaSourceRange['start'],
@@ -699,8 +711,8 @@ function classifyReference(
 	snapshot: LuaSemanticWorkspaceSnapshot,
 	knownGlobalNames: ReadonlySet<string>,
 ): LuaBoundReference {
-	const target = snapshot.resolveReference(ref);
-	const decl = target ? snapshot.getDecl(target) : null;
+	const target = snapshot.symbolResolver.resolveReference(ref);
+	const decl = target ? snapshot.symbolResolver.getDeclaration(target) : null;
 	if (decl && isReferenceInsideDeclScope(ref, decl)) {
 		return {
 			kind: decl.isGlobal ? 'global' : 'lexical',

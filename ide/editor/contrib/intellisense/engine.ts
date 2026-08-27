@@ -42,9 +42,7 @@ import { resetBlink } from '../../render/caret';
 import { resolvePointerTextPosition } from '../../ui/view/view';
 import type { CodeAreaBounds } from '../../ui/view/view';
 import * as constants from '../../../common/constants';
-import { buildEditorSemanticFrontend } from './frontend';
 import { editorRuntimeState } from '../../common/runtime_state';
-import { showEditorMessage } from '../../../common/feedback_state';
 import { clearEditorPointerSelectionState } from '../../../input/pointer/state';
 import { parseLuaIdentifierChain } from '../../../language/lua/identifier_chain';
 import { buildLuaSemanticModel, LuaSemanticModel, type FileSemanticData } from '../../../../toolchain/ts/lua/semantic/model';
@@ -74,6 +72,8 @@ import { editorDocumentState } from '../../editing/document_state';
 import { clearSingleCursorSelection } from '../../editing/cursor/state';
 import { editorViewState } from '../../ui/view/state';
 import { referenceState } from '../references/state';
+import { queryDefinitionsAt } from '../definitions/query';
+import { definitionLocationFromSourceRange } from '../../navigation/definition_location';
 export const PREVIEW_MAX_ENTRIES = 12;
 export const PREVIEW_MAX_DEPTH = 2;
 
@@ -607,22 +607,6 @@ export function requestSemanticRefresh(): void {
 			return;
 	}
 }
-export function resolveSemanticDefinitionLocation(
-	bridge: RuntimeLuaTooling,
-	context: EditorDocumentContext,
-	usageRow: number,
-	usageColumn: number,
-): LuaDefinitionLocation {
-	const frontend = buildEditorSemanticFrontend(bridge, context.resource, editorDocumentState.buffer, editorDocumentState.textVersion);
-	const hoverPath = context.resource.path;
-	const file = frontend.getFile(hoverPath);
-	const target = file.getNavigationTargetAt(usageRow, usageColumn);
-	if (!target) {
-		return null;
-	}
-	return buildDefinitionLocationFromRange(target.range);
-}
-
 export function findDefinitionAtPosition(
 	definitions: readonly LuaDefinitionInfo[],
 	row: number,
@@ -977,8 +961,6 @@ export function resolveContextMenuToken(row: number, column: number, path: strin
 
 export function refreshGotoHoverHighlight(
 	bridge: RuntimeLuaTooling,
-	fault: RuntimeFaultState,
-	runtime: Runtime,
 	row: number,
 	column: number,
 	context: EditorDocumentContext,
@@ -991,9 +973,9 @@ export function refreshGotoHoverHighlight(
 			return;
 	}
 	const path = context.resource.path;
-	const semanticDefinition = resolveSemanticDefinitionLocation(bridge, context, row + 1, column + 1);
+	const definitions = queryDefinitionsAt(bridge, context, row, column);
 	const token = extractHoverExpression(row, column, path);
-	if (!semanticDefinition && !token) {
+	if (definitions.length === 0 && !token) {
 		clearGotoHoverHighlight();
 		return;
 	}
@@ -1008,21 +990,7 @@ export function refreshGotoHoverHighlight(
 		&& existing.expression === highlightExpression) {
 		return;
 	}
-	let definition = semanticDefinition;
-	if (!definition) {
-		const inspection = inspectLuaExpression(
-			bridge,
-			fault,
-			runtime,
-			token.expression,
-			path,
-			row + 1,
-			column + 1,
-			context,
-		);
-		definition = inspection?.definition;
-	}
-	if (!definition) {
+	if (definitions.length === 0) {
 		clearGotoHoverHighlight();
 		return;
 	}
@@ -1040,48 +1008,6 @@ export function clearGotoHoverHighlight(): void {
 
 export function clearReferenceHighlights(): void {
 	referenceState.clear();
-}
-
-export function resolveDefinitionAt(
-	bridge: RuntimeLuaTooling,
-	fault: RuntimeFaultState,
-	runtime: Runtime,
-	context: EditorDocumentContext,
-	row: number,
-	column: number,
-): LuaDefinitionLocation {
-	switch (context.mode) {
-		case 'lua':
-			break;
-		case 'aem':
-			return null;
-	}
-	let definition = resolveSemanticDefinitionLocation(bridge, context, row + 1, column + 1);
-	if (definition) {
-		return definition;
-	}
-	const path = context.resource.path;
-	const token = extractHoverExpression(row, column, path);
-	if (!token) {
-		showEditorMessage('Definition not found', constants.COLOR_STATUS_WARNING, 1.6);
-		return null;
-	}
-	const inspection = inspectLuaExpression(
-		bridge,
-		fault,
-		runtime,
-		token.expression,
-		path,
-		row + 1,
-		column + 1,
-		context,
-	);
-	definition = inspection?.definition;
-	if (!definition) {
-		showEditorMessage(`Definition not found for ${token.expression}`, constants.COLOR_STATUS_WARNING, 1.8);
-		return null;
-	}
-	return definition;
 }
 
 export function inspectLuaExpression(bridge: RuntimeLuaTooling, fault: RuntimeFaultState, runtime: Runtime, expression: string, path: string, row: number, column: number, activeContext: EditorDocumentContext): LuaHoverResult {
@@ -1211,22 +1137,9 @@ export function resolveLuaDefinitionMetadata(bridge: RuntimeLuaTooling, range: L
 			end: range.end,
 		};
 	}
-	return buildDefinitionLocationFromRange(range);
+	return definitionLocationFromSourceRange(range);
 }
 
-export function buildDefinitionLocationFromRange(range: LuaSourceRange): LuaDefinitionLocation {
-	const normalizedChunk = range.path;
-	const location: LuaDefinitionLocation = {
-		path: normalizedChunk,
-		range: {
-			startLine: range.start.line,
-			startColumn: range.start.column,
-			endLine: range.end.line,
-			endColumn: range.end.column,
-		},
-	};
-	return location;
-}
 
 export function listLuaSymbols(bridge: RuntimeLuaTooling, domain: ResourceDomain, path: string): LuaSymbolEntry[] {
 	const bundle = getStaticDefinitions(bridge, domain, path);
@@ -1236,7 +1149,7 @@ export function listLuaSymbols(bridge: RuntimeLuaTooling, domain: ResourceDomain
 	const { definitions } = bundle;
 	const entries = new Map<string, { info: LuaDefinitionInfo; location: LuaDefinitionLocation; priority: number }>();
 	for (const info of definitions) {
-		const location = buildDefinitionLocationFromRange(info.definition);
+		const location = definitionLocationFromSourceRange(info.definition);
 		const keyPath = definitionSymbolPath(info);
 		const key = `${location.path}::${keyPath}@${location.range.startLine}:${location.range.startColumn}`;
 		const priority = definitionPriorityForSymbols(info.kind);
@@ -1316,7 +1229,7 @@ export function listGlobalLuaSymbols(bridge: RuntimeLuaTooling, domain: Resource
 			name: decl.name,
 			path,
 			kind: semanticSymbolKindToLuaSymbolKind(decl.kind),
-			location: buildDefinitionLocationFromRange(decl.range),
+			location: definitionLocationFromSourceRange(decl.range),
 		});
 	}
 	entries.sort((a, b) => {
@@ -1360,7 +1273,7 @@ export function findStaticDefinitionLocation(bridge: RuntimeLuaTooling, chain: R
 			.getSnapshot()
 			.symbolAt(preferredChunk, usageRow, usageColumn);
 		if (workspaceSymbol) {
-			return buildDefinitionLocationFromRange({
+			return definitionLocationFromSourceRange({
 				path: workspaceSymbol.decl.file,
 				start: workspaceSymbol.decl.range.start,
 				end: workspaceSymbol.decl.range.end,
@@ -1394,7 +1307,7 @@ export function findStaticDefinitionLocation(bridge: RuntimeLuaTooling, chain: R
 		}
 		const semanticDefinition = model.lookupIdentifier(usageRow, usageColumn, chain);
 		if (semanticDefinition) {
-			return buildDefinitionLocationFromRange(semanticDefinition.definition);
+			return definitionLocationFromSourceRange(semanticDefinition.definition);
 		}
 	}
 	const identifier = chain[chain.length - 1];
@@ -1449,7 +1362,7 @@ export function findStaticDefinitionLocation(bridge: RuntimeLuaTooling, chain: R
 	if (!chosen) {
 		return null;
 	}
-	return buildDefinitionLocationFromRange(chosen.definition);
+	return definitionLocationFromSourceRange(chosen.definition);
 }
 
 export function getStaticDefinitions(
