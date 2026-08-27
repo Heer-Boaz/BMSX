@@ -2,7 +2,7 @@ import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import type { EditorDocumentContext } from '../../editing/document_state';
 import { editorDocumentState } from '../../editing/document_state';
 import { buildEditorSemanticFrontend } from '../intellisense/frontend';
-import { definitionLocationFromSourceRange } from '../../navigation/definition_location';
+import { definitionLocationFromSourceRange } from '../../navigation/source_range';
 import type { LuaDefinitionLocation } from '../../../../toolchain/ts/lua/semantic_contracts';
 import type { SemanticSymbolKind } from '../../../../toolchain/ts/lua/semantic/symbols';
 

@@ -16,7 +16,7 @@ import { getLinesSnapshot, getTextSnapshot } from '../../text/source_text';
 import type { Decl, LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
 import { computeSourceLabel } from '../../../common/paths';
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
-import { definitionLocationFromSourceRange } from '../../navigation/definition_location';
+import { definitionLocationFromSourceRange, searchMatchFromSourceRange } from '../../navigation/source_range';
 
 type FileMetadata = {
 	path: string;
@@ -43,65 +43,28 @@ export function buildReferenceCatalogForExpression(bridge: RuntimeLuaTooling, op
 		options.lines,
 	);
 	const entries: SymbolCatalogEntry[] = [];
-	const existingKeys = new Set<string>();
 
-	const baseMeta = metadata.get(options.path);
-	if (baseMeta) {
-		for (let index = 0; index < options.info.matches.length; index += 1) {
-			const match = options.info.matches[index];
-			const entry = createCatalogEntry({
-				meta: baseMeta,
-				match,
-				location: {
-					path: options.path,
-					range: {
-						startLine: match.row + 1,
-						startColumn: match.start + 1,
-						endLine: match.row + 1,
-						endColumn: match.end,
-					},
-				},
-				expression: options.info.expression,
-			});
-			appendCatalogEntry(entries, existingKeys, entry);
-		}
-	}
-
-	const decl = frontend.snapshot.symbolResolver.getDeclaration(options.info.definitionKey);
-	if (decl) {
+	for (let definitionIndex = 0; definitionIndex < options.info.definitionKeys.length; definitionIndex += 1) {
+		const definitionKey = options.info.definitionKeys[definitionIndex];
+		const decl = frontend.snapshot.symbolResolver.getDeclaration(definitionKey);
 		const meta = metadata.get(decl.file);
-		if (meta) {
-			const match = rangeToSearchMatch(decl.range, meta.lines);
-			if (match) {
-				const entry = createCatalogEntry({
-					meta,
-					match,
-					location: definitionLocationFromSourceRange(decl.range),
-					expression: options.info.expression,
-				});
-				appendCatalogEntry(entries, existingKeys, entry);
-			}
-		}
-	}
-
-	const references = frontend.snapshot.symbolResolver.getReferences(options.info.definitionKey);
-	for (let index = 0; index < references.length; index += 1) {
-		const reference = references[index];
-		const meta = metadata.get(reference.file);
-		if (!meta) {
-			continue;
-		}
-		const match = rangeToSearchMatch(reference.range, meta.lines);
-		if (!match) {
-			continue;
-		}
-		const entry = createCatalogEntry({
+		entries.push(createCatalogEntry({
 			meta,
-			match,
+			match: searchMatchFromSourceRange(decl.range),
+			location: definitionLocationFromSourceRange(decl.range),
+			expression: options.info.expression,
+		}));
+	}
+	const references = frontend.snapshot.symbolResolver.getReferencesForSymbols(options.info.definitionKeys);
+	for (let referenceIndex = 0; referenceIndex < references.length; referenceIndex += 1) {
+		const reference = references[referenceIndex];
+		const referenceMeta = metadata.get(reference.file);
+		entries.push(createCatalogEntry({
+			meta: referenceMeta,
+			match: searchMatchFromSourceRange(reference.range),
 			location: definitionLocationFromSourceRange(reference.range),
 			expression: options.info.expression,
-		});
-		appendCatalogEntry(entries, existingKeys, entry);
+		}));
 	}
 	return entries;
 }
@@ -226,19 +189,6 @@ function registerProjectFile(
 	});
 }
 
-function rangeToSearchMatch(
-	range: { start: { line: number; column: number }; end: { line: number; column: number } },
-	lines: readonly string[],
-): SearchMatch {
-	const rowIndex = range.start.line - 1;
-	if (rowIndex < 0 || rowIndex >= lines.length) {
-		return null;
-	}
-	const start = range.start.column - 1;
-	const end = range.end.column;
-	return end > start ? { row: rowIndex, start, end } : null;
-}
-
 function createCatalogEntry(args: {
 	meta: FileMetadata;
 	match: SearchMatch;
@@ -268,15 +218,6 @@ function buildReferenceSnippet(lines: readonly string[], match: SearchMatch): st
 	const end = clamp(match.end + 20, start, line.length);
 	const snippet = line.slice(start, end).trim();
 	return snippet.length > 0 ? snippet : line.trim();
-}
-
-function appendCatalogEntry(entries: SymbolCatalogEntry[], existingKeys: Set<string>, entry: SymbolCatalogEntry): void {
-	const key = `${entry.symbol.location.path}:${entry.symbol.location.range.startLine}:${entry.symbol.location.range.startColumn}`;
-	if (existingKeys.has(key)) {
-		return;
-	}
-	entries.push(entry);
-	existingKeys.add(key);
 }
 
 function declarationPriority(decl: Decl): number {

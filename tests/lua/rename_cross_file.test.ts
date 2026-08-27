@@ -1,12 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { SearchMatch } from '../../ide/common/models';
 import type { CodeTabContext } from '../../ide/workbench/ui/code_tab/model';
 import { PieceTreeBuffer } from '../../ide/editor/text/piece_tree_buffer';
 import { createLuaSemanticFrontendFromSnapshot, LuaSemanticWorkspace } from '../../ide/editor/contrib/intellisense/semantic/workspace/index';
 import { getOrCreateSemanticWorkspace, resetSemanticWorkspace } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
-import { CrossFileRenameManager, convertRangeToSearchMatch } from '../../ide/workbench/contrib/code_editor/rename/operations';
+import { CrossFileRenameManager } from '../../ide/workbench/contrib/code_editor/rename/operations';
 import { buildCodeTabId, clearCodeTabContexts, registerCodeTabContext } from '../../ide/workbench/ui/code_tab/contexts';
 import { codeTabSessionState } from '../../ide/workbench/ui/code_tab/session_state';
 import { tabSessionState } from '../../ide/workbench/ui/tab/session_state';
@@ -137,11 +136,4 @@ test('cross file rename updates an existing code tab and semantic workspace', ()
 	assert.ok(updatedData);
 	assert.equal(updatedData!.source.trim(), 'print(worldState.value)');
 
-	const match: SearchMatch = convertRangeToSearchMatch({
-		path: 'usage.lua',
-		start: { line: 1, column: 7 },
-		end: { line: 1, column: 17 },
-	});
-	assert.equal(match.start, 6);
-	assert.equal(match.end, 17);
 });

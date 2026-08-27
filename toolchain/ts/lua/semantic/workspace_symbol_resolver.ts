@@ -1,5 +1,7 @@
 import type { Decl, FileSemanticData, Ref, SymbolID } from './model';
 import { WorkspaceValueGraph, type WorkspaceValueGraphInput } from './value_graph';
+import { sourceRangesEqual } from '../source_range';
+import { compareSourcePosition } from './source_range';
 
 const EMPTY_REFS: readonly Ref[] = [];
 const EMPTY_SYMBOLS: readonly SymbolID[] = [];
@@ -79,6 +81,36 @@ export class WorkspaceSymbolResolver {
 		return this.referencesBySymbol.get(symbolId) ?? EMPTY_REFS;
 	}
 
+	public getReferencesForSymbols(symbolIds: readonly SymbolID[]): readonly Ref[] {
+		if (symbolIds.length === 1) {
+			return this.getReferences(symbolIds[0]);
+		}
+		const references: Ref[] = [];
+		const retained = new Set<Ref>();
+		for (let symbolIndex = 0; symbolIndex < symbolIds.length; symbolIndex += 1) {
+			const symbolReferences = this.getReferences(symbolIds[symbolIndex]);
+			for (let referenceIndex = 0; referenceIndex < symbolReferences.length; referenceIndex += 1) {
+				const reference = symbolReferences[referenceIndex];
+				if (!retained.has(reference)) {
+					retained.add(reference);
+					references.push(reference);
+				}
+			}
+		}
+		references.sort((left, right) => {
+			if (left.file !== right.file) {
+				return left.file.localeCompare(right.file);
+			}
+			return compareSourcePosition(
+				left.range.start.line,
+				left.range.start.column,
+				right.range.start.line,
+				right.range.start.column,
+			);
+		});
+		return references;
+	}
+
 	private buildReferenceIndex(): ReadonlyMap<SymbolID, readonly Ref[]> {
 		const references = new Map<SymbolID, Ref[]>();
 		for (let fileIndex = 0; fileIndex < this.files.length; fileIndex += 1) {
@@ -88,6 +120,9 @@ export class WorkspaceSymbolResolver {
 				const targets = this.resolveReferenceTargets(ref);
 				for (let targetIndex = 0; targetIndex < targets.length; targetIndex += 1) {
 					const target = targets[targetIndex];
+					if (sourceRangesEqual(ref.range, this.declarations.get(target).range)) {
+						continue;
+					}
 					let bucket = references.get(target);
 					if (!bucket) {
 						bucket = [];

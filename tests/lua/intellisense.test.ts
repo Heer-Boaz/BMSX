@@ -580,7 +580,7 @@ test('project reference catalog resolves globals across paths', async () => {
 	const info = {
 		matches,
 		expression: 'state',
-		definitionKey: symbolInfo.id,
+		definitionKeys: symbolInfo.targets.map(target => target.id),
 		documentVersion: 1,
 	};
 
@@ -691,8 +691,41 @@ test('reference lookup resolves global definition across paths', async () => {
 		const symbolInfo = createLuaSemanticFrontendFromSnapshot(workspace.getSnapshot()).findReferencesByPosition('usage.lua', stateRow + 1, stateColumn + 1);
 		assert.ok(symbolInfo);
 		if (symbolInfo) {
-			assert.equal(result.info.definitionKey, symbolInfo.id);
+			assert.deepEqual(result.info.definitionKeys, symbolInfo.targets.map(target => target.id));
 		}
+	}
+});
+
+test('reference lookup retains all definitions of a value alternative', async () => {
+	const { resolveReferenceLookup } = await referenceNavigationModulePromise;
+	const { resetSemanticWorkspace } = await workspaceStateModulePromise;
+	const source = [
+		'local left<const> = {}',
+		'function left:run() end',
+		'local right<const> = {}',
+		'function right:run() end',
+		'local selected<const> = left or right',
+		'left:run()',
+		'right:run()',
+		'selected:run()',
+	].join('\n');
+	const lines = source.split('\n');
+	const cursorRow = 7;
+	const cursorColumn = lines[cursorRow]!.indexOf('run');
+	resetSemanticWorkspace(SYSTEM_RESOURCE_DOMAIN);
+
+	const result = resolveReferenceLookup(createIntellisenseBridge(), {
+		buffer: new PieceTreeBuffer(source),
+		textVersion: 1,
+		cursorRow,
+		cursorColumn,
+		identity: { domain: SYSTEM_RESOURCE_DOMAIN, path: 'alternatives.lua' },
+	});
+
+	assert.equal(result.kind, 'success');
+	if (result.kind === 'success') {
+		assert.equal(result.info.definitionKeys.length, 2);
+		assert.deepEqual(result.info.matches.map(match => match.row + 1), [2, 4, 6, 7, 8]);
 	}
 });
 
@@ -733,7 +766,7 @@ test('reference lookup prefers local parameter over global', async () => {
 	if (parameterResult.kind === 'success') {
 		const workspaceGlobal = createLuaSemanticFrontendFromSnapshot(workspace.getSnapshot()).findReferencesByPosition('global.lua', 1, 1);
 		if (workspaceGlobal) {
-			assert.notEqual(parameterResult.info.definitionKey, workspaceGlobal.id, 'parameter is not resolved as global');
+			assert.notEqual(parameterResult.info.definitionKeys[0], workspaceGlobal.targets[0].id, 'parameter is not resolved as global');
 		}
 	}
 });
@@ -783,7 +816,7 @@ test('intellisense recognizes global variable from another file', async () => {
 	const info = {
 		matches,
 		expression: 'state',
-		definitionKey: symbolInfo.id,
+		definitionKeys: symbolInfo.targets.map(target => target.id),
 		documentVersion: 1,
 	};
 

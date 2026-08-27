@@ -94,6 +94,8 @@ test('LuaSemanticFrontend returns every valid definition target', () => {
 		'local right<const> = {}',
 		'function right:run() end',
 		'local selected<const> = left or right',
+		'left:run()',
+		'right:run()',
 		'selected:run()',
 	].join('\n');
 	const frontend = buildLuaSemanticFrontend([{ path: 'alternatives.lua', source }]);
@@ -106,6 +108,20 @@ test('LuaSemanticFrontend returns every valid definition target', () => {
 	assert.deepEqual(
 		targets.map((target) => target.range.start.line),
 		[2, 4],
+	);
+	const references = frontend.findReferencesByPosition(
+		'alternatives.lua',
+		position.line,
+		position.column,
+	);
+	assert.ok(references);
+	assert.deepEqual(
+		references.targets.map(target => target.declaration.range.start.line),
+		[2, 4],
+	);
+	assert.deepEqual(
+		references.references.map(reference => reference.range.start.line),
+		[6, 7, 8],
 	);
 });
 

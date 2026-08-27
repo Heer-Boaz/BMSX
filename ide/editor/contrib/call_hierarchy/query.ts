@@ -4,6 +4,7 @@ import { buildIncomingCallHierarchyView, type CallHierarchyView } from './view';
 import { editorDocumentState } from '../../editing/document_state';
 import { SYSTEM_RESOURCE_DOMAIN } from '../../../common/resource';
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
+import { definitionLocationFromSourceRange } from '../../navigation/source_range';
 
 export type CallHierarchyQueryResult =
 	| { kind: 'success'; view: CallHierarchyView; }
@@ -15,9 +16,9 @@ export function resolveCallHierarchyViewAt(bridge: RuntimeLuaTooling, row: numbe
 	const path = resource.path;
 	const snapshot = buildEditorSemanticSnapshot(bridge, resource, editorDocumentState.buffer, editorDocumentState.textVersion);
 	const frontend = createEditorSemanticFrontend(bridge, snapshot);
-	const resolution = frontend.findReferencesByPosition(path, row + 1, column + 1);
+	const symbols = frontend.findSymbolsByPosition(path, row + 1, column + 1);
 	const expression = extractHoverExpression(row, column, path)?.expression;
-	if (!resolution || !expression) {
+	if (!symbols || !expression) {
 		return { kind: 'missing_definition' };
 	}
 	const resources = bridge.sources.luaResources;
@@ -42,8 +43,9 @@ export function resolveCallHierarchyViewAt(bridge: RuntimeLuaTooling, row: numbe
 	allowedPaths.add(path);
 	const view = buildIncomingCallHierarchyView(bridge, {
 		snapshot,
-		rootSymbolId: resolution.id,
+		rootSymbolIds: symbols.targets.map(target => target.id),
 		rootExpression: expression,
+		origin: definitionLocationFromSourceRange(symbols.origin),
 		allowedPaths,
 	});
 	if (!view) {

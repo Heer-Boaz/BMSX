@@ -19,6 +19,7 @@ import { registerCodeTabContext, setTabDirty } from '../../../ui/code_tab/contex
 import { editorViewState } from '../../../../editor/ui/view/state';
 import type { ResourceDomain } from '../../../../common/resource';
 import type { RuntimeSourceState } from '../../../../runtime/sources';
+import { searchMatchFromSourceRange } from '../../../../editor/navigation/source_range';
 
 export function commitRename(
 	crossFileRename: CrossFileRenameManager,
@@ -36,29 +37,24 @@ export function commitRename(
 	let updatedTotal = 0;
 
 	const snapshot = workspace.getSnapshot();
-	const decl = info.definitionKey ? snapshot.symbolResolver.getDeclaration(info.definitionKey) : null;
-	const references = info.definitionKey ? snapshot.symbolResolver.getReferences(info.definitionKey) : [];
-	type RangeBucket = { path: string; ranges: LuaSourceRange[]; seen: Set<string> };
+	type RangeBucket = { path: string; ranges: LuaSourceRange[] };
 	const rangeMap = new Map<string, RangeBucket>();
 	const addRange = (range: LuaSourceRange): void => {
-		const path = range.path ?? activePath;
+		const path = range.path;
 		let bucket = rangeMap.get(path);
 		if (!bucket) {
-			bucket = { path, ranges: [], seen: new Set<string>() };
+			bucket = { path, ranges: [] };
 			rangeMap.set(path, bucket);
 		}
-		const key = `${range.start.line}:${range.start.column}:${range.end.line}:${range.end.column}`;
-		if (bucket.seen.has(key)) {
-			return;
-		}
-		bucket.seen.add(key);
 		bucket.ranges.push(range);
 	};
-	if (decl) {
-		addRange(decl.range);
+	for (let definitionIndex = 0; definitionIndex < info.definitionKeys.length; definitionIndex += 1) {
+		const definitionKey = info.definitionKeys[definitionIndex];
+		addRange(snapshot.symbolResolver.getDeclaration(definitionKey).range);
 	}
-	for (let index = 0; index < references.length; index += 1) {
-		addRange(references[index].range);
+	const references = snapshot.symbolResolver.getReferencesForSymbols(info.definitionKeys);
+	for (let referenceIndex = 0; referenceIndex < references.length; referenceIndex += 1) {
+		addRange(references[referenceIndex].range);
 	}
 	rangeMap.delete(activePath);
 
@@ -122,7 +118,7 @@ export class CrossFileRenameManager {
 		}
 		const matches = new Array<SearchMatch>(ranges.length);
 		for (let index = 0; index < ranges.length; index += 1) {
-			matches[index] = convertRangeToSearchMatch(ranges[index]);
+			matches[index] = searchMatchFromSourceRange(ranges[index]);
 		}
 		if (matches.length === 0) {
 			return 0;
@@ -157,7 +153,7 @@ export class CrossFileRenameManager {
 		const cursorLength = context.buffer.getLineEndOffset(context.cursorRow) - context.buffer.getLineStartOffset(context.cursorRow);
 		context.cursorColumn = clamp(context.cursorColumn, 0, cursorLength);
 		context.scrollRow = clamp(context.scrollRow, 0, lineCount - 1);
-		this.markContextTabDirty(context.id, context.dirty);
+		setTabDirty(context.id, context.dirty);
 	}
 
 	private ensureCodeTabContextForChunk(
@@ -169,19 +165,8 @@ export class CrossFileRenameManager {
 		if (!context) {
 			context = createLuaCodeTabContext(this.sources, resource);
 			registerCodeTabContext(context);
-			this.markContextTabDirty(context.id, context.dirty);
+			setTabDirty(context.id, context.dirty);
 		}
 		return context;
 	}
-
-	private markContextTabDirty(contextId: string, dirty: boolean): void {
-		setTabDirty(contextId, dirty);
-	}
-}
-
-export function convertRangeToSearchMatch(range: LuaSourceRange): SearchMatch {
-	const row = range.start.line - 1;
-	const start = range.start.column - 1;
-	const end = range.end.column;
-	return { row, start, end };
 }

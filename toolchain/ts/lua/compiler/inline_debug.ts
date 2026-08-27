@@ -1,4 +1,4 @@
-import type { SourceRange } from '../source_range';
+import { sourceRangesEqual, type SourceRange } from '../source_range';
 import type { InlineCallSite } from './program';
 
 export const ROOT_INLINE_CALL_SITES: ReadonlyArray<InlineCallSite> = [];
@@ -6,13 +6,6 @@ export const ROOT_INLINE_CALL_SITES: ReadonlyArray<InlineCallSite> = [];
 type InlineLocalContext = {
 	inlineCallSites: ReadonlyArray<InlineCallSite>;
 };
-
-const sourceRangesEqual = (left: SourceRange, right: SourceRange): boolean =>
-	left.path === right.path
-	&& left.start.line === right.start.line
-	&& left.start.column === right.start.column
-	&& left.end.line === right.end.line
-	&& left.end.column === right.end.column;
 
 const inlineCallSitesEqual = (left: InlineCallSite, right: InlineCallSite): boolean =>
 	left.calleeFunctionId === right.calleeFunctionId

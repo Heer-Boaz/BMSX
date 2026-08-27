@@ -58,9 +58,17 @@ export type LuaSemanticNavigationTarget =
 		moduleName: string;
 	};
 
-export type LuaSemanticResolution = {
+export type LuaSemanticPositionTarget = {
 	id: SymbolID;
-	decl: Decl;
+	declaration: Decl;
+};
+
+export type LuaSemanticPositionSymbols = {
+	origin: LuaSourceRange;
+	targets: readonly LuaSemanticPositionTarget[];
+};
+
+export type LuaSemanticReferenceQuery = LuaSemanticPositionSymbols & {
 	references: readonly Ref[];
 };
 
@@ -97,7 +105,8 @@ export type LuaSemanticFrontend = {
 	filePaths: readonly string[];
 	getFile(path: string): LuaSemanticFrontendFile;
 	findDeclarationsByNamePath(namePath: readonly string[]): readonly Decl[];
-	findReferencesByPosition(path: string, line: number, column: number): LuaSemanticResolution;
+	findSymbolsByPosition(path: string, line: number, column: number): LuaSemanticPositionSymbols | null;
+	findReferencesByPosition(path: string, line: number, column: number): LuaSemanticReferenceQuery | null;
 	buildIncomingCallHierarchy(
 		rootSymbolId: SymbolID,
 		options?: {
@@ -194,7 +203,7 @@ class SnapshotSemanticFrontend implements LuaSemanticFrontend {
 		return matches;
 	}
 
-	public findReferencesByPosition(path: string, line: number, column: number): LuaSemanticResolution {
+	public findSymbolsByPosition(path: string, line: number, column: number): LuaSemanticPositionSymbols | null {
 		const source = this.sourcesByPath.get(path);
 		if (!source) {
 			return null;
@@ -203,9 +212,8 @@ class SnapshotSemanticFrontend implements LuaSemanticFrontend {
 			const decl = source.analysis.decls[index];
 			if (sourcePositionInRange(line, column, decl.range)) {
 				return {
-					id: decl.id,
-					decl,
-					references: this.snapshot.symbolResolver.getReferences(decl.id),
+					origin: decl.range,
+					targets: [{ id: decl.id, declaration: decl }],
 				};
 			}
 		}
@@ -214,21 +222,40 @@ class SnapshotSemanticFrontend implements LuaSemanticFrontend {
 			if (!sourcePositionInRange(line, column, ref.range)) {
 				continue;
 			}
-			const target = this.snapshot.symbolResolver.resolveReference(ref);
-			if (!target) {
+			const targetIds = this.snapshot.symbolResolver.resolveReferenceTargets(ref);
+			if (targetIds.length === 0) {
 				continue;
 			}
-			const decl = this.snapshot.symbolResolver.getDeclaration(target);
-			if (!decl) {
-				continue;
+			const targets = new Array<LuaSemanticPositionTarget>(targetIds.length);
+			for (let targetIndex = 0; targetIndex < targetIds.length; targetIndex += 1) {
+				const targetId = targetIds[targetIndex];
+				targets[targetIndex] = {
+					id: targetId,
+					declaration: this.snapshot.symbolResolver.getDeclaration(targetId),
+				};
 			}
 			return {
-				id: target,
-				decl,
-				references: this.snapshot.symbolResolver.getReferences(target),
+				origin: ref.range,
+				targets,
 			};
 		}
 		return null;
+	}
+
+	public findReferencesByPosition(path: string, line: number, column: number): LuaSemanticReferenceQuery | null {
+		const symbols = this.findSymbolsByPosition(path, line, column);
+		if (!symbols) {
+			return null;
+		}
+		const symbolIds = new Array<SymbolID>(symbols.targets.length);
+		for (let targetIndex = 0; targetIndex < symbols.targets.length; targetIndex += 1) {
+			symbolIds[targetIndex] = symbols.targets[targetIndex].id;
+		}
+		return {
+			origin: symbols.origin,
+			targets: symbols.targets,
+			references: this.snapshot.symbolResolver.getReferencesForSymbols(symbolIds),
+		};
 	}
 
 	public buildIncomingCallHierarchy(

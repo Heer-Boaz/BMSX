@@ -5,6 +5,8 @@ import type { TextBuffer } from '../../text/text_buffer';
 import type { SearchMatch } from '../../../common/models';
 import type { ResourceIdentity } from '../../../common/resource';
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
+import type { SymbolID } from '../../../../toolchain/ts/lua/semantic/model';
+import { searchMatchFromSourceRange } from '../../navigation/source_range';
 
 export type ReferenceLookupOptions = {
 	buffer: TextBuffer;
@@ -30,12 +32,12 @@ export function resolveReferenceLookup(bridge: RuntimeLuaTooling, options: Refer
 		return { kind: 'error', message: `Definition not found for ${identifier.expression}`, duration: 1.8 };
 	}
 	const matches: SearchMatch[] = [];
-	const seen = new Set<string>();
-	if (resolution.decl.file === path) {
-		const definitionMatch = rangeToSearchMatchInBuffer(resolution.decl.range, options.buffer);
-		if (definitionMatch) {
-			const key = `${definitionMatch.row}:${definitionMatch.start}`;
-			seen.add(key);
+	const definitionKeys = new Array<SymbolID>(resolution.targets.length);
+	for (let targetIndex = 0; targetIndex < resolution.targets.length; targetIndex += 1) {
+		const target = resolution.targets[targetIndex];
+		definitionKeys[targetIndex] = target.id;
+		if (target.declaration.file === path) {
+			const definitionMatch = searchMatchFromSourceRange(target.declaration.range);
 			matches.push(definitionMatch);
 		}
 	}
@@ -44,19 +46,8 @@ export function resolveReferenceLookup(bridge: RuntimeLuaTooling, options: Refer
 		if (reference.file !== path) {
 			continue;
 		}
-		const match = rangeToSearchMatchInBuffer(reference.range, options.buffer);
-		if (!match) {
-			continue;
-		}
-		const key = `${match.row}:${match.start}`;
-		if (seen.has(key)) {
-			continue;
-		}
-		seen.add(key);
+		const match = searchMatchFromSourceRange(reference.range);
 		matches.push(match);
-	}
-	if (matches.length === 0) {
-		return { kind: 'error', message: 'No references found in this document', duration: 1.6 };
 	}
 	matches.sort((left, right) => left.row !== right.row ? left.row - right.row : left.start - right.start);
 	let initialIndex = 0;
@@ -72,23 +63,9 @@ export function resolveReferenceLookup(bridge: RuntimeLuaTooling, options: Refer
 		info: {
 			matches,
 			expression: identifier.expression,
-			definitionKey: resolution.id,
+			definitionKeys,
 			documentVersion: options.textVersion,
 		},
 		initialIndex,
 	};
-}
-
-function rangeToSearchMatchInBuffer(
-	range: { start: { line: number; column: number }; end: { line: number; column: number } },
-	buffer: TextBuffer,
-): SearchMatch {
-	const rowIndex = range.start.line - 1;
-	if (rowIndex < 0 || rowIndex >= buffer.getLineCount()) {
-		return null;
-	}
-	const line = buffer.getLineContent(rowIndex);
-	const start = Math.max(0, Math.min(line.length, range.start.column - 1));
-	const end = Math.max(start, Math.min(line.length, Math.max(start, range.end.column - 1) + 1));
-	return end > start ? { row: rowIndex, start, end } : null;
 }

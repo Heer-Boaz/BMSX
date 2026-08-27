@@ -73,7 +73,7 @@ import { clearSingleCursorSelection } from '../../editing/cursor/state';
 import { editorViewState } from '../../ui/view/state';
 import { referenceState } from '../references/state';
 import { queryDefinitionsAt } from '../definitions/query';
-import { definitionLocationFromSourceRange } from '../../navigation/definition_location';
+import { definitionLocationFromSourceRange } from '../../navigation/source_range';
 export const PREVIEW_MAX_ENTRIES = 12;
 export const PREVIEW_MAX_DEPTH = 2;
 
