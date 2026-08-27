@@ -546,16 +546,23 @@ test('state machine definitions contextually bind callbacks to every prefab rece
 		'end',
 		'local right<const> = {}',
 		'function right:right_only() end',
-		'local named_callback<const> = function(self)',
-		'\tself:left_only()',
-		'\tself:right_only()',
+		'local named_callback<const> = function(actor)',
+		'\tactor:left_only()',
+		'\tactor:right_only()',
 		'end',
+		"local event_name<const> = 'wake'",
 		'fsm_library.register(machine_id, {',
+		'\ton = {',
+		'\t\t[event_name] = function(actor)',
+		'\t\t\tactor:left_only()',
+		'\t\t\tactor:right_only()',
+		'\t\tend,',
+		'\t},',
 		'\tstates = {',
 		'\t\tactive = {',
-		'\t\t\tentering_state = function(self)',
-		'\t\t\t\tself:left_only()',
-		'\t\t\t\tself:right_only()',
+		'\t\t\tentering_state = function(actor)',
+		'\t\t\t\tactor:left_only()',
+		'\t\t\t\tactor:right_only()',
 		'\t\t\tend,',
 		'\t\t\texiting_state = named_callback,',
 		'\t\t},',
@@ -578,10 +585,138 @@ test('state machine definitions contextually bind callbacks to every prefab rece
 	assert.equal(targetAt(14, 'right_only')!.decl.namePath.join('.'), 'right.right_only');
 	assert.equal(targetAt(20, 'left_only')!.decl.namePath.join('.'), 'left.left_only');
 	assert.equal(targetAt(21, 'right_only')!.decl.namePath.join('.'), 'right.right_only');
+	assert.equal(targetAt(27, 'left_only')!.decl.namePath.join('.'), 'left.left_only');
+	assert.equal(targetAt(28, 'right_only')!.decl.namePath.join('.'), 'right.right_only');
 	assert.equal(
 		targetAt(8, 'right_only'),
 		null,
 		'shared callback receivers remain alternatives instead of merging prefab identities',
+	);
+});
+
+test('state machine callback context follows the authored definition role and timeline target path', async () => {
+	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const sourceLines = [
+		"local fsm_library<const> = require('cartlib/fsm/library')",
+		"local fsm_component<const> = require('cartlib/fsm/fsm_component')",
+		"local prefab<const> = require('cartlib/world/prefab')",
+		'local visual<const> = {}',
+		'visual.__index = visual',
+		'function visual:visual_only() end',
+		'local actor<const> = {}',
+		'function actor:actor_only() end',
+		'function actor.initialize(self)',
+		'\tself.visual = setmetatable({}, visual)',
+		'end',
+		'local apply_frame<const> = function(target)',
+		'\ttarget:visual_only()',
+		'\ttarget:actor_only()',
+		'end',
+		'local unrelated_apply<const> = function(target)',
+		'\ttarget:actor_only()',
+		'end',
+		"local machine_id<const> = 'actor'",
+		'fsm_library.register(machine_id, {',
+		'\tunrelated = { apply = unrelated_apply },',
+		'\ttimelines = {',
+		'\t\tanim = {',
+		'\t\t\tdef = { frames = { 1 }, apply = apply_frame },',
+		"\t\t\ttarget_path = { 'visual' },",
+		'\t\t\ton_finished = function(owner)',
+		'\t\t\t\towner:actor_only()',
+		'\t\t\t\towner:visual_only()',
+		'\t\t\tend,',
+		'\t\t},',
+		'\t},',
+		'})',
+		"prefab.define({ def_id = 'actor', class = actor, components = { fsm_component.factory({ machine_id }) } })",
+		'return actor',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('actor_machine.lua', sourceLines.join('\n'));
+	const snapshot = workspace.getSnapshot();
+	const targetAt = (line: number, name: string) => snapshot.symbolAt(
+		'actor_machine.lua',
+		line,
+		sourceLines[line - 1].indexOf(name) + 1,
+	);
+
+	assert.equal(targetAt(13, 'visual_only')!.decl.namePath.join('.'), 'visual.visual_only');
+	assert.equal(targetAt(14, 'actor_only'), null, 'timeline apply receives the authored visual target');
+	assert.equal(targetAt(17, 'actor_only'), null, 'unrelated apply fields are not FSM callbacks');
+	assert.equal(targetAt(27, 'actor_only')!.decl.namePath.join('.'), 'actor.actor_only');
+	assert.equal(targetAt(28, 'visual_only'), null, 'timeline completion receives the FSM owner');
+});
+
+test('behaviour tree callbacks inherit every mounted prefab receiver through program calls', async () => {
+	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const actorsSource = [
+		"local bt_component<const> = require('cartlib/behaviour_tree/bt_component')",
+		"local prefab<const> = require('cartlib/world/prefab')",
+		'local left<const> = {}',
+		'function left:left_only() end',
+		'function left:probe()',
+		'\treturn self.right_only',
+		'end',
+		'local right<const> = {}',
+		'function right:right_only() end',
+		"local tree_id<const> = 'shared_tree'",
+		'local task<const> = {',
+		'\texecute = function(actor)',
+		'\t\tactor:left_only()',
+		'\t\tactor:right_only()',
+		'\tend,',
+		'}',
+		'local service<const> = {',
+		'\ton_tick = function(target)',
+		'\t\ttarget:left_only()',
+		'\t\ttarget:right_only()',
+		'\tend,',
+		'}',
+		"prefab.define({ def_id = 'left', class = left, components = { bt_component.factory(tree_id) } })",
+		"prefab.define({ def_id = 'right', class = right, components = { bt_component.factory(tree_id) } })",
+		'return { tree_id = tree_id, task = task, service = service }',
+	];
+	const treeSource = [
+		"local behaviour_tree_library<const> = require('cartlib/behaviour_tree/library')",
+		"local actors<const> = require('actors')",
+		'local tree<const> = {}',
+		'tree.id = actors.tree_id',
+		'local branch<const> = {',
+		"\ttype = 'task',",
+		'\ttask = actors.task,',
+		'}',
+		'behaviour_tree_library.register(tree.id, {',
+		'\troot = {',
+		"\t\ttype = 'sequence',",
+		'\t\tchildren = {',
+		'\t\t\tbranch,',
+		'\t\t\t{',
+		"\t\t\t\ttype = 'wait',",
+		'\t\t\t\tservices = { { service = actors.service } },',
+		'\t\t\t},',
+		'\t\t},',
+		'\t},',
+		'})',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('actors.lua', actorsSource.join('\n'));
+	workspace.updateFile('tree.lua', treeSource.join('\n'));
+	const snapshot = workspace.getSnapshot();
+	const targetAt = (line: number, name: string) => snapshot.symbolAt(
+		'actors.lua',
+		line,
+		actorsSource[line - 1].indexOf(name) + 1,
+	);
+
+	assert.equal(targetAt(13, 'left_only')!.decl.namePath.join('.'), 'left.left_only');
+	assert.equal(targetAt(14, 'right_only')!.decl.namePath.join('.'), 'right.right_only');
+	assert.equal(targetAt(19, 'left_only')!.decl.namePath.join('.'), 'left.left_only');
+	assert.equal(targetAt(20, 'right_only')!.decl.namePath.join('.'), 'right.right_only');
+	assert.equal(
+		targetAt(6, 'right_only'),
+		null,
+		'contextual callback alternatives do not merge the mounted prefab classes',
 	);
 });
 

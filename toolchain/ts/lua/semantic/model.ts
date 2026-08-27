@@ -24,7 +24,6 @@ import {
 	type LuaDefinitionInfo,
 	type LuaSourceRange,
 } from '../syntax/ast';
-import { walkLuaExpressionTree } from '../syntax/ast/traversal';
 import type { LuaToken } from '../syntax/token';
 import { LuaTokenType } from '../syntax/token';
 import type { LuaSymbolEntry } from '../semantic_contracts';
@@ -68,6 +67,13 @@ import {
 	type SemanticValueSource,
 	type ValueAssignmentEntry,
 } from './value_graph';
+import {
+	ComponentProgramSemanticCollector,
+	type ComponentProgramCallbackEntry,
+	type ComponentProgramKind,
+	type ComponentProgramMountEntry,
+	type ComponentProgramSemanticHost,
+} from './component_programs';
 import { WorkspaceSymbolResolver } from './workspace_symbol_resolver';
 
 export type SymbolID = string;
@@ -113,16 +119,6 @@ export type PrefabReferenceEntry = {
 export type EventEmitterParameterEntry = {
 	parameterDeclId: SymbolID;
 	emitterId: StaticStringSource;
-};
-
-export type StateMachineOwnerEntry = {
-	machineId: StaticStringSource;
-	classDeclId: SymbolID;
-};
-
-export type StateMachineReceiverEntry = {
-	machineId: StaticStringSource;
-	parameterDeclId: SymbolID;
 };
 
 export type LuaSemanticModel = {
@@ -190,8 +186,8 @@ export type FileSemanticData = {
 	objectBindings: readonly ObjectBindingEntry[];
 	prefabReferences: readonly PrefabReferenceEntry[];
 	eventEmitterParameters: readonly EventEmitterParameterEntry[];
-	stateMachineOwners: readonly StateMachineOwnerEntry[];
-	stateMachineReceivers: readonly StateMachineReceiverEntry[];
+	componentProgramMounts: readonly ComponentProgramMountEntry[];
+	componentProgramCallbacks: readonly ComponentProgramCallbackEntry[];
 };
 
 const EMPTY_CALL_EXPRESSIONS: readonly LuaCallExpression[] = [];
@@ -394,8 +390,12 @@ const CARTLIB_CALL_PREFAB_DEFINE = 1;
 const CARTLIB_CALL_WORLD_SPAWN = 2;
 const CARTLIB_CALL_STATE_MACHINE_REGISTER = 3;
 const CARTLIB_CALL_STATE_MACHINE_FACTORY = 4;
+const CARTLIB_CALL_BEHAVIOUR_TREE_REGISTER = 5;
+const CARTLIB_CALL_BEHAVIOUR_TREE_FACTORY = 6;
 const CARTLIB_STATE_MACHINE_COMPONENT_MODULE = 'cartlib/fsm/fsm_component';
 const CARTLIB_STATE_MACHINE_LIBRARY_MODULE = 'cartlib/fsm/library';
+const CARTLIB_BEHAVIOUR_TREE_COMPONENT_MODULE = 'cartlib/behaviour_tree/bt_component';
+const CARTLIB_BEHAVIOUR_TREE_LIBRARY_MODULE = 'cartlib/behaviour_tree/library';
 const CARTLIB_PREFAB_MODULE = 'cartlib/world/prefab';
 const CARTLIB_WORLD_MODULE = 'cartlib/world/world';
 const CARTLIB_WORLD_OBJECT_MODULE = 'cartlib/world/world_object';
@@ -405,7 +405,9 @@ type CartlibCallKind =
 	| typeof CARTLIB_CALL_PREFAB_DEFINE
 	| typeof CARTLIB_CALL_WORLD_SPAWN
 	| typeof CARTLIB_CALL_STATE_MACHINE_REGISTER
-	| typeof CARTLIB_CALL_STATE_MACHINE_FACTORY;
+	| typeof CARTLIB_CALL_STATE_MACHINE_FACTORY
+	| typeof CARTLIB_CALL_BEHAVIOUR_TREE_REGISTER
+	| typeof CARTLIB_CALL_BEHAVIOUR_TREE_FACTORY;
 
 type SemanticBuildResult = {
 	decls: InternalDecl[];
@@ -426,8 +428,8 @@ type SemanticBuildResult = {
 	objectBindings: ObjectBindingEntry[];
 	prefabReferences: PrefabReferenceEntry[];
 	eventEmitterParameters: EventEmitterParameterEntry[];
-	stateMachineOwners: StateMachineOwnerEntry[];
-	stateMachineReceivers: StateMachineReceiverEntry[];
+	componentProgramMounts: ComponentProgramMountEntry[];
+	componentProgramCallbacks: ComponentProgramCallbackEntry[];
 	moduleAliases: ModuleAliasEntry[];
 };
 
@@ -499,8 +501,8 @@ export function buildLuaFileSemanticData(
 		objectBindings: result.objectBindings,
 		prefabReferences: result.prefabReferences,
 		eventEmitterParameters: result.eventEmitterParameters,
-		stateMachineOwners: result.stateMachineOwners,
-		stateMachineReceivers: result.stateMachineReceivers,
+		componentProgramMounts: result.componentProgramMounts,
+		componentProgramCallbacks: result.componentProgramCallbacks,
 	};
 }
 
@@ -727,8 +729,8 @@ class LuaProjectIndex {
 		const valueAssignments: ValueAssignmentEntry[] = [];
 		const baseValues: BaseValueEntry[] = [];
 		const eventEmitterParameters: EventEmitterParameterEntry[] = [];
-		const stateMachineOwners: StateMachineOwnerEntry[] = [];
-		const stateMachineReceivers: StateMachineReceiverEntry[] = [];
+		const componentProgramMounts: ComponentProgramMountEntry[] = [];
+		const componentProgramCallbacks: ComponentProgramCallbackEntry[] = [];
 		const orderedData = new Array<FileSemanticData>(orderedFiles.length);
 		for (let fileIndex = 0; fileIndex < orderedFiles.length; fileIndex += 1) {
 			const data = this.files.get(orderedFiles[fileIndex])!;
@@ -772,11 +774,11 @@ class LuaProjectIndex {
 			for (let index = 0; index < data.eventEmitterParameters.length; index += 1) {
 				eventEmitterParameters.push(data.eventEmitterParameters[index]);
 			}
-			for (let index = 0; index < data.stateMachineOwners.length; index += 1) {
-				stateMachineOwners.push(data.stateMachineOwners[index]);
+			for (let index = 0; index < data.componentProgramMounts.length; index += 1) {
+				componentProgramMounts.push(data.componentProgramMounts[index]);
 			}
-			for (let index = 0; index < data.stateMachineReceivers.length; index += 1) {
-				stateMachineReceivers.push(data.stateMachineReceivers[index]);
+			for (let index = 0; index < data.componentProgramCallbacks.length; index += 1) {
+				componentProgramCallbacks.push(data.componentProgramCallbacks[index]);
 			}
 		}
 		const stringValues = new WorkspaceStringValueResolver({
@@ -851,41 +853,46 @@ class LuaProjectIndex {
 			}
 			sources.push(bindingValueSource(objectBindingId(emitterId)));
 		}
-		const classesByStateMachine = new Map<string, SymbolID[]>();
-		for (let index = 0; index < stateMachineOwners.length; index += 1) {
-			const entry = stateMachineOwners[index];
-			const machineId = stringValues.resolve(entry.machineId);
-			if (machineId === undefined) {
+		const classesByComponentProgram = new Map<string, SymbolID[]>();
+		for (let index = 0; index < componentProgramMounts.length; index += 1) {
+			const entry = componentProgramMounts[index];
+			const programId = stringValues.resolve(entry.programId);
+			if (programId === undefined) {
 				continue;
 			}
-			let classes = classesByStateMachine.get(machineId);
+			const programKey = `${entry.programKind}\0${programId}`;
+			let classes = classesByComponentProgram.get(programKey);
 			if (!classes) {
 				classes = [];
-				classesByStateMachine.set(machineId, classes);
+				classesByComponentProgram.set(programKey, classes);
 			}
 			if (!classes.includes(entry.classDeclId)) {
 				classes.push(entry.classDeclId);
 			}
 		}
-		for (let index = 0; index < stateMachineReceivers.length; index += 1) {
-			const entry = stateMachineReceivers[index];
-			const machineId = stringValues.resolve(entry.machineId);
-			if (machineId === undefined) {
+		for (let index = 0; index < componentProgramCallbacks.length; index += 1) {
+			const entry = componentProgramCallbacks[index];
+			const programId = stringValues.resolve(entry.programId);
+			if (programId === undefined) {
 				continue;
 			}
-			const classes = classesByStateMachine.get(machineId);
+			const classes = classesByComponentProgram.get(`${entry.programKind}\0${programId}`);
 			if (!classes) {
 				continue;
 			}
-			let sources = declarationValues.get(entry.parameterDeclId);
-			if (!sources) {
-				sources = [];
-				declarationValues.set(entry.parameterDeclId, sources);
-			}
 			for (let classIndex = 0; classIndex < classes.length; classIndex += 1) {
-				sources.push(appendValueInstance(declarationValueSource(classes[classIndex])));
+				let receiver = appendValueInstance(declarationValueSource(classes[classIndex]));
+				const receiverPath = entry.receiverPath;
+				if (receiverPath) {
+					for (let pathIndex = 0; pathIndex < receiverPath.length; pathIndex += 1) {
+						receiver = appendValueMember(receiver, receiverPath[pathIndex]);
+					}
+				}
+				calls.push({
+					callee: entry.callee,
+					arguments: [receiver],
+				});
 			}
-			projectionDeclarations.add(entry.parameterDeclId);
 		}
 		const globals = new Map(this.globalsByKey);
 		const valueGraphInput = {
@@ -1075,7 +1082,7 @@ function symbolAtPosition(options: {
 	return null;
 }
 
-class SemanticBuilder {
+class SemanticBuilder implements ComponentProgramSemanticHost {
 	private readonly chunk: LuaChunk;
 	private readonly path: string;
 	private readonly tokens: readonly LuaToken[];
@@ -1095,8 +1102,8 @@ class SemanticBuilder {
 	private readonly declarationValues: Map<SymbolID, SemanticValueSource[]> = new Map();
 	private readonly projectionValueDeclarations: Set<SymbolID> = new Set();
 	private readonly memberValues: Map<SymbolID, MemberValueEntry> = new Map();
-	private readonly functionReturnValues: Map<SymbolID, SemanticValueSource[]> = new Map();
-	private readonly functionParameterValues: Map<SymbolID, FunctionParameterValueEntry> = new Map();
+	private readonly functionReturnValues: Map<string, FunctionReturnValueEntry[]> = new Map();
+	private readonly functionParameterValues: Map<string, FunctionParameterValueEntry> = new Map();
 	private readonly callValues: CallValueEntry[] = [];
 	private readonly valueAssignments: ValueAssignmentEntry[] = [];
 	private moduleValue?: SemanticValueSource;
@@ -1105,9 +1112,7 @@ class SemanticBuilder {
 	private readonly objectBindings: ObjectBindingEntry[] = [];
 	private readonly prefabReferences: PrefabReferenceEntry[] = [];
 	private readonly eventEmitterParameters: EventEmitterParameterEntry[] = [];
-	private readonly stateMachineOwners: StateMachineOwnerEntry[] = [];
-	private readonly stateMachineReceivers: StateMachineReceiverEntry[] = [];
-	private readonly selfParameterByFunction: WeakMap<LuaFunctionExpression, SymbolID> = new WeakMap();
+	private readonly componentPrograms: ComponentProgramSemanticCollector;
 	private readonly baseValuesByClassDeclId: Map<SymbolID, BaseValueEntry> = new Map();
 	private readonly instanceBaseValues: BaseValueEntry[] = [];
 	private readonly moduleAliasesByDeclId: Map<SymbolID, ModuleAliasTarget> = new Map();
@@ -1130,6 +1135,11 @@ class SemanticBuilder {
 		this.tokens = options.tokens;
 		this.annotations = new Array(options.lines.length);
 		this.tokenMap = buildTokenMap(options.tokens);
+		this.componentPrograms = new ComponentProgramSemanticCollector(this);
+	}
+
+	public get file(): string {
+		return this.path;
 	}
 
 	public build(): SemanticBuildResult {
@@ -1158,9 +1168,7 @@ class SemanticBuilder {
 				? [{ module: toLuaModulePath(this.path), source: this.moduleValue }]
 				: [],
 			memberValues: Array.from(this.memberValues.values()),
-			functionReturnValues: Array.from(this.functionReturnValues.entries()).flatMap(
-				([functionDeclId, sources]) => sources.map(source => ({ functionDeclId, source })),
-			),
+			functionReturnValues: Array.from(this.functionReturnValues.values()).flat(),
 			functionParameterValues: Array.from(this.functionParameterValues.values()),
 			callValues: this.callValues,
 			valueAssignments: this.valueAssignments,
@@ -1173,8 +1181,8 @@ class SemanticBuilder {
 			objectBindings: this.objectBindings,
 			prefabReferences: this.prefabReferences,
 			eventEmitterParameters: this.eventEmitterParameters,
-			stateMachineOwners: this.stateMachineOwners,
-			stateMachineReceivers: this.stateMachineReceivers,
+			componentProgramMounts: this.componentPrograms.mounts,
+			componentProgramCallbacks: this.componentPrograms.callbacks,
 			moduleAliases: Array.from(this.moduleAliasesByName.values()),
 		};
 	}
@@ -1254,7 +1262,11 @@ class SemanticBuilder {
 				const localFunction = statement;
 				const decl = this.declareLocal(localFunction.name, 'function', true);
 				this.recordFunctionSignature(localFunction.name.name, localFunction.functionExpression, 'function');
-				this.visitFunctionExpression(localFunction.functionExpression, undefined, decl);
+				this.visitFunctionExpression(
+					localFunction.functionExpression,
+					undefined,
+					declarationValueSource(decl.id),
+				);
 				break;
 			}
 			case LuaSyntaxKind.FunctionDeclarationStatement: {
@@ -1315,7 +1327,11 @@ class SemanticBuilder {
 					&& functionDeclaration.functionExpression.parameters[0]?.name === 'self') {
 					methodSelfPath = functionDeclaration.name.identifiers.slice(0, -1);
 				}
-				this.visitFunctionExpression(functionDeclaration.functionExpression, methodSelfPath, decl);
+				this.visitFunctionExpression(
+					functionDeclaration.functionExpression,
+					methodSelfPath,
+					declarationValueSource(decl.id),
+				);
 				break;
 			}
 			case LuaSyntaxKind.AssignmentStatement: {
@@ -1350,7 +1366,17 @@ class SemanticBuilder {
 							&& valueExpression.parameters[0]?.name === 'self') {
 							selfPath = targetPath.slice(0, -1);
 						}
-						this.visitFunctionExpression(valueExpression, selfPath, targetInfo?.decl);
+						const functionValue = targetInfo?.decl
+							? declarationValueSource(targetInfo.decl.id)
+							: expressionValueSource(
+								this.path,
+								valueExpression.range.start.line,
+								valueExpression.range.start.column,
+							);
+						this.visitFunctionExpression(valueExpression, selfPath, functionValue);
+						if (targetInfo?.valueTarget) {
+							this.recordValueAssignment(targetInfo.valueTarget, functionValue);
+						}
 						continue;
 					}
 					const valueInfo = this.visitExpression(valueExpression, context);
@@ -1600,10 +1626,15 @@ class SemanticBuilder {
 					: null;
 			}
 			case LuaSyntaxKind.FunctionExpression: {
-				this.visitFunctionExpression(expression, undefined, context.tableBaseDecl);
-				return context.tableOwner
-					? { namePath: null, decl: context.tableBaseDecl, valueSource: context.tableOwner }
-					: null;
+				const functionValue = context.tableBaseDecl
+					? declarationValueSource(context.tableBaseDecl.id)
+					: expressionValueSource(
+						this.path,
+						expression.range.start.line,
+						expression.range.start.column,
+					);
+				this.visitFunctionExpression(expression, undefined, functionValue);
+				return { namePath: null, decl: context.tableBaseDecl, valueSource: functionValue };
 			}
 			case LuaSyntaxKind.TableConstructorExpression: {
 				const tableOwner = context.tableOwner ?? tableValueSource(
@@ -1611,6 +1642,9 @@ class SemanticBuilder {
 					expression.range.start.line,
 					expression.range.start.column,
 				);
+				if (context.tableBaseDecl) {
+					this.componentPrograms.recordTableInitializer(context.tableBaseDecl.id, expression);
+				}
 				this.visitTableConstructorExpression(expression, {
 					...context,
 					tableOwner,
@@ -1771,8 +1805,10 @@ class SemanticBuilder {
 		}
 		const goDecl = goExpression.kind === LuaSyntaxKind.FunctionExpression
 			? this.propertiesByOwner.get(this.memberOwnerKey(owner, 'go'))
-			: this.resolveStaticExpressionDecl(goExpression);
-		const parameters = goDecl && this.functionParameterValues.get(goDecl.id);
+			: this.resolveStaticExpressionDeclaration(goExpression);
+		const parameters = goDecl && this.functionParameterValues.get(
+			semanticValueSourceKey(declarationValueSource(goDecl.id)),
+		);
 		if (!parameters || parameters.parameterDeclIds.length < 4) {
 			return;
 		}
@@ -1784,8 +1820,8 @@ class SemanticBuilder {
 
 	private visitFunctionExpression(
 		expression: LuaFunctionExpression,
-		methodSelfPath?: readonly string[],
-		functionDecl?: InternalDecl,
+		methodSelfPath: readonly string[] | undefined,
+		functionValue: SemanticValueSource,
 	): void {
 		const block = expression.body;
 		const scopeRange = block.range;
@@ -1798,15 +1834,10 @@ class SemanticBuilder {
 		this.functionReturnValueStack.push({
 			sources: [],
 		});
-		const parameterDeclIds = functionDecl ? new Array<SymbolID>(expression.parameters.length) : undefined;
+		const parameterDeclIds = new Array<SymbolID>(expression.parameters.length);
 		for (let index = 0; index < expression.parameters.length; index += 1) {
 			const parameter = this.declareParameter(expression.parameters[index], expression.range);
-			if (index === 0 && parameter.name === 'self') {
-				this.selfParameterByFunction.set(expression, parameter.id);
-			}
-			if (parameterDeclIds) {
-				parameterDeclIds[index] = parameter.id;
-			}
+			parameterDeclIds[index] = parameter.id;
 			if (index === 0
 				&& parameter.name === 'self'
 				&& methodSelfPath
@@ -1818,23 +1849,23 @@ class SemanticBuilder {
 				}
 			}
 		}
-		if (functionDecl && parameterDeclIds) {
-			this.functionParameterValues.set(functionDecl.id, {
-				functionDeclId: functionDecl.id,
-				parameterDeclIds,
-			});
-		}
+		this.functionParameterValues.set(semanticValueSourceKey(functionValue), {
+			functionValue,
+			parameterDeclIds,
+		});
 		this.visitBlock(block);
 		const returnValue = this.functionReturnValueStack.pop()!;
 		this.methodSelfScopeStack.pop();
 		this.methodSelfPathStack.pop();
 		this.leaveScope();
-		if (functionDecl) {
-			if (returnValue.sources.length > 0) {
-				this.functionReturnValues.set(functionDecl.id, returnValue.sources);
-			} else {
-				this.functionReturnValues.delete(functionDecl.id);
-			}
+		const functionKey = semanticValueSourceKey(functionValue);
+		if (returnValue.sources.length > 0) {
+			this.functionReturnValues.set(
+				functionKey,
+				returnValue.sources.map(source => ({ functionValue, source })),
+			);
+		} else {
+			this.functionReturnValues.delete(functionKey);
 		}
 	}
 
@@ -2506,8 +2537,9 @@ class SemanticBuilder {
 			: this.resolveStaticStringSource(expression);
 		const retain = source && (
 			source.kind === 'literal'
+			|| (source.kind === 'module' && (decl.kind === 'property' || moduleExport))
 			|| (source.kind === 'declaration' && this.declStringSources.has(source.declId))
-			|| (moduleExport && source.kind !== 'declaration')
+			|| (moduleExport && source.kind === 'global')
 		);
 		if (retain) {
 			this.declStringSources.set(decl.id, source);
@@ -2532,14 +2564,14 @@ class SemanticBuilder {
 		if (!path || path.length === 0) {
 			return null;
 		}
-		const decl = this.resolveStaticExpressionDecl(expression);
+		const decl = this.resolveStaticExpressionDeclaration(expression);
 		if (decl) {
 			return { kind: 'declaration', declId: decl.id };
 		}
 		return { kind: 'global', symbolKey: joinNamePath(path) };
 	}
 
-	private resolveConstantStringSource(expression: LuaExpression): StaticStringSource {
+	public resolveConstantStringSource(expression: LuaExpression): StaticStringSource {
 		let source = this.resolveStaticStringSource(expression);
 		while (source?.kind === 'declaration') {
 			const retained = this.declStringSources.get(source.declId);
@@ -2641,8 +2673,20 @@ class SemanticBuilder {
 			this.recordPrefabMetadata(callExpression);
 			return undefined;
 		}
-		if (callKind === CARTLIB_CALL_STATE_MACHINE_REGISTER) {
-			this.recordStateMachineReceivers(callExpression);
+		if (callKind === CARTLIB_CALL_STATE_MACHINE_REGISTER
+			|| callKind === CARTLIB_CALL_BEHAVIOUR_TREE_REGISTER) {
+			const programExpression = callExpression.arguments[0];
+			const definition = callExpression.arguments[1];
+			if (programExpression && definition) {
+				const programId = this.resolveConstantStringSource(programExpression);
+				if (programId) {
+					this.componentPrograms.recordProgram(
+						callKind === CARTLIB_CALL_STATE_MACHINE_REGISTER ? 'state_machine' : 'behaviour_tree',
+						programId,
+						definition,
+					);
+				}
+			}
 			return undefined;
 		}
 		if (callKind === CARTLIB_CALL_WORLD_SPAWN) {
@@ -2673,40 +2717,6 @@ class SemanticBuilder {
 			return bindingValueSource(bindingId);
 		}
 		return undefined;
-	}
-
-	private recordStateMachineReceivers(callExpression: LuaCallExpression): void {
-		const machineExpression = callExpression.arguments[0];
-		const definition = callExpression.arguments[1];
-		if (!machineExpression || !definition) {
-			return;
-		}
-		const machineId = this.resolveConstantStringSource(machineExpression);
-		if (!machineId) {
-			return;
-		}
-		const retained = new Set<SymbolID>();
-		walkLuaExpressionTree(definition, expression => {
-			const kind = expression.kind;
-			let parameterDeclId: SymbolID | undefined;
-			if (kind === LuaSyntaxKind.FunctionExpression) {
-				parameterDeclId = this.selfParameterByFunction.get(expression);
-			} else if (kind === LuaSyntaxKind.IdentifierExpression
-				|| kind === LuaSyntaxKind.MemberExpression
-				|| kind === LuaSyntaxKind.IndexExpression) {
-				const functionDecl = this.resolveStaticExpressionDecl(expression);
-				const parameters = functionDecl && this.functionParameterValues.get(functionDecl.id);
-				const firstParameter = parameters && parameters.parameterDeclIds[0];
-				if (firstParameter && this.declById.get(firstParameter)?.name === 'self') {
-					parameterDeclId = firstParameter;
-				}
-			}
-			if (parameterDeclId && !retained.has(parameterDeclId)) {
-				retained.add(parameterDeclId);
-				this.stateMachineReceivers.push({ machineId, parameterDeclId });
-			}
-			return kind === LuaSyntaxKind.FunctionExpression ? false : undefined;
-		});
 	}
 
 	private resolveObjectBindingId(callExpression: LuaCallExpression): StaticStringSource {
@@ -2750,11 +2760,11 @@ class SemanticBuilder {
 					break;
 			}
 		}
-		const classDecl = this.resolveStaticExpressionDecl(classExpression);
+		const classDecl = this.resolveStaticExpressionDeclaration(classExpression);
 		if (!classDecl) {
 			return;
 		}
-		this.recordStateMachineOwners(descriptor, classDecl.id);
+		this.componentPrograms.recordMounts(descriptor, classDecl.id);
 		if (defId) {
 			this.prefabClasses.push({
 				defId,
@@ -2772,44 +2782,13 @@ class SemanticBuilder {
 			});
 			return;
 		}
-		const baseDecl = this.resolveStaticExpressionDecl(baseExpression);
+		const baseDecl = this.resolveStaticExpressionDeclaration(baseExpression);
 		if (baseDecl && baseDecl.id !== classDecl.id) {
 			this.baseValuesByClassDeclId.set(classDecl.id, {
 				owner: declarationValueSource(classDecl.id),
 				origin: 'prefab',
 				base: declarationValueSource(baseDecl.id),
 			});
-		}
-	}
-
-	private recordStateMachineOwners(descriptor: LuaTableConstructorExpression, classDeclId: SymbolID): void {
-		for (let fieldIndex = 0; fieldIndex < descriptor.fields.length; fieldIndex += 1) {
-			const field = descriptor.fields[fieldIndex];
-			if (field.kind !== LuaTableFieldKind.IdentifierKey || field.name !== 'components') {
-				continue;
-			}
-			walkLuaExpressionTree(field.value, expression => {
-				if (expression.kind !== LuaSyntaxKind.CallExpression
-					|| this.classifyCartlibCall(expression) !== CARTLIB_CALL_STATE_MACHINE_FACTORY) {
-					return expression.kind === LuaSyntaxKind.FunctionExpression ? false : undefined;
-				}
-				const machineList = expression.arguments[0];
-				if (!machineList || machineList.kind !== LuaSyntaxKind.TableConstructorExpression) {
-					return false;
-				}
-				for (let machineIndex = 0; machineIndex < machineList.fields.length; machineIndex += 1) {
-					const machineField = machineList.fields[machineIndex];
-					if (machineField.kind !== LuaTableFieldKind.Array) {
-						continue;
-					}
-					const machineId = this.resolveConstantStringSource(machineField.value);
-					if (machineId) {
-						this.stateMachineOwners.push({ machineId, classDeclId });
-					}
-				}
-				return false;
-			});
-			return;
 		}
 	}
 
@@ -2821,8 +2800,8 @@ class SemanticBuilder {
 		if (!relation) {
 			return;
 		}
-		const classDecl = this.resolveStaticExpressionDecl(relation.classExpression);
-		const baseDecl = this.resolveStaticExpressionDecl(relation.baseExpression);
+		const classDecl = this.resolveStaticExpressionDeclaration(relation.classExpression);
+		const baseDecl = this.resolveStaticExpressionDeclaration(relation.baseExpression);
 		if (!classDecl || !baseDecl || classDecl.id === baseDecl.id) {
 			return;
 		}
@@ -2833,7 +2812,7 @@ class SemanticBuilder {
 		});
 	}
 
-	private resolveStaticExpressionDecl(expression: LuaExpression): InternalDecl {
+	public resolveStaticExpressionDeclaration(expression: LuaExpression): InternalDecl {
 		const path = expression && extractStaticMemberPath(expression);
 		if (!path || path.length === 0) {
 			return null;
@@ -2845,6 +2824,25 @@ class SemanticBuilder {
 		return owner
 			? this.propertiesByOwner.get(this.memberOwnerKey(owner, path[path.length - 1]))
 			: this.properties.get(joinNamePath(path));
+	}
+
+	public resolveMemberValueSource(owner: SemanticValueSource, name: string): SemanticValueSource {
+		const decl = this.propertiesByOwner.get(this.memberOwnerKey(owner, name));
+		return decl ? declarationValueSource(decl.id) : appendValueMember(owner, name);
+	}
+
+	public resolveExpressionValueSource(expression: LuaExpression): SemanticValueSource | undefined {
+		if (expression.kind === LuaSyntaxKind.FunctionExpression
+			|| (expression.kind === LuaSyntaxKind.BinaryExpression
+				&& (expression.operator === LuaBinaryOperator.And || expression.operator === LuaBinaryOperator.Or))) {
+			return expressionValueSource(
+				this.path,
+				expression.range.start.line,
+				expression.range.start.column,
+			);
+		}
+		const path = extractStaticMemberPath(expression);
+		return path ? this.resolveValueSourceFromNamePath(path) : undefined;
 	}
 
 	private resolveModuleAliasInitializer(
@@ -2906,7 +2904,24 @@ class SemanticBuilder {
 		if (alias.module === CARTLIB_STATE_MACHINE_COMPONENT_MODULE && totalMemberCount === 1) {
 			return trailingMember === 'factory' ? CARTLIB_CALL_STATE_MACHINE_FACTORY : CARTLIB_CALL_NONE;
 		}
+		if (alias.module === CARTLIB_BEHAVIOUR_TREE_LIBRARY_MODULE && totalMemberCount === 1) {
+			return trailingMember === 'register' ? CARTLIB_CALL_BEHAVIOUR_TREE_REGISTER : CARTLIB_CALL_NONE;
+		}
+		if (alias.module === CARTLIB_BEHAVIOUR_TREE_COMPONENT_MODULE && totalMemberCount === 1) {
+			return trailingMember === 'factory' ? CARTLIB_CALL_BEHAVIOUR_TREE_FACTORY : CARTLIB_CALL_NONE;
+		}
 		return CARTLIB_CALL_NONE;
+	}
+
+	public classifyComponentFactory(callExpression: LuaCallExpression): ComponentProgramKind | undefined {
+		const callKind = this.classifyCartlibCall(callExpression);
+		if (callKind === CARTLIB_CALL_STATE_MACHINE_FACTORY) {
+			return 'state_machine';
+		}
+		if (callKind === CARTLIB_CALL_BEHAVIOUR_TREE_FACTORY) {
+			return 'behaviour_tree';
+		}
+		return undefined;
 	}
 
 	private moduleAliasForName(name: string): ModuleAliasTarget {

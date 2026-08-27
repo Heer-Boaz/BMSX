@@ -42,12 +42,12 @@ export type MemberValueEntry = {
 };
 
 export type FunctionReturnValueEntry = {
-	functionDeclId: SymbolID;
+	functionValue: SemanticValueSource;
 	source: SemanticValueSource;
 };
 
 export type FunctionParameterValueEntry = {
-	functionDeclId: SymbolID;
+	functionValue: SemanticValueSource;
 	parameterDeclIds: readonly SymbolID[];
 };
 
@@ -1058,7 +1058,7 @@ export class WorkspaceValueGraph {
 	private materializeFunctionReturns(entries: readonly FunctionReturnValueEntry[]): void {
 		for (let index = 0; index < entries.length; index += 1) {
 			const entry = entries[index];
-			const functionValue = this.nodeFor(this.declarationNodes, entry.functionDeclId);
+			const functionValue = this.materializeFunctionValue(entry.functionValue);
 			let sources = this.functionReturnsByValue.get(functionValue);
 			if (!sources) {
 				sources = [];
@@ -1072,10 +1072,17 @@ export class WorkspaceValueGraph {
 		for (let index = 0; index < entries.length; index += 1) {
 			const entry = entries[index];
 			this.functionParametersByValue.set(
-				this.nodeFor(this.declarationNodes, entry.functionDeclId),
+				this.materializeFunctionValue(entry.functionValue),
 				entry.parameterDeclIds,
 			);
 		}
+	}
+
+	private materializeFunctionValue(source: SemanticValueSource): SemanticValueID {
+		if (source.root.kind === 'declaration' && source.steps.length === 0) {
+			return this.nodeFor(this.declarationNodes, source.root.declId);
+		}
+		return this.resolveSource(source, true)!;
 	}
 
 	private materializeRootValues(): void {
