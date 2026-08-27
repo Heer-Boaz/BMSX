@@ -34,6 +34,20 @@ De verborgen hold-Start-assignmentflow is geen open herstelpunt. Browserdevices
 worden zichtbaar via de quick menu toegewezen; bij libretro blijft fysieke
 controller-naar-port-toewijzing eigendom van de frontend.
 
+De huidige IDE- en debuggergrenzen zijn:
+
+- de runtime source registry bezit de exacte Lua-bronnen die bij de geladen
+  system- en cartridge-images horen. Gegenereerde modules, waaronder
+  `bmsx/assets.lua`, zijn gewone geregistreerde source records;
+- de semantische workspace resolveert navigatie vanuit lexicale declaraties,
+  module-exports, teruggegeven module-instanties en statische Lua-class-
+  inheritance. Zij verzint geen bron voor dynamische runtimewaarden;
+- Back en Forward bewaren editorlocaties op het moment dat een navigatiecommando
+  vertrekt. Een cartridge-entry opent cartridgebron en niet eerst de BIOS-entry;
+- stackframes en statement-stepping gebruiken de toolingmetadata van de geladen
+  ROM. Functies die tijdens runtime in RAM zijn gecompileerd hebben geen ROM-
+  function index en worden daarom met hun fysieke adres getoond.
+
 ## Validatiebasis voor inputwerk
 
 Een inputslice is pas overdraagbaar wanneer de relevante subset hiervan groen
@@ -82,6 +96,7 @@ beide vervangt de zichtbare targetmetingen hieronder.
 | `GX-CART-RESIDENCY-LIVE-01` | Doorloop atlaswissels in `2024`, `2025`, `nemesis_s` en `pietious`; framebufferpages, vaste system-VRAM, palette-CLUTs en hergebruikte cart-atlassen mogen elkaar niet zichtbaar beschadigen. | WebGL2 en GLES2; daarna echte SNES Mini. |
 | `HOST-OSK-LIVE-01` | Touch en iedere toegewezen/aangesloten controller openen en besturen quick menu en onscreen keyboard. Shift, Backspace, Delete, spatie, Enter, cursor, Home/End en lowercase/uppercase labels werken; sluiten lekt geen chord of letter naar cart, terminal of IDE. Browser-portremaps werken voor fysieke en onscreen devices zonder quick-menu-/shortcutcontrols mee te remappen. Cheat-/sealtekst kan zonder fysiek keyboard worden ingevoerd. | iPhone/browser en echte SNES Mini. |
 | `HOST-SUPERVISOR-01` | Select+L opent en sluit de terminal vanaf iedere aangesloten frontendport exact eenmaal zonder gameplayinput te lekken. | Echte SNES Mini. |
+| `IDE-LIVE-01` | Tijdens een cartridge-run opent de IDE de cartridge-entry; Back en Forward keren terug naar de exacte cursorlocatie; definition/declaration navigeert door cart-, cartlib-, gegenereerde en statisch geerfde Lua-symbolen; faults tonen authored context voor anonieme functies; Step Into, Over en Out blijven correct voor fysieke en inline frames. | Browser Studio op WebGL2. |
 | `PERF-03` | De op de echte target geselecteerde ARM-fetch-, NV-barrier- of dependency-copyroute rendert exact en houdt 50 Hz zonder backlog. | Windows RetroArch en echte SNES Mini. |
 | `PERF-04` | De 16k audio-/presentatiesoak houdt 50 Hz zonder sampleverlies, backlog of periodieke hitch. | Zichtbare frontend en daarna SNES Mini. |
 | `SNES-ABI-01` | De door de GCC-10 cross-build en QEMU-smoke geaccepteerde core start tegen de actuele target-root en frontend zonder ABI-, loader- of GLES2-fouten. | Actuele SNES Mini-rootdump en hardware. |
