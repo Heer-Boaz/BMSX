@@ -465,6 +465,40 @@ test('semantic workspace resolves explicit-self methods through prefab inheritan
 	assert.equal(reboundRightTarget!.decl.file, 'base_right.lua');
 });
 
+test('semantic workspace retains fields initialized through an explicit self receiver', async () => {
+	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const worldObjectSource = [
+		'local world_object<const> = {}',
+		'function world_object.initialize(self)',
+		'\tself.events = {}',
+		'end',
+		'return world_object',
+	].join('\n');
+	const derivedLines = [
+		"local prefab<const> = require('cartlib/world/prefab')",
+		"local world_object<const> = require('world_object')",
+		'local derived<const> = {}',
+		'function derived:land()',
+		'\treturn self.events',
+		'end',
+		"prefab.define({ def_id = 'derived', class = derived, base = world_object })",
+		'return derived',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('world_object.lua', worldObjectSource);
+	workspace.updateFile('derived.lua', derivedLines.join('\n'));
+	const snapshot = workspace.getSnapshot();
+	const eventsTarget = snapshot.symbolAt(
+		'derived.lua',
+		5,
+		derivedLines[4].indexOf('events') + 1,
+	);
+
+	assert.ok(eventsTarget, 'field initialized by the base explicit-self receiver');
+	assert.equal(eventsTarget!.decl.file, 'world_object.lua');
+	assert.deepEqual(eventsTarget!.decl.namePath, ['self', 'events']);
+});
+
 test('semantic workspace applies the prefab runtime default base', async () => {
 	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
 	const worldObjectSource = [

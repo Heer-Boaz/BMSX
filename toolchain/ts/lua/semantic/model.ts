@@ -1022,6 +1022,7 @@ class SemanticBuilder {
 	private readonly methodSelfPathStack: (readonly string[] | undefined)[] = [];
 	private readonly methodSelfScopeStack: (Scope | undefined)[] = [];
 	private readonly declarationValues: Map<SymbolID, SemanticValueSource[]> = new Map();
+	private readonly identityValueDeclarations: Set<SymbolID> = new Set();
 	private readonly memberValues: Map<SymbolID, MemberValueEntry> = new Map();
 	private readonly functionReturnValues: Map<SymbolID, SemanticValueSource[]> = new Map();
 	private readonly functionParameterValues: Map<SymbolID, FunctionParameterValueEntry> = new Map();
@@ -1071,7 +1072,8 @@ class SemanticBuilder {
 			functionSignatures: this.functionSignatures,
 			declarationValues: Array.from(this.declarationValues.entries()).flatMap(
 				([declId, sources]) => {
-					const identity = this.declById.get(declId)?.kind === 'constant';
+					const identity = this.declById.get(declId)?.kind === 'constant'
+						|| this.identityValueDeclarations.has(declId);
 					return sources.map(source => ({ declId, source, identity }));
 				},
 			),
@@ -1730,6 +1732,7 @@ class SemanticBuilder {
 				const classValue = this.resolveValueSourceFromNamePath(methodSelfPath);
 				if (classValue) {
 					this.setDeclarationValue(parameter, appendValueInstance(classValue));
+					this.identityValueDeclarations.add(parameter.id);
 				}
 			}
 		}
