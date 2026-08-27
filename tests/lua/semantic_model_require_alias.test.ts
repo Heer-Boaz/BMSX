@@ -257,6 +257,84 @@ test('semantic workspace batch retargets inherited members through reverse class
 	assert.equal(rightTarget!.decl.file, 'base_right.lua');
 });
 
+test('semantic workspace resolves explicit-self methods through prefab inheritance', async () => {
+	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const baseLeftSource = [
+		'local base_left<const> = {}',
+		'function base_left:left_action() end',
+		'return base_left',
+	].join('\n');
+	const baseRightSource = [
+		'local base_right<const> = {}',
+		'function base_right:right_action() end',
+		'return base_right',
+	].join('\n');
+	const derivedLeftLines = [
+		"local prefab<const> = require('cartlib/world/prefab')",
+		"local base_left<const> = require('base_left')",
+		'local derived<const> = {}',
+		'function derived.initialize(self)',
+		'\tself:left_action()',
+		'\tself:right_action()',
+		'end',
+		'local function register()',
+		"\tprefab.define({ def_id = 'derived', class = derived, base = base_left })",
+		'end',
+		'return derived',
+	];
+	const derivedRightSource = derivedLeftLines
+		.join('\n')
+		.replaceAll('base_left', 'base_right');
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('base_left.lua', baseLeftSource);
+	workspace.updateFile('base_right.lua', baseRightSource);
+	workspace.updateFile('derived.lua', derivedLeftLines.join('\n'));
+	const leftColumn = derivedLeftLines[4].indexOf('left_action') + 1;
+	const rightColumn = derivedLeftLines[5].indexOf('right_action') + 1;
+	const initialLeftTarget = workspace.getSnapshot().symbolAt('derived.lua', 5, leftColumn);
+	assert.ok(initialLeftTarget, 'prefab base method target');
+	assert.equal(initialLeftTarget!.decl.file, 'base_left.lua');
+	assert.equal(workspace.getSnapshot().symbolAt('derived.lua', 6, rightColumn), null);
+
+	workspace.updateFile('derived.lua', derivedRightSource);
+	assert.equal(workspace.getSnapshot().symbolAt('derived.lua', 5, leftColumn), null);
+	const reboundRightTarget = workspace.getSnapshot().symbolAt('derived.lua', 6, rightColumn);
+	assert.ok(reboundRightTarget, 'retargeted prefab base method target');
+	assert.equal(reboundRightTarget!.decl.file, 'base_right.lua');
+});
+
+test('semantic workspace applies the prefab runtime default base', async () => {
+	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const worldObjectSource = [
+		'local world_object<const> = {}',
+		'function world_object:mark_for_disposal() end',
+		'return world_object',
+	].join('\n');
+	const derivedLines = [
+		"local prefab<const> = require('cartlib/world/prefab')",
+		'local derived<const> = {}',
+		'derived.initialize = function(self)',
+		'\tself:mark_for_disposal()',
+		'end',
+		'local function register()',
+		"\tprefab.define({ def_id = 'derived', class = derived })",
+		'end',
+		'return derived',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('cartlib/world/world_object.lua', worldObjectSource);
+	workspace.updateFile('derived.lua', derivedLines.join('\n'));
+	const target = workspace.getSnapshot().symbolAt(
+		'derived.lua',
+		4,
+		derivedLines[3].indexOf('mark_for_disposal') + 1,
+	);
+
+	assert.ok(target, 'default world object method target');
+	assert.equal(target!.decl.file, 'cartlib/world/world_object.lua');
+	assert.deepEqual(target!.decl.namePath, ['world_object', 'mark_for_disposal']);
+});
+
 test('semantic workspace retains exported table identity across local shadowing', async () => {
 	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
 	const signatureSource = [

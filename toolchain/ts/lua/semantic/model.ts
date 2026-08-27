@@ -71,6 +71,12 @@ export type ObjectBindingEntry = {
 	prefabId: string;
 };
 
+export type ClassBaseEntry = {
+	classDeclId: SymbolID;
+	origin: 'metatable' | 'prefab';
+	base: { declId: SymbolID } | { module: string };
+};
+
 export type LuaSemanticModel = {
 	file: string;
 	annotations: SemanticAnnotations;
@@ -127,6 +133,7 @@ export type FileSemanticData = {
 	declValueHints: readonly DeclValueHintEntry[];
 	prefabClasses: readonly PrefabClassEntry[];
 	objectBindings: readonly ObjectBindingEntry[];
+	classBases: readonly ClassBaseEntry[];
 };
 
 const EMPTY_REFS: readonly Ref[] = [];
@@ -345,6 +352,9 @@ type AssignmentTargetInfo = {
 const CARTLIB_CALL_NONE = 0;
 const CARTLIB_CALL_PREFAB_DEFINE = 1;
 const CARTLIB_CALL_WORLD_SPAWN = 2;
+const CARTLIB_PREFAB_MODULE = 'cartlib/world/prefab';
+const CARTLIB_WORLD_MODULE = 'cartlib/world/world';
+const CARTLIB_WORLD_OBJECT_MODULE = 'cartlib/world/world_object';
 
 type CartlibCallKind =
 	| typeof CARTLIB_CALL_NONE
@@ -360,6 +370,7 @@ type SemanticBuildResult = {
 	declValueHints: DeclValueHintEntry[];
 	prefabClasses: PrefabClassEntry[];
 	objectBindings: ObjectBindingEntry[];
+	classBases: ClassBaseEntry[];
 	moduleAliases: ModuleAliasEntry[];
 };
 
@@ -421,6 +432,7 @@ export function buildLuaFileSemanticData(
 		declValueHints: result.declValueHints,
 		prefabClasses: result.prefabClasses,
 		objectBindings: result.objectBindings,
+		classBases: result.classBases,
 	};
 }
 
@@ -960,7 +972,9 @@ class LuaProjectIndex {
 		const nextClassBaseHints = buildWorkspaceClassBaseHints(
 			orderedFiles,
 			this.files,
+			this.symbols,
 			nextDeclPathHints,
+			moduleFiles,
 		);
 
 		this.collectDirtyHintKeys(previousPrefabHintsById, nextPrefabHintsById, buildPrefabHintKey, dirtyReceiverHintKeys);
@@ -1372,6 +1386,7 @@ class SemanticBuilder {
 	private readonly declValueHints: Map<SymbolID, SemanticHintKey> = new Map();
 	private readonly prefabClasses: PrefabClassEntry[] = [];
 	private readonly objectBindings: ObjectBindingEntry[] = [];
+	private readonly classBasesByClassDeclId: Map<SymbolID, ClassBaseEntry> = new Map();
 	private readonly moduleAliasesByDeclId: Map<SymbolID, ModuleAliasTarget> = new Map();
 	private readonly immutableModuleAliasesByDeclId: Map<SymbolID, ModuleAliasTarget> = new Map();
 	private readonly moduleAliasesByName: Map<string, ModuleAliasEntry> = new Map();
@@ -1410,6 +1425,7 @@ class SemanticBuilder {
 			declValueHints: Array.from(this.declValueHints.entries(), ([declId, hintKey]) => ({ declId, hintKey })),
 			prefabClasses: this.prefabClasses,
 			objectBindings: this.objectBindings,
+			classBases: Array.from(this.classBasesByClassDeclId.values()),
 			moduleAliases: Array.from(this.moduleAliasesByName.values()),
 		};
 	}
@@ -1519,7 +1535,12 @@ class SemanticBuilder {
 					? (basePath.length > 0 ? `${basePath}:${methodName}` : methodName)
 					: basePath;
 				this.recordFunctionSignature(declarationPath, functionDeclaration.functionExpression, methodName ? 'method' : 'function');
-				const methodSelfPath = methodName ? functionDeclaration.name.identifiers.slice() : undefined;
+				let methodSelfPath = methodName ? functionDeclaration.name.identifiers.slice() : undefined;
+				if (!methodSelfPath
+					&& functionDeclaration.name.identifiers.length > 1
+					&& functionDeclaration.functionExpression.parameters[0]?.name === 'self') {
+					methodSelfPath = functionDeclaration.name.identifiers.slice(0, -1);
+				}
 				this.visitFunctionExpression(functionDeclaration.functionExpression, methodSelfPath, decl);
 				break;
 			}
@@ -1538,8 +1559,19 @@ class SemanticBuilder {
 						}
 						: { tableBaseDecl: null, tableBasePath: null };
 					const valueExpression = assignment.right[index];
-					if (valueExpression.kind === LuaSyntaxKind.FunctionExpression && targetInfo && targetInfo.path) {
-						this.recordFunctionSignature(targetInfo.path, valueExpression as LuaFunctionExpression, 'function');
+					if (valueExpression.kind === LuaSyntaxKind.FunctionExpression) {
+						if (targetInfo?.path) {
+							this.recordFunctionSignature(targetInfo.path, valueExpression, 'function');
+						}
+						const targetPath = targetInfo?.namePath;
+						let selfPath: readonly string[] | undefined;
+						if (targetPath
+							&& targetPath.length > 1
+							&& valueExpression.parameters[0]?.name === 'self') {
+							selfPath = targetPath.slice(0, -1);
+						}
+						this.visitFunctionExpression(valueExpression, selfPath, targetInfo?.decl);
+						continue;
 					}
 					const valueInfo = this.visitExpression(valueExpression, context);
 					if (targetInfo?.decl && valueInfo?.hintKey) {
@@ -1744,6 +1776,7 @@ class SemanticBuilder {
 						secondArgumentInfo = argumentInfo;
 					}
 				}
+				this.recordMetatableClassBase(callExpression);
 				this.callExpressions.push(callExpression);
 				const cartlibHint = this.recordCartlibCallMetadata(callExpression);
 				const hintKey = this.resolveCallResultHint(
@@ -1849,7 +1882,16 @@ class SemanticBuilder {
 			consistent: true,
 		});
 		for (let index = 0; index < expression.parameters.length; index += 1) {
-			this.declareParameter(expression.parameters[index], expression.range);
+			const parameter = this.declareParameter(expression.parameters[index], expression.range);
+			if (index === 0
+				&& parameter.name === 'self'
+				&& methodSelfPath
+				&& methodSelfPath.length > 0) {
+				this.declValueHints.set(
+					parameter.id,
+					buildPathHintKey(this.path, joinNamePath(methodSelfPath)),
+				);
+			}
 		}
 		this.visitBlock(block);
 		const returnHint = this.functionReturnHintStack.pop()!;
@@ -2433,10 +2475,7 @@ class SemanticBuilder {
 	private recordCartlibCallMetadata(callExpression: LuaCallExpression): SemanticHintKey {
 		const callKind = this.classifyCartlibCall(callExpression);
 		if (callKind === CARTLIB_CALL_PREFAB_DEFINE) {
-			const prefabClass = extractPrefabClassEntry(callExpression, this.path);
-			if (prefabClass) {
-				this.prefabClasses.push(prefabClass);
-			}
+			this.recordPrefabMetadata(callExpression);
 			return null;
 		}
 		if (callKind === CARTLIB_CALL_WORLD_SPAWN) {
@@ -2452,6 +2491,95 @@ class SemanticBuilder {
 			return buildPrefabHintKey(prefabId);
 		}
 		return null;
+	}
+
+	private recordPrefabMetadata(callExpression: LuaCallExpression): void {
+		const descriptor = callExpression.arguments[0];
+		if (!descriptor || descriptor.kind !== LuaSyntaxKind.TableConstructorExpression) {
+			return;
+		}
+		let defId: string = null;
+		let classExpression: LuaExpression = null;
+		let baseExpression: LuaExpression = null;
+		let hasBase = false;
+		for (let index = 0; index < descriptor.fields.length; index += 1) {
+			const field = descriptor.fields[index];
+			if (field.kind !== LuaTableFieldKind.IdentifierKey) {
+				continue;
+			}
+			switch (field.name) {
+				case 'def_id':
+					defId = extractStringLiteral(field.value);
+					break;
+				case 'class':
+					classExpression = field.value;
+					break;
+				case 'base':
+					baseExpression = field.value;
+					hasBase = true;
+					break;
+			}
+		}
+		const classDecl = this.resolveStaticExpressionDecl(classExpression);
+		if (!classDecl) {
+			return;
+		}
+		if (defId) {
+			this.prefabClasses.push({
+				defId,
+				classHintKey: buildPathHintKey(this.path, classDecl.symbolKey),
+			});
+		}
+		if (this.classBasesByClassDeclId.has(classDecl.id)) {
+			return;
+		}
+		if (!hasBase || baseExpression.kind === LuaSyntaxKind.NilLiteralExpression) {
+			this.classBasesByClassDeclId.set(classDecl.id, {
+				classDeclId: classDecl.id,
+				origin: 'prefab',
+				base: { module: CARTLIB_WORLD_OBJECT_MODULE },
+			});
+			return;
+		}
+		const baseDecl = this.resolveStaticExpressionDecl(baseExpression);
+		if (baseDecl && baseDecl.id !== classDecl.id) {
+			this.classBasesByClassDeclId.set(classDecl.id, {
+				classDeclId: classDecl.id,
+				origin: 'prefab',
+				base: { declId: baseDecl.id },
+			});
+		}
+	}
+
+	private recordMetatableClassBase(callExpression: LuaCallExpression): void {
+		if (this.currentScope().kind !== 'path') {
+			return;
+		}
+		const relation = extractMetatableClassBaseExpressions(callExpression);
+		if (!relation) {
+			return;
+		}
+		const classDecl = this.resolveStaticExpressionDecl(relation.classExpression);
+		const baseDecl = this.resolveStaticExpressionDecl(relation.baseExpression);
+		if (!classDecl || !baseDecl || classDecl.id === baseDecl.id) {
+			return;
+		}
+		this.classBasesByClassDeclId.set(classDecl.id, {
+			classDeclId: classDecl.id,
+			origin: 'metatable',
+			base: { declId: baseDecl.id },
+		});
+	}
+
+	private resolveStaticExpressionDecl(expression: LuaExpression): InternalDecl {
+		const path = expression && extractStaticMemberPath(expression);
+		if (!path || path.length === 0) {
+			return null;
+		}
+		if (path.length === 1) {
+			return this.resolveName(path[0]);
+		}
+		return this.properties.get(joinNamePath(path));
 	}
 
 	private resolveModuleAliasInitializer(
@@ -2498,13 +2626,13 @@ class SemanticBuilder {
 			trailingMember = alias.memberPath[0];
 		}
 		const totalMemberCount = alias.memberPath.length + memberCount;
-		if (alias.module === 'cartlib/world/prefab' && totalMemberCount === 1) {
+		if (alias.module === CARTLIB_PREFAB_MODULE && totalMemberCount === 1) {
 			if (trailingMember === 'define') {
 				return CARTLIB_CALL_PREFAB_DEFINE;
 			}
 			return CARTLIB_CALL_NONE;
 		}
-		if (alias.module === 'cartlib/world/world' && totalMemberCount === 1) {
+		if (alias.module === CARTLIB_WORLD_MODULE && totalMemberCount === 1) {
 			return trailingMember === 'spawn' ? CARTLIB_CALL_WORLD_SPAWN : CARTLIB_CALL_NONE;
 		}
 		return CARTLIB_CALL_NONE;
@@ -2895,55 +3023,65 @@ function addDerivedClassHints(
 function buildWorkspaceClassBaseHints(
 	files: readonly string[],
 	records: ReadonlyMap<string, FileRecord>,
+	declsById: ReadonlyMap<SymbolID, Decl>,
 	declPathHints: ReadonlyMap<SymbolID, SemanticHintKey>,
+	moduleFiles: ReadonlyMap<string, string>,
 ): Map<SemanticHintKey, SemanticHintKey> {
 	const bases = new Map<SemanticHintKey, SemanticHintKey>();
 	for (let fileIndex = 0; fileIndex < files.length; fileIndex += 1) {
 		const file = files[fileIndex];
 		const data = records.get(file)!.data;
-		for (let statementIndex = 0; statementIndex < data.chunk.body.length; statementIndex += 1) {
-			const relation = extractClassBaseRelation(data.chunk.body[statementIndex]);
-			if (!relation) {
+		for (let entryIndex = 0; entryIndex < data.classBases.length; entryIndex += 1) {
+			const entry = data.classBases[entryIndex];
+			const classDecl = declsById.get(entry.classDeclId)!;
+			const classHint = declPathHints.get(classDecl.id)
+				?? buildPathHintKey(file, classDecl.symbolKey);
+			let baseHint: SemanticHintKey;
+			if ('declId' in entry.base) {
+				const baseDecl = declsById.get(entry.base.declId)!;
+				baseHint = declPathHints.get(baseDecl.id)
+					?? buildPathHintKey(file, baseDecl.symbolKey);
+			} else {
+				baseHint = resolveModuleRootPathHint(
+					entry.base.module,
+					records,
+					moduleFiles,
+					declPathHints,
+				);
+			}
+			if (!baseHint || classHint === baseHint) {
 				continue;
 			}
-			const classDecl = findDeclBySymbolKey(data.decls, joinNamePath(relation.classPath));
-			const baseDecl = findDeclBySymbolKey(data.decls, joinNamePath(relation.basePath));
-			if (!classDecl || !baseDecl) {
-				continue;
+			if (entry.origin === 'metatable') {
+				bases.set(classHint, baseHint);
+			} else if (!bases.has(classHint)) {
+				bases.set(classHint, baseHint);
 			}
-			bases.set(
-				buildPathHintKey(file, classDecl.symbolKey),
-				declPathHints.get(baseDecl.id) ?? buildPathHintKey(file, baseDecl.symbolKey),
-			);
 		}
 	}
 	return bases;
 }
 
-function extractClassBaseRelation(statement: LuaStatement): {
-	classPath: string[];
-	basePath: string[];
+function extractMetatableClassBaseExpressions(call: LuaCallExpression): {
+	classExpression: LuaExpression;
+	baseExpression: LuaExpression;
 } {
-	if (statement.kind !== LuaSyntaxKind.CallStatement
-		|| statement.expression.kind !== LuaSyntaxKind.CallExpression) {
-		return null;
-	}
-	const call = statement.expression;
 	if (call.methodName
 		|| resolveDirectCallName(call.callee) !== 'setmetatable'
 		|| call.arguments.length !== 2) {
 		return null;
 	}
-	const classPath = extractStaticMemberPath(call.arguments[0]);
 	const metatable = call.arguments[1];
-	if (!classPath || metatable.kind !== LuaSyntaxKind.TableConstructorExpression) {
+	if (metatable.kind !== LuaSyntaxKind.TableConstructorExpression) {
 		return null;
 	}
 	for (let fieldIndex = 0; fieldIndex < metatable.fields.length; fieldIndex += 1) {
 		const field = metatable.fields[fieldIndex];
 		if (field.kind === LuaTableFieldKind.IdentifierKey && field.name === '__index') {
-			const basePath = extractStaticMemberPath(field.value);
-			return basePath ? { classPath, basePath } : null;
+			return {
+				classExpression: call.arguments[0],
+				baseExpression: field.value,
+			};
 		}
 	}
 	return null;
@@ -2965,20 +3103,10 @@ function recordModuleAliasPathHints(
 		if (!decl) {
 			continue;
 		}
-		const moduleFile = moduleFiles.get(alias.module);
-		if (!moduleFile) {
+		let targetHint = resolveModuleRootPathHint(alias.module, files, moduleFiles, hints);
+		if (!targetHint) {
 			continue;
 		}
-		const moduleRecord = files.get(moduleFile)!;
-		const moduleRoot = resolveModuleReturnNamePath(moduleRecord.data.chunk);
-		if (!moduleRoot) {
-			continue;
-		}
-		let targetHint = resolveDeclValuePathHint(
-			buildPathHintKey(moduleFile, joinNamePath(moduleRoot)),
-			files,
-			hints,
-		);
 		const memberPath = alias.memberPath;
 		for (let memberIndex = 0; memberIndex < memberPath.length; memberIndex += 1) {
 			targetHint = resolveDeclValuePathHint(
@@ -2992,6 +3120,27 @@ function recordModuleAliasPathHints(
 		}
 		hints.set(decl.id, targetHint);
 	}
+}
+
+function resolveModuleRootPathHint(
+	module: string,
+	files: ReadonlyMap<string, FileRecord>,
+	moduleFiles: ReadonlyMap<string, string>,
+	hints: ReadonlyMap<SymbolID, SemanticHintKey>,
+): SemanticHintKey {
+	const moduleFile = moduleFiles.get(module);
+	if (!moduleFile) {
+		return null;
+	}
+	const moduleRoot = resolveModuleReturnNamePath(files.get(moduleFile)!.data.chunk);
+	if (!moduleRoot) {
+		return null;
+	}
+	return resolveDeclValuePathHint(
+		buildPathHintKey(moduleFile, joinNamePath(moduleRoot)),
+		files,
+		hints,
+	);
 }
 
 function resolveDeclValuePathHint(
@@ -3209,38 +3358,6 @@ function extractObjectBindingId(callExpression: LuaCallExpression): string {
 		return extractStringLiteral(field.value);
 	}
 	return null;
-}
-
-function extractPrefabClassEntry(callExpression: LuaCallExpression, file: string): PrefabClassEntry {
-	if (callExpression.arguments.length === 0) {
-		return null;
-	}
-	const descriptor = callExpression.arguments[0];
-	if (!descriptor || descriptor.kind !== LuaSyntaxKind.TableConstructorExpression) {
-		return null;
-	}
-	let defId: string = null;
-	let classPath: string[] = null;
-	for (let index = 0; index < descriptor.fields.length; index += 1) {
-		const field = descriptor.fields[index];
-		if (field.kind !== LuaTableFieldKind.IdentifierKey) {
-			continue;
-		}
-		if (field.name === 'def_id') {
-			defId = extractStringLiteral(field.value);
-			continue;
-		}
-		if (field.name === 'class') {
-			classPath = extractNamePath(field.value);
-		}
-	}
-	if (!defId || !classPath || classPath.length === 0) {
-		return null;
-	}
-	return {
-		defId,
-		classHintKey: buildPathHintKey(file, joinNamePath(classPath)),
-	};
 }
 
 function buildFunctionNamePath(name: { identifiers: readonly string[]; methodName: string }): string[] {
