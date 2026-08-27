@@ -5,8 +5,8 @@ import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isShiftDown, sh
 import type { PlayerInput } from '../../../../../../hosts/common/input/player';
 
 type NavigationHistoryCommands = {
-	goBackward(): void;
-	goForward(): void;
+	goBackward(): Promise<void>;
+	goForward(): Promise<void>;
 };
 
 export function handleEditorNavigationKeys(playerInput: PlayerInput, navigation: EditorNavigationController): void {
@@ -62,12 +62,12 @@ function handleEditorAltNavigation(playerInput: PlayerInput, navigation: Navigat
 	if (!ctrlDown && !shiftDown) {
 		if (isKeyJustPressed('ArrowLeft', playerInput)) {
 			consumeIdeKey('ArrowLeft', playerInput);
-			navigation.goBackward();
+			void navigation.goBackward();
 			return;
 		}
 		if (isKeyJustPressed('ArrowRight', playerInput)) {
 			consumeIdeKey('ArrowRight', playerInput);
-			navigation.goForward();
+			void navigation.goForward();
 			return;
 		}
 	}

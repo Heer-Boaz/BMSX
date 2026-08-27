@@ -71,7 +71,7 @@ export function applyResourceSearchSelection(
 	const match = resourceSearchState.matches[index];
 	closeResourceSearch(true);
 	microtasks.queueMicrotask(() => {
-		editor.navigation.openResource(match.entry.resource);
+		void editor.navigation.openResource(match.entry.resource);
 	});
 }
 

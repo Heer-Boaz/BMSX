@@ -1,6 +1,5 @@
 import type { ResourceBrowserItem } from '../../../../common/models';
 import { getActiveCodeTabContext } from '../../../ui/code_tab/contexts';
-import { applyDefinitionSelection } from '../../../../editor/contrib/intellisense/engine';
 import { toggleSelectedCallHierarchyExpansion } from './navigation';
 import type { CartEditor } from '../../../../cart_editor';
 
@@ -11,7 +10,7 @@ export function openResourcePanelItem(
 	if (!item?.resource) {
 		return false;
 	}
-	editor.navigation.openResource(item.resource);
+	void editor.navigation.openResource(item.resource);
 	return true;
 }
 
@@ -25,8 +24,12 @@ export function openResourcePanelCallHierarchyLocation(
 	editor.navigation.focusChunkSourceForContext(
 		getActiveCodeTabContext().resource.domain,
 		item.location.path,
+		{
+			row: item.location.range.startLine - 1,
+			startColumn: item.location.range.startColumn - 1,
+			endColumn: item.location.range.startColumn - 1,
+		},
 	);
-	applyDefinitionSelection(item.location.range);
 }
 
 export function openSelectedResourcePanelItem(

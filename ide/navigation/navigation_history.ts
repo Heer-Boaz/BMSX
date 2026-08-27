@@ -1,17 +1,11 @@
 import { clamp } from '../../machine/ts/common/clamp';
-import { setActiveTab, activateCodeTab } from '../workbench/ui/tabs';
-import { getActiveCodeTabContext, getCodeTabContextById, isCodeTabActive } from '../workbench/ui/code_tab/contexts';
-import { setCursorPosition, ensureCursorVisible } from '../editor/ui/view/caret/caret';
-import * as TextEditing from '../editor/editing/text_editing_and_selection';
-import { editorCaretState } from '../editor/ui/view/caret/state';
+import { getActiveCodeTabContext, isCodeTabActive } from '../workbench/ui/code_tab/contexts';
 import { editorDocumentState } from '../editor/editing/document_state';
 import type { ResourceDomain } from '../common/resource';
-import type { ResourcePanelController } from '../workbench/contrib/resources/panel/controller';
 
 const NAVIGATION_HISTORY_LIMIT = 64;
 
 export type NavigationHistoryEntry = {
-	contextId: string;
 	domain: ResourceDomain;
 	path: string;
 	row: number;
@@ -21,13 +15,13 @@ export type NavigationHistoryEntry = {
 export const navigationState = {
 	back: [] as NavigationHistoryEntry[],
 	forward: [] as NavigationHistoryEntry[],
-	captureSuspended: false,
+	captureSuspendDepth: 0,
 };
 
 export function initializeNavigationState(): void {
 	navigationState.back.length = 0;
 	navigationState.forward.length = 0;
-	navigationState.captureSuspended = false;
+	navigationState.captureSuspendDepth = 0;
 }
 
 export function clearForwardNavigationHistory(): void {
@@ -37,18 +31,18 @@ export function clearForwardNavigationHistory(): void {
 export function resetNavigationHistoryState(): void {
 	navigationState.back.length = 0;
 	navigationState.forward.length = 0;
-	navigationState.captureSuspended = false;
+	navigationState.captureSuspendDepth = 0;
 }
 
 export function beginNavigationCapture(): NavigationHistoryEntry | null {
-	if (navigationState.captureSuspended) {
+	if (navigationState.captureSuspendDepth > 0) {
 		return null;
 	}
 	return createNavigationEntry();
 }
 
 export function completeNavigation(previous: NavigationHistoryEntry | null): void {
-	if (navigationState.captureSuspended) {
+	if (navigationState.captureSuspendDepth > 0) {
 		return;
 	}
 	const next = createNavigationEntry();
@@ -80,8 +74,7 @@ export function pushNavigationEntry(stack: NavigationHistoryEntry[], entry: Navi
 }
 
 export function areNavigationEntriesEqual(a: NavigationHistoryEntry, b: NavigationHistoryEntry): boolean {
-	return a.contextId === b.contextId
-		&& a.domain === b.domain
+	return a.domain === b.domain
 		&& a.path === b.path
 		&& a.row === b.row
 		&& a.column === b.column;
@@ -101,7 +94,6 @@ export function createNavigationEntry(): NavigationHistoryEntry | null {
 	const lineLen = editorDocumentState.buffer.getLineEndOffset(row) - editorDocumentState.buffer.getLineStartOffset(row);
 	const column = clamp(editorDocumentState.cursorColumn, 0, lineLen);
 	return {
-		contextId: context.id,
 		domain: context.resource.domain,
 		path,
 		row,
@@ -109,46 +101,13 @@ export function createNavigationEntry(): NavigationHistoryEntry | null {
 	};
 }
 
-export function withNavigationCaptureSuspended<T>(operation: () => T): T {
-	const previous = navigationState.captureSuspended;
-	navigationState.captureSuspended = true;
+export async function withNavigationCaptureSuspended<T>(operation: () => Promise<T>): Promise<T> {
+	navigationState.captureSuspendDepth += 1;
 	try {
-		return operation();
+		return await operation();
 	} finally {
-		navigationState.captureSuspended = previous;
+		navigationState.captureSuspendDepth -= 1;
 	}
-}
-
-export function activateNavigationEntryContext(
-	resourcePanel: ResourcePanelController,
-	entry: NavigationHistoryEntry,
-): boolean {
-	const existingContext = getCodeTabContextById(entry.contextId);
-	if (existingContext) {
-		setActiveTab(resourcePanel, entry.contextId);
-		return true;
-	}
-	return false;
-}
-
-export function applyNavigationEntryPosition(
-	resourcePanel: ResourcePanelController,
-	entry: NavigationHistoryEntry,
-): void {
-	if (!isCodeTabActive()) {
-		activateCodeTab(resourcePanel);
-	}
-	if (!isCodeTabActive()) {
-		return;
-	}
-	const maxRowIndex = Math.max(0, editorDocumentState.buffer.getLineCount() - 1);
-	const targetRow = clamp(entry.row, 0, maxRowIndex);
-	const line = editorDocumentState.buffer.getLineContent(targetRow);
-	const targetColumn = clamp(entry.column, 0, line.length);
-	setCursorPosition(targetRow, targetColumn);
-	TextEditing.clearSelection();
-	editorCaretState.cursorRevealSuspended = false;
-	ensureCursorVisible();
 }
 
 export function takeBackwardNavigationEntry(currentEntry: NavigationHistoryEntry | null): NavigationHistoryEntry | null {

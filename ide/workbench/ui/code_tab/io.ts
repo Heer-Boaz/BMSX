@@ -65,6 +65,7 @@ export async function openAemCodeTab(
 	editor: CartEditor,
 	sources: RuntimeSourceState,
 	resource: RuntimeResource,
+	selection?: CodeTabSelection,
 ): Promise<void> {
 	const resourcePanel = editor.resourcePanel;
 	const tabId = buildCodeTabId(resource);
@@ -85,7 +86,7 @@ export async function openAemCodeTab(
 		}
 		applyCodeTabResource(context, resource, 'aem');
 		upsertCodeEditorTab(context);
-		setActiveTab(resourcePanel, tabId);
+		setActiveTab(resourcePanel, tabId, selection);
 	} catch (error) {
 		showEditorMessage(extractErrorMessage(error), constants.COLOR_STATUS_ERROR, 4.0);
 	}
@@ -96,14 +97,15 @@ export async function openCodeTabForResource(
 	editor: CartEditor,
 	sources: RuntimeSourceState,
 	resource: RuntimeResource,
+	selection?: CodeTabSelection,
 ): Promise<void> {
 	const resourcePanel = editor.resourcePanel;
 	switch (resource.source.type) {
 		case 'lua':
-			openLuaCodeTab(resourcePanel, sources, resource);
+			openLuaCodeTab(resourcePanel, sources, resource, selection);
 			return;
 		case 'aem':
-			await openAemCodeTab(storage, editor, sources, resource);
+			await openAemCodeTab(storage, editor, sources, resource, selection);
 			return;
 		default:
 			throw new Error(`Unsupported code tab resource type '${resource.source.type}' for '${resource.path}'.`);
