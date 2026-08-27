@@ -4,6 +4,7 @@ import {
 } from '../syntax/ast';
 
 export type ModuleAliasEntry = {
+	readonly declId: string;
 	readonly alias: string;
 	readonly module: string;
 	readonly memberPath: readonly string[];

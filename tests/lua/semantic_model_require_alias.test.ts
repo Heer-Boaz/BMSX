@@ -15,12 +15,117 @@ test('semantic file data records direct and chained require aliases', async () =
 	].join('\n');
 	const data = buildLuaFileSemanticData(source, 'testpath');
 	assert.deepEqual(data.moduleAliases, [
-		{ alias: 'constants', module: 'constants', memberPath: [] },
-		{ alias: 'hud', module: 'constants', memberPath: ['hud'] },
-		{ alias: 'physics', module: 'constants', memberPath: ['physics'] },
-		{ alias: 'overlay', module: 'constants', memberPath: ['hud', 'overlay'] },
-		{ alias: 'combat_overlap', module: 'combat_overlap', memberPath: [] },
+		{
+			declId: 'testpath|1|7|constant|constants',
+			alias: 'constants',
+			module: 'constants',
+			memberPath: [],
+		},
+		{
+			declId: 'testpath|2|7|constant|hud',
+			alias: 'hud',
+			module: 'constants',
+			memberPath: ['hud'],
+		},
+		{
+			declId: 'testpath|3|7|constant|physics',
+			alias: 'physics',
+			module: 'constants',
+			memberPath: ['physics'],
+		},
+		{
+			declId: 'testpath|4|7|constant|overlay',
+			alias: 'overlay',
+			module: 'constants',
+			memberPath: ['hud', 'overlay'],
+		},
+		{
+			declId: 'testpath|5|7|constant|combat_overlap',
+			alias: 'combat_overlap',
+			module: 'combat_overlap',
+			memberPath: [],
+		},
 	]);
+});
+
+test('semantic workspace resolves transitive module aliases independently of file order', async () => {
+	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const baseSource = [
+		'local base<const> = {}',
+		'function base.tools.byte() end',
+		'return base',
+	].join('\n');
+	const facadeSource = [
+		"local base<const> = require('base')",
+		'return base.tools',
+	].join('\n');
+	const mainLines = [
+		"api = require('facade')",
+		'api.byte()',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('main.lua', mainLines.join('\n'));
+	workspace.updateFile('facade.lua', facadeSource);
+	workspace.updateFile('base.lua', baseSource);
+	const target = workspace.getSnapshot().symbolAt(
+		'main.lua',
+		2,
+		mainLines[1].indexOf('byte') + 1,
+	);
+
+	assert.ok(target, 'transitively exported member target');
+	assert.equal(target!.decl.file, 'base.lua');
+	assert.deepEqual(target!.decl.namePath, ['base', 'tools', 'byte']);
+});
+
+test('semantic workspace incrementally retargets transitive module aliases', async () => {
+	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const leftSource = [
+		'local left<const> = {}',
+		'function left.left_action() end',
+		'return left',
+	].join('\n');
+	const rightSource = [
+		'local right<const> = {}',
+		'function right.right_action() end',
+		'return right',
+	].join('\n');
+	const facadeSource = (module: string) => [
+		`local facade<const> = require('${module}')`,
+		'return facade',
+	].join('\n');
+	const mainLines = [
+		"local api<const> = require('facade')",
+		'api.left_action()',
+		'api.right_action()',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('main.lua', mainLines.join('\n'));
+	workspace.updateFile('facade.lua', facadeSource('left'));
+	workspace.updateFile('left.lua', leftSource);
+	workspace.updateFile('right.lua', rightSource);
+	const leftColumn = mainLines[1].indexOf('left_action') + 1;
+	const rightColumn = mainLines[2].indexOf('right_action') + 1;
+	const leftTarget = workspace.getSnapshot().symbolAt('main.lua', 2, leftColumn);
+	assert.ok(leftTarget, 'initial transitive target');
+	assert.equal(leftTarget!.decl.file, 'left.lua');
+	assert.equal(workspace.getSnapshot().symbolAt('main.lua', 3, rightColumn), null);
+
+	workspace.updateFile('facade.lua', facadeSource('right'));
+	assert.equal(workspace.getSnapshot().symbolAt('main.lua', 2, leftColumn), null);
+	const rightTarget = workspace.getSnapshot().symbolAt('main.lua', 3, rightColumn);
+	assert.ok(rightTarget, 'retargeted transitive target');
+	assert.equal(rightTarget!.decl.file, 'right.lua');
+});
+
+test('semantic workspace terminates circular module aliases without a false target', async () => {
+	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('main.lua', "local api<const> = require('left')\napi.value()");
+	workspace.updateFile('left.lua', "local left<const> = require('right')\nreturn left");
+	workspace.updateFile('right.lua', "local right<const> = require('left')\nreturn right");
+
+	assert.equal(workspace.getSnapshot().symbolAt('main.lua', 2, 5), null);
 });
 
 test('semantic workspace resolves require-alias member definitions through module returns', async () => {

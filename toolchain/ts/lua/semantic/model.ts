@@ -472,6 +472,7 @@ class LuaProjectIndex {
 	private readonly memberDeclByFileAndKey: Map<string, SymbolID> = new Map();
 	private readonly globalsByKey: Map<string, SymbolID> = new Map();
 	private readonly stringSourcesByDeclId: Map<SymbolID, StaticStringSource> = new Map();
+	private readonly moduleAliasTargetsByDeclId: Map<SymbolID, ModuleAliasTarget> = new Map();
 	private readonly refsBySymbol: Map<SymbolID, Ref[]> = new Map();
 	private readonly globalsSources: Map<string, Map<SymbolID, number>> = new Map();
 	private readonly refsByGlobalKey: Map<string, Set<Ref>> = new Map();
@@ -602,6 +603,10 @@ class LuaProjectIndex {
 			const entry = data.declStringSources[i];
 			this.stringSourcesByDeclId.set(entry.declId, entry.source);
 		}
+		for (let i = 0; i < data.moduleAliases.length; i += 1) {
+			const entry = data.moduleAliases[i];
+			this.moduleAliasTargetsByDeclId.set(entry.declId, entry);
+		}
 		for (let i = 0; i < data.decls.length; i += 1) {
 			const decl = data.decls[i];
 			this.symbols.set(decl.id, decl);
@@ -628,6 +633,9 @@ class LuaProjectIndex {
 		}
 		for (let i = 0; i < data.declStringSources.length; i += 1) {
 			this.stringSourcesByDeclId.delete(data.declStringSources[i].declId);
+		}
+		for (let i = 0; i < data.moduleAliases.length; i += 1) {
+			this.moduleAliasTargetsByDeclId.delete(data.moduleAliases[i].declId);
 		}
 		for (let i = 0; i < data.decls.length; i += 1) {
 			const decl = data.decls[i];
@@ -970,6 +978,7 @@ class LuaProjectIndex {
 			directDeclByFileAndKey: this.directDeclByFileAndKey,
 			memberDeclByFileAndKey: this.memberDeclByFileAndKey,
 			stringSourcesByDeclId: this.stringSourcesByDeclId,
+			moduleAliasTargetsByDeclId: this.moduleAliasTargetsByDeclId,
 		});
 
 		const nextPrefabHintsById = new Map<string, SemanticHintKey>();
@@ -1035,16 +1044,22 @@ class LuaProjectIndex {
 				}
 			}
 		}
-		for (let fileIndex = 0; fileIndex < orderedFiles.length; fileIndex += 1) {
-			const data = this.files.get(orderedFiles[fileIndex])!.data;
-			recordModuleAliasPathHints(data, this.files, moduleFiles, nextDeclPathHints);
-		}
+		const modulePathHints = new WorkspaceModulePathResolver({
+			files: this.files,
+			moduleFiles,
+			declsById: this.symbols,
+			directDeclByFileAndKey: this.directDeclByFileAndKey,
+			memberDeclByFileAndKey: this.memberDeclByFileAndKey,
+			moduleAliasTargetsByDeclId: this.moduleAliasTargetsByDeclId,
+			hints: nextDeclPathHints,
+		});
+		modulePathHints.resolveAliases();
 		const nextClassBaseHints = buildWorkspaceClassBaseHints(
 			orderedFiles,
 			this.files,
 			this.symbols,
 			nextDeclPathHints,
-			moduleFiles,
+			modulePathHints,
 		);
 
 		this.collectDirtyHintKeys(previousPrefabHintsById, nextPrefabHintsById, buildPrefabHintKey, dirtyReceiverHintKeys);
@@ -2821,6 +2836,7 @@ class SemanticBuilder {
 		}
 		if (target) {
 			this.moduleAliasesByName.set(decl.name, {
+				declId: decl.id,
 				alias: decl.name,
 				module: target.module,
 				memberPath: target.memberPath,
@@ -3106,6 +3122,7 @@ function buildModuleFileMap(files: readonly string[]): Map<string, string> {
 
 class WorkspaceStringValueResolver {
 	private readonly sources: ReadonlyMap<SymbolID, StaticStringSource>;
+	private readonly moduleAliasTargetsByDeclId: ReadonlyMap<SymbolID, ModuleAliasTarget>;
 	private readonly globalsByKey: ReadonlyMap<string, SymbolID>;
 	private readonly files: ReadonlyMap<string, FileRecord>;
 	private readonly moduleFiles: ReadonlyMap<string, string>;
@@ -3122,6 +3139,7 @@ class WorkspaceStringValueResolver {
 		directDeclByFileAndKey: ReadonlyMap<string, SymbolID>;
 		memberDeclByFileAndKey: ReadonlyMap<string, SymbolID>;
 		stringSourcesByDeclId: ReadonlyMap<SymbolID, StaticStringSource>;
+		moduleAliasTargetsByDeclId: ReadonlyMap<SymbolID, ModuleAliasTarget>;
 	}) {
 		this.files = project.files;
 		this.globalsByKey = project.globalsByKey;
@@ -3129,6 +3147,7 @@ class WorkspaceStringValueResolver {
 		this.directDeclByFileAndKey = project.directDeclByFileAndKey;
 		this.memberDeclByFileAndKey = project.memberDeclByFileAndKey;
 		this.sources = project.stringSourcesByDeclId;
+		this.moduleAliasTargetsByDeclId = project.moduleAliasTargetsByDeclId;
 	}
 
 	public resolve(source: StaticStringSource): string {
@@ -3179,16 +3198,10 @@ class WorkspaceStringValueResolver {
 			const data = this.files.get(moduleFile)!.data;
 			const moduleRoot = resolveModuleReturnNamePath(data.chunk);
 			if (moduleRoot) {
-				let rootAlias: ModuleAliasEntry = null;
-				if (moduleRoot.length > 0) {
-					for (let index = 0; index < data.moduleAliases.length; index += 1) {
-						const alias = data.moduleAliases[index];
-						if (alias.alias === moduleRoot[0]) {
-							rootAlias = alias;
-							break;
-						}
-					}
-				}
+				const rootDeclId = moduleRoot.length > 0
+					? this.directDeclByFileAndKey.get(fileSymbolKey(moduleFile, moduleRoot[0]))
+					: null;
+				const rootAlias = rootDeclId && this.moduleAliasTargetsByDeclId.get(rootDeclId);
 				if (rootAlias) {
 					resolved = this.resolve({
 						kind: 'module',
@@ -3211,6 +3224,126 @@ class WorkspaceStringValueResolver {
 		}
 		this.resolvingModules.delete(resolutionKey);
 		return resolved;
+	}
+}
+
+class WorkspaceModulePathResolver {
+	private readonly files: ReadonlyMap<string, FileRecord>;
+	private readonly moduleFiles: ReadonlyMap<string, string>;
+	private readonly declsById: ReadonlyMap<SymbolID, Decl>;
+	private readonly directDeclByFileAndKey: ReadonlyMap<string, SymbolID>;
+	private readonly memberDeclByFileAndKey: ReadonlyMap<string, SymbolID>;
+	private readonly aliasesByDeclId: ReadonlyMap<SymbolID, ModuleAliasTarget>;
+	private readonly hints: Map<SymbolID, SemanticHintKey>;
+	private readonly resolvedDecls: Map<SymbolID, SemanticHintKey> = new Map();
+	private readonly resolvedModules: Map<string, SemanticHintKey> = new Map();
+	private readonly resolvingDecls: Set<SymbolID> = new Set();
+
+	constructor(project: {
+		files: ReadonlyMap<string, FileRecord>;
+		moduleFiles: ReadonlyMap<string, string>;
+		declsById: ReadonlyMap<SymbolID, Decl>;
+		directDeclByFileAndKey: ReadonlyMap<string, SymbolID>;
+		memberDeclByFileAndKey: ReadonlyMap<string, SymbolID>;
+		moduleAliasTargetsByDeclId: ReadonlyMap<SymbolID, ModuleAliasTarget>;
+		hints: Map<SymbolID, SemanticHintKey>;
+	}) {
+		this.files = project.files;
+		this.moduleFiles = project.moduleFiles;
+		this.declsById = project.declsById;
+		this.directDeclByFileAndKey = project.directDeclByFileAndKey;
+		this.memberDeclByFileAndKey = project.memberDeclByFileAndKey;
+		this.aliasesByDeclId = project.moduleAliasTargetsByDeclId;
+		this.hints = project.hints;
+	}
+
+	public resolveAliases(): void {
+		for (const declId of this.aliasesByDeclId.keys()) {
+			const hint = this.resolveDeclaration(declId);
+			if (hint) {
+				this.hints.set(declId, hint);
+			} else {
+				this.hints.delete(declId);
+			}
+		}
+	}
+
+	public resolveModuleRoot(module: string): SemanticHintKey {
+		if (this.resolvedModules.has(module)) {
+			return this.resolvedModules.get(module);
+		}
+		const moduleFile = this.moduleFiles.get(module);
+		let resolved: SemanticHintKey = null;
+		if (moduleFile) {
+			const moduleRoot = resolveModuleReturnNamePath(this.files.get(moduleFile)!.data.chunk);
+			if (moduleRoot) {
+				resolved = this.resolvePathHint(buildPathHintKey(moduleFile, joinNamePath(moduleRoot)));
+			}
+		}
+		this.resolvedModules.set(module, resolved);
+		return resolved;
+	}
+
+	private resolveDeclaration(declId: SymbolID): SemanticHintKey {
+		if (this.resolvedDecls.has(declId)) {
+			return this.resolvedDecls.get(declId);
+		}
+		if (this.resolvingDecls.has(declId)) {
+			return null;
+		}
+		const decl = this.declsById.get(declId)!;
+		const ownHint = buildPathHintKey(decl.file, decl.symbolKey);
+		const alias = this.aliasesByDeclId.get(declId);
+		const valueHint = this.hints.get(declId);
+		this.resolvingDecls.add(declId);
+		let resolved = ownHint;
+		if (alias) {
+			resolved = this.resolveModuleMember(alias);
+		} else if (valueHint && valueHint !== ownHint) {
+			resolved = this.resolvePathHint(valueHint);
+		}
+		this.resolvingDecls.delete(declId);
+		this.resolvedDecls.set(declId, resolved);
+		return resolved;
+	}
+
+	private resolveModuleMember(alias: ModuleAliasTarget): SemanticHintKey {
+		let resolved = this.resolveModuleRoot(alias.module);
+		for (let index = 0; resolved && index < alias.memberPath.length; index += 1) {
+			resolved = this.resolveMember(resolved, alias.memberPath[index]);
+		}
+		return resolved;
+	}
+
+	private resolvePathHint(pathHint: SemanticHintKey): SemanticHintKey {
+		const file = getPathHintFile(pathHint);
+		const symbolKey = getPathHintSymbolKey(pathHint);
+		const key = fileSymbolKey(file, symbolKey);
+		const declId = this.memberDeclByFileAndKey.get(key)
+			?? this.directDeclByFileAndKey.get(key);
+		if (declId) {
+			return this.resolveDeclaration(declId);
+		}
+		const namePath = getPathHintSymbolKeyParts(pathHint);
+		if (namePath.length < 2) {
+			return pathHint;
+		}
+		let resolved = this.resolvePathHint(buildPathHintKey(file, namePath[0]));
+		for (let index = 1; resolved && index < namePath.length; index += 1) {
+			resolved = this.resolveMember(resolved, namePath[index]);
+		}
+		return resolved;
+	}
+
+	private resolveMember(baseHint: SemanticHintKey, member: string): SemanticHintKey {
+		const memberHint = buildPathHintKey(
+			getPathHintFile(baseHint),
+			appendSymbolKey(getPathHintSymbolKey(baseHint), member),
+		);
+		const key = fileSymbolKey(getPathHintFile(memberHint), getPathHintSymbolKey(memberHint));
+		const declId = this.memberDeclByFileAndKey.get(key)
+			?? this.directDeclByFileAndKey.get(key);
+		return declId ? this.resolveDeclaration(declId) : memberHint;
 	}
 }
 
@@ -3310,7 +3443,7 @@ function buildWorkspaceClassBaseHints(
 	records: ReadonlyMap<string, FileRecord>,
 	declsById: ReadonlyMap<SymbolID, Decl>,
 	declPathHints: ReadonlyMap<SymbolID, SemanticHintKey>,
-	moduleFiles: ReadonlyMap<string, string>,
+	modulePathHints: WorkspaceModulePathResolver,
 ): Map<SemanticHintKey, SemanticHintKey> {
 	const bases = new Map<SemanticHintKey, SemanticHintKey>();
 	for (let fileIndex = 0; fileIndex < files.length; fileIndex += 1) {
@@ -3327,12 +3460,7 @@ function buildWorkspaceClassBaseHints(
 				baseHint = declPathHints.get(baseDecl.id)
 					?? buildPathHintKey(file, baseDecl.symbolKey);
 			} else {
-				baseHint = resolveModuleRootPathHint(
-					entry.base.module,
-					records,
-					moduleFiles,
-					declPathHints,
-				);
+				baseHint = modulePathHints.resolveModuleRoot(entry.base.module);
 			}
 			if (!baseHint || classHint === baseHint) {
 				continue;
@@ -3370,108 +3498,6 @@ function extractMetatableClassBaseExpressions(call: LuaCallExpression): {
 		}
 	}
 	return null;
-}
-
-function recordModuleAliasPathHints(
-	data: FileSemanticData,
-	files: ReadonlyMap<string, FileRecord>,
-	moduleFiles: ReadonlyMap<string, string>,
-	hints: Map<SymbolID, SemanticHintKey>,
-): void {
-	if (data.moduleAliases.length === 0) {
-		return;
-	}
-	const declsByName = buildTopLevelDeclsByName(data.decls, data.chunk.range);
-	for (let index = 0; index < data.moduleAliases.length; index += 1) {
-		const alias = data.moduleAliases[index];
-		const decl = declsByName.get(alias.alias);
-		if (!decl) {
-			continue;
-		}
-		let targetHint = resolveModuleRootPathHint(alias.module, files, moduleFiles, hints);
-		if (!targetHint) {
-			continue;
-		}
-		const memberPath = alias.memberPath;
-		for (let memberIndex = 0; memberIndex < memberPath.length; memberIndex += 1) {
-			targetHint = resolveDeclValuePathHint(
-				buildPathHintKey(
-					getPathHintFile(targetHint),
-					appendSymbolKey(getPathHintSymbolKey(targetHint), memberPath[memberIndex]),
-				),
-				files,
-				hints,
-			);
-		}
-		hints.set(decl.id, targetHint);
-	}
-}
-
-function resolveModuleRootPathHint(
-	module: string,
-	files: ReadonlyMap<string, FileRecord>,
-	moduleFiles: ReadonlyMap<string, string>,
-	hints: ReadonlyMap<SymbolID, SemanticHintKey>,
-): SemanticHintKey {
-	const moduleFile = moduleFiles.get(module);
-	if (!moduleFile) {
-		return null;
-	}
-	const moduleRoot = resolveModuleReturnNamePath(files.get(moduleFile)!.data.chunk);
-	if (!moduleRoot) {
-		return null;
-	}
-	return resolveDeclValuePathHint(
-		buildPathHintKey(moduleFile, joinNamePath(moduleRoot)),
-		files,
-		hints,
-	);
-}
-
-function resolveDeclValuePathHint(
-	pathHint: SemanticHintKey,
-	files: ReadonlyMap<string, FileRecord>,
-	hints: ReadonlyMap<SymbolID, SemanticHintKey>,
-): SemanticHintKey {
-	const file = getPathHintFile(pathHint);
-	const decl = findDeclBySymbolKey(
-		files.get(file)!.data.decls,
-		getPathHintSymbolKey(pathHint),
-	);
-	if (!decl) {
-		return pathHint;
-	}
-	const valueHint = hints.get(decl.id);
-	return valueHint ? valueHint : pathHint;
-}
-
-function findDeclBySymbolKey(decls: readonly Decl[], symbolKey: string): Decl {
-	for (let index = 0; index < decls.length; index += 1) {
-		if (decls[index].symbolKey === symbolKey) {
-			return decls[index];
-		}
-	}
-	return null;
-}
-
-function buildTopLevelDeclsByName(
-	decls: readonly Decl[],
-	moduleScope: LuaSourceRange,
-): Map<string, Decl> {
-	const result = new Map<string, Decl>();
-	for (let index = 0; index < decls.length; index += 1) {
-		const decl = decls[index];
-		if (decl.namePath.length !== 1
-			|| decl.scope.start.line !== moduleScope.start.line
-			|| decl.scope.start.column !== moduleScope.start.column
-			|| decl.scope.end.line !== moduleScope.end.line
-			|| decl.scope.end.column !== moduleScope.end.column
-			|| result.has(decl.name)) {
-			continue;
-		}
-		result.set(decl.name, decl);
-	}
-	return result;
 }
 
 function resolveModuleReturnNamePath(chunk: LuaChunk): string[] | null {
