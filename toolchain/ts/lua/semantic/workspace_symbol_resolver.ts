@@ -1,5 +1,5 @@
 import type { Decl, FileSemanticData, Ref, SymbolID } from './model';
-import type { WorkspaceValueGraph } from './value_graph';
+import { WorkspaceValueGraph, type WorkspaceValueGraphInput } from './value_graph';
 
 const EMPTY_REFS: readonly Ref[] = [];
 
@@ -11,19 +11,20 @@ export class WorkspaceSymbolResolver {
 	private readonly files: readonly FileSemanticData[];
 	private readonly declarations: ReadonlyMap<SymbolID, Decl>;
 	private readonly globals: ReadonlyMap<string, SymbolID>;
-	private readonly valueGraph: WorkspaceValueGraph;
+	private readonly valueGraphInput: WorkspaceValueGraphInput;
+	private valueGraph?: WorkspaceValueGraph;
 	private referencesBySymbol?: ReadonlyMap<SymbolID, readonly Ref[]>;
 
 	constructor(options: {
 		files: readonly FileSemanticData[];
 		declarations: ReadonlyMap<SymbolID, Decl>;
 		globals: ReadonlyMap<string, SymbolID>;
-		valueGraph: WorkspaceValueGraph;
+		valueGraphInput: WorkspaceValueGraphInput;
 	}) {
 		this.files = options.files;
 		this.declarations = options.declarations;
 		this.globals = options.globals;
-		this.valueGraph = options.valueGraph;
+		this.valueGraphInput = options.valueGraphInput;
 	}
 
 	// disable-next-line single_line_method_pattern -- declaration lookup remains owned by the immutable workspace resolver.
@@ -42,9 +43,10 @@ export class WorkspaceSymbolResolver {
 			return ref.target;
 		}
 		if (ref.referenceKind === 'member' || ref.referenceKind === 'method') {
-			const receiver = this.valueGraph.resolve(ref.receiverValue);
+			const valueGraph = this.getValueGraph();
+			const receiver = valueGraph.resolve(ref.receiverValue);
 			if (receiver) {
-				const member = this.valueGraph.findMember(receiver, ref.name);
+				const member = valueGraph.findMember(receiver, ref.name);
 				if (member) {
 					return member;
 				}
@@ -54,6 +56,13 @@ export class WorkspaceSymbolResolver {
 			return undefined;
 		}
 		return this.globals.get(ref.symbolKey);
+	}
+
+	private getValueGraph(): WorkspaceValueGraph {
+		if (!this.valueGraph) {
+			this.valueGraph = new WorkspaceValueGraph(this.valueGraphInput);
+		}
+		return this.valueGraph;
 	}
 
 	public getReferences(symbolId: SymbolID): readonly Ref[] {

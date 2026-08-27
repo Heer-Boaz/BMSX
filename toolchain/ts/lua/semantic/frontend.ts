@@ -499,13 +499,22 @@ function createBoundFile(
 	snapshot: LuaSemanticWorkspaceSnapshot,
 ): LuaSemanticFrontendFile {
 	const decls = source.analysis.decls;
-	const refsByStart = source.analysis.refs.map(ref => classifyReference(ref, snapshot, knownGlobalNames));
-	refsByStart.sort((left, right) => compareSourcePosition(left.ref.range.start.line, left.ref.range.start.column, right.ref.range.start.line, right.ref.range.start.column));
+	const refsByStart = source.analysis.refs.slice();
+	refsByStart.sort((left, right) => compareSourcePosition(left.range.start.line, left.range.start.column, right.range.start.line, right.range.start.column));
 	const requireTargetsByStart = collectRequireNavigationTargets(source, moduleTargetsByAlias, sourceByPath);
 	const declarationsByRange = new Map<string, Decl>();
 	const declarationsByStart = new Map<string, Decl>();
-	const referencesByRange = new Map<string, LuaBoundReference>();
-	const referencesByStart = new Map<string, LuaBoundReference>();
+	const referencesByRange = new Map<string, Ref>();
+	const referencesByStart = new Map<string, Ref>();
+	const boundReferences = new Map<Ref, LuaBoundReference>();
+	const bindReference = (ref: Ref): LuaBoundReference => {
+		let reference = boundReferences.get(ref);
+		if (!reference) {
+			reference = classifyReference(ref, snapshot, knownGlobalNames);
+			boundReferences.set(ref, reference);
+		}
+		return reference;
+	};
 	for (let index = 0; index < decls.length; index += 1) {
 		const decl = decls[index];
 		declarationsByRange.set(sourceRangeKey(decl.range), decl);
@@ -516,8 +525,8 @@ function createBoundFile(
 	}
 	for (let index = 0; index < refsByStart.length; index += 1) {
 		const reference = refsByStart[index];
-		referencesByRange.set(sourceRangeKey(reference.ref.range), reference);
-		const startKey = sourceRangeStartKey(reference.ref.range);
+		referencesByRange.set(sourceRangeKey(reference.range), reference);
+		const startKey = sourceRangeStartKey(reference.range);
 		if (!referencesByStart.has(startKey)) {
 			referencesByStart.set(startKey, reference);
 		}
@@ -529,8 +538,9 @@ function createBoundFile(
 				?? declarationsByStart.get(sourceRangeStartKey(range));
 		},
 		getReference(range: LuaSourceRange): LuaBoundReference {
-			return referencesByRange.get(sourceRangeKey(range))
+			const ref = referencesByRange.get(sourceRangeKey(range))
 				?? referencesByStart.get(sourceRangeStartKey(range));
+			return ref ? bindReference(ref) : undefined;
 		},
 		getNavigationTargetAt(line: number, column: number): LuaSemanticNavigationTarget | null {
 			for (let index = 0; index < decls.length; index += 1) {
@@ -543,10 +553,11 @@ function createBoundFile(
 				}
 			}
 			for (let index = 0; index < refsByStart.length; index += 1) {
-				const reference = refsByStart[index];
-				if (!sourcePositionInRange(line, column, reference.ref.range)) {
+				const ref = refsByStart[index];
+				if (!sourcePositionInRange(line, column, ref.range)) {
 					continue;
 				}
+				const reference = bindReference(ref);
 				if (!reference.decl) {
 					return null;
 				}
@@ -574,7 +585,7 @@ function createBoundFile(
 		): LuaBoundReference {
 			const startIndex = lowerBoundReferenceStart(refsByStart, start.line, start.column);
 			const endIndex = lowerBoundReferenceStart(refsByStart, endExclusive.line, endExclusive.column);
-			return startIndex < endIndex ? refsByStart[startIndex] : null;
+			return startIndex < endIndex ? bindReference(refsByStart[startIndex]) : null;
 		},
 		findLastReferenceByStartRange(
 			start: LuaSourceRange['start'],
@@ -582,7 +593,7 @@ function createBoundFile(
 		): LuaBoundReference {
 			const startIndex = lowerBoundReferenceStart(refsByStart, start.line, start.column);
 			const endIndex = lowerBoundReferenceStart(refsByStart, endExclusive.line, endExclusive.column);
-			return startIndex < endIndex ? refsByStart[endIndex - 1] : null;
+			return startIndex < endIndex ? bindReference(refsByStart[endIndex - 1]) : null;
 		},
 	};
 }
@@ -777,7 +788,7 @@ function buildCombinedGlobalSymbols(decls: readonly Decl[], externalGlobalSymbol
 }
 
 function lowerBoundReferenceStart(
-	refs: readonly LuaBoundReference[],
+	refs: readonly Ref[],
 	line: number,
 	column: number,
 ): number {
@@ -785,7 +796,7 @@ function lowerBoundReferenceStart(
 	let high = refs.length;
 	while (low < high) {
 		const mid = (low + high) >> 1;
-		if (compareSourcePosition(refs[mid].ref.range.start.line, refs[mid].ref.range.start.column, line, column) < 0) {
+		if (compareSourcePosition(refs[mid].range.start.line, refs[mid].range.start.column, line, column) < 0) {
 			low = mid + 1;
 		} else {
 			high = mid;

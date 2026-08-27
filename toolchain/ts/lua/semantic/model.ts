@@ -41,7 +41,6 @@ import {
 	type ModuleAliasTarget,
 } from './module_aliases';
 import {
-	WorkspaceValueGraph,
 	appendValueCall,
 	appendValueElement,
 	appendValueInstance,
@@ -825,7 +824,7 @@ class LuaProjectIndex {
 			sources.push(bindingValueSource(objectBindingId(emitterId)));
 		}
 		const globals = new Map(this.globalsByKey);
-		const valueGraph = new WorkspaceValueGraph({
+		const valueGraphInput = {
 			declarationValues,
 			identityDeclarations,
 			moduleValues,
@@ -837,12 +836,12 @@ class LuaProjectIndex {
 			baseValues,
 			bindingValues,
 			globalValues: globals,
-		});
+		};
 		return new WorkspaceSymbolResolver({
 			files: orderedData,
 			declarations: new Map(this.symbols),
 			globals,
-			valueGraph,
+			valueGraphInput,
 		});
 	}
 

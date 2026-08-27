@@ -252,6 +252,20 @@ export function semanticValueSourcesEqual(
 	return true;
 }
 
+export type WorkspaceValueGraphInput = {
+	declarationValues: ReadonlyMap<SymbolID, readonly SemanticValueSource[]>;
+	identityDeclarations: ReadonlySet<SymbolID>;
+	moduleValues: ReadonlyMap<string, SemanticValueSource>;
+	memberValues: readonly MemberValueEntry[];
+	functionReturns: readonly FunctionReturnValueEntry[];
+	functionParameters: readonly FunctionParameterValueEntry[];
+	calls: readonly CallValueEntry[];
+	valueAssignments: readonly ValueAssignmentEntry[];
+	baseValues: readonly BaseValueEntry[];
+	bindingValues: ReadonlyMap<string, SemanticValueSource>;
+	globalValues: ReadonlyMap<string, SymbolID>;
+};
+
 export class WorkspaceValueGraph {
 	private readonly declarationValues: Map<SymbolID, SemanticValueSource[]>;
 	private readonly identityDeclarations: ReadonlySet<SymbolID>;
@@ -283,23 +297,19 @@ export class WorkspaceValueGraph {
 	private readonly unresolvedMemberOwners: SemanticValueID[] = [];
 	private readonly unresolvedMemberNames: string[] = [];
 	private readonly unresolvedMemberValues: MemberValue[] = [];
+	// Reverse traversal dependencies select dirty owners; these parallel arrays
+	// retain the resolver's deterministic materialization order.
+	private readonly traversalDependents: Map<SemanticValueID, SemanticValueID[]> = new Map();
+	private readonly dirtyTraversalValues: SemanticValueID[] = [];
+	private readonly dirtyTraversalFlags: boolean[] = [];
+	private readonly dirtyUnresolvedOwnerMarks: number[] = [];
+	private readonly dirtyPropagationStack: SemanticValueID[] = [];
+	private readonly dirtyPropagationMarks: number[] = [];
 	private traversalGeneration = 0;
+	private dirtyPropagationGeneration = 0;
 	private nextValueId = 1;
 	private nextMemberDeclarationOrder = 0;
-
-	constructor(options: {
-		declarationValues: ReadonlyMap<SymbolID, readonly SemanticValueSource[]>;
-		identityDeclarations: ReadonlySet<SymbolID>;
-		moduleValues: ReadonlyMap<string, SemanticValueSource>;
-		memberValues: readonly MemberValueEntry[];
-		functionReturns: readonly FunctionReturnValueEntry[];
-		functionParameters: readonly FunctionParameterValueEntry[];
-		calls: readonly CallValueEntry[];
-		valueAssignments: readonly ValueAssignmentEntry[];
-		baseValues: readonly BaseValueEntry[];
-		bindingValues: ReadonlyMap<string, SemanticValueSource>;
-		globalValues: ReadonlyMap<string, SymbolID>;
-	}) {
+	constructor(options: WorkspaceValueGraphInput) {
 		this.declarationValues = new Map();
 		for (const [declId, sources] of options.declarationValues) {
 			this.declarationValues.set(declId, sources.slice());
@@ -480,39 +490,80 @@ export class WorkspaceValueGraph {
 			this.unresolvedMemberOwners.push(owner);
 			this.unresolvedMemberNames.push(name);
 			this.unresolvedMemberValues.push(member);
+			this.markTraversalChanged(owner);
 		}
 		return member;
 	}
 
 	private refreshUnresolvedMembers(): boolean {
+		if (this.dirtyTraversalValues.length === 0) {
+			return false;
+		}
+		const generation = this.collectDirtyUnresolvedOwners();
 		let changed = false;
 		for (let index = 0; index < this.unresolvedMemberValues.length; index += 1) {
+			const owner = this.unresolvedMemberOwners[index];
 			const member = this.unresolvedMemberValues[index];
-			if (member.declaration) {
+			if (member.declaration || this.dirtyUnresolvedOwnerMarks[owner] !== generation) {
 				continue;
 			}
-			const owner = this.unresolvedMemberOwners[index];
-			const name = this.unresolvedMemberNames[index];
-			const generation = this.traversalGeneration + 1;
-			this.traversalGeneration = generation;
-			const stack = this.traversalStack;
-			stack.length = 0;
-			this.pushTraversalBases(stack, owner);
-			while (stack.length > 0) {
-				const candidate = stack.pop()!;
-				if (this.traversalMarks[candidate] === generation) {
+			changed = this.refreshUnresolvedMember(
+				owner,
+				this.unresolvedMemberNames[index],
+				member,
+			) || changed;
+		}
+		return changed;
+	}
+
+	private collectDirtyUnresolvedOwners(): number {
+		const generation = this.dirtyPropagationGeneration + 1;
+		this.dirtyPropagationGeneration = generation;
+		const stack = this.dirtyPropagationStack;
+		for (let index = 0; index < this.dirtyTraversalValues.length; index += 1) {
+			const value = this.dirtyTraversalValues[index];
+			this.dirtyTraversalFlags[value] = false;
+			stack.push(value);
+		}
+		this.dirtyTraversalValues.length = 0;
+		while (stack.length > 0) {
+			const value = stack.pop()!;
+			if (this.dirtyPropagationMarks[value] === generation) {
+				continue;
+			}
+			this.dirtyPropagationMarks[value] = generation;
+			this.dirtyUnresolvedOwnerMarks[value] = generation;
+			const dependents = this.traversalDependents.get(value);
+			if (dependents) {
+				for (let index = 0; index < dependents.length; index += 1) {
+					stack.push(dependents[index]);
+				}
+			}
+		}
+		return generation;
+	}
+
+	private refreshUnresolvedMember(owner: SemanticValueID, name: string, member: MemberValue): boolean {
+		let changed = false;
+		const generation = this.traversalGeneration + 1;
+		this.traversalGeneration = generation;
+		const stack = this.traversalStack;
+		stack.length = 0;
+		this.pushTraversalBases(stack, owner);
+		while (stack.length > 0) {
+			const candidate = stack.pop()!;
+			if (this.traversalMarks[candidate] === generation) {
+				continue;
+			}
+			this.traversalMarks[candidate] = generation;
+			const inherited = this.members.get(candidate)?.get(name);
+			if (inherited) {
+				changed = this.addIdentity(member.value, inherited.value) || changed;
+				if (inherited.declaration) {
 					continue;
 				}
-				this.traversalMarks[candidate] = generation;
-				const inherited = this.members.get(candidate)?.get(name);
-				if (inherited) {
-					changed = this.addIdentity(member.value, inherited.value) || changed;
-					if (inherited.declaration) {
-						continue;
-					}
-				}
-				this.pushTraversalBases(stack, candidate);
 			}
+			this.pushTraversalBases(stack, candidate);
 		}
 		return changed;
 	}
@@ -589,7 +640,7 @@ export class WorkspaceValueGraph {
 		if (!instance) {
 			instance = this.createNode();
 			this.instances.set(classValue, instance);
-			this.prototypeBases.set(instance, classValue);
+			this.setPrototypeBase(instance, classValue);
 			const valueBases = this.valueBases.get(classValue);
 			if (valueBases) {
 				for (let index = 0; index < valueBases.length; index += 1) {
@@ -685,7 +736,36 @@ export class WorkspaceValueGraph {
 			return false;
 		}
 		bases.push(base);
+		this.addTraversalDependency(owner, base);
 		return true;
+	}
+
+	private addTraversalDependency(owner: SemanticValueID, base: SemanticValueID): void {
+		let dependents = this.traversalDependents.get(base);
+		if (!dependents) {
+			dependents = [];
+			this.traversalDependents.set(base, dependents);
+		}
+		if (!dependents.includes(owner)) {
+			dependents.push(owner);
+		}
+		this.markTraversalChanged(owner);
+	}
+
+	private markTraversalChanged(value: SemanticValueID): void {
+		if (this.dirtyTraversalFlags[value]) {
+			return;
+		}
+		this.dirtyTraversalFlags[value] = true;
+		this.dirtyTraversalValues.push(value);
+	}
+
+	private setPrototypeBase(owner: SemanticValueID, base: SemanticValueID): void {
+		if (this.prototypeBases.get(owner) === base) {
+			return;
+		}
+		this.prototypeBases.set(owner, base);
+		this.addTraversalDependency(owner, base);
 	}
 
 	private addValueBase(owner: SemanticValueID, base: SemanticValueID): boolean {
@@ -713,6 +793,7 @@ export class WorkspaceValueGraph {
 			const member = this.ensureMember(owner, entry.name);
 			if (!member.declaration) {
 				member.declaration = entry.declId;
+				this.markTraversalChanged(owner);
 			}
 			this.retainMemberDeclaration(member.value, entry.declId);
 			this.addIdentity(member.value, this.nodeFor(this.declarationNodes, entry.declId));
@@ -944,7 +1025,7 @@ export class WorkspaceValueGraph {
 				if (origin === 'instance') {
 					this.addInstanceBase(owner, base);
 				} else {
-					this.prototypeBases.set(owner, base);
+					this.setPrototypeBase(owner, base);
 					this.addInstanceBase(this.ensureInstance(owner), this.ensureInstance(base));
 				}
 			}
