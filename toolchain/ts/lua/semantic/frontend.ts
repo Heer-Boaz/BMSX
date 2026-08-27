@@ -6,6 +6,7 @@ import {
 	buildLuaSemanticWorkspaceSnapshot,
 	type Decl,
 	type FileSemanticData,
+	type LuaSemanticWorkspaceSourceSnapshot,
 	type LuaSemanticWorkspaceSnapshot,
 	type Ref,
 	type SymbolID,
@@ -87,11 +88,9 @@ export type LuaSemanticFrontendFile = {
 
 export type LuaSemanticFrontend = {
 	snapshot: LuaSemanticWorkspaceSnapshot;
-	files: ReadonlyMap<string, LuaSemanticFrontendFile>;
+	filePaths: readonly string[];
 	getFile(path: string): LuaSemanticFrontendFile;
-	listFiles(): string[];
 	findDeclarationsByNamePath(namePath: readonly string[]): readonly Decl[];
-	getNavigationTargetAt(path: string, line: number, column: number): LuaSemanticNavigationTarget | null;
 	findReferencesByPosition(path: string, line: number, column: number): LuaSemanticResolution;
 	buildIncomingCallHierarchy(
 		rootSymbolId: SymbolID,
@@ -100,13 +99,6 @@ export type LuaSemanticFrontend = {
 			allowedPaths?: ReadonlySet<string>;
 		},
 	): readonly LuaIncomingCallHierarchyNode[];
-};
-
-type PreparedSource = {
-	path: string;
-	chunk: LuaChunk;
-	analysis: FileSemanticData;
-	parsed: ParsedLuaChunk;
 };
 
 export function buildLuaSemanticFrontend(
@@ -121,130 +113,142 @@ export function buildLuaSemanticFrontendFromSnapshot(
 	snapshot: LuaSemanticWorkspaceSnapshot,
 	options: LuaSemanticFrontendOptions = {},
 ): LuaSemanticFrontend {
-	const builtinDescriptors = options.builtinDescriptors ?? getDefaultLuaBuiltinDescriptors();
-	const preparedSources = snapshot.sources.map(source => ({
-		path: source.path,
-		chunk: source.chunk,
-		analysis: source.analysis,
-		parsed: source.parsed,
-	}));
-	const files = new Map<string, LuaSemanticFrontendFile>();
-	const sourcesByPath = new Map<string, PreparedSource>();
-	for (let index = 0; index < preparedSources.length; index += 1) {
-		const source = preparedSources[index];
-		sourcesByPath.set(source.path, source);
+	return new SnapshotSemanticFrontend(snapshot, options);
+}
+
+class SnapshotSemanticFrontend implements LuaSemanticFrontend {
+	public readonly snapshot: LuaSemanticWorkspaceSnapshot;
+	public readonly filePaths: readonly string[];
+	private readonly builtinDescriptors: readonly LuaBuiltinDescriptor[];
+	private readonly extraGlobalNames: readonly string[] | undefined;
+	private readonly globalSymbols: readonly LuaSymbolEntry[];
+	private readonly knownGlobalNames: ReadonlySet<string>;
+	private readonly moduleTargetsByAlias: ReadonlyMap<string, string>;
+	private readonly sourcesByPath: Map<string, LuaSemanticWorkspaceSourceSnapshot> = new Map();
+	private readonly files: Map<string, LuaSemanticFrontendFile> = new Map();
+
+	constructor(snapshot: LuaSemanticWorkspaceSnapshot, options: LuaSemanticFrontendOptions) {
+		this.snapshot = snapshot;
+		this.filePaths = snapshot.files;
+		this.builtinDescriptors = options.builtinDescriptors ?? getDefaultLuaBuiltinDescriptors();
+		this.extraGlobalNames = options.extraGlobalNames;
+		for (let index = 0; index < snapshot.sources.length; index += 1) {
+			const source = snapshot.sources[index];
+			this.sourcesByPath.set(source.path, source);
+		}
+		// Queries remain bound to this immutable source and global-symbol generation.
+		this.globalSymbols = buildCombinedGlobalSymbols(snapshot.listGlobalDecls(), options.externalGlobalSymbols);
+		this.knownGlobalNames = buildLuaKnownNameSet(
+			this.globalSymbols,
+			this.builtinDescriptors,
+			this.extraGlobalNames,
+		);
+		this.moduleTargetsByAlias = buildModuleTargetAliasMap(snapshot.sources);
 	}
-	// Frontend queries must resolve against the prepared snapshot, not whatever the workspace becomes later.
-	const globalSymbols = buildCombinedGlobalSymbols(snapshot.listGlobalDecls(), options.externalGlobalSymbols);
-	const knownGlobalNames = buildLuaKnownNameSet(globalSymbols, builtinDescriptors, options.extraGlobalNames);
-	const moduleTargetsByAlias = buildModuleTargetAliasMap(preparedSources);
-	for (let index = 0; index < preparedSources.length; index += 1) {
-		const source = preparedSources[index];
+
+	public getFile(path: string): LuaSemanticFrontendFile {
+		let file = this.files.get(path);
+		if (file) {
+			return file;
+		}
+		const source = this.sourcesByPath.get(path);
+		if (!source) {
+			throw new Error(`[LuaSemanticFrontend] Missing semantic file '${path}'.`);
+		}
 		const diagnostics = computeLuaDiagnosticsFromAnalysis({
 			analysis: source.analysis,
 			chunk: source.chunk,
-			globalSymbols,
-			builtinDescriptors,
-			extraGlobalNames: options.extraGlobalNames,
+			globalSymbols: this.globalSymbols,
+			builtinDescriptors: this.builtinDescriptors,
+			extraGlobalNames: this.extraGlobalNames,
 		});
-		files.set(source.path, createBoundFile(source, diagnostics, knownGlobalNames, moduleTargetsByAlias, sourcesByPath, snapshot));
+		file = createBoundFile(
+			source,
+			diagnostics,
+			this.knownGlobalNames,
+			this.moduleTargetsByAlias,
+			this.sourcesByPath,
+			this.snapshot,
+		);
+		this.files.set(path, file);
+		return file;
 	}
-	return {
-		snapshot,
-		files,
-		getFile(path: string): LuaSemanticFrontendFile {
-			const file = files.get(path);
-			if (!file) {
-				throw new Error(`[LuaSemanticFrontend] Missing semantic file '${path}'.`);
-			}
-			return file;
-		},
-		listFiles(): string[] {
-			return preparedSources.map(source => source.path);
-		},
-		findDeclarationsByNamePath(namePath: readonly string[]): readonly Decl[] {
-			const matches: Decl[] = [];
-			for (let index = 0; index < preparedSources.length; index += 1) {
-				const fileDecls = preparedSources[index].analysis.decls;
-				for (let declIndex = 0; declIndex < fileDecls.length; declIndex += 1) {
-					const decl = fileDecls[declIndex];
-					if (semanticNamePathMatches(decl.namePath, namePath)) {
-						matches.push(decl);
-					}
+
+	public findDeclarationsByNamePath(namePath: readonly string[]): readonly Decl[] {
+		const matches: Decl[] = [];
+		for (let index = 0; index < this.snapshot.sources.length; index += 1) {
+			const fileDecls = this.snapshot.sources[index].analysis.decls;
+			for (let declIndex = 0; declIndex < fileDecls.length; declIndex += 1) {
+				const decl = fileDecls[declIndex];
+				if (semanticNamePathMatches(decl.namePath, namePath)) {
+					matches.push(decl);
 				}
 			}
-			return matches;
-		},
-		getNavigationTargetAt(path: string, line: number, column: number): LuaSemanticNavigationTarget | null {
-			const file = files.get(path);
-			if (!file) {
-				throw new Error(`[LuaSemanticFrontend] Missing semantic file '${path}'.`);
-			}
-			return file.getNavigationTargetAt(line, column);
-		},
-		findReferencesByPosition(path: string, line: number, column: number): LuaSemanticResolution {
-			const source = sourcesByPath.get(path);
-			if (!source) {
-				return null;
-			}
-			for (let index = 0; index < source.analysis.decls.length; index += 1) {
-				const decl = source.analysis.decls[index];
-				if (sourcePositionInRange(line, column, decl.range)) {
-					return {
-						id: decl.id,
-						decl,
-						references: snapshot.getReferences(decl.id),
-					};
-				}
-			}
-			for (let index = 0; index < source.analysis.refs.length; index += 1) {
-				const ref = source.analysis.refs[index];
-				if (!sourcePositionInRange(line, column, ref.range)) {
-					continue;
-				}
-				const target = snapshot.resolveReference(ref);
-				if (!target) {
-					continue;
-				}
-				const decl = snapshot.getDecl(target);
-				if (!decl) {
-					continue;
-				}
+		}
+		return matches;
+	}
+
+	public findReferencesByPosition(path: string, line: number, column: number): LuaSemanticResolution {
+		const source = this.sourcesByPath.get(path);
+		if (!source) {
+			return null;
+		}
+		for (let index = 0; index < source.analysis.decls.length; index += 1) {
+			const decl = source.analysis.decls[index];
+			if (sourcePositionInRange(line, column, decl.range)) {
 				return {
-					id: target,
+					id: decl.id,
 					decl,
-					references: snapshot.getReferences(target),
+					references: this.snapshot.getReferences(decl.id),
 				};
 			}
-			return null;
-		},
-		buildIncomingCallHierarchy(
-			rootSymbolId: SymbolID,
-			options?: {
-				maxDepth?: number;
-				allowedPaths?: ReadonlySet<string>;
-			},
-		): readonly LuaIncomingCallHierarchyNode[] {
-			const rootDecl = snapshot.getDecl(rootSymbolId);
-			if (!rootDecl) {
-				return [];
+		}
+		for (let index = 0; index < source.analysis.refs.length; index += 1) {
+			const ref = source.analysis.refs[index];
+			if (!sourcePositionInRange(line, column, ref.range)) {
+				continue;
 			}
-			const maxDepth = options?.maxDepth ?? 8;
-			const pathCache = new Map<string, CallHierarchyPathIndex>();
-			const visited = new Set<SymbolID>([rootSymbolId]);
-			return buildIncomingCallHierarchyNodes({
-				symbolId: rootSymbolId,
-				sourcesByPath,
-				getReferences: (symbolId) => snapshot.getReferences(symbolId),
-				getDecl: (symbolId) => snapshot.getDecl(symbolId),
-				pathCache,
-				visited,
-				depth: 0,
-				maxDepth,
-				allowedPaths: options?.allowedPaths,
-			});
+			const target = this.snapshot.resolveReference(ref);
+			if (!target) {
+				continue;
+			}
+			const decl = this.snapshot.getDecl(target);
+			if (!decl) {
+				continue;
+			}
+			return {
+				id: target,
+				decl,
+				references: this.snapshot.getReferences(target),
+			};
+		}
+		return null;
+	}
+
+	public buildIncomingCallHierarchy(
+		rootSymbolId: SymbolID,
+		options?: {
+			maxDepth?: number;
+			allowedPaths?: ReadonlySet<string>;
 		},
-	};
+	): readonly LuaIncomingCallHierarchyNode[] {
+		const rootDecl = this.snapshot.getDecl(rootSymbolId);
+		if (!rootDecl) {
+			return [];
+		}
+		const pathCache = new Map<string, CallHierarchyPathIndex>();
+		const visited = new Set<SymbolID>([rootSymbolId]);
+		return buildIncomingCallHierarchyNodes({
+			symbolId: rootSymbolId,
+			sourcesByPath: this.sourcesByPath,
+			snapshot: this.snapshot,
+			pathCache,
+			visited,
+			depth: 0,
+			maxDepth: options?.maxDepth ?? 8,
+			allowedPaths: options?.allowedPaths,
+		});
+	}
 }
 
 type CallHierarchyPathIndex = {
@@ -259,9 +263,8 @@ type IncomingCallerGroup = {
 
 function buildIncomingCallHierarchyNodes(options: {
 	symbolId: SymbolID;
-	sourcesByPath: ReadonlyMap<string, PreparedSource>;
-	getReferences: (symbolId: SymbolID) => readonly Ref[];
-	getDecl: (symbolId: SymbolID) => Decl;
+	sourcesByPath: ReadonlyMap<string, LuaSemanticWorkspaceSourceSnapshot>;
+	snapshot: LuaSemanticWorkspaceSnapshot;
 	pathCache: Map<string, CallHierarchyPathIndex>;
 	visited: Set<SymbolID>;
 	depth: number;
@@ -296,14 +299,13 @@ function buildIncomingCallHierarchyNodes(options: {
 
 function collectIncomingCallerGroups(options: {
 	symbolId: SymbolID;
-	sourcesByPath: ReadonlyMap<string, PreparedSource>;
-	getReferences: (symbolId: SymbolID) => readonly Ref[];
-	getDecl: (symbolId: SymbolID) => Decl;
+	sourcesByPath: ReadonlyMap<string, LuaSemanticWorkspaceSourceSnapshot>;
+	snapshot: LuaSemanticWorkspaceSnapshot;
 	pathCache: Map<string, CallHierarchyPathIndex>;
 	allowedPaths?: ReadonlySet<string>;
 }): IncomingCallerGroup[] {
 	const grouped = new Map<string, IncomingCallerGroup>();
-	const references = options.getReferences(options.symbolId);
+	const references = options.snapshot.getReferences(options.symbolId);
 	for (let index = 0; index < references.length; index += 1) {
 		const reference = references[index];
 		if (reference.isWrite || !reference.file) {
@@ -312,7 +314,7 @@ function collectIncomingCallerGroups(options: {
 		if (options.allowedPaths && !options.allowedPaths.has(reference.file)) {
 			continue;
 		}
-		const hierarchyIndex = getCallHierarchyIndex(reference.file, options.sourcesByPath, options.pathCache, options.getDecl);
+		const hierarchyIndex = getCallHierarchyIndex(reference.file, options.sourcesByPath, options.pathCache, options.snapshot);
 		const key = buildPositionKey(reference.range.start.line, reference.range.start.column);
 		if (!hierarchyIndex.callByPosition.has(key)) {
 			continue;
@@ -342,9 +344,9 @@ function collectIncomingCallerGroups(options: {
 
 function getCallHierarchyIndex(
 	path: string,
-	sourcesByPath: ReadonlyMap<string, PreparedSource>,
+	sourcesByPath: ReadonlyMap<string, LuaSemanticWorkspaceSourceSnapshot>,
 	cache: Map<string, CallHierarchyPathIndex>,
-	getDecl: (symbolId: SymbolID) => Decl,
+	snapshot: LuaSemanticWorkspaceSnapshot,
 ): CallHierarchyPathIndex {
 	const cached = cache.get(path);
 	if (cached) {
@@ -374,7 +376,7 @@ function getCallHierarchyIndex(
 		const callerDecl = resolveCallerDeclaration(functionDecls, call.range.start.line, call.range.start.column);
 		const caller = callerDecl ? buildDeclCallerScope(callerDecl) : buildChunkCallerScope(path);
 		if (caller.symbolId) {
-			const current = getDecl(caller.symbolId);
+			const current = snapshot.getDecl(caller.symbolId);
 			if (current) {
 				index.callerByPosition.set(positionKey, buildDeclCallerScope(current));
 				continue;
@@ -491,11 +493,11 @@ function isRangeInside(inner: LuaSourceRange, outer: LuaSourceRange): boolean {
 }
 
 function createBoundFile(
-	source: PreparedSource,
+	source: LuaSemanticWorkspaceSourceSnapshot,
 	diagnostics: readonly LuaStaticDiagnostic[],
 	knownGlobalNames: ReadonlySet<string>,
 	moduleTargetsByAlias: ReadonlyMap<string, string>,
-	sourceByPath: ReadonlyMap<string, PreparedSource>,
+	sourceByPath: ReadonlyMap<string, LuaSemanticWorkspaceSourceSnapshot>,
 	snapshot: LuaSemanticWorkspaceSnapshot,
 ): LuaSemanticFrontendFile {
 	const decls = source.analysis.decls;
@@ -605,9 +607,9 @@ type LuaRequireNavigationTarget = {
 };
 
 function collectRequireNavigationTargets(
-	source: PreparedSource,
+	source: LuaSemanticWorkspaceSourceSnapshot,
 	moduleTargetsByAlias: ReadonlyMap<string, string>,
-	sourceByPath: ReadonlyMap<string, PreparedSource>,
+	sourceByPath: ReadonlyMap<string, LuaSemanticWorkspaceSourceSnapshot>,
 ): LuaRequireNavigationTarget[] {
 	const targets: LuaRequireNavigationTarget[] = [];
 	for (let index = 0; index < source.analysis.callExpressions.length; index += 1) {
@@ -655,7 +657,7 @@ function extractRequireStringArgument(
 }
 
 function resolveStringLiteralNavigationRange(
-	source: PreparedSource,
+	source: LuaSemanticWorkspaceSourceSnapshot,
 	literal: LuaStringLiteralExpression,
 ): LuaSourceRange {
 	for (let index = 0; index < source.parsed.tokens.length; index += 1) {
@@ -679,7 +681,7 @@ function resolveStringLiteralNavigationRange(
 }
 
 function buildModuleTargetAliasMap(
-	sources: readonly PreparedSource[],
+	sources: readonly LuaSemanticWorkspaceSourceSnapshot[],
 ): Map<string, string> {
 	const aliases = new Map<string, string>();
 	for (let index = 0; index < sources.length; index += 1) {

@@ -615,10 +615,7 @@ export function resolveSemanticDefinitionLocation(
 ): LuaDefinitionLocation {
 	const frontend = buildEditorSemanticFrontend(bridge, context.resource, editorDocumentState.buffer, editorDocumentState.textVersion);
 	const hoverPath = context.resource.path;
-	const file = frontend.files.get(hoverPath);
-	if (!file) {
-		return null;
-	}
+	const file = frontend.getFile(hoverPath);
 	const target = file.getNavigationTargetAt(usageRow, usageColumn);
 	if (!target) {
 		return null;
