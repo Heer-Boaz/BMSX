@@ -72,6 +72,14 @@ export type DeclStringSourceEntry = {
 	source: StaticStringSource;
 };
 
+export type ModuleAugmentationEntry = {
+	declId: SymbolID;
+	rootAliasDeclId: SymbolID;
+	ownerDeclId: SymbolID;
+	ownerMemberPath: readonly string[];
+	member: string;
+};
+
 export type PrefabClassEntry = {
 	defId: StaticStringSource;
 	classHintKey: SemanticHintKey;
@@ -148,6 +156,7 @@ export type FileSemanticData = {
 	functionSignatures: ReadonlyMap<string, FunctionSignatureInfo>;
 	declValueHints: readonly DeclValueHintEntry[];
 	declStringSources: readonly DeclStringSourceEntry[];
+	moduleAugmentations: readonly ModuleAugmentationEntry[];
 	prefabClasses: readonly PrefabClassEntry[];
 	objectBindings: readonly ObjectBindingEntry[];
 	prefabReferences: readonly PrefabReferenceEntry[];
@@ -389,6 +398,7 @@ type SemanticBuildResult = {
 	functionSignatures: Map<string, FunctionSignatureInfo>;
 	declValueHints: DeclValueHintEntry[];
 	declStringSources: DeclStringSourceEntry[];
+	moduleAugmentations: ModuleAugmentationEntry[];
 	prefabClasses: PrefabClassEntry[];
 	objectBindings: ObjectBindingEntry[];
 	prefabReferences: PrefabReferenceEntry[];
@@ -453,6 +463,7 @@ export function buildLuaFileSemanticData(
 		functionSignatures: result.functionSignatures,
 		declValueHints: result.declValueHints,
 		declStringSources: result.declStringSources,
+		moduleAugmentations: result.moduleAugmentations,
 		prefabClasses: result.prefabClasses,
 		objectBindings: result.objectBindings,
 		prefabReferences: result.prefabReferences,
@@ -487,6 +498,7 @@ class LuaProjectIndex {
 	private prefabReferenceHints: Map<SemanticHintKey, SemanticHintKey> = new Map();
 	private classBaseHints: Map<SemanticHintKey, SemanticHintKey> = new Map();
 	private derivedClassHintsByBase: Map<SemanticHintKey, Set<SemanticHintKey>> = new Map();
+	private resolvedMemberDeclsByOwner: Map<SemanticHintKey, Map<string, SymbolID>> = new Map();
 	private version = 0;
 	private nextFileOrder = 1;
 
@@ -883,7 +895,7 @@ class LuaProjectIndex {
 			const targetKey = appendSymbolKey(getPathHintSymbolKey(classHintKey), ref.name);
 			const target = this.memberDeclByFileAndKey.get(
 				fileSymbolKey(getPathHintFile(classHintKey), targetKey),
-			);
+			) ?? this.resolvedMemberDeclsByOwner.get(classHintKey)?.get(ref.name);
 			if (target) {
 				return target;
 			}
@@ -968,6 +980,7 @@ class LuaProjectIndex {
 		const previousPrefabReferenceHints = this.prefabReferenceHints;
 		const previousDeclPathHints = this.declPathHints;
 		const previousClassBaseHints = this.classBaseHints;
+		const previousResolvedMemberDeclsByOwner = this.resolvedMemberDeclsByOwner;
 		const orderedFiles = this.listFiles();
 		orderedFiles.sort((left, right) => this.fileOrder.get(left)! - this.fileOrder.get(right)!);
 		const moduleFiles = buildModuleFileMap(orderedFiles);
@@ -1054,6 +1067,11 @@ class LuaProjectIndex {
 			hints: nextDeclPathHints,
 		});
 		modulePathHints.resolveAliases();
+		const nextResolvedMemberDeclsByOwner = buildWorkspaceResolvedMemberDecls(
+			orderedFiles,
+			this.files,
+			modulePathHints,
+		);
 		const nextClassBaseHints = buildWorkspaceClassBaseHints(
 			orderedFiles,
 			this.files,
@@ -1081,6 +1099,11 @@ class LuaProjectIndex {
 			nextClassBaseHints,
 			dirtyReceiverSymbolKeys,
 		);
+		collectChangedResolvedMemberOwners(
+			previousResolvedMemberDeclsByOwner,
+			nextResolvedMemberDeclsByOwner,
+			affectedClasses,
+		);
 		const nextDerivedClassHintsByBase = buildDerivedClassHintsByBase(nextClassBaseHints);
 		if (affectedClasses.size > 0) {
 			addDerivedClassHints(
@@ -1099,6 +1122,7 @@ class LuaProjectIndex {
 		this.prefabReferenceHints = nextPrefabReferenceHints;
 		this.declPathHints = nextDeclPathHints;
 		this.classBaseHints = nextClassBaseHints;
+		this.resolvedMemberDeclsByOwner = nextResolvedMemberDeclsByOwner;
 	}
 
 	private collectFilesForReceiverClassHints(
@@ -1481,6 +1505,7 @@ class SemanticBuilder {
 	private readonly methodSelfPathStack: (readonly string[] | undefined)[] = [];
 	private readonly declValueHints: Map<SymbolID, SemanticHintKey> = new Map();
 	private readonly declStringSources: Map<SymbolID, StaticStringSource> = new Map();
+	private readonly moduleAugmentationsByDeclId: Map<SymbolID, ModuleAugmentationEntry> = new Map();
 	private readonly prefabClasses: PrefabClassEntry[] = [];
 	private readonly objectBindings: ObjectBindingEntry[] = [];
 	private readonly prefabReferences: PrefabReferenceEntry[] = [];
@@ -1522,6 +1547,9 @@ class SemanticBuilder {
 			functionSignatures: this.functionSignatures,
 			declValueHints: Array.from(this.declValueHints.entries(), ([declId, hintKey]) => ({ declId, hintKey })),
 			declStringSources: Array.from(this.declStringSources.entries(), ([declId, source]) => ({ declId, source })),
+			moduleAugmentations: Array.from(this.moduleAugmentationsByDeclId.values()).filter(
+				entry => this.moduleAliasesByDeclId.has(entry.rootAliasDeclId),
+			),
 			prefabClasses: this.prefabClasses,
 			objectBindings: this.objectBindings,
 			prefabReferences: this.prefabReferences,
@@ -1630,6 +1658,7 @@ class SemanticBuilder {
 						this.globalsByKey.set(symbolKey, decl);
 					}
 				}
+				this.recordModuleAugmentation(decl);
 				this.recordFunctionNameReferences(functionDeclaration);
 				this.recordFunctionDeclarationWriteReference(functionDeclaration, decl);
 				const basePath = functionDeclaration.name.identifiers.join('.');
@@ -2078,6 +2107,7 @@ class SemanticBuilder {
 		const namePath = basePath ? appendToNamePath(basePath, member.identifier) : [member.identifier];
 		const range = buildPropertyRange(member, this.tokenMap, this.path);
 		const decl = this.ensureTableField(namePath, range.start, member.identifier.length, baseDecl);
+		this.recordModuleAugmentation(decl);
 		this.recordReference({
 			namePath,
 			name: member.identifier,
@@ -2422,6 +2452,35 @@ class SemanticBuilder {
 		this.decls.push(decl);
 		this.declById.set(id, decl);
 		return decl;
+	}
+
+	private recordModuleAugmentation(decl: InternalDecl): void {
+		const namePath = decl.namePath;
+		if (namePath.length < 2) {
+			return;
+		}
+		const rootDecl = this.resolveName(namePath[0]) ?? this.globalsByKey.get(namePath[0]);
+		if (!rootDecl || !this.moduleAliasesByDeclId.has(rootDecl.id)) {
+			return;
+		}
+		let ownerDecl = rootDecl;
+		let ownerPathLength = 1;
+		let ownerSymbolKey = namePath[0];
+		for (let index = 1; index < namePath.length - 1; index += 1) {
+			ownerSymbolKey = appendSymbolKey(ownerSymbolKey, namePath[index]);
+			const candidate = this.properties.get(ownerSymbolKey);
+			if (candidate) {
+				ownerDecl = candidate;
+				ownerPathLength = index + 1;
+			}
+		}
+		this.moduleAugmentationsByDeclId.set(decl.id, {
+			declId: decl.id,
+			rootAliasDeclId: rootDecl.id,
+			ownerDeclId: ownerDecl.id,
+			ownerMemberPath: namePath.slice(ownerPathLength, -1),
+			member: decl.name,
+		});
 	}
 
 	private recordDefinitionAnnotation(decl: InternalDecl): void {
@@ -3284,7 +3343,7 @@ class WorkspaceModulePathResolver {
 		return resolved;
 	}
 
-	private resolveDeclaration(declId: SymbolID): SemanticHintKey {
+	public resolveDeclaration(declId: SymbolID): SemanticHintKey {
 		if (this.resolvedDecls.has(declId)) {
 			return this.resolvedDecls.get(declId);
 		}
@@ -3315,7 +3374,7 @@ class WorkspaceModulePathResolver {
 		return resolved;
 	}
 
-	private resolvePathHint(pathHint: SemanticHintKey): SemanticHintKey {
+	public resolvePathHint(pathHint: SemanticHintKey): SemanticHintKey {
 		const file = getPathHintFile(pathHint);
 		const symbolKey = getPathHintSymbolKey(pathHint);
 		const key = fileSymbolKey(file, symbolKey);
@@ -3335,7 +3394,7 @@ class WorkspaceModulePathResolver {
 		return resolved;
 	}
 
-	private resolveMember(baseHint: SemanticHintKey, member: string): SemanticHintKey {
+	public resolveMember(baseHint: SemanticHintKey, member: string): SemanticHintKey {
 		const memberHint = buildPathHintKey(
 			getPathHintFile(baseHint),
 			appendSymbolKey(getPathHintSymbolKey(baseHint), member),
@@ -3345,6 +3404,71 @@ class WorkspaceModulePathResolver {
 			?? this.directDeclByFileAndKey.get(key);
 		return declId ? this.resolveDeclaration(declId) : memberHint;
 	}
+}
+
+function buildWorkspaceResolvedMemberDecls(
+	files: readonly string[],
+	records: ReadonlyMap<string, FileRecord>,
+	modulePathHints: WorkspaceModulePathResolver,
+): Map<SemanticHintKey, Map<string, SymbolID>> {
+	const membersByOwner = new Map<SemanticHintKey, Map<string, SymbolID>>();
+	for (let fileIndex = 0; fileIndex < files.length; fileIndex += 1) {
+		const augmentations = records.get(files[fileIndex])!.data.moduleAugmentations;
+		for (let entryIndex = 0; entryIndex < augmentations.length; entryIndex += 1) {
+			const entry = augmentations[entryIndex];
+			let resolvedOwnerHint = modulePathHints.resolveDeclaration(entry.ownerDeclId);
+			for (let memberIndex = 0;
+				resolvedOwnerHint && memberIndex < entry.ownerMemberPath.length;
+				memberIndex += 1) {
+				resolvedOwnerHint = modulePathHints.resolveMember(
+					resolvedOwnerHint,
+					entry.ownerMemberPath[memberIndex],
+				);
+			}
+			if (!resolvedOwnerHint) {
+				continue;
+			}
+			let members = membersByOwner.get(resolvedOwnerHint);
+			if (!members) {
+				members = new Map<string, SymbolID>();
+				membersByOwner.set(resolvedOwnerHint, members);
+			}
+			members.set(entry.member, entry.declId);
+		}
+	}
+	return membersByOwner;
+}
+
+function collectChangedResolvedMemberOwners(
+	previous: ReadonlyMap<SemanticHintKey, ReadonlyMap<string, SymbolID>>,
+	next: ReadonlyMap<SemanticHintKey, ReadonlyMap<string, SymbolID>>,
+	changedOwners: Set<SemanticHintKey>,
+): void {
+	for (const [ownerHint, members] of previous) {
+		if (!symbolMapsEqual(members, next.get(ownerHint))) {
+			changedOwners.add(ownerHint);
+		}
+	}
+	for (const [ownerHint, members] of next) {
+		if (!symbolMapsEqual(members, previous.get(ownerHint))) {
+			changedOwners.add(ownerHint);
+		}
+	}
+}
+
+function symbolMapsEqual(
+	left: ReadonlyMap<string, SymbolID>,
+	right: ReadonlyMap<string, SymbolID>,
+): boolean {
+	if (!right || left.size !== right.size) {
+		return false;
+	}
+	for (const [name, symbolId] of left) {
+		if (right.get(name) !== symbolId) {
+			return false;
+		}
+	}
+	return true;
 }
 
 function collectAffectedClassHints(

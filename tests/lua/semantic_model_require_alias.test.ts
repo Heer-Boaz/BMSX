@@ -118,6 +118,63 @@ test('semantic workspace incrementally retargets transitive module aliases', asy
 	assert.equal(rightTarget!.decl.file, 'right.lua');
 });
 
+test('semantic workspace resolves members added to an imported module table', async () => {
+	const { buildLuaFileSemanticData, LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const baseSource = [
+		'local base<const> = {}',
+		'return base',
+	].join('\n');
+	const facadeSource = [
+		"local base<const> = require('base')",
+		'function base.tools.added() end',
+		'return base',
+	].join('\n');
+	const mainLines = [
+		"local api<const> = require('facade')",
+		'api.tools.added()',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFiles([
+		buildLuaFileSemanticData(mainLines.join('\n'), 'main.lua'),
+		buildLuaFileSemanticData(facadeSource, 'facade.lua'),
+		buildLuaFileSemanticData(baseSource, 'base.lua'),
+	]);
+	const target = workspace.getSnapshot().symbolAt(
+		'main.lua',
+		2,
+		mainLines[1].indexOf('added') + 1,
+	);
+
+	assert.ok(target, 'imported table augmentation target');
+	assert.equal(target!.decl.file, 'facade.lua');
+	assert.deepEqual(target!.decl.namePath, ['base', 'tools', 'added']);
+});
+
+test('semantic workspace incrementally removes imported table augmentations', async () => {
+	const { buildLuaFileSemanticData, LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const baseSource = 'local base<const> = {}\nreturn base';
+	const facadeSource = [
+		"local base<const> = require('base')",
+		'function base.added() end',
+		'return base',
+	].join('\n');
+	const mainLines = [
+		"local api<const> = require('facade')",
+		'api.added()',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFiles([
+		buildLuaFileSemanticData(baseSource, 'base.lua'),
+		buildLuaFileSemanticData(facadeSource, 'facade.lua'),
+		buildLuaFileSemanticData(mainLines.join('\n'), 'main.lua'),
+	]);
+	const column = mainLines[1].indexOf('added') + 1;
+	assert.ok(workspace.getSnapshot().symbolAt('main.lua', 2, column));
+
+	workspace.updateFile('facade.lua', "local base<const> = require('base')\nreturn base");
+	assert.equal(workspace.getSnapshot().symbolAt('main.lua', 2, column), null);
+});
+
 test('semantic workspace terminates circular module aliases without a false target', async () => {
 	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
 	const workspace = new LuaSemanticWorkspace();
