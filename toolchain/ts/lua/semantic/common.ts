@@ -66,14 +66,10 @@ export function buildLuaKnownNameSet(
 	globalSymbols: readonly LuaKnownSymbolName[],
 	builtinDescriptors: readonly LuaKnownBuiltinName[],
 	extraGlobalNames: readonly string[] | undefined,
-	includeSelf: boolean,
 ): Set<string> {
 	const names = new Set<string>();
 	for (const name of RESERVED_LUA_INTRINSIC_NAMES) {
 		addLuaKnownName(names, name);
-	}
-	if (includeSelf) {
-		addLuaKnownName(names, 'self');
 	}
 	if (extraGlobalNames) {
 		for (let index = 0; index < extraGlobalNames.length; index += 1) {

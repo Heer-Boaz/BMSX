@@ -428,3 +428,12 @@ export type LuaOffsetOfExpression = LuaNode & {
 };
 
 export type LuaAssignableExpression = LuaIdentifierExpression | LuaMemberExpression | LuaIndexExpression | LuaUnaryExpression;
+
+// A lone const closure is bound before its body is compiled so it can recurse
+// without the mutable predeclaration required by ordinary Lua locals.
+export function isRecursiveConstClosureDeclaration(statement: LuaLocalAssignmentStatement): boolean {
+	return statement.names.length === 1
+		&& statement.attributes[0] === 'const'
+		&& statement.values.length === 1
+		&& statement.values[0].kind === LuaSyntaxKind.FunctionExpression;
+}

@@ -36,7 +36,7 @@ export type LuaSemanticFrontendOptions = {
 	externalGlobalSymbols?: readonly LuaSymbolEntry[];
 };
 
-export type LuaBoundReferenceKind = 'lexical' | 'global' | 'map' | 'reserved_intrinsic' | 'unresolved';
+export type LuaBoundReferenceKind = 'lexical' | 'implicit_self' | 'global' | 'map' | 'reserved_intrinsic' | 'unresolved';
 
 export type LuaBoundReference = {
 	kind: LuaBoundReferenceKind;
@@ -113,8 +113,15 @@ export function buildLuaSemanticFrontend(
 	sources: ReadonlyArray<LuaSemanticFrontendSource>,
 	options: LuaSemanticFrontendOptions = {},
 ): LuaSemanticFrontend {
-	const builtinDescriptors = options.builtinDescriptors ?? getDefaultLuaBuiltinDescriptors();
 	const snapshot = buildLuaSemanticWorkspaceSnapshot(sources);
+	return buildLuaSemanticFrontendFromSnapshot(snapshot, options);
+}
+
+export function buildLuaSemanticFrontendFromSnapshot(
+	snapshot: LuaSemanticWorkspaceSnapshot,
+	options: LuaSemanticFrontendOptions = {},
+): LuaSemanticFrontend {
+	const builtinDescriptors = options.builtinDescriptors ?? getDefaultLuaBuiltinDescriptors();
 	const preparedSources = snapshot.sources.map(source => ({
 		path: source.path,
 		chunk: source.chunk,
@@ -129,7 +136,7 @@ export function buildLuaSemanticFrontend(
 	}
 	// Frontend queries must resolve against the prepared snapshot, not whatever the workspace becomes later.
 	const globalSymbols = buildCombinedGlobalSymbols(snapshot.listGlobalDecls(), options.externalGlobalSymbols);
-	const knownGlobalNames = buildLuaKnownNameSet(globalSymbols, builtinDescriptors, options.extraGlobalNames, false);
+	const knownGlobalNames = buildLuaKnownNameSet(globalSymbols, builtinDescriptors, options.extraGlobalNames);
 	const moduleTargetsByAlias = buildModuleTargetAliasMap(preparedSources);
 	for (let index = 0; index < preparedSources.length; index += 1) {
 		const source = preparedSources[index];
@@ -192,17 +199,21 @@ export function buildLuaSemanticFrontend(
 			}
 			for (let index = 0; index < source.analysis.refs.length; index += 1) {
 				const ref = source.analysis.refs[index];
-				if (!ref.target || !sourcePositionInRange(line, column, ref.range)) {
+				if (!sourcePositionInRange(line, column, ref.range)) {
 					continue;
 				}
-				const decl = snapshot.getDecl(ref.target);
+				const target = snapshot.resolveReference(ref);
+				if (!target) {
+					continue;
+				}
+				const decl = snapshot.getDecl(target);
 				if (!decl) {
 					continue;
 				}
 				return {
-					id: ref.target,
+					id: target,
 					decl,
-					references: snapshot.getReferences(ref.target),
+					references: snapshot.getReferences(target),
 				};
 			}
 			return null;
@@ -675,12 +686,21 @@ function classifyReference(
 	snapshot: LuaSemanticWorkspaceSnapshot,
 	knownGlobalNames: ReadonlySet<string>,
 ): LuaBoundReference {
-	const decl = ref.target ? snapshot.getDecl(ref.target) : null;
+	const target = snapshot.resolveReference(ref);
+	const decl = target ? snapshot.getDecl(target) : null;
 	if (decl && isReferenceInsideDeclScope(ref, decl)) {
 		return {
 			kind: decl.isGlobal ? 'global' : 'lexical',
 			ref,
 			decl,
+			isImplicitGlobal: false,
+		};
+	}
+	if (ref.referenceKind === 'self') {
+		return {
+			kind: 'implicit_self',
+			ref,
+			decl: null,
 			isImplicitGlobal: false,
 		};
 	}

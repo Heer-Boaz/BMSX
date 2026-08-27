@@ -3,6 +3,7 @@ import {
 	LuaSyntaxKind,
 	LuaTableFieldKind,
 	LuaUnaryOperator,
+	isRecursiveConstClosureDeclaration,
 	type LuaChunk,
 	type LuaBlock,
 	type LuaStatement,
@@ -67,6 +68,7 @@ import {
 	type SemanticValueSource,
 	type ValueAssignmentEntry,
 } from './value_graph';
+import { WorkspaceSymbolResolver } from './workspace_symbol_resolver';
 
 export type SymbolID = string;
 
@@ -148,7 +150,7 @@ export type Ref = {
 	target?: SymbolID;
 	lexicalTarget?: SymbolID;
 	isWrite: boolean;
-	referenceKind: 'identifier' | 'member' | 'method';
+	referenceKind: 'identifier' | 'self' | 'member' | 'method';
 	receiverSymbolKey?: string;
 	receiverValue?: SemanticValueSource;
 };
@@ -180,7 +182,6 @@ export type FileSemanticData = {
 	eventEmitterParameters: readonly EventEmitterParameterEntry[];
 };
 
-const EMPTY_REFS: readonly Ref[] = [];
 const EMPTY_CALL_EXPRESSIONS: readonly LuaCallExpression[] = [];
 const EMPTY_FUNCTION_SIGNATURES = new Map<string, FunctionSignatureInfo>();
 
@@ -203,58 +204,37 @@ export type LuaSemanticWorkspaceSnapshotInput = {
 	analysis?: FileSemanticData;
 };
 
-function getOrCreateRefSet(buckets: Map<string, Set<Ref>>, key: string): Set<Ref> {
-	let bucket = buckets.get(key);
-	if (!bucket) {
-		bucket = new Set<Ref>();
-		buckets.set(key, bucket);
-	}
-	return bucket;
-}
-
 export class LuaSemanticWorkspaceSnapshot {
 	public readonly version: number;
 	public readonly files: readonly string[];
 	public readonly sources: readonly LuaSemanticWorkspaceSourceSnapshot[];
 	private readonly dataByPath: ReadonlyMap<string, FileSemanticData>;
-	private readonly declById: ReadonlyMap<SymbolID, Decl>;
-	private readonly refsBySymbol: ReadonlyMap<SymbolID, readonly Ref[]>;
+	private readonly symbolResolver: WorkspaceSymbolResolver;
 	private readonly globalDecls: readonly Decl[];
 
-	constructor(version: number, files: readonly string[], sources: readonly LuaSemanticWorkspaceSourceSnapshot[]) {
+	constructor(
+		version: number,
+		files: readonly string[],
+		sources: readonly LuaSemanticWorkspaceSourceSnapshot[],
+		symbolResolver: WorkspaceSymbolResolver,
+	) {
 		this.version = version;
 		this.files = files;
 		this.sources = sources;
+		this.symbolResolver = symbolResolver;
 		const dataByPath = new Map<string, FileSemanticData>();
-		const declById = new Map<SymbolID, Decl>();
-		const refsBySymbol = new Map<SymbolID, Ref[]>();
 		const globalDecls: Decl[] = [];
 		for (let index = 0; index < sources.length; index += 1) {
 			const source = sources[index];
 			dataByPath.set(source.path, source.analysis);
 			for (let declIndex = 0; declIndex < source.analysis.decls.length; declIndex += 1) {
 				const decl = source.analysis.decls[declIndex];
-				declById.set(decl.id, decl);
 				if (decl.isGlobal) {
 					globalDecls.push(decl);
 				}
 			}
-			for (let refIndex = 0; refIndex < source.analysis.refs.length; refIndex += 1) {
-				const ref = source.analysis.refs[refIndex];
-				if (!ref.target) {
-					continue;
-				}
-				let bucket = refsBySymbol.get(ref.target);
-				if (!bucket) {
-					bucket = [];
-					refsBySymbol.set(ref.target, bucket);
-				}
-				bucket.push(ref);
-			}
 		}
 		this.dataByPath = dataByPath;
-		this.declById = declById;
-		this.refsBySymbol = refsBySymbol;
 		this.globalDecls = globalDecls;
 	}
 
@@ -263,11 +243,15 @@ export class LuaSemanticWorkspaceSnapshot {
 	}
 
 	public getDecl(symbolId: SymbolID): Decl {
-		return this.declById.get(symbolId);
+		return this.symbolResolver.getDeclaration(symbolId);
+	}
+
+	public resolveReference(ref: Ref): SymbolID | undefined {
+		return this.symbolResolver.resolveReference(ref);
 	}
 
 	public getReferences(symbolId: SymbolID): readonly Ref[] {
-		return this.refsBySymbol.get(symbolId) ?? EMPTY_REFS;
+		return this.symbolResolver.getReferences(symbolId);
 	}
 
 	public listGlobalDecls(): readonly Decl[] {
@@ -288,14 +272,18 @@ export class LuaSemanticWorkspaceSnapshot {
 		}
 		for (let refIndex = 0; refIndex < data.refs.length; refIndex += 1) {
 			const ref = data.refs[refIndex];
-			if (!ref.target || !sourcePositionInRange(row, column, ref.range)) {
+			if (!sourcePositionInRange(row, column, ref.range)) {
 				continue;
 			}
-			const decl = this.declById.get(ref.target);
+			const target = this.symbolResolver.resolveReference(ref);
+			if (!target) {
+				continue;
+			}
+			const decl = this.symbolResolver.getDeclaration(target);
 			if (!decl) {
 				continue;
 			}
-			return { id: ref.target, decl };
+			return { id: target, decl };
 		}
 		return null;
 	}
@@ -319,7 +307,7 @@ function createWorkspaceSnapshotFromIndex(index: LuaProjectIndex): LuaSemanticWo
 			analysis: data,
 		};
 	}
-	return new LuaSemanticWorkspaceSnapshot(index.getVersion(), files, sources);
+	return new LuaSemanticWorkspaceSnapshot(index.getVersion(), files, sources, index.getSymbolResolver());
 }
 
 export function buildLuaSemanticWorkspaceSnapshot(sources: ReadonlyArray<LuaSemanticWorkspaceSnapshotInput>): LuaSemanticWorkspaceSnapshot {
@@ -506,75 +494,56 @@ export function buildLuaSemanticModel(source: string, path: string, lines?: read
 }
 
 class LuaProjectIndex {
-	private readonly files: Map<string, FileRecord> = new Map();
+	private readonly files: Map<string, FileSemanticData> = new Map();
 	private readonly symbols: Map<SymbolID, Decl> = new Map();
 	private readonly directDeclByFileAndKey: Map<string, SymbolID> = new Map();
 	private readonly memberDeclByFileAndKey: Map<string, SymbolID> = new Map();
 	private readonly globalsByKey: Map<string, SymbolID> = new Map();
 	private readonly stringSourcesByDeclId: Map<SymbolID, StaticStringSource> = new Map();
 	private readonly moduleAliasTargetsByDeclId: Map<SymbolID, ModuleAliasTarget> = new Map();
-	private readonly refsBySymbol: Map<SymbolID, Ref[]> = new Map();
 	private readonly globalsSources: Map<string, Map<SymbolID, number>> = new Map();
-	private readonly refsByGlobalKey: Map<string, Set<Ref>> = new Map();
 	private readonly fileOrder: Map<string, number> = new Map();
-	private valueGraph?: WorkspaceValueGraph;
+	private symbolResolver: WorkspaceSymbolResolver;
 	private version = 0;
 	private nextFileOrder = 1;
 
-	public updateFile(file: string, source: string, lines?: readonly string[], parsed?: ParsedLuaChunk, version?: number): LuaSemanticModel {
+	constructor() {
+		this.symbolResolver = this.buildWorkspaceSymbolResolver();
+	}
+
+	public updateFile(file: string, source: string, lines?: readonly string[], parsed?: ParsedLuaChunk, version?: number): void {
 		const data = buildLuaFileSemanticData(source, file, lines, parsed, version);
-		return this.storeFileData(file, data);
+		this.storeFileData(file, data);
 	}
 
 	public updateFiles(files: readonly FileSemanticData[]): void {
-		const dirtySymbolKeys = new Set<string>();
-		const changedFiles = new Set<string>();
+		let changed = false;
 		for (let index = 0; index < files.length; index += 1) {
 			const data = files[index];
 			const file = data.model.file;
-			if (this.replaceIndexedFile(file, data, dirtySymbolKeys)) {
-				changedFiles.add(file);
-			}
+			changed = this.replaceIndexedFile(file, data) || changed;
 		}
-		if (changedFiles.size > 0) {
-			this.commitFileChanges(changedFiles, dirtySymbolKeys);
+		if (changed) {
+			this.commitFileChanges();
 		}
-	}
-
-	public getFileModel(file: string): LuaSemanticModel {
-		return this.files.get(file)?.data.model;
 	}
 
 	public getVersion(): number {
 		return this.version;
 	}
 
-	public symbolAt(file: string, row: number, column: number): { id: SymbolID; decl: Decl } {
-		const record = this.files.get(file);
-		if (!record) {
-			return null;
-		}
-		return this.findSymbolAt(record, row, column);
-	}
-
-	public getReferences(symbolId: SymbolID): readonly Ref[] {
-		const refs = this.refsBySymbol.get(symbolId);
-		return refs ? refs.slice() : [];
-	}
-
-	public getDecl(symbolId: SymbolID): Decl {
-		const decl = this.symbols.get(symbolId);
-		return decl ;
-	}
-
 	public getFileData(file: string): FileSemanticData {
-		return this.files.get(file)?.data;
+		return this.files.get(file);
+	}
+
+	public getSymbolResolver(): WorkspaceSymbolResolver {
+		return this.symbolResolver;
 	}
 
 	public listGlobalDecls(): Decl[] {
 		const decls: Decl[] = [];
-		for (const record of this.files.values()) {
-			const fileDecls = record.data.decls;
+		for (const data of this.files.values()) {
+			const fileDecls = data.decls;
 			for (let index = 0; index < fileDecls.length; index += 1) {
 				const decl = fileDecls[index];
 				if (decl.isGlobal) {
@@ -605,30 +574,6 @@ class LuaProjectIndex {
 		return Array.from(this.files.keys());
 	}
 
-	private registerReference(symbolId: SymbolID, ref: Ref): void {
-		let bucket = this.refsBySymbol.get(symbolId);
-		if (!bucket) {
-			bucket = [];
-			this.refsBySymbol.set(symbolId, bucket);
-		}
-		bucket.push(ref);
-	}
-
-	private unregisterReference(symbolId: SymbolID, ref: Ref): void {
-		const bucket = this.refsBySymbol.get(symbolId);
-		if (!bucket) {
-			return;
-		}
-		for (let index = bucket.length - 1; index >= 0; index -= 1) {
-			if (bucket[index] === ref) {
-				bucket.splice(index, 1);
-			}
-		}
-		if (bucket.length === 0) {
-			this.refsBySymbol.delete(symbolId);
-		}
-	}
-
 	private applyFileData(data: FileSemanticData): void {
 		for (let i = 0; i < data.declStringSources.length; i += 1) {
 			const entry = data.declStringSources[i];
@@ -653,15 +598,9 @@ class LuaProjectIndex {
 				this.addGlobalDecl(decl);
 			}
 		}
-		for (let i = 0; i < data.refs.length; i += 1) {
-			this.addReference(data.refs[i]);
-		}
 	}
 
 	private removeFileData(data: FileSemanticData): void {
-		for (let i = 0; i < data.refs.length; i += 1) {
-			this.removeReference(data.refs[i]);
-		}
 		for (let i = 0; i < data.declStringSources.length; i += 1) {
 			this.stringSourcesByDeclId.delete(data.declStringSources[i].declId);
 		}
@@ -746,30 +685,6 @@ class LuaProjectIndex {
 		return selected;
 	}
 
-	private addReference(ref: Ref): void {
-		if (ref.symbolKey.length > 0) {
-			getOrCreateRefSet(this.refsByGlobalKey, ref.symbolKey).add(ref);
-		}
-		if (ref.target) {
-			this.registerReference(ref.target, ref);
-		}
-	}
-
-	private removeReference(ref: Ref): void {
-		if (ref.target) {
-			this.unregisterReference(ref.target, ref);
-		}
-		if (ref.symbolKey.length > 0) {
-			const bucket = this.refsByGlobalKey.get(ref.symbolKey);
-			if (bucket) {
-				bucket.delete(ref);
-				if (bucket.size === 0) {
-					this.refsByGlobalKey.delete(ref.symbolKey);
-				}
-			}
-		}
-	}
-
 	private ensureFileOrder(file: string): number {
 		const existing = this.fileOrder.get(file);
 		if (existing !== undefined) {
@@ -781,48 +696,7 @@ class LuaProjectIndex {
 		return order;
 	}
 
-	private collectDirtySymbolKeysForFile(data: FileSemanticData, dirtyKeys: Set<string>): void {
-		for (let index = 0; index < data.decls.length; index += 1) {
-			const decl = data.decls[index];
-			if (decl.isGlobal) {
-				dirtyKeys.add(decl.symbolKey);
-			}
-		}
-	}
-
-	private collectFilesForGlobalKeys(keys: ReadonlySet<string>, files: Set<string>): void {
-		for (const key of keys) {
-			const bucket = this.refsByGlobalKey.get(key);
-			if (!bucket) {
-				continue;
-			}
-			for (const ref of bucket) {
-				files.add(ref.file);
-			}
-		}
-	}
-
-	private resolveReferenceTarget(file: string, ref: Ref): SymbolID | undefined {
-		let targetId = ref.lexicalTarget;
-		if (!targetId && ref.referenceKind !== 'identifier') {
-			const valueGraph = this.valueGraph;
-			const receiverValue = valueGraph?.resolve(ref.receiverValue);
-			targetId = receiverValue
-				? valueGraph.findMember(receiverValue, ref.name)
-				: undefined;
-		}
-		if (!targetId && ref.symbolKey.length > 0) {
-			targetId = ref.referenceKind === 'identifier'
-				? this.directDeclByFileAndKey.get(fileSymbolKey(file, ref.symbolKey)) ?? this.globalsByKey.get(ref.symbolKey)
-				: this.memberDeclByFileAndKey.get(fileSymbolKey(file, ref.symbolKey)) ?? this.globalsByKey.get(ref.symbolKey);
-		}
-		if (targetId) {
-			return targetId;
-		}
-		return undefined;
-	}
-
-	private refreshValueGraph(): void {
+	private buildWorkspaceSymbolResolver(): WorkspaceSymbolResolver {
 		const orderedFiles = this.listFiles();
 		orderedFiles.sort((left, right) => this.fileOrder.get(left)! - this.fileOrder.get(right)!);
 		const moduleFiles = buildModuleFileMap(orderedFiles);
@@ -836,8 +710,10 @@ class LuaProjectIndex {
 		const valueAssignments: ValueAssignmentEntry[] = [];
 		const baseValues: BaseValueEntry[] = [];
 		const eventEmitterParameters: EventEmitterParameterEntry[] = [];
+		const orderedData = new Array<FileSemanticData>(orderedFiles.length);
 		for (let fileIndex = 0; fileIndex < orderedFiles.length; fileIndex += 1) {
-			const data = this.files.get(orderedFiles[fileIndex])!.data;
+			const data = this.files.get(orderedFiles[fileIndex])!;
+			orderedData[fileIndex] = data;
 			for (let index = 0; index < data.declarationValues.length; index += 1) {
 				const entry = data.declarationValues[index];
 				if (entry.identity) {
@@ -887,7 +763,7 @@ class LuaProjectIndex {
 		});
 		const prefabClasses = new Map<string, SymbolID>();
 		for (let fileIndex = 0; fileIndex < orderedFiles.length; fileIndex += 1) {
-			const entries = this.files.get(orderedFiles[fileIndex])!.data.prefabClasses;
+			const entries = orderedData[fileIndex].prefabClasses;
 			for (let entryIndex = 0; entryIndex < entries.length; entryIndex += 1) {
 				const entry = entries[entryIndex];
 				const definitionId = stringValues.resolve(entry.defId);
@@ -904,7 +780,7 @@ class LuaProjectIndex {
 			);
 		}
 		for (let fileIndex = 0; fileIndex < orderedFiles.length; fileIndex += 1) {
-			const data = this.files.get(orderedFiles[fileIndex])!.data;
+			const data = orderedData[fileIndex];
 			for (let entryIndex = 0; entryIndex < data.objectBindings.length; entryIndex += 1) {
 				const entry = data.objectBindings[entryIndex];
 				const objectId = stringValues.resolve(entry.objectId);
@@ -948,7 +824,8 @@ class LuaProjectIndex {
 			}
 			sources.push(bindingValueSource(objectBindingId(emitterId)));
 		}
-		this.valueGraph = new WorkspaceValueGraph({
+		const globals = new Map(this.globalsByKey);
+		const valueGraph = new WorkspaceValueGraph({
 			declarationValues,
 			identityDeclarations,
 			moduleValues,
@@ -959,160 +836,41 @@ class LuaProjectIndex {
 			valueAssignments,
 			baseValues,
 			bindingValues,
-			globalValues: this.globalsByKey,
+			globalValues: globals,
+		});
+		return new WorkspaceSymbolResolver({
+			files: orderedData,
+			declarations: new Map(this.symbols),
+			globals,
+			valueGraph,
 		});
 	}
 
-	private rebuildFileTargets(data: FileSemanticData): FileSemanticData {
-		let nextRefs: Ref[] = null;
-		for (let index = 0; index < data.refs.length; index += 1) {
-			const ref = data.refs[index];
-			const nextTarget = this.resolveReferenceTarget(data.model.file, ref);
-			if (nextTarget === ref.target) {
-				if (nextRefs) {
-					nextRefs.push(ref);
-				}
-				continue;
-			}
-			if (!nextRefs) {
-				nextRefs = data.refs.slice(0, index);
-			}
-			const nextRef = { ...ref };
-			if (nextTarget) {
-				nextRef.target = nextTarget;
-			} else {
-				delete nextRef.target;
-			}
-			nextRefs.push(nextRef);
+	private storeFileData(file: string, data: FileSemanticData): void {
+		if (!this.replaceIndexedFile(file, data)) {
+			return;
 		}
-		return nextRefs ? replaceFileSemanticDataRefs(data, nextRefs) : data;
+		this.commitFileChanges();
 	}
 
-	private rebindAffectedFiles(files: ReadonlySet<string>): void {
-		const replacements = new Map<string, FileSemanticData>();
-		for (const file of files) {
-			const record = this.files.get(file);
-			if (!record) {
-				continue;
-			}
-			const nextData = this.rebuildFileTargets(record.data);
-			if (nextData !== record.data) {
-				replacements.set(file, nextData);
-			}
-		}
-		if (replacements.size > 0) {
-			// Older semantic frontends may still hold the previous FileSemanticData snapshot.
-			// Re-publish affected files instead of mutating stored Ref objects in place.
-			for (const [file, nextData] of replacements) {
-				const current = this.files.get(file)!;
-				this.removeFileData(current.data);
-				this.files.set(file, {
-					source: nextData.source,
-					data: nextData,
-				});
-			}
-			for (const nextData of replacements.values()) {
-				this.applyFileData(nextData);
-			}
-		}
-	}
-
-	private storeFileData(file: string, data: FileSemanticData): LuaSemanticModel {
-		const dirtySymbolKeys = new Set<string>();
-		if (!this.replaceIndexedFile(file, data, dirtySymbolKeys)) {
-			return this.files.get(file)!.data.model;
-		}
-		this.commitFileChanges(new Set<string>([file]), dirtySymbolKeys);
-		return this.files.get(file)!.data.model;
-	}
-
-	private replaceIndexedFile(
-		file: string,
-		data: FileSemanticData,
-		dirtySymbolKeys: Set<string>,
-	): boolean {
+	private replaceIndexedFile(file: string, data: FileSemanticData): boolean {
 		const current = this.files.get(file);
 		if (current && current.source === data.source) {
 			return false;
 		}
 		if (current) {
-			this.collectDirtySymbolKeysForFile(current.data, dirtySymbolKeys);
-			this.removeFileData(current.data);
+			this.removeFileData(current);
 		}
-		this.files.set(file, {
-			source: data.source,
-			data,
-		});
+		this.files.set(file, data);
 		this.ensureFileOrder(file);
-		this.collectDirtySymbolKeysForFile(data, dirtySymbolKeys);
 		this.applyFileData(data);
 		return true;
 	}
 
-	private commitFileChanges(
-		changedFiles: ReadonlySet<string>,
-		dirtySymbolKeys: Set<string>,
-	): void {
-		const filesToRebind = new Set<string>(changedFiles);
-		this.refreshValueGraph();
-		this.collectFilesForGlobalKeys(dirtySymbolKeys, filesToRebind);
-		const allFiles = this.listFiles();
-		for (let index = 0; index < allFiles.length; index += 1) {
-			filesToRebind.add(allFiles[index]);
-		}
-		this.rebindAffectedFiles(filesToRebind);
+	private commitFileChanges(): void {
+		this.symbolResolver = this.buildWorkspaceSymbolResolver();
 		this.version += 1;
 	}
-
-	private findSymbolAt(record: FileRecord, row: number, column: number): { id: SymbolID; decl: Decl } {
-		const data = record.data;
-		for (let declIndex = 0; declIndex < data.decls.length; declIndex += 1) {
-			const decl = data.decls[declIndex]!;
-			if (!sourcePositionInRange(row, column, decl.range)) {
-				continue;
-			}
-			const stored = this.symbols.get(decl.id) ?? decl;
-			return { id: decl.id, decl: stored };
-		}
-		for (let refIndex = 0; refIndex < data.refs.length; refIndex += 1) {
-			const ref = data.refs[refIndex]!;
-			if (!sourcePositionInRange(row, column, ref.range)) {
-				continue;
-			}
-			const targetId = ref.target ?? (ref.symbolKey.length > 0 ? this.globalsByKey.get(ref.symbolKey)  : null);
-			if (!targetId) {
-				continue;
-			}
-			const decl = this.symbols.get(targetId);
-			if (!decl) {
-				continue;
-			}
-			return { id: targetId, decl };
-		}
-		return null;
-	}
-}
-
-type FileRecord = {
-	source: string;
-	data: FileSemanticData;
-};
-
-function replaceFileSemanticDataRefs(data: FileSemanticData, refs: readonly Ref[]): FileSemanticData {
-	const model = createSemanticModel({
-		file: data.model.file,
-		decls: data.decls,
-		definitions: data.model.definitions,
-		refs,
-		annotations: data.annotations,
-		callExpressions: data.callExpressions,
-		functionSignatures: data.functionSignatures,
-	});
-	return {
-		...data,
-		model,
-		refs,
-	};
 }
 
 function createSemanticModel(options: {
@@ -1269,6 +1027,7 @@ class SemanticBuilder {
 	private readonly callExpressions: LuaCallExpression[] = [];
 	private readonly functionSignatures: Map<string, FunctionSignatureInfo> = new Map();
 	private readonly methodSelfPathStack: (readonly string[] | undefined)[] = [];
+	private readonly methodSelfScopeStack: (Scope | undefined)[] = [];
 	private readonly declarationValues: Map<SymbolID, SemanticValueSource[]> = new Map();
 	private readonly memberValues: Map<SymbolID, MemberValueEntry> = new Map();
 	private readonly functionReturnValues: Map<SymbolID, SemanticValueSource[]> = new Map();
@@ -1364,6 +1123,9 @@ class SemanticBuilder {
 							}
 						}
 					}
+				}
+				if (isRecursiveConstClosureDeclaration(localAssignment)) {
+					this.activateDecl(pending[0]);
 				}
 				const valueLimit = localAssignment.values.length;
 				for (let index = 0; index < valueLimit; index += 1) {
@@ -1955,8 +1717,10 @@ class SemanticBuilder {
 		const scopeRange = block.range;
 		this.enterScope(scopeRange, 'function');
 		const inheritedMethodSelfPath = this.currentMethodSelfPath();
+		const inheritedMethodSelfScope = this.methodSelfScopeStack[this.methodSelfScopeStack.length - 1];
 		const effectiveMethodSelfPath = methodSelfPath ?? inheritedMethodSelfPath;
 		this.methodSelfPathStack.push(effectiveMethodSelfPath?.slice());
+		this.methodSelfScopeStack.push(methodSelfPath ? this.currentScope() : inheritedMethodSelfScope);
 		this.functionReturnValueStack.push({
 			sources: [],
 		});
@@ -1984,6 +1748,7 @@ class SemanticBuilder {
 		}
 		this.visitBlock(block);
 		const returnValue = this.functionReturnValueStack.pop()!;
+		this.methodSelfScopeStack.pop();
 		this.methodSelfPathStack.pop();
 		this.leaveScope();
 		if (functionDecl) {
@@ -2163,20 +1928,26 @@ class SemanticBuilder {
 		if (identifier.name === 'self') {
 			const methodSelfPath = this.currentMethodSelfPath();
 			if (methodSelfPath && methodSelfPath.length > 0) {
-				const classValue = this.resolveValueSourceFromNamePath(methodSelfPath);
-				this.recordReference({
-					namePath,
-					name: identifier.name,
-					range,
-					target: resolved?.id,
-					isWrite,
-					referenceKind: 'identifier',
-				});
-				return {
-					namePath,
-					decl: resolved,
-					valueSource: classValue ? appendValueInstance(classValue) : undefined,
-				};
+				const methodSelfScope = this.methodSelfScopeStack[this.methodSelfScopeStack.length - 1];
+				let bindingScope = resolved?.scopeRef;
+				while (bindingScope && bindingScope !== methodSelfScope) {
+					bindingScope = bindingScope.parent;
+				}
+				if (!bindingScope) {
+					const classValue = this.resolveValueSourceFromNamePath(methodSelfPath);
+					this.recordReference({
+						namePath,
+						name: identifier.name,
+						range,
+						isWrite,
+						referenceKind: 'self',
+					});
+					return {
+						namePath,
+						decl: null,
+						valueSource: classValue ? appendValueInstance(classValue) : undefined,
+					};
+				}
 			}
 		}
 		const targetId = resolved?.id;
@@ -2515,7 +2286,7 @@ class SemanticBuilder {
 		range: LuaSourceRange;
 		target?: SymbolID;
 		isWrite: boolean;
-		referenceKind: 'identifier' | 'member' | 'method';
+		referenceKind: 'identifier' | 'self' | 'member' | 'method';
 		receiverSymbolKey?: string;
 		receiverValue?: SemanticValueSource;
 	}): void {
@@ -3215,7 +2986,7 @@ class WorkspaceStringValueResolver {
 	private readonly sources: ReadonlyMap<SymbolID, StaticStringSource>;
 	private readonly moduleAliasTargetsByDeclId: ReadonlyMap<SymbolID, ModuleAliasTarget>;
 	private readonly globalsByKey: ReadonlyMap<string, SymbolID>;
-	private readonly files: ReadonlyMap<string, FileRecord>;
+	private readonly files: ReadonlyMap<string, FileSemanticData>;
 	private readonly moduleFiles: ReadonlyMap<string, string>;
 	private readonly directDeclByFileAndKey: ReadonlyMap<string, SymbolID>;
 	private readonly memberDeclByFileAndKey: ReadonlyMap<string, SymbolID>;
@@ -3224,7 +2995,7 @@ class WorkspaceStringValueResolver {
 	private readonly resolvingModules: Set<string> = new Set();
 
 	constructor(project: {
-		files: ReadonlyMap<string, FileRecord>;
+		files: ReadonlyMap<string, FileSemanticData>;
 		globalsByKey: ReadonlyMap<string, SymbolID>;
 		moduleFiles: ReadonlyMap<string, string>;
 		directDeclByFileAndKey: ReadonlyMap<string, SymbolID>;
@@ -3286,7 +3057,7 @@ class WorkspaceStringValueResolver {
 		let resolved: string = null;
 		const moduleFile = this.moduleFiles.get(source.module);
 		if (moduleFile) {
-			const data = this.files.get(moduleFile)!.data;
+			const data = this.files.get(moduleFile)!;
 			const moduleRoot = resolveModuleReturnNamePath(data.chunk);
 			if (moduleRoot) {
 				const rootDeclId = moduleRoot.length > 0
@@ -4169,10 +3940,9 @@ export class LuaSemanticWorkspace {
 		return this.index.getVersion();
 	}
 
-	public updateFile(file: string, source: string, lines?: readonly string[], parsed?: ParsedLuaChunk, version?: number): LuaSemanticModel {
-		const model = this.index.updateFile(file, source, lines, parsed, version);
+	public updateFile(file: string, source: string, lines?: readonly string[], parsed?: ParsedLuaChunk, version?: number): void {
+		this.index.updateFile(file, source, lines, parsed, version);
 		this.snapshot = null;
-		return model;
 	}
 
 	public updateFiles(files: readonly FileSemanticData[]): void {
@@ -4181,10 +3951,6 @@ export class LuaSemanticWorkspace {
 		}
 		this.index.updateFiles(files);
 		this.snapshot = null;
-	}
-
-	public getModel(file: string): LuaSemanticModel {
-		return this.index.getFileModel(file);
 	}
 
 	public getFileData(file: string): FileSemanticData {

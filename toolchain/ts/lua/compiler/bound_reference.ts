@@ -54,7 +54,7 @@ export function getReferenceSymbolHandle(reference: LuaBoundReference): string |
 	if (reference.kind === 'lexical' && reference.decl) {
 		return reference.decl.id;
 	}
-	if (reference.kind === 'unresolved' && reference.ref.name === 'self') {
+	if (reference.kind === 'implicit_self') {
 		return IMPLICIT_SELF_SYMBOL_HANDLE;
 	}
 	return null;

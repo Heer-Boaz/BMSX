@@ -1,4 +1,4 @@
-import { buildLuaSemanticFrontend, type LuaSemanticFrontend } from '../../../../../../toolchain/ts/lua/semantic/frontend';
+import { buildLuaSemanticFrontendFromSnapshot, type LuaSemanticFrontend } from '../../../../../../toolchain/ts/lua/semantic/frontend';
 import type { LuaBuiltinDescriptor, LuaSymbolEntry } from '../../../../../../toolchain/ts/lua/semantic_contracts';
 import type { LuaSemanticWorkspaceSnapshot } from '../../../../../../toolchain/ts/lua/semantic/model';
 
@@ -26,7 +26,7 @@ export function createLuaSemanticFrontendFromSnapshot(
 	if (cached) {
 		return cached;
 	}
-	const frontend = buildLuaSemanticFrontend(snapshot.sources, {
+	const frontend = buildLuaSemanticFrontendFromSnapshot(snapshot, {
 		builtinDescriptors: options.builtinDescriptors,
 		extraGlobalNames: options.extraGlobalNames,
 		externalGlobalSymbols: options.externalGlobalSymbols,

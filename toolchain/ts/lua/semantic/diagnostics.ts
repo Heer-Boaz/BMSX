@@ -135,7 +135,6 @@ export function computeLuaDiagnosticsFromAnalysis(options: LuaAnalysisDiagnostic
 		options.globalSymbols,
 		options.builtinDescriptors,
 		options.extraGlobalNames,
-		true,
 	);
 	const builtinLookup = buildBuiltinLookup(options.builtinDescriptors);
 	addIdentifierDiagnosticsFromSemantic(diagnostics, options.analysis, globalKnownNames);

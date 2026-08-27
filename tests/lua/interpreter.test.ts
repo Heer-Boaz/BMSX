@@ -32,6 +32,7 @@ return fib(5)
 
 test('does not expose later local declarations to earlier closures', () => {
 	const result = runCompiledLua(`
+later = nil
 local function caller()
 	return later
 end

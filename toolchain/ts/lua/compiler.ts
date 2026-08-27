@@ -6,6 +6,7 @@ import {
 	LuaSyntaxKind,
 	LuaTableFieldKind,
 	LuaUnaryOperator,
+	isRecursiveConstClosureDeclaration,
 	type LuaAssignableExpression,
 	type LuaAssignmentStatement,
 	type LuaBinaryExpression,
@@ -3864,7 +3865,7 @@ class FunctionBuilder {
 		const attributes = statement.attributes;
 		const pointerTypeRefs = statement.pointerTypeRefs;
 		const values = statement.values;
-		if (names.length === 1 && attributes[0] === 'const' && values.length === 1 && values[0].kind === LuaSyntaxKind.FunctionExpression) {
+		if (isRecursiveConstClosureDeclaration(statement)) {
 			const decl = this.requireBoundDeclaration(names[0].range, `local '${names[0].name}'`);
 			const name = decl.name;
 			const target = this.declareLocalFromDecl(decl, names[0].range);

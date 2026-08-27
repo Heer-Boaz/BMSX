@@ -41,6 +41,31 @@ test('LuaSemanticFrontend preserves shadowed locals instead of retargeting them 
 	assert.deepEqual(frontend.getFile('shadow.lua').diagnostics, []);
 });
 
+test('LuaSemanticFrontend follows compiler scoping for recursive const closures', () => {
+	const source = [
+		'local recurse<const> = function(value)',
+		'\tif value == 0 then',
+		'\t\treturn value',
+		'\tend',
+		'\treturn recurse(value - 1)',
+		'end',
+		'return recurse(2)',
+	].join('\n');
+	const frontend = buildLuaSemanticFrontend([{ path: 'recursive_const.lua', source }]);
+	const recursiveCall = findPosition(source, '\treturn recurse', 'recurse');
+	const target = frontend.getFile('recursive_const.lua').getNavigationTargetAt(
+		recursiveCall.line,
+		recursiveCall.column,
+	);
+
+	assert.deepEqual(frontend.getFile('recursive_const.lua').diagnostics, []);
+	assert.deepEqual(target.range, {
+		path: 'recursive_const.lua',
+		start: { line: 1, column: 7 },
+		end: { line: 1, column: 13 },
+	});
+});
+
 test('LuaSemanticFrontend allows direct indexed memory-map access', () => {
 	const source = [
 		'local base = 0',
@@ -89,7 +114,7 @@ test('LuaSemanticFrontend allows omitted trailing optional arguments for user fu
 	assert.deepEqual(frontend.getFile('optional_args.lua').diagnostics, []);
 });
 
-test('LuaSemanticFrontend does not bind method self to an out-of-scope sibling local', () => {
+test('LuaSemanticFrontend binds method self independently of out-of-scope sibling locals', () => {
 	const source = [
 		'local t = {}',
 		'function t.new()',
@@ -107,7 +132,15 @@ test('LuaSemanticFrontend does not bind method self to an out-of-scope sibling l
 		start: { line: 7, column: 9 },
 		end: { line: 7, column: 12 },
 	});
-	assert.equal(ref.kind, 'unresolved');
+	assert.equal(ref.kind, 'implicit_self');
+	assert.deepEqual(file.diagnostics, []);
+});
+
+test('LuaSemanticFrontend does not treat self as an ambient global outside methods', () => {
+	const frontend = buildLuaSemanticFrontend([{ path: 'plain_self.lua', source: 'return self' }]);
+	const diagnostics = frontend.getFile('plain_self.lua').diagnostics;
+	assert.equal(diagnostics.length, 1);
+	assert.equal(diagnostics[0].message, `'self' is not defined.`);
 });
 
 test('LuaSemanticFrontend resolves navigation targets by lexical scope instead of first textual occurrence', () => {
@@ -245,6 +278,7 @@ test('workspace semantic frontends are cached per version and remain immutable a
 	const firstSnapshot = workspace.getSnapshot();
 	const first = createLuaSemanticFrontendFromSnapshot(firstSnapshot);
 	const firstAgain = createLuaSemanticFrontendFromSnapshot(firstSnapshot);
+	assert.equal(first.snapshot, firstSnapshot, 'frontend retains the prepared workspace program');
 	assert.equal(first, firstAgain);
 	const oldTarget = first.getFile('main.lua').getNavigationTargetAt(2, 8);
 	assert.ok(oldTarget);
@@ -309,7 +343,7 @@ test('workspace publishes immutable semantic snapshots per version', () => {
 	].join('\n'));
 });
 
-test('workspace rebinds global receiver member lookups without rebuilding every ref', () => {
+test('workspace resolves global receiver members per immutable snapshot without republishing unchanged files', () => {
 	const workspace = new LuaSemanticWorkspace();
 	workspace.updateFile('globals.lua', [
 		'hero = {}',
@@ -319,7 +353,9 @@ test('workspace rebinds global receiver member lookups without rebuilding every 
 	].join('\n'));
 	workspace.updateFile('usage.lua', 'return hero.walk');
 
-	const first = createLuaSemanticFrontendFromSnapshot(workspace.getSnapshot());
+	const usageData = workspace.getFileData('usage.lua');
+	const firstSnapshot = workspace.getSnapshot();
+	const first = createLuaSemanticFrontendFromSnapshot(firstSnapshot);
 	const firstTarget = first.getFile('usage.lua').getNavigationTargetAt(1, 13);
 	assert.ok(firstTarget);
 	assert.deepEqual(firstTarget.range, {
@@ -335,7 +371,11 @@ test('workspace rebinds global receiver member lookups without rebuilding every 
 		'end',
 	].join('\n'));
 
-	const second = createLuaSemanticFrontendFromSnapshot(workspace.getSnapshot());
+	const secondSnapshot = workspace.getSnapshot();
+	const second = createLuaSemanticFrontendFromSnapshot(secondSnapshot);
+	assert.equal(workspace.getFileData('usage.lua'), usageData, 'unchanged file analysis is retained');
+	assert.equal(first.snapshot, firstSnapshot);
+	assert.equal(second.snapshot, secondSnapshot);
 	const preservedTarget = first.getFile('usage.lua').getNavigationTargetAt(1, 13);
 	const updatedTarget = second.getFile('usage.lua').getNavigationTargetAt(1, 13);
 	assert.ok(preservedTarget);
