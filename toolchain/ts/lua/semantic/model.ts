@@ -76,6 +76,12 @@ import {
 	type ComponentProgramMountEntry,
 	type ComponentProgramSemanticHost,
 } from './component_programs';
+import {
+	PrefabComponentSemanticCollector,
+	type ComponentPublicationEntry,
+	type PrefabComponentEntry,
+	type PrefabComponentSemanticHost,
+} from './prefab_components';
 import { WorkspaceSymbolResolver } from './workspace_symbol_resolver';
 
 export type SymbolID = string;
@@ -190,6 +196,8 @@ export type FileSemanticData = {
 	eventEmitterParameters: readonly EventEmitterParameterEntry[];
 	componentProgramMounts: readonly ComponentProgramMountEntry[];
 	componentProgramCallbacks: readonly ComponentProgramCallbackEntry[];
+	componentPublications: readonly ComponentPublicationEntry[];
+	prefabComponents: readonly PrefabComponentEntry[];
 };
 
 const EMPTY_CALL_EXPRESSIONS: readonly LuaCallExpression[] = [];
@@ -434,6 +442,8 @@ type SemanticBuildResult = {
 	eventEmitterParameters: EventEmitterParameterEntry[];
 	componentProgramMounts: ComponentProgramMountEntry[];
 	componentProgramCallbacks: ComponentProgramCallbackEntry[];
+	componentPublications: ComponentPublicationEntry[];
+	prefabComponents: PrefabComponentEntry[];
 	moduleAliases: ModuleAliasEntry[];
 };
 
@@ -507,6 +517,8 @@ export function buildLuaFileSemanticData(
 		eventEmitterParameters: result.eventEmitterParameters,
 		componentProgramMounts: result.componentProgramMounts,
 		componentProgramCallbacks: result.componentProgramCallbacks,
+		componentPublications: result.componentPublications,
+		prefabComponents: result.prefabComponents,
 	};
 }
 
@@ -735,6 +747,8 @@ class LuaProjectIndex {
 		const eventEmitterParameters: EventEmitterParameterEntry[] = [];
 		const componentProgramMounts: ComponentProgramMountEntry[] = [];
 		const componentProgramCallbacks: ComponentProgramCallbackEntry[] = [];
+		const componentPublications: ComponentPublicationEntry[] = [];
+		const prefabComponents: PrefabComponentEntry[] = [];
 		const orderedData = new Array<FileSemanticData>(orderedFiles.length);
 		for (let fileIndex = 0; fileIndex < orderedFiles.length; fileIndex += 1) {
 			const data = this.files.get(orderedFiles[fileIndex])!;
@@ -783,6 +797,12 @@ class LuaProjectIndex {
 			}
 			for (let index = 0; index < data.componentProgramCallbacks.length; index += 1) {
 				componentProgramCallbacks.push(data.componentProgramCallbacks[index]);
+			}
+			for (let index = 0; index < data.componentPublications.length; index += 1) {
+				componentPublications.push(data.componentPublications[index]);
+			}
+			for (let index = 0; index < data.prefabComponents.length; index += 1) {
+				prefabComponents.push(data.prefabComponents[index]);
 			}
 		}
 		const stringValues = new WorkspaceStringValueResolver({
@@ -910,6 +930,8 @@ class LuaProjectIndex {
 			calls,
 			valueAssignments,
 			baseValues,
+			componentPublications,
+			prefabComponents,
 			bindingValues,
 			globalValues: globals,
 		};
@@ -1086,7 +1108,7 @@ function symbolAtPosition(options: {
 	return null;
 }
 
-class SemanticBuilder implements ComponentProgramSemanticHost {
+class SemanticBuilder implements ComponentProgramSemanticHost, PrefabComponentSemanticHost {
 	private readonly chunk: LuaChunk;
 	private readonly path: string;
 	private readonly tokens: readonly LuaToken[];
@@ -1118,6 +1140,7 @@ class SemanticBuilder implements ComponentProgramSemanticHost {
 	private readonly prefabReferences: PrefabReferenceEntry[] = [];
 	private readonly eventEmitterParameters: EventEmitterParameterEntry[] = [];
 	private readonly componentPrograms: ComponentProgramSemanticCollector;
+	private readonly prefabComponents: PrefabComponentSemanticCollector;
 	private readonly baseValuesByClassDeclId: Map<SymbolID, BaseValueEntry> = new Map();
 	private readonly instanceBaseValues: BaseValueEntry[] = [];
 	private readonly moduleAliasesByDeclId: Map<SymbolID, ModuleAliasTarget> = new Map();
@@ -1141,6 +1164,7 @@ class SemanticBuilder implements ComponentProgramSemanticHost {
 		this.annotations = new Array(options.lines.length);
 		this.tokenMap = buildTokenMap(options.tokens);
 		this.componentPrograms = new ComponentProgramSemanticCollector(this);
+		this.prefabComponents = new PrefabComponentSemanticCollector(this);
 	}
 
 	public get file(): string {
@@ -1188,6 +1212,8 @@ class SemanticBuilder implements ComponentProgramSemanticHost {
 			eventEmitterParameters: this.eventEmitterParameters,
 			componentProgramMounts: this.componentPrograms.mounts,
 			componentProgramCallbacks: this.componentPrograms.callbacks,
+			componentPublications: this.prefabComponents.publications,
+			prefabComponents: this.prefabComponents.components,
 			moduleAliases: Array.from(this.moduleAliasesByName.values()),
 		};
 	}
@@ -1336,6 +1362,11 @@ class SemanticBuilder implements ComponentProgramSemanticHost {
 					functionDeclaration.functionExpression,
 					methodSelfPath,
 					declarationValueSource(decl.id),
+					decl.name === 'on_attach' && functionOwner
+						? {
+							lifecycleDeclId: decl.id,
+						}
+						: undefined,
 				);
 				break;
 			}
@@ -1378,7 +1409,18 @@ class SemanticBuilder implements ComponentProgramSemanticHost {
 								valueExpression.range.start.line,
 								valueExpression.range.start.column,
 							);
-						this.visitFunctionExpression(valueExpression, selfPath, functionValue);
+						if (targetInfo?.decl?.name === 'on_attach' && targetInfo.memberOwner) {
+							this.visitFunctionExpression(
+								valueExpression,
+								selfPath,
+								functionValue,
+								{
+									lifecycleDeclId: targetInfo.decl.id,
+								},
+							);
+						} else {
+							this.visitFunctionExpression(valueExpression, selfPath, functionValue);
+						}
 						if (targetInfo?.valueTarget) {
 							this.recordValueAssignment(targetInfo.valueTarget, functionValue);
 						}
@@ -1391,6 +1433,14 @@ class SemanticBuilder implements ComponentProgramSemanticHost {
 					}
 					if (targetInfo?.valueTarget && valueInfo?.valueSource) {
 						this.recordValueAssignment(targetInfo.valueTarget, valueInfo.valueSource);
+					}
+					if (targetInfo?.decl) {
+						this.prefabComponents.recordMemberAssignment(
+							targetInfo.memberOwner,
+							targetInfo.decl.name,
+							targetInfo.decl.id,
+							valueInfo?.valueSource,
+						);
 					}
 					this.recordComponentProgramMemberAssignment(targetInfo, valueExpression);
 					if (targetInfo) {
@@ -1837,7 +1887,11 @@ class SemanticBuilder implements ComponentProgramSemanticHost {
 		expression: LuaFunctionExpression,
 		methodSelfPath: readonly string[] | undefined,
 		functionValue: SemanticValueSource,
+		componentLifecycle?: {
+			lifecycleDeclId: SymbolID;
+		},
 	): void {
+		this.prefabComponents.enterFunction(componentLifecycle);
 		const block = expression.body;
 		const scopeRange = block.range;
 		this.enterScope(scopeRange, 'function');
@@ -1881,6 +1935,7 @@ class SemanticBuilder implements ComponentProgramSemanticHost {
 		} else {
 			this.functionReturnValues.delete(functionKey);
 		}
+		this.prefabComponents.leaveFunction();
 	}
 
 	private currentMethodSelfPath(): readonly string[] | undefined {
@@ -2853,6 +2908,7 @@ class SemanticBuilder implements ComponentProgramSemanticHost {
 			return;
 		}
 		this.componentPrograms.recordMounts(descriptor, classDecl.id);
+		this.prefabComponents.recordPrefabComponents(descriptor, classDecl.id);
 		if (defId) {
 			this.prefabClasses.push({
 				defId,
@@ -2920,6 +2976,17 @@ class SemanticBuilder implements ComponentProgramSemanticHost {
 	}
 
 	public resolveExpressionValueSource(expression: LuaExpression): SemanticValueSource | undefined {
+		if (expression.kind === LuaSyntaxKind.CallExpression) {
+			const callee = this.resolveExpressionValueSource(expression.callee);
+			if (!callee) {
+				return undefined;
+			}
+			return appendValueCall(
+				expression.methodName
+					? appendValueMember(callee, expression.methodName)
+					: callee,
+			);
+		}
 		if (expression.kind === LuaSyntaxKind.FunctionExpression
 			|| (expression.kind === LuaSyntaxKind.BinaryExpression
 				&& (expression.operator === LuaBinaryOperator.And || expression.operator === LuaBinaryOperator.Or))) {

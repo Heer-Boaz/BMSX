@@ -1,4 +1,8 @@
 import type { SymbolID } from './model';
+import type {
+	ComponentPublicationEntry,
+	PrefabComponentEntry,
+} from './prefab_components';
 
 declare const semanticValueBrand: unique symbol;
 
@@ -369,6 +373,8 @@ export type WorkspaceValueGraphInput = {
 	calls: readonly CallValueEntry[];
 	valueAssignments: readonly ValueAssignmentEntry[];
 	baseValues: readonly BaseValueEntry[];
+	componentPublications: readonly ComponentPublicationEntry[];
+	prefabComponents: readonly PrefabComponentEntry[];
 	bindingValues: ReadonlyMap<string, SemanticValueSource>;
 	globalValues: ReadonlyMap<string, SymbolID>;
 };
@@ -448,7 +454,10 @@ export class WorkspaceValueGraph {
 		this.materializeRootValues();
 		this.materializeBases(options.baseValues);
 		this.materializeValueAssignments(options.valueAssignments);
+		const prefabComponents = this.materializePrefabComponentValues(options.prefabComponents);
 		this.solveCallArgumentValues();
+		this.materializeComponentPublications(options.componentPublications, prefabComponents);
+		this.solveValueChanges();
 	}
 
 	public resolve(source: SemanticValueSource | undefined): SemanticValueID | undefined {
@@ -1129,9 +1138,103 @@ export class WorkspaceValueGraph {
 
 	private solveCallArgumentValues(): void {
 		this.materializeCalls();
+		this.solveValueChanges();
+	}
+
+	private solveValueChanges(): void {
 		while (this.dirtyTraversalValues.length > 0 || this.pendingCalls.length > 0) {
 			this.processDirtyTraversalValues();
 			this.processPendingCalls();
+		}
+	}
+
+	private materializePrefabComponentValues(
+		entries: readonly PrefabComponentEntry[],
+	): readonly { owner: SemanticValueID; component: SemanticValueID }[] {
+		const values: { owner: SemanticValueID; component: SemanticValueID }[] = [];
+		for (let index = 0; index < entries.length; index += 1) {
+			const entry = entries[index];
+			const owner = this.resolveSource(
+				appendValueInstance(declarationValueSource(entry.classDeclId)),
+				true,
+			);
+			const component = this.resolveSource(entry.component, true);
+			if (owner && component) {
+				values.push({ owner, component });
+			}
+		}
+		return values;
+	}
+
+	private materializeComponentPublications(
+		entries: readonly ComponentPublicationEntry[],
+		components: readonly { owner: SemanticValueID; component: SemanticValueID }[],
+	): void {
+		const publicationsByLifecycle = new Map<SymbolID, ComponentPublicationEntry[]>();
+		for (let index = 0; index < entries.length; index += 1) {
+			const entry = entries[index];
+			let publications = publicationsByLifecycle.get(entry.lifecycleDeclId);
+			if (!publications) {
+				publications = [];
+				publicationsByLifecycle.set(entry.lifecycleDeclId, publications);
+			}
+			publications.push(entry);
+		}
+		const publicationsByOwner = new Map<SemanticValueID, Map<string, {
+			component: SemanticValueID;
+			publication: ComponentPublicationEntry;
+		}[]>>();
+		for (let componentIndex = 0; componentIndex < components.length; componentIndex += 1) {
+			const attachment = components[componentIndex];
+			const lifecycleDeclarations = this.findMembers(attachment.component, 'on_attach');
+			const attachmentPublications = new Map<string, {
+				component: SemanticValueID;
+				publication: ComponentPublicationEntry;
+			}[]>();
+			for (let lifecycleIndex = 0; lifecycleIndex < lifecycleDeclarations.length; lifecycleIndex += 1) {
+				const publications = publicationsByLifecycle.get(lifecycleDeclarations[lifecycleIndex]);
+				if (!publications) {
+					continue;
+				}
+				for (let publicationIndex = 0; publicationIndex < publications.length; publicationIndex += 1) {
+					const publication = publications[publicationIndex];
+					let matches = attachmentPublications.get(publication.name);
+					if (!matches) {
+						matches = [];
+						attachmentPublications.set(publication.name, matches);
+					}
+					matches.push({ component: attachment.component, publication });
+				}
+			}
+			if (attachmentPublications.size === 0) {
+				continue;
+			}
+			let ownerPublications = publicationsByOwner.get(attachment.owner);
+			if (!ownerPublications) {
+				ownerPublications = new Map();
+				publicationsByOwner.set(attachment.owner, ownerPublications);
+			}
+			for (const [name, publications] of attachmentPublications) {
+				ownerPublications.set(name, publications);
+			}
+		}
+		for (const [owner, publicationsByName] of publicationsByOwner) {
+			for (const [name, publications] of publicationsByName) {
+				const member = this.ensureMember(owner, name);
+				for (let index = 0; index < publications.length; index += 1) {
+					const match = publications[index];
+					const memberDeclId = match.publication.memberDeclId;
+					this.retainMemberDeclaration(member.value, memberDeclId);
+					this.addIdentity(
+						member.value,
+						this.nodeFor(this.declarationNodes, memberDeclId),
+					);
+					this.addValueBase(member.value, match.component);
+					if (!member.declaration) {
+						member.declaration = memberDeclId;
+					}
+				}
+			}
 		}
 	}
 
