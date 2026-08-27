@@ -107,6 +107,7 @@ export type Ref = {
 	lexicalTarget?: SymbolID;
 	isWrite: boolean;
 	referenceKind: 'identifier' | 'member' | 'method';
+	receiverDeclId?: SymbolID;
 	receiverSymbolKey?: string;
 	receiverHintKey?: SemanticHintKey;
 };
@@ -1717,7 +1718,13 @@ class SemanticBuilder {
 			}
 			case LuaSyntaxKind.TableConstructorExpression: {
 				this.visitTableConstructorExpression(expression, context);
-				return null;
+				return context.tableBasePath
+					? {
+						namePath: context.tableBasePath.slice(),
+						decl: context.tableBaseDecl,
+						hintKey: buildPathHintKey(this.path, joinNamePath(context.tableBasePath)),
+					}
+					: null;
 			}
 			case LuaSyntaxKind.BinaryExpression: {
 				this.visitExpression(expression.left, context);
@@ -1765,7 +1772,10 @@ class SemanticBuilder {
 						tableBaseDecl: decl,
 						tableBasePath: decl.namePath,
 					};
-					this.visitExpression(field.value, valueContext);
+					const valueInfo = this.visitExpression(field.value, valueContext);
+					if (valueInfo?.hintKey) {
+						this.setDeclValueHint(decl, valueInfo.hintKey);
+					}
 					break;
 				}
 				case LuaTableFieldKind.ExpressionKey: {
@@ -1925,6 +1935,7 @@ class SemanticBuilder {
 			target: targetId,
 			isWrite: false,
 			referenceKind: 'method',
+			receiverDeclId: calleeInfo?.decl?.id,
 			receiverSymbolKey,
 			receiverHintKey,
 		});
@@ -2008,6 +2019,7 @@ class SemanticBuilder {
 			target: targetId,
 			isWrite,
 			referenceKind: 'member',
+			receiverDeclId: baseInfo?.decl?.id,
 			receiverSymbolKey: baseInfo?.decl?.symbolKey || (baseInfo?.namePath && joinNamePath(baseInfo.namePath)),
 			receiverHintKey: baseInfo?.hintKey,
 		});
@@ -2229,6 +2241,7 @@ class SemanticBuilder {
 		target: SymbolID;
 		isWrite: boolean;
 		referenceKind: 'identifier' | 'member' | 'method';
+		receiverDeclId?: SymbolID;
 		receiverSymbolKey?: string;
 		receiverHintKey?: SemanticHintKey;
 	}): void {
@@ -2243,6 +2256,7 @@ class SemanticBuilder {
 			lexicalTarget: targetDecl && !targetDecl.isGlobal ? targetDecl.id : null,
 			isWrite: options.isWrite,
 			referenceKind: options.referenceKind,
+			receiverDeclId: options.receiverDeclId,
 			receiverSymbolKey: options.receiverSymbolKey,
 			receiverHintKey: options.receiverHintKey,
 		};
@@ -2748,6 +2762,12 @@ function resolveReferenceReceiverPathHintKey(
 			return resolved;
 		}
 	}
+	if (ref.receiverDeclId) {
+		const resolved = declHints.get(ref.receiverDeclId);
+		if (resolved) {
+			return resolved;
+		}
+	}
 	if (!ref.receiverSymbolKey || ref.receiverSymbolKey.length === 0) {
 		return null;
 	}
@@ -2941,22 +2961,41 @@ function recordModuleAliasPathHints(
 		if (!moduleRoot) {
 			continue;
 		}
-		let targetFile = moduleFile;
-		let symbolPath = moduleRoot.slice();
-		if (symbolPath.length > 0) {
-			const rootDecl = findDeclBySymbolKey(moduleRecord.data.decls, joinNamePath(symbolPath));
-			const rootHint = rootDecl && hints.get(rootDecl.id);
-			if (rootHint) {
-				targetFile = getPathHintFile(rootHint);
-				symbolPath = getPathHintSymbolKeyParts(rootHint);
-			}
-		}
+		let targetHint = resolveDeclValuePathHint(
+			buildPathHintKey(moduleFile, joinNamePath(moduleRoot)),
+			files,
+			hints,
+		);
 		const memberPath = alias.memberPath;
 		for (let memberIndex = 0; memberIndex < memberPath.length; memberIndex += 1) {
-			symbolPath.push(memberPath[memberIndex]);
+			targetHint = resolveDeclValuePathHint(
+				buildPathHintKey(
+					getPathHintFile(targetHint),
+					appendSymbolKey(getPathHintSymbolKey(targetHint), memberPath[memberIndex]),
+				),
+				files,
+				hints,
+			);
 		}
-		hints.set(decl.id, buildPathHintKey(targetFile, joinNamePath(symbolPath)));
+		hints.set(decl.id, targetHint);
 	}
+}
+
+function resolveDeclValuePathHint(
+	pathHint: SemanticHintKey,
+	files: ReadonlyMap<string, FileRecord>,
+	hints: ReadonlyMap<SymbolID, SemanticHintKey>,
+): SemanticHintKey {
+	const file = getPathHintFile(pathHint);
+	const decl = findDeclBySymbolKey(
+		files.get(file)!.data.decls,
+		getPathHintSymbolKey(pathHint),
+	);
+	if (!decl) {
+		return pathHint;
+	}
+	const valueHint = hints.get(decl.id);
+	return valueHint ? valueHint : pathHint;
 }
 
 function findDeclBySymbolKey(decls: readonly Decl[], symbolKey: string): Decl {

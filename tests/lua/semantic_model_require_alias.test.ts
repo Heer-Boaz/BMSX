@@ -200,3 +200,31 @@ test('semantic workspace resolves inherited module members through class metatab
 	assert.equal(activateTarget!.decl.file, 'base.lua');
 	assert.deepEqual(activateTarget!.decl.namePath, ['base', 'activate']);
 });
+
+test('semantic workspace retains exported table identity across local shadowing', async () => {
+	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const signatureSource = [
+		'local signature<const> = {}',
+		'local internal_operand<const> = { entry = 1 }',
+		'signature.operand = internal_operand',
+		'return signature',
+	].join('\n');
+	const mainLines = [
+		"local signature<const> = require('signature')",
+		'local operand<const> = signature.operand',
+		'local selected<const> = operand.entry',
+		'local passthrough<const> = function(operand) return operand end',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('main.lua', mainLines.join('\n'));
+	workspace.updateFile('signature.lua', signatureSource);
+	const entryTarget = workspace.getSnapshot().symbolAt(
+		'main.lua',
+		3,
+		mainLines[2].indexOf('entry') + 1,
+	);
+
+	assert.ok(entryTarget, 'exported nested table member target');
+	assert.equal(entryTarget!.decl.file, 'signature.lua');
+	assert.deepEqual(entryTarget!.decl.namePath, ['internal_operand', 'entry']);
+});
