@@ -39,6 +39,34 @@ import {
 	type ModuleAliasEntry,
 	type ModuleAliasTarget,
 } from './module_aliases';
+import {
+	WorkspaceValueGraph,
+	appendValueCall,
+	appendValueElement,
+	appendValueInstance,
+	appendValueMember,
+	bindingValueSource,
+	declarationValueSource,
+	expressionValueSource,
+	globalValueSource,
+	moduleTableValueSource,
+	moduleValueSource,
+	objectBindingId,
+	prefabBindingId,
+	semanticValueSourceKey,
+	semanticValueSourcesEqual,
+	sourceBindingId,
+	tableValueSource,
+	type BaseValueEntry,
+	type CallValueEntry,
+	type DeclarationValueEntry,
+	type FunctionParameterValueEntry,
+	type FunctionReturnValueEntry,
+	type MemberValueEntry,
+	type ModuleValueEntry,
+	type SemanticValueSource,
+	type ValueAssignmentEntry,
+} from './value_graph';
 
 export type SymbolID = string;
 
@@ -54,13 +82,6 @@ export type FunctionSignatureInfo = {
 	declarationStyle: 'function' | 'method';
 };
 
-export type SemanticHintKey = string;
-
-export type DeclValueHintEntry = {
-	declId: SymbolID;
-	hintKey: SemanticHintKey;
-};
-
 export type StaticStringSource =
 	| { kind: 'literal'; value: string }
 	| { kind: 'declaration'; declId: SymbolID }
@@ -72,33 +93,24 @@ export type DeclStringSourceEntry = {
 	source: StaticStringSource;
 };
 
-export type ModuleAugmentationEntry = {
-	declId: SymbolID;
-	rootAliasDeclId: SymbolID;
-	ownerDeclId: SymbolID;
-	ownerMemberPath: readonly string[];
-	member: string;
-};
-
 export type PrefabClassEntry = {
 	defId: StaticStringSource;
-	classHintKey: SemanticHintKey;
+	classDeclId: SymbolID;
 };
 
 export type ObjectBindingEntry = {
-	objectId: string;
+	objectId: StaticStringSource;
 	prefabId: StaticStringSource;
 };
 
 export type PrefabReferenceEntry = {
-	hintKey: SemanticHintKey;
+	bindingId: string;
 	defId: StaticStringSource;
 };
 
-export type ClassBaseEntry = {
-	classDeclId: SymbolID;
-	origin: 'metatable' | 'prefab';
-	base: { declId: SymbolID } | { module: string };
+export type EventEmitterParameterEntry = {
+	parameterDeclId: SymbolID;
+	emitterId: StaticStringSource;
 };
 
 export type LuaSemanticModel = {
@@ -133,13 +145,12 @@ export type Ref = {
 	namePath: readonly string[];
 	symbolKey: string;
 	range: LuaSourceRange;
-	target: SymbolID;
+	target?: SymbolID;
 	lexicalTarget?: SymbolID;
 	isWrite: boolean;
 	referenceKind: 'identifier' | 'member' | 'method';
-	receiverDeclId?: SymbolID;
 	receiverSymbolKey?: string;
-	receiverHintKey?: SemanticHintKey;
+	receiverValue?: SemanticValueSource;
 };
 
 export type FileSemanticData = {
@@ -154,13 +165,19 @@ export type FileSemanticData = {
 	moduleAliases: readonly ModuleAliasEntry[];
 	callExpressions: readonly LuaCallExpression[];
 	functionSignatures: ReadonlyMap<string, FunctionSignatureInfo>;
-	declValueHints: readonly DeclValueHintEntry[];
+	declarationValues: readonly DeclarationValueEntry[];
+	moduleValues: readonly ModuleValueEntry[];
+	memberValues: readonly MemberValueEntry[];
+	functionReturnValues: readonly FunctionReturnValueEntry[];
+	functionParameterValues: readonly FunctionParameterValueEntry[];
+	callValues: readonly CallValueEntry[];
+	valueAssignments: readonly ValueAssignmentEntry[];
+	baseValues: readonly BaseValueEntry[];
 	declStringSources: readonly DeclStringSourceEntry[];
-	moduleAugmentations: readonly ModuleAugmentationEntry[];
 	prefabClasses: readonly PrefabClassEntry[];
 	objectBindings: readonly ObjectBindingEntry[];
 	prefabReferences: readonly PrefabReferenceEntry[];
-	classBases: readonly ClassBaseEntry[];
+	eventEmitterParameters: readonly EventEmitterParameterEntry[];
 };
 
 const EMPTY_REFS: readonly Ref[] = [];
@@ -356,25 +373,25 @@ type InternalDecl = Decl & {
 type ResolvedNamePath = {
 	namePath: string[] | null;
 	decl: InternalDecl | null;
-	hintKey: SemanticHintKey | null;
+	valueSource?: SemanticValueSource;
 };
 
 type ExpressionContext = {
 	tableBaseDecl: InternalDecl;
 	tableBasePath: readonly string[];
+	tableOwner?: SemanticValueSource;
 	moduleReturn?: boolean;
 };
 
-type FunctionReturnHintState = {
-	hintKey: SemanticHintKey;
-	observed: boolean;
-	consistent: boolean;
+type FunctionReturnValueState = {
+	sources: SemanticValueSource[];
 };
 
 type AssignmentTargetInfo = {
 	decl: InternalDecl;
 	namePath: readonly string[];
 	path: string | null;
+	valueTarget?: SemanticValueSource;
 	moduleAlias?: ModuleAliasTarget;
 };
 
@@ -396,13 +413,19 @@ type SemanticBuildResult = {
 	annotations: SemanticAnnotations;
 	callExpressions: LuaCallExpression[];
 	functionSignatures: Map<string, FunctionSignatureInfo>;
-	declValueHints: DeclValueHintEntry[];
+	declarationValues: DeclarationValueEntry[];
+	moduleValues: ModuleValueEntry[];
+	memberValues: MemberValueEntry[];
+	functionReturnValues: FunctionReturnValueEntry[];
+	functionParameterValues: FunctionParameterValueEntry[];
+	callValues: CallValueEntry[];
+	valueAssignments: ValueAssignmentEntry[];
+	baseValues: BaseValueEntry[];
 	declStringSources: DeclStringSourceEntry[];
-	moduleAugmentations: ModuleAugmentationEntry[];
 	prefabClasses: PrefabClassEntry[];
 	objectBindings: ObjectBindingEntry[];
 	prefabReferences: PrefabReferenceEntry[];
-	classBases: ClassBaseEntry[];
+	eventEmitterParameters: EventEmitterParameterEntry[];
 	moduleAliases: ModuleAliasEntry[];
 };
 
@@ -461,13 +484,19 @@ export function buildLuaFileSemanticData(
 		moduleAliases: result.moduleAliases,
 		callExpressions: result.callExpressions,
 		functionSignatures: result.functionSignatures,
-		declValueHints: result.declValueHints,
+		declarationValues: result.declarationValues,
+		moduleValues: result.moduleValues,
+		memberValues: result.memberValues,
+		functionReturnValues: result.functionReturnValues,
+		functionParameterValues: result.functionParameterValues,
+		callValues: result.callValues,
+		valueAssignments: result.valueAssignments,
+		baseValues: result.baseValues,
 		declStringSources: result.declStringSources,
-		moduleAugmentations: result.moduleAugmentations,
 		prefabClasses: result.prefabClasses,
 		objectBindings: result.objectBindings,
 		prefabReferences: result.prefabReferences,
-		classBases: result.classBases,
+		eventEmitterParameters: result.eventEmitterParameters,
 	};
 }
 
@@ -487,18 +516,8 @@ class LuaProjectIndex {
 	private readonly refsBySymbol: Map<SymbolID, Ref[]> = new Map();
 	private readonly globalsSources: Map<string, Map<SymbolID, number>> = new Map();
 	private readonly refsByGlobalKey: Map<string, Set<Ref>> = new Map();
-	private readonly refsByReceiverSymbolKey: Map<string, Set<Ref>> = new Map();
-	private readonly refsByReceiverHintKey: Map<string, Set<Ref>> = new Map();
-	private readonly refsByReceiverClassHintKey: Map<SemanticHintKey, Set<Ref>> = new Map();
-	private readonly receiverClassHintByRef: Map<Ref, SemanticHintKey> = new Map();
 	private readonly fileOrder: Map<string, number> = new Map();
-	private declPathHints: Map<SymbolID, SemanticHintKey> = new Map();
-	private prefabHintsById: Map<string, SemanticHintKey> = new Map();
-	private objectHintsById: Map<string, SemanticHintKey> = new Map();
-	private prefabReferenceHints: Map<SemanticHintKey, SemanticHintKey> = new Map();
-	private classBaseHints: Map<SemanticHintKey, SemanticHintKey> = new Map();
-	private derivedClassHintsByBase: Map<SemanticHintKey, Set<SemanticHintKey>> = new Map();
-	private resolvedMemberDeclsByOwner: Map<SemanticHintKey, Map<string, SymbolID>> = new Map();
+	private valueGraph?: WorkspaceValueGraph;
 	private version = 0;
 	private nextFileOrder = 1;
 
@@ -727,63 +746,7 @@ class LuaProjectIndex {
 		return selected;
 	}
 
-	private indexReferenceDependencies(ref: Ref): void {
-		if (ref.receiverSymbolKey && ref.receiverSymbolKey.length > 0) {
-			getOrCreateRefSet(this.refsByReceiverSymbolKey, ref.receiverSymbolKey).add(ref);
-			const rootKey = receiverRootSymbolKey(ref.receiverSymbolKey);
-			if (rootKey !== ref.receiverSymbolKey) {
-				getOrCreateRefSet(this.refsByReceiverSymbolKey, rootKey).add(ref);
-			}
-		}
-		if (ref.receiverHintKey && ref.receiverHintKey.length > 0) {
-			getOrCreateRefSet(this.refsByReceiverHintKey, ref.receiverHintKey).add(ref);
-		}
-		this.refreshReferenceClassDependency(ref);
-	}
-
-	private unindexReferenceDependencies(ref: Ref): void {
-		if (ref.receiverSymbolKey && ref.receiverSymbolKey.length > 0) {
-			const receiverSymbolKey = ref.receiverSymbolKey;
-			const rootKey = receiverRootSymbolKey(receiverSymbolKey);
-			removeReferenceDependency(this.refsByReceiverSymbolKey, receiverSymbolKey, ref);
-			if (rootKey !== receiverSymbolKey) {
-				removeReferenceDependency(this.refsByReceiverSymbolKey, rootKey, ref);
-			}
-		}
-		if (ref.receiverHintKey && ref.receiverHintKey.length > 0) {
-			const bucket = this.refsByReceiverHintKey.get(ref.receiverHintKey);
-			if (bucket) {
-				bucket.delete(ref);
-				if (bucket.size === 0) {
-					this.refsByReceiverHintKey.delete(ref.receiverHintKey);
-				}
-			}
-		}
-		const classHintKey = this.receiverClassHintByRef.get(ref);
-		if (classHintKey) {
-			removeReferenceDependency(this.refsByReceiverClassHintKey, classHintKey, ref);
-			this.receiverClassHintByRef.delete(ref);
-		}
-	}
-
-	private refreshReferenceClassDependency(ref: Ref): void {
-		const previousClassHintKey = this.receiverClassHintByRef.get(ref);
-		const nextClassHintKey = this.resolveReceiverPathHintKey(ref.file, ref);
-		if (previousClassHintKey === nextClassHintKey) {
-			return;
-		}
-		if (previousClassHintKey) {
-			removeReferenceDependency(this.refsByReceiverClassHintKey, previousClassHintKey, ref);
-			this.receiverClassHintByRef.delete(ref);
-		}
-		if (nextClassHintKey) {
-			getOrCreateRefSet(this.refsByReceiverClassHintKey, nextClassHintKey).add(ref);
-			this.receiverClassHintByRef.set(ref, nextClassHintKey);
-		}
-	}
-
 	private addReference(ref: Ref): void {
-		this.indexReferenceDependencies(ref);
 		if (ref.symbolKey.length > 0) {
 			getOrCreateRefSet(this.refsByGlobalKey, ref.symbolKey).add(ref);
 		}
@@ -796,7 +759,6 @@ class LuaProjectIndex {
 		if (ref.target) {
 			this.unregisterReference(ref.target, ref);
 		}
-		this.unindexReferenceDependencies(ref);
 		if (ref.symbolKey.length > 0) {
 			const bucket = this.refsByGlobalKey.get(ref.symbolKey);
 			if (bucket) {
@@ -826,18 +788,6 @@ class LuaProjectIndex {
 				dirtyKeys.add(decl.symbolKey);
 			}
 		}
-		const declsById = new Map<SymbolID, Decl>();
-		for (let index = 0; index < data.decls.length; index += 1) {
-			const decl = data.decls[index];
-			declsById.set(decl.id, decl);
-		}
-		for (let index = 0; index < data.declValueHints.length; index += 1) {
-			const entry = data.declValueHints[index];
-			const decl = declsById.get(entry.declId);
-			if (decl) {
-				dirtyKeys.add(decl.symbolKey);
-			}
-		}
 	}
 
 	private collectFilesForGlobalKeys(keys: ReadonlySet<string>, files: Set<string>): void {
@@ -852,32 +802,15 @@ class LuaProjectIndex {
 		}
 	}
 
-	private collectFilesForReceiverSymbolKeys(keys: ReadonlySet<string>, files: Set<string>): void {
-		for (const key of keys) {
-			const bucket = this.refsByReceiverSymbolKey.get(key);
-			if (!bucket) {
-				continue;
-			}
-			for (const ref of bucket) {
-				files.add(ref.file);
-			}
-		}
-	}
-
-	private collectFilesForReceiverHintKeys(keys: ReadonlySet<SemanticHintKey>, files: Set<string>): void {
-		for (const key of keys) {
-			const bucket = this.refsByReceiverHintKey.get(key);
-			if (!bucket) {
-				continue;
-			}
-			for (const ref of bucket) {
-				files.add(ref.file);
-			}
-		}
-	}
-
-	private resolveReferenceTarget(file: string, ref: Ref): SymbolID {
+	private resolveReferenceTarget(file: string, ref: Ref): SymbolID | undefined {
 		let targetId = ref.lexicalTarget;
+		if (!targetId && ref.referenceKind !== 'identifier') {
+			const valueGraph = this.valueGraph;
+			const receiverValue = valueGraph?.resolve(ref.receiverValue);
+			targetId = receiverValue
+				? valueGraph.findMember(receiverValue, ref.name)
+				: undefined;
+		}
 		if (!targetId && ref.symbolKey.length > 0) {
 			targetId = ref.referenceKind === 'identifier'
 				? this.directDeclByFileAndKey.get(fileSymbolKey(file, ref.symbolKey)) ?? this.globalsByKey.get(ref.symbolKey)
@@ -886,104 +819,63 @@ class LuaProjectIndex {
 		if (targetId) {
 			return targetId;
 		}
-		const receiverPathHintKey = this.resolveReceiverPathHintKey(file, ref);
-		if (!receiverPathHintKey) {
-			return null;
-		}
-		let classHintKey = receiverPathHintKey;
-		while (classHintKey) {
-			const targetKey = appendSymbolKey(getPathHintSymbolKey(classHintKey), ref.name);
-			const target = this.memberDeclByFileAndKey.get(
-				fileSymbolKey(getPathHintFile(classHintKey), targetKey),
-			) ?? this.resolvedMemberDeclsByOwner.get(classHintKey)?.get(ref.name);
-			if (target) {
-				return target;
-			}
-			classHintKey = this.classBaseHints.get(classHintKey);
-		}
-		return null;
+		return undefined;
 	}
 
-	private resolveReceiverPathHintKey(file: string, ref: Ref): SemanticHintKey {
-		if (ref.receiverHintKey) {
-			const resolved = resolveHintKeyToPathHintKey(
-				ref.receiverHintKey,
-				this.prefabHintsById,
-				this.objectHintsById,
-				this.prefabReferenceHints,
-			);
-			if (resolved) {
-				return resolved;
-			}
-		}
-		if (ref.receiverDeclId) {
-			const resolved = this.declPathHints.get(ref.receiverDeclId);
-			if (resolved) {
-				return resolved;
-			}
-		}
-		if (!ref.receiverSymbolKey || ref.receiverSymbolKey.length === 0) {
-			return null;
-		}
-		const localDeclId = this.directDeclByFileAndKey.get(
-			fileSymbolKey(file, ref.receiverSymbolKey),
-		);
-		if (localDeclId) {
-			const resolved = this.declPathHints.get(localDeclId);
-			if (resolved) {
-				return resolved;
-			}
-		}
-		const rootSymbolKey = receiverRootSymbolKey(ref.receiverSymbolKey);
-		if (rootSymbolKey !== ref.receiverSymbolKey) {
-			const rootDeclId = this.directDeclByFileAndKey.get(fileSymbolKey(file, rootSymbolKey));
-			const rootHint = rootDeclId && this.declPathHints.get(rootDeclId);
-			if (rootHint) {
-				const resolved = resolveHintKeyToPathHintKey(
-					rootHint,
-					this.prefabHintsById,
-					this.objectHintsById,
-					this.prefabReferenceHints,
-				);
-				if (resolved) {
-					return buildPathHintKey(
-						getPathHintFile(resolved),
-						appendSymbolKey(
-							getPathHintSymbolKey(resolved),
-							ref.receiverSymbolKey.slice(rootSymbolKey.length + 1),
-						),
-					);
-				}
-			}
-		}
-		const memberDeclId = this.memberDeclByFileAndKey.get(
-			fileSymbolKey(file, ref.receiverSymbolKey),
-		);
-		if (memberDeclId) {
-			const resolved = this.declPathHints.get(memberDeclId);
-			if (resolved) {
-				return resolved;
-			}
-		}
-		const globalDeclId = this.globalsByKey.get(ref.receiverSymbolKey);
-		return globalDeclId ? this.declPathHints.get(globalDeclId) : null;
-	}
-
-	private refreshResolvedHintMaps(
-		changedFiles: ReadonlySet<string>,
-		dirtyReceiverSymbolKeys: Set<string>,
-		dirtyReceiverHintKeys: Set<SemanticHintKey>,
-		filesToRebind: Set<string>,
-	): void {
-		const previousPrefabHintsById = this.prefabHintsById;
-		const previousObjectHintsById = this.objectHintsById;
-		const previousPrefabReferenceHints = this.prefabReferenceHints;
-		const previousDeclPathHints = this.declPathHints;
-		const previousClassBaseHints = this.classBaseHints;
-		const previousResolvedMemberDeclsByOwner = this.resolvedMemberDeclsByOwner;
+	private refreshValueGraph(): void {
 		const orderedFiles = this.listFiles();
 		orderedFiles.sort((left, right) => this.fileOrder.get(left)! - this.fileOrder.get(right)!);
 		const moduleFiles = buildModuleFileMap(orderedFiles);
+		const declarationValues = new Map<SymbolID, SemanticValueSource[]>();
+		const identityDeclarations = new Set<SymbolID>();
+		const moduleValues = new Map<string, SemanticValueSource>();
+		const memberValues: MemberValueEntry[] = [];
+		const functionReturns: FunctionReturnValueEntry[] = [];
+		const functionParameters: FunctionParameterValueEntry[] = [];
+		const calls: CallValueEntry[] = [];
+		const valueAssignments: ValueAssignmentEntry[] = [];
+		const baseValues: BaseValueEntry[] = [];
+		const eventEmitterParameters: EventEmitterParameterEntry[] = [];
+		for (let fileIndex = 0; fileIndex < orderedFiles.length; fileIndex += 1) {
+			const data = this.files.get(orderedFiles[fileIndex])!.data;
+			for (let index = 0; index < data.declarationValues.length; index += 1) {
+				const entry = data.declarationValues[index];
+				if (entry.identity) {
+					identityDeclarations.add(entry.declId);
+				}
+				let sources = declarationValues.get(entry.declId);
+				if (!sources) {
+					sources = [];
+					declarationValues.set(entry.declId, sources);
+				}
+				sources.push(entry.source);
+			}
+			for (let index = 0; index < data.moduleValues.length; index += 1) {
+				const entry = data.moduleValues[index];
+				moduleValues.set(entry.module, entry.source);
+			}
+			for (let index = 0; index < data.memberValues.length; index += 1) {
+				memberValues.push(data.memberValues[index]);
+			}
+			for (let index = 0; index < data.functionReturnValues.length; index += 1) {
+				functionReturns.push(data.functionReturnValues[index]);
+			}
+			for (let index = 0; index < data.functionParameterValues.length; index += 1) {
+				functionParameters.push(data.functionParameterValues[index]);
+			}
+			for (let index = 0; index < data.callValues.length; index += 1) {
+				calls.push(data.callValues[index]);
+			}
+			for (let index = 0; index < data.valueAssignments.length; index += 1) {
+				valueAssignments.push(data.valueAssignments[index]);
+			}
+			for (let index = 0; index < data.baseValues.length; index += 1) {
+				baseValues.push(data.baseValues[index]);
+			}
+			for (let index = 0; index < data.eventEmitterParameters.length; index += 1) {
+				eventEmitterParameters.push(data.eventEmitterParameters[index]);
+			}
+		}
 		const stringValues = new WorkspaceStringValueResolver({
 			files: this.files,
 			globalsByKey: this.globalsByKey,
@@ -993,207 +885,82 @@ class LuaProjectIndex {
 			stringSourcesByDeclId: this.stringSourcesByDeclId,
 			moduleAliasTargetsByDeclId: this.moduleAliasTargetsByDeclId,
 		});
-
-		const nextPrefabHintsById = new Map<string, SemanticHintKey>();
+		const prefabClasses = new Map<string, SymbolID>();
 		for (let fileIndex = 0; fileIndex < orderedFiles.length; fileIndex += 1) {
-			const data = this.files.get(orderedFiles[fileIndex])!.data;
-			for (let entryIndex = 0; entryIndex < data.prefabClasses.length; entryIndex += 1) {
-				const entry = data.prefabClasses[entryIndex];
-				const defId = stringValues.resolve(entry.defId);
-				if (defId != null && !nextPrefabHintsById.has(defId)) {
-					nextPrefabHintsById.set(defId, entry.classHintKey);
+			const entries = this.files.get(orderedFiles[fileIndex])!.data.prefabClasses;
+			for (let entryIndex = 0; entryIndex < entries.length; entryIndex += 1) {
+				const entry = entries[entryIndex];
+				const definitionId = stringValues.resolve(entry.defId);
+				if (definitionId !== undefined && !prefabClasses.has(definitionId)) {
+					prefabClasses.set(definitionId, entry.classDeclId);
 				}
 			}
 		}
-
-		const nextObjectHintsById = new Map<string, SemanticHintKey>();
+		const bindingValues = new Map<string, SemanticValueSource>();
+		for (const [definitionId, classDeclId] of prefabClasses) {
+			bindingValues.set(
+				prefabBindingId(definitionId),
+				appendValueInstance(declarationValueSource(classDeclId)),
+			);
+		}
 		for (let fileIndex = 0; fileIndex < orderedFiles.length; fileIndex += 1) {
 			const data = this.files.get(orderedFiles[fileIndex])!.data;
 			for (let entryIndex = 0; entryIndex < data.objectBindings.length; entryIndex += 1) {
 				const entry = data.objectBindings[entryIndex];
-				if (nextObjectHintsById.has(entry.objectId)) {
-					continue;
-				}
-				const prefabId = stringValues.resolve(entry.prefabId);
-				if (prefabId == null) {
-					continue;
-				}
-				const classHintKey = nextPrefabHintsById.get(prefabId);
-				if (classHintKey) {
-					nextObjectHintsById.set(entry.objectId, classHintKey);
+				const objectId = stringValues.resolve(entry.objectId);
+				const definitionId = stringValues.resolve(entry.prefabId);
+				if (objectId !== undefined && definitionId !== undefined) {
+					const classDeclId = prefabClasses.get(definitionId);
+					if (!classDeclId) {
+						continue;
+					}
+					bindingValues.set(
+						objectBindingId(objectId),
+						appendValueInstance(declarationValueSource(classDeclId)),
+					);
 				}
 			}
-		}
-
-		const nextPrefabReferenceHints = new Map<SemanticHintKey, SemanticHintKey>();
-		for (let fileIndex = 0; fileIndex < orderedFiles.length; fileIndex += 1) {
-			const data = this.files.get(orderedFiles[fileIndex])!.data;
 			for (let entryIndex = 0; entryIndex < data.prefabReferences.length; entryIndex += 1) {
 				const entry = data.prefabReferences[entryIndex];
-				const defId = stringValues.resolve(entry.defId);
-				if (defId == null) {
+				const definitionId = stringValues.resolve(entry.defId);
+				if (definitionId === undefined) {
 					continue;
 				}
-				const classHintKey = nextPrefabHintsById.get(defId);
-				if (classHintKey) {
-					nextPrefabReferenceHints.set(entry.hintKey, classHintKey);
+				const classDeclId = prefabClasses.get(definitionId);
+				if (classDeclId) {
+					bindingValues.set(
+						entry.bindingId,
+						appendValueInstance(declarationValueSource(classDeclId)),
+					);
 				}
 			}
 		}
-
-		const nextDeclPathHints = new Map<SymbolID, SemanticHintKey>();
-		for (let fileIndex = 0; fileIndex < orderedFiles.length; fileIndex += 1) {
-			const data = this.files.get(orderedFiles[fileIndex])!.data;
-			for (let entryIndex = 0; entryIndex < data.declValueHints.length; entryIndex += 1) {
-				const entry = data.declValueHints[entryIndex];
-				const pathHintKey = resolveHintKeyToPathHintKey(
-					entry.hintKey,
-					nextPrefabHintsById,
-					nextObjectHintsById,
-					nextPrefabReferenceHints,
-				);
-				if (pathHintKey) {
-					nextDeclPathHints.set(entry.declId, pathHintKey);
-				}
+		for (let index = 0; index < eventEmitterParameters.length; index += 1) {
+			const entry = eventEmitterParameters[index];
+			const emitterId = stringValues.resolve(entry.emitterId);
+			if (emitterId === undefined || !bindingValues.has(objectBindingId(emitterId))) {
+				continue;
 			}
+			let sources = declarationValues.get(entry.parameterDeclId);
+			if (!sources) {
+				sources = [];
+				declarationValues.set(entry.parameterDeclId, sources);
+			}
+			sources.push(bindingValueSource(objectBindingId(emitterId)));
 		}
-		const modulePathHints = new WorkspaceModulePathResolver({
-			files: this.files,
-			moduleFiles,
-			declsById: this.symbols,
-			directDeclByFileAndKey: this.directDeclByFileAndKey,
-			memberDeclByFileAndKey: this.memberDeclByFileAndKey,
-			moduleAliasTargetsByDeclId: this.moduleAliasTargetsByDeclId,
-			hints: nextDeclPathHints,
+		this.valueGraph = new WorkspaceValueGraph({
+			declarationValues,
+			identityDeclarations,
+			moduleValues,
+			memberValues,
+			functionReturns,
+			functionParameters,
+			calls,
+			valueAssignments,
+			baseValues,
+			bindingValues,
+			globalValues: this.globalsByKey,
 		});
-		modulePathHints.resolveAliases();
-		const nextResolvedMemberDeclsByOwner = buildWorkspaceResolvedMemberDecls(
-			orderedFiles,
-			this.files,
-			modulePathHints,
-		);
-		const nextClassBaseHints = buildWorkspaceClassBaseHints(
-			orderedFiles,
-			this.files,
-			this.symbols,
-			nextDeclPathHints,
-			modulePathHints,
-		);
-
-		this.collectDirtyHintKeys(previousPrefabHintsById, nextPrefabHintsById, buildPrefabHintKey, dirtyReceiverHintKeys);
-		this.collectDirtyHintKeys(previousObjectHintsById, nextObjectHintsById, buildObjectHintKey, dirtyReceiverHintKeys);
-		for (const [hintKey, classHintKey] of previousPrefabReferenceHints) {
-			if (nextPrefabReferenceHints.get(hintKey) !== classHintKey) {
-				dirtyReceiverHintKeys.add(hintKey);
-			}
-		}
-		for (const [hintKey, classHintKey] of nextPrefabReferenceHints) {
-			if (previousPrefabReferenceHints.get(hintKey) !== classHintKey) {
-				dirtyReceiverHintKeys.add(hintKey);
-			}
-		}
-		this.collectDirtyDeclHintSymbolKeys(previousDeclPathHints, nextDeclPathHints, dirtyReceiverSymbolKeys);
-		const affectedClasses = collectAffectedClassHints(
-			changedFiles,
-			previousClassBaseHints,
-			nextClassBaseHints,
-			dirtyReceiverSymbolKeys,
-		);
-		collectChangedResolvedMemberOwners(
-			previousResolvedMemberDeclsByOwner,
-			nextResolvedMemberDeclsByOwner,
-			affectedClasses,
-		);
-		const nextDerivedClassHintsByBase = buildDerivedClassHintsByBase(nextClassBaseHints);
-		if (affectedClasses.size > 0) {
-			addDerivedClassHints(
-				affectedClasses,
-				this.derivedClassHintsByBase,
-			);
-			addDerivedClassHints(
-				affectedClasses,
-				nextDerivedClassHintsByBase,
-			);
-			this.collectFilesForReceiverClassHints(affectedClasses, filesToRebind);
-		}
-		this.derivedClassHintsByBase = nextDerivedClassHintsByBase;
-		this.prefabHintsById = nextPrefabHintsById;
-		this.objectHintsById = nextObjectHintsById;
-		this.prefabReferenceHints = nextPrefabReferenceHints;
-		this.declPathHints = nextDeclPathHints;
-		this.classBaseHints = nextClassBaseHints;
-		this.resolvedMemberDeclsByOwner = nextResolvedMemberDeclsByOwner;
-	}
-
-	private collectFilesForReceiverClassHints(
-		classHints: ReadonlySet<SemanticHintKey>,
-		files: Set<string>,
-	): void {
-		for (const classHint of classHints) {
-			const refs = this.refsByReceiverClassHintKey.get(classHint);
-			if (!refs) {
-				continue;
-			}
-			for (const ref of refs) {
-				files.add(ref.file);
-			}
-		}
-	}
-
-	private refreshFileReferenceClassDependencies(files: ReadonlySet<string>): void {
-		for (const file of files) {
-			const record = this.files.get(file);
-			if (!record) {
-				continue;
-			}
-			const refs = record.data.refs;
-			for (let refIndex = 0; refIndex < refs.length; refIndex += 1) {
-				this.refreshReferenceClassDependency(refs[refIndex]);
-			}
-		}
-	}
-
-	private collectDirtyHintKeys(
-		previous: ReadonlyMap<string, SemanticHintKey>,
-		next: ReadonlyMap<string, SemanticHintKey>,
-		buildHintKey: (key: string) => SemanticHintKey,
-		dirtyKeys: Set<SemanticHintKey>,
-	): void {
-		for (const [key, value] of previous) {
-			if (next.get(key) !== value) {
-				dirtyKeys.add(buildHintKey(key));
-			}
-		}
-		for (const [key, value] of next) {
-			if (previous.get(key) !== value) {
-				dirtyKeys.add(buildHintKey(key));
-			}
-		}
-	}
-
-	private collectDirtyDeclHintSymbolKeys(
-		previous: ReadonlyMap<SymbolID, SemanticHintKey>,
-		next: ReadonlyMap<SymbolID, SemanticHintKey>,
-		dirtyKeys: Set<string>,
-	): void {
-		for (const [symbolId, value] of previous) {
-			if (next.get(symbolId) === value) {
-				continue;
-			}
-			const decl = this.symbols.get(symbolId);
-			if (decl) {
-				dirtyKeys.add(decl.symbolKey);
-			}
-		}
-		for (const [symbolId, value] of next) {
-			if (previous.get(symbolId) === value) {
-				continue;
-			}
-			const decl = this.symbols.get(symbolId);
-			if (decl) {
-				dirtyKeys.add(decl.symbolKey);
-			}
-		}
 	}
 
 	private rebuildFileTargets(data: FileSemanticData): FileSemanticData {
@@ -1210,10 +977,13 @@ class LuaProjectIndex {
 			if (!nextRefs) {
 				nextRefs = data.refs.slice(0, index);
 			}
-			nextRefs.push({
-				...ref,
-				target: nextTarget,
-			});
+			const nextRef = { ...ref };
+			if (nextTarget) {
+				nextRef.target = nextTarget;
+			} else {
+				delete nextRef.target;
+			}
+			nextRefs.push(nextRef);
 		}
 		return nextRefs ? replaceFileSemanticDataRefs(data, nextRefs) : data;
 	}
@@ -1245,7 +1015,6 @@ class LuaProjectIndex {
 				this.applyFileData(nextData);
 			}
 		}
-		this.refreshFileReferenceClassDependencies(files);
 	}
 
 	private storeFileData(file: string, data: FileSemanticData): LuaSemanticModel {
@@ -1284,17 +1053,13 @@ class LuaProjectIndex {
 		changedFiles: ReadonlySet<string>,
 		dirtySymbolKeys: Set<string>,
 	): void {
-		const dirtyReceiverHintKeys = new Set<SemanticHintKey>();
 		const filesToRebind = new Set<string>(changedFiles);
-		this.refreshResolvedHintMaps(
-			changedFiles,
-			dirtySymbolKeys,
-			dirtyReceiverHintKeys,
-			filesToRebind,
-		);
+		this.refreshValueGraph();
 		this.collectFilesForGlobalKeys(dirtySymbolKeys, filesToRebind);
-		this.collectFilesForReceiverSymbolKeys(dirtySymbolKeys, filesToRebind);
-		this.collectFilesForReceiverHintKeys(dirtyReceiverHintKeys, filesToRebind);
+		const allFiles = this.listFiles();
+		for (let index = 0; index < allFiles.length; index += 1) {
+			filesToRebind.add(allFiles[index]);
+		}
 		this.rebindAffectedFiles(filesToRebind);
 		this.version += 1;
 	}
@@ -1496,6 +1261,7 @@ class SemanticBuilder {
 	private readonly tokenMap: Map<string, TokenInfo>;
 	private readonly scopeStack: Scope[] = [];
 	private readonly properties: Map<string, InternalDecl> = new Map();
+	private readonly propertiesByOwner: Map<string, InternalDecl> = new Map();
 	private readonly globalsByKey: Map<string, InternalDecl> = new Map();
 	private readonly decls: InternalDecl[] = [];
 	private readonly declById: Map<SymbolID, InternalDecl> = new Map();
@@ -1503,19 +1269,25 @@ class SemanticBuilder {
 	private readonly callExpressions: LuaCallExpression[] = [];
 	private readonly functionSignatures: Map<string, FunctionSignatureInfo> = new Map();
 	private readonly methodSelfPathStack: (readonly string[] | undefined)[] = [];
-	private readonly declValueHints: Map<SymbolID, SemanticHintKey> = new Map();
+	private readonly declarationValues: Map<SymbolID, SemanticValueSource[]> = new Map();
+	private readonly memberValues: Map<SymbolID, MemberValueEntry> = new Map();
+	private readonly functionReturnValues: Map<SymbolID, SemanticValueSource[]> = new Map();
+	private readonly functionParameterValues: Map<SymbolID, FunctionParameterValueEntry> = new Map();
+	private readonly callValues: CallValueEntry[] = [];
+	private readonly valueAssignments: ValueAssignmentEntry[] = [];
+	private moduleValue?: SemanticValueSource;
 	private readonly declStringSources: Map<SymbolID, StaticStringSource> = new Map();
-	private readonly moduleAugmentationsByDeclId: Map<SymbolID, ModuleAugmentationEntry> = new Map();
 	private readonly prefabClasses: PrefabClassEntry[] = [];
 	private readonly objectBindings: ObjectBindingEntry[] = [];
 	private readonly prefabReferences: PrefabReferenceEntry[] = [];
-	private readonly classBasesByClassDeclId: Map<SymbolID, ClassBaseEntry> = new Map();
+	private readonly eventEmitterParameters: EventEmitterParameterEntry[] = [];
+	private readonly baseValuesByClassDeclId: Map<SymbolID, BaseValueEntry> = new Map();
+	private readonly instanceBaseValues: BaseValueEntry[] = [];
 	private readonly moduleAliasesByDeclId: Map<SymbolID, ModuleAliasTarget> = new Map();
 	private readonly immutableModuleAliasesByDeclId: Map<SymbolID, ModuleAliasTarget> = new Map();
 	private readonly moduleAliasesByName: Map<string, ModuleAliasEntry> = new Map();
-	private readonly functionReturnHints: Map<SymbolID, SemanticHintKey> = new Map();
-	private readonly functionReturnHintStack: FunctionReturnHintState[] = [];
-	private readonly metatableIndexHints: Map<string, SemanticHintKey> = new Map();
+	private readonly functionReturnValueStack: FunctionReturnValueState[] = [];
+	private readonly metatableIndexValues: Map<string, SemanticValueSource> = new Map();
 	private readonly moduleAliasLookup = (name: string): ModuleAliasTarget => this.moduleAliasForName(name);
 	private readonly immutableModuleAliasLookup = (name: string): ModuleAliasTarget => this.immutableModuleAliasForName(name);
 	private nextScopeId = 1;
@@ -1545,15 +1317,31 @@ class SemanticBuilder {
 			annotations: this.annotations,
 			callExpressions: this.callExpressions,
 			functionSignatures: this.functionSignatures,
-			declValueHints: Array.from(this.declValueHints.entries(), ([declId, hintKey]) => ({ declId, hintKey })),
-			declStringSources: Array.from(this.declStringSources.entries(), ([declId, source]) => ({ declId, source })),
-			moduleAugmentations: Array.from(this.moduleAugmentationsByDeclId.values()).filter(
-				entry => this.moduleAliasesByDeclId.has(entry.rootAliasDeclId),
+			declarationValues: Array.from(this.declarationValues.entries()).flatMap(
+				([declId, sources]) => {
+					const identity = this.declById.get(declId)?.kind === 'constant';
+					return sources.map(source => ({ declId, source, identity }));
+				},
 			),
+			moduleValues: this.moduleValue
+				? [{ module: toLuaModulePath(this.path), source: this.moduleValue }]
+				: [],
+			memberValues: Array.from(this.memberValues.values()),
+			functionReturnValues: Array.from(this.functionReturnValues.entries()).flatMap(
+				([functionDeclId, sources]) => sources.map(source => ({ functionDeclId, source })),
+			),
+			functionParameterValues: Array.from(this.functionParameterValues.values()),
+			callValues: this.callValues,
+			valueAssignments: this.valueAssignments,
+			baseValues: [
+				...this.baseValuesByClassDeclId.values(),
+				...this.instanceBaseValues,
+			],
+			declStringSources: Array.from(this.declStringSources.entries(), ([declId, source]) => ({ declId, source })),
 			prefabClasses: this.prefabClasses,
 			objectBindings: this.objectBindings,
 			prefabReferences: this.prefabReferences,
-			classBases: Array.from(this.classBasesByClassDeclId.values()),
+			eventEmitterParameters: this.eventEmitterParameters,
 			moduleAliases: Array.from(this.moduleAliasesByName.values()),
 		};
 	}
@@ -1593,9 +1381,12 @@ class SemanticBuilder {
 						tableBaseDecl: targetDecl,
 						tableBasePath: targetDecl?.namePath,
 					};
+					if (targetDecl) {
+						context.tableOwner = declarationValueSource(targetDecl.id);
+					}
 					const valueInfo = this.visitExpression(valueExpression, context);
-					if (targetDecl && valueInfo?.hintKey) {
-						this.setDeclValueHint(targetDecl, valueInfo.hintKey);
+					if (targetDecl) {
+						this.setDeclarationValue(targetDecl, valueInfo?.valueSource);
 					}
 					if (targetDecl) {
 						this.setDeclStringSource(targetDecl, valueExpression, false);
@@ -1634,8 +1425,11 @@ class SemanticBuilder {
 				const functionDeclaration = statement;
 				const namePath = buildFunctionNamePath(functionDeclaration.name);
 				const symbolKey = joinNamePath(namePath);
+				const functionOwner = this.resolveMemberOwnerSource(namePath);
 				const scope = this.currentScope();
-				let decl = this.properties.get(symbolKey);
+				let decl = functionOwner
+					? this.propertiesByOwner.get(this.memberOwnerKey(functionOwner, namePath[namePath.length - 1]))
+					: this.properties.get(symbolKey);
 				if (!decl) {
 					const scopeRange = scope.range;
 					const isGlobal = scope.kind === 'path';
@@ -1654,11 +1448,23 @@ class SemanticBuilder {
 						active: true,
 					});
 					this.properties.set(symbolKey, decl);
+					if (functionOwner) {
+						this.propertiesByOwner.set(
+							this.memberOwnerKey(functionOwner, decl.name),
+							decl,
+						);
+					}
 					if (isGlobal) {
 						this.globalsByKey.set(symbolKey, decl);
 					}
 				}
-				this.recordModuleAugmentation(decl);
+				if (functionOwner) {
+					this.memberValues.set(decl.id, {
+						declId: decl.id,
+						name: decl.name,
+						owner: functionOwner,
+					});
+				}
 				this.recordFunctionNameReferences(functionDeclaration);
 				this.recordFunctionDeclarationWriteReference(functionDeclaration, decl);
 				const basePath = functionDeclaration.name.identifiers.join('.');
@@ -1690,6 +1496,9 @@ class SemanticBuilder {
 							tableBasePath: targetInfo.decl ? targetInfo.decl.namePath : targetInfo.namePath,
 						}
 						: { tableBaseDecl: null, tableBasePath: null };
+					if (targetInfo?.decl) {
+						context.tableOwner = declarationValueSource(targetInfo.decl.id);
+					}
 					const valueExpression = assignment.right[index];
 					if (targetInfo?.decl) {
 						this.setDeclStringSource(targetInfo.decl, valueExpression, false);
@@ -1709,8 +1518,11 @@ class SemanticBuilder {
 						continue;
 					}
 					const valueInfo = this.visitExpression(valueExpression, context);
-					if (targetInfo?.decl && valueInfo?.hintKey) {
-						this.setDeclValueHint(targetInfo.decl, valueInfo.hintKey);
+					if (targetInfo?.decl) {
+						this.setDeclarationValue(targetInfo.decl, valueInfo?.valueSource);
+					}
+					if (targetInfo?.valueTarget && valueInfo?.valueSource) {
+						this.recordValueAssignment(targetInfo.valueTarget, valueInfo.valueSource);
 					}
 					if (targetInfo) {
 						this.recordMetatableIndexAssignment(targetInfo, valueInfo);
@@ -1737,21 +1549,30 @@ class SemanticBuilder {
 			}
 			case LuaSyntaxKind.ReturnStatement: {
 				const returnStatement = statement;
-				let returnHint: SemanticHintKey = null;
+				let returnValue: SemanticValueSource | undefined;
 				const moduleReturn = this.currentScope().kind === 'path'
 					&& returnStatement.expressions.length === 1;
+				const moduleOwnedValue = moduleReturn
+					? moduleTableValueSource(toLuaModulePath(this.path))
+					: undefined;
 				for (let index = 0; index < returnStatement.expressions.length; index += 1) {
 					const valueInfo = this.visitExpression(
 						returnStatement.expressions[index],
-						{ tableBaseDecl: null, tableBasePath: null, moduleReturn },
+						{
+							tableBaseDecl: null,
+							tableBasePath: null,
+							tableOwner: moduleOwnedValue,
+							moduleReturn,
+						},
 					);
 					if (index === 0) {
-						returnHint = valueInfo?.hintKey;
+						returnValue = valueInfo?.valueSource;
 					}
 				}
-				this.recordFunctionReturnHint(
-					returnStatement.expressions.length === 1 ? returnHint : null,
-				);
+				this.recordFunctionReturnValue(returnValue);
+				if (moduleReturn) {
+					this.moduleValue = returnValue;
+				}
 				break;
 			}
 			case LuaSyntaxKind.IfStatement: {
@@ -1903,45 +1724,87 @@ class SemanticBuilder {
 				if (callExpression.methodName) {
 					this.recordMethodReference(callExpression, calleeInfo);
 				}
+				let firstArgumentInfo: ResolvedNamePath = null;
 				let secondArgumentInfo: ResolvedNamePath = null;
+				const argumentValues = new Array<SemanticValueSource | undefined>(callExpression.arguments.length);
 				for (let index = 0; index < callExpression.arguments.length; index += 1) {
 					const argumentInfo = this.visitExpression(
 						callExpression.arguments[index],
 						{ tableBaseDecl: null, tableBasePath: null },
 					);
+					if (index === 0) {
+						firstArgumentInfo = argumentInfo;
+					}
 					if (index === 1) {
 						secondArgumentInfo = argumentInfo;
 					}
+					argumentValues[index] = argumentInfo?.valueSource;
+				}
+				const calledValue = callExpression.methodName && calleeInfo?.valueSource
+					? appendValueMember(calleeInfo.valueSource, callExpression.methodName)
+					: calleeInfo?.valueSource;
+				if (calledValue) {
+					this.callValues.push({
+						callee: calledValue,
+						arguments: argumentValues,
+					});
 				}
 				this.recordMetatableClassBase(callExpression);
 				this.callExpressions.push(callExpression);
-				const cartlibHint = this.recordCartlibCallMetadata(callExpression);
-				const hintKey = this.resolveCallResultHint(
+				const cartlibValue = this.recordCartlibCallMetadata(callExpression);
+				const valueSource = this.resolveCallResultValue(
 					callExpression,
 					calleeInfo,
+					firstArgumentInfo,
 					secondArgumentInfo,
-				) ?? cartlibHint;
-				return hintKey
-					? { namePath: null, decl: null, hintKey }
+					cartlibValue,
+				);
+				return valueSource
+					? { namePath: null, decl: null, valueSource }
 					: null;
 			}
 			case LuaSyntaxKind.FunctionExpression: {
 				this.visitFunctionExpression(expression, undefined, context.tableBaseDecl);
-				return null;
+				return context.tableOwner
+					? { namePath: null, decl: context.tableBaseDecl, valueSource: context.tableOwner }
+					: null;
 			}
 			case LuaSyntaxKind.TableConstructorExpression: {
-				this.visitTableConstructorExpression(expression, context);
+				const tableOwner = context.tableOwner ?? tableValueSource(
+					this.path,
+					expression.range.start.line,
+					expression.range.start.column,
+				);
+				this.visitTableConstructorExpression(expression, {
+					...context,
+					tableOwner,
+				});
 				return context.tableBasePath
 					? {
 						namePath: context.tableBasePath.slice(),
 						decl: context.tableBaseDecl,
-						hintKey: buildPathHintKey(this.path, joinNamePath(context.tableBasePath)),
+						valueSource: tableOwner,
 					}
-					: null;
+					: { namePath: null, decl: null, valueSource: tableOwner };
 			}
 			case LuaSyntaxKind.BinaryExpression: {
-				this.visitExpression(expression.left, context);
-				this.visitExpression(expression.right, context);
+				const left = this.visitExpression(expression.left, context);
+				const right = this.visitExpression(expression.right, context);
+				if (expression.operator === LuaBinaryOperator.And
+					|| expression.operator === LuaBinaryOperator.Or) {
+					const valueSource = expressionValueSource(
+						this.path,
+						expression.range.start.line,
+						expression.range.start.column,
+					);
+					if (left?.valueSource) {
+						this.recordValueAssignment(valueSource, left.valueSource);
+					}
+					if (right?.valueSource) {
+						this.recordValueAssignment(valueSource, right.valueSource);
+					}
+					return { namePath: null, decl: null, valueSource };
+				}
 				return null;
 			}
 			case LuaSyntaxKind.UnaryExpression: {
@@ -1973,34 +1836,114 @@ class SemanticBuilder {
 		for (let index = 0; index < expression.fields.length; index += 1) {
 			const field = expression.fields[index];
 			switch (field.kind) {
-				case LuaTableFieldKind.Array:
-					this.visitExpression(field.value, { tableBaseDecl: null, tableBasePath: null });
+				case LuaTableFieldKind.Array: {
+					const valueInfo = this.visitExpression(field.value, { tableBaseDecl: null, tableBasePath: null });
+					if (context.tableOwner && valueInfo?.valueSource) {
+						this.recordValueAssignment(
+							appendValueElement(context.tableOwner),
+							valueInfo.valueSource,
+						);
+					}
 					break;
+				}
 				case LuaTableFieldKind.IdentifierKey: {
 					const baseDecl = context.tableBaseDecl;
 					const basePath = context.tableBasePath;
 					const namePath = basePath ? appendToNamePath(basePath, field.name) : [field.name];
-					const decl = this.ensureTableField(namePath, field.range.start, field.name.length, baseDecl);
+					const decl = this.ensureTableField(
+						namePath,
+						field.range.start,
+						field.name.length,
+						baseDecl,
+						context.tableOwner,
+					);
 					const valueContext: ExpressionContext = {
 						tableBaseDecl: decl,
 						tableBasePath: decl.namePath,
+						tableOwner: declarationValueSource(decl.id),
 					};
 					const valueInfo = this.visitExpression(field.value, valueContext);
-					if (valueInfo?.hintKey) {
-						this.setDeclValueHint(decl, valueInfo.hintKey);
-					}
+					this.setDeclarationValue(decl, valueInfo?.valueSource);
 					this.setDeclStringSource(decl, field.value, context.moduleReturn === true);
 					break;
 				}
 				case LuaTableFieldKind.ExpressionKey: {
 					this.visitExpression(field.key, { tableBaseDecl: null, tableBasePath: null });
-					this.visitExpression(field.value, { tableBaseDecl: null, tableBasePath: null });
+					if (field.key.kind === LuaSyntaxKind.StringLiteralExpression) {
+						const basePath = context.tableBasePath;
+						const namePath = basePath
+							? appendToNamePath(basePath, field.key.value)
+							: [field.key.value];
+						const decl = this.ensureTableField(
+							namePath,
+							field.key.range.start,
+							field.key.value.length,
+							context.tableBaseDecl,
+							context.tableOwner,
+						);
+						const valueInfo = this.visitExpression(field.value, {
+							tableBaseDecl: decl,
+							tableBasePath: decl.namePath,
+							tableOwner: declarationValueSource(decl.id),
+						});
+						this.setDeclarationValue(decl, valueInfo?.valueSource);
+						this.setDeclStringSource(decl, field.value, context.moduleReturn === true);
+						break;
+					}
+					const valueInfo = this.visitExpression(field.value, { tableBaseDecl: null, tableBasePath: null });
+					if (context.tableOwner && valueInfo?.valueSource) {
+						this.recordValueAssignment(
+							appendValueElement(context.tableOwner),
+							valueInfo.valueSource,
+						);
+					}
 					break;
 				}
 				default:
 					break;
 			}
 		}
+		this.recordEventEmitterParameter(expression, context.tableOwner);
+	}
+
+	private recordEventEmitterParameter(
+		expression: LuaTableConstructorExpression,
+		owner: SemanticValueSource | undefined,
+	): void {
+		if (!owner) {
+			return;
+		}
+		let emitterExpression: LuaExpression | undefined;
+		let goExpression: LuaExpression | undefined;
+		for (let index = 0; index < expression.fields.length; index += 1) {
+			const field = expression.fields[index];
+			if (field.kind !== LuaTableFieldKind.IdentifierKey) {
+				continue;
+			}
+			if (field.name === 'emitter') {
+				emitterExpression = field.value;
+			} else if (field.name === 'go') {
+				goExpression = field.value;
+			}
+		}
+		if (!emitterExpression || !goExpression) {
+			return;
+		}
+		const emitterId = this.resolveConstantStringSource(emitterExpression);
+		if (!emitterId) {
+			return;
+		}
+		const goDecl = goExpression.kind === LuaSyntaxKind.FunctionExpression
+			? this.propertiesByOwner.get(this.memberOwnerKey(owner, 'go'))
+			: this.resolveStaticExpressionDecl(goExpression);
+		const parameters = goDecl && this.functionParameterValues.get(goDecl.id);
+		if (!parameters || parameters.parameterDeclIds.length < 4) {
+			return;
+		}
+		this.eventEmitterParameters.push({
+			parameterDeclId: parameters.parameterDeclIds[3],
+			emitterId,
+		});
 	}
 
 	private visitFunctionExpression(
@@ -2014,32 +1957,40 @@ class SemanticBuilder {
 		const inheritedMethodSelfPath = this.currentMethodSelfPath();
 		const effectiveMethodSelfPath = methodSelfPath ?? inheritedMethodSelfPath;
 		this.methodSelfPathStack.push(effectiveMethodSelfPath?.slice());
-		this.functionReturnHintStack.push({
-			hintKey: null,
-			observed: false,
-			consistent: true,
+		this.functionReturnValueStack.push({
+			sources: [],
 		});
+		const parameterDeclIds = functionDecl ? new Array<SymbolID>(expression.parameters.length) : undefined;
 		for (let index = 0; index < expression.parameters.length; index += 1) {
 			const parameter = this.declareParameter(expression.parameters[index], expression.range);
+			if (parameterDeclIds) {
+				parameterDeclIds[index] = parameter.id;
+			}
 			if (index === 0
 				&& parameter.name === 'self'
 				&& methodSelfPath
 				&& methodSelfPath.length > 0) {
-				this.declValueHints.set(
-					parameter.id,
-					buildPathHintKey(this.path, joinNamePath(methodSelfPath)),
-				);
+				const classValue = this.resolveValueSourceFromNamePath(methodSelfPath);
+				if (classValue) {
+					this.setDeclarationValue(parameter, appendValueInstance(classValue));
+				}
 			}
 		}
+		if (functionDecl && parameterDeclIds) {
+			this.functionParameterValues.set(functionDecl.id, {
+				functionDeclId: functionDecl.id,
+				parameterDeclIds,
+			});
+		}
 		this.visitBlock(block);
-		const returnHint = this.functionReturnHintStack.pop()!;
+		const returnValue = this.functionReturnValueStack.pop()!;
 		this.methodSelfPathStack.pop();
 		this.leaveScope();
 		if (functionDecl) {
-			if (returnHint.observed && returnHint.consistent) {
-				this.functionReturnHints.set(functionDecl.id, returnHint.hintKey);
+			if (returnValue.sources.length > 0) {
+				this.functionReturnValues.set(functionDecl.id, returnValue.sources);
 			} else {
-				this.functionReturnHints.delete(functionDecl.id);
+				this.functionReturnValues.delete(functionDecl.id);
 			}
 		}
 	}
@@ -2106,8 +2057,13 @@ class SemanticBuilder {
 		const baseDecl = baseInfo?.decl;
 		const namePath = basePath ? appendToNamePath(basePath, member.identifier) : [member.identifier];
 		const range = buildPropertyRange(member, this.tokenMap, this.path);
-		const decl = this.ensureTableField(namePath, range.start, member.identifier.length, baseDecl);
-		this.recordModuleAugmentation(decl);
+		const decl = this.ensureTableField(
+			namePath,
+			range.start,
+			member.identifier.length,
+			baseDecl,
+			baseInfo?.valueSource,
+		);
 		this.recordReference({
 			namePath,
 			name: member.identifier,
@@ -2115,6 +2071,8 @@ class SemanticBuilder {
 			target: decl.id,
 			isWrite: true,
 			referenceKind: 'member',
+			receiverSymbolKey: baseDecl?.symbolKey || (baseInfo?.namePath && joinNamePath(baseInfo.namePath)),
+			receiverValue: baseInfo?.valueSource,
 		});
 		return { decl, namePath, path: joinNamePath(namePath) };
 	}
@@ -2123,10 +2081,39 @@ class SemanticBuilder {
 		const baseInfo = this.visitExpression(indexExpression.base, { tableBaseDecl: null, tableBasePath: null });
 		this.visitExpression(indexExpression.index, { tableBaseDecl: null, tableBasePath: null });
 		const namePath = resolveReferencedBasePath(baseInfo, indexExpression.base);
+		if (indexExpression.index.kind === LuaSyntaxKind.StringLiteralExpression) {
+			const fieldName = indexExpression.index.value;
+			const fieldPath = namePath ? appendToNamePath(namePath, fieldName) : [fieldName];
+			const decl = this.ensureTableField(
+				fieldPath,
+				indexExpression.index.range.start,
+				fieldName.length,
+				baseInfo?.decl,
+				baseInfo?.valueSource,
+			);
+			this.recordReference({
+				namePath: fieldPath,
+				name: fieldName,
+				range: indexExpression.index.range,
+				target: decl.id,
+				isWrite: true,
+				referenceKind: 'member',
+				receiverSymbolKey: baseInfo?.decl?.symbolKey || (baseInfo?.namePath && joinNamePath(baseInfo.namePath)),
+				receiverValue: baseInfo?.valueSource,
+			});
+			return {
+				decl,
+				namePath: fieldPath,
+				path: joinNamePath(fieldPath),
+			};
+		}
 		return {
-			decl: baseInfo?.decl,
+			decl: null,
 			namePath,
 			path: namePath && joinNamePath(namePath),
+			valueTarget: baseInfo?.valueSource
+				? appendValueElement(baseInfo.valueSource)
+				: undefined,
 		};
 	}
 
@@ -2135,22 +2122,20 @@ class SemanticBuilder {
 		if (basePath
 			&& basePath.length === 1
 			&& basePath[0] === 'self'
-			&& (!calleeInfo || (!calleeInfo.decl && !calleeInfo.hintKey))) {
+			&& (!calleeInfo || !calleeInfo.decl)) {
 			const methodSelfPath = this.currentMethodSelfPath();
 			if (methodSelfPath && methodSelfPath.length > 0) {
 				basePath = methodSelfPath.slice();
 			}
 		}
 		const receiverSymbolKey = calleeInfo?.decl?.symbolKey || (calleeInfo?.namePath && joinNamePath(calleeInfo.namePath));
-		const receiverHintKey = calleeInfo?.hintKey;
 		const methodName = callExpression.methodName!;
 		const namePath = basePath ? appendToNamePath(basePath, methodName) : [methodName];
 		const tokenInfo = findMethodToken(callExpression, this.tokens, this.tokenMap);
 		const range = tokenInfo ? buildRangeFromToken(tokenInfo, this.path) : callExpression.range;
-		const key = joinNamePath(namePath);
-		const decl = receiverHintKey && isPathHintKey(receiverHintKey) && getPathHintFile(receiverHintKey) !== this.path
-			? null
-			: this.properties.get(key);
+		const decl = calleeInfo?.valueSource
+			? this.propertiesByOwner.get(this.memberOwnerKey(calleeInfo.valueSource, methodName))
+			: this.properties.get(joinNamePath(namePath));
 		const targetId = decl?.id;
 		this.recordReference({
 			namePath,
@@ -2159,9 +2144,8 @@ class SemanticBuilder {
 			target: targetId,
 			isWrite: false,
 			referenceKind: 'method',
-			receiverDeclId: calleeInfo?.decl?.id,
 			receiverSymbolKey,
-			receiverHintKey,
+			receiverValue: calleeInfo?.valueSource,
 		});
 	}
 
@@ -2176,18 +2160,23 @@ class SemanticBuilder {
 		const range = buildIdentifierRange(identifier, this.tokenMap, this.path);
 		const resolved = this.resolveName(identifier.name);
 		const namePath = [identifier.name];
-		if (!resolved && identifier.name === 'self') {
+		if (identifier.name === 'self') {
 			const methodSelfPath = this.currentMethodSelfPath();
 			if (methodSelfPath && methodSelfPath.length > 0) {
+				const classValue = this.resolveValueSourceFromNamePath(methodSelfPath);
 				this.recordReference({
 					namePath,
 					name: identifier.name,
 					range,
-					target: undefined,
+					target: resolved?.id,
 					isWrite,
 					referenceKind: 'identifier',
 				});
-				return { namePath, decl: null, hintKey: buildPathHintKey(this.path, joinNamePath(methodSelfPath)) };
+				return {
+					namePath,
+					decl: resolved,
+					valueSource: classValue ? appendValueInstance(classValue) : undefined,
+				};
 			}
 		}
 		const targetId = resolved?.id;
@@ -2200,7 +2189,11 @@ class SemanticBuilder {
 				isWrite,
 				referenceKind: 'identifier',
 			});
-			return { namePath, decl: resolved, hintKey: this.getDeclValueHint(resolved) };
+			return {
+				namePath,
+				decl: resolved,
+				valueSource: declarationValueSource(resolved.id),
+			};
 		}
 		const globalDecl = this.globalsByKey.get(identifier.name);
 		const target = globalDecl?.id;
@@ -2218,12 +2211,17 @@ class SemanticBuilder {
 				namePath,
 				name: identifier.name,
 				range,
-				target: undefined,
 				isWrite,
 				referenceKind: 'identifier',
 			});
 		}
-		return { namePath, decl: globalDecl, hintKey: globalDecl && this.getDeclValueHint(globalDecl) };
+		return {
+			namePath,
+			decl: globalDecl,
+			valueSource: globalDecl
+				? declarationValueSource(globalDecl.id)
+				: globalValueSource(identifier.name),
+		};
 	}
 
 	private handleMemberExpression(member: LuaMemberExpression, context: ExpressionContext, isWrite: boolean): ResolvedNamePath {
@@ -2231,10 +2229,9 @@ class SemanticBuilder {
 		const basePath = resolveReferencedBasePath(baseInfo, member.base);
 		const namePath = basePath ? appendToNamePath(basePath, member.identifier) : [member.identifier];
 		const range = buildPropertyRange(member, this.tokenMap, this.path);
-		const key = joinNamePath(namePath);
-		const decl = baseInfo?.hintKey && isPathHintKey(baseInfo.hintKey) && getPathHintFile(baseInfo.hintKey) !== this.path
-			? null
-			: this.properties.get(key);
+		const decl = baseInfo?.valueSource
+			? this.propertiesByOwner.get(this.memberOwnerKey(baseInfo.valueSource, member.identifier))
+			: this.properties.get(joinNamePath(namePath));
 		const targetId = decl?.id;
 		this.recordReference({
 			namePath,
@@ -2243,17 +2240,41 @@ class SemanticBuilder {
 			target: targetId,
 			isWrite,
 			referenceKind: 'member',
-			receiverDeclId: baseInfo?.decl?.id,
 			receiverSymbolKey: baseInfo?.decl?.symbolKey || (baseInfo?.namePath && joinNamePath(baseInfo.namePath)),
-			receiverHintKey: baseInfo?.hintKey,
+			receiverValue: baseInfo?.valueSource,
 		});
-		return { namePath, decl, hintKey: decl && this.getDeclValueHint(decl) };
+		return {
+			namePath,
+			decl,
+			valueSource: baseInfo?.valueSource
+				? appendValueMember(baseInfo.valueSource, member.identifier)
+				: undefined,
+		};
 	}
 
 	private handleIndexExpression(indexExpression: LuaIndexExpression, context: ExpressionContext): ResolvedNamePath {
-		this.visitExpression(indexExpression.base, context);
+		const baseInfo = this.visitExpression(indexExpression.base, context);
 		this.visitExpression(indexExpression.index, { tableBaseDecl: null, tableBasePath: null });
-		return null;
+		if (!baseInfo?.valueSource) {
+			return null;
+		}
+		if (indexExpression.index.kind === LuaSyntaxKind.StringLiteralExpression) {
+			const name = indexExpression.index.value;
+			const basePath = resolveReferencedBasePath(baseInfo, indexExpression.base);
+			const namePath = basePath ? appendToNamePath(basePath, name) : [name];
+			const decl = this.propertiesByOwner.get(this.memberOwnerKey(baseInfo.valueSource, name))
+				?? this.properties.get(joinNamePath(namePath));
+			return {
+				namePath,
+				decl,
+				valueSource: appendValueMember(baseInfo.valueSource, name),
+			};
+		}
+		return {
+			namePath: null,
+			decl: null,
+			valueSource: appendValueElement(baseInfo.valueSource),
+		};
 	}
 
 	private declareLocal(name: LuaIdentifierExpression, kind: SemanticSymbolKind, activate: boolean): InternalDecl {
@@ -2396,10 +2417,26 @@ class SemanticBuilder {
 		return decl;
 	}
 
-	private ensureTableField(namePath: readonly string[], start: SourcePosition, length: number, baseDecl: InternalDecl): InternalDecl {
+	private ensureTableField(
+		namePath: readonly string[],
+		start: SourcePosition,
+		length: number,
+		baseDecl: InternalDecl,
+		owner: SemanticValueSource,
+	): InternalDecl {
 		const key = joinNamePath(namePath);
-		const existing = this.properties.get(key);
+		const ownerKey = owner && this.memberOwnerKey(owner, namePath[namePath.length - 1]);
+		const existing = ownerKey
+			? this.propertiesByOwner.get(ownerKey)
+			: this.properties.get(key);
 		if (existing) {
+			if (owner && !this.memberValues.has(existing.id)) {
+				this.memberValues.set(existing.id, {
+					declId: existing.id,
+					name: existing.name,
+					owner,
+				});
+			}
 			return existing;
 		}
 		const scope = baseDecl ? baseDecl.scopeRef : this.currentScope();
@@ -2417,11 +2454,25 @@ class SemanticBuilder {
 			active: true,
 		});
 		this.properties.set(key, decl);
+		if (ownerKey) {
+			this.propertiesByOwner.set(ownerKey, decl);
+		}
 		if (isGlobal) {
 			this.globalsByKey.set(key, decl);
 		}
 		this.recordDefinitionAnnotation(decl);
+		if (owner) {
+			this.memberValues.set(decl.id, {
+				declId: decl.id,
+				name: decl.name,
+				owner,
+			});
+		}
 		return decl;
+	}
+
+	private memberOwnerKey(owner: SemanticValueSource, name: string): string {
+		return `${semanticValueSourceKey(owner)}\0${name}`;
 	}
 
 	private createDecl(options: {
@@ -2454,35 +2505,6 @@ class SemanticBuilder {
 		return decl;
 	}
 
-	private recordModuleAugmentation(decl: InternalDecl): void {
-		const namePath = decl.namePath;
-		if (namePath.length < 2) {
-			return;
-		}
-		const rootDecl = this.resolveName(namePath[0]) ?? this.globalsByKey.get(namePath[0]);
-		if (!rootDecl || !this.moduleAliasesByDeclId.has(rootDecl.id)) {
-			return;
-		}
-		let ownerDecl = rootDecl;
-		let ownerPathLength = 1;
-		let ownerSymbolKey = namePath[0];
-		for (let index = 1; index < namePath.length - 1; index += 1) {
-			ownerSymbolKey = appendSymbolKey(ownerSymbolKey, namePath[index]);
-			const candidate = this.properties.get(ownerSymbolKey);
-			if (candidate) {
-				ownerDecl = candidate;
-				ownerPathLength = index + 1;
-			}
-		}
-		this.moduleAugmentationsByDeclId.set(decl.id, {
-			declId: decl.id,
-			rootAliasDeclId: rootDecl.id,
-			ownerDeclId: ownerDecl.id,
-			ownerMemberPath: namePath.slice(ownerPathLength, -1),
-			member: decl.name,
-		});
-	}
-
 	private recordDefinitionAnnotation(decl: InternalDecl): void {
 		this.annotate(decl.range, decl.name.length, decl.kind, 'definition');
 	}
@@ -2491,12 +2513,11 @@ class SemanticBuilder {
 		namePath: readonly string[];
 		name: string;
 		range: LuaSourceRange;
-		target: SymbolID;
+		target?: SymbolID;
 		isWrite: boolean;
 		referenceKind: 'identifier' | 'member' | 'method';
-		receiverDeclId?: SymbolID;
 		receiverSymbolKey?: string;
-		receiverHintKey?: SemanticHintKey;
+		receiverValue?: SemanticValueSource;
 	}): void {
 		const targetDecl = options.target ? this.declById.get(options.target) : null;
 		const ref: Ref = {
@@ -2505,14 +2526,17 @@ class SemanticBuilder {
 			namePath: options.namePath.slice(),
 			symbolKey: joinNamePath(options.namePath),
 			range: options.range,
-			target: options.target,
-			lexicalTarget: targetDecl && !targetDecl.isGlobal ? targetDecl.id : null,
 			isWrite: options.isWrite,
 			referenceKind: options.referenceKind,
-			receiverDeclId: options.receiverDeclId,
 			receiverSymbolKey: options.receiverSymbolKey,
-			receiverHintKey: options.receiverHintKey,
+			receiverValue: options.receiverValue,
 		};
+		if (options.target) {
+			ref.target = options.target;
+		}
+		if (targetDecl && !targetDecl.isGlobal && options.referenceKind === 'identifier') {
+			ref.lexicalTarget = targetDecl.id;
+		}
 		this.refs.push(ref);
 		const kind = targetDecl ? targetDecl.kind : inferReferenceKind(ref);
 		this.annotate(ref.range, ref.name.length, kind, 'usage');
@@ -2539,7 +2563,10 @@ class SemanticBuilder {
 			if (namePath.length === 1) {
 				targetDecl = this.resolveName(identifier) ?? this.globalsByKey.get(identifier);
 			} else {
-				targetDecl = this.properties.get(joinNamePath(namePath));
+				const owner = this.resolveValueSourceFromNamePath(namePath.slice(0, -1));
+				targetDecl = owner
+					? this.propertiesByOwner.get(this.memberOwnerKey(owner, identifier))
+					: this.properties.get(joinNamePath(namePath));
 			}
 			this.recordReference({
 				namePath,
@@ -2574,8 +2601,51 @@ class SemanticBuilder {
 		});
 	}
 
-	private setDeclValueHint(decl: InternalDecl, hintKey: SemanticHintKey): void {
-		this.declValueHints.set(decl.id, hintKey);
+	private setDeclarationValue(
+		decl: InternalDecl,
+		source: SemanticValueSource | undefined,
+	): void {
+		if (!source
+			|| (source.root.kind === 'declaration'
+				&& source.root.declId === decl.id
+				&& source.steps.length === 0)) {
+			return;
+		}
+		let sources = this.declarationValues.get(decl.id);
+		if (!sources) {
+			sources = [];
+			this.declarationValues.set(decl.id, sources);
+		}
+		for (let index = 0; index < sources.length; index += 1) {
+			if (semanticValueSourcesEqual(sources[index], source)) {
+				return;
+			}
+		}
+		sources.push(source);
+	}
+
+	private recordValueAssignment(target: SemanticValueSource, source: SemanticValueSource): void {
+		this.valueAssignments.push({ target, source });
+	}
+
+	private resolveValueSourceFromNamePath(namePath: readonly string[]): SemanticValueSource | undefined {
+		if (namePath.length === 0) {
+			return undefined;
+		}
+		const root = this.resolveName(namePath[0]) ?? this.globalsByKey.get(namePath[0]);
+		let source = root
+			? declarationValueSource(root.id)
+			: globalValueSource(namePath[0]);
+		for (let index = 1; index < namePath.length; index += 1) {
+			source = appendValueMember(source, namePath[index]);
+		}
+		return source;
+	}
+
+	private resolveMemberOwnerSource(namePath: readonly string[]): SemanticValueSource | undefined {
+		return namePath.length > 1
+			? this.resolveValueSourceFromNamePath(namePath.slice(0, -1))
+			: undefined;
 	}
 
 	private setDeclStringSource(decl: InternalDecl, expression: LuaExpression, moduleExport: boolean): void {
@@ -2637,24 +2707,17 @@ class SemanticBuilder {
 		return source;
 	}
 
-	private getDeclValueHint(decl: InternalDecl): SemanticHintKey {
-		return this.declValueHints.get(decl.id);
-	}
-
-	private recordFunctionReturnHint(hintKey: SemanticHintKey): void {
-		if (this.functionReturnHintStack.length === 0) {
+	private recordFunctionReturnValue(valueSource: SemanticValueSource | undefined): void {
+		if (!valueSource || this.functionReturnValueStack.length === 0) {
 			return;
 		}
-		const state = this.functionReturnHintStack[this.functionReturnHintStack.length - 1];
-		if (!state.observed) {
-			state.hintKey = hintKey;
-			state.observed = true;
-			state.consistent = hintKey !== null;
-			return;
+		const state = this.functionReturnValueStack[this.functionReturnValueStack.length - 1];
+		for (let index = 0; index < state.sources.length; index += 1) {
+			if (semanticValueSourcesEqual(state.sources[index], valueSource)) {
+				return;
+			}
 		}
-		if (hintKey === null || hintKey !== state.hintKey) {
-			state.consistent = false;
-		}
+		state.sources.push(valueSource);
 	}
 
 	private recordMetatableIndexAssignment(
@@ -2669,62 +2732,106 @@ class SemanticBuilder {
 			return;
 		}
 		const metatableKey = joinNamePath(targetPath.slice(0, targetPath.length - 1));
-		const indexHint = value?.hintKey
-			?? (value?.namePath ? buildPathHintKey(this.path, joinNamePath(value.namePath)) : null);
-		if (indexHint) {
-			this.metatableIndexHints.set(metatableKey, indexHint);
+		if (value?.valueSource) {
+			this.metatableIndexValues.set(metatableKey, value.valueSource);
 		} else {
-			this.metatableIndexHints.delete(metatableKey);
+			this.metatableIndexValues.delete(metatableKey);
 		}
 	}
 
-	private resolveCallResultHint(
+	private resolveCallResultValue(
 		callExpression: LuaCallExpression,
 		callee: ResolvedNamePath,
+		firstArgument: ResolvedNamePath,
 		secondArgument: ResolvedNamePath,
-	): SemanticHintKey {
-		if (callee?.decl) {
-			const functionHint = this.functionReturnHints.get(callee.decl.id);
-			if (functionHint) {
-				return functionHint;
+		cartlibValue: SemanticValueSource | undefined,
+	): SemanticValueSource | undefined {
+		if (cartlibValue) {
+			return cartlibValue;
+		}
+		if (!callExpression.methodName) {
+			const directCallName = resolveDirectCallName(callExpression.callee);
+			if (directCallName === 'require'
+				&& !this.resolveName('require')
+				&& callExpression.arguments.length === 1
+				&& callExpression.arguments[0].kind === LuaSyntaxKind.StringLiteralExpression) {
+				return moduleValueSource(callExpression.arguments[0].value);
+			}
+			if (directCallName === 'setmetatable'
+				&& !callee?.decl
+				&& callExpression.arguments.length === 2) {
+				if (secondArgument?.namePath) {
+					const classValue = this.metatableIndexValues.get(joinNamePath(secondArgument.namePath));
+					if (classValue) {
+						const instanceValue = appendValueInstance(classValue);
+						if (firstArgument?.valueSource) {
+							this.instanceBaseValues.push({
+								owner: instanceValue,
+								base: firstArgument.valueSource,
+								origin: 'instance',
+							});
+						}
+						return instanceValue;
+					}
+				}
+				return firstArgument?.valueSource;
 			}
 		}
-		if (callExpression.methodName
-			|| callExpression.arguments.length !== 2
-			|| resolveDirectCallName(callExpression.callee) !== 'setmetatable'
-			|| callee?.decl
-			|| !secondArgument?.namePath) {
-			return null;
+		if (!callee?.valueSource) {
+			return undefined;
 		}
-		return this.metatableIndexHints.get(joinNamePath(secondArgument.namePath));
+		const functionValue = callExpression.methodName
+			? appendValueMember(callee.valueSource, callExpression.methodName)
+			: callee.valueSource;
+		return appendValueCall(functionValue);
 	}
 
-	private recordCartlibCallMetadata(callExpression: LuaCallExpression): SemanticHintKey {
+	private recordCartlibCallMetadata(callExpression: LuaCallExpression): SemanticValueSource | undefined {
 		const callKind = this.classifyCartlibCall(callExpression);
 		if (callKind === CARTLIB_CALL_PREFAB_DEFINE) {
 			this.recordPrefabMetadata(callExpression);
-			return null;
+			return undefined;
 		}
 		if (callKind === CARTLIB_CALL_WORLD_SPAWN) {
 			const prefabExpression = callExpression.arguments[0];
 			if (!prefabExpression) {
-				return null;
+				return undefined;
 			}
 			const prefabId = this.resolveConstantStringSource(prefabExpression);
 			if (!prefabId) {
-				return null;
+				return undefined;
 			}
-			const objectId = extractObjectBindingId(callExpression);
+			const objectId = this.resolveObjectBindingId(callExpression);
 			if (objectId) {
 				this.objectBindings.push({ objectId, prefabId });
-				return buildObjectHintKey(objectId);
+				if (objectId.kind === 'literal') {
+					return bindingValueSource(objectBindingId(objectId.value));
+				}
 			}
 			if (prefabId.kind === 'literal') {
-				return buildPrefabHintKey(prefabId.value);
+				return bindingValueSource(prefabBindingId(prefabId.value));
 			}
-			const hintKey = buildPrefabReferenceHintKey(this.path, callExpression.range.start);
-			this.prefabReferences.push({ hintKey, defId: prefabId });
-			return hintKey;
+			const bindingId = sourceBindingId(
+				this.path,
+				callExpression.range.start.line,
+				callExpression.range.start.column,
+			);
+			this.prefabReferences.push({ bindingId, defId: prefabId });
+			return bindingValueSource(bindingId);
+		}
+		return undefined;
+	}
+
+	private resolveObjectBindingId(callExpression: LuaCallExpression): StaticStringSource {
+		const options = callExpression.arguments[1];
+		if (!options || options.kind !== LuaSyntaxKind.TableConstructorExpression) {
+			return null;
+		}
+		for (let index = 0; index < options.fields.length; index += 1) {
+			const field = options.fields[index];
+			if (field.kind === LuaTableFieldKind.IdentifierKey && field.name === 'id') {
+				return this.resolveConstantStringSource(field.value);
+			}
 		}
 		return null;
 	}
@@ -2763,26 +2870,26 @@ class SemanticBuilder {
 		if (defId) {
 			this.prefabClasses.push({
 				defId,
-				classHintKey: buildPathHintKey(this.path, classDecl.symbolKey),
+				classDeclId: classDecl.id,
 			});
 		}
-		if (this.classBasesByClassDeclId.has(classDecl.id)) {
+		if (this.baseValuesByClassDeclId.has(classDecl.id)) {
 			return;
 		}
 		if (!hasBase || baseExpression.kind === LuaSyntaxKind.NilLiteralExpression) {
-			this.classBasesByClassDeclId.set(classDecl.id, {
-				classDeclId: classDecl.id,
+			this.baseValuesByClassDeclId.set(classDecl.id, {
+				owner: declarationValueSource(classDecl.id),
 				origin: 'prefab',
-				base: { module: CARTLIB_WORLD_OBJECT_MODULE },
+				base: moduleValueSource(CARTLIB_WORLD_OBJECT_MODULE),
 			});
 			return;
 		}
 		const baseDecl = this.resolveStaticExpressionDecl(baseExpression);
 		if (baseDecl && baseDecl.id !== classDecl.id) {
-			this.classBasesByClassDeclId.set(classDecl.id, {
-				classDeclId: classDecl.id,
+			this.baseValuesByClassDeclId.set(classDecl.id, {
+				owner: declarationValueSource(classDecl.id),
 				origin: 'prefab',
-				base: { declId: baseDecl.id },
+				base: declarationValueSource(baseDecl.id),
 			});
 		}
 	}
@@ -2800,10 +2907,10 @@ class SemanticBuilder {
 		if (!classDecl || !baseDecl || classDecl.id === baseDecl.id) {
 			return;
 		}
-		this.classBasesByClassDeclId.set(classDecl.id, {
-			classDeclId: classDecl.id,
+		this.baseValuesByClassDeclId.set(classDecl.id, {
+			owner: declarationValueSource(classDecl.id),
 			origin: 'metatable',
-			base: { declId: baseDecl.id },
+			base: declarationValueSource(baseDecl.id),
 		});
 	}
 
@@ -2815,7 +2922,10 @@ class SemanticBuilder {
 		if (path.length === 1) {
 			return this.resolveName(path[0]) ?? this.globalsByKey.get(path[0]);
 		}
-		return this.properties.get(joinNamePath(path));
+		const owner = this.resolveValueSourceFromNamePath(path.slice(0, -1));
+		return owner
+			? this.propertiesByOwner.get(this.memberOwnerKey(owner, path[path.length - 1]))
+			: this.properties.get(joinNamePath(path));
 	}
 
 	private resolveModuleAliasInitializer(
@@ -3085,86 +3195,8 @@ function fileSymbolKey(file: string, symbolKey: string): string {
 	return `${file}|${symbolKey}`;
 }
 
-const PATH_HINT_PREFIX = 'p:';
-const PREFAB_HINT_PREFIX = 'f:';
-const OBJECT_HINT_PREFIX = 'o:';
-const PREFAB_REFERENCE_HINT_PREFIX = 'r:';
-
-function buildPathHintKey(file: string, symbolKey: string): SemanticHintKey {
-	return `${PATH_HINT_PREFIX}${file}|${symbolKey}`;
-}
-
-function buildPrefabHintKey(defId: string): SemanticHintKey {
-	return `${PREFAB_HINT_PREFIX}${defId}`;
-}
-
-function buildObjectHintKey(objectId: string): SemanticHintKey {
-	return `${OBJECT_HINT_PREFIX}${objectId}`;
-}
-
-function buildPrefabReferenceHintKey(file: string, position: SourcePosition): SemanticHintKey {
-	return `${PREFAB_REFERENCE_HINT_PREFIX}${file}|${position.line}|${position.column}`;
-}
-
-function isPathHintKey(hintKey: SemanticHintKey): boolean {
-	return hintKey.startsWith(PATH_HINT_PREFIX);
-}
-
-function isPrefabHintKey(hintKey: SemanticHintKey): boolean {
-	return hintKey.startsWith(PREFAB_HINT_PREFIX);
-}
-
-function isObjectHintKey(hintKey: SemanticHintKey): boolean {
-	return hintKey.startsWith(OBJECT_HINT_PREFIX);
-}
-
-function isPrefabReferenceHintKey(hintKey: SemanticHintKey): boolean {
-	return hintKey.startsWith(PREFAB_REFERENCE_HINT_PREFIX);
-}
-
-function getHintPayload(hintKey: SemanticHintKey): string {
-	return hintKey.slice(2);
-}
-
-function getPathHintSeparatorIndex(hintKey: SemanticHintKey): number {
-	return hintKey.indexOf('|', 2);
-}
-
-function getPathHintFile(hintKey: SemanticHintKey): string {
-	return hintKey.slice(2, getPathHintSeparatorIndex(hintKey));
-}
-
-function getPathHintSymbolKey(hintKey: SemanticHintKey): string {
-	return hintKey.slice(getPathHintSeparatorIndex(hintKey) + 1);
-}
-
-function getPathHintSymbolKeyParts(hintKey: SemanticHintKey): string[] {
-	return getPathHintSymbolKey(hintKey).split('.');
-}
-
 function appendSymbolKey(baseSymbolKey: string, member: string): string {
 	return baseSymbolKey.length > 0 ? `${baseSymbolKey}.${member}` : member;
-}
-
-function resolveHintKeyToPathHintKey(
-	hintKey: SemanticHintKey,
-	prefabClasses: ReadonlyMap<string, SemanticHintKey>,
-	objectClasses: ReadonlyMap<string, SemanticHintKey>,
-	prefabReferences: ReadonlyMap<SemanticHintKey, SemanticHintKey>,
-): SemanticHintKey {
-	if (isPathHintKey(hintKey)) {
-		return hintKey;
-	}
-	if (isPrefabHintKey(hintKey)) {
-		return prefabClasses.get(getHintPayload(hintKey));
-	}
-	if (isObjectHintKey(hintKey)) {
-		return objectClasses.get(getHintPayload(hintKey));
-	}
-	if (isPrefabReferenceHintKey(hintKey)) {
-		return prefabReferences.get(hintKey);
-	}
-	return null;
 }
 
 function buildModuleFileMap(files: readonly string[]): Map<string, string> {
@@ -3286,319 +3318,6 @@ class WorkspaceStringValueResolver {
 	}
 }
 
-class WorkspaceModulePathResolver {
-	private readonly files: ReadonlyMap<string, FileRecord>;
-	private readonly moduleFiles: ReadonlyMap<string, string>;
-	private readonly declsById: ReadonlyMap<SymbolID, Decl>;
-	private readonly directDeclByFileAndKey: ReadonlyMap<string, SymbolID>;
-	private readonly memberDeclByFileAndKey: ReadonlyMap<string, SymbolID>;
-	private readonly aliasesByDeclId: ReadonlyMap<SymbolID, ModuleAliasTarget>;
-	private readonly hints: Map<SymbolID, SemanticHintKey>;
-	private readonly resolvedDecls: Map<SymbolID, SemanticHintKey> = new Map();
-	private readonly resolvedModules: Map<string, SemanticHintKey> = new Map();
-	private readonly resolvingDecls: Set<SymbolID> = new Set();
-
-	constructor(project: {
-		files: ReadonlyMap<string, FileRecord>;
-		moduleFiles: ReadonlyMap<string, string>;
-		declsById: ReadonlyMap<SymbolID, Decl>;
-		directDeclByFileAndKey: ReadonlyMap<string, SymbolID>;
-		memberDeclByFileAndKey: ReadonlyMap<string, SymbolID>;
-		moduleAliasTargetsByDeclId: ReadonlyMap<SymbolID, ModuleAliasTarget>;
-		hints: Map<SymbolID, SemanticHintKey>;
-	}) {
-		this.files = project.files;
-		this.moduleFiles = project.moduleFiles;
-		this.declsById = project.declsById;
-		this.directDeclByFileAndKey = project.directDeclByFileAndKey;
-		this.memberDeclByFileAndKey = project.memberDeclByFileAndKey;
-		this.aliasesByDeclId = project.moduleAliasTargetsByDeclId;
-		this.hints = project.hints;
-	}
-
-	public resolveAliases(): void {
-		for (const declId of this.aliasesByDeclId.keys()) {
-			const hint = this.resolveDeclaration(declId);
-			if (hint) {
-				this.hints.set(declId, hint);
-			} else {
-				this.hints.delete(declId);
-			}
-		}
-	}
-
-	public resolveModuleRoot(module: string): SemanticHintKey {
-		if (this.resolvedModules.has(module)) {
-			return this.resolvedModules.get(module);
-		}
-		const moduleFile = this.moduleFiles.get(module);
-		let resolved: SemanticHintKey = null;
-		if (moduleFile) {
-			const moduleRoot = resolveModuleReturnNamePath(this.files.get(moduleFile)!.data.chunk);
-			if (moduleRoot) {
-				resolved = this.resolvePathHint(buildPathHintKey(moduleFile, joinNamePath(moduleRoot)));
-			}
-		}
-		this.resolvedModules.set(module, resolved);
-		return resolved;
-	}
-
-	public resolveDeclaration(declId: SymbolID): SemanticHintKey {
-		if (this.resolvedDecls.has(declId)) {
-			return this.resolvedDecls.get(declId);
-		}
-		if (this.resolvingDecls.has(declId)) {
-			return null;
-		}
-		const decl = this.declsById.get(declId)!;
-		const ownHint = buildPathHintKey(decl.file, decl.symbolKey);
-		const alias = this.aliasesByDeclId.get(declId);
-		const valueHint = this.hints.get(declId);
-		this.resolvingDecls.add(declId);
-		let resolved = ownHint;
-		if (alias) {
-			resolved = this.resolveModuleMember(alias);
-		} else if (valueHint && valueHint !== ownHint) {
-			resolved = this.resolvePathHint(valueHint);
-		}
-		this.resolvingDecls.delete(declId);
-		this.resolvedDecls.set(declId, resolved);
-		return resolved;
-	}
-
-	private resolveModuleMember(alias: ModuleAliasTarget): SemanticHintKey {
-		let resolved = this.resolveModuleRoot(alias.module);
-		for (let index = 0; resolved && index < alias.memberPath.length; index += 1) {
-			resolved = this.resolveMember(resolved, alias.memberPath[index]);
-		}
-		return resolved;
-	}
-
-	public resolvePathHint(pathHint: SemanticHintKey): SemanticHintKey {
-		const file = getPathHintFile(pathHint);
-		const symbolKey = getPathHintSymbolKey(pathHint);
-		const key = fileSymbolKey(file, symbolKey);
-		const declId = this.memberDeclByFileAndKey.get(key)
-			?? this.directDeclByFileAndKey.get(key);
-		if (declId) {
-			return this.resolveDeclaration(declId);
-		}
-		const namePath = getPathHintSymbolKeyParts(pathHint);
-		if (namePath.length < 2) {
-			return pathHint;
-		}
-		let resolved = this.resolvePathHint(buildPathHintKey(file, namePath[0]));
-		for (let index = 1; resolved && index < namePath.length; index += 1) {
-			resolved = this.resolveMember(resolved, namePath[index]);
-		}
-		return resolved;
-	}
-
-	public resolveMember(baseHint: SemanticHintKey, member: string): SemanticHintKey {
-		const memberHint = buildPathHintKey(
-			getPathHintFile(baseHint),
-			appendSymbolKey(getPathHintSymbolKey(baseHint), member),
-		);
-		const key = fileSymbolKey(getPathHintFile(memberHint), getPathHintSymbolKey(memberHint));
-		const declId = this.memberDeclByFileAndKey.get(key)
-			?? this.directDeclByFileAndKey.get(key);
-		return declId ? this.resolveDeclaration(declId) : memberHint;
-	}
-}
-
-function buildWorkspaceResolvedMemberDecls(
-	files: readonly string[],
-	records: ReadonlyMap<string, FileRecord>,
-	modulePathHints: WorkspaceModulePathResolver,
-): Map<SemanticHintKey, Map<string, SymbolID>> {
-	const membersByOwner = new Map<SemanticHintKey, Map<string, SymbolID>>();
-	for (let fileIndex = 0; fileIndex < files.length; fileIndex += 1) {
-		const augmentations = records.get(files[fileIndex])!.data.moduleAugmentations;
-		for (let entryIndex = 0; entryIndex < augmentations.length; entryIndex += 1) {
-			const entry = augmentations[entryIndex];
-			let resolvedOwnerHint = modulePathHints.resolveDeclaration(entry.ownerDeclId);
-			for (let memberIndex = 0;
-				resolvedOwnerHint && memberIndex < entry.ownerMemberPath.length;
-				memberIndex += 1) {
-				resolvedOwnerHint = modulePathHints.resolveMember(
-					resolvedOwnerHint,
-					entry.ownerMemberPath[memberIndex],
-				);
-			}
-			if (!resolvedOwnerHint) {
-				continue;
-			}
-			let members = membersByOwner.get(resolvedOwnerHint);
-			if (!members) {
-				members = new Map<string, SymbolID>();
-				membersByOwner.set(resolvedOwnerHint, members);
-			}
-			members.set(entry.member, entry.declId);
-		}
-	}
-	return membersByOwner;
-}
-
-function collectChangedResolvedMemberOwners(
-	previous: ReadonlyMap<SemanticHintKey, ReadonlyMap<string, SymbolID>>,
-	next: ReadonlyMap<SemanticHintKey, ReadonlyMap<string, SymbolID>>,
-	changedOwners: Set<SemanticHintKey>,
-): void {
-	for (const [ownerHint, members] of previous) {
-		if (!symbolMapsEqual(members, next.get(ownerHint))) {
-			changedOwners.add(ownerHint);
-		}
-	}
-	for (const [ownerHint, members] of next) {
-		if (!symbolMapsEqual(members, previous.get(ownerHint))) {
-			changedOwners.add(ownerHint);
-		}
-	}
-}
-
-function symbolMapsEqual(
-	left: ReadonlyMap<string, SymbolID>,
-	right: ReadonlyMap<string, SymbolID>,
-): boolean {
-	if (!right || left.size !== right.size) {
-		return false;
-	}
-	for (const [name, symbolId] of left) {
-		if (right.get(name) !== symbolId) {
-			return false;
-		}
-	}
-	return true;
-}
-
-function collectAffectedClassHints(
-	changedFiles: ReadonlySet<string>,
-	previousBases: ReadonlyMap<SemanticHintKey, SemanticHintKey>,
-	nextBases: ReadonlyMap<SemanticHintKey, SemanticHintKey>,
-	dirtySymbolKeys: ReadonlySet<string>,
-): Set<SemanticHintKey> {
-	const affectedClasses = new Set<SemanticHintKey>();
-	for (const [classHint, baseHint] of previousBases) {
-		if (nextBases.get(classHint) !== baseHint) {
-			affectedClasses.add(classHint);
-		}
-	}
-	for (const [classHint, baseHint] of nextBases) {
-		if (previousBases.get(classHint) !== baseHint) {
-			affectedClasses.add(classHint);
-		}
-	}
-	collectClassesWithDirtyMembers(changedFiles, previousBases, dirtySymbolKeys, affectedClasses);
-	collectClassesWithDirtyMembers(changedFiles, nextBases, dirtySymbolKeys, affectedClasses);
-	return affectedClasses;
-}
-
-function collectClassesWithDirtyMembers(
-	changedFiles: ReadonlySet<string>,
-	bases: ReadonlyMap<SemanticHintKey, SemanticHintKey>,
-	dirtySymbolKeys: ReadonlySet<string>,
-	affectedClasses: Set<SemanticHintKey>,
-): void {
-	for (const [classHint, baseHint] of bases) {
-		if (classHasDirtyMember(changedFiles, classHint, dirtySymbolKeys)) {
-			affectedClasses.add(classHint);
-		}
-		if (classHasDirtyMember(changedFiles, baseHint, dirtySymbolKeys)) {
-			affectedClasses.add(baseHint);
-		}
-	}
-}
-
-function classHasDirtyMember(
-	changedFiles: ReadonlySet<string>,
-	classHint: SemanticHintKey,
-	dirtySymbolKeys: ReadonlySet<string>,
-): boolean {
-	if (!changedFiles.has(getPathHintFile(classHint))) {
-		return false;
-	}
-	const classSymbolKey = getPathHintSymbolKey(classHint);
-	for (const dirtySymbolKey of dirtySymbolKeys) {
-		if (dirtySymbolKey === classSymbolKey
-			|| (dirtySymbolKey.startsWith(classSymbolKey)
-				&& dirtySymbolKey.charCodeAt(classSymbolKey.length) === 0x2e)) {
-			return true;
-		}
-	}
-	return false;
-}
-
-function buildDerivedClassHintsByBase(
-	bases: ReadonlyMap<SemanticHintKey, SemanticHintKey>,
-): Map<SemanticHintKey, Set<SemanticHintKey>> {
-	const derivedByBase = new Map<SemanticHintKey, Set<SemanticHintKey>>();
-	for (const [classHint, baseHint] of bases) {
-		let derived = derivedByBase.get(baseHint);
-		if (!derived) {
-			derived = new Set<SemanticHintKey>();
-			derivedByBase.set(baseHint, derived);
-		}
-		derived.add(classHint);
-	}
-	return derivedByBase;
-}
-
-function addDerivedClassHints(
-	classHints: Set<SemanticHintKey>,
-	derivedByBase: ReadonlyMap<SemanticHintKey, ReadonlySet<SemanticHintKey>>,
-): void {
-	const pending = Array.from(classHints);
-	for (let index = 0; index < pending.length; index += 1) {
-		const derived = derivedByBase.get(pending[index]);
-		if (!derived) {
-			continue;
-		}
-		for (const classHint of derived) {
-			if (!classHints.has(classHint)) {
-				classHints.add(classHint);
-				pending.push(classHint);
-			}
-		}
-	}
-}
-
-function buildWorkspaceClassBaseHints(
-	files: readonly string[],
-	records: ReadonlyMap<string, FileRecord>,
-	declsById: ReadonlyMap<SymbolID, Decl>,
-	declPathHints: ReadonlyMap<SymbolID, SemanticHintKey>,
-	modulePathHints: WorkspaceModulePathResolver,
-): Map<SemanticHintKey, SemanticHintKey> {
-	const bases = new Map<SemanticHintKey, SemanticHintKey>();
-	for (let fileIndex = 0; fileIndex < files.length; fileIndex += 1) {
-		const file = files[fileIndex];
-		const data = records.get(file)!.data;
-		for (let entryIndex = 0; entryIndex < data.classBases.length; entryIndex += 1) {
-			const entry = data.classBases[entryIndex];
-			const classDecl = declsById.get(entry.classDeclId)!;
-			const classHint = declPathHints.get(classDecl.id)
-				?? buildPathHintKey(file, classDecl.symbolKey);
-			let baseHint: SemanticHintKey;
-			if ('declId' in entry.base) {
-				const baseDecl = declsById.get(entry.base.declId)!;
-				baseHint = declPathHints.get(baseDecl.id)
-					?? buildPathHintKey(file, baseDecl.symbolKey);
-			} else {
-				baseHint = modulePathHints.resolveModuleRoot(entry.base.module);
-			}
-			if (!baseHint || classHint === baseHint) {
-				continue;
-			}
-			if (entry.origin === 'metatable') {
-				bases.set(classHint, baseHint);
-			} else if (!bases.has(classHint)) {
-				bases.set(classHint, baseHint);
-			}
-		}
-	}
-	return bases;
-}
-
 function extractMetatableClassBaseExpressions(call: LuaCallExpression): {
 	classExpression: LuaExpression;
 	baseExpression: LuaExpression;
@@ -3641,26 +3360,6 @@ function resolveModuleReturnNamePath(chunk: LuaChunk): string[] | null {
 	return expression.kind === LuaSyntaxKind.TableConstructorExpression
 		? []
 		: extractStaticMemberPath(expression);
-}
-
-function receiverRootSymbolKey(symbolKey: string): string {
-	const separator = symbolKey.indexOf('.');
-	return separator < 0 ? symbolKey : symbolKey.slice(0, separator);
-}
-
-function removeReferenceDependency(
-	dependencies: Map<string, Set<Ref>>,
-	key: string,
-	ref: Ref,
-): void {
-	const bucket = dependencies.get(key);
-	if (!bucket) {
-		return;
-	}
-	bucket.delete(ref);
-	if (bucket.size === 0) {
-		dependencies.delete(key);
-	}
 }
 
 function extractStaticMemberPath(expression: LuaExpression): string[] | null {
@@ -3754,9 +3453,6 @@ function extractNamePath(expression: LuaExpression): string[] {
 }
 
 function resolveReferencedBasePath(baseInfo: ResolvedNamePath, expression: LuaExpression): string[] {
-	if (baseInfo?.hintKey && isPathHintKey(baseInfo.hintKey)) {
-		return getPathHintSymbolKeyParts(baseInfo.hintKey);
-	}
 	if (baseInfo) {
 		return baseInfo.namePath;
 	}
@@ -3775,24 +3471,6 @@ function extractStringLiteral(expression: LuaExpression): string {
 		return null;
 	}
 	return expression.value;
-}
-
-function extractObjectBindingId(callExpression: LuaCallExpression): string {
-	if (callExpression.arguments.length < 2) {
-		return null;
-	}
-	const options = callExpression.arguments[1];
-	if (!options || options.kind !== LuaSyntaxKind.TableConstructorExpression) {
-		return null;
-	}
-	for (let index = 0; index < options.fields.length; index += 1) {
-		const field = options.fields[index];
-		if (field.kind !== LuaTableFieldKind.IdentifierKey || field.name !== 'id') {
-			continue;
-		}
-		return extractStringLiteral(field.value);
-	}
-	return null;
 }
 
 function buildFunctionNamePath(name: { identifiers: readonly string[]; methodName: string }): string[] {
