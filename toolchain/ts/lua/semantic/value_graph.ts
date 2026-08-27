@@ -60,6 +60,7 @@ export type FunctionParameterValueEntry = {
 export type CallValueEntry = {
 	callee: SemanticValueSource;
 	arguments: readonly (SemanticValueSource | undefined)[];
+	result?: SemanticValueSource;
 };
 
 export type ValueAssignmentEntry = {
@@ -430,6 +431,11 @@ export class WorkspaceValueGraph {
 	private readonly parameterDeclarationScratch: SymbolID[] = [];
 	private readonly parameterArgumentIndexScratch: number[] = [];
 	private readonly returnSourceScratch: SemanticValueSource[] = [];
+	private readonly returnParameterScratch: (readonly SymbolID[] | undefined)[] = [];
+	private readonly memberValueScratch: SemanticValueID[] = [];
+	private readonly memberNodeScratch: SemanticValueID[] = [];
+	private readonly memberTraversalMarks: number[] = [];
+	private memberTraversalGeneration = 0;
 	// Reverse traversal dependencies select dirty owners while preserving the
 	// resolver's deterministic materialization order.
 	private readonly traversalDependents = new SemanticValueEdges();
@@ -622,30 +628,42 @@ export class WorkspaceValueGraph {
 				break;
 			}
 		}
-		for (let index = 0; value && index < source.steps.length; index += 1) {
+		return value
+			? this.resolveValueSteps(value, source.steps, createMembers, dependencies)
+			: undefined;
+	}
+
+	private resolveValueSteps(
+		value: SemanticValueID,
+		steps: readonly SemanticValueStep[],
+		createMembers: boolean,
+		dependencies?: SemanticValueID[],
+	): SemanticValueID | undefined {
+		let resolved: SemanticValueID | undefined = value;
+		for (let index = 0; resolved && index < steps.length; index += 1) {
 			if (dependencies) {
-				dependencies.push(value);
+				dependencies.push(resolved);
 			}
-			const step = source.steps[index];
+			const step = steps[index];
 			switch (step.kind) {
 				case 'member':
-					value = this.resolveMemberValue(value, step.name, createMembers);
+					resolved = this.resolveMemberValue(resolved, step.name, createMembers);
 					break;
 				case 'element':
-					value = this.resolveElementValue(value, createMembers);
+					resolved = this.resolveElementValue(resolved, createMembers);
 					break;
 				case 'call':
-					value = this.resolveCallValue(value);
+					resolved = this.resolveCallValue(resolved);
 					break;
 				case 'instance':
-					value = this.ensureInstance(value);
+					resolved = this.ensureInstance(resolved);
 					break;
 			}
 		}
-		if (value && dependencies) {
-			dependencies.push(value);
+		if (resolved && dependencies) {
+			dependencies.push(resolved);
 		}
-		return value;
+		return resolved;
 	}
 
 	private resolveMemberValue(
@@ -653,35 +671,119 @@ export class WorkspaceValueGraph {
 		name: string,
 		create: boolean,
 	): SemanticValueID | undefined {
-		const generation = this.traversalGeneration + 1;
-		this.traversalGeneration = generation;
-		const stack = this.traversalStack;
-		stack.length = 0;
-		stack.push(owner);
-		let value: SemanticValueID | undefined;
-		while (stack.length > 0) {
-			const candidate = stack.pop()!;
-			if (this.traversalMarks[candidate] === generation) {
-				continue;
-			}
-			this.traversalMarks[candidate] = generation;
-			const member = this.members.get(candidate)?.get(name);
-			if (member) {
-				if (!value) {
-					value = member.value;
-				} else if (value !== member.value) {
-					this.addIdentity(value, member.value);
-				}
-				if (member.declaration) {
-					return value;
+		const values = this.memberValueScratch;
+		values.length = 0;
+		const generation = this.memberTraversalGeneration + 1;
+		this.memberTraversalGeneration = generation;
+		this.collectMemberValues(owner, name, generation, values);
+		if (values.length > 0) {
+			const value = values[0];
+			for (let index = 1; index < values.length; index += 1) {
+				if (values[index] !== value) {
+					this.addIdentity(value, values[index]);
 				}
 			}
-			this.pushTraversalBases(stack, candidate);
-		}
-		if (value) {
 			return value;
 		}
 		return create ? this.ensureMember(owner, name).value : undefined;
+	}
+
+	private collectMemberValues(
+		owner: SemanticValueID,
+		name: string,
+		generation: number,
+		values: SemanticValueID[],
+	): boolean {
+		if (this.memberTraversalMarks[owner] === generation) {
+			return false;
+		}
+		const nodes = this.memberNodeScratch;
+		const nodeStart = nodes.length;
+		this.memberTraversalMarks[owner] = generation;
+		nodes.push(owner);
+		for (let nodeIndex = nodeStart; nodeIndex < nodes.length; nodeIndex += 1) {
+			const node = nodes[nodeIndex];
+			for (let edge = this.identityValues.first(node); edge !== 0; edge = this.identityValues.next(edge)) {
+				const identity = this.identityValues.target(edge);
+				if (this.memberTraversalMarks[identity] !== generation) {
+					this.memberTraversalMarks[identity] = generation;
+					nodes.push(identity);
+				}
+			}
+		}
+		const nodeEnd = nodes.length;
+		let declared = false;
+		for (let nodeIndex = nodeStart; nodeIndex < nodeEnd; nodeIndex += 1) {
+			const member = this.members.get(nodes[nodeIndex])?.get(name);
+			if (member) {
+				values.push(member.value);
+				declared = declared || member.declaration !== undefined;
+			}
+		}
+		if (!declared) {
+			for (let nodeIndex = nodeStart; nodeIndex < nodeEnd; nodeIndex += 1) {
+				const node = nodes[nodeIndex];
+				declared = this.collectMemberValuesFromBases(
+					this.valueBases,
+					node,
+					name,
+					generation,
+					values,
+				) || declared;
+				declared = this.collectMemberValuesFromBases(
+					this.projectionBases,
+					node,
+					name,
+					generation,
+					values,
+				) || declared;
+			}
+		}
+		if (!declared) {
+			for (let nodeIndex = nodeStart; nodeIndex < nodeEnd; nodeIndex += 1) {
+				const prototype = this.prototypeBases.get(nodes[nodeIndex]);
+				if (prototype) {
+					declared = this.collectMemberValues(
+						prototype,
+						name,
+						generation,
+						values,
+					) || declared;
+				}
+			}
+		}
+		if (!declared) {
+			for (let nodeIndex = nodeStart; nodeIndex < nodeEnd; nodeIndex += 1) {
+				declared = this.collectMemberValuesFromBases(
+					this.instanceBases,
+					nodes[nodeIndex],
+					name,
+					generation,
+					values,
+				) || declared;
+			}
+		}
+		nodes.length = nodeStart;
+		return declared;
+	}
+
+	private collectMemberValuesFromBases(
+		bases: SemanticValueEdges,
+		owner: SemanticValueID,
+		name: string,
+		generation: number,
+		values: SemanticValueID[],
+	): boolean {
+		let declared = false;
+		for (let edge = bases.first(owner); edge !== 0; edge = bases.next(edge)) {
+			declared = this.collectMemberValues(
+				bases.target(edge),
+				name,
+				generation,
+				values,
+			) || declared;
+		}
+		return declared;
 	}
 
 	private resolveCallValue(value: SemanticValueID): SemanticValueID {
@@ -1319,6 +1421,10 @@ export class WorkspaceValueGraph {
 			}
 			if (callee) {
 				this.applyCallArguments(callee, call.arguments);
+				if (call.result) {
+					const result = this.resolveSource(call.result, true)!;
+					this.refreshCallResult(callee, result, call.arguments);
+				}
 			}
 		}
 	}
@@ -1341,9 +1447,15 @@ export class WorkspaceValueGraph {
 		this.callDependencyHeadByValue[dependency] = entryIndex + 1;
 	}
 
-	private refreshCallResult(callee: SemanticValueID, result: SemanticValueID): void {
+	private refreshCallResult(
+		callee: SemanticValueID,
+		result: SemanticValueID,
+		arguments_?: readonly (SemanticValueSource | undefined)[],
+	): void {
 		const sources = this.returnSourceScratch;
+		const parameterLists = this.returnParameterScratch;
 		sources.length = 0;
+		parameterLists.length = 0;
 		const generation = this.traversalGeneration + 1;
 		this.traversalGeneration = generation;
 		const stack = this.traversalStack;
@@ -1357,18 +1469,44 @@ export class WorkspaceValueGraph {
 			this.traversalMarks[candidate] = generation;
 			const returnSources = this.functionReturnsByValue.get(candidate);
 			if (returnSources) {
+				const parameters = this.functionParametersByValue.get(candidate);
 				for (let sourceIndex = 0; sourceIndex < returnSources.length; sourceIndex += 1) {
 					sources.push(returnSources[sourceIndex]);
+					parameterLists.push(parameters);
 				}
 			}
 			this.pushTraversalBases(stack, candidate);
 		}
 		for (let sourceIndex = 0; sourceIndex < sources.length; sourceIndex += 1) {
-			const returned = this.resolveSource(sources[sourceIndex], true);
+			const returned = this.resolveContextualReturnSource(
+				sources[sourceIndex],
+				parameterLists[sourceIndex],
+				arguments_,
+			);
 			if (returned && returned !== result) {
 				this.addValueBase(result, returned);
 			}
 		}
+	}
+
+	private resolveContextualReturnSource(
+		source: SemanticValueSource,
+		parameters: readonly SymbolID[] | undefined,
+		arguments_: readonly (SemanticValueSource | undefined)[] | undefined,
+	): SemanticValueID | undefined {
+		if (parameters && arguments_ && source.root.kind === 'declaration') {
+			const count = Math.min(parameters.length, arguments_.length);
+			for (let index = 0; index < count; index += 1) {
+				const argument = arguments_[index];
+				if (parameters[index] === source.root.declId && argument) {
+					const value = this.resolveSource(argument, true);
+					return value
+						? this.resolveValueSteps(value, source.steps, true)
+						: undefined;
+				}
+			}
+		}
+		return this.resolveSource(source, true);
 	}
 
 	private applyCallArguments(

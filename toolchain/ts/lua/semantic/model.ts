@@ -43,7 +43,6 @@ import {
 	type ModuleAliasTarget,
 } from './module_aliases';
 import {
-	appendValueCall,
 	appendValueElement,
 	appendValueInstance,
 	appendValueMember,
@@ -1669,6 +1668,11 @@ class SemanticBuilder implements ComponentProgramSemanticHost, ComponentComposit
 			case LuaSyntaxKind.CallExpression: {
 				const callExpression = expression;
 				const methodName = callExpression.methodName;
+				const callResult = expressionValueSource(
+					this.path,
+					callExpression.range.start.line,
+					callExpression.range.start.column,
+				);
 				const calleeInfo = this.visitExpression(callExpression.callee, context);
 				if (methodName) {
 					this.recordMethodReference(callExpression, calleeInfo);
@@ -1696,6 +1700,7 @@ class SemanticBuilder implements ComponentProgramSemanticHost, ComponentComposit
 					this.callValues.push({
 						callee: calledValue,
 						arguments: argumentValues,
+						result: callResult,
 					});
 				}
 				this.componentComposition.recordAttachmentCall(
@@ -1712,6 +1717,7 @@ class SemanticBuilder implements ComponentProgramSemanticHost, ComponentComposit
 					firstArgumentInfo,
 					secondArgumentInfo,
 					cartlibValue,
+					callResult,
 				);
 				return valueSource
 					? { namePath: null, decl: null, valueSource }
@@ -2796,6 +2802,7 @@ class SemanticBuilder implements ComponentProgramSemanticHost, ComponentComposit
 		firstArgument: ResolvedNamePath,
 		secondArgument: ResolvedNamePath,
 		cartlibValue: SemanticValueSource | undefined,
+		callResult: SemanticValueSource,
 	): SemanticValueSource | undefined {
 		if (cartlibValue) {
 			return cartlibValue;
@@ -2831,10 +2838,7 @@ class SemanticBuilder implements ComponentProgramSemanticHost, ComponentComposit
 		if (!callee?.valueSource) {
 			return undefined;
 		}
-		const functionValue = callExpression.methodName
-			? appendValueMember(callee.valueSource, callExpression.methodName)
-			: callee.valueSource;
-		return appendValueCall(functionValue);
+		return callResult;
 	}
 
 	private recordCartlibCallMetadata(callExpression: LuaCallExpression): SemanticValueSource | undefined {
@@ -3004,14 +3008,10 @@ class SemanticBuilder implements ComponentProgramSemanticHost, ComponentComposit
 
 	public resolveExpressionValueSource(expression: LuaExpression): SemanticValueSource | undefined {
 		if (expression.kind === LuaSyntaxKind.CallExpression) {
-			const callee = this.resolveExpressionValueSource(expression.callee);
-			if (!callee) {
-				return undefined;
-			}
-			return appendValueCall(
-				expression.methodName
-					? appendValueMember(callee, expression.methodName)
-					: callee,
+			return expressionValueSource(
+				this.path,
+				expression.range.start.line,
+				expression.range.start.column,
 			);
 		}
 		if (expression.kind === LuaSyntaxKind.FunctionExpression

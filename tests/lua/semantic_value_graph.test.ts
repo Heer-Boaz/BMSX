@@ -256,6 +256,41 @@ test('semantic workspace retains every object-return branch', async () => {
 	assert.equal(right!.decl.range.start.line, 2);
 });
 
+test('semantic workspace keeps function return values contextual to each callsite', async () => {
+	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const lines = [
+		'local left<const> = { left_only = 1 }',
+		'local right<const> = { right_only = 2 }',
+		'local identity<const> = function(value)',
+		'\treturn value',
+		'end',
+		'local selected_left<const> = identity(left)',
+		'local selected_right<const> = identity(right)',
+		'return selected_left.left_only, selected_left.right_only,',
+		'\tselected_right.right_only, selected_right.left_only',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('main.lua', lines.join('\n'));
+	const snapshot = workspace.getSnapshot();
+
+	assert.equal(
+		snapshot.symbolAt('main.lua', 8, lines[7].indexOf('left_only') + 1)!.decl.range.start.line,
+		1,
+	);
+	assert.equal(
+		snapshot.symbolAt('main.lua', 8, lines[7].indexOf('right_only') + 1),
+		null,
+	);
+	assert.equal(
+		snapshot.symbolAt('main.lua', 9, lines[8].indexOf('right_only') + 1)!.decl.range.start.line,
+		2,
+	);
+	assert.equal(
+		snapshot.symbolAt('main.lua', 9, lines[8].indexOf('left_only') + 1),
+		null,
+	);
+});
+
 test('semantic workspace preserves both value alternatives of Lua and-or expressions', async () => {
 	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
 	const lines = [
