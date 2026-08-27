@@ -61,14 +61,30 @@ export type DeclValueHintEntry = {
 	hintKey: SemanticHintKey;
 };
 
+export type StaticStringSource =
+	| { kind: 'literal'; value: string }
+	| { kind: 'declaration'; declId: SymbolID }
+	| { kind: 'global'; symbolKey: string }
+	| { kind: 'module'; module: string; memberPath: readonly string[] };
+
+export type DeclStringSourceEntry = {
+	declId: SymbolID;
+	source: StaticStringSource;
+};
+
 export type PrefabClassEntry = {
-	defId: string;
+	defId: StaticStringSource;
 	classHintKey: SemanticHintKey;
 };
 
 export type ObjectBindingEntry = {
 	objectId: string;
-	prefabId: string;
+	prefabId: StaticStringSource;
+};
+
+export type PrefabReferenceEntry = {
+	hintKey: SemanticHintKey;
+	defId: StaticStringSource;
 };
 
 export type ClassBaseEntry = {
@@ -131,8 +147,10 @@ export type FileSemanticData = {
 	callExpressions: readonly LuaCallExpression[];
 	functionSignatures: ReadonlyMap<string, FunctionSignatureInfo>;
 	declValueHints: readonly DeclValueHintEntry[];
+	declStringSources: readonly DeclStringSourceEntry[];
 	prefabClasses: readonly PrefabClassEntry[];
 	objectBindings: readonly ObjectBindingEntry[];
+	prefabReferences: readonly PrefabReferenceEntry[];
 	classBases: readonly ClassBaseEntry[];
 };
 
@@ -323,6 +341,7 @@ type Scope = {
 type InternalDecl = Decl & {
 	scopeRef: Scope;
 	active: boolean;
+	constantInitializer?: LuaExpression;
 };
 
 type ResolvedNamePath = {
@@ -334,6 +353,7 @@ type ResolvedNamePath = {
 type ExpressionContext = {
 	tableBaseDecl: InternalDecl;
 	tableBasePath: readonly string[];
+	moduleReturn?: boolean;
 };
 
 type FunctionReturnHintState = {
@@ -368,8 +388,10 @@ type SemanticBuildResult = {
 	callExpressions: LuaCallExpression[];
 	functionSignatures: Map<string, FunctionSignatureInfo>;
 	declValueHints: DeclValueHintEntry[];
+	declStringSources: DeclStringSourceEntry[];
 	prefabClasses: PrefabClassEntry[];
 	objectBindings: ObjectBindingEntry[];
+	prefabReferences: PrefabReferenceEntry[];
 	classBases: ClassBaseEntry[];
 	moduleAliases: ModuleAliasEntry[];
 };
@@ -430,8 +452,10 @@ export function buildLuaFileSemanticData(
 		callExpressions: result.callExpressions,
 		functionSignatures: result.functionSignatures,
 		declValueHints: result.declValueHints,
+		declStringSources: result.declStringSources,
 		prefabClasses: result.prefabClasses,
 		objectBindings: result.objectBindings,
+		prefabReferences: result.prefabReferences,
 		classBases: result.classBases,
 	};
 }
@@ -447,6 +471,7 @@ class LuaProjectIndex {
 	private readonly directDeclByFileAndKey: Map<string, SymbolID> = new Map();
 	private readonly memberDeclByFileAndKey: Map<string, SymbolID> = new Map();
 	private readonly globalsByKey: Map<string, SymbolID> = new Map();
+	private readonly stringSourcesByDeclId: Map<SymbolID, StaticStringSource> = new Map();
 	private readonly refsBySymbol: Map<SymbolID, Ref[]> = new Map();
 	private readonly globalsSources: Map<string, Map<SymbolID, number>> = new Map();
 	private readonly refsByGlobalKey: Map<string, Set<Ref>> = new Map();
@@ -458,6 +483,7 @@ class LuaProjectIndex {
 	private declPathHints: Map<SymbolID, SemanticHintKey> = new Map();
 	private prefabHintsById: Map<string, SemanticHintKey> = new Map();
 	private objectHintsById: Map<string, SemanticHintKey> = new Map();
+	private prefabReferenceHints: Map<SemanticHintKey, SemanticHintKey> = new Map();
 	private classBaseHints: Map<SemanticHintKey, SemanticHintKey> = new Map();
 	private derivedClassHintsByBase: Map<SemanticHintKey, Set<SemanticHintKey>> = new Map();
 	private version = 0;
@@ -572,6 +598,10 @@ class LuaProjectIndex {
 	}
 
 	private applyFileData(data: FileSemanticData): void {
+		for (let i = 0; i < data.declStringSources.length; i += 1) {
+			const entry = data.declStringSources[i];
+			this.stringSourcesByDeclId.set(entry.declId, entry.source);
+		}
 		for (let i = 0; i < data.decls.length; i += 1) {
 			const decl = data.decls[i];
 			this.symbols.set(decl.id, decl);
@@ -595,6 +625,9 @@ class LuaProjectIndex {
 	private removeFileData(data: FileSemanticData): void {
 		for (let i = 0; i < data.refs.length; i += 1) {
 			this.removeReference(data.refs[i]);
+		}
+		for (let i = 0; i < data.declStringSources.length; i += 1) {
+			this.stringSourcesByDeclId.delete(data.declStringSources[i].declId);
 		}
 		for (let i = 0; i < data.decls.length; i += 1) {
 			const decl = data.decls[i];
@@ -857,6 +890,7 @@ class LuaProjectIndex {
 				ref.receiverHintKey,
 				this.prefabHintsById,
 				this.objectHintsById,
+				this.prefabReferenceHints,
 			);
 			if (resolved) {
 				return resolved;
@@ -889,6 +923,7 @@ class LuaProjectIndex {
 					rootHint,
 					this.prefabHintsById,
 					this.objectHintsById,
+					this.prefabReferenceHints,
 				);
 				if (resolved) {
 					return buildPathHintKey(
@@ -922,19 +957,29 @@ class LuaProjectIndex {
 	): void {
 		const previousPrefabHintsById = this.prefabHintsById;
 		const previousObjectHintsById = this.objectHintsById;
+		const previousPrefabReferenceHints = this.prefabReferenceHints;
 		const previousDeclPathHints = this.declPathHints;
 		const previousClassBaseHints = this.classBaseHints;
 		const orderedFiles = this.listFiles();
 		orderedFiles.sort((left, right) => this.fileOrder.get(left)! - this.fileOrder.get(right)!);
 		const moduleFiles = buildModuleFileMap(orderedFiles);
+		const stringValues = new WorkspaceStringValueResolver({
+			files: this.files,
+			globalsByKey: this.globalsByKey,
+			moduleFiles,
+			directDeclByFileAndKey: this.directDeclByFileAndKey,
+			memberDeclByFileAndKey: this.memberDeclByFileAndKey,
+			stringSourcesByDeclId: this.stringSourcesByDeclId,
+		});
 
 		const nextPrefabHintsById = new Map<string, SemanticHintKey>();
 		for (let fileIndex = 0; fileIndex < orderedFiles.length; fileIndex += 1) {
 			const data = this.files.get(orderedFiles[fileIndex])!.data;
 			for (let entryIndex = 0; entryIndex < data.prefabClasses.length; entryIndex += 1) {
 				const entry = data.prefabClasses[entryIndex];
-				if (!nextPrefabHintsById.has(entry.defId)) {
-					nextPrefabHintsById.set(entry.defId, entry.classHintKey);
+				const defId = stringValues.resolve(entry.defId);
+				if (defId != null && !nextPrefabHintsById.has(defId)) {
+					nextPrefabHintsById.set(defId, entry.classHintKey);
 				}
 			}
 		}
@@ -947,9 +992,29 @@ class LuaProjectIndex {
 				if (nextObjectHintsById.has(entry.objectId)) {
 					continue;
 				}
-				const classHintKey = nextPrefabHintsById.get(entry.prefabId);
+				const prefabId = stringValues.resolve(entry.prefabId);
+				if (prefabId == null) {
+					continue;
+				}
+				const classHintKey = nextPrefabHintsById.get(prefabId);
 				if (classHintKey) {
 					nextObjectHintsById.set(entry.objectId, classHintKey);
+				}
+			}
+		}
+
+		const nextPrefabReferenceHints = new Map<SemanticHintKey, SemanticHintKey>();
+		for (let fileIndex = 0; fileIndex < orderedFiles.length; fileIndex += 1) {
+			const data = this.files.get(orderedFiles[fileIndex])!.data;
+			for (let entryIndex = 0; entryIndex < data.prefabReferences.length; entryIndex += 1) {
+				const entry = data.prefabReferences[entryIndex];
+				const defId = stringValues.resolve(entry.defId);
+				if (defId == null) {
+					continue;
+				}
+				const classHintKey = nextPrefabHintsById.get(defId);
+				if (classHintKey) {
+					nextPrefabReferenceHints.set(entry.hintKey, classHintKey);
 				}
 			}
 		}
@@ -959,7 +1024,12 @@ class LuaProjectIndex {
 			const data = this.files.get(orderedFiles[fileIndex])!.data;
 			for (let entryIndex = 0; entryIndex < data.declValueHints.length; entryIndex += 1) {
 				const entry = data.declValueHints[entryIndex];
-				const pathHintKey = resolveHintKeyToPathHintKey(entry.hintKey, nextPrefabHintsById, nextObjectHintsById);
+				const pathHintKey = resolveHintKeyToPathHintKey(
+					entry.hintKey,
+					nextPrefabHintsById,
+					nextObjectHintsById,
+					nextPrefabReferenceHints,
+				);
 				if (pathHintKey) {
 					nextDeclPathHints.set(entry.declId, pathHintKey);
 				}
@@ -979,6 +1049,16 @@ class LuaProjectIndex {
 
 		this.collectDirtyHintKeys(previousPrefabHintsById, nextPrefabHintsById, buildPrefabHintKey, dirtyReceiverHintKeys);
 		this.collectDirtyHintKeys(previousObjectHintsById, nextObjectHintsById, buildObjectHintKey, dirtyReceiverHintKeys);
+		for (const [hintKey, classHintKey] of previousPrefabReferenceHints) {
+			if (nextPrefabReferenceHints.get(hintKey) !== classHintKey) {
+				dirtyReceiverHintKeys.add(hintKey);
+			}
+		}
+		for (const [hintKey, classHintKey] of nextPrefabReferenceHints) {
+			if (previousPrefabReferenceHints.get(hintKey) !== classHintKey) {
+				dirtyReceiverHintKeys.add(hintKey);
+			}
+		}
 		this.collectDirtyDeclHintSymbolKeys(previousDeclPathHints, nextDeclPathHints, dirtyReceiverSymbolKeys);
 		const affectedClasses = collectAffectedClassHints(
 			changedFiles,
@@ -1001,6 +1081,7 @@ class LuaProjectIndex {
 		this.derivedClassHintsByBase = nextDerivedClassHintsByBase;
 		this.prefabHintsById = nextPrefabHintsById;
 		this.objectHintsById = nextObjectHintsById;
+		this.prefabReferenceHints = nextPrefabReferenceHints;
 		this.declPathHints = nextDeclPathHints;
 		this.classBaseHints = nextClassBaseHints;
 	}
@@ -1384,8 +1465,10 @@ class SemanticBuilder {
 	private readonly functionSignatures: Map<string, FunctionSignatureInfo> = new Map();
 	private readonly methodSelfPathStack: (readonly string[] | undefined)[] = [];
 	private readonly declValueHints: Map<SymbolID, SemanticHintKey> = new Map();
+	private readonly declStringSources: Map<SymbolID, StaticStringSource> = new Map();
 	private readonly prefabClasses: PrefabClassEntry[] = [];
 	private readonly objectBindings: ObjectBindingEntry[] = [];
+	private readonly prefabReferences: PrefabReferenceEntry[] = [];
 	private readonly classBasesByClassDeclId: Map<SymbolID, ClassBaseEntry> = new Map();
 	private readonly moduleAliasesByDeclId: Map<SymbolID, ModuleAliasTarget> = new Map();
 	private readonly immutableModuleAliasesByDeclId: Map<SymbolID, ModuleAliasTarget> = new Map();
@@ -1423,8 +1506,10 @@ class SemanticBuilder {
 			callExpressions: this.callExpressions,
 			functionSignatures: this.functionSignatures,
 			declValueHints: Array.from(this.declValueHints.entries(), ([declId, hintKey]) => ({ declId, hintKey })),
+			declStringSources: Array.from(this.declStringSources.entries(), ([declId, source]) => ({ declId, source })),
 			prefabClasses: this.prefabClasses,
 			objectBindings: this.objectBindings,
+			prefabReferences: this.prefabReferences,
 			classBases: Array.from(this.classBasesByClassDeclId.values()),
 			moduleAliases: Array.from(this.moduleAliasesByName.values()),
 		};
@@ -1468,6 +1553,9 @@ class SemanticBuilder {
 					const valueInfo = this.visitExpression(valueExpression, context);
 					if (targetDecl && valueInfo?.hintKey) {
 						this.setDeclValueHint(targetDecl, valueInfo.hintKey);
+					}
+					if (targetDecl) {
+						this.setDeclStringSource(targetDecl, valueExpression, false);
 					}
 				}
 				for (let index = 0; index < pending.length; index += 1) {
@@ -1559,6 +1647,9 @@ class SemanticBuilder {
 						}
 						: { tableBaseDecl: null, tableBasePath: null };
 					const valueExpression = assignment.right[index];
+					if (targetInfo?.decl) {
+						this.setDeclStringSource(targetInfo.decl, valueExpression, false);
+					}
 					if (valueExpression.kind === LuaSyntaxKind.FunctionExpression) {
 						if (targetInfo?.path) {
 							this.recordFunctionSignature(targetInfo.path, valueExpression, 'function');
@@ -1603,10 +1694,12 @@ class SemanticBuilder {
 			case LuaSyntaxKind.ReturnStatement: {
 				const returnStatement = statement;
 				let returnHint: SemanticHintKey = null;
+				const moduleReturn = this.currentScope().kind === 'path'
+					&& returnStatement.expressions.length === 1;
 				for (let index = 0; index < returnStatement.expressions.length; index += 1) {
 					const valueInfo = this.visitExpression(
 						returnStatement.expressions[index],
-						{ tableBaseDecl: null, tableBasePath: null },
+						{ tableBaseDecl: null, tableBasePath: null, moduleReturn },
 					);
 					if (index === 0) {
 						returnHint = valueInfo?.hintKey;
@@ -1852,6 +1945,7 @@ class SemanticBuilder {
 					if (valueInfo?.hintKey) {
 						this.setDeclValueHint(decl, valueInfo.hintKey);
 					}
+					this.setDeclStringSource(decl, field.value, context.moduleReturn === true);
 					break;
 				}
 				case LuaTableFieldKind.ExpressionKey: {
@@ -2410,6 +2504,65 @@ class SemanticBuilder {
 		this.declValueHints.set(decl.id, hintKey);
 	}
 
+	private setDeclStringSource(decl: InternalDecl, expression: LuaExpression, moduleExport: boolean): void {
+		if (decl.kind === 'constant') {
+			decl.constantInitializer = expression;
+		}
+		const source = moduleExport
+			? this.resolveConstantStringSource(expression)
+			: this.resolveStaticStringSource(expression);
+		const retain = source && (
+			source.kind === 'literal'
+			|| (source.kind === 'declaration' && this.declStringSources.has(source.declId))
+			|| (moduleExport && source.kind !== 'declaration')
+		);
+		if (retain) {
+			this.declStringSources.set(decl.id, source);
+		} else {
+			this.declStringSources.delete(decl.id);
+		}
+	}
+
+	private resolveStaticStringSource(expression: LuaExpression): StaticStringSource {
+		if (expression.kind === LuaSyntaxKind.StringLiteralExpression) {
+			return { kind: 'literal', value: expression.value };
+		}
+		const moduleAlias = this.resolveModuleAliasInitializer(expression, this.moduleAliasLookup);
+		if (moduleAlias) {
+			return {
+				kind: 'module',
+				module: moduleAlias.module,
+				memberPath: moduleAlias.memberPath.slice(),
+			};
+		}
+		const path = extractStaticMemberPath(expression);
+		if (!path || path.length === 0) {
+			return null;
+		}
+		const decl = this.resolveStaticExpressionDecl(expression);
+		if (decl) {
+			return { kind: 'declaration', declId: decl.id };
+		}
+		return { kind: 'global', symbolKey: joinNamePath(path) };
+	}
+
+	private resolveConstantStringSource(expression: LuaExpression): StaticStringSource {
+		let source = this.resolveStaticStringSource(expression);
+		while (source?.kind === 'declaration') {
+			const retained = this.declStringSources.get(source.declId);
+			if (retained) {
+				source = retained;
+				continue;
+			}
+			const initializer = this.declById.get(source.declId)?.constantInitializer;
+			if (!initializer) {
+				break;
+			}
+			source = this.resolveStaticStringSource(initializer);
+		}
+		return source;
+	}
+
 	private getDeclValueHint(decl: InternalDecl): SemanticHintKey {
 		return this.declValueHints.get(decl.id);
 	}
@@ -2479,7 +2632,11 @@ class SemanticBuilder {
 			return null;
 		}
 		if (callKind === CARTLIB_CALL_WORLD_SPAWN) {
-			const prefabId = extractStringLiteral(callExpression.arguments[0]);
+			const prefabExpression = callExpression.arguments[0];
+			if (!prefabExpression) {
+				return null;
+			}
+			const prefabId = this.resolveConstantStringSource(prefabExpression);
 			if (!prefabId) {
 				return null;
 			}
@@ -2488,7 +2645,12 @@ class SemanticBuilder {
 				this.objectBindings.push({ objectId, prefabId });
 				return buildObjectHintKey(objectId);
 			}
-			return buildPrefabHintKey(prefabId);
+			if (prefabId.kind === 'literal') {
+				return buildPrefabHintKey(prefabId.value);
+			}
+			const hintKey = buildPrefabReferenceHintKey(this.path, callExpression.range.start);
+			this.prefabReferences.push({ hintKey, defId: prefabId });
+			return hintKey;
 		}
 		return null;
 	}
@@ -2498,7 +2660,7 @@ class SemanticBuilder {
 		if (!descriptor || descriptor.kind !== LuaSyntaxKind.TableConstructorExpression) {
 			return;
 		}
-		let defId: string = null;
+		let defId: StaticStringSource = null;
 		let classExpression: LuaExpression = null;
 		let baseExpression: LuaExpression = null;
 		let hasBase = false;
@@ -2509,7 +2671,7 @@ class SemanticBuilder {
 			}
 			switch (field.name) {
 				case 'def_id':
-					defId = extractStringLiteral(field.value);
+					defId = this.resolveConstantStringSource(field.value);
 					break;
 				case 'class':
 					classExpression = field.value;
@@ -2577,7 +2739,7 @@ class SemanticBuilder {
 			return null;
 		}
 		if (path.length === 1) {
-			return this.resolveName(path[0]);
+			return this.resolveName(path[0]) ?? this.globalsByKey.get(path[0]);
 		}
 		return this.properties.get(joinNamePath(path));
 	}
@@ -2851,6 +3013,7 @@ function fileSymbolKey(file: string, symbolKey: string): string {
 const PATH_HINT_PREFIX = 'p:';
 const PREFAB_HINT_PREFIX = 'f:';
 const OBJECT_HINT_PREFIX = 'o:';
+const PREFAB_REFERENCE_HINT_PREFIX = 'r:';
 
 function buildPathHintKey(file: string, symbolKey: string): SemanticHintKey {
 	return `${PATH_HINT_PREFIX}${file}|${symbolKey}`;
@@ -2864,6 +3027,10 @@ function buildObjectHintKey(objectId: string): SemanticHintKey {
 	return `${OBJECT_HINT_PREFIX}${objectId}`;
 }
 
+function buildPrefabReferenceHintKey(file: string, position: SourcePosition): SemanticHintKey {
+	return `${PREFAB_REFERENCE_HINT_PREFIX}${file}|${position.line}|${position.column}`;
+}
+
 function isPathHintKey(hintKey: SemanticHintKey): boolean {
 	return hintKey.startsWith(PATH_HINT_PREFIX);
 }
@@ -2874,6 +3041,10 @@ function isPrefabHintKey(hintKey: SemanticHintKey): boolean {
 
 function isObjectHintKey(hintKey: SemanticHintKey): boolean {
 	return hintKey.startsWith(OBJECT_HINT_PREFIX);
+}
+
+function isPrefabReferenceHintKey(hintKey: SemanticHintKey): boolean {
+	return hintKey.startsWith(PREFAB_REFERENCE_HINT_PREFIX);
 }
 
 function getHintPayload(hintKey: SemanticHintKey): string {
@@ -2904,6 +3075,7 @@ function resolveHintKeyToPathHintKey(
 	hintKey: SemanticHintKey,
 	prefabClasses: ReadonlyMap<string, SemanticHintKey>,
 	objectClasses: ReadonlyMap<string, SemanticHintKey>,
+	prefabReferences: ReadonlyMap<SemanticHintKey, SemanticHintKey>,
 ): SemanticHintKey {
 	if (isPathHintKey(hintKey)) {
 		return hintKey;
@@ -2913,6 +3085,9 @@ function resolveHintKeyToPathHintKey(
 	}
 	if (isObjectHintKey(hintKey)) {
 		return objectClasses.get(getHintPayload(hintKey));
+	}
+	if (isPrefabReferenceHintKey(hintKey)) {
+		return prefabReferences.get(hintKey);
 	}
 	return null;
 }
@@ -2927,6 +3102,116 @@ function buildModuleFileMap(files: readonly string[]): Map<string, string> {
 		}
 	}
 	return modules;
+}
+
+class WorkspaceStringValueResolver {
+	private readonly sources: ReadonlyMap<SymbolID, StaticStringSource>;
+	private readonly globalsByKey: ReadonlyMap<string, SymbolID>;
+	private readonly files: ReadonlyMap<string, FileRecord>;
+	private readonly moduleFiles: ReadonlyMap<string, string>;
+	private readonly directDeclByFileAndKey: ReadonlyMap<string, SymbolID>;
+	private readonly memberDeclByFileAndKey: ReadonlyMap<string, SymbolID>;
+	private readonly values: Map<SymbolID, string> = new Map();
+	private readonly resolvingDecls: Set<SymbolID> = new Set();
+	private readonly resolvingModules: Set<string> = new Set();
+
+	constructor(project: {
+		files: ReadonlyMap<string, FileRecord>;
+		globalsByKey: ReadonlyMap<string, SymbolID>;
+		moduleFiles: ReadonlyMap<string, string>;
+		directDeclByFileAndKey: ReadonlyMap<string, SymbolID>;
+		memberDeclByFileAndKey: ReadonlyMap<string, SymbolID>;
+		stringSourcesByDeclId: ReadonlyMap<SymbolID, StaticStringSource>;
+	}) {
+		this.files = project.files;
+		this.globalsByKey = project.globalsByKey;
+		this.moduleFiles = project.moduleFiles;
+		this.directDeclByFileAndKey = project.directDeclByFileAndKey;
+		this.memberDeclByFileAndKey = project.memberDeclByFileAndKey;
+		this.sources = project.stringSourcesByDeclId;
+	}
+
+	public resolve(source: StaticStringSource): string {
+		switch (source.kind) {
+			case 'literal':
+				return source.value;
+			case 'declaration':
+				return this.resolveDeclaration(source.declId);
+			case 'global': {
+				const declId = this.globalsByKey.get(source.symbolKey);
+				return declId ? this.resolveDeclaration(declId) : null;
+			}
+			case 'module':
+				return this.resolveModuleMember(source);
+		}
+	}
+
+	private resolveDeclaration(declId: SymbolID): string {
+		const value = this.values.get(declId);
+		if (value != null) {
+			return value;
+		}
+		if (this.resolvingDecls.has(declId)) {
+			return null;
+		}
+		const source = this.sources.get(declId);
+		if (!source) {
+			return null;
+		}
+		this.resolvingDecls.add(declId);
+		const resolved = this.resolve(source);
+		this.resolvingDecls.delete(declId);
+		if (resolved != null) {
+			this.values.set(declId, resolved);
+		}
+		return resolved;
+	}
+
+	private resolveModuleMember(source: Extract<StaticStringSource, { kind: 'module' }>): string {
+		const resolutionKey = `${source.module}|${source.memberPath.join('.')}`;
+		if (this.resolvingModules.has(resolutionKey)) {
+			return null;
+		}
+		this.resolvingModules.add(resolutionKey);
+		let resolved: string = null;
+		const moduleFile = this.moduleFiles.get(source.module);
+		if (moduleFile) {
+			const data = this.files.get(moduleFile)!.data;
+			const moduleRoot = resolveModuleReturnNamePath(data.chunk);
+			if (moduleRoot) {
+				let rootAlias: ModuleAliasEntry = null;
+				if (moduleRoot.length > 0) {
+					for (let index = 0; index < data.moduleAliases.length; index += 1) {
+						const alias = data.moduleAliases[index];
+						if (alias.alias === moduleRoot[0]) {
+							rootAlias = alias;
+							break;
+						}
+					}
+				}
+				if (rootAlias) {
+					resolved = this.resolve({
+						kind: 'module',
+						module: rootAlias.module,
+						memberPath: rootAlias.memberPath.concat(moduleRoot.slice(1), source.memberPath),
+					});
+				} else {
+					let symbolKey = joinNamePath(moduleRoot);
+					for (let index = 0; index < source.memberPath.length; index += 1) {
+						symbolKey = appendSymbolKey(symbolKey, source.memberPath[index]);
+					}
+					const key = fileSymbolKey(moduleFile, symbolKey);
+					const declId = this.memberDeclByFileAndKey.get(key)
+						?? this.directDeclByFileAndKey.get(key);
+					if (declId) {
+						resolved = this.resolveDeclaration(declId);
+					}
+				}
+			}
+		}
+		this.resolvingModules.delete(resolutionKey);
+		return resolved;
+	}
 }
 
 function collectAffectedClassHints(

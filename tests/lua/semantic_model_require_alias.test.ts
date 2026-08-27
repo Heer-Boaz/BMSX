@@ -335,6 +335,86 @@ test('semantic workspace applies the prefab runtime default base', async () => {
 	assert.deepEqual(target!.decl.namePath, ['world_object', 'mark_for_disposal']);
 });
 
+test('semantic workspace retargets spawn results when a global prefab id changes', async () => {
+	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const constantsLeftSource = [
+		"left_def = 'left'",
+		"right_def = 'right'",
+		"selected_def = 'left'",
+	].join('\n');
+	const constantsRightSource = constantsLeftSource.replace("selected_def = 'left'", "selected_def = 'right'");
+	const leftSource = [
+		"local prefab<const> = require('cartlib/world/prefab')",
+		"require('constants')",
+		'local left<const> = {}',
+		'function left:left_action() end',
+		'prefab.define({ def_id = left_def, class = left })',
+		'return left',
+	].join('\n');
+	const rightSource = [
+		"local prefab<const> = require('cartlib/world/prefab')",
+		"require('constants')",
+		'local right<const> = {}',
+		'function right:right_action() end',
+		'prefab.define({ def_id = right_def, class = right })',
+		'return right',
+	].join('\n');
+	const mainLines = [
+		"local world<const> = require('cartlib/world/world')",
+		"require('constants')",
+		'local spawned<const> = world:spawn(selected_def, {})',
+		'spawned:left_action()',
+		'spawned:right_action()',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('constants.lua', constantsLeftSource);
+	workspace.updateFile('left.lua', leftSource);
+	workspace.updateFile('right.lua', rightSource);
+	workspace.updateFile('main.lua', mainLines.join('\n'));
+	const leftColumn = mainLines[3].indexOf('left_action') + 1;
+	const rightColumn = mainLines[4].indexOf('right_action') + 1;
+	const initialTarget = workspace.getSnapshot().symbolAt('main.lua', 4, leftColumn);
+	assert.ok(initialTarget, 'global prefab id target');
+	assert.equal(initialTarget!.decl.file, 'left.lua');
+	assert.equal(workspace.getSnapshot().symbolAt('main.lua', 5, rightColumn), null);
+
+	workspace.updateFile('constants.lua', constantsRightSource);
+	assert.equal(workspace.getSnapshot().symbolAt('main.lua', 4, leftColumn), null);
+	const reboundTarget = workspace.getSnapshot().symbolAt('main.lua', 5, rightColumn);
+	assert.ok(reboundTarget, 'retargeted global prefab id target');
+	assert.equal(reboundTarget!.decl.file, 'right.lua');
+});
+
+test('semantic workspace resolves spawn results through exported prefab ids', async () => {
+	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const actorSource = [
+		"local prefab<const> = require('cartlib/world/prefab')",
+		'local actor<const> = {}',
+		"local definition_id<const> = 'actor'",
+		'function actor:run() end',
+		'prefab.define({ def_id = definition_id, class = actor })',
+		'return { definition_id = definition_id }',
+	].join('\n');
+	const mainLines = [
+		"local world<const> = require('cartlib/world/world')",
+		"local actor_module<const> = require('actor')",
+		'local actor<const> = world:spawn(actor_module.definition_id, {})',
+		'actor:run()',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('actor.lua', actorSource);
+	workspace.updateFile('main.lua', mainLines.join('\n'));
+	const target = workspace.getSnapshot().symbolAt(
+		'main.lua',
+		4,
+		mainLines[3].indexOf('run') + 1,
+	);
+
+	assert.ok(target, 'exported prefab id target');
+	assert.equal(target!.decl.file, 'actor.lua');
+	assert.deepEqual(target!.decl.namePath, ['actor', 'run']);
+});
+
 test('semantic workspace retains exported table identity across local shadowing', async () => {
 	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
 	const signatureSource = [
