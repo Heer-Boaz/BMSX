@@ -77,6 +77,78 @@ type MemberDeclaration = {
 
 const EMPTY_MEMBER_DECLARATIONS: readonly MemberDeclaration[] = [];
 const EMPTY_MEMBER_IDS: readonly SymbolID[] = [];
+const INITIAL_VALUE_CAPACITY = 256;
+const INITIAL_EDGE_CAPACITY = 256;
+
+class SemanticValueEdges {
+	private firstByOwner = new Uint32Array(INITIAL_VALUE_CAPACITY);
+	private lastByOwner = new Uint32Array(INITIAL_VALUE_CAPACITY);
+	private targets = new Uint32Array(INITIAL_EDGE_CAPACITY);
+	private nextEdges = new Uint32Array(INITIAL_EDGE_CAPACITY);
+	private previousEdges = new Uint32Array(INITIAL_EDGE_CAPACITY);
+	private edgeCount = 0;
+
+	public resizeOwners(capacity: number): void {
+		const firstByOwner = new Uint32Array(capacity);
+		firstByOwner.set(this.firstByOwner);
+		this.firstByOwner = firstByOwner;
+		const lastByOwner = new Uint32Array(capacity);
+		lastByOwner.set(this.lastByOwner);
+		this.lastByOwner = lastByOwner;
+	}
+
+	public add(owner: SemanticValueID, target: SemanticValueID): boolean {
+		for (let edge = this.firstByOwner[owner]; edge !== 0; edge = this.nextEdges[edge]) {
+			if (this.targets[edge] === target) {
+				return false;
+			}
+		}
+		const edge = this.edgeCount + 1;
+		this.edgeCount = edge;
+		if (edge === this.targets.length) {
+			const capacity = this.targets.length * 2;
+			const targets = new Uint32Array(capacity);
+			targets.set(this.targets);
+			this.targets = targets;
+			const nextEdges = new Uint32Array(capacity);
+			nextEdges.set(this.nextEdges);
+			this.nextEdges = nextEdges;
+			const previousEdges = new Uint32Array(capacity);
+			previousEdges.set(this.previousEdges);
+			this.previousEdges = previousEdges;
+		}
+		const previous = this.lastByOwner[owner];
+		this.targets[edge] = target;
+		this.previousEdges[edge] = previous;
+		if (previous === 0) {
+			this.firstByOwner[owner] = edge;
+		} else {
+			this.nextEdges[previous] = edge;
+		}
+		this.lastByOwner[owner] = edge;
+		return true;
+	}
+
+	public first(owner: SemanticValueID): number {
+		return this.firstByOwner[owner];
+	}
+
+	public last(owner: SemanticValueID): number {
+		return this.lastByOwner[owner];
+	}
+
+	public next(edge: number): number {
+		return this.nextEdges[edge];
+	}
+
+	public previous(edge: number): number {
+		return this.previousEdges[edge];
+	}
+
+	public target(edge: number): SemanticValueID {
+		return this.targets[edge] as SemanticValueID;
+	}
+}
 
 class IndexWorklist<Value extends number> {
 	private readonly values: Value[] = [];
@@ -315,16 +387,16 @@ export class WorkspaceValueGraph {
 	private readonly callResults: Map<SemanticValueID, SemanticValueID> = new Map();
 	private readonly functionReturnsByValue: Map<SemanticValueID, SemanticValueSource[]> = new Map();
 	private readonly functionParametersByValue: Map<SemanticValueID, readonly SymbolID[]> = new Map();
-	private readonly identityValues: Map<SemanticValueID, SemanticValueID[]> = new Map();
+	private readonly identityValues = new SemanticValueEdges();
 	private readonly identityParents: SemanticValueID[] = [];
 	private readonly identitySizes: number[] = [];
 	private readonly memberDeclarationsByIdentityRoot: Map<SemanticValueID, MemberDeclaration[]> = new Map();
 	private readonly memberResolutionCache: Map<SemanticValueID, Map<string, readonly SymbolID[]>> = new Map();
 	private readonly elementsByIdentityRoot: Map<SemanticValueID, SemanticValueID> = new Map();
-	private readonly projectionBases: Map<SemanticValueID, SemanticValueID[]> = new Map();
-	private readonly valueBases: Map<SemanticValueID, SemanticValueID[]> = new Map();
+	private readonly projectionBases = new SemanticValueEdges();
+	private readonly valueBases = new SemanticValueEdges();
 	private readonly prototypeBases: Map<SemanticValueID, SemanticValueID> = new Map();
-	private readonly instanceBases: Map<SemanticValueID, SemanticValueID[]> = new Map();
+	private readonly instanceBases = new SemanticValueEdges();
 	private readonly traversalStack: SemanticValueID[] = [];
 	private readonly traversalMarks: number[] = [];
 	private readonly resolvingElements: Set<SemanticValueID> = new Set();
@@ -344,15 +416,16 @@ export class WorkspaceValueGraph {
 	private readonly parameterDeclarationScratch: SymbolID[] = [];
 	private readonly parameterArgumentIndexScratch: number[] = [];
 	private readonly returnSourceScratch: SemanticValueSource[] = [];
-	// Reverse traversal dependencies select dirty owners; these parallel arrays
-	// retain the resolver's deterministic materialization order.
-	private readonly traversalDependents: Map<SemanticValueID, SemanticValueID[]> = new Map();
+	// Reverse traversal dependencies select dirty owners while preserving the
+	// resolver's deterministic materialization order.
+	private readonly traversalDependents = new SemanticValueEdges();
 	private readonly dirtyTraversalValues: IndexWorklist<SemanticValueID> = new IndexWorklist();
 	private readonly dirtyPropagationStack: SemanticValueID[] = [];
 	private readonly dirtyPropagationMarks: number[] = [];
 	private traversalGeneration = 0;
 	private dirtyPropagationGeneration = 0;
 	private nextValueId = 1;
+	private valueCapacity = INITIAL_VALUE_CAPACITY;
 	private nextMemberDeclarationOrder = 0;
 	constructor(options: WorkspaceValueGraphInput) {
 		this.declarationValues = new Map();
@@ -423,11 +496,8 @@ export class WorkspaceValueGraph {
 			}
 			visited.add(value);
 			identityValues.push(value);
-			const aliases = this.identityValues.get(value);
-			if (aliases) {
-				for (let index = aliases.length - 1; index >= 0; index -= 1) {
-					identityStack.push(aliases[index]);
-				}
+			for (let edge = this.identityValues.last(value); edge !== 0; edge = this.identityValues.previous(edge)) {
+				identityStack.push(this.identityValues.target(edge));
 			}
 		}
 
@@ -445,8 +515,8 @@ export class WorkspaceValueGraph {
 		const alternativeStart = out.length;
 		for (let index = 0; index < identityValues.length; index += 1) {
 			const value = identityValues[index];
-			this.collectMemberDeclarationsFromBases(this.valueBases.get(value), name, visited, out);
-			this.collectMemberDeclarationsFromBases(this.projectionBases.get(value), name, visited, out);
+			this.collectMemberDeclarationsFromBases(this.valueBases, value, name, visited, out);
+			this.collectMemberDeclarationsFromBases(this.projectionBases, value, name, visited, out);
 		}
 		if (out.length !== alternativeStart) {
 			return;
@@ -464,21 +534,20 @@ export class WorkspaceValueGraph {
 		}
 
 		for (let index = 0; index < identityValues.length; index += 1) {
-			this.collectMemberDeclarationsFromBases(this.instanceBases.get(identityValues[index]), name, visited, out);
+			const value = identityValues[index];
+			this.collectMemberDeclarationsFromBases(this.instanceBases, value, name, visited, out);
 		}
 	}
 
 	private collectMemberDeclarationsFromBases(
-		bases: readonly SemanticValueID[] | undefined,
+		bases: SemanticValueEdges,
+		owner: SemanticValueID,
 		name: string,
 		visited: Set<SemanticValueID>,
 		out: MemberDeclaration[],
 	): void {
-		if (!bases) {
-			return;
-		}
-		for (let index = 0; index < bases.length; index += 1) {
-			this.collectMemberDeclarations(bases[index], name, visited, out);
+		for (let edge = bases.first(owner); edge !== 0; edge = bases.next(edge)) {
+			this.collectMemberDeclarations(bases.target(edge), name, visited, out);
 		}
 	}
 
@@ -599,33 +668,21 @@ export class WorkspaceValueGraph {
 	}
 
 	private pushTraversalBases(stack: SemanticValueID[], value: SemanticValueID): void {
-		const aliases = this.identityValues.get(value);
-		if (aliases) {
-			for (let index = aliases.length - 1; index >= 0; index -= 1) {
-				stack.push(aliases[index]);
-			}
+		for (let edge = this.identityValues.last(value); edge !== 0; edge = this.identityValues.previous(edge)) {
+			stack.push(this.identityValues.target(edge));
 		}
 		const prototypeBase = this.prototypeBases.get(value);
 		if (prototypeBase) {
 			stack.push(prototypeBase);
 		}
-		const instanceBases = this.instanceBases.get(value);
-		if (instanceBases) {
-			for (let index = instanceBases.length - 1; index >= 0; index -= 1) {
-				stack.push(instanceBases[index]);
-			}
+		for (let edge = this.instanceBases.last(value); edge !== 0; edge = this.instanceBases.previous(edge)) {
+			stack.push(this.instanceBases.target(edge));
 		}
-		const projectionBases = this.projectionBases.get(value);
-		if (projectionBases) {
-			for (let index = projectionBases.length - 1; index >= 0; index -= 1) {
-				stack.push(projectionBases[index]);
-			}
+		for (let edge = this.projectionBases.last(value); edge !== 0; edge = this.projectionBases.previous(edge)) {
+			stack.push(this.projectionBases.target(edge));
 		}
-		const valueBases = this.valueBases.get(value);
-		if (valueBases) {
-			for (let index = valueBases.length - 1; index >= 0; index -= 1) {
-				stack.push(valueBases[index]);
-			}
+		for (let edge = this.valueBases.last(value); edge !== 0; edge = this.valueBases.previous(edge)) {
+			stack.push(this.valueBases.target(edge));
 		}
 	}
 
@@ -670,11 +727,8 @@ export class WorkspaceValueGraph {
 			if (callResult) {
 				this.refreshCallResult(value, callResult);
 			}
-			const dependents = this.traversalDependents.get(value);
-			if (dependents) {
-				for (let index = 0; index < dependents.length; index += 1) {
-					stack.push(dependents[index]);
-				}
+			for (let edge = this.traversalDependents.first(value); edge !== 0; edge = this.traversalDependents.next(edge)) {
+				stack.push(this.traversalDependents.target(edge));
 			}
 		}
 	}
@@ -794,17 +848,11 @@ export class WorkspaceValueGraph {
 			instance = this.createNode();
 			this.instances.set(classValue, instance);
 			this.setPrototypeBase(instance, classValue);
-			const valueBases = this.valueBases.get(classValue);
-			if (valueBases) {
-				for (let index = 0; index < valueBases.length; index += 1) {
-					this.addEdge(this.instanceBases, instance, this.ensureInstance(valueBases[index]));
-				}
+			for (let edge = this.valueBases.first(classValue); edge !== 0; edge = this.valueBases.next(edge)) {
+				this.addEdge(this.instanceBases, instance, this.ensureInstance(this.valueBases.target(edge)));
 			}
-			const aliases = this.identityValues.get(classValue);
-			if (aliases) {
-				for (let index = 0; index < aliases.length; index += 1) {
-					this.addEdge(this.instanceBases, instance, this.ensureInstance(aliases[index]));
-				}
+			for (let edge = this.identityValues.first(classValue); edge !== 0; edge = this.identityValues.next(edge)) {
+				this.addEdge(this.instanceBases, instance, this.ensureInstance(this.identityValues.target(edge)));
 			}
 		}
 		return instance;
@@ -880,32 +928,19 @@ export class WorkspaceValueGraph {
 	}
 
 	private addEdge(
-		edges: Map<SemanticValueID, SemanticValueID[]>,
+		edges: SemanticValueEdges,
 		owner: SemanticValueID,
 		base: SemanticValueID,
 	): boolean {
-		let bases = edges.get(owner);
-		if (!bases) {
-			bases = [];
-			edges.set(owner, bases);
-		}
-		if (bases.includes(base)) {
+		if (!edges.add(owner, base)) {
 			return false;
 		}
-		bases.push(base);
 		this.addTraversalDependency(owner, base);
 		return true;
 	}
 
 	private addTraversalDependency(owner: SemanticValueID, base: SemanticValueID): void {
-		let dependents = this.traversalDependents.get(base);
-		if (!dependents) {
-			dependents = [];
-			this.traversalDependents.set(base, dependents);
-		}
-		if (!dependents.includes(owner)) {
-			dependents.push(owner);
-		}
+		this.traversalDependents.add(base, owner);
 		this.markTraversalChanged(owner);
 	}
 
@@ -949,22 +984,14 @@ export class WorkspaceValueGraph {
 	}
 
 	private projectMember(owner: SemanticValueID, name: string, value: SemanticValueID): void {
-		const bases = this.projectionBases.get(owner);
-		if (!bases) {
-			return;
-		}
-		for (let index = 0; index < bases.length; index += 1) {
-			this.addIdentity(value, this.ensureMember(bases[index], name).value);
+		for (let edge = this.projectionBases.first(owner); edge !== 0; edge = this.projectionBases.next(edge)) {
+			this.addIdentity(value, this.ensureMember(this.projectionBases.target(edge), name).value);
 		}
 	}
 
 	private projectElement(owner: SemanticValueID, element: SemanticValueID): void {
-		const bases = this.projectionBases.get(owner);
-		if (!bases) {
-			return;
-		}
-		for (let index = 0; index < bases.length; index += 1) {
-			this.addIdentity(element, this.ensureElement(bases[index]));
+		for (let edge = this.projectionBases.first(owner); edge !== 0; edge = this.projectionBases.next(edge)) {
+			this.addIdentity(element, this.ensureElement(this.projectionBases.target(edge)));
 		}
 	}
 
@@ -1272,6 +1299,14 @@ export class WorkspaceValueGraph {
 	private createNode(): SemanticValueID {
 		const value = this.nextValueId as SemanticValueID;
 		this.nextValueId += 1;
+		if (value === this.valueCapacity) {
+			this.valueCapacity *= 2;
+			this.identityValues.resizeOwners(this.valueCapacity);
+			this.projectionBases.resizeOwners(this.valueCapacity);
+			this.valueBases.resizeOwners(this.valueCapacity);
+			this.instanceBases.resizeOwners(this.valueCapacity);
+			this.traversalDependents.resizeOwners(this.valueCapacity);
+		}
 		this.identityParents[value] = value;
 		this.identitySizes[value] = 1;
 		this.unresolvedMemberHeadByOwner[value] = 0;
