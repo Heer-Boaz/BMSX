@@ -7,7 +7,9 @@ import {
 import type { SymbolID } from './model';
 import {
 	appendValueCall,
+	appendValueInstance,
 	appendValueMember,
+	declarationValueSource,
 	semanticValueSourcesEqual,
 	type SemanticValueSource,
 } from './value_graph';
@@ -18,9 +20,17 @@ export type ComponentPublicationEntry = {
 	memberDeclId: SymbolID;
 };
 
-export type PrefabComponentEntry = {
-	classDeclId: SymbolID;
+export type ComponentMountEntry = {
+	owner: SemanticValueSource;
 	component: SemanticValueSource;
+};
+
+export type ComponentAttachmentCallEntry = ComponentMountEntry;
+
+export type ComponentCompositionContract = {
+	attachmentOwner: SemanticValueSource;
+	attachmentMethodName: string;
+	lifecycleMethodName: string;
 };
 
 type PrefabStaticExpressionDeclaration = {
@@ -32,20 +42,25 @@ type ComponentLifecycleScope = {
 	lifecycleDeclId: SymbolID;
 };
 
-export interface PrefabComponentSemanticHost {
+export interface ComponentCompositionSemanticHost {
 	resolveExpressionValueSource(expression: LuaExpression): SemanticValueSource | undefined;
 	resolveStaticExpressionDeclaration(expression: LuaExpression): PrefabStaticExpressionDeclaration | undefined;
 }
 
-// Prefab composition invokes each authored component factory, attaches the
-// result, and then calls its on_attach lifecycle method. Retain only the
-// surface that the component itself publishes onto that parent.
-export class PrefabComponentSemanticCollector {
+// Component composition invokes on_attach after mounting an authored component.
+// Retain only the surface that the component itself publishes onto its parent;
+// the workspace value graph validates runtime attachment calls against the
+// actual world_object method before consuming them.
+export class ComponentCompositionSemanticCollector {
 	public readonly publications: ComponentPublicationEntry[] = [];
-	public readonly components: PrefabComponentEntry[] = [];
+	public readonly mounts: ComponentMountEntry[] = [];
+	public readonly attachmentCalls: ComponentAttachmentCallEntry[] = [];
 	private readonly lifecycleScopes: (ComponentLifecycleScope | undefined)[] = [];
 
-	constructor(private readonly host: PrefabComponentSemanticHost) {}
+	constructor(
+		private readonly host: ComponentCompositionSemanticHost,
+		private readonly attachmentMethodName: string,
+	) {}
 
 	public enterFunction(lifecycle: ComponentLifecycleScope | undefined): void {
 		this.lifecycleScopes.push(lifecycle);
@@ -73,6 +88,17 @@ export class PrefabComponentSemanticCollector {
 		});
 	}
 
+	public recordAttachmentCall(
+		methodName: string | null,
+		owner: SemanticValueSource | undefined,
+		component: SemanticValueSource | undefined,
+	): void {
+		if (methodName !== this.attachmentMethodName || !owner || !component) {
+			return;
+		}
+		this.attachmentCalls.push({ owner, component });
+	}
+
 	public recordPrefabComponents(
 		descriptor: LuaTableConstructorExpression,
 		classDeclId: SymbolID,
@@ -93,8 +119,8 @@ export class PrefabComponentSemanticCollector {
 				}
 				const factory = this.host.resolveExpressionValueSource(componentField.value);
 				if (factory) {
-					this.components.push({
-						classDeclId,
+					this.mounts.push({
+						owner: appendValueInstance(declarationValueSource(classDeclId)),
 						component: appendValueCall(factory),
 					});
 				}

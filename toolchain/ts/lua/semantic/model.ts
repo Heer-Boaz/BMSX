@@ -77,11 +77,13 @@ import {
 	type ComponentProgramSemanticHost,
 } from './component_programs';
 import {
-	PrefabComponentSemanticCollector,
+	ComponentCompositionSemanticCollector,
+	type ComponentAttachmentCallEntry,
+	type ComponentCompositionSemanticHost,
+	type ComponentCompositionContract,
+	type ComponentMountEntry,
 	type ComponentPublicationEntry,
-	type PrefabComponentEntry,
-	type PrefabComponentSemanticHost,
-} from './prefab_components';
+} from './component_composition';
 import { WorkspaceSymbolResolver } from './workspace_symbol_resolver';
 
 export type SymbolID = string;
@@ -197,7 +199,8 @@ export type FileSemanticData = {
 	componentProgramMounts: readonly ComponentProgramMountEntry[];
 	componentProgramCallbacks: readonly ComponentProgramCallbackEntry[];
 	componentPublications: readonly ComponentPublicationEntry[];
-	prefabComponents: readonly PrefabComponentEntry[];
+	componentMounts: readonly ComponentMountEntry[];
+	componentAttachmentCalls: readonly ComponentAttachmentCallEntry[];
 };
 
 const EMPTY_CALL_EXPRESSIONS: readonly LuaCallExpression[] = [];
@@ -411,6 +414,11 @@ const CARTLIB_BEHAVIOUR_TREE_LIBRARY_MODULE = 'cartlib/behaviour_tree/library';
 const CARTLIB_PREFAB_MODULE = 'cartlib/world/prefab';
 const CARTLIB_WORLD_MODULE = 'cartlib/world/world';
 const CARTLIB_WORLD_OBJECT_MODULE = 'cartlib/world/world_object';
+const CARTLIB_COMPONENT_COMPOSITION_CONTRACT: ComponentCompositionContract = {
+	attachmentOwner: moduleValueSource(CARTLIB_WORLD_OBJECT_MODULE),
+	attachmentMethodName: 'add_component',
+	lifecycleMethodName: 'on_attach',
+};
 
 type CartlibCallKind =
 	| typeof CARTLIB_CALL_NONE
@@ -443,7 +451,8 @@ type SemanticBuildResult = {
 	componentProgramMounts: ComponentProgramMountEntry[];
 	componentProgramCallbacks: ComponentProgramCallbackEntry[];
 	componentPublications: ComponentPublicationEntry[];
-	prefabComponents: PrefabComponentEntry[];
+	componentMounts: ComponentMountEntry[];
+	componentAttachmentCalls: ComponentAttachmentCallEntry[];
 	moduleAliases: ModuleAliasEntry[];
 };
 
@@ -518,7 +527,8 @@ export function buildLuaFileSemanticData(
 		componentProgramMounts: result.componentProgramMounts,
 		componentProgramCallbacks: result.componentProgramCallbacks,
 		componentPublications: result.componentPublications,
-		prefabComponents: result.prefabComponents,
+		componentMounts: result.componentMounts,
+		componentAttachmentCalls: result.componentAttachmentCalls,
 	};
 }
 
@@ -748,7 +758,8 @@ class LuaProjectIndex {
 		const componentProgramMounts: ComponentProgramMountEntry[] = [];
 		const componentProgramCallbacks: ComponentProgramCallbackEntry[] = [];
 		const componentPublications: ComponentPublicationEntry[] = [];
-		const prefabComponents: PrefabComponentEntry[] = [];
+		const componentMounts: ComponentMountEntry[] = [];
+		const componentAttachmentCalls: ComponentAttachmentCallEntry[] = [];
 		const orderedData = new Array<FileSemanticData>(orderedFiles.length);
 		for (let fileIndex = 0; fileIndex < orderedFiles.length; fileIndex += 1) {
 			const data = this.files.get(orderedFiles[fileIndex])!;
@@ -801,8 +812,11 @@ class LuaProjectIndex {
 			for (let index = 0; index < data.componentPublications.length; index += 1) {
 				componentPublications.push(data.componentPublications[index]);
 			}
-			for (let index = 0; index < data.prefabComponents.length; index += 1) {
-				prefabComponents.push(data.prefabComponents[index]);
+			for (let index = 0; index < data.componentMounts.length; index += 1) {
+				componentMounts.push(data.componentMounts[index]);
+			}
+			for (let index = 0; index < data.componentAttachmentCalls.length; index += 1) {
+				componentAttachmentCalls.push(data.componentAttachmentCalls[index]);
 			}
 		}
 		const stringValues = new WorkspaceStringValueResolver({
@@ -931,7 +945,9 @@ class LuaProjectIndex {
 			valueAssignments,
 			baseValues,
 			componentPublications,
-			prefabComponents,
+			componentMounts,
+			componentAttachmentCalls,
+			componentCompositionContract: CARTLIB_COMPONENT_COMPOSITION_CONTRACT,
 			bindingValues,
 			globalValues: globals,
 		};
@@ -1108,7 +1124,7 @@ function symbolAtPosition(options: {
 	return null;
 }
 
-class SemanticBuilder implements ComponentProgramSemanticHost, PrefabComponentSemanticHost {
+class SemanticBuilder implements ComponentProgramSemanticHost, ComponentCompositionSemanticHost {
 	private readonly chunk: LuaChunk;
 	private readonly path: string;
 	private readonly tokens: readonly LuaToken[];
@@ -1140,7 +1156,7 @@ class SemanticBuilder implements ComponentProgramSemanticHost, PrefabComponentSe
 	private readonly prefabReferences: PrefabReferenceEntry[] = [];
 	private readonly eventEmitterParameters: EventEmitterParameterEntry[] = [];
 	private readonly componentPrograms: ComponentProgramSemanticCollector;
-	private readonly prefabComponents: PrefabComponentSemanticCollector;
+	private readonly componentComposition: ComponentCompositionSemanticCollector;
 	private readonly baseValuesByClassDeclId: Map<SymbolID, BaseValueEntry> = new Map();
 	private readonly instanceBaseValues: BaseValueEntry[] = [];
 	private readonly moduleAliasesByDeclId: Map<SymbolID, ModuleAliasTarget> = new Map();
@@ -1164,7 +1180,10 @@ class SemanticBuilder implements ComponentProgramSemanticHost, PrefabComponentSe
 		this.annotations = new Array(options.lines.length);
 		this.tokenMap = buildTokenMap(options.tokens);
 		this.componentPrograms = new ComponentProgramSemanticCollector(this);
-		this.prefabComponents = new PrefabComponentSemanticCollector(this);
+		this.componentComposition = new ComponentCompositionSemanticCollector(
+			this,
+			CARTLIB_COMPONENT_COMPOSITION_CONTRACT.attachmentMethodName,
+		);
 	}
 
 	public get file(): string {
@@ -1212,8 +1231,9 @@ class SemanticBuilder implements ComponentProgramSemanticHost, PrefabComponentSe
 			eventEmitterParameters: this.eventEmitterParameters,
 			componentProgramMounts: this.componentPrograms.mounts,
 			componentProgramCallbacks: this.componentPrograms.callbacks,
-			componentPublications: this.prefabComponents.publications,
-			prefabComponents: this.prefabComponents.components,
+			componentPublications: this.componentComposition.publications,
+			componentMounts: this.componentComposition.mounts,
+			componentAttachmentCalls: this.componentComposition.attachmentCalls,
 			moduleAliases: Array.from(this.moduleAliasesByName.values()),
 		};
 	}
@@ -1362,7 +1382,7 @@ class SemanticBuilder implements ComponentProgramSemanticHost, PrefabComponentSe
 					functionDeclaration.functionExpression,
 					methodSelfPath,
 					declarationValueSource(decl.id),
-					decl.name === 'on_attach' && functionOwner
+					decl.name === CARTLIB_COMPONENT_COMPOSITION_CONTRACT.lifecycleMethodName && functionOwner
 						? {
 							lifecycleDeclId: decl.id,
 						}
@@ -1409,7 +1429,8 @@ class SemanticBuilder implements ComponentProgramSemanticHost, PrefabComponentSe
 								valueExpression.range.start.line,
 								valueExpression.range.start.column,
 							);
-						if (targetInfo?.decl?.name === 'on_attach' && targetInfo.memberOwner) {
+						if (targetInfo?.decl?.name === CARTLIB_COMPONENT_COMPOSITION_CONTRACT.lifecycleMethodName
+							&& targetInfo.memberOwner) {
 							this.visitFunctionExpression(
 								valueExpression,
 								selfPath,
@@ -1435,7 +1456,7 @@ class SemanticBuilder implements ComponentProgramSemanticHost, PrefabComponentSe
 						this.recordValueAssignment(targetInfo.valueTarget, valueInfo.valueSource);
 					}
 					if (targetInfo?.decl) {
-						this.prefabComponents.recordMemberAssignment(
+						this.componentComposition.recordMemberAssignment(
 							targetInfo.memberOwner,
 							targetInfo.decl.name,
 							targetInfo.decl.id,
@@ -1647,8 +1668,9 @@ class SemanticBuilder implements ComponentProgramSemanticHost, PrefabComponentSe
 				return this.handleIndexExpression(expression, context);
 			case LuaSyntaxKind.CallExpression: {
 				const callExpression = expression;
+				const methodName = callExpression.methodName;
 				const calleeInfo = this.visitExpression(callExpression.callee, context);
-				if (callExpression.methodName) {
+				if (methodName) {
 					this.recordMethodReference(callExpression, calleeInfo);
 				}
 				let firstArgumentInfo: ResolvedNamePath = null;
@@ -1667,8 +1689,8 @@ class SemanticBuilder implements ComponentProgramSemanticHost, PrefabComponentSe
 					}
 					argumentValues[index] = argumentInfo?.valueSource;
 				}
-				const calledValue = callExpression.methodName && calleeInfo?.valueSource
-					? appendValueMember(calleeInfo.valueSource, callExpression.methodName)
+				const calledValue = methodName && calleeInfo?.valueSource
+					? appendValueMember(calleeInfo.valueSource, methodName)
 					: calleeInfo?.valueSource;
 				if (calledValue) {
 					this.callValues.push({
@@ -1676,6 +1698,11 @@ class SemanticBuilder implements ComponentProgramSemanticHost, PrefabComponentSe
 						arguments: argumentValues,
 					});
 				}
+				this.componentComposition.recordAttachmentCall(
+					methodName,
+					calleeInfo?.valueSource,
+					argumentValues[0],
+				);
 				this.recordMetatableClassBase(callExpression);
 				this.callExpressions.push(callExpression);
 				const cartlibValue = this.recordCartlibCallMetadata(callExpression);
@@ -1891,7 +1918,7 @@ class SemanticBuilder implements ComponentProgramSemanticHost, PrefabComponentSe
 			lifecycleDeclId: SymbolID;
 		},
 	): void {
-		this.prefabComponents.enterFunction(componentLifecycle);
+		this.componentComposition.enterFunction(componentLifecycle);
 		const block = expression.body;
 		const scopeRange = block.range;
 		this.enterScope(scopeRange, 'function');
@@ -1935,7 +1962,7 @@ class SemanticBuilder implements ComponentProgramSemanticHost, PrefabComponentSe
 		} else {
 			this.functionReturnValues.delete(functionKey);
 		}
-		this.prefabComponents.leaveFunction();
+		this.componentComposition.leaveFunction();
 	}
 
 	private currentMethodSelfPath(): readonly string[] | undefined {
@@ -2908,7 +2935,7 @@ class SemanticBuilder implements ComponentProgramSemanticHost, PrefabComponentSe
 			return;
 		}
 		this.componentPrograms.recordMounts(descriptor, classDecl.id);
-		this.prefabComponents.recordPrefabComponents(descriptor, classDecl.id);
+		this.componentComposition.recordPrefabComponents(descriptor, classDecl.id);
 		if (defId) {
 			this.prefabClasses.push({
 				defId,

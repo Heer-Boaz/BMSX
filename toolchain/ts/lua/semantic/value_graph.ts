@@ -1,8 +1,10 @@
 import type { SymbolID } from './model';
 import type {
+	ComponentAttachmentCallEntry,
+	ComponentCompositionContract,
+	ComponentMountEntry,
 	ComponentPublicationEntry,
-	PrefabComponentEntry,
-} from './prefab_components';
+} from './component_composition';
 
 declare const semanticValueBrand: unique symbol;
 
@@ -374,7 +376,9 @@ export type WorkspaceValueGraphInput = {
 	valueAssignments: readonly ValueAssignmentEntry[];
 	baseValues: readonly BaseValueEntry[];
 	componentPublications: readonly ComponentPublicationEntry[];
-	prefabComponents: readonly PrefabComponentEntry[];
+	componentMounts: readonly ComponentMountEntry[];
+	componentAttachmentCalls: readonly ComponentAttachmentCallEntry[];
+	componentCompositionContract: ComponentCompositionContract;
 	bindingValues: ReadonlyMap<string, SemanticValueSource>;
 	globalValues: ReadonlyMap<string, SymbolID>;
 };
@@ -454,9 +458,18 @@ export class WorkspaceValueGraph {
 		this.materializeRootValues();
 		this.materializeBases(options.baseValues);
 		this.materializeValueAssignments(options.valueAssignments);
-		const prefabComponents = this.materializePrefabComponentValues(options.prefabComponents);
+		const componentMounts = this.materializeComponentMounts(options.componentMounts);
 		this.solveCallArgumentValues();
-		this.materializeComponentPublications(options.componentPublications, prefabComponents);
+		this.materializeComponentAttachmentCalls(
+			options.componentAttachmentCalls,
+			options.componentCompositionContract,
+			componentMounts,
+		);
+		this.materializeComponentPublications(
+			options.componentPublications,
+			options.componentCompositionContract.lifecycleMethodName,
+			componentMounts,
+		);
 		this.solveValueChanges();
 	}
 
@@ -1148,16 +1161,13 @@ export class WorkspaceValueGraph {
 		}
 	}
 
-	private materializePrefabComponentValues(
-		entries: readonly PrefabComponentEntry[],
-	): readonly { owner: SemanticValueID; component: SemanticValueID }[] {
+	private materializeComponentMounts(
+		entries: readonly ComponentMountEntry[],
+	): { owner: SemanticValueID; component: SemanticValueID }[] {
 		const values: { owner: SemanticValueID; component: SemanticValueID }[] = [];
 		for (let index = 0; index < entries.length; index += 1) {
 			const entry = entries[index];
-			const owner = this.resolveSource(
-				appendValueInstance(declarationValueSource(entry.classDeclId)),
-				true,
-			);
+			const owner = this.resolveSource(entry.owner, true);
 			const component = this.resolveSource(entry.component, true);
 			if (owner && component) {
 				values.push({ owner, component });
@@ -1166,8 +1176,51 @@ export class WorkspaceValueGraph {
 		return values;
 	}
 
+	private materializeComponentAttachmentCalls(
+		entries: readonly ComponentAttachmentCallEntry[],
+		contract: ComponentCompositionContract,
+		mounts: { owner: SemanticValueID; component: SemanticValueID }[],
+	): void {
+		const contractOwner = this.resolveSource(contract.attachmentOwner, false);
+		if (!contractOwner) {
+			return;
+		}
+		const contractMethods = this.findMembers(contractOwner, contract.attachmentMethodName);
+		if (contractMethods.length === 0) {
+			return;
+		}
+		for (let index = 0; index < entries.length; index += 1) {
+			const entry = entries[index];
+			const owner = this.resolveSource(entry.owner, false);
+			if (!owner) {
+				continue;
+			}
+			const methods = this.findMembers(owner, contract.attachmentMethodName);
+			let matchesContract = false;
+			for (let methodIndex = 0; methodIndex < methods.length; methodIndex += 1) {
+				for (let contractIndex = 0; contractIndex < contractMethods.length; contractIndex += 1) {
+					if (methods[methodIndex] === contractMethods[contractIndex]) {
+						matchesContract = true;
+						break;
+					}
+				}
+				if (matchesContract) {
+					break;
+				}
+			}
+			if (!matchesContract) {
+				continue;
+			}
+			const component = this.resolveSource(entry.component, true);
+			if (component) {
+				mounts.push({ owner, component });
+			}
+		}
+	}
+
 	private materializeComponentPublications(
 		entries: readonly ComponentPublicationEntry[],
+		lifecycleMethodName: string,
 		components: readonly { owner: SemanticValueID; component: SemanticValueID }[],
 	): void {
 		const publicationsByLifecycle = new Map<SymbolID, ComponentPublicationEntry[]>();
@@ -1186,7 +1239,7 @@ export class WorkspaceValueGraph {
 		}[]>>();
 		for (let componentIndex = 0; componentIndex < components.length; componentIndex += 1) {
 			const attachment = components[componentIndex];
-			const lifecycleDeclarations = this.findMembers(attachment.component, 'on_attach');
+			const lifecycleDeclarations = this.findMembers(attachment.component, lifecycleMethodName);
 			const attachmentPublications = new Map<string, {
 				component: SemanticValueID;
 				publication: ComponentPublicationEntry;
