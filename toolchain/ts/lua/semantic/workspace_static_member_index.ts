@@ -6,13 +6,14 @@ import {
 	type WorkspaceValueGraphInput,
 } from './value_graph';
 
-// Module members are lexical workspace symbols, not inferred runtime values.
-// Resolve direct exports through the module's static identity relation before
-// constructing the demand-driven graph used for calls and table value flow.
-export class WorkspaceModuleMemberIndex {
+// Resolve lexical module exports before dynamic value flow. A global identity
+// without a workspace producer is likewise terminal: it cannot own a source
+// declaration for navigation.
+export class WorkspaceStaticMemberIndex {
 	private readonly identityParents: Map<string, string> = new Map();
 	private readonly identityRanks: Map<string, number> = new Map();
 	private readonly moduleIdentities: Set<string> = new Set();
+	private readonly sourceOwnedIdentities: Set<string> = new Set();
 	private readonly membersByIdentity: Map<string, Map<string, SymbolID[]>> = new Map();
 	private readonly inferredMemberNamesByIdentity: Map<string, Set<string>> = new Map();
 
@@ -42,11 +43,17 @@ export class WorkspaceModuleMemberIndex {
 			);
 		}
 		for (const module of input.moduleValues.keys()) {
-			this.moduleIdentities.add(this.find(semanticValueRootKey({ kind: 'module', module })));
+			const identity = this.find(semanticValueRootKey({ kind: 'module', module }));
+			this.moduleIdentities.add(identity);
+			this.sourceOwnedIdentities.add(identity);
+		}
+		for (const symbolKey of input.globalValues.keys()) {
+			this.sourceOwnedIdentities.add(this.find(semanticValueRootKey({ kind: 'global', symbolKey })));
 		}
 		for (let memberIndex = 0; memberIndex < input.memberValues.length; memberIndex += 1) {
 			const member = input.memberValues[memberIndex];
 			const ownerKey = this.find(semanticValueRootKey(member.owner.root));
+			this.sourceOwnedIdentities.add(ownerKey);
 			if (!this.moduleIdentities.has(ownerKey)) {
 				continue;
 			}
@@ -79,7 +86,9 @@ export class WorkspaceModuleMemberIndex {
 		}
 		const ownerKey = this.find(semanticValueRootKey(source.root));
 		if (!this.moduleIdentities.has(ownerKey)) {
-			return undefined;
+			return source.root.kind === 'global' && !this.sourceOwnedIdentities.has(ownerKey)
+				? []
+				: undefined;
 		}
 		if (this.inferredMemberNamesByIdentity.get(ownerKey)?.has(name)) {
 			return undefined;

@@ -2,7 +2,7 @@ import type { Decl, FileSemanticData, Ref, SymbolID } from './model';
 import { WorkspaceValueGraph, type WorkspaceValueGraphInput } from './value_graph';
 import { sourceRangesEqual } from '../source_range';
 import { compareSourcePosition } from './source_range';
-import { WorkspaceModuleMemberIndex } from './workspace_module_member_index';
+import { WorkspaceStaticMemberIndex } from './workspace_static_member_index';
 
 const EMPTY_SYMBOLS: readonly SymbolID[] = [];
 
@@ -15,7 +15,7 @@ export class WorkspaceSymbolResolver {
 	private readonly declarations: ReadonlyMap<SymbolID, Decl>;
 	private readonly globals: ReadonlyMap<string, SymbolID>;
 	private readonly valueGraphInput: WorkspaceValueGraphInput;
-	private moduleMemberIndex?: WorkspaceModuleMemberIndex;
+	private staticMemberIndex?: WorkspaceStaticMemberIndex;
 	private valueGraph?: WorkspaceValueGraph;
 	private readonly referencesBySymbol: Map<SymbolID, readonly Ref[]> = new Map();
 
@@ -52,9 +52,9 @@ export class WorkspaceSymbolResolver {
 			return [ref.target];
 		}
 		if (ref.referenceKind === 'member' || ref.referenceKind === 'method') {
-			const moduleMembers = this.resolveModuleMembers(ref);
-			if (moduleMembers) {
-				return moduleMembers;
+			const staticMembers = this.resolveStaticMembers(ref);
+			if (staticMembers) {
+				return staticMembers;
 			}
 			const valueGraph = this.getValueGraph();
 			const members = valueGraph.resolveMembers(ref.receiverValue, ref.name);
@@ -69,11 +69,11 @@ export class WorkspaceSymbolResolver {
 		return global ? [global] : EMPTY_SYMBOLS;
 	}
 
-	private resolveModuleMembers(ref: Ref): readonly SymbolID[] | undefined {
-		if (!this.moduleMemberIndex) {
-			this.moduleMemberIndex = new WorkspaceModuleMemberIndex(this.valueGraphInput);
+	private resolveStaticMembers(ref: Ref): readonly SymbolID[] | undefined {
+		if (!this.staticMemberIndex) {
+			this.staticMemberIndex = new WorkspaceStaticMemberIndex(this.valueGraphInput);
 		}
-		return this.moduleMemberIndex.resolveMembers(ref.receiverValue, ref.name);
+		return this.staticMemberIndex.resolveMembers(ref.receiverValue, ref.name);
 	}
 
 	private getValueGraph(): WorkspaceValueGraph {
@@ -159,7 +159,7 @@ export class WorkspaceSymbolResolver {
 			let dynamicQueries: Ref[] | undefined;
 			for (let queryIndex = 0; queryIndex < memberQueries.length; queryIndex += 1) {
 				const query = memberQueries[queryIndex];
-				if (this.resolveModuleMembers(query) !== undefined) {
+				if (this.resolveStaticMembers(query) !== undefined) {
 					continue;
 				}
 				if (!dynamicQueries) {
