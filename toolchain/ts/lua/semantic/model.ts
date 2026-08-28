@@ -133,6 +133,7 @@ export type FileSemanticData = {
 	annotations: SemanticAnnotations;
 	decls: readonly Decl[];
 	refs: readonly Ref[];
+	referencesByName: ReadonlyMap<string, readonly Ref[]>;
 	moduleAliases: readonly ModuleAliasEntry[];
 	callExpressions: readonly LuaCallExpression[];
 	functionSignatures: ReadonlyMap<string, FunctionSignatureInfo>;
@@ -358,6 +359,7 @@ type AssignmentTargetInfo = {
 type SemanticBuildResult = {
 	decls: InternalDecl[];
 	refs: Ref[];
+	referencesByName: Map<string, Ref[]>;
 	annotations: SemanticAnnotations;
 	callExpressions: LuaCallExpression[];
 	functionSignatures: Map<string, FunctionSignatureInfo>;
@@ -423,6 +425,7 @@ export function buildLuaFileSemanticData(
 		annotations,
 		decls,
 		refs,
+		referencesByName: result.referencesByName,
 		moduleAliases: result.moduleAliases,
 		callExpressions: result.callExpressions,
 		functionSignatures: result.functionSignatures,
@@ -865,6 +868,7 @@ class SemanticBuilder {
 	private readonly decls: InternalDecl[] = [];
 	private readonly declById: Map<SymbolID, InternalDecl> = new Map();
 	private readonly refs: Ref[] = [];
+	private readonly referencesByName: Map<string, Ref[]> = new Map();
 	private readonly callExpressions: LuaCallExpression[] = [];
 	private readonly functionSignatures: Map<string, FunctionSignatureInfo> = new Map();
 	private readonly methodSelfPathStack: (readonly string[] | undefined)[] = [];
@@ -907,6 +911,7 @@ class SemanticBuilder {
 		return {
 			decls: this.decls,
 			refs: this.refs,
+			referencesByName: this.referencesByName,
 			annotations: this.annotations,
 			callExpressions: this.callExpressions,
 			functionSignatures: this.functionSignatures,
@@ -2232,6 +2237,12 @@ class SemanticBuilder {
 			ref.lexicalTarget = targetDecl.id;
 		}
 		this.refs.push(ref);
+		let references = this.referencesByName.get(ref.name);
+		if (!references) {
+			references = [];
+			this.referencesByName.set(ref.name, references);
+		}
+		references.push(ref);
 		const kind = targetDecl ? targetDecl.kind : inferReferenceKind(ref);
 		this.annotate(ref.range, ref.name.length, kind, 'usage');
 	}

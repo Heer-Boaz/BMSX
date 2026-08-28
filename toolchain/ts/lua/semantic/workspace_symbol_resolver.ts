@@ -3,7 +3,6 @@ import { WorkspaceValueGraph, type WorkspaceValueGraphInput } from './value_grap
 import { sourceRangesEqual } from '../source_range';
 import { compareSourcePosition } from './source_range';
 
-const EMPTY_REFS: readonly Ref[] = [];
 const EMPTY_SYMBOLS: readonly SymbolID[] = [];
 
 // A resolver belongs to exactly one immutable workspace version. File analyses
@@ -16,7 +15,7 @@ export class WorkspaceSymbolResolver {
 	private readonly globals: ReadonlyMap<string, SymbolID>;
 	private readonly valueGraphInput: WorkspaceValueGraphInput;
 	private valueGraph?: WorkspaceValueGraph;
-	private referencesBySymbol?: ReadonlyMap<SymbolID, readonly Ref[]>;
+	private readonly referencesBySymbol: Map<SymbolID, readonly Ref[]> = new Map();
 
 	constructor(options: {
 		files: readonly FileSemanticData[];
@@ -72,16 +71,19 @@ export class WorkspaceSymbolResolver {
 	}
 
 	public getReferences(symbolId: SymbolID): readonly Ref[] {
-		if (!this.referencesBySymbol) {
-			this.referencesBySymbol = this.buildReferenceIndex();
+		const cached = this.referencesBySymbol.get(symbolId);
+		if (cached) {
+			return cached;
 		}
-		return this.referencesBySymbol.get(symbolId) ?? EMPTY_REFS;
+		this.resolveReferences([symbolId]);
+		return this.referencesBySymbol.get(symbolId);
 	}
 
 	public getReferencesForSymbols(symbolIds: readonly SymbolID[]): readonly Ref[] {
 		if (symbolIds.length === 1) {
 			return this.getReferences(symbolIds[0]);
 		}
+		this.resolveReferences(symbolIds);
 		const references: Ref[] = [];
 		const retained = new Set<Ref>();
 		for (let symbolIndex = 0; symbolIndex < symbolIds.length; symbolIndex += 1) {
@@ -108,15 +110,35 @@ export class WorkspaceSymbolResolver {
 		return references;
 	}
 
-	private buildReferenceIndex(): ReadonlyMap<SymbolID, readonly Ref[]> {
+	private resolveReferences(symbolIds: readonly SymbolID[]): void {
+		const unresolvedSymbols = new Set<SymbolID>();
+		const names = new Set<string>();
+		for (let symbolIndex = 0; symbolIndex < symbolIds.length; symbolIndex += 1) {
+			const symbolId = symbolIds[symbolIndex];
+			if (this.referencesBySymbol.has(symbolId)) {
+				continue;
+			}
+			unresolvedSymbols.add(symbolId);
+			names.add(this.declarations.get(symbolId).name);
+		}
+		if (unresolvedSymbols.size === 0) {
+			return;
+		}
+		const candidates: Ref[] = [];
 		const memberQueries: Ref[] = [];
 		for (let fileIndex = 0; fileIndex < this.files.length; fileIndex += 1) {
-			const refs = this.files[fileIndex].refs;
-			for (let refIndex = 0; refIndex < refs.length; refIndex += 1) {
-				const ref = refs[refIndex];
-				if (!ref.lexicalTarget
-					&& (ref.referenceKind === 'member' || ref.referenceKind === 'method')) {
-					memberQueries.push(ref);
+			const referencesByName = this.files[fileIndex].referencesByName;
+			for (const name of names) {
+				const references = referencesByName.get(name);
+				if (references) {
+					for (let referenceIndex = 0; referenceIndex < references.length; referenceIndex += 1) {
+						const reference = references[referenceIndex];
+						candidates.push(reference);
+						if (!reference.lexicalTarget
+							&& (reference.referenceKind === 'member' || reference.referenceKind === 'method')) {
+							memberQueries.push(reference);
+						}
+					}
 				}
 			}
 		}
@@ -124,25 +146,22 @@ export class WorkspaceSymbolResolver {
 			this.getValueGraph().prepareMemberQueries(memberQueries);
 		}
 		const references = new Map<SymbolID, Ref[]>();
-		for (let fileIndex = 0; fileIndex < this.files.length; fileIndex += 1) {
-			const refs = this.files[fileIndex].refs;
-			for (let refIndex = 0; refIndex < refs.length; refIndex += 1) {
-				const ref = refs[refIndex];
-				const targets = this.resolveReferenceTargets(ref);
-				for (let targetIndex = 0; targetIndex < targets.length; targetIndex += 1) {
-					const target = targets[targetIndex];
-					if (sourceRangesEqual(ref.range, this.declarations.get(target).range)) {
-						continue;
-					}
-					let bucket = references.get(target);
-					if (!bucket) {
-						bucket = [];
-						references.set(target, bucket);
-					}
-					bucket.push(ref);
+		for (const symbolId of unresolvedSymbols) {
+			references.set(symbolId, []);
+		}
+		for (let candidateIndex = 0; candidateIndex < candidates.length; candidateIndex += 1) {
+			const candidate = candidates[candidateIndex];
+			const targets = this.resolveReferenceTargets(candidate);
+			for (let targetIndex = 0; targetIndex < targets.length; targetIndex += 1) {
+				const target = targets[targetIndex];
+				const bucket = references.get(target);
+				if (bucket && !sourceRangesEqual(candidate.range, this.declarations.get(target).range)) {
+					bucket.push(candidate);
 				}
 			}
 		}
-		return references;
+		for (const [symbolId, symbolReferences] of references) {
+			this.referencesBySymbol.set(symbolId, symbolReferences);
+		}
 	}
 }
