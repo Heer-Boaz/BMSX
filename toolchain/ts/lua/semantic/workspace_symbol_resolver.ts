@@ -52,12 +52,9 @@ export class WorkspaceSymbolResolver {
 		}
 		if (ref.referenceKind === 'member' || ref.referenceKind === 'method') {
 			const valueGraph = this.getValueGraph();
-			const receiver = valueGraph.resolve(ref.receiverValue);
-			if (receiver) {
-				const members = valueGraph.findMembers(receiver, ref.name);
-				if (members.length > 0) {
-					return members;
-				}
+			const members = valueGraph.resolveMembers(ref.receiverValue, ref.name);
+			if (members.length > 0) {
+				return members;
 			}
 		}
 		if (ref.symbolKey.length === 0) {
@@ -112,6 +109,20 @@ export class WorkspaceSymbolResolver {
 	}
 
 	private buildReferenceIndex(): ReadonlyMap<SymbolID, readonly Ref[]> {
+		const memberQueries: Ref[] = [];
+		for (let fileIndex = 0; fileIndex < this.files.length; fileIndex += 1) {
+			const refs = this.files[fileIndex].refs;
+			for (let refIndex = 0; refIndex < refs.length; refIndex += 1) {
+				const ref = refs[refIndex];
+				if (!ref.lexicalTarget
+					&& (ref.referenceKind === 'member' || ref.referenceKind === 'method')) {
+					memberQueries.push(ref);
+				}
+			}
+		}
+		if (memberQueries.length > 0) {
+			this.getValueGraph().prepareMemberQueries(memberQueries);
+		}
 		const references = new Map<SymbolID, Ref[]>();
 		for (let fileIndex = 0; fileIndex < this.files.length; fileIndex += 1) {
 			const refs = this.files[fileIndex].refs;

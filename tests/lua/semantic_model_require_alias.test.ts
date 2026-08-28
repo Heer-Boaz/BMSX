@@ -202,11 +202,11 @@ test('semantic workspace resolves require-alias member definitions through modul
 	workspace.updateFile('room.lua', roomSource);
 	workspace.updateFile('main.lua', mainSource);
 	const snapshot = workspace.getSnapshot();
-	const updateTarget = snapshot.symbolAt('main.lua', 2, mainSource.split('\n')[1]!.indexOf('update') + 1);
+	const updateTarget = snapshot.symbolAt('main.lua', 2, 'room_api.update()'.indexOf('update') + 1);
 	assert.ok(updateTarget, 'module function target');
 	assert.equal(updateTarget!.decl.file, 'room.lua');
 	assert.deepEqual(updateTarget!.decl.namePath, ['room', 'update']);
-	const valueTarget = snapshot.symbolAt('main.lua', 3, mainSource.split('\n')[2]!.indexOf('value') + 1);
+	const valueTarget = snapshot.symbolAt('main.lua', 3, 'return room_api.value'.indexOf('value') + 1);
 	assert.ok(valueTarget, 'module value target');
 	assert.equal(valueTarget!.decl.file, 'room.lua');
 	assert.deepEqual(valueTarget!.decl.namePath, ['room', 'value']);
@@ -226,7 +226,7 @@ test('semantic workspace preserves require-alias member paths', async () => {
 	const workspace = new LuaSemanticWorkspace();
 	workspace.updateFile('constants.lua', constantsSource);
 	workspace.updateFile('main.lua', mainSource);
-	const drawColumn = mainSource.split('\n')[1]!.indexOf('draw') + 1;
+	const drawColumn = 'hud.draw()'.indexOf('draw') + 1;
 	const drawTarget = workspace.getSnapshot().symbolAt('main.lua', 2, drawColumn);
 	assert.ok(drawTarget, 'nested module function target');
 	assert.equal(drawTarget!.decl.file, 'constants.lua');
@@ -419,7 +419,7 @@ test('semantic workspace batch retargets inherited members through reverse class
 	assert.equal(rightTarget!.decl.file, 'base_right.lua');
 });
 
-test('semantic workspace resolves explicit-self methods through prefab inheritance', async () => {
+test('semantic workspace resolves explicit-self methods through metatable inheritance', async () => {
 	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
 	const baseLeftSource = [
 		'local base_left<const> = {}',
@@ -432,15 +432,13 @@ test('semantic workspace resolves explicit-self methods through prefab inheritan
 		'return base_right',
 	].join('\n');
 	const derivedLeftLines = [
-		"local prefab<const> = require('cartlib/world/prefab')",
 		"local base_left<const> = require('base_left')",
 		'local derived<const> = {}',
+		'derived.__index = derived',
+		'setmetatable(derived, { __index = base_left })',
 		'function derived.initialize(self)',
 		'\tself:left_action()',
 		'\tself:right_action()',
-		'end',
-		'local function register()',
-		"\tprefab.define({ def_id = 'derived', class = derived, base = base_left })",
 		'end',
 		'return derived',
 	];
@@ -451,51 +449,51 @@ test('semantic workspace resolves explicit-self methods through prefab inheritan
 	workspace.updateFile('base_left.lua', baseLeftSource);
 	workspace.updateFile('base_right.lua', baseRightSource);
 	workspace.updateFile('derived.lua', derivedLeftLines.join('\n'));
-	const leftColumn = derivedLeftLines[4].indexOf('left_action') + 1;
-	const rightColumn = derivedLeftLines[5].indexOf('right_action') + 1;
-	const initialLeftTarget = workspace.getSnapshot().symbolAt('derived.lua', 5, leftColumn);
-	assert.ok(initialLeftTarget, 'prefab base method target');
+	const leftColumn = derivedLeftLines[5].indexOf('left_action') + 1;
+	const rightColumn = derivedLeftLines[6].indexOf('right_action') + 1;
+	const initialLeftTarget = workspace.getSnapshot().symbolAt('derived.lua', 6, leftColumn);
+	assert.ok(initialLeftTarget, 'metatable base method target');
 	assert.equal(initialLeftTarget!.decl.file, 'base_left.lua');
-	assert.equal(workspace.getSnapshot().symbolAt('derived.lua', 6, rightColumn), null);
+	assert.equal(workspace.getSnapshot().symbolAt('derived.lua', 7, rightColumn), null);
 
 	workspace.updateFile('derived.lua', derivedRightSource);
-	assert.equal(workspace.getSnapshot().symbolAt('derived.lua', 5, leftColumn), null);
-	const reboundRightTarget = workspace.getSnapshot().symbolAt('derived.lua', 6, rightColumn);
-	assert.ok(reboundRightTarget, 'retargeted prefab base method target');
+	assert.equal(workspace.getSnapshot().symbolAt('derived.lua', 6, leftColumn), null);
+	const reboundRightTarget = workspace.getSnapshot().symbolAt('derived.lua', 7, rightColumn);
+	assert.ok(reboundRightTarget, 'retargeted metatable base method target');
 	assert.equal(reboundRightTarget!.decl.file, 'base_right.lua');
 });
 
-test('semantic workspace retains fields initialized through an explicit self receiver', async () => {
+test('semantic workspace retains fields initialized through a base explicit-self receiver', async () => {
 	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
-	const worldObjectSource = [
-		'local world_object<const> = {}',
-		'function world_object.initialize(self)',
+	const objectBaseSource = [
+		'local object_base<const> = {}',
+		'object_base.__index = object_base',
+		'function object_base.initialize(self)',
 		'\tself.events = {}',
 		'end',
-		'return world_object',
+		'return object_base',
 	].join('\n');
 	const derivedLines = [
-		"local prefab<const> = require('cartlib/world/prefab')",
-		"local world_object<const> = require('world_object')",
+		"local object_base<const> = require('object_base')",
 		'local derived<const> = {}',
+		'derived.__index = derived',
+		'setmetatable(derived, { __index = object_base })',
 		'function derived:land()',
 		'\treturn self.events',
 		'end',
-		"prefab.define({ def_id = 'derived', class = derived, base = world_object })",
 		'return derived',
 	];
 	const workspace = new LuaSemanticWorkspace();
-	workspace.updateFile('world_object.lua', worldObjectSource);
+	workspace.updateFile('object_base.lua', objectBaseSource);
 	workspace.updateFile('derived.lua', derivedLines.join('\n'));
-	const snapshot = workspace.getSnapshot();
-	const eventsTarget = snapshot.symbolAt(
+	const eventsTarget = workspace.getSnapshot().symbolAt(
 		'derived.lua',
-		5,
-		derivedLines[4].indexOf('events') + 1,
+		6,
+		derivedLines[5].indexOf('events') + 1,
 	);
 
 	assert.ok(eventsTarget, 'field initialized by the base explicit-self receiver');
-	assert.equal(eventsTarget!.decl.file, 'world_object.lua');
+	assert.equal(eventsTarget!.decl.file, 'object_base.lua');
 	assert.deepEqual(eventsTarget!.decl.namePath, ['self', 'events']);
 });
 
@@ -532,149 +530,54 @@ test('explicit self receivers project writes without adopting call argument memb
 	);
 });
 
-test('state machine definitions contextually bind callbacks to every prefab receiver', async () => {
+test('higher-order callback parameters retain every callsite receiver alternative', async () => {
 	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
 	const sourceLines = [
-		"local fsm_library<const> = require('cartlib/fsm/library')",
-		"local fsm_component<const> = require('cartlib/fsm/fsm_component')",
-		"local prefab<const> = require('cartlib/world/prefab')",
-		"local machine_id<const> = 'shared'",
 		'local left<const> = {}',
+		'left.__index = left',
 		'function left:left_only() end',
 		'function left:probe()',
 		'\treturn self.right_only',
 		'end',
 		'local right<const> = {}',
+		'right.__index = right',
 		'function right:right_only() end',
-		'local named_callback<const> = function(actor)',
+		'local callback<const> = function(actor)',
 		'\tactor:left_only()',
 		'\tactor:right_only()',
 		'end',
-		"local event_name<const> = 'wake'",
-		'fsm_library.register(machine_id, {',
-		'\ton = {',
-		'\t\t[event_name] = function(actor)',
-		'\t\t\tactor:left_only()',
-		'\t\t\tactor:right_only()',
-		'\t\tend,',
-		'\t},',
-		'\tstates = {',
-		'\t\tactive = {',
-		'\t\t\tentering_state = function(actor)',
-		'\t\t\t\tactor:left_only()',
-		'\t\t\t\tactor:right_only()',
-		'\t\t\tend,',
-		'\t\t\texiting_state = named_callback,',
-		'\t\t},',
-		'\t},',
-		'})',
-		"prefab.define({ def_id = 'left', class = left, components = { fsm_component.factory({ machine_id }) } })",
-		"prefab.define({ def_id = 'right', class = right, components = { fsm_component.factory({ machine_id }) } })",
-		'return left',
+		'local dispatch<const> = function(fn, actor)',
+		'\tfn(actor)',
+		'end',
+		'dispatch(callback, setmetatable({}, left))',
+		'dispatch(callback, setmetatable({}, right))',
 	];
 	const workspace = new LuaSemanticWorkspace();
-	workspace.updateFile('shared_machine.lua', sourceLines.join('\n'));
+	workspace.updateFile('callbacks.lua', sourceLines.join('\n'));
 	const snapshot = workspace.getSnapshot();
 	const targetAt = (line: number, name: string) => snapshot.symbolAt(
-		'shared_machine.lua',
+		'callbacks.lua',
 		line,
 		sourceLines[line - 1].indexOf(name) + 1,
 	);
 
-	assert.equal(targetAt(13, 'left_only')!.decl.namePath.join('.'), 'left.left_only');
-	assert.equal(targetAt(14, 'right_only')!.decl.namePath.join('.'), 'right.right_only');
-	assert.equal(targetAt(20, 'left_only')!.decl.namePath.join('.'), 'left.left_only');
-	assert.equal(targetAt(21, 'right_only')!.decl.namePath.join('.'), 'right.right_only');
-	assert.equal(targetAt(27, 'left_only')!.decl.namePath.join('.'), 'left.left_only');
-	assert.equal(targetAt(28, 'right_only')!.decl.namePath.join('.'), 'right.right_only');
+	assert.equal(targetAt(11, 'left_only')!.decl.namePath.join('.'), 'left.left_only');
+	assert.equal(targetAt(12, 'right_only')!.decl.namePath.join('.'), 'right.right_only');
 	assert.equal(
-		targetAt(8, 'right_only'),
+		targetAt(5, 'right_only'),
 		null,
-		'shared callback receivers remain alternatives instead of merging prefab identities',
+		'callback alternatives do not merge their receiver classes',
 	);
 });
 
-test('state machine callback context follows iterator composition and later state extensions', async () => {
+test('callback roles follow explicit executor arguments', async () => {
 	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
 	const sourceLines = [
-		"local fsm_library<const> = require('cartlib/fsm/library')",
-		"local fsm_component<const> = require('cartlib/fsm/fsm_component')",
-		"local prefab<const> = require('cartlib/world/prefab')",
-		'local actor<const> = {}',
-		'function actor:base_update() end',
-		'function actor:wrapped_update() end',
-		'function actor:input_pressed() end',
-		'local input_event_handlers<const> = {',
-		'\t{',
-		"\t\tpattern = 'a[jp]',",
-		'\t\tgo = function(target)',
-		'\t\t\ttarget:input_pressed()',
-		'\t\tend,',
-		'\t},',
-		'\t{',
-		"\t\tpattern = 'a[jr]',",
-		'\t\tgo = function(target)',
-		'\t\t\ttarget:input_pressed()',
-		'\t\tend,',
-		'\t},',
-		'}',
-		'local wrap_update<const> = function(update)',
-		'\treturn function(target)',
-		'\t\ttarget:wrapped_update()',
-		'\t\treturn update(target)',
-		'\tend',
-		'end',
-		'local states<const> = {',
-		'\tidle = {',
-		'\t\tupdate = function(target)',
-		'\t\t\ttarget:base_update()',
-		'\t\tend,',
-		'\t},',
-		'}',
-		'for _, state in pairs(states) do',
-		'\tstate.update = wrap_update(state.update)',
-		'\tstate.input_event_handlers = input_event_handlers',
-		'end',
-		'function actor:parallel_update() end',
-		'states.concurrent = {',
-		'\tupdate = function(target)',
-		'\t\ttarget:parallel_update()',
-		'\tend,',
-		'}',
-		"local machine_id<const> = 'actor'",
-		'fsm_library.register(machine_id, { states = states })',
-		"prefab.define({ def_id = 'actor', class = actor, components = { fsm_component.factory({ machine_id }) } })",
-	];
-	const workspace = new LuaSemanticWorkspace();
-	workspace.updateFile('actor.lua', sourceLines.join('\n'));
-	const snapshot = workspace.getSnapshot();
-	const targetAt = (line: number, name: string) => snapshot.symbolAt(
-		'actor.lua',
-		line,
-		sourceLines[line - 1].indexOf(name) + 1,
-	);
-
-	assert.equal(targetAt(12, 'input_pressed')!.decl.namePath.join('.'), 'actor.input_pressed');
-	assert.equal(targetAt(18, 'input_pressed')!.decl.namePath.join('.'), 'actor.input_pressed');
-	assert.equal(targetAt(24, 'wrapped_update')!.decl.namePath.join('.'), 'actor.wrapped_update');
-	assert.equal(targetAt(31, 'base_update')!.decl.namePath.join('.'), 'actor.base_update');
-	const parallelUpdateLine = sourceLines.indexOf('\t\ttarget:parallel_update()') + 1;
-	assert.equal(
-		targetAt(parallelUpdateLine, 'parallel_update')!.decl.namePath.join('.'),
-		'actor.parallel_update',
-	);
-});
-
-test('state machine callback context follows the authored definition role and timeline target path', async () => {
-	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
-	const sourceLines = [
-		"local fsm_library<const> = require('cartlib/fsm/library')",
-		"local fsm_component<const> = require('cartlib/fsm/fsm_component')",
-		"local prefab<const> = require('cartlib/world/prefab')",
 		'local visual<const> = {}',
 		'visual.__index = visual',
 		'function visual:visual_only() end',
 		'local actor<const> = {}',
+		'actor.__index = actor',
 		'function actor:actor_only() end',
 		'function actor.initialize(self)',
 		'\tself.visual = setmetatable({}, visual)',
@@ -683,224 +586,99 @@ test('state machine callback context follows the authored definition role and ti
 		'\ttarget:visual_only()',
 		'\ttarget:actor_only()',
 		'end',
-		'local unrelated_apply<const> = function(target)',
-		'\ttarget:actor_only()',
+		'local on_finished<const> = function(owner)',
+		'\towner:actor_only()',
+		'\towner:visual_only()',
 		'end',
-		"local machine_id<const> = 'actor'",
-		'fsm_library.register(machine_id, {',
-		'\tunrelated = { apply = unrelated_apply },',
-		'\ttimelines = {',
-		'\t\tanim = {',
-		'\t\t\tdef = { frames = { 1 }, apply = apply_frame },',
-		"\t\t\ttarget_path = { 'visual' },",
-		'\t\t\ton_finished = function(owner)',
-		'\t\t\t\towner:actor_only()',
-		'\t\t\t\towner:visual_only()',
-		'\t\t\tend,',
-		'\t\t},',
-		'\t},',
-		'})',
-		"prefab.define({ def_id = 'actor', class = actor, components = { fsm_component.factory({ machine_id }) } })",
-		'return actor',
+		'local unrelated<const> = function(value)',
+		'\tvalue:actor_only()',
+		'end',
+		'local run_sequence<const> = function(owner, apply, finish)',
+		'\tapply(owner.visual)',
+		'\tfinish(owner)',
+		'end',
+		'run_sequence(setmetatable({}, actor), apply_frame, on_finished)',
 	];
 	const workspace = new LuaSemanticWorkspace();
-	workspace.updateFile('actor_machine.lua', sourceLines.join('\n'));
+	workspace.updateFile('sequence.lua', sourceLines.join('\n'));
 	const snapshot = workspace.getSnapshot();
 	const targetAt = (line: number, name: string) => snapshot.symbolAt(
-		'actor_machine.lua',
+		'sequence.lua',
 		line,
 		sourceLines[line - 1].indexOf(name) + 1,
 	);
 
-	assert.equal(targetAt(13, 'visual_only')!.decl.namePath.join('.'), 'visual.visual_only');
-	assert.equal(targetAt(14, 'actor_only'), null, 'timeline apply receives the authored visual target');
-	assert.equal(targetAt(17, 'actor_only'), null, 'unrelated apply fields are not FSM callbacks');
-	assert.equal(targetAt(27, 'actor_only')!.decl.namePath.join('.'), 'actor.actor_only');
-	assert.equal(targetAt(28, 'visual_only'), null, 'timeline completion receives the FSM owner');
+	assert.equal(targetAt(11, 'visual_only')!.decl.namePath.join('.'), 'visual.visual_only');
+	assert.equal(targetAt(12, 'actor_only'), null, 'the apply callback receives the visual value');
+	assert.equal(targetAt(15, 'actor_only')!.decl.namePath.join('.'), 'actor.actor_only');
+	assert.equal(targetAt(16, 'visual_only'), null, 'the completion callback receives the owner');
+	assert.equal(targetAt(19, 'actor_only'), null, 'uncalled callbacks remain unbound');
 });
 
-test('behaviour tree callbacks inherit every mounted prefab receiver through program calls', async () => {
+test('semantic workspace retargets literal-keyed registry results after an edit', async () => {
 	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
-	const actorsSource = [
-		"local bt_component<const> = require('cartlib/behaviour_tree/bt_component')",
-		"local prefab<const> = require('cartlib/world/prefab')",
-		'local left<const> = {}',
-		'function left:left_only() end',
-		'function left:probe()',
-		'\treturn self.right_only',
+	const registrySource = [
+		'local registry<const> = {}',
+		'local entries<const> = {}',
+		'function registry.define(id, value_class)',
+		'\tentries[id] = value_class',
 		'end',
-		'local right<const> = {}',
-		'function right:right_only() end',
-		"local tree_id<const> = 'shared_tree'",
-		'local task<const> = {',
-		'\texecute = function(actor)',
-		'\t\tactor:left_only()',
-		'\t\tactor:right_only()',
-		'\tend,',
-		'}',
-		'local service<const> = {',
-		'\ton_tick = function(target)',
-		'\t\ttarget:left_only()',
-		'\t\ttarget:right_only()',
-		'\tend,',
-		'}',
-		"prefab.define({ def_id = 'left', class = left, components = { bt_component.factory(tree_id) } })",
-		"prefab.define({ def_id = 'right', class = right, components = { bt_component.factory(tree_id) } })",
-		'return { tree_id = tree_id, task = task, service = service }',
-	];
-	const treeSource = [
-		"local behaviour_tree_library<const> = require('cartlib/behaviour_tree/library')",
-		"local actors<const> = require('actors')",
-		'local tree<const> = {}',
-		'tree.id = actors.tree_id',
-		'local branch<const> = {',
-		"\ttype = 'task',",
-		'\ttask = actors.task,',
-		'}',
-		'behaviour_tree_library.register(tree.id, {',
-		'\troot = {',
-		"\t\ttype = 'sequence',",
-		'\t\tchildren = {',
-		'\t\t\tbranch,',
-		'\t\t\t{',
-		"\t\t\t\ttype = 'wait',",
-		'\t\t\t\tservices = { { service = actors.service } },',
-		'\t\t\t},',
-		'\t\t},',
-		'\t},',
-		'})',
-	];
-	const workspace = new LuaSemanticWorkspace();
-	workspace.updateFile('actors.lua', actorsSource.join('\n'));
-	workspace.updateFile('tree.lua', treeSource.join('\n'));
-	const snapshot = workspace.getSnapshot();
-	const targetAt = (line: number, name: string) => snapshot.symbolAt(
-		'actors.lua',
-		line,
-		actorsSource[line - 1].indexOf(name) + 1,
-	);
-
-	assert.equal(targetAt(13, 'left_only')!.decl.namePath.join('.'), 'left.left_only');
-	assert.equal(targetAt(14, 'right_only')!.decl.namePath.join('.'), 'right.right_only');
-	assert.equal(targetAt(19, 'left_only')!.decl.namePath.join('.'), 'left.left_only');
-	assert.equal(targetAt(20, 'right_only')!.decl.namePath.join('.'), 'right.right_only');
-	assert.equal(
-		targetAt(6, 'right_only'),
-		null,
-		'contextual callback alternatives do not merge the mounted prefab classes',
-	);
-});
-
-test('semantic workspace applies the prefab runtime default base', async () => {
-	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
-	const worldObjectSource = [
-		'local world_object<const> = {}',
-		'function world_object:mark_for_disposal() end',
-		'return world_object',
+		'function registry.create(id)',
+		'\treturn setmetatable({}, entries[id])',
+		'end',
+		'return registry',
 	].join('\n');
-	const derivedLines = [
-		"local prefab<const> = require('cartlib/world/prefab')",
-		'local derived<const> = {}',
-		'derived.initialize = function(self)',
-		'\tself:mark_for_disposal()',
-		'end',
-		'local function register()',
-		"\tprefab.define({ def_id = 'derived', class = derived })",
-		'end',
-		'return derived',
-	];
-	const workspace = new LuaSemanticWorkspace();
-	workspace.updateFile('cartlib/world/world_object.lua', worldObjectSource);
-	workspace.updateFile('derived.lua', derivedLines.join('\n'));
-	const target = workspace.getSnapshot().symbolAt(
-		'derived.lua',
-		4,
-		derivedLines[3].indexOf('mark_for_disposal') + 1,
-	);
-
-	assert.ok(target, 'default world object method target');
-	assert.equal(target!.decl.file, 'cartlib/world/world_object.lua');
-	assert.deepEqual(target!.decl.namePath, ['world_object', 'mark_for_disposal']);
-});
-
-test('semantic workspace retargets spawn results when a global prefab id changes', async () => {
-	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
 	const constantsLeftSource = [
-		"left_def = 'left'",
-		"right_def = 'right'",
-		"selected_def = 'left'",
+		"left_id = 'left'",
+		"right_id = 'right'",
+		"selected_id = 'left'",
 	].join('\n');
-	const constantsRightSource = constantsLeftSource.replace("selected_def = 'left'", "selected_def = 'right'");
+	const constantsRightSource = constantsLeftSource.replace("selected_id = 'left'", "selected_id = 'right'");
 	const leftSource = [
-		"local prefab<const> = require('cartlib/world/prefab')",
+		"local registry<const> = require('registry')",
 		"require('constants')",
 		'local left<const> = {}',
+		'left.__index = left',
 		'function left:left_action() end',
-		'prefab.define({ def_id = left_def, class = left })',
+		'registry.define(left_id, left)',
 		'return left',
 	].join('\n');
 	const rightSource = [
-		"local prefab<const> = require('cartlib/world/prefab')",
+		"local registry<const> = require('registry')",
 		"require('constants')",
 		'local right<const> = {}',
+		'right.__index = right',
 		'function right:right_action() end',
-		'prefab.define({ def_id = right_def, class = right })',
+		'registry.define(right_id, right)',
 		'return right',
 	].join('\n');
 	const mainLines = [
-		"local world<const> = require('cartlib/world/world')",
+		"local registry<const> = require('registry')",
 		"require('constants')",
-		'local spawned<const> = world:spawn(selected_def, {})',
-		'spawned:left_action()',
-		'spawned:right_action()',
+		"require('left')",
+		"require('right')",
+		'local selected<const> = registry.create(selected_id)',
+		'selected:left_action()',
+		'selected:right_action()',
 	];
 	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('registry.lua', registrySource);
 	workspace.updateFile('constants.lua', constantsLeftSource);
 	workspace.updateFile('left.lua', leftSource);
 	workspace.updateFile('right.lua', rightSource);
 	workspace.updateFile('main.lua', mainLines.join('\n'));
-	const leftColumn = mainLines[3].indexOf('left_action') + 1;
-	const rightColumn = mainLines[4].indexOf('right_action') + 1;
-	const initialTarget = workspace.getSnapshot().symbolAt('main.lua', 4, leftColumn);
-	assert.ok(initialTarget, 'global prefab id target');
+	const leftColumn = mainLines[5].indexOf('left_action') + 1;
+	const rightColumn = mainLines[6].indexOf('right_action') + 1;
+	const initialTarget = workspace.getSnapshot().symbolAt('main.lua', 6, leftColumn);
+	assert.ok(initialTarget, 'initial literal registry target');
 	assert.equal(initialTarget!.decl.file, 'left.lua');
-	assert.equal(workspace.getSnapshot().symbolAt('main.lua', 5, rightColumn), null);
+	assert.equal(workspace.getSnapshot().symbolAt('main.lua', 7, rightColumn), null);
 
 	workspace.updateFile('constants.lua', constantsRightSource);
-	assert.equal(workspace.getSnapshot().symbolAt('main.lua', 4, leftColumn), null);
-	const reboundTarget = workspace.getSnapshot().symbolAt('main.lua', 5, rightColumn);
-	assert.ok(reboundTarget, 'retargeted global prefab id target');
+	assert.equal(workspace.getSnapshot().symbolAt('main.lua', 6, leftColumn), null);
+	const reboundTarget = workspace.getSnapshot().symbolAt('main.lua', 7, rightColumn);
+	assert.ok(reboundTarget, 'retargeted literal registry target');
 	assert.equal(reboundTarget!.decl.file, 'right.lua');
-});
-
-test('semantic workspace resolves spawn results through exported prefab ids', async () => {
-	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
-	const actorSource = [
-		"local prefab<const> = require('cartlib/world/prefab')",
-		'local actor<const> = {}',
-		"local definition_id<const> = 'actor'",
-		'function actor:run() end',
-		'prefab.define({ def_id = definition_id, class = actor })',
-		'return { definition_id = definition_id }',
-	].join('\n');
-	const mainLines = [
-		"local world<const> = require('cartlib/world/world')",
-		"local actor_module<const> = require('actor')",
-		'local actor<const> = world:spawn(actor_module.definition_id, {})',
-		'actor:run()',
-	];
-	const workspace = new LuaSemanticWorkspace();
-	workspace.updateFile('actor.lua', actorSource);
-	workspace.updateFile('main.lua', mainLines.join('\n'));
-	const target = workspace.getSnapshot().symbolAt(
-		'main.lua',
-		4,
-		mainLines[3].indexOf('run') + 1,
-	);
-
-	assert.ok(target, 'exported prefab id target');
-	assert.equal(target!.decl.file, 'actor.lua');
-	assert.deepEqual(target!.decl.namePath, ['actor', 'run']);
 });
 
 test('semantic workspace retains exported table identity across local shadowing', async () => {

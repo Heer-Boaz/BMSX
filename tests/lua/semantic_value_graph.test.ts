@@ -79,16 +79,16 @@ test('semantic workspace hides base methods overridden by a derived class', asyn
 		'return base',
 	].join('\n'));
 	workspace.updateFile('derived.lua', [
-		"local prefab<const> = require('cartlib/world/prefab')",
 		"local base<const> = require('base')",
 		'local derived<const> = {}',
+		'derived.__index = derived',
+		'setmetatable(derived, { __index = base })',
 		'function derived:run() end',
-		"prefab.define({ def_id = 'derived', class = derived, base = base })",
 		'return derived',
 	].join('\n'));
 	const mainLines = [
-		"local world<const> = require('cartlib/world/world')",
-		"local object<const> = world:spawn('derived', {})",
+		"local derived<const> = require('derived')",
+		'local object<const> = setmetatable({}, derived)',
 		'object:run()',
 	];
 	workspace.updateFile('main.lua', mainLines.join('\n'));
@@ -100,7 +100,7 @@ test('semantic workspace hides base methods overridden by a derived class', asyn
 
 	assert.equal(targets.length, 1);
 	assert.equal(targets[0].decl.file, 'derived.lua');
-	assert.equal(targets[0].decl.range.start.line, 4);
+	assert.equal(targets[0].decl.range.start.line, 5);
 });
 
 test('semantic workspace retains member writes through reused table elements', async () => {
@@ -296,6 +296,219 @@ test('semantic workspace keeps function return values contextual to each callsit
 	);
 });
 
+test('semantic workspace keeps parameter-indexed return values contextual to each callsite', async () => {
+	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const lines = [
+		'local left_key<const> = {}',
+		'local right_key<const> = {}',
+		'local left_value<const> = {}',
+		'function left_value:left_only() end',
+		'local right_value<const> = {}',
+		'function right_value:right_only() end',
+		'local values<const> = {}',
+		'values[left_key] = left_value',
+		'values[right_key] = right_value',
+		'local lookup<const> = function(key)',
+		'\treturn values[key]',
+		'end',
+		'local selected_left<const> = lookup(left_key)',
+		'local selected_right<const> = lookup(right_key)',
+		'selected_left:left_only()',
+		'selected_right:right_only()',
+		'selected_left:right_only()',
+		'selected_right:left_only()',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('main.lua', lines.join('\n'));
+	let snapshot = workspace.getSnapshot();
+
+	assert.equal(snapshot.symbolAt('main.lua', 15, memberColumn(lines[14], 'left_only'))!.decl.range.start.line, 4);
+	assert.equal(snapshot.symbolAt('main.lua', 16, memberColumn(lines[15], 'right_only'))!.decl.range.start.line, 6);
+	assert.equal(snapshot.symbolAt('main.lua', 17, memberColumn(lines[16], 'right_only')), null);
+	assert.equal(snapshot.symbolAt('main.lua', 18, memberColumn(lines[17], 'left_only')), null);
+
+	const retargeted = lines.slice();
+	retargeted[12] = 'local selected_left<const> = lookup(right_key)';
+	workspace.updateFile('main.lua', retargeted.join('\n'));
+	snapshot = workspace.getSnapshot();
+	assert.equal(snapshot.symbolAt('main.lua', 15, memberColumn(retargeted[14], 'left_only')), null);
+	assert.equal(snapshot.symbolAt('main.lua', 17, memberColumn(retargeted[16], 'right_only'))!.decl.range.start.line, 6);
+});
+
+test('semantic workspace keeps parameter-keyed table writes contextual to each invocation', async () => {
+	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const lines = [
+		'local left_class<const> = {}',
+		'left_class.__index = left_class',
+		'function left_class:left_only() end',
+		'local right_class<const> = {}',
+		'right_class.__index = right_class',
+		'function right_class:right_only() end',
+		'local values<const> = {}',
+		'local attach<const> = function(value)',
+		'\tlocal class<const> = getmetatable(value)',
+		'\tvalues[class] = value',
+		'end',
+		'local lookup<const> = function(class)',
+		'\treturn values[class]',
+		'end',
+		'attach(setmetatable({}, left_class))',
+		'attach(setmetatable({}, right_class))',
+		'local selected_left<const> = lookup(left_class)',
+		'local selected_right<const> = lookup(right_class)',
+		'selected_left:left_only()',
+		'selected_right:right_only()',
+		'selected_left:right_only()',
+		'selected_right:left_only()',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('main.lua', lines.join('\n'));
+	const snapshot = workspace.getSnapshot();
+
+	assert.equal(snapshot.symbolAt('main.lua', 19, memberColumn(lines[18], 'left_only'))!.decl.range.start.line, 3);
+	assert.equal(snapshot.symbolAt('main.lua', 20, memberColumn(lines[19], 'right_only'))!.decl.range.start.line, 6);
+	assert.equal(snapshot.symbolAt('main.lua', 21, memberColumn(lines[20], 'right_only')), null);
+	assert.equal(snapshot.symbolAt('main.lua', 22, memberColumn(lines[21], 'left_only')), null);
+});
+
+test('semantic workspace summarizes recursive value flow without unbounded call contexts', async () => {
+	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const lines = [
+		'local function walk(node)',
+		'\tnode.visited = true',
+		'\treturn walk(node.next)',
+		'end',
+		'local root<const> = {}',
+		'walk(root)',
+		'return root.visited',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('main.lua', lines.join('\n'));
+	const visited = workspace.getSnapshot().symbolAt(
+		'main.lua',
+		7,
+		memberColumn(lines[6], 'visited'),
+	);
+
+	assert.ok(visited);
+	assert.equal(visited.decl.range.start.line, 2);
+});
+
+test('semantic workspace passes colon-call receivers through nested method calls', async () => {
+	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const lines = [
+		'local map<const> = {}',
+		'map.__index = map',
+		'function map:_write(key, value)',
+		'\tself.values[key] = value',
+		'end',
+		'function map:write(key, value)',
+		'\tself:_write(key, value)',
+		'end',
+		'function map:read(key)',
+		'\treturn self.values[key]',
+		'end',
+		'local left_key<const> = {}',
+		'local right_key<const> = {}',
+		'local left_value<const> = {}',
+		'function left_value:left_only() end',
+		'local right_value<const> = {}',
+		'function right_value:right_only() end',
+		'local left<const> = setmetatable({ values = {} }, map)',
+		'local right<const> = setmetatable({ values = {} }, map)',
+		'left:write(left_key, left_value)',
+		'right:write(right_key, right_value)',
+		'local selected_left<const> = left:read(left_key)',
+		'local selected_right<const> = right:read(right_key)',
+		'selected_left:left_only()',
+		'selected_right:right_only()',
+		'selected_left:right_only()',
+		'selected_right:left_only()',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('main.lua', lines.join('\n'));
+	const snapshot = workspace.getSnapshot();
+
+	assert.equal(snapshot.symbolAt('main.lua', 24, memberColumn(lines[23], 'left_only'))!.decl.range.start.line, 15);
+	assert.equal(snapshot.symbolAt('main.lua', 25, memberColumn(lines[24], 'right_only'))!.decl.range.start.line, 17);
+	assert.equal(snapshot.symbolAt('main.lua', 26, memberColumn(lines[25], 'right_only')), null);
+	assert.equal(snapshot.symbolAt('main.lua', 27, memberColumn(lines[26], 'left_only')), null);
+});
+
+test('semantic workspace observes the current metatable after repeated setmetatable calls', async () => {
+	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const lines = [
+		'local base<const> = {}',
+		'base.__index = base',
+		'local left<const> = {}',
+		'left.__index = left',
+		'function left:left_only() end',
+		'local right<const> = {}',
+		'right.__index = right',
+		'function right:right_only() end',
+		'local left_value<const> = setmetatable(setmetatable({}, base), left)',
+		'local right_value<const> = setmetatable(setmetatable({}, base), right)',
+		'local left_metatable<const> = getmetatable(left_value)',
+		'local right_metatable<const> = getmetatable(right_value)',
+		'left_metatable:left_only()',
+		'right_metatable:right_only()',
+		'left_metatable:right_only()',
+		'right_metatable:left_only()',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('main.lua', lines.join('\n'));
+	const snapshot = workspace.getSnapshot();
+
+	assert.equal(snapshot.symbolAt('main.lua', 13, memberColumn(lines[12], 'left_only'))!.decl.range.start.line, 5);
+	assert.equal(snapshot.symbolAt('main.lua', 14, memberColumn(lines[13], 'right_only'))!.decl.range.start.line, 8);
+	assert.equal(snapshot.symbolAt('main.lua', 15, memberColumn(lines[14], 'right_only')), null);
+	assert.equal(snapshot.symbolAt('main.lua', 16, memberColumn(lines[15], 'left_only')), null);
+});
+
+test('semantic workspace follows ordinary Lua metatable identity through getmetatable', async () => {
+	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const lines = [
+		'local class<const> = {}',
+		'class.__index = class',
+		'function class:run() end',
+		'local value<const> = setmetatable({}, class)',
+		'local metatable<const> = getmetatable(value)',
+		'value:run()',
+		'metatable:run()',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('main.lua', lines.join('\n'));
+	const snapshot = workspace.getSnapshot();
+
+	assert.equal(snapshot.symbolAt('main.lua', 6, memberColumn(lines[5], 'run'))!.decl.range.start.line, 3);
+	assert.equal(snapshot.symbolAt('main.lua', 7, memberColumn(lines[6], 'run'))!.decl.range.start.line, 3);
+});
+
+test('semantic workspace applies metatables to values passed through function parameters', async () => {
+	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const lines = [
+		'local base<const> = {}',
+		'base.__index = base',
+		'function base:inherited() end',
+		'local apply_prototype<const> = function(value, prototype)',
+		'\tsetmetatable(value, { __index = prototype })',
+		'end',
+		'local derived<const> = {}',
+		'apply_prototype(derived, base)',
+		'derived:inherited()',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('main.lua', lines.join('\n'));
+	const usageLine = lines.length;
+	const result = workspace.getSnapshot().symbolAt(
+		'main.lua',
+		usageLine,
+		lines[usageLine - 1].lastIndexOf('inherited') + 1,
+	);
+
+	assert.equal(result!.decl.range.start.line, 3);
+});
+
 test('semantic workspace preserves both value alternatives of Lua and-or expressions', async () => {
 	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
 	const lines = [
@@ -316,42 +529,29 @@ test('semantic workspace preserves both value alternatives of Lua and-or express
 	assert.equal(fallback!.decl.range.start.line, 2);
 });
 
-test('semantic workspace resolves an FSM callback emitter from its retained object id', async () => {
+test('semantic workspace publishes direct method receiver members without executing the method', async () => {
 	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
-	const stageSource = [
-		"local prefab<const> = require('cartlib/world/prefab')",
-		'local stage<const> = {}',
-		"local definition_id<const> = 'stage'",
-		"local instance_id<const> = 'stage.instance'",
-		'function stage:initialize()',
+	const lines = [
+		'local value_class<const> = {}',
+		'value_class.__index = value_class',
+		'function value_class:initialize()',
 		'\tself.blink = false',
 		'end',
-		'prefab.define({ def_id = definition_id, class = stage })',
-		'return { definition_id = definition_id, instance_id = instance_id }',
-	].join('\n');
-	const mainLines = [
-		"local world<const> = require('cartlib/world/world')",
-		"local fsm_library<const> = require('cartlib/fsm/fsm_library')",
-		"local stage_module<const> = require('stage')",
-		'world:spawn(stage_module.definition_id, { id = stage_module.instance_id })',
-		"fsm_library.register('director', {",
-		'\ton = {',
-		"\t\tchanged = { emitter = stage_module.instance_id, go = function(_self, _state, _event, stage)",
-		'\t\t\treturn stage.blink',
-		'\t\tend },',
-		'\t},',
-		'})',
+		'local value<const> = setmetatable({}, value_class)',
+		'local read<const> = function(input)',
+		'\treturn input.blink',
+		'end',
+		'read(value)',
 	];
 	const workspace = new LuaSemanticWorkspace();
-	workspace.updateFile('main.lua', mainLines.join('\n'));
-	workspace.updateFile('stage.lua', stageSource);
+	workspace.updateFile('main.lua', lines.join('\n'));
 	const blink = workspace.getSnapshot().symbolAt(
 		'main.lua',
 		8,
-		memberColumn(mainLines[7], 'blink'),
+		memberColumn(lines[7], 'blink'),
 	);
 
-	assert.ok(blink, 'event emitter instance member');
-	assert.equal(blink!.decl.file, 'stage.lua');
+	assert.ok(blink, 'method receiver member');
+	assert.equal(blink!.decl.file, 'main.lua');
 	assert.deepEqual(blink!.decl.namePath, ['self', 'blink']);
 });
