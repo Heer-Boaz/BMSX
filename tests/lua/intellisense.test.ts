@@ -131,7 +131,7 @@ function codeContext(resource: RuntimeResource, source: string): CodeTabContext 
 function parseLuaChunk(source: string, path: string) {
 	const lexer = new LuaLexer(source, path);
 	const tokens = lexer.scanTokens();
-	const parser = new LuaParser(tokens, path, splitText(source));
+	const parser = new LuaParser(tokens, path, source);
 	return parser.parseChunk();
 }
 

@@ -1,13 +1,10 @@
 import type { LuaSyntaxError } from '../errors';
 import type { ParsedLuaChunk } from './parse';
 import { parseLuaChunkWithRecovery } from './parse';
-import { splitText } from '../../../../machine/ts/common/text_lines';
 
 export type LuaAnalysisEntry = {
 	path: string;
 	source: string;
-	version?: number;
-	lines: readonly string[];
 	parsed: ParsedLuaChunk;
 	syntaxError?: LuaSyntaxError | null;
 	lastAccessMs: number;
@@ -19,29 +16,19 @@ const analysisCache: Map<string, LuaAnalysisEntry> = new Map();
 export function getCachedLuaParse(options: {
 	path: string;
 	source: string;
-	lines?: readonly string[];
-	version?: number;
 	parsed?: ParsedLuaChunk;
-	withSyntaxError?: boolean;
 }): LuaAnalysisEntry {
 	const cacheKey = options.path;
-	const version = options.version;
 	const cached = analysisCache.get(cacheKey);
-	if (cached) {
-		const versionMatches = version !== undefined && cached.version === version;
-		if (versionMatches || cached.source === options.source) {
-			cached.lastAccessMs = Date.now();
-			return cached;
-		}
+	if (cached && cached.source === options.source) {
+		cached.lastAccessMs = Date.now();
+		return cached;
 	}
-	const resolvedLines = options.lines ?? splitText(options.source);
-	const parsed = options.parsed ?? parseLuaChunkWithRecovery(options.source, options.path, resolvedLines);
+	const parsed = options.parsed ?? parseLuaChunkWithRecovery(options.source, options.path);
 	const syntaxError = parsed.syntaxError;
 	const entry: LuaAnalysisEntry = {
 		path: options.path,
 		source: options.source,
-		version,
-		lines: resolvedLines,
 		parsed,
 		syntaxError,
 		lastAccessMs: Date.now(),
@@ -55,15 +42,14 @@ function evictIfNeeded(): void {
 	if (analysisCache.size <= MAX_ANALYSIS_CACHE_ENTRIES) {
 		return;
 	}
-	let oldestKey: string = null;
-	let oldestAccess = Number.POSITIVE_INFINITY;
+	const firstEntry = analysisCache.entries().next().value!;
+	let oldestKey = firstEntry[0];
+	let oldestAccess = firstEntry[1].lastAccessMs;
 	for (const [key, entry] of analysisCache) {
 		if (entry.lastAccessMs < oldestAccess) {
 			oldestKey = key;
 			oldestAccess = entry.lastAccessMs;
 		}
 	}
-	if (oldestKey !== null) {
-		analysisCache.delete(oldestKey);
-	}
+	analysisCache.delete(oldestKey);
 }

@@ -291,7 +291,6 @@ export class LuaInterpreter {
 		const parseEntry = getCachedLuaParse({
 			path,
 			source,
-			withSyntaxError: true,
 		});
 		if (parseEntry.syntaxError) {
 			throw parseEntry.syntaxError;

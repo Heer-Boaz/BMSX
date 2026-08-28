@@ -16,7 +16,6 @@ import type {
 } from '../../toolchain/ts/rompack/assets';
 import type { RomImageDomain } from '../../machine/ts/rompack/image';
 import { utf8FatalDecoder } from '../../machine/ts/common/serializer/binencoder';
-import { splitText } from '../../machine/ts/common/text_lines';
 import {
 	buildRomAssetSymbolModuleSourceFromSymbols,
 	collectRomAssetSymbols,
@@ -103,7 +102,7 @@ export function buildLuaSources(
 		registerLuaSourceRecord(registry, luaRecord);
 		entryCandidates.push({
 			record: luaRecord,
-			chunk: parseLuaChunk(src, entry.source_path, splitText(src)).chunk!,
+			chunk: parseLuaChunk(src, entry.source_path).chunk!,
 		});
 	}
 	registry.can_boot_from_source = sourceCount > 0;

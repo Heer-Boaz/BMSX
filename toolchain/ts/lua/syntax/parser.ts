@@ -105,14 +105,14 @@ const MULTIPLICATIVE_BINARY_OPERATORS: readonly LuaBinaryOperatorSpec[] = [
 export class LuaParser {
 	private readonly tokens: ReadonlyArray<LuaToken>;
 	private readonly path: string;
-	private readonly sourceLines: readonly string[];
+	private readonly source: string;
 	private index: number;
 	private previousToken: LuaToken;
 
-	constructor(tokens: ReadonlyArray<LuaToken>, path: string, lines: readonly string[]) {
+	constructor(tokens: ReadonlyArray<LuaToken>, path: string, source: string) {
 		this.tokens = tokens;
 		this.path = path;
-		this.sourceLines = lines;
+		this.source = source;
 		this.index = 0;
 		this.previousToken = this.tokens[0];
 	}
@@ -1823,24 +1823,38 @@ export class LuaParser {
 
 	private formatError(line: number, column: number, message: string, lexeme?: string): string {
 		const near = lexeme && lexeme.length > 0 ? ` near '${lexeme}'` : '';
-		let lineText = '';
-		const lineIndex = line - 1;
-		if (lineIndex >= 0 && lineIndex < this.sourceLines.length) {
-			lineText = this.sourceLines[lineIndex];
-		}
+		const lineText = this.sourceLine(line);
 		const pointer = ' '.repeat(Math.max(column - 1, 0)) + '^';
 		return `[line ${line}, column ${column}] ${message}${near}\n${lineText}\n${pointer}`;
 	}
 
 	private extractLexeme(range: LuaSourceRange): string {
-		const lineIndex = range.start.line - 1;
-		if (lineIndex < 0 || lineIndex >= this.sourceLines.length) {
-			return '';
-		}
-		const line = this.sourceLines[lineIndex];
+		const line = this.sourceLine(range.start.line);
 		const startIndex = Math.max(range.start.column - 1, 0);
 		let endIndex = Math.max(range.end.column, startIndex + 1);
 		endIndex = Math.min(endIndex, line.length);
 		return line.slice(startIndex, endIndex);
+	}
+
+	private sourceLine(line: number): string {
+		let currentLine = 1;
+		let lineStart = 0;
+		for (let index = 0; index < this.source.length; index += 1) {
+			if (this.source.charCodeAt(index) !== 10) {
+				continue;
+			}
+			if (currentLine === line) {
+				const lineEnd = index > lineStart && this.source.charCodeAt(index - 1) === 13
+					? index - 1
+					: index;
+				return this.source.slice(lineStart, lineEnd);
+			}
+			currentLine += 1;
+			lineStart = index + 1;
+		}
+		const lineEnd = this.source.length > lineStart && this.source.charCodeAt(this.source.length - 1) === 13
+			? this.source.length - 1
+			: this.source.length;
+		return this.source.slice(lineStart, lineEnd);
 	}
 }

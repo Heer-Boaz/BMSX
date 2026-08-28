@@ -3,7 +3,6 @@ import type { RomAsset } from '../../../../toolchain/ts/rompack/assets';
 import { ROM_ASSET_SYMBOL_MODULE_PATH } from '../../../../toolchain/ts/rompack/generated_modules';
 import { loadRomAssetList, parseCartridgeIndex } from '../../../../toolchain/ts/rompack/loader';
 import { decodeBinary, encodeBinary } from '../../../../machine/ts/common/serializer/binencoder';
-import { splitText } from '../../../../machine/ts/common/text_lines';
 import { parseLuaChunk } from '../../../../toolchain/ts/lua/analysis/parse';
 import { resolveLuaEntryModuleIndex } from '../../../../toolchain/ts/lua/entry_module';
 import type { LuaChunk } from '../../../../toolchain/ts/lua/syntax/ast';
@@ -63,7 +62,7 @@ export async function buildHostTestCartridge(
 	const entrySource = entryAsset.buffer!.toString('utf8');
 	const firstLineEnd = entrySource.indexOf('\n') + 1;
 	const source = `${entrySource.slice(0, firstLineEnd)}require('${HOST_TEST_MODULE_PATH}')\n${entrySource.slice(firstLineEnd)}`;
-	const parsed = parseLuaChunk(source, entryAsset.source_path, splitText(source)).chunk!;
+	const parsed = parseLuaChunk(source, entryAsset.source_path).chunk!;
 	entryAsset.buffer = Buffer.from(source);
 	entryAsset.compiled_buffer = Buffer.from(encodeBinary(parsed));
 	const built = buildBlua32Image({

@@ -24,8 +24,6 @@ import { buildLuaKnownNameSet, isReservedIntrinsicName, isReservedMemoryMapName,
 export type LuaSemanticFrontendSource = {
 	path: string;
 	source: string;
-	version?: number;
-	lines?: readonly string[];
 	parsed?: ParsedLuaChunk;
 	chunk?: LuaChunk;
 	analysis?: FileSemanticData;

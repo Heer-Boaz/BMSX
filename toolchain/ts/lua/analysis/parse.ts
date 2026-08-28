@@ -10,19 +10,19 @@ export type ParsedLuaChunk = {
 	syntaxError?: LuaSyntaxError | null;
 };
 
-export function parseLuaChunk(source: string, path: string, lines: readonly string[]): ParsedLuaChunk {
+export function parseLuaChunk(source: string, path: string): ParsedLuaChunk {
 	const lexer = new LuaLexer(source, path);
 	const tokens = lexer.scanTokens();
-	const parser = new LuaParser(tokens, path, lines);
+	const parser = new LuaParser(tokens, path, source);
 	const chunk = parser.parseChunk();
 	return { chunk, tokens, syntaxError: null };
 }
 
-export function parseLuaChunkWithRecovery(source: string, path: string, lines: readonly string[]): ParsedLuaChunk {
+export function parseLuaChunkWithRecovery(source: string, path: string): ParsedLuaChunk {
 	const lexer = new LuaLexer(source, path);
 	const lexed = lexer.scanTokensWithRecovery();
 	const tokens = lexed.tokens;
-	const parser = new LuaParser(tokens, path, lines);
+	const parser = new LuaParser(tokens, path, source);
 	const parsed = parser.parseChunkWithRecovery();
 	let syntaxError = parsed.syntaxError;
 	if (lexed.syntaxError) {

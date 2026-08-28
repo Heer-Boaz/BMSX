@@ -26,7 +26,6 @@ export function queryDefinitionsAt(
 		bridge,
 		context.resource,
 		editorDocumentState.buffer,
-		editorDocumentState.textVersion,
 	);
 	const targets = frontend.getFile(context.resource.path).getNavigationTargetsAt(row + 1, column + 1);
 	const definitions = new Array<LuaDefinitionTarget>(targets.length);

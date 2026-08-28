@@ -101,7 +101,6 @@ const { LuaLexer } = require('../../toolchain/ts/lua/syntax/lexer');
 // @ts-ignore
 const { LuaParser } = require('../../toolchain/ts/lua/syntax/parser');
 // @ts-ignore
-const { splitText } = require('../../machine/ts/common/text_lines');
 // @ts-ignore
 const { collectLuaModuleDependencyClosure } = require('../../toolchain/ts/lua/compiler/module_graph');
 // @ts-ignore
@@ -475,7 +474,7 @@ function formatLuaCompileError(error: { path: string; message: string; line: num
 export function compileLuaChunkBuffer(source: string, path: string): Buffer {
 	const lexer = new LuaLexer(source, path);
 	const tokens = lexer.scanTokens();
-	const parser = new LuaParser(tokens, path, splitText(source));
+	const parser = new LuaParser(tokens, path, source);
 	const chunk = parser.parseChunk();
 	const encoded = encodeBinary(chunk);
 	return Buffer.from(encoded);
@@ -617,7 +616,7 @@ function collectLibraryLuaClosure(seedFiles: readonly string[], libraryRoots: re
 		const source = readFileSync(file, 'utf8');
 		const lexer = new LuaLexer(source, file);
 		const tokens = lexer.scanTokens();
-		rootChunks[index] = new LuaParser(tokens, file, splitText(source)).parseChunk();
+		rootChunks[index] = new LuaParser(tokens, file, source).parseChunk();
 	}
 	const modulePaths = new Set(moduleFileByPath.keys());
 	const includedModulePaths = collectLuaModuleDependencyClosure(
@@ -628,7 +627,7 @@ function collectLibraryLuaClosure(seedFiles: readonly string[], libraryRoots: re
 			const source = readFileSync(file, 'utf8');
 			const lexer = new LuaLexer(source, file);
 			const tokens = lexer.scanTokens();
-			return new LuaParser(tokens, file, splitText(source)).parseChunk();
+			return new LuaParser(tokens, file, source).parseChunk();
 		},
 	);
 	const includedFiles = new Array<string>(includedModulePaths.length);

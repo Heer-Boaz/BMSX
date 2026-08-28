@@ -181,7 +181,7 @@ function registerProjectFile(
 	if (metadata.has(path)) {
 		return;
 	}
-	inputs.push({ path, source, lines });
+	inputs.push({ path, source });
 	metadata.set(path, {
 		path,
 		lines,

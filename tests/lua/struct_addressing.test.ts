@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { splitText } from '../../machine/ts/common/text_lines';
 import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
 import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
@@ -22,7 +21,7 @@ const TEST_RAM_BASE = RAM_BASE + 0x20000;
 
 function parseSource(source: string, path = 'struct_addressing.lua') {
 	const lexer = new LuaLexer(source, path);
-	const parser = new LuaParser(lexer.scanTokens(), path, splitText(source));
+	const parser = new LuaParser(lexer.scanTokens(), path, source);
 	return parser.parseChunk();
 }
 

@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { splitText } from '../../machine/ts/common/text_lines';
 import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
 import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
@@ -17,7 +16,7 @@ const BIN_ADDR = RAM_BASE + 0x21000;
 // the language's typed struct-array pointer ABI.
 function runStructRead(packedWords: number[], snippet: string): Value[] {
 	const lexer = new LuaLexer(snippet, 'bin_struct.lua');
-	const parser = new LuaParser(lexer.scanTokens(), 'bin_struct.lua', splitText(snippet));
+	const parser = new LuaParser(lexer.scanTokens(), 'bin_struct.lua', snippet);
 	const compiled = compileLuaChunkToProgram(parser.parseChunk(), [], {
 		entrySource: snippet,
 		programDomain: 'system',

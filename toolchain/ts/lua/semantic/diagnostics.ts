@@ -46,7 +46,6 @@ export type LuaAnalysisDiagnosticOptions = {
 export type LuaProjectSource = {
 	path: string;
 	source: string;
-	version?: number;
 };
 
 export type LuaProjectDiagnosticOptions = {
@@ -161,8 +160,6 @@ export function computeLuaProjectDiagnostics(
 		const parseEntry = getCachedLuaParse({
 			path: source.path,
 			source: source.source,
-			version: source.version,
-			withSyntaxError: true,
 		});
 		if (parseEntry.syntaxError) {
 			results.set(source.path, [toSyntaxDiagnostic(parseEntry.syntaxError.message, parseEntry.syntaxError.line, parseEntry.syntaxError.column)]);
@@ -171,9 +168,7 @@ export function computeLuaProjectDiagnostics(
 		snapshotInputs.push({
 			path: source.path,
 			source: parseEntry.source,
-			lines: parseEntry.lines,
 			parsed: parseEntry.parsed,
-			version: source.version,
 		});
 	}
 	if (snapshotInputs.length === 0) {

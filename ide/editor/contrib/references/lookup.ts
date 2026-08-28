@@ -26,7 +26,7 @@ export function resolveReferenceLookup(bridge: RuntimeLuaTooling, options: Refer
 	if (!identifier) {
 		return { kind: 'error', message: 'No identifier at cursor', duration: 1.6 };
 	}
-	const frontend = buildEditorSemanticFrontend(bridge, options.identity, options.buffer, options.textVersion);
+	const frontend = buildEditorSemanticFrontend(bridge, options.identity, options.buffer);
 	const resolution = frontend.findReferencesByPosition(path, options.cursorRow + 1, options.cursorColumn + 1);
 	if (!resolution) {
 		return { kind: 'error', message: `Definition not found for ${identifier.expression}`, duration: 1.8 };

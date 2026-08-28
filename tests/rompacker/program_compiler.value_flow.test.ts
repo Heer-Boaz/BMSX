@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { splitText } from '../../machine/ts/common/text_lines';
 import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
 import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
 import { valueIsString } from '../../machine/ts/machine/cpu/value';
@@ -20,7 +19,7 @@ import {
 
 function parseChunk(source: string, path: string = 'value_flow.lua') {
 	const lexer = new LuaLexer(source, path);
-	const parser = new LuaParser(lexer.scanTokens(), path, splitText(source));
+	const parser = new LuaParser(lexer.scanTokens(), path, source);
 	return parser.parseChunk();
 }
 

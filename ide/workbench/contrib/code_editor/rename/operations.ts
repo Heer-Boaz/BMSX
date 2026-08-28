@@ -5,7 +5,7 @@ import type { LuaSourceRange } from '../../../../../toolchain/ts/lua/syntax/ast/
 import { clamp } from '../../../../../machine/ts/common/clamp';
 import { createLuaCodeTabContext, findCodeTabContext, getActiveCodeTabContext } from '../../../ui/code_tab/contexts';
 import { resolveRuntimeResourceForContext } from '../../../../runtime/sources';
-import { getLinesSnapshot, getTextSnapshot } from '../../../../editor/text/source_text';
+import { getTextSnapshot } from '../../../../editor/text/source_text';
 import { syncSemanticWorkspacePath, getOrCreateSemanticWorkspace } from '../../../../editor/contrib/intellisense/semantic/workspace/state';
 import { markTextMutated } from '../../../../editor/common/text/runtime';
 import { markDiagnosticsDirtyForChunk } from '../diagnostics/controller';
@@ -132,12 +132,7 @@ export class CrossFileRenameManager {
 		}
 		this.markContextBufferMutated(context);
 		const workspace = getOrCreateSemanticWorkspace(domain);
-		syncSemanticWorkspacePath({
-			path,
-			source: getTextSnapshot(context.buffer),
-			lines: getLinesSnapshot(context.buffer),
-			version: context.textVersion,
-		}, workspace);
+		syncSemanticWorkspacePath(workspace, path, getTextSnapshot(context.buffer));
 		return matches.length;
 	}
 

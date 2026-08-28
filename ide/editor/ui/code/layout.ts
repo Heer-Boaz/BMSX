@@ -11,10 +11,10 @@ import type { SemanticAnnotations, TokenAnnotation } from '../../../../toolchain
 import type { CachedHighlight, HighlightLine, VisualLineSegment } from '../../../common/models';
 import type { EditorDocumentMode } from '../../editing/document_state';
 import { EditorFont } from '../view/font';
-import { getLinesSnapshot, getTextSnapshot } from '../../text/source_text';
+import { getTextSnapshot } from '../../text/source_text';
 import {
 	getOrCreateSemanticWorkspace,
-	syncSemanticWorkspacePaths,
+	syncSemanticWorkspacePath,
 } from '../../contrib/intellisense/semantic/workspace/state';
 import type { TextBuffer } from '../../text/text_buffer';
 import type { Position } from '../../../common/models';
@@ -95,7 +95,6 @@ type PendingSemanticUpdate = {
 	requestId: number;
 	buffer: TextBuffer;
 	source?: string;
-	lines?: readonly string[];
 };
 
 const createVisualLineSegment = (): VisualLineSegment => ({
@@ -913,7 +912,6 @@ export class CodeLayout {
 	private materializeSemanticSource(pending: PendingSemanticUpdate): string {
 		if (pending.source === undefined) {
 			pending.source = getTextSnapshot(pending.buffer);
-			pending.lines = getLinesSnapshot(pending.buffer);
 		}
 		return pending.source;
 	}
@@ -940,13 +938,11 @@ export class CodeLayout {
 		let errorMessage: string = null;
 		try {
 			const source = this.materializeSemanticSource(pending);
-			const snapshot = syncSemanticWorkspacePaths([{
-				path: pending.path,
+			fileData = syncSemanticWorkspacePath(
+				getOrCreateSemanticWorkspace(pending.domain),
+				pending.path,
 				source,
-				lines: pending.lines,
-				version: pending.version,
-			}], getOrCreateSemanticWorkspace(pending.domain));
-			fileData = snapshot.getFileData(pending.path);
+			);
 		} catch (error) {
 			fileData = null;
 			errorMessage = error instanceof Error ? error.message : String(error);

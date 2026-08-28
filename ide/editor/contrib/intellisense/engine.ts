@@ -65,8 +65,7 @@ import {
 } from '../../../common/resource';
 import { Pool } from '../../../../machine/ts/common/pool';
 import { KEYWORDS, LuaTokenType, type LuaToken } from '../../../../toolchain/ts/lua/syntax/token';
-import { splitText } from '../../../../machine/ts/common/text_lines';
-import { getLinesSnapshot, getTextSnapshot } from '../../text/source_text';
+import { getTextSnapshot } from '../../text/source_text';
 import type { TextBuffer } from '../../text/text_buffer';
 import { editorDocumentState } from '../../editing/document_state';
 import { clearSingleCursorSelection } from '../../editing/cursor/state';
@@ -299,9 +298,7 @@ export type LuaDiagnosticOptions = {
 	localSymbols: readonly LuaSymbolEntry[];
 	globalSymbols: readonly LuaSymbolEntry[];
 	builtinDescriptors: readonly LuaBuiltinDescriptor[];
-	lines?: readonly string[];
 	parsed?: ParsedLuaChunk;
-	version?: number;
 	analysis?: FileSemanticData;
 };
 
@@ -337,9 +334,7 @@ type SemanticResolutionInput = {
 	domain: ResourceDomain;
 	path: string;
 	source: string;
-	lines: readonly string[];
 	parsed: ParsedLuaChunk;
-	version?: number;
 };
 
 function finalizeLuaDiagnostics(): LuaDiagnostic[] {
@@ -399,9 +394,7 @@ function resolveSemanticDataForDiagnostics(input: SemanticResolutionInput): File
 	const data = syncRuntimeSemanticWorkspacePath(input.domain, {
 		path: pathKey,
 		source: input.source,
-		lines: input.lines,
 		parsed: input.parsed,
-		version: input.version,
 	}, getOrCreateSemanticWorkspace(input.domain));
 	if (data) {
 		return data;
@@ -414,10 +407,7 @@ export function computeLuaDiagnostics(bridge: RuntimeLuaTooling, options: LuaDia
 	const parseEntry = getCachedLuaParse({
 		path: options.path,
 		source: options.source,
-		lines: options.lines,
-		version: options.version,
 		parsed: options.parsed,
-		withSyntaxError: true,
 	});
 	const syntaxError = parseEntry.syntaxError;
 	if (syntaxError) {
@@ -429,9 +419,7 @@ export function computeLuaDiagnostics(bridge: RuntimeLuaTooling, options: LuaDia
 		domain: options.domain,
 		path: options.path,
 		source: options.source,
-		lines: parseEntry.lines,
 		parsed: parseEntry.parsed,
-		version: options.version,
 	});
 	if (!semanticData) {
 		return [];
@@ -440,11 +428,9 @@ export function computeLuaDiagnostics(bridge: RuntimeLuaTooling, options: LuaDia
 	const frontend = buildLuaSemanticFrontend([{
 		path: options.path,
 		source: options.source,
-		lines: parseEntry.lines,
 		parsed: parseEntry.parsed,
 		chunk: parseEntry.parsed.chunk,
 		analysis: semanticData,
-		version: options.version,
 	}], {
 		builtinDescriptors: options.builtinDescriptors,
 		extraGlobalNames,
@@ -806,7 +792,6 @@ function findContextMenuTokenMatch(row: number, column: number, path: string, so
 	const tokens = getCachedLuaParse({
 		path,
 		source,
-		version: editorDocumentState.textVersion,
 	}).parsed.tokens;
 	const targetLine = row + 1;
 	let adjacent: ContextMenuTokenMatch = null;
@@ -1259,8 +1244,6 @@ export function findStaticDefinitionLocation(bridge: RuntimeLuaTooling, chain: R
 			prepareRuntimeSemanticWorkspaceForEditorBuffer(bridge.sources, activeContext.resource.domain, {
 				path: preferredChunk,
 				source,
-				lines: getLinesSnapshot(editorDocumentState.buffer),
-				version: editorDocumentState.textVersion,
 			});
 		} else {
 			primeRuntimeSemanticWorkspaceProjectSources(
@@ -1430,9 +1413,6 @@ export function buildSemanticModelForChunk(bridge: RuntimeLuaTooling, domain: Re
 			return cachedAnalysis.model;
 		}
 		if (cachedMatch.model) {
-			if (!cachedMatch.lines) {
-				cachedMatch.lines = splitText(cachedMatch.source);
-			}
 			return cachedMatch.model;
 		}
 	}
@@ -1445,16 +1425,12 @@ export function buildSemanticModelForChunk(bridge: RuntimeLuaTooling, domain: Re
 	const parseEntry = getCachedLuaParse({
 		path,
 		source,
-		lines: cachedMatch?.lines,
-		withSyntaxError: false,
 		parsed: cachedMatch?.parsed,
 	});
-	const baseLines = parseEntry.lines;
 	const parsed = parseEntry.parsed;
 	const data = syncRuntimeSemanticWorkspacePath(domain, {
 		path,
 		source: parseEntry.source,
-		lines: baseLines,
 		parsed,
 	}, workspace);
 	if (data) {

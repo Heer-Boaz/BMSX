@@ -3,7 +3,6 @@ import { cartridgeSlots } from '../helpers/cartridge';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { splitText } from '../../machine/ts/common/text_lines';
 import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
 import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
@@ -23,7 +22,7 @@ import { materializeCpuCompletionValues } from './cpu_test_harness';
 
 function parseSource(source: string, path: string) {
 	const lexer = new LuaLexer(source, path);
-	const parser = new LuaParser(lexer.scanTokens(), path, splitText(source));
+	const parser = new LuaParser(lexer.scanTokens(), path, source);
 	return parser.parseChunk();
 }
 

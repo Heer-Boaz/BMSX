@@ -127,7 +127,6 @@ export type Ref = {
 export type FileSemanticData = {
 	model: LuaSemanticModel;
 	source: string;
-	lines: readonly string[];
 	parsed: ParsedLuaChunk;
 	chunk: LuaChunk;
 	annotations: SemanticAnnotations;
@@ -152,7 +151,6 @@ const EMPTY_FUNCTION_SIGNATURES = new Map<string, FunctionSignatureInfo>();
 export type LuaSemanticWorkspaceSourceSnapshot = {
 	path: string;
 	source: string;
-	lines: readonly string[];
 	parsed: ParsedLuaChunk;
 	chunk: LuaChunk;
 	analysis: FileSemanticData;
@@ -161,8 +159,6 @@ export type LuaSemanticWorkspaceSourceSnapshot = {
 export type LuaSemanticWorkspaceSnapshotInput = {
 	path: string;
 	source: string;
-	version?: number;
-	lines?: readonly string[];
 	parsed?: ParsedLuaChunk;
 	chunk?: LuaChunk;
 	analysis?: FileSemanticData;
@@ -259,7 +255,6 @@ function createWorkspaceSnapshotFromIndex(index: LuaProjectIndex): LuaSemanticWo
 		sources[indexInFiles] = {
 			path,
 			source: data.source,
-			lines: data.lines,
 			parsed: data.parsed,
 			chunk: data.chunk,
 			analysis: data,
@@ -282,10 +277,7 @@ export function buildLuaSemanticWorkspaceSnapshot(
 		const parseEntry = getCachedLuaParse({
 			path: source.path,
 			source: source.source,
-			lines: source.lines,
-			version: source.version,
 			parsed: source.parsed,
-			withSyntaxError: true,
 		});
 		if (parseEntry.syntaxError) {
 			throw new Error(`[LuaSemanticWorkspace] Syntax error in ${source.path}: ${parseEntry.syntaxError.message}`);
@@ -293,9 +285,7 @@ export function buildLuaSemanticWorkspaceSnapshot(
 		analyses[index] = buildLuaFileSemanticData(
 			parseEntry.source,
 			source.path,
-			parseEntry.lines,
 			parseEntry.parsed,
-			source.version,
 		);
 	}
 	workspace.updateFiles(analyses);
@@ -381,25 +371,20 @@ type TokenInfo = {
 export function buildLuaFileSemanticData(
 	source: string,
 	path: string,
-	lines?: readonly string[],
 	parsed?: ParsedLuaChunk,
-	version?: number,
 ): FileSemanticData {
 	const parseEntry = getCachedLuaParse({
 		path,
 		source,
-		lines,
-		version,
 		parsed,
 	});
-	const fileLines = parseEntry.lines;
 	const chunk = parseEntry.parsed.chunk;
 	const tokens = parseEntry.parsed.tokens;
 	const builder = new SemanticBuilder({
 		path,
 		chunk,
 		tokens,
-		lines: fileLines,
+		lineCount: tokens[tokens.length - 1].endLine,
 	});
 	const result = builder.build();
 	const decls = result.decls.map(toDecl);
@@ -419,7 +404,6 @@ export function buildLuaFileSemanticData(
 	return {
 		model,
 		source,
-		lines: fileLines,
 		parsed: parseEntry.parsed,
 		chunk,
 		annotations,
@@ -439,8 +423,8 @@ export function buildLuaFileSemanticData(
 	};
 }
 
-export function buildLuaSemanticModel(source: string, path: string, lines?: readonly string[], parsed?: ParsedLuaChunk): LuaSemanticModel {
-	const data = buildLuaFileSemanticData(source, path, lines, parsed);
+export function buildLuaSemanticModel(source: string, path: string, parsed?: ParsedLuaChunk): LuaSemanticModel {
+	const data = buildLuaFileSemanticData(source, path, parsed);
 	return data.model;
 }
 
@@ -458,8 +442,8 @@ class LuaProjectIndex {
 		this.symbolResolver = this.buildWorkspaceSymbolResolver();
 	}
 
-	public updateFile(file: string, source: string, lines?: readonly string[], parsed?: ParsedLuaChunk, version?: number): void {
-		const data = buildLuaFileSemanticData(source, file, lines, parsed, version);
+	public updateFile(file: string, source: string, parsed?: ParsedLuaChunk): void {
+		const data = buildLuaFileSemanticData(source, file, parsed);
 		this.storeFileData(file, data);
 	}
 
@@ -837,12 +821,12 @@ class SemanticBuilder {
 		chunk: LuaChunk;
 		path: string;
 		tokens: readonly LuaToken[];
-		lines: readonly string[];
+		lineCount: number;
 	}) {
 		this.chunk = options.chunk;
 		this.path = options.path;
 		this.tokens = options.tokens;
-		this.annotations = new Array(options.lines.length);
+		this.annotations = new Array(options.lineCount);
 		this.tokenMap = buildTokenMap(options.tokens);
 	}
 
@@ -3464,8 +3448,8 @@ export class LuaSemanticWorkspace {
 		return this.index.getVersion();
 	}
 
-	public updateFile(file: string, source: string, lines?: readonly string[], parsed?: ParsedLuaChunk, version?: number): void {
-		this.index.updateFile(file, source, lines, parsed, version);
+	public updateFile(file: string, source: string, parsed?: ParsedLuaChunk): void {
+		this.index.updateFile(file, source, parsed);
 		this.snapshot = null;
 	}
 

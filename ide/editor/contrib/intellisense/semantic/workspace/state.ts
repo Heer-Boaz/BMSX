@@ -11,9 +11,7 @@ import type { ResourceDomain } from '../../../../../common/resource';
 export type SemanticWorkspacePathInput = {
 	path: string;
 	source: string;
-	lines?: readonly string[];
 	parsed?: ParsedLuaChunk;
-	version?: number;
 };
 
 const semanticWorkspaces = new Map<ResourceDomain, LuaSemanticWorkspace>();
@@ -38,20 +36,22 @@ export function resetSemanticWorkspaces(): void {
 	semanticWorkspaces.clear();
 }
 
-export function syncSemanticWorkspacePath(input: SemanticWorkspacePathInput, workspace: LuaSemanticWorkspace): FileSemanticData {
+export function syncSemanticWorkspacePath(
+	workspace: LuaSemanticWorkspace,
+	path: string,
+	source: string,
+	parsed?: ParsedLuaChunk,
+): FileSemanticData {
 	const parseEntry = getCachedLuaParse({
-		path: input.path,
-		source: input.source,
-		lines: input.lines,
-		version: input.version,
-		withSyntaxError: false,
-		parsed: input.parsed,
+		path,
+		source,
+		parsed,
 	});
-	const existing = workspace.getFileData(input.path);
+	const existing = workspace.getFileData(path);
 	if (!existing || existing.source !== parseEntry.source) {
-		workspace.updateFile(input.path, parseEntry.source, parseEntry.lines, parseEntry.parsed, input.version);
+		workspace.updateFile(path, parseEntry.source, parseEntry.parsed);
 	}
-	return workspace.getFileData(input.path);
+	return workspace.getFileData(path);
 }
 
 export function syncSemanticWorkspacePaths(
@@ -64,9 +64,6 @@ export function syncSemanticWorkspacePaths(
 		const parseEntry = getCachedLuaParse({
 			path: input.path,
 			source: input.source,
-			lines: input.lines,
-			version: input.version,
-			withSyntaxError: false,
 			parsed: input.parsed,
 		});
 		const existing = workspace.getFileData(input.path);
@@ -74,9 +71,7 @@ export function syncSemanticWorkspacePaths(
 			changedAnalyses.push(buildLuaFileSemanticData(
 				parseEntry.source,
 				input.path,
-				parseEntry.lines,
 				parseEntry.parsed,
-				input.version,
 			));
 		}
 	}

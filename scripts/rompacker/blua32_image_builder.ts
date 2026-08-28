@@ -1,4 +1,3 @@
-import { splitText } from '../../machine/ts/common/text_lines';
 import { decodeBinary } from '../../machine/ts/common/serializer/binencoder';
 import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
@@ -91,7 +90,7 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): BuiltBlua32I
 			throw new Error(`Generated Lua module '${generated.path}' conflicts with a ROM Lua asset.`);
 		}
 		const sourcePath = `${generated.path}.lua`;
-		const chunk = parseLuaChunk(generated.source, generated.path, splitText(generated.source)).chunk!;
+		const chunk = parseLuaChunk(generated.source, generated.path).chunk!;
 		modulePaths.add(generated.path);
 		modules.push({ path: generated.path, chunk, source: generated.source });
 		diagnosticSources.set(chunk.range.path, {

@@ -1,4 +1,3 @@
-import { splitText } from '../../machine/ts/common/text_lines';
 import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
 import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
 import type { CPU } from '../../machine/ts/machine/cpu/cpu';
@@ -9,7 +8,7 @@ import { runCompiledTestSystem } from '../helpers/blua32';
 
 export function parseLuaChunk(source: string, path = 'test.lua') {
 	const lexer = new LuaLexer(source, path);
-	const parser = new LuaParser(lexer.scanTokens(), path, splitText(source));
+	const parser = new LuaParser(lexer.scanTokens(), path, source);
 	return parser.parseChunk();
 }
 

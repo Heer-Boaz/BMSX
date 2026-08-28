@@ -3,7 +3,7 @@ import type { HostClock, TimerHandle } from '../../../../../hosts/common/clock';
 import { computeAggregatedEditorDiagnostics, type DiagnosticContextInput } from './analysis';
 import type { EditorDiagnostic } from '../../../../common/models';
 import type { CodeTabContext } from '../../../ui/code_tab/model';
-import { getLinesSnapshot, getTextSnapshot } from '../../../../editor/text/source_text';
+import { getTextSnapshot } from '../../../../editor/text/source_text';
 import { enqueueBackgroundTask } from '../../../../common/background_tasks';
 import {
 	findCodeTabContext,
@@ -201,7 +201,6 @@ export function runDiagnosticsForContexts(bridge: RuntimeLuaTooling, contextIds:
 			domain: context.resource.domain,
 			path,
 			source,
-			lines: getLinesSnapshot(buffer),
 			version,
 		};
 		inputs.push(input);

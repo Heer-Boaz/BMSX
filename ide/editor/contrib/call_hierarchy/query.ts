@@ -14,7 +14,7 @@ export type CallHierarchyQueryResult =
 export function resolveCallHierarchyViewAt(bridge: RuntimeLuaTooling, row: number, column: number): CallHierarchyQueryResult {
 	const resource = editorDocumentState.resource;
 	const path = resource.path;
-	const snapshot = buildEditorSemanticSnapshot(bridge, resource, editorDocumentState.buffer, editorDocumentState.textVersion);
+	const snapshot = buildEditorSemanticSnapshot(bridge, resource, editorDocumentState.buffer);
 	const frontend = createEditorSemanticFrontend(bridge, snapshot);
 	const symbols = frontend.findSymbolsByPosition(path, row + 1, column + 1);
 	const expression = extractHoverExpression(row, column, path)?.expression;

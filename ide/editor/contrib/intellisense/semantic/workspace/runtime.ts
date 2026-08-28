@@ -1,5 +1,4 @@
 import type { ParsedLuaChunk } from '../../../../../../toolchain/ts/lua/analysis/parse';
-import { splitText } from '../../../../../../machine/ts/common/text_lines';
 import { getOrCreateSemanticWorkspace, syncSemanticWorkspacePath, type SemanticWorkspacePathInput } from './state';
 import type { LuaDefinitionInfo } from '../../../../../../toolchain/ts/lua/syntax/ast/index';
 import {
@@ -23,7 +22,6 @@ export type RuntimeSemanticCacheEntry = {
 	model?: LuaSemanticModel;
 	definitions?: ReadonlyArray<LuaDefinitionInfo>;
 	parsed?: ParsedLuaChunk;
-	lines?: readonly string[];
 	analysis?: FileSemanticData;
 };
 
@@ -58,7 +56,6 @@ export function cacheRuntimeSemanticWorkspaceAnalysis(
 		model: data.model,
 		definitions: data.model.definitions,
 		parsed,
-		lines: data.lines,
 		analysis: data,
 	});
 }
@@ -67,7 +64,6 @@ export function cacheRuntimeSemanticParseState(
 	domain: ResourceDomain,
 	path: string,
 	source: string,
-	lines: readonly string[],
 	parsed: ParsedLuaChunk,
 ): void {
 	const cache = runtimeSemanticCacheForDomain(domain);
@@ -77,7 +73,6 @@ export function cacheRuntimeSemanticParseState(
 		model: cacheEntry?.model,
 		definitions: cacheEntry?.definitions,
 		parsed,
-		lines,
 	});
 }
 
@@ -86,7 +81,7 @@ export function syncRuntimeSemanticWorkspacePath(
 	input: SemanticWorkspacePathInput,
 	workspace: LuaSemanticWorkspace = getOrCreateSemanticWorkspace(domain),
 ): FileSemanticData {
-	const data = syncSemanticWorkspacePath(input, workspace);
+	const data = syncSemanticWorkspacePath(workspace, input.path, input.source, input.parsed);
 	cacheRuntimeSemanticWorkspaceAnalysis(domain, input.path, data.source, data, data.parsed);
 	return data;
 }
@@ -127,11 +122,10 @@ export function primeRuntimeSemanticWorkspaceProjectSources(
 				continue;
 			}
 			const cachedSource = cacheEntry?.source === source ? cacheEntry : null;
-			const lines = cachedSource?.lines ?? splitText(source);
 			const parsed = cachedSource?.parsed;
 			changedAnalyses.push(
 				cachedSource?.analysis
-					?? buildLuaFileSemanticData(source, path, lines, parsed),
+					?? buildLuaFileSemanticData(source, path, parsed),
 			);
 		}
 	}

@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { splitText } from '../../machine/ts/common/text_lines';
 import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
 import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
 import { LuaSyntaxKind, LuaBinaryOperator, LuaAssignmentOperator, LuaUnaryOperator } from '../../toolchain/ts/lua/syntax/ast';
@@ -29,7 +28,7 @@ import type {
 function parseChunk(source: string): LuaChunk {
 	const lexer = new LuaLexer(source, 'path');
 	const tokens = lexer.scanTokens();
-	const parser = new LuaParser(tokens, 'path', splitText(source));
+	const parser = new LuaParser(tokens, 'path', source);
 	return parser.parseChunk();
 }
 
@@ -78,6 +77,13 @@ test('rejects unsupported local function attributes', () => {
 	assert.throws(
 		() => parseChunk('local function reload<const>() end'),
 		/Unsupported function attribute 'const'/,
+	);
+});
+
+test('syntax errors retain the authored CRLF source line', () => {
+	assert.throws(
+		() => parseChunk('local first = 1\r\nlocal second = )\r\nreturn first'),
+		/\[line 2, column 16\].*\nlocal second = \)\n\s+\^/,
 	);
 });
 

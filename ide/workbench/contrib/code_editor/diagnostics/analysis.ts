@@ -18,7 +18,6 @@ export type DiagnosticContextInput = {
 	domain: ResourceDomain;
 	path: string;
 	source: string;
-	lines?: readonly string[];
 	version: number;
 };
 
@@ -38,12 +37,9 @@ export function computeAggregatedEditorDiagnostics(
 		const parseEntry = getCachedLuaParse({
 			path,
 			source,
-			lines: ctx.lines,
-			version: ctx.version,
 		});
-		const baseLines = parseEntry.lines;
 		const parsed = parseEntry.parsed;
-		cacheRuntimeSemanticParseState(ctx.domain, path, source, baseLines, parsed);
+		cacheRuntimeSemanticParseState(ctx.domain, path, source, parsed);
 		const localSymbols = listLuaSymbols(bridge, ctx.domain, path);
 		const luaDiagnostics = computeLuaDiagnostics(bridge, {
 			source,
@@ -52,8 +48,6 @@ export function computeAggregatedEditorDiagnostics(
 			localSymbols,
 			globalSymbols,
 			builtinDescriptors,
-			version: ctx.version,
-			lines: baseLines,
 			parsed,
 		});
 		for (let j = 0; j < luaDiagnostics.length; j += 1) {

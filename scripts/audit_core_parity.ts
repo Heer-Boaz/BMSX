@@ -1027,8 +1027,7 @@ function auditStrictLuaNoHeapFunctions(manifest: Manifest): string[] {
 	const errors: string[] = [];
 	for (const entry of manifest.strict_lua_no_heap_functions) {
 		const source = fs.readFileSync(path.join(repoRoot, entry.file), 'utf8');
-		const lines = source.split('\n');
-		const parsed = parseLuaChunk(source, entry.file, lines);
+		const parsed = parseLuaChunk(source, entry.file);
 		const functions = new Map<string, LuaFunctionExpression>();
 		for (const statement of parsed.chunk.body) {
 			const named = luaNamedFunction(statement);
