@@ -2,6 +2,7 @@ import type { Decl, FileSemanticData, Ref, SymbolID } from './model';
 import { WorkspaceValueGraph, type WorkspaceValueGraphInput } from './value_graph';
 import { sourceRangesEqual } from '../source_range';
 import { compareSourcePosition } from './source_range';
+import { WorkspaceModuleMemberIndex } from './workspace_module_member_index';
 
 const EMPTY_SYMBOLS: readonly SymbolID[] = [];
 
@@ -14,6 +15,7 @@ export class WorkspaceSymbolResolver {
 	private readonly declarations: ReadonlyMap<SymbolID, Decl>;
 	private readonly globals: ReadonlyMap<string, SymbolID>;
 	private readonly valueGraphInput: WorkspaceValueGraphInput;
+	private moduleMemberIndex?: WorkspaceModuleMemberIndex;
 	private valueGraph?: WorkspaceValueGraph;
 	private readonly referencesBySymbol: Map<SymbolID, readonly Ref[]> = new Map();
 
@@ -50,6 +52,10 @@ export class WorkspaceSymbolResolver {
 			return [ref.target];
 		}
 		if (ref.referenceKind === 'member' || ref.referenceKind === 'method') {
+			const moduleMembers = this.resolveModuleMembers(ref);
+			if (moduleMembers) {
+				return moduleMembers;
+			}
 			const valueGraph = this.getValueGraph();
 			const members = valueGraph.resolveMembers(ref.receiverValue, ref.name);
 			if (members.length > 0) {
@@ -61,6 +67,13 @@ export class WorkspaceSymbolResolver {
 		}
 		const global = this.globals.get(ref.symbolKey);
 		return global ? [global] : EMPTY_SYMBOLS;
+	}
+
+	private resolveModuleMembers(ref: Ref): readonly SymbolID[] | undefined {
+		if (!this.moduleMemberIndex) {
+			this.moduleMemberIndex = new WorkspaceModuleMemberIndex(this.valueGraphInput);
+		}
+		return this.moduleMemberIndex.resolveMembers(ref.receiverValue, ref.name);
 	}
 
 	private getValueGraph(): WorkspaceValueGraph {
@@ -143,7 +156,20 @@ export class WorkspaceSymbolResolver {
 			}
 		}
 		if (memberQueries.length > 0) {
-			this.getValueGraph().prepareMemberQueries(memberQueries);
+			let dynamicQueries: Ref[] | undefined;
+			for (let queryIndex = 0; queryIndex < memberQueries.length; queryIndex += 1) {
+				const query = memberQueries[queryIndex];
+				if (this.resolveModuleMembers(query) !== undefined) {
+					continue;
+				}
+				if (!dynamicQueries) {
+					dynamicQueries = [];
+				}
+				dynamicQueries.push(query);
+			}
+			if (dynamicQueries) {
+				this.getValueGraph().prepareMemberQueries(dynamicQueries);
+			}
 		}
 		const references = new Map<SymbolID, Ref[]>();
 		for (const symbolId of unresolvedSymbols) {

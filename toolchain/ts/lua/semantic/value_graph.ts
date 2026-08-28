@@ -401,25 +401,30 @@ export function expressionValueSource(file: string, line: number, column: number
 	return ownedValueSource(`expression:${file}|${line}|${column}`);
 }
 
-export function semanticValueSourceKey(source: SemanticValueSource): string {
+export function semanticValueRootKey(root: SemanticValueRoot): string {
 	let key: string;
-	switch (source.root.kind) {
+	switch (root.kind) {
 		case 'declaration':
-			key = `d\0${source.root.declId}`;
+			key = `d\0${root.declId}`;
 			break;
 		case 'global':
-			key = `g\0${source.root.symbolKey}`;
+			key = `g\0${root.symbolKey}`;
 			break;
 		case 'module':
-			key = `m\0${source.root.module}`;
+			key = `m\0${root.module}`;
 			break;
 		case 'owned':
-			key = `o\0${source.root.key}`;
+			key = `o\0${root.key}`;
 			break;
 		case 'literal':
-			key = source.root.key;
+			key = root.key;
 			break;
 	}
+	return key;
+}
+
+export function semanticValueSourceKey(source: SemanticValueSource): string {
+	let key = semanticValueRootKey(source.root);
 	for (let index = 0; index < source.steps.length; index += 1) {
 		const step = source.steps[index];
 		switch (step.kind) {
