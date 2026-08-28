@@ -44,20 +44,54 @@ function applyCodeTabResource(context: CodeTabContext, resource: RuntimeResource
 	context.title = computeResourceTabTitle(resource);
 }
 
+function retainLuaCodeTab(
+	sources: RuntimeSourceState,
+	resource: RuntimeResource,
+): CodeTabContext {
+	const tabId = buildCodeTabId(resource);
+	let context = codeTabSessionState.contexts.get(tabId);
+	if (!context) {
+		context = createLuaCodeTabContext(sources, resource);
+		codeTabSessionState.contexts.set(tabId, context);
+	}
+	applyCodeTabResource(context, resource, 'lua');
+	upsertCodeEditorTab(context);
+	return context;
+}
+
+async function retainAemCodeTab(
+	storage: KeyValueStorage,
+	sources: RuntimeSourceState,
+	resource: RuntimeResource,
+): Promise<CodeTabContext> {
+	const tabId = buildCodeTabId(resource);
+	let context = codeTabSessionState.contexts.get(tabId);
+	if (!context) {
+		const projectRootPath = runtimeSourceProjectRootPath(sources, resource.domain);
+		const source = await loadWorkspaceSourceFile(
+			storage,
+			resource.path,
+			projectRootPath,
+		);
+		if (source === null) {
+			throw new Error(`AEM resource '${resource.path}' is unavailable.`);
+		}
+		context = createAemCodeTabContext(resource, source);
+		codeTabSessionState.contexts.set(tabId, context);
+	}
+	applyCodeTabResource(context, resource, 'aem');
+	upsertCodeEditorTab(context);
+	return context;
+}
+
 export function openLuaCodeTab(
 	resourcePanel: ResourcePanelController,
 	sources: RuntimeSourceState,
 	resource: RuntimeResource,
 	selection?: CodeTabSelection,
 ): void {
-	const tabId = buildCodeTabId(resource);
-	if (!codeTabSessionState.contexts.has(tabId)) {
-		codeTabSessionState.contexts.set(tabId, createLuaCodeTabContext(sources, resource));
-	}
-	const context = codeTabSessionState.contexts.get(tabId)!;
-	applyCodeTabResource(context, resource, 'lua');
-	upsertCodeEditorTab(context);
-	setActiveTab(resourcePanel, tabId, selection);
+	const context = retainLuaCodeTab(sources, resource);
+	setActiveTab(resourcePanel, context.id, selection);
 }
 
 export async function openAemCodeTab(
@@ -68,27 +102,28 @@ export async function openAemCodeTab(
 	selection?: CodeTabSelection,
 ): Promise<void> {
 	const resourcePanel = editor.resourcePanel;
-	const tabId = buildCodeTabId(resource);
 	try {
-		let context = codeTabSessionState.contexts.get(tabId);
-		if (!context) {
-			const projectRootPath = runtimeSourceProjectRootPath(sources, resource.domain);
-			const source = await loadWorkspaceSourceFile(
-				storage,
-				resource.path,
-				projectRootPath,
-			);
-			if (source === null) {
-				throw new Error(`AEM resource '${resource.path}' is unavailable.`);
-			}
-			context = createAemCodeTabContext(resource, source);
-			codeTabSessionState.contexts.set(tabId, context);
-		}
-		applyCodeTabResource(context, resource, 'aem');
-		upsertCodeEditorTab(context);
-		setActiveTab(resourcePanel, tabId, selection);
+		const context = await retainAemCodeTab(storage, sources, resource);
+		setActiveTab(resourcePanel, context.id, selection);
 	} catch (error) {
 		showEditorMessage(extractErrorMessage(error), constants.COLOR_STATUS_ERROR, 4.0);
+	}
+}
+
+export async function restoreCodeTabForResource(
+	storage: KeyValueStorage,
+	sources: RuntimeSourceState,
+	resource: RuntimeResource,
+): Promise<void> {
+	switch (resource.source.type) {
+		case 'lua':
+			retainLuaCodeTab(sources, resource);
+			return;
+		case 'aem':
+			await retainAemCodeTab(storage, sources, resource);
+			return;
+		default:
+			throw new Error(`Unsupported code tab resource type '${resource.source.type}' for '${resource.path}'.`);
 	}
 }
 

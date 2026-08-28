@@ -12,7 +12,7 @@ import {
 	createEntryTabContext,
 	findCodeTabContext,
 } from '../ui/code_tab/contexts';
-import { openCodeTabForResource } from '../ui/code_tab/io';
+import { restoreCodeTabForResource } from '../ui/code_tab/io';
 import { buildWorkspaceDirtyEntryPath } from '../../workspace/files';
 import { restoreWorkspaceContextSource } from './context_snapshot';
 import { workspaceDirtyRecords } from './state';
@@ -32,14 +32,13 @@ export async function applyWorkspaceAutosavePayload(
 	clearCodeTabContexts();
 	initializeTabs(createEntryTabContext(sources));
 	editor.setFontVariant(payload.fontVariant);
-	await openDirtyFileTabs(storage, editor, sources, payload.dirtyFiles);
+	await openDirtyFileTabs(storage, sources, payload.dirtyFiles);
 	hydrateDirtyFiles(sources, payload.dirtyFiles);
 	restoreBreakpointsFromPayload(debuggerState, payload.breakpoints);
 }
 
 async function openDirtyFileTabs(
 	storage: KeyValueStorage,
-	editor: CartEditor,
 	sources: RuntimeSourceState,
 	entries: PersistedDirtyEntry[],
 ): Promise<void> {
@@ -49,7 +48,7 @@ async function openDirtyFileTabs(
 			throw new Error(`Workspace resource '${entry.path}' is not installed for domain '${entry.domain}'.`);
 		}
 		if (!findCodeTabContext(resource)) {
-			await openCodeTabForResource(storage, editor, sources, resource);
+			await restoreCodeTabForResource(storage, sources, resource);
 		}
 	}
 }

@@ -464,6 +464,59 @@ test('resource identity keeps identical cartridge paths isolated by slot', (t) =
 	assert.equal(slot1Workspace.getFileData('entry.lua')!.source, 'return "slot 1"');
 });
 
+test('workspace restore keeps dirty system tabs behind the development cartridge entry', async (t) => {
+	const storage = new MockStorage();
+	installOfflineWorkspace(t, storage);
+	const systemRoot = 'machine/bios';
+	const cartridgeRoot = 'offline-cart';
+	const systemPath = 'system/main.lua';
+	const cartridgePath = 'cart.lua';
+	const sources = createTestRuntimeSourceState(
+		sourceRegistry('-- system source', systemRoot, systemPath),
+		[sourceRegistry('-- cartridge source', cartridgeRoot, cartridgePath), null],
+		SYSTEM_RESOURCE_DOMAIN,
+	);
+	sources.cartridgeSlots[0]!.rom.header.blua32ImageOffset = 64;
+	const dirtyPath = buildWorkspaceDirtyEntryPath(
+		systemRoot,
+		SYSTEM_RESOURCE_DOMAIN,
+		systemPath,
+	);
+	workspaceDirtyRecords.set(dirtyPath, {
+		contents: '-- dirty system source',
+		updatedAt: 80,
+	});
+	installWorkspaceRestoreView();
+	await applyWorkspaceAutosavePayload(
+		workspaceEnvironment.storage,
+		editorStub() as any,
+		sources,
+		{ breakpoints: [new Map(), new Map(), new Map()] },
+		payload([{
+			domain: SYSTEM_RESOURCE_DOMAIN,
+			path: systemPath,
+			updatedAt: 80,
+			cursorRow: 0,
+			cursorColumn: 0,
+			scrollRow: 0,
+			scrollColumn: 0,
+			selectionAnchor: null,
+		}]),
+	);
+
+	const activeContext = codeTabSessionState.contexts.get(codeTabSessionState.activeContextId)!;
+	assert.equal(activeContext.resource.domain, 0);
+	assert.equal(activeContext.resource.path, cartridgePath);
+	assert.equal(tabSessionState.activeTabId, activeContext.id);
+	const systemContext = findCodeTabContext({
+		domain: SYSTEM_RESOURCE_DOMAIN,
+		path: systemPath,
+	})!;
+	assert.equal(systemContext.dirty, true);
+	assert.equal(getTextSnapshot(systemContext.buffer), '-- dirty system source');
+	assert.equal(tabSessionState.tabs.some(tab => tab.id === systemContext.id), true);
+});
+
 test('canonical source cache keys identical resource paths by physical project path', async (t) => {
 	assert.equal(resolveWorkspacePath('src/entry.lua', 'cart0'), 'cart0/src/entry.lua');
 	workspaceCanonicalSourceCache.set('cart0/entry.lua', 'return "slot 0"');
