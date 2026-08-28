@@ -69,6 +69,55 @@ De huidige IDE- en debuggergrenzen zijn:
   ROM. Functies die tijdens runtime in RAM zijn gecompileerd hebben geen ROM-
   function index en worden daarom met hun fysieke adres getoond.
 
+### Doelgrenzen voor Lua- en BLua-sematiek
+
+De semantische laag volgt het productiepatroon van TypeScript en LuaLS: een
+langlevend programma behoudt ongewijzigde syntax- en file-records, terwijl
+featurevragen alleen de semantiek materialiseren die zij nodig hebben. Dit is
+een ownershipcontract, geen toestemming om de huidige bestanden cosmetisch te
+splitsen.
+
+| Laag | Eigenaar | Retained representatie | Mag niet bezitten |
+| --- | --- | --- | --- |
+| Brontekst | editorbuffer of runtime source registry | precies één immutable tekstsnapshot per benodigde versie | AST's, symbols of feature-resultaten |
+| Syntax | lexer, parser en parsecache | tokens en één generieke Lua/BLua-AST per sourceversie | workspacebinding, cartlibkennis of editorstate |
+| File-semantiek | binder over één AST | declaraties, scopes, occurrences, callable facts en generieke value-flowfacts | cross-file targets, navigatiekeuzes of UI-boomnodes |
+| Programmasnapshot | semantische workspace | geordende immutable file-records; ongewijzigde records behouden hun identiteit | tweede kopieën van filegraphs of feature-specifieke caches |
+| Resolutie | workspace symbol resolver en query-local value graph | symboltargets en op aanvraag opgeloste value-identiteiten voor precies één snapshot | mutatie van file-records, editorbuffers of frameworkregels |
+| Language features | definition-, references-, rename- en call-hierarchyproviders | vlakke, gesorteerde protocolresultaten | opnieuw parsen, opnieuw binden of eigen semantische heuristiek |
+| Editor/workbench | sessie- en viewmodels | selectie, expansie, navigatiehistorie en gerenderde items | Lua-resolutie of runtimewaarde-inferentie |
+
+Daaruit volgen deze harde migratiegates:
+
+- een syntactische occurrence wordt eenmaal door de file-semantiek beschreven.
+  Read/write/call-rol, receiverwaarde en de omvattende declaratie zijn generieke
+  taalfeiten; een featureprovider mag achteraf geen AST's kruisen om die feiten
+  opnieuw af te leiden;
+- iedere semantic feature resolveert via hetzelfde immutable programma en
+  dezelfde resolver. De legacy single-file `LuaSemanticModel.lookup*`-route mag
+  niet naast een afwijkende workspace-route blijven groeien;
+- afwezigheid wordt op de producergrens waarheidsgetrouw getypeerd. Geen
+  `null`/`undefined`-normalisatie, non-null assertions of fallbackketens om een
+  intern contract dat eigenlijk ongeldig is alsnog door te laten lopen;
+- cross-file valueflow blijft query-demanded. Een edit mag geen volledige
+  workspacegraph kopieren en een UI-feature mag geen eager recursieve boom
+  materialiseren;
+- cartlib-, firmware-, prefab-, component- en andere frameworkbegrippen zijn
+  verboden in lexer, parser, binder, programmasnapshot en resolver. Eventuele
+  producttooling boven de language service mag een eigen expliciete adapter
+  bezitten;
+- een grotere interne verbouwing mag tijdelijk ongecompileerd in de worktree
+  staan, maar niet als repositorycommit. Iedere commit behoudt een bouwbare,
+  toetsbare grens; als een eerlijke grens niet kleiner kan, wordt de commit
+  groter in plaats van gevuld met tijdelijke facades of compatibiliteitslagen.
+
+De eerstvolgende semantic slice begint daarom niet met een nieuwe IDE-feature.
+Zij inventariseert en verwijdert de dubbele query- en cacherepresentaties rond
+`LuaSemanticModel`, `LuaSemanticWorkspaceSnapshot` en de runtime semantic cache.
+Alleen een representatie die door huidige consumers aantoonbaar nodig is blijft
+bestaan. Het opsplitsen van `model.ts` volgt pas nadat die ownergrenzen in code
+staan; anders verplaatst het slechts dezelfde verkeerde verantwoordelijkheden.
+
 ## Validatiebasis voor inputwerk
 
 Een inputslice is pas overdraagbaar wanneer de relevante subset hiervan groen
