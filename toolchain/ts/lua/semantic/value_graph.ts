@@ -643,16 +643,18 @@ function projectValueSource(
 	return { root: to.root, steps };
 }
 
-export type WorkspaceValueGraphInput = {
-	declarationValues: ReadonlyMap<SymbolID, readonly SemanticValueSource[]>;
-	identityDeclarations: ReadonlySet<SymbolID>;
-	projectionDeclarations: ReadonlySet<SymbolID>;
-	moduleValues: ReadonlyMap<string, SemanticValueSource>;
+export type WorkspaceValueFileInput = {
+	declarationValues: readonly DeclarationValueEntry[];
+	moduleValues: readonly ModuleValueEntry[];
 	memberValues: readonly MemberValueEntry[];
-	functionReturns: readonly FunctionReturnValueEntry[];
-	functionFlows: readonly FunctionValueFlowEntry[];
-	calls: readonly CallValueEntry[];
+	functionReturnValues: readonly FunctionReturnValueEntry[];
+	functionValueFlows: readonly FunctionValueFlowEntry[];
+	callValues: readonly CallValueEntry[];
 	valueAssignments: readonly ValueAssignmentEntry[];
+};
+
+export type WorkspaceValueGraphInput = {
+	files: readonly WorkspaceValueFileInput[];
 	globalValues: ReadonlyMap<string, SymbolID>;
 };
 
@@ -665,20 +667,31 @@ export class WorkspaceValueIdentityIndex {
 	private readonly inferredMemberNamesByIdentity: Map<string, Set<string>> = new Map();
 
 	constructor(input: WorkspaceValueGraphInput) {
-		for (const declId of input.identityDeclarations) {
-			const sources = input.declarationValues.get(declId);
-			if (!sources) {
-				continue;
+		const identityDeclarations = new Set<SymbolID>();
+		const moduleValues = new Map<string, SemanticValueSource>();
+		for (let fileIndex = 0; fileIndex < input.files.length; fileIndex += 1) {
+			const file = input.files[fileIndex];
+			for (let declarationIndex = 0; declarationIndex < file.declarationValues.length; declarationIndex += 1) {
+				const entry = file.declarationValues[declarationIndex];
+				if (entry.relation === 'identity') {
+					identityDeclarations.add(entry.declId);
+				}
 			}
-			const declarationRoot: SemanticValueRoot = { kind: 'declaration', declId };
-			for (let sourceIndex = 0; sourceIndex < sources.length; sourceIndex += 1) {
-				const source = sources[sourceIndex];
-				if (source.steps.length === 0) {
-					this.union(declarationRoot, source.root);
+			for (let moduleIndex = 0; moduleIndex < file.moduleValues.length; moduleIndex += 1) {
+				const entry = file.moduleValues[moduleIndex];
+				moduleValues.set(entry.module, entry.source);
+			}
+		}
+		for (let fileIndex = 0; fileIndex < input.files.length; fileIndex += 1) {
+			const declarations = input.files[fileIndex].declarationValues;
+			for (let declarationIndex = 0; declarationIndex < declarations.length; declarationIndex += 1) {
+				const entry = declarations[declarationIndex];
+				if (identityDeclarations.has(entry.declId) && entry.source.steps.length === 0) {
+					this.union({ kind: 'declaration', declId: entry.declId }, entry.source.root);
 				}
 			}
 		}
-		for (const [module, source] of input.moduleValues) {
+		for (const [module, source] of moduleValues) {
 			if (source.steps.length === 0) {
 				this.union({ kind: 'module', module }, source.root);
 			}
@@ -689,7 +702,7 @@ export class WorkspaceValueIdentityIndex {
 				{ kind: 'declaration', declId },
 			);
 		}
-		for (const module of input.moduleValues.keys()) {
+		for (const module of moduleValues.keys()) {
 			const identity = this.find(semanticValueRootKey({ kind: 'module', module }));
 			this.moduleIdentities.add(identity);
 			this.sourceOwnedIdentities.add(identity);
@@ -697,47 +710,49 @@ export class WorkspaceValueIdentityIndex {
 		for (const symbolKey of input.globalValues.keys()) {
 			this.sourceOwnedIdentities.add(this.find(semanticValueRootKey({ kind: 'global', symbolKey })));
 		}
-		for (const declId of input.identityDeclarations) {
-			const sources = input.declarationValues.get(declId);
-			if (!sources) {
-				continue;
-			}
-			for (let sourceIndex = 0; sourceIndex < sources.length; sourceIndex += 1) {
-				const source = sources[sourceIndex];
-				if (source.steps.length === 0 && source.root.kind === 'owned') {
-					this.sourceOwnedIdentities.add(this.find(semanticValueRootKey(source.root)));
+		for (let fileIndex = 0; fileIndex < input.files.length; fileIndex += 1) {
+			const declarations = input.files[fileIndex].declarationValues;
+			for (let declarationIndex = 0; declarationIndex < declarations.length; declarationIndex += 1) {
+				const entry = declarations[declarationIndex];
+				if (identityDeclarations.has(entry.declId)
+					&& entry.source.steps.length === 0
+					&& entry.source.root.kind === 'owned') {
+					this.sourceOwnedIdentities.add(this.find(semanticValueRootKey(entry.source.root)));
 				}
 			}
 		}
-		for (let memberIndex = 0; memberIndex < input.memberValues.length; memberIndex += 1) {
-			const member = input.memberValues[memberIndex];
-			const ownerIdentity = this.find(semanticValueRootKey(member.owner.root));
-			if (member.owner.root.kind === 'owned') {
-				this.sourceOwnedIdentities.add(ownerIdentity);
-			}
-			if (member.owner.steps.length !== 0) {
-				const firstStep = member.owner.steps[0];
-				if (this.moduleIdentities.has(ownerIdentity) && firstStep.kind === 'member') {
-					let inferredNames = this.inferredMemberNamesByIdentity.get(ownerIdentity);
-					if (!inferredNames) {
-						inferredNames = new Set();
-						this.inferredMemberNamesByIdentity.set(ownerIdentity, inferredNames);
-					}
-					inferredNames.add(firstStep.name);
+		for (let fileIndex = 0; fileIndex < input.files.length; fileIndex += 1) {
+			const members = input.files[fileIndex].memberValues;
+			for (let memberIndex = 0; memberIndex < members.length; memberIndex += 1) {
+				const member = members[memberIndex];
+				const ownerIdentity = this.find(semanticValueRootKey(member.owner.root));
+				if (member.owner.root.kind === 'owned') {
+					this.sourceOwnedIdentities.add(ownerIdentity);
 				}
-				continue;
+				if (member.owner.steps.length !== 0) {
+					const firstStep = member.owner.steps[0];
+					if (this.moduleIdentities.has(ownerIdentity) && firstStep.kind === 'member') {
+						let inferredNames = this.inferredMemberNamesByIdentity.get(ownerIdentity);
+						if (!inferredNames) {
+							inferredNames = new Set();
+							this.inferredMemberNamesByIdentity.set(ownerIdentity, inferredNames);
+						}
+						inferredNames.add(firstStep.name);
+					}
+					continue;
+				}
+				let declaredMembers = this.membersByIdentity.get(ownerIdentity);
+				if (!declaredMembers) {
+					declaredMembers = new Map();
+					this.membersByIdentity.set(ownerIdentity, declaredMembers);
+				}
+				let declarations = declaredMembers.get(member.name);
+				if (!declarations) {
+					declarations = [];
+					declaredMembers.set(member.name, declarations);
+				}
+				declarations.push(member.declId);
 			}
-			let members = this.membersByIdentity.get(ownerIdentity);
-			if (!members) {
-				members = new Map();
-				this.membersByIdentity.set(ownerIdentity, members);
-			}
-			let declarations = members.get(member.name);
-			if (!declarations) {
-				declarations = [];
-				members.set(member.name, declarations);
-			}
-			declarations.push(member.declId);
 		}
 	}
 
@@ -825,7 +840,11 @@ export class WorkspaceValueIdentityIndex {
 const EMPTY_DEMAND_ENTRIES = Object.freeze(new Array<never>());
 
 class WorkspaceValueDemandIndex {
-	private readonly globalValues: ReadonlyMap<string, SymbolID>;
+	public readonly declarationValues: Map<SymbolID, SemanticValueSource[]> = new Map();
+	public readonly identityDeclarations: Set<SymbolID> = new Set();
+	public readonly projectionDeclarations: Set<SymbolID> = new Set();
+	public readonly moduleValues: Map<string, SemanticValueSource> = new Map();
+	public readonly globalValues: ReadonlyMap<string, SymbolID>;
 	private readonly identities: WorkspaceValueIdentityIndex;
 	private readonly membersByOwner: Map<string, Map<string, MemberValueEntry[]>> = new Map();
 	private readonly projectedMembersByOwner: Map<string, Map<string, MemberValueEntry[]>> = new Map();
@@ -860,176 +879,211 @@ class WorkspaceValueDemandIndex {
 	constructor(input: WorkspaceValueGraphInput, identities: WorkspaceValueIdentityIndex) {
 		this.globalValues = input.globalValues;
 		this.identities = identities;
-		for (let memberIndex = 0; memberIndex < input.memberValues.length; memberIndex += 1) {
-			const member = input.memberValues[memberIndex];
-			this.appendMember(this.membersByOwner, this.identities.sourceKey(member.owner), member.name, member);
-			this.membersByDeclaration.set(member.declId, member);
-		}
-		for (let returnIndex = 0; returnIndex < input.functionReturns.length; returnIndex += 1) {
-			const entry = input.functionReturns[returnIndex];
-			this.appendRoot(this.returnsByFunctionRoot, entry.functionValue.root, entry);
-		}
 		const ownerByOwnedKey = new Map<string, FunctionValueFlowEntry>();
-		for (let flowIndex = 0; flowIndex < input.functionFlows.length; flowIndex += 1) {
-			const flow = input.functionFlows[flowIndex];
-			for (let ownedIndex = 0; ownedIndex < flow.ownedValueKeys.length; ownedIndex += 1) {
-				ownerByOwnedKey.set(flow.ownedValueKeys[ownedIndex], flow);
+		for (let fileIndex = 0; fileIndex < input.files.length; fileIndex += 1) {
+			const file = input.files[fileIndex];
+			for (let entryIndex = 0; entryIndex < file.declarationValues.length; entryIndex += 1) {
+				const entry = file.declarationValues[entryIndex];
+				if (entry.relation === 'identity') {
+					this.identityDeclarations.add(entry.declId);
+				} else if (entry.relation === 'projection') {
+					this.projectionDeclarations.add(entry.declId);
+				}
+				let sources = this.declarationValues.get(entry.declId);
+				if (!sources) {
+					sources = [];
+					this.declarationValues.set(entry.declId, sources);
+				}
+				sources.push(entry.source);
+			}
+			for (let entryIndex = 0; entryIndex < file.moduleValues.length; entryIndex += 1) {
+				const entry = file.moduleValues[entryIndex];
+				this.moduleValues.set(entry.module, entry.source);
+			}
+			for (let memberIndex = 0; memberIndex < file.memberValues.length; memberIndex += 1) {
+				const member = file.memberValues[memberIndex];
+				this.appendMember(
+					this.membersByOwner,
+					this.identities.sourceKey(member.owner),
+					member.name,
+					member,
+				);
+				this.membersByDeclaration.set(member.declId, member);
+			}
+			for (let returnIndex = 0; returnIndex < file.functionReturnValues.length; returnIndex += 1) {
+				const entry = file.functionReturnValues[returnIndex];
+				this.appendRoot(this.returnsByFunctionRoot, entry.functionValue.root, entry);
+			}
+			for (let flowIndex = 0; flowIndex < file.functionValueFlows.length; flowIndex += 1) {
+				const flow = file.functionValueFlows[flowIndex];
+				for (let ownedIndex = 0; ownedIndex < flow.ownedValueKeys.length; ownedIndex += 1) {
+					ownerByOwnedKey.set(flow.ownedValueKeys[ownedIndex], flow);
+				}
 			}
 		}
-		for (let flowIndex = 0; flowIndex < input.functionFlows.length; flowIndex += 1) {
-			const flow = input.functionFlows[flowIndex];
-			const receiver = flow.parameters[0];
-			if (flow.receiverProjection && receiver) {
-				const members = this.membersByOwner.get(this.identities.sourceKey(flow.receiverProjection));
-				if (members) {
-					const projectedOwner = this.identities.sourceKey(receiver);
-					for (const [name, entries] of members) {
-						for (let entryIndex = 0; entryIndex < entries.length; entryIndex += 1) {
-							this.appendMember(
-								this.projectedMembersByOwner,
-								projectedOwner,
-								name,
-								entries[entryIndex],
-							);
+		for (let fileIndex = 0; fileIndex < input.files.length; fileIndex += 1) {
+			const flows = input.files[fileIndex].functionValueFlows;
+			for (let flowIndex = 0; flowIndex < flows.length; flowIndex += 1) {
+				const flow = flows[flowIndex];
+				const receiver = flow.parameters[0];
+				if (flow.receiverProjection && receiver) {
+					const members = this.membersByOwner.get(this.identities.sourceKey(flow.receiverProjection));
+					if (members) {
+						const projectedOwner = this.identities.sourceKey(receiver);
+						for (const [name, entries] of members) {
+							for (let entryIndex = 0; entryIndex < entries.length; entryIndex += 1) {
+								this.appendMember(
+									this.projectedMembersByOwner,
+									projectedOwner,
+									name,
+									entries[entryIndex],
+								);
+							}
 						}
 					}
 				}
-			}
-			if (flow.functionValue.root.kind === 'owned' && flow.functionValue.steps.length === 0) {
-				const owner = ownerByOwnedKey.get(flow.functionValue.root.key);
-				if (owner && owner !== flow) {
-					this.lexicalOwners.set(flow, owner);
+				if (flow.functionValue.root.kind === 'owned' && flow.functionValue.steps.length === 0) {
+					const owner = ownerByOwnedKey.get(flow.functionValue.root.key);
+					if (owner && owner !== flow) {
+						this.lexicalOwners.set(flow, owner);
+					}
+				}
+				this.appendRoot(this.flowsByRoot, flow.functionValue.root, flow);
+				for (let parameterIndex = 0; parameterIndex < flow.parameters.length; parameterIndex += 1) {
+					this.appendRoot(this.flowsByRoot, flow.parameters[parameterIndex].root, flow);
+				}
+				for (let declarationIndex = 0; declarationIndex < flow.declarationIds.length; declarationIndex += 1) {
+					this.append(
+						this.flowsByRoot,
+						semanticValueRootKey({ kind: 'declaration', declId: flow.declarationIds[declarationIndex] }),
+						flow,
+					);
+				}
+				for (let ownedIndex = 0; ownedIndex < flow.ownedValueKeys.length; ownedIndex += 1) {
+					this.append(
+						this.flowsByRoot,
+						semanticValueRootKey({ kind: 'owned', key: flow.ownedValueKeys[ownedIndex] }),
+						flow,
+					);
+				}
+				for (let callIndex = 0; callIndex < flow.calls.length; callIndex += 1) {
+					const call = flow.calls[callIndex];
+					this.ownerFlowByCall.set(call, flow);
+					if (call.result) {
+						this.appendRoot(this.resultCallerCallsByRoot, call.result.root, call);
+					}
+					this.indexSource(
+						this.callerCallsByRoot,
+						this.callerCallsByMember,
+						call.callee,
+						call,
+					);
+					this.append(
+						this.callerCallsByCalleeSource,
+						this.identities.sourceKey(call.callee),
+						call,
+					);
+					const projectedCallee = projectValueSource(
+						call.callee,
+						flow.parameters[0],
+						flow.receiverProjection,
+					);
+					if (projectedCallee) {
+						this.append(
+							this.callerCallsByCalleeSource,
+							this.identities.sourceKey(projectedCallee),
+							call,
+						);
+					}
+					for (let argumentIndex = 0; argumentIndex < call.arguments.length; argumentIndex += 1) {
+						const argument = call.arguments[argumentIndex];
+						if (argument) {
+							this.indexSourceRoot(this.argumentCallerCallsByRoot, argument, call);
+							this.append(
+								this.argumentCallerCallsBySource,
+								this.identities.sourceKey(argument),
+								call,
+							);
+							const projectedArgument = projectValueSource(
+								argument,
+								flow.parameters[0],
+								flow.receiverProjection,
+							);
+							if (projectedArgument) {
+								this.indexSourceRoot(this.argumentCallerCallsByRoot, projectedArgument, call);
+								this.append(
+									this.argumentCallerCallsBySource,
+									this.identities.sourceKey(projectedArgument),
+									call,
+								);
+							}
+						}
+					}
+				}
+				for (let memberIndex = 0; memberIndex < flow.members.length; memberIndex += 1) {
+					const member = flow.members[memberIndex];
+					this.indexMemberEffect(flow, member.owner, member.name, {
+						flow,
+						kind: 'member',
+						member,
+					});
+					const sources = this.declarationValues.get(member.declId);
+					if (sources) {
+						const target = appendValueMember(member.owner, member.name);
+						for (let sourceIndex = 0; sourceIndex < sources.length; sourceIndex += 1) {
+							this.indexEffectDependency(flow, sources[sourceIndex], target);
+						}
+					}
+				}
+				for (let assignmentIndex = 0; assignmentIndex < flow.assignments.length; assignmentIndex += 1) {
+					const assignment = flow.assignments[assignmentIndex];
+					this.indexAssignmentFlowEffect(flow, assignment);
+					if (assignment.relation === 'value') {
+						this.indexEffectDependency(flow, assignment.source, assignment.target);
+					} else {
+						this.indexEffectDependency(flow, assignment.target, assignment.source);
+					}
 				}
 			}
-			this.appendRoot(this.flowsByRoot, flow.functionValue.root, flow);
-			for (let parameterIndex = 0; parameterIndex < flow.parameters.length; parameterIndex += 1) {
-				this.appendRoot(this.flowsByRoot, flow.parameters[parameterIndex].root, flow);
-			}
-			for (let declarationIndex = 0; declarationIndex < flow.declarationIds.length; declarationIndex += 1) {
-				this.append(
-					this.flowsByRoot,
-					semanticValueRootKey({ kind: 'declaration', declId: flow.declarationIds[declarationIndex] }),
-					flow,
-				);
-			}
-			for (let ownedIndex = 0; ownedIndex < flow.ownedValueKeys.length; ownedIndex += 1) {
-				this.append(
-					this.flowsByRoot,
-					semanticValueRootKey({ kind: 'owned', key: flow.ownedValueKeys[ownedIndex] }),
-					flow,
-				);
-			}
-			for (let callIndex = 0; callIndex < flow.calls.length; callIndex += 1) {
-				const call = flow.calls[callIndex];
-				this.ownerFlowByCall.set(call, flow);
-				if (call.result) {
-					this.appendRoot(this.resultCallerCallsByRoot, call.result.root, call);
-				}
+		}
+		for (let fileIndex = 0; fileIndex < input.files.length; fileIndex += 1) {
+			const calls = input.files[fileIndex].callValues;
+			for (let callIndex = 0; callIndex < calls.length; callIndex += 1) {
+				const call = calls[callIndex];
 				this.indexSource(
-					this.callerCallsByRoot,
-					this.callerCallsByMember,
+					this.callsByCalleeRoot,
+					this.callsByCalleeMember,
 					call.callee,
 					call,
 				);
 				this.append(
-					this.callerCallsByCalleeSource,
+					this.callsByCalleeSource,
 					this.identities.sourceKey(call.callee),
 					call,
 				);
-				const projectedCallee = projectValueSource(
-					call.callee,
-					flow.parameters[0],
-					flow.receiverProjection,
-				);
-				if (projectedCallee) {
-					this.append(
-						this.callerCallsByCalleeSource,
-						this.identities.sourceKey(projectedCallee),
-						call,
-					);
-				}
 				for (let argumentIndex = 0; argumentIndex < call.arguments.length; argumentIndex += 1) {
 					const argument = call.arguments[argumentIndex];
 					if (argument) {
-						this.indexSourceRoot(this.argumentCallerCallsByRoot, argument, call);
+						this.indexSourceRoot(this.callsByArgumentRoot, argument, call);
 						this.append(
-							this.argumentCallerCallsBySource,
+							this.callsByArgumentSource,
 							this.identities.sourceKey(argument),
 							call,
 						);
-						const projectedArgument = projectValueSource(
-							argument,
-							flow.parameters[0],
-							flow.receiverProjection,
-						);
-						if (projectedArgument) {
-							this.indexSourceRoot(this.argumentCallerCallsByRoot, projectedArgument, call);
-							this.append(
-								this.argumentCallerCallsBySource,
-								this.identities.sourceKey(projectedArgument),
-								call,
-							);
-						}
 					}
 				}
-			}
-			for (let memberIndex = 0; memberIndex < flow.members.length; memberIndex += 1) {
-				const member = flow.members[memberIndex];
-				this.indexMemberEffect(flow, member.owner, member.name, {
-					flow,
-					kind: 'member',
-					member,
-				});
-				const sources = input.declarationValues.get(member.declId);
-				if (sources) {
-					const target = appendValueMember(member.owner, member.name);
-					for (let sourceIndex = 0; sourceIndex < sources.length; sourceIndex += 1) {
-						this.indexEffectDependency(flow, sources[sourceIndex], target);
-					}
-				}
-			}
-			for (let assignmentIndex = 0; assignmentIndex < flow.assignments.length; assignmentIndex += 1) {
-				const assignment = flow.assignments[assignmentIndex];
-				this.indexAssignmentFlowEffect(flow, assignment);
-				if (assignment.relation === 'value') {
-					this.indexEffectDependency(flow, assignment.source, assignment.target);
-				} else {
-					this.indexEffectDependency(flow, assignment.target, assignment.source);
+				if (call.result) {
+					this.appendRoot(this.callsByResultRoot, call.result.root, call);
 				}
 			}
 		}
-		for (let callIndex = 0; callIndex < input.calls.length; callIndex += 1) {
-			const call = input.calls[callIndex];
-			this.indexSource(
-				this.callsByCalleeRoot,
-				this.callsByCalleeMember,
-				call.callee,
-				call,
-			);
-			this.append(
-				this.callsByCalleeSource,
-				this.identities.sourceKey(call.callee),
-				call,
-			);
-			for (let argumentIndex = 0; argumentIndex < call.arguments.length; argumentIndex += 1) {
-				const argument = call.arguments[argumentIndex];
-				if (argument) {
-					this.indexSourceRoot(this.callsByArgumentRoot, argument, call);
-					this.append(
-						this.callsByArgumentSource,
-						this.identities.sourceKey(argument),
-						call,
-					);
-				}
+		for (let fileIndex = 0; fileIndex < input.files.length; fileIndex += 1) {
+			const assignments = input.files[fileIndex].valueAssignments;
+			for (let assignmentIndex = 0; assignmentIndex < assignments.length; assignmentIndex += 1) {
+				const assignment = assignments[assignmentIndex];
+				this.indexSourceRoot(this.assignmentsByTargetRoot, assignment.target, assignment);
+				this.indexMemberTarget(this.assignmentsByMemberOwner, assignment.target, assignment);
 			}
-			if (call.result) {
-				this.appendRoot(this.callsByResultRoot, call.result.root, call);
-			}
-		}
-		for (let assignmentIndex = 0; assignmentIndex < input.valueAssignments.length; assignmentIndex += 1) {
-			const assignment = input.valueAssignments[assignmentIndex];
-			this.indexSourceRoot(this.assignmentsByTargetRoot, assignment.target, assignment);
-			this.indexMemberTarget(this.assignmentsByMemberOwner, assignment.target, assignment);
 		}
 	}
 
@@ -1418,11 +1472,6 @@ class WorkspaceValueDemandIndex {
 export class WorkspaceValueGraph {
 	private readonly input: WorkspaceValueGraphInput;
 	private readonly identities: WorkspaceValueIdentityIndex;
-	private readonly declarationValues: ReadonlyMap<SymbolID, readonly SemanticValueSource[]>;
-	private readonly identityDeclarations: ReadonlySet<SymbolID>;
-	private readonly projectionDeclarations: ReadonlySet<SymbolID>;
-	private readonly moduleValues: ReadonlyMap<string, SemanticValueSource>;
-	private readonly globalValues: ReadonlyMap<string, SymbolID>;
 	private readonly demandIndex: WorkspaceValueDemandIndex;
 	private readonly demandedRootKeys: Set<string> = new Set();
 	private readonly demandedRoots: SemanticValueRoot[] = [];
@@ -1598,11 +1647,6 @@ export class WorkspaceValueGraph {
 	) {
 		this.input = options;
 		this.identities = identities;
-		this.declarationValues = options.declarationValues;
-		this.moduleValues = options.moduleValues;
-		this.identityDeclarations = options.identityDeclarations;
-		this.projectionDeclarations = options.projectionDeclarations;
-		this.globalValues = options.globalValues;
 		this.demandIndex = shared?.demandIndex ?? new WorkspaceValueDemandIndex(options, identities);
 	}
 
@@ -1844,7 +1888,7 @@ export class WorkspaceValueGraph {
 
 	private demandRoot(root: SemanticValueRoot): void {
 		if (root.kind === 'global') {
-			const declaration = this.globalValues.get(root.symbolKey);
+			const declaration = this.demandIndex.globalValues.get(root.symbolKey);
 			if (declaration === undefined) {
 				return;
 			}
@@ -1865,7 +1909,7 @@ export class WorkspaceValueGraph {
 		name: string,
 	): boolean {
 		if (source.root.kind === 'global') {
-			const declaration = this.globalValues.get(source.root.symbolKey);
+			const declaration = this.demandIndex.globalValues.get(source.root.symbolKey);
 			if (declaration === undefined) {
 				return false;
 			}
@@ -2256,14 +2300,14 @@ export class WorkspaceValueGraph {
 			return;
 		}
 		this.materializedDeclarations.add(declId);
-		const sources = this.declarationValues.get(declId);
+		const sources = this.demandIndex.declarationValues.get(declId);
 		if (!sources) {
 			return;
 		}
 		const target = this.nodeForRoot(root);
-		const relation: DeclarationValueRelation = this.identityDeclarations.has(declId)
+		const relation: DeclarationValueRelation = this.demandIndex.identityDeclarations.has(declId)
 			? 'identity'
-			: this.projectionDeclarations.has(declId)
+			: this.demandIndex.projectionDeclarations.has(declId)
 				? 'projection'
 				: 'value';
 		for (let sourceIndex = 0; sourceIndex < sources.length; sourceIndex += 1) {
@@ -2283,7 +2327,7 @@ export class WorkspaceValueGraph {
 			return;
 		}
 		this.materializedModules.add(module);
-		const source = this.moduleValues.get(module);
+		const source = this.demandIndex.moduleValues.get(module);
 		if (!source) {
 			return;
 		}
@@ -4022,7 +4066,7 @@ export class WorkspaceValueGraph {
 			if (source.root.kind === 'declaration'
 				&& !this.indexedSourceDeclarations.has(source.root.declId)) {
 				this.indexedSourceDeclarations.add(source.root.declId);
-				const declarationSources = this.declarationValues.get(source.root.declId);
+				const declarationSources = this.demandIndex.declarationValues.get(source.root.declId);
 				if (declarationSources) {
 					for (let sourceIndex = 0; sourceIndex < declarationSources.length; sourceIndex += 1) {
 						sources.push(declarationSources[sourceIndex]);
@@ -4061,7 +4105,7 @@ export class WorkspaceValueGraph {
 		for (let memberIndex = 0; memberIndex < entry.members.length; memberIndex += 1) {
 			const member = entry.members[memberIndex];
 			this.collectParameterDependencies(member.owner, entry, marks);
-			const sources = this.declarationValues.get(member.declId);
+			const sources = this.demandIndex.declarationValues.get(member.declId);
 			if (sources) {
 				for (let sourceIndex = 0; sourceIndex < sources.length; sourceIndex += 1) {
 					this.collectParameterDependencies(sources[sourceIndex], entry, marks);
@@ -4108,7 +4152,7 @@ export class WorkspaceValueGraph {
 			if (dependency.root.kind === 'declaration'
 				&& !this.indexedDependencyDeclarations.has(dependency.root.declId)) {
 				this.indexedDependencyDeclarations.add(dependency.root.declId);
-				const declarationSources = this.declarationValues.get(dependency.root.declId);
+				const declarationSources = this.demandIndex.declarationValues.get(dependency.root.declId);
 				if (declarationSources) {
 					for (let sourceIndex = 0; sourceIndex < declarationSources.length; sourceIndex += 1) {
 						pending.push(declarationSources[sourceIndex]);
@@ -4953,7 +4997,7 @@ export class WorkspaceValueGraph {
 		if (context.defaultContext) {
 			return this.nodeForRoot({ kind: 'declaration', declId });
 		}
-		const sources = this.declarationValues.get(declId);
+		const sources = this.demandIndex.declarationValues.get(declId);
 		let value = context.localValues.get(declId);
 		if (!value) {
 			value = this.createNode();
@@ -4964,9 +5008,9 @@ export class WorkspaceValueGraph {
 			return value;
 		}
 		context.resolvedLocals.add(declId);
-		const relation: DeclarationValueRelation = this.identityDeclarations.has(declId)
+		const relation: DeclarationValueRelation = this.demandIndex.identityDeclarations.has(declId)
 			? 'identity'
-			: this.projectionDeclarations.has(declId)
+			: this.demandIndex.projectionDeclarations.has(declId)
 				? 'projection'
 				: 'value';
 		for (let sourceIndex = 0; sourceIndex < sources.length; sourceIndex += 1) {
@@ -5289,7 +5333,7 @@ export class WorkspaceValueGraph {
 	private nodeForRoot(root: SemanticValueRoot): SemanticValueID | undefined;
 	private nodeForRoot(root: SemanticValueRoot): SemanticValueID | undefined {
 		if (root.kind === 'global') {
-			const declId = this.globalValues.get(root.symbolKey);
+			const declId = this.demandIndex.globalValues.get(root.symbolKey);
 			return declId === undefined
 				? undefined
 				: this.nodeForRoot({ kind: 'declaration', declId });

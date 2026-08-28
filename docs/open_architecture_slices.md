@@ -43,9 +43,12 @@ De huidige IDE- en debuggergrenzen zijn:
   module-exports, teruggegeven module-instanties en statische Lua-class-
   inheritance. Zij verzint geen bron voor dynamische runtimewaarden;
 - dynamische membernavigatie gebruikt per navigatie- of references-query een
-  eigen demand-graph boven één immutable workspace-index. Alleen gevraagde
-  Lua-roots, calls, contexten en heap-effects worden gematerialiseerd; de
-  taallaag kent geen cartlib-, firmware- of frameworktypen;
+  eigen demand-graph boven immutable semantische records per bestand. De
+  workspace kopieert die records bij een edit niet eerst naar een tweede
+  workspacebrede value-flowrepresentatie; identity- en demandindices ontstaan
+  pas wanneer een query ze nodig heeft. Alleen gevraagde Lua-roots, calls,
+  contexten en heap-effects worden gematerialiseerd; de taallaag kent geen
+  cartlib-, firmware- of frameworktypen;
 - Back en Forward bewaren editorlocaties op het moment dat een navigatiecommando
   vertrekt. Een cartridge-entry opent cartridgebron en niet eerst de BIOS-entry;
 - stackframes en statement-stepping gebruiken de toolingmetadata van de geladen
@@ -80,7 +83,7 @@ vervangt de hieronder genoemde fysieke SNES Mini-validatie niet.
 | ID | Opdracht | Klaar wanneer |
 | --- | --- | --- |
 | `PERF-RUNTIME-01` | Kies per iteratie één gemeten hot-pathowner en verwijder daar herhaalde decode, conversie, validatie, allocatie of dispatch bij de producer. Dit is een paraplu, geen enkele megaslice. | Analyzers blokkeren nieuwe overtredingen, parity blijft exact en representatieve low-end hardware houdt 50 Hz zonder oplopende backlog. |
-| `IDE-SEMANTIC-01` | Geef parser- en semantische knopen een stabiele identiteit over edits en laat de workspace alleen de echte reverse dependencies van gewijzigde knopen herbouwen. Meet eerst de huidige, eenmaal per debounced bufferversie uitgevoerde piece-tree-naar-source/lines-materialisatie; vervang haar alleen waar incremental parserinput aantoonbaar de eigenaargrens en edit-latency verbetert. | Ongewijzigde syntax en value-flow behouden hun identiteit zonder positiegebonden symbol- of owned-value-id's blind tussen snapshots te hergebruiken. Een edit heranalyseert geen onafhankelijk bestand of flow en veroorzaakt geen onnodige volledige source- én lines-materialisatie. Navigatieresultaten blijven gelijk aan een volledige cold build en de generieke Lua-laag krijgt geen cartlib-, firmware- of frameworkkennis. |
+| `IDE-SEMANTIC-01` | Meet de eenmaal per debounced bufferversie uitgevoerde piece-tree-naar-source/lines-materialisatie en de analyse van het gewijzigde bestand. Bouw pas incremental parserinput wanneer die meting een relevante edit-latency of allocatie aanwijst. Volg daarbij het productiecontract van TypeScript en LuaLS: ongewijzigde file-records worden behouden, maar de semantiek van een gewijzigd bestand mag opnieuw worden opgebouwd. | Een edit heranalyseert geen onafhankelijk bestand en bouwt geen workspacebrede kopie van alle file-value-flows. Source en lines worden niet vaker dan eenmaal per benodigde bufferversie gematerialiseerd. Symbol- en owned-value-ID's zijn snapshotintern; er bestaat geen speculatief persistent-ID-protocol. Navigatieresultaten blijven gelijk aan een volledige cold build en de generieke Lua-laag krijgt geen cartlib-, firmware- of frameworkkennis. |
 
 Houd throughput en fysieke pacing als twee afzonderlijke metingen. De
 `profile:libretro-particle-benchmark-offscreen-wsl`-opdracht eindigt op de

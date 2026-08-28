@@ -27,12 +27,14 @@ export class WorkspaceSymbolResolver {
 		files: readonly FileSemanticData[];
 		declarations: ReadonlyMap<SymbolID, Decl>;
 		globals: ReadonlyMap<string, SymbolID>;
-		valueGraphInput: WorkspaceValueGraphInput;
 	}) {
 		this.files = options.files;
 		this.declarations = options.declarations;
 		this.globals = options.globals;
-		this.valueGraphInput = options.valueGraphInput;
+		this.valueGraphInput = {
+			files: options.files,
+			globalValues: options.globals,
+		};
 	}
 
 	// disable-next-line single_line_method_pattern -- declaration lookup remains owned by the immutable workspace resolver.

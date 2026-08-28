@@ -622,71 +622,15 @@ class LuaProjectIndex {
 	private buildWorkspaceSymbolResolver(): WorkspaceSymbolResolver {
 		const orderedFiles = this.listFiles();
 		orderedFiles.sort((left, right) => this.fileOrder.get(left)! - this.fileOrder.get(right)!);
-		const declarationValues = new Map<SymbolID, SemanticValueSource[]>();
-		const identityDeclarations = new Set<SymbolID>();
-		const projectionDeclarations = new Set<SymbolID>();
-		const moduleValues = new Map<string, SemanticValueSource>();
-		const memberValues: MemberValueEntry[] = [];
-		const functionReturns: FunctionReturnValueEntry[] = [];
-		const functionFlows: FunctionValueFlowEntry[] = [];
-		const calls: CallValueEntry[] = [];
-		const valueAssignments: ValueAssignmentEntry[] = [];
 		const orderedData = new Array<FileSemanticData>(orderedFiles.length);
 		for (let fileIndex = 0; fileIndex < orderedFiles.length; fileIndex += 1) {
-			const data = this.files.get(orderedFiles[fileIndex])!;
-			orderedData[fileIndex] = data;
-			for (let index = 0; index < data.declarationValues.length; index += 1) {
-				const entry = data.declarationValues[index];
-				if (entry.relation === 'identity') {
-					identityDeclarations.add(entry.declId);
-				} else if (entry.relation === 'projection') {
-					projectionDeclarations.add(entry.declId);
-				}
-				let sources = declarationValues.get(entry.declId);
-				if (!sources) {
-					sources = [];
-					declarationValues.set(entry.declId, sources);
-				}
-				sources.push(entry.source);
-			}
-			for (let index = 0; index < data.moduleValues.length; index += 1) {
-				const entry = data.moduleValues[index];
-				moduleValues.set(entry.module, entry.source);
-			}
-			for (let index = 0; index < data.memberValues.length; index += 1) {
-				memberValues.push(data.memberValues[index]);
-			}
-			for (let index = 0; index < data.functionReturnValues.length; index += 1) {
-				functionReturns.push(data.functionReturnValues[index]);
-			}
-			for (let index = 0; index < data.functionValueFlows.length; index += 1) {
-				functionFlows.push(data.functionValueFlows[index]);
-			}
-			for (let index = 0; index < data.callValues.length; index += 1) {
-				calls.push(data.callValues[index]);
-			}
-			for (let index = 0; index < data.valueAssignments.length; index += 1) {
-				valueAssignments.push(data.valueAssignments[index]);
-			}
+			orderedData[fileIndex] = this.files.get(orderedFiles[fileIndex])!;
 		}
 		const globals = new Map(this.globalsByKey);
-		const valueGraphInput = {
-			declarationValues,
-			identityDeclarations,
-			projectionDeclarations,
-			moduleValues,
-			memberValues,
-			functionReturns,
-			functionFlows,
-			calls,
-			valueAssignments,
-			globalValues: globals,
-		};
 		return new WorkspaceSymbolResolver({
 			files: orderedData,
 			declarations: new Map(this.symbols),
 			globals,
-			valueGraphInput,
 		});
 	}
 
