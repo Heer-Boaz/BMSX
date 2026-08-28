@@ -1,8 +1,11 @@
 import type { Decl, FileSemanticData, Ref, SymbolID } from './model';
-import { WorkspaceValueGraph, type WorkspaceValueGraphInput } from './value_graph';
+import {
+	WorkspaceValueGraph,
+	WorkspaceValueIdentityIndex,
+	type WorkspaceValueGraphInput,
+} from './value_graph';
 import { sourceRangesEqual } from '../source_range';
 import { compareSourcePosition } from './source_range';
-import { WorkspaceStaticMemberIndex } from './workspace_static_member_index';
 
 const EMPTY_SYMBOLS: readonly SymbolID[] = [];
 
@@ -15,8 +18,9 @@ export class WorkspaceSymbolResolver {
 	private readonly declarations: ReadonlyMap<SymbolID, Decl>;
 	private readonly globals: ReadonlyMap<string, SymbolID>;
 	private readonly valueGraphInput: WorkspaceValueGraphInput;
-	private staticMemberIndex?: WorkspaceStaticMemberIndex;
+	private valueIdentities?: WorkspaceValueIdentityIndex;
 	private valueGraph?: WorkspaceValueGraph;
+	private readonly referenceTargets: Map<Ref, readonly SymbolID[]> = new Map();
 	private readonly referencesBySymbol: Map<SymbolID, readonly Ref[]> = new Map();
 
 	constructor(options: {
@@ -42,6 +46,19 @@ export class WorkspaceSymbolResolver {
 	}
 
 	public resolveReferenceTargets(ref: Ref): readonly SymbolID[] {
+		const cached = this.referenceTargets.get(ref);
+		if (cached) {
+			return cached;
+		}
+		const targets = this.resolveReferenceTargetsUncached(ref);
+		this.referenceTargets.set(ref, targets);
+		return targets;
+	}
+
+	private resolveReferenceTargetsUncached(
+		ref: Ref,
+		valueGraph?: WorkspaceValueGraph,
+	): readonly SymbolID[] {
 		if (ref.lexicalTarget) {
 			return [ref.lexicalTarget];
 		}
@@ -52,11 +69,16 @@ export class WorkspaceSymbolResolver {
 			return [ref.target];
 		}
 		if (ref.referenceKind === 'member' || ref.referenceKind === 'method') {
-			const staticMembers = this.resolveStaticMembers(ref);
+			const staticMembers = this.getValueIdentities().resolveStaticMembers(
+				ref.receiverValue,
+				ref.name,
+			);
 			if (staticMembers) {
 				return staticMembers;
 			}
-			const valueGraph = this.getValueGraph();
+			if (!valueGraph) {
+				valueGraph = this.getValueGraph().fork();
+			}
 			const members = valueGraph.resolveMembers(ref.receiverValue, ref.name);
 			if (members.length > 0) {
 				return members;
@@ -69,16 +91,16 @@ export class WorkspaceSymbolResolver {
 		return global ? [global] : EMPTY_SYMBOLS;
 	}
 
-	private resolveStaticMembers(ref: Ref): readonly SymbolID[] | undefined {
-		if (!this.staticMemberIndex) {
-			this.staticMemberIndex = new WorkspaceStaticMemberIndex(this.valueGraphInput);
+	private getValueIdentities(): WorkspaceValueIdentityIndex {
+		if (!this.valueIdentities) {
+			this.valueIdentities = new WorkspaceValueIdentityIndex(this.valueGraphInput);
 		}
-		return this.staticMemberIndex.resolveMembers(ref.receiverValue, ref.name);
+		return this.valueIdentities;
 	}
 
 	private getValueGraph(): WorkspaceValueGraph {
 		if (!this.valueGraph) {
-			this.valueGraph = new WorkspaceValueGraph(this.valueGraphInput);
+			this.valueGraph = new WorkspaceValueGraph(this.valueGraphInput, this.getValueIdentities());
 		}
 		return this.valueGraph;
 	}
@@ -138,7 +160,7 @@ export class WorkspaceSymbolResolver {
 			return;
 		}
 		const candidates: Ref[] = [];
-		const memberQueries: Ref[] = [];
+		let hasDynamicMemberCandidates = false;
 		for (let fileIndex = 0; fileIndex < this.files.length; fileIndex += 1) {
 			const referencesByName = this.files[fileIndex].referencesByName;
 			for (const name of names) {
@@ -148,36 +170,30 @@ export class WorkspaceSymbolResolver {
 						const reference = references[referenceIndex];
 						candidates.push(reference);
 						if (!reference.lexicalTarget
-							&& (reference.referenceKind === 'member' || reference.referenceKind === 'method')) {
-							memberQueries.push(reference);
+							&& (reference.referenceKind === 'member' || reference.referenceKind === 'method')
+							&& this.getValueIdentities().resolveStaticMembers(
+								reference.receiverValue,
+								reference.name,
+							) === undefined) {
+							hasDynamicMemberCandidates = true;
 						}
 					}
 				}
-			}
-		}
-		if (memberQueries.length > 0) {
-			let dynamicQueries: Ref[] | undefined;
-			for (let queryIndex = 0; queryIndex < memberQueries.length; queryIndex += 1) {
-				const query = memberQueries[queryIndex];
-				if (this.resolveStaticMembers(query) !== undefined) {
-					continue;
-				}
-				if (!dynamicQueries) {
-					dynamicQueries = [];
-				}
-				dynamicQueries.push(query);
-			}
-			if (dynamicQueries) {
-				this.getValueGraph().prepareMemberQueries(dynamicQueries);
 			}
 		}
 		const references = new Map<SymbolID, Ref[]>();
 		for (const symbolId of unresolvedSymbols) {
 			references.set(symbolId, []);
 		}
+		// Candidate selection and semantic confirmation share one query-local
+		// graph. Point navigation uses its own fork; workspace state is never
+		// polluted by a references search.
+		const valueGraph = hasDynamicMemberCandidates
+			? this.getValueGraph().fork()
+			: undefined;
 		for (let candidateIndex = 0; candidateIndex < candidates.length; candidateIndex += 1) {
 			const candidate = candidates[candidateIndex];
-			const targets = this.resolveReferenceTargets(candidate);
+			const targets = this.resolveReferenceTargetsUncached(candidate, valueGraph);
 			for (let targetIndex = 0; targetIndex < targets.length; targetIndex += 1) {
 				const target = targets[targetIndex];
 				const bucket = references.get(target);

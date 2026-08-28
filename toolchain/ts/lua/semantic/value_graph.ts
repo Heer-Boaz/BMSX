@@ -89,10 +89,22 @@ export type ValueAssignmentEntry = {
 	relation: 'value' | 'metatable' | 'prototype';
 };
 
-export type SemanticMemberQuery = {
-	receiverValue?: SemanticValueSource;
-	name: string;
+type FunctionEffectDependencyEntry = {
+	flow: FunctionValueFlowEntry;
+	source: SemanticValueSource;
+	target: SemanticValueSource;
 };
+
+type FunctionMemberEffectEntry =
+	| { flow: FunctionValueFlowEntry; kind: 'member'; member: MemberValueEntry }
+	| { flow: FunctionValueFlowEntry; kind: 'assignment'; assignment: ValueAssignmentEntry };
+
+type FunctionAssignmentEffectEntry = {
+	flow: FunctionValueFlowEntry;
+	assignment: ValueAssignmentEntry;
+};
+
+type StructuralValueStepKind = 'index' | 'element';
 
 type MemberValue = {
 	value: SemanticValueID;
@@ -117,6 +129,7 @@ type MaterializedFunctionValueFlow = {
 	members: readonly MemberValueEntry[];
 	calls: readonly CallValueEntry[];
 	assignments: readonly ValueAssignmentEntry[];
+	assignmentsByTarget: ReadonlyMap<string, readonly ValueAssignmentEntry[]>;
 	nestedFunctions: NestedFunctionValueFlow[];
 	lexicalOwner?: MaterializedFunctionValueFlow;
 };
@@ -139,12 +152,26 @@ type FunctionValueContext = {
 	resolvedLocals: Set<SymbolID>;
 	ownedValues: Map<string, SemanticValueID>;
 	callResults: Map<string, SemanticValueID>;
+	callModes: Map<CallValueEntry, CallInstantiationMode>;
+	materializedAssignments: Set<ValueAssignmentEntry>;
+	returnsMaterialized: boolean;
+	effectsMaterialized: boolean;
 };
 
 type ContextualCallValue = {
 	call: CallValueEntry;
 	context?: FunctionValueContext;
+	mode: CallInstantiationMode;
+	targetFlow?: MaterializedFunctionValueFlow;
 };
+
+type FunctionCallDemand = {
+	call: CallValueEntry;
+	mode: CallInstantiationMode;
+	targetFlow?: MaterializedFunctionValueFlow;
+};
+
+type CallInstantiationMode = 0 | 1 | 2 | 3;
 
 type ValueFlowTarget =
 	| { kind: 'value'; value: SemanticValueID }
@@ -162,6 +189,11 @@ type ValueFlowConstraint = {
 const EMPTY_MEMBER_DECLARATIONS: readonly MemberDeclaration[] = [];
 const EMPTY_MEMBER_IDS: readonly SymbolID[] = [];
 const EMPTY_ARGUMENT_VALUES: readonly (SemanticValueID | undefined)[] = [];
+const EMPTY_VALUE_STEPS: readonly SemanticValueStep[] = [];
+const CALL_BINDINGS: CallInstantiationMode = 0;
+const CALL_CONTEXT: CallInstantiationMode = 1;
+const CALL_RETURNS: CallInstantiationMode = 2;
+const CALL_EFFECTS: CallInstantiationMode = 3;
 const INITIAL_VALUE_CAPACITY = 256;
 const INITIAL_EDGE_CAPACITY = 256;
 
@@ -469,42 +501,63 @@ function semanticValueRootsEqual(left: SemanticValueRoot, right: SemanticValueRo
 	}
 }
 
-export function appendValueMember(source: SemanticValueSource, name: string): SemanticValueSource {
-	return {
-		root: source.root,
-		steps: source.steps.concat({ kind: 'member', name }),
-	};
+export function appendValueMember(
+	source: SemanticValueSource,
+	name: string,
+	stepCount = source.steps.length,
+): SemanticValueSource {
+	return appendValueStep(source, { kind: 'member', name }, stepCount);
 }
 
-export function appendValueElement(source: SemanticValueSource): SemanticValueSource {
-	return {
-		root: source.root,
-		steps: source.steps.concat({ kind: 'element' }),
-	};
+export function appendValueElement(
+	source: SemanticValueSource,
+	stepCount = source.steps.length,
+): SemanticValueSource {
+	return appendValueStep(source, { kind: 'element' }, stepCount);
 }
 
 export function appendValueIndex(
 	source: SemanticValueSource,
 	key: SemanticValueSource,
+	stepCount = source.steps.length,
 ): SemanticValueSource {
+	return appendValueStep(source, { kind: 'index', key }, stepCount);
+}
+
+export function appendValueInstance(
+	source: SemanticValueSource,
+	stepCount = source.steps.length,
+): SemanticValueSource {
+	return appendValueStep(source, { kind: 'instance' }, stepCount);
+}
+
+export function appendValueMetatable(
+	source: SemanticValueSource,
+	stepCount = source.steps.length,
+): SemanticValueSource {
+	return appendValueStep(source, { kind: 'metatable' }, stepCount);
+}
+
+function appendValueStep(
+	source: SemanticValueSource,
+	step: SemanticValueStep,
+	stepCount: number,
+): SemanticValueSource {
+	const steps = source.steps.slice(0, stepCount);
+	steps.push(step);
 	return {
 		root: source.root,
-		steps: source.steps.concat({ kind: 'index', key }),
+		steps,
 	};
 }
 
-export function appendValueInstance(source: SemanticValueSource): SemanticValueSource {
-	return {
-		root: source.root,
-		steps: source.steps.concat({ kind: 'instance' }),
-	};
-}
-
-export function appendValueMetatable(source: SemanticValueSource): SemanticValueSource {
-	return {
-		root: source.root,
-		steps: source.steps.concat({ kind: 'metatable' }),
-	};
+function valueSourcePrefix(
+	source: SemanticValueSource,
+	stepCount: number,
+): SemanticValueSource {
+	return stepCount === source.steps.length
+		? source
+		: { root: source.root, steps: source.steps.slice(0, stepCount) };
 }
 
 export function semanticValueSourcesEqual(
@@ -562,6 +615,34 @@ export function semanticValueSourcesEqual(
 	return true;
 }
 
+function projectValueSource(
+	source: SemanticValueSource,
+	from: SemanticValueSource | undefined,
+	to: SemanticValueSource | undefined,
+): SemanticValueSource | undefined {
+	if (!from
+		|| !to
+		|| from.steps.length > source.steps.length
+		|| !semanticValueRootsEqual(from.root, source.root)) {
+		return undefined;
+	}
+	for (let stepIndex = 0; stepIndex < from.steps.length; stepIndex += 1) {
+		const left = from.steps[stepIndex];
+		const right = source.steps[stepIndex];
+		if (left.kind !== right.kind
+			|| (left.kind === 'member' && (right.kind !== 'member' || left.name !== right.name))
+			|| (left.kind === 'index'
+				&& (right.kind !== 'index' || !semanticValueSourcesEqual(left.key, right.key)))) {
+			return undefined;
+		}
+	}
+	const steps = to.steps.slice();
+	for (let stepIndex = from.steps.length; stepIndex < source.steps.length; stepIndex += 1) {
+		steps.push(source.steps[stepIndex]);
+	}
+	return { root: to.root, steps };
+}
+
 export type WorkspaceValueGraphInput = {
 	declarationValues: ReadonlyMap<SymbolID, readonly SemanticValueSource[]>;
 	identityDeclarations: ReadonlySet<SymbolID>;
@@ -575,18 +656,831 @@ export type WorkspaceValueGraphInput = {
 	globalValues: ReadonlyMap<string, SymbolID>;
 };
 
+export class WorkspaceValueIdentityIndex {
+	private readonly identityParents: Map<string, string> = new Map();
+	private readonly identityRanks: Map<string, number> = new Map();
+	private readonly moduleIdentities: Set<string> = new Set();
+	private readonly sourceOwnedIdentities: Set<string> = new Set();
+	private readonly membersByIdentity: Map<string, Map<string, SymbolID[]>> = new Map();
+	private readonly inferredMemberNamesByIdentity: Map<string, Set<string>> = new Map();
+
+	constructor(input: WorkspaceValueGraphInput) {
+		for (const declId of input.identityDeclarations) {
+			const sources = input.declarationValues.get(declId);
+			if (!sources) {
+				continue;
+			}
+			const declarationRoot: SemanticValueRoot = { kind: 'declaration', declId };
+			for (let sourceIndex = 0; sourceIndex < sources.length; sourceIndex += 1) {
+				const source = sources[sourceIndex];
+				if (source.steps.length === 0) {
+					this.union(declarationRoot, source.root);
+				}
+			}
+		}
+		for (const [module, source] of input.moduleValues) {
+			if (source.steps.length === 0) {
+				this.union({ kind: 'module', module }, source.root);
+			}
+		}
+		for (const [symbolKey, declId] of input.globalValues) {
+			this.union(
+				{ kind: 'global', symbolKey },
+				{ kind: 'declaration', declId },
+			);
+		}
+		for (const module of input.moduleValues.keys()) {
+			const identity = this.find(semanticValueRootKey({ kind: 'module', module }));
+			this.moduleIdentities.add(identity);
+			this.sourceOwnedIdentities.add(identity);
+		}
+		for (const symbolKey of input.globalValues.keys()) {
+			this.sourceOwnedIdentities.add(this.find(semanticValueRootKey({ kind: 'global', symbolKey })));
+		}
+		for (const declId of input.identityDeclarations) {
+			const sources = input.declarationValues.get(declId);
+			if (!sources) {
+				continue;
+			}
+			for (let sourceIndex = 0; sourceIndex < sources.length; sourceIndex += 1) {
+				const source = sources[sourceIndex];
+				if (source.steps.length === 0 && source.root.kind === 'owned') {
+					this.sourceOwnedIdentities.add(this.find(semanticValueRootKey(source.root)));
+				}
+			}
+		}
+		for (let memberIndex = 0; memberIndex < input.memberValues.length; memberIndex += 1) {
+			const member = input.memberValues[memberIndex];
+			const ownerIdentity = this.find(semanticValueRootKey(member.owner.root));
+			if (member.owner.root.kind === 'owned') {
+				this.sourceOwnedIdentities.add(ownerIdentity);
+			}
+			if (member.owner.steps.length !== 0) {
+				const firstStep = member.owner.steps[0];
+				if (this.moduleIdentities.has(ownerIdentity) && firstStep.kind === 'member') {
+					let inferredNames = this.inferredMemberNamesByIdentity.get(ownerIdentity);
+					if (!inferredNames) {
+						inferredNames = new Set();
+						this.inferredMemberNamesByIdentity.set(ownerIdentity, inferredNames);
+					}
+					inferredNames.add(firstStep.name);
+				}
+				continue;
+			}
+			let members = this.membersByIdentity.get(ownerIdentity);
+			if (!members) {
+				members = new Map();
+				this.membersByIdentity.set(ownerIdentity, members);
+			}
+			let declarations = members.get(member.name);
+			if (!declarations) {
+				declarations = [];
+				members.set(member.name, declarations);
+			}
+			declarations.push(member.declId);
+		}
+	}
+
+	public sourceKey(source: SemanticValueSource, stepCount = source.steps.length): string {
+		let key = this.find(semanticValueRootKey(source.root));
+		for (let index = 0; index < stepCount; index += 1) {
+			const step = source.steps[index];
+			switch (step.kind) {
+				case 'member':
+					key += `\0m\0${step.name}`;
+					break;
+				case 'index':
+					key += `\0k\0${this.sourceKey(step.key)}`;
+					break;
+				case 'element':
+					key += '\0e';
+					break;
+				case 'call':
+					key += '\0c';
+					break;
+				case 'instance':
+					key += '\0i';
+					break;
+				case 'metatable':
+					key += '\0t';
+					break;
+			}
+		}
+		return key;
+	}
+
+	public resolveStaticMembers(source: SemanticValueSource | undefined, name: string): readonly SymbolID[] | undefined {
+		if (!source || source.steps.length !== 0) {
+			return undefined;
+		}
+		const ownerIdentity = this.find(semanticValueRootKey(source.root));
+		if (!this.moduleIdentities.has(ownerIdentity)) {
+			return source.root.kind === 'global' && !this.sourceOwnedIdentities.has(ownerIdentity)
+				? EMPTY_MEMBER_IDS
+				: undefined;
+		}
+		if (this.inferredMemberNamesByIdentity.get(ownerIdentity)?.has(name)) {
+			return undefined;
+		}
+		return this.membersByIdentity.get(ownerIdentity)?.get(name);
+	}
+
+	private union(left: SemanticValueRoot, right: SemanticValueRoot): void {
+		let leftKey = this.find(semanticValueRootKey(left));
+		let rightKey = this.find(semanticValueRootKey(right));
+		if (leftKey === rightKey) {
+			return;
+		}
+		const leftRank = this.identityRanks.get(leftKey) ?? 0;
+		const rightRank = this.identityRanks.get(rightKey) ?? 0;
+		if (leftRank < rightRank) {
+			const swap = leftKey;
+			leftKey = rightKey;
+			rightKey = swap;
+		}
+		this.identityParents.set(rightKey, leftKey);
+		if (leftRank === rightRank) {
+			this.identityRanks.set(leftKey, leftRank + 1);
+		}
+	}
+
+	private find(key: string): string {
+		let root = key;
+		let parent = this.identityParents.get(root);
+		while (parent !== undefined && parent !== root) {
+			root = parent;
+			parent = this.identityParents.get(root);
+		}
+		let current = key;
+		parent = this.identityParents.get(current);
+		while (parent !== undefined && parent !== root) {
+			this.identityParents.set(current, root);
+			current = parent;
+			parent = this.identityParents.get(current);
+		}
+		return root;
+	}
+}
+
+const EMPTY_DEMAND_ENTRIES = Object.freeze(new Array<never>());
+
+class WorkspaceValueDemandIndex {
+	private readonly globalValues: ReadonlyMap<string, SymbolID>;
+	private readonly identities: WorkspaceValueIdentityIndex;
+	private readonly membersByOwner: Map<string, Map<string, MemberValueEntry[]>> = new Map();
+	private readonly projectedMembersByOwner: Map<string, Map<string, MemberValueEntry[]>> = new Map();
+	public readonly membersByDeclaration: Map<SymbolID, MemberValueEntry> = new Map();
+	private readonly returnsByFunctionRoot: Map<string, FunctionReturnValueEntry[]> = new Map();
+	private readonly flowsByRoot: Map<string, FunctionValueFlowEntry[]> = new Map();
+	public readonly lexicalOwners: Map<FunctionValueFlowEntry, FunctionValueFlowEntry> = new Map();
+	private readonly callsByCalleeRoot: Map<string, CallValueEntry[]> = new Map();
+	private readonly callsByCalleeMember: Map<string, CallValueEntry[]> = new Map();
+	private readonly callsByCalleeSource: Map<string, CallValueEntry[]> = new Map();
+	private readonly callsByArgumentRoot: Map<string, CallValueEntry[]> = new Map();
+	private readonly callsByArgumentSource: Map<string, CallValueEntry[]> = new Map();
+	private readonly callsByResultRoot: Map<string, CallValueEntry[]> = new Map();
+	private readonly callerCallsByRoot: Map<string, CallValueEntry[]> = new Map();
+	private readonly callerCallsByMember: Map<string, CallValueEntry[]> = new Map();
+	private readonly callerCallsByCalleeSource: Map<string, CallValueEntry[]> = new Map();
+	private readonly argumentCallerCallsByRoot: Map<string, CallValueEntry[]> = new Map();
+	private readonly argumentCallerCallsBySource: Map<string, CallValueEntry[]> = new Map();
+	private readonly resultCallerCallsByRoot: Map<string, CallValueEntry[]> = new Map();
+	public readonly ownerFlowByCall: Map<CallValueEntry, FunctionValueFlowEntry> = new Map();
+	private readonly assignmentsByTargetRoot: Map<string, ValueAssignmentEntry[]> = new Map();
+	private readonly assignmentsByMemberOwner: Map<string, Map<string, ValueAssignmentEntry[]>> = new Map();
+	private readonly memberEffectsByOwner: Map<string, Map<string, FunctionMemberEffectEntry[]>> = new Map();
+	// The name index selects candidate writes only. Function-owned values stay
+	// private to their contextual flow and therefore never enter this index.
+	private readonly memberEffectsByName: Map<string, FunctionMemberEffectEntry[]> = new Map();
+	private readonly indexedEffectsByOwner: Map<string, FunctionAssignmentEffectEntry[]> = new Map();
+	private readonly elementEffectsByOwner: Map<string, FunctionAssignmentEffectEntry[]> = new Map();
+	private readonly prototypeEffectFlowsByCallee: Map<string, FunctionValueFlowEntry[]> = new Map();
+	private readonly effectDependenciesBySource: Map<string, FunctionEffectDependencyEntry[]> = new Map();
+
+	constructor(input: WorkspaceValueGraphInput, identities: WorkspaceValueIdentityIndex) {
+		this.globalValues = input.globalValues;
+		this.identities = identities;
+		for (let memberIndex = 0; memberIndex < input.memberValues.length; memberIndex += 1) {
+			const member = input.memberValues[memberIndex];
+			this.appendMember(this.membersByOwner, this.identities.sourceKey(member.owner), member.name, member);
+			this.membersByDeclaration.set(member.declId, member);
+		}
+		for (let returnIndex = 0; returnIndex < input.functionReturns.length; returnIndex += 1) {
+			const entry = input.functionReturns[returnIndex];
+			this.appendRoot(this.returnsByFunctionRoot, entry.functionValue.root, entry);
+		}
+		const ownerByOwnedKey = new Map<string, FunctionValueFlowEntry>();
+		for (let flowIndex = 0; flowIndex < input.functionFlows.length; flowIndex += 1) {
+			const flow = input.functionFlows[flowIndex];
+			for (let ownedIndex = 0; ownedIndex < flow.ownedValueKeys.length; ownedIndex += 1) {
+				ownerByOwnedKey.set(flow.ownedValueKeys[ownedIndex], flow);
+			}
+		}
+		for (let flowIndex = 0; flowIndex < input.functionFlows.length; flowIndex += 1) {
+			const flow = input.functionFlows[flowIndex];
+			const receiver = flow.parameters[0];
+			if (flow.receiverProjection && receiver) {
+				const members = this.membersByOwner.get(this.identities.sourceKey(flow.receiverProjection));
+				if (members) {
+					const projectedOwner = this.identities.sourceKey(receiver);
+					for (const [name, entries] of members) {
+						for (let entryIndex = 0; entryIndex < entries.length; entryIndex += 1) {
+							this.appendMember(
+								this.projectedMembersByOwner,
+								projectedOwner,
+								name,
+								entries[entryIndex],
+							);
+						}
+					}
+				}
+			}
+			if (flow.functionValue.root.kind === 'owned' && flow.functionValue.steps.length === 0) {
+				const owner = ownerByOwnedKey.get(flow.functionValue.root.key);
+				if (owner && owner !== flow) {
+					this.lexicalOwners.set(flow, owner);
+				}
+			}
+			this.appendRoot(this.flowsByRoot, flow.functionValue.root, flow);
+			for (let parameterIndex = 0; parameterIndex < flow.parameters.length; parameterIndex += 1) {
+				this.appendRoot(this.flowsByRoot, flow.parameters[parameterIndex].root, flow);
+			}
+			for (let declarationIndex = 0; declarationIndex < flow.declarationIds.length; declarationIndex += 1) {
+				this.append(
+					this.flowsByRoot,
+					semanticValueRootKey({ kind: 'declaration', declId: flow.declarationIds[declarationIndex] }),
+					flow,
+				);
+			}
+			for (let ownedIndex = 0; ownedIndex < flow.ownedValueKeys.length; ownedIndex += 1) {
+				this.append(
+					this.flowsByRoot,
+					semanticValueRootKey({ kind: 'owned', key: flow.ownedValueKeys[ownedIndex] }),
+					flow,
+				);
+			}
+			for (let callIndex = 0; callIndex < flow.calls.length; callIndex += 1) {
+				const call = flow.calls[callIndex];
+				this.ownerFlowByCall.set(call, flow);
+				if (call.result) {
+					this.appendRoot(this.resultCallerCallsByRoot, call.result.root, call);
+				}
+				this.indexSource(
+					this.callerCallsByRoot,
+					this.callerCallsByMember,
+					call.callee,
+					call,
+				);
+				this.append(
+					this.callerCallsByCalleeSource,
+					this.identities.sourceKey(call.callee),
+					call,
+				);
+				const projectedCallee = projectValueSource(
+					call.callee,
+					flow.parameters[0],
+					flow.receiverProjection,
+				);
+				if (projectedCallee) {
+					this.append(
+						this.callerCallsByCalleeSource,
+						this.identities.sourceKey(projectedCallee),
+						call,
+					);
+				}
+				for (let argumentIndex = 0; argumentIndex < call.arguments.length; argumentIndex += 1) {
+					const argument = call.arguments[argumentIndex];
+					if (argument) {
+						this.indexSourceRoot(this.argumentCallerCallsByRoot, argument, call);
+						this.append(
+							this.argumentCallerCallsBySource,
+							this.identities.sourceKey(argument),
+							call,
+						);
+						const projectedArgument = projectValueSource(
+							argument,
+							flow.parameters[0],
+							flow.receiverProjection,
+						);
+						if (projectedArgument) {
+							this.indexSourceRoot(this.argumentCallerCallsByRoot, projectedArgument, call);
+							this.append(
+								this.argumentCallerCallsBySource,
+								this.identities.sourceKey(projectedArgument),
+								call,
+							);
+						}
+					}
+				}
+			}
+			for (let memberIndex = 0; memberIndex < flow.members.length; memberIndex += 1) {
+				const member = flow.members[memberIndex];
+				this.indexMemberEffect(flow, member.owner, member.name, {
+					flow,
+					kind: 'member',
+					member,
+				});
+				const sources = input.declarationValues.get(member.declId);
+				if (sources) {
+					const target = appendValueMember(member.owner, member.name);
+					for (let sourceIndex = 0; sourceIndex < sources.length; sourceIndex += 1) {
+						this.indexEffectDependency(flow, sources[sourceIndex], target);
+					}
+				}
+			}
+			for (let assignmentIndex = 0; assignmentIndex < flow.assignments.length; assignmentIndex += 1) {
+				const assignment = flow.assignments[assignmentIndex];
+				this.indexAssignmentFlowEffect(flow, assignment);
+				if (assignment.relation === 'value') {
+					this.indexEffectDependency(flow, assignment.source, assignment.target);
+				} else {
+					this.indexEffectDependency(flow, assignment.target, assignment.source);
+				}
+			}
+		}
+		for (let callIndex = 0; callIndex < input.calls.length; callIndex += 1) {
+			const call = input.calls[callIndex];
+			this.indexSource(
+				this.callsByCalleeRoot,
+				this.callsByCalleeMember,
+				call.callee,
+				call,
+			);
+			this.append(
+				this.callsByCalleeSource,
+				this.identities.sourceKey(call.callee),
+				call,
+			);
+			for (let argumentIndex = 0; argumentIndex < call.arguments.length; argumentIndex += 1) {
+				const argument = call.arguments[argumentIndex];
+				if (argument) {
+					this.indexSourceRoot(this.callsByArgumentRoot, argument, call);
+					this.append(
+						this.callsByArgumentSource,
+						this.identities.sourceKey(argument),
+						call,
+					);
+				}
+			}
+			if (call.result) {
+				this.appendRoot(this.callsByResultRoot, call.result.root, call);
+			}
+		}
+		for (let assignmentIndex = 0; assignmentIndex < input.valueAssignments.length; assignmentIndex += 1) {
+			const assignment = input.valueAssignments[assignmentIndex];
+			this.indexSourceRoot(this.assignmentsByTargetRoot, assignment.target, assignment);
+			this.indexMemberTarget(this.assignmentsByMemberOwner, assignment.target, assignment);
+		}
+	}
+
+	public rootKey(root: SemanticValueRoot): string | undefined {
+		if (root.kind !== 'global') {
+			return semanticValueRootKey(root);
+		}
+		const declaration = this.globalValues.get(root.symbolKey);
+		return declaration === undefined
+			? undefined
+			: semanticValueRootKey({ kind: 'declaration', declId: declaration });
+	}
+
+	public members(
+		owner: SemanticValueSource,
+		stepCount: number,
+		name: string,
+	): readonly MemberValueEntry[] {
+		return this.membersByOwner.get(this.identities.sourceKey(owner, stepCount))?.get(name)
+			?? EMPTY_DEMAND_ENTRIES;
+	}
+
+	public projectedMembers(
+		owner: SemanticValueSource,
+		stepCount: number,
+		name: string,
+	): readonly MemberValueEntry[] {
+		return this.projectedMembersByOwner.get(this.identities.sourceKey(owner, stepCount))?.get(name)
+			?? EMPTY_DEMAND_ENTRIES;
+	}
+
+	public returns(rootKey: string): readonly FunctionReturnValueEntry[] {
+		return this.returnsByFunctionRoot.get(rootKey) ?? EMPTY_DEMAND_ENTRIES;
+	}
+
+	public flows(rootKey: string): readonly FunctionValueFlowEntry[] {
+		return this.flowsByRoot.get(rootKey) ?? EMPTY_DEMAND_ENTRIES;
+	}
+
+	public calleeCalls(rootKey: string): readonly CallValueEntry[] {
+		return this.callsByCalleeRoot.get(rootKey) ?? EMPTY_DEMAND_ENTRIES;
+	}
+
+	public calleeCallsByMemberName(name: string): readonly CallValueEntry[] {
+		return this.callsByCalleeMember.get(name) ?? EMPTY_DEMAND_ENTRIES;
+	}
+
+	public calleeCallsForSource(source: SemanticValueSource): readonly CallValueEntry[] {
+		return this.callsByCalleeSource.get(this.identities.sourceKey(source))
+			?? EMPTY_DEMAND_ENTRIES;
+	}
+
+	public argumentCalls(rootKey: string): readonly CallValueEntry[] {
+		return this.callsByArgumentRoot.get(rootKey) ?? EMPTY_DEMAND_ENTRIES;
+	}
+
+	public argumentCallsForSource(source: SemanticValueSource): readonly CallValueEntry[] {
+		return this.callsByArgumentSource.get(this.identities.sourceKey(source))
+			?? EMPTY_DEMAND_ENTRIES;
+	}
+
+	public resultCalls(rootKey: string): readonly CallValueEntry[] {
+		return this.callsByResultRoot.get(rootKey) ?? EMPTY_DEMAND_ENTRIES;
+	}
+
+	public callerCalls(rootKey: string): readonly CallValueEntry[] {
+		return this.callerCallsByRoot.get(rootKey) ?? EMPTY_DEMAND_ENTRIES;
+	}
+
+	public callerCallsByMemberName(name: string): readonly CallValueEntry[] {
+		return this.callerCallsByMember.get(name) ?? EMPTY_DEMAND_ENTRIES;
+	}
+
+	public callerCallsForSource(source: SemanticValueSource): readonly CallValueEntry[] {
+		return this.callerCallsByCalleeSource.get(this.identities.sourceKey(source))
+			?? EMPTY_DEMAND_ENTRIES;
+	}
+
+	public argumentCallerCalls(rootKey: string): readonly CallValueEntry[] {
+		return this.argumentCallerCallsByRoot.get(rootKey) ?? EMPTY_DEMAND_ENTRIES;
+	}
+
+	public argumentCallerCallsForSource(source: SemanticValueSource): readonly CallValueEntry[] {
+		return this.argumentCallerCallsBySource.get(this.identities.sourceKey(source))
+			?? EMPTY_DEMAND_ENTRIES;
+	}
+
+	public resultCallerCalls(rootKey: string): readonly CallValueEntry[] {
+		return this.resultCallerCallsByRoot.get(rootKey) ?? EMPTY_DEMAND_ENTRIES;
+	}
+
+	public rootAssignments(rootKey: string): readonly ValueAssignmentEntry[] {
+		return this.assignmentsByTargetRoot.get(rootKey) ?? EMPTY_DEMAND_ENTRIES;
+	}
+
+	public memberAssignments(
+		owner: SemanticValueSource,
+		stepCount: number,
+		name: string,
+	): readonly ValueAssignmentEntry[] {
+		return this.assignmentsByMemberOwner.get(this.identities.sourceKey(owner, stepCount))?.get(name)
+			?? EMPTY_DEMAND_ENTRIES;
+	}
+
+	public hasMemberDemand(owner: SemanticValueSource, stepCount: number, name: string): boolean {
+		const key = this.identities.sourceKey(owner, stepCount);
+		return this.membersByOwner.get(key)?.has(name) === true
+			|| this.projectedMembersByOwner.get(key)?.has(name) === true
+			|| this.assignmentsByMemberOwner.get(key)?.has(name) === true;
+	}
+
+	public memberEffects(
+		owner: SemanticValueSource,
+		stepCount: number,
+		name: string,
+	): readonly FunctionMemberEffectEntry[] {
+		return this.memberEffectsByOwner.get(this.identities.sourceKey(owner, stepCount))?.get(name)
+			?? EMPTY_DEMAND_ENTRIES;
+	}
+
+	public namedMemberEffects(name: string): readonly FunctionMemberEffectEntry[] {
+		return this.memberEffectsByName.get(name) ?? EMPTY_DEMAND_ENTRIES;
+	}
+
+	public assignmentEffects(
+		kind: StructuralValueStepKind,
+		owner: SemanticValueSource,
+		stepCount: number,
+	): readonly FunctionAssignmentEffectEntry[] {
+		const effects = kind === 'index'
+			? this.indexedEffectsByOwner
+			: this.elementEffectsByOwner;
+		return effects.get(this.identities.sourceKey(owner, stepCount))
+			?? EMPTY_DEMAND_ENTRIES;
+	}
+
+	public prototypeEffects(callee: SemanticValueSource): readonly FunctionValueFlowEntry[] {
+		return this.prototypeEffectFlowsByCallee.get(this.identities.sourceKey(callee))
+			?? EMPTY_DEMAND_ENTRIES;
+	}
+
+	public effectDependencies(
+		source: SemanticValueSource,
+		stepCount: number,
+	): readonly FunctionEffectDependencyEntry[] {
+		return this.effectDependenciesBySource.get(this.identities.sourceKey(source, stepCount))
+			?? EMPTY_DEMAND_ENTRIES;
+	}
+
+	private indexMemberEffect(
+		flow: FunctionValueFlowEntry,
+		owner: SemanticValueSource,
+		name: string,
+		entry: FunctionMemberEffectEntry,
+	): void {
+		if (this.sourceIsExternalToFlow(flow, owner)) {
+			this.append(this.memberEffectsByName, name, entry);
+		}
+		this.appendMember(
+			this.memberEffectsByOwner,
+			this.identities.sourceKey(owner),
+			name,
+			entry,
+		);
+		const receiver = flow.parameters[0];
+		if (!flow.receiverProjection
+			|| !receiver
+			|| !semanticValueRootsEqual(owner.root, receiver.root)) {
+			return;
+		}
+		const projectedOwner = projectValueSource(owner, receiver, flow.receiverProjection);
+		if (!projectedOwner) {
+			return;
+		}
+		this.appendMember(
+			this.memberEffectsByOwner,
+			this.identities.sourceKey(projectedOwner),
+			name,
+			entry,
+		);
+	}
+
+	private sourceIsExternalToFlow(
+		flow: FunctionValueFlowEntry,
+		source: SemanticValueSource,
+	): boolean {
+		const rootKey = this.identities.sourceKey(source, 0);
+		for (let parameterIndex = 0; parameterIndex < flow.parameters.length; parameterIndex += 1) {
+			if (this.identities.sourceKey(flow.parameters[parameterIndex]) === rootKey) {
+				return true;
+			}
+		}
+		if (source.root.kind === 'declaration') {
+			return !flow.declarationIds.includes(source.root.declId);
+		}
+		if (source.root.kind === 'owned') {
+			return !flow.ownedValueKeys.includes(source.root.key);
+		}
+		return true;
+	}
+
+	private indexAssignmentFlowEffect(
+		flow: FunctionValueFlowEntry,
+		assignment: ValueAssignmentEntry,
+	): void {
+		const target = assignment.target;
+		const stepCount = target.steps.length;
+		const lastStep = target.steps[stepCount - 1];
+		if (assignment.relation !== 'value') {
+			this.indexPrototypeEffectFlow(flow);
+			return;
+		}
+		if (!lastStep) {
+			return;
+		}
+		const owner = valueSourcePrefix(target, stepCount - 1);
+		if (lastStep.kind === 'member') {
+			this.indexMemberEffect(
+				flow,
+				owner,
+				lastStep.name,
+				{ flow, kind: 'assignment', assignment },
+			);
+			return;
+		}
+		if (lastStep.kind !== 'index' && lastStep.kind !== 'element') {
+			return;
+		}
+		const effects = lastStep.kind === 'index'
+			? this.indexedEffectsByOwner
+			: this.elementEffectsByOwner;
+		const entry = { flow, assignment };
+		this.append(
+			effects,
+			this.identities.sourceKey(owner),
+			entry,
+		);
+		const projectedOwner = projectValueSource(
+			owner,
+			flow.parameters[0],
+			flow.receiverProjection,
+		);
+		if (projectedOwner) {
+			this.append(
+				effects,
+				this.identities.sourceKey(projectedOwner),
+				entry,
+			);
+		}
+	}
+
+	private indexPrototypeEffectFlow(flow: FunctionValueFlowEntry): void {
+		this.append(
+			this.prototypeEffectFlowsByCallee,
+			this.identities.sourceKey(flow.functionValue),
+			flow,
+		);
+		if (flow.functionValue.root.kind !== 'declaration') {
+			return;
+		}
+		const member = this.membersByDeclaration.get(flow.functionValue.root.declId);
+		if (member) {
+			this.append(
+				this.prototypeEffectFlowsByCallee,
+				this.identities.sourceKey(appendValueMember(member.owner, member.name)),
+				flow,
+			);
+		}
+	}
+
+	private indexEffectDependency(
+		flow: FunctionValueFlowEntry,
+		source: SemanticValueSource,
+		target: SemanticValueSource,
+	): void {
+		const entry = { flow, source, target };
+		this.append(this.effectDependenciesBySource, this.identities.sourceKey(source), entry);
+		const projectedSource = projectValueSource(
+			source,
+			flow.parameters[0],
+			flow.receiverProjection,
+		);
+		if (projectedSource) {
+			this.append(
+				this.effectDependenciesBySource,
+				this.identities.sourceKey(projectedSource),
+				entry,
+			);
+		}
+	}
+
+	private indexMemberTarget<Entry>(
+		index: Map<string, Map<string, Entry[]>>,
+		target: SemanticValueSource,
+		entry: Entry,
+	): void {
+		const stepCount = target.steps.length;
+		if (stepCount === 0) {
+			return;
+		}
+		const member = target.steps[stepCount - 1];
+		if (member.kind === 'member') {
+			this.appendMember(
+				index,
+				this.identities.sourceKey(target, stepCount - 1),
+				member.name,
+				entry,
+			);
+		}
+	}
+
+	private indexSource<Entry>(
+		roots: Map<string, Entry[]>,
+		members: Map<string, Entry[]>,
+		source: SemanticValueSource,
+		entry: Entry,
+	): void {
+		this.indexSourceRoot(roots, source, entry);
+		for (let stepIndex = 0; stepIndex < source.steps.length; stepIndex += 1) {
+			const step = source.steps[stepIndex];
+			if (step.kind === 'member') {
+				this.append(members, step.name, entry);
+			} else if (step.kind === 'index') {
+				this.indexSource(roots, members, step.key, entry);
+			}
+		}
+	}
+
+	private indexSourceRoot<Entry>(
+		index: Map<string, Entry[]>,
+		source: SemanticValueSource,
+		entry: Entry,
+	): void {
+		const key = this.rootKey(source.root);
+		if (key !== undefined) {
+			this.append(index, key, entry);
+		}
+		for (let stepIndex = 0; stepIndex < source.steps.length; stepIndex += 1) {
+			const step = source.steps[stepIndex];
+			if (step.kind === 'index') {
+				this.indexSourceRoot(index, step.key, entry);
+			}
+		}
+	}
+
+	private appendRoot<Entry>(index: Map<string, Entry[]>, root: SemanticValueRoot, entry: Entry): void {
+		const key = this.rootKey(root);
+		if (key !== undefined) {
+			this.append(index, key, entry);
+		}
+	}
+
+	private appendMember<Entry>(
+		index: Map<string, Map<string, Entry[]>>,
+		owner: string,
+		name: string,
+		entry: Entry,
+	): void {
+		let members = index.get(owner);
+		if (!members) {
+			members = new Map();
+			index.set(owner, members);
+		}
+		let entries = members.get(name);
+		if (!entries) {
+			entries = [];
+			members.set(name, entries);
+		}
+		if (entries[entries.length - 1] !== entry) {
+			entries.push(entry);
+		}
+	}
+
+	private append<Entry>(index: Map<string, Entry[]>, key: string, entry: Entry): void {
+		let entries = index.get(key);
+		if (!entries) {
+			entries = [];
+			index.set(key, entries);
+		}
+		if (entries[entries.length - 1] !== entry) {
+			entries.push(entry);
+		}
+	}
+}
+
 export class WorkspaceValueGraph {
-	private readonly declarationValues: Map<SymbolID, SemanticValueSource[]>;
+	private readonly input: WorkspaceValueGraphInput;
+	private readonly identities: WorkspaceValueIdentityIndex;
+	private readonly declarationValues: ReadonlyMap<SymbolID, readonly SemanticValueSource[]>;
 	private readonly identityDeclarations: ReadonlySet<SymbolID>;
 	private readonly projectionDeclarations: ReadonlySet<SymbolID>;
 	private readonly moduleValues: ReadonlyMap<string, SemanticValueSource>;
 	private readonly globalValues: ReadonlyMap<string, SymbolID>;
-	private readonly rootCalls: readonly CallValueEntry[];
+	private readonly demandIndex: WorkspaceValueDemandIndex;
+	private readonly demandedRootKeys: Set<string> = new Set();
+	private readonly demandedRoots: SemanticValueRoot[] = [];
+	private demandedRootHead = 0;
+	private readonly demandedEffectKeys: Set<string> = new Set();
+	private readonly demandedEffectSources: SemanticValueSource[] = [];
+	private readonly demandedEffectStepCounts: number[] = [];
+	private readonly demandedEffectNames: string[] = [];
+	private demandedEffectHead = 0;
+	private readonly demandedEffectValues: SemanticValueID[] = [];
+	private readonly demandedEffectValueNames: string[] = [];
+	private demandedEffectValueHead = 0;
+	private readonly pendingEffectDependencyContexts: FunctionValueContext[] = [];
+	private readonly pendingEffectDependencyEntries: FunctionEffectDependencyEntry[] = [];
+	private pendingEffectDependencyHead = 0;
+	private readonly demandedMemberKeys: Set<string> = new Set();
+	private readonly pendingMemberOwners: SemanticValueSource[] = [];
+	private readonly pendingMemberStepCounts: number[] = [];
+	private readonly pendingMemberNames: string[] = [];
+	private pendingMemberHead = 0;
+	private readonly materializedDeclarations: Set<SymbolID> = new Set();
+	private readonly materializedModules: Set<string> = new Set();
+	private readonly materializedMembers: Set<MemberValueEntry> = new Set();
+	private readonly materializedProjectedMembers: Set<string> = new Set();
+	private readonly materializedFunctionReturns: Set<FunctionReturnValueEntry> = new Set();
+	private readonly materializedFunctionFlowEntries: Set<FunctionValueFlowEntry> = new Set();
+	private readonly materializedRootCallModes: Map<CallValueEntry, CallInstantiationMode> = new Map();
+	private readonly materializedCallerModes: Map<CallValueEntry, CallInstantiationMode> = new Map();
+	private readonly materializedTargetRootCallModes:
+		Map<CallValueEntry, Map<MaterializedFunctionValueFlow, CallInstantiationMode>> = new Map();
+	private readonly materializedTargetCallerModes:
+		Map<CallValueEntry, Map<MaterializedFunctionValueFlow, CallInstantiationMode>> = new Map();
+	private readonly materializedRootAssignments: Set<ValueAssignmentEntry> = new Set();
+	private readonly demandedFunctionCallerBindings: Set<FunctionValueFlowEntry> = new Set();
+	private readonly demandedFunctionCallerContexts: Set<FunctionValueFlowEntry> = new Set();
+	private readonly demandedDynamicFunctionCallers: Set<FunctionValueFlowEntry> = new Set();
 	private readonly calls: ContextualCallValue[] = [];
 	private readonly declarationNodes: Map<SymbolID, SemanticValueID> = new Map();
 	private readonly moduleNodes: Map<string, SemanticValueID> = new Map();
 	private readonly literalNodes: Map<string, SemanticValueID> = new Map();
 	private readonly ownedNodes: Map<string, SemanticValueID> = new Map();
+	private readonly valueSourceHeads: number[] = [];
+	private readonly valueSourceSources: SemanticValueSource[] = [];
+	private readonly valueSourceStepCounts: number[] = [];
+	private readonly valueSourceKeys: string[] = [];
+	private readonly valueSourceContexts: (FunctionValueContext | undefined)[] = [];
+	private readonly valueSourceNext: number[] = [];
+	private readonly valueSourceBindingsByKey: Map<string, number[]> = new Map();
+	private readonly materializedContextMembers: Map<FunctionValueContext, Set<MemberValueEntry>> = new Map();
+	private readonly materializedNamedEffectMembers: Set<string> = new Set();
+	private readonly demandedMemberEffectsByFlow:
+		Map<MaterializedFunctionValueFlow, FunctionMemberEffectEntry[]> = new Map();
+	private readonly demandedAssignmentEffectsByFlow:
+		Map<MaterializedFunctionValueFlow, FunctionAssignmentEffectEntry[]> = new Map();
+	private readonly demandedEffectDependenciesByFlow:
+		Map<MaterializedFunctionValueFlow, FunctionEffectDependencyEntry[]> = new Map();
+	private readonly demandedCallsByFlow: Map<MaterializedFunctionValueFlow, FunctionCallDemand[]> = new Map();
+	private readonly materializedContextEffectDependencies: Map<FunctionValueContext, Set<FunctionEffectDependencyEntry>> = new Map();
 	private readonly members: Map<SemanticValueID, Map<string, MemberValue>> = new Map();
 	private readonly memberProjections: Map<SemanticValueID, Map<string, SemanticValueID>> = new Map();
 	private readonly indexedValues: Map<SemanticValueID, Map<SemanticValueID, SemanticValueID>> = new Map();
@@ -599,6 +1493,7 @@ export class WorkspaceValueGraph {
 	private readonly functionReturnsByValue: Map<SemanticValueID, SemanticValueSource[]> = new Map();
 	private readonly functionFlowsByValue: Map<SemanticValueID, MaterializedFunctionValueFlow> = new Map();
 	private readonly materializedFunctionFlows: MaterializedFunctionValueFlow[] = [];
+	private readonly sourceFunctionFlowByMaterializedFlow: Map<MaterializedFunctionValueFlow, FunctionValueFlowEntry> = new Map();
 	private readonly functionFlowByDeclaration: Map<SymbolID, MaterializedFunctionValueFlow> = new Map();
 	private readonly functionFlowByOwnedValue: Map<string, MaterializedFunctionValueFlow> = new Map();
 	private readonly enclosingFunctionFlowByValue: Map<SemanticValueID, MaterializedFunctionValueFlow> = new Map();
@@ -619,6 +1514,7 @@ export class WorkspaceValueGraph {
 	private readonly projectionBases = new SemanticValueEdges();
 	private readonly callArgumentBases = new SemanticValueEdges();
 	private readonly valueBases = new SemanticValueEdges();
+	private readonly effectDependents = new SemanticValueEdges();
 	private readonly prototypeBases: Map<SemanticValueID, SemanticValueID> = new Map();
 	private readonly instanceBases = new SemanticValueEdges();
 	private readonly traversalStack: SemanticValueID[] = [];
@@ -639,6 +1535,7 @@ export class WorkspaceValueGraph {
 	private readonly valueAlternativeNodes: SemanticValueID[] = [];
 	private readonly valueAlternativeMarks: number[] = [];
 	private valueAlternativeGeneration = 0;
+	private readonly demandedEffectNamesByValue: Map<SemanticValueID, string[]> = new Map();
 	private readonly callArgumentValueScratch: (SemanticValueID | undefined)[] = [];
 	private readonly contextOrigins: (SemanticValueID | undefined)[] = [];
 	private readonly functionFlowScratch: MaterializedFunctionValueFlow[] = [];
@@ -650,7 +1547,7 @@ export class WorkspaceValueGraph {
 	private readonly indexedDependencyDeclarations: Set<SymbolID> = new Set();
 	private readonly indexedDependencyCallResults: Set<string> = new Set();
 	private readonly indexedParameterMarks: boolean[] = [];
-	private readonly indexedEffectParameterMarks: boolean[] = [];
+	private readonly effectParameterMarks: boolean[] = [];
 	private contextAnalysisReturnsParameter = false;
 	private readonly memberValueScratch: SemanticValueID[] = [];
 	private readonly memberValueIdentityScratch: boolean[] = [];
@@ -694,22 +1591,23 @@ export class WorkspaceValueGraph {
 	private nextValueId = 1;
 	private valueCapacity = INITIAL_VALUE_CAPACITY;
 	private nextMemberDeclarationOrder = 0;
-	constructor(options: WorkspaceValueGraphInput) {
-		this.declarationValues = new Map();
-		for (const [declId, sources] of options.declarationValues) {
-			this.declarationValues.set(declId, sources.slice());
-		}
+	constructor(
+		options: WorkspaceValueGraphInput,
+		identities: WorkspaceValueIdentityIndex,
+		shared?: WorkspaceValueGraph,
+	) {
+		this.input = options;
+		this.identities = identities;
+		this.declarationValues = options.declarationValues;
 		this.moduleValues = options.moduleValues;
 		this.identityDeclarations = options.identityDeclarations;
 		this.projectionDeclarations = options.projectionDeclarations;
 		this.globalValues = options.globalValues;
-		this.rootCalls = options.calls;
-		this.materializeMembers(options.memberValues);
-		this.materializeFunctionReturns(options.functionReturns);
-		this.materializeFunctionFlows(options.functionFlows);
-		this.materializeRootValues();
-		this.materializeValueAssignments(options.valueAssignments);
-		this.solveCallArgumentValues();
+		this.demandIndex = shared?.demandIndex ?? new WorkspaceValueDemandIndex(options, identities);
+	}
+
+	public fork(): WorkspaceValueGraph {
+		return new WorkspaceValueGraph(this.input, this.identities, this);
 	}
 
 	public resolveMembers(
@@ -719,52 +1617,845 @@ export class WorkspaceValueGraph {
 		if (!source) {
 			return EMPTY_MEMBER_IDS;
 		}
-		let owner = this.resolveSource(source, false, undefined, true);
-		let members = EMPTY_MEMBER_IDS;
-		if (owner) {
-			members = this.findMembers(owner, name);
-		}
+		this.demandMemberQuery(source, name);
+		this.solveDemandedValues();
+		let members = this.resolveDemandedMembers(source, name);
 		if (members.length > 0) {
 			return members;
 		}
-		const flow = source.root.kind === 'declaration'
+		const flow = this.functionFlowForSource(source);
+		if (flow) {
+			if (this.demandFunctionCallers(flow)) {
+				this.solveDemandedValues();
+				members = this.resolveDemandedMembers(source, name);
+				if (members.length > 0) {
+					return members;
+				}
+			}
+			if (!this.defaultFunctionContextsByValue.has(flow.functionValue)) {
+				this.defaultFunctionContext(flow, CALL_RETURNS);
+				this.solveDemandedValues();
+				members = this.resolveDemandedMembers(source, name);
+				if (members.length > 0) {
+					return members;
+				}
+			}
+		}
+		const receiverSource = flow
+			? projectValueSource(source, flow.parameters[0], flow.receiverProjection)
+			: undefined;
+		const pendingEffects = this.demandSourceEffects(receiverSource ?? source, name);
+		if (pendingEffects) {
+			this.solveDemandedValues();
+			members = this.resolveDemandedMembers(source, name);
+			if (members.length > 0) {
+				return members;
+			}
+		}
+		if (flow) {
+			if (this.demandDynamicFunctionCallers(flow)) {
+				this.solveDemandedValues();
+				members = this.resolveDemandedMembers(source, name);
+				if (members.length > 0) {
+					return members;
+				}
+			}
+		}
+		return EMPTY_MEMBER_IDS;
+	}
+
+	private demandSourceEffects(source: SemanticValueSource, name: string): boolean {
+		this.materializePrototypeCallEffects(source);
+		const root = this.resolveValueRoot(source.root);
+		if (!root) {
+			return this.demandEffectSource(source, source.steps.length, name);
+		}
+		let pending = this.demandResolvedEffects(root, name);
+		for (let stepCount = 1; stepCount <= source.steps.length; stepCount += 1) {
+			const value = this.resolveValueSteps(
+				root,
+				source.steps,
+				false,
+				undefined,
+				stepCount,
+				true,
+				false,
+			);
+			if (value) {
+				pending = this.demandResolvedEffects(value, name) || pending;
+			}
+		}
+		return pending;
+	}
+
+	private functionFlowForSource(source: SemanticValueSource): MaterializedFunctionValueFlow | undefined {
+		return source.root.kind === 'declaration'
 			? this.functionFlowByDeclaration.get(source.root.declId)
 			: source.root.kind === 'owned'
 				? this.functionFlowByOwnedValue.get(source.root.key)
 				: undefined;
-		if (!flow || this.defaultFunctionContextsByValue.has(flow.functionValue)) {
-			return EMPTY_MEMBER_IDS;
-		}
-		this.defaultFunctionContext(flow);
-		this.solveValueChanges();
-		owner = this.resolveSource(source, false, undefined, true);
-		return owner ? this.findMembers(owner, name) : EMPTY_MEMBER_IDS;
 	}
 
-	public prepareMemberQueries(queries: readonly SemanticMemberQuery[]): void {
-		let pending = false;
-		for (let index = 0; index < queries.length; index += 1) {
-			const source = queries[index].receiverValue;
-			if (!source) {
-				continue;
-			}
-			const owner = this.resolveSource(source, false, undefined, true);
-			if (owner && this.findMembers(owner, queries[index].name).length > 0) {
-				continue;
-			}
-			const flow = source.root.kind === 'declaration'
-				? this.functionFlowByDeclaration.get(source.root.declId)
-				: source.root.kind === 'owned'
-					? this.functionFlowByOwnedValue.get(source.root.key)
-					: undefined;
-			if (flow && !this.defaultFunctionContextsByValue.has(flow.functionValue)) {
-				this.defaultFunctionContext(flow);
-				pending = true;
+	private demandMemberQuery(source: SemanticValueSource, name: string): void {
+		this.demandSource(source);
+		for (let stepIndex = 0; stepIndex < source.steps.length; stepIndex += 1) {
+			const step = source.steps[stepIndex];
+			if (step.kind === 'member') {
+				this.demandQueryMember(source, stepIndex, step.name);
 			}
 		}
-		if (pending) {
+		this.demandQueryMember(source, source.steps.length, name);
+	}
+
+	private resolveDemandedMembers(
+		source: SemanticValueSource,
+		name: string,
+	): readonly SymbolID[] {
+		let owner = this.resolveSource(source, false, undefined, true);
+		while (this.hasPendingDemand()) {
+			this.solveDemandedValues();
+			owner = this.resolveSource(source, false, undefined, true);
+		}
+		if (!owner) {
+			return EMPTY_MEMBER_IDS;
+		}
+		if (this.demandResolvedMemberSources(owner, name)) {
+			this.solveDemandedValues();
+			owner = this.resolveSource(source, false, undefined, true);
+			if (!owner) {
+				return EMPTY_MEMBER_IDS;
+			}
+		}
+		return this.findMembers(owner, name);
+	}
+
+	private demandResolvedMemberSources(owner: SemanticValueID, name: string): boolean {
+		let known = false;
+		const generation = this.traversalGeneration + 1;
+		this.traversalGeneration = generation;
+		const stack = this.traversalStack;
+		stack.length = 0;
+		stack.push(owner);
+		while (stack.length > 0) {
+			const value = stack.pop()!;
+			if (this.traversalMarks[value] === generation) {
+				continue;
+			}
+			this.traversalMarks[value] = generation;
+			for (let link = this.valueSourceHeads[value]; link !== 0; link = this.valueSourceNext[link - 1]) {
+				const bindingIndex = link - 1;
+				const source = this.valueSourceSources[bindingIndex];
+				const stepCount = this.valueSourceStepCounts[bindingIndex];
+				if (this.demandIndex.hasMemberDemand(source, stepCount, name)) {
+					known = true;
+					this.demandMember(source, stepCount, name);
+					this.materializeContextMembers(this.demandIndex.members(source, stepCount, name));
+				}
+				const context = this.valueSourceContexts[bindingIndex];
+				if (context) {
+					const contextualRoot = this.resolveContextualValueRoot(source.root, context, false);
+					if (contextualRoot) {
+						stack.push(contextualRoot);
+					}
+				}
+			}
+			this.pushTraversalBases(stack, value);
+		}
+		return known;
+	}
+
+	private demandResolvedEffects(owner: SemanticValueID, name: string): boolean {
+		let names = this.demandedEffectNamesByValue.get(owner);
+		if (!names) {
+			names = [];
+			this.demandedEffectNamesByValue.set(owner, names);
+		}
+		if (names.includes(name)) {
+			return false;
+		}
+		names.push(name);
+		this.demandedEffectValues.push(owner);
+		this.demandedEffectValueNames.push(name);
+		return true;
+	}
+
+	private materializeDemandedValueEffects(owner: SemanticValueID, name: string): void {
+		const stack = this.traversalStack;
+		stack.length = 0;
+		this.pushEffectBases(stack, owner);
+		for (let edge = this.effectDependents.last(owner); edge !== 0; edge = this.effectDependents.previous(edge)) {
+			stack.push(this.effectDependents.target(edge));
+		}
+		for (let index = 0; index < stack.length; index += 1) {
+			this.demandResolvedEffects(stack[index], name);
+		}
+		for (let link = this.valueSourceHeads[owner]; link !== 0; link = this.valueSourceNext[link - 1]) {
+				const bindingIndex = link - 1;
+				const source = this.valueSourceSources[bindingIndex];
+				this.demandEffectSource(
+					source,
+					this.valueSourceStepCounts[bindingIndex],
+					name,
+				);
+				const context = this.valueSourceContexts[bindingIndex];
+				if (context) {
+					const contextualRoot = this.resolveContextualValueRoot(source.root, context, false);
+					if (contextualRoot) {
+						this.demandResolvedEffects(contextualRoot, name);
+					}
+				}
+		}
+	}
+
+	private pushEffectBases(stack: SemanticValueID[], value: SemanticValueID): void {
+		for (let edge = this.identityValues.last(value); edge !== 0; edge = this.identityValues.previous(edge)) {
+			stack.push(this.identityValues.target(edge));
+		}
+		for (let edge = this.callArgumentBases.last(value); edge !== 0; edge = this.callArgumentBases.previous(edge)) {
+			stack.push(this.callArgumentBases.target(edge));
+		}
+		for (let edge = this.valueBases.last(value); edge !== 0; edge = this.valueBases.previous(edge)) {
+			stack.push(this.valueBases.target(edge));
+		}
+	}
+
+	private demandSource(source: SemanticValueSource): void {
+		this.demandRoot(source.root);
+		for (let stepIndex = 0; stepIndex < source.steps.length; stepIndex += 1) {
+			const step = source.steps[stepIndex];
+			switch (step.kind) {
+				case 'member':
+					this.demandMember(source, stepIndex, step.name);
+					break;
+				case 'index':
+					this.materializeSourceAssignmentEffects('index', source, stepIndex);
+					this.demandSource(step.key);
+					break;
+				case 'element':
+					this.materializeSourceAssignmentEffects('element', source, stepIndex);
+					break;
+				case 'call':
+				case 'instance':
+				case 'metatable':
+					break;
+			}
+		}
+	}
+
+	private demandRoot(root: SemanticValueRoot): void {
+		if (root.kind === 'global') {
+			const declaration = this.globalValues.get(root.symbolKey);
+			if (declaration === undefined) {
+				return;
+			}
+			this.demandRoot({ kind: 'declaration', declId: declaration });
+			return;
+		}
+		const key = semanticValueRootKey(root);
+		if (this.demandedRootKeys.has(key)) {
+			return;
+		}
+		this.demandedRootKeys.add(key);
+		this.demandedRoots.push(root);
+	}
+
+	private demandEffectSource(
+		source: SemanticValueSource,
+		stepCount: number,
+		name: string,
+	): boolean {
+		if (source.root.kind === 'global') {
+			const declaration = this.globalValues.get(source.root.symbolKey);
+			if (declaration === undefined) {
+				return false;
+			}
+			return this.demandEffectSource({
+				root: { kind: 'declaration', declId: declaration },
+				steps: source.steps,
+			}, stepCount, name);
+		}
+		const key = `${this.identities.sourceKey(source, stepCount)}\0${name}`;
+		if (this.demandedEffectKeys.has(key)) {
+			return false;
+		}
+		this.demandSource(valueSourcePrefix(source, stepCount));
+		this.demandedEffectKeys.add(key);
+		this.demandedEffectSources.push(source);
+		this.demandedEffectStepCounts.push(stepCount);
+		this.demandedEffectNames.push(name);
+		return true;
+	}
+
+	private demandMember(source: SemanticValueSource, stepCount: number, name: string): boolean {
+		if (!this.demandIndex.hasMemberDemand(source, stepCount, name)) {
+			return false;
+		}
+		return this.queueMemberDemand(source, stepCount, name);
+	}
+
+	private demandQueryMember(source: SemanticValueSource, stepCount: number, name: string): boolean {
+		const hasMemberDemand = this.demandIndex.hasMemberDemand(source, stepCount, name);
+		const namedEffects = this.demandIndex.namedMemberEffects(name);
+		if (!hasMemberDemand && namedEffects.length === 0) {
+			return false;
+		}
+		if (namedEffects.length > 0) {
+			this.materializeNamedMemberEffects(name);
+		}
+		return hasMemberDemand
+			? this.queueMemberDemand(source, stepCount, name)
+			: true;
+	}
+
+	private queueMemberDemand(source: SemanticValueSource, stepCount: number, name: string): boolean {
+		const key = `${this.identities.sourceKey(source, stepCount)}\0${name}`;
+		if (this.demandedMemberKeys.has(key)) {
+			return false;
+		}
+		this.demandedMemberKeys.add(key);
+		this.pendingMemberOwners.push(source);
+		this.pendingMemberStepCounts.push(stepCount);
+		this.pendingMemberNames.push(name);
+		return true;
+	}
+
+	private solveDemandedValues(): void {
+		do {
+			while (this.demandedRootHead < this.demandedRoots.length) {
+				this.materializeDemandedRoot(this.demandedRoots[this.demandedRootHead]);
+				this.demandedRootHead += 1;
+			}
+			while (this.pendingEffectDependencyHead < this.pendingEffectDependencyContexts.length) {
+				this.materializeContextEffectDependency(
+					this.pendingEffectDependencyContexts[this.pendingEffectDependencyHead],
+					this.pendingEffectDependencyEntries[this.pendingEffectDependencyHead],
+				);
+				this.pendingEffectDependencyHead += 1;
+			}
+			while (this.demandedEffectHead < this.demandedEffectSources.length) {
+				this.materializeDemandedEffects(
+					this.demandedEffectSources[this.demandedEffectHead],
+					this.demandedEffectStepCounts[this.demandedEffectHead],
+					this.demandedEffectNames[this.demandedEffectHead],
+				);
+				this.demandedEffectHead += 1;
+			}
+			while (this.demandedEffectValueHead < this.demandedEffectValues.length) {
+				this.materializeDemandedValueEffects(
+					this.demandedEffectValues[this.demandedEffectValueHead],
+					this.demandedEffectValueNames[this.demandedEffectValueHead],
+				);
+				this.demandedEffectValueHead += 1;
+			}
+			while (this.pendingMemberHead < this.pendingMemberOwners.length) {
+				this.materializeDemandedMember(
+					this.pendingMemberOwners[this.pendingMemberHead],
+					this.pendingMemberStepCounts[this.pendingMemberHead],
+					this.pendingMemberNames[this.pendingMemberHead],
+				);
+				this.pendingMemberHead += 1;
+			}
 			this.solveValueChanges();
+		} while (this.demandedRootHead < this.demandedRoots.length
+			|| this.pendingEffectDependencyHead < this.pendingEffectDependencyContexts.length
+			|| this.demandedEffectHead < this.demandedEffectSources.length
+			|| this.demandedEffectValueHead < this.demandedEffectValues.length
+			|| this.pendingMemberHead < this.pendingMemberOwners.length);
+	}
+
+	private hasPendingDemand(): boolean {
+		return this.demandedRootHead < this.demandedRoots.length
+			|| this.pendingEffectDependencyHead < this.pendingEffectDependencyContexts.length
+			|| this.demandedEffectHead < this.demandedEffectSources.length
+			|| this.demandedEffectValueHead < this.demandedEffectValues.length
+			|| this.pendingMemberHead < this.pendingMemberOwners.length;
+	}
+
+	private materializeDemandedRoot(root: SemanticValueRoot): void {
+		const rootKey = semanticValueRootKey(root);
+		switch (root.kind) {
+			case 'declaration':
+				this.materializeDeclaration(root);
+				break;
+			case 'module':
+				this.materializeModule(root);
+				break;
+			case 'owned':
+			case 'literal':
+				break;
+			case 'global':
+				return;
 		}
+		this.materializeFunctionFlows(this.demandIndex.flows(rootKey));
+		this.materializeRootCalls(this.demandIndex.resultCalls(rootKey));
+		this.materializeCallerCalls(
+			this.demandIndex.resultCallerCalls(rootKey),
+			CALL_RETURNS,
+			false,
+		);
+		this.materializeValueAssignments(this.demandIndex.rootAssignments(rootKey));
+	}
+
+	private materializeDemandedEffects(
+		source: SemanticValueSource,
+		stepCount: number,
+		name: string,
+	): void {
+		this.materializeNamedMemberEffects(name);
+		this.materializeEffectDependencies(
+			this.demandIndex.effectDependencies(source, stepCount),
+		);
+		this.materializeMemberEffects(
+			this.demandIndex.memberEffects(source, stepCount, name),
+		);
+	}
+
+	private materializeNamedMemberEffects(name: string): void {
+		if (this.materializedNamedEffectMembers.has(name)) {
+			return;
+		}
+		this.materializedNamedEffectMembers.add(name);
+		this.materializeMemberEffects(this.demandIndex.namedMemberEffects(name));
+	}
+
+	private materializeEffectDependencies(
+		entries: readonly FunctionEffectDependencyEntry[],
+	): void {
+		for (let entryIndex = 0; entryIndex < entries.length; entryIndex += 1) {
+			const entry = entries[entryIndex];
+			const flow = this.materializeFunctionFlow(entry.flow);
+			this.retainFlowDemand(this.demandedEffectDependenciesByFlow, flow, entry);
+			if (flow.requiresCallContext) {
+				this.demandFunctionCallers(flow);
+			} else {
+				this.defaultFunctionContext(flow, CALL_CONTEXT);
+			}
+			const contexts = this.functionContextsByValue.get(flow.functionValue);
+			if (contexts) {
+				for (let contextIndex = 0; contextIndex < contexts.length; contextIndex += 1) {
+					this.registerContextEffectDependency(contexts[contextIndex], entry);
+				}
+			}
+		}
+	}
+
+	private materializeMemberEffects(
+		entries: readonly FunctionMemberEffectEntry[],
+	): void {
+		for (let entryIndex = 0; entryIndex < entries.length; entryIndex += 1) {
+			const entry = entries[entryIndex];
+			this.demandMemberEffectOwner(entry);
+			const contexts = this.demandHeapEffectContexts(
+				this.demandedMemberEffectsByFlow,
+				entry,
+				entry.flow,
+			);
+			if (contexts) {
+				for (let contextIndex = 0; contextIndex < contexts.length; contextIndex += 1) {
+					this.materializeContextMemberEffect(contexts[contextIndex], entry);
+				}
+			}
+		}
+	}
+
+	private demandMemberEffectOwner(entry: FunctionMemberEffectEntry): void {
+		const source = entry.kind === 'member'
+			? entry.member.owner
+			: valueSourcePrefix(entry.assignment.target, entry.assignment.target.steps.length - 1);
+		this.demandSource(source);
+		for (let stepIndex = 0; stepIndex < source.steps.length; stepIndex += 1) {
+			const step = source.steps[stepIndex];
+			if (step.kind === 'member') {
+				this.demandQueryMember(source, stepIndex, step.name);
+			}
+		}
+	}
+
+	private materializeContextMemberEffect(
+		context: FunctionValueContext,
+		entry: FunctionMemberEffectEntry,
+	): void {
+		if (entry.kind === 'member') {
+			this.materializeContextMember(context, entry.member);
+		} else {
+			this.materializeContextAssignment(context, entry.assignment);
+		}
+	}
+
+	private materializeDemandedMember(
+		owner: SemanticValueSource,
+		stepCount: number,
+		name: string,
+	): void {
+		const members = this.demandIndex.members(owner, stepCount, name);
+		const projectedMembers = this.demandIndex.projectedMembers(owner, stepCount, name);
+		const assignments = this.demandIndex.memberAssignments(owner, stepCount, name);
+		this.materializeMembers(members);
+		this.materializeContextMembers(members);
+		this.materializeProjectedMembers(owner, stepCount, name, projectedMembers);
+		this.materializeValueAssignments(assignments);
+	}
+
+	private materializeAssignmentEffects(entries: readonly FunctionAssignmentEffectEntry[]): void {
+		for (let index = 0; index < entries.length; index += 1) {
+			const entry = entries[index];
+			const contexts = this.demandHeapEffectContexts(
+				this.demandedAssignmentEffectsByFlow,
+				entry,
+				entry.flow,
+			);
+			if (contexts) {
+				for (let contextIndex = 0; contextIndex < contexts.length; contextIndex += 1) {
+					this.materializeContextAssignment(contexts[contextIndex], entry.assignment);
+				}
+			}
+		}
+	}
+
+	private demandHeapEffectContexts<Entry>(
+		demandsByFlow: Map<MaterializedFunctionValueFlow, Entry[]>,
+		entry: Entry,
+		entryFlow: FunctionValueFlowEntry,
+	): readonly FunctionValueContext[] | undefined {
+		const flow = this.materializeFunctionFlow(entryFlow);
+		this.retainFlowDemand(demandsByFlow, flow, entry);
+		this.demandFunctionCallers(flow, flow.requiresCallContext);
+		this.demandDynamicFunctionCallers(flow);
+		if (!flow.requiresCallContext) {
+			this.defaultFunctionContext(flow, CALL_CONTEXT);
+		}
+		return this.functionContextsByValue.get(flow.functionValue);
+	}
+
+	private retainFlowDemand<Entry>(
+		demandsByFlow: Map<MaterializedFunctionValueFlow, Entry[]>,
+		flow: MaterializedFunctionValueFlow,
+		entry: Entry,
+	): void {
+		let demands = demandsByFlow.get(flow);
+		if (!demands) {
+			demands = [];
+			demandsByFlow.set(flow, demands);
+		}
+		if (!demands.includes(entry)) {
+			demands.push(entry);
+		}
+	}
+
+	private applyDemandedContextSlices(context: FunctionValueContext): void {
+		// A query may discover the relevant write or nested call before any caller
+		// context exists. Retained slices are applied when that context is created;
+		// unrelated statements in the same function remain unmaterialized.
+		const flow = context.flow;
+		const calls = this.demandedCallsByFlow.get(flow);
+		if (calls) {
+			for (let index = 0; index < calls.length; index += 1) {
+				this.materializeContextCallDemand(context, calls[index]);
+			}
+		}
+		const memberEffects = this.demandedMemberEffectsByFlow.get(flow);
+		if (memberEffects) {
+			for (let index = 0; index < memberEffects.length; index += 1) {
+				this.materializeContextMemberEffect(context, memberEffects[index]);
+			}
+		}
+		const assignmentEffects = this.demandedAssignmentEffectsByFlow.get(flow);
+		if (assignmentEffects) {
+			for (let index = 0; index < assignmentEffects.length; index += 1) {
+				this.materializeContextAssignment(context, assignmentEffects[index].assignment);
+			}
+		}
+		const dependencies = this.demandedEffectDependenciesByFlow.get(flow);
+		if (dependencies) {
+			for (let index = 0; index < dependencies.length; index += 1) {
+				this.registerContextEffectDependency(context, dependencies[index]);
+			}
+		}
+	}
+
+	private materializeSourceAssignmentEffects(
+		kind: StructuralValueStepKind,
+		source: SemanticValueSource,
+		stepCount: number,
+	): void {
+		this.materializeAssignmentEffects(this.demandIndex.assignmentEffects(kind, source, stepCount));
+		const rootKey = this.demandIndex.rootKey(source.root);
+		if (rootKey === undefined) {
+			return;
+		}
+		const flows = this.demandIndex.flows(rootKey);
+		const prefix = valueSourcePrefix(source, stepCount);
+		for (let flowIndex = 0; flowIndex < flows.length; flowIndex += 1) {
+			const flow = flows[flowIndex];
+			const projected = projectValueSource(
+				prefix,
+				flow.parameters[0],
+				flow.receiverProjection,
+			);
+			if (projected) {
+				this.materializeAssignmentEffects(
+					this.demandIndex.assignmentEffects(kind, projected, projected.steps.length),
+				);
+			}
+		}
+	}
+
+	private materializePrototypeCallEffects(source: SemanticValueSource): void {
+		const rootKey = semanticValueRootKey(source.root);
+		const rootCalls = this.demandIndex.argumentCalls(rootKey);
+		for (let callIndex = 0; callIndex < rootCalls.length; callIndex += 1) {
+			const call = rootCalls[callIndex];
+			if (this.demandIndex.prototypeEffects(call.callee).length > 0
+				&& this.callUsesSource(call, source)) {
+				this.materializeRootCall(call, CALL_EFFECTS);
+			}
+		}
+		const callerCalls = this.demandIndex.argumentCallerCalls(rootKey);
+		for (let callIndex = 0; callIndex < callerCalls.length; callIndex += 1) {
+			const call = callerCalls[callIndex];
+			const owner = this.demandIndex.ownerFlowByCall.get(call);
+			if (owner
+				&& this.demandIndex.prototypeEffects(call.callee).length > 0
+				&& this.callUsesSource(call, source, owner)) {
+				this.materializeCallerCall(call, CALL_EFFECTS, true);
+			}
+		}
+	}
+
+	private callUsesSource(
+		call: CallValueEntry,
+		source: SemanticValueSource,
+		owner?: FunctionValueFlowEntry,
+	): boolean {
+		for (let argumentIndex = 0; argumentIndex < call.arguments.length; argumentIndex += 1) {
+			const argument = call.arguments[argumentIndex];
+			if (!argument) {
+				continue;
+			}
+			if (argument.steps.length <= source.steps.length
+				&& this.identities.sourceKey(argument)
+					=== this.identities.sourceKey(source, argument.steps.length)) {
+				return true;
+			}
+			const projectedArgument = owner
+				? projectValueSource(argument, owner.parameters[0], owner.receiverProjection)
+				: undefined;
+			if (projectedArgument
+				&& projectedArgument.steps.length <= source.steps.length
+				&& this.identities.sourceKey(projectedArgument)
+					=== this.identities.sourceKey(source, projectedArgument.steps.length)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private materializeDeclaration(root: Extract<SemanticValueRoot, { kind: 'declaration' }>): void {
+		const declId = root.declId;
+		if (this.materializedDeclarations.has(declId)) {
+			return;
+		}
+		this.materializedDeclarations.add(declId);
+		const sources = this.declarationValues.get(declId);
+		if (!sources) {
+			return;
+		}
+		const target = this.nodeForRoot(root);
+		const relation: DeclarationValueRelation = this.identityDeclarations.has(declId)
+			? 'identity'
+			: this.projectionDeclarations.has(declId)
+				? 'projection'
+				: 'value';
+		for (let sourceIndex = 0; sourceIndex < sources.length; sourceIndex += 1) {
+			const source = sources[sourceIndex];
+			this.demandSource(source);
+			this.registerValueConstraint({
+				target: { kind: 'value', value: target },
+				source,
+				relation,
+			});
+		}
+	}
+
+	private materializeModule(root: Extract<SemanticValueRoot, { kind: 'module' }>): void {
+		const module = root.module;
+		if (this.materializedModules.has(module)) {
+			return;
+		}
+		this.materializedModules.add(module);
+		const source = this.moduleValues.get(module);
+		if (!source) {
+			return;
+		}
+		this.demandSource(source);
+		this.registerValueConstraint({
+			target: { kind: 'value', value: this.nodeForRoot(root) },
+			source,
+			relation: 'identity',
+		});
+	}
+
+	private demandFunctionCallers(
+		flow: MaterializedFunctionValueFlow,
+		instantiateContext = flow.requiresCallContext,
+	): boolean {
+		const rawFlow = this.sourceFunctionFlowByMaterializedFlow.get(flow);
+		if (!rawFlow) {
+			return false;
+		}
+		if (instantiateContext) {
+			if (this.demandedFunctionCallerContexts.has(rawFlow)) {
+				return false;
+			}
+			this.demandedFunctionCallerBindings.add(rawFlow);
+			this.demandedFunctionCallerContexts.add(rawFlow);
+		} else {
+			if (this.demandedFunctionCallerBindings.has(rawFlow)) {
+				return false;
+			}
+			this.demandedFunctionCallerBindings.add(rawFlow);
+		}
+		const rootKey = this.demandIndex.rootKey(rawFlow.functionValue.root);
+		// Caller discovery needs return flow because a later call target can be a
+		// factory result. It does not execute unrelated effects in that caller.
+		const mode = instantiateContext ? CALL_RETURNS : CALL_BINDINGS;
+		if (rootKey !== undefined) {
+			this.materializeRootCalls(this.demandIndex.calleeCalls(rootKey), mode);
+			this.materializeCallerCalls(
+				this.demandIndex.callerCalls(rootKey),
+				mode,
+			);
+		}
+		if (rawFlow.functionValue.root.kind === 'declaration') {
+			const member = this.demandIndex.membersByDeclaration.get(rawFlow.functionValue.root.declId);
+			if (member) {
+				const memberSource = appendValueMember(member.owner, member.name);
+				this.materializeRootCalls(
+					this.demandIndex.calleeCallsForSource(memberSource),
+					mode,
+				);
+				this.materializeCallerCalls(
+					this.demandIndex.callerCallsForSource(memberSource),
+					mode,
+				);
+				if (flow.implicitReceiver) {
+					this.materializeRootCalls(
+						this.demandIndex.calleeCallsByMemberName(member.name),
+						mode,
+						flow,
+					);
+					this.materializeCallerCalls(
+						this.demandIndex.callerCallsByMemberName(member.name),
+						mode,
+						instantiateContext,
+						flow,
+					);
+				}
+			}
+		}
+		return true;
+	}
+
+	private demandDynamicFunctionCallers(flow: MaterializedFunctionValueFlow): boolean {
+		const rawFlow = this.sourceFunctionFlowByMaterializedFlow.get(flow);
+		if (!rawFlow || this.demandedDynamicFunctionCallers.has(rawFlow)) {
+			return false;
+		}
+		this.demandedDynamicFunctionCallers.add(rawFlow);
+		this.materializeRootCalls(
+			this.demandIndex.argumentCallsForSource(rawFlow.functionValue),
+		);
+		this.materializeCallerCalls(
+			this.demandIndex.argumentCallerCallsForSource(rawFlow.functionValue),
+			CALL_EFFECTS,
+		);
+		if (rawFlow.functionValue.root.kind !== 'declaration') {
+			return true;
+		}
+		const member = this.demandIndex.membersByDeclaration.get(rawFlow.functionValue.root.declId);
+		if (!member) {
+			return true;
+		}
+		const memberSource = appendValueMember(member.owner, member.name);
+		this.materializeRootCalls(this.demandIndex.argumentCallsForSource(memberSource));
+		this.materializeCallerCalls(
+			this.demandIndex.argumentCallerCallsForSource(memberSource),
+			CALL_EFFECTS,
+		);
+		return true;
+	}
+
+	private materializeCallerCalls(
+		entries: readonly CallValueEntry[],
+		mode: CallInstantiationMode,
+		propagateOwnerCallers = mode === CALL_EFFECTS,
+		targetFlow?: MaterializedFunctionValueFlow,
+	): void {
+		for (let index = 0; index < entries.length; index += 1) {
+			this.materializeCallerCall(entries[index], mode, propagateOwnerCallers, targetFlow);
+		}
+	}
+
+	private materializeCallerCall(
+		call: CallValueEntry,
+		mode: CallInstantiationMode,
+		propagateOwnerCallers: boolean,
+		targetFlow?: MaterializedFunctionValueFlow,
+	): void {
+		if (targetFlow) {
+			if (!this.upgradeTargetCallMode(this.materializedTargetCallerModes, call, targetFlow, mode)) {
+				return;
+			}
+		} else {
+			const previousMode = this.materializedCallerModes.get(call);
+			if (previousMode !== undefined && previousMode >= mode) {
+				return;
+			}
+			this.materializedCallerModes.set(call, mode);
+		}
+		const ownerEntry = this.demandIndex.ownerFlowByCall.get(call);
+		if (!ownerEntry) {
+			return;
+		}
+		const ownerFlow = this.materializeFunctionFlow(ownerEntry);
+		const demand = this.retainCallDemand(ownerFlow, call, mode, targetFlow);
+		if (!ownerFlow.requiresCallContext) {
+			this.defaultFunctionContext(ownerFlow, CALL_CONTEXT);
+		}
+		const contexts = this.functionContextsByValue.get(ownerFlow.functionValue);
+		if (contexts) {
+			for (let contextIndex = 0; contextIndex < contexts.length; contextIndex += 1) {
+				this.materializeContextCallDemand(contexts[contextIndex], demand);
+			}
+		}
+		if (propagateOwnerCallers) {
+			this.demandFunctionCallers(ownerFlow, true);
+		}
+	}
+
+	private retainCallDemand(
+		flow: MaterializedFunctionValueFlow,
+		call: CallValueEntry,
+		mode: CallInstantiationMode,
+		targetFlow: MaterializedFunctionValueFlow | undefined,
+	): FunctionCallDemand {
+		let demands = this.demandedCallsByFlow.get(flow);
+		if (!demands) {
+			demands = [];
+			this.demandedCallsByFlow.set(flow, demands);
+		}
+		for (let index = 0; index < demands.length; index += 1) {
+			const demand = demands[index];
+			if (demand.call === call && demand.targetFlow === targetFlow) {
+				if (demand.mode < mode) {
+					demand.mode = mode;
+				}
+				return demand;
+			}
+		}
+		const demand: FunctionCallDemand = { call, mode, targetFlow };
+		demands.push(demand);
+		return demand;
 	}
 
 	private findMembers(owner: SemanticValueID, name: string): readonly SymbolID[] {
@@ -892,6 +2583,7 @@ export class WorkspaceValueGraph {
 		createMembers: boolean,
 		dependencies?: SemanticValueID[],
 		useCallArgumentHints = false,
+		demandEffects = true,
 	): SemanticValueID | undefined {
 		const value = this.resolveValueRoot(source.root);
 		return value
@@ -900,27 +2592,16 @@ export class WorkspaceValueGraph {
 				source.steps,
 				createMembers,
 				dependencies,
-				source.steps.length,
-				useCallArgumentHints,
+					source.steps.length,
+					useCallArgumentHints,
+					demandEffects,
 			)
 			: undefined;
 	}
 
 	private resolveValueRoot(root: SemanticValueRoot): SemanticValueID | undefined {
-		switch (root.kind) {
-			case 'declaration':
-				return this.nodeFor(this.declarationNodes, root.declId);
-			case 'module':
-				return this.nodeFor(this.moduleNodes, root.module);
-			case 'global': {
-				const declId = this.globalValues.get(root.symbolKey);
-				return declId ? this.nodeFor(this.declarationNodes, declId) : undefined;
-			}
-			case 'owned':
-				return this.nodeFor(this.ownedNodes, root.key);
-			case 'literal':
-				return this.nodeFor(this.literalNodes, root.key);
-		}
+		this.demandRoot(root);
+		return this.nodeForRoot(root);
 	}
 
 	private resolveValueSteps(
@@ -930,6 +2611,7 @@ export class WorkspaceValueGraph {
 		dependencies?: SemanticValueID[],
 		stepCount = steps.length,
 		useCallArgumentHints = false,
+		demandEffects = true,
 	): SemanticValueID | undefined {
 		let resolved: SemanticValueID | undefined = value;
 		for (let index = 0; resolved && index < stepCount; index += 1) {
@@ -950,8 +2632,9 @@ export class WorkspaceValueGraph {
 					const key = this.resolveSource(
 						step.key,
 						createMembers,
-						dependencies,
-						useCallArgumentHints,
+							dependencies,
+							useCallArgumentHints,
+							demandEffects,
 					);
 					if (key && dependencies) {
 						dependencies.push(key);
@@ -1001,6 +2684,9 @@ export class WorkspaceValueGraph {
 		const identityValues = this.memberValueIdentityScratch;
 		values.length = 0;
 		identityValues.length = 0;
+		if (!create) {
+			this.demandResolvedMemberSources(owner, name);
+		}
 		const generation = this.memberTraversalGeneration + 1;
 		this.memberTraversalGeneration = generation;
 		this.collectMemberValues(owner, name, generation, true, useCallArgumentHints);
@@ -1437,7 +3123,9 @@ export class WorkspaceValueGraph {
 		if (!value) {
 			value = this.createNode();
 			values.set(key, value);
+			this.markTraversalChanged(owner);
 		}
+		this.registerIndexedValueSources(owner, key, value);
 		return value;
 	}
 
@@ -1446,6 +3134,7 @@ export class WorkspaceValueGraph {
 		if (!result) {
 			result = this.createNode();
 			this.callResults.set(value, result);
+			this.registerDerivedValueSources(value, result, { kind: 'call' });
 			this.markTraversalChanged(value);
 		}
 		return result;
@@ -1483,6 +3172,7 @@ export class WorkspaceValueGraph {
 		if (!member) {
 			member = { value: this.createNode() };
 			ownerMembers.set(name, member);
+			this.registerDerivedValueSources(owner, member.value, { kind: 'member', name });
 			const unresolvedIndex = this.unresolvedMemberValues.length;
 			this.unresolvedMemberOwners.push(owner);
 			this.unresolvedMemberNames.push(name);
@@ -1492,6 +3182,25 @@ export class WorkspaceValueGraph {
 			this.markTraversalChanged(owner);
 		}
 		return member;
+	}
+
+	private registerDerivedValueSources(
+		owner: SemanticValueID,
+		value: SemanticValueID,
+		step: SemanticValueStep,
+	): void {
+		for (let link = this.valueSourceHeads[owner]; link !== 0; link = this.valueSourceNext[link - 1]) {
+			const bindingIndex = link - 1;
+			this.registerValueSource(
+				value,
+				appendValueStep(
+					this.valueSourceSources[bindingIndex],
+					step,
+					this.valueSourceStepCounts[bindingIndex],
+				),
+				this.valueSourceContexts[bindingIndex],
+			);
+		}
 	}
 
 	private processDirtyTraversalValues(): void {
@@ -1762,7 +3471,9 @@ export class WorkspaceValueGraph {
 		if (!element) {
 			element = this.createNode();
 			this.elementsByIdentityRoot.set(root, element);
+			this.markTraversalChanged(owner);
 		}
+		this.registerDerivedValueSources(owner, element, { kind: 'element' });
 		if (this.elements.get(owner) !== element) {
 			this.elements.set(owner, element);
 		}
@@ -1782,6 +3493,7 @@ export class WorkspaceValueGraph {
 		if (!instance) {
 			instance = this.createNode();
 			this.instances.set(classValue, instance);
+			this.registerDerivedValueSources(classValue, instance, { kind: 'instance' });
 			this.metatables.set(instance, classValue);
 			this.setPrototypeBase(instance, classValue);
 			for (let edge = this.valueBases.first(classValue); edge !== 0; edge = this.valueBases.next(edge)) {
@@ -1999,18 +3711,110 @@ export class WorkspaceValueGraph {
 
 	private materializeMembers(entries: readonly MemberValueEntry[]): void {
 		for (let index = 0; index < entries.length; index += 1) {
-			const entry = entries[index];
-			const owner = this.resolveSource(entry.owner, true);
-			if (!owner) {
+			this.materializeMember(entries[index]);
+		}
+	}
+
+	private materializeMember(entry: MemberValueEntry): void {
+		if (this.materializedMembers.has(entry)) {
+			return;
+		}
+		this.materializedMembers.add(entry);
+		this.demandSource(entry.owner);
+		this.demandRoot({ kind: 'declaration', declId: entry.declId });
+		const owner = this.resolveSource(entry.owner, true);
+		if (!owner) {
+			return;
+		}
+		const member = this.ensureMember(owner, entry.name);
+		if (!member.declaration) {
+			member.declaration = entry.declId;
+			this.markTraversalChanged(owner);
+		}
+		this.retainMemberDeclaration(member.value, entry.declId);
+		this.registerValueSource(member.value, appendValueMember(entry.owner, entry.name));
+		this.addIdentity(member.value, this.nodeForRoot({ kind: 'declaration', declId: entry.declId }));
+	}
+
+	private materializeContextMembers(entries: readonly MemberValueEntry[]): void {
+		for (let entryIndex = 0; entryIndex < entries.length; entryIndex += 1) {
+			const entry = entries[entryIndex];
+			const bindings = this.valueSourceBindingsByKey.get(this.identities.sourceKey(entry.owner));
+			if (!bindings) {
 				continue;
 			}
-			const member = this.ensureMember(owner, entry.name);
+			for (let bindingListIndex = 0; bindingListIndex < bindings.length; bindingListIndex += 1) {
+				const context = this.valueSourceContexts[bindings[bindingListIndex]];
+				if (!context) {
+					continue;
+				}
+				this.materializeContextMember(context, entry);
+			}
+		}
+	}
+
+	private materializeContextMember(
+		context: FunctionValueContext,
+		entry: MemberValueEntry,
+	): void {
+		let materialized = this.materializedContextMembers.get(context);
+		if (!materialized) {
+			materialized = new Set();
+			this.materializedContextMembers.set(context, materialized);
+		}
+		const target = appendValueMember(entry.owner, entry.name);
+		const source = declarationValueSource(entry.declId);
+		if (!materialized.has(entry)) {
+			materialized.add(entry);
+			this.registerValueConstraint({
+				target: {
+					kind: 'source',
+					source: target,
+					memberDeclId: entry.declId,
+				},
+				source,
+				relation: 'identity',
+				context,
+			});
+		}
+	}
+
+	private materializeProjectedMembers(
+		source: SemanticValueSource,
+		stepCount: number,
+		name: string,
+		entries: readonly MemberValueEntry[],
+	): void {
+		const root = this.resolveValueRoot(source.root);
+		const owner = root
+			? this.resolveValueSteps(root, source.steps, true, undefined, stepCount, false, false)
+			: undefined;
+		if (!owner) {
+			return;
+		}
+		const projectionKey = `${this.identities.sourceKey(source, stepCount)}\0${name}`;
+		for (let index = 0; index < entries.length; index += 1) {
+			const entry = entries[index];
+			const key = `${projectionKey}\0${entry.declId}`;
+			if (this.materializedProjectedMembers.has(key)) {
+				continue;
+			}
+			this.materializedProjectedMembers.add(key);
+			this.demandRoot({ kind: 'declaration', declId: entry.declId });
+			const member = this.ensureMember(owner, name);
 			if (!member.declaration) {
 				member.declaration = entry.declId;
 				this.markTraversalChanged(owner);
 			}
 			this.retainMemberDeclaration(member.value, entry.declId);
-			this.addIdentity(member.value, this.nodeFor(this.declarationNodes, entry.declId));
+			this.registerValueSource(
+				member.value,
+				appendValueMember(source, name, stepCount),
+			);
+			this.addIdentity(
+				member.value,
+				this.nodeForRoot({ kind: 'declaration', declId: entry.declId }),
+			);
 		}
 	}
 
@@ -2055,7 +3859,13 @@ export class WorkspaceValueGraph {
 	private materializeFunctionReturns(entries: readonly FunctionReturnValueEntry[]): void {
 		for (let index = 0; index < entries.length; index += 1) {
 			const entry = entries[index];
-			const functionValue = this.materializeFunctionValue(entry.functionValue);
+			if (this.materializedFunctionReturns.has(entry)) {
+				continue;
+			}
+			this.materializedFunctionReturns.add(entry);
+			this.demandSource(entry.functionValue);
+			this.demandSource(entry.source);
+			const functionValue = this.nodeForRoot(entry.functionValue.root);
 			let sources = this.functionReturnsByValue.get(functionValue);
 			if (!sources) {
 				sources = [];
@@ -2066,100 +3876,118 @@ export class WorkspaceValueGraph {
 	}
 
 	private materializeFunctionFlows(entries: readonly FunctionValueFlowEntry[]): void {
-		const ownerFlowByOwnedKey = new Map<string, MaterializedFunctionValueFlow>();
 		for (let index = 0; index < entries.length; index += 1) {
-			const entry = entries[index];
-			const functionValue = this.materializeFunctionValue(entry.functionValue);
-			const contextParameterIndices = this.collectContextParameterIndices(entry);
-			const returnsParameter = this.contextAnalysisReturnsParameter;
-			const parameterIndexedEffect = this.collectParameterIndexedEffect(
-				entry,
-				contextParameterIndices,
-			);
-			// Reuse one summary for ordinary functions. A separate abstract call
-			// context is required only where parameter identity changes a returned
-			// lookup, a direct return, a receiver, or an indexed heap effect.
-			// Effectful methods additionally retain one caller site so an inner
-			// method invocation does not merge independent outer mutations.
-			const flow: MaterializedFunctionValueFlow = {
-				functionValue,
-				parameters: entry.parameters,
-				contextParameterIndices,
-				requiresCallContext: contextParameterIndices.length > 0
-					|| returnsParameter
-					|| parameterIndexedEffect,
-				requiresCallerContext: entry.implicitReceiver && parameterIndexedEffect,
-				receiverProjection: entry.receiverProjection,
-				implicitReceiver: entry.implicitReceiver,
-				declarationIds: entry.declarationIds,
-				ownedValueKeys: new Set(entry.ownedValueKeys),
-				members: entry.members,
-				calls: entry.calls,
-				assignments: entry.assignments,
-				nestedFunctions: [],
-			};
-			this.materializedFunctionFlows.push(flow);
-			this.functionFlowsByValue.set(functionValue, flow);
-			if (flow.implicitReceiver) {
-				this.registerValueConstraint({
-					target: {
-						kind: 'value',
-						value: this.materializeFunctionValue(flow.parameters[0]),
-					},
-					source: flow.receiverProjection,
-					relation: 'projection',
-				});
+			this.materializeFunctionFlow(entries[index]);
+		}
+	}
+
+	private materializeFunctionFlow(entry: FunctionValueFlowEntry): MaterializedFunctionValueFlow {
+		const functionValue = this.nodeForRoot(entry.functionValue.root);
+		const existing = this.functionFlowsByValue.get(functionValue);
+		if (existing && this.sourceFunctionFlowByMaterializedFlow.get(existing) === entry) {
+			return existing;
+		}
+		const lexicalOwnerEntry = this.demandIndex.lexicalOwners.get(entry);
+		const lexicalOwner = lexicalOwnerEntry
+			? this.materializeFunctionFlow(lexicalOwnerEntry)
+			: undefined;
+		this.materializedFunctionFlowEntries.add(entry);
+		const contextParameterIndices = this.collectContextParameterIndices(entry);
+		const returnsParameter = this.contextAnalysisReturnsParameter;
+		const parameterEffect = this.collectParameterEffects(
+			entry,
+			contextParameterIndices,
+		);
+		const assignmentsByTarget = new Map<string, ValueAssignmentEntry[]>();
+		for (let assignmentIndex = 0; assignmentIndex < entry.assignments.length; assignmentIndex += 1) {
+			const assignment = entry.assignments[assignmentIndex];
+			const key = this.identities.sourceKey(assignment.target);
+			let assignments = assignmentsByTarget.get(key);
+			if (!assignments) {
+				assignments = [];
+				assignmentsByTarget.set(key, assignments);
 			}
-			for (const ownedKey of flow.ownedValueKeys) {
-				ownerFlowByOwnedKey.set(ownedKey, flow);
-				this.functionFlowByOwnedValue.set(ownedKey, flow);
+			assignments.push(assignment);
+		}
+		// Reuse one summary for ordinary functions. A separate abstract call
+		// context is required only where parameter identity changes a returned
+		// lookup, a direct return, a receiver, or a heap effect.
+		// Effectful methods additionally retain one caller site so an inner
+		// method invocation does not merge independent outer mutations.
+		const flow: MaterializedFunctionValueFlow = {
+			functionValue,
+			parameters: entry.parameters,
+			contextParameterIndices,
+			requiresCallContext: contextParameterIndices.length > 0
+				|| returnsParameter
+				|| parameterEffect,
+			requiresCallerContext: entry.implicitReceiver && parameterEffect,
+			receiverProjection: entry.receiverProjection,
+			implicitReceiver: entry.implicitReceiver,
+			declarationIds: entry.declarationIds,
+			ownedValueKeys: new Set(entry.ownedValueKeys),
+			members: entry.members,
+			calls: entry.calls,
+			assignments: entry.assignments,
+			assignmentsByTarget,
+			nestedFunctions: [],
+			lexicalOwner,
+		};
+		this.materializedFunctionFlows.push(flow);
+		this.sourceFunctionFlowByMaterializedFlow.set(flow, entry);
+		this.functionFlowsByValue.set(functionValue, flow);
+		this.markTraversalChanged(functionValue);
+		if (flow.implicitReceiver) {
+			this.registerValueConstraint({
+				target: {
+					kind: 'value',
+					value: this.nodeForRoot(flow.parameters[0].root),
+				},
+				source: flow.receiverProjection,
+				relation: 'projection',
+			});
+		}
+		for (const ownedKey of flow.ownedValueKeys) {
+			this.functionFlowByOwnedValue.set(ownedKey, flow);
+		}
+		for (let parameterIndex = 0; parameterIndex < flow.parameters.length; parameterIndex += 1) {
+			const parameter = flow.parameters[parameterIndex];
+			if (parameter.root.kind === 'owned') {
+				this.functionFlowByOwnedValue.set(parameter.root.key, flow);
 			}
-			for (let parameterIndex = 0; parameterIndex < flow.parameters.length; parameterIndex += 1) {
-				const parameter = flow.parameters[parameterIndex];
-				if (parameter.root.kind === 'owned') {
-					this.functionFlowByOwnedValue.set(parameter.root.key, flow);
-				}
-			}
-			for (let declarationIndex = 0; declarationIndex < entry.declarationIds.length; declarationIndex += 1) {
-				const declarationId = entry.declarationIds[declarationIndex];
-				this.functionFlowByDeclaration.set(declarationId, flow);
-			}
-			const receiver = entry.parameters[0];
-			if (entry.receiverProjection && receiver) {
-				for (let memberIndex = 0; memberIndex < entry.members.length; memberIndex += 1) {
-					const member = entry.members[memberIndex];
-					if (semanticValueSourcesEqual(member.owner, receiver)) {
-						this.enclosingFunctionFlowByValue.set(
-							this.nodeFor(this.declarationNodes, member.declId),
-							flow,
-						);
-					}
+		}
+		for (let declarationIndex = 0; declarationIndex < entry.declarationIds.length; declarationIndex += 1) {
+			this.functionFlowByDeclaration.set(entry.declarationIds[declarationIndex], flow);
+		}
+		const receiver = entry.parameters[0];
+		if (entry.receiverProjection && receiver) {
+			for (let memberIndex = 0; memberIndex < entry.members.length; memberIndex += 1) {
+				const member = entry.members[memberIndex];
+				if (semanticValueSourcesEqual(member.owner, receiver)) {
+					this.enclosingFunctionFlowByValue.set(
+						this.nodeForRoot({ kind: 'declaration', declId: member.declId }),
+						flow,
+					);
 				}
 			}
 		}
-		for (let index = 0; index < entries.length; index += 1) {
-			const functionValue = entries[index].functionValue;
-			if (functionValue.root.kind !== 'owned' || functionValue.steps.length !== 0) {
-				continue;
-			}
-			const flow = this.materializedFunctionFlows[index];
-			const owner = ownerFlowByOwnedKey.get(functionValue.root.key);
-			if (!owner || owner === flow) {
-				continue;
-			}
-			flow.lexicalOwner = owner;
-			owner.nestedFunctions.push({ flow, ownedKey: functionValue.root.key });
+		if (lexicalOwner && entry.functionValue.root.kind === 'owned') {
+			lexicalOwner.nestedFunctions.push({
+				flow,
+				ownedKey: entry.functionValue.root.key,
+			});
 		}
+		return flow;
 	}
 
 	private collectContextParameterIndices(entry: FunctionValueFlowEntry): number[] {
 		const sources = this.indexedSourceScratch;
 		sources.length = 0;
-		const functionValue = this.materializeFunctionValue(entry.functionValue);
-		const returns = this.functionReturnsByValue.get(functionValue);
-		if (returns) {
+		const rootKey = this.demandIndex.rootKey(entry.functionValue.root);
+		if (rootKey !== undefined) {
+			const returns = this.demandIndex.returns(rootKey);
 			for (let returnIndex = 0; returnIndex < returns.length; returnIndex += 1) {
-				sources.push(returns[returnIndex]);
+				sources.push(returns[returnIndex].source);
 			}
 		}
 
@@ -2187,7 +4015,7 @@ export class WorkspaceValueGraph {
 			for (let stepIndex = 0; stepIndex < source.steps.length; stepIndex += 1) {
 				const step = source.steps[stepIndex];
 				if (step.kind === 'index') {
-					this.collectIndexedParameterDependencies(step.key, entry, marks);
+					this.collectParameterDependencies(step.key, entry, marks);
 					sources.push(step.key);
 				}
 			}
@@ -2221,29 +4049,32 @@ export class WorkspaceValueGraph {
 		return indices;
 	}
 
-	private collectParameterIndexedEffect(
+	private collectParameterEffects(
 		entry: FunctionValueFlowEntry,
 		contextParameterIndices: number[],
 	): boolean {
-		const marks = this.indexedEffectParameterMarks;
+		const marks = this.effectParameterMarks;
 		marks.length = entry.parameters.length;
 		marks.fill(false);
 		this.indexedDependencyDeclarations.clear();
 		this.indexedDependencyCallResults.clear();
-		for (let assignmentIndex = 0; assignmentIndex < entry.assignments.length; assignmentIndex += 1) {
-			const assignment = entry.assignments[assignmentIndex];
-			let indexed = false;
-			for (let stepIndex = 0; stepIndex < assignment.target.steps.length; stepIndex += 1) {
-				if (assignment.target.steps[stepIndex].kind === 'index') {
-					indexed = true;
-					break;
+		for (let memberIndex = 0; memberIndex < entry.members.length; memberIndex += 1) {
+			const member = entry.members[memberIndex];
+			this.collectParameterDependencies(member.owner, entry, marks);
+			const sources = this.declarationValues.get(member.declId);
+			if (sources) {
+				for (let sourceIndex = 0; sourceIndex < sources.length; sourceIndex += 1) {
+					this.collectParameterDependencies(sources[sourceIndex], entry, marks);
 				}
 			}
-			if (!indexed) {
+		}
+		for (let assignmentIndex = 0; assignmentIndex < entry.assignments.length; assignmentIndex += 1) {
+			const assignment = entry.assignments[assignmentIndex];
+			if (assignment.target.steps.length === 0 && assignment.relation === 'value') {
 				continue;
 			}
-			this.collectIndexedParameterDependencies(assignment.target, entry, marks);
-			this.collectIndexedParameterDependencies(assignment.source, entry, marks);
+			this.collectParameterDependencies(assignment.target, entry, marks);
+			this.collectParameterDependencies(assignment.source, entry, marks);
 		}
 		let found = false;
 		for (let parameterIndex = 0; parameterIndex < marks.length; parameterIndex += 1) {
@@ -2259,7 +4090,7 @@ export class WorkspaceValueGraph {
 		return found;
 	}
 
-	private collectIndexedParameterDependencies(
+	private collectParameterDependencies(
 		source: SemanticValueSource,
 		entry: FunctionValueFlowEntry,
 		marks: boolean[],
@@ -2309,39 +4140,11 @@ export class WorkspaceValueGraph {
 		}
 	}
 
-	private materializeFunctionValue(source: FunctionSemanticValueSource): SemanticValueID {
-		if (source.root.kind === 'declaration') {
-			return this.nodeFor(this.declarationNodes, source.root.declId);
-		}
-		return this.nodeFor(this.ownedNodes, source.root.key);
-	}
-
-	private materializeRootValues(): void {
-		for (const [declId, sources] of this.declarationValues) {
-			const target = this.nodeFor(this.declarationNodes, declId);
-			const relation: DeclarationValueRelation = this.identityDeclarations.has(declId)
-				? 'identity'
-				: this.projectionDeclarations.has(declId)
-					? 'projection'
-					: 'value';
-			for (let index = 0; index < sources.length; index += 1) {
-				this.registerValueConstraint({
-					target: { kind: 'value', value: target },
-					source: sources[index],
-					relation,
-				});
-			}
-		}
-		for (const [module, sourceValue] of this.moduleValues) {
-			this.registerValueConstraint({
-				target: { kind: 'value', value: this.nodeFor(this.moduleNodes, module) },
-				source: sourceValue,
-				relation: 'identity',
-			});
-		}
-	}
-
 	private registerValueConstraint(constraint: ValueFlowConstraint): void {
+		this.demandSource(constraint.source);
+		if (constraint.target.kind === 'source') {
+			this.demandSource(constraint.target.source);
+		}
 		const constraintIndex = this.valueFlowConstraints.length;
 		this.valueFlowConstraints.push(constraint);
 		this.valueFlowWorklist.add(constraintIndex);
@@ -2384,11 +4187,6 @@ export class WorkspaceValueGraph {
 		}
 	}
 
-	private solveCallArgumentValues(): void {
-		this.materializeCalls();
-		this.solveValueChanges();
-	}
-
 	private solveValueChanges(): void {
 		while (this.dirtyTraversalValues.length > 0
 			|| this.valueFlowWorklist.length > 0
@@ -2403,24 +4201,23 @@ export class WorkspaceValueGraph {
 		}
 	}
 
-	private materializeCalls(): void {
-		for (let callIndex = 0; callIndex < this.rootCalls.length; callIndex += 1) {
-			this.registerCall(this.rootCalls[callIndex]);
-		}
-	}
-
-	private defaultFunctionContext(flow: MaterializedFunctionValueFlow): FunctionValueContext {
+	private defaultFunctionContext(
+		flow: MaterializedFunctionValueFlow,
+		mode: CallInstantiationMode = CALL_EFFECTS,
+	): FunctionValueContext {
 		const existing = this.defaultFunctionContextsByValue.get(flow.functionValue);
 		if (existing) {
+			this.materializeFunctionContext(existing, mode);
 			return existing;
 		}
+		this.materializeFunctionFlowReturns(flow);
 		const parameters = flow.parameters;
 		const parameterValues = new Array<SemanticValueID>(parameters.length);
 		for (let parameterIndex = 0; parameterIndex < parameters.length; parameterIndex += 1) {
-			parameterValues[parameterIndex] = this.materializeFunctionValue(parameters[parameterIndex]);
+			parameterValues[parameterIndex] = this.nodeForRoot(parameters[parameterIndex].root);
 		}
 		const closure = flow.lexicalOwner
-			? this.defaultFunctionContext(flow.lexicalOwner)
+			? this.defaultFunctionContext(flow.lexicalOwner, mode)
 			: undefined;
 		const context = this.createFunctionContext(
 			flow,
@@ -2430,6 +4227,7 @@ export class WorkspaceValueGraph {
 			undefined,
 			undefined,
 			EMPTY_ARGUMENT_VALUES,
+			mode,
 		);
 		this.defaultFunctionContextsByValue.set(flow.functionValue, context);
 		return context;
@@ -2443,6 +4241,7 @@ export class WorkspaceValueGraph {
 		callSite: CallValueEntry | undefined,
 		parentCallSite: CallValueEntry | undefined,
 		contextArguments: readonly (SemanticValueID | undefined)[],
+		mode: CallInstantiationMode,
 	): FunctionValueContext {
 		let contexts = this.functionContextsByValue.get(flow.functionValue);
 		if (!contexts) {
@@ -2462,8 +4261,19 @@ export class WorkspaceValueGraph {
 			resolvedLocals: new Set(),
 			ownedValues: new Map(),
 			callResults: new Map(),
+			callModes: new Map(),
+			materializedAssignments: new Set(),
+			returnsMaterialized: false,
+			effectsMaterialized: false,
 		};
 		const contextParameterIndices = flow.contextParameterIndices;
+		for (let parameterIndex = 0; parameterIndex < flow.parameters.length; parameterIndex += 1) {
+			this.registerValueSource(
+				parameterValues[parameterIndex],
+				flow.parameters[parameterIndex],
+				context,
+			);
+		}
 		for (let index = 0; index < contextParameterIndices.length; index += 1) {
 			const argument = contextArguments[index];
 			if (argument) {
@@ -2472,18 +4282,8 @@ export class WorkspaceValueGraph {
 		}
 		contexts.push(context);
 		this.bindNestedFunctionFlows(context);
-		for (let callIndex = 0; callIndex < flow.calls.length; callIndex += 1) {
-			const call = flow.calls[callIndex];
-			if (call.result) {
-				const key = call.result.root.key;
-				const result = defaultContext
-					? this.nodeFor(this.ownedNodes, key)
-					: this.createNode();
-				context.callResults.set(key, result);
-			}
-			this.registerCall(call, context);
-		}
-		this.materializeFunctionContext(context);
+		this.applyDemandedContextSlices(context);
+		this.materializeFunctionContext(context, mode);
 		return context;
 	}
 
@@ -2499,33 +4299,178 @@ export class WorkspaceValueGraph {
 
 	private ownedValueInContext(context: FunctionValueContext, key: string): SemanticValueID {
 		if (context.defaultContext) {
-			return this.nodeFor(this.ownedNodes, key);
+			const value = this.nodeForRoot({ kind: 'owned', key });
+			this.registerValueSource(
+				value,
+				{ root: { kind: 'owned', key }, steps: EMPTY_VALUE_STEPS },
+				context,
+			);
+			return value;
 		}
 		let value = context.ownedValues.get(key);
 		if (!value) {
 			value = this.createNode();
 			context.ownedValues.set(key, value);
+			this.registerValueSource(value, { root: { kind: 'owned', key }, steps: EMPTY_VALUE_STEPS }, context);
 		}
 		return value;
 	}
 
-	private materializeFunctionContext(context: FunctionValueContext): void {
+	private registerValueSource(
+		value: SemanticValueID,
+		source: SemanticValueSource,
+		context?: FunctionValueContext,
+		stepCount = source.steps.length,
+	): void {
+		const key = this.identities.sourceKey(source, stepCount);
+		for (let link = this.valueSourceHeads[value]; link !== 0; link = this.valueSourceNext[link - 1]) {
+			const bindingIndex = link - 1;
+			if (this.valueSourceKeys[bindingIndex] === key
+				&& this.valueSourceContexts[bindingIndex] === context) {
+				return;
+			}
+		}
+		const bindingIndex = this.valueSourceSources.length;
+		this.valueSourceSources.push(source);
+		this.valueSourceStepCounts.push(stepCount);
+		this.valueSourceKeys.push(key);
+		this.valueSourceContexts.push(context);
+		this.valueSourceNext.push(this.valueSourceHeads[value]);
+		this.valueSourceHeads[value] = bindingIndex + 1;
+		let bindings = this.valueSourceBindingsByKey.get(key);
+		if (!bindings) {
+			bindings = [];
+			this.valueSourceBindingsByKey.set(key, bindings);
+		}
+		bindings.push(bindingIndex);
+		const effectNames = this.demandedEffectNamesByValue.get(value);
+		if (effectNames) {
+			for (let nameIndex = 0; nameIndex < effectNames.length; nameIndex += 1) {
+				this.demandEffectSource(source, stepCount, effectNames[nameIndex]);
+			}
+		}
+		this.publishValueSourceDerivations(value, source, stepCount, context);
+	}
+
+	private publishValueSourceDerivations(
+		value: SemanticValueID,
+		source: SemanticValueSource,
+		stepCount: number,
+		context: FunctionValueContext | undefined,
+	): void {
+		const members = this.members.get(value);
+		if (members) {
+			for (const [name, member] of members) {
+				this.registerValueSource(
+					member.value,
+					appendValueMember(source, name, stepCount),
+					context,
+				);
+			}
+		}
+		const element = this.elements.get(value);
+		if (element) {
+			this.registerValueSource(element, appendValueElement(source, stepCount), context);
+		}
+		const indexed = this.indexedValues.get(value);
+		if (indexed) {
+			for (const [key, indexedValue] of indexed) {
+				this.registerIndexedValueSources(value, key, indexedValue);
+			}
+		}
+		const instance = this.instances.get(value);
+		if (instance) {
+			this.registerValueSource(instance, appendValueInstance(source, stepCount), context);
+		}
+		const callResult = this.callResults.get(value);
+		if (callResult) {
+			this.registerValueSource(
+				callResult,
+				appendValueStep(source, { kind: 'call' }, stepCount),
+				context,
+			);
+		}
+	}
+
+	private registerIndexedValueSources(
+		owner: SemanticValueID,
+		key: SemanticValueID,
+		value: SemanticValueID,
+	): void {
+		for (let ownerLink = this.valueSourceHeads[owner]; ownerLink !== 0; ownerLink = this.valueSourceNext[ownerLink - 1]) {
+			const ownerBinding = ownerLink - 1;
+			const ownerContext = this.valueSourceContexts[ownerBinding];
+			for (let keyLink = this.valueSourceHeads[key]; keyLink !== 0; keyLink = this.valueSourceNext[keyLink - 1]) {
+				const keyBinding = keyLink - 1;
+				const keyContext = this.valueSourceContexts[keyBinding];
+				if (ownerContext && keyContext && ownerContext !== keyContext) {
+					continue;
+				}
+				this.registerValueSource(
+					value,
+					appendValueIndex(
+						this.valueSourceSources[ownerBinding],
+						valueSourcePrefix(
+							this.valueSourceSources[keyBinding],
+							this.valueSourceStepCounts[keyBinding],
+						),
+						this.valueSourceStepCounts[ownerBinding],
+					),
+					ownerContext ?? keyContext,
+				);
+			}
+		}
+	}
+
+	private materializeFunctionContext(
+		context: FunctionValueContext,
+		mode: CallInstantiationMode,
+	): void {
+		if (mode === CALL_EFFECTS && !context.effectsMaterialized) {
+			context.effectsMaterialized = true;
+			this.materializeFunctionContextEffects(context);
+		}
+		if (mode >= CALL_RETURNS && !context.returnsMaterialized) {
+			context.returnsMaterialized = true;
+			this.materializeFunctionContextReturns(context);
+		}
+	}
+
+	private materializeFunctionContextEffects(context: FunctionValueContext): void {
 		const flow = context.flow;
 		for (let memberIndex = 0; memberIndex < flow.members.length; memberIndex += 1) {
-			const member = flow.members[memberIndex];
-			this.registerValueConstraint({
-				target: {
-					kind: 'source',
-					source: appendValueMember(member.owner, member.name),
-					memberDeclId: member.declId,
-				},
-				source: declarationValueSource(member.declId),
-				relation: 'identity',
-				context,
-			});
+			this.materializeContextMember(context, flow.members[memberIndex]);
+		}
+		for (let callIndex = 0; callIndex < flow.calls.length; callIndex += 1) {
+			this.materializeContextCall(context, flow.calls[callIndex], CALL_EFFECTS);
 		}
 		for (let assignmentIndex = 0; assignmentIndex < flow.assignments.length; assignmentIndex += 1) {
-			const assignment = flow.assignments[assignmentIndex];
+			this.materializeContextAssignment(context, flow.assignments[assignmentIndex]);
+		}
+	}
+
+	private materializeContextAssignments(
+		context: FunctionValueContext,
+		source: SemanticValueSource,
+		stepCount = source.steps.length,
+	): void {
+		const assignments = context.flow.assignmentsByTarget.get(
+			this.identities.sourceKey(source, stepCount),
+		);
+		if (!assignments) {
+			return;
+		}
+		for (let assignmentIndex = 0; assignmentIndex < assignments.length; assignmentIndex += 1) {
+			this.materializeContextAssignment(context, assignments[assignmentIndex]);
+		}
+	}
+
+	private materializeContextAssignment(
+		context: FunctionValueContext,
+		assignment: ValueAssignmentEntry,
+	): void {
+		if (!context.materializedAssignments.has(assignment)) {
+			context.materializedAssignments.add(assignment);
 			this.registerValueConstraint({
 				target: { kind: 'source', source: assignment.target },
 				source: assignment.source,
@@ -2533,6 +4478,52 @@ export class WorkspaceValueGraph {
 				context,
 			});
 		}
+	}
+
+	private registerContextEffectDependency(
+		context: FunctionValueContext,
+		entry: FunctionEffectDependencyEntry,
+	): void {
+		let materialized = this.materializedContextEffectDependencies.get(context);
+		if (!materialized) {
+			materialized = new Set();
+			this.materializedContextEffectDependencies.set(context, materialized);
+		}
+		if (materialized.has(entry)) {
+			return;
+		}
+		materialized.add(entry);
+		this.pendingEffectDependencyContexts.push(context);
+		this.pendingEffectDependencyEntries.push(entry);
+	}
+
+	private materializeContextEffectDependency(
+		context: FunctionValueContext,
+		entry: FunctionEffectDependencyEntry,
+	): void {
+		const sourceValue = this.resolveContextualValueSource(entry.source, context, true);
+		const targetValue = this.resolveContextualValueSource(entry.target, context, true);
+		if (!sourceValue || !targetValue) {
+			return;
+		}
+		this.addEffectDependency(sourceValue, targetValue);
+	}
+
+	private addEffectDependency(source: SemanticValueID, target: SemanticValueID): void {
+		if (!this.effectDependents.add(source, target)) {
+			return;
+		}
+		const names = this.demandedEffectNamesByValue.get(source);
+		if (!names) {
+			return;
+		}
+		for (let nameIndex = 0; nameIndex < names.length; nameIndex += 1) {
+			this.demandResolvedEffects(target, names[nameIndex]);
+		}
+	}
+
+	private materializeFunctionContextReturns(context: FunctionValueContext): void {
+		const flow = context.flow;
 		const returns = this.functionReturnsByValue.get(flow.functionValue);
 		if (!returns) {
 			return;
@@ -2547,12 +4538,75 @@ export class WorkspaceValueGraph {
 		}
 	}
 
+	private materializeContextCall(
+		context: FunctionValueContext,
+		call: CallValueEntry,
+		mode: CallInstantiationMode,
+	): SemanticValueID | undefined {
+		let result: SemanticValueID | undefined;
+		if (call.result) {
+			const key = call.result.root.key;
+			result = context.callResults.get(key);
+			if (!result) {
+				result = context.defaultContext
+					? this.nodeForRoot(call.result.root)
+					: this.createNode();
+				context.callResults.set(key, result);
+				this.registerValueSource(result, call.result, context);
+			}
+		}
+		const previousMode = context.callModes.get(call);
+		if (previousMode === undefined || previousMode < mode) {
+			context.callModes.set(call, mode);
+			this.registerCall(call, context, mode);
+		}
+		return result;
+	}
+
+	private materializeContextCallDemand(
+		context: FunctionValueContext,
+		demand: FunctionCallDemand,
+	): void {
+		const call = demand.call;
+		if (!call.result) {
+			this.registerCall(call, context, demand.mode, demand.targetFlow);
+			return;
+		}
+		const key = call.result.root.key;
+		let result = context.callResults.get(key);
+		if (!result) {
+			result = context.defaultContext
+				? this.nodeForRoot(call.result.root)
+				: this.createNode();
+			context.callResults.set(key, result);
+			this.registerValueSource(result, call.result, context);
+		}
+		this.registerCall(call, context, demand.mode, demand.targetFlow);
+	}
+
 	private registerCall(
 		call: CallValueEntry,
 		context?: FunctionValueContext,
+		mode: CallInstantiationMode = CALL_EFFECTS,
+		targetFlow?: MaterializedFunctionValueFlow,
 	): void {
+		this.demandSource(call.callee);
+		for (let argumentIndex = 0; argumentIndex < call.arguments.length; argumentIndex += 1) {
+			const argument = call.arguments[argumentIndex];
+			if (argument) {
+				this.demandSource(argument);
+			}
+		}
+		if (mode >= CALL_RETURNS && call.result) {
+			this.demandSource(call.result);
+		}
 		const callIndex = this.calls.length;
-		this.calls.push({ call, context });
+		this.calls.push({
+			call,
+			context,
+			mode,
+			targetFlow,
+		});
 		this.callWorklist.add(callIndex);
 	}
 
@@ -2584,8 +4638,11 @@ export class WorkspaceValueGraph {
 			}
 			for (let targetIndex = 0; targetIndex < targets.length; targetIndex += 1) {
 				const target = targets[targetIndex];
-				if (constraint.target.kind === 'source' && constraint.target.memberDeclId) {
-					this.retainMemberDeclaration(target, constraint.target.memberDeclId);
+				if (constraint.target.kind === 'source') {
+					this.registerValueSource(target, constraint.target.source, context);
+					if (constraint.target.memberDeclId) {
+						this.retainMemberDeclaration(target, constraint.target.memberDeclId);
+					}
 				}
 				this.attachResolvedValue(target, source, constraint.relation);
 			}
@@ -2756,18 +4813,20 @@ export class WorkspaceValueGraph {
 						dependencies.push(argumentValue);
 					}
 				}
-				const result = call.result
+				const result = contextualCall.mode !== CALL_BINDINGS && call.result
 					? context
 						? context.callResults.get(call.result.root.key)
 						: this.resolveSource(call.result, true)
-					: undefined;
-				this.instantiateFunctionCall(
-					callee,
+						: undefined;
+					this.instantiateFunctionCall(
+						callee,
 					argumentValues,
 					result,
 					call,
-					context,
-				);
+						context,
+						contextualCall.mode,
+						contextualCall.targetFlow,
+					);
 			}
 			for (let dependencyIndex = 0; dependencyIndex < dependencies.length; dependencyIndex += 1) {
 				this.callWorklist.retain(callIndex, dependencies[dependencyIndex]);
@@ -2782,6 +4841,7 @@ export class WorkspaceValueGraph {
 		dependencies?: SemanticValueID[],
 		stepCount = source.steps.length,
 	): SemanticValueID | undefined {
+		this.materializeEnclosingContextAssignments(context, source, 0);
 		let value = this.resolveContextualValueRoot(source.root, context, createMembers, dependencies);
 		for (let stepIndex = 0; value && stepIndex < stepCount; stepIndex += 1) {
 			if (dependencies) {
@@ -2813,8 +4873,21 @@ export class WorkspaceValueGraph {
 					value = this.resolveMetatableValue(value, false);
 					break;
 			}
+			this.materializeEnclosingContextAssignments(context, source, stepIndex + 1);
 		}
 		return value;
+	}
+
+	private materializeEnclosingContextAssignments(
+		context: FunctionValueContext,
+		source: SemanticValueSource,
+		stepCount: number,
+	): void {
+		let activeContext: FunctionValueContext | undefined = context;
+		while (activeContext) {
+			this.materializeContextAssignments(activeContext, source, stepCount);
+			activeContext = activeContext.closure;
+		}
 	}
 
 	private resolveContextualValueRoot(
@@ -2837,12 +4910,13 @@ export class WorkspaceValueGraph {
 			}
 		}
 		if (root.kind === 'owned') {
-			const result = context.callResults.get(root.key);
-			if (result) {
-				return result;
-			}
 			let activeContext: FunctionValueContext | undefined = context;
 			while (activeContext) {
+				const result = activeContext.callResults.get(root.key)
+					?? this.materializeContextCallResult(activeContext, root.key);
+				if (result) {
+					return result;
+				}
 				const parameterIndex = this.parameterIndexForRoot(root, activeContext.flow);
 				if (parameterIndex !== -1) {
 					return activeContext.parameterValues[parameterIndex];
@@ -2856,6 +4930,20 @@ export class WorkspaceValueGraph {
 		return this.resolveValueRoot(root);
 	}
 
+	private materializeContextCallResult(
+		context: FunctionValueContext,
+		key: string,
+	): SemanticValueID | undefined {
+		const calls = context.flow.calls;
+		for (let index = 0; index < calls.length; index += 1) {
+			const call = calls[index];
+			if (call.result?.root.key === key) {
+				return this.materializeContextCall(context, call, CALL_RETURNS);
+			}
+		}
+		return undefined;
+	}
+
 	private resolveContextualDeclaration(
 		declId: SymbolID,
 		context: FunctionValueContext,
@@ -2863,13 +4951,14 @@ export class WorkspaceValueGraph {
 		_dependencies?: SemanticValueID[],
 	): SemanticValueID {
 		if (context.defaultContext) {
-			return this.nodeFor(this.declarationNodes, declId);
+			return this.nodeForRoot({ kind: 'declaration', declId });
 		}
 		const sources = this.declarationValues.get(declId);
 		let value = context.localValues.get(declId);
 		if (!value) {
 			value = this.createNode();
 			context.localValues.set(declId, value);
+			this.registerValueSource(value, declarationValueSource(declId), context);
 		}
 		if (!sources || sources.length === 0 || context.resolvedLocals.has(declId)) {
 			return value;
@@ -2915,6 +5004,8 @@ export class WorkspaceValueGraph {
 		result: SemanticValueID | undefined,
 		callSite?: CallValueEntry,
 		caller?: FunctionValueContext,
+		mode: CallInstantiationMode = CALL_EFFECTS,
+		targetFlow?: MaterializedFunctionValueFlow,
 	): void {
 		const flows = this.functionFlowScratch;
 		const closures = this.functionClosureScratch;
@@ -2933,12 +5024,16 @@ export class WorkspaceValueGraph {
 			this.traversalMarks[candidate] = generation;
 			const flow = this.functionFlowsByValue.get(candidate);
 			if (flow) {
+				if (targetFlow && flow !== targetFlow) {
+					this.pushTraversalBases(stack, candidate);
+					continue;
+				}
 				const parameters = flow.parameters;
 				const argumentCount = Math.min(parameters.length, argumentValues.length);
 				for (let argumentIndex = 0; argumentIndex < argumentCount; argumentIndex += 1) {
 					const argument = argumentValues[argumentIndex];
 					if (argument) {
-						const parameter = this.materializeFunctionValue(parameters[argumentIndex]);
+						const parameter = this.nodeForRoot(parameters[argumentIndex].root);
 						if (parameter !== argument) {
 							this.addEdge(this.callArgumentBases, parameter, argument);
 						}
@@ -2959,12 +5054,15 @@ export class WorkspaceValueGraph {
 			}
 			this.pushTraversalBases(stack, candidate);
 		}
+		if (mode === CALL_BINDINGS) {
+			return;
+		}
 		for (let flowIndex = 0; flowIndex < flows.length; flowIndex += 1) {
 			const flow = flows[flowIndex];
 			const closure = closures[flowIndex];
 			let context: FunctionValueContext;
 			if (!flow.requiresCallContext && (!closure || closure.defaultContext)) {
-				context = this.defaultFunctionContext(flow);
+				context = this.defaultFunctionContext(flow, mode);
 				this.bindFunctionContextArguments(context, argumentValues);
 			} else {
 				context = this.functionCallContext(
@@ -2973,6 +5071,7 @@ export class WorkspaceValueGraph {
 					closure,
 					flow.requiresCallContext ? callSite : undefined,
 					flow.requiresCallerContext ? caller?.callSite : undefined,
+					mode,
 				);
 			}
 			if (result && context.returnValue !== result) {
@@ -2987,7 +5086,9 @@ export class WorkspaceValueGraph {
 		closure: FunctionValueContext | undefined,
 		callSite: CallValueEntry | undefined,
 		parentCallSite: CallValueEntry | undefined,
+		mode: CallInstantiationMode,
 	): FunctionValueContext {
+		this.materializeFunctionFlowReturns(flow);
 		let contexts = this.functionContextsByValue.get(flow.functionValue);
 		if (contexts) {
 			for (let contextIndex = 0; contextIndex < contexts.length; contextIndex += 1) {
@@ -2997,6 +5098,7 @@ export class WorkspaceValueGraph {
 					&& context.callSite === callSite
 					&& context.parentCallSite === parentCallSite
 					&& this.contextArgumentsEqual(context, argumentValues, callSite)) {
+					this.materializeFunctionContext(context, mode);
 					this.bindFunctionContextArguments(context, argumentValues);
 					return context;
 				}
@@ -3020,9 +5122,21 @@ export class WorkspaceValueGraph {
 			callSite,
 			parentCallSite,
 			contextArguments,
+			mode,
 		);
 		this.bindFunctionContextArguments(context, argumentValues);
 		return context;
+	}
+
+	private materializeFunctionFlowReturns(flow: MaterializedFunctionValueFlow): void {
+		const entry = this.sourceFunctionFlowByMaterializedFlow.get(flow);
+		if (!entry) {
+			return;
+		}
+		const rootKey = this.demandIndex.rootKey(entry.functionValue.root);
+		if (rootKey !== undefined) {
+			this.materializeFunctionReturns(this.demandIndex.returns(rootKey));
+		}
 	}
 
 	private contextArgumentsEqual(
@@ -3107,6 +5221,12 @@ export class WorkspaceValueGraph {
 	private materializeValueAssignments(entries: readonly ValueAssignmentEntry[]): void {
 		for (let index = 0; index < entries.length; index += 1) {
 			const entry = entries[index];
+			if (this.materializedRootAssignments.has(entry)) {
+				continue;
+			}
+			this.materializedRootAssignments.add(entry);
+			this.demandSource(entry.target);
+			this.demandSource(entry.source);
 			this.registerValueConstraint({
 				target: { kind: 'source', source: entry.target },
 				source: entry.source,
@@ -3115,11 +5235,90 @@ export class WorkspaceValueGraph {
 		}
 	}
 
-	private nodeFor<Key>(nodes: Map<Key, SemanticValueID>, key: Key): SemanticValueID {
+	private materializeRootCalls(
+		entries: readonly CallValueEntry[],
+		mode: CallInstantiationMode = CALL_EFFECTS,
+		targetFlow?: MaterializedFunctionValueFlow,
+	): void {
+		for (let index = 0; index < entries.length; index += 1) {
+			this.materializeRootCall(entries[index], mode, targetFlow);
+		}
+	}
+
+	private materializeRootCall(
+		call: CallValueEntry,
+		mode: CallInstantiationMode,
+		targetFlow?: MaterializedFunctionValueFlow,
+	): void {
+		if (targetFlow) {
+			if (!this.upgradeTargetCallMode(this.materializedTargetRootCallModes, call, targetFlow, mode)) {
+				return;
+			}
+		} else {
+			const previousMode = this.materializedRootCallModes.get(call);
+			if (previousMode !== undefined && previousMode >= mode) {
+				return;
+			}
+			this.materializedRootCallModes.set(call, mode);
+		}
+		this.registerCall(call, undefined, mode, targetFlow);
+	}
+
+	private upgradeTargetCallMode(
+		modesByCall: Map<CallValueEntry, Map<MaterializedFunctionValueFlow, CallInstantiationMode>>,
+		call: CallValueEntry,
+		targetFlow: MaterializedFunctionValueFlow,
+		mode: CallInstantiationMode,
+	): boolean {
+		let modes = modesByCall.get(call);
+		if (!modes) {
+			modes = new Map();
+			modesByCall.set(call, modes);
+		}
+		const previousMode = modes.get(targetFlow);
+		if (previousMode !== undefined && previousMode >= mode) {
+			return false;
+		}
+		modes.set(targetFlow, mode);
+		return true;
+	}
+
+	private nodeForRoot(
+		root: Exclude<SemanticValueRoot, { kind: 'global' }>,
+	): SemanticValueID;
+	private nodeForRoot(root: SemanticValueRoot): SemanticValueID | undefined;
+	private nodeForRoot(root: SemanticValueRoot): SemanticValueID | undefined {
+		if (root.kind === 'global') {
+			const declId = this.globalValues.get(root.symbolKey);
+			return declId === undefined
+				? undefined
+				: this.nodeForRoot({ kind: 'declaration', declId });
+		}
+		let nodes: Map<SymbolID | string, SemanticValueID>;
+		let key: SymbolID | string;
+		switch (root.kind) {
+			case 'declaration':
+				nodes = this.declarationNodes;
+				key = root.declId;
+				break;
+			case 'module':
+				nodes = this.moduleNodes;
+				key = root.module;
+				break;
+			case 'owned':
+				nodes = this.ownedNodes;
+				key = root.key;
+				break;
+			case 'literal':
+				nodes = this.literalNodes;
+				key = root.key;
+				break;
+		}
 		let value = nodes.get(key);
 		if (!value) {
 			value = this.createNode();
 			nodes.set(key, value);
+			this.registerValueSource(value, { root, steps: EMPTY_VALUE_STEPS });
 		}
 		return value;
 	}
@@ -3133,6 +5332,7 @@ export class WorkspaceValueGraph {
 			this.projectionBases.resizeOwners(this.valueCapacity);
 			this.callArgumentBases.resizeOwners(this.valueCapacity);
 			this.valueBases.resizeOwners(this.valueCapacity);
+			this.effectDependents.resizeOwners(this.valueCapacity);
 			this.instanceBases.resizeOwners(this.valueCapacity);
 			this.traversalDependents.resizeOwners(this.valueCapacity);
 			this.callWorklist.resizeValues(this.valueCapacity);
@@ -3141,6 +5341,7 @@ export class WorkspaceValueGraph {
 		this.identityParents[value] = value;
 		this.identitySizes[value] = 1;
 		this.materializedValueTargets[value] = false;
+		this.valueSourceHeads[value] = 0;
 		this.unresolvedMemberHeadByOwner[value] = 0;
 		return value;
 	}

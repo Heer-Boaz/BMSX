@@ -215,6 +215,47 @@ test('semantic workspace follows inherited method effects without matching by me
 	);
 });
 
+test('function-owned table fields do not escape as external member effects', async () => {
+	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const actorLines = [
+		'local actor<const> = {}',
+		'function actor:draw()',
+		'\tself.font:draw_text()',
+		'end',
+		'local build_options<const> = function(font)',
+		'\treturn { font = font }',
+		'end',
+		'return actor',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('actor.lua', actorLines.join('\n'));
+	const snapshot = workspace.getSnapshot();
+	const referenceLine = lineNumber(actorLines, '\tself.font:draw_text()');
+
+	assert.equal(
+		snapshot.symbolAt(
+			'actor.lua',
+			referenceLine,
+			actorLines[referenceLine - 1].lastIndexOf('font') + 1,
+		),
+		null,
+		'a function-local options table does not publish its fields onto unrelated receivers',
+	);
+	const optionsLine = lineNumber(actorLines, '\treturn { font = font }');
+	const optionsField = snapshot.symbolAt(
+		'actor.lua',
+		optionsLine,
+		actorLines[optionsLine - 1].indexOf('font') + 1,
+	)!;
+	assert.equal(
+		snapshot.symbolResolver.getReferences(optionsField.id).some(
+			reference => reference.range.start.line === referenceLine,
+		),
+		false,
+		'a references search does not adopt an unrelated unresolved receiver',
+	);
+});
+
 test('semantic workspace keeps metatable-keyed storage contextual to each callsite', async () => {
 	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
 	const storeSource = [
