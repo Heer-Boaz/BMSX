@@ -8,7 +8,7 @@ import type { ResourceBrowserItem } from '../../../../common/models';
 import type { RectBounds } from '../../../../../machine/ts/common/rect';
 import { showEditorMessage } from '../../../../common/feedback_state';
 import { measureTextRange } from '../../../../editor/common/text/layout';
-import type { CallHierarchyView } from '../../../../editor/contrib/call_hierarchy/view';
+import type { CallHierarchyModel } from '../../../../editor/contrib/call_hierarchy/model';
 import { editorViewState } from '../../../../editor/ui/view/state';
 import {
 	findResourcePanelIndexByIdentity,
@@ -32,7 +32,6 @@ import {
 	scrollResourcePanelHorizontalOffset,
 } from './navigation';
 import {
-	activateSelectedCallHierarchyItem,
 	openSelectedResourcePanelCallHierarchyLocation,
 	openSelectedResourcePanelItem,
 } from './open_actions';
@@ -94,7 +93,7 @@ export class ResourcePanelController {
 	public selectionIndex = -1;
 	public hoverIndex = -1;
 	public maxLineWidth = 0;
-	private callHierarchyView: CallHierarchyView = null;
+	private callHierarchyModel: CallHierarchyModel = null;
 	private pendingSelectionIdentity: ResourceIdentity = null;
 	private readonly callHierarchyExpandedNodeIds = new Set<string>();
 	private readonly bounds: RectBounds = create_rect_bounds();
@@ -145,7 +144,7 @@ export class ResourcePanelController {
 		this.refresh();
 	}
 
-	showCallHierarchy(view: CallHierarchyView): void {
+	showCallHierarchy(model: CallHierarchyModel): void {
 		const desiredRatio = this.widthRatio;
 		const clamped = clampResourcePanelRatio(desiredRatio);
 		if (!writeResourcePanelBounds(this.bounds, clamped)) {
@@ -156,9 +155,12 @@ export class ResourcePanelController {
 		this.mode = 'command';
 		this.visible = true;
 		this.focused = true;
-		this.callHierarchyView = view;
+		this.callHierarchyModel = model;
 		this.callHierarchyExpandedNodeIds.clear();
-		this.callHierarchyExpandedNodeIds.add(view.root.id);
+		if (model.roots.length === 1) {
+			const root = model.roots[0];
+			this.callHierarchyExpandedNodeIds.add(root.id);
+		}
 		this.refreshCallHierarchyContents();
 	}
 
@@ -167,7 +169,7 @@ export class ResourcePanelController {
 		this.focused = false;
 		this.resetState();
 		this.mode = 'resources';
-		this.callHierarchyView = null;
+		this.callHierarchyModel = null;
 		this.callHierarchyExpandedNodeIds.clear();
 		this.publishCodeAreaLeft();
 	}
@@ -337,7 +339,7 @@ export class ResourcePanelController {
 			? this.items[this.selectionIndex].callHierarchyNodeId
 			: null;
 		this.applyRefreshResult(refreshResourcePanelCallHierarchyState({
-			view: this.callHierarchyView,
+			model: this.callHierarchyModel,
 			expandedNodeIds: this.callHierarchyExpandedNodeIds,
 			bounds,
 			lineHeight: this.lineHeight,
@@ -471,17 +473,23 @@ export class ResourcePanelController {
 	}
 
 	private activateSelectedCallHierarchy(): void {
-		const toggledNodeId = activateSelectedCallHierarchyItem(
-			this.editor,
-			this.items,
-			this.selectionIndex,
-			this.callHierarchyExpandedNodeIds,
-		);
-		if (!toggledNodeId) {
+		const selected = this.items[this.selectionIndex];
+		if (!selected?.callHierarchyExpandable) {
+			openSelectedResourcePanelCallHierarchyLocation(
+				this.editor,
+				this.items,
+				this.selectionIndex,
+			);
 			return;
 		}
+		const nodeId = selected.callHierarchyNodeId;
+		if (this.callHierarchyExpandedNodeIds.has(nodeId)) {
+			this.callHierarchyExpandedNodeIds.delete(nodeId);
+		} else {
+			this.callHierarchyExpandedNodeIds.add(nodeId);
+		}
 		this.refreshCallHierarchyContents();
-		this.restoreCallHierarchySelection(toggledNodeId);
+		this.restoreCallHierarchySelection(nodeId);
 	}
 
 	private restoreCallHierarchySelection(nodeId: string): void {

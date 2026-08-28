@@ -453,6 +453,90 @@ test('workspace rebinds direct global lookups immutably across updates', () => {
 	assert.equal(updatedTarget, null);
 });
 
+test('LuaSemanticFrontend provides one incoming-call layer and groups call sites by caller', () => {
+	const source = [
+		'local function target() end',
+		'local function direct()',
+		'\ttarget()',
+		'\ttarget()',
+		'end',
+		'local function indirect()',
+		'\tdirect()',
+		'end',
+	].join('\n');
+	const frontend = buildLuaSemanticFrontend([{ path: 'calls.lua', source }]);
+	const targetPosition = findPosition(source, 'local function target', 'target');
+	const target = frontend.findSymbolsByPosition('calls.lua', targetPosition.line, targetPosition.column);
+	assert.ok(target);
+
+	const directCalls = frontend.provideIncomingCalls(target.targets[0].id);
+	assert.equal(directCalls.length, 1);
+	assert.equal(directCalls[0].from.kind, 'symbol');
+	assert.equal(directCalls[0].from.label, 'direct');
+	assert.deepEqual(
+		directCalls[0].fromRanges.map(range => range.start.line),
+		[3, 4],
+	);
+	if (directCalls[0].from.kind !== 'symbol') {
+		assert.fail('direct caller must resolve to its function declaration');
+	}
+
+	const indirectCalls = frontend.provideIncomingCalls(directCalls[0].from.symbolId);
+	assert.equal(indirectCalls.length, 1);
+	assert.equal(indirectCalls[0].from.label, 'indirect');
+	assert.deepEqual(
+		indirectCalls[0].fromRanges.map(range => range.start.line),
+		[7],
+	);
+});
+
+test('LuaSemanticFrontend retains recursive calls as incoming call sites', () => {
+	const source = [
+		'local function recurse(value)',
+		'\tif value > 0 then',
+		'\t\treturn recurse(value - 1)',
+		'\tend',
+		'end',
+	].join('\n');
+	const frontend = buildLuaSemanticFrontend([{ path: 'recursive_calls.lua', source }]);
+	const target = frontend.findSymbolsByPosition('recursive_calls.lua', 1, 16);
+	assert.ok(target);
+
+	const calls = frontend.provideIncomingCalls(target.targets[0].id);
+	assert.equal(calls.length, 1);
+	assert.equal(calls[0].from.label, 'recurse');
+	assert.equal(calls[0].fromRanges[0].start.line, 3);
+});
+
+test('LuaSemanticFrontend classifies member and method calls at the reference producer', () => {
+	const source = [
+		'local target = {}',
+		'function target.member() end',
+		'function target:method() end',
+		'local function caller()',
+		'\tlocal member = target.member',
+		'\ttarget.member()',
+		'\ttarget:method()',
+		'end',
+	].join('\n');
+	const frontend = buildLuaSemanticFrontend([{ path: 'member_calls.lua', source }]);
+	const memberPosition = findPosition(source, 'function target.member', 'member');
+	const methodPosition = findPosition(source, 'function target:method', 'method');
+	const member = frontend.findSymbolsByPosition('member_calls.lua', memberPosition.line, memberPosition.column);
+	const method = frontend.findSymbolsByPosition('member_calls.lua', methodPosition.line, methodPosition.column);
+	assert.ok(member);
+	assert.ok(method);
+
+	const memberCalls = frontend.provideIncomingCalls(member.targets[0].id);
+	const methodCalls = frontend.provideIncomingCalls(method.targets[0].id);
+	assert.equal(memberCalls.length, 1);
+	assert.equal(methodCalls.length, 1);
+	assert.equal(memberCalls[0].from.label, 'caller');
+	assert.equal(methodCalls[0].from.label, 'caller');
+	assert.deepEqual(memberCalls[0].fromRanges.map(range => range.start.line), [6]);
+	assert.deepEqual(methodCalls[0].fromRanges.map(range => range.start.line), [7]);
+});
+
 function firstNavigationTarget(
 	file: LuaSemanticFrontendFile,
 	line: number,

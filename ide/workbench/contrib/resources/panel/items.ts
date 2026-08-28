@@ -7,10 +7,16 @@ import {
 } from '../../../../common/resource';
 import { measureTextRange } from '../../../../editor/common/text/layout';
 import type { ResourceBrowserItem } from '../../../../common/models';
-import type { CallHierarchyView, CallHierarchyViewNode } from '../../../../editor/contrib/call_hierarchy/view';
+import type { CallHierarchyModel, CallHierarchyNode } from '../../../../editor/contrib/call_hierarchy/model';
+import { definitionLocationFromSourceRange } from '../../../../editor/navigation/source_range';
+import { computeSourceLabel } from '../../../../common/paths';
+import type { LuaDefinitionLocation } from '../../../../../toolchain/ts/lua/semantic_contracts';
+import type { LuaSourceRange } from '../../../../../toolchain/ts/lua/syntax/ast';
 import type { RuntimeSourceState } from '../../../../runtime/sources';
 
 export type ResourcePanelFilterMode = 'lua_only' | 'all';
+
+const EMPTY_CALL_HIERARCHY_NODES: readonly CallHierarchyNode[] = [];
 
 type ResourceDirectory = {
 	name: string;
@@ -28,16 +34,11 @@ export function buildResourcePanelItems(
 	);
 }
 
-export function buildCallHierarchyPanelItems(view: CallHierarchyView, expandedNodeIds: ReadonlySet<string>): ResourceBrowserItem[] {
-	if (!view) {
-		return [{
-			line: '<no call hierarchy>',
-			contentStartColumn: 0,
-			resource: null,
-		}];
-	}
+export function buildCallHierarchyPanelItems(model: CallHierarchyModel, expandedNodeIds: ReadonlySet<string>): ResourceBrowserItem[] {
 	const items: ResourceBrowserItem[] = [];
-	appendCallHierarchyNode(items, view.root, expandedNodeIds, 0);
+	for (let index = 0; index < model.roots.length; index += 1) {
+		appendCallHierarchyNode(items, model, model.roots[index], expandedNodeIds, 0);
+	}
 	return items;
 }
 
@@ -164,26 +165,57 @@ function compactResourceDirectory(directory: ResourceDirectory): { label: string
 	return { label: segments.join('/'), terminal: cursor };
 }
 
-function appendCallHierarchyNode(items: ResourceBrowserItem[], node: CallHierarchyViewNode, expandedNodeIds: ReadonlySet<string>, depth: number): void {
+function appendCallHierarchyNode(
+	items: ResourceBrowserItem[],
+	model: CallHierarchyModel,
+	node: CallHierarchyNode,
+	expandedNodeIds: ReadonlySet<string>,
+	depth: number,
+): void {
 	const indentUnit = '  ';
-	const expandable = node.children.length > 0;
-	const expanded = expandable && expandedNodeIds.has(node.id);
+	const expansionRequested = expandedNodeIds.has(node.id);
+	const incoming = expansionRequested && node.kind === 'symbol'
+		? model.resolveIncomingCalls(node)
+		: EMPTY_CALL_HIERARCHY_NODES;
+	const expandable = model.hasChildren(node);
+	const expanded = expandable && expansionRequested;
 	const marker = expandable ? (expanded ? '- ' : '+ ') : '  ';
 	const indent = indentUnit.repeat(depth);
 	items.push({
-		line: `${indent}${marker}${node.label}`,
+		line: `${indent}${marker}${node.name} (${buildLocationLabel(node.location)})`,
 		contentStartColumn: indent.length + marker.length,
 		resource: null,
 		location: node.location,
 		callHierarchyNodeId: node.id,
-		callHierarchyNodeKind: node.kind,
 		callHierarchyExpandable: expandable,
 		callHierarchyExpanded: expanded,
 	});
 	if (!expandable || !expanded) {
 		return;
 	}
-	for (let childIndex = 0; childIndex < node.children.length; childIndex += 1) {
-		appendCallHierarchyNode(items, node.children[childIndex], expandedNodeIds, depth + 1);
+	const childIndent = indentUnit.repeat(depth + 1);
+	for (let index = 0; index < node.fromRanges.length; index += 1) {
+		const range = node.fromRanges[index];
+		items.push({
+			line: `${childIndent}  ${computeSourceLabel(range.path)}:${range.start.line}`,
+			contentStartColumn: childIndent.length + 2,
+			resource: null,
+			location: definitionLocationFromSourceRange(range),
+			callHierarchyNodeId: buildCallSiteId(node.id, range),
+		});
 	}
+	if (node.kind === 'chunk') {
+		return;
+	}
+	for (let index = 0; index < incoming.length; index += 1) {
+		appendCallHierarchyNode(items, model, incoming[index], expandedNodeIds, depth + 1);
+	}
+}
+
+function buildLocationLabel(location: LuaDefinitionLocation): string {
+	return `${computeSourceLabel(location.path)}:${location.range.startLine}`;
+}
+
+function buildCallSiteId(parentId: string, range: LuaSourceRange): string {
+	return `${parentId}>call:${range.path}:${range.start.line}:${range.start.column}:${range.end.line}:${range.end.column}`;
 }

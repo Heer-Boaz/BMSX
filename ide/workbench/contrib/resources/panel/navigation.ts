@@ -39,37 +39,21 @@ export function scrollResourcePanelHorizontalOffset(hscroll: number, amount: num
 	return clamp(hscroll + amount, 0, maxScroll);
 }
 
-export function toggleSelectedCallHierarchyExpansion(
-	items: readonly ResourceBrowserItem[],
-	selectionIndex: number,
-	expandedNodeIds: Set<string>,
-): string {
-	const item = items[selectionIndex];
-	if (!item?.callHierarchyExpandable || !item.callHierarchyNodeId) {
-		return null;
-	}
-	if (expandedNodeIds.has(item.callHierarchyNodeId)) {
-		expandedNodeIds.delete(item.callHierarchyNodeId);
-	} else {
-		expandedNodeIds.add(item.callHierarchyNodeId);
-	}
-	return item.callHierarchyNodeId;
-}
-
 export function expandSelectedCallHierarchyNode(
 	items: readonly ResourceBrowserItem[],
 	selectionIndex: number,
 	expandedNodeIds: Set<string>,
 ): string {
 	const item = items[selectionIndex];
-	if (!item?.callHierarchyExpandable || !item.callHierarchyNodeId) {
+	const nodeId = item?.callHierarchyNodeId;
+	if (!item?.callHierarchyExpandable || !nodeId) {
 		return null;
 	}
-	if (expandedNodeIds.has(item.callHierarchyNodeId)) {
+	if (expandedNodeIds.has(nodeId)) {
 		return null;
 	}
-	expandedNodeIds.add(item.callHierarchyNodeId);
-	return item.callHierarchyNodeId;
+	expandedNodeIds.add(nodeId);
+	return nodeId;
 }
 
 export function collapseSelectedCallHierarchyNode(
@@ -78,12 +62,13 @@ export function collapseSelectedCallHierarchyNode(
 	expandedNodeIds: Set<string>,
 ): string {
 	const item = items[selectionIndex];
-	if (!item?.callHierarchyExpandable || !item.callHierarchyNodeId) {
+	const nodeId = item?.callHierarchyNodeId;
+	if (!item?.callHierarchyExpandable || !nodeId) {
 		return null;
 	}
-	if (!expandedNodeIds.has(item.callHierarchyNodeId)) {
+	if (!expandedNodeIds.has(nodeId)) {
 		return null;
 	}
-	expandedNodeIds.delete(item.callHierarchyNodeId);
-	return item.callHierarchyNodeId;
+	expandedNodeIds.delete(nodeId);
+	return nodeId;
 }

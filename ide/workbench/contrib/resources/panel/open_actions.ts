@@ -1,6 +1,5 @@
 import type { ResourceBrowserItem } from '../../../../common/models';
 import { getActiveCodeTabContext } from '../../../ui/code_tab/contexts';
-import { toggleSelectedCallHierarchyExpansion } from './navigation';
 import type { CartEditor } from '../../../../cart_editor';
 
 export function openResourcePanelItem(
@@ -50,18 +49,4 @@ export function openSelectedResourcePanelCallHierarchyLocation(
 ): void {
 	const item = items[selectionIndex];
 	openResourcePanelCallHierarchyLocation(editor, item);
-}
-
-export function activateSelectedCallHierarchyItem(
-	editor: CartEditor,
-	items: readonly ResourceBrowserItem[],
-	selectionIndex: number,
-	expandedNodeIds: Set<string>,
-): string {
-	const toggledNodeId = toggleSelectedCallHierarchyExpansion(items, selectionIndex, expandedNodeIds);
-	if (toggledNodeId) {
-		return toggledNodeId;
-	}
-	openSelectedResourcePanelCallHierarchyLocation(editor, items, selectionIndex);
-	return null;
 }

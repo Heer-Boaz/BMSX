@@ -119,6 +119,8 @@ export type Ref = {
 	target?: SymbolID;
 	lexicalTarget?: SymbolID;
 	isWrite: boolean;
+	isCall: boolean;
+	caller?: SymbolID;
 	referenceKind: 'identifier' | 'self' | 'member' | 'method';
 	receiverSymbolKey?: string;
 	receiverValue?: SemanticValueSource;
@@ -1253,7 +1255,9 @@ class SemanticBuilder {
 				const callExpression = expression;
 				const methodName = callExpression.methodName;
 				const callResult = this.createExpressionValueSource(callExpression);
-				const calleeInfo = this.visitExpression(callExpression.callee, context);
+				const calleeInfo = methodName
+					? this.visitExpression(callExpression.callee, context)
+					: this.visitCallTarget(callExpression.callee, context);
 				if (methodName) {
 					this.recordMethodReference(callExpression, calleeInfo);
 				}
@@ -1378,6 +1382,16 @@ class SemanticBuilder {
 			default:
 				return null;
 		}
+	}
+
+	private visitCallTarget(expression: LuaExpression, context: ExpressionContext): ResolvedNamePath {
+		if (expression.kind === LuaSyntaxKind.IdentifierExpression) {
+			return this.handleIdentifierExpression(expression, false, true);
+		}
+		if (expression.kind === LuaSyntaxKind.MemberExpression) {
+			return this.handleMemberExpression(expression, context, false, true);
+		}
+		return this.visitExpression(expression, context);
 	}
 
 	private visitTableConstructorExpression(expression: LuaTableConstructorExpression, context: ExpressionContext): void {
@@ -1698,6 +1712,7 @@ class SemanticBuilder {
 			referenceKind: 'method',
 			receiverSymbolKey,
 			receiverValue: calleeInfo?.valueSource,
+			isCall: true,
 		});
 	}
 
@@ -1708,7 +1723,7 @@ class SemanticBuilder {
 		registerFunctionFromExpression(this.functionSignatures, path, expression, declarationStyle);
 	}
 
-	private handleIdentifierExpression(identifier: LuaIdentifierExpression, isWrite: boolean): ResolvedNamePath {
+	private handleIdentifierExpression(identifier: LuaIdentifierExpression, isWrite: boolean, isCall = false): ResolvedNamePath {
 		const range = buildIdentifierRange(identifier, this.tokenMap, this.path);
 		const resolved = this.resolveName(identifier.name);
 		const namePath = [identifier.name];
@@ -1728,6 +1743,7 @@ class SemanticBuilder {
 						range,
 						isWrite,
 						referenceKind: 'self',
+						isCall,
 					});
 					return {
 						namePath,
@@ -1747,6 +1763,7 @@ class SemanticBuilder {
 				target: targetId,
 				isWrite,
 				referenceKind: 'identifier',
+				isCall,
 			});
 			return {
 				namePath,
@@ -1764,6 +1781,7 @@ class SemanticBuilder {
 				target,
 				isWrite,
 				referenceKind: 'identifier',
+				isCall,
 			});
 		} else {
 			this.recordReference({
@@ -1772,6 +1790,7 @@ class SemanticBuilder {
 				range,
 				isWrite,
 				referenceKind: 'identifier',
+				isCall,
 			});
 		}
 		return {
@@ -1783,7 +1802,7 @@ class SemanticBuilder {
 		};
 	}
 
-	private handleMemberExpression(member: LuaMemberExpression, context: ExpressionContext, isWrite: boolean): ResolvedNamePath {
+	private handleMemberExpression(member: LuaMemberExpression, context: ExpressionContext, isWrite: boolean, isCall = false): ResolvedNamePath {
 		const baseInfo = this.visitExpression(member.base, context);
 		const basePath = resolveReferencedBasePath(baseInfo, member.base);
 		const namePath = basePath ? appendToNamePath(basePath, member.identifier) : [member.identifier];
@@ -1803,6 +1822,7 @@ class SemanticBuilder {
 			referenceKind: 'member',
 			receiverSymbolKey: baseInfo?.decl?.symbolKey || (baseInfo?.namePath && joinNamePath(baseInfo.namePath)),
 			receiverValue: baseInfo?.valueSource,
+			isCall,
 		});
 		return {
 			namePath,
@@ -2145,6 +2165,7 @@ class SemanticBuilder {
 		referenceKind: 'identifier' | 'self' | 'member' | 'method';
 		receiverSymbolKey?: string;
 		receiverValue?: SemanticValueSource;
+		isCall?: boolean;
 	}): void {
 		const targetDecl = options.target ? this.declById.get(options.target) : null;
 		const ref: Ref = {
@@ -2154,10 +2175,20 @@ class SemanticBuilder {
 			symbolKey: joinNamePath(options.namePath),
 			range: options.range,
 			isWrite: options.isWrite,
+			isCall: !!options.isCall,
 			referenceKind: options.referenceKind,
 			receiverSymbolKey: options.receiverSymbolKey,
 			receiverValue: options.receiverValue,
 		};
+		if (ref.isCall) {
+			for (let index = this.functionValueFlowStack.length - 1; index >= 0; index -= 1) {
+				const root = this.functionValueFlowStack[index].functionValue.root;
+				if (root.kind === 'declaration') {
+					ref.caller = root.declId;
+					break;
+				}
+			}
+		}
 		if (options.target) {
 			ref.target = options.target;
 		}

@@ -1,4 +1,4 @@
-import { resolveCallHierarchyViewAt } from '../editor/contrib/call_hierarchy/query';
+import { resolveCallHierarchyAt } from '../editor/contrib/call_hierarchy/query';
 import { closeSymbolSearch } from '../workbench/contrib/code_editor/symbols/shared';
 import { openDefinitionSearch } from '../workbench/contrib/code_editor/definitions/search/index';
 import { renameController } from '../workbench/contrib/code_editor/rename/controller';
@@ -30,7 +30,7 @@ export function executeEditorSymbolNavigationCommand(
 			);
 			return;
 		case 'callHierarchy':
-			const result = resolveCallHierarchyViewAt(
+			const result = resolveCallHierarchyAt(
 				luaTooling,
 				editorDocumentState.cursorRow,
 				editorDocumentState.cursorColumn,
@@ -39,13 +39,10 @@ export function executeEditorSymbolNavigationCommand(
 				case 'missing_definition':
 					showEditorMessage('Definition not found at cursor', constants.COLOR_STATUS_WARNING, 1.8);
 					return;
-				case 'no_calls':
-					showEditorMessage(`No calls found for ${result.expression}`, constants.COLOR_STATUS_WARNING, 1.8);
-					return;
 				case 'success':
 					closeSymbolSearch(false);
-					editor.resourcePanel.showCallHierarchy(result.view);
-					showEditorMessage(result.view.title, constants.COLOR_STATUS_SUCCESS, 1.6);
+					editor.resourcePanel.showCallHierarchy(result.model);
+					showEditorMessage(result.model.title, constants.COLOR_STATUS_SUCCESS, 1.6);
 					return;
 			}
 	}

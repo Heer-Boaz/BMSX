@@ -70,17 +70,26 @@ export type LuaSemanticReferenceQuery = LuaSemanticPositionSymbols & {
 	references: readonly Ref[];
 };
 
-export type LuaCallHierarchyCaller = {
+export type LuaCallHierarchySymbolItem = {
+	kind: 'symbol';
 	key: string;
 	label: string;
 	symbolId: SymbolID;
 	range: LuaSourceRange;
 };
 
-export type LuaIncomingCallHierarchyNode = {
-	caller: LuaCallHierarchyCaller;
-	calls: readonly Ref[];
-	children: readonly LuaIncomingCallHierarchyNode[];
+export type LuaCallHierarchyChunkItem = {
+	kind: 'chunk';
+	key: string;
+	label: string;
+	range: LuaSourceRange;
+};
+
+export type LuaCallHierarchyItem = LuaCallHierarchySymbolItem | LuaCallHierarchyChunkItem;
+
+export type LuaCallHierarchyIncomingCall = {
+	from: LuaCallHierarchyItem;
+	fromRanges: readonly LuaSourceRange[];
 };
 
 export type LuaSemanticFrontendFile = {
@@ -105,13 +114,10 @@ export type LuaSemanticFrontend = {
 	findDeclarationsByNamePath(namePath: readonly string[]): readonly Decl[];
 	findSymbolsByPosition(path: string, line: number, column: number): LuaSemanticPositionSymbols | null;
 	findReferencesByPosition(path: string, line: number, column: number): LuaSemanticReferenceQuery | null;
-	buildIncomingCallHierarchy(
-		rootSymbolId: SymbolID,
-		options?: {
-			maxDepth?: number;
-			allowedPaths?: ReadonlySet<string>;
-		},
-	): readonly LuaIncomingCallHierarchyNode[];
+	provideIncomingCalls(
+		symbolId: SymbolID,
+		allowedPaths?: ReadonlySet<string>,
+	): readonly LuaCallHierarchyIncomingCall[];
 };
 
 export function buildLuaSemanticFrontend(
@@ -256,229 +262,52 @@ class SnapshotSemanticFrontend implements LuaSemanticFrontend {
 		};
 	}
 
-	public buildIncomingCallHierarchy(
-		rootSymbolId: SymbolID,
-		options?: {
-			maxDepth?: number;
-			allowedPaths?: ReadonlySet<string>;
-		},
-	): readonly LuaIncomingCallHierarchyNode[] {
-		const rootDecl = this.snapshot.symbolResolver.getDeclaration(rootSymbolId);
-		if (!rootDecl) {
-			return [];
-		}
-		const pathCache = new Map<string, CallHierarchyPathIndex>();
-		const visited = new Set<SymbolID>([rootSymbolId]);
-		return buildIncomingCallHierarchyNodes({
-			symbolId: rootSymbolId,
-			sourcesByPath: this.sourcesByPath,
-			snapshot: this.snapshot,
-			pathCache,
-			visited,
-			depth: 0,
-			maxDepth: options?.maxDepth ?? 8,
-			allowedPaths: options?.allowedPaths,
-		});
-	}
-}
-
-type CallHierarchyPathIndex = {
-	callByPosition: Map<string, LuaCallExpression>;
-	callerByPosition: Map<string, LuaCallHierarchyCaller>;
-};
-
-type IncomingCallerGroup = {
-	caller: LuaCallHierarchyCaller;
-	calls: Ref[];
-};
-
-function buildIncomingCallHierarchyNodes(options: {
-	symbolId: SymbolID;
-	sourcesByPath: ReadonlyMap<string, LuaSemanticWorkspaceSourceSnapshot>;
-	snapshot: LuaSemanticWorkspaceSnapshot;
-	pathCache: Map<string, CallHierarchyPathIndex>;
-	visited: Set<SymbolID>;
-	depth: number;
-	maxDepth: number;
-	allowedPaths?: ReadonlySet<string>;
-}): readonly LuaIncomingCallHierarchyNode[] {
-	if (options.depth >= options.maxDepth) {
-		return [];
-	}
-	const groups = collectIncomingCallerGroups(options);
-	const nodes: LuaIncomingCallHierarchyNode[] = [];
-	for (let index = 0; index < groups.length; index += 1) {
-		const group = groups[index];
-		let children: readonly LuaIncomingCallHierarchyNode[] = [];
-		if (group.caller.symbolId && !options.visited.has(group.caller.symbolId)) {
-			options.visited.add(group.caller.symbolId);
-			children = buildIncomingCallHierarchyNodes({
-				...options,
-				symbolId: group.caller.symbolId,
-				depth: options.depth + 1,
-			});
-			options.visited.delete(group.caller.symbolId);
-		}
-		nodes.push({
-			caller: group.caller,
-			calls: group.calls,
-			children,
-		});
-	}
-	return nodes;
-}
-
-function collectIncomingCallerGroups(options: {
-	symbolId: SymbolID;
-	sourcesByPath: ReadonlyMap<string, LuaSemanticWorkspaceSourceSnapshot>;
-	snapshot: LuaSemanticWorkspaceSnapshot;
-	pathCache: Map<string, CallHierarchyPathIndex>;
-	allowedPaths?: ReadonlySet<string>;
-}): IncomingCallerGroup[] {
-	const grouped = new Map<string, IncomingCallerGroup>();
-	const references = options.snapshot.symbolResolver.getReferences(options.symbolId);
-	for (let index = 0; index < references.length; index += 1) {
-		const reference = references[index];
-		if (reference.isWrite || !reference.file) {
-			continue;
-		}
-		if (options.allowedPaths && !options.allowedPaths.has(reference.file)) {
-			continue;
-		}
-		const hierarchyIndex = getCallHierarchyIndex(reference.file, options.sourcesByPath, options.pathCache, options.snapshot);
-		const key = buildPositionKey(reference.range.start.line, reference.range.start.column);
-		if (!hierarchyIndex.callByPosition.has(key)) {
-			continue;
-		}
-		const caller = hierarchyIndex.callerByPosition.get(key) ?? buildChunkCallerScope(reference.file);
-		if (caller.symbolId === options.symbolId) {
-			continue;
-		}
-		const bucketKey = `${reference.file}|${caller.key}`;
-		let bucket = grouped.get(bucketKey);
-		if (!bucket) {
-			bucket = {
-				caller,
-				calls: [],
-			};
-			grouped.set(bucketKey, bucket);
-		}
-		bucket.calls.push(reference);
-	}
-	const groups = Array.from(grouped.values());
-	for (let index = 0; index < groups.length; index += 1) {
-		groups[index].calls.sort((left, right) => compareSourcePosition(left.range.start.line, left.range.start.column, right.range.start.line, right.range.start.column));
-	}
-	groups.sort((left, right) => compareCallHierarchyCaller(left.caller, right.caller));
-	return groups;
-}
-
-function getCallHierarchyIndex(
-	path: string,
-	sourcesByPath: ReadonlyMap<string, LuaSemanticWorkspaceSourceSnapshot>,
-	cache: Map<string, CallHierarchyPathIndex>,
-	snapshot: LuaSemanticWorkspaceSnapshot,
-): CallHierarchyPathIndex {
-	const cached = cache.get(path);
-	if (cached) {
-		return cached;
-	}
-	const source = sourcesByPath.get(path);
-	const index: CallHierarchyPathIndex = {
-		callByPosition: new Map(),
-		callerByPosition: new Map(),
-	};
-	if (!source) {
-		cache.set(path, index);
-		return index;
-	}
-	const functionDecls = source.analysis.decls.filter(decl => decl.kind === 'function');
-	for (let refIndex = 0; refIndex < source.analysis.refs.length; refIndex += 1) {
-		const ref = source.analysis.refs[refIndex];
-		const call = resolveCallExpressionForReference(ref, source.analysis.callExpressions);
-		if (!call) {
-			continue;
-		}
-		const positionKey = buildPositionKey(ref.range.start.line, ref.range.start.column);
-		index.callByPosition.set(positionKey, call);
-		if (index.callerByPosition.has(positionKey)) {
-			continue;
-		}
-		const callerDecl = resolveCallerDeclaration(functionDecls, call.range.start.line, call.range.start.column);
-		const caller = callerDecl ? buildDeclCallerScope(callerDecl) : buildChunkCallerScope(path);
-		if (caller.symbolId) {
-			const current = snapshot.symbolResolver.getDeclaration(caller.symbolId);
-			if (current) {
-				index.callerByPosition.set(positionKey, buildDeclCallerScope(current));
+	public provideIncomingCalls(
+		symbolId: SymbolID,
+		allowedPaths?: ReadonlySet<string>,
+	): readonly LuaCallHierarchyIncomingCall[] {
+		const grouped = new Map<string, IncomingCallerGroup>();
+		const references = this.snapshot.symbolResolver.getReferences(symbolId);
+		for (let index = 0; index < references.length; index += 1) {
+			const reference = references[index];
+			if (!reference.isCall) {
 				continue;
 			}
+			if (allowedPaths && !allowedPaths.has(reference.file)) {
+				continue;
+			}
+			const callerKey = reference.caller ? `decl:${reference.caller}` : `chunk:${reference.file}`;
+			let bucket = grouped.get(callerKey);
+			if (!bucket) {
+				const caller = reference.caller
+					? buildDeclCallerScope(this.snapshot.symbolResolver.getDeclaration(reference.caller))
+					: buildChunkCallerScope(reference.file);
+				bucket = {
+					from: caller,
+					fromRanges: [],
+				};
+				grouped.set(callerKey, bucket);
+			}
+			bucket.fromRanges.push(reference.range);
 		}
-		index.callerByPosition.set(positionKey, caller);
+		const groups = Array.from(grouped.values());
+		for (let index = 0; index < groups.length; index += 1) {
+			groups[index].fromRanges.sort((left, right) => compareSourcePosition(left.start.line, left.start.column, right.start.line, right.start.column));
+		}
+		groups.sort((left, right) => compareCallHierarchyItems(left.from, right.from));
+		return groups;
 	}
-	cache.set(path, index);
-	return index;
 }
 
-function resolveCallExpressionForReference(ref: Ref, calls: readonly LuaCallExpression[]): LuaCallExpression {
-	if (ref.isWrite) {
-		return null;
-	}
-	let best: LuaCallExpression = null;
-	for (let index = 0; index < calls.length; index += 1) {
-		const call = calls[index];
-		if (!callExpressionMatchesReference(call, ref)) {
-			continue;
-		}
-		if (!best || isRangeInside(call.range, best.range)) {
-			best = call;
-		}
-	}
-	return best;
-}
+type IncomingCallerGroup = {
+	from: LuaCallHierarchyItem;
+	fromRanges: LuaSourceRange[];
+};
 
-function callExpressionMatchesReference(call: LuaCallExpression, ref: Ref): boolean {
-	if (call.methodName) {
-		return ref.name === call.methodName && sourcePositionInRange(ref.range.start.line, ref.range.start.column, call.range);
-	}
-	if (call.callee.kind === LuaSyntaxKind.MemberExpression) {
-		const identifierStartColumn = call.callee.range.end.column - Math.max(0, call.callee.identifier.length - 1);
-		return ref.name === call.callee.identifier
-			&& ref.range.start.line === call.callee.range.end.line
-			&& ref.range.start.column === identifierStartColumn;
-	}
-	if (call.callee.kind === LuaSyntaxKind.IdentifierExpression) {
-		return ref.name === call.callee.name
-			&& ref.range.start.line === call.callee.range.start.line
-			&& ref.range.start.column === call.callee.range.start.column;
-	}
-	return sourcePositionInRange(ref.range.start.line, ref.range.start.column, call.callee.range);
-}
-
-function resolveCallerDeclaration(functionDecls: readonly Decl[], line: number, column: number): Decl {
-	let best: Decl = null;
-	for (let index = 0; index < functionDecls.length; index += 1) {
-		const decl = functionDecls[index];
-		if (compareSourcePosition(decl.range.start.line, decl.range.start.column, line, column) > 0) {
-			continue;
-		}
-		if (!sourcePositionInRange(line, column, decl.scope)) {
-			continue;
-		}
-		if (!best) {
-			best = decl;
-			continue;
-		}
-		const startDiff = compareSourcePosition(decl.range.start.line, decl.range.start.column, best.range.start.line, best.range.start.column);
-		if (startDiff > 0 || (startDiff === 0 && isRangeInside(decl.scope, best.scope))) {
-			best = decl;
-		}
-	}
-	return best;
-}
-
-function buildDeclCallerScope(decl: Decl): LuaCallHierarchyCaller {
+function buildDeclCallerScope(decl: Decl): LuaCallHierarchySymbolItem {
 	const label = decl.namePath.length > 0 ? decl.namePath.join('.') : decl.name;
 	return {
+		kind: 'symbol',
 		key: `decl:${decl.id}`,
 		label,
 		symbolId: decl.id,
@@ -486,11 +315,11 @@ function buildDeclCallerScope(decl: Decl): LuaCallHierarchyCaller {
 	};
 }
 
-function buildChunkCallerScope(path: string): LuaCallHierarchyCaller {
+function buildChunkCallerScope(path: string): LuaCallHierarchyChunkItem {
 	return {
+		kind: 'chunk',
 		key: `chunk:${path}`,
 		label: '<chunk>',
-		symbolId: null,
 		range: {
 			path,
 			start: { line: 1, column: 1 },
@@ -499,11 +328,7 @@ function buildChunkCallerScope(path: string): LuaCallHierarchyCaller {
 	};
 }
 
-function buildPositionKey(line: number, column: number): string {
-	return `${line}:${column}`;
-}
-
-function compareCallHierarchyCaller(left: LuaCallHierarchyCaller, right: LuaCallHierarchyCaller): number {
+function compareCallHierarchyItems(left: LuaCallHierarchyItem, right: LuaCallHierarchyItem): number {
 	if (left.range.path !== right.range.path) {
 		return left.range.path.localeCompare(right.range.path);
 	}
@@ -516,11 +341,6 @@ function compareCallHierarchyCaller(left: LuaCallHierarchyCaller, right: LuaCall
 		return columnDiff;
 	}
 	return left.label.localeCompare(right.label);
-}
-
-function isRangeInside(inner: LuaSourceRange, outer: LuaSourceRange): boolean {
-	return compareSourcePosition(inner.start.line, inner.start.column, outer.start.line, outer.start.column) >= 0
-		&& compareSourcePosition(inner.end.line, inner.end.column, outer.end.line, outer.end.column) <= 0;
 }
 
 function createBoundFile(

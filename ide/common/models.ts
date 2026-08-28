@@ -263,7 +263,6 @@ export type ResourceBrowserItem = {
 	resource: RuntimeResource;
 	location?: LuaDefinitionLocation;
 	callHierarchyNodeId?: string;
-	callHierarchyNodeKind?: 'root' | 'caller' | 'call';
 	callHierarchyExpandable?: boolean;
 	callHierarchyExpanded?: boolean;
 };

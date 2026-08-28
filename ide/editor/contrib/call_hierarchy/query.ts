@@ -1,17 +1,15 @@
 import { buildEditorSemanticSnapshot, createEditorSemanticFrontend } from '../intellisense/frontend';
 import { extractHoverExpression } from '../intellisense/engine';
-import { buildIncomingCallHierarchyView, type CallHierarchyView } from './view';
+import { CallHierarchyModel } from './model';
 import { editorDocumentState } from '../../editing/document_state';
 import { SYSTEM_RESOURCE_DOMAIN } from '../../../common/resource';
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
-import { definitionLocationFromSourceRange } from '../../navigation/source_range';
 
 export type CallHierarchyQueryResult =
-	| { kind: 'success'; view: CallHierarchyView; }
-	| { kind: 'missing_definition'; }
-	| { kind: 'no_calls'; expression: string; };
+	| { kind: 'success'; model: CallHierarchyModel; }
+	| { kind: 'missing_definition'; };
 
-export function resolveCallHierarchyViewAt(bridge: RuntimeLuaTooling, row: number, column: number): CallHierarchyQueryResult {
+export function resolveCallHierarchyAt(bridge: RuntimeLuaTooling, row: number, column: number): CallHierarchyQueryResult {
 	const resource = editorDocumentState.resource;
 	const path = resource.path;
 	const snapshot = buildEditorSemanticSnapshot(bridge, resource, editorDocumentState.buffer);
@@ -41,15 +39,10 @@ export function resolveCallHierarchyViewAt(bridge: RuntimeLuaTooling, row: numbe
 		}
 	}
 	allowedPaths.add(path);
-	const view = buildIncomingCallHierarchyView(bridge, {
-		snapshot,
-		rootSymbolIds: symbols.targets.map(target => target.id),
-		rootExpression: expression,
-		origin: definitionLocationFromSourceRange(symbols.origin),
-		allowedPaths,
-	});
-	if (!view) {
-		return { kind: 'no_calls', expression };
+	const rootSymbolIds = new Array(symbols.targets.length);
+	for (let index = 0; index < symbols.targets.length; index += 1) {
+		rootSymbolIds[index] = symbols.targets[index].id;
 	}
-	return { kind: 'success', view };
+	const model = new CallHierarchyModel(frontend, rootSymbolIds, expression, allowedPaths);
+	return { kind: 'success', model };
 }

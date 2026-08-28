@@ -32,6 +32,7 @@ export function getBoundIdentifierReference(
 			target: decl.id,
 			lexicalTarget: decl.isGlobal ? null : decl.id,
 			isWrite: fallbackIsWrite,
+			isCall: false,
 			referenceKind: 'identifier',
 		},
 		decl,

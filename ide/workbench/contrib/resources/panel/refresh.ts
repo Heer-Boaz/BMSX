@@ -1,7 +1,7 @@
 import { clamp } from '../../../../../machine/ts/common/clamp';
 import type { RectBounds } from '../../../../../machine/ts/common/rect';
 import type { ResourceBrowserItem, RuntimeResource } from '../../../../common/models';
-import type { CallHierarchyView } from '../../../../editor/contrib/call_hierarchy/view';
+import type { CallHierarchyModel } from '../../../../editor/contrib/call_hierarchy/model';
 import {
 	buildCallHierarchyPanelItems,
 	buildResourcePanelItems,
@@ -57,14 +57,14 @@ export function refreshResourcePanelResourceState(options: {
 }
 
 export function refreshResourcePanelCallHierarchyState(options: {
-	view: CallHierarchyView;
+	model: CallHierarchyModel;
 	expandedNodeIds: ReadonlySet<string>;
 	bounds: RectBounds;
 	lineHeight: number;
 	previousNodeId: string;
 	previousScroll: number;
 }): ResourcePanelRefreshResult {
-	const items = buildCallHierarchyPanelItems(options.view, options.expandedNodeIds);
+	const items = buildCallHierarchyPanelItems(options.model, options.expandedNodeIds);
 	const maxLineWidth = computeResourcePanelMaxLineWidth(items);
 	const capacity = resourcePanelLineCapacity(options.bounds, items.length, maxLineWidth, options.lineHeight);
 	let selectionIndex = options.previousNodeId ? findResourcePanelIndexByCallHierarchyNodeId(items, options.previousNodeId) : -1;

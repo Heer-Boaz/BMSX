@@ -54,6 +54,15 @@ De huidige IDE- en debuggergrenzen zijn:
   regel pas uit die source wanneer hij daadwerkelijk een syntaxfout formatteert;
   volledige line-arrays horen alleen bij expliciete UI-queries die regeltekst
   tonen, zoals het references-resultaat, en niet bij semantiek of diagnostics;
+- call hierarchy gebruikt dezelfde vlakke providergrens als volwassen language
+  services: de semantische frontend groepeert alleen de directe callsites per
+  caller en het editormodel vraagt pas bij het uitklappen om de volgende laag.
+  De file-semantiek markeert call-references en hun owning function tijdens de
+  oorspronkelijke AST-traversal; providers matchen references niet opnieuw
+  tegen alle call-expressions en zoeken owning scopes niet achteraf terug.
+  Er wordt geen recursieve depth-begrensde boom vooraf opgebouwd; node-identiteit
+  bevat het ouderpad zodat dezelfde caller in verschillende takken onafhankelijk
+  kan worden uitgeklapt;
 - Back en Forward bewaren editorlocaties op het moment dat een navigatiecommando
   vertrekt. Een cartridge-entry opent cartridgebron en niet eerst de BIOS-entry;
 - stackframes en statement-stepping gebruiken de toolingmetadata van de geladen
@@ -88,7 +97,7 @@ vervangt de hieronder genoemde fysieke SNES Mini-validatie niet.
 | ID | Opdracht | Klaar wanneer |
 | --- | --- | --- |
 | `PERF-RUNTIME-01` | Kies per iteratie één gemeten hot-pathowner en verwijder daar herhaalde decode, conversie, validatie, allocatie of dispatch bij de producer. Dit is een paraplu, geen enkele megaslice. | Analyzers blokkeren nieuwe overtredingen, parity blijft exact en representatieve low-end hardware houdt 50 Hz zonder oplopende backlog. |
-| `IDE-SEMANTIC-01` | Meet de lexer-, parser- en semantische analyse van het gewijzigde bestand op representatieve grote bronnen. Bouw pas incremental parserinput wanneer die meting een relevante edit-latency of allocatie aanwijst. Volg daarbij het productiecontract van TypeScript en LuaLS: ongewijzigde file-records worden behouden, maar de semantiek van een gewijzigd bestand mag opnieuw worden opgebouwd. | Een edit heranalyseert geen onafhankelijk bestand en bouwt geen workspacebrede kopie van alle file-value-flows. De terugkerende semantic- en diagnosticspaden materialiseren de source hoogstens eenmaal per benodigde bufferversie en geen volledige line-array. Symbol- en owned-value-ID's zijn snapshotintern; er bestaat geen speculatief persistent-ID-protocol. Navigatieresultaten blijven gelijk aan een volledige cold build en de generieke Lua-laag krijgt geen cartlib-, firmware- of frameworkkennis. |
+| `IDE-SEMANTIC-01` | Meet de lexer-, parser- en semantische analyse van het gewijzigde bestand op representatieve grote bronnen. Bouw pas incremental parserinput wanneer die meting een relevante edit-latency of allocatie aanwijst. Volg daarbij het productiecontract van TypeScript en LuaLS: ongewijzigde file-records worden behouden, maar de semantiek van een gewijzigd bestand mag opnieuw worden opgebouwd. | Een edit heranalyseert geen onafhankelijk bestand en bouwt geen workspacebrede kopie van alle file-value-flows. De terugkerende semantic- en diagnosticspaden materialiseren de source hoogstens eenmaal per benodigde bufferversie en geen volledige line-array. Call hierarchy resolveert per uitklapactie precies één incoming-calllaag en kent geen vooraf gebouwde recursieve boom of arbitraire depth-limiet. Symbol- en owned-value-ID's zijn snapshotintern; er bestaat geen speculatief persistent-ID-protocol. Navigatieresultaten blijven gelijk aan een volledige cold build en de generieke Lua-laag krijgt geen cartlib-, firmware- of frameworkkennis. |
 
 Houd throughput en fysieke pacing als twee afzonderlijke metingen. De
 `profile:libretro-particle-benchmark-offscreen-wsl`-opdracht eindigt op de
