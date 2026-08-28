@@ -1,14 +1,12 @@
 import type { EditorDiagnostic } from '../../../../common/models';
-import {
-	computeLuaDiagnostics,
-	listGlobalLuaSymbols,
-	listLuaBuiltinFunctions,
-	listLuaSymbols,
-} from '../../../../editor/contrib/intellisense/engine';
+import { createEditorSemanticFrontend } from '../../../../editor/contrib/intellisense/frontend';
+import { getOrCreateSemanticProject } from '../../../../editor/contrib/intellisense/semantic/workspace/state';
+import type { SemanticDocumentInput } from '../../../../editor/contrib/intellisense/semantic/workspace/project';
 import { getCachedLuaParse } from '../../../../../toolchain/ts/lua/analysis/cache';
+import type { LuaSyntaxError } from '../../../../../toolchain/ts/lua/errors';
+import type { LuaStaticDiagnostic } from '../../../../../toolchain/ts/lua/semantic/diagnostics';
 import { editorRuntimeState } from '../../../../editor/common/runtime_state';
 import { diagnosticsDebounceMs, editorDiagnosticsState } from '../../../../editor/contrib/diagnostics/state';
-import { cacheRuntimeSemanticParseState } from '../../../../editor/contrib/intellisense/semantic/workspace/runtime';
 import { getCodeTabContexts } from '../../../ui/code_tab/contexts';
 import type { ResourceDomain } from '../../../../common/resource';
 import type { RuntimeLuaTooling } from '../../../../runtime/lua_tooling';
@@ -21,52 +19,86 @@ export type DiagnosticContextInput = {
 	version: number;
 };
 
+type PreparedDiagnosticContext = {
+	context: DiagnosticContextInput;
+	syntaxError: LuaSyntaxError | null;
+};
+
+type DomainDiagnosticBatch = {
+	inputs: SemanticDocumentInput[];
+	contexts: PreparedDiagnosticContext[];
+};
+
 export function computeAggregatedEditorDiagnostics(
 	bridge: RuntimeLuaTooling,
 	contexts: ReadonlyArray<DiagnosticContextInput>,
 ): EditorDiagnostic[] {
 	if (contexts.length === 0) return [];
-	const builtinDescriptors = listLuaBuiltinFunctions();
-
-	const aggregated: EditorDiagnostic[] = [];
-	for (let i = 0; i < contexts.length; i += 1) {
-		const ctx = contexts[i];
-		const path = ctx.path;
-		const source = ctx.source;
-		const globalSymbols = listGlobalLuaSymbols(bridge, ctx.domain);
+	const batches = new Map<ResourceDomain, DomainDiagnosticBatch>();
+	for (let index = 0; index < contexts.length; index += 1) {
+		const context = contexts[index];
 		const parseEntry = getCachedLuaParse({
-			path,
-			source,
+			path: context.path,
+			source: context.source,
 		});
-		const parsed = parseEntry.parsed;
-		cacheRuntimeSemanticParseState(ctx.domain, path, source, parsed);
-		const localSymbols = listLuaSymbols(bridge, ctx.domain, path);
-		const luaDiagnostics = computeLuaDiagnostics(bridge, {
-			source,
-			domain: ctx.domain,
-			path,
-			localSymbols,
-			globalSymbols,
-			builtinDescriptors,
-			parsed,
+		let batch = batches.get(context.domain);
+		if (!batch) {
+			batch = { inputs: [], contexts: [] };
+			batches.set(context.domain, batch);
+		}
+		batch.inputs.push({
+			path: context.path,
+			source: parseEntry.source,
+			parsed: parseEntry.parsed,
 		});
-		for (let j = 0; j < luaDiagnostics.length; j += 1) {
-			const d = luaDiagnostics[j];
-			const startColumn = d.startColumn > 0 ? d.startColumn : 0;
-			const adjustedEnd = d.endColumn > startColumn ? d.endColumn : startColumn + 1;
-			aggregated.push({
-				row: d.row,
-				startColumn,
-				endColumn: adjustedEnd,
-				message: d.message,
-				severity: d.severity,
-				contextId: ctx.id,
-				sourceLabel: path,
-				path,
-			});
+		batch.contexts.push({
+			context,
+			syntaxError: parseEntry.syntaxError,
+		});
+	}
+	const aggregated: EditorDiagnostic[] = [];
+	for (const [domain, batch] of batches) {
+		const project = getOrCreateSemanticProject(domain);
+		project.synchronizeRuntimeSources(bridge.sources);
+		project.updateDocuments(batch.inputs);
+		const frontend = createEditorSemanticFrontend(bridge, project.getSnapshot());
+		for (let contextIndex = 0; contextIndex < batch.contexts.length; contextIndex += 1) {
+			const prepared = batch.contexts[contextIndex];
+			const context = prepared.context;
+			if (prepared.syntaxError) {
+				appendEditorDiagnostic(aggregated, context, {
+					row: prepared.syntaxError.line - 1,
+					startColumn: prepared.syntaxError.column - 1,
+					endColumn: prepared.syntaxError.column,
+					message: prepared.syntaxError.message,
+					severity: 'error',
+				});
+				continue;
+			}
+			const diagnostics = frontend.getFile(context.path).diagnostics;
+			for (let diagnosticIndex = 0; diagnosticIndex < diagnostics.length; diagnosticIndex += 1) {
+				appendEditorDiagnostic(aggregated, context, diagnostics[diagnosticIndex]);
+			}
 		}
 	}
 	return aggregated;
+}
+
+function appendEditorDiagnostic(
+	output: EditorDiagnostic[],
+	context: DiagnosticContextInput,
+	diagnostic: LuaStaticDiagnostic,
+): void {
+	output.push({
+		row: diagnostic.row,
+		startColumn: diagnostic.startColumn,
+		endColumn: diagnostic.endColumn,
+		message: diagnostic.message,
+		severity: diagnostic.severity,
+		contextId: context.id,
+		sourceLabel: context.path,
+		path: context.path,
+	});
 }
 
 export function markAllDiagnosticsDirty(): void {

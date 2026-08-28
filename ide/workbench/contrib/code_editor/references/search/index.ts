@@ -28,7 +28,6 @@ export function openReferenceSearchPopup(bridge: RuntimeLuaTooling, rename: Rena
 	rename.cancel();
 	const result = resolveReferenceLookup(bridge, {
 		buffer: editorDocumentState.buffer,
-		textVersion: editorDocumentState.textVersion,
 		cursorRow: editorDocumentState.cursorRow,
 		cursorColumn: editorDocumentState.cursorColumn,
 		identity: context.resource,
@@ -39,7 +38,7 @@ export function openReferenceSearchPopup(bridge: RuntimeLuaTooling, rename: Rena
 	}
 	const { info, initialIndex } = result;
 	referenceState.apply(info, initialIndex);
-	symbolSearchState.locationCatalog = buildReferenceSearchCatalog(bridge, info, context);
+	symbolSearchState.locationCatalog = buildReferenceSearchCatalog(info, context);
 	if (symbolSearchState.locationCatalog.length === 0) {
 		showEditorMessage('No references found', constants.COLOR_STATUS_WARNING, 1.6);
 		return;

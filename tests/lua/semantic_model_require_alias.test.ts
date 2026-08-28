@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { semanticSymbolAt } from './semantic_test_harness';
 
-const semanticModelModulePromise = import('../../toolchain/ts/lua/semantic/model');
+const semanticWorkspaceModulePromise = import('../../toolchain/ts/lua/semantic/model');
 
 test('semantic file data records direct and chained require aliases', async () => {
-	const { buildLuaFileSemanticData } = await semanticModelModulePromise;
+	const { buildLuaFileSemanticData } = await semanticWorkspaceModulePromise;
 	const source = [
 		"local constants<const> = require('constants')",
 		"local hud<const> = constants.hud",
@@ -49,7 +50,7 @@ test('semantic file data records direct and chained require aliases', async () =
 });
 
 test('semantic workspace resolves transitive module aliases independently of file order', async () => {
-	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
 	const baseSource = [
 		'local base<const> = {}',
 		'function base.tools.byte() end',
@@ -67,19 +68,19 @@ test('semantic workspace resolves transitive module aliases independently of fil
 	workspace.updateFile('main.lua', mainLines.join('\n'));
 	workspace.updateFile('facade.lua', facadeSource);
 	workspace.updateFile('base.lua', baseSource);
-	const target = workspace.getSnapshot().symbolAt(
+	const target = semanticSymbolAt(workspace.getSnapshot(),
 		'main.lua',
 		2,
 		mainLines[1].indexOf('byte') + 1,
 	);
 
 	assert.ok(target, 'transitively exported member target');
-	assert.equal(target!.decl.file, 'base.lua');
-	assert.deepEqual(target!.decl.namePath, ['base', 'tools', 'byte']);
+	assert.equal(target!.declaration.file, 'base.lua');
+	assert.deepEqual(target!.declaration.namePath, ['base', 'tools', 'byte']);
 });
 
 test('semantic workspace incrementally retargets transitive module aliases', async () => {
-	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
 	const leftSource = [
 		'local left<const> = {}',
 		'function left.left_action() end',
@@ -106,20 +107,20 @@ test('semantic workspace incrementally retargets transitive module aliases', asy
 	workspace.updateFile('right.lua', rightSource);
 	const leftColumn = mainLines[1].indexOf('left_action') + 1;
 	const rightColumn = mainLines[2].indexOf('right_action') + 1;
-	const leftTarget = workspace.getSnapshot().symbolAt('main.lua', 2, leftColumn);
+	const leftTarget = semanticSymbolAt(workspace.getSnapshot(), 'main.lua', 2, leftColumn);
 	assert.ok(leftTarget, 'initial transitive target');
-	assert.equal(leftTarget!.decl.file, 'left.lua');
-	assert.equal(workspace.getSnapshot().symbolAt('main.lua', 3, rightColumn), null);
+	assert.equal(leftTarget!.declaration.file, 'left.lua');
+	assert.equal(semanticSymbolAt(workspace.getSnapshot(), 'main.lua', 3, rightColumn), null);
 
 	workspace.updateFile('facade.lua', facadeSource('right'));
-	assert.equal(workspace.getSnapshot().symbolAt('main.lua', 2, leftColumn), null);
-	const rightTarget = workspace.getSnapshot().symbolAt('main.lua', 3, rightColumn);
+	assert.equal(semanticSymbolAt(workspace.getSnapshot(), 'main.lua', 2, leftColumn), null);
+	const rightTarget = semanticSymbolAt(workspace.getSnapshot(), 'main.lua', 3, rightColumn);
 	assert.ok(rightTarget, 'retargeted transitive target');
-	assert.equal(rightTarget!.decl.file, 'right.lua');
+	assert.equal(rightTarget!.declaration.file, 'right.lua');
 });
 
 test('semantic workspace resolves members added to an imported module table', async () => {
-	const { buildLuaFileSemanticData, LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const { buildLuaFileSemanticData, LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
 	const baseSource = [
 		'local base<const> = {}',
 		'return base',
@@ -139,19 +140,19 @@ test('semantic workspace resolves members added to an imported module table', as
 		buildLuaFileSemanticData(facadeSource, 'facade.lua'),
 		buildLuaFileSemanticData(baseSource, 'base.lua'),
 	]);
-	const target = workspace.getSnapshot().symbolAt(
+	const target = semanticSymbolAt(workspace.getSnapshot(),
 		'main.lua',
 		2,
 		mainLines[1].indexOf('added') + 1,
 	);
 
 	assert.ok(target, 'imported table augmentation target');
-	assert.equal(target!.decl.file, 'facade.lua');
-	assert.deepEqual(target!.decl.namePath, ['base', 'tools', 'added']);
+	assert.equal(target!.declaration.file, 'facade.lua');
+	assert.deepEqual(target!.declaration.namePath, ['base', 'tools', 'added']);
 });
 
 test('semantic workspace incrementally removes imported table augmentations', async () => {
-	const { buildLuaFileSemanticData, LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const { buildLuaFileSemanticData, LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
 	const baseSource = 'local base<const> = {}\nreturn base';
 	const facadeSource = [
 		"local base<const> = require('base')",
@@ -169,24 +170,24 @@ test('semantic workspace incrementally removes imported table augmentations', as
 		buildLuaFileSemanticData(mainLines.join('\n'), 'main.lua'),
 	]);
 	const column = mainLines[1].indexOf('added') + 1;
-	assert.ok(workspace.getSnapshot().symbolAt('main.lua', 2, column));
+	assert.ok(semanticSymbolAt(workspace.getSnapshot(), 'main.lua', 2, column));
 
 	workspace.updateFile('facade.lua', "local base<const> = require('base')\nreturn base");
-	assert.equal(workspace.getSnapshot().symbolAt('main.lua', 2, column), null);
+	assert.equal(semanticSymbolAt(workspace.getSnapshot(), 'main.lua', 2, column), null);
 });
 
 test('semantic workspace terminates circular module aliases without a false target', async () => {
-	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
 	const workspace = new LuaSemanticWorkspace();
 	workspace.updateFile('main.lua', "local api<const> = require('left')\napi.value()");
 	workspace.updateFile('left.lua', "local left<const> = require('right')\nreturn left");
 	workspace.updateFile('right.lua', "local right<const> = require('left')\nreturn right");
 
-	assert.equal(workspace.getSnapshot().symbolAt('main.lua', 2, 5), null);
+	assert.equal(semanticSymbolAt(workspace.getSnapshot(), 'main.lua', 2, 5), null);
 });
 
 test('semantic workspace resolves require-alias member definitions through module returns', async () => {
-	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
 	const roomSource = [
 		'local room = {}',
 		'function room.update() end',
@@ -202,18 +203,18 @@ test('semantic workspace resolves require-alias member definitions through modul
 	workspace.updateFile('room.lua', roomSource);
 	workspace.updateFile('main.lua', mainSource);
 	const snapshot = workspace.getSnapshot();
-	const updateTarget = snapshot.symbolAt('main.lua', 2, 'room_api.update()'.indexOf('update') + 1);
+	const updateTarget = semanticSymbolAt(snapshot, 'main.lua', 2, 'room_api.update()'.indexOf('update') + 1);
 	assert.ok(updateTarget, 'module function target');
-	assert.equal(updateTarget!.decl.file, 'room.lua');
-	assert.deepEqual(updateTarget!.decl.namePath, ['room', 'update']);
-	const valueTarget = snapshot.symbolAt('main.lua', 3, 'return room_api.value'.indexOf('value') + 1);
+	assert.equal(updateTarget!.declaration.file, 'room.lua');
+	assert.deepEqual(updateTarget!.declaration.namePath, ['room', 'update']);
+	const valueTarget = semanticSymbolAt(snapshot, 'main.lua', 3, 'return room_api.value'.indexOf('value') + 1);
 	assert.ok(valueTarget, 'module value target');
-	assert.equal(valueTarget!.decl.file, 'room.lua');
-	assert.deepEqual(valueTarget!.decl.namePath, ['room', 'value']);
+	assert.equal(valueTarget!.declaration.file, 'room.lua');
+	assert.deepEqual(valueTarget!.declaration.namePath, ['room', 'value']);
 });
 
 test('semantic workspace preserves require-alias member paths', async () => {
-	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
 	const constantsSource = [
 		'local constants = {}',
 		'function constants.hud.draw() end',
@@ -227,14 +228,14 @@ test('semantic workspace preserves require-alias member paths', async () => {
 	workspace.updateFile('constants.lua', constantsSource);
 	workspace.updateFile('main.lua', mainSource);
 	const drawColumn = 'hud.draw()'.indexOf('draw') + 1;
-	const drawTarget = workspace.getSnapshot().symbolAt('main.lua', 2, drawColumn);
+	const drawTarget = semanticSymbolAt(workspace.getSnapshot(), 'main.lua', 2, drawColumn);
 	assert.ok(drawTarget, 'nested module function target');
-	assert.equal(drawTarget!.decl.file, 'constants.lua');
-	assert.deepEqual(drawTarget!.decl.namePath, ['constants', 'hud', 'draw']);
+	assert.equal(drawTarget!.declaration.file, 'constants.lua');
+	assert.deepEqual(drawTarget!.declaration.namePath, ['constants', 'hud', 'draw']);
 });
 
 test('semantic workspace resolves fields exported by module table literals', async () => {
-	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
 	const directorSource = [
 		'local director = {}',
 		'local function register_director() end',
@@ -256,19 +257,19 @@ test('semantic workspace resolves fields exported by module table literals', asy
 	workspace.updateFile('director.lua', directorSource);
 	const snapshot = workspace.getSnapshot();
 	const registerColumn = mainLines[2].indexOf('register') + 1;
-	const registerTarget = snapshot.symbolAt('main.lua', 3, registerColumn);
+	const registerTarget = semanticSymbolAt(snapshot, 'main.lua', 3, registerColumn);
 	assert.ok(registerTarget, 'module table export target');
-	assert.equal(registerTarget!.decl.file, 'director.lua');
-	assert.deepEqual(registerTarget!.decl.namePath, ['register']);
+	assert.equal(registerTarget!.declaration.file, 'director.lua');
+	assert.deepEqual(registerTarget!.declaration.namePath, ['register']);
 	const updateColumn = mainLines[3].indexOf('update') + 1;
-	const updateTarget = snapshot.symbolAt('main.lua', 4, updateColumn);
+	const updateTarget = semanticSymbolAt(snapshot, 'main.lua', 4, updateColumn);
 	assert.ok(updateTarget, 'nested module table member target');
-	assert.equal(updateTarget!.decl.file, 'director.lua');
-	assert.deepEqual(updateTarget!.decl.namePath, ['director', 'update']);
+	assert.equal(updateTarget!.declaration.file, 'director.lua');
+	assert.deepEqual(updateTarget!.declaration.namePath, ['director', 'update']);
 });
 
 test('semantic workspace resolves methods on module-owned class instances', async () => {
-	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
 	const serviceSource = [
 		'local service',
 		'local service_class<const> = {}',
@@ -288,19 +289,19 @@ test('semantic workspace resolves methods on module-owned class instances', asyn
 	const workspace = new LuaSemanticWorkspace();
 	workspace.updateFile('main.lua', mainLines.join('\n'));
 	workspace.updateFile('service.lua', serviceSource);
-	const runTarget = workspace.getSnapshot().symbolAt(
+	const runTarget = semanticSymbolAt(workspace.getSnapshot(),
 		'main.lua',
 		2,
 		mainLines[1].indexOf('run') + 1,
 	);
 
 	assert.ok(runTarget, 'module-owned instance method target');
-	assert.equal(runTarget!.decl.file, 'service.lua');
-	assert.deepEqual(runTarget!.decl.namePath, ['service_class', 'run']);
+	assert.equal(runTarget!.declaration.file, 'service.lua');
+	assert.deepEqual(runTarget!.declaration.namePath, ['service_class', 'run']);
 });
 
 test('semantic workspace resolves inherited module members through class metatables', async () => {
-	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
 	const baseSource = [
 		'local base<const> = {}',
 		'function base:dispose() end',
@@ -330,17 +331,17 @@ test('semantic workspace resolves inherited module members through class metatab
 	workspace.updateFile('leaf.lua', leafSource);
 	workspace.updateFile('middle.lua', middleSource);
 	workspace.updateFile('base.lua', baseSource);
-	const disposeTarget = workspace.getSnapshot().symbolAt(
+	const disposeTarget = semanticSymbolAt(workspace.getSnapshot(),
 		'main.lua',
 		2,
 		mainLines[1].indexOf('dispose') + 1,
 	);
 
 	assert.ok(disposeTarget, 'inherited module method target');
-	assert.equal(disposeTarget!.decl.file, 'base.lua');
-	assert.deepEqual(disposeTarget!.decl.namePath, ['base', 'dispose']);
+	assert.equal(disposeTarget!.declaration.file, 'base.lua');
+	assert.deepEqual(disposeTarget!.declaration.namePath, ['base', 'dispose']);
 	assert.equal(
-		workspace.getSnapshot().symbolAt(
+		semanticSymbolAt(workspace.getSnapshot(),
 			'main.lua',
 			3,
 			mainLines[2].indexOf('activate') + 1,
@@ -353,18 +354,18 @@ test('semantic workspace resolves inherited module members through class metatab
 		'function base:activate() end',
 		'return base',
 	].join('\n'));
-	const activateTarget = workspace.getSnapshot().symbolAt(
+	const activateTarget = semanticSymbolAt(workspace.getSnapshot(),
 		'main.lua',
 		3,
 		mainLines[2].indexOf('activate') + 1,
 	);
 	assert.ok(activateTarget, 'incrementally added inherited method target');
-	assert.equal(activateTarget!.decl.file, 'base.lua');
-	assert.deepEqual(activateTarget!.decl.namePath, ['base', 'activate']);
+	assert.equal(activateTarget!.declaration.file, 'base.lua');
+	assert.deepEqual(activateTarget!.declaration.namePath, ['base', 'activate']);
 });
 
 test('semantic workspace batch retargets inherited members through reverse class dependencies', async () => {
-	const { buildLuaFileSemanticData, LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const { buildLuaFileSemanticData, LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
 	const baseLeftSource = [
 		'local base_left<const> = {}',
 		'function base_left:left_action() end',
@@ -404,23 +405,23 @@ test('semantic workspace batch retargets inherited members through reverse class
 	assert.equal(workspace.version, 1, 'one workspace version per source batch');
 	const leftColumn = mainLines[1].indexOf('left_action') + 1;
 	const rightColumn = mainLines[2].indexOf('right_action') + 1;
-	const leftTarget = workspace.getSnapshot().symbolAt('main.lua', 2, leftColumn);
+	const leftTarget = semanticSymbolAt(workspace.getSnapshot(), 'main.lua', 2, leftColumn);
 	assert.ok(leftTarget, 'initial inherited member target');
-	assert.equal(leftTarget!.decl.file, 'base_left.lua');
-	assert.equal(workspace.getSnapshot().symbolAt('main.lua', 3, rightColumn), null);
+	assert.equal(leftTarget!.declaration.file, 'base_left.lua');
+	assert.equal(semanticSymbolAt(workspace.getSnapshot(), 'main.lua', 3, rightColumn), null);
 
 	workspace.updateFiles([
 		buildLuaFileSemanticData(derivedRightSource, 'derived.lua'),
 	]);
 	assert.equal(workspace.version, 2, 'incremental batch commits once');
-	assert.equal(workspace.getSnapshot().symbolAt('main.lua', 2, leftColumn), null);
-	const rightTarget = workspace.getSnapshot().symbolAt('main.lua', 3, rightColumn);
+	assert.equal(semanticSymbolAt(workspace.getSnapshot(), 'main.lua', 2, leftColumn), null);
+	const rightTarget = semanticSymbolAt(workspace.getSnapshot(), 'main.lua', 3, rightColumn);
 	assert.ok(rightTarget, 'retargeted inherited member target');
-	assert.equal(rightTarget!.decl.file, 'base_right.lua');
+	assert.equal(rightTarget!.declaration.file, 'base_right.lua');
 });
 
 test('semantic workspace resolves explicit-self methods through metatable inheritance', async () => {
-	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
 	const baseLeftSource = [
 		'local base_left<const> = {}',
 		'function base_left:left_action() end',
@@ -451,20 +452,20 @@ test('semantic workspace resolves explicit-self methods through metatable inheri
 	workspace.updateFile('derived.lua', derivedLeftLines.join('\n'));
 	const leftColumn = derivedLeftLines[5].indexOf('left_action') + 1;
 	const rightColumn = derivedLeftLines[6].indexOf('right_action') + 1;
-	const initialLeftTarget = workspace.getSnapshot().symbolAt('derived.lua', 6, leftColumn);
+	const initialLeftTarget = semanticSymbolAt(workspace.getSnapshot(), 'derived.lua', 6, leftColumn);
 	assert.ok(initialLeftTarget, 'metatable base method target');
-	assert.equal(initialLeftTarget!.decl.file, 'base_left.lua');
-	assert.equal(workspace.getSnapshot().symbolAt('derived.lua', 7, rightColumn), null);
+	assert.equal(initialLeftTarget!.declaration.file, 'base_left.lua');
+	assert.equal(semanticSymbolAt(workspace.getSnapshot(), 'derived.lua', 7, rightColumn), null);
 
 	workspace.updateFile('derived.lua', derivedRightSource);
-	assert.equal(workspace.getSnapshot().symbolAt('derived.lua', 6, leftColumn), null);
-	const reboundRightTarget = workspace.getSnapshot().symbolAt('derived.lua', 7, rightColumn);
+	assert.equal(semanticSymbolAt(workspace.getSnapshot(), 'derived.lua', 6, leftColumn), null);
+	const reboundRightTarget = semanticSymbolAt(workspace.getSnapshot(), 'derived.lua', 7, rightColumn);
 	assert.ok(reboundRightTarget, 'retargeted metatable base method target');
-	assert.equal(reboundRightTarget!.decl.file, 'base_right.lua');
+	assert.equal(reboundRightTarget!.declaration.file, 'base_right.lua');
 });
 
 test('semantic workspace retains fields initialized through a base explicit-self receiver', async () => {
-	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
 	const objectBaseSource = [
 		'local object_base<const> = {}',
 		'object_base.__index = object_base',
@@ -486,19 +487,19 @@ test('semantic workspace retains fields initialized through a base explicit-self
 	const workspace = new LuaSemanticWorkspace();
 	workspace.updateFile('object_base.lua', objectBaseSource);
 	workspace.updateFile('derived.lua', derivedLines.join('\n'));
-	const eventsTarget = workspace.getSnapshot().symbolAt(
+	const eventsTarget = semanticSymbolAt(workspace.getSnapshot(),
 		'derived.lua',
 		6,
 		derivedLines[5].indexOf('events') + 1,
 	);
 
 	assert.ok(eventsTarget, 'field initialized by the base explicit-self receiver');
-	assert.equal(eventsTarget!.decl.file, 'object_base.lua');
-	assert.deepEqual(eventsTarget!.decl.namePath, ['self', 'events']);
+	assert.equal(eventsTarget!.declaration.file, 'object_base.lua');
+	assert.deepEqual(eventsTarget!.declaration.namePath, ['self', 'events']);
 });
 
 test('explicit self receivers project writes without adopting call argument members', async () => {
-	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
 	const sourceLines = [
 		'local actor<const> = {}',
 		'function actor.initialize(self)',
@@ -515,23 +516,23 @@ test('explicit self receivers project writes without adopting call argument memb
 	const workspace = new LuaSemanticWorkspace();
 	workspace.updateFile('actor.lua', sourceLines.join('\n'));
 	const snapshot = workspace.getSnapshot();
-	const projectedTarget = snapshot.symbolAt(
+	const projectedTarget = semanticSymbolAt(snapshot,
 		'actor.lua',
 		7,
 		sourceLines[6].indexOf('events') + 1,
 	);
 
 	assert.ok(projectedTarget, 'receiver write projected onto the explicit call argument');
-	assert.deepEqual(projectedTarget!.decl.namePath, ['self', 'events']);
+	assert.deepEqual(projectedTarget!.declaration.namePath, ['self', 'events']);
 	assert.equal(
-		snapshot.symbolAt('actor.lua', 9, sourceLines[8].indexOf('foreign_only') + 1),
+		semanticSymbolAt(snapshot, 'actor.lua', 9, sourceLines[8].indexOf('foreign_only') + 1),
 		null,
 		'foreign argument members do not become actor instance members',
 	);
 });
 
 test('higher-order callback parameters retain every callsite receiver alternative', async () => {
-	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
 	const sourceLines = [
 		'local left<const> = {}',
 		'left.__index = left',
@@ -555,14 +556,14 @@ test('higher-order callback parameters retain every callsite receiver alternativ
 	const workspace = new LuaSemanticWorkspace();
 	workspace.updateFile('callbacks.lua', sourceLines.join('\n'));
 	const snapshot = workspace.getSnapshot();
-	const targetAt = (line: number, name: string) => snapshot.symbolAt(
+	const targetAt = (line: number, name: string) => semanticSymbolAt(snapshot,
 		'callbacks.lua',
 		line,
 		sourceLines[line - 1].indexOf(name) + 1,
 	);
 
-	assert.equal(targetAt(11, 'left_only')!.decl.namePath.join('.'), 'left.left_only');
-	assert.equal(targetAt(12, 'right_only')!.decl.namePath.join('.'), 'right.right_only');
+	assert.equal(targetAt(11, 'left_only')!.declaration.namePath.join('.'), 'left.left_only');
+	assert.equal(targetAt(12, 'right_only')!.declaration.namePath.join('.'), 'right.right_only');
 	assert.equal(
 		targetAt(5, 'right_only'),
 		null,
@@ -571,7 +572,7 @@ test('higher-order callback parameters retain every callsite receiver alternativ
 });
 
 test('callback roles follow explicit executor arguments', async () => {
-	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
 	const sourceLines = [
 		'local visual<const> = {}',
 		'visual.__index = visual',
@@ -602,21 +603,21 @@ test('callback roles follow explicit executor arguments', async () => {
 	const workspace = new LuaSemanticWorkspace();
 	workspace.updateFile('sequence.lua', sourceLines.join('\n'));
 	const snapshot = workspace.getSnapshot();
-	const targetAt = (line: number, name: string) => snapshot.symbolAt(
+	const targetAt = (line: number, name: string) => semanticSymbolAt(snapshot,
 		'sequence.lua',
 		line,
 		sourceLines[line - 1].indexOf(name) + 1,
 	);
 
-	assert.equal(targetAt(11, 'visual_only')!.decl.namePath.join('.'), 'visual.visual_only');
+	assert.equal(targetAt(11, 'visual_only')!.declaration.namePath.join('.'), 'visual.visual_only');
 	assert.equal(targetAt(12, 'actor_only'), null, 'the apply callback receives the visual value');
-	assert.equal(targetAt(15, 'actor_only')!.decl.namePath.join('.'), 'actor.actor_only');
+	assert.equal(targetAt(15, 'actor_only')!.declaration.namePath.join('.'), 'actor.actor_only');
 	assert.equal(targetAt(16, 'visual_only'), null, 'the completion callback receives the owner');
 	assert.equal(targetAt(19, 'actor_only'), null, 'uncalled callbacks remain unbound');
 });
 
 test('semantic workspace retargets literal-keyed registry results after an edit', async () => {
-	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
 	const registrySource = [
 		'local registry<const> = {}',
 		'local entries<const> = {}',
@@ -669,20 +670,20 @@ test('semantic workspace retargets literal-keyed registry results after an edit'
 	workspace.updateFile('main.lua', mainLines.join('\n'));
 	const leftColumn = mainLines[5].indexOf('left_action') + 1;
 	const rightColumn = mainLines[6].indexOf('right_action') + 1;
-	const initialTarget = workspace.getSnapshot().symbolAt('main.lua', 6, leftColumn);
+	const initialTarget = semanticSymbolAt(workspace.getSnapshot(), 'main.lua', 6, leftColumn);
 	assert.ok(initialTarget, 'initial literal registry target');
-	assert.equal(initialTarget!.decl.file, 'left.lua');
-	assert.equal(workspace.getSnapshot().symbolAt('main.lua', 7, rightColumn), null);
+	assert.equal(initialTarget!.declaration.file, 'left.lua');
+	assert.equal(semanticSymbolAt(workspace.getSnapshot(), 'main.lua', 7, rightColumn), null);
 
 	workspace.updateFile('constants.lua', constantsRightSource);
-	assert.equal(workspace.getSnapshot().symbolAt('main.lua', 6, leftColumn), null);
-	const reboundTarget = workspace.getSnapshot().symbolAt('main.lua', 7, rightColumn);
+	assert.equal(semanticSymbolAt(workspace.getSnapshot(), 'main.lua', 6, leftColumn), null);
+	const reboundTarget = semanticSymbolAt(workspace.getSnapshot(), 'main.lua', 7, rightColumn);
 	assert.ok(reboundTarget, 'retargeted literal registry target');
-	assert.equal(reboundTarget!.decl.file, 'right.lua');
+	assert.equal(reboundTarget!.declaration.file, 'right.lua');
 });
 
 test('semantic workspace retains exported table identity across local shadowing', async () => {
-	const { LuaSemanticWorkspace } = await semanticModelModulePromise;
+	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
 	const signatureSource = [
 		'local signature<const> = {}',
 		'local internal_operand<const> = { entry = 1 }',
@@ -698,13 +699,13 @@ test('semantic workspace retains exported table identity across local shadowing'
 	const workspace = new LuaSemanticWorkspace();
 	workspace.updateFile('main.lua', mainLines.join('\n'));
 	workspace.updateFile('signature.lua', signatureSource);
-	const entryTarget = workspace.getSnapshot().symbolAt(
+	const entryTarget = semanticSymbolAt(workspace.getSnapshot(),
 		'main.lua',
 		3,
 		mainLines[2].indexOf('entry') + 1,
 	);
 
 	assert.ok(entryTarget, 'exported nested table member target');
-	assert.equal(entryTarget!.decl.file, 'signature.lua');
-	assert.deepEqual(entryTarget!.decl.namePath, ['internal_operand', 'entry']);
+	assert.equal(entryTarget!.declaration.file, 'signature.lua');
+	assert.deepEqual(entryTarget!.declaration.namePath, ['internal_operand', 'entry']);
 });

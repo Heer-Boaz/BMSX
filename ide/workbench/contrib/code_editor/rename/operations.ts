@@ -6,7 +6,7 @@ import { clamp } from '../../../../../machine/ts/common/clamp';
 import { createLuaCodeTabContext, findCodeTabContext, getActiveCodeTabContext } from '../../../ui/code_tab/contexts';
 import { resolveRuntimeResourceForContext } from '../../../../runtime/sources';
 import { getTextSnapshot } from '../../../../editor/text/source_text';
-import { syncSemanticWorkspacePath, getOrCreateSemanticWorkspace } from '../../../../editor/contrib/intellisense/semantic/workspace/state';
+import { getOrCreateSemanticProject } from '../../../../editor/contrib/intellisense/semantic/workspace/state';
 import { markTextMutated } from '../../../../editor/common/text/runtime';
 import { markDiagnosticsDirtyForChunk } from '../diagnostics/controller';
 import { prepareUndo, applyUndoableReplace, recordEditContext } from '../../../../editor/editing/undo_controller';
@@ -31,12 +31,10 @@ export function commitRename(
 	const activeContext = getActiveCodeTabContext();
 	const activePath = activeContext.resource.path;
 	const activeDomain = activeContext.resource.domain;
-	const workspace = getOrCreateSemanticWorkspace(activeDomain);
 	const sortedMatches = matches.slice();
 	sortedMatches.sort((a, b) => a.row !== b.row ? a.row - b.row : a.start - b.start);
 	let updatedTotal = 0;
 
-	const snapshot = workspace.getSnapshot();
 	type RangeBucket = { path: string; ranges: LuaSourceRange[] };
 	const rangeMap = new Map<string, RangeBucket>();
 	const addRange = (range: LuaSourceRange): void => {
@@ -48,13 +46,11 @@ export function commitRename(
 		}
 		bucket.ranges.push(range);
 	};
-	for (let definitionIndex = 0; definitionIndex < info.definitionKeys.length; definitionIndex += 1) {
-		const definitionKey = info.definitionKeys[definitionIndex];
-		addRange(snapshot.symbolResolver.getDeclaration(definitionKey).range);
+	for (let index = 0; index < info.query.targets.length; index += 1) {
+		addRange(info.query.targets[index].declaration.range);
 	}
-	const references = snapshot.symbolResolver.getReferencesForSymbols(info.definitionKeys);
-	for (let referenceIndex = 0; referenceIndex < references.length; referenceIndex += 1) {
-		addRange(references[referenceIndex].range);
+	for (let index = 0; index < info.query.references.length; index += 1) {
+		addRange(info.query.references[index].range);
 	}
 	rangeMap.delete(activePath);
 
@@ -131,8 +127,7 @@ export class CrossFileRenameManager {
 			context.buffer.replace(startOffset, endOffset - startOffset, newName);
 		}
 		this.markContextBufferMutated(context);
-		const workspace = getOrCreateSemanticWorkspace(domain);
-		syncSemanticWorkspacePath(workspace, path, getTextSnapshot(context.buffer));
+		getOrCreateSemanticProject(domain).updateDocument(path, getTextSnapshot(context.buffer));
 		return matches.length;
 	}
 

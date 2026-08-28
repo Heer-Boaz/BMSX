@@ -1,12 +1,13 @@
 import { clamp } from '../../../../machine/ts/common/clamp';
 import type { SearchMatch } from '../../../common/models';
-import type { SymbolID } from '../../../../toolchain/ts/lua/semantic/model';
+import type { LuaSemanticReferenceQuery } from '../../../../toolchain/ts/lua/semantic/frontend';
+import type { LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
 
 export type ReferenceMatchInfo = {
 	matches: SearchMatch[];
 	expression: string;
-	definitionKeys: readonly SymbolID[];
-	documentVersion: number;
+	query: LuaSemanticReferenceQuery;
+	snapshot: LuaSemanticWorkspaceSnapshot;
 };
 
 const EMPTY_REFERENCE_MATCHES: SearchMatch[] = [];

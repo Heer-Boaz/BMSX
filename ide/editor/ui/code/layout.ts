@@ -5,17 +5,14 @@ import { clamp } from '../../../../machine/ts/common/clamp';
 import { ScratchBuffer } from '../../../../machine/ts/common/scratchbuffer';
 import { highlightTextLine as highlightTextLineExternal } from '../../../language/lua/syntax_highlight';
 import { highlightAemTextLine } from '../../../language/aem/syntax_highlight';
-import type { FileSemanticData, LuaSemanticModel } from '../../../../toolchain/ts/lua/semantic/model';
+import type { FileSemanticData } from '../../../../toolchain/ts/lua/semantic/model';
 import type { SemanticSymbolKind } from '../../../../toolchain/ts/lua/semantic/symbols';
 import type { SemanticAnnotations, TokenAnnotation } from '../../../../toolchain/ts/lua/semantic/tokens';
 import type { CachedHighlight, HighlightLine, VisualLineSegment } from '../../../common/models';
 import type { EditorDocumentMode } from '../../editing/document_state';
 import { EditorFont } from '../view/font';
 import { getTextSnapshot } from '../../text/source_text';
-import {
-	getOrCreateSemanticWorkspace,
-	syncSemanticWorkspacePath,
-} from '../../contrib/intellisense/semantic/workspace/state';
+import { getOrCreateSemanticProject } from '../../contrib/intellisense/semantic/workspace/state';
 import type { TextBuffer } from '../../text/text_buffer';
 import type { Position } from '../../../common/models';
 import type { ResourceDomain, ResourceIdentity } from '../../../common/resource';
@@ -126,7 +123,6 @@ export class CodeLayout {
 	private visualLines: VisualLineSegment[] = [];
 	private visualLinesDirty = true;
 	private semanticFileData: FileSemanticData = null;
-	private semanticModel: LuaSemanticModel = null;
 	private semanticVersion = -1;
 	private semanticDomain: ResourceDomain = null;
 	private semanticPath: string = null;
@@ -247,7 +243,6 @@ export class CodeLayout {
 		this.highlightCache.clear();
 		this.semanticBuffer = null;
 		this.semanticFileData = null;
-		this.semanticModel = null;
 		this.semanticVersion = -1;
 		this.semanticDomain = null;
 		this.semanticPath = null;
@@ -274,20 +269,19 @@ export class CodeLayout {
 	public requestSemanticUpdate(buffer: TextBuffer, documentVersion: number, identity: ResourceIdentity): void {
 		switch (this.documentMode) {
 			case 'lua':
-				this.ensureSemanticModel(buffer, documentVersion, identity);
+				this.ensureSemanticAnalysis(buffer, documentVersion, identity);
 				return;
 			case 'aem':
 				this.pendingSemantic = null;
 				this.semanticDueAtMs = null;
 				this.semanticFileData = null;
-				this.semanticModel = null;
 				this.annotationRowSig = null;
 				return;
 		}
 	}
 
 	public getCachedHighlight(buffer: TextBuffer, row: number): CachedHighlight {
-		const annotations = this.semanticModel ? this.semanticModel.annotations : null;
+		const annotations = this.semanticFileData ? this.semanticFileData.annotations : null;
 		const builtinEpoch = this.builtinEpoch;
 		const builtinIdentifiers = this.builtinIdentifiers;
 		const textVersion = buffer.version;
@@ -559,7 +553,7 @@ export class CodeLayout {
 		documentVersion: number,
 		identity: ResourceIdentity,
 	): FileSemanticData {
-		this.ensureSemanticModel(buffer, documentVersion, identity);
+		this.ensureSemanticAnalysis(buffer, documentVersion, identity);
 		if (!this.semanticFileData) {
 			return null;
 		}
@@ -823,12 +817,7 @@ export class CodeLayout {
 		return columns > 0 ? columns : 1;
 	}
 
-	public getSemanticModel(buffer: TextBuffer, documentVersion: number, identity: ResourceIdentity): LuaSemanticModel {
-		this.ensureSemanticModel(buffer, documentVersion, identity);
-		return this.semanticModel;
-	}
-
-	private ensureSemanticModel(
+	private ensureSemanticAnalysis(
 		buffer: TextBuffer,
 		version: number,
 		identity: ResourceIdentity,
@@ -837,7 +826,7 @@ export class CodeLayout {
 			&& this.semanticVersion === version
 			&& this.semanticDomain === identity.domain
 			&& this.semanticPath === identity.path) {
-			if (this.semanticModel) {
+			if (this.semanticFileData) {
 				return;
 			}
 			if (this.lastSemanticError
@@ -938,11 +927,7 @@ export class CodeLayout {
 		let errorMessage: string = null;
 		try {
 			const source = this.materializeSemanticSource(pending);
-			fileData = syncSemanticWorkspacePath(
-				getOrCreateSemanticWorkspace(pending.domain),
-				pending.path,
-				source,
-			);
+			fileData = getOrCreateSemanticProject(pending.domain).updateDocument(pending.path, source);
 		} catch (error) {
 			fileData = null;
 			errorMessage = error instanceof Error ? error.message : String(error);
@@ -965,11 +950,9 @@ export class CodeLayout {
 		path: string,
 		errorMessage?: string,
 	): void {
-		const model = fileData ? fileData.model : null;
 		const annotations = fileData ? fileData.annotations : null;
 		this.semanticBuffer = buffer;
 		this.semanticFileData = fileData;
-		this.semanticModel = model;
 		this.semanticVersion = version;
 		this.semanticDomain = domain;
 		this.semanticPath = path;

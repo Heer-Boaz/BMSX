@@ -1,11 +1,9 @@
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import type { RuntimeFaultState } from '../../../runtime/fault_state';
-import type { LuaDefinitionInfo, LuaDefinitionKind, LuaSourceRange } from '../../../../toolchain/ts/lua/syntax/ast/index';
+import type { LuaSourceRange } from '../../../../toolchain/ts/lua/syntax/ast/index';
 import { LuaEnvironment } from '../../../language/lua/interpreter/environment';
 import { LuaLexer } from '../../../../toolchain/ts/lua/syntax/lexer';
 import { clamp } from '../../../../machine/ts/common/clamp';
-import type { ParsedLuaChunk } from '../../../../toolchain/ts/lua/analysis/parse';
-import type { LuaSyntaxError } from '../../../../toolchain/ts/lua/errors';
 import { getCachedLuaParse } from '../../../../toolchain/ts/lua/analysis/cache';
 import { LuaInterpreter } from '../../../language/lua/interpreter/interpreter';
 import { extractErrorMessage, isLuaFunctionValue, isLuaTable, LuaFunctionValue, LuaNativeValue, LuaTable, LuaValue, resolveNativeTypeName } from '../../../language/lua/interpreter/value';
@@ -21,11 +19,9 @@ import {
 } from '../../../../toolchain/ts/rompack/blua32_symbols';
 import type { SourceRange } from '../../../../toolchain/ts/lua/source_range';
 import { resolveInlineLocalContextRange } from '../../../../toolchain/ts/lua/compiler/inline_debug';
-import { DEFAULT_LUA_BUILTIN_FUNCTIONS, DEFAULT_LUA_BUILTIN_NAMES } from '../../../../toolchain/ts/lua/builtin_descriptors';
-import { luaBuiltinMetadata } from '../../../runtime/lua_builtins';
-import { buildLuaSemanticFrontend } from '../../../../toolchain/ts/lua/semantic/frontend';
+import { DEFAULT_LUA_BUILTIN_NAMES } from '../../../../toolchain/ts/lua/builtin_descriptors';
+import { listLuaBuiltinDescriptors, luaBuiltinMetadata } from '../../../runtime/lua_builtins';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
-import * as luaPipeline from '../../../runtime/lua_pipeline';
 import {
 	blua32ToolingImageForDomain,
 	type Blua32ToolingImage,
@@ -34,7 +30,7 @@ import {
 	Blua32GlobalRegisterFile,
 	resolveRuntimeLuaSourceForContext,
 } from '../../../runtime/sources';
-import type { LuaBuiltinDescriptor, LuaDefinitionLocation, LuaDefinitionRange, LuaHoverResult, LuaHoverScope, LuaMemberCompletion, LuaSymbolEntry } from '../../../../toolchain/ts/lua/semantic_contracts';
+import type { LuaDefinitionLocation, LuaHoverResult, LuaHoverScope, LuaMemberCompletion, LuaSymbolEntry } from '../../../../toolchain/ts/lua/semantic_contracts';
 import { ensureCursorVisible, updateDesiredColumn } from '../../ui/view/caret/caret';
 import { editorCaretState } from '../../ui/view/caret/state';
 import { intellisenseUiState } from './ui_state';
@@ -45,25 +41,17 @@ import * as constants from '../../../common/constants';
 import { editorRuntimeState } from '../../common/runtime_state';
 import { clearEditorPointerSelectionState } from '../../../input/pointer/state';
 import { parseLuaIdentifierChain } from '../../../language/lua/identifier_chain';
-import { buildLuaSemanticModel, LuaSemanticModel, type FileSemanticData } from '../../../../toolchain/ts/lua/semantic/model';
-import { getOrCreateSemanticWorkspace } from './semantic/workspace/state';
-import {
-	cacheRuntimeSemanticWorkspaceAnalysis,
-	prepareRuntimeSemanticWorkspaceForEditorBuffer,
-	primeRuntimeSemanticWorkspaceProjectSources,
-	runtimeSemanticCacheForDomain,
-	syncRuntimeSemanticWorkspacePath,
-} from './semantic/workspace/runtime';
+import type { LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
+import { getOrCreateSemanticProject } from './semantic/workspace/state';
 import { semanticSymbolKindToLuaSymbolKind } from '../../../../toolchain/ts/lua/semantic/common';
 import { isLuaCommentContext } from '../../../common/text';
 import { writeWrappedOverlayLine } from '../../common/text/layout';
-import type { EditorContextToken, EditorDiagnosticSeverity, LuaCompletionItem, PointerSnapshot } from '../../../common/models';
+import type { EditorContextToken, LuaCompletionItem, PointerSnapshot } from '../../../common/models';
 import type { EditorDocumentContext } from '../../editing/document_state';
 import {
 	SYSTEM_RESOURCE_DOMAIN,
 	type ResourceDomain,
 } from '../../../common/resource';
-import { Pool } from '../../../../machine/ts/common/pool';
 import { KEYWORDS, LuaTokenType, type LuaToken } from '../../../../toolchain/ts/lua/syntax/token';
 import { getTextSnapshot } from '../../text/source_text';
 import type { TextBuffer } from '../../text/text_buffer';
@@ -73,6 +61,7 @@ import { editorViewState } from '../../ui/view/state';
 import { referenceState } from '../references/state';
 import { queryDefinitionsAt } from '../definitions/query';
 import { definitionLocationFromSourceRange } from '../../navigation/source_range';
+import { createEditorSemanticFrontend } from './frontend';
 export const PREVIEW_MAX_ENTRIES = 12;
 export const PREVIEW_MAX_DEPTH = 2;
 
@@ -86,8 +75,6 @@ type ResolvedIntellisenseValue =
 		readonly value: LuaValue;
 	};
 
-const SYMBOL_PRIORITY_ORDER: LuaDefinitionKind[] = ['table_field', 'function', 'constant', 'parameter', 'variable', 'assignment'];
-const LOCAL_DEFINITION_PRIORITY_ORDER: LuaDefinitionKind[] = ['parameter', 'table_field', 'function', 'constant', 'variable', 'assignment'];
 let nativeMemberCompletionCache: WeakMap<object, { dot?: LuaMemberCompletion[]; colon?: LuaMemberCompletion[] }> = new WeakMap();
 
 function isHiddenNativeMemberName(name: string): boolean {
@@ -134,13 +121,6 @@ function formatHoverValueTypeSuffix(valueType: string): string {
 	return '';
 }
 
-function definitionSymbolPath(info: LuaDefinitionInfo): string {
-	if (info.namePath.length > 0) {
-		return info.namePath.join('.');
-	}
-	return info.name;
-}
-
 function resolveTableChain(table: LuaTable): LuaTable[] {
 	const chain: LuaTable[] = [];
 	let current: LuaTable = table;
@@ -177,18 +157,7 @@ function resolveTableTypeName(bridge: RuntimeLuaTooling, table: LuaTable): strin
 	return null;
 }
 
-function buildDefinitionPriority(order: LuaDefinitionKind[]): (kind: LuaDefinitionKind) => number {
-	const max = order.length;
-	return (kind: LuaDefinitionKind): number => {
-		const index = order.indexOf(kind);
-		return index === -1 ? 0 : max - index;
-	};
-}
-
-const definitionPriorityForSymbols = buildDefinitionPriority(SYMBOL_PRIORITY_ORDER);
-const definitionPriorityForLocals = buildDefinitionPriority(LOCAL_DEFINITION_PRIORITY_ORDER);
-
-const globalSymbolsCache = new Map<ResourceDomain, { version: number; entries: LuaSymbolEntry[] }>();
+const globalSymbolsCache = new WeakMap<LuaSemanticWorkspaceSnapshot, LuaSymbolEntry[]>();
 
 function hasStaticLuaBuiltinName(name: string): boolean {
 	const trimmed = name.trim();
@@ -202,19 +171,6 @@ function hasStaticLuaBuiltinName(name: string): boolean {
 	}
 	return false;
 }
-
-export type LuaScopedSymbol = {
-	name: string;
-	path: string;
-	kind: LuaDefinitionKind;
-	definitionRange: LuaDefinitionRange;
-	scopeRange: LuaDefinitionRange;
-};
-
-export type LuaScopedSymbolOptions = {
-	source: string;
-	path: string;
-};
 
 function extractFunctionParameters(fn: (...args: unknown[]) => unknown): string[] {
 	const source = Function.prototype.toString.call(fn);
@@ -281,162 +237,6 @@ function sanitizeParameterName(token: string, index: number): string {
 		return `arg${index + 1}`;
 	}
 	return sanitized;
-}
-
-export type LuaDiagnostic = {
-	row: number;
-	startColumn: number;
-	endColumn: number;
-	message: string;
-	severity: EditorDiagnosticSeverity;
-};
-
-export type LuaDiagnosticOptions = {
-	source: string;
-	domain: ResourceDomain;
-	path: string;
-	localSymbols: readonly LuaSymbolEntry[];
-	globalSymbols: readonly LuaSymbolEntry[];
-	builtinDescriptors: readonly LuaBuiltinDescriptor[];
-	parsed?: ParsedLuaChunk;
-	analysis?: FileSemanticData;
-};
-
-type MutableLuaDiagnostic = {
-	row: number;
-	startColumn: number;
-	endColumn: number;
-	message: string;
-	severity: EditorDiagnosticSeverity;
-};
-
-const luaDiagnosticPoolAccessor = Pool.createLazy<MutableLuaDiagnostic>({
-	onCreate: () => ({
-		row: 0,
-		startColumn: 0,
-		endColumn: 0,
-		message: '',
-		severity: 'error',
-	}),
-	onReset: (diag) => {
-		diag.row = 0;
-		diag.startColumn = 0;
-		diag.endColumn = 0;
-		diag.message = '';
-		diag.severity = 'error';
-	},
-});
-
-const luaDiagnosticPool = luaDiagnosticPoolAccessor.get();
-const activeLuaDiagnostics: MutableLuaDiagnostic[] = [];
-
-type SemanticResolutionInput = {
-	domain: ResourceDomain;
-	path: string;
-	source: string;
-	parsed: ParsedLuaChunk;
-};
-
-function finalizeLuaDiagnostics(): LuaDiagnostic[] {
-	const result: LuaDiagnostic[] = [];
-	for (const diag of activeLuaDiagnostics) {
-		result.push({
-			row: diag.row,
-			startColumn: diag.startColumn,
-			endColumn: diag.endColumn,
-			message: diag.message,
-			severity: diag.severity,
-		});
-	}
-	clearLuaDiagnosticSlots();
-	return result;
-}
-
-function clearLuaDiagnosticSlots(): void {
-	for (const diag of activeLuaDiagnostics) {
-		luaDiagnosticPool.release(diag);
-	}
-	activeLuaDiagnostics.length = 0;
-}
-
-function pushDiagnostic(row: number, startColumn: number, endColumn: number, message: string, severity: EditorDiagnosticSeverity): void {
-	const slot = luaDiagnosticPool.acquire();
-	activeLuaDiagnostics.push(slot);
-	slot.row = row;
-	slot.startColumn = startColumn;
-	slot.endColumn = endColumn > startColumn ? endColumn : startColumn + 1;
-	slot.message = message;
-	slot.severity = severity;
-}
-
-function pushSyntaxErrorDiagnostic(error: LuaSyntaxError): void {
-	const row = error.line - 1;
-	const startColumn = error.column - 1;
-	const endColumn = startColumn + 1;
-	pushDiagnostic(row, startColumn, endColumn, error.message, 'error');
-}
-
-function resolveSemanticDataForDiagnostics(input: SemanticResolutionInput): FileSemanticData {
-	const pathKey = input.path;
-	const cached = runtimeSemanticCacheForDomain(input.domain).get(pathKey);
-	if (cached && cached.source === input.source) {
-		const cachedAnalysis = (cached as { analysis?: FileSemanticData }).analysis;
-		if (cachedAnalysis) {
-			return cachedAnalysis;
-		}
-		const workspace = getOrCreateSemanticWorkspace(input.domain);
-		const workspaceData = workspace.getSnapshot().getFileData(pathKey);
-		if (workspaceData && workspaceData.source === input.source) {
-			(cached as { analysis?: FileSemanticData }).analysis = workspaceData;
-			return workspaceData;
-		}
-	}
-	const data = syncRuntimeSemanticWorkspacePath(input.domain, {
-		path: pathKey,
-		source: input.source,
-		parsed: input.parsed,
-	}, getOrCreateSemanticWorkspace(input.domain));
-	if (data) {
-		return data;
-	}
-	return null;
-}
-
-export function computeLuaDiagnostics(bridge: RuntimeLuaTooling, options: LuaDiagnosticOptions): LuaDiagnostic[] {
-	clearLuaDiagnosticSlots();
-	const parseEntry = getCachedLuaParse({
-		path: options.path,
-		source: options.source,
-		parsed: options.parsed,
-	});
-	const syntaxError = parseEntry.syntaxError;
-	if (syntaxError) {
-		pushSyntaxErrorDiagnostic(syntaxError);
-		return finalizeLuaDiagnostics();
-	}
-
-	const semanticData = options.analysis ?? resolveSemanticDataForDiagnostics({
-		domain: options.domain,
-		path: options.path,
-		source: options.source,
-		parsed: parseEntry.parsed,
-	});
-	if (!semanticData) {
-		return [];
-	}
-	const extraGlobalNames = Array.from(bridge.luaInterpreter.globalEnvironment.keys());
-	const frontend = buildLuaSemanticFrontend([{
-		path: options.path,
-		source: options.source,
-		parsed: parseEntry.parsed,
-		chunk: parseEntry.parsed.chunk,
-		analysis: semanticData,
-	}], {
-		builtinDescriptors: options.builtinDescriptors,
-		extraGlobalNames,
-		externalGlobalSymbols: options.globalSymbols,
-	});
-	return frontend.getFile(options.path).diagnostics as LuaDiagnostic[];
 }
 
 function wrapHoverLines(lines: string[]): string[] {
@@ -593,39 +393,6 @@ export function requestSemanticRefresh(): void {
 			return;
 	}
 }
-export function findDefinitionAtPosition(
-	definitions: readonly LuaDefinitionInfo[],
-	row: number,
-	column: number,
-	namePath: readonly string[]
-): LuaDefinitionInfo {
-	for (let index = 0; index < definitions.length; index += 1) {
-		const candidate = definitions[index];
-		if (candidate.namePath.length !== namePath.length) {
-			continue;
-		}
-		let matches = true;
-		for (let i = 0; i < namePath.length; i += 1) {
-			if (candidate.namePath[i] !== namePath[i]) {
-				matches = false;
-				break;
-			}
-		}
-		if (!matches) {
-			continue;
-		}
-		const range = candidate.definition;
-		if (row !== range.start.line) {
-			continue;
-		}
-		if (column < range.start.column || column > range.end.column) {
-			continue;
-		}
-		return candidate;
-	}
-	return null;
-}
-
 export function extractHoverExpression(row: number, column: number, path: string): { expression: string; startColumn: number; endColumn: number; } {
 	return extractHoverExpressionFromBuffer(editorDocumentState.buffer, row, column, path);
 }
@@ -1014,7 +781,7 @@ export function inspectLuaExpression(bridge: RuntimeLuaTooling, fault: RuntimeFa
 		row,
 		column,
 	);
-	const staticDefinition = findStaticDefinitionLocation(bridge, chain, row, column, path, activeContext);
+	const staticDefinition = findStaticDefinitionLocation(bridge, row, column, path, activeContext);
 	if (!resolved) {
 		if (!staticDefinition) {
 			return null;
@@ -1127,31 +894,29 @@ export function resolveLuaDefinitionMetadata(bridge: RuntimeLuaTooling, range: L
 
 
 export function listLuaSymbols(bridge: RuntimeLuaTooling, domain: ResourceDomain, path: string): LuaSymbolEntry[] {
-	const bundle = getStaticDefinitions(bridge, domain, path);
-	if (!bundle || bundle.definitions.length === 0) {
+	const source = resolveRuntimeLuaSourceForContext(bridge.sources, domain, path);
+	if (!source) {
 		return [];
 	}
-	const { definitions } = bundle;
-	const entries = new Map<string, { info: LuaDefinitionInfo; location: LuaDefinitionLocation; priority: number }>();
-	for (const info of definitions) {
-		const location = definitionLocationFromSourceRange(info.definition);
-		const keyPath = definitionSymbolPath(info);
-		const key = `${location.path}::${keyPath}@${location.range.startLine}:${location.range.startColumn}`;
-		const priority = definitionPriorityForSymbols(info.kind);
-		const existing = entries.get(key);
-		if (!existing || priority > existing.priority || (priority === existing.priority && info.definition.start.line < existing.info.definition.start.line)) {
-			entries.set(key, { info, location, priority });
-		}
+	const project = getOrCreateSemanticProject(domain);
+	project.synchronizeRuntimeSources(bridge.sources);
+	const analysis = project.getFileData(source.record.source_path);
+	if (!analysis) {
+		return [];
 	}
-	const symbols: LuaSymbolEntry[] = [];
-	for (const { info, location } of entries.values()) {
-		const path = definitionSymbolPath(info);
-		symbols.push({
-			name: info.name,
-			path,
-			kind: info.kind,
+	const declarations = analysis.decls;
+	const symbols = new Array<LuaSymbolEntry>(declarations.length);
+	for (let index = 0; index < declarations.length; index += 1) {
+		const declaration = declarations[index];
+		const location = definitionLocationFromSourceRange(declaration.range);
+		symbols[index] = {
+			name: declaration.name,
+			path: declaration.namePath.length > 0
+				? declaration.namePath.join('.')
+				: declaration.name,
+			kind: semanticSymbolKindToLuaSymbolKind(declaration.kind),
 			location,
-		});
+		};
 	}
 	symbols.sort((a, b) => {
 		const aLine = a.location.range.startLine;
@@ -1164,46 +929,13 @@ export function listLuaSymbols(bridge: RuntimeLuaTooling, domain: ResourceDomain
 	return symbols;
 }
 
-export function listLuaBuiltinFunctions(): LuaBuiltinDescriptor[] {
-	const descriptors = new Map<string, LuaBuiltinDescriptor>();
-	for (let index = 0; index < DEFAULT_LUA_BUILTIN_FUNCTIONS.length; index += 1) {
-		const descriptor = DEFAULT_LUA_BUILTIN_FUNCTIONS[index];
-			descriptors.set(descriptor.name, {
-				name: descriptor.name,
-				params: descriptor.params.slice(),
-				signature: descriptor.signature,
-				optionalParams: descriptor.optionalParams?.slice(),
-				parameterDescriptions: descriptor.parameterDescriptions?.slice(),
-				description: descriptor.description,
-			});
-		}
-		for (const metadata of luaBuiltinMetadata.values()) {
-			const optionalParams = metadata.optionalParams;
-			const optionalSet = optionalParams && optionalParams.length > 0 ? new Set(optionalParams) : undefined;
-			const params = optionalSet ? metadata.params.map(param => (optionalSet.has(param) ? `${param}?` : param)) : metadata.params.slice();
-			const parameterDescriptions = metadata.parameterDescriptions?.slice();
-			descriptors.set(metadata.name, {
-				name: metadata.name,
-				params,
-			signature: metadata.signature,
-			optionalParams,
-			parameterDescriptions,
-			description: metadata.description,
-		});
-	}
-	const result = Array.from(descriptors.values());
-	result.sort((a, b) => a.name.localeCompare(b.name));
-	return result;
-}
-
 export function listGlobalLuaSymbols(bridge: RuntimeLuaTooling, domain: ResourceDomain): LuaSymbolEntry[] {
-	const workspace = getOrCreateSemanticWorkspace(domain);
-	primeRuntimeSemanticWorkspaceProjectSources(bridge.sources, domain, workspace);
-	const snapshot = workspace.getSnapshot();
-	const version = snapshot.version;
-	const cached = globalSymbolsCache.get(domain);
-	if (cached && cached.version === version) {
-		return cached.entries;
+	const project = getOrCreateSemanticProject(domain);
+	project.synchronizeRuntimeSources(bridge.sources);
+	const snapshot = project.getSnapshot();
+	const cached = globalSymbolsCache.get(snapshot);
+	if (cached) {
+		return cached;
 	}
 	const entries: LuaSymbolEntry[] = [];
 	const decls = snapshot.listGlobalDecls();
@@ -1230,213 +962,36 @@ export function listGlobalLuaSymbols(bridge: RuntimeLuaTooling, domain: Resource
 		}
 		return a.path.localeCompare(b.path);
 	});
-	globalSymbolsCache.set(domain, { version, entries });
+	globalSymbolsCache.set(snapshot, entries);
 	return entries;
 }
 
-export function findStaticDefinitionLocation(bridge: RuntimeLuaTooling, chain: ReadonlyArray<string>, usageRow: number, usageColumn: number, preferredChunk: string, activeContext: EditorDocumentContext): LuaDefinitionLocation {
-	if (chain.length === 0) {
-		return null;
-	}
-	if (preferredChunk) {
-		if (activeContext.resource.path === preferredChunk) {
-			const source = getTextSnapshot(editorDocumentState.buffer);
-			prepareRuntimeSemanticWorkspaceForEditorBuffer(bridge.sources, activeContext.resource.domain, {
-				path: preferredChunk,
-				source,
-			});
-		} else {
-			primeRuntimeSemanticWorkspaceProjectSources(
-				bridge.sources,
-				activeContext.resource.domain,
-				getOrCreateSemanticWorkspace(activeContext.resource.domain),
-			);
-		}
-		const workspaceSymbol = getOrCreateSemanticWorkspace(activeContext.resource.domain)
-			.getSnapshot()
-			.symbolAt(preferredChunk, usageRow, usageColumn);
-		if (workspaceSymbol) {
-			return definitionLocationFromSourceRange({
-				path: workspaceSymbol.decl.file,
-				start: workspaceSymbol.decl.range.start,
-				end: workspaceSymbol.decl.range.end,
-			});
-		}
-		return null;
-	}
-	const bundle = getStaticDefinitions(bridge, activeContext.resource.domain, preferredChunk);
-	if (!bundle || bundle.definitions.length === 0) {
-		return null;
-	}
-	const { definitions, paths, models } = bundle;
-	for (let index = 0; index < paths.length; index += 1) {
-		const path = paths[index];
-		let model = models.get(path.path);
-		if (!model) {
-			const sourceMatch = resolveRuntimeLuaSourceForContext(
-				bridge.sources,
-				activeContext.resource.domain,
-				path.path,
-			)!;
-			const source = luaPipeline.resourceSourceForChunk(bridge.sources, {
-				domain: sourceMatch.domain,
-				path: sourceMatch.record.source_path,
-			});
-			if (!source) {
-				continue;
-			}
-			model = buildLuaSemanticModel(source, path.path);
-			models.set(path.path, model);
-		}
-		const semanticDefinition = model.lookupIdentifier(usageRow, usageColumn, chain);
-		if (semanticDefinition) {
-			return definitionLocationFromSourceRange(semanticDefinition.definition);
-		}
-	}
-	const identifier = chain[chain.length - 1];
-	const pathsMatch = (candidate: ReadonlyArray<string>): boolean => {
-		if (candidate.length !== chain.length) {
-			return false;
-		}
-		for (let index = 0; index < candidate.length; index += 1) {
-			if (candidate[index] !== chain[index]) {
-				return false;
-			}
-		}
-		return true;
-	};
-	const selectPreferred = (candidate: LuaDefinitionInfo, current: LuaDefinitionInfo): LuaDefinitionInfo => {
-		const candidatePriority = definitionPriorityForLocals(candidate.kind);
-		const currentPriority = current ? definitionPriorityForLocals(current.kind) : -1;
-		if (!positionWithinRange(usageRow, usageColumn, candidate.scope)) {
-			return current;
-		}
-		if (usageRow < candidate.definition.start.line) {
-			return current;
-		}
-		if (
-			!current
-			|| candidatePriority > currentPriority
-			|| (candidatePriority === currentPriority
-				&& (
-					candidate.definition.start.line > current.definition.start.line
-					|| (candidate.definition.start.line === current.definition.start.line
-						&& candidate.definition.start.column >= current.definition.start.column)
-				))
-		) {
-			return candidate;
-		}
-		return current;
-	};
-	let bestExact: LuaDefinitionInfo = null;
-	let bestPartial: LuaDefinitionInfo = null;
-	for (let i = 0; i < definitions.length; i += 1) {
-		const definition = definitions[i];
-		if (pathsMatch(definition.namePath)) {
-			bestExact = selectPreferred(definition, bestExact);
-			continue;
-		}
-		if (definition.name !== identifier) {
-			continue;
-		}
-		bestPartial = selectPreferred(definition, bestPartial);
-	}
-	const chosen = bestExact ?? bestPartial;
-	if (!chosen) {
-		return null;
-	}
-	return definitionLocationFromSourceRange(chosen.definition);
-}
-
-export function getStaticDefinitions(
+export function findStaticDefinitionLocation(
 	bridge: RuntimeLuaTooling,
-	domain: ResourceDomain,
-	preferredChunk: string,
-): { definitions: ReadonlyArray<LuaDefinitionInfo>; paths: Array<{ path: string; info: { asset_id: string; path?: string } }>; models: Map<string, LuaSemanticModel> } {
-	const interpreter = bridge.luaInterpreter;
-	const matchingChunks: Array<{ path: string; info: { asset_id: string; path?: string } }> = [];
-	const sources = bridge.sources;
-	const sourceMatch = resolveRuntimeLuaSourceForContext(sources, domain, preferredChunk);
-	if (sourceMatch !== null) {
-		const asset = sourceMatch.record;
-		matchingChunks.push({
-			path: asset.module_path,
-			info: { asset_id: asset.resid, path: asset.source_path },
-		});
-	}
-	if (matchingChunks.length === 0) {
+	usageRow: number,
+	usageColumn: number,
+	path: string,
+	activeContext: EditorDocumentContext,
+): LuaDefinitionLocation {
+	const source = resolveRuntimeLuaSourceForContext(
+		bridge.sources,
+		activeContext.resource.domain,
+		path,
+	);
+	if (!source) {
 		return null;
 	}
-	const byKey = new Map<string, LuaDefinitionInfo>();
-	const models: Map<string, LuaSemanticModel> = new Map();
-	const recordDefinition = (definition: LuaDefinitionInfo) => {
-		const key = `${definition.namePath.join('.')}@${definition.definition.start.line}:${definition.definition.start.column}`;
-		if (!byKey.has(key)) {
-			byKey.set(key, definition);
-		}
-	};
-	for (let index = 0; index < matchingChunks.length; index += 1) {
-		const candidate = matchingChunks[index];
-		const pathDefinitions = interpreter.getChunkDefinitions(candidate.path);
-		if (pathDefinitions && pathDefinitions.length > 0) {
-			for (let defIndex = 0; defIndex < pathDefinitions.length; defIndex += 1) {
-				recordDefinition(pathDefinitions[defIndex]);
-			}
-		}
-		const model = buildSemanticModelForChunk(bridge, domain, candidate.path);
-		const cacheEntry = runtimeSemanticCacheForDomain(domain).get(candidate.path);
-		const cachedDefinitions = cacheEntry ? cacheEntry.definitions : (model ? model.definitions : []);
-		if (model) {
-			models.set(candidate.path, model);
-		}
-		for (let defIndex = 0; defIndex < cachedDefinitions.length; defIndex += 1) {
-			recordDefinition(cachedDefinitions[defIndex]);
-		}
+	const sourcePath = source.record.source_path;
+	const project = getOrCreateSemanticProject(activeContext.resource.domain);
+	project.synchronizeRuntimeSources(bridge.sources);
+	if (activeContext.resource.path === sourcePath) {
+		project.updateDocument(sourcePath, getTextSnapshot(editorDocumentState.buffer));
 	}
-	if (byKey.size === 0) {
-		return null;
-	}
-	return { definitions: Array.from(byKey.values()), paths: matchingChunks, models };
-}
-
-export function buildSemanticModelForChunk(bridge: RuntimeLuaTooling, domain: ResourceDomain, path: string): LuaSemanticModel {
-	const sourceMatch = resolveRuntimeLuaSourceForContext(bridge.sources, domain, path)!;
-	const source = luaPipeline.resourceSourceForChunk(bridge.sources, {
-		domain: sourceMatch.domain,
-		path: sourceMatch.record.source_path,
-	});
-	const cached = runtimeSemanticCacheForDomain(domain).get(path);
-	const cachedMatch = cached && cached.source === source ? cached : null;
-	if (cachedMatch) {
-		const cachedAnalysis = (cachedMatch as { analysis?: FileSemanticData }).analysis;
-		if (cachedAnalysis) {
-			return cachedAnalysis.model;
-		}
-		if (cachedMatch.model) {
-			return cachedMatch.model;
-		}
-	}
-	const workspace = getOrCreateSemanticWorkspace(domain);
-	const workspaceData = workspace.getSnapshot().getFileData(path);
-	if (workspaceData && workspaceData.source === source) {
-		cacheRuntimeSemanticWorkspaceAnalysis(domain, path, source, workspaceData, cachedMatch?.parsed);
-		return workspaceData.model;
-	}
-	const parseEntry = getCachedLuaParse({
-		path,
-		source,
-		parsed: cachedMatch?.parsed,
-	});
-	const parsed = parseEntry.parsed;
-	const data = syncRuntimeSemanticWorkspacePath(domain, {
-		path,
-		source: parseEntry.source,
-		parsed,
-	}, workspace);
-	if (data) {
-		return data.model;
-	}
-	return null;
+	const frontend = createEditorSemanticFrontend(bridge, project.getSnapshot());
+	const symbols = frontend.findSymbolsByPosition(sourcePath, usageRow, usageColumn);
+	return symbols && symbols.targets.length === 1
+		? definitionLocationFromSourceRange(symbols.targets[0].declaration.range)
+		: null;
 }
 
 export function positionWithinRange(row: number, column: number, range: LuaSourceRange): boolean {
@@ -2439,7 +1994,7 @@ export function getBuiltinIdentifiersSnapshot(): { epoch: number; ids: ReadonlyS
 	if (cached && cached.caseInsensitive === editorRuntimeState.caseInsensitive) {
 		return cached;
 	}
-	const descriptors = listLuaBuiltinFunctions();
+	const descriptors = listLuaBuiltinDescriptors();
 	const names: string[] = [];
 	for (let index = 0; index < descriptors.length; index += 1) {
 		names.push(descriptors[index].name);

@@ -31,7 +31,6 @@ export function openRenamePrompt(bridge: RuntimeLuaTooling, rename: RenameContro
 	}
 	const started = rename.begin(bridge, {
 		buffer: editorDocumentState.buffer,
-		textVersion: editorDocumentState.textVersion,
 		cursorRow: editorDocumentState.cursorRow,
 		cursorColumn: editorDocumentState.cursorColumn,
 		identity: context.resource,

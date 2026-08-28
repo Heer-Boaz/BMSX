@@ -5,12 +5,10 @@ import type { TextBuffer } from '../../text/text_buffer';
 import type { SearchMatch } from '../../../common/models';
 import type { ResourceIdentity } from '../../../common/resource';
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
-import type { SymbolID } from '../../../../toolchain/ts/lua/semantic/model';
 import { searchMatchFromSourceRange } from '../../navigation/source_range';
 
 export type ReferenceLookupOptions = {
 	buffer: TextBuffer;
-	textVersion: number;
 	cursorRow: number;
 	cursorColumn: number;
 	identity: ResourceIdentity;
@@ -32,12 +30,11 @@ export function resolveReferenceLookup(bridge: RuntimeLuaTooling, options: Refer
 		return { kind: 'error', message: `Definition not found for ${identifier.expression}`, duration: 1.8 };
 	}
 	const matches: SearchMatch[] = [];
-	const definitionKeys = new Array<SymbolID>(resolution.targets.length);
 	for (let targetIndex = 0; targetIndex < resolution.targets.length; targetIndex += 1) {
 		const target = resolution.targets[targetIndex];
-		definitionKeys[targetIndex] = target.id;
-		if (target.declaration.file === path) {
-			const definitionMatch = searchMatchFromSourceRange(target.declaration.range);
+		const range = target.declaration.range;
+		if (range.path === path) {
+			const definitionMatch = searchMatchFromSourceRange(range);
 			matches.push(definitionMatch);
 		}
 	}
@@ -63,8 +60,8 @@ export function resolveReferenceLookup(bridge: RuntimeLuaTooling, options: Refer
 		info: {
 			matches,
 			expression: identifier.expression,
-			definitionKeys,
-			documentVersion: options.textVersion,
+			query: resolution,
+			snapshot: frontend.snapshot,
 		},
 		initialIndex,
 	};

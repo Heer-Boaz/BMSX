@@ -111,12 +111,12 @@ Daaruit volgen deze harde migratiegates:
   toetsbare grens; als een eerlijke grens niet kleiner kan, wordt de commit
   groter in plaats van gevuld met tijdelijke facades of compatibiliteitslagen.
 
-De eerstvolgende semantic slice begint daarom niet met een nieuwe IDE-feature.
-Zij inventariseert en verwijdert de dubbele query- en cacherepresentaties rond
-`LuaSemanticModel`, `LuaSemanticWorkspaceSnapshot` en de runtime semantic cache.
-Alleen een representatie die door huidige consumers aantoonbaar nodig is blijft
-bestaan. Het opsplitsen van `model.ts` volgt pas nadat die ownergrenzen in code
-staan; anders verplaatst het slechts dezelfde verkeerde verantwoordelijkheden.
+Nieuwe IDE-features beginnen aan de providergrens boven het retained semantic
+project; zij voegen geen tweede model, runtime semantic cache of afwijkende
+positie-resolver toe. De eerstvolgende open semantic slice is daarom de meting
+in `IDE-SEMANTIC-01`. Het opsplitsen van `model.ts` is alleen gerechtvaardigd
+wanneer een ownergrens of die meting daar aanleiding toe geeft; een cosmetische
+move zou slechts dezelfde verantwoordelijkheden verplaatsen.
 
 ## Validatiebasis voor inputwerk
 

@@ -20,7 +20,6 @@ import {
 } from './cache';
 import type { WorkspaceRecord } from './records';
 import { resolveWorkspacePath } from './path';
-import { runtimeSemanticCache } from '../editor/contrib/intellisense/semantic/workspace/runtime';
 import {
 	developmentCartridgeSource,
 	resolveRuntimeLuaSource,
@@ -44,13 +43,11 @@ function markLuaSourceRegistryChanged(sources: RuntimeSourceState, registry: Lua
 		for (const slot of CARTRIDGE_RESOURCE_DOMAINS) {
 			if (sources.cartridgeSlots[slot]?.luaSources === registry) {
 				sources.cartridgeBlua32MediaDirty[slot] = true;
-				runtimeSemanticCache.delete(slot);
 				return;
 			}
 		}
 		throw new Error('Lua source registry is not installed.');
 	}
-	runtimeSemanticCache.clear();
 }
 
 function resolveEditableLuaSource(

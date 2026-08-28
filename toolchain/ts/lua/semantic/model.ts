@@ -21,7 +21,6 @@ import {
 	type LuaDataDeclarationStatement,
 	type LuaRodataDeclarationStatement,
 	type LuaFunctionDeclarationStatement,
-	type LuaDefinitionInfo,
 	type LuaSourceRange,
 } from '../syntax/ast';
 import type { LuaToken } from '../syntax/token';
@@ -29,9 +28,8 @@ import { LuaTokenType } from '../syntax/token';
 import type { LuaSymbolEntry } from '../semantic_contracts';
 import type { ParsedLuaChunk } from '../analysis/parse';
 import { getCachedLuaParse } from '../analysis/cache';
-import { sourcePositionInRange } from './source_range';
 import type { SourcePosition } from '../source_range';
-import { semanticNamePathMatches, type SemanticSymbolKind } from './symbols';
+import type { SemanticSymbolKind } from './symbols';
 import type { SemanticAnnotations, SemanticRole } from './tokens';
 import { methodPathToPropertyPath } from './common';
 import { toLuaModulePath } from '../module_path';
@@ -72,30 +70,13 @@ import { WorkspaceSymbolResolver } from './workspace_symbol_resolver';
 
 export type SymbolID = string;
 
-export type LuaReferenceLookupResult = {
-	definition: LuaDefinitionInfo;
-	references: LuaSourceRange[];
-};
+const EMPTY_FILE_PATHS: readonly string[] = [];
 
 export type FunctionSignatureInfo = {
 	params: string[];
 	hasVararg: boolean;
 	minimumArgumentCount: number;
 	declarationStyle: 'function' | 'method';
-};
-
-export type LuaSemanticModel = {
-	file: string;
-	annotations: SemanticAnnotations;
-	decls: readonly Decl[];
-	refs: readonly Ref[];
-	definitions: readonly LuaDefinitionInfo[];
-	callExpressions?: readonly LuaCallExpression[];
-	functionSignatures?: ReadonlyMap<string, FunctionSignatureInfo>;
-	lookupIdentifier(row: number, column: number, namePath: readonly string[]): LuaDefinitionInfo;
-	lookupReferences(row: number, column: number, namePath: readonly string[]): LuaReferenceLookupResult;
-	getDefinitionReferences(definition: LuaDefinitionInfo): LuaSourceRange[];
-	symbolAt(row: number, column: number): { id: SymbolID; decl: Decl };
 };
 
 export type Decl = {
@@ -127,7 +108,7 @@ export type Ref = {
 };
 
 export type FileSemanticData = {
-	model: LuaSemanticModel;
+	file: string;
 	source: string;
 	parsed: ParsedLuaChunk;
 	chunk: LuaChunk;
@@ -146,9 +127,6 @@ export type FileSemanticData = {
 	callValues: readonly CallValueEntry[];
 	valueAssignments: readonly ValueAssignmentEntry[];
 };
-
-const EMPTY_CALL_EXPRESSIONS: readonly LuaCallExpression[] = [];
-const EMPTY_FUNCTION_SIGNATURES = new Map<string, FunctionSignatureInfo>();
 
 export type LuaSemanticWorkspaceSourceSnapshot = {
 	path: string;
@@ -200,7 +178,7 @@ export class LuaSemanticWorkspaceSnapshot {
 		this.globalDecls = globalDecls;
 	}
 
-	public getFileData(path: string): FileSemanticData {
+	public getFileData(path: string): FileSemanticData | undefined {
 		return this.dataByPath.get(path);
 	}
 
@@ -208,41 +186,6 @@ export class LuaSemanticWorkspaceSnapshot {
 		return this.globalDecls;
 	}
 
-	public symbolAt(path: string, row: number, column: number): { id: SymbolID; decl: Decl } {
-		const symbols = this.symbolsAt(path, row, column);
-		return symbols.length === 1 ? symbols[0] : null;
-	}
-
-	public symbolsAt(path: string, row: number, column: number): readonly { id: SymbolID; decl: Decl }[] {
-		const data = this.dataByPath.get(path);
-		if (!data) {
-			return [];
-		}
-		for (let declIndex = 0; declIndex < data.decls.length; declIndex += 1) {
-			const decl = data.decls[declIndex];
-			if (!sourcePositionInRange(row, column, decl.range)) {
-				continue;
-			}
-			return [{ id: decl.id, decl }];
-		}
-		for (let refIndex = 0; refIndex < data.refs.length; refIndex += 1) {
-			const ref = data.refs[refIndex];
-			if (!sourcePositionInRange(row, column, ref.range)) {
-				continue;
-			}
-			const targets = this.symbolResolver.resolveReferenceTargets(ref);
-			const symbols: { id: SymbolID; decl: Decl }[] = [];
-			for (let targetIndex = 0; targetIndex < targets.length; targetIndex += 1) {
-				const target = targets[targetIndex];
-				const decl = this.symbolResolver.getDeclaration(target);
-				if (decl) {
-					symbols.push({ id: target, decl });
-				}
-			}
-			return symbols;
-		}
-		return [];
-	}
 }
 
 function createWorkspaceSnapshotFromIndex(index: LuaProjectIndex): LuaSemanticWorkspaceSnapshot {
@@ -390,21 +333,10 @@ export function buildLuaFileSemanticData(
 	});
 	const result = builder.build();
 	const decls = result.decls.map(toDecl);
-	const definitions = decls.map(decl => declToDefinitionInfo(decl));
-	definitions.sort(compareDefinitionInfo);
 	const refs = result.refs.slice();
 	const annotations = finalizeAnnotations(result.annotations);
-	const model: LuaSemanticModel = createSemanticModel({
-		file: path,
-		decls,
-		definitions,
-		refs,
-		annotations,
-		callExpressions: result.callExpressions,
-		functionSignatures: result.functionSignatures,
-	});
 	return {
-		model,
+		file: path,
 		source,
 		parsed: parseEntry.parsed,
 		chunk,
@@ -425,11 +357,6 @@ export function buildLuaFileSemanticData(
 	};
 }
 
-export function buildLuaSemanticModel(source: string, path: string, parsed?: ParsedLuaChunk): LuaSemanticModel {
-	const data = buildLuaFileSemanticData(source, path, parsed);
-	return data.model;
-}
-
 class LuaProjectIndex {
 	private readonly files: Map<string, FileSemanticData> = new Map();
 	private readonly symbols: Map<SymbolID, Decl> = new Map();
@@ -444,28 +371,49 @@ class LuaProjectIndex {
 		this.symbolResolver = this.buildWorkspaceSymbolResolver();
 	}
 
-	public updateFile(file: string, source: string, parsed?: ParsedLuaChunk): void {
+	public updateFile(file: string, source: string, parsed?: ParsedLuaChunk): FileSemanticData {
+		const current = this.files.get(file);
+		if (current && current.source === source) {
+			return current;
+		}
 		const data = buildLuaFileSemanticData(source, file, parsed);
-		this.storeFileData(file, data);
+		this.replaceIndexedFile(file, data);
+		this.commitFileChanges();
+		return data;
 	}
 
-	public updateFiles(files: readonly FileSemanticData[]): void {
+	public updateFiles(
+		files: readonly FileSemanticData[],
+		removedFiles: readonly string[] = EMPTY_FILE_PATHS,
+	): boolean {
 		let changed = false;
+		for (let index = 0; index < removedFiles.length; index += 1) {
+			const file = removedFiles[index];
+			const current = this.files.get(file);
+			if (!current) {
+				continue;
+			}
+			this.removeFileData(current);
+			this.files.delete(file);
+			this.fileOrder.delete(file);
+			changed = true;
+		}
 		for (let index = 0; index < files.length; index += 1) {
 			const data = files[index];
-			const file = data.model.file;
+			const file = data.file;
 			changed = this.replaceIndexedFile(file, data) || changed;
 		}
 		if (changed) {
 			this.commitFileChanges();
 		}
+		return changed;
 	}
 
 	public getVersion(): number {
 		return this.version;
 	}
 
-	public getFileData(file: string): FileSemanticData {
+	public getFileData(file: string): FileSemanticData | undefined {
 		return this.files.get(file);
 	}
 
@@ -620,13 +568,6 @@ class LuaProjectIndex {
 		});
 	}
 
-	private storeFileData(file: string, data: FileSemanticData): void {
-		if (!this.replaceIndexedFile(file, data)) {
-			return;
-		}
-		this.commitFileChanges();
-	}
-
 	private replaceIndexedFile(file: string, data: FileSemanticData): boolean {
 		const current = this.files.get(file);
 		if (current && current.source === data.source) {
@@ -645,144 +586,6 @@ class LuaProjectIndex {
 		this.symbolResolver = this.buildWorkspaceSymbolResolver();
 		this.version += 1;
 	}
-}
-
-function createSemanticModel(options: {
-	file: string;
-	decls: readonly Decl[];
-	definitions: readonly LuaDefinitionInfo[];
-	refs: readonly Ref[];
-	annotations: SemanticAnnotations;
-	callExpressions?: readonly LuaCallExpression[];
-	functionSignatures?: ReadonlyMap<string, FunctionSignatureInfo>;
-}): LuaSemanticModel {
-	const {
-		file,
-		decls,
-		definitions,
-		refs,
-		annotations,
-		callExpressions,
-		functionSignatures,
-	} = options;
-	const declById = new Map<SymbolID, Decl>();
-	const definitionById = new Map<SymbolID, LuaDefinitionInfo>();
-	const definitionIdByKey = new Map<string, SymbolID>();
-	for (let index = 0; index < decls.length; index += 1) {
-		const decl = decls[index];
-		declById.set(decl.id, decl);
-		const definition = definitions[index];
-		definitionById.set(decl.id, definition);
-		const key = definitionLookupKey(definition.definition, definition.namePath);
-		if (!definitionIdByKey.has(key)) {
-			definitionIdByKey.set(key, decl.id);
-		}
-	}
-	const lookupDefinition = (row: number, column: number, namePath: readonly string[]): LuaDefinitionInfo => {
-		const symbol = symbolAtPosition({
-			row,
-			column,
-			namePath,
-			decls,
-			refs,
-			declById,
-		});
-		if (!symbol) {
-			return null;
-		}
-		const info = definitionById.get(symbol.id);
-		return info ;
-	};
-	const getReferencesForDefinition = (definition: LuaDefinitionInfo): LuaSourceRange[] => {
-		const key = definitionLookupKey(definition.definition, definition.namePath);
-		const symbolId = definitionIdByKey.get(key);
-		if (!symbolId) {
-			return [];
-		}
-		const ranges: LuaSourceRange[] = [];
-		for (let index = 0; index < refs.length; index += 1) {
-			const ref = refs[index];
-			if (ref.target === symbolId) {
-				ranges.push(cloneRange(ref.range));
-			}
-		}
-		return ranges;
-	};
-	return {
-		file,
-		annotations,
-		decls,
-		refs,
-		definitions,
-		callExpressions: callExpressions ?? EMPTY_CALL_EXPRESSIONS,
-		functionSignatures: functionSignatures ?? EMPTY_FUNCTION_SIGNATURES,
-		lookupIdentifier(row: number, column: number, namePath: readonly string[]): LuaDefinitionInfo {
-			return lookupDefinition(row, column, namePath);
-		},
-		lookupReferences(row: number, column: number, namePath: readonly string[]): LuaReferenceLookupResult {
-			const definition = lookupDefinition(row, column, namePath);
-			if (!definition) {
-				return { definition: null, references: [] };
-			}
-			return {
-				definition,
-				references: getReferencesForDefinition(definition),
-			};
-		},
-		getDefinitionReferences(definition: LuaDefinitionInfo): LuaSourceRange[] {
-			return getReferencesForDefinition(definition);
-		},
-		symbolAt(row: number, column: number): { id: SymbolID; decl: Decl } {
-			const result = symbolAtPosition({
-				row,
-				column,
-				namePath: null,
-				decls,
-				refs,
-				declById,
-			});
-			return result;
-		},
-	};
-}
-
-function symbolAtPosition(options: {
-	row: number;
-	column: number;
-	namePath: readonly string[];
-	decls: readonly Decl[];
-	refs: readonly Ref[];
-	declById: Map<SymbolID, Decl>;
-}): { id: SymbolID; decl: Decl } {
-	const { row, column, namePath, decls, refs, declById } = options;
-	for (let index = 0; index < decls.length; index += 1) {
-		const decl = decls[index];
-		if (sourcePositionInRange(row, column, decl.range)) {
-			if (namePath && !semanticNamePathMatches(decl.namePath, namePath)) {
-				continue;
-			}
-			return { id: decl.id, decl };
-		}
-	}
-	for (let index = 0; index < refs.length; index += 1) {
-		const ref = refs[index];
-		if (!sourcePositionInRange(row, column, ref.range)) {
-			continue;
-		}
-		if (namePath && !semanticNamePathMatches(ref.namePath, namePath)) {
-			continue;
-		}
-		const targetId = ref.target;
-		if (!targetId) {
-			continue;
-		}
-		const decl = declById.get(targetId);
-		if (!decl) {
-			continue;
-		}
-		return { id: targetId, decl };
-	}
-	return null;
 }
 
 class SemanticBuilder {
@@ -1569,7 +1372,7 @@ class SemanticBuilder {
 					this.visitExpression(target.operand, { tableBaseDecl: null, tableBasePath: null });
 					return { decl: null, namePath: null, path: null };
 				}
-				throw new Error('[LuaSemanticModel] Unsupported unary assignment target.');
+				throw new Error('[LuaSemanticBuilder] Unsupported unary assignment target.');
 			default:
 				return { decl: null, namePath: null, path: null };
 		}
@@ -2626,41 +2429,12 @@ function buildRangeFromPosition(position: SourcePosition, length: number, path: 
 	};
 }
 
-function declToDefinitionInfo(decl: Decl): LuaDefinitionInfo {
-	return {
-		name: decl.name,
-		namePath: decl.namePath.slice(),
-		definition: cloneRange(decl.range),
-		scope: cloneRange(decl.scope),
-		kind: symbolKindToDefinitionKind(decl.kind),
-	};
-}
-
 function cloneRange(range: LuaSourceRange): LuaSourceRange {
 	return {
 		path: range.path,
 		start: { line: range.start.line, column: range.start.column },
 		end: { line: range.end.line, column: range.end.column },
 	};
-}
-
-function symbolKindToDefinitionKind(kind: SemanticSymbolKind): LuaDefinitionInfo['kind'] {
-	switch (kind) {
-		case 'parameter':
-			return 'parameter';
-		case 'function':
-			return 'function';
-		case 'property':
-			return 'table_field';
-		case 'constant':
-			return 'constant';
-		case 'type':
-			return 'type';
-		case 'global':
-		case 'local':
-		default:
-			return 'variable';
-	}
 }
 
 function createSymbolId(file: string, range: LuaSourceRange, kind: SemanticSymbolKind, namePath: readonly string[]): SymbolID {
@@ -2702,10 +2476,6 @@ function extractStaticMemberPath(expression: LuaExpression): string[] | null {
 	return null;
 }
 
-function definitionLookupKey(range: LuaSourceRange, namePath: readonly string[]): string {
-	return `${range.path}|${range.start.line}|${range.start.column}|${joinNamePath(namePath)}`;
-}
-
 function appendToNamePath(base: readonly string[], segment: string): string[] {
 	const result = base.slice();
 	result.push(segment);
@@ -2721,16 +2491,6 @@ function finalizeAnnotations(annotations: SemanticAnnotations): SemanticAnnotati
 		row.sort((a, b) => a.start - b.start);
 	}
 	return annotations;
-}
-
-function compareDefinitionInfo(a: LuaDefinitionInfo, b: LuaDefinitionInfo): number {
-	if (a.definition.start.line !== b.definition.start.line) {
-		return a.definition.start.line - b.definition.start.line;
-	}
-	if (a.definition.start.column !== b.definition.start.column) {
-		return a.definition.start.column - b.definition.start.column;
-	}
-	return a.name.localeCompare(b.name);
 }
 
 function toDecl(internal: InternalDecl): Decl {
@@ -3479,20 +3239,28 @@ export class LuaSemanticWorkspace {
 		return this.index.getVersion();
 	}
 
-	public updateFile(file: string, source: string, parsed?: ParsedLuaChunk): void {
-		this.index.updateFile(file, source, parsed);
-		this.snapshot = null;
+	public updateFile(file: string, source: string, parsed?: ParsedLuaChunk): FileSemanticData {
+		const previousVersion = this.index.getVersion();
+		const data = this.index.updateFile(file, source, parsed);
+		if (this.index.getVersion() !== previousVersion) {
+			this.snapshot = null;
+		}
+		return data;
 	}
 
-	public updateFiles(files: readonly FileSemanticData[]): void {
-		if (files.length === 0) {
+	public updateFiles(
+		files: readonly FileSemanticData[],
+		removedFiles: readonly string[] = EMPTY_FILE_PATHS,
+	): void {
+		if (files.length === 0 && removedFiles.length === 0) {
 			return;
 		}
-		this.index.updateFiles(files);
-		this.snapshot = null;
+		if (this.index.updateFiles(files, removedFiles)) {
+			this.snapshot = null;
+		}
 	}
 
-	public getFileData(file: string): FileSemanticData {
+	public getFileData(file: string): FileSemanticData | undefined {
 		return this.index.getFileData(file);
 	}
 

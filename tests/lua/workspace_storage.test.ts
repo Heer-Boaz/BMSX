@@ -82,10 +82,9 @@ import {
 	resolveRuntimeLuaSource,
 	resolveRuntimeResource,
 } from '../../ide/runtime/sources';
-import { primeRuntimeSemanticWorkspaceProjectSources } from '../../ide/editor/contrib/intellisense/semantic/workspace/runtime';
 import {
-	getOrCreateSemanticWorkspace,
-	resetSemanticWorkspaces,
+	getOrCreateSemanticProject,
+	resetSemanticProjects,
 } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
 import {
 	WorkspaceAutosaveChange,
@@ -423,7 +422,7 @@ async function startAutosaveSession(t: TestContext, storage: MockStorage, root =
 		restored,
 		new Set(),
 	);
-	t.after(() => resetSemanticWorkspaces());
+	t.after(() => resetSemanticProjects());
 	return sources;
 }
 
@@ -442,7 +441,7 @@ test('resource identity keeps identical cartridge paths isolated by slot', (t) =
 	);
 	t.after(() => {
 		codeTabSessionState.contexts.clear();
-		resetSemanticWorkspaces();
+		resetSemanticProjects();
 		clearWorkspaceSourceCaches();
 	});
 
@@ -455,13 +454,15 @@ test('resource identity keeps identical cartridge paths isolated by slot', (t) =
 		buildWorkspaceDirtyEntryPath('offline-cart', 0, 'entry.lua'),
 		buildWorkspaceDirtyEntryPath('offline-cart', 1, 'entry.lua'),
 	);
-	const slot0Workspace = primeRuntimeSemanticWorkspaceProjectSources(sources, 0);
-	const slot1Workspace = primeRuntimeSemanticWorkspaceProjectSources(sources, 1);
-	assert.notEqual(slot0Workspace, slot1Workspace);
+	const slot0Project = getOrCreateSemanticProject(0);
+	const slot1Project = getOrCreateSemanticProject(1);
+	slot0Project.synchronizeRuntimeSources(sources);
+	slot1Project.synchronizeRuntimeSources(sources);
+	assert.notEqual(slot0Project, slot1Project);
 	setWorkspaceLuaSourceOverride(slot0Sources, 'entry.lua', 'return "slot 0 edit"');
-	primeRuntimeSemanticWorkspaceProjectSources(sources, 0, getOrCreateSemanticWorkspace(0));
-	assert.equal(slot0Workspace.getFileData('entry.lua')!.source, 'return "slot 0 edit"');
-	assert.equal(slot1Workspace.getFileData('entry.lua')!.source, 'return "slot 1"');
+	slot0Project.synchronizeRuntimeSources(sources);
+	assert.equal(slot0Project.getFileData('entry.lua')!.source, 'return "slot 0 edit"');
+	assert.equal(slot1Project.getFileData('entry.lua')!.source, 'return "slot 1"');
 });
 
 test('workspace restore keeps dirty system tabs behind the development cartridge entry', async (t) => {

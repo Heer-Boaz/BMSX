@@ -3571,6 +3571,14 @@ authoring-tool responsibilities under `toolchain/ts/lua`. Native machine code
 executes the already-linked physical BLua32 image and therefore has no parallel
 C++ source lexer, parser, AST, or runtime source-compilation path.
 
+The editor owns one long-lived semantic project per resource domain. Runtime
+source registries form its installed base and editor documents replace the
+corresponding file records without creating a second semantic model. Each
+project publishes immutable program snapshots that retain unchanged file
+records. Definition, references, rename, diagnostics, completion, and call
+hierarchy consume the same snapshot and workspace resolver; feature providers
+do not parse, bind, or infer framework-specific meaning independently.
+
 `RuntimeSourceState` owns one retained IDE resource identity per installed
 `(domain, path)`. That identity points at the owning `RomAsset` or
 `LuaSourceRecord`; tabs, navigation, search, workspace restore, and resource

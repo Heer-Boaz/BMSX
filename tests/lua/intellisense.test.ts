@@ -38,12 +38,12 @@ import { materializeCpuCompletionValues } from './cpu_test_harness';
 
 const semanticFrontendModulePromise = import('../../toolchain/ts/lua/semantic/frontend');
 const semanticDiagnosticsModulePromise = import('../../toolchain/ts/lua/semantic/diagnostics');
-const semanticModelModulePromise = import('../../toolchain/ts/lua/semantic/model');
 const referenceSourcesModulePromise = import('../../ide/editor/contrib/references/sources');
 const workspaceModulePromise = import('../../ide/editor/contrib/intellisense/semantic/workspace/index');
 const workspaceStateModulePromise = import('../../ide/editor/contrib/intellisense/semantic/workspace/state');
 const referenceNavigationModulePromise = import('../../ide/editor/contrib/references/lookup');
 const intellisenseEngineModulePromise = import('../../ide/editor/contrib/intellisense/engine');
+const editorDiagnosticsModulePromise = import('../../ide/workbench/contrib/code_editor/diagnostics/analysis');
 
 const EMPTY_ROM_PAYLOAD = createTestRuntimeRomPayload();
 const EMPTY_TOOLING_RUNTIME = createTestRuntime(EMPTY_ROM_PAYLOAD);
@@ -272,6 +272,75 @@ test('intellisense rejects host-published machine word globals', async () => {
 	assert.equal(diagnostics[2].message, `'sys_vdp_stream_base' is not defined.`);
 });
 
+test('editor diagnostics share one retained project snapshot across open documents', async () => {
+	const { computeAggregatedEditorDiagnostics } = await editorDiagnosticsModulePromise;
+	const { getOrCreateSemanticProject, resetSemanticProject } = await workspaceStateModulePromise;
+	const readerSource = 'return shared.value';
+	const declarationSource = 'shared = { value = 1 }';
+	const bridge = createIntellisenseBridge({
+		'reader.lua': readerSource,
+		'declaration.lua': declarationSource,
+	});
+	resetSemanticProject(SYSTEM_RESOURCE_DOMAIN);
+	const contexts = [
+		{
+			id: 'reader',
+			domain: SYSTEM_RESOURCE_DOMAIN,
+			path: 'reader.lua',
+			source: readerSource,
+			version: 1,
+		},
+		{
+			id: 'declaration',
+			domain: SYSTEM_RESOURCE_DOMAIN,
+			path: 'declaration.lua',
+			source: declarationSource,
+			version: 1,
+		},
+	];
+
+	const initial = computeAggregatedEditorDiagnostics(bridge, contexts);
+	assert.ok(!initial.some(diagnostic => diagnostic.message.includes("'shared' is not defined")));
+	const project = getOrCreateSemanticProject(SYSTEM_RESOURCE_DOMAIN);
+	const initialSnapshot = project.getSnapshot();
+
+	computeAggregatedEditorDiagnostics(bridge, contexts);
+	assert.equal(project.getSnapshot(), initialSnapshot, 'unchanged diagnostic pass retains the program snapshot');
+
+	contexts[1] = {
+		...contexts[1],
+		source: 'replacement = { value = 1 }',
+		version: 2,
+	};
+	const updated = computeAggregatedEditorDiagnostics(bridge, contexts);
+	assert.ok(updated.some(diagnostic => diagnostic.message.includes("'shared' is not defined")));
+});
+
+test('static definition lookup preserves one-based source coordinates at an identifier boundary', async () => {
+	const { findStaticDefinitionLocation } = await intellisenseEngineModulePromise;
+	const { resetSemanticProject } = await workspaceStateModulePromise;
+	const source = [
+		'local target = 1',
+		'return target',
+	].join('\n');
+	const usageLine = source.split('\n')[1];
+	const usageColumn = usageLine.indexOf('target') + 'target'.length;
+	resetSemanticProject(SYSTEM_RESOURCE_DOMAIN);
+
+	const location = findStaticDefinitionLocation(
+		createIntellisenseBridge({ 'main.lua': source }),
+		2,
+		usageColumn,
+		'main.lua',
+		codeContext(testLuaResource('other.lua'), ''),
+	);
+
+	assert.ok(location);
+	assert.equal(location.path, 'main.lua');
+	assert.equal(location.range.startLine, 1);
+	assert.equal(location.range.startColumn, 7);
+});
+
 test('intellisense live locals resolve editor source paths against CPU module paths', async () => {
 	const { resolveLuaChainValue, resolveLuaDefinitionMetadata } = await intellisenseEngineModulePromise;
 	const source = [
@@ -420,10 +489,10 @@ return read_shadow()
 	assert.equal(diagnostics.length, 0);
 });
 
-// Semantic model behavior tests
+// Semantic workspace behavior tests
 
-test('semantic model distinguishes table field and parameter', async () => {
-	const { buildLuaSemanticModel } = await semanticModelModulePromise;
+test('semantic workspace distinguishes table field and parameter', async () => {
+	const { buildLuaSemanticFrontend } = await semanticFrontendModulePromise;
 	const source = `
 local function create_ball(seed)
 	return {
@@ -431,55 +500,55 @@ local function create_ball(seed)
 	}
 end
 `;
-	const model = buildLuaSemanticModel(source, 'testpath');
+	const frontend = buildLuaSemanticFrontend([{ path: 'testpath', source }]);
 	const lines = splitText(source);
 	const targetLine = lines[3];
 	const leftZeroBased = targetLine.indexOf('seed');
 	const rightZeroBased = targetLine.indexOf('seed', leftZeroBased + 1);
-	const leftDefinition = model.lookupIdentifier(4, leftZeroBased + 1, ['seed']);
-	const rightDefinition = model.lookupIdentifier(4, rightZeroBased + 1, ['seed']);
+	const leftDefinition = frontend.findSymbolsByPosition('testpath', 4, leftZeroBased + 1)?.targets[0].declaration;
+	const rightDefinition = frontend.findSymbolsByPosition('testpath', 4, rightZeroBased + 1)?.targets[0].declaration;
 	assert.ok(leftDefinition, 'left seed definition');
 	assert.ok(rightDefinition, 'right seed definition');
-	assert.equal(leftDefinition!.kind, 'table_field');
+	assert.equal(leftDefinition!.kind, 'property');
 	assert.equal(rightDefinition!.kind, 'parameter');
-	assert.equal(rightDefinition!.definition.start.line, 2);
+	assert.equal(rightDefinition!.range.start.line, 2);
 });
 
-test('semantic model resolves table property access', async () => {
-	const { buildLuaSemanticModel } = await semanticModelModulePromise;
+test('semantic workspace resolves table property access', async () => {
+	const { buildLuaSemanticFrontend } = await semanticFrontendModulePromise;
 	const source = `
 local state = {
 	count = 0,
 }
 state.count = state.count + 1
 `;
-	const model = buildLuaSemanticModel(source, 'testpath');
+	const frontend = buildLuaSemanticFrontend([{ path: 'testpath', source }]);
 	const lines = source.replace(/\r\n/g, '\n').split('\n');
 	const assignmentLine = lines[4];
 	const firstZeroBased = assignmentLine.indexOf('count');
 	const secondZeroBased = assignmentLine.indexOf('count', firstZeroBased + 1);
-	const definition = model.lookupIdentifier(5, firstZeroBased + 1, ['state', 'count']);
-	const definitionAgain = model.lookupIdentifier(5, secondZeroBased + 1, ['state', 'count']);
+	const definition = frontend.findSymbolsByPosition('testpath', 5, firstZeroBased + 1)?.targets[0].declaration;
+	const definitionAgain = frontend.findSymbolsByPosition('testpath', 5, secondZeroBased + 1)?.targets[0].declaration;
 	assert.ok(definition, 'property definition found');
 	assert.ok(definitionAgain, 'property definition found for rhs');
-	assert.equal(definition!.kind, 'table_field');
-	assert.equal(definition!.definition.start.line, 3);
-	assert.equal(definitionAgain!.definition.start.line, definition!.definition.start.line);
+	assert.equal(definition!.kind, 'property');
+	assert.equal(definition!.range.start.line, 3);
+	assert.equal(definitionAgain!.range.start.line, definition!.range.start.line);
 });
 
-test('semantic model reports references for locals', async () => {
-	const { buildLuaSemanticModel } = await semanticModelModulePromise;
+test('semantic workspace reports references for locals', async () => {
+	const { buildLuaSemanticFrontend } = await semanticFrontendModulePromise;
 	const source = [
 		'local counter = 0',
 		'counter = counter + 1',
 		'return counter',
 	].join('\n');
-	const model = buildLuaSemanticModel(source, 'testpath');
+	const frontend = buildLuaSemanticFrontend([{ path: 'testpath', source }]);
 	const lines = source.split('\n');
 	const definitionColumn = lines[0].indexOf('counter') + 1;
-	const lookup = model.lookupReferences(1, definitionColumn, ['counter']);
-	assert.ok(lookup.definition, 'definition present');
-	const referenceKeys = lookup.references.map(range => `${range.start.line}:${range.start.column}`);
+	const lookup = frontend.findReferencesByPosition('testpath', 1, definitionColumn);
+	assert.ok(lookup, 'definition present');
+	const referenceKeys = lookup.references.map(reference => `${reference.range.start.line}:${reference.range.start.column}`);
 	const secondLine = lines[1];
 	const firstValueColumn = secondLine.indexOf('counter') + 1;
 	const secondValueColumn = secondLine.indexOf('counter', secondLine.indexOf('counter') + 1) + 1;
@@ -492,19 +561,19 @@ test('semantic model reports references for locals', async () => {
 	assert.deepEqual(referenceKeys, expectedKeys);
 });
 
-test('semantic model reports references for table fields', async () => {
-	const { buildLuaSemanticModel } = await semanticModelModulePromise;
+test('semantic workspace reports references for table fields', async () => {
+	const { buildLuaSemanticFrontend } = await semanticFrontendModulePromise;
 	const source = [
 		'local state = { value = 0 }',
 		'state.value = state.value + 1',
 		'return state.value',
 	].join('\n');
-	const model = buildLuaSemanticModel(source, 'testpath');
+	const frontend = buildLuaSemanticFrontend([{ path: 'testpath', source }]);
 	const lines = source.split('\n');
 	const definitionColumn = lines[0].indexOf('value') + 1;
-	const lookup = model.lookupReferences(1, definitionColumn, ['state', 'value']);
-	assert.ok(lookup.definition);
-	const referenceKeys = lookup.references.map(range => `${range.start.line}:${range.start.column}`);
+	const lookup = frontend.findReferencesByPosition('testpath', 1, definitionColumn);
+	assert.ok(lookup);
+	const referenceKeys = lookup.references.map(reference => `${reference.range.start.line}:${reference.range.start.column}`);
 	const secondLine = lines[1];
 	const firstValueColumn = secondLine.indexOf('value') + 1;
 	const secondValueColumn = secondLine.indexOf('value', secondLine.indexOf('value') + 1) + 1;
@@ -520,7 +589,7 @@ test('semantic model reports references for table fields', async () => {
 // Workspace-driven reference catalog test
 
 test('project reference catalog resolves globals across paths', async () => {
-	const { buildReferenceCatalogForExpression } = await referenceSourcesModulePromise;
+	const { buildReferenceCatalog } = await referenceSourcesModulePromise;
 	const { LuaSemanticWorkspace, createLuaSemanticFrontendFromSnapshot } = await workspaceModulePromise;
 	const usageSource = [
 		'function dummy_handler()',
@@ -551,22 +620,14 @@ test('project reference catalog resolves globals across paths', async () => {
 	workspace.updateFile('parameter.lua', parameterSource);
 	workspace.updateFile('local.lua', localSource);
 
-	const usageResource = testLuaResource('usage.lua');
-
-	const usageContext = codeContext(usageResource, usageSource);
-
 	const usageLines = usageSource.split('\n');
-	const bridge = createIntellisenseBridge({
-		'global.lua': globalSource,
-		'parameter.lua': parameterSource,
-		'local.lua': localSource,
-	});
 	const stateRow = usageLines.findIndex(line => line.includes('print(state'));
 	assert.ok(stateRow >= 0);
 	const stateColumn = usageLines[stateRow]!.indexOf('state');
 	assert.ok(stateColumn >= 0);
 
-	const symbolInfo = createLuaSemanticFrontendFromSnapshot(workspace.getSnapshot()).findReferencesByPosition('usage.lua', stateRow + 1, stateColumn + 1);
+	const snapshot = workspace.getSnapshot();
+	const symbolInfo = createLuaSemanticFrontendFromSnapshot(snapshot).findReferencesByPosition('usage.lua', stateRow + 1, stateColumn + 1);
 	assert.ok(symbolInfo);
 	if (!symbolInfo) {
 		return;
@@ -580,18 +641,14 @@ test('project reference catalog resolves globals across paths', async () => {
 	const info = {
 		matches,
 		expression: 'state',
-		definitionKeys: symbolInfo.targets.map(target => target.id),
-		documentVersion: 1,
+		query: symbolInfo,
+		snapshot,
 	};
 
-	const catalog = buildReferenceCatalogForExpression(bridge, {
-		workspace,
+	const catalog = buildReferenceCatalog({
 		info,
-		source: usageSource,
 		lines: usageLines,
 		path: 'usage.lua',
-		activeContext: usageContext,
-		codeTabContexts: [usageContext],
 	});
 
 	assert.ok(catalog.some(entry => entry.symbol.location.path === 'global.lua'), 'global path included in reference catalog');
@@ -601,53 +658,10 @@ test('project reference catalog resolves globals across paths', async () => {
 	assert.ok(!catalog.some(entry => entry.symbol.location.path === 'local.lua'), 'local-scoped variable file excluded from references');
 });
 
-test('project definition resolver locates global across paths', async () => {
-	const { resolveDefinitionLocationForExpression } = await referenceSourcesModulePromise;
-	const { LuaSemanticWorkspace } = await workspaceModulePromise;
-
-	const usageSource = [
-		'function dummy_handler()',
-		'\tprint(state, 10)',
-		'end',
-	].join('\n');
-	const globalSource = [
-		'state = {',
-		'\tvalue = 1',
-		'}',
-		'print(state.value)',
-	].join('\n');
-
-	const workspace = new LuaSemanticWorkspace();
-	workspace.updateFile('usage.lua', usageSource);
-	workspace.updateFile('global.lua', globalSource);
-
-	const usageResource = testLuaResource('usage.lua');
-
-	const usageContext = codeContext(usageResource, usageSource);
-
-	const usageLines = usageSource.split('\n');
-
-	const bridge = createIntellisenseBridge({ 'global.lua': globalSource });
-	const location = resolveDefinitionLocationForExpression(bridge, {
-		expression: 'state',
-		activeContext: usageContext,
-		codeTabContexts: [usageContext],
-		workspace,
-		currentPath: usageResource.path,
-		currentSource: usageSource,
-		currentLines: usageLines,
-	});
-
-	assert.ok(location, 'global definition location resolved');
-	assert.equal(location!.path, 'global.lua');
-	assert.equal(location!.range.startLine, 1);
-	assert.equal(location!.range.startColumn, 1);
-});
-
 test('reference lookup resolves global definition across paths', async () => {
 	const { resolveReferenceLookup } = await referenceNavigationModulePromise;
 	const { LuaSemanticWorkspace, createLuaSemanticFrontendFromSnapshot } = await workspaceModulePromise;
-	const { resetSemanticWorkspace } = await workspaceStateModulePromise;
+	const { resetSemanticProject } = await workspaceStateModulePromise;
 
 	const usageSource = [
 		'function dummy_handler(self)',
@@ -670,7 +684,7 @@ test('reference lookup resolves global definition across paths', async () => {
 	workspace.updateFile('global.lua', globalSource);
 
 	const usageLines = usageSource.split('\n');
-	resetSemanticWorkspace(SYSTEM_RESOURCE_DOMAIN);
+	resetSemanticProject(SYSTEM_RESOURCE_DOMAIN);
 
 	const stateRow = usageLines.findIndex(line => line.includes('print(state'));
 	assert.ok(stateRow >= 0);
@@ -679,7 +693,6 @@ test('reference lookup resolves global definition across paths', async () => {
 
 	const result = resolveReferenceLookup(createIntellisenseBridge({ 'global.lua': globalSource }), {
 		buffer: new PieceTreeBuffer(usageSource),
-		textVersion: 1,
 		cursorRow: stateRow,
 		cursorColumn: stateColumn,
 		identity: { domain: SYSTEM_RESOURCE_DOMAIN, path: 'usage.lua' },
@@ -691,14 +704,17 @@ test('reference lookup resolves global definition across paths', async () => {
 		const symbolInfo = createLuaSemanticFrontendFromSnapshot(workspace.getSnapshot()).findReferencesByPosition('usage.lua', stateRow + 1, stateColumn + 1);
 		assert.ok(symbolInfo);
 		if (symbolInfo) {
-			assert.deepEqual(result.info.definitionKeys, symbolInfo.targets.map(target => target.id));
+			assert.deepEqual(
+				result.info.query.targets.map(target => target.declaration.range),
+				symbolInfo.targets.map(target => target.declaration.range),
+			);
 		}
 	}
 });
 
 test('reference lookup retains all definitions of a value alternative', async () => {
 	const { resolveReferenceLookup } = await referenceNavigationModulePromise;
-	const { resetSemanticWorkspace } = await workspaceStateModulePromise;
+	const { resetSemanticProject } = await workspaceStateModulePromise;
 	const source = [
 		'local left<const> = {}',
 		'function left:run() end',
@@ -712,11 +728,10 @@ test('reference lookup retains all definitions of a value alternative', async ()
 	const lines = source.split('\n');
 	const cursorRow = 7;
 	const cursorColumn = lines[cursorRow]!.indexOf('run');
-	resetSemanticWorkspace(SYSTEM_RESOURCE_DOMAIN);
+	resetSemanticProject(SYSTEM_RESOURCE_DOMAIN);
 
 	const result = resolveReferenceLookup(createIntellisenseBridge(), {
 		buffer: new PieceTreeBuffer(source),
-		textVersion: 1,
 		cursorRow,
 		cursorColumn,
 		identity: { domain: SYSTEM_RESOURCE_DOMAIN, path: 'alternatives.lua' },
@@ -724,7 +739,10 @@ test('reference lookup retains all definitions of a value alternative', async ()
 
 	assert.equal(result.kind, 'success');
 	if (result.kind === 'success') {
-		assert.equal(result.info.definitionKeys.length, 2);
+		assert.deepEqual(
+			result.info.query.targets.map(target => target.declaration.range.start.line),
+			[2, 4],
+		);
 		assert.deepEqual(result.info.matches.map(match => match.row + 1), [2, 4, 6, 7, 8]);
 	}
 });
@@ -732,7 +750,7 @@ test('reference lookup retains all definitions of a value alternative', async ()
 test('reference lookup prefers local parameter over global', async () => {
 	const { resolveReferenceLookup } = await referenceNavigationModulePromise;
 	const { LuaSemanticWorkspace, createLuaSemanticFrontendFromSnapshot } = await workspaceModulePromise;
-	const { resetSemanticWorkspace } = await workspaceStateModulePromise;
+	const { resetSemanticProject } = await workspaceStateModulePromise;
 
 	const globalSource = 'state = {}';
 	const usageSource = [
@@ -748,7 +766,7 @@ test('reference lookup prefers local parameter over global', async () => {
 	workspace.updateFile('global.lua', globalSource);
 
 	const usageLines = usageSource.split('\n');
-	resetSemanticWorkspace(SYSTEM_RESOURCE_DOMAIN);
+	resetSemanticProject(SYSTEM_RESOURCE_DOMAIN);
 
 	const helperLineIndex = usageLines.findIndex(line => line.includes('helper'));
 	assert.ok(helperLineIndex >= 0);
@@ -756,7 +774,6 @@ test('reference lookup prefers local parameter over global', async () => {
 
 	const parameterResult = resolveReferenceLookup(createIntellisenseBridge({ 'global.lua': globalSource }), {
 		buffer: new PieceTreeBuffer(usageSource),
-		textVersion: 1,
 		cursorRow: helperLineIndex,
 		cursorColumn: parameterColumn,
 		identity: { domain: SYSTEM_RESOURCE_DOMAIN, path: 'usage.lua' },
@@ -766,14 +783,18 @@ test('reference lookup prefers local parameter over global', async () => {
 	if (parameterResult.kind === 'success') {
 		const workspaceGlobal = createLuaSemanticFrontendFromSnapshot(workspace.getSnapshot()).findReferencesByPosition('global.lua', 1, 1);
 		if (workspaceGlobal) {
-			assert.notEqual(parameterResult.info.definitionKeys[0], workspaceGlobal.targets[0].id, 'parameter is not resolved as global');
+			assert.notDeepEqual(
+				parameterResult.info.query.targets[0].declaration.range,
+				workspaceGlobal.targets[0].declaration.range,
+				'parameter is not resolved as global',
+			);
 		}
 	}
 });
 
 test('intellisense recognizes global variable from another file', async () => {
 	const { buildLuaSemanticFrontend } = await semanticFrontendModulePromise;
-	const { buildReferenceCatalogForExpression } = await referenceSourcesModulePromise;
+	const { buildReferenceCatalog } = await referenceSourcesModulePromise;
 	const { LuaSemanticWorkspace, createLuaSemanticFrontendFromSnapshot } = await workspaceModulePromise;
 
 	const usageSource = [
@@ -793,16 +814,12 @@ test('intellisense recognizes global variable from another file', async () => {
 	workspace.updateFile('usage.lua', usageSource);
 	workspace.updateFile('global.lua', globalSource);
 
-	const usageResource = testLuaResource('usage.lua');
-
-	const usageContext = codeContext(usageResource, usageSource);
-
 	const usageLines = usageSource.split('\n');
 
-	const bridge = createIntellisenseBridge({ 'global.lua': globalSource });
 	const stateRow = usageLines.findIndex(line => line.includes('print(state'));
 	const stateColumn = usageLines[stateRow]!.indexOf('state');
-	const symbolInfo = createLuaSemanticFrontendFromSnapshot(workspace.getSnapshot()).findReferencesByPosition('usage.lua', stateRow + 1, stateColumn + 1);
+	const snapshot = workspace.getSnapshot();
+	const symbolInfo = createLuaSemanticFrontendFromSnapshot(snapshot).findReferencesByPosition('usage.lua', stateRow + 1, stateColumn + 1);
 	assert.ok(symbolInfo);
 	if (!symbolInfo) {
 		return;
@@ -816,18 +833,14 @@ test('intellisense recognizes global variable from another file', async () => {
 	const info = {
 		matches,
 		expression: 'state',
-		definitionKeys: symbolInfo.targets.map(target => target.id),
-		documentVersion: 1,
+		query: symbolInfo,
+		snapshot,
 	};
 
-	const catalog = buildReferenceCatalogForExpression(bridge, {
-		workspace,
+	const catalog = buildReferenceCatalog({
 		info,
-		source: usageSource,
 		lines: usageLines,
 		path: 'usage.lua',
-		activeContext: usageContext,
-		codeTabContexts: [usageContext],
 	});
 
 	const diagnostics = buildLuaSemanticFrontend(

@@ -1,14 +1,23 @@
-import { createLuaSemanticFrontendFromSnapshot } from './semantic/workspace/index';
+import {
+	createLuaSemanticFrontendFromSnapshot,
+	type LuaSemanticFrontendEnvironment,
+} from './semantic/workspace/index';
 import type { LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
-import { prepareRuntimeSemanticWorkspaceForEditorBuffer } from './semantic/workspace/runtime';
+import { getOrCreateSemanticProject } from './semantic/workspace/state';
 import { getTextSnapshot } from '../../text/source_text';
 import type { TextBuffer } from '../../text/text_buffer';
 import type { ResourceIdentity } from '../../../common/resource';
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
+import type { LuaInterpreter } from '../../../language/lua/interpreter/interpreter';
+import { listLuaBuiltinDescriptors } from '../../../runtime/lua_builtins';
+import type { LuaBuiltinDescriptor } from '../../../../toolchain/ts/lua/semantic_contracts';
 
-export function runtimeSemanticExtraGlobalNames(bridge: RuntimeLuaTooling): string[] {
-	return Array.from(bridge.luaInterpreter.globalEnvironment.keys());
-}
+type RetainedSemanticEnvironment = {
+	readonly builtinDescriptors: readonly LuaBuiltinDescriptor[];
+	readonly environment: LuaSemanticFrontendEnvironment;
+};
+
+const semanticEnvironmentByInterpreter = new WeakMap<LuaInterpreter, RetainedSemanticEnvironment>();
 
 export function buildEditorSemanticSnapshot(
 	bridge: RuntimeLuaTooling,
@@ -16,16 +25,27 @@ export function buildEditorSemanticSnapshot(
 	buffer: TextBuffer,
 ): LuaSemanticWorkspaceSnapshot {
 	const source = getTextSnapshot(buffer);
-	return prepareRuntimeSemanticWorkspaceForEditorBuffer(bridge.sources, identity.domain, {
-		path: identity.path,
-		source,
-	});
+	const project = getOrCreateSemanticProject(identity.domain);
+	project.synchronizeRuntimeSources(bridge.sources);
+	project.updateDocument(identity.path, source);
+	return project.getSnapshot();
 }
 
 export function createEditorSemanticFrontend(bridge: RuntimeLuaTooling, snapshot: LuaSemanticWorkspaceSnapshot): ReturnType<typeof createLuaSemanticFrontendFromSnapshot> {
-	return createLuaSemanticFrontendFromSnapshot(snapshot, {
-		extraGlobalNames: runtimeSemanticExtraGlobalNames(bridge),
-	});
+	const builtinDescriptors = listLuaBuiltinDescriptors();
+	const interpreter = bridge.luaInterpreter;
+	let environment = semanticEnvironmentByInterpreter.get(interpreter);
+	if (!environment || environment.builtinDescriptors !== builtinDescriptors) {
+		environment = {
+			builtinDescriptors,
+			environment: {
+				builtinDescriptors,
+				extraGlobalNames: Array.from(interpreter.globalEnvironment.keys()),
+			},
+		};
+		semanticEnvironmentByInterpreter.set(interpreter, environment);
+	}
+	return createLuaSemanticFrontendFromSnapshot(snapshot, environment.environment);
 }
 
 export function buildEditorSemanticFrontend(

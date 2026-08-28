@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import type { CodeTabContext } from '../../ide/workbench/ui/code_tab/model';
 import { PieceTreeBuffer } from '../../ide/editor/text/piece_tree_buffer';
 import { createLuaSemanticFrontendFromSnapshot, LuaSemanticWorkspace } from '../../ide/editor/contrib/intellisense/semantic/workspace/index';
-import { getOrCreateSemanticWorkspace, resetSemanticWorkspace } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
+import { getOrCreateSemanticProject, resetSemanticProject } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
 import { CrossFileRenameManager } from '../../ide/workbench/contrib/code_editor/rename/operations';
 import { buildCodeTabId, clearCodeTabContexts, registerCodeTabContext } from '../../ide/workbench/ui/code_tab/contexts';
 import { codeTabSessionState } from '../../ide/workbench/ui/code_tab/session_state';
@@ -93,7 +93,7 @@ test('cross file rename updates an existing code tab and semantic workspace', ()
 	tabSessionState.tabs.length = 0;
 	codeTabSessionState.activeContextId = null;
 	tabSessionState.activeTabId = null;
-	resetSemanticWorkspace(SYSTEM_RESOURCE_DOMAIN);
+	resetSemanticProject(SYSTEM_RESOURCE_DOMAIN);
 
 	const usageResource = resolveRuntimeResource(sources, {
 		domain: SYSTEM_RESOURCE_DOMAIN,
@@ -132,7 +132,7 @@ test('cross file rename updates an existing code tab and semantic workspace', ()
 	assert.equal(usageContext.buffer.getText(), 'print(worldState.value)');
 	assert.equal(tabSessionState.tabs[0]!.dirty, true);
 
-	const updatedData = getOrCreateSemanticWorkspace(SYSTEM_RESOURCE_DOMAIN).getFileData('usage.lua');
+	const updatedData = getOrCreateSemanticProject(SYSTEM_RESOURCE_DOMAIN).getFileData('usage.lua');
 	assert.ok(updatedData);
 	assert.equal(updatedData!.source.trim(), 'print(worldState.value)');
 

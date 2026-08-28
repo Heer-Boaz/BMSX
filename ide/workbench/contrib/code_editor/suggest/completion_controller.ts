@@ -4,14 +4,12 @@ import { editorDocumentState } from '../../../../editor/editing/document_state';
 import { editorViewState } from '../../../../editor/ui/view/state';
 import {
 	listGlobalLuaSymbols,
-	listLuaBuiltinFunctions,
 	listLuaSymbols,
 	buildMemberCompletionItems,
-	type LuaScopedSymbol,
 } from '../../../../editor/contrib/intellisense/engine';
+import { listLuaBuiltinDescriptors } from '../../../../runtime/lua_builtins';
 import { getKeywordCompletions } from '../../../../editor/contrib/suggest/keyword_completions';
-import { isReservedMemoryMapName } from '../../../../../toolchain/ts/lua/semantic/common';
-import type { LuaDefinitionInfo, LuaSourceRange } from '../../../../../toolchain/ts/lua/syntax/ast/index';
+import { isReservedMemoryMapName, semanticSymbolKindToLuaSymbolKind } from '../../../../../toolchain/ts/lua/semantic/common';
 import {
 	CompletionContext,
 	CompletionSession,
@@ -21,7 +19,7 @@ import {
 	LuaCompletionKind,
 	ParameterHintState,
 } from '../../../../common/models';
-import type { LuaBuiltinDescriptor, LuaDefinitionRange, LuaSymbolEntry } from '../../../../../toolchain/ts/lua/semantic_contracts';
+import type { LuaBuiltinDescriptor, LuaSymbolEntry } from '../../../../../toolchain/ts/lua/semantic_contracts';
 import { resourceIdentityKey } from '../../../../common/resource';
 import * as constants from '../../../../common/constants';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from '../../../../input/keyboard/key_input';
@@ -35,7 +33,7 @@ import { isActiveLuaCodeTab, isReadOnlyCodeTab } from '../../../ui/code_tab/cont
 import { prepareUndo } from '../../../../editor/editing/undo_controller';
 import { updateDesiredColumn, revealCursor } from '../../../../editor/ui/view/caret/caret';
 import { resetBlink } from '../../../../editor/render/caret';
-import type { FileSemanticData } from '../../../../../toolchain/ts/lua/semantic/model';
+import type { Decl, FileSemanticData } from '../../../../../toolchain/ts/lua/semantic/model';
 import type { ModuleAliasEntry } from '../../../../../toolchain/ts/lua/semantic/module_aliases';
 import { clearSingleCursorSelection, setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../../../editor/editing/cursor/state';
 import type { Runtime } from '../../../../../machine/ts/machine/runtime/runtime';
@@ -50,7 +48,7 @@ import type { RuntimeFaultState } from '../../../../runtime/fault_state';
 type LocalCompletionCacheEntry = {
 	parsedVersion: number;
 	path: string;
-	symbols: LuaScopedSymbol[];
+	declarations: readonly Decl[];
 	moduleAliases: ReadonlyMap<string, ModuleAliasEntry>;
 };
 
@@ -183,9 +181,9 @@ export class CompletionController {
 
 	private completionSession: CompletionSession = null;
 	private readonly localCompletionCache: Map<string, LocalCompletionCacheEntry> = new Map();
+	private cachedGlobalSymbolEntries: readonly LuaSymbolEntry[] = null;
 	private cachedGlobalCompletionItems: LuaCompletionItem[] = null;
-	private cachedGlobalCompletionVersion = -1;
-	private cachedGlobalCompletionDomain = -1;
+	private cachedGlobalCompletionGeneration = 0;
 	private sharedCompletionItems: LuaCompletionItem[] = null;
 	private sharedCompletionVersion = -1;
 	private pendingCompletionRequest: { context: CompletionContext; trigger: CompletionTrigger; elapsed: number } = null;
@@ -196,7 +194,7 @@ export class CompletionController {
 	private parameterHintIdleElapsed = 0;
 	private lastCursorPosition: { row: number; column: number } = null;
 	private lastTextVersion = -1;
-	private builtinDescriptors: LuaBuiltinDescriptor[] = null;
+	private builtinDescriptors: readonly LuaBuiltinDescriptor[] = null;
 	private readonly builtinDescriptorMap: Map<string, LuaBuiltinDescriptor> = new Map();
 	public popupBounds: { left: number; top: number; right: number; bottom: number } | null = null;
 	public enterCommitsCompletion = false;
@@ -540,8 +538,9 @@ export class CompletionController {
 	}
 
 	private getSharedCompletionEntries(): LuaCompletionItem[] {
+		this.ensureBuiltinDescriptorCache();
 		const globalItems = this.getGlobalCompletionItems();
-		const version = this.cachedGlobalCompletionVersion;
+		const version = this.cachedGlobalCompletionGeneration;
 		if (!this.sharedCompletionItems || this.sharedCompletionVersion !== version) {
 			const items: LuaCompletionItem[] = [];
 			for (let i = 0; i < KEYWORD_COMPLETION_ITEMS.length; i += 1) {
@@ -620,7 +619,7 @@ export class CompletionController {
 		const buffer = this.getBuffer();
 		const lineCount = buffer.getLineCount();
 		const lastLine = buffer.getLineContent(lineCount - 1);
-		const filtered = this.filterLocalSymbolsAtPosition(cached.symbols, lineCount, lastLine.length, context.row, column);
+		const filtered = this.filterLocalDeclarationsAtPosition(cached.declarations, lineCount, lastLine.length, context.row, column);
 		if (filtered.length === 0) {
 			return [];
 		}
@@ -640,8 +639,6 @@ export class CompletionController {
 		if (!semanticData) {
 			return cached;
 		}
-		const definitions = semanticData.model.definitions;
-		const symbols = definitions.length > 0 ? this.convertDefinitionsToLocalSymbols(definitions) : [];
 		let moduleAliases = EMPTY_MODULE_ALIASES;
 		if (semanticData.moduleAliases.length > 0) {
 			const aliases = new Map<string, ModuleAliasEntry>();
@@ -654,7 +651,7 @@ export class CompletionController {
 		const updated: LocalCompletionCacheEntry = {
 			parsedVersion: currentVersion,
 			path,
-			symbols,
+			declarations: semanticData.decls,
 			moduleAliases,
 		};
 		this.localCompletionCache.set(key, updated);
@@ -662,31 +659,26 @@ export class CompletionController {
 	}
 
 	private getGlobalCompletionItems(): LuaCompletionItem[] {
-		const version = this.getTextVersion();
-		const domain = this.getActiveDomain();
-		if (this.cachedGlobalCompletionItems
-			&& this.cachedGlobalCompletionVersion === version
-			&& this.cachedGlobalCompletionDomain === domain) {
+		const entries = listGlobalLuaSymbols(this.bridge, this.getActiveDomain());
+		if (this.cachedGlobalCompletionItems && this.cachedGlobalSymbolEntries === entries) {
 			return this.cachedGlobalCompletionItems;
 		}
-		const entries = listGlobalLuaSymbols(this.bridge, domain);
 		const items = this.buildSymbolCompletionItems(entries, 'global');
 		items.sort((a, b) => a.label.localeCompare(b.label));
+		this.cachedGlobalSymbolEntries = entries;
 		this.cachedGlobalCompletionItems = items;
-		this.cachedGlobalCompletionVersion = version;
-		this.cachedGlobalCompletionDomain = domain;
+		this.cachedGlobalCompletionGeneration += 1;
 		this.sharedCompletionItems = null;
 		this.sharedCompletionVersion = -1;
 		return items;
 	}
 
 	private getBuiltinCompletionItems(): LuaCompletionItem[] {
-		this.ensureBuiltinDescriptorCache();
 		const items: LuaCompletionItem[] = [];
 		for (const descriptor of this.builtinDescriptorMap.values()) {
 			const label = descriptor.name;
 			const insertText = isReservedMemoryMapName(label) ? `${label}[]` : label;
-			const params = Array.isArray(descriptor.params) ? descriptor.params.slice() : [];
+			const params = descriptor.params.slice();
 			const baseDetail = descriptor.signature && descriptor.signature.length > 0 ? descriptor.signature : 'Lua builtin';
 			const detail = descriptor.description && descriptor.description.length > 0 ? `${baseDetail} • ${descriptor.description}` : baseDetail;
 			items.push({ label, insertText, sortKey: `builtin:${label}`, kind: 'builtin', detail, parameters: params });
@@ -714,45 +706,13 @@ export class CompletionController {
 		return items;
 	}
 
-	private convertDefinitionsToLocalSymbols(definitions: readonly LuaDefinitionInfo[]): LuaScopedSymbol[] {
-		if (!definitions || definitions.length === 0) {
-			return [];
-		}
-		const scopedSymbols: LuaScopedSymbol[] = [];
-		for (let index = 0; index < definitions.length; index += 1) {
-			const definition = definitions[index];
-			const name = definition.name;
-			if (!name || name.length === 0) {
-				continue;
-			}
-			const path = definition.namePath.length > 0 ? definition.namePath.join('.') : name;
-			scopedSymbols.push({
-				name,
-				path,
-				kind: definition.kind,
-				definitionRange: this.convertSourceRange(definition.definition),
-				scopeRange: this.convertSourceRange(definition.scope),
-			});
-		}
-		return scopedSymbols;
-	}
-
-	private convertSourceRange(range: LuaSourceRange): LuaDefinitionRange {
-		return {
-			startLine: range.start.line,
-			startColumn: range.start.column,
-			endLine: range.end.line,
-			endColumn: range.end.column,
-		};
-	}
-
-	private filterLocalSymbolsAtPosition(symbols: readonly LuaScopedSymbol[], lineCount: number, lastLineLength: number, row: number, column: number): LuaScopedSymbol[] {
-		if (symbols.length === 0) return [];
+	private filterLocalDeclarationsAtPosition(declarations: readonly Decl[], lineCount: number, lastLineLength: number, row: number, column: number): Decl[] {
+		if (declarations.length === 0) return [];
 		const row1Based = row + 1;
 		const column1Based = column + 1;
 		let semanticEndLine = 0;
-		for (let index = 0; index < symbols.length; index += 1) {
-			const scopeEndLine = symbols[index].scopeRange.endLine;
+		for (let index = 0; index < declarations.length; index += 1) {
+			const scopeEndLine = declarations[index].scope.end.line;
 			if (scopeEndLine > semanticEndLine) {
 				semanticEndLine = scopeEndLine;
 			}
@@ -760,52 +720,52 @@ export class CompletionController {
 		const documentEndLine = lineCount;
 		const scopeEndExtendsToDocument = semanticEndLine < documentEndLine;
 		const documentEndColumn = lastLineLength + 1;
-		const selected = new Map<string, LuaScopedSymbol>();
-		for (let index = 0; index < symbols.length; index += 1) {
-			const symbol = symbols[index];
-			if (!this.isLocalDefinitionKind(symbol.kind)) {
+		const selected = new Map<string, Decl>();
+		for (let index = 0; index < declarations.length; index += 1) {
+			const declaration = declarations[index];
+			if (!this.isLocalCompletionDeclaration(declaration)) {
 				continue;
 			}
-			const scopeRange = symbol.scopeRange;
-			if (!scopeEndExtendsToDocument || scopeRange.endLine !== semanticEndLine) {
+			const scopeRange = declaration.scope;
+			if (!scopeEndExtendsToDocument || scopeRange.end.line !== semanticEndLine) {
 				if (!this.isPositionWithinRange(row1Based, column1Based, scopeRange)) {
 					continue;
 				}
 			} else {
-				if (row1Based < scopeRange.startLine || row1Based > documentEndLine) {
+				if (row1Based < scopeRange.start.line || row1Based > documentEndLine) {
 					continue;
 				}
-				if (row1Based === scopeRange.startLine && column1Based < scopeRange.startColumn) {
+				if (row1Based === scopeRange.start.line && column1Based < scopeRange.start.column) {
 					continue;
 				}
 				if (row1Based === documentEndLine && column1Based > documentEndColumn) {
 					continue;
 				}
 			}
-			if (!this.isDefinitionBeforePosition(symbol.definitionRange, row1Based, column1Based)) {
+			if (!this.isDefinitionBeforePosition(declaration.range, row1Based, column1Based)) {
 				continue;
 			}
-			const existing = selected.get(symbol.name);
-			if (!existing || this.definitionOccursAfter(symbol.definitionRange, existing.definitionRange)) {
-				selected.set(symbol.name, symbol);
+			const existing = selected.get(declaration.name);
+			if (!existing || this.definitionOccursAfter(declaration.range, existing.range)) {
+				selected.set(declaration.name, declaration);
 			}
 		}
 		return Array.from(selected.values());
 	}
 
-	private buildLocalCompletionItems(symbols: readonly LuaScopedSymbol[], pathLabel: string): LuaCompletionItem[] {
+	private buildLocalCompletionItems(symbols: readonly Decl[], pathLabel: string): LuaCompletionItem[] {
 		const items: LuaCompletionItem[] = [];
 		for (let index = 0; index < symbols.length; index += 1) {
 			const symbol = symbols[index];
 			const label = symbol.name;
-			const kindLabel = this.formatSymbolKind(symbol.kind as LuaSymbolEntry['kind']);
+			const kindLabel = this.formatSymbolKind(semanticSymbolKindToLuaSymbolKind(symbol.kind));
 			const detailParts: string[] = [kindLabel];
 			if (pathLabel && pathLabel.length > 0) {
 				detailParts.push(pathLabel);
 			}
-			detailParts.push(`line ${symbol.definitionRange.startLine}`);
+			detailParts.push(`line ${symbol.range.start.line}`);
 			const detail = detailParts.join(' • ');
-			const sortKey = `local:${symbol.definitionRange.startLine.toString().padStart(6, '0')}:${label}`;
+			const sortKey = `local:${symbol.range.start.line.toString().padStart(6, '0')}:${label}`;
 			items.push({ label, insertText: label, sortKey, kind: 'local', detail });
 		}
 		items.sort((a, b) => a.label.localeCompare(b.label));
@@ -888,50 +848,51 @@ export class CompletionController {
 		return `require('${escaped}').${memberPath.join('.')}`;
 	}
 
-	private isLocalDefinitionKind(kind: LuaScopedSymbol['kind']): boolean {
+	private isLocalCompletionDeclaration(declaration: Decl): boolean {
+		const kind = semanticSymbolKindToLuaSymbolKind(declaration.kind);
 		return kind === 'variable' || kind === 'constant' || kind === 'function' || kind === 'parameter';
 	}
 
-	private isPositionWithinRange(row: number, column: number, range: LuaDefinitionRange): boolean {
-		if (row < range.startLine || row > range.endLine) {
+	private isPositionWithinRange(row: number, column: number, range: Decl['scope']): boolean {
+		if (row < range.start.line || row > range.end.line) {
 			return false;
 		}
-		if (row === range.startLine && column < range.startColumn) {
+		if (row === range.start.line && column < range.start.column) {
 			return false;
 		}
-		if (row === range.endLine && column > range.endColumn) {
+		if (row === range.end.line && column > range.end.column) {
 			return false;
 		}
 		return true;
 	}
 
-	private isDefinitionBeforePosition(range: LuaDefinitionRange, row: number, column: number): boolean {
-		if (row < range.startLine) {
+	private isDefinitionBeforePosition(range: Decl['range'], row: number, column: number): boolean {
+		if (row < range.start.line) {
 			return false;
 		}
-		if (row > range.endLine) {
+		if (row > range.end.line) {
 			return true;
 		}
-		if (row === range.endLine) {
-			return column > range.endColumn;
+		if (row === range.end.line) {
+			return column > range.end.column;
 		}
-		if (row === range.startLine) {
-			return column > range.endColumn;
+		if (row === range.start.line) {
+			return column > range.end.column;
 		}
 		return true;
 	}
 
-	private definitionOccursAfter(candidate: LuaDefinitionRange, other: LuaDefinitionRange): boolean {
-		if (candidate.startLine !== other.startLine) {
-			return candidate.startLine > other.startLine;
+	private definitionOccursAfter(candidate: Decl['range'], other: Decl['range']): boolean {
+		if (candidate.start.line !== other.start.line) {
+			return candidate.start.line > other.start.line;
 		}
-		if (candidate.startColumn !== other.startColumn) {
-			return candidate.startColumn > other.startColumn;
+		if (candidate.start.column !== other.start.column) {
+			return candidate.start.column > other.start.column;
 		}
-		if (candidate.endLine !== other.endLine) {
-			return candidate.endLine > other.endLine;
+		if (candidate.end.line !== other.end.line) {
+			return candidate.end.line > other.end.line;
 		}
-		return candidate.endColumn > other.endColumn;
+		return candidate.end.column > other.end.column;
 	}
 
 	private isIdentifierTriggerPrefix(prefix: string): boolean {
@@ -954,32 +915,16 @@ export class CompletionController {
 		}
 	}
 
-	private ensureBuiltinDescriptorCache(force = false): void {
-		if (!force && this.builtinDescriptors !== null) return;
-		let descriptors: LuaBuiltinDescriptor[];
-		try { descriptors = listLuaBuiltinFunctions(); } catch { descriptors = []; }
-		if (!Array.isArray(descriptors)) descriptors = [];
+	private ensureBuiltinDescriptorCache(): void {
+		const descriptors = listLuaBuiltinDescriptors();
+		if (this.builtinDescriptors === descriptors) return;
 		this.builtinDescriptors = descriptors;
 		this.builtinDescriptorMap.clear();
 		this.sharedCompletionItems = null;
-		const registerDescriptor = (descriptor: LuaBuiltinDescriptor): void => {
-			if (!descriptor || typeof descriptor.name !== 'string') return;
-			const normalized = descriptor.name.trim();
-			if (normalized.length === 0) return;
-			const params = Array.isArray(descriptor.params) ? descriptor.params.slice() : [];
-			const signature = descriptor.signature && descriptor.signature.length > 0 ? descriptor.signature : normalized;
-			const optionalParams = Array.isArray(descriptor.optionalParams) ? descriptor.optionalParams.slice() : undefined;
-			const entry: LuaBuiltinDescriptor = {
-				name: normalized,
-				params,
-				signature,
-				optionalParams,
-				parameterDescriptions: descriptor.parameterDescriptions ? descriptor.parameterDescriptions.slice() : undefined,
-				description: descriptor.description ,
-			};
-			this.builtinDescriptorMap.set(normalized, entry);
-		};
-		for (let i = 0; i < descriptors.length; i += 1) registerDescriptor(descriptors[i]);
+		for (let index = 0; index < descriptors.length; index += 1) {
+			const descriptor = descriptors[index];
+			this.builtinDescriptorMap.set(descriptor.name, descriptor);
+		}
 	}
 
 	private findBuiltinDescriptor(objectName: string, methodName: string): LuaBuiltinDescriptor {
@@ -989,24 +934,12 @@ export class CompletionController {
 			const compositeKey = `${objectName}.${methodKey}`;
 			const composite = this.builtinDescriptorMap.get(compositeKey);
 			if (composite) {
-				return {
-					name: composite.name,
-					params: composite.params.slice(),
-					signature: composite.signature,
-					optionalParams: composite.optionalParams ? composite.optionalParams.slice() : undefined,
-					description: composite.description ,
-				};
+				return composite;
 			}
 		}
 		const direct = this.builtinDescriptorMap.get(methodKey);
 		if (direct) {
-			return {
-				name: direct.name,
-				params: direct.params.slice(),
-				signature: direct.signature,
-				optionalParams: direct.optionalParams ? direct.optionalParams.slice() : undefined,
-				description: direct.description ,
-			};
+			return direct;
 		}
 		return null;
 	}
@@ -1380,7 +1313,7 @@ export class CompletionController {
 
 		const builtin = this.findBuiltinDescriptor(objectName, methodName);
 		if (builtin) {
-			const params = Array.isArray(builtin.params) ? builtin.params.slice() : [];
+			const params = builtin.params.slice();
 			return {
 				methodName: builtin.name,
 				params,
@@ -1388,9 +1321,7 @@ export class CompletionController {
 				anchorRow: safeRow,
 				anchorColumn: lastOpen,
 				argumentIndex: clamp(argumentIndex, 0, params.length - 1),
-				paramDescriptions: Array.isArray(builtin.parameterDescriptions)
-					? builtin.parameterDescriptions.slice()
-					: undefined,
+				paramDescriptions: builtin.parameterDescriptions,
 				methodDescription: builtin.description ,
 			};
 		}

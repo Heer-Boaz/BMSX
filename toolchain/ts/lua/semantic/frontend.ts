@@ -18,7 +18,6 @@ import {
 	type LuaStaticDiagnostic,
 } from './diagnostics';
 import { compareSourcePosition, sourcePositionInRange, sourceRangeKey, sourceRangeStartKey } from './source_range';
-import { semanticNamePathMatches } from './symbols';
 import { buildLuaKnownNameSet, isReservedIntrinsicName, isReservedMemoryMapName, semanticSymbolKindToLuaSymbolKind } from './common';
 
 export type LuaSemanticFrontendSource = {
@@ -111,7 +110,6 @@ export type LuaSemanticFrontend = {
 	snapshot: LuaSemanticWorkspaceSnapshot;
 	filePaths: readonly string[];
 	getFile(path: string): LuaSemanticFrontendFile;
-	findDeclarationsByNamePath(namePath: readonly string[]): readonly Decl[];
 	findSymbolsByPosition(path: string, line: number, column: number): LuaSemanticPositionSymbols | null;
 	findReferencesByPosition(path: string, line: number, column: number): LuaSemanticReferenceQuery | null;
 	provideIncomingCalls(
@@ -193,57 +191,12 @@ class SnapshotSemanticFrontend implements LuaSemanticFrontend {
 		return file;
 	}
 
-	public findDeclarationsByNamePath(namePath: readonly string[]): readonly Decl[] {
-		const matches: Decl[] = [];
-		for (let index = 0; index < this.snapshot.sources.length; index += 1) {
-			const fileDecls = this.snapshot.sources[index].analysis.decls;
-			for (let declIndex = 0; declIndex < fileDecls.length; declIndex += 1) {
-				const decl = fileDecls[declIndex];
-				if (semanticNamePathMatches(decl.namePath, namePath)) {
-					matches.push(decl);
-				}
-			}
-		}
-		return matches;
-	}
-
 	public findSymbolsByPosition(path: string, line: number, column: number): LuaSemanticPositionSymbols | null {
 		const source = this.sourcesByPath.get(path);
 		if (!source) {
 			return null;
 		}
-		for (let index = 0; index < source.analysis.decls.length; index += 1) {
-			const decl = source.analysis.decls[index];
-			if (sourcePositionInRange(line, column, decl.range)) {
-				return {
-					origin: decl.range,
-					targets: [{ id: decl.id, declaration: decl }],
-				};
-			}
-		}
-		for (let index = 0; index < source.analysis.refs.length; index += 1) {
-			const ref = source.analysis.refs[index];
-			if (!sourcePositionInRange(line, column, ref.range)) {
-				continue;
-			}
-			const targetIds = this.snapshot.symbolResolver.resolveReferenceTargets(ref);
-			if (targetIds.length === 0) {
-				continue;
-			}
-			const targets = new Array<LuaSemanticPositionTarget>(targetIds.length);
-			for (let targetIndex = 0; targetIndex < targetIds.length; targetIndex += 1) {
-				const targetId = targetIds[targetIndex];
-				targets[targetIndex] = {
-					id: targetId,
-					declaration: this.snapshot.symbolResolver.getDeclaration(targetId),
-				};
-			}
-			return {
-				origin: ref.range,
-				targets,
-			};
-		}
-		return null;
+		return findPositionSymbols(source, this.snapshot, line, column);
 	}
 
 	public findReferencesByPosition(path: string, line: number, column: number): LuaSemanticReferenceQuery | null {
@@ -396,32 +349,16 @@ function createBoundFile(
 			return ref ? bindReference(ref) : undefined;
 		},
 		getNavigationTargetsAt(line: number, column: number): readonly LuaSemanticNavigationTarget[] {
-			for (let index = 0; index < decls.length; index += 1) {
-				const decl = decls[index];
-				if (sourcePositionInRange(line, column, decl.range)) {
-					return [{
+			const symbols = findPositionSymbols(source, snapshot, line, column);
+			if (symbols) {
+				const targets = new Array<LuaSemanticNavigationTarget>(symbols.targets.length);
+				for (let index = 0; index < symbols.targets.length; index += 1) {
+					const declaration = symbols.targets[index].declaration;
+					targets[index] = {
 						kind: 'declaration',
-						declaration: decl,
-						range: decl.range,
-					}];
-				}
-			}
-			for (let index = 0; index < refsByStart.length; index += 1) {
-				const ref = refsByStart[index];
-				if (!sourcePositionInRange(line, column, ref.range)) {
-					continue;
-				}
-				const targetIds = snapshot.symbolResolver.resolveReferenceTargets(ref);
-				const targets: LuaSemanticNavigationTarget[] = [];
-				for (let targetIndex = 0; targetIndex < targetIds.length; targetIndex += 1) {
-					const declaration = snapshot.symbolResolver.getDeclaration(targetIds[targetIndex]);
-					if (declaration) {
-						targets.push({
-							kind: 'declaration',
-							declaration,
-							range: declaration.range,
-						});
-					}
+						declaration,
+						range: declaration.range,
+					};
 				}
 				return targets;
 			}
@@ -455,6 +392,48 @@ function createBoundFile(
 			return startIndex < endIndex ? bindReference(refsByStart[endIndex - 1]) : null;
 		},
 	};
+}
+
+function findPositionSymbols(
+	source: LuaSemanticWorkspaceSourceSnapshot,
+	snapshot: LuaSemanticWorkspaceSnapshot,
+	line: number,
+	column: number,
+): LuaSemanticPositionSymbols | null {
+	const decls = source.analysis.decls;
+	for (let index = 0; index < decls.length; index += 1) {
+		const decl = decls[index];
+		if (sourcePositionInRange(line, column, decl.range)) {
+			return {
+				origin: decl.range,
+				targets: [{ id: decl.id, declaration: decl }],
+			};
+		}
+	}
+	const refs = source.analysis.refs;
+	for (let index = 0; index < refs.length; index += 1) {
+		const ref = refs[index];
+		if (!sourcePositionInRange(line, column, ref.range)) {
+			continue;
+		}
+		const targetIds = snapshot.symbolResolver.resolveReferenceTargets(ref);
+		if (targetIds.length === 0) {
+			continue;
+		}
+		const targets = new Array<LuaSemanticPositionTarget>(targetIds.length);
+		for (let targetIndex = 0; targetIndex < targetIds.length; targetIndex += 1) {
+			const targetId = targetIds[targetIndex];
+			targets[targetIndex] = {
+				id: targetId,
+				declaration: snapshot.symbolResolver.getDeclaration(targetId),
+			};
+		}
+		return {
+			origin: ref.range,
+			targets,
+		};
+	}
+	return null;
 }
 
 type LuaRequireNavigationTarget = {

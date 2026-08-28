@@ -309,15 +309,18 @@ test('LuaSemanticFrontend can build from immutable analysis snapshots without re
 
 test('workspace semantic frontends are cached per version and remain immutable across updates', () => {
 	const workspace = new LuaSemanticWorkspace();
-	workspace.updateFile('main.lua', [
+	const initialSource = [
 		'local value = 1',
 		'return value',
-	].join('\n'));
+	].join('\n');
+	workspace.updateFile('main.lua', initialSource);
 	const firstSnapshot = workspace.getSnapshot();
 	const first = createLuaSemanticFrontendFromSnapshot(firstSnapshot);
 	const firstAgain = createLuaSemanticFrontendFromSnapshot(firstSnapshot);
 	assert.equal(first.snapshot, firstSnapshot, 'frontend retains the prepared workspace program');
 	assert.equal(first, firstAgain);
+	workspace.updateFile('main.lua', initialSource);
+	assert.equal(workspace.getSnapshot(), firstSnapshot, 'unchanged source retains the program generation');
 	const oldTarget = firstNavigationTarget(first.getFile('main.lua'), 2, 8);
 	assert.ok(oldTarget);
 	assert.deepEqual(oldTarget.range, {
@@ -346,6 +349,19 @@ test('workspace semantic frontends are cached per version and remain immutable a
 		start: { line: 1, column: 7 },
 		end: { line: 1, column: 12 },
 	});
+});
+
+test('workspace semantic frontend cache follows retained environment identity', () => {
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('main.lua', 'return host_value');
+	const snapshot = workspace.getSnapshot();
+	const environment = { extraGlobalNames: ['host_value'] };
+	const first = createLuaSemanticFrontendFromSnapshot(snapshot, environment);
+	assert.equal(createLuaSemanticFrontendFromSnapshot(snapshot, environment), first);
+	assert.notEqual(
+		createLuaSemanticFrontendFromSnapshot(snapshot, { extraGlobalNames: ['host_value'] }),
+		first,
+	);
 });
 
 test('workspace publishes immutable semantic snapshots per version', () => {

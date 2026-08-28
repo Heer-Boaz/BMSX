@@ -47,7 +47,7 @@ import {
 } from './runtime_error/navigation';
 import { clearGotoHoverHighlight, clearNativeMemberCompletionCache } from './editor/contrib/intellisense/engine';
 import { referenceState } from './editor/contrib/references/state';
-import { resetSemanticWorkspaces } from './editor/contrib/intellisense/semantic/workspace/state';
+import { resetSemanticProjects } from './editor/contrib/intellisense/semantic/workspace/state';
 import { editorDocumentState } from './editor/editing/document_state';
 import { clearSingleCursorSelection } from './editor/editing/cursor/state';
 import { editorDiagnosticsState } from './editor/contrib/diagnostics/state';
@@ -630,7 +630,7 @@ export class RuntimeCartEditor implements CartEditor {
 		setEditorCaseInsensitivity(editorRuntimeState.uppercaseDisplay);
 		editorDocumentState.preMutationSource = null;
 		applyViewportSize(viewport);
-		resetSemanticWorkspaces();
+		resetSemanticProjects();
 		editorViewState.scrollbars = {
 			codeVertical: new Scrollbar('codeVertical', 'vertical'),
 			codeHorizontal: new Scrollbar('codeHorizontal', 'horizontal'),
