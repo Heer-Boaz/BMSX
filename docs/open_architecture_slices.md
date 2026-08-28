@@ -76,6 +76,7 @@ vervangt de hieronder genoemde fysieke SNES Mini-validatie niet.
 | ID | Opdracht | Klaar wanneer |
 | --- | --- | --- |
 | `PERF-RUNTIME-01` | Kies per iteratie één gemeten hot-pathowner en verwijder daar herhaalde decode, conversie, validatie, allocatie of dispatch bij de producer. Dit is een paraplu, geen enkele megaslice. | Analyzers blokkeren nieuwe overtredingen, parity blijft exact en representatieve low-end hardware houdt 50 Hz zonder oplopende backlog. |
+| `IDE-SEMANTIC-01` | Vervang de workspacebrede value-flow-solve bij de eerste werkelijk dynamische memberquery door bronknoop-/bestandsgebonden demand analysis. Directe moduleleden en globals zonder bronproducer blijven in de statische index; call-, parameter-, metatable- en table-flow blijven generieke Lua-semantiek. | Een dynamische query materialiseert geen ongerelateerde bestanden of functiecontexten. Een edit hergebruikt uitsluitend semantische knopen met stabiele identiteit en invalideert hun echte reverse dependencies; positiegebonden symbol- of owned-value-id's worden niet blind tussen snapshots hergebruikt. Alle bestaande generieke value-flowtargets blijven exact gelijk en er komt geen cartlib-, firmware- of frameworkkennis in de taallaag. |
 
 Houd throughput en fysieke pacing als twee afzonderlijke metingen. De
 `profile:libretro-particle-benchmark-offscreen-wsl`-opdracht eindigt op de
