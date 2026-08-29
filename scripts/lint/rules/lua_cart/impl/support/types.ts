@@ -1,5 +1,5 @@
 import { type LuaCallExpression as CallExpression, type LuaExpression as Expression, type LuaIdentifierExpression as IdentifierExpression } from '../../../../../../toolchain/ts/lua/syntax/ast';
-import type { ModuleAliasTarget } from '../../../../../../toolchain/ts/lua/semantic/module_aliases';
+import type { ModuleAliasTarget } from '../../../../../../toolchain/ts/lua/semantic/module_bindings';
 import { type CartLintIssue } from '../../../../lua_rule';
 import { type LintRuleName } from '../../../../rule';
 

@@ -326,6 +326,45 @@ test('LuaSemanticFrontend resolves require strings to their target module files'
 	});
 });
 
+test('LuaSemanticFrontend navigates only calls bound to the builtin require', () => {
+	const entrySource = [
+		'require("lib/util")',
+		'local function load(require)',
+		'\treturn require("lib/util")',
+		'end',
+		'require = function(name)',
+		'\treturn name',
+		'end',
+		'local util<const> = require("lib/util")',
+	].join('\n');
+	const frontend = buildLuaSemanticFrontend([
+		{ path: 'main.lua', source: entrySource },
+		{ path: 'lib/util.lua', source: 'return {}' },
+	]);
+	const source = frontend.snapshot.getFileData('main.lua');
+	assert.ok(source);
+	assert.equal(source.moduleReferences.length, 1);
+	assert.equal(source.moduleReferences[0].value, 'lib/util');
+	assert.deepEqual(source.moduleReferences[0].range, {
+		path: 'main.lua',
+		start: { line: 1, column: 9 },
+		end: { line: 1, column: 18 },
+	});
+
+	const builtinPosition = findPosition(entrySource, 'require("lib/util")', 'lib/util');
+	const shadowedPosition = findPosition(entrySource, '\treturn require("lib/util")', 'lib/util');
+	const assignedPosition = findPosition(entrySource, 'local util<const> = require("lib/util")', 'lib/util');
+	assert.ok(frontend.getFile('main.lua').findNavigationAt(builtinPosition.line, builtinPosition.column));
+	assert.equal(
+		frontend.getFile('main.lua').findNavigationAt(shadowedPosition.line, shadowedPosition.column),
+		null,
+	);
+	assert.equal(
+		frontend.getFile('main.lua').findNavigationAt(assignedPosition.line, assignedPosition.column),
+		null,
+	);
+});
+
 test('LuaSemanticFrontend can build from immutable analysis snapshots without reparsing source state', () => {
 	const workspace = new LuaSemanticWorkspace();
 	const mainSource = [

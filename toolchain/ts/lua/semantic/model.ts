@@ -23,6 +23,7 @@ import {
 	type LuaFunctionDeclarationStatement,
 	type LuaFunctionName,
 	type LuaSourceRange,
+	type LuaStringLiteralExpression,
 } from '../syntax/ast';
 import type { LuaSymbolEntry } from '../semantic_contracts';
 import type { ParsedLuaChunk } from '../analysis/parse';
@@ -35,10 +36,11 @@ import { methodPathToPropertyPath } from './common';
 import { toLuaModulePath } from '../module_path';
 import { LUA_BUILTIN_TABLE_ITERATOR_ARGUMENTS } from '../builtin_descriptors';
 import {
-	resolveModuleAliasInitializer,
+	resolveBuiltinRequireArgument,
+	resolveModuleAliasValueSource,
 	type ModuleAliasEntry,
 	type ModuleAliasTarget,
-} from './module_aliases';
+} from './module_bindings';
 import {
 	appendValueElement,
 	appendValueIndex,
@@ -119,6 +121,7 @@ export type FileSemanticData = {
 	readonly referencesBySyntax: ReadonlyMap<LuaIdentifierExpression, Ref>;
 	readonly referencesByName: ReadonlyMap<string, readonly Ref[]>;
 	readonly moduleAliases: readonly ModuleAliasEntry[];
+	readonly moduleReferences: readonly LuaStringLiteralExpression[];
 	readonly callExpressions: readonly LuaCallExpression[];
 	readonly functionSignatures: ReadonlyMap<string, FunctionSignatureInfo>;
 	readonly declarationValues: readonly DeclarationValueEntry[];
@@ -288,6 +291,7 @@ type SemanticBuildResult = {
 	callValues: CallValueEntry[];
 	valueAssignments: ValueAssignmentEntry[];
 	moduleAliases: ModuleAliasEntry[];
+	moduleReferences: LuaStringLiteralExpression[];
 };
 
 export function buildLuaFileSemanticData(
@@ -324,6 +328,7 @@ export function buildLuaFileSemanticData(
 		referencesBySyntax: result.referencesBySyntax,
 		referencesByName: result.referencesByName,
 		moduleAliases: result.moduleAliases,
+		moduleReferences: result.moduleReferences,
 		callExpressions: result.callExpressions,
 		functionSignatures: result.functionSignatures,
 		declarationValues: result.declarationValues,
@@ -545,6 +550,7 @@ class SemanticBuilder {
 	private readonly declarationIdsBySyntax: Map<LuaIdentifierExpression, SymbolID> = new Map();
 	private readonly referencesBySyntax: Map<LuaIdentifierExpression, Ref> = new Map();
 	private readonly referencesByName: Map<string, Ref[]> = new Map();
+	private readonly moduleReferences: LuaStringLiteralExpression[] = [];
 	private readonly callExpressions: LuaCallExpression[] = [];
 	private readonly functionSignatures: Map<string, FunctionSignatureInfo> = new Map();
 	private readonly methodSelfPathStack: (readonly string[] | undefined)[] = [];
@@ -562,7 +568,6 @@ class SemanticBuilder {
 	private readonly moduleAliasesByName: Map<string, ModuleAliasEntry> = new Map();
 	private readonly functionReturnValueStack: FunctionReturnValueState[] = [];
 	private readonly functionValueFlowStack: FunctionValueFlowState[] = [];
-	private readonly moduleAliasLookup = (name: string): ModuleAliasTarget => this.moduleAliasForName(name);
 	private nextScopeId = 1;
 
 	constructor(options: {
@@ -609,6 +614,7 @@ class SemanticBuilder {
 			callValues: this.callValues,
 			valueAssignments: this.valueAssignments,
 			moduleAliases: Array.from(this.moduleAliasesByName.values()),
+			moduleReferences: this.moduleReferences,
 		};
 	}
 
@@ -657,14 +663,12 @@ class SemanticBuilder {
 					if (targetDecl) {
 						this.setDeclarationValue(targetDecl, valueInfo?.valueSource);
 					}
-				}
-				for (let index = 0; index < pending.length; index += 1) {
-					if (index >= localAssignment.values.length) {
-						continue;
+					if (index < pending.length) {
+						this.setModuleAlias(
+							pending[index],
+							resolveModuleAliasValueSource(valueInfo?.valueSource, this.moduleAliasesByDeclId),
+						);
 					}
-					const initializer = localAssignment.values[index];
-					const decl = pending[index];
-					this.setModuleAlias(decl, this.resolveModuleAliasInitializer(initializer, this.moduleAliasLookup));
 				}
 				for (let index = 0; index < pending.length; index += 1) {
 					if (index >= localAssignment.values.length) {
@@ -799,19 +803,16 @@ class SemanticBuilder {
 					if (targetInfo?.decl) {
 						this.setDeclarationValue(targetInfo.decl, valueInfo?.valueSource);
 					}
+					if (index < assignment.left.length
+						&& assignment.left[index].kind === LuaSyntaxKind.IdentifierExpression) {
+						targetInfo.moduleAlias = resolveModuleAliasValueSource(
+							valueInfo?.valueSource,
+							this.moduleAliasesByDeclId,
+						);
+					}
 					if (targetInfo?.valueTarget && valueInfo?.valueSource) {
 						this.recordValueFlow(targetInfo.valueTarget, valueInfo.valueSource, 'value');
 					}
-				}
-				for (let index = 0; index < assignment.left.length; index += 1) {
-					const target = assignment.left[index];
-					if (target.kind !== LuaSyntaxKind.IdentifierExpression || index >= assignment.right.length) {
-						continue;
-					}
-					targets[index].moduleAlias = this.resolveModuleAliasInitializer(
-						assignment.right[index],
-						this.moduleAliasLookup,
-					);
 				}
 				for (let index = 0; index < assignment.left.length; index += 1) {
 					const target = assignment.left[index];
@@ -1008,6 +1009,13 @@ class SemanticBuilder {
 				const calleeInfo = methodName
 					? this.visitExpression(callExpression.callee, context)
 					: this.visitCallTarget(callExpression.callee, context);
+				const requireArgument = resolveBuiltinRequireArgument(
+					callExpression,
+					calleeInfo !== null && calleeInfo.decl === null,
+				);
+				if (requireArgument) {
+					this.moduleReferences.push(requireArgument);
+				}
 				if (methodName) {
 					this.recordMethodReference(callExpression, calleeInfo);
 				}
@@ -1046,6 +1054,7 @@ class SemanticBuilder {
 				this.callExpressions.push(callExpression);
 				const valueSource = this.resolveCallResultValue(
 					callExpression,
+					requireArgument,
 					calleeInfo,
 					firstArgumentInfo,
 					secondArgumentInfo,
@@ -1539,35 +1548,36 @@ class SemanticBuilder {
 			};
 		}
 		const globalDecl = this.globalsByKey.get(identifier.name);
-		const target = globalDecl?.id;
-		if (target) {
+		if (globalDecl) {
 			this.recordReference({
 				syntax: identifier,
 				namePath,
 				name: identifier.name,
 				range,
-				target,
+				target: globalDecl.id,
 				isWrite,
 				referenceKind: 'identifier',
 				isCall,
 			});
-		} else {
-			this.recordReference({
-				syntax: identifier,
+			return {
 				namePath,
-				name: identifier.name,
-				range,
-				isWrite,
-				referenceKind: 'identifier',
-				isCall,
-			});
+				decl: globalDecl,
+				valueSource: declarationValueSource(globalDecl.id),
+			};
 		}
+		this.recordReference({
+			syntax: identifier,
+			namePath,
+			name: identifier.name,
+			range,
+			isWrite,
+			referenceKind: 'identifier',
+			isCall,
+		});
 		return {
 			namePath,
-			decl: globalDecl,
-			valueSource: globalDecl
-				? declarationValueSource(globalDecl.id)
-				: globalValueSource(identifier.name),
+			decl: null,
+			valueSource: globalValueSource(identifier.name),
 		};
 	}
 
@@ -2153,20 +2163,18 @@ class SemanticBuilder {
 
 	private resolveCallResultValue(
 		callExpression: LuaCallExpression,
+		requireArgument: LuaStringLiteralExpression | null,
 		callee: ResolvedNamePath,
 		firstArgument: ResolvedNamePath,
 		secondArgument: ResolvedNamePath,
 		callResult: SemanticValueSource,
 	): SemanticValueSource | undefined {
+		if (requireArgument) {
+			return moduleValueSource(requireArgument.value);
+		}
 		if (!callExpression.method) {
 			const directCallName = resolveDirectCallName(callExpression.callee);
 			const firstArgumentValue = firstArgument?.valueSource;
-			if (directCallName === 'require'
-				&& !this.resolveName('require')
-				&& callExpression.arguments.length === 1
-				&& callExpression.arguments[0].kind === LuaSyntaxKind.StringLiteralExpression) {
-				return moduleValueSource(callExpression.arguments[0].value);
-			}
 			if (directCallName === 'setmetatable'
 				&& !callee?.decl
 				&& callExpression.arguments.length === 2) {
@@ -2249,22 +2257,6 @@ class SemanticBuilder {
 		}
 		const path = extractStaticMemberPath(expression);
 		return path ? this.resolveValueSourceFromNamePath(path) : undefined;
-	}
-
-	private resolveModuleAliasInitializer(
-		expression: LuaExpression,
-		lookup: (name: string) => ModuleAliasTarget,
-	): ModuleAliasTarget {
-		return resolveModuleAliasInitializer(
-			expression,
-			lookup,
-			this.resolveName('require') === null,
-		);
-	}
-
-	private moduleAliasForName(name: string): ModuleAliasTarget {
-		const decl = this.resolveName(name);
-		return decl ? this.moduleAliasesByDeclId.get(decl.id) : null;
 	}
 
 	private setModuleAlias(decl: InternalDecl, target: ModuleAliasTarget): void {

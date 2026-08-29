@@ -34,7 +34,7 @@ import { prepareUndo } from '../../../../editor/editing/undo_controller';
 import { updateDesiredColumn, revealCursor } from '../../../../editor/ui/view/caret/caret';
 import { resetBlink } from '../../../../editor/render/caret';
 import type { Decl, FileSemanticData } from '../../../../../toolchain/ts/lua/semantic/model';
-import type { ModuleAliasEntry } from '../../../../../toolchain/ts/lua/semantic/module_aliases';
+import type { ModuleAliasEntry } from '../../../../../toolchain/ts/lua/semantic/module_bindings';
 import { clearSingleCursorSelection, setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../../../editor/editing/cursor/state';
 import type { Runtime } from '../../../../../machine/ts/machine/runtime/runtime';
 import type { PlayerInput } from '../../../../../hosts/common/input/player';

@@ -1,5 +1,5 @@
 import { type LuaExpression as Expression, type LuaFunctionExpression as CartFunctionExpression, type LuaStatement as Statement, LuaSyntaxKind as SyntaxKind, LuaTableFieldKind as TableFieldKind } from '../../../../../../toolchain/ts/lua/syntax/ast';
-import { resolveModuleAliasInitializer } from '../../../../../../toolchain/ts/lua/semantic/module_aliases';
+import { resolveModuleAliasInitializer } from '../../../../../../toolchain/ts/lua/semantic/module_bindings';
 import { type CartLintIssue } from '../../../../lua_rule';
 import { declareShadowedRequireAliasBinding } from '../../shadowed_require_alias_pattern';
 import { discardBindingScope, enterBindingScope, lintScopedBindingStatements, resolveBinding } from './bindings';

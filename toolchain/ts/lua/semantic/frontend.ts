@@ -1,5 +1,4 @@
-import { LuaSyntaxKind, type LuaCallExpression, type LuaChunk, type LuaIdentifierExpression, type LuaSourceRange, type LuaStringLiteralExpression } from '../syntax/ast';
-import { LuaTokenType } from '../syntax/token';
+import type { LuaChunk, LuaIdentifierExpression, LuaSourceRange } from '../syntax/ast';
 import type { LuaBuiltinDescriptor, LuaSymbolEntry } from '../semantic_contracts';
 import type { ParsedLuaChunk } from '../analysis/parse';
 import {
@@ -416,13 +415,9 @@ function collectRequireNavigationTargets(
 	snapshot: LuaSemanticWorkspaceSnapshot,
 ): LuaRequireNavigationTarget[] {
 	const targets: LuaRequireNavigationTarget[] = [];
-	for (let index = 0; index < source.callExpressions.length; index += 1) {
-		const callExpression = source.callExpressions[index];
-		const requireArgument = extractRequireStringArgument(callExpression);
-		if (!requireArgument) {
-			continue;
-		}
-		const moduleName = requireArgument.value;
+	for (let index = 0; index < source.moduleReferences.length; index += 1) {
+		const reference = source.moduleReferences[index];
+		const moduleName = reference.value;
 		const targetPath = moduleTargetsByAlias.get(moduleName);
 		if (!targetPath) {
 			continue;
@@ -432,56 +427,12 @@ function collectRequireNavigationTargets(
 			continue;
 		}
 		targets.push({
-			range: resolveStringLiteralNavigationRange(source, requireArgument),
+			range: reference.range,
 			moduleName,
 			target: targetSource.chunk.range,
 		});
 	}
-	targets.sort((left, right) => compareSourcePosition(left.range.start.line, left.range.start.column, right.range.start.line, right.range.start.column));
 	return targets;
-}
-
-function extractRequireStringArgument(
-	callExpression: LuaCallExpression,
-): LuaStringLiteralExpression {
-	if (callExpression.callee.kind !== LuaSyntaxKind.IdentifierExpression) {
-		return null;
-	}
-	if ((callExpression.callee as LuaIdentifierExpression).name !== 'require') {
-		return null;
-	}
-	if (callExpression.arguments.length === 0) {
-		return null;
-	}
-	const firstArgument = callExpression.arguments[0];
-	if (firstArgument.kind !== LuaSyntaxKind.StringLiteralExpression) {
-		return null;
-	}
-	return firstArgument as LuaStringLiteralExpression;
-}
-
-function resolveStringLiteralNavigationRange(
-	source: FileSemanticData,
-	literal: LuaStringLiteralExpression,
-): LuaSourceRange {
-	for (let index = 0; index < source.tokens.length; index += 1) {
-		const token = source.tokens[index];
-		if (token.type !== LuaTokenType.String) {
-			continue;
-		}
-		if (token.line !== literal.range.start.line || token.column !== literal.range.start.column) {
-			continue;
-		}
-		return {
-			path: literal.range.path,
-			start: literal.range.start,
-			end: {
-				line: token.line,
-				column: token.column + token.lexeme.length - 1,
-			},
-		};
-	}
-	return literal.range;
 }
 
 function buildModuleTargetAliasMap(

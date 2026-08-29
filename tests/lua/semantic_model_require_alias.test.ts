@@ -49,6 +49,27 @@ test('semantic file data records direct and chained require aliases', async () =
 	]);
 });
 
+test('semantic file data does not create module aliases after require is assigned globally', async () => {
+	const { buildLuaFileSemanticData } = await semanticWorkspaceModulePromise;
+	const source = [
+		"local constants<const> = require('constants')",
+		'require = function(name)',
+		'\treturn name',
+		'end',
+		"local combat<const> = require('combat')",
+	].join('\n');
+	const data = buildLuaFileSemanticData(source, 'testpath');
+	assert.deepEqual(data.moduleAliases, [
+		{
+			declId: 'testpath|1|7|constant|constants',
+			alias: 'constants',
+			module: 'constants',
+			memberPath: [],
+		},
+	]);
+	assert.deepEqual(data.moduleReferences.map(reference => reference.value), ['constants']);
+});
+
 test('semantic workspace resolves transitive module aliases independently of file order', async () => {
 	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
 	const baseSource = [
