@@ -208,6 +208,30 @@ test('semantic workspace propagates values through higher-order calls', async ()
 	assert.equal(ready!.declaration.range.start.line, 5);
 });
 
+test('semantic workspace follows function values through table member aliases', async () => {
+	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
+	const lines = [
+		'local component<const> = {}',
+		'function component:_wait() end',
+		'local evaluate<const> = function(execution)',
+		'\texecution:_wait()',
+		'end',
+		'local program<const> = { evaluate = evaluate }',
+		'local pipeline<const> = { step = program.evaluate }',
+		'pipeline.step(component)',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('main.lua', lines.join('\n'));
+	const wait = semanticSymbolAt(workspace.getSnapshot(),
+		'main.lua',
+		4,
+		memberColumn(lines[3], '_wait'),
+	);
+
+	assert.ok(wait, 'call argument observed through table member aliases');
+	assert.equal(wait!.declaration.range.start.line, 2);
+});
+
 test('semantic workspace evaluates every dynamic callee before resolving argument and return paths', async () => {
 	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
 	const lines = [

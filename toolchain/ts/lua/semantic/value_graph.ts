@@ -117,6 +117,7 @@ type MemberDeclaration = {
 };
 
 type MaterializedFunctionValueFlow = {
+	source: FunctionValueFlowEntry;
 	functionValue: SemanticValueID;
 	parameters: readonly FunctionSemanticValueSource[];
 	contextParameterIndices: readonly number[];
@@ -863,6 +864,7 @@ class WorkspaceValueDemandIndex {
 	private readonly membersByOwner: Map<string, Map<string, MemberValueEntry[]>> = new Map();
 	private readonly projectedMembersByOwner: Map<string, Map<string, MemberValueEntry[]>> = new Map();
 	public readonly membersByDeclaration: Map<SymbolID, MemberValueEntry> = new Map();
+	private readonly declarationsByValueSource: Map<string, SymbolID[]> = new Map();
 	private readonly returnsByFunctionRoot: Map<string, FunctionReturnValueEntry[]> = new Map();
 	private readonly flowsByRoot: Map<string, FunctionValueFlowEntry[]> = new Map();
 	public readonly lexicalOwners: Map<FunctionValueFlowEntry, FunctionValueFlowEntry> = new Map();
@@ -910,6 +912,13 @@ class WorkspaceValueDemandIndex {
 					this.declarationValues.set(entry.declId, sources);
 				}
 				sources.push(entry.source);
+				if (entry.relation !== 'identity' || entry.source.steps.length > 0) {
+					this.append(
+						this.declarationsByValueSource,
+						this.identities.sourceKey(entry.source),
+						entry.declId,
+					);
+				}
 			}
 			for (let entryIndex = 0; entryIndex < file.moduleValues.length; entryIndex += 1) {
 				const entry = file.moduleValues[entryIndex];
@@ -1132,6 +1141,14 @@ class WorkspaceValueDemandIndex {
 
 	public returns(rootKey: string): readonly FunctionReturnValueEntry[] {
 		return this.returnsByFunctionRoot.get(rootKey) ?? EMPTY_DEMAND_ENTRIES;
+	}
+
+	public declarationsForValue(
+		source: SemanticValueSource,
+		stepCount: number,
+	): readonly SymbolID[] {
+		return this.declarationsByValueSource.get(this.identities.sourceKey(source, stepCount))
+			?? EMPTY_DEMAND_ENTRIES;
 	}
 
 	public flows(rootKey: string): readonly FunctionValueFlowEntry[] {
@@ -1538,6 +1555,7 @@ export class WorkspaceValueGraph {
 	private readonly materializedRootAssignments: Set<ValueAssignmentEntry> = new Set();
 	private readonly demandedFunctionCallerBindings: Set<FunctionValueFlowEntry> = new Set();
 	private readonly demandedFunctionCallerContexts: Set<FunctionValueFlowEntry> = new Set();
+	private readonly demandedFunctionCallerAliases: Set<FunctionValueFlowEntry> = new Set();
 	private readonly demandedDynamicFunctionCallers: Set<FunctionValueFlowEntry> = new Set();
 	private readonly calls: ContextualCallValue[] = [];
 	private readonly declarationNodes: Map<SymbolID, SemanticValueID> = new Map();
@@ -1573,7 +1591,6 @@ export class WorkspaceValueGraph {
 	private readonly functionReturnsByValue: Map<SemanticValueID, SemanticValueSource[]> = new Map();
 	private readonly functionFlowsByValue: Map<SemanticValueID, MaterializedFunctionValueFlow> = new Map();
 	private readonly materializedFunctionFlows: MaterializedFunctionValueFlow[] = [];
-	private readonly sourceFunctionFlowByMaterializedFlow: Map<MaterializedFunctionValueFlow, FunctionValueFlowEntry> = new Map();
 	private readonly functionFlowByDeclaration: Map<SymbolID, MaterializedFunctionValueFlow> = new Map();
 	private readonly functionFlowByOwnedValue: Map<string, MaterializedFunctionValueFlow> = new Map();
 	private readonly enclosingFunctionFlowByValue: Map<SemanticValueID, MaterializedFunctionValueFlow> = new Map();
@@ -1620,6 +1637,8 @@ export class WorkspaceValueGraph {
 	private readonly contextOrigins: (SemanticValueID | undefined)[] = [];
 	private readonly functionFlowScratch: MaterializedFunctionValueFlow[] = [];
 	private readonly functionClosureScratch: (FunctionValueContext | undefined)[] = [];
+	private readonly functionAliasQueue: SemanticValueSource[] = [];
+	private readonly visitedFunctionAliases: Set<string> = new Set();
 	private readonly indexedSourceScratch: SemanticValueSource[] = [];
 	private readonly indexedSourceDeclarations: Set<SymbolID> = new Set();
 	private readonly indexedSourceOwnedValues: Set<string> = new Set();
@@ -1700,7 +1719,7 @@ export class WorkspaceValueGraph {
 		}
 		const flow = this.functionFlowForSource(source);
 		if (flow) {
-			if (this.demandFunctionCallers(flow)) {
+			if (this.demandFunctionCallers(flow, flow.requiresCallContext, true)) {
 				this.solveDemandedValues();
 				members = this.resolveDemandedMembers(source, name);
 				if (members.length > 0) {
@@ -2518,81 +2537,118 @@ export class WorkspaceValueGraph {
 	private demandFunctionCallers(
 		flow: MaterializedFunctionValueFlow,
 		instantiateContext = flow.requiresCallContext,
+		followValueAliases = false,
 	): boolean {
-		const rawFlow = this.sourceFunctionFlowByMaterializedFlow.get(flow);
-		if (!rawFlow) {
+		const sourceFlow = flow.source;
+		let changed = false;
+		if (instantiateContext) {
+			if (!this.demandedFunctionCallerContexts.has(sourceFlow)) {
+				this.demandedFunctionCallerBindings.add(sourceFlow);
+				this.demandedFunctionCallerContexts.add(sourceFlow);
+				changed = true;
+			}
+		} else if (!this.demandedFunctionCallerBindings.has(sourceFlow)) {
+			this.demandedFunctionCallerBindings.add(sourceFlow);
+			changed = true;
+		}
+		if (followValueAliases && !this.demandedFunctionCallerAliases.has(sourceFlow)) {
+			this.demandedFunctionCallerAliases.add(sourceFlow);
+			changed = true;
+		}
+		if (!changed) {
 			return false;
 		}
-		if (instantiateContext) {
-			if (this.demandedFunctionCallerContexts.has(rawFlow)) {
-				return false;
-			}
-			this.demandedFunctionCallerBindings.add(rawFlow);
-			this.demandedFunctionCallerContexts.add(rawFlow);
-		} else {
-			if (this.demandedFunctionCallerBindings.has(rawFlow)) {
-				return false;
-			}
-			this.demandedFunctionCallerBindings.add(rawFlow);
-		}
-		const rootKey = this.demandIndex.rootKey(rawFlow.functionValue.root);
 		// Caller discovery needs return flow because a later call target can be a
 		// factory result. It does not execute unrelated effects in that caller.
 		const mode = instantiateContext ? CALL_RETURNS : CALL_BINDINGS;
-		if (rootKey !== undefined) {
-			this.materializeRootCalls(this.demandIndex.calleeCalls(rootKey), mode);
-			this.materializeCallerCalls(
-				this.demandIndex.callerCalls(rootKey),
-				mode,
-			);
+		const aliases = this.functionAliasQueue;
+		aliases.length = 0;
+		this.visitedFunctionAliases.clear();
+		this.enqueueFunctionAlias(sourceFlow.functionValue);
+		for (let aliasIndex = 0; aliasIndex < aliases.length; aliasIndex += 1) {
+			const source = aliases[aliasIndex];
+			if (source.steps.length === 0) {
+				const rootKey = semanticValueRootKey(source.root);
+				this.materializeRootCalls(this.demandIndex.calleeCalls(rootKey), mode);
+				this.materializeCallerCalls(this.demandIndex.callerCalls(rootKey), mode);
+			} else {
+				this.materializeRootCalls(this.demandIndex.calleeCallsForSource(source), mode);
+				this.materializeCallerCalls(this.demandIndex.callerCallsForSource(source), mode);
+			}
+			if (followValueAliases) {
+				this.enqueueFunctionAliases(source);
+			}
+			if (source.steps.length === 0 && source.root.kind === 'declaration') {
+				const member = this.demandIndex.membersByDeclaration.get(source.root.declId);
+				if (member) {
+					this.enqueueFunctionAlias(appendValueMember(member.owner, member.name));
+				}
+			}
 		}
-		if (rawFlow.functionValue.root.kind === 'declaration') {
-			const member = this.demandIndex.membersByDeclaration.get(rawFlow.functionValue.root.declId);
+		if (flow.implicitReceiver && sourceFlow.functionValue.root.kind === 'declaration') {
+			const member = this.demandIndex.membersByDeclaration.get(sourceFlow.functionValue.root.declId);
 			if (member) {
-				const memberSource = appendValueMember(member.owner, member.name);
 				this.materializeRootCalls(
-					this.demandIndex.calleeCallsForSource(memberSource),
+					this.demandIndex.calleeCallsByMemberName(member.name),
 					mode,
+					flow,
 				);
 				this.materializeCallerCalls(
-					this.demandIndex.callerCallsForSource(memberSource),
+					this.demandIndex.callerCallsByMemberName(member.name),
 					mode,
+					instantiateContext,
+					flow,
 				);
-				if (flow.implicitReceiver) {
-					this.materializeRootCalls(
-						this.demandIndex.calleeCallsByMemberName(member.name),
-						mode,
-						flow,
-					);
-					this.materializeCallerCalls(
-						this.demandIndex.callerCallsByMemberName(member.name),
-						mode,
-						instantiateContext,
-						flow,
-					);
-				}
 			}
 		}
 		return true;
 	}
 
+	private enqueueFunctionAlias(source: SemanticValueSource): void {
+		const key = this.identities.sourceKey(source);
+		if (this.visitedFunctionAliases.has(key)) {
+			return;
+		}
+		this.visitedFunctionAliases.add(key);
+		this.functionAliasQueue.push(source);
+	}
+
+	private enqueueFunctionAliases(source: SemanticValueSource): void {
+		const declarations = this.demandIndex.declarationsForValue(source, source.steps.length);
+		for (let declarationIndex = 0; declarationIndex < declarations.length; declarationIndex += 1) {
+			this.enqueueFunctionAlias(declarationValueSource(declarations[declarationIndex]));
+		}
+		if (source.steps.length > 0) {
+			const ownerDeclarations = this.demandIndex.declarationsForValue(source, 0);
+			for (let declarationIndex = 0; declarationIndex < ownerDeclarations.length; declarationIndex += 1) {
+				const declaration = ownerDeclarations[declarationIndex];
+				if (!this.demandIndex.membersByDeclaration.has(declaration)) {
+					this.enqueueFunctionAlias({
+						root: { kind: 'declaration', declId: declaration },
+						steps: source.steps,
+					});
+				}
+			}
+		}
+	}
+
 	private demandDynamicFunctionCallers(flow: MaterializedFunctionValueFlow): boolean {
-		const rawFlow = this.sourceFunctionFlowByMaterializedFlow.get(flow);
-		if (!rawFlow || this.demandedDynamicFunctionCallers.has(rawFlow)) {
+		const sourceFlow = flow.source;
+		if (this.demandedDynamicFunctionCallers.has(sourceFlow)) {
 			return false;
 		}
-		this.demandedDynamicFunctionCallers.add(rawFlow);
+		this.demandedDynamicFunctionCallers.add(sourceFlow);
 		this.materializeRootCalls(
-			this.demandIndex.argumentCallsForSource(rawFlow.functionValue),
+			this.demandIndex.argumentCallsForSource(sourceFlow.functionValue),
 		);
 		this.materializeCallerCalls(
-			this.demandIndex.argumentCallerCallsForSource(rawFlow.functionValue),
+			this.demandIndex.argumentCallerCallsForSource(sourceFlow.functionValue),
 			CALL_EFFECTS,
 		);
-		if (rawFlow.functionValue.root.kind !== 'declaration') {
+		if (sourceFlow.functionValue.root.kind !== 'declaration') {
 			return true;
 		}
-		const member = this.demandIndex.membersByDeclaration.get(rawFlow.functionValue.root.declId);
+		const member = this.demandIndex.membersByDeclaration.get(sourceFlow.functionValue.root.declId);
 		if (!member) {
 			return true;
 		}
@@ -4104,7 +4160,7 @@ export class WorkspaceValueGraph {
 	private materializeFunctionFlow(entry: FunctionValueFlowEntry): MaterializedFunctionValueFlow {
 		const functionValue = this.nodeForRoot(entry.functionValue.root);
 		const existing = this.functionFlowsByValue.get(functionValue);
-		if (existing && this.sourceFunctionFlowByMaterializedFlow.get(existing) === entry) {
+		if (existing && existing.source === entry) {
 			return existing;
 		}
 		const lexicalOwnerEntry = this.demandIndex.lexicalOwners.get(entry);
@@ -4135,6 +4191,7 @@ export class WorkspaceValueGraph {
 		// Effectful methods additionally retain one caller site so an inner
 		// method invocation does not merge independent outer mutations.
 		const flow: MaterializedFunctionValueFlow = {
+			source: entry,
 			functionValue,
 			parameters: entry.parameters,
 			contextParameterIndices,
@@ -4154,7 +4211,6 @@ export class WorkspaceValueGraph {
 			lexicalOwner,
 		};
 		this.materializedFunctionFlows.push(flow);
-		this.sourceFunctionFlowByMaterializedFlow.set(flow, entry);
 		this.functionFlowsByValue.set(functionValue, flow);
 		this.markTraversalChanged(functionValue);
 		if (flow.implicitReceiver) {
@@ -5352,14 +5408,10 @@ export class WorkspaceValueGraph {
 	}
 
 	private materializeFunctionFlowReturns(flow: MaterializedFunctionValueFlow): void {
-		const entry = this.sourceFunctionFlowByMaterializedFlow.get(flow);
-		if (!entry) {
-			return;
-		}
-		const rootKey = this.demandIndex.rootKey(entry.functionValue.root);
-		if (rootKey !== undefined) {
-			this.materializeFunctionReturns(this.demandIndex.returns(rootKey));
-		}
+		const entry = flow.source;
+		this.materializeFunctionReturns(
+			this.demandIndex.returns(semanticValueRootKey(entry.functionValue.root)),
+		);
 	}
 
 	private contextArgumentsEqual(
