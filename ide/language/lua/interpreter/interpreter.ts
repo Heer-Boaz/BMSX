@@ -2460,7 +2460,7 @@ export class LuaInterpreter {
 		return this.withCurrentCallRange(range, () => {
 			if (functionValue instanceof LuaNativeFunction) {
 				this.callStack.push({
-					functionName: functionValue.name && functionValue.name.length > 0 ? functionValue.name : null,
+					functionName: functionValue.name && functionValue.name.length > 0 ? functionValue.name : '(anonymous)',
 					source: range.path,
 					line: range.start.line,
 					column: range.start.column,

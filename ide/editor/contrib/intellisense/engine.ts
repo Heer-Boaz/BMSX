@@ -2030,25 +2030,3 @@ export function applyDefinitionSelection(range: LuaDefinitionLocation['range']):
 	ensureCursorVisible();
 	editorDocumentState.emitCursorMoved();
 }
-
-export function findFunctionDefinitionRowInActiveFile(functionName: string): number {
-	if (typeof functionName !== 'string' || functionName.length === 0) {
-		return null;
-	}
-	const escaped = functionName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-	const patterns = [
-		new RegExp(`^\\s*function\\s+${escaped}\\b`),
-		new RegExp(`^\\s*local\\s+function\\s+${escaped}\\b`),
-		new RegExp(`\\b${escaped}\\s*=\\s*function\\b`),
-	];
-	const lineCount = editorDocumentState.buffer.getLineCount();
-	for (let row = 0; row < lineCount; row += 1) {
-		const line = editorDocumentState.buffer.getLineContent(row);
-		for (let index = 0; index < patterns.length; index += 1) {
-			if (patterns[index].test(line)) {
-				return row;
-			}
-		}
-	}
-	return null;
-}

@@ -21,13 +21,12 @@ import {
 	setExecutionStopHighlight as setEditorExecutionStopHighlight,
 } from '../editor/contrib/runtime_error/navigation';
 import { LuaError } from '../../toolchain/ts/lua/errors';
-import type { StackTraceFrame } from '../runtime/stack_trace';
+import type { SourceStackTraceFrame } from '../runtime/stack_trace';
 import { extractErrorMessage } from '../language/lua/interpreter/value';
 import { clamp } from '../../machine/ts/common/clamp';
 import type { CartEditor } from '../cart_editor';
 import type { ResourcePanelController } from '../workbench/contrib/resources/panel/controller';
 import type { ResourceIdentity } from '../common/resource';
-import { findFunctionDefinitionRowInActiveFile } from '../editor/contrib/intellisense/engine';
 import { resetPointerClickTracking } from '../input/pointer/state';
 
 type RuntimeErrorOverlayTarget = { context: CodeTabContext; overlay: RuntimeErrorOverlay };
@@ -195,7 +194,7 @@ export function showLuaErrorOverlay(
 
 export function navigateToRuntimeErrorFrameTarget(
 	editor: CartEditor,
-	frame: StackTraceFrame,
+	frame: SourceStackTraceFrame,
 ): void {
 	try {
 		editor.navigation.focusChunkSource(frame.resource);
@@ -208,21 +207,9 @@ export function navigateToRuntimeErrorFrameTarget(
 		return;
 	}
 	const lastRowIndex = editorDocumentState.buffer.getLineCount() - 1;
-	let targetRow = frame.line > 0 ? clamp(frame.line - 1, 0, lastRowIndex) : -1;
-	if (targetRow < 0 && frame.functionName) {
-		targetRow = findFunctionDefinitionRowInActiveFile(frame.functionName);
-	}
-	if (targetRow < 0) {
-		targetRow = 0;
-	}
+	const targetRow = clamp(frame.line - 1, 0, lastRowIndex);
 	const targetLine = editorDocumentState.buffer.getLineContent(targetRow);
-	let targetColumn = frame.column > 0 ? clamp(frame.column - 1, 0, targetLine.length) : 0;
-	if (targetColumn === 0 && frame.functionName) {
-		const nameIndex = targetLine.indexOf(frame.functionName);
-		if (nameIndex >= 0) {
-			targetColumn = nameIndex;
-		}
-	}
+	const targetColumn = clamp(frame.column - 1, 0, targetLine.length);
 	editorDocumentState.selectionAnchor = null;
 	editorPointerState.pointerSelecting = false;
 	resetPointerClickTracking();

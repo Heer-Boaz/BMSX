@@ -45,7 +45,7 @@ function buildRuntimeErrorOverlayDescriptors(
 			text: formatRuntimeStackFrame(frame),
 			role: 'frame',
 		};
-		if (frame.resource) {
+		if (frame.kind === 'source') {
 			descriptor.frame = frame;
 		}
 		descriptors.push(descriptor);

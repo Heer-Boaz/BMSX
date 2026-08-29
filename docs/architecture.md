@@ -3677,7 +3677,10 @@ call-site chain without changing the physical CPU stack. Step-in stops at the
 next point; step-over and step-out compare the logical `(physical frame depth,
 inline call-site chain length)` position. The full chain, rather than only its
 length, owns virtual inlined stack frames, local-variable context and Hot Resume
-continuation identity.
+continuation identity. Runtime stack records distinguish source frames from
+instruction-only frames. Only an exact tooling source range creates a navigable
+source frame; missing source metadata remains an instruction frame and never
+triggers an editor-text scan that guesses a declaration by its display name.
 The frame loop stops at the selected boundary. The CPU owns no source paths,
 symbols, editor state, or stepping policy. The uninstrumented specialization
 contains no hook test, domain-mask test, callback, or debugger-induced CALL/RET

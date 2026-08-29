@@ -1,75 +1,62 @@
-import {
-	buildLuaFrameRawLabel,
-	luaFunctionDisplayName,
-} from '../../toolchain/ts/lua/stack_frame_label';
+import { luaFunctionDisplayName } from '../../toolchain/ts/lua/stack_frame_label';
 import {
 	blua32InlineCallSitesAtPc,
 	blua32SourceRangeAtPc,
-	type Blua32SymbolsImage,
 } from '../../toolchain/ts/rompack/blua32_symbols';
 import type { RuntimeCpuFaultFrame } from './fault_state';
 import {
 	resolveRuntimeLuaSource,
+	runtimeSourceProjectRootPath,
 	type RuntimeSourceState,
 } from './sources';
-import type { ResourceIdentity } from '../common/resource';
+import type { ResourceDomain, ResourceIdentity } from '../common/resource';
+import { resolveWorkspacePath } from '../workspace/path';
 import type { ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
-import type { SourceRange } from '../../toolchain/ts/lua/source_range';
 
-export type StackTraceFrame = {
-	resource: ResourceIdentity | null;
-	functionName: string;
-	source: string;
-	line: number;
-	column: number;
-	raw: string;
-	workspacePath?: string;
+export type SourceStackTraceFrame = {
+	readonly kind: 'source';
+	readonly resource: ResourceIdentity;
+	readonly functionName: string;
+	readonly line: number;
+	readonly column: number;
+	readonly workspacePath: string;
 };
 
-function resolveLuaFunctionName(
-	symbols: Blua32SymbolsImage | null,
-	functionIndex: number,
-	functionAddress: number,
-): string {
-	return symbols === null || functionIndex < 0
-		? `function@${functionAddress.toString(16)}`
-		: luaFunctionDisplayName(symbols.metadata.functionIds[functionIndex]);
-}
+export type InstructionStackTraceFrame = {
+	readonly kind: 'instruction';
+	readonly executionDomainId: ExecutionDomainId;
+	readonly instructionAddress: number;
+	readonly functionName: string;
+};
 
-function buildLuaInstructionStackFrame(
-	functionName: string,
-): StackTraceFrame {
-	return {
-		resource: null,
-		functionName,
-		source: '',
-		line: 0,
-		column: 0,
-		raw: buildLuaFrameRawLabel(functionName, ''),
-	};
-}
+export type StackTraceFrame = SourceStackTraceFrame | InstructionStackTraceFrame;
 
-function buildLuaSourceStackFrame(
+export function createLuaSourceStackTraceFrame(
 	sources: RuntimeSourceState,
-	executionDomainId: ExecutionDomainId,
-	range: SourceRange,
+	domain: ResourceDomain,
+	source: string,
+	line: number,
+	column: number,
 	functionName: string,
-): StackTraceFrame {
-	const source = range.path;
+): SourceStackTraceFrame {
 	const sourceRecord = resolveRuntimeLuaSource(sources, {
-		domain: executionDomainId,
+		domain,
 		path: source,
 	})!.record;
+	const resource = {
+		domain,
+		path: sourceRecord.source_path,
+	};
 	return {
-		resource: {
-			domain: executionDomainId,
-			path: sourceRecord.source_path,
-		},
+		kind: 'source',
+		resource,
 		functionName,
-		source,
-		line: range.start.line,
-		column: range.start.column,
-		raw: buildLuaFrameRawLabel(functionName, source),
+		line,
+		column,
+		workspacePath: resolveWorkspacePath(
+			resource.path,
+			runtimeSourceProjectRootPath(sources, domain),
+		),
 	};
 }
 
@@ -81,16 +68,19 @@ export function buildLuaStackFrames(
 	for (let index = faultFrames.length - 1; index >= 0; index -= 1) {
 		const entry = faultFrames[index];
 		const image = entry.toolingImage;
-		const symbols = entry.functionIndex < 0 ? null : image.symbols;
-		const range = symbols === null
-			? null
-			: blua32SourceRangeAtPc(symbols, image.layout.header.textAddress, entry.tracePc);
-		const physicalFunctionName = resolveLuaFunctionName(
-			symbols,
-			entry.functionIndex,
-			entry.functionAddress,
-		);
-		if (symbols !== null && range !== null) {
+		if (entry.functionIndex < 0 || image.symbols === null) {
+			frames.push({
+				kind: 'instruction',
+				executionDomainId: entry.executionDomainId,
+				instructionAddress: entry.tracePc,
+				functionName: `function@${entry.functionAddress.toString(16)}`,
+			});
+			continue;
+		}
+		const symbols = image.symbols;
+		const physicalFunctionName = luaFunctionDisplayName(symbols.metadata.functionIds[entry.functionIndex]);
+		const range = blua32SourceRangeAtPc(symbols, image.layout.header.textAddress, entry.tracePc);
+		if (range !== null) {
 			const inlineCallSites = blua32InlineCallSitesAtPc(
 				symbols,
 				image.layout.header.textAddress,
@@ -100,21 +90,31 @@ export function buildLuaStackFrames(
 				const inlineRange = inlineIndex === inlineCallSites.length - 1
 					? range
 					: inlineCallSites[inlineIndex + 1].callRange;
-				frames.push(buildLuaSourceStackFrame(
+				frames.push(createLuaSourceStackTraceFrame(
 					sources,
 					entry.executionDomainId,
-					inlineRange,
+					inlineRange.path,
+					inlineRange.start.line,
+					inlineRange.start.column,
 					luaFunctionDisplayName(inlineCallSites[inlineIndex].calleeFunctionId),
 				));
 			}
-			frames.push(buildLuaSourceStackFrame(
+			const physicalRange = inlineCallSites.length === 0 ? range : inlineCallSites[0].callRange;
+			frames.push(createLuaSourceStackTraceFrame(
 				sources,
 				entry.executionDomainId,
-				inlineCallSites.length === 0 ? range : inlineCallSites[0].callRange,
+				physicalRange.path,
+				physicalRange.start.line,
+				physicalRange.start.column,
 				physicalFunctionName,
 			));
 		} else {
-			frames.push(buildLuaInstructionStackFrame(physicalFunctionName));
+			frames.push({
+				kind: 'instruction',
+				executionDomainId: entry.executionDomainId,
+				instructionAddress: entry.tracePc,
+				functionName: physicalFunctionName,
+			});
 		}
 	}
 	return frames;

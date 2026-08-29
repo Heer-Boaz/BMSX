@@ -409,8 +409,10 @@ test('inline debugger exposes virtual frames and physical caller locals', async 
 	const fault = createRuntimeFaultState();
 	recordLuaError(fault, bridge.sources, runtime, new Error('inline stop'));
 	assert.equal(fault.lastLuaCallStack[0].functionName, 'inspect');
+	assert.equal(fault.lastLuaCallStack[0].kind, 'source');
 	assert.equal(fault.lastLuaCallStack[0].line, 2);
 	assert.equal(fault.lastLuaCallStack[1].functionName, 'run');
+	assert.equal(fault.lastLuaCallStack[1].kind, 'source');
 	assert.equal(fault.lastLuaCallStack[1].line, 7);
 
 	const callerLine = source.split('\n')[7];

@@ -1,8 +1,10 @@
 import type { LuaCallFrame } from '../language/lua/interpreter/interpreter';
-import { buildLuaFrameRawLabel } from '../../toolchain/ts/lua/stack_frame_label';
-import type { StackTraceFrame } from './stack_trace';
+import {
+	createLuaSourceStackTraceFrame,
+	type StackTraceFrame,
+} from './stack_trace';
 import type { ResourceDomain } from '../common/resource';
-import { resolveRuntimeLuaSource, type RuntimeSourceState } from './sources';
+import type { RuntimeSourceState } from './sources';
 
 function ensureWorkspaceRelativePath(source: string): string {
 	if (!source || source.startsWith('./') || source.startsWith('../') || source.startsWith('/')) {
@@ -22,23 +24,17 @@ export function convertLuaCallFrames(
 	const frames: StackTraceFrame[] = [];
 	for (let index = callFrames.length - 1; index >= 0; index -= 1) {
 		const frame = callFrames[index];
-		const sourceRecord = resolveRuntimeLuaSource(sources, {
+		frames.push(createLuaSourceStackTraceFrame(
+			sources,
 			domain,
-			path: frame.source,
-		})!.record;
-		frames.push({
-			resource: { domain, path: sourceRecord.source_path },
-			functionName: frame.functionName,
-			source: frame.source,
-			line: frame.line,
-			column: frame.column,
-			raw: buildLuaFrameRawLabel(frame.functionName, frame.source),
-		});
+			frame.source,
+			frame.line,
+			frame.column,
+			frame.functionName,
+		));
 	}
 	return frames;
 }
-
-export { buildLuaFrameRawLabel };
 
 export function sanitizeLuaErrorMessage(message: string): string {
 	return message.replace(/^\[mod:[^\]]+]\s*/, '');
@@ -51,7 +47,10 @@ export function formatRuntimeErrorLocation(path: string, line: number, column: n
 }
 
 export function formatRuntimeStackFrame(frame: StackTraceFrame): string {
-	const source = frame.workspacePath || frame.source;
+	if (frame.kind === 'instruction') {
+		return frame.functionName;
+	}
+	const source = frame.workspacePath;
 	let location = source ? ensureWorkspaceRelativePath(source) : '';
 	if (frame.line) {
 		location = location ? `${location}:${frame.line}` : `${frame.line}`;
@@ -59,8 +58,7 @@ export function formatRuntimeStackFrame(frame: StackTraceFrame): string {
 			location += `:${frame.column}`;
 		}
 	}
-	const name = frame.functionName || frame.raw || frame.source || '(anonymous)';
-	return location ? `${name}(${location})` : name;
+	return location ? `${frame.functionName}(${location})` : frame.functionName;
 }
 
 export function buildErrorStackString(

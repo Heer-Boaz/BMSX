@@ -6,11 +6,15 @@ import {
 } from '../language/lua/interpreter/value';
 import {
 	buildErrorStackString,
-	buildLuaFrameRawLabel,
 	convertLuaCallFrames,
 	sanitizeLuaErrorMessage,
 } from './error_format';
-import { buildLuaStackFrames, type StackTraceFrame } from './stack_trace';
+import {
+	buildLuaStackFrames,
+	createLuaSourceStackTraceFrame,
+	type SourceStackTraceFrame,
+	type StackTraceFrame,
+} from './stack_trace';
 import { blua32FunctionIndexAtAddress } from '../../toolchain/ts/rompack/blua32_image';
 import type { Blua32ToolingImage } from '../../toolchain/ts/rompack/blua32_media';
 import type { ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
@@ -19,11 +23,9 @@ import type {
 	SuspendedGuestSession,
 	SuspendedGuestValue,
 } from './suspended_guest';
-import { resolveWorkspacePath } from '../workspace/path';
 import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
 import {
 	resolveRuntimeLuaSource,
-	runtimeSourceProjectRootPath,
 	type RuntimeSourceState,
 } from './sources';
 import type { ResourceDomain, ResourceIdentity } from '../common/resource';
@@ -113,16 +115,6 @@ export function resetHandledLuaErrors(fault: RuntimeFaultState): void {
 	fault.handledLuaErrors = new WeakSet<object>();
 }
 
-function resolveStackFrameWorkspacePath(
-	sources: RuntimeSourceState,
-	resource: ResourceIdentity,
-): string {
-	return resolveWorkspacePath(
-		resource.path,
-		runtimeSourceProjectRootPath(sources, resource.domain),
-	);
-}
-
 function luaErrorSourcePath(error: LuaError): string {
 	return error.path.startsWith('@') ? error.path.slice(1) : error.path;
 }
@@ -145,10 +137,10 @@ function runtimeLuaErrorLocation(
 
 function firstSourceStackFrame(
 	frames: ReadonlyArray<StackTraceFrame>,
-): StackTraceFrame | null {
+): SourceStackTraceFrame | null {
 	for (let index = 0; index < frames.length; index += 1) {
 		const frame = frames[index];
-		if (frame.resource) {
+		if (frame.kind === 'source') {
 			return frame;
 		}
 	}
@@ -181,24 +173,6 @@ function resolveRuntimeErrorLocation(
 	};
 }
 
-function createLuaErrorStackFrame(
-	sources: RuntimeSourceState,
-	error: LuaError,
-	functionName: string,
-	domain: ResourceDomain,
-): StackTraceFrame {
-	const source = luaErrorSourcePath(error);
-	const sourceRecord = resolveRuntimeLuaSource(sources, { domain, path: source })!.record;
-	return {
-		resource: { domain, path: sourceRecord.source_path },
-		functionName,
-		source,
-		line: error.line,
-		column: error.column,
-		raw: buildLuaFrameRawLabel(functionName, source),
-	};
-}
-
 function errorStackFunctionName(callFrames: ReadonlyArray<LuaCallFrame>, luaFrames: ReadonlyArray<StackTraceFrame>): string {
 	if (callFrames.length > 0) {
 		return callFrames[callFrames.length - 1].functionName;
@@ -206,7 +180,7 @@ function errorStackFunctionName(callFrames: ReadonlyArray<LuaCallFrame>, luaFram
 	if (luaFrames.length > 0) {
 		return luaFrames[0].functionName;
 	}
-	return null;
+	return '(anonymous)';
 }
 
 export function clearFaultSnapshot(fault: RuntimeFaultState): void {
@@ -442,21 +416,14 @@ function buildRuntimeErrorDetails(
 	}
 	if (error instanceof LuaError) {
 		const sourceFrame = firstSourceStackFrame(luaFrames);
-		luaFrames[0] = createLuaErrorStackFrame(
+		luaFrames[0] = createLuaSourceStackTraceFrame(
 			sources,
-			error,
-			errorStackFunctionName(callFrames, luaFrames),
 			sourceFrame ? sourceFrame.resource.domain : sources.activeCartridgeSlot,
+			luaErrorSourcePath(error),
+			error.line,
+			error.column,
+			errorStackFunctionName(callFrames, luaFrames),
 		);
-	}
-	if (luaFrames.length > 0) {
-		for (const frame of luaFrames) {
-			const source = frame.source;
-			if (!source || source.length === 0 || !frame.resource) {
-				continue;
-			}
-			frame.workspacePath = resolveStackFrameWorkspacePath(sources, frame.resource);
-		}
 	}
 	if (luaFrames.length === 0) {
 		return null;

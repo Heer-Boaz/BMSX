@@ -124,7 +124,8 @@ test('fault snapshots retain mapped runtime functions as instruction frames', ()
 	assert.equal(fault.lastCpuFaultSnapshot[0].functionIndex, -1);
 	assert.equal(fault.lastCpuFaultSnapshot[0].codeAddress, codeAddress);
 	assert.equal(fault.lastLuaCallStack[0].functionName, `function@${functionAddress.toString(16)}`);
-	assert.equal(fault.lastLuaCallStack[0].resource, null);
+	assert.equal(fault.lastLuaCallStack[0].kind, 'instruction');
+	assert.equal(fault.lastLuaCallStack[0].instructionAddress, codeAddress);
 	assert.deepEqual(fault.faultSnapshot.resource, { domain: -1, path: sourcePath });
 	assert.match(messages.join('\n'), /op=HALT/);
 
@@ -161,8 +162,10 @@ test('fault snapshots retain mapped runtime functions as instruction frames', ()
 	);
 	assert.equal(mixedFault.lastCpuFaultSnapshot.length, 2);
 	assert.equal(mixedFault.lastLuaCallStack[0].functionName, 'source_target');
+	assert.equal(mixedFault.lastLuaCallStack[0].kind, 'source');
 	assert.deepEqual(mixedFault.lastLuaCallStack[0].resource, { domain: -1, path: sourcePath });
 	assert.equal(mixedFault.lastLuaCallStack[1].functionName, `function@${functionAddress.toString(16)}`);
-	assert.equal(mixedFault.lastLuaCallStack[1].resource, null);
+	assert.equal(mixedFault.lastLuaCallStack[1].kind, 'instruction');
+	assert.equal(mixedFault.lastLuaCallStack[1].instructionAddress, codeAddress);
 	assert.deepEqual(mixedFault.faultSnapshot.resource, { domain: -1, path: sourcePath });
 });

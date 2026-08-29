@@ -3,7 +3,7 @@ import type { EditorFont } from '../ui/view/font';
 import { drawEditorText } from './text_renderer';
 import { computeRuntimeErrorOverlayMaxWidth, ensureVisualLines, measureText, writeWrappedOverlayLine } from '../common/text/layout';
 import type { RuntimeErrorDetails } from '../../runtime/fault_state';
-import type { StackTraceFrame } from '../../runtime/stack_trace';
+import type { SourceStackTraceFrame } from '../../runtime/stack_trace';
 import type { RuntimeErrorOverlay } from '../contrib/runtime_error/model';
 import type { RectBounds } from '../../../machine/ts/common/rect';
 import { point_in_rect } from '../../../machine/ts/common/rect';
@@ -324,7 +324,7 @@ export type RuntimeErrorOverlayDrawOptions = {
 
 export type RuntimeErrorOverlayClickResult = { kind: 'expand'; } |
 { kind: 'collapse'; } |
-{ kind: 'navigate'; frame: StackTraceFrame; };
+{ kind: 'navigate'; frame: SourceStackTraceFrame; };
 
 export type AppliedRuntimeErrorOverlay = {
 	overlay: RuntimeErrorOverlay;

@@ -1,13 +1,13 @@
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import type { RuntimeErrorDetails } from '../../../runtime/fault_state';
-import type { StackTraceFrame } from '../../../runtime/stack_trace';
+import type { SourceStackTraceFrame } from '../../../runtime/stack_trace';
 
 export type RuntimeErrorOverlayLineRole = 'message' | 'header' | 'divider' | 'frame';
 
 export type RuntimeErrorOverlayLineDescriptor = {
 	text: string;
 	role: RuntimeErrorOverlayLineRole;
-	frame?: StackTraceFrame;
+	frame?: SourceStackTraceFrame;
 };
 
 export type RuntimeErrorOverlayLayout = {
