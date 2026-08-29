@@ -2613,7 +2613,7 @@ function executeNewGxGpuCommands(gx: WebGpuGxGpuState,
 	}
 }
 
-function executeGxGpuVramCommands(gx: WebGpuGxGpuState, source: GxGpuVramSource, commandLimit: number, readbackClaimed: boolean): void {
+export function executeGxGpuVramCommands(gx: WebGpuGxGpuState, source: GxGpuVramSource, commandLimit: number, readbackClaimed: boolean): void {
 	const commandBuffer = source.commandBuffer;
 	const commandSerial = commandBuffer.serial;
 	if (gx.vramSnapshotSerial !== source.vramSnapshotSerial) {

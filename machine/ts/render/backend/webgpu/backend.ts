@@ -8,6 +8,7 @@ import { registerCRT } from '../../post/crt/webgpu/pipeline';
 import { registerDeviceQuantize } from '../../post/device_quantize/webgpu/pipeline';
 import {
 	captureRenderedVramSnapshot,
+	executeGxGpuVramCommands,
 	registerGxGpuPass,
 	serviceGxGpuReadback,
 	type WebGpuGxGpuState,
