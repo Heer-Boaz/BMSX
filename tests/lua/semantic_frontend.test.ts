@@ -406,6 +406,7 @@ test('workspace publishes immutable semantic snapshots per version', () => {
 	const firstSnapshot = workspace.getSnapshot();
 	const firstData = firstSnapshot.getFileData('main.lua');
 	assert.equal(firstSnapshot.files.length, 1);
+	assert.equal(firstSnapshot.files[0], firstData, 'program stores the semantic file record itself');
 	assert.equal(firstData.source, [
 		'local value = 1',
 		'return value',
@@ -460,6 +461,7 @@ test('workspace resolves global receiver members per immutable snapshot without 
 	const secondSnapshot = workspace.getSnapshot();
 	const second = createLuaSemanticFrontendFromSnapshot(secondSnapshot);
 	assert.equal(workspace.getFileData('usage.lua'), usageData, 'unchanged file analysis is retained');
+	assert.equal(secondSnapshot.files[1], usageData, 'new program retains the unchanged file record identity');
 	assert.equal(first.snapshot, firstSnapshot);
 	assert.equal(second.snapshot, secondSnapshot);
 	const preservedTarget = firstNavigationTarget(first.getFile('usage.lua'), 1, 13);

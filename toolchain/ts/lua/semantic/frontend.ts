@@ -6,7 +6,6 @@ import {
 	buildLuaSemanticWorkspaceSnapshot,
 	type Decl,
 	type FileSemanticData,
-	type LuaSemanticWorkspaceSourceSnapshot,
 	type LuaSemanticWorkspaceSnapshot,
 	type Ref,
 	type SymbolID,
@@ -100,7 +99,6 @@ export type LuaSemanticFrontendFile = {
 
 export type LuaSemanticFrontend = {
 	snapshot: LuaSemanticWorkspaceSnapshot;
-	filePaths: readonly string[];
 	getFile(path: string): LuaSemanticFrontendFile;
 	findSymbolsByPosition(path: string, line: number, column: number): LuaSemanticPositionSymbols | null;
 	findReferencesByPosition(path: string, line: number, column: number): LuaSemanticReferenceQuery | null;
@@ -127,24 +125,17 @@ export function buildLuaSemanticFrontendFromSnapshot(
 
 class SnapshotSemanticFrontend implements LuaSemanticFrontend {
 	public readonly snapshot: LuaSemanticWorkspaceSnapshot;
-	public readonly filePaths: readonly string[];
 	private readonly builtinDescriptors: readonly LuaBuiltinDescriptor[];
 	private readonly extraGlobalNames: readonly string[] | undefined;
 	private readonly globalSymbols: readonly LuaSymbolEntry[];
 	private readonly knownGlobalNames: ReadonlySet<string>;
 	private readonly moduleTargetsByAlias: ReadonlyMap<string, string>;
-	private readonly sourcesByPath: Map<string, LuaSemanticWorkspaceSourceSnapshot> = new Map();
 	private readonly files: Map<string, LuaSemanticFrontendFile> = new Map();
 
 	constructor(snapshot: LuaSemanticWorkspaceSnapshot, options: LuaSemanticFrontendOptions) {
 		this.snapshot = snapshot;
-		this.filePaths = snapshot.files;
 		this.builtinDescriptors = options.builtinDescriptors ?? getDefaultLuaBuiltinDescriptors();
 		this.extraGlobalNames = options.extraGlobalNames;
-		for (let index = 0; index < snapshot.sources.length; index += 1) {
-			const source = snapshot.sources[index];
-			this.sourcesByPath.set(source.path, source);
-		}
 		// Queries remain bound to this immutable source and global-symbol generation.
 		this.globalSymbols = buildCombinedGlobalSymbols(snapshot.listGlobalDecls(), options.externalGlobalSymbols);
 		this.knownGlobalNames = buildLuaKnownNameSet(
@@ -152,7 +143,7 @@ class SnapshotSemanticFrontend implements LuaSemanticFrontend {
 			this.builtinDescriptors,
 			this.extraGlobalNames,
 		);
-		this.moduleTargetsByAlias = buildModuleTargetAliasMap(snapshot.sources);
+		this.moduleTargetsByAlias = buildModuleTargetAliasMap(snapshot.files);
 	}
 
 	public getFile(path: string): LuaSemanticFrontendFile {
@@ -160,12 +151,12 @@ class SnapshotSemanticFrontend implements LuaSemanticFrontend {
 		if (file) {
 			return file;
 		}
-		const source = this.sourcesByPath.get(path);
+		const source = this.snapshot.getFileData(path);
 		if (!source) {
 			throw new Error(`[LuaSemanticFrontend] Missing semantic file '${path}'.`);
 		}
 		const diagnostics = computeLuaDiagnosticsFromAnalysis({
-			analysis: source.analysis,
+			analysis: source,
 			chunk: source.chunk,
 			globalSymbols: this.globalSymbols,
 			builtinDescriptors: this.builtinDescriptors,
@@ -176,7 +167,6 @@ class SnapshotSemanticFrontend implements LuaSemanticFrontend {
 			diagnostics,
 			this.knownGlobalNames,
 			this.moduleTargetsByAlias,
-			this.sourcesByPath,
 			this.snapshot,
 		);
 		this.files.set(path, file);
@@ -184,7 +174,7 @@ class SnapshotSemanticFrontend implements LuaSemanticFrontend {
 	}
 
 	public findSymbolsByPosition(path: string, line: number, column: number): LuaSemanticPositionSymbols | null {
-		const source = this.sourcesByPath.get(path);
+		const source = this.snapshot.getFileData(path);
 		if (!source) {
 			return null;
 		}
@@ -289,14 +279,13 @@ function compareCallHierarchyItems(left: LuaCallHierarchyItem, right: LuaCallHie
 }
 
 function createBoundFile(
-	source: LuaSemanticWorkspaceSourceSnapshot,
+	source: FileSemanticData,
 	diagnostics: readonly LuaStaticDiagnostic[],
 	knownGlobalNames: ReadonlySet<string>,
 	moduleTargetsByAlias: ReadonlyMap<string, string>,
-	sourceByPath: ReadonlyMap<string, LuaSemanticWorkspaceSourceSnapshot>,
 	snapshot: LuaSemanticWorkspaceSnapshot,
 ): LuaSemanticFrontendFile {
-	const requireTargetsByStart = collectRequireNavigationTargets(source, moduleTargetsByAlias, sourceByPath);
+	const requireTargetsByStart = collectRequireNavigationTargets(source, moduleTargetsByAlias, snapshot);
 	const boundReferences = new Map<Ref, LuaBoundReference>();
 	const bindReference = (ref: Ref): LuaBoundReference => {
 		let reference = boundReferences.get(ref);
@@ -309,13 +298,13 @@ function createBoundFile(
 	return {
 		diagnostics,
 		getDeclaration(identifier: LuaIdentifierExpression): Decl | undefined {
-			const id = source.analysis.declarationIdsBySyntax.get(identifier);
+			const id = source.declarationIdsBySyntax.get(identifier);
 			return id === undefined
 				? undefined
 				: snapshot.symbolResolver.getDeclaration(id);
 		},
 		getReference(identifier: LuaIdentifierExpression): LuaBoundReference | undefined {
-			const ref = source.analysis.referencesBySyntax.get(identifier);
+			const ref = source.referencesBySyntax.get(identifier);
 			return ref === undefined ? undefined : bindReference(ref);
 		},
 		getNavigationTargetsAt(line: number, column: number): readonly LuaSemanticNavigationTarget[] {
@@ -349,12 +338,12 @@ function createBoundFile(
 }
 
 function findPositionSymbols(
-	source: LuaSemanticWorkspaceSourceSnapshot,
+	source: FileSemanticData,
 	snapshot: LuaSemanticWorkspaceSnapshot,
 	line: number,
 	column: number,
 ): LuaSemanticPositionSymbols | null {
-	const decls = source.analysis.decls;
+	const decls = source.decls;
 	for (let index = 0; index < decls.length; index += 1) {
 		const decl = decls[index];
 		if (sourcePositionInRange(line, column, decl.range)) {
@@ -364,7 +353,7 @@ function findPositionSymbols(
 			};
 		}
 	}
-	const refs = source.analysis.refs;
+	const refs = source.refs;
 	for (let index = 0; index < refs.length; index += 1) {
 		const ref = refs[index];
 		if (!sourcePositionInRange(line, column, ref.range)) {
@@ -397,13 +386,13 @@ type LuaRequireNavigationTarget = {
 };
 
 function collectRequireNavigationTargets(
-	source: LuaSemanticWorkspaceSourceSnapshot,
+	source: FileSemanticData,
 	moduleTargetsByAlias: ReadonlyMap<string, string>,
-	sourceByPath: ReadonlyMap<string, LuaSemanticWorkspaceSourceSnapshot>,
+	snapshot: LuaSemanticWorkspaceSnapshot,
 ): LuaRequireNavigationTarget[] {
 	const targets: LuaRequireNavigationTarget[] = [];
-	for (let index = 0; index < source.analysis.callExpressions.length; index += 1) {
-		const callExpression = source.analysis.callExpressions[index];
+	for (let index = 0; index < source.callExpressions.length; index += 1) {
+		const callExpression = source.callExpressions[index];
 		const requireArgument = extractRequireStringArgument(callExpression);
 		if (!requireArgument) {
 			continue;
@@ -413,7 +402,7 @@ function collectRequireNavigationTargets(
 		if (!targetPath) {
 			continue;
 		}
-		const targetSource = sourceByPath.get(targetPath);
+		const targetSource = snapshot.getFileData(targetPath);
 		if (!targetSource) {
 			continue;
 		}
@@ -447,7 +436,7 @@ function extractRequireStringArgument(
 }
 
 function resolveStringLiteralNavigationRange(
-	source: LuaSemanticWorkspaceSourceSnapshot,
+	source: FileSemanticData,
 	literal: LuaStringLiteralExpression,
 ): LuaSourceRange {
 	for (let index = 0; index < source.tokens.length; index += 1) {
@@ -471,14 +460,14 @@ function resolveStringLiteralNavigationRange(
 }
 
 function buildModuleTargetAliasMap(
-	sources: readonly LuaSemanticWorkspaceSourceSnapshot[],
+	files: readonly FileSemanticData[],
 ): Map<string, string> {
 	const aliases = new Map<string, string>();
-	for (let index = 0; index < sources.length; index += 1) {
-		const source = sources[index];
-		const modulePath = toLuaModulePath(source.path);
+	for (let index = 0; index < files.length; index += 1) {
+		const file = files[index];
+		const modulePath = toLuaModulePath(file.file);
 		if (!aliases.has(modulePath)) {
-			aliases.set(modulePath, source.path);
+			aliases.set(modulePath, file.file);
 		}
 	}
 	return aliases;

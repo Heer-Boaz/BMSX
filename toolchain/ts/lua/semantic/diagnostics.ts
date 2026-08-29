@@ -70,12 +70,6 @@ type QualifiedName = {
 	parts: string[];
 };
 
-type MutableProjectSource = {
-	path: string;
-	chunk: LuaChunk;
-	analysis: FileSemanticData;
-};
-
 function walkLuaStatementTree(statements: readonly LuaStatement[], visitStatement: (statement: LuaStatement) => void): void {
 	for (let index = 0; index < statements.length; index += 1) {
 		const statement = statements[index];
@@ -153,7 +147,6 @@ export function computeLuaProjectDiagnostics(
 		return results;
 	}
 	const builtinDescriptors = options.builtinDescriptors ?? getDefaultLuaBuiltinDescriptors();
-	const validSources: MutableProjectSource[] = [];
 	const snapshotInputs: LuaSemanticWorkspaceSnapshotInput[] = [];
 	for (let index = 0; index < sources.length; index += 1) {
 		const source = sources[index];
@@ -175,20 +168,12 @@ export function computeLuaProjectDiagnostics(
 		return results;
 	}
 	const snapshot = buildLuaSemanticWorkspaceSnapshot(snapshotInputs);
-	for (let index = 0; index < snapshot.sources.length; index += 1) {
-		const source = snapshot.sources[index];
-		validSources.push({
-			path: source.path,
-			chunk: source.chunk,
-			analysis: source.analysis,
-		});
-	}
 	const globalSymbols = buildGlobalSymbols(snapshot.listGlobalDecls());
-	for (let index = 0; index < validSources.length; index += 1) {
-		const source = validSources[index];
-		results.set(source.path, computeLuaDiagnosticsFromAnalysis({
-			analysis: source.analysis,
-			chunk: source.chunk,
+	for (let index = 0; index < snapshot.files.length; index += 1) {
+		const file = snapshot.files[index];
+		results.set(file.file, computeLuaDiagnosticsFromAnalysis({
+			analysis: file,
+			chunk: file.chunk,
 			globalSymbols,
 			builtinDescriptors,
 			extraGlobalNames: options.extraGlobalNames,

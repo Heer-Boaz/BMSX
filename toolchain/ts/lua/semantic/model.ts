@@ -108,34 +108,26 @@ export type Ref = {
 };
 
 export type FileSemanticData = {
-	file: string;
-	source: string;
-	tokens: readonly LuaToken[];
-	chunk: LuaChunk;
-	annotations: SemanticAnnotations;
-	decls: readonly Decl[];
-	refs: readonly Ref[];
-	declarationIdsBySyntax: ReadonlyMap<LuaIdentifierExpression, SymbolID>;
-	referencesBySyntax: ReadonlyMap<LuaIdentifierExpression, Ref>;
-	referencesByName: ReadonlyMap<string, readonly Ref[]>;
-	moduleAliases: readonly ModuleAliasEntry[];
-	callExpressions: readonly LuaCallExpression[];
-	functionSignatures: ReadonlyMap<string, FunctionSignatureInfo>;
-	declarationValues: readonly DeclarationValueEntry[];
-	moduleValues: readonly ModuleValueEntry[];
-	memberValues: readonly MemberValueEntry[];
-	functionReturnValues: readonly FunctionReturnValueEntry[];
-	functionValueFlows: readonly FunctionValueFlowEntry[];
-	callValues: readonly CallValueEntry[];
-	valueAssignments: readonly ValueAssignmentEntry[];
-};
-
-export type LuaSemanticWorkspaceSourceSnapshot = {
-	path: string;
-	source: string;
-	tokens: readonly LuaToken[];
-	chunk: LuaChunk;
-	analysis: FileSemanticData;
+	readonly file: string;
+	readonly source: string;
+	readonly tokens: readonly LuaToken[];
+	readonly chunk: LuaChunk;
+	readonly annotations: SemanticAnnotations;
+	readonly decls: readonly Decl[];
+	readonly refs: readonly Ref[];
+	readonly declarationIdsBySyntax: ReadonlyMap<LuaIdentifierExpression, SymbolID>;
+	readonly referencesBySyntax: ReadonlyMap<LuaIdentifierExpression, Ref>;
+	readonly referencesByName: ReadonlyMap<string, readonly Ref[]>;
+	readonly moduleAliases: readonly ModuleAliasEntry[];
+	readonly callExpressions: readonly LuaCallExpression[];
+	readonly functionSignatures: ReadonlyMap<string, FunctionSignatureInfo>;
+	readonly declarationValues: readonly DeclarationValueEntry[];
+	readonly moduleValues: readonly ModuleValueEntry[];
+	readonly memberValues: readonly MemberValueEntry[];
+	readonly functionReturnValues: readonly FunctionReturnValueEntry[];
+	readonly functionValueFlows: readonly FunctionValueFlowEntry[];
+	readonly callValues: readonly CallValueEntry[];
+	readonly valueAssignments: readonly ValueAssignmentEntry[];
 };
 
 export type LuaSemanticWorkspaceSnapshotInput = {
@@ -148,29 +140,26 @@ export type LuaSemanticWorkspaceSnapshotInput = {
 
 export class LuaSemanticWorkspaceSnapshot {
 	public readonly version: number;
-	public readonly files: readonly string[];
-	public readonly sources: readonly LuaSemanticWorkspaceSourceSnapshot[];
+	public readonly files: readonly FileSemanticData[];
 	public readonly symbolResolver: WorkspaceSymbolResolver;
 	private readonly dataByPath: ReadonlyMap<string, FileSemanticData>;
 	private readonly globalDecls: readonly Decl[];
 
 	constructor(
 		version: number,
-		files: readonly string[],
-		sources: readonly LuaSemanticWorkspaceSourceSnapshot[],
+		files: readonly FileSemanticData[],
 		symbolResolver: WorkspaceSymbolResolver,
 	) {
 		this.version = version;
 		this.files = files;
-		this.sources = sources;
 		this.symbolResolver = symbolResolver;
 		const dataByPath = new Map<string, FileSemanticData>();
 		const globalDecls: Decl[] = [];
-		for (let index = 0; index < sources.length; index += 1) {
-			const source = sources[index];
-			dataByPath.set(source.path, source.analysis);
-			for (let declIndex = 0; declIndex < source.analysis.decls.length; declIndex += 1) {
-				const decl = source.analysis.decls[declIndex];
+		for (let index = 0; index < files.length; index += 1) {
+			const file = files[index];
+			dataByPath.set(file.file, file);
+			for (let declIndex = 0; declIndex < file.decls.length; declIndex += 1) {
+				const decl = file.decls[declIndex];
 				if (decl.isGlobal) {
 					globalDecls.push(decl);
 				}
@@ -191,23 +180,11 @@ export class LuaSemanticWorkspaceSnapshot {
 }
 
 function createWorkspaceSnapshotFromIndex(index: LuaProjectIndex): LuaSemanticWorkspaceSnapshot {
-	const files = index.listFiles();
-	const sources = new Array<LuaSemanticWorkspaceSourceSnapshot>(files.length);
-	for (let indexInFiles = 0; indexInFiles < files.length; indexInFiles += 1) {
-		const path = files[indexInFiles];
-		const data = index.getFileData(path);
-		if (!data) {
-			throw new Error(`[LuaSemanticWorkspace] Missing file data for '${path}'.`);
-		}
-		sources[indexInFiles] = {
-			path,
-			source: data.source,
-			tokens: data.tokens,
-			chunk: data.chunk,
-			analysis: data,
-		};
-	}
-	return new LuaSemanticWorkspaceSnapshot(index.getVersion(), files, sources, index.getSymbolResolver());
+	return new LuaSemanticWorkspaceSnapshot(
+		index.getVersion(),
+		index.orderedFiles,
+		index.symbolResolver,
+	);
 }
 
 export function buildLuaSemanticWorkspaceSnapshot(
@@ -365,7 +342,8 @@ class LuaProjectIndex {
 	private readonly globalsByKey: Map<string, SymbolID> = new Map();
 	private readonly globalsSources: Map<string, Map<SymbolID, number>> = new Map();
 	private readonly fileOrder: Map<string, number> = new Map();
-	private symbolResolver: WorkspaceSymbolResolver;
+	public orderedFiles: readonly FileSemanticData[] = [];
+	public symbolResolver: WorkspaceSymbolResolver;
 	private version = 0;
 	private nextFileOrder = 1;
 
@@ -417,44 +395,6 @@ class LuaProjectIndex {
 
 	public getFileData(file: string): FileSemanticData | undefined {
 		return this.files.get(file);
-	}
-
-	public getSymbolResolver(): WorkspaceSymbolResolver {
-		return this.symbolResolver;
-	}
-
-	public listGlobalDecls(): Decl[] {
-		const decls: Decl[] = [];
-		for (const data of this.files.values()) {
-			const fileDecls = data.decls;
-			for (let index = 0; index < fileDecls.length; index += 1) {
-				const decl = fileDecls[index];
-				if (decl.isGlobal) {
-					decls.push(decl);
-				}
-			}
-		}
-		decls.sort((a, b) => {
-			const orderA = this.fileOrder.get(a.file)!;
-			const orderB = this.fileOrder.get(b.file)!;
-			if (orderA !== orderB) {
-				return orderA - orderB;
-			}
-			const startA = a.range.start;
-			const startB = b.range.start;
-			if (startA.line !== startB.line) {
-				return startA.line - startB.line;
-			}
-			if (startA.column !== startB.column) {
-				return startA.column - startB.column;
-			}
-			return a.symbolKey.localeCompare(b.symbolKey);
-		});
-		return decls;
-	}
-
-	public listFiles(): string[] {
-		return Array.from(this.files.keys());
 	}
 
 	private applyFileData(data: FileSemanticData): void {
@@ -555,16 +495,16 @@ class LuaProjectIndex {
 		return order;
 	}
 
+	private buildOrderedFiles(): FileSemanticData[] {
+		const orderedFiles = Array.from(this.files.values());
+		orderedFiles.sort((left, right) => this.fileOrder.get(left.file)! - this.fileOrder.get(right.file)!);
+		return orderedFiles;
+	}
+
 	private buildWorkspaceSymbolResolver(): WorkspaceSymbolResolver {
-		const orderedFiles = this.listFiles();
-		orderedFiles.sort((left, right) => this.fileOrder.get(left)! - this.fileOrder.get(right)!);
-		const orderedData = new Array<FileSemanticData>(orderedFiles.length);
-		for (let fileIndex = 0; fileIndex < orderedFiles.length; fileIndex += 1) {
-			orderedData[fileIndex] = this.files.get(orderedFiles[fileIndex])!;
-		}
 		const globals = new Map(this.globalsByKey);
 		return new WorkspaceSymbolResolver({
-			files: orderedData,
+			files: this.orderedFiles,
 			declarations: new Map(this.symbols),
 			globals,
 		});
@@ -585,6 +525,7 @@ class LuaProjectIndex {
 	}
 
 	private commitFileChanges(): void {
+		this.orderedFiles = this.buildOrderedFiles();
 		this.symbolResolver = this.buildWorkspaceSymbolResolver();
 		this.version += 1;
 	}
@@ -3182,9 +3123,6 @@ export class LuaSemanticWorkspace {
 		return this.snapshot;
 	}
 
-	public listFiles(): string[] {
-		return this.index.listFiles();
-	}
 }
 
 export function symbolPriority(kind: LuaSymbolEntry['kind']): number {

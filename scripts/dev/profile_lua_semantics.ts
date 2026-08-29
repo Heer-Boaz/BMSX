@@ -124,6 +124,9 @@ for (let iteration = 0; iteration < EDIT_ITERATION_COUNT; iteration += 1) {
 	if (workspace.getFileData(unchangedSource.path) !== unchangedData) {
 		throw new Error(`Edit rebuilt unchanged semantic file '${unchangedSource.path}'.`);
 	}
+	if (snapshot.getFileData(unchangedSource.path) !== unchangedData) {
+		throw new Error(`Program snapshot replaced unchanged semantic file '${unchangedSource.path}'.`);
+	}
 	if (iteration >= EDIT_WARMUP_COUNT) {
 		parseMeasurements.push(parseMs);
 		semanticMeasurements.push(semanticMs);

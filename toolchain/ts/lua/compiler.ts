@@ -5815,9 +5815,9 @@ function buildCompilerSemanticFrontend(
 
 function collectSemanticCompileErrors(frontend: LuaSemanticFrontend, entryPath: string): CompileError[] {
 	const compileErrors: CompileError[] = [];
-	const paths = frontend.filePaths;
-	for (let pathIndex = 0; pathIndex < paths.length; pathIndex += 1) {
-		const path = paths[pathIndex];
+	const files = frontend.snapshot.files;
+	for (let fileIndex = 0; fileIndex < files.length; fileIndex += 1) {
+		const path = files[fileIndex].file;
 		const file = frontend.getFile(path);
 		if (file.diagnostics.length === 0) {
 			continue;
