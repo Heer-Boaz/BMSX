@@ -21,10 +21,9 @@ import {
 	type LuaDataDeclarationStatement,
 	type LuaRodataDeclarationStatement,
 	type LuaFunctionDeclarationStatement,
+	type LuaFunctionName,
 	type LuaSourceRange,
 } from '../syntax/ast';
-import type { LuaToken } from '../syntax/token';
-import { LuaTokenType } from '../syntax/token';
 import type { LuaSymbolEntry } from '../semantic_contracts';
 import type { ParsedLuaChunk } from '../analysis/parse';
 import { getCachedLuaParse } from '../analysis/cache';
@@ -308,11 +307,6 @@ type SemanticBuildResult = {
 	moduleAliases: ModuleAliasEntry[];
 };
 
-type TokenInfo = {
-	token: LuaToken;
-	index: number;
-};
-
 export function buildLuaFileSemanticData(
 	source: string,
 	path: string,
@@ -328,7 +322,6 @@ export function buildLuaFileSemanticData(
 	const builder = new SemanticBuilder({
 		path,
 		chunk,
-		tokens,
 		lineCount: tokens[tokens.length - 1].endLine,
 	});
 	const result = builder.build();
@@ -591,9 +584,7 @@ class LuaProjectIndex {
 class SemanticBuilder {
 	private readonly chunk: LuaChunk;
 	private readonly path: string;
-	private readonly tokens: readonly LuaToken[];
 	private readonly annotations: SemanticAnnotations;
-	private readonly tokenMap: Map<string, TokenInfo>;
 	private readonly scopeStack: Scope[] = [];
 	private readonly properties: Map<string, InternalDecl> = new Map();
 	private readonly propertiesByOwner: Map<string, InternalDecl> = new Map();
@@ -625,14 +616,11 @@ class SemanticBuilder {
 	constructor(options: {
 		chunk: LuaChunk;
 		path: string;
-		tokens: readonly LuaToken[];
 		lineCount: number;
 	}) {
 		this.chunk = options.chunk;
 		this.path = options.path;
-		this.tokens = options.tokens;
 		this.annotations = new Array(options.lineCount);
-		this.tokenMap = buildTokenMap(options.tokens);
 	}
 
 	public build(): SemanticBuildResult {
@@ -755,10 +743,9 @@ class SemanticBuilder {
 				if (!decl) {
 					const scopeRange = scope.range;
 					const isGlobal = scope.kind === 'path';
-					const tokenInfo = findFunctionNameToken(functionDeclaration, this.tokens, this.tokenMap);
-					const range = tokenInfo
-						? buildRangeFromToken(tokenInfo, this.path)
-						: buildRangeFromPosition(functionDeclaration.range.start, namePath[namePath.length - 1].length, this.path);
+					const declarationName = functionDeclaration.name.method
+						?? functionDeclaration.name.path[functionDeclaration.name.path.length - 1];
+					const range = declarationName.range;
 					decl = this.createDecl({
 						namePath,
 						name: namePath[namePath.length - 1],
@@ -789,18 +776,23 @@ class SemanticBuilder {
 				}
 				this.recordFunctionNameReferences(functionDeclaration);
 				this.recordFunctionDeclarationWriteReference(functionDeclaration, decl);
-				const basePath = functionDeclaration.name.identifiers.join('.');
-				const methodName = functionDeclaration.name.methodName;
+				const functionPath = functionDeclaration.name.path;
+				const baseNames = new Array<string>(functionPath.length);
+				for (let pathIndex = 0; pathIndex < functionPath.length; pathIndex += 1) {
+					baseNames[pathIndex] = functionPath[pathIndex].name;
+				}
+				const basePath = joinNamePath(baseNames);
+				const methodName = functionDeclaration.name.method?.name;
 				const methodReceiverClass = methodName ? functionOwner : undefined;
 				const declarationPath = methodName
-					? (basePath.length > 0 ? `${basePath}:${methodName}` : methodName)
+					? `${basePath}:${methodName}`
 					: basePath;
 				this.recordFunctionSignature(declarationPath, functionDeclaration.functionExpression, methodName ? 'method' : 'function');
-				let methodSelfPath = methodName ? functionDeclaration.name.identifiers.slice() : undefined;
+				let methodSelfPath = methodName ? baseNames : undefined;
 				if (!methodSelfPath
-					&& functionDeclaration.name.identifiers.length > 1
+					&& baseNames.length > 1
 					&& functionDeclaration.functionExpression.parameters[0]?.name === 'self') {
-					methodSelfPath = functionDeclaration.name.identifiers.slice(0, -1);
+					methodSelfPath = baseNames.slice(0, -1);
 				}
 				this.visitFunctionExpression(
 					functionDeclaration.functionExpression,
@@ -1056,7 +1048,7 @@ class SemanticBuilder {
 				return this.handleIndexExpression(expression, context);
 			case LuaSyntaxKind.CallExpression: {
 				const callExpression = expression;
-				const methodName = callExpression.methodName;
+				const methodName = callExpression.method?.name;
 				const callResult = this.createExpressionValueSource(callExpression);
 				const calleeInfo = methodName
 					? this.visitExpression(callExpression.callee, context)
@@ -1380,7 +1372,7 @@ class SemanticBuilder {
 
 	private assignIdentifier(identifier: LuaIdentifierExpression): AssignmentTargetInfo {
 		const existing = this.resolveName(identifier.name);
-		const range = buildIdentifierRange(identifier, this.tokenMap, this.path);
+		const range = identifier.range;
 		if (existing) {
 			this.recordReference({
 				namePath: existing.namePath,
@@ -1412,18 +1404,19 @@ class SemanticBuilder {
 		const baseInfo = this.visitExpression(member.base, { tableBaseDecl: null, tableBasePath: null });
 		const basePath = resolveReferencedBasePath(baseInfo, member.base);
 		const baseDecl = baseInfo?.decl;
-		const namePath = basePath ? appendToNamePath(basePath, member.identifier) : [member.identifier];
-		const range = buildPropertyRange(member, this.tokenMap, this.path);
+		const memberName = member.member.name;
+		const namePath = basePath ? appendToNamePath(basePath, memberName) : [memberName];
+		const range = member.member.range;
 		const decl = this.ensureTableField(
 			namePath,
 			range.start,
-			member.identifier.length,
+			memberName.length,
 			baseDecl,
 			baseInfo?.valueSource,
 		);
 		this.recordReference({
 			namePath,
-			name: member.identifier,
+			name: memberName,
 			range,
 			target: decl.id,
 			isWrite: true,
@@ -1496,10 +1489,10 @@ class SemanticBuilder {
 			}
 		}
 		const receiverSymbolKey = calleeInfo?.decl?.symbolKey || (calleeInfo?.namePath && joinNamePath(calleeInfo.namePath));
-		const methodName = callExpression.methodName!;
+		const method = callExpression.method;
+		const methodName = method.name;
 		const namePath = basePath ? appendToNamePath(basePath, methodName) : [methodName];
-		const tokenInfo = findMethodToken(callExpression, this.tokens, this.tokenMap);
-		const range = tokenInfo ? buildRangeFromToken(tokenInfo, this.path) : callExpression.range;
+		const range = method.range;
 		const decl = this.resolveMemberDeclaration(
 			calleeInfo?.valueSource,
 			methodName,
@@ -1527,7 +1520,7 @@ class SemanticBuilder {
 	}
 
 	private handleIdentifierExpression(identifier: LuaIdentifierExpression, isWrite: boolean, isCall = false): ResolvedNamePath {
-		const range = buildIdentifierRange(identifier, this.tokenMap, this.path);
+		const range = identifier.range;
 		const resolved = this.resolveName(identifier.name);
 		const namePath = [identifier.name];
 		if (identifier.name === 'self') {
@@ -1608,17 +1601,18 @@ class SemanticBuilder {
 	private handleMemberExpression(member: LuaMemberExpression, context: ExpressionContext, isWrite: boolean, isCall = false): ResolvedNamePath {
 		const baseInfo = this.visitExpression(member.base, context);
 		const basePath = resolveReferencedBasePath(baseInfo, member.base);
-		const namePath = basePath ? appendToNamePath(basePath, member.identifier) : [member.identifier];
-		const range = buildPropertyRange(member, this.tokenMap, this.path);
+		const memberName = member.member.name;
+		const namePath = basePath ? appendToNamePath(basePath, memberName) : [memberName];
+		const range = member.member.range;
 		const decl = this.resolveMemberDeclaration(
 			baseInfo?.valueSource,
-			member.identifier,
+			memberName,
 			baseInfo?.decl,
 		) ?? (baseInfo?.valueSource ? undefined : this.properties.get(joinNamePath(namePath)));
 		const targetId = decl?.id;
 		this.recordReference({
 			namePath,
-			name: member.identifier,
+			name: memberName,
 			range,
 			target: targetId,
 			isWrite,
@@ -1631,7 +1625,7 @@ class SemanticBuilder {
 			namePath,
 			decl,
 			valueSource: baseInfo?.valueSource
-				? appendValueMember(baseInfo.valueSource, member.identifier)
+				? appendValueMember(baseInfo.valueSource, memberName)
 				: undefined,
 		};
 	}
@@ -1668,7 +1662,7 @@ class SemanticBuilder {
 
 	private declareLocal(name: LuaIdentifierExpression, kind: SemanticSymbolKind, activate: boolean): InternalDecl {
 		const scope = this.currentScope();
-		const range = buildIdentifierRange(name, this.tokenMap, this.path);
+		const range = name.range;
 		const decl = this.createDecl({
 			namePath: [name.name],
 			name: name.name,
@@ -1688,7 +1682,7 @@ class SemanticBuilder {
 
 	private declareParameter(name: LuaIdentifierExpression, scopeRange: LuaSourceRange): InternalDecl {
 		const scope = this.currentScope();
-		const range = buildIdentifierRange(name, this.tokenMap, this.path);
+		const range = name.range;
 		const decl = this.createDecl({
 			namePath: [name.name],
 			name: name.name,
@@ -1706,7 +1700,7 @@ class SemanticBuilder {
 
 	private declareType(name: LuaIdentifierExpression): InternalDecl {
 		const scope = this.currentScope();
-		const range = buildIdentifierRange(name, this.tokenMap, this.path);
+		const range = name.range;
 		const decl = this.createDecl({
 			namePath: [name.name],
 			name: name.name,
@@ -1727,7 +1721,7 @@ class SemanticBuilder {
 
 	private declareBss(name: LuaIdentifierExpression): InternalDecl {
 		const scope = this.currentScope();
-		const range = buildIdentifierRange(name, this.tokenMap, this.path);
+		const range = name.range;
 		const decl = this.createDecl({
 			namePath: [name.name],
 			name: name.name,
@@ -1748,7 +1742,7 @@ class SemanticBuilder {
 
 	private declareData(name: LuaIdentifierExpression): InternalDecl {
 		const scope = this.currentScope();
-		const range = buildIdentifierRange(name, this.tokenMap, this.path);
+		const range = name.range;
 		const decl = this.createDecl({
 			namePath: [name.name],
 			name: name.name,
@@ -1769,7 +1763,7 @@ class SemanticBuilder {
 
 	private declareRodata(name: LuaIdentifierExpression): InternalDecl {
 		const scope = this.currentScope();
-		const range = buildIdentifierRange(name, this.tokenMap, this.path);
+		const range = name.range;
 		const decl = this.createDecl({
 			namePath: [name.name],
 			name: name.name,
@@ -2010,35 +2004,29 @@ class SemanticBuilder {
 	}
 
 	private recordFunctionNameReferences(statement: LuaFunctionDeclarationStatement): void {
-		const identifiers = statement.name.methodName
-			? statement.name.identifiers
-			: statement.name.identifiers.slice(0, Math.max(statement.name.identifiers.length - 1, 0));
-		if (identifiers.length === 0) {
-			return;
-		}
-		const tokenInfos = findFunctionNameIdentifierTokens(statement, identifiers, this.tokens, this.tokenMap);
-		if (tokenInfos.length === 0) {
+		const path = statement.name.path;
+		const referenceCount = statement.name.method ? path.length : path.length - 1;
+		if (referenceCount === 0) {
 			return;
 		}
 		const namePath: string[] = [];
-		for (let index = 0; index < tokenInfos.length; index += 1) {
-			const identifier = identifiers[index];
-			const tokenInfo = tokenInfos[index];
-			namePath.push(identifier);
-			const range = buildRangeFromToken(tokenInfo, this.path);
+		for (let index = 0; index < referenceCount; index += 1) {
+			const identifier = path[index];
+			const name = identifier.name;
+			namePath.push(name);
 			let targetDecl: InternalDecl = null;
 			if (namePath.length === 1) {
-				targetDecl = this.resolveName(identifier) ?? this.globalsByKey.get(identifier);
+				targetDecl = this.resolveName(name) ?? this.globalsByKey.get(name);
 			} else {
 				const owner = this.resolveValueSourceFromNamePath(namePath.slice(0, -1));
 				targetDecl = owner
-					? this.propertiesByOwner.get(this.memberOwnerKey(owner, identifier))
+					? this.propertiesByOwner.get(this.memberOwnerKey(owner, name))
 					: this.properties.get(joinNamePath(namePath));
 			}
 			this.recordReference({
 				namePath,
-				name: identifier,
-				range,
+				name,
+				range: identifier.range,
 				target: targetDecl?.id,
 				isWrite: false,
 				referenceKind: index === 0 ? 'identifier' : 'member',
@@ -2047,13 +2035,12 @@ class SemanticBuilder {
 	}
 
 	private recordFunctionDeclarationWriteReference(statement: LuaFunctionDeclarationStatement, decl: InternalDecl): void {
-		const tokenInfo = findFunctionNameToken(statement, this.tokens, this.tokenMap);
-		if (!tokenInfo) {
-			return;
-		}
+		const path = statement.name.path;
+		const method = statement.name.method;
+		const declarationName = method ?? path[path.length - 1];
 		let targetDecl: InternalDecl = decl;
-		if (!statement.name.methodName && statement.name.identifiers.length === 1) {
-			targetDecl = this.resolveName(statement.name.identifiers[0]);
+		if (!method && path.length === 1) {
+			targetDecl = this.resolveName(path[0].name);
 			if (!targetDecl && this.currentScope().kind === 'path') {
 				targetDecl = decl;
 			}
@@ -2061,10 +2048,10 @@ class SemanticBuilder {
 		this.recordReference({
 			namePath: decl.namePath,
 			name: decl.name,
-			range: buildRangeFromToken(tokenInfo, this.path),
+			range: declarationName.range,
 			target: targetDecl?.id,
 			isWrite: true,
-			referenceKind: statement.name.methodName ? 'method' : (decl.namePath.length === 1 ? 'identifier' : 'member'),
+			referenceKind: method ? 'method' : (decl.namePath.length === 1 ? 'identifier' : 'member'),
 		});
 	}
 
@@ -2157,7 +2144,7 @@ class SemanticBuilder {
 	): SemanticValueSource | undefined {
 		const iterator = statement.iterators[0];
 		if (iterator.kind === LuaSyntaxKind.CallExpression
-			&& !iterator.methodName) {
+			&& !iterator.method) {
 			const name = resolveDirectCallName(iterator.callee);
 			const tableArgument = LUA_BUILTIN_TABLE_ITERATOR_ARGUMENTS[name];
 			if (tableArgument !== undefined
@@ -2178,7 +2165,7 @@ class SemanticBuilder {
 		secondArgument: ResolvedNamePath,
 		callResult: SemanticValueSource,
 	): SemanticValueSource | undefined {
-		if (!callExpression.methodName) {
+		if (!callExpression.method) {
 			const directCallName = resolveDirectCallName(callExpression.callee);
 			const firstArgumentValue = firstArgument?.valueSource;
 			if (directCallName === 'require'
@@ -2378,46 +2365,11 @@ class SemanticBuilder {
 	}
 }
 
-function buildTokenMap(tokens: readonly LuaToken[]): Map<string, TokenInfo> {
-	const map = new Map<string, TokenInfo>();
-	for (let index = 0; index < tokens.length; index += 1) {
-		const token = tokens[index];
-		const key = tokenKey(token.line, token.column);
-		if (!map.has(key)) {
-			map.set(key, { token, index });
-		}
-	}
-	return map;
-}
-
-function tokenKey(line: number, column: number): string {
-	return `${line}:${column}`;
-}
-
 function inferReferenceKind(ref: Ref): SemanticSymbolKind {
 	if (ref.symbolKey.includes('.')) {
 		return 'property';
 	}
 	return 'global';
-}
-
-function buildIdentifierRange(identifier: LuaIdentifierExpression, tokenMap: Map<string, TokenInfo>, path: string): LuaSourceRange {
-	const info = tokenMap.get(tokenKey(identifier.range.start.line, identifier.range.start.column));
-	const length = info ? info.token.lexeme.length : identifier.name.length;
-	return buildRangeFromPosition(identifier.range.start, length, path);
-}
-
-function buildPropertyRange(member: LuaMemberExpression, tokenMap: Map<string, TokenInfo>, path: string): LuaSourceRange {
-	const end = member.range.end;
-	const start = { line: end.line, column: end.column - Math.max(0, member.identifier.length - 1) };
-	const info = tokenMap.get(tokenKey(start.line, start.column));
-	const length = info ? info.token.lexeme.length : member.identifier.length;
-	return buildRangeFromPosition(start, length, path);
-}
-
-function buildRangeFromToken(tokenInfo: TokenInfo, path: string): LuaSourceRange {
-	const token = tokenInfo.token;
-	return buildRangeFromPosition({ line: token.line, column: token.column }, token.lexeme.length, path);
 }
 
 function buildRangeFromPosition(position: SourcePosition, length: number, path: string): LuaSourceRange {
@@ -2458,7 +2410,7 @@ function extractStaticMemberPath(expression: LuaExpression): string[] | null {
 		if (!base) {
 			return null;
 		}
-		base.push(expression.identifier);
+		base.push(expression.member.name);
 		return base;
 	}
 	if (expression.kind === LuaSyntaxKind.IndexExpression) {
@@ -2516,7 +2468,7 @@ function extractNamePath(expression: LuaExpression): string[] {
 			if (!base) {
 				return null;
 			}
-			return appendToNamePath(base, expression.identifier);
+			return appendToNamePath(base, expression.member.name);
 		}
 		case LuaSyntaxKind.IndexExpression:
 			return extractNamePath(expression.base);
@@ -2546,10 +2498,13 @@ function extractStringLiteral(expression: LuaExpression): string {
 	return expression.value;
 }
 
-function buildFunctionNamePath(name: { identifiers: readonly string[]; methodName: string }): string[] {
-	const identifiers = name.identifiers.slice();
-	if (name.methodName) {
-		identifiers.push(name.methodName);
+function buildFunctionNamePath(name: LuaFunctionName): string[] {
+	const identifiers = new Array<string>(name.path.length + (name.method ? 1 : 0));
+	for (let index = 0; index < name.path.length; index += 1) {
+		identifiers[index] = name.path[index].name;
+	}
+	if (name.method) {
+		identifiers[identifiers.length - 1] = name.method.name;
 	}
 	return identifiers;
 }
@@ -3065,9 +3020,9 @@ function isOptionalCallArgumentUse(
 }
 
 function resolveDirectCallPath(expression: LuaCallExpression): string {
-	if (expression.methodName) {
+	if (expression.method) {
 		const basePath = extractNamePath(expression.callee);
-		return basePath ? `${joinNamePath(basePath)}:${expression.methodName}` : null;
+		return basePath ? `${joinNamePath(basePath)}:${expression.method.name}` : null;
 	}
 	const calleePath = extractNamePath(expression.callee);
 	return calleePath ? joinNamePath(calleePath) : null;
@@ -3082,7 +3037,7 @@ function isNilLiteral(expression: LuaExpression): boolean {
 }
 
 function isTypeCallOnParameter(expression: LuaExpression, parameterName: string): boolean {
-	if (expression.kind !== LuaSyntaxKind.CallExpression || expression.methodName) {
+	if (expression.kind !== LuaSyntaxKind.CallExpression || expression.method) {
 		return false;
 	}
 	if (resolveDirectCallName(expression.callee) !== 'type' || expression.arguments.length !== 1) {
@@ -3132,103 +3087,6 @@ function expressionContainsParameter(expression: LuaExpression, parameterName: s
 		default:
 			return false;
 	}
-}
-
-function findFunctionNameToken(statement: LuaFunctionDeclarationStatement, tokens: readonly LuaToken[], tokenMap: Map<string, TokenInfo>): TokenInfo {
-	const identifiers = statement.name.identifiers;
-	const target = statement.name.methodName && statement.name.methodName.length > 0
-		? statement.name.methodName
-		: (identifiers.length > 0 ? identifiers[identifiers.length - 1] : null);
-	if (!target) {
-		return null;
-	}
-	const startLine = statement.range.start.line;
-	const endLine = statement.functionExpression.range.start.line;
-	let candidate: TokenInfo = null;
-	for (let index = 0; index < tokens.length; index += 1) {
-		const token = tokens[index];
-		if (token.type !== LuaTokenType.Identifier) {
-			continue;
-		}
-		if (token.lexeme !== target) {
-			continue;
-		}
-		if (token.line < startLine || token.line > endLine) {
-			continue;
-		}
-		const info = tokenMap.get(tokenKey(token.line, token.column));
-		if (info) {
-			candidate = info;
-		}
-	}
-	return candidate;
-}
-
-function findFunctionNameIdentifierTokens(
-	statement: LuaFunctionDeclarationStatement,
-	identifiers: readonly string[],
-	tokens: readonly LuaToken[],
-	tokenMap: Map<string, TokenInfo>,
-): TokenInfo[] {
-	if (identifiers.length === 0) {
-		return [];
-	}
-	const startLine = statement.range.start.line;
-	const endLine = statement.functionExpression.range.start.line;
-	const results: TokenInfo[] = [];
-	let nextIdentifierIndex = 0;
-	for (let index = 0; index < tokens.length; index += 1) {
-		const token = tokens[index];
-		if (token.line < startLine || token.line > endLine) {
-			continue;
-		}
-		if (token.type !== LuaTokenType.Identifier) {
-			continue;
-		}
-		if (token.lexeme !== identifiers[nextIdentifierIndex]) {
-			continue;
-		}
-		const info = tokenMap.get(tokenKey(token.line, token.column));
-		if (!info) {
-			continue;
-		}
-		results.push(info);
-		nextIdentifierIndex += 1;
-		if (nextIdentifierIndex >= identifiers.length) {
-			break;
-		}
-	}
-	return results;
-}
-
-function findMethodToken(callExpression: LuaCallExpression, tokens: readonly LuaToken[], tokenMap: Map<string, TokenInfo>): TokenInfo {
-	const methodName = callExpression.methodName;
-	if (!methodName) {
-		return null;
-	}
-	const rangeStartLine = callExpression.callee.range.start.line;
-	const rangeEndLine = callExpression.range.end.line;
-	for (let index = 0; index < tokens.length; index += 1) {
-		const token = tokens[index];
-		if (token.type !== LuaTokenType.Identifier) {
-			continue;
-		}
-		if (token.lexeme !== methodName) {
-			continue;
-		}
-		if (token.line < rangeStartLine || token.line > rangeEndLine) {
-			continue;
-		}
-		const previous = index > 0 ? tokens[index - 1] : null;
-		if (!previous || previous.type !== LuaTokenType.Colon) {
-			continue;
-		}
-		const info = tokenMap.get(tokenKey(token.line, token.column));
-		if (info) {
-			return info;
-		}
-	}
-	return null;
 }
 
 export class LuaSemanticWorkspace {

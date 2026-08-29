@@ -3,7 +3,7 @@ import { getCallMethodName } from '../../../../../../toolchain/ts/lua/syntax/cal
 import { BUILTIN_GLOBAL_FUNCTIONS, BUILTIN_TABLE_NAMES } from './general';
 
 export function isBuiltinCallExpression(expression: CallExpression): boolean {
-	if (expression.methodName && expression.callee.kind === SyntaxKind.IdentifierExpression) {
+	if (expression.method && expression.callee.kind === SyntaxKind.IdentifierExpression) {
 		return BUILTIN_TABLE_NAMES.has(expression.callee.name);
 	}
 	if (expression.callee.kind === SyntaxKind.IdentifierExpression) {

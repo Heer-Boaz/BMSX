@@ -15,7 +15,7 @@ export function getExpressionSignature(expression: Expression): string {
 		case SyntaxKind.IdentifierExpression:
 			return `id:${expression.name}`;
 		case SyntaxKind.MemberExpression:
-			return `member:${getExpressionSignature(expression.base)}.${expression.identifier}`;
+			return `member:${getExpressionSignature(expression.base)}.${expression.member.name}`;
 		case SyntaxKind.IndexExpression:
 			return `index:${getExpressionSignature(expression.base)}[${getExpressionSignature(expression.index)}]`;
 		case SyntaxKind.UnaryExpression:
@@ -24,7 +24,7 @@ export function getExpressionSignature(expression: Expression): string {
 				return `binary:${expression.operator}:${getExpressionSignature(expression.left)}:${getExpressionSignature(expression.right)}`;
 			case SyntaxKind.CallExpression: {
 				const argumentSignatures = expression.arguments.map(getExpressionSignature);
-				const callKind = expression.methodName === undefined ? 'call' : `method:${expression.methodName}`;
+				const callKind = expression.method === null ? 'call' : `method:${expression.method.name}`;
 				return `${callKind}:${getExpressionSignature(expression.callee)}(${argumentSignatures.join(',')})`;
 			}
 		case SyntaxKind.TableConstructorExpression: {

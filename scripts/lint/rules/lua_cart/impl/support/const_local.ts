@@ -138,8 +138,8 @@ export function lintConstLocalInStatements(statements: ReadonlyArray<Statement>,
 			}
 			case SyntaxKind.FunctionDeclarationStatement: {
 				const declaration = statement as FunctionDeclarationStatement;
-				if (declaration.name.identifiers.length === 1 && declaration.name.methodName === null) {
-					markConstLocalWriteByName(context, declaration.name.identifiers[0]);
+				if (declaration.name.path.length === 1 && declaration.name.method === null) {
+					markConstLocalWriteByName(context, declaration.name.path[0].name);
 				}
 				enterConstLocalScope(context);
 				for (const parameter of declaration.functionExpression.parameters) {

@@ -43,7 +43,7 @@ export const extractAssignmentPath = (expression: LuaAssignableExpression): stri
 			if (!basePath) {
 				return null;
 			}
-			basePath.push(member.identifier);
+			basePath.push(member.member.name);
 			return basePath;
 		}
 		case LuaSyntaxKind.IndexExpression: {

@@ -19,7 +19,7 @@ export function getSelfPropertyNameFromAliasExpression(expression: Expression): 
 		if (!isSelfExpressionRoot(expression.base)) {
 			return undefined;
 		}
-		return expression.identifier;
+		return expression.member.name;
 	}
 	if (expression.kind === SyntaxKind.IndexExpression) {
 		if (!isSelfExpressionRoot(expression.base)) {
@@ -32,7 +32,7 @@ export function getSelfPropertyNameFromAliasExpression(expression: Expression): 
 
 export function isSelfImageIdAssignmentTarget(target: Expression): boolean {
 	if (target.kind === SyntaxKind.MemberExpression) {
-		return target.identifier === 'imgid' && isSelfExpressionRoot(target.base);
+		return target.member.name === 'imgid' && isSelfExpressionRoot(target.base);
 	}
 	if (target.kind !== SyntaxKind.IndexExpression) {
 		return false;
@@ -63,7 +63,7 @@ export function looksLikeSpriteLikeTarget(expression: Expression): boolean {
 
 export function isSpriteComponentImageIdAssignmentTarget(target: Expression): boolean {
 	if (target.kind === SyntaxKind.MemberExpression) {
-		if (target.identifier !== 'imgid') {
+		if (target.member.name !== 'imgid') {
 			return false;
 		}
 		return looksLikeSpriteLikeTarget(target.base);
@@ -159,7 +159,7 @@ export function getSelfPropertyNameFromConditionExpression(expression: Expressio
 		return undefined;
 	}
 	if (expression.kind === SyntaxKind.MemberExpression && isSelfExpressionRoot(expression.base)) {
-		return expression.identifier;
+		return expression.member.name;
 	}
 	if (expression.kind === SyntaxKind.IndexExpression && isSelfExpressionRoot(expression.base)) {
 		return getExpressionKeyName(expression.index);
@@ -310,7 +310,7 @@ export function findSelfBooleanPropertyAssignmentInStatements(
 
 export function isSelfPropertyReferenceByName(expression: Expression, propertyName: string): boolean {
 	if (expression.kind === SyntaxKind.MemberExpression && isSelfExpressionRoot(expression.base)) {
-		return expression.identifier === propertyName;
+		return expression.member.name === propertyName;
 	}
 	if (expression.kind === SyntaxKind.IndexExpression && isSelfExpressionRoot(expression.base)) {
 		return getExpressionKeyName(expression.index) === propertyName;
@@ -320,7 +320,7 @@ export function isSelfPropertyReferenceByName(expression: Expression, propertyNa
 
 export function getSelfAssignedPropertyNameFromTarget(target: Expression): string | undefined {
 	if (target.kind === SyntaxKind.MemberExpression && isSelfExpressionRoot(target.base)) {
-		return target.identifier;
+		return target.member.name;
 	}
 	if (target.kind === SyntaxKind.IndexExpression && isSelfExpressionRoot(target.base)) {
 		return getExpressionKeyName(target.index);

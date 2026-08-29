@@ -142,9 +142,9 @@ export function lintShadowedRequireAliasStatements(
 				lintShadowedRequireAliasFunctionExpression(statement.functionExpression, context);
 				break;
 			case SyntaxKind.FunctionDeclarationStatement:
-				if (statement.name.identifiers.length === 1
-					&& statement.name.identifiers[0] === 'require'
-					&& !statement.name.methodName
+				if (statement.name.path.length === 1
+					&& statement.name.path[0].name === 'require'
+					&& !statement.name.method
 					&& resolveBinding(context, 'require') === undefined) {
 					context.requireIsBuiltin = false;
 				}
@@ -255,7 +255,7 @@ function classifyCartModuleCall(
 	expression: Extract<Expression, { kind: SyntaxKind.CallExpression }>,
 	context: ShadowedRequireAliasContext,
 ): CartModuleCallKind | undefined {
-	let member = expression.methodName;
+	let member = expression.method?.name;
 	let memberCount = member ? 1 : 0;
 	let callee = expression.callee;
 	while (callee.kind === SyntaxKind.MemberExpression || callee.kind === SyntaxKind.IndexExpression) {
@@ -264,7 +264,7 @@ function classifyCartModuleCall(
 			return undefined;
 		}
 		if (callee.kind === SyntaxKind.MemberExpression) {
-			member = callee.identifier;
+			member = callee.member.name;
 		} else {
 			if (callee.index.kind !== SyntaxKind.StringLiteralExpression) {
 				return undefined;

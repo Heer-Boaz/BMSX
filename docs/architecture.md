@@ -3578,6 +3578,10 @@ project publishes immutable program snapshots that retain unchanged file
 records. Definition, references, rename, diagnostics, completion, and call
 hierarchy consume the same snapshot and workspace resolver; feature providers
 do not parse, bind, or infer framework-specific meaning independently.
+Identifier-bearing syntax retains its identifier child nodes and exact authored
+source ranges in the parser-owned AST. File semantics consumes those nodes
+directly; it does not rebuild token maps or rescan the token stream for function
+paths, member names, or method names.
 
 `RuntimeSourceState` owns one retained IDE resource identity per installed
 `(domain, path)`. That identity points at the owning `RomAsset` or

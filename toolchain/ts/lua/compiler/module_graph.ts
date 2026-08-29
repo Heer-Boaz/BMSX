@@ -15,7 +15,7 @@ export function collectLuaModuleDependencies(
 	const dependencies: string[] = [];
 	const seen = new Set<string>();
 	visitCallExpressionsInStatements(chunk.body, (call: LuaCallExpression) => {
-		if (call.methodName !== null
+		if (call.method !== null
 			|| call.arguments.length !== 1
 			|| call.callee.kind !== LuaSyntaxKind.IdentifierExpression
 			|| (call.callee as LuaIdentifierExpression).name !== 'require'

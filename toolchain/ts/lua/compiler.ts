@@ -15,6 +15,7 @@ import {
 	type LuaExpression,
 	type LuaForGenericStatement,
 	type LuaFunctionExpression,
+	type LuaFunctionDeclarationStatement,
 	type LuaIdentifierExpression,
 	type LuaIfStatement,
 	type LuaIndexExpression,
@@ -2481,7 +2482,7 @@ class FunctionBuilder {
 		if (reference.kind === 'lexical') {
 			return;
 		}
-		if (call.methodName !== null || call.arguments.length !== 1 || call.arguments[0].kind !== LuaSyntaxKind.StringLiteralExpression) {
+		if (call.method !== null || call.arguments.length !== 1 || call.arguments[0].kind !== LuaSyntaxKind.StringLiteralExpression) {
 			throw new Error('Compile-time require expects exactly one literal module path.');
 		}
 		const moduleName = (call.arguments[0] as LuaStringLiteralExpression).value;
@@ -2564,7 +2565,7 @@ class FunctionBuilder {
 			return;
 		}
 		const key = isMemberExpression
-			? (expression as LuaMemberExpression).identifier
+			? (expression as LuaMemberExpression).member.name
 			: stringLiteralValue((expression as LuaIndexExpression).index);
 		if (key == null) {
 			return;
@@ -2759,7 +2760,7 @@ class FunctionBuilder {
 	}
 
 	private resolveCallProtoIndex(expression: LuaCallExpression): number | null {
-		if (expression.methodName !== null) {
+		if (expression.method !== null) {
 			return null;
 		}
 		if (expression.callee.kind === LuaSyntaxKind.IdentifierExpression) {
@@ -4070,7 +4071,7 @@ class FunctionBuilder {
 				const cop0Register = this.resolveCop0Register(expr as LuaMemberExpression);
 				if (cop0Register) {
 					if (cop0Register !== COP0_STATUS && cop0Register !== COP0_EPC && cop0Register !== COP0_EXEC) {
-						throw new Error(`cop0.${(expr as LuaMemberExpression).identifier} is read-only.`);
+						throw new Error(`cop0.${(expr as LuaMemberExpression).member.name} is read-only.`);
 					}
 					targets.push({ kind: 'cop0', register: cop0Register });
 					continue;
@@ -4152,7 +4153,7 @@ class FunctionBuilder {
 				const member = expr as LuaMemberExpression;
 				const baseReg = this.allocTemp();
 				this.compileExpressionInto(targetPreparation.base, baseReg, 1);
-				const keyConst = this.program.constIndex(member.identifier);
+				const keyConst = this.program.constIndex(member.member.name);
 				targets.push({ kind: 'table', tableReg: baseReg, keyConst });
 				continue;
 			}
@@ -4575,10 +4576,15 @@ class FunctionBuilder {
 		}
 	}
 
-	private compileFunctionDeclaration(statement: any): void {
-		const fnExpr = statement.functionExpression as LuaFunctionExpression;
-		const methodName = statement.name.methodName;
-		const identifiers = statement.name.identifiers as string[];
+	private compileFunctionDeclaration(statement: LuaFunctionDeclarationStatement): void {
+		const fnExpr = statement.functionExpression;
+		const method = statement.name.method;
+		const methodName = method === null ? null : method.name;
+		const path = statement.name.path;
+		const identifiers = new Array<string>(path.length);
+		for (let index = 0; index < path.length; index += 1) {
+			identifiers[index] = path[index].name;
+		}
 		const target = classifyFunctionDeclarationTarget(this.semantics, statement);
 		const hint = buildDeclarationHint(identifiers, methodName);
 		const protoId = buildProtoId(this.protoId, hint);
@@ -4718,7 +4724,7 @@ class FunctionBuilder {
 		}
 		const baseReg = this.allocTemp();
 		this.compileExpressionInto(expression.base, baseReg, 1);
-		const key = this.program.constIndex(expression.identifier);
+		const key = this.program.constIndex(expression.member.name);
 		this.emitTableGetConst(target, baseReg, key);
 	}
 
@@ -4730,14 +4736,14 @@ class FunctionBuilder {
 		if (reference.kind !== 'reserved_intrinsic' || reference.ref.name !== 'cop0') {
 			return undefined;
 		}
-		switch (expression.identifier) {
+		switch (expression.member.name) {
 			case 'bad_address': return COP0_BAD_ADDRESS;
 			case 'lua_fault_reason': return COP0_LUA_FAULT_REASON;
 			case 'status': return COP0_STATUS;
 			case 'cause': return COP0_CAUSE;
 			case 'epc': return COP0_EPC;
 			case 'exec': return COP0_EXEC;
-			default: throw new Error(`Unknown cop0 register '${expression.identifier}'.`);
+			default: throw new Error(`Unknown cop0 register '${expression.member.name}'.`);
 		}
 	}
 
@@ -5000,7 +5006,7 @@ class FunctionBuilder {
 				if (!base) {
 					return;
 				}
-				return this.resolveStructFieldAddress(base, member.identifier);
+				return this.resolveStructFieldAddress(base, member.member.name);
 			}
 			case LuaSyntaxKind.IndexExpression: {
 				const index = expression as LuaIndexExpression;
@@ -5542,7 +5548,7 @@ class FunctionBuilder {
 		if (this.compileBlua32ClosureCall(expression, target, resultCount)) {
 			return;
 		}
-		const methodName = expression.methodName;
+		const methodName = expression.method?.name;
 		const constModuleValueCallee = methodName ? undefined : this.resolveModuleExportConstValue(expression.callee);
 		const moduleCallTarget = methodName ? undefined : this.resolveModuleExportCallTarget(expression.callee);
 		const ownStaticFunctionExportTarget = methodName ? undefined : this.resolveOwnStaticFunctionExportCallTarget(expression.callee);
@@ -5611,7 +5617,7 @@ class FunctionBuilder {
 		target: number,
 		resultCount: number,
 	): boolean {
-		if (expression.methodName !== null
+		if (expression.method !== null
 			|| expression.callee.kind !== LuaSyntaxKind.MemberExpression) {
 			return false;
 		}
@@ -5626,8 +5632,8 @@ class FunctionBuilder {
 		if (reference.kind !== 'reserved_intrinsic' || reference.ref.name !== 'blua32') {
 			return false;
 		}
-		if (callee.identifier !== 'closure') {
-			throw new Error(`Unknown blua32 operation '${callee.identifier}'.`);
+		if (callee.member.name !== 'closure') {
+			throw new Error(`Unknown blua32 operation '${callee.member.name}'.`);
 		}
 		if (expression.arguments.length !== 1) {
 			throw new Error('blua32.closure expects one function-record address.');

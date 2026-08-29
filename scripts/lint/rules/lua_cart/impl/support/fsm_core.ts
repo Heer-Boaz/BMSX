@@ -12,7 +12,7 @@ export function isStateControllerExpression(expression: Expression): boolean {
 		return expression.name === 'sc';
 	}
 	if (expression.kind === SyntaxKind.MemberExpression) {
-		return expression.identifier === 'sc';
+		return expression.member.name === 'sc';
 	}
 	if (expression.kind !== SyntaxKind.IndexExpression) {
 		return false;

@@ -57,7 +57,7 @@ export function expressionsEquivalentForLint(left: Expression, right: Expression
 		case SyntaxKind.IdentifierExpression:
 			return left.name === (right as IdentifierExpression).name;
 		case SyntaxKind.MemberExpression:
-			return (left as MemberExpression).identifier === (right as MemberExpression).identifier && expressionsEquivalentForLint((left as MemberExpression).base, (right as MemberExpression).base);
+			return (left as MemberExpression).member.name === (right as MemberExpression).member.name && expressionsEquivalentForLint((left as MemberExpression).base, (right as MemberExpression).base);
 		case SyntaxKind.IndexExpression:
 			return expressionsEquivalentForLint((left as IndexExpression).base, (right as IndexExpression).base) && expressionsEquivalentForLint((left as IndexExpression).index, (right as IndexExpression).index);
 		case SyntaxKind.StringLiteralExpression:
@@ -83,7 +83,7 @@ export function getCopiedSourceKey(expression: Expression, sourceIdentifier: str
 		if (!isIdentifier(expression.base, sourceIdentifier)) {
 			return undefined;
 		}
-		return expression.identifier;
+		return expression.member.name;
 	}
 	if (expression.kind !== SyntaxKind.IndexExpression) {
 		return undefined;

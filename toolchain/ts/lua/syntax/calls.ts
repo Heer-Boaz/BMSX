@@ -1,7 +1,7 @@
 import { type LuaCallExpression, type LuaExpression, type LuaStatement, LuaSyntaxKind, LuaTableFieldKind } from './ast';
 
 export function getCallReceiverName(expression: LuaCallExpression): string | undefined {
-	if (expression.methodName && expression.callee.kind === LuaSyntaxKind.IdentifierExpression) {
+	if (expression.method && expression.callee.kind === LuaSyntaxKind.IdentifierExpression) {
 		return expression.callee.name;
 	}
 	if (expression.callee.kind === LuaSyntaxKind.MemberExpression && expression.callee.base.kind === LuaSyntaxKind.IdentifierExpression) {
@@ -11,11 +11,11 @@ export function getCallReceiverName(expression: LuaCallExpression): string | und
 }
 
 export function getCallMethodName(expression: LuaCallExpression): string | undefined {
-	if (expression.methodName && expression.methodName.length > 0) {
-		return expression.methodName;
+	if (expression.method) {
+		return expression.method.name;
 	}
 	if (expression.callee.kind === LuaSyntaxKind.MemberExpression) {
-		return expression.callee.identifier;
+		return expression.callee.member.name;
 	}
 	return undefined;
 }
@@ -32,7 +32,7 @@ export function getCallLeafName(expression: LuaCallExpression): string | undefin
 }
 
 export function getCallReceiverExpression(expression: LuaCallExpression): LuaExpression | undefined {
-	if (expression.methodName && expression.methodName.length > 0) {
+	if (expression.method) {
 		return expression.callee;
 	}
 	if (expression.callee.kind === LuaSyntaxKind.MemberExpression) {

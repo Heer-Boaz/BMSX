@@ -939,8 +939,11 @@ function luaNamedFunction(statement: LuaStatement): LuaNamedFunction | null {
 		}
 		case LuaSyntaxKind.FunctionDeclarationStatement: {
 			const declaration = statement as LuaFunctionDeclarationStatement;
-			const prefix = declaration.name.identifiers.join('.');
-			const name = declaration.name.methodName === null ? prefix : `${prefix}:${declaration.name.methodName}`;
+			let prefix = declaration.name.path[0].name;
+			for (let index = 1; index < declaration.name.path.length; index += 1) {
+				prefix += `.${declaration.name.path[index].name}`;
+			}
+			const name = declaration.name.method === null ? prefix : `${prefix}:${declaration.name.method.name}`;
 			return { name, expression: declaration.functionExpression };
 		}
 		case LuaSyntaxKind.LocalAssignmentStatement: {

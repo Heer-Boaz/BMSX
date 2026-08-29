@@ -46,8 +46,8 @@ export function lintConstantCopyInStatements(statements: ReadonlyArray<Statement
 			}
 			case SyntaxKind.FunctionDeclarationStatement: {
 				const declaration = statement as FunctionDeclarationStatement;
-				if (declaration.name.identifiers.length === 1 && declaration.name.methodName === null) {
-					setConstantCopyBindingByName(context, declaration.name.identifiers[0], false);
+				if (declaration.name.path.length === 1 && declaration.name.method === null) {
+					setConstantCopyBindingByName(context, declaration.name.path[0].name, false);
 				}
 				enterConstantCopyScope(context);
 				for (const parameter of declaration.functionExpression.parameters) {

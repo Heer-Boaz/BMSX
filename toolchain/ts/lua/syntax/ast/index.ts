@@ -164,8 +164,8 @@ export type LuaLocalFunctionStatement = LuaNode & {
 };
 
 export type LuaFunctionName = {
-	readonly identifiers: ReadonlyArray<string>;
-	readonly methodName: string | null;
+	readonly path: ReadonlyArray<LuaIdentifierExpression>;
+	readonly method: LuaIdentifierExpression | null;
 };
 
 export type LuaFunctionDeclarationStatement = LuaNode & {
@@ -401,13 +401,13 @@ export type LuaCallExpression = LuaNode & {
 	readonly kind: LuaSyntaxKind.CallExpression;
 	readonly callee: LuaExpression;
 	readonly arguments: ReadonlyArray<LuaExpression>;
-	readonly methodName: string | null;
+	readonly method: LuaIdentifierExpression | null;
 };
 
 export type LuaMemberExpression = LuaNode & {
 	readonly kind: LuaSyntaxKind.MemberExpression;
 	readonly base: LuaExpression;
-	readonly identifier: string;
+	readonly member: LuaIdentifierExpression;
 };
 
 export type LuaIndexExpression = LuaNode & {

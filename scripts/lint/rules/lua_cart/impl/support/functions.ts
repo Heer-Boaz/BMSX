@@ -13,9 +13,12 @@ export function getFunctionDisplayName(statement: Statement): string {
 		return statement.name.name;
 	}
 	const declaration = statement as FunctionDeclarationStatement;
-	const prefix = declaration.name.identifiers.join('.');
-	if (declaration.name.methodName && declaration.name.methodName.length > 0) {
-		return `${prefix}:${declaration.name.methodName}`;
+	let prefix = declaration.name.path[0].name;
+	for (let index = 1; index < declaration.name.path.length; index += 1) {
+		prefix += `.${declaration.name.path[index].name}`;
+	}
+	if (declaration.name.method) {
+		return `${prefix}:${declaration.name.method.name}`;
 	}
 	return prefix;
 }
@@ -56,12 +59,12 @@ export function matchesMetatableConstructorPattern(functionName: string, functio
 	if (baseConstructor.kind !== SyntaxKind.CallExpression || baseConstructor.callee.kind !== SyntaxKind.MemberExpression) {
 		return false;
 	}
-	return baseConstructor.callee.identifier === 'new'
+	return baseConstructor.callee.member.name === 'new'
 		&& matchesForwardedArgumentList(baseConstructor.arguments, getFunctionParameterNames(functionExpression));
 }
 
 export function isMethodLikeFunctionDeclaration(statement: FunctionDeclarationStatement): boolean {
-	return statement.name.identifiers.length > 1 || !!statement.name.methodName;
+	return statement.name.path.length > 1 || !!statement.name.method;
 }
 
 export function matchesForwardedArgumentList(argumentsList: ReadonlyArray<Expression>, parameterNames: ReadonlyArray<string>): boolean {
@@ -282,7 +285,7 @@ export function collectOptionsParameterUseInExpression(expression: Expression, p
 			return;
 		case SyntaxKind.MemberExpression:
 			if (isIdentifier(expression.base, parameterName)) {
-				use.fields.add(expression.identifier);
+				use.fields.add(expression.member.name);
 				return;
 			}
 			collectOptionsParameterUseInExpression(expression.base, parameterName, use);

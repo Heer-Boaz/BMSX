@@ -25,7 +25,7 @@ function luaExpressionReferenceName(expression: Expression): string | undefined 
 		if (!baseName) {
 			return undefined;
 		}
-		return `${baseName}.${expression.identifier}`;
+		return `${baseName}.${expression.member.name}`;
 	}
 	if (expression.kind === SyntaxKind.IndexExpression) {
 		const baseName = luaExpressionReferenceName(expression.base);

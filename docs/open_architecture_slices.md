@@ -113,10 +113,21 @@ Daaruit volgen deze harde migratiegates:
 
 Nieuwe IDE-features beginnen aan de providergrens boven het retained semantic
 project; zij voegen geen tweede model, runtime semantic cache of afwijkende
-positie-resolver toe. De eerstvolgende open semantic slice is daarom de meting
-in `IDE-SEMANTIC-01`. Het opsplitsen van `model.ts` is alleen gerechtvaardigd
-wanneer een ownergrens of die meting daar aanleiding toe geeft; een cosmetische
-move zou slechts dezelfde verantwoordelijkheden verplaatsen.
+positie-resolver toe. Het opsplitsen van `model.ts` is alleen gerechtvaardigd
+wanneer een ownergrens of een gemeten bottleneck daar aanleiding toe geeft; een
+cosmetische move zou slechts dezelfde verantwoordelijkheden verplaatsen.
+
+De herhaalbare profiler voor lexer-, parser-, file-semantiek-, index- en
+querytijd staat in `scripts/dev/profile_lua_semantics.ts`. Hij gebruikt echte
+sourcebomen en bewijst tijdens iedere edit dat een onafhankelijk file-record
+zijn identiteit behoudt. Gebruik hem als meting, niet als een timingtest met een
+hostafhankelijke drempel:
+
+```sh
+npx tsx --tsconfig tsconfig.base.json \
+  scripts/dev/profile_lua_semantics.ts \
+  carts/pietious/player/player.lua cartlib carts/pietious
+```
 
 ## Validatiebasis voor inputwerk
 
@@ -146,7 +157,6 @@ vervangt de hieronder genoemde fysieke SNES Mini-validatie niet.
 | ID | Opdracht | Klaar wanneer |
 | --- | --- | --- |
 | `PERF-RUNTIME-01` | Kies per iteratie één gemeten hot-pathowner en verwijder daar herhaalde decode, conversie, validatie, allocatie of dispatch bij de producer. Dit is een paraplu, geen enkele megaslice. | Analyzers blokkeren nieuwe overtredingen, parity blijft exact en representatieve low-end hardware houdt 50 Hz zonder oplopende backlog. |
-| `IDE-SEMANTIC-01` | Meet de lexer-, parser- en semantische analyse van het gewijzigde bestand op representatieve grote bronnen. Bouw pas incremental parserinput wanneer die meting een relevante edit-latency of allocatie aanwijst. Volg daarbij het productiecontract van TypeScript en LuaLS: ongewijzigde file-records worden behouden, maar de semantiek van een gewijzigd bestand mag opnieuw worden opgebouwd. | Een edit heranalyseert geen onafhankelijk bestand en bouwt geen workspacebrede kopie van alle file-value-flows. De terugkerende semantic- en diagnosticspaden materialiseren de source hoogstens eenmaal per benodigde bufferversie en geen volledige line-array. Call hierarchy resolveert per uitklapactie precies één incoming-calllaag en kent geen vooraf gebouwde recursieve boom of arbitraire depth-limiet. Symbol- en owned-value-ID's zijn snapshotintern; er bestaat geen speculatief persistent-ID-protocol. Navigatieresultaten blijven gelijk aan een volledige cold build en de generieke Lua-laag krijgt geen cartlib-, firmware- of frameworkkennis. |
 
 Houd throughput en fysieke pacing als twee afzonderlijke metingen. De
 `profile:libretro-particle-benchmark-offscreen-wsl`-opdracht eindigt op de

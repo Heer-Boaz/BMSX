@@ -30,7 +30,7 @@ const resolveStaticModuleShapePath = (
 		if (!baseShape) {
 			return undefined;
 		}
-		return baseShape.get(member.identifier);
+		return baseShape.get(member.member.name);
 	}
 	if (expression.kind === LuaSyntaxKind.IndexExpression) {
 		const indexExpr = expression as LuaIndexExpression;
@@ -74,7 +74,7 @@ const assignModuleShapePath = (
 	path: ReadonlyArray<string>,
 	startIndex: number,
 	value: ModuleExportShape,
-	methodName: string | null = null,
+	methodName: string | null,
 ): void => {
 	let cursor = root;
 	const endIndex = methodName && methodName.length > 0 ? path.length : path.length - 1;
@@ -139,30 +139,36 @@ export const buildTopLevelLocalModuleShapes = (
 				if (path.length === 1) {
 					localShapes.set(rootName, shape);
 				} else {
-					assignModuleShapePath(rootShape, path, 1, shape);
+					assignModuleShapePath(rootShape, path, 1, shape, null);
 				}
 			}
 			continue;
 		}
 		if (statement.kind === LuaSyntaxKind.FunctionDeclarationStatement) {
 			const declaration = statement as LuaFunctionDeclarationStatement;
-			if (declaration.name.identifiers.length === 0) {
+			const path = declaration.name.path;
+			if (path.length === 0) {
 				continue;
 			}
-			const rootName = declaration.name.identifiers[0];
+			const rootName = path[0].name;
 			const rootShape = localShapes.get(rootName);
 			if (!rootShape) {
 				continue;
 			}
-			if (declaration.name.identifiers.length === 1 && (!declaration.name.methodName || declaration.name.methodName.length === 0)) {
+			if (path.length === 1 && declaration.name.method === null) {
 				continue;
 			}
+			const names = new Array<string>(path.length);
+			for (let pathIndex = 0; pathIndex < path.length; pathIndex += 1) {
+				names[pathIndex] = path[pathIndex].name;
+			}
+			const method = declaration.name.method;
 			assignModuleShapePath(
 				rootShape,
-				declaration.name.identifiers,
+				names,
 				1,
 				new Map<string, ModuleExportShape>(),
-				declaration.name.methodName,
+				method === null ? null : method.name,
 			);
 		}
 	}

@@ -68,12 +68,12 @@ export function countIdentifierMentionsInStatement(statement: Statement, identif
 		}
 		case SyntaxKind.FunctionDeclarationStatement: {
 			let count = 0;
-			for (const namePart of statement.name.identifiers) {
-				if (namePart === identifierName) {
+			for (const namePart of statement.name.path) {
+				if (namePart.name === identifierName) {
 					count += 1;
 				}
 			}
-			if (statement.name.methodName === identifierName) {
+			if (statement.name.method?.name === identifierName) {
 				count += 1;
 			}
 			count += countIdentifierMentionsInExpression(statement.functionExpression, identifierName);

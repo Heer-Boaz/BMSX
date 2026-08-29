@@ -543,21 +543,21 @@ export class LuaParser {
 	}
 
 	private parseFunctionName(): LuaFunctionName {
-		const identifiers: string[] = [];
+		const path: LuaIdentifierExpression[] = [];
 		const firstToken = this.consume(LuaTokenType.Identifier, 'Expected function name.');
-		identifiers.push(firstToken.lexeme);
+		path.push(this.createIdentifierExpression(firstToken));
 		while (this.match(LuaTokenType.Dot)) {
 			const identifierToken = this.consume(LuaTokenType.Identifier, 'Expected identifier after "." in function name.');
-			identifiers.push(identifierToken.lexeme);
+			path.push(this.createIdentifierExpression(identifierToken));
 		}
-		let methodName: string = null;
+		let method: LuaIdentifierExpression | null = null;
 		if (this.match(LuaTokenType.Colon)) {
 			const methodToken = this.consume(LuaTokenType.Identifier, 'Expected method name after ":".');
-			methodName = methodToken.lexeme;
+			method = this.createIdentifierExpression(methodToken);
 		}
 		return {
-			identifiers,
-			methodName,
+			path,
+			method,
 		};
 	}
 
@@ -994,7 +994,7 @@ export class LuaParser {
 					kind: LuaSyntaxKind.MemberExpression,
 					range,
 					base: expression,
-					identifier: identifierToken.lexeme,
+					member: this.createIdentifierExpression(identifierToken),
 				};
 				expression = memberNode;
 				continue;
@@ -1002,7 +1002,11 @@ export class LuaParser {
 			if (this.match(LuaTokenType.Colon)) {
 				const methodToken = this.consume(LuaTokenType.Identifier, 'Expected method name after ":".');
 				const parsedArguments = this.parseCallArguments();
-				expression = this.createCallExpression(expression, parsedArguments, methodToken.lexeme);
+				expression = this.createCallExpression(
+					expression,
+					parsedArguments,
+					this.createIdentifierExpression(methodToken),
+				);
 				continue;
 			}
 			const tokenType = this.current().type;
@@ -1055,13 +1059,17 @@ export class LuaParser {
 		throw this.error(this.current(), 'Invalid function call arguments.');
 	}
 
-	private createCallExpression(callee: LuaExpression, parsedArguments: ParsedArguments, methodName: string): LuaCallExpression {
+	private createCallExpression(
+		callee: LuaExpression,
+		parsedArguments: ParsedArguments,
+		method: LuaIdentifierExpression | null,
+	): LuaCallExpression {
 		return {
 			kind: LuaSyntaxKind.CallExpression,
 			range: this.rangeFromNodeAndToken(callee, parsedArguments.endToken),
 			callee,
 			arguments: parsedArguments.arguments,
-			methodName,
+			method,
 		};
 	}
 
@@ -1305,7 +1313,7 @@ export class LuaParser {
 						return null;
 					}
 					const extended = basePath.slice();
-					extended.push(member.identifier);
+					extended.push(member.member.name);
 					return extended;
 				}
 				case LuaSyntaxKind.IndexExpression: {
@@ -1393,7 +1401,7 @@ export class LuaParser {
 			}
 			if (target.kind === LuaSyntaxKind.MemberExpression) {
 				const member = target as LuaMemberExpression;
-				const identifierLength = member.identifier.length;
+				const identifierLength = member.member.name.length;
 				const end = member.range.end;
 				const startColumn = end.column - Math.max(0, identifierLength - 1);
 				return {

@@ -374,7 +374,7 @@ function resolveCallSignature(
 	call: LuaCallExpression,
 	builtinLookup: Map<string, LuaBuiltinDescriptor>,
 ): CallSignatureMetadata | null {
-	if (call.methodName !== null) {
+	if (call.method !== null) {
 		return null;
 	}
 	const qualified = resolveQualifiedName(call.callee);
@@ -417,7 +417,7 @@ function resolveQualifiedName(expression: LuaExpression): QualifiedName | null {
 		}
 		if (current.kind === LuaSyntaxKind.MemberExpression) {
 			const member = current as LuaMemberExpression;
-			parts.unshift(member.identifier);
+			parts.unshift(member.member.name);
 			current = member.base;
 			continue;
 		}
@@ -456,7 +456,7 @@ function buildMemberBasePath(expression: LuaExpression): string | null {
 		if (parent === null) {
 			return null;
 		}
-		return `${parent}.${member.identifier}`;
+		return `${parent}.${member.member.name}`;
 	}
 	if (expression.kind === LuaSyntaxKind.IndexExpression) {
 		const indexExpression = expression as LuaIndexExpression;
@@ -474,12 +474,12 @@ function buildMemberBasePath(expression: LuaExpression): string | null {
 }
 
 function buildCallInfo(call: LuaCallExpression): FunctionCallInfo | null {
-	if (call.methodName !== null) {
+	if (call.method !== null) {
 		const basePath = buildMemberBasePath(call.callee);
 		if (basePath === null) {
 			return null;
 		}
-		return { path: `${basePath}:${call.methodName}`, style: 'method' };
+		return { path: `${basePath}:${call.method.name}`, style: 'method' };
 	}
 	const qualified = resolveQualifiedName(call.callee);
 	if (!qualified) {

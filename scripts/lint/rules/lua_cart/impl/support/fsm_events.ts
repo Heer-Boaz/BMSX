@@ -13,7 +13,7 @@ export function isEventsContainerExpression(expression: Expression): boolean {
 		return expression.name === 'events';
 	}
 	if (expression.kind === SyntaxKind.MemberExpression) {
-		return expression.identifier === 'events';
+		return expression.member.name === 'events';
 	}
 	if (expression.kind !== SyntaxKind.IndexExpression) {
 		return false;
@@ -33,7 +33,7 @@ export function isEventsOnCallExpression(expression: CallExpression): boolean {
 		return false;
 	}
 	let receiver: Expression;
-	if (expression.methodName && expression.methodName.length > 0) {
+	if (expression.method) {
 		receiver = expression.callee;
 	} else if (expression.callee.kind === SyntaxKind.MemberExpression) {
 		receiver = expression.callee.base;

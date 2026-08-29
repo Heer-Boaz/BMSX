@@ -174,7 +174,7 @@ export function getAssignmentTargetInfo(target: Expression): AssignmentTargetInf
 		return {
 			depth: baseInfo.depth + 1,
 			rootName: baseInfo.rootName,
-			terminalPropertyName: target.identifier,
+			terminalPropertyName: target.member.name,
 		};
 	}
 	if (target.kind === SyntaxKind.IndexExpression) {

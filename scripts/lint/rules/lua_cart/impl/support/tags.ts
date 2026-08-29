@@ -12,7 +12,7 @@ export function isHasTagCall(expression: Expression): boolean {
 
 export function isTagsContainerExpression(expression: Expression): boolean {
 	if (expression.kind === SyntaxKind.MemberExpression) {
-		return expression.identifier === 'tags';
+		return expression.member.name === 'tags';
 	}
 	if (expression.kind !== SyntaxKind.IndexExpression) {
 		return false;

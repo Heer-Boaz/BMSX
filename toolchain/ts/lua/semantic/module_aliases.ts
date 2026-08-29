@@ -24,7 +24,7 @@ export function resolveModuleAliasInitializer(
 ): ModuleAliasTarget {
 	if (expression.kind === LuaSyntaxKind.CallExpression) {
 		if (!requireIsBuiltin
-			|| expression.methodName
+			|| expression.method
 			|| expression.callee.kind !== LuaSyntaxKind.IdentifierExpression
 			|| expression.callee.name !== 'require') {
 			return null;
@@ -48,7 +48,7 @@ export function resolveModuleAliasInitializer(
 		}
 		return {
 			module: base.module,
-			memberPath: [...base.memberPath, expression.identifier],
+			memberPath: [...base.memberPath, expression.member.name],
 		};
 	}
 	if (expression.kind === LuaSyntaxKind.IndexExpression

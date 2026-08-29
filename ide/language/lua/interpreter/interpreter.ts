@@ -823,66 +823,65 @@ export class LuaInterpreter {
 	}
 
 	public executeFunctionDeclaration(statement: LuaFunctionDeclarationStatement, environment: LuaEnvironment): void {
-		const functionNameParts = statement.name.identifiers;
+		const functionNameParts = statement.name.path;
 		if (functionNameParts.length === 0) {
 			throw this.runtimeErrorAt(statement.range, 'Function declaration missing name.');
 		}
 		const functionDisplayName = this.composeFunctionName(statement.name);
-		const implicitSelfName = statement.name.methodName !== null ? 'self' : null;
+		const implicitSelfName = statement.name.method !== null ? 'self' : null;
 		const functionValue = new LuaScriptFunction(statement.functionExpression, environment, functionDisplayName, implicitSelfName, this);
 
-		if (statement.name.methodName !== null) {
-			const methodTable = this.resolveTableFromPath(functionNameParts, environment, functionDisplayName, statement.range);
-			methodTable.set(statement.name.methodName, functionValue);
+		if (statement.name.method !== null) {
+			const methodTable = this.resolveTableFromPath(functionNameParts, functionNameParts.length, environment, functionDisplayName, statement.range);
+			methodTable.set(statement.name.method.name, functionValue);
 			return;
 		}
 
 		if (functionNameParts.length === 1) {
-			const resolvedEnv = environment.resolve(functionNameParts[0], statement.range);
+			const name = functionNameParts[0].name;
+			const resolvedEnv = environment.resolve(name, statement.range);
 			if (resolvedEnv !== null) {
-				resolvedEnv.assignExisting(functionNameParts[0], functionValue);
+				resolvedEnv.assignExisting(name, functionValue);
 				return;
 			}
-			this.globals.set(functionNameParts[0], functionValue, statement.range);
+			this.globals.set(name, functionValue, statement.range);
 			return;
 		}
 
-		const containerParts: string[] = [];
-		for (let index = 0; index < functionNameParts.length - 1; index += 1) {
-			containerParts.push(functionNameParts[index]);
-		}
-		const containerTable = this.resolveTableFromPath(containerParts, environment, functionDisplayName, statement.range);
-		const finalName = functionNameParts[functionNameParts.length - 1];
+		const containerTable = this.resolveTableFromPath(functionNameParts, functionNameParts.length - 1, environment, functionDisplayName, statement.range);
+		const finalName = functionNameParts[functionNameParts.length - 1].name;
 		containerTable.set(finalName, functionValue);
 	}
 
 	private composeFunctionName(name: LuaFunctionDeclarationStatement['name']): string {
 		let display = '';
-		for (let index = 0; index < name.identifiers.length; index += 1) {
+		for (let index = 0; index < name.path.length; index += 1) {
 			if (index > 0) {
 				display += '.';
 			}
-			display += name.identifiers[index];
+			display += name.path[index].name;
 		}
-		if (name.methodName !== null) {
-			display += `:${name.methodName}`;
+		if (name.method !== null) {
+			display += `:${name.method.name}`;
 		}
 		return display;
 	}
 
-	private resolveTableFromPath(parts: ReadonlyArray<string>, environment: LuaEnvironment, displayName: string, range: LuaSourceRange): LuaTable {
-		if (parts.length === 0) {
+	private resolveTableFromPath(parts: ReadonlyArray<LuaIdentifierExpression>, count: number, environment: LuaEnvironment, displayName: string, range: LuaSourceRange): LuaTable {
+		if (count === 0) {
 			throw this.runtimeErrorAt(range, `Invalid table path for function '${displayName}'.`);
 		}
-		const currentValue: LuaValue = this.lookupIdentifier(parts[0], environment, range);
+		const firstName = parts[0].name;
+		const currentValue: LuaValue = this.lookupIdentifier(firstName, environment, range);
 		if (!(isLuaTable(currentValue))) {
-			throw this.runtimeErrorAt(range, `Expected table for '${parts[0]}' when declaring function '${displayName}'.`);
+			throw this.runtimeErrorAt(range, `Expected table for '${firstName}' when declaring function '${displayName}'.`);
 		}
 		let currentTable: LuaTable = currentValue;
-		for (let index = 1; index < parts.length; index += 1) {
-			const fieldValue = currentTable.get(parts[index]);
+		for (let index = 1; index < count; index += 1) {
+			const name = parts[index].name;
+			const fieldValue = currentTable.get(name);
 			if (!(isLuaTable(fieldValue))) {
-				throw this.runtimeErrorAt(range, `Expected table for '${parts[index]}' when declaring function '${displayName}'.`);
+				throw this.runtimeErrorAt(range, `Expected table for '${name}' when declaring function '${displayName}'.`);
 			}
 			currentTable = fieldValue;
 		}
@@ -1027,10 +1026,10 @@ export class LuaInterpreter {
 	private evaluateMemberExpression(expression: LuaMemberExpression, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>): LuaValue {
 		const baseValue = this.evaluateSingleExpression(expression.base, environment, varargs);
 		if (isLuaTable(baseValue)) {
-			return this.getTableValueWithMetamethod(baseValue, expression.identifier, expression.range);
+			return this.getTableValueWithMetamethod(baseValue, expression.member.name, expression.range);
 		}
 		if (baseValue instanceof LuaNativeValue) {
-			return this.getNativeValueWithMetamethod(baseValue, expression.identifier, expression.range);
+			return this.getNativeValueWithMetamethod(baseValue, expression.member.name, expression.range);
 		}
 		throw this.runtimeErrorAt(expression.range, 'Attempted to index field on a non-table value.');
 	}
@@ -1164,16 +1163,17 @@ export class LuaInterpreter {
 
 	public evaluateCallExpression(expression: LuaCallExpression, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>): LuaValue[] {
 		const calleeValue = this.evaluateSingleExpression(expression.callee, environment, varargs);
-		if (expression.methodName !== null) {
+		if (expression.method !== null) {
+			const methodName = expression.method.name;
 			if (isLuaTable(calleeValue)) {
-				const methodValue = this.getTableValueWithMetamethod(calleeValue, expression.methodName, expression.range);
-				const functionValue = this.expectFunction(methodValue, LuaInterpreter.buildMethodNotFoundOnTableMessage, expression.methodName, expression.range);
+				const methodValue = this.getTableValueWithMetamethod(calleeValue, methodName, expression.range);
+				const functionValue = this.expectFunction(methodValue, LuaInterpreter.buildMethodNotFoundOnTableMessage, methodName, expression.range);
 				const args = this.buildCallArguments(expression, environment, varargs, calleeValue);
 				return this.invokeFunction(functionValue, args, expression.range);
 			}
 			if (calleeValue instanceof LuaNativeValue) {
-				const methodValue = this.getNativeValueWithMetamethod(calleeValue, expression.methodName, expression.range);
-				const functionValue = this.expectFunction(methodValue, LuaInterpreter.buildMethodNotFoundOnNativeValueMessage, expression.methodName, expression.range);
+				const methodValue = this.getNativeValueWithMetamethod(calleeValue, methodName, expression.range);
+				const functionValue = this.expectFunction(methodValue, LuaInterpreter.buildMethodNotFoundOnNativeValueMessage, methodName, expression.range);
 				const args = this.buildCallArguments(expression, environment, varargs, calleeValue);
 				return this.invokeFunction(functionValue, args, expression.range);
 			}
@@ -1258,14 +1258,14 @@ export class LuaInterpreter {
 				return {
 					kind: 'member',
 					table: baseValue,
-					key: member.identifier,
+					key: member.member.name,
 				};
 			}
 			if (baseValue instanceof LuaNativeValue) {
 				return {
 					kind: 'native-member',
 					target: baseValue,
-					key: member.identifier,
+					key: member.member.name,
 				};
 			}
 			throw this.runtimeErrorAt(member.base.range, 'Attempted to assign to a member of an unsupported value.');
@@ -1920,7 +1920,7 @@ export class LuaInterpreter {
 		}
 		if (callee.kind === LuaSyntaxKind.MemberExpression) {
 			const member = callee as LuaMemberExpression;
-			return `Attempted to call ${description} (field '${member.identifier}').`;
+			return `Attempted to call ${description} (field '${member.member.name}').`;
 		}
 		if (callee.kind === LuaSyntaxKind.IndexExpression) {
 			return `Attempted to call ${description} (index result).`;

@@ -23,6 +23,7 @@ import type {
 	LuaTableConstructorExpression,
 	LuaIndexExpression,
 	LuaLocalFunctionStatement,
+	LuaMemberExpression,
 } from '../../toolchain/ts/lua/syntax/ast';
 
 function parseChunk(source: string): LuaChunk {
@@ -54,8 +55,18 @@ test('parses function declaration with method name and parameters', () => {
 	const statement = path.body[0];
 	assert.equal(statement.kind, LuaSyntaxKind.FunctionDeclarationStatement);
 	const functionStatement = statement as LuaFunctionDeclarationStatement;
-	assert.deepEqual(functionStatement.name.identifiers, ['module', 'object']);
-	assert.equal(functionStatement.name.methodName, 'method');
+	assert.deepEqual(functionStatement.name.path.map(identifier => identifier.name), ['module', 'object']);
+	assert.equal(functionStatement.name.method?.name, 'method');
+	assert.deepEqual(functionStatement.name.path[1].range, {
+		path: 'path',
+		start: { line: 1, column: 17 },
+		end: { line: 1, column: 22 },
+	});
+	assert.deepEqual(functionStatement.name.method?.range, {
+		path: 'path',
+		start: { line: 1, column: 24 },
+		end: { line: 1, column: 29 },
+	});
 	const funcExpr = functionStatement.functionExpression;
 	assert.equal(funcExpr.parameters.length, 2);
 	assert.equal(funcExpr.parameters[0].name, 'x');
@@ -135,6 +146,25 @@ test('parses table assignment and preserves call statement', () => {
 	assert.equal(callStatement.kind, LuaSyntaxKind.CallStatement);
 	const call = callStatement as LuaCallStatement;
 	assert.equal(call.expression.kind, LuaSyntaxKind.CallExpression);
+});
+
+test('retains member identifier nodes with their authored range', () => {
+	const path = parseChunk('local value = root.branch.leaf');
+	const statement = path.body[0] as LuaLocalAssignmentStatement;
+	const leaf = statement.values[0] as LuaMemberExpression;
+	const branch = leaf.base as LuaMemberExpression;
+	assert.equal(branch.member.name, 'branch');
+	assert.deepEqual(branch.member.range, {
+		path: 'path',
+		start: { line: 1, column: 20 },
+		end: { line: 1, column: 25 },
+	});
+	assert.equal(leaf.member.name, 'leaf');
+	assert.deepEqual(leaf.member.range, {
+		path: 'path',
+		start: { line: 1, column: 27 },
+		end: { line: 1, column: 30 },
+	});
 });
 
 test('parses augmented assignment statement', () => {
@@ -231,7 +261,7 @@ test('parses paren-less single string argument calls', () => {
 	const simpleChunk = parseChunk('f "x"');
 	const simpleCall = simpleChunk.body[0] as LuaCallStatement;
 	const simpleExpression = simpleCall.expression as LuaCallExpression;
-	assert.equal(simpleExpression.methodName, null);
+	assert.equal(simpleExpression.method, null);
 	assert.equal((simpleExpression.arguments[0] as LuaStringLiteralExpression).value, 'x');
 
 	const singleQuoteChunk = parseChunk("f 'x'");
@@ -247,7 +277,12 @@ test('parses paren-less single string argument calls', () => {
 	const methodChunk = parseChunk('obj:method "arg"');
 	const methodCall = methodChunk.body[0] as LuaCallStatement;
 	const methodExpression = methodCall.expression as LuaCallExpression;
-	assert.equal(methodExpression.methodName, 'method');
+	assert.equal(methodExpression.method?.name, 'method');
+	assert.deepEqual(methodExpression.method?.range, {
+		path: 'path',
+		start: { line: 1, column: 5 },
+		end: { line: 1, column: 10 },
+	});
 	assert.equal((methodExpression.callee as LuaIdentifierExpression).name, 'obj');
 	assert.equal((methodExpression.arguments[0] as LuaStringLiteralExpression).value, 'arg');
 
@@ -272,7 +307,7 @@ obj:method { key = "value" }`);
 
 	const methodCall = path.body[1] as LuaCallStatement;
 	const methodExpression = methodCall.expression as LuaCallExpression;
-	assert.equal(methodExpression.methodName, 'method');
+	assert.equal(methodExpression.method?.name, 'method');
 	const methodTableArg = methodExpression.arguments[0] as LuaTableConstructorExpression;
 	assert.equal(methodTableArg.fields.length, 1);
 });

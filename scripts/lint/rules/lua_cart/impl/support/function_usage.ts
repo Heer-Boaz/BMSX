@@ -11,7 +11,7 @@ export function getExpressionReferenceName(expression: Expression): string | und
 		if (!baseName) {
 			return undefined;
 		}
-		return `${baseName}.${expression.identifier}`;
+		return `${baseName}.${expression.member.name}`;
 	}
 	if (expression.kind === SyntaxKind.IndexExpression) {
 		const baseName = getExpressionReferenceName(expression.base);
@@ -56,10 +56,10 @@ export function collectCartExpressionFunctionUsageCounts(
 			collectCartExpressionFunctionUsageCounts(expression.index, totalCounts, referenceCounts, false);
 			return;
 		case SyntaxKind.CallExpression:
-			if (expression.methodName && expression.methodName.length > 0) {
+			if (expression.method) {
 				const calleeName = getExpressionReferenceName(expression.callee);
 				if (calleeName) {
-					incrementUsageCount(totalCounts, `${calleeName}:${expression.methodName}`);
+					incrementUsageCount(totalCounts, `${calleeName}:${expression.method.name}`);
 				}
 			}
 			collectCartExpressionFunctionUsageCounts(expression.callee, totalCounts, referenceCounts, false);
