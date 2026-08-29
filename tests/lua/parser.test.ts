@@ -25,6 +25,7 @@ import type {
 	LuaIndexExpression,
 	LuaLocalFunctionStatement,
 	LuaMemberExpression,
+	LuaErrorStatement,
 } from '../../toolchain/ts/lua/syntax/ast';
 
 function parseChunk(source: string): LuaChunk {
@@ -111,15 +112,35 @@ test('recovery preserves enclosing blocks and statements after an incomplete mem
 	].join('\n');
 	const parsed = parseLuaChunkWithRecovery(source, 'recovery.lua');
 	assert.ok(parsed.syntaxError);
-	assert.equal(parsed.syntaxError.line, 5);
+	assert.equal(parsed.syntaxError.line, 4);
 	assert.equal(parsed.chunk?.body.length, 3);
 	const method = parsed.chunk?.body[1] as LuaFunctionDeclarationStatement;
 	assert.equal(method.kind, LuaSyntaxKind.FunctionDeclarationStatement);
 	assert.deepEqual(
 		method.functionExpression.body.body.map(statement => statement.kind),
-		[LuaSyntaxKind.LocalAssignmentStatement, LuaSyntaxKind.ReturnStatement],
+		[
+			LuaSyntaxKind.LocalAssignmentStatement,
+			LuaSyntaxKind.ErrorStatement,
+			LuaSyntaxKind.ReturnStatement,
+		],
 	);
+	const errorStatement = method.functionExpression.body.body[1] as LuaErrorStatement;
+	const access = errorStatement.expression as LuaMemberExpression;
+	assert.equal(access.kind, LuaSyntaxKind.MemberExpression);
+	assert.equal(access.member.kind, LuaSyntaxKind.MissingIdentifier);
+	assert.deepEqual(access.member.range, {
+		path: 'recovery.lua',
+		start: { line: 4, column: 7 },
+		end: { line: 4, column: 7 },
+	});
 	assert.equal(parsed.chunk?.body[2].kind, LuaSyntaxKind.ReturnStatement);
+});
+
+test('strict parsing still rejects an incomplete member access', () => {
+	assert.throws(
+		() => parseChunk('self.'),
+		/Expected identifier after member access operator/,
+	);
 });
 
 test('parses if-elseif-else statement', () => {

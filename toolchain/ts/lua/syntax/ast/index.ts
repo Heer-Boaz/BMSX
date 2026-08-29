@@ -51,6 +51,8 @@ export const enum LuaSyntaxKind {
 	IndexExpression,
 	SizeOfExpression,
 	OffsetOfExpression,
+	ErrorStatement,
+	MissingIdentifier,
 }
 
 export type LuaNode = {
@@ -78,7 +80,8 @@ export type LuaStatement =
 	| LuaRodataDeclarationStatement
 	| LuaGotoStatement
 	| LuaLabelStatement
-	| LuaCallStatement;
+	| LuaCallStatement
+	| LuaErrorStatement;
 
 export type LuaExpression =
 	| LuaNumericLiteralExpression
@@ -257,6 +260,13 @@ export type LuaCallStatement = LuaNode & {
 	readonly expression: LuaCallExpression;
 };
 
+// Recovery parsing retains the expression that led into an invalid Lua
+// statement. Strict parsing never produces this node.
+export type LuaErrorStatement = LuaNode & {
+	readonly kind: LuaSyntaxKind.ErrorStatement;
+	readonly expression: LuaExpression;
+};
+
 export type LuaGotoStatement = LuaNode & {
 	readonly kind: LuaSyntaxKind.GotoStatement;
 	readonly label: string;
@@ -293,6 +303,11 @@ export type LuaVarargExpression = LuaNode & {
 export type LuaIdentifierExpression = LuaNode & {
 	readonly kind: LuaSyntaxKind.IdentifierExpression;
 	readonly name: string;
+};
+
+export type LuaMissingIdentifier = LuaNode & {
+	readonly kind: LuaSyntaxKind.MissingIdentifier;
+	readonly name: '';
 };
 
 export const enum LuaTableFieldKind {
@@ -388,10 +403,17 @@ export type LuaCallExpression = LuaNode & {
 	readonly method: LuaIdentifierExpression | null;
 };
 
+export const enum LuaMemberOperator {
+	Dot,
+	Arrow,
+	Colon,
+}
+
 export type LuaMemberExpression = LuaNode & {
 	readonly kind: LuaSyntaxKind.MemberExpression;
 	readonly base: LuaExpression;
-	readonly member: LuaIdentifierExpression;
+	readonly member: LuaIdentifierExpression | LuaMissingIdentifier;
+	readonly operator: LuaMemberOperator;
 };
 
 export type LuaIndexExpression = LuaNode & {

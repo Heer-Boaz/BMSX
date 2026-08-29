@@ -1,5 +1,6 @@
 import {
 	LuaBinaryOperator,
+	LuaMemberOperator,
 	LuaSyntaxKind,
 	LuaTableFieldKind,
 	LuaUnaryOperator,
@@ -28,7 +29,6 @@ import {
 import type { LuaSymbolEntry } from '../semantic_contracts';
 import type { ParsedLuaChunk } from '../analysis/parse';
 import { getCachedLuaParse } from '../analysis/cache';
-import type { LuaToken } from '../syntax/token';
 import type { SourcePosition } from '../source_range';
 import type { SemanticSymbolKind } from './symbols';
 import type { SemanticAnnotations, SemanticRole } from './tokens';
@@ -118,15 +118,22 @@ export type Ref = {
 	receiverValue?: SemanticValueSource;
 };
 
+export type MemberAccessEntry = {
+	readonly range: LuaSourceRange;
+	readonly receiver: SemanticValueSource;
+	readonly operator: LuaMemberOperator;
+	readonly namePath?: readonly string[];
+};
+
 export type FileSemanticData = {
 	readonly file: string;
 	readonly source: string;
-	readonly tokens: readonly LuaToken[];
 	readonly chunk: LuaChunk;
 	readonly annotations: SemanticAnnotations;
 	readonly decls: readonly Decl[];
 	readonly scopes: readonly SemanticScope[];
 	readonly refs: readonly Ref[];
+	readonly memberAccesses: readonly MemberAccessEntry[];
 	readonly declarationIdsBySyntax: ReadonlyMap<LuaIdentifierExpression, SymbolID>;
 	readonly referencesBySyntax: ReadonlyMap<LuaIdentifierExpression, Ref>;
 	readonly referencesByName: ReadonlyMap<string, readonly Ref[]>;
@@ -291,6 +298,7 @@ type SemanticBuildResult = {
 	decls: InternalDecl[];
 	scopes: Scope[];
 	refs: Ref[];
+	memberAccesses: MemberAccessEntry[];
 	declarationIdsBySyntax: Map<LuaIdentifierExpression, SymbolID>;
 	referencesBySyntax: Map<LuaIdentifierExpression, Ref>;
 	referencesByName: Map<string, Ref[]>;
@@ -325,7 +333,7 @@ export function buildLuaFileSemanticData(
 	const builder = new SemanticBuilder({
 		path,
 		chunk: retainedChunk,
-		lineCount: tokens[tokens.length - 1].endLine,
+		lineCount: eof.endLine,
 		documentEndExclusive: {
 			line: eof.endLine,
 			column: eof.endColumn + 1,
@@ -339,12 +347,12 @@ export function buildLuaFileSemanticData(
 	return {
 		file: path,
 		source,
-		tokens,
 		chunk: retainedChunk,
 		annotations,
 		decls,
 		scopes,
 		refs,
+		memberAccesses: result.memberAccesses,
 		declarationIdsBySyntax: result.declarationIdsBySyntax,
 		referencesBySyntax: result.referencesBySyntax,
 		referencesByName: result.referencesByName,
@@ -570,6 +578,7 @@ class SemanticBuilder {
 	private readonly decls: InternalDecl[] = [];
 	private readonly declById: Map<SymbolID, InternalDecl> = new Map();
 	private readonly refs: Ref[] = [];
+	private readonly memberAccesses: MemberAccessEntry[] = [];
 	private readonly declarationIdsBySyntax: Map<LuaIdentifierExpression, SymbolID> = new Map();
 	private readonly referencesBySyntax: Map<LuaIdentifierExpression, Ref> = new Map();
 	private readonly referencesByName: Map<string, Ref[]> = new Map();
@@ -618,6 +627,7 @@ class SemanticBuilder {
 			decls: this.decls,
 			scopes: this.scopes,
 			refs: this.refs,
+			memberAccesses: this.memberAccesses,
 			declarationIdsBySyntax: this.declarationIdsBySyntax,
 			referencesBySyntax: this.referencesBySyntax,
 			referencesByName: this.referencesByName,
@@ -1001,6 +1011,9 @@ class SemanticBuilder {
 				this.visitExpression(rodataDeclaration.initializer, { tableBaseDecl: null, tableBasePath: null });
 				break;
 			}
+			case LuaSyntaxKind.ErrorStatement:
+				this.visitExpression(statement.expression, { tableBaseDecl: null, tableBasePath: null });
+				break;
 			default: {
 				this.visitGenericStatement(statement);
 				break;
@@ -1409,6 +1422,15 @@ class SemanticBuilder {
 
 	private assignMember(member: LuaMemberExpression): AssignmentTargetInfo {
 		const baseInfo = this.visitExpression(member.base, { tableBaseDecl: null, tableBasePath: null });
+		this.recordMemberAccess(
+			member.member.range,
+			baseInfo?.valueSource,
+			member.operator,
+			baseInfo?.namePath,
+		);
+		if (member.member.kind === LuaSyntaxKind.MissingIdentifier) {
+			return { decl: null, namePath: null, path: null };
+		}
 		const basePath = resolveReferencedBasePath(baseInfo, member.base);
 		const baseDecl = baseInfo?.decl;
 		const memberName = member.member.name;
@@ -1499,6 +1521,12 @@ class SemanticBuilder {
 		}
 		const receiverSymbolKey = calleeInfo?.decl?.symbolKey || (calleeInfo?.namePath && joinNamePath(calleeInfo.namePath));
 		const method = callExpression.method;
+		this.recordMemberAccess(
+			method.range,
+			calleeInfo?.valueSource,
+			LuaMemberOperator.Colon,
+			calleeInfo?.namePath,
+		);
 		const methodName = method.name;
 		const namePath = basePath ? appendToNamePath(basePath, methodName) : [methodName];
 		const range = method.range;
@@ -1615,6 +1643,15 @@ class SemanticBuilder {
 
 	private handleMemberExpression(member: LuaMemberExpression, context: ExpressionContext, isWrite: boolean, isCall = false): ResolvedNamePath {
 		const baseInfo = this.visitExpression(member.base, context);
+		this.recordMemberAccess(
+			member.member.range,
+			baseInfo?.valueSource,
+			member.operator,
+			baseInfo?.namePath,
+		);
+		if (member.member.kind === LuaSyntaxKind.MissingIdentifier) {
+			return baseInfo;
+		}
 		const basePath = resolveReferencedBasePath(baseInfo, member.base);
 		const memberName = member.member.name;
 		const namePath = basePath ? appendToNamePath(basePath, memberName) : [memberName];
@@ -1644,6 +1681,22 @@ class SemanticBuilder {
 				? appendValueMember(baseInfo.valueSource, memberName)
 				: undefined,
 		};
+	}
+
+	private recordMemberAccess(
+		range: LuaSourceRange,
+		receiver: SemanticValueSource | undefined,
+		operator: LuaMemberOperator,
+		namePath: readonly string[] | null | undefined,
+	): void {
+		if (receiver === undefined) {
+			return;
+		}
+		if (namePath != null) {
+			this.memberAccesses.push({ range, receiver, operator, namePath });
+			return;
+		}
+		this.memberAccesses.push({ range, receiver, operator });
 	}
 
 	private handleIndexExpression(indexExpression: LuaIndexExpression, context: ExpressionContext): ResolvedNamePath {

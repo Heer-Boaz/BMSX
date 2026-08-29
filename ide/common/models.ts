@@ -7,6 +7,7 @@ import type {
 import type { ResourceDomain, RuntimeResource } from './resource';
 import type { EditorCommandId } from './commands';
 import type { RectBounds } from '../../machine/ts/common/rect';
+import type { LuaMemberCompletionContext } from '../../toolchain/ts/lua/semantic/completion';
 export type { RuntimeResource } from './resource';
 
 export type Position = { row: number; column: number };
@@ -119,8 +120,7 @@ export type CompletionContext =
 	}
 	| {
 		kind: 'member';
-		objectName: string;
-		operator: '.' | ':';
+		member: LuaMemberCompletionContext;
 		prefix: string;
 		row: number;
 		replaceFromColumn: number;

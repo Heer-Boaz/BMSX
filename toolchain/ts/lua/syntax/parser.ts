@@ -7,6 +7,7 @@ import {
 	LuaUnaryOperator,
 	LuaTableFieldKind,
 	LuaAssignmentOperator,
+	LuaMemberOperator,
 } from './ast';
 import type {
 	LuaAssignableExpression,
@@ -23,6 +24,7 @@ import type {
 	LuaChunk,
 	LuaDoStatement,
 	LuaExpression,
+	LuaErrorStatement,
 	LuaForGenericStatement,
 	LuaForNumericStatement,
 	LuaFunctionAttribute,
@@ -37,7 +39,7 @@ import type {
 	LuaLabelStatement,
 	LuaLocalAssignmentStatement,
 	LuaLocalFunctionStatement,
-	LuaMemberExpression,
+	LuaMissingIdentifier,
 	LuaNilLiteralExpression,
 	LuaNode,
 	LuaNumericLiteralExpression,
@@ -194,9 +196,7 @@ export class LuaParser {
 				if (!(error instanceof LuaSyntaxError)) {
 					throw error;
 				}
-				if (this.recoveredSyntaxError === null) {
-					this.recoveredSyntaxError = error;
-				}
+				this.retainSyntaxError(error);
 				this.synchronizeStatement(terminators);
 			}
 		}
@@ -786,6 +786,15 @@ export class LuaParser {
 		if (expression.kind === LuaSyntaxKind.CallExpression) {
 			return this.createCallStatement(expression as LuaCallExpression);
 		}
+		if (this.recoverStatements && expression.kind === LuaSyntaxKind.MemberExpression) {
+			this.retainSyntaxError(this.errorAtRange(expression.range, 'Expected assignment or function call.'));
+			const statement: LuaErrorStatement = {
+				kind: LuaSyntaxKind.ErrorStatement,
+				range: expression.range,
+				expression,
+			};
+			return statement;
+		}
 		throw this.errorAtRange(expression.range, 'Expected assignment or function call.');
 	}
 
@@ -1007,33 +1016,14 @@ export class LuaParser {
 				continue;
 			}
 			if (this.match(LuaTokenType.Dot) || this.match(LuaTokenType.Arrow)) {
-				const identifierToken = this.consume(LuaTokenType.Identifier, 'Expected identifier after member access operator.');
-				const range = this.rangeFromNodeAndToken(expression, identifierToken);
-				const memberNode: LuaMemberExpression = {
-					kind: LuaSyntaxKind.MemberExpression,
-					range,
-					base: expression,
-					member: this.createIdentifierExpression(identifierToken),
-				};
-				expression = memberNode;
+				expression = this.parseNamedAccess(expression, this.previous());
 				continue;
 			}
 			if (this.match(LuaTokenType.Colon)) {
-				const methodToken = this.consume(LuaTokenType.Identifier, 'Expected method name after ":".');
-				const parsedArguments = this.parseCallArguments();
-				expression = this.createCallExpression(
-					expression,
-					parsedArguments,
-					this.createIdentifierExpression(methodToken),
-				);
+				expression = this.parseNamedAccess(expression, this.previous());
 				continue;
 			}
-			const tokenType = this.current().type;
-			if (
-				tokenType === LuaTokenType.LeftParen ||
-				tokenType === LuaTokenType.LeftBrace ||
-				tokenType === LuaTokenType.String
-			) {
+			if (this.startsCallArguments()) {
 				const parsedArguments = this.parseCallArguments();
 				expression = this.createCallExpression(expression, parsedArguments, null);
 				continue;
@@ -1041,6 +1031,67 @@ export class LuaParser {
 			break;
 		}
 		return expression;
+	}
+
+	private parseNamedAccess(expression: LuaExpression, operatorToken: LuaToken): LuaExpression {
+		const operator = operatorToken.type === LuaTokenType.Dot
+			? LuaMemberOperator.Dot
+			: operatorToken.type === LuaTokenType.Arrow
+				? LuaMemberOperator.Arrow
+				: LuaMemberOperator.Colon;
+		const message = operator === LuaMemberOperator.Colon
+			? 'Expected method name after ":".'
+			: 'Expected identifier after member access operator.';
+		let member: LuaIdentifierExpression | LuaMissingIdentifier;
+		if (this.check(LuaTokenType.Identifier)) {
+			member = this.createIdentifierExpression(this.advance());
+		} else {
+			if (!this.recoverStatements) {
+				throw this.error(this.current(), message);
+			}
+			const column = operatorToken.endColumn + 1;
+			const range: LuaSourceRange = {
+				path: this.path,
+				start: { line: operatorToken.endLine, column },
+				end: { line: operatorToken.endLine, column },
+			};
+			this.retainSyntaxError(this.errorAtRange(range, message));
+			member = {
+				kind: LuaSyntaxKind.MissingIdentifier,
+				range,
+				name: '',
+			};
+		}
+		if (operator === LuaMemberOperator.Colon
+			&& member.kind === LuaSyntaxKind.IdentifierExpression) {
+			if (this.startsCallArguments()) {
+				return this.createCallExpression(expression, this.parseCallArguments(), member);
+			}
+			if (!this.recoverStatements) {
+				throw this.error(this.current(), 'Invalid function call arguments.');
+			}
+			this.retainSyntaxError(this.error(this.current(), 'Invalid function call arguments.'));
+		}
+		return {
+			kind: LuaSyntaxKind.MemberExpression,
+			range: {
+				path: this.path,
+				start: expression.range.start,
+				end: member.kind === LuaSyntaxKind.MissingIdentifier
+					? this.endPositionFromToken(operatorToken)
+					: member.range.end,
+			},
+			base: expression,
+			member,
+			operator,
+		};
+	}
+
+	private startsCallArguments(): boolean {
+		const type = this.current().type;
+		return type === LuaTokenType.LeftParen
+			|| type === LuaTokenType.LeftBrace
+			|| type === LuaTokenType.String;
 	}
 
 	private parseCallArguments(): ParsedArguments {
@@ -1469,6 +1520,12 @@ export class LuaParser {
 		}
 		const token = this.previous();
 		return { line: token.endLine, column: token.endColumn + 1 };
+	}
+
+	private retainSyntaxError(error: LuaSyntaxError): void {
+		if (this.recoveredSyntaxError === null) {
+			this.recoveredSyntaxError = error;
+		}
 	}
 
 	private error(token: LuaToken, message: string): LuaSyntaxError {

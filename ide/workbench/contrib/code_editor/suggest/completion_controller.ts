@@ -467,23 +467,29 @@ export class CompletionController {
 		if (isLuaCommentContext(buffer, row, replaceFromColumn)) {
 			return null;
 		}
-		let operatorColumn = replaceFromColumn - 1;
-		while (operatorColumn >= 0 && LuaLexer.isWhitespace(line.charAt(operatorColumn))) {
-			operatorColumn -= 1;
+		let operatorEndColumn = replaceFromColumn - 1;
+		while (operatorEndColumn >= 0 && LuaLexer.isWhitespace(line.charAt(operatorEndColumn))) {
+			operatorEndColumn -= 1;
 		}
-		if (operatorColumn < 0
-			|| (line.charAt(operatorColumn) !== '.' && line.charAt(operatorColumn) !== ':')) {
+		const operatorEnd = line.charAt(operatorEndColumn);
+		const hasNamedAccessOperator = operatorEnd === '.'
+			|| operatorEnd === ':'
+			|| (operatorEnd === '>' && line.charAt(operatorEndColumn - 1) === '-');
+		if (!hasNamedAccessOperator) {
 			return { kind: 'global', prefix, row, replaceFromColumn, replaceToColumn };
 		}
-		const member = this.ensureLocalCompletionCache().file.findMemberCompletionContextAt(
+		const semanticFile = this.ensureLocalCompletionCache().file;
+		let member = semanticFile.findMemberCompletionContextAt(
 			row + 1,
 			replaceFromColumn + 1,
 		);
+		if (member === null && replaceFromColumn > operatorEndColumn + 1) {
+			member = semanticFile.findMemberCompletionContextAt(row + 1, operatorEndColumn + 2);
+		}
 		if (member) {
 			return {
 				kind: 'member',
-				objectName: member.expression,
-				operator: member.operator,
+				member,
 				prefix,
 				row,
 				replaceFromColumn,
@@ -517,40 +523,48 @@ export class CompletionController {
 
 	private collectCompletionItems(context: CompletionContext): LuaCompletionItem[] {
 		if (context.kind === 'member') {
-			const merged: LuaCompletionItem[] = [];
-			const appendItems = (items: LuaCompletionItem[]): void => {
-				if (!items || items.length === 0) {
-					return;
-				}
-				for (let i = 0; i < items.length; i += 1) {
-					merged.push(items[i]);
-				}
-			};
-			appendItems(this.getSemanticMemberCompletionItems(context));
-			const path = this.getActivePath();
+			const semanticItems = this.getSemanticMemberCompletionItems(context);
+			const namePath = context.member.namePath;
+			if (namePath === undefined || context.member.operator === '->') {
+				return semanticItems;
+			}
 			const runtimeItems = buildMemberCompletionItems(
 				this.bridge,
 				this.fault,
 				this.runtime,
-				context.objectName,
-				context.operator,
+				namePath,
+				context.member.operator,
 				editorDocumentState.resource.domain,
-				path,
+				this.getActivePath(),
 			);
-			appendItems(runtimeItems);
-			if (merged.length > 0) {
-				return buildCanonicalCompletionItems(merged);
+			if (semanticItems.length === 0) {
+				return runtimeItems;
 			}
-			return [];
+			if (runtimeItems.length === 0) {
+				return semanticItems;
+			}
+			const merged = new Array<LuaCompletionItem>(semanticItems.length + runtimeItems.length);
+			let index = 0;
+			for (; index < semanticItems.length; index += 1) {
+				merged[index] = semanticItems[index];
+			}
+			for (let runtimeIndex = 0; runtimeIndex < runtimeItems.length; runtimeIndex += 1) {
+				merged[index + runtimeIndex] = runtimeItems[runtimeIndex];
+			}
+			return buildCanonicalCompletionItems(merged);
 		}
 		const sharedItems = this.getSharedCompletionEntries();
 		const localItems = this.getLocalCompletionItems(context);
 		if (localItems.length === 0) {
 			return sharedItems;
 		}
-		const combined = localItems.slice();
+		const combined = new Array<LuaCompletionItem>(localItems.length + sharedItems.length);
+		let index = 0;
+		for (; index < localItems.length; index += 1) {
+			combined[index] = localItems[index];
+		}
 		for (let i = 0; i < sharedItems.length; i += 1) {
-			combined.push(sharedItems[i]);
+			combined[index + i] = sharedItems[i];
 		}
 		return buildCanonicalCompletionItems(combined);
 	}
@@ -671,15 +685,11 @@ export class CompletionController {
 		return items;
 	}
 
-	private getSemanticMemberCompletionItems(context: CompletionContext): LuaCompletionItem[] {
-		if (context.kind !== 'member') {
-			return [];
-		}
+	private getSemanticMemberCompletionItems(
+		context: Extract<CompletionContext, { kind: 'member' }>,
+	): LuaCompletionItem[] {
 		const cached = this.ensureLocalCompletionCache();
-		const symbols = cached.file.getMemberCompletionDeclarationsAt(
-			context.row + 1,
-			context.replaceFromColumn + 1,
-		);
+		const symbols = cached.file.getMemberCompletionDeclarations(context.member);
 		if (symbols.length === 0) {
 			return [];
 		}
@@ -766,7 +776,9 @@ export class CompletionController {
 		if (edit.text.length === 0) return null;
 		const lastChar = edit.text.charAt(edit.text.length - 1);
 		if (context.kind === 'member') {
-			if (lastChar === '.' || lastChar === ':') return 'punctuation';
+			if (lastChar === '.'
+				|| lastChar === ':'
+				|| (lastChar === '>' && context.member.operator === '->')) return 'punctuation';
 			if (!LuaLexer.isIdentifierPart(lastChar)) return null;
 			return context.prefix.length === 0 ? null : 'typing';
 		}
@@ -783,7 +795,11 @@ export class CompletionController {
 			if (!analyzed) { this.closeSession(); return; }
 			const cursor = this.getCursorPosition();
 			const previousChar = this.getCharAt(cursor.row, cursor.column - 1);
-			if (analyzed.prefix.length === 0 && previousChar !== '.' && previousChar !== ':' && !LuaLexer.isIdentifierPart(previousChar)) { this.closeSession(); return; }
+			const atMemberOperator = analyzed.kind === 'member'
+				&& (previousChar === '.'
+					|| previousChar === ':'
+					|| (previousChar === '>' && analyzed.member.operator === '->'));
+			if (analyzed.prefix.length === 0 && !atMemberOperator && !LuaLexer.isIdentifierPart(previousChar)) { this.closeSession(); return; }
 			this.refreshCompletionSessionFromContext(analyzed);
 			return;
 		}
@@ -798,54 +814,20 @@ export class CompletionController {
 		this.cancelPendingCompletion();
 		const items = this.collectCompletionItems(context);
 		if (items.length === 0) { this.completionSession = null; return; }
-		let session: CompletionSession;
-		switch (context.kind) {
-			case 'member':
-				session = {
-					context: { kind: 'member', objectName: context.objectName, operator: context.operator, prefix: context.prefix, row: context.row, replaceFromColumn: context.replaceFromColumn, replaceToColumn: context.replaceToColumn },
-					items,
-					filteredItems: [],
-					selectionIndex: -1,
-					displayOffset: 0,
-					anchorRow: this.getCursorPosition().row,
-					anchorColumn: this.getCursorPosition().column,
-					maxVisibleItems: constants.COMPLETION_POPUP_MAX_VISIBLE,
-					filterCache: new Map(),
-					trigger,
-					navigationCaptured: trigger === 'manual',
-				};
-				break;
-			case 'global':
-				session = {
-					context: { kind: 'global', prefix: context.prefix, row: context.row, replaceFromColumn: context.replaceFromColumn, replaceToColumn: context.replaceToColumn },
-					items,
-					filteredItems: [],
-					selectionIndex: -1,
-					displayOffset: 0,
-					anchorRow: this.getCursorPosition().row,
-					anchorColumn: this.getCursorPosition().column,
-					maxVisibleItems: constants.COMPLETION_POPUP_MAX_VISIBLE,
-					filterCache: new Map(),
-					trigger,
-					navigationCaptured: trigger === 'manual',
-				};
-				break;
-			case 'local':
-				session = {
-					context: { kind: 'local', prefix: context.prefix, row: context.row, replaceFromColumn: context.replaceFromColumn, replaceToColumn: context.replaceToColumn },
-					items,
-					filteredItems: [],
-					selectionIndex: -1,
-					displayOffset: 0,
-					anchorRow: this.getCursorPosition().row,
-					anchorColumn: this.getCursorPosition().column,
-					maxVisibleItems: constants.COMPLETION_POPUP_MAX_VISIBLE,
-					filterCache: new Map(),
-					trigger,
-					navigationCaptured: trigger === 'manual',
-				};
-				break;
-		}
+		const cursor = this.getCursorPosition();
+		const session: CompletionSession = {
+			context,
+			items,
+			filteredItems: [],
+			selectionIndex: -1,
+			displayOffset: 0,
+			anchorRow: cursor.row,
+			anchorColumn: cursor.column,
+			maxVisibleItems: constants.COMPLETION_POPUP_MAX_VISIBLE,
+			filterCache: new Map(),
+			trigger,
+			navigationCaptured: trigger === 'manual',
+		};
 		this.completionSession = session;
 		this.applyCompletionFilter(session);
 	}
@@ -856,17 +838,7 @@ export class CompletionController {
 		const reuseItems = this.completionContextsCompatible(session.context, context);
 		const items = reuseItems ? session.items : this.collectCompletionItems(context);
 		if (items.length === 0) { this.closeSession(); return; }
-		switch (context.kind) {
-			case 'member':
-				session.context = { kind: 'member', objectName: context.objectName, operator: context.operator, prefix: context.prefix, row: context.row, replaceFromColumn: context.replaceFromColumn, replaceToColumn: context.replaceToColumn };
-				break;
-			case 'global':
-				session.context = { kind: 'global', prefix: context.prefix, row: context.row, replaceFromColumn: context.replaceFromColumn, replaceToColumn: context.replaceToColumn };
-				break;
-			case 'local':
-				session.context = { kind: 'local', prefix: context.prefix, row: context.row, replaceFromColumn: context.replaceFromColumn, replaceToColumn: context.replaceToColumn };
-				break;
-		}
+		session.context = context;
 		if (!reuseItems) {
 			session.items = items;
 			session.filterCache.clear();
@@ -972,8 +944,8 @@ export class CompletionController {
 	private completionContextsCompatible(expected: CompletionContext, actual: CompletionContext): boolean {
 		if (expected.kind !== actual.kind) return false;
 		if (expected.kind === 'member' && actual.kind === 'member') {
-			if (expected.operator !== actual.operator) return false;
-			if (expected.objectName !== actual.objectName) return false;
+			if (expected.member.operator !== actual.member.operator) return false;
+			if (expected.member.receiverKey !== actual.member.receiverKey) return false;
 		}
 		return true;
 	}

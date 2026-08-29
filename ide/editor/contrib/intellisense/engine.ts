@@ -350,31 +350,25 @@ export function clearHoverTooltip(): void {
 	intellisenseUiState.lastInspectorResult = null;
 }
 
-export function buildMemberCompletionItems(bridge: RuntimeLuaTooling, fault: RuntimeFaultState, runtime: Runtime, objectName: string, operator: '.' | ':', domain: ResourceDomain, path: string): LuaCompletionItem[] {
-	if (objectName.length === 0) {
-		return [];
-	}
-	const response = listLuaObjectMembers(bridge, fault, runtime, objectName, domain, path, operator);
+export function buildMemberCompletionItems(bridge: RuntimeLuaTooling, fault: RuntimeFaultState, runtime: Runtime, chain: readonly string[], operator: '.' | ':', domain: ResourceDomain, path: string): LuaCompletionItem[] {
+	const response = listLuaObjectMembers(bridge, fault, runtime, chain, domain, path, operator);
 	if (response.length === 0) {
 		return [];
 	}
-	const items: LuaCompletionItem[] = [];
+	const items = new Array<LuaCompletionItem>(response.length);
 	for (let index = 0; index < response.length; index += 1) {
 		const entry = response[index];
-		if (!entry || !entry.name || entry.name.length === 0) {
-			continue;
-		}
 		const kind = entry.kind === 'method' ? 'native_method' : 'native_property';
-		const parameters = entry.parameters && entry.parameters.length > 0 ? entry.parameters.slice() : undefined;
+		const parameters = entry.parameters.length > 0 ? entry.parameters : undefined;
 		const detail = entry.detail;
-		items.push({
+		items[index] = {
 			label: entry.name,
 			insertText: entry.name,
 			sortKey: `${kind}:${entry.name}`,
 			kind,
 			detail,
 			parameters,
-		});
+		};
 	}
 	items.sort((a, b) => a.label.localeCompare(b.label));
 	return items;
@@ -827,15 +821,7 @@ export function inspectLuaExpression(bridge: RuntimeLuaTooling, fault: RuntimeFa
 	};
 }
 
-export function listLuaObjectMembers(bridge: RuntimeLuaTooling, fault: RuntimeFaultState, runtime: Runtime, expression: string, domain: ResourceDomain, path: string, operator: '.' | ':'): LuaMemberCompletion[] {
-	const trimmed = expression.trim();
-	if (trimmed.length === 0) {
-		return [];
-	}
-	const chain = parseLuaIdentifierChain(trimmed);
-	if (!chain) {
-		return [];
-	}
+export function listLuaObjectMembers(bridge: RuntimeLuaTooling, fault: RuntimeFaultState, runtime: Runtime, chain: readonly string[], domain: ResourceDomain, path: string, operator: '.' | ':'): LuaMemberCompletion[] {
 	const resolved = resolveLuaChainValue(bridge, fault, runtime, chain, domain, path, null, null);
 	if (!resolved || resolved.kind !== 'value') {
 		return [];
@@ -1294,7 +1280,7 @@ export function resolveLuaChainValue(
 	bridge: RuntimeLuaTooling,
 	fault: RuntimeFaultState,
 	runtime: Runtime,
-	parts: string[],
+	parts: readonly string[],
 	domain: ResourceDomain,
 	path: string,
 	usageRow: number,
@@ -1303,7 +1289,7 @@ export function resolveLuaChainValue(
 	| ({ kind: 'value'; scope: LuaHoverScope; definitionRange: LuaSourceRange } & ResolvedIntellisenseValue)
 	| { kind: 'not_defined'; scope: LuaHoverScope }
 ) {
-	if (!parts || parts.length === 0) {
+	if (parts.length === 0) {
 		return null;
 	}
 	const interpreter = bridge.luaInterpreter;

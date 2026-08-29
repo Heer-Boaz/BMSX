@@ -26,8 +26,6 @@ import {
 } from './completion';
 import { buildLuaKnownNameSet, isReservedIntrinsicName, isReservedMemoryMapName, semanticSymbolKindToLuaSymbolKind } from './common';
 
-const EMPTY_DECLARATIONS: readonly Decl[] = [];
-
 export type LuaSemanticFrontendSource = {
 	path: string;
 	source: string;
@@ -112,7 +110,7 @@ export type LuaSemanticFrontendFile = {
 	getReference(identifier: LuaIdentifierExpression): LuaBoundReference | undefined;
 	getVisibleDeclarationsAt(line: number, column: number): readonly Decl[];
 	findMemberCompletionContextAt(line: number, memberStartColumn: number): LuaMemberCompletionContext | null;
-	getMemberCompletionDeclarationsAt(line: number, memberStartColumn: number): readonly Decl[];
+	getMemberCompletionDeclarations(context: LuaMemberCompletionContext): readonly Decl[];
 	findNavigationAt(line: number, column: number): LuaSemanticNavigationQuery | null;
 };
 
@@ -331,15 +329,13 @@ function createBoundFile(
 		getVisibleDeclarationsAt(line: number, column: number): readonly Decl[] {
 			return collectVisibleDeclarationsAt(source, line, column);
 		},
-		// disable-next-line single_line_method_pattern -- the bound file owns its source while completion parsing remains a shared semantic query.
+		// disable-next-line single_line_method_pattern -- the bound file owns its source while member-access lookup remains a shared semantic query.
 		findMemberCompletionContextAt(line: number, memberStartColumn: number): LuaMemberCompletionContext | null {
 			return findLuaMemberCompletionContext(source, line, memberStartColumn);
 		},
-		getMemberCompletionDeclarationsAt(line: number, memberStartColumn: number): readonly Decl[] {
-			const context = findLuaMemberCompletionContext(source, line, memberStartColumn);
-			return context
-				? snapshot.symbolResolver.getMembers(context.receiver)
-				: EMPTY_DECLARATIONS;
+		// disable-next-line single_line_method_pattern -- the bound frontend resolves retained semantic receivers against its immutable workspace snapshot.
+		getMemberCompletionDeclarations(context: LuaMemberCompletionContext): readonly Decl[] {
+			return snapshot.symbolResolver.getMembers(context.receiver);
 		},
 		findNavigationAt(line: number, column: number): LuaSemanticNavigationQuery | null {
 			const symbols = findPositionSymbols(source, snapshot, line, column);

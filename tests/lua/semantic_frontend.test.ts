@@ -346,12 +346,95 @@ test('LuaSemanticFrontend completes an incomplete implicit-self receiver from th
 	const frontend = createLuaSemanticFrontendFromSnapshot(workspace.getSnapshot());
 	const file = frontend.getFile('incomplete_member.lua');
 	const context = file.findMemberCompletionContextAt(4, lines[3].length + 1);
-	const members = file.getMemberCompletionDeclarationsAt(4, lines[3].length + 1);
 
 	assert.ok(parsed.syntaxError);
-	assert.equal(context?.expression, 'self');
-	assert.equal(context?.operator, '.');
-	assert.deepEqual(members.map(member => member.name), ['blink', 'update']);
+	assert.ok(context);
+	assert.equal(context.operator, '.');
+	assert.deepEqual(context.namePath, ['self']);
+	assert.deepEqual(
+		file.getMemberCompletionDeclarations(context).map(member => member.name),
+		['blink', 'update'],
+	);
+});
+
+test('LuaSemanticFrontend completes members on a recovered call-result receiver', () => {
+	const lines = [
+		'local function build()',
+		'\treturn { ready = true, update = function() end }',
+		'end',
+		'build().',
+	];
+	const source = lines.join('\n');
+	const parsed = parseLuaChunkWithRecovery(source, 'call_result_member.lua');
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFiles([
+		buildLuaFileSemanticData(source, 'call_result_member.lua', parsed),
+	]);
+	const file = createLuaSemanticFrontendFromSnapshot(workspace.getSnapshot())
+		.getFile('call_result_member.lua');
+	const column = lines[3].length + 1;
+	const context = file.findMemberCompletionContextAt(4, column);
+
+	assert.ok(parsed.syntaxError);
+	assert.ok(context);
+	assert.equal(context.namePath, undefined);
+	assert.deepEqual(
+		file.getMemberCompletionDeclarations(context).map(member => member.name),
+		['ready', 'update'],
+	);
+});
+
+test('LuaSemanticFrontend retains a typed method prefix for completion', () => {
+	const lines = [
+		'local actor<const> = {}',
+		'function actor:blink() end',
+		'function actor:update()',
+		'\tself:bl',
+		'end',
+		'return actor',
+	];
+	const source = lines.join('\n');
+	const parsed = parseLuaChunkWithRecovery(source, 'method_prefix.lua');
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFiles([
+		buildLuaFileSemanticData(source, 'method_prefix.lua', parsed),
+	]);
+	const file = createLuaSemanticFrontendFromSnapshot(workspace.getSnapshot())
+		.getFile('method_prefix.lua');
+	const memberColumn = lines[3].indexOf('bl') + 1;
+	const context = file.findMemberCompletionContextAt(4, memberColumn);
+
+	assert.ok(parsed.syntaxError);
+	assert.ok(context);
+	assert.equal(context.operator, ':');
+	assert.deepEqual(
+		file.getMemberCompletionDeclarations(context).map(member => member.name),
+		['blink', 'update'],
+	);
+});
+
+test('LuaSemanticFrontend retains BLua pointer-member completion syntax', () => {
+	const lines = [
+		'local target<const> = { value = 1 }',
+		'target->',
+	];
+	const source = lines.join('\n');
+	const parsed = parseLuaChunkWithRecovery(source, 'pointer_member.lua');
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFiles([
+		buildLuaFileSemanticData(source, 'pointer_member.lua', parsed),
+	]);
+	const file = createLuaSemanticFrontendFromSnapshot(workspace.getSnapshot())
+		.getFile('pointer_member.lua');
+	const context = file.findMemberCompletionContextAt(2, lines[1].length + 1);
+
+	assert.ok(parsed.syntaxError);
+	assert.ok(context);
+	assert.equal(context.operator, '->');
+	assert.deepEqual(
+		file.getMemberCompletionDeclarations(context).map(member => member.name),
+		['value'],
+	);
 });
 
 test('LuaSemanticFrontend enumerates members through modules, nested values, effects, and prototypes', () => {
@@ -377,20 +460,23 @@ test('LuaSemanticFrontend enumerates members through modules, nested values, eff
 	]);
 	const file = frontend.getFile('usage.lua');
 	const usage = usageLines[7];
+	const direct = file.findMemberCompletionContextAt(8, usage.indexOf('direct') + 1);
+	const build = file.findMemberCompletionContextAt(8, usage.indexOf('build') + 1);
+	const own = file.findMemberCompletionContextAt(8, usage.indexOf('own') + 1);
+	assert.ok(direct);
+	assert.ok(build);
+	assert.ok(own);
 
 	assert.deepEqual(
-		file.getMemberCompletionDeclarationsAt(8, usage.indexOf('direct') + 1)
-			.map(member => member.name),
+		file.getMemberCompletionDeclarations(direct).map(member => member.name),
 		['direct', 'nested'],
 	);
 	assert.deepEqual(
-		file.getMemberCompletionDeclarationsAt(8, usage.indexOf('build') + 1)
-			.map(member => member.name),
+		file.getMemberCompletionDeclarations(build).map(member => member.name),
 		['build'],
 	);
 	assert.deepEqual(
-		file.getMemberCompletionDeclarationsAt(8, usage.indexOf('own') + 1)
-			.map(member => member.name),
+		file.getMemberCompletionDeclarations(own).map(member => member.name),
 		['added', 'inherited', 'own'],
 	);
 });

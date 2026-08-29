@@ -89,6 +89,10 @@ function unreachableFlowValue(value: never, label: string): never {
 	throw new Error(`[ValueKindFlowAnalyzer] Unhandled ${label}: ${String(value)}`);
 }
 
+function rejectRecoveryStatement(): never {
+	throw new Error('[ValueKindFlowAnalyzer] Recovery statements cannot enter compilation.');
+}
+
 // ---------------------------------------------------------------------------
 //  State helpers
 // ---------------------------------------------------------------------------
@@ -518,6 +522,8 @@ function collectNestedClosureWritesFromStatement(
 		case LuaSyntaxKind.CallStatement:
 			collectNestedClosureWritesFromExpression((statement as LuaCallStatement).expression, semantics, out);
 			return;
+		case LuaSyntaxKind.ErrorStatement:
+			return rejectRecoveryStatement();
 		case LuaSyntaxKind.BreakStatement:
 		case LuaSyntaxKind.HaltUntilIrqStatement:
 		case LuaSyntaxKind.StructDeclarationStatement:
@@ -663,6 +669,8 @@ function collectLexicalWritesInStatement(
 		case LuaSyntaxKind.CallStatement:
 			collectNestedClosureWritesFromExpression((statement as LuaCallStatement).expression, semantics, out);
 			return;
+		case LuaSyntaxKind.ErrorStatement:
+			return rejectRecoveryStatement();
 		case LuaSyntaxKind.BreakStatement:
 		case LuaSyntaxKind.HaltUntilIrqStatement:
 		case LuaSyntaxKind.StructDeclarationStatement:
@@ -878,6 +886,8 @@ export class ValueKindFlowAnalyzer {
 			case LuaSyntaxKind.CallStatement:
 				this.evalExprFact((statement as LuaCallStatement).expression);
 				return;
+			case LuaSyntaxKind.ErrorStatement:
+				return rejectRecoveryStatement();
 			case LuaSyntaxKind.BreakStatement:
 			case LuaSyntaxKind.HaltUntilIrqStatement:
 				case LuaSyntaxKind.StructDeclarationStatement:
