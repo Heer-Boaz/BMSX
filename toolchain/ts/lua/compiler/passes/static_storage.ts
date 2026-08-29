@@ -8,6 +8,7 @@ import {
 } from '../../syntax/ast';
 import type { LuaSemanticFrontendFile } from '../../semantic/frontend';
 import type { Decl } from '../../semantic/model';
+import { getBoundDeclaration } from '../bound_reference';
 
 export type StaticStorageDeclaration =
 	| { kind: 'struct'; statement: LuaStructDeclarationStatement }
@@ -30,7 +31,7 @@ export const collectStaticStorageDeclarations = (
 				const bssStatement = statement as LuaBssDeclarationStatement;
 				declarations.push({
 					kind: 'bss',
-					declaration: semantics.getDeclaration(bssStatement.name.range),
+					declaration: getBoundDeclaration(semantics, bssStatement.name),
 					statement: bssStatement,
 				});
 				break;
@@ -39,7 +40,7 @@ export const collectStaticStorageDeclarations = (
 				const dataStatement = statement as LuaDataDeclarationStatement;
 				declarations.push({
 					kind: 'data',
-					declaration: semantics.getDeclaration(dataStatement.name.range),
+					declaration: getBoundDeclaration(semantics, dataStatement.name),
 					statement: dataStatement,
 				});
 				break;
@@ -48,7 +49,7 @@ export const collectStaticStorageDeclarations = (
 				const rodataStatement = statement as LuaRodataDeclarationStatement;
 				declarations.push({
 					kind: 'rodata',
-					declaration: semantics.getDeclaration(rodataStatement.name.range),
+					declaration: getBoundDeclaration(semantics, rodataStatement.name),
 					statement: rodataStatement,
 				});
 				break;

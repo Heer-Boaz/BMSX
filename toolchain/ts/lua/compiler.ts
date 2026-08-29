@@ -107,6 +107,7 @@ import { stringLiteralValue } from './syntax/literals';
 import { Decl } from './semantic/model';
 import {
 	IMPLICIT_SELF_SYMBOL_HANDLE,
+	getBoundDeclaration as getResolvedDeclaration,
 	getBoundIdentifierReference as getResolvedIdentifierReference,
 	getReferenceSymbolHandle as getResolvedReferenceSymbolHandle,
 } from './compiler/bound_reference';
@@ -1381,7 +1382,7 @@ class FunctionBuilder {
 			const statement = chunk.body[index];
 			if (statement.kind === LuaSyntaxKind.LocalFunctionStatement) {
 				const localFunction = statement as LuaLocalFunctionStatement;
-				const decl = this.requireBoundDeclaration(localFunction.name.range, `local function '${localFunction.name.name}'`);
+				const decl = getResolvedDeclaration(this.semantics, localFunction.name);
 				this.declareLocalFromDecl(decl, localFunction.name.range);
 				continue;
 			}
@@ -1408,7 +1409,7 @@ class FunctionBuilder {
 			}
 			for (let nameIndex = 0; nameIndex < local.names.length; nameIndex += 1) {
 				const localName = local.names[nameIndex];
-				const decl = this.requireBoundDeclaration(localName.range, `local '${localName.name}'`);
+				const decl = getResolvedDeclaration(this.semantics, localName);
 				const flags = this.initializerFlags[nameIndex];
 				const moduleBinding = flags & INIT_HAS_MODULE_BINDING
 					? this.initializerModuleBindings[nameIndex]
@@ -1444,7 +1445,7 @@ class FunctionBuilder {
 		}
 		for (let i = 0; i < expression.parameters.length; i += 1) {
 			const parameter = expression.parameters[i];
-			const decl = this.requireBoundDeclaration(parameter.range, `parameter '${parameter.name}'`);
+			const decl = getResolvedDeclaration(this.semantics, parameter);
 			this.declareLocalFromDecl(decl, parameter.range, expression.range);
 		}
 		for (let i = 0; i < expression.body.body.length; i += 1) {
@@ -2163,14 +2164,6 @@ class FunctionBuilder {
 		}
 		const labels = Array.from(this.pendingLabelJumps.keys()).sort();
 		throw new Error(`Missing label(s): ${labels.join(', ')}`);
-	}
-
-	private requireBoundDeclaration(range: LuaSourceRange, context: string): Decl {
-		const decl = this.semantics.getDeclaration(range);
-		if (!decl) {
-			throw new Error(`Missing bound declaration for ${context}.`);
-		}
-		return decl;
 	}
 
 	private declareLocal(
@@ -3727,7 +3720,7 @@ class FunctionBuilder {
 	}
 
 	private compileBssDeclaration(statement: LuaBssDeclarationStatement): void {
-		this.recordBssDeclaration(statement, this.requireBoundDeclaration(statement.name.range, `bss '${statement.name.name}'`));
+		this.recordBssDeclaration(statement, getResolvedDeclaration(this.semantics, statement.name));
 	}
 
 	private recordBssDeclaration(statement: LuaBssDeclarationStatement, declaration: Decl): void {
@@ -3736,7 +3729,7 @@ class FunctionBuilder {
 	}
 
 	private compileDataDeclaration(statement: LuaDataDeclarationStatement): void {
-		this.recordDataDeclaration(statement, this.requireBoundDeclaration(statement.name.range, `data '${statement.name.name}'`));
+		this.recordDataDeclaration(statement, getResolvedDeclaration(this.semantics, statement.name));
 	}
 
 	private recordDataDeclaration(statement: LuaDataDeclarationStatement, declaration: Decl): void {
@@ -3746,7 +3739,7 @@ class FunctionBuilder {
 	}
 
 	private compileRodataDeclaration(statement: LuaRodataDeclarationStatement): void {
-		this.recordRodataDeclaration(statement, this.requireBoundDeclaration(statement.name.range, `rodata '${statement.name.name}'`));
+		this.recordRodataDeclaration(statement, getResolvedDeclaration(this.semantics, statement.name));
 	}
 
 	private recordRodataDeclaration(statement: LuaRodataDeclarationStatement, declaration: Decl): void {
@@ -3867,7 +3860,7 @@ class FunctionBuilder {
 		const pointerTypeRefs = statement.pointerTypeRefs;
 		const values = statement.values;
 		if (isRecursiveConstClosureDeclaration(statement)) {
-			const decl = this.requireBoundDeclaration(names[0].range, `local '${names[0].name}'`);
+			const decl = getResolvedDeclaration(this.semantics, names[0]);
 			const name = decl.name;
 			const target = this.declareLocalFromDecl(decl, names[0].range);
 			const hint = this.createLocalFunctionHint(name);
@@ -3902,7 +3895,7 @@ class FunctionBuilder {
 				}
 				const reg = this.allocTemp();
 				const name = i < names.length
-					? this.requireBoundDeclaration(names[i].range, `local '${names[i].name}'`).name
+					? getResolvedDeclaration(this.semantics, names[i]).name
 					: '';
 				const hint = expr.kind === LuaSyntaxKind.FunctionExpression && i < names.length
 					? this.createLocalFunctionHint(name)
@@ -3939,7 +3932,7 @@ class FunctionBuilder {
 				} else {
 					const lastReg = this.allocTemp();
 					const lastName = lastHasName
-						? this.requireBoundDeclaration(names[lastIndex].range, `local '${names[lastIndex].name}'`).name
+						? getResolvedDeclaration(this.semantics, names[lastIndex]).name
 						: '';
 					const resultCount = wantsMulti ? remaining : 1;
 					const lastHint = lastExpr.kind === LuaSyntaxKind.FunctionExpression && lastHasName
@@ -3966,7 +3959,7 @@ class FunctionBuilder {
 			}
 		}
 		for (let i = 0; i < names.length; i += 1) {
-			const decl = this.requireBoundDeclaration(names[i].range, `local '${names[i].name}'`);
+			const decl = getResolvedDeclaration(this.semantics, names[i]);
 			const name = decl.name;
 			const attribute = attributes[i];
 			const lastIndex = values.length - 1;
@@ -4113,7 +4106,7 @@ class FunctionBuilder {
 			const targetPreparation = classifyAssignmentTargetPreparation(this.semantics, expr);
 			if (targetPreparation.kind === 'identifier') {
 				const identifier = expr as LuaIdentifierExpression;
-				const reference = getResolvedIdentifierReference(this.semantics, identifier, true);
+				const reference = getResolvedIdentifierReference(this.semantics, identifier);
 				const symbolHandle = getResolvedReferenceSymbolHandle(reference);
 				const name = this.getReferenceName(reference);
 				const localBinding = symbolHandle ? this.localBindings.get(symbolHandle) : undefined;
@@ -4421,7 +4414,7 @@ class FunctionBuilder {
 
 	private compileForNumeric(statement: any): void {
 		this.pushScope(statement.block.range);
-		const loopDecl = this.requireBoundDeclaration(statement.variable.range, `loop variable '${statement.variable.name}'`);
+		const loopDecl = getResolvedDeclaration(this.semantics, statement.variable);
 		const indexReg = this.declareLocalFromDecl(loopDecl, statement.variable.range);
 		this.compileExpressionInto(statement.start, indexReg, 1);
 		const limitReg = this.allocLocal();
@@ -4482,7 +4475,7 @@ class FunctionBuilder {
 		const loopVars: number[] = [];
 		for (let i = 0; i < statement.variables.length; i += 1) {
 			const variable = statement.variables[i];
-			const decl = this.requireBoundDeclaration(variable.range, `loop variable '${variable.name}'`);
+			const decl = getResolvedDeclaration(this.semantics, variable);
 			loopVars.push(this.declareLocalFromDecl(decl, variable.range));
 		}
 
@@ -4563,7 +4556,7 @@ class FunctionBuilder {
 	}
 
 	private compileLocalFunction(statement: LuaLocalFunctionStatement): void {
-		const decl = this.requireBoundDeclaration(statement.name.range, `local function '${statement.name.name}'`);
+		const decl = getResolvedDeclaration(this.semantics, statement.name);
 		const name = decl.name;
 		const reg = this.declareLocalFromDecl(decl, statement.name.range);
 		const hint = this.createLocalFunctionHint(name);
@@ -4579,33 +4572,23 @@ class FunctionBuilder {
 	private compileFunctionDeclaration(statement: LuaFunctionDeclarationStatement): void {
 		const fnExpr = statement.functionExpression;
 		const method = statement.name.method;
-		const methodName = method === null ? null : method.name;
 		const path = statement.name.path;
 		const identifiers = new Array<string>(path.length);
 		for (let index = 0; index < path.length; index += 1) {
 			identifiers[index] = path[index].name;
 		}
 		const target = classifyFunctionDeclarationTarget(this.semantics, statement);
-		const hint = buildDeclarationHint(identifiers, methodName);
+		const hint = buildDeclarationHint(identifiers, method);
 		const protoId = buildProtoId(this.protoId, hint);
-		const protoIndex = compileFunctionExpression(this.program, fnExpr, this, methodName && methodName.length > 0, protoId, this.moduleId, this.semantics, this.frontend);
+		const protoIndex = compileFunctionExpression(this.program, fnExpr, this, method !== null, protoId, this.moduleId, this.semantics, this.frontend);
 		const closureReg = this.allocTemp();
 		this.emitABx(OpCode.CLOSURE, closureReg, protoIndex);
-		if (identifiers.length === 0) {
-			throw new Error('Function declaration missing name.');
-		}
 		if (target.kind === 'simple') {
-			if (!target.finalReference) {
-				throw new Error(`Missing bound function target for '${identifiers[0]}'.`);
-			}
 			this.emitReferenceStore(target.finalReference, closureReg);
 			return;
 		}
 
 		const baseReg = this.allocTemp();
-		if (!target.baseReference) {
-			throw new Error(`Missing bound function base for '${identifiers[0]}'.`);
-		}
 		this.emitReferenceLoad(target.baseReference, baseReg);
 		for (let i = 0; i < target.intermediateKeys.length; i += 1) {
 			const key = this.program.constIndex(target.intermediateKeys[i]);
@@ -5713,10 +5696,10 @@ function opForAssignment(operator: LuaAssignmentOperator): OpCode {
 
 const buildNamePath = (parts: ReadonlyArray<string>): string => parts.join('.');
 
-const buildDeclarationHint = (identifiers: ReadonlyArray<string>, methodName: string | null): string => {
-	if (methodName && methodName.length > 0) {
+const buildDeclarationHint = (identifiers: ReadonlyArray<string>, method: LuaIdentifierExpression | null): string => {
+	if (method !== null) {
 		const prefix = identifiers.length > 0 ? `${buildNamePath(identifiers)}.` : '';
-		return `decl:${prefix}${methodName}`;
+		return `decl:${prefix}${method.name}`;
 	}
 	return `decl:${buildNamePath(identifiers)}`;
 };
@@ -5815,12 +5798,14 @@ function buildCompilerSemanticFrontend(
 	const sources = [{
 		path: entryChunk.range.path,
 		source: requireEntrySource(options, entryChunk.range.path),
+		chunk: entryChunk,
 	}];
 	for (let index = 0; index < modules.length; index += 1) {
 		const module = modules[index];
 		sources.push({
 			path: module.path,
 			source: requireModuleSource(module),
+			chunk: module.chunk,
 		});
 	}
 	return buildLuaSemanticFrontend(sources, {

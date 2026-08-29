@@ -9,7 +9,10 @@ import {
 	type LuaTableConstructorExpression,
 } from '../../syntax/ast';
 import type { LuaSemanticFrontendFile } from '../../semantic/frontend';
-import { getBoundIdentifierReference as getResolvedIdentifierReference } from '../bound_reference';
+import {
+	getBoundDeclaration,
+	getBoundIdentifierReference as getResolvedIdentifierReference,
+} from '../bound_reference';
 import { visitNamedTableFields } from './expression_paths';
 import { buildModuleExportPathKey, buildModuleExportSlotName } from '../../module_path';
 
@@ -34,7 +37,7 @@ const collectTopLevelFunctionExpressions = (
 		const statement = chunk.body[index];
 		if (statement.kind === LuaSyntaxKind.LocalFunctionStatement) {
 			const localFunction = statement as LuaLocalFunctionStatement;
-			functions.set(semantics.getDeclaration(localFunction.name.range).id, localFunction.functionExpression);
+			functions.set(getBoundDeclaration(semantics, localFunction.name).id, localFunction.functionExpression);
 			continue;
 		}
 		if (statement.kind !== LuaSyntaxKind.LocalAssignmentStatement) {
@@ -44,7 +47,7 @@ const collectTopLevelFunctionExpressions = (
 		for (let nameIndex = 0; nameIndex < local.names.length && nameIndex < local.values.length; nameIndex += 1) {
 			const value = local.values[nameIndex];
 			if (local.attributes[nameIndex] === 'const' && value.kind === LuaSyntaxKind.FunctionExpression) {
-				functions.set(semantics.getDeclaration(local.names[nameIndex].range).id, value as LuaFunctionExpression);
+				functions.set(getBoundDeclaration(semantics, local.names[nameIndex]).id, value as LuaFunctionExpression);
 			}
 		}
 	}

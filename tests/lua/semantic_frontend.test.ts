@@ -4,6 +4,8 @@ import { test } from 'node:test';
 import { buildLuaSemanticFrontend, type LuaSemanticFrontendFile, type LuaSemanticNavigationTarget } from '../../toolchain/ts/lua/semantic/frontend';
 import { createLuaSemanticFrontendFromSnapshot } from '../../ide/editor/contrib/intellisense/semantic/workspace/index';
 import { LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
+import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
+import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
 
 test('LuaSemanticFrontend rejects host-published machine word globals', () => {
 	const source = 'return sys_boot_cart, sys_vdp_stream_base, cart_manifest';
@@ -138,6 +140,32 @@ test('LuaSemanticFrontend treats implicit global writes inside nested scopes as 
 	assert.deepEqual(frontend.getFile('globalscope.lua').diagnostics, []);
 });
 
+test('LuaSemanticFrontend binds declarations and references to retained syntax identity', () => {
+	const source = 'value = 1';
+	const path = 'syntax_identity.lua';
+	const retainedChunk = parseLuaChunk(source, path).chunk;
+	const frontend = buildLuaSemanticFrontend([{ path, source, chunk: retainedChunk }]);
+	const assignment = retainedChunk.body[0];
+	assert.equal(assignment.kind, LuaSyntaxKind.AssignmentStatement);
+	const identifier = assignment.left[0];
+	assert.equal(identifier.kind, LuaSyntaxKind.IdentifierExpression);
+
+	const file = frontend.getFile(path);
+	const declaration = file.getDeclaration(identifier);
+	const reference = file.getReference(identifier);
+	assert.ok(declaration);
+	assert.ok(reference);
+	assert.equal(reference.ref.target, declaration.id);
+	assert.equal(reference.ref.isWrite, true);
+
+	const reparsedAssignment = parseLuaChunk(source, path).chunk.body[0];
+	assert.equal(reparsedAssignment.kind, LuaSyntaxKind.AssignmentStatement);
+	const reparsedIdentifier = reparsedAssignment.left[0];
+	assert.equal(reparsedIdentifier.kind, LuaSyntaxKind.IdentifierExpression);
+	assert.equal(file.getDeclaration(reparsedIdentifier), undefined);
+	assert.equal(file.getReference(reparsedIdentifier), undefined);
+});
+
 test('LuaSemanticFrontend allows omitted trailing optional arguments for user functions', () => {
 	const source = [
 		'local function add(a, b, c)',
@@ -163,13 +191,17 @@ test('LuaSemanticFrontend binds method self independently of out-of-scope siblin
 		'\treturn self',
 		'end',
 	].join('\n');
-	const frontend = buildLuaSemanticFrontend([{ path: 'method_self.lua', source }]);
+	const parsed = parseLuaChunk(source, 'method_self.lua');
+	const frontend = buildLuaSemanticFrontend([{ path: 'method_self.lua', source, parsed }]);
 	const file = frontend.getFile('method_self.lua');
-	const ref = file.getReference({
-		path: 'method_self.lua',
-		start: { line: 7, column: 9 },
-		end: { line: 7, column: 12 },
-	});
+	const method = parsed.chunk.body[2];
+	assert.equal(method.kind, LuaSyntaxKind.FunctionDeclarationStatement);
+	const returnStatement = method.functionExpression.body.body[0];
+	assert.equal(returnStatement.kind, LuaSyntaxKind.ReturnStatement);
+	const self = returnStatement.expressions[0];
+	assert.equal(self.kind, LuaSyntaxKind.IdentifierExpression);
+	const ref = file.getReference(self);
+	assert.ok(ref);
 	assert.equal(ref.kind, 'implicit_self');
 	assert.deepEqual(file.diagnostics, []);
 });

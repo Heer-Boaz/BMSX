@@ -409,7 +409,7 @@ function resolveDeclarationHandle(
 	identifier: LuaIdentifierExpression,
 	semantics: LuaSemanticFrontendFile,
 ): string | undefined {
-	const decl = semantics.getDeclaration(identifier.range);
+	const decl = semantics.getDeclaration(identifier);
 	if (decl && !decl.isGlobal) return decl.id;
 	return undefined;
 }
@@ -599,7 +599,7 @@ function collectLexicalWritesInStatement(
 		case LuaSyntaxKind.FunctionDeclarationStatement: {
 			const declaration = statement as LuaFunctionDeclarationStatement;
 			const target = classifyFunctionDeclarationTarget(semantics, declaration);
-			if (target.kind === 'simple' && target.lexicalHandle !== undefined) {
+			if (target.kind === 'simple' && target.lexicalHandle !== null) {
 				out.add(target.lexicalHandle);
 			}
 			collectLexicalWritesInFunctionBody(declaration.functionExpression.body.body, semantics, out);
@@ -920,7 +920,7 @@ export class ValueKindFlowAnalyzer {
 			// facts. Only the simple identifier form rewrites a lexical slot.
 			return;
 		}
-		if (target.lexicalHandle === undefined) return;
+		if (target.lexicalHandle === null) return;
 		this.state.set(target.lexicalHandle, FUNCTION_VALUE_FACT);
 	}
 

@@ -11,7 +11,6 @@ import { MemoryAccessKind } from '../../../../machine/ts/spec/blua32/memory_acce
 import { getMemoryAccessKindForName } from '../memory_access_syntax';
 import {
 	getBoundIdentifierReference,
-	getFunctionDeclarationBoundReferences,
 	getReferenceSymbolHandle,
 } from './bound_reference';
 
@@ -88,12 +87,12 @@ export function classifyAssignmentTargetPreparation(
 export type FunctionDeclarationTarget =
 	| {
 		readonly kind: 'simple';
-		readonly lexicalHandle: string | undefined;
-		readonly finalReference: LuaBoundReference | null;
+		readonly lexicalHandle: string | null;
+		readonly finalReference: LuaBoundReference;
 	}
 	| {
 		readonly kind: 'path';
-		readonly baseReference: LuaBoundReference | null;
+		readonly baseReference: LuaBoundReference;
 		readonly intermediateKeys: ReadonlyArray<string>;
 		readonly finalKey: string;
 	};
@@ -102,7 +101,6 @@ export function classifyFunctionDeclarationTarget(
 	semantics: LuaSemanticFrontendFile,
 	statement: LuaFunctionDeclarationStatement,
 ): FunctionDeclarationTarget {
-	const { baseReference, finalReference } = getFunctionDeclarationBoundReferences(semantics, statement);
 	const path = statement.name.path;
 	const method = statement.name.method;
 	// Declaration headers are restricted to identifier chains (`fn`, `tbl.fn`,
@@ -110,13 +108,10 @@ export function classifyFunctionDeclarationTarget(
 	// identifier form. Dotted/method forms read the base and then mutate table
 	// state, but they do not rewrite the base lexical symbol itself.
 	if (path.length === 1 && method === null) {
-		let lexicalHandle: string | undefined;
-		if (finalReference !== null) {
-			lexicalHandle = getReferenceSymbolHandle(finalReference);
-		}
+		const finalReference = getBoundIdentifierReference(semantics, path[0]);
 		return {
 			kind: 'simple',
-			lexicalHandle,
+			lexicalHandle: getReferenceSymbolHandle(finalReference),
 			finalReference,
 		};
 	}
@@ -130,7 +125,7 @@ export function classifyFunctionDeclarationTarget(
 	}
 	return {
 		kind: 'path',
-		baseReference,
+		baseReference: getBoundIdentifierReference(semantics, path[0]),
 		intermediateKeys,
 		finalKey,
 	};

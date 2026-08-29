@@ -3581,7 +3581,13 @@ do not parse, bind, or infer framework-specific meaning independently.
 Identifier-bearing syntax retains its identifier child nodes and exact authored
 source ranges in the parser-owned AST. File semantics consumes those nodes
 directly; it does not rebuild token maps or rescan the token stream for function
-paths, member names, or method names.
+paths, member names, or method names. A file-semantic record owns exactly one
+retained AST and its lexical token sequence. The binder indexes declarations
+and references by the identity of their identifier nodes. Compiler passes bind
+the same retained nodes and never reconstruct semantic identity from encoded
+source ranges, start-position fallbacks, or synthesized references. Source
+ranges remain the correct boundary for cursor- and protocol-originated queries,
+where no syntax node exists at the callsite.
 
 `RuntimeSourceState` owns one retained IDE resource identity per installed
 `(domain, path)`. That identity points at the owning `RomAsset` or

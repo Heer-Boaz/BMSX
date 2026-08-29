@@ -1,54 +1,29 @@
-import type { LuaFunctionDeclarationStatement, LuaIdentifierExpression } from '../syntax/ast';
+import type { LuaIdentifierExpression } from '../syntax/ast';
 import type { LuaBoundReference, LuaSemanticFrontendFile } from '../semantic/frontend';
+import type { Decl } from '../semantic/model';
 
 export const IMPLICIT_SELF_SYMBOL_HANDLE = '$implicit:self';
 
-export type FunctionDeclarationBoundReferences = {
-	readonly baseReference: LuaBoundReference | null;
-	readonly finalReference: LuaBoundReference | null;
-};
+export function getBoundDeclaration(
+	semantics: LuaSemanticFrontendFile,
+	identifier: LuaIdentifierExpression,
+): Decl {
+	const declaration = semantics.getDeclaration(identifier);
+	if (declaration === undefined) {
+		throw new Error(`Missing bound declaration for identifier '${identifier.name}'.`);
+	}
+	return declaration;
+}
 
 export function getBoundIdentifierReference(
 	semantics: LuaSemanticFrontendFile,
 	expression: LuaIdentifierExpression,
-	fallbackIsWrite = false,
 ): LuaBoundReference {
-	const reference = semantics.getReference(expression.range);
-	if (reference) {
-		return reference;
-	}
-	const decl = semantics.getDeclaration(expression.range);
-	if (!decl) {
+	const reference = semantics.getReference(expression);
+	if (reference === undefined) {
 		throw new Error(`Missing bound reference for identifier '${expression.name}'.`);
 	}
-	return {
-		kind: decl.isGlobal ? 'global' : 'lexical',
-		ref: {
-			file: decl.file,
-			name: decl.name,
-			namePath: decl.namePath,
-			symbolKey: decl.symbolKey,
-			range: expression.range,
-			target: decl.id,
-			lexicalTarget: decl.isGlobal ? null : decl.id,
-			isWrite: fallbackIsWrite,
-			isCall: false,
-			referenceKind: 'identifier',
-		},
-		decl,
-		isImplicitGlobal: false,
-	};
-}
-
-export function getFunctionDeclarationBoundReferences(
-	semantics: LuaSemanticFrontendFile,
-	statement: LuaFunctionDeclarationStatement,
-): FunctionDeclarationBoundReferences {
-	const headerEnd = statement.functionExpression.body.range.start;
-	return {
-		baseReference: semantics.findFirstReferenceByStartRange(statement.range.start, headerEnd),
-		finalReference: semantics.findLastReferenceByStartRange(statement.range.start, headerEnd),
-	};
+	return reference;
 }
 
 export function getReferenceSymbolHandle(reference: LuaBoundReference): string | null {

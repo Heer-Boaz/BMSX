@@ -17,7 +17,7 @@ import {
 	getDefaultLuaBuiltinDescriptors,
 	type LuaStaticDiagnostic,
 } from './diagnostics';
-import { compareSourcePosition, sourcePositionInRange, sourceRangeKey, sourceRangeStartKey } from './source_range';
+import { compareSourcePosition, sourcePositionInRange } from './source_range';
 import { buildLuaKnownNameSet, isReservedIntrinsicName, isReservedMemoryMapName, semanticSymbolKindToLuaSymbolKind } from './common';
 
 export type LuaSemanticFrontendSource = {
@@ -93,17 +93,9 @@ export type LuaCallHierarchyIncomingCall = {
 
 export type LuaSemanticFrontendFile = {
 	diagnostics: readonly LuaStaticDiagnostic[];
-	getDeclaration(range: LuaSourceRange): Decl;
-	getReference(range: LuaSourceRange): LuaBoundReference;
+	getDeclaration(identifier: LuaIdentifierExpression): Decl | undefined;
+	getReference(identifier: LuaIdentifierExpression): LuaBoundReference | undefined;
 	getNavigationTargetsAt(line: number, column: number): readonly LuaSemanticNavigationTarget[];
-	findFirstReferenceByStartRange(
-		start: LuaSourceRange['start'],
-		endExclusive: LuaSourceRange['start'],
-	): LuaBoundReference | null;
-	findLastReferenceByStartRange(
-		start: LuaSourceRange['start'],
-		endExclusive: LuaSourceRange['start'],
-	): LuaBoundReference | null;
 };
 
 export type LuaSemanticFrontend = {
@@ -304,14 +296,7 @@ function createBoundFile(
 	sourceByPath: ReadonlyMap<string, LuaSemanticWorkspaceSourceSnapshot>,
 	snapshot: LuaSemanticWorkspaceSnapshot,
 ): LuaSemanticFrontendFile {
-	const decls = source.analysis.decls;
-	const refsByStart = source.analysis.refs.slice();
-	refsByStart.sort((left, right) => compareSourcePosition(left.range.start.line, left.range.start.column, right.range.start.line, right.range.start.column));
 	const requireTargetsByStart = collectRequireNavigationTargets(source, moduleTargetsByAlias, sourceByPath);
-	const declarationsByRange = new Map<string, Decl>();
-	const declarationsByStart = new Map<string, Decl>();
-	const referencesByRange = new Map<string, Ref>();
-	const referencesByStart = new Map<string, Ref>();
 	const boundReferences = new Map<Ref, LuaBoundReference>();
 	const bindReference = (ref: Ref): LuaBoundReference => {
 		let reference = boundReferences.get(ref);
@@ -321,32 +306,17 @@ function createBoundFile(
 		}
 		return reference;
 	};
-	for (let index = 0; index < decls.length; index += 1) {
-		const decl = decls[index];
-		declarationsByRange.set(sourceRangeKey(decl.range), decl);
-		const startKey = sourceRangeStartKey(decl.range);
-		if (!declarationsByStart.has(startKey)) {
-			declarationsByStart.set(startKey, decl);
-		}
-	}
-	for (let index = 0; index < refsByStart.length; index += 1) {
-		const reference = refsByStart[index];
-		referencesByRange.set(sourceRangeKey(reference.range), reference);
-		const startKey = sourceRangeStartKey(reference.range);
-		if (!referencesByStart.has(startKey)) {
-			referencesByStart.set(startKey, reference);
-		}
-	}
 	return {
 		diagnostics,
-		getDeclaration(range: LuaSourceRange): Decl {
-			return declarationsByRange.get(sourceRangeKey(range))
-				?? declarationsByStart.get(sourceRangeStartKey(range));
+		getDeclaration(identifier: LuaIdentifierExpression): Decl | undefined {
+			const id = source.analysis.declarationIdsBySyntax.get(identifier);
+			return id === undefined
+				? undefined
+				: snapshot.symbolResolver.getDeclaration(id);
 		},
-		getReference(range: LuaSourceRange): LuaBoundReference {
-			const ref = referencesByRange.get(sourceRangeKey(range))
-				?? referencesByStart.get(sourceRangeStartKey(range));
-			return ref ? bindReference(ref) : undefined;
+		getReference(identifier: LuaIdentifierExpression): LuaBoundReference | undefined {
+			const ref = source.analysis.referencesBySyntax.get(identifier);
+			return ref === undefined ? undefined : bindReference(ref);
 		},
 		getNavigationTargetsAt(line: number, column: number): readonly LuaSemanticNavigationTarget[] {
 			const symbols = findPositionSymbols(source, snapshot, line, column);
@@ -374,22 +344,6 @@ function createBoundFile(
 				}];
 			}
 			return [];
-		},
-		findFirstReferenceByStartRange(
-			start: LuaSourceRange['start'],
-			endExclusive: LuaSourceRange['start'],
-		): LuaBoundReference {
-			const startIndex = lowerBoundReferenceStart(refsByStart, start.line, start.column);
-			const endIndex = lowerBoundReferenceStart(refsByStart, endExclusive.line, endExclusive.column);
-			return startIndex < endIndex ? bindReference(refsByStart[startIndex]) : null;
-		},
-		findLastReferenceByStartRange(
-			start: LuaSourceRange['start'],
-			endExclusive: LuaSourceRange['start'],
-		): LuaBoundReference {
-			const startIndex = lowerBoundReferenceStart(refsByStart, start.line, start.column);
-			const endIndex = lowerBoundReferenceStart(refsByStart, endExclusive.line, endExclusive.column);
-			return startIndex < endIndex ? bindReference(refsByStart[endIndex - 1]) : null;
 		},
 	};
 }
@@ -496,8 +450,8 @@ function resolveStringLiteralNavigationRange(
 	source: LuaSemanticWorkspaceSourceSnapshot,
 	literal: LuaStringLiteralExpression,
 ): LuaSourceRange {
-	for (let index = 0; index < source.parsed.tokens.length; index += 1) {
-		const token = source.parsed.tokens[index];
+	for (let index = 0; index < source.tokens.length; index += 1) {
+		const token = source.tokens[index];
 		if (token.type !== LuaTokenType.String) {
 			continue;
 		}
@@ -623,22 +577,4 @@ function buildCombinedGlobalSymbols(decls: readonly Decl[], externalGlobalSymbol
 		}
 	}
 	return symbols;
-}
-
-function lowerBoundReferenceStart(
-	refs: readonly Ref[],
-	line: number,
-	column: number,
-): number {
-	let low = 0;
-	let high = refs.length;
-	while (low < high) {
-		const mid = (low + high) >> 1;
-		if (compareSourcePosition(refs[mid].range.start.line, refs[mid].range.start.column, line, column) < 0) {
-			low = mid + 1;
-		} else {
-			high = mid;
-		}
-	}
-	return low;
 }

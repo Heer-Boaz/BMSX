@@ -14,7 +14,10 @@ import {
 } from '../../syntax/ast';
 import { evaluateCompileTimeNumberBinaryOperator } from '../compile_time_number';
 import type { LuaSemanticFrontendFile } from '../../semantic/frontend';
-import { getBoundIdentifierReference as getResolvedIdentifierReference } from '../bound_reference';
+import {
+	getBoundDeclaration,
+	getBoundIdentifierReference as getResolvedIdentifierReference,
+} from '../bound_reference';
 import { visitNamedTableFields } from './expression_paths';
 import { buildModuleExportPathKey } from '../../module_path';
 import type { ModuleExportShape } from './module_shape';
@@ -127,7 +130,7 @@ const collectTopLevelConstValues = (
 		}
 		const value = evaluateModuleConstLiteral(local.values[0], consts, semantics);
 		if (value !== undefined) {
-			const declaration = semantics.getDeclaration(local.names[0].range);
+			const declaration = getBoundDeclaration(semantics, local.names[0]);
 			consts.set(declaration.id, value);
 		}
 	}

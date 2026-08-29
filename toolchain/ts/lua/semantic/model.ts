@@ -27,6 +27,7 @@ import {
 import type { LuaSymbolEntry } from '../semantic_contracts';
 import type { ParsedLuaChunk } from '../analysis/parse';
 import { getCachedLuaParse } from '../analysis/cache';
+import type { LuaToken } from '../syntax/token';
 import type { SourcePosition } from '../source_range';
 import type { SemanticSymbolKind } from './symbols';
 import type { SemanticAnnotations, SemanticRole } from './tokens';
@@ -109,11 +110,13 @@ export type Ref = {
 export type FileSemanticData = {
 	file: string;
 	source: string;
-	parsed: ParsedLuaChunk;
+	tokens: readonly LuaToken[];
 	chunk: LuaChunk;
 	annotations: SemanticAnnotations;
 	decls: readonly Decl[];
 	refs: readonly Ref[];
+	declarationIdsBySyntax: ReadonlyMap<LuaIdentifierExpression, SymbolID>;
+	referencesBySyntax: ReadonlyMap<LuaIdentifierExpression, Ref>;
 	referencesByName: ReadonlyMap<string, readonly Ref[]>;
 	moduleAliases: readonly ModuleAliasEntry[];
 	callExpressions: readonly LuaCallExpression[];
@@ -130,7 +133,7 @@ export type FileSemanticData = {
 export type LuaSemanticWorkspaceSourceSnapshot = {
 	path: string;
 	source: string;
-	parsed: ParsedLuaChunk;
+	tokens: readonly LuaToken[];
 	chunk: LuaChunk;
 	analysis: FileSemanticData;
 };
@@ -199,7 +202,7 @@ function createWorkspaceSnapshotFromIndex(index: LuaProjectIndex): LuaSemanticWo
 		sources[indexInFiles] = {
 			path,
 			source: data.source,
-			parsed: data.parsed,
+			tokens: data.tokens,
 			chunk: data.chunk,
 			analysis: data,
 		};
@@ -230,6 +233,7 @@ export function buildLuaSemanticWorkspaceSnapshot(
 			parseEntry.source,
 			source.path,
 			parseEntry.parsed,
+			source.chunk,
 		);
 	}
 	workspace.updateFiles(analyses);
@@ -293,6 +297,8 @@ type AssignmentTargetInfo = {
 type SemanticBuildResult = {
 	decls: InternalDecl[];
 	refs: Ref[];
+	declarationIdsBySyntax: Map<LuaIdentifierExpression, SymbolID>;
+	referencesBySyntax: Map<LuaIdentifierExpression, Ref>;
 	referencesByName: Map<string, Ref[]>;
 	annotations: SemanticAnnotations;
 	callExpressions: LuaCallExpression[];
@@ -311,17 +317,18 @@ export function buildLuaFileSemanticData(
 	source: string,
 	path: string,
 	parsed?: ParsedLuaChunk,
+	chunk?: LuaChunk,
 ): FileSemanticData {
 	const parseEntry = getCachedLuaParse({
 		path,
 		source,
 		parsed,
 	});
-	const chunk = parseEntry.parsed.chunk;
+	const retainedChunk = chunk === undefined ? parseEntry.parsed.chunk : chunk;
 	const tokens = parseEntry.parsed.tokens;
 	const builder = new SemanticBuilder({
 		path,
-		chunk,
+		chunk: retainedChunk,
 		lineCount: tokens[tokens.length - 1].endLine,
 	});
 	const result = builder.build();
@@ -331,11 +338,13 @@ export function buildLuaFileSemanticData(
 	return {
 		file: path,
 		source,
-		parsed: parseEntry.parsed,
-		chunk,
+		tokens,
+		chunk: retainedChunk,
 		annotations,
 		decls,
 		refs,
+		declarationIdsBySyntax: result.declarationIdsBySyntax,
+		referencesBySyntax: result.referencesBySyntax,
 		referencesByName: result.referencesByName,
 		moduleAliases: result.moduleAliases,
 		callExpressions: result.callExpressions,
@@ -592,6 +601,8 @@ class SemanticBuilder {
 	private readonly decls: InternalDecl[] = [];
 	private readonly declById: Map<SymbolID, InternalDecl> = new Map();
 	private readonly refs: Ref[] = [];
+	private readonly declarationIdsBySyntax: Map<LuaIdentifierExpression, SymbolID> = new Map();
+	private readonly referencesBySyntax: Map<LuaIdentifierExpression, Ref> = new Map();
 	private readonly referencesByName: Map<string, Ref[]> = new Map();
 	private readonly callExpressions: LuaCallExpression[] = [];
 	private readonly functionSignatures: Map<string, FunctionSignatureInfo> = new Map();
@@ -632,6 +643,8 @@ class SemanticBuilder {
 		return {
 			decls: this.decls,
 			refs: this.refs,
+			declarationIdsBySyntax: this.declarationIdsBySyntax,
+			referencesBySyntax: this.referencesBySyntax,
 			referencesByName: this.referencesByName,
 			annotations: this.annotations,
 			callExpressions: this.callExpressions,
@@ -747,6 +760,7 @@ class SemanticBuilder {
 						?? functionDeclaration.name.path[functionDeclaration.name.path.length - 1];
 					const range = declarationName.range;
 					decl = this.createDecl({
+						syntax: declarationName,
 						namePath,
 						name: namePath[namePath.length - 1],
 						kind: 'function',
@@ -1375,6 +1389,7 @@ class SemanticBuilder {
 		const range = identifier.range;
 		if (existing) {
 			this.recordReference({
+				syntax: identifier,
 				namePath: existing.namePath,
 				name: identifier.name,
 				range,
@@ -1387,6 +1402,7 @@ class SemanticBuilder {
 		const globalDecl = this.globalsByKey.get(identifier.name);
 		if (globalDecl) {
 			this.recordReference({
+				syntax: identifier,
 				namePath: globalDecl.namePath,
 				name: identifier.name,
 				range,
@@ -1397,6 +1413,15 @@ class SemanticBuilder {
 			return { decl: globalDecl, namePath: globalDecl.namePath, path: identifier.name };
 		}
 		const decl = this.declareGlobal(identifier, range);
+		this.recordReference({
+			syntax: identifier,
+			namePath: decl.namePath,
+			name: identifier.name,
+			range,
+			target: decl.id,
+			isWrite: true,
+			referenceKind: 'identifier',
+		});
 		return { decl, namePath: decl.namePath, path: identifier.name };
 	}
 
@@ -1413,8 +1438,10 @@ class SemanticBuilder {
 			memberName.length,
 			baseDecl,
 			baseInfo?.valueSource,
+			member.member,
 		);
 		this.recordReference({
+			syntax: member.member,
 			namePath,
 			name: memberName,
 			range,
@@ -1500,6 +1527,7 @@ class SemanticBuilder {
 		) ?? (calleeInfo?.valueSource ? undefined : this.properties.get(joinNamePath(namePath)));
 		const targetId = decl?.id;
 		this.recordReference({
+			syntax: method,
 			namePath,
 			name: methodName,
 			range,
@@ -1534,6 +1562,7 @@ class SemanticBuilder {
 				if (!bindingScope) {
 					const classValue = this.resolveValueSourceFromNamePath(methodSelfPath);
 					this.recordReference({
+						syntax: identifier,
 						namePath,
 						name: identifier.name,
 						range,
@@ -1553,6 +1582,7 @@ class SemanticBuilder {
 		const targetId = resolved?.id;
 		if (resolved) {
 			this.recordReference({
+				syntax: identifier,
 				namePath,
 				name: identifier.name,
 				range,
@@ -1571,6 +1601,7 @@ class SemanticBuilder {
 		const target = globalDecl?.id;
 		if (target) {
 			this.recordReference({
+				syntax: identifier,
 				namePath,
 				name: identifier.name,
 				range,
@@ -1581,6 +1612,7 @@ class SemanticBuilder {
 			});
 		} else {
 			this.recordReference({
+				syntax: identifier,
 				namePath,
 				name: identifier.name,
 				range,
@@ -1611,6 +1643,7 @@ class SemanticBuilder {
 		) ?? (baseInfo?.valueSource ? undefined : this.properties.get(joinNamePath(namePath)));
 		const targetId = decl?.id;
 		this.recordReference({
+			syntax: member.member,
 			namePath,
 			name: memberName,
 			range,
@@ -1664,6 +1697,7 @@ class SemanticBuilder {
 		const scope = this.currentScope();
 		const range = name.range;
 		const decl = this.createDecl({
+			syntax: name,
 			namePath: [name.name],
 			name: name.name,
 			kind,
@@ -1684,6 +1718,7 @@ class SemanticBuilder {
 		const scope = this.currentScope();
 		const range = name.range;
 		const decl = this.createDecl({
+			syntax: name,
 			namePath: [name.name],
 			name: name.name,
 			kind: 'parameter',
@@ -1702,6 +1737,7 @@ class SemanticBuilder {
 		const scope = this.currentScope();
 		const range = name.range;
 		const decl = this.createDecl({
+			syntax: name,
 			namePath: [name.name],
 			name: name.name,
 			kind: 'type',
@@ -1723,6 +1759,7 @@ class SemanticBuilder {
 		const scope = this.currentScope();
 		const range = name.range;
 		const decl = this.createDecl({
+			syntax: name,
 			namePath: [name.name],
 			name: name.name,
 			kind: 'bss',
@@ -1744,6 +1781,7 @@ class SemanticBuilder {
 		const scope = this.currentScope();
 		const range = name.range;
 		const decl = this.createDecl({
+			syntax: name,
 			namePath: [name.name],
 			name: name.name,
 			kind: 'data',
@@ -1765,6 +1803,7 @@ class SemanticBuilder {
 		const scope = this.currentScope();
 		const range = name.range;
 		const decl = this.createDecl({
+			syntax: name,
 			namePath: [name.name],
 			name: name.name,
 			kind: 'rodata',
@@ -1786,6 +1825,7 @@ class SemanticBuilder {
 		const scope = this.scopeStack[0];
 		const namePath = [identifier.name];
 		const decl = this.createDecl({
+			syntax: identifier,
 			namePath,
 			name: identifier.name,
 			kind: 'global',
@@ -1806,6 +1846,7 @@ class SemanticBuilder {
 		length: number,
 		baseDecl: InternalDecl,
 		owner: SemanticValueSource,
+		syntax?: LuaIdentifierExpression,
 	): InternalDecl {
 		const key = joinNamePath(namePath);
 		const name = namePath[namePath.length - 1];
@@ -1830,6 +1871,7 @@ class SemanticBuilder {
 		const range = buildRangeFromPosition(start, length, this.path);
 		const isGlobal = baseDecl ? baseDecl.isGlobal : scope.kind === 'path' && namePath.length > 1;
 		const decl = this.createDecl({
+			syntax,
 			namePath: namePath,
 			name,
 			kind: 'property',
@@ -1916,6 +1958,7 @@ class SemanticBuilder {
 	}
 
 	private createDecl(options: {
+		syntax?: LuaIdentifierExpression;
 		namePath: readonly string[];
 		name: string;
 		kind: SemanticSymbolKind;
@@ -1925,7 +1968,7 @@ class SemanticBuilder {
 		isGlobal: boolean;
 		active: boolean;
 	}): InternalDecl {
-		const { namePath, name, kind, range, scopeRange, scopeRef, isGlobal, active } = options;
+		const { syntax, namePath, name, kind, range, scopeRange, scopeRef, isGlobal, active } = options;
 		const id = createSymbolId(this.path, range, kind, namePath);
 		const decl: InternalDecl = {
 			id,
@@ -1942,6 +1985,9 @@ class SemanticBuilder {
 		};
 		this.decls.push(decl);
 		this.declById.set(id, decl);
+		if (syntax !== undefined) {
+			this.declarationIdsBySyntax.set(syntax, id);
+		}
 		const flow = this.functionValueFlowStack[this.functionValueFlowStack.length - 1];
 		if (flow) {
 			flow.declarationIds.push(id);
@@ -1954,6 +2000,7 @@ class SemanticBuilder {
 	}
 
 	private recordReference(options: {
+		syntax?: LuaIdentifierExpression;
 		namePath: readonly string[];
 		name: string;
 		range: LuaSourceRange;
@@ -1993,6 +2040,9 @@ class SemanticBuilder {
 			ref.lexicalTarget = targetDecl.id;
 		}
 		this.refs.push(ref);
+		if (options.syntax !== undefined) {
+			this.referencesBySyntax.set(options.syntax, ref);
+		}
 		let references = this.referencesByName.get(ref.name);
 		if (!references) {
 			references = [];
@@ -2024,6 +2074,7 @@ class SemanticBuilder {
 					: this.properties.get(joinNamePath(namePath));
 			}
 			this.recordReference({
+				syntax: identifier,
 				namePath,
 				name,
 				range: identifier.range,
@@ -2046,6 +2097,7 @@ class SemanticBuilder {
 			}
 		}
 		this.recordReference({
+			syntax: declarationName,
 			namePath: decl.namePath,
 			name: decl.name,
 			range: declarationName.range,
