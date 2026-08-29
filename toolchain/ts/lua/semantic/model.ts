@@ -109,7 +109,6 @@ export type Ref = {
 	symbolKey: string;
 	range: LuaSourceRange;
 	target?: SymbolID;
-	lexicalTarget?: SymbolID;
 	isWrite: boolean;
 	isCall: boolean;
 	caller?: SymbolID;
@@ -2065,9 +2064,6 @@ class SemanticBuilder {
 		}
 		if (options.target) {
 			ref.target = options.target;
-		}
-		if (targetDecl && !targetDecl.isGlobal && options.referenceKind === 'identifier') {
-			ref.lexicalTarget = targetDecl.id;
 		}
 		this.refs.push(ref);
 		if (options.syntax !== undefined) {

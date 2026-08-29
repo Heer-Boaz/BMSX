@@ -63,14 +63,14 @@ export class WorkspaceSymbolResolver {
 		ref: Ref,
 		valueGraph?: WorkspaceValueGraph,
 	): readonly SymbolID[] {
-		if (ref.lexicalTarget) {
-			return [ref.lexicalTarget];
+		// The file binder has already resolved references whose target is exact.
+		// Cross-file value flow is only needed for references that remain
+		// unbound after that pass.
+		if (ref.target) {
+			return [ref.target];
 		}
 		if (ref.referenceKind === 'self') {
 			return EMPTY_SYMBOLS;
-		}
-		if (ref.referenceKind === 'identifier' && ref.target) {
-			return [ref.target];
 		}
 		if (ref.referenceKind === 'member' || ref.referenceKind === 'method') {
 			const staticMembers = this.getValueIdentities().resolveStaticMembers(
@@ -208,7 +208,7 @@ export class WorkspaceSymbolResolver {
 					for (let referenceIndex = 0; referenceIndex < references.length; referenceIndex += 1) {
 						const reference = references[referenceIndex];
 						candidates.push(reference);
-						if (!reference.lexicalTarget
+						if (!reference.target
 							&& (reference.referenceKind === 'member' || reference.referenceKind === 'method')
 							&& this.getValueIdentities().resolveStaticMembers(
 								reference.receiverValue,
