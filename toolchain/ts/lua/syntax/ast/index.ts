@@ -58,23 +58,6 @@ export type LuaNode = {
 	readonly range: LuaSourceRange;
 };
 
-export type LuaDefinitionInfo = {
-	readonly name: string;
-	readonly namePath: ReadonlyArray<string>;
-	readonly definition: LuaSourceRange;
-	readonly scope: LuaSourceRange;
-	readonly kind: LuaDefinitionKind;
-};
-
-export type LuaDefinitionKind =
-	| 'variable'
-	| 'constant'
-	| 'function'
-	| 'table_field'
-	| 'parameter'
-	| 'type'
-	| 'assignment';
-
 export type LuaStatement =
 	| LuaAssignmentStatement
 	| LuaLocalAssignmentStatement
@@ -119,7 +102,6 @@ export type LuaChunk = LuaNode & {
 	readonly constModule: boolean;
 	readonly entryModule: boolean;
 	readonly body: ReadonlyArray<LuaStatement>;
-	readonly definitions: ReadonlyArray<LuaDefinitionInfo>;
 };
 
 export type LuaBlock = LuaNode & {

@@ -3581,7 +3581,8 @@ do not parse, bind, or infer framework-specific meaning independently.
 Identifier-bearing syntax retains its identifier child nodes and exact authored
 source ranges in the parser-owned AST. File semantics consumes those nodes
 directly; it does not rebuild token maps or rescan the token stream for function
-paths, member names, or method names. A file-semantic record owns exactly one
+paths, member names, or method names. The parser does not build declaration or
+scope indexes; those are binder products. A file-semantic record owns exactly one
 retained AST and its lexical token sequence. The binder indexes declarations
 and references by the identity of their identifier nodes. Compiler passes bind
 the same retained nodes and never reconstruct semantic identity from encoded

@@ -28,7 +28,6 @@ import type {
 	LuaTableIdentifierField,
 	LuaUnaryExpression,
 	LuaSourceRange,
-	LuaDefinitionInfo,
 } from '../../../../toolchain/ts/lua/syntax/ast';
 import { LuaEnvironment } from './environment';
 import { LuaRuntimeError, LuaSyntaxError } from '../../../../toolchain/ts/lua/errors';
@@ -235,7 +234,6 @@ export class LuaInterpreter {
 	private currentChunk: string;
 	private _currentCallRange: LuaSourceRange = null;
 	private _pathEnvironment: LuaEnvironment = null;
-	private readonly pathDefinitions: Map<string, ReadonlyArray<LuaDefinitionInfo>> = new Map();
 	private _lastFaultEnvironment: LuaEnvironment = null;
 	private _lastFaultCallStack: LuaCallFrame[] = [];
 	private valueNameCache = new WeakMap<object | Function, string>();
@@ -296,7 +294,6 @@ export class LuaInterpreter {
 			throw parseEntry.syntaxError;
 		}
 		const chunk = parseEntry.parsed.chunk!;
-		this.pathDefinitions.set(chunk.range.path, chunk.definitions);
 		return chunk;
 	}
 
@@ -487,10 +484,6 @@ export class LuaInterpreter {
 
 	public get pathEnvironment(): LuaEnvironment {
 		return this._pathEnvironment;
-	}
-
-	public getChunkDefinitions(path: string): ReadonlyArray<LuaDefinitionInfo> {
-		return this.pathDefinitions.get(path);
 	}
 
 	public hasChunkBinding(name: string): boolean {
