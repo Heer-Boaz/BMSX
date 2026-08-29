@@ -247,6 +247,101 @@ test('LuaSemanticFrontend resolves navigation targets by lexical scope instead o
 	});
 });
 
+test('LuaSemanticFrontend owns visible declarations and lexical shadowing', () => {
+	const lines = [
+		'local outer = 1',
+		'local function inspect(parameter)',
+		'\tlocal retained = parameter',
+		'\tdo',
+		'\t\tlocal outer = retained',
+		'\t\treturn outer',
+		'\tend',
+		'\treturn retained',
+		'end',
+		'return outer',
+	];
+	const frontend = buildLuaSemanticFrontend([{ path: 'visible.lua', source: lines.join('\n') }]);
+	const file = frontend.getFile('visible.lua');
+	const nested = file.getVisibleDeclarationsAt(6, lines[5].length + 1);
+	const nestedByName = new Map(nested.map(declaration => [declaration.name, declaration]));
+
+	assert.deepEqual(Array.from(nestedByName.keys()).sort(), [
+		'inspect',
+		'outer',
+		'parameter',
+		'retained',
+	]);
+	assert.equal(nestedByName.get('outer')?.range.start.line, 5);
+	assert.deepEqual(
+		file.getVisibleDeclarationsAt(8, lines[7].length + 1)
+			.map(declaration => declaration.name)
+			.sort(),
+		['inspect', 'outer', 'parameter', 'retained'],
+	);
+	assert.deepEqual(
+		file.getVisibleDeclarationsAt(10, lines[9].length + 1)
+			.map(declaration => declaration.name)
+			.sort(),
+		['inspect', 'outer'],
+	);
+});
+
+test('LuaSemanticFrontend applies local declaration visibility after its initializer', () => {
+	const lines = [
+		'local value = 1',
+		'local function inspect()',
+		'\tlocal value = value',
+		'\treturn value',
+		'end',
+	];
+	const frontend = buildLuaSemanticFrontend([{ path: 'local_effect.lua', source: lines.join('\n') }]);
+	const file = frontend.getFile('local_effect.lua');
+	const initializerColumn = lines[2].lastIndexOf('value') + 1;
+	const initializerValue = file.getVisibleDeclarationsAt(3, initializerColumn)
+		.find(declaration => declaration.name === 'value');
+	const bodyValue = file.getVisibleDeclarationsAt(4, lines[3].length + 1)
+		.find(declaration => declaration.name === 'value');
+
+	assert.equal(initializerValue?.range.start.line, 1);
+	assert.equal(bodyValue?.range.start.line, 3);
+});
+
+test('LuaSemanticFrontend retains parameters and loop variables on blank body lines', () => {
+	const source = [
+		'local function inspect(parameter)',
+		'',
+		'end',
+		'for index = 1, 3 do',
+		'',
+		'end',
+	].join('\n');
+	const frontend = buildLuaSemanticFrontend([{ path: 'blank_body.lua', source }]);
+	const file = frontend.getFile('blank_body.lua');
+
+	assert.equal(
+		file.getVisibleDeclarationsAt(2, 1).some(declaration => declaration.name === 'parameter'),
+		true,
+	);
+	assert.equal(
+		file.getVisibleDeclarationsAt(5, 1).some(declaration => declaration.name === 'index'),
+		true,
+	);
+});
+
+test('LuaSemanticFrontend retains repeat locals through the until condition', () => {
+	const source = [
+		'repeat',
+		'\tlocal ready = true',
+		'until ready',
+	].join('\n');
+	const frontend = buildLuaSemanticFrontend([{ path: 'repeat_scope.lua', source }]);
+	const file = frontend.getFile('repeat_scope.lua');
+	const target = firstNavigationTarget(file, 3, 7);
+
+	assert.deepEqual(file.diagnostics, []);
+	assert.equal(target?.range.start.line, 2);
+});
+
 test('LuaSemanticFrontend keeps table field definitions out of unqualified storage references', () => {
 	const source = [
 		'bss counter: word',

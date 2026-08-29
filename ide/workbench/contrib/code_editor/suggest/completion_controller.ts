@@ -27,13 +27,15 @@ import { isLuaCommentContext } from '../../../../common/text';
 import { point_in_rect } from '../../../../../machine/ts/common/rect';
 import { LuaLexer } from '../../../../../toolchain/ts/lua/syntax/lexer';
 import { buildCanonicalCompletionItems, filterCompletionItems, resolveCompletionWordRange } from '../../../../editor/contrib/suggest/completion_model';
+import { buildEditorSemanticFrontend } from '../../../../editor/contrib/intellisense/frontend';
 import { assignRowColumn } from '../../../../common/state';
 import * as TextEditing from '../../../../editor/editing/text_editing_and_selection';
 import { isActiveLuaCodeTab, isReadOnlyCodeTab } from '../../../ui/code_tab/contexts';
 import { prepareUndo } from '../../../../editor/editing/undo_controller';
 import { updateDesiredColumn, revealCursor } from '../../../../editor/ui/view/caret/caret';
 import { resetBlink } from '../../../../editor/render/caret';
-import type { Decl, FileSemanticData } from '../../../../../toolchain/ts/lua/semantic/model';
+import type { Decl } from '../../../../../toolchain/ts/lua/semantic/model';
+import type { LuaSemanticFrontendFile } from '../../../../../toolchain/ts/lua/semantic/frontend';
 import type { ModuleAliasEntry } from '../../../../../toolchain/ts/lua/semantic/module_bindings';
 import { clearSingleCursorSelection, setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../../../editor/editing/cursor/state';
 import type { Runtime } from '../../../../../machine/ts/machine/runtime/runtime';
@@ -48,7 +50,7 @@ import type { RuntimeFaultState } from '../../../../runtime/fault_state';
 type LocalCompletionCacheEntry = {
 	parsedVersion: number;
 	path: string;
-	declarations: readonly Decl[];
+	file: LuaSemanticFrontendFile;
 	moduleAliases: ReadonlyMap<string, ModuleAliasEntry>;
 };
 
@@ -115,14 +117,6 @@ export class CompletionController {
 
 	protected getActiveDomain() {
 		return editorDocumentState.resource.domain;
-	}
-
-	protected getSemanticFileData(): FileSemanticData {
-		return editorViewState.layout.getSemanticFileData(
-			editorDocumentState.buffer,
-			editorDocumentState.textVersion,
-			editorDocumentState.resource,
-		);
 	}
 
 	protected getCharAt(row: number, column: number): string {
@@ -614,17 +608,12 @@ export class CompletionController {
 
 	private getLocalCompletionItems(context: CompletionContext): LuaCompletionItem[] {
 		const cached = this.ensureLocalCompletionCache();
-		if (!cached) return [];
 		const column = context.replaceToColumn;
-		const buffer = this.getBuffer();
-		const lineCount = buffer.getLineCount();
-		const lastLine = buffer.getLineContent(lineCount - 1);
-		const filtered = this.filterLocalDeclarationsAtPosition(cached.declarations, lineCount, lastLine.length, context.row, column);
+		const filtered = cached.file.getVisibleDeclarationsAt(context.row + 1, column + 1);
 		if (filtered.length === 0) {
 			return [];
 		}
-		const path = cached.path || this.getActivePath();
-		return this.buildLocalCompletionItems(filtered, path);
+		return this.buildLocalCompletionItems(filtered, cached.path);
 	}
 
 	private ensureLocalCompletionCache(): LocalCompletionCacheEntry {
@@ -635,9 +624,15 @@ export class CompletionController {
 		if (cached && cached.path === path && cached.parsedVersion === currentVersion) {
 			return cached;
 		}
-		const semanticData = this.getSemanticFileData();
-		if (!semanticData) {
-			return cached;
+		const frontend = buildEditorSemanticFrontend(
+			this.bridge,
+			editorDocumentState.resource,
+			this.getBuffer(),
+		);
+		const file = frontend.getFile(path);
+		const semanticData = frontend.snapshot.getFileData(path);
+		if (semanticData === undefined) {
+			throw new Error(`[CompletionController] Missing semantic file '${path}'.`);
 		}
 		let moduleAliases = EMPTY_MODULE_ALIASES;
 		if (semanticData.moduleAliases.length > 0) {
@@ -651,7 +646,7 @@ export class CompletionController {
 		const updated: LocalCompletionCacheEntry = {
 			parsedVersion: currentVersion,
 			path,
-			declarations: semanticData.decls,
+			file,
 			moduleAliases,
 		};
 		this.localCompletionCache.set(key, updated);
@@ -706,57 +701,13 @@ export class CompletionController {
 		return items;
 	}
 
-	private filterLocalDeclarationsAtPosition(declarations: readonly Decl[], lineCount: number, lastLineLength: number, row: number, column: number): Decl[] {
-		if (declarations.length === 0) return [];
-		const row1Based = row + 1;
-		const column1Based = column + 1;
-		let semanticEndLine = 0;
-		for (let index = 0; index < declarations.length; index += 1) {
-			const scopeEndLine = declarations[index].scope.end.line;
-			if (scopeEndLine > semanticEndLine) {
-				semanticEndLine = scopeEndLine;
-			}
-		}
-		const documentEndLine = lineCount;
-		const scopeEndExtendsToDocument = semanticEndLine < documentEndLine;
-		const documentEndColumn = lastLineLength + 1;
-		const selected = new Map<string, Decl>();
-		for (let index = 0; index < declarations.length; index += 1) {
-			const declaration = declarations[index];
-			if (!this.isLocalCompletionDeclaration(declaration)) {
-				continue;
-			}
-			const scopeRange = declaration.scope;
-			if (!scopeEndExtendsToDocument || scopeRange.end.line !== semanticEndLine) {
-				if (!this.isPositionWithinRange(row1Based, column1Based, scopeRange)) {
-					continue;
-				}
-			} else {
-				if (row1Based < scopeRange.start.line || row1Based > documentEndLine) {
-					continue;
-				}
-				if (row1Based === scopeRange.start.line && column1Based < scopeRange.start.column) {
-					continue;
-				}
-				if (row1Based === documentEndLine && column1Based > documentEndColumn) {
-					continue;
-				}
-			}
-			if (!this.isDefinitionBeforePosition(declaration.range, row1Based, column1Based)) {
-				continue;
-			}
-			const existing = selected.get(declaration.name);
-			if (!existing || this.definitionOccursAfter(declaration.range, existing.range)) {
-				selected.set(declaration.name, declaration);
-			}
-		}
-		return Array.from(selected.values());
-	}
-
 	private buildLocalCompletionItems(symbols: readonly Decl[], pathLabel: string): LuaCompletionItem[] {
 		const items: LuaCompletionItem[] = [];
 		for (let index = 0; index < symbols.length; index += 1) {
 			const symbol = symbols[index];
+			if (!this.isLocalCompletionDeclaration(symbol)) {
+				continue;
+			}
 			const label = symbol.name;
 			const kindLabel = this.formatSymbolKind(semanticSymbolKindToLuaSymbolKind(symbol.kind));
 			const detailParts: string[] = [kindLabel];
@@ -777,7 +728,7 @@ export class CompletionController {
 			return [];
 		}
 		const cached = this.ensureLocalCompletionCache();
-		if (!cached || cached.moduleAliases.size === 0) {
+		if (cached.moduleAliases.size === 0) {
 			return [];
 		}
 		const moduleAlias = cached.moduleAliases.get(context.objectName);
@@ -850,49 +801,15 @@ export class CompletionController {
 
 	private isLocalCompletionDeclaration(declaration: Decl): boolean {
 		const kind = semanticSymbolKindToLuaSymbolKind(declaration.kind);
-		return kind === 'variable' || kind === 'constant' || kind === 'function' || kind === 'parameter';
-	}
-
-	private isPositionWithinRange(row: number, column: number, range: Decl['scope']): boolean {
-		if (row < range.start.line || row > range.end.line) {
-			return false;
+		switch (kind) {
+			case 'variable':
+			case 'constant':
+			case 'function':
+			case 'parameter':
+				return true;
+			default:
+				return false;
 		}
-		if (row === range.start.line && column < range.start.column) {
-			return false;
-		}
-		if (row === range.end.line && column > range.end.column) {
-			return false;
-		}
-		return true;
-	}
-
-	private isDefinitionBeforePosition(range: Decl['range'], row: number, column: number): boolean {
-		if (row < range.start.line) {
-			return false;
-		}
-		if (row > range.end.line) {
-			return true;
-		}
-		if (row === range.end.line) {
-			return column > range.end.column;
-		}
-		if (row === range.start.line) {
-			return column > range.end.column;
-		}
-		return true;
-	}
-
-	private definitionOccursAfter(candidate: Decl['range'], other: Decl['range']): boolean {
-		if (candidate.start.line !== other.start.line) {
-			return candidate.start.line > other.start.line;
-		}
-		if (candidate.start.column !== other.start.column) {
-			return candidate.start.column > other.start.column;
-		}
-		if (candidate.end.line !== other.end.line) {
-			return candidate.end.line > other.end.line;
-		}
-		return candidate.end.column > other.end.column;
 	}
 
 	private isIdentifierTriggerPrefix(prefix: string): boolean {

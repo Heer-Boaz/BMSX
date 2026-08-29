@@ -103,6 +103,7 @@ export type LuaSemanticFrontendFile = {
 	diagnostics: readonly LuaStaticDiagnostic[];
 	getDeclaration(identifier: LuaIdentifierExpression): Decl | undefined;
 	getReference(identifier: LuaIdentifierExpression): LuaBoundReference | undefined;
+	getVisibleDeclarationsAt(line: number, column: number): readonly Decl[];
 	findNavigationAt(line: number, column: number): LuaSemanticNavigationQuery | null;
 };
 
@@ -300,7 +301,7 @@ function createBoundFile(
 	const bindReference = (ref: Ref): LuaBoundReference => {
 		let reference = boundReferences.get(ref);
 		if (!reference) {
-			reference = classifyReference(ref, snapshot, knownGlobalNames);
+			reference = classifyReference(ref, source, snapshot, knownGlobalNames);
 			boundReferences.set(ref, reference);
 		}
 		return reference;
@@ -316,6 +317,34 @@ function createBoundFile(
 		getReference(identifier: LuaIdentifierExpression): LuaBoundReference | undefined {
 			const ref = source.referencesBySyntax.get(identifier);
 			return ref === undefined ? undefined : bindReference(ref);
+		},
+		getVisibleDeclarationsAt(line: number, column: number): readonly Decl[] {
+			let scopeIndex = findInnermostScopeIndex(source, line, column);
+			if (scopeIndex < 0) {
+				return [];
+			}
+			const declarations: Decl[] = [];
+			const names = new Set<string>();
+			while (scopeIndex >= 0) {
+				const scope = source.scopes[scopeIndex];
+				const indices = scope.declarationIndices;
+				for (let index = indices.length - 1; index >= 0; index -= 1) {
+					const declaration = source.decls[indices[index]];
+					if (names.has(declaration.name)
+						|| compareSourcePosition(
+							line,
+							column,
+							declaration.visibleFrom.line,
+							declaration.visibleFrom.column,
+						) <= 0) {
+						continue;
+					}
+					names.add(declaration.name);
+					declarations.push(declaration);
+				}
+				scopeIndex = scope.parentIndex;
+			}
+			return declarations;
 		},
 		findNavigationAt(line: number, column: number): LuaSemanticNavigationQuery | null {
 			const symbols = findPositionSymbols(source, snapshot, line, column);
@@ -350,6 +379,35 @@ function createBoundFile(
 			return null;
 		},
 	};
+}
+
+function findInnermostScopeIndex(
+	source: FileSemanticData,
+	line: number,
+	column: number,
+): number {
+	const scopes = source.scopes;
+	let low = 0;
+	let high = scopes.length;
+	while (low < high) {
+		const middle = (low + high) >>> 1;
+		const start = scopes[middle].startInclusive;
+		if (compareSourcePosition(start.line, start.column, line, column) <= 0) {
+			low = middle + 1;
+		} else {
+			high = middle;
+		}
+	}
+	let scopeIndex = low - 1;
+	while (scopeIndex >= 0) {
+		const scope = scopes[scopeIndex];
+		const end = scope.endExclusive;
+		if (compareSourcePosition(line, column, end.line, end.column) < 0) {
+			return scopeIndex;
+		}
+		scopeIndex = scope.parentIndex;
+	}
+	return -1;
 }
 
 function findPositionSymbols(
@@ -451,12 +509,13 @@ function buildModuleTargetAliasMap(
 
 function classifyReference(
 	ref: Ref,
+	source: FileSemanticData,
 	snapshot: LuaSemanticWorkspaceSnapshot,
 	knownGlobalNames: ReadonlySet<string>,
 ): LuaBoundReference {
 	const target = snapshot.symbolResolver.resolveReference(ref);
 	const decl = target ? snapshot.symbolResolver.getDeclaration(target) : null;
-	if (decl && isReferenceInsideDeclScope(ref, decl)) {
+	if (decl && isReferenceInsideDeclScope(ref, decl, source)) {
 		return {
 			kind: decl.isGlobal ? 'global' : 'lexical',
 			ref,
@@ -506,15 +565,26 @@ function classifyReference(
 	};
 }
 
-function isReferenceInsideDeclScope(ref: Ref, decl: Decl): boolean {
+function isReferenceInsideDeclScope(ref: Ref, decl: Decl, source: FileSemanticData): boolean {
 	if (decl.isGlobal) {
 		return true;
 	}
 	if (decl.file !== ref.file) {
 		return false;
 	}
-	return compareSourcePosition(ref.range.start.line, ref.range.start.column, decl.scope.start.line, decl.scope.start.column) >= 0
-		&& compareSourcePosition(ref.range.start.line, ref.range.start.column, decl.scope.end.line, decl.scope.end.column) <= 0;
+	const scope = source.scopes[decl.scopeIndex];
+	return compareSourcePosition(
+		ref.range.start.line,
+		ref.range.start.column,
+		scope.startInclusive.line,
+		scope.startInclusive.column,
+	) >= 0
+		&& compareSourcePosition(
+			ref.range.start.line,
+			ref.range.start.column,
+			scope.endExclusive.line,
+			scope.endExclusive.column,
+		) < 0;
 }
 
 function buildCombinedGlobalSymbols(decls: readonly Decl[], externalGlobalSymbols?: readonly LuaSymbolEntry[]): LuaSymbolEntry[] {

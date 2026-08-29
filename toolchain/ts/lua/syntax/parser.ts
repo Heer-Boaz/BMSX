@@ -171,6 +171,7 @@ export class LuaParser {
 
 	private parseBlock(terminators: ReadonlySet<LuaTokenType>): LuaBlock {
 		const startToken = this.current();
+		const startInclusive = this.blockStartPosition();
 		const statements: LuaStatement[] = [];
 		while (!this.isAtEnd() && !terminators.has(this.current().type)) {
 			if (this.current().type === LuaTokenType.Semicolon) {
@@ -183,17 +184,20 @@ export class LuaParser {
 		const endPosition = statements.length > 0 ? statements[statements.length - 1].range.end : startPosition;
 		return {
 			kind: LuaSyntaxKind.Block,
+			startInclusive,
 			range: {
 				path: this.path,
 				start: startPosition,
 				end: endPosition,
 			},
+			endExclusive: this.positionFromToken(this.current()),
 			body: statements,
 		};
 	}
 
 	private parseBlockWithRecovery(terminators: ReadonlySet<LuaTokenType>): { block: LuaBlock; syntaxError: LuaSyntaxError | null } {
 		const startToken = this.current();
+		const startInclusive = this.blockStartPosition();
 		const statements: LuaStatement[] = [];
 		let syntaxError: LuaSyntaxError | null = null;
 		try {
@@ -215,11 +219,13 @@ export class LuaParser {
 		return {
 			block: {
 				kind: LuaSyntaxKind.Block,
+				startInclusive,
 				range: {
 					path: this.path,
 					start: startPosition,
 					end: endPosition,
 				},
+				endExclusive: this.positionFromToken(this.current()),
 				body: statements,
 			},
 			syntaxError,
@@ -1436,6 +1442,14 @@ export class LuaParser {
 
 	private endPositionFromToken(token: LuaToken): LuaSourcePosition {
 		return { line: token.endLine, column: token.endColumn };
+	}
+
+	private blockStartPosition(): LuaSourcePosition {
+		if (this.index === 0) {
+			return { line: 1, column: 1 };
+		}
+		const token = this.previous();
+		return { line: token.endLine, column: token.endColumn + 1 };
 	}
 
 	private error(token: LuaToken, message: string): LuaSyntaxError {

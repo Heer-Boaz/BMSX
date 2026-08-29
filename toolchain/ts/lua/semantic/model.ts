@@ -89,8 +89,16 @@ export type Decl = {
 	symbolKey: string;
 	kind: SemanticSymbolKind;
 	range: LuaSourceRange;
-	scope: LuaSourceRange;
+	scopeIndex: number;
+	visibleFrom: SourcePosition;
 	isGlobal: boolean;
+};
+
+export type SemanticScope = {
+	readonly startInclusive: SourcePosition;
+	readonly endExclusive: SourcePosition;
+	readonly parentIndex: number;
+	readonly declarationIndices: readonly number[];
 };
 
 export type Ref = {
@@ -116,6 +124,7 @@ export type FileSemanticData = {
 	readonly chunk: LuaChunk;
 	readonly annotations: SemanticAnnotations;
 	readonly decls: readonly Decl[];
+	readonly scopes: readonly SemanticScope[];
 	readonly refs: readonly Ref[];
 	readonly declarationIdsBySyntax: ReadonlyMap<LuaIdentifierExpression, SymbolID>;
 	readonly referencesBySyntax: ReadonlyMap<LuaIdentifierExpression, Ref>;
@@ -223,11 +232,13 @@ export function buildLuaSemanticWorkspaceSnapshot(
 type ScopeKind = 'path' | 'function' | 'block' | 'loop';
 
 type Scope = {
-	id: number;
+	index: number;
 	kind: ScopeKind;
-	range: LuaSourceRange;
+	startInclusive: SourcePosition;
+	endExclusive: SourcePosition;
 	parent: Scope;
 	bindings: Map<string, InternalDecl[]>;
+	declarationIndices: number[];
 };
 
 type InternalDecl = Decl & {
@@ -276,6 +287,7 @@ type AssignmentTargetInfo = {
 
 type SemanticBuildResult = {
 	decls: InternalDecl[];
+	scopes: Scope[];
 	refs: Ref[];
 	declarationIdsBySyntax: Map<LuaIdentifierExpression, SymbolID>;
 	referencesBySyntax: Map<LuaIdentifierExpression, Ref>;
@@ -307,13 +319,19 @@ export function buildLuaFileSemanticData(
 	});
 	const retainedChunk = chunk === undefined ? parseEntry.parsed.chunk : chunk;
 	const tokens = parseEntry.parsed.tokens;
+	const eof = tokens[tokens.length - 1];
 	const builder = new SemanticBuilder({
 		path,
 		chunk: retainedChunk,
 		lineCount: tokens[tokens.length - 1].endLine,
+		documentEndExclusive: {
+			line: eof.endLine,
+			column: eof.endColumn + 1,
+		},
 	});
 	const result = builder.build();
 	const decls = result.decls.map(toDecl);
+	const scopes = result.scopes.map(toSemanticScope);
 	const refs = result.refs.slice();
 	const annotations = finalizeAnnotations(result.annotations);
 	return {
@@ -323,6 +341,7 @@ export function buildLuaFileSemanticData(
 		chunk: retainedChunk,
 		annotations,
 		decls,
+		scopes,
 		refs,
 		declarationIdsBySyntax: result.declarationIdsBySyntax,
 		referencesBySyntax: result.referencesBySyntax,
@@ -539,8 +558,10 @@ class LuaProjectIndex {
 class SemanticBuilder {
 	private readonly chunk: LuaChunk;
 	private readonly path: string;
+	private readonly documentEndExclusive: SourcePosition;
 	private readonly annotations: SemanticAnnotations;
 	private readonly scopeStack: Scope[] = [];
+	private readonly scopes: Scope[] = [];
 	private readonly properties: Map<string, InternalDecl> = new Map();
 	private readonly propertiesByOwner: Map<string, InternalDecl> = new Map();
 	private readonly globalsByKey: Map<string, InternalDecl> = new Map();
@@ -568,26 +589,32 @@ class SemanticBuilder {
 	private readonly moduleAliasesByName: Map<string, ModuleAliasEntry> = new Map();
 	private readonly functionReturnValueStack: FunctionReturnValueState[] = [];
 	private readonly functionValueFlowStack: FunctionValueFlowState[] = [];
-	private nextScopeId = 1;
 
 	constructor(options: {
 		chunk: LuaChunk;
 		path: string;
 		lineCount: number;
+		documentEndExclusive: SourcePosition;
 	}) {
 		this.chunk = options.chunk;
 		this.path = options.path;
+		this.documentEndExclusive = options.documentEndExclusive;
 		this.annotations = new Array(options.lineCount);
 	}
 
 	public build(): SemanticBuildResult {
-		this.enterScope(this.chunk.range, 'path');
+		this.enterScope(
+			{ line: 1, column: 1 },
+			this.documentEndExclusive,
+			'path',
+		);
 		for (let index = 0; index < this.chunk.body.length; index += 1) {
 			this.visitStatement(this.chunk.body[index]);
 		}
 		this.leaveScope();
 		return {
 			decls: this.decls,
+			scopes: this.scopes,
 			refs: this.refs,
 			declarationIdsBySyntax: this.declarationIdsBySyntax,
 			referencesBySyntax: this.referencesBySyntax,
@@ -638,7 +665,7 @@ class SemanticBuilder {
 					}
 				}
 				if (isRecursiveConstClosureDeclaration(localAssignment)) {
-					this.activateDecl(pending[0]);
+					this.activateDecl(pending[0], pending[0].range.end);
 				}
 				const valueLimit = localAssignment.values.length;
 				for (let index = 0; index < valueLimit; index += 1) {
@@ -674,7 +701,7 @@ class SemanticBuilder {
 					if (index >= localAssignment.values.length) {
 						this.setModuleAlias(pending[index], null);
 					}
-					this.activateDecl(pending[index]);
+					this.activateDecl(pending[index], localAssignment.range.end);
 				}
 				break;
 			}
@@ -699,7 +726,6 @@ class SemanticBuilder {
 					? this.propertiesByOwner.get(this.memberOwnerKey(functionOwner, namePath[namePath.length - 1]))
 					: this.properties.get(symbolKey);
 				if (!decl) {
-					const scopeRange = scope.range;
 					const isGlobal = scope.kind === 'path';
 					const declarationName = functionDeclaration.name.method
 						?? functionDeclaration.name.path[functionDeclaration.name.path.length - 1];
@@ -710,7 +736,6 @@ class SemanticBuilder {
 						name: namePath[namePath.length - 1],
 						kind: 'function',
 						range,
-						scopeRange,
 						scopeRef: scope,
 						isGlobal,
 						active: true,
@@ -858,7 +883,7 @@ class SemanticBuilder {
 					if (clause.condition) {
 						this.visitExpression(clause.condition, { tableBaseDecl: null, tableBasePath: null });
 					}
-					this.enterScope(clause.block.range, 'block');
+					this.enterScope(clause.block.startInclusive, clause.block.endExclusive, 'block');
 					this.visitBlock(clause.block);
 					this.leaveScope();
 				}
@@ -867,17 +892,21 @@ class SemanticBuilder {
 			case LuaSyntaxKind.WhileStatement: {
 				const whileStatement = statement;
 				this.visitExpression(whileStatement.condition, { tableBaseDecl: null, tableBasePath: null });
-				this.enterScope(whileStatement.block.range, 'loop');
+				this.enterScope(whileStatement.block.startInclusive, whileStatement.block.endExclusive, 'loop');
 				this.visitBlock(whileStatement.block);
 				this.leaveScope();
 				break;
 			}
 			case LuaSyntaxKind.RepeatStatement: {
 				const repeatStatement = statement;
-				this.enterScope(repeatStatement.block.range, 'loop');
+				this.enterScope(
+					repeatStatement.block.startInclusive,
+					positionAfter(repeatStatement.range.end),
+					'loop',
+				);
 				this.visitBlock(repeatStatement.block);
-				this.leaveScope();
 				this.visitExpression(repeatStatement.condition, { tableBaseDecl: null, tableBasePath: null });
+				this.leaveScope();
 				break;
 			}
 			case LuaSyntaxKind.ForNumericStatement: {
@@ -887,7 +916,7 @@ class SemanticBuilder {
 				if (forNumeric.step) {
 					this.visitExpression(forNumeric.step, { tableBaseDecl: null, tableBasePath: null });
 				}
-				this.enterScope(forNumeric.block.range, 'loop');
+				this.enterScope(forNumeric.block.startInclusive, forNumeric.block.endExclusive, 'loop');
 				this.declareLocal(forNumeric.variable, 'local', true);
 				this.visitBlock(forNumeric.block);
 				this.leaveScope();
@@ -899,7 +928,7 @@ class SemanticBuilder {
 					this.visitExpression(forGeneric.iterators[index], { tableBaseDecl: null, tableBasePath: null });
 				}
 				const tableSource = this.resolveGenericForTableSource(forGeneric);
-				this.enterScope(forGeneric.block.range, 'loop');
+				this.enterScope(forGeneric.block.startInclusive, forGeneric.block.endExclusive, 'loop');
 				let valueVariable: InternalDecl | undefined;
 				for (let index = 0; index < forGeneric.variables.length; index += 1) {
 					const variable = this.declareLocal(forGeneric.variables[index], 'local', true);
@@ -916,7 +945,7 @@ class SemanticBuilder {
 			}
 			case LuaSyntaxKind.DoStatement: {
 				const doStatement = statement;
-				this.enterScope(doStatement.block.range, 'block');
+				this.enterScope(doStatement.block.startInclusive, doStatement.block.endExclusive, 'block');
 				this.visitBlock(doStatement.block);
 				this.leaveScope();
 				break;
@@ -1267,8 +1296,7 @@ class SemanticBuilder {
 		};
 		this.functionValueFlowStack.push(valueFlow);
 		const block = expression.body;
-		const scopeRange = block.range;
-		this.enterScope(scopeRange, 'function');
+		this.enterScope(block.startInclusive, block.endExclusive, 'function');
 		const inheritedMethodSelfPath = this.currentMethodSelfPath();
 		const inheritedMethodSelfScope = this.methodSelfScopeStack[this.methodSelfScopeStack.length - 1];
 		const effectiveMethodSelfPath = methodSelfPath ?? inheritedMethodSelfPath;
@@ -1279,7 +1307,7 @@ class SemanticBuilder {
 			sources: [],
 		});
 		for (let index = 0; index < expression.parameters.length; index += 1) {
-			const parameter = this.declareParameter(expression.parameters[index], expression.range);
+			const parameter = this.declareParameter(expression.parameters[index]);
 			parameters[index + (receiver ? 1 : 0)] = declarationValueSource(parameter.id);
 			if (index === 0 && explicitReceiverClass) {
 				this.setDeclarationProjection(parameter, appendValueInstance(explicitReceiverClass));
@@ -1653,7 +1681,6 @@ class SemanticBuilder {
 			name: name.name,
 			kind,
 			range,
-			scopeRange: scope.range,
 			scopeRef: scope,
 			isGlobal: false,
 			active: activate,
@@ -1665,7 +1692,7 @@ class SemanticBuilder {
 		return decl;
 	}
 
-	private declareParameter(name: LuaIdentifierExpression, scopeRange: LuaSourceRange): InternalDecl {
+	private declareParameter(name: LuaIdentifierExpression): InternalDecl {
 		const scope = this.currentScope();
 		const range = name.range;
 		const decl = this.createDecl({
@@ -1674,7 +1701,6 @@ class SemanticBuilder {
 			name: name.name,
 			kind: 'parameter',
 			range,
-			scopeRange,
 			scopeRef: scope,
 			isGlobal: false,
 			active: true,
@@ -1693,7 +1719,6 @@ class SemanticBuilder {
 			name: name.name,
 			kind: 'type',
 			range,
-			scopeRange: scope.range,
 			scopeRef: scope,
 			isGlobal: scope.kind === 'path',
 			active: true,
@@ -1715,7 +1740,6 @@ class SemanticBuilder {
 			name: name.name,
 			kind: 'bss',
 			range,
-			scopeRange: scope.range,
 			scopeRef: scope,
 			isGlobal: scope.kind === 'path',
 			active: true,
@@ -1737,7 +1761,6 @@ class SemanticBuilder {
 			name: name.name,
 			kind: 'data',
 			range,
-			scopeRange: scope.range,
 			scopeRef: scope,
 			isGlobal: scope.kind === 'path',
 			active: true,
@@ -1759,7 +1782,6 @@ class SemanticBuilder {
 			name: name.name,
 			kind: 'rodata',
 			range,
-			scopeRange: scope.range,
 			scopeRef: scope,
 			isGlobal: scope.kind === 'path',
 			active: true,
@@ -1781,7 +1803,6 @@ class SemanticBuilder {
 			name: identifier.name,
 			kind: 'global',
 			range,
-			scopeRange: scope.range,
 			scopeRef: scope,
 			isGlobal: true,
 			active: true,
@@ -1818,7 +1839,6 @@ class SemanticBuilder {
 			return existing;
 		}
 		const scope = baseDecl ? baseDecl.scopeRef : this.currentScope();
-		const scopeRange = baseDecl ? baseDecl.scope : scope.range;
 		const range = buildRangeFromPosition(start, length, this.path);
 		const isGlobal = baseDecl ? baseDecl.isGlobal : scope.kind === 'path' && namePath.length > 1;
 		const decl = this.createDecl({
@@ -1827,7 +1847,6 @@ class SemanticBuilder {
 			name,
 			kind: 'property',
 			range,
-			scopeRange,
 			scopeRef: scope,
 			isGlobal,
 			active: true,
@@ -1914,12 +1933,11 @@ class SemanticBuilder {
 		name: string;
 		kind: SemanticSymbolKind;
 		range: LuaSourceRange;
-		scopeRange: LuaSourceRange;
 		scopeRef: Scope;
 		isGlobal: boolean;
 		active: boolean;
 	}): InternalDecl {
-		const { syntax, namePath, name, kind, range, scopeRange, scopeRef, isGlobal, active } = options;
+		const { syntax, namePath, name, kind, range, scopeRef, isGlobal, active } = options;
 		const id = createSymbolId(this.path, range, kind, namePath);
 		const decl: InternalDecl = {
 			id,
@@ -1929,11 +1947,15 @@ class SemanticBuilder {
 			symbolKey: joinNamePath(namePath),
 			kind,
 			range,
-			scope: scopeRange,
+			scopeIndex: scopeRef.index,
+			visibleFrom: range.end,
 			isGlobal,
 			scopeRef,
 			active,
 		};
+		if (namePath.length === 1) {
+			scopeRef.declarationIndices.push(this.decls.length);
+		}
 		this.decls.push(decl);
 		this.declById.set(id, decl);
 		if (syntax !== undefined) {
@@ -2300,10 +2322,11 @@ class SemanticBuilder {
 		});
 	}
 
-	private activateDecl(decl: InternalDecl): void {
+	private activateDecl(decl: InternalDecl, visibleFrom: SourcePosition): void {
 		if (decl.active) {
 			return;
 		}
+		decl.visibleFrom = visibleFrom;
 		this.addBinding(decl.scopeRef, decl);
 		decl.active = true;
 	}
@@ -2333,15 +2356,21 @@ class SemanticBuilder {
 		return this.scopeStack[this.scopeStack.length - 1];
 	}
 
-	private enterScope(range: LuaSourceRange, kind: ScopeKind): void {
+	private enterScope(
+		startInclusive: SourcePosition,
+		endExclusive: SourcePosition,
+		kind: ScopeKind,
+	): void {
 		const scope: Scope = {
-			id: this.nextScopeId,
+			index: this.scopes.length,
 			kind,
-			range,
+			startInclusive,
+			endExclusive,
 			parent: this.scopeStack.length > 0 ? this.scopeStack[this.scopeStack.length - 1] : null,
 			bindings: new Map(),
+			declarationIndices: [],
 		};
-		this.nextScopeId += 1;
+		this.scopes.push(scope);
 		this.scopeStack.push(scope);
 	}
 
@@ -2372,6 +2401,10 @@ function cloneRange(range: LuaSourceRange): LuaSourceRange {
 		start: { line: range.start.line, column: range.start.column },
 		end: { line: range.end.line, column: range.end.column },
 	};
+}
+
+function positionAfter(position: SourcePosition): SourcePosition {
+	return { line: position.line, column: position.column + 1 };
 }
 
 function createSymbolId(file: string, range: LuaSourceRange, kind: SemanticSymbolKind, namePath: readonly string[]): SymbolID {
@@ -2439,8 +2472,27 @@ function toDecl(internal: InternalDecl): Decl {
 		symbolKey: internal.symbolKey,
 		kind: internal.kind,
 		range: cloneRange(internal.range),
-		scope: cloneRange(internal.scope),
+		scopeIndex: internal.scopeIndex,
+		visibleFrom: {
+			line: internal.visibleFrom.line,
+			column: internal.visibleFrom.column,
+		},
 		isGlobal: internal.isGlobal,
+	};
+}
+
+function toSemanticScope(scope: Scope): SemanticScope {
+	return {
+		startInclusive: {
+			line: scope.startInclusive.line,
+			column: scope.startInclusive.column,
+		},
+		endExclusive: {
+			line: scope.endExclusive.line,
+			column: scope.endExclusive.column,
+		},
+		parentIndex: scope.parent ? scope.parent.index : -1,
+		declarationIndices: scope.declarationIndices.slice(),
 	};
 }
 

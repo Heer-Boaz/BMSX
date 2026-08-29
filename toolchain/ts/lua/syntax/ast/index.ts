@@ -106,6 +106,8 @@ export type LuaChunk = LuaNode & {
 
 export type LuaBlock = LuaNode & {
 	readonly kind: LuaSyntaxKind.Block;
+	readonly startInclusive: LuaSourcePosition;
+	readonly endExclusive: LuaSourcePosition;
 	readonly body: ReadonlyArray<LuaStatement>;
 };
 
