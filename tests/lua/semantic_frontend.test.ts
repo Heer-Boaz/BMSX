@@ -3,8 +3,8 @@ import { test } from 'node:test';
 
 import { buildLuaSemanticFrontend, type LuaSemanticFrontendFile, type LuaSemanticNavigationTarget } from '../../toolchain/ts/lua/semantic/frontend';
 import { createLuaSemanticFrontendFromSnapshot } from '../../ide/editor/contrib/intellisense/semantic/workspace/index';
-import { LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
-import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
+import { buildLuaFileSemanticData, LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
+import { parseLuaChunk, parseLuaChunkWithRecovery } from '../../toolchain/ts/lua/analysis/parse';
 import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
 
 test('LuaSemanticFrontend rejects host-published machine word globals', () => {
@@ -325,6 +325,73 @@ test('LuaSemanticFrontend retains parameters and loop variables on blank body li
 	assert.equal(
 		file.getVisibleDeclarationsAt(5, 1).some(declaration => declaration.name === 'index'),
 		true,
+	);
+});
+
+test('LuaSemanticFrontend completes an incomplete implicit-self receiver from the retained method scope', () => {
+	const lines = [
+		'local actor<const> = {}',
+		'function actor:blink() end',
+		'function actor:update()',
+		'\tself.',
+		'end',
+		'return actor',
+	];
+	const source = lines.join('\n');
+	const parsed = parseLuaChunkWithRecovery(source, 'incomplete_member.lua');
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFiles([
+		buildLuaFileSemanticData(source, 'incomplete_member.lua', parsed),
+	]);
+	const frontend = createLuaSemanticFrontendFromSnapshot(workspace.getSnapshot());
+	const file = frontend.getFile('incomplete_member.lua');
+	const context = file.findMemberCompletionContextAt(4, lines[3].length + 1);
+	const members = file.getMemberCompletionDeclarationsAt(4, lines[3].length + 1);
+
+	assert.ok(parsed.syntaxError);
+	assert.equal(context?.expression, 'self');
+	assert.equal(context?.operator, '.');
+	assert.deepEqual(members.map(member => member.name), ['blink', 'update']);
+});
+
+test('LuaSemanticFrontend enumerates members through modules, nested values, effects, and prototypes', () => {
+	const usageLines = [
+		"local api<const> = require('api')",
+		'local base<const> = { inherited = 1 }',
+		'local derived<const> = setmetatable({ own = 2 }, { __index = base })',
+		'local function extend(target)',
+		'\ttarget.added = 3',
+		'end',
+		'extend(derived)',
+		'return api.direct, api.nested.build, derived.own',
+	];
+	const frontend = buildLuaSemanticFrontend([
+		{
+			path: 'api.lua',
+			source: [
+				'local api<const> = { direct = 1, nested = { build = 2 } }',
+				'return api',
+			].join('\n'),
+		},
+		{ path: 'usage.lua', source: usageLines.join('\n') },
+	]);
+	const file = frontend.getFile('usage.lua');
+	const usage = usageLines[7];
+
+	assert.deepEqual(
+		file.getMemberCompletionDeclarationsAt(8, usage.indexOf('direct') + 1)
+			.map(member => member.name),
+		['direct', 'nested'],
+	);
+	assert.deepEqual(
+		file.getMemberCompletionDeclarationsAt(8, usage.indexOf('build') + 1)
+			.map(member => member.name),
+		['build'],
+	);
+	assert.deepEqual(
+		file.getMemberCompletionDeclarationsAt(8, usage.indexOf('own') + 1)
+			.map(member => member.name),
+		['added', 'inherited', 'own'],
 	);
 });
 

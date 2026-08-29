@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
 import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
+import { parseLuaChunkWithRecovery } from '../../toolchain/ts/lua/analysis/parse';
 import { LuaSyntaxKind, LuaBinaryOperator, LuaAssignmentOperator, LuaUnaryOperator } from '../../toolchain/ts/lua/syntax/ast';
 import type {
 	LuaChunk,
@@ -96,6 +97,29 @@ test('syntax errors retain the authored CRLF source line', () => {
 		() => parseChunk('local first = 1\r\nlocal second = )\r\nreturn first'),
 		/\[line 2, column 16\].*\nlocal second = \)\n\s+\^/,
 	);
+});
+
+test('recovery preserves enclosing blocks and statements after an incomplete member access', () => {
+	const source = [
+		'local owner<const> = {}',
+		'function owner:update()',
+		'\tlocal retained<const> = 1',
+		'\tself.',
+		'\treturn retained',
+		'end',
+		'return owner',
+	].join('\n');
+	const parsed = parseLuaChunkWithRecovery(source, 'recovery.lua');
+	assert.ok(parsed.syntaxError);
+	assert.equal(parsed.syntaxError.line, 5);
+	assert.equal(parsed.chunk?.body.length, 3);
+	const method = parsed.chunk?.body[1] as LuaFunctionDeclarationStatement;
+	assert.equal(method.kind, LuaSyntaxKind.FunctionDeclarationStatement);
+	assert.deepEqual(
+		method.functionExpression.body.body.map(statement => statement.kind),
+		[LuaSyntaxKind.LocalAssignmentStatement, LuaSyntaxKind.ReturnStatement],
+	);
+	assert.equal(parsed.chunk?.body[2].kind, LuaSyntaxKind.ReturnStatement);
 });
 
 test('parses if-elseif-else statement', () => {

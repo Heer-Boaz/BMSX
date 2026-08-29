@@ -97,6 +97,14 @@ const MULTIPLICATIVE_BINARY_OPERATORS: readonly LuaBinaryOperatorSpec[] = [
 	[LuaTokenType.FloorDivide, LuaBinaryOperator.FloorDivide],
 	[LuaTokenType.Percent, LuaBinaryOperator.Modulus],
 ];
+const CHUNK_TERMINATORS: ReadonlySet<LuaTokenType> = new Set([LuaTokenType.Eof]);
+const END_TERMINATORS: ReadonlySet<LuaTokenType> = new Set([LuaTokenType.End]);
+const IF_CLAUSE_TERMINATORS: ReadonlySet<LuaTokenType> = new Set([
+	LuaTokenType.ElseIf,
+	LuaTokenType.Else,
+	LuaTokenType.End,
+]);
+const REPEAT_TERMINATORS: ReadonlySet<LuaTokenType> = new Set([LuaTokenType.Until]);
 
 export class LuaParser {
 	private readonly tokens: ReadonlyArray<LuaToken>;
@@ -104,6 +112,8 @@ export class LuaParser {
 	private readonly source: string;
 	private index: number;
 	private previousToken: LuaToken;
+	private recoverStatements = false;
+	private recoveredSyntaxError: LuaSyntaxError | null = null;
 
 	constructor(tokens: ReadonlyArray<LuaToken>, path: string, source: string) {
 		this.tokens = tokens;
@@ -115,7 +125,7 @@ export class LuaParser {
 
 	public parseChunk(): LuaChunk {
 		const moduleAttribute = this.parseModuleAttribute();
-		const block = this.parseBlock(new Set<LuaTokenType>([LuaTokenType.Eof]));
+		const block = this.parseBlock(CHUNK_TERMINATORS);
 		const eofToken = this.consume(LuaTokenType.Eof, 'Expected end of input.');
 		const range = this.rangeFromBlockAndToken(block, eofToken);
 		return {
@@ -128,15 +138,11 @@ export class LuaParser {
 	}
 
 	public parseChunkWithRecovery(): { path: LuaChunk; syntaxError: LuaSyntaxError | null } {
+		this.recoverStatements = true;
 		const moduleAttribute = this.parseModuleAttribute();
-		const { block, syntaxError } = this.parseBlockWithRecovery(new Set<LuaTokenType>([LuaTokenType.Eof]));
-		let end: LuaSourcePosition;
-		if (syntaxError) {
-			end = { line: syntaxError.line, column: syntaxError.column };
-		} else {
-			const eofToken = this.consume(LuaTokenType.Eof, 'Expected end of input.');
-			end = this.positionFromToken(eofToken);
-		}
+		const block = this.parseBlock(CHUNK_TERMINATORS);
+		const eofToken = this.consume(LuaTokenType.Eof, 'Expected end of input.');
+		const end = this.positionFromToken(eofToken);
 		const range: LuaSourceRange = { path: this.path, start: block.range.start, end };
 		const path: LuaChunk = {
 			kind: LuaSyntaxKind.Chunk,
@@ -145,7 +151,7 @@ export class LuaParser {
 			entryModule: moduleAttribute === 'entry',
 			body: block.body,
 		};
-		return { path, syntaxError };
+		return { path, syntaxError: this.recoveredSyntaxError };
 	}
 
 	private parseModuleAttribute(): 'const' | 'entry' | null {
@@ -178,7 +184,21 @@ export class LuaParser {
 				this.advance();
 				continue;
 			}
-			statements.push(this.parseStatement());
+			if (!this.recoverStatements) {
+				statements.push(this.parseStatement());
+				continue;
+			}
+			try {
+				statements.push(this.parseStatement());
+			} catch (error) {
+				if (!(error instanceof LuaSyntaxError)) {
+					throw error;
+				}
+				if (this.recoveredSyntaxError === null) {
+					this.recoveredSyntaxError = error;
+				}
+				this.synchronizeStatement(terminators);
+			}
 		}
 		const startPosition = statements.length > 0 ? statements[0].range.start : this.positionFromToken(startToken);
 		const endPosition = statements.length > 0 ? statements[statements.length - 1].range.end : startPosition;
@@ -195,41 +215,40 @@ export class LuaParser {
 		};
 	}
 
-	private parseBlockWithRecovery(terminators: ReadonlySet<LuaTokenType>): { block: LuaBlock; syntaxError: LuaSyntaxError | null } {
-		const startToken = this.current();
-		const startInclusive = this.blockStartPosition();
-		const statements: LuaStatement[] = [];
-		let syntaxError: LuaSyntaxError | null = null;
-		try {
-			while (!this.isAtEnd() && !terminators.has(this.current().type)) {
-				if (this.current().type === LuaTokenType.Semicolon) {
-					this.advance();
-					continue;
-				}
-				statements.push(this.parseStatement());
+	private synchronizeStatement(terminators: ReadonlySet<LuaTokenType>): void {
+		while (!this.isAtEnd() && !terminators.has(this.current().type)) {
+			if (this.match(LuaTokenType.Semicolon)) {
+				return;
 			}
-		} catch (error) {
-			if (!(error instanceof LuaSyntaxError)) {
-				throw error;
+			const token = this.current();
+			if (token.line > this.previous().endLine && this.isStatementStart(token.type)) {
+				return;
 			}
-			syntaxError = error;
+			this.advance();
 		}
-		const startPosition = statements.length > 0 ? statements[0].range.start : this.positionFromToken(startToken);
-		const endPosition = statements.length > 0 ? statements[statements.length - 1].range.end : startPosition;
-		return {
-			block: {
-				kind: LuaSyntaxKind.Block,
-				startInclusive,
-				range: {
-					path: this.path,
-					start: startPosition,
-					end: endPosition,
-				},
-				endExclusive: this.positionFromToken(this.current()),
-				body: statements,
-			},
-			syntaxError,
-		};
+	}
+
+	private isStatementStart(type: LuaTokenType): boolean {
+		switch (type) {
+			case LuaTokenType.DoubleColon:
+			case LuaTokenType.Identifier:
+			case LuaTokenType.LeftParen:
+			case LuaTokenType.Star:
+			case LuaTokenType.Local:
+			case LuaTokenType.Function:
+			case LuaTokenType.Return:
+			case LuaTokenType.Break:
+			case LuaTokenType.If:
+			case LuaTokenType.While:
+			case LuaTokenType.Repeat:
+			case LuaTokenType.For:
+			case LuaTokenType.Do:
+			case LuaTokenType.HaltUntilIrq:
+			case LuaTokenType.Goto:
+				return true;
+			default:
+				return false;
+		}
 	}
 
 	private parseStatement(): LuaStatement {
@@ -582,7 +601,7 @@ export class LuaParser {
 			}
 		}
 		this.consume(LuaTokenType.RightParen, 'Expected ")" after function parameters.');
-		const body = this.parseBlock(new Set<LuaTokenType>([LuaTokenType.End]));
+		const body = this.parseBlock(END_TERMINATORS);
 		const endToken = this.consume(LuaTokenType.End, 'Expected "end" after function body.');
 		const range = this.rangeFromTokenAndToken(functionToken, endToken);
 		return {
@@ -637,7 +656,7 @@ export class LuaParser {
 		const clauses: LuaIfClause[] = [];
 		const condition = this.parseExpression();
 		this.consume(LuaTokenType.Then, 'Expected "then" after condition.');
-		const thenBlock = this.parseBlock(new Set<LuaTokenType>([LuaTokenType.ElseIf, LuaTokenType.Else, LuaTokenType.End]));
+		const thenBlock = this.parseBlock(IF_CLAUSE_TERMINATORS);
 		clauses.push({
 			condition,
 			block: thenBlock,
@@ -645,14 +664,14 @@ export class LuaParser {
 		while (this.match(LuaTokenType.ElseIf)) {
 			const elseifCondition = this.parseExpression();
 			this.consume(LuaTokenType.Then, 'Expected "then" after elseif condition.');
-			const elseifBlock = this.parseBlock(new Set<LuaTokenType>([LuaTokenType.ElseIf, LuaTokenType.Else, LuaTokenType.End]));
+			const elseifBlock = this.parseBlock(IF_CLAUSE_TERMINATORS);
 			clauses.push({
 				condition: elseifCondition,
 				block: elseifBlock,
 			});
 		}
 		if (this.match(LuaTokenType.Else)) {
-			const elseBlock = this.parseBlock(new Set<LuaTokenType>([LuaTokenType.End]));
+			const elseBlock = this.parseBlock(END_TERMINATORS);
 			clauses.push({
 				condition: null,
 				block: elseBlock,
@@ -671,7 +690,7 @@ export class LuaParser {
 		const whileToken = this.advance();
 		const condition = this.parseExpression();
 		this.consume(LuaTokenType.Do, 'Expected "do" after while condition.');
-		const block = this.parseBlock(new Set<LuaTokenType>([LuaTokenType.End]));
+		const block = this.parseBlock(END_TERMINATORS);
 		const endToken = this.consume(LuaTokenType.End, 'Expected "end" after while body.');
 		const range = this.rangeFromTokenAndToken(whileToken, endToken);
 		return {
@@ -684,7 +703,7 @@ export class LuaParser {
 
 	private parseRepeatStatement(): LuaRepeatStatement {
 		const repeatToken = this.advance();
-		const block = this.parseBlock(new Set<LuaTokenType>([LuaTokenType.Until]));
+		const block = this.parseBlock(REPEAT_TERMINATORS);
 		this.consume(LuaTokenType.Until, 'Expected "until" after repeat block.');
 		const condition = this.parseExpression();
 		const range = this.rangeFromTokenAndNode(repeatToken, condition);
@@ -711,7 +730,7 @@ export class LuaParser {
 		this.consume(LuaTokenType.In, 'Expected "in" in generic for loop.');
 		const iterators = this.parseExpressionList();
 		this.consume(LuaTokenType.Do, 'Expected "do" in for loop.');
-		const block = this.parseBlock(new Set<LuaTokenType>([LuaTokenType.End]));
+		const block = this.parseBlock(END_TERMINATORS);
 		const endToken = this.consume(LuaTokenType.End, 'Expected "end" after for loop.');
 		const range = this.rangeFromTokenAndToken(forToken, endToken);
 		const statement: LuaForGenericStatement = {
@@ -733,7 +752,7 @@ export class LuaParser {
 			stepExpression = this.parseExpression();
 		}
 		this.consume(LuaTokenType.Do, 'Expected "do" in numeric for loop.');
-		const block = this.parseBlock(new Set<LuaTokenType>([LuaTokenType.End]));
+		const block = this.parseBlock(END_TERMINATORS);
 		const endToken = this.consume(LuaTokenType.End, 'Expected "end" after numeric for loop.');
 		const range = this.rangeFromTokenAndToken(forToken, endToken);
 		return {
@@ -749,7 +768,7 @@ export class LuaParser {
 
 	private parseDoStatement(): LuaDoStatement {
 		const doToken = this.advance();
-		const block = this.parseBlock(new Set<LuaTokenType>([LuaTokenType.End]));
+		const block = this.parseBlock(END_TERMINATORS);
 		const endToken = this.consume(LuaTokenType.End, 'Expected "end" after do block.');
 		const range = this.rangeFromTokenAndToken(doToken, endToken);
 		return {

@@ -19,7 +19,14 @@ import {
 	compareSourcePosition,
 	findOrderedSourceRangeEntryAtPosition,
 } from './source_range';
+import { collectVisibleDeclarationsAt } from './scope_query';
+import {
+	findLuaMemberCompletionContext,
+	type LuaMemberCompletionContext,
+} from './completion';
 import { buildLuaKnownNameSet, isReservedIntrinsicName, isReservedMemoryMapName, semanticSymbolKindToLuaSymbolKind } from './common';
+
+const EMPTY_DECLARATIONS: readonly Decl[] = [];
 
 export type LuaSemanticFrontendSource = {
 	path: string;
@@ -104,6 +111,8 @@ export type LuaSemanticFrontendFile = {
 	getDeclaration(identifier: LuaIdentifierExpression): Decl | undefined;
 	getReference(identifier: LuaIdentifierExpression): LuaBoundReference | undefined;
 	getVisibleDeclarationsAt(line: number, column: number): readonly Decl[];
+	findMemberCompletionContextAt(line: number, memberStartColumn: number): LuaMemberCompletionContext | null;
+	getMemberCompletionDeclarationsAt(line: number, memberStartColumn: number): readonly Decl[];
 	findNavigationAt(line: number, column: number): LuaSemanticNavigationQuery | null;
 };
 
@@ -318,33 +327,19 @@ function createBoundFile(
 			const ref = source.referencesBySyntax.get(identifier);
 			return ref === undefined ? undefined : bindReference(ref);
 		},
+		// disable-next-line single_line_method_pattern -- the bound file owns its source while lexical scope traversal remains a shared semantic query.
 		getVisibleDeclarationsAt(line: number, column: number): readonly Decl[] {
-			let scopeIndex = findInnermostScopeIndex(source, line, column);
-			if (scopeIndex < 0) {
-				return [];
-			}
-			const declarations: Decl[] = [];
-			const names = new Set<string>();
-			while (scopeIndex >= 0) {
-				const scope = source.scopes[scopeIndex];
-				const indices = scope.declarationIndices;
-				for (let index = indices.length - 1; index >= 0; index -= 1) {
-					const declaration = source.decls[indices[index]];
-					if (names.has(declaration.name)
-						|| compareSourcePosition(
-							line,
-							column,
-							declaration.visibleFrom.line,
-							declaration.visibleFrom.column,
-						) <= 0) {
-						continue;
-					}
-					names.add(declaration.name);
-					declarations.push(declaration);
-				}
-				scopeIndex = scope.parentIndex;
-			}
-			return declarations;
+			return collectVisibleDeclarationsAt(source, line, column);
+		},
+		// disable-next-line single_line_method_pattern -- the bound file owns its source while completion parsing remains a shared semantic query.
+		findMemberCompletionContextAt(line: number, memberStartColumn: number): LuaMemberCompletionContext | null {
+			return findLuaMemberCompletionContext(source, line, memberStartColumn);
+		},
+		getMemberCompletionDeclarationsAt(line: number, memberStartColumn: number): readonly Decl[] {
+			const context = findLuaMemberCompletionContext(source, line, memberStartColumn);
+			return context
+				? snapshot.symbolResolver.getMembers(context.receiver)
+				: EMPTY_DECLARATIONS;
 		},
 		findNavigationAt(line: number, column: number): LuaSemanticNavigationQuery | null {
 			const symbols = findPositionSymbols(source, snapshot, line, column);
@@ -379,35 +374,6 @@ function createBoundFile(
 			return null;
 		},
 	};
-}
-
-function findInnermostScopeIndex(
-	source: FileSemanticData,
-	line: number,
-	column: number,
-): number {
-	const scopes = source.scopes;
-	let low = 0;
-	let high = scopes.length;
-	while (low < high) {
-		const middle = (low + high) >>> 1;
-		const start = scopes[middle].startInclusive;
-		if (compareSourcePosition(start.line, start.column, line, column) <= 0) {
-			low = middle + 1;
-		} else {
-			high = middle;
-		}
-	}
-	let scopeIndex = low - 1;
-	while (scopeIndex >= 0) {
-		const scope = scopes[scopeIndex];
-		const end = scope.endExclusive;
-		if (compareSourcePosition(line, column, end.line, end.column) < 0) {
-			return scopeIndex;
-		}
-		scopeIndex = scope.parentIndex;
-	}
-	return -1;
 }
 
 function findPositionSymbols(

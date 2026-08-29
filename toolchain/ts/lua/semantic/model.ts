@@ -99,6 +99,7 @@ export type SemanticScope = {
 	readonly endExclusive: SourcePosition;
 	readonly parentIndex: number;
 	readonly declarationIndices: readonly number[];
+	readonly implicitSelfValue?: SemanticValueSource;
 };
 
 export type Ref = {
@@ -239,6 +240,7 @@ type Scope = {
 	parent: Scope;
 	bindings: Map<string, InternalDecl[]>;
 	declarationIndices: number[];
+	implicitSelfValue?: SemanticValueSource;
 };
 
 type InternalDecl = Decl & {
@@ -1302,7 +1304,9 @@ class SemanticBuilder {
 		const effectiveMethodSelfPath = methodSelfPath ?? inheritedMethodSelfPath;
 		this.methodSelfPathStack.push(effectiveMethodSelfPath?.slice());
 		this.methodSelfScopeStack.push(methodSelfPath ? this.currentScope() : inheritedMethodSelfScope);
-		this.methodSelfValueStack.push(receiver ?? this.currentMethodSelfValue());
+		const implicitSelfValue = receiver ?? this.currentMethodSelfValue();
+		this.methodSelfValueStack.push(implicitSelfValue);
+		this.currentScope().implicitSelfValue = implicitSelfValue;
 		this.functionReturnValueStack.push({
 			sources: [],
 		});
@@ -2369,6 +2373,7 @@ class SemanticBuilder {
 			parent: this.scopeStack.length > 0 ? this.scopeStack[this.scopeStack.length - 1] : null,
 			bindings: new Map(),
 			declarationIndices: [],
+			implicitSelfValue: this.currentMethodSelfValue(),
 		};
 		this.scopes.push(scope);
 		this.scopeStack.push(scope);
@@ -2493,6 +2498,7 @@ function toSemanticScope(scope: Scope): SemanticScope {
 		},
 		parentIndex: scope.parent ? scope.parent.index : -1,
 		declarationIndices: scope.declarationIndices.slice(),
+		implicitSelfValue: scope.implicitSelfValue,
 	};
 }
 

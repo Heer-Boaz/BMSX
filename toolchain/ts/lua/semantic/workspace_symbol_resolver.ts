@@ -2,6 +2,7 @@ import type { Decl, FileSemanticData, Ref, SymbolID } from './model';
 import {
 	WorkspaceValueGraph,
 	WorkspaceValueIdentityIndex,
+	type SemanticValueSource,
 	type WorkspaceValueGraphInput,
 } from './value_graph';
 import { sourceRangesEqual } from '../source_range';
@@ -22,6 +23,7 @@ export class WorkspaceSymbolResolver {
 	private valueGraph?: WorkspaceValueGraph;
 	private readonly referenceTargets: Map<Ref, readonly SymbolID[]> = new Map();
 	private readonly referencesBySymbol: Map<SymbolID, readonly Ref[]> = new Map();
+	private readonly membersBySource: Map<string, readonly Decl[]> = new Map();
 
 	constructor(options: {
 		files: readonly FileSemanticData[];
@@ -105,6 +107,41 @@ export class WorkspaceSymbolResolver {
 			this.valueGraph = new WorkspaceValueGraph(this.valueGraphInput, this.getValueIdentities());
 		}
 		return this.valueGraph;
+	}
+
+	public getMembers(source: SemanticValueSource): readonly Decl[] {
+		const identities = this.getValueIdentities();
+		const key = identities.sourceKey(source);
+		const cached = this.membersBySource.get(key);
+		if (cached) {
+			return cached;
+		}
+		const membersByName = new Map<string, Decl>();
+		const memberIds = this.getValueGraph().fork().resolveAllMembers(source);
+		for (let index = 0; index < memberIds.length; index += 1) {
+			const declaration = this.declarations.get(memberIds[index]);
+			if (!membersByName.has(declaration.name)) {
+				membersByName.set(declaration.name, declaration);
+			}
+		}
+		const members = Array.from(membersByName.values());
+		members.sort((left, right) => {
+			const name = left.name.localeCompare(right.name);
+			if (name !== 0) {
+				return name;
+			}
+			if (left.file !== right.file) {
+				return left.file.localeCompare(right.file);
+			}
+			return compareSourcePosition(
+				left.range.start.line,
+				left.range.start.column,
+				right.range.start.line,
+				right.range.start.column,
+			);
+		});
+		this.membersBySource.set(key, members);
+		return members;
 	}
 
 	public getReferences(symbolId: SymbolID): readonly Ref[] {

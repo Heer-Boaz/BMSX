@@ -4,7 +4,7 @@ import type { LuaCompletionItem, LuaCompletionKind } from '../../../common/model
 
 const COMPLETION_KIND_PRIORITY: Record<LuaCompletionKind, number> = {
 	local: 90,
-	module: 80,
+	member: 80,
 	global: 70,
 	native_method: 50,
 	native_property: 50,

@@ -4,7 +4,6 @@ import { editorDocumentState } from '../../../../editor/editing/document_state';
 import { editorViewState } from '../../../../editor/ui/view/state';
 import {
 	listGlobalLuaSymbols,
-	listLuaSymbols,
 	buildMemberCompletionItems,
 } from '../../../../editor/contrib/intellisense/engine';
 import { listLuaBuiltinDescriptors } from '../../../../runtime/lua_builtins';
@@ -36,7 +35,6 @@ import { updateDesiredColumn, revealCursor } from '../../../../editor/ui/view/ca
 import { resetBlink } from '../../../../editor/render/caret';
 import type { Decl } from '../../../../../toolchain/ts/lua/semantic/model';
 import type { LuaSemanticFrontendFile } from '../../../../../toolchain/ts/lua/semantic/frontend';
-import type { ModuleAliasEntry } from '../../../../../toolchain/ts/lua/semantic/module_bindings';
 import { clearSingleCursorSelection, setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../../../editor/editing/cursor/state';
 import type { Runtime } from '../../../../../machine/ts/machine/runtime/runtime';
 import type { PlayerInput } from '../../../../../hosts/common/input/player';
@@ -51,11 +49,9 @@ type LocalCompletionCacheEntry = {
 	parsedVersion: number;
 	path: string;
 	file: LuaSemanticFrontendFile;
-	moduleAliases: ReadonlyMap<string, ModuleAliasEntry>;
 };
 
 const KEYWORD_COMPLETION_ITEMS: LuaCompletionItem[] = getKeywordCompletions();
-const EMPTY_MODULE_ALIASES: ReadonlyMap<string, ModuleAliasEntry> = new Map();
 
 export class CompletionController {
 	public constructor(
@@ -471,64 +467,30 @@ export class CompletionController {
 		if (isLuaCommentContext(buffer, row, replaceFromColumn)) {
 			return null;
 		}
-		let probe = replaceFromColumn - 1;
-		while (probe >= 0 && LuaLexer.isWhitespace(line.charAt(probe))) probe -= 1;
-		if (probe >= 0) {
-			const operator = line.charAt(probe);
-			if (operator === '.' || operator === ':') {
-				const objectName = this.readMemberObjectExpression(line, probe - 1);
-				if (objectName === null) return null;
-				return { kind: 'member', objectName, operator: operator as '.' | ':', prefix, row, replaceFromColumn, replaceToColumn };
-			}
+		let operatorColumn = replaceFromColumn - 1;
+		while (operatorColumn >= 0 && LuaLexer.isWhitespace(line.charAt(operatorColumn))) {
+			operatorColumn -= 1;
 		}
-		return { kind: 'global', prefix, row, replaceFromColumn, replaceToColumn };
-	}
-
-	private readMemberObjectExpression(line: string, fromIndex: number): string | null {
-		let scan = fromIndex;
-		while (scan >= 0 && LuaLexer.isWhitespace(line.charAt(scan))) scan -= 1;
-		if (scan < 0) {
-			return null;
+		if (operatorColumn < 0
+			|| (line.charAt(operatorColumn) !== '.' && line.charAt(operatorColumn) !== ':')) {
+			return { kind: 'global', prefix, row, replaceFromColumn, replaceToColumn };
 		}
-		const segments: string[] = [];
-		const separators: Array<'.' | ':'> = [];
-		while (scan >= 0) {
-			const segmentEnd = scan;
-			while (scan >= 0 && LuaLexer.isIdentifierPart(line.charAt(scan))) {
-				scan -= 1;
-			}
-			const segmentStart = scan + 1;
-			if (segmentStart > segmentEnd) {
-				return null;
-			}
-			const segment = line.slice(segmentStart, segmentEnd + 1);
-			if (!LuaLexer.isIdentifierStart(segment.charAt(0))) {
-				return null;
-			}
-			segments.unshift(segment);
-			while (scan >= 0 && LuaLexer.isWhitespace(line.charAt(scan))) scan -= 1;
-			if (scan < 0) {
-				break;
-			}
-			const separator = line.charAt(scan);
-			if (separator !== '.' && separator !== ':') {
-				break;
-			}
-			separators.unshift(separator as '.' | ':');
-			scan -= 1;
-			while (scan >= 0 && LuaLexer.isWhitespace(line.charAt(scan))) scan -= 1;
-			if (scan < 0) {
-				return null;
-			}
+		const member = this.ensureLocalCompletionCache().file.findMemberCompletionContextAt(
+			row + 1,
+			replaceFromColumn + 1,
+		);
+		if (member) {
+			return {
+				kind: 'member',
+				objectName: member.expression,
+				operator: member.operator,
+				prefix,
+				row,
+				replaceFromColumn,
+				replaceToColumn,
+			};
 		}
-		if (segments.length === 0) {
-			return null;
-		}
-		let expression = segments[0];
-		for (let index = 0; index < separators.length; index += 1) {
-			expression += `${separators[index]}${segments[index + 1]}`;
-		}
-		return expression;
+		return null;
 	}
 
 	private getSharedCompletionEntries(): LuaCompletionItem[] {
@@ -564,7 +526,7 @@ export class CompletionController {
 					merged.push(items[i]);
 				}
 			};
-			appendItems(this.getModuleMemberCompletionItems(context));
+			appendItems(this.getSemanticMemberCompletionItems(context));
 			const path = this.getActivePath();
 			const runtimeItems = buildMemberCompletionItems(
 				this.bridge,
@@ -630,24 +592,10 @@ export class CompletionController {
 			this.getBuffer(),
 		);
 		const file = frontend.getFile(path);
-		const semanticData = frontend.snapshot.getFileData(path);
-		if (semanticData === undefined) {
-			throw new Error(`[CompletionController] Missing semantic file '${path}'.`);
-		}
-		let moduleAliases = EMPTY_MODULE_ALIASES;
-		if (semanticData.moduleAliases.length > 0) {
-			const aliases = new Map<string, ModuleAliasEntry>();
-			for (let index = 0; index < semanticData.moduleAliases.length; index += 1) {
-				const entry = semanticData.moduleAliases[index];
-				aliases.set(entry.alias, entry);
-			}
-			moduleAliases = aliases;
-		}
 		const updated: LocalCompletionCacheEntry = {
 			parsedVersion: currentVersion,
 			path,
 			file,
-			moduleAliases,
 		};
 		this.localCompletionCache.set(key, updated);
 		return updated;
@@ -682,7 +630,7 @@ export class CompletionController {
 		return items;
 	}
 
-	private buildSymbolCompletionItems(entries: LuaSymbolEntry[], scope: 'local' | 'global' | 'module'): LuaCompletionItem[] {
+	private buildSymbolCompletionItems(entries: LuaSymbolEntry[], scope: 'local' | 'global'): LuaCompletionItem[] {
 		if (entries.length === 0) return [];
 		const items: LuaCompletionItem[] = [];
 		for (let i = 0; i < entries.length; i += 1) {
@@ -694,7 +642,7 @@ export class CompletionController {
 			const kindLabel = this.formatSymbolKind(entry.kind);
 			const detail = origin.length > 0 ? `${kindLabel} • ${origin}` : kindLabel;
 			const sortKey = `${scope}:${origin}:${entry.path}:${entry.name}:${entry.kind}`;
-			const completionKind: LuaCompletionKind = scope === 'local' ? 'local' : scope === 'module' ? 'module' : 'global';
+			const completionKind: LuaCompletionKind = scope === 'local' ? 'local' : 'global';
 			items.push({ label: entry.name, insertText: entry.name, sortKey, kind: completionKind, detail });
 		}
 		items.sort((a, b) => a.label.localeCompare(b.label));
@@ -723,80 +671,31 @@ export class CompletionController {
 		return items;
 	}
 
-	private getModuleMemberCompletionItems(context: CompletionContext): LuaCompletionItem[] {
+	private getSemanticMemberCompletionItems(context: CompletionContext): LuaCompletionItem[] {
 		if (context.kind !== 'member') {
 			return [];
 		}
 		const cached = this.ensureLocalCompletionCache();
-		if (cached.moduleAliases.size === 0) {
+		const symbols = cached.file.getMemberCompletionDeclarationsAt(
+			context.row + 1,
+			context.replaceFromColumn + 1,
+		);
+		if (symbols.length === 0) {
 			return [];
 		}
-		const moduleAlias = cached.moduleAliases.get(context.objectName);
-		if (!moduleAlias) {
-			return [];
-		}
-		let symbols: LuaSymbolEntry[] = [];
-		try {
-			symbols = listLuaSymbols(this.bridge, this.getActiveDomain(), moduleAlias.module);
-		} catch {
-			symbols = [];
-		}
-		symbols = this.filterModuleAliasSymbols(symbols, moduleAlias);
-		if (!symbols || symbols.length === 0) {
-			return [];
-		}
-		const items = this.buildSymbolCompletionItems(symbols, 'module');
-		const aliasSource = this.formatModuleAliasSource(moduleAlias);
-		for (let index = 0; index < items.length; index += 1) {
-			const item = items[index];
-			const detail = item.detail ? `${item.detail} • ${aliasSource}` : `module export • ${aliasSource}`;
-			item.detail = detail;
+		const items = new Array<LuaCompletionItem>(symbols.length);
+		for (let index = 0; index < symbols.length; index += 1) {
+			const symbol = symbols[index];
+			const kind = semanticSymbolKindToLuaSymbolKind(symbol.kind);
+			items[index] = {
+				label: symbol.name,
+				insertText: symbol.name,
+				sortKey: `member:${symbol.name}:${symbol.file}:${symbol.range.start.line}:${symbol.range.start.column}`,
+				kind: 'member',
+				detail: `${this.formatSymbolKind(kind)} • ${symbol.file} • line ${symbol.range.start.line}`,
+			};
 		}
 		return items;
-	}
-
-	private filterModuleAliasSymbols(symbols: LuaSymbolEntry[], moduleAlias: ModuleAliasEntry): LuaSymbolEntry[] {
-		const memberPath = moduleAlias.memberPath;
-		if (memberPath.length === 0) {
-			return symbols;
-		}
-		const prefix = memberPath.join('.');
-		const directPrefix = `${prefix}.`;
-		const filtered: LuaSymbolEntry[] = [];
-		for (let index = 0; index < symbols.length; index += 1) {
-			const symbol = symbols[index]!;
-			if (this.symbolMatchesModuleAliasPath(symbol.path, prefix, directPrefix)) {
-				filtered.push(symbol);
-			}
-		}
-		return filtered;
-	}
-
-	private symbolMatchesModuleAliasPath(path: string, prefix: string, directPrefix: string): boolean {
-		if (path.length <= prefix.length) {
-			return false;
-		}
-		if (path.startsWith(directPrefix)) {
-			return true;
-		}
-		const firstSeparator = path.indexOf('.');
-		if (firstSeparator === -1 || firstSeparator + 1 >= path.length) {
-			return false;
-		}
-		const nestedPath = path.slice(firstSeparator + 1);
-		if (nestedPath.length <= prefix.length) {
-			return false;
-		}
-		return nestedPath.startsWith(directPrefix);
-	}
-
-	private formatModuleAliasSource(moduleAlias: ModuleAliasEntry): string {
-		const escaped = moduleAlias.module.replace(/'/g, "\\'");
-		const memberPath = moduleAlias.memberPath;
-		if (memberPath.length === 0) {
-			return `require('${escaped}')`;
-		}
-		return `require('${escaped}').${memberPath.join('.')}`;
 	}
 
 	private isLocalCompletionDeclaration(declaration: Decl): boolean {
@@ -954,7 +853,8 @@ export class CompletionController {
 	private refreshCompletionSessionFromContext(context: CompletionContext): void {
 		const session = this.completionSession;
 		if (!session) return;
-		const items = this.collectCompletionItems(context);
+		const reuseItems = this.completionContextsCompatible(session.context, context);
+		const items = reuseItems ? session.items : this.collectCompletionItems(context);
 		if (items.length === 0) { this.closeSession(); return; }
 		switch (context.kind) {
 			case 'member':
@@ -967,8 +867,10 @@ export class CompletionController {
 				session.context = { kind: 'local', prefix: context.prefix, row: context.row, replaceFromColumn: context.replaceFromColumn, replaceToColumn: context.replaceToColumn };
 				break;
 		}
-		session.items = items;
-		session.filterCache.clear();
+		if (!reuseItems) {
+			session.items = items;
+			session.filterCache.clear();
+		}
 		const cursor = this.getCursorPosition();
 		session.anchorRow = cursor.row;
 		session.anchorColumn = cursor.column;

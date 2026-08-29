@@ -96,7 +96,7 @@ export type LuaCompletionKind =
 	| 'builtin'
 	| 'native_method'
 	| 'native_property'
-	| 'module';
+	| 'member';
 
 export type LuaCompletionItem = {
 	label: string;
