@@ -281,7 +281,7 @@ export function updateHoverTooltip(
 	const row = pointer.row;
 	const column = pointer.column;
 	const path = context.resource.path;
-	const token = extractHoverExpression(row, column, path);
+	const token = extractHoverExpression(editorDocumentState.buffer, row, column, path);
 	if (!token) {
 		clearHoverTooltip();
 		return;
@@ -393,11 +393,7 @@ export function requestSemanticRefresh(): void {
 			return;
 	}
 }
-export function extractHoverExpression(row: number, column: number, path: string): { expression: string; startColumn: number; endColumn: number; } {
-	return extractHoverExpressionFromBuffer(editorDocumentState.buffer, row, column, path);
-}
-
-export function extractHoverExpressionFromBuffer(buffer: TextBuffer, row: number, column: number, path: string): { expression: string; startColumn: number; endColumn: number; } {
+function extractHoverExpression(buffer: TextBuffer, row: number, column: number, path: string): { expression: string; startColumn: number; endColumn: number; } {
 	if (row < 0 || row >= buffer.getLineCount()) {
 		return null;
 	}
@@ -619,7 +615,7 @@ function resolveIdentifierExpressionForKeyword(row: number, match: ContextMenuTo
 		if (token.type !== LuaTokenType.Identifier) {
 			continue;
 		}
-		return extractHoverExpression(row, token.column - 1, path);
+		return extractHoverExpression(editorDocumentState.buffer, row, token.column - 1, path);
 	}
 	return null;
 }
@@ -645,18 +641,19 @@ function buildContextMenuToken(
 }
 
 export function resolveContextMenuToken(row: number, column: number, path: string): EditorContextToken {
-	if (row < 0 || row >= editorDocumentState.buffer.getLineCount()) {
+	const buffer = editorDocumentState.buffer;
+	if (row < 0 || row >= buffer.getLineCount()) {
 		return null;
 	}
-	const line = editorDocumentState.buffer.getLineContent(row);
+	const line = buffer.getLineContent(row);
 	if (line.length === 0) {
 		return null;
 	}
 	const safeColumn = clamp(column, 0, line.length);
-	if (isLuaCommentContext(editorDocumentState.buffer, row, safeColumn)) {
+	if (isLuaCommentContext(buffer, row, safeColumn)) {
 		return null;
 	}
-	const expression = extractHoverExpression(row, safeColumn, path);
+	const expression = extractHoverExpression(buffer, row, safeColumn, path);
 	if (expression) {
 		const segmentText = line.slice(expression.startColumn, expression.endColumn);
 		const isKeyword = KEYWORDS.has(segmentText);
@@ -724,33 +721,26 @@ export function refreshGotoHoverHighlight(
 			clearGotoHoverHighlight();
 			return;
 	}
-	const path = context.resource.path;
-	const definitions = queryDefinitionsAt(bridge, context, row, column);
-	const token = extractHoverExpression(row, column, path);
-	if (definitions.length === 0 && !token) {
+	const query = queryDefinitionsAt(bridge, context, row, column);
+	if (!query) {
 		clearGotoHoverHighlight();
 		return;
 	}
-	const highlightStart = token ? token.startColumn : column;
-	const highlightEnd = token ? token.endColumn : column;
-	const highlightExpression = token ? token.expression : '';
+	const highlightStart = query.origin.start.column - 1;
+	const highlightEnd = query.origin.end.column;
 	const existing = intellisenseUiState.gotoHoverHighlight;
 	if (existing
 		&& existing.row === row
 		&& column >= existing.startColumn
 		&& column <= existing.endColumn
-		&& existing.expression === highlightExpression) {
-		return;
-	}
-	if (definitions.length === 0) {
-		clearGotoHoverHighlight();
+		&& existing.expression === query.label) {
 		return;
 	}
 	intellisenseUiState.gotoHoverHighlight = {
 		row,
 		startColumn: highlightStart,
 		endColumn: highlightEnd,
-		expression: highlightExpression,
+		expression: query.label,
 	};
 }
 

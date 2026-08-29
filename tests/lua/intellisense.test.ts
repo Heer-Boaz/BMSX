@@ -703,6 +703,7 @@ test('reference lookup resolves global definition across paths', async () => {
 	assert.equal(result.kind, 'success', 'reference lookup succeeded');
 	if (result.kind === 'success') {
 		assert.ok(result.info.matches.length > 0, 'matches found');
+		assert.equal(result.info.expression, 'state');
 		const symbolInfo = createLuaSemanticFrontendFromSnapshot(workspace.getSnapshot()).findReferencesByPosition('usage.lua', stateRow + 1, stateColumn + 1);
 		assert.ok(symbolInfo);
 		if (symbolInfo) {
@@ -741,6 +742,7 @@ test('reference lookup retains all definitions of a value alternative', async ()
 
 	assert.equal(result.kind, 'success');
 	if (result.kind === 'success') {
+		assert.equal(result.info.expression, 'selected:run');
 		assert.deepEqual(
 			result.info.query.targets.map(target => target.declaration.range.start.line),
 			[2, 4],

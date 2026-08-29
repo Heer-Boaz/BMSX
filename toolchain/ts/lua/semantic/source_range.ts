@@ -33,6 +33,35 @@ export function sourcePositionInRange(line: number, column: number, range: Sourc
 		&& compareSourcePosition(line, column, range.end.line, range.end.column) <= 0;
 }
 
+// The producer orders non-overlapping semantic occurrences by source start.
+// Position queries can therefore descend the retained array without scanning
+// every declaration or reference in the file.
+export function findOrderedSourceRangeEntryAtPosition<T extends { readonly range: SourceRange }>(
+	entries: readonly T[],
+	line: number,
+	column: number,
+): T | undefined {
+	let low = 0;
+	let high = entries.length;
+	while (low < high) {
+		const middle = (low + high) >>> 1;
+		const start = entries[middle].range.start;
+		if (compareSourcePosition(start.line, start.column, line, column) <= 0) {
+			low = middle + 1;
+		} else {
+			high = middle;
+		}
+	}
+	const index = low - 1;
+	if (index < 0) {
+		return undefined;
+	}
+	const entry = entries[index];
+	return compareSourcePosition(line, column, entry.range.end.line, entry.range.end.column) <= 0
+		? entry
+		: undefined;
+}
+
 export function cloneSourceRange(range: SourceRange): SourceRange {
 	return {
 		path: range.path,

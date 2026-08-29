@@ -1,5 +1,4 @@
 import { buildEditorSemanticFrontend } from '../intellisense/frontend';
-import { extractHoverExpressionFromBuffer } from '../intellisense/engine';
 import type { ReferenceMatchInfo } from './state';
 import type { TextBuffer } from '../../text/text_buffer';
 import type { SearchMatch } from '../../../common/models';
@@ -20,14 +19,10 @@ export type ReferenceLookupResult =
 
 export function resolveReferenceLookup(bridge: RuntimeLuaTooling, options: ReferenceLookupOptions): ReferenceLookupResult {
 	const path = options.identity.path;
-	const identifier = extractHoverExpressionFromBuffer(options.buffer, options.cursorRow, options.cursorColumn, path);
-	if (!identifier) {
-		return { kind: 'error', message: 'No identifier at cursor', duration: 1.6 };
-	}
 	const frontend = buildEditorSemanticFrontend(bridge, options.identity, options.buffer);
 	const resolution = frontend.findReferencesByPosition(path, options.cursorRow + 1, options.cursorColumn + 1);
 	if (!resolution) {
-		return { kind: 'error', message: `Definition not found for ${identifier.expression}`, duration: 1.8 };
+		return { kind: 'error', message: 'No symbol at cursor', duration: 1.6 };
 	}
 	const matches: SearchMatch[] = [];
 	for (let targetIndex = 0; targetIndex < resolution.targets.length; targetIndex += 1) {
@@ -59,7 +54,7 @@ export function resolveReferenceLookup(bridge: RuntimeLuaTooling, options: Refer
 		kind: 'success',
 		info: {
 			matches,
-			expression: identifier.expression,
+			expression: resolution.label,
 			query: resolution,
 			snapshot: frontend.snapshot,
 		},

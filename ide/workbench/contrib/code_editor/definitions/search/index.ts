@@ -21,16 +21,17 @@ export function openDefinitionSearch(
 	column: number,
 ): boolean {
 	const context = getActiveCodeTabContext();
-	const definitions = queryDefinitionsAt(
+	const query = queryDefinitionsAt(
 		bridge,
 		context,
 		row,
 		column,
 	);
-	if (definitions.length === 0) {
+	if (!query) {
 		showEditorMessage('Definition not found', constants.COLOR_STATUS_WARNING, 1.6);
 		return false;
 	}
+	const definitions = query.definitions;
 	if (definitions.length === 1) {
 		navigateToLuaDefinition(editor, definitions[0].location);
 		return true;

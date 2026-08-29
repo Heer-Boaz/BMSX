@@ -1,5 +1,4 @@
 import { buildEditorSemanticSnapshot, createEditorSemanticFrontend } from '../intellisense/frontend';
-import { extractHoverExpression } from '../intellisense/engine';
 import { CallHierarchyModel } from './model';
 import { editorDocumentState } from '../../editing/document_state';
 import { SYSTEM_RESOURCE_DOMAIN } from '../../../common/resource';
@@ -15,8 +14,7 @@ export function resolveCallHierarchyAt(bridge: RuntimeLuaTooling, row: number, c
 	const snapshot = buildEditorSemanticSnapshot(bridge, resource, editorDocumentState.buffer);
 	const frontend = createEditorSemanticFrontend(bridge, snapshot);
 	const symbols = frontend.findSymbolsByPosition(path, row + 1, column + 1);
-	const expression = extractHoverExpression(row, column, path)?.expression;
-	if (!symbols || !expression) {
+	if (!symbols) {
 		return { kind: 'missing_definition' };
 	}
 	const resources = bridge.sources.luaResources;
@@ -43,6 +41,6 @@ export function resolveCallHierarchyAt(bridge: RuntimeLuaTooling, row: number, c
 	for (let index = 0; index < symbols.targets.length; index += 1) {
 		rootSymbolIds[index] = symbols.targets[index].id;
 	}
-	const model = new CallHierarchyModel(frontend, rootSymbolIds, expression, allowedPaths);
+	const model = new CallHierarchyModel(frontend, rootSymbolIds, symbols.label, allowedPaths);
 	return { kind: 'success', model };
 }

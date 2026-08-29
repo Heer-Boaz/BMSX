@@ -5,6 +5,7 @@ import { buildEditorSemanticFrontend } from '../intellisense/frontend';
 import { definitionLocationFromSourceRange } from '../../navigation/source_range';
 import type { LuaDefinitionLocation } from '../../../../toolchain/ts/lua/semantic_contracts';
 import type { SemanticSymbolKind } from '../../../../toolchain/ts/lua/semantic/symbols';
+import type { LuaSourceRange } from '../../../../toolchain/ts/lua/syntax/ast';
 
 export type LuaDefinitionTarget = {
 	location: LuaDefinitionLocation;
@@ -13,24 +14,33 @@ export type LuaDefinitionTarget = {
 	kind: SemanticSymbolKind | 'module';
 };
 
+export type LuaDefinitionQuery = {
+	origin: LuaSourceRange;
+	label: string;
+	definitions: readonly LuaDefinitionTarget[];
+};
+
 export function queryDefinitionsAt(
 	bridge: RuntimeLuaTooling,
 	context: EditorDocumentContext,
 	row: number,
 	column: number,
-): readonly LuaDefinitionTarget[] {
+): LuaDefinitionQuery | null {
 	if (context.mode !== 'lua') {
-		return [];
+		return null;
 	}
 	const frontend = buildEditorSemanticFrontend(
 		bridge,
 		context.resource,
 		editorDocumentState.buffer,
 	);
-	const targets = frontend.getFile(context.resource.path).getNavigationTargetsAt(row + 1, column + 1);
-	const definitions = new Array<LuaDefinitionTarget>(targets.length);
-	for (let index = 0; index < targets.length; index += 1) {
-		const target = targets[index];
+	const navigation = frontend.getFile(context.resource.path).findNavigationAt(row + 1, column + 1);
+	if (!navigation) {
+		return null;
+	}
+	const definitions = new Array<LuaDefinitionTarget>(navigation.targets.length);
+	for (let index = 0; index < navigation.targets.length; index += 1) {
+		const target = navigation.targets[index];
 		if (target.kind === 'declaration') {
 			const declaration = target.declaration;
 			definitions[index] = {
@@ -48,5 +58,9 @@ export function queryDefinitionsAt(
 			};
 		}
 	}
-	return definitions;
+	return {
+		origin: navigation.origin,
+		label: navigation.label,
+		definitions,
+	};
 }

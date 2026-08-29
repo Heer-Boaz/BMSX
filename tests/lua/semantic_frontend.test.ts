@@ -102,13 +102,20 @@ test('LuaSemanticFrontend returns every valid definition target', () => {
 	].join('\n');
 	const frontend = buildLuaSemanticFrontend([{ path: 'alternatives.lua', source }]);
 	const position = findPosition(source, 'selected:run()', 'run');
-	const targets = frontend.getFile('alternatives.lua').getNavigationTargetsAt(
+	const navigation = frontend.getFile('alternatives.lua').findNavigationAt(
 		position.line,
 		position.column,
 	);
+	assert.ok(navigation);
+	assert.equal(navigation.label, 'selected:run');
+	assert.deepEqual(navigation.origin, {
+		path: 'alternatives.lua',
+		start: position,
+		end: { line: position.line, column: position.column + 2 },
+	});
 
 	assert.deepEqual(
-		targets.map((target) => target.range.start.line),
+		navigation.targets.map((target) => target.range.start.line),
 		[2, 4],
 	);
 	const references = frontend.findReferencesByPosition(
@@ -117,6 +124,7 @@ test('LuaSemanticFrontend returns every valid definition target', () => {
 		position.column,
 	);
 	assert.ok(references);
+	assert.equal(references.label, 'selected:run');
 	assert.deepEqual(
 		references.targets.map(target => target.declaration.range.start.line),
 		[2, 4],
@@ -272,8 +280,8 @@ test('LuaSemanticFrontend keeps ordinary strings and comments out of identifier 
 	const commentPosition = findPosition(source, '-- target', 'target');
 	const stringPosition = findPosition(source, 'local text = "target"', 'target');
 	const livePosition = findPosition(source, 'return target', 'target');
-	assert.deepEqual(file.getNavigationTargetsAt(commentPosition.line, commentPosition.column), []);
-	assert.deepEqual(file.getNavigationTargetsAt(stringPosition.line, stringPosition.column), []);
+	assert.equal(file.findNavigationAt(commentPosition.line, commentPosition.column), null);
+	assert.equal(file.findNavigationAt(stringPosition.line, stringPosition.column), null);
 	const liveTarget = firstNavigationTarget(file, livePosition.line, livePosition.column);
 	assert.deepEqual(liveTarget.range, {
 		path: 'literals.lua',
@@ -297,7 +305,16 @@ test('LuaSemanticFrontend resolves require strings to their target module files'
 	]);
 	const file = frontend.getFile('main.lua');
 	const requirePosition = findPosition(entrySource, 'require("lib/util")', 'lib/util');
-	const target = firstNavigationTarget(file, requirePosition.line, requirePosition.column);
+	const navigation = file.findNavigationAt(requirePosition.line, requirePosition.column);
+	assert.ok(navigation);
+	assert.equal(navigation.label, 'lib/util');
+	assert.deepEqual(navigation.origin, {
+		path: 'main.lua',
+		start: { line: requirePosition.line, column: requirePosition.column - 1 },
+		end: { line: requirePosition.line, column: requirePosition.column + 'lib/util'.length },
+	});
+	assert.equal(navigation.targets.length, 1);
+	const target = navigation.targets[0];
 	assert.deepEqual(target, {
 		kind: 'require_module',
 		moduleName: 'lib/util',
@@ -585,6 +602,17 @@ test('LuaSemanticFrontend classifies member and method calls at the reference pr
 	assert.equal(methodCalls[0].from.label, 'caller');
 	assert.deepEqual(memberCalls[0].fromRanges.map(range => range.start.line), [6]);
 	assert.deepEqual(methodCalls[0].fromRanges.map(range => range.start.line), [7]);
+
+	const memberCallPosition = findPosition(source, '\ttarget.member()', 'member');
+	const methodCallPosition = findPosition(source, '\ttarget:method()', 'method');
+	assert.equal(
+		frontend.findSymbolsByPosition('member_calls.lua', memberCallPosition.line, memberCallPosition.column)?.label,
+		'target.member',
+	);
+	assert.equal(
+		frontend.findSymbolsByPosition('member_calls.lua', methodCallPosition.line, methodCallPosition.column)?.label,
+		'target:method',
+	);
 });
 
 function firstNavigationTarget(
@@ -592,9 +620,12 @@ function firstNavigationTarget(
 	line: number,
 	column: number,
 ): LuaSemanticNavigationTarget | null {
-	const targets = file.getNavigationTargetsAt(line, column);
-	assert.ok(targets.length <= 1, 'expected at most one navigation target');
-	return targets.length === 0 ? null : targets[0];
+	const navigation = file.findNavigationAt(line, column);
+	if (!navigation) {
+		return null;
+	}
+	assert.ok(navigation.targets.length <= 1, 'expected at most one navigation target');
+	return navigation.targets[0];
 }
 
 function findPosition(source: string, lineFragment: string, needle: string): { line: number; column: number } {

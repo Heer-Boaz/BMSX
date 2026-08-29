@@ -16,7 +16,10 @@ import {
 	getDefaultLuaBuiltinDescriptors,
 	type LuaStaticDiagnostic,
 } from './diagnostics';
-import { compareSourcePosition, sourcePositionInRange } from './source_range';
+import {
+	compareSourcePosition,
+	findOrderedSourceRangeEntryAtPosition,
+} from './source_range';
 import { buildLuaKnownNameSet, isReservedIntrinsicName, isReservedMemoryMapName, semanticSymbolKindToLuaSymbolKind } from './common';
 
 export type LuaSemanticFrontendSource = {
@@ -61,11 +64,18 @@ export type LuaSemanticPositionTarget = {
 
 export type LuaSemanticPositionSymbols = {
 	origin: LuaSourceRange;
+	label: string;
 	targets: readonly LuaSemanticPositionTarget[];
 };
 
 export type LuaSemanticReferenceQuery = LuaSemanticPositionSymbols & {
 	references: readonly Ref[];
+};
+
+export type LuaSemanticNavigationQuery = {
+	origin: LuaSourceRange;
+	label: string;
+	targets: readonly LuaSemanticNavigationTarget[];
 };
 
 export type LuaCallHierarchySymbolItem = {
@@ -94,7 +104,7 @@ export type LuaSemanticFrontendFile = {
 	diagnostics: readonly LuaStaticDiagnostic[];
 	getDeclaration(identifier: LuaIdentifierExpression): Decl | undefined;
 	getReference(identifier: LuaIdentifierExpression): LuaBoundReference | undefined;
-	getNavigationTargetsAt(line: number, column: number): readonly LuaSemanticNavigationTarget[];
+	findNavigationAt(line: number, column: number): LuaSemanticNavigationQuery | null;
 };
 
 export type LuaSemanticFrontend = {
@@ -192,6 +202,7 @@ class SnapshotSemanticFrontend implements LuaSemanticFrontend {
 		}
 		return {
 			origin: symbols.origin,
+			label: symbols.label,
 			targets: symbols.targets,
 			references: this.snapshot.symbolResolver.getReferencesForSymbols(symbolIds),
 		};
@@ -307,7 +318,7 @@ function createBoundFile(
 			const ref = source.referencesBySyntax.get(identifier);
 			return ref === undefined ? undefined : bindReference(ref);
 		},
-		getNavigationTargetsAt(line: number, column: number): readonly LuaSemanticNavigationTarget[] {
+		findNavigationAt(line: number, column: number): LuaSemanticNavigationQuery | null {
 			const symbols = findPositionSymbols(source, snapshot, line, column);
 			if (symbols) {
 				const targets = new Array<LuaSemanticNavigationTarget>(symbols.targets.length);
@@ -319,20 +330,25 @@ function createBoundFile(
 						range: declaration.range,
 					};
 				}
-				return targets;
+				return {
+					origin: symbols.origin,
+					label: symbols.label,
+					targets,
+				};
 			}
-			for (let index = 0; index < requireTargetsByStart.length; index += 1) {
-				const target = requireTargetsByStart[index];
-				if (!sourcePositionInRange(line, column, target.range)) {
-					continue;
-				}
-				return [{
-					kind: 'require_module',
-					range: target.target,
-					moduleName: target.moduleName,
-				}];
+			const target = findOrderedSourceRangeEntryAtPosition(requireTargetsByStart, line, column);
+			if (target) {
+				return {
+					origin: target.range,
+					label: target.moduleName,
+					targets: [{
+						kind: 'require_module',
+						range: target.target,
+						moduleName: target.moduleName,
+					}],
+				};
 			}
-			return [];
+			return null;
 		},
 	};
 }
@@ -343,40 +359,49 @@ function findPositionSymbols(
 	line: number,
 	column: number,
 ): LuaSemanticPositionSymbols | null {
-	const decls = source.decls;
-	for (let index = 0; index < decls.length; index += 1) {
-		const decl = decls[index];
-		if (sourcePositionInRange(line, column, decl.range)) {
-			return {
-				origin: decl.range,
-				targets: [{ id: decl.id, declaration: decl }],
-			};
-		}
-	}
-	const refs = source.refs;
-	for (let index = 0; index < refs.length; index += 1) {
-		const ref = refs[index];
-		if (!sourcePositionInRange(line, column, ref.range)) {
-			continue;
-		}
-		const targetIds = snapshot.symbolResolver.resolveReferenceTargets(ref);
-		if (targetIds.length === 0) {
-			continue;
-		}
-		const targets = new Array<LuaSemanticPositionTarget>(targetIds.length);
-		for (let targetIndex = 0; targetIndex < targetIds.length; targetIndex += 1) {
-			const targetId = targetIds[targetIndex];
-			targets[targetIndex] = {
-				id: targetId,
-				declaration: snapshot.symbolResolver.getDeclaration(targetId),
-			};
-		}
+	const decl = findOrderedSourceRangeEntryAtPosition(source.decls, line, column);
+	if (decl) {
 		return {
-			origin: ref.range,
-			targets,
+			origin: decl.range,
+			label: semanticOccurrenceLabel(decl.symbolKey, decl.name, false),
+			targets: [{ id: decl.id, declaration: decl }],
 		};
 	}
+	const ref = findOrderedSourceRangeEntryAtPosition(source.refs, line, column);
+	if (ref) {
+		const targetIds = snapshot.symbolResolver.resolveReferenceTargets(ref);
+		if (targetIds.length > 0) {
+			const targets = new Array<LuaSemanticPositionTarget>(targetIds.length);
+			for (let targetIndex = 0; targetIndex < targetIds.length; targetIndex += 1) {
+				const targetId = targetIds[targetIndex];
+				targets[targetIndex] = {
+					id: targetId,
+					declaration: snapshot.symbolResolver.getDeclaration(targetId),
+				};
+			}
+			return {
+				origin: ref.range,
+				label: semanticOccurrenceLabel(ref.symbolKey, ref.name, ref.referenceKind === 'method'),
+				targets,
+			};
+		}
+	}
 	return null;
+}
+
+function semanticOccurrenceLabel(
+	symbolKey: string,
+	name: string,
+	method: boolean,
+): string {
+	if (symbolKey.length === 0) {
+		return name;
+	}
+	if (!method) {
+		return symbolKey;
+	}
+	const separator = symbolKey.lastIndexOf('.');
+	return separator === -1 ? name : `${symbolKey.slice(0, separator)}:${name}`;
 }
 
 type LuaRequireNavigationTarget = {
