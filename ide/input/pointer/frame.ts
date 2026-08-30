@@ -1,6 +1,7 @@
 import type { PlayerInput } from '../../../hosts/common/input/player';
 import { applyScrollbarScroll } from './scrollbar';
-import { clearHoverTooltip, clearGotoHoverHighlight } from '../../editor/contrib/intellisense/engine';
+import { clearGotoHoverHighlight } from '../../editor/contrib/intellisense/engine';
+import { clearHoverTooltip } from '../../editor/contrib/hover/controller';
 import { mapScreenPointToViewport } from '../../editor/ui/view/view';
 import { updateTabHoverState } from '../../workbench/input/pointer/tab_bar/pointer';
 import type { PointerSnapshot } from '../../common/models';

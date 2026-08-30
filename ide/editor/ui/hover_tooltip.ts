@@ -2,11 +2,11 @@ import { clamp } from '../../../machine/ts/common/clamp';
 import { api } from '../../runtime/overlay_api';
 import * as constants from '../../common/constants';
 import { drawEditorText } from '../render/text_renderer';
-import type { CodeHoverTooltip, PointerSnapshot } from '../../common/models';
+import type { PointerSnapshot } from '../../common/models';
 import { ensureVisualLines, measureText } from '../common/text/layout';
 import { getCodeAreaBounds, resolvePointerColumn, resolvePointerRow } from './view/view';
 import { point_in_rect } from '../../../machine/ts/common/rect';
-import { intellisenseUiState } from '../contrib/intellisense/ui_state';
+import { hoverState, type CodeHoverTooltip } from '../contrib/hover/state';
 import { editorDocumentState } from '../editing/document_state';
 import { editorViewState } from './view/state';
 import type { RectBounds } from '../../../machine/ts/common/rect';
@@ -19,7 +19,7 @@ const hoverTooltipBubbleBounds: RectBounds = {
 };
 
 export function drawHoverTooltip(codeTop: number, codeBottom: number, textLeft: number): void {
-	const tooltip = intellisenseUiState.hoverTooltip;
+	const tooltip = hoverState.tooltip;
 	if (!tooltip) {
 		return;
 	}
@@ -114,13 +114,13 @@ export function drawHoverTooltip(codeTop: number, codeBottom: number, textLeft: 
 }
 
 export function adjustHoverTooltipScroll(stepCount: number): boolean {
-	if (!intellisenseUiState.hoverTooltip) {
+	if (!hoverState.tooltip) {
 		return false;
 	}
 	if (stepCount === 0) {
 		return false;
 	}
-	const tooltip = intellisenseUiState.hoverTooltip;
+	const tooltip = hoverState.tooltip;
 	const totalLines = tooltip.contentLines.length;
 	if (totalLines <= tooltip.visibleLineCount || tooltip.visibleLineCount <= 0) {
 		const maxVisible = Math.max(1, Math.min(constants.HOVER_TOOLTIP_MAX_VISIBLE_LINES, totalLines));
@@ -142,7 +142,7 @@ export function adjustHoverTooltipScroll(stepCount: number): boolean {
 }
 
 export function isPointInHoverTooltip(x: number, y: number): boolean {
-	const tooltip = intellisenseUiState.hoverTooltip;
+	const tooltip = hoverState.tooltip;
 	if (!tooltip || !tooltip.bubbleBounds) {
 		return false;
 	}

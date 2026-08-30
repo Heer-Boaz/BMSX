@@ -1,5 +1,6 @@
 import type { PointerSnapshot } from '../../../common/models';
-import { clearHoverTooltip, clearGotoHoverHighlight } from '../../../editor/contrib/intellisense/engine';
+import { clearGotoHoverHighlight } from '../../../editor/contrib/intellisense/engine';
+import { clearHoverTooltip } from '../../../editor/contrib/hover/controller';
 import { resetBlink } from '../../../editor/render/caret';
 import { measureText } from '../../../editor/common/text/layout';
 import { editorPointerState } from '../../pointer/state';

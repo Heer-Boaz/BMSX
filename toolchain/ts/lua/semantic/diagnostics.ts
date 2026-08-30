@@ -29,8 +29,8 @@ import {
 	getLuaBuiltinMinimumArgumentCount,
 	getLuaCallMinimumArgumentCount,
 	getLuaCallStyle,
-	resolveStaticLuaExpressionPath,
 } from './call_signature';
+import { resolveStaticLuaExpressionPath } from './expression_path';
 
 export type LuaStaticDiagnostic = {
 	row: number;

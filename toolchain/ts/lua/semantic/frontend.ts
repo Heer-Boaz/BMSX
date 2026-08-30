@@ -30,6 +30,12 @@ import {
 	provideLuaSignatureHelp,
 	type LuaSignatureHelp,
 } from './signature_help';
+import { provideLuaHover, type LuaHover } from './hover';
+import {
+	provideLuaEvaluatableExpression,
+	type LuaEvaluatableExpression,
+} from './evaluatable_expression';
+import { findLuaSemanticOccurrenceAt } from './position_query';
 
 export type LuaSemanticFrontendSource = {
 	path: string;
@@ -130,6 +136,8 @@ export type LuaSemanticFrontend = {
 	findSymbolsByPosition(path: string, line: number, column: number): LuaSemanticPositionSymbols | null;
 	findReferencesByPosition(path: string, line: number, column: number): LuaSemanticReferenceQuery | null;
 	provideSignatureHelp(path: string, line: number, column: number): LuaSignatureHelp | null;
+	provideHover(path: string, line: number, column: number): LuaHover | null;
+	provideEvaluatableExpression(path: string, line: number, column: number): LuaEvaluatableExpression | null;
 	provideIncomingCalls(
 		symbolId: SymbolID,
 		allowedPaths?: ReadonlySet<string>,
@@ -245,6 +253,31 @@ class SnapshotSemanticFrontend implements LuaSemanticFrontend {
 			line,
 			column,
 		);
+	}
+
+	public provideHover(path: string, line: number, column: number): LuaHover | null {
+		const source = this.snapshot.getFileData(path);
+		if (!source) {
+			return null;
+		}
+		return provideLuaHover(
+			source,
+			this.snapshot.symbolResolver,
+			this.builtinDescriptorLookup,
+			line,
+			column,
+		);
+	}
+
+	public provideEvaluatableExpression(
+		path: string,
+		line: number,
+		column: number,
+	): LuaEvaluatableExpression | null {
+		const source = this.snapshot.getFileData(path);
+		return source
+			? provideLuaEvaluatableExpression(source, line, column)
+			: null;
 	}
 
 	public provideIncomingCalls(
@@ -470,34 +503,36 @@ function findPositionSymbols(
 	line: number,
 	column: number,
 ): LuaSemanticPositionSymbols | null {
-	const decl = findOrderedSourceRangeEntryAtPosition(source.decls, line, column);
-	if (decl) {
+	const occurrence = findLuaSemanticOccurrenceAt(source, line, column);
+	if (occurrence === null) {
+		return null;
+	}
+	if (occurrence.kind === 'declaration') {
+		const decl = occurrence.declaration;
 		return {
 			origin: decl.range,
 			label: semanticOccurrenceLabel(decl.symbolKey, decl.name, false),
 			targets: [{ id: decl.id, declaration: decl }],
 		};
 	}
-	const ref = findOrderedSourceRangeEntryAtPosition(source.refs, line, column);
-	if (ref) {
-		const targetIds = snapshot.symbolResolver.resolveReferenceTargets(ref);
-		if (targetIds.length > 0) {
-			const targets = new Array<LuaSemanticPositionTarget>(targetIds.length);
-			for (let targetIndex = 0; targetIndex < targetIds.length; targetIndex += 1) {
-				const targetId = targetIds[targetIndex];
-				targets[targetIndex] = {
-					id: targetId,
-					declaration: snapshot.symbolResolver.getDeclaration(targetId),
-				};
-			}
-			return {
-				origin: ref.range,
-				label: semanticOccurrenceLabel(ref.symbolKey, ref.name, ref.referenceKind === 'method'),
-				targets,
-			};
-		}
+	const ref = occurrence.reference;
+	const targetIds = snapshot.symbolResolver.resolveReferenceTargets(ref);
+	if (targetIds.length === 0) {
+		return null;
 	}
-	return null;
+	const targets = new Array<LuaSemanticPositionTarget>(targetIds.length);
+	for (let targetIndex = 0; targetIndex < targetIds.length; targetIndex += 1) {
+		const targetId = targetIds[targetIndex];
+		targets[targetIndex] = {
+			id: targetId,
+			declaration: snapshot.symbolResolver.getDeclaration(targetId),
+		};
+	}
+	return {
+		origin: ref.range,
+		label: semanticOccurrenceLabel(ref.symbolKey, ref.name, ref.referenceKind === 'method'),
+		targets,
+	};
 }
 
 function semanticOccurrenceLabel(

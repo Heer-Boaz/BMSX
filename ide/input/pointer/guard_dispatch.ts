@@ -1,5 +1,6 @@
 import { isResourceViewActive } from '../../workbench/ui/tabs';
-import { clearHoverTooltip, clearGotoHoverHighlight } from '../../editor/contrib/intellisense/engine';
+import { clearGotoHoverHighlight } from '../../editor/contrib/intellisense/engine';
+import { clearHoverTooltip } from '../../editor/contrib/hover/controller';
 import type { PointerSnapshot } from '../../common/models';
 import { handleBlockingWorkbenchModalPointer, hasBlockingWorkbenchModal } from '../../workbench/contrib/modal/blocking_modal';
 import { stopPointerSelectionAndResetClicks } from './state';

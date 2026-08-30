@@ -88,6 +88,18 @@ De huidige IDE- en debuggergrenzen zijn:
   uitzonderingspad. Incomplete calls blijven tijdens parser-recovery echte
   callsites; de renderer consumeert alleen het providerresultaat en behoudt zijn
   gemeten layout zolang hint, fontmeting en beschikbare breedte gelijk blijven;
+- semantic hover en debugger-evaluatie zijn afzonderlijke language features.
+  Hover begint bij dezelfde retained occurrence en workspace-resolver als
+  definition en signature help; een geexporteerde functionwaarde volgt de
+  gedeelde demand-graph en wordt niet als naamloos table-field gepresenteerd.
+  De evaluatable-expressionprovider levert uitsluitend een door de binder
+  behouden statisch Lua-pad. De editor composeert dat resultaat eventueel met
+  de waarde uit de stilstaande guest en verzint bij een runtime-miss geen
+  statische debuggerwaarde. Regel-scans, cartlibkennis en debuggerstate horen
+  niet in beide providers. De hover-controller behoudt ook negatieve resultaten
+  op documentversie, semantic snapshot en execution point; een onveranderde
+  Alt-hover mag daardoor niet iedere hostframe opnieuw analyseren, inspecteren
+  of tekst wrappen;
 - Back en Forward bewaren editorlocaties op het moment dat een navigatiecommando
   vertrekt. Een cartridge-entry opent cartridgebron en niet eerst de BIOS-entry;
 - stackframes en statement-stepping gebruiken de toolingmetadata van de geladen
@@ -109,8 +121,8 @@ splitsen.
 | File-semantiek | binder over één AST | declaraties, scopes, occurrences, callable facts en generieke value-flowfacts | cross-file targets, navigatiekeuzes of UI-boomnodes |
 | Programmasnapshot | semantische workspace | geordende immutable file-records; ongewijzigde records behouden hun identiteit | tweede kopieën van filegraphs of feature-specifieke caches |
 | Resolutie | workspace symbol resolver en retained demand-graph | symboltargets, bewezen call-edges en op aanvraag opgeloste value-identiteiten voor precies één immutable snapshot | mutatie van file-records, editorbuffers of frameworkregels |
-| Language features | definition-, references-, rename-, signature-help- en call-hierarchyproviders | vlakke, gesorteerde protocolresultaten | opnieuw parsen, opnieuw binden of eigen semantische heuristiek |
-| Editor/workbench | sessie- en viewmodels | selectie, expansie, navigatiehistorie en gerenderde items | Lua-resolutie of runtimewaarde-inferentie |
+| Language features | definition-, references-, rename-, hover-, evaluatable-expression-, signature-help- en call-hierarchyproviders | vlakke, gesorteerde protocolresultaten | opnieuw parsen, opnieuw binden of eigen semantische heuristiek |
+| Editor/workbench | sessie- en viewmodels | selectie, expansie, navigatiehistorie, gerenderde items en compositie met feitelijke debuggerwaarden | Lua-resolutie of runtimewaarde-inferentie |
 
 Daaruit volgen deze harde migratiegates:
 
@@ -162,6 +174,11 @@ npx tsx --tsconfig tsconfig.base.json \
   scripts/dev/profile_lua_semantics.ts \
   --outgoing cartlib/world/world.lua:684:22 \
   carts/nemesis_s/cart.lua cartlib machine/bios carts/nemesis_s
+
+npx tsx --tsconfig tsconfig.base.json \
+  scripts/dev/profile_lua_semantics.ts \
+  --hover carts/2025/combat.lua:475:43 \
+  carts/2025/combat.lua cartlib machine/bios carts/2025
 ```
 
 ## Validatiebasis voor inputwerk
@@ -212,7 +229,7 @@ beide vervangt de zichtbare targetmetingen hieronder.
 | `GX-CART-RESIDENCY-LIVE-01` | Doorloop atlaswissels in `2024`, `2025`, `nemesis_s` en `pietious`; framebufferpages, vaste system-VRAM, palette-CLUTs en hergebruikte cart-atlassen mogen elkaar niet zichtbaar beschadigen. | WebGL2 en GLES2; daarna echte SNES Mini. |
 | `HOST-OSK-LIVE-01` | Touch en iedere toegewezen/aangesloten controller openen en besturen quick menu en onscreen keyboard. Shift, Backspace, Delete, spatie, Enter, cursor, Home/End en lowercase/uppercase labels werken; sluiten lekt geen chord of letter naar cart, terminal of IDE. Browser-portremaps werken voor fysieke en onscreen devices zonder quick-menu-/shortcutcontrols mee te remappen. Cheat-/sealtekst kan zonder fysiek keyboard worden ingevoerd. | iPhone/browser en echte SNES Mini. |
 | `HOST-SUPERVISOR-01` | Select+L opent en sluit de terminal vanaf iedere aangesloten frontendport exact eenmaal zonder gameplayinput te lekken. | Echte SNES Mini. |
-| `IDE-LIVE-01` | Tijdens een cartridge-run opent de IDE de cartridge-entry; Back en Forward keren terug naar de exacte cursorlocatie; Go to Definition navigeert door cart-, cartlib-, gegenereerde en statisch geerfde Lua-symbolen; Signature Help volgt nested, multiline en nog incomplete user-/module-/builtin-calls; Call Hierarchy wisselt lazy tussen incoming en outgoing; faults tonen authored context voor anonieme functies; Step Into, Over en Out blijven correct voor fysieke en inline frames. | Browser Studio op WebGL2. |
+| `IDE-LIVE-01` | Tijdens een cartridge-run opent de IDE de cartridge-entry; Back en Forward keren terug naar de exacte cursorlocatie; Go to Definition navigeert door cart-, cartlib-, gegenereerde en statisch geerfde Lua-symbolen; Hover toont resolved declarations en alleen waar mogelijk de echte suspended guestwaarde; Signature Help volgt nested, multiline en nog incomplete user-/module-/builtin-calls; Call Hierarchy wisselt lazy tussen incoming en outgoing; faults tonen authored context voor anonieme functies; Step Into, Over en Out blijven correct voor fysieke en inline frames. | Browser Studio op WebGL2. |
 | `PERF-03` | De op de echte target geselecteerde ARM-fetch-, NV-barrier- of dependency-copyroute rendert exact en houdt 50 Hz zonder backlog. | Windows RetroArch en echte SNES Mini. |
 | `PERF-04` | De 16k audio-/presentatiesoak houdt 50 Hz zonder sampleverlies, backlog of periodieke hitch. | Zichtbare frontend en daarna SNES Mini. |
 | `SNES-ABI-01` | De door de GCC-10 cross-build en QEMU-smoke geaccepteerde core start tegen de actuele target-root en frontend zonder ABI-, loader- of GLES2-fouten. | Actuele SNES Mini-rootdump en hardware. |

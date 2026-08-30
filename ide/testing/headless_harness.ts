@@ -20,6 +20,9 @@ import type { EditorDebugCommandId } from '../common/commands';
 import type { LuaSignatureHelp } from '../../toolchain/ts/lua/semantic/signature_help';
 import { toggleBreakpoint } from '../workbench/contrib/debugger/controller';
 import { handleLuaError } from '../workbench/runtime_errors';
+import { getActiveCodeTabContext } from '../workbench/ui/code_tab/contexts';
+import { updateHoverTooltip } from '../editor/contrib/hover/controller';
+import { hoverState, type CodeHoverTooltip } from '../editor/contrib/hover/state';
 import type {
 	RecordedLogMessage,
 	RecordingLogOutput,
@@ -42,6 +45,7 @@ export type HeadlessIdeHarness = {
 	getLogMessageCount(): number;
 	getLogMessage(index: number): RecordedLogMessage;
 	getSignatureHelp(): LuaSignatureHelp | null;
+	getHover(row: number, column: number): CodeHoverTooltip | null;
 	/** Execute Hot Resume directly against the source registry's current dirty state. */
 	hotResumeCore(): void;
 	/** Full IDE hot-resume action, completed after its queued rebuild settles. */
@@ -95,6 +99,17 @@ export function createHeadlessIdeHarness(
 		getLogMessageCount: () => logOutput.messages.length,
 		getLogMessage: index => logOutput.messages[index],
 		getSignatureHelp: () => ide.editor.completion.hint,
+		getHover: (row, column) => {
+			updateHoverTooltip(
+				ide.luaTooling,
+				ide.fault,
+				runtime,
+				getActiveCodeTabContext(),
+				row,
+				column,
+			);
+			return hoverState.tooltip;
+		},
 		hotResumeCore: () => {
 			hotResume(
 				ide.sources,

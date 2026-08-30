@@ -1,4 +1,4 @@
-import { LuaLexer } from '../../../toolchain/ts/lua/syntax/lexer';
+import { isLuaIdentifier } from '../../../toolchain/ts/lua/syntax/identifier';
 
 export function parseLuaIdentifierChain(expression: string): string[] {
 	if (!expression) {
@@ -12,14 +12,14 @@ export function parseLuaIdentifierChain(expression: string): string[] {
 			continue;
 		}
 		const segment = expression.slice(segmentStart, index);
-		if (!isValidIdentifierSegment(segment)) {
+		if (!isLuaIdentifier(segment)) {
 			return null;
 		}
 		parts.push(segment);
 		segmentStart = index + 1;
 	}
 	const tailSegment = expression.slice(segmentStart);
-	if (!isValidIdentifierSegment(tailSegment)) {
+	if (!isLuaIdentifier(tailSegment)) {
 		return null;
 	}
 	parts.push(tailSegment);
@@ -32,19 +32,4 @@ export function resolveLuaIdentifierChainRoot(expression: string): string {
 		return null;
 	}
 	return parts[0];
-}
-
-function isValidIdentifierSegment(value: string): boolean {
-	if (value.length === 0) {
-		return false;
-	}
-	if (!LuaLexer.isIdentifierStart(value.charAt(0))) {
-		return false;
-	}
-	for (let index = 1; index < value.length; index += 1) {
-		if (!LuaLexer.isIdentifierPart(value.charAt(index))) {
-			return false;
-		}
-	}
-	return true;
 }

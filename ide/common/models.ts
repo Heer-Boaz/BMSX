@@ -1,6 +1,4 @@
 import type {
-	LuaHoverScope,
-	LuaHoverValueState,
 	LuaDefinitionLocation,
 	LuaSymbolEntry,
 } from '../../toolchain/ts/lua/semantic_contracts';
@@ -190,21 +188,6 @@ export type EditorTabKind = 'resource_view' | 'code_editor';
 export type EditorRuntimeSyncState = 'synced' | 'runtime_update_pending' | 'diverged';
 
 export type ScrollbarKind = 'codeVertical' | 'codeHorizontal' | 'resourceVertical' | 'resourceHorizontal' | 'viewerVertical';
-
-export type CodeHoverTooltip = {
-	expression: string;
-	contentLines: string[];
-	valueType: string;
-	scope: LuaHoverScope;
-	state: LuaHoverValueState;
-	path: string;
-	row: number;
-	startColumn: number;
-	endColumn: number;
-	scrollOffset: number;
-	visibleLineCount: number;
-	bubbleBounds: RectBounds;
-};
 
 export type ResourceViewerState = {
 	resource: RuntimeResource;

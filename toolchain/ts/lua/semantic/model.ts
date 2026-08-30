@@ -69,6 +69,10 @@ import {
 	type ValueAssignmentEntry,
 } from './value_graph';
 import { WorkspaceSymbolResolver } from './workspace_symbol_resolver';
+import {
+	resolveStaticLuaExpressionPath,
+	resolveStaticLuaNamePath,
+} from './expression_path';
 
 export type SymbolID = string;
 
@@ -114,6 +118,7 @@ export type Ref = {
 	isCall: boolean;
 	caller?: SymbolID;
 	referenceKind: 'identifier' | 'self' | 'member' | 'method';
+	staticExpressionPath: string | null;
 	receiverSymbolKey?: string;
 	receiverValue?: SemanticValueSource;
 	call?: CallValueEntry;
@@ -1418,6 +1423,7 @@ class SemanticBuilder {
 				target: existing.id,
 				isWrite: true,
 				referenceKind: 'identifier',
+				staticExpressionPath: identifier.name,
 			});
 			return { decl: existing, namePath: existing.namePath, path: identifier.name };
 		}
@@ -1431,6 +1437,7 @@ class SemanticBuilder {
 				target: globalDecl.id,
 				isWrite: true,
 				referenceKind: 'identifier',
+				staticExpressionPath: identifier.name,
 			});
 			return { decl: globalDecl, namePath: globalDecl.namePath, path: identifier.name };
 		}
@@ -1443,6 +1450,7 @@ class SemanticBuilder {
 			target: decl.id,
 			isWrite: true,
 			referenceKind: 'identifier',
+			staticExpressionPath: identifier.name,
 		});
 		return { decl, namePath: decl.namePath, path: identifier.name };
 	}
@@ -1479,6 +1487,7 @@ class SemanticBuilder {
 			target: decl.id,
 			isWrite: true,
 			referenceKind: 'member',
+			staticExpressionPath: resolveStaticLuaExpressionPath(member),
 			receiverSymbolKey: baseDecl?.symbolKey || (baseInfo?.namePath && joinNamePath(baseInfo.namePath)),
 			receiverValue: baseInfo?.valueSource,
 		});
@@ -1512,6 +1521,7 @@ class SemanticBuilder {
 				target: decl.id,
 				isWrite: true,
 				referenceKind: 'member',
+				staticExpressionPath: resolveStaticLuaExpressionPath(indexExpression),
 				receiverSymbolKey: baseInfo?.decl?.symbolKey || (baseInfo?.namePath && joinNamePath(baseInfo.namePath)),
 				receiverValue: baseInfo?.valueSource,
 			});
@@ -1563,6 +1573,7 @@ class SemanticBuilder {
 			calleeInfo?.decl,
 		) ?? (calleeInfo?.valueSource ? undefined : this.properties.get(joinNamePath(namePath)));
 		const targetId = decl?.id;
+		const receiverExpressionPath = resolveStaticLuaExpressionPath(callExpression.callee);
 		return this.recordReference({
 			syntax: method,
 			namePath,
@@ -1571,6 +1582,9 @@ class SemanticBuilder {
 			target: targetId,
 			isWrite: false,
 			referenceKind: 'method',
+			staticExpressionPath: receiverExpressionPath === null
+				? null
+				: `${receiverExpressionPath}.${methodName}`,
 			receiverSymbolKey,
 			receiverValue: calleeInfo?.valueSource,
 			isCall: true,
@@ -1612,6 +1626,7 @@ class SemanticBuilder {
 						range,
 						isWrite,
 						referenceKind: 'self',
+						staticExpressionPath: identifier.name,
 						isCall,
 					});
 					return {
@@ -1633,6 +1648,7 @@ class SemanticBuilder {
 				target: targetId,
 				isWrite,
 				referenceKind: 'identifier',
+				staticExpressionPath: identifier.name,
 				isCall,
 			});
 			return {
@@ -1651,6 +1667,7 @@ class SemanticBuilder {
 				target: globalDecl.id,
 				isWrite,
 				referenceKind: 'identifier',
+				staticExpressionPath: identifier.name,
 				isCall,
 			});
 			return {
@@ -1666,6 +1683,7 @@ class SemanticBuilder {
 			range,
 			isWrite,
 			referenceKind: 'identifier',
+			staticExpressionPath: identifier.name,
 			isCall,
 		});
 		return {
@@ -1704,6 +1722,7 @@ class SemanticBuilder {
 			target: targetId,
 			isWrite,
 			referenceKind: 'member',
+			staticExpressionPath: resolveStaticLuaExpressionPath(member),
 			receiverSymbolKey: baseInfo?.decl?.symbolKey || (baseInfo?.namePath && joinNamePath(baseInfo.namePath)),
 			receiverValue: baseInfo?.valueSource,
 			isCall,
@@ -2071,6 +2090,7 @@ class SemanticBuilder {
 		target?: SymbolID;
 		isWrite: boolean;
 		referenceKind: 'identifier' | 'self' | 'member' | 'method';
+		staticExpressionPath: string | null;
 		receiverSymbolKey?: string;
 		receiverValue?: SemanticValueSource;
 		isCall?: boolean;
@@ -2085,6 +2105,7 @@ class SemanticBuilder {
 			isWrite: options.isWrite,
 			isCall: !!options.isCall,
 			referenceKind: options.referenceKind,
+			staticExpressionPath: options.staticExpressionPath,
 			receiverSymbolKey: options.receiverSymbolKey,
 			receiverValue: options.receiverValue,
 		};
@@ -2143,6 +2164,7 @@ class SemanticBuilder {
 				target: targetDecl?.id,
 				isWrite: false,
 				referenceKind: index === 0 ? 'identifier' : 'member',
+				staticExpressionPath: resolveStaticLuaNamePath(namePath),
 			});
 		}
 	}
@@ -2166,6 +2188,7 @@ class SemanticBuilder {
 			target: targetDecl?.id,
 			isWrite: true,
 			referenceKind: method ? 'method' : (decl.namePath.length === 1 ? 'identifier' : 'member'),
+			staticExpressionPath: resolveStaticLuaNamePath(decl.namePath),
 		});
 	}
 

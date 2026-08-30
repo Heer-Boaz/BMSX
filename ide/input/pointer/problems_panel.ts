@@ -1,6 +1,7 @@
 import { point_in_rect } from '../../../machine/ts/common/rect';
 import type { PointerSnapshot } from '../../common/models';
-import { clearHoverTooltip, clearGotoHoverHighlight } from '../../editor/contrib/intellisense/engine';
+import { clearGotoHoverHighlight } from '../../editor/contrib/intellisense/engine';
+import { clearHoverTooltip } from '../../editor/contrib/hover/controller';
 import { getProblemsPanelBounds, isPointerOverProblemsPanelDivider, problemsPanel, setProblemsPanelHeightFromViewportY } from '../../workbench/contrib/problems/panel/controller';
 import { editorChromeState } from '../../workbench/ui/chrome_state';
 import { editorPointerState, stopPointerSelectionAndResetClicks } from './state';

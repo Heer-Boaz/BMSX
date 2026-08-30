@@ -1,8 +1,4 @@
-import {
-	LuaSyntaxKind,
-	type LuaCallExpression,
-	type LuaExpression,
-} from '../syntax/ast';
+import type { LuaCallExpression } from '../syntax/ast';
 import type { LuaBuiltinDescriptor } from '../semantic_contracts';
 import type { FunctionSignatureInfo, Ref } from './model';
 
@@ -68,20 +64,4 @@ export function formatLuaCallReferencePath(reference: Ref, callStyle: LuaCallSty
 		receiver += `.${reference.namePath[index]}`;
 	}
 	return `${receiver}:${reference.name}`;
-}
-
-export function resolveStaticLuaExpressionPath(expression: LuaExpression): string | null {
-	if (expression.kind === LuaSyntaxKind.IdentifierExpression) {
-		return expression.name;
-	}
-	if (expression.kind === LuaSyntaxKind.MemberExpression) {
-		const base = resolveStaticLuaExpressionPath(expression.base);
-		return base === null ? null : `${base}.${expression.member.name}`;
-	}
-	if (expression.kind === LuaSyntaxKind.IndexExpression
-		&& expression.index.kind === LuaSyntaxKind.StringLiteralExpression) {
-		const base = resolveStaticLuaExpressionPath(expression.base);
-		return base === null ? null : `${base}.${expression.index.value}`;
-	}
-	return null;
 }

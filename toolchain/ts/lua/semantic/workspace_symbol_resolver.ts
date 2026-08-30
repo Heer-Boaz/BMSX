@@ -32,6 +32,7 @@ export class WorkspaceSymbolResolver {
 	private valueIdentities?: WorkspaceValueIdentityIndex;
 	private valueGraph?: WorkspaceValueGraph;
 	private readonly referenceTargets: Map<Ref, readonly SymbolID[]> = new Map();
+	private readonly referenceFunctionTargets: Map<Ref, readonly SymbolID[]> = new Map();
 	private readonly callableTargets: Map<LuaCallSite, readonly SymbolID[]> = new Map();
 	private readonly referencesBySymbol: Map<SymbolID, readonly Ref[]> = new Map();
 	private readonly membersBySource: Map<string, readonly Decl[]> = new Map();
@@ -68,6 +69,7 @@ export class WorkspaceSymbolResolver {
 		const targets = this.resolveReferenceTargetsUncached(ref);
 		if (this.retainCallTargets(ref, targets)) {
 			this.referenceTargets.clear();
+			this.referenceFunctionTargets.clear();
 			this.callableTargets.clear();
 			this.referencesBySymbol.clear();
 		}
@@ -80,23 +82,45 @@ export class WorkspaceSymbolResolver {
 		if (retained) {
 			return retained;
 		}
-		const valueGraph = this.getValueGraph();
-		const declarations = callSite.reference
-			? this.resolveReferenceTargets(callSite.reference)
-			: callSite.directTarget === undefined
-				? EMPTY_SYMBOLS
-				: [callSite.directTarget];
 		const targets: SymbolID[] = [];
+		if (callSite.reference) {
+			appendUniqueSymbols(
+				targets,
+				this.resolveReferenceFunctionTargets(callSite.reference),
+			);
+		} else if (callSite.directTarget !== undefined) {
+			appendUniqueSymbols(
+				targets,
+				this.getValueGraph().resolveFunctionDeclarations(
+					declarationValueSource(callSite.directTarget),
+				),
+			);
+		}
+		if (targets.length === 0 && callSite.calleeValue !== undefined) {
+			appendUniqueSymbols(
+				targets,
+				this.getValueGraph().resolveFunctionDeclarations(callSite.calleeValue),
+			);
+		}
+		this.callableTargets.set(callSite, targets);
+		return targets;
+	}
+
+	public resolveReferenceFunctionTargets(reference: Ref): readonly SymbolID[] {
+		const retained = this.referenceFunctionTargets.get(reference);
+		if (retained) {
+			return retained;
+		}
+		const targets: SymbolID[] = [];
+		const declarations = this.resolveReferenceTargets(reference);
+		const valueGraph = this.getValueGraph();
 		for (let index = 0; index < declarations.length; index += 1) {
 			appendUniqueSymbols(
 				targets,
 				valueGraph.resolveFunctionDeclarations(declarationValueSource(declarations[index])),
 			);
 		}
-		if (targets.length === 0 && callSite.calleeValue !== undefined) {
-			appendUniqueSymbols(targets, valueGraph.resolveFunctionDeclarations(callSite.calleeValue));
-		}
-		this.callableTargets.set(callSite, targets);
+		this.referenceFunctionTargets.set(reference, targets);
 		return targets;
 	}
 
@@ -136,6 +160,7 @@ export class WorkspaceSymbolResolver {
 		} while (callGraphChanged);
 		if (retainedCallGraphChanged) {
 			this.referenceTargets.clear();
+			this.referenceFunctionTargets.clear();
 			this.callableTargets.clear();
 			this.referencesBySymbol.clear();
 		}

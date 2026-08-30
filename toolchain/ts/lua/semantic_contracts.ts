@@ -1,7 +1,3 @@
-export type LuaHoverScope = 'global' | 'path';
-
-export type LuaHoverValueState = 'value' | 'not_defined';
-
 export type LuaDefinitionRange = {
 	startLine: number;
 	startColumn: number;
@@ -45,16 +41,4 @@ export type LuaMemberCompletion = {
 	kind: 'method' | 'property';
 	detail: string;
 	parameters: string[];
-};
-
-export type LuaHoverResult = {
-	expression: string;
-	lines: string[];
-	valueType: string;
-	scope: LuaHoverScope;
-	state: LuaHoverValueState;
-	isFunction: boolean;
-	isLocalFunction: boolean;
-	isBuiltin: boolean;
-	definition?: LuaDefinitionLocation;
 };

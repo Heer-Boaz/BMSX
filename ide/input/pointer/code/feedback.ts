@@ -1,5 +1,6 @@
 import { isCodeTabActive } from '../../../workbench/ui/code_tab/contexts';
-import { clearHoverTooltip, clearGotoHoverHighlight, refreshGotoHoverHighlight, updateHoverTooltip } from '../../../editor/contrib/intellisense/engine';
+import { clearGotoHoverHighlight, refreshGotoHoverHighlight } from '../../../editor/contrib/intellisense/engine';
+import { clearHoverTooltip, updateHoverTooltip } from '../../../editor/contrib/hover/controller';
 import { resolvePointerTextPosition } from '../../../editor/ui/view/view';
 import type { CodeAreaBounds } from '../../../editor/ui/view/view';
 import type { PointerSnapshot } from '../../../common/models';
@@ -31,7 +32,8 @@ export function updateCodeAreaPointerFeedback(
 	if (isCodeTabActive()) {
 		const altDown = isAltDown(playerInput);
 		if (!snapshot.primaryPressed && !pointerSelecting && insideCodeArea && altDown) {
-				updateHoverTooltip(bridge, fault, runtime, snapshot, activeContext, bounds);
+			const hover = resolvePointerTextPosition(snapshot.viewportX, snapshot.viewportY, bounds);
+			updateHoverTooltip(bridge, fault, runtime, activeContext, hover.row, hover.column);
 		} else {
 			clearHoverTooltip();
 		}

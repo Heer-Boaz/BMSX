@@ -19,8 +19,7 @@ import {
 } from '../../../../toolchain/ts/rompack/blua32_symbols';
 import type { SourceRange } from '../../../../toolchain/ts/lua/source_range';
 import { resolveInlineLocalContextRange } from '../../../../toolchain/ts/lua/compiler/inline_debug';
-import { DEFAULT_LUA_BUILTIN_NAMES } from '../../../../toolchain/ts/lua/builtin_descriptors';
-import { listLuaBuiltinDescriptors, luaBuiltinMetadata } from '../../../runtime/lua_builtins';
+import { listLuaBuiltinDescriptors } from '../../../runtime/lua_builtins';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import {
 	blua32ToolingImageForDomain,
@@ -30,14 +29,11 @@ import {
 	Blua32GlobalRegisterFile,
 	resolveRuntimeLuaSourceForContext,
 } from '../../../runtime/sources';
-import type { LuaDefinitionLocation, LuaHoverResult, LuaHoverScope, LuaMemberCompletion, LuaSymbolEntry } from '../../../../toolchain/ts/lua/semantic_contracts';
+import type { LuaDefinitionLocation, LuaMemberCompletion, LuaSymbolEntry } from '../../../../toolchain/ts/lua/semantic_contracts';
 import { ensureCursorVisible, updateDesiredColumn } from '../../ui/view/caret/caret';
 import { editorCaretState } from '../../ui/view/caret/state';
 import { intellisenseUiState } from './ui_state';
 import { resetBlink } from '../../render/caret';
-import { resolvePointerTextPosition } from '../../ui/view/view';
-import type { CodeAreaBounds } from '../../ui/view/view';
-import * as constants from '../../../common/constants';
 import { editorRuntimeState } from '../../common/runtime_state';
 import { clearEditorPointerSelectionState } from '../../../input/pointer/state';
 import { parseLuaIdentifierChain } from '../../../language/lua/identifier_chain';
@@ -45,8 +41,7 @@ import type { LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/
 import { getOrCreateSemanticProject } from './semantic/workspace/state';
 import { semanticSymbolKindToLuaSymbolKind } from '../../../../toolchain/ts/lua/semantic/common';
 import { isLuaCommentContext } from '../../../common/text';
-import { writeWrappedOverlayLine } from '../../common/text/layout';
-import type { EditorContextToken, LuaCompletionItem, PointerSnapshot } from '../../../common/models';
+import type { EditorContextToken, LuaCompletionItem } from '../../../common/models';
 import type { EditorDocumentContext } from '../../editing/document_state';
 import {
 	SYSTEM_RESOURCE_DOMAIN,
@@ -74,6 +69,8 @@ type ResolvedIntellisenseValue =
 		readonly source: 'interpreter';
 		readonly value: LuaValue;
 	};
+
+type LuaValueScope = 'global' | 'path';
 
 let nativeMemberCompletionCache: WeakMap<object, { dot?: LuaMemberCompletion[]; colon?: LuaMemberCompletion[] }> = new WeakMap();
 
@@ -114,13 +111,6 @@ function isFunctionOwnMemberName(name: string): boolean {
 	}
 }
 
-function formatHoverValueTypeSuffix(valueType: string): string {
-	if (valueType && valueType !== 'unknown') {
-		return ` (${valueType})`;
-	}
-	return '';
-}
-
 function resolveTableChain(table: LuaTable): LuaTable[] {
 	const chain: LuaTable[] = [];
 	let current: LuaTable = table;
@@ -158,19 +148,6 @@ function resolveTableTypeName(bridge: RuntimeLuaTooling, table: LuaTable): strin
 }
 
 const globalSymbolsCache = new WeakMap<LuaSemanticWorkspaceSnapshot, LuaSymbolEntry[]>();
-
-function hasStaticLuaBuiltinName(name: string): boolean {
-	const trimmed = name.trim();
-	if (trimmed.length === 0) {
-		return false;
-	}
-	for (let index = 0; index < DEFAULT_LUA_BUILTIN_NAMES.length; index += 1) {
-		if (DEFAULT_LUA_BUILTIN_NAMES[index] === trimmed) {
-			return true;
-		}
-	}
-	return false;
-}
 
 function extractFunctionParameters(fn: (...args: unknown[]) => unknown): string[] {
 	const source = Function.prototype.toString.call(fn);
@@ -239,117 +216,6 @@ function sanitizeParameterName(token: string, index: number): string {
 	return sanitized;
 }
 
-function wrapHoverLines(lines: string[]): string[] {
-	const wrapWidth = Math.max(
-		editorViewState.spaceAdvance,
-		editorViewState.viewportWidth - constants.HOVER_TOOLTIP_PADDING_X * 2 - editorViewState.spaceAdvance * 2
-	);
-	const wrapped: string[] = [];
-	for (let i = 0; i < lines.length; i += 1) {
-		writeWrappedOverlayLine(wrapped, lines[i], wrapWidth);
-	}
-	return wrapped;
-}
-
-export function buildHoverContentLines(result: LuaHoverResult): string[] {
-	const lines: string[] = [];
-	if (result.state === 'not_defined') {
-		lines.push(`${result.expression} = not defined`);
-		return wrapHoverLines(lines);
-	}
-	const valueLines = result.lines.length > 0 ? result.lines : [''];
-	if (valueLines.length === 1) {
-		const suffix = formatHoverValueTypeSuffix(result.valueType);
-		lines.push(`${result.expression} = ${valueLines[0]}${suffix}`);
-		return wrapHoverLines(lines);
-	}
-	const suffix = formatHoverValueTypeSuffix(result.valueType);
-	lines.push(`${result.expression}${suffix}`);
-	for (const line of valueLines) lines.push(`  ${line}`);
-	return wrapHoverLines(lines);
-}
-
-export function updateHoverTooltip(
-	bridge: RuntimeLuaTooling,
-	fault: RuntimeFaultState,
-	runtime: Runtime,
-	snapshot: PointerSnapshot,
-	context: EditorDocumentContext,
-	bounds?: CodeAreaBounds,
-): void {
-	const pointer = resolvePointerTextPosition(snapshot.viewportX, snapshot.viewportY, bounds);
-	const row = pointer.row;
-	const column = pointer.column;
-	const path = context.resource.path;
-	const token = extractHoverExpression(editorDocumentState.buffer, row, column, path);
-	if (!token) {
-		clearHoverTooltip();
-		return;
-	}
-	const inspection = inspectLuaExpression(
-		bridge,
-		fault,
-		runtime,
-		token.expression,
-		path,
-		row + 1,
-		token.startColumn + 1,
-		context,
-	);
-	const previousInspection = intellisenseUiState.lastInspectorResult;
-	intellisenseUiState.lastInspectorResult = inspection;
-	if (!inspection) {
-		clearHoverTooltip();
-		return;
-	}
-	if (inspection.isFunction && (inspection.isLocalFunction || inspection.isBuiltin) && inspection.state !== 'value') {
-		clearHoverTooltip();
-		return;
-	}
-	const contentLines = buildHoverContentLines(inspection);
-	const existing = intellisenseUiState.hoverTooltip;
-	if (existing && existing.expression === inspection.expression && existing.path === path) {
-		existing.contentLines = contentLines;
-		existing.valueType = inspection.valueType;
-		existing.scope = inspection.scope;
-		existing.state = inspection.state;
-		existing.path = path;
-		existing.row = row;
-		existing.startColumn = token.startColumn;
-		existing.endColumn = token.endColumn;
-		existing.bubbleBounds = null;
-		if (!previousInspection || previousInspection.expression !== inspection.expression) {
-			existing.scrollOffset = 0;
-			existing.visibleLineCount = 0;
-		}
-		const visibleLineCount = existing.visibleLineCount || 1;
-		const maxOffset = contentLines.length > visibleLineCount ? contentLines.length - visibleLineCount : 0;
-		if (existing.scrollOffset > maxOffset) {
-			existing.scrollOffset = maxOffset;
-		}
-		return;
-	}
-	intellisenseUiState.hoverTooltip = {
-		expression: inspection.expression,
-		contentLines,
-		valueType: inspection.valueType,
-		scope: inspection.scope,
-		state: inspection.state,
-		path,
-		row,
-		startColumn: token.startColumn,
-		endColumn: token.endColumn,
-		scrollOffset: 0,
-		visibleLineCount: 0,
-		bubbleBounds: null,
-	};
-}
-
-export function clearHoverTooltip(): void {
-	intellisenseUiState.hoverTooltip = null;
-	intellisenseUiState.lastInspectorResult = null;
-}
-
 export function buildMemberCompletionItems(bridge: RuntimeLuaTooling, fault: RuntimeFaultState, runtime: Runtime, chain: readonly string[], operator: '.' | ':', domain: ResourceDomain, path: string): LuaCompletionItem[] {
 	const response = listLuaObjectMembers(bridge, fault, runtime, chain, domain, path, operator);
 	if (response.length === 0) {
@@ -387,7 +253,7 @@ export function requestSemanticRefresh(): void {
 			return;
 	}
 }
-function extractHoverExpression(buffer: TextBuffer, row: number, column: number, path: string): { expression: string; startColumn: number; endColumn: number; } {
+function extractIdentifierExpression(buffer: TextBuffer, row: number, column: number, path: string): { expression: string; startColumn: number; endColumn: number; } {
 	if (row < 0 || row >= buffer.getLineCount()) {
 		return null;
 	}
@@ -609,7 +475,7 @@ function resolveIdentifierExpressionForKeyword(row: number, match: ContextMenuTo
 		if (token.type !== LuaTokenType.Identifier) {
 			continue;
 		}
-		return extractHoverExpression(editorDocumentState.buffer, row, token.column - 1, path);
+		return extractIdentifierExpression(editorDocumentState.buffer, row, token.column - 1, path);
 	}
 	return null;
 }
@@ -647,7 +513,7 @@ export function resolveContextMenuToken(row: number, column: number, path: strin
 	if (isLuaCommentContext(buffer, row, safeColumn)) {
 		return null;
 	}
-	const expression = extractHoverExpression(buffer, row, safeColumn, path);
+	const expression = extractIdentifierExpression(buffer, row, safeColumn, path);
 	if (expression) {
 		const segmentText = line.slice(expression.startColumn, expression.endColumn);
 		const isKeyword = KEYWORDS.has(segmentText);
@@ -746,7 +612,23 @@ export function clearReferenceHighlights(): void {
 	referenceState.clear();
 }
 
-export function inspectLuaExpression(bridge: RuntimeLuaTooling, fault: RuntimeFaultState, runtime: Runtime, expression: string, path: string, row: number, column: number, activeContext: EditorDocumentContext): LuaHoverResult {
+export type LuaRuntimeInspection = {
+	readonly expression: string;
+	readonly lines: readonly string[];
+	readonly valueType: string;
+	readonly state: 'value' | 'not_defined';
+};
+
+export function inspectLuaRuntimeExpression(
+	bridge: RuntimeLuaTooling,
+	fault: RuntimeFaultState,
+	runtime: Runtime,
+	expression: string,
+	domain: ResourceDomain,
+	path: string,
+	row: number,
+	column: number,
+): LuaRuntimeInspection | null {
 	const trimmed = expression.trim();
 	if (trimmed.length === 0) {
 		return null;
@@ -760,64 +642,30 @@ export function inspectLuaExpression(bridge: RuntimeLuaTooling, fault: RuntimeFa
 		fault,
 		runtime,
 		chain,
-		activeContext.resource.domain,
+		domain,
 		path,
 		row,
 		column,
 	);
-	const staticDefinition = findStaticDefinitionLocation(bridge, row, column, path, activeContext);
 	if (!resolved) {
-		if (!staticDefinition) {
-			return null;
-		}
-		return {
-			expression: trimmed,
-			lines: ['static definition'],
-			valueType: 'unknown',
-			scope: 'path',
-			state: 'not_defined',
-			isFunction: false,
-			isLocalFunction: false,
-			isBuiltin: false,
-			definition: staticDefinition,
-		};
+		return null;
 	}
 	if (resolved.kind === 'not_defined') {
 		return {
 			expression: trimmed,
 			lines: ['not defined'],
 			valueType: 'undefined',
-			scope: resolved.scope,
 			state: 'not_defined',
-			isFunction: false,
-			isLocalFunction: false,
-			isBuiltin: false,
-			definition: staticDefinition,
 		};
 	}
 	const formatted = resolved.source === 'runtime'
 		? describeSuspendedGuestValueForInspector(bridge, resolved.value)
 		: describeLuaValueForInspector(bridge, resolved.value);
-	const isFunction = formatted.isFunction;
-	const isLocalFunction = isFunction && resolved.scope === 'path';
-	const isBuiltin = isFunction && chain.length === 1 && isLuaBuiltinFunctionName(chain[0]);
-	let definition: LuaDefinitionLocation = null;
-	if (!isBuiltin) {
-		definition = resolveLuaDefinitionMetadata(bridge, resolved.definitionRange);
-		if (!definition) {
-			definition = staticDefinition;
-		}
-	}
 	return {
 		expression: trimmed,
 		lines: formatted.lines,
 		valueType: formatted.valueType,
-		scope: resolved.scope,
 		state: 'value',
-		isFunction,
-		isLocalFunction,
-		isBuiltin,
-		definition,
 	};
 }
 
@@ -1286,8 +1134,8 @@ export function resolveLuaChainValue(
 	usageRow: number,
 	usageColumn: number,
 ): (
-	| ({ kind: 'value'; scope: LuaHoverScope; definitionRange: LuaSourceRange } & ResolvedIntellisenseValue)
-	| { kind: 'not_defined'; scope: LuaHoverScope }
+	| ({ kind: 'value'; scope: LuaValueScope; definitionRange: LuaSourceRange } & ResolvedIntellisenseValue)
+	| { kind: 'not_defined'; scope: LuaValueScope }
 ) {
 	if (parts.length === 0) {
 		return null;
@@ -1363,13 +1211,13 @@ export function resolveLuaChainValue(
 	return null;
 }
 
-export function resolveIdentifierThroughChain(environment: LuaEnvironment, name: string, interpreter: LuaInterpreter): { environment: LuaEnvironment; value: LuaValue; scope: LuaHoverScope } {
+export function resolveIdentifierThroughChain(environment: LuaEnvironment, name: string, interpreter: LuaInterpreter): { environment: LuaEnvironment; value: LuaValue; scope: LuaValueScope } {
 	let current: LuaEnvironment = environment;
 	const globalEnv = interpreter.globalEnvironment;
 	while (current) {
 		if (current.hasLocal(name)) {
 			const value = current.get(name);
-			const scope: LuaHoverScope = current === globalEnv ? 'global' : 'path';
+			const scope: LuaValueScope = current === globalEnv ? 'global' : 'path';
 			return { environment: current, value, scope };
 		}
 		current = current.getParent();
@@ -1380,28 +1228,25 @@ export function resolveIdentifierThroughChain(environment: LuaEnvironment, name:
 function describeSuspendedGuestValueForInspector(
 	bridge: RuntimeLuaTooling,
 	value: SuspendedGuestValue,
-): { lines: string[]; valueType: string; isFunction: boolean } {
+): { lines: string[]; valueType: string } {
 	const inspection = bridge.suspendedGuest;
 	switch (inspection.kind(value)) {
 		case SuspendedGuestValueKind.Nil:
-			return { lines: ['Nil'], valueType: 'nil', isFunction: false };
+			return { lines: ['Nil'], valueType: 'nil' };
 		case SuspendedGuestValueKind.Boolean:
 			return {
 				lines: [inspection.formatValue(value)],
 				valueType: 'boolean',
-				isFunction: false,
 			};
 		case SuspendedGuestValueKind.Number:
 			return {
 				lines: [inspection.formatValue(value)],
 				valueType: 'number',
-				isFunction: false,
 			};
 		case SuspendedGuestValueKind.String:
 			return {
 				lines: [JSON.stringify(inspection.formatValue(value))],
 				valueType: 'string',
-				isFunction: false,
 			};
 		case SuspendedGuestValueKind.Table:
 			return {
@@ -1414,31 +1259,30 @@ function describeSuspendedGuestValueForInspector(
 					),
 				],
 				valueType: 'table',
-				isFunction: false,
 			};
 		case SuspendedGuestValueKind.Function:
-			return { lines: ['<function>'], valueType: 'function', isFunction: true };
+			return { lines: ['<function>'], valueType: 'function' };
 	}
 }
 
-export function describeLuaValueForInspector(bridge: RuntimeLuaTooling, value: LuaValue): { lines: string[]; valueType: string; isFunction: boolean } {
+export function describeLuaValueForInspector(bridge: RuntimeLuaTooling, value: LuaValue): { lines: string[]; valueType: string } {
 	const resolvedName = bridge.luaInterpreter.resolveValueName(value);
 	if (value === null) {
-		return { lines: ['Nil'], valueType: 'nil', isFunction: false };
+		return { lines: ['Nil'], valueType: 'nil' };
 	}
 	if (typeof value === 'boolean') {
-		return { lines: [value ? 'true' : 'false'], valueType: 'boolean', isFunction: false };
+		return { lines: [value ? 'true' : 'false'], valueType: 'boolean' };
 	}
 	if (typeof value === 'number') {
 		const numeric = Number.isFinite(value) ? String(value) : 'nan';
-		return { lines: [numeric], valueType: 'number', isFunction: false };
+		return { lines: [numeric], valueType: 'number' };
 	}
 	if (typeof value === 'string') {
-		return { lines: [JSON.stringify(value)], valueType: 'string', isFunction: false };
+		return { lines: [JSON.stringify(value)], valueType: 'string' };
 	}
 	if (isLuaFunctionValue(value)) {
 		const fnName = value.name && value.name.length > 0 ? value.name : '<anonymous>';
-		return { lines: [`<function ${fnName}>`], valueType: 'function', isFunction: true };
+		return { lines: [`<function ${fnName}>`], valueType: 'function' };
 	}
 	if (value instanceof LuaNativeValue) {
 		const native = value.native;
@@ -1449,24 +1293,24 @@ export function describeLuaValueForInspector(bridge: RuntimeLuaTooling, value: L
 			const paramSegment = params.length > 0 ? params.join(', ') : '';
 			const signature = paramSegment.length > 0 ? `(${paramSegment})` : '()';
 			const label = labelName && labelName.length > 0 ? `<native function ${labelName}${signature}>` : `<native function${signature}>`;
-			return { lines: [label], valueType: labelName ?? 'native', isFunction: true };
+			return { lines: [label], valueType: labelName ?? 'native' };
 		}
 		let summary = `<${labelName ?? 'native'}>`;
 		const identifier = (native as { id?: unknown }).id;
 		if (identifier != null) {
 			summary = `${summary} id=${String(identifier)}`;
 		}
-		return { lines: [summary], valueType: labelName ?? 'native', isFunction: false };
+		return { lines: [summary], valueType: labelName ?? 'native' };
 	}
 	if (isLuaTable(value)) {
 		const tableName = resolveTableTypeName(bridge, value);
 		const preview = formatLuaValuePreview(value);
 		const lines = tableName ? [`<table ${tableName}>`] : ['<table>'];
 		lines.push(preview);
-		return { lines, valueType: tableName ?? 'table', isFunction: false };
+		return { lines, valueType: tableName ?? 'table' };
 	}
 	const summary = formatLuaValuePreview(value);
-	return { lines: [summary], valueType: 'unknown', isFunction: false };
+	return { lines: [summary], valueType: 'unknown' };
 }
 
 export function getNativeMemberCompletionEntries(bridge: RuntimeLuaTooling, value: LuaNativeValue, operator: '.' | ':'): LuaMemberCompletion[] {
@@ -1737,13 +1581,6 @@ export function cloneMemberCompletions(entries: LuaMemberCompletion[]): LuaMembe
 
 export function clearNativeMemberCompletionCache(): void {
 	nativeMemberCompletionCache = new WeakMap<object, { dot?: LuaMemberCompletion[]; colon?: LuaMemberCompletion[] }>();
-}
-
-export function isLuaBuiltinFunctionName(name: string): boolean {
-	if (!name || name.length === 0) {
-		return false;
-	}
-	return luaBuiltinMetadata.has(name) || hasStaticLuaBuiltinName(name);
 }
 
 export function describeLuaFunctionValue(value: LuaFunctionValue): string {

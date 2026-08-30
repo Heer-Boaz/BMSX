@@ -15,7 +15,7 @@ type LuaSource = {
 	source: string;
 };
 
-type CallHierarchyLocation = {
+type SemanticQueryLocation = {
 	path: string;
 	line: number;
 	column: number;
@@ -23,12 +23,19 @@ type CallHierarchyLocation = {
 
 type CallHierarchyProfile = {
 	direction: 'incoming' | 'outgoing';
-	location: CallHierarchyLocation;
+	location: SemanticQueryLocation;
 	label: string;
 	targetCount: number;
 	groupCount: number;
 	callSiteCount: number;
 	symbolMs: number;
+	coldMs: number;
+	warmMs: number;
+};
+
+type HoverProfile = {
+	location: SemanticQueryLocation;
+	contentCount: number;
 	coldMs: number;
 	warmMs: number;
 };
@@ -60,7 +67,7 @@ function summarizeTimingSamples(values: readonly number[]): { median: number; p9
 	};
 }
 
-function parseCallHierarchyLocation(value: string | undefined, option: string): CallHierarchyLocation | undefined {
+function parseSemanticQueryLocation(value: string | undefined, option: string): SemanticQueryLocation | undefined {
 	if (value === undefined) {
 		return undefined;
 	}
@@ -81,23 +88,28 @@ const { values, positionals } = parseArgs({
 	options: {
 		incoming: { type: 'string' },
 		outgoing: { type: 'string' },
+		hover: { type: 'string' },
 	},
 	allowPositionals: true,
 });
 const editPath = positionals[0];
 const sourceRoots = positionals.slice(1);
 if (editPath === undefined || sourceRoots.length === 0) {
-	throw new Error('Usage: profile_lua_semantics.ts [--incoming <path>:<line>:<column> | --outgoing <path>:<line>:<column>] <edit-file> <source-root>...');
+	throw new Error('Usage: profile_lua_semantics.ts [--incoming <path>:<line>:<column> | --outgoing <path>:<line>:<column> | --hover <path>:<line>:<column>] <edit-file> <source-root>...');
 }
-if (values.incoming !== undefined && values.outgoing !== undefined) {
-	throw new Error('Choose either --incoming or --outgoing.');
+const selectedQueryCount = Number(values.incoming !== undefined)
+	+ Number(values.outgoing !== undefined)
+	+ Number(values.hover !== undefined);
+if (selectedQueryCount > 1) {
+	throw new Error('Choose one semantic query to profile.');
 }
 const callHierarchyDirection = values.outgoing === undefined ? 'incoming' : 'outgoing';
 const callHierarchyOptionValue = values.outgoing === undefined ? values.incoming : values.outgoing;
-const callHierarchyLocation = parseCallHierarchyLocation(
+const callHierarchyLocation = parseSemanticQueryLocation(
 	callHierarchyOptionValue,
 	callHierarchyDirection,
 );
+const hoverLocation = parseSemanticQueryLocation(values.hover, 'hover');
 
 const sources: LuaSource[] = [];
 for (const root of sourceRoots) {
@@ -180,6 +192,33 @@ if (callHierarchyLocation) {
 	};
 }
 
+let hoverProfile: HoverProfile | undefined;
+if (hoverLocation) {
+	const coldStartedAt = performance.now();
+	const hover = frontend.provideHover(
+		hoverLocation.path,
+		hoverLocation.line,
+		hoverLocation.column,
+	);
+	const coldMs = performance.now() - coldStartedAt;
+	if (hover === null) {
+		throw new Error(`No semantic hover at '${values.hover}'.`);
+	}
+	const warmStartedAt = performance.now();
+	frontend.provideHover(
+		hoverLocation.path,
+		hoverLocation.line,
+		hoverLocation.column,
+	);
+	const warmMs = performance.now() - warmStartedAt;
+	hoverProfile = {
+		location: hoverLocation,
+		contentCount: hover.contents.length,
+		coldMs,
+		warmMs,
+	};
+}
+
 const editedSource = sources.find(source => source.path === editPath);
 if (editedSource === undefined) {
 	throw new Error(`Edit file '${editPath}' is not contained by the profiled source roots.`);
@@ -246,6 +285,7 @@ console.log(JSON.stringify({
 		fileQueryMs: coldFileQueryMs,
 	},
 	callHierarchy: callHierarchyProfile,
+	hover: hoverProfile,
 	edit: {
 		parseMs: summarizeTimingSamples(parseMeasurements),
 		semanticMs: summarizeTimingSamples(semanticMeasurements),

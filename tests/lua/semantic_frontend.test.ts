@@ -1174,6 +1174,127 @@ test('LuaSemanticFrontend does not replace a shadowing callable with a builtin s
 	assert.deepEqual(frontend.getFile('shadow_builtin.lua').diagnostics, []);
 });
 
+test('LuaSemanticFrontend provides semantic hover from resolved declarations and builtin descriptors', () => {
+	const source = [
+		'local target<const> = {}',
+		'function target:run(value, delay) return value end',
+		'target:run(1, 2)',
+		'math.max(1, 2)',
+	].join('\n');
+	const frontend = buildLuaSemanticFrontend([{ path: 'hover.lua', source }]);
+	const methodPosition = findPosition(source, 'target:run(1, 2)', 'run');
+	const method = frontend.provideHover('hover.lua', methodPosition.line, methodPosition.column);
+	assert.ok(method);
+	assert.deepEqual(method.contents, [{ label: '(method) target:run(value, delay)' }]);
+	assert.deepEqual(method.applicableRange, {
+		path: 'hover.lua',
+		start: methodPosition,
+		end: { line: methodPosition.line, column: methodPosition.column + 2 },
+	});
+
+	const builtinPosition = findPosition(source, 'math.max(1, 2)', 'max');
+	const builtin = frontend.provideHover('hover.lua', builtinPosition.line, builtinPosition.column);
+	assert.ok(builtin);
+	assert.deepEqual(builtin.contents, [{ label: '(builtin) math.max(x, ...)' }]);
+
+	const declaration = frontend.provideHover('hover.lua', 1, 7);
+	assert.ok(declaration);
+	assert.deepEqual(declaration.contents, [{ label: '(constant) target' }]);
+});
+
+test('LuaSemanticFrontend preserves every exact hover target without same-name inference', () => {
+	const source = [
+		'local left<const> = {}',
+		'function left:run(value) end',
+		'local right<const> = {}',
+		'function right:run(value, delay) end',
+		'local selected<const> = left or right',
+		'selected:run(1, 2)',
+	].join('\n');
+	const frontend = buildLuaSemanticFrontend([{ path: 'hover_targets.lua', source }]);
+	const position = findPosition(source, 'selected:run(1, 2)', 'run');
+	const hover = frontend.provideHover('hover_targets.lua', position.line, position.column);
+	assert.ok(hover);
+	assert.deepEqual(hover.contents, [
+		{ label: '(method) left:run(value)' },
+		{ label: '(method) right:run(value, delay)' },
+	]);
+});
+
+test('LuaSemanticFrontend follows exported function values for hover signatures', () => {
+	const source = [
+		'local run<const> = function(first, ...) return first end',
+		'exported = { run = run }',
+		'exported.run(1, 2)',
+	].join('\n');
+	const frontend = buildLuaSemanticFrontend([{ path: 'hover_export.lua', source }]);
+	const position = findPosition(source, 'exported.run(1, 2)', 'run');
+	const hover = frontend.provideHover('hover_export.lua', position.line, position.column);
+	assert.ok(hover);
+	assert.deepEqual(hover.contents, [
+		{ label: '(function) exported.run(first, ...)' },
+	]);
+});
+
+test('LuaSemanticFrontend provides debugger expressions only for static Lua access paths', () => {
+	const source = [
+		'local target<const> = { value = 1 }',
+		'function target:run() return self.value end',
+		'target:run()',
+		'target.value = 2',
+		'return make_target().value',
+	].join('\n');
+	const frontend = buildLuaSemanticFrontend([{ path: 'evaluate.lua', source }]);
+	const methodPosition = findPosition(source, 'target:run()', 'run');
+	assert.deepEqual(
+		frontend.provideEvaluatableExpression('evaluate.lua', methodPosition.line, methodPosition.column),
+		{
+			expression: 'target.run',
+			range: {
+				path: 'evaluate.lua',
+				start: methodPosition,
+				end: { line: methodPosition.line, column: methodPosition.column + 2 },
+			},
+		},
+	);
+
+	const fieldPosition = findPosition(source, 'target.value = 2', 'value');
+	assert.equal(
+		frontend.provideEvaluatableExpression('evaluate.lua', fieldPosition.line, fieldPosition.column)?.expression,
+		'target.value',
+	);
+	const dynamicPosition = findPosition(source, 'return make_target().value', 'value');
+	assert.equal(
+		frontend.provideEvaluatableExpression('evaluate.lua', dynamicPosition.line, dynamicPosition.column),
+		null,
+	);
+});
+
+test('LuaSemanticFrontend does not rewrite non-identifier table keys into debugger paths', () => {
+	const source = [
+		'local target<const> = {}',
+		'target["valid"] = 1',
+		'target["not-valid"] = 2',
+		'target["end"] = 3',
+	].join('\n');
+	const frontend = buildLuaSemanticFrontend([{ path: 'evaluate_keys.lua', source }]);
+	const validKey = findPosition(source, 'target["valid"]', 'valid');
+	const invalidKey = findPosition(source, 'target["not-valid"]', 'not-valid');
+	const keywordKey = findPosition(source, 'target["end"]', 'end');
+	assert.equal(
+		frontend.provideEvaluatableExpression('evaluate_keys.lua', validKey.line, validKey.column)?.expression,
+		'target.valid',
+	);
+	assert.equal(
+		frontend.provideEvaluatableExpression('evaluate_keys.lua', invalidKey.line, invalidKey.column),
+		null,
+	);
+	assert.equal(
+		frontend.provideEvaluatableExpression('evaluate_keys.lua', keywordKey.line, keywordKey.column),
+		null,
+	);
+});
+
 function firstNavigationTarget(
 	file: LuaSemanticFrontendFile,
 	line: number,

@@ -1,7 +1,8 @@
 import type { ResourcePanelController } from '../../workbench/contrib/resources/panel/controller';
 import { point_in_rect } from '../../../machine/ts/common/rect';
 import type { PointerSnapshot } from '../../common/models';
-import { clearHoverTooltip, clearGotoHoverHighlight } from '../../editor/contrib/intellisense/engine';
+import { clearGotoHoverHighlight } from '../../editor/contrib/intellisense/engine';
+import { clearHoverTooltip } from '../../editor/contrib/hover/controller';
 import { editorPointerState, resetPointerClickTracking } from './state';
 
 export function handleResourcePanelPointer(

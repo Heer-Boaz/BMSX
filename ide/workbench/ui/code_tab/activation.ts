@@ -9,7 +9,8 @@ import type { LuaDefinitionLocation } from '../../../../toolchain/ts/lua/semanti
 import { ensureCursorVisible, updateDesiredColumn } from '../../../editor/ui/view/caret/caret';
 import { refreshActiveDiagnostics } from '../../contrib/code_editor/diagnostics/controller';
 import { markDiagnosticsDirty } from '../../../editor/contrib/diagnostics/state';
-import { clearGotoHoverHighlight, clearHoverTooltip, clearReferenceHighlights, requestSemanticRefresh } from '../../../editor/contrib/intellisense/engine';
+import { clearGotoHoverHighlight, clearReferenceHighlights, requestSemanticRefresh } from '../../../editor/contrib/intellisense/engine';
+import { clearHoverTooltip } from '../../../editor/contrib/hover/controller';
 import { resetBlink } from '../../../editor/render/caret';
 import { getTextSnapshot } from '../../../editor/text/source_text';
 import { editorPointerState } from '../../../input/pointer/state';

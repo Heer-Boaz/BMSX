@@ -16,7 +16,7 @@ import { isShiftDown } from '../keyboard/key_input';
 import { scrollResourceBrowserHorizontal, scrollResourceViewer } from '../../workbench/input/keyboard/resource_viewer_input';
 import { editorPointerState } from './state';
 import { editorCaretState } from '../../editor/ui/view/caret/state';
-import { intellisenseUiState } from '../../editor/contrib/intellisense/ui_state';
+import { hoverState } from '../../editor/contrib/hover/state';
 import { editorViewState } from '../../editor/ui/view/state';
 import { resourceSearchState } from '../../workbench/contrib/resources/widget_state';
 
@@ -73,10 +73,10 @@ function handleHoverTooltipWheel(
 	activePointer: PointerSnapshot,
 	playerInput: PlayerInput
 ): boolean {
-	if (!intellisenseUiState.hoverTooltip) {
+	if (!hoverState.tooltip) {
 		return false;
 	}
-	const tooltip = intellisenseUiState.hoverTooltip;
+	const tooltip = hoverState.tooltip;
 	const pointerInTooltip = activePointer !== null && isPointInHoverTooltip(activePointer.viewportX, activePointer.viewportY);
 	const pointerInTarget = activePointer !== null && pointerHitsHoverTarget(activePointer, tooltip);
 	const allowTooltipScroll = pointerInTooltip || pointerInTarget || activePointer === null;

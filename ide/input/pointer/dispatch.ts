@@ -1,6 +1,7 @@
 import type { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import type { PlayerInput } from '../../../hosts/common/input/player';
-import { clearGotoHoverHighlight, clearHoverTooltip } from '../../editor/contrib/intellisense/engine';
+import { clearGotoHoverHighlight } from '../../editor/contrib/intellisense/engine';
+import { clearHoverTooltip } from '../../editor/contrib/hover/controller';
 import { computeEditorPointerButtonMask, POINTER_AUX_JUST_PRESSED, POINTER_PRIMARY_JUST_PRESSED, POINTER_PRIMARY_JUST_RELEASED, POINTER_SECONDARY_JUST_PRESSED } from './buttons';
 import { handleCodeAreaPointerInput } from './code/index';
 import { prepareEditorPointerFrame, readEditorPointerSnapshot } from './frame';

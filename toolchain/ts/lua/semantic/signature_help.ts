@@ -15,9 +15,9 @@ import {
 	getLuaCallMinimumArgumentCount,
 	getLuaCallReceiverParameterShift,
 	getLuaCallStyle,
-	resolveStaticLuaExpressionPath,
 } from './call_signature';
 import type { LuaCallStyle } from './call_signature';
+import { resolveStaticLuaExpressionPath } from './expression_path';
 
 export type LuaSignatureParameterInformation = {
 	readonly start: number;

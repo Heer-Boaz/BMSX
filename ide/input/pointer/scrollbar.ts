@@ -1,4 +1,5 @@
-import { clearHoverTooltip, clearGotoHoverHighlight } from '../../editor/contrib/intellisense/engine';
+import { clearGotoHoverHighlight } from '../../editor/contrib/intellisense/engine';
+import { clearHoverTooltip } from '../../editor/contrib/hover/controller';
 import { ensureVisualLines } from '../../editor/common/text/layout';
 import { bottomMargin } from '../../workbench/common/layout';
 import type { PointerSnapshot, ScrollbarKind } from '../../common/models';
