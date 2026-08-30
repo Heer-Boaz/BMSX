@@ -889,6 +889,8 @@ class WorkspaceValueDemandIndex {
 	private readonly elementEffectsByOwner: Map<string, FunctionAssignmentEffectEntry[]> = new Map();
 	private readonly prototypeEffectFlowsByCallee: Map<string, FunctionValueFlowEntry[]> = new Map();
 	private readonly effectDependenciesBySource: Map<string, FunctionEffectDependencyEntry[]> = new Map();
+	private readonly instanceAllocationFlowsByMember:
+		Map<string, FunctionValueFlowEntry[]> = new Map();
 
 	constructor(input: WorkspaceValueGraphInput, identities: WorkspaceValueIdentityIndex) {
 		this.globalValues = input.globalValues;
@@ -939,6 +941,7 @@ class WorkspaceValueDemandIndex {
 			const flows = input.files[fileIndex].functionValueFlows;
 			for (let flowIndex = 0; flowIndex < flows.length; flowIndex += 1) {
 				const flow = flows[flowIndex];
+				this.indexInstanceAllocationMembers(flow);
 				if (flow.functionValue.root.kind === 'declaration') {
 					this.append(this.flowsByDeclaration, flow.functionValue.root.declId, flow);
 				}
@@ -1264,6 +1267,31 @@ class WorkspaceValueDemandIndex {
 			?? EMPTY_DEMAND_ENTRIES;
 	}
 
+	public instanceAllocationFlows(name: string): readonly FunctionValueFlowEntry[] {
+		return this.instanceAllocationFlowsByMember.get(name) ?? EMPTY_DEMAND_ENTRIES;
+	}
+
+	private indexInstanceAllocationMembers(flow: FunctionValueFlowEntry): void {
+		const functionRootKey = this.rootKey(flow.functionValue.root);
+		if (functionRootKey === undefined || this.returns(functionRootKey).length === 0) {
+			return;
+		}
+		for (let assignmentIndex = 0; assignmentIndex < flow.assignments.length; assignmentIndex += 1) {
+			const assignment = flow.assignments[assignmentIndex];
+			if (assignment.relation !== 'prototype' || assignment.target.steps.length !== 0) {
+				continue;
+			}
+			const allocationKey = this.identities.sourceKey(assignment.target);
+			for (let memberIndex = 0; memberIndex < flow.members.length; memberIndex += 1) {
+				const member = flow.members[memberIndex];
+				if (member.owner.steps.length === 0
+					&& this.identities.sourceKey(member.owner) === allocationKey) {
+					this.append(this.instanceAllocationFlowsByMember, member.name, flow);
+				}
+			}
+		}
+	}
+
 	private indexMemberEffect(
 		flow: FunctionValueFlowEntry,
 		owner: SemanticValueSource,
@@ -1548,6 +1576,7 @@ export class WorkspaceValueGraph {
 	private readonly materializedRootAssignments: Set<ValueAssignmentEntry> = new Set();
 	private readonly demandedFunctionCallerBindings: Set<FunctionValueFlowEntry> = new Set();
 	private readonly demandedFunctionCallerContexts: Set<FunctionValueFlowEntry> = new Set();
+	private readonly refinedFunctionCallerContexts: Set<FunctionValueFlowEntry> = new Set();
 	private readonly demandedFunctionCallerAliases: Set<FunctionValueFlowEntry> = new Set();
 	private readonly demandedDynamicFunctionCallers: Set<FunctionValueFlowEntry> = new Set();
 	private readonly calls: ContextualCallValue[] = [];
@@ -1607,6 +1636,10 @@ export class WorkspaceValueGraph {
 	private readonly effectDependents = new SemanticValueEdges();
 	private readonly prototypeBases: Map<SemanticValueID, SemanticValueID> = new Map();
 	private readonly instanceBases = new SemanticValueEdges();
+	// Allocation-site fields belong to constructed values, not to their shared
+	// prototype. Keeping this relation separate prevents sibling classes from
+	// acquiring writes performed by an unrelated factory call.
+	private readonly instanceAllocations = new SemanticValueEdges();
 	private readonly traversalStack: SemanticValueID[] = [];
 	private readonly traversalMarks: number[] = [];
 	private readonly unresolvedMemberOwners: SemanticValueID[] = [];
@@ -1621,6 +1654,7 @@ export class WorkspaceValueGraph {
 	private readonly assignmentTargetScratch: SemanticValueID[] = [];
 	private readonly assignmentOwnerScratch: SemanticValueID[] = [];
 	private readonly assignmentKeyScratch: SemanticValueID[] = [];
+	private readonly prototypeAlternativeScratch: SemanticValueID[] = [];
 	private readonly valueAlternativeStack: SemanticValueID[] = [];
 	private readonly valueAlternativeNodes: SemanticValueID[] = [];
 	private readonly valueAlternativeMarks: number[] = [];
@@ -1767,15 +1801,25 @@ export class WorkspaceValueGraph {
 		source: SemanticValueSource | undefined,
 		name: string,
 	): readonly SymbolID[] {
-		let members = this.resolveDiscoveredMembers(source, name);
+		let members = this.resolveRetainedMembers(source, name);
 		if (members.length > 0 || !source) {
 			return members;
 		}
 		const flow = this.functionFlowForSource(source);
+		const projectedSource = flow
+			? projectValueSource(source, flow.parameters[0], flow.receiverProjection)
+			: source;
+		if (projectedSource && this.materializeInstanceAllocationCalls(projectedSource, name)) {
+			this.solveDemandedValues();
+			members = this.resolveRetainedMembers(source, name);
+			if (members.length > 0) {
+				return members;
+			}
+		}
 		if (flow) {
 			if (this.demandFunctionCallers(flow, flow.requiresCallContext, true)) {
 				this.solveDemandedValues();
-				members = this.resolveDiscoveredMembers(source, name);
+				members = this.resolveRetainedMembers(source, name);
 				if (members.length > 0) {
 					return members;
 				}
@@ -1783,35 +1827,81 @@ export class WorkspaceValueGraph {
 			if (!this.defaultFunctionContextsByValue.has(flow.functionValue)) {
 				this.defaultFunctionContext(flow, CALL_RETURNS);
 				this.solveDemandedValues();
-				members = this.resolveDiscoveredMembers(source, name);
+				members = this.resolveRetainedMembers(source, name);
 				if (members.length > 0) {
 					return members;
 				}
 			}
 			if (this.demandDynamicFunctionCallers(flow)) {
 				this.solveDemandedValues();
-				members = this.resolveDiscoveredMembers(source, name);
+				members = this.resolveRetainedMembers(source, name);
 				if (members.length > 0) {
 					return members;
 				}
 			}
 		}
-		return EMPTY_MEMBER_IDS;
-	}
-
-	private resolveDiscoveredMembers(
-		source: SemanticValueSource | undefined,
-		name: string,
-	): readonly SymbolID[] {
-		let members = this.resolveRetainedMembers(source, name);
-		if (members.length > 0 || !source) {
-			return members;
+		if (this.materializeNamedQueryEffects(source, name)) {
+			this.solveDemandedValues();
+			members = this.resolveRetainedMembers(source, name);
+			if (members.length > 0) {
+				return members;
+			}
 		}
 		if (this.discoverDemandedHeapEffectCallers()) {
 			this.solveDemandedValues();
-			members = this.resolveDemandedMembers(source, name);
+			members = this.resolveRetainedMembers(source, name);
+			if (members.length > 0) {
+				return members;
+			}
 		}
-		return members;
+		if (this.refineDemandedHeapEffectCallers()) {
+			this.solveDemandedValues();
+			members = this.resolveRetainedMembers(source, name);
+			if (members.length > 0) {
+				return members;
+			}
+		}
+		return EMPTY_MEMBER_IDS;
+	}
+
+	private materializeNamedQueryEffects(
+		source: SemanticValueSource,
+		name: string,
+	): boolean {
+		let changed = false;
+		for (let stepIndex = 0; stepIndex < source.steps.length; stepIndex += 1) {
+			const step = source.steps[stepIndex];
+			if (step.kind === 'member') {
+				changed = this.materializeNamedMemberEffects(step.name) || changed;
+			}
+		}
+		return this.materializeNamedMemberEffects(name) || changed;
+	}
+
+	private materializeInstanceAllocationCalls(
+		source: SemanticValueSource,
+		queriedMemberName: string,
+	): boolean {
+		let allocationMemberName: string | undefined;
+		for (let stepIndex = 0; stepIndex < source.steps.length; stepIndex += 1) {
+			if (source.steps[stepIndex].kind === 'instance') {
+				const member = source.steps[stepIndex + 1];
+				allocationMemberName = member?.kind === 'member'
+					? member.name
+					: queriedMemberName;
+				break;
+			}
+		}
+		if (allocationMemberName === undefined) {
+			return false;
+		}
+		let changed = false;
+		const entries = this.demandIndex.instanceAllocationFlows(allocationMemberName);
+		for (let entryIndex = 0; entryIndex < entries.length; entryIndex += 1) {
+			const flow = this.materializeFunctionFlow(entries[entryIndex]);
+			changed = this.demandFunctionCallers(flow, true) || changed;
+		}
+		return changed;
 	}
 
 	public resolveRetainedMembers(
@@ -1974,6 +2064,9 @@ export class WorkspaceValueGraph {
 					}
 				}
 			}
+			for (let edge = this.instanceAllocations.first(value); edge !== 0; edge = this.instanceAllocations.next(edge)) {
+				stack.push(this.instanceAllocations.target(edge));
+			}
 			for (let edge = this.traversalDependents.last(value); edge !== 0; edge = this.traversalDependents.previous(edge)) {
 				const dependent = this.traversalDependents.target(edge);
 				if (this.callArgumentBases.has(dependent, value)) {
@@ -2025,10 +2118,10 @@ export class WorkspaceValueGraph {
 		for (let stepIndex = 0; stepIndex < source.steps.length; stepIndex += 1) {
 			const step = source.steps[stepIndex];
 			if (step.kind === 'member') {
-				this.demandQueryMember(source, stepIndex, step.name);
+				this.demandMember(source, stepIndex, step.name);
 			}
 		}
-		this.demandQueryMember(source, source.steps.length, name);
+		this.demandMember(source, source.steps.length, name);
 	}
 
 	private resolveDemandedMembers(
@@ -2082,6 +2175,9 @@ export class WorkspaceValueGraph {
 						stack.push(contextualRoot);
 					}
 				}
+			}
+			for (let edge = this.instanceAllocations.first(value); edge !== 0; edge = this.instanceAllocations.next(edge)) {
+				stack.push(this.instanceAllocations.target(edge));
 			}
 			this.pushTraversalBases(stack, value);
 		}
@@ -2217,20 +2313,6 @@ export class WorkspaceValueGraph {
 		return this.queueMemberDemand(source, stepCount, name);
 	}
 
-	private demandQueryMember(source: SemanticValueSource, stepCount: number, name: string): boolean {
-		const hasMemberDemand = this.demandIndex.hasMemberDemand(source, stepCount, name);
-		const namedEffects = this.demandIndex.namedMemberEffects(name);
-		if (!hasMemberDemand && namedEffects.length === 0) {
-			return false;
-		}
-		if (namedEffects.length > 0) {
-			this.materializeNamedMemberEffects(name);
-		}
-		return hasMemberDemand
-			? this.queueMemberDemand(source, stepCount, name)
-			: true;
-	}
-
 	private queueMemberDemand(source: SemanticValueSource, stepCount: number, name: string): boolean {
 		const key = `${this.identities.sourceKey(source, stepCount)}\0${name}`;
 		if (this.demandedMemberKeys.has(key)) {
@@ -2315,7 +2397,6 @@ export class WorkspaceValueGraph {
 		this.materializeCallerCalls(
 			this.demandIndex.resultCallerCalls(rootKey),
 			CALL_RETURNS,
-			false,
 		);
 		this.materializeValueAssignments(this.demandIndex.rootAssignments(rootKey));
 	}
@@ -2335,12 +2416,14 @@ export class WorkspaceValueGraph {
 		);
 	}
 
-	private materializeNamedMemberEffects(name: string): void {
+	private materializeNamedMemberEffects(name: string): boolean {
 		if (this.materializedNamedEffectMembers.has(name)) {
-			return;
+			return false;
 		}
 		this.materializedNamedEffectMembers.add(name);
-		this.materializeMemberEffects(this.demandIndex.namedMemberEffects(name));
+		const entries = this.demandIndex.namedMemberEffects(name);
+		this.materializeMemberEffects(entries);
+		return entries.length > 0;
 	}
 
 	private materializeEffectDependencies(
@@ -2391,7 +2474,7 @@ export class WorkspaceValueGraph {
 		for (let stepIndex = 0; stepIndex < source.steps.length; stepIndex += 1) {
 			const step = source.steps[stepIndex];
 			if (step.kind === 'member') {
-				this.demandQueryMember(source, stepIndex, step.name);
+				this.demandMember(source, stepIndex, step.name);
 			}
 		}
 	}
@@ -2456,8 +2539,25 @@ export class WorkspaceValueGraph {
 	private discoverDemandedHeapEffectCallers(): boolean {
 		let changed = false;
 		for (const flow of this.demandedHeapEffectFlows) {
+			// First instantiate the call in its owner's retained summary. Most
+			// queries resolve here without replaying the owner's own callers.
 			changed = this.demandFunctionCallers(flow, flow.requiresCallContext) || changed;
 			changed = this.demandDynamicFunctionCallers(flow) || changed;
+		}
+		return changed;
+	}
+
+	private refineDemandedHeapEffectCallers(): boolean {
+		let changed = false;
+		for (const flow of this.demandedHeapEffectFlows) {
+			// A remaining miss requires call-site identity for the retained heap
+			// effect. Only this second phase asks the immediate owner for contexts.
+			changed = this.demandFunctionCallers(
+				flow,
+				flow.requiresCallContext,
+				false,
+				true,
+			) || changed;
 		}
 		return changed;
 	}
@@ -2552,7 +2652,7 @@ export class WorkspaceValueGraph {
 			if (owner
 				&& this.demandIndex.prototypeEffects(call.callee).length > 0
 				&& this.callUsesSource(call, source, owner)) {
-				this.materializeCallerCall(call, CALL_EFFECTS, true);
+				this.materializeCallerCall(call, CALL_EFFECTS);
 			}
 		}
 	}
@@ -2634,6 +2734,7 @@ export class WorkspaceValueGraph {
 		flow: MaterializedFunctionValueFlow,
 		instantiateContext = flow.requiresCallContext,
 		followValueAliases = false,
+		refineCallerContexts = false,
 	): boolean {
 		const sourceFlow = flow.source;
 		let changed = false;
@@ -2649,6 +2750,10 @@ export class WorkspaceValueGraph {
 		}
 		if (followValueAliases && !this.demandedFunctionCallerAliases.has(sourceFlow)) {
 			this.demandedFunctionCallerAliases.add(sourceFlow);
+			changed = true;
+		}
+		if (refineCallerContexts && !this.refinedFunctionCallerContexts.has(sourceFlow)) {
+			this.refinedFunctionCallerContexts.add(sourceFlow);
 			changed = true;
 		}
 		if (!changed) {
@@ -2689,12 +2794,12 @@ export class WorkspaceValueGraph {
 					mode,
 					flow,
 				);
-				this.materializeCallerCalls(
-					this.demandIndex.callerCallsByMemberName(member.name),
-					mode,
-					instantiateContext,
-					flow,
-				);
+				const callerCalls = this.demandIndex.callerCallsByMemberName(member.name);
+				if (refineCallerContexts) {
+					this.materializeContextualCallerCalls(callerCalls, mode, flow);
+				} else {
+					this.materializeCallerCalls(callerCalls, mode, flow);
+				}
 			}
 		}
 		return true;
@@ -2760,18 +2865,34 @@ export class WorkspaceValueGraph {
 	private materializeCallerCalls(
 		entries: readonly CallValueEntry[],
 		mode: CallInstantiationMode,
-		propagateOwnerCallers = mode === CALL_EFFECTS,
 		targetFlow?: MaterializedFunctionValueFlow,
 	): void {
 		for (let index = 0; index < entries.length; index += 1) {
-			this.materializeCallerCall(entries[index], mode, propagateOwnerCallers, targetFlow);
+			this.materializeCallerCall(entries[index], mode, targetFlow);
+		}
+	}
+
+	private materializeContextualCallerCalls(
+		entries: readonly CallValueEntry[],
+		mode: CallInstantiationMode,
+		targetFlow: MaterializedFunctionValueFlow,
+	): void {
+		for (let index = 0; index < entries.length; index += 1) {
+			const call = entries[index];
+			this.materializeCallerCall(call, mode, targetFlow);
+			const ownerEntry = this.demandIndex.ownerFlowByCall.get(call);
+			if (ownerEntry) {
+				const ownerFlow = this.materializeFunctionFlow(ownerEntry);
+				if (ownerFlow.requiresCallContext) {
+					this.demandFunctionCallers(ownerFlow, true);
+				}
+			}
 		}
 	}
 
 	private materializeCallerCall(
 		call: CallValueEntry,
 		mode: CallInstantiationMode,
-		propagateOwnerCallers: boolean,
 		targetFlow?: MaterializedFunctionValueFlow,
 	): void {
 		if (targetFlow) {
@@ -2791,17 +2912,14 @@ export class WorkspaceValueGraph {
 		}
 		const ownerFlow = this.materializeFunctionFlow(ownerEntry);
 		const demand = this.retainCallDemand(ownerFlow, call, mode, targetFlow);
-		if (!ownerFlow.requiresCallContext) {
-			this.defaultFunctionContext(ownerFlow, CALL_CONTEXT);
-		}
-		const contexts = this.functionContextsByValue.get(ownerFlow.functionValue);
-		if (contexts) {
-			for (let contextIndex = 0; contextIndex < contexts.length; contextIndex += 1) {
-				this.materializeContextCallDemand(contexts[contextIndex], demand);
+		const context = this.defaultFunctionContext(ownerFlow, CALL_CONTEXT);
+		this.materializeContextCallDemand(context, demand);
+		const contexts = this.functionContextsByValue.get(ownerFlow.functionValue)!;
+		for (let contextIndex = 0; contextIndex < contexts.length; contextIndex += 1) {
+			const retainedContext = contexts[contextIndex];
+			if (retainedContext !== context) {
+				this.materializeContextCallDemand(retainedContext, demand);
 			}
-		}
-		if (propagateOwnerCallers) {
-			this.demandFunctionCallers(ownerFlow, true);
 		}
 	}
 
@@ -2889,6 +3007,20 @@ export class WorkspaceValueGraph {
 			}
 		}
 		if (out.length !== directStart) {
+			return;
+		}
+
+		const allocationStart = out.length;
+		for (let index = 0; index < identityValues.length; index += 1) {
+			const value = identityValues[index];
+			for (let edge = this.instanceAllocations.first(value); edge !== 0; edge = this.instanceAllocations.next(edge)) {
+				const member = this.members.get(this.instanceAllocations.target(edge))?.get(name);
+				if (member) {
+					this.appendMemberDeclarations(member.value, out);
+				}
+			}
+		}
+		if (out.length !== allocationStart) {
 			return;
 		}
 
@@ -3193,6 +3325,19 @@ export class WorkspaceValueGraph {
 				const flow = this.enclosingFunctionFlowByValue.get(nodes[nodeIndex]);
 				if (flow) {
 					this.defaultFunctionContext(flow);
+				}
+			}
+		}
+		if (!declared) {
+			for (let nodeIndex = nodeStart; nodeIndex < nodeEnd; nodeIndex += 1) {
+				const node = nodes[nodeIndex];
+				for (let edge = this.instanceAllocations.first(node); edge !== 0; edge = this.instanceAllocations.next(edge)) {
+					const member = this.members.get(this.instanceAllocations.target(edge))?.get(name);
+					if (member) {
+						this.memberValueScratch.push(member.value);
+						this.memberValueIdentityScratch.push(false);
+						declared = declared || member.declaration !== undefined;
+					}
 				}
 			}
 		}
@@ -3642,6 +3787,12 @@ export class WorkspaceValueGraph {
 		}
 		for (let edge = this.projectionBases.first(owner); edge !== 0; edge = this.projectionBases.next(edge)) {
 			this.inheritMemberValue(target, this.projectionBases.target(edge), name, 'value');
+		}
+		for (let edge = this.instanceAllocations.first(owner); edge !== 0; edge = this.instanceAllocations.next(edge)) {
+			const member = this.members.get(this.instanceAllocations.target(edge))?.get(name);
+			if (member) {
+				this.addValueBase(target, member.value);
+			}
 		}
 		for (let edge = this.instanceBases.first(owner); edge !== 0; edge = this.instanceBases.next(edge)) {
 			this.inheritMemberValue(target, this.instanceBases.target(edge), name, 'value');
@@ -4554,7 +4705,17 @@ export class WorkspaceValueGraph {
 				return;
 			case 'prototype':
 				this.setPrototypeBase(target, source);
-				this.addEdge(this.instanceBases, target, this.ensureInstance(source));
+				const instance = this.ensureInstance(source);
+				this.addEdge(this.instanceBases, target, instance);
+				const alternatives = this.prototypeAlternativeScratch;
+				this.collectValueAlternatives(source, alternatives);
+				for (let alternativeIndex = 0; alternativeIndex < alternatives.length; alternativeIndex += 1) {
+					this.addEdge(
+						this.instanceAllocations,
+						this.ensureInstance(alternatives[alternativeIndex]),
+						target,
+					);
+				}
 				this.addEdge(
 					this.instanceBases,
 					this.ensureInstance(target),
@@ -5789,6 +5950,7 @@ export class WorkspaceValueGraph {
 			this.valueBases.resizeOwners(this.valueCapacity);
 			this.effectDependents.resizeOwners(this.valueCapacity);
 			this.instanceBases.resizeOwners(this.valueCapacity);
+			this.instanceAllocations.resizeOwners(this.valueCapacity);
 			this.traversalDependents.resizeOwners(this.valueCapacity);
 			this.callWorklist.resizeValues(this.valueCapacity);
 			this.valueFlowWorklist.resizeValues(this.valueCapacity);

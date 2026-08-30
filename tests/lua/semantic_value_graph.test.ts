@@ -623,3 +623,99 @@ test('semantic workspace publishes direct method receiver members without execut
 	assert.equal(blink!.declaration.file, 'main.lua');
 	assert.deepEqual(blink!.declaration.namePath, ['self', 'blink']);
 });
+
+test('semantic workspace resolves fields injected by a generic instance factory without invoking methods', async () => {
+	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
+	const catalogSource = [
+		'local catalog<const> = {}',
+		'local entries<const> = {}',
+		'function catalog.define(id, value_class)',
+		'\tentries[id] = { instance_metatable = { __index = value_class } }',
+		'end',
+		'function catalog.definition(id)',
+		'\treturn entries[id]',
+		'end',
+		'return catalog',
+	].join('\n');
+	const factoryLines = [
+		"local catalog<const> = require('catalog')",
+		'local factory<const> = {}',
+		'factory.__index = factory',
+		'function factory.new()',
+		'\treturn setmetatable({}, factory)',
+		'end',
+		'function factory:create(id)',
+		'\tlocal definition<const> = catalog.definition(id)',
+		'\tlocal value<const> = {}',
+		'\tsetmetatable(value, definition.instance_metatable)',
+		'\tvalue.owner = self',
+		'\treturn value',
+		'end',
+		'return factory',
+	];
+	const actorLines = [
+		"local catalog<const> = require('catalog')",
+		'local actor<const> = {}',
+		'actor.__index = actor',
+		'function actor:release()',
+		"\tself.owner:create('item')",
+		'end',
+		"catalog.define('actor', actor)",
+		'return actor',
+	];
+	const spectatorLines = [
+		"local catalog<const> = require('catalog')",
+		'local spectator<const> = {}',
+		'spectator.__index = spectator',
+		'function spectator:release()',
+		"\tself.owner:create('item')",
+		'end',
+		"catalog.define('spectator', spectator)",
+		'return spectator',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('catalog.lua', catalogSource);
+	workspace.updateFile('factory.lua', factoryLines.join('\n'));
+	workspace.updateFile('actor.lua', actorLines.join('\n'));
+	workspace.updateFile('spectator.lua', spectatorLines.join('\n'));
+	workspace.updateFile('main.lua', [
+		"local factory<const> = require('factory')",
+		"require('actor')",
+		"require('spectator')",
+		'local instance<const> = factory.new()',
+		"instance:create('actor')",
+	].join('\n'));
+	const snapshot = workspace.getSnapshot();
+
+	const create = semanticSymbolAt(
+		snapshot,
+		'actor.lua',
+		5,
+		memberColumn(actorLines[4], 'create'),
+	);
+
+	assert.ok(create, 'factory-injected owner member');
+	assert.equal(create!.declaration.file, 'factory.lua');
+	assert.equal(create!.declaration.range.start.line, 7);
+	const callReferences = snapshot.symbolResolver.getReferences(create!.id).filter(reference => reference.isCall);
+	assert.equal(
+		callReferences.some(reference => reference.file === 'actor.lua' && reference.range.start.line === 5),
+		true,
+		'call hierarchy retains the constructed class method call',
+	);
+	assert.equal(
+		semanticSymbolAt(
+			snapshot,
+			'spectator.lua',
+			5,
+			memberColumn(spectatorLines[4], 'create'),
+		),
+		null,
+		'an unconstructed class does not acquire another allocation site',
+	);
+	assert.equal(
+		callReferences.some(reference => reference.file === 'spectator.lua'),
+		false,
+		'call hierarchy does not retain the unconstructed sibling call',
+	);
+});

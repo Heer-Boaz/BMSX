@@ -51,6 +51,13 @@ De huidige IDE- en debuggergrenzen zijn:
   volgende features op dezelfde snapshot. Alleen gevraagde Lua-roots, calls,
   contexten en heap-effects worden gematerialiseerd; de taallaag kent geen
   cartlib-, firmware- of frameworktypen;
+- Lua-instanties behouden prototype-inheritance en concrete allocation-sites
+  als afzonderlijke graphrelaties. Een `setmetatable`-factory kan daardoor
+  velden publiceren die tijdens constructie op de teruggegeven waarde worden
+  geschreven, zonder die velden aan een siblingprototype toe te kennen. Een
+  memberquery gebruikt eerst retained en lexicale summaries, daarna de relevante
+  allocation-site en pas bij een resterende miss contextuele heap-effects en
+  hun callers;
 - de editor materialiseert per benodigde bufferversie alleen de ene immutable
   source snapshot die lexer en parser consumeren. De parser haalt een authored
   regel pas uit die source wanneer hij daadwerkelijk een syntaxfout formatteert;
@@ -132,8 +139,8 @@ npx tsx --tsconfig tsconfig.base.json \
 
 npx tsx --tsconfig tsconfig.base.json \
   scripts/dev/profile_lua_semantics.ts \
-  --incoming cartlib/world/world.lua:684:22 \
-  cartlib/world/world.lua cartlib carts/nemesis_s
+  --incoming carts/nemesis_s/player/player.lua:1223:15 \
+  cartlib/world/world.lua cartlib machine/bios carts/nemesis_s
 ```
 
 ## Validatiebasis voor inputwerk
