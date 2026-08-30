@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { buildLuaSemanticFrontend, type LuaSemanticFrontendFile, type LuaSemanticNavigationTarget } from '../../toolchain/ts/lua/semantic/frontend';
+import {
+	buildLuaSemanticFrontend,
+	buildLuaSemanticFrontendFromSnapshot,
+	type LuaSemanticFrontendFile,
+	type LuaSemanticNavigationTarget,
+} from '../../toolchain/ts/lua/semantic/frontend';
 import { createLuaSemanticFrontendFromSnapshot } from '../../ide/editor/contrib/intellisense/semantic/workspace/index';
 import { buildLuaFileSemanticData, LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
 import { parseLuaChunk, parseLuaChunkWithRecovery } from '../../toolchain/ts/lua/analysis/parse';
@@ -1008,6 +1013,165 @@ test('LuaSemanticFrontend incoming calls follow bound inherited methods without 
 	assert.equal(outgoing.length, 2);
 	assert.deepEqual(outgoing.map(call => call.to.label), ['base.spawn', 'derived.new']);
 	assert.deepEqual(outgoing.map(call => call.fromRanges[0].start.line), [6, 5]);
+});
+
+test('LuaSemanticFrontend provides nested multiline signature help from parser-owned argument lists', () => {
+	const source = [
+		'local function combine(first, second, third) return first end',
+		'combine(',
+		'\t1,',
+		'\tmath.max(2, 3),',
+		'\t4',
+		')',
+	].join('\n');
+	const frontend = buildLuaSemanticFrontend([{ path: 'signature.lua', source }]);
+	const outer = frontend.provideSignatureHelp('signature.lua', 4, 16);
+	assert.ok(outer);
+	assert.equal(outer.signatures[0].label, 'combine(first, second, third)');
+	assert.equal(outer.activeParameter, 1);
+	assert.deepEqual(outer.applicableRange, {
+		path: 'signature.lua',
+		start: { line: 2, column: 8 },
+		end: { line: 6, column: 1 },
+	});
+
+	const nested = frontend.provideSignatureHelp('signature.lua', 4, 15);
+	assert.ok(nested);
+	assert.equal(nested.signatures[0].label, 'math.max(x, ...)');
+	assert.equal(nested.activeParameter, 1);
+	assert.deepEqual(nested.signatures[0].parameters, [
+		{ start: 9, end: 10 },
+		{ start: 12, end: 15 },
+	]);
+});
+
+test('LuaSemanticFrontend projects Lua receiver semantics into method and dot-call signatures', () => {
+	const source = [
+		'local target<const> = {}',
+		'function target:method(value, delay) end',
+		'function target.function_style(receiver, value) end',
+		'target:method(',
+		'target.method(target,',
+		'target:function_style(',
+	].join('\n');
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('receiver.lua', source);
+	const frontend = buildLuaSemanticFrontendFromSnapshot(workspace.getSnapshot());
+
+	const method = frontend.provideSignatureHelp('receiver.lua', 4, 15);
+	assert.ok(method);
+	assert.equal(method.signatures[0].label, 'target:method(value, delay)');
+	assert.equal(method.activeParameter, 0);
+
+	const dot = frontend.provideSignatureHelp('receiver.lua', 5, 22);
+	assert.ok(dot);
+	assert.equal(dot.signatures[0].label, 'target.method(self, value, delay)');
+	assert.equal(dot.activeParameter, 1);
+
+	const colon = frontend.provideSignatureHelp('receiver.lua', 6, 23);
+	assert.ok(colon);
+	assert.equal(colon.signatures[0].label, 'target:function_style(value)');
+	assert.equal(colon.activeParameter, 0);
+});
+
+test('LuaSemanticFrontend selects among exact dynamic signature targets without same-name guesses', () => {
+	const source = [
+		'local left<const> = {}',
+		'function left:run(value) end',
+		'local right<const> = {}',
+		'function right:run(value, delay) end',
+		'local selected<const> = left or right',
+		'selected:run(1, 2)',
+	].join('\n');
+	const frontend = buildLuaSemanticFrontend([{ path: 'overloads.lua', source }]);
+	const hint = frontend.provideSignatureHelp('overloads.lua', 6, 18);
+	assert.ok(hint);
+	assert.deepEqual(
+		hint.signatures.map(signature => signature.label),
+		['selected:run(value)', 'selected:run(value, delay)'],
+	);
+	assert.equal(hint.activeSignature, 1);
+	assert.equal(hint.activeParameter, 1);
+});
+
+test('LuaSemanticFrontend follows module values to table-field function signatures', () => {
+	const moduleSource = [
+		'local module<const> = {',
+		'\trun = function(target, value) return value end,',
+		'}',
+		'return module',
+	].join('\n');
+	const usageSource = [
+		"local module<const> = require('module')",
+		'module.run(target, ',
+	].join('\n');
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('module.lua', moduleSource);
+	workspace.updateFile('usage.lua', usageSource);
+	const frontend = buildLuaSemanticFrontendFromSnapshot(workspace.getSnapshot());
+	const hint = frontend.provideSignatureHelp('usage.lua', 2, 20);
+	assert.ok(hint);
+	assert.equal(hint.signatures[0].label, 'module.run(target, value)');
+	assert.equal(hint.activeParameter, 1);
+});
+
+test('LuaSemanticFrontend follows callable aliases exported through a global module table', () => {
+	const librarySource = [
+		'local execute<const> = function(first, second) return first end',
+		'return { execute = execute }',
+	].join('\n');
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('library.lua', librarySource);
+	workspace.updateFile('boot.lua', "library = require('library')");
+	workspace.updateFile('usage.lua', 'library.execute(1, ');
+	const frontend = buildLuaSemanticFrontendFromSnapshot(workspace.getSnapshot());
+	const hint = frontend.provideSignatureHelp('usage.lua', 1, 20);
+
+	assert.ok(hint);
+	assert.equal(hint.signatures[0].label, 'library.execute(first, second)');
+	assert.equal(hint.activeParameter, 1);
+});
+
+test('LuaSemanticFrontend resolves string-indexed table functions without path reconstruction in the provider', () => {
+	const source = [
+		'local api<const> = {',
+		'\trun = function(first, second) return first + second end,',
+		'}',
+		"api['run'](1, ",
+	].join('\n');
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('indexed_call.lua', source);
+	const frontend = buildLuaSemanticFrontendFromSnapshot(workspace.getSnapshot());
+	const hint = frontend.provideSignatureHelp('indexed_call.lua', 4, 15);
+	assert.ok(hint);
+	assert.equal(hint.signatures[0].label, 'api.run(first, second)');
+	assert.equal(hint.activeParameter, 1);
+});
+
+test('LuaSemanticFrontend retains signature help while the current call is incomplete', () => {
+	const source = [
+		'local function apply(target, value) return value end',
+		'apply(target, ',
+	].join('\n');
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('incomplete.lua', source);
+	const frontend = buildLuaSemanticFrontendFromSnapshot(workspace.getSnapshot());
+	const hint = frontend.provideSignatureHelp('incomplete.lua', 2, 15);
+	assert.ok(hint);
+	assert.equal(hint.signatures[0].label, 'apply(target, value)');
+	assert.equal(hint.activeParameter, 1);
+});
+
+test('LuaSemanticFrontend does not replace a shadowing callable with a builtin signature', () => {
+	const source = [
+		'local load<const> = function() end',
+		'load()',
+	].join('\n');
+	const frontend = buildLuaSemanticFrontend([{ path: 'shadow_builtin.lua', source }]);
+	const hint = frontend.provideSignatureHelp('shadow_builtin.lua', 2, 6);
+	assert.ok(hint);
+	assert.equal(hint.signatures[0].label, 'load()');
+	assert.deepEqual(frontend.getFile('shadow_builtin.lua').diagnostics, []);
 });
 
 function firstNavigationTarget(

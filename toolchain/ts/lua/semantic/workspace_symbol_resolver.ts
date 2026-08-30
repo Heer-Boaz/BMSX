@@ -1,5 +1,6 @@
-import type { Decl, FileSemanticData, Ref, SymbolID } from './model';
+import type { Decl, FileSemanticData, LuaCallSite, Ref, SymbolID } from './model';
 import {
+	declarationValueSource,
 	WorkspaceValueGraph,
 	WorkspaceValueIdentityIndex,
 	type SemanticValueSource,
@@ -9,6 +10,15 @@ import { sourceRangesEqual } from '../source_range';
 import { compareSourcePosition } from './source_range';
 
 const EMPTY_SYMBOLS: readonly SymbolID[] = [];
+
+function appendUniqueSymbols(target: SymbolID[], source: readonly SymbolID[]): void {
+	for (let sourceIndex = 0; sourceIndex < source.length; sourceIndex += 1) {
+		const symbol = source[sourceIndex];
+		if (!target.includes(symbol)) {
+			target.push(symbol);
+		}
+	}
+}
 
 // A resolver belongs to exactly one immutable workspace version. File analyses
 // retain lexical bindings; workspace-dependent module, value-flow and global
@@ -22,6 +32,7 @@ export class WorkspaceSymbolResolver {
 	private valueIdentities?: WorkspaceValueIdentityIndex;
 	private valueGraph?: WorkspaceValueGraph;
 	private readonly referenceTargets: Map<Ref, readonly SymbolID[]> = new Map();
+	private readonly callableTargets: Map<LuaCallSite, readonly SymbolID[]> = new Map();
 	private readonly referencesBySymbol: Map<SymbolID, readonly Ref[]> = new Map();
 	private readonly membersBySource: Map<string, readonly Decl[]> = new Map();
 
@@ -57,9 +68,35 @@ export class WorkspaceSymbolResolver {
 		const targets = this.resolveReferenceTargetsUncached(ref);
 		if (this.retainCallTargets(ref, targets)) {
 			this.referenceTargets.clear();
+			this.callableTargets.clear();
 			this.referencesBySymbol.clear();
 		}
 		this.referenceTargets.set(ref, targets);
+		return targets;
+	}
+
+	public resolveCallableTargets(callSite: LuaCallSite): readonly SymbolID[] {
+		const retained = this.callableTargets.get(callSite);
+		if (retained) {
+			return retained;
+		}
+		const valueGraph = this.getValueGraph();
+		const declarations = callSite.reference
+			? this.resolveReferenceTargets(callSite.reference)
+			: callSite.directTarget === undefined
+				? EMPTY_SYMBOLS
+				: [callSite.directTarget];
+		const targets: SymbolID[] = [];
+		for (let index = 0; index < declarations.length; index += 1) {
+			appendUniqueSymbols(
+				targets,
+				valueGraph.resolveFunctionDeclarations(declarationValueSource(declarations[index])),
+			);
+		}
+		if (targets.length === 0 && callSite.calleeValue !== undefined) {
+			appendUniqueSymbols(targets, valueGraph.resolveFunctionDeclarations(callSite.calleeValue));
+		}
+		this.callableTargets.set(callSite, targets);
 		return targets;
 	}
 
@@ -99,6 +136,7 @@ export class WorkspaceSymbolResolver {
 		} while (callGraphChanged);
 		if (retainedCallGraphChanged) {
 			this.referenceTargets.clear();
+			this.callableTargets.clear();
 			this.referencesBySymbol.clear();
 		}
 		return targetsByReference;

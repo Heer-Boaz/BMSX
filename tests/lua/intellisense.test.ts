@@ -246,6 +246,40 @@ tracker:add()
 	assert.match(diagnostics[0].message, /tracker:add/);
 });
 
+test('accounts for Lua implicit receivers independently of parameter naming', async () => {
+	const diagnostics = await runDiagnostics(`
+local tracker = { total = 0 }
+function tracker.add(receiver, value)
+	receiver.total = receiver.total + value
+end
+tracker:add(1)
+`);
+	assert.equal(diagnostics.length, 0);
+});
+
+test('requires an explicit receiver when a colon-defined method is called with dot syntax', async () => {
+	const diagnostics = await runDiagnostics(`
+local tracker = { total = 0 }
+function tracker:add(value)
+	self.total = self.total + value
+end
+tracker.add(1)
+`);
+	assert.equal(diagnostics.length, 1);
+	assert.match(diagnostics[0].message, /tracker\.add expects 2 arguments/i);
+});
+
+test('detects missing arguments for string-indexed table functions', async () => {
+	const diagnostics = await runDiagnostics(`
+local api<const> = {
+	run = function(first, second) return first + second end,
+}
+return api['run'](1)
+`);
+	assert.equal(diagnostics.length, 1);
+	assert.match(diagnostics[0].message, /api\.run expects 2 arguments/i);
+});
+
 test('allows omitted trailing optional arguments for local functions', async () => {
 	const diagnostics = await runDiagnostics(`
 local function add(a, b, c)

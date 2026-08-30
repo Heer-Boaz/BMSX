@@ -401,6 +401,12 @@ export type LuaCallExpression = LuaNode & {
 	readonly callee: LuaExpression;
 	readonly arguments: ReadonlyArray<LuaExpression>;
 	readonly method: LuaIdentifierExpression | null;
+	readonly argumentList: LuaCallArgumentList | null;
+};
+
+export type LuaCallArgumentList = {
+	readonly range: LuaSourceRange;
+	readonly separators: ReadonlyArray<LuaSourcePosition>;
 };
 
 export const enum LuaMemberOperator {

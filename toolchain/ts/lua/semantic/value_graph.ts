@@ -1866,6 +1866,53 @@ export class WorkspaceValueGraph {
 		return EMPTY_MEMBER_IDS;
 	}
 
+	public resolveFunctionDeclarations(source: SemanticValueSource): readonly SymbolID[] {
+		this.demandSource(source);
+		this.solveDemandedValues();
+		const value = this.resolveSource(source, false, undefined, true);
+		if (value === undefined) {
+			return EMPTY_MEMBER_IDS;
+		}
+		const declarations: SymbolID[] = [];
+		const generation = this.beginTraversal(value);
+		const stack = this.traversalStack;
+		while (true) {
+			const candidate = this.nextTraversalValue(generation);
+			if (candidate === undefined) {
+				break;
+			}
+			const flow = this.functionFlowsByValue.get(candidate);
+			const root = flow?.source.functionValue.root;
+			if (root?.kind === 'declaration' && !declarations.includes(root.declId)) {
+				declarations.push(root.declId);
+			}
+			this.pushTraversalBases(stack, candidate);
+		}
+		return declarations;
+	}
+
+	private beginTraversal(root: SemanticValueID): number {
+		this.traversalGeneration += 1;
+		const stack = this.traversalStack;
+		stack.length = 0;
+		stack.push(root);
+		return this.traversalGeneration;
+	}
+
+	private nextTraversalValue(generation: number): SemanticValueID | undefined {
+		const stack = this.traversalStack;
+		while (stack.length > 0) {
+			const lastIndex = stack.length - 1;
+			const value = stack[lastIndex];
+			stack.length = lastIndex;
+			if (this.traversalMarks[value] !== generation) {
+				this.traversalMarks[value] = generation;
+				return value;
+			}
+		}
+		return undefined;
+	}
+
 	private materializeNamedQueryEffects(
 		source: SemanticValueSource,
 		name: string,
@@ -2034,17 +2081,13 @@ export class WorkspaceValueGraph {
 		names: string[],
 		retainedNames: Set<string>,
 	): void {
-		const generation = this.traversalGeneration + 1;
-		this.traversalGeneration = generation;
+		const generation = this.beginTraversal(owner);
 		const stack = this.traversalStack;
-		stack.length = 0;
-		stack.push(owner);
-		while (stack.length > 0) {
-			const value = stack.pop()!;
-			if (this.traversalMarks[value] === generation) {
-				continue;
+		while (true) {
+			const value = this.nextTraversalValue(generation);
+			if (value === undefined) {
+				break;
 			}
-			this.traversalMarks[value] = generation;
 			const materializedMembers = this.members.get(value);
 			if (materializedMembers) {
 				for (const name of materializedMembers.keys()) {
@@ -2150,17 +2193,13 @@ export class WorkspaceValueGraph {
 
 	private demandResolvedMemberSources(owner: SemanticValueID, name: string): boolean {
 		let known = false;
-		const generation = this.traversalGeneration + 1;
-		this.traversalGeneration = generation;
+		const generation = this.beginTraversal(owner);
 		const stack = this.traversalStack;
-		stack.length = 0;
-		stack.push(owner);
-		while (stack.length > 0) {
-			const value = stack.pop()!;
-			if (this.traversalMarks[value] === generation) {
-				continue;
+		while (true) {
+			const value = this.nextTraversalValue(generation);
+			if (value === undefined) {
+				break;
 			}
-			this.traversalMarks[value] = generation;
 			for (let link = this.valueSourceHeads[value]; link !== 0; link = this.valueSourceNext[link - 1]) {
 				const bindingIndex = link - 1;
 				const source = this.valueSourceSources[bindingIndex];
@@ -5649,17 +5688,13 @@ export class WorkspaceValueGraph {
 		const closures = this.functionClosureScratch;
 		flows.length = 0;
 		closures.length = 0;
-		const generation = this.traversalGeneration + 1;
-		this.traversalGeneration = generation;
+		const generation = this.beginTraversal(callee);
 		const stack = this.traversalStack;
-		stack.length = 0;
-		stack.push(callee);
-		while (stack.length > 0) {
-			const candidate = stack.pop()!;
-			if (this.traversalMarks[candidate] === generation) {
-				continue;
+		while (true) {
+			const candidate = this.nextTraversalValue(generation);
+			if (candidate === undefined) {
+				break;
 			}
-			this.traversalMarks[candidate] = generation;
 			const flow = this.functionFlowsByValue.get(candidate);
 			if (flow) {
 				if (targetFlow && flow !== targetFlow) {

@@ -165,19 +165,6 @@ export type CursorScreenInfo = {
 	baseColor: number;
 };
 
-export type ParameterHintState = {
-	methodName: string;
-	params: string[];
-	signatureLabel: string;
-	anchorRow: number;
-	anchorColumn: number;
-	argumentIndex: number;
-	paramDescriptions?: readonly (string)[];
-	methodDescription?: string;
-	returnType?: string;
-	returnDescription?: string;
-};
-
 export type EditorDiagnosticSeverity = 'error' | 'warning';
 
 export type EditorDiagnostic = {

@@ -17,6 +17,7 @@ import {
 import type { RuntimeIdeState } from '../runtime/state';
 import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
 import type { EditorDebugCommandId } from '../common/commands';
+import type { LuaSignatureHelp } from '../../toolchain/ts/lua/semantic/signature_help';
 import { toggleBreakpoint } from '../workbench/contrib/debugger/controller';
 import { handleLuaError } from '../workbench/runtime_errors';
 import type {
@@ -40,6 +41,7 @@ export type HeadlessIdeHarness = {
 	getTrackedLuaHeapBytes(): number;
 	getLogMessageCount(): number;
 	getLogMessage(index: number): RecordedLogMessage;
+	getSignatureHelp(): LuaSignatureHelp | null;
 	/** Execute Hot Resume directly against the source registry's current dirty state. */
 	hotResumeCore(): void;
 	/** Full IDE hot-resume action, completed after its queued rebuild settles. */
@@ -92,6 +94,7 @@ export function createHeadlessIdeHarness(
 		getTrackedLuaHeapBytes: () => runtime.machine.cpu.luaHeap.usedBytes(),
 		getLogMessageCount: () => logOutput.messages.length,
 		getLogMessage: index => logOutput.messages[index],
+		getSignatureHelp: () => ide.editor.completion.hint,
 		hotResumeCore: () => {
 			hotResume(
 				ide.sources,

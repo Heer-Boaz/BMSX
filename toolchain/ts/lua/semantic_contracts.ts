@@ -36,7 +36,7 @@ export type LuaBuiltinDescriptor = {
 	params: string[];
 	signature: string;
 	optionalParams?: readonly string[];
-	parameterDescriptions?: readonly (string)[];
+	parameterDescriptions?: readonly (string | undefined)[];
 	description?: string;
 };
 

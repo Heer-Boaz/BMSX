@@ -1,5 +1,26 @@
 import type { LuaBuiltinDescriptor } from './semantic_contracts';
 
+const LUA_BUILTIN_DESCRIPTOR_LOOKUPS = new WeakMap<
+	readonly LuaBuiltinDescriptor[],
+	ReadonlyMap<string, LuaBuiltinDescriptor>
+>();
+
+export function getLuaBuiltinDescriptorLookup(
+	descriptors: readonly LuaBuiltinDescriptor[],
+): ReadonlyMap<string, LuaBuiltinDescriptor> {
+	const retained = LUA_BUILTIN_DESCRIPTOR_LOOKUPS.get(descriptors);
+	if (retained) {
+		return retained;
+	}
+	const lookup = new Map<string, LuaBuiltinDescriptor>();
+	for (let index = 0; index < descriptors.length; index += 1) {
+		const descriptor = descriptors[index];
+		lookup.set(descriptor.name, descriptor);
+	}
+	LUA_BUILTIN_DESCRIPTOR_LOOKUPS.set(descriptors, lookup);
+	return lookup;
+}
+
 export const LUA_BUILTIN_TABLE_ITERATOR_ARGUMENTS: Readonly<Record<string, number | undefined>> = {
 	ipairs: 0,
 	pairs: 0,

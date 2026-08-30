@@ -4,26 +4,33 @@ import {
 	type LuaCallExpression,
 	type LuaChunk,
 	type LuaExpression,
-	type LuaIdentifierExpression,
-	type LuaIndexExpression,
 	type LuaLocalAssignmentStatement,
-	type LuaMemberExpression,
 	type LuaSourceRange,
 	type LuaStatement,
-	type LuaStringLiteralExpression,
 } from '../syntax/ast';
-import { DEFAULT_LUA_BUILTIN_FUNCTIONS } from '../builtin_descriptors';
+import {
+	DEFAULT_LUA_BUILTIN_FUNCTIONS,
+	getLuaBuiltinDescriptorLookup,
+} from '../builtin_descriptors';
 import type { LuaBuiltinDescriptor, LuaSymbolEntry } from '../semantic_contracts';
 import {
 	buildLuaSemanticWorkspaceSnapshot,
 	type Decl,
 	type FileSemanticData,
-	type FunctionSignatureInfo,
 	type LuaSemanticWorkspaceSnapshotInput,
+	type SymbolID,
 } from './model';
+import type { WorkspaceSymbolResolver } from './workspace_symbol_resolver';
 import { getCachedLuaParse } from '../analysis/cache';
 import { sourceRangeStartKey } from './source_range';
-import { buildLuaKnownNameSet, isReservedMemoryMapName, methodPathToPropertyPath, semanticSymbolKindToLuaSymbolKind } from './common';
+import { buildLuaKnownNameSet, isReservedMemoryMapName, semanticSymbolKindToLuaSymbolKind } from './common';
+import {
+	formatLuaCallReferencePath,
+	getLuaBuiltinMinimumArgumentCount,
+	getLuaCallMinimumArgumentCount,
+	getLuaCallStyle,
+	resolveStaticLuaExpressionPath,
+} from './call_signature';
 
 export type LuaStaticDiagnostic = {
 	row: number;
@@ -41,6 +48,7 @@ export type LuaAnalysisDiagnosticOptions = {
 	globalSymbols: readonly LuaSymbolEntry[];
 	builtinDescriptors: readonly LuaBuiltinDescriptor[];
 	extraGlobalNames?: readonly string[];
+	symbolResolver: WorkspaceSymbolResolver;
 };
 
 export type LuaProjectSource = {
@@ -54,20 +62,8 @@ export type LuaProjectDiagnosticOptions = {
 };
 
 type CallSignatureMetadata = {
-	params: readonly string[];
 	required: number;
 	label: string;
-	callStyle?: 'function' | 'method';
-	declarationStyle?: 'function' | 'method';
-};
-
-type FunctionCallInfo = {
-	path: string;
-	style: 'function' | 'method';
-};
-
-type QualifiedName = {
-	parts: string[];
 };
 
 function walkLuaStatementTree(statements: readonly LuaStatement[], visitStatement: (statement: LuaStatement) => void): void {
@@ -129,11 +125,11 @@ export function computeLuaDiagnosticsFromAnalysis(options: LuaAnalysisDiagnostic
 		options.builtinDescriptors,
 		options.extraGlobalNames,
 	);
-	const builtinLookup = buildBuiltinLookup(options.builtinDescriptors);
+	const builtinLookup = getLuaBuiltinDescriptorLookup(options.builtinDescriptors);
 	addIdentifierDiagnosticsFromSemantic(diagnostics, options.analysis, globalKnownNames);
 	addConstLocalWriteDiagnosticsFromSemantic(diagnostics, options.analysis);
 	addConstLocalInitializerDiagnostics(diagnostics, options.chunk);
-	addCallDiagnosticsFromSemantic(diagnostics, options.analysis, builtinLookup);
+	addCallDiagnosticsFromSemantic(diagnostics, options.analysis, builtinLookup, options.symbolResolver);
 	addReservedMemoryDiagnosticsFromSemantic(diagnostics, options.analysis, options.chunk);
 	return diagnostics;
 }
@@ -177,6 +173,7 @@ export function computeLuaProjectDiagnostics(
 			globalSymbols,
 			builtinDescriptors,
 			extraGlobalNames: options.extraGlobalNames,
+			symbolResolver: snapshot.symbolResolver,
 		}));
 	}
 	return results;
@@ -243,15 +240,6 @@ function pushRangeDiagnostic(
 	const startColumn = range.start.column - 1;
 	const endColumn = range.end.column > range.start.column ? range.end.column : startColumn + 1;
 	pushDiagnostic(diagnostics, row, startColumn, endColumn, message, severity);
-}
-
-function buildBuiltinLookup(builtinDescriptors: readonly LuaBuiltinDescriptor[]): Map<string, LuaBuiltinDescriptor> {
-	const lookup = new Map<string, LuaBuiltinDescriptor>();
-	for (let index = 0; index < builtinDescriptors.length; index += 1) {
-		const descriptor = builtinDescriptors[index];
-		lookup.set(descriptor.name, descriptor);
-	}
-	return lookup;
 }
 
 function addIdentifierDiagnosticsFromSemantic(
@@ -332,203 +320,91 @@ function addConstLocalInitializerDiagnostics(diagnostics: LuaStaticDiagnostic[],
 function addCallDiagnosticsFromSemantic(
 	diagnostics: LuaStaticDiagnostic[],
 	analysis: FileSemanticData,
-	builtinLookup: Map<string, LuaBuiltinDescriptor>,
+	builtinLookup: ReadonlyMap<string, LuaBuiltinDescriptor>,
+	symbolResolver: WorkspaceSymbolResolver,
 ): void {
-	const calls = analysis.callExpressions;
-	if (calls.length === 0) {
+	const callSites = analysis.callSites;
+	if (callSites.length === 0) {
 		return;
 	}
-	const signatures = analysis.functionSignatures;
-	for (let index = 0; index < calls.length; index += 1) {
-		const call = calls[index];
-		const metadata = resolveCallSignature(call, builtinLookup);
-		if (metadata) {
-			validateCallArity(diagnostics, call, metadata);
-			continue;
-		}
-		if (signatures) {
-			const userMetadata = resolveUserFunctionSignature(call, signatures);
+	for (let index = 0; index < callSites.length; index += 1) {
+		const callSite = callSites[index];
+		const call = callSite.expression;
+		if (callSite.directTarget !== undefined) {
+			const declaration = symbolResolver.getDeclaration(callSite.directTarget);
+			const userMetadata = resolveUserFunctionSignature(
+				call,
+				declaration.namePath.join('.'),
+				callSite.directTarget,
+				symbolResolver,
+			);
 			if (userMetadata) {
 				validateCallArity(diagnostics, call, userMetadata);
 			}
+			continue;
+		}
+		const reference = callSite.reference;
+		if (reference?.target !== undefined) {
+			const callStyle = getLuaCallStyle(call);
+			const userMetadata = resolveUserFunctionSignature(
+				call,
+				formatLuaCallReferencePath(reference, callStyle),
+				reference.target,
+				symbolResolver,
+			);
+			if (userMetadata) {
+				validateCallArity(diagnostics, call, userMetadata);
+			}
+			continue;
+		}
+		const metadata = resolveCallSignature(call, builtinLookup);
+		if (metadata) {
+			validateCallArity(diagnostics, call, metadata);
 		}
 	}
 }
 
 function resolveCallSignature(
 	call: LuaCallExpression,
-	builtinLookup: Map<string, LuaBuiltinDescriptor>,
+	builtinLookup: ReadonlyMap<string, LuaBuiltinDescriptor>,
 ): CallSignatureMetadata | null {
 	if (call.method !== null) {
 		return null;
 	}
-	const qualified = resolveQualifiedName(call.callee);
-	if (!qualified) {
+	const path = resolveStaticLuaExpressionPath(call.callee);
+	if (path === null) {
 		return null;
 	}
-	const key = qualified.parts.join('.');
-	const builtin = builtinLookup.get(key);
+	const builtin = builtinLookup.get(path);
 	if (builtin) {
-		return createCallSignatureMetadata(builtin.name, builtin.params, builtin.optionalParams, 'function', 'function');
+		return {
+			required: getLuaBuiltinMinimumArgumentCount(builtin),
+			label: builtin.name,
+		};
 	}
 	return null;
-}
-
-function createCallSignatureMetadata(
-	label: string,
-	params: readonly string[],
-	optionalParams: readonly string[] | undefined,
-	callStyle: 'function' | 'method',
-	declarationStyle: 'function' | 'method',
-	requiredOverride?: number,
-): CallSignatureMetadata {
-	return {
-		params,
-		required: requiredOverride ?? countRequiredParameters(params, optionalParams),
-		label,
-		callStyle,
-		declarationStyle,
-	};
-}
-
-function resolveQualifiedName(expression: LuaExpression): QualifiedName | null {
-	const parts: string[] = [];
-	let current: LuaExpression = expression;
-	while (current) {
-		if (current.kind === LuaSyntaxKind.IdentifierExpression) {
-			const identifier = current as LuaIdentifierExpression;
-			parts.unshift(identifier.name);
-			return { parts };
-		}
-		if (current.kind === LuaSyntaxKind.MemberExpression) {
-			const member = current as LuaMemberExpression;
-			parts.unshift(member.member.name);
-			current = member.base;
-			continue;
-		}
-		if (current.kind === LuaSyntaxKind.IndexExpression) {
-			return null;
-		}
-		return null;
-	}
-	return null;
-}
-
-function countRequiredParameters(params: readonly string[], optionalParams?: readonly string[]): number {
-	const optionalSet = optionalParams ? new Set(optionalParams) : null;
-	let required = 0;
-	for (let index = 0; index < params.length; index += 1) {
-		const param = params[index];
-		if (param === '...' || param.endsWith('...') || param.endsWith('?')) {
-			continue;
-		}
-		if (optionalSet && optionalSet.has(param)) {
-			continue;
-		}
-		required += 1;
-	}
-	return required;
-}
-
-function buildMemberBasePath(expression: LuaExpression): string | null {
-	if (expression.kind === LuaSyntaxKind.IdentifierExpression) {
-		const identifier = expression as LuaIdentifierExpression;
-		return identifier.name;
-	}
-	if (expression.kind === LuaSyntaxKind.MemberExpression) {
-		const member = expression as LuaMemberExpression;
-		const parent = buildMemberBasePath(member.base);
-		if (parent === null) {
-			return null;
-		}
-		return `${parent}.${member.member.name}`;
-	}
-	if (expression.kind === LuaSyntaxKind.IndexExpression) {
-		const indexExpression = expression as LuaIndexExpression;
-		if (indexExpression.index.kind === LuaSyntaxKind.StringLiteralExpression) {
-			const literal = indexExpression.index as LuaStringLiteralExpression;
-			const base = buildMemberBasePath(indexExpression.base);
-			if (base === null) {
-				return null;
-			}
-			return `${base}.${literal.value}`;
-		}
-		return null;
-	}
-	return null;
-}
-
-function buildCallInfo(call: LuaCallExpression): FunctionCallInfo | null {
-	if (call.method !== null) {
-		const basePath = buildMemberBasePath(call.callee);
-		if (basePath === null) {
-			return null;
-		}
-		return { path: `${basePath}:${call.method.name}`, style: 'method' };
-	}
-	const qualified = resolveQualifiedName(call.callee);
-	if (!qualified) {
-		return null;
-	}
-	return { path: qualified.parts.join('.'), style: 'function' };
-}
-
-function convertPropertyPathToMethod(path: string): string | null {
-	const index = path.lastIndexOf('.');
-	if (index === -1) {
-		return null;
-	}
-	const prefix = path.slice(0, index);
-	const suffix = path.slice(index + 1);
-	return `${prefix}:${suffix}`;
 }
 
 function resolveUserFunctionSignature(
 	call: LuaCallExpression,
-	signatures: ReadonlyMap<string, FunctionSignatureInfo>,
+	label: string,
+	target: SymbolID,
+	symbolResolver: WorkspaceSymbolResolver,
 ): CallSignatureMetadata | null {
-	const callInfo = buildCallInfo(call);
-	if (!callInfo) {
+	const signature = symbolResolver.getDeclaration(target).signature;
+	if (!signature) {
 		return null;
 	}
-	const direct = signatures.get(callInfo.path);
-	if (direct) {
-		return createCallSignatureMetadata(callInfo.path, direct.params, undefined, callInfo.style, direct.declarationStyle, direct.minimumArgumentCount);
-	}
-	if (callInfo.style === 'method') {
-		const dotPath = methodPathToPropertyPath(callInfo.path);
-		if (dotPath) {
-			const fallback = signatures.get(dotPath);
-			if (fallback) {
-				return createCallSignatureMetadata(dotPath, fallback.params, undefined, callInfo.style, fallback.declarationStyle, fallback.minimumArgumentCount);
-			}
-		}
-	} else {
-		const colonPath = convertPropertyPathToMethod(callInfo.path);
-		if (colonPath) {
-			const fallback = signatures.get(colonPath);
-			if (fallback) {
-				return createCallSignatureMetadata(colonPath, fallback.params, undefined, callInfo.style, fallback.declarationStyle, fallback.minimumArgumentCount);
-			}
-		}
-	}
-	return null;
-}
-
-function isSelfParameter(name: string): boolean {
-	return name === 'self' || name === 'this';
+	const callStyle = getLuaCallStyle(call);
+	return {
+		required: getLuaCallMinimumArgumentCount(signature, callStyle),
+		label,
+	};
 }
 
 function validateCallArity(diagnostics: LuaStaticDiagnostic[], call: LuaCallExpression, metadata: CallSignatureMetadata): void {
-	let required = metadata.required;
+	const required = metadata.required;
 	const actualCount = call.arguments.length;
-	if (metadata.declarationStyle === 'method' && metadata.callStyle === 'function') {
-		required += 1;
-	} else if (metadata.declarationStyle === 'function' && metadata.callStyle === 'method') {
-		if (isSelfParameter(metadata.params[0])) {
-			required = Math.max(0, required - 1);
-		}
-	}
 	if (actualCount >= required) {
 		return;
 	}

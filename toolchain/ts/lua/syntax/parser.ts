@@ -19,6 +19,7 @@ import type {
 	LuaBinaryExpression,
 	LuaBooleanLiteralExpression,
 	LuaBreakStatement,
+	LuaCallArgumentList,
 	LuaCallExpression,
 	LuaCallStatement,
 	LuaChunk,
@@ -66,7 +67,8 @@ import type {
 
 type ParsedArguments = {
 	readonly arguments: ReadonlyArray<LuaExpression>;
-	readonly endToken: LuaToken;
+	readonly end: LuaSourcePosition;
+	readonly argumentList: LuaCallArgumentList | null;
 };
 
 type LuaBinaryOperatorSpec = readonly [LuaTokenType, LuaBinaryOperator];
@@ -1094,19 +1096,86 @@ export class LuaParser {
 			|| type === LuaTokenType.String;
 	}
 
+	private startsExpression(): boolean {
+		switch (this.current().type) {
+			case LuaTokenType.Ampersand:
+			case LuaTokenType.False:
+			case LuaTokenType.Function:
+			case LuaTokenType.Hash:
+			case LuaTokenType.Identifier:
+			case LuaTokenType.LeftBrace:
+			case LuaTokenType.LeftParen:
+			case LuaTokenType.Minus:
+			case LuaTokenType.Nil:
+			case LuaTokenType.Not:
+			case LuaTokenType.Number:
+			case LuaTokenType.Star:
+			case LuaTokenType.String:
+			case LuaTokenType.Tilde:
+			case LuaTokenType.True:
+			case LuaTokenType.Vararg:
+				return true;
+			default:
+				return false;
+		}
+	}
+
 	private parseCallArguments(): ParsedArguments {
 		if (this.match(LuaTokenType.LeftParen)) {
+			const leftParen = this.previous();
 			const args: LuaExpression[] = [];
+			const separators: LuaSourcePosition[] = [];
 			if (!this.check(LuaTokenType.RightParen)) {
-				args.push(this.parseExpression());
-				while (this.match(LuaTokenType.Comma)) {
+				if (!this.recoverStatements || this.startsExpression()) {
 					args.push(this.parseExpression());
+					while (this.match(LuaTokenType.Comma)) {
+						separators.push(this.positionFromToken(this.previous()));
+						if (this.recoverStatements && !this.startsExpression()) {
+							this.retainSyntaxError(this.error(this.current(), 'Expected expression after ",".'));
+							break;
+						}
+						args.push(this.parseExpression());
+					}
+				} else {
+					this.retainSyntaxError(this.error(this.current(), 'Expected expression after "(".'));
 				}
 			}
-			const rightParen = this.consume(LuaTokenType.RightParen, 'Expected ")" after arguments.');
+			if (this.match(LuaTokenType.RightParen)) {
+				const rightParen = this.previous();
+				const end = this.endPositionFromToken(rightParen);
+				return {
+					arguments: args,
+					end,
+					argumentList: {
+						range: {
+							path: this.path,
+							start: this.positionFromToken(leftParen),
+							end,
+						},
+						separators,
+					},
+				};
+			}
+			if (!this.recoverStatements) {
+				this.consume(LuaTokenType.RightParen, 'Expected ")" after arguments.');
+			}
+			this.retainSyntaxError(this.error(this.current(), 'Expected ")" after arguments.'));
+			const current = this.current();
+			const previous = this.previous();
+			const end = current.type === LuaTokenType.Eof
+				? this.positionFromToken(current)
+				: { line: previous.endLine, column: previous.endColumn + 1 };
 			return {
 				arguments: args,
-				endToken: rightParen,
+				end,
+				argumentList: {
+					range: {
+						path: this.path,
+						start: this.positionFromToken(leftParen),
+						end,
+					},
+					separators,
+				},
 			};
 		}
 		if (this.check(LuaTokenType.LeftBrace)) {
@@ -1115,7 +1184,8 @@ export class LuaParser {
 			const endToken = this.previous();
 			return {
 				arguments: [tableExpression],
-				endToken,
+				end: this.endPositionFromToken(endToken),
+				argumentList: null,
 			};
 		}
 		if (this.check(LuaTokenType.String)) {
@@ -1123,7 +1193,8 @@ export class LuaParser {
 			const stringExpression = this.createStringLiteralExpression(stringToken);
 			return {
 				arguments: [stringExpression],
-				endToken: stringToken,
+				end: this.endPositionFromToken(stringToken),
+				argumentList: null,
 			};
 		}
 		throw this.error(this.current(), 'Invalid function call arguments.');
@@ -1136,10 +1207,15 @@ export class LuaParser {
 	): LuaCallExpression {
 		return {
 			kind: LuaSyntaxKind.CallExpression,
-			range: this.rangeFromNodeAndToken(callee, parsedArguments.endToken),
+			range: {
+				path: this.path,
+				start: callee.range.start,
+				end: parsedArguments.end,
+			},
 			callee,
 			arguments: parsedArguments.arguments,
 			method,
+			argumentList: parsedArguments.argumentList,
 		};
 	}
 

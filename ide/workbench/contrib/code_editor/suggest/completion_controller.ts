@@ -16,7 +16,6 @@ import {
 	EditContext,
 	LuaCompletionItem,
 	LuaCompletionKind,
-	ParameterHintState,
 } from '../../../../common/models';
 import type { LuaBuiltinDescriptor, LuaSymbolEntry } from '../../../../../toolchain/ts/lua/semantic_contracts';
 import { resourceIdentityKey } from '../../../../common/resource';
@@ -35,6 +34,7 @@ import { updateDesiredColumn, revealCursor } from '../../../../editor/ui/view/ca
 import { resetBlink } from '../../../../editor/render/caret';
 import type { Decl } from '../../../../../toolchain/ts/lua/semantic/model';
 import type { LuaSemanticFrontendFile } from '../../../../../toolchain/ts/lua/semantic/frontend';
+import type { LuaSignatureHelp } from '../../../../../toolchain/ts/lua/semantic/signature_help';
 import { clearSingleCursorSelection, setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../../../editor/editing/cursor/state';
 import type { Runtime } from '../../../../../machine/ts/machine/runtime/runtime';
 import type { PlayerInput } from '../../../../../hosts/common/input/player';
@@ -61,13 +61,12 @@ export class CompletionController {
 	) {}
 
 	public get session(): CompletionSession | null { return this.completionSession; }
-	public get hint(): ParameterHintState | null { return this.parameterHint; }
+	public get hint(): LuaSignatureHelp | null { return this.parameterHint; }
 
 	private readonly cursorPositionScratch = { row: 0, column: 0 };
 	private readonly clampPositionScratch = { row: 0, column: 0 };
 	private readonly inlineCompletionPreviewScratch = { row: 0, column: 0, suffix: '' };
 	private readonly lastCursorPositionScratch = { row: 0, column: 0 };
-	private readonly parameterHintAnchorScratch = { row: 0, column: 0 };
 	public readonly popupBoundsScratch = create_rect_bounds();
 
 	protected isCompletionContextActive(): boolean {
@@ -159,10 +158,6 @@ export class CompletionController {
 		this.lastCursorPosition = assignRowColumn(this.lastCursorPosition, row, column, this.lastCursorPositionScratch);
 	}
 
-	private setParameterHintAnchor(row: number, column: number): void {
-		this.parameterHintAnchor = assignRowColumn(this.parameterHintAnchor, row, column, this.parameterHintAnchorScratch);
-	}
-
 	protected afterCompletionApplied(): void {
 		updateDesiredColumn();
 		resetBlink();
@@ -178,14 +173,12 @@ export class CompletionController {
 	private sharedCompletionVersion = -1;
 	private pendingCompletionRequest: { context: CompletionContext; trigger: CompletionTrigger; elapsed: number } = null;
 	private suppressNextAutoCompletion = false;
-	private parameterHint: ParameterHintState = null;
-	private parameterHintAnchor: { row: number; column: number } = null;
+	private parameterHint: LuaSignatureHelp | null = null;
 	private parameterHintTriggerPending = false;
 	private parameterHintIdleElapsed = 0;
 	private lastCursorPosition: { row: number; column: number } = null;
 	private lastTextVersion = -1;
-	private builtinDescriptors: readonly LuaBuiltinDescriptor[] = null;
-	private readonly builtinDescriptorMap: Map<string, LuaBuiltinDescriptor> = new Map();
+	private builtinDescriptors: readonly LuaBuiltinDescriptor[] | null = null;
 	public popupBounds: { left: number; top: number; right: number; bottom: number } | null = null;
 	public enterCommitsCompletion = false;
 
@@ -330,14 +323,12 @@ export class CompletionController {
 			this.closeSession();
 			this.cancelPendingCompletion();
 			this.parameterHint = null;
-			this.parameterHintAnchor = null;
 			this.parameterHintTriggerPending = false;
 			this.parameterHintIdleElapsed = 0;
 			return;
 		}
 		this.cancelPendingCompletion();
 		this.parameterHint = null;
-		this.parameterHintAnchor = null;
 		this.parameterHintTriggerPending = false;
 		this.parameterHintIdleElapsed = 0;
 		const session = this.completionSession;
@@ -632,7 +623,9 @@ export class CompletionController {
 
 	private getBuiltinCompletionItems(): LuaCompletionItem[] {
 		const items: LuaCompletionItem[] = [];
-		for (const descriptor of this.builtinDescriptorMap.values()) {
+		const descriptors = this.builtinDescriptors;
+		for (let index = 0; index < descriptors.length; index += 1) {
+			const descriptor = descriptors[index];
 			const label = descriptor.name;
 			const insertText = isReservedMemoryMapName(label) ? `${label}[]` : label;
 			const params = descriptor.params.slice();
@@ -745,29 +738,7 @@ export class CompletionController {
 		const descriptors = listLuaBuiltinDescriptors();
 		if (this.builtinDescriptors === descriptors) return;
 		this.builtinDescriptors = descriptors;
-		this.builtinDescriptorMap.clear();
 		this.sharedCompletionItems = null;
-		for (let index = 0; index < descriptors.length; index += 1) {
-			const descriptor = descriptors[index];
-			this.builtinDescriptorMap.set(descriptor.name, descriptor);
-		}
-	}
-
-	private findBuiltinDescriptor(objectName: string, methodName: string): LuaBuiltinDescriptor {
-		this.ensureBuiltinDescriptorCache();
-		const methodKey = methodName;
-		if (objectName) {
-			const compositeKey = `${objectName}.${methodKey}`;
-			const composite = this.builtinDescriptorMap.get(compositeKey);
-			if (composite) {
-				return composite;
-			}
-		}
-		const direct = this.builtinDescriptorMap.get(methodKey);
-		if (direct) {
-			return direct;
-		}
-		return null;
 	}
 
 	private determineAutoCompletionTrigger(context: CompletionContext, edit: EditContext): CompletionTrigger {
@@ -996,7 +967,6 @@ export class CompletionController {
 	private refreshParameterHint(): void {
 		if (!this.isCompletionReady()) {
 			this.parameterHint = null;
-			this.parameterHintAnchor = null;
 			this.parameterHintTriggerPending = false;
 			this.parameterHintIdleElapsed = 0;
 			return;
@@ -1004,25 +974,24 @@ export class CompletionController {
 		const info = this.resolveParameterHintContext();
 		if (!info) {
 			this.parameterHint = null;
-			this.parameterHintAnchor = null;
 			this.parameterHintTriggerPending = false;
 			this.parameterHintIdleElapsed = 0;
 			return;
 		}
 		if (this.parameterHintTriggerPending) {
 			this.parameterHintTriggerPending = false;
-			this.setParameterHintAnchor(info.anchorRow, info.anchorColumn);
 			this.parameterHint = info;
 			this.parameterHintIdleElapsed = 0;
 			return;
 		}
-		const anchor = this.parameterHintAnchor;
-		if (anchor && anchor.row === info.anchorRow && anchor.column === info.anchorColumn) {
+		const current = this.parameterHint;
+		if (current
+			&& current.applicableRange.start.line === info.applicableRange.start.line
+			&& current.applicableRange.start.column === info.applicableRange.start.column) {
 			this.parameterHint = info;
 			return;
 		}
 		this.parameterHint = null;
-		this.parameterHintAnchor = null;
 		this.parameterHintIdleElapsed = 0;
 	}
 
@@ -1050,73 +1019,19 @@ export class CompletionController {
 		}
 	}
 
-	private resolveParameterHintContext(): ParameterHintState {
+	private resolveParameterHintContext(): LuaSignatureHelp | null {
 		if (!this.isCompletionReady()) return null;
-		const buffer = this.getBuffer();
 		const cursor = this.getCursorPosition();
-		const lineCount = buffer.getLineCount();
-		const safeRow = clamp(cursor.row, 0, lineCount - 1);
-		const line = buffer.getLineContent(safeRow);
-		if (line.length === 0) return null;
-		const safeColumn = clamp(cursor.column, 0, line.length);
-		let depth = 0;
-		let lastOpen = -1;
-		for (let index = 0; index < safeColumn; index += 1) {
-			const ch = line.charAt(index);
-			if (ch === '(') { depth += 1; lastOpen = index; }
-			else if (ch === ')') { if (depth > 0) { depth -= 1; if (depth === 0) lastOpen = -1; } }
-		}
-		if (depth <= 0 || lastOpen < 0) return null;
-		if (isLuaCommentContext(buffer, safeRow, lastOpen)) return null;
-		const prefix = line.slice(0, lastOpen);
-		let scan = prefix.length - 1;
-		while (scan >= 0 && LuaLexer.isWhitespace(prefix.charAt(scan))) scan -= 1;
-		if (scan < 0) return null;
-		let nameEnd = scan + 1;
-		while (scan >= 0 && LuaLexer.isIdentifierPart(prefix.charAt(scan))) scan -= 1;
-		const methodName = prefix.slice(scan + 1, nameEnd);
-		if (methodName.length === 0) return null;
-		const inner = line.slice(lastOpen + 1, safeColumn);
-		let argumentIndex = 0;
-		let nested = 0;
-		for (let i = 0; i < inner.length; i += 1) {
-			const ch = inner.charAt(i);
-			if (ch === '(') nested += 1;
-			else if (ch === ')') { if (nested > 0) nested -= 1; }
-			else if (ch === ',' && nested === 0) argumentIndex += 1;
-		}
-		let operatorIndex = scan;
-		while (operatorIndex >= 0 && LuaLexer.isWhitespace(prefix.charAt(operatorIndex))) operatorIndex -= 1;
-		let objectName: string = null;
-		if (operatorIndex >= 0) {
-			const candidateOperator = prefix.charAt(operatorIndex);
-			if (candidateOperator === '.' || candidateOperator === ':') {
-				let objectEnd = operatorIndex;
-				let objectIndex = objectEnd - 1;
-				while (objectIndex >= 0 && LuaLexer.isWhitespace(prefix.charAt(objectIndex))) objectIndex -= 1;
-				if (objectIndex >= 0) {
-					let objectStart = objectIndex;
-					while (objectStart >= 0 && LuaLexer.isIdentifierPart(prefix.charAt(objectStart))) objectStart -= 1;
-					objectName = prefix.slice(objectStart + 1, objectIndex + 1);
-				}
-			}
-		}
-
-		const builtin = this.findBuiltinDescriptor(objectName, methodName);
-		if (builtin) {
-			const params = builtin.params.slice();
-			return {
-				methodName: builtin.name,
-				params,
-				signatureLabel: builtin.signature,
-				anchorRow: safeRow,
-				anchorColumn: lastOpen,
-				argumentIndex: clamp(argumentIndex, 0, params.length - 1),
-				paramDescriptions: builtin.parameterDescriptions,
-				methodDescription: builtin.description ,
-			};
-		}
-		return null;
+		const frontend = buildEditorSemanticFrontend(
+			this.bridge,
+			editorDocumentState.resource,
+			this.getBuffer(),
+		);
+		return frontend.provideSignatureHelp(
+			this.getActivePath(),
+			cursor.row + 1,
+			cursor.column + 1,
+		);
 	}
 }
 

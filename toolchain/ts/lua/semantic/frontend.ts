@@ -1,5 +1,6 @@
 import type { LuaChunk, LuaIdentifierExpression, LuaSourceRange } from '../syntax/ast';
 import type { LuaBuiltinDescriptor, LuaSymbolEntry } from '../semantic_contracts';
+import { getLuaBuiltinDescriptorLookup } from '../builtin_descriptors';
 import type { ParsedLuaChunk } from '../analysis/parse';
 import {
 	buildLuaSemanticWorkspaceSnapshot,
@@ -25,6 +26,10 @@ import {
 	type LuaMemberCompletionContext,
 } from './completion';
 import { buildLuaKnownNameSet, isReservedIntrinsicName, isReservedMemoryMapName, semanticSymbolKindToLuaSymbolKind } from './common';
+import {
+	provideLuaSignatureHelp,
+	type LuaSignatureHelp,
+} from './signature_help';
 
 export type LuaSemanticFrontendSource = {
 	path: string;
@@ -124,6 +129,7 @@ export type LuaSemanticFrontend = {
 	getFile(path: string): LuaSemanticFrontendFile;
 	findSymbolsByPosition(path: string, line: number, column: number): LuaSemanticPositionSymbols | null;
 	findReferencesByPosition(path: string, line: number, column: number): LuaSemanticReferenceQuery | null;
+	provideSignatureHelp(path: string, line: number, column: number): LuaSignatureHelp | null;
 	provideIncomingCalls(
 		symbolId: SymbolID,
 		allowedPaths?: ReadonlySet<string>,
@@ -152,6 +158,7 @@ export function buildLuaSemanticFrontendFromSnapshot(
 class SnapshotSemanticFrontend implements LuaSemanticFrontend {
 	public readonly snapshot: LuaSemanticWorkspaceSnapshot;
 	private readonly builtinDescriptors: readonly LuaBuiltinDescriptor[];
+	private readonly builtinDescriptorLookup: ReadonlyMap<string, LuaBuiltinDescriptor>;
 	private readonly extraGlobalNames: readonly string[] | undefined;
 	private readonly globalSymbols: readonly LuaSymbolEntry[];
 	private readonly knownGlobalNames: ReadonlySet<string>;
@@ -161,6 +168,7 @@ class SnapshotSemanticFrontend implements LuaSemanticFrontend {
 	constructor(snapshot: LuaSemanticWorkspaceSnapshot, options: LuaSemanticFrontendOptions) {
 		this.snapshot = snapshot;
 		this.builtinDescriptors = options.builtinDescriptors ?? getDefaultLuaBuiltinDescriptors();
+		this.builtinDescriptorLookup = getLuaBuiltinDescriptorLookup(this.builtinDescriptors);
 		this.extraGlobalNames = options.extraGlobalNames;
 		// Queries remain bound to this immutable source and global-symbol generation.
 		this.globalSymbols = buildCombinedGlobalSymbols(snapshot.listGlobalDecls(), options.externalGlobalSymbols);
@@ -187,6 +195,7 @@ class SnapshotSemanticFrontend implements LuaSemanticFrontend {
 			globalSymbols: this.globalSymbols,
 			builtinDescriptors: this.builtinDescriptors,
 			extraGlobalNames: this.extraGlobalNames,
+			symbolResolver: this.snapshot.symbolResolver,
 		});
 		file = createBoundFile(
 			source,
@@ -222,6 +231,20 @@ class SnapshotSemanticFrontend implements LuaSemanticFrontend {
 			targets: symbols.targets,
 			references: this.snapshot.symbolResolver.getReferencesForSymbols(symbolIds),
 		};
+	}
+
+	public provideSignatureHelp(path: string, line: number, column: number): LuaSignatureHelp | null {
+		const source = this.snapshot.getFileData(path);
+		if (!source) {
+			return null;
+		}
+		return provideLuaSignatureHelp(
+			source,
+			this.snapshot.symbolResolver,
+			this.builtinDescriptorLookup,
+			line,
+			column,
+		);
 	}
 
 	public provideIncomingCalls(

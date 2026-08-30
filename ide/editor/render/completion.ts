@@ -1,9 +1,15 @@
 import { clamp } from '../../../machine/ts/common/clamp';
 import { api } from '../../runtime/overlay_api';
 import * as constants from '../../common/constants';
-import { truncateWithMeasure, wrapTextDynamic } from '../../common/text';
-import { measureText } from '../common/text/layout';
-import type { CompletionSession, CursorScreenInfo, ParameterHintState } from '../../common/models';
+import {
+	truncateMeasuredText,
+	truncateWithMeasure,
+	writeWrappedMeasuredText,
+	type TextRangeMeasure,
+} from '../../common/text';
+import { measureText, measureTextRange } from '../common/text/layout';
+import type { CompletionSession, CursorScreenInfo } from '../../common/models';
+import type { LuaSignatureHelp } from '../../../toolchain/ts/lua/semantic/signature_help';
 import { drawEditorText } from './text_renderer';
 import { editorViewState } from '../ui/view/state';
 
@@ -24,13 +30,44 @@ export type CompletionPopupBounds = {
 
 export type CompletionPresentation = {
 	readonly session: CompletionSession | null;
-	readonly hint: ParameterHintState | null;
+	readonly hint: LuaSignatureHelp | null;
 	popupBounds: CompletionPopupBounds | null;
 	readonly popupBoundsScratch: CompletionPopupBounds;
 };
 
 type CompletionTextMeasure = (text: string) => number;
 type CompletionTextDraw = (text: string, x: number, y: number, color: number) => void;
+
+type ParameterHintLayout = {
+	hint: LuaSignatureHelp | null;
+	measure: CompletionTextMeasure;
+	measureRange: TextRangeMeasure;
+	maxTextWidth: number;
+	signaturePrefix: string;
+	signatureActiveParameter: string;
+	signatureSuffix: string;
+	signaturePrefixWidth: number;
+	signatureActiveParameterWidth: number;
+	maxLineWidth: number;
+	descriptionLines: string[];
+	descriptionColors: number[];
+};
+
+const parameterHintLayout: ParameterHintLayout = {
+	hint: null,
+	measure: measureText,
+	measureRange: measureTextRange,
+	maxTextWidth: -1,
+	signaturePrefix: '',
+	signatureActiveParameter: '',
+	signatureSuffix: '',
+	signaturePrefixWidth: 0,
+	signatureActiveParameterWidth: 0,
+	maxLineWidth: 0,
+	descriptionLines: [],
+	descriptionColors: [],
+};
+const parameterHintWrapScratch: string[] = [];
 
 function drawCompletionText(text: string, x: number, y: number, color: number): void {
 	drawEditorText(editorViewState.font, text, x, y, 0, color);
@@ -151,84 +188,23 @@ export function drawCompletionPopupWithRenderer(
 }
 
 function drawParameterHintOverlayCore(
-	hint: ParameterHintState | null,
+	hint: LuaSignatureHelp | null,
 	cursorInfo: CursorScreenInfo | null,
 	lineHeight: number,
 	bounds: CompletionRenderBounds,
 	measure: CompletionTextMeasure,
+	measureRange: TextRangeMeasure,
 	draw: CompletionTextDraw,
 ): void {
 	if (!hint || !cursorInfo) return;
-	const params = hint.params;
-	const baseColor = constants.COLOR_PARAMETER_HINT_TEXT;
-	const segments: Array<{ text: string; color: number }> = [];
-	segments.push({ text: `${hint.methodName}(`, color: baseColor });
-	for (let i = 0; i < params.length; i += 1) {
-		if (i > 0) segments.push({ text: ', ', color: baseColor });
-		const color = i === hint.argumentIndex ? constants.COLOR_PARAMETER_HINT_ACTIVE : baseColor;
-		segments.push({ text: params[i], color });
-	}
-	segments.push({ text: ')', color: baseColor });
-	const methodDescription = hint.methodDescription && hint.methodDescription.length > 0 ? hint.methodDescription : null;
-	const returnType = hint.returnType && hint.returnType.length > 0 ? hint.returnType : null;
-	const returnDescription = hint.returnDescription && hint.returnDescription.length > 0 ? hint.returnDescription : null;
-	const activeParamDescription = hint.paramDescriptions && hint.argumentIndex < hint.paramDescriptions.length
-		? hint.paramDescriptions[hint.argumentIndex]
-		: null;
-	const descriptionLines: Array<{ text: string; color: number }> = [];
-	if (methodDescription) {
-		descriptionLines.push({ text: methodDescription, color: baseColor });
-	}
-	if (returnType) {
-		const returnLine = returnDescription ? `Returns ${returnType}: ${returnDescription}` : `Returns ${returnType}`;
-		descriptionLines.push({ text: returnLine, color: baseColor });
-	}
-	if (activeParamDescription && activeParamDescription.length > 0) {
-		descriptionLines.push({ text: activeParamDescription, color: constants.COLOR_PARAMETER_HINT_ACTIVE });
-	}
 	const maxAllowedWidth = bounds.codeRight - bounds.textLeft;
 	if (maxAllowedWidth <= 0) return;
 	const maxTextWidth = Math.max(0, maxAllowedWidth - constants.PARAMETER_HINT_PADDING_X * 2);
 	if (maxTextWidth <= 0) return;
-	const clippedSegments: Array<{ text: string; color: number }> = [];
-	let signatureWidth = 0;
-	for (let i = 0; i < segments.length; i += 1) {
-		const part = segments[i];
-		if (part.text.length === 0) continue;
-		const width = measure(part.text);
-		if (signatureWidth + width <= maxTextWidth) {
-			clippedSegments.push(part);
-			signatureWidth += width;
-			continue;
-		}
-		const remainingWidth = maxTextWidth - signatureWidth;
-		if (remainingWidth <= 0) break;
-			const clipped = truncateWithMeasure(part.text, remainingWidth, measure);
-		if (clipped.length > 0) {
-			clippedSegments.push({ text: clipped, color: part.color });
-			signatureWidth += measure(clipped);
-		}
-		break;
-	}
-	const wrappedDescriptionLines: Array<{ text: string; color: number }> = [];
-	const maxDescriptionLines = 4;
-	for (let i = 0; i < descriptionLines.length; i += 1) {
-		if (wrappedDescriptionLines.length >= maxDescriptionLines) break;
-		const line = descriptionLines[i];
-		const remaining = maxDescriptionLines - wrappedDescriptionLines.length;
-		const wrapped = wrapTextDynamic(line.text, maxTextWidth, maxTextWidth, measure, remaining);
-		for (let segIndex = 0; segIndex < wrapped.length; segIndex += 1) {
-			wrappedDescriptionLines.push({ text: wrapped[segIndex], color: line.color });
-		}
-	}
-	let maxLineWidth = signatureWidth;
-	for (let i = 0; i < wrappedDescriptionLines.length; i += 1) {
-		const width = measure(wrappedDescriptionLines[i].text);
-		if (width > maxLineWidth) maxLineWidth = width;
-	}
+	const layout = resolveParameterHintLayout(hint, maxTextWidth, measure, measureRange);
 	const lineSpacing = 2;
-	const totalLines = 1 + wrappedDescriptionLines.length;
-	const popupWidth = Math.min(maxAllowedWidth, maxLineWidth + constants.PARAMETER_HINT_PADDING_X * 2);
+	const totalLines = 1 + layout.descriptionLines.length;
+	const popupWidth = Math.min(maxAllowedWidth, layout.maxLineWidth + constants.PARAMETER_HINT_PADDING_X * 2);
 	const popupHeight = totalLines * lineHeight + constants.PARAMETER_HINT_PADDING_Y * 2 + Math.max(0, totalLines - 1) * lineSpacing;
 	let popupLeft = cursorInfo.x;
 	if (popupLeft + popupWidth > bounds.codeRight) popupLeft = bounds.codeRight - popupWidth;
@@ -244,35 +220,141 @@ function drawParameterHintOverlayCore(
 	api.fill_rect(popupLeft, popupTop, popupRight, popupBottom, 0, constants.COLOR_PARAMETER_HINT_BACKGROUND);
 	let textX = popupLeft + constants.PARAMETER_HINT_PADDING_X;
 	let currentY = popupTop + constants.PARAMETER_HINT_PADDING_Y;
-	for (let i = 0; i < clippedSegments.length; i += 1) {
-		const part = clippedSegments[i];
-		if (part.text.length === 0) continue;
-		draw(part.text, textX, currentY, part.color);
-		textX += measure(part.text);
+	if (layout.signaturePrefix.length > 0) {
+		draw(layout.signaturePrefix, textX, currentY, constants.COLOR_PARAMETER_HINT_TEXT);
+		textX += layout.signaturePrefixWidth;
 	}
-	for (let i = 0; i < wrappedDescriptionLines.length; i += 1) {
-		const line = wrappedDescriptionLines[i];
+	if (layout.signatureActiveParameter.length > 0) {
+		draw(layout.signatureActiveParameter, textX, currentY, constants.COLOR_PARAMETER_HINT_ACTIVE);
+		textX += layout.signatureActiveParameterWidth;
+	}
+	if (layout.signatureSuffix.length > 0) {
+		draw(layout.signatureSuffix, textX, currentY, constants.COLOR_PARAMETER_HINT_TEXT);
+	}
+	for (let i = 0; i < layout.descriptionLines.length; i += 1) {
 		currentY += lineHeight + lineSpacing;
-		draw(line.text, popupLeft + constants.PARAMETER_HINT_PADDING_X, currentY, line.color);
+		draw(
+			layout.descriptionLines[i],
+			popupLeft + constants.PARAMETER_HINT_PADDING_X,
+			currentY,
+			layout.descriptionColors[i],
+		);
+	}
+}
+
+function resolveParameterHintLayout(
+	hint: LuaSignatureHelp,
+	maxTextWidth: number,
+	measure: CompletionTextMeasure,
+	measureRange: TextRangeMeasure,
+): ParameterHintLayout {
+	const layout = parameterHintLayout;
+	if (layout.hint === hint
+		&& layout.measure === measure
+		&& layout.measureRange === measureRange
+		&& layout.maxTextWidth === maxTextWidth) {
+		return layout;
+	}
+	layout.hint = hint;
+	layout.measure = measure;
+	layout.measureRange = measureRange;
+	layout.maxTextWidth = maxTextWidth;
+	layout.descriptionLines.length = 0;
+	layout.descriptionColors.length = 0;
+	const signature = hint.signatures[hint.activeSignature];
+	const clippedLabel = truncateMeasuredText(signature.label, maxTextWidth, measureRange);
+	const activeParameter = hint.activeParameter;
+	if (activeParameter < 0) {
+		layout.signaturePrefix = clippedLabel;
+		layout.signatureActiveParameter = '';
+		layout.signatureSuffix = '';
+	} else {
+		const parameter = signature.parameters[activeParameter];
+		const start = Math.min(parameter.start, clippedLabel.length);
+		const end = Math.min(parameter.end, clippedLabel.length);
+		layout.signaturePrefix = clippedLabel.slice(0, start);
+		layout.signatureActiveParameter = clippedLabel.slice(start, end);
+		layout.signatureSuffix = clippedLabel.slice(end);
+	}
+	layout.signaturePrefixWidth = measure(layout.signaturePrefix);
+	layout.signatureActiveParameterWidth = measure(layout.signatureActiveParameter);
+	layout.maxLineWidth = measure(clippedLabel);
+	if (signature.documentation !== undefined) {
+		appendParameterHintDescription(
+			layout,
+			signature.documentation,
+			constants.COLOR_PARAMETER_HINT_TEXT,
+			maxTextWidth,
+		);
+	}
+	if (activeParameter >= 0) {
+		const parameterDocumentation = signature.parameters[activeParameter].documentation;
+		if (parameterDocumentation !== undefined) {
+			appendParameterHintDescription(
+				layout,
+				parameterDocumentation,
+				constants.COLOR_PARAMETER_HINT_ACTIVE,
+				maxTextWidth,
+			);
+		}
+	}
+	return layout;
+}
+
+function appendParameterHintDescription(
+	layout: ParameterHintLayout,
+	text: string,
+	color: number,
+	maxTextWidth: number,
+): void {
+	const remaining = 4 - layout.descriptionLines.length;
+	if (remaining <= 0 || text.length === 0) {
+		return;
+	}
+	writeWrappedMeasuredText(
+		parameterHintWrapScratch,
+		text,
+		maxTextWidth,
+		maxTextWidth,
+		remaining,
+		layout.measureRange,
+	);
+	for (let index = 0; index < parameterHintWrapScratch.length; index += 1) {
+		const line = parameterHintWrapScratch[index];
+		layout.descriptionLines.push(line);
+		layout.descriptionColors.push(color);
+		const width = layout.measure(line);
+		if (width > layout.maxLineWidth) {
+			layout.maxLineWidth = width;
+		}
 	}
 }
 
 export function drawParameterHintOverlay(
-	hint: ParameterHintState | null,
+	hint: LuaSignatureHelp | null,
 	cursorInfo: CursorScreenInfo | null,
 	lineHeight: number,
 	bounds: CompletionRenderBounds,
 ): void {
-	drawParameterHintOverlayCore(hint, cursorInfo, lineHeight, bounds, measureText, drawCompletionText);
+	drawParameterHintOverlayCore(
+		hint,
+		cursorInfo,
+		lineHeight,
+		bounds,
+		measureText,
+		measureTextRange,
+		drawCompletionText,
+	);
 }
 
 export function drawParameterHintOverlayWithRenderer(
-	hint: ParameterHintState | null,
+	hint: LuaSignatureHelp | null,
 	cursorInfo: CursorScreenInfo | null,
 	lineHeight: number,
 	bounds: CompletionRenderBounds,
 	measure: CompletionTextMeasure,
+	measureRange: TextRangeMeasure,
 	draw: CompletionTextDraw,
 ): void {
-	drawParameterHintOverlayCore(hint, cursorInfo, lineHeight, bounds, measure, draw);
+	drawParameterHintOverlayCore(hint, cursorInfo, lineHeight, bounds, measure, measureRange, draw);
 }

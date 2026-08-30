@@ -143,6 +143,71 @@ test('strict parsing still rejects an incomplete member access', () => {
 	);
 });
 
+test('recovery retains an incomplete call and its authored argument-list syntax', () => {
+	const parsed = parseLuaChunkWithRecovery('dispatch(target, ', 'incomplete_call.lua');
+	assert.ok(parsed.syntaxError);
+	assert.equal(parsed.chunk.body.length, 1);
+	const statement = parsed.chunk.body[0] as LuaCallStatement;
+	assert.equal(statement.kind, LuaSyntaxKind.CallStatement);
+	const call = statement.expression as LuaCallExpression;
+	assert.equal(call.kind, LuaSyntaxKind.CallExpression);
+	assert.equal(call.arguments.length, 1);
+	assert.deepEqual(call.argumentList, {
+		range: {
+			path: 'incomplete_call.lua',
+			start: { line: 1, column: 9 },
+			end: { line: 1, column: 18 },
+		},
+		separators: [{ line: 1, column: 16 }],
+	});
+});
+
+test('recovery does not consume a following statement as an incomplete call argument', () => {
+	const source = [
+		'dispatch(',
+		'local retained<const> = 1',
+	].join('\n');
+	const parsed = parseLuaChunkWithRecovery(source, 'call_boundary.lua');
+	assert.ok(parsed.syntaxError);
+	assert.deepEqual(
+		parsed.chunk.body.map(statement => statement.kind),
+		[LuaSyntaxKind.CallStatement, LuaSyntaxKind.LocalAssignmentStatement],
+	);
+	const call = (parsed.chunk.body[0] as LuaCallStatement).expression as LuaCallExpression;
+	assert.deepEqual(call.argumentList?.range, {
+		path: 'call_boundary.lua',
+		start: { line: 1, column: 9 },
+		end: { line: 1, column: 10 },
+	});
+});
+
+test('call argument-list separators exclude commas owned by nested expressions', () => {
+	const source = [
+		'dispatch(',
+		'\tfirst,',
+		'\tnested(one, two),',
+		'\t{ left, right },',
+		'\tlast',
+		')',
+	].join('\n');
+	const statement = parseChunk(source).body[0] as LuaCallStatement;
+	const call = statement.expression as LuaCallExpression;
+	assert.deepEqual(call.argumentList?.separators, [
+		{ line: 2, column: 7 },
+		{ line: 3, column: 18 },
+		{ line: 4, column: 17 },
+	]);
+	const nested = call.arguments[1] as LuaCallExpression;
+	assert.deepEqual(nested.argumentList?.separators, [{ line: 3, column: 12 }]);
+});
+
+test('strict parsing still rejects incomplete call arguments', () => {
+	assert.throws(
+		() => parseChunk('dispatch(target, '),
+		/Unexpected token/,
+	);
+});
+
 test('parses if-elseif-else statement', () => {
 	const source = `
 if a then

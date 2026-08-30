@@ -12,12 +12,12 @@ export function registerLuaBuiltin(metadata: LuaBuiltinDescriptor): void {
 	}
 	const params: string[] = [];
 	const optionalSet: Set<string> = new Set();
-	const normalizedDescriptions: (string)[] = [];
+	const normalizedDescriptions: (string | undefined)[] = [];
 	const sourceParams = Array.isArray(metadata.params) ? metadata.params : [];
 	const sourceDescriptions = Array.isArray(metadata.parameterDescriptions) ? metadata.parameterDescriptions : [];
 	for (let index = 0; index < sourceParams.length; index += 1) {
 		const raw = sourceParams[index];
-		const description = index < sourceDescriptions.length ? sourceDescriptions[index] : null;
+		const description = index < sourceDescriptions.length ? sourceDescriptions[index] : undefined;
 		if (typeof raw !== 'string' || raw.trim().length === 0) {
 			throw new Error(`Invalid Lua builtin parameter at index ${index} for '${name}'.`);
 		}
