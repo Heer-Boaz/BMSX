@@ -57,7 +57,10 @@ De huidige IDE- en debuggergrenzen zijn:
   geschreven, zonder die velden aan een siblingprototype toe te kennen. Een
   memberquery gebruikt eerst retained en lexicale summaries, daarna de relevante
   allocation-site en pas bij een resterende miss contextuele heap-effects en
-  hun callers;
+  hun callers. Parameters die een heap-effect doorgeven aan een volgende call
+  vormen retained call summaries; een query-demanded worklist volgt zulke
+  summaries over meerdere forwardinglagen zonder siblingcallsites samen te
+  voegen of de workspacecallgraph eager af te lopen;
 - de editor materialiseert per benodigde bufferversie alleen de ene immutable
   source snapshot die lexer en parser consumeren. De parser haalt een authored
   regel pas uit die source wanneer hij daadwerkelijk een syntaxfout formatteert;

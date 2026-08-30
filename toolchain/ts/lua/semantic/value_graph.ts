@@ -1577,6 +1577,8 @@ export class WorkspaceValueGraph {
 	private readonly demandedFunctionCallerBindings: Set<FunctionValueFlowEntry> = new Set();
 	private readonly demandedFunctionCallerContexts: Set<FunctionValueFlowEntry> = new Set();
 	private readonly refinedFunctionCallerContexts: Set<FunctionValueFlowEntry> = new Set();
+	private readonly queuedFunctionCallerRefinements: Set<FunctionValueFlowEntry> = new Set();
+	private readonly functionCallerRefinementQueue: MaterializedFunctionValueFlow[] = [];
 	private readonly demandedFunctionCallerAliases: Set<FunctionValueFlowEntry> = new Set();
 	private readonly demandedDynamicFunctionCallers: Set<FunctionValueFlowEntry> = new Set();
 	private readonly calls: ContextualCallValue[] = [];
@@ -2548,10 +2550,18 @@ export class WorkspaceValueGraph {
 	}
 
 	private refineDemandedHeapEffectCallers(): boolean {
-		let changed = false;
+		const queue = this.functionCallerRefinementQueue;
+		queue.length = 0;
+		this.queuedFunctionCallerRefinements.clear();
 		for (const flow of this.demandedHeapEffectFlows) {
+			this.enqueueFunctionCallerRefinement(flow);
+		}
+		let changed = false;
+		for (let queueIndex = 0; queueIndex < queue.length; queueIndex += 1) {
+			const flow = queue[queueIndex];
 			// A remaining miss requires call-site identity for the retained heap
-			// effect. Only this second phase asks the immediate owner for contexts.
+			// effect. The worklist visits only context-bearing caller summaries
+			// reached from the demanded calls, not the workspace call graph.
 			changed = this.demandFunctionCallers(
 				flow,
 				flow.requiresCallContext,
@@ -2560,6 +2570,14 @@ export class WorkspaceValueGraph {
 			) || changed;
 		}
 		return changed;
+	}
+
+	private enqueueFunctionCallerRefinement(flow: MaterializedFunctionValueFlow): void {
+		if (this.queuedFunctionCallerRefinements.has(flow.source)) {
+			return;
+		}
+		this.queuedFunctionCallerRefinements.add(flow.source);
+		this.functionCallerRefinementQueue.push(flow);
 	}
 
 	private retainFlowDemand<Entry>(
@@ -2771,10 +2789,20 @@ export class WorkspaceValueGraph {
 			if (source.steps.length === 0) {
 				const rootKey = semanticValueRootKey(source.root);
 				this.materializeRootCalls(this.demandIndex.calleeCalls(rootKey), mode);
-				this.materializeCallerCalls(this.demandIndex.callerCalls(rootKey), mode);
+				const callerCalls = this.demandIndex.callerCalls(rootKey);
+				if (refineCallerContexts) {
+					this.materializeContextualCallerCalls(callerCalls, mode, flow);
+				} else {
+					this.materializeCallerCalls(callerCalls, mode);
+				}
 			} else {
 				this.materializeRootCalls(this.demandIndex.calleeCallsForSource(source), mode);
-				this.materializeCallerCalls(this.demandIndex.callerCallsForSource(source), mode);
+				const callerCalls = this.demandIndex.callerCallsForSource(source);
+				if (refineCallerContexts) {
+					this.materializeContextualCallerCalls(callerCalls, mode, flow);
+				} else {
+					this.materializeCallerCalls(callerCalls, mode);
+				}
 			}
 			if (followValueAliases) {
 				this.enqueueFunctionAliases(source);
@@ -2884,7 +2912,7 @@ export class WorkspaceValueGraph {
 			if (ownerEntry) {
 				const ownerFlow = this.materializeFunctionFlow(ownerEntry);
 				if (ownerFlow.requiresCallContext) {
-					this.demandFunctionCallers(ownerFlow, true);
+					this.enqueueFunctionCallerRefinement(ownerFlow);
 				}
 			}
 		}
@@ -4613,14 +4641,22 @@ export class WorkspaceValueGraph {
 			this.collectParameterDependencies(assignment.target, entry, marks);
 			this.collectParameterDependencies(assignment.source, entry, marks);
 		}
+		for (let callIndex = 0; callIndex < entry.calls.length; callIndex += 1) {
+			const call = entry.calls[callIndex];
+			for (let argumentIndex = 0; argumentIndex < call.arguments.length; argumentIndex += 1) {
+				const argument = call.arguments[argumentIndex];
+				if (argument) {
+					this.collectParameterDependencies(argument, entry, marks);
+				}
+			}
+		}
 		let found = false;
 		for (let parameterIndex = 0; parameterIndex < marks.length; parameterIndex += 1) {
 			if (!marks[parameterIndex]) {
 				continue;
 			}
 			found = true;
-			if (entry.implicitReceiver
-				&& !contextParameterIndices.includes(parameterIndex)) {
+			if (!contextParameterIndices.includes(parameterIndex)) {
 				contextParameterIndices.push(parameterIndex);
 			}
 		}

@@ -719,3 +719,74 @@ test('semantic workspace resolves fields injected by a generic instance factory 
 		'call hierarchy does not retain the unconstructed sibling call',
 	);
 });
+
+test('semantic workspace propagates heap effects through forwarding call summaries', async () => {
+	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
+	const lines = [
+		'local map<const> = {}',
+		'function map:_write(target)',
+		'\ttarget.ready = true',
+		'end',
+		'function map:write(target)',
+		'\tself:_write(target)',
+		'end',
+		'local relay<const> = function(owner, target)',
+		'\towner:write(target)',
+		'end',
+		'local outer<const> = function(owner, target)',
+		'\trelay(owner, target)',
+		'end',
+		'local item<const> = {}',
+		'outer(map, item)',
+		'return item.ready',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('main.lua', lines.join('\n'));
+	const ready = semanticSymbolAt(
+		workspace.getSnapshot(),
+		'main.lua',
+		16,
+		memberColumn(lines[15], 'ready'),
+	);
+
+	assert.ok(ready, 'field written through three forwarding calls');
+	assert.equal(ready!.declaration.range.start.line, 3);
+});
+
+test('forwarding call summaries preserve callsite receiver identity', async () => {
+	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
+	const lines = [
+		'local writer<const> = {}',
+		'function writer:write(target)',
+		'\ttarget.ready = true',
+		'end',
+		'local observer<const> = {}',
+		'function observer:write(_target) end',
+		'local relay<const> = function(owner, target)',
+		'\towner:write(target)',
+		'end',
+		'local outer<const> = function(owner, target)',
+		'\trelay(owner, target)',
+		'end',
+		'local written<const> = {}',
+		'local untouched<const> = {}',
+		'outer(writer, written)',
+		'outer(observer, untouched)',
+		'local yes<const> = written.ready',
+		'local no<const> = untouched.ready',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('main.lua', lines.join('\n'));
+	const snapshot = workspace.getSnapshot();
+
+	assert.equal(
+		semanticSymbolAt(snapshot, 'main.lua', 17, memberColumn(lines[16], 'ready'))!
+			.declaration.range.start.line,
+		3,
+	);
+	assert.equal(
+		semanticSymbolAt(snapshot, 'main.lua', 18, memberColumn(lines[17], 'ready')),
+		null,
+		'an unrelated receiver does not acquire another callsite effect',
+	);
+});
