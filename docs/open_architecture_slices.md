@@ -42,11 +42,13 @@ De huidige IDE- en debuggergrenzen zijn:
 - de semantische workspace resolveert navigatie vanuit lexicale declaraties,
   module-exports, teruggegeven module-instanties en statische Lua-class-
   inheritance. Zij verzint geen bron voor dynamische runtimewaarden;
-- dynamische membernavigatie gebruikt per navigatie- of references-query een
-  eigen demand-graph boven immutable semantische records per bestand. De
+- dynamische membernavigatie gebruikt per immutable programmasnapshot één lazy,
+  monotone demand-graph boven de behouden semantische records per bestand. De
   workspace kopieert die records bij een edit niet eerst naar een tweede
   workspacebrede value-flowrepresentatie; identity- en demandindices ontstaan
-  pas wanneer een query ze nodig heeft. Alleen gevraagde Lua-roots, calls,
+  pas wanneer een query ze nodig heeft. Exact gebonden calls en later bewezen
+  dynamische calltargets worden daarna als gewone graph edges behouden voor
+  volgende features op dezelfde snapshot. Alleen gevraagde Lua-roots, calls,
   contexten en heap-effects worden gematerialiseerd; de taallaag kent geen
   cartlib-, firmware- of frameworktypen;
 - de editor materialiseert per benodigde bufferversie alleen de ene immutable
@@ -83,7 +85,7 @@ splitsen.
 | Syntax | lexer, parser en parsecache | tokens en één generieke Lua/BLua-AST per sourceversie | workspacebinding, cartlibkennis of editorstate |
 | File-semantiek | binder over één AST | declaraties, scopes, occurrences, callable facts en generieke value-flowfacts | cross-file targets, navigatiekeuzes of UI-boomnodes |
 | Programmasnapshot | semantische workspace | geordende immutable file-records; ongewijzigde records behouden hun identiteit | tweede kopieën van filegraphs of feature-specifieke caches |
-| Resolutie | workspace symbol resolver en query-local value graph | symboltargets en op aanvraag opgeloste value-identiteiten voor precies één snapshot | mutatie van file-records, editorbuffers of frameworkregels |
+| Resolutie | workspace symbol resolver en retained demand-graph | symboltargets, bewezen call-edges en op aanvraag opgeloste value-identiteiten voor precies één immutable snapshot | mutatie van file-records, editorbuffers of frameworkregels |
 | Language features | definition-, references-, rename- en call-hierarchyproviders | vlakke, gesorteerde protocolresultaten | opnieuw parsen, opnieuw binden of eigen semantische heuristiek |
 | Editor/workbench | sessie- en viewmodels | selectie, expansie, navigatiehistorie en gerenderde items | Lua-resolutie of runtimewaarde-inferentie |
 
@@ -127,6 +129,11 @@ hostafhankelijke drempel:
 npx tsx --tsconfig tsconfig.base.json \
   scripts/dev/profile_lua_semantics.ts \
   carts/pietious/player/player.lua cartlib carts/pietious
+
+npx tsx --tsconfig tsconfig.base.json \
+  scripts/dev/profile_lua_semantics.ts \
+  --incoming cartlib/world/world.lua:684:22 \
+  cartlib/world/world.lua cartlib carts/nemesis_s
 ```
 
 ## Validatiebasis voor inputwerk

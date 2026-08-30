@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
+import { parseArgs } from 'node:util';
 import {
 	buildLuaFileSemanticData,
 	LuaSemanticWorkspace,
@@ -12,6 +13,23 @@ import { parseLuaChunkWithRecovery } from '../../toolchain/ts/lua/analysis/parse
 type LuaSource = {
 	path: string;
 	source: string;
+};
+
+type IncomingCallLocation = {
+	path: string;
+	line: number;
+	column: number;
+};
+
+type IncomingCallProfile = {
+	location: IncomingCallLocation;
+	label: string;
+	targetCount: number;
+	callerGroupCount: number;
+	callSiteCount: number;
+	symbolMs: number;
+	coldMs: number;
+	warmMs: number;
 };
 
 const EDIT_ITERATION_COUNT = 12;
@@ -41,12 +59,35 @@ function summarizeTimingSamples(values: readonly number[]): { median: number; p9
 	};
 }
 
-const workspaceRoot = process.cwd();
-const editPath = process.argv[2];
-const sourceRoots = process.argv.slice(3);
-if (editPath === undefined || sourceRoots.length === 0) {
-	throw new Error('Usage: profile_lua_semantics.ts <edit-file> <source-root>...');
+function parseIncomingCallLocation(value: string | undefined): IncomingCallLocation | undefined {
+	if (value === undefined) {
+		return undefined;
+	}
+	const match = /^(.*):(\d+):(\d+)$/.exec(value);
+	if (!match) {
+		throw new Error(`Invalid incoming-call location '${value}'; expected <path>:<line>:<column>.`);
+	}
+	return {
+		path: match[1],
+		line: Number.parseInt(match[2], 10),
+		column: Number.parseInt(match[3], 10),
+	};
 }
+
+const workspaceRoot = process.cwd();
+const { values, positionals } = parseArgs({
+	args: process.argv.slice(2),
+	options: {
+		incoming: { type: 'string' },
+	},
+	allowPositionals: true,
+});
+const editPath = positionals[0];
+const sourceRoots = positionals.slice(1);
+if (editPath === undefined || sourceRoots.length === 0) {
+	throw new Error('Usage: profile_lua_semantics.ts [--incoming <path>:<line>:<column>] <edit-file> <source-root>...');
+}
+const incomingCallLocation = parseIncomingCallLocation(values.incoming);
 
 const sources: LuaSource[] = [];
 for (const root of sourceRoots) {
@@ -81,6 +122,46 @@ const coldFrontendMs = performance.now() - coldFrontendStartedAt;
 const coldFileQueryStartedAt = performance.now();
 frontend.getFile(editPath);
 const coldFileQueryMs = performance.now() - coldFileQueryStartedAt;
+
+let incomingCallProfile: IncomingCallProfile | undefined;
+if (incomingCallLocation) {
+	const symbolStartedAt = performance.now();
+	const symbols = frontend.findSymbolsByPosition(
+		incomingCallLocation.path,
+		incomingCallLocation.line,
+		incomingCallLocation.column,
+	);
+	const symbolMs = performance.now() - symbolStartedAt;
+	if (!symbols) {
+		throw new Error(`No semantic symbol at '${values.incoming}'.`);
+	}
+	let callerGroupCount = 0;
+	let callSiteCount = 0;
+	const coldStartedAt = performance.now();
+	for (let targetIndex = 0; targetIndex < symbols.targets.length; targetIndex += 1) {
+		const calls = frontend.provideIncomingCalls(symbols.targets[targetIndex].id);
+		callerGroupCount += calls.length;
+		for (let callIndex = 0; callIndex < calls.length; callIndex += 1) {
+			callSiteCount += calls[callIndex].fromRanges.length;
+		}
+	}
+	const coldMs = performance.now() - coldStartedAt;
+	const warmStartedAt = performance.now();
+	for (let index = 0; index < symbols.targets.length; index += 1) {
+		frontend.provideIncomingCalls(symbols.targets[index].id);
+	}
+	const warmMs = performance.now() - warmStartedAt;
+	incomingCallProfile = {
+		location: incomingCallLocation,
+		label: symbols.label,
+		targetCount: symbols.targets.length,
+		callerGroupCount,
+		callSiteCount,
+		symbolMs,
+		coldMs,
+		warmMs,
+	};
+}
 
 const editedSource = sources.find(source => source.path === editPath);
 if (editedSource === undefined) {
@@ -147,6 +228,7 @@ console.log(JSON.stringify({
 		frontendMs: coldFrontendMs,
 		fileQueryMs: coldFileQueryMs,
 	},
+	incomingCalls: incomingCallProfile,
 	edit: {
 		parseMs: summarizeTimingSamples(parseMeasurements),
 		semanticMs: summarizeTimingSamples(semanticMeasurements),

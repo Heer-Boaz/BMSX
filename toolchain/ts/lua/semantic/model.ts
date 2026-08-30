@@ -115,6 +115,7 @@ export type Ref = {
 	referenceKind: 'identifier' | 'self' | 'member' | 'method';
 	receiverSymbolKey?: string;
 	receiverValue?: SemanticValueSource;
+	call?: CallValueEntry;
 };
 
 export type MemberAccessEntry = {
@@ -273,6 +274,7 @@ type FunctionReturnValueState = {
 
 type FunctionValueFlowState = {
 	functionValue: FunctionSemanticValueSource;
+	lexicalOwner?: FunctionValueFlowState;
 	parameters: FunctionSemanticValueSource[];
 	receiverProjection?: SemanticValueSource;
 	implicitReceiver: boolean;
@@ -1059,8 +1061,14 @@ class SemanticBuilder {
 				if (requireArgument) {
 					this.moduleReferences.push(requireArgument);
 				}
+				let callReference: Ref | undefined;
 				if (methodName) {
-					this.recordMethodReference(callExpression, calleeInfo);
+					callReference = this.recordMethodReference(callExpression, calleeInfo);
+				} else if (callExpression.callee.kind === LuaSyntaxKind.IdentifierExpression) {
+					callReference = this.referencesBySyntax.get(callExpression.callee);
+				} else if (callExpression.callee.kind === LuaSyntaxKind.MemberExpression
+					&& callExpression.callee.member.kind === LuaSyntaxKind.IdentifierExpression) {
+					callReference = this.referencesBySyntax.get(callExpression.callee.member);
 				}
 				let firstArgumentInfo: ResolvedNamePath = null;
 				let secondArgumentInfo: ResolvedNamePath = null;
@@ -1092,7 +1100,7 @@ class SemanticBuilder {
 						callee: calledValue,
 						arguments: argumentValues,
 						result: callResult,
-					});
+					}, callReference);
 				}
 				this.callExpressions.push(callExpression);
 				const valueSource = this.resolveCallResultValue(
@@ -1299,6 +1307,7 @@ class SemanticBuilder {
 		}
 		const valueFlow: FunctionValueFlowState = {
 			functionValue,
+			lexicalOwner: this.functionValueFlowStack[this.functionValueFlowStack.length - 1],
 			parameters,
 			receiverProjection,
 			implicitReceiver: methodReceiverClass !== undefined,
@@ -1507,7 +1516,7 @@ class SemanticBuilder {
 		};
 	}
 
-	private recordMethodReference(callExpression: LuaCallExpression, calleeInfo: ResolvedNamePath): void {
+	private recordMethodReference(callExpression: LuaCallExpression, calleeInfo: ResolvedNamePath): Ref {
 		let basePath = resolveReferencedBasePath(calleeInfo, callExpression.callee);
 		if (basePath
 			&& basePath.length === 1
@@ -1535,7 +1544,7 @@ class SemanticBuilder {
 			calleeInfo?.decl,
 		) ?? (calleeInfo?.valueSource ? undefined : this.properties.get(joinNamePath(namePath)));
 		const targetId = decl?.id;
-		this.recordReference({
+		return this.recordReference({
 			syntax: method,
 			namePath,
 			name: methodName,
@@ -2039,7 +2048,7 @@ class SemanticBuilder {
 		receiverSymbolKey?: string;
 		receiverValue?: SemanticValueSource;
 		isCall?: boolean;
-	}): void {
+	}): Ref {
 		const targetDecl = options.target ? this.declById.get(options.target) : null;
 		const ref: Ref = {
 			file: this.path,
@@ -2077,6 +2086,7 @@ class SemanticBuilder {
 		references.push(ref);
 		const kind = targetDecl ? targetDecl.kind : inferReferenceKind(ref);
 		this.annotate(ref.range, ref.name.length, kind, 'usage');
+		return ref;
 	}
 
 	private recordFunctionNameReferences(statement: LuaFunctionDeclarationStatement): void {
@@ -2175,7 +2185,10 @@ class SemanticBuilder {
 		}
 	}
 
-	private recordCallValue(call: CallValueEntry): void {
+	private recordCallValue(call: CallValueEntry, reference: Ref | undefined): void {
+		if (reference) {
+			reference.call = call;
+		}
 		const flow = this.functionValueFlowStack[this.functionValueFlowStack.length - 1];
 		if (flow) {
 			flow.calls.push(call);

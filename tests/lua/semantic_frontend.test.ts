@@ -902,6 +902,62 @@ test('LuaSemanticFrontend classifies member and method calls at the reference pr
 	);
 });
 
+test('LuaSemanticFrontend incoming calls follow bound inherited methods without same-name guesses', () => {
+	const baseSource = [
+		'local base<const> = {}',
+		'base.__index = base',
+		'function base:spawn() end',
+		'return base',
+	].join('\n');
+	const derivedSource = [
+		"local base<const> = require('base')",
+		'local derived<const> = {}',
+		'derived.__index = derived',
+		'setmetatable(derived, { __index = base })',
+		'function derived.new()',
+		'\treturn setmetatable({}, derived)',
+		'end',
+		'return derived',
+	].join('\n');
+	const usageSource = [
+		"local derived<const> = require('derived')",
+		'local unrelated<const> = {}',
+		'function unrelated:spawn() end',
+		'local function inherited_call()',
+		'\tlocal value<const> = derived.new()',
+		'\tvalue:spawn()',
+		'end',
+		'local function unrelated_calls(value)',
+		'\tunrelated:spawn()',
+		'\tvalue:spawn()',
+		'end',
+	].join('\n');
+	const frontend = buildLuaSemanticFrontend([
+		{ path: 'base.lua', source: baseSource },
+		{ path: 'derived.lua', source: derivedSource },
+		{ path: 'usage.lua', source: usageSource },
+	]);
+	const target = frontend.findSymbolsByPosition('base.lua', 3, 15);
+	assert.ok(target);
+	assert.equal(
+		frontend.findSymbolsByPosition('usage.lua', 10, 8),
+		null,
+		'an unbound same-name call does not acquire a target from query order',
+	);
+
+	const first = frontend.provideIncomingCalls(target.targets[0].id);
+	const second = frontend.provideIncomingCalls(target.targets[0].id);
+	assert.deepEqual(first, second, 'the retained workspace graph is stable across repeated queries');
+	assert.equal(first.length, 1);
+	assert.equal(first[0].from.label, 'inherited_call');
+	assert.deepEqual(first[0].fromRanges.map(range => range.start.line), [6]);
+	assert.equal(
+		frontend.findSymbolsByPosition('usage.lua', 10, 8),
+		null,
+		'an unbound same-name call remains unresolved after the call graph is retained',
+	);
+});
+
 function firstNavigationTarget(
 	file: LuaSemanticFrontendFile,
 	line: number,

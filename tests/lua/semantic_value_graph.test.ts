@@ -321,6 +321,49 @@ test('semantic workspace keeps function return values contextual to each callsit
 	);
 });
 
+test('semantic workspace keeps bound nested calls attached to their lexical closure', async () => {
+	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
+	const lines = [
+		'local left<const> = { left_only = 1 }',
+		'local right<const> = { right_only = 2 }',
+		'local make_reader<const> = function(value)',
+		'\tlocal read<const> = function()',
+		'\t\treturn value',
+		'\tend',
+		'\tlocal invoke<const> = function()',
+		'\t\treturn read()',
+		'\tend',
+		'\treturn invoke',
+		'end',
+		'local read_left<const> = make_reader(left)',
+		'local read_right<const> = make_reader(right)',
+		'local selected_left<const> = read_left()',
+		'local selected_right<const> = read_right()',
+		'return selected_left.left_only, selected_left.right_only,',
+		'\tselected_right.right_only, selected_right.left_only',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('main.lua', lines.join('\n'));
+	const snapshot = workspace.getSnapshot();
+
+	assert.equal(
+		semanticSymbolAt(snapshot, 'main.lua', 16, lines[15].indexOf('left_only') + 1)!.declaration.range.start.line,
+		1,
+	);
+	assert.equal(
+		semanticSymbolAt(snapshot, 'main.lua', 16, lines[15].indexOf('right_only') + 1),
+		null,
+	);
+	assert.equal(
+		semanticSymbolAt(snapshot, 'main.lua', 17, lines[16].indexOf('right_only') + 1)!.declaration.range.start.line,
+		2,
+	);
+	assert.equal(
+		semanticSymbolAt(snapshot, 'main.lua', 17, lines[16].indexOf('left_only') + 1),
+		null,
+	);
+});
+
 test('semantic workspace keeps parameter-indexed return values contextual to each callsite', async () => {
 	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
 	const lines = [

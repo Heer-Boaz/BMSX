@@ -55,17 +55,59 @@ export class WorkspaceSymbolResolver {
 			return cached;
 		}
 		const targets = this.resolveReferenceTargetsUncached(ref);
+		this.retainCallTargets(ref, targets);
 		this.referenceTargets.set(ref, targets);
 		return targets;
+	}
+
+	private retainCallTargets(ref: Ref, targets: readonly SymbolID[]): boolean {
+		const call = ref.call;
+		const valueGraph = this.valueGraph;
+		if (!call || !valueGraph) {
+			return false;
+		}
+		let changed = false;
+		for (let index = 0; index < targets.length; index += 1) {
+			changed = valueGraph.retainCallTarget(call, targets[index]) || changed;
+		}
+		if (changed) {
+			this.referenceTargets.clear();
+			this.referencesBySymbol.clear();
+		}
+		return changed;
 	}
 
 	private resolveReferenceTargetsUncached(
 		ref: Ref,
 		valueGraph?: WorkspaceValueGraph,
+		retainedCallsOnly = false,
 	): readonly SymbolID[] {
 		// The file binder has already resolved references whose target is exact.
 		// Cross-file value flow is only needed for references that remain
 		// unbound after that pass.
+		const boundTargets = this.resolveBoundReferenceTargets(ref);
+		if (boundTargets !== undefined) {
+			return boundTargets;
+		}
+		if (ref.referenceKind === 'member' || ref.referenceKind === 'method') {
+			if (!valueGraph) {
+				valueGraph = this.getValueGraph();
+			}
+			const members = retainedCallsOnly && ref.isCall
+				? valueGraph.resolveRetainedMembers(ref.receiverValue, ref.name)
+				: valueGraph.resolveMembers(ref.receiverValue, ref.name);
+			if (members.length > 0) {
+				return members;
+			}
+		}
+		if (ref.symbolKey.length === 0) {
+			return EMPTY_SYMBOLS;
+		}
+		const global = this.globals.get(ref.symbolKey);
+		return global ? [global] : EMPTY_SYMBOLS;
+	}
+
+	private resolveBoundReferenceTargets(ref: Ref): readonly SymbolID[] | undefined {
 		if (ref.target) {
 			return [ref.target];
 		}
@@ -73,20 +115,10 @@ export class WorkspaceSymbolResolver {
 			return EMPTY_SYMBOLS;
 		}
 		if (ref.referenceKind === 'member' || ref.referenceKind === 'method') {
-			const staticMembers = this.getValueIdentities().resolveStaticMembers(
+			return this.getValueIdentities().resolveStaticMembers(
 				ref.receiverValue,
 				ref.name,
 			);
-			if (staticMembers) {
-				return staticMembers;
-			}
-			if (!valueGraph) {
-				valueGraph = this.getValueGraph().fork();
-			}
-			const members = valueGraph.resolveMembers(ref.receiverValue, ref.name);
-			if (members.length > 0) {
-				return members;
-			}
 		}
 		if (ref.symbolKey.length === 0) {
 			return EMPTY_SYMBOLS;
@@ -104,9 +136,34 @@ export class WorkspaceSymbolResolver {
 
 	private getValueGraph(): WorkspaceValueGraph {
 		if (!this.valueGraph) {
-			this.valueGraph = new WorkspaceValueGraph(this.valueGraphInput, this.getValueIdentities());
+			const valueGraph = new WorkspaceValueGraph(this.valueGraphInput, this.getValueIdentities());
+			this.valueGraph = valueGraph;
+			this.retainBoundCallTargets(valueGraph);
 		}
 		return this.valueGraph;
+	}
+
+	private retainBoundCallTargets(valueGraph: WorkspaceValueGraph): void {
+		for (let fileIndex = 0; fileIndex < this.files.length; fileIndex += 1) {
+			const references = this.files[fileIndex].refs;
+			for (let referenceIndex = 0; referenceIndex < references.length; referenceIndex += 1) {
+				const reference = references[referenceIndex];
+				if (!reference.call) {
+					continue;
+				}
+				if (reference.target) {
+					valueGraph.retainCallTarget(reference.call, reference.target);
+					continue;
+				}
+				const targets = this.resolveBoundReferenceTargets(reference);
+				if (targets === undefined) {
+					continue;
+				}
+				for (let targetIndex = 0; targetIndex < targets.length; targetIndex += 1) {
+					valueGraph.retainCallTarget(reference.call, targets[targetIndex]);
+				}
+			}
+		}
 	}
 
 	public getMembers(source: SemanticValueSource): readonly Decl[] {
@@ -117,7 +174,7 @@ export class WorkspaceSymbolResolver {
 			return cached;
 		}
 		const membersByName = new Map<string, Decl>();
-		const memberIds = this.getValueGraph().fork().resolveAllMembers(source);
+		const memberIds = this.getValueGraph().resolveAllMembers(source);
 		for (let index = 0; index < memberIds.length; index += 1) {
 			const declaration = this.declarations.get(memberIds[index]);
 			if (!membersByName.has(declaration.name)) {
@@ -220,19 +277,30 @@ export class WorkspaceSymbolResolver {
 				}
 			}
 		}
+		// Candidate selection and semantic confirmation extend one retained graph
+		// for this immutable workspace version. Resolved calls become ordinary
+		// call-graph edges instead of being rediscovered by later queries.
+		const valueGraph = hasDynamicMemberCandidates
+			? this.getValueGraph()
+			: undefined;
+		const targetsByCandidate = new Array<readonly SymbolID[]>(candidates.length);
+		let callGraphChanged: boolean;
+		do {
+			callGraphChanged = false;
+			for (let candidateIndex = 0; candidateIndex < candidates.length; candidateIndex += 1) {
+				const candidate = candidates[candidateIndex];
+				const targets = this.resolveReferenceTargetsUncached(candidate, valueGraph, true);
+				targetsByCandidate[candidateIndex] = targets;
+				callGraphChanged = this.retainCallTargets(candidate, targets) || callGraphChanged;
+			}
+		} while (callGraphChanged);
 		const references = new Map<SymbolID, Ref[]>();
 		for (const symbolId of unresolvedSymbols) {
 			references.set(symbolId, []);
 		}
-		// Candidate selection and semantic confirmation share one query-local
-		// graph. Point navigation uses its own fork; workspace state is never
-		// polluted by a references search.
-		const valueGraph = hasDynamicMemberCandidates
-			? this.getValueGraph().fork()
-			: undefined;
 		for (let candidateIndex = 0; candidateIndex < candidates.length; candidateIndex += 1) {
 			const candidate = candidates[candidateIndex];
-			const targets = this.resolveReferenceTargetsUncached(candidate, valueGraph);
+			const targets = targetsByCandidate[candidateIndex];
 			for (let targetIndex = 0; targetIndex < targets.length; targetIndex += 1) {
 				const target = targets[targetIndex];
 				const bucket = references.get(target);
