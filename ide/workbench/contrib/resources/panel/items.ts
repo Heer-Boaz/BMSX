@@ -7,7 +7,11 @@ import {
 } from '../../../../common/resource';
 import { measureTextRange } from '../../../../editor/common/text/layout';
 import type { ResourceBrowserItem } from '../../../../common/models';
-import type { CallHierarchyModel, CallHierarchyNode } from '../../../../editor/contrib/call_hierarchy/model';
+import {
+	CallHierarchyDirection,
+	type CallHierarchyModel,
+	type CallHierarchyNode,
+} from '../../../../editor/contrib/call_hierarchy/model';
 import { definitionLocationFromSourceRange } from '../../../../editor/navigation/source_range';
 import { computeSourceLabel } from '../../../../common/paths';
 import type { LuaDefinitionLocation } from '../../../../../toolchain/ts/lua/semantic_contracts';
@@ -34,10 +38,14 @@ export function buildResourcePanelItems(
 	);
 }
 
-export function buildCallHierarchyPanelItems(model: CallHierarchyModel, expandedNodeIds: ReadonlySet<string>): ResourceBrowserItem[] {
+export function buildCallHierarchyPanelItems(
+	model: CallHierarchyModel,
+	direction: CallHierarchyDirection,
+	expandedNodeIds: ReadonlySet<string>,
+): ResourceBrowserItem[] {
 	const items: ResourceBrowserItem[] = [];
 	for (let index = 0; index < model.roots.length; index += 1) {
-		appendCallHierarchyNode(items, model, model.roots[index], expandedNodeIds, 0);
+		appendCallHierarchyNode(items, model, direction, model.roots[index], expandedNodeIds, 0);
 	}
 	return items;
 }
@@ -168,22 +176,28 @@ function compactResourceDirectory(directory: ResourceDirectory): { label: string
 function appendCallHierarchyNode(
 	items: ResourceBrowserItem[],
 	model: CallHierarchyModel,
+	direction: CallHierarchyDirection,
 	node: CallHierarchyNode,
 	expandedNodeIds: ReadonlySet<string>,
 	depth: number,
 ): void {
 	const indentUnit = '  ';
 	const expansionRequested = expandedNodeIds.has(node.id);
-	const incoming = expansionRequested && node.kind === 'symbol'
-		? model.resolveIncomingCalls(node)
+	const calls = expansionRequested && node.kind === 'symbol'
+		? direction === CallHierarchyDirection.CallsTo
+			? model.resolveIncomingCalls(node)
+			: model.resolveOutgoingCalls(node)
 		: EMPTY_CALL_HIERARCHY_NODES;
-	const expandable = model.hasChildren(node);
+	const expandable = model.hasChildren(node, direction);
 	const expanded = expandable && expansionRequested;
 	const marker = expandable ? (expanded ? '- ' : '+ ') : '  ';
 	const indent = indentUnit.repeat(depth);
+	const directionLabel = depth === 0
+		? direction === CallHierarchyDirection.CallsTo ? 'CALLERS OF ' : 'CALLS FROM '
+		: '';
 	items.push({
-		line: `${indent}${marker}${node.name} (${buildLocationLabel(node.location)})`,
-		contentStartColumn: indent.length + marker.length,
+		line: `${indent}${directionLabel}${marker}${node.name} (${buildLocationLabel(node.location)})`,
+		contentStartColumn: indent.length + directionLabel.length + marker.length,
 		resource: null,
 		location: node.location,
 		callHierarchyNodeId: node.id,
@@ -207,8 +221,8 @@ function appendCallHierarchyNode(
 	if (node.kind === 'chunk') {
 		return;
 	}
-	for (let index = 0; index < incoming.length; index += 1) {
-		appendCallHierarchyNode(items, model, incoming[index], expandedNodeIds, depth + 1);
+	for (let index = 0; index < calls.length; index += 1) {
+		appendCallHierarchyNode(items, model, direction, calls[index], expandedNodeIds, depth + 1);
 	}
 }
 

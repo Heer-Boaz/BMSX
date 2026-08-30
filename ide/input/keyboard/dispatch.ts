@@ -3,6 +3,7 @@ import type { RuntimeSourceState } from '../../runtime/sources';
 import type { RuntimeLuaTooling } from '../../runtime/lua_tooling';
 import type { CartEditor } from '../../cart_editor';
 import type { ResourcePanelController } from '../../workbench/contrib/resources/panel/controller';
+import { handleResourcePanelKeyboardInput } from '../../workbench/contrib/resources/panel/keyboard';
 import { isResourceViewActive } from '../../workbench/ui/tabs';
 import { handleResourceViewerInput } from '../../workbench/input/keyboard/resource_viewer_input';
 import { handleEditorGlobalBindings } from './global_bindings';
@@ -78,7 +79,7 @@ function handleFocusedResourcePanelInput(playerInput: PlayerInput, resourcePanel
 	if (!resourcePanel.isVisible() || !resourcePanel.isFocused()) {
 		return false;
 	}
-	resourcePanel.handleKeyboard(playerInput);
+	handleResourcePanelKeyboardInput(playerInput, resourcePanel);
 	return true;
 }
 

@@ -1,6 +1,6 @@
 import * as constants from '../../../../common/constants';
 import { showEditorMessage } from '../../../../common/feedback_state';
-import { consumeIdeKey, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from '../../../../input/keyboard/key_input';
+import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from '../../../../input/keyboard/key_input';
 import { resetBlink } from '../../../../editor/render/caret';
 import type { ResourcePanelController } from './controller';
 import type { PlayerInput } from '../../../../../hosts/common/input/player';
@@ -31,6 +31,11 @@ export function handleResourcePanelKeyboardInput(playerInput: PlayerInput, contr
 		return;
 	}
 	if (controller.getMode() !== 'resources') {
+		if (shiftDown && isAltDown(playerInput) && isKeyJustPressed('KeyH', playerInput)) {
+			consumeIdeKey('KeyH', playerInput);
+			controller.toggleCallHierarchyDirection();
+			return;
+		}
 		if (isKeyJustPressed('ArrowLeft', playerInput)) {
 			consumeIdeKey('ArrowLeft', playerInput);
 			controller.collapseSelectedCallHierarchyNode();

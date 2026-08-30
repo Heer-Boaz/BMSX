@@ -15,17 +15,18 @@ type LuaSource = {
 	source: string;
 };
 
-type IncomingCallLocation = {
+type CallHierarchyLocation = {
 	path: string;
 	line: number;
 	column: number;
 };
 
-type IncomingCallProfile = {
-	location: IncomingCallLocation;
+type CallHierarchyProfile = {
+	direction: 'incoming' | 'outgoing';
+	location: CallHierarchyLocation;
 	label: string;
 	targetCount: number;
-	callerGroupCount: number;
+	groupCount: number;
 	callSiteCount: number;
 	symbolMs: number;
 	coldMs: number;
@@ -59,13 +60,13 @@ function summarizeTimingSamples(values: readonly number[]): { median: number; p9
 	};
 }
 
-function parseIncomingCallLocation(value: string | undefined): IncomingCallLocation | undefined {
+function parseCallHierarchyLocation(value: string | undefined, option: string): CallHierarchyLocation | undefined {
 	if (value === undefined) {
 		return undefined;
 	}
 	const match = /^(.*):(\d+):(\d+)$/.exec(value);
 	if (!match) {
-		throw new Error(`Invalid incoming-call location '${value}'; expected <path>:<line>:<column>.`);
+		throw new Error(`Invalid ${option} location '${value}'; expected <path>:<line>:<column>.`);
 	}
 	return {
 		path: match[1],
@@ -79,15 +80,24 @@ const { values, positionals } = parseArgs({
 	args: process.argv.slice(2),
 	options: {
 		incoming: { type: 'string' },
+		outgoing: { type: 'string' },
 	},
 	allowPositionals: true,
 });
 const editPath = positionals[0];
 const sourceRoots = positionals.slice(1);
 if (editPath === undefined || sourceRoots.length === 0) {
-	throw new Error('Usage: profile_lua_semantics.ts [--incoming <path>:<line>:<column>] <edit-file> <source-root>...');
+	throw new Error('Usage: profile_lua_semantics.ts [--incoming <path>:<line>:<column> | --outgoing <path>:<line>:<column>] <edit-file> <source-root>...');
 }
-const incomingCallLocation = parseIncomingCallLocation(values.incoming);
+if (values.incoming !== undefined && values.outgoing !== undefined) {
+	throw new Error('Choose either --incoming or --outgoing.');
+}
+const callHierarchyDirection = values.outgoing === undefined ? 'incoming' : 'outgoing';
+const callHierarchyOptionValue = values.outgoing === undefined ? values.incoming : values.outgoing;
+const callHierarchyLocation = parseCallHierarchyLocation(
+	callHierarchyOptionValue,
+	callHierarchyDirection,
+);
 
 const sources: LuaSource[] = [];
 for (const root of sourceRoots) {
@@ -123,24 +133,26 @@ const coldFileQueryStartedAt = performance.now();
 frontend.getFile(editPath);
 const coldFileQueryMs = performance.now() - coldFileQueryStartedAt;
 
-let incomingCallProfile: IncomingCallProfile | undefined;
-if (incomingCallLocation) {
+let callHierarchyProfile: CallHierarchyProfile | undefined;
+if (callHierarchyLocation) {
 	const symbolStartedAt = performance.now();
 	const symbols = frontend.findSymbolsByPosition(
-		incomingCallLocation.path,
-		incomingCallLocation.line,
-		incomingCallLocation.column,
+		callHierarchyLocation.path,
+		callHierarchyLocation.line,
+		callHierarchyLocation.column,
 	);
 	const symbolMs = performance.now() - symbolStartedAt;
 	if (!symbols) {
-		throw new Error(`No semantic symbol at '${values.incoming}'.`);
+		throw new Error(`No semantic symbol at '${callHierarchyOptionValue}'.`);
 	}
-	let callerGroupCount = 0;
+	let groupCount = 0;
 	let callSiteCount = 0;
 	const coldStartedAt = performance.now();
 	for (let targetIndex = 0; targetIndex < symbols.targets.length; targetIndex += 1) {
-		const calls = frontend.provideIncomingCalls(symbols.targets[targetIndex].id);
-		callerGroupCount += calls.length;
+		const calls = callHierarchyDirection === 'incoming'
+			? frontend.provideIncomingCalls(symbols.targets[targetIndex].id)
+			: frontend.provideOutgoingCalls(symbols.targets[targetIndex].id);
+		groupCount += calls.length;
 		for (let callIndex = 0; callIndex < calls.length; callIndex += 1) {
 			callSiteCount += calls[callIndex].fromRanges.length;
 		}
@@ -148,14 +160,19 @@ if (incomingCallLocation) {
 	const coldMs = performance.now() - coldStartedAt;
 	const warmStartedAt = performance.now();
 	for (let index = 0; index < symbols.targets.length; index += 1) {
-		frontend.provideIncomingCalls(symbols.targets[index].id);
+		if (callHierarchyDirection === 'incoming') {
+			frontend.provideIncomingCalls(symbols.targets[index].id);
+		} else {
+			frontend.provideOutgoingCalls(symbols.targets[index].id);
+		}
 	}
 	const warmMs = performance.now() - warmStartedAt;
-	incomingCallProfile = {
-		location: incomingCallLocation,
+	callHierarchyProfile = {
+		direction: callHierarchyDirection,
+		location: callHierarchyLocation,
 		label: symbols.label,
 		targetCount: symbols.targets.length,
-		callerGroupCount,
+		groupCount,
 		callSiteCount,
 		symbolMs,
 		coldMs,
@@ -228,7 +245,7 @@ console.log(JSON.stringify({
 		frontendMs: coldFrontendMs,
 		fileQueryMs: coldFileQueryMs,
 	},
-	incomingCalls: incomingCallProfile,
+	callHierarchy: callHierarchyProfile,
 	edit: {
 		parseMs: summarizeTimingSamples(parseMeasurements),
 		semanticMs: summarizeTimingSamples(semanticMeasurements),

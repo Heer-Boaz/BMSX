@@ -844,6 +844,52 @@ test('LuaSemanticFrontend provides one incoming-call layer and groups call sites
 	);
 });
 
+test('LuaSemanticFrontend provides one outgoing-call layer and groups call sites by callee', () => {
+	const source = [
+		'local function target() end',
+		'local function direct()',
+		'\ttarget()',
+		'\ttarget()',
+		'end',
+		'local function indirect()',
+		'\tdirect()',
+		'end',
+	].join('\n');
+	const frontend = buildLuaSemanticFrontend([{ path: 'calls.lua', source }]);
+	const indirectPosition = findPosition(source, 'local function indirect', 'indirect');
+	const indirect = frontend.findSymbolsByPosition('calls.lua', indirectPosition.line, indirectPosition.column);
+	assert.ok(indirect);
+
+	const directCalls = frontend.provideOutgoingCalls(indirect.targets[0].id);
+	assert.equal(directCalls.length, 1);
+	assert.equal(directCalls[0].to.label, 'direct');
+	assert.deepEqual(directCalls[0].fromRanges.map(range => range.start.line), [7]);
+
+	const targetCalls = frontend.provideOutgoingCalls(directCalls[0].to.symbolId);
+	assert.equal(targetCalls.length, 1);
+	assert.equal(targetCalls[0].to.label, 'target');
+	assert.deepEqual(targetCalls[0].fromRanges.map(range => range.start.line), [3, 4]);
+});
+
+test('LuaSemanticFrontend outgoing calls exclude nested callable bodies', () => {
+	const source = [
+		'local function outer_target() end',
+		'local function nested_target() end',
+		'local function outer()',
+		'\touter_target()',
+		'\tlocal function nested()',
+		'\t\tnested_target()',
+		'\tend',
+		'end',
+	].join('\n');
+	const frontend = buildLuaSemanticFrontend([{ path: 'nested.lua', source }]);
+	const outer = frontend.findSymbolsByPosition('nested.lua', 3, 16);
+	assert.ok(outer);
+
+	const calls = frontend.provideOutgoingCalls(outer.targets[0].id);
+	assert.deepEqual(calls.map(call => call.to.label), ['outer_target']);
+});
+
 test('LuaSemanticFrontend retains recursive calls as incoming call sites', () => {
 	const source = [
 		'local function recurse(value)',
@@ -956,6 +1002,12 @@ test('LuaSemanticFrontend incoming calls follow bound inherited methods without 
 		null,
 		'an unbound same-name call remains unresolved after the call graph is retained',
 	);
+	const caller = frontend.findSymbolsByPosition('usage.lua', 4, 16);
+	assert.ok(caller);
+	const outgoing = frontend.provideOutgoingCalls(caller.targets[0].id);
+	assert.equal(outgoing.length, 2);
+	assert.deepEqual(outgoing.map(call => call.to.label), ['base.spawn', 'derived.new']);
+	assert.deepEqual(outgoing.map(call => call.fromRanges[0].start.line), [6, 5]);
 });
 
 function firstNavigationTarget(
@@ -972,21 +1024,28 @@ function firstNavigationTarget(
 }
 
 function findPosition(source: string, lineFragment: string, needle: string): { line: number; column: number } {
-	const lines = source.split('\n');
-	for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
-		const line = lines[lineIndex];
-		const fragmentIndex = line.indexOf(lineFragment);
-		if (fragmentIndex === -1) {
-			continue;
-		}
-		const needleIndex = line.indexOf(needle, fragmentIndex);
-		if (needleIndex === -1) {
-			break;
-		}
-		return {
-			line: lineIndex + 1,
-			column: needleIndex + 1,
-		};
+	const fragmentOffset = source.indexOf(lineFragment);
+	if (fragmentOffset === -1) {
+		throw new Error(`Unable to find '${lineFragment}'.`);
 	}
-	throw new Error(`Unable to find '${needle}' inside '${lineFragment}'.`);
+	let lineEndOffset = fragmentOffset;
+	while (lineEndOffset < source.length && source.charCodeAt(lineEndOffset) !== 10) {
+		lineEndOffset += 1;
+	}
+	const needleOffset = source.indexOf(needle, fragmentOffset);
+	if (needleOffset === -1 || needleOffset >= lineEndOffset) {
+		throw new Error(`Unable to find '${needle}' inside '${lineFragment}'.`);
+	}
+	let line = 1;
+	let lineOffset = 0;
+	for (let offset = 0; offset < needleOffset; offset += 1) {
+		if (source.charCodeAt(offset) === 10) {
+			line += 1;
+			lineOffset = offset + 1;
+		}
+	}
+	return {
+		line,
+		column: needleOffset - lineOffset + 1,
+	};
 }

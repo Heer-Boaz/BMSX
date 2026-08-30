@@ -21,14 +21,18 @@ export function moveResourcePanelSelectionIndex(selectionIndex: number, itemCoun
 export function ensureResourcePanelSelectionScroll(selectionIndex: number, scroll: number, capacity: number, itemCount: number): number {
 	const scrollLimit = itemCount - capacity;
 	const maxScroll = scrollLimit > 0 ? scrollLimit : 0;
-	if (selectionIndex < scroll) {
+	const currentScroll = clamp(scroll, 0, maxScroll);
+	if (selectionIndex < 0) {
+		return currentScroll;
+	}
+	if (selectionIndex < currentScroll) {
 		return selectionIndex;
 	}
-	const overflow = selectionIndex - (scroll + capacity - 1);
+	const overflow = selectionIndex - (currentScroll + capacity - 1);
 	if (overflow <= 0) {
-		return scroll;
+		return currentScroll;
 	}
-	const requestedScroll = scroll + overflow;
+	const requestedScroll = currentScroll + overflow;
 	return requestedScroll < maxScroll ? requestedScroll : maxScroll;
 }
 

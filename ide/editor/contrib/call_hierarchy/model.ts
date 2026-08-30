@@ -1,5 +1,6 @@
 import type {
 	LuaCallHierarchyItem,
+	LuaCallHierarchyOutgoingCall,
 	LuaSemanticFrontend,
 } from '../../../../toolchain/ts/lua/semantic/frontend';
 import type { LuaDefinitionLocation } from '../../../../toolchain/ts/lua/semantic_contracts';
@@ -8,7 +9,12 @@ import type { LuaSourceRange } from '../../../../toolchain/ts/lua/syntax/ast';
 import { definitionLocationFromSourceRange } from '../../navigation/source_range';
 
 const EMPTY_CALL_RANGES: readonly LuaSourceRange[] = [];
-const EMPTY_INCOMING_CALLS: readonly CallHierarchyNode[] = [];
+const EMPTY_CALLS: readonly CallHierarchyNode[] = [];
+
+export const enum CallHierarchyDirection {
+	CallsTo = 'incomingCalls',
+	CallsFrom = 'outgoingCalls',
+}
 
 export type CallHierarchySymbolNode = {
 	kind: 'symbol';
@@ -33,6 +39,7 @@ export class CallHierarchyModel {
 	public readonly title: string;
 	public readonly roots: readonly CallHierarchySymbolNode[];
 	private readonly incomingByNodeId: Map<string, readonly CallHierarchyNode[]> = new Map();
+	private readonly outgoingByNodeId: Map<string, readonly CallHierarchyNode[]> = new Map();
 
 	constructor(
 		private readonly frontend: LuaSemanticFrontend,
@@ -60,7 +67,7 @@ export class CallHierarchyModel {
 
 	public resolveIncomingCalls(node: CallHierarchyNode): readonly CallHierarchyNode[] {
 		if (node.kind === 'chunk') {
-			return EMPTY_INCOMING_CALLS;
+			return EMPTY_CALLS;
 		}
 		const cached = this.incomingByNodeId.get(node.id);
 		if (cached) {
@@ -77,15 +84,35 @@ export class CallHierarchyModel {
 		return children;
 	}
 
-	public hasChildren(node: CallHierarchyNode): boolean {
+	public resolveOutgoingCalls(node: CallHierarchyNode): readonly CallHierarchyNode[] {
+		if (node.kind === 'chunk') {
+			return EMPTY_CALLS;
+		}
+		const cached = this.outgoingByNodeId.get(node.id);
+		if (cached) {
+			return cached;
+		}
+		const calls = this.frontend.provideOutgoingCalls(node.symbolId, this.allowedPaths);
+		const children = new Array<CallHierarchyNode>(calls.length);
+		for (let index = 0; index < calls.length; index += 1) {
+			const call = calls[index];
+			children[index] = createOutgoingNode(node.id, call);
+		}
+		this.outgoingByNodeId.set(node.id, children);
+		return children;
+	}
+
+	public hasChildren(node: CallHierarchyNode, direction: CallHierarchyDirection): boolean {
 		if (node.fromRanges.length > 0) {
 			return true;
 		}
 		if (node.kind === 'chunk') {
 			return false;
 		}
-		const incoming = this.incomingByNodeId.get(node.id);
-		return !incoming || incoming.length > 0;
+		const calls = direction === CallHierarchyDirection.CallsTo
+			? this.incomingByNodeId.get(node.id)
+			: this.outgoingByNodeId.get(node.id);
+		return !calls || calls.length > 0;
 	}
 }
 
@@ -111,6 +138,21 @@ function createIncomingNode(
 		name: item.label,
 		location,
 		fromRanges,
+		symbolId: item.symbolId,
+	};
+}
+
+function createOutgoingNode(
+	parentId: string,
+	call: LuaCallHierarchyOutgoingCall,
+): CallHierarchySymbolNode {
+	const item = call.to;
+	return {
+		kind: 'symbol',
+		id: `${parentId}>${item.key}`,
+		name: item.label,
+		location: definitionLocationFromSourceRange(item.range),
+		fromRanges: call.fromRanges,
 		symbolId: item.symbolId,
 	};
 }

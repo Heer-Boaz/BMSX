@@ -104,6 +104,11 @@ export type LuaCallHierarchyIncomingCall = {
 	fromRanges: readonly LuaSourceRange[];
 };
 
+export type LuaCallHierarchyOutgoingCall = {
+	to: LuaCallHierarchySymbolItem;
+	fromRanges: readonly LuaSourceRange[];
+};
+
 export type LuaSemanticFrontendFile = {
 	diagnostics: readonly LuaStaticDiagnostic[];
 	getDeclaration(identifier: LuaIdentifierExpression): Decl | undefined;
@@ -123,6 +128,10 @@ export type LuaSemanticFrontend = {
 		symbolId: SymbolID,
 		allowedPaths?: ReadonlySet<string>,
 	): readonly LuaCallHierarchyIncomingCall[];
+	provideOutgoingCalls(
+		symbolId: SymbolID,
+		allowedPaths?: ReadonlySet<string>,
+	): readonly LuaCallHierarchyOutgoingCall[];
 };
 
 export function buildLuaSemanticFrontend(
@@ -233,7 +242,7 @@ class SnapshotSemanticFrontend implements LuaSemanticFrontend {
 			let bucket = grouped.get(callerKey);
 			if (!bucket) {
 				const caller = reference.caller
-					? buildDeclCallerScope(this.snapshot.symbolResolver.getDeclaration(reference.caller))
+					? buildSymbolCallHierarchyItem(this.snapshot.symbolResolver.getDeclaration(reference.caller))
 					: buildChunkCallerScope(reference.file);
 				bucket = {
 					from: caller,
@@ -245,9 +254,52 @@ class SnapshotSemanticFrontend implements LuaSemanticFrontend {
 		}
 		const groups = Array.from(grouped.values());
 		for (let index = 0; index < groups.length; index += 1) {
-			groups[index].fromRanges.sort((left, right) => compareSourcePosition(left.start.line, left.start.column, right.start.line, right.start.column));
+			groups[index].fromRanges.sort(compareSourceRangesByStart);
 		}
 		groups.sort((left, right) => compareCallHierarchyItems(left.from, right.from));
+		return groups;
+	}
+
+	public provideOutgoingCalls(
+		symbolId: SymbolID,
+		allowedPaths?: ReadonlySet<string>,
+	): readonly LuaCallHierarchyOutgoingCall[] {
+		const declaration = this.snapshot.symbolResolver.getDeclaration(symbolId);
+		const source: FileSemanticData = this.snapshot.getFileData(declaration.file);
+		const callReferences: Ref[] = [];
+		for (let index = 0; index < source.refs.length; index += 1) {
+			const reference = source.refs[index];
+			if (reference.isCall && reference.caller === symbolId) {
+				callReferences.push(reference);
+			}
+		}
+		const targetsByReference = this.snapshot.symbolResolver.resolveCallTargets(callReferences);
+		const grouped = new Map<SymbolID, OutgoingCalleeGroup>();
+		for (let index = 0; index < callReferences.length; index += 1) {
+			const reference = callReferences[index];
+			const targets = targetsByReference[index];
+			for (let targetIndex = 0; targetIndex < targets.length; targetIndex += 1) {
+				const targetId = targets[targetIndex];
+				let bucket = grouped.get(targetId);
+				if (!bucket) {
+					const target = this.snapshot.symbolResolver.getDeclaration(targetId);
+					if (allowedPaths && !allowedPaths.has(target.file)) {
+						continue;
+					}
+					bucket = {
+						to: buildSymbolCallHierarchyItem(target),
+						fromRanges: [],
+					};
+					grouped.set(targetId, bucket);
+				}
+				bucket.fromRanges.push(reference.range);
+			}
+		}
+		const groups = Array.from(grouped.values());
+		for (let index = 0; index < groups.length; index += 1) {
+			groups[index].fromRanges.sort(compareSourceRangesByStart);
+		}
+		groups.sort((left, right) => compareCallHierarchyItems(left.to, right.to));
 		return groups;
 	}
 }
@@ -257,7 +309,12 @@ type IncomingCallerGroup = {
 	fromRanges: LuaSourceRange[];
 };
 
-function buildDeclCallerScope(decl: Decl): LuaCallHierarchySymbolItem {
+type OutgoingCalleeGroup = {
+	to: LuaCallHierarchySymbolItem;
+	fromRanges: LuaSourceRange[];
+};
+
+function buildSymbolCallHierarchyItem(decl: Decl): LuaCallHierarchySymbolItem {
 	const label = decl.namePath.length > 0 ? decl.namePath.join('.') : decl.name;
 	return {
 		kind: 'symbol',
@@ -294,6 +351,18 @@ function compareCallHierarchyItems(left: LuaCallHierarchyItem, right: LuaCallHie
 		return columnDiff;
 	}
 	return left.label.localeCompare(right.label);
+}
+
+function compareSourceRangesByStart(left: LuaSourceRange, right: LuaSourceRange): number {
+	if (left.path !== right.path) {
+		return left.path.localeCompare(right.path);
+	}
+	return compareSourcePosition(
+		left.start.line,
+		left.start.column,
+		right.start.line,
+		right.start.column,
+	);
 }
 
 function createBoundFile(

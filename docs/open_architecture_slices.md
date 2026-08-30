@@ -67,11 +67,15 @@ De huidige IDE- en debuggergrenzen zijn:
   volledige line-arrays horen alleen bij expliciete UI-queries die regeltekst
   tonen, zoals het references-resultaat, en niet bij semantiek of diagnostics;
 - call hierarchy gebruikt dezelfde vlakke providergrens als volwassen language
-  services: de semantische frontend groepeert alleen de directe callsites per
-  caller en het editormodel vraagt pas bij het uitklappen om de volgende laag.
+  services: de semantische frontend levert directe incoming- en outgoing-calls;
+  richting, expansie en de twee viewcaches blijven eigendom van het editormodel
+  en de workbench. Het model vraagt pas bij het uitklappen om de volgende laag.
   De file-semantiek markeert call-references en hun owning function tijdens de
   oorspronkelijke AST-traversal; providers matchen references niet opnieuw
   tegen alle call-expressions en zoeken owning scopes niet achteraf terug.
+  Alle callsites uit een opgevraagde functiebody worden als een batch tegen een
+  gedeelde retained value-graph opgelost. Een provider mag niet per callsite de
+  interactieve single-reference-resolver opnieuw laten materialiseren.
   Er wordt geen recursieve depth-begrensde boom vooraf opgebouwd; node-identiteit
   bevat het ouderpad zodat dezelfde caller in verschillende takken onafhankelijk
   kan worden uitgeklapt;
@@ -144,6 +148,11 @@ npx tsx --tsconfig tsconfig.base.json \
   scripts/dev/profile_lua_semantics.ts \
   --incoming carts/nemesis_s/player/player.lua:1223:15 \
   cartlib/world/world.lua cartlib machine/bios carts/nemesis_s
+
+npx tsx --tsconfig tsconfig.base.json \
+  scripts/dev/profile_lua_semantics.ts \
+  --outgoing cartlib/world/world.lua:684:22 \
+  carts/nemesis_s/cart.lua cartlib machine/bios carts/nemesis_s
 ```
 
 ## Validatiebasis voor inputwerk
@@ -194,7 +203,7 @@ beide vervangt de zichtbare targetmetingen hieronder.
 | `GX-CART-RESIDENCY-LIVE-01` | Doorloop atlaswissels in `2024`, `2025`, `nemesis_s` en `pietious`; framebufferpages, vaste system-VRAM, palette-CLUTs en hergebruikte cart-atlassen mogen elkaar niet zichtbaar beschadigen. | WebGL2 en GLES2; daarna echte SNES Mini. |
 | `HOST-OSK-LIVE-01` | Touch en iedere toegewezen/aangesloten controller openen en besturen quick menu en onscreen keyboard. Shift, Backspace, Delete, spatie, Enter, cursor, Home/End en lowercase/uppercase labels werken; sluiten lekt geen chord of letter naar cart, terminal of IDE. Browser-portremaps werken voor fysieke en onscreen devices zonder quick-menu-/shortcutcontrols mee te remappen. Cheat-/sealtekst kan zonder fysiek keyboard worden ingevoerd. | iPhone/browser en echte SNES Mini. |
 | `HOST-SUPERVISOR-01` | Select+L opent en sluit de terminal vanaf iedere aangesloten frontendport exact eenmaal zonder gameplayinput te lekken. | Echte SNES Mini. |
-| `IDE-LIVE-01` | Tijdens een cartridge-run opent de IDE de cartridge-entry; Back en Forward keren terug naar de exacte cursorlocatie; definition/declaration navigeert door cart-, cartlib-, gegenereerde en statisch geerfde Lua-symbolen; faults tonen authored context voor anonieme functies; Step Into, Over en Out blijven correct voor fysieke en inline frames. | Browser Studio op WebGL2. |
+| `IDE-LIVE-01` | Tijdens een cartridge-run opent de IDE de cartridge-entry; Back en Forward keren terug naar de exacte cursorlocatie; Go to Definition navigeert door cart-, cartlib-, gegenereerde en statisch geerfde Lua-symbolen; Call Hierarchy wisselt lazy tussen incoming en outgoing; faults tonen authored context voor anonieme functies; Step Into, Over en Out blijven correct voor fysieke en inline frames. | Browser Studio op WebGL2. |
 | `PERF-03` | De op de echte target geselecteerde ARM-fetch-, NV-barrier- of dependency-copyroute rendert exact en houdt 50 Hz zonder backlog. | Windows RetroArch en echte SNES Mini. |
 | `PERF-04` | De 16k audio-/presentatiesoak houdt 50 Hz zonder sampleverlies, backlog of periodieke hitch. | Zichtbare frontend en daarna SNES Mini. |
 | `SNES-ABI-01` | De door de GCC-10 cross-build en QEMU-smoke geaccepteerde core start tegen de actuele target-root en frontend zonder ABI-, loader- of GLES2-fouten. | Actuele SNES Mini-rootdump en hardware. |

@@ -1,7 +1,9 @@
-import { clamp } from '../../../../../machine/ts/common/clamp';
 import type { RectBounds } from '../../../../../machine/ts/common/rect';
 import type { ResourceBrowserItem, RuntimeResource } from '../../../../common/models';
-import type { CallHierarchyModel } from '../../../../editor/contrib/call_hierarchy/model';
+import type {
+	CallHierarchyDirection,
+	CallHierarchyModel,
+} from '../../../../editor/contrib/call_hierarchy/model';
 import {
 	buildCallHierarchyPanelItems,
 	buildResourcePanelItems,
@@ -43,11 +45,12 @@ export function refreshResourcePanelResourceState(options: {
 	if (selectionIndex === -1 && items.length > 0) {
 		selectionIndex = 0;
 	}
-	const scrollLimit = items.length - capacity;
-	const maxScroll = scrollLimit > 0 ? scrollLimit : 0;
-	const scroll = selectionIndex >= 0
-		? ensureResourcePanelSelectionScroll(selectionIndex, clamp(options.previousScroll, 0, maxScroll), capacity, items.length)
-		: clamp(options.previousScroll, 0, maxScroll);
+	const scroll = ensureResourcePanelSelectionScroll(
+		selectionIndex,
+		options.previousScroll,
+		capacity,
+		items.length,
+	);
 	return {
 		items,
 		maxLineWidth,
@@ -58,24 +61,26 @@ export function refreshResourcePanelResourceState(options: {
 
 export function refreshResourcePanelCallHierarchyState(options: {
 	model: CallHierarchyModel;
+	direction: CallHierarchyDirection;
 	expandedNodeIds: ReadonlySet<string>;
 	bounds: RectBounds;
 	lineHeight: number;
 	previousNodeId: string;
 	previousScroll: number;
 }): ResourcePanelRefreshResult {
-	const items = buildCallHierarchyPanelItems(options.model, options.expandedNodeIds);
+	const items = buildCallHierarchyPanelItems(options.model, options.direction, options.expandedNodeIds);
 	const maxLineWidth = computeResourcePanelMaxLineWidth(items);
 	const capacity = resourcePanelLineCapacity(options.bounds, items.length, maxLineWidth, options.lineHeight);
 	let selectionIndex = options.previousNodeId ? findResourcePanelIndexByCallHierarchyNodeId(items, options.previousNodeId) : -1;
 	if (selectionIndex === -1 && items.length > 0) {
 		selectionIndex = 0;
 	}
-	const scrollLimit = items.length - capacity;
-	const maxScroll = scrollLimit > 0 ? scrollLimit : 0;
-	const scroll = selectionIndex >= 0
-		? ensureResourcePanelSelectionScroll(selectionIndex, clamp(options.previousScroll, 0, maxScroll), capacity, items.length)
-		: clamp(options.previousScroll, 0, maxScroll);
+	const scroll = ensureResourcePanelSelectionScroll(
+		selectionIndex,
+		options.previousScroll,
+		capacity,
+		items.length,
+	);
 	return {
 		items,
 		maxLineWidth,

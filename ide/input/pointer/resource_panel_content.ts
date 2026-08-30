@@ -18,7 +18,7 @@ export function handleResourcePanelPointer(
 			resourcePanel.setFocused(false);
 		}
 		if (resourcePanel.isVisible() && !snapshot.primaryPressed) {
-			resourcePanel.setHoverIndex(-1);
+			resourcePanel.hoverIndex = -1;
 		}
 		return false;
 	}
@@ -32,7 +32,7 @@ export function handleResourcePanelPointer(
 		resourcePanel.scrollBy(1);
 	}
 	const hoverIndex = resourcePanel.indexAtPosition(snapshot.viewportX, snapshot.viewportY);
-	resourcePanel.setHoverIndex(hoverIndex);
+	resourcePanel.hoverIndex = hoverIndex;
 	if (hoverIndex >= 0) {
 		if (hoverIndex !== resourcePanel.selectionIndex) {
 			resourcePanel.setSelectionIndex(hoverIndex);
@@ -42,7 +42,7 @@ export function handleResourcePanelPointer(
 			}
 	}
 	if (!snapshot.primaryPressed && hoverIndex === -1) {
-		resourcePanel.setHoverIndex(-1);
+		resourcePanel.hoverIndex = -1;
 	}
 	editorPointerState.pointerSelecting = false;
 	editorPointerState.pointerPrimaryWasPressed = snapshot.primaryPressed;

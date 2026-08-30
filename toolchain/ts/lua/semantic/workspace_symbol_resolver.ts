@@ -55,9 +55,53 @@ export class WorkspaceSymbolResolver {
 			return cached;
 		}
 		const targets = this.resolveReferenceTargetsUncached(ref);
-		this.retainCallTargets(ref, targets);
+		if (this.retainCallTargets(ref, targets)) {
+			this.referenceTargets.clear();
+			this.referencesBySymbol.clear();
+		}
 		this.referenceTargets.set(ref, targets);
 		return targets;
+	}
+
+	public resolveCallTargets(refs: readonly Ref[]): readonly (readonly SymbolID[])[] {
+		const targetsByReference = this.resolveReferenceTargetBatch(refs);
+		for (let index = 0; index < refs.length; index += 1) {
+			this.referenceTargets.set(refs[index], targetsByReference[index]);
+		}
+		return targetsByReference;
+	}
+
+	private resolveReferenceTargetBatch(refs: readonly Ref[]): readonly (readonly SymbolID[])[] {
+		const targetsByReference = new Array<readonly SymbolID[]>(refs.length);
+		let hasDynamicReferences = false;
+		for (let index = 0; index < refs.length; index += 1) {
+			const targets = this.resolveBoundReferenceTargets(refs[index]);
+			if (targets === undefined) {
+				hasDynamicReferences = true;
+			} else {
+				targetsByReference[index] = targets;
+			}
+		}
+		if (!hasDynamicReferences) {
+			return targetsByReference;
+		}
+		const valueGraph = this.getValueGraph();
+		let callGraphChanged: boolean;
+		let retainedCallGraphChanged = false;
+		do {
+			callGraphChanged = false;
+			for (let index = 0; index < refs.length; index += 1) {
+				const targets = this.resolveReferenceTargetsUncached(refs[index], valueGraph, true);
+				targetsByReference[index] = targets;
+				callGraphChanged = this.retainCallTargets(refs[index], targets) || callGraphChanged;
+			}
+			retainedCallGraphChanged = callGraphChanged || retainedCallGraphChanged;
+		} while (callGraphChanged);
+		if (retainedCallGraphChanged) {
+			this.referenceTargets.clear();
+			this.referencesBySymbol.clear();
+		}
+		return targetsByReference;
 	}
 
 	private retainCallTargets(ref: Ref, targets: readonly SymbolID[]): boolean {
@@ -69,10 +113,6 @@ export class WorkspaceSymbolResolver {
 		let changed = false;
 		for (let index = 0; index < targets.length; index += 1) {
 			changed = valueGraph.retainCallTarget(call, targets[index]) || changed;
-		}
-		if (changed) {
-			this.referenceTargets.clear();
-			this.referencesBySymbol.clear();
 		}
 		return changed;
 	}
@@ -256,23 +296,13 @@ export class WorkspaceSymbolResolver {
 			return;
 		}
 		const candidates: Ref[] = [];
-		let hasDynamicMemberCandidates = false;
 		for (let fileIndex = 0; fileIndex < this.files.length; fileIndex += 1) {
 			const referencesByName = this.files[fileIndex].referencesByName;
 			for (const name of names) {
 				const references = referencesByName.get(name);
 				if (references) {
 					for (let referenceIndex = 0; referenceIndex < references.length; referenceIndex += 1) {
-						const reference = references[referenceIndex];
-						candidates.push(reference);
-						if (!reference.target
-							&& (reference.referenceKind === 'member' || reference.referenceKind === 'method')
-							&& this.getValueIdentities().resolveStaticMembers(
-								reference.receiverValue,
-								reference.name,
-							) === undefined) {
-							hasDynamicMemberCandidates = true;
-						}
+						candidates.push(references[referenceIndex]);
 					}
 				}
 			}
@@ -280,20 +310,7 @@ export class WorkspaceSymbolResolver {
 		// Candidate selection and semantic confirmation extend one retained graph
 		// for this immutable workspace version. Resolved calls become ordinary
 		// call-graph edges instead of being rediscovered by later queries.
-		const valueGraph = hasDynamicMemberCandidates
-			? this.getValueGraph()
-			: undefined;
-		const targetsByCandidate = new Array<readonly SymbolID[]>(candidates.length);
-		let callGraphChanged: boolean;
-		do {
-			callGraphChanged = false;
-			for (let candidateIndex = 0; candidateIndex < candidates.length; candidateIndex += 1) {
-				const candidate = candidates[candidateIndex];
-				const targets = this.resolveReferenceTargetsUncached(candidate, valueGraph, true);
-				targetsByCandidate[candidateIndex] = targets;
-				callGraphChanged = this.retainCallTargets(candidate, targets) || callGraphChanged;
-			}
-		} while (callGraphChanged);
+		const targetsByCandidate = this.resolveReferenceTargetBatch(candidates);
 		const references = new Map<SymbolID, Ref[]>();
 		for (const symbolId of unresolvedSymbols) {
 			references.set(symbolId, []);

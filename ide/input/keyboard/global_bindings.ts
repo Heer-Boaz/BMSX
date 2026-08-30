@@ -37,6 +37,7 @@ const editorGlobalKeyBindings: readonly CommandKeyBinding[] = [
 	{ code: 'KeyB', command: 'resources', modifiers: { anyOf: ['ctrl', 'meta'] } },
 	{ code: 'KeyM', command: 'problems', modifiers: { anyOf: ['ctrl', 'meta'], allOf: ['shift'] } },
 	{ code: 'Comma', command: 'symbolSearchGlobal', modifiers: { allOf: ['alt'], noneOf: ['ctrl', 'meta'] } },
+	{ code: 'KeyH', command: 'callHierarchy', modifiers: { allOf: ['shift', 'alt'], noneOf: ['ctrl', 'meta'] } },
 ];
 
 function handleEscapeBinding(playerInput: PlayerInput): boolean {

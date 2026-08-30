@@ -8,7 +8,10 @@ import type { ResourceBrowserItem } from '../../../../common/models';
 import type { RectBounds } from '../../../../../machine/ts/common/rect';
 import { showEditorMessage } from '../../../../common/feedback_state';
 import { measureTextRange } from '../../../../editor/common/text/layout';
-import type { CallHierarchyModel } from '../../../../editor/contrib/call_hierarchy/model';
+import {
+	CallHierarchyDirection,
+	type CallHierarchyModel,
+} from '../../../../editor/contrib/call_hierarchy/model';
 import { editorViewState } from '../../../../editor/ui/view/state';
 import {
 	findResourcePanelIndexByIdentity,
@@ -39,8 +42,6 @@ import {
 	refreshResourcePanelCallHierarchyState,
 	refreshResourcePanelResourceState,
 } from './refresh';
-import { handleResourcePanelKeyboardInput } from './keyboard';
-import type { PlayerInput } from '../../../../../hosts/common/input/player';
 import type { ResourceIdentity } from '../../../../common/resource';
 import type { CartEditor } from '../../../../cart_editor';
 import type { RuntimeSourceState } from '../../../../runtime/sources';
@@ -94,6 +95,7 @@ export class ResourcePanelController {
 	public hoverIndex = -1;
 	public maxLineWidth = 0;
 	private callHierarchyModel: CallHierarchyModel = null;
+	private callHierarchyDirection = CallHierarchyDirection.CallsTo;
 	private pendingSelectionIdentity: ResourceIdentity = null;
 	private readonly callHierarchyExpandedNodeIds = new Set<string>();
 	private readonly bounds: RectBounds = create_rect_bounds();
@@ -156,12 +158,31 @@ export class ResourcePanelController {
 		this.visible = true;
 		this.focused = true;
 		this.callHierarchyModel = model;
+		this.callHierarchyDirection = CallHierarchyDirection.CallsTo;
 		this.callHierarchyExpandedNodeIds.clear();
 		if (model.roots.length === 1) {
 			const root = model.roots[0];
 			this.callHierarchyExpandedNodeIds.add(root.id);
 		}
 		this.refreshCallHierarchyContents();
+	}
+
+	toggleCallHierarchyDirection(): void {
+		this.callHierarchyDirection = this.callHierarchyDirection === CallHierarchyDirection.CallsTo
+			? CallHierarchyDirection.CallsFrom
+			: CallHierarchyDirection.CallsTo;
+		this.callHierarchyExpandedNodeIds.clear();
+		if (this.callHierarchyModel.roots.length === 1) {
+			this.callHierarchyExpandedNodeIds.add(this.callHierarchyModel.roots[0].id);
+		}
+		this.scroll = 0;
+		this.hscroll = 0;
+		this.refreshCallHierarchyContents();
+		showEditorMessage(
+			this.callHierarchyDirection === CallHierarchyDirection.CallsTo ? 'Incoming calls' : 'Outgoing calls',
+			constants.COLOR_STATUS_TEXT,
+			1.8,
+		);
 	}
 
 	hide(): void {
@@ -191,11 +212,6 @@ export class ResourcePanelController {
 		renderResourcePanel(this);
 	}
 
-	// === Keyboard ===
-	handleKeyboard(playerInput: PlayerInput): void {
-		handleResourcePanelKeyboardInput(playerInput, this);
-	}
-
 	// === Public helpers used by editor pointer logic ===
 	indexAtPosition(_x: number, y: number): number {
 		const layout = this.prepareLayout();
@@ -213,10 +229,6 @@ export class ResourcePanelController {
 		this.selectionIndex = next;
 		this.hoverIndex = -1;
 		this.ensureSelectionVisible();
-	}
-
-	setHoverIndex(index: number): void {
-		this.hoverIndex = index;
 	}
 
 	isCallHierarchyMarkerHit(index: number, viewportX: number): boolean {
@@ -340,6 +352,7 @@ export class ResourcePanelController {
 			: null;
 		this.applyRefreshResult(refreshResourcePanelCallHierarchyState({
 			model: this.callHierarchyModel,
+			direction: this.callHierarchyDirection,
 			expandedNodeIds: this.callHierarchyExpandedNodeIds,
 			bounds,
 			lineHeight: this.lineHeight,
