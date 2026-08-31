@@ -666,13 +666,19 @@ export type WorkspaceValueGraphInput = {
 };
 
 export class WorkspaceValueIdentityIndex {
-	private readonly identityParents: Map<string, string> = new Map();
-	private readonly identityRanks: Map<string, number> = new Map();
-	private readonly moduleIdentities: Set<string> = new Set();
-	private readonly sourceOwnedIdentities: Set<string> = new Set();
+	private readonly declarationIdentityIds: Map<SymbolID, number> = new Map();
+	private readonly globalIdentityIds: Map<string, number> = new Map();
+	private readonly moduleIdentityIds: Map<string, number> = new Map();
+	private readonly ownedIdentityIds: Map<string, number> = new Map();
+	private readonly literalIdentityIds: Map<string, number> = new Map();
+	private readonly identityParents: number[] = [0];
+	private readonly identityRanks: number[] = [0];
+	private readonly identitySourceKeys: string[] = [''];
+	private readonly moduleIdentities: Set<number> = new Set();
+	private readonly sourceOwnedIdentities: Set<number> = new Set();
 	private readonly membersBySource: Map<string, Map<string, SymbolID[]>> = new Map();
 	private readonly receiverProjectionBySource: Map<string, SemanticValueSource> = new Map();
-	private readonly inferredMemberNamesByIdentity: Map<string, Set<string>> = new Map();
+	private readonly inferredMemberNamesByIdentity: Map<number, Set<string>> = new Map();
 
 	constructor(input: WorkspaceValueGraphInput) {
 		const identityDeclarations = new Set<SymbolID>();
@@ -711,12 +717,12 @@ export class WorkspaceValueIdentityIndex {
 			);
 		}
 		for (const module of moduleValues.keys()) {
-			const identity = this.find(semanticValueRootKey({ kind: 'module', module }));
+			const identity = this.find(this.identityId({ kind: 'module', module }));
 			this.moduleIdentities.add(identity);
 			this.sourceOwnedIdentities.add(identity);
 		}
 		for (const symbolKey of input.globalValues.keys()) {
-			this.sourceOwnedIdentities.add(this.find(semanticValueRootKey({ kind: 'global', symbolKey })));
+			this.sourceOwnedIdentities.add(this.find(this.identityId({ kind: 'global', symbolKey })));
 		}
 		for (let fileIndex = 0; fileIndex < input.files.length; fileIndex += 1) {
 			const declarations = input.files[fileIndex].declarationValues;
@@ -725,7 +731,7 @@ export class WorkspaceValueIdentityIndex {
 				if (identityDeclarations.has(entry.declId)
 					&& entry.source.steps.length === 0
 					&& entry.source.root.kind === 'owned') {
-					this.sourceOwnedIdentities.add(this.find(semanticValueRootKey(entry.source.root)));
+					this.sourceOwnedIdentities.add(this.find(this.identityId(entry.source.root)));
 				}
 			}
 		}
@@ -734,7 +740,7 @@ export class WorkspaceValueIdentityIndex {
 			const members = file.memberValues;
 			for (let memberIndex = 0; memberIndex < members.length; memberIndex += 1) {
 				const member = members[memberIndex];
-				const ownerIdentity = this.find(semanticValueRootKey(member.owner.root));
+				const ownerIdentity = this.find(this.identityId(member.owner.root));
 				if (member.owner.root.kind === 'owned') {
 					this.sourceOwnedIdentities.add(ownerIdentity);
 				}
@@ -777,7 +783,8 @@ export class WorkspaceValueIdentityIndex {
 	}
 
 	public sourceKey(source: SemanticValueSource, stepCount = source.steps.length): string {
-		let key = this.find(semanticValueRootKey(source.root));
+		const identity = this.find(this.identityId(source.root));
+		let key = this.identitySourceKeys[identity];
 		for (let index = 0; index < stepCount; index += 1) {
 			const step = source.steps[index];
 			switch (step.kind) {
@@ -829,7 +836,7 @@ export class WorkspaceValueIdentityIndex {
 		if (source.steps.length !== 0) {
 			return undefined;
 		}
-		const ownerIdentity = this.find(semanticValueRootKey(source.root));
+		const ownerIdentity = this.find(this.identityId(source.root));
 		if (!this.moduleIdentities.has(ownerIdentity)) {
 			return source.root.kind === 'global' && !this.sourceOwnedIdentities.has(ownerIdentity)
 				? EMPTY_MEMBER_IDS
@@ -842,37 +849,74 @@ export class WorkspaceValueIdentityIndex {
 	}
 
 	private union(left: SemanticValueRoot, right: SemanticValueRoot): void {
-		let leftKey = this.find(semanticValueRootKey(left));
-		let rightKey = this.find(semanticValueRootKey(right));
-		if (leftKey === rightKey) {
+		let leftId = this.find(this.identityId(left));
+		let rightId = this.find(this.identityId(right));
+		if (leftId === rightId) {
 			return;
 		}
-		const leftRank = this.identityRanks.get(leftKey) ?? 0;
-		const rightRank = this.identityRanks.get(rightKey) ?? 0;
+		const leftRank = this.identityRanks[leftId];
+		const rightRank = this.identityRanks[rightId];
 		if (leftRank < rightRank) {
-			const swap = leftKey;
-			leftKey = rightKey;
-			rightKey = swap;
+			const swap = leftId;
+			leftId = rightId;
+			rightId = swap;
 		}
-		this.identityParents.set(rightKey, leftKey);
+		this.identityParents[rightId] = leftId;
 		if (leftRank === rightRank) {
-			this.identityRanks.set(leftKey, leftRank + 1);
+			this.identityRanks[leftId] = leftRank + 1;
 		}
 	}
 
-	private find(key: string): string {
-		let root = key;
-		let parent = this.identityParents.get(root);
-		while (parent !== undefined && parent !== root) {
-			root = parent;
-			parent = this.identityParents.get(root);
+	private identityId(root: SemanticValueRoot): number {
+		let identities: Map<string, number>;
+		let key: string;
+		switch (root.kind) {
+			case 'declaration':
+				identities = this.declarationIdentityIds;
+				key = root.declId;
+				break;
+			case 'global':
+				identities = this.globalIdentityIds;
+				key = root.symbolKey;
+				break;
+			case 'module':
+				identities = this.moduleIdentityIds;
+				key = root.module;
+				break;
+			case 'owned':
+				identities = this.ownedIdentityIds;
+				key = root.key;
+				break;
+			case 'literal':
+				identities = this.literalIdentityIds;
+				key = root.key;
+				break;
 		}
-		let current = key;
-		parent = this.identityParents.get(current);
-		while (parent !== undefined && parent !== root) {
-			this.identityParents.set(current, root);
+		const existing = identities.get(key);
+		if (existing !== undefined) {
+			return existing;
+		}
+		const identity = this.identityParents.length;
+		identities.set(key, identity);
+		this.identityParents.push(identity);
+		this.identityRanks.push(0);
+		this.identitySourceKeys.push(String(identity));
+		return identity;
+	}
+
+	private find(identity: number): number {
+		let root = identity;
+		let parent = this.identityParents[root];
+		while (parent !== root) {
+			root = parent;
+			parent = this.identityParents[root];
+		}
+		let current = identity;
+		parent = this.identityParents[current];
+		while (parent !== root) {
+			this.identityParents[current] = root;
 			current = parent;
-			parent = this.identityParents.get(current);
+			parent = this.identityParents[current];
 		}
 		return root;
 	}
