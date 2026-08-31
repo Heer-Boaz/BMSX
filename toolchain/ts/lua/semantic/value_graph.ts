@@ -939,6 +939,7 @@ function demandBucketEntry<Entry>(bucket: DemandBucket<Entry> | undefined, index
 }
 
 class WorkspaceValueDemandIndex {
+	private readonly files: readonly WorkspaceValueFileInput[];
 	public readonly declarationValues: Map<SymbolID, DemandBucket<SemanticValueSource>> = new Map();
 	public readonly identityDeclarations: Set<SymbolID> = new Set();
 	public readonly projectionDeclarations: Set<SymbolID> = new Set();
@@ -978,8 +979,10 @@ class WorkspaceValueDemandIndex {
 	public readonly effectDependenciesBySource: Map<string, DemandBucket<FunctionEffectDependencyEntry>> = new Map();
 	public readonly instanceAllocationFlowsByMember:
 		Map<string, DemandBucket<FunctionValueFlowEntry>> = new Map();
+	private valueSourceIndicesMaterialized = false;
 
 	constructor(input: WorkspaceValueGraphInput, identities: WorkspaceValueIdentityIndex) {
+		this.files = input.files;
 		this.globalValues = input.globalValues;
 		this.identities = identities;
 		for (let fileIndex = 0; fileIndex < input.files.length; fileIndex += 1) {
@@ -992,13 +995,6 @@ class WorkspaceValueDemandIndex {
 					this.projectionDeclarations.add(entry.declId);
 				}
 				this.append(this.declarationValues, entry.declId, entry.source);
-				if (entry.relation !== 'identity' || entry.source.steps.length > 0) {
-					this.append(
-						this.declarationsByValueSource,
-						this.identities.sourceKey(entry.source),
-						entry.declId,
-					);
-				}
 			}
 			for (let entryIndex = 0; entryIndex < file.moduleValues.length; entryIndex += 1) {
 				const entry = file.moduleValues[entryIndex];
@@ -1075,32 +1071,10 @@ class WorkspaceValueDemandIndex {
 						call.callee,
 						call,
 					);
-					this.append(
-						this.callerCallsByCalleeSource,
-						this.identities.sourceKey(call.callee),
-						call,
-					);
-					const projectedCallee = projectValueSource(
-						call.callee,
-						flow.parameters[0],
-						flow.receiverProjection,
-					);
-					if (projectedCallee) {
-						this.append(
-							this.callerCallsByCalleeSource,
-							this.identities.sourceKey(projectedCallee),
-							call,
-						);
-					}
 					for (let argumentIndex = 0; argumentIndex < call.arguments.length; argumentIndex += 1) {
 						const argument = call.arguments[argumentIndex];
 						if (argument) {
 							this.indexSourceRoot(this.argumentCallerCallsByRoot, argument, call);
-							this.append(
-								this.argumentCallerCallsBySource,
-								this.identities.sourceKey(argument),
-								call,
-							);
 							const projectedArgument = projectValueSource(
 								argument,
 								flow.parameters[0],
@@ -1108,11 +1082,6 @@ class WorkspaceValueDemandIndex {
 							);
 							if (projectedArgument) {
 								this.indexSourceRoot(this.argumentCallerCallsByRoot, projectedArgument, call);
-								this.append(
-									this.argumentCallerCallsBySource,
-									this.identities.sourceKey(projectedArgument),
-									call,
-								);
 							}
 						}
 					}
@@ -1154,20 +1123,10 @@ class WorkspaceValueDemandIndex {
 					call.callee,
 					call,
 				);
-				this.append(
-					this.callsByCalleeSource,
-					this.identities.sourceKey(call.callee),
-					call,
-				);
 				for (let argumentIndex = 0; argumentIndex < call.arguments.length; argumentIndex += 1) {
 					const argument = call.arguments[argumentIndex];
 					if (argument) {
 						this.indexSourceRoot(this.callsByArgumentRoot, argument, call);
-						this.append(
-							this.callsByArgumentSource,
-							this.identities.sourceKey(argument),
-							call,
-						);
 					}
 				}
 				if (call.result) {
@@ -1181,6 +1140,91 @@ class WorkspaceValueDemandIndex {
 				const assignment = assignments[assignmentIndex];
 				this.indexSourceRoot(this.assignmentsByTargetRoot, assignment.target, assignment);
 				this.indexMemberTarget(this.assignmentsByMemberOwner, assignment.target, assignment);
+			}
+		}
+	}
+
+	public materializeValueSourceIndices(): void {
+		if (this.valueSourceIndicesMaterialized) {
+			return;
+		}
+		this.valueSourceIndicesMaterialized = true;
+		for (let fileIndex = 0; fileIndex < this.files.length; fileIndex += 1) {
+			const file = this.files[fileIndex];
+			for (let entryIndex = 0; entryIndex < file.declarationValues.length; entryIndex += 1) {
+				const entry = file.declarationValues[entryIndex];
+				if (entry.relation !== 'identity' || entry.source.steps.length > 0) {
+					this.append(
+						this.declarationsByValueSource,
+						this.identities.sourceKey(entry.source),
+						entry.declId,
+					);
+				}
+			}
+			const flows = file.functionValueFlows;
+			for (let flowIndex = 0; flowIndex < flows.length; flowIndex += 1) {
+				const flow = flows[flowIndex];
+				for (let callIndex = 0; callIndex < flow.calls.length; callIndex += 1) {
+					const call = flow.calls[callIndex];
+					this.append(
+						this.callerCallsByCalleeSource,
+						this.identities.sourceKey(call.callee),
+						call,
+					);
+					const projectedCallee = projectValueSource(
+						call.callee,
+						flow.parameters[0],
+						flow.receiverProjection,
+					);
+					if (projectedCallee) {
+						this.append(
+							this.callerCallsByCalleeSource,
+							this.identities.sourceKey(projectedCallee),
+							call,
+						);
+					}
+					for (let argumentIndex = 0; argumentIndex < call.arguments.length; argumentIndex += 1) {
+						const argument = call.arguments[argumentIndex];
+						if (argument) {
+							this.append(
+								this.argumentCallerCallsBySource,
+								this.identities.sourceKey(argument),
+								call,
+							);
+							const projectedArgument = projectValueSource(
+								argument,
+								flow.parameters[0],
+								flow.receiverProjection,
+							);
+							if (projectedArgument) {
+								this.append(
+									this.argumentCallerCallsBySource,
+									this.identities.sourceKey(projectedArgument),
+									call,
+								);
+							}
+						}
+					}
+				}
+			}
+			const calls = file.callValues;
+			for (let callIndex = 0; callIndex < calls.length; callIndex += 1) {
+				const call = calls[callIndex];
+				this.append(
+					this.callsByCalleeSource,
+					this.identities.sourceKey(call.callee),
+					call,
+				);
+				for (let argumentIndex = 0; argumentIndex < call.arguments.length; argumentIndex += 1) {
+					const argument = call.arguments[argumentIndex];
+					if (argument) {
+						this.append(
+							this.callsByArgumentSource,
+							this.identities.sourceKey(argument),
+							call,
+						);
+					}
+				}
 			}
 		}
 	}
@@ -2804,6 +2848,9 @@ export class WorkspaceValueGraph {
 		// Caller discovery needs return flow because a later call target can be a
 		// factory result. It does not execute unrelated effects in that caller.
 		const mode = instantiateContext ? CALL_RETURNS : CALL_BINDINGS;
+		if (followValueAliases) {
+			this.demandIndex.materializeValueSourceIndices();
+		}
 		const aliases = this.functionAliasQueue;
 		aliases.length = 0;
 		this.visitedFunctionAliases.clear();
@@ -2820,6 +2867,7 @@ export class WorkspaceValueGraph {
 					this.materializeCallerCalls(callerCalls, mode);
 				}
 			} else {
+				this.demandIndex.materializeValueSourceIndices();
 				const sourceKey = this.identities.sourceKey(source);
 				this.materializeRootCalls(this.demandIndex.callsByCalleeSource.get(sourceKey), mode);
 				const callerCalls = this.demandIndex.callerCallsByCalleeSource.get(sourceKey);
@@ -2898,6 +2946,7 @@ export class WorkspaceValueGraph {
 			return false;
 		}
 		this.demandedDynamicFunctionCallers.add(sourceFlow);
+		this.demandIndex.materializeValueSourceIndices();
 		const functionValueKey = this.identities.sourceKey(sourceFlow.functionValue);
 		this.materializeRootCalls(
 			this.demandIndex.callsByArgumentSource.get(functionValueKey),

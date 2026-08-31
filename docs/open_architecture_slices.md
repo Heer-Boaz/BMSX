@@ -46,11 +46,14 @@ De huidige IDE- en debuggergrenzen zijn:
   monotone demand-graph boven de behouden semantische records per bestand. De
   workspace kopieert die records bij een edit niet eerst naar een tweede
   workspacebrede value-flowrepresentatie; identity- en demandindices ontstaan
-  pas wanneer een query ze nodig heeft. Exact gebonden calls en later bewezen
-  dynamische calltargets worden daarna als gewone graph edges behouden voor
-  volgende features op dezelfde snapshot. De binder behoudt de receiverprojectie
-  van gewone Lua-methoden, zodat de identity-index een `self:`-call rechtstreeks
-  tegen de gedeclareerde receiver kan binden voordat een demand-graph nodig is.
+  pas wanneer een query ze nodig heeft. Root- en memberindices vormen de
+  directe selectielaag; volledige value-source-indices ontstaan pas wanneer
+  alias- of dynamische callerresolutie ze daadwerkelijk vraagt. Exact gebonden
+  calls en later bewezen dynamische calltargets worden daarna als gewone graph
+  edges behouden voor volgende features op dezelfde snapshot. De binder
+  behoudt de receiverprojectie van gewone Lua-methoden, zodat de identity-index
+  een `self:`-call rechtstreeks tegen de gedeclareerde receiver kan binden
+  voordat een demand-graph nodig is.
   Alleen gevraagde Lua-roots, calls, contexten en heap-effects worden
   gematerialiseerd; de taallaag kent geen cartlib-, firmware- of
   frameworktypen;
