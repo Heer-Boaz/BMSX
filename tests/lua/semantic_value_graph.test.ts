@@ -662,6 +662,31 @@ test('semantic workspace preserves both value alternatives of Lua and-or express
 	assert.equal(fallback!.declaration.range.start.line, 2);
 });
 
+test('semantic workspace retains every prototype alternative of an abstract value', async () => {
+	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
+	const lines = [
+		'local left<const> = {}',
+		'left.__index = left',
+		'function left:left_only() end',
+		'local right<const> = {}',
+		'right.__index = right',
+		'function right:right_only() end',
+		'local selected<const> = setmetatable({}, left or right)',
+		'selected:left_only()',
+		'selected:right_only()',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('main.lua', lines.join('\n'));
+	const snapshot = workspace.getSnapshot();
+	const left = semanticSymbolAt(snapshot, 'main.lua', 8, memberColumn(lines[7], 'left_only'));
+	const right = semanticSymbolAt(snapshot, 'main.lua', 9, memberColumn(lines[8], 'right_only'));
+
+	assert.ok(left, 'first prototype alternative');
+	assert.equal(left.declaration.range.start.line, 3);
+	assert.ok(right, 'second prototype alternative');
+	assert.equal(right.declaration.range.start.line, 6);
+});
+
 test('semantic workspace publishes direct method receiver members without executing the method', async () => {
 	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
 	const lines = [
@@ -941,6 +966,103 @@ test('semantic workspace retains contextual prototype effects through configurat
 		null,
 		'an unconfigured sibling does not acquire the prototype',
 	);
+});
+
+test('semantic workspace follows co-attached extension effects through a generic host', async () => {
+	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
+	const hostLines = [
+		'local host<const> = {}',
+		'host.__index = host',
+		'function host.new()',
+		'\treturn setmetatable({}, host)',
+		'end',
+		'function host:add(extension)',
+		'\textension.parent = self',
+		'\textension:on_attach()',
+		'end',
+		'return host',
+	];
+	const controllerLines = [
+		'local controller<const> = {}',
+		'controller.__index = controller',
+		'function controller.new()',
+		'\treturn setmetatable({}, controller)',
+		'end',
+		'function controller:on_attach()',
+		'\tself.parent.controller = self',
+		'end',
+		'function controller:bind() end',
+		'return controller',
+	];
+	const consumerLines = [
+		'local consumer<const> = {}',
+		'consumer.__index = consumer',
+		'local bind_controller<const> = function(owner)',
+		'\towner.controller:bind()',
+		'end',
+		'local inspect_monitor<const> = function(owner)',
+		'\towner.monitor:inspect()',
+		'end',
+		'function consumer.new()',
+		'\treturn setmetatable({}, consumer)',
+		'end',
+		'function consumer:on_attach()',
+		'\tbind_controller(self.parent)',
+		'\tinspect_monitor(self.parent)',
+		'end',
+		'return consumer',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('host.lua', hostLines.join('\n'));
+	workspace.updateFile('controller.lua', controllerLines.join('\n'));
+	workspace.updateFile('consumer.lua', consumerLines.join('\n'));
+	workspace.updateFile('noise.lua', [
+		'local noise<const> = {}',
+		'noise.__index = noise',
+		'function noise.new() return setmetatable({}, noise) end',
+		'function noise:on_attach() self.parent.noise = self end',
+		'return noise',
+	].join('\n'));
+	workspace.updateFile('monitor.lua', [
+		'local monitor<const> = {}',
+		'monitor.__index = monitor',
+		'function monitor.new() return setmetatable({}, monitor) end',
+		'function monitor:on_attach() self.parent.monitor = self end',
+		'function monitor:inspect() end',
+		'return monitor',
+	].join('\n'));
+	workspace.updateFile('main.lua', [
+		"local host<const> = require('host')",
+		"local controller<const> = require('controller')",
+		"local consumer<const> = require('consumer')",
+		"local noise<const> = require('noise')",
+		"local monitor<const> = require('monitor')",
+		'local owner<const> = host.new()',
+		'local consumer_instance<const> = consumer.new()',
+		'owner:add(noise.new())',
+		'owner:add(controller.new())',
+		'owner:add(consumer_instance)',
+		'owner:add(monitor.new())',
+	].join('\n'));
+	const bind = semanticSymbolAt(
+		workspace.getSnapshot(),
+		'consumer.lua',
+		4,
+		memberColumn(consumerLines[3], 'bind'),
+	);
+
+	assert.ok(bind, 'method published by a co-attached extension');
+	assert.equal(bind.declaration.file, 'controller.lua');
+	assert.equal(bind.declaration.range.start.line, 9);
+	const inspect = semanticSymbolAt(
+		workspace.getSnapshot(),
+		'consumer.lua',
+		7,
+		memberColumn(consumerLines[6], 'inspect'),
+	);
+	assert.ok(inspect, 'later context candidate remains available to another query');
+	assert.equal(inspect.declaration.file, 'monitor.lua');
+	assert.equal(inspect.declaration.range.start.line, 5);
 });
 
 test('semantic workspace propagates heap effects through forwarding call summaries', async () => {
