@@ -106,8 +106,11 @@ De huidige IDE- en debuggergrenzen zijn:
 - Back en Forward bewaren editorlocaties op het moment dat een navigatiecommando
   vertrekt. Een cartridge-entry opent cartridgebron en niet eerst de BIOS-entry;
 - stackframes en statement-stepping gebruiken de toolingmetadata van de geladen
-  ROM. Functies die tijdens runtime in RAM zijn gecompileerd hebben geen ROM-
-  function index en worden daarom met hun fysieke adres getoond.
+  ROM. De compiler behoudt de stabiele linkeridentiteit en de uit Lua-syntax
+  afgeleide functienaam als afzonderlijke records; de debugger ontleedt geen
+  linker-ID om een gebruikersnaam te verzinnen. Functies die tijdens runtime in
+  RAM zijn gecompileerd hebben geen ROM-function index en worden daarom met hun
+  fysieke adres getoond.
 
 ### Doelgrenzen voor Lua- en BLua-sematiek
 

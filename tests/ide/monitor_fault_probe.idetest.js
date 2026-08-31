@@ -10,6 +10,11 @@ for (let frame = 0; frame < 1200 && faultSequence === 0; frame += 1) {
 t.assert(faultSequence !== 0, 'physical supervisor fault was not latched');
 await t.frames(15);
 
+const faultStack = t.faultStack();
+t.assert(faultStack.length >= 2, 'physical Lua fault did not retain its source stack');
+t.assert(faultStack[0].functionName === 'invoke', 'table-field callback lost its inferred authored name');
+t.assert(faultStack[1].functionName === 'entry', 'callback caller lost its authored entry name');
+
 const runtime = t.runtime();
 const cpu = runtime.machine.cpu;
 

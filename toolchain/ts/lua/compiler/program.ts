@@ -50,6 +50,7 @@ export type LocalSlotDebug = {
 };
 
 export type ProgramMetadata = ProgramRuntimeSymbols & {
+	protoDisplayNames: string[];
 	debugRanges: ReadonlyArray<SourceRange | null>;
 	debugInlineCallSites: ReadonlyArray<ReadonlyArray<InlineCallSite>>;
 	statementPointsByProto: ReadonlyArray<ReadonlyArray<ProgramStatementPoint>>;

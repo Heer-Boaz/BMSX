@@ -1,5 +1,5 @@
-import { luaFunctionDisplayName } from '../../toolchain/ts/lua/stack_frame_label';
 import {
+	blua32FunctionDisplayNameById,
 	blua32InlineCallSitesAtPc,
 	blua32SourceRangeAtPc,
 } from '../../toolchain/ts/rompack/blua32_symbols';
@@ -78,7 +78,7 @@ export function buildLuaStackFrames(
 			continue;
 		}
 		const symbols = image.symbols;
-		const physicalFunctionName = luaFunctionDisplayName(symbols.metadata.functionIds[entry.functionIndex]);
+		const physicalFunctionName = symbols.metadata.functionDisplayNames[entry.functionIndex];
 		const range = blua32SourceRangeAtPc(symbols, image.layout.header.textAddress, entry.tracePc);
 		if (range !== null) {
 			const inlineCallSites = blua32InlineCallSitesAtPc(
@@ -96,7 +96,7 @@ export function buildLuaStackFrames(
 					inlineRange.path,
 					inlineRange.start.line,
 					inlineRange.start.column,
-					luaFunctionDisplayName(inlineCallSites[inlineIndex].calleeFunctionId),
+					blua32FunctionDisplayNameById(symbols, inlineCallSites[inlineIndex].calleeFunctionId),
 				));
 			}
 			const physicalRange = inlineCallSites.length === 0 ? range : inlineCallSites[0].callRange;

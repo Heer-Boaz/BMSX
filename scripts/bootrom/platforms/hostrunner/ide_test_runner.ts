@@ -73,6 +73,7 @@ export async function runIdeTest(options: IdeTestRunnerOptions): Promise<void> {
 		debugStats: () => options.ide.debugStats(),
 		logMessageCount: () => options.ide.getLogMessageCount(),
 		logMessage: (index: number) => options.ide.getLogMessage(index),
+		faultStack: () => options.ide.getFaultStack(),
 		signatureHelp: () => options.ide.getSignatureHelp(),
 		hover: (row: number, column: number) => options.ide.getHover(row, column),
 		isCartActive: () => options.ide.isCartActive(),

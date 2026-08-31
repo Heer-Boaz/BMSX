@@ -10,7 +10,7 @@ import {
 	type Blua32SymbolsImage,
 } from '../../toolchain/ts/rompack/blua32_symbols';
 
-test('BLua32 inline call-site chains round-trip through the symbols codec', () => {
+test('BLua32 function names and inline call-site chains round-trip through the symbols codec', () => {
 	const outerCallRange = {
 		path: 'cart.lua',
 		start: { line: 4, column: 2 },
@@ -34,7 +34,8 @@ test('BLua32 inline call-site chains round-trip through the symbols codec', () =
 		initParticipants: [],
 		staticLayoutToken: { lo: 0, hi: 0 },
 		metadata: {
-			functionIds: [],
+			functionIds: ['module:cart/module/anon:4:2:4:14'],
+			functionDisplayNames: ['invoke'],
 			globalNames: [],
 			systemGlobalNames: [],
 			staticFunctionIdBySlot: {},
@@ -49,6 +50,7 @@ test('BLua32 inline call-site chains round-trip through the symbols codec', () =
 	};
 
 	const decoded = decodeBlua32SymbolsImage(encodeBlua32SymbolsImage(symbols));
+	assert.deepEqual(decoded.metadata.functionDisplayNames, ['invoke']);
 	assert.deepEqual(decoded.metadata.debugInlineCallSiteChains, [[], inlineCallSites]);
 	assert.deepEqual(decoded.metadata.debugInlineCallSiteChainIds, [1, 0]);
 	assert.deepEqual(blua32InlineCallSitesAtPc(decoded, 0x2000, 0x2000), inlineCallSites);

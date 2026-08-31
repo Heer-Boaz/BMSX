@@ -971,10 +971,12 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 	const resumePointsByFunction = new Array<Blua32DebugMetadata['resumePointsByFunction'][number]>(functionCount);
 	const localSlotsByFunction = new Array<Blua32DebugMetadata['localSlotsByFunction'][number]>(functionCount);
 	const upvalueNamesByFunction = new Array<Blua32DebugMetadata['upvalueNamesByFunction'][number]>(functionCount);
+	const functionDisplayNames = new Array<string>(functionCount);
 	const noDebugRecords: readonly [] = [];
 	for (let slot = 0; slot < functionCount; slot += 1) {
 		const protoIndex = functionLayout.protoIndexBySlot[slot];
 		if (protoIndex < 0) {
+			functionDisplayNames[slot] = input.previous!.symbols.metadata.functionDisplayNames[slot];
 			statementPointsByFunction[slot] = noDebugRecords;
 			resumePointsByFunction[slot] = noDebugRecords;
 			localSlotsByFunction[slot] = noDebugRecords;
@@ -982,6 +984,7 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 				= input.previous!.symbols.metadata.upvalueNamesByFunction[slot];
 			continue;
 		}
+		functionDisplayNames[slot] = input.metadata.protoDisplayNames[protoIndex];
 		statementPointsByFunction[slot] = input.metadata.statementPointsByProto[protoIndex];
 		resumePointsByFunction[slot] = input.metadata.resumePointsByProto[protoIndex];
 		localSlotsByFunction[slot] = input.metadata.localSlotsByProto[protoIndex];
@@ -992,6 +995,7 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 	);
 	const metadata: Blua32DebugMetadata = {
 		functionIds: functionLayout.functionIds,
+		functionDisplayNames,
 		globalNames: globalNameLayout.names,
 		systemGlobalNames: systemGlobalNameLayout.names,
 		staticFunctionIdBySlot: input.metadata.exportProtoIdBySlot,

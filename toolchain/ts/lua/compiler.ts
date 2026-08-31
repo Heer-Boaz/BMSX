@@ -500,6 +500,7 @@ class ProgramBuilder {
 	public readonly protoUpvalueNames: ReadonlyArray<string>[] = [];
 	public readonly protoInstructionSets: InstructionSet[] = [];
 	public readonly protoIds: string[] = [];
+	public readonly protoDisplayNames: string[] = [];
 	// These facts only guide same-program optimization; neither enters Proto nor the linked image.
 	private readonly protoReturnsOneValue: boolean[] = [];
 	private readonly exportProtoIdBySlot: { [slotName: string]: string } = {};
@@ -807,6 +808,7 @@ class ProgramBuilder {
 		localSlots: ReadonlyArray<LocalSlotDebug>,
 		upvalueNames: ReadonlyArray<string>,
 		protoId: string,
+		displayName: string,
 		instructionSet: InstructionSet,
 	): number {
 		if (this.protoIndexById.has(protoId)) {
@@ -825,6 +827,7 @@ class ProgramBuilder {
 		this.protoUpvalueNames.push(upvalueNames);
 		this.protoInstructionSets.push(instructionSet);
 		this.protoIds.push(protoId);
+		this.protoDisplayNames.push(displayName);
 		let returnsOneValue = true;
 		for (let instructionIndex = 0; instructionIndex < instructionSet.instructions.length; instructionIndex += 1) {
 			const instruction = instructionSet.instructions[instructionIndex];
@@ -1087,6 +1090,7 @@ class ProgramBuilder {
 			debugRanges: fullRanges,
 			debugInlineCallSites: fullInlineCallSites,
 			protoIds: this.protoIds,
+			protoDisplayNames: this.protoDisplayNames,
 			statementPointsByProto: this.protoStatementPoints,
 			resumePointsByProto: this.protoResumePoints,
 			localSlotsByProto: this.protoLocalSlots,
@@ -1234,6 +1238,7 @@ class FunctionBuilder {
 	private readonly frontend: LuaSemanticFrontend;
 	private readonly moduleId: string;
 	private readonly protoId: string;
+	private readonly functionDisplayName: string;
 	private readonly moduleCompileContext?: ModuleCompileContext;
 	private readonly moduleCompileInfo?: ModuleCompileInfo;
 	private readonly staticCallTargetScope: boolean;
@@ -1287,6 +1292,7 @@ class FunctionBuilder {
 		params: {
 			moduleId: string;
 			protoId: string;
+			functionDisplayName: string;
 			semantics: LuaSemanticFrontendFile;
 			frontend: LuaSemanticFrontend;
 			moduleCompileContext?: ModuleCompileContext;
@@ -1300,6 +1306,7 @@ class FunctionBuilder {
 		this.frontend = params.frontend;
 		this.moduleId = params.moduleId;
 		this.protoId = params.protoId;
+		this.functionDisplayName = params.functionDisplayName;
 		this.moduleCompileContext = params.moduleCompileContext;
 		this.staticCallTargetScope = !!params.staticCallTargetScope;
 		// Nested functions inherit the module's export info so that references to the
@@ -3224,12 +3231,19 @@ class FunctionBuilder {
 		this.emitABx(OpCode.LOADK, target, index);
 	}
 
-	private compileExpressionWithStaticClosureProto(expression: LuaExpression, target: number, resultCount: number, protoIdHint: string | null = null): number | null {
+	private compileExpressionWithStaticClosureProto(
+		expression: LuaExpression,
+		target: number,
+		resultCount: number,
+		protoIdHint: string | null = null,
+		functionDisplayNameHint: string | null = null,
+	): number | null {
 		let closureProtoIndex: number | null = null;
 		this.withRange(expression.range, () => {
 			if (expression.kind === LuaSyntaxKind.FunctionExpression) {
 				const protoId = buildProtoId(this.protoId, protoIdHint ?? buildAnonymousHint(expression.range));
-				closureProtoIndex = compileFunctionExpression(this.program, expression as LuaFunctionExpression, this, false, protoId, this.moduleId, this.semantics, this.frontend);
+				const displayName = functionDisplayNameHint ?? `${this.functionDisplayName}.<anonymous>`;
+				closureProtoIndex = compileFunctionExpression(this.program, expression as LuaFunctionExpression, this, false, protoId, displayName, this.moduleId, this.semantics, this.frontend);
 				this.emitABx(OpCode.CLOSURE, target, closureProtoIndex);
 				return;
 			}
@@ -3239,7 +3253,7 @@ class FunctionBuilder {
 					closureProtoIndex = binding.constClosureProtoIndex;
 				}
 			}
-			this.compileExpressionInto(expression, target, resultCount, protoIdHint);
+			this.compileExpressionInto(expression, target, resultCount, protoIdHint, functionDisplayNameHint);
 		});
 		return closureProtoIndex;
 	}
@@ -3864,7 +3878,7 @@ class FunctionBuilder {
 			const name = decl.name;
 			const target = this.declareLocalFromDecl(decl, names[0].range);
 			const hint = this.createLocalFunctionHint(name);
-			const closureProtoIndex = this.compileExpressionWithStaticClosureProto(values[0], target, 1, hint);
+			const closureProtoIndex = this.compileExpressionWithStaticClosureProto(values[0], target, 1, hint, name);
 			(this.localBindings.get(decl.id) as LocalBinding).constClosureProtoIndex = closureProtoIndex;
 			if (closureProtoIndex || closureProtoIndex === 0) {
 				this.program.markStaticClosureProto(closureProtoIndex);
@@ -3897,10 +3911,17 @@ class FunctionBuilder {
 				const name = i < names.length
 					? getResolvedDeclaration(this.semantics, names[i]).name
 					: '';
-				const hint = expr.kind === LuaSyntaxKind.FunctionExpression && i < names.length
+				const namedFunction = expr.kind === LuaSyntaxKind.FunctionExpression && i < names.length;
+				const hint = namedFunction
 					? this.createLocalFunctionHint(name)
 					: null;
-				const closureProtoIndex = this.compileExpressionWithStaticClosureProto(expr, reg, 1, hint);
+				const closureProtoIndex = this.compileExpressionWithStaticClosureProto(
+					expr,
+					reg,
+					1,
+					hint,
+					namedFunction ? name : null,
+				);
 				if (i < names.length) {
 					this.initializerFlags[i] |= INIT_HAS_VALUE_REG;
 					this.initializerValueRegs[i] = reg;
@@ -3935,10 +3956,17 @@ class FunctionBuilder {
 						? getResolvedDeclaration(this.semantics, names[lastIndex]).name
 						: '';
 					const resultCount = wantsMulti ? remaining : 1;
-					const lastHint = lastExpr.kind === LuaSyntaxKind.FunctionExpression && lastHasName
+					const lastIsNamedFunction = lastExpr.kind === LuaSyntaxKind.FunctionExpression && lastHasName;
+					const lastHint = lastIsNamedFunction
 						? this.createLocalFunctionHint(lastName)
 						: null;
-					const closureProtoIndex = this.compileExpressionWithStaticClosureProto(lastExpr, lastReg, resultCount, lastHint);
+					const closureProtoIndex = this.compileExpressionWithStaticClosureProto(
+						lastExpr,
+						lastReg,
+						resultCount,
+						lastHint,
+						lastIsNamedFunction ? lastName : null,
+					);
 					if (lastHasName) {
 						this.initializerFlags[lastIndex] |= INIT_HAS_VALUE_REG;
 						this.initializerValueRegs[lastIndex] = lastReg;
@@ -4181,9 +4209,14 @@ class FunctionBuilder {
 		for (let i = 0; i < lastIndex; i += 1) {
 			const expr = expressions[i];
 			const path = targetPaths[i];
-			const hint = expr.kind === LuaSyntaxKind.FunctionExpression && path ? buildAssignmentHint(path) : null;
+			let hint: string | null = null;
+			let displayName: string | null = null;
+			if (expr.kind === LuaSyntaxKind.FunctionExpression && path) {
+				hint = buildAssignmentHint(path);
+				displayName = buildNamePath(path);
+			}
 			const reg = this.allocTemp();
-			this.compileExpressionInto(expr, reg, 1, hint);
+			this.compileExpressionInto(expr, reg, 1, hint, displayName);
 			values.push(reg);
 		}
 		const remaining = targetCount - lastIndex;
@@ -4192,8 +4225,19 @@ class FunctionBuilder {
 		const wantsMulti = remaining > 1 && this.isMultiReturnExpression(lastExpr);
 		const resultCount = wantsMulti ? remaining : 1;
 		const lastPath = targetPaths[lastIndex];
-		const lastHint = lastExpr.kind === LuaSyntaxKind.FunctionExpression && lastPath ? buildAssignmentHint(lastPath) : null;
-		this.compileExpressionInto(lastExpr, baseReg, resultCount, lastHint);
+		let lastHint: string | null = null;
+		let lastDisplayName: string | null = null;
+		if (lastExpr.kind === LuaSyntaxKind.FunctionExpression && lastPath) {
+			lastHint = buildAssignmentHint(lastPath);
+			lastDisplayName = buildNamePath(lastPath);
+		}
+		this.compileExpressionInto(
+			lastExpr,
+			baseReg,
+			resultCount,
+			lastHint,
+			lastDisplayName,
+		);
 		values.push(baseReg);
 		if (wantsMulti) {
 			this.reserveTempRange(baseReg, remaining);
@@ -4561,7 +4605,7 @@ class FunctionBuilder {
 		const reg = this.declareLocalFromDecl(decl, statement.name.range);
 		const hint = this.createLocalFunctionHint(name);
 		const protoId = buildProtoId(this.protoId, hint);
-		const protoIndex = compileFunctionExpression(this.program, statement.functionExpression, this, false, protoId, this.moduleId, this.semantics, this.frontend);
+		const protoIndex = compileFunctionExpression(this.program, statement.functionExpression, this, false, protoId, name, this.moduleId, this.semantics, this.frontend);
 		this.emitABx(OpCode.CLOSURE, reg, protoIndex);
 		if (statement.attribute === 'init') {
 			const participant = this.program.recordInitParticipant(this.moduleId, protoId);
@@ -4580,7 +4624,10 @@ class FunctionBuilder {
 		const target = classifyFunctionDeclarationTarget(this.semantics, statement);
 		const hint = buildDeclarationHint(identifiers, method);
 		const protoId = buildProtoId(this.protoId, hint);
-		const protoIndex = compileFunctionExpression(this.program, fnExpr, this, method !== null, protoId, this.moduleId, this.semantics, this.frontend);
+		const displayName = method === null
+			? buildNamePath(identifiers)
+			: `${buildNamePath(identifiers)}.${method.name}`;
+		const protoIndex = compileFunctionExpression(this.program, fnExpr, this, method !== null, protoId, displayName, this.moduleId, this.semantics, this.frontend);
 		const closureReg = this.allocTemp();
 		this.emitABx(OpCode.CLOSURE, closureReg, protoIndex);
 		if (target.kind === 'simple') {
@@ -4622,7 +4669,13 @@ class FunctionBuilder {
 		return handle;
 	}
 
-	private compileExpressionInto(expression: LuaExpression, target: number, resultCount: number, protoIdHint: string | null = null): void {
+	private compileExpressionInto(
+		expression: LuaExpression,
+		target: number,
+		resultCount: number,
+		protoIdHint: string | null = null,
+		functionDisplayNameHint: string | null = null,
+	): void {
 		this.withRange(expression.range, () => {
 			switch (expression.kind) {
 				case LuaSyntaxKind.NumericLiteralExpression:
@@ -4671,7 +4724,8 @@ class FunctionBuilder {
 					return;
 				case LuaSyntaxKind.FunctionExpression: {
 					const protoId = buildProtoId(this.protoId, protoIdHint ?? buildAnonymousHint(expression.range));
-					const protoIndex = compileFunctionExpression(this.program, expression as LuaFunctionExpression, this, false, protoId, this.moduleId, this.semantics, this.frontend);
+					const displayName = functionDisplayNameHint ?? `${this.functionDisplayName}.<anonymous>`;
+					const protoIndex = compileFunctionExpression(this.program, expression as LuaFunctionExpression, this, false, protoId, displayName, this.moduleId, this.semantics, this.frontend);
 					this.emitABx(OpCode.CLOSURE, target, protoIndex);
 					return;
 				}
@@ -4792,9 +4846,16 @@ class FunctionBuilder {
 				this.tempTop = tempBase;
 				continue;
 			}
+			const valueIsFunction = field.value.kind === LuaSyntaxKind.FunctionExpression;
 			if (field.kind === LuaTableFieldKind.IdentifierKey) {
 				const valueReg = this.allocTemp();
-				this.compileExpressionInto(field.value, valueReg, 1);
+				this.compileExpressionInto(
+					field.value,
+					valueReg,
+					1,
+					null,
+					valueIsFunction ? field.name : null,
+				);
 				const keyConst = this.program.constIndex(field.name);
 				this.emitTableSetConst(target, keyConst, valueReg);
 				this.tempTop = tempBase;
@@ -4803,7 +4864,20 @@ class FunctionBuilder {
 			const keyConst = this.getConstIndex(field.key);
 			if (keyConst !== undefined) {
 				const valueReg = this.allocTemp();
-				this.compileExpressionInto(field.value, valueReg, 1);
+				let functionDisplayName: string | null = null;
+				if (valueIsFunction) {
+					const keyName = stringLiteralValue(field.key);
+					if (keyName !== undefined) {
+						functionDisplayName = keyName;
+					}
+				}
+				this.compileExpressionInto(
+					field.value,
+					valueReg,
+					1,
+					null,
+					functionDisplayName,
+				);
 				this.emitTableSetConst(target, keyConst, valueReg);
 				this.tempTop = tempBase;
 				continue;
@@ -5841,11 +5915,18 @@ function compileFunctionExpression(
 	parent: FunctionBuilder | null,
 	implicitSelf: boolean,
 	protoId: string,
+	functionDisplayName: string,
 	moduleId: string,
 	semantics: LuaSemanticFrontendFile,
 	frontend: LuaSemanticFrontend,
 ): number {
-	const builder = new FunctionBuilder(program, parent, { moduleId, protoId, semantics, frontend });
+	const builder = new FunctionBuilder(program, parent, {
+		moduleId,
+		protoId,
+		functionDisplayName,
+		semantics,
+		frontend,
+	});
 	builder.compileFunctionExpression(expression, implicitSelf);
 	const code = builder.getCode();
 	const ranges = builder.getRanges();
@@ -5860,7 +5941,7 @@ function compileFunctionExpression(
 			maxStack: builder.getMaxStack(),
 			upvalueDescs: builder.getUpvalueDescs(),
 			staticClosure: false,
-	}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), localSlots, builder.getUpvalueNames(), protoId, instructionSet);
+	}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), localSlots, builder.getUpvalueNames(), protoId, functionDisplayName, instructionSet);
 	return protoIndex;
 }
 
@@ -5872,7 +5953,8 @@ function compileSectionInitProto(
 	frontend: LuaSemanticFrontend,
 ): number {
 	const protoId = buildSectionInitProtoId(moduleId);
-	const builder = new FunctionBuilder(program, null, { moduleId, protoId, semantics, frontend });
+	const functionDisplayName = 'section_init';
+	const builder = new FunctionBuilder(program, null, { moduleId, protoId, functionDisplayName, semantics, frontend });
 	builder.compileSectionInit(range);
 	const code = builder.getCode();
 	const ranges = builder.getRanges();
@@ -5886,7 +5968,7 @@ function compileSectionInitProto(
 		maxStack: builder.getMaxStack(),
 		upvalueDescs: [],
 		staticClosure: true,
-	}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), builder.getLocalDebugSlots(), [], protoId, instructionSet);
+	}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), builder.getLocalDebugSlots(), [], protoId, functionDisplayName, instructionSet);
 	program.markStaticClosureProto(protoIndex);
 	return protoIndex;
 }
@@ -5902,7 +5984,8 @@ function compileStartupProto(
 	clearBootPrimitives: boolean,
 ): number {
 	const protoId = buildStartupProtoId(moduleId);
-	const builder = new FunctionBuilder(program, null, { moduleId, protoId, semantics, frontend });
+	const functionDisplayName = 'startup';
+	const builder = new FunctionBuilder(program, null, { moduleId, protoId, functionDisplayName, semantics, frontend });
 	builder.compileStartup(range, sectionInitProtoIndex, entryProtoIndex, clearBootPrimitives);
 	const code = builder.getCode();
 	const ranges = builder.getRanges();
@@ -5916,7 +5999,7 @@ function compileStartupProto(
 		maxStack: builder.getMaxStack(),
 		upvalueDescs: [],
 		staticClosure: true,
-	}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), builder.getLocalDebugSlots(), [], protoId, instructionSet);
+	}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), builder.getLocalDebugSlots(), [], protoId, functionDisplayName, instructionSet);
 	program.markStaticClosureProto(protoIndex);
 	return protoIndex;
 }
@@ -5930,7 +6013,8 @@ function compileInitProto(
 	participants: ReadonlyArray<InitParticipantBinding>,
 ): number {
 	const protoId = buildInitProtoId(moduleId);
-	const builder = new FunctionBuilder(program, null, { moduleId, protoId, semantics, frontend });
+	const functionDisplayName = 'init';
+	const builder = new FunctionBuilder(program, null, { moduleId, protoId, functionDisplayName, semantics, frontend });
 	builder.compileInitVector(range, participants);
 	const code = builder.getCode();
 	const ranges = builder.getRanges();
@@ -5944,7 +6028,7 @@ function compileInitProto(
 		maxStack: builder.getMaxStack(),
 		upvalueDescs: [],
 		staticClosure: true,
-	}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), builder.getLocalDebugSlots(), [], protoId, instructionSet);
+	}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), builder.getLocalDebugSlots(), [], protoId, functionDisplayName, instructionSet);
 	program.markStaticClosureProto(protoIndex);
 	return protoIndex;
 }
@@ -5957,7 +6041,8 @@ function compileInterruptProto(
 	frontend: LuaSemanticFrontend,
 ): number {
 	const protoId = buildInterruptProtoId(moduleId);
-	const builder = new FunctionBuilder(program, null, { moduleId, protoId, semantics, frontend });
+	const functionDisplayName = 'irq';
+	const builder = new FunctionBuilder(program, null, { moduleId, protoId, functionDisplayName, semantics, frontend });
 	builder.compileInterruptEntry(range);
 	const code = builder.getCode();
 	const ranges = builder.getRanges();
@@ -5971,7 +6056,7 @@ function compileInterruptProto(
 		maxStack: builder.getMaxStack(),
 		upvalueDescs: [],
 		staticClosure: true,
-	}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), builder.getLocalDebugSlots(), [], protoId, instructionSet);
+	}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), builder.getLocalDebugSlots(), [], protoId, functionDisplayName, instructionSet);
 	program.markStaticClosureProto(protoIndex);
 	return protoIndex;
 }
@@ -5984,7 +6069,8 @@ function compileExceptionProto(
 	frontend: LuaSemanticFrontend,
 ): number {
 	const protoId = buildExceptionProtoId(moduleId);
-	const builder = new FunctionBuilder(program, null, { moduleId, protoId, semantics, frontend });
+	const functionDisplayName = 'exception';
+	const builder = new FunctionBuilder(program, null, { moduleId, protoId, functionDisplayName, semantics, frontend });
 	builder.compileExceptionEntry(range);
 	const code = builder.getCode();
 	const ranges = builder.getRanges();
@@ -5998,7 +6084,7 @@ function compileExceptionProto(
 		maxStack: builder.getMaxStack(),
 		upvalueDescs: [],
 		staticClosure: true,
-	}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), builder.getLocalDebugSlots(), [], protoId, instructionSet);
+	}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), builder.getLocalDebugSlots(), [], protoId, functionDisplayName, instructionSet);
 	program.markStaticClosureProto(protoIndex);
 	return protoIndex;
 }
@@ -6081,6 +6167,7 @@ export function compileLuaChunkToProgram(
 		const builder = new FunctionBuilder(programBuilder, null, {
 			moduleId: module.path,
 			protoId: buildModuleProtoId(module.path),
+			functionDisplayName: 'module',
 			semantics: frontend.getFile(module.path),
 			frontend,
 			moduleCompileContext,
@@ -6109,6 +6196,7 @@ export function compileLuaChunkToProgram(
 			const staticScope = new FunctionBuilder(programBuilder, null, {
 				moduleId: module.path,
 				protoId: moduleProtoId,
+				functionDisplayName: 'module',
 				semantics,
 				frontend,
 				moduleCompileContext,
@@ -6120,7 +6208,7 @@ export function compileLuaChunkToProgram(
 			for (let exportIndex = 0; exportIndex < exports.length; exportIndex += 1) {
 				const fn = exports[exportIndex];
 				const protoId = buildProtoId(moduleProtoId, `static:${fn.symbolHandle}`);
-				const protoIndex = compileFunctionExpression(programBuilder, fn.expression, staticScope, false, protoId, module.path, semantics, frontend);
+				const protoIndex = compileFunctionExpression(programBuilder, fn.expression, staticScope, false, protoId, fn.displayName, module.path, semantics, frontend);
 				if (!programBuilder.protoHasNoUpvalues(protoIndex)) {
 					const upvalueNames = programBuilder.getProtoUpvalueNames(protoIndex);
 					throw new Error(`Const module '${module.path}' function export '${fn.symbolHandle}' captures runtime local '${upvalueNames[0]}'; function exports may use compile-time constants, parameters, function-local declarations, static calls, and static storage only.`);
@@ -6153,6 +6241,7 @@ export function compileLuaChunkToProgram(
 	const entryBuilder = new FunctionBuilder(programBuilder, null, {
 		moduleId,
 		protoId: entryProtoId,
+		functionDisplayName: 'entry',
 		semantics: frontend.getFile(chunk.range.path),
 		frontend,
 		moduleCompileContext,
@@ -6168,11 +6257,11 @@ export function compileLuaChunkToProgram(
 			entryPC: 0,
 			codeLen: entryRanges.length * INSTRUCTION_BYTES,
 			numParams: 0,
-				isVararg: false,
-				maxStack: entryBuilder.getMaxStack(),
-				upvalueDescs: entryBuilder.getUpvalueDescs(),
-				staticClosure: false,
-			}, entryCode, entryRanges, entryBuilder.getInlineCallSites(), entryConstRelocs, entryBuilder.getStatementPoints(), entryBuilder.getResumePoints(), entryLocalSlots, entryBuilder.getUpvalueNames(), entryProtoId, entryInstructionSet);
+			isVararg: false,
+			maxStack: entryBuilder.getMaxStack(),
+			upvalueDescs: entryBuilder.getUpvalueDescs(),
+			staticClosure: false,
+		}, entryCode, entryRanges, entryBuilder.getInlineCallSites(), entryConstRelocs, entryBuilder.getStatementPoints(), entryBuilder.getResumePoints(), entryLocalSlots, entryBuilder.getUpvalueNames(), entryProtoId, 'entry', entryInstructionSet);
 	} catch (error) {
 		compileErrors.push({
 			path: chunk.range.path,
@@ -6192,6 +6281,7 @@ export function compileLuaChunkToProgram(
 		const builder = new FunctionBuilder(programBuilder, null, {
 			moduleId: module.path,
 			protoId: moduleProtoId,
+			functionDisplayName: 'module',
 			semantics: frontend.getFile(module.path),
 			frontend,
 			moduleCompileContext,
@@ -6212,7 +6302,7 @@ export function compileLuaChunkToProgram(
 				maxStack: builder.getMaxStack(),
 				upvalueDescs: builder.getUpvalueDescs(),
 				staticClosure: false,
-			}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), localSlots, builder.getUpvalueNames(), moduleProtoId, instructionSet);
+			}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), localSlots, builder.getUpvalueNames(), moduleProtoId, 'module', instructionSet);
 			programBuilder.recordModuleProto(module.path, protoIndex);
 		} catch (error) {
 			compileErrors.push({

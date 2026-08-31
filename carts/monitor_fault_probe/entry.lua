@@ -9,5 +9,10 @@ local irq_vblank<const> = 0x0004
 *irq_mask = irq_vblank
 print('MONITOR FAULT PROBE BOOTED')
 
-local nothing<const> = nil
-nothing()
+local callbacks<const> = {
+	invoke = function()
+		local nothing<const> = nil
+		nothing()
+	end,
+}
+callbacks.invoke()

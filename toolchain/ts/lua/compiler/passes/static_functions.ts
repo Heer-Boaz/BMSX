@@ -19,25 +19,36 @@ import { buildModuleExportPathKey, buildModuleExportSlotName } from '../../modul
 export type StaticFunctionExportSymbol = {
 	symbolHandle: string;
 	slotName: string;
+	displayName: string;
 	expression?: LuaFunctionExpression;
 };
 
 export type StaticFunctionExport = {
 	symbolHandle: string;
 	expression: LuaFunctionExpression;
+	displayName: string;
 	slotNames: string[];
+};
+
+type TopLevelFunction = {
+	expression: LuaFunctionExpression;
+	displayName: string;
 };
 
 const collectTopLevelFunctionExpressions = (
 	chunk: LuaChunk,
 	semantics: LuaSemanticFrontendFile,
-): Map<string, LuaFunctionExpression> => {
-	const functions = new Map<string, LuaFunctionExpression>();
+): Map<string, TopLevelFunction> => {
+	const functions = new Map<string, TopLevelFunction>();
 	for (let index = 0; index < chunk.body.length; index += 1) {
 		const statement = chunk.body[index];
 		if (statement.kind === LuaSyntaxKind.LocalFunctionStatement) {
 			const localFunction = statement as LuaLocalFunctionStatement;
-			functions.set(getBoundDeclaration(semantics, localFunction.name).id, localFunction.functionExpression);
+			const declaration = getBoundDeclaration(semantics, localFunction.name);
+			functions.set(declaration.id, {
+				expression: localFunction.functionExpression,
+				displayName: declaration.name,
+			});
 			continue;
 		}
 		if (statement.kind !== LuaSyntaxKind.LocalAssignmentStatement) {
@@ -47,7 +58,11 @@ const collectTopLevelFunctionExpressions = (
 		for (let nameIndex = 0; nameIndex < local.names.length && nameIndex < local.values.length; nameIndex += 1) {
 			const value = local.values[nameIndex];
 			if (local.attributes[nameIndex] === 'const' && value.kind === LuaSyntaxKind.FunctionExpression) {
-				functions.set(getBoundDeclaration(semantics, local.names[nameIndex]).id, value as LuaFunctionExpression);
+				const declaration = getBoundDeclaration(semantics, local.names[nameIndex]);
+				functions.set(declaration.id, {
+					expression: value as LuaFunctionExpression,
+					displayName: declaration.name,
+				});
 			}
 		}
 	}
@@ -57,7 +72,7 @@ const collectTopLevelFunctionExpressions = (
 const collectStaticFunctionExportSymbols = (
 	modulePath: string,
 	expression: LuaExpression,
-	functions: ReadonlyMap<string, LuaFunctionExpression>,
+	functions: ReadonlyMap<string, TopLevelFunction>,
 	semantics: LuaSemanticFrontendFile,
 	includeLocalBindingExports: boolean,
 	out: Map<string, StaticFunctionExportSymbol>,
@@ -80,6 +95,7 @@ const collectStaticFunctionExportSymbols = (
 		out.set(buildModuleExportPathKey(path), {
 			symbolHandle: slotName,
 			slotName,
+			displayName: path.length === 0 ? modulePath : buildModuleExportPathKey(path),
 			expression: expression as LuaFunctionExpression,
 		});
 		return;
@@ -91,10 +107,12 @@ const collectStaticFunctionExportSymbols = (
 		return;
 	}
 	const reference = getResolvedIdentifierReference(semantics, expression as LuaIdentifierExpression);
-	if (reference.decl && functions.has(reference.decl.id)) {
+	const fn = reference.decl && functions.get(reference.decl.id);
+	if (fn) {
 		out.set(buildModuleExportPathKey(path), {
 			symbolHandle: reference.decl.id,
 			slotName: buildModuleExportSlotName(modulePath, path),
+			displayName: fn.displayName,
 		});
 	}
 };
@@ -121,11 +139,16 @@ export const collectStaticFunctionExports = (
 	for (const value of staticFunctionExportByPathKey.values()) {
 		let entry = exportsBySymbol.get(value.symbolHandle);
 		if (entry === undefined) {
-			const expression = value.expression ?? functions.get(value.symbolHandle);
+			const expression = value.expression ?? functions.get(value.symbolHandle)?.expression;
 			if (expression === undefined) {
 				throw new Error(`Const module function export '${value.symbolHandle}' has no top-level function body.`);
 			}
-			entry = { symbolHandle: value.symbolHandle, expression, slotNames: [] };
+			entry = {
+				symbolHandle: value.symbolHandle,
+				expression,
+				displayName: value.displayName,
+				slotNames: [],
+			};
 			exportsBySymbol.set(value.symbolHandle, entry);
 		}
 		entry.slotNames.push(value.slotName);

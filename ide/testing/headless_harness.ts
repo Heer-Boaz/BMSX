@@ -15,6 +15,7 @@ import {
 	type RuntimeSourceState,
 } from '../runtime/sources';
 import type { RuntimeIdeState } from '../runtime/state';
+import type { StackTraceFrame } from '../runtime/stack_trace';
 import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
 import type { EditorDebugCommandId } from '../common/commands';
 import type { LuaSignatureHelp } from '../../toolchain/ts/lua/semantic/signature_help';
@@ -44,6 +45,7 @@ export type HeadlessIdeHarness = {
 	getTrackedLuaHeapBytes(): number;
 	getLogMessageCount(): number;
 	getLogMessage(index: number): RecordedLogMessage;
+	getFaultStack(): ReadonlyArray<StackTraceFrame>;
 	getSignatureHelp(): LuaSignatureHelp | null;
 	getHover(row: number, column: number): CodeHoverTooltip | null;
 	/** Execute Hot Resume directly against the source registry's current dirty state. */
@@ -98,6 +100,7 @@ export function createHeadlessIdeHarness(
 		getTrackedLuaHeapBytes: () => runtime.machine.cpu.luaHeap.usedBytes(),
 		getLogMessageCount: () => logOutput.messages.length,
 		getLogMessage: index => logOutput.messages[index],
+		getFaultStack: () => ide.fault.lastLuaCallStack,
 		getSignatureHelp: () => ide.editor.completion.hint,
 		getHover: (row, column) => {
 			updateHoverTooltip(

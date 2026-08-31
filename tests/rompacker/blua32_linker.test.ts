@@ -102,6 +102,7 @@ function makeMetadata(
 		debugRanges: new Array(instructionCount).fill(null),
 		debugInlineCallSites: new Array(instructionCount).fill([]),
 		protoIds,
+		protoDisplayNames: protoIds.slice(),
 		statementPointsByProto: protoIds.map(() => []),
 		resumePointsByProto: protoIds.map(() => []),
 		localSlotsByProto: protoIds.map(() => []),
@@ -178,9 +179,11 @@ function setFunctionIds(
 	object: ProgramObjectImage,
 	metadata: ProgramMetadata,
 	ids: string[],
+	displayNames: string[] = ids,
 ): void {
 	object.link.symbols.protoIds = ids;
 	metadata.protoIds = ids;
+	metadata.protoDisplayNames = displayNames.slice();
 	metadata.statementPointsByProto = ids.map(() => []);
 	metadata.resumePointsByProto = ids.map(() => []);
 	metadata.localSlotsByProto = ids.map(() => []);
@@ -1097,7 +1100,12 @@ test('BLua32 Hot Resume preserves function-record addresses across reorder, remo
 	];
 	initial.object.sections.text.protos[1].staticClosure = false;
 	initial.object.sections.text.protos[1].upvalueDescs = [{ inStack: true, index: 0 }];
-	setFunctionIds(initial.object, initial.metadata, ['entry', 'middle', 'tail']);
+	setFunctionIds(
+		initial.object,
+		initial.metadata,
+		['entry', 'middle', 'tail'],
+		['entryName', 'middleName', 'tailName'],
+	);
 	initial.metadata.upvalueNamesByProto = [[], ['captured'], []];
 	const previous = linkSystemBlua32Image(initial.object, initial.metadata, SYSTEM_ROM_BASE + 0x100, LINK_TARGET_RAM_BYTES, []);
 
@@ -1113,7 +1121,12 @@ test('BLua32 Hot Resume preserves function-record addresses across reorder, remo
 		makeProto(3, 1),
 		makeProto(4, 1),
 	];
-	setFunctionIds(changed.object, changed.metadata, ['entry', 'tail', 'new']);
+	setFunctionIds(
+		changed.object,
+		changed.metadata,
+		['entry', 'tail', 'new'],
+		['entryName', 'tailName', 'newName'],
+	);
 	const linked = linkSystemBlua32Image(
 		changed.object,
 		changed.metadata,
@@ -1124,6 +1137,7 @@ test('BLua32 Hot Resume preserves function-record addresses across reorder, remo
 	);
 
 	assert.deepEqual(linked.symbols.metadata.functionIds, ['entry', 'middle', 'tail', 'new']);
+	assert.deepEqual(linked.symbols.metadata.functionDisplayNames, ['entryName', 'middleName', 'tailName', 'newName']);
 	assert.deepEqual(
 		linked.symbols.functionAddresses.slice(0, 3),
 		previous.symbols.functionAddresses,
@@ -1179,7 +1193,12 @@ test('BLua32 Hot Resume preserves function-record addresses across reorder, remo
 	];
 	reinserted.object.sections.text.protos[1].staticClosure = false;
 	reinserted.object.sections.text.protos[1].upvalueDescs = [{ inStack: true, index: 0 }];
-	setFunctionIds(reinserted.object, reinserted.metadata, ['entry', 'middle', 'tail', 'new']);
+	setFunctionIds(
+		reinserted.object,
+		reinserted.metadata,
+		['entry', 'middle', 'tail', 'new'],
+		['entryName', 'middleName', 'tailName', 'newName'],
+	);
 	reinserted.metadata.upvalueNamesByProto = [[], ['captured'], [], []];
 	const restored = linkSystemBlua32Image(
 		reinserted.object,
@@ -1191,6 +1210,7 @@ test('BLua32 Hot Resume preserves function-record addresses across reorder, remo
 	);
 
 	assert.deepEqual(restored.symbols.metadata.functionIds, ['entry', 'middle', 'tail', 'new']);
+	assert.deepEqual(restored.symbols.metadata.functionDisplayNames, ['entryName', 'middleName', 'tailName', 'newName']);
 	assert.deepEqual(restored.symbols.functionAddresses, linked.symbols.functionAddresses);
 	assert.doesNotThrow(() => buildBlua32ExecutionRevision(
 		linked.layout,
