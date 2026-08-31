@@ -233,6 +233,154 @@ test('semantic workspace follows function values through table member aliases', 
 	assert.equal(wait!.declaration.range.start.line, 2);
 });
 
+test('semantic workspace projects callbacks stored in aggregate arguments', async () => {
+	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
+	const lines = [
+		'local service<const> = {}',
+		'function service:run() end',
+		'local callback<const> = function(value)',
+		'\tvalue:run()',
+		'end',
+		'local invoke<const> = function(options)',
+		'\toptions.callback(service)',
+		'end',
+		'invoke({ callback = callback })',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('main.lua', lines.join('\n'));
+	const run = semanticSymbolAt(
+		workspace.getSnapshot(),
+		'main.lua',
+		4,
+		memberColumn(lines[3], 'run'),
+	);
+
+	assert.ok(run, 'callback field projected from the actual aggregate to the formal parameter');
+	assert.equal(run.declaration.range.start.line, 2);
+});
+
+test('aggregate callbacks project through dynamically resolved methods', async () => {
+	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
+	const lines = [
+		'local service<const> = {}',
+		'function service:run() end',
+		'local component<const> = {}',
+		'component.__index = component',
+		'function component:invoke(options)',
+		'\toptions.callback(service)',
+		'end',
+		'local callback<const> = function(value)',
+		'\tvalue:run()',
+		'end',
+		'local instance<const> = setmetatable({}, component)',
+		'instance:invoke({ callback = callback })',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('main.lua', lines.join('\n'));
+	const run = semanticSymbolAt(
+		workspace.getSnapshot(),
+		'main.lua',
+		9,
+		memberColumn(lines[8], 'run'),
+	);
+
+	assert.ok(run, 'the method target is retained from its receiver value');
+	assert.equal(run.declaration.range.start.line, 2);
+});
+
+test('aggregate callback projections retain their callsite roles', async () => {
+	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
+	const lines = [
+		'local left<const> = {}',
+		'function left:left_only() end',
+		'local right<const> = {}',
+		'function right:right_only() end',
+		'local left_callback<const> = function(value)',
+		'\tvalue:left_only()',
+		'\tvalue:right_only()',
+		'end',
+		'local right_callback<const> = function(value)',
+		'\tvalue:right_only()',
+		'\tvalue:left_only()',
+		'end',
+		'local invoke<const> = function(options, value)',
+		'\toptions.callback(value)',
+		'end',
+		'invoke({ callback = left_callback }, left)',
+		'invoke({ callback = right_callback }, right)',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('main.lua', lines.join('\n'));
+	const snapshot = workspace.getSnapshot();
+	const targetAt = (line: number, name: string) => semanticSymbolAt(
+		snapshot,
+		'main.lua',
+		line,
+		memberColumn(lines[line - 1], name),
+	);
+
+	assert.equal(targetAt(6, 'left_only')!.declaration.range.start.line, 2);
+	assert.equal(targetAt(7, 'right_only'), null);
+	assert.equal(targetAt(10, 'right_only')!.declaration.range.start.line, 4);
+	assert.equal(targetAt(11, 'left_only'), null);
+});
+
+test('aggregate callback projections converge through forwarding functions', async () => {
+	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
+	const lines = [
+		'local service<const> = {}',
+		'function service:run() end',
+		'local callback<const> = function(value)',
+		'\tvalue:run()',
+		'end',
+		'local invoke<const> = function(options)',
+		'\toptions.callback(service)',
+		'end',
+		'local forward<const> = function(options)',
+		'\tinvoke(options)',
+		'end',
+		'forward({ callback = callback })',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('main.lua', lines.join('\n'));
+	const run = semanticSymbolAt(
+		workspace.getSnapshot(),
+		'main.lua',
+		4,
+		memberColumn(lines[3], 'run'),
+	);
+
+	assert.ok(run, 'aggregate callback reaches the executor through a forwarding call');
+	assert.equal(run.declaration.range.start.line, 2);
+});
+
+test('unresolved aggregate members do not open unrelated final-name effects', async () => {
+	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
+	const lines = [
+		'local publish<const> = function(target, callback)',
+		'\ttarget.blit = callback',
+		'end',
+		'local unrelated<const> = {}',
+		'publish(unrelated, function() end)',
+		'local draw<const> = function(projectile)',
+		'\tprojectile.source:blit()',
+		'end',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('main.lua', lines.join('\n'));
+
+	assert.equal(
+		semanticSymbolAt(
+			workspace.getSnapshot(),
+			'main.lua',
+			7,
+			memberColumn(lines[6], 'blit'),
+		),
+		null,
+		'an unresolved source does not acquire a same-named field from another aggregate',
+	);
+});
+
 test('semantic workspace evaluates every dynamic callee before resolving argument and return paths', async () => {
 	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
 	const lines = [

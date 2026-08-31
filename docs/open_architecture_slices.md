@@ -76,6 +76,11 @@ De huidige IDE- en debuggergrenzen zijn:
   daarna de relevante allocation-site en pas bij een resterende miss
   contextuele heap-effects en hun callers. Parameters die een heap-effect
   doorgeven aan een volgende call vormen retained call summaries. De
+  actual-naar-formalprojectie volgt ook functionwaarden die in een tableveld
+  als callargument worden doorgegeven. Alleen een bewezen statische of tijdens
+  de graphsolve geobserveerde calltarget mag zo'n aggregateveld aan de formele
+  parameter koppelen; geobserveerde targets beperken latere dynamische
+  alternatieven niet. De
   query-worklist bezoekt callers breadth-first en materialiseert hun
   contextkandidaten afzonderlijk; zij stopt zodra de gevraagde declaratie is
   bewezen. De per-call mode blijft retained, zodat een latere query de nog niet

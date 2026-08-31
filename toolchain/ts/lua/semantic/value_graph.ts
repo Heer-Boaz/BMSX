@@ -1666,6 +1666,8 @@ export class WorkspaceValueGraph {
 		Map<CallValueEntry, Map<MaterializedFunctionValueFlow, CallInstantiationMode>> = new Map();
 	private readonly resolvedCallTargets:
 		Map<CallValueEntry, DemandBucket<FunctionValueFlowEntry>> = new Map();
+	private readonly observedCallTargets:
+		Map<CallValueEntry, DemandBucket<FunctionValueFlowEntry>> = new Map();
 	private readonly materializedRootAssignments: Set<ValueAssignmentEntry> = new Set();
 	private readonly demandedFunctionCallerBindings: Set<FunctionValueFlowEntry> = new Set();
 	private readonly demandedFunctionCallerContexts: Set<FunctionValueFlowEntry> = new Set();
@@ -1867,6 +1869,29 @@ export class WorkspaceValueGraph {
 		return changed;
 	}
 
+	private retainObservedCallTarget(
+		call: CallValueEntry,
+		target: FunctionValueFlowEntry,
+	): boolean {
+		const targets = this.observedCallTargets.get(call);
+		if (!targets) {
+			this.observedCallTargets.set(call, target);
+			return true;
+		}
+		if (Array.isArray(targets)) {
+			if (targets.includes(target)) {
+				return false;
+			}
+			targets.push(target);
+			return true;
+		}
+		if (targets === target) {
+			return false;
+		}
+		this.observedCallTargets.set(call, [targets, target]);
+		return true;
+	}
+
 	private replayResolvedCallTarget(
 		call: CallValueEntry,
 		targetEntry: FunctionValueFlowEntry,
@@ -1928,7 +1953,7 @@ export class WorkspaceValueGraph {
 			}
 		}
 		if (flow) {
-			if (this.demandFunctionCallers(flow, flow.requiresCallContext, true)) {
+			while (this.demandFunctionCallers(flow, flow.requiresCallContext, true)) {
 				this.solveDemandedValues();
 				members = this.resolveRetainedMembers(source, name);
 				if (members.length > 0) {
@@ -3056,7 +3081,7 @@ export class WorkspaceValueGraph {
 			// candidate, so the flow itself cannot be marked globally complete.
 			changed = true;
 		}
-		if (!changed) {
+		if (!changed && !followValueAliases) {
 			return false;
 		}
 		// Caller discovery needs return flow because a later call target can be a
@@ -3069,55 +3094,71 @@ export class WorkspaceValueGraph {
 		aliases.length = 0;
 		this.visitedFunctionAliases.clear();
 		this.enqueueFunctionAlias(sourceFlow.functionValue);
+		let callerGraphChanged = false;
 		for (let aliasIndex = 0; aliasIndex < aliases.length; aliasIndex += 1) {
 			const source = aliases[aliasIndex];
 			if (source.steps.length === 0) {
 				const rootKey = semanticValueRootKey(source.root);
-				this.materializeRootCalls(this.demandIndex.callsByCalleeRoot.get(rootKey), mode);
+				callerGraphChanged = this.materializeRootCalls(
+					this.demandIndex.callsByCalleeRoot.get(rootKey),
+					mode,
+				) || callerGraphChanged;
 				const callerCalls = this.demandIndex.callerCallsByRoot.get(rootKey);
 				if (refineCallerContexts) {
 					this.queueContextualCallerCalls(callerCalls, mode, flow);
 				} else {
-					this.materializeCallerCalls(callerCalls, mode);
+					callerGraphChanged = this.materializeCallerCalls(callerCalls, mode)
+						|| callerGraphChanged;
 				}
 			} else {
 				this.demandIndex.materializeValueSourceIndices();
 				const sourceKey = this.identities.sourceKey(source);
-				this.materializeRootCalls(this.demandIndex.callsByCalleeSource.get(sourceKey), mode);
+				callerGraphChanged = this.materializeRootCalls(
+					this.demandIndex.callsByCalleeSource.get(sourceKey),
+					mode,
+				) || callerGraphChanged;
 				const callerCalls = this.demandIndex.callerCallsByCalleeSource.get(sourceKey);
 				if (refineCallerContexts) {
 					this.queueContextualCallerCalls(callerCalls, mode, flow);
 				} else {
-					this.materializeCallerCalls(callerCalls, mode);
+					callerGraphChanged = this.materializeCallerCalls(callerCalls, mode)
+						|| callerGraphChanged;
 				}
 			}
 			if (followValueAliases) {
 				this.enqueueFunctionAliases(source);
+				callerGraphChanged = this.enqueueProjectedFunctionAliases(source)
+					|| callerGraphChanged;
 			}
 			if (source.steps.length === 0 && source.root.kind === 'declaration') {
 				const member = this.demandIndex.membersByDeclaration.get(source.root.declId);
 				if (member) {
 					this.enqueueFunctionAlias(appendValueMember(member.owner, member.name));
+					this.enqueueFunctionAlias(appendValueMember(
+						appendValueInstance(member.owner),
+						member.name,
+					));
 				}
 			}
 		}
 		if (flow.implicitReceiver && sourceFlow.functionValue.root.kind === 'declaration') {
 			const member = this.demandIndex.membersByDeclaration.get(sourceFlow.functionValue.root.declId);
 			if (member) {
-				this.materializeRootCalls(
+				callerGraphChanged = this.materializeRootCalls(
 					this.demandIndex.callsByCalleeMember.get(member.name),
 					mode,
 					flow,
-				);
+				) || callerGraphChanged;
 				const callerCalls = this.demandIndex.callerCallsByMember.get(member.name);
 				if (refineCallerContexts) {
 					this.queueContextualCallerCalls(callerCalls, mode, flow);
 				} else {
-					this.materializeCallerCalls(callerCalls, mode, flow);
+					callerGraphChanged = this.materializeCallerCalls(callerCalls, mode, flow)
+						|| callerGraphChanged;
 				}
 			}
 		}
-		return true;
+		return changed || callerGraphChanged;
 	}
 
 	private enqueueFunctionAlias(source: SemanticValueSource): void {
@@ -3150,6 +3191,101 @@ export class WorkspaceValueGraph {
 						steps: source.steps,
 					});
 				}
+			}
+		}
+	}
+
+	private enqueueProjectedFunctionAliases(source: SemanticValueSource): boolean {
+		let changed = false;
+		for (let stepCount = source.steps.length; stepCount >= 0; stepCount -= 1) {
+			const sourceKey = this.identities.sourceKey(source, stepCount);
+			const rootCalls = this.demandIndex.callsByArgumentSource.get(sourceKey);
+			const rootCallCount = demandBucketLength(rootCalls);
+			for (let callIndex = 0; callIndex < rootCallCount; callIndex += 1) {
+				const call = demandBucketEntry(rootCalls, callIndex);
+				this.enqueueCallArgumentFunctionAliases(source, sourceKey, call);
+				changed = this.materializeRootCall(call, CALL_CONTEXT) || changed;
+			}
+			const callerCalls = this.demandIndex.argumentCallerCallsBySource.get(sourceKey);
+			const callerCallCount = demandBucketLength(callerCalls);
+			for (let callIndex = 0; callIndex < callerCallCount; callIndex += 1) {
+				const call = demandBucketEntry(callerCalls, callIndex);
+				const owner = this.demandIndex.ownerFlowByCall.get(call)!;
+				this.enqueueCallArgumentFunctionAliases(source, sourceKey, call, owner);
+				changed = this.materializeCallerCall(call, CALL_CONTEXT) || changed;
+			}
+		}
+		return changed;
+	}
+
+	private enqueueCallArgumentFunctionAliases(
+		source: SemanticValueSource,
+		sourceKey: string,
+		call: CallValueEntry,
+		owner?: FunctionValueFlowEntry,
+	): void {
+		const resolvedTargets = this.resolvedCallTargets.get(call);
+		const observedTargets = this.observedCallTargets.get(call);
+		const resolvedTargetCount = demandBucketLength(resolvedTargets);
+		const observedTargetCount = demandBucketLength(observedTargets);
+		if (resolvedTargetCount === 0 && observedTargetCount === 0) {
+			return;
+		}
+		for (let argumentIndex = 0; argumentIndex < call.arguments.length; argumentIndex += 1) {
+			const argument = call.arguments[argumentIndex];
+			if (!argument) {
+				continue;
+			}
+			let matchedArgument = argument;
+			if (this.identities.sourceKey(argument) !== sourceKey) {
+				if (!owner) {
+					continue;
+				}
+				const projectedArgument = projectValueSource(
+					argument,
+					owner.parameters[0],
+					owner.receiverProjection,
+				);
+				if (!projectedArgument
+					|| this.identities.sourceKey(projectedArgument) !== sourceKey) {
+					continue;
+				}
+				matchedArgument = projectedArgument;
+			}
+			this.enqueueFunctionAliasesForCallTargets(
+				source,
+				matchedArgument,
+				argumentIndex,
+				resolvedTargets,
+			);
+			this.enqueueFunctionAliasesForCallTargets(
+				source,
+				matchedArgument,
+				argumentIndex,
+				observedTargets,
+			);
+		}
+	}
+
+	private enqueueFunctionAliasesForCallTargets(
+		source: SemanticValueSource,
+		argument: SemanticValueSource,
+		argumentIndex: number,
+		targets: DemandBucket<FunctionValueFlowEntry>,
+	): void {
+		const targetCount = demandBucketLength(targets);
+		for (let targetIndex = 0; targetIndex < targetCount; targetIndex += 1) {
+			const target = demandBucketEntry(targets, targetIndex);
+			if (argumentIndex >= target.parameters.length) {
+				continue;
+			}
+			const projectedAlias = projectValueSource(
+				source,
+				argument,
+				target.parameters[argumentIndex],
+			);
+			if (projectedAlias) {
+				this.enqueueFunctionAlias(projectedAlias);
 			}
 		}
 	}
@@ -3191,11 +3327,17 @@ export class WorkspaceValueGraph {
 		entries: DemandBucket<CallValueEntry>,
 		mode: CallInstantiationMode,
 		targetFlow?: MaterializedFunctionValueFlow,
-	): void {
+	): boolean {
+		let changed = false;
 		const entryCount = demandBucketLength(entries);
 		for (let index = 0; index < entryCount; index += 1) {
-			this.materializeCallerCall(demandBucketEntry(entries, index), mode, targetFlow);
+			changed = this.materializeCallerCall(
+				demandBucketEntry(entries, index),
+				mode,
+				targetFlow,
+			) || changed;
 		}
+		return changed;
 	}
 	// end normalized-body-acceptable
 
@@ -5000,6 +5142,7 @@ export class WorkspaceValueGraph {
 		}
 		for (let callIndex = 0; callIndex < entry.calls.length; callIndex += 1) {
 			const call = entry.calls[callIndex];
+			this.collectParameterDependencies(call.callee, entry, marks);
 			for (let argumentIndex = 0; argumentIndex < call.arguments.length; argumentIndex += 1) {
 				const argument = call.arguments[argumentIndex];
 				if (argument) {
@@ -6079,6 +6222,9 @@ export class WorkspaceValueGraph {
 			this.pushTraversalBases(stack, candidate);
 		}
 		for (let flowIndex = 0; flowIndex < flows.length; flowIndex += 1) {
+			if (callSite) {
+				this.retainObservedCallTarget(callSite, flows[flowIndex].source);
+			}
 			this.instantiateMaterializedFunctionCall(
 				flows[flowIndex],
 				closures[flowIndex],
@@ -6370,11 +6516,17 @@ export class WorkspaceValueGraph {
 		entries: DemandBucket<CallValueEntry>,
 		mode: CallInstantiationMode = CALL_EFFECTS,
 		targetFlow?: MaterializedFunctionValueFlow,
-	): void {
+	): boolean {
+		let changed = false;
 		const entryCount = demandBucketLength(entries);
 		for (let index = 0; index < entryCount; index += 1) {
-			this.materializeRootCall(demandBucketEntry(entries, index), mode, targetFlow);
+			changed = this.materializeRootCall(
+				demandBucketEntry(entries, index),
+				mode,
+				targetFlow,
+			) || changed;
 		}
+		return changed;
 	}
 	// end normalized-body-acceptable
 
@@ -6382,19 +6534,20 @@ export class WorkspaceValueGraph {
 		call: CallValueEntry,
 		mode: CallInstantiationMode,
 		targetFlow?: MaterializedFunctionValueFlow,
-	): void {
+	): boolean {
 		if (targetFlow) {
 			if (!this.upgradeTargetCallMode(this.materializedTargetRootCallModes, call, targetFlow, mode)) {
-				return;
+				return false;
 			}
 		} else {
 			const previousMode = this.materializedRootCallModes.get(call);
 			if (previousMode !== undefined && previousMode >= mode) {
-				return;
+				return false;
 			}
 			this.materializedRootCallModes.set(call, mode);
 		}
 		this.registerCall(call, undefined, mode, targetFlow);
+		return true;
 	}
 
 	private upgradeTargetCallMode(
