@@ -878,49 +878,62 @@ export class WorkspaceValueIdentityIndex {
 	}
 }
 
-const EMPTY_DEMAND_ENTRIES = Object.freeze(new Array<never>());
 const EMPTY_MEMBER_NAMES: ReadonlySet<string> = new Set();
 
+// Most workspace facts have exactly one entry per semantic key. Retaining that
+// entry directly avoids allocating an array for every singleton bucket; only a
+// key with multiple facts is promoted to an array. Entries in this index are
+// semantic records or symbol IDs and are therefore never arrays themselves.
+type DemandBucket<Entry> = Entry | Entry[];
+
+function demandBucketLength<Entry>(bucket: DemandBucket<Entry> | undefined): number {
+	return bucket === undefined ? 0 : Array.isArray(bucket) ? bucket.length : 1;
+}
+
+function demandBucketEntry<Entry>(bucket: DemandBucket<Entry> | undefined, index: number): Entry {
+	return Array.isArray(bucket) ? bucket[index] : bucket;
+}
+
 class WorkspaceValueDemandIndex {
-	public readonly declarationValues: Map<SymbolID, SemanticValueSource[]> = new Map();
+	public readonly declarationValues: Map<SymbolID, DemandBucket<SemanticValueSource>> = new Map();
 	public readonly identityDeclarations: Set<SymbolID> = new Set();
 	public readonly projectionDeclarations: Set<SymbolID> = new Set();
 	public readonly moduleValues: Map<string, SemanticValueSource> = new Map();
 	public readonly globalValues: ReadonlyMap<string, SymbolID>;
 	private readonly identities: WorkspaceValueIdentityIndex;
-	private readonly membersByOwner: Map<string, Map<string, MemberValueEntry[]>> = new Map();
-	private readonly projectedMembersByOwner: Map<string, Map<string, MemberValueEntry[]>> = new Map();
+	public readonly membersByOwner: Map<string, Map<string, DemandBucket<MemberValueEntry>>> = new Map();
+	public readonly projectedMembersByOwner: Map<string, Map<string, DemandBucket<MemberValueEntry>>> = new Map();
 	public readonly membersByDeclaration: Map<SymbolID, MemberValueEntry> = new Map();
-	private readonly declarationsByValueSource: Map<string, SymbolID[]> = new Map();
-	private readonly returnsByFunctionRoot: Map<string, FunctionReturnValueEntry[]> = new Map();
-	private readonly flowsByRoot: Map<string, FunctionValueFlowEntry[]> = new Map();
-	private readonly flowsByDeclaration: Map<SymbolID, FunctionValueFlowEntry[]> = new Map();
-	private readonly callsByCalleeRoot: Map<string, CallValueEntry[]> = new Map();
-	private readonly callsByCalleeMember: Map<string, CallValueEntry[]> = new Map();
-	private readonly callsByCalleeSource: Map<string, CallValueEntry[]> = new Map();
-	private readonly callsByArgumentRoot: Map<string, CallValueEntry[]> = new Map();
-	private readonly callsByArgumentSource: Map<string, CallValueEntry[]> = new Map();
-	private readonly callsByResultRoot: Map<string, CallValueEntry[]> = new Map();
-	private readonly callerCallsByRoot: Map<string, CallValueEntry[]> = new Map();
-	private readonly callerCallsByMember: Map<string, CallValueEntry[]> = new Map();
-	private readonly callerCallsByCalleeSource: Map<string, CallValueEntry[]> = new Map();
-	private readonly argumentCallerCallsByRoot: Map<string, CallValueEntry[]> = new Map();
-	private readonly argumentCallerCallsBySource: Map<string, CallValueEntry[]> = new Map();
-	private readonly resultCallerCallsByRoot: Map<string, CallValueEntry[]> = new Map();
+	public readonly declarationsByValueSource: Map<string, DemandBucket<SymbolID>> = new Map();
+	public readonly returnsByFunctionRoot: Map<string, DemandBucket<FunctionReturnValueEntry>> = new Map();
+	public readonly flowsByRoot: Map<string, DemandBucket<FunctionValueFlowEntry>> = new Map();
+	public readonly flowsByDeclaration: Map<SymbolID, DemandBucket<FunctionValueFlowEntry>> = new Map();
+	public readonly callsByCalleeRoot: Map<string, DemandBucket<CallValueEntry>> = new Map();
+	public readonly callsByCalleeMember: Map<string, DemandBucket<CallValueEntry>> = new Map();
+	public readonly callsByCalleeSource: Map<string, DemandBucket<CallValueEntry>> = new Map();
+	public readonly callsByArgumentRoot: Map<string, DemandBucket<CallValueEntry>> = new Map();
+	public readonly callsByArgumentSource: Map<string, DemandBucket<CallValueEntry>> = new Map();
+	public readonly callsByResultRoot: Map<string, DemandBucket<CallValueEntry>> = new Map();
+	public readonly callerCallsByRoot: Map<string, DemandBucket<CallValueEntry>> = new Map();
+	public readonly callerCallsByMember: Map<string, DemandBucket<CallValueEntry>> = new Map();
+	public readonly callerCallsByCalleeSource: Map<string, DemandBucket<CallValueEntry>> = new Map();
+	public readonly argumentCallerCallsByRoot: Map<string, DemandBucket<CallValueEntry>> = new Map();
+	public readonly argumentCallerCallsBySource: Map<string, DemandBucket<CallValueEntry>> = new Map();
+	public readonly resultCallerCallsByRoot: Map<string, DemandBucket<CallValueEntry>> = new Map();
 	public readonly ownerFlowByCall: Map<CallValueEntry, FunctionValueFlowEntry> = new Map();
-	private readonly assignmentsByTargetRoot: Map<string, ValueAssignmentEntry[]> = new Map();
-	private readonly assignmentsByMemberOwner: Map<string, Map<string, ValueAssignmentEntry[]>> = new Map();
+	public readonly assignmentsByTargetRoot: Map<string, DemandBucket<ValueAssignmentEntry>> = new Map();
+	public readonly assignmentsByMemberOwner: Map<string, Map<string, DemandBucket<ValueAssignmentEntry>>> = new Map();
 	private readonly memberNamesByOwner: Map<string, Set<string>> = new Map();
-	private readonly memberEffectsByOwner: Map<string, Map<string, FunctionMemberEffectEntry[]>> = new Map();
+	public readonly memberEffectsByOwner: Map<string, Map<string, DemandBucket<FunctionMemberEffectEntry>>> = new Map();
 	// The name index selects candidate writes only. Function-owned values stay
 	// private to their contextual flow and therefore never enter this index.
-	private readonly memberEffectsByName: Map<string, FunctionMemberEffectEntry[]> = new Map();
-	private readonly indexedEffectsByOwner: Map<string, FunctionAssignmentEffectEntry[]> = new Map();
-	private readonly elementEffectsByOwner: Map<string, FunctionAssignmentEffectEntry[]> = new Map();
-	private readonly prototypeEffectFlowsByCallee: Map<string, FunctionValueFlowEntry[]> = new Map();
-	private readonly effectDependenciesBySource: Map<string, FunctionEffectDependencyEntry[]> = new Map();
-	private readonly instanceAllocationFlowsByMember:
-		Map<string, FunctionValueFlowEntry[]> = new Map();
+	public readonly memberEffectsByName: Map<string, DemandBucket<FunctionMemberEffectEntry>> = new Map();
+	private readonly indexedEffectsByOwner: Map<string, DemandBucket<FunctionAssignmentEffectEntry>> = new Map();
+	private readonly elementEffectsByOwner: Map<string, DemandBucket<FunctionAssignmentEffectEntry>> = new Map();
+	public readonly prototypeEffectFlowsByCallee: Map<string, DemandBucket<FunctionValueFlowEntry>> = new Map();
+	public readonly effectDependenciesBySource: Map<string, DemandBucket<FunctionEffectDependencyEntry>> = new Map();
+	public readonly instanceAllocationFlowsByMember:
+		Map<string, DemandBucket<FunctionValueFlowEntry>> = new Map();
 
 	constructor(input: WorkspaceValueGraphInput, identities: WorkspaceValueIdentityIndex) {
 		this.globalValues = input.globalValues;
@@ -934,12 +947,7 @@ class WorkspaceValueDemandIndex {
 				} else if (entry.relation === 'projection') {
 					this.projectionDeclarations.add(entry.declId);
 				}
-				let sources = this.declarationValues.get(entry.declId);
-				if (!sources) {
-					sources = [];
-					this.declarationValues.set(entry.declId, sources);
-				}
-				sources.push(entry.source);
+				this.append(this.declarationValues, entry.declId, entry.source);
 				if (entry.relation !== 'identity' || entry.source.steps.length > 0) {
 					this.append(
 						this.declarationsByValueSource,
@@ -981,12 +989,13 @@ class WorkspaceValueDemandIndex {
 					if (members) {
 						const projectedOwner = this.identities.sourceKey(receiver);
 						for (const [name, entries] of members) {
-							for (let entryIndex = 0; entryIndex < entries.length; entryIndex += 1) {
+							const entryCount = demandBucketLength(entries);
+							for (let entryIndex = 0; entryIndex < entryCount; entryIndex += 1) {
 								this.appendMember(
 									this.projectedMembersByOwner,
 									projectedOwner,
 									name,
-									entries[entryIndex],
+									demandBucketEntry(entries, entryIndex),
 								);
 							}
 						}
@@ -1074,8 +1083,9 @@ class WorkspaceValueDemandIndex {
 					const sources = this.declarationValues.get(member.declId);
 					if (sources) {
 						const target = appendValueMember(member.owner, member.name);
-						for (let sourceIndex = 0; sourceIndex < sources.length; sourceIndex += 1) {
-							this.indexEffectDependency(flow, sources[sourceIndex], target);
+						const sourceCount = demandBucketLength(sources);
+						for (let sourceIndex = 0; sourceIndex < sourceCount; sourceIndex += 1) {
+							this.indexEffectDependency(flow, demandBucketEntry(sources, sourceIndex), target);
 						}
 					}
 				}
@@ -1141,109 +1151,6 @@ class WorkspaceValueDemandIndex {
 			: semanticValueRootKey({ kind: 'declaration', declId: declaration });
 	}
 
-	public members(
-		owner: SemanticValueSource,
-		stepCount: number,
-		name: string,
-	): readonly MemberValueEntry[] {
-		return this.membersByOwner.get(this.identities.sourceKey(owner, stepCount))?.get(name)
-			?? EMPTY_DEMAND_ENTRIES;
-	}
-
-	public projectedMembers(
-		owner: SemanticValueSource,
-		stepCount: number,
-		name: string,
-	): readonly MemberValueEntry[] {
-		return this.projectedMembersByOwner.get(this.identities.sourceKey(owner, stepCount))?.get(name)
-			?? EMPTY_DEMAND_ENTRIES;
-	}
-
-	public returns(rootKey: string): readonly FunctionReturnValueEntry[] {
-		return this.returnsByFunctionRoot.get(rootKey) ?? EMPTY_DEMAND_ENTRIES;
-	}
-
-	public declarationsForValue(
-		source: SemanticValueSource,
-		stepCount: number,
-	): readonly SymbolID[] {
-		return this.declarationsByValueSource.get(this.identities.sourceKey(source, stepCount))
-			?? EMPTY_DEMAND_ENTRIES;
-	}
-
-	public flows(rootKey: string): readonly FunctionValueFlowEntry[] {
-		return this.flowsByRoot.get(rootKey) ?? EMPTY_DEMAND_ENTRIES;
-	}
-
-	public functionFlows(declId: SymbolID): readonly FunctionValueFlowEntry[] {
-		return this.flowsByDeclaration.get(declId) ?? EMPTY_DEMAND_ENTRIES;
-	}
-
-	public calleeCalls(rootKey: string): readonly CallValueEntry[] {
-		return this.callsByCalleeRoot.get(rootKey) ?? EMPTY_DEMAND_ENTRIES;
-	}
-
-	public calleeCallsByMemberName(name: string): readonly CallValueEntry[] {
-		return this.callsByCalleeMember.get(name) ?? EMPTY_DEMAND_ENTRIES;
-	}
-
-	public calleeCallsForSource(source: SemanticValueSource): readonly CallValueEntry[] {
-		return this.callsByCalleeSource.get(this.identities.sourceKey(source))
-			?? EMPTY_DEMAND_ENTRIES;
-	}
-
-	public argumentCalls(rootKey: string): readonly CallValueEntry[] {
-		return this.callsByArgumentRoot.get(rootKey) ?? EMPTY_DEMAND_ENTRIES;
-	}
-
-	public argumentCallsForSource(source: SemanticValueSource): readonly CallValueEntry[] {
-		return this.callsByArgumentSource.get(this.identities.sourceKey(source))
-			?? EMPTY_DEMAND_ENTRIES;
-	}
-
-	public resultCalls(rootKey: string): readonly CallValueEntry[] {
-		return this.callsByResultRoot.get(rootKey) ?? EMPTY_DEMAND_ENTRIES;
-	}
-
-	public callerCalls(rootKey: string): readonly CallValueEntry[] {
-		return this.callerCallsByRoot.get(rootKey) ?? EMPTY_DEMAND_ENTRIES;
-	}
-
-	public callerCallsByMemberName(name: string): readonly CallValueEntry[] {
-		return this.callerCallsByMember.get(name) ?? EMPTY_DEMAND_ENTRIES;
-	}
-
-	public callerCallsForSource(source: SemanticValueSource): readonly CallValueEntry[] {
-		return this.callerCallsByCalleeSource.get(this.identities.sourceKey(source))
-			?? EMPTY_DEMAND_ENTRIES;
-	}
-
-	public argumentCallerCalls(rootKey: string): readonly CallValueEntry[] {
-		return this.argumentCallerCallsByRoot.get(rootKey) ?? EMPTY_DEMAND_ENTRIES;
-	}
-
-	public argumentCallerCallsForSource(source: SemanticValueSource): readonly CallValueEntry[] {
-		return this.argumentCallerCallsBySource.get(this.identities.sourceKey(source))
-			?? EMPTY_DEMAND_ENTRIES;
-	}
-
-	public resultCallerCalls(rootKey: string): readonly CallValueEntry[] {
-		return this.resultCallerCallsByRoot.get(rootKey) ?? EMPTY_DEMAND_ENTRIES;
-	}
-
-	public rootAssignments(rootKey: string): readonly ValueAssignmentEntry[] {
-		return this.assignmentsByTargetRoot.get(rootKey) ?? EMPTY_DEMAND_ENTRIES;
-	}
-
-	public memberAssignments(
-		owner: SemanticValueSource,
-		stepCount: number,
-		name: string,
-	): readonly ValueAssignmentEntry[] {
-		return this.assignmentsByMemberOwner.get(this.identities.sourceKey(owner, stepCount))?.get(name)
-			?? EMPTY_DEMAND_ENTRIES;
-	}
-
 	public memberNames(
 		owner: SemanticValueSource,
 		stepCount: number,
@@ -1259,51 +1166,21 @@ class WorkspaceValueDemandIndex {
 			|| this.assignmentsByMemberOwner.get(key)?.has(name) === true;
 	}
 
-	public memberEffects(
-		owner: SemanticValueSource,
-		stepCount: number,
-		name: string,
-	): readonly FunctionMemberEffectEntry[] {
-		return this.memberEffectsByOwner.get(this.identities.sourceKey(owner, stepCount))?.get(name)
-			?? EMPTY_DEMAND_ENTRIES;
-	}
-
-	public namedMemberEffects(name: string): readonly FunctionMemberEffectEntry[] {
-		return this.memberEffectsByName.get(name) ?? EMPTY_DEMAND_ENTRIES;
-	}
-
 	public assignmentEffects(
 		kind: StructuralValueStepKind,
 		owner: SemanticValueSource,
 		stepCount: number,
-	): readonly FunctionAssignmentEffectEntry[] {
+	): DemandBucket<FunctionAssignmentEffectEntry> | undefined {
 		const effects = kind === 'index'
 			? this.indexedEffectsByOwner
 			: this.elementEffectsByOwner;
-		return effects.get(this.identities.sourceKey(owner, stepCount))
-			?? EMPTY_DEMAND_ENTRIES;
-	}
-
-	public prototypeEffects(callee: SemanticValueSource): readonly FunctionValueFlowEntry[] {
-		return this.prototypeEffectFlowsByCallee.get(this.identities.sourceKey(callee))
-			?? EMPTY_DEMAND_ENTRIES;
-	}
-
-	public effectDependencies(
-		source: SemanticValueSource,
-		stepCount: number,
-	): readonly FunctionEffectDependencyEntry[] {
-		return this.effectDependenciesBySource.get(this.identities.sourceKey(source, stepCount))
-			?? EMPTY_DEMAND_ENTRIES;
-	}
-
-	public instanceAllocationFlows(name: string): readonly FunctionValueFlowEntry[] {
-		return this.instanceAllocationFlowsByMember.get(name) ?? EMPTY_DEMAND_ENTRIES;
+		return effects.get(this.identities.sourceKey(owner, stepCount));
 	}
 
 	private indexInstanceAllocationMembers(flow: FunctionValueFlowEntry): void {
 		const functionRootKey = this.rootKey(flow.functionValue.root);
-		if (functionRootKey === undefined || this.returns(functionRootKey).length === 0) {
+		if (functionRootKey === undefined
+			|| demandBucketLength(this.returnsByFunctionRoot.get(functionRootKey)) === 0) {
 			return;
 		}
 		for (let assignmentIndex = 0; assignmentIndex < flow.assignments.length; assignmentIndex += 1) {
@@ -1465,7 +1342,7 @@ class WorkspaceValueDemandIndex {
 	}
 
 	private indexMemberTarget<Entry>(
-		index: Map<string, Map<string, Entry[]>>,
+		index: Map<string, Map<string, DemandBucket<Entry>>>,
 		target: SemanticValueSource,
 		entry: Entry,
 	): void {
@@ -1485,8 +1362,8 @@ class WorkspaceValueDemandIndex {
 	}
 
 	private indexSource<Entry>(
-		roots: Map<string, Entry[]>,
-		members: Map<string, Entry[]>,
+		roots: Map<string, DemandBucket<Entry>>,
+		members: Map<string, DemandBucket<Entry>>,
 		source: SemanticValueSource,
 		entry: Entry,
 	): void {
@@ -1502,7 +1379,7 @@ class WorkspaceValueDemandIndex {
 	}
 
 	private indexSourceRoot<Entry>(
-		index: Map<string, Entry[]>,
+		index: Map<string, DemandBucket<Entry>>,
 		source: SemanticValueSource,
 		entry: Entry,
 	): void {
@@ -1518,7 +1395,11 @@ class WorkspaceValueDemandIndex {
 		}
 	}
 
-	private appendRoot<Entry>(index: Map<string, Entry[]>, root: SemanticValueRoot, entry: Entry): void {
+	private appendRoot<Entry>(
+		index: Map<string, DemandBucket<Entry>>,
+		root: SemanticValueRoot,
+		entry: Entry,
+	): void {
 		const key = this.rootKey(root);
 		if (key !== undefined) {
 			this.append(index, key, entry);
@@ -1526,7 +1407,7 @@ class WorkspaceValueDemandIndex {
 	}
 
 	private appendMember<Entry>(
-		index: Map<string, Map<string, Entry[]>>,
+		index: Map<string, Map<string, DemandBucket<Entry>>>,
 		owner: string,
 		name: string,
 		entry: Entry,
@@ -1536,10 +1417,9 @@ class WorkspaceValueDemandIndex {
 			members = new Map();
 			index.set(owner, members);
 		}
-		let entries = members.get(name);
-		if (!entries) {
-			entries = [];
-			members.set(name, entries);
+		const entries = members.get(name);
+		if (entries === undefined) {
+			members.set(name, entry);
 			let namesByOwner = this.memberNamesByOwner.get(owner);
 			if (!namesByOwner) {
 				namesByOwner = new Set();
@@ -1548,20 +1428,29 @@ class WorkspaceValueDemandIndex {
 			// One owner/name may be indexed as a declaration, projected member,
 			// function effect, and assignment target.
 			namesByOwner.add(name);
+			return;
 		}
-		if (entries[entries.length - 1] !== entry) {
-			entries.push(entry);
+		if (Array.isArray(entries)) {
+			if (entries[entries.length - 1] !== entry) {
+				entries.push(entry);
+			}
+		} else if (entries !== entry) {
+			members.set(name, [entries, entry]);
 		}
 	}
 
-	private append<Entry>(index: Map<string, Entry[]>, key: string, entry: Entry): void {
-		let entries = index.get(key);
-		if (!entries) {
-			entries = [];
-			index.set(key, entries);
+	private append<Key, Entry>(index: Map<Key, DemandBucket<Entry>>, key: Key, entry: Entry): void {
+		const entries = index.get(key);
+		if (entries === undefined) {
+			index.set(key, entry);
+			return;
 		}
-		if (entries[entries.length - 1] !== entry) {
-			entries.push(entry);
+		if (Array.isArray(entries)) {
+			if (entries[entries.length - 1] !== entry) {
+				entries.push(entry);
+			}
+		} else if (entries !== entry) {
+			index.set(key, [entries, entry]);
 		}
 	}
 }
@@ -1602,7 +1491,7 @@ export class WorkspaceValueGraph {
 	private readonly materializedTargetCallerModes:
 		Map<CallValueEntry, Map<MaterializedFunctionValueFlow, CallInstantiationMode>> = new Map();
 	private readonly resolvedCallTargets:
-		Map<CallValueEntry, readonly FunctionValueFlowEntry[]> = new Map();
+		Map<CallValueEntry, DemandBucket<FunctionValueFlowEntry>> = new Map();
 	private readonly materializedRootAssignments: Set<ValueAssignmentEntry> = new Set();
 	private readonly demandedFunctionCallerBindings: Set<FunctionValueFlowEntry> = new Set();
 	private readonly demandedFunctionCallerContexts: Set<FunctionValueFlowEntry> = new Set();
@@ -1758,27 +1647,28 @@ export class WorkspaceValueGraph {
 	}
 
 	public retainCallTarget(call: CallValueEntry, declId: SymbolID): boolean {
-		const entries = this.demandIndex.functionFlows(declId);
-		if (entries.length === 0) {
+		const entries = this.demandIndex.flowsByDeclaration.get(declId);
+		const entryCount = demandBucketLength(entries);
+		if (entryCount === 0) {
 			return false;
 		}
 		const targets = this.resolvedCallTargets.get(call);
 		if (!targets) {
 			this.resolvedCallTargets.set(call, entries);
-			for (let index = 0; index < entries.length; index += 1) {
-				this.replayResolvedCallTarget(call, entries[index]);
+			for (let index = 0; index < entryCount; index += 1) {
+				this.replayResolvedCallTarget(call, demandBucketEntry(entries, index));
 			}
 			return true;
 		}
 		let mergedTargets: FunctionValueFlowEntry[] | undefined;
 		let changed = false;
-		for (let index = 0; index < entries.length; index += 1) {
-			const entry = entries[index];
-			if (targets.includes(entry)) {
+		for (let index = 0; index < entryCount; index += 1) {
+			const entry = demandBucketEntry(entries, index);
+			if (Array.isArray(targets) ? targets.includes(entry) : targets === entry) {
 				continue;
 			}
 			if (!mergedTargets) {
-				mergedTargets = targets.slice();
+				mergedTargets = Array.isArray(targets) ? targets.slice() : [targets];
 				this.resolvedCallTargets.set(call, mergedTargets);
 			}
 			mergedTargets.push(entry);
@@ -1975,9 +1865,10 @@ export class WorkspaceValueGraph {
 			return false;
 		}
 		let changed = false;
-		const entries = this.demandIndex.instanceAllocationFlows(allocationMemberName);
-		for (let entryIndex = 0; entryIndex < entries.length; entryIndex += 1) {
-			const flow = this.materializeFunctionFlow(entries[entryIndex]);
+		const entries = this.demandIndex.instanceAllocationFlowsByMember.get(allocationMemberName);
+		const entryCount = demandBucketLength(entries);
+		for (let entryIndex = 0; entryIndex < entryCount; entryIndex += 1) {
+			const flow = this.materializeFunctionFlow(demandBucketEntry(entries, entryIndex));
 			changed = this.demandFunctionCallers(flow, true) || changed;
 		}
 		return changed;
@@ -2097,9 +1988,10 @@ export class WorkspaceValueGraph {
 		if (rootKey === undefined) {
 			return;
 		}
-		const calls = this.demandIndex.argumentCalls(rootKey);
-		for (let callIndex = 0; callIndex < calls.length; callIndex += 1) {
-			const call = calls[callIndex];
+		const calls = this.demandIndex.callsByArgumentRoot.get(rootKey);
+		const callCount = demandBucketLength(calls);
+		for (let callIndex = 0; callIndex < callCount; callIndex += 1) {
+			const call = demandBucketEntry(calls, callIndex);
 			if (this.callUsesSource(call, source)) {
 				this.materializeRootCall(call, CALL_EFFECTS);
 			}
@@ -2237,7 +2129,11 @@ export class WorkspaceValueGraph {
 				if (this.demandIndex.hasMemberDemand(source, stepCount, name)) {
 					known = true;
 					this.demandMember(source, stepCount, name);
-					this.materializeContextMembers(this.demandIndex.members(source, stepCount, name));
+					this.materializeContextMembers(
+						this.demandIndex.membersByOwner
+							.get(this.identities.sourceKey(source, stepCount))
+							?.get(name),
+					);
 				}
 				const context = this.valueSourceContexts[bindingIndex];
 				if (context) {
@@ -2463,13 +2359,13 @@ export class WorkspaceValueGraph {
 			case 'global':
 				return;
 		}
-		this.materializeFunctionFlows(this.demandIndex.flows(rootKey));
-		this.materializeRootCalls(this.demandIndex.resultCalls(rootKey));
+		this.materializeFunctionFlows(this.demandIndex.flowsByRoot.get(rootKey));
+		this.materializeRootCalls(this.demandIndex.callsByResultRoot.get(rootKey));
 		this.materializeCallerCalls(
-			this.demandIndex.resultCallerCalls(rootKey),
+			this.demandIndex.resultCallerCallsByRoot.get(rootKey),
 			CALL_RETURNS,
 		);
-		this.materializeValueAssignments(this.demandIndex.rootAssignments(rootKey));
+		this.materializeValueAssignments(this.demandIndex.assignmentsByTargetRoot.get(rootKey));
 	}
 
 	private materializeDemandedEffects(
@@ -2479,11 +2375,14 @@ export class WorkspaceValueGraph {
 	): void {
 		// Open-world point queries materialize their name candidates in
 		// demandQueryMember. This queue retains only source-specific effects.
+		const sourceKey = this.identities.sourceKey(source, stepCount);
 		this.materializeEffectDependencies(
-			this.demandIndex.effectDependencies(source, stepCount),
+			this.demandIndex.effectDependenciesBySource.get(sourceKey),
 		);
 		this.materializeMemberEffects(
-			this.demandIndex.memberEffects(source, stepCount, name),
+			this.demandIndex.memberEffectsByOwner
+				.get(sourceKey)
+				?.get(name),
 		);
 	}
 
@@ -2492,16 +2391,17 @@ export class WorkspaceValueGraph {
 			return false;
 		}
 		this.materializedNamedEffectMembers.add(name);
-		const entries = this.demandIndex.namedMemberEffects(name);
+		const entries = this.demandIndex.memberEffectsByName.get(name);
 		this.materializeMemberEffects(entries);
-		return entries.length > 0;
+		return demandBucketLength(entries) > 0;
 	}
 
 	private materializeEffectDependencies(
-		entries: readonly FunctionEffectDependencyEntry[],
+		entries: DemandBucket<FunctionEffectDependencyEntry>,
 	): void {
-		for (let entryIndex = 0; entryIndex < entries.length; entryIndex += 1) {
-			const entry = entries[entryIndex];
+		const entryCount = demandBucketLength(entries);
+		for (let entryIndex = 0; entryIndex < entryCount; entryIndex += 1) {
+			const entry = demandBucketEntry(entries, entryIndex);
 			const flow = this.materializeFunctionFlow(entry.flow);
 			this.retainFlowDemand(this.demandedEffectDependenciesByFlow, flow, entry);
 			this.demandedHeapEffectFlows.add(flow);
@@ -2519,10 +2419,11 @@ export class WorkspaceValueGraph {
 	}
 
 	private materializeMemberEffects(
-		entries: readonly FunctionMemberEffectEntry[],
+		entries: DemandBucket<FunctionMemberEffectEntry>,
 	): void {
-		for (let entryIndex = 0; entryIndex < entries.length; entryIndex += 1) {
-			const entry = entries[entryIndex];
+		const entryCount = demandBucketLength(entries);
+		for (let entryIndex = 0; entryIndex < entryCount; entryIndex += 1) {
+			const entry = demandBucketEntry(entries, entryIndex);
 			this.demandMemberEffectOwner(entry);
 			const contexts = this.demandHeapEffectContexts(
 				this.demandedMemberEffectsByFlow,
@@ -2566,18 +2467,20 @@ export class WorkspaceValueGraph {
 		stepCount: number,
 		name: string,
 	): void {
-		const members = this.demandIndex.members(owner, stepCount, name);
-		const projectedMembers = this.demandIndex.projectedMembers(owner, stepCount, name);
-		const assignments = this.demandIndex.memberAssignments(owner, stepCount, name);
+		const ownerKey = this.identities.sourceKey(owner, stepCount);
+		const members = this.demandIndex.membersByOwner.get(ownerKey)?.get(name);
+		const projectedMembers = this.demandIndex.projectedMembersByOwner.get(ownerKey)?.get(name);
+		const assignments = this.demandIndex.assignmentsByMemberOwner.get(ownerKey)?.get(name);
 		this.materializeMembers(members);
 		this.materializeContextMembers(members);
 		this.materializeProjectedMembers(owner, stepCount, name, projectedMembers);
 		this.materializeValueAssignments(assignments);
 	}
 
-	private materializeAssignmentEffects(entries: readonly FunctionAssignmentEffectEntry[]): void {
-		for (let index = 0; index < entries.length; index += 1) {
-			const entry = entries[index];
+	private materializeAssignmentEffects(entries: DemandBucket<FunctionAssignmentEffectEntry>): void {
+		const entryCount = demandBucketLength(entries);
+		for (let index = 0; index < entryCount; index += 1) {
+			const entry = demandBucketEntry(entries, index);
 			const contexts = this.demandHeapEffectContexts(
 				this.demandedAssignmentEffectsByFlow,
 				entry,
@@ -2705,10 +2608,11 @@ export class WorkspaceValueGraph {
 		if (rootKey === undefined) {
 			return;
 		}
-		const flows = this.demandIndex.flows(rootKey);
+		const flows = this.demandIndex.flowsByRoot.get(rootKey);
 		const prefix = valueSourcePrefix(source, stepCount);
-		for (let flowIndex = 0; flowIndex < flows.length; flowIndex += 1) {
-			const flow = flows[flowIndex];
+		const flowCount = demandBucketLength(flows);
+		for (let flowIndex = 0; flowIndex < flowCount; flowIndex += 1) {
+			const flow = demandBucketEntry(flows, flowIndex);
 			const projected = projectValueSource(
 				prefix,
 				flow.parameters[0],
@@ -2724,20 +2628,26 @@ export class WorkspaceValueGraph {
 
 	private materializePrototypeCallEffects(source: SemanticValueSource): void {
 		const rootKey = semanticValueRootKey(source.root);
-		const rootCalls = this.demandIndex.argumentCalls(rootKey);
-		for (let callIndex = 0; callIndex < rootCalls.length; callIndex += 1) {
-			const call = rootCalls[callIndex];
-			if (this.demandIndex.prototypeEffects(call.callee).length > 0
+		const rootCalls = this.demandIndex.callsByArgumentRoot.get(rootKey);
+		const rootCallCount = demandBucketLength(rootCalls);
+		for (let callIndex = 0; callIndex < rootCallCount; callIndex += 1) {
+			const call = demandBucketEntry(rootCalls, callIndex);
+			if (demandBucketLength(this.demandIndex.prototypeEffectFlowsByCallee.get(
+				this.identities.sourceKey(call.callee),
+			)) > 0
 				&& this.callUsesSource(call, source)) {
 				this.materializeRootCall(call, CALL_EFFECTS);
 			}
 		}
-		const callerCalls = this.demandIndex.argumentCallerCalls(rootKey);
-		for (let callIndex = 0; callIndex < callerCalls.length; callIndex += 1) {
-			const call = callerCalls[callIndex];
+		const callerCalls = this.demandIndex.argumentCallerCallsByRoot.get(rootKey);
+		const callerCallCount = demandBucketLength(callerCalls);
+		for (let callIndex = 0; callIndex < callerCallCount; callIndex += 1) {
+			const call = demandBucketEntry(callerCalls, callIndex);
 			const owner = this.demandIndex.ownerFlowByCall.get(call);
 			if (owner
-				&& this.demandIndex.prototypeEffects(call.callee).length > 0
+				&& demandBucketLength(this.demandIndex.prototypeEffectFlowsByCallee.get(
+					this.identities.sourceKey(call.callee),
+				)) > 0
 				&& this.callUsesSource(call, source, owner)) {
 				this.materializeCallerCall(call, CALL_EFFECTS);
 			}
@@ -2788,8 +2698,9 @@ export class WorkspaceValueGraph {
 			: this.demandIndex.projectionDeclarations.has(declId)
 				? 'projection'
 				: 'value';
-		for (let sourceIndex = 0; sourceIndex < sources.length; sourceIndex += 1) {
-			const source = sources[sourceIndex];
+		const sourceCount = demandBucketLength(sources);
+		for (let sourceIndex = 0; sourceIndex < sourceCount; sourceIndex += 1) {
+			const source = demandBucketEntry(sources, sourceIndex);
 			this.demandSource(source);
 			this.registerValueConstraint({
 				target: { kind: 'value', value: target },
@@ -2857,16 +2768,17 @@ export class WorkspaceValueGraph {
 			const source = aliases[aliasIndex];
 			if (source.steps.length === 0) {
 				const rootKey = semanticValueRootKey(source.root);
-				this.materializeRootCalls(this.demandIndex.calleeCalls(rootKey), mode);
-				const callerCalls = this.demandIndex.callerCalls(rootKey);
+				this.materializeRootCalls(this.demandIndex.callsByCalleeRoot.get(rootKey), mode);
+				const callerCalls = this.demandIndex.callerCallsByRoot.get(rootKey);
 				if (refineCallerContexts) {
 					this.materializeContextualCallerCalls(callerCalls, mode, flow);
 				} else {
 					this.materializeCallerCalls(callerCalls, mode);
 				}
 			} else {
-				this.materializeRootCalls(this.demandIndex.calleeCallsForSource(source), mode);
-				const callerCalls = this.demandIndex.callerCallsForSource(source);
+				const sourceKey = this.identities.sourceKey(source);
+				this.materializeRootCalls(this.demandIndex.callsByCalleeSource.get(sourceKey), mode);
+				const callerCalls = this.demandIndex.callerCallsByCalleeSource.get(sourceKey);
 				if (refineCallerContexts) {
 					this.materializeContextualCallerCalls(callerCalls, mode, flow);
 				} else {
@@ -2887,11 +2799,11 @@ export class WorkspaceValueGraph {
 			const member = this.demandIndex.membersByDeclaration.get(sourceFlow.functionValue.root.declId);
 			if (member) {
 				this.materializeRootCalls(
-					this.demandIndex.calleeCallsByMemberName(member.name),
+					this.demandIndex.callsByCalleeMember.get(member.name),
 					mode,
 					flow,
 				);
-				const callerCalls = this.demandIndex.callerCallsByMemberName(member.name);
+				const callerCalls = this.demandIndex.callerCallsByMember.get(member.name);
 				if (refineCallerContexts) {
 					this.materializeContextualCallerCalls(callerCalls, mode, flow);
 				} else {
@@ -2912,14 +2824,20 @@ export class WorkspaceValueGraph {
 	}
 
 	private enqueueFunctionAliases(source: SemanticValueSource): void {
-		const declarations = this.demandIndex.declarationsForValue(source, source.steps.length);
-		for (let declarationIndex = 0; declarationIndex < declarations.length; declarationIndex += 1) {
-			this.enqueueFunctionAlias(declarationValueSource(declarations[declarationIndex]));
+		const declarations = this.demandIndex.declarationsByValueSource.get(
+			this.identities.sourceKey(source),
+		);
+		const declarationCount = demandBucketLength(declarations);
+		for (let declarationIndex = 0; declarationIndex < declarationCount; declarationIndex += 1) {
+			this.enqueueFunctionAlias(declarationValueSource(demandBucketEntry(declarations, declarationIndex)));
 		}
 		if (source.steps.length > 0) {
-			const ownerDeclarations = this.demandIndex.declarationsForValue(source, 0);
-			for (let declarationIndex = 0; declarationIndex < ownerDeclarations.length; declarationIndex += 1) {
-				const declaration = ownerDeclarations[declarationIndex];
+			const ownerDeclarations = this.demandIndex.declarationsByValueSource.get(
+				this.identities.sourceKey(source, 0),
+			);
+			const ownerDeclarationCount = demandBucketLength(ownerDeclarations);
+			for (let declarationIndex = 0; declarationIndex < ownerDeclarationCount; declarationIndex += 1) {
+				const declaration = demandBucketEntry(ownerDeclarations, declarationIndex);
 				if (!this.demandIndex.membersByDeclaration.has(declaration)) {
 					this.enqueueFunctionAlias({
 						root: { kind: 'declaration', declId: declaration },
@@ -2936,11 +2854,12 @@ export class WorkspaceValueGraph {
 			return false;
 		}
 		this.demandedDynamicFunctionCallers.add(sourceFlow);
+		const functionValueKey = this.identities.sourceKey(sourceFlow.functionValue);
 		this.materializeRootCalls(
-			this.demandIndex.argumentCallsForSource(sourceFlow.functionValue),
+			this.demandIndex.callsByArgumentSource.get(functionValueKey),
 		);
 		this.materializeCallerCalls(
-			this.demandIndex.argumentCallerCallsForSource(sourceFlow.functionValue),
+			this.demandIndex.argumentCallerCallsBySource.get(functionValueKey),
 			CALL_EFFECTS,
 		);
 		if (sourceFlow.functionValue.root.kind !== 'declaration') {
@@ -2951,31 +2870,36 @@ export class WorkspaceValueGraph {
 			return true;
 		}
 		const memberSource = appendValueMember(member.owner, member.name);
-		this.materializeRootCalls(this.demandIndex.argumentCallsForSource(memberSource));
+		const memberSourceKey = this.identities.sourceKey(memberSource);
+		this.materializeRootCalls(this.demandIndex.callsByArgumentSource.get(memberSourceKey));
 		this.materializeCallerCalls(
-			this.demandIndex.argumentCallerCallsForSource(memberSource),
+			this.demandIndex.argumentCallerCallsBySource.get(memberSourceKey),
 			CALL_EFFECTS,
 		);
 		return true;
 	}
 
+	// start normalized-body-acceptable -- Caller/root call buckets retain separate typed loops so cold demand traversal pays no callback or per-entry mode dispatch.
 	private materializeCallerCalls(
-		entries: readonly CallValueEntry[],
+		entries: DemandBucket<CallValueEntry>,
 		mode: CallInstantiationMode,
 		targetFlow?: MaterializedFunctionValueFlow,
 	): void {
-		for (let index = 0; index < entries.length; index += 1) {
-			this.materializeCallerCall(entries[index], mode, targetFlow);
+		const entryCount = demandBucketLength(entries);
+		for (let index = 0; index < entryCount; index += 1) {
+			this.materializeCallerCall(demandBucketEntry(entries, index), mode, targetFlow);
 		}
 	}
+	// end normalized-body-acceptable
 
 	private materializeContextualCallerCalls(
-		entries: readonly CallValueEntry[],
+		entries: DemandBucket<CallValueEntry>,
 		mode: CallInstantiationMode,
 		targetFlow: MaterializedFunctionValueFlow,
 	): void {
-		for (let index = 0; index < entries.length; index += 1) {
-			const call = entries[index];
+		const entryCount = demandBucketLength(entries);
+		for (let index = 0; index < entryCount; index += 1) {
+			const call = demandBucketEntry(entries, index);
 			this.materializeCallerCall(call, mode, targetFlow);
 			const ownerEntry = this.demandIndex.ownerFlowByCall.get(call);
 			if (ownerEntry) {
@@ -4329,11 +4253,14 @@ export class WorkspaceValueGraph {
 		return true;
 	}
 
-	private materializeMembers(entries: readonly MemberValueEntry[]): void {
-		for (let index = 0; index < entries.length; index += 1) {
-			this.materializeMember(entries[index]);
+	// start normalized-body-acceptable -- Member/function buckets retain separate typed loops so cold demand traversal pays no callback or indirect dispatch.
+	private materializeMembers(entries: DemandBucket<MemberValueEntry>): void {
+		const entryCount = demandBucketLength(entries);
+		for (let index = 0; index < entryCount; index += 1) {
+			this.materializeMember(demandBucketEntry(entries, index));
 		}
 	}
+	// end normalized-body-acceptable
 
 	private materializeMember(entry: MemberValueEntry): void {
 		if (this.materializedMembers.has(entry)) {
@@ -4356,9 +4283,10 @@ export class WorkspaceValueGraph {
 		this.addIdentity(member.value, this.nodeForRoot({ kind: 'declaration', declId: entry.declId }));
 	}
 
-	private materializeContextMembers(entries: readonly MemberValueEntry[]): void {
-		for (let entryIndex = 0; entryIndex < entries.length; entryIndex += 1) {
-			const entry = entries[entryIndex];
+	private materializeContextMembers(entries: DemandBucket<MemberValueEntry>): void {
+		const entryCount = demandBucketLength(entries);
+		for (let entryIndex = 0; entryIndex < entryCount; entryIndex += 1) {
+			const entry = demandBucketEntry(entries, entryIndex);
 			const bindings = this.valueSourceBindingsByKey.get(this.identities.sourceKey(entry.owner));
 			if (!bindings) {
 				continue;
@@ -4403,7 +4331,7 @@ export class WorkspaceValueGraph {
 		source: SemanticValueSource,
 		stepCount: number,
 		name: string,
-		entries: readonly MemberValueEntry[],
+		entries: DemandBucket<MemberValueEntry>,
 	): void {
 		const root = this.resolveValueRoot(source.root);
 		const owner = root
@@ -4413,8 +4341,9 @@ export class WorkspaceValueGraph {
 			return;
 		}
 		const projectionKey = `${this.identities.sourceKey(source, stepCount)}\0${name}`;
-		for (let index = 0; index < entries.length; index += 1) {
-			const entry = entries[index];
+		const entryCount = demandBucketLength(entries);
+		for (let index = 0; index < entryCount; index += 1) {
+			const entry = demandBucketEntry(entries, index);
 			const key = `${projectionKey}\0${entry.declId}`;
 			if (this.materializedProjectedMembers.has(key)) {
 				continue;
@@ -4476,9 +4405,10 @@ export class WorkspaceValueGraph {
 		return merged;
 	}
 
-	private materializeFunctionReturns(entries: readonly FunctionReturnValueEntry[]): void {
-		for (let index = 0; index < entries.length; index += 1) {
-			const entry = entries[index];
+	private materializeFunctionReturns(entries: DemandBucket<FunctionReturnValueEntry>): void {
+		const entryCount = demandBucketLength(entries);
+		for (let index = 0; index < entryCount; index += 1) {
+			const entry = demandBucketEntry(entries, index);
 			if (this.materializedFunctionReturns.has(entry)) {
 				continue;
 			}
@@ -4495,11 +4425,14 @@ export class WorkspaceValueGraph {
 		}
 	}
 
-	private materializeFunctionFlows(entries: readonly FunctionValueFlowEntry[]): void {
-		for (let index = 0; index < entries.length; index += 1) {
-			this.materializeFunctionFlow(entries[index]);
+	// start normalized-body-acceptable -- Member/function buckets retain separate typed loops so cold demand traversal pays no callback or indirect dispatch.
+	private materializeFunctionFlows(entries: DemandBucket<FunctionValueFlowEntry>): void {
+		const entryCount = demandBucketLength(entries);
+		for (let index = 0; index < entryCount; index += 1) {
+			this.materializeFunctionFlow(demandBucketEntry(entries, index));
 		}
 	}
+	// end normalized-body-acceptable
 
 	private materializeFunctionFlow(entry: FunctionValueFlowEntry): MaterializedFunctionValueFlow {
 		const materialized = this.materializedFunctionFlowsByEntry.get(entry);
@@ -4607,9 +4540,10 @@ export class WorkspaceValueGraph {
 		sources.length = 0;
 		const rootKey = this.demandIndex.rootKey(entry.functionValue.root);
 		if (rootKey !== undefined) {
-			const returns = this.demandIndex.returns(rootKey);
-			for (let returnIndex = 0; returnIndex < returns.length; returnIndex += 1) {
-				sources.push(returns[returnIndex].source);
+			const returns = this.demandIndex.returnsByFunctionRoot.get(rootKey);
+			const returnCount = demandBucketLength(returns);
+			for (let returnIndex = 0; returnIndex < returnCount; returnIndex += 1) {
+				sources.push(demandBucketEntry(returns, returnIndex).source);
 			}
 		}
 
@@ -4642,7 +4576,7 @@ export class WorkspaceValueGraph {
 					this.contextAnalysisRequiresReturnContext = true;
 				} else if (source.root.kind === 'declaration'
 					&& entry.declarationIds.includes(source.root.declId)
-					&& this.demandIndex.functionFlows(source.root.declId).length > 0) {
+					&& demandBucketLength(this.demandIndex.flowsByDeclaration.get(source.root.declId)) > 0) {
 					this.contextAnalysisRequiresReturnContext = true;
 				}
 			}
@@ -4658,8 +4592,9 @@ export class WorkspaceValueGraph {
 				this.indexedSourceDeclarations.add(source.root.declId);
 				const declarationSources = this.demandIndex.declarationValues.get(source.root.declId);
 				if (declarationSources) {
-					for (let sourceIndex = 0; sourceIndex < declarationSources.length; sourceIndex += 1) {
-						sources.push(declarationSources[sourceIndex]);
+					const sourceCount = demandBucketLength(declarationSources);
+					for (let sourceIndex = 0; sourceIndex < sourceCount; sourceIndex += 1) {
+						sources.push(demandBucketEntry(declarationSources, sourceIndex));
 					}
 				}
 			} else if (source.root.kind === 'owned'
@@ -4697,8 +4632,9 @@ export class WorkspaceValueGraph {
 			this.collectParameterDependencies(member.owner, entry, marks);
 			const sources = this.demandIndex.declarationValues.get(member.declId);
 			if (sources) {
-				for (let sourceIndex = 0; sourceIndex < sources.length; sourceIndex += 1) {
-					this.collectParameterDependencies(sources[sourceIndex], entry, marks);
+				const sourceCount = demandBucketLength(sources);
+				for (let sourceIndex = 0; sourceIndex < sourceCount; sourceIndex += 1) {
+					this.collectParameterDependencies(demandBucketEntry(sources, sourceIndex), entry, marks);
 				}
 			}
 		}
@@ -4752,8 +4688,9 @@ export class WorkspaceValueGraph {
 				this.indexedDependencyDeclarations.add(dependency.root.declId);
 				const declarationSources = this.demandIndex.declarationValues.get(dependency.root.declId);
 				if (declarationSources) {
-					for (let sourceIndex = 0; sourceIndex < declarationSources.length; sourceIndex += 1) {
-						pending.push(declarationSources[sourceIndex]);
+					const sourceCount = demandBucketLength(declarationSources);
+					for (let sourceIndex = 0; sourceIndex < sourceCount; sourceIndex += 1) {
+						pending.push(demandBucketEntry(declarationSources, sourceIndex));
 					}
 				}
 			} else if (dependency.root.kind === 'owned'
@@ -5282,8 +5219,9 @@ export class WorkspaceValueGraph {
 			return;
 		}
 		if (resolvedTargets) {
-			for (let index = 0; index < resolvedTargets.length; index += 1) {
-				const flow = this.materializeFunctionFlow(resolvedTargets[index]);
+			const targetCount = demandBucketLength(resolvedTargets);
+			for (let index = 0; index < targetCount; index += 1) {
+				const flow = this.materializeFunctionFlow(demandBucketEntry(resolvedTargets, index));
 				if (flow.lexicalOwner) {
 					this.demandSource(call.callee);
 				}
@@ -5667,7 +5605,7 @@ export class WorkspaceValueGraph {
 			context.localValues.set(declId, value);
 			this.registerValueSource(value, declarationValueSource(declId), context);
 		}
-		if (!sources || sources.length === 0 || context.resolvedLocals.has(declId)) {
+		if (!sources || context.resolvedLocals.has(declId)) {
 			return value;
 		}
 		context.resolvedLocals.add(declId);
@@ -5676,10 +5614,11 @@ export class WorkspaceValueGraph {
 			: this.demandIndex.projectionDeclarations.has(declId)
 				? 'projection'
 				: 'value';
-		for (let sourceIndex = 0; sourceIndex < sources.length; sourceIndex += 1) {
+		const sourceCount = demandBucketLength(sources);
+		for (let sourceIndex = 0; sourceIndex < sourceCount; sourceIndex += 1) {
 			this.registerValueConstraint({
 				target: { kind: 'value', value },
-				source: sources[sourceIndex],
+				source: demandBucketEntry(sources, sourceIndex),
 				relation,
 				context,
 			});
@@ -5852,7 +5791,9 @@ export class WorkspaceValueGraph {
 	private materializeFunctionFlowReturns(flow: MaterializedFunctionValueFlow): void {
 		const entry = flow.source;
 		this.materializeFunctionReturns(
-			this.demandIndex.returns(semanticValueRootKey(entry.functionValue.root)),
+			this.demandIndex.returnsByFunctionRoot.get(
+				semanticValueRootKey(entry.functionValue.root),
+			),
 		);
 	}
 
@@ -5935,9 +5876,10 @@ export class WorkspaceValueGraph {
 		}
 	}
 
-	private materializeValueAssignments(entries: readonly ValueAssignmentEntry[]): void {
-		for (let index = 0; index < entries.length; index += 1) {
-			const entry = entries[index];
+	private materializeValueAssignments(entries: DemandBucket<ValueAssignmentEntry>): void {
+		const entryCount = demandBucketLength(entries);
+		for (let index = 0; index < entryCount; index += 1) {
+			const entry = demandBucketEntry(entries, index);
 			if (this.materializedRootAssignments.has(entry)) {
 				continue;
 			}
@@ -5952,15 +5894,18 @@ export class WorkspaceValueGraph {
 		}
 	}
 
+	// start normalized-body-acceptable -- Caller/root call buckets retain separate typed loops so cold demand traversal pays no callback or per-entry mode dispatch.
 	private materializeRootCalls(
-		entries: readonly CallValueEntry[],
+		entries: DemandBucket<CallValueEntry>,
 		mode: CallInstantiationMode = CALL_EFFECTS,
 		targetFlow?: MaterializedFunctionValueFlow,
 	): void {
-		for (let index = 0; index < entries.length; index += 1) {
-			this.materializeRootCall(entries[index], mode, targetFlow);
+		const entryCount = demandBucketLength(entries);
+		for (let index = 0; index < entryCount; index += 1) {
+			this.materializeRootCall(demandBucketEntry(entries, index), mode, targetFlow);
 		}
 	}
+	// end normalized-body-acceptable
 
 	private materializeRootCall(
 		call: CallValueEntry,
