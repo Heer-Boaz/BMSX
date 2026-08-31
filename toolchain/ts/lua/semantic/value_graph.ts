@@ -670,7 +670,8 @@ export class WorkspaceValueIdentityIndex {
 	private readonly identityRanks: Map<string, number> = new Map();
 	private readonly moduleIdentities: Set<string> = new Set();
 	private readonly sourceOwnedIdentities: Set<string> = new Set();
-	private readonly membersByIdentity: Map<string, Map<string, SymbolID[]>> = new Map();
+	private readonly membersBySource: Map<string, Map<string, SymbolID[]>> = new Map();
+	private readonly receiverProjectionBySource: Map<string, SemanticValueSource> = new Map();
 	private readonly inferredMemberNamesByIdentity: Map<string, Set<string>> = new Map();
 
 	constructor(input: WorkspaceValueGraphInput) {
@@ -729,7 +730,8 @@ export class WorkspaceValueIdentityIndex {
 			}
 		}
 		for (let fileIndex = 0; fileIndex < input.files.length; fileIndex += 1) {
-			const members = input.files[fileIndex].memberValues;
+			const file = input.files[fileIndex];
+			const members = file.memberValues;
 			for (let memberIndex = 0; memberIndex < members.length; memberIndex += 1) {
 				const member = members[memberIndex];
 				const ownerIdentity = this.find(semanticValueRootKey(member.owner.root));
@@ -746,12 +748,12 @@ export class WorkspaceValueIdentityIndex {
 						}
 						inferredNames.add(firstStep.name);
 					}
-					continue;
 				}
-				let declaredMembers = this.membersByIdentity.get(ownerIdentity);
+				const owner = this.sourceKey(member.owner);
+				let declaredMembers = this.membersBySource.get(owner);
 				if (!declaredMembers) {
 					declaredMembers = new Map();
-					this.membersByIdentity.set(ownerIdentity, declaredMembers);
+					this.membersBySource.set(owner, declaredMembers);
 				}
 				let declarations = declaredMembers.get(member.name);
 				if (!declarations) {
@@ -759,6 +761,17 @@ export class WorkspaceValueIdentityIndex {
 					declaredMembers.set(member.name, declarations);
 				}
 				declarations.push(member.declId);
+			}
+			const flows = file.functionValueFlows;
+			for (let flowIndex = 0; flowIndex < flows.length; flowIndex += 1) {
+				const flow = flows[flowIndex];
+				const receiver = flow.parameters[0];
+				if (receiver && flow.receiverProjection) {
+					this.receiverProjectionBySource.set(
+						this.sourceKey(receiver),
+						flow.receiverProjection,
+					);
+				}
 			}
 		}
 	}
@@ -792,14 +805,31 @@ export class WorkspaceValueIdentityIndex {
 	}
 
 	public resolveStaticMembers(source: SemanticValueSource | undefined, name: string): readonly SymbolID[] | undefined {
-		if (!source || source.steps.length !== 0) {
+		if (!source) {
 			return undefined;
 		}
-		const ownerIdentity = this.find(semanticValueRootKey(source.root));
-		const direct = this.membersByIdentity.get(ownerIdentity)?.get(name);
+		const direct = this.membersBySource.get(this.sourceKey(source))?.get(name);
 		if (direct) {
 			return direct;
 		}
+		const projection = this.receiverProjectionBySource.get(this.sourceKey(source));
+		if (projection) {
+			const projected = this.membersBySource.get(this.sourceKey(projection))?.get(name);
+			if (projected) {
+				return projected;
+			}
+			const stepCount = projection.steps.length;
+			if (stepCount > 0 && projection.steps[stepCount - 1].kind === 'instance') {
+				const inherited = this.membersBySource.get(this.sourceKey(projection, stepCount - 1))?.get(name);
+				if (inherited) {
+					return inherited;
+				}
+			}
+		}
+		if (source.steps.length !== 0) {
+			return undefined;
+		}
+		const ownerIdentity = this.find(semanticValueRootKey(source.root));
 		if (!this.moduleIdentities.has(ownerIdentity)) {
 			return source.root.kind === 'global' && !this.sourceOwnedIdentities.has(ownerIdentity)
 				? EMPTY_MEMBER_IDS

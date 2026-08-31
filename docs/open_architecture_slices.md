@@ -48,9 +48,12 @@ De huidige IDE- en debuggergrenzen zijn:
   workspacebrede value-flowrepresentatie; identity- en demandindices ontstaan
   pas wanneer een query ze nodig heeft. Exact gebonden calls en later bewezen
   dynamische calltargets worden daarna als gewone graph edges behouden voor
-  volgende features op dezelfde snapshot. Alleen gevraagde Lua-roots, calls,
-  contexten en heap-effects worden gematerialiseerd; de taallaag kent geen
-  cartlib-, firmware- of frameworktypen;
+  volgende features op dezelfde snapshot. De binder behoudt de receiverprojectie
+  van gewone Lua-methoden, zodat de identity-index een `self:`-call rechtstreeks
+  tegen de gedeclareerde receiver kan binden voordat een demand-graph nodig is.
+  Alleen gevraagde Lua-roots, calls, contexten en heap-effects worden
+  gematerialiseerd; de taallaag kent geen cartlib-, firmware- of
+  frameworktypen;
 - Lua-instanties behouden prototype-inheritance en concrete allocation-sites
   als afzonderlijke graphrelaties. Een `setmetatable`-factory kan daardoor
   velden publiceren die tijdens constructie op de teruggegeven waarde worden

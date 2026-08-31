@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { semanticSymbolAt, semanticSymbolsAt } from './semantic_test_harness';
 
 const semanticWorkspaceModulePromise = import('../../toolchain/ts/lua/semantic/model');
+const semanticValueGraphModulePromise = import('../../toolchain/ts/lua/semantic/value_graph');
 
 function memberColumn(line: string, member: string): number {
 	return line.lastIndexOf(member) + 1;
@@ -622,6 +623,34 @@ test('semantic workspace publishes direct method receiver members without execut
 	assert.ok(blink, 'method receiver member');
 	assert.equal(blink!.declaration.file, 'main.lua');
 	assert.deepEqual(blink!.declaration.namePath, ['self', 'blink']);
+});
+
+test('semantic value identities project implicit self onto the declared receiver', async () => {
+	const { buildLuaFileSemanticData } = await semanticWorkspaceModulePromise;
+	const { WorkspaceValueIdentityIndex } = await semanticValueGraphModulePromise;
+	const source = [
+		'local left<const> = {}',
+		'function left:target() end',
+		'function left:forward()',
+		'\tself:target()',
+		'end',
+		'local right<const> = {}',
+		'function right:target() end',
+	].join('\n');
+	const file = buildLuaFileSemanticData(source, 'methods.lua');
+	const call = file.refs.find(ref => ref.name === 'target' && ref.range.start.line === 4);
+	const target = file.decls.find(decl => decl.namePath.join('.') === 'left.target');
+	assert.ok(call?.receiverValue);
+	assert.ok(target);
+
+	const identities = new WorkspaceValueIdentityIndex({
+		files: [file],
+		globalValues: new Map(),
+	});
+	assert.deepEqual(
+		identities.resolveStaticMembers(call.receiverValue, call.name),
+		[target.id],
+	);
 });
 
 test('semantic workspace resolves fields injected by a generic instance factory without invoking methods', async () => {
