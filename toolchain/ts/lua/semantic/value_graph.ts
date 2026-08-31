@@ -1659,7 +1659,9 @@ export class WorkspaceValueGraph {
 	private readonly callWorklist = new DependencyWorklist();
 	private readonly valueFlowConstraints: ValueFlowConstraint[] = [];
 	private readonly valueFlowWorklist = new DependencyWorklist();
+	private readonly valueAlternativeWorklist = new DependencyWorklist();
 	private readonly dependencyScratch: SemanticValueID[] = [];
+	private readonly valueAlternativeDependencyScratch: SemanticValueID[] = [];
 	private readonly assignmentTargetScratch: SemanticValueID[] = [];
 	private readonly assignmentOwnerScratch: SemanticValueID[] = [];
 	private readonly assignmentKeyScratch: SemanticValueID[] = [];
@@ -2265,20 +2267,25 @@ export class WorkspaceValueGraph {
 			this.demandResolvedEffects(stack[index], name);
 		}
 		for (let link = this.valueSourceHeads[owner]; link !== 0; link = this.valueSourceNext[link - 1]) {
-				const bindingIndex = link - 1;
-				const source = this.valueSourceSources[bindingIndex];
-				this.demandEffectSource(
+			const bindingIndex = link - 1;
+			const source = this.valueSourceSources[bindingIndex];
+			this.demandEffectSource(
+				source,
+				this.valueSourceStepCounts[bindingIndex],
+				name,
+			);
+			const context = this.valueSourceContexts[bindingIndex];
+			if (context) {
+				this.materializeContextPrototypeCallEffects(
+					context,
 					source,
 					this.valueSourceStepCounts[bindingIndex],
-					name,
 				);
-				const context = this.valueSourceContexts[bindingIndex];
-				if (context) {
-					const contextualRoot = this.resolveContextualValueRoot(source.root, context, false);
-					if (contextualRoot) {
-						this.demandResolvedEffects(contextualRoot, name);
-					}
+				const contextualRoot = this.resolveContextualValueRoot(source.root, context, false);
+				if (contextualRoot) {
+					this.demandResolvedEffects(contextualRoot, name);
 				}
+			}
 		}
 	}
 
@@ -2742,17 +2749,35 @@ export class WorkspaceValueGraph {
 		}
 	}
 
+	private materializeContextPrototypeCallEffects(
+		context: FunctionValueContext,
+		source: SemanticValueSource,
+		stepCount: number,
+	): void {
+		const calls = context.flow.calls;
+		for (let callIndex = 0; callIndex < calls.length; callIndex += 1) {
+			const call = calls[callIndex];
+			if (demandBucketLength(this.demandIndex.prototypeEffectFlowsByCallee.get(
+				this.identities.sourceKey(call.callee),
+			)) > 0
+				&& this.callUsesSource(call, source, context.flow.source, stepCount)) {
+				this.materializeContextCall(context, call, CALL_EFFECTS);
+			}
+		}
+	}
+
 	private callUsesSource(
 		call: CallValueEntry,
 		source: SemanticValueSource,
 		owner?: FunctionValueFlowEntry,
+		sourceStepCount = source.steps.length,
 	): boolean {
 		for (let argumentIndex = 0; argumentIndex < call.arguments.length; argumentIndex += 1) {
 			const argument = call.arguments[argumentIndex];
 			if (!argument) {
 				continue;
 			}
-			if (argument.steps.length <= source.steps.length
+			if (argument.steps.length <= sourceStepCount
 				&& this.identities.sourceKey(argument)
 					=== this.identities.sourceKey(source, argument.steps.length)) {
 				return true;
@@ -2761,7 +2786,7 @@ export class WorkspaceValueGraph {
 				? projectValueSource(argument, owner.parameters[0], owner.receiverProjection)
 				: undefined;
 			if (projectedArgument
-				&& projectedArgument.steps.length <= source.steps.length
+				&& projectedArgument.steps.length <= sourceStepCount
 				&& this.identities.sourceKey(projectedArgument)
 					=== this.identities.sourceKey(source, projectedArgument.steps.length)) {
 				return true;
@@ -4252,7 +4277,12 @@ export class WorkspaceValueGraph {
 		if (rightInstance) {
 			this.addEdge(this.instanceBases, rightInstance, this.ensureInstance(left));
 		}
-		return leftChanged || rightChanged || componentsChanged;
+		const changed = leftChanged || rightChanged || componentsChanged;
+		if (changed) {
+			this.valueAlternativeWorklist.queue(left);
+			this.valueAlternativeWorklist.queue(right);
+		}
+		return changed;
 	}
 
 	private unionIdentityComponents(left: SemanticValueID, right: SemanticValueID): boolean {
@@ -4339,6 +4369,7 @@ export class WorkspaceValueGraph {
 		if (!this.addEdge(this.valueBases, owner, base)) {
 			return false;
 		}
+		this.valueAlternativeWorklist.queue(owner);
 		const instance = this.instances.get(owner);
 		if (instance) {
 			this.addEdge(this.instanceBases, instance, this.ensureInstance(base));
@@ -4861,7 +4892,9 @@ export class WorkspaceValueGraph {
 				this.addIdentity(target, source);
 				return;
 			case 'projection':
-				this.addEdge(this.projectionBases, target, source);
+				if (this.addEdge(this.projectionBases, target, source)) {
+					this.valueAlternativeWorklist.queue(target);
+				}
 				return;
 			case 'value':
 				this.addValueBase(target, source);
@@ -4872,9 +4905,13 @@ export class WorkspaceValueGraph {
 	private solveValueChanges(): void {
 		while (this.dirtyTraversalValues.length > 0
 			|| this.valueFlowWorklist.length > 0
+			|| this.valueAlternativeWorklist.length > 0
 			|| this.callWorklist.length > 0) {
-			while (this.valueFlowWorklist.length > 0 || this.callWorklist.length > 0) {
-				this.processPendingValueConstraints();
+			while (this.valueFlowWorklist.length > 0
+				|| this.valueAlternativeWorklist.length > 0
+				|| this.callWorklist.length > 0) {
+				this.processPendingValueConstraints(this.valueFlowWorklist);
+				this.processPendingValueConstraints(this.valueAlternativeWorklist);
 				this.processPendingCalls();
 			}
 			if (this.dirtyTraversalValues.length > 0) {
@@ -5040,6 +5077,9 @@ export class WorkspaceValueGraph {
 		bindings.push(bindingIndex);
 		const effectNames = this.demandedEffectNamesByValue.get(value);
 		if (effectNames) {
+			if (context) {
+				this.materializeContextPrototypeCallEffects(context, source, stepCount);
+			}
 			for (let nameIndex = 0; nameIndex < effectNames.length; nameIndex += 1) {
 				this.demandEffectSource(source, stepCount, effectNames[nameIndex]);
 			}
@@ -5331,12 +5371,14 @@ export class WorkspaceValueGraph {
 		this.callWorklist.add(callIndex);
 	}
 
-	private processPendingValueConstraints(): void {
-		while (this.valueFlowWorklist.length > 0) {
-			const constraintIndex = this.valueFlowWorklist.take();
+	private processPendingValueConstraints(worklist: DependencyWorklist): void {
+		while (worklist.length > 0) {
+			const constraintIndex = worklist.take();
 			const constraint = this.valueFlowConstraints[constraintIndex];
 			const dependencies = this.dependencyScratch;
 			dependencies.length = 0;
+			const alternativeDependencies = this.valueAlternativeDependencyScratch;
+			alternativeDependencies.length = 0;
 			const context = constraint.context;
 			const targets = this.assignmentTargetScratch;
 			targets.length = 0;
@@ -5349,6 +5391,7 @@ export class WorkspaceValueGraph {
 					context,
 					dependencies,
 					targets,
+					alternativeDependencies,
 				);
 			}
 			const source = context
@@ -5356,6 +5399,9 @@ export class WorkspaceValueGraph {
 				: this.resolveSource(constraint.source, true, dependencies);
 			for (let dependencyIndex = 0; dependencyIndex < dependencies.length; dependencyIndex += 1) {
 				this.valueFlowWorklist.retain(constraintIndex, dependencies[dependencyIndex]);
+			}
+			for (let dependencyIndex = 0; dependencyIndex < alternativeDependencies.length; dependencyIndex += 1) {
+				this.valueAlternativeWorklist.retain(constraintIndex, alternativeDependencies[dependencyIndex]);
 			}
 			for (let targetIndex = 0; targetIndex < targets.length; targetIndex += 1) {
 				const target = targets[targetIndex];
@@ -5376,15 +5422,16 @@ export class WorkspaceValueGraph {
 		context: FunctionValueContext | undefined,
 		dependencies: SemanticValueID[],
 		out: SemanticValueID[],
+		alternativeDependencies: SemanticValueID[],
 	): void {
 		const stepCount = target.steps.length;
-		if (stepCount === 0) {
+		if (relation === 'metatable' || relation === 'prototype' || stepCount === 0) {
 			const value = context
 				? this.resolveContextualValueSource(target, context, true, dependencies)
 				: this.resolveSource(target, true, dependencies);
 			if (value) {
 				if (relation === 'metatable' || relation === 'prototype') {
-					this.collectValueAlternatives(value, out);
+					this.collectValueAlternatives(value, out, alternativeDependencies);
 					if (!out.includes(value)) {
 						out.push(value);
 					}
@@ -5461,6 +5508,7 @@ export class WorkspaceValueGraph {
 	private collectValueAlternatives(
 		value: SemanticValueID,
 		out: SemanticValueID[],
+		dependencies?: SemanticValueID[],
 	): void {
 		out.length = 0;
 		const stack = this.valueAlternativeStack;
@@ -5478,6 +5526,7 @@ export class WorkspaceValueGraph {
 			const nodeStart = nodes.length;
 			this.valueAlternativeMarks[candidate] = generation;
 			nodes.push(candidate);
+			dependencies?.push(candidate);
 			for (let nodeIndex = nodeStart; nodeIndex < nodes.length; nodeIndex += 1) {
 				const node = nodes[nodeIndex];
 				for (let edge = this.identityValues.first(node); edge !== 0; edge = this.identityValues.next(edge)) {
@@ -5485,6 +5534,7 @@ export class WorkspaceValueGraph {
 					if (this.valueAlternativeMarks[identity] !== generation) {
 						this.valueAlternativeMarks[identity] = generation;
 						nodes.push(identity);
+						dependencies?.push(identity);
 					}
 				}
 			}
@@ -6093,6 +6143,7 @@ export class WorkspaceValueGraph {
 			this.traversalDependents.resizeOwners(this.valueCapacity);
 			this.callWorklist.resizeValues(this.valueCapacity);
 			this.valueFlowWorklist.resizeValues(this.valueCapacity);
+			this.valueAlternativeWorklist.resizeValues(this.valueCapacity);
 		}
 		this.identityParents[value] = value;
 		this.identitySizes[value] = 1;

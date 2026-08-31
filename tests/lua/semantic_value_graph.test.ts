@@ -749,6 +749,136 @@ test('semantic workspace resolves fields injected by a generic instance factory 
 	);
 });
 
+test('semantic workspace retains contextual prototype effects through configuration factories', async () => {
+	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
+	const channelLines = [
+		'local channel<const> = {}',
+		'local port<const> = {}',
+		'port.__index = port',
+		'function port:emit(name) end',
+		'function channel.for_owner(owner)',
+		'\treturn setmetatable({ owner = owner }, port)',
+		'end',
+		'return channel',
+	];
+	const baseLines = [
+		"local channel<const> = require('channel')",
+		'local base<const> = {}',
+		'base.__index = base',
+		'function base.initialize(self)',
+		'\tself.events = channel.for_owner(self)',
+		'end',
+		'function base:set_space(id) end',
+		'return base',
+	];
+	const catalogLines = [
+		"local base<const> = require('base')",
+		'local definitions<const> = {}',
+		'local catalog<const> = {}',
+		'function catalog.define(source)',
+		'\tlocal prototype<const> = source.base or base',
+		'\tsetmetatable(source.class, { __index = prototype })',
+		'\tdefinitions[source.id] = {',
+		'\t\tinstance_metatable = { __index = source.class },',
+		'\t\tinitialize = prototype.initialize,',
+		'\t}',
+		'end',
+		'function catalog.definition(id)',
+		'\treturn definitions[id]',
+		'end',
+		'return catalog',
+	];
+	const factoryLines = [
+		"local catalog<const> = require('catalog')",
+		'local factory<const> = {}',
+		'function factory:spawn(id)',
+		'\tlocal definition<const> = catalog.definition(id)',
+		'\tlocal value<const> = {}',
+		'\tsetmetatable(value, definition.instance_metatable)',
+		'\tdefinition.initialize(value)',
+		'\treturn value',
+		'end',
+		'return factory',
+	];
+	const actorLines = [
+		"local catalog<const> = require('catalog')",
+		'local actor<const> = {}',
+		'actor.__index = actor',
+		'function actor:run()',
+		'\tself:set_space(1)',
+		"\tself.events:emit('run')",
+		'end',
+		'function actor.register()',
+		"\tcatalog.define({ id = 'actor', class = actor })",
+		'end',
+		'return actor',
+	];
+	const spectatorLines = [
+		'local spectator<const> = {}',
+		'spectator.__index = spectator',
+		'function spectator:run()',
+		'\tself:set_space(1)',
+		"\tself.events:emit('run')",
+		'end',
+		'return spectator',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('channel.lua', channelLines.join('\n'));
+	workspace.updateFile('base.lua', baseLines.join('\n'));
+	workspace.updateFile('catalog.lua', catalogLines.join('\n'));
+	workspace.updateFile('factory.lua', factoryLines.join('\n'));
+	workspace.updateFile('actor.lua', actorLines.join('\n'));
+	workspace.updateFile('spectator.lua', spectatorLines.join('\n'));
+	workspace.updateFile('main.lua', [
+		"local actor<const> = require('actor')",
+		"local factory<const> = require('factory')",
+		'actor.register()',
+		"factory:spawn('actor')",
+	].join('\n'));
+	const snapshot = workspace.getSnapshot();
+
+	const inheritedMethod = semanticSymbolAt(
+		snapshot,
+		'actor.lua',
+		5,
+		memberColumn(actorLines[4], 'set_space'),
+	);
+	assert.ok(inheritedMethod, 'prototype installed through the configuration call');
+	assert.equal(inheritedMethod!.declaration.file, 'base.lua');
+	assert.equal(inheritedMethod!.declaration.range.start.line, 7);
+
+	const initializedField = semanticSymbolAt(
+		snapshot,
+		'actor.lua',
+		6,
+		memberColumn(actorLines[5], 'events'),
+	);
+	assert.ok(initializedField, 'field published by the configured base initializer');
+	assert.equal(initializedField!.declaration.file, 'base.lua');
+	assert.equal(initializedField!.declaration.range.start.line, 5);
+
+	const chainedMethod = semanticSymbolAt(
+		snapshot,
+		'actor.lua',
+		6,
+		memberColumn(actorLines[5], 'emit'),
+	);
+	assert.ok(chainedMethod, 'method retained from the initialized factory return');
+	assert.equal(chainedMethod!.declaration.file, 'channel.lua');
+	assert.equal(chainedMethod!.declaration.range.start.line, 4);
+
+	assert.equal(
+		semanticSymbolAt(
+			snapshot,
+			'spectator.lua',
+			4,
+			memberColumn(spectatorLines[3], 'set_space'),
+		),
+		null,
+		'an unconfigured sibling does not acquire the prototype',
+	);
+});
+
 test('semantic workspace propagates heap effects through forwarding call summaries', async () => {
 	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
 	const lines = [

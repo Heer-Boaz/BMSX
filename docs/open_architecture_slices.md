@@ -148,6 +148,11 @@ Daaruit volgen deze harde migratiegates:
 - cross-file valueflow blijft query-demanded. Een edit mag geen volledige
   workspacegraph kopieren en een UI-feature mag geen eager recursieve boom
   materialiseren;
+- prototype- en metatable-effecten door een factorycall volgen uitsluitend de
+  bewezen call-edge in diens concrete functioncontext. Hun aliasalternatieven
+  hebben een afzonderlijke monotone dependency-worklist; een metatable-effect
+  mag zichzelf niet opnieuw activeren en een query opent geen globale
+  same-name- of caller-scan;
 - cartlib-, firmware-, prefab-, component- en andere frameworkbegrippen zijn
   verboden in lexer, parser, binder, programmasnapshot en resolver. Eventuele
   producttooling boven de language service mag een eigen expliciete adapter
