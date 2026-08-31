@@ -1951,6 +1951,17 @@ export class WorkspaceValueGraph {
 				}
 			}
 		}
+		if (this.demandMetatableMemberEffects(source, name)) {
+			this.solveDemandedValues();
+			members = this.resolveRetainedMembers(source, name);
+			if (members.length > 0) {
+				return members;
+			}
+			members = this.resolveDemandedHeapEffectMembers(source, name);
+			if (members.length > 0) {
+				return members;
+			}
+		}
 		if (this.materializeNamedQueryEffects(source, name)) {
 			this.solveDemandedValues();
 			members = this.resolveRetainedMembers(source, name);
@@ -1970,6 +1981,36 @@ export class WorkspaceValueGraph {
 			return members;
 		}
 		return EMPTY_MEMBER_IDS;
+	}
+
+	private demandMetatableMemberEffects(
+		source: SemanticValueSource,
+		name: string,
+	): boolean {
+		// Refine a retained receiver only after the ordinary call contexts miss.
+		// Concrete value, argument, and projection edges are evidence; candidate
+		// hints are not allowed to materialize heap effects.
+		const owner = this.resolveSource(source, false);
+		if (!owner) {
+			return false;
+		}
+		const generation = this.beginTraversal(owner);
+		const stack = this.traversalStack;
+		let pending = false;
+		while (true) {
+			const value = this.nextTraversalValue(generation);
+			if (value === undefined) {
+				return pending;
+			}
+			const metatable = this.metatables.get(value);
+			if (metatable) {
+				pending = this.effectValueDemands.add(metatable, name) || pending;
+			}
+			this.pushEffectBases(stack, value);
+			for (let edge = this.projectionBases.last(value); edge !== 0; edge = this.projectionBases.previous(edge)) {
+				stack.push(this.projectionBases.target(edge));
+			}
+		}
 	}
 
 	public resolveFunctionDeclarations(source: SemanticValueSource): readonly SymbolID[] {
@@ -2359,22 +2400,21 @@ export class WorkspaceValueGraph {
 		for (let link = this.valueSourceHeads[owner]; link !== 0; link = this.valueSourceNext[link - 1]) {
 			const bindingIndex = link - 1;
 			const source = this.valueSourceSources[bindingIndex];
-			this.demandEffectSource(
-				source,
-				this.valueSourceStepCounts[bindingIndex],
-				name,
-			);
+			const stepCount = this.valueSourceStepCounts[bindingIndex];
+			this.demandEffectSource(source, stepCount, name);
 			const context = this.valueSourceContexts[bindingIndex];
 			if (context) {
 				this.materializeContextPrototypeCallEffects(
 					context,
 					source,
-					this.valueSourceStepCounts[bindingIndex],
+					stepCount,
 				);
 				const contextualRoot = this.resolveContextualValueRoot(source.root, context, false);
 				if (contextualRoot) {
 					this.effectValueDemands.add(contextualRoot, name);
 				}
+			} else {
+				this.materializePrototypeCallEffects(source, stepCount);
 			}
 		}
 	}
@@ -2865,7 +2905,10 @@ export class WorkspaceValueGraph {
 		}
 	}
 
-	private materializePrototypeCallEffects(source: SemanticValueSource): void {
+	private materializePrototypeCallEffects(
+		source: SemanticValueSource,
+		stepCount = source.steps.length,
+	): void {
 		const rootKey = semanticValueRootKey(source.root);
 		const rootCalls = this.demandIndex.callsByArgumentRoot.get(rootKey);
 		const rootCallCount = demandBucketLength(rootCalls);
@@ -2874,7 +2917,7 @@ export class WorkspaceValueGraph {
 			if (demandBucketLength(this.demandIndex.prototypeEffectFlowsByCallee.get(
 				this.identities.sourceKey(call.callee),
 			)) > 0
-				&& this.callUsesSource(call, source)) {
+				&& this.callUsesSource(call, source, undefined, stepCount)) {
 				this.materializeRootCall(call, CALL_EFFECTS);
 			}
 		}
@@ -2887,7 +2930,7 @@ export class WorkspaceValueGraph {
 				&& demandBucketLength(this.demandIndex.prototypeEffectFlowsByCallee.get(
 					this.identities.sourceKey(call.callee),
 				)) > 0
-				&& this.callUsesSource(call, source, owner)) {
+				&& this.callUsesSource(call, source, owner, stepCount)) {
 				this.materializeCallerCall(call, CALL_EFFECTS);
 			}
 		}
@@ -5272,6 +5315,8 @@ export class WorkspaceValueGraph {
 		if (effectNames) {
 			if (context) {
 				this.materializeContextPrototypeCallEffects(context, source, stepCount);
+			} else {
+				this.materializePrototypeCallEffects(source, stepCount);
 			}
 			for (let nameIndex = 0; nameIndex < effectNames.length; nameIndex += 1) {
 				this.demandEffectSource(source, stepCount, effectNames[nameIndex]);

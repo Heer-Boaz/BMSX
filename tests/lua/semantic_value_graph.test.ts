@@ -653,6 +653,36 @@ test('semantic workspace uses unresolved receiver calls as parameter type hints'
 	assert.equal(delivered.declaration.range.start.line, 4);
 });
 
+test('semantic workspace retains projected receiver effects through ordinary function parameters', async () => {
+	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
+	const lines = [
+		'local base<const> = {}',
+		'function base:inherited() end',
+		'local configure<const> = function(class)',
+		'\tsetmetatable(class, { __index = base })',
+		'end',
+		'local consume<const> = function(owner)',
+		'\towner:inherited()',
+		'end',
+		'local actor<const> = {}',
+		'actor.__index = actor',
+		'configure(actor)',
+		'local instance<const> = setmetatable({}, actor)',
+		'consume(instance)',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('main.lua', lines.join('\n'));
+	const inherited = semanticSymbolAt(
+		workspace.getSnapshot(),
+		'main.lua',
+		7,
+		memberColumn(lines[6], 'inherited'),
+	);
+
+	assert.ok(inherited, 'the ordinary function parameter retains its caller receiver projection');
+	assert.equal(inherited.declaration.range.start.line, 2);
+});
+
 test('semantic workspace observes the current metatable after repeated setmetatable calls', async () => {
 	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
 	const lines = [

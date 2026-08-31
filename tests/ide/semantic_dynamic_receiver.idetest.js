@@ -17,3 +17,10 @@ t.assert(
 	indexedCollider.contentLines.includes('(method) collider_2d_component:set_enabled(enabled)'),
 	'numeric-loop indexed receiver resolved to the wrong declaration',
 );
+
+const forwardedOwner = t.hover(238, 7);
+t.assert(forwardedOwner !== null, 'forwarded instance receiver did not resolve');
+t.assert(
+	forwardedOwner.contentLines.includes('(method) world_object:add_component(comp)'),
+	'forwarded instance receiver resolved to the wrong inherited declaration',
+);

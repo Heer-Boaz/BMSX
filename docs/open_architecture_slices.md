@@ -80,7 +80,11 @@ De huidige IDE- en debuggergrenzen zijn:
   contextkandidaten afzonderlijk; zij stopt zodra de gevraagde declaratie is
   bewezen. De per-call mode blijft retained, zodat een latere query de nog niet
   bezochte kandidaten kan vervolgen zonder siblingcallsites samen te voegen of
-  de workspacecallgraph eager af te lopen;
+  de workspacecallgraph eager af te lopen. Wanneer ook die concrete contexten
+  missen, mag de query de expliciete metatable van reeds behouden identity-,
+  call-argument-, value- en projection-alternatieven openen. Onbewezen
+  candidate-argumenthints zijn daarvan uitgesloten: zij mogen geen
+  heap-effecten materialiseren;
 - de editor materialiseert per benodigde bufferversie alleen de ene immutable
   source snapshot die lexer en parser consumeren. De parser haalt een authored
   regel pas uit die source wanneer hij daadwerkelijk een syntaxfout formatteert;
@@ -220,13 +224,22 @@ npx tsx --tsconfig tsconfig.base.json \
   --hover cartlib/actioneffects/actioneffect_component.lua:10:35 \
   cartlib/actioneffects/actioneffect_component.lua \
   cartlib machine/bios carts/nemesis_s
+
+npx tsx --tsconfig tsconfig.base.json \
+  scripts/dev/profile_lua_semantics.ts \
+  --hover carts/nemesis_s/player/player.lua:239:8 \
+  carts/nemesis_s/player/player.lua \
+  cartlib machine/bios carts/nemesis_s
 ```
 
-De laatste query is de generieke co-attached-objectcase die eerder meer dan een
-minuut de host blokkeerde. Op de gemeten 228-file snapshot resolveert zij koud
-in ongeveer 0,66 s en warm in ongeveer 0,03 ms; de target is
-`fsm_component:bind_state_path`. Dit is performance-evidence, geen draagbare
-timingdrempel.
+De voorlaatste query is de generieke co-attached-objectcase die eerder meer dan
+een minuut de host blokkeerde. Op de gemeten 228-file snapshot resolveert zij
+koud in ongeveer 0,35 s en warm in ongeveer 0,03 ms; de target is
+`fsm_component:bind_state_path`. De laatste query bewijst de door een gewone
+functieparameter doorgegeven receiver en diens metatable-effect zonder globale
+named-effectscan: `owner:add_component` resolveert koud in ongeveer 0,10 s en
+warm in ongeveer 0,03 ms naar `world_object:add_component`. Dit is
+performance-evidence, geen draagbare timingdrempel.
 
 ## Validatiebasis voor inputwerk
 
