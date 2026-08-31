@@ -153,6 +153,13 @@ Daaruit volgen deze harde migratiegates:
   hebben een afzonderlijke monotone dependency-worklist; een metatable-effect
   mag zichzelf niet opnieuw activeren en een query opent geen globale
   same-name- of caller-scan;
+- callcontexts worden geinterned op immutable syntactische callsites en
+  parameterprovenance, niet op mutable valuegraph-projecties. Recursieve flow
+  convergeert daardoor naar een bestaande context in plaats van steeds nieuwe
+  contexts te klonen;
+- een unresolved methodreceiver mag zijn callargumenten uitsluitend als
+  queryhint aan een named candidate leveren. Zo'n hint materialiseert geen
+  heap-effecten en kan dus geen same-name lifecycle of writes publiceren;
 - cartlib-, firmware-, prefab-, component- en andere frameworkbegrippen zijn
   verboden in lexer, parser, binder, programmasnapshot en resolver. Eventuele
   producttooling boven de language service mag een eigen expliciete adapter

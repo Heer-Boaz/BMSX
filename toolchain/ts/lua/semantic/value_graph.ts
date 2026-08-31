@@ -137,6 +137,7 @@ type MaterializedFunctionValueFlow = {
 };
 
 type FunctionValueContext = {
+	id: number;
 	flow: MaterializedFunctionValueFlow;
 	parameterValues: readonly SemanticValueID[];
 	closure?: FunctionValueContext;
@@ -192,6 +193,8 @@ const CALL_BINDINGS: CallInstantiationMode = 0;
 const CALL_CONTEXT: CallInstantiationMode = 1;
 const CALL_RETURNS: CallInstantiationMode = 2;
 const CALL_EFFECTS: CallInstantiationMode = 3;
+const NO_CONTEXT_PARAMETER = -1;
+const MULTIPLE_CONTEXT_PARAMETERS = -2;
 const INITIAL_VALUE_CAPACITY = 256;
 const INITIAL_EDGE_CAPACITY = 256;
 
@@ -1628,6 +1631,11 @@ export class WorkspaceValueGraph {
 	private readonly functionClosuresByValue: Map<SemanticValueID, FunctionValueContext> = new Map();
 	private readonly functionContextsByValue: Map<SemanticValueID, FunctionValueContext[]> = new Map();
 	private readonly defaultFunctionContextsByValue: Map<SemanticValueID, FunctionValueContext> = new Map();
+	private readonly functionContextsByKey:
+		Map<MaterializedFunctionValueFlow, Map<string, FunctionValueContext>> = new Map();
+	private readonly contextParameterBySource:
+		Map<MaterializedFunctionValueFlow, Map<SemanticValueSource, number>> = new Map();
+	private readonly callIds: Map<CallValueEntry, number> = new Map();
 	private readonly identityValues = new SemanticValueEdges();
 	private readonly identityParents: SemanticValueID[] = [];
 	private readonly identitySizes: number[] = [];
@@ -1641,6 +1649,7 @@ export class WorkspaceValueGraph {
 	private readonly elementsByIdentityRoot: Map<SemanticValueID, SemanticValueID> = new Map();
 	private readonly projectionBases = new SemanticValueEdges();
 	private readonly callArgumentBases = new SemanticValueEdges();
+	private readonly candidateArgumentBases = new SemanticValueEdges();
 	private readonly valueBases = new SemanticValueEdges();
 	private readonly effectDependents = new SemanticValueEdges();
 	private readonly prototypeBases: Map<SemanticValueID, SemanticValueID> = new Map();
@@ -1672,7 +1681,7 @@ export class WorkspaceValueGraph {
 	private valueAlternativeGeneration = 0;
 	private readonly demandedEffectNamesByValue: Map<SemanticValueID, string[]> = new Map();
 	private readonly callArgumentValueScratch: (SemanticValueID | undefined)[] = [];
-	private readonly contextOrigins: (SemanticValueID | undefined)[] = [];
+	private readonly contextArgumentScratch: (SemanticValueID | undefined)[] = [];
 	private readonly functionFlowScratch: MaterializedFunctionValueFlow[] = [];
 	private readonly functionClosureScratch: (FunctionValueContext | undefined)[] = [];
 	private readonly functionAliasQueue: SemanticValueSource[] = [];
@@ -1727,6 +1736,8 @@ export class WorkspaceValueGraph {
 	private dirtyPropagationGeneration = 0;
 	private nextValueId = 1;
 	private valueCapacity = INITIAL_VALUE_CAPACITY;
+	private nextFunctionContextId = 1;
+	private nextCallId = 1;
 	private nextMemberDeclarationOrder = 0;
 	constructor(
 		options: WorkspaceValueGraphInput,
@@ -2130,6 +2141,9 @@ export class WorkspaceValueGraph {
 					stack.push(dependent);
 				}
 			}
+			for (let edge = this.candidateArgumentBases.last(value); edge !== 0; edge = this.candidateArgumentBases.previous(edge)) {
+				stack.push(this.candidateArgumentBases.target(edge));
+			}
 			this.pushTraversalBases(stack, value);
 		}
 	}
@@ -2235,6 +2249,9 @@ export class WorkspaceValueGraph {
 			}
 			for (let edge = this.instanceAllocations.first(value); edge !== 0; edge = this.instanceAllocations.next(edge)) {
 				stack.push(this.instanceAllocations.target(edge));
+			}
+			for (let edge = this.candidateArgumentBases.last(value); edge !== 0; edge = this.candidateArgumentBases.previous(edge)) {
+				stack.push(this.candidateArgumentBases.target(edge));
 			}
 			this.pushTraversalBases(stack, value);
 		}
@@ -3180,6 +3197,7 @@ export class WorkspaceValueGraph {
 			this.collectMemberDeclarationsFromBases(this.valueBases, value, name, visited, out);
 			this.collectMemberDeclarationsFromBases(this.projectionBases, value, name, visited, out);
 			this.collectMemberDeclarationsFromBases(this.callArgumentBases, value, name, visited, out);
+			this.collectMemberDeclarationsFromBases(this.candidateArgumentBases, value, name, visited, out);
 		}
 		if (out.length !== alternativeStart) {
 			return;
@@ -3522,6 +3540,14 @@ export class WorkspaceValueGraph {
 						false,
 						true,
 					) || declared;
+					declared = this.collectMemberValuesFromBases(
+						this.candidateArgumentBases,
+						node,
+						name,
+						generation,
+						false,
+						true,
+					) || declared;
 				}
 			}
 		}
@@ -3632,6 +3658,10 @@ export class WorkspaceValueGraph {
 					stack.push(this.callArgumentBases.target(edge));
 					identityStack.push(false);
 				}
+				for (let edge = this.candidateArgumentBases.last(value); edge !== 0; edge = this.candidateArgumentBases.previous(edge)) {
+					stack.push(this.candidateArgumentBases.target(edge));
+					identityStack.push(false);
+				}
 			}
 		}
 	}
@@ -3725,6 +3755,13 @@ export class WorkspaceValueGraph {
 				if (useCallArgumentHints) {
 					declared = this.collectIndexedValuesFromBases(
 						this.callArgumentBases,
+						node,
+						generation,
+						false,
+						true,
+					) || declared;
+					declared = this.collectIndexedValuesFromBases(
+						this.candidateArgumentBases,
 						node,
 						generation,
 						false,
@@ -4088,6 +4125,13 @@ export class WorkspaceValueGraph {
 						false,
 						true,
 					) || declared;
+					declared = this.collectElementValuesFromBases(
+						this.candidateArgumentBases,
+						node,
+						generation,
+						false,
+						true,
+					) || declared;
 				}
 			}
 		}
@@ -4239,6 +4283,13 @@ export class WorkspaceValueGraph {
 					for (let edge = this.callArgumentBases.first(node); edge !== 0; edge = this.callArgumentBases.next(edge)) {
 						declared = this.collectMetatableValues(
 							this.callArgumentBases.target(edge),
+							generation,
+							true,
+						) || declared;
+					}
+					for (let edge = this.candidateArgumentBases.first(node); edge !== 0; edge = this.candidateArgumentBases.next(edge)) {
+						declared = this.collectMetatableValues(
+							this.candidateArgumentBases.target(edge),
 							generation,
 							true,
 						) || declared;
@@ -4960,6 +5011,7 @@ export class WorkspaceValueGraph {
 		parentCallSite: CallValueEntry | undefined,
 		contextArguments: readonly (SemanticValueID | undefined)[],
 		mode: CallInstantiationMode,
+		contextKey?: string,
 	): FunctionValueContext {
 		let contexts = this.functionContextsByValue.get(flow.functionValue);
 		if (!contexts) {
@@ -4967,6 +5019,7 @@ export class WorkspaceValueGraph {
 			this.functionContextsByValue.set(flow.functionValue, contexts);
 		}
 		const context: FunctionValueContext = {
+			id: this.nextFunctionContextId,
 			flow,
 			parameterValues,
 			closure,
@@ -4984,7 +5037,7 @@ export class WorkspaceValueGraph {
 			returnsMaterialized: false,
 			effectsMaterialized: false,
 		};
-		const contextParameterIndices = flow.contextParameterIndices;
+		this.nextFunctionContextId += 1;
 		for (let parameterIndex = 0; parameterIndex < flow.parameters.length; parameterIndex += 1) {
 			this.registerValueSource(
 				parameterValues[parameterIndex],
@@ -4992,13 +5045,10 @@ export class WorkspaceValueGraph {
 				context,
 			);
 		}
-		for (let index = 0; index < contextParameterIndices.length; index += 1) {
-			const argument = contextArguments[index];
-			if (argument) {
-				this.contextOrigins[parameterValues[contextParameterIndices[index]]] = argument;
-			}
-		}
 		contexts.push(context);
+		if (contextKey !== undefined) {
+			this.functionContextsByKey.get(flow)!.set(contextKey, context);
+		}
 		this.bindNestedFunctionFlows(context);
 		if (defaultContext) {
 			// Retained slices can demand this same summary while they are applied.
@@ -5571,7 +5621,8 @@ export class WorkspaceValueGraph {
 				: context
 					? this.resolveContextualValueSource(call.callee, context, false, dependencies)
 					: this.resolveSource(call.callee, false, dependencies);
-			if (resolvedFlow || callee) {
+			const targetFlow = contextualCall.targetFlow;
+			if (resolvedFlow || callee || targetFlow) {
 				if (callee) {
 					dependencies.push(callee);
 				}
@@ -5604,7 +5655,7 @@ export class WorkspaceValueGraph {
 						context,
 						contextualCall.mode,
 					);
-				} else {
+				} else if (callee) {
 					this.instantiateFunctionCall(
 						callee,
 						argumentValues,
@@ -5614,6 +5665,8 @@ export class WorkspaceValueGraph {
 						contextualCall.mode,
 						contextualCall.targetFlow,
 					);
+				} else if (targetFlow) {
+					this.bindCandidateFunctionArguments(targetFlow, argumentValues);
 				}
 			}
 			for (let dependencyIndex = 0; dependencyIndex < dependencies.length; dependencyIndex += 1) {
@@ -5875,11 +5928,30 @@ export class WorkspaceValueGraph {
 				closure,
 				flow.requiresCallContext ? callSite : undefined,
 				flow.requiresCallerContext ? caller?.callSite : undefined,
+				caller,
 				mode,
 			);
 		}
 		if (result && context.returnValue !== result) {
 			this.addValueBase(result, context.returnValue);
+		}
+	}
+
+	private bindCandidateFunctionArguments(
+		flow: MaterializedFunctionValueFlow,
+		argumentValues: readonly (SemanticValueID | undefined)[],
+	): void {
+		const count = Math.min(flow.parameters.length, argumentValues.length);
+		for (let index = 0; index < count; index += 1) {
+			const argument = argumentValues[index];
+			if (argument) {
+				const parameter = this.nodeForRoot(flow.parameters[index].root);
+				if (this.candidateArgumentBases.add(parameter, argument)) {
+					this.memberResolutionCache.delete(parameter);
+					this.hintedResolvedMemberValues.delete(parameter);
+					this.missingHintedResolvedMemberValues.delete(parameter);
+				}
+			}
 		}
 	}
 
@@ -5889,33 +5961,46 @@ export class WorkspaceValueGraph {
 		closure: FunctionValueContext | undefined,
 		callSite: CallValueEntry | undefined,
 		parentCallSite: CallValueEntry | undefined,
+		caller: FunctionValueContext | undefined,
 		mode: CallInstantiationMode,
 	): FunctionValueContext {
 		this.materializeFunctionFlowReturns(flow);
-		let contexts = this.functionContextsByValue.get(flow.functionValue);
-		if (contexts) {
-			for (let contextIndex = 0; contextIndex < contexts.length; contextIndex += 1) {
-				const context = contexts[contextIndex];
-				if (!context.defaultContext
-					&& context.closure === closure
-					&& context.callSite === callSite
-					&& context.parentCallSite === parentCallSite
-					&& this.contextArgumentsEqual(context, argumentValues, callSite)) {
-					this.materializeFunctionContext(context, mode);
-					this.bindFunctionContextArguments(context, argumentValues);
-					return context;
-				}
-			}
+		const contextParameterIndices = flow.contextParameterIndices;
+		const contextArguments = this.contextArgumentScratch;
+		contextArguments.length = contextParameterIndices.length;
+		for (let index = 0; index < contextParameterIndices.length; index += 1) {
+			const parameterIndex = contextParameterIndices[index];
+			contextArguments[index] = this.contextArgument(
+				argumentValues,
+				callSite,
+				parameterIndex,
+				caller,
+			);
+		}
+		let contextsByKey = this.functionContextsByKey.get(flow);
+		if (!contextsByKey) {
+			contextsByKey = new Map();
+			this.functionContextsByKey.set(flow, contextsByKey);
+		}
+		const contextKey = this.functionContextKey(
+			closure,
+			callSite,
+			parentCallSite,
+			contextArguments,
+		);
+		const existing = contextsByKey.get(contextKey);
+		if (existing) {
+			this.materializeFunctionContext(existing, mode);
+			this.bindFunctionContextArguments(existing, argumentValues);
+			return existing;
 		}
 		const parameterValues = new Array<SemanticValueID>(flow.parameters.length);
 		for (let parameterIndex = 0; parameterIndex < parameterValues.length; parameterIndex += 1) {
 			parameterValues[parameterIndex] = this.createNode();
 		}
-		const contextParameterIndices = flow.contextParameterIndices;
-		const contextArguments = new Array<SemanticValueID | undefined>(contextParameterIndices.length);
-		for (let index = 0; index < contextParameterIndices.length; index += 1) {
-			const parameterIndex = contextParameterIndices[index];
-			contextArguments[index] = this.contextArgument(argumentValues, callSite, parameterIndex);
+		const retainedContextArguments = new Array<SemanticValueID | undefined>(contextArguments.length);
+		for (let index = 0; index < contextArguments.length; index += 1) {
+			retainedContextArguments[index] = contextArguments[index];
 		}
 		const context = this.createFunctionContext(
 			flow,
@@ -5924,8 +6009,9 @@ export class WorkspaceValueGraph {
 			false,
 			callSite,
 			parentCallSite,
-			contextArguments,
+			retainedContextArguments,
 			mode,
+			contextKey,
 		);
 		this.bindFunctionContextArguments(context, argumentValues);
 		return context;
@@ -5940,70 +6026,109 @@ export class WorkspaceValueGraph {
 		);
 	}
 
-	private contextArgumentsEqual(
-		context: FunctionValueContext,
-		argumentValues: readonly (SemanticValueID | undefined)[],
+	private functionContextKey(
+		closure: FunctionValueContext | undefined,
 		callSite: CallValueEntry | undefined,
-	): boolean {
-		const indices = context.flow.contextParameterIndices;
-		const contextArguments = context.contextArguments;
-		for (let index = 0; index < indices.length; index += 1) {
-			if (contextArguments[index] !== this.contextArgument(argumentValues, callSite, indices[index])) {
-				return false;
-			}
+		parentCallSite: CallValueEntry | undefined,
+		contextArguments: readonly (SemanticValueID | undefined)[],
+	): string {
+		let key = String(closure ? closure.id : 0);
+		key += ':' + this.callId(callSite);
+		key += ':' + this.callId(parentCallSite);
+		for (let index = 0; index < contextArguments.length; index += 1) {
+			key += ':' + (contextArguments[index] || 0);
 		}
-		return true;
+		return key;
+	}
+
+	private callId(call: CallValueEntry | undefined): number {
+		if (!call) {
+			return 0;
+		}
+		let id = this.callIds.get(call);
+		if (id === undefined) {
+			id = this.nextCallId;
+			this.nextCallId += 1;
+			this.callIds.set(call, id);
+		}
+		return id;
 	}
 
 	private contextArgument(
 		argumentValues: readonly (SemanticValueID | undefined)[],
 		callSite: CallValueEntry | undefined,
 		parameterIndex: number,
+		caller: FunctionValueContext | undefined,
 	): SemanticValueID | undefined {
 		const source = callSite?.arguments[parameterIndex];
-		// Derived expressions already belong to this syntactic call site. Using
-		// their transient graph nodes as context keys would recursively clone
-		// contexts for ordinary scalar/dataflow transformations. Direct values
-		// retain identity sensitivity; derived values widen into the call-site
-		// summary while their value flow remains attached to the parameter.
-		if (source && source.steps.length > 0) {
-			return undefined;
+		if (!source) {
+			return argumentValues[parameterIndex];
 		}
-		const argument = argumentValues[parameterIndex];
-		return argument ? this.contextOrigin(argument) : undefined;
+		if (caller) {
+			const contextParameter = this.contextParameterForSource(source, caller.flow);
+			if (contextParameter >= 0) {
+				return this.contextOriginForParameter(caller, contextParameter);
+			}
+			// A value derived from several caller parameters belongs to this
+			// syntactic callsite summary. Keying it by a mutable graph projection
+			// would create a fresh context on every recursive fixed-point step.
+			if (contextParameter === MULTIPLE_CONTEXT_PARAMETERS) {
+				return undefined;
+			}
+		}
+		return source.steps.length === 0
+			? this.nodeForRoot(source.root)
+			: undefined;
 	}
 
-	private contextOrigin(value: SemanticValueID): SemanticValueID {
-		const generation = this.traversalGeneration + 1;
-		this.traversalGeneration = generation;
-		while (this.traversalMarks[value] !== generation) {
-			this.traversalMarks[value] = generation;
-			const origin = this.contextOrigins[value];
-			if (origin) {
-				value = origin;
+	private contextOriginForParameter(
+		context: FunctionValueContext,
+		parameterIndex: number,
+	): SemanticValueID | undefined {
+		if (context.defaultContext) {
+			return this.nodeForRoot(context.flow.parameters[parameterIndex].root);
+		}
+		const indices = context.flow.contextParameterIndices;
+		for (let index = 0; index < indices.length; index += 1) {
+			if (indices[index] === parameterIndex) {
+				return context.contextArguments[index];
+			}
+		}
+		return undefined;
+	}
+
+	private contextParameterForSource(
+		source: SemanticValueSource,
+		flow: MaterializedFunctionValueFlow,
+	): number {
+		let dependencies = this.contextParameterBySource.get(flow);
+		if (!dependencies) {
+			dependencies = new Map();
+			this.contextParameterBySource.set(flow, dependencies);
+		}
+		const cached = dependencies.get(source);
+		if (cached !== undefined) {
+			return cached;
+		}
+		const marks = this.effectParameterMarks;
+		marks.length = flow.parameters.length;
+		marks.fill(false);
+		this.indexedDependencyDeclarations.clear();
+		this.indexedDependencyCallResults.clear();
+		this.collectParameterDependencies(source, flow.source, marks);
+		let parameter = NO_CONTEXT_PARAMETER;
+		for (let index = 0; index < marks.length; index += 1) {
+			if (!marks[index]) {
 				continue;
 			}
-			let base: SemanticValueID | undefined;
-			for (let edge = this.projectionBases.first(value); edge !== 0; edge = this.projectionBases.next(edge)) {
-				const candidate = this.projectionBases.target(edge);
-				if (base && base !== candidate) {
-					return this.findIdentityRoot(value);
-				}
-				base = candidate;
+			if (parameter !== NO_CONTEXT_PARAMETER) {
+				parameter = MULTIPLE_CONTEXT_PARAMETERS;
+				break;
 			}
-			for (let edge = this.valueBases.first(value); edge !== 0; edge = this.valueBases.next(edge)) {
-				const candidate = this.valueBases.target(edge);
-				if (base && base !== candidate) {
-					return this.findIdentityRoot(value);
-				}
-				base = candidate;
-			}
-			if (!base) {
-				return this.findIdentityRoot(value);
-			}
-			value = base;
+			parameter = index;
 		}
-		return this.findIdentityRoot(value);
+		dependencies.set(source, parameter);
+		return parameter;
 	}
 
 	private bindFunctionContextArguments(
@@ -6136,6 +6261,7 @@ export class WorkspaceValueGraph {
 			this.identityValues.resizeOwners(this.valueCapacity);
 			this.projectionBases.resizeOwners(this.valueCapacity);
 			this.callArgumentBases.resizeOwners(this.valueCapacity);
+			this.candidateArgumentBases.resizeOwners(this.valueCapacity);
 			this.valueBases.resizeOwners(this.valueCapacity);
 			this.effectDependents.resizeOwners(this.valueCapacity);
 			this.instanceBases.resizeOwners(this.valueCapacity);

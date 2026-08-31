@@ -463,6 +463,33 @@ test('semantic workspace summarizes recursive value flow without unbounded call 
 	assert.equal(visited.declaration.range.start.line, 2);
 });
 
+test('semantic workspace widens recursive local aliases into one call context', async () => {
+	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
+	const lines = [
+		'local function propagate(source, target)',
+		'\ttarget.visited = source.visited',
+		'\tlocal source_child<const> = source.next',
+		'\tlocal target_child<const> = target.next',
+		'\treturn propagate(source_child, target_child)',
+		'end',
+		'local source<const> = { visited = true }',
+		'local target<const> = {}',
+		'propagate(source, target)',
+		'return target.visited',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('main.lua', lines.join('\n'));
+	const visited = semanticSymbolAt(
+		workspace.getSnapshot(),
+		'main.lua',
+		10,
+		memberColumn(lines[9], 'visited'),
+	);
+
+	assert.ok(visited);
+	assert.equal(visited.declaration.range.start.line, 2);
+});
+
 test('semantic workspace passes colon-call receivers through nested method calls', async () => {
 	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
 	const lines = [
@@ -502,6 +529,43 @@ test('semantic workspace passes colon-call receivers through nested method calls
 	assert.equal(semanticSymbolAt(snapshot, 'main.lua', 25, memberColumn(lines[24], 'right_only'))!.declaration.range.start.line, 17);
 	assert.equal(semanticSymbolAt(snapshot, 'main.lua', 26, memberColumn(lines[25], 'right_only')), null);
 	assert.equal(semanticSymbolAt(snapshot, 'main.lua', 27, memberColumn(lines[26], 'left_only')), null);
+});
+
+test('semantic workspace uses unresolved receiver calls as parameter type hints', async () => {
+	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
+	const consumerLines = [
+		'local consumer<const> = {}',
+		'consumer.__index = consumer',
+		'function consumer:accept(value)',
+		'\tvalue:delivered()',
+		'end',
+		'return consumer',
+	];
+	const producerLines = [
+		'local acquire<const> = require(\'acquire\')',
+		'local producer<const> = {}',
+		'producer.__index = producer',
+		'function producer:delivered() end',
+		'function producer:send()',
+		'\tlocal receiver<const> = acquire()',
+		'\treceiver:accept(self)',
+		'end',
+		'return producer',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('acquire.lua', 'return function() return {} end');
+	workspace.updateFile('consumer.lua', consumerLines.join('\n'));
+	workspace.updateFile('producer.lua', producerLines.join('\n'));
+	const delivered = semanticSymbolAt(
+		workspace.getSnapshot(),
+		'consumer.lua',
+		4,
+		memberColumn(consumerLines[3], 'delivered'),
+	);
+
+	assert.ok(delivered, 'the named call candidate binds the producer argument');
+	assert.equal(delivered.declaration.file, 'producer.lua');
+	assert.equal(delivered.declaration.range.start.line, 4);
 });
 
 test('semantic workspace observes the current metatable after repeated setmetatable calls', async () => {
