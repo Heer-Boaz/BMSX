@@ -14,7 +14,8 @@ export type SemanticValueRoot =
 	| { kind: 'global'; symbolKey: string }
 	| { kind: 'module'; module: string }
 	| { kind: 'owned'; key: string }
-	| { kind: 'literal'; key: string };
+	| { kind: 'literal'; key: string }
+	| { kind: 'unknown' };
 
 export type SemanticValueStep =
 	| { kind: 'member'; name: string }
@@ -306,6 +307,54 @@ class IndexWorklist<Value extends number> {
 	}
 }
 
+class SemanticNameWorklist {
+	private readonly namesByValue: Map<SemanticValueID, string[]> = new Map();
+	private readonly values: SemanticValueID[] = [];
+	private readonly names: string[] = [];
+	private head = 0;
+
+	public get length(): number {
+		return this.values.length - this.head;
+	}
+
+	public get currentValue(): SemanticValueID {
+		return this.values[this.head];
+	}
+
+	public get currentName(): string {
+		return this.names[this.head];
+	}
+
+	public add(value: SemanticValueID, name: string): boolean {
+		let names = this.namesByValue.get(value);
+		if (!names) {
+			names = [];
+			this.namesByValue.set(value, names);
+		}
+		if (names.includes(name)) {
+			return false;
+		}
+		names.push(name);
+		this.values.push(value);
+		this.names.push(name);
+		return true;
+	}
+
+	public namesFor(value: SemanticValueID): readonly string[] | undefined {
+		const names = this.namesByValue.get(value);
+		return names;
+	}
+
+	public advance(): void {
+		this.head += 1;
+		if (this.head === this.values.length) {
+			this.values.length = 0;
+			this.names.length = 0;
+			this.head = 0;
+		}
+	}
+}
+
 class DependencyWorklist extends IndexWorklist<number> {
 	private dependencyValues = new Uint32Array(INITIAL_EDGE_CAPACITY);
 	private itemIndices = new Uint32Array(INITIAL_EDGE_CAPACITY);
@@ -413,6 +462,13 @@ export function literalValueSource(literal: SemanticLiteralValue): SemanticValue
 	};
 }
 
+export function unknownValueSource(): SemanticValueSource {
+	return {
+		root: { kind: 'unknown' },
+		steps: [],
+	};
+}
+
 function semanticLiteralValueKey(literal: SemanticLiteralValue): string {
 	switch (literal.kind) {
 		case 'string':
@@ -461,6 +517,9 @@ export function semanticValueRootKey(root: SemanticValueRoot): string {
 		case 'literal':
 			key = root.key;
 			break;
+		case 'unknown':
+			key = 'u';
+			break;
 	}
 	return key;
 }
@@ -508,6 +567,8 @@ function semanticValueRootsEqual(left: SemanticValueRoot, right: SemanticValueRo
 			return right.kind === 'owned' && left.key === right.key;
 		case 'literal':
 			return right.kind === 'literal' && left.key === right.key;
+		case 'unknown':
+			return right.kind === 'unknown';
 	}
 }
 
@@ -606,6 +667,11 @@ export function semanticValueSourcesEqual(
 				return false;
 			}
 			break;
+		case 'unknown':
+			if (right.root.kind !== 'unknown') {
+				return false;
+			}
+			break;
 	}
 	for (let index = 0; index < left.steps.length; index += 1) {
 		const leftStep = left.steps[index];
@@ -674,8 +740,10 @@ export class WorkspaceValueIdentityIndex {
 	private readonly moduleIdentityIds: Map<string, number> = new Map();
 	private readonly ownedIdentityIds: Map<string, number> = new Map();
 	private readonly literalIdentityIds: Map<string, number> = new Map();
+	private unknownIdentityId = 0;
 	private readonly identityParents: number[] = [0];
 	private readonly identityRanks: number[] = [0];
+	private readonly unknownIdentities: boolean[] = [false];
 	private readonly identitySourceKeys: string[] = [''];
 	private readonly moduleIdentities: Set<number> = new Set();
 	private readonly sourceOwnedIdentities: Set<number> = new Set();
@@ -814,6 +882,10 @@ export class WorkspaceValueIdentityIndex {
 		return key;
 	}
 
+	public hasUnknownIdentity(root: SemanticValueRoot): boolean {
+		return this.unknownIdentities[this.find(this.identityId(root))];
+	}
+
 	public resolveStaticMembers(source: SemanticValueSource | undefined, name: string): readonly SymbolID[] | undefined {
 		if (!source) {
 			return undefined;
@@ -865,12 +937,20 @@ export class WorkspaceValueIdentityIndex {
 			rightId = swap;
 		}
 		this.identityParents[rightId] = leftId;
+		this.unknownIdentities[leftId] = this.unknownIdentities[leftId]
+			|| this.unknownIdentities[rightId];
 		if (leftRank === rightRank) {
 			this.identityRanks[leftId] = leftRank + 1;
 		}
 	}
 
 	private identityId(root: SemanticValueRoot): number {
+		if (root.kind === 'unknown') {
+			if (this.unknownIdentityId === 0) {
+				this.unknownIdentityId = this.createIdentity(true);
+			}
+			return this.unknownIdentityId;
+		}
 		let identities: Map<string, number>;
 		let key: string;
 		switch (root.kind) {
@@ -899,10 +979,16 @@ export class WorkspaceValueIdentityIndex {
 		if (existing !== undefined) {
 			return existing;
 		}
-		const identity = this.identityParents.length;
+		const identity = this.createIdentity(false);
 		identities.set(key, identity);
+		return identity;
+	}
+
+	private createIdentity(unknown: boolean): number {
+		const identity = this.identityParents.length;
 		this.identityParents.push(identity);
 		this.identityRanks.push(0);
+		this.unknownIdentities.push(unknown);
 		this.identitySourceKeys.push(String(identity));
 		return identity;
 	}
@@ -1557,9 +1643,6 @@ export class WorkspaceValueGraph {
 	private readonly demandedEffectStepCounts: number[] = [];
 	private readonly demandedEffectNames: string[] = [];
 	private demandedEffectHead = 0;
-	private readonly demandedEffectValues: SemanticValueID[] = [];
-	private readonly demandedEffectValueNames: string[] = [];
-	private demandedEffectValueHead = 0;
 	private readonly pendingEffectDependencyContexts: FunctionValueContext[] = [];
 	private readonly pendingEffectDependencyEntries: FunctionEffectDependencyEntry[] = [];
 	private pendingEffectDependencyHead = 0;
@@ -1598,6 +1681,7 @@ export class WorkspaceValueGraph {
 	private readonly moduleNodes: Map<string, SemanticValueID> = new Map();
 	private readonly literalNodes: Map<string, SemanticValueID> = new Map();
 	private readonly ownedNodes: Map<string, SemanticValueID> = new Map();
+	private unknownNode: SemanticValueID | undefined;
 	private readonly valueSourceHeads: number[] = [];
 	private readonly valueSourceSources: SemanticValueSource[] = [];
 	private readonly valueSourceStepCounts: number[] = [];
@@ -1641,6 +1725,7 @@ export class WorkspaceValueGraph {
 	private readonly identityValues = new SemanticValueEdges();
 	private readonly identityParents: SemanticValueID[] = [];
 	private readonly identitySizes: number[] = [];
+	private readonly unknownIdentityRoots: boolean[] = [];
 	private readonly materializedValueTargets: boolean[] = [];
 	private readonly memberDeclarationsByIdentityRoot: Map<SemanticValueID, MemberDeclaration[]> = new Map();
 	private readonly memberResolutionCache: Map<SemanticValueID, Map<string, readonly SymbolID[]>> = new Map();
@@ -1681,7 +1766,8 @@ export class WorkspaceValueGraph {
 	private readonly valueAlternativeNodes: SemanticValueID[] = [];
 	private readonly valueAlternativeMarks: number[] = [];
 	private valueAlternativeGeneration = 0;
-	private readonly demandedEffectNamesByValue: Map<SemanticValueID, string[]> = new Map();
+	private readonly memberSourceDemands = new SemanticNameWorklist();
+	private readonly effectValueDemands = new SemanticNameWorklist();
 	private readonly callArgumentValueScratch: (SemanticValueID | undefined)[] = [];
 	private readonly contextArgumentScratch: (SemanticValueID | undefined)[] = [];
 	private readonly functionFlowScratch: MaterializedFunctionValueFlow[] = [];
@@ -2065,7 +2151,7 @@ export class WorkspaceValueGraph {
 		let owner = this.resolveSource(source, false, undefined, true)!;
 		let pending = false;
 		for (let nameIndex = start; nameIndex < end; nameIndex += 1) {
-			pending = this.demandResolvedMemberSources(owner, names[nameIndex]) || pending;
+			pending = this.memberSourceDemands.add(owner, names[nameIndex]) || pending;
 		}
 		if (pending) {
 			this.solveDemandedValues();
@@ -2157,7 +2243,7 @@ export class WorkspaceValueGraph {
 		if (!root) {
 			return this.demandEffectSource(source, source.steps.length, name);
 		}
-		let pending = this.demandResolvedEffects(root, name);
+		let pending = this.effectValueDemands.add(root, name);
 		for (let stepCount = 1; stepCount <= source.steps.length; stepCount += 1) {
 			const value = this.resolveValueSteps(
 				root,
@@ -2169,7 +2255,7 @@ export class WorkspaceValueGraph {
 				false,
 			);
 			if (value) {
-				pending = this.demandResolvedEffects(value, name) || pending;
+				pending = this.effectValueDemands.add(value, name) || pending;
 			}
 		}
 		return pending;
@@ -2206,7 +2292,7 @@ export class WorkspaceValueGraph {
 		if (!owner) {
 			return EMPTY_MEMBER_IDS;
 		}
-		if (this.demandResolvedMemberSources(owner, name)) {
+		if (this.memberSourceDemands.add(owner, name)) {
 			this.solveDemandedValues();
 			owner = this.resolveSource(source, false, undefined, true);
 			if (!owner) {
@@ -2216,60 +2302,48 @@ export class WorkspaceValueGraph {
 		return this.findMembers(owner, name);
 	}
 
-	private demandResolvedMemberSources(owner: SemanticValueID, name: string): boolean {
-		let known = false;
-		const generation = this.beginTraversal(owner);
-		const stack = this.traversalStack;
-		while (true) {
-			const value = this.nextTraversalValue(generation);
-			if (value === undefined) {
-				break;
-			}
-			for (let link = this.valueSourceHeads[value]; link !== 0; link = this.valueSourceNext[link - 1]) {
-				const bindingIndex = link - 1;
-				const source = this.valueSourceSources[bindingIndex];
-				const stepCount = this.valueSourceStepCounts[bindingIndex];
-				if (this.demandIndex.hasMemberDemand(source, stepCount, name)) {
-					known = true;
-					this.demandMember(source, stepCount, name);
-					this.materializeContextMembers(
-						this.demandIndex.membersByOwner
-							.get(this.identities.sourceKey(source, stepCount))
-							?.get(name),
-					);
-				}
-				const context = this.valueSourceContexts[bindingIndex];
-				if (context) {
-					const contextualRoot = this.resolveContextualValueRoot(source.root, context, false);
-					if (contextualRoot) {
-						stack.push(contextualRoot);
-					}
-				}
-			}
-			for (let edge = this.instanceAllocations.first(value); edge !== 0; edge = this.instanceAllocations.next(edge)) {
-				stack.push(this.instanceAllocations.target(edge));
-			}
-			for (let edge = this.candidateArgumentBases.last(value); edge !== 0; edge = this.candidateArgumentBases.previous(edge)) {
-				stack.push(this.candidateArgumentBases.target(edge));
-			}
-			this.pushTraversalBases(stack, value);
+	private materializeDemandedMemberSources(owner: SemanticValueID, name: string): void {
+		for (let link = this.valueSourceHeads[owner]; link !== 0; link = this.valueSourceNext[link - 1]) {
+			this.materializeDemandedMemberSource(link - 1, name);
 		}
-		return known;
+		this.propagateMemberSourceDemand(this.identityValues, owner, name);
+		this.propagateMemberSourceDemand(this.prototypeBases, owner, name);
+		this.propagateMemberSourceDemand(this.instanceBases, owner, name);
+		this.propagateMemberSourceDemand(this.projectionBases, owner, name);
+		this.propagateMemberSourceDemand(this.callArgumentBases, owner, name);
+		this.propagateMemberSourceDemand(this.candidateArgumentBases, owner, name);
+		this.propagateMemberSourceDemand(this.valueBases, owner, name);
+		this.propagateMemberSourceDemand(this.instanceAllocations, owner, name);
 	}
 
-	private demandResolvedEffects(owner: SemanticValueID, name: string): boolean {
-		let names = this.demandedEffectNamesByValue.get(owner);
-		if (!names) {
-			names = [];
-			this.demandedEffectNamesByValue.set(owner, names);
+	private materializeDemandedMemberSource(bindingIndex: number, name: string): void {
+		const source = this.valueSourceSources[bindingIndex];
+		const stepCount = this.valueSourceStepCounts[bindingIndex];
+		if (this.demandIndex.hasMemberDemand(source, stepCount, name)) {
+			this.demandMember(source, stepCount, name);
+			this.materializeContextMembers(
+				this.demandIndex.membersByOwner
+					.get(this.identities.sourceKey(source, stepCount))
+					?.get(name),
+			);
 		}
-		if (names.includes(name)) {
-			return false;
+		const context = this.valueSourceContexts[bindingIndex];
+		if (context) {
+			const contextualRoot = this.resolveContextualValueRoot(source.root, context, false);
+			if (contextualRoot) {
+				this.memberSourceDemands.add(contextualRoot, name);
+			}
 		}
-		names.push(name);
-		this.demandedEffectValues.push(owner);
-		this.demandedEffectValueNames.push(name);
-		return true;
+	}
+
+	private propagateMemberSourceDemand(
+		edges: SemanticValueEdges,
+		owner: SemanticValueID,
+		name: string,
+	): void {
+		for (let edge = edges.first(owner); edge !== 0; edge = edges.next(edge)) {
+			this.memberSourceDemands.add(edges.target(edge), name);
+		}
 	}
 
 	private materializeDemandedValueEffects(owner: SemanticValueID, name: string): void {
@@ -2280,7 +2354,7 @@ export class WorkspaceValueGraph {
 			stack.push(this.effectDependents.target(edge));
 		}
 		for (let index = 0; index < stack.length; index += 1) {
-			this.demandResolvedEffects(stack[index], name);
+			this.effectValueDemands.add(stack[index], name);
 		}
 		for (let link = this.valueSourceHeads[owner]; link !== 0; link = this.valueSourceNext[link - 1]) {
 			const bindingIndex = link - 1;
@@ -2299,7 +2373,7 @@ export class WorkspaceValueGraph {
 				);
 				const contextualRoot = this.resolveContextualValueRoot(source.root, context, false);
 				if (contextualRoot) {
-					this.demandResolvedEffects(contextualRoot, name);
+					this.effectValueDemands.add(contextualRoot, name);
 				}
 			}
 		}
@@ -2416,6 +2490,13 @@ export class WorkspaceValueGraph {
 				);
 				this.pendingEffectDependencyHead += 1;
 			}
+			while (this.memberSourceDemands.length > 0) {
+				this.materializeDemandedMemberSources(
+					this.memberSourceDemands.currentValue,
+					this.memberSourceDemands.currentName,
+				);
+				this.memberSourceDemands.advance();
+			}
 			while (this.demandedEffectHead < this.demandedEffectSources.length) {
 				this.materializeDemandedEffects(
 					this.demandedEffectSources[this.demandedEffectHead],
@@ -2424,12 +2505,12 @@ export class WorkspaceValueGraph {
 				);
 				this.demandedEffectHead += 1;
 			}
-			while (this.demandedEffectValueHead < this.demandedEffectValues.length) {
+			while (this.effectValueDemands.length > 0) {
 				this.materializeDemandedValueEffects(
-					this.demandedEffectValues[this.demandedEffectValueHead],
-					this.demandedEffectValueNames[this.demandedEffectValueHead],
+					this.effectValueDemands.currentValue,
+					this.effectValueDemands.currentName,
 				);
-				this.demandedEffectValueHead += 1;
+				this.effectValueDemands.advance();
 			}
 			while (this.pendingMemberHead < this.pendingMemberOwners.length) {
 				this.materializeDemandedMember(
@@ -2442,16 +2523,18 @@ export class WorkspaceValueGraph {
 			this.solveValueChanges();
 		} while (this.demandedRootHead < this.demandedRoots.length
 			|| this.pendingEffectDependencyHead < this.pendingEffectDependencyContexts.length
+			|| this.memberSourceDemands.length > 0
 			|| this.demandedEffectHead < this.demandedEffectSources.length
-			|| this.demandedEffectValueHead < this.demandedEffectValues.length
+			|| this.effectValueDemands.length > 0
 			|| this.pendingMemberHead < this.pendingMemberOwners.length);
 	}
 
 	private hasPendingDemand(): boolean {
 		return this.demandedRootHead < this.demandedRoots.length
 			|| this.pendingEffectDependencyHead < this.pendingEffectDependencyContexts.length
+			|| this.memberSourceDemands.length > 0
 			|| this.demandedEffectHead < this.demandedEffectSources.length
-			|| this.demandedEffectValueHead < this.demandedEffectValues.length
+			|| this.effectValueDemands.length > 0
 			|| this.pendingMemberHead < this.pendingMemberOwners.length;
 	}
 
@@ -2466,6 +2549,7 @@ export class WorkspaceValueGraph {
 				break;
 			case 'owned':
 			case 'literal':
+			case 'unknown':
 				break;
 			case 'global':
 				return;
@@ -3289,7 +3373,7 @@ export class WorkspaceValueGraph {
 		createMembers: boolean,
 		dependencies?: SemanticValueID[],
 		useCallArgumentHints = false,
-		demandEffects = true,
+		demandMemberSources = true,
 	): SemanticValueID | undefined {
 		const value = this.resolveValueRoot(source.root);
 		return value
@@ -3300,7 +3384,7 @@ export class WorkspaceValueGraph {
 				dependencies,
 					source.steps.length,
 					useCallArgumentHints,
-					demandEffects,
+					demandMemberSources,
 			)
 			: undefined;
 	}
@@ -3317,7 +3401,7 @@ export class WorkspaceValueGraph {
 		dependencies?: SemanticValueID[],
 		stepCount = steps.length,
 		useCallArgumentHints = false,
-		demandEffects = true,
+		demandMemberSources = true,
 	): SemanticValueID | undefined {
 		let resolved: SemanticValueID | undefined = value;
 		for (let index = 0; resolved && index < stepCount; index += 1) {
@@ -3332,6 +3416,7 @@ export class WorkspaceValueGraph {
 						step.name,
 						createMembers,
 						useCallArgumentHints,
+						demandMemberSources,
 					);
 					break;
 				case 'index': {
@@ -3340,7 +3425,7 @@ export class WorkspaceValueGraph {
 						createMembers,
 							dependencies,
 							useCallArgumentHints,
-							demandEffects,
+							demandMemberSources,
 					);
 					if (key && dependencies) {
 						dependencies.push(key);
@@ -3372,6 +3457,7 @@ export class WorkspaceValueGraph {
 		name: string,
 		create: boolean,
 		useCallArgumentHints: boolean,
+		demandSources = true,
 	): SemanticValueID | undefined {
 		const cache = useCallArgumentHints
 			? this.hintedResolvedMemberValues
@@ -3390,8 +3476,8 @@ export class WorkspaceValueGraph {
 		const identityValues = this.memberValueIdentityScratch;
 		values.length = 0;
 		identityValues.length = 0;
-		if (!create) {
-			this.demandResolvedMemberSources(owner, name);
+		if (!create && demandSources) {
+			this.memberSourceDemands.add(owner, name);
 		}
 		const generation = this.memberTraversalGeneration + 1;
 		this.memberTraversalGeneration = generation;
@@ -3640,6 +3726,11 @@ export class WorkspaceValueGraph {
 		useCallArgumentHints: boolean,
 	): SemanticValueID | undefined {
 		this.collectIndexKeyValues(key, useCallArgumentHints);
+		for (let index = 0; index < this.indexKeyScratch.length; index += 1) {
+			if (this.unknownIdentityRoots[this.indexKeyScratch[index]]) {
+				return this.resolveElementValue(owner, create, useCallArgumentHints);
+			}
+		}
 		const values = this.indexValueScratch;
 		const identityValues = this.indexValueIdentityScratch;
 		values.length = 0;
@@ -4392,6 +4483,8 @@ export class WorkspaceValueGraph {
 		}
 		this.identityParents[rightRoot] = leftRoot;
 		this.identitySizes[leftRoot] += this.identitySizes[rightRoot];
+		this.unknownIdentityRoots[leftRoot] = this.unknownIdentityRoots[leftRoot]
+			|| this.unknownIdentityRoots[rightRoot];
 		const leftElement = this.elementsByIdentityRoot.get(leftRoot);
 		const rightElement = this.elementsByIdentityRoot.get(rightRoot);
 		const leftMemberDeclarations = this.memberDeclarationsByIdentityRoot.get(leftRoot);
@@ -4444,6 +4537,12 @@ export class WorkspaceValueGraph {
 
 	private addTraversalDependency(owner: SemanticValueID, base: SemanticValueID): void {
 		this.traversalDependents.add(base, owner);
+		const names = this.memberSourceDemands.namesFor(owner);
+		if (names) {
+			for (let nameIndex = 0; nameIndex < names.length; nameIndex += 1) {
+				this.memberSourceDemands.add(base, names[nameIndex]);
+			}
+		}
 		this.markTraversalChanged(owner);
 	}
 
@@ -5032,6 +5131,7 @@ export class WorkspaceValueGraph {
 			undefined,
 			undefined,
 			EMPTY_ARGUMENT_VALUES,
+			EMPTY_ARGUMENT_VALUES,
 			mode,
 		);
 		return context;
@@ -5045,6 +5145,7 @@ export class WorkspaceValueGraph {
 		callSite: CallValueEntry | undefined,
 		parentCallSite: CallValueEntry | undefined,
 		contextArguments: readonly (SemanticValueID | undefined)[],
+		argumentValues: readonly (SemanticValueID | undefined)[],
 		mode: CallInstantiationMode,
 		contextKey?: string,
 	): FunctionValueContext {
@@ -5084,6 +5185,7 @@ export class WorkspaceValueGraph {
 		if (contextKey !== undefined) {
 			this.functionContextsByKey.get(flow)!.set(contextKey, context);
 		}
+		this.bindFunctionContextArguments(context, argumentValues);
 		this.bindNestedFunctionFlows(context);
 		if (defaultContext) {
 			// Retained slices can demand this same summary while they are applied.
@@ -5160,7 +5262,13 @@ export class WorkspaceValueGraph {
 			this.valueSourceBindingsByKey.set(key, bindings);
 		}
 		bindings.push(bindingIndex);
-		const effectNames = this.demandedEffectNamesByValue.get(value);
+		const memberSourceNames = this.memberSourceDemands.namesFor(value);
+		if (memberSourceNames) {
+			for (let nameIndex = 0; nameIndex < memberSourceNames.length; nameIndex += 1) {
+				this.materializeDemandedMemberSource(bindingIndex, memberSourceNames[nameIndex]);
+			}
+		}
+		const effectNames = this.effectValueDemands.namesFor(value);
 		if (effectNames) {
 			if (context) {
 				this.materializeContextPrototypeCallEffects(context, source, stepCount);
@@ -5333,12 +5441,12 @@ export class WorkspaceValueGraph {
 		if (!this.effectDependents.add(source, target)) {
 			return;
 		}
-		const names = this.demandedEffectNamesByValue.get(source);
+		const names = this.effectValueDemands.namesFor(source);
 		if (!names) {
 			return;
 		}
 		for (let nameIndex = 0; nameIndex < names.length; nameIndex += 1) {
-			this.demandResolvedEffects(target, names[nameIndex]);
+			this.effectValueDemands.add(target, names[nameIndex]);
 		}
 	}
 
@@ -5555,8 +5663,17 @@ export class WorkspaceValueGraph {
 				keys.length = 0;
 				this.collectValueAlternatives(key, keys);
 				for (let ownerIndex = 0; ownerIndex < owners.length; ownerIndex += 1) {
+					let hasDynamicKey = false;
 					for (let keyIndex = 0; keyIndex < keys.length; keyIndex += 1) {
-						out.push(this.ensureIndexedValue(owners[ownerIndex], keys[keyIndex]));
+						const resolvedKey = keys[keyIndex];
+						if (this.unknownIdentityRoots[resolvedKey]) {
+							hasDynamicKey = true;
+						} else {
+							out.push(this.ensureIndexedValue(owners[ownerIndex], resolvedKey));
+						}
+					}
+					if (hasDynamicKey) {
+						out.push(this.ensureElement(owners[ownerIndex]));
 					}
 				}
 				return;
@@ -5985,6 +6102,12 @@ export class WorkspaceValueGraph {
 					this.memberResolutionCache.delete(parameter);
 					this.hintedResolvedMemberValues.delete(parameter);
 					this.missingHintedResolvedMemberValues.delete(parameter);
+					const memberSourceNames = this.memberSourceDemands.namesFor(parameter);
+					if (memberSourceNames) {
+						for (let nameIndex = 0; nameIndex < memberSourceNames.length; nameIndex += 1) {
+							this.memberSourceDemands.add(argument, memberSourceNames[nameIndex]);
+						}
+					}
 				}
 			}
 		}
@@ -6025,8 +6148,8 @@ export class WorkspaceValueGraph {
 		);
 		const existing = contextsByKey.get(contextKey);
 		if (existing) {
-			this.materializeFunctionContext(existing, mode);
 			this.bindFunctionContextArguments(existing, argumentValues);
+			this.materializeFunctionContext(existing, mode);
 			return existing;
 		}
 		const parameterValues = new Array<SemanticValueID>(flow.parameters.length);
@@ -6045,10 +6168,10 @@ export class WorkspaceValueGraph {
 			callSite,
 			parentCallSite,
 			retainedContextArguments,
+			argumentValues,
 			mode,
 			contextKey,
 		);
-		this.bindFunctionContextArguments(context, argumentValues);
 		return context;
 	}
 
@@ -6259,6 +6382,14 @@ export class WorkspaceValueGraph {
 				? undefined
 				: this.nodeForRoot({ kind: 'declaration', declId });
 		}
+		if (root.kind === 'unknown') {
+			if (!this.unknownNode) {
+				this.unknownNode = this.createNode();
+				this.unknownIdentityRoots[this.unknownNode] = true;
+				this.registerValueSource(this.unknownNode, { root, steps: EMPTY_VALUE_STEPS });
+			}
+			return this.unknownNode;
+		}
 		let nodes: Map<SymbolID | string, SemanticValueID>;
 		let key: SymbolID | string;
 		switch (root.kind) {
@@ -6285,6 +6416,9 @@ export class WorkspaceValueGraph {
 			nodes.set(key, value);
 			this.registerValueSource(value, { root, steps: EMPTY_VALUE_STEPS });
 		}
+		if (this.identities.hasUnknownIdentity(root)) {
+			this.unknownIdentityRoots[value] = true;
+		}
 		return value;
 	}
 
@@ -6309,6 +6443,7 @@ export class WorkspaceValueGraph {
 		}
 		this.identityParents[value] = value;
 		this.identitySizes[value] = 1;
+		this.unknownIdentityRoots[value] = false;
 		this.materializedValueTargets[value] = false;
 		this.valueSourceHeads[value] = 0;
 		this.unresolvedMemberHeadByOwner[value] = 0;

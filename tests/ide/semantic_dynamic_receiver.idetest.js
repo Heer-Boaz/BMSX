@@ -10,3 +10,10 @@ t.assert(
 	projectileReceiver.contentLines.includes('(method) enemy:receive_player_projectile(projectile)'),
 	'dynamic receiver argument hint resolved to the wrong declaration',
 );
+
+const indexedCollider = t.hover(388, 19);
+t.assert(indexedCollider !== null, 'numeric-loop indexed receiver did not resolve');
+t.assert(
+	indexedCollider.contentLines.includes('(method) collider_2d_component:set_enabled(enabled)'),
+	'numeric-loop indexed receiver resolved to the wrong declaration',
+);

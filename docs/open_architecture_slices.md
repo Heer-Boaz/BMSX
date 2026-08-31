@@ -56,7 +56,15 @@ De huidige IDE- en debuggergrenzen zijn:
   voordat een demand-graph nodig is.
   Alleen gevraagde Lua-roots, calls, contexten en heap-effects worden
   gematerialiseerd; de taallaag kent geen cartlib-, firmware- of
-  frameworktypen;
+  frameworktypen. Member-source- en effectvragen blijven monotone
+  `(value, name)`-worklists: een nieuw bewezen graph-edge erft bestaande
+  vragen eenmaal, in plaats van bij iedere query dezelfde bereikbare graph
+  opnieuw af te lopen. Letterlijke table-keys behouden hun concrete
+  value-identiteit. De keyvariabele van een numeric of generic `for` gebruikt
+  daarentegen het generieke runtime-indexdomein: writes landen in de bestaande
+  elementprojectie en reads omvatten zowel die projectie als concrete
+  tablevelden. Dit is een Lua-taalregel en geen framework- of
+  identifierheuristiek;
 - Lua-instanties behouden prototype-inheritance en concrete allocation-sites
   als afzonderlijke graphrelaties. Een `setmetatable`-factory kan daardoor
   velden publiceren die tijdens constructie op de teruggegeven waarde worden

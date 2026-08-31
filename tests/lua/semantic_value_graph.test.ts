@@ -440,6 +440,91 @@ test('semantic workspace keeps parameter-keyed table writes contextual to each i
 	assert.equal(semanticSymbolAt(snapshot, 'main.lua', 22, memberColumn(lines[21], 'left_only')), null);
 });
 
+test('semantic workspace maps numeric loop keys to the shared table element domain', async () => {
+	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
+	const lines = [
+		'local slots<const> = {}',
+		'local projectile<const> = {}',
+		'function projectile:disable() end',
+		'for write_index = 1, 4 do',
+		'\tslots[write_index] = projectile',
+		'end',
+		'for read_index = 1, 4 do',
+		'\tlocal slot<const> = slots[read_index]',
+		'\tslot:disable()',
+		'end',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('main.lua', lines.join('\n'));
+	const target = semanticSymbolAt(
+		workspace.getSnapshot(),
+		'main.lua',
+		9,
+		memberColumn(lines[8], 'disable'),
+	);
+
+	assert.ok(target, 'independent numeric loops share the numeric index domain');
+	assert.equal(target.declaration.range.start.line, 3);
+});
+
+test('semantic workspace reads literal table entries through a numeric loop key', async () => {
+	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
+	const lines = [
+		'local left<const> = {}',
+		'function left:left_only() end',
+		'local right<const> = {}',
+		'function right:right_only() end',
+		'local slots<const> = { left, right }',
+		'for index = 1, #slots do',
+		'\tlocal slot<const> = slots[index]',
+		'\tslot:left_only()',
+		'\tslot:right_only()',
+		'end',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('main.lua', lines.join('\n'));
+	const snapshot = workspace.getSnapshot();
+
+	assert.equal(
+		semanticSymbolAt(snapshot, 'main.lua', 8, memberColumn(lines[7], 'left_only'))!
+			.declaration.range.start.line,
+		2,
+	);
+	assert.equal(
+		semanticSymbolAt(snapshot, 'main.lua', 9, memberColumn(lines[8], 'right_only'))!
+			.declaration.range.start.line,
+		4,
+	);
+});
+
+test('semantic workspace keeps literal table indices disjoint from the element domain', async () => {
+	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
+	const lines = [
+		'local left<const> = {}',
+		'function left:left_only() end',
+		'local right<const> = {}',
+		'function right:right_only() end',
+		'local slots<const> = {}',
+		'slots[1] = left',
+		'slots[2] = right',
+		'slots[1]:left_only()',
+		'slots[1]:right_only()',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('main.lua', lines.join('\n'));
+	const snapshot = workspace.getSnapshot();
+
+	assert.equal(
+		semanticSymbolAt(snapshot, 'main.lua', 8, memberColumn(lines[7], 'left_only'))!
+			.declaration.range.start.line,
+		2,
+	);
+	assert.equal(
+		semanticSymbolAt(snapshot, 'main.lua', 9, memberColumn(lines[8], 'right_only')),
+		null,
+	);
+});
+
 test('semantic workspace summarizes recursive value flow without unbounded call contexts', async () => {
 	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
 	const lines = [

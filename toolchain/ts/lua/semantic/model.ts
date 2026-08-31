@@ -57,6 +57,7 @@ import {
 	semanticValueSourceKey,
 	semanticValueSourcesEqual,
 	tableValueSource,
+	unknownValueSource,
 	type CallValueEntry,
 	type DeclarationValueEntry,
 	type FunctionReturnValueEntry,
@@ -601,6 +602,7 @@ class SemanticBuilder {
 	private readonly methodSelfValueStack: (OwnedSemanticValueSource | undefined)[] = [];
 	private readonly declarationValues: Map<SymbolID, SemanticValueSource[]> = new Map();
 	private readonly projectionValueDeclarations: Set<SymbolID> = new Set();
+	private readonly unknownValueDeclarations: Set<SymbolID> = new Set();
 	private readonly memberValues: Map<SymbolID, MemberValueEntry> = new Map();
 	private readonly functionReturnValues: Map<string, FunctionReturnValueEntry[]> = new Map();
 	private readonly functionValueFlows: FunctionValueFlowEntry[] = [];
@@ -939,7 +941,8 @@ class SemanticBuilder {
 					this.visitExpression(forNumeric.step, { tableBaseDecl: null, tableBasePath: null });
 				}
 				this.enterScope(forNumeric.block.startInclusive, forNumeric.block.endExclusive, 'loop');
-				this.declareLocal(forNumeric.variable, 'local', true);
+				const variable = this.declareLocal(forNumeric.variable, 'local', true);
+				this.unknownValueDeclarations.add(variable.id);
 				this.visitBlock(forNumeric.block);
 				this.leaveScope();
 				break;
@@ -954,7 +957,9 @@ class SemanticBuilder {
 				let valueVariable: InternalDecl | undefined;
 				for (let index = 0; index < forGeneric.variables.length; index += 1) {
 					const variable = this.declareLocal(forGeneric.variables[index], 'local', true);
-					if (index === 1) {
+					if (index === 0) {
+						this.unknownValueDeclarations.add(variable.id);
+					} else if (index === 1) {
 						valueVariable = variable;
 					}
 				}
@@ -1654,7 +1659,9 @@ class SemanticBuilder {
 			return {
 				namePath,
 				decl: resolved,
-				valueSource: declarationValueSource(resolved.id),
+				valueSource: this.unknownValueDeclarations.has(resolved.id)
+					? unknownValueSource()
+					: declarationValueSource(resolved.id),
 			};
 		}
 		const globalDecl = this.globalsByKey.get(identifier.name);
