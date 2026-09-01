@@ -3,7 +3,6 @@ import { test } from 'node:test';
 import { semanticSymbolAt, semanticSymbolsAt } from './semantic_test_harness';
 
 const semanticWorkspaceModulePromise = import('../../toolchain/ts/lua/semantic/model');
-const semanticValueGraphModulePromise = import('../../toolchain/ts/lua/semantic/value_graph');
 
 function memberColumn(line: string, member: string): number {
 	return line.lastIndexOf(member) + 1;
@@ -764,7 +763,7 @@ test('semantic workspace passes colon-call receivers through nested method calls
 	assert.equal(semanticSymbolAt(snapshot, 'main.lua', 27, memberColumn(lines[26], 'left_only')), null);
 });
 
-test('semantic workspace uses unresolved receiver calls as parameter type hints', async () => {
+test('candidate call names do not instantiate an unresolved receiver', async () => {
 	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
 	const consumerLines = [
 		'local consumer<const> = {}',
@@ -796,9 +795,11 @@ test('semantic workspace uses unresolved receiver calls as parameter type hints'
 		memberColumn(consumerLines[3], 'delivered'),
 	);
 
-	assert.ok(delivered, 'the named call candidate binds the producer argument');
-	assert.equal(delivered.declaration.file, 'producer.lua');
-	assert.equal(delivered.declaration.range.start.line, 4);
+	assert.equal(
+		delivered,
+		null,
+		'a same-named candidate is not a proven callee and cannot bind actual arguments',
+	);
 });
 
 test('semantic workspace retains projected receiver effects through ordinary function parameters', async () => {
@@ -977,9 +978,8 @@ test('semantic workspace publishes direct method receiver members without execut
 	assert.deepEqual(blink!.declaration.namePath, ['self', 'blink']);
 });
 
-test('semantic value identities project implicit self onto the declared receiver', async () => {
-	const { buildLuaFileSemanticData } = await semanticWorkspaceModulePromise;
-	const { WorkspaceValueIdentityIndex } = await semanticValueGraphModulePromise;
+test('semantic summaries project implicit self onto the declared receiver', async () => {
+	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
 	const source = [
 		'local left<const> = {}',
 		'function left:target() end',
@@ -989,20 +989,12 @@ test('semantic value identities project implicit self onto the declared receiver
 		'local right<const> = {}',
 		'function right:target() end',
 	].join('\n');
-	const file = buildLuaFileSemanticData(source, 'methods.lua');
-	const call = file.refs.find(ref => ref.name === 'target' && ref.range.start.line === 4);
-	const target = file.decls.find(decl => decl.namePath.join('.') === 'left.target');
-	assert.ok(call?.receiverValue);
-	assert.ok(target);
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('methods.lua', source);
+	const target = semanticSymbolAt(workspace.getSnapshot(), 'methods.lua', 4, 7);
 
-	const identities = new WorkspaceValueIdentityIndex({
-		files: [file],
-		globalValues: new Map(),
-	});
-	assert.deepEqual(
-		identities.resolveStaticMembers(call.receiverValue, call.name),
-		[target.id],
-	);
+	assert.ok(target);
+	assert.deepEqual(target.declaration.namePath, ['left', 'target']);
 });
 
 test('semantic workspace resolves fields injected by a generic instance factory without invoking methods', async () => {
@@ -1266,6 +1258,9 @@ test('semantic workspace follows co-attached extension effects through a generic
 		'local inspect_monitor<const> = function(owner)',
 		'\towner.monitor:inspect()',
 		'end',
+		'local inspect_controller<const> = function(owner)',
+		'\towner.controller:noise_only()',
+		'end',
 		'function consumer.new()',
 		'\treturn setmetatable({}, consumer)',
 		'end',
@@ -1284,6 +1279,7 @@ test('semantic workspace follows co-attached extension effects through a generic
 		'noise.__index = noise',
 		'function noise.new() return setmetatable({}, noise) end',
 		'function noise:on_attach() self.parent.noise = self end',
+		'function noise:noise_only() end',
 		'return noise',
 	].join('\n'));
 	workspace.updateFile('monitor.lua', [
@@ -1326,9 +1322,239 @@ test('semantic workspace follows co-attached extension effects through a generic
 	assert.ok(inspect, 'later context candidate remains available to another query');
 	assert.equal(inspect.declaration.file, 'monitor.lua');
 	assert.equal(inspect.declaration.range.start.line, 5);
+	assert.equal(
+		semanticSymbolAt(
+			workspace.getSnapshot(),
+			'consumer.lua',
+			10,
+			memberColumn(consumerLines[9], 'noise_only'),
+		),
+		null,
+		'a co-attached extension field retains the value written by its own lifecycle',
+	);
 });
 
-test('semantic workspace propagates heap effects through forwarding call summaries', async () => {
+test('generic host calls do not apply an unrelated extension lifecycle effect', async () => {
+	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
+	const hostLines = [
+		'local host<const> = {}',
+		'host.__index = host',
+		'function host.new()',
+		'\treturn setmetatable({}, host)',
+		'end',
+		'function host:add(extension)',
+		'\textension.parent = self',
+		'\textension:on_attach()',
+		'end',
+		'return host',
+	];
+	const consumerLines = [
+		'local consumer<const> = {}',
+		'consumer.__index = consumer',
+		'function consumer:inspect(owner)',
+		'\towner.controller:bind()',
+		'end',
+		'return consumer',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('host.lua', hostLines.join('\n'));
+	workspace.updateFile('controller.lua', [
+		'local controller<const> = {}',
+		'controller.__index = controller',
+		'function controller.new() return setmetatable({}, controller) end',
+		'function controller:on_attach() self.parent.controller = self end',
+		'function controller:bind() end',
+		'return controller',
+	].join('\n'));
+	workspace.updateFile('noise.lua', [
+		'local noise<const> = {}',
+		'noise.__index = noise',
+		'function noise.new() return setmetatable({}, noise) end',
+		'function noise:on_attach() self.parent.noise = self end',
+		'return noise',
+	].join('\n'));
+	workspace.updateFile('consumer.lua', consumerLines.join('\n'));
+	workspace.updateFile('main.lua', [
+		"local host<const> = require('host')",
+		"local noise<const> = require('noise')",
+		'local owner<const> = host.new()',
+		'owner:add(noise.new())',
+	].join('\n'));
+
+	assert.equal(
+		semanticSymbolAt(
+			workspace.getSnapshot(),
+			'consumer.lua',
+			4,
+			memberColumn(consumerLines[3], 'bind'),
+		),
+		null,
+		'an extension that is never constructed cannot publish through a same-name lifecycle call',
+	);
+});
+
+test('generic host lifecycle effects stay with the receiver of their attachment call', async () => {
+	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
+	const leftLines = [
+		"local host<const> = require('host')",
+		'local left<const> = {}',
+		'left.__index = left',
+		'setmetatable(left, { __index = host })',
+		'function left:inspect()',
+		'\tself.controller:bind()',
+		'end',
+		'return left',
+	];
+	const rightLines = [
+		"local host<const> = require('host')",
+		'local right<const> = {}',
+		'right.__index = right',
+		'setmetatable(right, { __index = host })',
+		'function right:inspect()',
+		'\tself.controller:bind()',
+		'end',
+		'return right',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('host.lua', [
+		'local host<const> = {}',
+		'host.__index = host',
+		'function host.new() return setmetatable({}, host) end',
+		'function host:add(extension)',
+		'\textension.parent = self',
+		'\textension:on_attach()',
+		'end',
+		'return host',
+	].join('\n'));
+	workspace.updateFile('controller.lua', [
+		'local controller<const> = {}',
+		'controller.__index = controller',
+		'function controller.new() return setmetatable({}, controller) end',
+		'function controller:on_attach() self.parent.controller = self end',
+		'function controller:bind() end',
+		'return controller',
+	].join('\n'));
+	workspace.updateFile('visual.lua', [
+		'local visual<const> = {}',
+		'visual.__index = visual',
+		'function visual.new() return setmetatable({}, visual) end',
+		'function visual:on_attach() self.parent.visual = self end',
+		'return visual',
+	].join('\n'));
+	workspace.updateFile('left.lua', leftLines.join('\n'));
+	workspace.updateFile('right.lua', rightLines.join('\n'));
+	workspace.updateFile('main.lua', [
+		"local host<const> = require('host')",
+		"local controller<const> = require('controller')",
+		"local visual<const> = require('visual')",
+		"local left<const> = require('left')",
+		"local right<const> = require('right')",
+		'local left_owner<const> = setmetatable(host.new(), left)',
+		'local right_owner<const> = setmetatable(host.new(), right)',
+		'left_owner:add(visual.new())',
+		'right_owner:add(controller.new())',
+	].join('\n'));
+
+	assert.equal(
+		semanticSymbolAt(
+			workspace.getSnapshot(),
+			'left.lua',
+			6,
+			memberColumn(leftLines[5], 'bind'),
+		),
+		null,
+		'an attachment to another owner does not publish onto this receiver',
+	);
+	const rightBind = semanticSymbolAt(
+		workspace.getSnapshot(),
+		'right.lua',
+		6,
+		memberColumn(rightLines[5], 'bind'),
+	);
+	assert.ok(rightBind);
+	assert.equal(rightBind.declaration.file, 'controller.lua');
+	assert.equal(rightBind.declaration.range.start.line, 5);
+});
+
+test('semantic workspace projects extension effects through retained factory aggregates', async () => {
+	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
+	const actorLines = [
+		"local catalog<const> = require('catalog')",
+		"local controller<const> = require('controller')",
+		"local host<const> = require('host')",
+		'local actor<const> = {}',
+		'actor.__index = actor',
+		'setmetatable(actor, { __index = host })',
+		'function actor:run()',
+		'\tself.controller:bind()',
+		'end',
+		'function actor.register()',
+		"\tcatalog.define({ id = 'actor', class = actor, extensions = { controller.factory() } })",
+		'end',
+		'return actor',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('catalog.lua', [
+		'local definitions<const> = {}',
+		'local catalog<const> = {}',
+		'function catalog.define(source)',
+		'\tdefinitions[source.id] = source',
+		'end',
+		'function catalog.definition(id)',
+		'\treturn definitions[id]',
+		'end',
+		'return catalog',
+	].join('\n'));
+	workspace.updateFile('host.lua', [
+		"local catalog<const> = require('catalog')",
+		'local host<const> = {}',
+		'host.__index = host',
+		'function host:add(extension)',
+		'\textension.parent = self',
+		'\textension:on_attach()',
+		'end',
+		'function host.spawn(id)',
+		'\tlocal definition<const> = catalog.definition(id)',
+		'\tlocal owner<const> = setmetatable({}, definition.class)',
+		'\tlocal factories<const> = definition.extensions',
+		'\tfor index = 1, #factories do',
+		'\t\towner:add(factories[index]())',
+		'\tend',
+		'\treturn owner',
+		'end',
+		'return host',
+	].join('\n'));
+	workspace.updateFile('controller.lua', [
+		'local controller<const> = {}',
+		'controller.__index = controller',
+		'function controller.new() return setmetatable({}, controller) end',
+		'function controller.factory()',
+		'\treturn function() return controller.new() end',
+		'end',
+		'function controller:on_attach() self.parent.controller = self end',
+		'function controller:bind() end',
+		'return controller',
+	].join('\n'));
+	workspace.updateFile('actor.lua', actorLines.join('\n'));
+	workspace.updateFile('main.lua', [
+		"local actor<const> = require('actor')",
+		"local host<const> = require('host')",
+		'actor.register()',
+		"host.spawn('actor')",
+	].join('\n'));
+
+	const bind = semanticSymbolAt(
+		workspace.getSnapshot(),
+		'actor.lua',
+		8,
+		memberColumn(actorLines[7], 'bind'),
+	);
+	assert.ok(bind, 'the constructed extension publishes its field through the aggregate factory');
+	assert.equal(bind.declaration.file, 'controller.lua');
+	assert.equal(bind.declaration.range.start.line, 8);
+});
+
+test('semantic workspace propagates member effects through forwarding call summaries', async () => {
 	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
 	const lines = [
 		'local map<const> = {}',

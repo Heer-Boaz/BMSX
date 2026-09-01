@@ -25,6 +25,11 @@ type CallHierarchyProfile = {
 	direction: 'incoming' | 'outgoing';
 	location: SemanticQueryLocation;
 	label: string;
+	targets: readonly {
+		file: string;
+		line: number;
+		column: number;
+	}[];
 	targetCount: number;
 	groupCount: number;
 	callSiteCount: number;
@@ -183,6 +188,11 @@ if (callHierarchyLocation) {
 		direction: callHierarchyDirection,
 		location: callHierarchyLocation,
 		label: symbols.label,
+		targets: symbols.targets.map(target => ({
+			file: target.declaration.file,
+			line: target.declaration.range.start.line,
+			column: target.declaration.range.start.column,
+		})),
 		targetCount: symbols.targets.length,
 		groupCount,
 		callSiteCount,
@@ -218,6 +228,10 @@ if (hoverLocation) {
 		warmMs,
 	};
 }
+
+const semanticQueryProfile = callHierarchyLocation || hoverLocation
+	? frontend.snapshot.symbolResolver.getSemanticQueryMetrics()
+	: undefined;
 
 const editedSource = sources.find(source => source.path === editPath);
 if (editedSource === undefined) {
@@ -286,6 +300,7 @@ console.log(JSON.stringify({
 	},
 	callHierarchy: callHierarchyProfile,
 	hover: hoverProfile,
+	semanticQuery: semanticQueryProfile,
 	edit: {
 		parseMs: summarizeTimingSamples(parseMeasurements),
 		semanticMs: summarizeTimingSamples(semanticMeasurements),

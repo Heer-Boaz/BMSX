@@ -1,10 +1,8 @@
 import type { Decl, FileSemanticData, LuaCallSite, Ref, SymbolID } from './model';
+import { LuaSemanticQueryStore, type LuaSemanticQueryMetrics } from './query_store';
 import {
 	declarationValueSource,
-	WorkspaceValueGraph,
-	WorkspaceValueIdentityIndex,
 	type SemanticValueSource,
-	type WorkspaceValueGraphInput,
 } from './value_graph';
 import { sourceRangesEqual } from '../source_range';
 import { compareSourcePosition } from './source_range';
@@ -20,22 +18,22 @@ function appendUniqueSymbols(target: SymbolID[], source: readonly SymbolID[]): v
 	}
 }
 
-// A resolver belongs to exactly one immutable workspace version. File analyses
-// retain lexical bindings; workspace-dependent module, value-flow and global
-// bindings are resolved against this version instead of being copied back into
-// every unchanged file after an edit.
+// A resolver belongs to exactly one immutable workspace version. The retained
+// query store owns semantic summaries, instantiations and call facts for that
+// version; unchanged FileSemanticData remains binder input rather than a heap.
 export class WorkspaceSymbolResolver {
 	private readonly files: readonly FileSemanticData[];
 	private readonly declarations: ReadonlyMap<SymbolID, Decl>;
 	private readonly globals: ReadonlyMap<string, SymbolID>;
-	private readonly valueGraphInput: WorkspaceValueGraphInput;
-	private valueIdentities?: WorkspaceValueIdentityIndex;
-	private valueGraph?: WorkspaceValueGraph;
+	private queryStore?: LuaSemanticQueryStore;
 	private readonly referenceTargets: Map<Ref, readonly SymbolID[]> = new Map();
 	private readonly referenceFunctionTargets: Map<Ref, readonly SymbolID[]> = new Map();
 	private readonly callableTargets: Map<LuaCallSite, readonly SymbolID[]> = new Map();
 	private readonly referencesBySymbol: Map<SymbolID, readonly Ref[]> = new Map();
-	private readonly membersBySource: Map<string, readonly Decl[]> = new Map();
+	private readonly membersBySource: Map<SemanticValueSource, readonly Decl[]> = new Map();
+	private readonly incomingCallsBySymbol: Map<SymbolID, readonly Ref[]> = new Map();
+	private readonly outgoingCallsBySymbol:
+		Map<SymbolID, readonly { readonly reference: Ref; readonly callee: SymbolID }[]> = new Map();
 
 	constructor(options: {
 		files: readonly FileSemanticData[];
@@ -45,10 +43,6 @@ export class WorkspaceSymbolResolver {
 		this.files = options.files;
 		this.declarations = options.declarations;
 		this.globals = options.globals;
-		this.valueGraphInput = {
-			files: options.files,
-			globalValues: options.globals,
-		};
 	}
 
 	// disable-next-line single_line_method_pattern -- declaration lookup remains owned by the immutable workspace resolver.
@@ -67,12 +61,6 @@ export class WorkspaceSymbolResolver {
 			return cached;
 		}
 		const targets = this.resolveReferenceTargetsUncached(ref);
-		if (this.retainCallTargets(ref, targets)) {
-			this.referenceTargets.clear();
-			this.referenceFunctionTargets.clear();
-			this.callableTargets.clear();
-			this.referencesBySymbol.clear();
-		}
 		this.referenceTargets.set(ref, targets);
 		return targets;
 	}
@@ -83,24 +71,21 @@ export class WorkspaceSymbolResolver {
 			return retained;
 		}
 		const targets: SymbolID[] = [];
-		if (callSite.reference) {
-			appendUniqueSymbols(
-				targets,
-				this.resolveReferenceFunctionTargets(callSite.reference),
-			);
+		const call = callSite.reference?.call;
+		if (call) {
+			const facts = this.getQueryStore().callee(call);
+			for (let factIndex = 0; factIndex < facts.length; factIndex += 1) {
+				if (!targets.includes(facts[factIndex].calleeFn)) {
+					targets.push(facts[factIndex].calleeFn);
+				}
+			}
 		} else if (callSite.directTarget !== undefined) {
 			appendUniqueSymbols(
 				targets,
-				this.getValueGraph().resolveFunctionDeclarations(
-					declarationValueSource(callSite.directTarget),
-				),
+				this.getQueryStore().functions(declarationValueSource(callSite.directTarget)),
 			);
-		}
-		if (targets.length === 0 && callSite.calleeValue !== undefined) {
-			appendUniqueSymbols(
-				targets,
-				this.getValueGraph().resolveFunctionDeclarations(callSite.calleeValue),
-			);
+		} else if (callSite.calleeValue !== undefined) {
+			appendUniqueSymbols(targets, this.getQueryStore().functions(callSite.calleeValue));
 		}
 		this.callableTargets.set(callSite, targets);
 		return targets;
@@ -112,172 +97,33 @@ export class WorkspaceSymbolResolver {
 			return retained;
 		}
 		const targets: SymbolID[] = [];
-		const declarations = this.resolveReferenceTargets(reference);
-		const valueGraph = this.getValueGraph();
-		for (let index = 0; index < declarations.length; index += 1) {
-			appendUniqueSymbols(
-				targets,
-				valueGraph.resolveFunctionDeclarations(declarationValueSource(declarations[index])),
-			);
+		if (reference.call) {
+			const facts = this.getQueryStore().callee(reference.call);
+			for (let factIndex = 0; factIndex < facts.length; factIndex += 1) {
+				if (!targets.includes(facts[factIndex].calleeFn)) {
+					targets.push(facts[factIndex].calleeFn);
+				}
+			}
+		} else {
+			const declarations = this.resolveReferenceTargets(reference);
+			for (let declarationIndex = 0; declarationIndex < declarations.length; declarationIndex += 1) {
+				appendUniqueSymbols(
+					targets,
+					this.getQueryStore().functions(declarationValueSource(declarations[declarationIndex])),
+				);
+			}
 		}
 		this.referenceFunctionTargets.set(reference, targets);
 		return targets;
 	}
 
-	public resolveCallTargets(refs: readonly Ref[]): readonly (readonly SymbolID[])[] {
-		const targetsByReference = this.resolveReferenceTargetBatch(refs);
-		for (let index = 0; index < refs.length; index += 1) {
-			this.referenceTargets.set(refs[index], targetsByReference[index]);
-		}
-		return targetsByReference;
-	}
-
-	private resolveReferenceTargetBatch(refs: readonly Ref[]): readonly (readonly SymbolID[])[] {
-		const targetsByReference = new Array<readonly SymbolID[]>(refs.length);
-		let hasDynamicReferences = false;
-		for (let index = 0; index < refs.length; index += 1) {
-			const targets = this.resolveBoundReferenceTargets(refs[index]);
-			if (targets === undefined) {
-				hasDynamicReferences = true;
-			} else {
-				targetsByReference[index] = targets;
-			}
-		}
-		if (!hasDynamicReferences) {
-			return targetsByReference;
-		}
-		const valueGraph = this.getValueGraph();
-		let callGraphChanged: boolean;
-		let retainedCallGraphChanged = false;
-		do {
-			callGraphChanged = false;
-			for (let index = 0; index < refs.length; index += 1) {
-				const targets = this.resolveReferenceTargetsUncached(refs[index], valueGraph, true);
-				targetsByReference[index] = targets;
-				callGraphChanged = this.retainCallTargets(refs[index], targets) || callGraphChanged;
-			}
-			retainedCallGraphChanged = callGraphChanged || retainedCallGraphChanged;
-		} while (callGraphChanged);
-		if (retainedCallGraphChanged) {
-			this.referenceTargets.clear();
-			this.referenceFunctionTargets.clear();
-			this.callableTargets.clear();
-			this.referencesBySymbol.clear();
-		}
-		return targetsByReference;
-	}
-
-	private retainCallTargets(ref: Ref, targets: readonly SymbolID[]): boolean {
-		const call = ref.call;
-		const valueGraph = this.valueGraph;
-		if (!call || !valueGraph) {
-			return false;
-		}
-		let changed = false;
-		for (let index = 0; index < targets.length; index += 1) {
-			changed = valueGraph.retainCallTarget(call, targets[index]) || changed;
-		}
-		return changed;
-	}
-
-	private resolveReferenceTargetsUncached(
-		ref: Ref,
-		valueGraph?: WorkspaceValueGraph,
-		retainedCallsOnly = false,
-	): readonly SymbolID[] {
-		// The file binder has already resolved references whose target is exact.
-		// Cross-file value flow is only needed for references that remain
-		// unbound after that pass.
-		const boundTargets = this.resolveBoundReferenceTargets(ref);
-		if (boundTargets !== undefined) {
-			return boundTargets;
-		}
-		if (ref.referenceKind === 'member' || ref.referenceKind === 'method') {
-			if (!valueGraph) {
-				valueGraph = this.getValueGraph();
-			}
-			const members = retainedCallsOnly && ref.isCall
-				? valueGraph.resolveRetainedMembers(ref.receiverValue, ref.name)
-				: valueGraph.resolveMembers(ref.receiverValue, ref.name);
-			if (members.length > 0) {
-				return members;
-			}
-		}
-		if (ref.symbolKey.length === 0) {
-			return EMPTY_SYMBOLS;
-		}
-		const global = this.globals.get(ref.symbolKey);
-		return global ? [global] : EMPTY_SYMBOLS;
-	}
-
-	private resolveBoundReferenceTargets(ref: Ref): readonly SymbolID[] | undefined {
-		if (ref.target) {
-			return [ref.target];
-		}
-		if (ref.referenceKind === 'self') {
-			return EMPTY_SYMBOLS;
-		}
-		if (ref.referenceKind === 'member' || ref.referenceKind === 'method') {
-			return this.getValueIdentities().resolveStaticMembers(
-				ref.receiverValue,
-				ref.name,
-			);
-		}
-		if (ref.symbolKey.length === 0) {
-			return EMPTY_SYMBOLS;
-		}
-		const global = this.globals.get(ref.symbolKey);
-		return global ? [global] : EMPTY_SYMBOLS;
-	}
-
-	private getValueIdentities(): WorkspaceValueIdentityIndex {
-		if (!this.valueIdentities) {
-			this.valueIdentities = new WorkspaceValueIdentityIndex(this.valueGraphInput);
-		}
-		return this.valueIdentities;
-	}
-
-	private getValueGraph(): WorkspaceValueGraph {
-		if (!this.valueGraph) {
-			const valueGraph = new WorkspaceValueGraph(this.valueGraphInput, this.getValueIdentities());
-			this.valueGraph = valueGraph;
-			this.retainBoundCallTargets(valueGraph);
-		}
-		return this.valueGraph;
-	}
-
-	private retainBoundCallTargets(valueGraph: WorkspaceValueGraph): void {
-		for (let fileIndex = 0; fileIndex < this.files.length; fileIndex += 1) {
-			const references = this.files[fileIndex].refs;
-			for (let referenceIndex = 0; referenceIndex < references.length; referenceIndex += 1) {
-				const reference = references[referenceIndex];
-				if (!reference.call) {
-					continue;
-				}
-				if (reference.target) {
-					valueGraph.retainCallTarget(reference.call, reference.target);
-					continue;
-				}
-				const targets = this.resolveBoundReferenceTargets(reference);
-				if (targets === undefined) {
-					continue;
-				}
-				for (let targetIndex = 0; targetIndex < targets.length; targetIndex += 1) {
-					valueGraph.retainCallTarget(reference.call, targets[targetIndex]);
-				}
-			}
-		}
-	}
-
 	public getMembers(source: SemanticValueSource): readonly Decl[] {
-		const identities = this.getValueIdentities();
-		const key = identities.sourceKey(source);
-		const cached = this.membersBySource.get(key);
+		const cached = this.membersBySource.get(source);
 		if (cached) {
 			return cached;
 		}
 		const membersByName = new Map<string, Decl>();
-		const memberIds = this.getValueGraph().resolveAllMembers(source);
+		const memberIds = this.getQueryStore().allMembers(source);
 		for (let index = 0; index < memberIds.length; index += 1) {
 			const declaration = this.declarations.get(memberIds[index]);
 			if (!membersByName.has(declaration.name)) {
@@ -300,7 +146,7 @@ export class WorkspaceSymbolResolver {
 				right.range.start.column,
 			);
 		});
-		this.membersBySource.set(key, members);
+		this.membersBySource.set(source, members);
 		return members;
 	}
 
@@ -310,7 +156,7 @@ export class WorkspaceSymbolResolver {
 			return cached;
 		}
 		this.resolveReferences([symbolId]);
-		return this.referencesBySymbol.get(symbolId);
+		return this.referencesBySymbol.get(symbolId) as readonly Ref[];
 	}
 
 	public getReferencesForSymbols(symbolIds: readonly SymbolID[]): readonly Ref[] {
@@ -344,6 +190,58 @@ export class WorkspaceSymbolResolver {
 		return references;
 	}
 
+	public incomingCalls(symbolId: SymbolID): readonly Ref[] {
+		const cached = this.incomingCallsBySymbol.get(symbolId);
+		if (cached) {
+			return cached;
+		}
+		const facts = this.getQueryStore().incoming(symbolId, this.declarations.get(symbolId).name);
+		const references = new Array<Ref>(facts.length);
+		for (let factIndex = 0; factIndex < facts.length; factIndex += 1) {
+			references[factIndex] = facts[factIndex].reference;
+		}
+		this.incomingCallsBySymbol.set(symbolId, references);
+		return references;
+	}
+
+	public outgoingCalls(symbolId: SymbolID): readonly { readonly reference: Ref; readonly callee: SymbolID }[] {
+		const cached = this.outgoingCallsBySymbol.get(symbolId);
+		if (cached) {
+			return cached;
+		}
+		const facts = this.getQueryStore().outgoing(symbolId);
+		const calls = new Array<{ readonly reference: Ref; readonly callee: SymbolID }>(facts.length);
+		for (let factIndex = 0; factIndex < facts.length; factIndex += 1) {
+			calls[factIndex] = {
+				reference: facts[factIndex].reference,
+				callee: facts[factIndex].calleeFn,
+			};
+		}
+		this.outgoingCallsBySymbol.set(symbolId, calls);
+		return calls;
+	}
+
+	public getSemanticQueryMetrics(): LuaSemanticQueryMetrics {
+		return this.getQueryStore().metrics();
+	}
+
+	private resolveReferenceTargetsUncached(ref: Ref): readonly SymbolID[] {
+		if (ref.target) {
+			return [ref.target];
+		}
+		if (ref.referenceKind === 'self') {
+			return EMPTY_SYMBOLS;
+		}
+		if (ref.referenceKind === 'member' || ref.referenceKind === 'method') {
+			return this.getQueryStore().member(ref.receiverValue, ref.name);
+		}
+		if (ref.symbolKey.length === 0) {
+			return EMPTY_SYMBOLS;
+		}
+		const global = this.globals.get(ref.symbolKey);
+		return global ? [global] : EMPTY_SYMBOLS;
+	}
+
 	private resolveReferences(symbolIds: readonly SymbolID[]): void {
 		const unresolvedSymbols = new Set<SymbolID>();
 		const names = new Set<string>();
@@ -370,17 +268,13 @@ export class WorkspaceSymbolResolver {
 				}
 			}
 		}
-		// Candidate selection and semantic confirmation extend one retained graph
-		// for this immutable workspace version. Resolved calls become ordinary
-		// call-graph edges instead of being rediscovered by later queries.
-		const targetsByCandidate = this.resolveReferenceTargetBatch(candidates);
 		const references = new Map<SymbolID, Ref[]>();
 		for (const symbolId of unresolvedSymbols) {
 			references.set(symbolId, []);
 		}
 		for (let candidateIndex = 0; candidateIndex < candidates.length; candidateIndex += 1) {
 			const candidate = candidates[candidateIndex];
-			const targets = targetsByCandidate[candidateIndex];
+			const targets = this.resolveReferenceTargets(candidate);
 			for (let targetIndex = 0; targetIndex < targets.length; targetIndex += 1) {
 				const target = targets[targetIndex];
 				const bucket = references.get(target);
@@ -392,5 +286,12 @@ export class WorkspaceSymbolResolver {
 		for (const [symbolId, symbolReferences] of references) {
 			this.referencesBySymbol.set(symbolId, symbolReferences);
 		}
+	}
+
+	private getQueryStore(): LuaSemanticQueryStore {
+		if (!this.queryStore) {
+			this.queryStore = new LuaSemanticQueryStore(this.files, this.globals);
+		}
+		return this.queryStore;
 	}
 }

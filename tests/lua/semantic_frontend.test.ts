@@ -997,8 +997,15 @@ test('LuaSemanticFrontend incoming calls follow bound inherited methods without 
 	);
 
 	const first = frontend.provideIncomingCalls(target.targets[0].id);
+	const firstMetrics = frontend.snapshot.symbolResolver.getSemanticQueryMetrics();
 	const second = frontend.provideIncomingCalls(target.targets[0].id);
-	assert.deepEqual(first, second, 'the retained workspace graph is stable across repeated queries');
+	const secondMetrics = frontend.snapshot.symbolResolver.getSemanticQueryMetrics();
+	assert.deepEqual(first, second, 'the retained CallFacts are stable across repeated queries');
+	assert.equal(
+		secondMetrics.callFactPasses,
+		firstMetrics.callFactPasses,
+		'a repeated incoming expansion is a CallFacts cache hit',
+	);
 	assert.equal(first.length, 1);
 	assert.equal(first[0].from.label, 'inherited_call');
 	assert.deepEqual(first[0].fromRanges.map(range => range.start.line), [6]);
@@ -1013,6 +1020,65 @@ test('LuaSemanticFrontend incoming calls follow bound inherited methods without 
 	assert.equal(outgoing.length, 2);
 	assert.deepEqual(outgoing.map(call => call.to.label), ['base.spawn', 'derived.new']);
 	assert.deepEqual(outgoing.map(call => call.fromRanges[0].start.line), [6, 5]);
+});
+
+test('LuaSemanticFrontend retains dynamic lifecycle CallFacts for both hierarchy directions', () => {
+	const hostSource = [
+		'local host<const> = {}',
+		'host.__index = host',
+		'function host.new() return setmetatable({}, host) end',
+		'function host:add(extension)',
+		'\textension.parent = self',
+		'\textension:on_attach()',
+		'end',
+		'return host',
+	].join('\n');
+	const controllerSource = [
+		'local controller<const> = {}',
+		'controller.__index = controller',
+		'function controller.new() return setmetatable({}, controller) end',
+		'function controller:on_attach() self.parent.controller = self end',
+		'return controller',
+	].join('\n');
+	const noiseSource = [
+		'local noise<const> = {}',
+		'noise.__index = noise',
+		'function noise:on_attach() end',
+		'return noise',
+	].join('\n');
+	const mainSource = [
+		"local host<const> = require('host')",
+		"local controller<const> = require('controller')",
+		'local owner<const> = host.new()',
+		'owner:add(controller.new())',
+	].join('\n');
+	const frontend = buildLuaSemanticFrontend([
+		{ path: 'host.lua', source: hostSource },
+		{ path: 'controller.lua', source: controllerSource },
+		{ path: 'noise.lua', source: noiseSource },
+		{ path: 'main.lua', source: mainSource },
+	]);
+	const lifecycle = frontend.findSymbolsByPosition('controller.lua', 4, 21);
+	const hostAdd = frontend.findSymbolsByPosition('host.lua', 4, 15);
+	assert.ok(lifecycle);
+	assert.ok(hostAdd);
+
+	const incoming = frontend.provideIncomingCalls(lifecycle.targets[0].id);
+	const retainedPasses = frontend.snapshot.symbolResolver.getSemanticQueryMetrics().callFactPasses;
+	assert.equal(incoming.length, 1);
+	assert.equal(incoming[0].from.label, 'host.add');
+	assert.deepEqual(incoming[0].fromRanges.map(range => range.start.line), [6]);
+	const outgoing = frontend.provideOutgoingCalls(hostAdd.targets[0].id);
+	assert.equal(outgoing.length, 1);
+	assert.equal(outgoing[0].to.label, 'controller.on_attach');
+	assert.deepEqual(outgoing[0].fromRanges.map(range => range.start.line), [6]);
+	frontend.provideIncomingCalls(lifecycle.targets[0].id);
+	frontend.provideOutgoingCalls(hostAdd.targets[0].id);
+	assert.equal(
+		frontend.snapshot.symbolResolver.getSemanticQueryMetrics().callFactPasses,
+		retainedPasses,
+		'repeated hierarchy expansion reads the retained dynamic CallFacts',
+	);
 });
 
 test('LuaSemanticFrontend provides nested multiline signature help from parser-owned argument lists', () => {

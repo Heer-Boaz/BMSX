@@ -285,12 +285,9 @@ class SnapshotSemanticFrontend implements LuaSemanticFrontend {
 		allowedPaths?: ReadonlySet<string>,
 	): readonly LuaCallHierarchyIncomingCall[] {
 		const grouped = new Map<string, IncomingCallerGroup>();
-		const references = this.snapshot.symbolResolver.getReferences(symbolId);
+		const references = this.snapshot.symbolResolver.incomingCalls(symbolId);
 		for (let index = 0; index < references.length; index += 1) {
 			const reference = references[index];
-			if (!reference.isCall) {
-				continue;
-			}
 			if (allowedPaths && !allowedPaths.has(reference.file)) {
 				continue;
 			}
@@ -320,36 +317,23 @@ class SnapshotSemanticFrontend implements LuaSemanticFrontend {
 		symbolId: SymbolID,
 		allowedPaths?: ReadonlySet<string>,
 	): readonly LuaCallHierarchyOutgoingCall[] {
-		const declaration = this.snapshot.symbolResolver.getDeclaration(symbolId);
-		const source: FileSemanticData = this.snapshot.getFileData(declaration.file);
-		const callReferences: Ref[] = [];
-		for (let index = 0; index < source.refs.length; index += 1) {
-			const reference = source.refs[index];
-			if (reference.isCall && reference.caller === symbolId) {
-				callReferences.push(reference);
-			}
-		}
-		const targetsByReference = this.snapshot.symbolResolver.resolveCallTargets(callReferences);
+		const calls = this.snapshot.symbolResolver.outgoingCalls(symbolId);
 		const grouped = new Map<SymbolID, OutgoingCalleeGroup>();
-		for (let index = 0; index < callReferences.length; index += 1) {
-			const reference = callReferences[index];
-			const targets = targetsByReference[index];
-			for (let targetIndex = 0; targetIndex < targets.length; targetIndex += 1) {
-				const targetId = targets[targetIndex];
-				let bucket = grouped.get(targetId);
-				if (!bucket) {
-					const target = this.snapshot.symbolResolver.getDeclaration(targetId);
-					if (allowedPaths && !allowedPaths.has(target.file)) {
-						continue;
-					}
-					bucket = {
-						to: buildSymbolCallHierarchyItem(target),
-						fromRanges: [],
-					};
-					grouped.set(targetId, bucket);
+		for (let callIndex = 0; callIndex < calls.length; callIndex += 1) {
+			const call = calls[callIndex];
+			let bucket = grouped.get(call.callee);
+			if (!bucket) {
+				const target = this.snapshot.symbolResolver.getDeclaration(call.callee);
+				if (allowedPaths && !allowedPaths.has(target.file)) {
+					continue;
 				}
-				bucket.fromRanges.push(reference.range);
+				bucket = {
+					to: buildSymbolCallHierarchyItem(target),
+					fromRanges: [],
+				};
+				grouped.set(call.callee, bucket);
 			}
+			bucket.fromRanges.push(call.reference.range);
 		}
 		const groups = Array.from(grouped.values());
 		for (let index = 0; index < groups.length; index += 1) {

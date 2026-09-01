@@ -590,6 +590,7 @@ class SemanticBuilder {
 	private readonly decls: InternalDecl[] = [];
 	private readonly declById: Map<SymbolID, InternalDecl> = new Map();
 	private readonly refs: Ref[] = [];
+	private readonly deferredMethodTargets: Ref[] = [];
 	private readonly memberAccesses: MemberAccessEntry[] = [];
 	private readonly declarationIdsBySyntax: Map<LuaIdentifierExpression, SymbolID> = new Map();
 	private readonly referencesBySyntax: Map<LuaIdentifierExpression, Ref> = new Map();
@@ -634,6 +635,13 @@ class SemanticBuilder {
 		);
 		for (let index = 0; index < this.chunk.body.length; index += 1) {
 			this.visitStatement(this.chunk.body[index]);
+		}
+		for (let index = 0; index < this.deferredMethodTargets.length; index += 1) {
+			const reference = this.deferredMethodTargets[index];
+			const declaration = this.properties.get(reference.symbolKey);
+			if (declaration !== undefined) {
+				reference.target = declaration.id;
+			}
 		}
 		this.leaveScope();
 		return {
@@ -1363,9 +1371,6 @@ class SemanticBuilder {
 		for (let index = 0; index < expression.parameters.length; index += 1) {
 			const parameter = this.declareParameter(expression.parameters[index]);
 			parameters[index + (receiver ? 1 : 0)] = declarationValueSource(parameter.id);
-			if (index === 0 && explicitReceiverClass) {
-				this.setDeclarationProjection(parameter, appendValueInstance(explicitReceiverClass));
-			}
 		}
 		this.visitBlock(block);
 		const returnValue = this.functionReturnValueStack.pop()!;
@@ -1552,6 +1557,7 @@ class SemanticBuilder {
 
 	private recordMethodReference(callExpression: LuaCallExpression, calleeInfo: ResolvedNamePath): Ref {
 		let basePath = resolveReferencedBasePath(calleeInfo, callExpression.callee);
+		let implicitSelfReceiver = false;
 		if (basePath
 			&& basePath.length === 1
 			&& basePath[0] === 'self'
@@ -1559,6 +1565,7 @@ class SemanticBuilder {
 			const methodSelfPath = this.currentMethodSelfPath();
 			if (methodSelfPath && methodSelfPath.length > 0) {
 				basePath = methodSelfPath.slice();
+				implicitSelfReceiver = true;
 			}
 		}
 		const receiverSymbolKey = calleeInfo?.decl?.symbolKey || (calleeInfo?.namePath && joinNamePath(calleeInfo.namePath));
@@ -1576,10 +1583,12 @@ class SemanticBuilder {
 			calleeInfo?.valueSource,
 			methodName,
 			calleeInfo?.decl,
-		) ?? (calleeInfo?.valueSource ? undefined : this.properties.get(joinNamePath(namePath)));
+		) ?? (implicitSelfReceiver || !calleeInfo?.valueSource
+			? this.properties.get(joinNamePath(namePath))
+			: undefined);
 		const targetId = decl?.id;
 		const receiverExpressionPath = resolveStaticLuaExpressionPath(callExpression.callee);
-		return this.recordReference({
+		const reference = this.recordReference({
 			syntax: method,
 			namePath,
 			name: methodName,
@@ -1594,6 +1603,10 @@ class SemanticBuilder {
 			receiverValue: calleeInfo?.valueSource,
 			isCall: true,
 		});
+		if (implicitSelfReceiver && targetId === undefined) {
+			this.deferredMethodTargets.push(reference);
+		}
+		return reference;
 	}
 
 	private recordFunctionSignature(
