@@ -42,6 +42,7 @@ local component_class_chain<const> = require('cartlib/component/component_class'
 local prefab<const> = require('cartlib/world/prefab')
 local registry<const> = require('cartlib/registry')
 local space<const> = require('cartlib/world/space')
+local studio_runtime<const> = require('cartlib/studio/runtime')
 local system_manager<const> = require('cartlib/world/system_manager')
 
 local world
@@ -148,6 +149,7 @@ function world_class.new()
 	self._render_visuals = {}
 	self._render_visual_count = 0
 	self._render_visual_revision = -1
+	self._studio = nil
 	return self
 end
 
@@ -231,6 +233,24 @@ function world_class:configure(world_module)
 	self._initial_space_id = initial_space_id
 	self.active_space_id = initial_space_id
 	self:_commit_active_space(initial_space_id)
+	local studio<const> = studio_runtime.attach(self)
+	if studio ~= nil then
+		self._studio = studio
+		self._studio_system_update = self._update_with_gameplay
+		self.update = world_class._update_studio
+		if world_module.framebuffer_count == 1 then
+			self.render = world_class._render_studio_single_page
+		else
+			self.render = world_class._render_studio_double_page
+		end
+	end
+end
+
+function world_class:_update_studio()
+	local studio<const> = self._studio
+	studio:apply_command(self)
+	self._studio_system_update()
+	studio:update_editor(self)
 end
 
 function world_class:active_component_view(component_class)
@@ -302,9 +322,17 @@ function world_class:_commit_gameplay_clock(running)
 	self.gameplay_clock_running = running
 	if running then
 		self._system_manager:resume_clock(clock.gameplay)
-		self.update = self._update_with_gameplay
+		if self._studio ~= nil then
+			self._studio_system_update = self._update_with_gameplay
+		else
+			self.update = self._update_with_gameplay
+		end
 	else
-		self.update = self._update_without_gameplay
+		if self._studio ~= nil then
+			self._studio_system_update = self._update_without_gameplay
+		else
+			self.update = self._update_without_gameplay
+		end
 	end
 	return true
 end
@@ -544,6 +572,9 @@ end
 function world_class:_commit_component_detach(comp)
 	self:_reconcile_active_component(comp)
 	comp.parent:_detach_component(comp)
+	if self._studio ~= nil then
+		self._studio:component_detached(comp)
+	end
 	registry:deregister(comp)
 end
 
@@ -678,15 +709,14 @@ function world_class:_flush_admissions()
 	self._pending_admission_count = 0
 end
 
--- A prefab instance is fully constructed before Registry, space and system
--- views publish it. During a tick group that publication or cancellation
--- happens at the group barrier.
-function world_class:spawn(definition_id, options)
-	local definition<const> = prefab.definition(definition_id)
+local spawn_definition<const> = function(self, definition, options)
+	local definition_id<const> = definition.id
 	local obj<const> = {}
 	apply_spawn_values(obj, definition.defaults)
 	apply_spawn_values(obj, options)
 	obj.definition_id = definition_id
+	obj._definition_token_lo = definition.token_lo
+	obj._definition_token_hi = definition.token_hi
 	obj.id = obj.id or registry:next_id()
 
 	setmetatable(obj, definition.instance_metatable)
@@ -728,9 +758,24 @@ function world_class:spawn(definition_id, options)
 	return obj
 end
 
+-- A prefab instance is fully constructed before Registry, space and system
+-- views publish it. During a tick group that publication or cancellation
+-- happens at the group barrier.
+function world_class:spawn(definition_id, options)
+	return spawn_definition(self, prefab.definition(definition_id), options)
+end
+
+function world_class:spawn_by_token(definition_token_lo, definition_token_hi, options)
+	local definition<const> = prefab.definition_by_token(definition_token_lo, definition_token_hi)
+	return spawn_definition(self, definition, options)
+end
+
 function world_class:_commit_disposal(obj)
 	local components<const> = obj._components
 	if obj._world_object_index ~= nil then
+		if self._studio ~= nil then
+			self._studio:object_disposed(obj)
+		end
 		for i = 1, #components do
 			self:_reconcile_active_component(components[i])
 		end
@@ -921,6 +966,30 @@ function world_class:_render_double_page()
 	self._draw_page = self._display_page
 	self._display_page = draw_page
 	gx_gpu.draw_target(self._draw_page, self._page_size)
+end
+
+function world_class:_render_studio_single_page()
+	local draw_page<const> = self._draw_page
+	self:_build_render_commands(draw_page)
+	command_list.submit(self._draw_commands)
+	local studio<const> = self._studio
+	studio:render_overlay()
+	gx_gpu.draw_target(draw_page, self._page_size)
+	studio:publish(self)
+end
+
+function world_class:_render_studio_double_page()
+	local draw_page<const> = self._draw_page
+	self:_build_render_commands(draw_page)
+	command_list.submit_fenced(self._draw_commands)
+	local studio<const> = self._studio
+	studio:set_game_origin(draw_page)
+	self._draw_page = self._display_page
+	self._display_page = draw_page
+	gx_gpu.draw_target(self._draw_page, self._page_size)
+	studio:render_overlay()
+	gx_gpu.draw_target(self._draw_page, self._page_size)
+	studio:publish(self)
 end
 
 -- Removes every object owned by one space through the normal structural

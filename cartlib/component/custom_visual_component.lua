@@ -26,12 +26,14 @@ function custom_visual_component.factory(definition)
 	local offset_x<const> = definition.offset_x or 0
 	local offset_y<const> = definition.offset_y or 0
 	local offset_z<const> = definition.offset_z or 0
+	local edit_area<const> = definition.edit_area
 	return function(opts)
 		local self<const> = create(opts, draw)
 		self.id_local = id_local
 		self.offset_x = offset_x
 		self.offset_y = offset_y
 		self.offset_z = offset_z
+		self.edit_area = edit_area
 		if enabled ~= nil then
 			self.enabled = enabled
 		end

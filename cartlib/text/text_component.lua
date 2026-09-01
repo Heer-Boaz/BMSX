@@ -185,6 +185,50 @@ function text_component:draw_visual(draw)
 	self:render_glyphs(draw, x, y, first_line, last_line)
 end
 
+function text_component:edit_bounds()
+	local line_count<const> = self.glyph_line_count
+	if line_count == 0 then
+		return nil
+	end
+	local widths<const> = self.line_widths or self.layout_line_widths
+	local line_offsets<const> = self.line_offsets
+	local line_x_offsets<const> = self.line_x_offsets
+	local center_block_width<const> = self.center_block_width
+	local line_height<const> = self.line_height
+	local left
+	local top
+	local right
+	local bottom
+	for index = 1, line_count do
+		local width<const> = widths[index]
+		local line_x = 0
+		if line_x_offsets ~= nil then
+			line_x = line_x_offsets[index]
+		elseif center_block_width ~= nil then
+			line_x = (center_block_width - width) // 2
+		end
+		local line_y<const> = line_offsets ~= nil
+			and line_offsets[index]
+			or (index - 1) * line_height
+		local line_right<const> = line_x + width
+		local line_bottom<const> = line_y + line_height
+		if left == nil then
+			left = line_x
+			top = line_y
+			right = line_right
+			bottom = line_bottom
+		else
+			if line_x < left then left = line_x end
+			if line_y < top then top = line_y end
+			if line_right > right then right = line_right end
+			if line_bottom > bottom then bottom = line_bottom end
+		end
+	end
+	local offset_x<const> = self.offset_x + self.draw_offset_x
+	local offset_y<const> = self.offset_y + self.draw_offset_y
+	return left + offset_x, top + offset_y, right + offset_x, bottom + offset_y
+end
+
 function text_component:render_glyphs(draw, x, y, first_line, last_line)
 	local glyphs<const> = self.glyph_lines
 	local span_binding<const> = self.font.span_binding

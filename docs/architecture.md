@@ -342,6 +342,10 @@ Ownership terms are architectural roles, not interchangeable directory labels:
   scheduler, devices, installed-ROM decoding, BLua32 execution, and
   deterministic save-state.
 - `bios` owns the guest system-ROM program and its resources.
+- `cartlib` is the first-party cartridge-ROM engine. It is linked into ordinary
+  game cartridges and owns their world, components, schedules, input semantics,
+  GX command production and other cart middleware; it is neither firmware nor
+  host code. Bare-metal cartridges may omit it.
 - `host` owns the process, window/device/runtime environment, files, physical
   input, audio/video presentation, external ABI callbacks, and execution loop.
 - `mode` is a behavior variant inside one host. A mode may choose pacing,
@@ -814,6 +818,10 @@ The outer ROM header exposes the executable without a TOC lookup:
 | `52` | Static-layout token low word. |
 | `56` | Static-layout token high word. |
 | `60` | Debug diagnostic-directory byte offset in this physical ROM; zero means physically absent. |
+| `64`, `68` | Tooling metadata byte offset and byte count. |
+| `72` | Raw physical cartridge-board identity word; zero means no named device identity. |
+| `76` | Raw physical cartridge-board capability word. |
+| `80` | Physical cartridge-RAM byte count. |
 
 The diagnostic directory is CPU-readable ROM data rather than a host symbol
 object. Its 32-byte header contains range count/offset, file count/offset,
@@ -2278,17 +2286,23 @@ not classify cartridge contents as executable. The four read-only words that
 follow expose each socket's raw board word and physical RAM byte count. Unknown
 board bits remain readable and have no current datapath effect.
 
-The ROM header owns the board declaration. Its word at byte 76 has
-`RAM=bit0` and `MAILBOX=bit1`; the word at byte 80 is the socket-local RAM
-capacity and cannot exceed the 15 MiB aperture. A board without `RAM` returns
+The ROM header owns the board declaration. Its word at byte 72 is the raw board
+identity, the word at byte 76 has `RAM=bit0` and `MAILBOX=bit1`, and the word at
+byte 80 is the socket-local RAM capacity and cannot exceed the 15 MiB aperture.
+Identity is a device admission word, not a socket class: either socket may hold
+any named board, an executable game, or media that combines both roles. A board
+without `RAM` returns
 zero and ignores writes in the RAM window. A shorter ROM or RAM backing returns
 zero beyond its physical end. The complete header, sections and TOC must fit
 the 512 MiB ROM window; loaders and ROM producers reject a larger physical
 image. Reset retains cartridge RAM, resets the CPU
 selection to socket 0 and clears mailbox data, control, DREQ and local
 IRQ state. At the source boundary the ROM packer maps
-`cartridge.board = rom|ram|mailbox|ram_mailbox` and optional
-`cartridge.ram_bytes` into those two raw header words.
+`cartridge.board = rom|ram|mailbox|ram_mailbox`, optional
+`cartridge.board_id`, and optional `cartridge.ram_bytes` into those three raw
+header words. A non-executable device image uses the same physical header and
+TOC layout with a zero BLua32 image offset; it does not acquire a second
+execution domain.
 
 The minimal device board decodes four aligned 32-bit mailbox registers at the
 start of cartridge MMIO:
@@ -2355,6 +2369,63 @@ example its
 [GFX9000 device cartridge](https://github.com/openMSX/openMSX/blob/d1b8f2c81b3fcafde528e91e6133a7278a732e04/share/extensions/gfx9000.xml).
 BMSX deliberately does not copy MSX slot paging: the raw chip-select mux,
 external-bus aperture and per-board decode above are the complete base contract.
+
+#### Studio expansion-board viewport
+
+Browser Studio admits one ordinary non-executable `ram_mailbox` device image
+with board identity `53545544h` in the other physical socket by default. This is
+a product admission convention, not a special slot: the guest contract works
+with the game in socket 0 and the board in socket 1 or with those media reversed.
+An explicit second medium replaces the default board rather than creating a
+third socket.
+
+The BIOS still boots the first executable cartridge. The active game cartridge
+then inspects the other socket through the ordinary cartridge aperture. When it
+finds the Studio identity plus RAM and mailbox capabilities, cartlib attaches
+one Studio runtime to the existing cart world. The board runs no Lua, owns no
+world and has no IRQ handler of its own. The active cartridge services the
+board's socket IRQ, reads its mailbox sequence, and returns `CART_SELECT` to the
+known execution socket. Frame-path descriptor and command transfers use the
+DMA request selectors' explicit socket override, so they neither change the CPU
+data selection nor steal the `CP0.EXEC` instruction latch.
+
+The Studio board RAM is the single shared data owner. It contains a fixed
+little-endian word protocol defined by
+`cartlib/studio/protocol.lua` and
+`ide/workbench/contrib/studio/protocol.ts`: a 32-word header, fixed-stride
+object and component records, and one fixed 16-word command record. Object and
+component identity is a cart-registry handle. Authored definition, space and
+string component ids cross the bus as FNV-1a token words. Live cart positions
+and authoring bounds cross as their raw BLua32 `f32` words. The guest component
+owner supplies exact edit bounds; the host does not infer sprite, text or
+collision geometry and never walks the Lua heap.
+
+Publishing uses an odd/even revision latch. Cartlib writes an odd header and
+the complete tables by explicit-slot DMA, then publishes the next even revision
+word last. Host readers accept only two matching even revision samples. The
+mailbox is a doorbell: `DATA` carries the command sequence, while the board-RAM
+command record carries numeric `SELECT`, position, visibility, component,
+gameplay-clock, spawn and disposal operands. The active game applies them
+through the existing registry, world-object, component, prefab and disposal
+owners; there is no host Lua RPC or shadow scene graph.
+
+Browser pointer events are converted once from DOM coordinates to intrinsic
+viewport pixels before ICU publication. ICU retains the raw signed-S16.16
+words, and cartlib decodes that fixed-point representation at its central
+fixed-point owner. Guest Studio picking walks the retained cart visual order,
+selection and dragging mutate the live world, and pausing changes only the
+world gameplay-clock lane. Frame-clock work, the existing world, scanout and
+authoring publication continue.
+
+The game framebuffer is PCRTC circuit 2. Cartlib allocates a transparent gizmo
+page after the game framebuffer pages and programs it as circuit 1, whose
+source-alpha pixels form the top layer. Crosshair, hover/selection rectangles
+and translate handles are ordinary GP0 commands stored in VRAM, so every host
+and libretro sees the same viewport. `OverlayRenderer` and `LAYER_2D_IDE` remain
+host chrome after PCRTC merge, quantization and CRT; they never draw or own the
+scene. Studio uses one Machine and one Runtime. Hot Resume revises the live
+cartridge image and heap; a second Runtime for play-in-editor remains a separate
+future product decision.
 
 ### DMA
 
@@ -2783,6 +2854,26 @@ phase and applies the same packet/FIFO transition as GP1(01h). It does not publi
 those reset register values directly: the previous presented registers remain
 visible until the next VBlank presentation edge, and neither the prior edge result
 nor a pending compacted-VRAM publication is discarded.
+
+The published guest `320×240 PAL` preset is one hardware contract used by both
+BIOS boot presentation and cartlib's `display.reset_320x240()` caller. It emits
+GP1 reset `00000000h`, VRAM-Y extension `09000001h`, display mode `08000009h`,
+horizontal range `06c60260h`, vertical range `07044c23h`, DMA direction
+`04000002h`, and display enable `03000000h`. Its PCRTC circuit-1 bank is:
+
+| PCRTC word pair | Low | High |
+| --- | ---: | ---: |
+| `PMODE` | `0000ff21h` | `00000000h` |
+| `DISPFB1` | `000fa000h` | `00000000h` |
+| `DISPLAY1` | `018252a8h` | `000ef4ffh` |
+| `SMODE1` | `40806504h` | `00000007h` |
+| `SMODE2` | `00000000h` | `00000000h` |
+| `SYNCH1` | `1fc83030h` | `0007f5c2h` |
+| `SYNCH2` | `003484bch` | `00000000h` |
+| `SYNCV` | `02101404h` | `00a90005h` |
+
+The BIOS and cartlib remain separate guest programs and therefore keep
+separate MMIO callsites; neither imports a shared Lua firmware/cart library.
 Its register reset clears the E1 texture-page-Y-high bit, mirrored in GPUSTAT
 bit 15, but preserves the separate GP1(09h) VRAM-Y-address-extension latch;
 only machine reset clears that latch.
@@ -3486,7 +3577,8 @@ is restored with the registerfile but is not gameplay state.
 `SYSTEM_ROM`, not a distinct layer below another firmware abstraction and not
 emulator runtime code. Its source tree follows the program's actual owners:
 
-- root `main.lua` owns reset, boot presentation, and cartridge handoff;
+- [`machine/bios/main.lua`](../machine/bios/main.lua) owns reset, boot
+  presentation, `load`, and cartridge handoff;
 - `kernel` owns interrupt, VBlank, and BIOS DMA control;
 - `gpu` owns only the private command path used by BIOS presentation;
 - `tty` owns the firmware console driver, terminal state and raster submission;
@@ -3495,9 +3587,11 @@ emulator runtime code. Its source tree follows the program's actual owners:
   their `string/` and `math/` implementation modules, own the resident Lua
   libraries.
 
-There is no parallel `firmware`, `system`, `stdlib`, language-name wrapper, or
-machine-name namespace beneath the BIOS root. Cart builds do not receive BIOS
-source modules as a linker context. Normal Lua facilities are installed as
+There is no parallel repo-root BIOS entry, `firmware`, `system`, `stdlib`,
+language-name wrapper, or machine-name namespace beneath the BIOS root. Cart
+builds compile their selected game sources together with the first-party
+`cartlib` root; they do not receive BIOS source modules as a linker context.
+Normal Lua facilities are installed as
 ordinary globals before cartridge initialization; explicitly callable BIOS
 services use the fixed public vector described above. Cartridge modules are
 compiled and linked into the cartridge image.

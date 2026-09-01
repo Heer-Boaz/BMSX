@@ -1384,6 +1384,7 @@ export async function finalizeRompack(
 		blua32: RomBlua32Tail,
 		layout: RomPrefixLayout,
 		outputDirectory: string,
+		cartridgeBoardId: number,
 		cartridgeBoardWord: number,
 		cartridgeRamByteCount: number,
 	}
@@ -1473,6 +1474,7 @@ export async function finalizeRompack(
 		blua32DiagnosticDirectoryOffset: diagnosticDirectoryOffset,
 		metadataOffset: options.layout.metadataOffset,
 		metadataLength: options.layout.metadataLength,
+		cartridgeBoardId: options.cartridgeBoardId,
 		cartridgeBoardWord: options.cartridgeBoardWord,
 		cartridgeRamByteCount: options.cartridgeRamByteCount,
 	});

@@ -83,6 +83,23 @@ int main() {
 		}
 	}
 
+	std::array<bmsx::u8, bmsx::CART_ROM_HEADER_SIZE> cartridgeHeaderBytes{};
+	bmsx::CartRomHeader cartridgeHeader;
+	cartridgeHeader.headerSize = bmsx::CART_ROM_HEADER_SIZE;
+	cartridgeHeader.cartridgeBoardId = 0x53545544u;
+	cartridgeHeader.cartridgeBoardWord = 0x00000003u;
+	cartridgeHeader.cartridgeRamByteCount = 0x00100000u;
+	bmsx::writeCartRomHeader(cartridgeHeaderBytes.data(), cartridgeHeader);
+	const bmsx::CartRomHeader decodedCartridgeHeader = bmsx::parseCartHeader(
+		cartridgeHeaderBytes.data(),
+		cartridgeHeaderBytes.size()
+	);
+	if (decodedCartridgeHeader.cartridgeBoardId != cartridgeHeader.cartridgeBoardId
+		|| decodedCartridgeHeader.cartridgeBoardWord != cartridgeHeader.cartridgeBoardWord
+		|| decodedCartridgeHeader.cartridgeRamByteCount != cartridgeHeader.cartridgeRamByteCount) {
+		throw std::runtime_error("Cartridge board identity and capability words did not round-trip");
+	}
+
 	std::array<bmsx::u8, bmsx::BLUA32_IMAGE_HEADER_SIZE> unsupportedBlua32{};
 	bmsx::writeLE32(
 		unsupportedBlua32.data() + bmsx::BLUA32_IMAGE_MAGIC_OFFSET,

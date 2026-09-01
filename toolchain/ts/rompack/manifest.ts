@@ -13,6 +13,7 @@ export type CartManifest = {
 	title?: string;
 	cartridge?: {
 		board: 'rom' | 'ram' | 'mailbox' | 'ram_mailbox';
+		board_id?: number;
 		ram_bytes?: number;
 	};
 };
@@ -34,6 +35,7 @@ export function decodeCartManifest(rom: Uint8Array, header: CartRomHeader): Cart
 }
 
 export function resolveCartridgeHeaderWords(manifest: CartManifest | null): {
+	cartridgeBoardId: number;
 	cartridgeBoardWord: number;
 	cartridgeRamByteCount: number;
 } {
@@ -65,5 +67,11 @@ export function resolveCartridgeHeaderWords(manifest: CartManifest | null): {
 	if ((cartridgeBoardWord & CARTRIDGE_BOARD_RAM) === 0 && cartridgeRamByteCount !== 0) {
 		throw new Error('Cartridge RAM bytes require a RAM board.');
 	}
-	return { cartridgeBoardWord, cartridgeRamByteCount };
+	const cartridgeBoardId = manifest?.cartridge?.board_id ?? 0;
+	if (!Number.isInteger(cartridgeBoardId)
+			|| cartridgeBoardId < 0
+			|| cartridgeBoardId > 0xffffffff) {
+		throw new Error('Cartridge board id must be a raw unsigned 32-bit word.');
+	}
+	return { cartridgeBoardId, cartridgeBoardWord, cartridgeRamByteCount };
 }

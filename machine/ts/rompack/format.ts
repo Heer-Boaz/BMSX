@@ -9,6 +9,7 @@ import {
 } from '../spec/bmsx/rom_header';
 import {
 	CART_ROM_HEADER_CARTRIDGE_BOARD_OFFSET,
+	CART_ROM_HEADER_CARTRIDGE_BOARD_ID_OFFSET,
 	CART_ROM_HEADER_CARTRIDGE_RAM_BYTES_OFFSET,
 	CART_ROM_HEADER_BLUA32_DIAGNOSTIC_DIRECTORY_OFFSET,
 	CART_ROM_HEADER_DATA_LENGTH_OFFSET,
@@ -45,6 +46,7 @@ export type CartRomHeader = {
 	blua32DiagnosticDirectoryOffset: number;
 	metadataOffset: number;
 	metadataLength: number;
+	cartridgeBoardId: number;
 	cartridgeBoardWord: number;
 	cartridgeRamByteCount: number;
 };
@@ -78,6 +80,7 @@ export function parseCartHeader(payload: Uint8Array): CartRomHeader {
 	const dataLength = view.getUint32(CART_ROM_HEADER_DATA_LENGTH_OFFSET, true);
 	const metadataOffset = view.getUint32(CART_ROM_HEADER_METADATA_OFFSET, true);
 	const metadataLength = view.getUint32(CART_ROM_HEADER_METADATA_LENGTH_OFFSET, true);
+	const cartridgeBoardId = view.getUint32(CART_ROM_HEADER_CARTRIDGE_BOARD_ID_OFFSET, true);
 	const cartridgeBoardWord = view.getUint32(CART_ROM_HEADER_CARTRIDGE_BOARD_OFFSET, true);
 	const cartridgeRamByteCount = view.getUint32(CART_ROM_HEADER_CARTRIDGE_RAM_BYTES_OFFSET, true);
 	if (cartridgeRamByteCount > CART_RAM_SIZE) {
@@ -109,6 +112,7 @@ export function parseCartHeader(payload: Uint8Array): CartRomHeader {
 		blua32DiagnosticDirectoryOffset: view.getUint32(CART_ROM_HEADER_BLUA32_DIAGNOSTIC_DIRECTORY_OFFSET, true),
 		metadataOffset,
 		metadataLength,
+		cartridgeBoardId,
 		cartridgeBoardWord,
 		cartridgeRamByteCount,
 	};

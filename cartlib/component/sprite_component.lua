@@ -110,6 +110,22 @@ function sprite_component:clear_region()
 	return self
 end
 
+function sprite_component:edit_bounds()
+	local width<const> = (self.region_width or self.source_width) * self.scale_x * self.draw_scale_x
+	local height<const> = (self.region_height or self.source_height) * self.scale_y * self.draw_scale_y
+	local left = self.offset_x + self.draw_offset_x
+	local top = self.offset_y + self.draw_offset_y
+	local right = left + width
+	local bottom = top + height
+	if right < left then
+		left, right = right, left
+	end
+	if bottom < top then
+		top, bottom = bottom, top
+	end
+	return left, top, right, bottom
+end
+
 function sprite_component:on_detach()
 	if self._collider then
 		self._collider:set_sprite(nil)

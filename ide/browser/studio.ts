@@ -23,6 +23,7 @@ import { HostOverlayMenu } from '../../hosts/common/host_overlay_menu';
 import { RenderPresentationState } from '../../hosts/common/presentation_state';
 import { SystemOutputLog } from '../../hosts/common/system_output_log';
 import { runWorkbenchHostFrame } from '../workbench/host_frame';
+import { studioBoardMedia } from '../workbench/contrib/studio/board_media';
 
 declare const BMSX_BROWSER_DEBUG: boolean;
 
@@ -33,6 +34,7 @@ async function startBrowserStudio(): Promise<void> {
 			BMSX_BROWSER_DEBUG,
 			systemRomPath,
 			document.body.dataset.defaultRom,
+			studioBoardMedia,
 		);
 		const runtime = initializeMachineRuntime(
 			options.systemRom,

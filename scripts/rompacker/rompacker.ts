@@ -443,6 +443,7 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 		blua32: BIOSBlua32,
 		layout: BIOSLayout,
 		outputDirectory,
+		cartridgeBoardId: 0,
 		cartridgeBoardWord: 0,
 		cartridgeRamByteCount: 0,
 	}));
@@ -615,6 +616,7 @@ async function main() {
 				blua32,
 				layout: romLayout,
 				outputDirectory,
+				cartridgeBoardId: cartridgeHeaderWords.cartridgeBoardId,
 				cartridgeBoardWord: cartridgeHeaderWords.cartridgeBoardWord,
 				cartridgeRamByteCount: cartridgeHeaderWords.cartridgeRamByteCount,
 			}));

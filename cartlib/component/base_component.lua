@@ -56,6 +56,12 @@ end
 function base_component:on_activate()
 end
 
+-- Authoring consumers ask every component through one guest-side contract.
+-- Components without authored or derived geometry publish no edit rectangle.
+function base_component:edit_bounds()
+	return nil
+end
+
 function base_component:unbind()
 	event_emitter:remove_subscriber(self)
 end

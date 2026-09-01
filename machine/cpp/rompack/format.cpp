@@ -58,7 +58,7 @@ void writeCartRomHeader(u8* data, const CartRomHeader& header) {
 	);
 	writeLE32(data + CART_ROM_HEADER_METADATA_OFFSET, header.metadataOffset);
 	writeLE32(data + CART_ROM_HEADER_METADATA_LENGTH_OFFSET, header.metadataLength);
-	writeLE32(data + CART_ROM_HEADER_RESERVED_1_OFFSET, 0u);
+	writeLE32(data + CART_ROM_HEADER_CARTRIDGE_BOARD_ID_OFFSET, header.cartridgeBoardId);
 	writeLE32(data + CART_ROM_HEADER_CARTRIDGE_BOARD_OFFSET, header.cartridgeBoardWord);
 	writeLE32(data + CART_ROM_HEADER_CARTRIDGE_RAM_BYTES_OFFSET, header.cartridgeRamByteCount);
 }
@@ -108,6 +108,7 @@ CartRomHeader parseCartHeader(const u8* data, size_t size) {
 	);
 	header.metadataOffset = readLE32(data + CART_ROM_HEADER_METADATA_OFFSET);
 	header.metadataLength = readLE32(data + CART_ROM_HEADER_METADATA_LENGTH_OFFSET);
+	header.cartridgeBoardId = readLE32(data + CART_ROM_HEADER_CARTRIDGE_BOARD_ID_OFFSET);
 	header.cartridgeBoardWord = readLE32(data + CART_ROM_HEADER_CARTRIDGE_BOARD_OFFSET);
 	header.cartridgeRamByteCount = readLE32(data + CART_ROM_HEADER_CARTRIDGE_RAM_BYTES_OFFSET);
 	if (header.cartridgeRamByteCount > CART_RAM_SIZE) {

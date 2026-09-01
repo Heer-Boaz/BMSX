@@ -274,6 +274,7 @@ cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRES
 		});
 		await finalizeRompack('texture-contract-system', {
 			debug: false,
+			cartridgeBoardId: 0,
 			cartridgeBoardWord: 0,
 			cartridgeRamByteCount: 0,
 			blua32: systemBlua32,
@@ -305,6 +306,7 @@ return first_image._texture == second_image._texture and 1 or 0,
 `;
 		const cartModuleSources = [
 			['cartlib/memory', readFileSync('cartlib/memory.lua', 'utf8')],
+			['cartlib/token', readFileSync('cartlib/token.lua', 'utf8')],
 			['string/float/decode', readFileSync('machine/bios/string/float/decode.lua', 'utf8')],
 			['cartlib/bin', readFileSync('cartlib/bin.lua', 'utf8')],
 			['cartlib/rom_dir', readFileSync('cartlib/rom_dir.lua', 'utf8')],
@@ -378,6 +380,7 @@ return imgdec
 		});
 		await finalizeRompack('texture-contract', {
 			debug: false,
+			cartridgeBoardId: 0,
 			cartridgeBoardWord: 0,
 			cartridgeRamByteCount: 0,
 			blua32: cartBlua32,

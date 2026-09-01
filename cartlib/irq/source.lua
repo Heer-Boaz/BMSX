@@ -11,4 +11,6 @@ return {
 	gpu = 0x0040,
 	imgdec = 0x0080,
 	dma1_done = 0x0100,
+	cartridge_slot0 = 0x0200,
+	cartridge_slot1 = 0x0400,
 }

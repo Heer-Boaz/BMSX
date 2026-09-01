@@ -85,7 +85,7 @@ Current artifact names encode that split:
 
 ## Runtime Timing
 
-BMSX fixes the CPU at 50 MHz and resets GX to 320×240 PAL. The PSX GP1 register
+BMSX fixes the CPU at 33.8688 MHz (`44100 × 768`) and resets GX to 320×240 PAL. The PSX GP1 register
 set still owns raster/status state, including its native 256, 320, 368, 512 and
 640-column modes. The PS2-style PCRTC is the sole scanout clock and geometry
 owner: `SMODE1/2`, `SYNCH1/2` and `SYNCV` drive the physical beam, while

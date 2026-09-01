@@ -99,6 +99,54 @@ function world_object:set_z(z)
 	end
 end
 
+function world_object:set_visible(visible)
+	self.visible = visible
+	return self
+end
+
+-- The object owns the union of component-authored edit geometry. Studio and
+-- other authoring consumers receive world-space coordinates without inferring
+-- sprite, text, collision or custom-component shapes on the host.
+function world_object:edit_bounds()
+	local left
+	local top
+	local right
+	local bottom
+	local components<const> = self._components
+	for index = 1, #components do
+		local comp<const> = components[index]
+		if comp.enabled and (comp.visible == nil or comp.visible) then
+			local comp_left<const>, comp_top<const>, comp_right<const>, comp_bottom<const> =
+				comp:edit_bounds()
+			if comp_left ~= nil then
+				if left == nil then
+					left = comp_left
+					top = comp_top
+					right = comp_right
+					bottom = comp_bottom
+				else
+					if comp_left < left then left = comp_left end
+					if comp_top < top then top = comp_top end
+					if comp_right > right then right = comp_right end
+					if comp_bottom > bottom then bottom = comp_bottom end
+				end
+			end
+		end
+	end
+	if left == nil then
+		if self.sx == 0 and self.sy == 0 then
+			return nil
+		end
+		left = 0
+		top = 0
+		right = self.sx
+		bottom = self.sy
+		if right < left then left, right = right, left end
+		if bottom < top then top, bottom = bottom, top end
+	end
+	return self.x + left, self.y + top, self.x + right, self.y + bottom
+end
+
 -- set_space(space_id): moves this object into the named world space.
 --   The object stays alive and subscribed. Its components and definition stop
 --   appearing in retained views while another space is selected, then reappear

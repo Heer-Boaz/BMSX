@@ -56,4 +56,29 @@ function tile_strip_component.factory(definition)
 	end
 end
 
+function tile_strip_component:edit_bounds()
+	local first<const> = self.first_tile
+	local last<const> = self.last_tile
+	if last < first then
+		return nil
+	end
+	local offset_x<const> = self.offset_x + self.draw_offset_x
+	local offset_y<const> = self.offset_y + self.draw_offset_y
+	local x0<const> = offset_x + first * self.step_x
+	local y0<const> = offset_y + first * self.step_y
+	local x1<const> = offset_x + last * self.step_x
+	local y1<const> = offset_y + last * self.step_y
+	local left = x0
+	local top = y0
+	local right = x1 + self.tile_width
+	local bottom = y1 + self.tile_height
+	if right < left then
+		left, right = right - self.tile_width, left + self.tile_width
+	end
+	if bottom < top then
+		top, bottom = bottom - self.tile_height, top + self.tile_height
+	end
+	return left, top, right, bottom
+end
+
 return tile_strip_component

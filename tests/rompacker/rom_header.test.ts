@@ -33,6 +33,7 @@ const EMPTY_CART_HEADER: CartRomHeader = {
 	blua32DiagnosticDirectoryOffset: 0,
 	metadataOffset: 0,
 	metadataLength: 0,
+	cartridgeBoardId: 0,
 	cartridgeBoardWord: 0,
 	cartridgeRamByteCount: 0,
 };
@@ -82,11 +83,13 @@ test('ROM header carries the physical cartridge board words', () => {
 	const rom = new Uint8Array(CART_ROM_HEADER_SIZE);
 	writeCartRomHeader(rom, {
 		...EMPTY_CART_HEADER,
+		cartridgeBoardId: 0x53545544,
 		cartridgeBoardWord: CARTRIDGE_BOARD_RAM | CARTRIDGE_BOARD_MAILBOX,
 		cartridgeRamByteCount: 0x00123456,
 	});
 
 	const header = parseCartHeader(rom);
+	assert.equal(header.cartridgeBoardId, 0x53545544);
 	assert.equal(header.cartridgeBoardWord, CARTRIDGE_BOARD_RAM | CARTRIDGE_BOARD_MAILBOX);
 	assert.equal(header.cartridgeRamByteCount, 0x00123456);
 });
@@ -105,11 +108,13 @@ test('manifest cartridge semantics resolve once into raw header words', () => {
 	const manifest: CartManifest = {
 		cartridge: {
 			board: 'ram_mailbox',
+			board_id: 0x53545544,
 			ram_bytes: 0x20000,
 		},
 	};
 
 	assert.deepEqual(resolveCartridgeHeaderWords(manifest), {
+		cartridgeBoardId: 0x53545544,
 		cartridgeBoardWord: CARTRIDGE_BOARD_RAM | CARTRIDGE_BOARD_MAILBOX,
 		cartridgeRamByteCount: 0x20000,
 	});

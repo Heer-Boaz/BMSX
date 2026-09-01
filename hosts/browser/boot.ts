@@ -42,6 +42,7 @@ export async function prepareBrowserStartup(
 	debug: boolean,
 	systemRomPath: string,
 	defaultRom: string,
+	defaultSlot1Rom: Uint8Array | null,
 ): Promise<BrowserStartup> {
 	const romUrl = getRomFromUrlParameter() || defaultRom;
 	if (!romUrl) {
@@ -51,7 +52,7 @@ export async function prepareBrowserStartup(
 	const slot1Url = getRomFromUrlParameter(1);
 	const [slot0Rom, slot1Rom] = await Promise.all([
 		loadCart(`./${romUrl}`, 0, debug),
-		slot1Url ? loadCart(`./${slot1Url}`, 1, debug) : Promise.resolve(null),
+		slot1Url ? loadCart(`./${slot1Url}`, 1, debug) : Promise.resolve(defaultSlot1Rom),
 	]);
 	createAudioContext(audioState);
 	const gamescreen = document.getElementById('gamescreen');

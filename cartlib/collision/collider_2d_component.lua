@@ -133,6 +133,26 @@ function collider_2d_component:set_shape_flip(flip_h, flip_v)
 	end
 end
 
+function collider_2d_component:edit_bounds()
+	local sprite<const> = self.sprite
+	if sprite ~= nil then
+		return sprite:edit_bounds()
+	end
+	local offset_x<const> = self.shape_offset_x
+	local offset_y<const> = self.shape_offset_y
+	local area<const> = self.local_area
+	if area ~= nil then
+		return area.left + offset_x, area.top + offset_y,
+			area.right + offset_x, area.bottom + offset_y
+	end
+	if self.shape_ref ~= nil then
+		local left<const>, top<const>, right<const>, bottom<const> =
+			collision_shape.bounds(self.shape_ref)
+		return left + offset_x, top + offset_y, right + offset_x, bottom + offset_y
+	end
+	return offset_x, offset_y, offset_x + self.parent.sx, offset_y + self.parent.sy
+end
+
 function collider_2d_component:on_detach()
 	self:set_sprite(nil)
 	if self.parent.collider == self then

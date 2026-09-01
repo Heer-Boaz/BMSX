@@ -93,6 +93,7 @@ function emptyRomHeader(): CartRomHeader {
 		blua32DiagnosticDirectoryOffset: 0,
 		metadataOffset: CART_ROM_HEADER_SIZE,
 		metadataLength: 0,
+		cartridgeBoardId: 0,
 		cartridgeBoardWord: 0,
 		cartridgeRamByteCount: 0,
 	};

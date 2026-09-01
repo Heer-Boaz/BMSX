@@ -24,6 +24,10 @@ local control_read_increment_apu_write<const> = 0x00003cc1
 local control_write_increment_apu_read<const> = 0x00003c12
 local control_read_increment_imgdec_write<const> = 0x00003d41
 local control_imgdec_read_gx_write<const> = 0x00003c58
+local control_read_increment_write_increment_cart0_write<const> = 0x00003dc3
+local control_read_increment_write_increment_cart1_write<const> = 0x00003e43
+local control_cart0_read_increment_write_increment<const> = 0x00003c23
+local control_cart1_read_increment_write_increment<const> = 0x00003c2b
 local trigger_start<const> = 0x00000001
 local status_busy<const> = 0x00000001
 
@@ -102,6 +106,40 @@ function dma.copy_from_imgdec_to_gp0(word_count)
 	*dma1_transfer_count = word_count
 	*dma1_control = control_imgdec_read_gx_write
 	*dma1_trigger = trigger_start
+end
+
+-- Cartridge DMA carries the socket selection in the request word. These
+-- transfers never disturb CART_SELECT or the CPU instruction-image latch.
+function dma.copy_to_cartridge0(source, target, word_count)
+	*dma0_read_addr = source
+	*dma0_write_addr = target
+	*dma0_transfer_count = word_count
+	*dma0_control = control_read_increment_write_increment_cart0_write
+	*dma0_trigger = trigger_start
+end
+
+function dma.copy_to_cartridge1(source, target, word_count)
+	*dma0_read_addr = source
+	*dma0_write_addr = target
+	*dma0_transfer_count = word_count
+	*dma0_control = control_read_increment_write_increment_cart1_write
+	*dma0_trigger = trigger_start
+end
+
+function dma.copy_from_cartridge0(source, target, word_count)
+	*dma0_read_addr = source
+	*dma0_write_addr = target
+	*dma0_transfer_count = word_count
+	*dma0_control = control_cart0_read_increment_write_increment
+	*dma0_trigger = trigger_start
+end
+
+function dma.copy_from_cartridge1(source, target, word_count)
+	*dma0_read_addr = source
+	*dma0_write_addr = target
+	*dma0_transfer_count = word_count
+	*dma0_control = control_cart1_read_increment_write_increment
+	*dma0_trigger = trigger_start
 end
 
 return dma

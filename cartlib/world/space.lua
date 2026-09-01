@@ -1,5 +1,6 @@
 local component_class_chain<const> = require('cartlib/component/component_class').chain
 local dense_set<const> = require('cartlib/util/dense_set')
+local token<const> = require('cartlib/token')
 
 local space<const> = {}
 space.__index = space
@@ -9,8 +10,11 @@ space.__index = space
 -- iterate its dense items directly.
 
 function space.new(id)
+	local token_lo<const>, token_hi<const> = token.hash(id)
 	return setmetatable({
 		id = id,
+		token_lo = token_lo,
+		token_hi = token_hi,
 		_active_objects = {},
 		_active_objects_by_definition = {},
 		_active_components_by_class = {},

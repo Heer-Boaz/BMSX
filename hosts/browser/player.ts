@@ -27,6 +27,7 @@ async function startBrowserPlayer(): Promise<void> {
 			BMSX_BROWSER_DEBUG,
 			systemRomPath,
 			document.body.dataset.defaultRom,
+			null,
 		);
 		const runtime = initializeMachineRuntime(
 			options.systemRom,

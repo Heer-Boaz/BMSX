@@ -12,6 +12,7 @@ import {
 	type GamepadHaptics,
 } from './gamepad_haptics';
 import { sonyGamepadProductId } from './sony_gamepad_hid';
+import { mapDisplayPointToViewport } from '../../machine/ts/render/video_output';
 
 const W3C_STANDARD_GAMEPAD_BUTTON_COUNT = 17;
 const W3C_STANDARD_GAMEPAD_AXIS_COUNT = 4;
@@ -144,9 +145,10 @@ export class BrowserInputHub implements InputSource {
 	private readonly activePointerIds: number[] = [];
 	private readonly activePointerButtons: number[] = [];
 	private readonly activePointerPressIds: number[] = [];
+	private readonly mappedPointerPosition = { x: 0, y: 0 };
 
 	constructor(
-		surface: HTMLElement,
+		private readonly surface: HTMLCanvasElement,
 		clock: HostClock,
 		onscreenGamepad: BrowserOnscreenGamepad,
 		private readonly supervisorRequestKeyCode: string,
@@ -165,14 +167,14 @@ export class BrowserInputHub implements InputSource {
 		window.addEventListener('keyup', this.onKeyUp, { passive: false, capture: true });
 		window.addEventListener('blur', this.onWindowFocusChange, { passive: true });
 		window.addEventListener('focus', this.onWindowFocusChange, { passive: true });
-		surface.addEventListener('pointerdown', this.onPointerDown, { passive: false });
-		surface.addEventListener('pointerup', this.onPointerUp, { passive: false });
-		surface.addEventListener('pointermove', this.onPointerMove, { passive: false });
-		surface.addEventListener('wheel', this.onWheel, { passive: false });
-		surface.addEventListener('contextmenu', this.onContextMenu, { passive: false });
-		surface.addEventListener('pointercancel', this.onPointerCancel, { passive: false });
-		surface.addEventListener('lostpointercapture', this.onPointerCancel, { passive: false });
-		surface.addEventListener('pointerleave', this.onPointerLeave, { passive: true });
+		this.surface.addEventListener('pointerdown', this.onPointerDown, { passive: false });
+		this.surface.addEventListener('pointerup', this.onPointerUp, { passive: false });
+		this.surface.addEventListener('pointermove', this.onPointerMove, { passive: false });
+		this.surface.addEventListener('wheel', this.onWheel, { passive: false });
+		this.surface.addEventListener('contextmenu', this.onContextMenu, { passive: false });
+		this.surface.addEventListener('pointercancel', this.onPointerCancel, { passive: false });
+		this.surface.addEventListener('lostpointercapture', this.onPointerCancel, { passive: false });
+		this.surface.addEventListener('pointerleave', this.onPointerLeave, { passive: true });
 
 		window.addEventListener('gamepadconnected', this.onGamepadConnected);
 		window.addEventListener('gamepaddisconnected', this.onGamepadDisconnected);
@@ -283,7 +285,7 @@ export class BrowserInputHub implements InputSource {
 			this.activePointerPressIds.push(pressId);
 		}
 		this.sink.inputButton('pointer:0', code, true, 1, now, pressId);
-		this.sink.inputAxis2('pointer:0', 'pointer_position', event.clientX, event.clientY, now);
+		this.publishPointerPosition(event, now);
 	};
 
 	private onPointerUp = (event: PointerEvent) => {
@@ -307,7 +309,7 @@ export class BrowserInputHub implements InputSource {
 			this.activePointerPressIds.length = last;
 		}
 		this.sink.inputButton('pointer:0', code, false, 0, now, pressId);
-		this.sink.inputAxis2('pointer:0', 'pointer_position', event.clientX, event.clientY, now);
+		this.publishPointerPosition(event, now);
 	};
 
 	private onPointerCancel = (event: PointerEvent) => {
@@ -337,7 +339,7 @@ export class BrowserInputHub implements InputSource {
 			this.activePointerButtons.length = last;
 			this.activePointerPressIds.length = last;
 		}
-		this.sink.inputAxis2('pointer:0', 'pointer_position', event.clientX, event.clientY, now);
+		this.publishPointerPosition(event, now);
 	};
 
 	private activePointerIndex(pointerId: number, button: number): number {
@@ -355,7 +357,7 @@ export class BrowserInputHub implements InputSource {
 			event.preventDefault();
 		}
 		const now = this.clock.now();
-		this.sink.inputAxis2('pointer:0', 'pointer_position', event.clientX, event.clientY, now);
+		this.publishPointerPosition(event, now);
 	};
 
 	private onWheel = (event: WheelEvent) => {
@@ -374,8 +376,21 @@ export class BrowserInputHub implements InputSource {
 
 	private onPointerLeave = (event: PointerEvent) => {
 		const now = this.clock.now();
-		this.sink.inputAxis2('pointer:0', 'pointer_position', event.clientX, event.clientY, now);
+		this.publishPointerPosition(event, now);
 	};
+
+	private publishPointerPosition(event: PointerEvent, now: number): void {
+		const position = this.mappedPointerPosition;
+		mapDisplayPointToViewport(
+			this.surface.getBoundingClientRect(),
+			this.surface.width,
+			this.surface.height,
+			event.clientX,
+			event.clientY,
+			position,
+		);
+		this.sink.inputAxis2('pointer:0', 'pointer_position', position.x, position.y, now);
+	}
 
 	private scanInitialGamepads(): void {
 		const pads = navigator.getGamepads();

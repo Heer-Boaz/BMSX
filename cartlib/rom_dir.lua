@@ -1,4 +1,5 @@
 local bin<const> = require('cartlib/bin')
+local token<const> = require('cartlib/token')
 local string_lib<const> = string
 local table_lib<const> = table
 
@@ -24,8 +25,6 @@ local toc_entry_metadata_end_index<const> = 15
 local toc_entry_collision_start_index<const> = 18
 local toc_entry_collision_end_index<const> = 19
 local op_delete<const> = 1
-local hash_prime<const> = 0x1b3
-local u32_mod<const> = 0x100000000
 local cart_rom_base<const> = 0x10000000
 
 local kind_image<const> = 1
@@ -144,20 +143,6 @@ local parse_rom<const> = function(header)
 	return rom
 end
 
-local hash_id<const> = function(id)
-	local lo = 0x84222325
-	local hi = 0xcbf29ce4
-	for index = 1, #id do
-		local xored_lo<const> = (lo ~ string_lib.byte(id, index)) % u32_mod
-		local lo_mul<const> = xored_lo * hash_prime
-		local carry<const> = lo_mul // u32_mod
-		local hi_mul<const> = hi * hash_prime + carry
-		lo = lo_mul % u32_mod
-		hi = ((hi_mul % u32_mod) + ((xored_lo * 256) % u32_mod)) % u32_mod
-	end
-	return lo, hi
-end
-
 local entry_matches<const> = function(entry_base, token_hi, kind)
 	local entry<const>: *word = entry_base
 	return entry[toc_entry_token_hi_index] == token_hi
@@ -189,7 +174,7 @@ local find_by_token<const> = function(rom, token_lo, token_hi, kind)
 end
 
 local find_in_roms<const> = function(roms, id, kind)
-	local token_lo<const>, token_hi<const> = hash_id(id)
+	local token_lo<const>, token_hi<const> = token.hash(id)
 	for index = 1, #roms do
 		local rom<const> = roms[index]
 		local entry_base<const> = find_by_token(rom, token_lo, token_hi, kind)

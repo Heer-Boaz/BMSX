@@ -9,6 +9,10 @@ local pcrtc_dispfb1_low<const>: *word = 0x0801035c
 local pcrtc_dispfb1_high<const>: *word = 0x08010360
 local pcrtc_display1_low<const>: *word = 0x08010364
 local pcrtc_display1_high<const>: *word = 0x08010368
+local pcrtc_dispfb2_low<const>: *word = 0x0801036c
+local pcrtc_dispfb2_high<const>: *word = 0x08010370
+local pcrtc_display2_low<const>: *word = 0x08010374
+local pcrtc_display2_high<const>: *word = 0x08010378
 local pcrtc_smode1_low<const>: *word = 0x080103ac
 local pcrtc_smode1_high<const>: *word = 0x080103b0
 local pcrtc_smode2_low<const>: *word = 0x080103b4
@@ -53,18 +57,42 @@ local pcrtc_syncv_60hz_interlaced_low<const> = 0x01a01801
 local pcrtc_syncv_50hz_progressive_low<const> = 0x02101404
 local pcrtc_syncv_50hz_interlaced_low<const> = 0x02101401
 local pcrtc_enable_circuit1<const> = 1
+local pcrtc_enable_circuit2<const> = 2
 local pcrtc_constant_alpha<const> = 1 << 5
 local pcrtc_alpha_opaque<const> = 0xff << 8
 local pcrtc_enable_word<const> = pcrtc_enable_circuit1 | pcrtc_constant_alpha | pcrtc_alpha_opaque
+local pcrtc_dual_source_alpha_word<const> = pcrtc_enable_circuit1 | pcrtc_enable_circuit2
+
+local program_pcrtc_framebuffer<const> = function(low_address, high_address, origin_word)
+	local low<const>: *word = low_address
+	local high<const>: *word = high_address
+	local x<const> = origin_word & 0x0000ffff
+	local y<const> = origin_word >> 16
+	local framebuffer_address<const> = (y << 10) + x
+	local framebuffer_offset<const> = framebuffer_address & 0x00000fff
+	*low = (framebuffer_address >> 12) | pcrtc_framebuffer_width_1024 | pcrtc_psmgx16
+	*high = (framebuffer_offset & 0x000003ff) | ((framebuffer_offset >> 10) << 11)
+end
 
 function display.origin(origin_word)
 	local x<const> = origin_word & 0x0000ffff
 	local y<const> = origin_word >> 16
 	*gp1 = gp1_display_start | x | (y << 10)
-	local framebuffer_address<const> = (y << 10) + x
-	local framebuffer_offset<const> = framebuffer_address & 0x00000fff
-	*pcrtc_dispfb1_low = (framebuffer_address >> 12) | pcrtc_framebuffer_width_1024 | pcrtc_psmgx16
-	*pcrtc_dispfb1_high = (framebuffer_offset & 0x000003ff) | ((framebuffer_offset >> 10) << 11)
+	program_pcrtc_framebuffer(pcrtc_dispfb1_low, pcrtc_dispfb1_high, origin_word)
+end
+
+function display.circuit2_origin(origin_word)
+	program_pcrtc_framebuffer(pcrtc_dispfb2_low, pcrtc_dispfb2_high, origin_word)
+end
+
+-- Circuit 1 is the source-alpha top layer; circuit 2 remains the opaque
+-- underlay. Both consume the already-programmed circuit-1 output rectangle.
+function display.configure_dual_readout(underlay_origin, overlay_origin)
+	program_pcrtc_framebuffer(pcrtc_dispfb1_low, pcrtc_dispfb1_high, overlay_origin)
+	program_pcrtc_framebuffer(pcrtc_dispfb2_low, pcrtc_dispfb2_high, underlay_origin)
+	*pcrtc_display2_low = *pcrtc_display1_low
+	*pcrtc_display2_high = *pcrtc_display1_high
+	*pcrtc_pmode = pcrtc_dual_source_alpha_word
 end
 
 local program_pcrtc_circuit1<const> = function(signal_x, signal_y, signal_step_x, width, height)

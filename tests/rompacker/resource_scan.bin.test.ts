@@ -111,6 +111,7 @@ test('ROM writer materializes word-aligned payload ranges', async () => {
 		});
 		await finalizeRompack('aligned', {
 			debug: false,
+			cartridgeBoardId: 0,
 			cartridgeBoardWord: 0,
 			cartridgeRamByteCount: 0,
 			blua32,

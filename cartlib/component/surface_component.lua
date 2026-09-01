@@ -16,12 +16,23 @@ end
 function surface_component:set_imgid(imgid)
 	self.imgid = imgid
 	if imgid then
-		self._tiles = image.resolve(imgid)._tiles
+		local source<const> = image.resolve(imgid)
+		self._tiles = source._tiles
+		self.source_width = source.width
+		self.source_height = source.height
 		self:set_draw_function(surface_component.draw_visual)
 	else
 		self._tiles = nil
+		self.source_width = 0
+		self.source_height = 0
 		self:set_draw_function(nil)
 	end
+end
+
+function surface_component:edit_bounds()
+	local left<const> = self.offset_x + self.draw_offset_x
+	local top<const> = self.offset_y + self.draw_offset_y
+	return left, top, left + self.source_width, top + self.source_height
 end
 
 function surface_component:draw_visual(draw)

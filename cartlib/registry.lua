@@ -2,9 +2,11 @@ local dense_set<const> = require('cartlib/util/dense_set')
 
 local registry<const> = {
 	_entries_by_id = {},
+	_entries_by_handle = {},
 	_entries_by_key = {},
 	_keys_by_entry = {},
 	_id_counter = 0,
+	_handle_counter = 0,
 }
 
 local empty_entries<const> = {}
@@ -38,12 +40,27 @@ function registry:get(id)
 	return self._entries_by_id[id]
 end
 
+-- Registry ids remain authored Lua values. Machine-facing protocols use a
+-- retained guest-owned word instead, so neither Lua strings nor host object
+-- identity cross a hardware boundary.
+function registry:get_handle(handle)
+	return self._entries_by_handle[handle]
+end
+
+function registry:handle(entry)
+	return entry._registry_handle
+end
+
 function registry:register(entry)
 	local id<const> = entry.id
 	if self._entries_by_id[id] ~= nil then
 		error('registry.register duplicate id "' .. id .. '"')
 	end
 	self._entries_by_id[id] = entry
+	local handle<const> = self._handle_counter + 1
+	self._handle_counter = handle
+	self._entries_by_handle[handle] = entry
+	entry._registry_handle = handle
 end
 
 function registry:index(entry, key)
@@ -72,6 +89,8 @@ function registry:deregister(entry)
 		self._keys_by_entry[entry] = nil
 	end
 	self._entries_by_id[entry.id] = nil
+	self._entries_by_handle[entry._registry_handle] = nil
+	entry._registry_handle = nil
 end
 
 function registry:entries(key)

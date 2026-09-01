@@ -15,7 +15,19 @@ function visual_component.new(opts)
 	self.draw_offset_y = opts.draw_offset_y or 0
 	self.draw_offset_z = opts.draw_offset_z or 0
 	self.visible = opts.visible == nil or opts.visible
+	self.edit_area = opts.edit_area
 	return self
+end
+
+function visual_component:edit_bounds()
+	local area<const> = self.edit_area
+	if area == nil then
+		return nil
+	end
+	local offset_x<const> = self.offset_x + self.draw_offset_x
+	local offset_y<const> = self.offset_y + self.draw_offset_y
+	return area.left + offset_x, area.top + offset_y,
+		area.right + offset_x, area.bottom + offset_y
 end
 
 -- Visual producers publish their retained draw datapath directly. A nil

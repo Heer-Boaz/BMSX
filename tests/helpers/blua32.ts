@@ -154,6 +154,7 @@ function writeTestRom(linked: LinkedBlua32Image): Uint8Array {
 		blua32DiagnosticDirectoryOffset: 0,
 		metadataOffset: 0,
 		metadataLength: 0,
+		cartridgeBoardId: 0,
 		cartridgeBoardWord: 0,
 		cartridgeRamByteCount: 0,
 	});

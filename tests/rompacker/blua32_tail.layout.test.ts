@@ -95,6 +95,7 @@ test('BLua32-tail rebuild preserves immutable asset metadata addresses and bytes
 		});
 		await finalizeRompack('tail', {
 			debug: true,
+			cartridgeBoardId: 0,
 			cartridgeBoardWord: 0,
 			cartridgeRamByteCount: 0,
 			layout,
