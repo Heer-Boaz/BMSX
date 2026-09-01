@@ -14,7 +14,6 @@ import {
 	resolveRuntimeResourceForContext,
 	type RuntimeSourceState,
 } from '../runtime/sources';
-import type { RuntimeIdeState } from '../runtime/state';
 import type { StackTraceFrame } from '../runtime/stack_trace';
 import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
 import type { EditorDebugCommandId } from '../common/commands';
@@ -28,6 +27,8 @@ import type {
 	RecordedLogMessage,
 	RecordingLogOutput,
 } from './recording_log_output';
+import type { StudioWorkbench } from '../workbench/contrib/studio/chrome';
+import type { WorkbenchState } from '../workbench/state';
 
 /**
  * Host-side test surface for the IDE/runtime. The headless composition root creates
@@ -48,6 +49,7 @@ export type HeadlessIdeHarness = {
 	getFaultStack(): ReadonlyArray<StackTraceFrame>;
 	getSignatureHelp(): LuaSignatureHelp | null;
 	getHover(row: number, column: number): CodeHoverTooltip | null;
+	getStudioWorkbench(): StudioWorkbench | null;
 	/** Execute Hot Resume directly against the source registry's current dirty state. */
 	hotResumeCore(): void;
 	/** Full IDE hot-resume action, completed after its queued rebuild settles. */
@@ -74,13 +76,14 @@ export type HeadlessIdeHeapStats = {
 };
 
 export function createHeadlessIdeHarness(
-	ide: RuntimeIdeState,
+	workbench: WorkbenchState,
 	runtime: Runtime,
 	input: Input,
 	audioOutput: HostAudioOutput,
 	storage: KeyValueStorage,
 	logOutput: RecordingLogOutput,
 ): HeadlessIdeHarness {
+	const ide = workbench.ide;
 	const handleHotResumeError = (error: unknown): void => {
 		console.error(error);
 		handleLuaError(
@@ -113,6 +116,7 @@ export function createHeadlessIdeHarness(
 			);
 			return hoverState.tooltip;
 		},
+		getStudioWorkbench: () => workbench.studio,
 		hotResumeCore: () => {
 			hotResume(
 				ide.sources,

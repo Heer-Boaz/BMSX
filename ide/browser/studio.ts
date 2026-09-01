@@ -58,7 +58,7 @@ async function startBrowserStudio(): Promise<void> {
 			runtime.timing.ufpsScaled,
 			options.clock.now(),
 		);
-		const ide = await prepareWorkbenchRuntime(
+		const workbench = await prepareWorkbenchRuntime(
 			options.systemRom,
 			options.cartridgeSlots,
 			runtime,
@@ -108,7 +108,7 @@ async function startBrowserStudio(): Promise<void> {
 				audioOutput,
 				systemOutput,
 				options.logOutput,
-				ide,
+				workbench,
 				presentation,
 				hostOverlayMenu,
 				currentTime,

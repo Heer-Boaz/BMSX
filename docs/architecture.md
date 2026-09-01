@@ -2367,6 +2367,10 @@ example its
 [cartridge-slot manager](https://github.com/openMSX/openMSX/blob/d1b8f2c81b3fcafde528e91e6133a7278a732e04/src/CartridgeSlotManager.cc#L120-L180),
 [2 MiB RAM cartridge](https://github.com/openMSX/openMSX/blob/d1b8f2c81b3fcafde528e91e6133a7278a732e04/share/extensions/ram2mb.xml), and
 [GFX9000 device cartridge](https://github.com/openMSX/openMSX/blob/d1b8f2c81b3fcafde528e91e6133a7278a732e04/share/extensions/gfx9000.xml).
+BMSX keeps the same slot/card ownership split as MAME's
+[`device_slot_interface`](https://github.com/mamedev/mame/blob/cebbc1f39e7f81ca1bd27e7f293d6d1a9ab44a20/src/emu/dislot.h#L52-L166):
+the socket selects a concrete board device; the board identity does not assign
+a special semantic role to that socket.
 BMSX deliberately does not copy MSX slot paging: the raw chip-select mux,
 external-bus aperture and per-board decode above are the complete base contract.
 
@@ -2409,13 +2413,16 @@ gameplay-clock, spawn and disposal operands. The active game applies them
 through the existing registry, world-object, component, prefab and disposal
 owners; there is no host Lua RPC or shadow scene graph.
 
-Browser pointer events are converted once from DOM coordinates to intrinsic
-viewport pixels before ICU publication. ICU retains the raw signed-S16.16
-words, and cartlib decodes that fixed-point representation at its central
-fixed-point owner. Guest Studio picking walks the retained cart visual order,
-selection and dragging mutate the live world, and pausing changes only the
-world gameplay-clock lane. Frame-clock work, the existing world, scanout and
-authoring publication continue.
+Browser pointer events publish two owned pairs. `pointer_position` retains DOM
+screen coordinates for host chrome; `pointer_controller_position` retains the
+same event mapped once to intrinsic viewport pixels for the ICU snapshot. ICU
+stores the latter as raw signed-S16.16 words, and cartlib decodes that
+fixed-point representation at its central fixed-point owner. A host surface
+that captures a pointer button or wheel clears that routed ICU lane before the
+machine samples it; the retained host position is unchanged. Guest Studio
+picking walks the retained cart visual order, selection and dragging mutate the
+live world, and pausing changes only the world gameplay-clock lane. Frame-clock
+work, the existing world, scanout and authoring publication continue.
 
 The game framebuffer is PCRTC circuit 2. Cartlib allocates a transparent gizmo
 page after the game framebuffer pages and programs it as circuit 1, whose
@@ -2423,9 +2430,48 @@ source-alpha pixels form the top layer. Crosshair, hover/selection rectangles
 and translate handles are ordinary GP0 commands stored in VRAM, so every host
 and libretro sees the same viewport. `OverlayRenderer` and `LAYER_2D_IDE` remain
 host chrome after PCRTC merge, quantization and CRT; they never draw or own the
-scene. Studio uses one Machine and one Runtime. Hot Resume revises the live
-cartridge image and heap; a second Runtime for play-in-editor remains a separate
-future product decision.
+scene. This ordering follows the real two-circuit merge boundary in PCSX2's
+[`GSRenderer::Merge`](https://github.com/PCSX2/pcsx2/blob/00482e8adadd4baa8ac720e382803d169142a8ad/pcsx2/GS/Renderers/Common/GSRenderer.cpp#L82-L237):
+both PCRTC circuits are resolved before a host presentation layer is involved.
+
+Browser and Node Studio discover the board from the immutable ROM-header board
+id in either tooling-media socket. The workbench contribution keeps the
+resulting physical board/game socket pair; it does not ask the CPU execution
+latch to rediscover product topology. Each descriptor read selects the board,
+consumes its raw mapped words, and leaves the known game socket selected. Two
+preallocated snapshots and pooled object/component records implement the
+seqlock: a standby snapshot may receive an interrupted read, but only two equal
+even revision words publish it. There is no compatibility reader, heap DTO or
+host-side object graph.
+
+The workbench outliner flattens those retained object/component records only for
+painting and hit testing. Its labels are guest handles, class words and token
+words; selection remains the descriptor's selected handles. This mirrors the
+provider/view separation in VS Code's
+[`AbstractTreeView`](https://github.com/microsoft/vscode/blob/df2411cf7d8f2e0cfc79109a3bc8eaab2c69165b/src/vs/workbench/browser/parts/views/treeView.ts#L210-L435):
+the tree owns selection and presentation while refreshes consume the provider's
+model. BMSX performs that refresh synchronously from the board-RAM snapshot and
+allocates no rows per frame.
+
+Outliner clicks and Details edits fill one retained 16-word command buffer,
+write operands before the sequence word, publish that sequence through mailbox
+`DATA`, and strobe DREQ plus IRQ. Only one command is outstanding; UI actions
+remain disabled until the next descriptor reports its applied sequence.
+Position, visibility and component-enabled edits therefore return through the
+guest owners before the chrome changes. Play/Edit uses the same lane for
+`SET_GAMEPLAY_RUNNING`; Edit does not activate the source editor and does not
+stop machine, frame, scanout or Studio clocks. Existing host shortcuts continue
+to read unremapped device controls, while only the retained per-port ICU
+snapshot receives the gameplay remap; possession never becomes a gizmo action
+map.
+
+`OverlayRenderer` draws only the top bar, outliner and Details after the scene.
+It stays inactive as a runtime-blocking editor overlay, so the ordinary
+workbench frame loop advances the one live Runtime. Opening the source editor
+temporarily supersedes this chrome through the existing editor lifecycle; it
+does not replace the Studio model or language-service doctrine. Hot Resume
+revises the same live cartridge image and heap. A second Runtime for
+play-in-editor remains a separate future product decision.
 
 ### DMA
 

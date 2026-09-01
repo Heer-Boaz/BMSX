@@ -289,30 +289,17 @@ named-effectscan: `owner:add_component` resolveert koud in ongeveer 0,10 s en
 warm in ongeveer 0,03 ms naar `world_object:add_component`. Dit is
 performance-evidence, geen draagbare timingdrempel.
 
-## Studio-product: resterend host-contract
+## Studio-product: geparkeerde PIE-keuze
 
-De guest-viewport en het uitbreidingsbord zijn afgerond machine-/cartlibcontract
-in [`architecture.md`](architecture.md). Beide fysieke sockets blijven gelijk:
-de BIOS-bootbare game kan in socket 0 of 1 zitten en de niet-uitvoerbare Studio-
-boardmedia zit in de andere socket. De actieve gamecart bedient het board; het
-board bezit geen tweede Lua-world of executable.
-
-```text
-SYSTEM_ROM     BIOS boot, monitor, public function vector
-GAME CART      bestaande cartlib-world; framebuffer in PCRTC circuit2
-STUDIO BOARD   board-RAM descriptor/commands + mailbox; beide sockets geldig
-GUEST STUDIO   pick/edit + GP0-gizmos in transparante circuit1-page
-TS Studio      workbench, language service, Hot Resume, media-admission
-PCRTC          circuit2-underlay + circuit1-source-alpha, daarna host chrome
-```
-
-| ID | Eindtoestand | Klaar wanneer |
-| --- | --- | --- |
-| `STUDIO-HOST-CHROME-01` | TypeScript Studio ontdekt de raw `53545544h`-board-id in een van de twee ingestoken media en leest de vaste board-RAM-records uit [`contrib/studio/protocol.ts`](../ide/workbench/contrib/studio/protocol.ts). De host houdt één retained snapshot met de guest-handles, tokens, raw flags en `f32`-woorden; een reader accepteert alleen twee gelijke even seqlock-revisies. Outliner en details zijn views op die snapshot, geen `world._objects`, Lua-reflectie of CPU-heap-DTO. Outliner-selectie en property-edits schrijven de vaste 16-word command record, publiceren de sequence als mailbox-DATA en stroben de mailbox-IRQ; de bekende game-socket wordt daarna geselecteerd. Play/Edit schrijft alleen `SET_GAMEPLAY_RUNNING`; Edit laat machine-, frame-, scanout- en Studio-guestwerk draaien. `OverlayRenderer` / `LAYER_2D_IDE` blijven tabs, problems, find, debugger, outliner en details ná de beam; alle scene-gizmos blijven GP0-pixels in circuit1. Possess/eject gebruikt de bestaande host-shortcut en retained ICU-padremap, niet een gizmo-action-map. De language service blijft framework-onwetend en Hot Resume blijft dezelfde live heap reviseren. | Een browser-IDE-headless scenario start de echte dual-cart-runtime, ziet dezelfde descriptorselectie in guest-viewport en outliner, klikt een tree-item en ziet het guest-selected-handle terug, wijzigt positie/visible/enabled/gameplay via de mailbox en ziet de volgende even descriptorrevision. `IDE-LIVE-01` blijft de interactieve chrome-gate. Geen derde socket, tweede Runtime, host scene graph, OverlayRenderer-gizmo, Lua-RPC of compatibility reader. |
+Guest-viewport, symmetrisch uitbreidingsbord en host-chrome zijn afgeronde
+productcontracten in [`architecture.md`](architecture.md). `IDE-LIVE-01` blijft
+de interactieve gate voor fysiek browsergebruik; het is geen open vervangende
+implementatieslice.
 
 Play-in-editor blijft geparkeerd als `STUDIO-PIE-RUNTIME-01`. Zolang Stop geen
 onaangeraakte editor-scene hoeft terug te zetten, is Studio edit-in-place op één
-Machine en één Runtime.
+Machine en één Runtime. Ontwerp of bouw geen tweede Runtime voordat die
+producteis werkelijk bestaat.
 
 ## Validatiebasis voor inputwerk
 

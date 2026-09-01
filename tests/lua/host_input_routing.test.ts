@@ -25,6 +25,11 @@ import {
 	DisplayPointMappingResult,
 	mapDisplayPointToViewport,
 } from '../../machine/ts/render/video_output';
+import {
+	POINTER_CONTROLLER_POSITION_CODE,
+	POINTER_HOST_POSITION_CODE,
+} from '../../hosts/common/input/pointer';
+import { encodeSignedFix16 } from '../../machine/ts/machine/common/numeric';
 
 function createInput(): { input: Input; setTime(time: number): void } {
 	let currentTime = 0;
@@ -70,6 +75,29 @@ function tickMenu(input: Input, menu: HostOverlayMenu): HostMenuInput {
 	input.pollInput();
 	return menu.tickInput();
 }
+
+test('host pointer coordinates and ICU viewport words keep separate owners', () => {
+	const { input } = createInput();
+	input.inputAxis2('pointer:0', POINTER_HOST_POSITION_CODE, 420, 260, 1);
+	input.pollInput();
+	const pointer = input.getPlayerInput(1).inputHandlers.pointer!;
+	assert.deepEqual(pointer.getButtonState(POINTER_HOST_POSITION_CODE).value2d, [420, 260]);
+	const snapshot = createInputControllerSnapshot();
+	input.sampleInputControllerSnapshot(snapshot);
+	assert.equal(snapshot.pointerXQ16, 0);
+	assert.equal(snapshot.pointerYQ16, 0);
+	input.inputAxis2('pointer:0', POINTER_CONTROLLER_POSITION_CODE, 112.5, 96.25, 2);
+	input.pollInput();
+	input.sampleInputControllerSnapshot(snapshot);
+	assert.equal(snapshot.pointerXQ16, encodeSignedFix16(112.5));
+	assert.equal(snapshot.pointerYQ16, encodeSignedFix16(96.25));
+	input.inputAxis1('pointer:0', 'pointer_wheel', 2.5, 3);
+	input.pollInput();
+	pointer.consumeButton('pointer_wheel');
+	input.sampleInputControllerSnapshot(snapshot);
+	assert.equal(snapshot.pointerWheelQ16, 0);
+	input.dispose();
+});
 
 function openMenuWithGamepad(
 	input: Input,

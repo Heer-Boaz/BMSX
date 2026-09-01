@@ -3,28 +3,16 @@ import Module from 'node:module';
 import { readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 
-import { f32BitsToNumber, numberToF32Bits } from '../../../machine/ts/machine/common/numeric';
+import { numberToF32Bits } from '../../../machine/ts/machine/common/numeric';
 import {
 	GX_GPU_PCRTC_PMODE_EN1,
 	GX_GPU_PCRTC_PMODE_EN2,
 	GX_GPU_PCRTC_PMODE_LOW,
 	gxGpuPcrtcRegisterAddress,
 } from '../../../machine/ts/machine/devices/gx/gpu_pcrtc';
-import {
-	IO_CART_SELECT,
-	IO_SYS_SUPERVISOR_FAULT_SEQUENCE,
-} from '../../../machine/ts/spec/bmsx/io';
-import {
-	CARTRIDGE_MAILBOX_CONTROL_DREQ_READ,
-	CARTRIDGE_MAILBOX_CONTROL_DREQ_WRITE,
-	CARTRIDGE_MAILBOX_CONTROL_IRQ_TRIGGER,
-	CARTRIDGE_MAILBOX_CONTROL_OFFSET,
-	CARTRIDGE_MAILBOX_DATA_OFFSET,
-} from '../../../machine/ts/spec/bmsx/cartridge';
-import {
-	CART_MMIO_BASE,
-	CART_RAM_BASE,
-} from '../../../machine/ts/spec/bmsx/memory_map';
+import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../../machine/ts/spec/bmsx/io';
+import { StudioBoardConnection } from '../../../ide/workbench/contrib/studio/connection';
+import { StudioDescriptorModel } from '../../../ide/workbench/contrib/studio/model';
 import * as studio from '../../../ide/workbench/contrib/studio/protocol';
 
 const sourceExtensions = (Module as any)._extensions as Record<string, (module: any, filename: string) => void>;
@@ -137,83 +125,83 @@ async function main(): Promise<void> {
 		);
 
 		const memory = runtime.machine.memory;
-		memory.writeMappedU32LE(IO_CART_SELECT, boardSlot);
-		const readBoardWord = (wordOffset: number): number =>
-			memory.readMappedU32LE(CART_RAM_BASE + wordOffset * 4);
-		const revision = readBoardWord(studio.STUDIO_HEADER_REVISION);
+		const connection = new StudioBoardConnection(memory, { gameSlot, boardSlot });
+		const model = new StudioDescriptorModel(connection);
+		assert.equal(model.synchronize(), true);
+		let snapshot = model.snapshot;
+		const revision = snapshot.revision;
 		assert.ok(revision !== 0 && (revision & 1) === 0);
-		assert.equal(readBoardWord(studio.STUDIO_HEADER_MAGIC), studio.STUDIO_DESCRIPTOR_MAGIC);
-		assert.equal(readBoardWord(studio.STUDIO_HEADER_VERSION), studio.STUDIO_DESCRIPTOR_VERSION);
-		assert.equal(readBoardWord(studio.STUDIO_HEADER_OBJECT_COUNT), 1);
-		assert.equal(readBoardWord(studio.STUDIO_HEADER_COMPONENT_COUNT), 1);
-		assert.equal(readBoardWord(studio.STUDIO_HEADER_GAME_SLOT), gameSlot);
-		assert.equal(readBoardWord(studio.STUDIO_HEADER_BOARD_SLOT), boardSlot);
-		const objectOffset = readBoardWord(studio.STUDIO_HEADER_OBJECT_TABLE_WORD_OFFSET);
-		const objectHandle = readBoardWord(objectOffset + studio.STUDIO_OBJECT_HANDLE);
+		assert.equal(snapshot.objectCount, 1);
+		assert.equal(snapshot.componentCount, 1);
+		assert.equal(snapshot.gameSlot, gameSlot);
+		assert.equal(snapshot.boardSlot, boardSlot);
+		const object = snapshot.objects.peek(0);
+		const component = snapshot.components.peek(0);
+		const objectHandle = object.handle;
+		const componentHandle = component.handle;
 		assert.ok(objectHandle !== 0);
-		assert.equal(f32BitsToNumber(readBoardWord(objectOffset + studio.STUDIO_OBJECT_X)), 80);
-		assert.equal(f32BitsToNumber(readBoardWord(objectOffset + studio.STUDIO_OBJECT_Y)), 72);
-		assert.equal(f32BitsToNumber(readBoardWord(objectOffset + studio.STUDIO_OBJECT_PICK_RIGHT)), 128);
-		assert.equal(f32BitsToNumber(readBoardWord(objectOffset + studio.STUDIO_OBJECT_PICK_BOTTOM)), 104);
-		const overlayOrigin = readBoardWord(studio.STUDIO_HEADER_OVERLAY_ORIGIN);
-		const gameOrigin = readBoardWord(studio.STUDIO_HEADER_GAME_ORIGIN);
+		assert.ok(componentHandle !== 0);
+		assert.equal(object.x, 80);
+		assert.equal(object.y, 72);
+		assert.equal(object.pickRight, 128);
+		assert.equal(object.pickBottom, 104);
+		const overlayOrigin = snapshot.overlayOrigin;
+		const gameOrigin = snapshot.gameOrigin;
 		assert.notEqual(overlayOrigin, gameOrigin);
-		memory.writeMappedU32LE(IO_CART_SELECT, gameSlot);
 		assert.equal(
 			memory.readMappedU32LE(gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_PMODE_LOW))
 				& (GX_GPU_PCRTC_PMODE_EN1 | GX_GPU_PCRTC_PMODE_EN2),
 			GX_GPU_PCRTC_PMODE_EN1 | GX_GPU_PCRTC_PMODE_EN2,
 		);
 
-		const writeCommand = (sequence: number, opcode: number, arg0 = 0, arg1 = 0, arg2 = 0): void => {
-			memory.writeMappedU32LE(IO_CART_SELECT, boardSlot);
-			const commandAddress = CART_RAM_BASE + studio.STUDIO_COMMAND_WORD_OFFSET * 4;
-			memory.writeMappedU32LE(commandAddress + studio.STUDIO_COMMAND_OPCODE * 4, opcode);
-			memory.writeMappedU32LE(commandAddress + studio.STUDIO_COMMAND_OBJECT_HANDLE * 4, objectHandle);
-			memory.writeMappedU32LE(commandAddress + studio.STUDIO_COMMAND_ARG0 * 4, arg0);
-			memory.writeMappedU32LE(commandAddress + studio.STUDIO_COMMAND_ARG1 * 4, arg1);
-			memory.writeMappedU32LE(commandAddress + studio.STUDIO_COMMAND_ARG2 * 4, arg2);
-			memory.writeMappedU32LE(commandAddress + studio.STUDIO_COMMAND_SEQUENCE * 4, sequence);
-			memory.writeMappedU32LE(CART_MMIO_BASE + CARTRIDGE_MAILBOX_DATA_OFFSET, sequence);
-			memory.writeMappedU32LE(
-				CART_MMIO_BASE + CARTRIDGE_MAILBOX_CONTROL_OFFSET,
-				CARTRIDGE_MAILBOX_CONTROL_DREQ_READ
-					| CARTRIDGE_MAILBOX_CONTROL_DREQ_WRITE
-					| CARTRIDGE_MAILBOX_CONTROL_IRQ_TRIGGER,
+		const applyCommand = (
+			opcode: number,
+			selectedObject: number,
+			selectedComponent: number,
+			arg0 = 0,
+			arg1 = 0,
+			arg2 = 0,
+		): number => {
+			const sequence = connection.submit(
+				opcode,
+				selectedObject,
+				selectedComponent,
+				arg0,
+				arg1,
+				arg2,
+				0,
+				0,
+				0,
 			);
-			memory.writeMappedU32LE(IO_CART_SELECT, gameSlot);
+			assert.equal(connection.commandPending, true);
+			runFrames(4);
+			assert.equal(model.synchronize(), true);
+			snapshot = model.snapshot;
+			assert.equal(snapshot.appliedCommandSequence, sequence);
+			assert.equal(connection.commandPending, false);
+			return sequence;
 		};
 
-		writeCommand(1, studio.STUDIO_COMMAND_SELECT);
-		runFrames(4);
-		memory.writeMappedU32LE(IO_CART_SELECT, boardSlot);
-		assert.equal(readBoardWord(studio.STUDIO_HEADER_APPLIED_COMMAND_SEQUENCE), 1);
-		assert.equal(readBoardWord(studio.STUDIO_HEADER_SELECTED_OBJECT_HANDLE), objectHandle);
-		memory.writeMappedU32LE(IO_CART_SELECT, gameSlot);
+		applyCommand(studio.STUDIO_COMMAND_SELECT, objectHandle, 0);
+		assert.equal(snapshot.selectedObjectHandle, objectHandle);
+		assert.equal(snapshot.selectedComponentHandle, 0);
 
-		writeCommand(2, studio.STUDIO_COMMAND_SET_GAMEPLAY_RUNNING, 0);
-		runFrames(4);
-		memory.writeMappedU32LE(IO_CART_SELECT, boardSlot);
-		assert.equal(readBoardWord(studio.STUDIO_HEADER_APPLIED_COMMAND_SEQUENCE), 2);
+		applyCommand(studio.STUDIO_COMMAND_SET_GAMEPLAY_RUNNING, 0, 0, 0);
 		assert.equal(
-			readBoardWord(studio.STUDIO_HEADER_FLAGS) & studio.STUDIO_FLAG_GAMEPLAY_RUNNING,
+			snapshot.flags & studio.STUDIO_FLAG_GAMEPLAY_RUNNING,
 			0,
 		);
-		memory.writeMappedU32LE(IO_CART_SELECT, gameSlot);
 
-		writeCommand(
-			3,
+		applyCommand(
 			studio.STUDIO_COMMAND_SET_POS,
+			objectHandle,
+			0,
 			numberToF32Bits(112),
 			numberToF32Bits(96),
 			numberToF32Bits(4),
 		);
-		runFrames(4);
-		memory.writeMappedU32LE(IO_CART_SELECT, boardSlot);
-		assert.equal(readBoardWord(studio.STUDIO_HEADER_APPLIED_COMMAND_SEQUENCE), 3);
-		assert.equal(f32BitsToNumber(readBoardWord(objectOffset + studio.STUDIO_OBJECT_X)), 112);
-		assert.equal(f32BitsToNumber(readBoardWord(objectOffset + studio.STUDIO_OBJECT_Y)), 96);
-		memory.writeMappedU32LE(IO_CART_SELECT, gameSlot);
+		assert.equal(snapshot.objects.peek(0).x, 112);
+		assert.equal(snapshot.objects.peek(0).y, 96);
 
 		await presenter.backend.captureGxGpuVramSnapshot(runtime.machine.gxGpu);
 		const vram = runtime.machine.gxGpu.readVramSnapshotBytes();
@@ -226,6 +214,20 @@ async function main(): Promise<void> {
 		assert.ok((vramWord(gameOrigin, 112, 96) & 0x7fff) !== 0);
 		assert.equal(vramWord(overlayOrigin, 80, 72), 0);
 		assert.ok((vramWord(overlayOrigin, 112, 96) & 0x8000) !== 0);
+
+		applyCommand(studio.STUDIO_COMMAND_SET_VISIBLE, objectHandle, 0, 0);
+		assert.equal(snapshot.objects.peek(0).flags & studio.STUDIO_OBJECT_FLAG_VISIBLE, 0);
+		applyCommand(studio.STUDIO_COMMAND_SET_VISIBLE, objectHandle, 0, 1);
+		assert.notEqual(snapshot.objects.peek(0).flags & studio.STUDIO_OBJECT_FLAG_VISIBLE, 0);
+
+		applyCommand(studio.STUDIO_COMMAND_SET_COMPONENT_ENABLED, objectHandle, componentHandle, 0);
+		assert.equal(snapshot.components.peek(0).flags & studio.STUDIO_COMPONENT_FLAG_ENABLED, 0);
+		applyCommand(studio.STUDIO_COMMAND_SET_COMPONENT_ENABLED, objectHandle, componentHandle, 1);
+		assert.notEqual(snapshot.components.peek(0).flags & studio.STUDIO_COMPONENT_FLAG_ENABLED, 0);
+
+		applyCommand(studio.STUDIO_COMMAND_SELECT, objectHandle, componentHandle);
+		assert.equal(snapshot.selectedObjectHandle, objectHandle);
+		assert.equal(snapshot.selectedComponentHandle, componentHandle);
 	};
 
 	await runScenario(0);

@@ -11,13 +11,16 @@ import {
 } from '../../../machine/ts/machine/devices/input/contracts';
 import { encodeSignedFix16 } from '../../../machine/ts/machine/common/numeric';
 
+export const POINTER_HOST_POSITION_CODE = 'pointer_position';
+export const POINTER_CONTROLLER_POSITION_CODE = 'pointer_controller_position';
+
 const POINTER_DEFAULT_CODES = [
 	'pointer_primary',
 	'pointer_aux',
 	'pointer_secondary',
 	'pointer_back',
 	'pointer_forward',
-	'pointer_position',
+	POINTER_HOST_POSITION_CODE,
 	'pointer_delta',
 	'pointer_wheel',
 ] as const;
@@ -189,6 +192,11 @@ export class PointerInput implements PointerInputHandler {
 	}
 
 	public ingestAxis2(code: string, x: number, y: number, timestamp: number): void {
+		if (code === POINTER_CONTROLLER_POSITION_CODE) {
+			this.inputControllerXQ16 = encodeSignedFix16(x);
+			this.inputControllerYQ16 = encodeSignedFix16(y);
+			return;
+		}
 		const current = getPressedState(this.buttonStates, code);
 		const dx = this.lastPositionValid ? (x - this.lastPositionX) : 0;
 		const dy = this.lastPositionValid ? (y - this.lastPositionY) : 0;
@@ -197,17 +205,12 @@ export class PointerInput implements PointerInputHandler {
 		this.lastPositionValid = true;
 		let value2d = current.value2d;
 		if (!value2d) {
-			value2d = code === 'pointer_position' ? this.pointerPosition : [0, 0];
+			value2d = code === POINTER_HOST_POSITION_CODE ? this.pointerPosition : [0, 0];
 			current.value2d = value2d;
 		}
 		value2d[0] = x;
 		value2d[1] = y;
 		current.timestamp = timestamp;
-		if (code === 'pointer_position') {
-			this.inputControllerXQ16 = encodeSignedFix16(x);
-			this.inputControllerYQ16 = encodeSignedFix16(y);
-		}
-
 		this.pendingDeltaX += dx;
 		this.pendingDeltaY += dy;
 		this.pendingDeltaTimestamp = timestamp;
@@ -232,6 +235,7 @@ export class PointerInput implements PointerInputHandler {
 				state.pressed = false;
 				state.justpressed = false;
 				state.justreleased = false;
+				this.inputControllerWheelQ16 = 0;
 			}
 		}
 		const bit = pointerButtonBit(button);
@@ -247,7 +251,7 @@ export class PointerInput implements PointerInputHandler {
 		for (let i = 0; i < POINTER_DEFAULT_CODES.length; i += 1) {
 			const code = POINTER_DEFAULT_CODES[i];
 			const state = makeButtonState();
-			if (code === 'pointer_position') {
+			if (code === POINTER_HOST_POSITION_CODE) {
 				state.value2d = this.pointerPosition;
 			} else if (code === 'pointer_delta') {
 				state.value2d = this.pointerDelta;

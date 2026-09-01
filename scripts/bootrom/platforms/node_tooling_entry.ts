@@ -201,7 +201,7 @@ async function main(): Promise<void> {
 					console.log(
 						`[bootrom:headless:input] [capture] screenshots -> ${capture.outputDir}`,
 					);
-					const ide = await prepareWorkbenchRuntime(
+					const workbench = await prepareWorkbenchRuntime(
 						systemRom,
 						[slot0Rom, slot1Rom],
 						runtime,
@@ -240,7 +240,7 @@ async function main(): Promise<void> {
 								audioOutput,
 								systemOutput,
 								logOutput,
-								ide,
+								workbench,
 								presentation,
 								hostOverlayMenu,
 								currentTime,
@@ -256,7 +256,7 @@ async function main(): Promise<void> {
 								testPath: options.mode.path,
 								frameIntervalMs: options.frameIntervalMs,
 								ide: createHeadlessIdeHarness(
-									ide,
+									workbench,
 									runtime,
 									input,
 									audioOutput,

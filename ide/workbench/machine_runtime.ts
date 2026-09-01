@@ -1,5 +1,4 @@
 import { createRuntimeSourceState } from '../runtime/sources';
-import type { RuntimeIdeState } from '../runtime/state';
 import { loadRomToolingMedia } from '../../toolchain/ts/rompack/media';
 import { startPreparedRuntime } from './blua32_boot';
 import * as workbenchMode from './mode';
@@ -13,6 +12,9 @@ import type { Input } from '../../hosts/common/input/manager';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import type { HostClock } from '../../hosts/common/clock';
 import type { LogOutput } from '../../hosts/common/log';
+import { StudioWorkbench } from './contrib/studio/chrome';
+import { studioSocketPairFromMedia } from './contrib/studio/media_admission';
+import { WorkbenchState } from './state';
 
 export async function prepareWorkbenchRuntime(
 	systemRom: Uint8Array,
@@ -28,7 +30,7 @@ export async function prepareWorkbenchRuntime(
 	microtasks: MicrotaskQueue,
 	logOutput: LogOutput,
 	resourcePanelWidthRatio: number,
-): Promise<RuntimeIdeState> {
+): Promise<WorkbenchState> {
 	const media = await loadRomToolingMedia(
 		systemRom,
 		cartridgeSlots,
@@ -37,6 +39,7 @@ export async function prepareWorkbenchRuntime(
 		media.system,
 		media.cartridgeSlots,
 	);
+	const studioSockets = studioSocketPairFromMedia(media.cartridgeSlots);
 	const viewport = presenter.viewportSize;
 	const ide = await workbenchMode.initializeIdeFeatures(
 		runtime,
@@ -53,6 +56,16 @@ export async function prepareWorkbenchRuntime(
 		{ width: viewport.x, height: viewport.y },
 		sources,
 	);
+	let studio: StudioWorkbench | null = null;
+	if (studioSockets !== null) {
+		studio = new StudioWorkbench(
+			runtime.machine.memory,
+			presenter,
+			input,
+			ide.overlayRenderer,
+			studioSockets,
+		);
+	}
 	startPreparedRuntime(ide, runtime, logOutput);
-	return ide;
+	return new WorkbenchState(ide, studio);
 }

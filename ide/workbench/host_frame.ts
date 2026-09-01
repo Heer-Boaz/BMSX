@@ -29,6 +29,7 @@ import {
 	didFaultRuntimeDebuggerPlan,
 	willExecuteRuntimeDebuggerPlan,
 } from '../runtime/debugger_state';
+import type { WorkbenchState } from './state';
 
 function executeWorkbenchHostMenuAction(
 	ide: RuntimeIdeState,
@@ -88,11 +89,12 @@ function presentWorkbenchFrame(
 	runtime: Runtime,
 	presenter: VideoPresenter,
 	audioOutput: HostAudioOutput,
-	ide: RuntimeIdeState,
+	workbench: WorkbenchState,
 	action: HostFramePresentation,
 	screen: RenderPresentationState,
 	hostDeltaMs: number,
 ): void {
+	const ide = workbench.ide;
 	if (
 		action === HostFrameAction.PresentPending
 		&& !screen.pending
@@ -100,7 +102,13 @@ function presentWorkbenchFrame(
 		return;
 	}
 	if (action === HostFrameAction.PresentPending) {
-		workbenchMode.tickIDEDraw(ide, presenter);
+		if (ide.overlayRenderer.active) {
+			workbenchMode.tickIDEDraw(ide, presenter);
+		} else {
+			workbench.studio?.draw();
+		}
+	} else if (!ide.overlayRenderer.active) {
+		workbench.studio?.draw();
 	}
 	presentHostPresentation(
 		session,
@@ -118,10 +126,11 @@ function presentWorkbenchError(
 	runtime: Runtime,
 	presenter: VideoPresenter,
 	audioOutput: HostAudioOutput,
-	ide: RuntimeIdeState,
+	workbench: WorkbenchState,
 	screen: RenderPresentationState,
 	hostDeltaMs: number,
 ): void {
+	const ide = workbench.ide;
 	if (!ide.overlayRenderer.active) {
 		return;
 	}
@@ -131,7 +140,7 @@ function presentWorkbenchError(
 		runtime,
 		presenter,
 		audioOutput,
-		ide,
+		workbench,
 		HostFrameAction.PresentPending,
 		screen,
 		hostDeltaMs,
@@ -146,11 +155,12 @@ export function runWorkbenchHostFrame(
 	audioOutput: HostAudioOutput,
 	systemOutput: SystemOutputLog,
 	logOutput: LogOutput,
-	ide: RuntimeIdeState,
+	workbench: WorkbenchState,
 	screen: RenderPresentationState,
 	hostOverlayMenu: HostOverlayMenu,
 	currentTime: number,
 ): HostFrameRunResult {
+	const ide = workbench.ide;
 	let hostDeltaMs = 0;
 	let systemOutputDrained = false;
 	try {
@@ -178,6 +188,9 @@ export function runWorkbenchHostFrame(
 			return HostFrameRunResult.Continue;
 		}
 		if (hostMenuInput !== HostMenuInput.Active) {
+			if (!ide.overlayRenderer.active) {
+				workbench.studio?.tickInput();
+			}
 			workbenchMode.tickIdeInput(ide, input);
 		}
 
@@ -218,6 +231,7 @@ export function runWorkbenchHostFrame(
 					screen,
 					hostDeltaMs,
 				);
+				workbench.studio?.synchronize();
 				systemOutput.flush(runtime, logOutput);
 				systemOutputDrained = true;
 				const supervisorFaultSequence = runtime.machine.memory.readMappedU32LE(
@@ -260,7 +274,7 @@ export function runWorkbenchHostFrame(
 			runtime,
 			presenter,
 			audioOutput,
-			ide,
+			workbench,
 			action,
 			screen,
 			hostDeltaMs,
@@ -272,7 +286,7 @@ export function runWorkbenchHostFrame(
 			runtime,
 			presenter,
 			audioOutput,
-			ide,
+			workbench,
 			screen,
 			hostDeltaMs,
 		);

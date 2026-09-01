@@ -13,6 +13,10 @@ import {
 } from './gamepad_haptics';
 import { sonyGamepadProductId } from './sony_gamepad_hid';
 import { mapDisplayPointToViewport } from '../../machine/ts/render/video_output';
+import {
+	POINTER_CONTROLLER_POSITION_CODE,
+	POINTER_HOST_POSITION_CODE,
+} from '../common/input/pointer';
 
 const W3C_STANDARD_GAMEPAD_BUTTON_COUNT = 17;
 const W3C_STANDARD_GAMEPAD_AXIS_COUNT = 4;
@@ -380,6 +384,13 @@ export class BrowserInputHub implements InputSource {
 	};
 
 	private publishPointerPosition(event: PointerEvent, now: number): void {
+		this.sink.inputAxis2(
+			'pointer:0',
+			POINTER_HOST_POSITION_CODE,
+			event.clientX,
+			event.clientY,
+			now,
+		);
 		const position = this.mappedPointerPosition;
 		mapDisplayPointToViewport(
 			this.surface.getBoundingClientRect(),
@@ -389,7 +400,13 @@ export class BrowserInputHub implements InputSource {
 			event.clientY,
 			position,
 		);
-		this.sink.inputAxis2('pointer:0', 'pointer_position', position.x, position.y, now);
+		this.sink.inputAxis2(
+			'pointer:0',
+			POINTER_CONTROLLER_POSITION_CODE,
+			position.x,
+			position.y,
+			now,
+		);
 	}
 
 	private scanInitialGamepads(): void {

@@ -76,6 +76,7 @@ export async function runIdeTest(options: IdeTestRunnerOptions): Promise<void> {
 		faultStack: () => options.ide.getFaultStack(),
 		signatureHelp: () => options.ide.getSignatureHelp(),
 		hover: (row: number, column: number) => options.ide.getHover(row, column),
+		studio: () => options.ide.getStudioWorkbench(),
 		isCartActive: () => options.ide.isCartActive(),
 		waitForCart,
 		frames: waitFrames,

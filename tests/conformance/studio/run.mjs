@@ -27,6 +27,9 @@ try {
 	run('Studio conformance cartridge build', 'npm', [
 		'run', 'build:toolchain:cart', '--', 'studio_conformance', '--debug', '--force',
 	]);
+	run('Node Studio tooling build', 'npm', [
+		'run', 'build:product:node-headless-tooling', '--', '--debug', '--force',
+	]);
 	run('Studio board media build', 'npx', [
 		'tsx', '--tsconfig', 'tsconfig.base.json',
 		'tests/conformance/studio/create_board_rom.ts', boardRom,
@@ -41,8 +44,31 @@ try {
 	if (!output.includes('BMSX-STUDIO-CONFORMANCE=GAME0-BOARD1|GAME1-BOARD0')) {
 		throw new Error(`Studio conformance signature missing.\n${output}`);
 	}
+	const hostScenario = 'tests/ide/studio_host_chrome.idetest.js';
+	const game0Output = run('Studio host chrome game0/board1', 'node', [
+		'dist/host_headless_tooling.debug.js',
+		'--system-rom', 'dist/bmsx-bios.debug.rom',
+		'--rom', 'dist/studio_conformance.debug.rom',
+		'--slot1', boardRom,
+		'--ttl', '30',
+		'--ide-test', hostScenario,
+	]);
+	if (!game0Output.includes('studio_host_chrome.idetest.js passed (19 assertions)')) {
+		throw new Error(`Studio game0/board1 host signature missing.\n${game0Output}`);
+	}
+	const game1Output = run('Studio host chrome board0/game1', 'node', [
+		'dist/host_headless_tooling.debug.js',
+		'--system-rom', 'dist/bmsx-bios.debug.rom',
+		'--rom', boardRom,
+		'--slot1', 'dist/studio_conformance.debug.rom',
+		'--ttl', '30',
+		'--ide-test', hostScenario,
+	]);
+	if (!game1Output.includes('studio_host_chrome.idetest.js passed (19 assertions)')) {
+		throw new Error(`Studio board0/game1 host signature missing.\n${game1Output}`);
+	}
 	await rm(workRoot, { recursive: true, force: true });
-	console.log('Studio conformance: GAME0-BOARD1|GAME1-BOARD0');
+	console.log('Studio conformance: GUEST+HOST GAME0-BOARD1|GAME1-BOARD0');
 } catch (error) {
 	console.error(`${error}\nConformance artifacts retained at ${workRoot}`);
 	process.exitCode = 1;
