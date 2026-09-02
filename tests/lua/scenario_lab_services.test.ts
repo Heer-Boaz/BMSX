@@ -84,7 +84,11 @@ test('scenario result service retains current-first runs and bounded ordered out
 	for (let index = 0; index < SCENARIO_RESULT_CAPTURE_RETAIN_COUNT + 2; index += 1) {
 		service.requestCapture(first, index, `capture ${index}`);
 	}
-	service.recordPresentation(first, 41);
+	assert.equal(
+		service.recordPresentation(first, 41),
+		SCENARIO_RESULT_CAPTURE_RETAIN_COUNT,
+	);
+	assert.equal(service.recordPresentation(first, 42), 0);
 
 	assert.equal(first.logs.length, SCENARIO_RESULT_LOG_RETAIN_COUNT);
 	assert.equal(first.logs.at(0).text, 'log 2');

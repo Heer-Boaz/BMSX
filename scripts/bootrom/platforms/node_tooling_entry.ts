@@ -53,7 +53,6 @@ import {
 	HeadlessCaptureCoordinator,
 	deriveHeadlessCaptureOutputDir,
 } from './headless_capture';
-import { HostTestRunner } from './hostrunner/host_test_runner';
 import { runIdeTest } from './hostrunner/ide_test_runner';
 import { InputTimeline } from './input_timeline';
 import {
@@ -64,6 +63,11 @@ import { installNodeWorkspaceBridge } from './node_workspace_bridge';
 import { RecordingLogOutput } from '../../../ide/testing/recording_log_output';
 import { createRuntimeSourceState } from '../../../ide/runtime/sources';
 import { buildScenarioCartridge } from '../../../toolchain/ts/rompack/scenario_cartridge';
+import { ScenarioTestCollection } from '../../../ide/workbench/contrib/scenario_lab/test_collection';
+import { ScenarioResultService } from '../../../ide/workbench/contrib/scenario_lab/result_service';
+import { ScenarioExecutionService } from '../../../ide/workbench/contrib/scenario_lab/execution_service';
+import { createRuntimeFaultState } from '../../../ide/runtime/fault_state';
+import { runHeadlessScenarioFrame } from './hostrunner/scenario_host_frame';
 
 declare const BMSX_BOOTROM_DEBUG: boolean;
 
@@ -294,6 +298,21 @@ async function main(): Promise<void> {
 			case 'host-test': {
 				const media = await loadRomToolingMedia(systemRom, [slot0Rom, slot1Rom]);
 				const sources = createRuntimeSourceState(media.system, media.cartridgeSlots);
+				const testPath = path.relative(
+					process.cwd(),
+					path.resolve(options.mode.path),
+				).split(path.sep).join('/');
+				const collection = new ScenarioTestCollection(sources);
+				const test = collection.findTestBySourcePath(0, testPath);
+				const results = new ScenarioResultService();
+				const execution = new ScenarioExecutionService(
+					runtime,
+					sources,
+					input,
+					createRuntimeFaultState(),
+					results,
+					Math.trunc(options.ttlMs / runtime.timing.frameDurationMs),
+				);
 				const capture = new HeadlessCaptureCoordinator(
 					videoBackend,
 					deriveHeadlessCaptureOutputDir(options.mode.path),
@@ -305,35 +324,44 @@ async function main(): Promise<void> {
 				let passed = false;
 				try {
 					runtime.frameScheduler.clearQueuedTime();
-					const frameLoop = frames.start((currentTime) => {
-						const result = runHostFrame(
-							frameSession,
-							runtime,
-							presenter,
-							input,
-							audioOutput,
-							systemOutput,
-							logOutput,
-							presentation,
-							hostOverlayMenu,
-							currentTime,
-						);
-						if (result === HostFrameRunResult.ExitRequested) {
+					const result = execution.start(test, test.sourceTimestamp);
+					await new Promise<void>((resolve, reject) => {
+						const frameLoop = frames.start((currentTime) => {
+							runHeadlessScenarioFrame(
+								frameSession,
+								runtime,
+								presenter,
+								input,
+								audioOutput,
+								systemOutput,
+								logOutput,
+								presentation,
+								execution,
+								capture,
+								currentTime,
+							);
+							if (execution.active) {
+								return;
+							}
 							frameLoop.stop();
-							process.exit(0);
-						}
+							for (let index = 0; index < result.logs.length; index += 1) {
+								inputLogger(`test:${test.id} ${result.logs.at(index).text}`);
+							}
+							if (result.state === 'passed') {
+								inputLogger(`test:${test.id} passed`);
+								resolve();
+								return;
+							}
+							reject(new Error(
+								`Scenario '${test.id}' ${result.state}: ${result.failure!.message}`,
+							));
+						});
+						clock.scheduleOnce(options.ttlMs, () => {
+							frameLoop.stop();
+							execution.cancel();
+							reject(new Error(`Scenario '${test.id}' did not finish before TTL.`));
+						});
 					});
-					await new HostTestRunner({
-						testPath: options.mode.path,
-						frameIntervalMs: options.frameIntervalMs,
-						ttlMs: options.ttlMs,
-						logger: inputLogger,
-						runtime,
-						sources,
-						input: inputHub,
-						clock,
-						capture,
-					}).run();
 					passed = true;
 				} finally {
 					await capture.flushWrites(passed);

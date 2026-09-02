@@ -151,6 +151,31 @@ void testBoundedLogicalTickResumesBackendFenceWithoutAnotherGrant() {
 	require(completedState.logicalTickRunTargetSequence == 0, "completed operation clears its target");
 }
 
+void testBoundedLogicalTickExtendsExhaustedRetainedGrant() {
+	TickRuntimeFixture fixture;
+	bmsx::Runtime& runtime = fixture.runtime;
+	bmsx::FrameSchedulerState& scheduler = runtime.frameScheduler;
+	runtime.frameLoop.beginFrameState(runtime, 0, 0);
+	bmsx::FrameSchedulerStateSnapshot pendingState = scheduler.captureState();
+	pendingState.logicalTickRunPending = true;
+	pendingState.logicalTickRunTargetSequence = 1;
+	scheduler.restoreState(pendingState);
+
+	require(
+		scheduler.runToNextLogicalTick(runtime),
+		"bounded execution extends an exhausted explicit grant"
+	);
+	require(scheduler.lastTickSequence == 1, "the retained target completes on the next edge");
+	require(
+		scheduler.lastTickBudgetGranted == runtime.timing.cycleBudgetPerFrame,
+		"the resumed operation grants one current PCRTC period"
+	);
+	require(
+		!scheduler.captureState().logicalTickRunPending,
+		"the completed retained target clears its pending state"
+	);
+}
+
 void testBoundedLogicalTickDoesNotReportResetAsTargetEdge() {
 	TickRuntimeFixture fixture;
 	bmsx::Runtime& runtime = fixture.runtime;
@@ -252,6 +277,7 @@ void testNormalHostExecutionKeepsExistingSchedulerContract() {
 int main() {
 	testBoundedLogicalTickRetainsCycleCarry();
 	testBoundedLogicalTickResumesBackendFenceWithoutAnotherGrant();
+	testBoundedLogicalTickExtendsExhaustedRetainedGrant();
 	testBoundedLogicalTickDoesNotReportResetAsTargetEdge();
 	testLogicalTickPublishesInputAndEntersWaitingCpuInterrupt();
 	testLogicalTickIsBoundedWithoutVblankDeadline();

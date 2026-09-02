@@ -81,7 +81,7 @@ Current artifact names encode that split:
 - `libbmsx.a` in its CMake build tree: C++ machine/runtime.
 - `dist/libretro_bmsx.so`: libretro core built around the C++ machine runtime.
 - `dist/host_headless.js` and `dist/host_cli.js`: IDE-free Node player modes with their statically linked runtime composition.
-- `dist/host_headless_tooling.js`: Node timelines, captures, host tests, IDE tests, and profiling.
+- `dist/host_headless_tooling.js`: Node timelines, captures, scenario tests, IDE tests, and profiling.
 
 ## Runtime Timing
 
@@ -163,7 +163,7 @@ Run render parity through the TypeScript and C++ headless runtimes:
 npm run test:render-parity
 ```
 
-Run an explicit host test:
+Run an explicit scenario test:
 
 ```bash
 npm run headless:test -- pietious tests/carts/pietious/pietious_enter_world_assert.lua
@@ -175,11 +175,16 @@ Important:
 - `test:render-parity` force-builds and compares the render test carts through TS headless and the C++ libretro host
 - headless runs `dist/host_headless.debug.js` with `dist/bmsx-bios.debug.rom`; it does not dynamically load `dist/libbmsx.debug.js`
 - `headless:tooling` runs the separate `dist/host_headless_tooling.debug.js` validation product
-- host tests are always explicit; `headless:game` does not auto-load assert modules
+- scenario tests are always explicit; `headless:game` does not auto-load assert modules
 - the ordinary player never scans `tests/` or auto-loads `<cart>_demo.json`
 - headless tooling timelines run unpaced, so the full scenario completes as fast as the emulator can simulate it
-- `headless:test` and `headless:forcebuildalltest` are the explicit host-test paths
-- Lua host tests run through `scripts/bootrom/platforms/hostrunner/host_test_runner.lua`; TypeScript schedules the machine and drives the explicit runner protocol. The Lua runner exposes `host.press(code, frames)`, `host.down(code)`, `host.up(code)`, `host.at(frame, command)`, `host.capture(label)`, and `host.log(message)` for simple Lua-built input timelines
+- `headless:test` and `headless:forcebuildalltest` are the explicit scenario-test paths
+- Lua scenario tests run through the shared
+  `ide/workbench/contrib/scenario_lab/execution_service.ts` owner; the headless
+  host only adapts that owner to its frame and capture lifecycle. The packaged
+  Lua API exposes `host.press(code, ticks)`, `host.down(code)`,
+  `host.up(code)`, `host.at(tick, command)`, `host.capture(label)`, and
+  `host.log(message)` for logical-tick input schedules
 
 ## Libretro / Custom Host
 

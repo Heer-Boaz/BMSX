@@ -282,6 +282,39 @@ export function executeHostUpdate(
 	);
 }
 
+/** Executes one retained machine tick, servicing backend fences without advancing a second tick. */
+export function executeHostLogicalTick(
+	session: HostFrameSession,
+	runtime: Runtime,
+	presenter: VideoPresenter,
+	input: Input,
+	audioOutput: HostAudioOutput,
+	screen: RenderPresentationState,
+): boolean {
+	const previousTickSequence = runtime.frameScheduler.lastTickSequence;
+	let completed = runtime.frameScheduler.runToNextLogicalTick();
+	const gxGpu = runtime.machine.gxGpu;
+	while (gxGpu.backendServicePending()) {
+		if (gxGpu.backendCommandDrainPending()) {
+			presenter.backend.executeGxGpuCommandDrain(gxGpu);
+		} else {
+			presenter.backend.executeGxGpuReadback(gxGpu);
+		}
+		if (!completed) {
+			completed = runtime.frameScheduler.runToNextLogicalTick();
+		}
+	}
+	syncAfterRuntimeUpdate(
+		session,
+		runtime,
+		input,
+		audioOutput,
+		screen,
+		previousTickSequence,
+	);
+	return completed;
+}
+
 export function presentHostPresentation(
 	session: HostFrameSession,
 	runtime: Runtime,

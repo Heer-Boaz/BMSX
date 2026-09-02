@@ -221,12 +221,13 @@ bezit generieke taalservices, en `common` blijft klein.
   ([`ide/workbench/host_frame.ts:74-84,184-255`](../ide/workbench/host_frame.ts)).
   Live-monitoring is daardoor een echte latere host-lifecyclekeuze, geen kleine
   panelwijziging.
-- [`scripts/bootrom/platforms/hostrunner/host_test_runner.ts`](../scripts/bootrom/platforms/hostrunner/host_test_runner.ts)
-  draait expliciete guest-testclosures tegen één Runtime. De runner bezit een
-  monotone `updateFrames`-stap en voert daarop geplande input uit vóór de
-  bijbehorende guest-`update`. Die host-clockgestuurde runnerstap is niet
-  hetzelfde als de logische runtime-tick; dit is testharness-plumbing, geen
-  productcontrol- of simulation-time-API.
+- [`ide/workbench/contrib/scenario_lab/execution_service.ts`](../ide/workbench/contrib/scenario_lab/execution_service.ts)
+  draait uitsluitend de verpakte loader-, ready-, setup- en updateclosures
+  tegen één Runtime. De execution owner plant input op zijn monotone scenario-
+  tick en biedt die input vóór de ICU-sampling van de bijbehorende
+  logische runtime-tick aan. Browser en headless tooling adapteren dezelfde
+  execution state machine aan hun host-frame lifecycle; geen van beide bezit
+  een tweede runnerprotocol.
 - [`scripts/bootrom/platforms/input_timeline.ts`](../scripts/bootrom/platforms/input_timeline.ts)
   plant input en captures expliciet op
   `HeadlessPresentedFrame.frameIndex`. Dat is een presentation-/captureroute,
@@ -308,9 +309,9 @@ Een scenario-workflow ondersteunt:
    registreren;
 10. een begrensde history van live en voltooide resultaten bewaren.
 
-Testcode mag expliciete setup/updateclosures gebruiken, zoals de huidige
-`HostTestRunner`. Die testgrens wordt niet uitgebreid tot een generieke live
-`runtime.call`, host-Lua-RPC of mutation-API voor Studio.
+Testcode mag expliciete verpakte setup/updateclosures gebruiken. Die testgrens
+wordt niet uitgebreid tot een generieke live `runtime.call`, host-Lua-RPC of
+mutation-API voor Studio.
 
 ## UX- en ownershiproute
 
@@ -376,7 +377,7 @@ Een testproduct boven de bestaande guest-, host- en IDE-testowners.
 **Eigendom**
 
 - workbench bezit discoveryviews, commands en resultaatpresentatie;
-- runners blijven de uitvoeringsowners;
+- de gedeelde Scenario Lab execution service bezit de run state machine;
 - assertions en domeininjectie blijven expliciete testcode;
 - resultaten hebben een aparte, begrensde result owner.
 
@@ -389,8 +390,9 @@ Een testproduct boven de bestaande guest-, host- en IDE-testowners.
 
 **Trade-off**
 
-De bestaande runners hebben nog geen gezamenlijk discovery/run/resultproduct.
-Dat moet als verticale workflow worden ontworpen, niet als runnerfacade.
+Browser en headless tooling moeten dezelfde testidentiteit, execution owner en
+resultaatsemantiek aan hun verschillende hostlifecycles binden. Die verticale
+workflow wordt geen browserfacade rond een headless runner.
 
 ### Optie D — Text-backed Visual Authoring
 
@@ -556,18 +558,19 @@ BMSX heeft drie verschillende relevante ordeningen:
 1. machine-execution en de logische runtime-ticks die
    [`FrameSchedulerState`](../machine/ts/machine/scheduler/frame.ts) sequentieel
    publiceert;
-2. de host-clockgestuurde `updateFrames`-stap van de huidige test-runner;
+2. de monotone scenario-tick waarop expliciete testcommands gepland worden;
 3. geaccepteerde host-presentaties en hun `HeadlessPresentedFrame.frameIndex`.
 
 De PCRTC/host mag presentaties coalescen of bij een gestopte beam helemaal niet
 publiceren terwijl machine-execution doorgaat. Deze tijdassen zijn daarom niet
-uitwisselbaar. Deterministische scenario-stimuli en assertions worden aan de
-logische runtime-tick gebonden; een implementatieslice moet ook de exacte fase
-ten opzichte van ICU-sampling vastleggen. De runnerstap mag guest-testwerk
-groeperen, maar is zonder die expliciete binding geen simulation-timebewijs.
-Een capture wordt pas aan een werkelijk gepresenteerd frame toegewezen en
-bewaart daarnaast de logische tick die haar aanvroeg. Observability gebruikt
-diezelfde execution-ordering en leidt haar nooit uit een presentatie-index af.
+uitwisselbaar. De execution owner bereidt de volgende scenario-tick en haar input
+vóór ICU-sampling voor; na de aantoonbaar voltooide logische tick roept hij de
+expliciete guest-update aan. Een guest-call die meerdere ticks nodig heeft,
+vertraagt deze tijdas of een geplande release niet. De scenario-tick groepeert
+testwerk maar is zonder die binding geen simulation-timebewijs. Een capture
+wordt pas aan een werkelijk gepresenteerd frame toegewezen en bewaart daarnaast
+de logische tick die haar aanvroeg. Observability gebruikt diezelfde execution-
+ordering en leidt haar nooit uit een presentatie-index af.
 
 ### Discovery
 
@@ -730,7 +733,7 @@ staan in [`open_architecture_slices.md`](open_architecture_slices.md).
 ### Fase 2 — Scenario Lab
 
 - bestaande tests worden zonder duplicaatregistratie ontdekt;
-- run, cancel en rerun werken via de echte runner-owner;
+- run, cancel en rerun werken via de gedeelde execution owner;
 - bounded live/completed result history;
 - input, fault, log en capture zijn terugvindbaar;
 - failure navigeert naar bron;

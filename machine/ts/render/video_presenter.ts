@@ -73,6 +73,10 @@ export class VideoPresenter {
 		return this.presentationHistorySourceIndex === 0 ? 1 : 0;
 	}
 
+	public get presentationSequence(): number {
+		return this.frame.frameIndex;
+	}
+
 	public initialize(pipelineRegistry: RenderPassLibrary): void {
 		this.pipelineRegistry = pipelineRegistry;
 		this.resetPresentationHistory();

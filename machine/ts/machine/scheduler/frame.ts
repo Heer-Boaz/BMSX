@@ -207,6 +207,15 @@ export class FrameSchedulerState {
 				const carry = this.carriedCycleBudget;
 				this.beginScheduledFrame(carry + tickBudget, carry);
 			}
+		} else if (runtime.frameLoop.frameActive) {
+			const frameState = runtime.frameLoop.frameState;
+			if (frameState.cycleBudgetRemaining <= 0) {
+				frameState.cycleBudgetRemaining += tickBudget;
+				frameState.cycleBudgetGranted += tickBudget;
+			}
+		} else {
+			const carry = this.carriedCycleBudget;
+			this.beginScheduledFrame(carry + tickBudget, carry);
 		}
 		const targetSequence = this.logicalTickRunTargetSequence;
 		while (this.lastTickSequence !== targetSequence && this.canRunScheduledUpdate()) {

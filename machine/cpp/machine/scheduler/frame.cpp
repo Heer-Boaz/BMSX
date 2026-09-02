@@ -206,6 +206,15 @@ bool FrameSchedulerState::runToNextLogicalTick(Runtime& runtime) {
 			const i64 carry = m_carriedCycleBudget;
 			beginScheduledFrame(runtime, carry + tickBudget, carry);
 		}
+	} else if (runtime.frameLoop.frameActive) {
+		FrameState& frameState = runtime.frameLoop.frameState;
+		if (frameState.cycleBudgetRemaining <= 0) {
+			frameState.cycleBudgetRemaining += tickBudget;
+			frameState.cycleBudgetGranted += tickBudget;
+		}
+	} else {
+		const i64 carry = m_carriedCycleBudget;
+		beginScheduledFrame(runtime, carry + tickBudget, carry);
 	}
 	const i64 targetSequence = m_logicalTickRunTargetSequence;
 	while (lastTickSequence != targetSequence && canRunScheduledUpdate(runtime)) {

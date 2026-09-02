@@ -138,6 +138,21 @@ test('bounded logical-tick execution resumes a backend fence without granting an
 	assert.equal(scheduler.captureState().logicalTickRunTargetSequence, 0);
 });
 
+test('bounded logical-tick execution extends an exhausted retained grant', () => {
+	const { runtime } = createTickRuntime();
+	const scheduler = runtime.frameScheduler;
+	runtime.frameLoop.beginFrameState(0, 0);
+	const pendingState = scheduler.captureState();
+	pendingState.logicalTickRunPending = true;
+	pendingState.logicalTickRunTargetSequence = 1;
+	scheduler.restoreState(pendingState);
+
+	assert.equal(scheduler.runToNextLogicalTick(), true);
+	assert.equal(scheduler.lastTickSequence, 1);
+	assert.equal(scheduler.lastTickBudgetGranted, runtime.timing.cycleBudgetPerFrame);
+	assert.equal(scheduler.captureState().logicalTickRunPending, false);
+});
+
 test('bounded logical-tick execution does not report a reset as its target edge', () => {
 	const { runtime } = createTickRuntime();
 	runtime.machine.memory.writeMappedU32LE(IO_SYS_CONTROL, SYS_CONTROL_RESET);

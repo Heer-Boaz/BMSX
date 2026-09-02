@@ -136,18 +136,19 @@ export class ScenarioResultService {
 		this.revision += 1;
 	}
 
-	public recordPresentation(result: ScenarioRunResult, presentedFrame: number): void {
-		let changed = false;
+	public recordPresentation(result: ScenarioRunResult, presentedFrame: number): number {
+		let captureCount = 0;
 		for (let index = 0; index < result.captures.length; index += 1) {
 			const capture = result.captures.at(index);
 			if (capture.presentedFrame === null) {
 				capture.presentedFrame = presentedFrame;
-				changed = true;
+				captureCount += 1;
 			}
 		}
-		if (changed) {
+		if (captureCount > 0) {
 			this.revision += 1;
 		}
+		return captureCount;
 	}
 
 	public pass(result: ScenarioRunResult, endTick: number): void {

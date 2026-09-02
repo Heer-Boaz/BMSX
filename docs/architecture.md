@@ -356,17 +356,19 @@ one machine cycle, PCRTC advances every physical FIELD/event transition in
 constant time and coalesces only the host-facing presentation edge. Absolute
 cycle zero remains a valid hardware deadline.
 
-The scheduler also owns a cold, bounded `runToNextLogicalTick` operation. It
-contributes one current PCRTC-period cycle grant and advances through the same
-frame loop, CPU executor and device deadlines until the next physical
-VBlank-begin increments `lastTickSequence`. Existing whole-cycle carry remains
-identified separately in `cycleCarryGranted`, and the operation neither adds
-host elapsed time nor consumes the host fractional-cycle remainder. A stopped
-PCRTC publishes a zero tick grant, so the operation reports no tick without
-advancing machine time. A backend fence suspends the operation with its target
-sequence and single cycle grant retained; resumption after backend service does
-not grant another period. An execution stop or timing change may likewise end
-the bounded grant without fabricating an edge. On a real edge the
+The scheduler also owns a cold, bounded `runToNextLogicalTick` operation. Each
+invocation contributes at most one current PCRTC-period cycle grant and advances
+through the same frame loop, CPU executor and device deadlines until the next
+physical VBlank-begin increments `lastTickSequence`. Existing whole-cycle carry
+remains identified separately in `cycleCarryGranted`, and the operation neither
+adds host elapsed time nor consumes the host fractional-cycle remainder. A
+stopped PCRTC publishes a zero tick grant, so the operation reports no tick
+without advancing machine time. A backend fence suspends the operation with its
+target sequence and unspent cycle grant retained; resumption after backend
+service does not grant another period. A subsequent call continues the retained
+target and contributes another current period only when the previous explicit
+grant was exhausted. An execution stop or timing change may likewise end the
+bounded grant without fabricating an edge. On a real edge the
 GPU presentation latch, ICU sample, VBlank IRQ flag and tick completion are
 published in that order. A CPU parked in `HALT_UNTIL_IRQ` may accept the IRQ on
 the same scheduler fence, but no IRQ-handler instruction is executed past the
@@ -465,14 +467,15 @@ Current artifact roles:
 - `dist/host_headless.js` / `.debug.js` and `dist/host_cli.js` / `.debug.js`:
   Node player executables/modes that statically compose the machine runtime and
   own their process/runtime environment. Their bundles contain no IDE,
-  compiler, ROM tooling, capture runner, or host-test runner.
+  compiler, ROM tooling, capture runner, or scenario runner.
 - `dist/host_headless_tooling.js` / `.debug.js`: explicit Node validation and
-  Studio-tooling executable. Timelines, screenshots, host tests, IDE tests, and
-  source-aware profiling live here rather than in the ordinary headless player.
+  Studio-tooling executable. Timelines, screenshots, scenario tests, IDE tests,
+  and source-aware profiling live here rather than in the ordinary headless
+  player.
 
 The shared player lifecycle and frame loop are owned by `hosts/common/`. The
 browser and Node player entrypoints import that lifecycle directly. Studio owns
-its separate composition in `ide/workbench/`; only Studio and IDE-test
+its separate composition in `ide/workbench/`; only Studio and explicit tooling
 entrypoints import it.
 This is a static dependency boundary, not an optional IDE parameter, callback
 provider, or runtime feature switch. Browser and native libretro product roots
@@ -843,6 +846,24 @@ its exact authored line and column. Requiring the test as an independent module
 would be incorrect: BLua `require` selects static startup modules and would run
 the test before the execution owner's settle phase.
 
+Scenario discovery, execution and results remain separate retained owners.
+`ScenarioTestCollection` enumerates the already loaded source registries once
+and lazily materializes stable `scenario:<domain>:<asset-id>` children.
+`ScenarioExecutionService` alone advances the packaged loader/ready/setup/update
+protocol against one Runtime and installs a retained raw ICU playback source.
+Scheduled input is applied before the exact logical tick's ICU sample; guest
+closures that span more than one machine tick do not stretch a requested input
+hold. `ScenarioResultService` separately retains a bounded current-first run
+history, logs and captures. Each capture records its requesting logical tick and
+is bound only when `VideoPresenter` accepts an actual presentation.
+
+The headless tooling host adapts that shared execution owner through
+`executeHostLogicalTick`, services GPU backend fences on the existing host
+boundary and captures completed presentations. It does not own another test
+state machine. The ordinary browser and Node players do not import these
+Scenario Lab owners, and the machine, cartlib and native core know nothing about
+them.
+
 `Blua32ImageLayout` is a tooling representation for inspection, disassembly,
 linking, and hot-resume relocation. It is not part of the runtime execution
 address space or either CPU implementation.
@@ -1112,7 +1133,7 @@ The public BIOS link library is the separate `__blua32_bios_imports__` asset
 and `<system-rom>.blua32-imports` sidecar. It contains the cartridge static-RAM
 base plus author-facing module paths, export paths, and their physical
 public-vector addresses. It is embedded in release and debug system ROMs for
-Studio and host-test tooling. The identical sidecar is the offline cartridge
+Studio and scenario tooling. The identical sidecar is the offline cartridge
 linker's complete BIOS input; that linker never decodes the private system
 image. The library contains no source paths, private function identities,
 global-slot tables, lexical metadata, or compatibility version branches.

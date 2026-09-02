@@ -46,6 +46,9 @@ export class UnpacedHeadlessFrameLoop implements FrameLoop {
 				return;
 			}
 			this.clock.advance(this.stepMs);
+			if (!active) {
+				return;
+			}
 			tick(this.clock.now());
 			setImmediate(pump);
 		};

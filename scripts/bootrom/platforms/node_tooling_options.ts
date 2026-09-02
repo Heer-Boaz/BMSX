@@ -39,7 +39,7 @@ Options:
   --ttl <seconds>            Stop after the given duration.
   --system-rom <path>        System ROM path.
   --input-timeline <file>    Schedule a JSON input/capture timeline.
-  --test <file>              Run a cartridge host-test module.
+  --test <file>              Run a packaged scenario test.
   --ide-test <file>          Run a host-side Studio test.
   --cpu-profile              Profile fantasy-CPU instructions.
   --help, -h                 Show this help.`;

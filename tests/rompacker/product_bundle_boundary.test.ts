@@ -28,7 +28,8 @@ test('player bundle boundary rejects IDE, compiler, and tooling sources', () => 
 		'scripts/bootrom/platforms/node_tooling_options.ts',
 		'scripts/bootrom/platforms/node_workspace_bridge.ts',
 		'scripts/bootrom/platforms/headless_capture.ts',
-		'scripts/bootrom/platforms/hostrunner/host_test_runner.ts',
+		'ide/workbench/contrib/scenario_lab/execution_service.ts',
+		'scripts/bootrom/platforms/hostrunner/scenario_host_frame.ts',
 	]) {
 		assert.throws(
 			() => assertPlayerBundleBoundary('test player', { [source]: {} }),
