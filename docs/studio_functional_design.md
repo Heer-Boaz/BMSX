@@ -1,6 +1,6 @@
 # Studio functioneel ontwerp
 
-Status: **geaccepteerd productcontract voor fase A + C**
+Status: **geaccepteerd productcontract voor fase A + C en de eerste recorded-observabilityslice**
 
 Dit document werkt `STUDIO-FUNCTIONAL-DESIGN-01` uit vanuit de bestaande
 BMSX-representaties en productievoorbeelden. De gekozen eerste productroute is
@@ -85,6 +85,12 @@ en houdt static topology, een vooraf bemeten statusbuffer en een begrensde
 transitionhistory apart
 ([initialisatie](https://github.com/BehaviorTree/BehaviorTree.CPP/blob/9b63b505983f76e46d90d71c87d21fad0001f8a3/src/loggers/groot2_publisher.cpp#L123-L168),
 [transitions](https://github.com/BehaviorTree/BehaviorTree.CPP/blob/9b63b505983f76e46d90d71c87d21fad0001f8a3/src/loggers/groot2_publisher.cpp#L222-L247)).
+
+Godot publiceert een state-machineverandering vanuit de playback-owner: eerst
+wordt `current` werkelijk geschreven, daarna wordt `state_started` op die
+commitgrens uitgezonden
+([`_set_current`](https://github.com/godotengine/godot/blob/6ef60dc279b2c58a94ffc57bf98eefc9663f7907/scene/animation/animation_node_state_machine.cpp#L194-L257),
+[`_signal_state_change`](https://github.com/godotengine/godot/blob/6ef60dc279b2c58a94ffc57bf98eefc9663f7907/scene/animation/animation_node_state_machine.cpp#L363-L377)).
 
 **Gevolg voor BMSX:** static topology wordt niet iedere tick gekopieerd;
 runtime-observatie bestaat uit geselecteerde, begrensde semantische deltas. De
@@ -455,6 +461,12 @@ De source-lens blijft read-only boven arbitrary Lua. Zij belooft geen exacte
 runtime-nodecorrespondentie. De eerste inspectieworkflow is stop-and-inspect en
 libretro blijft buiten de Studio-workbench.
 
+De eerste toegestane stap van **B** is daarna uitsluitend een opgenomen FSM-
+transitionstream binnen een expliciet Scenario Lab-test. FSM heeft als enige
+van de drie behaviorfamilies nu al zowel een concrete runtime-instance als een
+semantische `def_id`. BT-occurrence-identiteit en ActionEffect-outcomes zijn nog
+niet sterk genoeg en worden niet via hetzelfde kanaal gegeneraliseerd.
+
 ## Observabilitycontract
 
 Dit hoofdstuk definieert benodigde informatie en ownership. Het definieert geen
@@ -492,7 +504,7 @@ Voor BT occurrence-to-sourcecorrespondence blijven drie eerlijke keuzes open:
 Een logisch feit moet voldoende informatie dragen om ordering, instance,
 element en outcome te begrijpen:
 
-- de logische runtime-tick en volgorde daarbinnen;
+- een coordinate die de producer werkelijk bezit, plus monotone volgorde;
 - concrete instance-identiteit;
 - fact kind;
 - semantische elementidentiteit;
@@ -503,6 +515,13 @@ element en outcome te begrijpen:
 Een presentation-frame-index is geen execution-coordinate. Als een visuele
 capture aan een feit of checkpoint wordt gekoppeld, bewaart het resultaat beide
 coördinaten en de aantoonbare relatie ertussen.
+
+De FSM-owner kan het host-side `FrameSchedulerState.lastTickSequence` niet
+lezen. De eerste opgenomen FSM-stream bewaart daarom het ruwe wrapping
+`SYS_TIME_MS`-woord en een recorder-owned monotone sequence als producer-
+coördinaten. Scenario Lab bewaart daarnaast de logische tick waarop het record
+werd geobserveerd. Die observation tick wordt niet ten onrechte als de
+transition-tick gepresenteerd.
 
 Static strings, topology en sourcemetadata worden niet bij ieder feit herhaald.
 Dit is een functioneel datamodel, geen wireformat.
@@ -535,6 +554,45 @@ Een gekozen observabilityimplementatie voldoet aan de volgende eisen:
 - disabled/release-overhead wordt gemeten op de echte cart-hot paths;
 - een generieke callback- of hookdispatch wordt niet in de normale fused
   evaluator gesmokkeld.
+
+### Eerste gekozen producer: opgenomen FSM-transitions
+
+`STUDIO-FSM-TRACE-01` volgt drie concrete productiepatronen en verwerpt hun
+ongeschikte delen expliciet:
+
+- zoals BehaviorTree.CPP's logger abonneert de recorder op één concrete
+  runtime-instance en staan immutable instancegegevens los van transition-
+  deltas;
+- zoals Godot publiceert FSM de commit pas nadat `current_id` en
+  `current_state` zijn geschreven, maar vóór enter-callbacks een geneste
+  transition kunnen veroorzaken;
+- zoals LimboAI selecteert de workflow één concrete instance, maar zijn
+  volledige per-update tree-serialisatie wordt niet overgenomen.
+
+De concrete BMSX-grens is geen machine-register, cartridge-device, live-RPC of
+algemene diagnostics-hook. Expliciete guest-testcode maakt een
+`cartlib/fsm/transition_recorder` voor één via `fsm_component:get_machine()`
+verkregen root en retourneert die als Scenario Lab-setupcommand. Alleen
+`state:transition_to_state()` publiceert committed of guard-rejected records.
+De gecompileerde frame-evaluator en carts zonder recorder formatteren,
+alloceren of dispatchen niets voor observability.
+
+De recorder alloceert zijn volledige circular buffer bij constructie en
+publiceert ieder slot pas nadat alle velden zijn geschreven. Deze interne
+Lua/host-representatie heeft een vaste arrayvorm:
+
+| Waarde | Arrayvelden |
+| --- | --- |
+| kanaal | concrete root-instance-id; machine-id; capacity; published sequence; retained record-array |
+| record | producer sequence; raw `SYS_TIME_MS`; lane `def_id`; from `def_id`; to `def_id`; committed boolean |
+
+Het scenarioresultaat materialiseert deze records in een afzonderlijke,
+begrensde retained sequence onder één static instanceheader. De host scant geen
+world, registry of Lua-heap. Wanneer de producerbuffer de consumer inhaalt,
+faalt de test deterministisch; er is geen incomplete fallbacktrace. De eerste
+slice claimt geen sourcecorrespondence: een record heeft expliciet geen
+bronlocatie totdat de authored registration daadwerkelijk een bewezen
+runtime-`def_id`-mapping produceert.
 
 ### Pauze en semantic stepping
 
