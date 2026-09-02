@@ -5,12 +5,26 @@ import type { HostClock } from '../../hosts/common/clock';
 import type { GamepadDevice, InputSource } from '../../hosts/common/input/contracts';
 import { inputControllerGamepadButtonBit } from '../../hosts/common/input/gamepad_buttons';
 import { Input } from '../../hosts/common/input/manager';
+import { InputControllerPlayback } from '../../hosts/common/input/controller_playback';
 import {
 	createInputControllerSnapshot,
 	InputControllerGamepadAxis,
 	InputControllerGamepadButtonBit,
 } from '../../machine/ts/machine/devices/input/contracts';
 import { encodeSignedFix16 } from '../../machine/ts/machine/common/numeric';
+import { Machine } from '../../machine/ts/machine/machine';
+import { Memory } from '../../machine/ts/machine/memory/memory';
+import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
+import { cartridgeSlots } from '../helpers/cartridge';
+import {
+	INP_CTRL_ARM,
+	IO_INP_CTRL,
+	IO_INP_KEYS,
+	IO_INP_PADS,
+	IO_INP_PAD_BUTTONS_OFFSET,
+} from '../../machine/ts/spec/bmsx/io';
+import { IO_WORD_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
+import { hidKeyUsageForCode } from '../../hosts/common/input/hid_keys';
 
 function gamepad(index: number): GamepadDevice {
 	return {
@@ -208,5 +222,86 @@ test('control maps stay with the player port when devices are reassigned', () =>
 	const aMask = 1 << InputControllerGamepadButtonBit.A;
 	assert.equal(snapshot.pads[0].buttons & aMask, 0);
 	assert.notEqual(snapshot.pads[1].buttons & aMask, 0);
+	input.dispose();
+});
+
+test('input-controller playback replaces only the physical ICU view at the VBlank latch edge', () => {
+	const clock = { now: () => 0 } as HostClock;
+	const device = gamepad(0);
+	const source: InputSource = {
+		devices: () => [device],
+		subscribe: () => () => {},
+	};
+	const input = new Input(clock, source, device.gamepadIndex);
+	input.inputButton('keyboard:0', 'KeyA', true, 1, 0, 1);
+	input.inputButton(device.id, 'a', true, 1, 0, 2);
+	input.pollInput();
+
+	const playback = new InputControllerPlayback();
+	playback.setKeyboardKey('KeyB', true);
+	playback.setGamepadButton(0, 'b', true);
+	input.setInputControllerPlayback(playback);
+
+	const memory = new Memory(
+		{ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() },
+		PSX_MACHINE_SPEC.ramBytes,
+	);
+	const machine = new Machine(memory, input, PSX_MACHINE_SPEC);
+	machine.resetDevices();
+	const keyBUsage = hidKeyUsageForCode('KeyB');
+	const keyCUsage = hidKeyUsageForCode('KeyC');
+	memory.writeMappedWord(IO_INP_CTRL, INP_CTRL_ARM);
+	playback.setKeyboardKey('KeyC', true);
+	machine.inputController.onVblankEdge(1);
+
+	assert.notEqual(
+		memory.readIoU32(IO_INP_KEYS + (keyBUsage >>> 5) * IO_WORD_SIZE)
+			& (1 << (keyBUsage & 31)),
+		0,
+	);
+	assert.notEqual(
+		memory.readIoU32(IO_INP_KEYS + (keyCUsage >>> 5) * IO_WORD_SIZE)
+			& (1 << (keyCUsage & 31)),
+		0,
+	);
+	assert.equal(
+		memory.readIoU32(IO_INP_KEYS + (hidKeyUsageForCode('KeyA') >>> 5) * IO_WORD_SIZE)
+			& (1 << (hidKeyUsageForCode('KeyA') & 31)),
+		0,
+	);
+	assert.notEqual(
+		memory.readIoU32(IO_INP_PADS + IO_INP_PAD_BUTTONS_OFFSET)
+			& (1 << InputControllerGamepadButtonBit.B),
+		0,
+	);
+	assert.equal(
+		memory.readIoU32(IO_INP_PADS + IO_INP_PAD_BUTTONS_OFFSET)
+			& (1 << InputControllerGamepadButtonBit.A),
+		0,
+	);
+
+	playback.setKeyboardKey('KeyC', false);
+	assert.notEqual(
+		memory.readIoU32(IO_INP_KEYS + (keyCUsage >>> 5) * IO_WORD_SIZE)
+			& (1 << (keyCUsage & 31)),
+		0,
+	);
+	memory.writeMappedWord(IO_INP_CTRL, INP_CTRL_ARM);
+	machine.inputController.onVblankEdge(2);
+	assert.equal(
+		memory.readIoU32(IO_INP_KEYS + (keyCUsage >>> 5) * IO_WORD_SIZE)
+			& (1 << (keyCUsage & 31)),
+		0,
+	);
+
+	input.setInputControllerPlayback(null);
+	const physical = createInputControllerSnapshot();
+	input.sampleInputControllerSnapshot(physical);
+	const keyAUsage = hidKeyUsageForCode('KeyA');
+	assert.notEqual(physical.keyWords[keyAUsage >>> 5] & (1 << (keyAUsage & 31)), 0);
+	assert.notEqual(
+		physical.pads[0].buttons & (1 << InputControllerGamepadButtonBit.A),
+		0,
+	);
 	input.dispose();
 });

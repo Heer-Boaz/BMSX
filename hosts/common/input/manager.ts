@@ -31,6 +31,7 @@ import {
 	type InputControllerPadSnapshot,
 	type InputControllerSnapshot,
 } from '../../../machine/ts/machine/devices/input/contracts';
+import type { InputControllerPlayback } from './controller_playback';
 
 const EMPTY_BUTTON_STATE_PATCH: Readonly<Partial<ButtonState>> = Object.freeze({});
 const HOST_OVERLAY_KEYBOARD_SOURCE = 'keyboard:host-overlay';
@@ -142,6 +143,7 @@ export class Input implements InputControllerInputSource, InputEventSink {
 
 	private readonly unsubscribeHostInput: () => void;
 	private readonly pendingVibrationDevices: GamepadDevice[] = [];
+	private inputControllerPlayback: InputControllerPlayback | null = null;
 	public resetInput(): void {
 		this.globalShortcuts.reset();
 		this.hostSupervisorRequestLine = false;
@@ -531,6 +533,10 @@ export class Input implements InputControllerInputSource, InputEventSink {
 	}
 
 	public sampleInputControllerSnapshot(snapshot: InputControllerSnapshot): void {
+		if (this.inputControllerPlayback !== null) {
+			this.inputControllerPlayback.writeInputControllerSnapshot(snapshot);
+			return;
+		}
 		this.sampleInputControllerKeyWords(snapshot.keyWords);
 		snapshot.pointerButtons = 0;
 		snapshot.pointerXQ16 = 0;
@@ -543,6 +549,10 @@ export class Input implements InputControllerInputSource, InputEventSink {
 		for (let pad = 0; pad < INPUT_CONTROLLER_PAD_COUNT; pad += 1) {
 			this.samplePadSnapshot(pad, snapshot);
 		}
+	}
+
+	public setInputControllerPlayback(playback: InputControllerPlayback | null): void {
+		this.inputControllerPlayback = playback;
 	}
 
 	public supervisorRequestLineHigh(): boolean {
