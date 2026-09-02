@@ -51,6 +51,10 @@ export function handleEditorWheelInput(editor: CartEditor, playerInput: PlayerIn
 			editor.behaviorLens.handleWheel(activeTab.view, direction, steps);
 			playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');
 			return;
+		case 'scenario_lab':
+			editor.scenarioLab.handleWheel(activeTab.view, direction, steps, activePointer);
+			playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');
+			return;
 		case 'resource_view':
 			scrollResourceViewer(activeTab.resource, direction * steps);
 			playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');

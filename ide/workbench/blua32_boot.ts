@@ -9,7 +9,7 @@ import {
 	prepareBlua32MediaBoot,
 } from '../runtime/lua_pipeline';
 import { enterSystemSources } from '../runtime/sources';
-import type { RuntimeIdeState } from '../runtime/state';
+import type { RuntimeIdeState } from './state';
 import type { RuntimeSourceState } from '../runtime/sources';
 import type { RuntimeFaultState } from '../runtime/fault_state';
 import type { RuntimeLuaTooling } from '../runtime/lua_tooling';

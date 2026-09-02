@@ -14,8 +14,8 @@ import {
 	createBehaviorLensLayout,
 	installBehaviorLensDocument,
 	prepareBehaviorLensLayout,
-	setBehaviorLensScroll,
 } from './layout';
+import { scrollWorkbenchList } from '../../ui/list_view';
 import {
 	BehaviorLensNavigationResult,
 	executeBehaviorLensNavigation,
@@ -110,7 +110,7 @@ export class BehaviorLensController {
 	public handleWheel(view: BehaviorLensViewState, direction: number, steps: number): boolean {
 		prepareBehaviorLensLayout(view);
 		const previousScroll = view.scroll;
-		setBehaviorLensScroll(view, view.scroll + direction * steps * WHEEL_SCROLL_ROWS);
+		scrollWorkbenchList(view, direction * steps * WHEEL_SCROLL_ROWS);
 		return view.scroll !== previousScroll;
 	}
 

@@ -1,6 +1,6 @@
 import type { EditorFont } from '../ui/view/font';
 import type { Font } from '../../../machine/ts/render/shared/bmsx_font';
-import { applyCaseOutsideStrings, expandTabs as expandTabsExternal } from '../../common/text';
+import { expandTabs as expandTabsExternal, uppercaseOutsideStrings } from '../../common/text';
 import * as constants from '../../common/constants';
 import { api } from '../../runtime/overlay_api';
 import { ScratchBuffer } from '../../../machine/ts/common/scratchbuffer';
@@ -24,7 +24,7 @@ function drawEditorTextLine(renderFont: Font, text: string, x: number, y: number
 	if (expanded.length === 0) {
 		return;
 	}
-	const display = useUppercase ? applyCaseOutsideStrings(expanded, (ch) => ch.toUpperCase()) : expanded;
+	const display = useUppercase ? uppercaseOutsideStrings(expanded) : expanded;
 	api.blit_text_inline_with_font(display, x, y, z, color, renderFont);
 }
 

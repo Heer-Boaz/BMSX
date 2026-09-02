@@ -8,6 +8,44 @@ import { editorSearchState, lineJumpState } from '../contrib/code_editor/find/wi
 import { symbolSearchState } from '../contrib/code_editor/symbols/search/state';
 import { renameController } from '../contrib/code_editor/rename/controller';
 import { createResourceState, resourceSearchState } from '../contrib/resources/widget_state';
+import type { EditorFont } from '../../editor/ui/view/font';
+
+export type FullWidthWorkbenchLayout = {
+	left: number;
+	top: number;
+	right: number;
+	bottom: number;
+	rowHeight: number;
+	font: EditorFont | null;
+	viewportWidth: number;
+	viewportHeight: number;
+	codeAreaTop: number;
+	codeAreaBottom: number;
+};
+
+/** Writes shared full-width editor-input geometry only when its owner metrics advance. */
+export function updateFullWidthWorkbenchLayout(layout: FullWidthWorkbenchLayout): boolean {
+	const changed = layout.viewportWidth !== editorViewState.viewportWidth
+		|| layout.viewportHeight !== editorViewState.viewportHeight
+		|| layout.codeAreaTop !== editorViewState.codeAreaTop
+		|| layout.codeAreaBottom !== editorViewState.codeAreaBottom
+		|| layout.font !== editorViewState.font
+		|| layout.rowHeight !== editorViewState.lineHeight;
+	if (!changed) {
+		return false;
+	}
+	layout.left = 0;
+	layout.top = editorViewState.codeAreaTop;
+	layout.right = editorViewState.viewportWidth;
+	layout.bottom = editorViewState.codeAreaBottom;
+	layout.rowHeight = editorViewState.lineHeight;
+	layout.font = editorViewState.font;
+	layout.viewportWidth = editorViewState.viewportWidth;
+	layout.viewportHeight = editorViewState.viewportHeight;
+	layout.codeAreaTop = editorViewState.codeAreaTop;
+	layout.codeAreaBottom = editorViewState.codeAreaBottom;
+	return true;
+}
 
 const statusMessageLines: string[] = [];
 let statusMessageCachedVisible = false;

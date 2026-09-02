@@ -51,9 +51,11 @@ export function drawBehaviorLens(state: BehaviorLensViewState): void {
 		if (rowIndex === state.selectionIndex) {
 			api.fill_rect(layout.left, y, layout.right, y + layout.rowHeight, 0, constants.SELECTION_OVERLAY);
 		}
-		const textColor = row.node.resolution !== 'complete'
-			? constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM
-			: constants.COLOR_RESOURCE_VIEWER_TEXT;
+		const textColor = rowIndex === state.selectionIndex
+			? constants.COLOR_SELECTION_TEXT
+			: (row.node.resolution !== 'complete'
+				? constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM
+				: constants.COLOR_RESOURCE_VIEWER_TEXT);
 		api.blit_text_inline_span_with_font(
 			row.text,
 			0,

@@ -1,5 +1,5 @@
-import type { FaultSnapshot } from '../../../runtime/fault_state';
-import type { ResourceIdentity } from '../../../common/resource';
+import type { FaultSnapshot } from '../../runtime/fault_state';
+import type { ResourceIdentity } from '../../common/resource';
 import type { ScenarioTestItem } from './test_collection';
 
 export const SCENARIO_RESULT_RETAIN_COUNT = 128;
@@ -20,12 +20,14 @@ export type ScenarioSourceLocation = {
 };
 
 export type ScenarioResultLog = {
+	readonly id: string;
 	readonly tick: number;
 	readonly text: string;
 	readonly location: ScenarioSourceLocation;
 };
 
 export type ScenarioResultCapture = {
+	readonly id: string;
 	readonly label: string;
 	readonly requestTick: number;
 	readonly location: ScenarioSourceLocation;
@@ -39,6 +41,7 @@ export type ScenarioRunFailure = {
 
 export type ScenarioRunResult = {
 	readonly id: string;
+	readonly sequence: number;
 	readonly test: ScenarioTestItem;
 	readonly sourceRevision: number;
 	readonly startTick: number;
@@ -84,6 +87,8 @@ export class ScenarioResultService {
 	public readonly results: ScenarioRunResult[] = [];
 	public revision = 0;
 	private nextRunSequence = 1;
+	private nextLogSequence = 1;
+	private nextCaptureSequence = 1;
 	private _liveResult: ScenarioRunResult | null = null;
 
 	public get liveResult(): ScenarioRunResult | null {
@@ -96,6 +101,7 @@ export class ScenarioResultService {
 		}
 		const result: ScenarioRunResult = {
 			id: `scenario-run:${this.nextRunSequence}`,
+			sequence: this.nextRunSequence,
 			test,
 			sourceRevision,
 			startTick,
@@ -122,17 +128,25 @@ export class ScenarioResultService {
 	}
 
 	public appendLog(result: ScenarioRunResult, tick: number, text: string): void {
-		result.logs.push({ tick, text, location: sourceStart(result.test) });
+		result.logs.push({
+			id: `scenario-log:${this.nextLogSequence}`,
+			tick,
+			text,
+			location: sourceStart(result.test),
+		});
+		this.nextLogSequence += 1;
 		this.revision += 1;
 	}
 
 	public requestCapture(result: ScenarioRunResult, tick: number, label: string): void {
 		result.captures.push({
+			id: `scenario-capture:${this.nextCaptureSequence}`,
 			label,
 			requestTick: tick,
 			presentedFrame: null,
 			location: sourceStart(result.test),
 		});
+		this.nextCaptureSequence += 1;
 		this.revision += 1;
 	}
 

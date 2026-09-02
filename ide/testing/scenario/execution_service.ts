@@ -1,8 +1,8 @@
-import { InputControllerPlayback } from '../../../../hosts/common/input/controller_playback';
-import type { Input } from '../../../../hosts/common/input/manager';
-import type { Closure } from '../../../../machine/ts/machine/cpu/closure';
-import type { StringId } from '../../../../machine/ts/machine/cpu/string_pool';
-import { Table } from '../../../../machine/ts/machine/cpu/table';
+import { InputControllerPlayback } from '../../../hosts/common/input/controller_playback';
+import type { Input } from '../../../hosts/common/input/manager';
+import type { Closure } from '../../../machine/ts/machine/cpu/closure';
+import type { StringId } from '../../../machine/ts/machine/cpu/string_pool';
+import { Table } from '../../../machine/ts/machine/cpu/table';
 import {
 	asStringId,
 	EMPTY_CALL_ARGS,
@@ -10,16 +10,16 @@ import {
 	type Value,
 	valueTag,
 	ValueTag,
-} from '../../../../machine/ts/machine/cpu/value';
-import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
-import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../../../machine/ts/spec/bmsx/io';
-import { SCENARIO_TEST_LOADER_GLOBAL } from '../../../../toolchain/ts/rompack/scenario_guest_api';
+} from '../../../machine/ts/machine/cpu/value';
+import type { Runtime } from '../../../machine/ts/machine/runtime/runtime';
+import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../../machine/ts/spec/bmsx/io';
+import { SCENARIO_TEST_LOADER_GLOBAL } from '../../../toolchain/ts/rompack/scenario_guest_api';
 import {
 	recordSupervisorFault,
 	type RuntimeFaultState,
-} from '../../../runtime/fault_state';
-import type { RuntimeSourceState } from '../../../runtime/sources';
-import { SuspendedGuestSession } from '../../../runtime/suspended_guest';
+} from '../../runtime/fault_state';
+import type { RuntimeSourceState } from '../../runtime/sources';
+import { SuspendedGuestSession } from '../../runtime/suspended_guest';
 import {
 	type ScenarioRunResult,
 	ScenarioResultService,

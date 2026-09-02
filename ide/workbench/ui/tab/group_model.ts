@@ -3,12 +3,14 @@ import type {
 	CodeEditorTabId,
 	EditorTabId,
 	ResourceViewerTabId,
+	ScenarioLabTabId,
 } from './id';
 import type {
 	BehaviorLensTabDescriptor,
 	CodeEditorTabDescriptor,
 	EditorTabDescriptor,
 	ResourceViewerTabDescriptor,
+	ScenarioLabTabDescriptor,
 } from './model';
 
 /**
@@ -49,6 +51,7 @@ export class EditorTabGroupModel {
 	public findById(tabId: CodeEditorTabId): CodeEditorTabDescriptor | undefined;
 	public findById(tabId: ResourceViewerTabId): ResourceViewerTabDescriptor | undefined;
 	public findById(tabId: BehaviorLensTabId): BehaviorLensTabDescriptor | undefined;
+	public findById(tabId: ScenarioLabTabId): ScenarioLabTabDescriptor | undefined;
 	public findById(tabId: EditorTabId): EditorTabDescriptor | undefined;
 	public findById(tabId: EditorTabId): EditorTabDescriptor | undefined {
 		for (let index = 0; index < this.editorTabs.length; index += 1) {

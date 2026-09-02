@@ -14,7 +14,7 @@ import {
 	resolveRuntimeResourceForContext,
 	type RuntimeSourceState,
 } from '../runtime/sources';
-import type { RuntimeIdeState } from '../runtime/state';
+import type { RuntimeIdeState } from '../workbench/state';
 import type { StackTraceFrame } from '../runtime/stack_trace';
 import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
 import type { EditorCommandId } from '../common/commands';

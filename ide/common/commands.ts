@@ -18,6 +18,7 @@ export type EditorViewCommandId =
 	| 'resources'
 	| 'problems'
 	| 'behaviorLens'
+	| 'scenarioLab'
 	| 'filter'
 	| 'wrap';
 
@@ -33,25 +34,19 @@ export type EditorDebugCommandId =
 	| 'debugStepOut'
 	| 'debugStepOver';
 
+export type EditorScenarioLabCommandId =
+	| 'scenarioLab.run'
+	| 'scenarioLab.rerun'
+	| 'scenarioLab.cancel';
+
 export type EditorCommandId =
 	| EditorSearchCommandId
 	| EditorSymbolNavigationCommandId
 	| EditorViewCommandId
 	| EditorWorkspaceCommandId
-	| EditorDebugCommandId;
+	| EditorDebugCommandId
+	| EditorScenarioLabCommandId;
 
-export type TopBarButtonId = Extract<
-	EditorCommandId,
-	| 'hot-resume'
-	| 'reboot'
-	| 'save'
-	| 'resources'
-	| 'problems'
-	| 'behaviorLens'
-	| 'filter'
-	| 'wrap'
-	| 'debugContinue'
-	| 'debugStepInto'
-	| 'debugStepOut'
-	| 'debugStepOver'
->;
+export type EditorCommandEnablement = {
+	isEnabled(command: EditorCommandId): boolean;
+};

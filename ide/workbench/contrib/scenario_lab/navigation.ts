@@ -1,0 +1,284 @@
+import {
+	refreshScenarioLabProjection,
+	selectedScenarioResultRow,
+	selectedScenarioTest,
+	updateSelectedScenarioTest,
+} from './projection';
+import type { EditorScenarioLabCommandId } from '../../../common/commands';
+import { revealWorkbenchListSelection } from '../../ui/list_view';
+import type { ScenarioLabViewState } from './view_model';
+
+export type ScenarioLabNavigationCommand =
+	| 'up'
+	| 'down'
+	| 'page-up'
+	| 'page-down'
+	| 'home'
+	| 'end'
+	| 'left'
+	| 'right'
+	| 'focus-next'
+	| 'activate';
+
+export const enum ScenarioLabNavigationResult {
+	None,
+	Changed,
+	OpenSource,
+}
+
+export function updateScenarioLabStatus(state: ScenarioLabViewState): void {
+	const test = selectedScenarioTest(state);
+	state.status.info = test === null ? 'NO SCENARIO SELECTED' : test.label.toUpperCase();
+	state.status.dirty = true;
+}
+
+function selectScenarioTestRow(state: ScenarioLabViewState, index: number): void {
+	state.testPane.selectionIndex = index;
+	updateSelectedScenarioTest(state);
+	refreshScenarioLabProjection(state);
+	revealWorkbenchListSelection(state.testPane);
+	updateScenarioLabStatus(state);
+}
+
+function selectScenarioResultRow(state: ScenarioLabViewState, index: number): void {
+	state.resultPane.selectionIndex = index;
+	revealWorkbenchListSelection(state.resultPane);
+	updateScenarioLabStatus(state);
+}
+
+export function selectScenarioLabTestRow(state: ScenarioLabViewState, index: number): void {
+	state.focus = 'tests';
+	selectScenarioTestRow(state, index);
+}
+
+export function selectScenarioLabResultRow(state: ScenarioLabViewState, index: number): void {
+	state.focus = 'results';
+	selectScenarioResultRow(state, index);
+}
+
+export function toggleScenarioLabTestRow(state: ScenarioLabViewState, index: number): void {
+	const row = state.testPane.rows[index];
+	if (!row.expandable) {
+		return;
+	}
+	if (row.expanded) {
+		state.testPane.collapsedRootIds.add(row.root.id);
+	} else {
+		state.testPane.collapsedRootIds.delete(row.root.id);
+	}
+	state.testPane.rowsDirty = true;
+	refreshScenarioLabProjection(state);
+	revealWorkbenchListSelection(state.testPane);
+	updateScenarioLabStatus(state);
+}
+
+export function toggleScenarioLabResultRow(state: ScenarioLabViewState, index: number): void {
+	const row = state.resultPane.rows[index];
+	if (!row.expandable) {
+		return;
+	}
+	if (row.expanded) {
+		state.resultPane.expandedResultIds.delete(row.result.id);
+	} else {
+		state.resultPane.expandedResultIds.add(row.result.id);
+	}
+	state.resultPane.projectedRevision = -1;
+	refreshScenarioLabProjection(state);
+	revealWorkbenchListSelection(state.resultPane);
+	updateScenarioLabStatus(state);
+}
+
+function moveScenarioLabSelection(state: ScenarioLabViewState, delta: number): boolean {
+	if (state.focus === 'tests') {
+		if (state.testPane.rows.length === 0) {
+			return false;
+		}
+		let next = state.testPane.selectionIndex + delta;
+		if (next < 0) next = 0;
+		if (next >= state.testPane.rows.length) next = state.testPane.rows.length - 1;
+		if (next === state.testPane.selectionIndex) {
+			return false;
+		}
+		selectScenarioTestRow(state, next);
+		return true;
+	}
+	if (state.resultPane.rows.length === 0) {
+		return false;
+	}
+	let next = state.resultPane.selectionIndex + delta;
+	if (next < 0) next = 0;
+	if (next >= state.resultPane.rows.length) next = state.resultPane.rows.length - 1;
+	if (next === state.resultPane.selectionIndex) {
+		return false;
+	}
+	selectScenarioResultRow(state, next);
+	return true;
+}
+
+function moveScenarioLabBoundary(state: ScenarioLabViewState, end: boolean): boolean {
+	const length = state.focus === 'tests' ? state.testPane.rows.length : state.resultPane.rows.length;
+	if (length === 0) {
+		return false;
+	}
+	const next = end ? length - 1 : 0;
+	if (state.focus === 'tests') {
+		if (next === state.testPane.selectionIndex) return false;
+		selectScenarioTestRow(state, next);
+		return true;
+	}
+	if (next === state.resultPane.selectionIndex) return false;
+	selectScenarioResultRow(state, next);
+	return true;
+}
+
+export function scenarioLabCommandEnabled(
+	state: ScenarioLabViewState,
+	command: EditorScenarioLabCommandId,
+): boolean {
+	switch (command) {
+		case 'scenarioLab.run':
+			return !state.runActive && selectedScenarioTest(state) !== null;
+		case 'scenarioLab.rerun': {
+			const test = selectedScenarioTest(state);
+			return !state.runActive && test !== null && state.resultPane.selectedTestHasResult;
+		}
+		case 'scenarioLab.cancel':
+			return state.runActive;
+	}
+}
+
+function activateScenarioLabSelection(state: ScenarioLabViewState): ScenarioLabNavigationResult {
+	if (state.focus === 'tests') {
+		const selectionIndex = state.testPane.selectionIndex;
+		if (selectionIndex < 0) {
+			return ScenarioLabNavigationResult.None;
+		}
+		const row = state.testPane.rows[selectionIndex];
+		if (row.kind === 'root') {
+			toggleScenarioLabTestRow(state, selectionIndex);
+			return ScenarioLabNavigationResult.Changed;
+		}
+		return ScenarioLabNavigationResult.OpenSource;
+	}
+	const row = selectedScenarioResultRow(state);
+	if (row === null) {
+		return ScenarioLabNavigationResult.None;
+	}
+	if (row.kind === 'result') {
+		toggleScenarioLabResultRow(state, state.resultPane.selectionIndex);
+		return ScenarioLabNavigationResult.Changed;
+	}
+	return ScenarioLabNavigationResult.OpenSource;
+}
+
+function moveScenarioLabLeft(state: ScenarioLabViewState): boolean {
+	if (state.focus === 'results') {
+		state.focus = 'tests';
+		updateScenarioLabStatus(state);
+		return true;
+	}
+	const selectionIndex = state.testPane.selectionIndex;
+	if (selectionIndex < 0) {
+		return false;
+	}
+	const row = state.testPane.rows[selectionIndex];
+	if (row.kind === 'root') {
+		if (!row.expanded) return false;
+		toggleScenarioLabTestRow(state, selectionIndex);
+		return true;
+	}
+	for (let index = selectionIndex - 1; index >= 0; index -= 1) {
+		if (state.testPane.rows[index].id === row.root.id) {
+			selectScenarioTestRow(state, index);
+			return true;
+		}
+	}
+	return false;
+}
+
+function moveScenarioLabRight(state: ScenarioLabViewState): boolean {
+	if (state.focus === 'results') {
+		const row = selectedScenarioResultRow(state);
+		if (row === null || row.kind !== 'result' || row.expanded) {
+			return false;
+		}
+		toggleScenarioLabResultRow(state, state.resultPane.selectionIndex);
+		return true;
+	}
+	const selectionIndex = state.testPane.selectionIndex;
+	if (selectionIndex < 0) {
+		return false;
+	}
+	const row = state.testPane.rows[selectionIndex];
+	if (row.kind === 'root') {
+		if (row.expanded) return false;
+		toggleScenarioLabTestRow(state, selectionIndex);
+		return true;
+	}
+	if (state.resultPane.rows.length === 0) {
+		return false;
+	}
+	state.focus = 'results';
+	updateScenarioLabStatus(state);
+	return true;
+}
+
+export function executeScenarioLabNavigation(
+	state: ScenarioLabViewState,
+	command: ScenarioLabNavigationCommand,
+): ScenarioLabNavigationResult {
+	refreshScenarioLabProjection(state);
+	switch (command) {
+		case 'up':
+			return moveScenarioLabSelection(state, -1)
+				? ScenarioLabNavigationResult.Changed
+				: ScenarioLabNavigationResult.None;
+		case 'down':
+			return moveScenarioLabSelection(state, 1)
+				? ScenarioLabNavigationResult.Changed
+				: ScenarioLabNavigationResult.None;
+		case 'page-up':
+			if (state.focus === 'tests') {
+				return moveScenarioLabSelection(state, -state.testPane.layout.visibleRowCount)
+					? ScenarioLabNavigationResult.Changed
+					: ScenarioLabNavigationResult.None;
+			}
+			return moveScenarioLabSelection(
+				state,
+				-state.resultPane.layout.visibleRowCount,
+			) ? ScenarioLabNavigationResult.Changed : ScenarioLabNavigationResult.None;
+		case 'page-down':
+			if (state.focus === 'tests') {
+				return moveScenarioLabSelection(state, state.testPane.layout.visibleRowCount)
+					? ScenarioLabNavigationResult.Changed
+					: ScenarioLabNavigationResult.None;
+			}
+			return moveScenarioLabSelection(
+				state,
+				state.resultPane.layout.visibleRowCount,
+			) ? ScenarioLabNavigationResult.Changed : ScenarioLabNavigationResult.None;
+		case 'home':
+			return moveScenarioLabBoundary(state, false)
+				? ScenarioLabNavigationResult.Changed
+				: ScenarioLabNavigationResult.None;
+		case 'end':
+			return moveScenarioLabBoundary(state, true)
+				? ScenarioLabNavigationResult.Changed
+				: ScenarioLabNavigationResult.None;
+		case 'left':
+			return moveScenarioLabLeft(state)
+				? ScenarioLabNavigationResult.Changed
+				: ScenarioLabNavigationResult.None;
+		case 'right':
+			return moveScenarioLabRight(state)
+				? ScenarioLabNavigationResult.Changed
+				: ScenarioLabNavigationResult.None;
+		case 'focus-next':
+			if (state.resultPane.rows.length === 0) return ScenarioLabNavigationResult.None;
+			state.focus = state.focus === 'tests' ? 'results' : 'tests';
+			updateScenarioLabStatus(state);
+			return ScenarioLabNavigationResult.Changed;
+		case 'activate':
+			return activateScenarioLabSelection(state);
+	}
+}

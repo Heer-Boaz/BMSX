@@ -25,6 +25,10 @@ import {
 	handleBehaviorLensGamepadInput,
 	handleBehaviorLensKeyboardInput,
 } from '../../workbench/contrib/behavior_lens/keyboard';
+import {
+	handleScenarioLabGamepadInput,
+	handleScenarioLabKeyboardInput,
+} from '../../workbench/contrib/scenario_lab/keyboard';
 
 export function handleEditorInput(
 	playerInput: PlayerInput,
@@ -56,6 +60,16 @@ export function handleEditorInput(
 		case 'behavior_lens':
 			if (!handleBehaviorLensKeyboardInput(activeTab.view, playerInput, editor.behaviorLens)) {
 				handleBehaviorLensGamepadInput(activeTab.view, playerInput, editor.behaviorLens);
+			}
+			return;
+		case 'scenario_lab':
+			if (!handleScenarioLabKeyboardInput(activeTab.view, playerInput, editor.scenarioLab)) {
+				handleScenarioLabGamepadInput(
+					activeTab.view,
+					playerInput,
+					editor.scenarioLab,
+					editor.commands,
+				);
 			}
 			return;
 		case 'code_editor':

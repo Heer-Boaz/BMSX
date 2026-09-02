@@ -221,13 +221,17 @@ bezit generieke taalservices, en `common` blijft klein.
   ([`ide/workbench/host_frame.ts:74-84,184-255`](../ide/workbench/host_frame.ts)).
   Live-monitoring is daardoor een echte latere host-lifecyclekeuze, geen kleine
   panelwijziging.
-- [`ide/workbench/contrib/scenario_lab/execution_service.ts`](../ide/workbench/contrib/scenario_lab/execution_service.ts)
+- [`ide/testing/scenario/execution_service.ts`](../ide/testing/scenario/execution_service.ts)
   draait uitsluitend de verpakte loader-, ready-, setup- en updateclosures
   tegen één Runtime. De execution owner plant input op zijn monotone scenario-
   tick en biedt die input vóór de ICU-sampling van de bijbehorende
   logische runtime-tick aan. Browser en headless tooling adapteren dezelfde
   execution state machine aan hun host-frame lifecycle; geen van beide bezit
   een tweede runnerprotocol.
+- `ide/testing/scenario` bezit daarnaast de gedeelde discovery- en result-
+  services. De browser-mediasessie en UI blijven workbench-contributions;
+  [`ide/workbench/state.ts`](../ide/workbench/state.ts) composeert die lagen.
+  Runtime-modules importeren daardoor geen workbenchfeature.
 - [`scripts/bootrom/platforms/input_timeline.ts`](../scripts/bootrom/platforms/input_timeline.ts)
   plant input en captures expliciet op
   `HeadlessPresentedFrame.frameIndex`. Dat is een presentation-/captureroute,
@@ -606,6 +610,17 @@ herhaalbare seed en initialisatie blijven guest-owned scenario-startcondities.
 De runtime-taskqueue serialiseert build, install en herstel; de UI bezit geen
 mediawrites.
 
+De browserprojectie is één echte workbench-tab, geen cart-UI en geen overlay op
+de game. Zij gebruikt het tiny font en verdeelt het volledige contentvlak in
+een retained testboom en retained resultatenboom. Beide panes zijn zelfstandige
+list views met eigen rijen, selectie, scroll, hover en viewport-layout; alleen
+de focus tussen panes behoort aan de omvattende tab. Selectie, collapse, tekst
+en hit-bounds worden niet ieder frame gereconstrueerd.
+Run/rerun/cancel zijn contextacties; een run legt de actuele geselecteerde bron
+en open programmafiles vast, verlaat daarna tijdelijk de blokkerende IDE en
+keert pas na canoniek mediaherstel naar dezelfde tab terug. Resultaat- en
+failure-activatie loopt via de bestaande sourcenavigatie.
+
 ### Resultaat
 
 Een resultaat kan bevatten:
@@ -631,7 +646,7 @@ De actieve IDE zet haar eigen render target expliciet op 384×288 in
 ook werkelijk de viewport-, canvas- en offscreen-target
 ([`machine/ts/render/video_presenter.ts`](../machine/ts/render/video_presenter.ts)).
 De IDE kiest standaard de `tiny`-fontvariant in
-[`ide/runtime/state.ts`](../ide/runtime/state.ts). De atlas beschrijft de tiny
+[`ide/workbench/state.ts`](../ide/workbench/state.ts). De atlas beschrijft de tiny
 glyphs als 4×6 pixels
 ([`machine/ts/render/host_overlay/atlas.generated.ts`](../machine/ts/render/host_overlay/atlas.generated.ts)).
 384×288 bevat dus hoogstens 96×48 kale glyphcellen. Dat is alleen een absolute
@@ -680,6 +695,15 @@ device-assignment, shortcutregistratie en capture blijven bij
 [`hosts/common/input/manager.ts`](../hosts/common/input/manager.ts) en
 [`hosts/common/input/shortcuts.ts`](../hosts/common/input/shortcuts.ts). Wanneer
 de workbench input bezit, bereikt hetzelfde event niet gelijktijdig ICU/gameplay.
+
+De workbench implementeert die grens declaratief naar het VS Code-model. Een
+typed command-id heeft een centrale presentatienaam; keybindings en named-menu-
+contributies verwijzen naar dat id. Een generieke action bar projecteert de
+view-title-menu en pointer, keyboard en controller voeren uiteindelijk hetzelfde
+command uit. Featurecode spelt daarom geen sneltoetsen uit in statustekst en
+tekent geen eigen Run/Cancel-knoppen. Contextuele enablement en de gewogen
+keybindingresolver lossen conflicten zoals debugger-F5 versus Scenario-Lab-F5
+op buiten beide features.
 
 ## Browser en libretro
 

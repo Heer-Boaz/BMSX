@@ -37,22 +37,27 @@ import {
 	type LuaCodeTabSourceSnapshot,
 } from '../../ui/code_tab/activation';
 import { workspaceDirtyRecords } from '../../workspace/state';
-import { ScenarioExecutionService } from './execution_service';
+import { ScenarioExecutionService } from '../../../testing/scenario/execution_service';
 import type {
 	ScenarioRunFailure,
 	ScenarioRunResult,
-} from './result_service';
-import { ScenarioResultService } from './result_service';
-import type { ScenarioTestItem } from './test_collection';
+} from '../../../testing/scenario/result_service';
+import { ScenarioResultService } from '../../../testing/scenario/result_service';
+import type { ScenarioTestItem } from '../../../testing/scenario/test_collection';
 
 type PendingScenarioRun = {
 	readonly test: ScenarioTestItem;
 	readonly testSource: CurrentLuaSourceSnapshot;
 	readonly pendingProgramSources: ReadonlyArray<LuaCodeTabSourceSnapshot>;
-	readonly onError: (error: unknown) => void;
 	result: ScenarioRunResult | null;
 	cancelled: boolean;
 };
+
+export type ScenarioMediaSessionEvent =
+	| { readonly type: 'complete' }
+	| { readonly type: 'error'; readonly error: unknown };
+
+type ScenarioMediaSessionListener = (event: ScenarioMediaSessionEvent) => void;
 
 type ScenarioMediaSession = {
 	readonly request: PendingScenarioRun;
@@ -107,6 +112,7 @@ export class ScenarioRunService {
 	public readonly execution: ScenarioExecutionService;
 	private pendingRun: PendingScenarioRun | null = null;
 	private mediaSession: ScenarioMediaSession | null = null;
+	private readonly mediaSessionListeners = new Set<ScenarioMediaSessionListener>();
 
 	public constructor(
 		private readonly runtime: Runtime,
@@ -137,7 +143,6 @@ export class ScenarioRunService {
 		test: ScenarioTestItem,
 		testSource: CurrentLuaSourceSnapshot,
 		pendingProgramSources: ReadonlyArray<LuaCodeTabSourceSnapshot>,
-		onError: (error: unknown) => void,
 	): Promise<void> {
 		if (this.active) {
 			throw new Error('A Scenario Lab media session is already active.');
@@ -146,15 +151,19 @@ export class ScenarioRunService {
 			test,
 			testSource,
 			pendingProgramSources,
-			onError,
 			result: null,
 			cancelled: false,
 		};
 		this.pendingRun = request;
 		return this.runtimeTasks.schedule(
 			() => this.prepareRun(request),
-			onError,
+			error => this.endMediaSessionWithError(error),
 		);
+	}
+
+	public onDidEndMediaSession(listener: ScenarioMediaSessionListener): () => void {
+		this.mediaSessionListeners.add(listener);
+		return () => this.mediaSessionListeners.delete(listener);
 	}
 
 	public cancel(): void {
@@ -202,6 +211,7 @@ export class ScenarioRunService {
 			if (request.cancelled) {
 				this.results.cancel(result, 0);
 				this.pendingRun = null;
+				this.emitMediaSessionEvent({ type: 'complete' });
 				return;
 			}
 
@@ -241,6 +251,7 @@ export class ScenarioRunService {
 				}
 				this.pendingRun = null;
 				this.mediaSession = null;
+				this.emitMediaSessionEvent({ type: 'complete' });
 				return;
 			}
 
@@ -293,7 +304,7 @@ export class ScenarioRunService {
 		}
 		this.mediaSession = null;
 		this.pendingRun = null;
-		request.onError(error);
+		this.emitMediaSessionEvent({ type: 'error', error });
 	}
 
 	private queueCanonicalRestore(session: ScenarioMediaSession): void {
@@ -309,7 +320,20 @@ export class ScenarioRunService {
 				),
 			);
 			this.mediaSession = null;
-		}, session.request.onError);
+			this.emitMediaSessionEvent({ type: 'complete' });
+		}, error => this.endMediaSessionWithError(error));
+	}
+
+	private endMediaSessionWithError(error: unknown): void {
+		this.pendingRun = null;
+		this.mediaSession = null;
+		this.emitMediaSessionEvent({ type: 'error', error });
+	}
+
+	private emitMediaSessionEvent(event: ScenarioMediaSessionEvent): void {
+		for (const listener of this.mediaSessionListeners) {
+			listener(event);
+		}
 	}
 
 	private bootCanonicalMedia(

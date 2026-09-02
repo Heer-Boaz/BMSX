@@ -31,7 +31,7 @@ function isStringQuote(ch: string): boolean {
 	}
 }
 
-export function applyCaseOutsideStrings(text: string, transform: (ch: string) => string): string {
+export function uppercaseOutsideStrings(text: string): string {
 	let inString = false;
 	let quote = '';
 	let escapeNext = false;
@@ -65,7 +65,7 @@ export function applyCaseOutsideStrings(text: string, transform: (ch: string) =>
 			}
 			continue;
 		}
-		const transformed = transform(ch);
+		const transformed = ch.toUpperCase();
 		if (transformed === ch) {
 			if (mutated) {
 				result += ch;

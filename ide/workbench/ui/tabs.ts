@@ -66,7 +66,12 @@ export function isBehaviorLensActive(): boolean {
 	return getActiveTabKind() === 'behavior_lens';
 }
 
-function activateBehaviorLensTab(resourcePanel: ResourcePanelController): void {
+export function isScenarioLabActive(): boolean {
+	return getActiveTabKind() === 'scenario_lab';
+}
+
+/** Activates a full-width workbench editor input with code-only UI cleared. */
+function activateFullWidthWorkbenchTab(resourcePanel: ResourcePanelController): void {
 	closeSearch(false, true);
 	closeLineJump(false);
 	closeEditorContextMenu();
@@ -103,7 +108,8 @@ export function setActiveTab(
 				activateResourceViewerTab(tab);
 				return;
 			case 'behavior_lens':
-				activateBehaviorLensTab(resourcePanel);
+			case 'scenario_lab':
+				activateFullWidthWorkbenchTab(resourcePanel);
 				return;
 			case 'code_editor':
 				if (selection) {
@@ -119,7 +125,8 @@ export function setActiveTab(
 			activateResourceViewerTab(tab);
 			return;
 		case 'behavior_lens':
-			activateBehaviorLensTab(resourcePanel);
+		case 'scenario_lab':
+			activateFullWidthWorkbenchTab(resourcePanel);
 			return;
 		case 'code_editor':
 			resourcePanel.hide();

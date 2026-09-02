@@ -20,7 +20,7 @@ import {
 	runtimeSourcesSupportIde,
 	type RuntimeSourceState,
 } from '../runtime/sources';
-import { RuntimeIdeState } from '../runtime/state';
+import { RuntimeIdeState } from './state';
 import {
 	initializeWorkspaceStorage,
 	restoreWorkspaceStorageSession,

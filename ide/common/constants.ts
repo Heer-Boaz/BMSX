@@ -87,6 +87,7 @@ type ThemeDefinition = {
 		localFunction: number;
 		functionHandle: number;
 		selection: number;
+		selectionText: number;
 		selectionBorder: number;
 		errorOverlayText: number;
 	};
@@ -201,6 +202,7 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 			localFunction: THEME_TOKEN_FUNCTION_BLUE,
 			functionHandle: THEME_TOKEN_TERMINAL_LIGHT_GREEN,
 			selection: THEME_TOKEN_TERMINAL_DARK_BLUE,
+			selectionText: THEME_TOKEN_WHITE,
 			selectionBorder: THEME_TOKEN_TERMINAL_BLUE,
 			errorOverlayText: THEME_TOKEN_WHITE,
 		},
@@ -310,6 +312,7 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 			localFunction: THEME_TOKEN_FUNCTION_BLUE,
 			functionHandle: THEME_TOKEN_FUNCTION_BLUE,
 			selection: THEME_TOKEN_SELECTION_OVERLAY,
+			selectionText: THEME_TOKEN_GENTLE_WHITE,
 			selectionBorder: THEME_TOKEN_MID_GREY,
 			errorOverlayText: THEME_TOKEN_WHITE,
 		},
@@ -470,6 +473,7 @@ export let COLOR_SYNTAX_HIGHLIGHTS = {
 };
 export let HIGHLIGHT_OVERLAY = 0;
 export let SELECTION_OVERLAY = 0;
+export let COLOR_SELECTION_TEXT = 0;
 export let CARET_COLOR = 0;
 export let INLINE_CARET_COLOR = 0;
 export let SEARCH_RESULT_SELECTION_OVERLAY = 0;
@@ -625,6 +629,7 @@ function applyThemeDefinition(theme: ThemeDefinition): void {
 	COLOR_SYNTAX_HIGHLIGHTS.COLOR_FUNCTION_HANDLE = theme.text.functionHandle;
 	HIGHLIGHT_OVERLAY = theme.highlightOverlay;
 	SELECTION_OVERLAY = theme.text.selection;
+	COLOR_SELECTION_TEXT = theme.text.selectionText;
 	CARET_COLOR = theme.caret.editor;
 	INLINE_CARET_COLOR = theme.caret.inline;
 	SEARCH_RESULT_SELECTION_OVERLAY = theme.text.selection;

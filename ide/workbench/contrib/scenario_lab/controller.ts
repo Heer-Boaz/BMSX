@@ -1,0 +1,290 @@
+import type { HostAudioOutput } from '../../../../hosts/common/audio_output';
+import type { PointerSnapshot } from '../../../common/models';
+import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
+import type { CartEditor } from '../../../cart_editor';
+import type { OverlayRenderer } from '../../../runtime/overlay_renderer';
+import type { RuntimeSourceState } from '../../../runtime/sources';
+import type { EditorScenarioLabCommandId } from '../../../common/commands';
+import { activateEditor, deactivateEditor } from '../../overlay_modes';
+import {
+	captureCurrentLuaSource,
+	capturePendingLuaCodeTabSources,
+} from '../../ui/code_tab/activation';
+import type { ScenarioLabTabId } from '../../ui/tab/id';
+import { editorTabGroup } from '../../ui/tab/group_model';
+import { isScenarioLabActive, setActiveTab } from '../../ui/tabs';
+import type { EditorNavigationController } from '../resources/navigation';
+import type { ResourcePanelController } from '../resources/panel/controller';
+import { prepareScenarioLabLayout } from './layout';
+import {
+	scrollWorkbenchList,
+	workbenchListContainsPosition,
+} from '../../ui/list_view';
+import {
+	executeScenarioLabNavigation,
+	scenarioLabCommandEnabled,
+	ScenarioLabNavigationResult,
+	type ScenarioLabNavigationCommand,
+	updateScenarioLabStatus,
+} from './navigation';
+import {
+	selectedScenarioResultRow,
+	selectedScenarioTest,
+	refreshScenarioLabProjection,
+} from './projection';
+import {
+	handleScenarioLabPointerInput,
+	ScenarioLabPointerResult,
+} from './pointer';
+import type { ScenarioRunService } from './run_service';
+import type { ScenarioMediaSessionEvent } from './run_service';
+import type { ScenarioTestCollection } from '../../../testing/scenario/test_collection';
+import type { ScenarioLabViewState } from './view_model';
+import { createScenarioLabViewState } from './view_state';
+
+const SCENARIO_LAB_TAB_ID: ScenarioLabTabId = 'scenario-lab';
+const WHEEL_SCROLL_ROWS = 3;
+
+/** Workbench contribution that projects tests/results and invokes the run owner. */
+export class ScenarioLabController {
+	private view: ScenarioLabViewState | null = null;
+	private readonly disposeMediaSessionListener: () => void;
+
+	public constructor(
+		private readonly editor: CartEditor,
+		private readonly sources: RuntimeSourceState,
+		private readonly navigation: EditorNavigationController,
+		private readonly resourcePanel: ResourcePanelController,
+		private readonly collection: ScenarioTestCollection,
+		private readonly runs: ScenarioRunService,
+		private readonly runtime: Runtime,
+		private readonly overlayRenderer: OverlayRenderer,
+		private readonly audioOutput: HostAudioOutput,
+	) {
+		this.disposeMediaSessionListener = this.runs.onDidEndMediaSession(
+			event => this.handleMediaSessionEnd(event),
+		);
+	}
+
+	public dispose(): void {
+		this.disposeMediaSessionListener();
+	}
+
+	public open(): void {
+		this.openView(this.getOrCreateView());
+	}
+
+	public updateView(view: ScenarioLabViewState): void {
+		if (view.runActive !== this.runs.active) {
+			view.runActive = this.runs.active;
+			updateScenarioLabStatus(view);
+		}
+		prepareScenarioLabLayout(view);
+	}
+
+	public executeNavigation(
+		view: ScenarioLabViewState,
+		command: ScenarioLabNavigationCommand,
+	): boolean {
+		prepareScenarioLabLayout(view);
+		const result = executeScenarioLabNavigation(view, command);
+		return this.applyNavigationResult(view, result);
+	}
+
+	public handlePointer(
+		view: ScenarioLabViewState,
+		snapshot: PointerSnapshot,
+		justPressed: boolean,
+		currentTimeMs: number,
+	): boolean {
+		prepareScenarioLabLayout(view);
+		const result = handleScenarioLabPointerInput(
+			view,
+			snapshot,
+			justPressed,
+			currentTimeMs,
+			this.editor.commands,
+		);
+		switch (result) {
+			case ScenarioLabPointerResult.Outside:
+				return false;
+			case ScenarioLabPointerResult.Handled:
+				return true;
+			case ScenarioLabPointerResult.Activate:
+				this.applyNavigationResult(
+					view,
+					executeScenarioLabNavigation(view, 'activate'),
+				);
+				return true;
+		}
+	}
+
+	public executeCommand(command: EditorScenarioLabCommandId): void {
+		const view = this.view!;
+		switch (command) {
+			case 'scenarioLab.run':
+			case 'scenarioLab.rerun':
+				this.runSelected(view);
+				return;
+			case 'scenarioLab.cancel':
+				this.runs.cancel();
+				return;
+		}
+	}
+
+	public isCommandEnabled(command: EditorScenarioLabCommandId): boolean {
+		return isScenarioLabActive()
+			&& this.view !== null
+			&& scenarioLabCommandEnabled(this.view, command);
+	}
+
+	public handleWheel(
+		view: ScenarioLabViewState,
+		direction: number,
+		steps: number,
+		pointer: PointerSnapshot | null,
+	): void {
+		prepareScenarioLabLayout(view);
+		const delta = direction * steps * WHEEL_SCROLL_ROWS;
+		if (pointer !== null
+			&& workbenchListContainsPosition(
+				view.testPane,
+				pointer.viewportX,
+				pointer.viewportY,
+			)) {
+			scrollWorkbenchList(view.testPane, delta);
+			return;
+		}
+		if (pointer !== null
+			&& workbenchListContainsPosition(
+				view.resultPane,
+				pointer.viewportX,
+				pointer.viewportY,
+			)) {
+			scrollWorkbenchList(view.resultPane, delta);
+			return;
+		}
+		if (view.focus === 'tests') {
+			scrollWorkbenchList(view.testPane, delta);
+		} else {
+			scrollWorkbenchList(view.resultPane, delta);
+		}
+	}
+
+	private getOrCreateView(): ScenarioLabViewState {
+		if (this.view !== null) {
+			return this.view;
+		}
+		const view = createScenarioLabViewState(
+			this.collection,
+			this.runs.results,
+			this.runs.active,
+		);
+		this.view = view;
+		return view;
+	}
+
+	private openView(view: ScenarioLabViewState): void {
+		let tab = editorTabGroup.findById(SCENARIO_LAB_TAB_ID);
+		if (tab === undefined) {
+			tab = {
+				id: SCENARIO_LAB_TAB_ID,
+				kind: 'scenario_lab',
+				title: 'SCENARIO LAB',
+				closable: true,
+				view,
+			};
+			editorTabGroup.add(tab);
+		}
+		setActiveTab(this.resourcePanel, tab.id);
+	}
+
+	private applyNavigationResult(
+		view: ScenarioLabViewState,
+		result: ScenarioLabNavigationResult,
+	): boolean {
+		switch (result) {
+			case ScenarioLabNavigationResult.None:
+				return false;
+			case ScenarioLabNavigationResult.Changed:
+				return true;
+			case ScenarioLabNavigationResult.OpenSource:
+				this.openSelectedSource(view);
+				return true;
+		}
+	}
+
+	private openSelectedSource(view: ScenarioLabViewState): void {
+		if (view.focus === 'tests') {
+			const test = selectedScenarioTest(view)!;
+			this.navigation.focusChunkSourceForContext(
+				test.resource.domain,
+				test.resource.path,
+				{ row: 0, startColumn: 0, endColumn: 0 },
+			);
+			return;
+		}
+		const location = selectedScenarioResultRow(view)!.location;
+		this.navigation.focusChunkSourceForContext(
+			location.resource.domain,
+			location.resource.path,
+			{
+				row: location.line - 1,
+				startColumn: location.column - 1,
+				endColumn: location.column - 1,
+			},
+		);
+	}
+
+	private runSelected(view: ScenarioLabViewState): void {
+		const test = selectedScenarioTest(view)!;
+		const testSource = captureCurrentLuaSource(this.sources, test.resource);
+		const programSources = capturePendingLuaCodeTabSources(this.sources);
+		view.runActive = true;
+		updateScenarioLabStatus(view);
+		void this.runs.start(
+			test,
+			testSource,
+			programSources,
+		);
+		deactivateEditor(this.editor, this.overlayRenderer, this.audioOutput);
+	}
+
+	private handleMediaSessionEnd(event: ScenarioMediaSessionEvent): void {
+		const view = this.view!;
+		if (event.type === 'error') {
+			this.handleRunError(view, event.error);
+			return;
+		}
+		this.completeRun(view);
+	}
+
+	private handleRunError(view: ScenarioLabViewState, error: unknown): void {
+		view.runActive = false;
+		activateEditor(
+			this.editor,
+			this.sources,
+			this.overlayRenderer,
+			this.runtime,
+			this.audioOutput,
+		);
+		this.editor.handleRuntimeTaskError(error, 'Scenario run failed');
+		this.openView(view);
+		refreshScenarioLabProjection(view);
+		updateScenarioLabStatus(view);
+	}
+
+	private completeRun(view: ScenarioLabViewState): void {
+		view.runActive = false;
+		activateEditor(
+			this.editor,
+			this.sources,
+			this.overlayRenderer,
+			this.runtime,
+			this.audioOutput,
+		);
+		this.openView(view);
+		refreshScenarioLabProjection(view);
+		updateScenarioLabStatus(view);
+	}
+}

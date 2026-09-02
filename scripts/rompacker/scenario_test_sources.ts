@@ -2,7 +2,10 @@ import { readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 import type { RomAsset } from '../../toolchain/ts/rompack/assets';
-import { scenarioTestAssetId } from '../../toolchain/ts/rompack/scenario_test';
+import {
+	SCENARIO_TEST_SOURCE_SUFFIX,
+	scenarioTestAssetId,
+} from '../../toolchain/ts/rompack/scenario_test';
 import { collectSourceFiles } from '../lib/file_scan';
 
 const LUA_SOURCE_EXTENSIONS = new Set(['.lua']);
@@ -16,7 +19,7 @@ export function collectScenarioTestSourceAssets(projectRootPath: string): Scenar
 	const sourceFiles = collectSourceFiles(
 		[join('tests', projectRootPath)],
 		LUA_SOURCE_EXTENSIONS,
-	).filter(path => path.endsWith('_assert.lua')).sort();
+	).filter(path => path.endsWith(SCENARIO_TEST_SOURCE_SUFFIX)).sort();
 	const assets = new Array<RomAsset>(sourceFiles.length);
 	for (let index = 0; index < sourceFiles.length; index += 1) {
 		const file = sourceFiles[index];

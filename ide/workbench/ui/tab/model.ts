@@ -1,14 +1,16 @@
 import type { ResourceViewerState } from '../../contrib/resources/model';
 import type { BehaviorLensViewState } from '../../contrib/behavior_lens/view_model';
+import type { ScenarioLabViewState } from '../../contrib/scenario_lab/view_model';
 import type { CodeTabContext } from '../code_tab/model';
 import type {
 	BehaviorLensTabId,
 	CodeEditorTabId,
 	EditorTabId,
 	ResourceViewerTabId,
+	ScenarioLabTabId,
 } from './id';
 
-export type EditorTabKind = 'code_editor' | 'resource_view' | 'behavior_lens';
+export type EditorTabKind = 'code_editor' | 'resource_view' | 'behavior_lens' | 'scenario_lab';
 
 type EditorTabBase<TId extends EditorTabId, TKind extends EditorTabKind> = {
 	id: TId;
@@ -29,10 +31,15 @@ export type BehaviorLensTabDescriptor = EditorTabBase<BehaviorLensTabId, 'behavi
 	view: BehaviorLensViewState;
 };
 
+export type ScenarioLabTabDescriptor = EditorTabBase<ScenarioLabTabId, 'scenario_lab'> & {
+	view: ScenarioLabViewState;
+};
+
 export type EditorTabDescriptor =
 	| CodeEditorTabDescriptor
 	| ResourceViewerTabDescriptor
-	| BehaviorLensTabDescriptor;
+	| BehaviorLensTabDescriptor
+	| ScenarioLabTabDescriptor;
 
 export function editorTabDirty(tab: EditorTabDescriptor): boolean {
 	return tab.kind === 'code_editor' && tab.context.dirty;

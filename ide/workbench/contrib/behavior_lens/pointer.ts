@@ -1,6 +1,6 @@
 import * as constants from '../../../common/constants';
 import type { PointerSnapshot } from '../../../common/models';
-import { behaviorLensRowIndexAtPosition } from './layout';
+import { workbenchListRowIndexAtPosition } from '../../ui/list_view';
 import { selectBehaviorLensRow, toggleBehaviorLensRow } from './navigation';
 import type { BehaviorLensViewState } from './view_model';
 
@@ -27,7 +27,7 @@ export function handleBehaviorLensPointerInput(
 		state.hoverIndex = -1;
 		return BehaviorLensPointerResult.Outside;
 	}
-	const rowIndex = behaviorLensRowIndexAtPosition(state, snapshot.viewportX, snapshot.viewportY);
+	const rowIndex = workbenchListRowIndexAtPosition(state, snapshot.viewportX, snapshot.viewportY);
 	state.hoverIndex = rowIndex;
 	if (!justPressed || rowIndex < 0) {
 		return BehaviorLensPointerResult.Handled;

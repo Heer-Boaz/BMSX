@@ -63,9 +63,9 @@ import { installNodeWorkspaceBridge } from './node_workspace_bridge';
 import { RecordingLogOutput } from '../../../ide/testing/recording_log_output';
 import { createRuntimeSourceState } from '../../../ide/runtime/sources';
 import { buildScenarioCartridge } from '../../../toolchain/ts/rompack/scenario_cartridge';
-import { ScenarioTestCollection } from '../../../ide/workbench/contrib/scenario_lab/test_collection';
-import { ScenarioResultService } from '../../../ide/workbench/contrib/scenario_lab/result_service';
-import { ScenarioExecutionService } from '../../../ide/workbench/contrib/scenario_lab/execution_service';
+import { ScenarioTestCollection } from '../../../ide/testing/scenario/test_collection';
+import { ScenarioResultService } from '../../../ide/testing/scenario/result_service';
+import { ScenarioExecutionService } from '../../../ide/testing/scenario/execution_service';
 import { createRuntimeFaultState } from '../../../ide/runtime/fault_state';
 import { runHeadlessScenarioFrame } from './hostrunner/scenario_host_frame';
 

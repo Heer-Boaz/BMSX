@@ -12,7 +12,7 @@ import type { RenderPresentationState } from '../../../../hosts/common/presentat
 import type { SystemOutputLog } from '../../../../hosts/common/system_output_log';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import type { VideoPresenter } from '../../../../machine/ts/render/video_presenter';
-import type { ScenarioExecutionService } from '../../../../ide/workbench/contrib/scenario_lab/execution_service';
+import type { ScenarioExecutionService } from '../../../../ide/testing/scenario/execution_service';
 import type { HeadlessCaptureCoordinator } from '../headless_capture';
 
 /** Headless host adaptation for the shared logical-tick scenario execution owner. */

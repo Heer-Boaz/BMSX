@@ -18,7 +18,7 @@ import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { RuntimeTaskQueue } from '../../ide/runtime/task_queue';
 import { MemoryStorage } from '../../ide/testing/memory_storage';
 import { ScenarioRunService } from '../../ide/workbench/contrib/scenario_lab/run_service';
-import { ScenarioTestCollection } from '../../ide/workbench/contrib/scenario_lab/test_collection';
+import { ScenarioTestCollection } from '../../ide/testing/scenario/test_collection';
 import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import type { CartridgeByteView } from '../../machine/ts/machine/devices/cartridge/contracts';
@@ -115,12 +115,19 @@ test('browser scenario media session installs derived execution media and restor
 		const canonicalSourceMedia = sources.currentBlua32Media;
 		const currentTestSource = PACKAGED_TEST_SOURCE.replace('\treturn true', '\treturn false');
 		const errors: unknown[] = [];
+		let completed = 0;
+		const disposeMediaSessionListener = runService.onDidEndMediaSession(event => {
+			if (event.type === 'error') {
+				errors.push(event.error);
+			} else {
+				completed += 1;
+			}
+		});
 
 		const started = runService.start(
 			scenario,
 			{ source: currentTestSource, revision: 77 },
 			[],
-			error => errors.push(error),
 		);
 		microtasks.flush();
 		await started;
@@ -155,10 +162,12 @@ test('browser scenario media session installs derived execution media and restor
 		assert.deepEqual(errors, []);
 		assert.equal(runService.active, false);
 		assert.equal(runService.execution.active, false);
+		assert.equal(completed, 1);
 		assert.equal(sources.currentBlua32Media, canonicalSourceMedia);
 		assert.equal(sources.cartridgeSlots[0]!.rom, canonicalLayer);
 		assert.equal(sources.cartridgeSlots[0]!.rom.bytes, canonicalRom);
 		assert.equal(installedRomBytes(runtime), canonicalRom);
+		disposeMediaSessionListener();
 	} finally {
 		input.dispose();
 		await rm(ROOT, { recursive: true, force: true });

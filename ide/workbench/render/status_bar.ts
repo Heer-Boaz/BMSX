@@ -107,6 +107,18 @@ export function renderStatusBar(
 			}
 			return;
 		}
+		case 'scenario_lab': {
+			const status = activeTab.view.status;
+			drawEditorText(
+				editorViewState.font,
+				status.renderedInfo,
+				4,
+				statusTop + 2,
+				0,
+				statusTextColor,
+			);
+			return;
+		}
 		case 'code_editor':
 			break;
 	}

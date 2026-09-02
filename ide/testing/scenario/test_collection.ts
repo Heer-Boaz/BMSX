@@ -1,7 +1,10 @@
-import { computeSourceLabel } from '../../../common/paths';
-import type { RuntimeSourceState } from '../../../runtime/sources';
-import { developmentCartridgeSource } from '../../../runtime/sources';
-import { isScenarioTestAsset } from '../../../../toolchain/ts/rompack/scenario_test';
+import { computeSourceLabel } from '../../common/paths';
+import type { RuntimeSourceState } from '../../runtime/sources';
+import { developmentCartridgeSource } from '../../runtime/sources';
+import {
+	isScenarioTestAsset,
+	SCENARIO_TEST_SOURCE_SUFFIX,
+} from '../../../toolchain/ts/rompack/scenario_test';
 
 export type ScenarioTestId = `scenario:${0 | 1}:${string}`;
 export type ScenarioTestRootId = `scenario-root:${0 | 1}`;
@@ -21,6 +24,7 @@ export type ScenarioTestItem = {
 export type ScenarioTestRoot = {
 	readonly id: ScenarioTestRootId;
 	readonly domain: 0 | 1;
+	readonly projectLabel: string;
 	readonly label: string;
 	readonly testCount: number;
 	children: readonly ScenarioTestItem[] | null;
@@ -41,7 +45,6 @@ export class ScenarioTestCollection {
 	public readonly roots: readonly ScenarioTestRoot[];
 	private readonly rootsById = new Map<ScenarioTestRootId, ScenarioTestRoot>();
 	private readonly candidatesByRootId = new Map<ScenarioTestRootId, readonly ScenarioTestCandidate[]>();
-	private readonly testsById = new Map<ScenarioTestId, ScenarioTestItem>();
 
 	public constructor(sources: RuntimeSourceState) {
 		const roots: ScenarioTestRoot[] = [];
@@ -68,6 +71,7 @@ export class ScenarioTestCollection {
 				const root: ScenarioTestRoot = {
 					id: rootId,
 					domain,
+					projectLabel,
 					label: `CART ${domain} / ${projectLabel}`,
 					testCount: candidates.length,
 					children: null,
@@ -89,23 +93,24 @@ export class ScenarioTestCollection {
 		const children = new Array<ScenarioTestItem>(candidates.length);
 		for (let index = 0; index < candidates.length; index += 1) {
 			const candidate = candidates[index];
+			const sourceLabel = computeSourceLabel(candidate.sourcePath);
+			let testLabel = sourceLabel.slice(0, -SCENARIO_TEST_SOURCE_SUFFIX.length);
+			const projectPrefix = `${root.projectLabel}_`;
+			if (testLabel.startsWith(projectPrefix)) {
+				testLabel = testLabel.slice(projectPrefix.length);
+			}
 			const test: ScenarioTestItem = {
 				id: scenarioTestId(root.domain, candidate.assetId),
 				parentId: rootId,
-				label: computeSourceLabel(candidate.sourcePath),
+				label: testLabel.replaceAll('_', ' '),
 				resource: { domain: root.domain, path: candidate.sourcePath },
 				assetId: candidate.assetId,
 				sourceTimestamp: candidate.sourceTimestamp,
 			};
 			children[index] = test;
-			this.testsById.set(test.id, test);
 		}
 		root.children = children;
 		return children;
-	}
-
-	public getTest(testId: ScenarioTestId): ScenarioTestItem {
-		return this.testsById.get(testId)!;
 	}
 
 	public findTestBySourcePath(domain: 0 | 1, sourcePath: string): ScenarioTestItem {

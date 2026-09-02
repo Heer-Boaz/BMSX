@@ -1,56 +1,32 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { RuntimeSourceState } from '../../ide/runtime/sources';
-import type { LuaSourceRecord } from '../../ide/runtime/source_registry';
 import {
 	ScenarioTestCollection,
 	scenarioTestId,
-} from '../../ide/workbench/contrib/scenario_lab/test_collection';
+} from '../../ide/testing/scenario/test_collection';
 import {
 	SCENARIO_RESULT_CAPTURE_RETAIN_COUNT,
 	SCENARIO_RESULT_LOG_RETAIN_COUNT,
 	SCENARIO_RESULT_RETAIN_COUNT,
 	ScenarioResultService,
-} from '../../ide/workbench/contrib/scenario_lab/result_service';
+} from '../../ide/testing/scenario/result_service';
 import { scenarioTestAssetId } from '../../toolchain/ts/rompack/scenario_test';
-
-function sourceRecord(path: string, timestamp: number): LuaSourceRecord {
-	return {
-		resid: scenarioTestAssetId(path),
-		type: 'lua',
-		src: `-- ${path}`,
-		base_src: `-- ${path}`,
-		base_update_timestamp: timestamp,
-		source_path: path,
-		normalized_source_path: path,
-		module_path: path.slice(0, -4),
-		update_timestamp: timestamp,
-		generated: false,
-		program_module: false,
-	};
-}
-
-function sourceState(records: LuaSourceRecord[]): RuntimeSourceState {
-	return {
-		activeCartridgeSlot: -1,
-		cartridgeSlots: [{
-			domain: 0,
-			projectRootPath: 'carts/nemesis_s',
-			rom: { header: { blua32ImageOffset: 1 } },
-			luaSources: { records, can_boot_from_source: true },
-		}, null],
-	} as RuntimeSourceState;
-}
+import { registerLuaSourceRecord } from '../../ide/runtime/source_registry';
+import {
+	createScenarioTestSourceRecord,
+	createScenarioTestSourceState,
+} from '../helpers/scenario_sources';
 
 test('scenario collection scans cartridge registries once and resolves retained children lazily', () => {
 	const firstPath = 'tests/carts/nemesis_s/a_assert.lua';
 	const secondPath = 'tests/carts/nemesis_s/b_assert.lua';
 	const records = [
-		sourceRecord(secondPath, 20),
-		sourceRecord(firstPath, 10),
+		createScenarioTestSourceRecord(secondPath, 20),
+		createScenarioTestSourceRecord(firstPath, 10),
 	];
-	const collection = new ScenarioTestCollection(sourceState(records));
+	const sources = createScenarioTestSourceState(records);
+	const collection = new ScenarioTestCollection(sources);
 
 	assert.equal(collection.roots.length, 1);
 	const root = collection.roots[0];
@@ -59,11 +35,16 @@ test('scenario collection scans cartridge registries once and resolves retained 
 	assert.equal(root.testCount, 2);
 	assert.equal(root.children, null);
 
-	records.push(sourceRecord('tests/carts/nemesis_s/later_assert.lua', 30));
+	registerLuaSourceRecord(
+		sources.cartridgeSlots[0]!.luaSources,
+		createScenarioTestSourceRecord('tests/carts/nemesis_s/later_assert.lua', 30),
+	);
 	const children = collection.resolveRoot(root.id);
 	assert.equal(children.length, 2);
 	assert.equal(children[0].resource.path, firstPath);
 	assert.equal(children[1].resource.path, secondPath);
+	assert.equal(children[0].label, 'a');
+	assert.equal(children[1].label, 'b');
 	assert.equal(
 		children[0].id,
 		scenarioTestId(0, scenarioTestAssetId(firstPath)),
@@ -73,8 +54,8 @@ test('scenario collection scans cartridge registries once and resolves retained 
 });
 
 test('scenario result service retains current-first runs and bounded ordered output', () => {
-	const collection = new ScenarioTestCollection(sourceState([
-		sourceRecord('tests/carts/nemesis_s/a_assert.lua', 10),
+	const collection = new ScenarioTestCollection(createScenarioTestSourceState([
+		createScenarioTestSourceRecord('tests/carts/nemesis_s/a_assert.lua', 10),
 	]));
 	const item = collection.resolveRoot(collection.roots[0].id)[0];
 	const service = new ScenarioResultService();
@@ -120,8 +101,8 @@ test('scenario result service retains current-first runs and bounded ordered out
 });
 
 test('scenario failure retains authored fault navigation', () => {
-	const collection = new ScenarioTestCollection(sourceState([
-		sourceRecord('tests/carts/nemesis_s/a_assert.lua', 10),
+	const collection = new ScenarioTestCollection(createScenarioTestSourceState([
+		createScenarioTestSourceRecord('tests/carts/nemesis_s/a_assert.lua', 10),
 	]));
 	const item = collection.resolveRoot(collection.roots[0].id)[0];
 	const service = new ScenarioResultService();
@@ -143,7 +124,7 @@ test('scenario failure retains authored fault navigation', () => {
 	}, fault);
 
 	assert.equal(result.state, 'failed');
-	assert.deepEqual(result.failure?.location, {
+	assert.deepEqual(result.failure!.location, {
 		resource: item.resource,
 		line: 12,
 		column: 4,

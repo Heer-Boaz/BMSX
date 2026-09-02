@@ -4,8 +4,8 @@ import { compareSourcePosition, sourcePositionInRange } from '../../../../toolch
 import {
 	findVisibleRowIndex,
 	rebuildBehaviorLensRows,
-	revealBehaviorLensSelection,
 } from './layout';
+import { revealWorkbenchListSelection } from '../../ui/list_view';
 import type { BehaviorSourceNode, BehaviorSourceRowKey } from './model';
 import type { BehaviorLensViewState } from './view_model';
 
@@ -234,7 +234,7 @@ export function selectedBehaviorLensSourceRange(state: BehaviorLensViewState): L
 }
 
 export function finishBehaviorLensNavigation(state: BehaviorLensViewState): void {
-	revealBehaviorLensSelection(state);
+	revealWorkbenchListSelection(state);
 	updateBehaviorLensStatus(state);
 }
 

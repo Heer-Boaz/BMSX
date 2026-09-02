@@ -846,8 +846,9 @@ its exact authored line and column. Requiring the test as an independent module
 would be incorrect: BLua `require` selects static startup modules and would run
 the test before the execution owner's settle phase.
 
-Scenario discovery, execution and results remain separate retained owners.
-`ScenarioTestCollection` enumerates the workbench's selected development
+Scenario discovery, execution and results remain separate retained owners in
+`ide/testing/scenario`; neither the browser panel nor the Node adapter owns
+them. `ScenarioTestCollection` enumerates the workbench's selected development
 cartridge source registry once and lazily materializes stable
 `scenario:<domain>:<asset-id>` children. Expansion cards and a second unrelated
 executable cartridge do not become a second project in the current workspace.
@@ -870,6 +871,11 @@ mailbox devices, the second socket, and the canonical authoring layers are not
 reclassified or copied into a Studio model. The matching derived BLua32 source
 image is the current debugger/fault map for exactly that execution.
 
+`ide/workbench/state.ts` is the browser-workbench composition owner that wires
+the shared scenario services to `ScenarioRunService` and the editor. Runtime
+source, debugger and task modules stay below that composition and do not import
+workbench contributions.
+
 Completion and cancellation end the media session after the run's final
 presentation opportunity. The same socket then receives its canonical ROM
 bytes and the canonical BLua32 source map again, followed by the ordinary cold
@@ -883,6 +889,43 @@ device, and MAME's image manager coordinates lifecycle while each image device
 performs its own load/unload
 ([openMSX slot manager](https://github.com/openMSX/openMSX/blob/master/src/CartridgeSlotManager.cc#L348-L378),
 [MAME image manager](https://github.com/mamedev/mame/blob/master/src/emu/image.cpp#L34-L128)).
+
+`ScenarioLabController` is the workbench contribution above those services; it
+does not become a fourth test owner. One `scenario_lab` editor-input
+discriminant retains a two-pane projection: the selected development
+cartridge's test tree on the left and that test's bounded result history on the
+right. Test and result panes are first-class retained view items rather than
+parallel fields on their container. Each pane owns its row projection,
+selection, scroll, hover and list viewport; the parent passes split geometry to
+both pane layouts. Root and result expansion, stable-id selection, pane focus,
+formatted rows and hit bounds survive frames and are rebuilt only when the
+collection, result revision, font or viewport changes. The same workbench-list
+owner supplies row hit-testing, reveal and scroll invariants to Behavior Lens.
+Run, rerun and cancel
+are typed workbench commands. Their labels, keybindings and named view-title
+menu placement are separate declarations; the generic action bar invokes the
+same command ids as keyboard and controller input. A feature does not render
+bespoke command buttons or write shortcut spellings into status text. The
+weighted keybinding resolver chooses the applicable contextual command, so the
+Scenario Lab F5 binding and debugger F5 binding do not become ordered branches
+inside either feature. Starting a run captures the selected source and open
+executable buffers, then temporarily leaves the blocking workbench so the guest
+can execute; successful canonical-media restoration returns to the same
+Scenario Lab input. Opening the workbench during a run pauses machine progress
+through the existing editor policy and still exposes cancel. Source activation
+uses the existing navigation owner. The view renders with the current IDE tiny
+font over the full 384x288 workbench content area; it neither draws guest
+viewport chrome nor formats or discovers tests in its draw loop. This follows
+VS Code's testing split between retained explorer projection, contextual
+run/cancel actions and separately retained results, plus its shared
+command/menu/keybinding registration path
+([testing explorer](https://github.com/microsoft/vscode/blob/f6f7c31e6cd2541fdd901f045a3418a06f2c3aca/src/vs/workbench/contrib/testing/browser/testingExplorerView.ts),
+[test actions](https://github.com/microsoft/vscode/blob/f6f7c31e6cd2541fdd901f045a3418a06f2c3aca/src/vs/workbench/contrib/testing/browser/testExplorerActions.ts),
+[result service](https://github.com/microsoft/vscode/blob/f6f7c31e6cd2541fdd901f045a3418a06f2c3aca/src/vs/workbench/contrib/testing/common/testResultService.ts),
+[split-view items](https://github.com/microsoft/vscode/blob/f6f7c31e6cd2541fdd901f045a3418a06f2c3aca/src/vs/base/browser/ui/splitview/splitview.ts#L35-L109),
+[retained list view](https://github.com/microsoft/vscode/blob/f6f7c31e6cd2541fdd901f045a3418a06f2c3aca/src/vs/base/browser/ui/list/listView.ts#L230-L298),
+[action registration](https://github.com/microsoft/vscode/blob/f6f7c31e6cd2541fdd901f045a3418a06f2c3aca/src/vs/platform/actions/common/actions.ts#L679-L779),
+[keybinding resolver](https://github.com/microsoft/vscode/blob/f6f7c31e6cd2541fdd901f045a3418a06f2c3aca/src/vs/platform/keybinding/common/keybindingResolver.ts#L320-L395)).
 
 The headless tooling host adapts that shared execution owner through
 `executeHostLogicalTick`, services GPU backend fences on the existing host

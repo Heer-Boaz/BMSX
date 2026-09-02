@@ -15,7 +15,7 @@ import { executeEditorViewCommand, isEditorViewCommand } from './view';
 import { editorViewState } from '../editor/ui/view/state';
 import { problemsPanel } from '../workbench/contrib/problems/panel/controller';
 import { isActiveLuaCodeTab } from '../workbench/ui/code_tab/contexts';
-import { isBehaviorLensActive, isCodeTabActive } from '../workbench/ui/tabs';
+import { isBehaviorLensActive, isCodeTabActive, isScenarioLabActive } from '../workbench/ui/tabs';
 import { executeEditorWorkspaceCommand, isEditorWorkspaceCommand } from './workspace';
 import { performEditorAction } from './actions';
 import { save } from '../workbench/ui/code_tab/io';
@@ -52,6 +52,11 @@ export class IdeCommandController {
 
 	public execute(command: EditorCommandId): void {
 		switch (command) {
+			case 'scenarioLab.run':
+			case 'scenarioLab.rerun':
+			case 'scenarioLab.cancel':
+				this.editor.scenarioLab.executeCommand(command);
+				return;
 			case 'debugContinue':
 				resumeRuntimeDebugger(this.debuggerState, RuntimeDebuggerResumeMode.Continue);
 				clearExecutionStopHighlights();
@@ -147,6 +152,10 @@ export class IdeCommandController {
 
 	public isEnabled(command: EditorCommandId): boolean {
 		switch (command) {
+			case 'scenarioLab.run':
+			case 'scenarioLab.rerun':
+			case 'scenarioLab.cancel':
+				return this.editor.scenarioLab.isCommandEnabled(command);
 			case 'debugContinue':
 			case 'debugStepInto':
 			case 'debugStepOver':
@@ -164,6 +173,8 @@ export class IdeCommandController {
 			case 'goToDefinition':
 			case 'callHierarchy':
 				return isActiveLuaCodeTab();
+			case 'scenarioLab':
+				return true;
 			case 'rename':
 				return isActiveLuaCodeTab() && !editorDocumentState.readOnly;
 			case 'createResource':
@@ -188,6 +199,8 @@ export class IdeCommandController {
 				return problemsPanel.isVisible;
 			case 'behaviorLens':
 				return isBehaviorLensActive();
+			case 'scenarioLab':
+				return isScenarioLabActive();
 			case 'filter':
 				return this.editor.resourcePanel.getFilterMode() === 'lua_only';
 			case 'wrap':

@@ -93,6 +93,10 @@ import { initializeNavigationState } from './navigation/navigation_history';
 import { EditorNavigationController } from './workbench/contrib/resources/navigation';
 import { BehaviorLensController } from './workbench/contrib/behavior_lens/controller';
 import { drawBehaviorLens } from './workbench/contrib/behavior_lens/render';
+import { ScenarioLabController } from './workbench/contrib/scenario_lab/controller';
+import { drawScenarioLab } from './workbench/contrib/scenario_lab/render';
+import type { ScenarioRunService } from './workbench/contrib/scenario_lab/run_service';
+import type { ScenarioTestCollection } from './testing/scenario/test_collection';
 import { editorChromeState } from './workbench/ui/chrome_state';
 import { getActiveTab, getActiveTabId, initializeTabs, setActiveTab } from './workbench/ui/tabs';
 import { drawResourcePanel, drawResourceViewer } from './workbench/render/resource_panel';
@@ -122,6 +126,7 @@ export type CartEditor = {
 	readonly commands: IdeCommandController;
 	readonly navigation: EditorNavigationController;
 	readonly behaviorLens: BehaviorLensController;
+	readonly scenarioLab: ScenarioLabController;
 	readonly crossFileRename: CrossFileRenameManager;
 	isActive: boolean;
 	readonly fontVariant: Parameters<typeof setFontVariant>[1];
@@ -153,6 +158,7 @@ export class RuntimeCartEditor implements CartEditor {
 	public readonly commands: IdeCommandController;
 	public readonly navigation: EditorNavigationController;
 	public readonly behaviorLens: BehaviorLensController;
+	public readonly scenarioLab: ScenarioLabController;
 	public readonly crossFileRename: CrossFileRenameManager;
 	public readonly clearRuntimeErrorOverlay = clearRuntimeErrorOverlay;
 	public readonly clearAllRuntimeErrorOverlays = clearAllRuntimeErrorOverlays;
@@ -208,6 +214,8 @@ export class RuntimeCartEditor implements CartEditor {
 		debuggerState: RuntimeDebuggerState,
 		runtimeTasks: RuntimeTaskQueue,
 		overlayRenderer: OverlayRenderer,
+		scenarioTests: ScenarioTestCollection,
+		scenarioRuns: ScenarioRunService,
 	) {
 		this.runtime = runtime;
 		this.presenter = presenter;
@@ -250,6 +258,17 @@ export class RuntimeCartEditor implements CartEditor {
 			this.sources,
 			this.navigation,
 			this.resourcePanel,
+		);
+		this.scenarioLab = new ScenarioLabController(
+			this,
+			this.sources,
+			this.navigation,
+			this.resourcePanel,
+			scenarioTests,
+			scenarioRuns,
+			this.runtime,
+			this.overlayRenderer,
+			audioOutput,
 		);
 		this.crossFileRename = new CrossFileRenameManager(this.sources);
 		this.search = new EditorSearchController(this.sources, renameController);
@@ -433,17 +452,26 @@ export class RuntimeCartEditor implements CartEditor {
 		updateBlink(deltaSeconds);
 		updateEditorMessage(deltaSeconds);
 		const activeTab = getActiveTab();
-		if (activeTab.kind === 'behavior_lens') {
-			this.behaviorLens.updateView(activeTab.view);
-		} else if (activeTab.kind === 'code_editor') {
-			this.completion.processPending(deltaSeconds);
-			const semanticError = editorViewState.layout.getLastSemanticError();
-			if (semanticError && semanticError !== editorRuntimeState.lastReportedSemanticError) {
-				showEditorMessage(semanticError, constants.COLOR_STATUS_ERROR, 2.0);
-				editorRuntimeState.lastReportedSemanticError = semanticError;
-			} else if (!semanticError && editorRuntimeState.lastReportedSemanticError) {
-				editorRuntimeState.lastReportedSemanticError = null;
+		switch (activeTab.kind) {
+			case 'behavior_lens':
+				this.behaviorLens.updateView(activeTab.view);
+				break;
+			case 'scenario_lab':
+				this.scenarioLab.updateView(activeTab.view);
+				break;
+			case 'code_editor': {
+				this.completion.processPending(deltaSeconds);
+				const semanticError = editorViewState.layout.getLastSemanticError();
+				if (semanticError && semanticError !== editorRuntimeState.lastReportedSemanticError) {
+					showEditorMessage(semanticError, constants.COLOR_STATUS_ERROR, 2.0);
+					editorRuntimeState.lastReportedSemanticError = semanticError;
+				} else if (!semanticError && editorRuntimeState.lastReportedSemanticError) {
+					editorRuntimeState.lastReportedSemanticError = null;
+				}
+				break;
 			}
+			case 'resource_view':
+				break;
 		}
 		if (editorDiagnosticsState.diagnosticsDirty) {
 			processDiagnosticsQueue(
@@ -479,6 +507,9 @@ export class RuntimeCartEditor implements CartEditor {
 			case 'behavior_lens':
 				drawBehaviorLens(activeTab.view);
 				break;
+			case 'scenario_lab':
+				drawScenarioLab(activeTab.view, this.commands);
+				break;
 			case 'code_editor': {
 				renderInlineWidgets();
 				const resourcePanel = this.resourcePanel;
@@ -505,7 +536,7 @@ export class RuntimeCartEditor implements CartEditor {
 		}
 		drawProblemsPanel();
 		renderStatusBar(this.resourcePanel, this.fault);
-		renderTopBarDropdown(this.commands, this.chromeRenderContext);
+		renderTopBarDropdown(this.chromeRenderContext);
 		if (hasBlockingWorkbenchModal()) {
 			drawBlockingWorkbenchModal();
 		}
@@ -513,6 +544,7 @@ export class RuntimeCartEditor implements CartEditor {
 
 	public async shutdown(): Promise<void> {
 		this.completion.dispose();
+		this.scenarioLab.dispose();
 		clearExecutionStopHighlights();
 		const activeTab = getActiveTab();
 		if (this.isAvailable && activeTab.kind === 'code_editor') {

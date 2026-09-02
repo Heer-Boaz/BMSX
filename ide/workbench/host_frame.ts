@@ -18,7 +18,7 @@ import type { SystemOutputLog } from '../../hosts/common/system_output_log';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import { syncRuntimeSourceActivity } from '../runtime/sources';
-import type { RuntimeIdeState } from '../runtime/state';
+import type { RuntimeIdeState } from './state';
 import { rebootPreparedRuntime } from './blua32_boot';
 import { activateEditor } from './overlay_modes';
 import { handleSupervisorFault } from './runtime_errors';

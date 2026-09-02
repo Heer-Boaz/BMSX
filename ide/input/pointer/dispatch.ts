@@ -74,38 +74,51 @@ export function handleTextEditorPointerInput(
 		clearGotoHoverHighlight();
 		return;
 	}
-	if (activeTab.kind === 'resource_view') {
-		stopPointerSelectionAndResetClicks(snapshot);
-		clearHoverTooltip();
-		clearGotoHoverHighlight();
-		return;
+	let workbenchViewPointerHandled = false;
+	switch (activeTab.kind) {
+		case 'resource_view':
+			break;
+		case 'behavior_lens':
+			workbenchViewPointerHandled = editor.behaviorLens.handlePointer(
+				activeTab.view,
+				snapshot,
+				justPressed,
+				now,
+			);
+			break;
+		case 'scenario_lab':
+			workbenchViewPointerHandled = editor.scenarioLab.handlePointer(
+				activeTab.view,
+				snapshot,
+				justPressed,
+				now,
+			);
+			break;
+		case 'code_editor':
+			if (handleQuickInputPointer(microtasks, editor, sources, snapshot, justPressed)) {
+				return;
+			}
+			handleCodeAreaPointerInput(
+				editor,
+				luaTooling,
+				fault,
+				runtime,
+				snapshot,
+				justPressed,
+				gotoModifierActive,
+				activeTab.context,
+				pointerSecondaryJustPressed,
+				playerInput,
+				now,
+				clipboard,
+			);
+			return;
 	}
-	if (activeTab.kind === 'behavior_lens') {
-		const handled = editor.behaviorLens.handlePointer(activeTab.view, snapshot, justPressed, now);
-		if (handled && justPressed) {
-			playerInput.inputHandlers.pointer?.consumeButton('pointer_primary');
-		}
-		stopPointerSelectionAndResetClicks(snapshot);
-		editorPointerState.lastPointerRowResolution = null;
-		clearHoverTooltip();
-		clearGotoHoverHighlight();
-		return;
+	if (workbenchViewPointerHandled && justPressed) {
+		playerInput.inputHandlers.pointer?.consumeButton('pointer_primary');
 	}
-	if (handleQuickInputPointer(microtasks, editor, sources, snapshot, justPressed)) {
-		return;
-	}
-	handleCodeAreaPointerInput(
-		editor,
-		luaTooling,
-		fault,
-		runtime,
-		snapshot,
-		justPressed,
-		gotoModifierActive,
-		activeTab.context,
-		pointerSecondaryJustPressed,
-		playerInput,
-		now,
-		clipboard,
-	);
+	stopPointerSelectionAndResetClicks(snapshot);
+	editorPointerState.lastPointerRowResolution = null;
+	clearHoverTooltip();
+	clearGotoHoverHighlight();
 }

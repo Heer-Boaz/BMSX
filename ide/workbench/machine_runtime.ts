@@ -1,5 +1,5 @@
 import { createRuntimeSourceState } from '../runtime/sources';
-import type { RuntimeIdeState } from '../runtime/state';
+import type { RuntimeIdeState } from './state';
 import { loadRomToolingMedia } from '../../toolchain/ts/rompack/media';
 import { startPreparedRuntime } from './blua32_boot';
 import * as workbenchMode from './mode';

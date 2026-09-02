@@ -8,6 +8,7 @@ export function isEditorViewCommand(command: EditorCommandId): command is Editor
 		case 'resources':
 		case 'problems':
 		case 'behaviorLens':
+		case 'scenarioLab':
 		case 'filter':
 		case 'wrap':
 			return true;
@@ -26,6 +27,9 @@ export function executeEditorViewCommand(editor: CartEditor, command: EditorView
 			return;
 		case 'behaviorLens':
 			editor.behaviorLens.openActiveDocument();
+			return;
+		case 'scenarioLab':
+			editor.scenarioLab.open();
 			return;
 		case 'filter':
 			editor.resourcePanel.toggleFilterMode();

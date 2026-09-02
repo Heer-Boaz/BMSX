@@ -1,7 +1,11 @@
-import { clamp } from '../../../../machine/ts/common/clamp';
-import { applyCaseOutsideStrings } from '../../../common/text';
+import { uppercaseOutsideStrings } from '../../../common/text';
 import { truncateTextToWidth } from '../../../editor/common/text/layout';
 import { editorViewState } from '../../../editor/ui/view/state';
+import { updateFullWidthWorkbenchLayout } from '../../common/layout';
+import {
+	clampWorkbenchListScroll,
+	layoutWorkbenchList,
+} from '../../ui/list_view';
 import type { BehaviorKind, BehaviorSourceDocument, BehaviorSourceNode, BehaviorSourceRowKey } from './model';
 import type { BehaviorLensLayout, BehaviorLensViewState } from './view_model';
 
@@ -9,10 +13,6 @@ const HEADER_PADDING_X = 4;
 const HEADER_PADDING_Y = 2;
 const CONTENT_PADDING_X = 4;
 const TREE_INDENT_COLUMNS = 2;
-
-function uppercaseCharacter(character: string): string {
-	return character.toUpperCase();
-}
 
 export function createBehaviorLensLayout(): BehaviorLensLayout {
 	return {
@@ -26,7 +26,7 @@ export function createBehaviorLensLayout(): BehaviorLensLayout {
 		contentRight: 0,
 		contentBottom: 0,
 		rowHeight: 0,
-		visibleRowCount: 1,
+		visibleRowCount: 0,
 		headerText: '',
 		font: null,
 		viewportWidth: -1,
@@ -96,30 +96,16 @@ function indexSourceNodes(
 /** Writes the retained layout only when the tree, font, or viewport changed. */
 export function prepareBehaviorLensLayout(state: BehaviorLensViewState): BehaviorLensLayout {
 	const layout = state.layout;
-	const viewportChanged = layout.viewportWidth !== editorViewState.viewportWidth
-		|| layout.viewportHeight !== editorViewState.viewportHeight
-		|| layout.codeAreaTop !== editorViewState.codeAreaTop
-		|| layout.codeAreaBottom !== editorViewState.codeAreaBottom;
-	const fontChanged = layout.font !== editorViewState.font
-		|| layout.rowHeight !== editorViewState.lineHeight;
-	if (viewportChanged || fontChanged) {
-		layout.left = 0;
-		layout.top = editorViewState.codeAreaTop;
-		layout.right = editorViewState.viewportWidth;
-		layout.bottom = editorViewState.codeAreaBottom;
+	if (updateFullWidthWorkbenchLayout(layout)) {
 		layout.headerBottom = layout.top + editorViewState.lineHeight + HEADER_PADDING_Y * 2;
-		layout.contentLeft = layout.left + CONTENT_PADDING_X;
-		layout.contentTop = layout.headerBottom + 1;
-		layout.contentRight = layout.right - CONTENT_PADDING_X;
-		layout.contentBottom = layout.bottom;
-		layout.rowHeight = editorViewState.lineHeight;
-		const visibleRows = ((layout.contentBottom - layout.contentTop) / layout.rowHeight) | 0;
-		layout.visibleRowCount = visibleRows > 0 ? visibleRows : 1;
-		layout.font = editorViewState.font;
-		layout.viewportWidth = editorViewState.viewportWidth;
-		layout.viewportHeight = editorViewState.viewportHeight;
-		layout.codeAreaTop = editorViewState.codeAreaTop;
-		layout.codeAreaBottom = editorViewState.codeAreaBottom;
+		layoutWorkbenchList(
+			layout,
+			layout.left + CONTENT_PADDING_X,
+			layout.headerBottom + 1,
+			layout.right - CONTENT_PADDING_X,
+			layout.bottom,
+			layout.rowHeight,
+		);
 		state.textDirty = true;
 	}
 	if (state.rowsDirty) {
@@ -131,7 +117,7 @@ export function prepareBehaviorLensLayout(state: BehaviorLensViewState): Behavio
 		writeRetainedText(state);
 		state.textDirty = false;
 	}
-	state.scroll = clampBehaviorLensScroll(state, state.scroll);
+	clampWorkbenchListScroll(state);
 	return layout;
 }
 
@@ -188,14 +174,14 @@ function writeRetainedText(state: BehaviorLensViewState): void {
 		const badge = behaviorKindBadge(row.node.behaviorKind, row.node.kind === 'definition');
 		const detail = row.node.detail.length > 0 ? `  ${row.node.detail}` : '';
 		const rawText = `${' '.repeat(row.depth * TREE_INDENT_COLUMNS)}${marker} ${badge}${row.node.label}${detail}`;
-		const displayText = applyCaseOutsideStrings(rawText, uppercaseCharacter);
+		const displayText = uppercaseOutsideStrings(rawText);
 		row.text = truncateTextToWidth(displayText, availableWidth);
 		row.twistieLeft = layout.contentLeft + row.depth * indentWidth;
 		row.twistieRight = row.twistieLeft + markerHitWidth;
 	}
 	const rawHeader = `BEHAVIOR SOURCE  ${state.document.resource.path}  ${state.document.definitions.length} DEF`;
 	layout.headerText = truncateTextToWidth(
-		applyCaseOutsideStrings(rawHeader, uppercaseCharacter),
+		uppercaseOutsideStrings(rawHeader),
 		layout.right - layout.left - HEADER_PADDING_X * 2,
 	);
 }
@@ -211,21 +197,6 @@ function behaviorKindBadge(kind: BehaviorKind, definition: boolean): string {
 	}
 }
 
-export function behaviorLensRowIndexAtPosition(
-	state: BehaviorLensViewState,
-	viewportX: number,
-	viewportY: number,
-): number {
-	const layout = state.layout;
-	if (viewportX < layout.left || viewportX >= layout.right
-		|| viewportY < layout.contentTop || viewportY >= layout.contentBottom) {
-		return -1;
-	}
-	const visibleIndex = ((viewportY - layout.contentTop) / layout.rowHeight) | 0;
-	const rowIndex = state.scroll + visibleIndex;
-	return rowIndex < state.rows.length ? rowIndex : -1;
-}
-
 export function findVisibleRowIndex(
 	state: BehaviorLensViewState,
 	rowKey: BehaviorSourceRowKey,
@@ -236,30 +207,6 @@ export function findVisibleRowIndex(
 		}
 	}
 	return -1;
-}
-
-export function setBehaviorLensScroll(state: BehaviorLensViewState, scroll: number): void {
-	state.scroll = clampBehaviorLensScroll(state, scroll);
-	state.hoverIndex = -1;
-}
-
-export function revealBehaviorLensSelection(state: BehaviorLensViewState): void {
-	if (state.selectionIndex < state.scroll) {
-		state.scroll = state.selectionIndex;
-	} else {
-		const lastVisibleIndex = state.scroll + state.layout.visibleRowCount - 1;
-		if (state.selectionIndex > lastVisibleIndex) {
-			state.scroll = state.selectionIndex - state.layout.visibleRowCount + 1;
-		}
-	}
-	state.scroll = clampBehaviorLensScroll(state, state.scroll);
-}
-
-function clampBehaviorLensScroll(state: BehaviorLensViewState, scroll: number): number {
-	const maxScroll = state.rows.length > state.layout.visibleRowCount
-		? state.rows.length - state.layout.visibleRowCount
-		: 0;
-	return clamp(scroll, 0, maxScroll);
 }
 
 function defaultSelectionIndex(state: BehaviorLensViewState): number {

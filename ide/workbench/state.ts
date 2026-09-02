@@ -10,15 +10,15 @@ import type { LogOutput } from '../../hosts/common/log';
 import type { MicrotaskQueue } from '../common/microtask_queue';
 import type { KeyValueStorage } from '../workspace/key_value_storage';
 import { RuntimeCartEditor, type CartEditor } from '../cart_editor';
-import { createRuntimeDebuggerState, type RuntimeDebuggerState } from './debugger_state';
-import { createRuntimeFaultState, type RuntimeFaultState } from './fault_state';
-import { RuntimeLuaTooling } from './lua_tooling';
-import { SuspendedGuestSession } from './suspended_guest';
-import { OverlayRenderer } from './overlay_renderer';
-import type { RuntimeSourceState } from './sources';
-import { RuntimeTaskQueue } from './task_queue';
-import { ScenarioRunService } from '../workbench/contrib/scenario_lab/run_service';
-import { ScenarioTestCollection } from '../workbench/contrib/scenario_lab/test_collection';
+import { createRuntimeDebuggerState, type RuntimeDebuggerState } from '../runtime/debugger_state';
+import { createRuntimeFaultState, type RuntimeFaultState } from '../runtime/fault_state';
+import { RuntimeLuaTooling } from '../runtime/lua_tooling';
+import { SuspendedGuestSession } from '../runtime/suspended_guest';
+import { OverlayRenderer } from '../runtime/overlay_renderer';
+import type { RuntimeSourceState } from '../runtime/sources';
+import { RuntimeTaskQueue } from '../runtime/task_queue';
+import { ScenarioRunService } from './contrib/scenario_lab/run_service';
+import { ScenarioTestCollection } from '../testing/scenario/test_collection';
 
 export const DEFAULT_IDE_FONT_VARIANT: FontVariant = 'tiny';
 export type OverlayResolutionMode = 'offscreen' | 'viewport';
@@ -89,6 +89,8 @@ export class RuntimeIdeState {
 			this.debugger,
 			this.runtimeTasks,
 			this.overlayRenderer,
+			this.scenarioTests,
+			this.scenarioRuns,
 		);
 		this.overlayRenderer.setViewportSize(viewport);
 		this.editor.updateViewport(viewport);
