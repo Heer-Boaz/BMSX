@@ -1,12 +1,18 @@
 # Studio functioneel ontwerp
 
-Status: **reviewhypothese; geen implementatiecontract**
+Status: **geaccepteerd productcontract voor fase A + C**
 
 Dit document werkt `STUDIO-FUNCTIONAL-DESIGN-01` uit vanuit de bestaande
-BMSX-representaties en productievoorbeelden. Het kiest nog geen productoptie,
-viewport, transport, guest-ABI of runtime-instrumentatie. Implementatieslices
-mogen pas worden geknipt nadat de productkeuzes in [Open beslissingen](#open-beslissingen)
-zijn geaccepteerd.
+BMSX-representaties en productievoorbeelden. De gekozen eerste productroute is
+**A + C**: een source-first Behavior Lens, gevolgd door een deterministisch
+Scenario Lab. De eerste inspectieworkflow is stop-and-inspect; bestaande
+BT/FSM/ActionEffect-definities blijven arbitrary Lua. Exacte per-node
+BT-runtimecorrespondence en runtime-observability horen niet bij de eerste
+source-lens. Libretro blijft speler/core en krijgt geen Studio-workbench.
+
+Deze keuzes autoriseren geen viewport, cartridgefunctie, transport, guest-ABI
+of runtime-instrumentatie. Iedere implementatieslice blijft gebonden aan de
+owner- en representatiegrenzen verderop.
 
 ## Scope en ontwerpgrens
 
@@ -274,16 +280,17 @@ observabilityoptie dit werkelijk produceert, tonen:
 ### Pauzeren, opnemen en terugvinden
 
 De gebruiker kan gedrag opnemen, een concrete verandering selecteren, de
-bijbehorende instance en waarden inspecteren en naar de bron springen. Twee
-productmodellen blijven geldig en onbeslist:
+bijbehorende instance en waarden inspecteren en naar de bron springen. Het
+eerste product gebruikt het volgende model:
 
-1. **Stop-and-inspect:** de runtime produceert tijdens normaal spel een
-   begrensde trace; openen van de workbench stopt dezelfde Runtime volgens het
-   huidige hostmodel. De maker scrubt de opgenomen feiten en inspecteert echte
-   guestwaarden.
-2. **Live monitor:** de workbench blijft zichtbaar terwijl dezelfde Runtime
-   doorloopt. Dit vereist een expliciete host-frame-, audio- en inputlifecycle;
-   het wordt niet gebouwd via gameplay-clock, PIE of een tweede Runtime.
+1. **Stop-and-inspect:** openen van de workbench stopt dezelfde Runtime volgens
+   het huidige hostmodel. De source-lens toont uitsluitend authored feiten.
+   Een latere tracefase mag begrensde, vóór de stop geproduceerde feiten tonen
+   en echte gestopte guestwaarden inspecteren.
+
+Een live monitor blijft een afzonderlijke, niet gekozen productoptie. Die zou
+een expliciete host-frame-, audio- en inputlifecycle vereisen en wordt niet
+gebouwd via gameplay-clock, PIE of een tweede Runtime.
 
 ### Deterministische scenario's
 
@@ -305,9 +312,11 @@ Testcode mag expliciete setup/updateclosures gebruiken, zoals de huidige
 `HostTestRunner`. Die testgrens wordt niet uitgebreid tot een generieke live
 `runtime.call`, host-Lua-RPC of mutation-API voor Studio.
 
-## UX- en ownershipopties
+## UX- en ownershiproute
 
-De opties zijn combineerbaar, maar geen combinatie is in dit document gekozen.
+Opties A en C vormen het gekozen eerste product. B blijft een latere
+observabilityfase; D en E vereisen eerst een afzonderlijke keuze voor een
+constrained authored representatie.
 
 ### Optie A — Source-first Behavior Lens
 
@@ -428,15 +437,17 @@ Dit is een nieuw product- en assetformat met compiler-, admission-, lifecycle-
 en migratiewerk. Het mag niet stilzwijgend als host-viewmodel of compatibiliteits-
 laag worden ingevoerd.
 
-### Aanbeveling als hypothese
+### Gekozen volgorde
 
-De best onderbouwde eerste producthypothese is **A + C**: eerst source-first
-begrip en deterministische scenario's, daarna **B** voor geselecteerde live of
-recorded observability. **D** of **E** volgt alleen wanneer de gebruiker bewust
-een constrained authoringrepresentatie kiest.
+De productvolgorde is **A, daarna C**: eerst source-first begrip, daarna
+deterministische scenario's. **B** volgt alleen voor geselecteerde recorded
+observability nadat de benodigde semantische producers en identities expliciet
+zijn ontworpen. **D** of **E** volgt alleen wanneer de gebruiker bewust een
+constrained authoringrepresentatie kiest.
 
-Dit is geen productkeuze. Met name stop-and-inspect versus live monitor, en
-arbitrary Lua versus een constrained authored formaat, blijven open.
+De source-lens blijft read-only boven arbitrary Lua. Zij belooft geen exacte
+runtime-nodecorrespondentie. De eerste inspectieworkflow is stop-and-inspect en
+libretro blijft buiten de Studio-workbench.
 
 ## Observabilitycontract
 
@@ -695,17 +706,16 @@ de core.
 
 ## Acceptatiefasen
 
-De fasen beschrijven beslis- en bewijsgrenzen. Zij zijn nog geen geautoriseerde
-implementatieslices.
+De fasen beschrijven beslis- en bewijsgrenzen. De concrete implementatieslices
+staan in [`open_architecture_slices.md`](open_architecture_slices.md).
 
-### Fase 0 — Productkeuze zonder ABI
+### Fase 0 — Productkeuze zonder ABI — geaccepteerd
 
-- gebruiker kiest een combinatie van A-E;
-- stop-and-inspect versus live monitor is gekozen;
-- arbitrary Lua versus constrained authored representation is gekozen;
-- 384×288 tiny-fontprototypes met live chrome-metrics bestaan voor echte
-  BT/FSM/testcases;
-- keyboard- en controller-walkthrough zijn beoordeeld;
+- A + C is gekozen;
+- stop-and-inspect is gekozen;
+- arbitrary Lua is gekozen voor de eerste source-lens;
+- exacte per-node BT-runtimecorrespondence valt buiten die eerste lens;
+- libretro blijft speler/core;
 - geen machine-, cartlib-, transport- of guest-ABI-wijziging.
 
 ### Fase 1 — Static source lens
@@ -753,22 +763,21 @@ implementatieslices.
 - geen generieke release-hot-path-hookfacade;
 - één Runtime en geen PIE.
 
-## Open beslissingen
+## Uitgestelde beslissingen
 
-Voor implementatieslices zijn minimaal de volgende keuzes nodig:
+De eerste A + C-slices vereisen geen keuze over onderstaande onderwerpen en
+bouwen er daarom ook geen abstractie voor:
 
-1. Welke combinatie van A-E vormt het eerste product?
-2. Is de eerste observatieworkflow stop-and-inspect of live monitor?
-3. Blijven BT/FSM-definities volledig arbitrary Lua, of wordt voor visual
-   authoring een constrained tekst- of resourceformaat geaccepteerd?
-4. Is per-node BT sourcecorrespondence verplicht, optioneel of buiten de eerste
-   productversie?
-5. Welke semantic facts zijn voor de eerste echte gameworkflow noodzakelijk?
-6. Is libretro-scope beperkt tot speler/core, of is portable scenario-execution
-   een afzonderlijk gekozen native productdoel?
+1. Welke semantic facts een eerste recorded observabilityworkflow nodig heeft.
+2. Welke echte produceridentiteit BT-occurrences aan runtimefeiten koppelt.
+3. Of visual authoring later een constrained tekstformaat (D) of structured
+   resource (E) gebruikt.
+4. Of een live-monitorlifecycle naast stop-and-inspect ooit productscope wordt.
+5. Of portable native scenario-execution ooit een afzonderlijk libretrodoel
+   wordt.
 
-Pas na deze keuzes worden transport, correspondenceproductie, debug/release-
-variant, performancebudget en verticale implementatieslices ontworpen.
+Transport, correspondenceproductie en debug/release-instrumentatie worden pas
+ontworpen wanneer een latere slice een van deze productkeuzes werkelijk maakt.
 
 ## No-go's
 
