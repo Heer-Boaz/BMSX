@@ -85,11 +85,12 @@ Current artifact names encode that split:
 
 ## Runtime Timing
 
-BMSX fixes the CPU at 50 MHz and resets GX to 320×240 PAL. The PSX GP1 register
-set still owns raster/status state, including its native 256, 320, 368, 512 and
-640-column modes. The PS2-style PCRTC is the sole scanout clock and geometry
-owner: `SMODE1/2`, `SYNCH1/2` and `SYNCV` drive the physical beam, while
-`DISPFB1/2`, `DISPLAY1/2` and `PMODE` select and merge the visible rectangles.
+BMSX fixes the CPU at 33.8688 MHz (`44100 × 768`) and resets GX to 320×240 PAL.
+The PSX GP1 register set still owns raster/status state, including its native
+256, 320, 368, 512 and 640-column modes. The PS2-style PCRTC is the sole
+scanout clock and geometry owner: `SMODE1/2`, `SYNCH1/2` and `SYNCV` drive the
+physical beam, while `DISPFB1/2`, `DISPLAY1/2` and `PMODE` select and merge the
+visible rectangles.
 Cart manifests do not own refresh rate, render size, or a `vblank_cycles`
 override.
 
