@@ -13,7 +13,7 @@
 namespace bmsx {
 
 constexpr const char* BLUA32_SYMBOLS_IMAGE_ID = "__blua32_symbols__";
-constexpr u32 BLUA32_SYMBOLS_VERSION = 3u;
+constexpr u32 BLUA32_SYMBOLS_VERSION = 4u;
 
 struct Blua32InlineCallSite {
 	std::string calleeFunctionId;
@@ -46,6 +46,7 @@ struct Blua32StatementPoint {
 
 struct Blua32DebugMetadata {
 	std::vector<std::string> functionIds;
+	std::vector<std::string> functionDisplayNames;
 	std::vector<std::string> globalNames;
 	std::vector<std::string> systemGlobalNames;
 	std::unordered_map<std::string, std::string> staticFunctionIdBySlot;
@@ -97,5 +98,9 @@ auto blua32InlineCallSitesAtPc(
 	u32 textAddress,
 	u32 pc
 ) -> std::span<const Blua32InlineCallSite>;
+auto blua32FunctionDisplayNameById(
+	const Blua32SymbolsImage& symbols,
+	const std::string& functionId
+) -> const std::string&;
 
 } // namespace bmsx

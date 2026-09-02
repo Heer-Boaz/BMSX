@@ -35,6 +35,8 @@ int main() {
 	};
 	bmsx::Blua32SymbolsImage symbols;
 	symbols.version = bmsx::BLUA32_SYMBOLS_VERSION;
+	symbols.metadata.functionIds = {"entry"};
+	symbols.metadata.functionDisplayNames = {"entryDisplay"};
 	symbols.metadata.debugRanges = {outerCallRange, std::nullopt};
 	symbols.metadata.debugInlineCallSiteChains = {{}, inlineCallSites};
 	symbols.metadata.debugInlineCallSiteChainIds = {1, 0};
@@ -51,6 +53,7 @@ int main() {
 	const std::vector<bmsx::u8> encodedSymbols = bmsx::encodeBlua32SymbolsImage(symbols);
 	const bmsx::Blua32SymbolsImage decodedSymbols = bmsx::decodeBlua32SymbolsImage(encodedSymbols);
 	if (decodedSymbols.version != bmsx::BLUA32_SYMBOLS_VERSION
+		|| bmsx::blua32FunctionDisplayNameById(decodedSymbols, "entry") != "entryDisplay"
 		|| decodedSymbols.metadata.debugRanges.size() != 2u
 		|| decodedSymbols.metadata.debugInlineCallSiteChains.size() != 2u
 		|| !decodedSymbols.metadata.debugInlineCallSiteChains[0].empty()

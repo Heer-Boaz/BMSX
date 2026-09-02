@@ -3,6 +3,7 @@
 #include "common/serializer/binencoder.h"
 #include "spec/blua32/instruction_format.h"
 
+#include <algorithm>
 #include <utility>
 
 namespace bmsx {
@@ -183,6 +184,7 @@ auto encodeResumePoint(const Blua32ResumePoint& point) -> BinValue {
 auto decodeMetadata(const BinValue& value) -> Blua32DebugMetadata {
 	Blua32DebugMetadata metadata;
 	metadata.functionIds = decodeStringArray(value.require("functionIds"));
+	metadata.functionDisplayNames = decodeStringArray(value.require("functionDisplayNames"));
 	metadata.globalNames = decodeStringArray(value.require("globalNames"));
 	metadata.systemGlobalNames = decodeStringArray(value.require("systemGlobalNames"));
 	for (const auto& [slot, functionId] : value.require("staticFunctionIdBySlot").asObject()) {
@@ -251,6 +253,7 @@ auto decodeMetadata(const BinValue& value) -> Blua32DebugMetadata {
 auto encodeMetadata(const Blua32DebugMetadata& metadata) -> BinValue {
 	BinObject value;
 	value["functionIds"] = encodeStringArray(metadata.functionIds);
+	value["functionDisplayNames"] = encodeStringArray(metadata.functionDisplayNames);
 	value["globalNames"] = encodeStringArray(metadata.globalNames);
 	value["systemGlobalNames"] = encodeStringArray(metadata.systemGlobalNames);
 
@@ -406,6 +409,20 @@ auto blua32InlineCallSitesAtPc(
 	const size_t wordIndex = static_cast<size_t>((pc - textAddress) / INSTRUCTION_BYTES);
 	const u32 chainId = symbols.metadata.debugInlineCallSiteChainIds[wordIndex];
 	return symbols.metadata.debugInlineCallSiteChains[chainId];
+}
+
+auto blua32FunctionDisplayNameById(
+	const Blua32SymbolsImage& symbols,
+	const std::string& functionId
+) -> const std::string& {
+	const auto function = std::find(
+		symbols.metadata.functionIds.begin(),
+		symbols.metadata.functionIds.end(),
+		functionId
+	);
+	return symbols.metadata.functionDisplayNames[
+		static_cast<size_t>(function - symbols.metadata.functionIds.begin())
+	];
 }
 
 } // namespace bmsx
