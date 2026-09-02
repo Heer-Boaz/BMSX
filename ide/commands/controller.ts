@@ -14,7 +14,8 @@ import { executeEditorSymbolNavigationCommand, isEditorSymbolNavigationCommand }
 import { executeEditorViewCommand, isEditorViewCommand } from './view';
 import { editorViewState } from '../editor/ui/view/state';
 import { problemsPanel } from '../workbench/contrib/problems/panel/controller';
-import { isCodeTabActive } from '../workbench/ui/code_tab/contexts';
+import { isActiveLuaCodeTab } from '../workbench/ui/code_tab/contexts';
+import { isBehaviorLensActive, isCodeTabActive } from '../workbench/ui/tabs';
 import { executeEditorWorkspaceCommand, isEditorWorkspaceCommand } from './workspace';
 import { performEditorAction } from './actions';
 import { save } from '../workbench/ui/code_tab/io';
@@ -156,6 +157,21 @@ export class IdeCommandController {
 						|| this.runtime.machine.cpu.getFrameDepth() > 1);
 			case 'save':
 				return isCodeTabActive() && editorDocumentState.dirty;
+			case 'behaviorLens':
+			case 'symbolSearch':
+			case 'symbolSearchGlobal':
+			case 'referenceSearch':
+			case 'goToDefinition':
+			case 'callHierarchy':
+				return isActiveLuaCodeTab();
+			case 'rename':
+				return isActiveLuaCodeTab() && !editorDocumentState.readOnly;
+			case 'createResource':
+			case 'findGlobal':
+			case 'findLocal':
+			case 'lineJump':
+			case 'wrap':
+				return isCodeTabActive();
 			case 'filter':
 				return this.editor.resourcePanel.isVisible()
 					&& this.editor.resourcePanel.getMode() === 'resources';
@@ -170,6 +186,8 @@ export class IdeCommandController {
 				return this.editor.resourcePanel.isVisible();
 			case 'problems':
 				return problemsPanel.isVisible;
+			case 'behaviorLens':
+				return isBehaviorLensActive();
 			case 'filter':
 				return this.editor.resourcePanel.getFilterMode() === 'lua_only';
 			case 'wrap':

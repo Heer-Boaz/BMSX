@@ -5,6 +5,7 @@ import {
 	type WorkspaceAutosavePayload,
 	type WorkspaceSessionGeneration,
 } from './models';
+import type { EditorDocumentContextId } from '../../common/editor_context';
 
 type WorkspaceState = {
 	projectRootPath: string | null;
@@ -20,7 +21,7 @@ type WorkspaceState = {
 };
 
 export const workspaceDirtyRecords = new Map<string, WorkspaceRecord>();
-export const workspacePendingMetadataContextIds = new Set<string>();
+export const workspacePendingMetadataContextIds = new Set<EditorDocumentContextId>();
 
 export const workspaceState: WorkspaceState = {
 	projectRootPath: null,

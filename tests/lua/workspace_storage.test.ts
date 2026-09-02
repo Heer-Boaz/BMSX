@@ -39,12 +39,14 @@ import {
 	type WorkspaceRecord,
 } from '../../ide/workspace/records';
 import { joinWorkspacePaths, resolveWorkspacePath } from '../../ide/workspace/path';
-import { codeTabSessionState } from '../../ide/workbench/ui/code_tab/session_state';
 import {
 	buildCodeTabId,
+	createCodeEditorTabDescriptor,
 	findCodeTabContext,
+	registerCodeTabContext,
 } from '../../ide/workbench/ui/code_tab/contexts';
-import { tabSessionState } from '../../ide/workbench/ui/tab/session_state';
+import { codeEditorModelManager } from '../../ide/workbench/ui/code_tab/model_manager';
+import { editorTabGroup } from '../../ide/workbench/ui/tab/group_model';
 import {
 	applyWorkspaceAutosavePayload,
 	hydrateDirtyFiles,
@@ -69,7 +71,7 @@ import {
 	type LuaCodeTabSourceSnapshot,
 } from '../../ide/workbench/ui/code_tab/activation';
 import { captureContextText } from '../../ide/workbench/workspace/context_snapshot';
-import { editorDocumentState } from '../../ide/editor/editing/document_state';
+import { editorDocumentState, restoreDocumentStateFromContext } from '../../ide/editor/editing/document_state';
 import { configureFontVariant } from '../../ide/editor/ui/view/view';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { DEFAULT_FONT_VARIANT } from '../../machine/ts/render/shared/bmsx_font';
@@ -277,10 +279,8 @@ async function resetEnvironment(storage: MockStorage): Promise<void> {
 	await shutdownWorkspaceStorage();
 	storage.clear();
 	clearWorkspaceSourceCaches();
-	codeTabSessionState.contexts.clear();
-	codeTabSessionState.activeContextId = null;
-	tabSessionState.tabs = [];
-	tabSessionState.activeTabId = null;
+	editorTabGroup.clear();
+	codeEditorModelManager.clear();
 	editorDocumentState.buffer = new PieceTreeBuffer('');
 	editorDocumentState.readOnly = false;
 	globalThis.fetch = ORIGINAL_FETCH;
@@ -336,16 +336,7 @@ function installCodeContext(path: string, source: string, domain: ResourceDomain
 		runtimeSyncMessage: null,
 		textVersion: buffer.version,
 	};
-	codeTabSessionState.contexts.set(context.id, context);
-	tabSessionState.tabs = [{
-		id: context.id,
-		kind: 'code_editor',
-		title: context.title,
-		closable: true,
-		dirty: true,
-	}];
-	tabSessionState.activeTabId = 'resource:other';
-	codeTabSessionState.activeContextId = 'code:other.lua';
+	registerCodeTabContext(context);
 	return context;
 }
 
@@ -440,7 +431,8 @@ test('resource identity keeps identical cartridge paths isolated by slot', (t) =
 		0,
 	);
 	t.after(() => {
-		codeTabSessionState.contexts.clear();
+		editorTabGroup.clear();
+		codeEditorModelManager.clear();
 		resetSemanticProjects();
 		clearWorkspaceSourceCaches();
 	});
@@ -505,17 +497,19 @@ test('workspace restore keeps dirty system tabs behind the development cartridge
 		}]),
 	);
 
-	const activeContext = codeTabSessionState.contexts.get(codeTabSessionState.activeContextId)!;
+	const activeTab = editorTabGroup.activeTab!;
+	assert.equal(activeTab.kind, 'code_editor');
+	const activeContext = activeTab.kind === 'code_editor' ? activeTab.context : null;
 	assert.equal(activeContext.resource.domain, 0);
 	assert.equal(activeContext.resource.path, cartridgePath);
-	assert.equal(tabSessionState.activeTabId, activeContext.id);
+	assert.equal(activeTab.id, activeContext.id);
 	const systemContext = findCodeTabContext({
 		domain: SYSTEM_RESOURCE_DOMAIN,
 		path: systemPath,
 	})!;
 	assert.equal(systemContext.dirty, true);
 	assert.equal(getTextSnapshot(systemContext.buffer), '-- dirty system source');
-	assert.equal(tabSessionState.tabs.some(tab => tab.id === systemContext.id), true);
+	assert.equal(editorTabGroup.tabs.some(tab => tab.id === systemContext.id), true);
 });
 
 test('canonical source cache keys identical resource paths by physical project path', async (t) => {
@@ -1020,12 +1014,11 @@ test('cursor-only autosave reuses retained dirty content and background metadata
 	await startAutosaveSession(t, storage);
 	const activeContext = installCodeContext('src/foo.lua', '-- dirty foreground');
 	const backgroundContext = installCodeContext('src/bar.lua', '-- dirty background');
-	codeTabSessionState.activeContextId = activeContext.id;
-	tabSessionState.activeTabId = activeContext.id;
-	editorDocumentState.buffer = activeContext.buffer;
-	editorDocumentState.cursorRow = 0;
-	editorDocumentState.cursorColumn = 0;
-	editorDocumentState.selectionAnchor = null;
+	const activeTab = createCodeEditorTabDescriptor(activeContext);
+	const backgroundTab = createCodeEditorTabDescriptor(backgroundContext);
+	editorTabGroup.initialize(activeTab);
+	editorTabGroup.add(backgroundTab);
+	restoreDocumentStateFromContext(activeContext);
 	editorDocumentState.dirty = true;
 	editorViewState.scrollRow = 0;
 	editorViewState.scrollColumn = 0;
@@ -1042,8 +1035,7 @@ test('cursor-only autosave reuses retained dirty content and background metadata
 	editorDocumentState.cursorColumn = 1;
 	requestWorkspaceAutosave(WorkspaceAutosaveChange.ActiveEditor);
 	activeContext.cursorColumn = editorDocumentState.cursorColumn;
-	codeTabSessionState.activeContextId = backgroundContext.id;
-	tabSessionState.activeTabId = backgroundContext.id;
+	editorTabGroup.activate(backgroundTab);
 	editorDocumentState.buffer = backgroundContext.buffer;
 	editorDocumentState.cursorColumn = backgroundContext.cursorColumn;
 	await flushRequestedAutosave();
@@ -1489,16 +1481,30 @@ test('generated compiler sources ignore manifest dirty records', async (t) => {
 	assert.equal(asset.src, 'return { source_addr = 1 }');
 });
 
-test('active source capture only trusts the editor buffer while the code tab is foregrounded', () => {
+test('source capture reads the live editor document only for the active code tab', () => {
 	const context = installCodeContext('src/foo.lua', '-- tab buffer');
-	codeTabSessionState.activeContextId = context.id;
+	const codeTab = createCodeEditorTabDescriptor(context);
+	editorTabGroup.initialize(codeTab);
 	editorDocumentState.buffer = new PieceTreeBuffer('-- editor buffer');
-	tabSessionState.activeTabId = context.id;
 	assert.equal(captureContextText(context), '-- editor buffer');
 	assert.equal(captureActiveCodeTabSource(), '-- editor buffer');
-	tabSessionState.activeTabId = 'resource:other';
+	const resource = testResource('image.png', TEST_DOMAIN, 'image');
+	const resourceTab = {
+		id: 'resource:0\0image.png',
+		kind: 'resource_view',
+		title: 'image.png',
+		closable: true,
+		resource: {
+			resource,
+			lines: [],
+			error: '',
+			title: 'image.png',
+			scroll: 0,
+		},
+	} as const;
+	editorTabGroup.add(resourceTab);
+	editorTabGroup.activate(resourceTab);
 	assert.equal(captureContextText(context), '-- tab buffer');
-	assert.equal(captureActiveCodeTabSource(), '-- tab buffer');
 });
 
 test('runtime source capture detects changed code when editor epochs collide', (t) => {
@@ -1543,13 +1549,9 @@ test('successful runtime update applies only captured Lua generations without to
 		saveGeneration: 7,
 		appliedGeneration: 6,
 	};
-	codeTabSessionState.contexts.set(backgroundLua.id, backgroundLua);
-	codeTabSessionState.contexts.set(aem.id, aem);
-	tabSessionState.tabs.push(
-		{ id: backgroundLua.id, kind: 'code_editor', title: backgroundLua.title, closable: true, dirty: false, runtimeSyncState: 'runtime_update_pending' },
-		{ id: aem.id, kind: 'code_editor', title: aem.title, closable: true, dirty: false, runtimeSyncState: 'runtime_update_pending' },
-	);
-	codeTabSessionState.activeContextId = activeLua.id;
+	registerCodeTabContext(backgroundLua);
+	registerCodeTabContext(aem);
+	editorTabGroup.initialize(createCodeEditorTabDescriptor(activeLua));
 	editorDocumentState.appliedGeneration = 2;
 	const appliedSnapshots: LuaCodeTabSourceSnapshot[] = [
 		{ contextId: activeLua.id, generation: 3, domain: TEST_DOMAIN, path: activeLua.resource.path, source: '-- saved source' },

@@ -1,5 +1,5 @@
 import { clamp } from '../../machine/ts/common/clamp';
-import { getActiveCodeTabContext, isCodeTabActive } from '../workbench/ui/code_tab/contexts';
+import { getActiveTab } from '../workbench/ui/tabs';
 import { editorDocumentState } from '../editor/editing/document_state';
 import type { ResourceDomain } from '../common/resource';
 
@@ -81,13 +81,11 @@ export function areNavigationEntriesEqual(a: NavigationHistoryEntry, b: Navigati
 }
 
 export function createNavigationEntry(): NavigationHistoryEntry | null {
-	if (!isCodeTabActive()) {
+	const activeTab = getActiveTab();
+	if (activeTab.kind !== 'code_editor') {
 		return null;
 	}
-	const context = getActiveCodeTabContext();
-	if (!context) {
-		return null;
-	}
+	const context = activeTab.context;
 	const path = context.resource.path;
 	const maxRowIndex = Math.max(0, editorDocumentState.buffer.getLineCount() - 1);
 	const row = clamp(editorDocumentState.cursorRow, 0, maxRowIndex);

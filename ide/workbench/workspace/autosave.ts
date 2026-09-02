@@ -40,6 +40,7 @@ import {
 import type { CartEditor } from '../../cart_editor';
 import type { HostClock } from '../../../hosts/common/clock';
 import type { KeyValueStorage } from '../../workspace/key_value_storage';
+import type { EditorDocumentContextId } from '../../common/editor_context';
 
 export function commitWorkspaceSessionLocally(
 	storage: KeyValueStorage,
@@ -48,7 +49,7 @@ export function commitWorkspaceSessionLocally(
 	sources: RuntimeSourceState,
 	debuggerState: RuntimeBreakpointState,
 	changes: WorkspaceAutosaveChange,
-	metadataContextIds: ReadonlySet<string>,
+	metadataContextIds: ReadonlySet<EditorDocumentContextId>,
 ): WorkspaceSessionGeneration {
 	const previousGeneration = workspaceState.localGeneration;
 	const rebuildDirtyFiles = !previousGeneration || (changes & WorkspaceAutosaveChange.DirtyFiles);
@@ -161,7 +162,7 @@ export function commitWorkspaceSessionLocally(
 
 function captureDirtyEntryMetadata(
 	dirtyFiles: PersistedDirtyEntry[],
-	contextIds: ReadonlySet<string>,
+	contextIds: ReadonlySet<EditorDocumentContextId>,
 ): PersistedDirtyEntry[] {
 	let updatedDirtyFiles = dirtyFiles;
 	for (const contextId of contextIds) {

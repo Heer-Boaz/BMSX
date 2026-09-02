@@ -3,7 +3,7 @@ import type { CodeTabContext } from '../../../ui/code_tab/model';
 import type { ReferenceMatchInfo } from '../../../../editor/contrib/references/state';
 import type { LuaSourceRange } from '../../../../../toolchain/ts/lua/syntax/ast/index';
 import { clamp } from '../../../../../machine/ts/common/clamp';
-import { createLuaCodeTabContext, findCodeTabContext, getActiveCodeTabContext } from '../../../ui/code_tab/contexts';
+import { getActiveCodeTabContext, retainLuaCodeTabContext } from '../../../ui/code_tab/contexts';
 import { resolveRuntimeResourceForContext } from '../../../../runtime/sources';
 import { getTextSnapshot } from '../../../../editor/text/source_text';
 import { getOrCreateSemanticProject } from '../../../../editor/contrib/intellisense/semantic/workspace/state';
@@ -15,7 +15,6 @@ import { updateDesiredColumn, ensureCursorVisible } from '../../../../editor/ui/
 import { resetBlink } from '../../../../editor/render/caret';
 import { editorCaretState } from '../../../../editor/ui/view/caret/state';
 import { editorDocumentState } from '../../../../editor/editing/document_state';
-import { registerCodeTabContext, setTabDirty } from '../../../ui/code_tab/contexts';
 import { editorViewState } from '../../../../editor/ui/view/state';
 import type { ResourceDomain } from '../../../../common/resource';
 import type { RuntimeSourceState } from '../../../../runtime/sources';
@@ -143,7 +142,6 @@ export class CrossFileRenameManager {
 		const cursorLength = context.buffer.getLineEndOffset(context.cursorRow) - context.buffer.getLineStartOffset(context.cursorRow);
 		context.cursorColumn = clamp(context.cursorColumn, 0, cursorLength);
 		context.scrollRow = clamp(context.scrollRow, 0, lineCount - 1);
-		setTabDirty(context.id, context.dirty);
 	}
 
 	private ensureCodeTabContextForChunk(
@@ -151,12 +149,6 @@ export class CrossFileRenameManager {
 		path: string,
 	): CodeTabContext {
 		const resource = resolveRuntimeResourceForContext(this.sources, domain, path)!;
-		let context = findCodeTabContext(resource);
-		if (!context) {
-			context = createLuaCodeTabContext(this.sources, resource);
-			registerCodeTabContext(context);
-			setTabDirty(context.id, context.dirty);
-		}
-		return context;
+		return retainLuaCodeTabContext(this.sources, resource);
 	}
 }

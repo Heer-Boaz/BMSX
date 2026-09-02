@@ -21,6 +21,7 @@ import {
 } from '../../common/text/layout';
 import { rewrapRuntimeErrorOverlays } from '../../../runtime_error/navigation';
 import type { InlineFieldMetrics } from '../inline/text_field';
+import type { EditorDocumentContextId } from '../../../common/editor_context';
 
 function advanceInlineFieldChar(ch: string): number {
 	return editorViewState.font.advance(ch);
@@ -320,8 +321,8 @@ export function configureFontVariant(
 export function setFontVariant(
 	clock: HostClock,
 	variant: FontVariant,
-	activeDocumentMode: EditorDocumentMode | null,
-	activeContextId: string | null,
+	activeDocumentMode: EditorDocumentMode,
+	activeContextId: EditorDocumentContextId,
 ): void {
 	configureFontVariant(clock, variant, activeDocumentMode);
 	ensureVisualLines();

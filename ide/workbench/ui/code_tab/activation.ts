@@ -22,14 +22,14 @@ import {
 } from '../../../runtime/sources';
 import { SYSTEM_RESOURCE_DOMAIN, type ResourceDomain } from '../../../common/resource';
 import {
-	getActiveCodeTabContext,
+	getCodeTabContextById,
+	getCodeTabContexts,
 	setContextRuntimeSyncState,
-	setTabDirty,
-	setTabRuntimeSyncState,
 	updateActiveContextDirtyFlag,
 } from './contexts';
-import { codeTabSessionState } from './session_state';
-import { getActiveTabId } from '../tabs';
+import { editorTabGroup } from '../tab/group_model';
+import type { EditorDocumentContextId } from '../../../common/editor_context';
+import type { CodeEditorTabDescriptor } from '../tab/model';
 
 export type CodeTabSelection = {
 	row: number;
@@ -38,15 +38,14 @@ export type CodeTabSelection = {
 };
 
 export type LuaCodeTabSourceSnapshot = {
-	contextId: string;
+	contextId: EditorDocumentContextId;
 	generation: number;
 	domain: ResourceDomain;
 	path: string;
 	source: string;
 };
 
-function setCodeTabDiagnosticsState(): void {
-	const context = getActiveCodeTabContext();
+function setCodeTabDiagnosticsState(context: CodeTabContext): void {
 	switch (context.mode) {
 		case 'lua': {
 			const cached = editorDiagnosticsState.diagnosticsCache.get(context.id);
@@ -69,28 +68,21 @@ function setCodeTabDiagnosticsState(): void {
 	}
 }
 
-export function storeActiveCodeTabContext(): void {
-	const context = getActiveCodeTabContext();
+export function storeCodeTabContext(context: CodeTabContext): void {
 	storeDocumentStateInContext(context);
 	context.scrollRow = editorViewState.scrollRow;
 	context.scrollColumn = editorViewState.scrollColumn;
 	context.runtimeErrorOverlay = runtimeErrorState.activeOverlay;
 	context.executionStopRow = runtimeErrorState.executionStopRow;
-	setTabDirty(context.id, context.dirty);
-	setTabRuntimeSyncState(context.id, context.runtimeSyncState, context.runtimeSyncMessage);
 }
 
 export function captureActiveCodeTabSource(): string {
-	const context = getActiveCodeTabContext();
-	if (getActiveTabId() === context.id) {
-		return getTextSnapshot(editorDocumentState.buffer);
-	}
-	return getTextSnapshot(context.buffer);
+	return getTextSnapshot(editorDocumentState.buffer);
 }
 
 export function capturePendingLuaCodeTabSources(sources: RuntimeSourceState): LuaCodeTabSourceSnapshot[] {
 	const snapshots: LuaCodeTabSourceSnapshot[] = [];
-	for (const context of codeTabSessionState.contexts.values()) {
+	for (const context of getCodeTabContexts()) {
 		switch (context.mode) {
 			case 'lua':
 				break;
@@ -137,7 +129,7 @@ export function setActiveCodeTabAppliedGeneration(context: CodeTabContext, appli
 export function markLuaCodeTabsAppliedToRuntime(snapshots: ReadonlyArray<LuaCodeTabSourceSnapshot>): void {
 	for (let index = 0; index < snapshots.length; index += 1) {
 		const snapshot = snapshots[index];
-		const context = codeTabSessionState.contexts.get(snapshot.contextId);
+		const context = getCodeTabContextById(snapshot.contextId);
 		if (!context) {
 			continue;
 		}
@@ -148,7 +140,11 @@ export function markLuaCodeTabsAppliedToRuntime(snapshots: ReadonlyArray<LuaCode
 			null,
 		);
 	}
-	const activeContext = getActiveCodeTabContext();
+	const activeTab = editorTabGroup.activeTab;
+	if (activeTab?.kind !== 'code_editor') {
+		return;
+	}
+	const activeContext = activeTab.context;
 	switch (activeContext.mode) {
 		case 'lua':
 			editorDocumentState.appliedGeneration = activeContext.appliedGeneration;
@@ -168,9 +164,8 @@ export function applyActiveCodeTabSelection(selection: CodeTabSelection): void {
 	editorDocumentState.emitCursorMoved();
 }
 
-export function activateCodeEditorTab(tabId: string, selection?: CodeTabSelection): void {
-	codeTabSessionState.activeContextId = tabId;
-	const context = getActiveCodeTabContext();
+export function activateCodeEditorTab(tab: CodeEditorTabDescriptor, selection?: CodeTabSelection): void {
+	const context = tab.context;
 	restoreDocumentStateFromContext(context);
 	editorViewState.scrollRow = context.scrollRow;
 	editorViewState.scrollColumn = context.scrollColumn;
@@ -178,9 +173,8 @@ export function activateCodeEditorTab(tabId: string, selection?: CodeTabSelectio
 	editorViewState.layout.setDocumentMode(context.mode);
 	editorViewState.layout.markVisualLinesDirty();
 	editorViewState.layout.invalidateAllHighlights();
-	setCodeTabDiagnosticsState();
+	setCodeTabDiagnosticsState(context);
 	context.dirty = editorDocumentState.dirty;
-	setTabDirty(context.id, context.dirty);
 	syncRuntimeErrorOverlayFromContext(context);
 	requestSemanticRefresh();
 	updateDesiredColumn();
@@ -198,7 +192,7 @@ export function navigateToLuaDefinition(
 	definition: LuaDefinitionLocation,
 ): void {
 	clearReferenceHighlights();
-	const activeDomain = getActiveCodeTabContext().resource.domain;
+	const activeDomain = editorDocumentState.resource.domain;
 	editor.navigation.focusChunkSourceForContext(
 		activeDomain,
 		definition.path,

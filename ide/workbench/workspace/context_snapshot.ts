@@ -7,8 +7,7 @@ import { restoreSnapshot } from '../../editor/editing/undo_controller';
 import { editorViewState } from '../../editor/ui/view/state';
 import { getTextSnapshot } from '../../editor/text/source_text';
 import type { SnapshotMetadata } from './models';
-import { getActiveCodeTabContextId, setTabDirty, updateActiveContextDirtyFlag } from '../ui/code_tab/contexts';
-import { getActiveTabId } from '../ui/tabs';
+import { getActiveCodeTabContextId, updateActiveContextDirtyFlag } from '../ui/code_tab/contexts';
 
 type EditHistoryState = {
 	undoStack: { length: number };
@@ -27,7 +26,7 @@ function clearEditHistory(state: EditHistoryState): void {
 }
 
 function isActiveCodeContext(context: CodeTabContext): boolean {
-	return getActiveCodeTabContextId() === context.id && getActiveTabId() === context.id;
+	return getActiveCodeTabContextId() === context.id;
 }
 
 export function applySourceToContext(context: CodeTabContext, source: string, metadata?: SnapshotMetadata): void {
@@ -86,7 +85,6 @@ export function resetWorkspaceContextToCleanSource(context: CodeTabContext, sour
 	context.saveGeneration = editorDocumentState.saveGeneration;
 	context.appliedGeneration = editorDocumentState.appliedGeneration;
 	context.lastSavedSource = source;
-	setTabDirty(context.id, false);
 	if (isActiveCodeContext(context)) {
 		restoreSnapshot(buildSnapshotFromBuffer(context), { preserveScroll: false });
 		updateActiveContextDirtyFlag();
@@ -96,7 +94,6 @@ export function resetWorkspaceContextToCleanSource(context: CodeTabContext, sour
 export function clearWorkspaceContextSessionState(context: CodeTabContext): void {
 	clearEditHistory(context);
 	context.dirty = false;
-	setTabDirty(context.id, false);
 }
 
 export function restoreWorkspaceContextSource(context: CodeTabContext, source: string, metadata: SnapshotMetadata, dirty: boolean): void {
@@ -109,7 +106,6 @@ export function restoreWorkspaceContextSource(context: CodeTabContext, source: s
 		context.dirty = false;
 		context.savePointDepth = context.undoStack.length;
 	}
-	setTabDirty(context.id, dirty);
 	if (isActiveCodeContext(context)) {
 		restoreSnapshot(buildSnapshotFromBuffer(context, metadata), { preserveScroll: true });
 		editorDocumentState.savePointDepth = context.savePointDepth;
@@ -119,14 +115,14 @@ export function restoreWorkspaceContextSource(context: CodeTabContext, source: s
 }
 
 export function captureContextText(context: CodeTabContext): string {
-	if (context.id === getActiveCodeTabContextId() && getActiveTabId() === context.id) {
+	if (context.id === getActiveCodeTabContextId()) {
 		return getTextSnapshot(editorDocumentState.buffer);
 	}
 	return getTextSnapshot(context.buffer);
 }
 
 export function captureContextSnapshotMetadata(context: CodeTabContext): SnapshotMetadata {
-	if (context.id === getActiveCodeTabContextId() && getActiveTabId() === context.id) {
+	if (context.id === getActiveCodeTabContextId()) {
 		return {
 			cursorRow: editorDocumentState.cursorRow,
 			cursorColumn: editorDocumentState.cursorColumn,

@@ -327,15 +327,17 @@ export class CompletionController {
 			this.parameterHintIdleElapsed = 0;
 			return;
 		}
+		const parameterHintVisible = this.parameterHint !== null;
 		this.cancelPendingCompletion();
-		this.parameterHint = null;
 		this.parameterHintTriggerPending = false;
 		this.parameterHintIdleElapsed = 0;
 		const session = this.completionSession;
 		const cursor = this.getCursorPosition();
 		if (session && session.trigger !== 'manual') {
 			this.closeSession();
-			this.refreshParameterHint();
+			if (parameterHintVisible) {
+				this.refreshParameterHint();
+			}
 			return;
 		}
 		this.setLastCursorPosition(cursor.row, cursor.column);
@@ -345,7 +347,9 @@ export class CompletionController {
 			if (!context) this.closeSession();
 			else this.refreshCompletionSessionFromContext(context);
 		}
-		this.refreshParameterHint();
+		if (parameterHintVisible) {
+			this.refreshParameterHint();
+		}
 	}
 
 	public updateAfterEdit(edit: EditContext): void {

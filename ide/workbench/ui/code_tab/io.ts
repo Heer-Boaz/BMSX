@@ -25,12 +25,13 @@ import {
 import {
 	buildCodeTabId,
 	createAemCodeTabContext,
-	createLuaCodeTabContext,
 	getActiveCodeTabContext,
+	getCodeTabContextById,
+	registerCodeTabContext,
+	retainLuaCodeTabContext,
 	setContextRuntimeSyncState,
 	upsertCodeEditorTab,
 } from './contexts';
-import { codeTabSessionState } from './session_state';
 import { runtimeSourceProjectRootPath } from '../../../runtime/sources';
 import type { ResourcePanelController } from '../../contrib/resources/panel/controller';
 import { requestWorkspaceAutosave } from '../../workspace/storage';
@@ -48,13 +49,7 @@ function retainLuaCodeTab(
 	sources: RuntimeSourceState,
 	resource: RuntimeResource,
 ): CodeTabContext {
-	const tabId = buildCodeTabId(resource);
-	let context = codeTabSessionState.contexts.get(tabId);
-	if (!context) {
-		context = createLuaCodeTabContext(sources, resource);
-		codeTabSessionState.contexts.set(tabId, context);
-	}
-	applyCodeTabResource(context, resource, 'lua');
+	const context = retainLuaCodeTabContext(sources, resource);
 	upsertCodeEditorTab(context);
 	return context;
 }
@@ -65,7 +60,7 @@ async function retainAemCodeTab(
 	resource: RuntimeResource,
 ): Promise<CodeTabContext> {
 	const tabId = buildCodeTabId(resource);
-	let context = codeTabSessionState.contexts.get(tabId);
+	let context = getCodeTabContextById(tabId);
 	if (!context) {
 		const projectRootPath = runtimeSourceProjectRootPath(sources, resource.domain);
 		const source = await loadWorkspaceSourceFile(
@@ -77,7 +72,7 @@ async function retainAemCodeTab(
 			throw new Error(`AEM resource '${resource.path}' is unavailable.`);
 		}
 		context = createAemCodeTabContext(resource, source);
-		codeTabSessionState.contexts.set(tabId, context);
+		registerCodeTabContext(context);
 	}
 	applyCodeTabResource(context, resource, 'aem');
 	upsertCodeEditorTab(context);

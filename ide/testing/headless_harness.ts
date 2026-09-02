@@ -6,7 +6,7 @@ import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import type { Input } from '../../hosts/common/input/manager';
 import type { KeyValueStorage } from '../workspace/key_value_storage';
 import { openLuaCodeTab } from '../workbench/ui/code_tab/io';
-import { editorDocumentState } from '../editor/editing/document_state';
+import { editorDocumentState, type EditorDocumentState } from '../editor/editing/document_state';
 import { activateEditor } from '../workbench/overlay_modes';
 import { selectAllSingleCursor } from '../editor/editing/cursor/state';
 import { insertText } from '../editor/editing/text_editing_and_selection';
@@ -17,13 +17,16 @@ import {
 import type { RuntimeIdeState } from '../runtime/state';
 import type { StackTraceFrame } from '../runtime/stack_trace';
 import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
-import type { EditorDebugCommandId } from '../common/commands';
+import type { EditorCommandId } from '../common/commands';
 import type { LuaSignatureHelp } from '../../toolchain/ts/lua/semantic/signature_help';
 import { toggleBreakpoint } from '../workbench/contrib/debugger/controller';
 import { handleLuaError } from '../workbench/runtime_errors';
 import { getActiveCodeTabContext } from '../workbench/ui/code_tab/contexts';
 import { updateHoverTooltip } from '../editor/contrib/hover/controller';
 import { hoverState, type CodeHoverTooltip } from '../editor/contrib/hover/state';
+import type { CodeTabContext } from '../workbench/ui/code_tab/model';
+import type { EditorTabDescriptor } from '../workbench/ui/tab/model';
+import { getActiveTab, getTabs } from '../workbench/ui/tabs';
 import type {
 	RecordedLogMessage,
 	RecordingLogOutput,
@@ -48,6 +51,10 @@ export type HeadlessIdeHarness = {
 	getFaultStack(): ReadonlyArray<StackTraceFrame>;
 	getSignatureHelp(): LuaSignatureHelp | null;
 	getHover(row: number, column: number): CodeHoverTooltip | null;
+	getActiveWorkbenchTab(): Readonly<EditorTabDescriptor>;
+	getActiveCodeContext(): Readonly<CodeTabContext> | null;
+	getActiveEditorDocument(): Readonly<EditorDocumentState>;
+	getWorkbenchTabs(): readonly EditorTabDescriptor[];
 	/** Execute Hot Resume directly against the source registry's current dirty state. */
 	hotResumeCore(): void;
 	/** Full IDE hot-resume action, completed after its queued rebuild settles. */
@@ -55,7 +62,7 @@ export type HeadlessIdeHarness = {
 	toggleLuaBreakpoint(path: string, line: number): void;
 	isDebuggerStopped(): boolean;
 	reboot(): Promise<void>;
-	executeCommand(command: EditorDebugCommandId): void;
+	executeCommand(command: EditorCommandId): void;
 	openLuaSource(path: string): void;
 	replaceActiveCodeSource(source: string): void;
 	/** Diagnostic breakdown of tracked-heap contributors, for leak hunting. */
@@ -102,6 +109,10 @@ export function createHeadlessIdeHarness(
 		getLogMessage: index => logOutput.messages[index],
 		getFaultStack: () => ide.fault.lastLuaCallStack,
 		getSignatureHelp: () => ide.editor.completion.hint,
+		getActiveWorkbenchTab: () => getActiveTab(),
+		getActiveCodeContext: () => getActiveCodeTabContext(),
+		getActiveEditorDocument: () => editorDocumentState,
+		getWorkbenchTabs: () => getTabs(),
 		getHover: (row, column) => {
 			updateHoverTooltip(
 				ide.luaTooling,

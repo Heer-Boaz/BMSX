@@ -1,25 +1,20 @@
 import { getCodeAreaBounds } from '../../../editor/ui/view/view';
 import { consumeIdeKey, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
 import { applyResourceViewerScroll, clampResourceViewerScroll, resourceViewerTextCapacity, setResourceViewerScroll } from '../../contrib/resources/viewer';
-import { getActiveResourceViewer } from '../../contrib/resources/view_tabs';
-import type { ResourceViewerState } from '../../../common/models';
+import type { ResourceViewerState } from '../../contrib/resources/model';
 import { editorViewState } from '../../../editor/ui/view/state';
 import type { ResourcePanelController } from '../../contrib/resources/panel/controller';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 
-export function handleResourceViewerInput(playerInput: PlayerInput): void {
-	const viewer = getActiveResourceViewer();
-	if (!viewer) {
-		return;
-	}
+export function handleResourceViewerInput(playerInput: PlayerInput, viewer: ResourceViewerState): void {
 	if (shouldRepeatKeyFromPlayer('ArrowUp', playerInput)) {
 		consumeIdeKey('ArrowUp', playerInput);
-		scrollResourceViewer(-1);
+		scrollResourceViewer(viewer, -1);
 		return;
 	}
 	if (shouldRepeatKeyFromPlayer('ArrowDown', playerInput)) {
 		consumeIdeKey('ArrowDown', playerInput);
-		scrollResourceViewer(1);
+		scrollResourceViewer(viewer, 1);
 		return;
 	}
 	if (shouldRepeatKeyFromPlayer('PageUp', playerInput)) {
@@ -45,11 +40,7 @@ export function scrollResourceBrowserHorizontal(resourcePanel: ResourcePanelCont
 	resourcePanel.setHScroll(resourcePanel.hscroll + delta);
 }
 
-export function scrollResourceViewer(amount: number): void {
-	const viewer = getActiveResourceViewer();
-	if (!viewer) {
-		return;
-	}
+export function scrollResourceViewer(viewer: ResourceViewerState, amount: number): void {
 	setResourceViewerScroll(viewer, getCodeAreaBounds(), editorViewState.lineHeight, viewer.scroll + amount);
 }
 

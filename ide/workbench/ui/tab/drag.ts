@@ -1,15 +1,16 @@
 import * as constants from '../../../common/constants';
-import type { EditorTabDescriptor } from '../../../common/models';
+import type { EditorTabId } from './id';
+import { editorTabDirty, type EditorTabDescriptor } from './model';
 import { clamp } from '../../../../machine/ts/common/clamp';
 import { editorChromeState } from '../chrome_state';
 import { getTabBarTotalHeight } from '../../common/layout';
 import { measureText } from '../../../editor/common/text/layout';
 import { resetPointerClickTracking } from '../../../input/pointer/state';
 import { editorViewState } from '../../../editor/ui/view/state';
-import { tabSessionState } from './session_state';
+import { editorTabGroup } from './group_model';
 
 export type TabLayoutEntry = {
-	id: string;
+	id: EditorTabId | null;
 	left: number;
 	right: number;
 	width: number;
@@ -23,7 +24,7 @@ function getTabLayoutEntry(index: number): TabLayoutEntry {
 	let entry = tabLayoutScratch[index];
 	if (!entry) {
 		entry = {
-			id: '',
+			id: null,
 			left: 0,
 			right: 0,
 			width: 0,
@@ -35,7 +36,7 @@ function getTabLayoutEntry(index: number): TabLayoutEntry {
 	return entry;
 }
 
-function writeTabLayoutEntry(entry: TabLayoutEntry, id: string, left: number, right: number, width: number, rowIndex: number): void {
+function writeTabLayoutEntry(entry: TabLayoutEntry, id: EditorTabId, left: number, right: number, width: number, rowIndex: number): void {
 	entry.id = id;
 	entry.left = left;
 	entry.right = right;
@@ -49,7 +50,7 @@ export function measureTabWidth(tab: EditorTabDescriptor): number {
 	let indicatorWidth = 0;
 	if (tab.closable) {
 		indicatorWidth = measureText(constants.TAB_CLOSE_BUTTON_SYMBOL) + constants.TAB_CLOSE_BUTTON_PADDING_X * 2;
-	} else if (tab.dirty) {
+	} else if (editorTabDirty(tab)) {
 		indicatorWidth = constants.TAB_DIRTY_MARKER_METRICS.width + constants.TAB_DIRTY_MARKER_SPACING;
 	}
 	return textWidth + constants.TAB_BUTTON_PADDING_X * 2 + indicatorWidth;
@@ -57,9 +58,10 @@ export function measureTabWidth(tab: EditorTabDescriptor): number {
 
 export function computeTabLayout(): TabLayoutEntry[] {
 	const layout = tabLayoutScratch;
-	layout.length = tabSessionState.tabs.length;
-	for (let index = 0; index < tabSessionState.tabs.length; index += 1) {
-		const tab = tabSessionState.tabs[index];
+	const tabs = editorTabGroup.tabs;
+	layout.length = tabs.length;
+	for (let index = 0; index < tabs.length; index += 1) {
+		const tab = tabs[index];
 		const entry = getTabLayoutEntry(index);
 		const bounds = editorChromeState.tabButtonBounds.get(tab.id)!;
 		const left = bounds.left;
@@ -71,8 +73,8 @@ export function computeTabLayout(): TabLayoutEntry[] {
 	return layout;
 }
 
-export function beginTabDrag(tabId: string, pointerX: number): void {
-	if (tabSessionState.tabs.length <= 1) {
+export function beginTabDrag(tabId: EditorTabId, pointerX: number): void {
+	if (editorTabGroup.tabs.length <= 1) {
 		editorChromeState.tabDragState = null;
 		return;
 	}
@@ -126,22 +128,13 @@ export function updateTabDrag(pointerX: number, pointerY: number): void {
 	if (desiredIndex === currentIndex) {
 		return;
 	}
-	const tabs = tabSessionState.tabs;
+	const tabs = editorTabGroup.tabs;
 	let tabIndex = 0;
 	while (tabs[tabIndex].id !== state.tabId) {
 		tabIndex += 1;
 	}
-	const tab = tabs[tabIndex];
-	for (let index = tabIndex; index < tabs.length - 1; index += 1) {
-		tabs[index] = tabs[index + 1];
-	}
-	tabs.length -= 1;
-	const targetIndex = clamp(desiredIndex, 0, tabSessionState.tabs.length);
-	tabs.length += 1;
-	for (let index = tabs.length - 1; index > targetIndex; index -= 1) {
-		tabs[index] = tabs[index - 1];
-	}
-	tabs[targetIndex] = tab;
+	const targetIndex = clamp(desiredIndex, 0, tabs.length - 1);
+	editorTabGroup.move(tabIndex, targetIndex);
 }
 
 export function endTabDrag(): void {

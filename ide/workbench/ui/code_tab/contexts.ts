@@ -3,16 +3,14 @@ import {
 	type RuntimeSourceState,
 } from '../../../runtime/sources';
 import { editorDocumentState } from '../../../editor/editing/document_state';
-import type {
-	EditorRuntimeSyncState,
-	EditorTabDescriptor,
-} from '../../../common/models';
+import type { CodeEditorTabId } from '../tab/id';
+import type { CodeEditorTabDescriptor } from '../tab/model';
 import type { EditorDocumentMode } from '../../../editor/editing/document_state';
+import type { EditorDocumentContextId } from '../../../common/editor_context';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
 import { PieceTreeBuffer } from '../../../editor/text/piece_tree_buffer';
 import { computeResourceTabTitle } from '../tab/titles';
-import { codeTabSessionState } from './session_state';
-import { tabSessionState } from '../tab/session_state';
+import { editorTabGroup } from '../tab/group_model';
 import {
 	SYSTEM_RESOURCE_DOMAIN,
 	resourceIdentityEquals,
@@ -22,6 +20,7 @@ import {
 	type RuntimeResource,
 } from '../../../common/resource';
 import type { CodeTabContext } from './model';
+import { codeEditorModelManager } from './model_manager';
 
 function resolveLuaSource(sources: RuntimeSourceState, resource: RuntimeResource): string {
 	return luaPipeline.resourceSourceForChunk(sources, resource);
@@ -58,97 +57,110 @@ function createCodeTabContext(resource: RuntimeResource, initialSource: string, 
 	};
 }
 
-export function buildCodeTabId(resource: ResourceIdentity): string {
+export function buildCodeTabId(resource: ResourceIdentity): CodeEditorTabId {
 	return `code:${resourceIdentityKey(resource)}`;
 }
 
-export function setTabRuntimeSyncState(tabId: string, runtimeSyncState: EditorRuntimeSyncState, runtimeSyncMessage: string): void {
-	const tab = tabSessionState.tabs.find(candidate => candidate.id === tabId)!;
-	tab.runtimeSyncState = runtimeSyncState;
-	tab.runtimeSyncMessage = runtimeSyncMessage;
-}
-
-export function setContextRuntimeSyncState(context: CodeTabContext, runtimeSyncState: EditorRuntimeSyncState, runtimeSyncMessage: string): void {
+export function setContextRuntimeSyncState(
+	context: CodeTabContext,
+	runtimeSyncState: CodeTabContext['runtimeSyncState'],
+	runtimeSyncMessage: string | null,
+): void {
 	context.runtimeSyncState = runtimeSyncState;
 	context.runtimeSyncMessage = runtimeSyncMessage;
-	setTabRuntimeSyncState(context.id, runtimeSyncState, runtimeSyncMessage);
 }
 
-export function upsertCodeEditorTab(context: CodeTabContext): EditorTabDescriptor {
-	let tab = tabSessionState.tabs.find(candidate => candidate.id === context.id);
+export function createCodeEditorTabDescriptor(context: CodeTabContext): CodeEditorTabDescriptor {
+	return {
+		id: context.id,
+		kind: 'code_editor',
+		title: context.title,
+		closable: true,
+		context,
+	};
+}
+
+export function upsertCodeEditorTab(context: CodeTabContext): CodeEditorTabDescriptor {
+	let tab = editorTabGroup.findById(context.id);
 	if (!tab) {
-		tab = {
-			id: context.id,
-			kind: 'code_editor',
-			title: '',
-			closable: true,
-			dirty: false,
-		};
-		tabSessionState.tabs.push(tab);
+		tab = createCodeEditorTabDescriptor(context);
+		editorTabGroup.add(tab);
 	}
-	tab.kind = 'code_editor';
 	tab.title = context.title;
-	tab.dirty = context.dirty;
-	tab.runtimeSyncState = context.runtimeSyncState;
-	tab.runtimeSyncMessage = context.runtimeSyncMessage;
-	tab.resource = undefined;
+	tab.context = context;
 	return tab;
 }
 
-export function createEntryTabContext(sources: RuntimeSourceState): CodeTabContext {
+function entryTabResource(sources: RuntimeSourceState): RuntimeResource {
 	const cartridge = developmentCartridgeSource(sources);
 	const domain = cartridge ? cartridge.domain : SYSTEM_RESOURCE_DOMAIN;
 	const registry = cartridge ? cartridge.luaSources : sources.systemLuaSources;
-	const resource = sources.resourceByIdentity.get(resourceIdentityKeyFromParts(
+	return sources.resourceByIdentity.get(resourceIdentityKeyFromParts(
 		domain,
 		registry.entrySourcePath,
 	))!;
-	return createLuaCodeTabContext(sources, resource);
 }
 
 export function createLuaCodeTabContext(sources: RuntimeSourceState, resource: RuntimeResource): CodeTabContext {
 	return createCodeTabContext(resource, resolveLuaSource(sources, resource), 'lua');
 }
 
+export function retainLuaCodeTabContext(
+	sources: RuntimeSourceState,
+	resource: RuntimeResource,
+): CodeTabContext {
+	const contextId = buildCodeTabId(resource);
+	let context = codeEditorModelManager.get(contextId);
+	if (context === undefined) {
+		context = createLuaCodeTabContext(sources, resource);
+		codeEditorModelManager.register(context);
+	}
+	context.resource = resource;
+	context.mode = 'lua';
+	context.title = computeResourceTabTitle(resource);
+	return context;
+}
+
+export function retainEntryTabContext(sources: RuntimeSourceState): CodeTabContext {
+	return retainLuaCodeTabContext(sources, entryTabResource(sources));
+}
+
 export function createAemCodeTabContext(resource: RuntimeResource, source: string): CodeTabContext {
 	return createCodeTabContext(resource, source, 'aem');
 }
 
-export function getActiveCodeTabContext(): CodeTabContext {
-	return codeTabSessionState.contexts.get(codeTabSessionState.activeContextId)!;
+export function getActiveCodeTabContext(): CodeTabContext | null {
+	const activeTab = editorTabGroup.activeTab;
+	return activeTab?.kind === 'code_editor' ? activeTab.context : null;
 }
 
-export function getActiveCodeTabContextId(): string {
-	return codeTabSessionState.activeContextId;
+export function getActiveCodeTabContextId(): CodeEditorTabId | null {
+	const activeTab = editorTabGroup.activeTab;
+	return activeTab?.kind === 'code_editor' ? activeTab.id : null;
 }
 
 export function isActiveCodeTabReadOnly(): boolean {
 	return editorDocumentState.readOnly;
 }
 
-export function getCodeTabContextById(contextId: string): CodeTabContext {
-	return codeTabSessionState.contexts.get(contextId);
+export function getCodeTabContextById(contextId: EditorDocumentContextId): CodeTabContext | undefined {
+	return codeEditorModelManager.get(contextId);
 }
 
-export function hasCodeTabContext(contextId: string): boolean {
-	return codeTabSessionState.contexts.has(contextId);
+export function hasCodeTabContext(contextId: EditorDocumentContextId): boolean {
+	return codeEditorModelManager.has(contextId);
 }
 
-export function getCodeTabContexts(): Iterable<CodeTabContext> {
-	return codeTabSessionState.contexts.values();
+export function getCodeTabContexts(): IterableIterator<CodeTabContext> {
+	return codeEditorModelManager.models;
 }
 
 export function registerCodeTabContext(context: CodeTabContext): void {
-	codeTabSessionState.contexts.set(context.id, context);
+	codeEditorModelManager.register(context);
 }
 
 export function clearCodeTabContexts(): void {
-	codeTabSessionState.contexts.clear();
-}
-
-export function setTabDirty(tabId: string, dirty: boolean): void {
-	const tab = tabSessionState.tabs.find(candidate => candidate.id === tabId)!;
-	tab.dirty = dirty;
+	codeEditorModelManager.clear();
 }
 
 export function updateActiveContextDirtyFlag(): void {
@@ -156,28 +168,23 @@ export function updateActiveContextDirtyFlag(): void {
 	context.saveGeneration = editorDocumentState.saveGeneration;
 	context.textVersion = editorDocumentState.textVersion;
 	context.dirty = editorDocumentState.dirty;
-	setTabDirty(context.id, context.dirty);
-}
-
-export function isCodeTabActive(): boolean {
-	const active = tabSessionState.tabs.find(tab => tab.id === tabSessionState.activeTabId)!;
-	return active.kind === 'code_editor';
 }
 
 export function isActiveLuaCodeTab(): boolean {
-	return isCodeTabActive() && getActiveCodeTabContext().mode === 'lua';
+	const activeTab = editorTabGroup.activeTab;
+	return activeTab?.kind === 'code_editor' && activeTab.context.mode === 'lua';
 }
 
 export function isReadOnlyCodeTab(): boolean {
-	return isCodeTabActive() && editorDocumentState.readOnly;
+	return editorTabGroup.activeTab?.kind === 'code_editor' && editorDocumentState.readOnly;
 }
 
 export function isEditableCodeTab(): boolean {
-	return isCodeTabActive() && !editorDocumentState.readOnly;
+	return editorTabGroup.activeTab?.kind === 'code_editor' && !editorDocumentState.readOnly;
 }
 
-export function findCodeTabContext(identity: ResourceIdentity): CodeTabContext {
-	for (const context of codeTabSessionState.contexts.values()) {
+export function findCodeTabContext(identity: ResourceIdentity): CodeTabContext | null {
+	for (const context of getCodeTabContexts()) {
 		if (resourceIdentityEquals(context.resource, identity)) {
 			return context;
 		}

@@ -18,6 +18,7 @@ import { diagnosticsDebounceMs, editorDiagnosticsState } from '../../../../edito
 import { editorDocumentState } from '../../../../editor/editing/document_state';
 import { problemsPanel } from '../../problems/panel/controller';
 import type { RuntimeLuaTooling } from '../../../../runtime/lua_tooling';
+import type { EditorDocumentContextId } from '../../../../common/editor_context';
 
 const diagnosticsMinIntervalMs = 600;
 let diagnosticsTimer: TimerHandle | null = null;
@@ -39,10 +40,6 @@ export function processDiagnosticsQueue(
 	now: number,
 ): void {
 	if (!editorDiagnosticsState.diagnosticsDirty) {
-		return;
-	}
-	const activeId = getActiveCodeTabContextId();
-	if (activeId && !editorDiagnosticsState.dirtyDiagnosticContexts.has(activeId)) {
 		return;
 	}
 	if (editorDiagnosticsState.dirtyDiagnosticContexts.size === 0) {
@@ -86,12 +83,6 @@ export function executeDiagnosticsComputation(bridge: RuntimeLuaTooling, clock: 
 		cancelDiagnosticsTimer();
 		return;
 	}
-	const activeId = getActiveCodeTabContextId();
-	if (activeId && !editorDiagnosticsState.dirtyDiagnosticContexts.has(activeId)) {
-		editorDiagnosticsState.diagnosticsDueAtMs = null;
-		cancelDiagnosticsTimer();
-		return;
-	}
 	if (editorDiagnosticsState.dirtyDiagnosticContexts.size === 0) {
 		editorDiagnosticsState.diagnosticsDirty = false;
 		editorDiagnosticsState.diagnosticsDueAtMs = null;
@@ -125,7 +116,7 @@ export function executeDiagnosticsComputation(bridge: RuntimeLuaTooling, clock: 
 export function enqueueDiagnosticsJob(
 	bridge: RuntimeLuaTooling,
 	clock: HostClock,
-	contextIds: readonly string[],
+	contextIds: readonly EditorDocumentContextId[],
 ): void {
 	if (contextIds.length === 0) {
 		return;
@@ -148,15 +139,18 @@ export function enqueueDiagnosticsJob(
 	});
 }
 
-export function collectDiagnosticsBatch(): string[] {
+export function collectDiagnosticsBatch(): EditorDocumentContextId[] {
 	const activeId = getActiveCodeTabContextId();
 	if (activeId && editorDiagnosticsState.dirtyDiagnosticContexts.has(activeId)) {
 		return [activeId];
 	}
+	for (const contextId of editorDiagnosticsState.dirtyDiagnosticContexts) {
+		return [contextId];
+	}
 	return [];
 }
 
-export function runDiagnosticsForContexts(bridge: RuntimeLuaTooling, contextIds: readonly string[]): void {
+export function runDiagnosticsForContexts(bridge: RuntimeLuaTooling, contextIds: readonly EditorDocumentContextId[]): void {
 	if (contextIds.length === 0) {
 		return;
 	}
@@ -210,10 +204,10 @@ export function runDiagnosticsForContexts(bridge: RuntimeLuaTooling, contextIds:
 		return;
 	}
 	const diagnostics = computeAggregatedEditorDiagnostics(bridge, inputs);
-	const byContext = new Map<string, EditorDiagnostic[]>();
+	const byContext = new Map<EditorDocumentContextId, EditorDiagnostic[]>();
 	for (let index = 0; index < diagnostics.length; index += 1) {
 		const diag = diagnostics[index];
-		const key = diag.contextId ?? '';
+		const key = diag.contextId;
 		let bucket = byContext.get(key);
 		if (!bucket) {
 			bucket = [];
@@ -288,7 +282,7 @@ export function markDiagnosticsDirtyForChunk(path: string): void {
 	markDiagnosticsDirty(context.id);
 }
 
-export function findContextByChunk(path: string): CodeTabContext {
+export function findContextByChunk(path: string): CodeTabContext | null {
 	return findCodeTabContext({
 		domain: getActiveCodeTabContext().resource.domain,
 		path,

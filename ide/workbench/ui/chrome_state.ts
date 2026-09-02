@@ -1,7 +1,8 @@
 import type { RectBounds } from '../../../machine/ts/common/rect';
 import { create_rect_bounds } from '../../../machine/ts/common/rect';
 import type { TopBarButtonId } from '../../common/commands';
-import type { TabDragState } from '../../common/models';
+import type { EditorTabId } from './tab/id';
+import type { TabDragState } from './tab/model';
 import type { MenuId } from './top_bar/menu';
 
 type EditorChromeState = {
@@ -10,11 +11,11 @@ type EditorChromeState = {
 	menuEntryBounds: Record<MenuId, RectBounds>;
 	menuDropdownBounds: RectBounds;
 	tabBarBounds: RectBounds;
-	openMenuId: MenuId;
-	tabButtonBounds: Map<string, RectBounds>;
-	tabCloseButtonBounds: Map<string, RectBounds>;
-	tabHoverId: string;
-	tabDragState: TabDragState;
+	openMenuId: MenuId | null;
+	tabButtonBounds: Map<EditorTabId, RectBounds>;
+	tabCloseButtonBounds: Map<EditorTabId, RectBounds>;
+	tabHoverId: EditorTabId | null;
+	tabDragState: TabDragState | null;
 	problemsPanelResizing: boolean;
 	resourcePanelResizing: boolean;
 };
@@ -31,6 +32,7 @@ export const editorChromeState: EditorChromeState = {
 		save: create_rect_bounds(),
 		resources: create_rect_bounds(),
 		problems: create_rect_bounds(),
+		behaviorLens: create_rect_bounds(),
 		filter: create_rect_bounds(),
 		wrap: create_rect_bounds(),
 	},
@@ -42,8 +44,8 @@ export const editorChromeState: EditorChromeState = {
 	menuDropdownBounds: null,
 	tabBarBounds: create_rect_bounds(),
 	openMenuId: null,
-	tabButtonBounds: new Map<string, RectBounds>(),
-	tabCloseButtonBounds: new Map<string, RectBounds>(),
+	tabButtonBounds: new Map<EditorTabId, RectBounds>(),
+	tabCloseButtonBounds: new Map<EditorTabId, RectBounds>(),
 	tabHoverId: null,
 	tabDragState: null,
 	problemsPanelResizing: false,

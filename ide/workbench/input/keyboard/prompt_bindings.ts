@@ -1,6 +1,5 @@
 import type { CartEditor } from '../../../cart_editor';
-import { cycleTab } from '../../ui/tabs';
-import { isCodeTabActive } from '../../ui/code_tab/contexts';
+import { isCodeTabActive } from '../../ui/tabs';
 import { selectAllSingleCursor } from '../../../editor/editing/cursor/state';
 import { revealCursor, updateDesiredColumn } from '../../../editor/ui/view/caret/caret';
 import { resetBlink } from '../../../editor/render/caret';
@@ -33,15 +32,6 @@ function handleLocalFindBinding(playerInput: PlayerInput, editor: CartEditor): b
 	}
 	consumeIdeKey('KeyF', playerInput);
 	editor.commands.execute('findLocal');
-	return true;
-}
-
-function handleCycleTabBinding(playerInput: PlayerInput, editor: CartEditor): boolean {
-	if (!(isCtrlDown(playerInput) || isMetaDown(playerInput)) || !isKeyJustPressed('Tab', playerInput)) {
-		return false;
-	}
-	consumeIdeKey('Tab', playerInput);
-	cycleTab(editor.resourcePanel, isShiftDown(playerInput) ? -1 : 1);
 	return true;
 }
 
@@ -88,7 +78,6 @@ export function handleEditorPromptBindings(playerInput: PlayerInput, editor: Car
 	return handleCreateResourceBinding(playerInput, editor)
 		|| handleGlobalFindBinding(playerInput, editor)
 		|| handleLocalFindBinding(playerInput, editor)
-		|| handleCycleTabBinding(playerInput, editor)
 		|| handleDefinitionAndReferenceBinding(playerInput, editor)
 		|| handleSelectAllBinding(playerInput, editor)
 		|| handleLineJumpBinding(playerInput, editor);

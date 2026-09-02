@@ -1,20 +1,15 @@
 import { resourceIdentityKey, type RuntimeResource } from '../../../common/resource';
-import type { EditorTabId, ResourceViewerState } from '../../../common/models';
+import type { ResourceViewerTabId } from '../../ui/tab/id';
 import { setActiveTab } from '../../ui/tabs';
-import { tabSessionState } from '../../ui/tab/session_state';
+import { editorTabGroup } from '../../ui/tab/group_model';
 import { buildResourceViewerState } from './viewer';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { ResourcePanelController } from './panel/controller';
+import type { ResourceViewerState } from './model';
 
-export function getActiveResourceViewer(): ResourceViewerState {
-	for (let index = 0; index < tabSessionState.tabs.length; index += 1) {
-		const tab = tabSessionState.tabs[index];
-		if (tab.id !== tabSessionState.activeTabId) {
-			continue;
-		}
-		return tab.kind === 'resource_view' ? tab.resource : null;
-	}
-	return null;
+export function getActiveResourceViewer(): ResourceViewerState | null {
+	const tab = editorTabGroup.activeTab;
+	return tab.kind === 'resource_view' ? tab.resource : null;
 }
 
 export function openResourceViewerTab(
@@ -22,20 +17,12 @@ export function openResourceViewerTab(
 	sources: RuntimeSourceState,
 	resource: RuntimeResource,
 ): void {
-	const tabId: EditorTabId = `resource:${resourceIdentityKey(resource)}`;
-	let tab = null;
-	for (let index = 0; index < tabSessionState.tabs.length; index += 1) {
-		const candidate = tabSessionState.tabs[index];
-		if (candidate.id === tabId) {
-			tab = candidate;
-			break;
-		}
-	}
+	const tabId: ResourceViewerTabId = `resource:${resourceIdentityKey(resource)}`;
+	let tab = editorTabGroup.findById(tabId);
 	const state = buildResourceViewerState(sources, resource);
 	if (tab) {
 		tab.title = state.title;
 		tab.resource = state;
-		tab.dirty = false;
 		setActiveTab(resourcePanel, tabId);
 		return;
 	}
@@ -44,9 +31,8 @@ export function openResourceViewerTab(
 		kind: 'resource_view',
 		title: state.title,
 		closable: true,
-		dirty: false,
 		resource: state,
 	};
-	tabSessionState.tabs.push(tab);
+	editorTabGroup.add(tab);
 	setActiveTab(resourcePanel, tabId);
 }

@@ -1,4 +1,4 @@
-import { isCodeTabActive } from '../../../workbench/ui/code_tab/contexts';
+import { isCodeTabActive } from '../../../workbench/ui/tabs';
 import { clearGotoHoverHighlight, refreshGotoHoverHighlight } from '../../../editor/contrib/intellisense/engine';
 import { clearHoverTooltip, updateHoverTooltip } from '../../../editor/contrib/hover/controller';
 import { resolvePointerTextPosition } from '../../../editor/ui/view/view';

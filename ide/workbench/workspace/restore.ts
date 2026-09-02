@@ -9,8 +9,8 @@ import { restoreBreakpointsFromPayload } from '../contrib/debugger/controller';
 import { initializeTabs } from '../ui/tabs';
 import {
 	clearCodeTabContexts,
-	createEntryTabContext,
 	findCodeTabContext,
+	retainEntryTabContext,
 } from '../ui/code_tab/contexts';
 import { restoreCodeTabForResource } from '../ui/code_tab/io';
 import { buildWorkspaceDirtyEntryPath } from '../../workspace/files';
@@ -30,7 +30,7 @@ export async function applyWorkspaceAutosavePayload(
 	payload: WorkspaceAutosavePayload,
 ): Promise<void> {
 	clearCodeTabContexts();
-	initializeTabs(createEntryTabContext(sources));
+	initializeTabs(retainEntryTabContext(sources));
 	editor.setFontVariant(payload.fontVariant);
 	await openDirtyFileTabs(storage, sources, payload.dirtyFiles);
 	hydrateDirtyFiles(sources, payload.dirtyFiles);

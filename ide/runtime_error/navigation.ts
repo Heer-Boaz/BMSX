@@ -1,7 +1,11 @@
 import { centerCursorVertically, ensureCursorVisible, setCursorPosition } from '../editor/ui/view/caret/caret';
 import { beginNavigationCapture, completeNavigation } from '../navigation/navigation_history';
-import { activateCodeTab, isTabActive, setActiveTab } from '../workbench/ui/tabs';
-import { getActiveCodeTabContext, getCodeTabContexts } from '../workbench/ui/code_tab/contexts';
+import { isTabActive, setActiveTab } from '../workbench/ui/tabs';
+import {
+	getActiveCodeTabContext,
+	getCodeTabContexts,
+	upsertCodeEditorTab,
+} from '../workbench/ui/code_tab/contexts';
 import { showEditorMessage } from '../common/feedback_state';
 import type { RuntimeErrorOverlay } from '../editor/contrib/runtime_error/model';
 import type { CodeTabContext } from '../workbench/ui/code_tab/model';
@@ -31,7 +35,7 @@ import { resetPointerClickTracking } from '../input/pointer/state';
 
 type RuntimeErrorOverlayTarget = { context: CodeTabContext; overlay: RuntimeErrorOverlay };
 
-function resolveRuntimeErrorOverlayTarget(): RuntimeErrorOverlayTarget {
+function resolveRuntimeErrorOverlayTarget(): RuntimeErrorOverlayTarget | null {
 	const activeContext = getActiveCodeTabContext();
 	if (activeContext && activeContext.runtimeErrorOverlay) {
 		return { context: activeContext, overlay: activeContext.runtimeErrorOverlay };
@@ -44,10 +48,8 @@ function resolveRuntimeErrorOverlayTarget(): RuntimeErrorOverlayTarget {
 	return null;
 }
 
-function ensureActiveContext(resourcePanel: ResourcePanelController, target: CodeTabContext): void {
-	if (!target) {
-		return;
-	}
+function activateRuntimeErrorContext(resourcePanel: ResourcePanelController, target: CodeTabContext): void {
+	upsertCodeEditorTab(target);
 	if (!isTabActive(target.id)) {
 		setActiveTab(resourcePanel, target.id);
 		return;
@@ -60,14 +62,8 @@ export function focusRuntimeErrorOverlay(resourcePanel: ResourcePanelController)
 	if (!target) {
 		return false;
 	}
-	ensureActiveContext(resourcePanel, target.context);
-	if (!getActiveCodeTabContext()) {
-		activateCodeTab(resourcePanel);
-	}
-	const overlay = target.context.runtimeErrorOverlay;
-	if (!overlay) {
-		return false;
-	}
+	activateRuntimeErrorContext(resourcePanel, target.context);
+	const overlay = target.overlay;
 	const navigationCheckpoint = beginNavigationCapture();
 	overlay.hidden = false;
 	overlay.hovered = false;
@@ -162,13 +158,8 @@ export function focusExecutionStop(
 }
 
 export function syncRuntimeErrorOverlayFromContext(context: CodeTabContext): void {
-	if (context) {
-		setActiveRuntimeErrorOverlay(context.runtimeErrorOverlay);
-		setEditorExecutionStopHighlight(context.executionStopRow);
-		return;
-	}
-	setActiveRuntimeErrorOverlay(null);
-	clearExecutionStopHighlight();
+	setActiveRuntimeErrorOverlay(context.runtimeErrorOverlay);
+	setEditorExecutionStopHighlight(context.executionStopRow);
 }
 
 export function showLuaErrorOverlay(

@@ -9,6 +9,7 @@ export const MENU_COMMANDS = [
 	'save',
 	'resources',
 	'problems',
+	'behaviorLens',
 	'filter',
 	'wrap',
 	'debugContinue',
@@ -40,6 +41,7 @@ const stepIntoMenuItem: TopBarMenuItem = { type: 'command', command: 'debugStepI
 const stepOutMenuItem: TopBarMenuItem = { type: 'command', command: 'debugStepOut', label: 'Step Out    Shift+F11', active: false, disabled: true };
 const rebootMenuItem: TopBarMenuItem = { type: 'command', command: 'reboot', label: 'Reboot', active: false, disabled: false };
 const problemsMenuItem: TopBarMenuItem = { type: 'command', command: 'problems', label: 'Problems Panel', active: false, disabled: false };
+const behaviorLensMenuItem: TopBarMenuItem = { type: 'command', command: 'behaviorLens', label: 'Behavior Lens', active: false, disabled: true };
 const wrapMenuItem: TopBarMenuItem = { type: 'command', command: 'wrap', label: 'Word Wrap', active: false, disabled: false };
 const filterMenuItem: TopBarMenuItem = { type: 'command', command: 'filter', label: 'All Resources', active: false, disabled: true };
 
@@ -64,7 +66,7 @@ const topBarMenuEntries: TopBarMenuEntry[] = [
 	{
 		id: 'view',
 		label: 'VIEW',
-		items: [problemsMenuItem, wrapMenuItem, filterMenuItem],
+		items: [behaviorLensMenuItem, problemsMenuItem, wrapMenuItem, filterMenuItem],
 	},
 ];
 
@@ -79,6 +81,8 @@ export function buildTopBarMenuEntries(commands: IdeCommandController): TopBarMe
 	resourcesMenuItem.label = resourcePanelActive ? 'Hide Files' : 'Show Files';
 	resourcesMenuItem.active = resourcePanelActive;
 	problemsMenuItem.active = commands.isActive('problems');
+	behaviorLensMenuItem.active = commands.isActive('behaviorLens');
+	behaviorLensMenuItem.disabled = !commands.isEnabled('behaviorLens');
 	wrapMenuItem.active = commands.isActive('wrap');
 	filterMenuItem.label = filterActive ? 'Lua Files Only' : 'All Resources';
 	filterMenuItem.active = filterActive;

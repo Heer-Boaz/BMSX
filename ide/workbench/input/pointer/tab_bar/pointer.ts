@@ -5,9 +5,10 @@ import type { PointerSnapshot } from '../../../../common/models';
 import { closeTab, setActiveTab } from '../../../ui/tabs';
 import { beginTabDrag, endTabDrag } from '../../../ui/tab/drag';
 import { consumeChromePointerPress } from '../../../../input/pointer/chrome_press';
-import { tabSessionState } from '../../../ui/tab/session_state';
+import { editorTabGroup } from '../../../ui/tab/group_model';
 import type { RuntimeSourceState } from '../../../../runtime/sources';
 import type { ResourcePanelController } from '../../../contrib/resources/panel/controller';
+import type { EditorTabId } from '../../../ui/tab/id';
 
 export function handleTabBarPointer(
 	resourcePanel: ResourcePanelController,
@@ -19,8 +20,9 @@ export function handleTabBarPointer(
 	if (!point_in_rect(x, y, editorChromeState.tabBarBounds)) {
 		return false;
 	}
-	for (let index = 0; index < tabSessionState.tabs.length; index += 1) {
-		const tab = tabSessionState.tabs[index];
+	const tabs = editorTabGroup.tabs;
+	for (let index = 0; index < tabs.length; index += 1) {
+		const tab = tabs[index];
 		const closeBounds = editorChromeState.tabCloseButtonBounds.get(tab.id);
 		if (closeBounds && point_in_rect(x, y, closeBounds)) {
 			endTabDrag();
@@ -51,8 +53,9 @@ export function handleTabBarMiddleClick(
 	if (!point_in_rect(x, y, editorChromeState.tabBarBounds)) {
 		return false;
 	}
-	for (let index = 0; index < tabSessionState.tabs.length; index += 1) {
-		const tab = tabSessionState.tabs[index];
+	const tabs = editorTabGroup.tabs;
+	for (let index = 0; index < tabs.length; index += 1) {
+		const tab = tabs[index];
 		if (!tab.closable) {
 			continue;
 		}
@@ -81,9 +84,10 @@ export function updateTabHoverState(snapshot: PointerSnapshot): void {
 		editorChromeState.tabHoverId = null;
 		return;
 	}
-	let hovered: string = null;
-	for (let index = 0; index < tabSessionState.tabs.length; index += 1) {
-		const tab = tabSessionState.tabs[index];
+	let hovered: EditorTabId | null = null;
+	const tabs = editorTabGroup.tabs;
+	for (let index = 0; index < tabs.length; index += 1) {
+		const tab = tabs[index];
 		const bounds = editorChromeState.tabButtonBounds.get(tab.id);
 		if (bounds && point_in_rect(x, y, bounds)) {
 			hovered = tab.id;

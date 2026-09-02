@@ -4,7 +4,7 @@ import { clamp } from '../../../machine/ts/common/clamp';
 import { create_rect_bounds } from '../../../machine/ts/common/rect';
 import { getCodeAreaBounds } from '../../editor/ui/view/view';
 import { applyResourceViewerScroll, resolveResourceViewerLayout } from '../contrib/resources/viewer';
-import { getActiveResourceViewer } from '../contrib/resources/view_tabs';
+import type { ResourceViewerState } from '../contrib/resources/model';
 import { drawEditorText } from '../../editor/render/text_renderer';
 import { api } from '../../runtime/overlay_api';
 import { measureText, writeWrappedOverlayLine } from '../../editor/common/text/layout';
@@ -146,11 +146,7 @@ export function renderResourcePanel(controller: ResourcePanelController): void {
 	}
 }
 
-export function drawResourceViewer(): void {
-	const viewer = getActiveResourceViewer();
-	if (!viewer) {
-		return;
-	}
+export function drawResourceViewer(viewer: ResourceViewerState): void {
 	const bounds = getCodeAreaBounds();
 	const contentLeft = bounds.codeLeft + constants.RESOURCE_PANEL_PADDING_X;
 	const layout = resolveResourceViewerLayout(viewer, bounds, editorViewState.lineHeight);

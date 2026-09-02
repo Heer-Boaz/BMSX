@@ -1,12 +1,13 @@
 import { api } from '../../runtime/overlay_api';
 import * as constants from '../../common/constants';
-import type { EditorTabDescriptor } from '../../common/models';
+import type { EditorTabId } from '../ui/tab/id';
+import { editorTabDirty, type EditorTabDescriptor } from '../ui/tab/model';
 import type { RectBounds } from '../../../machine/ts/common/rect';
 import { clear_rect_bounds, create_rect_bounds, write_rect_bounds } from '../../../machine/ts/common/rect';
 import { TAB_DIRTY_LEFT_MARGIN, TAB_DIRTY_RIGHT_MARGIN } from '../../common/constants';
 import { ScratchBuffer } from '../../../machine/ts/common/scratchbuffer';
 import { editorChromeState } from '../ui/chrome_state';
-import { tabSessionState } from '../ui/tab/session_state';
+import { editorTabGroup } from '../ui/tab/group_model';
 import type { ChromeRenderContext } from './chrome_context';
 
 type TabMetrics = {
@@ -37,7 +38,7 @@ const tabMetricsScratch = new ScratchBuffer<TabMetrics>(createTabMetrics, 8);
 const costsScratch: number[] = [];
 const nextBreakScratch: number[] = [];
 
-function getStoredTabBounds(boundsByTabId: Map<string, RectBounds>, tabId: string): RectBounds {
+function getStoredTabBounds(boundsByTabId: Map<EditorTabId, RectBounds>, tabId: EditorTabId): RectBounds {
 	let bounds = boundsByTabId.get(tabId);
 	if (!bounds) {
 		bounds = create_rect_bounds();
@@ -58,7 +59,7 @@ export function renderTabBar(context: ChromeRenderContext): number {
 	const borderColor = constants.COLOR_TAB_BORDER;
 	const viewportWidth = context.viewportWidth;
 
-	const tabs = tabSessionState.tabs;
+	const tabs = editorTabGroup.tabs;
 	const tabCount = tabs.length;
 	const rowHeightTotal = rowHeight;
 	if (tabCount === 0) {
@@ -78,7 +79,7 @@ export function renderTabBar(context: ChromeRenderContext): number {
 		const tab = tabs[index];
 		const metric = tabMetricsScratch.get(index);
 		const textWidth = context.measureText(tab.title);
-		const dirty = tab.dirty;
+		const dirty = editorTabDirty(tab);
 		const closable = tab.closable;
 		const closeWidth = closable
 			? closeButtonWidth + constants.TAB_CLOSE_BUTTON_PADDING_X * 2
@@ -167,7 +168,7 @@ export function renderTabBar(context: ChromeRenderContext): number {
 			const bounds = getStoredTabBounds(editorChromeState.tabButtonBounds, tab.id);
 			write_rect_bounds(bounds, left, boundsTop, right, boundsBottom);
 
-			const active = tabSessionState.activeTabId === tab.id;
+			const active = editorTabGroup.activeTab === tab;
 			const fillColor = active ? constants.COLOR_TAB_ACTIVE_BACKGROUND : constants.COLOR_TAB_INACTIVE_BACKGROUND;
 			const textColor = active ? constants.COLOR_TAB_ACTIVE_TEXT : constants.COLOR_TAB_INACTIVE_TEXT;
 

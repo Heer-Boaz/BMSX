@@ -1,5 +1,6 @@
 import type { EditorDiagnostic, DiagnosticsCacheEntry } from '../../../common/models';
 import { editorRuntimeState } from '../../common/runtime_state';
+import type { EditorDocumentContextId } from '../../../common/editor_context';
 
 export const EMPTY_DIAGNOSTICS: EditorDiagnostic[] = [];
 
@@ -9,8 +10,8 @@ type EditorDiagnosticsState = {
 	diagnostics: EditorDiagnostic[];
 	diagnosticsByRow: Map<number, EditorDiagnostic[]>;
 	diagnosticsDirty: boolean;
-	diagnosticsCache: Map<string, DiagnosticsCacheEntry>;
-	dirtyDiagnosticContexts: Set<string>;
+	diagnosticsCache: Map<EditorDocumentContextId, DiagnosticsCacheEntry>;
+	dirtyDiagnosticContexts: Set<EditorDocumentContextId>;
 	diagnosticsDueAtMs: number;
 	diagnosticsComputationScheduled: boolean;
 	diagnosticsTaskPending: boolean;
@@ -20,14 +21,14 @@ export const editorDiagnosticsState: EditorDiagnosticsState = {
 	diagnostics: [],
 	diagnosticsByRow: new Map<number, EditorDiagnostic[]>(),
 	diagnosticsDirty: true,
-	diagnosticsCache: new Map<string, DiagnosticsCacheEntry>(),
-	dirtyDiagnosticContexts: new Set<string>(),
+	diagnosticsCache: new Map<EditorDocumentContextId, DiagnosticsCacheEntry>(),
+	dirtyDiagnosticContexts: new Set<EditorDocumentContextId>(),
 	diagnosticsDueAtMs: null,
 	diagnosticsComputationScheduled: false,
 	diagnosticsTaskPending: false,
 };
 
-export function markDiagnosticsDirty(contextId: string): void {
+export function markDiagnosticsDirty(contextId: EditorDocumentContextId): void {
 	editorDiagnosticsState.diagnosticsDirty = true;
 	editorDiagnosticsState.dirtyDiagnosticContexts.add(contextId);
 	editorDiagnosticsState.diagnosticsDueAtMs = editorRuntimeState.currentTimeMs + diagnosticsDebounceMs;

@@ -3,6 +3,7 @@ import type { RuntimeResource } from '../../common/resource';
 import type { TextBuffer } from '../text/text_buffer';
 import { PieceTreeBuffer } from '../text/piece_tree_buffer';
 import type { EditorUndoRecord } from '../text/undo';
+import type { EditorDocumentContextId } from '../../common/editor_context';
 
 type CursorMovedListener = () => void;
 type TextMutatedListener = (edit: EditContext) => void;
@@ -10,7 +11,7 @@ type TextMutatedListener = (edit: EditContext) => void;
 export type EditorDocumentMode = 'lua' | 'aem';
 
 export type EditorDocumentContext = {
-	id: string;
+	id: EditorDocumentContextId;
 	resource: RuntimeResource;
 	mode: EditorDocumentMode;
 	buffer: TextBuffer;
@@ -30,7 +31,7 @@ export type EditorDocumentContext = {
 };
 
 export class EditorDocumentState {
-	public contextId: string;
+	public contextId: EditorDocumentContextId;
 	public resource: RuntimeResource;
 	public mode: EditorDocumentMode;
 	public readOnly: boolean;

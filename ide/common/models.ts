@@ -6,6 +6,7 @@ import type { ResourceDomain, RuntimeResource } from './resource';
 import type { EditorCommandId } from './commands';
 import type { RectBounds } from '../../machine/ts/common/rect';
 import type { LuaMemberCompletionContext } from '../../toolchain/ts/lua/semantic/completion';
+import type { EditorDocumentContextId } from './editor_context';
 export type { RuntimeResource } from './resource';
 
 export type Position = { row: number; column: number };
@@ -171,8 +172,7 @@ export type EditorDiagnostic = {
 	endColumn: number;
 	message: string;
 	severity: EditorDiagnosticSeverity;
-	// Optional metadata to identify the originating tab/source
-	contextId?: string;
+	contextId: EditorDocumentContextId;
 	sourceLabel?: string;
 	path?: string;
 };
@@ -183,42 +183,7 @@ export type VisualLineSegment = {
 	endColumn: number;
 };
 
-export type EditorTabId = `resource:${string}` | `code:${string}`;
-export type EditorTabKind = 'resource_view' | 'code_editor';
-export type EditorRuntimeSyncState = 'synced' | 'runtime_update_pending' | 'diverged';
-
 export type ScrollbarKind = 'codeVertical' | 'codeHorizontal' | 'resourceVertical' | 'resourceHorizontal' | 'viewerVertical';
-
-export type ResourceViewerState = {
-	resource: RuntimeResource;
-	lines: string[];
-	error: string;
-	title: string;
-	scroll: number;
-	image?: {
-		asset_id: string;
-		width: number;
-		height: number;
-	};
-};
-
-export type EditorTabDescriptor = {
-	id: EditorTabId | string;
-	kind: EditorTabKind;
-	title: string;
-	closable: boolean;
-	dirty: boolean;
-	runtimeSyncState?: EditorRuntimeSyncState;
-	runtimeSyncMessage?: string;
-	resource?: ResourceViewerState;
-};
-
-export type TabDragState = {
-	tabId: string;
-	pointerOffset: number;
-	startX: number;
-	hasDragged: boolean;
-};
 
 export type CrtOptionsSnapshot = {
 	noiseIntensity: number;
@@ -371,7 +336,7 @@ export type InlineInputOptions = {
 };
 
 export type DiagnosticsCacheEntry = {
-	contextId: string;
+	contextId: EditorDocumentContextId;
 	path: string;
 	diagnostics: EditorDiagnostic[];
 	version: number;

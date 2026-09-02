@@ -5,8 +5,7 @@ import * as constants from '../../common/constants';
 import { problemsPanel } from '../../workbench/contrib/problems/panel/controller';
 import type { ResourcePanelController } from '../../workbench/contrib/resources/panel/controller';
 import type { PointerSnapshot } from '../../common/models';
-import { isResourceViewActive } from '../../workbench/ui/tabs';
-import { isCodeTabActive } from '../../workbench/ui/code_tab/contexts';
+import { getActiveTab } from '../../workbench/ui/tabs';
 import { getProblemsPanelBounds } from '../../workbench/contrib/problems/panel/controller';
 import { isPointInHoverTooltip, pointerHitsHoverTarget, adjustHoverTooltipScroll } from '../../editor/ui/hover_tooltip';
 import { getCodeAreaBounds, scrollRows } from '../../editor/ui/view/view';
@@ -46,25 +45,37 @@ export function handleEditorWheelInput(editor: CartEditor, playerInput: PlayerIn
 	if (handleProblemsPanelWheel(editor.resourcePanel, direction, steps, activePointer, playerInput)) {
 		return;
 	}
-	if (editor.completion.handlePointerWheel(direction, steps, activePointer ? { x: activePointer.viewportX, y: activePointer.viewportY } : null)) {
-		playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');
-		return;
-	}
-	if (isResourceViewActive()) {
-		scrollResourceViewer(direction * steps);
-		playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');
-		return;
-	}
-	if (isCodeTabActive() && pointer !== null) {
-		const bounds = getCodeAreaBounds();
-		if (!pointer.valid || !pointer.insideViewport || pointer.viewportY < bounds.codeTop || pointer.viewportY >= bounds.codeBottom || pointer.viewportX < bounds.codeLeft || pointer.viewportX >= bounds.codeRight) {
+	const activeTab = getActiveTab();
+	switch (activeTab.kind) {
+		case 'behavior_lens':
+			editor.behaviorLens.handleWheel(activeTab.view, direction, steps);
 			playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');
 			return;
-		}
+		case 'resource_view':
+			scrollResourceViewer(activeTab.resource, direction * steps);
+			playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');
+			return;
+		case 'code_editor':
+			if (editor.completion.handlePointerWheel(
+				direction,
+				steps,
+				activePointer ? { x: activePointer.viewportX, y: activePointer.viewportY } : null,
+			)) {
+				playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');
+				return;
+			}
+			if (pointer !== null) {
+				const bounds = getCodeAreaBounds();
+				if (!pointer.valid || !pointer.insideViewport || pointer.viewportY < bounds.codeTop || pointer.viewportY >= bounds.codeBottom || pointer.viewportX < bounds.codeLeft || pointer.viewportX >= bounds.codeRight) {
+					playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');
+					return;
+				}
+			}
+			scrollRows(direction * steps);
+			editorCaretState.cursorRevealSuspended = true;
+			playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');
+			return;
 	}
-	scrollRows(direction * steps);
-	editorCaretState.cursorRevealSuspended = true;
-	playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');
 }
 
 function handleHoverTooltipWheel(

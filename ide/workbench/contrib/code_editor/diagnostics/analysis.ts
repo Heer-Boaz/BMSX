@@ -10,9 +10,10 @@ import { diagnosticsDebounceMs, editorDiagnosticsState } from '../../../../edito
 import { getCodeTabContexts } from '../../../ui/code_tab/contexts';
 import type { ResourceDomain } from '../../../../common/resource';
 import type { RuntimeLuaTooling } from '../../../../runtime/lua_tooling';
+import type { EditorDocumentContextId } from '../../../../common/editor_context';
 
 export type DiagnosticContextInput = {
-	id: string;
+	id: EditorDocumentContextId;
 	domain: ResourceDomain;
 	path: string;
 	source: string;
@@ -102,7 +103,7 @@ function appendEditorDiagnostic(
 }
 
 export function markAllDiagnosticsDirty(): void {
-	const contextIds: string[] = [];
+	const contextIds: EditorDocumentContextId[] = [];
 	for (const context of getCodeTabContexts()) {
 		contextIds.push(context.id);
 	}

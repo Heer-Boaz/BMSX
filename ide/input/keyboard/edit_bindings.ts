@@ -1,7 +1,7 @@
 import type { IdeCommandController } from '../../commands/controller';
 import { jumpToNextMatch, jumpToPreviousMatch } from '../../workbench/contrib/code_editor/find/search';
-import { closeActiveTab } from '../../workbench/ui/tabs';
-import { isCodeTabActive, isEditableCodeTab, isReadOnlyCodeTab } from '../../workbench/ui/code_tab/contexts';
+import { isEditableCodeTab, isReadOnlyCodeTab } from '../../workbench/ui/code_tab/contexts';
+import { isCodeTabActive } from '../../workbench/ui/tabs';
 import { notifyReadOnlyEdit } from '../../editor/ui/view/view';
 import { toggleLineComments } from '../../editor/editing/line_comments';
 import { redo, undo } from '../../editor/editing/undo_controller';
@@ -10,8 +10,6 @@ import * as TextEditing from '../../editor/editing/text_editing_and_selection';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from './key_input';
 import { isInlineWidgetFocused } from '../../quick_input/inline_widget';
 import { editorSearchState } from '../../workbench/contrib/code_editor/find/widget_state';
-import type { RuntimeSourceState } from '../../runtime/sources';
-import type { ResourcePanelController } from '../../workbench/contrib/resources/panel/controller';
 import type { PlayerInput } from '../../../hosts/common/input/player';
 import type { Clipboard } from '../../common/clipboard';
 
@@ -55,19 +53,6 @@ function handleRedoBinding(playerInput: PlayerInput): boolean {
 		return true;
 	}
 	redo();
-	return true;
-}
-
-function handleCloseTabBinding(
-	playerInput: PlayerInput,
-	resourcePanel: ResourcePanelController,
-	sources: RuntimeSourceState,
-): boolean {
-	if (!(isCtrlDown(playerInput) || isMetaDown(playerInput)) || !isKeyJustPressed('KeyW', playerInput)) {
-		return false;
-	}
-	consumeIdeKey('KeyW', playerInput);
-	closeActiveTab(resourcePanel, sources);
 	return true;
 }
 
@@ -173,13 +158,10 @@ export function handleCodeFormattingKeybinding(playerInput: PlayerInput): boolea
 export function handleEditorClipboardAndCommandBindings(
 	playerInput: PlayerInput,
 	clipboard: Clipboard,
-	resourcePanel: ResourcePanelController,
-	sources: RuntimeSourceState,
 	commands: IdeCommandController,
 ): boolean {
 	return handleUndoBinding(playerInput)
 		|| handleRedoBinding(playerInput)
-		|| handleCloseTabBinding(playerInput, resourcePanel, sources)
 		|| handleSaveBinding(playerInput, commands)
 		|| handleCopyBinding(playerInput, clipboard)
 		|| handleCutBinding(playerInput, clipboard)

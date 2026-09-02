@@ -5,7 +5,7 @@ import type { RuntimeResource } from '../../../common/resource';
 import * as constants from '../../../common/constants';
 import { computeResourceTabTitle } from '../../ui/tab/titles';
 import { appendTextLines } from '../../../../machine/ts/common/text_lines';
-import type { ResourceViewerState } from '../../../common/models';
+import type { ResourceViewerState } from './model';
 
 export type ResourceViewerBounds = {
 	codeTop: number;

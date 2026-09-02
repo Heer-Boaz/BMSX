@@ -2,10 +2,8 @@ import type { ResourcePanelController } from '../contrib/resources/panel/control
 import * as constants from '../../common/constants';
 import { getActiveSymbolSearchMatch } from '../contrib/code_editor/symbols/shared';
 import { statusAreaHeight, getStatusMessageLines } from '../common/layout';
-import { isResourceViewActive } from '../ui/tabs';
-import { getActiveCodeTabContext, isCodeTabActive } from '../ui/code_tab/contexts';
+import { getActiveTab } from '../ui/tabs';
 import { editorFeedbackState } from '../../common/feedback_state';
-import { getActiveResourceViewer } from '../contrib/resources/view_tabs';
 import { drawEditorText } from '../../editor/render/text_renderer';
 import { measureText, truncateTextToWidth } from '../../editor/common/text/layout';
 import { api } from '../../runtime/overlay_api';
@@ -16,7 +14,10 @@ import { problemsPanel } from '../contrib/problems/panel/controller';
 import { symbolSearchState } from '../contrib/code_editor/symbols/search/state';
 import type { RuntimeFaultState } from '../../runtime/fault_state';
 
-export function renderStatusBar(resourcePanel: ResourcePanelController, fault: RuntimeFaultState): void {
+export function renderStatusBar(
+	resourcePanel: ResourcePanelController,
+	fault: RuntimeFaultState,
+): void {
 	const runtimeFaulted = !!fault.faultSnapshot;
 	const statusTop = editorViewState.viewportHeight - statusAreaHeight();
 	const statusBottom = editorViewState.viewportHeight;
@@ -41,9 +42,12 @@ export function renderStatusBar(resourcePanel: ResourcePanelController, fault: R
 		}
 		return;
 	}
-	const statusLeftInfo = buildStatusLeftInfo();
 	// When Problems panel owns the status (focused), show its info and stop
-	if (problemsPanel.isVisible && problemsPanel.isFocused && statusLeftInfo && statusLeftInfo.length > 0) {
+	if (problemsPanel.isVisible && problemsPanel.isFocused) {
+		const statusLeftInfo = buildStatusLeftInfo();
+		if (statusLeftInfo.length === 0) {
+			return;
+		}
 		drawEditorText(editorViewState.font, statusLeftInfo, 4, statusTop + 2, 0, statusTextColor);
 		return;
 	}
@@ -83,20 +87,34 @@ export function renderStatusBar(resourcePanel: ResourcePanelController, fault: R
 		return;
 	}
 
-	if (isResourceViewActive()) {
-		const viewer = getActiveResourceViewer();
-		const info = viewer ? `${viewer.resource.source.type.toUpperCase()} ${viewer.resource.source.resid}` : 'RESOURCE';
-		const detail = viewer ? viewer.resource.path : '';
-		drawEditorText(editorViewState.font, info, 4, statusTop + 2, 0, statusTextColor);
-		if (detail.length > 0) {
-			drawEditorText(editorViewState.font, detail, editorViewState.viewportWidth - measureText(detail) - 4, statusTop + 2, 0, statusTextColor);
+	const activeTab = getActiveTab();
+	switch (activeTab.kind) {
+		case 'resource_view': {
+			const viewer = activeTab.resource;
+			const info = `${viewer.resource.source.type.toUpperCase()} ${viewer.resource.source.resid}`;
+			const detail = viewer.resource.path;
+			drawEditorText(editorViewState.font, info, 4, statusTop + 2, 0, statusTextColor);
+			if (detail.length > 0) {
+				drawEditorText(editorViewState.font, detail, editorViewState.viewportWidth - measureText(detail) - 4, statusTop + 2, 0, statusTextColor);
+			}
+			return;
 		}
-		return;
+		case 'behavior_lens': {
+			const status = activeTab.view.status;
+			drawEditorText(editorViewState.font, status.info, 4, statusTop + 2, 0, statusTextColor);
+			if (status.detail.length > 0) {
+				drawEditorText(editorViewState.font, status.detail, editorViewState.viewportWidth - measureText(status.detail) - 4, statusTop + 2, 0, statusTextColor);
+			}
+			return;
+		}
+		case 'code_editor':
+			break;
 	}
 
 	// Draw filename info on the right. The line/col info remains rendered by the editor for now.
 	// const filenameInfo = `${ide_state.metadata.title || 'UNTITLED'}.lua`;
 	const leftX = 0;
+	const statusLeftInfo = buildStatusLeftInfo();
 	const itemSize = measureText('•');
 	const indicatorColor = workspaceRecordState.connected ? constants.COLOR_SERVER_STATUS_CONNECTED : constants.COLOR_SERVER_STATUS_DISCONNECTED;
 	drawEditorText(editorViewState.font, '•', leftX, statusTop + 2, 0, indicatorColor);
@@ -104,19 +122,17 @@ export function renderStatusBar(resourcePanel: ResourcePanelController, fault: R
 	if (statusLeftInfo && statusLeftInfo.length > 0) {
 		drawEditorText(editorViewState.font, statusLeftInfo, textX, statusTop + 2, 0, statusTextColor);
 	}
-	if (isCodeTabActive()) {
-		const context = getActiveCodeTabContext();
-		let detail = '';
-		let detailColor = statusTextColor;
-		if (context.runtimeSyncState === 'diverged') {
-			detail = 'SAVED, RUNTIME NOT APPLIED';
-			detailColor = constants.COLOR_STATUS_WARNING;
-		} else if (context.runtimeSyncState === 'runtime_update_pending') {
-			detail = 'RUNTIME UPDATE PENDING';
-		}
-		if (detail.length > 0) {
-			drawEditorText(editorViewState.font, detail, editorViewState.viewportWidth - measureText(detail) - 4, statusTop + 2, 0, detailColor);
-		}
+	const context = activeTab.context;
+	let detail = '';
+	let detailColor = statusTextColor;
+	if (context.runtimeSyncState === 'diverged') {
+		detail = 'SAVED, RUNTIME NOT APPLIED';
+		detailColor = constants.COLOR_STATUS_WARNING;
+	} else if (context.runtimeSyncState === 'runtime_update_pending') {
+		detail = 'RUNTIME UPDATE PENDING';
+	}
+	if (detail.length > 0) {
+		drawEditorText(editorViewState.font, detail, editorViewState.viewportWidth - measureText(detail) - 4, statusTop + 2, 0, detailColor);
 	}
 }
 

@@ -9,7 +9,7 @@ import {
 	type NavigationHistoryEntry,
 } from '../../ide/navigation/navigation_history';
 import { EditorNavigationController } from '../../ide/workbench/contrib/resources/navigation';
-import { tabSessionState } from '../../ide/workbench/ui/tab/session_state';
+import { editorTabGroup } from '../../ide/workbench/ui/tab/group_model';
 import type { RuntimeResource } from '../../ide/common/resource';
 import type { RuntimeSourceState } from '../../ide/runtime/sources';
 import type { ResourcePanelController } from '../../ide/workbench/contrib/resources/panel/controller';
@@ -37,24 +37,30 @@ test('navigation history returns to the live cursor location after moving backwa
 	assert.deepEqual(navigationState.back, [origin]);
 });
 
-test('history navigation awaits resource activation with its retained cursor location', async () => {
+test('history navigation awaits resource activation with its retained cursor location', async (t) => {
 	initializeNavigationState();
-	tabSessionState.tabs = [{
-		id: 'resource-view',
-		kind: 'resource_view',
-		title: 'Resource',
-		closable: true,
-		dirty: false,
-	}];
-	tabSessionState.activeTabId = 'resource-view';
 	const target = entry('target.lua', 12);
 	target.column = 7;
-	navigationState.back.push(target);
 	const resource = {
-		domain: target.domain,
+		domain: 0,
 		path: target.path,
 		source: { type: 'lua' },
 	} as RuntimeResource;
+	editorTabGroup.initialize({
+		id: 'resource:history',
+		kind: 'resource_view',
+		title: 'Resource',
+		closable: true,
+		resource: {
+			resource,
+			lines: [],
+			error: '',
+			title: 'Resource',
+			scroll: 0,
+		},
+	});
+	t.after(() => editorTabGroup.clear());
+	navigationState.back.push(target);
 	const sources = {
 		resourceByIdentity: new Map([[`${target.domain}\0${target.path}`, resource]]),
 	} as RuntimeSourceState;

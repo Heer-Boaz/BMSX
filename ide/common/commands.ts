@@ -17,6 +17,7 @@ export type EditorSymbolNavigationCommandId =
 export type EditorViewCommandId =
 	| 'resources'
 	| 'problems'
+	| 'behaviorLens'
 	| 'filter'
 	| 'wrap';
 
@@ -46,6 +47,7 @@ export type TopBarButtonId = Extract<
 	| 'save'
 	| 'resources'
 	| 'problems'
+	| 'behaviorLens'
 	| 'filter'
 	| 'wrap'
 	| 'debugContinue'

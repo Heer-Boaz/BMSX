@@ -43,7 +43,7 @@ import {
 	WorkspaceAutosaveChange,
 	type WorkspaceAutosavePayload,
 } from './models';
-import { getActiveCodeTabContext } from '../ui/code_tab/contexts';
+import { editorDocumentState } from '../../editor/editing/document_state';
 
 const WORKSPACE_AUTOSAVE_DELAY_MS = 2500;
 const WORKSPACE_RECONNECT_DELAY_MS = WORKSPACE_AUTOSAVE_DELAY_MS * 4;
@@ -286,7 +286,7 @@ export function requestWorkspaceAutosave(changes: WorkspaceAutosaveChange): void
 		return;
 	}
 	if (changes & WorkspaceAutosaveChange.ActiveEditor) {
-		workspacePendingMetadataContextIds.add(getActiveCodeTabContext().id);
+		workspacePendingMetadataContextIds.add(editorDocumentState.contextId);
 	}
 	workspaceState.pendingChanges |= changes;
 	workspaceState.requestedRevision += 1;
