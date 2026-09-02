@@ -42,6 +42,7 @@ public:
 	bool refillFrameBudget(Runtime& runtime, FrameState& frameState);
 	bool startScheduledFrame(Runtime& runtime);
 	void run(Runtime& runtime, f64 hostDeltaMs);
+	bool runToNextLogicalTick(Runtime& runtime);
 	InstructionStepResult stepInstruction(Runtime& runtime, f64 hostDeltaMs);
 
 	i64 lastTickSequence = 0;
@@ -54,8 +55,9 @@ public:
 	i64 lastTickConsumedSequence = 0;
 
 private:
-	bool beginHostExecution(Runtime& runtime, f64 hostDeltaMs);
-	void endHostExecution(Runtime& runtime);
+	bool beginScheduledExecution(Runtime& runtime, f64 hostDeltaMs);
+	void endScheduledExecution(Runtime& runtime);
+	void beginScheduledFrame(Runtime& runtime, i64 budget, i64 carry);
 	void accumulateHostTime(f64 deltaMs);
 	bool canRunScheduledUpdate(const Runtime& runtime) const;
 	i64 takeScheduledCycleBudget(const Runtime& runtime);

@@ -32,7 +32,7 @@ i64 FrameSchedulerState::takeScheduledCycleBudget(const Runtime& runtime) {
 	return budget;
 }
 
-bool FrameSchedulerState::beginHostExecution(Runtime& runtime, f64 hostDeltaMs) {
+bool FrameSchedulerState::beginScheduledExecution(Runtime& runtime, f64 hostDeltaMs) {
 	if (runtime.machine.gxGpu.backendServiceBlocksMachine()) {
 		m_backendServiceSuspended = true;
 		return false;
@@ -46,7 +46,7 @@ bool FrameSchedulerState::beginHostExecution(Runtime& runtime, f64 hostDeltaMs) 
 	return true;
 }
 
-void FrameSchedulerState::endHostExecution(Runtime& runtime) {
+void FrameSchedulerState::endScheduledExecution(Runtime& runtime) {
 	if (runtime.machine.gxGpu.backendServiceBlocksMachine()) {
 		m_backendServiceSuspended = true;
 	}
@@ -161,14 +161,18 @@ bool FrameSchedulerState::startScheduledFrame(Runtime& runtime) {
 		budget = takeScheduledCycleBudget(runtime);
 		if (budget <= 0) return false;
 	}
-	m_carriedCycleBudget = 0;
-	lastTickCompleted = false;
-	runtime.frameLoop.beginFrameState(runtime, budget, carry);
+	beginScheduledFrame(runtime, budget, carry);
 	return true;
 }
 
+void FrameSchedulerState::beginScheduledFrame(Runtime& runtime, i64 budget, i64 carry) {
+	m_carriedCycleBudget = 0;
+	lastTickCompleted = false;
+	runtime.frameLoop.beginFrameState(runtime, budget, carry);
+}
+
 void FrameSchedulerState::run(Runtime& runtime, f64 hostDeltaMs) {
-	if (!beginHostExecution(runtime, hostDeltaMs)) {
+	if (!beginScheduledExecution(runtime, hostDeltaMs)) {
 		return;
 	}
 	while (canRunScheduledUpdate(runtime)) {
@@ -177,17 +181,41 @@ void FrameSchedulerState::run(Runtime& runtime, f64 hostDeltaMs) {
 			break;
 		}
 	}
-	endHostExecution(runtime);
+	endScheduledExecution(runtime);
+}
+
+bool FrameSchedulerState::runToNextLogicalTick(Runtime& runtime) {
+	const i64 tickBudget = runtime.timing.cycleBudgetPerFrame;
+	if (tickBudget == 0 || !beginScheduledExecution(runtime, 0.0)) {
+		return false;
+	}
+	const i64 previousSequence = lastTickSequence;
+	if (runtime.frameLoop.frameActive) {
+		FrameState& frameState = runtime.frameLoop.frameState;
+		frameState.cycleBudgetRemaining += tickBudget;
+		frameState.cycleBudgetGranted += tickBudget;
+	} else {
+		const i64 carry = m_carriedCycleBudget;
+		beginScheduledFrame(runtime, carry + tickBudget, carry);
+	}
+	while (lastTickSequence == previousSequence && canRunScheduledUpdate(runtime)) {
+		const bool progressed = runtime.frameLoop.tickUpdate(runtime);
+		if (runtime.frameLoop.frameActive && !progressed) {
+			break;
+		}
+	}
+	endScheduledExecution(runtime);
+	return lastTickSequence == previousSequence + 1;
 }
 
 InstructionStepResult FrameSchedulerState::stepInstruction(Runtime& runtime, f64 hostDeltaMs) {
-	if (!beginHostExecution(runtime, hostDeltaMs)) {
+	if (!beginScheduledExecution(runtime, hostDeltaMs)) {
 		return InstructionStepResult::Blocked;
 	}
 	const InstructionStepResult result = canRunScheduledUpdate(runtime)
 		? runtime.frameLoop.tickInstruction(runtime)
 		: InstructionStepResult::Blocked;
-	endHostExecution(runtime);
+	endScheduledExecution(runtime);
 	return result;
 }
 

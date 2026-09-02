@@ -75,7 +75,7 @@ export class FrameSchedulerState {
 		return budget;
 	}
 
-	private beginHostExecution(hostDeltaMs: number): boolean {
+	private beginScheduledExecution(hostDeltaMs: number): boolean {
 		const runtime = this.runtime;
 		if (runtime.machine.gxGpu.backendServiceBlocksMachine()) {
 			this.backendServiceSuspended = true;
@@ -90,10 +90,16 @@ export class FrameSchedulerState {
 		return true;
 	}
 
-	private endHostExecution(): void {
+	private endScheduledExecution(): void {
 		if (this.runtime.machine.gxGpu.backendServiceBlocksMachine()) {
 			this.backendServiceSuspended = true;
 		}
+	}
+
+	private beginScheduledFrame(budget: number, carry: number): void {
+		this.carriedCycleBudget = 0;
+		this.lastTickCompleted = false;
+		this.runtime.frameLoop.beginFrameState(budget, carry);
 	}
 
 	public clearQueuedTime(): void {
@@ -162,7 +168,7 @@ export class FrameSchedulerState {
 
 	public run(hostDeltaMs: number): void {
 		const runtime = this.runtime;
-		if (!this.beginHostExecution(hostDeltaMs)) {
+		if (!this.beginScheduledExecution(hostDeltaMs)) {
 			return;
 		}
 		while (this.canRunScheduledUpdate()) {
@@ -171,17 +177,42 @@ export class FrameSchedulerState {
 				break;
 			}
 		}
-		this.endHostExecution();
+		this.endScheduledExecution();
+	}
+
+	public runToNextLogicalTick(): boolean {
+		const runtime = this.runtime;
+		const tickBudget = runtime.timing.cycleBudgetPerFrame;
+		if (tickBudget === 0 || !this.beginScheduledExecution(0)) {
+			return false;
+		}
+		const previousSequence = this.lastTickSequence;
+		if (runtime.frameLoop.frameActive) {
+			const frameState = runtime.frameLoop.frameState;
+			frameState.cycleBudgetRemaining += tickBudget;
+			frameState.cycleBudgetGranted += tickBudget;
+		} else {
+			const carry = this.carriedCycleBudget;
+			this.beginScheduledFrame(carry + tickBudget, carry);
+		}
+		while (this.lastTickSequence === previousSequence && this.canRunScheduledUpdate()) {
+			const progressed = runtime.frameLoop.tickUpdate();
+			if (runtime.frameLoop.frameActive && !progressed) {
+				break;
+			}
+		}
+		this.endScheduledExecution();
+		return this.lastTickSequence === previousSequence + 1;
 	}
 
 	public stepInstruction(hostDeltaMs: number): InstructionStepResult {
-		if (!this.beginHostExecution(hostDeltaMs)) {
+		if (!this.beginScheduledExecution(hostDeltaMs)) {
 			return InstructionStepResult.Blocked;
 		}
 		const result = this.canRunScheduledUpdate()
 			? this.runtime.frameLoop.tickInstruction()
 			: InstructionStepResult.Blocked;
-		this.endHostExecution();
+		this.endScheduledExecution();
 		return result;
 	}
 
@@ -237,10 +268,7 @@ export class FrameSchedulerState {
 			budget = this.takeScheduledCycleBudget();
 			if (budget <= 0) return false;
 		}
-		this.carriedCycleBudget = 0;
-		const runtime = this.runtime;
-		this.lastTickCompleted = false;
-		runtime.frameLoop.beginFrameState(budget, carry);
+		this.beginScheduledFrame(budget, carry);
 		return true;
 	}
 }

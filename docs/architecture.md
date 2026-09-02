@@ -356,6 +356,48 @@ one machine cycle, PCRTC advances every physical FIELD/event transition in
 constant time and coalesces only the host-facing presentation edge. Absolute
 cycle zero remains a valid hardware deadline.
 
+The scheduler also owns a cold, bounded `runToNextLogicalTick` operation. It
+contributes one current PCRTC-period cycle grant and advances through the same
+frame loop, CPU executor and device deadlines until the next physical
+VBlank-begin increments `lastTickSequence`. Existing whole-cycle carry remains
+identified separately in `cycleCarryGranted`, and the operation neither adds
+host elapsed time nor consumes the host fractional-cycle remainder. A stopped
+PCRTC publishes a zero tick grant, so the operation reports no tick without
+advancing machine time; a backend fence, execution stop or timing change may
+likewise end the bounded grant without fabricating an edge. On a real edge the
+GPU presentation latch, ICU sample, VBlank IRQ flag and tick completion are
+published in that order. A CPU parked in `HALT_UNTIL_IRQ` may accept the IRQ on
+the same scheduler fence, but no IRQ-handler instruction is executed past the
+completed tick.
+
+This boundary follows production emulator ownership rather than a host-UI
+clock: MAME limits a scheduler slice by the next device-timer deadline
+([scheduler](https://github.com/mamedev/mame/blob/09b09f7b27fcd919ac4f8b0ca1c20289e1f71121/src/emu/schedule.cpp#L401-L413))
+and its debugger observes an actual screen VBlank before stopping execution
+([VBlank latch](https://github.com/mamedev/mame/blob/09b09f7b27fcd919ac4f8b0ca1c20289e1f71121/src/emu/debug/debugcpu.cpp#L267-L271),
+[execution stop](https://github.com/mamedev/mame/blob/09b09f7b27fcd919ac4f8b0ca1c20289e1f71121/src/emu/debug/debugcpu.cpp#L330-L339));
+mGBA likewise exposes “run until the next frame” on its core interface
+([core API](https://github.com/mgba-emu/mgba/blob/507061afd70489a0c2ffc8ba26d8f9b53d6cf7d6/src/core/scripting.c#L508-L585)).
+BMSX retains its own already-defined PCRTC/VBlank semantics instead of copying
+their frame representation.
+
+The scheduler representations and steady-state callers are deliberately kept
+distinct:
+
+| Quantity | TypeScript | C++ | Owner |
+| --- | --- | --- | --- |
+| Machine cycle and device deadline | integral `number` | `i64` | device scheduler |
+| Host elapsed time and fractional cycle grant | `number` | `f64` | frame scheduler |
+| Active grant and unused whole-cycle carry | integral `number` | `i64` | frame scheduler/frame loop |
+| Logical tick identity | integral `lastTickSequence` | `i64 lastTickSequence` | VBlank-begin/frame scheduler |
+| Pending or committed presentation | retained GPU/host latches | retained GPU/host latches | GPU and presentation host |
+
+Browser, Node and the IDE continue through `executeHostUpdate` and ordinary
+`FrameSchedulerState.run`; libretro continues through `runLibretroFrame` and
+the same C++ `run`. Debugger instruction stepping remains `stepInstruction`.
+The bounded logical-tick operation is a core scheduler primitive, not a Studio
+callback or a replacement host frame pump.
+
 ## Runtime container vocabulary
 
 Ownership terms are architectural roles, not interchangeable directory labels:
