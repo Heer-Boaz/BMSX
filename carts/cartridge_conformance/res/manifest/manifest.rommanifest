@@ -1,4 +1,6 @@
 title: Cartridge Hardware Conformance
-cartridge:
-    board: ram_mailbox
-    ram_bytes: 256
+hardware:
+    - type: rom
+    - type: ram
+      bytes: 256
+    - type: mailbox

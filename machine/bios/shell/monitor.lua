@@ -18,7 +18,7 @@ local input_keys<const>: *word[8] = 0x0800006c
 local system_control<const>: *word = 0x0801034c
 local system_status<const>: *word = 0x08010350
 local cart_select<const>: *word = 0x08010420
-local supervisor_fault_domain<const>: *word = 0x0801044c
+local supervisor_fault_domain<const>: *word = 0x0801043c
 
 local irq_vblank<const> = 0x0004
 local irq_dma_done<const> = 0x0001

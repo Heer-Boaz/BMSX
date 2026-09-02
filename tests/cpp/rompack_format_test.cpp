@@ -71,7 +71,7 @@ int main() {
 	}
 
 	std::array<bmsx::u8, bmsx::CART_ROM_HEADER_SIZE - 1u> truncated{};
-	for (const size_t size : {size_t{32}, size_t{76}, truncated.size()}) {
+	for (const size_t size : {size_t{0}, size_t{32}, truncated.size()}) {
 		bool rejected = false;
 		try {
 			bmsx::parseCartHeader(truncated.data(), size);
@@ -134,14 +134,70 @@ int main() {
 		throw std::runtime_error("BLua32 function text above the image text span was accepted");
 	}
 
-	const bmsx::u8 payload = 0u;
+	bmsx::CartManifest romPackage;
+	romPackage.hardware.emplace_back(bmsx::CartridgeRomDeviceConfig{});
+	bmsx::CartRomHeader emptyHeader;
 	try {
-		bmsx::parseRomImage(
-			&payload,
+		bmsx::assertCartridgePackageFitsHardware(
 			static_cast<size_t>(bmsx::CART_ROM_SIZE) + 1u,
-			bmsx::RomImageDomain::Cartridge);
+			emptyHeader,
+			romPackage.hardware);
 	} catch (const std::runtime_error&) {
+		bmsx::assertCartridgePackageFitsHardware(
+			static_cast<size_t>(bmsx::CART_ROM_SIZE) + 1u,
+			emptyHeader,
+			{});
+		bool formatLimitRejected = false;
+		try {
+			bmsx::assertCartridgePackageFitsHardware(
+				static_cast<size_t>(bmsx::CART_PACKAGE_MAX_BYTE_COUNT) + 1u,
+				emptyHeader,
+				{});
+		} catch (const std::runtime_error&) {
+			formatLimitRejected = true;
+		}
+		if (!formatLimitRejected) {
+			throw std::runtime_error("Package beyond the 32-bit format limit was accepted");
+		}
+		bmsx::CartRomHeader executableHeader;
+		executableHeader.blua32ImageOffset = bmsx::CART_ROM_HEADER_SIZE;
+		bool executableWithoutRomRejected = false;
+		try {
+			bmsx::assertCartridgePackageFitsHardware(
+				bmsx::CART_ROM_HEADER_SIZE,
+				executableHeader,
+				{});
+		} catch (const std::runtime_error&) {
+			executableWithoutRomRejected = true;
+		}
+		if (!executableWithoutRomRejected) {
+			throw std::runtime_error("Executable package without a ROM device was accepted");
+		}
+		bmsx::CartManifest hardwareOnlyManifest;
+		std::vector<bmsx::u8> contradictoryPackage =
+			bmsx::test::encodeBlua32TestDataRom(hardwareOnlyManifest);
+		bmsx::CartRomHeader contradictoryHeader = bmsx::parseCartHeader(
+			contradictoryPackage.data(),
+			contradictoryPackage.size()
+		);
+		contradictoryHeader.blua32ImageOffset = bmsx::CART_ROM_HEADER_SIZE;
+		bmsx::writeCartRomHeader(
+			contradictoryPackage.data(),
+			contradictoryHeader
+		);
+		bool contradictoryAdmissionRejected = false;
+		try {
+			(void)bmsx::parseCartridgePackage(
+				contradictoryPackage.data(),
+				contradictoryPackage.size()
+			);
+		} catch (const std::runtime_error&) {
+			contradictoryAdmissionRejected = true;
+		}
+		if (!contradictoryAdmissionRejected) {
+			throw std::runtime_error("Contradictory cartridge package passed admission");
+		}
 		return 0;
 	}
-	throw std::runtime_error("ROM payload beyond the cartridge aperture was accepted");
+	throw std::runtime_error("ROM-bearing package beyond the cartridge aperture was accepted");
 }

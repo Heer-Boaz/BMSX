@@ -7,7 +7,6 @@ import type {
 	TextureMeta,
 } from './assets';
 import type { GLTFMaterial, GLTFModel } from './gltf';
-import { decodeCartManifest } from './manifest';
 import type { Polygon, RectBounds } from '../../../machine/ts/common/rect';
 import type { vec4arr } from '../../../machine/ts/common/vector';
 import { decodeBinary, decodeBinaryWithPropTable, toF32, typedArrayFromBytes } from '../../../machine/ts/common/serializer/binencoder';
@@ -15,7 +14,12 @@ import { parseCartHeader, type CartRomHeader } from '../../../machine/ts/rompack
 import { parseRomMetadataSection } from './metadata';
 import { RomSourceStack, type RawRomSource } from './source';
 import { decodeRomToc } from '../../../machine/ts/rompack/toc';
-import type { RomImage, RomImageDomain } from '../../../machine/ts/rompack/image';
+import {
+	parseCartridgePackage,
+	type CartridgePackage,
+	type RomImage,
+	type RomImageDomain,
+} from '../../../machine/ts/rompack/image';
 
 const utf8Decoder = new TextDecoder();
 
@@ -145,16 +149,19 @@ export async function loadRomAssetList(
 }
 
 export async function parseCartridgeIndex(payload: Uint8Array): Promise<CartridgeIndex> {
-	const header = parseCartHeader(payload);
-	return parseCartridgeIndexFromHeader(payload, header);
+	return buildCartridgeIndex(parseCartridgePackage(payload));
 }
 
-async function parseCartridgeIndexFromHeader(payload: Uint8Array, header: CartRomHeader): Promise<CartridgeIndex> {
-	const { entries, projectRootPath } = await loadRomAssetListFromHeader(payload, header, 'cart');
+async function buildCartridgeIndex(image: CartridgePackage): Promise<CartridgeIndex> {
+	const { entries, projectRootPath } = await loadRomAssetListFromHeader(
+		image.bytes,
+		image.header,
+		'cart',
+	);
 	return {
 		entries,
 		projectRootPath,
-		cart_manifest: decodeCartManifest(payload, header),
+		cart_manifest: image.manifest,
 	};
 }
 
@@ -358,8 +365,8 @@ async function loadRomToolingPackageFromSource(source: RawRomSource, index: Cart
 	return romPackage;
 }
 
-export async function buildCartridgeToolingLayer(image: RomImage): Promise<RomToolingLayer<'cart'>> {
-	const index = await parseCartridgeIndexFromHeader(image.bytes, image.header);
+export async function buildCartridgeToolingLayer(image: CartridgePackage): Promise<RomToolingLayer<'cart'>> {
+	const index = await buildCartridgeIndex(image);
 	const source = new RomSourceStack([{ id: 'cart', index, bytes: image.bytes }]);
 	const toolingPackage = await loadRomToolingPackageFromSource(source, index);
 	return { ...image, id: 'cart', index, package: toolingPackage };

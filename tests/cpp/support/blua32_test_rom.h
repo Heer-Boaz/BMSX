@@ -4,6 +4,7 @@
 #include "spec/blua32/image_format.h"
 #include "spec/bmsx/memory_map.h"
 #include "rompack/format.h"
+#include "rompack/manifest.h"
 
 #include <string>
 #include <vector>
@@ -57,16 +58,17 @@ constexpr auto blua32TestFunctionAddress(RomImageDomain domain, u32 functionInde
 
 auto encodeBlua32TestRom(
 	RomImageDomain domain,
+	const Blua32TestImage& image
+) -> Blua32TestRom;
+auto encodeBlua32TestRom(
+	RomImageDomain domain,
 	const Blua32TestImage& image,
-	u32 cartridgeBoardWord = 0u,
-	u32 cartridgeRamByteCount = 0u
+	const CartManifest& manifest
 ) -> Blua32TestRom;
 
 void programBlua32TestResetVector(Blua32TestRom& rom, u32 functionIndex);
 
-auto encodeBlua32TestDataRom(
-	u32 cartridgeBoardWord = 0u,
-	u32 cartridgeRamByteCount = 0u
-) -> std::vector<u8>;
+auto encodeBlua32TestDataRom() -> std::vector<u8>;
+auto encodeBlua32TestDataRom(const CartManifest& manifest) -> std::vector<u8>;
 
 } // namespace bmsx::test

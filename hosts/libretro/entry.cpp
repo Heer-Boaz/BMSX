@@ -1021,7 +1021,7 @@ void retro_set_environment(retro_environment_t cb) {
 	logging.log = fallback_log;
 	}
 
-	// We don't need a game to run (for testing empty cart)
+	// System firmware can run with both physical cartridge sockets empty.
 	bool no_game = true;
 	cb(RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME, &no_game);
 	cb(RETRO_ENVIRONMENT_SET_SUBSYSTEM_INFO, CARTRIDGE_SUBSYSTEMS);
@@ -1429,7 +1429,7 @@ bool retro_load_game(const struct retro_game_info* game) {
 	bool loaded_ok = false;
 	if (!game) {
 		logging.log(RETRO_LOG_INFO,
-					"[BMSX] No game provided, loading empty cart\n");
+					"[BMSX] No game provided, booting system firmware without a cartridge\n");
 		loaded_ok = load_default_content();
 	} else if (game->path) {
 		logging.log(
@@ -1496,7 +1496,7 @@ void retro_reset(void) {
 	} else if (!load_default_content()) {
 		logging.log(
 			RETRO_LOG_ERROR,
-			"[BMSX] Reset failed: empty cart boot failed\n");
+			"[BMSX] Reset failed: cartridge-free firmware boot failed\n");
 		return;
 	}
 	logging.log(RETRO_LOG_INFO, "[BMSX] Game reset (runtime rebooted)\n");
@@ -1651,14 +1651,14 @@ void retro_run(void) {
 		bmsx::reportLibretroRuntimeError(
 			runtime,
 			g_content->systemRomImage,
-			g_content->cartridgeRomImages,
+			g_content->cartridgePackages,
 			error.what(),
 			logging);
 	} catch (...) {
 		bmsx::reportLibretroRuntimeError(
 			runtime,
 			g_content->systemRomImage,
-			g_content->cartridgeRomImages,
+			g_content->cartridgePackages,
 			"Unhandled host frame exception.",
 			logging);
 	}

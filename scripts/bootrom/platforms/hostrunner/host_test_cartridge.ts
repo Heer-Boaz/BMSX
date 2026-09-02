@@ -2,7 +2,11 @@ import { buildRomAssetSymbolModuleSource } from '../../../../toolchain/ts/rompac
 import type { RomAsset } from '../../../../toolchain/ts/rompack/assets';
 import { ROM_ASSET_SYMBOL_MODULE_PATH } from '../../../../toolchain/ts/rompack/generated_modules';
 import { loadRomAssetList, parseCartridgeIndex } from '../../../../toolchain/ts/rompack/loader';
-import { decodeBinary, encodeBinary } from '../../../../machine/ts/common/serializer/binencoder';
+import {
+	decodeBinary,
+	encodeBinary,
+	utf8FatalDecoder,
+} from '../../../../machine/ts/common/serializer/binencoder';
 import { parseLuaChunk } from '../../../../toolchain/ts/lua/analysis/parse';
 import { resolveLuaEntryModuleIndex } from '../../../../toolchain/ts/lua/entry_module';
 import type { LuaChunk } from '../../../../toolchain/ts/lua/syntax/ast';
@@ -59,7 +63,7 @@ export async function buildHostTestCartridge(
 		};
 	}
 	const entryAsset = entryCandidates[resolveLuaEntryModuleIndex(entryCandidates)].asset;
-	const entrySource = entryAsset.buffer!.toString('utf8');
+	const entrySource = utf8FatalDecoder.decode(entryAsset.buffer!);
 	const firstLineEnd = entrySource.indexOf('\n') + 1;
 	const source = `${entrySource.slice(0, firstLineEnd)}require('${HOST_TEST_MODULE_PATH}')\n${entrySource.slice(firstLineEnd)}`;
 	const parsed = parseLuaChunk(source, entryAsset.source_path).chunk!;

@@ -1,18 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import {
-	CARTRIDGE_BOARD_MAILBOX,
-	CARTRIDGE_BOARD_RAM,
-} from '../../machine/ts/spec/bmsx/cartridge';
-import { CART_RAM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { parseCartHeader } from '../../machine/ts/rompack/format';
 import { writeCartRomHeader } from '../../toolchain/ts/rompack/header_encode';
 import { CART_ROM_HEADER_SIZE } from '../../machine/ts/spec/bmsx/rom_package';
-import {
-	resolveCartridgeHeaderWords,
-	type CartManifest,
-} from '../../toolchain/ts/rompack/manifest';
 import type { CartRomHeader } from '../../machine/ts/rompack/format';
 
 const EMPTY_CART_HEADER: CartRomHeader = {
@@ -33,12 +24,10 @@ const EMPTY_CART_HEADER: CartRomHeader = {
 	blua32DiagnosticDirectoryOffset: 0,
 	metadataOffset: 0,
 	metadataLength: 0,
-	cartridgeBoardWord: 0,
-	cartridgeRamByteCount: 0,
 };
 
 test('ROM header parser rejects every truncated current header', () => {
-	for (const byteLength of [32, 76, CART_ROM_HEADER_SIZE - 1]) {
+	for (const byteLength of [0, 32, CART_ROM_HEADER_SIZE - 1]) {
 		assert.throws(
 			() => parseCartHeader(new Uint8Array(byteLength)),
 			/too small for cart header/,
@@ -78,41 +67,11 @@ test('ROM header carries raw BLua32 image and vector words', () => {
 	});
 });
 
-test('ROM header carries the physical cartridge board words', () => {
-	const rom = new Uint8Array(CART_ROM_HEADER_SIZE);
+test('ROM header parser rejects the retired 84-byte hardware-header format', () => {
+	const rom = new Uint8Array(84);
 	writeCartRomHeader(rom, {
 		...EMPTY_CART_HEADER,
-		cartridgeBoardWord: CARTRIDGE_BOARD_RAM | CARTRIDGE_BOARD_MAILBOX,
-		cartridgeRamByteCount: 0x00123456,
+		headerSize: 84,
 	});
-
-	const header = parseCartHeader(rom);
-	assert.equal(header.cartridgeBoardWord, CARTRIDGE_BOARD_RAM | CARTRIDGE_BOARD_MAILBOX);
-	assert.equal(header.cartridgeRamByteCount, 0x00123456);
-});
-
-test('ROM header rejects cartridge RAM beyond the physical socket aperture', () => {
-	const rom = new Uint8Array(CART_ROM_HEADER_SIZE);
-	writeCartRomHeader(rom, {
-		...EMPTY_CART_HEADER,
-		cartridgeRamByteCount: CART_RAM_SIZE + 1,
-	});
-
-	assert.throws(() => parseCartHeader(rom), /socket aperture/);
-});
-
-test('manifest cartridge semantics resolve once into raw header words', () => {
-	const manifest: CartManifest = {
-		cartridge: {
-			board: 'ram_mailbox',
-			ram_bytes: 0x20000,
-		},
-	};
-
-	assert.deepEqual(resolveCartridgeHeaderWords(manifest), {
-		cartridgeBoardWord: CARTRIDGE_BOARD_RAM | CARTRIDGE_BOARD_MAILBOX,
-		cartridgeRamByteCount: 0x20000,
-	});
-	manifest.cartridge = { board: 'mailbox', ram_bytes: 1 };
-	assert.throws(() => resolveCartridgeHeaderWords(manifest), /RAM bytes require a RAM board/);
+	assert.throws(() => parseCartHeader(rom), /does not match the current/);
 });

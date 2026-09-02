@@ -1,6 +1,6 @@
 import type { RomAsset } from '../../toolchain/ts/rompack/assets';
 import type { GLTFModel } from '../../toolchain/ts/rompack/gltf';
-import type { RomManifest } from '../../toolchain/ts/rompack/manifest';
+import type { CartManifest } from '../../machine/ts/rompack/manifest';
 import { decodeBinary } from '../../machine/ts/common/serializer/binencoder';
 import { loadModelFromBuffer as loadGLTFModelFromBuffer } from '../../toolchain/ts/rompack/loader';
 import { BLUA32_IMAGE_ID } from '../../toolchain/ts/rompack/blua32_image';
@@ -60,7 +60,7 @@ type BuildAssetModalViewContext = {
 	rombin: Uint8Array;
 	assetList: RomAsset[];
 	decodedTexture: TextureDecodeCache;
-	manifest: RomManifest | null;
+	manifest: CartManifest | null;
 	projectRootPath: string | null;
 	formatByteSize(size: number): string;
 	modalWidth: number;

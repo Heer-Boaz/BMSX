@@ -1,1 +1,3 @@
 title: Render HW Test
+hardware:
+    - type: rom

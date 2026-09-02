@@ -41,6 +41,7 @@ async function hash(path) {
 try {
 	run('BIOS build', 'npm', ['run', 'build:toolchain:bios', '--', '--force']);
 	run('conformance cartridge build', 'npm', ['run', 'build:toolchain:cart', '--', 'cartridge_conformance', '--force']);
+	run('data cartridge build', 'npm', ['run', 'build:toolchain:cart', '--', 'cartridge_data_conformance', '--force']);
 	run('native test configure', 'cmake', [
 		'-S', 'machine/cpp',
 		'-B', 'build-cpp-tests',
@@ -55,14 +56,8 @@ try {
 
 	await Promise.all([
 		copyFile(join(root, 'dist', 'bmsx-bios.rom'), systemRom),
+		copyFile(join(root, 'dist', 'cartridge_data_conformance.rom'), dataRom),
 		copyFile(join(root, 'dist', 'cartridge_conformance.rom'), bootableCartRom),
-	]);
-	run('data-cartridge fixture build', 'npx', [
-		'tsx',
-		'--tsconfig', 'tsconfig.base.json',
-		'tests/conformance/cartridge/create_data_rom.ts',
-		bootableCartRom,
-		dataRom,
 	]);
 	await Promise.all([
 		chmod(systemRom, 0o444),

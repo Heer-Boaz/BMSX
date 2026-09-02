@@ -1,12 +1,19 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { extname, isAbsolute, relative, resolve } from 'node:path';
+import { existsSync, readdirSync } from 'node:fs';
+import { extname, isAbsolute, join, relative, resolve } from 'node:path';
 
 export function resolveInputPath(candidate: string): string {
 	return isAbsolute(candidate) ? candidate : resolve(process.cwd(), candidate);
 }
 
 let gitTrackedFilesCache: string[] | undefined;
+
+const FILESYSTEM_SOURCE_SCAN_EXCLUDED_DIRECTORIES = new Set([
+	'.bmsx',
+	'.git',
+	'_ignore',
+	'node_modules',
+]);
 
 function requestedRootKeys(roots: readonly string[]): string[] {
 	const keys: string[] = [];
@@ -20,6 +27,18 @@ function requestedRootKeys(roots: readonly string[]): string[] {
 		}
 	}
 	return keys;
+}
+
+function requestedExternalRoots(roots: readonly string[]): string[] {
+	const externalRoots: string[] = [];
+	for (let index = 0; index < roots.length; index += 1) {
+		const absolute = resolveInputPath(roots[index]);
+		const relativePath = relative(process.cwd(), absolute).replace(/\\/g, '/');
+		if (relativePath === '..' || relativePath.startsWith('../')) {
+			externalRoots.push(absolute);
+		}
+	}
+	return externalRoots;
 }
 
 function pathIsUnderRequestedRoot(path: string, roots: readonly string[]): boolean {
@@ -54,6 +73,29 @@ function gitTrackedAndUntrackedFiles(): string[] {
 	return Array.from(files);
 }
 
+function collectExternalSourceFiles(
+	root: string,
+	extensions: ReadonlySet<string>,
+	files: string[],
+): void {
+	const pendingDirectories = [root];
+	while (pendingDirectories.length !== 0) {
+		const directory = pendingDirectories.pop()!;
+		const entries = readdirSync(directory, { withFileTypes: true });
+		for (let index = 0; index < entries.length; index += 1) {
+			const entry = entries[index];
+			const path = join(directory, entry.name);
+			if (entry.isDirectory()) {
+				if (!FILESYSTEM_SOURCE_SCAN_EXCLUDED_DIRECTORIES.has(entry.name)) {
+					pendingDirectories.push(path);
+				}
+			} else if (entry.isFile() && extensions.has(extname(entry.name))) {
+				files.push(path);
+			}
+		}
+	}
+}
+
 export function collectSourceFiles(roots: readonly string[], extensions: ReadonlySet<string>): string[] {
 	const candidates = gitTrackedAndUntrackedFiles();
 	const rootKeys = requestedRootKeys(roots);
@@ -69,6 +111,10 @@ export function collectSourceFiles(roots: readonly string[], extensions: Readonl
 				files.push(absolute);
 			}
 		}
+	}
+	const externalRoots = requestedExternalRoots(roots);
+	for (let index = 0; index < externalRoots.length; index += 1) {
+		collectExternalSourceFiles(externalRoots[index], extensions, files);
 	}
 	return files;
 }

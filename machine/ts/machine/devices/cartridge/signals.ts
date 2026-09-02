@@ -1,0 +1,5 @@
+export const CARTRIDGE_CARD_EFFECT_IRQ_EDGE = 1 << 0;
+export const CARTRIDGE_CARD_EFFECT_DREQ_CHANGED = 1 << 1;
+
+export const CARTRIDGE_CARD_DREQ_READ = 1 << 0;
+export const CARTRIDGE_CARD_DREQ_WRITE = 1 << 1;

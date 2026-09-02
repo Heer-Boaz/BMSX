@@ -6,7 +6,7 @@ import type {
 } from '../../../machine/ts/rompack/toc';
 import type { RomImageDomain } from '../../../machine/ts/rompack/image';
 import type { GLTFModel } from './gltf';
-import type { CartManifest } from './manifest';
+import type { CartManifest } from '../../../machine/ts/rompack/manifest';
 
 export type AudioType = 'sfx' | 'music' | 'ui';
 

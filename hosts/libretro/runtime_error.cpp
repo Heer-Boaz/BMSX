@@ -45,7 +45,7 @@ void flushLibretroSystemOutput(
 void reportLibretroRuntimeError(
 	Runtime& runtime,
 	const RomImage& systemRom,
-	const std::array<RomImage, CARTRIDGE_SLOT_COUNT>& cartridgeRoms,
+	const std::array<std::optional<CartridgePackage>, CARTRIDGE_SLOT_COUNT>& cartridgePackages,
 	std::string_view message,
 	const retro_log_callback& logging
 ) {
@@ -62,11 +62,12 @@ void reportLibretroRuntimeError(
 		SYSTEM_ROM_BASE
 	);
 	for (u32 slot = 0u; slot < CARTRIDGE_SLOT_COUNT; ++slot) {
-		const RomImage& image = cartridgeRoms[slot];
-		if (!image.bytes.empty()) {
-			toolingMedia.cartridgeSlots[slot] =
-				loadBlua32ToolingImage(image, CART_ROM_BASE);
-		}
+		const std::optional<CartridgePackage>& package = cartridgePackages[slot];
+		if (!package) continue;
+		toolingMedia.cartridgeSlots[slot] =
+			loadBlua32ToolingImage(
+				RomImage{package->bytes, package->header},
+				CART_ROM_BASE);
 	}
 	const int frameDepth = cpu.getFrameDepth();
 	const int topFrameIndex = frameDepth - 1;

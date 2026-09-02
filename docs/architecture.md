@@ -286,8 +286,9 @@ configuration; that is a reset register state, not a fixed host scanout size.
 
 The ROM package does not select a VDP, GPU, APU, or machine model. The product
 host selects the installed machine model; guest software configures that
-hardware only through its CPU-visible registers and memory ABI. Authoring
-manifests are not guest hardware descriptors and are never exposed to Lua.
+hardware only through its CPU-visible registers and memory ABI. A cartridge
+package may declare the concrete components installed on that card, but that
+cold admission metadata is never guest-visible or exposed to Lua.
 
 Display configuration is raw hardware register state. PCRTC is the implemented
 scanout authority. Its live timing bank owns the physical beam; its
@@ -407,11 +408,12 @@ provider, or runtime feature switch. Browser and native libretro product roots
 own their monotonic presentation clocks; machine
 `FrameLoopState` retains only in-flight emulation execution state.
 
-The product host admits the outer physical ROM/header and translates cartridge
-package metadata into installed socket media. `Runtime` consumes the system-ROM
-bytes and cartridge-media records directly and constructs the one machine-owned
-`Memory`; there is no manager or second ROM lifecycle. Admission never decodes
-TOC assets, manifests, source registries, symbols, or authoring packages.
+The product host admits the outer physical package/header, decodes only the
+cartridge hardware manifest and translates it into installed socket media.
+`Runtime` consumes system-ROM bytes and resolved cartridge-media records
+directly and constructs the one machine-owned `Memory`; neither the manifest nor
+its package DTO crosses into the machine. Ordinary admission never decodes TOC
+assets, source registries, symbols, or authoring layers.
 Native libretro content owns its mapped ROM backing, parsed physical-image
 views, and active `Runtime` as one RAII lifetime; unloading destroys the runtime
 before unmapping its ROM spans.
@@ -528,12 +530,12 @@ Accepted target releases are available through:
 The core and direct host are separate deployable products. The core can be
 installed through the normal libretro-core route. On the SNES Mini, Clover can
 instead start `bmsx_libretro_host` directly and pass it that installed core plus
-the selected cart ROM. The host is not a shell runner around RetroArch: its ARM
-executable is built with the same target SDK, its full runtime closure is
-audited against the same imported device root, and QEMU enters its real CLI
-through that target loader before publication. Clover's desktop `Exec` field
-therefore names the host executable directly; no `/bin/sh` trampoline is part of
-the deployment contract.
+the selected cartridge package. The host is not a shell runner around
+RetroArch: its ARM executable is built with the same target SDK, its full
+runtime closure is audited against the same imported device root, and QEMU
+enters its real CLI through that target loader before publication. Clover's
+desktop `Exec` field therefore names the host executable directly; no `/bin/sh`
+trampoline is part of the deployment contract.
 
 ## Repository and package boundary policy
 
@@ -759,7 +761,7 @@ header. `entry_path`, `rom_name`, and browser `short_name` are therefore not
 executable ROM-manifest fields: the first is derived by tooling from
 `module<entry>`, the second is a build-output identity, and the third belongs
 to browser-product packaging. The serialized cart manifest keeps
-author/cart facts such as its title and physical cartridge-board construction;
+author/cart facts such as its title and physical card-component construction;
 it does not select executable source.
 
 The packer emits one immutable prefix: ordinary asset payload spans, per-entry
@@ -892,9 +894,10 @@ start at offset `0x00400000`; the linker rejects a system image that crosses
 that partition. Text in both domains contains the existing BLua32 instruction
 words unchanged. `.bss` owns no ROM payload.
 
-`Memory` owns the installed system ROM and both cartridge ROMs and binds direct
-read-only views into those regions. `Machine` owns one
-`ExecutionAddressSpace`, wired directly to `Memory` and borrowed by the CPU. It
+`Memory` owns the installed system ROM and cartridge bus. Each occupied
+`CartridgeCard` owns its optional direct ROM/RAM regions and mapped-page
+bindings. `Machine` owns one `ExecutionAddressSpace`, wired directly to
+`Memory` and borrowed by the CPU. It
 selects the executable bus domain and reads only the raw outer boot words. The
 CPU consumes the system reset word into root execution state, retains the
 system exception word as a CPU latch, retains the raw IRQ word with each
@@ -1626,11 +1629,11 @@ ABI values; they are documented constants, not runtime-injected Lua globals.
 Cart and firmware code that tests or acknowledges them defines the constants it
 uses.
 
-The system and selected-cartridge ROM headers carry physical IRQ and exception
-function-record addresses. On a guest-domain `HALT` or guest instruction
-boundary, an asserted unmasked maskable IRQ line makes the CPU push the selected
-generated IRQ root above the interrupted frame. That root calls the image's
-`irq(flags)` handler and ends
+The system header and the selected executable cartridge's ROM header carry
+physical IRQ and exception function-record addresses. On a guest-domain `HALT`
+or guest instruction boundary, an asserted unmasked maskable IRQ line makes the
+CPU push the selected generated IRQ root above the interrupted frame. That root
+calls the image's `irq(flags)` handler and ends
 in `RFE`; an ordinary Lua return only returns to the root. Host/debugger closure
 calls obey the same pending IRQ/NMI entry before their next instruction; they do
 not bypass or suppress physical vectors. The NMI line and system exception
@@ -1962,12 +1965,12 @@ one read-only raw registerfile:
 
 | Register | Address | Meaning |
 | --- | ---: | --- |
-| `SYS_SUPERVISOR_FAULT_SEQUENCE` | `0x08010438` | Wrapping publication sequence. |
-| `SYS_SUPERVISOR_FAULT_CAUSE` | `0x0801043c` | Captured raw CP0 `CAUSE`. |
-| `SYS_SUPERVISOR_FAULT_EPC` | `0x08010440` | Captured raw CP0 `EPC`. |
-| `SYS_SUPERVISOR_FAULT_BAD_ADDRESS` | `0x08010444` | Captured raw CP0 `BAD_ADDRESS`. |
-| `SYS_SUPERVISOR_FAULT_LUA_REASON` | `0x08010448` | Captured raw CP0 Lua-fault reason. |
-| `SYS_SUPERVISOR_FAULT_DOMAIN` | `0x0801044c` | Interrupted execution socket; system ROM is `0xffffffff`, cartridge sockets are `0` and `1`. |
+| `SYS_SUPERVISOR_FAULT_SEQUENCE` | `0x08010428` | Wrapping publication sequence. |
+| `SYS_SUPERVISOR_FAULT_CAUSE` | `0x0801042c` | Captured raw CP0 `CAUSE`. |
+| `SYS_SUPERVISOR_FAULT_EPC` | `0x08010430` | Captured raw CP0 `EPC`. |
+| `SYS_SUPERVISOR_FAULT_BAD_ADDRESS` | `0x08010434` | Captured raw CP0 `BAD_ADDRESS`. |
+| `SYS_SUPERVISOR_FAULT_LUA_REASON` | `0x08010438` | Captured raw CP0 Lua-fault reason. |
+| `SYS_SUPERVISOR_FAULT_DOMAIN` | `0x0801043c` | Interrupted execution socket; system ROM is `0xffffffff`, cartridge sockets are `0` and `1`. |
 
 The `SUPERVISOR_FAULT` command copies the five payload words from CPU latches
 before the firmware changes interrupt or display ownership, but does not yet
@@ -2262,36 +2265,80 @@ depend on the removed host terminal.
 
 BMSX has two physical cartridge sockets on one 16-bit external
 address/data bus. Both sockets receive the same address and bus strobes; distinct
-`/CS0` and `/CS1` lines decide which board responds. The CPU sees one 528 MiB
+`/CS0` and `/CS1` lines decide which card responds. The CPU sees one 528 MiB
 cartridge aperture, not two relocated ROMs:
 
-| CPU range | Selected-board decode |
+| CPU range | Selected-card decode |
 | --- | --- |
-| `10000000h`--`2FFFFFFFh` | 512 MiB immutable ROM window. |
+| `10000000h`--`2FFFFFFFh` | 512 MiB optional immutable-ROM window. |
 | `30000000h`--`30EFFFFFh` | 15 MiB cartridge-RAM window. |
 | `30F00000h`--`30FFFFFFh` | 1 MiB cartridge-MMIO window. |
 
-`CART_SELECT` at `0801041Ch` is a raw retained word; bit 0 selects socket 1
-when set and socket 0 when clear. `CART_STATUS` at `08010420h` reports socket
-presence in bits 0--1 and the decoded selection in bit 16. The controller does
-not classify cartridge contents as executable. The four read-only words that
-follow expose each socket's raw board word and physical RAM byte count. Unknown
-board bits remain readable and have no current datapath effect.
+`CART_SELECT` at `08010420h` is a raw retained word; bit 0 selects socket 1
+when set and socket 0 when clear. `CART_STATUS` at `08010424h` reports socket
+presence in bits 0--1 and the decoded selection in bit 16. These are the only
+global cartridge-bus control/status words. The controller owns physical socket order,
+chip-select selection and translation of card-local request signals to socket
+IRQ/DREQ lines; it does not identify card types or mirror device capabilities.
 
-The ROM header owns the board declaration. Its word at byte 76 has
-`RAM=bit0` and `MAILBOX=bit1`; the word at byte 80 is the socket-local RAM
-capacity and cannot exceed the 15 MiB aperture. A board without `RAM` returns
-zero and ignores writes in the RAM window. A shorter ROM or RAM backing returns
-zero beyond its physical end. The complete header, sections and TOC must fit
-the 512 MiB ROM window; loaders and ROM producers reject a larger physical
-image. Reset retains cartridge RAM, resets the CPU
-selection to socket 0 and clears mailbox data, control, DREQ and local
-IRQ state. At the source boundary the ROM packer maps
-`cartridge.board = rom|ram|mailbox|ram_mailbox` and optional
-`cartridge.ram_bytes` into those two raw header words.
+The 72-byte package header owns layout and executable entry metadata, not
+installed hardware. A cartridge package has one mandatory manifest hardware
+sequence. Each entry names a concrete implemented card component:
 
-The minimal device board decodes four aligned 32-bit mailbox registers at the
-start of cartridge MMIO:
+```yaml
+hardware:
+  - type: rom
+  - type: ram
+    bytes: 262144
+  - type: mailbox
+```
+
+A plain ROM card writes `hardware: [{type: rom}]`; a RAM-only card omits that
+component. The product host maps the immutable package bytes into the ROM
+aperture only when `rom` is declared. Otherwise the aperture is unbacked and
+reads zero while the socket, RAM and MMIO devices remain present. A ROM-bearing
+package must fit the 512 MiB window; a ROM-less package is not assigned that
+hardware limit. Every cartridge package remains bounded by the 32-bit outer
+package format. Admission rejects unknown fields, unknown component types,
+duplicate singleton components, RAM sizes outside the 15 MiB aperture and any
+nonzero BLua32 image/vector metadata on a card without ROM. RAM capacity has
+one binary representation: `ram.bytes` uses the serializer integer tag;
+integral F32/F64 encodings are rejected before a host can erase that wire
+distinction. There is no legacy board word, capability mask, generic property
+bag or synthesized empty cartridge. A physical socket is either empty or
+contains one admitted card. The product host parses the manifest once and
+translates it to direct installed media (`rom`, RAM capacity and mailbox
+presence); `Runtime`, memory, DMA and instruction hot paths never receive
+manifest DTOs, strings or package metadata.
+
+A cartridge package does not need a guest program or a ROM component. When its
+source tree has no Lua program, the package producer emits the ordinary
+manifest/assets and zeroes the BLua32 image and entry words. A RAM/mailbox-only
+card still occupies its physical socket and its devices remain accessible while
+its package header stays host-side. Firmware merely skips it during the
+first-executable-cartridge scan. Program presence is therefore represented by
+the existing image/entry words on ROM-bearing cards; producer and admission
+reject executable metadata without that ROM component. It is not duplicated by a
+`bootable` manifest flag.
+
+The package producer receives `system` or `cart` as an explicit build domain and
+scans exactly the resource roots owned by that product. It never classifies a
+package from a `carts/` pathname segment. BIOS resources therefore enter system
+products only; an executable cartridge depends on the encoded BIOS import
+sidecar rather than copying firmware assets into its package. This follows the
+same target-owned production-input pattern used by
+[VS Code's extension packager](https://github.com/microsoft/vscode/blob/48465bfbc57a81b0ff223d928753972c51b9ecd2/build/lib/extensions.ts#L424-L459),
+which composes a product from its selected extension streams and explicitly
+declared production dependencies instead of inferring ownership from an output
+path.
+
+`CartridgeCard` is the per-socket composition owner. Optional ROM and RAM remain
+direct card-owned regions so mapped-page bindings point at their backing bytes
+without per-access dispatch. A shorter ROM or RAM backing returns zero beyond
+its physical end. ROM replacement mutates only an already installed ROM
+component; it cannot synthesize one on a RAM-only card. The currently
+implemented device component is a mailbox with
+four aligned 32-bit registers at the start of cartridge MMIO:
 
 | Offset | Register | Datapath |
 | ---: | --- | --- |
@@ -2311,13 +2358,26 @@ the socket-local source latch. A central `IRQ_ACK` clears the IRQ-controller
 flag but does not retrigger a still-pending mailbox; firmware must write the
 mailbox's own `IRQ_ACK` before a later trigger can create another edge.
 
+Future expansion RAM, VRAM or a clocked coprocessor is added as another concrete
+card component with its own decode, mutable state and, where applicable,
+scheduler owner. It is not projected into controller capability bits and does
+not add a socket or executable namespace. This is the same slot/card separation
+used by mature emulators: the slot selects a concrete installed card, while the
+card composes its memory and devices. Only physical bus and request signals cross
+back into the controller when a later card adds, for example, video RAM or a
+geometry processor; card identity and device state do not.
+
+Reset retains cartridge RAM, resets the CPU selection to socket 0 and clears
+mailbox data, control, DREQ and local IRQ state. Immutable ROM bytes and the
+installed component topology remain media state.
+
 System firmware always supplies the reset vector. Firmware scans sockets in
-physical order by writing `CART_SELECT` and reading each raw ROM header through
-the shared aperture. It chooses the first present image whose BLua32 image
-offset is nonzero, leaves that socket selected, and writes the header's physical
-startup function address to `CP0.EXEC`. If neither cartridge is executable,
-firmware remains in its own boot flow. The emulator host neither chooses the
-executable socket nor calls its entry.
+physical order by writing `CART_SELECT`; an admitted card without ROM drives
+zero in the shared ROM aperture. Firmware chooses the first card with a valid
+package header and nonzero BLua32 image offset, leaves that socket selected, and
+writes the header's physical startup function address to `CP0.EXEC`. If neither
+cartridge is executable, firmware remains in its own boot flow. The emulator
+host neither chooses the executable socket nor calls its entry.
 
 Both sockets are executable through exactly the same cartridge aperture. The
 bus controller has two physical chip-select sources: ordinary CPU data cycles
@@ -2334,9 +2394,10 @@ replaces the execution latch. DMA uses its explicit socket chip-select
 overrides. There is no second executable namespace and no host merge of the two
 cartridges.
 
-Save-state stores the raw CPU selection word and, per socket, RAM, mailbox data,
-retained control and the local IRQ source latch. Immutable ROM bytes, board
-words and capacities remain properties of the inserted media. CPU state
+Save-state stores the raw CPU selection word and, for each occupied socket,
+the mutable state of its installed components. An empty socket is stored as an
+empty socket, not as zero-filled card state. Immutable ROM bytes and component
+topology remain properties of the inserted media. CPU state
 separately retains the cartridge execution-socket latch selected by `CP0.EXEC`.
 Browser hosts
 accept `rom` and optional `slot1` URL parameters, the Node host accepts
@@ -2347,14 +2408,18 @@ machine owner; none maps a second cart through an alternate address or copies
 it into RAM.
 
 This follows the MSX principle that a cartridge can extend the machine rather
-than merely supply one software image; openMSX models the same distinction with
-external-slot ownership and extensions that install real memory or devices, for
-example its
-[cartridge-slot manager](https://github.com/openMSX/openMSX/blob/d1b8f2c81b3fcafde528e91e6133a7278a732e04/src/CartridgeSlotManager.cc#L120-L180),
-[2 MiB RAM cartridge](https://github.com/openMSX/openMSX/blob/d1b8f2c81b3fcafde528e91e6133a7278a732e04/share/extensions/ram2mb.xml), and
-[GFX9000 device cartridge](https://github.com/openMSX/openMSX/blob/d1b8f2c81b3fcafde528e91e6133a7278a732e04/share/extensions/gfx9000.xml).
-BMSX deliberately does not copy MSX slot paging: the raw chip-select mux,
-external-bus aperture and per-board decode above are the complete base contract.
+than merely supply one software image. The concrete implementation boundary is
+based on openMSX's external-slot allocation and direct cache-line card access,
+MAME's slot/card configuration and device-owned state, and ares' one-time board
+mapping plus concrete coprocessor composition:
+[openMSX slot allocation](https://github.com/openMSX/openMSX/blob/8d0c435c2bfd8ef387a0b91a73d1ac0d2e0acf89/src/CartridgeSlotManager.cc#L120-L180),
+[openMSX direct memory access](https://github.com/openMSX/openMSX/blob/8d0c435c2bfd8ef387a0b91a73d1ac0d2e0acf89/src/MSXDevice.hh#L148-L203),
+[openMSX RAM-only extension](https://github.com/openMSX/openMSX/blob/8d0c435c2bfd8ef387a0b91a73d1ac0d2e0acf89/share/extensions/ram16k.xml),
+[MAME slot/card contract](https://github.com/mamedev/mame/blob/cdebe409cd3a66f7f7f95fa93874ee0b2dd45b86/src/emu/dislot.h#L52-L166),
+[MAME RAM-only cartridge](https://github.com/mamedev/mame/blob/cdebe409cd3a66f7f7f95fa93874ee0b2dd45b86/src/devices/bus/msx/cart/ram.cpp), and
+[ares conditional component loading](https://github.com/ares-emulator/ares/blob/7b51c8ab719e403a150aa700e0933d9e93a06851/ares/sfc/cartridge/load.cpp#L26-L50).
+BMSX deliberately does not copy MSX paging: the raw chip-select mux, external
+bus aperture and card-owned decode above are the complete base contract.
 
 ### DMA
 
@@ -2569,19 +2634,19 @@ PNG, RGBA, a backend texture or a private GX command path. The ROM producer
 first converts a cart atlas to native GX direct16 or palette4 words and then
 encodes that payload as the BMSX `IMD1` word stream.
 
-The registerfile starts at `08010400h`:
+The registerfile starts at `080103FCh`:
 
 | Address | Register | Direction |
 | ---: | --- | --- |
-| `08010400h` | `INPUT_WORD_COUNT` | R/W |
-| `08010404h` | `TEXTURE_DESTINATION` | R/W |
-| `08010408h` | `TEXTURE_SIZE` | R/W |
-| `0801040Ch` | `CLUT_DESTINATION` | R/W |
-| `08010410h` | `CONTROL` | R/W |
-| `08010414h` | `STATUS` | Read-only status word. |
-| `08010418h` | `DATA` | Compressed input on write; GP0 output on read. |
-| `0801041Ch` | `INPUT_WORDS_RECEIVED` | Read-only progress word. |
-| `08010420h` | `DECODED_WORD_COUNT` | Read-only payload progress word. |
+| `080103FCh` | `INPUT_WORD_COUNT` | R/W |
+| `08010400h` | `TEXTURE_DESTINATION` | R/W |
+| `08010404h` | `TEXTURE_SIZE` | R/W |
+| `08010408h` | `CLUT_DESTINATION` | R/W |
+| `0801040Ch` | `CONTROL` | R/W |
+| `08010410h` | `STATUS` | Read-only status word. |
+| `08010414h` | `DATA` | Compressed input on write; GP0 output on read. |
+| `08010418h` | `INPUT_WORDS_RECEIVED` | Read-only progress word. |
+| `0801041Ch` | `DECODED_WORD_COUNT` | Read-only payload progress word. |
 
 `CONTROL.START` is a self-clearing start strobe. Configuration writes wait while
 the decoder is busy, so a new stream cannot overwrite active configuration.

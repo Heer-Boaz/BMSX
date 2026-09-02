@@ -202,7 +202,10 @@ add_library(bmsx_binary_codec STATIC
 add_library(bmsx_rom_image STATIC
 	rompack/format.cpp
 	rompack/image.cpp
+	rompack/manifest.cpp
 )
+
+target_link_libraries(bmsx_rom_image PUBLIC bmsx_binary_codec)
 
 foreach(target bmsx_binary_codec bmsx_rom_image)
 	set_target_properties(${target} PROPERTIES
@@ -250,7 +253,9 @@ add_library(bmsx_core STATIC
 	machine/execution_address_space.cpp
 	spec/blua32/opcode.cpp
 	spec/blua32/instruction_format.cpp
+	machine/devices/cartridge/card.cpp
 	machine/devices/cartridge/controller.cpp
+	machine/devices/cartridge/mailbox.cpp
 	machine/devices/dma/controller.cpp
 	machine/devices/dma/registers.cpp
 	machine/devices/imgdec/controller.cpp
@@ -420,6 +425,7 @@ set(BMSX_LIBRETRO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../hosts/libretro")
 set(BMSX_LIBRETRO_HOST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../hosts/libretro_host")
 set(BMSX_LIBRETRO_CORE_SOURCES
 	${BMSX_LIBRETRO_DIR}/audio_output.cpp
+	${BMSX_LIBRETRO_DIR}/cartridge_media.cpp
 	${BMSX_LIBRETRO_DIR}/content.cpp
 	${BMSX_LIBRETRO_DIR}/host_frame.cpp
 	${BMSX_LIBRETRO_DIR}/host_on_screen_keyboard.cpp
@@ -635,6 +641,18 @@ if(BMSX_BUILD_TESTS)
 	target_link_libraries(bmsx_cartridge_controller_tests PRIVATE bmsx_core)
 	add_test(NAME bmsx_cartridge_controller_tests COMMAND bmsx_cartridge_controller_tests)
 
+	add_executable(bmsx_cartridge_card_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/cartridge_card_test.cpp
+	)
+	target_link_libraries(bmsx_cartridge_card_tests PRIVATE bmsx_core)
+	add_test(NAME bmsx_cartridge_card_tests COMMAND bmsx_cartridge_card_tests)
+
+	add_executable(bmsx_cartridge_manifest_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/cartridge_manifest_test.cpp
+	)
+	target_link_libraries(bmsx_cartridge_manifest_tests PRIVATE bmsx_rom_image)
+	add_test(NAME bmsx_cartridge_manifest_tests COMMAND bmsx_cartridge_manifest_tests)
+
 	add_executable(bmsx_rompack_format_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/rompack_format_test.cpp
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/support/blua32_test_rom.cpp
@@ -710,8 +728,12 @@ if(BMSX_BUILD_TESTS)
 	add_executable(bmsx_cartridge_conformance_runner
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/cartridge_conformance_runner.cpp
 		${CMAKE_CURRENT_SOURCE_DIR}/common/mmap_file.cpp
+		${BMSX_LIBRETRO_DIR}/cartridge_media.cpp
 	)
 	target_link_libraries(bmsx_cartridge_conformance_runner PRIVATE bmsx_core bmsx_rom_image)
+	target_include_directories(bmsx_cartridge_conformance_runner PRIVATE
+		${BMSX_LIBRETRO_DIR}
+	)
 
 	if(BMSX_ENABLE_GLES2)
 		add_executable(bmsx_libretro_hw_context_tests

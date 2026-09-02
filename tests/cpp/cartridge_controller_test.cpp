@@ -28,7 +28,7 @@ struct CartridgeHarness {
 	bmsx::DeviceScheduler scheduler;
 	bmsx::DmaController dma;
 
-	explicit CartridgeHarness(const bmsx::CartridgeSlotMediaPair& slots)
+	explicit CartridgeHarness(const bmsx::CartridgeSocketMediaPair& slots)
 		: memory(bmsx::MemoryInit{ {}, slots }, bmsx::PSX_MACHINE_SPEC.ramBytes)
 		, irq(memory)
 		, executionAddressSpace(memory)
@@ -46,19 +46,9 @@ struct CartridgeHarness {
 void testPhysicalSocketSelectionAndRawLatch() {
 	const std::array<bmsx::u8, 4> slot0Rom{{ 0x44u, 0x33u, 0x22u, 0x11u }};
 	const std::array<bmsx::u8, 4> slot1Rom{{ 0xddu, 0xccu, 0xbbu, 0xaau }};
-	const bmsx::CartridgeSlotMediaPair slots{{
-		{
-			.rom = slot0Rom,
-			.boardWord = bmsx::CARTRIDGE_BOARD_RAM,
-			.ramByteCount = 16u,
-			.present = true,
-		},
-		{
-			.rom = slot1Rom,
-			.boardWord = bmsx::CARTRIDGE_BOARD_MAILBOX,
-			.present = true,
-		},
-	}};
+	bmsx::CartridgeSocketMediaPair slots{};
+	slots[0] = bmsx::CartridgeCardMedia{slot0Rom, 16u, false};
+	slots[1] = bmsx::CartridgeCardMedia{slot1Rom, std::nullopt, true};
 	CartridgeHarness harness(slots);
 	bmsx::Memory& memory = harness.memory;
 
@@ -70,11 +60,6 @@ void testPhysicalSocketSelectionAndRawLatch() {
 				| bmsx::CARTRIDGE_STATUS_SLOT1_PRESENT),
 		"status reports both inserted cartridges"
 	);
-	require(memory.readMappedU32LE(bmsx::IO_CART_SLOT0_BOARD) == bmsx::CARTRIDGE_BOARD_RAM, "slot 0 board word is hardware-visible");
-	require(memory.readMappedU32LE(bmsx::IO_CART_SLOT0_RAM_BYTES) == 16u, "slot 0 RAM capacity is hardware-visible");
-	require(memory.readMappedU32LE(bmsx::IO_CART_SLOT1_BOARD) == bmsx::CARTRIDGE_BOARD_MAILBOX, "slot 1 board word is hardware-visible");
-	require(memory.readMappedU32LE(bmsx::IO_CART_SLOT1_RAM_BYTES) == 0u, "slot 1 RAM capacity is hardware-visible");
-
 	memory.writeMappedU32LE(bmsx::IO_CART_SELECT, 0xa5a50001u);
 	require(memory.readMappedU32LE(bmsx::IO_CART_SELECT) == 0xa5a50001u, "selection register retains its raw word");
 	require(memory.readMappedU32LE(bmsx::CART_ROM_BASE) == 0xaabbccddu, "CPU aperture reads slot 1 when CS1 is selected");
@@ -87,22 +72,29 @@ void testPhysicalSocketSelectionAndRawLatch() {
 	);
 }
 
+void testAbsentSocketDrivesZeroAndHasNoState() {
+	const std::array<bmsx::u8, 4> slot0Rom{{ 0x44u, 0x33u, 0x22u, 0x11u }};
+	bmsx::CartridgeSocketMediaPair slots{};
+	slots[0] = bmsx::CartridgeCardMedia{slot0Rom, std::nullopt, false};
+	CartridgeHarness harness(slots);
+	bmsx::Memory& memory = harness.memory;
+	memory.writeMappedU32LE(bmsx::IO_CART_SELECT, 1u);
+	require(
+		memory.readMappedU32LE(bmsx::IO_CART_STATUS)
+			== (bmsx::CARTRIDGE_STATUS_SLOT0_PRESENT
+				| bmsx::CARTRIDGE_STATUS_SELECTED_SLOT1),
+		"status retains selection while reporting the second socket absent"
+	);
+	require(memory.readMappedU32LE(bmsx::CART_ROM_BASE) == 0u, "absent socket drives zero in ROM aperture");
+	require(memory.readMappedU32LE(bmsx::CART_RAM_BASE) == 0u, "absent socket drives zero in RAM aperture");
+	require(memory.readMappedU32LE(bmsx::CART_MMIO_BASE) == 0u, "absent socket drives zero in MMIO aperture");
+	require(!memory.cartridgeController().captureState().slots[1].has_value(), "absent socket has no synthetic state");
+}
+
 void testSocketLocalRamMailboxResetAndRestore() {
-	constexpr bmsx::u32 board = bmsx::CARTRIDGE_BOARD_RAM | bmsx::CARTRIDGE_BOARD_MAILBOX;
-	const bmsx::CartridgeSlotMediaPair slots{{
-		{
-			.rom = {},
-			.boardWord = board,
-			.ramByteCount = 16u,
-			.present = true,
-		},
-		{
-			.rom = {},
-			.boardWord = board,
-			.ramByteCount = 16u,
-			.present = true,
-		},
-	}};
+	bmsx::CartridgeSocketMediaPair slots{};
+	slots[0] = bmsx::CartridgeCardMedia{std::nullopt, 16u, true};
+	slots[1] = bmsx::CartridgeCardMedia{std::nullopt, 16u, true};
 	CartridgeHarness harness(slots);
 	bmsx::Memory& memory = harness.memory;
 
@@ -162,14 +154,8 @@ void testSocketLocalRamMailboxResetAndRestore() {
 }
 
 void testMailboxIrqRaisesOncePerSourceLatchEdge() {
-	const bmsx::CartridgeSlotMediaPair slots{{
-		{
-			.rom = {},
-			.boardWord = bmsx::CARTRIDGE_BOARD_MAILBOX,
-			.present = true,
-		},
-		{},
-	}};
+	bmsx::CartridgeSocketMediaPair slots{};
+	slots[0] = bmsx::CartridgeCardMedia{std::nullopt, std::nullopt, true};
 	CartridgeHarness harness(slots);
 	bmsx::Memory& memory = harness.memory;
 	const bmsx::u32 mailboxControl = bmsx::CART_MMIO_BASE + bmsx::CARTRIDGE_MAILBOX_CONTROL_OFFSET;
@@ -196,7 +182,6 @@ void testMailboxIrqRaisesOncePerSourceLatchEdge() {
 }
 
 void testDmaRequestSelectorsOverrideBothChipSelects() {
-	constexpr bmsx::u32 board = bmsx::CARTRIDGE_BOARD_RAM | bmsx::CARTRIDGE_BOARD_MAILBOX;
 	const std::array<bmsx::u8, 8> slot0Rom{{
 		0x04u, 0x03u, 0x02u, 0x01u,
 		0x14u, 0x13u, 0x12u, 0x11u,
@@ -205,20 +190,9 @@ void testDmaRequestSelectorsOverrideBothChipSelects() {
 		0xa4u, 0xa3u, 0xa2u, 0xa1u,
 		0xb4u, 0xb3u, 0xb2u, 0xb1u,
 	}};
-	const bmsx::CartridgeSlotMediaPair slots{{
-		{
-			.rom = slot0Rom,
-			.boardWord = board,
-			.ramByteCount = 16u,
-			.present = true,
-		},
-		{
-			.rom = slot1Rom,
-			.boardWord = board,
-			.ramByteCount = 16u,
-			.present = true,
-		},
-	}};
+	bmsx::CartridgeSocketMediaPair slots{};
+	slots[0] = bmsx::CartridgeCardMedia{slot0Rom, 16u, true};
+	slots[1] = bmsx::CartridgeCardMedia{slot1Rom, 16u, true};
 	CartridgeHarness harness(slots);
 	bmsx::Memory& memory = harness.memory;
 
@@ -259,6 +233,7 @@ void testDmaRequestSelectorsOverrideBothChipSelects() {
 
 int main() {
 	testPhysicalSocketSelectionAndRawLatch();
+	testAbsentSocketDrivesZeroAndHasNoState();
 	testSocketLocalRamMailboxResetAndRestore();
 	testMailboxIrqRaisesOncePerSourceLatchEdge();
 	testDmaRequestSelectorsOverrideBothChipSelects();

@@ -1,1 +1,3 @@
 title: System Print Test
+hardware:
+    - type: rom

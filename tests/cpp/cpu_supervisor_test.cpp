@@ -17,6 +17,7 @@
 
 #include <array>
 #include <cstddef>
+#include <optional>
 #include <span>
 #include <stdexcept>
 #include <utility>
@@ -171,6 +172,7 @@ auto makeCartridgeSelectionSwitchImage(bmsx::OpCode result) -> bmsx::test::Blua3
 struct CpuTestMachine {
 	bmsx::test::Blua32TestRom systemRom;
 	bmsx::test::Blua32TestRom cartRom;
+	std::optional<bmsx::test::Blua32TestRom> auxiliaryCartRom;
 	bmsx::Memory memory;
 	bmsx::IrqController irq;
 	bmsx::ExecutionAddressSpace executionAddressSpace;
@@ -180,7 +182,8 @@ struct CpuTestMachine {
 
 	CpuTestMachine(
 		bmsx::test::Blua32TestImage systemImage,
-		bmsx::test::Blua32TestImage cartImage = makeSupervisorCartImage()
+		bmsx::test::Blua32TestImage cartImage = makeSupervisorCartImage(),
+		std::optional<bmsx::test::Blua32TestImage> auxiliaryCartImage = std::nullopt
 	)
 		: systemRom(bmsx::test::encodeBlua32TestRom(
 			bmsx::RomImageDomain::System,
@@ -190,9 +193,19 @@ struct CpuTestMachine {
 			bmsx::RomImageDomain::Cartridge,
 			cartImage
 		))
+		, auxiliaryCartRom(auxiliaryCartImage.has_value()
+			? std::optional<bmsx::test::Blua32TestRom>{
+				bmsx::test::encodeBlua32TestRom(
+					bmsx::RomImageDomain::Cartridge,
+					*auxiliaryCartImage
+				)
+			}
+			: std::nullopt)
 		, memory(bmsx::MemoryInit{
 			systemRom.bytes,
-			bmsx::test::cartridgeSlots(cartRom.bytes),
+			auxiliaryCartRom.has_value()
+				? bmsx::test::cartridgeSlots(cartRom.bytes, auxiliaryCartRom->bytes)
+				: bmsx::test::cartridgeSlots(cartRom.bytes),
 		}, bmsx::PSX_MACHINE_SPEC.ramBytes)
 		, irq(memory)
 		, executionAddressSpace(memory)
@@ -811,13 +824,9 @@ void testCartridgeInstructionFetchRetainsExecSlot() {
 	systemImage.startupFunctionIndex = EXEC_CART_FUNCTION;
 	CpuTestMachine machine(
 		std::move(systemImage),
-		makeCartridgeSelectionSwitchImage(bmsx::OpCode::K0)
-	);
-	bmsx::test::Blua32TestRom slot1 = bmsx::test::encodeBlua32TestRom(
-		bmsx::RomImageDomain::Cartridge,
+		makeCartridgeSelectionSwitchImage(bmsx::OpCode::K0),
 		makeCartridgeSelectionSwitchImage(bmsx::OpCode::K1)
 	);
-	machine.memory.cartridgeController().installRom(1u, slot1.bytes);
 	machine.memory.writeMappedU32LE(bmsx::IO_CART_SELECT, 1u);
 
 	require(

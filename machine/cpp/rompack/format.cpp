@@ -4,7 +4,6 @@
 
 #include "format.h"
 #include "common/endian.h"
-#include "spec/bmsx/memory_map.h"
 #include "spec/bmsx/rom_header.h"
 
 namespace bmsx {
@@ -58,9 +57,6 @@ void writeCartRomHeader(u8* data, const CartRomHeader& header) {
 	);
 	writeLE32(data + CART_ROM_HEADER_METADATA_OFFSET, header.metadataOffset);
 	writeLE32(data + CART_ROM_HEADER_METADATA_LENGTH_OFFSET, header.metadataLength);
-	writeLE32(data + CART_ROM_HEADER_RESERVED_1_OFFSET, 0u);
-	writeLE32(data + CART_ROM_HEADER_CARTRIDGE_BOARD_OFFSET, header.cartridgeBoardWord);
-	writeLE32(data + CART_ROM_HEADER_CARTRIDGE_RAM_BYTES_OFFSET, header.cartridgeRamByteCount);
 }
 
 CartRomHeader parseCartHeader(const u8* data, size_t size) {
@@ -72,11 +68,8 @@ CartRomHeader parseCartHeader(const u8* data, size_t size) {
 	}
 	CartRomHeader header{};
 	header.headerSize = readLE32(data + CART_ROM_HEADER_SIZE_OFFSET);
-	if (header.headerSize < CART_ROM_HEADER_SIZE) {
-		throw BMSX_RUNTIME_ERROR("ROM header size is too small.");
-	}
-	if (header.headerSize > size) {
-		throw BMSX_RUNTIME_ERROR("ROM header size exceeds payload length.");
+	if (header.headerSize != CART_ROM_HEADER_SIZE) {
+		throw BMSX_RUNTIME_ERROR("ROM header size does not match the current format.");
 	}
 	header.manifestOffset = readLE32(data + CART_ROM_HEADER_MANIFEST_OFFSET);
 	header.manifestLength = readLE32(data + CART_ROM_HEADER_MANIFEST_LENGTH_OFFSET);
@@ -108,11 +101,6 @@ CartRomHeader parseCartHeader(const u8* data, size_t size) {
 	);
 	header.metadataOffset = readLE32(data + CART_ROM_HEADER_METADATA_OFFSET);
 	header.metadataLength = readLE32(data + CART_ROM_HEADER_METADATA_LENGTH_OFFSET);
-	header.cartridgeBoardWord = readLE32(data + CART_ROM_HEADER_CARTRIDGE_BOARD_OFFSET);
-	header.cartridgeRamByteCount = readLE32(data + CART_ROM_HEADER_CARTRIDGE_RAM_BYTES_OFFSET);
-	if (header.cartridgeRamByteCount > CART_RAM_SIZE) {
-		throw BMSX_RUNTIME_ERROR("Cartridge RAM byte count exceeds the socket aperture.");
-	}
 
 	assertSectionRange(static_cast<size_t>(header.manifestOffset), static_cast<size_t>(header.manifestLength), size, "manifest");
 	assertSectionRange(static_cast<size_t>(header.tocOffset), static_cast<size_t>(header.tocLength), size, "toc");

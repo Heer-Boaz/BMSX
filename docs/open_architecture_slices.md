@@ -48,10 +48,10 @@ De huidige machine-, BIOS- en cartlibgrenzen zijn:
   `./cartlib` als cart-library root. BIOS-Lua doet geen `require('cartlib/...')`.
   Bare-metal carts mogen de engine weglaten en GP0/GP1/GTE/DMA/IRQ zelf
   programmeren;
-- cartlib mag een volledige Unreal-/Godot-achtige runtime zijn: world, spaces,
-  components, compiled tick-schedule, input-actions, FSM, behaviour trees,
-  timelines, AEM en overlap-events. Dat is cart-middleware op MMIO, geen reden
-  om gameplay in BIOS of in de host te tillen;
+- cartlib bezit de bestaande game-runtimeconcepten: world, spaces, components,
+  compiled tick-schedule, input-actions, FSM, behaviour trees, timelines, AEM
+  en overlap-events. Dat is cart-middleware op MMIO, geen product-UI en geen
+  reden om gameplay in BIOS of in de host te tillen;
 - ICU blijft het rauwe registerfile. Action maps, edges, consume en repeat
   blijven cartlib. Device-assignment blijft host;
 - GEO `overlap2d_pass` is machinecommando. `cartlib/collision` staged descriptor-
@@ -65,15 +65,16 @@ De huidige machine-, BIOS- en cartlibgrenzen zijn:
   machine;
 - de machine heeft twee fysieke sockets (0 en 1), één cartridge-aperture en
   execution domains `-1 | 0 | 1`. Er is geen slot 2. Hosts kunnen slot 1 al
-  admitten (`?slot1=`, `--slot1`, libretro `dualcart`); dat is media, geen
-  Studio-product;
+  admitten (`?slot1=`, `--slot1`, libretro `dualcart`). Beide sockets kunnen
+  een plain ROM of een kaart met concrete expansion-devices dragen; geen
+  socket heeft een Studio-rol;
 - de TypeScript-IDE is VS Code-chrome (`ide/editor`, `ide/workbench`,
   `ide/language`) plus Hot Resume. [`OverlayRenderer`](../ide/runtime/overlay_renderer.ts)
   en `LAYER_2D_IDE` tekenen na PCRTC-merge, quantize en CRT. Dat is host-UI,
   geen cart-waarneembare viewport;
 - PCRTC circuit1/circuit2 mergen VRAM-rectangles in de beam, vóór host overlay.
-  BIOS-monitor programmeert circuit2 al via `gx_gpu.prepare_supervisor`. Een
-  Unreal-achtige viewport is die tweede scanout, niet de IDE-overlay;
+  BIOS-monitor programmeert circuit2 al via `gx_gpu.prepare_supervisor`. Dat is
+  een generieke machinecapability en nog geen gekozen Studio-viewport;
 - Hot Resume is IDE-only Live Coding van ingestoken images. Het is geen PIE,
   geen tweede world en geen tweede `Runtime`.
 
@@ -302,73 +303,39 @@ geen bouwrecept.
 | `BIOS-ENTRY-01` | Live BIOS-entry is [`machine/bios/main.lua`](../machine/bios/main.lua) (boot, `load`, cartridge-handoff). Repo-root [`main.lua`](../main.lua) is een stale sibling zonder `lua_compiler.load` en met `print ("test")`. De architecture-zin „root `main.lua`” is daardoor dubbelzinnig. | Eén BIOS-entry-owner; de stale rootkopie is weg of niet langer een tweede programma; architecture.md wijst naar `machine/bios/main.lua`. |
 | `GUEST-GX-RESET-01` | BIOS [`gpu/gpu.lua`](../machine/bios/gpu/gpu.lua) en cartlib [`gx/display.lua`](../cartlib/gx/display.lua) programmeren dezelfde PCRTC/GP1-resetwoorden met lokale magie. Machine-resetlatches leven in `gpu_pcrtc`/`gpu_display`. Twee callers mogen blijven; twee handboeken niet. | De gepubliceerde presetwoorden staan één keer in het hardwarecontract of de gespiegelde spec; BIOS-boot en cartlib-presets zijn callers; geen gedeelde Lua-module over BIOS en cartlib; cartlib verdwijnt niet in `SYSTEM_ROM`. |
 
-## Studio-product: volledige ownership-contracten
+## Cartridge-expansie vóór Studio
 
-Dit is geen stappenplan en geen toestemming om Unreal na te bouwen in de host.
-Iedere rij is één eindtoestand. Verifieer de live sockets, PCRTC-woorden,
-mailbox-offsets en IDE-overlay-owners voordat er een bestand wijzigt. Kleinere
-hulpcommits zijn alleen gerechtvaardigd wanneer een eerlijke grens niet kleiner
-kan zonder een facade.
-
-Het product is twee lagen op één machine:
-
-```text
-SYSTEM_ROM     BIOS boot, monitor, public function vector
-CART socket 0  game image; cartlib world; circuit1
-CART socket 1  Studio board; gizmos in VRAM; circuit2; mailbox
-TS Studio      workbench, language service, Hot Resume, admission
-PCRTC          PMODE merge vóór quantize/CRT/host overlay
-```
+De expansielaag is zelfstandig machinewerk. Studio is slechts één mogelijke
+latere gebruiker en bepaalt geen socketrol, board-id, capability-bit of
+mailbox-ABI. Beide fysieke sockets mogen een gewone game-ROM of een kaart met
+concrete extra hardware bevatten. De live machine-eigenaren en de professionele
+slot/card-modellen van openMSX, MAME en ares blijven de toetssteen; deze tabel is
+geen toestemming voor een generieke device-facade.
 
 | ID | Eindtoestand | Klaar wanneer |
 | --- | --- | --- |
-| `STUDIO-GUEST-VIEWPORT-01` | Unreal-viewport op deze machine: PCRTC circuit2, socket-1 `ram_mailbox`-cart, socket-0 game, één beam. Instruction-fetch volgt `CP0.EXEC`; data volgt `CART_SELECT`; DMA gebruikt socket chip-select overrides. BIOS scant de eerste bootable socket; slot 1 wekt via mailbox-IRQ of supervisor-chord, zonder de slot-0-entry te stelen. Slot 0 schrijft elke frame-clock (niet gameplay-clock) een vaste little-endian inspect-tabel in **zijn** cartridge-RAM, buiten GEO-scratch `0x08040000`. Header: magic, revision, object_count, component_count, selected_object_id, selected_component_id, hover_object_id, flags (paused, space), view_origin, view_size, pointer_game_x, pointer_game_y. Daarna objectrijen met registry-id, definition-id, space-id, parent-id, x, y, z, sx, sy, pick_x0, pick_y0, pick_x1, pick_y1, flags, first_component, component_count. Daarna componentrijen met component-id, owner-id, class-id, id_local, enabled, pick-extents relatief aan de owner. Coordinaten zijn de live guest-woorden van `world_object` (`x`/`y`/`z`), geen host-floats. Pick-extents komen uit de actieve visual (`source_width`/`source_height` + offsets) of de 2D-collider; slot 0 berekent ze, slot 1 raadt geen AABB. ICU-pointer (`sys_inp_pointer_*`, Q16.16 host-pointerruimte) wordt één keer naar gamepixels van circuit1 gebracht met de gepubliceerde PCRTC-outputbounds; die mapping is cart-owned en schrijft `pointer_game_x/y`. Slot 1 leest de tabel (DMA override mag), tekent in VRAM ná `gpu/system_vram_region` en ná de gamepages: crosshair op pointer, hover-rect, selectie-rect, translate-handles op de geselecteerde actor. `PMODE` merget circuit2 over circuit1. Primary-press zonder handle: pick topmost object wiens pick-rect de pointer bevat (z, daarna `_visual_sequence`); schrijf SELECT-object. Tweede pick op dezelfde actor met modifier of click in de component-outliner: SELECT-component. Translate-drag schrijft SET_POS in mailbox-DATA; slot 0 past `world_object:set_pos` toe zodat de mutation barrier en visual revision de gewone owners blijven. PAUSE_GAMEPLAY zet `world:set_gameplay_clock_running`; frame-clock, inspect-publish en circuit1 blijven. SET_VISIBLE / SET_ENABLED / SET_Z zijn dezelfde weg. Spawn/despawn vanuit Studio is mailbox SPAWN(definition_id, x, y, z) / DISPOSE(id) die `world:spawn` / `mark_for_disposal` aanroepen; geen host-`spawn`. Live Coding blijft Hot Resume; live property-edit is guest-mutatie van de draaiende world, geen bronherschrijf. Libretro/SNES Mini zien dezelfde gizmos omdat het VRAM is. | Architecture.md beschrijft viewport versus host-overlay; dual-cart mailbox, CART_SELECT-versus-EXEC-latch en DMA-override hebben RAM/MMIO-tests; headless/GPUREAD toont crosshair + selectie-rect in circuit2 terwijl circuit1 de gamepage houdt; pointer-pick selecteert het juiste registry-id; SET_POS verschuift het object via world; pause stopt gameplay-systemen niet de overlay; geen host-heap-walk, geen OverlayRenderer-gizmo, geen ICU-action-map voor pick, geen cartlib-typen in de language service, geen slot 2, geen tweede Runtime. |
-| `STUDIO-HOST-CHROME-01` | TypeScript-IDE blijft VS Code. Outliner is een tree over de object- en componentrijen van dezelfde cart-RAM-tabel; selectie is het selected_* id-paar. Details-panel toont alleen woorden uit die rijen plus mailbox-schrijfbare velden (pos, z, visible, enabled). Klik in outliner schrijft SELECT; gizmo-selectie in slot 1 verschijnt in het panel zonder Lua-reflectie. `OverlayRenderer` / `LAYER_2D_IDE` blijven tabs, problems, find, debugger. `toggleEditor` + `blocksRuntimePipeline` is fullscreen bron-edit, niet Play. Possess = ICU naar socket 0 (game); Edit-viewport = pointer/primary voor pick naar de Studio-cart-logica, host-shortcuts en supervisor-chords ongemapt. Language service opent de authored Lua van definition_id via gewone workspace-resolutie, niet via een prefab-type. Hot Resume ongewijzigd. | Workbench toont en schrijft dezelfde ids als circuit2-selectie; overlay tekent geen scene; `IDE-LIVE-01` blijft de chrome-gate. |
+| `CART-DEVICE-COMPOSITION-01` | Eén gedeelde cartridgebus met twee nullable fysieke sockets. Het pakketmanifest bevat een verplichte geordende `hardware`-lijst met uitsluitend concrete geïmplementeerde componenten (`rom`, `ram`, `mailbox`); de pakketheader bevat alleen layout- en entrymetadata. ROM is optioneel: zonder `rom` blijven pakketbytes host-side en drijft de kaart nul in het ROM-window. Een source-free hardwarekaart is een normaal pakket met nul BLua32-entrywoorden, niet een afgeleide bootable-cartfixture; BLua32-image/vectorwoorden zonder ROM worden door producer en admission geweigerd. De producer krijgt `system|cart` expliciet en scant alleen de resource-roots van dat product; padspelling bepaalt geen ownership. De producthost vertaalt het manifest één keer naar directe installed media; geen manifest-DTO bereikt de machine. `CartridgeController` bezit selectie, socketstatus en fysieke IRQ/DREQ-routering. Iedere `CartridgeCard` bezit haar optionele ROM/RAM, concrete devices, mapped-page keys/write-watches en mutable state. Er zijn geen boardwoorden, inventoryregisters, capabilitymasks, lege-media-met-`present`, bootable-vlag, manifeststrings in de hot path of compatibiliteitslezers. | TS en C++ hebben dezelfde representatie; beide sockets kunnen onafhankelijk ROM, RAM en mailbox combineren; lege sockets leveren nul en hebben `null`/`optional` state; aanwezige ROM/RAM blijven direct page-bindbaar; de normale producer bouwt een echte source-free RAM/mailbox-cart zonder ROM-chip of BIOS-imports en ontdekt dezelfde bronset ook buiten de BMSX-worktree zonder BIOS-assets mee te pakken; mailbox-edge, DREQ, DMA chip-select override, reset en save/restore zijn gespiegeld getest; echte dual-cartconformance bewijst in beide runtimes dat de ROM-loze pakketheader niet bus-visible is. |
+| `CART-CLOCKED-DEVICE-01` | **Geparkeerd tot er een echte kaart bestaat.** De eerste 3D-math-, video- of andere clocked expansion krijgt een concreet card-owned device, registerdecode, schedulerbudget, IRQ/DREQ en save-state. Pas die echte datapath bepaalt de gedeelde abstractie. Geen lege `Accelerator`, `tick()`-facade of generieke property bag vooraf. | Een gekozen kaart en softwarecontract bestaan; de implementatie volgt een passende productie-emulatorreferentie en houdt de controller bij fysieke selectie en signaalroutering, zonder nieuw socketnummer, capability-inventory of executable namespace. |
 
-### Viewport-protocol (onderdeel van `STUDIO-GUEST-VIEWPORT-01`)
+Een toekomstige VRAM-kaart is dus geen speciale Studio-socket. Zij wordt een
+concrete kaartcomponent met haar eigen decode en toestand, precies zoals RAM en
+de mailbox dat nu zijn. Of die component via het cartridge-MMIO-window, DMA of
+een ander werkelijk hardwarecontract met GX samenwerkt, wordt pas beslist bij
+die device-slice; dit document verzint die datapath niet vooraf.
 
-Dit is de guest-ABI, geen tweede machine. Woorden, geen namen in de bus.
+## Studio: eerst functioneel ontwerp, nog geen implementatieslice
 
-```text
-ICU pointer (host Q16.16)
-  → slot 0 of slot 1 (één owner) mapped naar circuit1 gamepixels
-  → header.pointer_game_x/y
+De eerdere `STUDIO-GUEST-VIEWPORT-01` en `STUDIO-HOST-CHROME-01` zijn verworpen.
+Zij begonnen bij een Unreal/Unity-achtig beeld, reserveerden socket 1 en schreven
+al een scene-, pick-, gizmo- en pauseprotocol voordat de authoringproblemen en
+runtime-eigenaren waren onderzocht. Geen onderdeel van dat protocol is nog een
+bouwcontract. Ook `STUDIO-PIE-RUNTIME-01` is geen geldige vervolgslice zolang er
+geen geaccepteerd Studio-ontwerp is.
 
-Primary press, geen handle-hit:
-  walk objectrijen back-to-front using pick rect + z
-  → SELECT object_id (component_id = 0)
-
-Primary press op translate-handle van selected object:
-  → drag: SET_POS object_id, x, y  (z ongewijzigd tenzij Z-handle)
-
-Outliner / modifier-pick:
-  → SELECT object_id, component_id
-
-Mailbox DATA layout (één word opcode, daarna operand words):
-  1 SELECT     object_id, component_id
-  2 SET_POS    object_id, x, y, z
-  3 SET_FLAG   object_id, flag_mask, value
-  4 SET_COMP   component_id, enabled
-  5 PAUSE      running  (0/1 → gameplay clock)
-  6 SPAWN      definition_id, x, y, z
-  7 DISPOSE    object_id
-
-Circuit2 draw list (GP0, elke frame-clock):
-  clear overlay page
-  crosshair at pointer_game
-  hover pick rect
-  selected pick rect + translate handles
-  optional component pick rect if selected_component_id ≠ 0
-```
-
-Pick is 2D tegen gepubliceerde rects, geen GPU-id-buffer en geen host raycast.
-Handles zijn overlay-pixels, geen colliders in de game-overlap-pass.
-Slot 1 mag cartlib gebruiken voor zijn eigen HUD-world; die world is niet de
-game-world. De game-world blijft de singleton van slot 0.
-
-Die twee rijen zijn het Unreal-gevoel dat deze machine toelaat: viewport in de
-beam, chrome om de beam, pick/gizmo/live-mutatie als woorden, Play = gameplay-clock
-+ ICU, Live Coding = Hot Resume.
+| ID | Opdracht | Klaar wanneer |
+| --- | --- | --- |
+| `STUDIO-FUNCTIONAL-DESIGN-01` | Maak na `CART-DEVICE-COMPOSITION-01` een ontwerp vanuit de echte authoring- en testtaken van de bestaande games en cartlib. Begin bij Behavior Trees, FSM-overgangen, ActionEffects, blackboard/state-data, eventketens en deterministische scenario-tests: wat moet de maker modelleren, live zien, pauzeren, stap-voor-stap uitvoeren, injecteren, opnemen, vergelijken en terugvinden in bron? Onderzoek per functie eerst volwassen productievoorbeelden (onder meer VS Code voor workbench/testing/debugger-ownership en gespecialiseerde BT/FSM-tools voor graph-editing en runtime-observatie). Verifieer daarna de live BMSX owners en representaties. Maak meerdere UX/ownership-opties; kies nog geen viewport, socket, mailbox, guest-ABI, scene graph of tweede Runtime. Neem de werkelijke lage presentatieresolutie, het bestaande IDE-tiny-font, keyboard/controllerbediening en browser plus libretro expliciet mee. | Een reviewbaar functioneel eisenmodel, workflows, resolutie-/inputbudget, runtime-observability-contract, testmodel en owner-matrix bestaan; iedere architectuurkeuze verwijst naar een best-practicebron en live BMSX-owner; prototypes mogen wegwerpbaar zijn en schrijven geen machine/cartlib ABI. De gebruiker heeft het ontwerp gekozen vóór er implementatieslices worden geknipt. |
+| `STUDIO-IMPLEMENTATION-01` | **Geblokkeerd op het geaccepteerde functionele ontwerp.** Knip pas daarna verticale product-slices langs echte workflows, niet langs een vooraf bedacht Unreal-scherm. | `STUDIO-FUNCTIONAL-DESIGN-01` is geaccepteerd en iedere slice heeft een bewezen owner, representatie, interactief testpad en performancebudget. |
 
 ## Validatiebasis voor inputwerk
 
@@ -403,11 +370,10 @@ Houd throughput en fysieke pacing als twee afzonderlijke metingen. De
 `profile:libretro-particle-benchmark-offscreen-wsl`-opdracht eindigt op de
 particle-scene en draait zonder throttle of audio; zij meet hoeveel werk de
 emulator en GLES2-route kunnen verwerken, niet of een frontend vloeiend paced.
-De `profile:libretro-gx`STUDIO-GUEST-VIEWPORT-01` een firmware-call/return nodig heeft zodat slot 1 wekt zonder de slot-0-entry te stelen. Tot die ABI bestaat blijft wekken mailbox-IRQ of supervisor-chord. |
-| `BIOS-IRQ-SCAN-01` | BIOS [`kernel/interrupts.lua`](../machine/bios/kernel/interrupts.lua) loopt `pairs(handlers)` en ackt na de scan. Cartlib [`irq.lua`](../cartlib/irq.lua) is lowest-set-bit plus ack-before-handler. Hervatten wanneer BIOS meer unmasked sources krijgt dan boot-DMA+VBlank; til de cart-dispatcher niet „voor consistentie” de firmware in. |
-| `CARTLIB-VISUAL-SORT-01` | [`cartlib/world/world.lua`](../cartlib/world/world.lua) kopieert actieve visuals en `table.sort` bij iedere depth/revision. Hervatten wanneer een cart-visualbudget die sort als producer-hotspot meet. Geen tweede draw-path op gevoel. |
-| `CARTLIB-WORLD-SINGLETON-01` | Eén image, één world-module. Twee carts hebben twee singletons; dat is geen PIE. Hervatten alleen wanneer één ROM twee gelijktijdige worlds nodig heeft. |
-| `STUDIO-PIE-RUNTIME-01` | Stop de editor-scene moet herstellen die Play heeft gesloopt. Dan een tweede `Runtime` uitsluitend in TypeScript Studio, zelfde twee media, eigen VRAM/APU; Stop vernietigt die instance. Niet in libretro, niet in cartlib, niet als slot 2. Raakt `GX-REVISION-OWNER-01`. Tot die productvraag: edit-in-plac
+De `profile:libretro-gx-dependency-soak-offscreen-wsl`-opdracht doorloopt alle
+GX-scenes, eindigt op framebuffer-feedback en blijft paced, maar schakelt audio
+uit zodat een dummy-audiodevice geen fictieve underruns rapporteert. Geen van
+beide vervangt de zichtbare targetmetingen hieronder.
 
 ## Vereist een interactieve backend of fysieke target
 
@@ -433,4 +399,4 @@ De `profile:libretro-gx`STUDIO-GUEST-VIEWPORT-01` een firmware-call/return nodig
 | `BIOS-TERM-EXT-01` | Er een concrete behoefte is en de command-, call/return- en terminal-output-ABI voor een door firmware geselecteerde developer-cartridge is ontworpen. |
 | `BIOS-IRQ-SCAN-01` | BIOS [`kernel/interrupts.lua`](../machine/bios/kernel/interrupts.lua) loopt `pairs(handlers)` en ackt na de scan. Cartlib [`irq.lua`](../cartlib/irq.lua) is lowest-set-bit plus ack-before-handler. Hervatten wanneer BIOS meer unmasked sources krijgt dan boot-DMA+VBlank; til de cart-dispatcher niet „voor consistentie” de firmware in. |
 | `CARTLIB-VISUAL-SORT-01` | [`cartlib/world/world.lua`](../cartlib/world/world.lua) kopieert actieve visuals en `table.sort` bij iedere depth/revision. Hervatten wanneer een cart-visualbudget die sort als producer-hotspot meet. Geen tweede draw-path op gevoel. |
-| `CARTLIB-WORLD-SINGLETON-01` | De cart-world is één module-instantie. Hervatten wanneer Studio of play-in-play een tweede gelijktijdige world nodig heeft; tot die tijd geen multi-world facade. |
+| `CARTLIB-WORLD-SINGLETON-01` | De cart-world is één module-instantie. Hervatten wanneer een gekozen productworkflow werkelijk twee gelijktijdige worlds in één ROM vereist; tot die tijd geen multi-world facade. |

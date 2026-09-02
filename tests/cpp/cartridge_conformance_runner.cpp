@@ -1,4 +1,5 @@
 #include "common/mmap_file.h"
+#include "cartridge_media.h"
 #include "machine/devices/input/contracts.h"
 #include "machine/devices/system/controller.h"
 #include "machine/runtime/runtime.h"
@@ -97,31 +98,18 @@ int main(int argc, char** argv) {
 		|| !bootableCartFile.open(argv[3])) {
 		throw std::runtime_error("Cartridge conformance media did not map.");
 	}
-	const bmsx::RomImage systemImage = bmsx::parseRomImage(
+	const bmsx::RomImage systemImage = bmsx::parseSystemRomImage(
 		systemFile.data(),
-		systemFile.size(),
-		bmsx::RomImageDomain::System);
-	const bmsx::RomImage dataCartImage = bmsx::parseRomImage(
+		systemFile.size());
+	const bmsx::CartridgePackage dataCartImage = bmsx::parseCartridgePackage(
 		dataCartFile.data(),
-		dataCartFile.size(),
-		bmsx::RomImageDomain::Cartridge);
-	const bmsx::RomImage bootableCartImage = bmsx::parseRomImage(
+		dataCartFile.size());
+	const bmsx::CartridgePackage bootableCartImage = bmsx::parseCartridgePackage(
 		bootableCartFile.data(),
-		bootableCartFile.size(),
-		bmsx::RomImageDomain::Cartridge);
-	const bmsx::CartridgeSlotMediaPair cartridgeMedia{{
-		{
-			dataCartImage.bytes,
-			dataCartImage.header.cartridgeBoardWord,
-			dataCartImage.header.cartridgeRamByteCount,
-			true,
-		},
-		{
-			bootableCartImage.bytes,
-			bootableCartImage.header.cartridgeBoardWord,
-			bootableCartImage.header.cartridgeRamByteCount,
-			true,
-		},
+		bootableCartFile.size());
+	const bmsx::CartridgeSocketMediaPair cartridgeMedia{{
+		bmsx::cartridgeMediaFromPackage(dataCartImage),
+		bmsx::cartridgeMediaFromPackage(bootableCartImage),
 	}};
 	IdleInput input;
 	bmsx::Runtime runtime(

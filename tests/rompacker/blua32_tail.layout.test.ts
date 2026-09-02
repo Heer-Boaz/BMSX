@@ -11,7 +11,7 @@ import {
 } from '../../machine/ts/rompack/format';
 import type { RomAsset } from '../../toolchain/ts/rompack/assets';
 import { buildRomAssetAddressLinkValuesFromSymbols } from '../../toolchain/ts/rompack/asset_symbols';
-import type { RomManifest } from '../../toolchain/ts/rompack/manifest';
+import type { CartManifest } from '../../machine/ts/rompack/manifest';
 import { parseCartridgeIndex } from '../../toolchain/ts/rompack/loader';
 import { BLUA32_SYMBOLS_IMAGE_ID } from '../../toolchain/ts/rompack/blua32_symbols';
 import {
@@ -32,7 +32,7 @@ import { buildBlua32Image } from '../../scripts/rompacker/blua32_image_builder';
 const ROOT = join(process.cwd(), 'tmp', 'blua32-tail-layout-test');
 const ENTRY_PATH = 'entry.lua';
 const LINK_RAM_BYTES = 0x00400000;
-const MANIFEST: RomManifest = {};
+const MANIFEST: CartManifest = { hardware: [{ type: 'rom' }] };
 
 function luaAsset(source: string): RomAsset {
 	const entrySource = `module<entry>\n${source}`;
@@ -95,8 +95,6 @@ test('BLua32-tail rebuild preserves immutable asset metadata addresses and bytes
 		});
 		await finalizeRompack('tail', {
 			debug: true,
-			cartridgeBoardWord: 0,
-			cartridgeRamByteCount: 0,
 			layout,
 			outputDirectory: ROOT,
 			blua32,

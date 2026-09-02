@@ -327,22 +327,45 @@ FrameLoopStateSnapshot decodeFrameLoopState(const BinValue& value, const char* l
 	return state;
 }
 
-BinValue encodeCartridgeSlotState(const CartridgeSlotState& state) {
+BinValue encodeCartridgeMailboxState(const CartridgeMailboxState& state) {
 	BinObject object;
-	object["ram"] = BinValue(BinBinary(state.ram.begin(), state.ram.end()));
-	object["mailboxDataWord"] = static_cast<f64>(state.mailboxDataWord);
-	object["mailboxControlWord"] = static_cast<f64>(state.mailboxControlWord);
-	object["mailboxIrqPending"] = state.mailboxIrqPending;
+	object["dataWord"] = static_cast<f64>(state.dataWord);
+	object["controlWord"] = static_cast<f64>(state.controlWord);
+	object["irqPending"] = state.irqPending;
 	return BinValue(std::move(object));
 }
 
-CartridgeSlotState decodeCartridgeSlotState(const BinValue& value, const char* label) {
+CartridgeMailboxState decodeCartridgeMailboxState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
-	CartridgeSlotState state;
-	state.ram = requireBinary(requireField(object, "ram", label), "machine.cartridge.slots[].ram");
-	state.mailboxDataWord = requireU32(requireField(object, "mailboxDataWord", label), "machine.cartridge.slots[].mailboxDataWord");
-	state.mailboxControlWord = requireU32(requireField(object, "mailboxControlWord", label), "machine.cartridge.slots[].mailboxControlWord");
-	state.mailboxIrqPending = requireBool(requireField(object, "mailboxIrqPending", label), "machine.cartridge.slots[].mailboxIrqPending");
+	CartridgeMailboxState state;
+	state.dataWord = requireU32(requireField(object, "dataWord", label), "machine.cartridge.slots[].mailbox.dataWord");
+	state.controlWord = requireU32(requireField(object, "controlWord", label), "machine.cartridge.slots[].mailbox.controlWord");
+	state.irqPending = requireBool(requireField(object, "irqPending", label), "machine.cartridge.slots[].mailbox.irqPending");
+	return state;
+}
+
+BinValue encodeCartridgeCardState(const CartridgeCardState& state) {
+	BinObject object;
+	object["ram"] = state.ram
+		? BinValue(BinBinary(state.ram->begin(), state.ram->end()))
+		: BinValue(nullptr);
+	object["mailbox"] = state.mailbox
+		? encodeCartridgeMailboxState(*state.mailbox)
+		: BinValue(nullptr);
+	return BinValue(std::move(object));
+}
+
+CartridgeCardState decodeCartridgeCardState(const BinValue& value, const char* label) {
+	const BinObject& object = requireObject(value, label);
+	CartridgeCardState state;
+	const BinValue& ram = requireField(object, "ram", label);
+	if (!ram.isNull()) {
+		state.ram = requireBinary(ram, "machine.cartridge.slots[].ram");
+	}
+	const BinValue& mailbox = requireField(object, "mailbox", label);
+	if (!mailbox.isNull()) {
+		state.mailbox = decodeCartridgeMailboxState(mailbox, "machine.cartridge.slots[].mailbox");
+	}
 	return state;
 }
 
@@ -351,8 +374,10 @@ BinValue encodeCartridgeControllerState(const CartridgeControllerState& state) {
 	object["selectionWord"] = static_cast<f64>(state.selectionWord);
 	BinArray slots;
 	slots.reserve(CARTRIDGE_SLOT_COUNT);
-	for (const CartridgeSlotState& slot : state.slots) {
-		slots.push_back(encodeCartridgeSlotState(slot));
+	for (const std::optional<CartridgeCardState>& slot : state.slots) {
+		slots.push_back(slot
+			? encodeCartridgeCardState(*slot)
+			: BinValue(nullptr));
 	}
 	object["slots"] = BinValue(std::move(slots));
 	return BinValue(std::move(object));
@@ -370,7 +395,9 @@ CartridgeControllerState decodeCartridgeControllerState(const BinValue& value, c
 	CartridgeControllerState state;
 	state.selectionWord = requireU32(requireField(object, "selectionWord", label), "machine.cartridge.selectionWord");
 	for (u32 slotIndex = 0; slotIndex < CARTRIDGE_SLOT_COUNT; ++slotIndex) {
-		state.slots[slotIndex] = decodeCartridgeSlotState(slots[slotIndex], "machine.cartridge.slots[]");
+		if (!slots[slotIndex].isNull()) {
+			state.slots[slotIndex] = decodeCartridgeCardState(slots[slotIndex], "machine.cartridge.slots[]");
+		}
 	}
 	return state;
 }

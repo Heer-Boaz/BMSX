@@ -32,9 +32,17 @@ Blua32TestImage makeMinimalImage() {
 } // namespace
 
 std::vector<u8> makeMinimalBootRom(
+	RomImageDomain domain) {
+	CartManifest manifest;
+	if (domain == RomImageDomain::Cartridge) {
+		manifest.hardware.emplace_back(CartridgeRomDeviceConfig{});
+	}
+	return makeMinimalBootRom(domain, manifest);
+}
+
+std::vector<u8> makeMinimalBootRom(
 	RomImageDomain domain,
-	u32 cartridgeBoardWord,
-	u32 cartridgeRamByteCount) {
+	const CartManifest& manifest) {
 	Blua32TestImage image = makeMinimalImage();
 	if (domain == RomImageDomain::System) {
 		for (const LuaBootPrimitive& primitive : LUA_BOOT_PRIMITIVES) {
@@ -44,8 +52,7 @@ std::vector<u8> makeMinimalBootRom(
 	return encodeBlua32TestRom(
 		domain,
 		image,
-		cartridgeBoardWord,
-		cartridgeRamByteCount
+		manifest
 	).bytes;
 }
 
@@ -79,13 +86,12 @@ std::vector<u8> makeMinimalDiagnosticBootRom(RomImageDomain domain) {
 	return encodeBlua32TestRom(domain, image).bytes;
 }
 
-std::vector<u8> makeMinimalDataRom(
-	u32 cartridgeBoardWord,
-	u32 cartridgeRamByteCount) {
-	return encodeBlua32TestDataRom(
-		cartridgeBoardWord,
-		cartridgeRamByteCount
-	);
+std::vector<u8> makeMinimalDataRom(const CartManifest& manifest) {
+	return encodeBlua32TestDataRom(manifest);
+}
+
+std::vector<u8> makeMinimalDataRom() {
+	return encodeBlua32TestDataRom();
 }
 
 } // namespace bmsx::test

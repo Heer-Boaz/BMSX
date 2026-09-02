@@ -1,65 +1,73 @@
 #include "machine/devices/cartridge/controller.h"
 
-#include "common/endian.h"
-#include "spec/bmsx/io.h"
+#include "machine/devices/cartridge/signals.h"
 #include "machine/devices/dma/controller.h"
 #include "machine/devices/irq/controller.h"
-#include "spec/bmsx/memory_map.h"
 #include "machine/memory/memory.h"
+#include "spec/bmsx/io.h"
+#include "spec/bmsx/memory_map.h"
 
-#include <algorithm>
 #include <cstring>
 
 namespace bmsx {
 namespace {
 
-constexpr u32 CARTRIDGE_DREQ_MASK =
+constexpr u32 CARTRIDGE_SLOT0_DREQ_MASK =
 	(1u << DMA_REQUEST_CARTRIDGE_SLOT0_WRITE)
-	| (1u << DMA_REQUEST_CARTRIDGE_SLOT0_READ)
-	| (1u << DMA_REQUEST_CARTRIDGE_SLOT1_WRITE)
+	| (1u << DMA_REQUEST_CARTRIDGE_SLOT0_READ);
+constexpr u32 CARTRIDGE_SLOT1_DREQ_MASK =
+	(1u << DMA_REQUEST_CARTRIDGE_SLOT1_WRITE)
 	| (1u << DMA_REQUEST_CARTRIDGE_SLOT1_READ);
+constexpr u64 CARTRIDGE_SLOT0_MAPPED_KEY_OFFSET = 1ull << 32u;
+constexpr u64 CARTRIDGE_SLOT1_MAPPED_KEY_OFFSET = 2ull << 32u;
 
 } // namespace
 
-CartridgeController::CartridgeController(const CartridgeSlotMediaPair& media)
-	: m_ramPageWriteWatches{
-		MappedPageWriteWatches(media[0].ramByteCount),
-		MappedPageWriteWatches(media[1].ramByteCount)
-	} {
-	for (u32 slotIndex = 0; slotIndex < CARTRIDGE_SLOT_COUNT; ++slotIndex) {
-		const CartridgeSlotMedia& source = media[slotIndex];
-		Slot& slot = m_slots[slotIndex];
-		slot.media = source;
-		slot.ram.resize(source.ramByteCount);
-		slot.mappedKeyOffset = static_cast<u64>(slotIndex + 1u) << 32u;
-	}
-	m_selectionWord = 0u;
+CartridgeController::CartridgeController(const CartridgeSocketMediaPair& media)
+	: m_cards{
+		media[0]
+			? std::optional<CartridgeCard>(
+				std::in_place,
+				*media[0],
+				CARTRIDGE_SLOT0_MAPPED_KEY_OFFSET
+			)
+			: std::nullopt,
+		media[1]
+			? std::optional<CartridgeCard>(
+				std::in_place,
+				*media[1],
+				CARTRIDGE_SLOT1_MAPPED_KEY_OFFSET
+			)
+			: std::nullopt
+	} {}
+
+void CartridgeController::connect(Memory& memory, IrqController& irq, DmaController& dma) {
+	m_irq = &irq;
+	m_dma = &dma;
+	memory.mapIoRead(IO_CART_SELECT, this, &CartridgeController::readSelectionThunk);
+	memory.mapIoWrite(IO_CART_SELECT, this, &CartridgeController::writeSelectionThunk);
+	memory.mapIoRead(IO_CART_STATUS, this, &CartridgeController::readStatusThunk);
 }
 
 void CartridgeController::installRom(u32 slotIndex, std::span<const u8> rom) {
-	Slot& slot = m_slots[slotIndex];
-	slot.media.rom = rom;
-	if (m_mappedPageInvalidator) {
-		m_mappedPageInvalidator->invalidateMappedRange(
-			CART_ROM_BASE + slot.mappedKeyOffset,
-			CART_ROM_END + slot.mappedKeyOffset
-		);
-	}
+	m_cards[slotIndex]->installRom(rom);
 }
 
 void CartridgeController::attachMappedPageInvalidator(
 	MappedPageInvalidator& invalidator
 ) {
-	m_mappedPageInvalidator = &invalidator;
+	if (m_cards[0]) m_cards[0]->attachMappedPageInvalidator(invalidator);
+	if (m_cards[1]) m_cards[1]->attachMappedPageInvalidator(invalidator);
 }
 
 void CartridgeController::detachMappedPageInvalidator() {
-	m_mappedPageInvalidator = nullptr;
+	if (m_cards[0]) m_cards[0]->detachMappedPageInvalidator();
+	if (m_cards[1]) m_cards[1]->detachMappedPageInvalidator();
 }
 
 void CartridgeController::clearMappedPageWriteWatches() {
-	m_ramPageWriteWatches[0].clear();
-	m_ramPageWriteWatches[1].clear();
+	if (m_cards[0]) m_cards[0]->clearMappedPageWriteWatches();
+	if (m_cards[1]) m_cards[1]->clearMappedPageWriteWatches();
 }
 
 void CartridgeController::bindMappedPage(
@@ -68,339 +76,123 @@ void CartridgeController::bindMappedPage(
 	MappedPageBinding& out
 ) {
 	const u32 slotIndex = selectedSlot(busSignals);
-	Slot& slot = m_slots[slotIndex];
-	out.key = address + slot.mappedKeyOffset;
-	out.readBytes = nullptr;
-	out.writeWatch = nullptr;
-	if (address < CART_RAM_BASE) {
-		out.cacheable = true;
-		const size_t offset = static_cast<size_t>(address - CART_ROM_BASE);
-		if (offset + MAPPED_PAGE_BYTE_SIZE <= slot.media.rom.size()) {
-			out.readBytes = slot.media.rom.data() + offset;
-		}
+	auto& card = m_cards[slotIndex];
+	if (card) {
+		card->bindMappedPage(address, out);
 		return;
 	}
-	if (address < CART_MMIO_BASE) {
-		const size_t offset = static_cast<size_t>(address - CART_RAM_BASE);
-		if (offset < slot.ram.size()) {
-			out.cacheable = true;
-			if (offset + MAPPED_PAGE_BYTE_SIZE <= slot.ram.size()) {
-				out.readBytes = slot.ram.data() + offset;
-			}
-			m_ramPageWriteWatches[slotIndex].bind(offset, out);
-			return;
-		}
-	}
-	out.cacheable = false;
-}
-
-void CartridgeController::connect(Memory& memory, IrqController& irq, DmaController& dma) {
-	m_irq = &irq;
-	m_dma = &dma;
-	memory.mapIoRead(IO_CART_SELECT, this, &CartridgeController::readSelectionThunk);
-	memory.mapIoWrite(IO_CART_SELECT, this, &CartridgeController::writeSelectionThunk);
-	memory.mapIoRead(IO_CART_STATUS, this, &CartridgeController::readStatusThunk);
-	memory.mapIoRead(IO_CART_SLOT0_BOARD, this, &CartridgeController::readSlot0BoardThunk);
-	memory.mapIoRead(IO_CART_SLOT0_RAM_BYTES, this, &CartridgeController::readSlot0RamBytesThunk);
-	memory.mapIoRead(IO_CART_SLOT1_BOARD, this, &CartridgeController::readSlot1BoardThunk);
-	memory.mapIoRead(IO_CART_SLOT1_RAM_BYTES, this, &CartridgeController::readSlot1RamBytesThunk);
+	out.key = address + (slotIndex == 0u
+		? CARTRIDGE_SLOT0_MAPPED_KEY_OFFSET
+		: CARTRIDGE_SLOT1_MAPPED_KEY_OFFSET);
+	out.cacheable = address < CART_RAM_BASE;
+	out.readBytes = nullptr;
+	out.writeWatch = nullptr;
 }
 
 void CartridgeController::reset() {
 	m_selectionWord = 0u;
-	for (Slot& slot : m_slots) {
-		slot.mailboxDataWord = 0u;
-		slot.mailboxControlWord = 0u;
-		slot.mailboxIrqPending = false;
-	}
-	publishDreqLines();
+	if (m_cards[0]) m_cards[0]->reset();
+	if (m_cards[1]) m_cards[1]->reset();
+	publishDreqLines(0u);
+	publishDreqLines(1u);
 }
 
 CartridgeControllerState CartridgeController::captureState() const {
 	CartridgeControllerState state;
 	state.selectionWord = m_selectionWord;
-	for (u32 slotIndex = 0; slotIndex < CARTRIDGE_SLOT_COUNT; ++slotIndex) {
-		state.slots[slotIndex] = captureSlot(m_slots[slotIndex]);
-	}
+	if (m_cards[0]) state.slots[0] = m_cards[0]->captureState();
+	if (m_cards[1]) state.slots[1] = m_cards[1]->captureState();
 	return state;
 }
 
 void CartridgeController::restoreState(const CartridgeControllerState& state) {
+	for (u32 slotIndex = 0u; slotIndex < CARTRIDGE_SLOT_COUNT; ++slotIndex) {
+		if (m_cards[slotIndex].has_value() != state.slots[slotIndex].has_value()) {
+			throw BMSX_RUNTIME_ERROR(
+				"Cartridge state does not match the occupied physical sockets."
+			);
+		}
+	}
 	m_selectionWord = state.selectionWord;
-	for (u32 slotIndex = 0; slotIndex < CARTRIDGE_SLOT_COUNT; ++slotIndex) {
-		restoreSlot(m_slots[slotIndex], state.slots[slotIndex]);
-	}
-	publishDreqLines();
-}
-
-u8 CartridgeController::readU8(u32 address, MappedBusSignals busSignals) const {
-	const Slot& slot = m_slots[selectedSlot(busSignals)];
-	if (address < CART_RAM_BASE) {
-		const size_t offset = static_cast<size_t>(address - CART_ROM_BASE);
-		return offset < slot.media.rom.size() ? slot.media.rom[offset] : 0u;
-	}
-	if (address < CART_MMIO_BASE) {
-		if ((slot.media.boardWord & CARTRIDGE_BOARD_RAM) == 0u) return 0u;
-		const size_t offset = static_cast<size_t>(address - CART_RAM_BASE);
-		return offset < slot.ram.size() ? slot.ram[offset] : 0u;
-	}
-	const u32 word = readMailboxWord(slot, address - CART_MMIO_BASE);
-	return static_cast<u8>(word >> ((address & 3u) << 3u));
-}
-
-u32 CartridgeController::readU16(u32 address, MappedBusSignals busSignals) const {
-	const Slot& slot = m_slots[selectedSlot(busSignals)];
-	if (address < CART_RAM_BASE) {
-		return readU16From(slot.media.rom, static_cast<size_t>(address - CART_ROM_BASE));
-	}
-	if (address < CART_MMIO_BASE) {
-		if ((slot.media.boardWord & CARTRIDGE_BOARD_RAM) == 0u) return 0u;
-		return readU16From(slot.ram, static_cast<size_t>(address - CART_RAM_BASE));
-	}
-	const u32 word = readMailboxWord(slot, address - CART_MMIO_BASE);
-	return (word >> ((address & 2u) << 3u)) & 0xffffu;
-}
-
-u32 CartridgeController::readU32(u32 address, MappedBusSignals busSignals) const {
-	const Slot& slot = m_slots[selectedSlot(busSignals)];
-	if (address < CART_RAM_BASE) {
-		return readU32From(slot.media.rom, static_cast<size_t>(address - CART_ROM_BASE));
-	}
-	if (address < CART_MMIO_BASE) {
-		if ((slot.media.boardWord & CARTRIDGE_BOARD_RAM) == 0u) return 0u;
-		return readU32From(slot.ram, static_cast<size_t>(address - CART_RAM_BASE));
-	}
-	return readMailboxWord(slot, address - CART_MMIO_BASE);
-}
-
-void CartridgeController::writeU8(u32 address, u8 value, MappedBusSignals busSignals) {
-	if (address >= CART_RAM_BASE && address < CART_MMIO_BASE) {
-		const u32 slotIndex = selectedSlot(busSignals);
-		Slot& slot = m_slots[slotIndex];
-		if ((slot.media.boardWord & CARTRIDGE_BOARD_RAM) == 0u) return;
-		const size_t offset = static_cast<size_t>(address - CART_RAM_BASE);
-		if (offset < slot.ram.size()) {
-			slot.ram[offset] = value;
-			m_ramPageWriteWatches[slotIndex].invalidateWrite(
-				offset,
-				1u,
-				CART_RAM_BASE + slot.mappedKeyOffset,
-				m_mappedPageInvalidator
-			);
+	for (u32 slotIndex = 0u; slotIndex < CARTRIDGE_SLOT_COUNT; ++slotIndex) {
+		if (m_cards[slotIndex]) {
+			m_cards[slotIndex]->restoreState(*state.slots[slotIndex]);
 		}
 	}
+	publishDreqLines(0u);
+	publishDreqLines(1u);
 }
 
-void CartridgeController::writeU16(u32 address, u32 value, MappedBusSignals busSignals) {
-	if (address < CART_RAM_BASE || address >= CART_MMIO_BASE) return;
-	const u32 slotIndex = selectedSlot(busSignals);
-	Slot& slot = m_slots[slotIndex];
-	if ((slot.media.boardWord & CARTRIDGE_BOARD_RAM) == 0u) return;
-	const size_t offset = static_cast<size_t>(address - CART_RAM_BASE);
-	if (offset + 2u <= slot.ram.size()) {
-		writeLE16(slot.ram.data() + offset, static_cast<u16>(value));
-		m_ramPageWriteWatches[slotIndex].invalidateWrite(
-			offset,
-			2u,
-			CART_RAM_BASE + slot.mappedKeyOffset,
-			m_mappedPageInvalidator
-		);
+void CartridgeController::routeCardEffects(u32 slotIndex, u32 effects) {
+	if ((effects & CARTRIDGE_CARD_EFFECT_IRQ_EDGE) != 0u) {
+		m_irq->raise(slotIndex == 0u ? IRQ_CARTRIDGE_SLOT0 : IRQ_CARTRIDGE_SLOT1);
 	}
-}
-
-void CartridgeController::writeU32(u32 address, u32 value, MappedBusSignals busSignals) {
-	const u32 slotIndex = selectedSlot(busSignals);
-	Slot& slot = m_slots[slotIndex];
-	if (address >= CART_RAM_BASE && address < CART_MMIO_BASE) {
-		if ((slot.media.boardWord & CARTRIDGE_BOARD_RAM) == 0u) return;
-		const size_t offset = static_cast<size_t>(address - CART_RAM_BASE);
-		if (offset + 4u <= slot.ram.size()) {
-			writeLE32(slot.ram.data() + offset, value);
-			m_ramPageWriteWatches[slotIndex].invalidateWrite(
-				offset,
-				4u,
-				CART_RAM_BASE + slot.mappedKeyOffset,
-				m_mappedPageInvalidator
-			);
-		}
-		return;
-	}
-	if (address >= CART_MMIO_BASE) {
-		writeMailboxWord(slotIndex, slot, address - CART_MMIO_BASE, value);
+	if ((effects & CARTRIDGE_CARD_EFFECT_DREQ_CHANGED) != 0u) {
+		publishDreqLines(slotIndex);
 	}
 }
 
 void CartridgeController::readBytes(u32 address, u8* out, size_t length) const {
-	const Slot& slot = m_slots[selectedSlot()];
-	if (address < CART_RAM_BASE && static_cast<u64>(address) + length <= CART_RAM_BASE) {
-		const size_t offset = static_cast<size_t>(address - CART_ROM_BASE);
-		const size_t available = offset < slot.media.rom.size()
-			? std::min(length, slot.media.rom.size() - offset)
-			: 0u;
-		if (available != 0u) {
-			std::memcpy(out, slot.media.rom.data() + offset, available);
-		}
-		if (available != length) {
-			std::memset(out + available, 0, length - available);
-		}
+	const auto& card = m_cards[selectedSlot()];
+	if (card) {
+		card->readBytes(address, out, length);
 		return;
 	}
-	if (address >= CART_RAM_BASE && static_cast<u64>(address) + length <= CART_MMIO_BASE) {
-		if ((slot.media.boardWord & CARTRIDGE_BOARD_RAM) == 0u) {
-			std::memset(out, 0, length);
-			return;
-		}
-		const size_t offset = static_cast<size_t>(address - CART_RAM_BASE);
-		const size_t available = offset < slot.ram.size()
-			? std::min(length, slot.ram.size() - offset)
-			: 0u;
-		if (available != 0u) {
-			std::memcpy(out, slot.ram.data() + offset, available);
-		}
-		if (available != length) {
-			std::memset(out + available, 0, length - available);
-		}
-		return;
-	}
-	for (size_t index = 0; index < length; ++index) {
-		out[index] = readU8(address + static_cast<u32>(index), MAPPED_BUS_MASTER_CPU);
-	}
+	std::memset(out, 0, length);
 }
 
-bool CartridgeController::bindRomByteView(u32 slotIndex, u32 address, size_t length, Span<const u8>& out) const {
-	const std::span<const u8> rom = m_slots[slotIndex].media.rom;
-	const size_t offset = static_cast<size_t>(address - CART_ROM_BASE);
-	if (length == 0u || offset >= rom.size() || length > rom.size() - offset) {
-		return false;
-	}
-	out = Span<const u8>(rom.data() + offset, length);
-	return true;
+bool CartridgeController::bindRomByteView(
+	u32 slotIndex,
+	u32 address,
+	size_t length,
+	Span<const u8>& out
+) const {
+	const auto& card = m_cards[slotIndex];
+	return card ? card->bindRomByteView(address, length, out) : false;
 }
 
-u32 CartridgeController::readU16From(std::span<const u8> bytes, size_t offset) {
-	if (offset + 2u <= bytes.size()) return readLE16(bytes.data() + offset);
-	return offset < bytes.size() ? bytes[offset] : 0u;
-}
-
-u32 CartridgeController::readU32From(std::span<const u8> bytes, size_t offset) {
-	if (offset + 4u <= bytes.size()) return readLE32(bytes.data() + offset);
-	if (offset >= bytes.size()) return 0u;
-	u32 word = bytes[offset];
-	if (offset + 1u < bytes.size()) word |= static_cast<u32>(bytes[offset + 1u]) << 8u;
-	if (offset + 2u < bytes.size()) word |= static_cast<u32>(bytes[offset + 2u]) << 16u;
-	return word;
-}
-
-u32 CartridgeController::readMailboxWord(const Slot& slot, u32 offset) const {
-	if ((slot.media.boardWord & CARTRIDGE_BOARD_MAILBOX) == 0u) return 0u;
-	switch (offset & ~3u) {
-		case CARTRIDGE_MAILBOX_DATA_OFFSET:
-			return slot.mailboxDataWord;
-		case CARTRIDGE_MAILBOX_CONTROL_OFFSET:
-			return slot.mailboxControlWord;
-		case CARTRIDGE_MAILBOX_STATUS_OFFSET:
-			return slot.mailboxIrqPending ? CARTRIDGE_MAILBOX_STATUS_IRQ_PENDING : 0u;
-		default:
-			return 0u;
-	}
-}
-
-void CartridgeController::writeMailboxWord(u32 slotIndex, Slot& slot, u32 offset, u32 value) {
-	if ((slot.media.boardWord & CARTRIDGE_BOARD_MAILBOX) == 0u) return;
-	switch (offset) {
-		case CARTRIDGE_MAILBOX_DATA_OFFSET:
-			slot.mailboxDataWord = value;
-			return;
-		case CARTRIDGE_MAILBOX_CONTROL_OFFSET:
-			slot.mailboxControlWord = value & ~CARTRIDGE_MAILBOX_CONTROL_IRQ_TRIGGER;
-			if ((value & CARTRIDGE_MAILBOX_CONTROL_IRQ_TRIGGER) != 0u && !slot.mailboxIrqPending) {
-				slot.mailboxIrqPending = true;
-				m_irq->raise(slotIndex == 0u ? IRQ_CARTRIDGE_SLOT0 : IRQ_CARTRIDGE_SLOT1);
-			}
-			publishDreqLines();
-			return;
-		case CARTRIDGE_MAILBOX_IRQ_ACK_OFFSET:
-			if (value != 0u) slot.mailboxIrqPending = false;
-			return;
-		default:
-			return;
-	}
-}
-
-void CartridgeController::publishDreqLines() {
+void CartridgeController::publishDreqLines(u32 slotIndex) {
 	u32 asserted = 0u;
-	const Slot& slot0 = m_slots[0];
-	const Slot& slot1 = m_slots[1];
-	if ((slot0.mailboxControlWord & CARTRIDGE_MAILBOX_CONTROL_DREQ_WRITE) != 0u) {
-		asserted |= 1u << DMA_REQUEST_CARTRIDGE_SLOT0_WRITE;
+	const auto& card = m_cards[slotIndex];
+	const u32 lines = card ? card->dreqLines() : 0u;
+	if (slotIndex == 0u) {
+		if ((lines & CARTRIDGE_CARD_DREQ_WRITE) != 0u) {
+			asserted |= 1u << DMA_REQUEST_CARTRIDGE_SLOT0_WRITE;
+		}
+		if ((lines & CARTRIDGE_CARD_DREQ_READ) != 0u) {
+			asserted |= 1u << DMA_REQUEST_CARTRIDGE_SLOT0_READ;
+		}
+		m_dma->setRequestLines(CARTRIDGE_SLOT0_DREQ_MASK, asserted);
+		return;
 	}
-	if ((slot0.mailboxControlWord & CARTRIDGE_MAILBOX_CONTROL_DREQ_READ) != 0u) {
-		asserted |= 1u << DMA_REQUEST_CARTRIDGE_SLOT0_READ;
-	}
-	if ((slot1.mailboxControlWord & CARTRIDGE_MAILBOX_CONTROL_DREQ_WRITE) != 0u) {
+	if ((lines & CARTRIDGE_CARD_DREQ_WRITE) != 0u) {
 		asserted |= 1u << DMA_REQUEST_CARTRIDGE_SLOT1_WRITE;
 	}
-	if ((slot1.mailboxControlWord & CARTRIDGE_MAILBOX_CONTROL_DREQ_READ) != 0u) {
+	if ((lines & CARTRIDGE_CARD_DREQ_READ) != 0u) {
 		asserted |= 1u << DMA_REQUEST_CARTRIDGE_SLOT1_READ;
 	}
-	m_dma->setRequestLines(CARTRIDGE_DREQ_MASK, asserted);
-}
-
-CartridgeSlotState CartridgeController::captureSlot(const Slot& slot) {
-	CartridgeSlotState state;
-	state.ram = slot.ram;
-	state.mailboxDataWord = slot.mailboxDataWord;
-	state.mailboxControlWord = slot.mailboxControlWord;
-	state.mailboxIrqPending = slot.mailboxIrqPending;
-	return state;
-}
-
-void CartridgeController::restoreSlot(Slot& slot, const CartridgeSlotState& state) {
-	if (state.ram.size() != slot.ram.size()) {
-		throw BMSX_RUNTIME_ERROR("Cartridge RAM size does not match the inserted board.");
-	}
-	std::copy_n(state.ram.data(), slot.ram.size(), slot.ram.data());
-	if (m_mappedPageInvalidator) {
-		m_mappedPageInvalidator->invalidateMappedRange(
-			CART_RAM_BASE + slot.mappedKeyOffset,
-			CART_RAM_BASE + slot.mappedKeyOffset + slot.ram.size()
-		);
-	}
-	slot.mailboxDataWord = state.mailboxDataWord;
-	slot.mailboxControlWord = state.mailboxControlWord;
-	slot.mailboxIrqPending = state.mailboxIrqPending;
+	m_dma->setRequestLines(CARTRIDGE_SLOT1_DREQ_MASK, asserted);
 }
 
 u32 CartridgeController::readSelectionThunk(void* context, u32, MappedBusSignals) {
 	return static_cast<CartridgeController*>(context)->m_selectionWord;
 }
 
-void CartridgeController::writeSelectionThunk(void* context, u32, u32 value, MappedBusSignals) {
+void CartridgeController::writeSelectionThunk(
+	void* context,
+	u32,
+	u32 value,
+	MappedBusSignals
+) {
 	static_cast<CartridgeController*>(context)->m_selectionWord = value;
 }
 
 u32 CartridgeController::readStatusThunk(void* context, u32, MappedBusSignals) {
 	const CartridgeController& controller = *static_cast<CartridgeController*>(context);
 	u32 status = controller.selectedSlot() == 1u ? CARTRIDGE_STATUS_SELECTED_SLOT1 : 0u;
-	if (controller.m_slots[0].media.present) status |= CARTRIDGE_STATUS_SLOT0_PRESENT;
-	if (controller.m_slots[1].media.present) status |= CARTRIDGE_STATUS_SLOT1_PRESENT;
+	if (controller.m_cards[0]) status |= CARTRIDGE_STATUS_SLOT0_PRESENT;
+	if (controller.m_cards[1]) status |= CARTRIDGE_STATUS_SLOT1_PRESENT;
 	return status;
-}
-
-u32 CartridgeController::readSlot0BoardThunk(void* context, u32, MappedBusSignals) {
-	return static_cast<CartridgeController*>(context)->m_slots[0].media.boardWord;
-}
-
-u32 CartridgeController::readSlot0RamBytesThunk(void* context, u32, MappedBusSignals) {
-	return static_cast<u32>(static_cast<CartridgeController*>(context)->m_slots[0].ram.size());
-}
-
-u32 CartridgeController::readSlot1BoardThunk(void* context, u32, MappedBusSignals) {
-	return static_cast<CartridgeController*>(context)->m_slots[1].media.boardWord;
-}
-
-u32 CartridgeController::readSlot1RamBytesThunk(void* context, u32, MappedBusSignals) {
-	return static_cast<u32>(static_cast<CartridgeController*>(context)->m_slots[1].ram.size());
 }
 
 } // namespace bmsx

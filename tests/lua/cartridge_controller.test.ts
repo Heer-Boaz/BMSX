@@ -13,10 +13,6 @@ import {
 	DMA_REQUEST_CARTRIDGE_SLOT1_READ,
 	DMA_TRIGGER_START,
 	IO_CART_SELECT,
-	IO_CART_SLOT0_BOARD,
-	IO_CART_SLOT0_RAM_BYTES,
-	IO_CART_SLOT1_BOARD,
-	IO_CART_SLOT1_RAM_BYTES,
 	IO_CART_STATUS,
 	IO_DMA0_CONTROL,
 	IO_DMA0_READ_ADDR,
@@ -31,8 +27,6 @@ import {
 import { CPU } from '../../machine/ts/machine/cpu/cpu';
 import { ExecutionAddressSpace } from '../../machine/ts/machine/execution_address_space';
 import {
-	CARTRIDGE_BOARD_MAILBOX,
-	CARTRIDGE_BOARD_RAM,
 	CARTRIDGE_MAILBOX_CONTROL_DREQ_READ,
 	CARTRIDGE_MAILBOX_CONTROL_DREQ_WRITE,
 	CARTRIDGE_MAILBOX_CONTROL_IRQ_TRIGGER,
@@ -45,7 +39,10 @@ import {
 	CARTRIDGE_STATUS_SLOT0_PRESENT,
 	CARTRIDGE_STATUS_SLOT1_PRESENT,
 } from '../../machine/ts/spec/bmsx/cartridge';
-import { type CartridgeSlotMediaPair } from '../../machine/ts/machine/devices/cartridge/contracts';
+import type {
+	CartridgeCardMedia,
+	CartridgeSocketMediaPair,
+} from '../../machine/ts/machine/devices/cartridge/contracts';
 import { DmaController } from '../../machine/ts/machine/devices/dma/controller';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import {
@@ -69,7 +66,7 @@ type CartridgeHarness = {
 	scheduler: DeviceScheduler;
 };
 
-function createHarness(cartridgeSlots: CartridgeSlotMediaPair): CartridgeHarness {
+function createHarness(cartridgeSlots: CartridgeSocketMediaPair): CartridgeHarness {
 	const memory = new Memory({
 		systemRom: new Uint8Array(0),
 		cartridgeSlots,
@@ -88,20 +85,19 @@ function createHarness(cartridgeSlots: CartridgeSlotMediaPair): CartridgeHarness
 
 function slot(
 	romWords: readonly number[],
-	boardWord: number,
-	ramByteCount: number,
-	present: boolean,
-): CartridgeSlotMediaPair[number] {
+	ramByteCount: number | null = null,
+	mailboxPresent = false,
+): CartridgeCardMedia {
 	const rom = new Uint8Array(romWords.length * 4);
 	for (let index = 0; index < romWords.length; index += 1) {
 		writeLE32(rom, index * 4, romWords[index]!);
 	}
-	return { rom, boardWord, ramByteCount, present };
+	return { rom, ramByteCount, mailboxPresent };
 }
 
 test('cartridge bus selects one physical socket and retains the raw selection latch', () => {
-	const slot0 = slot([0x11223344], CARTRIDGE_BOARD_RAM, 16, true);
-	const slot1 = slot([0xaabbccdd], CARTRIDGE_BOARD_MAILBOX, 0, true);
+	const slot0 = slot([0x11223344], 16);
+	const slot1 = slot([0xaabbccdd], null, true);
 	const { memory } = createHarness([slot0, slot1]);
 
 	assert.equal(memory.readMappedU32LE(IO_CART_SELECT), 0);
@@ -111,11 +107,6 @@ test('cartridge bus selects one physical socket and retains the raw selection la
 		CARTRIDGE_STATUS_SLOT0_PRESENT
 			| CARTRIDGE_STATUS_SLOT1_PRESENT,
 	);
-	assert.equal(memory.readMappedU32LE(IO_CART_SLOT0_BOARD), CARTRIDGE_BOARD_RAM);
-	assert.equal(memory.readMappedU32LE(IO_CART_SLOT0_RAM_BYTES), 16);
-	assert.equal(memory.readMappedU32LE(IO_CART_SLOT1_BOARD), CARTRIDGE_BOARD_MAILBOX);
-	assert.equal(memory.readMappedU32LE(IO_CART_SLOT1_RAM_BYTES), 0);
-
 	memory.writeMappedU32LE(IO_CART_SELECT, 0xa5a50001);
 	assert.equal(memory.readMappedU32LE(IO_CART_SELECT), 0xa5a50001);
 	assert.equal(memory.readMappedU32LE(CART_ROM_BASE), 0xaabbccdd);
@@ -127,11 +118,35 @@ test('cartridge bus selects one physical socket and retains the raw selection la
 	);
 });
 
-test('cartridge RAM, mailbox state, reset, and restore remain socket-local', () => {
-	const board = CARTRIDGE_BOARD_RAM | CARTRIDGE_BOARD_MAILBOX;
+test('an empty physical socket remains absent state and drives zero on the shared aperture', () => {
 	const { memory } = createHarness([
-		slot([], board, 16, true),
-		slot([], board, 16, true),
+		slot([0x11223344]),
+		null,
+	]);
+	memory.writeMappedU32LE(IO_CART_SELECT, 1);
+	assert.equal(
+		memory.readMappedU32LE(IO_CART_STATUS),
+		CARTRIDGE_STATUS_SLOT0_PRESENT | CARTRIDGE_STATUS_SELECTED_SLOT1,
+	);
+	assert.equal(memory.readMappedU32LE(CART_ROM_BASE), 0);
+	assert.equal(memory.readMappedU32LE(CART_RAM_BASE), 0);
+	assert.equal(memory.readMappedU32LE(CART_MMIO_BASE), 0);
+	assert.equal(memory.cartridgeController.captureState().slots[1], null);
+});
+
+test('cartridge RAM, mailbox state, reset, and restore remain socket-local', () => {
+	const hardwareCard: CartridgeCardMedia = {
+		rom: null,
+		ramByteCount: 16,
+		mailboxPresent: true,
+	};
+	const { memory } = createHarness([
+		hardwareCard,
+		{
+			rom: null,
+			ramByteCount: 16,
+			mailboxPresent: true,
+		},
 	]);
 
 	assert.equal(memory.readMappedU32LE(IO_CART_SELECT), 0);
@@ -181,8 +196,8 @@ test('cartridge RAM, mailbox state, reset, and restore remain socket-local', () 
 
 test('mailbox IRQ raises once per cartridge source-latch edge', () => {
 	const { memory } = createHarness([
-		slot([], CARTRIDGE_BOARD_MAILBOX, 0, true),
-		slot([], 0, 0, false),
+		{ rom: null, ramByteCount: null, mailboxPresent: true },
+		null,
 	]);
 
 	memory.writeMappedU32LE(MAILBOX_CONTROL_ADDRESS, CARTRIDGE_MAILBOX_CONTROL_IRQ_TRIGGER);
@@ -205,10 +220,9 @@ test('mailbox IRQ raises once per cartridge source-latch edge', () => {
 });
 
 test('cartridge DREQ selectors override CPU selection independently on both DMA sides', () => {
-	const board = CARTRIDGE_BOARD_RAM | CARTRIDGE_BOARD_MAILBOX;
 	const { memory, dma, scheduler } = createHarness([
-		slot([0x01020304, 0x11121314], board, 16, true),
-		slot([0xa1a2a3a4, 0xb1b2b3b4], board, 16, true),
+		slot([0x01020304, 0x11121314], 16, true),
+		slot([0xa1a2a3a4, 0xb1b2b3b4], 16, true),
 	]);
 
 	memory.writeMappedU32LE(IO_CART_SELECT, 1);

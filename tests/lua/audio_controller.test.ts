@@ -448,15 +448,13 @@ test('APU voices latch their cartridge socket across CPU selection changes and r
 		cartridgeSlots: [
 			{
 				rom: new Uint8Array([0x00, 0x00, 0x00, 0x00]),
-				boardWord: 0,
-				ramByteCount: 0,
-				present: true,
+				ramByteCount: null,
+				mailboxPresent: false,
 			},
 			{
 				rom: new Uint8Array([0xff, 0xff, 0xff, 0xff]),
-				boardWord: 0,
-				ramByteCount: 0,
-				present: true,
+				ramByteCount: null,
+				mailboxPresent: false,
 			},
 		],
 	}, PSX_MACHINE_SPEC.ramBytes);

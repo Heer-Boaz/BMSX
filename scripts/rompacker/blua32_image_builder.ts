@@ -1,4 +1,7 @@
-import { decodeBinary } from '../../machine/ts/common/serializer/binencoder';
+import {
+	decodeBinary,
+	utf8FatalDecoder,
+} from '../../machine/ts/common/serializer/binencoder';
 import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
 import { resolveLuaEntryModuleIndex } from '../../toolchain/ts/lua/entry_module';
@@ -67,7 +70,7 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): BuiltBlua32I
 		}
 		const chunk = decodeBinary(asset.compiled_buffer!) as LuaChunk;
 		modulePaths.add(modulePath);
-		const source = asset.buffer!.toString('utf8');
+		const source = utf8FatalDecoder.decode(asset.buffer!);
 		diagnosticSources.set(chunk.range.path, {
 			displayPath: asset.source_path,
 			source,

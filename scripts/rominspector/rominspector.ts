@@ -6,7 +6,7 @@ import * as fs from 'fs/promises';
 import { parseArgs } from 'node:util';
 import { parseCartHeader, type CartRomHeader } from '../../machine/ts/rompack/format';
 import type { RomAsset } from '../../toolchain/ts/rompack/assets';
-import type { RomManifest } from '../../toolchain/ts/rompack/manifest';
+import type { CartManifest } from '../../machine/ts/rompack/manifest';
 import { collectRomAssetSymbols } from '../../toolchain/ts/rompack/asset_symbols';
 import { loadRomAssetList, parseCartridgeIndex } from '../../toolchain/ts/rompack/loader';
 import {
@@ -22,14 +22,14 @@ import { runNativeInspectorUI } from './native_ui';
 import { generateCycleCostReport } from './cycle_cost_analysis';
 
 let assetList: RomAsset[] = [];
-let romManifest: RomManifest | null = null;
+let romManifest: CartManifest | null = null;
 let romProjectRootPath: string | null = null;
 async function loadAssets(
 	rombin: Uint8Array,
 	header: CartRomHeader,
-): Promise<{ assets: RomAsset[]; manifest: RomManifest | null; projectRootPath: string | null }> {
+): Promise<{ assets: RomAsset[]; manifest: CartManifest | null; projectRootPath: string | null }> {
 	let assets: RomAsset[] = [];
-	let manifest: RomManifest | null = null;
+	let manifest: CartManifest | null = null;
 	let projectRootPath: string | null = null;
 	if (header.manifestLength === 0) {
 		const entriesAndRoot = await loadRomAssetList(rombin, 'cart');
@@ -171,7 +171,7 @@ function printAssetSymbols(assets: RomAsset[]): void {
 	printTable(['symbol', 'type', 'asset', 'payload', 'address', 'length'], rows);
 }
 
-function printManifest(manifest: RomManifest | null, projectRootPath: string | null): void {
+function printManifest(manifest: CartManifest | null, projectRootPath: string | null): void {
 	if (!manifest) {
 		console.log('Manifest: <missing>');
 		return;

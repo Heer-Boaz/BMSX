@@ -12,6 +12,7 @@
 
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <stdexcept>
 #include <vector>
 
@@ -56,26 +57,38 @@ void testLibretroStateEnvelopeRoundTrip() {
 	bmsx::LibretroInput input(readSupervisorRequestLine);
 	const std::vector<bmsx::u8> system =
 		bmsx::test::makeMinimalBootRom(bmsx::RomImageDomain::System);
+	bmsx::CartManifest cartridgeManifest;
+	cartridgeManifest.hardware.emplace_back(bmsx::CartridgeRomDeviceConfig{});
+	cartridgeManifest.hardware.emplace_back(bmsx::CartridgeRamDeviceConfig{16u});
 	const std::vector<bmsx::u8> cartridge = bmsx::test::makeMinimalBootRom(
 		bmsx::RomImageDomain::Cartridge,
-		bmsx::CARTRIDGE_BOARD_RAM,
-		16u);
-	const bmsx::RomImage systemImage = bmsx::parseRomImage(
+		cartridgeManifest);
+	const std::vector<bmsx::u8> romOnlyCartridge = bmsx::test::makeMinimalBootRom(
+		bmsx::RomImageDomain::Cartridge,
+		bmsx::CartManifest{
+			.title = std::nullopt,
+			.hardware = {bmsx::CartridgeRomDeviceConfig{}},
+		});
+	const bmsx::RomImage systemImage = bmsx::parseSystemRomImage(
 		system.data(),
-		system.size(),
-		bmsx::RomImageDomain::System);
-	const bmsx::RomImage cartridgeImage = bmsx::parseRomImage(
+		system.size());
+	const bmsx::CartridgePackage cartridgeImage = bmsx::parseCartridgePackage(
 		cartridge.data(),
-		cartridge.size(),
-		bmsx::RomImageDomain::Cartridge);
-	const bmsx::CartridgeSlotMediaPair cartridgeMedia{{
-		{
+		cartridge.size());
+	const bmsx::CartridgePackage romOnlyCartridgeImage = bmsx::parseCartridgePackage(
+		romOnlyCartridge.data(),
+		romOnlyCartridge.size());
+	const bmsx::CartridgeSocketMediaPair cartridgeMedia{{
+		bmsx::CartridgeCardMedia{
 			cartridgeImage.bytes,
-			cartridgeImage.header.cartridgeBoardWord,
-			cartridgeImage.header.cartridgeRamByteCount,
-			true,
+			16u,
+			false,
 		},
-		{},
+		bmsx::CartridgeCardMedia{
+			romOnlyCartridgeImage.bytes,
+			std::nullopt,
+			false,
+		},
 	}};
 	bmsx::Runtime runtime(
 		bmsx::RuntimeOptions{

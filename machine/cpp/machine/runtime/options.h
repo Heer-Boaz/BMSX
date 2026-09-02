@@ -13,7 +13,7 @@ namespace bmsx {
  */
 struct RuntimeOptions {
 	std::span<const u8> systemRomBytes;
-	CartridgeSlotMediaPair cartridgeSlots;
+	CartridgeSocketMediaPair cartridgeSlots;
 	const MachineModelSpec& machineModel;
 };
 

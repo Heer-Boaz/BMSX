@@ -4,7 +4,9 @@ const CART_SOURCE_EXTENSIONS = new Set(['.lua']);
 
 function isRuntimeCartSourcePath(path: string): boolean {
 	const normalized = path.replace(/\\/g, '/');
-	return !normalized.includes('/_ignore/') && !normalized.includes('/test/');
+	return !normalized.includes('/.bmsx/')
+		&& !normalized.includes('/_ignore/')
+		&& !normalized.includes('/test/');
 }
 
 export function collectCartSourceFiles(roots: readonly string[]): string[] {

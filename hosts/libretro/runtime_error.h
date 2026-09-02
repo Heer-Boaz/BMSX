@@ -5,6 +5,7 @@
 #include "spec/bmsx/cartridge.h"
 
 #include <array>
+#include <optional>
 #include <string_view>
 
 namespace bmsx {
@@ -17,7 +18,7 @@ void flushLibretroSystemOutput(
 void reportLibretroRuntimeError(
 	Runtime& runtime,
 	const RomImage& systemRom,
-	const std::array<RomImage, CARTRIDGE_SLOT_COUNT>& cartridgeRoms,
+	const std::array<std::optional<CartridgePackage>, CARTRIDGE_SLOT_COUNT>& cartridgePackages,
 	std::string_view message,
 	const retro_log_callback& logging);
 

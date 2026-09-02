@@ -1,1 +1,3 @@
 title: Cartlib Test
+hardware:
+    - type: rom

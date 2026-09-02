@@ -345,6 +345,7 @@ class BinWriter {
 class BinReader {
 	private readonly dv: DataView;
 	private readonly zeroCopyBin: boolean;
+	private readonly rejectFloatingPointValues: boolean;
 	private readonly maxProps: number;
 	private readonly maxContainerEntries: number;
 	private readonly maxDepth: number;
@@ -355,6 +356,7 @@ class BinReader {
 	constructor(private readonly buf: Uint8Array, opts: DecodeOptions) {
 		this.dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
 		this.zeroCopyBin = opts.zeroCopyBin ?? false;
+		this.rejectFloatingPointValues = opts.rejectFloatingPointValues ?? false;
 		this.maxProps = opts.maxProps ?? 1_000_000;
 		this.maxContainerEntries = opts.maxContainerEntries ?? 1_000_000;
 		this.maxDepth = opts.maxDepth ?? (1 << 15);
@@ -394,6 +396,9 @@ class BinReader {
 				case Tag.True: return true;
 				case Tag.False: return false;
 				case Tag.F64: {
+					if (this.rejectFloatingPointValues) {
+						throw new Error('decodeBinary: floating-point values are not accepted by this schema');
+					}
 					this.need(8);
 					const v = this.dv.getFloat64(this.offset, true);
 					this.offset += 8;
@@ -432,6 +437,9 @@ class BinReader {
 				}
 				case Tag.Int: return this.readVarIntSigned();
 				case Tag.F32: {
+					if (this.rejectFloatingPointValues) {
+						throw new Error('decodeBinary: floating-point values are not accepted by this schema');
+					}
 					this.need(4);
 					const v = this.dv.getFloat32(this.offset, true);
 					this.offset += 4;
@@ -506,6 +514,8 @@ class BinReader {
 
 export interface DecodeOptions {
 	zeroCopyBin?: boolean;
+	/** Enforce an integer-only wire schema before JavaScript erases numeric tags. */
+	rejectFloatingPointValues?: boolean;
 	maxProps?: number;
 	maxContainerEntries?: number;
 	maxDepth?: number;

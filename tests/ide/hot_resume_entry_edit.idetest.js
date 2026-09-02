@@ -325,7 +325,7 @@ t.replaceActiveCodeSource(revisionSource(entryRecord, 2).replace(
 const faultLogStart = t.logMessageCount();
 await t.performHotResume();
 
-const faultSequenceAddress = 0x08010438;
+const faultSequenceAddress = 0x08010428;
 let faultSequence = 0;
 for (let frame = 0; frame < 1200 && faultSequence === 0; frame += 1) {
 	await t.frames(1);

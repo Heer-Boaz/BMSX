@@ -30,7 +30,7 @@ test('resource scan treats glTF buffer URIs as model-owned and keeps other .bin 
 		await writeFile(join(ROOT, 'models', 'mesh.bin'), Buffer.from([5, 6, 7, 8]));
 		await writeFile(join(ROOT, 'models', 'mesh.gltf'), JSON.stringify({ asset: { version: '2.0' }, buffers: [{ uri: 'mesh.bin', byteLength: 4 }] }));
 
-		const resources = await getResMetaList([ROOT]);
+		const resources = await getResMetaList([ROOT], { domain: 'cart' });
 		const binResources = resources.filter(resource => resource.type === 'bin');
 
 		assert.deepEqual(binResources.map(resource => resource.name).sort(), ['scripted', 'tiles']);
@@ -111,8 +111,6 @@ test('ROM writer materializes word-aligned payload ranges', async () => {
 		});
 		await finalizeRompack('aligned', {
 			debug: false,
-			cartridgeBoardWord: 0,
-			cartridgeRamByteCount: 0,
 			blua32,
 			layout,
 			outputDirectory,

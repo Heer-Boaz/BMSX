@@ -1,1 +1,3 @@
 title: Bare Metal Cart
+hardware:
+    - type: rom

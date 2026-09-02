@@ -43,16 +43,7 @@ struct AudioHarness {
 		: memory(bmsx::MemoryInit{
 			{systemRom.data(), systemRom.size()},
 			auxiliaryCartridge
-				? bmsx::CartridgeSlotMediaPair{{
-					{
-						.rom = cartRom,
-						.present = true,
-					},
-					{
-						.rom = auxiliaryCartRom,
-						.present = true,
-					},
-				}}
+				? bmsx::test::cartridgeSlots(cartRom, auxiliaryCartRom)
 				: bmsx::test::cartridgeSlots(cartRom)},
 			bmsx::PSX_MACHINE_SPEC.ramBytes)
 		, irq(memory)

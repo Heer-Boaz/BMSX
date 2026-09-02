@@ -1,52 +1,30 @@
-import { readLE16, readLE32, writeLE16, writeLE32 } from '../../../common/endian';
 import {
 	DMA_REQUEST_CARTRIDGE_SLOT0_READ,
 	DMA_REQUEST_CARTRIDGE_SLOT0_WRITE,
 	DMA_REQUEST_CARTRIDGE_SLOT1_READ,
 	DMA_REQUEST_CARTRIDGE_SLOT1_WRITE,
 	IO_CART_SELECT,
-	IO_CART_SLOT0_BOARD,
-	IO_CART_SLOT0_RAM_BYTES,
-	IO_CART_SLOT1_BOARD,
-	IO_CART_SLOT1_RAM_BYTES,
 	IO_CART_STATUS,
 	IRQ_CARTRIDGE_SLOT0,
 	IRQ_CARTRIDGE_SLOT1,
 } from '../../../spec/bmsx/io';
+import {
+	CART_RAM_BASE,
+} from '../../../spec/bmsx/memory_map';
 import {
 	MAPPED_BUS_CARTRIDGE_SLOT1,
 	MAPPED_BUS_CARTRIDGE_SLOT_OVERRIDE,
 	MAPPED_BUS_MASTER_CPU,
 	type MappedBusSignals,
 } from '../../memory/bus_signals';
-import {
-	CART_MMIO_BASE,
-	CART_RAM_BASE,
-	CART_ROM_BASE,
-	CART_ROM_END,
-} from '../../../spec/bmsx/memory_map';
 import type {
 	MappedPageBinding,
 	MappedPageInvalidator,
 	Memory,
 } from '../../memory/memory';
-import {
-	MAPPED_PAGE_BYTE_SIZE,
-	MappedPageWriteWatches,
-} from '../../memory/mapped_page';
 import type { DmaController } from '../dma/controller';
 import type { IrqController } from '../irq/controller';
 import {
-	CARTRIDGE_BOARD_MAILBOX,
-	CARTRIDGE_BOARD_RAM,
-	CARTRIDGE_MAILBOX_CONTROL_DREQ_READ,
-	CARTRIDGE_MAILBOX_CONTROL_DREQ_WRITE,
-	CARTRIDGE_MAILBOX_CONTROL_IRQ_TRIGGER,
-	CARTRIDGE_MAILBOX_CONTROL_OFFSET,
-	CARTRIDGE_MAILBOX_DATA_OFFSET,
-	CARTRIDGE_MAILBOX_IRQ_ACK_OFFSET,
-	CARTRIDGE_MAILBOX_STATUS_IRQ_PENDING,
-	CARTRIDGE_MAILBOX_STATUS_OFFSET,
 	CARTRIDGE_STATUS_SELECTED_SLOT1,
 	CARTRIDGE_STATUS_SLOT0_PRESENT,
 	CARTRIDGE_STATUS_SLOT1_PRESENT,
@@ -55,56 +33,39 @@ import {
 import {
 	type CartridgeByteView,
 	type CartridgeControllerState,
-	type CartridgeSlotMedia,
-	type CartridgeSlotMediaPair,
-	type CartridgeSlotState,
+	type CartridgeSocketMediaPair,
 } from './contracts';
+import { CartridgeCard } from './card';
+import {
+	CARTRIDGE_CARD_DREQ_READ,
+	CARTRIDGE_CARD_DREQ_WRITE,
+	CARTRIDGE_CARD_EFFECT_DREQ_CHANGED,
+	CARTRIDGE_CARD_EFFECT_IRQ_EDGE,
+} from './signals';
 
-type CartridgeSlot = {
-	media: CartridgeSlotMedia;
-	ram: Uint8Array;
-	mappedKeyOffset: number;
-	mailboxDataWord: number;
-	mailboxControlWord: number;
-	mailboxIrqPending: boolean;
-};
-
-const CARTRIDGE_DREQ_MASK =
+const CARTRIDGE_SLOT0_MAPPED_KEY_OFFSET = 0x100000000;
+const CARTRIDGE_SLOT1_MAPPED_KEY_OFFSET = 0x200000000;
+const CARTRIDGE_SLOT0_DREQ_MASK =
 	(1 << DMA_REQUEST_CARTRIDGE_SLOT0_WRITE)
-	| (1 << DMA_REQUEST_CARTRIDGE_SLOT0_READ)
-	| (1 << DMA_REQUEST_CARTRIDGE_SLOT1_WRITE)
+	| (1 << DMA_REQUEST_CARTRIDGE_SLOT0_READ);
+const CARTRIDGE_SLOT1_DREQ_MASK =
+	(1 << DMA_REQUEST_CARTRIDGE_SLOT1_WRITE)
 	| (1 << DMA_REQUEST_CARTRIDGE_SLOT1_READ);
 
 export class CartridgeController {
-	private readonly slots: [CartridgeSlot, CartridgeSlot];
-	private readonly ramPageWriteWatches: [MappedPageWriteWatches, MappedPageWriteWatches];
-	private mappedPageInvalidator: MappedPageInvalidator | null = null;
+	private readonly cards: [CartridgeCard | null, CartridgeCard | null];
 	private selectionWord = 0;
 	private irq!: IrqController;
 	private dma!: DmaController;
 
-	public constructor(media: CartridgeSlotMediaPair) {
-		this.slots = [
-			{
-				media: media[0],
-				ram: new Uint8Array(media[0].ramByteCount),
-				mappedKeyOffset: 0x100000000,
-				mailboxDataWord: 0,
-				mailboxControlWord: 0,
-				mailboxIrqPending: false,
-			},
-			{
-				media: media[1],
-				ram: new Uint8Array(media[1].ramByteCount),
-				mappedKeyOffset: 0x200000000,
-				mailboxDataWord: 0,
-				mailboxControlWord: 0,
-				mailboxIrqPending: false,
-			},
-		];
-		this.ramPageWriteWatches = [
-			new MappedPageWriteWatches(media[0].ramByteCount),
-			new MappedPageWriteWatches(media[1].ramByteCount),
+	public constructor(media: CartridgeSocketMediaPair) {
+		this.cards = [
+			media[0] === null
+				? null
+				: new CartridgeCard(media[0], CARTRIDGE_SLOT0_MAPPED_KEY_OFFSET),
+			media[1] === null
+				? null
+				: new CartridgeCard(media[1], CARTRIDGE_SLOT1_MAPPED_KEY_OFFSET),
 		];
 	}
 
@@ -114,10 +75,6 @@ export class CartridgeController {
 		memory.mapIoRead(IO_CART_SELECT, this, CartridgeController.readSelectionThunk);
 		memory.mapIoWrite(IO_CART_SELECT, this, CartridgeController.writeSelectionThunk);
 		memory.mapIoRead(IO_CART_STATUS, this, CartridgeController.readStatusThunk);
-		memory.mapIoRead(IO_CART_SLOT0_BOARD, this, CartridgeController.readSlot0BoardThunk);
-		memory.mapIoRead(IO_CART_SLOT0_RAM_BYTES, this, CartridgeController.readSlot0RamBytesThunk);
-		memory.mapIoRead(IO_CART_SLOT1_BOARD, this, CartridgeController.readSlot1BoardThunk);
-		memory.mapIoRead(IO_CART_SLOT1_RAM_BYTES, this, CartridgeController.readSlot1RamBytesThunk);
 	}
 
 	public selectedSlot(busSignals: MappedBusSignals = MAPPED_BUS_MASTER_CPU): CartridgeSlotIndex {
@@ -128,316 +85,144 @@ export class CartridgeController {
 	}
 
 	public installRom(slotIndex: number, rom: Uint8Array): void {
-		const slot = this.slots[slotIndex]!;
-		slot.media.rom = rom;
-		if (this.mappedPageInvalidator !== null) {
-			this.mappedPageInvalidator.invalidateMappedRange(
-				CART_ROM_BASE + slot.mappedKeyOffset,
-				CART_ROM_END + slot.mappedKeyOffset,
-			);
-		}
+		this.cards[slotIndex]!.installRom(rom);
 	}
 
 	public attachMappedPageInvalidator(invalidator: MappedPageInvalidator): void {
-		this.mappedPageInvalidator = invalidator;
+		if (this.cards[0] !== null) this.cards[0].attachMappedPageInvalidator(invalidator);
+		if (this.cards[1] !== null) this.cards[1].attachMappedPageInvalidator(invalidator);
 	}
 
 	public clearMappedPageWriteWatches(): void {
-		this.ramPageWriteWatches[0].clear();
-		this.ramPageWriteWatches[1].clear();
+		if (this.cards[0] !== null) this.cards[0].clearMappedPageWriteWatches();
+		if (this.cards[1] !== null) this.cards[1].clearMappedPageWriteWatches();
 	}
 
 	public bindMappedPage(address: number, busSignals: MappedBusSignals, out: MappedPageBinding): void {
 		const slotIndex = this.selectedSlot(busSignals);
-		const slot = this.slots[slotIndex];
-		out.key = address + slot.mappedKeyOffset;
+		const card = this.cards[slotIndex];
+		if (card !== null) {
+			card.bindMappedPage(address, out);
+			return;
+		}
+		out.key = address + (slotIndex === 0
+			? CARTRIDGE_SLOT0_MAPPED_KEY_OFFSET
+			: CARTRIDGE_SLOT1_MAPPED_KEY_OFFSET);
+		out.cacheable = address < CART_RAM_BASE;
 		out.readBytes = null;
 		out.readByteOffset = 0;
 		out.writeWatches = null;
 		out.writeWatchIndex = 0;
-		if (address < CART_RAM_BASE) {
-			out.cacheable = true;
-			const offset = address - CART_ROM_BASE;
-			if (offset + MAPPED_PAGE_BYTE_SIZE <= slot.media.rom.byteLength) {
-				out.readBytes = slot.media.rom;
-				out.readByteOffset = offset;
-			}
-			return;
-		}
-		if (address < CART_MMIO_BASE) {
-			const offset = address - CART_RAM_BASE;
-			if (offset < slot.ram.byteLength) {
-				out.cacheable = true;
-				if (offset + MAPPED_PAGE_BYTE_SIZE <= slot.ram.byteLength) {
-					out.readBytes = slot.ram;
-					out.readByteOffset = offset;
-				}
-				this.ramPageWriteWatches[slotIndex].bind(offset, out);
-				return;
-			}
-		}
-		out.cacheable = false;
 	}
 
 	public ramByteCount(): number {
-		return this.slots[0].ram.byteLength + this.slots[1].ram.byteLength;
+		return (this.cards[0] === null ? 0 : this.cards[0].ramByteCount())
+			+ (this.cards[1] === null ? 0 : this.cards[1].ramByteCount());
 	}
 
 	public reset(): void {
 		this.selectionWord = 0;
-		for (let slotIndex = 0; slotIndex < this.slots.length; slotIndex += 1) {
-			const slot = this.slots[slotIndex]!;
-			slot.mailboxDataWord = 0;
-			slot.mailboxControlWord = 0;
-			slot.mailboxIrqPending = false;
-		}
-		this.publishDreqLines();
+		if (this.cards[0] !== null) this.cards[0].reset();
+		if (this.cards[1] !== null) this.cards[1].reset();
+		this.publishDreqLines(0);
+		this.publishDreqLines(1);
 	}
 
 	public captureState(): CartridgeControllerState {
 		return {
 			selectionWord: this.selectionWord,
 			slots: [
-				this.captureSlot(this.slots[0]),
-				this.captureSlot(this.slots[1]),
+				this.cards[0] === null ? null : this.cards[0].captureState(),
+				this.cards[1] === null ? null : this.cards[1].captureState(),
 			],
 		};
 	}
 
 	public restoreState(state: CartridgeControllerState): void {
+		if ((this.cards[0] === null) !== (state.slots[0] === null)
+				|| (this.cards[1] === null) !== (state.slots[1] === null)) {
+			throw new Error('Cartridge state does not match the occupied physical sockets.');
+		}
 		this.selectionWord = state.selectionWord >>> 0;
-		this.restoreSlot(this.slots[0], state.slots[0]);
-		this.restoreSlot(this.slots[1], state.slots[1]);
-		this.publishDreqLines();
+		if (this.cards[0] !== null) this.cards[0].restoreState(state.slots[0]!);
+		if (this.cards[1] !== null) this.cards[1].restoreState(state.slots[1]!);
+		this.publishDreqLines(0);
+		this.publishDreqLines(1);
 	}
 
 	public readU8(address: number, busSignals: MappedBusSignals): number {
-		const slot = this.slots[this.selectedSlot(busSignals)]!;
-		if (address < CART_RAM_BASE) {
-			const offset = address - CART_ROM_BASE;
-			return offset < slot.media.rom.byteLength ? slot.media.rom[offset]! : 0;
-		}
-		if (address < CART_MMIO_BASE) {
-			if ((slot.media.boardWord & CARTRIDGE_BOARD_RAM) === 0) return 0;
-			const offset = address - CART_RAM_BASE;
-			return offset < slot.ram.byteLength ? slot.ram[offset]! : 0;
-		}
-		const word = this.readMailboxWord(slot, address - CART_MMIO_BASE);
-		return (word >>> ((address & 3) << 3)) & 0xff;
+		const card = this.cards[this.selectedSlot(busSignals)];
+		return card === null ? 0 : card.readU8(address);
 	}
 
 	public readU16(address: number, busSignals: MappedBusSignals): number {
-		const slot = this.slots[this.selectedSlot(busSignals)]!;
-		if (address < CART_RAM_BASE) {
-			return this.readU16From(slot.media.rom, address - CART_ROM_BASE);
-		}
-		if (address < CART_MMIO_BASE) {
-			if ((slot.media.boardWord & CARTRIDGE_BOARD_RAM) === 0) return 0;
-			return this.readU16From(slot.ram, address - CART_RAM_BASE);
-		}
-		const word = this.readMailboxWord(slot, address - CART_MMIO_BASE);
-		return (word >>> ((address & 2) << 3)) & 0xffff;
+		const card = this.cards[this.selectedSlot(busSignals)];
+		return card === null ? 0 : card.readU16(address);
 	}
 
 	public readU32(address: number, busSignals: MappedBusSignals): number {
-		const slot = this.slots[this.selectedSlot(busSignals)]!;
-		if (address < CART_RAM_BASE) {
-			return this.readU32From(slot.media.rom, address - CART_ROM_BASE);
-		}
-		if (address < CART_MMIO_BASE) {
-			if ((slot.media.boardWord & CARTRIDGE_BOARD_RAM) === 0) return 0;
-			return this.readU32From(slot.ram, address - CART_RAM_BASE);
-		}
-		return this.readMailboxWord(slot, address - CART_MMIO_BASE);
+		const card = this.cards[this.selectedSlot(busSignals)];
+		return card === null ? 0 : card.readU32(address);
 	}
 
 	public writeU8(address: number, value: number, busSignals: MappedBusSignals): void {
-		const slotIndex = this.selectedSlot(busSignals);
-		const slot = this.slots[slotIndex]!;
-		if (address >= CART_RAM_BASE && address < CART_MMIO_BASE) {
-			if ((slot.media.boardWord & CARTRIDGE_BOARD_RAM) === 0) return;
-			const offset = address - CART_RAM_BASE;
-			if (offset < slot.ram.byteLength) {
-				slot.ram[offset] = value & 0xff;
-				this.ramPageWriteWatches[slotIndex].invalidateWrite(
-					offset,
-					1,
-					CART_RAM_BASE + slot.mappedKeyOffset,
-					this.mappedPageInvalidator!,
-				);
-			}
-		}
+		const card = this.cards[this.selectedSlot(busSignals)];
+		if (card !== null) card.writeU8(address, value);
 	}
 
 	public writeU16(address: number, value: number, busSignals: MappedBusSignals): void {
-		if (address < CART_RAM_BASE || address >= CART_MMIO_BASE) return;
-		const slotIndex = this.selectedSlot(busSignals);
-		const slot = this.slots[slotIndex]!;
-		if ((slot.media.boardWord & CARTRIDGE_BOARD_RAM) === 0) return;
-		const ram = slot.ram;
-		const offset = address - CART_RAM_BASE;
-		if (offset + 2 <= ram.byteLength) {
-			writeLE16(ram, offset, value);
-			this.ramPageWriteWatches[slotIndex].invalidateWrite(
-				offset,
-				2,
-				CART_RAM_BASE + slot.mappedKeyOffset,
-				this.mappedPageInvalidator!,
-			);
-		}
+		const card = this.cards[this.selectedSlot(busSignals)];
+		if (card !== null) card.writeU16(address, value);
 	}
 
 	public writeU32(address: number, value: number, busSignals: MappedBusSignals): void {
 		const slotIndex = this.selectedSlot(busSignals);
-		const slot = this.slots[slotIndex]!;
-		if (address >= CART_RAM_BASE && address < CART_MMIO_BASE) {
-			if ((slot.media.boardWord & CARTRIDGE_BOARD_RAM) === 0) return;
-			const offset = address - CART_RAM_BASE;
-			if (offset + 4 <= slot.ram.byteLength) {
-				writeLE32(slot.ram, offset, value);
-				this.ramPageWriteWatches[slotIndex].invalidateWrite(
-					offset,
-					4,
-					CART_RAM_BASE + slot.mappedKeyOffset,
-					this.mappedPageInvalidator!,
-				);
-			}
-			return;
+		const card = this.cards[slotIndex];
+		if (card === null) return;
+		const effects = card.writeU32(address, value);
+		if ((effects & CARTRIDGE_CARD_EFFECT_IRQ_EDGE) !== 0) {
+			this.irq.raise(slotIndex === 0 ? IRQ_CARTRIDGE_SLOT0 : IRQ_CARTRIDGE_SLOT1);
 		}
-		if (address >= CART_MMIO_BASE) {
-			this.writeMailboxWord(slotIndex, slot, address - CART_MMIO_BASE, value >>> 0);
+		if ((effects & CARTRIDGE_CARD_EFFECT_DREQ_CHANGED) !== 0) {
+			this.publishDreqLines(slotIndex);
 		}
 	}
 
 	public readBytes(address: number, out: Uint8Array, dstOffset: number, length: number): void {
-		const slot = this.slots[this.selectedSlot()]!;
-		if (address < CART_RAM_BASE && address + length <= CART_RAM_BASE) {
-			this.readByteRun(slot.media.rom, address - CART_ROM_BASE, out, dstOffset, length);
+		const card = this.cards[this.selectedSlot()];
+		if (card === null) {
+			out.fill(0, dstOffset, dstOffset + length);
 			return;
 		}
-		if (address >= CART_RAM_BASE && address + length <= CART_MMIO_BASE) {
-			if ((slot.media.boardWord & CARTRIDGE_BOARD_RAM) === 0) {
-				out.fill(0, dstOffset, dstOffset + length);
-				return;
-			}
-			this.readByteRun(slot.ram, address - CART_RAM_BASE, out, dstOffset, length);
-			return;
-		}
-		for (let index = 0; index < length; index += 1) {
-			out[dstOffset + index] = this.readU8(address + index, MAPPED_BUS_MASTER_CPU);
-		}
+		card.readBytes(address, out, dstOffset, length);
 	}
 
 	public bindRomByteView(slotIndex: number, address: number, length: number, out: CartridgeByteView): boolean {
-		const rom = this.slots[slotIndex]!.media.rom;
-		const offset = address - CART_ROM_BASE;
-		if (length === 0 || offset >= rom.byteLength || length > rom.byteLength - offset) {
-			return false;
-		}
-		out.bytes = rom;
-		out.byteOffset = offset;
-		out.byteLength = length;
-		return true;
+		const card = this.cards[slotIndex];
+		return card === null ? false : card.bindRomByteView(address, length, out);
 	}
 
-	private captureSlot(slot: CartridgeSlot): CartridgeSlotState {
-		return {
-			ram: slot.ram.slice(),
-			mailboxDataWord: slot.mailboxDataWord,
-			mailboxControlWord: slot.mailboxControlWord,
-			mailboxIrqPending: slot.mailboxIrqPending,
-		};
-	}
-
-	private restoreSlot(slot: CartridgeSlot, state: CartridgeSlotState): void {
-		if (state.ram.byteLength !== slot.ram.byteLength) {
-			throw new Error('Cartridge RAM size does not match the inserted board.');
-		}
-		slot.ram.set(state.ram);
-		if (this.mappedPageInvalidator !== null) {
-			this.mappedPageInvalidator.invalidateMappedRange(
-				CART_RAM_BASE + slot.mappedKeyOffset,
-				CART_RAM_BASE + slot.mappedKeyOffset + slot.ram.byteLength,
-			);
-		}
-		slot.mailboxDataWord = state.mailboxDataWord >>> 0;
-		slot.mailboxControlWord = state.mailboxControlWord >>> 0;
-		slot.mailboxIrqPending = state.mailboxIrqPending;
-	}
-
-	private readU16From(bytes: Uint8Array, offset: number): number {
-		if (offset + 2 <= bytes.byteLength) return readLE16(bytes, offset);
-		return offset < bytes.byteLength ? bytes[offset]! : 0;
-	}
-
-	private readByteRun(bytes: Uint8Array, offset: number, out: Uint8Array, dstOffset: number, length: number): void {
-		const available = offset < bytes.byteLength ? Math.min(length, bytes.byteLength - offset) : 0;
-		out.set(bytes.subarray(offset, offset + available), dstOffset);
-		if (available !== length) {
-			out.fill(0, dstOffset + available, dstOffset + length);
-		}
-	}
-
-	private readU32From(bytes: Uint8Array, offset: number): number {
-		if (offset + 4 <= bytes.byteLength) return readLE32(bytes, offset);
-		if (offset >= bytes.byteLength) return 0;
-		let word = bytes[offset]!;
-		if (offset + 1 < bytes.byteLength) word |= bytes[offset + 1]! << 8;
-		if (offset + 2 < bytes.byteLength) word |= bytes[offset + 2]! << 16;
-		return word >>> 0;
-	}
-
-	private readMailboxWord(slot: CartridgeSlot, offset: number): number {
-		if ((slot.media.boardWord & CARTRIDGE_BOARD_MAILBOX) === 0) return 0;
-		switch (offset & ~3) {
-			case CARTRIDGE_MAILBOX_DATA_OFFSET:
-				return slot.mailboxDataWord;
-			case CARTRIDGE_MAILBOX_CONTROL_OFFSET:
-				return slot.mailboxControlWord;
-			case CARTRIDGE_MAILBOX_STATUS_OFFSET:
-				return slot.mailboxIrqPending ? CARTRIDGE_MAILBOX_STATUS_IRQ_PENDING : 0;
-			default:
-				return 0;
-		}
-	}
-
-	private writeMailboxWord(slotIndex: number, slot: CartridgeSlot, offset: number, value: number): void {
-		if ((slot.media.boardWord & CARTRIDGE_BOARD_MAILBOX) === 0) return;
-		switch (offset) {
-			case CARTRIDGE_MAILBOX_DATA_OFFSET:
-				slot.mailboxDataWord = value;
-				return;
-			case CARTRIDGE_MAILBOX_CONTROL_OFFSET:
-				slot.mailboxControlWord = (value & ~CARTRIDGE_MAILBOX_CONTROL_IRQ_TRIGGER) >>> 0;
-				if ((value & CARTRIDGE_MAILBOX_CONTROL_IRQ_TRIGGER) !== 0 && !slot.mailboxIrqPending) {
-					slot.mailboxIrqPending = true;
-					this.irq.raise(slotIndex === 0 ? IRQ_CARTRIDGE_SLOT0 : IRQ_CARTRIDGE_SLOT1);
-				}
-				this.publishDreqLines();
-				return;
-			case CARTRIDGE_MAILBOX_IRQ_ACK_OFFSET:
-				if (value !== 0) slot.mailboxIrqPending = false;
-				return;
-		}
-	}
-
-	private publishDreqLines(): void {
+	private publishDreqLines(slotIndex: CartridgeSlotIndex): void {
 		let asserted = 0;
-		const slot0 = this.slots[0];
-		const slot1 = this.slots[1];
-		if ((slot0.mailboxControlWord & CARTRIDGE_MAILBOX_CONTROL_DREQ_WRITE) !== 0) {
-			asserted |= 1 << DMA_REQUEST_CARTRIDGE_SLOT0_WRITE;
+		const card = this.cards[slotIndex];
+		const lines = card === null ? 0 : card.dreqLines();
+		if (slotIndex === 0) {
+			if ((lines & CARTRIDGE_CARD_DREQ_WRITE) !== 0) {
+				asserted |= 1 << DMA_REQUEST_CARTRIDGE_SLOT0_WRITE;
+			}
+			if ((lines & CARTRIDGE_CARD_DREQ_READ) !== 0) {
+				asserted |= 1 << DMA_REQUEST_CARTRIDGE_SLOT0_READ;
+			}
+			this.dma.setRequestLines(CARTRIDGE_SLOT0_DREQ_MASK, asserted);
+			return;
 		}
-		if ((slot0.mailboxControlWord & CARTRIDGE_MAILBOX_CONTROL_DREQ_READ) !== 0) {
-			asserted |= 1 << DMA_REQUEST_CARTRIDGE_SLOT0_READ;
-		}
-		if ((slot1.mailboxControlWord & CARTRIDGE_MAILBOX_CONTROL_DREQ_WRITE) !== 0) {
+		if ((lines & CARTRIDGE_CARD_DREQ_WRITE) !== 0) {
 			asserted |= 1 << DMA_REQUEST_CARTRIDGE_SLOT1_WRITE;
 		}
-		if ((slot1.mailboxControlWord & CARTRIDGE_MAILBOX_CONTROL_DREQ_READ) !== 0) {
+		if ((lines & CARTRIDGE_CARD_DREQ_READ) !== 0) {
 			asserted |= 1 << DMA_REQUEST_CARTRIDGE_SLOT1_READ;
 		}
-		this.dma.setRequestLines(CARTRIDGE_DREQ_MASK, asserted);
+		this.dma.setRequestLines(CARTRIDGE_SLOT1_DREQ_MASK, asserted);
 	}
 
 	private static readSelectionThunk(context: CartridgeController): number {
@@ -450,24 +235,8 @@ export class CartridgeController {
 
 	private static readStatusThunk(context: CartridgeController): number {
 		let status = context.selectedSlot() === 1 ? CARTRIDGE_STATUS_SELECTED_SLOT1 : 0;
-		if (context.slots[0].media.present) status |= CARTRIDGE_STATUS_SLOT0_PRESENT;
-		if (context.slots[1].media.present) status |= CARTRIDGE_STATUS_SLOT1_PRESENT;
+		if (context.cards[0] !== null) status |= CARTRIDGE_STATUS_SLOT0_PRESENT;
+		if (context.cards[1] !== null) status |= CARTRIDGE_STATUS_SLOT1_PRESENT;
 		return status;
-	}
-
-	private static readSlot0BoardThunk(context: CartridgeController): number {
-		return context.slots[0].media.boardWord;
-	}
-
-	private static readSlot0RamBytesThunk(context: CartridgeController): number {
-		return context.slots[0].ram.byteLength;
-	}
-
-	private static readSlot1BoardThunk(context: CartridgeController): number {
-		return context.slots[1].media.boardWord;
-	}
-
-	private static readSlot1RamBytesThunk(context: CartridgeController): number {
-		return context.slots[1].ram.byteLength;
 	}
 }

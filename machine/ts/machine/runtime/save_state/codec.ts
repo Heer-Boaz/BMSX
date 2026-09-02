@@ -7,8 +7,9 @@ import type { BuiltinFunctionId } from '../../../spec/blua32/builtin';
 import type { IrqControllerState } from '../../devices/irq/save_state';
 import type { AudioControllerState } from '../../devices/audio/save_state';
 import type {
+	CartridgeCardState,
 	CartridgeControllerState,
-	CartridgeSlotState,
+	CartridgeMailboxState,
 } from '../../devices/cartridge/contracts';
 import { CARTRIDGE_SLOT_COUNT } from '../../../spec/bmsx/cartridge';
 import type { DmaControllerState } from '../../devices/dma/controller';
@@ -292,22 +293,43 @@ function decodeFrameLoopState(value: unknown, label: string): FrameLoopStateSnap
 	};
 }
 
-function encodeCartridgeSlotState(state: CartridgeSlotState): CartridgeSlotState {
+function encodeCartridgeMailboxState(state: CartridgeMailboxState): CartridgeMailboxState {
 	return {
-		ram: state.ram,
-		mailboxDataWord: state.mailboxDataWord >>> 0,
-		mailboxControlWord: state.mailboxControlWord >>> 0,
-		mailboxIrqPending: state.mailboxIrqPending,
+		dataWord: state.dataWord >>> 0,
+		controlWord: state.controlWord >>> 0,
+		irqPending: state.irqPending,
 	};
 }
 
-function decodeCartridgeSlotState(value: unknown, label: string): CartridgeSlotState {
+function decodeCartridgeMailboxState(value: unknown, label: string): CartridgeMailboxState {
 	const object = requireObject(value, label);
 	return {
-		ram: requireBinaryValue(requireObjectKey(object, 'ram', label, `${label}.ram`), `${label}.ram`),
-		mailboxDataWord: requireBoundedU32(requireObjectKey(object, 'mailboxDataWord', label, `${label}.mailboxDataWord`), `${label}.mailboxDataWord`, 0, 0xffffffff),
-		mailboxControlWord: requireBoundedU32(requireObjectKey(object, 'mailboxControlWord', label, `${label}.mailboxControlWord`), `${label}.mailboxControlWord`, 0, 0xffffffff),
-		mailboxIrqPending: requireBooleanValue(requireObjectKey(object, 'mailboxIrqPending', label, `${label}.mailboxIrqPending`), `${label}.mailboxIrqPending`),
+		dataWord: requireBoundedU32(requireObjectKey(object, 'dataWord', label, `${label}.dataWord`), `${label}.dataWord`, 0, 0xffffffff),
+		controlWord: requireBoundedU32(requireObjectKey(object, 'controlWord', label, `${label}.controlWord`), `${label}.controlWord`, 0, 0xffffffff),
+		irqPending: requireBooleanValue(requireObjectKey(object, 'irqPending', label, `${label}.irqPending`), `${label}.irqPending`),
+	};
+}
+
+function encodeCartridgeCardState(state: CartridgeCardState): CartridgeCardState {
+	return {
+		ram: state.ram,
+		mailbox: state.mailbox === null
+			? null
+			: encodeCartridgeMailboxState(state.mailbox),
+	};
+}
+
+function decodeCartridgeCardState(value: unknown, label: string): CartridgeCardState {
+	const object = requireObject(value, label);
+	const ram = requireObjectKey(object, 'ram', label, `${label}.ram`);
+	const mailbox = requireObjectKey(object, 'mailbox', label, `${label}.mailbox`);
+	return {
+		ram: ram === null
+			? null
+			: requireBinaryValue(ram, `${label}.ram`),
+		mailbox: mailbox === null
+			? null
+			: decodeCartridgeMailboxState(mailbox, `${label}.mailbox`),
 	};
 }
 
@@ -315,8 +337,12 @@ function encodeCartridgeControllerState(state: CartridgeControllerState): Cartri
 	return {
 		selectionWord: state.selectionWord >>> 0,
 		slots: [
-			encodeCartridgeSlotState(state.slots[0]),
-			encodeCartridgeSlotState(state.slots[1]),
+			state.slots[0] === null
+				? null
+				: encodeCartridgeCardState(state.slots[0]),
+			state.slots[1] === null
+				? null
+				: encodeCartridgeCardState(state.slots[1]),
 		],
 	};
 }
@@ -330,8 +356,12 @@ function decodeCartridgeControllerState(value: unknown, label: string): Cartridg
 	return {
 		selectionWord: requireBoundedU32(requireObjectKey(object, 'selectionWord', label, `${label}.selectionWord`), `${label}.selectionWord`, 0, 0xffffffff),
 		slots: [
-			decodeCartridgeSlotState(slots[0], `${label}.slots[0]`),
-			decodeCartridgeSlotState(slots[1], `${label}.slots[1]`),
+			slots[0] === null
+				? null
+				: decodeCartridgeCardState(slots[0], `${label}.slots[0]`),
+			slots[1] === null
+				? null
+				: decodeCartridgeCardState(slots[1], `${label}.slots[1]`),
 		],
 	};
 }

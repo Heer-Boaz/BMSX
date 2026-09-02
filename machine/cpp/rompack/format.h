@@ -34,8 +34,6 @@ struct CartRomHeader {
 	u32 blua32DiagnosticDirectoryOffset = 0;
 	u32 metadataOffset = 0;
 	u32 metadataLength = 0;
-	u32 cartridgeBoardWord = 0;
-	u32 cartridgeRamByteCount = 0;
 };
 
 void writeCartRomHeader(u8* data, const CartRomHeader& header);

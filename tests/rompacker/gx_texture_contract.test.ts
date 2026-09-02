@@ -231,7 +231,9 @@ test('a packed cart texture resolves through the ROM loader, inspector, and cart
 
 	await rm(PACKED_TEXTURE_ROM_ROOT, { recursive: true, force: true });
 	try {
-		const cartPrefix = layoutRomPrefix(assets, true, null);
+		const cartPrefix = layoutRomPrefix(assets, true, {
+			hardware: [{ type: 'rom' }],
+		});
 		const systemEntrySource = `module<entry>
 require('base')
 table = require('table')
@@ -274,8 +276,6 @@ cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRES
 		});
 		await finalizeRompack('texture-contract-system', {
 			debug: false,
-			cartridgeBoardWord: 0,
-			cartridgeRamByteCount: 0,
 			blua32: systemBlua32,
 			layout: systemPrefix,
 			outputDirectory: PACKED_TEXTURE_ROM_ROOT,
@@ -378,8 +378,6 @@ return imgdec
 		});
 		await finalizeRompack('texture-contract', {
 			debug: false,
-			cartridgeBoardWord: 0,
-			cartridgeRamByteCount: 0,
 			blua32: cartBlua32,
 			layout: cartPrefix,
 			outputDirectory: PACKED_TEXTURE_ROM_ROOT,

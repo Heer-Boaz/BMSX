@@ -1,1 +1,3 @@
 title: VBLANK Test
+hardware:
+    - type: rom

@@ -1,0 +1,5 @@
+title: Cartridge Data Conformance
+hardware:
+    - type: ram
+      bytes: 256
+    - type: mailbox

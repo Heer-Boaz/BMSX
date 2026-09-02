@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <cstring>
 #include <span>
+#include <type_traits>
 #include <unordered_map>
 
 namespace bmsx::test {
@@ -24,8 +25,30 @@ auto alignOffset(u32 offset, u32 address, u32 alignment) -> u32 {
 	return ((value + alignment - 1u) & ~(alignment - 1u)) - address;
 }
 
-auto encodeManifest() -> std::vector<u8> {
+auto encodeManifest(const CartManifest& source) -> std::vector<u8> {
 	BinObject manifest;
+	if (source.title.has_value()) {
+		manifest.emplace("title", *source.title);
+	}
+	BinArray hardware;
+	hardware.reserve(source.hardware.size());
+	for (const CartridgeDeviceConfig& config : source.hardware) {
+		BinObject device;
+		std::visit([&device](const auto& concrete) {
+			using Config = std::remove_cvref_t<decltype(concrete)>;
+			if constexpr (std::is_same_v<Config, CartridgeRomDeviceConfig>) {
+				device.emplace("type", "rom");
+			} else if constexpr (std::is_same_v<Config, CartridgeRamDeviceConfig>) {
+				device.emplace("type", "ram");
+				device.emplace("bytes", static_cast<i64>(concrete.bytes));
+			} else {
+				static_assert(std::is_same_v<Config, CartridgeMailboxDeviceConfig>);
+				device.emplace("type", "mailbox");
+			}
+		}, config);
+		hardware.emplace_back(std::move(device));
+	}
+	manifest.emplace("hardware", BinValue(std::move(hardware)));
 	return encodeBinary(BinValue(std::move(manifest)));
 }
 
@@ -290,11 +313,10 @@ auto encodeRom(
 	std::span<const u8> image,
 	std::span<const u8> toolingSymbols,
 	const Blua32BootHeader& boot,
-	u32 cartridgeBoardWord,
-	u32 cartridgeRamByteCount
+	const CartManifest& manifestConfig
 ) -> std::vector<u8> {
 	const std::vector<u8> manifest = domain == RomImageDomain::Cartridge
-		? encodeManifest()
+		? encodeManifest(manifestConfig)
 		: std::vector<u8>();
 	RomTocPayload tocPayload;
 	if (!image.empty()) {
@@ -358,8 +380,6 @@ auto encodeRom(
 	header.blua32ExceptionFunctionAddress = boot.exceptionFunctionAddress;
 	header.blua32StaticLayoutTokenLo = boot.staticLayoutTokenLo;
 	header.blua32StaticLayoutTokenHi = boot.staticLayoutTokenHi;
-	header.cartridgeBoardWord = cartridgeBoardWord;
-	header.cartridgeRamByteCount = cartridgeRamByteCount;
 	writeCartRomHeader(rom.data(), header);
 	return rom;
 }
@@ -368,9 +388,19 @@ auto encodeRom(
 
 auto encodeBlua32TestRom(
 	RomImageDomain domain,
+	const Blua32TestImage& image
+) -> Blua32TestRom {
+	CartManifest manifest;
+	if (domain == RomImageDomain::Cartridge) {
+		manifest.hardware.emplace_back(CartridgeRomDeviceConfig{});
+	}
+	return encodeBlua32TestRom(domain, image, manifest);
+}
+
+auto encodeBlua32TestRom(
+	RomImageDomain domain,
 	const Blua32TestImage& image,
-	u32 cartridgeBoardWord,
-	u32 cartridgeRamByteCount
+	const CartManifest& manifest
 ) -> Blua32TestRom {
 	Blua32TestRom rom;
 	const std::vector<u8> executable = encodeImage(domain, image, rom.functionAddresses);
@@ -385,8 +415,7 @@ auto encodeBlua32TestRom(
 		executable,
 		image.toolingSymbols,
 		rom.boot,
-		cartridgeBoardWord,
-		cartridgeRamByteCount
+		manifest
 	);
 	return rom;
 }
@@ -398,18 +427,20 @@ void programBlua32TestResetVector(Blua32TestRom& rom, u32 functionIndex) {
 	writeCartRomHeader(rom.bytes.data(), header);
 }
 
-auto encodeBlua32TestDataRom(
-	u32 cartridgeBoardWord,
-	u32 cartridgeRamByteCount
-) -> std::vector<u8> {
+auto encodeBlua32TestDataRom(const CartManifest& manifest) -> std::vector<u8> {
 	return encodeRom(
 		RomImageDomain::Cartridge,
 		{},
 		{},
 		{},
-		cartridgeBoardWord,
-		cartridgeRamByteCount
+		manifest
 	);
+}
+
+auto encodeBlua32TestDataRom() -> std::vector<u8> {
+	CartManifest manifest;
+	manifest.hardware.emplace_back(CartridgeRomDeviceConfig{});
+	return encodeBlua32TestDataRom(manifest);
 }
 
 } // namespace bmsx::test

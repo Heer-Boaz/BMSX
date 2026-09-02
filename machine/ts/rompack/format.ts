@@ -8,8 +8,6 @@ import {
 	BMSX_ROM_HEADER_BLUA32_STATIC_LAYOUT_TOKEN_LO_OFFSET,
 } from '../spec/bmsx/rom_header';
 import {
-	CART_ROM_HEADER_CARTRIDGE_BOARD_OFFSET,
-	CART_ROM_HEADER_CARTRIDGE_RAM_BYTES_OFFSET,
 	CART_ROM_HEADER_BLUA32_DIAGNOSTIC_DIRECTORY_OFFSET,
 	CART_ROM_HEADER_DATA_LENGTH_OFFSET,
 	CART_ROM_HEADER_DATA_OFFSET,
@@ -24,7 +22,6 @@ import {
 	CART_ROM_HEADER_TOC_OFFSET,
 	CART_ROM_MAGIC,
 } from '../spec/bmsx/rom_package';
-import { CART_RAM_SIZE } from '../spec/bmsx/memory_map';
 import { formatNumberAsHex } from '../common/byte_hex_string';
 
 export type CartRomHeader = {
@@ -45,8 +42,6 @@ export type CartRomHeader = {
 	blua32DiagnosticDirectoryOffset: number;
 	metadataOffset: number;
 	metadataLength: number;
-	cartridgeBoardWord: number;
-	cartridgeRamByteCount: number;
 };
 
 function assertRomSectionRange(offset: number, length: number, total: number, label: string): void {
@@ -64,11 +59,8 @@ export function parseCartHeader(payload: Uint8Array): CartRomHeader {
 		throw new Error('Invalid ROM cart header.');
 	}
 	const headerSize = view.getUint32(CART_ROM_HEADER_SIZE_OFFSET, true);
-	if (headerSize < CART_ROM_HEADER_SIZE) {
-		throw new Error(`ROM header size is too small: ${headerSize}.`);
-	}
-	if (headerSize > payload.byteLength) {
-		throw new Error(`ROM header size exceeds payload length: ${headerSize}.`);
+	if (headerSize !== CART_ROM_HEADER_SIZE) {
+		throw new Error(`ROM header size ${headerSize} does not match the current ${CART_ROM_HEADER_SIZE}-byte format.`);
 	}
 	const manifestOffset = view.getUint32(CART_ROM_HEADER_MANIFEST_OFFSET, true);
 	const manifestLength = view.getUint32(CART_ROM_HEADER_MANIFEST_LENGTH_OFFSET, true);
@@ -78,11 +70,6 @@ export function parseCartHeader(payload: Uint8Array): CartRomHeader {
 	const dataLength = view.getUint32(CART_ROM_HEADER_DATA_LENGTH_OFFSET, true);
 	const metadataOffset = view.getUint32(CART_ROM_HEADER_METADATA_OFFSET, true);
 	const metadataLength = view.getUint32(CART_ROM_HEADER_METADATA_LENGTH_OFFSET, true);
-	const cartridgeBoardWord = view.getUint32(CART_ROM_HEADER_CARTRIDGE_BOARD_OFFSET, true);
-	const cartridgeRamByteCount = view.getUint32(CART_ROM_HEADER_CARTRIDGE_RAM_BYTES_OFFSET, true);
-	if (cartridgeRamByteCount > CART_RAM_SIZE) {
-		throw new Error(`Cartridge RAM byte count exceeds the ${CART_RAM_SIZE}-byte socket aperture.`);
-	}
 
 	assertRomSectionRange(manifestOffset, manifestLength, payload.byteLength, 'manifest');
 	assertRomSectionRange(tocOffset, tocLength, payload.byteLength, 'toc');
@@ -109,7 +96,5 @@ export function parseCartHeader(payload: Uint8Array): CartRomHeader {
 		blua32DiagnosticDirectoryOffset: view.getUint32(CART_ROM_HEADER_BLUA32_DIAGNOSTIC_DIRECTORY_OFFSET, true),
 		metadataOffset,
 		metadataLength,
-		cartridgeBoardWord,
-		cartridgeRamByteCount,
 	};
 }

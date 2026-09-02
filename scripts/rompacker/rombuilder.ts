@@ -14,7 +14,11 @@ import type {
 } from '../../toolchain/ts/rompack/assets';
 import type { LuaChunk } from '../../toolchain/ts/lua/syntax/ast';
 import type { GLTFMesh } from '../../toolchain/ts/rompack/gltf';
-import { parseCartManifest, type RomManifest } from '../../toolchain/ts/rompack/manifest';
+import { parseCartManifest, type CartManifest } from '../../machine/ts/rompack/manifest';
+import {
+	assertCartridgePackageFitsHardware,
+	type RomImageDomain,
+} from '../../machine/ts/rompack/image';
 import {
 	alignRomAssetOffset,
 	layoutRomAssetPayloads,
@@ -65,7 +69,7 @@ import { BoundingBoxExtractor } from './boundingbox_extractor';
 import { collectGLTFExternalBufferFileSet, loadGLTFModel } from './gltfloader';
 import type { TextureAtlasResource, ImageResource, Resource, resourcetype } from './rompacker.rompack';
 import { collectCartSourceFiles } from './cart_source_files';
-import { CART_ROM_BASE, CART_ROM_SIZE, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
+import { CART_ROM_BASE, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import {
 	BLUA32_IMAGE_ID,
 	type Blua32BootHeader,
@@ -163,21 +167,6 @@ export function normalizeWorkspacePath(input: string): string {
 	return stack.join('/');
 }
 
-const CART_ROOT_SEGMENT = 'carts/';
-const BIOS_RES_SEGMENT = 'machine/bios/res';
-
-function isCartPath(path?: string): boolean {
-	if (!path || path.length === 0) return false;
-	const normalized = normalizeWorkspacePath(path);
-	return normalized.includes(CART_ROOT_SEGMENT);
-}
-
-function isBiosResPath(path?: string): boolean {
-	if (!path || path.length === 0) return false;
-	const normalized = normalizeWorkspacePath(path);
-	return normalized === BIOS_RES_SEGMENT || normalized.startsWith(`${BIOS_RES_SEGMENT}/`);
-}
-
 function toWorkspaceRelativePath(filepath: string): string {
 	if (!filepath || filepath.length === 0) {
 		throw new Error('Cannot convert empty filepath to workspace-relative path.');
@@ -262,7 +251,7 @@ export async function getFiles(dirPath: string, arrayOfFiles?: string[], filterE
 	return array;
 }
 
-export async function getRomManifest(dirPath: string): Promise<RomManifest | null> {
+export async function getRomManifest(dirPath: string): Promise<CartManifest | null> {
 	const files = await getFiles(dirPath, [], '.rommanifest');
 
 	if (files.length > 1) {
@@ -563,19 +552,20 @@ export function getResMetaByFilename(filepath: string): { name: string, ext: str
 }
 
 /**
- * Builds a list of resource objects located at `respaths` for the specified `romname`.
- * @param respaths An array of the paths to the resources to include in the list.
- * @param romname The name of the ROM pack to build the list for.
+ * Builds a list of resource objects from the exact roots owned by one product.
+ * @param respaths Paths whose resources belong to the selected build domain.
  * @returns An array of resources with basic metadata.
  */
 export type ResourceScanOptions = {
+	domain: RomImageDomain;
 	extraLuaPaths?: string[];
+	extraLuaFiles?: readonly string[];
 	virtualRoot?: string;
-	systemResourceRoots?: readonly string[];
 	libraryLuaPaths?: string[];
 };
 
 export type RebuildOptions = {
+	domain: RomImageDomain;
 	extraLuaPaths?: readonly string[];
 	buildSourceDirectories?: readonly string[];
 	buildSourceFiles?: readonly string[];
@@ -589,8 +579,8 @@ export type RebuildOptions = {
 	 */
 	romFilePath?: string;
 	/**
-	 * Optional override for the BIOS import-library path used by cart rebuild checks.
-	 * Defaults to `dist/bmsx-bios[.debug].rom.blua32-imports` (based on `debug`).
+	 * BIOS import-library path used by executable cart rebuild checks. Omit it for
+	 * cartridges without program source.
 	 */
 	biosImportsFilePath?: string;
 };
@@ -639,15 +629,14 @@ function collectLibraryLuaClosure(seedFiles: readonly string[], libraryRoots: re
 	return includedFiles.sort((a, b) => a.localeCompare(b));
 }
 
-export async function getResMetaList(respaths: string[], _romname?: string, options: ResourceScanOptions = {}): Promise<Resource[]> {
+export async function getResMetaList(
+	respaths: readonly string[],
+	options: ResourceScanOptions,
+): Promise<Resource[]> {
 	const arrayOfFiles: string[] = [];
 	const virtualRoot = normalizeVirtualRootPath(options.virtualRoot);
-	const cartProject = isCartPath(virtualRoot) || respaths.some(isCartPath);
-	const scanRoots = cartProject
-		? respaths.filter(path => !isBiosResPath(path))
-		: respaths;
 	const extraLuaRoots = options.extraLuaPaths;
-	const systemResourceRoots = options.systemResourceRoots ?? DEFAULT_SYSTEM_RESOURCE_ROOTS;
+	const systemResourceRoots = options.domain === 'system' ? respaths : [];
 	const seenPaths = new Set<string>();
 
 	const pushFile = (filepath: string) => {
@@ -657,7 +646,7 @@ export async function getResMetaList(respaths: string[], _romname?: string, opti
 		arrayOfFiles.push(filepath);
 	};
 
-	for (const respath of scanRoots) {
+	for (const respath of respaths) {
 		const files = await getFiles(respath);
 		for (const file of files) {
 			pushFile(file);
@@ -670,6 +659,12 @@ export async function getResMetaList(respaths: string[], _romname?: string, opti
 			for (const file of collectCartSourceFiles([luaRoot])) {
 				pushFile(file);
 			}
+		}
+	}
+	const extraLuaFiles = options.extraLuaFiles;
+	if (extraLuaFiles) {
+		for (let index = 0; index < extraLuaFiles.length; index += 1) {
+			pushFile(extraLuaFiles[index]);
 		}
 	}
 	const seedFiles = arrayOfFiles.filter(file => file.toLowerCase().endsWith('.lua'));
@@ -1154,23 +1149,42 @@ type BuildRomBlua32TailOptions = {
 	}
 );
 
+type BuildSystemRomBlua32TailOptions = Extract<
+	BuildRomBlua32TailOptions,
+	{ domain: 'system' }
+>;
+
+type BuildCartRomBlua32TailOptions = Extract<
+	BuildRomBlua32TailOptions,
+	{ domain: 'cart' }
+>;
+
 type RomBlua32TailCommon = {
 	boot: Blua32BootHeader;
 	layout: RomAssetPayloadLayout;
 	diagnostics: Blua32DiagnosticImage | null;
 };
 
-export type RomBlua32Tail = RomBlua32TailCommon & (
-	| {
-		domain: 'system';
-		symbolsPayload: Uint8Array;
-		biosImportsPayload: Uint8Array;
-	}
-	| {
-		domain: 'cart';
-	}
-);
+type SystemRomBlua32Tail = RomBlua32TailCommon & {
+	domain: 'system';
+	symbolsPayload: Uint8Array;
+	biosImportsPayload: Uint8Array;
+};
 
+export type CartRomBlua32Tail = RomBlua32TailCommon & {
+	domain: 'cart';
+};
+
+export type RomBlua32Tail = SystemRomBlua32Tail | CartRomBlua32Tail;
+
+export function buildRomBlua32Tail(
+	assetList: ReadonlyArray<RomAsset>,
+	options: BuildSystemRomBlua32TailOptions,
+): SystemRomBlua32Tail;
+export function buildRomBlua32Tail(
+	assetList: ReadonlyArray<RomAsset>,
+	options: BuildCartRomBlua32TailOptions,
+): CartRomBlua32Tail;
 export function buildRomBlua32Tail(
 	assetList: ReadonlyArray<RomAsset>,
 	options: BuildRomBlua32TailOptions,
@@ -1381,23 +1395,29 @@ export async function finalizeRompack(
 		projectRootPath?: string,
 		status?: ProgressNote,
 		debug: boolean,
-		blua32: RomBlua32Tail,
 		layout: RomPrefixLayout,
 		outputDirectory: string,
-		cartridgeBoardWord: number,
-		cartridgeRamByteCount: number,
-	}
+	} & (
+		| { blua32: SystemRomBlua32Tail }
+		| { blua32: CartRomBlua32Tail | null }
+	)
 ) {
 	const outfileBasename = `${rom_name}${options.debug ? '.debug' : ''}.rom`;
 	const outputPath = join(options.outputDirectory, outfileBasename);
 	const status = options.status;
-	const physicalSpans = options.layout.ranges.concat(options.blua32.layout.ranges);
-	let dataEnd = options.layout.payloadEnd > options.blua32.layout.payloadEnd
-		? options.layout.payloadEnd
-		: options.blua32.layout.payloadEnd;
-	const entries = options.layout.entries.concat(options.blua32.layout.entries);
+	const blua32 = options.blua32;
+	const physicalSpans = blua32 === null
+		? options.layout.ranges.slice()
+		: options.layout.ranges.concat(blua32.layout.ranges);
+	let dataEnd = options.layout.payloadEnd;
+	if (blua32 !== null && blua32.layout.payloadEnd > dataEnd) {
+		dataEnd = blua32.layout.payloadEnd;
+	}
+	const entries = blua32 === null
+		? options.layout.entries.slice()
+		: options.layout.entries.concat(blua32.layout.entries);
 	let diagnosticDirectoryOffset = 0;
-	if (options.blua32.diagnostics) {
+	if (blua32 !== null && blua32.diagnostics) {
 		const entryBySourcePath = new Map<string, RomAsset>();
 		for (let index = 0; index < entries.length; index += 1) {
 			const entry = entries[index];
@@ -1411,7 +1431,7 @@ export async function finalizeRompack(
 			spanByStart.set(span.start, span.buffer);
 		}
 		const packedSources = new Map<string, PackedBlua32DiagnosticSource>();
-		for (const [rangePath, source] of options.blua32.diagnostics.sources) {
+		for (const [rangePath, source] of blua32.diagnostics.sources) {
 			const entry = entryBySourcePath.get(source.displayPath);
 			if (!entry) {
 				continue;
@@ -1423,7 +1443,7 @@ export async function finalizeRompack(
 		}
 		diagnosticDirectoryOffset = alignRomAssetOffset(dataEnd);
 		const diagnosticPayload = encodeBlua32DiagnosticDirectory({
-			...options.blua32.diagnostics,
+			...blua32.diagnostics,
 			directoryOffset: diagnosticDirectoryOffset,
 			packedSources,
 		});
@@ -1450,12 +1470,8 @@ export async function finalizeRompack(
 	}));
 	const tocOffset = alignRomAssetOffset(dataEnd);
 	const tocLength = tocBuffer.length;
-	const romCapacity = options.blua32.domain === 'system' ? SYSTEM_ROM_SIZE : CART_ROM_SIZE;
-	if (tocOffset + tocLength > romCapacity) {
-		throw new Error(`ROM payload exceeds the ${romCapacity}-byte ${options.blua32.domain} ROM window.`);
-	}
-	const headerBuffer = Buffer.alloc(CART_ROM_HEADER_SIZE);
-	writeCartRomHeader(headerBuffer, {
+	const packageByteCount = tocOffset + tocLength;
+	const header = {
 		headerSize: CART_ROM_HEADER_SIZE,
 		manifestOffset: options.layout.manifestOffset,
 		manifestLength: options.layout.manifestLength,
@@ -1463,19 +1479,31 @@ export async function finalizeRompack(
 		tocLength,
 		dataOffset,
 		dataLength: dataEnd - dataOffset,
-		blua32ImageOffset: options.blua32.boot.imageOffset,
-		blua32ImageByteCount: options.blua32.boot.imageByteCount,
-		blua32StartupFunctionAddress: options.blua32.boot.startupFunctionAddress,
-		blua32IrqFunctionAddress: options.blua32.boot.irqFunctionAddress,
-		blua32ExceptionFunctionAddress: options.blua32.boot.exceptionFunctionAddress,
-		blua32StaticLayoutTokenLo: options.blua32.boot.staticLayoutTokenLo,
-		blua32StaticLayoutTokenHi: options.blua32.boot.staticLayoutTokenHi,
+		blua32ImageOffset: blua32 === null ? 0 : blua32.boot.imageOffset,
+		blua32ImageByteCount: blua32 === null ? 0 : blua32.boot.imageByteCount,
+		blua32StartupFunctionAddress: blua32 === null ? 0 : blua32.boot.startupFunctionAddress,
+		blua32IrqFunctionAddress: blua32 === null ? 0 : blua32.boot.irqFunctionAddress,
+		blua32ExceptionFunctionAddress: blua32 === null ? 0 : blua32.boot.exceptionFunctionAddress,
+		blua32StaticLayoutTokenLo: blua32 === null ? 0 : blua32.boot.staticLayoutTokenLo,
+		blua32StaticLayoutTokenHi: blua32 === null ? 0 : blua32.boot.staticLayoutTokenHi,
 		blua32DiagnosticDirectoryOffset: diagnosticDirectoryOffset,
 		metadataOffset: options.layout.metadataOffset,
 		metadataLength: options.layout.metadataLength,
-		cartridgeBoardWord: options.cartridgeBoardWord,
-		cartridgeRamByteCount: options.cartridgeRamByteCount,
-	});
+	};
+	const manifest = options.layout.manifest;
+	if (manifest === null) {
+		if (packageByteCount > SYSTEM_ROM_SIZE) {
+			throw new Error(`ROM payload exceeds the ${SYSTEM_ROM_SIZE}-byte system ROM window.`);
+		}
+	} else {
+		assertCartridgePackageFitsHardware(
+			packageByteCount,
+			header,
+			manifest.hardware,
+		);
+	}
+	const headerBuffer = Buffer.alloc(CART_ROM_HEADER_SIZE);
+	writeCartRomHeader(headerBuffer, header);
 
 	await mkdir(options.outputDirectory, { recursive: true });
 
@@ -1527,11 +1555,11 @@ export async function finalizeRompack(
 		} finally {
 			await file.close();
 		}
-		if (options.blua32.domain === 'system') {
+		if (blua32 !== null && blua32.domain === 'system') {
 			const symbolsOutputFile = `${outputPath}${BLUA32_SYMBOLS_SIDECAR_SUFFIX}`;
 			const biosImportsOutputFile = `${outputPath}${BLUA32_BIOS_IMPORTS_SIDECAR_SUFFIX}`;
-			await writeFile(symbolsTempFile, options.blua32.symbolsPayload);
-			await writeFile(biosImportsTempFile, options.blua32.biosImportsPayload);
+			await writeFile(symbolsTempFile, blua32.symbolsPayload);
+			await writeFile(biosImportsTempFile, blua32.biosImportsPayload);
 			await rename(symbolsTempFile, symbolsOutputFile);
 			await rename(biosImportsTempFile, biosImportsOutputFile);
 			const publicationTime = new Date(
@@ -1609,17 +1637,18 @@ async function directoryHasRebuildInputNewerThan(dir: string, mtimeMs: number, c
  * @param {string} resPath - The path to the resource files.
  * @returns {Promise<boolean>} A Promise that resolves with a boolean indicating whether a rebuild is required.
  */
-export async function isRebuildRequired(romname: string, resPath: string, options: RebuildOptions = {}): Promise<boolean> {
+export async function isRebuildRequired(
+	romname: string,
+	resPath: string,
+	options: RebuildOptions,
+): Promise<boolean> {
 	let romFilePath = options.romFilePath;
 	if (romFilePath === undefined) {
 		romFilePath = `./dist/${romname}${options.debug ? '.debug' : ''}.rom`;
 	}
-	let biosImportsFilePath = options.biosImportsFilePath;
-	if (biosImportsFilePath === undefined) {
-		biosImportsFilePath = `./dist/bmsx-bios${options.debug ? '.debug' : ''}.rom.blua32-imports`;
-	}
+	const biosImportsFilePath = options.biosImportsFilePath;
 	const extraLuaRoots = options.extraLuaPaths;
-	const cartProject = isCartPath(resPath) || !!options.biosImportsFilePath;
+	const includeExtraRootAssets = options.domain === 'cart';
 
 	async function checkPaths() {
 		try {
@@ -1645,7 +1674,7 @@ export async function isRebuildRequired(romname: string, resPath: string, option
 			}
 		}
 	}
-	if (cartProject) {
+	if (biosImportsFilePath !== undefined) {
 		let biosImportsStats: Stats;
 		try {
 			biosImportsStats = await stat(biosImportsFilePath);
@@ -1664,7 +1693,7 @@ export async function isRebuildRequired(romname: string, resPath: string, option
 			if (!root || root.length === 0) continue;
 			const normalized = resolve(root);
 			if (normalized === normalizedRes) continue;
-			if (await directoryHasRebuildInputNewerThan(root, romMtimeMs, true, cartProject, true)) {
+			if (await directoryHasRebuildInputNewerThan(root, romMtimeMs, true, includeExtraRootAssets, true)) {
 				extraNeedsRebuild = true;
 				break;
 			}
@@ -1677,6 +1706,5 @@ export async function isRebuildRequired(romname: string, resPath: string, option
 }
 
 export const biosResPath = './machine/bios/res';
-const DEFAULT_SYSTEM_RESOURCE_ROOTS: readonly string[] = [biosResPath];
 export const biosSourcePath = './machine/bios';
 export const cartlibLuaPath = './cartlib';

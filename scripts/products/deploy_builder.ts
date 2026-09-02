@@ -3,8 +3,7 @@ import { join } from 'node:path';
 
 import pc from 'picocolors';
 
-import { parseCartHeader } from '../../machine/ts/rompack/format';
-import { decodeCartManifest } from '../../toolchain/ts/rompack/manifest';
+import { parseCartridgePackage } from '../../machine/ts/rompack/image';
 import {
 	getOptionalParamOrEnv,
 	parseArgsVector,
@@ -77,7 +76,7 @@ async function main(): Promise<void> {
 	const rom = await readFile(
 		join(process.cwd(), 'dist', `${romName}${options.debug ? '.debug' : ''}.rom`),
 	);
-	const manifest = decodeCartManifest(rom, parseCartHeader(rom));
+	const manifest = parseCartridgePackage(rom).manifest;
 	const title = options.title || manifest.title || 'BMSX';
 
 	ui.divider('Browser deployment');

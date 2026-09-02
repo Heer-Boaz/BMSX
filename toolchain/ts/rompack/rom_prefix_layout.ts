@@ -6,12 +6,13 @@ import {
 	type RomAssetPayloadRange,
 } from './asset_layout';
 import type { AudioMeta, ImgMeta, RomAsset, TextureMeta } from './assets';
-import type { RomManifest } from './manifest';
+import type { CartManifest } from '../../../machine/ts/rompack/manifest';
 import { buildRomMetadataSection } from './metadata_encode';
 
 export type RomPrefixLayout = {
 	entries: RomAsset[];
 	ranges: RomAssetPayloadRange[];
+	manifest: CartManifest | null;
 	metadataOffset: number;
 	metadataLength: number;
 	manifestOffset: number;
@@ -23,7 +24,7 @@ export type RomPrefixLayout = {
 export function layoutRomPrefix(
 	assetList: ReadonlyArray<RomAsset>,
 	includeLuaAssets: boolean,
-	manifest: RomManifest | null,
+	manifest: CartManifest | null,
 	initialOffset?: number,
 ): RomPrefixLayout {
 	const assetLayout = layoutRomAssetPayloads(assetList, includeLuaAssets, initialOffset);
@@ -93,6 +94,7 @@ export function layoutRomPrefix(
 	return {
 		entries: assetLayout.entries,
 		ranges,
+		manifest,
 		metadataOffset,
 		metadataLength,
 		manifestOffset,

@@ -12,7 +12,7 @@ import {
 	SYSTEM_ROM_SIZE,
 } from '../../spec/bmsx/memory_map';
 import { CartridgeController } from '../devices/cartridge/controller';
-import type { CartridgeSlotMediaPair } from '../devices/cartridge/contracts';
+import type { CartridgeSocketMediaPair } from '../devices/cartridge/contracts';
 import {
 	BUS_FAULT_ACCESS_READ,
 	BUS_FAULT_ACCESS_F32,
@@ -35,10 +35,6 @@ import {
 	IO_APU_FAULT_CODE,
 	IO_APU_FAULT_DETAIL,
 	IO_APU_STATUS,
-	IO_CART_SLOT0_BOARD,
-	IO_CART_SLOT0_RAM_BYTES,
-	IO_CART_SLOT1_BOARD,
-	IO_CART_SLOT1_RAM_BYTES,
 	IO_CART_STATUS,
 	IO_DMA0_STATUS,
 	IO_DMA1_STATUS,
@@ -129,7 +125,7 @@ export type RomByteView = {
 
 export type MemoryInit = {
 	systemRom: Uint8Array;
-	cartridgeSlots: CartridgeSlotMediaPair;
+	cartridgeSlots: CartridgeSocketMediaPair;
 };
 
 export const NO_BLOCKED_MAPPED_WRITE = 0xffffffff;
@@ -885,10 +881,6 @@ export class Memory {
 			case IO_APU_SELECTED_SOURCE_ADDR:
 			case IO_APU_ACTIVE_MASK:
 			case IO_CART_STATUS:
-			case IO_CART_SLOT0_BOARD:
-			case IO_CART_SLOT0_RAM_BYTES:
-			case IO_CART_SLOT1_BOARD:
-			case IO_CART_SLOT1_RAM_BYTES:
 			case IO_SYS_SUPERVISOR_FAULT_SEQUENCE:
 			case IO_SYS_SUPERVISOR_FAULT_CAUSE:
 			case IO_SYS_SUPERVISOR_FAULT_EPC:

@@ -6,9 +6,6 @@ namespace bmsx {
 
 constexpr u32 CARTRIDGE_SLOT_COUNT = 2u;
 
-constexpr u32 CARTRIDGE_BOARD_RAM = 1u << 0u;
-constexpr u32 CARTRIDGE_BOARD_MAILBOX = 1u << 1u;
-
 constexpr u32 CARTRIDGE_STATUS_SLOT0_PRESENT = 1u << 0u;
 constexpr u32 CARTRIDGE_STATUS_SLOT1_PRESENT = 1u << 1u;
 constexpr u32 CARTRIDGE_STATUS_SELECTED_SLOT1 = 1u << 16u;

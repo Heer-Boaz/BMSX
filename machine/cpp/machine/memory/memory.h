@@ -25,7 +25,7 @@ struct MemorySaveState {
 
 struct MemoryInit {
 	std::span<const u8> systemRom;
-	CartridgeSlotMediaPair cartridgeSlots;
+	CartridgeSocketMediaPair cartridgeSlots;
 };
 
 constexpr u32 NO_BLOCKED_MAPPED_WRITE = 0xffffffffu;

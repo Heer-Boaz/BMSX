@@ -220,7 +220,14 @@
 			"cpp": [
 				"machine/cpp/spec/bmsx/cartridge.h"
 			],
-			"reason": "cartridge_socket_board_and_mailbox_wire_contract"
+			"reason": "cartridge_socket_status_and_mailbox_wire_contract"
+		},
+		{
+			"ts": "machine/ts/machine/devices/cartridge/signals.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/cartridge/signals.h"
+			],
+			"reason": "cartridge_card_local_effect_and_request_word_contract"
 		},
 		{
 			"ts": "machine/ts/spec/audio/apu.ts",
@@ -1038,6 +1045,52 @@
 	],
 	"strict_file_pair_parity": [
 		{
+			"ts": "machine/ts/machine/devices/cartridge/contracts.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/cartridge/contracts.h"
+			],
+			"reason": "cartridge_media_and_state_representation_filename_parity"
+		},
+		{
+			"ts": "machine/ts/machine/devices/cartridge/signals.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/cartridge/signals.h"
+			],
+			"reason": "cartridge_local_signal_word_filename_parity"
+		},
+		{
+			"ts": "machine/ts/machine/devices/cartridge/card.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/cartridge/card.h",
+				"machine/cpp/machine/devices/cartridge/card.cpp"
+			],
+			"reason": "cartridge_card_component_owner_filename_parity"
+		},
+		{
+			"ts": "machine/ts/machine/devices/cartridge/mailbox.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/cartridge/mailbox.h",
+				"machine/cpp/machine/devices/cartridge/mailbox.cpp"
+			],
+			"reason": "cartridge_mailbox_device_owner_filename_parity"
+		},
+		{
+			"ts": "machine/ts/machine/devices/cartridge/controller.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/cartridge/controller.h",
+				"machine/cpp/machine/devices/cartridge/controller.cpp"
+			],
+			"reason": "cartridge_physical_socket_controller_filename_parity"
+		},
+		{
+			"ts": "machine/ts/rompack/manifest.ts",
+			"cpp": [
+				"machine/cpp/rompack/manifest.h",
+				"machine/cpp/rompack/manifest.cpp"
+			],
+			"reason": "cartridge_package_hardware_manifest_filename_parity"
+		},
+		{
 			"ts": "machine/ts/audio/output_resampler.ts",
 			"cpp": [
 				"machine/cpp/audio/output_resampler.h",
@@ -1414,6 +1467,91 @@
 		}
 	],
 	"strict_runtime_no_heap_functions": [
+		{
+			"file": "machine/ts/machine/devices/cartridge/controller.ts",
+			"functions": [
+				"selectedSlot",
+				"bindMappedPage",
+				"readU8",
+				"readU16",
+				"readU32",
+				"writeU8",
+				"writeU16",
+				"writeU32",
+				"publishDreqLines"
+			],
+			"reason": "cartridge_socket_bus_routing_must_remain_gc_free"
+		},
+		{
+			"file": "machine/cpp/machine/devices/cartridge/controller.h",
+			"functions": [
+				"selectedSlot",
+				"readU8",
+				"readU16",
+				"readU32",
+				"writeU8",
+				"writeU16",
+				"writeU32"
+			],
+			"reason": "cartridge_inline_socket_forwarding_must_remain_heap_free"
+		},
+		{
+			"file": "machine/cpp/machine/devices/cartridge/controller.cpp",
+			"functions": [
+				"bindMappedPage",
+				"routeCardEffects",
+				"publishDreqLines"
+			],
+			"reason": "cartridge_socket_effect_routing_must_remain_heap_free"
+		},
+		{
+			"file": "machine/ts/machine/devices/cartridge/card.ts",
+			"functions": [
+				"bindMappedPage",
+				"readU8",
+				"readU16",
+				"readU32",
+				"writeU8",
+				"writeU16",
+				"writeU32",
+				"readMmioWord",
+				"dreqLines"
+			],
+			"reason": "cartridge_card_memory_and_device_datapaths_must_remain_gc_free"
+		},
+		{
+			"file": "machine/cpp/machine/devices/cartridge/card.cpp",
+			"functions": [
+				"bindMappedPage",
+				"readU8",
+				"readU16",
+				"readU32",
+				"writeU8",
+				"writeU16",
+				"writeU32",
+				"readMmioWord",
+				"dreqLines"
+			],
+			"reason": "cartridge_card_memory_and_device_datapaths_must_remain_heap_free"
+		},
+		{
+			"file": "machine/ts/machine/devices/cartridge/mailbox.ts",
+			"functions": [
+				"readWord",
+				"writeWord",
+				"dreqLines"
+			],
+			"reason": "cartridge_mailbox_register_datapath_must_remain_gc_free"
+		},
+		{
+			"file": "machine/cpp/machine/devices/cartridge/mailbox.cpp",
+			"functions": [
+				"readWord",
+				"writeWord",
+				"dreqLines"
+			],
+			"reason": "cartridge_mailbox_register_datapath_must_remain_heap_free"
+		},
 		{
 			"file": "machine/ts/machine/devices/imgdec/controller.ts",
 			"functions": [
@@ -1914,6 +2052,74 @@
 		}
 	],
 	"strict_runtime_method_parity": [
+		{
+			"ts": "machine/ts/machine/devices/cartridge/card.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/cartridge/card.h",
+				"machine/cpp/machine/devices/cartridge/card.cpp"
+			],
+			"methods": [
+				"installRom",
+				"attachMappedPageInvalidator",
+				"clearMappedPageWriteWatches",
+				"bindMappedPage",
+				"reset",
+				"captureState",
+				"restoreState",
+				"readU8",
+				"readU16",
+				"readU32",
+				"writeU8",
+				"writeU16",
+				"writeU32",
+				"bindRomByteView",
+				"dreqLines"
+			],
+			"reason": "cartridge_card_datapath_and_state_method_contract"
+		},
+		{
+			"ts": "machine/ts/machine/devices/cartridge/mailbox.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/cartridge/mailbox.h",
+				"machine/cpp/machine/devices/cartridge/mailbox.cpp"
+			],
+			"methods": [
+				"reset",
+				"captureState",
+				"restoreState",
+				"readWord",
+				"writeWord",
+				"dreqLines"
+			],
+			"reason": "cartridge_mailbox_register_and_state_method_contract"
+		},
+		{
+			"ts": "machine/ts/machine/devices/cartridge/controller.ts",
+			"cpp": [
+				"machine/cpp/machine/devices/cartridge/controller.h",
+				"machine/cpp/machine/devices/cartridge/controller.cpp"
+			],
+			"methods": [
+				"connect",
+				"selectedSlot",
+				"installRom",
+				"attachMappedPageInvalidator",
+				"clearMappedPageWriteWatches",
+				"bindMappedPage",
+				"ramByteCount",
+				"reset",
+				"captureState",
+				"restoreState",
+				"readU8",
+				"readU16",
+				"readU32",
+				"writeU8",
+				"writeU16",
+				"writeU32",
+				"bindRomByteView"
+			],
+			"reason": "cartridge_socket_routing_and_bus_method_contract"
+		},
 		{
 			"ts": "machine/ts/audio/output_resampler.ts",
 			"cpp": [

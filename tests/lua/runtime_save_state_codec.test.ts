@@ -78,15 +78,15 @@ function createRuntimeSaveState(): RuntimeSaveState {
 					slots: [
 						{
 							ram: new Uint8Array([1, 3, 5, 7]),
-							mailboxDataWord: 0x11223344,
-							mailboxControlWord: 2,
-							mailboxIrqPending: true,
+							mailbox: {
+								dataWord: 0x11223344,
+								controlWord: 2,
+								irqPending: true,
+							},
 						},
 						{
-							ram: new Uint8Array([2, 4, 6, 8, 10, 12]),
-							mailboxDataWord: 0xaabbccdd,
-							mailboxControlWord: 4,
-							mailboxIrqPending: false,
+							ram: null,
+							mailbox: null,
 						},
 					],
 				},

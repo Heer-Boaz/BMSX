@@ -14,10 +14,6 @@ local irq_mask<const>: *word = 0x08000008
 local apu_status<const>: *word = 0x08000178
 local cart_select<const>: *word = 0x08010420
 local cart_status<const>: *word = 0x08010424
-local slot0_board<const>: *word = 0x08010428
-local slot0_ram_bytes<const>: *word = 0x0801042c
-local slot1_board<const>: *word = 0x08010430
-local slot1_ram_bytes<const>: *word = 0x08010434
 local mailbox_data<const>: *word = 0x30f00000
 local mailbox_control<const>: *word = 0x30f00004
 local mailbox_status<const>: *word = 0x30f00008
@@ -43,9 +39,8 @@ end)
 *irq_mask = irq_dma0_done | irq_cartridge_slot1
 
 assert(*cart_status == 0x00010003, 'mixed-socket boot selection mismatch')
-assert(*slot0_board == 3 and *slot1_board == 3, 'cartridge board words mismatch')
-assert(*slot0_ram_bytes == 256 and *slot1_ram_bytes == 256, 'cartridge RAM capacities mismatch')
 *cart_select = 0
+assert(cart_rom[0] == 0, 'data cartridge exposed its package header as ROM')
 assert(cart_rom[cart_blua32_image_index] == 0, 'data cartridge exposed a BLua32 image')
 *cart_ram_probe = 0x10203040
 *cart_select = 1

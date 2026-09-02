@@ -1,1 +1,3 @@
 title: Nemesis S - Nemesis 2 Baseline
+hardware:
+    - type: rom

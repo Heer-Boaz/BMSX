@@ -159,17 +159,25 @@ int main() {
 		reinterpret_cast<const char*>(system.data()),
 		static_cast<std::streamsize>(system.size()));
 	systemRom.close();
+	bmsx::CartManifest primaryCartManifest;
+	primaryCartManifest.hardware.emplace_back(
+		bmsx::CartridgeRamDeviceConfig{primaryCartRamBytes});
 	const std::vector<bmsx::u8> cart =
-		bmsx::test::makeMinimalDataRom(
-			bmsx::CARTRIDGE_BOARD_RAM,
-			primaryCartRamBytes);
+		bmsx::test::makeMinimalDataRom(primaryCartManifest);
+	bmsx::CartManifest auxiliaryCartManifest;
+	auxiliaryCartManifest.hardware.emplace_back(
+		bmsx::CartridgeRomDeviceConfig{});
+	auxiliaryCartManifest.hardware.emplace_back(
+		bmsx::CartridgeRamDeviceConfig{auxiliaryCartRamBytes});
+	auxiliaryCartManifest.hardware.emplace_back(
+		bmsx::CartridgeMailboxDeviceConfig{});
 	const std::vector<bmsx::u8> auxiliaryCart =
 		bmsx::test::makeMinimalBootRom(
 			bmsx::RomImageDomain::Cartridge,
-			bmsx::CARTRIDGE_BOARD_RAM | bmsx::CARTRIDGE_BOARD_MAILBOX,
-			auxiliaryCartRamBytes);
+			auxiliaryCartManifest);
 	const std::string gamePath = (testDirectory / "test.rom").string();
 	const std::string auxiliaryPath = (testDirectory / "auxiliary.rom").string();
+	const std::string malformedPath = (testDirectory / "malformed.rom").string();
 	std::ofstream gameRom(gamePath, std::ios::binary);
 	gameRom.write(
 		reinterpret_cast<const char*>(cart.data()),
@@ -180,6 +188,10 @@ int main() {
 		reinterpret_cast<const char*>(auxiliaryCart.data()),
 		static_cast<std::streamsize>(auxiliaryCart.size()));
 	auxiliaryRom.close();
+	std::ofstream malformedRom(malformedPath, std::ios::binary);
+	constexpr char malformedPackage[] = "not-a-cartridge-package";
+	malformedRom.write(malformedPackage, sizeof(malformedPackage) - 1u);
+	malformedRom.close();
 	const retro_game_info game{
 		.path = gamePath.c_str(),
 		.data = cart.data(),
@@ -232,8 +244,8 @@ int main() {
 			bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
 	const auto& cartridgeControllerState = cartridgeRuntimeState.machineState.machine.cartridge;
 	require(cartridgeControllerState.selectionWord == 0u, "the cartridge controller should reset to socket 0 without host-side executable inspection");
-	require(cartridgeControllerState.slots[0].ram.size() == 16u, "slot 0 cartridge RAM should come from its physical cartridge header");
-	require(cartridgeControllerState.slots[1].ram.size() == 24u, "slot 1 cartridge RAM should come from its physical cartridge header");
+	require(cartridgeControllerState.slots[0]->ram->size() == 16u, "slot 0 cartridge RAM should come from its physical cartridge manifest");
+	require(cartridgeControllerState.slots[1]->ram->size() == 24u, "slot 1 cartridge RAM should come from its physical cartridge manifest");
 	insideRetroRun = true;
 	retro_run();
 	insideRetroRun = false;
@@ -299,6 +311,23 @@ int main() {
 	retro_init();
 	require(!retro_load_game(&game), "the core must reject a frontend that cannot consume its XRGB8888 framebuffer");
 	require(pixelFormatRequests == 3u, "an unsupported frontend should receive one XRGB8888 negotiation request");
+	retro_deinit();
+
+	acceptXrgb8888 = true;
+	retro_set_environment(frontendEnvironment);
+	retro_get_system_av_info(&initialAvInfo);
+	retro_init();
+	const retro_game_info malformedGame{
+		.path = malformedPath.c_str(),
+		.data = nullptr,
+		.size = 0u,
+		.meta = nullptr,
+	};
+	require(
+		!retro_load_game(&malformedGame),
+		"invalid cartridge package data must fail admission without crossing the libretro ABI"
+	);
+	require(pixelFormatRequests == 4u, "malformed content should pass through one framebuffer negotiation before admission");
 	retro_deinit();
 	std::filesystem::remove_all(testDirectory);
 
