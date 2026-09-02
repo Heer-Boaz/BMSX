@@ -1,6 +1,6 @@
 # Studio functioneel ontwerp
 
-Status: **geaccepteerd productcontract voor fase A + C en de eerste recorded-observabilityslice**
+Status: **geaccepteerd productcontract voor fase A + C en geselecteerde recorded-observabilityslices**
 
 Dit document werkt `STUDIO-FUNCTIONAL-DESIGN-01` uit vanuit de bestaande
 BMSX-representaties en productievoorbeelden. De gekozen eerste productroute is
@@ -127,6 +127,26 @@ categorieën
 Unreal's PIE, actor-overlay en scene viewport zijn hier uitdrukkelijk geen
 architectuurvoorbeeld.
 
+### Action-admission rapporteert redenen vanuit de producer
+
+Unreal GameplayAbilities behandelt admission, commitment en uitvoering als
+verschillende semantische grenzen. `CanActivateAbility()` laat cooldown, cost,
+tags en de authored custom gate ieder hun eigen uitkomst produceren
+([gepinde productiebron](https://github.com/folgerwang/UnrealEngine/blob/99a530d4ccbe6bea1e8f49df20acfeb294006962/Engine/Plugins/Runtime/GameplayAbilities/Source/GameplayAbilities/Private/Abilities/GameplayAbility.cpp#L286-L365));
+de caller geeft de aldus geproduceerde failure tags door aan
+`NotifyAbilityFailed()` in plaats van achteraf actorstate te inspecteren
+([activation boundary](https://github.com/folgerwang/UnrealEngine/blob/99a530d4ccbe6bea1e8f49df20acfeb294006962/Engine/Plugins/Runtime/GameplayAbilities/Source/GameplayAbilities/Private/AbilitySystemComponent_Abilities.cpp#L1218-L1247),
+[notification](https://github.com/folgerwang/UnrealEngine/blob/99a530d4ccbe6bea1e8f49df20acfeb294006962/Engine/Plugins/Runtime/GameplayAbilities/Source/GameplayAbilities/Private/AbilitySystemComponent_Abilities.cpp#L1898-L1915)).
+Cooldown commitment blijft bovendien een afzonderlijke operatie
+([bron](https://github.com/folgerwang/UnrealEngine/blob/99a530d4ccbe6bea1e8f49df20acfeb294006962/Engine/Plugins/Runtime/GameplayAbilities/Source/GameplayAbilities/Private/Abilities/GameplayAbility.cpp#L399-L475)).
+
+**Gevolg voor BMSX:** een ActionEffect-recorder mag alleen de uitkomst
+publiceren die `actioneffect_component:trigger()` zelf bezit. De host raadt geen
+reden uit tags, state paths, cooldownvelden of custom componentstate. Een
+accepted trigger wordt gepubliceerd nadat zijn immediate/deferred cooldownstate
+is committed en vóór de handler een geneste trigger of event kan uitvoeren.
+Lifecycle- en periodieke feiten blijven afzonderlijke toekomstige categorieën.
+
 ## Echte BMSX-representaties
 
 Authoring, gecompileerde uitvoering en observatie zijn niet dezelfde
@@ -185,11 +205,11 @@ tabellen.
 bezit per owner de effectdefinition, `active_count`, cooldown/pending state en
 de dense periodieke lane (`actioneffect_component.lua:56-86,163-197,208-347`).
 
-`trigger()` onderscheidt intern cooldown en gates, maar publiceert alleen een
-boolean (`actioneffect_component.lua:250-305`). Een host kan dus geen rejection
-reason afleiden. Als zo'n reden een gekozen productvereiste wordt, moet de
-ActionEffect-producer die reden op zijn echte beslisgrens produceren; de
-workbench mag haar niet raden.
+`trigger()` onderscheidt intern cooldown en gates en blijft de owner van hun
+resultaat (`actioneffect_component.lua:250-305`). De gekozen triggertrace laat
+diezelfde grens een compacte reasoncode produceren; zij voegt geen hostscan of
+tweede evaluatie van tags, states of custom gates toe. De gewone gameplay-API
+blijft een boolean retourneren.
 
 ### Events, world en identiteit
 
@@ -470,11 +490,14 @@ De source-lens blijft read-only boven arbitrary Lua. Zij belooft geen exacte
 runtime-nodecorrespondentie. De eerste inspectieworkflow is stop-and-inspect en
 libretro blijft buiten de Studio-workbench.
 
-De eerste toegestane stap van **B** is daarna uitsluitend een opgenomen FSM-
-transitionstream binnen een expliciet Scenario Lab-test. FSM heeft als enige
-van de drie behaviorfamilies nu al zowel een concrete runtime-instance als een
-semantische `def_id`. BT-occurrence-identiteit en ActionEffect-outcomes zijn nog
-niet sterk genoeg en worden niet via hetzelfde kanaal gegeneraliseerd.
+De eerste toegestane stap van **B** is een opgenomen FSM-transitionstream binnen
+een expliciete Scenario Lab-test. De volgende geselecteerde categorie is alleen
+de admission-uitkomst van een concrete ActionEffect-`trigger()`: de component en
+effect-id bestaan al, terwijl de producer op iedere echte afwijzingsgrens een
+reden kan behouden zonder de host state te laten reconstrueren. Activation,
+deactivation, cooldown commitment en periodieke uitvoering zijn andere feiten
+en worden niet stilzwijgend aan deze slice toegevoegd. BT-occurrence-identiteit
+is nog niet sterk genoeg en wordt niet via een van beide kanalen gegeneraliseerd.
 
 ## Observabilitycontract
 
@@ -611,6 +634,51 @@ test 370.000 extra cycles voor 10.000 records (37 per record). Na warm-up bleef
 de door de VM bijgehouden guest-heap over 10.000 records exact gelijk. Dit zijn
 synthetische cyclemetingen van deze transitiongrens, geen algemeen framebudget
 of low-end-hostresultaat.
+
+### Tweede gekozen producer: opgenomen ActionEffect-triggeruitkomsten
+
+`STUDIO-ACTIONEFFECT-TRIGGER-TRACE-01` bindt één recorder aan de unieke
+`actioneffect_component` van één concrete registry-owner. De bestaande
+`trigger(id, payload, ...)`-grens produceert precies één feit per werkelijke
+triggerpoging. Zij onderscheidt de redenen die zij zelf al beoordeelt:
+
+- cooldown nog actief;
+- vereiste tag ontbreekt;
+- geblokkeerde tag aanwezig;
+- vereiste state ontbreekt;
+- geblokkeerde state aanwezig;
+- de authored `can_trigger`-gate wijst af.
+
+Interne keuzes binnen een authored `can_trigger` blijven terecht één
+`custom_gate`-reden: de component bezit hun fijnere betekenis niet. Accepted
+wordt pas gepubliceerd nadat de immediate cooldowndeadline of de deferred
+cooldownduur in de effectstate staat, maar vóór `handler`/event emission. Een
+handler die een tweede effect triggert kan daardoor nooit vóór de admission van
+zijn parent in de stream verschijnen.
+
+De recorder prealloceert opnieuw een vaste circular buffer, maar FSM en
+ActionEffects krijgen geen generieke callback-, DTO- of diagnosticsfacade. Hun
+identiteit, records en producergrenzen verschillen en de normale hot paths
+betalen alleen een direct recorder-veldcheck op de gekozen semantische
+operatie. De ActionEffect-channel heeft deze vaste interne Lua/hostvorm:
+
+| Waarde | Arrayvelden |
+| --- | --- |
+| kanaal | concrete owner-id; owner-definition-id; capacity; published sequence; retained record-array; eenmalige rejection-reasontabel |
+| record | producer sequence; raw `SYS_TIME_MS`; effect-id; `0` voor accepted of index in de rejection-reasontabel |
+
+Scenario Lab materialiseert dit als een afzonderlijke begrensde ActionEffect-
+trace onder de static ownerheader. De execution domain komt uit het werkelijk
+uitgevoerde testresource. De host scant geen registry, world of component en
+decodeert een rejection alleen met de producer-owned reasontabel. Overflow
+faalt de test. Er is geen sourcerange zolang de runtime-effect-id nog geen
+bewezen authored correspondence publiceert.
+
+Deze slice observeert uitdrukkelijk niet `activate()`, `deactivate()`,
+`commit_cooldown()` of `tick_periodic()`. Zij maakt ook geen `can_trigger`-
+callback zwaarder om cart-specifieke subredenen te verzamelen. Zulke feiten
+krijgen pas een eigen slice wanneer de concrete authoring- en testworkflow hun
+identiteit en payload vereist.
 
 ### Pauze en semantic stepping
 
@@ -883,7 +951,8 @@ staan in [`open_architecture_slices.md`](open_architecture_slices.md).
 De eerste A + C-slices vereisen geen keuze over onderstaande onderwerpen en
 bouwen er daarom ook geen abstractie voor:
 
-1. Welke semantic facts een eerste recorded observabilityworkflow nodig heeft.
+1. Welke semantic facts na FSM-transitions en ActionEffect-triggeradmission een
+   concrete volgende recorded observabilityworkflow nodig heeft.
 2. Welke echte produceridentiteit BT-occurrences aan runtimefeiten koppelt.
 3. Of visual authoring later een constrained tekstformaat (D) of structured
    resource (E) gebruikt.
