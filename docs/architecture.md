@@ -847,8 +847,10 @@ would be incorrect: BLua `require` selects static startup modules and would run
 the test before the execution owner's settle phase.
 
 Scenario discovery, execution and results remain separate retained owners.
-`ScenarioTestCollection` enumerates the already loaded source registries once
-and lazily materializes stable `scenario:<domain>:<asset-id>` children.
+`ScenarioTestCollection` enumerates the workbench's selected development
+cartridge source registry once and lazily materializes stable
+`scenario:<domain>:<asset-id>` children. Expansion cards and a second unrelated
+executable cartridge do not become a second project in the current workspace.
 `ScenarioExecutionService` alone advances the packaged loader/ready/setup/update
 protocol against one Runtime and installs a retained raw ICU playback source.
 Scheduled input is applied before the exact logical tick's ICU sample; guest
@@ -856,6 +858,31 @@ closures that span more than one machine tick do not stretch a requested input
 hold. `ScenarioResultService` separately retains a bounded current-first run
 history, logs and captures. Each capture records its requesting logical tick and
 is bound only when `VideoPresenter` accepts an actual presentation.
+
+The browser workbench adds an explicit scenario **media session** above those
+three owners. The workspace/source registries and their `RomToolingLayer`s stay
+the canonical authoring media. Starting a run first commits the current editor
+generation, applies workspace overrides, and rebuilds dirty ordinary BLua32
+media through the existing compiler/install owner. The selected source-only
+test is then compiled into one derived cartridge ROM. Only the physical ROM
+component in that test's already occupied socket is replaced; cartridge RAM,
+mailbox devices, the second socket, and the canonical authoring layers are not
+reclassified or copied into a Studio model. The matching derived BLua32 source
+image is the current debugger/fault map for exactly that execution.
+
+Completion and cancellation end the media session after the run's final
+presentation opportunity. The same socket then receives its canonical ROM
+bytes and the canonical BLua32 source map again, followed by the ordinary cold
+boot lifecycle on the same `Runtime`. This is not save-state rollback: RAM,
+VRAM, device reset semantics, and cart-owned seed/setup remain exactly those of
+an ordinary reboot. Compile/install/restore transitions are serialized by the
+workbench runtime-task owner; a panel never mutates machine media directly.
+The split follows production emulator media ownership: openMSX replaces a
+cartridge through its slot manager while the inserted extension owns the
+device, and MAME's image manager coordinates lifecycle while each image device
+performs its own load/unload
+([openMSX slot manager](https://github.com/openMSX/openMSX/blob/master/src/CartridgeSlotManager.cc#L348-L378),
+[MAME image manager](https://github.com/mamedev/mame/blob/master/src/emu/image.cpp#L34-L128)).
 
 The headless tooling host adapts that shared execution owner through
 `executeHostLogicalTick`, services GPU backend fences on the existing host

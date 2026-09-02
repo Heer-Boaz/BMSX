@@ -20,8 +20,13 @@ import { setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../.
 import {
 	resolveRuntimeLuaSource,
 } from '../../../runtime/sources';
-import { SYSTEM_RESOURCE_DOMAIN, type ResourceDomain } from '../../../common/resource';
 import {
+	SYSTEM_RESOURCE_DOMAIN,
+	type ResourceDomain,
+	type ResourceIdentity,
+} from '../../../common/resource';
+import {
+	findCodeTabContext,
 	getCodeTabContextById,
 	getCodeTabContexts,
 	setContextRuntimeSyncState,
@@ -30,6 +35,7 @@ import {
 import { editorTabGroup } from '../tab/group_model';
 import type { EditorDocumentContextId } from '../../../common/editor_context';
 import type { CodeEditorTabDescriptor } from '../tab/model';
+import { readWorkspaceLuaSourceText } from '../../../workspace/files';
 
 export type CodeTabSelection = {
 	row: number;
@@ -44,6 +50,30 @@ export type LuaCodeTabSourceSnapshot = {
 	path: string;
 	source: string;
 };
+
+export type CurrentLuaSourceSnapshot = {
+	readonly source: string;
+	readonly revision: number;
+};
+
+/** Reads the current editor generation when open, otherwise the workspace-backed source record. */
+export function captureCurrentLuaSource(
+	sources: RuntimeSourceState,
+	resource: ResourceIdentity,
+): CurrentLuaSourceSnapshot {
+	const context = findCodeTabContext(resource);
+	if (context !== null) {
+		return {
+			source: getTextSnapshot(context.buffer),
+			revision: context.buffer.version,
+		};
+	}
+	const match = resolveRuntimeLuaSource(sources, resource)!;
+	return {
+		source: readWorkspaceLuaSourceText(match.registry, match.record),
+		revision: match.record.update_timestamp,
+	};
+}
 
 function setCodeTabDiagnosticsState(context: CodeTabContext): void {
 	switch (context.mode) {

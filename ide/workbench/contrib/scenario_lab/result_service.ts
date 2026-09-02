@@ -162,19 +162,10 @@ export class ScenarioResultService {
 	public fail(
 		result: ScenarioRunResult,
 		endTick: number,
-		message: string,
+		failure: ScenarioRunFailure,
 		fault: FaultSnapshot | null,
 	): void {
-		result.failure = {
-			message,
-			location: fault === null
-				? sourceStart(result.test)
-				: {
-					resource: fault.resource,
-					line: fault.line,
-					column: fault.column,
-				},
-		};
+		result.failure = failure;
 		result.fault = fault;
 		this.complete(result, 'failed', endTick);
 	}

@@ -324,7 +324,12 @@ async function main(): Promise<void> {
 				let passed = false;
 				try {
 					runtime.frameScheduler.clearQueuedTime();
-					const result = execution.start(test, test.sourceTimestamp);
+					const result = results.begin(
+						test,
+						test.sourceTimestamp,
+						runtime.frameScheduler.lastTickSequence,
+					);
+					execution.start(result);
 					await new Promise<void>((resolve, reject) => {
 						const frameLoop = frames.start((currentTime) => {
 							runHeadlessScenarioFrame(

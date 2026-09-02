@@ -24,7 +24,6 @@ import {
 	type ScenarioRunResult,
 	ScenarioResultService,
 } from './result_service';
-import type { ScenarioTestItem } from './test_collection';
 
 const SCENARIO_TEST_GLOBAL = '__bmsx_host_test';
 const CART_SETTLE_TICKS = 5;
@@ -120,7 +119,7 @@ export class ScenarioExecutionService {
 		private readonly input: Input,
 		private readonly fault: RuntimeFaultState,
 		public readonly results: ScenarioResultService,
-		private readonly maxLogicalTicks: number,
+		private readonly maxLogicalTicks: number | null,
 	) {
 		this.suspendedGuest = new SuspendedGuestSession(runtime);
 	}
@@ -134,12 +133,11 @@ export class ScenarioExecutionService {
 		return execution === null ? null : execution.result;
 	}
 
-	public start(test: ScenarioTestItem, sourceRevision: number): ScenarioRunResult {
+	public start(result: ScenarioRunResult): void {
 		if (this.execution !== null) {
 			throw new Error('A scenario execution is already active.');
 		}
 		const startTick = this.runtime.frameScheduler.lastTickSequence;
-		const result = this.results.begin(test, sourceRevision, startTick);
 		this.scheduledCommands.clear();
 		this.playback.reset();
 		this.input.setInputControllerPlayback(this.playback);
@@ -153,7 +151,6 @@ export class ScenarioExecutionService {
 			tickPrepared: false,
 		};
 		this.results.appendLog(result, startTick, 'waiting for cartridge');
-		return result;
 	}
 
 	public prepareLogicalTick(): boolean {
@@ -234,13 +231,21 @@ export class ScenarioExecutionService {
 			this.results.fail(
 				execution.result,
 				this.runtime.frameScheduler.lastTickSequence,
-				this.fault.faultSnapshot.message,
+				{
+					message: this.fault.faultSnapshot.message,
+					location: {
+						resource: this.fault.faultSnapshot.resource,
+						line: this.fault.faultSnapshot.line,
+						column: this.fault.faultSnapshot.column,
+					},
+				},
 				this.fault.faultSnapshot,
 			);
 			this.finish();
 			return;
 		}
-		if (execution.logicalTicks >= this.maxLogicalTicks) {
+		if (this.maxLogicalTicks !== null
+			&& execution.logicalTicks >= this.maxLogicalTicks) {
 			this.fail(
 				execution,
 				`Scenario did not finish within ${this.maxLogicalTicks} logical ticks.`,
@@ -564,7 +569,14 @@ export class ScenarioExecutionService {
 		this.results.fail(
 			execution.result,
 			this.runtime.frameScheduler.lastTickSequence,
-			message,
+			{
+				message,
+				location: {
+					resource: execution.result.test.resource,
+					line: 1,
+					column: 1,
+				},
+			},
 			null,
 		);
 		this.finish();

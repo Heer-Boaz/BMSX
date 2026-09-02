@@ -94,6 +94,12 @@ export type RuntimeRomAssetRevision = readonly [
 	edit: RomAssetEdit,
 ];
 
+export function blua32MediaRequiresRebuild(sources: RuntimeSourceState): boolean {
+	return sources.systemBlua32MediaDirty
+		|| sources.cartridgeBlua32MediaDirty[0]
+		|| sources.cartridgeBlua32MediaDirty[1];
+}
+
 function createFreshLuaInterpreter(
 	bridge: RuntimeLuaTooling,
 ): LuaInterpreter {
@@ -497,13 +503,13 @@ export function installBlua32Media(
 	sources.currentBlua32Media = installation.sourceMedia;
 }
 
-export function bootActiveBlua32Media(
+/** Materializes canonical dirty media and returns the fresh tooling interpreter for the next boot. */
+export function prepareBlua32MediaBoot(
 	sources: RuntimeSourceState,
-	fault: RuntimeFaultState,
 	luaTooling: RuntimeLuaTooling,
 	runtime: Runtime,
 	rebuildBlua32Media: boolean,
-): void {
+): LuaInterpreter {
 	const interpreter = createFreshLuaInterpreter(luaTooling);
 	if (rebuildBlua32Media) {
 		const rebuilt = buildBlua32Media(
@@ -519,6 +525,16 @@ export function bootActiveBlua32Media(
 			layoutBlua32MediaInstallation(sources, rebuilt),
 		);
 	}
+	return interpreter;
+}
+
+/** Starts the one Runtime against the media and source map installed by its owner. */
+export function bootInstalledBlua32Media(
+	fault: RuntimeFaultState,
+	luaTooling: RuntimeLuaTooling,
+	runtime: Runtime,
+	interpreter: LuaInterpreter,
+): void {
 	resetHandledLuaErrors(fault);
 	luaTooling.luaInterpreter = interpreter;
 	runtime.resetForSystemBoot();

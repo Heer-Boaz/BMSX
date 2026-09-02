@@ -33,10 +33,12 @@ function sourceRecord(path: string, timestamp: number): LuaSourceRecord {
 
 function sourceState(records: LuaSourceRecord[]): RuntimeSourceState {
 	return {
+		activeCartridgeSlot: -1,
 		cartridgeSlots: [{
 			domain: 0,
 			projectRootPath: 'carts/nemesis_s',
-			luaSources: { records },
+			rom: { header: { blua32ImageOffset: 1 } },
+			luaSources: { records, can_boot_from_source: true },
 		}, null],
 	} as RuntimeSourceState;
 }
@@ -131,7 +133,14 @@ test('scenario failure retains authored fault navigation', () => {
 		column: 4,
 		details: { luaStack: [] },
 	};
-	service.fail(result, 9, fault.message, fault);
+	service.fail(result, 9, {
+		message: fault.message,
+		location: {
+			resource: fault.resource,
+			line: fault.line,
+			column: fault.column,
+		},
+	}, fault);
 
 	assert.equal(result.state, 'failed');
 	assert.deepEqual(result.failure?.location, {

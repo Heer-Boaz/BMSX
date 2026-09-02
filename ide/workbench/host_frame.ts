@@ -1,6 +1,7 @@
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import {
 	beginHostFrame,
+	executeHostLogicalTick,
 	executeHostUpdate,
 	HostFrameAction,
 	HostFrameRunResult,
@@ -44,6 +45,10 @@ function executeWorkbenchHostMenuAction(
 			return false;
 		case HostMenuInput.RebootCart:
 			screen.clearPresentation();
+			if (ide.scenarioRuns.active) {
+				ide.scenarioRuns.cancel();
+				return true;
+			}
 			ide.runtimeTasks.schedule(async () => {
 				await rebootPreparedRuntime(
 					ide.sources,
@@ -153,6 +158,7 @@ export function runWorkbenchHostFrame(
 ): HostFrameRunResult {
 	let hostDeltaMs = 0;
 	let systemOutputDrained = false;
+	let scenarioGuestFrame = false;
 	try {
 		hostDeltaMs = beginHostFrame(
 			session,
@@ -206,47 +212,65 @@ export function runWorkbenchHostFrame(
 				hostMenuInput,
 			);
 			if (action === HostFrameAction.Execute) {
-				if (ide.debugger.plans.controlActive) {
-					willExecuteRuntimeDebuggerPlan(ide.debugger);
+				const scenarioExecution = ide.scenarioRuns.execution;
+				if (scenarioExecution.active) {
+					scenarioGuestFrame = true;
+					if (scenarioExecution.prepareLogicalTick()) {
+						const completed = executeHostLogicalTick(
+							session,
+							runtime,
+							presenter,
+							input,
+							audioOutput,
+							screen,
+						);
+						scenarioExecution.didRunLogicalTick(completed);
+					}
+				} else {
+					if (ide.debugger.plans.controlActive) {
+						willExecuteRuntimeDebuggerPlan(ide.debugger);
+					}
+					executeHostUpdate(
+						session,
+						runtime,
+						presenter,
+						input,
+						audioOutput,
+						screen,
+						hostDeltaMs,
+					);
 				}
-				executeHostUpdate(
-					session,
-					runtime,
-					presenter,
-					input,
-					audioOutput,
-					screen,
-					hostDeltaMs,
-				);
 				systemOutput.flush(runtime, logOutput);
 				systemOutputDrained = true;
-				const supervisorFaultSequence = runtime.machine.memory.readMappedU32LE(
-					IO_SYS_SUPERVISOR_FAULT_SEQUENCE,
-				);
-				if (supervisorFaultSequence !== ide.fault.supervisorFaultSequence) {
-					if (ide.debugger.plans.controlActive) {
-						didFaultRuntimeDebuggerPlan(ide.debugger);
+				if (!scenarioGuestFrame) {
+					const supervisorFaultSequence = runtime.machine.memory.readMappedU32LE(
+						IO_SYS_SUPERVISOR_FAULT_SEQUENCE,
+					);
+					if (supervisorFaultSequence !== ide.fault.supervisorFaultSequence) {
+						if (ide.debugger.plans.controlActive) {
+							didFaultRuntimeDebuggerPlan(ide.debugger);
+						}
+						ide.fault.supervisorFaultSequence = supervisorFaultSequence;
+						handleSupervisorFault(
+							logOutput,
+							ide.fault,
+							ide.sources,
+							runtime,
+							ide.luaTooling.suspendedGuest,
+						);
+					} else if (ide.debugger.plans.controlActive) {
+						didExecuteRuntimeDebuggerPlan(ide.debugger);
 					}
-					ide.fault.supervisorFaultSequence = supervisorFaultSequence;
-					handleSupervisorFault(
-						logOutput,
-						ide.fault,
-						ide.sources,
-						runtime,
-						ide.luaTooling.suspendedGuest,
-					);
-				} else if (ide.debugger.plans.controlActive) {
-					didExecuteRuntimeDebuggerPlan(ide.debugger);
-				}
-				if (ide.debugger.stopPresentationPending) {
-					activateEditor(
-						ide.editor,
-						ide.sources,
-						ide.overlayRenderer,
-						runtime,
-						audioOutput,
-					);
-					presentRuntimeDebuggerStop(ide.editor, ide.debugger);
+					if (ide.debugger.stopPresentationPending) {
+						activateEditor(
+							ide.editor,
+							ide.sources,
+							ide.overlayRenderer,
+							runtime,
+							audioOutput,
+						);
+						presentRuntimeDebuggerStop(ide.editor, ide.debugger);
+					}
 				}
 				action = HostFrameAction.PresentPending;
 			}
@@ -255,6 +279,7 @@ export function runWorkbenchHostFrame(
 				syncRuntimeSourceActivity(ide.sources, runtime.machine.cpu.activeCartridgeSlot());
 			}
 		}
+		const previousPresentation = presenter.presentationSequence;
 		presentWorkbenchFrame(
 			session,
 			runtime,
@@ -265,6 +290,12 @@ export function runWorkbenchHostFrame(
 			screen,
 			hostDeltaMs,
 		);
+		if (scenarioGuestFrame) {
+			ide.scenarioRuns.finishHostFrame(
+				presenter.presentationSequence,
+				presenter.presentationSequence !== previousPresentation,
+			);
+		}
 	} catch (error) {
 		workbenchMode.surfaceHostFrameError(ide, logOutput, runtime, error);
 		presentWorkbenchError(

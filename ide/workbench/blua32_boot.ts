@@ -3,7 +3,11 @@ import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import type { LogOutput } from '../../hosts/common/log';
 import type { KeyValueStorage } from '../workspace/key_value_storage';
 import { clearFaultSnapshot } from '../runtime/fault_state';
-import { bootActiveBlua32Media } from '../runtime/lua_pipeline';
+import {
+	blua32MediaRequiresRebuild,
+	bootInstalledBlua32Media,
+	prepareBlua32MediaBoot,
+} from '../runtime/lua_pipeline';
 import { enterSystemSources } from '../runtime/sources';
 import type { RuntimeIdeState } from '../runtime/state';
 import type { RuntimeSourceState } from '../runtime/sources';
@@ -22,12 +26,6 @@ import { deactivateEditor } from './overlay_modes';
 import { handleLuaError } from './runtime_errors';
 import { clearExecutionStopHighlights } from '../runtime_error/navigation';
 
-function blua32MediaOverridesRequireRebuild(sources: RuntimeSourceState): boolean {
-	return sources.systemBlua32MediaDirty
-		|| sources.cartridgeBlua32MediaDirty[0]
-		|| sources.cartridgeBlua32MediaDirty[1];
-}
-
 export function startPreparedRuntime(
 	state: RuntimeIdeState,
 	runtime: Runtime,
@@ -42,7 +40,7 @@ export function startPreparedRuntime(
 		state.editor,
 		runtime,
 		logOutput,
-		blua32MediaOverridesRequireRebuild(state.sources),
+		blua32MediaRequiresRebuild(state.sources),
 	);
 }
 
@@ -64,7 +62,7 @@ async function prepareRebootToBootRom(
 		workspaceDirtyRecords,
 	);
 	enterSystemSources(sources);
-	return blua32MediaOverridesRequireRebuild(sources);
+	return blua32MediaRequiresRebuild(sources);
 }
 
 export async function rebootPreparedRuntime(
@@ -87,13 +85,13 @@ export async function rebootPreparedRuntime(
 		audioOutput,
 		storage,
 	);
-	bootActiveBlua32Media(
+	const interpreter = prepareBlua32MediaBoot(
 		sources,
-		fault,
 		luaTooling,
 		runtime,
 		rebuildBlua32Media,
 	);
+	bootInstalledBlua32Media(fault, luaTooling, runtime, interpreter);
 	audioOutput.muteSystem(false);
 	resetRuntimeDebuggerExecution(debuggerState);
 	audioOutput.restart(runtime.timing.ufpsScaled);
@@ -112,13 +110,13 @@ function bootPreparedBlua32Media(
 	try {
 		clearFaultSnapshot(fault);
 		editor.clearRuntimeErrorOverlay();
-		bootActiveBlua32Media(
+		const interpreter = prepareBlua32MediaBoot(
 			sources,
-			fault,
 			luaTooling,
 			runtime,
 			rebuildBlua32Media,
 		);
+		bootInstalledBlua32Media(fault, luaTooling, runtime, interpreter);
 		resetRuntimeDebuggerExecution(debuggerState);
 	} catch (error) {
 		handleLuaError(

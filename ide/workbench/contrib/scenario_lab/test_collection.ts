@@ -1,7 +1,6 @@
 import { computeSourceLabel } from '../../../common/paths';
-import type { ResourceIdentity } from '../../../common/resource';
-import { CARTRIDGE_RESOURCE_DOMAINS } from '../../../common/resource';
 import type { RuntimeSourceState } from '../../../runtime/sources';
+import { developmentCartridgeSource } from '../../../runtime/sources';
 import { isScenarioTestAsset } from '../../../../toolchain/ts/rompack/scenario_test';
 
 export type ScenarioTestId = `scenario:${0 | 1}:${string}`;
@@ -11,7 +10,10 @@ export type ScenarioTestItem = {
 	readonly id: ScenarioTestId;
 	readonly parentId: ScenarioTestRootId;
 	readonly label: string;
-	readonly resource: ResourceIdentity;
+	readonly resource: {
+		readonly domain: 0 | 1;
+		readonly path: string;
+	};
 	readonly assetId: string;
 	readonly sourceTimestamp: number;
 };
@@ -43,11 +45,9 @@ export class ScenarioTestCollection {
 
 	public constructor(sources: RuntimeSourceState) {
 		const roots: ScenarioTestRoot[] = [];
-		for (const domain of CARTRIDGE_RESOURCE_DOMAINS) {
-			const cartridge = sources.cartridgeSlots[domain];
-			if (cartridge === null) {
-				continue;
-			}
+		const cartridge = developmentCartridgeSource(sources);
+		if (cartridge !== null) {
+			const domain = cartridge.domain;
 			const candidates: ScenarioTestCandidate[] = [];
 			const records = cartridge.luaSources.records;
 			for (let index = 0; index < records.length; index += 1) {
@@ -61,22 +61,21 @@ export class ScenarioTestCollection {
 					sourceTimestamp: record.update_timestamp,
 				});
 			}
-			if (candidates.length === 0) {
-				continue;
+			if (candidates.length > 0) {
+				candidates.sort((left, right) => left.sourcePath.localeCompare(right.sourcePath));
+				const rootId: ScenarioTestRootId = `scenario-root:${domain}`;
+				const projectLabel = computeSourceLabel(cartridge.projectRootPath);
+				const root: ScenarioTestRoot = {
+					id: rootId,
+					domain,
+					label: `CART ${domain} / ${projectLabel}`,
+					testCount: candidates.length,
+					children: null,
+				};
+				roots.push(root);
+				this.rootsById.set(rootId, root);
+				this.candidatesByRootId.set(rootId, candidates);
 			}
-			candidates.sort((left, right) => left.sourcePath.localeCompare(right.sourcePath));
-			const rootId: ScenarioTestRootId = `scenario-root:${domain}`;
-			const projectLabel = computeSourceLabel(cartridge.projectRootPath);
-			const root: ScenarioTestRoot = {
-				id: rootId,
-				domain,
-				label: `CART ${domain} / ${projectLabel}`,
-				testCount: candidates.length,
-				children: null,
-			};
-			roots.push(root);
-			this.rootsById.set(rootId, root);
-			this.candidatesByRootId.set(rootId, candidates);
 		}
 		this.roots = roots;
 	}

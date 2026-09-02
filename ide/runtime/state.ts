@@ -17,6 +17,8 @@ import { SuspendedGuestSession } from './suspended_guest';
 import { OverlayRenderer } from './overlay_renderer';
 import type { RuntimeSourceState } from './sources';
 import { RuntimeTaskQueue } from './task_queue';
+import { ScenarioRunService } from '../workbench/contrib/scenario_lab/run_service';
+import { ScenarioTestCollection } from '../workbench/contrib/scenario_lab/test_collection';
 
 export const DEFAULT_IDE_FONT_VARIANT: FontVariant = 'tiny';
 export type OverlayResolutionMode = 'offscreen' | 'viewport';
@@ -29,6 +31,8 @@ export class RuntimeIdeState {
 	public shortcutDisposers: Array<() => void> = [];
 	public readonly luaTooling: RuntimeLuaTooling;
 	public readonly runtimeTasks: RuntimeTaskQueue;
+	public readonly scenarioTests: ScenarioTestCollection;
+	public readonly scenarioRuns: ScenarioRunService;
 	public readonly fault: RuntimeFaultState = createRuntimeFaultState();
 
 	public constructor(
@@ -53,6 +57,18 @@ export class RuntimeIdeState {
 			new SuspendedGuestSession(runtime),
 		);
 		this.runtimeTasks = new RuntimeTaskQueue(microtasks, audioOutput);
+		this.scenarioTests = new ScenarioTestCollection(sources);
+		this.scenarioRuns = new ScenarioRunService(
+			runtime,
+			sources,
+			input,
+			audioOutput,
+			storage,
+			this.fault,
+			this.luaTooling,
+			this.debugger,
+			this.runtimeTasks,
+		);
 		this.editor = new RuntimeCartEditor(
 			runtime,
 			presenter,

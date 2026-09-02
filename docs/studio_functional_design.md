@@ -594,6 +594,18 @@ Een interactieve browserrun mag dezelfde Runtime rebooten of opnieuw laden als
 de gekozen workflow dat vereist; er draait geen tweede verborgen Runtime naast.
 Een afzonderlijk headless proces is een testhost, geen PIE-runtime in Studio.
 
+Voor de browser bestaat een run uit een expliciete media session. De huidige
+workspacegeneratie wordt eerst de canonieke gewone ROM; de scenario-builder
+leidt daaruit één tijdelijke executable test-ROM af en de bestaande fysieke
+socket installeert die ROM. Source registries en authoringlagen blijven
+canoniek, terwijl debugger/fault-resolutie gedurende de run naar de afgeleide
+BLua32-image wijst. Na de laatste presentatiegelegenheid van pass, failure of
+cancel wordt dezelfde canonieke ROM opnieuw geïnstalleerd en dezelfde Runtime
+normaal koud gestart. Dit is geen heap-, RAM-, VRAM- of save-state-rollback:
+herhaalbare seed en initialisatie blijven guest-owned scenario-startcondities.
+De runtime-taskqueue serialiseert build, install en herstel; de UI bezit geen
+mediawrites.
+
 ### Resultaat
 
 Een resultaat kan bevatten:
