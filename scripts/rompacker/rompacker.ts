@@ -48,6 +48,7 @@ import {
 	BLUA32_BIOS_IMPORTS_SIDECAR_SUFFIX,
 	decodeBlua32BiosImports,
 } from '../../toolchain/ts/rompack/blua32_bios_imports';
+import { collectScenarioTestSourceAssets } from './scenario_test_sources';
 
 import { join } from 'node:path';
 import { existsSync, readFileSync, statSync } from 'node:fs';
@@ -509,6 +510,9 @@ async function main() {
 		const libraryLuaPathSet = new Set<string>(libraryLuaRoots.map(normalizePathKey));
 		const cartSourceFiles = collectCartSourceFiles(extraLuaRoots);
 		const cartHasProgramSource = cartSourceFiles.length !== 0;
+		const scenarioTestSources = romPackDebug
+			? collectScenarioTestSourceAssets(projectRootPath)
+			: { sourceFiles: [], assets: [] };
 
 		if (!rom_name) {
 			throw new Error('Missing required argument: --romname or ROM_NAME environment variable.');
@@ -561,7 +565,10 @@ async function main() {
 			rebuildRequired = await progress.runWithDetail('Check timestamps', () => isRebuildRequired(rom_name, respath, {
 				domain: 'cart',
 				extraLuaPaths: [...extraLuaPathSet, ...libraryLuaPathSet],
-				buildSourceFiles: GX_GENERATED_MODULE_BUILD_SOURCE_FILES,
+				buildSourceFiles: [
+					...GX_GENERATED_MODULE_BUILD_SOURCE_FILES,
+					...scenarioTestSources.sourceFiles,
+				],
 				debug,
 				romFilePath: romOutputPath,
 				biosImportsFilePath: biosImportsPath,
@@ -600,7 +607,11 @@ async function main() {
 			// Compile AEM resources against the loaded audio and data resources.
 			compileAudioEventResources(resources);
 
-			const romAssets = await progress.runWithDetail('Generate ROM assets', () => generateRomAssets(resources, message => progress.setDetail(message)));
+			const romAssets = await progress.runWithDetail('Generate ROM assets', async () => {
+				const assets = await generateRomAssets(resources, message => progress.setDetail(message));
+				assets.push(...scenarioTestSources.assets);
+				return assets;
+			});
 			const romLayout = layoutRomPrefix(romAssets, romPackDebug, romManifest);
 			let blua32: CartRomBlua32Tail | null = null;
 			if (biosImportsPath !== undefined) {

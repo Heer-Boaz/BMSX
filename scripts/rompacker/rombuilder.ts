@@ -47,7 +47,7 @@ import {
 	SYSTEM_BLUA32_IMAGE_OFFSET,
 } from '../../toolchain/ts/rompack/system';
 import { encodeAudioAssetToAdpcm } from './adpcm';
-import { buildBlua32Image, type GeneratedLuaModule } from './blua32_image_builder';
+import { buildBlua32Image, type GeneratedLuaModule } from '../../toolchain/ts/rompack/blua32_image_builder';
 import { createTextureAtlas, resolveTextureAtlasName } from './atlasbuilder';
 import {
 	GX_SYSTEM_TEXTURE_ATLAS_NAME,

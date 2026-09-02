@@ -68,3 +68,32 @@ test('compiler reports mapped harness diagnostics at the authored source locatio
 		new RegExp(`module ${TEST_DISPLAY_PATH.replaceAll('/', '\\/')}: 2:1:`),
 	);
 });
+
+test('source composition maps disjoint whole-line fragments to one complete authored source', () => {
+	const entrySource = 'module<entry>\nlocal first = 1\nreturn first';
+	const firstLineEnd = entrySource.indexOf('\n') + 1;
+	const mapped = composeLuaSource(GENERATED_PATH, [
+		{
+			kind: 'source',
+			rangePath: ENTRY_PATH,
+			displayPath: 'entry.lua',
+			source: entrySource,
+			endOffset: firstLineEnd,
+		},
+		{ kind: 'generated', source: 'local injected = true' },
+		{
+			kind: 'source',
+			rangePath: ENTRY_PATH,
+			displayPath: 'entry.lua',
+			source: entrySource,
+			startOffset: firstLineEnd,
+		},
+	]);
+
+	assert.equal(
+		mapped.source,
+		'module<entry>\nlocal injected = true\nlocal first = 1\nreturn first\n',
+	);
+	assert.deepEqual(mapped.sourceMap.lines[2], { sourceIndex: 1, sourceLine: 2 });
+	assert.equal(mapped.sourceMap.sources[1].source, entrySource);
+});

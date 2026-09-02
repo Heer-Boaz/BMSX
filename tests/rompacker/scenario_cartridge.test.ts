@@ -9,7 +9,7 @@ import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_form
 import { buildLuaSources } from '../../ide/runtime/source_registry';
 import { createRuntimeSourceState } from '../../ide/runtime/sources';
 import { buildLuaStackFrames } from '../../ide/runtime/stack_trace';
-import { buildHostTestCartridge } from '../../scripts/bootrom/platforms/hostrunner/host_test_cartridge';
+import { buildScenarioCartridge } from '../../toolchain/ts/rompack/scenario_cartridge';
 import {
 	buildRomBlua32Tail,
 	compileLuaChunkBuffer,
@@ -26,6 +26,7 @@ import { layoutRomPrefix } from '../../toolchain/ts/rompack/rom_prefix_layout';
 import { RomSourceStack } from '../../toolchain/ts/rompack/source';
 import { SYSTEM_ROM_ASSET_OFFSET } from '../../toolchain/ts/rompack/system';
 import { parseCartridgePackage } from '../../machine/ts/rompack/image';
+import { scenarioTestAssetId } from '../../toolchain/ts/rompack/scenario_test';
 
 const ROOT = join(process.cwd(), 'tmp', 'host-test-cartridge-test');
 const MANIFEST: CartManifest = { hardware: [{ type: 'rom' }] };
@@ -42,7 +43,7 @@ function luaEntry(source: string): RomAsset {
 	};
 }
 
-test('host test cartridge packages authored test source without making it a startup module', async () => {
+test('scenario cartridge packages authored test source without making it a startup module', async () => {
 	await rm(ROOT, { recursive: true, force: true });
 	try {
 		await mkdir(ROOT, { recursive: true });
@@ -66,6 +67,17 @@ test('host test cartridge packages authored test source without making it a star
 		});
 
 		const cartSource = 'module<entry>\nreturn true';
+		const testSource = [
+			'__bmsx_host_test = {}',
+			'function __bmsx_host_test.ready()',
+			'\treturn true',
+			'end',
+			'function __bmsx_host_test.setup()',
+			'end',
+			'function __bmsx_host_test.update()',
+			"\tassert(false, 'mapped assertion')",
+			'end',
+		].join('\n');
 		const retainedDocument: RomAsset = {
 			resid: 'retained-document',
 			type: 'lua',
@@ -73,7 +85,15 @@ test('host test cartridge packages authored test source without making it a star
 			source_path: 'docs/retained.lua',
 			normalized_source_path: 'carts/example/docs/retained.lua',
 		};
-		const cartAssets = [luaEntry(cartSource), retainedDocument];
+		const packagedTest: RomAsset = {
+			resid: scenarioTestAssetId(TEST_SOURCE_PATH),
+			type: 'lua',
+			buffer: Buffer.from(testSource),
+			source_path: TEST_SOURCE_PATH,
+			normalized_source_path: TEST_SOURCE_PATH,
+			update_timestamp: 1234,
+		};
+		const cartAssets = [luaEntry(cartSource), retainedDocument, packagedTest];
 		const cartLayout = layoutRomPrefix(cartAssets, true, MANIFEST);
 		const cartBlua32 = buildRomBlua32Tail(cartAssets, {
 			generatedLuaModules: [],
@@ -94,29 +114,20 @@ test('host test cartridge packages authored test source without making it a star
 
 		const systemRom = new Uint8Array(await readFile(join(ROOT, 'system.debug.rom')));
 		const cartRom = new Uint8Array(await readFile(join(ROOT, 'cart.debug.rom')));
-		const testSource = [
-			'__bmsx_host_test = {}',
-			'function __bmsx_host_test.ready()',
-			'\treturn true',
-			'end',
-			'function __bmsx_host_test.setup()',
-			'end',
-			'function __bmsx_host_test.update()',
-			"\tassert(false, 'mapped assertion')",
-			'end',
-		].join('\n');
-		const enhanced = await buildHostTestCartridge(
+		const enhancedBuild = await buildScenarioCartridge({
 			systemRom,
-			cartRom,
-			{
+			cartridge: cartRom,
+			test: {
 				sourcePath: TEST_SOURCE_PATH,
 				source: testSource,
-				updateTimestamp: 1234,
 			},
-			'host = {}',
-		);
+			ramByteCount: 0x00400000,
+			optLevel: 3,
+		});
+		const enhanced = enhancedBuild.layer.bytes;
 		const index = await parseCartridgeIndex(enhanced);
 		const sourceEntry = index.entries.find(entry => entry.source_path === TEST_SOURCE_PATH)!;
+		const entrySource = index.entries.find(entry => entry.source_path === 'entry.lua')!;
 
 		assert.equal(sourceEntry.type, 'lua');
 		assert.equal(sourceEntry.compiled_start, undefined);
@@ -125,6 +136,10 @@ test('host test cartridge packages authored test source without making it a star
 		assert.equal(
 			Buffer.from(enhanced.subarray(sourceEntry.start, sourceEntry.end)).toString('utf8'),
 			testSource,
+		);
+		assert.equal(
+			Buffer.from(enhanced.subarray(entrySource.start, entrySource.end)).toString('utf8'),
+			cartSource,
 		);
 		const retainedEntry = index.entries.find(entry => entry.resid === retainedDocument.resid)!;
 		assert.equal(retainedEntry.compiled_start, undefined);
@@ -182,19 +197,32 @@ test('host test cartridge packages authored test source without making it a star
 		assert.equal(registry.entrySourcePath, 'entry.lua');
 
 		await assert.rejects(
-			buildHostTestCartridge(
+			buildScenarioCartridge({
 				systemRom,
-				cartRom,
-				{
+				cartridge: cartRom,
+				test: {
 					sourcePath: TEST_SOURCE_PATH,
 					source: 'local value = 1\n@',
-					updateTimestamp: 1235,
 				},
-				'host = {}',
-			),
+				ramByteCount: 0x00400000,
+				optLevel: 3,
+			}),
 			(error: LuaSyntaxError) => error.path === TEST_SOURCE_PATH
 				&& error.line === 2
 				&& error.column === 1,
+		);
+		await assert.rejects(
+			buildScenarioCartridge({
+				systemRom,
+				cartridge: cartRom,
+				test: {
+					sourcePath: 'tests/carts/example/unpackaged_assert.lua',
+					source: '__bmsx_host_test = {}',
+				},
+				ramByteCount: 0x00400000,
+				optLevel: 3,
+			}),
+			/lua asset '__bmsx_scenario_test__\/tests\/carts\/example\/unpackaged_assert\.lua' is not present in the ROM/,
 		);
 	} finally {
 		await rm(ROOT, { recursive: true, force: true });

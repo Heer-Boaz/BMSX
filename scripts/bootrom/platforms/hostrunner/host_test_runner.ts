@@ -16,7 +16,7 @@ import type { HostClock, TimerHandle } from '../../../../hosts/common/clock';
 import type { InputEventWriter } from '../../../../hosts/common/input/contracts';
 import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../../../machine/ts/spec/bmsx/io';
 import { HeadlessCaptureCoordinator } from '../headless_capture';
-import { HOST_TEST_LOADER_GLOBAL } from './host_test_cartridge';
+import { SCENARIO_TEST_LOADER_GLOBAL } from '../../../../toolchain/ts/rompack/scenario_guest_api';
 import {
 	createRuntimeFaultState,
 	recordSupervisorFault,
@@ -146,7 +146,7 @@ export class HostTestRunner {
 				if (this.cartSettleFrames >= CART_SETTLE_FRAMES) {
 					const cpu = this.options.runtime.machine.cpu;
 					this.loader = cpu.getGlobalByKey(
-						cpu.stringPool.intern(HOST_TEST_LOADER_GLOBAL),
+						cpu.stringPool.intern(SCENARIO_TEST_LOADER_GLOBAL),
 					) as Closure;
 					this.phase = 'install';
 				}

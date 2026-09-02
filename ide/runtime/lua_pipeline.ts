@@ -41,12 +41,9 @@ import {
 } from '../common/resource';
 import type { RuntimeFaultState } from './fault_state';
 import type { RuntimeLuaTooling } from './lua_tooling';
-import type { RomAsset } from '../../toolchain/ts/rompack/assets';
 import {
-	buildRomAssetAddressLinkValuesFromSymbols,
-	buildRomAssetSymbolModuleSourceFromSymbols,
-	collectRomAssetSymbols,
-	type RomAssetSymbol,
+	buildRelocatableRomAssetSymbolModule,
+	type RomAssetSymbolModule,
 } from '../../toolchain/ts/rompack/asset_symbols';
 import {
 	ROM_ASSET_SYMBOL_MODULE_PATH,
@@ -106,11 +103,7 @@ function createFreshLuaInterpreter(
 function buildProgramSources(
 	registries: LuaSourceRegistry[],
 	interpreter: LuaInterpreter,
-	generatedSourceRevision?: readonly [
-		modulePath: string,
-		source: string,
-		linkValues: ReadonlyMap<string, number>,
-	],
+	generatedSourceRevision?: RomAssetSymbolModule & { modulePath: string },
 ): {
 	entry: ProgramSourceModule;
 	modules: ProgramSourceModule[];
@@ -127,11 +120,11 @@ function buildProgramSources(
 				continue;
 			}
 			seen.add(key);
-			const generated = generatedSourceRevision && key === generatedSourceRevision[0]
+			const generated = generatedSourceRevision && key === generatedSourceRevision.modulePath
 				? generatedSourceRevision
 				: undefined;
 			const source = generated
-				? generated[1]
+				? generated.source
 				: readWorkspaceLuaSourceText(registry, asset);
 			const chunk = interpreter.compileChunk(source, key);
 			const module: ProgramSourceModule = {
@@ -141,7 +134,7 @@ function buildProgramSources(
 				source,
 			};
 			if (generated) {
-				module.linkValues = generated[2];
+				module.linkValues = generated.linkValues;
 			}
 			modules.push(module);
 		}
@@ -159,10 +152,7 @@ function prepareRegistryProgramSources(
 	registry: LuaSourceRegistry,
 	interpreter: LuaInterpreter,
 	assetModulePath: string,
-	assetModule: readonly [
-		source: string,
-		linkValues: ReadonlyMap<string, number>,
-	],
+	assetModule: RomAssetSymbolModule,
 ): {
 	entry: ProgramSourceModule;
 	modules: ProgramSourceModule[];
@@ -173,7 +163,7 @@ function prepareRegistryProgramSources(
 	const programSources = buildProgramSources(
 		[registry],
 		interpreter,
-		[assetModulePath, assetModule[0], assetModule[1]],
+		{ modulePath: assetModulePath, ...assetModule },
 	);
 	const entryPath = programSources.entry.path;
 	const entrySource = programSources.entry.source;
@@ -202,25 +192,6 @@ function prepareRegistryProgramSources(
 	};
 }
 
-function buildAssetModule(
-	entries: ReadonlyArray<RomAsset>,
-	domain: RomSourceLayer['id'],
-	imageOffset: number,
-): readonly [source: string, linkValues: ReadonlyMap<string, number>] {
-	const symbols = collectRomAssetSymbols(entries, domain);
-	const linkSymbols: RomAssetSymbol[] = [];
-	for (let index = 0; index < symbols.length; index += 1) {
-		const symbol = symbols[index];
-		if (domain === 'cart' && symbol.offset >= imageOffset) {
-			linkSymbols.push(symbol);
-		}
-	}
-	return [
-		buildRomAssetSymbolModuleSourceFromSymbols(symbols),
-		buildRomAssetAddressLinkValuesFromSymbols(linkSymbols),
-	];
-}
-
 function applyLinkedAssetModule(
 	object: ProgramObjectImage,
 	modules: ProgramSourceModule[],
@@ -228,27 +199,24 @@ function applyLinkedAssetModule(
 	diagnosticSources: Map<string, Blua32DiagnosticSource>,
 	linked: LinkedBlua32Image,
 	modulePath: string,
-	assetModule: readonly [
-		source: string,
-		linkValues: ReadonlyMap<string, number>,
-	],
+	assetModule: RomAssetSymbolModule,
 ): void {
 	applyBlua32LinkValues(
 		linked,
 		object.link.constValueRelocs,
 		modulePath,
-		assetModule[1],
+		assetModule.linkValues,
 	);
-	sources.set(modulePath, assetModule[0]);
+	sources.set(modulePath, assetModule.source);
 	let moduleIndex = 0;
 	while (modules[moduleIndex].path !== modulePath) {
 		moduleIndex += 1;
 	}
-	modules[moduleIndex].source = assetModule[0];
-	modules[moduleIndex].linkValues = assetModule[1];
+	modules[moduleIndex].source = assetModule.source;
+	modules[moduleIndex].linkValues = assetModule.linkValues;
 	diagnosticSources.set(modules[moduleIndex].chunk.range.path, {
 		displayPath: modules[moduleIndex].sourcePath,
-		source: assetModule[0],
+		source: assetModule.source,
 	});
 }
 
@@ -310,7 +278,7 @@ export function buildBlua32Media(
 			systemRegistry,
 			interpreter,
 			SYSTEM_ASSET_SYMBOL_MODULE_PATH,
-			buildAssetModule(
+			buildRelocatableRomAssetSymbolModule(
 				publicAssets.entries,
 				sources.systemRom.id,
 				imageOffset,
@@ -368,7 +336,7 @@ export function buildBlua32Media(
 			cartridge.luaSources,
 			interpreter,
 			ROM_ASSET_SYMBOL_MODULE_PATH,
-			buildAssetModule(
+			buildRelocatableRomAssetSymbolModule(
 				compileAssets.entries,
 				cartridge.rom.id,
 				imageOffset,
@@ -406,7 +374,7 @@ export function buildBlua32Media(
 			programSources.diagnosticSources,
 			linked,
 			ROM_ASSET_SYMBOL_MODULE_PATH,
-			buildAssetModule(
+			buildRelocatableRomAssetSymbolModule(
 				publicAssets.entries,
 				cartridge.rom.id,
 				imageOffset,

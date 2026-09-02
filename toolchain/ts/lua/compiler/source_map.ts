@@ -31,6 +31,8 @@ export type LuaSourceFragment =
 	}
 	| ({
 		kind: 'source';
+		startOffset?: number;
+		endOffset?: number;
 	} & LuaSourceMapSource);
 
 export type ComposedLuaSource = {
@@ -61,33 +63,41 @@ export function composeLuaSource(
 	for (let fragmentIndex = 0; fragmentIndex < fragments.length; fragmentIndex += 1) {
 		const fragment = fragments[fragmentIndex];
 		const sourceIndex = fragment.kind === 'source' ? sources.length : -1;
+		let fragmentSource = fragment.source;
+		let sourceLine = 1;
 		if (fragment.kind === 'source') {
 			sources.push({
 				rangePath: fragment.rangePath,
 				displayPath: fragment.displayPath,
 				source: fragment.source,
 			});
+			const startOffset = fragment.startOffset === undefined ? 0 : fragment.startOffset;
+			for (let index = 0; index < startOffset; index += 1) {
+				if (fragment.source.charCodeAt(index) === 10) {
+					sourceLine += 1;
+				}
+			}
+			fragmentSource = fragment.source.slice(startOffset, fragment.endOffset);
 		}
 		if (lines.length < generatedLine) {
 			lines.push(null);
 		}
-		if (fragment.source.length !== 0 && sourceIndex >= 0) {
-			lines[generatedLine - 1] = { sourceIndex, sourceLine: 1 };
+		if (fragmentSource.length !== 0 && sourceIndex >= 0) {
+			lines[generatedLine - 1] = { sourceIndex, sourceLine };
 		}
-		let sourceLine = 1;
-		for (let index = 0; index < fragment.source.length; index += 1) {
-			if (fragment.source.charCodeAt(index) !== 10) {
+		for (let index = 0; index < fragmentSource.length; index += 1) {
+			if (fragmentSource.charCodeAt(index) !== 10) {
 				continue;
 			}
 			generatedLine += 1;
 			sourceLine += 1;
-			lines.push(index + 1 < fragment.source.length && sourceIndex >= 0
+			lines.push(index + 1 < fragmentSource.length && sourceIndex >= 0
 				? { sourceIndex, sourceLine }
 				: null);
 		}
-		chunks.push(fragment.source);
-		if (fragment.source.length === 0
-			|| fragment.source.charCodeAt(fragment.source.length - 1) !== 10) {
+		chunks.push(fragmentSource);
+		if (fragmentSource.length === 0
+			|| fragmentSource.charCodeAt(fragmentSource.length - 1) !== 10) {
 			chunks.push('\n');
 			generatedLine += 1;
 			lines.push(null);

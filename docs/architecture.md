@@ -822,15 +822,26 @@ boundary ([source-map implementation](https://github.com/evanw/esbuild/blob/f605
 while VS Code test items retain an immutable URI as their source identity
 ([test item](https://github.com/microsoft/vscode/blob/f6f7c31e6cd2541fdd901f045a3418a06f2c3aca/src/vs/workbench/api/common/extHostTestItem.ts#L127-L162)).
 
-The host-test packer uses those two representations directly. It adds the
-selected `_assert.lua` as one source-only cart resource with its authored
-`source_path`, and compiles the existing deferred loader with a source mapping
-over only the test fragment. Calling the loader after cart settle therefore
-keeps the existing guest-test timing, while assertions and faults resolve to
-the `_assert.lua` module path and its exact authored line and column. Requiring
-the test as an independent module would be incorrect: BLua `require` selects
-static startup modules and would run the test before the host-owned settle
-phase.
+The debug cart packer retains every conventional
+`tests/<cart-project-root>/**/*_assert.lua` document as its own source-only cart
+resource. Its namespaced asset id identifies the test role; `source_path` is
+the stable authored identity and `normalized_source_path` is the workspace
+location. Release carts do not carry these authoring resources. Browser and
+headless discovery therefore enumerate the same packaged records once instead
+of maintaining registration lists or scanning a host filesystem at run time.
+
+The browser-safe scenario cartridge builder consumes one of those records. It
+leaves the public entry document untouched and compiles a synthetic entry in
+which the deferred loader is inserted after the entry declaration. Whole-line
+source-map fragments project the original entry suffix and the selected test
+back to their complete authored documents. The selected source-only payload is
+replaced with its current workspace bytes, while the BLua image and any
+image-relative asset addresses are linked against the final tail layout.
+Calling the loader after cart settle therefore keeps the existing guest-test
+timing, while assertions and faults resolve to the `_assert.lua` resource and
+its exact authored line and column. Requiring the test as an independent module
+would be incorrect: BLua `require` selects static startup modules and would run
+the test before the execution owner's settle phase.
 
 `Blua32ImageLayout` is a tooling representation for inspection, disassembly,
 linking, and hot-resume relocation. It is not part of the runtime execution

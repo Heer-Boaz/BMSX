@@ -12,6 +12,11 @@ export type RomAssetSymbol = {
 	byteLength: number;
 };
 
+export type RomAssetSymbolModule = {
+	source: string;
+	linkValues: ReadonlyMap<string, number>;
+};
+
 const romBaseByPayloadId: Record<RomImageDomain, number> = {
 	system: SYSTEM_ROM_BASE,
 	cart: CART_ROM_BASE,
@@ -97,6 +102,27 @@ export function buildRomAssetAddressLinkValuesFromSymbols(
 		values.set(`${symbol.name}_addr`, symbol.address);
 	}
 	return values;
+}
+
+export function buildRelocatableRomAssetSymbolModule(
+	assetList: ReadonlyArray<RomAsset>,
+	payloadId: RomImageDomain,
+	imageOffset: number,
+): RomAssetSymbolModule {
+	const symbols = collectRomAssetSymbols(assetList, payloadId);
+	const relocatedSymbols: RomAssetSymbol[] = [];
+	for (let index = 0; index < symbols.length; index += 1) {
+		const symbol = symbols[index];
+		if (payloadId === 'cart'
+			&& symbol.payloadId === payloadId
+			&& symbol.offset >= imageOffset) {
+			relocatedSymbols.push(symbol);
+		}
+	}
+	return {
+		source: buildRomAssetSymbolModuleSourceFromSymbols(symbols),
+		linkValues: buildRomAssetAddressLinkValuesFromSymbols(relocatedSymbols),
+	};
 }
 
 /*

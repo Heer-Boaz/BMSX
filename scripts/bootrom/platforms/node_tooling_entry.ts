@@ -53,10 +53,6 @@ import {
 	HeadlessCaptureCoordinator,
 	deriveHeadlessCaptureOutputDir,
 } from './headless_capture';
-import {
-	buildHostTestCartridge,
-	HOST_TEST_API_PATH,
-} from './hostrunner/host_test_cartridge';
 import { HostTestRunner } from './hostrunner/host_test_runner';
 import { runIdeTest } from './hostrunner/ide_test_runner';
 import { InputTimeline } from './input_timeline';
@@ -67,6 +63,7 @@ import {
 import { installNodeWorkspaceBridge } from './node_workspace_bridge';
 import { RecordingLogOutput } from '../../../ide/testing/recording_log_output';
 import { createRuntimeSourceState } from '../../../ide/runtime/sources';
+import { buildScenarioCartridge } from '../../../toolchain/ts/rompack/scenario_cartridge';
 
 declare const BMSX_BOOTROM_DEBUG: boolean;
 
@@ -94,21 +91,18 @@ async function main(): Promise<void> {
 
 	let slot0Rom: Uint8Array = originalSlot0Rom;
 	if (options.mode.kind === 'host-test') {
-		const [apiSource, testSource, testStats] = await Promise.all([
-			fs.readFile(path.resolve(HOST_TEST_API_PATH), 'utf8'),
-			fs.readFile(options.mode.path, 'utf8'),
-			fs.stat(options.mode.path),
-		]);
-		slot0Rom = await buildHostTestCartridge(
+		const testSource = await fs.readFile(options.mode.path, 'utf8');
+		const scenario = await buildScenarioCartridge({
 			systemRom,
-			slot0Rom,
-			{
+			cartridge: slot0Rom,
+			test: {
 				sourcePath: path.relative(process.cwd(), path.resolve(options.mode.path)).split(path.sep).join('/'),
 				source: testSource,
-				updateTimestamp: testStats.mtimeMs,
 			},
-			apiSource,
-		);
+			ramByteCount: PSX_MACHINE_SPEC.ramBytes,
+			optLevel: 3,
+		});
+		slot0Rom = scenario.layer.bytes;
 	}
 
 	const clock = new VirtualHeadlessClock();

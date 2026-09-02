@@ -27,7 +27,7 @@ import {
 	compileLuaChunkBuffer,
 	finalizeRompack,
 } from '../../scripts/rompacker/rombuilder';
-import { buildBlua32Image } from '../../scripts/rompacker/blua32_image_builder';
+import { buildBlua32Image } from '../../toolchain/ts/rompack/blua32_image_builder';
 
 const ROOT = join(process.cwd(), 'tmp', 'blua32-tail-layout-test');
 const ENTRY_PATH = 'entry.lua';
