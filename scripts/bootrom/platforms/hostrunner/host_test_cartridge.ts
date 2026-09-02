@@ -1,6 +1,12 @@
 import { buildRomAssetSymbolModuleSource } from '../../../../toolchain/ts/rompack/asset_symbols';
 import type { RomAsset } from '../../../../toolchain/ts/rompack/assets';
-import { ROM_ASSET_SYMBOL_MODULE_PATH } from '../../../../toolchain/ts/rompack/generated_modules';
+import {
+	GX_DISPLAY_PRESET_MODULE_PATH,
+	GX_REGISTER_MODULE_PATH,
+	ROM_ASSET_SYMBOL_MODULE_PATH,
+} from '../../../../toolchain/ts/rompack/generated_modules';
+import { GX_DISPLAY_PRESET_MODULE_SOURCE } from '../../../../toolchain/ts/rompack/gx_display_preset_module';
+import { GX_REGISTER_MODULE_SOURCE } from '../../../../toolchain/ts/rompack/gx_register_module';
 import { loadRomAssetList, parseCartridgeIndex } from '../../../../toolchain/ts/rompack/loader';
 import {
 	decodeBinary,
@@ -73,6 +79,8 @@ export async function buildHostTestCartridge(
 		luaAssets: cartridgeLuaAssets,
 		generatedLuaModules: [
 			{ path: ROM_ASSET_SYMBOL_MODULE_PATH, source: buildRomAssetSymbolModuleSource(cartIndex.entries) },
+			{ path: GX_DISPLAY_PRESET_MODULE_PATH, source: GX_DISPLAY_PRESET_MODULE_SOURCE },
+			{ path: GX_REGISTER_MODULE_PATH, source: GX_REGISTER_MODULE_SOURCE },
 			{
 				path: HOST_TEST_MODULE_PATH,
 				source: `${HOST_TEST_LOADER_GLOBAL} = function()\n${testSource}\nend`,

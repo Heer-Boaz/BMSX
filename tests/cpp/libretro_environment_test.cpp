@@ -1,6 +1,7 @@
 #include "bmsx_libretro.h"
 #include "common/endian.h"
 #include "spec/bmsx/cartridge.h"
+#include "spec/gx/pcrtc.h"
 #include "machine/devices/gx/gpu_pcrtc.h"
 #include "spec/bmsx/model.h"
 #include "machine/runtime/save_state/codec.h"

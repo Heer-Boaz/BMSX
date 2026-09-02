@@ -5,9 +5,15 @@ import type { RawRomSource } from '../../toolchain/ts/rompack/source';
 import {
 	BLUA32_FIRMWARE_MODULE_PATH,
 	BLUA32_FIRMWARE_SOURCE_PATH,
+	GX_DISPLAY_PRESET_MODULE_PATH,
+	GX_DISPLAY_PRESET_SOURCE_PATH,
+	GX_REGISTER_MODULE_PATH,
+	GX_REGISTER_SOURCE_PATH,
 	ROM_ASSET_SYMBOL_MODULE_PATH,
 } from '../../toolchain/ts/rompack/generated_modules';
 import { BLUA32_FIRMWARE_MODULE_SOURCE } from '../../toolchain/ts/rompack/blua32_firmware_module';
+import { GX_DISPLAY_PRESET_MODULE_SOURCE } from '../../toolchain/ts/rompack/gx_display_preset_module';
+import { GX_REGISTER_MODULE_SOURCE } from '../../toolchain/ts/rompack/gx_register_module';
 import type {
 	CartridgeIndex,
 	RomAsset,
@@ -116,6 +122,18 @@ test('buildLuaSources registers real Lua assets in one pass', () => {
 	assert.equal(record.update_timestamp, 22);
 	assert.equal(record.generated, false);
 	assert.equal(registry.module2lua[ROM_ASSET_SYMBOL_MODULE_PATH].generated, true);
+	const displayPresets = registry.module2lua[GX_DISPLAY_PRESET_MODULE_PATH];
+	assert.equal(displayPresets.source_path, GX_DISPLAY_PRESET_SOURCE_PATH);
+	assert.equal(displayPresets.src, GX_DISPLAY_PRESET_MODULE_SOURCE);
+	assert.equal(displayPresets.base_src, GX_DISPLAY_PRESET_MODULE_SOURCE);
+	assert.equal(displayPresets.generated, true);
+	assert.equal(registry.path2lua[GX_DISPLAY_PRESET_SOURCE_PATH], displayPresets);
+	const gxRegisters = registry.module2lua[GX_REGISTER_MODULE_PATH];
+	assert.equal(gxRegisters.source_path, GX_REGISTER_SOURCE_PATH);
+	assert.equal(gxRegisters.src, GX_REGISTER_MODULE_SOURCE);
+	assert.equal(gxRegisters.base_src, GX_REGISTER_MODULE_SOURCE);
+	assert.equal(gxRegisters.generated, true);
+	assert.equal(registry.path2lua[GX_REGISTER_SOURCE_PATH], gxRegisters);
 	assert.equal(registry.module2lua.cart, record);
 	assert.equal(registry.path2lua['kernel/interrupts.lua'], undefined);
 });
@@ -141,6 +159,14 @@ test('system source registry retains the BLua32 compile-time firmware module', (
 	assert.equal(firmware.source_path, BLUA32_FIRMWARE_SOURCE_PATH);
 	assert.equal(firmware.src, BLUA32_FIRMWARE_MODULE_SOURCE);
 	assert.equal(firmware.generated, true);
+	const displayPresets = registry.module2lua[GX_DISPLAY_PRESET_MODULE_PATH];
+	assert.equal(displayPresets.source_path, GX_DISPLAY_PRESET_SOURCE_PATH);
+	assert.equal(displayPresets.src, GX_DISPLAY_PRESET_MODULE_SOURCE);
+	assert.equal(displayPresets.generated, true);
+	const gxRegisters = registry.module2lua[GX_REGISTER_MODULE_PATH];
+	assert.equal(gxRegisters.source_path, GX_REGISTER_SOURCE_PATH);
+	assert.equal(gxRegisters.src, GX_REGISTER_MODULE_SOURCE);
+	assert.equal(gxRegisters.generated, true);
 });
 
 test('ROM TOC decode gives Lua assets an explicit zero update timestamp', () => {

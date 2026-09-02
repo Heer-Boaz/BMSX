@@ -1,6 +1,7 @@
 #include "audio/output_resampler.h"
 #include "common/endian.h"
 #include "spec/bmsx/io.h"
+#include "spec/gx/pcrtc.h"
 #include "machine/cpu/cpu.h"
 #include "machine/devices/audio/controller.h"
 #include "machine/devices/audio/biquad_filter.h"

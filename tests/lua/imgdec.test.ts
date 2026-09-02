@@ -37,11 +37,11 @@ import {
 } from '../../machine/ts/spec/bmsx/io';
 import { IO_CMD_GEO_XFORM2_BATCH } from '../../machine/ts/machine/devices/geometry/contracts';
 import {
-	GX_GPU_GP1_DMA_DIRECTION,
 	GX_GPU_GP0_INGRESS_COMMAND,
 	GX_GPU_GP0_INGRESS_IMAGE_PAYLOAD,
 	GxGpu,
 } from '../../machine/ts/machine/devices/gx/gpu';
+import { GX_GPU_GP1_DMA_DIRECTION } from '../../machine/ts/spec/gx/gp1';
 import {
 	GX_GPU_DMA_DIRECTION_CPU_TO_GP0,
 } from '../../machine/ts/spec/gx/gp0';
@@ -52,7 +52,7 @@ import {
 	GX_GPU_PCRTC_SMODE1_LOW,
 	GX_GPU_PCRTC_SMODE1_SINT,
 	gxGpuPcrtcRegisterAddress,
-} from '../../machine/ts/machine/devices/gx/gpu_pcrtc';
+} from '../../machine/ts/spec/gx/pcrtc';
 import {
 	IMGDEC_CONTROL_START,
 	IMGDEC_INPUT_FIFO_WORD_CAPACITY,

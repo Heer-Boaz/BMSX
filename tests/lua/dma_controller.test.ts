@@ -37,10 +37,10 @@ import {
 	GX_GPU_COMMAND_UPLOAD_CPU_TO_VRAM,
 } from '../../machine/ts/machine/devices/gx/gpu_command_buffer';
 import {
-	GX_GPU_GP1_DMA_DIRECTION,
 	GX_GPU_STATUS_READY_TO_RECEIVE_DMA,
 	GxGpu,
 } from '../../machine/ts/machine/devices/gx/gpu';
+import { GX_GPU_GP1_DMA_DIRECTION } from '../../machine/ts/spec/gx/gp1';
 import {
 	GX_GPU_DMA_DIRECTION_CPU_TO_GP0,
 	GX_GPU_DMA_DIRECTION_FIFO,
@@ -56,7 +56,7 @@ import {
 	GX_GPU_PCRTC_SMODE1_LOW,
 	GX_GPU_PCRTC_SMODE1_SINT,
 	gxGpuPcrtcRegisterAddress,
-} from '../../machine/ts/machine/devices/gx/gpu_pcrtc';
+} from '../../machine/ts/spec/gx/pcrtc';
 import { IrqController } from '../../machine/ts/machine/devices/irq/controller';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import {

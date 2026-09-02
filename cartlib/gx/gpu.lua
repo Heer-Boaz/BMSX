@@ -1,10 +1,10 @@
 local gp0<const> = require('cartlib/gx/gp0')
+local gx_registers<const> = require('bmsx/gx_registers')
 
 local gx_gpu<const> = {}
 
 local gp0_register<const>: *word = 0x0801023c
 local gp1<const>: *word = 0x08010240
-local gp1_ack_irq<const> = 0x02000000
 
 function gx_gpu.draw_target(origin_word, size_word)
 	local x<const> = origin_word & 0x0000ffff
@@ -17,7 +17,7 @@ function gx_gpu.draw_target(origin_word, size_word)
 end
 
 function gx_gpu.ack_irq()
-	*gp1 = gp1_ack_irq
+	*gp1 = gx_registers.gp1_ack_interrupt_command
 end
 
 function gx_gpu.clear_color(origin_word, size_word, color)

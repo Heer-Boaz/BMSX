@@ -1,16 +1,11 @@
 #pragma once
 
 #include "common/primitives.h"
+#include "spec/gx/gp1.h"
 #include "spec/gx/vram.h"
 
 namespace bmsx {
 
-constexpr u32 GX_GPU_RESET_DISPLAY_MODE_WORD = 0x00000009u;
-constexpr u32 GX_GPU_RESET_HORIZONTAL_DISPLAY_RANGE_WORD = 0x00c60260u;
-constexpr u32 GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD = 0x00044c23u;
-constexpr u32 GX_GPU_DISPLAY_MODE_VERTICAL_RESOLUTION_BIT = 0x04u;
-constexpr u32 GX_GPU_DISPLAY_MODE_RGB24_BIT = 0x10u;
-constexpr u32 GX_GPU_DISPLAY_MODE_VERTICAL_INTERLACE_BIT = 0x20u;
 constexpr u32 GX_GPU_SCANOUT_INTERPRETATION_MASK = GX_GPU_DISPLAY_MODE_VERTICAL_RESOLUTION_BIT | GX_GPU_DISPLAY_MODE_RGB24_BIT | GX_GPU_DISPLAY_MODE_VERTICAL_INTERLACE_BIT;
 
 inline u32 gxGpuDisplayStartX(u32 word) {
@@ -50,11 +45,11 @@ inline u32 gxGpuDisplayModeScreenWidth(u32 displayModeWord) {
 }
 
 inline u32 gxGpuVerticalDisplayRangeStart(u32 verticalDisplayRangeWord) {
-	return verticalDisplayRangeWord & 0x3ffu;
+	return verticalDisplayRangeWord & GX_GPU_VERTICAL_DISPLAY_RANGE_START_MASK;
 }
 
 inline u32 gxGpuVerticalDisplayRangeEnd(u32 verticalDisplayRangeWord) {
-	return (verticalDisplayRangeWord >> 10u) & 0x3ffu;
+	return (verticalDisplayRangeWord >> GX_GPU_VERTICAL_DISPLAY_RANGE_END_SHIFT) & GX_GPU_VERTICAL_DISPLAY_RANGE_END_MASK;
 }
 
 inline i32 gxGpuVerticalVisibleLines(u32 verticalDisplayRangeWord, u32 displayModeWord) {

@@ -23,6 +23,7 @@ const BROWSER_STUDIO_SOURCE_ROOTS = [
 	'machine/ts',
 	'runtime',
 	'scripts/products/browser_build.ts',
+	'toolchain/ts',
 ] as const;
 
 const BROWSER_IMAGE_PATHS = [

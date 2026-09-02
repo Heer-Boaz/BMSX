@@ -2,6 +2,10 @@ import type { RawRomSource } from '../../toolchain/ts/rompack/source';
 import {
 	BLUA32_FIRMWARE_MODULE_PATH,
 	BLUA32_FIRMWARE_SOURCE_PATH,
+	GX_DISPLAY_PRESET_MODULE_PATH,
+	GX_DISPLAY_PRESET_SOURCE_PATH,
+	GX_REGISTER_MODULE_PATH,
+	GX_REGISTER_SOURCE_PATH,
 	ROM_ASSET_SYMBOL_MODULE_PATH,
 	ROM_ASSET_SYMBOL_SOURCE_PATH,
 	ROM_GENERATED_MODULE_PATHS,
@@ -9,6 +13,8 @@ import {
 	SYSTEM_ASSET_SYMBOL_SOURCE_PATH,
 } from '../../toolchain/ts/rompack/generated_modules';
 import { BLUA32_FIRMWARE_MODULE_SOURCE } from '../../toolchain/ts/rompack/blua32_firmware_module';
+import { GX_DISPLAY_PRESET_MODULE_SOURCE } from '../../toolchain/ts/rompack/gx_display_preset_module';
+import { GX_REGISTER_MODULE_SOURCE } from '../../toolchain/ts/rompack/gx_register_module';
 import type {
 	CartridgeIndex,
 	RomAsset,
@@ -137,6 +143,28 @@ export function buildLuaSources(
 			generated: true,
 		};
 		registerLuaSourceRecord(registry, assetSymbols);
+		registerLuaSourceRecord(registry, {
+			resid: GX_DISPLAY_PRESET_MODULE_PATH,
+			type: 'lua',
+			src: GX_DISPLAY_PRESET_MODULE_SOURCE,
+			base_src: GX_DISPLAY_PRESET_MODULE_SOURCE,
+			base_update_timestamp: 0,
+			source_path: GX_DISPLAY_PRESET_SOURCE_PATH,
+			module_path: GX_DISPLAY_PRESET_MODULE_PATH,
+			update_timestamp: 0,
+			generated: true,
+		});
+		registerLuaSourceRecord(registry, {
+			resid: GX_REGISTER_MODULE_PATH,
+			type: 'lua',
+			src: GX_REGISTER_MODULE_SOURCE,
+			base_src: GX_REGISTER_MODULE_SOURCE,
+			base_update_timestamp: 0,
+			source_path: GX_REGISTER_SOURCE_PATH,
+			module_path: GX_REGISTER_MODULE_PATH,
+			update_timestamp: 0,
+			generated: true,
+		});
 		if (payloadId === 'system') {
 			registerLuaSourceRecord(registry, {
 				resid: BLUA32_FIRMWARE_MODULE_PATH,

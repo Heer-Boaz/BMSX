@@ -3,6 +3,8 @@
 #include "common/primitives.h"
 #include "machine/devices/gx/device_output.h"
 #include "spec/gx/gp0.h"
+#include "spec/gx/gp1.h"
+#include "spec/gx/pcrtc.h"
 #include "machine/devices/gx/gpu_command_buffer.h"
 #include "machine/devices/gx/gpu_display.h"
 #include "machine/devices/gx/gpu_pcrtc.h"
@@ -31,27 +33,6 @@ class CPU;
 class DeviceScheduler;
 class IrqController;
 
-constexpr u32 GX_GPU_GP1_RESET = 0x00u;
-constexpr u32 GX_GPU_GP1_CLEAR_FIFO = 0x01u;
-constexpr u32 GX_GPU_GP1_ACK_INTERRUPT = 0x02u;
-constexpr u32 GX_GPU_GP1_DISPLAY_DISABLE = 0x03u;
-constexpr u32 GX_GPU_GP1_DMA_DIRECTION = 0x04u;
-constexpr u32 GX_GPU_GP1_DISPLAY_START = 0x05u;
-constexpr u32 GX_GPU_GP1_HORIZONTAL_DISPLAY_RANGE = 0x06u;
-constexpr u32 GX_GPU_GP1_VERTICAL_DISPLAY_RANGE = 0x07u;
-constexpr u32 GX_GPU_GP1_DISPLAY_MODE = 0x08u;
-constexpr u32 GX_GPU_GP1_VRAM_Y_ADDRESS_EXTENSION = 0x09u;
-constexpr u32 GX_GPU_GP1_GET_GPU_INFO = 0x10u;
-constexpr u32 GX_GPU_GP1_GET_GPU_INFO_LAST = 0x1fu;
-constexpr u32 GX_GPU_GP1_OPCODE_SHIFT = 24u;
-constexpr u32 GX_GPU_GP1_PARAM_MASK = 0x00ffffffu;
-constexpr u32 GX_GPU_GP1_GET_GPU_INFO_INDEX_MASK = 0x0fu;
-constexpr u32 GX_GPU_INFO_GPU_TYPE_V2 = 0x00000002u;
-
-constexpr u32 GX_GPU_DISPLAY_START_MASK = 0x000ffffeu;
-constexpr u32 GX_GPU_DISPLAY_MODE_MASK = 0x000000ffu;
-constexpr u32 GX_GPU_HORIZONTAL_DISPLAY_RANGE_MASK = 0x00ffffffu;
-constexpr u32 GX_GPU_VERTICAL_DISPLAY_RANGE_MASK = 0x000fffffu;
 constexpr u32 GX_GPU_DRAW_MODE_MASK = 0x00003fffu;
 constexpr u32 GX_GPU_DRAW_MODE_GPUSTAT_MASK = 0x000007ffu;
 constexpr u32 GX_GPU_TEXTURE_WINDOW_MASK = 0x000fffffu;

@@ -33,10 +33,15 @@ import type { RomPackerOptions } from './rompacker.rompack';
 import { buildRomAssetSymbolModuleSourceFromSymbols, collectRomAssetSymbols } from '../../toolchain/ts/rompack/asset_symbols';
 import {
 	BLUA32_FIRMWARE_MODULE_PATH,
+	GX_DISPLAY_PRESET_MODULE_PATH,
+	GX_GENERATED_MODULE_BUILD_SOURCE_FILES,
+	GX_REGISTER_MODULE_PATH,
 	ROM_ASSET_SYMBOL_MODULE_PATH,
 	SYSTEM_ASSET_SYMBOL_MODULE_PATH,
 } from '../../toolchain/ts/rompack/generated_modules';
 import { BLUA32_FIRMWARE_MODULE_SOURCE } from '../../toolchain/ts/rompack/blua32_firmware_module';
+import { GX_DISPLAY_PRESET_MODULE_SOURCE } from '../../toolchain/ts/rompack/gx_display_preset_module';
+import { GX_REGISTER_MODULE_SOURCE } from '../../toolchain/ts/rompack/gx_register_module';
 import { LuaError } from '../../toolchain/ts/lua/errors';
 import { layoutRomPrefix } from '../../toolchain/ts/rompack/rom_prefix_layout';
 import {
@@ -138,7 +143,6 @@ const BIOS_BUILD_SOURCE_FILES = [
 	'./tsconfig.base.json',
 	'./tsconfig.json',
 ] as const;
-
 // const webTasks: TaskName[] = [
 // 	'Platform-artifacts bouwen',
 // ];
@@ -445,6 +449,14 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 				path: BLUA32_FIRMWARE_MODULE_PATH,
 				source: BLUA32_FIRMWARE_MODULE_SOURCE,
 			},
+			{
+				path: GX_DISPLAY_PRESET_MODULE_PATH,
+				source: GX_DISPLAY_PRESET_MODULE_SOURCE,
+			},
+			{
+				path: GX_REGISTER_MODULE_PATH,
+				source: GX_REGISTER_MODULE_SOURCE,
+			},
 		],
 		includeSymbols: debug,
 		optLevel,
@@ -549,6 +561,7 @@ async function main() {
 			rebuildRequired = await progress.runWithDetail('Check timestamps', () => isRebuildRequired(rom_name, respath, {
 				domain: 'cart',
 				extraLuaPaths: [...extraLuaPathSet, ...libraryLuaPathSet],
+				buildSourceFiles: GX_GENERATED_MODULE_BUILD_SOURCE_FILES,
 				debug,
 				romFilePath: romOutputPath,
 				biosImportsFilePath: biosImportsPath,
@@ -601,10 +614,20 @@ async function main() {
 					ramByteCount: PSX_MACHINE_SPEC.ramBytes,
 					domain: 'cart',
 					biosImports,
-					generatedLuaModules: [{
-						path: ROM_ASSET_SYMBOL_MODULE_PATH,
-						source: assetSymbolModuleSource,
-					}],
+					generatedLuaModules: [
+						{
+							path: ROM_ASSET_SYMBOL_MODULE_PATH,
+							source: assetSymbolModuleSource,
+						},
+						{
+							path: GX_DISPLAY_PRESET_MODULE_PATH,
+							source: GX_DISPLAY_PRESET_MODULE_SOURCE,
+						},
+						{
+							path: GX_REGISTER_MODULE_PATH,
+							source: GX_REGISTER_MODULE_SOURCE,
+						},
+					],
 				});
 			}
 			await progress.taskCompleted();

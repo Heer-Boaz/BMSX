@@ -30,6 +30,7 @@
 #include "video_output.h"
 #include "spec/bmsx/io.h"
 #include "spec/bmsx/model.h"
+#include "spec/gx/gp1.h"
 #include "machine/devices/gx/gpu_display.h"
 #include "machine/devices/gx/gpu_pcrtc.h"
 #include "machine/runtime/runtime.h"

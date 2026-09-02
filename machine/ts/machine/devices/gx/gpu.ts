@@ -91,12 +91,29 @@ import {
 	GX_GPU_GP0_VRAM_TO_VRAM_LAST,
 } from '../../../spec/gx/gp0';
 import {
-	GX_GPU_RESET_HORIZONTAL_DISPLAY_RANGE_WORD,
+	GX_GPU_DISPLAY_MODE_MASK,
+	GX_GPU_DISPLAY_START_MASK,
+	GX_GPU_GP1_ACK_INTERRUPT,
+	GX_GPU_GP1_CLEAR_FIFO,
+	GX_GPU_GP1_DISPLAY_DISABLE,
+	GX_GPU_GP1_DISPLAY_MODE,
+	GX_GPU_GP1_DISPLAY_START,
+	GX_GPU_GP1_DMA_DIRECTION,
+	GX_GPU_GP1_GET_GPU_INFO,
+	GX_GPU_GP1_GET_GPU_INFO_INDEX_MASK,
+	GX_GPU_GP1_GET_GPU_INFO_LAST,
+	GX_GPU_GP1_HORIZONTAL_DISPLAY_RANGE,
+	GX_GPU_GP1_OPCODE_SHIFT,
+	GX_GPU_GP1_RESET,
+	GX_GPU_GP1_VERTICAL_DISPLAY_RANGE,
+	GX_GPU_GP1_VRAM_Y_ADDRESS_EXTENSION,
+	GX_GPU_HORIZONTAL_DISPLAY_RANGE_MASK,
+	GX_GPU_INFO_GPU_TYPE_V2,
 	GX_GPU_RESET_DISPLAY_MODE_WORD,
+	GX_GPU_RESET_HORIZONTAL_DISPLAY_RANGE_WORD,
 	GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD,
-	gxGpuDisplayStartY,
-} from './gpu_display';
-import { initializeGxGpuVramPowerOn } from './vram_power_on';
+	GX_GPU_VERTICAL_DISPLAY_RANGE_MASK,
+} from '../../../spec/gx/gp1';
 import {
 	GX_GPU_PCRTC_COMPOSITION_WORD_COUNT,
 	GX_GPU_PCRTC_CONFIG_WORD_COUNT,
@@ -104,13 +121,19 @@ import {
 	GX_GPU_PCRTC_CSR_LOW,
 	GX_GPU_PCRTC_CSR_RESET,
 	GX_GPU_PCRTC_IMR_LOW,
+	GX_GPU_PCRTC_WORD_COUNT,
+	gxGpuPcrtcRegisterAddress,
+} from '../../../spec/gx/pcrtc';
+import {
+	gxGpuDisplayStartY,
+} from './gpu_display';
+import { initializeGxGpuVramPowerOn } from './vram_power_on';
+import {
 	GX_GPU_PCRTC_RUNTIME_EDGE_NONE,
 	GX_GPU_PCRTC_RUNTIME_EDGE_VBLANK_BEGIN,
 	GX_GPU_PCRTC_SERVICE_IRQ,
 	GX_GPU_PCRTC_SERVICE_RUNTIME_EDGE_MASK,
-	GX_GPU_PCRTC_WORD_COUNT,
 	GxGpuPcrtc,
-	gxGpuPcrtcRegisterAddress,
 	type GxGpuPcrtcState,
 	type GxGpuPcrtcTiming,
 } from './gpu_pcrtc';
@@ -128,23 +151,6 @@ export const GX_GPU_GP0_INGRESS_IMAGE_PAYLOAD = 3;
 export const GX_GPU_GP0_INGRESS_POLYLINE_HEADER = 4;
 export const GX_GPU_GP0_INGRESS_POLYLINE_PAYLOAD = 5;
 
-export const GX_GPU_GP1_RESET = 0x00;
-export const GX_GPU_GP1_CLEAR_FIFO = 0x01;
-export const GX_GPU_GP1_ACK_INTERRUPT = 0x02;
-export const GX_GPU_GP1_DISPLAY_DISABLE = 0x03;
-export const GX_GPU_GP1_DMA_DIRECTION = 0x04;
-export const GX_GPU_GP1_DISPLAY_START = 0x05;
-export const GX_GPU_GP1_HORIZONTAL_DISPLAY_RANGE = 0x06;
-export const GX_GPU_GP1_VERTICAL_DISPLAY_RANGE = 0x07;
-export const GX_GPU_GP1_DISPLAY_MODE = 0x08;
-export const GX_GPU_GP1_VRAM_Y_ADDRESS_EXTENSION = 0x09;
-export const GX_GPU_GP1_GET_GPU_INFO = 0x10;
-export const GX_GPU_GP1_GET_GPU_INFO_LAST = 0x1f;
-export const GX_GPU_GP1_OPCODE_SHIFT = 24;
-export const GX_GPU_GP1_PARAM_MASK = 0x00ffffff;
-export const GX_GPU_GP1_GET_GPU_INFO_INDEX_MASK = 0x0f;
-export const GX_GPU_INFO_GPU_TYPE_V2 = 0x00000002;
-
 function gxGpuGp0OpcodeIsNop(opcode: number): boolean {
 	return opcode === 0x00
 		|| (opcode >= 0x04 && opcode <= 0x1e)
@@ -152,10 +158,6 @@ function gxGpuGp0OpcodeIsNop(opcode: number): boolean {
 		|| (opcode >= 0xe7 && opcode <= 0xef);
 }
 
-export const GX_GPU_DISPLAY_START_MASK = 0x000ffffe;
-export const GX_GPU_DISPLAY_MODE_MASK = 0x000000ff;
-export const GX_GPU_HORIZONTAL_DISPLAY_RANGE_MASK = 0x00ffffff;
-export const GX_GPU_VERTICAL_DISPLAY_RANGE_MASK = 0x000fffff;
 export const GX_GPU_DRAW_MODE_MASK = 0x00003fff;
 export const GX_GPU_DRAW_MODE_GPUSTAT_MASK = 0x000007ff;
 export const GX_GPU_TEXTURE_WINDOW_MASK = 0x000fffff;

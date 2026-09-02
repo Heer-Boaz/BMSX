@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
-import { mkdir, rm, utimes, writeFile } from 'node:fs/promises';
+import { mkdir, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
 
 import { isRebuildRequired } from '../../scripts/rompacker/rombuilder';
+import { GX_GENERATED_MODULE_BUILD_SOURCE_FILES } from '../../toolchain/ts/rompack/generated_modules';
 
 type RebuildFixture = {
 	readonly romname: string;
@@ -121,6 +122,37 @@ test('cart rebuild triggers when cart-root file is newer than game ROM', async (
 			domain: 'cart',
 			debug: false,
 			extraLuaPaths: [fixture.cartRoot],
+			biosImportsFilePath: fixture.biosPath,
+		});
+		assert.equal(needsRebuild, true);
+	});
+});
+
+test('cart rebuild tracks every generated GX contract input', async () => {
+	await withRebuildFixture('__rompacker_test_gx_contract_input__', async fixture => {
+		assert.deepEqual(GX_GENERATED_MODULE_BUILD_SOURCE_FILES, [
+			'./machine/ts/spec/gx/display_presets.ts',
+			'./machine/ts/spec/gx/gp0.ts',
+			'./machine/ts/spec/gx/gp1.ts',
+			'./machine/ts/spec/gx/pcrtc.ts',
+			'./toolchain/ts/rompack/generated_modules.ts',
+			'./toolchain/ts/rompack/gx_display_preset_module.ts',
+			'./toolchain/ts/rompack/gx_register_module.ts',
+		]);
+		await writeBaseCartOutput(fixture);
+		let newestInputMtimeMs = 0;
+		for (const path of GX_GENERATED_MODULE_BUILD_SOURCE_FILES) {
+			const input = await stat(path);
+			if (input.mtimeMs > newestInputMtimeMs) newestInputMtimeMs = input.mtimeMs;
+		}
+		await utimes(fixture.assetPath, new Date(newestInputMtimeMs - 4_000), new Date(newestInputMtimeMs - 4_000));
+		await utimes(fixture.biosPath, new Date(newestInputMtimeMs - 3_000), new Date(newestInputMtimeMs - 3_000));
+		await utimes(fixture.distReleasePath, new Date(newestInputMtimeMs - 2_000), new Date(newestInputMtimeMs - 2_000));
+
+		const needsRebuild = await isRebuildRequired(fixture.romname, fixture.resPath, {
+			domain: 'cart',
+			debug: false,
+			buildSourceFiles: GX_GENERATED_MODULE_BUILD_SOURCE_FILES,
 			biosImportsFilePath: fixture.biosPath,
 		});
 		assert.equal(needsRebuild, true);

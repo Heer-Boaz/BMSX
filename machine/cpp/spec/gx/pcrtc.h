@@ -1,0 +1,100 @@
+#pragma once
+
+#include "common/primitives.h"
+#include "spec/bmsx/io.h"
+
+#include <array>
+
+namespace bmsx {
+
+constexpr u32 GX_GPU_PCRTC_WORD_COUNT = IO_GX_PCRTC_WORD_COUNT + IO_GX_PCRTC_TIMING_WORD_COUNT;
+constexpr u32 GX_GPU_PCRTC_CONFIG_WORD_COUNT = 22u;
+constexpr u32 GX_GPU_PCRTC_COMPOSITION_WORD_COUNT = 12u;
+constexpr u32 GX_GPU_PCRTC_PMODE_LOW = 0u;
+constexpr u32 GX_GPU_PCRTC_PMODE_HIGH = 1u;
+constexpr u32 GX_GPU_PCRTC_DISPFB1_LOW = 2u;
+constexpr u32 GX_GPU_PCRTC_DISPFB1_HIGH = 3u;
+constexpr u32 GX_GPU_PCRTC_DISPLAY1_LOW = 4u;
+constexpr u32 GX_GPU_PCRTC_DISPLAY1_HIGH = 5u;
+constexpr u32 GX_GPU_PCRTC_DISPFB2_LOW = 6u;
+constexpr u32 GX_GPU_PCRTC_DISPFB2_HIGH = 7u;
+constexpr u32 GX_GPU_PCRTC_DISPLAY2_LOW = 8u;
+constexpr u32 GX_GPU_PCRTC_DISPLAY2_HIGH = 9u;
+constexpr u32 GX_GPU_PCRTC_BGCOLOR_LOW = 10u;
+constexpr u32 GX_GPU_PCRTC_BGCOLOR_HIGH = 11u;
+constexpr u32 GX_GPU_PCRTC_SMODE1_LOW = 12u;
+constexpr u32 GX_GPU_PCRTC_SMODE1_HIGH = 13u;
+constexpr u32 GX_GPU_PCRTC_SMODE2_LOW = 14u;
+constexpr u32 GX_GPU_PCRTC_SMODE2_HIGH = 15u;
+constexpr u32 GX_GPU_PCRTC_SYNCH1_LOW = 16u;
+constexpr u32 GX_GPU_PCRTC_SYNCH1_HIGH = 17u;
+constexpr u32 GX_GPU_PCRTC_SYNCH2_LOW = 18u;
+constexpr u32 GX_GPU_PCRTC_SYNCH2_HIGH = 19u;
+constexpr u32 GX_GPU_PCRTC_SYNCV_LOW = 20u;
+constexpr u32 GX_GPU_PCRTC_SYNCV_HIGH = 21u;
+constexpr u32 GX_GPU_PCRTC_CSR_LOW = 22u;
+constexpr u32 GX_GPU_PCRTC_CSR_HIGH = 23u;
+constexpr u32 GX_GPU_PCRTC_IMR_LOW = 24u;
+constexpr u32 GX_GPU_PCRTC_IMR_HIGH = 25u;
+
+constexpr u32 GX_GPU_PCRTC_PMODE_EN1 = 1u << 0u;
+constexpr u32 GX_GPU_PCRTC_PMODE_EN2 = 1u << 1u;
+constexpr u32 GX_GPU_PCRTC_PMODE_MMOD_SHIFT = 5u;
+constexpr u32 GX_GPU_PCRTC_PMODE_AMOD_SHIFT = 6u;
+constexpr u32 GX_GPU_PCRTC_PMODE_SLBG_SHIFT = 7u;
+constexpr u32 GX_GPU_PCRTC_PMODE_MMOD = 1u << GX_GPU_PCRTC_PMODE_MMOD_SHIFT;
+constexpr u32 GX_GPU_PCRTC_PMODE_AMOD = 1u << GX_GPU_PCRTC_PMODE_AMOD_SHIFT;
+constexpr u32 GX_GPU_PCRTC_PMODE_SLBG = 1u << GX_GPU_PCRTC_PMODE_SLBG_SHIFT;
+constexpr u32 GX_GPU_PCRTC_PMODE_ALP_SHIFT = 8u;
+constexpr u32 GX_GPU_PCRTC_SMODE1_PRST = 1u << 16u;
+constexpr u32 GX_GPU_PCRTC_SMODE1_SINT = 1u << 17u;
+constexpr u32 GX_GPU_PCRTC_SMODE2_INT = 1u << 0u;
+constexpr u32 GX_GPU_PCRTC_SMODE2_FFMD = 1u << 1u;
+constexpr u32 GX_GPU_PCRTC_CSR_SIGNAL = 1u << 0u;
+constexpr u32 GX_GPU_PCRTC_CSR_FINISH = 1u << 1u;
+constexpr u32 GX_GPU_PCRTC_CSR_HSINT = 1u << 2u;
+constexpr u32 GX_GPU_PCRTC_CSR_VSINT = 1u << 3u;
+constexpr u32 GX_GPU_PCRTC_CSR_EDWINT = 1u << 4u;
+constexpr u32 GX_GPU_PCRTC_CSR_EVENT_MASK = 0x1fu;
+constexpr u32 GX_GPU_PCRTC_CSR_FLUSH = 1u << 8u;
+constexpr u32 GX_GPU_PCRTC_CSR_RESET = 1u << 9u;
+constexpr u32 GX_GPU_PCRTC_CSR_FIELD = 1u << 13u;
+constexpr u32 GX_GPU_PCRTC_CSR_ACTION_MASK = GX_GPU_PCRTC_CSR_FLUSH | GX_GPU_PCRTC_CSR_RESET;
+constexpr u32 GX_GPU_PCRTC_IMR_EVENT_MASK = 0x1f00u;
+constexpr u32 GX_GPU_PCRTC_IMR_FIXED_BITS = 0x6000u;
+
+constexpr u32 GX_GPU_PCRTC_RESET_CSR_WORD = 0x551b4000u;
+constexpr u32 GX_GPU_PCRTC_RESET_IMR_WORD = 0x00007f00u;
+
+constexpr std::array<u32, GX_GPU_PCRTC_CONFIG_WORD_COUNT> GX_GPU_PCRTC_RESET_CONFIG_WORDS{
+	0x00000000u,
+	0x00000000u,
+	0x000fa000u,
+	0x00000000u,
+	0x018252a8u,
+	0x000ef4ffu,
+	0x000fa000u,
+	0x00000000u,
+	0x018252a8u,
+	0x000ef4ffu,
+	0x00000000u,
+	0x00000000u,
+	0x40806504u,
+	0x00000007u,
+	0x00000000u,
+	0x00000000u,
+	0x1fc83030u,
+	0x0007f5c2u,
+	0x003484bcu,
+	0x00000000u,
+	0x02101404u,
+	0x00a90005u,
+};
+
+constexpr u32 gxGpuPcrtcRegisterAddress(u32 index) {
+	return index < IO_GX_PCRTC_WORD_COUNT
+		? IO_GX_PCRTC_BASE + index * IO_WORD_SIZE
+		: IO_GX_PCRTC_TIMING_BASE + (index - IO_GX_PCRTC_WORD_COUNT) * IO_WORD_SIZE;
+}
+
+} // namespace bmsx

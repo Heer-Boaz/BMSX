@@ -3,6 +3,7 @@
 #include "common/primitives.h"
 #include "machine/devices/gx/gpu_command_buffer.h"
 #include "machine/devices/gx/gpu_pcrtc.h"
+#include "spec/gx/pcrtc.h"
 
 #include <array>
 #include <span>

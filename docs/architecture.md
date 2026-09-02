@@ -300,6 +300,27 @@ presentation loop consumes those members directly instead of re-decoding both
 circuits every host frame. Host targets resize only when those bounds change,
 and physical 4:3 layout remains separate presentation policy.
 
+The mirrored [`spec/gx/pcrtc`](../machine/ts/spec/gx/pcrtc.ts) contract owns
+the PCRTC register-word layout, field bits and fixed power-on register image.
+The mirrored [`spec/gx/gp1`](../machine/ts/spec/gx/gp1.ts) contract separately
+owns the GP1 wire commands, fields and power-on GP1 latches. Published software
+mode and timing words live in mirrored
+[`spec/gx/display_presets`](../machine/ts/spec/gx/display_presets.ts); they are
+not device state and are never consulted by hardware reset, scanout, DMA or a
+render hot path. This follows PCSX2's register-owned
+[privileged GS layout](https://github.com/PCSX2/pcsx2/blob/67aadac40cff9245c93c0eb0b61fcc9b38596296/pcsx2/GS/GSRegs.h#L385-L486)
+and PS2SDK's separation between a static
+[mode catalog](https://github.com/ps2dev/ps2sdk/blob/61a4b3f1b074fcbf74958116ff71da6681f33cb6/ee/graph/src/graph_mode.c#L11-L87)
+and the calls that independently program
+[framebuffer, output and timing registers](https://github.com/ps2dev/ps2sdk/blob/61a4b3f1b074fcbf74958116ff71da6681f33cb6/ee/graph/src/graph_mode.c#L277-L386).
+
+The ROM producer projects those raw constants into separate generated `module<const>`
+sources, `bmsx/gx_registers` and `bmsx/gx_display_presets`, for each system or
+cartridge program that consumes them. They lower to immediate words rather
+than a runtime module table. BIOS and cartlib therefore remain independent
+MMIO callers; neither imports the other and there is no shared handwritten Lua
+display owner.
+
 GP1(05h)--GP1(08h) are retained PSX GPU register/status words, not a second
 clock or scanout owner. They retain the PSX origin, horizontal range, vertical
 range and display-mode bits used by GP0/GPUSTAT behavior. A write to any of
@@ -2153,9 +2174,10 @@ vectors cover the PSX 256/320/368/512/640-column 240p family and 640x480i, PS2
 `SET_SYSTEM_AV_INFO` with a larger maximum only when raw dual-circuit composition
 exceeds it. Every representable `SMODE`, `DISPLAY` and `DISPFB` word therefore
 continues through the same deterministic datapath without forcing frontends to
-reserve the theoretical maximum at startup. The system firmware owns coherent
-reset presets for the PSX widths and the three SD interlaced outputs; those
-helpers program GP1 and PCRTC raw words independently and do not create a
+reserve the theoretical maximum at startup. The software display catalog owns
+coherent presets for the PSX widths and the three SD interlaced outputs. BIOS
+boot and cartlib helpers consume that catalog and program GP1 and PCRTC raw
+words independently; neither caller becomes a hardware owner or creates a
 permanent GP1-to-PCRTC adapter.
 
 Software scanout selects its composition datapath once from the published

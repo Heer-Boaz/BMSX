@@ -1,4 +1,5 @@
 #include "machine/devices/gx/gpu.h"
+#include "machine/devices/gx/gpu_local_memory.h"
 #include "machine/devices/gx/gpu_pcrtc.h"
 #include "machine/devices/dma/controller.h"
 #include "machine/devices/irq/controller.h"
@@ -15,6 +16,9 @@
 #include "render/backend/software/gx_gpu_state.h"
 #include "render/backend/software/gx_gpu_commands.h"
 #include "render/backend/software/gx_gpu_vram.h"
+#include "spec/gx/display_presets.h"
+#include "spec/gx/gp1.h"
+#include "spec/gx/pcrtc.h"
 #include "support/cartridge_fixture.h"
 
 #include <algorithm>

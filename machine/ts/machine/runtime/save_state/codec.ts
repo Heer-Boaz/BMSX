@@ -79,7 +79,8 @@ import {
 	GX_GPU_VRAM_X_ADDRESS_PERIOD,
 	GX_GPU_VRAM_Y_ADDRESS_PERIOD,
 } from '../../../spec/gx/vram';
-import { GX_GPU_PCRTC_COMPOSITION_WORD_COUNT, GX_GPU_PCRTC_CONFIG_WORD_COUNT, type GxGpuPcrtcState } from '../../devices/gx/gpu_pcrtc';
+import { GX_GPU_PCRTC_COMPOSITION_WORD_COUNT, GX_GPU_PCRTC_CONFIG_WORD_COUNT } from '../../../spec/gx/pcrtc';
+import type { GxGpuPcrtcState } from '../../devices/gx/gpu_pcrtc';
 import type { GxGteState } from '../../devices/gx/gte';
 import { GX_GTE_CONTROL_REGISTER_COUNT, GX_GTE_DATA_REGISTER_COUNT, GX_GTE_PLUS_REGISTER_COUNT } from '../../devices/gx/gte';
 import type { GeometryJobState } from '../../devices/geometry/job';

@@ -1,11 +1,12 @@
 import { gxGpuVramYAddress } from '../../../spec/gx/vram';
-
-export const GX_GPU_RESET_DISPLAY_MODE_WORD = 0x00000009;
-export const GX_GPU_RESET_HORIZONTAL_DISPLAY_RANGE_WORD = 0x00c60260;
-export const GX_GPU_RESET_VERTICAL_DISPLAY_RANGE_WORD = 0x00044c23;
-export const GX_GPU_DISPLAY_MODE_VERTICAL_RESOLUTION_BIT = 0x04;
-export const GX_GPU_DISPLAY_MODE_RGB24_BIT = 0x10;
-export const GX_GPU_DISPLAY_MODE_VERTICAL_INTERLACE_BIT = 0x20;
+import {
+	GX_GPU_DISPLAY_MODE_RGB24_BIT,
+	GX_GPU_DISPLAY_MODE_VERTICAL_INTERLACE_BIT,
+	GX_GPU_DISPLAY_MODE_VERTICAL_RESOLUTION_BIT,
+	GX_GPU_VERTICAL_DISPLAY_RANGE_END_MASK,
+	GX_GPU_VERTICAL_DISPLAY_RANGE_END_SHIFT,
+	GX_GPU_VERTICAL_DISPLAY_RANGE_START_MASK,
+} from '../../../spec/gx/gp1';
 export const GX_GPU_SCANOUT_INTERPRETATION_MASK = GX_GPU_DISPLAY_MODE_VERTICAL_RESOLUTION_BIT
 	| GX_GPU_DISPLAY_MODE_RGB24_BIT
 	| GX_GPU_DISPLAY_MODE_VERTICAL_INTERLACE_BIT;
@@ -47,11 +48,11 @@ export function gxGpuDisplayModeScreenWidth(displayModeWord: number): number {
 }
 
 export function gxGpuVerticalDisplayRangeStart(verticalDisplayRangeWord: number): number {
-	return verticalDisplayRangeWord & 0x3ff;
+	return verticalDisplayRangeWord & GX_GPU_VERTICAL_DISPLAY_RANGE_START_MASK;
 }
 
 export function gxGpuVerticalDisplayRangeEnd(verticalDisplayRangeWord: number): number {
-	return (verticalDisplayRangeWord >>> 10) & 0x3ff;
+	return (verticalDisplayRangeWord >>> GX_GPU_VERTICAL_DISPLAY_RANGE_END_SHIFT) & GX_GPU_VERTICAL_DISPLAY_RANGE_END_MASK;
 }
 
 export function gxGpuVerticalVisibleLines(verticalDisplayRangeWord: number, displayModeWord: number): number {

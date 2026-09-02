@@ -2,6 +2,7 @@
 
 #include "common/serializer/binencoder.h"
 #include "spec/bmsx/io.h"
+#include "spec/gx/pcrtc.h"
 #include "machine/devices/dma/controller.h"
 #include "machine/devices/gx/gpu.h"
 #include "machine/devices/gx/gte.h"

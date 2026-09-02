@@ -24,14 +24,9 @@ import {
 import {
 	GX_GPU_GP1_DISPLAY_MODE,
 	GX_GPU_GP1_VERTICAL_DISPLAY_RANGE,
-} from '../../machine/ts/machine/devices/gx/gpu';
+} from '../../machine/ts/spec/gx/gp1';
 import {
 	GX_GPU_PCRTC_CSR_HSINT,
-	GX_GPU_PCRTC_RESET_ACTIVE_DISPLAY_HALF_LINES,
-	GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED,
-	GX_GPU_PCRTC_RESET_TOTAL_HALF_LINES,
-	GX_GPU_PCRTC_RUNTIME_EDGE_VBLANK_BEGIN,
-	GX_GPU_PCRTC_RUNTIME_EDGE_VBLANK_END,
 	GX_GPU_PCRTC_SMODE1_HIGH,
 	GX_GPU_PCRTC_SMODE1_LOW,
 	GX_GPU_PCRTC_SMODE1_SINT,
@@ -41,8 +36,15 @@ import {
 	GX_GPU_PCRTC_SYNCH2_LOW,
 	GX_GPU_PCRTC_SYNCV_HIGH,
 	GX_GPU_PCRTC_SYNCV_LOW,
-	GxGpuPcrtc,
 	gxGpuPcrtcRegisterAddress,
+} from '../../machine/ts/spec/gx/pcrtc';
+import {
+	GX_GPU_PCRTC_RESET_ACTIVE_DISPLAY_HALF_LINES,
+	GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED,
+	GX_GPU_PCRTC_RESET_TOTAL_HALF_LINES,
+	GX_GPU_PCRTC_RUNTIME_EDGE_VBLANK_BEGIN,
+	GX_GPU_PCRTC_RUNTIME_EDGE_VBLANK_END,
+	GxGpuPcrtc,
 } from '../../machine/ts/machine/devices/gx/gpu_pcrtc';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { runDueRuntimeTimers } from '../../machine/ts/machine/runtime/cpu_executor';

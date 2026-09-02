@@ -5,6 +5,8 @@
 #include "machine/devices/gx/gpu.h"
 #include "machine/devices/gx/gpu_command_buffer.h"
 #include "spec/gx/gp0.h"
+#include "spec/gx/gp1.h"
+#include "spec/gx/pcrtc.h"
 #include "machine/devices/irq/controller.h"
 #include "spec/bmsx/memory_map.h"
 #include "machine/memory/memory.h"

@@ -6,6 +6,8 @@
 #include "machine/devices/geometry/controller.h"
 #include "machine/devices/geometry/contracts.h"
 #include "spec/gx/gp0.h"
+#include "spec/gx/gp1.h"
+#include "spec/gx/pcrtc.h"
 #include "machine/devices/gx/gpu.h"
 #include "machine/devices/gx/gpu_command_buffer.h"
 #include "machine/devices/gx/gpu_pcrtc.h"

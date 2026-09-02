@@ -6,20 +6,71 @@ import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import {
 	GX_GPU_PCRTC_CONFIG_WORD_COUNT,
+	GX_GPU_PCRTC_DISPFB1_HIGH,
+	GX_GPU_PCRTC_DISPFB1_LOW,
 	GX_GPU_PCRTC_DISPLAY1_LOW,
 	GX_GPU_PCRTC_DISPLAY1_HIGH,
 	GX_GPU_PCRTC_PMODE_LOW,
+	GX_GPU_PCRTC_SMODE1_HIGH,
+	GX_GPU_PCRTC_SMODE1_LOW,
 	GX_GPU_PCRTC_SMODE2_INT,
+	GX_GPU_PCRTC_SMODE2_HIGH,
 	GX_GPU_PCRTC_SMODE2_LOW,
+	GX_GPU_PCRTC_SYNCH1_HIGH,
+	GX_GPU_PCRTC_SYNCH1_LOW,
+	GX_GPU_PCRTC_SYNCH2_HIGH,
+	GX_GPU_PCRTC_SYNCH2_LOW,
+	GX_GPU_PCRTC_SYNCV_HIGH,
+	GX_GPU_PCRTC_SYNCV_LOW,
+	gxGpuPcrtcRegisterAddress,
+} from '../../machine/ts/spec/gx/pcrtc';
+import {
 	GxGpuPcrtcScanout,
 	GxGpuPcrtcTiming,
-	gxGpuPcrtcRegisterAddress,
 } from '../../machine/ts/machine/devices/gx/gpu_pcrtc';
 import { Memory } from '../../machine/ts/machine/memory/memory';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { CART_ROM_BASE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { gxGpuPair16 } from '../../machine/ts/spec/gx/gp0';
+import {
+	GX_GPU_DISPLAY_DISPFB_GX16_1024_LAYOUT_WORD,
+	GX_GPU_DISPLAY_PMODE_CIRCUIT1_OPAQUE_WORD,
+	GX_GPU_DISPLAY_PRESET_256X192_PAL_WORDS,
+	GX_GPU_DISPLAY_PRESET_256X212_PAL_WORDS,
+	GX_GPU_DISPLAY_PRESET_256X240_PAL_WORDS,
+	GX_GPU_DISPLAY_PRESET_320X240_PAL_WORDS,
+	GX_GPU_DISPLAY_PRESET_368X240_PAL_WORDS,
+	GX_GPU_DISPLAY_PRESET_512X240_PAL_WORDS,
+	GX_GPU_DISPLAY_PRESET_640X240_PAL_WORDS,
+	GX_GPU_DISPLAY_PRESET_640X448I_NTSC_WORDS,
+	GX_GPU_DISPLAY_PRESET_640X480I_NTSC_WORDS,
+	GX_GPU_DISPLAY_PRESET_640X512I_PAL_WORDS,
+	GX_GPU_DISPLAY_PRESET_HEIGHT_WORD,
+	GX_GPU_DISPLAY_PRESET_PCRTC_DISPLAY_HIGH_WORD,
+	GX_GPU_DISPLAY_PRESET_PCRTC_DISPLAY_LOW_WORD,
+	GX_GPU_DISPLAY_PRESET_PCRTC_SMODE2_LOW_WORD,
+	GX_GPU_DISPLAY_PRESET_PCRTC_SYNCV_LOW_WORD,
+	GX_GPU_DISPLAY_PRESET_WIDTH_WORD,
+	GX_GPU_DISPLAY_TIMING_NTSC_WORDS,
+	GX_GPU_DISPLAY_TIMING_PAL_WORDS,
+	GX_GPU_DISPLAY_TIMING_SMODE1_HIGH_WORD,
+	GX_GPU_DISPLAY_TIMING_SMODE1_RUN_LOW_WORD,
+	GX_GPU_DISPLAY_TIMING_SMODE1_SETUP_LOW_WORD,
+	GX_GPU_DISPLAY_TIMING_SYNCH1_HIGH_WORD,
+	GX_GPU_DISPLAY_TIMING_SYNCH1_LOW_WORD,
+	GX_GPU_DISPLAY_TIMING_SYNCH2_HIGH_WORD,
+	GX_GPU_DISPLAY_TIMING_SYNCH2_LOW_WORD,
+	GX_GPU_DISPLAY_TIMING_SYNCV_HIGH_WORD,
+} from '../../machine/ts/spec/gx/display_presets';
+import {
+	GX_DISPLAY_PRESET_MODULE_PATH,
+	GX_DISPLAY_PRESET_SOURCE_PATH,
+	GX_REGISTER_MODULE_PATH,
+	GX_REGISTER_SOURCE_PATH,
+} from '../../toolchain/ts/rompack/generated_modules';
+import { GX_DISPLAY_PRESET_MODULE_SOURCE } from '../../toolchain/ts/rompack/gx_display_preset_module';
+import { GX_REGISTER_MODULE_SOURCE } from '../../toolchain/ts/rompack/gx_register_module';
 import { materializeCpuCompletionValues, parseLuaChunk } from './cpu_test_harness';
 import {
 	createTestBlua32PairCpu,
@@ -29,6 +80,7 @@ import {
 } from '../helpers/blua32';
 
 const MODE_SELECTOR_ADDRESS = 0x08040000;
+const PCRTC_SENTINEL_BASE = 0xa5000000;
 const SYSTEM_TEXTURE_UPLOAD_ADDRESS = RAM_BASE + PSX_MACHINE_SPEC.ramBytes - 0x100;
 const SYSTEM_BOOT_SOURCE = `
 math = require('math')
@@ -38,18 +90,22 @@ const CART_ENTRY_SOURCE = `
 local gx_display<const> = require('cartlib/gx/display')
 local mode_selector<const>: *word = ${MODE_SELECTOR_ADDRESS}
 if *mode_selector == 0 then
-	gx_display.reset_256x240()
+	gx_display.reset_256x192()
 elseif *mode_selector == 1 then
-	gx_display.reset_320x240()
+	gx_display.reset_256x212()
 elseif *mode_selector == 2 then
-	gx_display.reset_368x240()
+	gx_display.reset_256x240()
 elseif *mode_selector == 3 then
-	gx_display.reset_512x240()
+	gx_display.reset_320x240()
 elseif *mode_selector == 4 then
-	gx_display.reset_640x240()
+	gx_display.reset_368x240()
 elseif *mode_selector == 5 then
-	gx_display.reset_640x480i()
+	gx_display.reset_512x240()
 elseif *mode_selector == 6 then
+	gx_display.reset_640x240()
+elseif *mode_selector == 7 then
+	gx_display.reset_640x480i()
+elseif *mode_selector == 8 then
 	gx_display.reset_640x448i()
 else
 	gx_display.reset_640x512i()
@@ -71,6 +127,10 @@ local width<const>, height<const> = bios_gpu.prepare_supervisor(0, 320, 240)
 bios_gpu.enable_display()
 local system_origin<const>, system_size<const> = system_vram_region()
 return width, height, system_origin, system_size
+`;
+const BIOS_RESET_ENTRY_SOURCE = `
+local bios_gpu<const> = require('gpu/gpu')
+bios_gpu.reset_320x240()
 `;
 const SYSTEM_MODULE_FILES = [
 	['math', 'machine/bios/math.lua'],
@@ -95,13 +155,26 @@ function sourceModules(files: ReadonlyArray<readonly [string, string]>) {
 }
 
 const systemModules = sourceModules(SYSTEM_MODULE_FILES);
-const cartModules = sourceModules(CART_MODULE_FILES);
+const gxDisplayPresetModule = {
+	path: GX_DISPLAY_PRESET_MODULE_PATH,
+	chunk: parseLuaChunk(GX_DISPLAY_PRESET_MODULE_SOURCE, GX_DISPLAY_PRESET_SOURCE_PATH),
+	source: GX_DISPLAY_PRESET_MODULE_SOURCE,
+};
+const gxRegisterModule = {
+	path: GX_REGISTER_MODULE_PATH,
+	chunk: parseLuaChunk(GX_REGISTER_MODULE_SOURCE, GX_REGISTER_SOURCE_PATH),
+	source: GX_REGISTER_MODULE_SOURCE,
+};
+systemModules.push(gxDisplayPresetModule, gxRegisterModule);
+const cartModules = [gxDisplayPresetModule, gxRegisterModule, ...sourceModules(CART_MODULE_FILES)];
 const systemAssetsSource = `module<const>
 local bin_gx_system_texture_addr<const> = ${SYSTEM_TEXTURE_UPLOAD_ADDRESS}
 return {
 	bin_gx_system_texture_addr = bin_gx_system_texture_addr,
 }`;
 const biosModules = [
+	gxDisplayPresetModule,
+	gxRegisterModule,
 	{
 		path: 'bmsx/system_assets',
 		chunk: parseLuaChunk(systemAssetsSource, 'bmsx/system_assets.lua'),
@@ -126,53 +199,154 @@ const biosCompiled = compileLuaChunkToProgram(
 	{ entrySource: BIOS_ENTRY_SOURCE, optLevel: 3, programDomain: 'system' },
 );
 const biosImage = linkTestSystemBlua32(biosCompiled);
+const biosResetCompiled = compileLuaChunkToProgram(
+	parseLuaChunk(BIOS_RESET_ENTRY_SOURCE, 'bios_reset.lua'),
+	biosModules,
+	{ entrySource: BIOS_RESET_ENTRY_SOURCE, optLevel: 3, programDomain: 'system' },
+);
+const biosResetImage = linkTestSystemBlua32(biosResetCompiled);
 
 type OutputMode = {
-	width: number;
-	height: number;
+	preset: readonly [number, number, number, number, number, number, number, number];
+	timing: readonly [number, number, number, number, number, number, number, number];
 	interlaced: boolean;
 	refreshUfpsScaled: number;
 };
 
 const OUTPUT_MODES: readonly OutputMode[] = [
-	{ width: 256, height: 240, interlaced: false, refreshUfpsScaled: 49_761_146 },
-	{ width: 320, height: 240, interlaced: false, refreshUfpsScaled: 49_761_146 },
-	{ width: 368, height: 240, interlaced: false, refreshUfpsScaled: 49_761_146 },
-	{ width: 512, height: 240, interlaced: false, refreshUfpsScaled: 49_761_146 },
-	{ width: 640, height: 240, interlaced: false, refreshUfpsScaled: 49_761_146 },
-	{ width: 640, height: 480, interlaced: true, refreshUfpsScaled: 59_940_059 },
-	{ width: 640, height: 448, interlaced: true, refreshUfpsScaled: 59_940_059 },
-	{ width: 640, height: 512, interlaced: true, refreshUfpsScaled: 50_000_000 },
+	{ preset: GX_GPU_DISPLAY_PRESET_256X192_PAL_WORDS, timing: GX_GPU_DISPLAY_TIMING_PAL_WORDS, interlaced: false, refreshUfpsScaled: 49_761_146 },
+	{ preset: GX_GPU_DISPLAY_PRESET_256X212_PAL_WORDS, timing: GX_GPU_DISPLAY_TIMING_PAL_WORDS, interlaced: false, refreshUfpsScaled: 49_761_146 },
+	{ preset: GX_GPU_DISPLAY_PRESET_256X240_PAL_WORDS, timing: GX_GPU_DISPLAY_TIMING_PAL_WORDS, interlaced: false, refreshUfpsScaled: 49_761_146 },
+	{ preset: GX_GPU_DISPLAY_PRESET_320X240_PAL_WORDS, timing: GX_GPU_DISPLAY_TIMING_PAL_WORDS, interlaced: false, refreshUfpsScaled: 49_761_146 },
+	{ preset: GX_GPU_DISPLAY_PRESET_368X240_PAL_WORDS, timing: GX_GPU_DISPLAY_TIMING_PAL_WORDS, interlaced: false, refreshUfpsScaled: 49_761_146 },
+	{ preset: GX_GPU_DISPLAY_PRESET_512X240_PAL_WORDS, timing: GX_GPU_DISPLAY_TIMING_PAL_WORDS, interlaced: false, refreshUfpsScaled: 49_761_146 },
+	{ preset: GX_GPU_DISPLAY_PRESET_640X240_PAL_WORDS, timing: GX_GPU_DISPLAY_TIMING_PAL_WORDS, interlaced: false, refreshUfpsScaled: 49_761_146 },
+	{ preset: GX_GPU_DISPLAY_PRESET_640X480I_NTSC_WORDS, timing: GX_GPU_DISPLAY_TIMING_NTSC_WORDS, interlaced: true, refreshUfpsScaled: 59_940_059 },
+	{ preset: GX_GPU_DISPLAY_PRESET_640X448I_NTSC_WORDS, timing: GX_GPU_DISPLAY_TIMING_NTSC_WORDS, interlaced: true, refreshUfpsScaled: 59_940_059 },
+	{ preset: GX_GPU_DISPLAY_PRESET_640X512I_PAL_WORDS, timing: GX_GPU_DISPLAY_TIMING_PAL_WORDS, interlaced: true, refreshUfpsScaled: 50_000_000 },
 ];
 
-function runCartMode(modeIndex: number): { memory: Memory; cpu: CPU } {
+function runCartMode(modeIndex: number): { memory: Memory; cpu: CPU; initialWords: Uint32Array } {
 	const { memory, cpu } = createTestBlua32PairCpu(gxImages);
+	const initialWords = new Uint32Array(GX_GPU_PCRTC_CONFIG_WORD_COUNT);
+	for (let wordIndex = 0; wordIndex < initialWords.length; wordIndex += 1) {
+		const word = (PCRTC_SENTINEL_BASE | wordIndex) >>> 0;
+		initialWords[wordIndex] = word;
+		memory.writeMappedU32LE(gxGpuPcrtcRegisterAddress(wordIndex), word);
+	}
 	memory.writeMappedU32LE(MODE_SELECTOR_ADDRESS, modeIndex);
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
-	return { memory, cpu };
+	return { memory, cpu, initialWords };
 }
 
-test('GX cart SDK programs native PSX widths and PS2 SD interlaced outputs', () => {
+test('GX cart SDK programs every public display preset from the exact raw PCRTC words', () => {
 	for (let modeIndex = 0; modeIndex < OUTPUT_MODES.length; modeIndex += 1) {
 		const expected = OUTPUT_MODES[modeIndex]!;
-		const { memory, cpu } = runCartMode(modeIndex);
-		assert.deepEqual(materializeCpuCompletionValues(cpu), [expected.width, expected.height]);
+		const width = expected.preset[GX_GPU_DISPLAY_PRESET_WIDTH_WORD];
+		const height = expected.preset[GX_GPU_DISPLAY_PRESET_HEIGHT_WORD];
+		const { memory, cpu, initialWords } = runCartMode(modeIndex);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [width, height]);
 		const words = new Uint32Array(GX_GPU_PCRTC_CONFIG_WORD_COUNT);
 		for (let wordIndex = 0; wordIndex < words.length; wordIndex += 1) {
 			words[wordIndex] = memory.readMappedU32LE(gxGpuPcrtcRegisterAddress(wordIndex));
 		}
+		const expectedWords = initialWords.slice();
+		expectedWords[GX_GPU_PCRTC_PMODE_LOW] = GX_GPU_DISPLAY_PMODE_CIRCUIT1_OPAQUE_WORD;
+		expectedWords[GX_GPU_PCRTC_DISPFB1_LOW] = GX_GPU_DISPLAY_DISPFB_GX16_1024_LAYOUT_WORD;
+		expectedWords[GX_GPU_PCRTC_DISPFB1_HIGH] = 0;
+		expectedWords[GX_GPU_PCRTC_DISPLAY1_LOW] = expected.preset[GX_GPU_DISPLAY_PRESET_PCRTC_DISPLAY_LOW_WORD];
+		expectedWords[GX_GPU_PCRTC_DISPLAY1_HIGH] = expected.preset[GX_GPU_DISPLAY_PRESET_PCRTC_DISPLAY_HIGH_WORD];
+		expectedWords[GX_GPU_PCRTC_SMODE1_LOW] = expected.timing[GX_GPU_DISPLAY_TIMING_SMODE1_RUN_LOW_WORD];
+		expectedWords[GX_GPU_PCRTC_SMODE1_HIGH] = expected.timing[GX_GPU_DISPLAY_TIMING_SMODE1_HIGH_WORD];
+		expectedWords[GX_GPU_PCRTC_SMODE2_LOW] = expected.preset[GX_GPU_DISPLAY_PRESET_PCRTC_SMODE2_LOW_WORD];
+		expectedWords[GX_GPU_PCRTC_SMODE2_HIGH] = 0;
+		expectedWords[GX_GPU_PCRTC_SYNCH1_LOW] = expected.timing[GX_GPU_DISPLAY_TIMING_SYNCH1_LOW_WORD];
+		expectedWords[GX_GPU_PCRTC_SYNCH1_HIGH] = expected.timing[GX_GPU_DISPLAY_TIMING_SYNCH1_HIGH_WORD];
+		expectedWords[GX_GPU_PCRTC_SYNCH2_LOW] = expected.timing[GX_GPU_DISPLAY_TIMING_SYNCH2_LOW_WORD];
+		expectedWords[GX_GPU_PCRTC_SYNCH2_HIGH] = expected.timing[GX_GPU_DISPLAY_TIMING_SYNCH2_HIGH_WORD];
+		expectedWords[GX_GPU_PCRTC_SYNCV_LOW] = expected.preset[GX_GPU_DISPLAY_PRESET_PCRTC_SYNCV_LOW_WORD];
+		expectedWords[GX_GPU_PCRTC_SYNCV_HIGH] = expected.timing[GX_GPU_DISPLAY_TIMING_SYNCV_HIGH_WORD];
+		assert.deepEqual(words, expectedWords);
 		const timing = new GxGpuPcrtcTiming();
 		const scanout = new GxGpuPcrtcScanout();
 		timing.update(words);
 		scanout.update(words, timing);
-		assert.equal(words[GX_GPU_PCRTC_DISPLAY1_HIGH], ((expected.width << 2) - 1) | ((expected.height - 1) << 12));
 		assert.equal((words[GX_GPU_PCRTC_SMODE2_LOW]! & GX_GPU_PCRTC_SMODE2_INT) !== 0, expected.interlaced);
 		assert.equal(timing.refreshUfpsScaled, expected.refreshUfpsScaled);
 		assert.equal(timing.fieldToggles, expected.interlaced);
-		assert.equal(scanout.outputWidth, expected.width);
-		assert.equal(scanout.outputHeight, expected.height);
+		assert.equal(scanout.outputWidth, width);
+		assert.equal(scanout.outputHeight, height);
 		assert.equal(scanout.interlaced, expected.interlaced);
 	}
+});
+
+test('GX cart SDK holds SMODE1 reset until every timing latch is programmed', () => {
+	const { memory, cpu } = createTestBlua32PairCpu(gxImages);
+	const timingWrites: number[] = [];
+	const recordTimingWrite = (writes: number[], address: number, word: number): void => {
+		writes.push(address, word);
+	};
+	for (const wordIndex of [
+		GX_GPU_PCRTC_SMODE1_LOW,
+		GX_GPU_PCRTC_SMODE1_HIGH,
+		GX_GPU_PCRTC_SMODE2_LOW,
+		GX_GPU_PCRTC_SMODE2_HIGH,
+		GX_GPU_PCRTC_SYNCH1_LOW,
+		GX_GPU_PCRTC_SYNCH1_HIGH,
+		GX_GPU_PCRTC_SYNCH2_LOW,
+		GX_GPU_PCRTC_SYNCH2_HIGH,
+		GX_GPU_PCRTC_SYNCV_LOW,
+		GX_GPU_PCRTC_SYNCV_HIGH,
+	]) {
+		memory.mapIoWrite(gxGpuPcrtcRegisterAddress(wordIndex), timingWrites, recordTimingWrite);
+	}
+	memory.writeMappedU32LE(MODE_SELECTOR_ADDRESS, 3);
+	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	assert.deepEqual(timingWrites, [
+		gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_SMODE1_LOW), GX_GPU_DISPLAY_TIMING_PAL_WORDS[GX_GPU_DISPLAY_TIMING_SMODE1_SETUP_LOW_WORD],
+		gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_SMODE1_HIGH), GX_GPU_DISPLAY_TIMING_PAL_WORDS[GX_GPU_DISPLAY_TIMING_SMODE1_HIGH_WORD],
+		gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_SYNCH1_LOW), GX_GPU_DISPLAY_TIMING_PAL_WORDS[GX_GPU_DISPLAY_TIMING_SYNCH1_LOW_WORD],
+		gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_SYNCH1_HIGH), GX_GPU_DISPLAY_TIMING_PAL_WORDS[GX_GPU_DISPLAY_TIMING_SYNCH1_HIGH_WORD],
+		gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_SYNCH2_LOW), GX_GPU_DISPLAY_TIMING_PAL_WORDS[GX_GPU_DISPLAY_TIMING_SYNCH2_LOW_WORD],
+		gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_SYNCH2_HIGH), GX_GPU_DISPLAY_TIMING_PAL_WORDS[GX_GPU_DISPLAY_TIMING_SYNCH2_HIGH_WORD],
+		gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_SYNCV_HIGH), GX_GPU_DISPLAY_TIMING_PAL_WORDS[GX_GPU_DISPLAY_TIMING_SYNCV_HIGH_WORD],
+		gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_SYNCV_LOW), GX_GPU_DISPLAY_PRESET_320X240_PAL_WORDS[GX_GPU_DISPLAY_PRESET_PCRTC_SYNCV_LOW_WORD],
+		gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_SMODE2_LOW), GX_GPU_DISPLAY_PRESET_320X240_PAL_WORDS[GX_GPU_DISPLAY_PRESET_PCRTC_SMODE2_LOW_WORD],
+		gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_SMODE2_HIGH), 0,
+		gxGpuPcrtcRegisterAddress(GX_GPU_PCRTC_SMODE1_LOW), GX_GPU_DISPLAY_TIMING_PAL_WORDS[GX_GPU_DISPLAY_TIMING_SMODE1_RUN_LOW_WORD],
+	]);
+});
+
+test('BIOS GX reset programs the same 320x240 raw preset without touching circuit 2', () => {
+	const { memory, cpu } = createTestSystemCpu(biosResetImage);
+	const initialWords = new Uint32Array(GX_GPU_PCRTC_CONFIG_WORD_COUNT);
+	for (let wordIndex = 0; wordIndex < initialWords.length; wordIndex += 1) {
+		const word = (PCRTC_SENTINEL_BASE | wordIndex) >>> 0;
+		initialWords[wordIndex] = word;
+		memory.writeMappedU32LE(gxGpuPcrtcRegisterAddress(wordIndex), word);
+	}
+	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	const words = new Uint32Array(GX_GPU_PCRTC_CONFIG_WORD_COUNT);
+	for (let wordIndex = 0; wordIndex < words.length; wordIndex += 1) {
+		words[wordIndex] = memory.readMappedU32LE(gxGpuPcrtcRegisterAddress(wordIndex));
+	}
+	const expectedWords = initialWords.slice();
+	expectedWords[GX_GPU_PCRTC_PMODE_LOW] = GX_GPU_DISPLAY_PMODE_CIRCUIT1_OPAQUE_WORD;
+	expectedWords[GX_GPU_PCRTC_DISPFB1_LOW] = GX_GPU_DISPLAY_DISPFB_GX16_1024_LAYOUT_WORD;
+	expectedWords[GX_GPU_PCRTC_DISPFB1_HIGH] = 0;
+	expectedWords[GX_GPU_PCRTC_DISPLAY1_LOW] = GX_GPU_DISPLAY_PRESET_320X240_PAL_WORDS[GX_GPU_DISPLAY_PRESET_PCRTC_DISPLAY_LOW_WORD];
+	expectedWords[GX_GPU_PCRTC_DISPLAY1_HIGH] = GX_GPU_DISPLAY_PRESET_320X240_PAL_WORDS[GX_GPU_DISPLAY_PRESET_PCRTC_DISPLAY_HIGH_WORD];
+	expectedWords[GX_GPU_PCRTC_SMODE1_LOW] = GX_GPU_DISPLAY_TIMING_PAL_WORDS[GX_GPU_DISPLAY_TIMING_SMODE1_RUN_LOW_WORD];
+	expectedWords[GX_GPU_PCRTC_SMODE1_HIGH] = GX_GPU_DISPLAY_TIMING_PAL_WORDS[GX_GPU_DISPLAY_TIMING_SMODE1_HIGH_WORD];
+	expectedWords[GX_GPU_PCRTC_SMODE2_LOW] = GX_GPU_DISPLAY_PRESET_320X240_PAL_WORDS[GX_GPU_DISPLAY_PRESET_PCRTC_SMODE2_LOW_WORD];
+	expectedWords[GX_GPU_PCRTC_SMODE2_HIGH] = 0;
+	expectedWords[GX_GPU_PCRTC_SYNCH1_LOW] = GX_GPU_DISPLAY_TIMING_PAL_WORDS[GX_GPU_DISPLAY_TIMING_SYNCH1_LOW_WORD];
+	expectedWords[GX_GPU_PCRTC_SYNCH1_HIGH] = GX_GPU_DISPLAY_TIMING_PAL_WORDS[GX_GPU_DISPLAY_TIMING_SYNCH1_HIGH_WORD];
+	expectedWords[GX_GPU_PCRTC_SYNCH2_LOW] = GX_GPU_DISPLAY_TIMING_PAL_WORDS[GX_GPU_DISPLAY_TIMING_SYNCH2_LOW_WORD];
+	expectedWords[GX_GPU_PCRTC_SYNCH2_HIGH] = GX_GPU_DISPLAY_TIMING_PAL_WORDS[GX_GPU_DISPLAY_TIMING_SYNCH2_HIGH_WORD];
+	expectedWords[GX_GPU_PCRTC_SYNCV_LOW] = GX_GPU_DISPLAY_PRESET_320X240_PAL_WORDS[GX_GPU_DISPLAY_PRESET_PCRTC_SYNCV_LOW_WORD];
+	expectedWords[GX_GPU_PCRTC_SYNCV_HIGH] = GX_GPU_DISPLAY_TIMING_PAL_WORDS[GX_GPU_DISPLAY_TIMING_SYNCV_HIGH_WORD];
+	assert.deepEqual(words, expectedWords);
 });
 
 test('BIOS GX code aligns the source-alpha supervisor circuit to a retained PS2 DTV origin', () => {

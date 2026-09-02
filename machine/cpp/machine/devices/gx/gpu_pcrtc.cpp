@@ -1,42 +1,15 @@
 #include "machine/devices/gx/gpu_pcrtc.h"
 
-#include "spec/bmsx/io.h"
+#include "machine/devices/gx/gpu_local_memory.h"
 
 namespace bmsx {
 namespace {
-
-static_assert(GX_GPU_PCRTC_WORD_COUNT == IO_GX_PCRTC_WORD_COUNT + IO_GX_PCRTC_TIMING_WORD_COUNT);
 
 constexpr i64 PCRTC_REFERENCE_CLOCK_HZ = 13'500'000;
 constexpr u32 PCRTC_SOURCE_DIVISION_SCALE = 1u << GX_GPU_PCRTC_SOURCE_DIVISION_SHIFT;
 constexpr u32 GX_GPU_PCRTC_VERTICAL_STAGE_VBLANK_BEGIN = 0u;
 constexpr u32 GX_GPU_PCRTC_VERTICAL_STAGE_VSYNC = 1u;
 constexpr u32 GX_GPU_PCRTC_VERTICAL_STAGE_FIELD_END = 2u;
-
-constexpr std::array<u32, GX_GPU_PCRTC_CONFIG_WORD_COUNT> resetConfigWords{
-	0u,
-	0u,
-	GX_GPU_PCRTC_RESET_DISPFB_LOW,
-	0u,
-	GX_GPU_PCRTC_RESET_DISPLAY_LOW,
-	GX_GPU_PCRTC_RESET_DISPLAY_HIGH,
-	GX_GPU_PCRTC_RESET_DISPFB_LOW,
-	0u,
-	GX_GPU_PCRTC_RESET_DISPLAY_LOW,
-	GX_GPU_PCRTC_RESET_DISPLAY_HIGH,
-	0u,
-	0u,
-	0x40806504u,
-	0x00000007u,
-	0u,
-	0u,
-	0x1fc83030u,
-	0x0007f5c2u,
-	0x003484bcu,
-	0u,
-	0x02101404u,
-	0x00a90005u,
-};
 
 constexpr u32 circuitDispFbLowIndex(u32 circuit) {
 	return circuit == 0u ? GX_GPU_PCRTC_DISPFB1_LOW : GX_GPU_PCRTC_DISPFB2_LOW;
@@ -89,12 +62,6 @@ constexpr bool isBeamTimingWord(u32 index) {
 }
 
 } // namespace
-
-u32 gxGpuPcrtcRegisterAddress(u32 index) {
-	return index < IO_GX_PCRTC_WORD_COUNT
-		? IO_GX_PCRTC_BASE + index * IO_WORD_SIZE
-		: IO_GX_PCRTC_TIMING_BASE + (index - IO_GX_PCRTC_WORD_COUNT) * IO_WORD_SIZE;
-}
 
 void GxGpuPcrtcTiming::update(const std::array<u32, GX_GPU_PCRTC_CONFIG_WORD_COUNT>& words) {
 	const u32 smode1 = words[GX_GPU_PCRTC_SMODE1_LOW];
@@ -336,8 +303,8 @@ void GxGpuPcrtcScanout::setField(u32 value) {
 }
 
 void GxGpuPcrtc::reset(i64 nowCycles) {
-	m_registerWords = resetConfigWords;
-	m_presentWords = resetConfigWords;
+	m_registerWords = GX_GPU_PCRTC_RESET_CONFIG_WORDS;
+	m_presentWords = GX_GPU_PCRTC_RESET_CONFIG_WORDS;
 	m_csrWord = GX_GPU_PCRTC_RESET_CSR_WORD;
 	m_imrWord = GX_GPU_PCRTC_RESET_IMR_WORD;
 	timing.update(m_registerWords);
@@ -351,7 +318,7 @@ void GxGpuPcrtc::reset(i64 nowCycles) {
 
 void GxGpuPcrtc::resetCompositionWords() {
 	for (u32 index = 0u; index < GX_GPU_PCRTC_COMPOSITION_WORD_COUNT; index += 1u) {
-		m_registerWords[index] = resetConfigWords[index];
+		m_registerWords[index] = GX_GPU_PCRTC_RESET_CONFIG_WORDS[index];
 	}
 }
 

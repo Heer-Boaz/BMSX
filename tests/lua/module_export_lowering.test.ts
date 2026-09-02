@@ -9,6 +9,12 @@ import type { ProgramImageConstReloc } from '../../toolchain/ts/lua/compiler/pro
 import { compileLuaChunkToProgram, type CompiledSystemProgram } from '../../toolchain/ts/lua/compiler';
 import { buildRomAssetAddressLinkValuesFromSymbols } from '../../toolchain/ts/rompack/asset_symbols';
 import {
+	GX_DISPLAY_PRESET_MODULE_PATH,
+	GX_REGISTER_MODULE_PATH,
+} from '../../toolchain/ts/rompack/generated_modules';
+import { GX_DISPLAY_PRESET_MODULE_SOURCE } from '../../toolchain/ts/rompack/gx_display_preset_module';
+import { GX_REGISTER_MODULE_SOURCE } from '../../toolchain/ts/rompack/gx_register_module';
+import {
 	disassembleTestBlua32Functions,
 	linkTestSystemBlua32,
 	runCompiledTestSystem,
@@ -276,6 +282,54 @@ test('const modules inline export constants without runtime module state', () =>
 	assert.doesNotMatch(disasm, /\bCALL\b/, 'const module import must not emit a runtime import call');
 	assert.doesNotMatch(disasm, /\bNEWT\b/, 'const module must not build a runtime export table');
 	assert.doesNotMatch(disasm, /\bGET(GL|SYS)\b.*assets/, 'const module reads must not use module export slots');
+});
+
+test('generated GX register contracts remain compile-time words without runtime module tables', () => {
+	const entrySource = [
+		`local presets<const> = require('${GX_DISPLAY_PRESET_MODULE_PATH}')`,
+		`local registers<const> = require('${GX_REGISTER_MODULE_PATH}')`,
+		'return presets.mode_640x512i_size_word,',
+		'\tpresets.mode_640x512i_gp1_display_mode_command,',
+		'\tpresets.pal_synch1_low_word,',
+		'\tpresets.pcrtc_pmode_circuit1_opaque_word,',
+		'\tregisters.gp1_reset_command,',
+		'\tregisters.gp1_ack_interrupt_command,',
+		'\tregisters.gp1_vertical_display_range_start_mask,',
+		'\tregisters.gp1_vertical_display_range_end_shift,',
+		'\tregisters.pcrtc_pmode_circuit1_enable_word,',
+		'\tregisters.pcrtc_pmode_circuit2_enable_word',
+	].join('\n');
+	for (const optLevel of [0, 3] as const) {
+		const { compiled, disasm } = compileWithModule(
+			entrySource,
+			GX_DISPLAY_PRESET_MODULE_PATH,
+			GX_DISPLAY_PRESET_MODULE_SOURCE,
+			[{ path: GX_REGISTER_MODULE_PATH, source: GX_REGISTER_MODULE_SOURCE }],
+			optLevel,
+		);
+		assert.equal(compiled.moduleProtoMap.has(GX_DISPLAY_PRESET_MODULE_PATH), false);
+		assert.equal(compiled.moduleProtoMap.has(GX_REGISTER_MODULE_PATH), false);
+		assert.equal(compiled.staticModulePaths.includes(GX_DISPLAY_PRESET_MODULE_PATH), false);
+		assert.equal(compiled.staticModulePaths.includes(GX_REGISTER_MODULE_PATH), false);
+		assert.equal(compiled.program.moduleExports.some(entry => entry.path === GX_DISPLAY_PRESET_MODULE_PATH), false);
+		assert.equal(compiled.program.moduleExports.some(entry => entry.path === GX_REGISTER_MODULE_PATH), false);
+		assert.doesNotMatch(disasm, /\bCALL\b/, 'generated preset imports do not execute a module initializer');
+		assert.doesNotMatch(disasm, /\bNEWT\b/, 'generated preset exports do not materialize a table');
+		assert.doesNotMatch(disasm, /\bGET(GL|SYS)\b.*gx_(?:display_presets|registers)/, 'generated GX contract reads do not use module export slots');
+		const cpu = runCompiledTestSystem(compiled, 100000);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [
+			0x02000280,
+			0x0800002f,
+			0x1fc83030,
+			0x0000ff21,
+			0x00000000,
+			0x02000000,
+			0x000003ff,
+			0x0000000a,
+			0x00000001,
+			0x00000002,
+		]);
+	}
 });
 
 test('const modules inline direct require member reads', () => {

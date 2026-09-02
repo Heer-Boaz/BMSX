@@ -47,7 +47,7 @@ type StrictRuntimeMethodParityEntry = {
 type StrictRuntimeNoChurnEntry = { files: string[]; reason: string };
 type StrictRuntimeNoHeapFunctionEntry = { file: string; functions: string[]; reason: string };
 type StrictLuaNoHeapFunctionEntry = { file: string; functions: string[]; top_level_loops?: boolean; reason: string };
-type StrictRpuTableParityEntry = { ts: string; cpp: string; tables: string[]; reason: string };
+type StrictRawWordTableParityEntry = { ts: string; cpp: string; tables: string[]; reason: string };
 type StrictBlua32IsaParityEntry = {
 	ts_cop0: string;
 	cpp_cop0: string;
@@ -87,7 +87,7 @@ type Manifest = {
 	strict_runtime_no_churn: StrictRuntimeNoChurnEntry[];
 	strict_runtime_no_heap_functions: StrictRuntimeNoHeapFunctionEntry[];
 	strict_lua_no_heap_functions: StrictLuaNoHeapFunctionEntry[];
-	strict_rpu_table_parity: StrictRpuTableParityEntry[];
+	strict_raw_word_table_parity: StrictRawWordTableParityEntry[];
 	strict_blua32_isa_parity: StrictBlua32IsaParityEntry[];
 	strict_file_layout: StrictFileLayoutEntry[];
 	strict_file_pair_parity: StrictFilePairParityEntry[];
@@ -1057,15 +1057,14 @@ function auditStrictLuaNoHeapFunctions(manifest: Manifest): string[] {
 	return errors;
 }
 
-function canonicalRpuTableTokens(body: string): string {
-	return body
-		.replace(/\b(?:id|byteStride|attributeCount|attributes|attribute|componentCount|componentType|normalized|byteOffset|requiredFeatureMask|vertexLayout|instanceLayout|instanceMode|textureSlotCount|usesC0|lightingConstantSlot|jointConstantSlot|constantSlotCount|constantSlots|slot|maxWords|vertexVisible|fragmentVisible)\s*:/g, '')
-		.match(/\b[A-Z][A-Z0-9_]*\b|\b0x[0-9a-fA-F]+[uU]?\b|\b\d+[uU]?\b/g)
-		?.map((token) => token.replace(/[uU]$/, ''))
-		.join(',') ?? '';
+function canonicalRawWordTableTokens(body: string): string {
+	return Array.from(
+		body.matchAll(/\b[A-Z][A-Z0-9_]*\b|\b0x[0-9a-fA-F_']+[uU]?\b|\b\d[\d_']*[uU]?\b/g),
+		match => match[0].replace(/[uU]$/, '').replace(/[_']/g, ''),
+	).join(',');
 }
 
-function tsRpuTableTokens(file: string, table: string): string | null {
+function tsRawWordTableTokens(file: string, table: string): string | null {
 	const text = fs.readFileSync(path.join(repoRoot, file), 'utf8');
 	const tableIndex = text.indexOf(`export const ${table}`);
 	if (tableIndex < 0) return null;
@@ -1073,30 +1072,30 @@ function tsRpuTableTokens(file: string, table: string): string | null {
 	if (equalsIndex < 0) return null;
 	const openIndex = text.indexOf('[', equalsIndex);
 	if (openIndex < 0) return null;
-	return canonicalRpuTableTokens(readDelimitedBody(text, openIndex));
+	return canonicalRawWordTableTokens(readDelimitedBody(text, openIndex));
 }
 
-function cppRpuTableTokens(file: string, table: string): string | null {
+function cppRawWordTableTokens(file: string, table: string): string | null {
 	const text = fs.readFileSync(path.join(repoRoot, file), 'utf8');
 	const tableIndex = text.indexOf(table);
 	if (tableIndex < 0) return null;
 	const openIndex = text.indexOf('{', tableIndex);
 	if (openIndex < 0) return null;
-	return canonicalRpuTableTokens(readDelimitedBody(text, openIndex));
+	return canonicalRawWordTableTokens(readDelimitedBody(text, openIndex));
 }
 
-function auditStrictRpuTableParity(manifest: Manifest): string[] {
+function auditStrictRawWordTableParity(manifest: Manifest): string[] {
 	const errors: string[] = [];
-	for (const entry of manifest.strict_rpu_table_parity) {
+	for (const entry of manifest.strict_raw_word_table_parity) {
 		for (const table of entry.tables) {
-			const tsTokens = tsRpuTableTokens(entry.ts, table);
+			const tsTokens = tsRawWordTableTokens(entry.ts, table);
 			if (tsTokens === null) {
-				errors.push(`${entry.ts}: RPU table ${table} missing`);
+				errors.push(`${entry.ts}: Raw-word table ${table} missing`);
 				continue;
 			}
-			const cppTokens = cppRpuTableTokens(entry.cpp, table);
+			const cppTokens = cppRawWordTableTokens(entry.cpp, table);
 			if (cppTokens === null) {
-				errors.push(`${entry.cpp}: RPU table ${table} missing`);
+				errors.push(`${entry.cpp}: Raw-word table ${table} missing`);
 				continue;
 			}
 			if (tsTokens !== cppTokens) {
@@ -1439,7 +1438,7 @@ function main(): void {
 	const strictRuntimeNoChurnErrors = auditStrictRuntimeNoChurn(manifest);
 	const strictRuntimeNoHeapFunctionErrors = auditStrictRuntimeNoHeapFunctions(manifest);
 	const strictLuaNoHeapFunctionErrors = auditStrictLuaNoHeapFunctions(manifest);
-	const strictRpuTableParityErrors = auditStrictRpuTableParity(manifest);
+	const strictRawWordTableParityErrors = auditStrictRawWordTableParity(manifest);
 	const strictBlua32IsaParityErrors = auditStrictBlua32IsaParity(manifest);
 	const strictFileLayoutErrors = auditStrictFileLayout(manifest);
 	const strictFilePairParityErrors = auditStrictFilePairParity(manifest);
@@ -1537,10 +1536,10 @@ function main(): void {
 		console.error(`\nStrict Lua no-heap function errors (${strictLuaNoHeapFunctionErrors.length}):`);
 		for (const item of strictLuaNoHeapFunctionErrors) console.error(`  ${item}`);
 	}
-	if (strictRpuTableParityErrors.length > 0) {
+	if (strictRawWordTableParityErrors.length > 0) {
 		hasErrors = true;
-		console.error(`\nStrict RPU table parity errors (${strictRpuTableParityErrors.length}):`);
-		for (const item of strictRpuTableParityErrors) console.error(`  ${item}`);
+		console.error(`\nStrict raw-word table parity errors (${strictRawWordTableParityErrors.length}):`);
+		for (const item of strictRawWordTableParityErrors) console.error(`  ${item}`);
 	}
 	if (strictBlua32IsaParityErrors.length > 0) {
 		hasErrors = true;

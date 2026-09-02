@@ -2,6 +2,7 @@
 #include "spec/blua32/cop0.h"
 #include "spec/blua32/instruction_format.h"
 #include "spec/blua32/opcode.h"
+#include "spec/gx/pcrtc.h"
 #include "machine/devices/gx/gpu_display.h"
 #include "machine/devices/gx/gpu_pcrtc.h"
 #include "machine/devices/gx/gte.h"

@@ -1,11 +1,48 @@
-import {
-	IO_GX_PCRTC_BASE,
-	IO_GX_PCRTC_TIMING_BASE,
-	IO_GX_PCRTC_TIMING_WORD_COUNT,
-	IO_GX_PCRTC_WORD_COUNT,
-} from '../../../spec/bmsx/io';
 import { multiplyHighU32 } from '../../common/numeric';
-import { IO_WORD_SIZE } from '../../../spec/bmsx/memory_map';
+import {
+	GX_GPU_PCRTC_BGCOLOR_HIGH,
+	GX_GPU_PCRTC_BGCOLOR_LOW,
+	GX_GPU_PCRTC_COMPOSITION_WORD_COUNT,
+	GX_GPU_PCRTC_CONFIG_WORD_COUNT,
+	GX_GPU_PCRTC_CSR_ACTION_MASK,
+	GX_GPU_PCRTC_CSR_EVENT_MASK,
+	GX_GPU_PCRTC_CSR_FIELD,
+	GX_GPU_PCRTC_CSR_HSINT,
+	GX_GPU_PCRTC_CSR_LOW,
+	GX_GPU_PCRTC_CSR_VSINT,
+	GX_GPU_PCRTC_DISPFB1_HIGH,
+	GX_GPU_PCRTC_DISPFB1_LOW,
+	GX_GPU_PCRTC_DISPFB2_HIGH,
+	GX_GPU_PCRTC_DISPFB2_LOW,
+	GX_GPU_PCRTC_DISPLAY1_HIGH,
+	GX_GPU_PCRTC_DISPLAY1_LOW,
+	GX_GPU_PCRTC_DISPLAY2_HIGH,
+	GX_GPU_PCRTC_DISPLAY2_LOW,
+	GX_GPU_PCRTC_IMR_EVENT_MASK,
+	GX_GPU_PCRTC_IMR_FIXED_BITS,
+	GX_GPU_PCRTC_IMR_LOW,
+	GX_GPU_PCRTC_PMODE_ALP_SHIFT,
+	GX_GPU_PCRTC_PMODE_AMOD_SHIFT,
+	GX_GPU_PCRTC_PMODE_EN1,
+	GX_GPU_PCRTC_PMODE_LOW,
+	GX_GPU_PCRTC_PMODE_MMOD_SHIFT,
+	GX_GPU_PCRTC_PMODE_SLBG_SHIFT,
+	GX_GPU_PCRTC_RESET_CONFIG_WORDS,
+	GX_GPU_PCRTC_RESET_CSR_WORD,
+	GX_GPU_PCRTC_RESET_IMR_WORD,
+	GX_GPU_PCRTC_SMODE1_HIGH,
+	GX_GPU_PCRTC_SMODE1_LOW,
+	GX_GPU_PCRTC_SMODE1_PRST,
+	GX_GPU_PCRTC_SMODE1_SINT,
+	GX_GPU_PCRTC_SMODE2_FFMD,
+	GX_GPU_PCRTC_SMODE2_INT,
+	GX_GPU_PCRTC_SMODE2_LOW,
+	GX_GPU_PCRTC_SYNCH1_HIGH,
+	GX_GPU_PCRTC_SYNCH1_LOW,
+	GX_GPU_PCRTC_SYNCH2_LOW,
+	GX_GPU_PCRTC_SYNCV_HIGH,
+	GX_GPU_PCRTC_SYNCV_LOW,
+} from '../../../spec/gx/pcrtc';
 import {
 	GX_GPU_PSGPU24,
 	GX_GPU_PSMCT16,
@@ -14,62 +51,6 @@ import {
 	GX_GPU_PSMCT32,
 	GX_GPU_PSMGX16,
 } from './gpu_local_memory';
-
-export const GX_GPU_PCRTC_WORD_COUNT = IO_GX_PCRTC_WORD_COUNT + IO_GX_PCRTC_TIMING_WORD_COUNT;
-export const GX_GPU_PCRTC_CONFIG_WORD_COUNT = 22;
-export const GX_GPU_PCRTC_COMPOSITION_WORD_COUNT = 12;
-export const GX_GPU_PCRTC_PMODE_LOW = 0;
-export const GX_GPU_PCRTC_PMODE_HIGH = 1;
-export const GX_GPU_PCRTC_DISPFB1_LOW = 2;
-export const GX_GPU_PCRTC_DISPFB1_HIGH = 3;
-export const GX_GPU_PCRTC_DISPLAY1_LOW = 4;
-export const GX_GPU_PCRTC_DISPLAY1_HIGH = 5;
-export const GX_GPU_PCRTC_DISPFB2_LOW = 6;
-export const GX_GPU_PCRTC_DISPFB2_HIGH = 7;
-export const GX_GPU_PCRTC_DISPLAY2_LOW = 8;
-export const GX_GPU_PCRTC_DISPLAY2_HIGH = 9;
-export const GX_GPU_PCRTC_BGCOLOR_LOW = 10;
-export const GX_GPU_PCRTC_BGCOLOR_HIGH = 11;
-export const GX_GPU_PCRTC_SMODE1_LOW = 12;
-export const GX_GPU_PCRTC_SMODE1_HIGH = 13;
-export const GX_GPU_PCRTC_SMODE2_LOW = 14;
-export const GX_GPU_PCRTC_SMODE2_HIGH = 15;
-export const GX_GPU_PCRTC_SYNCH1_LOW = 16;
-export const GX_GPU_PCRTC_SYNCH1_HIGH = 17;
-export const GX_GPU_PCRTC_SYNCH2_LOW = 18;
-export const GX_GPU_PCRTC_SYNCH2_HIGH = 19;
-export const GX_GPU_PCRTC_SYNCV_LOW = 20;
-export const GX_GPU_PCRTC_SYNCV_HIGH = 21;
-export const GX_GPU_PCRTC_CSR_LOW = 22;
-export const GX_GPU_PCRTC_CSR_HIGH = 23;
-export const GX_GPU_PCRTC_IMR_LOW = 24;
-export const GX_GPU_PCRTC_IMR_HIGH = 25;
-
-export const GX_GPU_PCRTC_PMODE_EN1 = 1 << 0;
-export const GX_GPU_PCRTC_PMODE_EN2 = 1 << 1;
-export const GX_GPU_PCRTC_PMODE_MMOD_SHIFT = 5;
-export const GX_GPU_PCRTC_PMODE_AMOD_SHIFT = 6;
-export const GX_GPU_PCRTC_PMODE_SLBG_SHIFT = 7;
-export const GX_GPU_PCRTC_PMODE_MMOD = 1 << GX_GPU_PCRTC_PMODE_MMOD_SHIFT;
-export const GX_GPU_PCRTC_PMODE_AMOD = 1 << GX_GPU_PCRTC_PMODE_AMOD_SHIFT;
-export const GX_GPU_PCRTC_PMODE_SLBG = 1 << GX_GPU_PCRTC_PMODE_SLBG_SHIFT;
-export const GX_GPU_PCRTC_PMODE_ALP_SHIFT = 8;
-export const GX_GPU_PCRTC_SMODE1_PRST = 1 << 16;
-export const GX_GPU_PCRTC_SMODE1_SINT = 1 << 17;
-export const GX_GPU_PCRTC_SMODE2_INT = 1 << 0;
-export const GX_GPU_PCRTC_SMODE2_FFMD = 1 << 1;
-export const GX_GPU_PCRTC_CSR_SIGNAL = 1 << 0;
-export const GX_GPU_PCRTC_CSR_FINISH = 1 << 1;
-export const GX_GPU_PCRTC_CSR_HSINT = 1 << 2;
-export const GX_GPU_PCRTC_CSR_VSINT = 1 << 3;
-export const GX_GPU_PCRTC_CSR_EDWINT = 1 << 4;
-export const GX_GPU_PCRTC_CSR_EVENT_MASK = 0x1f;
-export const GX_GPU_PCRTC_CSR_FLUSH = 1 << 8;
-export const GX_GPU_PCRTC_CSR_RESET = 1 << 9;
-export const GX_GPU_PCRTC_CSR_FIELD = 1 << 13;
-export const GX_GPU_PCRTC_CSR_ACTION_MASK = GX_GPU_PCRTC_CSR_FLUSH | GX_GPU_PCRTC_CSR_RESET;
-export const GX_GPU_PCRTC_IMR_EVENT_MASK = 0x1f00;
-export const GX_GPU_PCRTC_IMR_FIXED_BITS = 0x6000;
 
 export const GX_GPU_PCRTC_COMPOSE_GENERIC = 0;
 export const GX_GPU_PCRTC_COMPOSE_GX16 = 1;
@@ -96,11 +77,6 @@ export const GX_GPU_PCRTC_SCANOUT_DRAW_BLEND_CONSTANT_RGB = 6;
 export const GX_GPU_PCRTC_SCANOUT_DRAW_BLEND_CONSTANT_RGBA = 7;
 export const GX_GPU_PCRTC_SCANOUT_DRAW_PATH_COUNT = 8;
 
-export const GX_GPU_PCRTC_RESET_DISPFB_LOW = (16 << 9) | (GX_GPU_PSMGX16 << 15);
-export const GX_GPU_PCRTC_RESET_DISPLAY_LOW = 0x018252a8;
-export const GX_GPU_PCRTC_RESET_DISPLAY_HIGH = 0x000ef4ff;
-export const GX_GPU_PCRTC_RESET_CSR_WORD = 0x551b4000;
-export const GX_GPU_PCRTC_RESET_IMR_WORD = 0x00007f00;
 export const GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED = 49_761_146;
 export const GX_GPU_PCRTC_RESET_TOTAL_HALF_LINES = 628;
 export const GX_GPU_PCRTC_RESET_ACTIVE_DISPLAY_HALF_LINES = 576;
@@ -121,12 +97,6 @@ const PCRTC_REFERENCE_CLOCK_HZ = 13_500_000;
 const U32_LIMB_SCALE = 0x1_0000_0000;
 export const GX_GPU_PCRTC_SOURCE_DIVISION_SHIFT = 18;
 const PCRTC_SOURCE_DIVISION_SCALE = 1 << GX_GPU_PCRTC_SOURCE_DIVISION_SHIFT;
-
-export function gxGpuPcrtcRegisterAddress(index: number): number {
-	return index < IO_GX_PCRTC_WORD_COUNT
-		? IO_GX_PCRTC_BASE + index * IO_WORD_SIZE
-		: IO_GX_PCRTC_TIMING_BASE + (index - IO_GX_PCRTC_WORD_COUNT) * IO_WORD_SIZE;
-}
 
 export type GxGpuPcrtcState = {
 	registerWords: number[];
@@ -181,31 +151,6 @@ export type GxGpuPcrtcCircuit = {
 	magnificationY: number;
 	linearSampling: boolean;
 };
-
-const resetConfigWords = new Uint32Array([
-	0,
-	0,
-	GX_GPU_PCRTC_RESET_DISPFB_LOW,
-	0,
-	GX_GPU_PCRTC_RESET_DISPLAY_LOW,
-	GX_GPU_PCRTC_RESET_DISPLAY_HIGH,
-	GX_GPU_PCRTC_RESET_DISPFB_LOW,
-	0,
-	GX_GPU_PCRTC_RESET_DISPLAY_LOW,
-	GX_GPU_PCRTC_RESET_DISPLAY_HIGH,
-	0,
-	0,
-	0x40806504,
-	0x00000007,
-	0,
-	0,
-	0x1fc83030,
-	0x0007f5c2,
-	0x003484bc,
-	0,
-	0x02101404,
-	0x00a90005,
-]);
 
 function circuitDispFbLowIndex(circuit: number): number {
 	return circuit === 0 ? GX_GPU_PCRTC_DISPFB1_LOW : GX_GPU_PCRTC_DISPFB2_LOW;
@@ -613,8 +558,8 @@ export class GxGpuPcrtc {
 	private presentationTimingDirty = false;
 
 	public reset(nowCycles: number): void {
-		this.registerWords.set(resetConfigWords);
-		this.presentWords.set(resetConfigWords);
+		this.registerWords.set(GX_GPU_PCRTC_RESET_CONFIG_WORDS);
+		this.presentWords.set(GX_GPU_PCRTC_RESET_CONFIG_WORDS);
 		this.csrWord = GX_GPU_PCRTC_RESET_CSR_WORD;
 		this.imrWord = GX_GPU_PCRTC_RESET_IMR_WORD;
 		this.timing.update(this.registerWords);
@@ -628,7 +573,7 @@ export class GxGpuPcrtc {
 
 	private resetCompositionWords(): void {
 		for (let index = 0; index < GX_GPU_PCRTC_COMPOSITION_WORD_COUNT; index += 1) {
-			this.registerWords[index] = resetConfigWords[index]!;
+			this.registerWords[index] = GX_GPU_PCRTC_RESET_CONFIG_WORDS[index]!;
 		}
 	}
 

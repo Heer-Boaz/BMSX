@@ -1,5 +1,6 @@
 #include "render/backend/software/gx_gpu_scanout.h"
 
+#include "machine/devices/gx/gpu_local_memory.h"
 #include "machine/devices/gx/gpu_pcrtc.h"
 #include "spec/gx/vram.h"
 #include "render/backend/backend.h"

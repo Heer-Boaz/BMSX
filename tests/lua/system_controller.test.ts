@@ -31,7 +31,7 @@ import {
 	GX_GPU_PCRTC_SMODE1_LOW,
 	GX_GPU_PCRTC_SMODE1_SINT,
 	gxGpuPcrtcRegisterAddress,
-} from '../../machine/ts/machine/devices/gx/gpu_pcrtc';
+} from '../../machine/ts/spec/gx/pcrtc';
 import { decodeBlua32BootHeader } from '../../toolchain/ts/rompack/blua32_image';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';

@@ -30,6 +30,7 @@ const NODE_TOOLING_SOURCE_ROOTS = [
 	'runtime',
 	'scripts/bootrom',
 	'scripts/products/node_build.ts',
+	'toolchain/ts',
 ] as const;
 
 type NodeProductBuildOptions = {

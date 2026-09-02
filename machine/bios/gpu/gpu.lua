@@ -1,4 +1,6 @@
 local gx_gpu<const> = {}
+local display_presets<const> = require('bmsx/gx_display_presets')
+local gx_registers<const> = require('bmsx/gx_registers')
 
 local gp0<const>: *word = 0x0801023c
 local gp1<const>: *word = 0x08010240
@@ -19,24 +21,6 @@ local pcrtc_synch2_low<const>: *word = 0x080103c4
 local pcrtc_synch2_high<const>: *word = 0x080103c8
 local pcrtc_syncv_low<const>: *word = 0x080103cc
 local pcrtc_syncv_high<const>: *word = 0x080103d0
-
-local gp1_reset<const> = 0x00000000
-local gp1_ack_irq<const> = 0x02000000
-local gp1_display_enable<const> = 0x03000000
-local gp1_dma_direction_cpu_to_gp0<const> = 0x04000002
-local gp1_display_start<const> = 0x05000000
-local gp1_horizontal_display_range<const> = 0x06c60260
-local gp1_vertical_display_range<const> = 0x07000000
-local gp1_display_mode_320x240_50hz<const> = 0x08000009
-local gp1_vram_y_address_extension<const> = 0x09000001
-local vertical_display_range_start<const> = 35
-
-local pcrtc_framebuffer_width_1024<const> = 16 << 9
-local pcrtc_psmgx16<const> = 31 << 15
-local pcrtc_enable_circuit1<const> = 1
-local pcrtc_enable_circuit2<const> = 2
-local pcrtc_constant_alpha<const> = 1 << 5
-local pcrtc_alpha_opaque<const> = 0xff << 8
 
 local gp0_fill_rectangle<const> = 0x02000000
 local gp0_draw_rectangle<const> = 0x60000000
@@ -85,44 +69,40 @@ end
 function gx_gpu.display_origin(origin_word)
 	local x<const> = origin_word & 0x0000ffff
 	local y<const> = origin_word >> 16
-	*gp1 = gp1_display_start | x | (y << 10)
+	*gp1 = gx_registers.gp1_display_start_command | x | (y << 10)
 	local framebuffer_address<const> = (y << 10) + x
 	local framebuffer_offset<const> = framebuffer_address & 0x00000fff
-	*pcrtc_dispfb1_low = (framebuffer_address >> 12) | pcrtc_framebuffer_width_1024 | pcrtc_psmgx16
+	*pcrtc_dispfb1_low = (framebuffer_address >> 12) | display_presets.pcrtc_dispfb_gx16_1024_layout_word
 	*pcrtc_dispfb1_high = (framebuffer_offset & 0x000003ff) | ((framebuffer_offset >> 10) << 11)
 end
 
-local program_pcrtc_circuit1<const> = function(signal_x, signal_y, signal_step_x, width, height)
-	*pcrtc_display1_low = signal_x | (signal_y << 12) | ((signal_step_x - 1) << 23)
-	*pcrtc_display1_high = ((width * signal_step_x) - 1) | ((height - 1) << 12)
-end
-
 function gx_gpu.reset_320x240()
-	*gp1 = gp1_reset
-	*gp1 = gp1_vram_y_address_extension
-	*gp1 = gp1_display_mode_320x240_50hz
-	current_display_size_word = 320 | (240 << 16)
-	*pcrtc_smode1_low = 0x40836504
-	*pcrtc_smode1_high = 0x00000007
-	*pcrtc_synch1_low = 0x1fc83030
-	*pcrtc_synch1_high = 0x0007f5c2
-	*pcrtc_synch2_low = 0x003484bc
-	*pcrtc_synch2_high = 0
-	*pcrtc_syncv_low = 0x02101404
-	*pcrtc_syncv_high = 0x00a90005
-	*pcrtc_smode2_low = 0
+	*gp1 = gx_registers.gp1_reset_command
+	*gp1 = gx_registers.gp1_vram_y_address_extension_command
+	*gp1 = display_presets.mode_320x240_gp1_display_mode_command
+	current_display_size_word = display_presets.mode_320x240_size_word
+	*pcrtc_smode1_low = display_presets.pal_smode1_setup_low_word
+	*pcrtc_smode1_high = display_presets.pal_smode1_high_word
+	*pcrtc_synch1_low = display_presets.pal_synch1_low_word
+	*pcrtc_synch1_high = display_presets.pal_synch1_high_word
+	*pcrtc_synch2_low = display_presets.pal_synch2_low_word
+	*pcrtc_synch2_high = display_presets.pal_synch2_high_word
+	*pcrtc_syncv_low = display_presets.mode_320x240_pcrtc_syncv_low_word
+	*pcrtc_syncv_high = display_presets.pal_syncv_high_word
+	*pcrtc_smode2_low = display_presets.mode_320x240_pcrtc_smode2_low_word
 	*pcrtc_smode2_high = 0
-	*pcrtc_smode1_low = 0x40806504
+	*pcrtc_smode1_low = display_presets.pal_smode1_run_low_word
 	gx_gpu.display_origin(0)
-	program_pcrtc_circuit1(680, 37, 4, 320, 240)
-	*gp1 = gp1_horizontal_display_range
-	*gp1 = gp1_vertical_display_range | vertical_display_range_start | ((vertical_display_range_start + 240) << 10)
-	*gp1 = gp1_dma_direction_cpu_to_gp0
+	*pcrtc_display1_low = display_presets.mode_320x240_pcrtc_display_low_word
+	*pcrtc_display1_high = display_presets.mode_320x240_pcrtc_display_high_word
+	*gp1 = display_presets.gp1_horizontal_display_range_command
+	*gp1 = display_presets.mode_320x240_gp1_vertical_range_command
+	*gp1 = gx_registers.gp1_dma_cpu_to_gp0_command
 	*gp0 = gp0_draw_mode
 	gx_gpu.draw_target(0)
 	*gp0 = gp0_mask_bit_mode
-	*gp1 = gp1_display_enable
-	current_pcrtc_enable_word = pcrtc_enable_circuit1 | pcrtc_constant_alpha | pcrtc_alpha_opaque
+	*gp1 = gx_registers.gp1_display_enable_command
+	current_pcrtc_enable_word = display_presets.pcrtc_pmode_circuit1_opaque_word
 	*pcrtc_pmode = current_pcrtc_enable_word
 end
 
@@ -133,7 +113,7 @@ function gx_gpu.prepare_supervisor(origin_word, maximum_width, maximum_height)
 	local signal_step_x<const> = (smode1_word >> 21) & 0x0000000f
 	local signal_width = maximum_width * signal_step_x
 	local height = maximum_height
-	if (*pcrtc_pmode & pcrtc_enable_circuit2) ~= 0 then
+	if (*pcrtc_pmode & gx_registers.pcrtc_pmode_circuit2_enable_word) ~= 0 then
 		local retained_signal_width<const> = (display2_extent_word & 0x00000fff) + 1
 		local retained_height<const> = ((display2_extent_word >> 12) & 0x000007ff) + 1
 		if retained_signal_width < signal_width then
@@ -147,29 +127,34 @@ function gx_gpu.prepare_supervisor(origin_word, maximum_width, maximum_height)
 	local display_left<const> = (signal_x + signal_step_x - 1) // signal_step_x
 	local display_right<const> = (signal_x + signal_width + signal_step_x - 1) // signal_step_x
 	local width<const> = display_right - display_left
-	*gp1 = gp1_vram_y_address_extension
+	*gp1 = gx_registers.gp1_vram_y_address_extension_command
 	current_display_size_word = width | (height << 16)
 	gx_gpu.display_origin(origin_word)
 	*pcrtc_display1_low = signal_x | (display2_word & 0x007ff000) | ((signal_step_x - 1) << 23)
 	*pcrtc_display1_high = (signal_width - 1) | ((height - 1) << 12)
-	*gp1 = gp1_horizontal_display_range
-	*gp1 = gp1_vertical_display_range | vertical_display_range_start | ((vertical_display_range_start + height) << 10)
-	*gp1 = gp1_dma_direction_cpu_to_gp0
+	*gp1 = display_presets.gp1_horizontal_display_range_command
+	local vertical_display_range_start<const> = display_presets.mode_320x240_gp1_vertical_range_command
+		& gx_registers.gp1_vertical_display_range_start_mask
+	*gp1 = gx_registers.gp1_vertical_display_range_command
+		| vertical_display_range_start
+		| ((vertical_display_range_start + height) << gx_registers.gp1_vertical_display_range_end_shift)
+	*gp1 = gx_registers.gp1_dma_cpu_to_gp0_command
 	*gp0 = gp0_draw_mode
 	gx_gpu.draw_target(origin_word)
 	*gp0 = gp0_mask_bit_mode
-	*gp1 = gp1_display_enable
-	current_pcrtc_enable_word = (*pcrtc_pmode & pcrtc_enable_circuit2) | pcrtc_enable_circuit1
+	*gp1 = gx_registers.gp1_display_enable_command
+	current_pcrtc_enable_word = (*pcrtc_pmode & gx_registers.pcrtc_pmode_circuit2_enable_word)
+		| gx_registers.pcrtc_pmode_circuit1_enable_word
 	return width, height
 end
 
 function gx_gpu.enable_display()
-	*gp1 = gp1_display_enable
+	*gp1 = gx_registers.gp1_display_enable_command
 	*pcrtc_pmode = current_pcrtc_enable_word
 end
 
 function gx_gpu.ack_irq()
-	*gp1 = gp1_ack_irq
+	*gp1 = gx_registers.gp1_ack_interrupt_command
 end
 
 function gx_gpu.encode_fill_rectangle(words, index, x, y, width, height, color_word)

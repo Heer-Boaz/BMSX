@@ -195,6 +195,27 @@
 	],
 	"strict_runtime_symbol_parity": [
 		{
+			"ts": "machine/ts/spec/gx/gp1.ts",
+			"cpp": [
+				"machine/cpp/spec/gx/gp1.h"
+			],
+			"reason": "gx_gp1_protocol_contract"
+		},
+		{
+			"ts": "machine/ts/spec/gx/pcrtc.ts",
+			"cpp": [
+				"machine/cpp/spec/gx/pcrtc.h"
+			],
+			"reason": "gx_pcrtc_register_protocol_and_reset_contract"
+		},
+		{
+			"ts": "machine/ts/spec/gx/display_presets.ts",
+			"cpp": [
+				"machine/cpp/spec/gx/display_presets.h"
+			],
+			"reason": "gx_raw_software_display_preset_contract"
+		},
+		{
 			"ts": "machine/ts/machine/devices/gx/gpu_display.ts",
 			"cpp": [
 				"machine/cpp/machine/devices/gx/gpu_display.h"
@@ -771,7 +792,35 @@
 			"reason": "cart_and_headless_hot_paths_must_not_allocate"
 		}
 	],
-	"strict_rpu_table_parity": [],
+	"strict_raw_word_table_parity": [
+		{
+			"ts": "machine/ts/spec/gx/display_presets.ts",
+			"cpp": "machine/cpp/spec/gx/display_presets.h",
+			"tables": [
+				"GX_GPU_DISPLAY_PRESET_256X192_PAL_WORDS",
+				"GX_GPU_DISPLAY_PRESET_256X212_PAL_WORDS",
+				"GX_GPU_DISPLAY_PRESET_256X240_PAL_WORDS",
+				"GX_GPU_DISPLAY_PRESET_320X240_PAL_WORDS",
+				"GX_GPU_DISPLAY_PRESET_368X240_PAL_WORDS",
+				"GX_GPU_DISPLAY_PRESET_512X240_PAL_WORDS",
+				"GX_GPU_DISPLAY_PRESET_640X240_PAL_WORDS",
+				"GX_GPU_DISPLAY_PRESET_640X480I_NTSC_WORDS",
+				"GX_GPU_DISPLAY_PRESET_640X448I_NTSC_WORDS",
+				"GX_GPU_DISPLAY_PRESET_640X512I_PAL_WORDS",
+				"GX_GPU_DISPLAY_TIMING_PAL_WORDS",
+				"GX_GPU_DISPLAY_TIMING_NTSC_WORDS"
+			],
+			"reason": "gx_display_preset_raw_words_must_match_exactly"
+		},
+		{
+			"ts": "machine/ts/spec/gx/pcrtc.ts",
+			"cpp": "machine/cpp/spec/gx/pcrtc.h",
+			"tables": [
+				"GX_GPU_PCRTC_RESET_CONFIG_WORDS"
+			],
+			"reason": "gx_pcrtc_hardware_reset_vector_must_match_exactly"
+		}
+	],
 	"strict_blua32_isa_parity": [
 		{
 			"ts_cop0": "machine/ts/spec/blua32/cop0.ts",
