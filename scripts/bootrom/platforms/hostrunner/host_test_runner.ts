@@ -17,6 +17,12 @@ import type { InputEventWriter } from '../../../../hosts/common/input/contracts'
 import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../../../machine/ts/spec/bmsx/io';
 import { HeadlessCaptureCoordinator } from '../headless_capture';
 import { HOST_TEST_LOADER_GLOBAL } from './host_test_cartridge';
+import {
+	createRuntimeFaultState,
+	recordSupervisorFault,
+} from '../../../../ide/runtime/fault_state';
+import { SuspendedGuestSession } from '../../../../ide/runtime/suspended_guest';
+import type { RuntimeSourceState } from '../../../../ide/runtime/sources';
 
 export interface HostTestRunnerOptions {
 	testPath: string;
@@ -24,6 +30,7 @@ export interface HostTestRunnerOptions {
 	ttlMs: number;
 	logger: (msg: string) => void;
 	runtime: Runtime;
+	sources: RuntimeSourceState;
 	input: InputEventWriter;
 	clock: HostClock;
 	capture: HeadlessCaptureCoordinator;
@@ -45,6 +52,8 @@ const GAMEPLAY_SETTLE_FRAMES = 50;
 
 export class HostTestRunner {
 	private readonly label: string;
+	private readonly fault = createRuntimeFaultState();
+	private readonly suspendedGuest: SuspendedGuestSession;
 	private readonly scheduledCommands = new Map<number, ScheduledHostCommand[]>();
 	private readonly updateArgs: Value[] = [0];
 	private loader!: Closure;
@@ -80,6 +89,7 @@ export class HostTestRunner {
 
 	constructor(private readonly options: HostTestRunnerOptions) {
 		this.label = path.basename(options.testPath);
+		this.suspendedGuest = new SuspendedGuestSession(options.runtime);
 		let resolveCompletion!: () => void;
 		let rejectCompletion!: (error: unknown) => void;
 		this.completion = new Promise((resolve, reject) => {
@@ -116,7 +126,15 @@ export class HostTestRunner {
 	private tickUnsafe(timestampMs: number): void {
 		if (this.options.runtime.machine.memory.readMappedU32LE(IO_SYS_SUPERVISOR_FAULT_SEQUENCE)
 			!== this.supervisorFaultSequence) {
-			throw new Error(`Host test '${this.label}' entered the machine fault supervisor.`);
+			const stackText = recordSupervisorFault(
+				this.fault,
+				this.options.sources,
+				this.options.runtime,
+				this.suspendedGuest,
+			);
+			const error = new Error(`Host test '${this.label}' entered the machine fault supervisor.`);
+			error.stack = `${error.name}: ${error.message}\nGuest stack:\n${stackText}`;
+			throw error;
 		}
 		if (!this.options.runtime.machine.cpu.isCartridgeExecutionActive()) {
 			return;

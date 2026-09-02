@@ -31,8 +31,16 @@ import { resolveLuaEntryModuleIndex } from '../../toolchain/ts/lua/entry_module'
 import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
 import type { LuaChunk } from '../../toolchain/ts/lua/syntax/ast';
 
-export type LuaSourceRecord = RomLuaAsset & { base_src: string; base_update_timestamp: number; module_path: string; generated: boolean };
-type PackedLuaSourceAsset = RomLuaAsset & { source_path: string; payload_id: RomImageDomain };
+export type LuaSourceRecord = RomLuaAsset & {
+	base_src: string;
+	base_update_timestamp: number;
+	module_path: string;
+	generated: boolean;
+	program_module: boolean;
+};
+type PackedLuaSourceAsset = RomLuaAsset & {
+	payload_id: RomImageDomain;
+};
 
 export type LuaSourceRegistry = {
 	records: LuaSourceRecord[];
@@ -89,13 +97,12 @@ export function buildLuaSources(
 		revision: 0,
 	};
 
-	let sourceCount = 0;
+	let programSourceCount = 0;
 	const entryCandidates: Array<{ record: LuaSourceRecord; chunk: LuaChunk }> = [];
 	for (const entry of romSource.list('lua') as PackedLuaSourceAsset[]) {
 		if (entry.payload_id !== payloadId) {
 			continue;
 		}
-		sourceCount += 1;
 		const baseEntry = cartSource.getEntry(entry.resid);
 		const src = utf8FatalDecoder.decode(romSource.getBytes(entry));
 		const baseSrc = baseEntry ? utf8FatalDecoder.decode(cartSource.getBytes(baseEntry)) : src;
@@ -105,14 +112,18 @@ export function buildLuaSources(
 		luaRecord.base_update_timestamp = entry.update_timestamp ?? 0;
 		luaRecord.module_path = toLuaModulePath(entry.source_path);
 		luaRecord.generated = ROM_GENERATED_MODULE_PATHS.includes(luaRecord.module_path);
+		luaRecord.program_module = entry.compiled_start !== undefined;
 		registerLuaSourceRecord(registry, luaRecord);
-		entryCandidates.push({
-			record: luaRecord,
-			chunk: parseLuaChunk(src, entry.source_path).chunk!,
-		});
+		if (luaRecord.program_module) {
+			programSourceCount += 1;
+			entryCandidates.push({
+				record: luaRecord,
+				chunk: parseLuaChunk(src, entry.source_path).chunk!,
+			});
+		}
 	}
-	registry.can_boot_from_source = sourceCount > 0;
-	if (sourceCount > 0) {
+	registry.can_boot_from_source = programSourceCount > 0;
+	if (programSourceCount > 0) {
 		registry.entrySourcePath = entryCandidates[resolveLuaEntryModuleIndex(entryCandidates)].record.source_path;
 		const assetEntries: RomAsset[] = [];
 		const entries = romSource.list();
@@ -138,9 +149,11 @@ export function buildLuaSources(
 			base_src: source,
 			base_update_timestamp: 0,
 			source_path: generatedSourcePath,
+			normalized_source_path: generatedSourcePath,
 			module_path: generatedModulePath,
 			update_timestamp: 0,
 			generated: true,
+			program_module: true,
 		};
 		registerLuaSourceRecord(registry, assetSymbols);
 		registerLuaSourceRecord(registry, {
@@ -150,9 +163,11 @@ export function buildLuaSources(
 			base_src: GX_DISPLAY_PRESET_MODULE_SOURCE,
 			base_update_timestamp: 0,
 			source_path: GX_DISPLAY_PRESET_SOURCE_PATH,
+			normalized_source_path: GX_DISPLAY_PRESET_SOURCE_PATH,
 			module_path: GX_DISPLAY_PRESET_MODULE_PATH,
 			update_timestamp: 0,
 			generated: true,
+			program_module: true,
 		});
 		registerLuaSourceRecord(registry, {
 			resid: GX_REGISTER_MODULE_PATH,
@@ -161,9 +176,11 @@ export function buildLuaSources(
 			base_src: GX_REGISTER_MODULE_SOURCE,
 			base_update_timestamp: 0,
 			source_path: GX_REGISTER_SOURCE_PATH,
+			normalized_source_path: GX_REGISTER_SOURCE_PATH,
 			module_path: GX_REGISTER_MODULE_PATH,
 			update_timestamp: 0,
 			generated: true,
+			program_module: true,
 		});
 		if (payloadId === 'system') {
 			registerLuaSourceRecord(registry, {
@@ -173,9 +190,11 @@ export function buildLuaSources(
 				base_src: BLUA32_FIRMWARE_MODULE_SOURCE,
 				base_update_timestamp: 0,
 				source_path: BLUA32_FIRMWARE_SOURCE_PATH,
+				normalized_source_path: BLUA32_FIRMWARE_SOURCE_PATH,
 				module_path: BLUA32_FIRMWARE_MODULE_PATH,
 				update_timestamp: 0,
 				generated: true,
+				program_module: true,
 			});
 		}
 	}

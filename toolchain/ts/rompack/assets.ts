@@ -77,7 +77,8 @@ export type RomAsset = Omit<RomTocEntry, 'id_token_lo' | 'id_token_hi'> & {
 
 export type RomLuaAsset = RomAsset & {
 	src: string;
-	normalized_source_path?: string;
+	source_path: string;
+	normalized_source_path: string;
 	update_timestamp: number;
 };
 

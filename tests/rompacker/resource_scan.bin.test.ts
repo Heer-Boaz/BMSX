@@ -15,7 +15,14 @@ import { type RomAsset } from '../../toolchain/ts/rompack/assets';
 import { loadRomAssetList } from '../../toolchain/ts/rompack/loader';
 import { layoutRomPrefix } from '../../toolchain/ts/rompack/rom_prefix_layout';
 import { SYSTEM_ROM_ASSET_OFFSET } from '../../toolchain/ts/rompack/system';
-import { buildRomBlua32Tail, compileLuaChunkBuffer, finalizeRompack, getResMetaList } from '../../scripts/rompacker/rombuilder';
+import {
+	buildRomBlua32Tail,
+	compileLuaChunkBuffer,
+	finalizeRompack,
+	generateRomAssets,
+	getResMetaList,
+	getResourcesList,
+} from '../../scripts/rompacker/rombuilder';
 
 const ROOT = join(process.cwd(), 'tmp', 'rompacker-bin-scan-test');
 
@@ -34,6 +41,25 @@ test('resource scan treats glTF buffer URIs as model-owned and keeps other .bin 
 		const binResources = resources.filter(resource => resource.type === 'bin');
 
 		assert.deepEqual(binResources.map(resource => resource.name).sort(), ['scripted', 'tiles']);
+	} finally {
+		await rm(ROOT, { recursive: true, force: true });
+	}
+});
+
+test('Lua assets retain separate module-local and workspace source paths', async () => {
+	await rm(ROOT, { recursive: true, force: true });
+	try {
+		await mkdir(ROOT, { recursive: true });
+		await writeFile(join(ROOT, 'entry.lua'), 'module<entry>\nreturn true');
+		const metadata = await getResMetaList([ROOT], {
+			domain: 'cart',
+			virtualRoot: ROOT,
+		});
+		const assets = await generateRomAssets(await getResourcesList(metadata));
+		const lua = assets.find(asset => asset.type === 'lua')!;
+
+		assert.equal(lua.source_path, 'entry.lua');
+		assert.equal(lua.normalized_source_path, 'tmp/rompacker-bin-scan-test/entry.lua');
 	} finally {
 		await rm(ROOT, { recursive: true, force: true });
 	}

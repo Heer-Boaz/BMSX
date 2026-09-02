@@ -136,12 +136,12 @@ test('BLua32-tail rebuild preserves immutable asset metadata addresses and bytes
 		const prelinkedAssetLayout = layoutBlua32PublicAssets(
 			systemLayer,
 			changed.linked.bytes.byteLength,
-			['image', 'sprite', editedSpriteBytes],
+			{ assetEdit: ['image', 'sprite', editedSpriteBytes] },
 		);
 		const largerImageAssetLayout = layoutBlua32PublicAssets(
 			systemLayer,
 			changed.linked.bytes.byteLength + 0x10000,
-			['image', 'sprite', editedSpriteBytes],
+			{ assetEdit: ['image', 'sprite', editedSpriteBytes] },
 		);
 		const prelinkedSprite = prelinkedAssetLayout.entries.find(entry => entry.resid === 'sprite')!;
 		const largerImageSprite = largerImageAssetLayout.entries.find(entry => entry.resid === 'sprite')!;
@@ -187,7 +187,7 @@ test('BLua32-tail rebuild preserves immutable asset metadata addresses and bytes
 			systemLayer,
 			changed.linked,
 			changed.diagnosticSources,
-			['image', 'sprite', editedSpriteBytes],
+			{ assetEdit: ['image', 'sprite', editedSpriteBytes] },
 		);
 		const assetEditedFont = assetEdited.index.entries.find(entry => entry.resid === 'terminal-font')!;
 		const assetEditedSprite = assetEdited.index.entries.find(entry => entry.resid === 'sprite')!;

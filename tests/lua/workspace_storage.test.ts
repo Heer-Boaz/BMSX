@@ -65,7 +65,6 @@ import {
 	workspaceState,
 } from '../../ide/workbench/workspace/state';
 import {
-	captureActiveCodeTabSource,
 	capturePendingLuaCodeTabSources,
 	markLuaCodeTabsAppliedToRuntime,
 	type LuaCodeTabSourceSnapshot,
@@ -361,9 +360,11 @@ function sourceRegistry(
 		base_src: source,
 		base_update_timestamp: 0,
 		source_path: sourcePath,
+		normalized_source_path: resolveWorkspacePath(sourcePath, projectRootPath),
 		module_path: sourcePath.endsWith('.lua') ? sourcePath.slice(0, -4).replaceAll('/', '.') : sourcePath,
 		update_timestamp: 0,
 		generated: false,
+		program_module: true,
 	});
 	return registry;
 }
@@ -532,7 +533,7 @@ test('canonical source cache keys identical resource paths by physical project p
 	});
 	workspaceEnvironment = createWorkspaceEnvironment(new MockStorage());
 
-	assert.equal(await loadWorkspaceSourceFile(workspaceEnvironment.storage, 'entry.lua', 'cart1'), 'return "slot 1"');
+	assert.equal(await loadWorkspaceSourceFile(workspaceEnvironment.storage, 'cart1/entry.lua', 'cart1'), 'return "slot 1"');
 	assert.deepEqual(requestedPaths, ['cart1/entry.lua']);
 });
 
@@ -1487,7 +1488,6 @@ test('source capture reads the live editor document only for the active code tab
 	editorTabGroup.initialize(codeTab);
 	editorDocumentState.buffer = new PieceTreeBuffer('-- editor buffer');
 	assert.equal(captureContextText(context), '-- editor buffer');
-	assert.equal(captureActiveCodeTabSource(), '-- editor buffer');
 	const resource = testResource('image.png', TEST_DOMAIN, 'image');
 	const resourceTab = {
 		id: 'resource:0\0image.png',
@@ -1523,6 +1523,23 @@ test('runtime source capture detects changed code when editor epochs collide', (
 		path: 'src/foo.lua',
 		source: '-- revision 2',
 	}]);
+});
+
+test('runtime source capture excludes source-only Lua documents', (t) => {
+	const storage = new MockStorage();
+	installOfflineWorkspace(t, storage);
+	const context = installCodeContext('tests/example_assert.lua', '-- edited test');
+	context.saveGeneration = 2;
+	context.appliedGeneration = 1;
+	const registry = sourceRegistry('-- packed test', 'offline-cart', 'tests/example_assert.lua');
+	registry.records[0].program_module = false;
+	const sources = createTestRuntimeSourceState(
+		sourceRegistry('-- system source'),
+		[registry, null],
+		TEST_DOMAIN,
+	);
+
+	assert.deepEqual(capturePendingLuaCodeTabSources(sources), []);
 });
 
 test('successful runtime update applies only captured Lua generations without touching AEM state', async (t) => {
@@ -1595,6 +1612,30 @@ test('offline canonical save remains local and replicates on reconnect', async (
 	globalThis.fetch = (input, init) => server.fetch(input, init);
 	await reconnectWorkspaceRecords(workspaceEnvironment.clock, 'offline-cart');
 	assert.equal(server.files.get(canonicalPath)!.contents, '-- saved offline');
+});
+
+test('source-only Lua saves without scheduling a BLua media rebuild', async (t) => {
+	const storage = new MockStorage();
+	installOfflineWorkspace(t, storage);
+	const registry = sourceRegistry('-- packed test', 'offline-cart', 'tests/example_assert.lua');
+	registry.records[0].program_module = false;
+	const sources = createTestRuntimeSourceState(
+		sourceRegistry('-- system source', 'machine/bios'),
+		[registry, null],
+		TEST_DOMAIN,
+	);
+
+	const programModule = await saveLuaResourceSource(
+		workspaceEnvironment.storage,
+		workspaceEnvironment.clock,
+		sources,
+		{ domain: TEST_DOMAIN, path: 'tests/example_assert.lua' },
+		'-- saved test',
+	);
+
+	assert.equal(programModule, false);
+	assert.equal(sources.cartridgeBlua32MediaDirty[TEST_DOMAIN], false);
+	assert.equal(registry.records[0].src, '-- saved test');
 });
 
 test('explicit Lua save promotes one exact canonical record without deleting manifest recovery early', async (t) => {

@@ -66,6 +66,7 @@ import {
 } from './node_tooling_options';
 import { installNodeWorkspaceBridge } from './node_workspace_bridge';
 import { RecordingLogOutput } from '../../../ide/testing/recording_log_output';
+import { createRuntimeSourceState } from '../../../ide/runtime/sources';
 
 declare const BMSX_BOOTROM_DEBUG: boolean;
 
@@ -93,14 +94,20 @@ async function main(): Promise<void> {
 
 	let slot0Rom: Uint8Array = originalSlot0Rom;
 	if (options.mode.kind === 'host-test') {
-		const [apiSource, testSource] = await Promise.all([
+		const [apiSource, testSource, testStats] = await Promise.all([
 			fs.readFile(path.resolve(HOST_TEST_API_PATH), 'utf8'),
 			fs.readFile(options.mode.path, 'utf8'),
+			fs.stat(options.mode.path),
 		]);
 		slot0Rom = await buildHostTestCartridge(
 			systemRom,
 			slot0Rom,
-			`${apiSource}\n${testSource}`,
+			{
+				sourcePath: path.relative(process.cwd(), path.resolve(options.mode.path)).split(path.sep).join('/'),
+				source: testSource,
+				updateTimestamp: testStats.mtimeMs,
+			},
+			apiSource,
 		);
 	}
 
@@ -291,6 +298,8 @@ async function main(): Promise<void> {
 				return;
 			}
 			case 'host-test': {
+				const media = await loadRomToolingMedia(systemRom, [slot0Rom, slot1Rom]);
+				const sources = createRuntimeSourceState(media.system, media.cartridgeSlots);
 				const capture = new HeadlessCaptureCoordinator(
 					videoBackend,
 					deriveHeadlessCaptureOutputDir(options.mode.path),
@@ -326,6 +335,7 @@ async function main(): Promise<void> {
 						ttlMs: options.ttlMs,
 						logger: inputLogger,
 						runtime,
+						sources,
 						input: inputHub,
 						clock,
 						capture,

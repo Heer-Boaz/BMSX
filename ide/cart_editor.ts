@@ -92,6 +92,7 @@ import { IdeCommandController } from './commands/controller';
 import { initializeNavigationState } from './navigation/navigation_history';
 import { EditorNavigationController } from './workbench/contrib/resources/navigation';
 import { BehaviorLensController } from './workbench/contrib/behavior_lens/controller';
+import { drawBehaviorLens } from './workbench/contrib/behavior_lens/render';
 import { editorChromeState } from './workbench/ui/chrome_state';
 import { getActiveTab, getActiveTabId, initializeTabs, setActiveTab } from './workbench/ui/tabs';
 import { drawResourcePanel, drawResourceViewer } from './workbench/render/resource_panel';
@@ -476,7 +477,7 @@ export class RuntimeCartEditor implements CartEditor {
 				drawResourceViewer(activeTab.resource);
 				break;
 			case 'behavior_lens':
-				this.behaviorLens.draw(activeTab.view);
+				drawBehaviorLens(activeTab.view);
 				break;
 			case 'code_editor': {
 				renderInlineWidgets();

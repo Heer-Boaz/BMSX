@@ -79,7 +79,7 @@ export async function saveLuaResourceSource(
 	sources: RuntimeSourceState,
 	identity: ResourceIdentity,
 	source: string,
-): Promise<void> {
+): Promise<boolean> {
 	const target = resolveEditableLuaSource(sources, identity);
 	const registry = target.registry;
 	const asset = target.asset;
@@ -87,10 +87,11 @@ export async function saveLuaResourceSource(
 		throw new Error(`Generated Lua source '${identity.path}' is read-only.`);
 	}
 	const sourcePath = asset.source_path;
+	const workspacePath = asset.normalized_source_path;
 	const record = await persistWorkspaceSourceFile(
 		storage,
 		clock,
-		sourcePath,
+		workspacePath,
 		source,
 		registry.projectRootPath,
 	);
@@ -99,9 +100,12 @@ export async function saveLuaResourceSource(
 	asset.base_update_timestamp = record.updatedAt;
 	asset.update_timestamp = record.updatedAt;
 	registerLuaSourceRecord(registry, asset);
-	markLuaSourceRegistryChanged(sources, registry);
-	workspaceCanonicalSourceCache.set(resolveWorkspacePath(sourcePath, registry.projectRootPath), source);
+	if (asset.program_module) {
+		markLuaSourceRegistryChanged(sources, registry);
+	}
+	workspaceCanonicalSourceCache.set(workspacePath, source);
 	deleteWorkspaceLuaSourceOverride(registry, sourcePath);
+	return asset.program_module;
 }
 
 export async function createLuaResource(
@@ -123,10 +127,11 @@ export async function createLuaResource(
 	const registry = systemSource
 		? sources.systemLuaSources
 		: resolveEditableCartLuaSources(sources);
+	const workspacePath = resolveWorkspacePath(path, registry.projectRootPath);
 	const record = await persistWorkspaceSourceFile(
 		storage,
 		clock,
-		path,
+		workspacePath,
 		contents,
 		registry.projectRootPath,
 	);
@@ -137,9 +142,11 @@ export async function createLuaResource(
 		base_src: contents,
 		base_update_timestamp: record.updatedAt,
 		source_path: path,
+		normalized_source_path: workspacePath,
 		module_path: modulePath,
 		update_timestamp: record.updatedAt,
 		generated: false,
+		program_module: true,
 	};
 	const domain = runtimeLuaSourceDomain(sources, registry);
 	registerLuaSourceRecord(registry, asset);
@@ -158,18 +165,17 @@ export async function applyWorkspaceOverridesToRegistry(
 		projectRootPath: string;
 	},
 ): Promise<Set<string>> {
-	const revision = params.registry.revision;
-	const rejectedDirtyPaths = await applyWorkspaceSourceOverrides({
+	const result = await applyWorkspaceSourceOverrides({
 		dirtyRecords: params.dirtyRecords,
 		domain: runtimeLuaSourceDomain(sources, params.registry),
 		registry: params.registry,
 		storage,
 		projectRootPath: params.projectRootPath,
 	});
-	if (params.registry.revision !== revision) {
+	if (result.programChanged) {
 		markLuaSourceRegistryChanged(sources, params.registry);
 	}
-	return rejectedDirtyPaths;
+	return result.rejectedDirtyPaths;
 }
 
 export async function applyAllWorkspaceSourceOverrides(

@@ -76,12 +76,14 @@ test('cross file rename updates a retained background model without opening an e
 		resid: 'usage.lua',
 		type: 'lua',
 		source_path: 'usage.lua',
+		normalized_source_path: 'usage.lua',
 		module_path: 'usage',
 		src: usageSource,
 		base_src: usageSource,
 		base_update_timestamp: 0,
 		update_timestamp: 0,
 		generated: false,
+		program_module: true,
 	});
 	const sources = createTestRuntimeSourceState(
 		registry,

@@ -971,6 +971,7 @@ export async function generateRomAssets(
 				}
 				const luaSourcePath = sourcePath || toWorkspaceRelativePath(res.filepath);
 				const normalizedPath = normalizeWorkspacePath(luaSourcePath);
+				const workspacePath = normalizeWorkspacePath(toWorkspaceRelativePath(res.filepath));
 				const modulePath = toLuaModulePath(normalizedPath);
 				const source = buffer.toString('utf8');
 				let compiled_buffer: Buffer;
@@ -989,6 +990,7 @@ export async function generateRomAssets(
 					buffer,
 					compiled_buffer,
 					source_path: normalizedPath,
+					normalized_source_path: workspacePath,
 					update_timestamp: res.update_timestamp,
 				});
 				break;
@@ -1189,11 +1191,13 @@ export function buildRomBlua32Tail(
 	assetList: ReadonlyArray<RomAsset>,
 	options: BuildRomBlua32TailOptions,
 ): RomBlua32Tail {
-	const luaAssets = assetList.filter(asset => asset.type === 'lua');
+	const luaProgramAssets = assetList.filter(
+		asset => asset.type === 'lua' && asset.compiled_buffer !== undefined,
+	);
 	if (options.domain === 'system') {
 		const imageOffset = SYSTEM_BLUA32_IMAGE_OFFSET;
 		const built = buildBlua32Image({
-			luaAssets,
+			luaAssets: luaProgramAssets,
 			generatedLuaModules: options.generatedLuaModules,
 			loadAddress: SYSTEM_ROM_BASE + imageOffset,
 			ramByteCount: options.ramByteCount,
@@ -1271,7 +1275,7 @@ export function buildRomBlua32Tail(
 		};
 	}
 	const built = buildBlua32Image({
-		luaAssets,
+		luaAssets: luaProgramAssets,
 		generatedLuaModules: options.generatedLuaModules,
 		loadAddress: CART_ROM_BASE + options.imageOffset,
 		ramByteCount: options.ramByteCount,

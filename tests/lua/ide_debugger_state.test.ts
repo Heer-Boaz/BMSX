@@ -54,10 +54,12 @@ function createDebuggerHarness(source: string, optLevel: 0 | 3): DebuggerHarness
 		src: source,
 		base_src: source,
 		source_path: DEBUG_SOURCE_PATH,
+		normalized_source_path: DEBUG_SOURCE_PATH,
 		module_path: DEBUG_MODULE_PATH,
 		update_timestamp: 0,
 		base_update_timestamp: 0,
 		generated: false,
+		program_module: true,
 	});
 	const sources = createTestSystemImageRuntimeSourceState(image.romBytes, registry);
 	sources.currentBlua32Media = {

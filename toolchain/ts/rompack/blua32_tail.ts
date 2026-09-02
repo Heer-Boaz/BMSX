@@ -44,13 +44,20 @@ export type RomAssetEdit = readonly [
 	payload: Uint8Array,
 ];
 
+export type Blua32PublicAssetChanges = {
+	assetEdit?: RomAssetEdit;
+	assetAdditions?: ReadonlyArray<RomAsset>;
+};
+
 export function layoutBlua32PublicAssets(
 	layer: RomSourceLayer,
 	imageByteCount: number,
-	assetEdit?: RomAssetEdit,
+	changes?: Blua32PublicAssetChanges,
 ): RomAssetPayloadLayout {
 	const header = parseCartHeader(layer.bytes);
 	const imageOffset = header.blua32ImageOffset;
+	const assetEdit = changes?.assetEdit;
+	const assetAdditions = changes?.assetAdditions;
 	const entries: RomAsset[] = [];
 	const relocatedSources: RomAsset[] = [];
 	const relocatedEntryIndices: number[] = [];
@@ -117,6 +124,13 @@ export function layoutBlua32PublicAssets(
 		relocatedSources.push(source);
 		entries.push(entry);
 	}
+	if (assetAdditions) {
+		for (let index = 0; index < assetAdditions.length; index += 1) {
+			relocatedEntryIndices.push(entries.length);
+			relocatedSources.push(assetAdditions[index]);
+			entries.push(assetAdditions[index]);
+		}
+	}
 	const layout = layoutRomAssetPayloads(relocatedSources, true, tailOffset);
 	for (let index = 0; index < layout.entries.length; index += 1) {
 		const entryIndex = relocatedEntryIndices[index];
@@ -142,19 +156,19 @@ export function buildBlua32Tail(
 	layer: RomSourceLayer<'system'>,
 	linked: LinkedSystemBlua32Image,
 	diagnosticSources: Blua32DiagnosticSourceMap | null,
-	assetEdit?: RomAssetEdit,
+	changes?: Blua32PublicAssetChanges,
 ): RomSourceLayer<'system'>;
 export function buildBlua32Tail(
 	layer: RomSourceLayer<'cart'>,
 	linked: LinkedCartBlua32Image,
 	diagnosticSources: Blua32DiagnosticSourceMap | null,
-	assetEdit?: RomAssetEdit,
+	changes?: Blua32PublicAssetChanges,
 ): RomSourceLayer<'cart'>;
 export function buildBlua32Tail(
 	layer: RomSourceLayer,
 	linked: LinkedBlua32Image,
 	diagnosticSources: Blua32DiagnosticSourceMap | null,
-	assetEdit?: RomAssetEdit,
+	changes?: Blua32PublicAssetChanges,
 ): RomSourceLayer {
 	const header = parseCartHeader(layer.bytes);
 	const imageOffset = header.blua32ImageOffset;
@@ -165,13 +179,14 @@ export function buildBlua32Tail(
 	const publicAssets = layoutBlua32PublicAssets(
 		layer,
 		linked.bytes.byteLength,
-		assetEdit,
+		changes,
 	);
 	const entries = publicAssets.entries;
+	const systemImage = linked.domain === 'system';
 	let metadataOffset = header.metadataOffset;
 	let manifestOffset = header.manifestOffset;
 	let toolingOffset = publicAssets.nextOffset;
-	if (linked.domain === 'system') {
+	if (systemImage) {
 		if (header.metadataLength !== 0) {
 			metadataOffset = toolingOffset;
 			const metadataDelta = metadataOffset - header.metadataOffset;
@@ -207,7 +222,7 @@ export function buildBlua32Tail(
 		buffer: symbolsPayload,
 		source_path: BLUA32_SYMBOLS_IMAGE_ID,
 	}];
-	if (linked.domain === 'system') {
+	if (systemImage) {
 		const biosImportsPayload = encodeBlua32BiosImports(linked.biosImports);
 		toolingAssets.push({
 			resid: BLUA32_BIOS_IMPORTS_IMAGE_ID,
@@ -299,7 +314,7 @@ export function buildBlua32Tail(
 		const range = publicAssets.ranges[index];
 		payload.set(range.buffer, range.start);
 	}
-	if (linked.domain === 'system') {
+	if (systemImage) {
 		if (header.metadataLength !== 0) {
 			payload.set(
 				layer.bytes.subarray(

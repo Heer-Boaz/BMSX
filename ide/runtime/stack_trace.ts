@@ -6,11 +6,9 @@ import {
 import type { RuntimeCpuFaultFrame } from './fault_state';
 import {
 	resolveRuntimeLuaSource,
-	runtimeSourceProjectRootPath,
 	type RuntimeSourceState,
 } from './sources';
 import type { ResourceDomain, ResourceIdentity } from '../common/resource';
-import { resolveWorkspacePath } from '../workspace/path';
 import type { ExecutionDomainId } from '../../machine/ts/spec/blua32/execution_domain';
 
 export type SourceStackTraceFrame = {
@@ -53,10 +51,7 @@ export function createLuaSourceStackTraceFrame(
 		functionName,
 		line,
 		column,
-		workspacePath: resolveWorkspacePath(
-			resource.path,
-			runtimeSourceProjectRootPath(sources, domain),
-		),
+		workspacePath: sourceRecord.normalized_source_path,
 	};
 }
 

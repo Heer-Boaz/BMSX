@@ -98,10 +98,12 @@ test('fault snapshots retain mapped runtime functions as instruction frames', ()
 		src: source,
 		base_src: source,
 		source_path: sourcePath,
+		normalized_source_path: `workspace/${sourcePath}`,
 		module_path: 'runtime_fault_state',
 		update_timestamp: 0,
 		base_update_timestamp: 0,
 		generated: false,
+		program_module: true,
 	});
 	const sources = createTestSystemImageRuntimeSourceState(image.romBytes, luaSources);
 	const fault = createRuntimeFaultState();
@@ -168,4 +170,5 @@ test('fault snapshots retain mapped runtime functions as instruction frames', ()
 	assert.equal(mixedFault.lastLuaCallStack[1].kind, 'instruction');
 	assert.equal(mixedFault.lastLuaCallStack[1].instructionAddress, codeAddress);
 	assert.deepEqual(mixedFault.faultSnapshot.resource, { domain: -1, path: sourcePath });
+	assert.match(messages.join('\n'), /workspace\/runtime_fault_state\.lua:1:1/);
 });

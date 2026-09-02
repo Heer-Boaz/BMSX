@@ -22,6 +22,7 @@ import {
 	type ModuleExportShape,
 } from './module_shape';
 import { collectLuaModuleDependencies } from '../module_graph';
+import type { LuaSourceMap } from '../source_map';
 
 export type { ConstExportValue } from './const_module_exports';
 
@@ -29,6 +30,7 @@ export type ProgramModule = {
 	path: string;
 	chunk: LuaChunk;
 	source?: string;
+	sourceMap?: LuaSourceMap;
 	linkValues?: ReadonlyMap<string, number>;
 };
 

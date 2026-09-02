@@ -12,9 +12,11 @@ function sourceRecord(path: string, source: string): LuaSourceRecord {
 		base_src: source,
 		base_update_timestamp: 0,
 		source_path: path,
+		normalized_source_path: path,
 		module_path: path.slice(0, -4),
 		update_timestamp: 0,
 		generated: false,
+		program_module: true,
 	};
 }
 

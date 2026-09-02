@@ -789,6 +789,46 @@ Owners:
 The ROM package and BLua32 image use the current wire records only. There is no
 old-format reader and no decode path for obsolete records.
 
+A public `lua` TOC entry owns a source resource. `source_path` is its stable
+domain-local identity and `normalized_source_path` is its canonical
+workspace-relative file location; the producer writes both rather than asking
+navigation or persistence consumers to guess whether a module came from the
+project root or a shared library root. Its physical compiled-payload
+range separately determines whether that source participates as a BLua program
+module. Source-only Lua entries therefore remain ordinary retained IDE
+resources, semantic-project inputs and navigation targets, but are not entry
+candidates and are never admitted to executable rebuilds. The one
+`LuaSourceRegistry` records that distinction as `program_module`; tooling does
+not create a second test-source registry or infer execution from a filename.
+Their edits advance the semantic source revision without dirtying BLua media
+or entering Hot Resume. Newly authored Lua modules explicitly enter the
+program, while a packer that adds a source-only document omits the compiled
+payload.
+
+Generated Lua may compose authored whole-line fragments behind generated glue.
+The compiler analyzes the generated coordinates, then its source-map owner
+projects compile diagnostics and mapped debug ranges, inline callsites,
+statement/resume points and local-slot metadata back to the authored resource.
+A range spanning generated glue stays generated rather than inventing a
+cross-file source span. The diagnostic directory maps each authored range path
+to the same packed source bytes; the generated document is not the navigation
+owner for a mapped fragment. This is
+the same ownership split used by production build tooling: esbuild retains
+ordered generated-to-original mappings and resolves them at the diagnostic
+boundary ([source-map implementation](https://github.com/evanw/esbuild/blob/f6058f8364fe7ab91ca57a83e02577ed74c9cae4/internal/sourcemap/sourcemap.go#L19-L56)),
+while VS Code test items retain an immutable URI as their source identity
+([test item](https://github.com/microsoft/vscode/blob/f6f7c31e6cd2541fdd901f045a3418a06f2c3aca/src/vs/workbench/api/common/extHostTestItem.ts#L127-L162)).
+
+The host-test packer uses those two representations directly. It adds the
+selected `_assert.lua` as one source-only cart resource with its authored
+`source_path`, and compiles the existing deferred loader with a source mapping
+over only the test fragment. Calling the loader after cart settle therefore
+keeps the existing guest-test timing, while assertions and faults resolve to
+the `_assert.lua` module path and its exact authored line and column. Requiring
+the test as an independent module would be incorrect: BLua `require` selects
+static startup modules and would run the test before the host-owned settle
+phase.
+
 `Blua32ImageLayout` is a tooling representation for inspection, disassembly,
 linking, and hot-resume relocation. It is not part of the runtime execution
 address space or either CPU implementation.

@@ -76,10 +76,6 @@ export function storeCodeTabContext(context: CodeTabContext): void {
 	context.executionStopRow = runtimeErrorState.executionStopRow;
 }
 
-export function captureActiveCodeTabSource(): string {
-	return getTextSnapshot(editorDocumentState.buffer);
-}
-
 export function capturePendingLuaCodeTabSources(sources: RuntimeSourceState): LuaCodeTabSourceSnapshot[] {
 	const snapshots: LuaCodeTabSourceSnapshot[] = [];
 	for (const context of getCodeTabContexts()) {
@@ -91,6 +87,9 @@ export function capturePendingLuaCodeTabSources(sources: RuntimeSourceState): Lu
 		}
 		const source = getTextSnapshot(context.buffer);
 		const match = resolveRuntimeLuaSource(sources, context.resource)!;
+		if (!match.record.program_module) {
+			continue;
+		}
 		const installedSources = match.domain === SYSTEM_RESOURCE_DOMAIN
 			? sources.systemInstalledBlua32Sources
 			: sources.cartridgeSlots[match.domain]!.installedBlua32Sources;

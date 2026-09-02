@@ -1,6 +1,9 @@
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import { showEditorMessage, showEditorWarningBanner } from '../../../common/feedback_state';
-import type { EditorDocumentMode } from '../../../editor/editing/document_state';
+import {
+	editorDocumentState,
+	type EditorDocumentMode,
+} from '../../../editor/editing/document_state';
 import type { CodeTabContext } from './model';
 import type { RuntimeResource } from '../../../common/resource';
 import * as constants from '../../../common/constants';
@@ -17,7 +20,6 @@ import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import { computeResourceTabTitle } from '../tab/titles';
 import { setActiveTab } from '../tabs';
 import {
-	captureActiveCodeTabSource,
 	commitActiveCodeTabSave,
 	setActiveCodeTabAppliedGeneration,
 	type CodeTabSelection,
@@ -38,6 +40,7 @@ import { requestWorkspaceAutosave } from '../../workspace/storage';
 import { WorkspaceAutosaveChange } from '../../workspace/models';
 import type { HostClock } from '../../../../hosts/common/clock';
 import type { KeyValueStorage } from '../../../workspace/key_value_storage';
+import { getTextSnapshot } from '../../../editor/text/source_text';
 
 function applyCodeTabResource(context: CodeTabContext, resource: RuntimeResource, mode: EditorDocumentMode): void {
 	context.resource = resource;
@@ -63,9 +66,10 @@ async function retainAemCodeTab(
 	let context = getCodeTabContextById(tabId);
 	if (!context) {
 		const projectRootPath = runtimeSourceProjectRootPath(sources, resource.domain);
+		const workspacePath = resolveWorkspacePath(resource.path, projectRootPath);
 		const source = await loadWorkspaceSourceFile(
 			storage,
-			resource.path,
+			workspacePath,
 			projectRootPath,
 		);
 		if (source === null) {
@@ -151,13 +155,14 @@ export async function save(
 	runtime: Runtime,
 ): Promise<void> {
 	const context = getActiveCodeTabContext();
-	const source = captureActiveCodeTabSource();
+	const source = getTextSnapshot(editorDocumentState.buffer);
 	const targetPath = context.resource.path;
 	const previousAppliedGeneration = context.appliedGeneration;
+	let savedLuaProgramModule = false;
 	try {
 		switch (context.mode) {
 			case 'lua':
-				await saveLuaResourceSource(
+				savedLuaProgramModule = await saveLuaResourceSource(
 					storage,
 					clock,
 					sources,
@@ -170,14 +175,15 @@ export async function save(
 					sources,
 					context.resource.domain,
 				);
+				const workspacePath = resolveWorkspacePath(targetPath, projectRootPath);
 				await persistWorkspaceSourceFile(
 					storage,
 					clock,
-					targetPath,
+					workspacePath,
 					source,
 					projectRootPath,
 				);
-				workspaceCanonicalSourceCache.set(resolveWorkspacePath(targetPath, projectRootPath), source);
+				workspaceCanonicalSourceCache.set(workspacePath, source);
 				break;
 			}
 		}
@@ -185,8 +191,14 @@ export async function save(
 		requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
 		switch (context.mode) {
 			case 'lua':
-				setContextRuntimeSyncState(context, 'runtime_update_pending', null);
-				showEditorMessage(`${context.title} saved (runtime update pending)`, constants.COLOR_STATUS_SUCCESS, 2.5);
+				if (savedLuaProgramModule) {
+					setContextRuntimeSyncState(context, 'runtime_update_pending', null);
+					showEditorMessage(`${context.title} saved (runtime update pending)`, constants.COLOR_STATUS_SUCCESS, 2.5);
+				} else {
+					setActiveCodeTabAppliedGeneration(context, context.saveGeneration);
+					setContextRuntimeSyncState(context, 'synced', null);
+					showEditorMessage(`${context.title} saved`, constants.COLOR_STATUS_SUCCESS, 2.5);
+				}
 				return;
 			case 'aem':
 				try {

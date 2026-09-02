@@ -119,6 +119,9 @@ function buildProgramSources(
 	const seen = new Set<string>();
 	for (const registry of registries) {
 		for (const asset of registry.records) {
+			if (!asset.program_module) {
+				continue;
+			}
 			const key = asset.module_path;
 			if (seen.has(key)) {
 				continue;
@@ -301,7 +304,7 @@ export function buildBlua32Media(
 		const publicAssets = layoutBlua32PublicAssets(
 			sources.systemRom,
 			installedSystem.layout.bytes.byteLength,
-			assetEdit,
+			{ assetEdit },
 		);
 		const programSources = prepareRegistryProgramSources(
 			systemRegistry,
@@ -359,7 +362,7 @@ export function buildBlua32Media(
 		const compileAssets = layoutBlua32PublicAssets(
 			cartridge.rom,
 			installed.layout.bytes.byteLength,
-			assetEdit,
+			{ assetEdit },
 		);
 		const programSources = prepareRegistryProgramSources(
 			cartridge.luaSources,
@@ -394,7 +397,7 @@ export function buildBlua32Media(
 		const publicAssets = layoutBlua32PublicAssets(
 			cartridge.rom,
 			linked.bytes.byteLength,
-			assetEdit,
+			{ assetEdit },
 		);
 		applyLinkedAssetModule(
 			cartObject,
@@ -436,9 +439,11 @@ export function layoutBlua32MediaInstallation(
 			sources.systemRom,
 			rebuilt.system.linked,
 			rebuilt.system.diagnosticSources,
-			assetRevision && assetRevision[0] === SYSTEM_RESOURCE_DOMAIN
-				? assetRevision[1]
-				: undefined,
+			{
+				assetEdit: assetRevision && assetRevision[0] === SYSTEM_RESOURCE_DOMAIN
+					? assetRevision[1]
+					: undefined,
+			},
 		);
 	}
 	for (let slot = 0; slot < rebuilt.cartridgeSlots.length; slot += 1) {
@@ -448,9 +453,11 @@ export function layoutBlua32MediaInstallation(
 				sources.cartridgeSlots[slot]!.rom,
 				image.linked,
 				image.diagnosticSources,
-				assetRevision && assetRevision[0] === slot
-					? assetRevision[1]
-					: undefined,
+				{
+					assetEdit: assetRevision && assetRevision[0] === slot
+						? assetRevision[1]
+						: undefined,
+				},
 			);
 		}
 	}

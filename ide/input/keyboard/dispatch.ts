@@ -21,6 +21,10 @@ import type { HostClock } from '../../../hosts/common/clock';
 import type { MicrotaskQueue } from '../../common/microtask_queue';
 import type { KeyValueStorage } from '../../workspace/key_value_storage';
 import { handleWorkbenchTabInput } from '../../workbench/input/keyboard/tab_input';
+import {
+	handleBehaviorLensGamepadInput,
+	handleBehaviorLensKeyboardInput,
+} from '../../workbench/contrib/behavior_lens/keyboard';
 
 export function handleEditorInput(
 	playerInput: PlayerInput,
@@ -50,8 +54,8 @@ export function handleEditorInput(
 			handleResourceViewerInput(playerInput, activeTab.resource);
 			return;
 		case 'behavior_lens':
-			if (!editor.behaviorLens.handleKeyboard(activeTab.view, playerInput)) {
-				editor.behaviorLens.handleGamepad(activeTab.view, playerInput);
+			if (!handleBehaviorLensKeyboardInput(activeTab.view, playerInput, editor.behaviorLens)) {
+				handleBehaviorLensGamepadInput(activeTab.view, playerInput, editor.behaviorLens);
 			}
 			return;
 		case 'code_editor':

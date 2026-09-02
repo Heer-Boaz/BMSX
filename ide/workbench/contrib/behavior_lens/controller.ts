@@ -1,18 +1,15 @@
-import type { PlayerInput } from '../../../../hosts/common/input/player';
 import type { PointerSnapshot } from '../../../common/models';
 import { resourceIdentityKey } from '../../../common/resource';
 import { editorDocumentState } from '../../../editor/editing/document_state';
 import { getOrCreateSemanticProject } from '../../../editor/contrib/intellisense/semantic/workspace/state';
 import { getTextSnapshot } from '../../../editor/text/source_text';
 import type { RuntimeSourceState } from '../../../runtime/sources';
-import { captureActiveCodeTabSource } from '../../ui/code_tab/activation';
 import { getActiveCodeTabContext, getCodeTabContextById } from '../../ui/code_tab/contexts';
 import type { BehaviorLensTabId } from '../../ui/tab/id';
 import { editorTabGroup } from '../../ui/tab/group_model';
 import { setActiveTab } from '../../ui/tabs';
 import type { EditorNavigationController } from '../resources/navigation';
 import type { ResourcePanelController } from '../resources/panel/controller';
-import { handleBehaviorLensGamepadInput, handleBehaviorLensKeyboardInput } from './keyboard';
 import {
 	createBehaviorLensLayout,
 	installBehaviorLensDocument,
@@ -29,7 +26,6 @@ import {
 } from './navigation';
 import { BehaviorLensPointerResult, handleBehaviorLensPointerInput } from './pointer';
 import { buildBehaviorSourceDocument } from './recognizer';
-import { drawBehaviorLens } from './render';
 import type { BehaviorSourceDocument } from './model';
 import type { BehaviorLensViewState } from './view_model';
 
@@ -45,7 +41,7 @@ export class BehaviorLensController {
 
 	public openActiveDocument(): void {
 		const context = getActiveCodeTabContext();
-		const source = captureActiveCodeTabSource();
+		const source = getTextSnapshot(editorDocumentState.buffer);
 		const sourceVersion = context.buffer.version;
 		const sourceLine = editorDocumentState.cursorRow + 1;
 		const sourceColumn = editorDocumentState.cursorColumn + 1;
@@ -95,18 +91,6 @@ export class BehaviorLensController {
 		setBehaviorLensSourcePosition(view, view.resource.path, sourceLine, sourceColumn);
 		prepareBehaviorLensLayout(view);
 		finishBehaviorLensNavigation(view);
-	}
-
-	public draw(view: BehaviorLensViewState): void {
-		drawBehaviorLens(view);
-	}
-
-	public handleKeyboard(view: BehaviorLensViewState, playerInput: PlayerInput): boolean {
-		return handleBehaviorLensKeyboardInput(view, playerInput, this);
-	}
-
-	public handleGamepad(view: BehaviorLensViewState, playerInput: PlayerInput): boolean {
-		return handleBehaviorLensGamepadInput(view, playerInput, this);
 	}
 
 	public handlePointer(

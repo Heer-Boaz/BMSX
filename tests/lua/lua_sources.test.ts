@@ -95,8 +95,11 @@ function luaEntry(resid: string, sourcePath: string, payloadId: RomImageDomain, 
 		resid,
 		type: 'lua',
 		source_path: sourcePath,
+		normalized_source_path: sourcePath,
 		payload_id: payloadId,
 		update_timestamp: updateTimestamp,
+		compiled_start: 1,
+		compiled_end: 2,
 	};
 }
 
@@ -119,8 +122,10 @@ test('buildLuaSources registers real Lua assets in one pass', () => {
 	assert.equal(record.src, 'module<entry>\nreturn 2');
 	assert.equal(record.base_src, 'module<entry>\nreturn 1');
 	assert.equal(record.module_path, 'cart');
+	assert.equal(record.normalized_source_path, 'cart.lua');
 	assert.equal(record.update_timestamp, 22);
 	assert.equal(record.generated, false);
+	assert.equal(record.program_module, true);
 	assert.equal(registry.module2lua[ROM_ASSET_SYMBOL_MODULE_PATH].generated, true);
 	const displayPresets = registry.module2lua[GX_DISPLAY_PRESET_MODULE_PATH];
 	assert.equal(displayPresets.source_path, GX_DISPLAY_PRESET_SOURCE_PATH);
@@ -136,6 +141,32 @@ test('buildLuaSources registers real Lua assets in one pass', () => {
 	assert.equal(registry.path2lua[GX_REGISTER_SOURCE_PATH], gxRegisters);
 	assert.equal(registry.module2lua.cart, record);
 	assert.equal(registry.path2lua['kernel/interrupts.lua'], undefined);
+});
+
+test('buildLuaSources retains source-only Lua without admitting it to the program', () => {
+	const entry = luaEntry('main', 'cart.lua', 'cart', 11);
+	const testSource: RomAsset = {
+		resid: '__test_source__',
+		type: 'lua',
+		source_path: 'tests/carts/test/cart_assert.lua',
+		normalized_source_path: 'tests/carts/test/cart_assert.lua',
+		payload_id: 'cart',
+		update_timestamp: 12,
+	};
+	const source = new TestRomSource([entry, testSource], {
+		main: 'module<entry>\nreturn 1',
+		__test_source__: '__bmsx_host_test = {}',
+	});
+
+	const registry = buildLuaSources(source, source, makeIndex([entry, testSource]), 'cart');
+	const retained = registry.path2lua['tests/carts/test/cart_assert.lua'];
+
+	assert.equal(registry.can_boot_from_source, true);
+	assert.equal(retained.program_module, false);
+	assert.equal(retained.src, '__bmsx_host_test = {}');
+	assert.equal(retained.normalized_source_path, 'tests/carts/test/cart_assert.lua');
+	assert.equal(registry.module2lua['tests/carts/test/cart_assert'], retained);
+	assert.equal(registry.entrySourcePath, 'cart.lua');
 });
 
 test('release BLua32 images do not synthesize editable Lua source records', () => {

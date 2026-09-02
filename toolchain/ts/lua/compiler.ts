@@ -126,6 +126,11 @@ import {
 	buildProgramResumePoints,
 	buildProgramStatementPoints,
 } from './compiler/execution_points';
+import {
+	mapLuaSourcePosition,
+	mapProgramMetadataSourceRanges,
+	type LuaSourceMap,
+} from './compiler/source_map';
 
 export type ProgramCompileDomain = 'cart' | 'system';
 
@@ -251,6 +256,7 @@ export const isLuaCompileError = (value: unknown): value is LuaCompileError =>
 type CompileOptionsBase = {
 	optLevel?: OptimizationLevel;
 	entrySource?: string;
+	entrySourceMap?: LuaSourceMap;
 };
 
 type SystemCompileOptions = CompileOptionsBase & {
@@ -5781,15 +5787,26 @@ const buildDeclarationHint = (identifiers: ReadonlyArray<string>, method: LuaIde
 const buildAssignmentHint = (path: ReadonlyArray<string>): string =>
 	`assign:${buildNamePath(path)}`;
 
-const extractCompileErrorMessage = (error: unknown, path: string): string => {
+const toCompileError = (
+	error: unknown,
+	path: string,
+	stage: CompileError['stage'],
+	sourceMaps: ReadonlyMap<string, LuaSourceMap>,
+): CompileError => {
 	if (error instanceof LuaSyntaxError) {
-		const location = error.path === path
-			? `${error.line}:${error.column}`
-			: `${error.path}:${error.line}:${error.column}`;
-		return `${location}: ${error.message}`;
+		const mapped = mapLuaSourcePosition(
+			sourceMaps,
+			error.path,
+			{ line: error.line, column: error.column },
+		);
+		return {
+			path: mapped.displayPath,
+			stage,
+			message: `${mapped.line}:${mapped.column}: ${error.message}`,
+		};
 	}
 	if (error instanceof Error) {
-		return error.message;
+		return { path, stage, message: error.message };
 	}
 	throw new Error(`[ProgramCompiler] Unexpected compile failure for ${path}.`);
 };
@@ -5852,6 +5869,9 @@ function canonicalizeProgramModules(modules: ReadonlyArray<ProgramModule>, label
 		if (module.source !== undefined) {
 			canonicalModule.source = module.source;
 		}
+		if (module.sourceMap !== undefined) {
+			canonicalModule.sourceMap = module.sourceMap;
+		}
 		if (module.linkValues) {
 			canonicalModule.linkValues = module.linkValues;
 		}
@@ -5887,7 +5907,11 @@ function buildCompilerSemanticFrontend(
 	});
 }
 
-function collectSemanticCompileErrors(frontend: LuaSemanticFrontend, entryPath: string): CompileError[] {
+function collectSemanticCompileErrors(
+	frontend: LuaSemanticFrontend,
+	entryPath: string,
+	sourceMaps: ReadonlyMap<string, LuaSourceMap>,
+): CompileError[] {
 	const compileErrors: CompileError[] = [];
 	const files = frontend.snapshot.files;
 	for (let fileIndex = 0; fileIndex < files.length; fileIndex += 1) {
@@ -5899,10 +5923,15 @@ function collectSemanticCompileErrors(frontend: LuaSemanticFrontend, entryPath: 
 		const stage: CompileError['stage'] = path === entryPath ? 'entry' : 'module';
 		for (let diagnosticIndex = 0; diagnosticIndex < file.diagnostics.length; diagnosticIndex += 1) {
 			const diagnostic = file.diagnostics[diagnosticIndex];
-			compileErrors.push({
+			const mapped = mapLuaSourcePosition(
+				sourceMaps,
 				path,
+				{ line: diagnostic.row + 1, column: diagnostic.startColumn + 1 },
+			);
+			compileErrors.push({
+				path: mapped.displayPath,
 				stage,
-				message: `${diagnostic.row + 1}:${diagnostic.startColumn + 1}: ${diagnostic.message}`,
+				message: `${mapped.line}:${mapped.column}: ${diagnostic.message}`,
 			});
 		}
 	}
@@ -6109,9 +6138,19 @@ export function compileLuaChunkToProgram(
 		? 'system'
 		: 'cart';
 	const canonicalModules = canonicalizeProgramModules(modules, 'program');
+	const sourceMaps = new Map<string, LuaSourceMap>();
+	if (options.entrySourceMap !== undefined) {
+		sourceMaps.set(options.entrySourceMap.generatedPath, options.entrySourceMap);
+	}
+	for (let index = 0; index < canonicalModules.length; index += 1) {
+		const sourceMap = canonicalModules[index].sourceMap;
+		if (sourceMap !== undefined) {
+			sourceMaps.set(sourceMap.generatedPath, sourceMap);
+		}
+	}
 	const frontend = buildCompilerSemanticFrontend(chunk, canonicalModules, options);
 	const moduleCompileContext = buildModuleCompileContext(canonicalModules, frontend);
-	const semanticErrors = collectSemanticCompileErrors(frontend, chunk.range.path);
+	const semanticErrors = collectSemanticCompileErrors(frontend, chunk.range.path, sourceMaps);
 	if (semanticErrors.length > 0) {
 		throw new Error(buildCompileFailureMessage(semanticErrors));
 	}
@@ -6119,11 +6158,7 @@ export function compileLuaChunkToProgram(
 	try {
 		validateInitParticipantPlacement(chunk);
 	} catch (error) {
-		compileErrors.push({
-			path: chunk.range.path,
-			stage: 'entry',
-			message: extractCompileErrorMessage(error, chunk.range.path),
-		});
+		compileErrors.push(toCompileError(error, chunk.range.path, 'entry', sourceMaps));
 	}
 	for (let index = 0; index < canonicalModules.length; index += 1) {
 		const module = canonicalModules[index];
@@ -6134,11 +6169,7 @@ export function compileLuaChunkToProgram(
 				module.chunk.constModule || (moduleInfo !== undefined && moduleInfo.constModule),
 			);
 		} catch (error) {
-			compileErrors.push({
-				path: module.path,
-				stage: 'module',
-				message: extractCompileErrorMessage(error, module.path),
-			});
+			compileErrors.push(toCompileError(error, module.path, 'module', sourceMaps));
 		}
 	}
 	if (compileErrors.length > 0) {
@@ -6177,11 +6208,7 @@ export function compileLuaChunkToProgram(
 			builder.compileStaticModuleScope(module.chunk);
 			builder.compileStaticStorage(collectStaticStorageDeclarations(module.chunk, frontend.getFile(module.path)));
 		} catch (error) {
-			compileErrors.push({
-				path: module.path,
-				stage: 'module',
-				message: extractCompileErrorMessage(error, module.path),
-			});
+			compileErrors.push(toCompileError(error, module.path, 'module', sourceMaps));
 		}
 	}
 	for (let index = 0; index < canonicalModules.length; index += 1) {
@@ -6220,11 +6247,7 @@ export function compileLuaChunkToProgram(
 				}
 			}
 		} catch (error) {
-			compileErrors.push({
-				path: module.path,
-				stage: 'module',
-				message: extractCompileErrorMessage(error, module.path),
-			});
+			compileErrors.push(toCompileError(error, module.path, 'module', sourceMaps));
 		}
 	}
 	if (compileErrors.length > 0) {
@@ -6263,11 +6286,7 @@ export function compileLuaChunkToProgram(
 			staticClosure: false,
 		}, entryCode, entryRanges, entryBuilder.getInlineCallSites(), entryConstRelocs, entryBuilder.getStatementPoints(), entryBuilder.getResumePoints(), entryLocalSlots, entryBuilder.getUpvalueNames(), entryProtoId, 'entry', entryInstructionSet);
 	} catch (error) {
-		compileErrors.push({
-			path: chunk.range.path,
-			stage: 'entry',
-			message: extractCompileErrorMessage(error, chunk.range.path),
-		});
+		compileErrors.push(toCompileError(error, chunk.range.path, 'entry', sourceMaps));
 	}
 	for (let i = 0; i < canonicalModules.length; i += 1) {
 		const module = canonicalModules[i];
@@ -6305,11 +6324,7 @@ export function compileLuaChunkToProgram(
 			}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), localSlots, builder.getUpvalueNames(), moduleProtoId, 'module', instructionSet);
 			programBuilder.recordModuleProto(module.path, protoIndex);
 		} catch (error) {
-			compileErrors.push({
-				path: module.path,
-				stage: 'module',
-				message: extractCompileErrorMessage(error, module.path),
-			});
+			compileErrors.push(toCompileError(error, module.path, 'module', sourceMaps));
 		}
 	}
 	if (compileErrors.length > 0) {
@@ -6347,7 +6362,7 @@ export function compileLuaChunkToProgram(
 	);
 	const {
 		program,
-		metadata,
+		metadata: generatedMetadata,
 		imageConstRelocs,
 		biosFunctionConstRelocs,
 		constValueRelocs,
@@ -6358,6 +6373,7 @@ export function compileLuaChunkToProgram(
 		rodataSymbols,
 		staticModulePaths,
 	} = programBuilder.buildProgram(initParticipants);
+	const metadata = mapProgramMetadataSourceRanges(generatedMetadata, sourceMaps);
 	if (programDomain === 'system') {
 		return {
 			domain: 'system',

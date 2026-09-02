@@ -95,6 +95,9 @@ function indexInstalledBlua32Sources(registry: LuaSourceRegistry): Map<string, s
 	const sourceByPath = new Map<string, string>();
 	for (let index = 0; index < registry.records.length; index += 1) {
 		const record = registry.records[index];
+		if (!record.program_module) {
+			continue;
+		}
 		sourceByPath.set(record.module_path, record.src);
 	}
 	return sourceByPath;
@@ -308,12 +311,11 @@ export function installRuntimeRomLayers(
 export function runtimeLuaSourceRegistry(
 	state: RuntimeSourceState,
 	domain: ResourceDomain,
-): LuaSourceRegistry | null {
+): LuaSourceRegistry | undefined {
 	if (domain === SYSTEM_RESOURCE_DOMAIN) {
 		return state.systemLuaSources;
 	}
-	const cartridge = state.cartridgeSlots[domain];
-	return cartridge === null ? null : cartridge.luaSources;
+	return state.cartridgeSlots[domain]?.luaSources;
 }
 
 export function runtimeSourceProjectRootPath(
@@ -360,7 +362,7 @@ export function resolveRuntimeLuaSource(
 	identity: ResourceIdentity,
 ): RuntimeLuaSourceMatch | null {
 	const registry = runtimeLuaSourceRegistry(state, identity.domain);
-	if (registry === null) {
+	if (registry === undefined) {
 		return null;
 	}
 	const record = resolveLuaSourceRecord(registry, identity.path);

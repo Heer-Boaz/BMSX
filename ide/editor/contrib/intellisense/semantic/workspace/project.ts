@@ -30,7 +30,7 @@ export class EditorLuaSemanticProject {
 	private readonly workspace = new LuaSemanticWorkspace();
 	private readonly documentPaths = new Set<string>();
 	private basePaths: ReadonlySet<string> = new Set();
-	private primaryRegistry: LuaSourceRegistry | null = null;
+	private primaryRegistry: LuaSourceRegistry | undefined;
 	private primaryRevision = -1;
 	private systemRegistry: LuaSourceRegistry | null = null;
 	private systemRevision = -1;
@@ -41,14 +41,14 @@ export class EditorLuaSemanticProject {
 		const primaryRegistry = runtimeLuaSourceRegistry(sources, this.domain);
 		const systemRegistry = sources.systemLuaSources;
 		if (this.primaryRegistry === primaryRegistry
-			&& (primaryRegistry === null || this.primaryRevision === primaryRegistry.revision)
+			&& (primaryRegistry === undefined || this.primaryRevision === primaryRegistry.revision)
 			&& this.systemRegistry === systemRegistry
 			&& this.systemRevision === systemRegistry.revision) {
 			return;
 		}
 
 		const registries: LuaSourceRegistry[] = [];
-		if (this.domain !== SYSTEM_RESOURCE_DOMAIN && primaryRegistry !== null) {
+		if (this.domain !== SYSTEM_RESOURCE_DOMAIN && primaryRegistry !== undefined) {
 			registries.push(primaryRegistry);
 		}
 		registries.push(systemRegistry);
@@ -83,7 +83,7 @@ export class EditorLuaSemanticProject {
 		this.workspace.updateFiles(changedAnalyses, removedPaths);
 		this.basePaths = nextBasePaths;
 		this.primaryRegistry = primaryRegistry;
-		this.primaryRevision = primaryRegistry === null ? -1 : primaryRegistry.revision;
+		this.primaryRevision = primaryRegistry === undefined ? -1 : primaryRegistry.revision;
 		this.systemRegistry = systemRegistry;
 		this.systemRevision = systemRegistry.revision;
 	}

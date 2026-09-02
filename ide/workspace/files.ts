@@ -15,7 +15,7 @@ import {
 	writeWorkspaceRecord,
 	type WorkspaceRecord,
 } from './records';
-import { joinWorkspacePaths, resolveWorkspacePath, stripProjectRootPrefix } from './path';
+import { joinWorkspacePaths, stripProjectRootPrefix } from './path';
 import type { ResourceDomain } from '../common/resource';
 
 export { joinWorkspacePaths } from './path';
@@ -57,16 +57,15 @@ export function readWorkspaceLuaSourceText(registry: LuaSourceRegistry, record: 
 export async function persistWorkspaceSourceFile(
 	storage: KeyValueStorage,
 	clock: HostClock,
-	path: string,
+	workspacePath: string,
 	source: string,
 	projectRootPath: string,
 ): Promise<WorkspaceRecord> {
-	const relativePath = resolveWorkspacePath(path, projectRootPath);
 	const record = createWorkspaceRecord(clock, source);
 	await writeWorkspaceRecord(
 		storage,
 		projectRootPath,
-		relativePath,
+		workspacePath,
 		record,
 	);
 	return record;
@@ -74,23 +73,22 @@ export async function persistWorkspaceSourceFile(
 
 export async function loadWorkspaceSourceFile(
 	storage: KeyValueStorage,
-	path: string,
+	workspacePath: string,
 	projectRootPath: string,
 ): Promise<string | null> {
-	const relativePath = resolveWorkspacePath(path, projectRootPath);
-	const cached = workspaceCanonicalSourceCache.get(relativePath);
+	const cached = workspaceCanonicalSourceCache.get(workspacePath);
 	if (cached !== undefined) {
 		return cached;
 	}
 	const record = await readWorkspaceRecord(
 		storage,
 		projectRootPath,
-		relativePath,
+		workspacePath,
 	);
 	if (!record) {
 		return null;
 	}
-	workspaceCanonicalSourceCache.set(relativePath, record.contents);
+	workspaceCanonicalSourceCache.set(workspacePath, record.contents);
 	return record.contents;
 }
 
@@ -100,7 +98,7 @@ export async function applyWorkspaceSourceOverrides(params: {
 	registry: LuaSourceRegistry;
 	storage: KeyValueStorage;
 	projectRootPath: string;
-}): Promise<Set<string>> {
+}): Promise<{ rejectedDirtyPaths: Set<string>; programChanged: boolean }> {
 	const rejectedDirtyPaths = new Set<string>();
 	const registry = params.registry;
 	const root = params.projectRootPath;
@@ -110,14 +108,14 @@ export async function applyWorkspaceSourceOverrides(params: {
 	const canonicalRecords = new Array<WorkspaceRecord | null>(records.length);
 	const reads: Promise<void>[] = [];
 	let changed = false;
+	let programChanged = false;
 
 	for (let index = 0; index < records.length; index += 1) {
 		const asset = records[index];
 		if (asset.generated) {
 			continue;
 		}
-		const filePath = asset.source_path;
-		const canonicalPath = resolveWorkspacePath(filePath, root);
+		const canonicalPath = asset.normalized_source_path;
 		canonicalPaths[index] = canonicalPath;
 		reads.push(readWorkspaceRecord(
 			params.storage,
@@ -164,6 +162,9 @@ export async function applyWorkspaceSourceOverrides(params: {
 		}
 		if (asset.src !== winnerSource) {
 			changed = true;
+			if (asset.program_module) {
+				programChanged = true;
+			}
 		}
 		asset.src = winnerSource;
 		asset.update_timestamp = winnerUpdatedAt;
@@ -183,5 +184,5 @@ export async function applyWorkspaceSourceOverrides(params: {
 	if (changed && registry.revision === revision) {
 		registry.revision += 1;
 	}
-	return rejectedDirtyPaths;
+	return { rejectedDirtyPaths, programChanged };
 }
