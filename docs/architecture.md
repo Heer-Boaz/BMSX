@@ -3551,14 +3551,15 @@ is restored with the registerfile but is not gameplay state.
 `SYSTEM_ROM`, not a distinct layer below another firmware abstraction and not
 emulator runtime code. Its source tree follows the program's actual owners:
 
-- root `main.lua` owns reset, boot presentation, and cartridge handoff;
+- [`machine/bios/main.lua`](../machine/bios/main.lua) owns reset, boot
+  presentation, and cartridge handoff;
 - `kernel` owns interrupt, VBlank, and BIOS DMA control;
 - `gpu` owns only the private command path used by BIOS presentation;
 - `tty` owns the firmware console driver, terminal state and raster submission;
 - `shell` owns the resumable supervisor monitor;
-- root `base.lua`, `table.lua`, `string.lua`, `math.lua`, and `os.lua`, with
-  their `string/` and `math/` implementation modules, own the resident Lua
-  libraries.
+- the top-level `base.lua`, `table.lua`, `string.lua`, `math.lua`, and `os.lua`
+  beneath `machine/bios`, with their `string/` and `math/` implementation
+  modules, own the resident Lua libraries.
 
 There is no parallel `firmware`, `system`, `stdlib`, language-name wrapper, or
 machine-name namespace beneath the BIOS root. Cart builds do not receive BIOS
