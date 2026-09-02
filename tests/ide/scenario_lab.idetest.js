@@ -146,8 +146,8 @@ t.assert(testPane.rows === retainedRows, 'unchanged frames replaced the retained
 
 const testRowIndex = testPane.rows.findIndex(row =>
 	row.kind === 'test'
-	&& row.test.resource.path === 'tests/carts/nemesis_s/nemesis_s_stage_boot_assert.lua');
-t.assert(testRowIndex >= 0, 'packaged stage-boot scenario is missing from the test tree');
+	&& row.test.resource.path === 'tests/carts/nemesis_s/nemesis_s_pause_assert.lua');
+t.assert(testRowIndex >= 0, 'packaged pause scenario is missing from the test tree');
 const testRowY = testPane.layout.contentTop
 	+ (testRowIndex - testPane.scroll) * view.layout.rowHeight
 	+ 1;
@@ -178,9 +178,31 @@ t.assert(sources.currentBlua32Media === canonicalMedia, 'Scenario Lab did not re
 t.assert(sources.cartridgeSlots[0].rom === canonicalCartridge, 'Scenario Lab replaced the canonical cartridge source');
 t.assert(t.activeWorkbenchTab() === labTab, 'completed run did not return to the same Scenario Lab input');
 t.assert(resultPane.rows.length >= 4, 'completed run did not project its retained logs and capture');
-t.assert(resultPane.rows[0].result.state === 'passed', 'stage-boot scenario did not pass');
+t.assert(resultPane.rows[0].result.state === 'passed', 'pause scenario did not pass');
 t.assert(resultPane.rows[0].expanded, 'new result was not expanded');
 t.assert(resultPane.selectionIndex === 0, 'new result did not become the retained result selection');
+const fsmTrace = resultPane.rows[0].result.fsmTransitionTrace;
+t.assert(fsmTrace !== null, 'pause scenario did not bind its selected FSM recorder');
+t.assert(fsmTrace.executionDomain === 0, 'FSM trace lost its cartridge execution domain');
+t.assert(fsmTrace.instanceId === 'nemesis_s.director.nemesis_s.director.fsm', 'FSM trace selected the wrong concrete machine instance');
+t.assert(fsmTrace.machineId === 'nemesis_s.director.fsm', 'FSM trace lost its semantic machine id');
+t.assert(fsmTrace.transitions.length === 2, 'pause scenario did not record exactly the pause and resume transitions');
+const pauseTransition = fsmTrace.transitions.at(0);
+const resumeTransition = fsmTrace.transitions.at(1);
+t.assert(pauseTransition.outcome === 'committed'
+	&& pauseTransition.fromDefId === 'nemesis_s.director.fsm:/gameplay/running'
+	&& pauseTransition.toDefId === 'nemesis_s.director.fsm:/gameplay/pause',
+'first FSM fact is not the committed running-to-pause transition');
+t.assert(resumeTransition.outcome === 'committed'
+	&& resumeTransition.fromDefId === 'nemesis_s.director.fsm:/gameplay/pause'
+	&& resumeTransition.toDefId === 'nemesis_s.director.fsm:/gameplay/running',
+'second FSM fact is not the committed pause-to-running transition');
+t.assert(pauseTransition.producerSequence === 1
+	&& resumeTransition.producerSequence === 2
+	&& pauseTransition.observedTick <= resumeTransition.observedTick,
+'FSM fact ordering did not retain producer sequence and host observation tick separately');
+t.assert(resultPane.rows.some(row => row.kind === 'fsm_transition' && row.transition === pauseTransition),
+'Scenario Lab did not project recorded FSM facts');
 t.capture('scenario-lab-passed-result-tiny-384x288');
 
 await pressKey('Tab', 110);

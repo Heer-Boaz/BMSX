@@ -99,6 +99,11 @@ function resultSummaryText(row: ScenarioLabResultRow): string {
 	return `${row.expanded ? '-' : '+'} ${scenarioStateBadge(result.state)} RUN ${result.sequence}  REV ${result.sourceRevision}  T${result.startTick}-${endTick}`;
 }
 
+function semanticPathTail(defId: string): string {
+	const separator = defId.lastIndexOf('/');
+	return defId.slice(separator + 1);
+}
+
 function resultDetailText(row: ScenarioLabResultRow): string {
 	switch (row.kind) {
 		case 'result':
@@ -113,6 +118,11 @@ function resultDetailText(row: ScenarioLabResultRow): string {
 			const capture = row.capture;
 			const frame = capture.presentedFrame === null ? '-' : String(capture.presentedFrame);
 			return `  CAP T${capture.requestTick} F${frame}  ${capture.label}`;
+		}
+		case 'fsm_transition': {
+			const transition = row.transition;
+			const outcome = transition.outcome === 'committed' ? 'OK' : 'NO';
+			return `  FSM [${outcome}] ${semanticPathTail(transition.fromDefId)} > ${semanticPathTail(transition.toDefId)}  @${transition.producerTimeMillisecondsWord}MS #${transition.producerSequence}`;
 		}
 	}
 }

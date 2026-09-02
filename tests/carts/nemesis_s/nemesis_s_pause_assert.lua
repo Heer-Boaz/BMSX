@@ -1,6 +1,7 @@
 local registry<const> = require('cartlib/registry')
 local rom_dir<const> = require('cartlib/rom_dir')
 local world<const> = require('cartlib/world/world')
+local transition_recorder<const> = require('cartlib/fsm/transition_recorder')
 require('constants')
 
 local apu_slot<const>: *word = 0x08000148
@@ -57,7 +58,14 @@ function __bmsx_host_test.update()
 			return false
 		end
 		test.phase = 'enter_pause'
-		return host.gamepad_press(2, 'start', 4)
+		local recorder<const> = transition_recorder.new(
+			director.state_machines:get_machine(ids_director_fsm),
+			32
+		)
+		return {
+			host.observe_fsm_transitions(recorder),
+			host.gamepad_press(2, 'start', 4),
+		}
 	end
 
 	if test.phase == 'enter_pause' then

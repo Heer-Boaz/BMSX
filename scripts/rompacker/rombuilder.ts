@@ -562,6 +562,8 @@ export type ResourceScanOptions = {
 	extraLuaFiles?: readonly string[];
 	virtualRoot?: string;
 	libraryLuaPaths?: string[];
+	/** Lua roots used for library reachability without adding the roots as resources. */
+	luaDependencyRootFiles?: readonly string[];
 };
 
 export type RebuildOptions = {
@@ -668,6 +670,12 @@ export async function getResMetaList(
 		}
 	}
 	const seedFiles = arrayOfFiles.filter(file => file.toLowerCase().endsWith('.lua'));
+	const dependencyRootFiles = options.luaDependencyRootFiles;
+	if (dependencyRootFiles !== undefined) {
+		for (let index = 0; index < dependencyRootFiles.length; index += 1) {
+			seedFiles.push(dependencyRootFiles[index]);
+		}
+	}
 	const libraryLuaRoots = options.libraryLuaPaths;
 	if (libraryLuaRoots) {
 		const libraryFiles = collectLibraryLuaClosure(seedFiles, libraryLuaRoots, virtualRoot);

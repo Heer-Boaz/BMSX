@@ -40,6 +40,11 @@ function resultTextColor(row: ScenarioLabResultRow): number {
 	if (row.kind === 'failure') {
 		return constants.COLOR_STATUS_ERROR;
 	}
+	if (row.kind === 'fsm_transition') {
+		return row.transition.outcome === 'committed'
+			? constants.COLOR_STATUS_SUCCESS
+			: constants.COLOR_STATUS_WARNING;
+	}
 	if (row.kind === 'log' || row.kind === 'capture') {
 		return constants.COLOR_RESOURCE_VIEWER_TEXT;
 	}

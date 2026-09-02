@@ -12,6 +12,7 @@ import {
 } from '../../ide/workbench/contrib/scenario_lab/navigation';
 import { refreshScenarioLabProjection } from '../../ide/workbench/contrib/scenario_lab/projection';
 import { drawScenarioLab } from '../../ide/workbench/contrib/scenario_lab/render';
+import { prepareScenarioLabLayout } from '../../ide/workbench/contrib/scenario_lab/layout';
 import {
 	SCENARIO_RESULT_LOG_RETAIN_COUNT,
 	ScenarioResultService,
@@ -135,6 +136,37 @@ test('scenario result projection follows a new run and preserves stable log iden
 	results.cancel(second, 202);
 	view.runActive = false;
 	assert.equal(scenarioLabCommandEnabled(view, 'scenarioLab.rerun'), true);
+});
+
+test('scenario result projection retains FSM facts without inventing source navigation', (t) => {
+	const { collection, results, view } = createViewFixture(t);
+	const result = results.begin(collection.roots[0].children![0], 7, 100);
+	const trace = results.beginFsmTransitionTrace(
+		result,
+		'nemesis_s.director.nemesis_s.director.fsm',
+		'nemesis_s.director.fsm',
+	);
+	results.appendFsmTransition(
+		trace,
+		1,
+		1200,
+		123,
+		'nemesis_s.director.fsm:/gameplay',
+		'nemesis_s.director.fsm:/gameplay/running',
+		'nemesis_s.director.fsm:/gameplay/pause',
+		'committed',
+	);
+	refreshScenarioLabProjection(view);
+	prepareScenarioLabLayout(view);
+
+	const factIndex = view.resultPane.rows.findIndex(row => row.kind === 'fsm_transition');
+	assert.ok(factIndex > 0);
+	const factRow = view.resultPane.rows[factIndex];
+	assert.match(factRow.text, /FSM \[OK\] RUNNING > PAUSE/);
+	selectScenarioLabResultRow(view, factIndex);
+	const activation = executeScenarioLabNavigation(view, 'activate');
+	assert.equal(activation.kind, 'changed');
+	assert.match(view.status.info, /SOURCE UNAVAILABLE/);
 });
 
 test('scenario workbench renderer uses the active tiny IDE font and retained text', (t) => {

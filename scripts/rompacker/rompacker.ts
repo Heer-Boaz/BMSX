@@ -591,6 +591,7 @@ async function main() {
 				domain: 'cart',
 				extraLuaFiles: cartSourceFiles,
 				libraryLuaPaths: Array.from(libraryLuaPathSet),
+				luaDependencyRootFiles: scenarioTestSources.sourceFiles,
 				virtualRoot,
 			}));
 			await progress.taskCompleted();

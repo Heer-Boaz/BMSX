@@ -3,6 +3,12 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import type { Closure } from '../../machine/ts/machine/cpu/closure';
+import { Table } from '../../machine/ts/machine/cpu/table';
+import {
+	asStringId,
+	type StringValue,
+} from '../../machine/ts/machine/cpu/value';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
@@ -69,6 +75,7 @@ const CART_MODULE_FILES = [
 	['cartlib/fsm/frame_evaluator_syntax', 'cartlib/fsm/frame_evaluator_syntax.lua'],
 	['cartlib/fsm/frame_program', 'cartlib/fsm/frame_program.lua'],
 	['cartlib/fsm/fsm', 'cartlib/fsm/fsm.lua'],
+	['cartlib/fsm/transition_recorder', 'cartlib/fsm/transition_recorder.lua'],
 	['cartlib/fsm/library', 'cartlib/fsm/library.lua'],
 	['cartlib/fsm/fsm_component', 'cartlib/fsm/fsm_component.lua'],
 	['cartlib/behaviour_tree/result', 'cartlib/behaviour_tree/result.lua'],
@@ -196,7 +203,7 @@ registry:register(state_machines)
 registry:index(state_machines, state_machine_component)
 state_machines:start()
 
-local machine<const> = state_machines._machines_by_id.hot_machine
+local machine<const> = state_machines:get_machine('hot_machine')
 local idle<const> = machine.states.idle
 local active<const> = machine.states.active
 state_machines.update_gameplay()
@@ -262,7 +269,7 @@ fsm_library.register('hot_machine', {
 	},
 })
 
-assert(state_machines._machines_by_id.hot_machine == machine)
+assert(state_machines:get_machine('hot_machine') == machine)
 assert(machine.states.idle == idle and machine.states.active == active)
 assert(machine.states.bonus ~= nil)
 assert(active.data == active_data and active_data.retained == 73)
@@ -322,7 +329,7 @@ end)
 assert(compatible == false)
 assert(machine.definition == published_definition)
 local future_state_machines<const> = make_fsm({ parent = target })
-assert(future_state_machines._machines_by_id.hot_machine.definition == published_definition)
+assert(future_state_machines:get_machine('hot_machine').definition == published_definition)
 
 local ticks_key<const> = blackboard.key('ticks', 0)
 local retained_key<const> = blackboard.key('retained', 0)
@@ -381,7 +388,70 @@ return target.value, active_data.retained, blackboard_instance:get(ticks_key), b
 	machine.current_id == 'active', target.tags.new_active, target.tags.old_active
 `;
 
-test('cartlib FSM and behaviour-tree instances retain semantic state across program replacement', () => {
+const TRANSITION_RECORDER_ENTRY_SOURCE = `
+local fsm_library<const> = require('cartlib/fsm/library')
+local fsm_component<const> = require('cartlib/fsm/fsm_component')
+local transition_recorder<const> = require('cartlib/fsm/transition_recorder')
+
+local target<const> = {
+	id = 'trace_target',
+	active = true,
+	tags = {},
+	allow_active = false,
+}
+function target:_retain_tag(tag)
+	self.tags[tag] = true
+end
+function target:_release_tag(tag)
+	self.tags[tag] = nil
+end
+
+fsm_library.register('trace_machine', {
+	initial = 'idle',
+	states = {
+		idle = {},
+		active = {
+			transition_guards = {
+				can_enter = function(self)
+					return self.allow_active
+				end,
+			},
+			entering_state = function()
+				return '/done'
+			end,
+		},
+		done = {},
+	},
+})
+
+local state_machines<const> = fsm_component.new({ parent = target }, { 'trace_machine' })
+local machine<const> = state_machines:get_machine('trace_machine')
+state_machines:start()
+local recorder<const> = transition_recorder.new(machine, 4)
+
+assert(machine:transition_to_state('active') == false)
+target.allow_active = true
+assert(machine:transition_to_state('active') == true)
+assert(machine.current_id == 'done')
+
+local run<const> = function(count)
+	for _ = 1, count do
+		if machine.current_id == 'idle' then
+			machine:transition_to_state('done')
+		else
+			machine:transition_to_state('idle')
+		end
+	end
+end
+
+local detach<const> = function()
+	recorder:dispose()
+end
+
+return run, detach, recorder
+`;
+
+function createCartlibProgramCpu(cartEntrySource: string): CPU {
 	const systemModules = SYSTEM_MODULE_FILES.map(([path, file]) => {
 		const source = readFileSync(file, 'utf8');
 		return { path, chunk: parseLuaChunk(source, `${path}.lua`), source };
@@ -409,14 +479,26 @@ test('cartlib FSM and behaviour-tree instances retain semantic state across prog
 		optLevel: 3,
 		programDomain: 'system',
 	});
-	const cartCompiled = compileLuaChunkToProgram(parseLuaChunk(CART_ENTRY_SOURCE, 'entry.lua'), cartModules, {
-		entrySource: CART_ENTRY_SOURCE,
+	const cartCompiled = compileLuaChunkToProgram(parseLuaChunk(cartEntrySource, 'entry.lua'), cartModules, {
+		entrySource: cartEntrySource,
 		optLevel: 3,
 		programDomain: 'cart',
 	});
 	const images = linkTestBlua32Pair(systemCompiled, cartCompiled);
 	const cpu: CPU = createTestBlua32PairCpu(images).cpu;
 	cpu.installBootPrimitives();
+	return cpu;
+}
+
+function runCompletionClosure(cpu: CPU, closure: Closure, args: number[]): number {
+	const budget = 10_000_000;
+	cpu.beginCompletionCall(closure, args);
+	assert.equal(cpu.runUntilDepth(0, budget), RunResult.Halted);
+	return budget - cpu.instructionBudgetRemaining;
+}
+
+test('cartlib FSM and behaviour-tree instances retain semantic state across program replacement', () => {
+	const cpu = createCartlibProgramCpu(CART_ENTRY_SOURCE);
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [
 		1021,
@@ -427,4 +509,53 @@ test('cartlib FSM and behaviour-tree instances retain semantic state across prog
 		true,
 		null,
 	]);
+});
+
+test('FSM transition recorder publishes ordered fixed-capacity facts without steady-state allocation', () => {
+	const cpu = createCartlibProgramCpu(TRANSITION_RECORDER_ENTRY_SOURCE);
+	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	const [run, detach, channel] = materializeCpuCompletionValues(cpu) as [
+		Closure,
+		Closure,
+		Table,
+	];
+	const records = channel.getInteger(5) as Table;
+	const strings = cpu.stringPool;
+	const text = (value: StringValue): string => strings.toString(asStringId(value));
+
+	assert.equal(text(channel.getInteger(1) as StringValue), 'trace_target.trace_machine');
+	assert.equal(text(channel.getInteger(2) as StringValue), 'trace_machine');
+	assert.equal(channel.getInteger(3), 4);
+	assert.equal(channel.getInteger(4), 3);
+	const rejected = records.getInteger(1) as Table;
+	const committed = records.getInteger(2) as Table;
+	const nested = records.getInteger(3) as Table;
+	assert.equal(rejected.getInteger(1), 1);
+	assert.equal(rejected.getInteger(6), false);
+	assert.equal(text(rejected.getInteger(3) as StringValue), 'trace_machine');
+	assert.equal(text(rejected.getInteger(4) as StringValue), 'trace_machine:/idle');
+	assert.equal(text(rejected.getInteger(5) as StringValue), 'trace_machine:/active');
+	assert.equal(committed.getInteger(1), 2);
+	assert.equal(committed.getInteger(6), true);
+	assert.equal(nested.getInteger(1), 3);
+	assert.equal(text(nested.getInteger(4) as StringValue), 'trace_machine:/active');
+	assert.equal(text(nested.getInteger(5) as StringValue), 'trace_machine:/done');
+
+	runCompletionClosure(cpu, run, [20]);
+	const heapBefore = cpu.collectTrackedHeapBytes();
+	const recordedCycles = runCompletionClosure(cpu, run, [10_000]);
+	assert.equal(cpu.collectTrackedHeapBytes(), heapBefore);
+	assert.equal(channel.getInteger(4), 10_023);
+	for (let sequence = 10_020; sequence <= 10_023; sequence += 1) {
+		const slot = ((sequence - 1) % 4) + 1;
+		const record = records.getInteger(slot) as Table;
+		assert.equal(record.getInteger(1), sequence);
+	}
+
+	runCompletionClosure(cpu, detach, []);
+	const disabledCycles = runCompletionClosure(cpu, run, [10_000]);
+	assert.ok(disabledCycles <= 1_900_000, `disabled recorder check used ${disabledCycles} cycles`);
+	const recorderCycles = recordedCycles - disabledCycles;
+	assert.ok(recorderCycles > 0);
+	assert.ok(recorderCycles <= 400_000, `recorder used ${recorderCycles} cycles`);
 });

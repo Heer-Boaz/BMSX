@@ -65,6 +65,41 @@ test('Lua assets retain separate module-local and workspace source paths', async
 	}
 });
 
+test('source-only scenario roots retain their reachable debug library modules', async () => {
+	await rm(ROOT, { recursive: true, force: true });
+	try {
+		const resourcesRoot = join(ROOT, 'res');
+		const libraryRoot = join(ROOT, 'cartlib');
+		const scenarioPath = join(ROOT, 'tests', 'scenario_assert.lua');
+		await mkdir(resourcesRoot, { recursive: true });
+		await mkdir(libraryRoot, { recursive: true });
+		await mkdir(join(ROOT, 'tests'), { recursive: true });
+		await writeFile(join(resourcesRoot, 'entry.lua'), 'module<entry>\nreturn true');
+		await writeFile(join(libraryRoot, 'trace.lua'), "return require('cartlib/trace_storage')");
+		await writeFile(join(libraryRoot, 'trace_storage.lua'), 'return {}');
+		await writeFile(join(libraryRoot, 'unused.lua'), 'return {}');
+		await writeFile(scenarioPath, "return require('cartlib/trace')");
+
+		const metadata = await getResMetaList([resourcesRoot], {
+			domain: 'cart',
+			virtualRoot: ROOT,
+			libraryLuaPaths: [libraryRoot],
+			luaDependencyRootFiles: [scenarioPath],
+		});
+		const sourcePaths = metadata
+			.filter(resource => resource.type === 'lua')
+			.map(resource => resource.sourcePath);
+
+		assert.deepEqual(sourcePaths, [
+			'cartlib/trace.lua',
+			'cartlib/trace_storage.lua',
+			'res/entry.lua',
+		]);
+	} finally {
+		await rm(ROOT, { recursive: true, force: true });
+	}
+});
+
 test('ROM asset symbols expose concrete memory addresses without runtime lookup', () => {
 	const assets: RomAsset[] = [
 		{ type: 'lua', resid: 'cart', compiled_buffer: Buffer.from([0xaa, 0xbb]) },

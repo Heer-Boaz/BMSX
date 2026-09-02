@@ -177,6 +177,24 @@ function appendScenarioResultRows(
 			twistieRight: 0,
 		});
 	}
+	const fsmTrace = result.fsmTransitionTrace;
+	if (fsmTrace !== null) {
+		for (let index = 0; index < fsmTrace.transitions.length; index += 1) {
+			const transition = fsmTrace.transitions.at(index);
+			pane.rows.push({
+				id: transition.id,
+				kind: 'fsm_transition',
+				result,
+				trace: fsmTrace,
+				transition,
+				expandable: false,
+				expanded: false,
+				text: '',
+				twistieLeft: 0,
+				twistieRight: 0,
+			});
+		}
+	}
 	for (let index = 0; index < result.captures.length; index += 1) {
 		const capture = result.captures.at(index);
 		pane.rows.push({

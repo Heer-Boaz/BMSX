@@ -206,6 +206,12 @@ function fsm_component:dispatch(event_name, payload, emitter, emitter_id)
 	return handled
 end
 
+-- Concrete machine lookup for tooling and explicit cart-owned control. Runtime
+-- callers receive the retained root rather than reaching into component state.
+function fsm_component:get_machine(machine_id)
+	return self._machines_by_id[machine_id]
+end
+
 function fsm_component:bind_state_path(path)
 	local paths = self._state_paths
 	if paths then

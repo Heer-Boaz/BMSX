@@ -323,6 +323,15 @@ Testcode mag expliciete verpakte setup/updateclosures gebruiken. Die testgrens
 wordt niet uitgebreid tot een generieke live `runtime.call`, host-Lua-RPC of
 mutation-API voor Studio.
 
+Een debugscenario is daarnaast een afzonderlijke dependency-root voor de
+cartbibliotheekmodules die uitsluitend zijn testcode gebruikt. Dit volgt het
+productiebundlermodel waarin iedere entry root de dependencygraph doorloopt
+([esbuild-architectuur](https://github.com/evanw/esbuild/blob/f6058f8364fe7ab91ca57a83e02577ed74c9cae4/docs/architecture.md#L62-L68)).
+De gewone cart-entry blijft de enige executable root van de canonieke ROM;
+scenariofiles blijven source-only assets en alleen hun bereikbare
+librarymodules worden in de debugpackage beschikbaar gehouden voor de latere
+scenario-entry. De builder injecteert dus geen Studio/cartlib-module op naam.
+
 ## UX- en ownershiproute
 
 Opties A en C vormen het gekozen eerste product. B blijft een latere
@@ -593,6 +602,15 @@ faalt de test deterministisch; er is geen incomplete fallbacktrace. De eerste
 slice claimt geen sourcecorrespondence: een record heeft expliciet geen
 bronlocatie totdat de authored registration daadwerkelijk een bewezen
 runtime-`def_id`-mapping produceert.
+
+Een deterministische O3-BLua32-microbenchmark op 10.000 directe, werkelijke
+transitions mat 1.800.007 VM-cycles zonder recorderveld en 1.840.007 cycles met
+de uitgeschakelde recordercheck: vier cycles per transition, circa 2,22%, en
+geen werk in de frame-evaluator. De geselecteerde recorder kostte in dezelfde
+test 370.000 extra cycles voor 10.000 records (37 per record). Na warm-up bleef
+de door de VM bijgehouden guest-heap over 10.000 records exact gelijk. Dit zijn
+synthetische cyclemetingen van deze transitiongrens, geen algemeen framebudget
+of low-end-hostresultaat.
 
 ### Pauze en semantic stepping
 

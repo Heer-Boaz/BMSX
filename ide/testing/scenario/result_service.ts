@@ -5,6 +5,7 @@ import type { ScenarioTestItem } from './test_collection';
 export const SCENARIO_RESULT_RETAIN_COUNT = 128;
 export const SCENARIO_RESULT_LOG_RETAIN_COUNT = 512;
 export const SCENARIO_RESULT_CAPTURE_RETAIN_COUNT = 64;
+export const SCENARIO_RESULT_FSM_TRANSITION_RETAIN_COUNT = 1024;
 
 export type ScenarioRunState =
 	| 'preparing'
@@ -39,6 +40,26 @@ export type ScenarioRunFailure = {
 	readonly location: ScenarioSourceLocation;
 };
 
+export type ScenarioFsmTransitionOutcome = 'committed' | 'rejected';
+
+export type ScenarioFsmTransitionRecord = {
+	readonly id: string;
+	readonly producerSequence: number;
+	readonly producerTimeMillisecondsWord: number;
+	readonly observedTick: number;
+	readonly laneDefId: string;
+	readonly fromDefId: string;
+	readonly toDefId: string;
+	readonly outcome: ScenarioFsmTransitionOutcome;
+};
+
+export type ScenarioFsmTransitionTrace = {
+	readonly executionDomain: 0 | 1;
+	readonly instanceId: string;
+	readonly machineId: string;
+	readonly transitions: ScenarioRetainedSequence<ScenarioFsmTransitionRecord>;
+};
+
 export type ScenarioRunResult = {
 	readonly id: string;
 	readonly sequence: number;
@@ -49,6 +70,7 @@ export type ScenarioRunResult = {
 	endTick: number | null;
 	readonly logs: ScenarioRetainedSequence<ScenarioResultLog>;
 	readonly captures: ScenarioRetainedSequence<ScenarioResultCapture>;
+	fsmTransitionTrace: ScenarioFsmTransitionTrace | null;
 	failure: ScenarioRunFailure | null;
 	fault: FaultSnapshot | null;
 };
@@ -89,6 +111,7 @@ export class ScenarioResultService {
 	private nextRunSequence = 1;
 	private nextLogSequence = 1;
 	private nextCaptureSequence = 1;
+	private nextFsmTransitionSequence = 1;
 	private _liveResult: ScenarioRunResult | null = null;
 
 	public get liveResult(): ScenarioRunResult | null {
@@ -109,6 +132,7 @@ export class ScenarioResultService {
 			endTick: null,
 			logs: new ScenarioRetainedSequence(SCENARIO_RESULT_LOG_RETAIN_COUNT),
 			captures: new ScenarioRetainedSequence(SCENARIO_RESULT_CAPTURE_RETAIN_COUNT),
+			fsmTransitionTrace: null,
 			failure: null,
 			fault: null,
 		};
@@ -120,6 +144,51 @@ export class ScenarioResultService {
 		this._liveResult = result;
 		this.revision += 1;
 		return result;
+	}
+
+	public beginFsmTransitionTrace(
+		result: ScenarioRunResult,
+		instanceId: string,
+		machineId: string,
+	): ScenarioFsmTransitionTrace {
+		if (result.fsmTransitionTrace !== null) {
+			throw new Error('A scenario run can record one selected FSM instance.');
+		}
+		const trace: ScenarioFsmTransitionTrace = {
+			executionDomain: result.test.resource.domain,
+			instanceId,
+			machineId,
+			transitions: new ScenarioRetainedSequence(
+				SCENARIO_RESULT_FSM_TRANSITION_RETAIN_COUNT,
+			),
+		};
+		result.fsmTransitionTrace = trace;
+		this.revision += 1;
+		return trace;
+	}
+
+	public appendFsmTransition(
+		trace: ScenarioFsmTransitionTrace,
+		producerSequence: number,
+		producerTimeMillisecondsWord: number,
+		observedTick: number,
+		laneDefId: string,
+		fromDefId: string,
+		toDefId: string,
+		outcome: ScenarioFsmTransitionOutcome,
+	): void {
+		trace.transitions.push({
+			id: `scenario-fsm-transition:${this.nextFsmTransitionSequence}`,
+			producerSequence,
+			producerTimeMillisecondsWord,
+			observedTick,
+			laneDefId,
+			fromDefId,
+			toDefId,
+			outcome,
+		});
+		this.nextFsmTransitionSequence += 1;
+		this.revision += 1;
 	}
 
 	public markRunning(result: ScenarioRunResult): void {

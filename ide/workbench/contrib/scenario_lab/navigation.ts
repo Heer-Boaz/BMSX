@@ -7,6 +7,7 @@ import {
 import type { EditorScenarioLabCommandId } from '../../../common/commands';
 import { revealWorkbenchListSelection } from '../../ui/list_view';
 import type { ScenarioLabViewState } from './view_model';
+import type { ScenarioSourceLocation } from '../../../testing/scenario/result_service';
 
 export type ScenarioLabNavigationCommand =
 	| 'up'
@@ -20,13 +21,23 @@ export type ScenarioLabNavigationCommand =
 	| 'focus-next'
 	| 'activate';
 
-export const enum ScenarioLabNavigationResult {
-	None,
-	Changed,
-	OpenSource,
-}
+export type ScenarioLabNavigationResult =
+	| { readonly kind: 'none' }
+	| { readonly kind: 'changed' }
+	| { readonly kind: 'open-source'; readonly location: ScenarioSourceLocation };
+
+const NAVIGATION_NONE: ScenarioLabNavigationResult = { kind: 'none' };
+const NAVIGATION_CHANGED: ScenarioLabNavigationResult = { kind: 'changed' };
 
 export function updateScenarioLabStatus(state: ScenarioLabViewState): void {
+	if (state.focus === 'results') {
+		const row = selectedScenarioResultRow(state);
+		if (row !== null && row.kind === 'fsm_transition') {
+			state.status.info = `FSM ${row.trace.instanceId} / SOURCE UNAVAILABLE`;
+			state.status.dirty = true;
+			return;
+		}
+	}
 	const test = selectedScenarioTest(state);
 	state.status.info = test === null ? 'NO SCENARIO SELECTED' : test.label.toUpperCase();
 	state.status.dirty = true;
@@ -151,24 +162,35 @@ function activateScenarioLabSelection(state: ScenarioLabViewState): ScenarioLabN
 	if (state.focus === 'tests') {
 		const selectionIndex = state.testPane.selectionIndex;
 		if (selectionIndex < 0) {
-			return ScenarioLabNavigationResult.None;
+			return NAVIGATION_NONE;
 		}
 		const row = state.testPane.rows[selectionIndex];
 		if (row.kind === 'root') {
 			toggleScenarioLabTestRow(state, selectionIndex);
-			return ScenarioLabNavigationResult.Changed;
+			return NAVIGATION_CHANGED;
 		}
-		return ScenarioLabNavigationResult.OpenSource;
+		return {
+			kind: 'open-source',
+			location: {
+				resource: row.test.resource,
+				line: 1,
+				column: 1,
+			},
+		};
 	}
 	const row = selectedScenarioResultRow(state);
 	if (row === null) {
-		return ScenarioLabNavigationResult.None;
+		return NAVIGATION_NONE;
 	}
 	if (row.kind === 'result') {
 		toggleScenarioLabResultRow(state, state.resultPane.selectionIndex);
-		return ScenarioLabNavigationResult.Changed;
+		return NAVIGATION_CHANGED;
 	}
-	return ScenarioLabNavigationResult.OpenSource;
+	if (row.kind === 'fsm_transition') {
+		updateScenarioLabStatus(state);
+		return NAVIGATION_CHANGED;
+	}
+	return { kind: 'open-source', location: row.location };
 }
 
 function moveScenarioLabLeft(state: ScenarioLabViewState): boolean {
@@ -231,53 +253,53 @@ export function executeScenarioLabNavigation(
 	switch (command) {
 		case 'up':
 			return moveScenarioLabSelection(state, -1)
-				? ScenarioLabNavigationResult.Changed
-				: ScenarioLabNavigationResult.None;
+				? NAVIGATION_CHANGED
+				: NAVIGATION_NONE;
 		case 'down':
 			return moveScenarioLabSelection(state, 1)
-				? ScenarioLabNavigationResult.Changed
-				: ScenarioLabNavigationResult.None;
+				? NAVIGATION_CHANGED
+				: NAVIGATION_NONE;
 		case 'page-up':
 			if (state.focus === 'tests') {
 				return moveScenarioLabSelection(state, -state.testPane.layout.visibleRowCount)
-					? ScenarioLabNavigationResult.Changed
-					: ScenarioLabNavigationResult.None;
+					? NAVIGATION_CHANGED
+					: NAVIGATION_NONE;
 			}
 			return moveScenarioLabSelection(
 				state,
 				-state.resultPane.layout.visibleRowCount,
-			) ? ScenarioLabNavigationResult.Changed : ScenarioLabNavigationResult.None;
+			) ? NAVIGATION_CHANGED : NAVIGATION_NONE;
 		case 'page-down':
 			if (state.focus === 'tests') {
 				return moveScenarioLabSelection(state, state.testPane.layout.visibleRowCount)
-					? ScenarioLabNavigationResult.Changed
-					: ScenarioLabNavigationResult.None;
+					? NAVIGATION_CHANGED
+					: NAVIGATION_NONE;
 			}
 			return moveScenarioLabSelection(
 				state,
 				state.resultPane.layout.visibleRowCount,
-			) ? ScenarioLabNavigationResult.Changed : ScenarioLabNavigationResult.None;
+			) ? NAVIGATION_CHANGED : NAVIGATION_NONE;
 		case 'home':
 			return moveScenarioLabBoundary(state, false)
-				? ScenarioLabNavigationResult.Changed
-				: ScenarioLabNavigationResult.None;
+				? NAVIGATION_CHANGED
+				: NAVIGATION_NONE;
 		case 'end':
 			return moveScenarioLabBoundary(state, true)
-				? ScenarioLabNavigationResult.Changed
-				: ScenarioLabNavigationResult.None;
+				? NAVIGATION_CHANGED
+				: NAVIGATION_NONE;
 		case 'left':
 			return moveScenarioLabLeft(state)
-				? ScenarioLabNavigationResult.Changed
-				: ScenarioLabNavigationResult.None;
+				? NAVIGATION_CHANGED
+				: NAVIGATION_NONE;
 		case 'right':
 			return moveScenarioLabRight(state)
-				? ScenarioLabNavigationResult.Changed
-				: ScenarioLabNavigationResult.None;
+				? NAVIGATION_CHANGED
+				: NAVIGATION_NONE;
 		case 'focus-next':
-			if (state.resultPane.rows.length === 0) return ScenarioLabNavigationResult.None;
+			if (state.resultPane.rows.length === 0) return NAVIGATION_NONE;
 			state.focus = state.focus === 'tests' ? 'results' : 'tests';
 			updateScenarioLabStatus(state);
-			return ScenarioLabNavigationResult.Changed;
+			return NAVIGATION_CHANGED;
 		case 'activate':
 			return activateScenarioLabSelection(state);
 	}

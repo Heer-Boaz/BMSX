@@ -7,6 +7,8 @@ import type {
 import type {
 	ScenarioResultService,
 	ScenarioResultCapture,
+	ScenarioFsmTransitionRecord,
+	ScenarioFsmTransitionTrace,
 	ScenarioResultLog,
 	ScenarioRunFailure,
 	ScenarioRunResult,
@@ -49,7 +51,6 @@ export type ScenarioLabTestRow = ScenarioLabTestRowBase & ({
 type ScenarioLabResultRowBase = {
 	readonly id: string;
 	readonly result: ScenarioRunResult;
-	readonly location: ScenarioSourceLocation;
 	text: string;
 	twistieLeft: number;
 	twistieRight: number;
@@ -57,21 +58,31 @@ type ScenarioLabResultRowBase = {
 
 export type ScenarioLabResultRow = ScenarioLabResultRowBase & ({
 	readonly kind: 'result';
+	readonly location: ScenarioSourceLocation;
 	readonly expandable: true;
 	expanded: boolean;
 } | {
 	readonly kind: 'failure';
+	readonly location: ScenarioSourceLocation;
 	readonly failure: ScenarioRunFailure;
 	readonly expandable: false;
 	readonly expanded: false;
 } | {
 	readonly kind: 'log';
+	readonly location: ScenarioSourceLocation;
 	readonly log: ScenarioResultLog;
 	readonly expandable: false;
 	readonly expanded: false;
 } | {
 	readonly kind: 'capture';
+	readonly location: ScenarioSourceLocation;
 	readonly capture: ScenarioResultCapture;
+	readonly expandable: false;
+	readonly expanded: false;
+} | {
+	readonly kind: 'fsm_transition';
+	readonly trace: ScenarioFsmTransitionTrace;
+	readonly transition: ScenarioFsmTransitionRecord;
 	readonly expandable: false;
 	readonly expanded: false;
 });

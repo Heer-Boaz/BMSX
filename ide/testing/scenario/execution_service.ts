@@ -13,7 +13,10 @@ import {
 } from '../../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../../machine/ts/spec/bmsx/io';
-import { SCENARIO_TEST_LOADER_GLOBAL } from '../../../toolchain/ts/rompack/scenario_guest_api';
+import {
+	SCENARIO_GUEST_OBSERVE_FSM_TRANSITIONS_KEY,
+	SCENARIO_TEST_LOADER_GLOBAL,
+} from '../../../toolchain/ts/rompack/scenario_guest_api';
 import {
 	recordSupervisorFault,
 	type RuntimeFaultState,
@@ -24,6 +27,7 @@ import {
 	type ScenarioRunResult,
 	ScenarioResultService,
 } from './result_service';
+import { ScenarioFsmTransitionObservation } from './fsm_transition_observation';
 
 const SCENARIO_TEST_GLOBAL = '__bmsx_host_test';
 const CART_SETTLE_TICKS = 5;
@@ -52,6 +56,7 @@ type ScenarioProtocol = {
 	readonly captureKey: StringId;
 	readonly logKey: StringId;
 	readonly doneKey: StringId;
+	readonly observeFsmTransitionsKey: StringId;
 };
 
 type ScenarioCartPhase = {
@@ -97,6 +102,7 @@ type ScenarioExecution = {
 	phase: ScenarioExecutionPhase;
 	logicalTicks: number;
 	tickPrepared: boolean;
+	fsmTransitionObservation: ScenarioFsmTransitionObservation | null;
 };
 
 /**
@@ -149,6 +155,7 @@ export class ScenarioExecutionService {
 			phase: { kind: 'cart', settleTicks: 0 },
 			logicalTicks: 0,
 			tickPrepared: false,
+			fsmTransitionObservation: null,
 		};
 		this.results.appendLog(result, startTick, 'waiting for cartridge');
 	}
@@ -182,6 +189,7 @@ export class ScenarioExecutionService {
 		execution.logicalTicks += 1;
 		this.presentationResult = execution.result;
 		try {
+			this.drainFsmTransitions(execution);
 			this.advance(execution);
 		} catch (error) {
 			this.fail(execution, error instanceof Error ? error.message : String(error));
@@ -321,6 +329,7 @@ export class ScenarioExecutionService {
 					guestCallPending: false,
 				};
 				this.applyCommands(execution, updatePhase, this.guestResult());
+				this.drainFsmTransitions(execution);
 				execution.phase = updatePhase;
 				return;
 			case 'update': {
@@ -332,6 +341,7 @@ export class ScenarioExecutionService {
 				}
 				const result = this.guestResult();
 				this.applyCommands(execution, phase, result);
+				this.drainFsmTransitions(execution);
 				if (result === true
 					|| (valueTag(result) === ValueTag.Table
 						&& (result as Table).getStringKey(phase.protocol.doneKey) === true)) {
@@ -369,6 +379,9 @@ export class ScenarioExecutionService {
 			captureKey: cpu.stringPool.intern('capture'),
 			logKey: cpu.stringPool.intern('log'),
 			doneKey: cpu.stringPool.intern('done'),
+			observeFsmTransitionsKey: cpu.stringPool.intern(
+				SCENARIO_GUEST_OBSERVE_FSM_TRANSITIONS_KEY,
+			),
 		};
 	}
 
@@ -432,6 +445,18 @@ export class ScenarioExecutionService {
 		const gamepadValue = command.getStringKey(protocol.gamepadKey);
 		const captureValue = command.getStringKey(protocol.captureKey);
 		const logValue = command.getStringKey(protocol.logKey);
+		const fsmTransitionsValue = command.getStringKey(
+			protocol.observeFsmTransitionsKey,
+		);
+		if (fsmTransitionsValue !== null) {
+			execution.fsmTransitionObservation = new ScenarioFsmTransitionObservation(
+				fsmTransitionsValue as Table,
+				this.runtime.machine.cpu.stringPool,
+				this.results,
+				execution.result,
+			);
+			return;
+		}
 		if (pressValue === null
 			&& downValue === null
 			&& upValue === null
@@ -489,6 +514,13 @@ export class ScenarioExecutionService {
 			phase.scenarioTick + 1,
 			this.runtime.frameScheduler.lastTickSequence,
 		);
+	}
+
+	private drainFsmTransitions(execution: ScenarioExecution): void {
+		const observation = execution.fsmTransitionObservation;
+		if (observation !== null) {
+			observation.drain(this.runtime.frameScheduler.lastTickSequence);
+		}
 	}
 
 	private applyScheduledCommands(

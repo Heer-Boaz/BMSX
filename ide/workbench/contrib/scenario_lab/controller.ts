@@ -23,12 +23,11 @@ import {
 import {
 	executeScenarioLabNavigation,
 	scenarioLabCommandEnabled,
-	ScenarioLabNavigationResult,
+	type ScenarioLabNavigationResult,
 	type ScenarioLabNavigationCommand,
 	updateScenarioLabStatus,
 } from './navigation';
 import {
-	selectedScenarioResultRow,
 	selectedScenarioTest,
 	refreshScenarioLabProjection,
 } from './projection';
@@ -41,6 +40,7 @@ import type { ScenarioMediaSessionEvent } from './run_service';
 import type { ScenarioTestCollection } from '../../../testing/scenario/test_collection';
 import type { ScenarioLabViewState } from './view_model';
 import { createScenarioLabViewState } from './view_state';
+import type { ScenarioSourceLocation } from '../../../testing/scenario/result_service';
 
 const SCENARIO_LAB_TAB_ID: ScenarioLabTabId = 'scenario-lab';
 const WHEEL_SCROLL_ROWS = 3;
@@ -88,7 +88,7 @@ export class ScenarioLabController {
 	): boolean {
 		prepareScenarioLabLayout(view);
 		const result = executeScenarioLabNavigation(view, command);
-		return this.applyNavigationResult(view, result);
+		return this.applyNavigationResult(result);
 	}
 
 	public handlePointer(
@@ -111,10 +111,7 @@ export class ScenarioLabController {
 			case ScenarioLabPointerResult.Handled:
 				return true;
 			case ScenarioLabPointerResult.Activate:
-				this.applyNavigationResult(
-					view,
-					executeScenarioLabNavigation(view, 'activate'),
-				);
+				this.applyNavigationResult(executeScenarioLabNavigation(view, 'activate'));
 				return true;
 		}
 	}
@@ -199,32 +196,19 @@ export class ScenarioLabController {
 		setActiveTab(this.resourcePanel, tab.id);
 	}
 
-	private applyNavigationResult(
-		view: ScenarioLabViewState,
-		result: ScenarioLabNavigationResult,
-	): boolean {
-		switch (result) {
-			case ScenarioLabNavigationResult.None:
+	private applyNavigationResult(result: ScenarioLabNavigationResult): boolean {
+		switch (result.kind) {
+			case 'none':
 				return false;
-			case ScenarioLabNavigationResult.Changed:
+			case 'changed':
 				return true;
-			case ScenarioLabNavigationResult.OpenSource:
-				this.openSelectedSource(view);
+			case 'open-source':
+				this.openSource(result.location);
 				return true;
 		}
 	}
 
-	private openSelectedSource(view: ScenarioLabViewState): void {
-		if (view.focus === 'tests') {
-			const test = selectedScenarioTest(view)!;
-			this.navigation.focusChunkSourceForContext(
-				test.resource.domain,
-				test.resource.path,
-				{ row: 0, startColumn: 0, endColumn: 0 },
-			);
-			return;
-		}
-		const location = selectedScenarioResultRow(view)!.location;
+	private openSource(location: ScenarioSourceLocation): void {
 		this.navigation.focusChunkSourceForContext(
 			location.resource.domain,
 			location.resource.path,
