@@ -343,6 +343,11 @@ Ownership terms are architectural roles, not interchangeable directory labels:
   scheduler, devices, installed-ROM decoding, BLua32 execution, and
   deterministic save-state.
 - `bios` owns the guest system-ROM program and its resources.
+- `cartlib` is the reusable cart-ROM engine and SDK source library. Its world,
+  component scheduling, behaviour, FSM, ActionEffect, and device-helper modules
+  execute as cartridge code and are linked into a cart image only when that
+  cart's static module closure requires them. It owns no machine, BIOS, host, or
+  Studio state and is not a separately mounted runtime.
 - `host` owns the process, window/device/runtime environment, files, physical
   input, audio/video presentation, external ABI callbacks, and execution loop.
 - `mode` is a behavior variant inside one host. A mode may choose pacing,
@@ -553,11 +558,20 @@ Split repositories only after all of these are true:
 - External consumers exist that need independent versioning.
 
 The package boundary is `machine`, `hosts`, `toolchain`, `ide`, `extensions`,
-`third_party`, `scripts`, `carts`, and `tests`. Carts are software for the
-machine, not part of the machine package.
+`third_party`, `scripts`, `cartlib`, `carts`, and `tests`. Carts are software
+for the machine, not part of the machine package. `cartlib` is their reusable
+cart-ROM engine dependency, not firmware and not an emulator package.
 Current `carts/<name>` folders are cart collections with cart-local
 resources. If cart source moves during a package split, it should move toward a
 top-level `carts/` collection, not under `machine`.
+
+The executable-cart producer starts from the cart's own source and follows its
+static `require` closure into `cartlib`; only that closure enters the cartridge
+BLua32 image. There is no independent cartlib runtime artifact. This follows
+the conventional console-SDK split exemplified by
+[PSn00bSDK's explicit SDK library targets](https://github.com/Lameguy64/PSn00bSDK/blob/5d9aa2d3dfc7d6e51c2eb942ab4cdbae5571a40a/doc/cmake_reference.md#L236-L269):
+the reusable library is a build dependency of the console executable rather
+than firmware or emulator-owned runtime state.
 
 The BIOS program that ships as the default system ROM lives in
 `machine/bios`. That directory contains guest source and resources for the
@@ -3562,11 +3576,13 @@ emulator runtime code. Its source tree follows the program's actual owners:
   modules, own the resident Lua libraries.
 
 There is no parallel `firmware`, `system`, `stdlib`, language-name wrapper, or
-machine-name namespace beneath the BIOS root. Cart builds do not receive BIOS
-source modules as a linker context. Normal Lua facilities are installed as
-ordinary globals before cartridge initialization; explicitly callable BIOS
-services use the fixed public vector described above. Cartridge modules are
-compiled and linked into the cartridge image.
+machine-name namespace beneath the BIOS root. Cart builds never compile BIOS
+source or receive private BIOS module slots. Their offline linker receives only
+the fixed public-vector import library described above; a cart reference such
+as `gpu/system_vram_region` resolves to that physical BIOS vector rather than
+copying the BIOS module into the cartridge. Normal Lua facilities are installed
+as ordinary globals before cartridge initialization. Cartridge and required
+cartlib modules are compiled and linked into the cartridge image.
 
 Lua heap counts as RAM. Public accounting should talk about RAM, not a separate
 heap budget outside the machine.
