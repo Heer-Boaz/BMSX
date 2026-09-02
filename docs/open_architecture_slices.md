@@ -332,6 +332,11 @@ runtime-eigenaren waren onderzocht. Geen onderdeel van dat protocol is nog een
 bouwcontract. Ook `STUDIO-PIE-RUNTIME-01` is geen geldige vervolgslice zolang er
 geen geaccepteerd Studio-ontwerp is.
 
+Het reviewartifact voor `STUDIO-FUNCTIONAL-DESIGN-01` staat in
+[`studio_functional_design.md`](studio_functional_design.md). Het document
+definieert functionele opties en eigendomsgrenzen, maar kiest bewust nog geen
+productvariant, transport of ABI.
+
 | ID | Opdracht | Klaar wanneer |
 | --- | --- | --- |
 | `STUDIO-FUNCTIONAL-DESIGN-01` | Maak na `CART-DEVICE-COMPOSITION-01` een ontwerp vanuit de echte authoring- en testtaken van de bestaande games en cartlib. Begin bij Behavior Trees, FSM-overgangen, ActionEffects, blackboard/state-data, eventketens en deterministische scenario-tests: wat moet de maker modelleren, live zien, pauzeren, stap-voor-stap uitvoeren, injecteren, opnemen, vergelijken en terugvinden in bron? Onderzoek per functie eerst volwassen productievoorbeelden (onder meer VS Code voor workbench/testing/debugger-ownership en gespecialiseerde BT/FSM-tools voor graph-editing en runtime-observatie). Verifieer daarna de live BMSX owners en representaties. Maak meerdere UX/ownership-opties; kies nog geen viewport, socket, mailbox, guest-ABI, scene graph of tweede Runtime. Neem de werkelijke lage presentatieresolutie, het bestaande IDE-tiny-font, keyboard/controllerbediening en browser plus libretro expliciet mee. | Een reviewbaar functioneel eisenmodel, workflows, resolutie-/inputbudget, runtime-observability-contract, testmodel en owner-matrix bestaan; iedere architectuurkeuze verwijst naar een best-practicebron en live BMSX-owner; prototypes mogen wegwerpbaar zijn en schrijven geen machine/cartlib ABI. De gebruiker heeft het ontwerp gekozen vóór er implementatieslices worden geknipt. |
