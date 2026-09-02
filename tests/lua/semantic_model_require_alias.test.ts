@@ -49,6 +49,69 @@ test('semantic file data records direct and chained require aliases', async () =
 	]);
 });
 
+test('semantic call sites retain function-local module targets', async () => {
+	const { buildLuaFileSemanticData } = await semanticWorkspaceModulePromise;
+	const source = [
+		'local register<const> = function()',
+		"\tlocal trees<const> = require('cartlib/behaviour_tree/library')",
+		"\ttrees.register('guard', { root = { type = 'task' } })",
+		'end',
+		'return register',
+	].join('\n');
+	const data = buildLuaFileSemanticData(source, 'function_local_alias.lua');
+	const registration = data.callSites.find(callSite => callSite.expression.range.start.line === 3)!;
+	assert.deepEqual(registration.moduleTarget, {
+		module: 'cartlib/behaviour_tree/library',
+		memberPath: ['register'],
+	});
+	assert.equal(registration.moduleTargetBinding, 'immutable');
+});
+
+test('semantic call sites retain the module target active at each call', async () => {
+	const { buildLuaFileSemanticData } = await semanticWorkspaceModulePromise;
+	const source = [
+		"local api = require('left')",
+		'api.first()',
+		"api = require('right')",
+		'api.second()',
+	].join('\n');
+	const data = buildLuaFileSemanticData(source, 'temporal_alias.lua');
+	const first = data.callSites.find(callSite => callSite.expression.range.start.line === 2)!;
+	const second = data.callSites.find(callSite => callSite.expression.range.start.line === 4)!;
+	assert.deepEqual(first.moduleTarget, { module: 'left', memberPath: ['first'] });
+	assert.deepEqual(second.moduleTarget, { module: 'right', memberPath: ['second'] });
+	assert.equal(first.moduleTargetBinding, 'mutable');
+	assert.equal(second.moduleTargetBinding, 'mutable');
+});
+
+test('semantic call sites resolve the callee before traversing argument closures', async () => {
+	const { buildLuaFileSemanticData } = await semanticWorkspaceModulePromise;
+	const source = [
+		"local api = require('left')",
+		'api.run(function()',
+		"\tapi = require('right')",
+		'end)',
+	].join('\n');
+	const data = buildLuaFileSemanticData(source, 'callee_before_arguments.lua');
+	const call = data.callSites.find(callSite => callSite.expression.range.start.line === 2)!;
+	assert.deepEqual(call.moduleTarget, { module: 'left', memberPath: ['run'] });
+	assert.equal(call.moduleTargetBinding, 'mutable');
+});
+
+test('semantic call sites retain immutable module targets copied from mutable aliases', async () => {
+	const { buildLuaFileSemanticData } = await semanticWorkspaceModulePromise;
+	const source = [
+		"local mutable = require('left')",
+		'local retained<const> = mutable',
+		"mutable = require('right')",
+		'retained.run()',
+	].join('\n');
+	const data = buildLuaFileSemanticData(source, 'retained_alias.lua');
+	const call = data.callSites.find(callSite => callSite.expression.range.start.line === 4)!;
+	assert.deepEqual(call.moduleTarget, { module: 'left', memberPath: ['run'] });
+	assert.equal(call.moduleTargetBinding, 'immutable');
+});
+
 test('semantic file data does not create module aliases after require is assigned globally', async () => {
 	const { buildLuaFileSemanticData } = await semanticWorkspaceModulePromise;
 	const source = [

@@ -6,7 +6,7 @@ export type LuaAnalysisEntry = {
 	path: string;
 	source: string;
 	parsed: ParsedLuaChunk;
-	syntaxError?: LuaSyntaxError | null;
+	syntaxError: LuaSyntaxError | null;
 	lastAccessMs: number;
 };
 

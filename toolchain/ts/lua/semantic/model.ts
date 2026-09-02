@@ -28,6 +28,7 @@ import {
 } from '../syntax/ast';
 import type { LuaSymbolEntry } from '../semantic_contracts';
 import type { ParsedLuaChunk } from '../analysis/parse';
+import type { LuaSyntaxError } from '../errors';
 import { getCachedLuaParse } from '../analysis/cache';
 import type { SourcePosition } from '../source_range';
 import type { SemanticSymbolKind } from './symbols';
@@ -128,6 +129,8 @@ export type Ref = {
 export type LuaCallSite = {
 	readonly expression: LuaCallExpression;
 	readonly calleeValue: SemanticValueSource | undefined;
+	readonly moduleTarget: ModuleAliasTarget | null;
+	readonly moduleTargetBinding: 'immutable' | 'mutable' | null;
 	readonly reference: Ref | undefined;
 	readonly directTarget: SymbolID | undefined;
 };
@@ -142,6 +145,7 @@ export type MemberAccessEntry = {
 export type FileSemanticData = {
 	readonly file: string;
 	readonly source: string;
+	readonly syntaxError: LuaSyntaxError | null;
 	readonly chunk: LuaChunk;
 	readonly annotations: SemanticAnnotations;
 	readonly decls: readonly Decl[];
@@ -303,7 +307,7 @@ type AssignmentTargetInfo = {
 	namePath: readonly string[];
 	path: string | null;
 	valueTarget?: SemanticValueSource;
-	moduleAlias?: ModuleAliasTarget;
+	moduleAlias?: ModuleAliasTarget | null;
 	memberBaseDecl?: InternalDecl;
 	memberOwner?: SemanticValueSource;
 };
@@ -360,6 +364,7 @@ export function buildLuaFileSemanticData(
 	return {
 		file: path,
 		source,
+		syntaxError: parseEntry.syntaxError,
 		chunk: retainedChunk,
 		annotations,
 		decls,
@@ -1092,6 +1097,20 @@ class SemanticBuilder {
 					&& callExpression.callee.member.kind === LuaSyntaxKind.IdentifierExpression) {
 					callReference = this.referencesBySyntax.get(callExpression.callee.member);
 				}
+				const calledValue = methodName && calleeInfo?.valueSource
+					? appendValueMember(calleeInfo.valueSource, methodName)
+					: calleeInfo?.valueSource;
+				const moduleTarget = resolveModuleAliasValueSource(
+					calledValue,
+					this.moduleAliasesByDeclId,
+				);
+				const moduleTargetBinding = moduleTarget && calledValue
+					? (calledValue.root.kind === 'module'
+						|| (calledValue.root.kind === 'declaration'
+							&& this.declById.get(calledValue.root.declId)?.kind === 'constant')
+						? 'immutable'
+						: 'mutable')
+					: null;
 				let firstArgumentInfo: ResolvedNamePath = null;
 				let secondArgumentInfo: ResolvedNamePath = null;
 				const argumentOffset = methodName ? 1 : 0;
@@ -1114,9 +1133,6 @@ class SemanticBuilder {
 					}
 					argumentValues[index + argumentOffset] = argumentInfo?.valueSource;
 				}
-				const calledValue = methodName && calleeInfo?.valueSource
-					? appendValueMember(calleeInfo.valueSource, methodName)
-					: calleeInfo?.valueSource;
 				if (calledValue) {
 					this.recordCallValue({
 						callee: calledValue,
@@ -1127,6 +1143,8 @@ class SemanticBuilder {
 				this.callSites.push({
 					expression: callExpression,
 					calleeValue: calledValue,
+					moduleTarget,
+					moduleTargetBinding,
 					reference: callReference,
 					directTarget: callReference === undefined
 						&& calleeInfo !== null
@@ -2416,7 +2434,7 @@ class SemanticBuilder {
 		return path ? this.resolveValueSourceFromNamePath(path) : undefined;
 	}
 
-	private setModuleAlias(decl: InternalDecl, target: ModuleAliasTarget): void {
+	private setModuleAlias(decl: InternalDecl, target: ModuleAliasTarget | null): void {
 		if (target) {
 			this.moduleAliasesByDeclId.set(decl.id, target);
 		} else {

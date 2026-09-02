@@ -7,7 +7,7 @@ import type { LuaToken } from '../syntax/token';
 export type ParsedLuaChunk = {
 	chunk: LuaChunk | null;
 	tokens: LuaToken[];
-	syntaxError?: LuaSyntaxError | null;
+	syntaxError: LuaSyntaxError | null;
 };
 
 export function parseLuaChunk(source: string, path: string): ParsedLuaChunk {

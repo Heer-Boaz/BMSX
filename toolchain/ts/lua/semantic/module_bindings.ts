@@ -19,7 +19,7 @@ export type ModuleAliasTarget = {
 	readonly memberPath: readonly string[];
 };
 
-type ModuleAliasLookup = (name: string) => ModuleAliasTarget;
+type ModuleAliasLookup = (name: string) => ModuleAliasTarget | null;
 
 const EMPTY_MEMBER_PATH: readonly string[] = [];
 
@@ -44,7 +44,7 @@ export function resolveModuleAliasInitializer(
 	expression: LuaExpression,
 	resolveIdentifier: ModuleAliasLookup,
 	requireIsBuiltin: boolean,
-): ModuleAliasTarget {
+): ModuleAliasTarget | null {
 	let root = expression;
 	let memberCount = 0;
 	while (root.kind === LuaSyntaxKind.MemberExpression
@@ -98,7 +98,7 @@ export function resolveModuleAliasInitializer(
 export function resolveModuleAliasValueSource(
 	source: SemanticValueSource | undefined,
 	aliasesByDeclaration: ReadonlyMap<string, ModuleAliasTarget>,
-): ModuleAliasTarget {
+): ModuleAliasTarget | null {
 	if (!source) {
 		return null;
 	}
