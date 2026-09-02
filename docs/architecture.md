@@ -363,8 +363,10 @@ VBlank-begin increments `lastTickSequence`. Existing whole-cycle carry remains
 identified separately in `cycleCarryGranted`, and the operation neither adds
 host elapsed time nor consumes the host fractional-cycle remainder. A stopped
 PCRTC publishes a zero tick grant, so the operation reports no tick without
-advancing machine time; a backend fence, execution stop or timing change may
-likewise end the bounded grant without fabricating an edge. On a real edge the
+advancing machine time. A backend fence suspends the operation with its target
+sequence and single cycle grant retained; resumption after backend service does
+not grant another period. An execution stop or timing change may likewise end
+the bounded grant without fabricating an edge. On a real edge the
 GPU presentation latch, ICU sample, VBlank IRQ flag and tick completion are
 published in that order. A CPU parked in `HALT_UNTIL_IRQ` may accept the IRQ on
 the same scheduler fence, but no IRQ-handler instruction is executed past the
@@ -390,6 +392,7 @@ distinct:
 | Host elapsed time and fractional cycle grant | `number` | `f64` | frame scheduler |
 | Active grant and unused whole-cycle carry | integral `number` | `i64` | frame scheduler/frame loop |
 | Logical tick identity | integral `lastTickSequence` | `i64 lastTickSequence` | VBlank-begin/frame scheduler |
+| In-flight bounded operation | boolean plus integral target sequence | `bool` plus `i64` target sequence | frame scheduler |
 | Pending or committed presentation | retained GPU/host latches | retained GPU/host latches | GPU and presentation host |
 
 Browser, Node and the IDE continue through `executeHostUpdate` and ordinary

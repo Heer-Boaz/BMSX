@@ -15,13 +15,16 @@ import {
 	IO_INP_STATUS,
 	IO_IRQ_FLAGS,
 	IO_IRQ_MASK,
+	IO_SYS_CONTROL,
 	IRQ_VBLANK,
+	SYS_CONTROL_RESET,
 } from '../../machine/ts/spec/bmsx/io';
 import { IO_WORD_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import { LUA_BOOT_PRIMITIVES } from '../../machine/ts/spec/blua32/builtin';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { GX_GPU_GP0_VRAM_TO_CPU_FIRST } from '../../machine/ts/spec/gx/gp0';
 import {
 	GX_GPU_PCRTC_SMODE1_LOW,
 	GX_GPU_PCRTC_SMODE1_SINT,
@@ -106,6 +109,42 @@ test('bounded logical-tick execution advances one VBlank sequence and retains cy
 	assert.equal(runtime.frameLoop.frameState.cycleCarryGranted, carriedBudget);
 	assert.equal(scheduler.lastTickBudgetRemaining, carriedBudget);
 	assert.equal(scheduler.captureState().cycleGrantRemainder, grantRemainder);
+});
+
+test('bounded logical-tick execution resumes a backend fence without granting another period', () => {
+	const { runtime } = createTickRuntime();
+	const scheduler = runtime.frameScheduler;
+	const gpu = runtime.machine.gxGpu;
+	gpu.writeGp0(GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24);
+	gpu.writeGp0(0);
+	gpu.writeGp0((1 << 16) | 1);
+
+	assert.equal(scheduler.runToNextLogicalTick(), false);
+	assert.equal(gpu.backendServiceBlocksMachine(), true);
+	assert.equal(scheduler.lastTickSequence, 0);
+	assert.equal(runtime.frameLoop.frameState.cycleBudgetGranted, runtime.timing.cycleBudgetPerFrame);
+	const suspendedState = scheduler.captureState();
+	assert.equal(suspendedState.logicalTickRunPending, true);
+	assert.equal(suspendedState.logicalTickRunTargetSequence, 1);
+
+	const output = gpu.readDeviceOutput();
+	const readback = output.readbackPort;
+	assert.equal(readback.claimReadback(output.commandBuffer.executedCommandCount), true);
+	readback.completeReadback(readback.token);
+	assert.equal(scheduler.runToNextLogicalTick(), true);
+	assert.equal(scheduler.lastTickSequence, 1);
+	assert.equal(scheduler.lastTickBudgetGranted, runtime.timing.cycleBudgetPerFrame);
+	assert.equal(scheduler.captureState().logicalTickRunPending, false);
+	assert.equal(scheduler.captureState().logicalTickRunTargetSequence, 0);
+});
+
+test('bounded logical-tick execution does not report a reset as its target edge', () => {
+	const { runtime } = createTickRuntime();
+	runtime.machine.memory.writeMappedU32LE(IO_SYS_CONTROL, SYS_CONTROL_RESET);
+
+	assert.equal(runtime.frameScheduler.runToNextLogicalTick(), false);
+	assert.equal(runtime.frameScheduler.lastTickSequence, 0);
+	assert.equal(runtime.frameScheduler.captureState().logicalTickRunPending, false);
 });
 
 test('logical-tick boundary publishes ICU state and enters a waiting CPU interrupt', () => {

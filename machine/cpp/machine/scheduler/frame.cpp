@@ -68,6 +68,8 @@ void FrameSchedulerState::reset() {
 	m_cycleGrantRemainder = 0.0;
 	clearPendingTickCompletion();
 	m_backendServiceSuspended = false;
+	m_logicalTickRunPending = false;
+	m_logicalTickRunTargetSequence = 0;
 }
 
 void FrameSchedulerState::resetTickTelemetry() {
@@ -88,6 +90,8 @@ FrameSchedulerStateSnapshot FrameSchedulerState::captureState() const {
 	state.carriedCycleBudget = m_carriedCycleBudget;
 	state.tickCompletionPending = m_tickCompletionPending;
 	state.tickCompletionVisualCommitted = m_tickCompletionVisualCommitted;
+	state.logicalTickRunPending = m_logicalTickRunPending;
+	state.logicalTickRunTargetSequence = m_logicalTickRunTargetSequence;
 	state.lastTickSequence = lastTickSequence;
 	state.lastTickBudgetGranted = lastTickBudgetGranted;
 	state.lastTickCpuBudgetGranted = lastTickCpuBudgetGranted;
@@ -105,6 +109,8 @@ void FrameSchedulerState::restoreState(const FrameSchedulerStateSnapshot& state)
 	m_carriedCycleBudget = state.carriedCycleBudget;
 	m_tickCompletionPending = state.tickCompletionPending;
 	m_tickCompletionVisualCommitted = state.tickCompletionVisualCommitted;
+	m_logicalTickRunPending = state.logicalTickRunPending;
+	m_logicalTickRunTargetSequence = state.logicalTickRunTargetSequence;
 	lastTickSequence = state.lastTickSequence;
 	lastTickBudgetGranted = state.lastTickBudgetGranted;
 	lastTickCpuBudgetGranted = state.lastTickCpuBudgetGranted;
@@ -189,23 +195,32 @@ bool FrameSchedulerState::runToNextLogicalTick(Runtime& runtime) {
 	if (tickBudget == 0 || !beginScheduledExecution(runtime, 0.0)) {
 		return false;
 	}
-	const i64 previousSequence = lastTickSequence;
-	if (runtime.frameLoop.frameActive) {
-		FrameState& frameState = runtime.frameLoop.frameState;
-		frameState.cycleBudgetRemaining += tickBudget;
-		frameState.cycleBudgetGranted += tickBudget;
-	} else {
-		const i64 carry = m_carriedCycleBudget;
-		beginScheduledFrame(runtime, carry + tickBudget, carry);
+	if (!m_logicalTickRunPending) {
+		m_logicalTickRunPending = true;
+		m_logicalTickRunTargetSequence = lastTickSequence + 1;
+		if (runtime.frameLoop.frameActive) {
+			FrameState& frameState = runtime.frameLoop.frameState;
+			frameState.cycleBudgetRemaining += tickBudget;
+			frameState.cycleBudgetGranted += tickBudget;
+		} else {
+			const i64 carry = m_carriedCycleBudget;
+			beginScheduledFrame(runtime, carry + tickBudget, carry);
+		}
 	}
-	while (lastTickSequence == previousSequence && canRunScheduledUpdate(runtime)) {
+	const i64 targetSequence = m_logicalTickRunTargetSequence;
+	while (lastTickSequence != targetSequence && canRunScheduledUpdate(runtime)) {
 		const bool progressed = runtime.frameLoop.tickUpdate(runtime);
 		if (runtime.frameLoop.frameActive && !progressed) {
 			break;
 		}
 	}
 	endScheduledExecution(runtime);
-	return lastTickSequence == previousSequence + 1;
+	if (lastTickSequence != targetSequence) {
+		return false;
+	}
+	m_logicalTickRunPending = false;
+	m_logicalTickRunTargetSequence = 0;
+	return true;
 }
 
 InstructionStepResult FrameSchedulerState::stepInstruction(Runtime& runtime, f64 hostDeltaMs) {

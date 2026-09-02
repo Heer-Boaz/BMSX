@@ -19,6 +19,8 @@ struct FrameSchedulerStateSnapshot {
 	i64 carriedCycleBudget = 0;
 	bool tickCompletionPending = false;
 	bool tickCompletionVisualCommitted = false;
+	bool logicalTickRunPending = false;
+	i64 logicalTickRunTargetSequence = 0;
 	i64 lastTickSequence = 0;
 	i64 lastTickBudgetGranted = 0;
 	i64 lastTickCpuBudgetGranted = 0;
@@ -68,6 +70,8 @@ private:
 	bool m_tickCompletionPending = false;
 	bool m_tickCompletionVisualCommitted = false;
 	bool m_backendServiceSuspended = false;
+	bool m_logicalTickRunPending = false;
+	i64 m_logicalTickRunTargetSequence = 0;
 };
 
 } // namespace bmsx

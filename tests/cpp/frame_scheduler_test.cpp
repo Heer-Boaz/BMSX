@@ -7,6 +7,7 @@
 #include "spec/bmsx/memory_map.h"
 #include "spec/bmsx/model.h"
 #include "spec/gx/pcrtc.h"
+#include "spec/gx/gp0.h"
 #include "support/boot_rom_fixture.h"
 #include "support/cartridge_fixture.h"
 
@@ -112,6 +113,60 @@ void testBoundedLogicalTickRetainsCycleCarry() {
 	);
 }
 
+void testBoundedLogicalTickResumesBackendFenceWithoutAnotherGrant() {
+	TickRuntimeFixture fixture;
+	bmsx::Runtime& runtime = fixture.runtime;
+	bmsx::FrameSchedulerState& scheduler = runtime.frameScheduler;
+	bmsx::GxGpu& gpu = runtime.machine.gxGpu;
+	gpu.writeGp0(bmsx::GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24u);
+	gpu.writeGp0(0u);
+	gpu.writeGp0((1u << 16u) | 1u);
+
+	require(!scheduler.runToNextLogicalTick(runtime), "backend fence suspends bounded execution");
+	require(gpu.backendServiceBlocksMachine(), "scheduled GPUREAD reaches the backend fence");
+	require(scheduler.lastTickSequence == 0, "backend fence precedes the target VBlank");
+	require(
+		runtime.frameLoop.frameState.cycleBudgetGranted == runtime.timing.cycleBudgetPerFrame,
+		"bounded execution grants one PCRTC period before suspension"
+	);
+	const bmsx::FrameSchedulerStateSnapshot suspendedState = scheduler.captureState();
+	require(suspendedState.logicalTickRunPending, "bounded operation retains its pending state");
+	require(suspendedState.logicalTickRunTargetSequence == 1, "bounded operation retains its VBlank target");
+
+	const bmsx::GxGpuDeviceOutput& output = gpu.readDeviceOutput();
+	bmsx::GxGpuReadbackPort& readback = output.readbackPort;
+	require(
+		readback.claimReadback(output.commandBuffer.executedCommandCount),
+		"backend claims the readback fence"
+	);
+	readback.completeReadback(readback.token());
+	require(scheduler.runToNextLogicalTick(runtime), "bounded execution resumes after backend service");
+	require(scheduler.lastTickSequence == 1, "resumed execution reaches its original target");
+	require(
+		scheduler.lastTickBudgetGranted == runtime.timing.cycleBudgetPerFrame,
+		"resumption does not grant a second PCRTC period"
+	);
+	const bmsx::FrameSchedulerStateSnapshot completedState = scheduler.captureState();
+	require(!completedState.logicalTickRunPending, "completed operation clears its pending state");
+	require(completedState.logicalTickRunTargetSequence == 0, "completed operation clears its target");
+}
+
+void testBoundedLogicalTickDoesNotReportResetAsTargetEdge() {
+	TickRuntimeFixture fixture;
+	bmsx::Runtime& runtime = fixture.runtime;
+	runtime.machine.memory.writeMappedU32LE(bmsx::IO_SYS_CONTROL, bmsx::SYS_CONTROL_RESET);
+
+	require(
+		!runtime.frameScheduler.runToNextLogicalTick(runtime),
+		"system reset does not report completion of the abandoned target"
+	);
+	require(runtime.frameScheduler.lastTickSequence == 0, "system reset clears the logical tick sequence");
+	require(
+		!runtime.frameScheduler.captureState().logicalTickRunPending,
+		"system reset abandons the bounded operation"
+	);
+}
+
 void testLogicalTickPublishesInputAndEntersWaitingCpuInterrupt() {
 	TickRuntimeFixture fixture;
 	bmsx::Runtime& runtime = fixture.runtime;
@@ -196,6 +251,8 @@ void testNormalHostExecutionKeepsExistingSchedulerContract() {
 
 int main() {
 	testBoundedLogicalTickRetainsCycleCarry();
+	testBoundedLogicalTickResumesBackendFenceWithoutAnotherGrant();
+	testBoundedLogicalTickDoesNotReportResetAsTargetEdge();
 	testLogicalTickPublishesInputAndEntersWaitingCpuInterrupt();
 	testLogicalTickIsBoundedWithoutVblankDeadline();
 	testNormalHostExecutionKeepsExistingSchedulerContract();

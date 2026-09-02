@@ -95,6 +95,8 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'lastSampleCycle',
 	'sampleArmed',
 	'sampleSequence',
+	'logicalTickRunPending',
+	'logicalTickRunTargetSequence',
 	'supervisorRequestLineHigh',
 	'systemControl',
 	'systemDebugTransmit',

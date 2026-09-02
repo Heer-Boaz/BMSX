@@ -464,6 +464,8 @@ function createRuntimeSaveState(): RuntimeSaveState {
 				carriedCycleBudget: 22,
 				tickCompletionPending: true,
 				tickCompletionVisualCommitted: true,
+				logicalTickRunPending: true,
+				logicalTickRunTargetSequence: 45,
 				lastTickSequence: 44,
 				lastTickBudgetGranted: 55,
 				lastTickCpuBudgetGranted: 66,

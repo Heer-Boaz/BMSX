@@ -13,6 +13,8 @@ export type FrameSchedulerStateSnapshot = {
 	carriedCycleBudget: number;
 	tickCompletionPending: boolean;
 	tickCompletionVisualCommitted: boolean;
+	logicalTickRunPending: boolean;
+	logicalTickRunTargetSequence: number;
 	lastTickSequence: number;
 	lastTickBudgetGranted: number;
 	lastTickCpuBudgetGranted: number;
@@ -44,6 +46,8 @@ export class FrameSchedulerState {
 	private tickCompletionPending = false;
 	private tickCompletionVisualCommitted = false;
 	private backendServiceSuspended = false;
+	private logicalTickRunPending = false;
+	private logicalTickRunTargetSequence = 0;
 
 	constructor(private readonly runtime: Runtime) {
 	}
@@ -118,6 +122,8 @@ export class FrameSchedulerState {
 		this.cycleGrantRemainder = 0;
 		this.clearPendingTickCompletion();
 		this.backendServiceSuspended = false;
+		this.logicalTickRunPending = false;
+		this.logicalTickRunTargetSequence = 0;
 	}
 
 	public resetTickTelemetry(): void {
@@ -138,6 +144,8 @@ export class FrameSchedulerState {
 			carriedCycleBudget: this.carriedCycleBudget,
 			tickCompletionPending: this.tickCompletionPending,
 			tickCompletionVisualCommitted: this.tickCompletionVisualCommitted,
+			logicalTickRunPending: this.logicalTickRunPending,
+			logicalTickRunTargetSequence: this.logicalTickRunTargetSequence,
 			lastTickSequence: this.lastTickSequence,
 			lastTickBudgetGranted: this.lastTickBudgetGranted,
 			lastTickCpuBudgetGranted: this.lastTickCpuBudgetGranted,
@@ -163,6 +171,8 @@ export class FrameSchedulerState {
 		this.lastTickConsumedSequence = state.lastTickConsumedSequence;
 		this.tickCompletionPending = state.tickCompletionPending;
 		this.tickCompletionVisualCommitted = state.tickCompletionVisualCommitted;
+		this.logicalTickRunPending = state.logicalTickRunPending;
+		this.logicalTickRunTargetSequence = state.logicalTickRunTargetSequence;
 		this.backendServiceSuspended = false;
 	}
 
@@ -186,23 +196,32 @@ export class FrameSchedulerState {
 		if (tickBudget === 0 || !this.beginScheduledExecution(0)) {
 			return false;
 		}
-		const previousSequence = this.lastTickSequence;
-		if (runtime.frameLoop.frameActive) {
-			const frameState = runtime.frameLoop.frameState;
-			frameState.cycleBudgetRemaining += tickBudget;
-			frameState.cycleBudgetGranted += tickBudget;
-		} else {
-			const carry = this.carriedCycleBudget;
-			this.beginScheduledFrame(carry + tickBudget, carry);
+		if (!this.logicalTickRunPending) {
+			this.logicalTickRunPending = true;
+			this.logicalTickRunTargetSequence = this.lastTickSequence + 1;
+			if (runtime.frameLoop.frameActive) {
+				const frameState = runtime.frameLoop.frameState;
+				frameState.cycleBudgetRemaining += tickBudget;
+				frameState.cycleBudgetGranted += tickBudget;
+			} else {
+				const carry = this.carriedCycleBudget;
+				this.beginScheduledFrame(carry + tickBudget, carry);
+			}
 		}
-		while (this.lastTickSequence === previousSequence && this.canRunScheduledUpdate()) {
+		const targetSequence = this.logicalTickRunTargetSequence;
+		while (this.lastTickSequence !== targetSequence && this.canRunScheduledUpdate()) {
 			const progressed = runtime.frameLoop.tickUpdate();
 			if (runtime.frameLoop.frameActive && !progressed) {
 				break;
 			}
 		}
 		this.endScheduledExecution();
-		return this.lastTickSequence === previousSequence + 1;
+		if (this.lastTickSequence !== targetSequence) {
+			return false;
+		}
+		this.logicalTickRunPending = false;
+		this.logicalTickRunTargetSequence = 0;
+		return true;
 	}
 
 	public stepInstruction(hostDeltaMs: number): InstructionStepResult {

@@ -262,6 +262,8 @@ BinValue encodeFrameSchedulerState(const FrameSchedulerStateSnapshot& state) {
 	object["carriedCycleBudget"] = state.carriedCycleBudget;
 	object["tickCompletionPending"] = state.tickCompletionPending;
 	object["tickCompletionVisualCommitted"] = state.tickCompletionVisualCommitted;
+	object["logicalTickRunPending"] = state.logicalTickRunPending;
+	object["logicalTickRunTargetSequence"] = static_cast<i64>(state.logicalTickRunTargetSequence);
 	object["lastTickSequence"] = static_cast<i64>(state.lastTickSequence);
 	object["lastTickBudgetGranted"] = static_cast<i64>(state.lastTickBudgetGranted);
 	object["lastTickCpuBudgetGranted"] = static_cast<i64>(state.lastTickCpuBudgetGranted);
@@ -281,6 +283,8 @@ FrameSchedulerStateSnapshot decodeFrameSchedulerState(const BinValue& value, con
 	state.carriedCycleBudget = requireI64(requireField(object, "carriedCycleBudget", label), "frameScheduler.carriedCycleBudget");
 	state.tickCompletionPending = requireBool(requireField(object, "tickCompletionPending", label), "frameScheduler.tickCompletionPending");
 	state.tickCompletionVisualCommitted = requireBool(requireField(object, "tickCompletionVisualCommitted", label), "frameScheduler.tickCompletionVisualCommitted");
+	state.logicalTickRunPending = requireBool(requireField(object, "logicalTickRunPending", label), "frameScheduler.logicalTickRunPending");
+	state.logicalTickRunTargetSequence = requireI64(requireField(object, "logicalTickRunTargetSequence", label), "frameScheduler.logicalTickRunTargetSequence");
 	state.lastTickSequence = requireI64(requireField(object, "lastTickSequence", label), "frameScheduler.lastTickSequence");
 	state.lastTickBudgetGranted = requireI64(requireField(object, "lastTickBudgetGranted", label), "frameScheduler.lastTickBudgetGranted");
 	state.lastTickCpuBudgetGranted = requireI64(requireField(object, "lastTickCpuBudgetGranted", label), "frameScheduler.lastTickCpuBudgetGranted");
