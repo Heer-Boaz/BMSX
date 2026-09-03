@@ -1,7 +1,7 @@
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import {
+	advanceHostScheduledLogicalTick,
 	beginHostFrame,
-	executeHostLogicalTick,
 	executeHostUpdate,
 	HostFrameAction,
 	HostFrameRunResult,
@@ -9,6 +9,7 @@ import {
 	type HostFrameSession,
 	prepareHostPresentation,
 	presentHostPresentation,
+	syncAfterRuntimeUpdate,
 } from '../../hosts/common/host_frame';
 import { HostMenuInput, type HostOverlayMenu } from '../../hosts/common/host_overlay_menu';
 import type { Input } from '../../hosts/common/input/manager';
@@ -215,16 +216,31 @@ export function runWorkbenchHostFrame(
 				const scenarioExecution = ide.scenarioRuns.execution;
 				if (scenarioExecution.active) {
 					scenarioGuestFrame = true;
-					if (scenarioExecution.prepareLogicalTick()) {
-						const completed = executeHostLogicalTick(
-							session,
+					const previousTickSequence = runtime.frameScheduler.lastTickSequence;
+					let scheduledDeltaMs = hostDeltaMs;
+					let machineAdvanced = false;
+					while (scenarioExecution.active && scenarioExecution.prepareLogicalTick()) {
+						const completed = advanceHostScheduledLogicalTick(
 							runtime,
 							presenter,
+							scheduledDeltaMs,
+						);
+						machineAdvanced = true;
+						scenarioExecution.didRunLogicalTick(completed);
+						scheduledDeltaMs = 0;
+						if (!completed) {
+							break;
+						}
+					}
+					if (machineAdvanced) {
+						syncAfterRuntimeUpdate(
+							session,
+							runtime,
 							input,
 							audioOutput,
 							screen,
+							previousTickSequence,
 						);
-						scenarioExecution.didRunLogicalTick(completed);
 					}
 				} else {
 					if (ide.debugger.plans.controlActive) {

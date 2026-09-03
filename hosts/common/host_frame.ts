@@ -252,6 +252,18 @@ export function syncAfterRuntimeUpdate(
 	screen.syncAfterRuntimeUpdate(runtime, previousTickSequence);
 }
 
+function serviceNextGxBackendRequest(
+	runtime: Runtime,
+	presenter: VideoPresenter,
+): void {
+	const gxGpu = runtime.machine.gxGpu;
+	if (gxGpu.backendCommandDrainPending()) {
+		presenter.backend.executeGxGpuCommandDrain(gxGpu);
+	} else {
+		presenter.backend.executeGxGpuReadback(gxGpu);
+	}
+}
+
 export function executeHostUpdate(
 	session: HostFrameSession,
 	runtime: Runtime,
@@ -265,11 +277,7 @@ export function executeHostUpdate(
 	runtime.frameScheduler.run(hostDeltaMs);
 	const gxGpu = runtime.machine.gxGpu;
 	while (gxGpu.backendServicePending()) {
-		if (gxGpu.backendCommandDrainPending()) {
-			presenter.backend.executeGxGpuCommandDrain(gxGpu);
-		} else {
-			presenter.backend.executeGxGpuReadback(gxGpu);
-		}
+		serviceNextGxBackendRequest(runtime, presenter);
 		runtime.frameScheduler.run(0);
 	}
 	syncAfterRuntimeUpdate(
@@ -295,11 +303,7 @@ export function executeHostLogicalTick(
 	let completed = runtime.frameScheduler.runToNextLogicalTick();
 	const gxGpu = runtime.machine.gxGpu;
 	while (gxGpu.backendServicePending()) {
-		if (gxGpu.backendCommandDrainPending()) {
-			presenter.backend.executeGxGpuCommandDrain(gxGpu);
-		} else {
-			presenter.backend.executeGxGpuReadback(gxGpu);
-		}
+		serviceNextGxBackendRequest(runtime, presenter);
 		if (!completed) {
 			completed = runtime.frameScheduler.runToNextLogicalTick();
 		}
@@ -312,6 +316,23 @@ export function executeHostLogicalTick(
 		screen,
 		previousTickSequence,
 	);
+	return completed;
+}
+
+/** Advances at most one host-time-backed logical tick and services its backend fences. */
+export function advanceHostScheduledLogicalTick(
+	runtime: Runtime,
+	presenter: VideoPresenter,
+	hostDeltaMs: number,
+): boolean {
+	let completed = runtime.frameScheduler.runScheduledToNextLogicalTick(hostDeltaMs);
+	const gxGpu = runtime.machine.gxGpu;
+	while (gxGpu.backendServicePending()) {
+		serviceNextGxBackendRequest(runtime, presenter);
+		if (!completed) {
+			completed = runtime.frameScheduler.runScheduledToNextLogicalTick(0);
+		}
+	}
 	return completed;
 }
 

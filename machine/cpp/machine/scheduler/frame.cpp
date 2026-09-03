@@ -232,6 +232,21 @@ bool FrameSchedulerState::runToNextLogicalTick(Runtime& runtime) {
 	return true;
 }
 
+bool FrameSchedulerState::runScheduledToNextLogicalTick(Runtime& runtime, f64 hostDeltaMs) {
+	const i64 targetSequence = lastTickSequence + 1;
+	if (!beginScheduledExecution(runtime, hostDeltaMs)) {
+		return false;
+	}
+	while (lastTickSequence != targetSequence && canRunScheduledUpdate(runtime)) {
+		const bool progressed = runtime.frameLoop.tickUpdate(runtime);
+		if (runtime.frameLoop.frameActive && !progressed) {
+			break;
+		}
+	}
+	endScheduledExecution(runtime);
+	return lastTickSequence == targetSequence;
+}
+
 InstructionStepResult FrameSchedulerState::stepInstruction(Runtime& runtime, f64 hostDeltaMs) {
 	if (!beginScheduledExecution(runtime, hostDeltaMs)) {
 		return InstructionStepResult::Blocked;

@@ -233,6 +233,22 @@ export class FrameSchedulerState {
 		return true;
 	}
 
+	public runScheduledToNextLogicalTick(hostDeltaMs: number): boolean {
+		const runtime = this.runtime;
+		const targetSequence = this.lastTickSequence + 1;
+		if (!this.beginScheduledExecution(hostDeltaMs)) {
+			return false;
+		}
+		while (this.lastTickSequence !== targetSequence && this.canRunScheduledUpdate()) {
+			const progressed = runtime.frameLoop.tickUpdate();
+			if (runtime.frameLoop.frameActive && !progressed) {
+				break;
+			}
+		}
+		this.endScheduledExecution();
+		return this.lastTickSequence === targetSequence;
+	}
+
 	public stepInstruction(hostDeltaMs: number): InstructionStepResult {
 		if (!this.beginScheduledExecution(hostDeltaMs)) {
 			return InstructionStepResult.Blocked;

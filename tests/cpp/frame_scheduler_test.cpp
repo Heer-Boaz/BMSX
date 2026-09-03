@@ -11,6 +11,7 @@
 #include "support/boot_rom_fixture.h"
 #include "support/cartridge_fixture.h"
 
+#include <array>
 #include <stdexcept>
 #include <vector>
 
@@ -151,6 +152,132 @@ void testBoundedLogicalTickResumesBackendFenceWithoutAnotherGrant() {
 	require(completedState.logicalTickRunTargetSequence == 0, "completed operation clears its target");
 }
 
+void testScheduledBoundedTickRetainsPartialMachineProgress() {
+	TickRuntimeFixture fixture;
+	bmsx::Runtime& runtime = fixture.runtime;
+	bmsx::FrameSchedulerState& scheduler = runtime.frameScheduler;
+	const bmsx::f64 halfFrameMs = runtime.timing.frameDurationMs / 2.0;
+
+	require(
+		!scheduler.runScheduledToNextLogicalTick(runtime, 0.0),
+		"scheduled bounded execution requires host time"
+	);
+	require(!runtime.frameLoop.frameActive, "zero host time does not open a machine frame");
+	require(
+		!scheduler.runScheduledToNextLogicalTick(runtime, halfFrameMs),
+		"a partial host frame stops before VBlank"
+	);
+	require(scheduler.lastTickSequence == 0, "partial host time does not publish a logical tick");
+	require(runtime.frameLoop.frameActive, "partial host time retains the machine frame");
+	require(
+		scheduler.runScheduledToNextLogicalTick(runtime, halfFrameMs),
+		"the next host delta completes the retained machine frame"
+	);
+	require(scheduler.lastTickSequence == 1, "scheduled bounded execution publishes one tick");
+	require(
+		scheduler.lastTickBudgetGranted == static_cast<bmsx::i64>(
+			runtime.timing.frameDurationMs * runtime.timing.cpuCyclesPerMillisecond
+		),
+		"scheduled bounded execution grants only accepted host time"
+	);
+}
+
+void testScheduledBoundedTickExposesEveryCatchUpBoundary() {
+	TickRuntimeFixture fixture;
+	bmsx::Runtime& runtime = fixture.runtime;
+	bmsx::FrameSchedulerState& scheduler = runtime.frameScheduler;
+	const bmsx::f64 hostDeltaMs = runtime.timing.frameDurationMs * 4.0;
+
+	for (bmsx::i64 expectedSequence = 1; expectedSequence <= 4; ++expectedSequence) {
+		fixture.input.keyDown = (expectedSequence & 1) != 0;
+		runtime.machine.memory.writeMappedU32LE(bmsx::IO_INP_CTRL, bmsx::INP_CTRL_ARM);
+		require(
+			scheduler.runScheduledToNextLogicalTick(
+				runtime,
+				expectedSequence == 1 ? hostDeltaMs : 0.0
+			),
+			"retained host carry reaches the next prepared boundary"
+		);
+		require(
+			scheduler.lastTickSequence == expectedSequence,
+			"scheduled bounded execution exposes each logical tick"
+		);
+	}
+	require(fixture.input.sampleCount == 4, "each catch-up boundary samples ICU input once");
+	require(
+		!scheduler.runScheduledToNextLogicalTick(runtime, 0.0),
+		"drained host carry cannot fabricate another logical tick"
+	);
+}
+
+void testScheduledBoundedTickResumesBackendFenceWithAcceptedHostGrant() {
+	TickRuntimeFixture fixture;
+	bmsx::Runtime& runtime = fixture.runtime;
+	bmsx::FrameSchedulerState& scheduler = runtime.frameScheduler;
+	bmsx::GxGpu& gpu = runtime.machine.gxGpu;
+	gpu.writeGp0(bmsx::GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24u);
+	gpu.writeGp0(0u);
+	gpu.writeGp0((1u << 16u) | 1u);
+
+	require(
+		!scheduler.runScheduledToNextLogicalTick(runtime, runtime.timing.frameDurationMs),
+		"backend fence suspends scheduled bounded execution"
+	);
+	require(gpu.backendServiceBlocksMachine(), "scheduled execution reaches the backend fence");
+	const bmsx::i64 grantedBudget = runtime.frameLoop.frameState.cycleBudgetGranted;
+	const bmsx::GxGpuDeviceOutput& output = gpu.readDeviceOutput();
+	bmsx::GxGpuReadbackPort& readback = output.readbackPort;
+	require(
+		readback.claimReadback(output.commandBuffer.executedCommandCount),
+		"backend claims the scheduled readback fence"
+	);
+	readback.completeReadback(readback.token());
+	require(
+		scheduler.runScheduledToNextLogicalTick(runtime, 0.0),
+		"scheduled bounded execution resumes without another host delta"
+	);
+	require(scheduler.lastTickSequence == 1, "resumed scheduled execution reaches its target");
+	require(
+		scheduler.lastTickBudgetGranted == grantedBudget,
+		"backend resumption preserves the accepted host grant"
+	);
+}
+
+void testScheduledBoundedTickMatchesCommonHostRates() {
+	constexpr std::array<int, 3> HOST_RATES = {60, 120, 144};
+	bmsx::i64 expectedTickSequence = -1;
+	bmsx::i64 expectedMachineCycles = -1;
+	for (const int rate : HOST_RATES) {
+		TickRuntimeFixture fixture;
+		bmsx::Runtime& runtime = fixture.runtime;
+		bmsx::FrameSchedulerState& scheduler = runtime.frameScheduler;
+		for (int hostFrame = 0; hostFrame < rate; ++hostFrame) {
+			bool completed = scheduler.runScheduledToNextLogicalTick(
+				runtime,
+				1000.0 / static_cast<bmsx::f64>(rate)
+			);
+			while (completed) {
+				completed = scheduler.runScheduledToNextLogicalTick(runtime, 0.0);
+			}
+		}
+		if (expectedTickSequence < 0) {
+			expectedTickSequence = scheduler.lastTickSequence;
+			expectedMachineCycles = runtime.machine.scheduler.nowCycles();
+		} else {
+			require(
+				scheduler.lastTickSequence == expectedTickSequence,
+				"common host rates publish the same logical tick count"
+			);
+			require(
+				runtime.machine.scheduler.nowCycles() == expectedMachineCycles,
+				"common host rates consume the same machine time"
+			);
+		}
+	}
+	require(expectedTickSequence == 49, "one PAL wall second publishes 49 complete VBlanks");
+	require(expectedMachineCycles == bmsx::PSX_CPU_FREQ_HZ, "one wall second advances one CPU second");
+}
+
 void testBoundedLogicalTickExtendsExhaustedRetainedGrant() {
 	TickRuntimeFixture fixture;
 	bmsx::Runtime& runtime = fixture.runtime;
@@ -277,6 +404,10 @@ void testNormalHostExecutionKeepsExistingSchedulerContract() {
 int main() {
 	testBoundedLogicalTickRetainsCycleCarry();
 	testBoundedLogicalTickResumesBackendFenceWithoutAnotherGrant();
+	testScheduledBoundedTickRetainsPartialMachineProgress();
+	testScheduledBoundedTickExposesEveryCatchUpBoundary();
+	testScheduledBoundedTickResumesBackendFenceWithAcceptedHostGrant();
+	testScheduledBoundedTickMatchesCommonHostRates();
 	testBoundedLogicalTickExtendsExhaustedRetainedGrant();
 	testBoundedLogicalTickDoesNotReportResetAsTargetEdge();
 	testLogicalTickPublishesInputAndEntersWaitingCpuInterrupt();

@@ -20,7 +20,10 @@ import {
 	SYS_CONTROL_RESET,
 } from '../../machine/ts/spec/bmsx/io';
 import { IO_WORD_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
-import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
+import {
+	PSX_CPU_FREQ_HZ,
+	PSX_MACHINE_SPEC,
+} from '../../machine/ts/spec/bmsx/model';
 import { LUA_BOOT_PRIMITIVES } from '../../machine/ts/spec/blua32/builtin';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
 import { OpCode } from '../../machine/ts/spec/blua32/opcode';
@@ -136,6 +139,90 @@ test('bounded logical-tick execution resumes a backend fence without granting an
 	assert.equal(scheduler.lastTickBudgetGranted, runtime.timing.cycleBudgetPerFrame);
 	assert.equal(scheduler.captureState().logicalTickRunPending, false);
 	assert.equal(scheduler.captureState().logicalTickRunTargetSequence, 0);
+});
+
+test('scheduled bounded execution waits for host time and retains partial machine progress', () => {
+	const { runtime } = createTickRuntime();
+	const scheduler = runtime.frameScheduler;
+	const halfFrameMs = runtime.timing.frameDurationMs / 2;
+
+	assert.equal(scheduler.runScheduledToNextLogicalTick(0), false);
+	assert.equal(runtime.frameLoop.frameActive, false);
+	assert.equal(scheduler.runScheduledToNextLogicalTick(halfFrameMs), false);
+	assert.equal(scheduler.lastTickSequence, 0);
+	assert.equal(runtime.frameLoop.frameActive, true);
+	assert.equal(scheduler.runScheduledToNextLogicalTick(halfFrameMs), true);
+	assert.equal(scheduler.lastTickSequence, 1);
+	assert.equal(
+		scheduler.lastTickBudgetGranted,
+		Math.trunc(runtime.timing.frameDurationMs * runtime.timing.cpuCyclesPerMillisecond),
+	);
+});
+
+test('scheduled bounded execution exposes every catch-up tick without adding host time', () => {
+	const { input, runtime } = createTickRuntime();
+	const scheduler = runtime.frameScheduler;
+	const hostDeltaMs = runtime.timing.frameDurationMs * 4;
+
+	for (let expectedSequence = 1; expectedSequence <= 4; expectedSequence += 1) {
+		input.keyDown = (expectedSequence & 1) !== 0;
+		runtime.machine.memory.writeMappedU32LE(IO_INP_CTRL, INP_CTRL_ARM);
+		assert.equal(
+			scheduler.runScheduledToNextLogicalTick(expectedSequence === 1 ? hostDeltaMs : 0),
+			true,
+		);
+		assert.equal(scheduler.lastTickSequence, expectedSequence);
+	}
+	assert.equal(input.sampleCount, 4);
+	assert.equal(scheduler.runScheduledToNextLogicalTick(0), false);
+});
+
+test('scheduled bounded execution resumes a backend fence with the accepted host grant', () => {
+	const { runtime } = createTickRuntime();
+	const scheduler = runtime.frameScheduler;
+	const gpu = runtime.machine.gxGpu;
+	gpu.writeGp0(GX_GPU_GP0_VRAM_TO_CPU_FIRST << 24);
+	gpu.writeGp0(0);
+	gpu.writeGp0((1 << 16) | 1);
+
+	assert.equal(
+		scheduler.runScheduledToNextLogicalTick(runtime.timing.frameDurationMs),
+		false,
+	);
+	assert.equal(gpu.backendServiceBlocksMachine(), true);
+	const grantedBudget = runtime.frameLoop.frameState.cycleBudgetGranted;
+	const output = gpu.readDeviceOutput();
+	const readback = output.readbackPort;
+	assert.equal(readback.claimReadback(output.commandBuffer.executedCommandCount), true);
+	readback.completeReadback(readback.token);
+	assert.equal(scheduler.runScheduledToNextLogicalTick(0), true);
+	assert.equal(scheduler.lastTickSequence, 1);
+	assert.equal(scheduler.lastTickBudgetGranted, grantedBudget);
+});
+
+test('scheduled bounded execution produces the same machine second at common host rates', () => {
+	const rates = [60, 120, 144] as const;
+	let expectedTickSequence = -1;
+	let expectedMachineCycles = -1;
+	for (const rate of rates) {
+		const { runtime } = createTickRuntime();
+		const scheduler = runtime.frameScheduler;
+		for (let hostFrame = 0; hostFrame < rate; hostFrame += 1) {
+			let completed = scheduler.runScheduledToNextLogicalTick(1000 / rate);
+			while (completed) {
+				completed = scheduler.runScheduledToNextLogicalTick(0);
+			}
+		}
+		if (expectedTickSequence < 0) {
+			expectedTickSequence = scheduler.lastTickSequence;
+			expectedMachineCycles = runtime.machine.scheduler.nowCycles;
+		} else {
+			assert.equal(scheduler.lastTickSequence, expectedTickSequence);
+			assert.equal(runtime.machine.scheduler.nowCycles, expectedMachineCycles);
+		}
+	}
+	assert.equal(expectedTickSequence, 49);
+	assert.equal(expectedMachineCycles, PSX_CPU_FREQ_HZ);
 });
 
 test('bounded logical-tick execution extends an exhausted retained grant', () => {
