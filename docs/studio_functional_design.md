@@ -1,14 +1,16 @@
 # Studio functioneel ontwerp
 
-Status: **geaccepteerd productcontract voor fase A + C en geselecteerde recorded-observabilityslices**
+Status: **geaccepteerde bouwroute A + C naar visual authoring, met geselecteerde recorded-observabilityslices**
 
 Dit document werkt `STUDIO-FUNCTIONAL-DESIGN-01` uit vanuit de bestaande
-BMSX-representaties en productievoorbeelden. De gekozen eerste productroute is
+BMSX-representaties en productievoorbeelden. De gekozen eerste bouwroute is
 **A + C**: een source-first Behavior Lens, gevolgd door een deterministisch
-Scenario Lab. De eerste inspectieworkflow is stop-and-inspect; bestaande
-BT/FSM/ActionEffect-definities blijven arbitrary Lua. Exacte per-node
-BT-runtimecorrespondence en runtime-observability horen niet bij de eerste
-source-lens. Libretro blijft speler/core en krijgt geen Studio-workbench.
+Scenario Lab. Dit is niet het eindproduct: Studio moet daarna echte visual
+authoring voor onder meer BT's, FSM's en ActionEffects bieden. De eerste
+inspectieworkflow is stop-and-inspect; bestaande arbitrary-Lua-definities
+blijven source-first. Exacte per-node BT-runtimecorrespondence en runtime-
+observability horen niet bij de eerste source-lens. Libretro blijft
+speler/core en krijgt geen Studio-workbench.
 
 Deze keuzes autoriseren geen viewport, cartridgefunctie, transport, guest-ABI
 of runtime-instrumentatie. Iedere implementatieslice blijft gebonden aan de
@@ -790,6 +792,43 @@ effectpayloads, sourcemapping of een algemene lifecycle/eventfacade. Gewone
 release-, debug- en Hot Resume-bytecode bevatten geen ActionEffect-
 tracekanaal, trace-only outcomeconstant, sinkdispatch of recorderstate.
 
+### ActionEffect-facts verwijzen vanuit de workbench naar actuele bron
+
+VS Code bewaart testlocaties als URI plus range bij het testitem in plaats van
+ze uit resultaattekst te raden
+([gepinde productiebron](https://github.com/microsoft/vscode/blob/9a9257010666f5e886b2e2b095fe9febd5a5c13c/src/vs/workbench/contrib/testing/common/testTypes.ts#L373-L422)).
+Zijn Outline-modelservice cachet de door taalproviders afgeleide outline per
+textmodelversie en provider-generation; een ongewijzigd model wordt niet op
+iedere render opnieuw opgebouwd
+([gepinde productiebron](https://github.com/microsoft/vscode/blob/9a9257010666f5e886b2e2b095fe9febd5a5c13c/src/vs/editor/contrib/documentSymbols/browser/outlineModel.ts#L400-L478)).
+
+**Gevolg voor BMSX:** Scenario-resultaten worden niet alsnog eigenaar van een
+verzonnen sourcerange. De ActionEffect-fact bezit execution domain en de echte
+effect-id; de actuele authored workspace bezit registrations en ranges. De
+Behavior Lens-recognizer mag daarom een afzonderlijke registratiecandidate
+publiceren wanneer de id rechtstreeks een stringliteral is of via uitsluitend
+immutable lokale `<const>`-initializers naar zo'n literal leidt. Een
+workbench-index materialiseert die candidates één keer per immutable semantic-
+workspacegeneration, keyed op domain, behavior-kind en semantische id.
+
+Activeren van een Scenario-fact bevraagt die actuele index. Precies één
+candidate opent de id-expressie van de `register_effect`-aanroep. Nul candidates
+blijft unresolved; meerdere candidates blijven ambiguous. De UI kiest niet
+stilzwijgend de eerste registratie, want arbitrary Lua kan dezelfde id op meer
+dan één uitvoerbare grens opnieuw registreren. Dit is source-navigation, geen
+bewijs welke dynamische registratie als laatste is uitgevoerd. Parser, binder,
+query store, runtimefact en guestrecord krijgen geen cartlib-schema of
+sourceveld. Synchronisatie gebeurt op de expliciete navigatieopdracht, niet in
+draw of de frame-update.
+
+Deze correspondence is een noodzakelijke bouwsteen voor latere visual
+authoring, maar zelf geen editable model. Een toekomstige graph-editor bindt
+aan dezelfde actuele document-/resource-identiteit en schrijft via de
+canonieke edit- en undo-owner. Hij reconstrueert zijn waarheid niet uit
+Scenario-facts en krijgt geen parallelle graphdatabase. Welke constrained
+representatie zulke lossless edits toelaat, blijft de eerstvolgende expliciete
+authoring-ontwerpbeslissing.
+
 ### Niet geselecteerd: ActionEffect-periodiek
 
 De productievoorbeelden leggen de juiste completion-grens vast, maar maken de
@@ -1061,9 +1100,10 @@ staan in [`open_architecture_slices.md`](open_architecture_slices.md).
 - gewone bytecode/constantpools zijn trace-vrij; enabled overhead en retained
   geheugen zijn afzonderlijk gemeten.
 
-### Fase 4 — Optionele visual authoring
+### Fase 4 — Visual authoring
 
-- alleen na geaccepteerde constrained document-/resourcekeuze;
+- verplicht productdoel, maar alleen na een geaccepteerde constrained
+  document-/resourcekeuze;
 - graph edits wijzigen het echte document/resource;
 - undo, redo, save, revert en Hot Resume gebruiken de bestaande owners;
 - geen tweede graphdatabase;
@@ -1085,8 +1125,8 @@ bouwen er daarom ook geen abstractie voor:
    concrete volgende recorded observabilityworkflow nodig heeft, en of een
    niet-diagnostische owner ooit actieve periodieke effectidentiteit vereist.
 2. Welke echte produceridentiteit BT-occurrences aan runtimefeiten koppelt.
-3. Of visual authoring later een constrained tekstformaat (D) of structured
-   resource (E) gebruikt.
+3. Of visual authoring een constrained tekstformaat (D) of structured resource
+   (E) gebruikt.
 4. Of een live-monitorlifecycle naast stop-and-inspect ooit productscope wordt.
 5. Of portable native scenario-execution ooit een afzonderlijk libretrodoel
    wordt.
