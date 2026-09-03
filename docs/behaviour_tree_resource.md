@@ -8,10 +8,11 @@ validate-before-instantiation split in BehaviorTree.CPP. The pinned production
 references and the product-level ownership decision are recorded in
 [`studio_functional_design.md`](studio_functional_design.md#selected-combination-d--e--typed-jsonc-resources).
 
-This slice owns source parsing, validation and cooking only. Cart-side decode,
-binding and `program.compile` admission belong to `BT-RESOURCE-ADMISSION-01`.
-The visual editor belongs to `STUDIO-BT-VISUAL-EDITOR-01` after that admission
-contract exists.
+Source parsing and cooking end at ordinary serialized cart bytes. Cart-side
+decode and binding are owned by `cartlib/behaviour_tree/resource.lua`;
+`program.compile`, publication and live-component rebinding remain owned by
+the existing Behavior Tree library. The visual editor belongs
+to `STUDIO-BT-VISUAL-EDITOR-01` and edits only the canonical JSONC document.
 
 ## Ownership and identity
 
@@ -122,3 +123,52 @@ The resulting TOC record is simply `data`. It has the normal generated
 `bmsx/assets` address and length symbols and introduces no Behavior Tree,
 Studio or JSONC knowledge in the machine, cartridge bus, TOC or C++ runtime.
 There is no generated Lua module and no JSON parser in the cart frame path.
+
+## Cart admission
+
+A cart selects the resource with its generated address constant and supplies a
+local binding manifest at registration:
+
+```lua
+local assets<const> = require('bmsx/assets')
+local blackboard<const> = require('cartlib/behaviour_tree/blackboard')
+local behaviour_tree_resource<const> = require('cartlib/behaviour_tree/resource')
+
+local alert_key<const> = blackboard.key('alert')
+
+behaviour_tree_resource.register(assets.data_guard_addr, {
+    blackboard = { alert_key },
+    tasks = { patrol = guard_tasks.patrol },
+    services = { acquire_target = guard_services.acquire_target },
+    decorators = { can_see_target = guard_decorators.can_see_target },
+})
+```
+
+The three callback maps are registration-local namespaces. Admission resolves
+each referenced id to the exact immutable Task, Service or condition-decorator
+definition already consumed by the native Lua definition compiler. It never
+publishes those maps globally and the retained evaluator never looks up a
+binding string.
+
+`blackboard` lists semantic key descriptors captured by cart callbacks. They
+are unique and matched by name rather than resource order; the resource remains
+owner of their initial values. Keys used only by declarative nodes need not be
+repeated in the manifest. A repeated or absent listed key and any referenced
+callback id absent from its typed map reject the complete admission before a
+program is installed or a live component is rebound.
+
+Manifest-dependent placement rules are checked at the same boundary. A Task
+interval requires a ticking Task. A ticking Service requires an authored
+interval, while interval and tick-timer policies are rejected for a Service
+without `on_tick`. The cooked producer already guarantees node topology,
+scalar types and blackboard references; cartlib does not revalidate that owned
+payload as a runtime DTO.
+
+Decode and manifest resolution happen once during cart registration. Only
+resource-authored carts link that decoder/admission module; Lua-authored trees
+do not acquire a binary-decoder dependency. Successful admission calls the
+library's existing native-definition registration path, so compilation,
+publication and live-component rebinding have one owner. Live components
+retain blackboard values by semantic key and restart compiler-owned Task and
+Service execution state. The frame evaluator remains the same fused,
+allocation-free program used by a Lua-authored definition.

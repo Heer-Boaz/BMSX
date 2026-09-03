@@ -1,0 +1,60 @@
+{
+	"version": 1,
+	"definition_id": "cartlib_resource_fixture",
+	"blackboard": [
+		{
+			"id": "10000000-0000-4000-8000-000000000001",
+			"name": "score",
+			"initial_value": 1,
+		},
+	],
+	"root": {
+		"id": "20000000-0000-4000-8000-000000000001",
+		"type": "sequence",
+		"services": [
+			{
+				"id": "30000000-0000-4000-8000-000000000001",
+				"binding": "pulse",
+				"interval": {
+					"period_units": 1,
+					"units_per_tick": 1,
+				},
+				"tick_on_search_start": true,
+				"restart_timer_on_each_activation": true,
+			},
+		],
+		"children": [
+			{
+				"id": "20000000-0000-4000-8000-000000000002",
+				"type": "set_blackboard",
+				"blackboard": "10000000-0000-4000-8000-000000000001",
+				"value": 5,
+			},
+			{
+				"id": "20000000-0000-4000-8000-000000000003",
+				"type": "add_blackboard",
+				"blackboard": "10000000-0000-4000-8000-000000000001",
+				"value": 7,
+			},
+			{
+				"id": "20000000-0000-4000-8000-000000000004",
+				"type": "task",
+				"binding": "record",
+				"decorators": [
+					{
+						"id": "40000000-0000-4000-8000-000000000001",
+						"type": "condition",
+						"binding": "ready",
+					},
+					{
+						"id": "40000000-0000-4000-8000-000000000002",
+						"type": "blackboard",
+						"blackboard": "10000000-0000-4000-8000-000000000001",
+						"operation": "equal",
+						"value": 12,
+					},
+				],
+			},
+		],
+	},
+}
