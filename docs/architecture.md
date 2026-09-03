@@ -643,10 +643,13 @@ the reusable library is a build dependency of the console executable rather
 than firmware or emulator-owned runtime state.
 
 `testlib` is the guest-side companion for explicitly packaged Scenario tests,
-not a cart runtime dependency. Only a debug cart build admits the `testlib`
-modules reachable from its source-only scenario resources; release dependency
-discovery does not include that root. A derived Scenario cartridge may execute
-those modules, while ordinary cart and cartlib sources never require them. This
+not a cart runtime dependency. A debug package retains only the source payloads
+of `testlib` modules reachable from its source-only scenario resources; their
+TOC entries have no compiled range and the ordinary debug BLua image contains
+no testlib code. Release dependency discovery does not include that root. The
+derived Scenario cartridge recompiles the selected test's dependency closure
+and may execute those modules, while ordinary cart and cartlib sources never
+require them. This
 matches VSTest's separation of runner/logging from an explicitly selected
 in-process collector when collection must observe execution-owned semantics
 ([pinned architecture](https://github.com/microsoft/vstest/blob/d8e681b328d3887ac4ea69e5d7a79604b736d771/docs/RFCs/0001-Test-Platform-Architecture.md#L79-L119)).
@@ -812,7 +815,12 @@ project root or a shared library root. Its physical compiled-payload
 range separately determines whether that source participates as a BLua program
 module. Source-only Lua entries therefore remain ordinary retained IDE
 resources, semantic-project inputs and navigation targets, but are not entry
-candidates and are never admitted to executable rebuilds. The one
+candidates and never enter ordinary or Hot Resume executable rebuilds. The
+explicit Scenario-derived producer may compile only the dependency closure of
+its selected source root. Packed program ASTs are decoded once at the
+ROM-to-compiler boundary; newly parsed source-only modules enter that same
+immutable compiler representation directly instead of taking an encode/decode
+round trip. The one
 `LuaSourceRegistry` records that distinction as `program_module`; tooling does
 not create a second test-source registry or infer execution from a filename.
 Their edits advance the semantic source revision without dirtying BLua media
@@ -842,8 +850,11 @@ location. Release carts do not carry these authoring resources. Browser and
 headless discovery therefore enumerate the same packaged records once instead
 of maintaining registration lists or scanning a host filesystem at run time.
 
-The browser-safe scenario cartridge builder consumes one of those records. It
-leaves the public entry document untouched and compiles a synthetic entry in
+The browser-safe scenario cartridge builder consumes one of those records as a
+distinct derived-build dependency root and compiles only
+its reachable source-only library modules alongside the canonical program
+modules; unrelated test support remains source-only. It leaves the public
+entry document untouched and compiles a synthetic entry in
 which the deferred loader is inserted after the entry declaration. Whole-line
 source-map fragments project the original entry suffix and the selected test
 back to their complete authored documents. The selected source-only payload is

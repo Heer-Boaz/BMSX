@@ -27,7 +27,10 @@ import {
 	compileLuaChunkBuffer,
 	finalizeRompack,
 } from '../../scripts/rompacker/rombuilder';
-import { buildBlua32Image } from '../../toolchain/ts/rompack/blua32_image_builder';
+import {
+	buildBlua32Image,
+	decodeBlua32SourceModules,
+} from '../../toolchain/ts/rompack/blua32_image_builder';
 
 const ROOT = join(process.cwd(), 'tmp', 'blua32-tail-layout-test');
 const ENTRY_PATH = 'entry.lua';
@@ -123,7 +126,7 @@ test('BLua32-tail rebuild preserves immutable asset metadata addresses and bytes
 
 		const changedSource = `local value = 0\n${'value = value + 1\n'.repeat(128)}return value`;
 		const changed = buildBlua32Image({
-			luaAssets: [luaAsset(changedSource)],
+			luaModules: decodeBlua32SourceModules([luaAsset(changedSource)]),
 			generatedLuaModules: [],
 			loadAddress: SYSTEM_ROM_BASE + imageStart,
 			optLevel: 0,

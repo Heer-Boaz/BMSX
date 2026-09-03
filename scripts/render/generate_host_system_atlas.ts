@@ -165,6 +165,7 @@ async function generateHostSystemAtlasArtifacts(): Promise<boolean> {
 	const resourceRoots = [biosResPath, HOST_RESOURCE_PATH];
 	const resMeta = await getResMetaList(resourceRoots, {
 		domain: 'system',
+		sourceOnlyLuaRootFiles: [],
 		extraLuaPaths: [],
 		virtualRoot: biosVirtualRoot,
 	});

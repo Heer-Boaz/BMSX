@@ -14,7 +14,7 @@ import {
 import type { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../../machine/ts/spec/bmsx/io';
 import {
-	SCENARIO_GUEST_OBSERVE_ACTIONEFFECT_TRIGGERS_KEY,
+	SCENARIO_GUEST_OBSERVE_ACTIONEFFECTS_KEY,
 	SCENARIO_GUEST_OBSERVE_FSM_TRANSITIONS_KEY,
 	SCENARIO_TEST_LOADER_GLOBAL,
 } from '../../../toolchain/ts/rompack/scenario_guest_api';
@@ -28,7 +28,7 @@ import {
 	type ScenarioRunResult,
 	ScenarioResultService,
 } from './result_service';
-import { ScenarioActionEffectTriggerObservation } from './actioneffect_trigger_observation';
+import { ScenarioActionEffectObservation } from './actioneffect_observation';
 import { ScenarioFsmTransitionObservation } from './fsm_transition_observation';
 
 const SCENARIO_TEST_GLOBAL = '__bmsx_host_test';
@@ -59,7 +59,7 @@ type ScenarioProtocol = {
 	readonly logKey: StringId;
 	readonly doneKey: StringId;
 	readonly observeFsmTransitionsKey: StringId;
-	readonly observeActionEffectTriggersKey: StringId;
+	readonly observeActionEffectsKey: StringId;
 };
 
 type ScenarioCartPhase = {
@@ -106,7 +106,7 @@ type ScenarioExecution = {
 	logicalTicks: number;
 	tickPrepared: boolean;
 	fsmTransitionObservation: ScenarioFsmTransitionObservation | null;
-	actionEffectTriggerObservation: ScenarioActionEffectTriggerObservation | null;
+	actionEffectObservation: ScenarioActionEffectObservation | null;
 };
 
 /**
@@ -160,7 +160,7 @@ export class ScenarioExecutionService {
 			logicalTicks: 0,
 			tickPrepared: false,
 			fsmTransitionObservation: null,
-			actionEffectTriggerObservation: null,
+			actionEffectObservation: null,
 		};
 		this.results.appendLog(result, startTick, 'waiting for cartridge');
 	}
@@ -387,8 +387,8 @@ export class ScenarioExecutionService {
 			observeFsmTransitionsKey: cpu.stringPool.intern(
 				SCENARIO_GUEST_OBSERVE_FSM_TRANSITIONS_KEY,
 			),
-			observeActionEffectTriggersKey: cpu.stringPool.intern(
-				SCENARIO_GUEST_OBSERVE_ACTIONEFFECT_TRIGGERS_KEY,
+			observeActionEffectsKey: cpu.stringPool.intern(
+				SCENARIO_GUEST_OBSERVE_ACTIONEFFECTS_KEY,
 			),
 		};
 	}
@@ -456,8 +456,8 @@ export class ScenarioExecutionService {
 		const fsmTransitionsValue = command.getStringKey(
 			protocol.observeFsmTransitionsKey,
 		);
-		const actionEffectTriggersValue = command.getStringKey(
-			protocol.observeActionEffectTriggersKey,
+		const actionEffectsValue = command.getStringKey(
+			protocol.observeActionEffectsKey,
 		);
 		if (fsmTransitionsValue !== null) {
 			execution.fsmTransitionObservation = new ScenarioFsmTransitionObservation(
@@ -468,9 +468,9 @@ export class ScenarioExecutionService {
 			);
 			return;
 		}
-		if (actionEffectTriggersValue !== null) {
-			execution.actionEffectTriggerObservation = new ScenarioActionEffectTriggerObservation(
-				actionEffectTriggersValue as Table,
+		if (actionEffectsValue !== null) {
+			execution.actionEffectObservation = new ScenarioActionEffectObservation(
+				actionEffectsValue as Table,
 				this.runtime.machine.cpu.stringPool,
 				this.results,
 				execution.result,
@@ -542,9 +542,9 @@ export class ScenarioExecutionService {
 		if (fsmTransitions !== null) {
 			fsmTransitions.drain(observedTick);
 		}
-		const actionEffectTriggers = execution.actionEffectTriggerObservation;
-		if (actionEffectTriggers !== null) {
-			actionEffectTriggers.drain(observedTick);
+		const actionEffects = execution.actionEffectObservation;
+		if (actionEffects !== null) {
+			actionEffects.drain(observedTick);
 		}
 	}
 

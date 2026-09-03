@@ -1,9 +1,7 @@
-import {
-	decodeBinary,
-	utf8FatalDecoder,
-} from '../../../machine/ts/common/serializer/binencoder';
+import { utf8FatalDecoder } from '../../../machine/ts/common/serializer/binencoder';
 import { CART_ROM_BASE } from '../../../machine/ts/spec/bmsx/memory_map';
-import type { LuaChunk } from '../lua/syntax/ast';
+import { parseLuaChunk } from '../lua/analysis/parse';
+import { collectLuaModuleDependencyClosure } from '../lua/compiler/module_graph';
 import { composeLuaSource } from '../lua/compiler/source_map';
 import { resolveLuaEntryModuleIndex } from '../lua/entry_module';
 import { toLuaModulePath } from '../lua/module_path';
@@ -16,7 +14,11 @@ import {
 	decodeBlua32BiosImports,
 } from './blua32_bios_imports';
 import { BLUA32_IMAGE_ID } from './blua32_image';
-import { buildBlua32Image } from './blua32_image_builder';
+import {
+	buildBlua32Image,
+	decodeBlua32SourceModules,
+	type Blua32SourceModule,
+} from './blua32_image_builder';
 import {
 	buildBlua32Tail,
 	layoutBlua32PublicAssets,
@@ -54,18 +56,21 @@ export type BuiltScenarioCartridge = {
 
 const utf8Encoder = new TextEncoder();
 
-function collectLuaProgramAssets(payload: Uint8Array, entries: ReadonlyArray<RomAsset>): RomAsset[] {
+function collectLuaSourceAssets(payload: Uint8Array, entries: ReadonlyArray<RomAsset>): RomAsset[] {
 	const assets: RomAsset[] = [];
 	for (let index = 0; index < entries.length; index += 1) {
 		const entry = entries[index];
-		if (entry.type !== 'lua' || entry.compiled_start === undefined) {
+		if (entry.type !== 'lua') {
 			continue;
 		}
-		assets.push({
+		const asset: RomAsset = {
 			...entry,
 			buffer: payload.subarray(entry.start!, entry.end!),
-			compiled_buffer: payload.subarray(entry.compiled_start, entry.compiled_end!),
-		});
+		};
+		if (entry.compiled_start !== undefined) {
+			asset.compiled_buffer = payload.subarray(entry.compiled_start, entry.compiled_end!);
+		}
+		assets.push(asset);
 	}
 	return assets;
 }
@@ -89,17 +94,53 @@ export async function buildScenarioCartridge(
 		index: cartridgeIndex,
 		bytes: options.cartridge,
 	};
-	const luaAssets = collectLuaProgramAssets(options.cartridge, cartridgeIndex.entries);
-	const entryCandidates = new Array<{ asset: RomAsset; chunk: LuaChunk }>(luaAssets.length);
-	for (let index = 0; index < luaAssets.length; index += 1) {
-		entryCandidates[index] = {
-			asset: luaAssets[index],
-			chunk: decodeBinary(luaAssets[index].compiled_buffer!) as LuaChunk,
-		};
+	const luaSourceAssets = collectLuaSourceAssets(options.cartridge, cartridgeIndex.entries);
+	const programModules = decodeBlua32SourceModules(luaSourceAssets);
+	const entryCandidate = programModules[resolveLuaEntryModuleIndex(programModules)];
+	const entrySource = entryCandidate.source;
+	const entrySourcePath = entryCandidate.displayPath;
+	const sourceAssetByModulePath = new Map<string, RomAsset>();
+	for (let index = 0; index < luaSourceAssets.length; index += 1) {
+		const asset = luaSourceAssets[index];
+		sourceAssetByModulePath.set(toLuaModulePath(asset.source_path), asset);
 	}
-	const entryCandidate = entryCandidates[resolveLuaEntryModuleIndex(entryCandidates)];
-	const entrySource = utf8FatalDecoder.decode(entryCandidate.asset.buffer!);
-	const entrySourcePath = entryCandidate.asset.source_path!;
+	const sourceModuleByPath = new Map<string, Blua32SourceModule>();
+	for (let index = 0; index < programModules.length; index += 1) {
+		const module = programModules[index];
+		sourceModuleByPath.set(module.path, module);
+	}
+	const modulePaths = new Set(sourceAssetByModulePath.keys());
+	const loadSourceModule = (modulePath: string): Blua32SourceModule => {
+		const cached = sourceModuleByPath.get(modulePath);
+		if (cached !== undefined) {
+			return cached;
+		}
+		const asset = sourceAssetByModulePath.get(modulePath)!;
+		const source = utf8FatalDecoder.decode(asset.buffer!);
+		const module: Blua32SourceModule = {
+			path: modulePath,
+			displayPath: asset.source_path!,
+			chunk: parseLuaChunk(source, modulePath).chunk!,
+			source,
+		};
+		sourceModuleByPath.set(modulePath, module);
+		return module;
+	};
+	const testChunk = parseLuaChunk(options.test.source, options.test.sourcePath).chunk!;
+	const testDependencyPaths = collectLuaModuleDependencyClosure(
+		[testChunk],
+		modulePaths,
+		modulePath => loadSourceModule(modulePath).chunk,
+	);
+	const derivedProgramModules = programModules.slice();
+	for (let index = 0; index < testDependencyPaths.length; index += 1) {
+		const modulePath = testDependencyPaths[index];
+		const asset = sourceAssetByModulePath.get(modulePath)!;
+		if (asset.compiled_buffer !== undefined) {
+			continue;
+		}
+		derivedProgramModules.push(loadSourceModule(modulePath));
+	}
 	const firstLineEnd = entrySource.indexOf('\n') + 1;
 	const entryComposition = composeLuaSource(SCENARIO_ENTRY_MODULE_PATH, [
 		{
@@ -147,7 +188,7 @@ export async function buildScenarioCartridge(
 		imageEntry.start!,
 	);
 	const built = buildBlua32Image({
-		luaAssets,
+		luaModules: derivedProgramModules,
 		entryComposition,
 		generatedLuaModules: [
 			{

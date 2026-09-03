@@ -47,7 +47,11 @@ import {
 	SYSTEM_BLUA32_IMAGE_OFFSET,
 } from '../../toolchain/ts/rompack/system';
 import { encodeAudioAssetToAdpcm } from './adpcm';
-import { buildBlua32Image, type GeneratedLuaModule } from '../../toolchain/ts/rompack/blua32_image_builder';
+import {
+	buildBlua32Image,
+	decodeBlua32SourceModules,
+	type GeneratedLuaModule,
+} from '../../toolchain/ts/rompack/blua32_image_builder';
 import { createTextureAtlas, resolveTextureAtlasName } from './atlasbuilder';
 import {
 	GX_SYSTEM_TEXTURE_ATLAS_NAME,
@@ -562,8 +566,8 @@ export type ResourceScanOptions = {
 	extraLuaFiles?: readonly string[];
 	virtualRoot?: string;
 	libraryLuaPaths?: string[];
-	/** Lua roots used for library reachability without adding the roots as resources. */
-	luaDependencyRootFiles?: readonly string[];
+	/** Derived-build roots whose reachable library modules remain source-only in the base image. */
+	sourceOnlyLuaRootFiles: readonly string[];
 };
 
 export type RebuildOptions = {
@@ -591,7 +595,17 @@ function isWorkspaceStateDirectory(name: string): boolean {
 	return name.toLowerCase() === WORKSPACE_STATE_DIR_NAME;
 }
 
-function collectLibraryLuaClosure(seedFiles: readonly string[], libraryRoots: readonly string[], virtualRoot: string): string[] {
+type LibraryLuaClosure = {
+	files: string[];
+	sourceOnlyFiles: ReadonlySet<string>;
+};
+
+function collectLibraryLuaClosure(
+	programRootFiles: readonly string[],
+	sourceOnlyRootFiles: readonly string[],
+	libraryRoots: readonly string[],
+	virtualRoot: string,
+): LibraryLuaClosure {
 	const moduleFileByPath = new Map<string, string>();
 	for (const root of libraryRoots) {
 		if (!root || root.length === 0) {
@@ -602,33 +616,48 @@ function collectLibraryLuaClosure(seedFiles: readonly string[], libraryRoots: re
 			moduleFileByPath.set(toLuaModulePath(sourcePath), file);
 		}
 	}
-	const rootChunks = new Array<LuaChunk>(seedFiles.length);
-	for (let index = 0; index < seedFiles.length; index += 1) {
-		const file = seedFiles[index];
+	const chunksByFile = new Map<string, LuaChunk>();
+	const loadFileChunk = (file: string): LuaChunk => {
+		const key = resolve(file);
+		const cached = chunksByFile.get(key);
+		if (cached !== undefined) {
+			return cached;
+		}
 		const source = readFileSync(file, 'utf8');
 		const lexer = new LuaLexer(source, file);
 		const tokens = lexer.scanTokens();
-		rootChunks[index] = new LuaParser(tokens, file, source).parseChunk();
-	}
+		const chunk = new LuaParser(tokens, file, source).parseChunk();
+		chunksByFile.set(key, chunk);
+		return chunk;
+	};
 	const modulePaths = new Set(moduleFileByPath.keys());
-	const includedModulePaths = collectLuaModuleDependencyClosure(
-		rootChunks,
-		modulePaths,
-		(modulePath: string): LuaChunk => {
-			const file = moduleFileByPath.get(modulePath)!;
-			const source = readFileSync(file, 'utf8');
-			const lexer = new LuaLexer(source, file);
-			const tokens = lexer.scanTokens();
-			return new LuaParser(tokens, file, source).parseChunk();
-		},
+	const collectClosure = (rootFiles: readonly string[]): string[] => {
+		const rootChunks = new Array<LuaChunk>(rootFiles.length);
+		for (let index = 0; index < rootFiles.length; index += 1) {
+			rootChunks[index] = loadFileChunk(rootFiles[index]);
+		}
+		return collectLuaModuleDependencyClosure(
+			rootChunks,
+			modulePaths,
+			(modulePath: string): LuaChunk => loadFileChunk(moduleFileByPath.get(modulePath)!),
+		);
+	};
+	const programModulePaths = collectClosure(programRootFiles);
+	const programModules = new Set(programModulePaths);
+	const sourceOnlyModulePaths = collectClosure(sourceOnlyRootFiles).filter(
+		modulePath => !programModules.has(modulePath),
 	);
-	const includedFiles = new Array<string>(includedModulePaths.length);
-	for (let index = 0; index < includedModulePaths.length; index += 1) {
-		const modulePath = includedModulePaths[index];
-		const file = moduleFileByPath.get(modulePath)!;
-		includedFiles[index] = file;
+	const includedModulePaths = new Set(programModulePaths);
+	for (let index = 0; index < sourceOnlyModulePaths.length; index += 1) {
+		includedModulePaths.add(sourceOnlyModulePaths[index]);
 	}
-	return includedFiles.sort((a, b) => a.localeCompare(b));
+	const files = Array.from(includedModulePaths, modulePath => moduleFileByPath.get(modulePath)!)
+		.sort((left, right) => left.localeCompare(right));
+	const sourceOnlyFiles = new Set<string>();
+	for (let index = 0; index < sourceOnlyModulePaths.length; index += 1) {
+		sourceOnlyFiles.add(resolve(moduleFileByPath.get(sourceOnlyModulePaths[index])!));
+	}
+	return { files, sourceOnlyFiles };
 }
 
 export async function getResMetaList(
@@ -669,18 +698,19 @@ export async function getResMetaList(
 			pushFile(extraLuaFiles[index]);
 		}
 	}
-	const seedFiles = arrayOfFiles.filter(file => file.toLowerCase().endsWith('.lua'));
-	const dependencyRootFiles = options.luaDependencyRootFiles;
-	if (dependencyRootFiles !== undefined) {
-		for (let index = 0; index < dependencyRootFiles.length; index += 1) {
-			seedFiles.push(dependencyRootFiles[index]);
-		}
-	}
+	const programRootFiles = arrayOfFiles.filter(file => file.toLowerCase().endsWith('.lua'));
+	let sourceOnlyLibraryFiles: ReadonlySet<string> = new Set();
 	const libraryLuaRoots = options.libraryLuaPaths;
 	if (libraryLuaRoots) {
-		const libraryFiles = collectLibraryLuaClosure(seedFiles, libraryLuaRoots, virtualRoot);
-		for (let index = 0; index < libraryFiles.length; index += 1) {
-			pushFile(libraryFiles[index]);
+		const libraryClosure = collectLibraryLuaClosure(
+			programRootFiles,
+			options.sourceOnlyLuaRootFiles,
+			libraryLuaRoots,
+			virtualRoot,
+		);
+		sourceOnlyLibraryFiles = libraryClosure.sourceOnlyFiles;
+		for (let index = 0; index < libraryClosure.files.length; index += 1) {
+			pushFile(libraryClosure.files[index]);
 		}
 	}
 	const gltfBufferFiles = collectGLTFExternalBufferFileSet(arrayOfFiles);
@@ -773,7 +803,16 @@ export async function getResMetaList(
 			case 'lua':
 				// For Lua files, we also determine the current datetime to allow the workspace to detect changes and choosing which source to regard as newer
 				name = sourcePath.replace(/\.lua$/i, '');
-				result.push({ filepath, name, ext, type, id: luaid, sourcePath, update_timestamp: meta.update_timestamp });
+				result.push({
+					filepath,
+					name,
+					ext,
+					type,
+					id: luaid,
+					programModule: !sourceOnlyLibraryFiles.has(resolve(filepath)),
+					sourcePath,
+					update_timestamp: meta.update_timestamp,
+				});
 				++luaid;
 				break;
 			case 'model':
@@ -982,25 +1021,26 @@ export async function generateRomAssets(
 				const workspacePath = normalizeWorkspacePath(toWorkspaceRelativePath(res.filepath));
 				const modulePath = toLuaModulePath(normalizedPath);
 				const source = buffer.toString('utf8');
-				let compiled_buffer: Buffer;
-				try {
-					compiled_buffer = compileLuaChunkBuffer(source, modulePath);
-				} catch (error) {
-					if (isLuaCompileError(error)) {
-						compileErrors.push(formatLuaCompileError(error, source));
-						continue;
-					}
-					throw error;
-				}
-				romAssets.push({
+				const asset: RomAsset = {
 					resid,
 					type,
 					buffer,
-					compiled_buffer,
 					source_path: normalizedPath,
 					normalized_source_path: workspacePath,
 					update_timestamp: res.update_timestamp,
-				});
+				};
+				if (res.programModule) {
+					try {
+						asset.compiled_buffer = compileLuaChunkBuffer(source, modulePath);
+					} catch (error) {
+						if (isLuaCompileError(error)) {
+							compileErrors.push(formatLuaCompileError(error, source));
+							continue;
+						}
+						throw error;
+					}
+				}
+				romAssets.push(asset);
 				break;
 			}
 			case 'data':
@@ -1199,13 +1239,11 @@ export function buildRomBlua32Tail(
 	assetList: ReadonlyArray<RomAsset>,
 	options: BuildRomBlua32TailOptions,
 ): RomBlua32Tail {
-	const luaProgramAssets = assetList.filter(
-		asset => asset.type === 'lua' && asset.compiled_buffer !== undefined,
-	);
+	const luaModules = decodeBlua32SourceModules(assetList);
 	if (options.domain === 'system') {
 		const imageOffset = SYSTEM_BLUA32_IMAGE_OFFSET;
 		const built = buildBlua32Image({
-			luaAssets: luaProgramAssets,
+			luaModules,
 			generatedLuaModules: options.generatedLuaModules,
 			loadAddress: SYSTEM_ROM_BASE + imageOffset,
 			ramByteCount: options.ramByteCount,
@@ -1284,7 +1322,7 @@ export function buildRomBlua32Tail(
 		};
 	}
 	const built = buildBlua32Image({
-		luaAssets: luaProgramAssets,
+		luaModules,
 		generatedLuaModules: options.generatedLuaModules,
 		loadAddress: CART_ROM_BASE + options.imageOffset,
 		ramByteCount: options.ramByteCount,

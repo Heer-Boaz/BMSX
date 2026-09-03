@@ -39,8 +39,17 @@ export type GeneratedLuaModule = {
 	linkValues?: ReadonlyMap<string, number>;
 };
 
+export type Blua32SourceModule = {
+	readonly path: string;
+	readonly displayPath: string;
+	readonly chunk: LuaChunk;
+	readonly source: string;
+	readonly sourceMap?: LuaSourceMap;
+	readonly linkValues?: ReadonlyMap<string, number>;
+};
+
 type Blua32ImageBuildOptionsBase = {
-	luaAssets: ReadonlyArray<RomAsset>;
+	luaModules: ReadonlyArray<Blua32SourceModule>;
 	generatedLuaModules: ReadonlyArray<GeneratedLuaModule>;
 	entryComposition?: ComposedLuaSource;
 	loadAddress: number;
@@ -69,6 +78,24 @@ export type BuiltBlua32Image<TLinked extends LinkedBlua32Image = LinkedBlua32Ima
 	diagnosticSources: Blua32DiagnosticSourceMap;
 };
 
+/** Decodes packed Lua program payloads once at the ROM-to-compiler boundary. */
+export function decodeBlua32SourceModules(assets: ReadonlyArray<RomAsset>): Blua32SourceModule[] {
+	const modules: Blua32SourceModule[] = [];
+	for (let index = 0; index < assets.length; index += 1) {
+		const asset = assets[index];
+		if (asset.type !== 'lua' || asset.compiled_buffer === undefined) {
+			continue;
+		}
+		modules.push({
+			path: toLuaModulePath(asset.source_path),
+			displayPath: asset.source_path!,
+			chunk: decodeBinary(asset.compiled_buffer) as LuaChunk,
+			source: utf8FatalDecoder.decode(asset.buffer!),
+		});
+	}
+	return modules;
+}
+
 function parseMappedLuaChunk(
 	source: string,
 	path: string,
@@ -93,31 +120,15 @@ export function buildBlua32Image(options: SystemBlua32ImageBuildOptions): BuiltB
 export function buildBlua32Image(options: CartBlua32ImageBuildOptions): BuiltBlua32Image<LinkedCartBlua32Image>;
 export function buildBlua32Image(options: Blua32ImageBuildOptions): BuiltBlua32Image {
 	const modulePaths = new Set<string>();
-	const modules: Array<{
-		path: string;
-		displayPath: string;
-		chunk: LuaChunk;
-		source: string;
-		sourceMap?: LuaSourceMap;
-		linkValues?: ReadonlyMap<string, number>;
-	}> = [];
+	const modules = options.luaModules.slice();
 	const diagnosticSources = new Map<string, Blua32DiagnosticSource>();
 	const generatedSourceMaps = new Map<string, LuaSourceMap>();
-	for (let index = 0; index < options.luaAssets.length; index += 1) {
-		const asset = options.luaAssets[index];
-		const modulePath = toLuaModulePath(asset.source_path);
-		if (modulePaths.has(modulePath)) {
-			throw new Error(`ROM Lua module '${modulePath}' is defined more than once.`);
+	for (let index = 0; index < modules.length; index += 1) {
+		const module = modules[index];
+		if (modulePaths.has(module.path)) {
+			throw new Error(`ROM Lua module '${module.path}' is defined more than once.`);
 		}
-		const chunk = decodeBinary(asset.compiled_buffer!) as LuaChunk;
-		modulePaths.add(modulePath);
-		const source = utf8FatalDecoder.decode(asset.buffer!);
-		modules.push({
-			path: modulePath,
-			displayPath: asset.source_path,
-			chunk,
-			source,
-		});
+		modulePaths.add(module.path);
 	}
 	const entryIndex = resolveLuaEntryModuleIndex(modules);
 	let entry = modules[entryIndex];

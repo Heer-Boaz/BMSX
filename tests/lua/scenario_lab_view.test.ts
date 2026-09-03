@@ -169,17 +169,26 @@ test('scenario result projection retains FSM facts without inventing source navi
 	assert.match(view.status.info, /SOURCE UNAVAILABLE/);
 });
 
-test('scenario result projection retains direct ActionEffect trigger outcomes', (t) => {
+test('scenario result projection retains ordered ActionEffect facts', (t) => {
 	const { collection, results, view } = createViewFixture(t);
 	const result = results.begin(collection.roots[0].children![0], 7, 100);
-	const trace = results.beginActionEffectTriggerTrace(
+	const trace = results.beginActionEffectTrace(
 		result,
 		'nemesis_s.player.1',
 		'nemesis_s.player',
 	);
-	results.appendActionEffectTrigger(
+	results.appendActionEffectActivity(
 		trace,
 		1,
+		1209,
+		123,
+		'fire_salvo',
+		'activate',
+		1,
+	);
+	results.appendActionEffectTrigger(
+		trace,
+		2,
 		1210,
 		124,
 		'fire_salvo',
@@ -188,13 +197,25 @@ test('scenario result projection retains direct ActionEffect trigger outcomes', 
 	refreshScenarioLabProjection(view);
 	prepareScenarioLabLayout(view);
 
-	const factIndex = view.resultPane.rows.findIndex(
-		row => row.kind === 'actioneffect_trigger',
+	const factIndices = view.resultPane.rows.reduce<number[]>(
+		(indices, row, index) => {
+			if (row.kind === 'actioneffect_fact') {
+				indices.push(index);
+			}
+			return indices;
+		},
+		[],
 	);
-	assert.ok(factIndex > 0);
-	const factRow = view.resultPane.rows[factIndex];
-	assert.match(factRow.text, /EFFECT \[NO:COOLDOWN\] FIRE_SALVO/);
-	selectScenarioLabResultRow(view, factIndex);
+	assert.equal(factIndices.length, 2);
+	assert.match(
+		view.resultPane.rows[factIndices[0]].text,
+		/EFFECT ACTIVATE FIRE_SALVO X1/,
+	);
+	assert.match(
+		view.resultPane.rows[factIndices[1]].text,
+		/EFFECT TRIGGER \[NO:COOLDOWN\] FIRE_SALVO/,
+	);
+	selectScenarioLabResultRow(view, factIndices[1]);
 	const activation = executeScenarioLabNavigation(view, 'activate');
 	assert.equal(activation.kind, 'changed');
 	assert.match(

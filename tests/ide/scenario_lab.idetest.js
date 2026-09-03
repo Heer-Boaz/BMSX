@@ -232,19 +232,35 @@ await t.frames(2);
 
 const actionEffectResult = resultPane.rows[0].result;
 t.assert(actionEffectResult.state === 'passed', 'ActionEffect scenario did not pass');
-const actionEffectTrace = actionEffectResult.actionEffectTriggerTrace;
+const actionEffectTrace = actionEffectResult.actionEffectTrace;
 t.assert(actionEffectTrace !== null, 'ActionEffect scenario did not bind its selected recorder');
 t.assert(actionEffectTrace.executionDomain === 0, 'ActionEffect trace lost its cartridge execution domain');
 t.assert(actionEffectTrace.ownerId === 'nemesis_s.player.1'
 	&& actionEffectTrace.ownerDefinitionId === 'nemesis_s.player',
 'ActionEffect trace selected the wrong concrete component owner');
-t.assert(actionEffectTrace.triggers.length === 1,
-'ActionEffect trace confused periodic execution with a trigger attempt');
-const fireTrigger = actionEffectTrace.triggers.at(0);
-t.assert(fireTrigger.effectId === 'fire_salvo' && fireTrigger.outcome === 'accepted',
+t.assert(actionEffectTrace.facts.length === 3,
+'ActionEffect trace did not retain the fire down/up activity boundaries');
+const fireActivation = actionEffectTrace.facts.at(0);
+const fireTrigger = actionEffectTrace.facts.at(1);
+const fireDeactivation = actionEffectTrace.facts.at(2);
+t.assert(fireActivation.kind === 'activate'
+	&& fireActivation.effectId === 'fire_salvo'
+	&& fireActivation.activeCount === 1,
+'ActionEffect trace did not retain the committed fire activation');
+t.assert(fireTrigger.kind === 'trigger'
+	&& fireTrigger.effectId === 'fire_salvo'
+	&& fireTrigger.outcome === 'accepted',
 'ActionEffect trace did not retain the direct accepted fire outcome');
-t.assert(resultPane.rows.some(row => row.kind === 'actioneffect_trigger' && row.trigger === fireTrigger),
-'Scenario Lab did not project recorded ActionEffect triggers');
+t.assert(fireDeactivation.kind === 'deactivate'
+	&& fireDeactivation.effectId === 'fire_salvo'
+	&& fireDeactivation.activeCount === 0,
+'ActionEffect trace did not retain the committed fire deactivation');
+t.assert(fireActivation.producerSequence === 1
+	&& fireTrigger.producerSequence === 2
+	&& fireDeactivation.producerSequence === 3,
+'ActionEffect trace lost the producer order across activity and trigger facts');
+t.assert(resultPane.rows.some(row => row.kind === 'actioneffect_fact' && row.fact === fireTrigger),
+'Scenario Lab did not project recorded ActionEffect facts');
 t.capture('scenario-lab-actioneffect-result-tiny-384x288');
 
 await pressKey('Tab', 310);

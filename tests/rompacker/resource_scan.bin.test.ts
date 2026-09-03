@@ -37,7 +37,10 @@ test('resource scan treats glTF buffer URIs as model-owned and keeps other .bin 
 		await writeFile(join(ROOT, 'models', 'mesh.bin'), Buffer.from([5, 6, 7, 8]));
 		await writeFile(join(ROOT, 'models', 'mesh.gltf'), JSON.stringify({ asset: { version: '2.0' }, buffers: [{ uri: 'mesh.bin', byteLength: 4 }] }));
 
-		const resources = await getResMetaList([ROOT], { domain: 'cart' });
+		const resources = await getResMetaList([ROOT], {
+			domain: 'cart',
+			sourceOnlyLuaRootFiles: [],
+		});
 		const binResources = resources.filter(resource => resource.type === 'bin');
 
 		assert.deepEqual(binResources.map(resource => resource.name).sort(), ['scripted', 'tiles']);
@@ -53,6 +56,7 @@ test('Lua assets retain separate module-local and workspace source paths', async
 		await writeFile(join(ROOT, 'entry.lua'), 'module<entry>\nreturn true');
 		const metadata = await getResMetaList([ROOT], {
 			domain: 'cart',
+			sourceOnlyLuaRootFiles: [],
 			virtualRoot: ROOT,
 		});
 		const assets = await generateRomAssets(await getResourcesList(metadata));
@@ -65,7 +69,7 @@ test('Lua assets retain separate module-local and workspace source paths', async
 	}
 });
 
-test('source-only scenario roots retain their reachable debug library modules', async () => {
+test('source-only scenario roots retain library source without base compilation', async () => {
 	await rm(ROOT, { recursive: true, force: true });
 	try {
 		const resourcesRoot = join(ROOT, 'res');
@@ -84,17 +88,25 @@ test('source-only scenario roots retain their reachable debug library modules', 
 			domain: 'cart',
 			virtualRoot: ROOT,
 			libraryLuaPaths: [libraryRoot],
-			luaDependencyRootFiles: [scenarioPath],
+			sourceOnlyLuaRootFiles: [scenarioPath],
 		});
-		const sourcePaths = metadata
+		const luaResources = metadata
 			.filter(resource => resource.type === 'lua')
-			.map(resource => resource.sourcePath);
+			.map(resource => ({
+				path: resource.sourcePath,
+				programModule: resource.programModule,
+			}));
 
-		assert.deepEqual(sourcePaths, [
-			'cartlib/trace.lua',
-			'cartlib/trace_storage.lua',
-			'res/entry.lua',
+		assert.deepEqual(luaResources, [
+			{ path: 'cartlib/trace.lua', programModule: false },
+			{ path: 'cartlib/trace_storage.lua', programModule: false },
+			{ path: 'res/entry.lua', programModule: true },
 		]);
+		const assets = await generateRomAssets(await getResourcesList(metadata));
+		const luaAssets = assets.filter(asset => asset.type === 'lua');
+		assert.equal(luaAssets[0].compiled_buffer, undefined);
+		assert.equal(luaAssets[1].compiled_buffer, undefined);
+		assert.notEqual(luaAssets[2].compiled_buffer, undefined);
 	} finally {
 		await rm(ROOT, { recursive: true, force: true });
 	}

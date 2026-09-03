@@ -195,16 +195,16 @@ function appendScenarioResultRows(
 			});
 		}
 	}
-	const actionEffectTrace = result.actionEffectTriggerTrace;
+	const actionEffectTrace = result.actionEffectTrace;
 	if (actionEffectTrace !== null) {
-		for (let index = 0; index < actionEffectTrace.triggers.length; index += 1) {
-			const trigger = actionEffectTrace.triggers.at(index);
+		for (let index = 0; index < actionEffectTrace.facts.length; index += 1) {
+			const fact = actionEffectTrace.facts.at(index);
 			pane.rows.push({
-				id: trigger.id,
-				kind: 'actioneffect_trigger',
+				id: fact.id,
+				kind: 'actioneffect_fact',
 				result,
 				trace: actionEffectTrace,
-				trigger,
+				fact,
 				expandable: false,
 				expanded: false,
 				text: '',

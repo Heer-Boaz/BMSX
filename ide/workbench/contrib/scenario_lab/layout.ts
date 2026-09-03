@@ -124,12 +124,15 @@ function resultDetailText(row: ScenarioLabResultRow): string {
 			const outcome = transition.outcome === 'committed' ? 'OK' : 'NO';
 			return `  FSM [${outcome}] ${semanticPathTail(transition.fromDefId)} > ${semanticPathTail(transition.toDefId)}  @${transition.producerTimeMillisecondsWord}MS #${transition.producerSequence}`;
 		}
-		case 'actioneffect_trigger': {
-			const trigger = row.trigger;
-			const outcome = trigger.outcome === 'accepted'
-				? 'OK'
-				: `NO:${trigger.outcome}`;
-			return `  EFFECT [${outcome}] ${trigger.effectId}  @${trigger.producerTimeMillisecondsWord}MS #${trigger.producerSequence}`;
+		case 'actioneffect_fact': {
+			const fact = row.fact;
+			if (fact.kind === 'trigger') {
+				const outcome = fact.outcome === 'accepted'
+					? 'OK'
+					: `NO:${fact.outcome}`;
+				return `  EFFECT TRIGGER [${outcome}] ${fact.effectId}  @${fact.producerTimeMillisecondsWord}MS #${fact.producerSequence}`;
+			}
+			return `  EFFECT ${fact.kind} ${fact.effectId} x${fact.activeCount}  @${fact.producerTimeMillisecondsWord}MS #${fact.producerSequence}`;
 		}
 	}
 }

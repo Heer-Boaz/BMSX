@@ -176,8 +176,10 @@ end
 function actioneffect_component:activate(id)
 	local effect<const> = self.effects[id]
 	local active_count<const> = effect.active_count
-	effect.active_count = active_count + 1
+	local new_active_count<const> = active_count + 1
+	effect.active_count = new_active_count
 	if active_count ~= 0 then
+		blua32.trace(self, 'actioneffect.fact', 'activate', id, new_active_count)
 		return
 	end
 	local period_ms<const> = effect.definition.period_ms
@@ -187,11 +189,14 @@ function actioneffect_component:activate(id)
 			effect.next_execution_ms = self.parent.world.gameplay_time_ms + period_ms
 		end
 	end
+	blua32.trace(self, 'actioneffect.fact', 'activate', id, new_active_count)
 end
 
 function actioneffect_component:deactivate(id)
 	local effect<const> = self.effects[id]
-	effect.active_count = effect.active_count - 1
+	local active_count<const> = effect.active_count - 1
+	effect.active_count = active_count
+	blua32.trace(self, 'actioneffect.fact', 'deactivate', id, active_count)
 end
 
 -- Cooldown commitment is normally part of successful activation. A deferred
@@ -220,7 +225,7 @@ local effect_allows<const> = function(effect, owner, id, payload, ...)
 	if required_tags then
 		for i = 1, #required_tags do
 			if not owner:has_tag(required_tags[i]) then
-				blua32.trace(owner.actioneffects, 'actioneffect.trigger', id, 'required_tag_missing')
+				blua32.trace(owner.actioneffects, 'actioneffect.fact', 'trigger', id, 'required_tag_missing')
 				return false
 			end
 		end
@@ -229,7 +234,7 @@ local effect_allows<const> = function(effect, owner, id, payload, ...)
 	if blocked_tags then
 		for i = 1, #blocked_tags do
 			if owner:has_tag(blocked_tags[i]) then
-				blua32.trace(owner.actioneffects, 'actioneffect.trigger', id, 'blocked_tag_present')
+				blua32.trace(owner.actioneffects, 'actioneffect.fact', 'trigger', id, 'blocked_tag_present')
 				return false
 			end
 		end
@@ -238,7 +243,7 @@ local effect_allows<const> = function(effect, owner, id, payload, ...)
 	if required_states then
 		for i = 1, #required_states do
 			if not owner.state_machines:matches_state(required_states[i]) then
-				blua32.trace(owner.actioneffects, 'actioneffect.trigger', id, 'required_state_missing')
+				blua32.trace(owner.actioneffects, 'actioneffect.fact', 'trigger', id, 'required_state_missing')
 				return false
 			end
 		end
@@ -247,14 +252,14 @@ local effect_allows<const> = function(effect, owner, id, payload, ...)
 	if blocked_states then
 		for i = 1, #blocked_states do
 			if owner.state_machines:matches_state(blocked_states[i]) then
-				blua32.trace(owner.actioneffects, 'actioneffect.trigger', id, 'blocked_state_present')
+				blua32.trace(owner.actioneffects, 'actioneffect.fact', 'trigger', id, 'blocked_state_present')
 				return false
 			end
 		end
 	end
 	local gate<const> = definition.can_trigger
 	if gate and not gate(owner, payload, ...) then
-		blua32.trace(owner.actioneffects, 'actioneffect.trigger', id, 'custom_gate')
+		blua32.trace(owner.actioneffects, 'actioneffect.fact', 'trigger', id, 'custom_gate')
 		return false
 	end
 	return true
@@ -289,7 +294,7 @@ function actioneffect_component:trigger(id, payload, ...)
 	local current_time_ms<const> = owner.world.gameplay_time_ms
 	local cooldown_until_ms<const> = effect.cooldown_until_ms
 	if cooldown_until_ms ~= nil and current_time_ms < cooldown_until_ms then
-		blua32.trace(self, 'actioneffect.trigger', id, 'cooldown')
+		blua32.trace(self, 'actioneffect.fact', 'trigger', id, 'cooldown')
 		return false
 	end
 	local definition<const> = effect.definition
@@ -303,7 +308,7 @@ function actioneffect_component:trigger(id, payload, ...)
 	else
 		commit_effect_cooldown(effect, owner, cooldown_ms)
 	end
-	blua32.trace(self, 'actioneffect.trigger', id, 'accepted')
+	blua32.trace(self, 'actioneffect.fact', 'trigger', id, 'accepted')
 	return execute_effect(effect, owner, payload, ...)
 end
 

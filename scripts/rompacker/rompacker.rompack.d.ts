@@ -81,6 +81,7 @@ export interface ModelResource extends BaseResource<'model'> {
 
 export interface LuaResource extends BaseResource<'lua'> {
 	id: number;
+	programModule: boolean;
 	update_timestamp: number; // Timestamp of the last update to this Lua asset, used for caching and reloading during development.
 }
 

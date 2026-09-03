@@ -6,8 +6,8 @@ import type {
 } from '../../ui/list_view';
 import type {
 	ScenarioResultService,
-	ScenarioActionEffectTriggerRecord,
-	ScenarioActionEffectTriggerTrace,
+	ScenarioActionEffectFact,
+	ScenarioActionEffectTrace,
 	ScenarioResultCapture,
 	ScenarioFsmTransitionRecord,
 	ScenarioFsmTransitionTrace,
@@ -88,9 +88,9 @@ export type ScenarioLabResultRow = ScenarioLabResultRowBase & ({
 	readonly expandable: false;
 	readonly expanded: false;
 } | {
-	readonly kind: 'actioneffect_trigger';
-	readonly trace: ScenarioActionEffectTriggerTrace;
-	readonly trigger: ScenarioActionEffectTriggerRecord;
+	readonly kind: 'actioneffect_fact';
+	readonly trace: ScenarioActionEffectTrace;
+	readonly fact: ScenarioActionEffectFact;
 	readonly expandable: false;
 	readonly expanded: false;
 });

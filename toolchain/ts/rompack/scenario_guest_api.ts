@@ -1,6 +1,6 @@
 export const SCENARIO_TEST_LOADER_GLOBAL = '__bmsx_host_test_loader';
 export const SCENARIO_GUEST_OBSERVE_FSM_TRANSITIONS_KEY = 'observe_fsm_transitions';
-export const SCENARIO_GUEST_OBSERVE_ACTIONEFFECT_TRIGGERS_KEY = 'observe_actioneffect_triggers';
+export const SCENARIO_GUEST_OBSERVE_ACTIONEFFECTS_KEY = 'observe_actioneffects';
 
 export const SCENARIO_GUEST_API_SOURCE = `host = {
 	press = function(code, ticks)
@@ -28,7 +28,7 @@ export const SCENARIO_GUEST_API_SOURCE = `host = {
 	${SCENARIO_GUEST_OBSERVE_FSM_TRANSITIONS_KEY} = function(recorder)
 		return { ${SCENARIO_GUEST_OBSERVE_FSM_TRANSITIONS_KEY} = recorder }
 	end,
-	${SCENARIO_GUEST_OBSERVE_ACTIONEFFECT_TRIGGERS_KEY} = function(recorder)
-		return { ${SCENARIO_GUEST_OBSERVE_ACTIONEFFECT_TRIGGERS_KEY} = recorder }
+	${SCENARIO_GUEST_OBSERVE_ACTIONEFFECTS_KEY} = function(recorder)
+		return { ${SCENARIO_GUEST_OBSERVE_ACTIONEFFECTS_KEY} = recorder }
 	end,
 }`;

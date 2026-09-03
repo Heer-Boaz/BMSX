@@ -20,8 +20,9 @@ import { parseCartridgePackage } from '../../machine/ts/rompack/image';
 import {
 	buildScenarioMediaFixture,
 	SCENARIO_FIXTURE_CART_ENTRY_SOURCE,
-	SCENARIO_FIXTURE_RETAINED_SOURCE,
+	SCENARIO_FIXTURE_SOURCE_ONLY_MODULE_SOURCE,
 	SCENARIO_FIXTURE_TEST_SOURCE_PATH,
+	SCENARIO_FIXTURE_UNSELECTED_MODULE_SOURCE,
 } from '../helpers/scenario_media';
 
 const ROOT = join(process.cwd(), 'tmp', 'host-test-cartridge-test');
@@ -31,9 +32,10 @@ test('scenario cartridge packages authored test source without making it a start
 	try {
 		await mkdir(ROOT, { recursive: true });
 		const testSource = [
+			"local fixture<const> = require('testlib/fixture')",
 			'__bmsx_host_test = {}',
 			'function __bmsx_host_test.ready()',
-			'\treturn true',
+			'\treturn fixture == "source only"',
 			'end',
 			'function __bmsx_host_test.setup()',
 			'end',
@@ -48,6 +50,11 @@ test('scenario cartridge packages authored test source without making it a start
 		)!;
 		assert.equal(
 			baseToolingImage.layout.constants.includes(traceSinkFieldName('fixture')),
+			false,
+		);
+		assert.equal(baseToolingImage.layout.constants.includes('source only'), false);
+		assert.equal(
+			baseToolingImage.layout.constants.includes('unselected source only'),
 			false,
 		);
 		const enhancedBuild = await buildScenarioCartridge({
@@ -79,11 +86,22 @@ test('scenario cartridge packages authored test source without making it a start
 			Buffer.from(enhanced.subarray(entrySource.start, entrySource.end)).toString('utf8'),
 			SCENARIO_FIXTURE_CART_ENTRY_SOURCE,
 		);
-		const retainedEntry = index.entries.find(entry => entry.resid === 'retained-document')!;
-		assert.equal(retainedEntry.compiled_start, undefined);
+		const sourceOnlyEntry = index.entries.find(entry => entry.resid === 'source-only-module')!;
+		assert.equal(sourceOnlyEntry.compiled_start, undefined);
 		assert.equal(
-			Buffer.from(enhanced.subarray(retainedEntry.start, retainedEntry.end)).toString('utf8'),
-			SCENARIO_FIXTURE_RETAINED_SOURCE,
+			Buffer.from(enhanced.subarray(sourceOnlyEntry.start, sourceOnlyEntry.end)).toString('utf8'),
+			SCENARIO_FIXTURE_SOURCE_ONLY_MODULE_SOURCE,
+		);
+		const unselectedSourceOnlyEntry = index.entries.find(
+			entry => entry.resid === 'unselected-source-only-module',
+		)!;
+		assert.equal(unselectedSourceOnlyEntry.compiled_start, undefined);
+		assert.equal(
+			Buffer.from(enhanced.subarray(
+				unselectedSourceOnlyEntry.start,
+				unselectedSourceOnlyEntry.end,
+			)).toString('utf8'),
+			SCENARIO_FIXTURE_UNSELECTED_MODULE_SOURCE,
 		);
 
 		const cartPackage = parseCartridgePackage(enhanced);
@@ -92,15 +110,20 @@ test('scenario cartridge packages authored test source without making it a start
 			toolingImage.layout.constants.includes(traceSinkFieldName('fixture')),
 			true,
 		);
+		assert.equal(toolingImage.layout.constants.includes('source only'), true);
+		assert.equal(
+			toolingImage.layout.constants.includes('unselected source only'),
+			false,
+		);
 		const testModulePath = toLuaModulePath(SCENARIO_FIXTURE_TEST_SOURCE_PATH);
 		const authoredRanges = toolingImage.symbols!.metadata.debugRanges.filter(
 			range => range !== null && range.path === testModulePath,
 		);
-		assert.ok(authoredRanges.some(range => range!.start.line === 8 && range!.start.column === 2));
+		assert.ok(authoredRanges.some(range => range!.start.line === 9 && range!.start.column === 2));
 		const debugRangeIndex = toolingImage.symbols!.metadata.debugRanges.findIndex(
 			range => range !== null
 				&& range.path === testModulePath
-				&& range.start.line === 8
+				&& range.start.line === 9
 				&& range.start.column === 2,
 		);
 		const tracePc = toolingImage.layout.header.textAddress + debugRangeIndex * INSTRUCTION_BYTES;
@@ -126,7 +149,7 @@ test('scenario cartridge packages authored test source without making it a start
 				&& frame.resource.path === SCENARIO_FIXTURE_TEST_SOURCE_PATH,
 		)!;
 		assert.equal(authoredFrame.kind, 'source');
-		assert.equal(authoredFrame.line, 8);
+		assert.equal(authoredFrame.line, 9);
 		assert.equal(authoredFrame.column, 2);
 		assert.equal(authoredFrame.workspacePath, SCENARIO_FIXTURE_TEST_SOURCE_PATH);
 

@@ -16,7 +16,8 @@ import {
 const MANIFEST: CartManifest = { hardware: [{ type: 'rom' }] };
 
 export const SCENARIO_FIXTURE_TEST_SOURCE_PATH = 'tests/carts/example/example_assert.lua';
-export const SCENARIO_FIXTURE_RETAINED_SOURCE = 'return "source only"';
+export const SCENARIO_FIXTURE_SOURCE_ONLY_MODULE_SOURCE = 'return "source only"';
+export const SCENARIO_FIXTURE_UNSELECTED_MODULE_SOURCE = 'return "unselected source only"';
 export const SCENARIO_FIXTURE_CART_ENTRY_SOURCE = [
 	'module<entry>',
 	'local trace_subject<const> = {}',
@@ -69,12 +70,19 @@ export async function buildScenarioMediaFixture(
 		blua32: systemBlua32,
 	});
 
-	const retainedDocument: RomAsset = {
-		resid: 'retained-document',
+	const sourceOnlyModule: RomAsset = {
+		resid: 'source-only-module',
 		type: 'lua',
-		buffer: Buffer.from(SCENARIO_FIXTURE_RETAINED_SOURCE),
-		source_path: 'docs/retained.lua',
-		normalized_source_path: 'carts/example/docs/retained.lua',
+		buffer: Buffer.from(SCENARIO_FIXTURE_SOURCE_ONLY_MODULE_SOURCE),
+		source_path: 'testlib/fixture.lua',
+		normalized_source_path: 'testlib/fixture.lua',
+	};
+	const unselectedSourceOnlyModule: RomAsset = {
+		resid: 'unselected-source-only-module',
+		type: 'lua',
+		buffer: Buffer.from(SCENARIO_FIXTURE_UNSELECTED_MODULE_SOURCE),
+		source_path: 'testlib/unselected.lua',
+		normalized_source_path: 'testlib/unselected.lua',
 	};
 	const packagedTest: RomAsset = {
 		resid: scenarioTestAssetId(SCENARIO_FIXTURE_TEST_SOURCE_PATH),
@@ -84,7 +92,12 @@ export async function buildScenarioMediaFixture(
 		normalized_source_path: SCENARIO_FIXTURE_TEST_SOURCE_PATH,
 		update_timestamp: 1234,
 	};
-	const cartAssets = [luaEntry(SCENARIO_FIXTURE_CART_ENTRY_SOURCE), retainedDocument, packagedTest];
+	const cartAssets = [
+		luaEntry(SCENARIO_FIXTURE_CART_ENTRY_SOURCE),
+		sourceOnlyModule,
+		unselectedSourceOnlyModule,
+		packagedTest,
+	];
 	const cartLayout = layoutRomPrefix(cartAssets, true, MANIFEST);
 	const cartBlua32 = buildRomBlua32Tail(cartAssets, {
 		generatedLuaModules: [],

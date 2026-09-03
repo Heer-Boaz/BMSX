@@ -37,7 +37,7 @@ export function updateScenarioLabStatus(state: ScenarioLabViewState): void {
 			state.status.dirty = true;
 			return;
 		}
-		if (row !== null && row.kind === 'actioneffect_trigger') {
+		if (row !== null && row.kind === 'actioneffect_fact') {
 			state.status.info = `ACTIONEFFECT ${row.trace.ownerId} / SOURCE UNAVAILABLE`;
 			state.status.dirty = true;
 			return;
@@ -191,7 +191,7 @@ function activateScenarioLabSelection(state: ScenarioLabViewState): ScenarioLabN
 		toggleScenarioLabResultRow(state, state.resultPane.selectionIndex);
 		return NAVIGATION_CHANGED;
 	}
-	if (row.kind === 'fsm_transition' || row.kind === 'actioneffect_trigger') {
+	if (row.kind === 'fsm_transition' || row.kind === 'actioneffect_fact') {
 		updateScenarioLabStatus(state);
 		return NAVIGATION_CHANGED;
 	}

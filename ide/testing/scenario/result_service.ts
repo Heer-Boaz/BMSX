@@ -6,7 +6,7 @@ export const SCENARIO_RESULT_RETAIN_COUNT = 128;
 export const SCENARIO_RESULT_LOG_RETAIN_COUNT = 512;
 export const SCENARIO_RESULT_CAPTURE_RETAIN_COUNT = 64;
 export const SCENARIO_RESULT_FSM_TRANSITION_RETAIN_COUNT = 1024;
-export const SCENARIO_RESULT_ACTIONEFFECT_TRIGGER_RETAIN_COUNT = 1024;
+export const SCENARIO_RESULT_ACTIONEFFECT_FACT_RETAIN_COUNT = 1024;
 
 export type ScenarioRunState =
 	| 'preparing'
@@ -70,20 +70,35 @@ export type ScenarioActionEffectTriggerOutcome =
 	| 'blocked_state_present'
 	| 'custom_gate';
 
-export type ScenarioActionEffectTriggerRecord = {
+type ScenarioActionEffectFactBase = {
 	readonly id: string;
 	readonly producerSequence: number;
 	readonly producerTimeMillisecondsWord: number;
 	readonly observedTick: number;
 	readonly effectId: string;
+};
+
+export type ScenarioActionEffectTriggerFact = ScenarioActionEffectFactBase & {
+	readonly kind: 'trigger';
 	readonly outcome: ScenarioActionEffectTriggerOutcome;
 };
 
-export type ScenarioActionEffectTriggerTrace = {
+export type ScenarioActionEffectActivityKind = 'activate' | 'deactivate';
+
+export type ScenarioActionEffectActivityFact = ScenarioActionEffectFactBase & {
+	readonly kind: ScenarioActionEffectActivityKind;
+	readonly activeCount: number;
+};
+
+export type ScenarioActionEffectFact =
+	| ScenarioActionEffectTriggerFact
+	| ScenarioActionEffectActivityFact;
+
+export type ScenarioActionEffectTrace = {
 	readonly executionDomain: 0 | 1;
 	readonly ownerId: string;
 	readonly ownerDefinitionId: string;
-	readonly triggers: ScenarioRetainedSequence<ScenarioActionEffectTriggerRecord>;
+	readonly facts: ScenarioRetainedSequence<ScenarioActionEffectFact>;
 };
 
 export type ScenarioRunResult = {
@@ -97,7 +112,7 @@ export type ScenarioRunResult = {
 	readonly logs: ScenarioRetainedSequence<ScenarioResultLog>;
 	readonly captures: ScenarioRetainedSequence<ScenarioResultCapture>;
 	fsmTransitionTrace: ScenarioFsmTransitionTrace | null;
-	actionEffectTriggerTrace: ScenarioActionEffectTriggerTrace | null;
+	actionEffectTrace: ScenarioActionEffectTrace | null;
 	failure: ScenarioRunFailure | null;
 	fault: FaultSnapshot | null;
 };
@@ -139,7 +154,7 @@ export class ScenarioResultService {
 	private nextLogSequence = 1;
 	private nextCaptureSequence = 1;
 	private nextFsmTransitionSequence = 1;
-	private nextActionEffectTriggerSequence = 1;
+	private nextActionEffectFactSequence = 1;
 	private _liveResult: ScenarioRunResult | null = null;
 
 	public get liveResult(): ScenarioRunResult | null {
@@ -161,7 +176,7 @@ export class ScenarioResultService {
 			logs: new ScenarioRetainedSequence(SCENARIO_RESULT_LOG_RETAIN_COUNT),
 			captures: new ScenarioRetainedSequence(SCENARIO_RESULT_CAPTURE_RETAIN_COUNT),
 			fsmTransitionTrace: null,
-			actionEffectTriggerTrace: null,
+			actionEffectTrace: null,
 			failure: null,
 			fault: null,
 		};
@@ -220,44 +235,67 @@ export class ScenarioResultService {
 		this.revision += 1;
 	}
 
-	public beginActionEffectTriggerTrace(
+	public beginActionEffectTrace(
 		result: ScenarioRunResult,
 		ownerId: string,
 		ownerDefinitionId: string,
-	): ScenarioActionEffectTriggerTrace {
-		if (result.actionEffectTriggerTrace !== null) {
+	): ScenarioActionEffectTrace {
+		if (result.actionEffectTrace !== null) {
 			throw new Error('A scenario run can record one selected ActionEffect component.');
 		}
-		const trace: ScenarioActionEffectTriggerTrace = {
+		const trace: ScenarioActionEffectTrace = {
 			executionDomain: result.test.resource.domain,
 			ownerId,
 			ownerDefinitionId,
-			triggers: new ScenarioRetainedSequence(
-				SCENARIO_RESULT_ACTIONEFFECT_TRIGGER_RETAIN_COUNT,
+			facts: new ScenarioRetainedSequence(
+				SCENARIO_RESULT_ACTIONEFFECT_FACT_RETAIN_COUNT,
 			),
 		};
-		result.actionEffectTriggerTrace = trace;
+		result.actionEffectTrace = trace;
 		this.revision += 1;
 		return trace;
 	}
 
 	public appendActionEffectTrigger(
-		trace: ScenarioActionEffectTriggerTrace,
+		trace: ScenarioActionEffectTrace,
 		producerSequence: number,
 		producerTimeMillisecondsWord: number,
 		observedTick: number,
 		effectId: string,
 		outcome: ScenarioActionEffectTriggerOutcome,
 	): void {
-		trace.triggers.push({
-			id: `scenario-actioneffect-trigger:${this.nextActionEffectTriggerSequence}`,
+		trace.facts.push({
+			id: `scenario-actioneffect-fact:${this.nextActionEffectFactSequence}`,
 			producerSequence,
 			producerTimeMillisecondsWord,
 			observedTick,
 			effectId,
+			kind: 'trigger',
 			outcome,
 		});
-		this.nextActionEffectTriggerSequence += 1;
+		this.nextActionEffectFactSequence += 1;
+		this.revision += 1;
+	}
+
+	public appendActionEffectActivity(
+		trace: ScenarioActionEffectTrace,
+		producerSequence: number,
+		producerTimeMillisecondsWord: number,
+		observedTick: number,
+		effectId: string,
+		kind: ScenarioActionEffectActivityKind,
+		activeCount: number,
+	): void {
+		trace.facts.push({
+			id: `scenario-actioneffect-fact:${this.nextActionEffectFactSequence}`,
+			producerSequence,
+			producerTimeMillisecondsWord,
+			observedTick,
+			effectId,
+			kind,
+			activeCount,
+		});
+		this.nextActionEffectFactSequence += 1;
 		this.revision += 1;
 	}
 

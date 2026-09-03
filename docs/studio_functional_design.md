@@ -368,8 +368,14 @@ productiebundlermodel waarin iedere entry root de dependencygraph doorloopt
 ([esbuild-architectuur](https://github.com/evanw/esbuild/blob/f6058f8364fe7ab91ca57a83e02577ed74c9cae4/docs/architecture.md#L62-L68)).
 De gewone cart-entry blijft de enige executable root van de canonieke ROM;
 scenariofiles blijven source-only assets en alleen hun bereikbare
-librarymodules worden in de debugpackage beschikbaar gehouden voor de latere
-scenario-entry. De builder injecteert dus geen Studio/cartlib-module op naam.
+librarymodules worden zonder compiled payload in de debugpackage beschikbaar
+gehouden. Pas de afgeleide Scenario-builder compileert de closure van de ene
+geselecteerde testroot naast de canonieke programmodules. Onverwante testlib-
+code komt dus ook niet in de gewone debug-BLua-image. Eenmaal gedecodeerde
+program-AST's en eenmaal geparsete source-only modules gaan als dezelfde
+immutable compilerrepresentatie naar de image-builder; de afgeleide route
+serialiseert een AST niet alleen om hem meteen weer te deserialiseren. De
+builder injecteert geen Studio/cartlib-module op naam.
 
 ## UX- en ownershiproute
 
@@ -668,8 +674,8 @@ low-end-hostresultaat.
 ### Tweede gekozen producer: opgenomen ActionEffect-triggeruitkomsten
 
 `STUDIO-ACTIONEFFECT-TRIGGER-TRACE-01` bindt één Scenario-only
-`testlib`-recorder aan de unieke `actioneffect_component` van één concrete
-registry-owner. De bestaande
+`testlib/actioneffects/recorder` aan de unieke `actioneffect_component` van één
+concrete registry-owner. De bestaande
 `trigger(id, payload, ...)`-grens produceert precies één feit per werkelijke
 triggerpoging. Zij onderscheidt de redenen die zij zelf al beoordeelt:
 
@@ -691,17 +697,14 @@ De recorder prealloceert opnieuw een vaste circular buffer, maar FSM en
 ActionEffects krijgen geen generieke callback-, DTO- of diagnosticsfacade. Hun
 identiteit, records en producergrenzen verschillen. Gewone builds wissen de
 trace statements; alleen de afgeleide Scenario-ROM bevat de geselecteerde
-sinklookup. De ActionEffect-channel heeft deze vaste interne Lua/hostvorm:
-
-| Waarde | Arrayvelden |
-| --- | --- |
-| kanaal | concrete owner-id; owner-definition-id; capacity; published sequence; retained record-array |
-| record | producer sequence; raw `SYS_TIME_MS`; effect-id; producer-owned geïnterneerde outcome-string |
+sinklookup. De latere activityslice hergebruikt ditzelfde kanaal en brengt de
+definitieve vaste recordvorm onder één producer sequence; zij introduceert geen
+tweede recorder of host-side tijdmerge.
 
 Scenario Lab materialiseert dit als een afzonderlijke begrensde ActionEffect-
 trace onder de static ownerheader. De execution domain komt uit het werkelijk
 uitgevoerde testresource. De host scant geen registry, world of component en
-behoudt de outcome-string zonder hostvertaling. Overflow
+behoudt de outcome-string zonder code-/labelvertaling. Overflow
 faalt de test. Er is geen sourcerange zolang de runtime-effect-id nog geen
 bewezen authored correspondence publiceert.
 
@@ -710,16 +713,16 @@ De gewone effectrecords krijgen dus geen gedupliceerd debug-id, de recorder
 hoeft geen tweede identity-map te onderhouden en een grant na recorderbinding
 houdt dezelfde semantiek.
 
-Deze slice observeert uitdrukkelijk niet `activate()`, `deactivate()`,
-`commit_cooldown()` of `tick_periodic()`. Zij maakt ook geen `can_trigger`-
-callback zwaarder om cart-specifieke subredenen te verzamelen. Zulke feiten
-krijgen pas een eigen slice wanneer de concrete authoring- en testworkflow hun
-identiteit en payload vereist.
+De triggercategorie observeert uitdrukkelijk niet zelf `activate()`,
+`deactivate()`, `commit_cooldown()` of `tick_periodic()`. Zij maakt ook geen
+`can_trigger`-callback zwaarder om cart-specifieke subredenen te verzamelen. De
+volgende activityslice voegt de twee concrete commitgrenzen toe aan hetzelfde
+kanaal; cooldowncommit en periodieke uitvoering blijven ongeobserveerd.
 
 De deterministische O3-BLua32-test mat voor 10.000 directe accepted `plain`-
 triggers 920.007 VM-cycles in de gewone gewiste build, 940.007 cycles in de
-Scenario-build zonder geselecteerde sink en 1.240.007 cycles met de recorder:
-twee cycles voor de Scenario-selectie en vervolgens dertig cycles per
+Scenario-build zonder geselecteerde sink en 1.280.007 cycles met de gedeelde
+factrecorder: twee cycles voor de Scenario-selectie en vervolgens 34 cycles per
 gepubliceerd record. Na warm-up bleef de door de VM bijgehouden guest-heap over
 10.000 records exact gelijk. Dit zijn synthetische cyclemetingen van alleen de
 triggergrens, geen algemeen framebudget of low-end-hostmeting.
@@ -747,16 +750,24 @@ retained sequence en doet geen state-inference. De UI mag count nul dus niet als
 `removed` hernoemen: de effectrecord blijft granted en de periodieke lane wordt
 volgens de bestaande componentsemantiek pas op haar tickgrens verwijderd.
 
-Een echte Nemesis-inputflow houdt `Space` vast en laat los. De trace moet in
+De echte Nemesis-inputtest houdt `Space` vast en laat los. De trace toont in
 dezelfde stream `activate` count 1, een accepted `trigger` en `deactivate` count
-0 tonen, terwijl de bestaande gameplayassertie de periodieke salvo-cadans
+0, terwijl de bestaande gameplayassertie de periodieke salvo-cadans
 controleert. Dat bewijst input-, component- en observatie-integratie zonder een
 test die de drie methods zelf in de gewenste volgorde aanroept.
 
+De deterministische O3-BLua32-test mat voor 10.000
+`activate('plain')`/`deactivate('plain')`-paren 390.007 VM-cycles in de gewone
+gewiste build, 430.007 cycles in de Scenario-build zonder geselecteerde sink en
+1.090.007 cycles met de recorder. Dat is twee selectiecycles per fact en 33
+recordercycles per gepubliceerd activityfeit. De geprealloceerde guestbuffer
+behield na warm-up exact dezelfde door de VM bijgehouden heapgrootte. Ook dit is
+een synthetische grensmeting, geen volledig framebudget of hostbenchmark.
+
 Niet in deze slice: grant/revoke/rebind, cooldowncommit, periodic-executionfact,
 effectpayloads, sourcemapping of een algemene lifecycle/eventfacade. Gewone
-release-, debug- en Hot Resume-bytecode bevatten ook voor activity geen sink,
-branch, kindstring of recorderstate.
+release-, debug- en Hot Resume-bytecode bevatten geen ActionEffect-
+tracekanaal, trace-only outcomeconstant, sinkdispatch of recorderstate.
 
 ### Pauze en semantic stepping
 

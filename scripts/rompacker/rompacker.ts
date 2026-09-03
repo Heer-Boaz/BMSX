@@ -425,6 +425,7 @@ async function runBIOSBuild(options: ParsedOptions, progress?: ProgressReporter)
 
 	const BIOSResMetaList = await runBIOSStep(TASK.MANIFEST_SCAN, () => getResMetaList([BIOSResPath], {
 		domain: 'system',
+		sourceOnlyLuaRootFiles: [],
 		extraLuaPaths: [biosSourcePath],
 		virtualRoot: BIOSVirtualRoot,
 	}));
@@ -595,7 +596,7 @@ async function main() {
 				domain: 'cart',
 				extraLuaFiles: cartSourceFiles,
 				libraryLuaPaths: Array.from(libraryLuaPathSet),
-				luaDependencyRootFiles: scenarioTestSources.sourceFiles,
+				sourceOnlyLuaRootFiles: scenarioTestSources.sourceFiles,
 				virtualRoot,
 			}));
 			await progress.taskCompleted();

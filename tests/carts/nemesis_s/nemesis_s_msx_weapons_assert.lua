@@ -1,5 +1,5 @@
 local clock<const> = require('cartlib/clock')
-local trigger_recorder<const> = require('testlib/actioneffects/trigger_recorder')
+local actioneffect_recorder<const> = require('testlib/actioneffects/recorder')
 local image<const> = require('cartlib/gx/image')
 local registry<const> = require('cartlib/registry')
 local rom_dir<const> = require('cartlib/rom_dir')
@@ -39,10 +39,34 @@ function __bmsx_host_test.update()
 	if player == nil then
 		return false
 	end
-	if test.trigger_recorder == nil then
-		local recorder<const> = trigger_recorder.new(player.actioneffects, 8)
-		test.trigger_recorder = recorder
-		return host.observe_actioneffect_triggers(recorder)
+	if test.actioneffect_recorder == nil then
+		local recorder<const> = actioneffect_recorder.new(player.actioneffects, 8)
+		test.actioneffect_recorder = recorder
+		return host.observe_actioneffects(recorder)
+	end
+	if test.phase == 'fire_down' then
+		test.edge_wait_ticks = test.edge_wait_ticks + 1
+		if test.salvo_count == 0 then
+			assert(test.edge_wait_ticks < 10,
+				'the held Space input did not reach the gameplay input clock')
+			return false
+		end
+		assert(test.salvo_count == 1, 'the initial fire edge did not admit its immediate salvo')
+		assert(test.actioneffect_recorder[4] == 2,
+			'the fire edge did not publish its activation and accepted trigger')
+		local activate_record<const> = test.actioneffect_recorder[5][1]
+		assert(activate_record[3] == 'activate'
+			and activate_record[4] == fire_effect_id
+			and activate_record[5] == 1,
+			'the fire-down edge did not publish the committed active count')
+		local trigger_record<const> = test.actioneffect_recorder[5][2]
+		assert(trigger_record[3] == 'trigger'
+			and trigger_record[4] == fire_effect_id
+			and trigger_record[5] == 'accepted',
+			'the admitted fire edge did not publish its accepted trigger outcome')
+		test.repeat_start_ms = world.gameplay_time_ms
+		test.phase = 'repeat'
+		return false
 	end
 	if test.phase == 'repeat' then
 		local repeat_period_ms<const> = 15 * clock.gameplay_delta_milliseconds()
@@ -58,10 +82,29 @@ function __bmsx_host_test.update()
 			'the held-fire effect did not repeat at the original E437 cadence')
 		assert(elapsed_ms <= repeat_deadline_ms,
 			'the held-fire effect skipped its first repeat boundary')
-		assert(test.trigger_recorder[4] == 1,
+		assert(test.actioneffect_recorder[4] == 2,
 			'periodic execution was misreported as a trigger attempt')
-		player.actioneffects:deactivate(fire_effect_id)
-		test.trigger_recorder:dispose()
+		test.edge_wait_ticks = 0
+		test.phase = 'fire_up'
+		return host.up('Space')
+	end
+	if test.phase == 'fire_up' then
+		test.edge_wait_ticks = test.edge_wait_ticks + 1
+		if test.actioneffect_recorder[4] == 2 then
+			assert(test.edge_wait_ticks < 10,
+				'the released Space input did not reach the gameplay input clock')
+			return false
+		end
+		assert(test.actioneffect_recorder[4] == 3,
+			'the fire-up edge did not publish its deactivation')
+		local deactivate_record<const> = test.actioneffect_recorder[5][3]
+		assert(deactivate_record[3] == 'deactivate'
+			and deactivate_record[4] == fire_effect_id
+			and deactivate_record[5] == 0,
+			'the fire-up edge did not publish the committed inactive count')
+		assert(player.actioneffects.effects[fire_effect_id].active_count == 0,
+			'the fire-up edge left the held effect active')
+		test.actioneffect_recorder:dispose()
 		return true
 	end
 	local stage<const> = player.stage
@@ -350,13 +393,7 @@ function __bmsx_host_test.update()
 	player.fire_weapon_salvo = function()
 		test.salvo_count = test.salvo_count + 1
 	end
-	player.actioneffects:activate(fire_effect_id)
-	player.actioneffects:trigger(fire_effect_id)
-	assert(test.salvo_count == 1, 'the initial fire edge did not admit its immediate salvo')
-	local trigger_record<const> = test.trigger_recorder[5][1]
-	assert(trigger_record[3] == fire_effect_id and trigger_record[4] == 'accepted',
-		'the admitted fire edge did not publish its accepted trigger outcome')
-	test.repeat_start_ms = world.gameplay_time_ms
-	test.phase = 'repeat'
-	return false
+	test.edge_wait_ticks = 0
+	test.phase = 'fire_down'
+	return host.down('Space')
 end

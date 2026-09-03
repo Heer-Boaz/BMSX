@@ -82,16 +82,18 @@ t.assert(sources.currentBlua32Media === canonicalMedia, 'Scenario Lab did not re
 t.assert(sources.cartridgeSlots[0].rom === canonicalCartridge, 'Scenario Lab replaced the canonical Pietious cartridge');
 const result = resultPane.rows[0].result;
 t.assert(result.state === 'passed', 'Pietious ActionEffect scenario did not pass');
-const trace = result.actionEffectTriggerTrace;
+const trace = result.actionEffectTrace;
 t.assert(trace !== null, 'Pietious scenario did not bind its ActionEffect recorder');
 t.assert(trace.executionDomain === 0
 	&& trace.ownerId === 'pietolon'
 	&& trace.ownerDefinitionId === 'player',
 'Pietious ActionEffect trace selected the wrong concrete component owner');
-t.assert(trace.triggers.length === 1, 'Pietious input published an unexpected trigger count');
-const trigger = trace.triggers.at(0);
-t.assert(trigger.effectId === 'spyglass' && trigger.outcome === 'custom_gate',
+t.assert(trace.facts.length === 1, 'Pietious input published an unexpected fact count');
+const trigger = trace.facts.at(0);
+t.assert(trigger.kind === 'trigger'
+	&& trigger.effectId === 'spyglass'
+	&& trigger.outcome === 'custom_gate',
 'Pietious ActionEffect trace lost the direct custom-gate outcome');
-t.assert(resultPane.rows.some(row => row.kind === 'actioneffect_trigger' && row.trigger === trigger),
+t.assert(resultPane.rows.some(row => row.kind === 'actioneffect_fact' && row.fact === trigger),
 'Scenario Lab did not project the Pietious ActionEffect outcome');
 t.capture('scenario-lab-pietious-actioneffect-tiny-384x288');
