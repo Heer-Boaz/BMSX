@@ -1,14 +1,16 @@
 # Studio scene-authoringarchitectuur
 
-Status: **`STUDIO-SCENE-RUNTIME-DESIGN-02`; sceneconcept geaccepteerd,
-runtime-representatie nog niet gekozen**
+Status: **`STUDIO-SCENE-RUNTIME-DESIGN-03`; directe opt-in
+scenedefinitie gekozen, retained live-reconcile nog niet ontworpen**
 
 Scenes zijn een legitiem engine- en Studio-concept. De fout in de eerste
-implementatie was niet dat zij scenes introduceerde, maar dat zij zonder
-productieworkload een desktop-runtime naar Lua vertaalde. Daardoor betaalde
-iedere `World` voor een `SceneInstance`, structurele commandbuffer, gekopieerde
-definitionrecords, maps en tombstones, ook wanneer de cart geen scene gebruikte.
-Die implementatie is verwijderd; het scenevraagstuk blijft open.
+implementatie was niet dat zij structured scenes introduceerde of dat een cart
+die scenes kiest daar helemaal niets voor mag betalen. Zij vertaalde zonder
+producer een desktop-runtime naar de algemene `World`: `SceneInstance`, een
+structurele commandbuffer, gekopieerde definitionrecords, maps en tombstones.
+Daardoor betaalde zelfs een cart zonder scene-import. Die implementatie is
+verwijderd; dit ontwerp maakt scenes net als FSM, BT en ActionEffect expliciet
+opt-in.
 
 Dit ontwerp begint daarom bij de bestaande BMSX-voorbeelden die al hetzelfde
 probleem goed oplossen: FSM's, Behavior Trees en ActionEffects. Daarna toetst
@@ -43,7 +45,9 @@ instanceklasse nodig heeft. De gemeenschappelijke regels zijn:
 1. gewone Lua blijft de canonieke bron zolang geen andere runtimeconsument een
    cooked representatie rechtvaardigt;
 2. registration is expliciet en opt-in; een cart zonder BT betaalt niet voor
-   BT en een cart zonder scenes mag niet voor scenes betalen;
+   BT en een cart zonder scenes betaalt niet voor scenes. Een cart die bewust
+   een scene gebruikt mag wel betalen voor haar authored definition en koude
+   instantiatie;
 3. authored input wordt alleen verlaagd wanneer dat aantoonbaar werk uit een
    herhaald pad haalt;
 4. runtime-instances bewaren alleen hun noodzakelijke veranderlijke state;
@@ -53,11 +57,20 @@ instanceklasse nodig heeft. De gemeenschappelijke regels zijn:
    tabel met labels als `number`, `string`, `asset_id` of `object_reference` en
    geen DTO-validator die Lua-types nogmaals modelleert.
 
-Voor scenes is load/unload in beginsel een koud pad. Een BT-achtige compiler is
-daarom geen standaardantwoord. Eerst moet blijken of een concrete scene vaak
-genoeg wordt geladen of groot genoeg is om verlaging te rechtvaardigen. Anders
-is ActionEffect-achtige directe admission, of zelfs uitsluitend bestaande
-Lua-code, de kleinere professionele keuze.
+Voor scenes is instantiatie in beginsel een koud pad. Een BT-achtige compiler is
+daarom geen standaardantwoord. De eerste sceneowner volgt ActionEffect: een
+expliciete registration bewaart de concrete Lua-definitie rechtstreeks en
+instantiatie consumeert haar ordered members via de bestaande `World:spawn`-
+grens. Verlaging volgt alleen wanneer een grote echte placementcollection daar
+later aantoonbaar baat bij heeft.
+
+FSM en BT leveren wel twee andere essentiële regels. De scenedefinitie staat in
+een cartmodule waarvan de expliciete `register`-functie uit `<init>` wordt
+aangeroepen, en een toekomstige rebindroute mag alleen bestaan wanneer een
+werkelijk retained sceneconsumer bestaat. Registration alleen gaat geen reeds
+geinstantieerde objectgraph herschrijven. Dat is ook het `PackedScene`-model:
+een resource revision bepaalt toekomstige instanties; een aparte editor- of
+runtimeoperatie bezit eventuele mutatie van een levende instantie.
 
 ## Professionele referenties
 
@@ -96,20 +109,21 @@ De sceneview wordt dus geen tweede authored database:
 ### `2024`
 
 `cart.lua` bouwt drie rootobjecten: portret, tekst en controller. De positionele
-compositie is visueel te editen, maar drie directe spawns rechtvaardigen geen
-scene-runtime. Deze cart is de negatieve controle: een scenevoorziening is pas
-goed wanneer `2024` haar niet hoeft te importeren en exact dezelfde ROM- en
-runtimekosten houdt.
+compositie is visueel te editen. Of de cart die drie objecten als scene wil
+authoren is een productkeuze, niet een performanceverbod. Zij is wel de
+negatieve controle voor opt-in ownership: zolang zij de scenelibrary niet
+importeert, blijven ROM en runtime bytegelijk.
 
 ### `nemesis_s`
 
-De root bestaat uit vier statische scherm-/directorobjecten. Ook hier is een
-algemene runtime waarschijnlijk duurder dan de huidige directe Lua. De stage is
-wel een echte authored ruimtelijke compositie: `nemesis_s_stage.yaml` bevat een
-32-rijige tilemap, restartpunten, muziekgrenzen en actor-glyphs; `stage.lua`
-decodeert die eenmaal naar tiles en een ordered actor-spawnlijst. Studio kan
-daar direct waarde leveren met visuele stagecompositie en positionele edits,
-zonder de runtime naar een generieke scene te dwingen.
+De root bestaat uit vier statische scherm-/directorobjecten. Dat is juist een
+geschikte eerste structured scene: authored order, prefabidentiteit, Space en
+positie worden brondata waarop een visual editor direct kan projecteren. De
+stage is een grotere authored ruimtelijke compositie:
+`nemesis_s_stage.yaml` bevat een 32-rijige tilemap, restartpunten,
+muziekgrenzen en actor-glyphs; `stage.lua` decodeert die eenmaal naar tiles en
+een ordered actor-spawnlijst. Beide bronnen leveren Studio-waarde, maar hun
+runtimeconsumenten hoeven daarom niet dezelfde representatie te krijgen.
 
 ### `pietious`
 
@@ -156,15 +170,39 @@ Godot en Defold ondersteunen eveneens zowel authored scenes/collections als
 runtime-instantiatie vanuit code. BMSX hoeft daarom niet iedere `world:spawn`
 onder één scene-API te brengen om scenes serieus te nemen.
 
-## Te meten representaties
+## Eerste representatiebesluit
 
-`STUDIO-SCENE-WORKLOAD-01` vergelijkt de volgende varianten buiten de
-productiebranch, met de bestaande directe cartcode als nulmeting:
+`STUDIO-SCENE-WORKLOAD-01` heeft eerst de vier release-O3-carts gemeten en
+daarna de Nemesis-root buiten de productiebranch omgezet naar het patroon van
+ActionEffect. De scene-library bewaart een directe definition; de ordered
+records bevatten `member_id`, `definition_id` en de bestaande `World:spawn`-
+options. Instantiatie maakt de echte objecten in authored order en retourneert
+een scene-local membermap. Er is geen definitionkopie, compiler,
+`SceneInstance`, `World`-veld of framewerk.
+
+| maat | directe Nemesis-root | opt-in scenedefinitie | verschil |
+| --- | ---: | ---: | ---: |
+| BLua-image | 633.688 bytes | 634.580 bytes | +892 bytes |
+| statische functies | 1.771 | 1.776 | +5 |
+| statische instructies | 80.855 | 80.948 | +93 |
+| statische basiscyles | 101.103 | 101.228 | +125 |
+| uitgevoerde instructies in vijf seconden | 2.546.542 | 2.546.723 | +181 |
+| uitgevoerde basiscyles in vijf seconden | 2.876.131 | 2.876.350 | +219 |
+| uitgevoerde tables in vijf seconden | 18.511 | 18.521 | +10 |
+
+De +219 cycles zijn initialization/instantiatie, niet de 50-Hz-route. Een
+release-O3-build van `2024`, die de nieuwe module niet importeerde, bleef
+SHA-256- en byte-identiek. De overhead is dus eigendom van de cart die voor de
+structured scene kiest. Zij koopt daarmee een canonieke ordered compositie,
+stabiele scene-local membernamen en een directe bron voor de visual editor; dat
+is productfunctionaliteit en geen vermomde optimalisatie.
+
+De relevante representaties blijven per workload:
 
 | Variant | Analogie | Wat zij moet bewijzen |
 | --- | --- | --- |
 | directe Lua assembly | huidige carts | kleinste ROM/load voor kleine graphs; references en berekende waarden blijven native Lua |
-| opt-in directe scene-definition | ActionEffect | één authored definitie zonder gekopieerde records; alleen de importer betaalt; reload/rebind alleen als een echte instance dat nodig heeft |
+| opt-in directe scene-definition | ActionEffect | **gekozen voor rootcompositie:** één authored definitie zonder gekopieerde records; alleen de importer betaalt |
 | verlaagd sceneprogramma | BT/FSM | extra admissionwerk is alleen toegestaan wanneer het herhaalde load/reconcilewerk aantoonbaar verlaagt |
 | immutable placementdata in ROM | Defold collection / BMSX `rodata` | grote collections besparen ROM/heap en laden binnen budget zonder een algemeen Lua-objectmodel |
 
@@ -175,11 +213,12 @@ Een eerste synthetische O3-proef met dezelfde vier en 128 triviale spawns gaf:
 | 4 instances | 81.540 bytes | 81.792 bytes | +156 | 1 table, 2 closures |
 | 128 instances | 94.226 bytes | 84.274 bytes | +3.600 | 1 table, 2 closures |
 
-Dat is nog geen productbesluit. Het laat juist zien dat één representatie niet
-voor beide workloads wint: direct Lua is beter voor vier instances; immutable
-data bespaart bijna 10 KiB bij 128 instances voor ongeveer 0,53% van één
-50-Hz-CPU-frame aan eenmalig loadwerk. De volgende proef gebruikt de echte
-Nemesis-root, Pietious-root, één kleine Pietious-room en de grootste room.
+Dat tweede resultaat verandert het rootbesluit niet. Het laat zien dat grote
+placementcollections mogelijk een compactere producer-owned representatie
+verdienen: immutable data bespaart in de synthetische 128-case bijna 10 KiB
+voor ongeveer 0,53% van één 50-Hz-CPU-frame aan eenmalig loadwerk. De echte
+Pietious-rooms en Nemesis-stage krijgen daarom later een afzonderlijk
+placementbesluit; zij blokkeren de directe root-scene niet.
 
 ## Performance- en ownershipgate
 
@@ -191,7 +230,8 @@ Nemesis-root, Pietious-root, één kleine Pietious-room en de grootste room.
 - Een definitie wordt niet eerst naar een tweede verzameling Lua-records en
   maps gekopieerd. Verlaging moet minder retained gueststate of minder herhaald
   werk opleveren en wordt gemeten.
-- Memberidentity gebruikt een producer-owned guestwaarde. Host-objectidentity,
+- Memberidentity gebruikt de direct authored scene-local guestwaarde.
+  Host-objectidentity,
   table-shape-probes en stringlabels voor pseudo-types zijn geen representatie.
 - Prefab-/cartcode blijft eigenaar van betekenisvolle constructioninput en
   mutatie. Een scenevoorziening schrijft niet willekeurig objectfields.
@@ -216,18 +256,17 @@ een expliciete correspondence- en mutatiegrens; de host leest niet
 
 ## Bouwvolgorde
 
-1. **`STUDIO-SCENE-WORKLOAD-01`** — meet de vier echte rootassemblies en de
-   kleine/grote placementworkloads; leg per cart vast welke authored handeling
-   de sceneview verbetert.
-2. **`IDE-SCENE-SOURCE-ADAPTER-01`** — kies op basis daarvan één bestaande
-   canonical source en bouw een source-preserving visual projectie plus één
-   echte edit. Geen runtimewijziging als de bestaande consumer de edit al kan
-   laden.
-3. Alleen wanneer een huidige cart daarna load/unload/rebind mist, krijgt een
-   optionele cartlib-sceneowner een eigen gemeten slice. Zijn API wordt afgeleid
-   van de winnende workload en van FSM/BT/ActionEffect, niet vooraf verzonnen.
-4. Runtimecorrespondence, picking en directe preview volgen pas nadat die
-   concrete scene-instanceowner bestaat.
+1. **`CARTLIB-SCENE-COLLECTION-01`** — land de gemeten opt-in directe
+   definition/instantiationowner zonder wijziging aan `World` of `prefab`.
+2. **`NEMESIS-ROOT-SCENE-01`** — maak de vier bestaande rootspawns de eerste
+   productieconsument en bewijs de echte cartflow.
+3. **`IDE-SCENE-SOURCE-ADAPTER-01`** — bouw op die bestaande canonical source
+   een source-preserving visual projectie plus één echte edit. Geen
+   runtimewijziging als de bestaande consumer de edit al kan laden.
+4. Meet de echte grote placementbronnen afzonderlijk voordat daar `rodata` of
+   een ander sceneprogramma voor wordt gekozen.
+5. Retained reconcile, picking en directe live preview volgen pas wanneer de
+   source-editor een concrete mutatie van een levende instance vereist.
 
 ## No-go's
 

@@ -109,23 +109,13 @@ at the generic Lua-language boundary before a scene contribution may issue
 them. That layer returns `EditorTextEdit`s only; it does not apply edits, know
 cartlib types, or become a second working-copy owner.
 
-Live scene commands additionally wait for
-`BLUA32-TOOLING-MODULE-ROOT-01`. A dynamic BLua module root lives in a
-compiler-owned guest global slot, but the workbench must not import the slot
-sanitizer or guess that hidden name. The compiler/linker publishes its existing
-module-path/root-slot binding in the private symbols; `RuntimeSourceState`
-indexes it for the exact execution domain. Runtime scene code resolves that
-tooling symbol and then binds fixed public scene operations. It does not add a
-runtime `require`, cart global, heap search, or generic call-by-string API.
-
-Live preview also does not turn every text change into guest execution. Before
-scene preview, `IDE-TEXT-HISTORY-PROJECTION-01` makes the existing stable
-`EditorUndoRecord` identity observable on edit/undo/redo. The text model remains
-the only stack owner and stores no feature callback or runtime payload. A scene
-preview coordinator may associate only its own successfully applied operation
-with that record, then replay its direct before/after values on undo/redo.
-Unassociated code edits, external changes, revert, or an expired runtime epoch
-never infer a guest mutation from a textual diff.
+The first scene source adapter edits the registered structured Lua definition
+and uses the ordinary save plus Hot Resume path. Registration changes the
+definition used by future instantiations; it does not infer mutation of an
+already living objectgraph. A later live-instance command requires its own
+concrete cartlib operation and correspondence owner first. Until that owner
+exists, the IDE adds no hidden module-root lookup, runtime `require`, heap scan,
+generic call-by-string route, undo callback or guessed guest mutation.
 
 ## Resource editor resolution
 

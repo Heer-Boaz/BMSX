@@ -1376,31 +1376,39 @@ bind a visual-editor manifest, and machine, TOC, cartridge model and C++ core
 remain unaware of behavior authoring.
 
 Scene authoring follows the same canonical-source rule. Scenes are a valid
-composition concept; the open question is their guest representation. The
-first proposal copied desktop-engine scene state and a C ECS command buffer
-into Lua tables. Even a cart that used no scene then paid ROM, module-init,
-table and closure costs on the 33.8688 MHz guest. Those implementation slices
-were removed rather than wrapped or optimized in place.
+composition concept. The rejected first proposal copied desktop-engine scene
+state and a C ECS command buffer into the general Lua `World`; even a cart that
+used no scene then paid ROM, module-init, table and closure costs on the
+33.8688 MHz guest. Those implementation slices were removed rather than
+wrapped or optimized in place. This does not mean a cart that deliberately
+uses scenes may not pay for its scene definition and cold instantiation.
 
 The replacement design starts from cartlib's existing structured-Lua owners.
 FSM registration compiles and rebinds because a state machine has retained
 state and repeated event/tick work. Behavior Trees lower authored topology to
 specialized evaluators and dense instance slots to keep the 50-Hz path free of
 definition interpretation. ActionEffects instead install their Lua definition
-directly and retain only granted runtime state. A scene implementation must
-justify which of those patterns its measured load/reload workload needs; the
-mere presence of a structured Lua table does not justify another compiler,
-definition copy or instance graph.
+directly and retain only granted runtime state. Root scenes follow that last
+pattern: an explicitly called cart registration installs one direct ordered
+Lua definition and the opt-in scene owner instantiates its members through the
+unchanged `World:spawn` boundary. It does not copy the definition, compile a
+second program or add a branch, field or system to `World`.
 
 The product boundary is accepted: a future visual editor is a host-side view
 on the same canonical source, machine/ROM/TOC remain unaware of scenes, and the
 host may not treat `world._objects` or arbitrary Lua tables as its scene
 database. Current carts expose both small Lua root assemblies and large
 placement sources such as Pietious' 24 rooms/122 objects and Nemesis' stage
-map. They need not share one runtime recordshape. No `SceneInstance`, member-id
-scheme, property descriptor, construction split, structural batch, tombstone
-policy or guest binding becomes an architecture owner until a current cart
-proves the state and a cart without scene imports remains cost-neutral. The
+map. They need not share one runtime recordshape. The first root-scene
+representation is an ordered collection of direct `member_id`,
+`definition_id` and existing spawn-options values. Instantiation returns its
+scene-local membermap; runtime object identity remains `Registry`-owned.
+Registration replacement affects future instantiations, just as a
+`PackedScene` revision does; it does not silently reconcile a living
+objectgraph. No retained `SceneInstance`, property descriptor, construction
+split, structural batch, tombstone policy or guest binding becomes an
+architecture owner until a current live-edit operation proves that state is
+needed. A cart without scene imports remains byte- and runtime-neutral. The
 workload analysis and gates are recorded in
 [`studio_scene_authoring_design.md`](studio_scene_authoring_design.md).
 
