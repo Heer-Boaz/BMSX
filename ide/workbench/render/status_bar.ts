@@ -2,21 +2,22 @@ import type { ResourcePanelController } from '../contrib/resources/panel/control
 import * as constants from '../../common/constants';
 import { getActiveSymbolSearchMatch } from '../contrib/code_editor/symbols/shared';
 import { statusAreaHeight, getStatusMessageLines } from '../common/layout';
-import { getActiveTab } from '../ui/tabs';
 import { editorFeedbackState } from '../../common/feedback_state';
 import { drawEditorText } from '../../editor/render/text_renderer';
 import { measureText, truncateTextToWidth } from '../../editor/common/text/layout';
 import { api } from '../../runtime/overlay_api';
-import { workspaceRecordState } from '../../workspace/records';
-import { activeCodeEditor } from '../../editor/ui/code_editor_state';
 import { editorViewState } from '../../editor/ui/view/state';
 import { problemsPanel } from '../contrib/problems/panel/controller';
 import { symbolSearchState } from '../contrib/code_editor/symbols/search/state';
 import type { RuntimeFaultState } from '../../runtime/fault_state';
+import type { EditorPane } from '../services/editor/editor_pane';
+import type { EditorTabDescriptor } from '../ui/tab/model';
+import { buildStatusLeftInfo } from './status_bar_info';
 
 export function renderStatusBar(
 	resourcePanel: ResourcePanelController,
 	fault: RuntimeFaultState,
+	editorPane: EditorPane<EditorTabDescriptor>,
 ): void {
 	const runtimeFaulted = !!fault.faultSnapshot;
 	const statusTop = editorViewState.viewportHeight - statusAreaHeight();
@@ -87,81 +88,5 @@ export function renderStatusBar(
 		return;
 	}
 
-	const activeTab = getActiveTab();
-	switch (activeTab.kind) {
-		case 'resource_view': {
-			const viewer = activeTab.resource;
-			const info = `${viewer.resource.source.type.toUpperCase()} ${viewer.resource.source.resid}`;
-			const detail = viewer.resource.path;
-			drawEditorText(editorViewState.font, info, 4, statusTop + 2, 0, statusTextColor);
-			if (detail.length > 0) {
-				drawEditorText(editorViewState.font, detail, editorViewState.viewportWidth - measureText(detail) - 4, statusTop + 2, 0, statusTextColor);
-			}
-			return;
-		}
-		case 'behavior_lens': {
-			const status = activeTab.view.status;
-			drawEditorText(editorViewState.font, status.info, 4, statusTop + 2, 0, statusTextColor);
-			if (status.detail.length > 0) {
-				drawEditorText(editorViewState.font, status.detail, editorViewState.viewportWidth - measureText(status.detail) - 4, statusTop + 2, 0, statusTextColor);
-			}
-			return;
-		}
-		case 'scenario_lab': {
-			const status = activeTab.view.status;
-			drawEditorText(
-				editorViewState.font,
-				status.renderedInfo,
-				4,
-				statusTop + 2,
-				0,
-				statusTextColor,
-			);
-			return;
-		}
-		case 'code_editor':
-			break;
-	}
-
-	// Draw filename info on the right. The line/col info remains rendered by the editor for now.
-	// const filenameInfo = `${ide_state.metadata.title || 'UNTITLED'}.lua`;
-	const leftX = 0;
-	const statusLeftInfo = buildStatusLeftInfo();
-	const itemSize = measureText('•');
-	const indicatorColor = workspaceRecordState.connected ? constants.COLOR_SERVER_STATUS_CONNECTED : constants.COLOR_SERVER_STATUS_DISCONNECTED;
-	drawEditorText(editorViewState.font, '•', leftX, statusTop + 2, 0, indicatorColor);
-	let textX = leftX + itemSize;
-	if (statusLeftInfo && statusLeftInfo.length > 0) {
-		drawEditorText(editorViewState.font, statusLeftInfo, textX, statusTop + 2, 0, statusTextColor);
-	}
-	const context = activeTab.context;
-	let detail = '';
-	let detailColor = statusTextColor;
-	if (context.model.runtimeSyncState === 'diverged') {
-		detail = 'SAVED, RUNTIME NOT APPLIED';
-		detailColor = constants.COLOR_STATUS_WARNING;
-	} else if (context.model.runtimeSyncState === 'runtime_update_pending') {
-		detail = 'RUNTIME UPDATE PENDING';
-	}
-	if (detail.length > 0) {
-		drawEditorText(editorViewState.font, detail, editorViewState.viewportWidth - measureText(detail) - 4, statusTop + 2, 0, detailColor);
-	}
-}
-
-export function buildStatusLeftInfo(): string {
-	if (problemsPanel.isVisible) {
-		if (problemsPanel.isFocused) {
-			const sel = problemsPanel.selectedDiagnostic;
-			if (sel) {
-				const file = sel.sourceLabel ?? (sel.path ?? '');
-				const parts: string[] = [];
-				parts.push(`Ln ${sel.row + 1}, Col ${sel.startColumn + 1}`);
-				if (file.length > 0) parts.push(file);
-				return parts.join(' • ');
-			}
-		}
-		// When Problems panel is visible but not focused or no selection, don't render default editor position
-		return '';
-	}
-	return `LINE ${activeCodeEditor.view.cursorRow + 1}/${activeCodeEditor.model.buffer.getLineCount()} COL ${activeCodeEditor.view.cursorColumn + 1}`;
+	editorPane.drawStatusBar(statusTop, statusTextColor);
 }

@@ -97,7 +97,6 @@ function appendEditorDiagnostic(
 		message: diagnostic.message,
 		severity: diagnostic.severity,
 		contextId: context.id,
-		sourceLabel: context.path,
 		path: context.path,
 	});
 }

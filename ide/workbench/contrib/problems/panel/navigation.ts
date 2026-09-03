@@ -1,13 +1,13 @@
 import { clamp } from '../../../../../machine/ts/common/clamp';
 import { gotoDiagnostic } from '../../code_editor/diagnostics/navigation';
 import type { ProblemsPanelController } from './controller';
-import type { ResourcePanelController } from '../../resources/panel/controller';
+import type { EditorPanes } from '../../../services/editor/editor_panes';
 
 export type ProblemsPanelCommand = 'up' | 'down' | 'page-up' | 'page-down' | 'home' | 'end' | 'activate';
 
 export function handleProblemsPanelNavigationCommand(
 	controller: ProblemsPanelController,
-	resourcePanel: ResourcePanelController,
+	editorPanes: EditorPanes,
 	command: ProblemsPanelCommand,
 ): boolean {
 	if (!controller.isVisible || !controller.isFocused) {
@@ -24,7 +24,7 @@ export function handleProblemsPanelNavigationCommand(
 			if (!diagnostic) {
 				return false;
 			}
-			gotoDiagnostic(resourcePanel, diagnostic);
+			gotoDiagnostic(editorPanes, diagnostic);
 			return true;
 		}
 		case 'home':

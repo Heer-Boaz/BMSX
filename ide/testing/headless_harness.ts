@@ -189,7 +189,7 @@ export function createHeadlessIdeHarness(
 				ide.sources.activeCartridgeSlot,
 				path,
 			)!;
-			openLuaCodeTab(ide.editor.resourcePanel, ide.sources, resource);
+			openLuaCodeTab(ide.editor.editorPanes, ide.sources, resource);
 		},
 		replaceActiveCodeSource: (source: string) => {
 			const buffer = activeCodeEditor.model.buffer;

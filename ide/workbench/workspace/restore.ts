@@ -28,9 +28,10 @@ export async function applyWorkspaceAutosavePayload(
 	debuggerState: RuntimeBreakpointState,
 	payload: WorkspaceAutosavePayload,
 ): Promise<void> {
+	editor.editorPanes.clearEditor();
 	clearCodeEditorInputs();
 	editorTextModelService.clear();
-	initializeTabs(retainEntryTabContext(sources));
+	initializeTabs(retainEntryTabContext(sources), editor.editorPanes);
 	editor.setFontVariant(payload.fontVariant);
 	await retainDirtyFileInputs(editor, sources, payload.dirtyFiles);
 	hydrateDirtyFiles(sources, payload.dirtyFiles);

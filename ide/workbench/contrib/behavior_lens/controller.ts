@@ -9,7 +9,7 @@ import type { BehaviorLensTabId } from '../../ui/tab/id';
 import { editorTabGroup } from '../../ui/tab/group_model';
 import { setActiveTab } from '../../ui/tabs';
 import type { EditorNavigationController } from '../resources/navigation';
-import type { ResourcePanelController } from '../resources/panel/controller';
+import type { EditorPanes } from '../../services/editor/editor_panes';
 import {
 	createBehaviorLensLayout,
 	installBehaviorLensDocument,
@@ -36,7 +36,7 @@ export class BehaviorLensController {
 	public constructor(
 		private readonly sources: RuntimeSourceState,
 		private readonly navigation: EditorNavigationController,
-		private readonly resourcePanel: ResourcePanelController,
+		private readonly editorPanes: EditorPanes,
 	) {}
 
 	public openActiveDocument(): void {
@@ -66,7 +66,7 @@ export class BehaviorLensController {
 		} else {
 			this.refreshView(tab.view, source, sourceVersion, sourceLine, sourceColumn);
 		}
-		setActiveTab(this.resourcePanel, tab.id);
+		setActiveTab(this.editorPanes, tab.id);
 	}
 
 	/** Refreshes a visible source lens when its canonical code buffer advances. */

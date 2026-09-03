@@ -10,9 +10,10 @@ import { editorViewState } from '../../../editor/ui/view/state';
 import { editorSearchState } from '../../../workbench/contrib/code_editor/find/widget_state';
 import { openGlobalSearchMatch } from '../../../workbench/contrib/find/global_search_navigation';
 import type { RuntimeSourceState } from '../../../runtime/sources';
+import type { EditorPanes } from '../../../workbench/services/editor/editor_panes';
 
 function applySearchPointerSelection(
-	resourcePanel: ResourcePanelController,
+	editorPanes: EditorPanes,
 	sources: RuntimeSourceState,
 	index: number,
 	preview?: boolean,
@@ -23,11 +24,11 @@ function applySearchPointerSelection(
 	}
 	const match = editorSearchState.globalMatches[editorSearchState.currentIndex];
 	if (match) {
-		openGlobalSearchMatch(resourcePanel, sources, match);
+		openGlobalSearchMatch(editorPanes, sources, match);
 	}
 }
 
-export function handleSearchPointer(sources: RuntimeSourceState, resourcePanel: ResourcePanelController, snapshot: PointerSnapshot, justPressed: boolean): boolean {
+export function handleSearchPointer(editorPanes: EditorPanes, sources: RuntimeSourceState, resourcePanel: ResourcePanelController, snapshot: PointerSnapshot, justPressed: boolean): boolean {
 	const bounds = getSearchBarBounds();
 	if (!editorSearchState.visible || !bounds) {
 		editorSearchState.hoverIndex = -1;
@@ -62,10 +63,10 @@ export function handleSearchPointer(sources: RuntimeSourceState, resourcePanel: 
 			editorSearchState.currentIndex = hoverIndex;
 			ensureSearchSelectionVisible();
 			if (editorSearchState.scope === 'local') {
-					applySearchPointerSelection(resourcePanel, sources, hoverIndex, true);
+					applySearchPointerSelection(editorPanes, sources, hoverIndex, true);
 			}
 		}
-		applySearchPointerSelection(resourcePanel, sources, hoverIndex);
+		applySearchPointerSelection(editorPanes, sources, hoverIndex);
 		finishQuickInputPointer(snapshot);
 		return true;
 	}

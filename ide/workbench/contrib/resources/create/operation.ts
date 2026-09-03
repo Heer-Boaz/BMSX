@@ -51,7 +51,7 @@ export async function confirmCreateResourcePrompt(
 		if (resourcePanel.isVisible()) {
 			resourcePanel.refresh();
 		}
-		openLuaCodeTab(resourcePanel, sources, resource);
+		openLuaCodeTab(editor.editorPanes, sources, resource);
 		showEditorMessage(`Created ${resource.path} (asset ${resource.source.resid})`, constants.COLOR_STATUS_SUCCESS, 2.5);
 		closeCreateResourcePrompt(false);
 	} catch (error) {

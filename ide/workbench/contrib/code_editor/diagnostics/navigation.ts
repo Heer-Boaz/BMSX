@@ -8,15 +8,15 @@ import { setCursorPosition, ensureCursorVisible } from '../../../../editor/ui/vi
 import * as TextEditing from '../../../../editor/editing/text_editing_and_selection';
 import { editorCaretState } from '../../../../editor/ui/view/caret/state';
 import { activeCodeEditor } from '../../../../editor/ui/code_editor_state';
-import type { ResourcePanelController } from '../../resources/panel/controller';
+import type { EditorPanes } from '../../../services/editor/editor_panes';
 
-export function gotoDiagnostic(resourcePanel: ResourcePanelController, diagnostic: EditorDiagnostic): void {
+export function gotoDiagnostic(editorPanes: EditorPanes, diagnostic: EditorDiagnostic): void {
 	const navigationCheckpoint = beginNavigationCapture();
 	if (diagnostic.contextId && diagnostic.contextId.length > 0 && diagnostic.contextId !== getActiveCodeTabContextId()) {
-		setActiveTab(resourcePanel, diagnostic.contextId);
+		setActiveTab(editorPanes, diagnostic.contextId);
 	}
 	if (!isCodeTabActive()) {
-		activateCodeTab(resourcePanel);
+		activateCodeTab(editorPanes);
 	}
 	if (!isCodeTabActive()) {
 		return;

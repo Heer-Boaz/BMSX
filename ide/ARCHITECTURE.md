@@ -140,6 +140,43 @@ ordered from specific to general. A future Behavior Tree contribution may
 therefore claim `*.bt.jsonc` while the machine-facing asset remains ordinary
 `data`; it must not add a BT asset type to the ROM TOC.
 
+## Editor pane lifecycle
+
+An editor input is data and retained view state; an `EditorPane` is the one
+workbench control that presents inputs of that kind. `EditorPanes`, scoped to the single
+editor group, creates each pane only on first use and retains that instance.
+Switching inputs calls `clearInput()` on the old pane and `setInput()` on the
+new pane. Reopening the identical retained input calls only `setOptions()`, so
+a navigation selection can be applied without rebuilding or reattaching the
+control.
+
+The active pane owns all input-specific update, draw, keyboard, pointer, wheel,
+and status-bar behavior. The outer workbench still owns global commands, tabs,
+panels, blocking modals, and chrome. Consequently a Behavior Tree editor can
+become a real editable workbench control instead of adding another
+`switch (activeTab.kind)` to every frame and input router. The frame hot paths
+call the cached active pane directly: factory resolution, map lookup, and pane
+allocation happen only during activation.
+
+The lifecycle is the deliberately synchronous subset of VS Code's retained
+editor-pane model. VS Code keeps an editor control alive across inputs, gives
+it `setInput`, `setOptions`, and `clearInput` lifecycle calls, keeps lightweight
+pane descriptors separate from retained instances, and resolves or creates a
+pane only while opening an editor:
+
+- <https://github.com/microsoft/vscode/blob/8d48b77e9fc7df97b659e8a04bc999bb6fb8f031/src/vs/workbench/browser/parts/editor/editorPane.ts#L34-L49>
+- <https://github.com/microsoft/vscode/blob/8d48b77e9fc7df97b659e8a04bc999bb6fb8f031/src/vs/workbench/browser/parts/editor/editorPane.ts#L103-L146>
+- <https://github.com/microsoft/vscode/blob/8d48b77e9fc7df97b659e8a04bc999bb6fb8f031/src/vs/workbench/browser/editor.ts#L24-L112>
+- <https://github.com/microsoft/vscode/blob/8d48b77e9fc7df97b659e8a04bc999bb6fb8f031/src/vs/workbench/browser/parts/editor/editorPanes.ts#L323-L407>
+- <https://github.com/microsoft/vscode/blob/8d48b77e9fc7df97b659e8a04bc999bb6fb8f031/src/vs/workbench/browser/parts/editor/editorPanes.ts#L425-L484>
+
+BMSX uses one exhaustive built-in factory table instead of copying VS Code's
+dynamic pane registry. It does not add DOM containers, asynchronous
+cancellation, multiple editor groups, dependency injection, visibility events,
+or extension registration before those product requirements exist. It also does not make panes disposable
+per tab: one pane instance may present many retained inputs, while the inputs
+and their resource-owned document models outlive visibility independently.
+
 ## Retained lists and panes
 
 `workbench/ui/list_view.ts` owns the common retained-list contract: row storage,

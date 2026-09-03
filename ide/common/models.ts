@@ -172,8 +172,7 @@ export type EditorDiagnostic = {
 	message: string;
 	severity: EditorDiagnosticSeverity;
 	contextId: CodeEditorInputId;
-	sourceLabel?: string;
-	path?: string;
+	path: string;
 };
 
 export type VisualLineSegment = {

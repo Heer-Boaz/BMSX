@@ -7,11 +7,11 @@ import { beginTabDrag, endTabDrag } from '../../../ui/tab/drag';
 import { consumeChromePointerPress } from '../../../../input/pointer/chrome_press';
 import { editorTabGroup } from '../../../ui/tab/group_model';
 import type { RuntimeSourceState } from '../../../../runtime/sources';
-import type { ResourcePanelController } from '../../../contrib/resources/panel/controller';
+import type { EditorPanes } from '../../../services/editor/editor_panes';
 import type { EditorTabId } from '../../../ui/tab/id';
 
 export function handleTabBarPointer(
-	resourcePanel: ResourcePanelController,
+	editorPanes: EditorPanes,
 	sources: RuntimeSourceState,
 	snapshot: PointerSnapshot,
 ): boolean {
@@ -26,7 +26,7 @@ export function handleTabBarPointer(
 		const closeBounds = editorChromeState.tabCloseButtonBounds.get(tab.id);
 		if (closeBounds && point_in_rect(x, y, closeBounds)) {
 			endTabDrag();
-			closeTab(resourcePanel, sources, tab.id);
+			closeTab(editorPanes, sources, tab.id);
 			editorChromeState.tabHoverId = null;
 			consumeChromePointerPress(snapshot);
 			return true;
@@ -34,7 +34,7 @@ export function handleTabBarPointer(
 		const tabBounds = editorChromeState.tabButtonBounds.get(tab.id);
 		if (tabBounds && point_in_rect(x, y, tabBounds)) {
 			beginTabDrag(tab.id, x);
-			setActiveTab(resourcePanel, tab.id);
+			setActiveTab(editorPanes, tab.id);
 			consumeChromePointerPress(snapshot);
 			return true;
 		}
@@ -43,7 +43,7 @@ export function handleTabBarPointer(
 }
 
 export function handleTabBarMiddleClick(
-	resourcePanel: ResourcePanelController,
+	editorPanes: EditorPanes,
 	sources: RuntimeSourceState,
 	snapshot: PointerSnapshot,
 	playerInput: PlayerInput,
@@ -64,7 +64,7 @@ export function handleTabBarMiddleClick(
 			continue;
 		}
 		if (point_in_rect(x, y, bounds)) {
-			closeTab(resourcePanel, sources, tab.id);
+			closeTab(editorPanes, sources, tab.id);
 			playerInput.inputHandlers.pointer?.consumeButton('pointer_aux');
 			consumeChromePointerPress(snapshot);
 			return true;

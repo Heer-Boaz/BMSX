@@ -95,6 +95,7 @@ import { createTestRuntimeSourceState } from '../helpers/runtime_sources';
 import { createResourceEditorResolver } from '../../ide/workbench/contrib/resources/editor_contributions';
 import type { RuntimeSourceState } from '../../ide/runtime/sources';
 import { ResourceEditorResolver } from '../../ide/workbench/services/editor/resource_editor_resolver';
+import { createTestEditorPanes } from '../helpers/editor_panes';
 
 class MockStorage implements KeyValueStorage {
 	private readonly store = new Map<string, string>();
@@ -389,6 +390,7 @@ function editorStub(
 		fontVariant: DEFAULT_FONT_VARIANT,
 		resourcePanel: null,
 		resourceEditors,
+		editorPanes: createTestEditorPanes(),
 		setFontVariant() { /* noop */ },
 		updateViewport() { /* noop */ },
 	};

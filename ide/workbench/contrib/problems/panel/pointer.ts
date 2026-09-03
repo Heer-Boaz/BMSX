@@ -4,11 +4,11 @@ import { clamp } from '../../../../../machine/ts/common/clamp';
 import { gotoDiagnostic } from '../../code_editor/diagnostics/navigation';
 import type { ProblemsPanelController } from './controller';
 import { editorViewState } from '../../../../editor/ui/view/state';
-import type { ResourcePanelController } from '../../resources/panel/controller';
+import type { EditorPanes } from '../../../services/editor/editor_panes';
 
 export function handleProblemsPanelPointerInput(
 	controller: ProblemsPanelController,
-	resourcePanel: ResourcePanelController,
+	editorPanes: EditorPanes,
 	snapshot: PointerSnapshot,
 	justPressed: boolean,
 	bounds: RectBounds,
@@ -72,7 +72,7 @@ export function handleProblemsPanelPointerInput(
 	}
 	controller.setSelectionIndex(diagnosticIndex);
 	controller.revealSelection(layout, availableWidth);
-	gotoDiagnostic(resourcePanel, diagnostics[diagnosticIndex]);
+	gotoDiagnostic(editorPanes, diagnostics[diagnosticIndex]);
 	return true;
 }
 

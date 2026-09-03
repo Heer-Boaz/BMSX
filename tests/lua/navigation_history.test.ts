@@ -14,6 +14,7 @@ import type { RuntimeResource } from '../../ide/common/resource';
 import type { RuntimeSourceState } from '../../ide/runtime/sources';
 import type { ResourcePanelController } from '../../ide/workbench/contrib/resources/panel/controller';
 import { ResourceEditorResolver } from '../../ide/workbench/services/editor/resource_editor_resolver';
+import { createTestEditorPanes } from '../helpers/editor_panes';
 
 function entry(path: string, row: number): NavigationHistoryEntry {
 	return {
@@ -71,6 +72,7 @@ test('history navigation awaits resource activation with its retained cursor loc
 			selector: { kind: 'all' },
 			createEditorInput: () => editorTabGroup.activeTab,
 		}]),
+		createTestEditorPanes(),
 	);
 	let finishOpen: () => void;
 	const openGate = new Promise<void>(resolve => {

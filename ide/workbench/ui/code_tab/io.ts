@@ -26,7 +26,7 @@ import {
 	upsertCodeEditorTab,
 } from './contexts';
 import { runtimeSourceProjectRootPath } from '../../../runtime/sources';
-import type { ResourcePanelController } from '../../contrib/resources/panel/controller';
+import type { EditorPanes } from '../../services/editor/editor_panes';
 import { requestWorkspaceAutosave } from '../../workspace/storage';
 import { WorkspaceAutosaveChange } from '../../workspace/models';
 import type { HostClock } from '../../../../hosts/common/clock';
@@ -72,13 +72,13 @@ export async function retainAemCodeEditorInput(
 }
 
 export function openLuaCodeTab(
-	resourcePanel: ResourcePanelController,
+	editorPanes: EditorPanes,
 	sources: RuntimeSourceState,
 	resource: RuntimeResource,
 	selection?: EditorTextSelection,
 ): void {
 	const input = retainLuaCodeEditorInput(sources, resource);
-	setActiveTab(resourcePanel, input.id, selection);
+	setActiveTab(editorPanes, input.id, selection);
 }
 
 export async function save(

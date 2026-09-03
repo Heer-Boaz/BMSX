@@ -24,7 +24,7 @@ function openSelectedGlobalMatch(
 	}
 	const match = editorSearchState.globalMatches[editorSearchState.currentIndex];
 	if (match) {
-		openGlobalSearchMatch(editor.resourcePanel, sources, match);
+		openGlobalSearchMatch(editor.editorPanes, sources, match);
 	}
 }
 

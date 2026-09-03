@@ -32,10 +32,10 @@ export function handleEditorChromePointerDispatch(
 	if (handleInvalidEditorPointerSnapshot(snapshot)) {
 		return true;
 	}
-	if (pointerAuxJustPressed && handleTabBarMiddleClick(editor.resourcePanel, sources, snapshot, playerInput)) {
+	if (pointerAuxJustPressed && handleTabBarMiddleClick(editor.editorPanes, sources, snapshot, playerInput)) {
 		return true;
 	}
-	if (justPressed && handleTabBarPointer(editor.resourcePanel, sources, snapshot)) {
+	if (justPressed && handleTabBarPointer(editor.editorPanes, sources, snapshot)) {
 		return true;
 	}
 	return false;

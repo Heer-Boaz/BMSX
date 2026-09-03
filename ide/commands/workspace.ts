@@ -61,7 +61,7 @@ export function executeEditorWorkspaceCommand(
 			return;
 		case 'hot-resume':
 		case 'reboot':
-			activateCodeTab(editor.resourcePanel);
+			activateCodeTab(editor.editorPanes);
 			if (activeCodeEditor.model.dirty) {
 				showActionPrompt(command);
 				return;
@@ -83,7 +83,7 @@ export function executeEditorWorkspaceCommand(
 			);
 			return;
 		case 'theme-toggle':
-			activateCodeTab(editor.resourcePanel);
+			activateCodeTab(editor.editorPanes);
 			performEditorAction(
 				editor,
 				sources,

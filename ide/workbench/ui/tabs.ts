@@ -1,50 +1,29 @@
 // disable cross_layer_import_pattern -- workbench tabs own editor/resource tab activation lifecycle.
 import { editorRuntimeState } from '../../editor/common/runtime_state';
 import { editorChromeState } from './chrome_state';
-import { editorViewState } from '../../editor/ui/view/state';
 import type { EditorTabId } from './tab/id';
-import type { EditorTabDescriptor, EditorTabKind, ResourceViewerTabDescriptor } from './tab/model';
+import type { EditorTabDescriptor, EditorTabKind } from './tab/model';
 import type { CodeTabContext } from './code_tab/model';
 import { beginNavigationCapture, completeNavigation } from '../../navigation/navigation_history';
-import { closeLineJump } from '../contrib/code_editor/find/line_jump';
 import { closeSymbolSearch } from '../contrib/code_editor/symbols/shared';
-import { getCodeAreaBounds } from '../../editor/ui/view/view';
-import { closeSearch } from '../contrib/code_editor/find/search';
-import { clampResourceViewerScroll } from '../contrib/resources/viewer';
-import { runtimeErrorState } from '../../editor/contrib/runtime_error/state';
-import { editorCaretState } from '../../editor/ui/view/caret/state';
 import {
 	createCodeEditorTabDescriptor,
 	retainEntryTabContext,
 } from './code_tab/contexts';
-import { activateCodeEditorTab, applyActiveCodeTabSelection, storeCodeTabContext } from './code_tab/activation';
 import type { EditorTextSelection } from '../../editor/navigation/text_selection';
 import { endTabDrag } from './tab/drag';
 import type { RuntimeSourceState } from '../../runtime/sources';
 import { editorTabGroup } from './tab/group_model';
-import type { ResourcePanelController } from '../contrib/resources/panel/controller';
-import { problemsPanel } from '../contrib/problems/panel/controller';
-import { closeEditorContextMenu } from '../contrib/context_menu/widget';
-import { clearGotoHoverHighlight } from '../../editor/contrib/intellisense/engine';
-import { clearHoverTooltip } from '../../editor/contrib/hover/controller';
+import type { EditorPanes } from '../services/editor/editor_panes';
 
-function activateResourceViewerTab(tab: ResourceViewerTabDescriptor): void {
-	closeSearch(false, true);
-	closeLineJump(false);
-	editorCaretState.cursorRevealSuspended = false;
-	runtimeErrorState.activeOverlay = null;
-	runtimeErrorState.executionStopRow = null;
-	clampResourceViewerScroll(tab.resource, getCodeAreaBounds(), editorViewState.lineHeight);
-}
-
-export function initializeTabs(initialContext: CodeTabContext): void {
+export function initializeTabs(initialContext: CodeTabContext, editorPanes: EditorPanes): void {
 	editorChromeState.tabHoverId = null;
 	editorChromeState.tabDragState = null;
 	editorChromeState.tabButtonBounds.clear();
 	editorChromeState.tabCloseButtonBounds.clear();
 	const initialTab = createCodeEditorTabDescriptor(initialContext);
 	editorTabGroup.initialize(initialTab);
-	activateCodeEditorTab(initialTab);
+	editorPanes.openEditor(initialTab);
 }
 
 export function getActiveTabKind(): EditorTabKind {
@@ -71,25 +50,8 @@ export function isScenarioLabActive(): boolean {
 	return getActiveTabKind() === 'scenario_lab';
 }
 
-/** Activates a full-width workbench editor input with code-only UI cleared. */
-function activateFullWidthWorkbenchTab(resourcePanel: ResourcePanelController): void {
-	closeSearch(false, true);
-	closeLineJump(false);
-	closeEditorContextMenu();
-	resourcePanel.hide();
-	problemsPanel.hide();
-	editorChromeState.resourcePanelResizing = false;
-	editorChromeState.problemsPanelResizing = false;
-	editorViewState.scrollbarController.cancel();
-	editorCaretState.cursorRevealSuspended = false;
-	runtimeErrorState.activeOverlay = null;
-	runtimeErrorState.executionStopRow = null;
-	clearGotoHoverHighlight();
-	clearHoverTooltip();
-}
-
 export function setActiveTab(
-	resourcePanel: ResourcePanelController,
+	editorPanes: EditorPanes,
 	tabId: EditorTabId,
 	selection?: EditorTextSelection,
 ): void {
@@ -100,52 +62,26 @@ export function setActiveTab(
 		? beginNavigationCapture()
 		: null;
 	closeSymbolSearch(true);
-	if (!isSameTab && activeTab.kind === 'code_editor') {
-		storeCodeTabContext(activeTab.context);
-	}
 	if (isSameTab) {
-		switch (tab.kind) {
-			case 'resource_view':
-				activateResourceViewerTab(tab);
-				return;
-			case 'behavior_lens':
-			case 'scenario_lab':
-				activateFullWidthWorkbenchTab(resourcePanel);
-				return;
-			case 'code_editor':
-				if (selection) {
-					applyActiveCodeTabSelection(selection);
-					completeNavigation(navigationCheckpoint);
-				}
-				return;
+		editorPanes.openEditor(tab, selection);
+		if (navigationCheckpoint) {
+			completeNavigation(navigationCheckpoint);
 		}
+		return;
 	}
 	editorTabGroup.activate(tab);
-	switch (tab.kind) {
-		case 'resource_view':
-			activateResourceViewerTab(tab);
-			return;
-		case 'behavior_lens':
-		case 'scenario_lab':
-			activateFullWidthWorkbenchTab(resourcePanel);
-			return;
-		case 'code_editor':
-			resourcePanel.hide();
-			editorChromeState.resourcePanelResizing = false;
-			activateCodeEditorTab(tab, selection);
-			if (navigationCheckpoint) {
-				completeNavigation(navigationCheckpoint);
-			}
-			return;
+	editorPanes.openEditor(tab, selection);
+	if (navigationCheckpoint) {
+		completeNavigation(navigationCheckpoint);
 	}
 }
 
-export function activateCodeTab(resourcePanel: ResourcePanelController): void {
+export function activateCodeTab(editorPanes: EditorPanes): void {
 	const tabs = editorTabGroup.tabs;
 	for (let index = 0; index < tabs.length; index += 1) {
 		const tab = tabs[index];
 		if (tab.kind === 'code_editor') {
-			setActiveTab(resourcePanel, tab.id);
+			setActiveTab(editorPanes, tab.id);
 			return;
 		}
 	}
@@ -168,7 +104,7 @@ export function isTabActive(tabId: EditorTabId): boolean {
 }
 
 export function closeTab(
-	resourcePanel: ResourcePanelController,
+	editorPanes: EditorPanes,
 	sources: RuntimeSourceState,
 	tabId: EditorTabId,
 ): void {
@@ -186,17 +122,15 @@ export function closeTab(
 		const fallback = index > 0
 			? tabs[index - 1]
 			: tabs[index + 1];
-		setActiveTab(resourcePanel, fallback.id);
-	} else if (isActive && tab.kind === 'code_editor') {
-		storeCodeTabContext(tab.context);
+		setActiveTab(editorPanes, fallback.id);
 	}
 	editorTabGroup.removeAt(index);
 	if (editorTabGroup.tabs.length === 0) {
-		initializeTabs(retainEntryTabContext(sources));
+		initializeTabs(retainEntryTabContext(sources), editorPanes);
 	}
 }
 
-export function cycleTab(resourcePanel: ResourcePanelController, direction: number): void {
+export function cycleTab(editorPanes: EditorPanes, direction: number): void {
 	const tabs = editorTabGroup.tabs;
 	if (tabs.length <= 1 || direction === 0) {
 		return;
@@ -209,7 +143,7 @@ export function cycleTab(resourcePanel: ResourcePanelController, direction: numb
 		return;
 	}
 	const target = tabs[nextIndex];
-	setActiveTab(resourcePanel, target.id);
+	setActiveTab(editorPanes, target.id);
 }
 
 export function isActive(): boolean {
@@ -217,8 +151,8 @@ export function isActive(): boolean {
 }
 
 export function closeActiveTab(
-	resourcePanel: ResourcePanelController,
+	editorPanes: EditorPanes,
 	sources: RuntimeSourceState,
 ): void {
-	closeTab(resourcePanel, sources, editorTabGroup.activeTab.id);
+	closeTab(editorPanes, sources, editorTabGroup.activeTab.id);
 }

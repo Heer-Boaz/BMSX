@@ -25,7 +25,6 @@ import { invalidateLuaCommentContextFromRow } from './common/text';
 import { assertMonospace, measureText } from './editor/common/text/layout';
 import { applyRuntimeErrorOverlay } from './editor/render/error_overlay';
 import { drawEditorText, setEditorCaseInsensitivity } from './editor/render/text_renderer';
-import { renderCodeArea } from './editor/render/code_area/area';
 import {
 	applyViewportSize,
 	configureFontVariant,
@@ -46,7 +45,6 @@ import {
 	syncRuntimeErrorOverlayFromContext,
 } from './runtime_error/navigation';
 import { clearGotoHoverHighlight, clearNativeMemberCompletionCache } from './editor/contrib/intellisense/engine';
-import { referenceState } from './editor/contrib/references/state';
 import { resetSemanticProjects } from './editor/contrib/intellisense/semantic/workspace/state';
 import { activeCodeEditor } from './editor/ui/code_editor_state';
 import { editorTextModelService } from './editor/model/model_service';
@@ -61,7 +59,6 @@ import { CrossFileRenameManager } from './workbench/contrib/code_editor/rename/o
 import { EditorCompletionController } from './workbench/contrib/code_editor/suggest/completion_controller';
 import { symbolSearchState } from './workbench/contrib/code_editor/symbols/search/state';
 import { applySymbolSearchFieldText } from './workbench/contrib/code_editor/symbols/shared';
-import { renderInlineWidgets } from './quick_input/inline_widget';
 import { handleEditorInput } from './input/keyboard/dispatch';
 import { captureKeys } from './workbench/contrib/code_editor/input/keyboard/capture_keys';
 import { editorInput } from './workbench/contrib/code_editor/input/keyboard/text_input';
@@ -82,7 +79,7 @@ import {
 } from './workbench/workspace/storage';
 import { WorkspaceAutosaveChange } from './workbench/workspace/models';
 import { refreshWorkbenchLayout } from './workbench/common/layout';
-import { BreakpointController, getBreakpointsForChunk } from './workbench/contrib/debugger/controller';
+import { BreakpointController } from './workbench/contrib/debugger/controller';
 import { closeBlockingWorkbenchModal, drawBlockingWorkbenchModal, handleBlockingWorkbenchModalInput, hasBlockingWorkbenchModal } from './workbench/contrib/modal/blocking_modal';
 import { drawProblemsPanel, problemsPanel } from './workbench/contrib/problems/panel/controller';
 import { ResourcePanelController } from './workbench/contrib/resources/panel/controller';
@@ -94,21 +91,23 @@ import { initializeNavigationState } from './navigation/navigation_history';
 import { EditorNavigationController } from './workbench/contrib/resources/navigation';
 import { BehaviorLensController } from './workbench/contrib/behavior_lens/controller';
 import { BehaviorRegistrationIndex } from './workbench/contrib/behavior_lens/registration_index';
-import { drawBehaviorLens } from './workbench/contrib/behavior_lens/render';
 import { ScenarioLabController } from './workbench/contrib/scenario_lab/controller';
-import { drawScenarioLab } from './workbench/contrib/scenario_lab/render';
 import type { ScenarioRunService } from './workbench/contrib/scenario_lab/run_service';
 import type { ScenarioTestCollection } from './testing/scenario/test_collection';
 import { editorChromeState } from './workbench/ui/chrome_state';
 import { getActiveTab, getActiveTabId, initializeTabs, setActiveTab } from './workbench/ui/tabs';
-import { drawResourcePanel, drawResourceViewer } from './workbench/render/resource_panel';
-import { renderEditorContextMenu } from './workbench/render/context_menu';
+import { drawResourcePanel } from './workbench/render/resource_panel';
 import { renderStatusBar } from './workbench/render/status_bar';
 import { renderTabBar } from './workbench/render/tab_bar';
 import { renderTopBar, renderTopBarDropdown } from './workbench/render/top_bar';
 import type { ChromeRenderContext } from './workbench/render/chrome_context';
 import { createResourceEditorResolver } from './workbench/contrib/resources/editor_contributions';
 import type { ResourceEditorResolver } from './workbench/services/editor/resource_editor_resolver';
+import { EditorPanes } from './workbench/services/editor/editor_panes';
+import { CodeEditorPane } from './workbench/contrib/code_editor/editor_pane';
+import { ResourceViewerEditorPane } from './workbench/contrib/resources/editor_pane';
+import { BehaviorLensEditorPane } from './workbench/contrib/behavior_lens/editor_pane';
+import { ScenarioLabEditorPane } from './workbench/contrib/scenario_lab/editor_pane';
 
 
 type RenderRuntimeFaultOverlayOptions = {
@@ -129,6 +128,7 @@ export type CartEditor = {
 	readonly breakpoints: BreakpointController;
 	readonly commands: IdeCommandController;
 	readonly resourceEditors: ResourceEditorResolver;
+	readonly editorPanes: EditorPanes;
 	readonly navigation: EditorNavigationController;
 	readonly behaviorLens: BehaviorLensController;
 	readonly scenarioLab: ScenarioLabController;
@@ -162,6 +162,7 @@ export class RuntimeCartEditor implements CartEditor {
 	public readonly breakpoints: BreakpointController;
 	public readonly commands: IdeCommandController;
 	public readonly resourceEditors: ResourceEditorResolver;
+	public readonly editorPanes: EditorPanes;
 	public readonly navigation: EditorNavigationController;
 	public readonly behaviorLens: BehaviorLensController;
 	public readonly scenarioLab: ScenarioLabController;
@@ -258,21 +259,43 @@ export class RuntimeCartEditor implements CartEditor {
 			storage,
 			this.sources,
 		);
+		this.editorPanes = new EditorPanes({
+			code_editor: () => new CodeEditorPane(
+				this,
+				this.clipboard,
+				this.microtasks,
+				this.storage,
+				this.clock,
+				this.sources,
+				this.luaTooling,
+				this.fault,
+				this.runtime,
+				this.debuggerState,
+			),
+			resource_view: () => new ResourceViewerEditorPane(),
+			behavior_lens: () => new BehaviorLensEditorPane(this.resourcePanel, this.behaviorLens),
+			scenario_lab: () => new ScenarioLabEditorPane(
+				this.resourcePanel,
+				this.scenarioLab,
+				this.commands,
+			),
+		});
 		this.navigation = new EditorNavigationController(
 			this.sources,
 			this.resourcePanel,
 			this.resourceEditors,
+			this.editorPanes,
 		);
 		this.behaviorLens = new BehaviorLensController(
 			this.sources,
 			this.navigation,
-			this.resourcePanel,
+			this.editorPanes,
 		);
 		this.scenarioLab = new ScenarioLabController(
 			this,
 			this.sources,
 			this.navigation,
-			this.resourcePanel,
+			this.editorPanes,
 			new BehaviorRegistrationIndex(this.sources),
 			scenarioTests,
 			scenarioRuns,
@@ -284,6 +307,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.search = new EditorSearchController(this.sources, renameController);
 		this.breakpoints = new BreakpointController(debuggerState);
 		this.clearNativeMemberCompletionCache = clearNativeMemberCompletionCache;
+		this.initializeEditorGroup();
 		this.unsubscribeWorkspaceCursorMoved = activeCodeEditor.onDidMoveCursor(() => {
 			if (activeCodeEditor.model.dirty) {
 				requestWorkspaceAutosave(WorkspaceAutosaveChange.ActiveEditor);
@@ -314,7 +338,7 @@ export class RuntimeCartEditor implements CartEditor {
 			return;
 		}
 		editorInput.applyOverrides(this.input, true, captureKeys);
-		setActiveTab(this.resourcePanel, getActiveTabId());
+		setActiveTab(this.editorPanes, getActiveTabId());
 		const activeTab = getActiveTab();
 		const codeTabActive = activeTab.kind === 'code_editor';
 		editorCaretState.cursorVisible = codeTabActive;
@@ -409,7 +433,6 @@ export class RuntimeCartEditor implements CartEditor {
 	}
 
 	public tickInput(): void {
-		const runtime = this.runtime;
 		const playerInput = this.input.getPlayerInput(1);
 		editorRuntimeState.currentTimeMs = this.clock.now();
 		const scrollRow = activeCodeEditor.view.scrollRow;
@@ -421,12 +444,8 @@ export class RuntimeCartEditor implements CartEditor {
 			playerInput,
 			editorRuntimeState.currentTimeMs,
 			this.clipboard,
-			this.microtasks,
 			this,
 			this.sources,
-			this.luaTooling,
-			this.fault,
-			runtime,
 		);
 		if (hasBlockingWorkbenchModal()) {
 			handleBlockingWorkbenchModalInput(
@@ -437,13 +456,8 @@ export class RuntimeCartEditor implements CartEditor {
 		}
 		handleEditorInput(
 			playerInput,
-			this.clipboard,
-			this.microtasks,
-			this.storage,
-			this.clock,
 			this,
 			this.sources,
-			this.luaTooling,
 		);
 		let workspaceChanges = WorkspaceAutosaveChange.None;
 		if (this.breakpoints.revision !== breakpointRevision) {
@@ -464,28 +478,7 @@ export class RuntimeCartEditor implements CartEditor {
 		runBackgroundTasks(this.clock);
 		updateBlink(deltaSeconds);
 		updateEditorMessage(deltaSeconds);
-		const activeTab = getActiveTab();
-		switch (activeTab.kind) {
-			case 'behavior_lens':
-				this.behaviorLens.updateView(activeTab.view);
-				break;
-			case 'scenario_lab':
-				this.scenarioLab.updateView(activeTab.view);
-				break;
-			case 'code_editor': {
-				this.completion.processPending(deltaSeconds);
-				const semanticError = editorViewState.layout.getLastSemanticError();
-				if (semanticError && semanticError !== editorRuntimeState.lastReportedSemanticError) {
-					showEditorMessage(semanticError, constants.COLOR_STATUS_ERROR, 2.0);
-					editorRuntimeState.lastReportedSemanticError = semanticError;
-				} else if (!semanticError && editorRuntimeState.lastReportedSemanticError) {
-					editorRuntimeState.lastReportedSemanticError = null;
-				}
-				break;
-			}
-			case 'resource_view':
-				break;
-		}
+		this.editorPanes.activePane.update(deltaSeconds);
 		if (editorDiagnosticsState.diagnosticsDirty) {
 			processDiagnosticsQueue(
 				this.luaTooling,
@@ -512,43 +505,9 @@ export class RuntimeCartEditor implements CartEditor {
 		editorViewState.tabBarRowCount = renderTabBar(this.chromeRenderContext);
 		refreshWorkbenchLayout();
 		drawResourcePanel(this.resourcePanel);
-		const activeTab = getActiveTab();
-		switch (activeTab.kind) {
-			case 'resource_view':
-				drawResourceViewer(activeTab.resource);
-				break;
-			case 'behavior_lens':
-				drawBehaviorLens(activeTab.view);
-				break;
-			case 'scenario_lab':
-				drawScenarioLab(activeTab.view, this.commands);
-				break;
-			case 'code_editor': {
-				renderInlineWidgets();
-				const resourcePanel = this.resourcePanel;
-				const problemsPanelHasFocus = problemsPanel.isVisible && problemsPanel.isFocused;
-				const cursorActive = !(editorSearchState.active || lineJumpState.active || resourcePanel.isFocused() || createResourceState.active || problemsPanelHasFocus);
-				const renameActive = renameController.isActive();
-				const codeAreaViewport = renderCodeArea(
-					this.completion,
-					this.completion.getInlineCompletionPreview(),
-					cursorActive,
-					getBreakpointsForChunk(
-						this.debuggerState,
-						activeTab.context.model.resource,
-					),
-					renameActive ? renameController.getHighlightMatches() : referenceState.getMatches(),
-					renameActive ? renameController.getActiveIndex() : referenceState.getActiveIndex(),
-					editorSearchState.matches,
-					editorSearchState.currentIndex,
-					editorSearchState.scope === 'local' && editorSearchState.query.length > 0,
-				);
-				renderEditorContextMenu(codeAreaViewport);
-				break;
-			}
-		}
+		this.editorPanes.activePane.draw();
 		drawProblemsPanel();
-		renderStatusBar(this.resourcePanel, this.fault);
+		renderStatusBar(this.resourcePanel, this.fault, this.editorPanes.activePane);
 		renderTopBarDropdown(this.chromeRenderContext);
 		if (hasBlockingWorkbenchModal()) {
 			drawBlockingWorkbenchModal();
@@ -559,9 +518,8 @@ export class RuntimeCartEditor implements CartEditor {
 		this.completion.dispose();
 		this.scenarioLab.dispose();
 		clearExecutionStopHighlights();
-		const activeTab = getActiveTab();
-		if (this.isAvailable && activeTab.kind === 'code_editor') {
-			storeCodeTabContext(activeTab.context);
+		if (this.isAvailable) {
+			this.editorPanes.clearEditor();
 		}
 		editorInput.applyOverrides(this.input, false, captureKeys);
 		if (editorViewState.dimCrtInEditor) {
@@ -727,8 +685,7 @@ export class RuntimeCartEditor implements CartEditor {
 		}
 		clearCodeEditorInputs();
 		editorTextModelService.clear();
-		const initialContext = retainEntryTabContext(this.sources);
-		configureFontVariant(this.clock, editorViewState.fontVariant, initialContext.model.mode);
+		configureFontVariant(this.clock, editorViewState.fontVariant, 'lua');
 		resourcePanel.setFontMetrics(editorViewState.lineHeight, editorViewState.charAdvance);
 		editorSearchState.field = createInlineTextField();
 		symbolSearchState.field = createInlineTextField();
@@ -748,14 +705,20 @@ export class RuntimeCartEditor implements CartEditor {
 		editorViewState.cachedVisibleRowCount = 1;
 		editorViewState.cachedVisibleColumnCount = 1;
 		editorViewState.cachedMaxScrollColumn = 0;
-		initializeTabs(initialContext);
-		resourcePanel.queuePendingSelection(null);
+		assertMonospace();
+		return resourcePanel;
+	}
+
+	private initializeEditorGroup(): void {
+		if (!this.isAvailable) {
+			return;
+		}
+		initializeTabs(retainEntryTabContext(this.sources), this.editorPanes);
+		this.resourcePanel.queuePendingSelection(null);
 		editorChromeState.resourcePanelResizing = false;
 		activeCodeEditor.view.desiredColumn = activeCodeEditor.view.cursorColumn;
-		assertMonospace();
 		initializeNavigationState();
 		editorRuntimeState.initialized = true;
-		return resourcePanel;
 	}
 
 	private syncResourcePanelViewport(): void {

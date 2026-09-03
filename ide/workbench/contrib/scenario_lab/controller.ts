@@ -14,7 +14,7 @@ import type { ScenarioLabTabId } from '../../ui/tab/id';
 import { editorTabGroup } from '../../ui/tab/group_model';
 import { isScenarioLabActive, setActiveTab } from '../../ui/tabs';
 import type { EditorNavigationController } from '../resources/navigation';
-import type { ResourcePanelController } from '../resources/panel/controller';
+import type { EditorPanes } from '../../services/editor/editor_panes';
 import { prepareScenarioLabLayout } from './layout';
 import {
 	scrollWorkbenchList,
@@ -55,7 +55,7 @@ export class ScenarioLabController {
 		private readonly editor: CartEditor,
 		private readonly sources: RuntimeSourceState,
 		private readonly navigation: EditorNavigationController,
-		private readonly resourcePanel: ResourcePanelController,
+		private readonly editorPanes: EditorPanes,
 		private readonly behaviorRegistrations: BehaviorRegistrationIndex,
 		private readonly collection: ScenarioTestCollection,
 		private readonly runs: ScenarioRunService,
@@ -198,7 +198,7 @@ export class ScenarioLabController {
 			};
 			editorTabGroup.add(tab);
 		}
-		setActiveTab(this.resourcePanel, tab.id);
+		setActiveTab(this.editorPanes, tab.id);
 	}
 
 	private applyNavigationResult(

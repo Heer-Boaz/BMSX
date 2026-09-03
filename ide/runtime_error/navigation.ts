@@ -29,7 +29,7 @@ import type { SourceStackTraceFrame } from '../runtime/stack_trace';
 import { extractErrorMessage } from '../language/lua/interpreter/value';
 import { clamp } from '../../machine/ts/common/clamp';
 import type { CartEditor } from '../cart_editor';
-import type { ResourcePanelController } from '../workbench/contrib/resources/panel/controller';
+import type { EditorPanes } from '../workbench/services/editor/editor_panes';
 import type { ResourceIdentity } from '../common/resource';
 import { resetPointerClickTracking } from '../input/pointer/state';
 
@@ -48,21 +48,21 @@ function resolveRuntimeErrorOverlayTarget(): RuntimeErrorOverlayTarget | null {
 	return null;
 }
 
-function activateRuntimeErrorContext(resourcePanel: ResourcePanelController, target: CodeTabContext): void {
+function activateRuntimeErrorContext(editorPanes: EditorPanes, target: CodeTabContext): void {
 	upsertCodeEditorTab(target);
 	if (!isTabActive(target.id)) {
-		setActiveTab(resourcePanel, target.id);
+		setActiveTab(editorPanes, target.id);
 		return;
 	}
 	syncRuntimeErrorOverlayFromContext(target);
 }
 
-export function focusRuntimeErrorOverlay(resourcePanel: ResourcePanelController): boolean {
+export function focusRuntimeErrorOverlay(editorPanes: EditorPanes): boolean {
 	const target = resolveRuntimeErrorOverlayTarget();
 	if (!target) {
 		return false;
 	}
-	activateRuntimeErrorContext(resourcePanel, target.context);
+	activateRuntimeErrorContext(editorPanes, target.context);
 	const overlay = target.overlay;
 	const navigationCheckpoint = beginNavigationCapture();
 	overlay.hidden = false;

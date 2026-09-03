@@ -5,16 +5,13 @@ import * as constants from '../../common/constants';
 import { problemsPanel } from '../../workbench/contrib/problems/panel/controller';
 import type { ResourcePanelController } from '../../workbench/contrib/resources/panel/controller';
 import type { PointerSnapshot } from '../../common/models';
-import { getActiveTab } from '../../workbench/ui/tabs';
 import { getProblemsPanelBounds } from '../../workbench/contrib/problems/panel/controller';
 import { isPointInHoverTooltip, pointerHitsHoverTarget, adjustHoverTooltipScroll } from '../../editor/ui/hover_tooltip';
-import { getCodeAreaBounds, scrollRows } from '../../editor/ui/view/view';
 import { getResourceSearchBarBounds } from '../../workbench/common/layout';
 import { moveResourceSearchSelection } from '../../workbench/contrib/resources/search/catalog';
 import { isShiftDown } from '../keyboard/key_input';
-import { scrollResourceBrowserHorizontal, scrollResourceViewer } from '../../workbench/input/keyboard/resource_viewer_input';
+import { scrollResourceBrowserHorizontal } from '../../workbench/input/keyboard/resource_viewer_input';
 import { editorPointerState } from './state';
-import { editorCaretState } from '../../editor/ui/view/caret/state';
 import { hoverState } from '../../editor/contrib/hover/state';
 import { editorViewState } from '../../editor/ui/view/state';
 import { resourceSearchState } from '../../workbench/contrib/resources/widget_state';
@@ -42,44 +39,10 @@ export function handleEditorWheelInput(editor: CartEditor, playerInput: PlayerIn
 	if (handleResourcePanelWheel(editor.resourcePanel, direction, steps, activePointer, playerInput)) {
 		return;
 	}
-	if (handleProblemsPanelWheel(editor.resourcePanel, direction, steps, activePointer, playerInput)) {
+	if (handleProblemsPanelWheel(editor, direction, steps, activePointer, playerInput)) {
 		return;
 	}
-	const activeTab = getActiveTab();
-	switch (activeTab.kind) {
-		case 'behavior_lens':
-			editor.behaviorLens.handleWheel(activeTab.view, direction, steps);
-			playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');
-			return;
-		case 'scenario_lab':
-			editor.scenarioLab.handleWheel(activeTab.view, direction, steps, activePointer);
-			playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');
-			return;
-		case 'resource_view':
-			scrollResourceViewer(activeTab.resource, direction * steps);
-			playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');
-			return;
-		case 'code_editor':
-			if (editor.completion.handlePointerWheel(
-				direction,
-				steps,
-				activePointer ? { x: activePointer.viewportX, y: activePointer.viewportY } : null,
-			)) {
-				playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');
-				return;
-			}
-			if (pointer !== null) {
-				const bounds = getCodeAreaBounds();
-				if (!pointer.valid || !pointer.insideViewport || pointer.viewportY < bounds.codeTop || pointer.viewportY >= bounds.codeBottom || pointer.viewportX < bounds.codeLeft || pointer.viewportX >= bounds.codeRight) {
-					playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');
-					return;
-				}
-			}
-			scrollRows(direction * steps);
-			editorCaretState.cursorRevealSuspended = true;
-			playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');
-			return;
-	}
+	editor.editorPanes.activePane.handleWheel(direction, steps, activePointer, playerInput);
 }
 
 function handleHoverTooltipWheel(
@@ -154,7 +117,7 @@ function handleResourcePanelWheel(
 }
 
 function handleProblemsPanelWheel(
-	resourcePanel: ResourcePanelController,
+	editor: CartEditor,
 	direction: number,
 	steps: number,
 	activePointer: PointerSnapshot,
@@ -175,7 +138,7 @@ function handleProblemsPanelWheel(
 	}
 	if (problemsPanel.isFocused) {
 		for (let i = 0; i < steps; i += 1) {
-			void problemsPanel.handleKeyboardCommand(resourcePanel, direction > 0 ? 'down' : 'up');
+			void problemsPanel.handleKeyboardCommand(editor.editorPanes, direction > 0 ? 'down' : 'up');
 		}
 		playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');
 		return true;
