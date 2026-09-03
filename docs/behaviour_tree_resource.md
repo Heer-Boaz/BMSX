@@ -33,6 +33,14 @@ Comments and trailing commas are accepted. Unknown and duplicate properties
 are errors rather than ignored extension bags. The packer never rewrites or
 normalizes the source document.
 
+The source parser also records one exact object range, `id` token range and
+JSON path for every valid authored element id while it validates the document.
+That index is authoring correspondence, not runtime data: the cooker discards
+it together with all UUIDs. The host visual editor joins the index to the typed
+document once per text-model version, so selection and property commands use
+stable identity without rescanning strings or treating an array index as
+identity.
+
 ## Document shape
 
 The root object contains:

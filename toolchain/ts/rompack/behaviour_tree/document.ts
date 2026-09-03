@@ -1,5 +1,7 @@
 import {
+	getNodePath,
 	parseTree,
+	type JSONPath,
 	type Node as JsonNode,
 	type ParseError,
 } from 'jsonc-parser';
@@ -42,9 +44,19 @@ export type BehaviourTreeDocumentDiagnosticCode =
 export type BehaviourTreeDocumentDiagnostic =
 	JsoncSchemaDiagnostic<BehaviourTreeDocumentSpecificDiagnosticCode>;
 
+export type BehaviourTreeDocumentElementSource = {
+	id: string;
+	path: JSONPath;
+	offset: number;
+	length: number;
+	idOffset: number;
+	idLength: number;
+};
+
 export type BehaviourTreeDocumentParseResult = {
 	document: AuthoredBehaviourTreeDocument | null;
 	diagnostics: BehaviourTreeDocumentDiagnostic[];
+	elements: ReadonlyMap<string, BehaviourTreeDocumentElementSource>;
 };
 
 type ParsedNodeBase = {
@@ -132,7 +144,7 @@ const BLACKBOARD_OPERATIONS: ReadonlySet<AuthoredBehaviourTreeBlackboardDecorato
 ]);
 
 class BehaviourTreeDocumentReader extends JsoncSchemaReader<BehaviourTreeDocumentSpecificDiagnosticCode> {
-	private readonly elementIds = new Set<string>();
+	public readonly elements = new Map<string, BehaviourTreeDocumentElementSource>();
 	private readonly blackboardNames = new Set<string>();
 	private readonly blackboardNameById = new Map<string, string>();
 
@@ -819,11 +831,19 @@ class BehaviourTreeDocumentReader extends JsoncSchemaReader<BehaviourTreeDocumen
 			this.addDiagnostic('invalid_value', node.offset, node.length, `${label} must be a canonical lowercase UUID.`);
 			return;
 		}
-		if (this.elementIds.has(id)) {
+		if (this.elements.has(id)) {
 			this.addDiagnostic('duplicate_element_id', node.offset, node.length, `Duplicate authored element id '${id}'.`);
 			return;
 		}
-		this.elementIds.add(id);
+		const elementNode = node.parent!.parent!;
+		this.elements.set(id, {
+			id,
+			path: getNodePath(elementNode),
+			offset: elementNode.offset,
+			length: elementNode.length,
+			idOffset: node.offset,
+			idLength: node.length,
+		});
 		return id;
 	}
 
@@ -863,10 +883,15 @@ export function parseBehaviourTreeDocument(source: string): BehaviourTreeDocumen
 		reader.addSyntaxError(syntaxErrors[index]);
 	}
 	if (syntaxErrors.length !== 0) {
-		return { document: null, diagnostics: reader.diagnostics };
+		return {
+			document: null,
+			diagnostics: reader.diagnostics,
+			elements: reader.elements,
+		};
 	}
 	return {
 		document: reader.parseDocument(root),
 		diagnostics: reader.diagnostics,
+		elements: reader.elements,
 	};
 }

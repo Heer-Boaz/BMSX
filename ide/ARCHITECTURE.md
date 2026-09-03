@@ -69,6 +69,33 @@ service surface:
   <https://github.com/microsoft/vscode/blob/dc85eaf99d21fb62cc4d8b43a21625a93863cf1e/src/vs/workbench/services/textfile/common/textFileEditorModel.ts#L592-L642> and
   <https://github.com/microsoft/vscode/blob/dc85eaf99d21fb62cc4d8b43a21625a93863cf1e/src/vs/workbench/services/textfile/common/textFileEditorModel.ts#L953-L970>.
 
+### Structured text projections
+
+A typed visual editor does not turn its parsed graph into another working
+copy. `BehaviourTreeDocumentModel` retains a derived projection of an
+`EditorTextModel<'behaviour_tree'>`. The typed document, diagnostics, stable-id
+index and exact JSON paths are rebuilt exactly once for each text-model content
+event and shared by all views of that text model. A render pass reads the
+retained projection; it never parses or rebuilds topology.
+
+Structured commands write through `jsonc-parser` edit results and
+`EditorTextModel.pushEditOperations`. The adapter in
+`editor/model/jsonc_edit.ts` only translates the JSONC library's offset edit
+contract into the canonical text-model edit contract. It does not own content,
+undo state or domain semantics. A property command therefore creates one text
+undo element and the normal content event updates source and visual consumers.
+No command may mutate the parsed projection or replace the complete document
+to change one property.
+
+The production references are VS Code's custom text editor contract—one text
+document, multiple views and minimal workspace edits—and Microsoft's JSONC
+edit contract, whose edits address the original source and preserve surrounding
+formatting:
+
+- <https://github.com/microsoft/vscode-docs/blob/9d199617aec5afda97740da77c0df87d08388553/api/extension-guides/custom-editors.md#L34-L52>
+- <https://github.com/microsoft/vscode-docs/blob/9d199617aec5afda97740da77c0df87d08388553/api/extension-guides/custom-editors.md#L140-L166>
+- <https://github.com/microsoft/node-jsonc-parser/blob/ee57b71dad28a973488b02d5577778c54784d76a/README.md#L256-L299>
+
 ## Retained lists and panes
 
 `workbench/ui/list_view.ts` owns the common retained-list contract: row storage,

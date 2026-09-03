@@ -210,6 +210,23 @@ test('JSONC behaviour-tree documents retain authored identity and cook to runtim
 	assert.doesNotMatch(JSON.stringify(cooked), /10000000|Guard loop/);
 });
 
+test('the document parser indexes every authored element at its JSON path and exact source range', () => {
+	const source = validSource();
+	const parsed = parseBehaviourTreeDocument(source);
+	assert.deepEqual(parsed.diagnostics, []);
+	assert.equal(parsed.elements.size, 6);
+	assert.deepEqual(parsed.elements.get(BLACKBOARD_ID)!.path, ['blackboard', 0]);
+	assert.deepEqual(parsed.elements.get(ROOT_ID)!.path, ['root']);
+	assert.deepEqual(parsed.elements.get(TASK_ID)!.path, ['root', 'children', 0]);
+	assert.deepEqual(parsed.elements.get(SERVICE_ID)!.path, ['root', 'children', 0, 'services', 0]);
+	assert.deepEqual(parsed.elements.get(DECORATOR_ID)!.path, ['root', 'children', 0, 'decorators', 0]);
+	assert.deepEqual(parsed.elements.get(WAIT_ID)!.path, ['root', 'children', 1]);
+
+	const task = parsed.elements.get(TASK_ID)!;
+	assert.equal(source.slice(task.idOffset, task.idOffset + task.idLength), JSON.stringify(TASK_ID));
+	assert.match(source.slice(task.offset, task.offset + task.length), /^\{\n\t\t\t\t"id":/);
+});
+
 test('schema and cooker cover every live built-in node kind and attachment kind', () => {
 	const parsed = parseBehaviourTreeDocument(allLiveNodeKindsSource());
 	assert.deepEqual(parsed.diagnostics, []);

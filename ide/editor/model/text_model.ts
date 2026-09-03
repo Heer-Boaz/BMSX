@@ -6,7 +6,8 @@ import { getTextSnapshot } from '../text/source_text';
 import type { TextBuffer } from '../text/text_buffer';
 import { EditorUndoRecord, TextUndoOp } from '../text/undo';
 
-export type EditorDocumentMode = 'lua' | 'aem';
+export type EditorDocumentMode = 'lua' | 'aem' | 'behaviour_tree';
+export type CodeEditorDocumentMode = Exclude<EditorDocumentMode, 'behaviour_tree'>;
 export type EditorRuntimeSyncState = 'synced' | 'runtime_update_pending' | 'diverged';
 
 export type EditorTextEdit = {
@@ -39,7 +40,7 @@ const editStartPosition = { row: 0, column: 0 };
  * Resource-owned editable text and working-copy state. Editor inputs attach
  * their own cursor, selection, scroll and contribution state to this model.
  */
-export class EditorTextModel {
+export class EditorTextModel<TMode extends EditorDocumentMode = EditorDocumentMode> {
 	private readonly pieceTree: PieceTreeBuffer;
 	private readonly undoStack: EditorUndoRecord[] = [];
 	private readonly redoStack: EditorUndoRecord[] = [];
@@ -67,9 +68,9 @@ export class EditorTextModel {
 	private pendingHistoryMerge = false;
 	private pendingStartRow = 0;
 
-	public readonly mode: EditorDocumentMode;
+	public readonly mode: TMode;
 
-	public constructor(resource: RuntimeResource, mode: EditorDocumentMode, source: string) {
+	public constructor(resource: RuntimeResource, mode: TMode, source: string) {
 		this.resourceValue = resource;
 		this.mode = mode;
 		this.pieceTree = new PieceTreeBuffer(source);

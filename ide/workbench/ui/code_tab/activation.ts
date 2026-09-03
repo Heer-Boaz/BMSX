@@ -101,6 +101,7 @@ export function capturePendingLuaTextModelSources(sources: RuntimeSourceState): 
 			case 'lua':
 				break;
 			case 'aem':
+			case 'behaviour_tree':
 				continue;
 		}
 		const source = getTextSnapshot(model.buffer);

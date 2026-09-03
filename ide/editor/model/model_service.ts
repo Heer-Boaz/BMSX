@@ -23,7 +23,11 @@ export class EditorTextModelService {
 		return this.modelsByResource.get(resourceIdentityKey(identity));
 	}
 
-	public retain(resource: RuntimeResource, mode: EditorDocumentMode, source: string): EditorTextModel {
+	public retain<TMode extends EditorDocumentMode>(
+		resource: RuntimeResource,
+		mode: TMode,
+		source: string,
+	): EditorTextModel<TMode> {
 		const key = resourceIdentityKey(resource);
 		let model = this.modelsByResource.get(key);
 		if (model === undefined) {
@@ -32,7 +36,7 @@ export class EditorTextModelService {
 		} else {
 			model.refreshResource(resource);
 		}
-		return model;
+		return model as EditorTextModel<TMode>;
 	}
 
 	private register(model: EditorTextModel): void {
