@@ -267,7 +267,6 @@ export async function restoreWorkspaceStorageSession(
 	}
 	if (restorePayload) {
 		await applyWorkspaceAutosavePayload(
-			storage,
 			workspaceEditor,
 			runtimeSources,
 			runtimeDebuggerState,

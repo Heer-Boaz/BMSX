@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { RuntimeResource } from '../../ide/common/resource';
+import { resourceIdentityKey, type RuntimeResource } from '../../ide/common/resource';
 import {
 	ResourceEditorResolver,
 	type ResourceEditorRegistration,
+	type ResourceEditorSelector,
 } from '../../ide/workbench/services/editor/resource_editor_resolver';
 
 function resource(path: string, type: RuntimeResource['source']['type']): RuntimeResource {
@@ -19,22 +20,33 @@ function resource(path: string, type: RuntimeResource['source']['type']): Runtim
 	};
 }
 
-test('resource editor resolution selects the first matching contribution without changing resource classification', () => {
-	const visualEditor: ResourceEditorRegistration = {
-		id: 'studio.behaviourTree',
-		selector: { kind: 'filename_suffix', suffix: '.bt.jsonc' },
-		open: () => {},
+function registration(id: string, selector: ResourceEditorSelector): ResourceEditorRegistration {
+	return {
+		id,
+		selector,
+		createEditorInput: resource => ({
+			id: `resource:${id}:${resourceIdentityKey(resource)}`,
+			kind: 'resource_view',
+			title: id,
+			closable: true,
+			resource: {
+				resource,
+				lines: [],
+				error: '',
+				title: resource.path,
+				scroll: 0,
+			},
+		}),
 	};
-	const textEditor: ResourceEditorRegistration = {
-		id: 'workbench.text',
-		selector: { kind: 'asset_type', assetType: 'lua' },
-		open: () => {},
-	};
-	const resourceViewer: ResourceEditorRegistration = {
-		id: 'workbench.viewer',
-		selector: { kind: 'all' },
-		open: () => {},
-	};
+}
+
+test('resource editor resolution creates an input with the first matching contribution', async () => {
+	const visualEditor = registration(
+		'studio.behaviourTree',
+		{ kind: 'filename_suffix', suffix: '.bt.jsonc' },
+	);
+	const textEditor = registration('workbench.text', { kind: 'asset_type', assetType: 'lua' });
+	const resourceViewer = registration('workbench.viewer', { kind: 'all' });
 	const resolver = new ResourceEditorResolver([
 		visualEditor,
 		textEditor,
@@ -42,30 +54,28 @@ test('resource editor resolution selects the first matching contribution without
 	]);
 	const behaviourTree = resource('res/Enemy_Guard.BT.JSONC', 'data');
 
-	assert.strictEqual(resolver.resolve(behaviourTree), visualEditor);
+	assert.equal((await resolver.resolveEditorInput(behaviourTree)).title, visualEditor.id);
 	assert.equal(behaviourTree.source.type, 'data');
-	assert.strictEqual(resolver.resolve(resource('cart.lua', 'lua')), textEditor);
-	assert.strictEqual(resolver.resolve(resource('sprite.png', 'image')), resourceViewer);
+	assert.equal((await resolver.resolveEditorInput(resource('cart.lua', 'lua'))).title, textEditor.id);
+	assert.equal((await resolver.resolveEditorInput(resource('sprite.png', 'image'))).title, resourceViewer.id);
 });
 
-test('an explicit editor id selects another matching editor for the same resource', () => {
-	const visualEditor: ResourceEditorRegistration = {
-		id: 'studio.behaviourTree',
-		selector: { kind: 'filename_suffix', suffix: '.bt.jsonc' },
-		open: () => {},
-	};
-	const resourceViewer: ResourceEditorRegistration = {
-		id: 'workbench.viewer',
-		selector: { kind: 'all' },
-		open: () => {},
-	};
+test('an explicit editor id creates another matching input for the same resource', async () => {
+	const visualEditor = registration(
+		'studio.behaviourTree',
+		{ kind: 'filename_suffix', suffix: '.bt.jsonc' },
+	);
+	const resourceViewer = registration('workbench.viewer', { kind: 'all' });
 	const resolver = new ResourceEditorResolver([visualEditor, resourceViewer]);
 	const behaviourTree = resource('res/enemy_guard.bt.jsonc', 'data');
 
-	assert.strictEqual(resolver.resolve(behaviourTree), visualEditor);
-	assert.strictEqual(resolver.resolve(behaviourTree, resourceViewer.id), resourceViewer);
+	assert.equal((await resolver.resolveEditorInput(behaviourTree)).title, visualEditor.id);
+	assert.equal(
+		(await resolver.resolveEditorInput(behaviourTree, resourceViewer.id)).title,
+		resourceViewer.id,
+	);
 	assert.throws(
-		() => resolver.resolve(behaviourTree, 'missing.editor'),
+		() => resolver.resolveEditorInput(behaviourTree, 'missing.editor'),
 		/No editor 'missing\.editor' is registered/,
 	);
 });

@@ -31,26 +31,26 @@ import { requestWorkspaceAutosave } from '../../workspace/storage';
 import { WorkspaceAutosaveChange } from '../../workspace/models';
 import type { HostClock } from '../../../../hosts/common/clock';
 import type { KeyValueStorage } from '../../../workspace/key_value_storage';
+import type { CodeEditorTabDescriptor } from '../tab/model';
 
 function applyCodeTabResource(context: CodeTabContext, resource: RuntimeResource): void {
 	context.model.refreshResource(resource);
 	context.title = computeResourceTabTitle(resource);
 }
 
-function retainLuaCodeTab(
+export function retainLuaCodeEditorInput(
 	sources: RuntimeSourceState,
 	resource: RuntimeResource,
-): CodeTabContext {
+): CodeEditorTabDescriptor {
 	const context = retainLuaCodeTabContext(sources, resource);
-	upsertCodeEditorTab(context);
-	return context;
+	return upsertCodeEditorTab(context);
 }
 
-async function retainAemCodeTab(
+export async function retainAemCodeEditorInput(
 	storage: KeyValueStorage,
 	sources: RuntimeSourceState,
 	resource: RuntimeResource,
-): Promise<CodeTabContext> {
+): Promise<CodeEditorTabDescriptor> {
 	const tabId = buildCodeTabId(resource);
 	let context = getCodeTabContextById(tabId);
 	if (!context) {
@@ -68,8 +68,7 @@ async function retainAemCodeTab(
 		registerCodeTabContext(context);
 	}
 	applyCodeTabResource(context, resource);
-	upsertCodeEditorTab(context);
-	return context;
+	return upsertCodeEditorTab(context);
 }
 
 export function openLuaCodeTab(
@@ -78,41 +77,8 @@ export function openLuaCodeTab(
 	resource: RuntimeResource,
 	selection?: EditorTextSelection,
 ): void {
-	const context = retainLuaCodeTab(sources, resource);
-	setActiveTab(resourcePanel, context.id, selection);
-}
-
-export async function openAemCodeTab(
-	storage: KeyValueStorage,
-	editor: CartEditor,
-	sources: RuntimeSourceState,
-	resource: RuntimeResource,
-	selection?: EditorTextSelection,
-): Promise<void> {
-	const resourcePanel = editor.resourcePanel;
-	try {
-		const context = await retainAemCodeTab(storage, sources, resource);
-		setActiveTab(resourcePanel, context.id, selection);
-	} catch (error) {
-		showEditorMessage(extractErrorMessage(error), constants.COLOR_STATUS_ERROR, 4.0);
-	}
-}
-
-export async function restoreCodeTabForResource(
-	storage: KeyValueStorage,
-	sources: RuntimeSourceState,
-	resource: RuntimeResource,
-): Promise<void> {
-	switch (resource.source.type) {
-		case 'lua':
-			retainLuaCodeTab(sources, resource);
-			return;
-		case 'aem':
-			await retainAemCodeTab(storage, sources, resource);
-			return;
-		default:
-			throw new Error(`Unsupported code tab resource type '${resource.source.type}' for '${resource.path}'.`);
-	}
+	const input = retainLuaCodeEditorInput(sources, resource);
+	setActiveTab(resourcePanel, input.id, selection);
 }
 
 export async function save(

@@ -1,30 +1,27 @@
 import { resourceIdentityKey, type RuntimeResource } from '../../../common/resource';
 import type { ResourceViewerTabId } from '../../ui/tab/id';
-import { setActiveTab } from '../../ui/tabs';
 import { editorTabGroup } from '../../ui/tab/group_model';
 import { buildResourceViewerState } from './viewer';
 import type { RuntimeSourceState } from '../../../runtime/sources';
-import type { ResourcePanelController } from './panel/controller';
 import type { ResourceViewerState } from './model';
+import type { ResourceViewerTabDescriptor } from '../../ui/tab/model';
 
 export function getActiveResourceViewer(): ResourceViewerState | null {
 	const tab = editorTabGroup.activeTab;
 	return tab.kind === 'resource_view' ? tab.resource : null;
 }
 
-export function openResourceViewerTab(
-	resourcePanel: ResourcePanelController,
+export function retainResourceViewerInput(
 	sources: RuntimeSourceState,
 	resource: RuntimeResource,
-): void {
+): ResourceViewerTabDescriptor {
 	const tabId: ResourceViewerTabId = `resource:${resourceIdentityKey(resource)}`;
 	let tab = editorTabGroup.findById(tabId);
 	const state = buildResourceViewerState(sources, resource);
 	if (tab) {
 		tab.title = state.title;
 		tab.resource = state;
-		setActiveTab(resourcePanel, tabId);
-		return;
+		return tab;
 	}
 	tab = {
 		id: tabId,
@@ -34,5 +31,5 @@ export function openResourceViewerTab(
 		resource: state,
 	};
 	editorTabGroup.add(tab);
-	setActiveTab(resourcePanel, tabId);
+	return tab;
 }

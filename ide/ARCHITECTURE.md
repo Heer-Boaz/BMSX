@@ -107,6 +107,14 @@ the final wildcard contribution owns the ordinary resource viewer. Editor ids
 also allow another matching editor to be selected explicitly without changing
 the resource or duplicating its document.
 
+Resolution returns the retained editor input; it does not activate it. Resource
+navigation gives that input to the editor group and owns activation and text
+selection. Workspace recovery uses the same contribution factory to recreate
+each dirty input without activating it, then hydrates the resource-owned
+`EditorTextModel` directly. Code cursor and scroll metadata remain code-input
+state and are restored separately. A dirty structured document therefore does
+not need a hidden code tab or a second recovery model.
+
 `runtime/sources.ts` indexes source-backed ordinary `data` and `aem` assets as
 data resources alongside the Lua source registry. It does not identify which
 editor will open them. Only the active execution domain contributes data
@@ -121,6 +129,8 @@ reclassifying it:
 
 - <https://github.com/microsoft/vscode/blob/8d48b77e9fc7df97b659e8a04bc999bb6fb8f031/src/vs/workbench/services/editor/common/editorResolverService.ts#L271-L284>
 - <https://github.com/microsoft/vscode/blob/8d48b77e9fc7df97b659e8a04bc999bb6fb8f031/src/vs/workbench/services/editor/browser/editorResolverService.ts#L446-L478>
+- <https://github.com/microsoft/vscode/blob/8d48b77e9fc7df97b659e8a04bc999bb6fb8f031/src/vs/workbench/services/editor/browser/editorResolverService.ts#L606-L683>
+- <https://github.com/microsoft/vscode/blob/8d48b77e9fc7df97b659e8a04bc999bb6fb8f031/src/vs/workbench/services/workingCopy/common/workingCopyEditorService.ts#L20-L48>
 - <https://github.com/microsoft/vscode/blob/8d48b77e9fc7df97b659e8a04bc999bb6fb8f031/src/vs/workbench/contrib/customEditor/common/customEditor.ts#L100-L126>
 
 BMSX has no extension marketplace or user editor associations, so it does not

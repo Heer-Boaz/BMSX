@@ -1,5 +1,5 @@
 import type { RuntimeResource } from '../../../common/resource';
-import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
+import type { EditorTabDescriptor } from '../../ui/tab/model';
 
 export type ResourceEditorSelector =
 	| { kind: 'asset_type'; assetType: RuntimeResource['source']['type'] }
@@ -9,7 +9,7 @@ export type ResourceEditorSelector =
 export type ResourceEditorRegistration = {
 	id: string;
 	selector: ResourceEditorSelector;
-	open: (resource: RuntimeResource, selection?: EditorTextSelection) => void | Promise<void>;
+	createEditorInput: (resource: RuntimeResource) => EditorTabDescriptor | Promise<EditorTabDescriptor>;
 };
 
 /** Selects the editor contribution for a resource without classifying the resource itself. */
@@ -17,12 +17,15 @@ export class ResourceEditorResolver {
 	public constructor(private readonly registrations: readonly ResourceEditorRegistration[]) {
 	}
 
-	public resolve(resource: RuntimeResource, preferredEditorId?: string): ResourceEditorRegistration {
+	public resolveEditorInput(
+		resource: RuntimeResource,
+		preferredEditorId?: string,
+	): EditorTabDescriptor | Promise<EditorTabDescriptor> {
 		for (let index = 0; index < this.registrations.length; index += 1) {
 			const registration = this.registrations[index];
 			if ((preferredEditorId === undefined || registration.id === preferredEditorId)
 				&& resourceMatchesSelector(resource, registration.selector)) {
-				return registration;
+				return registration.createEditorInput(resource);
 			}
 		}
 		throw new Error(`No editor '${preferredEditorId}' is registered for '${resource.path}'.`);

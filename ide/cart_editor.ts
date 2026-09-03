@@ -108,6 +108,7 @@ import { renderTabBar } from './workbench/render/tab_bar';
 import { renderTopBar, renderTopBarDropdown } from './workbench/render/top_bar';
 import type { ChromeRenderContext } from './workbench/render/chrome_context';
 import { createResourceEditorResolver } from './workbench/contrib/resources/editor_contributions';
+import type { ResourceEditorResolver } from './workbench/services/editor/resource_editor_resolver';
 
 
 type RenderRuntimeFaultOverlayOptions = {
@@ -127,6 +128,7 @@ export type CartEditor = {
 	readonly search: EditorSearchController;
 	readonly breakpoints: BreakpointController;
 	readonly commands: IdeCommandController;
+	readonly resourceEditors: ResourceEditorResolver;
 	readonly navigation: EditorNavigationController;
 	readonly behaviorLens: BehaviorLensController;
 	readonly scenarioLab: ScenarioLabController;
@@ -159,6 +161,7 @@ export class RuntimeCartEditor implements CartEditor {
 	public readonly search: EditorSearchController;
 	public readonly breakpoints: BreakpointController;
 	public readonly commands: IdeCommandController;
+	public readonly resourceEditors: ResourceEditorResolver;
 	public readonly navigation: EditorNavigationController;
 	public readonly behaviorLens: BehaviorLensController;
 	public readonly scenarioLab: ScenarioLabController;
@@ -251,16 +254,14 @@ export class RuntimeCartEditor implements CartEditor {
 		);
 		this.completion = new EditorCompletionController(luaTooling, fault, runtime);
 		this.resourcePanel = this.initialize(resourcePanelWidthRatio, viewport, fontVariant);
-		const resourceEditorResolver = createResourceEditorResolver(
+		this.resourceEditors = createResourceEditorResolver(
 			storage,
-			this,
 			this.sources,
-			this.resourcePanel,
 		);
 		this.navigation = new EditorNavigationController(
 			this.sources,
 			this.resourcePanel,
-			resourceEditorResolver,
+			this.resourceEditors,
 		);
 		this.behaviorLens = new BehaviorLensController(
 			this.sources,

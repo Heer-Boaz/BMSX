@@ -13,7 +13,6 @@ import {
 	retainEntryTabContext,
 } from '../ui/code_tab/contexts';
 import { editorTextModelService } from '../../editor/model/model_service';
-import { restoreCodeTabForResource } from '../ui/code_tab/io';
 import { buildWorkspaceDirtyEntryPath } from '../../workspace/files';
 import { restoreWorkspaceCodeEditorView } from './context_snapshot';
 import { workspaceDirtyRecords } from './state';
@@ -22,10 +21,8 @@ import {
 	type PersistedDirtyEntry,
 	type WorkspaceAutosavePayload,
 } from './models';
-import type { KeyValueStorage } from '../../workspace/key_value_storage';
 
 export async function applyWorkspaceAutosavePayload(
-	storage: KeyValueStorage,
 	editor: CartEditor,
 	sources: RuntimeSourceState,
 	debuggerState: RuntimeBreakpointState,
@@ -35,14 +32,14 @@ export async function applyWorkspaceAutosavePayload(
 	editorTextModelService.clear();
 	initializeTabs(retainEntryTabContext(sources));
 	editor.setFontVariant(payload.fontVariant);
-	await openDirtyFileTabs(storage, sources, payload.dirtyFiles);
+	await retainDirtyFileInputs(editor, sources, payload.dirtyFiles);
 	hydrateDirtyFiles(sources, payload.dirtyFiles);
 	restoreCodeEditorViews(payload.codeEditorViews);
 	restoreBreakpointsFromPayload(debuggerState, payload.breakpoints);
 }
 
-async function openDirtyFileTabs(
-	storage: KeyValueStorage,
+async function retainDirtyFileInputs(
+	editor: CartEditor,
 	sources: RuntimeSourceState,
 	entries: PersistedDirtyEntry[],
 ): Promise<void> {
@@ -51,9 +48,7 @@ async function openDirtyFileTabs(
 		if (!resource) {
 			throw new Error(`Workspace resource '${entry.path}' is not installed for domain '${entry.domain}'.`);
 		}
-		if (!findCodeTabContext(resource)) {
-			await restoreCodeTabForResource(storage, sources, resource);
-		}
+		await editor.resourceEditors.resolveEditorInput(resource);
 	}
 }
 
@@ -62,10 +57,7 @@ export function hydrateDirtyFiles(
 	entries: PersistedDirtyEntry[],
 ): void {
 	for (const entry of entries) {
-		const context = findCodeTabContext(entry);
-		if (!context) {
-			throw new Error(`Failed to restore code tab context for '${entry.path}'.`);
-		}
+		const model = editorTextModelService.get(entry)!;
 		const projectRootPath = runtimeSourceProjectRootPath(sources, entry.domain);
 		const dirtyPath = buildWorkspaceDirtyEntryPath(
 			projectRootPath,
@@ -76,7 +68,7 @@ export function hydrateDirtyFiles(
 		if (!record) {
 			throw new Error(`Persisted dirty file '${dirtyPath}' was not loaded.`);
 		}
-		context.model.restoreDirtySource(record.contents);
+		model.restoreDirtySource(record.contents);
 	}
 }
 

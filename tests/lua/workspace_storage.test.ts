@@ -4,6 +4,7 @@ import { test, type TestContext } from 'node:test';
 import type { CodeTabContext } from '../../ide/workbench/ui/code_tab/model';
 import {
 	SYSTEM_RESOURCE_DOMAIN,
+	resourceIdentityKey,
 	type ResourceDomain,
 	type RuntimeResource,
 } from '../../ide/common/resource';
@@ -91,6 +92,9 @@ import {
 	type WorkspaceAutosavePayload,
 } from '../../ide/workbench/workspace/models';
 import { createTestRuntimeSourceState } from '../helpers/runtime_sources';
+import { createResourceEditorResolver } from '../../ide/workbench/contrib/resources/editor_contributions';
+import type { RuntimeSourceState } from '../../ide/runtime/sources';
+import { ResourceEditorResolver } from '../../ide/workbench/services/editor/resource_editor_resolver';
 
 class MockStorage implements KeyValueStorage {
 	private readonly store = new Map<string, string>();
@@ -376,10 +380,15 @@ function payload(
 	};
 }
 
-function editorStub() {
+function editorStub(
+	storage: KeyValueStorage,
+	sources: RuntimeSourceState,
+	resourceEditors = createResourceEditorResolver(storage, sources),
+) {
 	return {
 		fontVariant: DEFAULT_FONT_VARIANT,
 		resourcePanel: null,
+		resourceEditors,
 		setFontVariant() { /* noop */ },
 		updateViewport() { /* noop */ },
 	};
@@ -393,7 +402,7 @@ async function startAutosaveSession(t: TestContext, storage: MockStorage, root =
 	);
 	const restored = await initializeWorkspaceStorage(storage, workspaceEnvironment.clock, root, sources);
 	await restoreWorkspaceStorageSession(
-		editorStub() as any,
+		editorStub(storage, sources) as any,
 		sources,
 		{ breakpoints: [new Map(), new Map(), new Map()] },
 		restored,
@@ -468,8 +477,7 @@ test('workspace restore keeps dirty system tabs behind the development cartridge
 	});
 	installWorkspaceRestoreView();
 	await applyWorkspaceAutosavePayload(
-		workspaceEnvironment.storage,
-		editorStub() as any,
+		editorStub(storage, sources) as any,
 		sources,
 		{ breakpoints: [new Map(), new Map(), new Map()] },
 		payload(
@@ -846,7 +854,7 @@ test('cold boot uses one manifest-indexed dirty snapshot for source arbitration 
 
 	installWorkspaceRestoreView();
 	await restoreWorkspaceStorageSession(
-		editorStub() as any,
+		editorStub(storage, sources) as any,
 		sources,
 		{ breakpoints: [new Map(), new Map(), new Map()] },
 		restored,
@@ -908,7 +916,7 @@ test('manifest dirty entry rejected by newer ROM is not hydrated', async (t) => 
 	assert.deepEqual([...rejected], [dirtyPath]);
 	installWorkspaceRestoreView();
 	await restoreWorkspaceStorageSession(
-		editorStub() as any,
+		editorStub(storage, sources) as any,
 		sources,
 		{ breakpoints: [new Map(), new Map(), new Map()] },
 		restored,
@@ -1378,8 +1386,7 @@ test('workspace restore resolves persisted identity to the retained runtime reso
 		{ domain: TEST_DOMAIN, path: retained.path, lines: [3, 9] },
 	];
 	await applyWorkspaceAutosavePayload(
-		workspaceEnvironment.storage,
-		editorStub() as any,
+		editorStub(storage, sources) as any,
 		sources,
 		debuggerState,
 		restoredPayload,
@@ -1390,6 +1397,60 @@ test('workspace restore resolves persisted identity to the retained runtime reso
 	assert.deepEqual(debuggerState.breakpoints[0].get('base.lua'), new Set([4]));
 	assert.deepEqual(debuggerState.breakpoints[1].get(retained.path), new Set([3, 9]));
 	assert.equal(debuggerState.breakpoints[2].size, 0);
+});
+
+test('workspace recovery hydrates a dirty model retained by a non-code editor input', async (t) => {
+	const storage = new MockStorage();
+	installOfflineWorkspace(t, storage);
+	const sources = createTestRuntimeSourceState(
+		sourceRegistry('-- system source'),
+		[sourceRegistry('-- cart source'), null],
+		TEST_DOMAIN,
+	);
+	const resource = testResource('res/enemy_guard.bt.jsonc', TEST_DOMAIN, 'data');
+	sources.resourceByIdentity.set(resourceIdentityKey(resource), resource);
+	const dirtyPath = buildWorkspaceDirtyEntryPath('offline-cart', resource.domain, resource.path);
+	workspaceDirtyRecords.set(dirtyPath, { contents: '{ "version": 1 }', updatedAt: 1 });
+	const resourceInput: ResourceViewerTabDescriptor = {
+		id: `resource:${resourceIdentityKey(resource)}`,
+		kind: 'resource_view',
+		title: 'enemy_guard.bt.jsonc',
+		closable: true,
+		resource: {
+			resource,
+			lines: [],
+			error: '',
+			title: 'enemy_guard.bt.jsonc',
+			scroll: 0,
+		},
+	};
+	const resourceEditors = new ResourceEditorResolver([{
+		id: 'test.behaviourTree',
+		selector: { kind: 'filename_suffix', suffix: '.bt.jsonc' },
+		createEditorInput: (target) => {
+			editorTextModelService.retain(target, 'behaviour_tree', '{ "version": 1, "root": {} }');
+			editorTabGroup.add(resourceInput);
+			return resourceInput;
+		},
+	}]);
+	installWorkspaceRestoreView();
+	await applyWorkspaceAutosavePayload(
+		editorStub(storage, sources, resourceEditors) as any,
+		sources,
+		{ breakpoints: [new Map(), new Map(), new Map()] },
+		payload([{
+			domain: resource.domain,
+			path: resource.path,
+			updatedAt: 1,
+		}]),
+	);
+
+	const model = editorTextModelService.get(resource)!;
+	assert.equal(model.mode, 'behaviour_tree');
+	assert.equal(model.buffer.getText(), '{ "version": 1 }');
+	assert.equal(model.dirty, true);
+	assert.equal(findCodeTabContext(resource), null);
+	assert.strictEqual(editorTabGroup.findById(resourceInput.id), resourceInput);
 });
 
 test('workspace override arbitration keeps dirty and canonical namespaces separate', async (t) => {

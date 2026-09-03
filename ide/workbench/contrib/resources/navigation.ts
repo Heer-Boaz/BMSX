@@ -16,6 +16,7 @@ import {
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import type { ResourcePanelController } from './panel/controller';
 import type { ResourceEditorResolver } from '../../services/editor/resource_editor_resolver';
+import { setActiveTab } from '../../ui/tabs';
 
 export class EditorNavigationController {
 	public constructor(
@@ -30,10 +31,9 @@ export class EditorNavigationController {
 		if (this.resourcePanel.isVisible()) {
 			this.resourcePanel.applyPendingSelection();
 		}
-		const registration = this.editorResolver.resolve(resource);
-		const opened = registration.open(resource, selection);
+		const input = await this.editorResolver.resolveEditorInput(resource);
+		setActiveTab(this.resourcePanel, input.id, selection);
 		releaseResourcePanelFocus(this.resourcePanel);
-		await opened;
 	}
 
 	public focusChunkSource(identity: ResourceIdentity, selection?: EditorTextSelection): void {

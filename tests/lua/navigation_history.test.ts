@@ -69,7 +69,7 @@ test('history navigation awaits resource activation with its retained cursor loc
 		new ResourceEditorResolver([{
 			id: 'test.editor',
 			selector: { kind: 'all' },
-			open: () => {},
+			createEditorInput: () => editorTabGroup.activeTab,
 		}]),
 	);
 	let finishOpen: () => void;
