@@ -1,5 +1,3 @@
-import type { KeyValueStorage } from '../../../workspace/key_value_storage';
-import type { CartEditor } from '../../../cart_editor';
 import type { RuntimeResource } from '../../../common/models';
 import type { ResourceDomain, ResourceIdentity } from '../../../common/resource';
 import {
@@ -15,42 +13,30 @@ import {
 	resolveRuntimeResourceForContext,
 	type RuntimeSourceState,
 } from '../../../runtime/sources';
-import { openCodeTabForResource } from '../../ui/code_tab/io';
-import type { CodeTabSelection } from '../../ui/code_tab/activation';
+import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import type { ResourcePanelController } from './panel/controller';
-import { openResourceViewerTab } from './view_tabs';
+import type { ResourceEditorResolver } from '../../services/editor/resource_editor_resolver';
 
 export class EditorNavigationController {
 	public constructor(
-		private readonly editor: CartEditor,
 		private readonly sources: RuntimeSourceState,
 		private readonly resourcePanel: ResourcePanelController,
-		private readonly storage: KeyValueStorage,
+		private readonly editorResolver: ResourceEditorResolver,
 	) {
 	}
 
-	public async openResource(resource: RuntimeResource, selection?: CodeTabSelection): Promise<void> {
+	public async openResource(resource: RuntimeResource, selection?: EditorTextSelection): Promise<void> {
 		this.resourcePanel.queuePendingSelection(resource);
 		if (this.resourcePanel.isVisible()) {
 			this.resourcePanel.applyPendingSelection();
 		}
-		if (resource.source.type === 'lua' || resource.source.type === 'aem') {
-			const opened = openCodeTabForResource(
-				this.storage,
-				this.editor,
-				this.sources,
-				resource,
-				selection,
-			);
-			releaseResourcePanelFocus(this.resourcePanel);
-			await opened;
-			return;
-		}
-		openResourceViewerTab(this.resourcePanel, this.sources, resource);
+		const registration = this.editorResolver.resolve(resource);
+		const opened = registration.open(resource, selection);
 		releaseResourcePanelFocus(this.resourcePanel);
+		await opened;
 	}
 
-	public focusChunkSource(identity: ResourceIdentity, selection?: CodeTabSelection): void {
+	public focusChunkSource(identity: ResourceIdentity, selection?: EditorTextSelection): void {
 		prepareEditorForSourceFocus();
 		if (!identity.path) {
 			return;
@@ -65,7 +51,7 @@ export class EditorNavigationController {
 	public focusChunkSourceForContext(
 		domain: ResourceDomain,
 		path: string,
-		selection?: CodeTabSelection,
+		selection?: EditorTextSelection,
 	): void {
 		prepareEditorForSourceFocus();
 		const resource = resolveRuntimeResourceForContext(this.sources, domain, path)!;

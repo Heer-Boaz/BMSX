@@ -107,6 +107,7 @@ import { renderStatusBar } from './workbench/render/status_bar';
 import { renderTabBar } from './workbench/render/tab_bar';
 import { renderTopBar, renderTopBarDropdown } from './workbench/render/top_bar';
 import type { ChromeRenderContext } from './workbench/render/chrome_context';
+import { createResourceEditorResolver } from './workbench/contrib/resources/editor_contributions';
 
 
 type RenderRuntimeFaultOverlayOptions = {
@@ -250,11 +251,16 @@ export class RuntimeCartEditor implements CartEditor {
 		);
 		this.completion = new EditorCompletionController(luaTooling, fault, runtime);
 		this.resourcePanel = this.initialize(resourcePanelWidthRatio, viewport, fontVariant);
-		this.navigation = new EditorNavigationController(
+		const resourceEditorResolver = createResourceEditorResolver(
+			storage,
 			this,
 			this.sources,
 			this.resourcePanel,
-			storage,
+		);
+		this.navigation = new EditorNavigationController(
+			this.sources,
+			this.resourcePanel,
+			resourceEditorResolver,
 		);
 		this.behaviorLens = new BehaviorLensController(
 			this.sources,

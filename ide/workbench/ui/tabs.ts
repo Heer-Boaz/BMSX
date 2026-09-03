@@ -17,7 +17,8 @@ import {
 	createCodeEditorTabDescriptor,
 	retainEntryTabContext,
 } from './code_tab/contexts';
-import { activateCodeEditorTab, applyActiveCodeTabSelection, storeCodeTabContext, type CodeTabSelection } from './code_tab/activation';
+import { activateCodeEditorTab, applyActiveCodeTabSelection, storeCodeTabContext } from './code_tab/activation';
+import type { EditorTextSelection } from '../../editor/navigation/text_selection';
 import { endTabDrag } from './tab/drag';
 import type { RuntimeSourceState } from '../../runtime/sources';
 import { editorTabGroup } from './tab/group_model';
@@ -90,7 +91,7 @@ function activateFullWidthWorkbenchTab(resourcePanel: ResourcePanelController): 
 export function setActiveTab(
 	resourcePanel: ResourcePanelController,
 	tabId: EditorTabId,
-	selection?: CodeTabSelection,
+	selection?: EditorTextSelection,
 ): void {
 	const tab = editorTabGroup.findById(tabId)!;
 	const activeTab = editorTabGroup.activeTab;

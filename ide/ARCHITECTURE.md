@@ -96,6 +96,33 @@ formatting:
 - <https://github.com/microsoft/vscode-docs/blob/9d199617aec5afda97740da77c0df87d08388553/api/extension-guides/custom-editors.md#L140-L166>
 - <https://github.com/microsoft/node-jsonc-parser/blob/ee57b71dad28a973488b02d5577778c54784d76a/README.md#L256-L299>
 
+## Resource editor resolution
+
+A ROM resource keeps its producer-owned asset type. The workbench does not add
+an `editorKind` to `RuntimeResource`, and resource navigation does not decide
+between Lua, AEM, binary previews or future visual editors. Instead,
+`ResourceEditorResolver` selects an ordered built-in editor contribution by
+asset type or filename suffix. The concrete contribution owns input creation;
+the final wildcard contribution owns the ordinary resource viewer. Editor ids
+also allow another matching editor to be selected explicitly without changing
+the resource or duplicating its document.
+
+This is the deliberately small built-in subset of VS Code's editor resolver:
+editors register independently against resource patterns, resolution chooses a
+matching editor/factory, and custom editors match the resource rather than
+reclassifying it:
+
+- <https://github.com/microsoft/vscode/blob/8d48b77e9fc7df97b659e8a04bc999bb6fb8f031/src/vs/workbench/services/editor/common/editorResolverService.ts#L271-L284>
+- <https://github.com/microsoft/vscode/blob/8d48b77e9fc7df97b659e8a04bc999bb6fb8f031/src/vs/workbench/services/editor/browser/editorResolverService.ts#L446-L478>
+- <https://github.com/microsoft/vscode/blob/8d48b77e9fc7df97b659e8a04bc999bb6fb8f031/src/vs/workbench/contrib/customEditor/common/customEditor.ts#L100-L126>
+
+BMSX has no extension marketplace or user editor associations, so it does not
+copy VS Code's dynamic registration, priority and configuration machinery.
+Built-in contributions are composed once when the workbench starts and are
+ordered from specific to general. A future Behavior Tree contribution may
+therefore claim `*.bt.jsonc` while the machine-facing asset remains ordinary
+`data`; it must not add a BT asset type to the ROM TOC.
+
 ## Retained lists and panes
 
 `workbench/ui/list_view.ts` owns the common retained-list contract: row storage,

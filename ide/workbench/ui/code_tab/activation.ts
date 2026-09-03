@@ -27,12 +27,7 @@ import {
 import type { CodeEditorTabDescriptor } from '../tab/model';
 import { readWorkspaceLuaSourceText } from '../../../workspace/files';
 import { editorTextModelService } from '../../../editor/model/model_service';
-
-export type CodeTabSelection = {
-	row: number;
-	startColumn: number;
-	endColumn: number;
-};
+import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 
 export type LuaTextModelSourceSnapshot = {
 	version: number;
@@ -138,7 +133,7 @@ export function markLuaTextModelsAppliedToRuntime(snapshots: ReadonlyArray<LuaTe
 	}
 }
 
-export function applyActiveCodeTabSelection(selection: CodeTabSelection): void {
+export function applyActiveCodeTabSelection(selection: EditorTextSelection): void {
 	setSingleCursorPosition(activeCodeEditor.view, selection.row, selection.startColumn);
 	setSingleCursorSelectionAnchor(activeCodeEditor.view, selection.row, selection.endColumn);
 	editorPointerState.pointerSelecting = false;
@@ -148,7 +143,7 @@ export function applyActiveCodeTabSelection(selection: CodeTabSelection): void {
 	activeCodeEditor.emitCursorMoved();
 }
 
-export function activateCodeEditorTab(tab: CodeEditorTabDescriptor, selection?: CodeTabSelection): void {
+export function activateCodeEditorTab(tab: CodeEditorTabDescriptor, selection?: EditorTextSelection): void {
 	const context = tab.context;
 	activeCodeEditor.attach(context.model, context.view);
 	editorViewState.maxLineLengthDirty = true;

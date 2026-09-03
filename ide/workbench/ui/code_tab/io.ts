@@ -15,9 +15,7 @@ import type { CartEditor } from '../../../cart_editor';
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import { computeResourceTabTitle } from '../tab/titles';
 import { setActiveTab } from '../tabs';
-import {
-	type CodeTabSelection,
-} from './activation';
+import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import {
 	buildCodeTabId,
 	createAemCodeTabContext,
@@ -78,7 +76,7 @@ export function openLuaCodeTab(
 	resourcePanel: ResourcePanelController,
 	sources: RuntimeSourceState,
 	resource: RuntimeResource,
-	selection?: CodeTabSelection,
+	selection?: EditorTextSelection,
 ): void {
 	const context = retainLuaCodeTab(sources, resource);
 	setActiveTab(resourcePanel, context.id, selection);
@@ -89,7 +87,7 @@ export async function openAemCodeTab(
 	editor: CartEditor,
 	sources: RuntimeSourceState,
 	resource: RuntimeResource,
-	selection?: CodeTabSelection,
+	selection?: EditorTextSelection,
 ): Promise<void> {
 	const resourcePanel = editor.resourcePanel;
 	try {
@@ -111,26 +109,6 @@ export async function restoreCodeTabForResource(
 			return;
 		case 'aem':
 			await retainAemCodeTab(storage, sources, resource);
-			return;
-		default:
-			throw new Error(`Unsupported code tab resource type '${resource.source.type}' for '${resource.path}'.`);
-	}
-}
-
-export async function openCodeTabForResource(
-	storage: KeyValueStorage,
-	editor: CartEditor,
-	sources: RuntimeSourceState,
-	resource: RuntimeResource,
-	selection?: CodeTabSelection,
-): Promise<void> {
-	const resourcePanel = editor.resourcePanel;
-	switch (resource.source.type) {
-		case 'lua':
-			openLuaCodeTab(resourcePanel, sources, resource, selection);
-			return;
-		case 'aem':
-			await openAemCodeTab(storage, editor, sources, resource, selection);
 			return;
 		default:
 			throw new Error(`Unsupported code tab resource type '${resource.source.type}' for '${resource.path}'.`);

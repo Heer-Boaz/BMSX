@@ -13,8 +13,7 @@ import { editorTabGroup } from '../../ide/workbench/ui/tab/group_model';
 import type { RuntimeResource } from '../../ide/common/resource';
 import type { RuntimeSourceState } from '../../ide/runtime/sources';
 import type { ResourcePanelController } from '../../ide/workbench/contrib/resources/panel/controller';
-import type { CartEditor } from '../../ide/cart_editor';
-import type { KeyValueStorage } from '../../ide/workspace/key_value_storage';
+import { ResourceEditorResolver } from '../../ide/workbench/services/editor/resource_editor_resolver';
 
 function entry(path: string, row: number): NavigationHistoryEntry {
 	return {
@@ -65,10 +64,13 @@ test('history navigation awaits resource activation with its retained cursor loc
 		resourceByIdentity: new Map([[`${target.domain}\0${target.path}`, resource]]),
 	} as RuntimeSourceState;
 	const navigation = new EditorNavigationController(
-		{} as CartEditor,
 		sources,
 		{} as ResourcePanelController,
-		{} as KeyValueStorage,
+		new ResourceEditorResolver([{
+			id: 'test.editor',
+			selector: { kind: 'all' },
+			open: () => {},
+		}]),
 	);
 	let finishOpen: () => void;
 	const openGate = new Promise<void>(resolve => {
