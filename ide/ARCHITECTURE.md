@@ -104,10 +104,20 @@ Scene authoring uses the same document contract, but its runtime object and
 viewport owners are deliberately not inferred from the behavior projection.
 The accepted cross-owner design and prerequisites are documented in
 [`../docs/studio_scene_authoring_design.md`](../docs/studio_scene_authoring_design.md).
-In particular, `IDE-LUA-SYNTAX-EDIT-01` must put literal/table transformations
-at the generic Lua-language boundary before a scene contribution may issue
-them. That layer returns `EditorTextEdit`s only; it does not apply edits, know
-cartlib types, or become a second working-copy owner.
+The first writable primitive is deliberately narrower. Existing signed numeric
+literals can be replaced exactly from their syntax range at the generic Lua-
+language boundary. That layer returns an `EditorTextEdit` only; it does not
+apply edits, know cartlib types, or become a second working-copy owner. This is
+enough for the first transform edit without pretending that the current syntax
+tree is already full-fidelity.
+
+Table insertion, removal and reordering are a separate language-architecture
+slice. The current parser consumes separators and the lexer discards whitespace
+and comments, so AST field ranges cannot own those edits without guessing over
+raw source. Before those operations exist, the Lua syntax owner must explicitly
+model token/trivia ownership and its compiler, semantic, formatter, memory and
+incremental-analysis costs. Scene, BT and FSM contributions must not each grow
+their own comma/comment scanners in the meantime.
 
 The first scene source adapter edits the registered structured Lua definition
 and uses the ordinary save plus Hot Resume path. Registration changes the

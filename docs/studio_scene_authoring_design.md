@@ -260,12 +260,17 @@ een expliciete correspondence- en mutatiegrens; de host leest niet
    definition/instantiationowner zonder wijziging aan `World` of `prefab`.
 2. **`NEMESIS-ROOT-SCENE-01`** — maak de vier bestaande rootspawns de eerste
    productieconsument en bewijs de echte cartflow.
-3. **`IDE-SCENE-SOURCE-ADAPTER-01`** — bouw op die bestaande canonical source
-   een source-preserving visual projectie plus één echte edit. Geen
+3. **`IDE-LUA-NUMERIC-LITERAL-EDIT-01`** — bewijs eerst één generieke minimale
+   language-owned edit voor bestaande signed numeric literals. De huidige AST
+   volstaat daarvoor; table insertion/removal/reorder wacht op een afzonderlijk
+   full-fidelity token-/trivia-ontwerp en wordt niet met feature-local
+   sourcetekstlogica nagebootst.
+4. **`IDE-SCENE-SOURCE-ADAPTER-01`** — bouw op die bestaande canonical source
+   een source-preserving visual projectie plus één echte transformedit. Geen
    runtimewijziging als de bestaande consumer de edit al kan laden.
-4. Meet de echte grote placementbronnen afzonderlijk voordat daar `rodata` of
+5. Meet de echte grote placementbronnen afzonderlijk voordat daar `rodata` of
    een ander sceneprogramma voor wordt gekozen.
-5. Retained reconcile, picking en directe live preview volgen pas wanneer de
+6. Retained reconcile, picking en directe live preview volgen pas wanneer de
    source-editor een concrete mutatie van een levende instance vereist.
 
 ## No-go's
