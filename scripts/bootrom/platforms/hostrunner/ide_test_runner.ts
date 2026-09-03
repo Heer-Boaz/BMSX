@@ -88,6 +88,8 @@ export async function runIdeTest(options: IdeTestRunnerOptions): Promise<void> {
 		capture: (description: string) => options.capture.captureNow(description, `ide:${label}`),
 		hotResume: () => options.ide.hotResumeCore(),
 		performHotResume: () => options.ide.performHotResume(),
+		captureRuntimeSaveState: () => options.ide.captureRuntimeSaveState(),
+		restoreRuntimeSaveState: (state: Uint8Array) => options.ide.restoreRuntimeSaveState(state),
 		toggleBreakpoint: (path: string, line: number) => options.ide.toggleLuaBreakpoint(path, line),
 		debuggerStopped: () => options.ide.isDebuggerStopped(),
 		reboot: () => options.ide.reboot(),

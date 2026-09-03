@@ -137,6 +137,7 @@ function __bmsx_host_test.ready()
 end
 
 function __bmsx_host_test.setup()
+	local definition<const> = prefab.definition(definition_id)
 	local old_options<const> = {
 		label = 'old',
 		pos = { x = 1, y = 2, z = 3 },
@@ -147,7 +148,11 @@ function __bmsx_host_test.setup()
 		events[index] = nil
 	end
 
-	local stale<const>, stale_definition<const> = world:_allocate_spawn_object(definition_id, nil)
+	local stale<const> = world:_allocate_spawn_object(
+		definition_id,
+		definition,
+		nil
+	)
 	local stale_input<const> = {
 		label = 'stale',
 		pos = { x = 10, y = 11, z = 12 },
@@ -157,14 +162,26 @@ function __bmsx_host_test.setup()
 	local stale_plan<const> = new_plan(1, 'complete:stale')
 	stale_plan.additions[1] = {
 		object = stale,
-		definition = stale_definition,
+		definition = definition,
 		input = stale_input,
 	}
 	stale_plan.completed_object = stale
 
-	local right<const>, right_definition<const> = world:_allocate_spawn_object(definition_id, nil)
-	local replacement<const>, replacement_definition<const> = world:_allocate_spawn_object(definition_id, nil)
-	local followup<const>, followup_definition<const> = world:_allocate_spawn_object(definition_id, nil)
+	local right<const> = world:_allocate_spawn_object(
+		definition_id,
+		definition,
+		nil
+	)
+	local replacement<const> = world:_allocate_spawn_object(
+		definition_id,
+		definition,
+		nil
+	)
+	local followup<const> = world:_allocate_spawn_object(
+		definition_id,
+		definition,
+		nil
+	)
 	local nested_options<const> = {
 		label = 'nested',
 		pos = { x = 70, y = 71, z = 72 },
@@ -179,7 +196,7 @@ function __bmsx_host_test.setup()
 	local followup_plan<const> = new_plan(1, 'complete:followup')
 	followup_plan.additions[1] = {
 		object = followup,
-		definition = followup_definition,
+		definition = definition,
 		input = followup_input,
 	}
 	followup_plan.completed_object = followup
@@ -207,7 +224,7 @@ function __bmsx_host_test.setup()
 	local right_plan<const> = new_plan(1, 'complete:right')
 	right_plan.additions[1] = {
 		object = right,
-		definition = right_definition,
+		definition = definition,
 		input = right_input,
 	}
 	right_plan.completed_object = right
@@ -216,7 +233,7 @@ function __bmsx_host_test.setup()
 	replacement_plan.removals[1] = old
 	replacement_plan.additions[1] = {
 		object = replacement,
-		definition = replacement_definition,
+		definition = definition,
 		input = replacement_input,
 	}
 	replacement_plan.mutations[1] = {
@@ -270,7 +287,11 @@ function __bmsx_host_test.setup()
 		events[index] = nil
 	end
 
-	local direct<const>, direct_definition<const> = world:_allocate_spawn_object(definition_id, nil)
+	local direct<const> = world:_allocate_spawn_object(
+		definition_id,
+		definition,
+		nil
+	)
 	local direct_input<const> = {
 		label = 'direct',
 		pos = { x = 50, y = 51, z = 52 },
@@ -280,7 +301,7 @@ function __bmsx_host_test.setup()
 	local direct_plan<const> = new_plan(1, 'complete:direct')
 	direct_plan.additions[1] = {
 		object = direct,
-		definition = direct_definition,
+		definition = definition,
 		input = direct_input,
 	}
 	direct_plan.completed_object = direct
@@ -289,7 +310,11 @@ function __bmsx_host_test.setup()
 		'direct structural submission did not synchronously use the World barrier operation')
 	direct:mark_for_disposal()
 
-	local deferred<const>, deferred_definition<const> = world:_allocate_spawn_object(definition_id, nil)
+	local deferred<const> = world:_allocate_spawn_object(
+		definition_id,
+		definition,
+		nil
+	)
 	local deferred_input<const> = {
 		label = 'deferred',
 		pos = { x = 60, y = 61, z = 62 },
@@ -299,7 +324,7 @@ function __bmsx_host_test.setup()
 	local deferred_plan<const> = new_plan(1, 'complete:deferred')
 	deferred_plan.additions[1] = {
 		object = deferred,
-		definition = deferred_definition,
+		definition = definition,
 		input = deferred_input,
 	}
 	deferred_plan.completed_object = deferred

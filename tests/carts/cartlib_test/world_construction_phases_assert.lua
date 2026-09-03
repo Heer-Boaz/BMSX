@@ -248,8 +248,17 @@ function __bmsx_host_test.setup()
 		'canceled deferred spawn did not preserve terminal lifecycle order')
 
 	world:_open_mutation_barrier()
-	local left<const>, left_definition<const> = world:_allocate_spawn_object(definition_id, nil)
-	local right<const>, right_definition<const> = world:_allocate_spawn_object(definition_id, nil)
+	local definition<const> = prefab.definition(definition_id)
+	local left<const> = world:_allocate_spawn_object(
+		definition_id,
+		definition,
+		nil
+	)
+	local right<const> = world:_allocate_spawn_object(
+		definition_id,
+		definition,
+		nil
+	)
 	local ordered_members<const> = {
 		{ member_id = 'left', object = left },
 		{ member_id = 'right', object = right },
@@ -292,10 +301,10 @@ function __bmsx_host_test.setup()
 	right_input.expected_construction_input = right_input
 	world:_apply_spawn_input(left, left_input)
 	world:_apply_spawn_input(right, right_input)
-	world:_initialize_spawn_object(left, left_definition)
-	world:_initialize_spawn_object(right, right_definition)
-	world:_construct_spawn_object(left, left_definition, left_input)
-	world:_construct_spawn_object(right, right_definition, right_input)
+	world:_initialize_spawn_object(left, definition)
+	world:_initialize_spawn_object(right, definition)
+	world:_construct_spawn_object(left, definition, left_input)
+	world:_construct_spawn_object(right, definition, right_input)
 	world:_queue_spawn_admission(left)
 	world:_queue_spawn_admission(right)
 	world:_start_spawn_lifecycle(left, left_input.pos)

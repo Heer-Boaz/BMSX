@@ -1,7 +1,7 @@
 # Studio scene-authoringarchitectuur
 
-Status: **architectuurcontract; geen scene-implementatie vóór de hieronder
-genoemde owner-slices**
+Status: **architectuurcontract; construction-, structural-batch- en scene-
+definitionowners zijn geïmplementeerd, de volgende owner-slices blijven open**
 
 Dit document ontwerpt scene-authoring vóór UI of runtimecode. Het vervangt de
 verworpen aanname dat Studio de cartlib-`World` alleen mag observeren. Studio
@@ -100,8 +100,8 @@ BMSX kopieert deze producten niet letterlijk. De afgeleide regels zijn:
 | `PrefabDefinition` | `cartlib/world/prefab.lua` | class, base initialization, defaults, component factories en concrete authoring bindings | scene, runtimeobject of editor-schema |
 | `SceneBlueprint` | cart-Lua bij `scene_library.register` | authored ordered literal records onder één scene-id | runtimeobject, YAML-resource of host graph |
 | `SceneDefinition` | `cartlib/world/scene_library.lua` | cold gematerialiseerde ordered velden/propertybindings, revision en member-id-index | `Space`, source-AST of generic propertybag |
-| `SceneInstance` | `cartlib/world/scene_instance.lua` | één loaded definitie, ordered membercorrespondence en applied/pending revision | tweede `World` of save-state |
-| `World` | `cartlib/world/world.lua` | object construction/admission/disposal en structural mutation barriers | authored scene of editortransaction |
+| `SceneInstance` | `cartlib/world/scene_instance.lua`, retained door `World` | één loaded definitie, ordered membercorrespondence en applied/pending revision | tweede `World` of save-state |
+| `World` | `cartlib/world/world.lua` | loaded-instance-index, object construction/admission/disposal en structural mutation barriers | authored scene of editortransaction |
 | `Space` | `cartlib/world/space.lua` | scheduling/renderpartition voor actieve retained views | level, scene of transformhierarchie |
 | `Registry` | `cartlib/registry.lua` | cart-wide terminale runtime-identiteit en keyindices | authored member-id, sourceprojectie of scene membership |
 | scene sourceprojection | Studio workbench-contribution | syntaxtree-ranges en retained rows voor één `EditorTextModel.version` | live gueststate |
@@ -235,8 +235,11 @@ ontworpen zolang een echte game dat niet nodig heeft.
 
 ## Load, unload en identiteit
 
-`scene_library` bezit één definitionmap en één loaded-instance-map voor de
-modulebrede cart-`World`:
+Zoals Defold zijn `Collection` de runtime-instances en hun identitymap laat
+bezitten terwijl resources de prototypes leveren, bezit `scene_library` alleen
+de cold definitioncatalogus. De modulebrede cart-`World` bezit de loaded-
+instance-map en -volgorde. De publieke library-operaties richten zich op die
+ene World zonder dezelfde runtimestaat nogmaals te indexeren:
 
 - `register(scene_id, blueprint)` produceert één nieuwe cold
   `SceneDefinition`-revision en biedt die aan een eventueel loaded instance aan;
@@ -261,7 +264,7 @@ modulebrede cart-`World`:
   directe cartlib pixelbounds, niet een host DTO.
 
 Scene membership is gewone cartlib-runtimeownership, geen Studio/debugmetadata.
-`World` bewaart daarom package-intern de loaded `SceneInstance`s die aan hem
+`World` bewaart package-intern de loaded `SceneInstance`s die aan hem
 toebehoren, en een admitted authored object bewaart rechtstreeks zijn ene
 package-interne instance/membercorrespondence. De terminale World-disposalgrens
 meldt disposal aan die concrete instance; er komt geen algemene lifecycle-
@@ -460,8 +463,8 @@ eerst oude/vervangen members verwijderen, daarna voor alle additions input,
 initialize, construction en lifecycle uitvoeren, vervolgens nieuwe members in
 batch- en authored order publiceren en retained setters/references toepassen.
 Daarna draint World de normale mutationqueues volledig en roept pas als laatste
-de plancompletions aan. Een toekomstige `SceneInstance` publiceert uitsluitend
-op die completion haar nieuwe membercorrespondence en revision. Geen systemview
+de plancompletions aan. `SceneInstance` publiceert uitsluitend op die completion
+haar nieuwe membercorrespondence en revision. Geen systemview
 kan een half toegepaste scene-batch observeren.
 
 Het concrete World-plan is geen callbackcommandbuffer. Zoals Flecs een
@@ -469,8 +472,8 @@ Het concrete World-plan is geen callbackcommandbuffer. Zoals Flecs een
 plan dense arrays van records: een removal is het object zelf, een addition
 bevat object, concrete prefabdefinition en constructioninput, en een retained
 mutation heeft een numerieke World-operation plus uitsluitend haar eigen
-velden (`object/x/y/z`, `object/space_id` of
-`object/concrete-setter/value`). Dit vermijdt zowel parallelle
+velden (`object/x/y/z` of `object/space_id`). De propertyslice voegt pas een
+concrete setteroperatie toe wanneer die owner werkelijk bestaat. Dit vermijdt zowel parallelle
 `value_1/value_2/value_3`-arrays en een willekeurige ariteitsgrens als een
 closure per command. De modulevaste dispatch hoort bij de World-batchowner;
 een plan bevat geen operation-kindstring, fieldnaamlookup of undo-closure. De

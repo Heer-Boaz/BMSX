@@ -16,6 +16,8 @@ import {
 } from '../runtime/sources';
 import type { RuntimeIdeState } from '../workbench/state';
 import type { StackTraceFrame } from '../runtime/stack_trace';
+import { decodeRuntimeSaveState, encodeRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state/codec';
+import { applyRuntimeSaveState, captureRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state';
 import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
 import type { EditorCommandId } from '../common/commands';
 import type { LuaSignatureHelp } from '../../toolchain/ts/lua/semantic/signature_help';
@@ -60,6 +62,8 @@ export type HeadlessIdeHarness = {
 	hotResumeCore(): void;
 	/** Full IDE hot-resume action, completed after its queued rebuild settles. */
 	performHotResume(): Promise<void>;
+	captureRuntimeSaveState(): Uint8Array;
+	restoreRuntimeSaveState(state: Uint8Array): void;
 	toggleLuaBreakpoint(path: string, line: number): void;
 	isDebuggerStopped(): boolean;
 	reboot(): Promise<void>;
@@ -157,6 +161,17 @@ export function createHeadlessIdeHarness(
 				storage,
 				logOutput,
 			),
+		captureRuntimeSaveState: () => encodeRuntimeSaveState(captureRuntimeSaveState(runtime)),
+		restoreRuntimeSaveState: (state) => {
+			applyRuntimeSaveState(
+				runtime,
+				decodeRuntimeSaveState(
+					state,
+					runtime.machine.memory.ramByteCount(),
+					runtime.machine.gxGpu.readVramSnapshotBytes().byteLength,
+				),
+			);
+		},
 		toggleLuaBreakpoint: (path: string, line: number) => {
 			const resource = resolveRuntimeResourceForContext(
 				ide.sources,

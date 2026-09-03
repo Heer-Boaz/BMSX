@@ -110,6 +110,8 @@ function world_class.new()
 	self._objects = {}
 	self._spaces = {}
 	self._space_order = {}
+	self._scene_instances_by_id = {}
+	self._scene_instances = {}
 	self._pending_disposals = {}
 	self._pending_disposal_count = 0
 	self._flushing_disposals = false
@@ -639,8 +641,7 @@ end
 -- World construction is phased so a retained owner can allocate every object
 -- identity before resolving peer references. These package-internal phases are
 -- also the only path used by ordinary single-object spawn.
-local allocate_spawn_object<const> = function(self, definition_id, requested_id)
-	local definition<const> = prefab.definition(definition_id)
+local allocate_spawn_object<const> = function(self, definition_id, definition, requested_id)
 	local obj<const> = {}
 	for key, value in pairs(definition.defaults) do
 		if key ~= 'pos' then
@@ -653,7 +654,7 @@ local allocate_spawn_object<const> = function(self, definition_id, requested_id)
 	obj.definition_id = definition_id
 	obj.id = obj.id or registry:next_id()
 	setmetatable(obj, definition.instance_metatable)
-	return obj, definition
+	return obj
 end
 world_class._allocate_spawn_object = allocate_spawn_object
 
@@ -763,7 +764,8 @@ end
 -- views publish it. During a tick group that publication or cancellation
 -- happens at the group barrier.
 function world_class:spawn(definition_id, options)
-	local obj<const>, definition<const> = allocate_spawn_object(self, definition_id, options.id)
+	local definition<const> = prefab.definition(definition_id)
+	local obj<const> = allocate_spawn_object(self, definition_id, definition, options.id)
 	apply_spawn_input(self, obj, options)
 	initialize_spawn_object(self, obj, definition)
 	construct_spawn_object(self, obj, definition, options)
@@ -800,10 +802,45 @@ function world_class:_commit_disposal(obj)
 		obj._space = nil
 		self:_remove_world_object(obj)
 	end
-
 	obj:ondespawn()
 	obj:_dispose()
+	local instance<const> = obj._scene_instance
+	if instance ~= nil then
+		instance:_object_disposed(obj)
+	end
 	obj.world = nil
+end
+
+-- Scene definitions remain resource state in scene_library. World retains the
+-- instances created by that library because it owns their object lifecycle.
+function world_class:_add_scene_instance(instance)
+	local scene_id<const> = instance.id
+	if self._scene_instances_by_id[scene_id] ~= nil then
+		error('scene "' .. scene_id .. '" is already loaded')
+	end
+	local instances<const> = self._scene_instances
+	local index<const> = #instances + 1
+	instances[index] = instance
+	instance._world_scene_index = index
+	self._scene_instances_by_id[scene_id] = instance
+end
+
+function world_class:_scene_instance(scene_id)
+	return self._scene_instances_by_id[scene_id]
+end
+
+function world_class:_remove_scene_instance(instance)
+	local instances<const> = self._scene_instances
+	local index<const> = instance._world_scene_index
+	local count<const> = #instances
+	for moved_index = index + 1, count do
+		local moved<const> = instances[moved_index]
+		instances[moved_index - 1] = moved
+		moved._world_scene_index = moved_index - 1
+	end
+	instances[count] = nil
+	self._scene_instances_by_id[instance.id] = nil
+	instance._world_scene_index = nil
 end
 
 -- world:mark_for_disposal(obj)
@@ -1032,6 +1069,24 @@ function world_class:unload_space(space_id, on_unloaded, context)
 	self._pending_mutation_mask = self._pending_mutation_mask | mutation_space_unload
 end
 
+local begin_scene_clear<const> = function(self)
+	local instances<const> = self._scene_instances
+	for index = 1, #instances do
+		instances[index]:_begin_world_clear()
+	end
+end
+
+local complete_scene_clear<const> = function(self)
+	local instances<const> = self._scene_instances
+	local instances_by_id<const> = self._scene_instances_by_id
+	for index = 1, #instances do
+		local instance<const> = instances[index]
+		instance:_world_cleared()
+		instances_by_id[instance.id] = nil
+		instances[index] = nil
+	end
+end
+
 function world_class:_commit_clear()
 	local unload_callbacks<const> = self._pending_space_unload_callbacks
 	local unload_contexts<const> = self._pending_space_unload_contexts
@@ -1047,11 +1102,13 @@ function world_class:_commit_clear()
 	while #objects > 0 do
 		self:mark_for_disposal(objects[#objects])
 	end
+	complete_scene_clear(self)
 	self._system_manager:reset()
 	self:set_space(self._initial_space_id)
 end
 
 function world_class:clear()
+	begin_scene_clear(self)
 	if self._mutation_barrier_open or self._flushing_disposals then
 		local objects<const> = self._objects
 		for i = #objects, 1, -1 do
