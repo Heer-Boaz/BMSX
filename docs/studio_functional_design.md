@@ -165,6 +165,24 @@ periodieke lane/deadline zijn gecommitted. De host vertaalt dit niet naar
 `added`, `removed` of een boolean die de geneste/concurrente retainsemantiek
 verliest.
 
+### Periodieke uitvoering blijft een eigen completion-grens
+
+Unreal registreert de periodieke timer afzonderlijk van effect-admission
+([gepinde productiebron](https://github.com/folgerwang/UnrealEngine/blob/99a530d4ccbe6bea1e8f49df20acfeb294006962/Engine/Plugins/Runtime/GameplayAbilities/Source/GameplayAbilities/Private/GameplayEffect.cpp#L2941-L2954))
+en publiceert de periodic-execute delegates pas nadat de concrete effect-
+executie is teruggekeerd
+([gepinde productiebron](https://github.com/folgerwang/UnrealEngine/blob/99a530d4ccbe6bea1e8f49df20acfeb294006962/Engine/Plugins/Runtime/GameplayAbilities/Source/GameplayAbilities/Private/GameplayEffect.cpp#L3168-L3199)).
+
+**Gevolg voor BMSX:** `tick_periodic()` bezit zowel de due-check als de
+deadline-advance en de concrete `execute_effect()`-aanroep. Een
+`periodic_execute`-feit ontstaat daarom alleen nadat die aanroep is voltooid en
+voordat de tick-owner de eventueel gedeactiveerde lane verwijdert. Het draagt
+de rauwe scheduled gameplay-deadline die deze uitvoering bediende; de recorder
+blijft daarnaast eigenaar van het rauwe `SYS_TIME_MS`-woord waarop completion
+werd gepubliceerd. Een tijdens de handler genest trigger- of activityfeit staat
+dus vóór de completion in dezelfde componentstream. De host reconstrueert geen
+periodieke uitvoering uit projectielen, events of `next_execution_ms`.
+
 ## Echte BMSX-representaties
 
 Authoring, gecompileerde uitvoering en observatie zijn niet dezelfde
@@ -528,7 +546,10 @@ component causaal kunnen nestelen, delen zij één producer-owned volgorde; twee
 losse buffers die de host op millisecondetijd probeert te mergen zijn ongeldig.
 Cooldown commitment en periodieke uitvoering blijven buiten deze slice.
 BT-occurrence-identiteit is nog niet sterk genoeg en wordt niet via een van deze
-kanalen gegeneraliseerd.
+kanalen gegeneraliseerd. De vierde gekozen categorie is de concrete voltooide
+periodieke uitvoering van dezelfde ActionEffect-component. Zij hergebruikt de
+bestaande factstream en verandert trigger-admission noch activity in een
+periodiek feit.
 
 ## Observabilitycontract
 
@@ -768,6 +789,36 @@ Niet in deze slice: grant/revoke/rebind, cooldowncommit, periodic-executionfact,
 effectpayloads, sourcemapping of een algemene lifecycle/eventfacade. Gewone
 release-, debug- en Hot Resume-bytecode bevatten geen ActionEffect-
 tracekanaal, trace-only outcomeconstant, sinkdispatch of recorderstate.
+
+### Vierde gekozen producer: voltooide ActionEffect-periodiek
+
+`STUDIO-ACTIONEFFECT-PERIODIC-TRACE-01` breidt exact dezelfde geselecteerde
+componentstream uit met `periodic_execute`. In `tick_periodic()` wordt eerst de
+deadline voor de volgende periode gecommitted. Daarna voert de component de
+effecthandler en het eventuele effectevent uit. Alleen wanneer die aanroep
+terugkeert, publiceert de component de completion met effect-id en de rauwe
+scheduled gameplay-deadline die zojuist due was. De bestaande daaropvolgende
+active-countcontrole en lane-removal blijven ongewijzigd.
+
+De vaste recordvorm blijft `[sequence, SYS_TIME_MS, kind, effect_id, value]`.
+Voor `periodic_execute` is `value` de scheduled gameplay-deadline als direct
+integerwoord. Er komt geen lokale numerieke kindcode, labeltabel, tweede buffer,
+host-merge of event-/projectielinferentie. Omdat completion na de handler wordt
+gepubliceerd, staan geneste trigger/activityfacts en een eventuele deactivation
+vóór de periodic completion. Dat is completion-order; de UI noemt het niet
+stilzwijgend start- of dispatch-order.
+
+De echte Nemesis-inputflow is de productworkflow: één fire-down activeert en
+triggert `fire_salvo`, het vastgehouden inputeffect voert na de authored vijftien
+gameplay-updates één periodieke salvo uit en fire-up deactiveert het effect. De
+Scenario-resultaatstream moet precies die vier categorieën tonen, terwijl de
+bestaande gameplayassertie het werkelijke projectielresultaat en de cadence
+blijft bewijzen.
+
+Niet in deze slice: cooldowncommit, grant/revoke/rebind, periodieke payloads,
+handler-events, een algemeen schedulertrace of BT-observability. Gewone release-,
+debug- en Hot Resume-bytecode blijven vrij van het kanaal, de
+`periodic_execute`-constant en sinkdispatch.
 
 ### Pauze en semantic stepping
 
@@ -1041,7 +1092,7 @@ staan in [`open_architecture_slices.md`](open_architecture_slices.md).
 De eerste A + C-slices vereisen geen keuze over onderstaande onderwerpen en
 bouwen er daarom ook geen abstractie voor:
 
-1. Welke semantic facts na FSM-transitions en ActionEffect-triggeradmission een
+1. Welke semantic facts na de geselecteerde FSM- en ActionEffectcategorieen een
    concrete volgende recorded observabilityworkflow nodig heeft.
 2. Welke echte produceridentiteit BT-occurrences aan runtimefeiten koppelt.
 3. Of visual authoring later een constrained tekstformaat (D) of structured
