@@ -8,6 +8,7 @@ import { drawCursor } from '../caret';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import { editorCaretState } from '../../ui/view/caret/state';
 import { editorViewState } from '../../ui/view/state';
+import { activeCodeEditor } from '../../ui/code_editor_state';
 import type { CodeAreaViewport } from '../../ui/code/area_viewport';
 
 const verticalTrackScratch: RectBounds = {
@@ -64,8 +65,8 @@ export function finalizeCodeAreaRender(
 	verticalTrackScratch.right = verticalTrackLeft + constants.SCROLLBAR_WIDTH;
 	verticalTrackScratch.bottom = viewport.contentBottom;
 
-	editorViewState.scrollbars.codeVertical.layout(verticalTrackScratch, viewport.visualCount, viewport.rows, editorViewState.scrollRow);
-	editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(editorViewState.scrollbars.codeVertical.getScroll(), viewport.visualCount, viewport.rows);
+	editorViewState.scrollbars.codeVertical.layout(verticalTrackScratch, viewport.visualCount, viewport.rows, activeCodeEditor.view.scrollRow);
+	activeCodeEditor.view.scrollRow = editorViewState.layout.clampVisualScroll(editorViewState.scrollbars.codeVertical.getScroll(), viewport.visualCount, viewport.rows);
 	editorViewState.codeVerticalScrollbarVisible = editorViewState.scrollbars.codeVertical.isVisible();
 
 	if (!viewport.wrapEnabled) {
@@ -74,11 +75,11 @@ export function finalizeCodeAreaRender(
 		horizontalTrackScratch.right = viewport.trackRight;
 		horizontalTrackScratch.bottom = viewport.contentBottom + constants.SCROLLBAR_WIDTH;
 		const maxColumns = viewport.columns + viewport.maxScrollColumn;
-		editorViewState.scrollbars.codeHorizontal.layout(horizontalTrackScratch, maxColumns, viewport.columns, editorViewState.scrollColumn);
-		editorViewState.scrollColumn = editorViewState.layout.clampHorizontalScroll(editorViewState.scrollbars.codeHorizontal.getScroll(), viewport.maxScrollColumn);
+		editorViewState.scrollbars.codeHorizontal.layout(horizontalTrackScratch, maxColumns, viewport.columns, activeCodeEditor.view.scrollColumn);
+		activeCodeEditor.view.scrollColumn = editorViewState.layout.clampHorizontalScroll(editorViewState.scrollbars.codeHorizontal.getScroll(), viewport.maxScrollColumn);
 		editorViewState.codeHorizontalScrollbarVisible = editorViewState.scrollbars.codeHorizontal.isVisible();
 	} else {
-		editorViewState.scrollColumn = 0;
+		activeCodeEditor.view.scrollColumn = 0;
 		editorViewState.codeHorizontalScrollbarVisible = false;
 	}
 

@@ -6,8 +6,6 @@ import { CodeLayout } from '../code/layout';
 import { EditorFont } from './font';
 
 export type EditorViewState = {
-	scrollRow: number;
-	scrollColumn: number;
 	fontVariant: FontVariant;
 	viewportWidth: number;
 	viewportHeight: number;
@@ -40,8 +38,6 @@ export type EditorViewState = {
 };
 
 export const editorViewState: EditorViewState = {
-	scrollRow: 0,
-	scrollColumn: 0,
 	fontVariant: undefined!,
 	viewportWidth: 0,
 	viewportHeight: 0,

@@ -9,7 +9,7 @@ import type { PointerSnapshot } from '../../../common/models';
 import * as TextEditing from '../../../editor/editing/text_editing_and_selection';
 import * as constants from '../../../common/constants';
 import { editorPointerState, stopPointerSelectionAndResetClicks } from '../state';
-import { editorDocumentState } from '../../../editor/editing/document_state';
+import { activeCodeEditor } from '../../../editor/ui/code_editor_state';
 import type { CartEditor } from '../../../cart_editor';
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 
@@ -45,7 +45,7 @@ export function handleCodeAreaPrimaryPressPointer(
 		editorPointerState.pointerSelecting = false;
 		return false;
 	}
-	setSingleCursorSelectionAnchor(editorDocumentState, targetRow, targetColumn);
+	setSingleCursorSelectionAnchor(activeCodeEditor.view, targetRow, targetColumn);
 	setCursorPosition(targetRow, targetColumn);
 	editorPointerState.pointerSelecting = true;
 	return false;

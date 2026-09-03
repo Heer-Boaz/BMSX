@@ -6,7 +6,8 @@ import type {
 import { getOrCreateSemanticProject } from '../../../editor/contrib/intellisense/semantic/workspace/state';
 import { getTextSnapshot } from '../../../editor/text/source_text';
 import type { RuntimeSourceState } from '../../../runtime/sources';
-import { getCodeTabContexts } from '../../ui/code_tab/contexts';
+import { editorTextModelService } from '../../../editor/model/model_service';
+import type { EditorTextModel } from '../../../editor/model/text_model';
 import type {
 	BehaviorKind,
 	BehaviorRegistrationSource,
@@ -29,7 +30,7 @@ export class BehaviorRegistrationIndex {
 		BehaviorRegistrationGeneration | null,
 		BehaviorRegistrationGeneration | null,
 	] = [null, null];
-	private readonly documentVersions = new Map<string, number>();
+	private readonly documentVersions = new WeakMap<EditorTextModel, number>();
 
 	public constructor(private readonly sources: RuntimeSourceState) {}
 
@@ -56,21 +57,21 @@ export class BehaviorRegistrationIndex {
 		project: EditorLuaSemanticProject,
 	): void {
 		let changedDocuments: SemanticDocumentInput[] | null = null;
-		for (const context of getCodeTabContexts()) {
-			if (context.mode !== 'lua' || context.resource.domain !== executionDomain) {
+		for (const model of editorTextModelService.models) {
+			if (model.mode !== 'lua' || model.resource.domain !== executionDomain) {
 				continue;
 			}
-			const version = context.buffer.version;
-			if (this.documentVersions.get(context.id) === version) {
+			const version = model.version;
+			if (this.documentVersions.get(model) === version) {
 				continue;
 			}
-			this.documentVersions.set(context.id, version);
+			this.documentVersions.set(model, version);
 			if (changedDocuments === null) {
 				changedDocuments = [];
 			}
 			changedDocuments.push({
-				path: context.resource.path,
-				source: getTextSnapshot(context.buffer),
+				path: model.resource.path,
+				source: getTextSnapshot(model.buffer),
 			});
 		}
 		if (changedDocuments !== null) {

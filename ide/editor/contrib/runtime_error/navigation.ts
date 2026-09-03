@@ -1,5 +1,5 @@
 import type { RuntimeErrorOverlay } from './model';
-import { editorDocumentState } from '../../editing/document_state';
+import { activeCodeEditor } from '../../ui/code_editor_state';
 import { editorViewState } from '../../ui/view/state';
 import { runtimeErrorState } from './state';
 
@@ -14,7 +14,7 @@ export function setActiveRuntimeErrorOverlay(overlay: RuntimeErrorOverlay): void
 export function setExecutionStopHighlight(row: number): void {
 	let nextRow = row;
 	if (nextRow !== null) {
-		nextRow = editorViewState.layout.clampBufferRow(editorDocumentState.buffer, nextRow);
+		nextRow = editorViewState.layout.clampBufferRow(activeCodeEditor.model.buffer, nextRow);
 	}
 	runtimeErrorState.executionStopRow = nextRow;
 }

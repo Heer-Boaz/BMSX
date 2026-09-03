@@ -4,8 +4,7 @@ import type { RuntimeFaultState } from '../../../runtime/fault_state';
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import type { LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
 import type { LuaHover } from '../../../../toolchain/ts/lua/semantic/hover';
-import type { EditorDocumentContext } from '../../editing/document_state';
-import { editorDocumentState } from '../../editing/document_state';
+import type { CodeEditorContext } from '../../ui/code_editor_state';
 import { writeWrappedOverlayLine } from '../../common/text/layout';
 import { editorViewState } from '../../ui/view/state';
 import {
@@ -51,16 +50,16 @@ export function updateHoverTooltip(
 	bridge: RuntimeLuaTooling,
 	fault: RuntimeFaultState,
 	runtime: Runtime,
-	context: EditorDocumentContext,
+	context: CodeEditorContext,
 	row: number,
 	column: number,
 ): void {
-	if (context.mode !== 'lua') {
+	if (context.model.mode !== 'lua') {
 		clearHoverTooltip();
 		return;
 	}
-	const path = context.resource.path;
-	const textVersion = editorDocumentState.buffer.version;
+	const path = context.model.resource.path;
+	const textVersion = context.model.version;
 	const wrapWidth = Math.max(
 		editorViewState.spaceAdvance,
 		editorViewState.viewportWidth
@@ -72,7 +71,7 @@ export function updateHoverTooltip(
 	const executionFrameDepth = fault.faultSnapshot === null
 		? cpu.getFrameDepth()
 		: fault.lastCpuFaultSnapshot.length;
-	const semanticProject = getOrCreateSemanticProject(context.resource.domain);
+	const semanticProject = getOrCreateSemanticProject(context.model.resource.domain);
 	semanticProject.synchronizeRuntimeSources(bridge.sources);
 	const semanticSnapshot = semanticProject.getSnapshot();
 	if (queryState.valid
@@ -91,8 +90,8 @@ export function updateHoverTooltip(
 
 	const snapshot = buildEditorSemanticSnapshot(
 		bridge,
-		context.resource,
-		editorDocumentState.buffer,
+		context.model.resource,
+		context.model.buffer,
 	);
 	const frontend = createEditorSemanticFrontend(bridge, snapshot);
 	const semanticHover = frontend.provideHover(path, row + 1, column + 1);
@@ -104,7 +103,7 @@ export function updateHoverTooltip(
 			fault,
 			runtime,
 			evaluatableExpression.expression,
-			context.resource.domain,
+			context.model.resource.domain,
 			path,
 			evaluatableExpression.range.start.line,
 			evaluatableExpression.range.start.column,

@@ -1,4 +1,4 @@
-import type { MutableTextPosition, TextBuffer } from './text_buffer';
+import type { MutableTextBuffer, MutableTextPosition } from './text_buffer';
 
 function assert(condition: unknown, message: string): asserts condition {
 	if (!condition) {
@@ -121,7 +121,7 @@ class SplitResult {
 	public right: PieceTreeNode | null = null;
 }
 
-export class PieceTreeBuffer implements TextBuffer {
+export class PieceTreeBuffer implements MutableTextBuffer {
 	public version = 0;
 
 	private root: PieceTreeNode | null = null;

@@ -7,7 +7,7 @@ import { focusEditorFromLineJump } from '../contrib/code_editor/find/line_jump';
 import { resetBlink } from '../../editor/render/caret';
 import { focusEditorFromResourceSearch } from '../contrib/resources/search/index';
 import { focusEditorFromSymbolSearch } from '../contrib/code_editor/symbols/shared';
-import { editorDocumentState } from '../../editor/editing/document_state';
+import { activeCodeEditor } from '../../editor/ui/code_editor_state';
 
 export function focusPrimaryEditorSurface(editor: CartEditor): void {
 	clearReferenceHighlights();
@@ -21,7 +21,7 @@ export function focusPrimaryEditorSurface(editor: CartEditor): void {
 
 export function focusEditorAtPosition(editor: CartEditor, row: number, column: number): void {
 	focusPrimaryEditorSurface(editor);
-	setSingleCursorSelectionAnchor(editorDocumentState, row, column);
+	setSingleCursorSelectionAnchor(activeCodeEditor.view, row, column);
 	setCursorPosition(row, column);
 	resetBlink();
 }

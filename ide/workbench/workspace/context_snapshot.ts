@@ -1,143 +1,61 @@
-// disable cross_layer_import_pattern -- workspace context snapshots own the editor/workbench state handoff for autosave and restore.
-import { clamp_safe } from '../../../machine/ts/common/clamp';
-import type { EditorSnapshot, Position } from '../../common/models';
+// disable cross_layer_import_pattern -- workspace snapshots persist document contents and code-editor view state without changing their owners.
+import { clamp } from '../../../machine/ts/common/clamp';
+import type { CodeEditorViewSnapshot, Position } from '../../common/models';
+import { restoreCodeEditorViewSnapshot } from '../../editor/editing/undo_controller';
 import type { CodeTabContext } from '../ui/code_tab/model';
-import { editorDocumentState } from '../../editor/editing/document_state';
-import { restoreSnapshot } from '../../editor/editing/undo_controller';
-import { editorViewState } from '../../editor/ui/view/state';
-import { getTextSnapshot } from '../../editor/text/source_text';
+import { getActiveCodeTabContextId } from '../ui/code_tab/contexts';
 import type { SnapshotMetadata } from './models';
-import { getActiveCodeTabContextId, updateActiveContextDirtyFlag } from '../ui/code_tab/contexts';
 
-type EditHistoryState = {
-	undoStack: { length: number };
-	redoStack: { length: number };
-	lastHistoryKey: unknown;
-	lastHistoryTimestamp: number;
-	savePointDepth: number;
-};
-
-function clearEditHistory(state: EditHistoryState): void {
-	state.undoStack.length = 0;
-	state.redoStack.length = 0;
-	state.lastHistoryKey = null;
-	state.lastHistoryTimestamp = 0;
-	state.savePointDepth = 0;
-}
-
-function isActiveCodeContext(context: CodeTabContext): boolean {
-	return getActiveCodeTabContextId() === context.id;
-}
-
-export function applySourceToContext(context: CodeTabContext, source: string, metadata?: SnapshotMetadata): void {
-	context.buffer.replace(0, context.buffer.length, source);
-	context.textVersion = context.buffer.version;
-	clearEditHistory(context);
-	if (isActiveCodeContext(context)) {
-		clearEditHistory(editorDocumentState);
-	}
-	const snapshot = buildSnapshotFromBuffer(context, metadata);
-	context.cursorRow = snapshot.cursorRow;
-	context.cursorColumn = snapshot.cursorColumn;
-	context.scrollRow = snapshot.scrollRow;
-	context.scrollColumn = snapshot.scrollColumn;
-	context.selectionAnchor = snapshot.selectionAnchor;
-}
-
-export function buildSnapshotFromBuffer(context: CodeTabContext, metadata?: SnapshotMetadata): EditorSnapshot {
-	const buffer = context.buffer;
+function restoredViewSnapshot(context: CodeTabContext, metadata: SnapshotMetadata): CodeEditorViewSnapshot {
+	const buffer = context.model.buffer;
 	const lastRow = buffer.getLineCount() - 1;
-	const cursorRow = clamp_safe(metadata?.cursorRow, 0, lastRow);
+	const cursorRow = clamp(metadata.cursorRow, 0, lastRow);
 	const cursorLen = buffer.getLineEndOffset(cursorRow) - buffer.getLineStartOffset(cursorRow);
-	const cursorColumn = clamp_safe(metadata?.cursorColumn, 0, cursorLen);
-	const anchor = metadata?.selectionAnchor;
+	const cursorColumn = clamp(metadata.cursorColumn, 0, cursorLen);
+	const anchor = metadata.selectionAnchor;
 	let selectionAnchor: Position = null;
-	if (anchor) {
-		const anchorRow = clamp_safe(anchor.row ?? 0, 0, lastRow);
+	if (anchor !== null) {
+		const anchorRow = clamp(anchor.row, 0, lastRow);
 		const anchorLen = buffer.getLineEndOffset(anchorRow) - buffer.getLineStartOffset(anchorRow);
-		const anchorColumn = clamp_safe(anchor.column ?? 0, 0, anchorLen);
-		selectionAnchor = { row: anchorRow, column: anchorColumn };
+		selectionAnchor = {
+			row: anchorRow,
+			column: clamp(anchor.column, 0, anchorLen),
+		};
 	}
 	return {
 		cursorRow,
 		cursorColumn,
-		scrollRow: clamp_safe(metadata?.scrollRow, 0, lastRow),
-		scrollColumn: metadata?.scrollColumn ?? 0,
+		scrollRow: clamp(metadata.scrollRow, 0, lastRow),
+		scrollColumn: metadata.scrollColumn,
 		selectionAnchor,
-		textVersion: metadata?.textVersion ?? buffer.version,
 	};
 }
 
-export function resetWorkspaceActiveDocumentDirtyBufferState(): void {
-	editorDocumentState.saveGeneration = editorDocumentState.appliedGeneration;
-	editorDocumentState.dirty = false;
-	clearEditHistory(editorDocumentState);
-}
-
-export function clearWorkspaceActiveDocumentSessionState(): void {
-	clearEditHistory(editorDocumentState);
-	editorDocumentState.dirty = false;
-}
-
-export function resetWorkspaceContextToCleanSource(context: CodeTabContext, source: string): void {
-	applySourceToContext(context, source);
-	context.dirty = false;
-	context.saveGeneration = editorDocumentState.saveGeneration;
-	context.appliedGeneration = editorDocumentState.appliedGeneration;
-	context.lastSavedSource = source;
-	if (isActiveCodeContext(context)) {
-		restoreSnapshot(buildSnapshotFromBuffer(context), { preserveScroll: false });
-		updateActiveContextDirtyFlag();
+export function restoreWorkspaceCodeEditorView(
+	context: CodeTabContext,
+	metadata: SnapshotMetadata,
+): void {
+	const snapshot = restoredViewSnapshot(context, metadata);
+	const view = context.view;
+	view.cursorRow = snapshot.cursorRow;
+	view.cursorColumn = snapshot.cursorColumn;
+	view.scrollRow = snapshot.scrollRow;
+	view.scrollColumn = snapshot.scrollColumn;
+	view.selectionAnchor = snapshot.selectionAnchor;
+	if (getActiveCodeTabContextId() === context.id) {
+		restoreCodeEditorViewSnapshot(snapshot, { preserveScroll: true });
 	}
-}
-
-export function clearWorkspaceContextSessionState(context: CodeTabContext): void {
-	clearEditHistory(context);
-	context.dirty = false;
-}
-
-export function restoreWorkspaceContextSource(context: CodeTabContext, source: string, metadata: SnapshotMetadata, dirty: boolean): void {
-	applySourceToContext(context, source, metadata);
-	if (dirty) {
-		context.dirty = true;
-		context.savePointDepth = -1;
-	} else {
-		context.lastSavedSource = source;
-		context.dirty = false;
-		context.savePointDepth = context.undoStack.length;
-	}
-	if (isActiveCodeContext(context)) {
-		restoreSnapshot(buildSnapshotFromBuffer(context, metadata), { preserveScroll: true });
-		editorDocumentState.savePointDepth = context.savePointDepth;
-		editorDocumentState.dirty = dirty;
-		updateActiveContextDirtyFlag();
-	}
-}
-
-export function captureContextText(context: CodeTabContext): string {
-	if (context.id === getActiveCodeTabContextId()) {
-		return getTextSnapshot(editorDocumentState.buffer);
-	}
-	return getTextSnapshot(context.buffer);
 }
 
 export function captureContextSnapshotMetadata(context: CodeTabContext): SnapshotMetadata {
-	if (context.id === getActiveCodeTabContextId()) {
-		return {
-			cursorRow: editorDocumentState.cursorRow,
-			cursorColumn: editorDocumentState.cursorColumn,
-			scrollRow: editorViewState.scrollRow,
-			scrollColumn: editorViewState.scrollColumn,
-			selectionAnchor: editorDocumentState.selectionAnchor ? { row: editorDocumentState.selectionAnchor.row, column: editorDocumentState.selectionAnchor.column } : null,
-			textVersion: editorDocumentState.textVersion,
-		};
-	}
+	const view = context.view;
 	return {
-		cursorRow: context.cursorRow,
-		cursorColumn: context.cursorColumn,
-		scrollRow: context.scrollRow,
-		scrollColumn: context.scrollColumn,
-		selectionAnchor: context.selectionAnchor ? { row: context.selectionAnchor.row, column: context.selectionAnchor.column } : null,
-		textVersion: context.textVersion,
+		cursorRow: view.cursorRow,
+		cursorColumn: view.cursorColumn,
+		scrollRow: view.scrollRow,
+		scrollColumn: view.scrollColumn,
+		selectionAnchor: view.selectionAnchor === null
+			? null
+			: { row: view.selectionAnchor.row, column: view.selectionAnchor.column },
 	};
 }

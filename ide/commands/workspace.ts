@@ -9,7 +9,7 @@ import type { HostClock } from '../../hosts/common/clock';
 import type { LogOutput } from '../../hosts/common/log';
 import type { KeyValueStorage } from '../workspace/key_value_storage';
 import type { EditorCommandId, EditorWorkspaceCommandId } from '../common/commands';
-import { editorDocumentState } from '../editor/editing/document_state';
+import { activeCodeEditor } from '../editor/ui/code_editor_state';
 import type { CartEditor } from '../cart_editor';
 import type { RuntimeSourceState } from '../runtime/sources';
 import type { RuntimeFaultState } from '../runtime/fault_state';
@@ -48,7 +48,7 @@ export function executeEditorWorkspaceCommand(
 ): void {
 	switch (command) {
 		case 'save':
-			if (editorDocumentState.dirty) {
+			if (activeCodeEditor.model.dirty) {
 				void save(
 					storage,
 					clock,
@@ -62,7 +62,7 @@ export function executeEditorWorkspaceCommand(
 		case 'hot-resume':
 		case 'reboot':
 			activateCodeTab(editor.resourcePanel);
-			if (editorDocumentState.dirty) {
+			if (activeCodeEditor.model.dirty) {
 				showActionPrompt(command);
 				return;
 			}

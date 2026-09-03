@@ -5,7 +5,7 @@ import { handlePointerAutoScroll, resolvePointerTextPosition } from '../../../ed
 import type { CodeAreaBounds } from '../../../editor/ui/view/view';
 import type { PointerSnapshot } from '../../../common/models';
 import { editorPointerState } from '../state';
-import { editorDocumentState } from '../../../editor/editing/document_state';
+import { activeCodeEditor } from '../../../editor/ui/code_editor_state';
 
 export function handleCodeAreaSelectionPointer(snapshot: PointerSnapshot, bounds: CodeAreaBounds): void {
 	if (!editorPointerState.pointerSelecting || !snapshot.primaryPressed) {
@@ -16,6 +16,6 @@ export function handleCodeAreaSelectionPointer(snapshot: PointerSnapshot, bounds
 	const target = resolvePointerTextPosition(snapshot.viewportX, snapshot.viewportY, bounds);
 	const targetRow = target.row;
 	const targetColumn = target.column;
-	ensureSingleCursorSelectionAnchor(editorDocumentState, targetRow, targetColumn);
+	ensureSingleCursorSelectionAnchor(activeCodeEditor.view, targetRow, targetColumn);
 	setCursorPosition(targetRow, targetColumn);
 }

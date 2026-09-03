@@ -6,7 +6,7 @@ import type { ResourceDomain, RuntimeResource } from './resource';
 import type { EditorCommandId } from './commands';
 import type { RectBounds } from '../../machine/ts/common/rect';
 import type { LuaMemberCompletionContext } from '../../toolchain/ts/lua/semantic/completion';
-import type { EditorDocumentContextId } from './editor_context';
+import type { CodeEditorInputId } from './editor_context';
 export type { RuntimeResource } from './resource';
 
 export type Position = { row: number; column: number };
@@ -52,13 +52,12 @@ export type GlobalSearchMatch = {
 	path: string;
 };
 
-export type EditorSnapshot = {
+export type CodeEditorViewSnapshot = {
 	cursorRow: number;
 	cursorColumn: number;
 	scrollRow: number;
 	scrollColumn: number;
 	selectionAnchor: Position;
-	textVersion: number;
 };
 
 export type SymbolCatalogEntry = {
@@ -172,7 +171,7 @@ export type EditorDiagnostic = {
 	endColumn: number;
 	message: string;
 	severity: EditorDiagnosticSeverity;
-	contextId: EditorDocumentContextId;
+	contextId: CodeEditorInputId;
 	sourceLabel?: string;
 	path?: string;
 };
@@ -336,7 +335,7 @@ export type InlineInputOptions = {
 };
 
 export type DiagnosticsCacheEntry = {
-	contextId: EditorDocumentContextId;
+	contextId: CodeEditorInputId;
 	path: string;
 	diagnostics: EditorDiagnostic[];
 	version: number;

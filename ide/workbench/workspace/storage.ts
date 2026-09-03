@@ -43,7 +43,7 @@ import {
 	WorkspaceAutosaveChange,
 	type WorkspaceAutosavePayload,
 } from './models';
-import { editorDocumentState } from '../../editor/editing/document_state';
+import { getActiveCodeTabContextId } from '../ui/code_tab/contexts';
 
 const WORKSPACE_AUTOSAVE_DELAY_MS = 2500;
 const WORKSPACE_RECONNECT_DELAY_MS = WORKSPACE_AUTOSAVE_DELAY_MS * 4;
@@ -250,8 +250,17 @@ export async function restoreWorkspaceStorageSession(
 				dirtyFiles.push(entry);
 			}
 		}
+		const codeEditorViews = [];
+		for (const view of payload.codeEditorViews) {
+			const root = runtimeSourceProjectRootPath(runtimeSources, view.domain);
+			const dirtyPath = buildWorkspaceDirtyEntryPath(root, view.domain, view.path);
+			if (!rejectedDirtyPaths.has(dirtyPath)) {
+				codeEditorViews.push(view);
+			}
+		}
 		restorePayload = {
 			dirtyFiles,
+			codeEditorViews,
 			breakpoints: payload.breakpoints,
 			fontVariant: payload.fontVariant,
 		};
@@ -286,7 +295,7 @@ export function requestWorkspaceAutosave(changes: WorkspaceAutosaveChange): void
 		return;
 	}
 	if (changes & WorkspaceAutosaveChange.ActiveEditor) {
-		workspacePendingMetadataContextIds.add(editorDocumentState.contextId);
+		workspacePendingMetadataContextIds.add(getActiveCodeTabContextId()!);
 	}
 	workspaceState.pendingChanges |= changes;
 	workspaceState.requestedRevision += 1;

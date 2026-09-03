@@ -1,6 +1,6 @@
 import { clamp } from '../../machine/ts/common/clamp';
 import { getActiveTab } from '../workbench/ui/tabs';
-import { editorDocumentState } from '../editor/editing/document_state';
+import { activeCodeEditor } from '../editor/ui/code_editor_state';
 import type { ResourceDomain } from '../common/resource';
 
 const NAVIGATION_HISTORY_LIMIT = 64;
@@ -86,13 +86,13 @@ export function createNavigationEntry(): NavigationHistoryEntry | null {
 		return null;
 	}
 	const context = activeTab.context;
-	const path = context.resource.path;
-	const maxRowIndex = Math.max(0, editorDocumentState.buffer.getLineCount() - 1);
-	const row = clamp(editorDocumentState.cursorRow, 0, maxRowIndex);
-	const lineLen = editorDocumentState.buffer.getLineEndOffset(row) - editorDocumentState.buffer.getLineStartOffset(row);
-	const column = clamp(editorDocumentState.cursorColumn, 0, lineLen);
+	const path = context.model.resource.path;
+	const maxRowIndex = Math.max(0, activeCodeEditor.model.buffer.getLineCount() - 1);
+	const row = clamp(activeCodeEditor.view.cursorRow, 0, maxRowIndex);
+	const lineLen = activeCodeEditor.model.buffer.getLineEndOffset(row) - activeCodeEditor.model.buffer.getLineStartOffset(row);
+	const column = clamp(activeCodeEditor.view.cursorColumn, 0, lineLen);
 	return {
-		domain: context.resource.domain,
+		domain: context.model.resource.domain,
 		path,
 		row,
 		column,

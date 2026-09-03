@@ -2,7 +2,7 @@ import { resolveCallHierarchyAt } from '../editor/contrib/call_hierarchy/query';
 import { closeSymbolSearch } from '../workbench/contrib/code_editor/symbols/shared';
 import { openDefinitionSearch } from '../workbench/contrib/code_editor/definitions/search/index';
 import { renameController } from '../workbench/contrib/code_editor/rename/controller';
-import { editorDocumentState } from '../editor/editing/document_state';
+import { activeCodeEditor } from '../editor/ui/code_editor_state';
 import { showEditorMessage } from '../common/feedback_state';
 import * as constants from '../common/constants';
 import type { EditorCommandId, EditorSymbolNavigationCommandId } from '../common/commands';
@@ -25,15 +25,15 @@ export function executeEditorSymbolNavigationCommand(
 				luaTooling,
 				renameController,
 				editor,
-				editorDocumentState.cursorRow,
-				editorDocumentState.cursorColumn,
+				activeCodeEditor.view.cursorRow,
+				activeCodeEditor.view.cursorColumn,
 			);
 			return;
 		case 'callHierarchy':
 			const result = resolveCallHierarchyAt(
 				luaTooling,
-				editorDocumentState.cursorRow,
-				editorDocumentState.cursorColumn,
+				activeCodeEditor.view.cursorRow,
+				activeCodeEditor.view.cursorColumn,
 			);
 			switch (result.kind) {
 				case 'missing_definition':

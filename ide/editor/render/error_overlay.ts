@@ -18,7 +18,7 @@ import { resolveThemeTokenColor } from '../../theme/tokens';
 import { editorPointerState } from '../../input/pointer/state';
 import { editorCaretState } from '../ui/view/caret/state';
 import { runtimeErrorState } from '../contrib/runtime_error/state';
-import { editorDocumentState } from '../editing/document_state';
+import { activeCodeEditor } from '../ui/code_editor_state';
 import { editorViewState } from '../ui/view/state';
 
 export interface ErrorOverlayBounds {
@@ -177,7 +177,7 @@ export function resolveRuntimeErrorOverlayAnchor(
 	const visualIndex = editorViewState.layout.positionToVisualIndex(overlay.row, overlay.column);
 	const visibleRowsCandidate = ((availableBottom - codeTop) / editorViewState.lineHeight) | 0;
 	const visibleRows = visibleRowsCandidate > 1 ? visibleRowsCandidate : 1;
-	const relativeRow = visualIndex - editorViewState.scrollRow;
+	const relativeRow = visualIndex - activeCodeEditor.view.scrollRow;
 	if (relativeRow < 0 || relativeRow >= visibleRows) {
 		return null;
 	}
@@ -185,9 +185,9 @@ export function resolveRuntimeErrorOverlayAnchor(
 	if (!segment) {
 		return null;
 	}
-	const entry = editorViewState.layout.getCachedHighlight(editorDocumentState.buffer, segment.row);
+	const entry = editorViewState.layout.getCachedHighlight(activeCodeEditor.model.buffer, segment.row);
 	const highlight = entry.hi;
-	let columnStart = editorViewState.wordWrapEnabled ? segment.startColumn : editorViewState.scrollColumn;
+	let columnStart = editorViewState.wordWrapEnabled ? segment.startColumn : activeCodeEditor.view.scrollColumn;
 	if (editorViewState.wordWrapEnabled && (columnStart < segment.startColumn || columnStart > segment.endColumn)) {
 		columnStart = segment.startColumn;
 	}
@@ -231,7 +231,7 @@ export function renderRuntimeErrorOverlay(codeTop: number, codeRight: number, te
 	ensureVisualLines();
 	const visualIndex = editorViewState.layout.positionToVisualIndex(overlay.row, overlay.column);
 	const visibleRows = editorViewState.cachedVisibleRowCount > 1 ? editorViewState.cachedVisibleRowCount : 1;
-	const visibleStart = editorViewState.scrollRow;
+	const visibleStart = activeCodeEditor.view.scrollRow;
 	const visibleEnd = visibleStart + visibleRows - 1;
 	if (visualIndex < visibleStart) {
 		overlay.layout = null;
@@ -490,13 +490,13 @@ export function applyRuntimeErrorOverlay(
 	details?: RuntimeErrorDetails,
 	path: string = ''
 ): AppliedRuntimeErrorOverlay {
-	const buffer = editorDocumentState.buffer;
+	const buffer = activeCodeEditor.model.buffer;
 	const targetRow = editorViewState.layout.clampBufferRow(buffer, line - 1);
 	const currentLine = buffer.getLineContent(targetRow);
 	const targetColumn = editorViewState.layout.clampLineLength(currentLine.length, column - 1);
-	editorDocumentState.cursorRow = targetRow;
-	editorDocumentState.cursorColumn = targetColumn;
-	editorDocumentState.selectionAnchor = null;
+	activeCodeEditor.view.cursorRow = targetRow;
+	activeCodeEditor.view.cursorColumn = targetColumn;
+	activeCodeEditor.view.selectionAnchor = null;
 	editorPointerState.pointerSelecting = false;
 	editorPointerState.pointerPrimaryWasPressed = false;
 	editorViewState.scrollbarController.cancel();
@@ -505,7 +505,7 @@ export function applyRuntimeErrorOverlay(
 	updateDesiredColumn();
 	revealCursor();
 	resetBlink();
-	editorDocumentState.emitCursorMoved();
+	activeCodeEditor.emitCursorMoved();
 	const normalizedMessage = message && message.length > 0 ? message.trim() : 'Runtime error';
 	const locationLabel = formatRuntimeErrorLocation(path, line, column);
 	const overlayMessage = locationLabel ? `${locationLabel}: ${normalizedMessage}` : normalizedMessage;

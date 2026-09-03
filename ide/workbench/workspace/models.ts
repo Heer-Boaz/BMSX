@@ -10,22 +10,22 @@ export type SnapshotMetadata = {
 	scrollRow: number;
 	scrollColumn: number;
 	selectionAnchor: Position;
-	textVersion?: number;
 };
 
 export type PersistedDirtyEntry = {
 	domain: ResourceDomain;
 	path: string;
 	updatedAt: number;
-	cursorRow: number;
-	cursorColumn: number;
-	scrollRow: number;
-	scrollColumn: number;
-	selectionAnchor: Position;
+};
+
+export type PersistedCodeEditorView = SnapshotMetadata & {
+	domain: ResourceDomain;
+	path: string;
 };
 
 export type WorkspaceAutosavePayload = {
 	dirtyFiles: PersistedDirtyEntry[];
+	codeEditorViews: PersistedCodeEditorView[];
 	breakpoints: SerializedBreakpoints;
 	fontVariant: FontVariant;
 };

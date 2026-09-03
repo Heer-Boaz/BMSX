@@ -1,5 +1,5 @@
 import type { EditorFont } from '../../../editor/ui/view/font';
-import type { EditorDocumentContextId } from '../../../common/editor_context';
+import type { CodeEditorInputId } from '../../../common/editor_context';
 import type {
 	WorkbenchListLayout,
 	WorkbenchListState,
@@ -42,7 +42,7 @@ export type BehaviorLensStatusInfo = {
 
 /** Retained presentation state owned by its Behavior Lens tab descriptor. */
 export type BehaviorLensViewState = WorkbenchListState<BehaviorLensRow, BehaviorLensLayout> & {
-	readonly sourceContextId: EditorDocumentContextId;
+	readonly sourceContextId: CodeEditorInputId;
 	readonly resource: BehaviorSourceDocument['resource'];
 	document: BehaviorSourceDocument;
 	sourceVersion: number;

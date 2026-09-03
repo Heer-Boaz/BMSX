@@ -6,7 +6,7 @@ import { findWordLeft, findWordRight, hasSelection, collapseSelectionTo, clearSe
 import { ensureSingleCursorSelectionAnchor } from '../../../editing/cursor/state';
 import type { VisualLineSegment } from '../../../../common/models';
 import { revealCursor, resolveViewportCapacity, setCursorFromVisualIndex, updateDesiredColumn } from './view';
-import { editorDocumentState } from '../../../editing/document_state';
+import { activeCodeEditor } from '../../code_editor_state';
 import { editorViewState } from '../state';
 import { caretNavigation } from './state';
 import { resolveCursorVisualIndex } from './visual_index';
@@ -49,15 +49,15 @@ export function findFirstNonWhitespace(line: string, startColumn: number, endCol
  */
 export function setCursorPosition(row: number, column: number): void {
 	caretNavigation.clear();
-	const buffer = editorDocumentState.buffer;
+	const buffer = activeCodeEditor.model.buffer;
 	const targetRow = editorViewState.layout.clampBufferRow(buffer, row);
 	const targetColumn = editorViewState.layout.clampBufferColumn(buffer, targetRow, column);
-	editorDocumentState.cursorRow = targetRow;
-	editorDocumentState.cursorColumn = targetColumn;
+	activeCodeEditor.view.cursorRow = targetRow;
+	activeCodeEditor.view.cursorColumn = targetColumn;
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
-	editorDocumentState.emitCursorMoved();
+	activeCodeEditor.emitCursorMoved();
 }
 
 /**
@@ -70,10 +70,10 @@ export function moveCursorVertical(delta: number): void {
 	if (visualCount === 0) {
 		return;
 	}
-	const currentIndex = editorViewState.layout.positionToVisualIndex(editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
+	const currentIndex = editorViewState.layout.positionToVisualIndex(activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
 	const targetIndex = editorViewState.layout.clampVisualIndex(visualCount, currentIndex + delta);
-	const desired = editorDocumentState.desiredColumn;
-	const desiredDisplay = editorDocumentState.desiredDisplayOffset;
+	const desired = activeCodeEditor.view.desiredColumn;
+	const desiredDisplay = activeCodeEditor.view.desiredDisplayOffset;
 	setCursorFromVisualIndex(targetIndex, desired, desiredDisplay);
 	resetBlink();
 	revealCursor();
@@ -92,64 +92,64 @@ export function moveCursorHorizontal(delta: number): void {
 	if (visualCount === 0) {
 		return;
 	}
-	const visualIndex = editorViewState.layout.positionToVisualIndex(editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
+	const visualIndex = editorViewState.layout.positionToVisualIndex(activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
 	const segment = editorViewState.layout.visualIndexToSegment(visualIndex);
 	if (!segment) {
 		return;
 	}
-	const buffer = editorDocumentState.buffer;
+	const buffer = activeCodeEditor.model.buffer;
 	const line = buffer.getLineContent(segment.row);
 	if (delta < 0) {
 		// Move left
-		if (editorDocumentState.cursorColumn > segment.startColumn) {
-			editorDocumentState.cursorColumn -= 1;
+		if (activeCodeEditor.view.cursorColumn > segment.startColumn) {
+			activeCodeEditor.view.cursorColumn -= 1;
 		} else {
 			let moved = false;
 				if (editorViewState.wordWrapEnabled && visualIndex > 0) {
 					const prevSegment = editorViewState.layout.visualIndexToSegment(visualIndex - 1);
 					if (prevSegment && prevSegment.row === segment.row) {
-						editorDocumentState.cursorRow = prevSegment.row;
+						activeCodeEditor.view.cursorRow = prevSegment.row;
 						const prevLine = buffer.getLineContent(prevSegment.row);
 						const prevEnd = Math.max(prevSegment.endColumn, prevSegment.startColumn);
 						const hasMoreBefore = prevEnd > prevSegment.startColumn;
 						const targetColumn = hasMoreBefore && prevEnd < prevLine.length
 						? Math.max(prevSegment.startColumn, prevEnd - 1)
 						: Math.min(prevEnd, prevLine.length);
-					editorDocumentState.cursorColumn = editorViewState.layout.clampLineLength(prevLine.length, targetColumn);
+					activeCodeEditor.view.cursorColumn = editorViewState.layout.clampLineLength(prevLine.length, targetColumn);
 					moved = true;
 				}
 			}
 			if (!moved && segment.row > 0) {
-				editorDocumentState.cursorRow = segment.row - 1;
-				editorDocumentState.cursorColumn = buffer.getLineEndOffset(editorDocumentState.cursorRow) - buffer.getLineStartOffset(editorDocumentState.cursorRow);
+				activeCodeEditor.view.cursorRow = segment.row - 1;
+				activeCodeEditor.view.cursorColumn = buffer.getLineEndOffset(activeCodeEditor.view.cursorRow) - buffer.getLineStartOffset(activeCodeEditor.view.cursorRow);
 			}
 		}
 	} else {
 		// Move right
-		if (editorDocumentState.cursorColumn < segment.endColumn && editorDocumentState.cursorColumn < line.length) {
-			editorDocumentState.cursorColumn += 1;
+		if (activeCodeEditor.view.cursorColumn < segment.endColumn && activeCodeEditor.view.cursorColumn < line.length) {
+			activeCodeEditor.view.cursorColumn += 1;
 		} else {
 			let moved = false;
 			if (editorViewState.wordWrapEnabled && visualIndex < visualCount - 1) {
 				const nextSegment = editorViewState.layout.visualIndexToSegment(visualIndex + 1);
 				if (nextSegment && nextSegment.row === segment.row) {
-					editorDocumentState.cursorRow = nextSegment.row;
-					editorDocumentState.cursorColumn = nextSegment.startColumn;
+					activeCodeEditor.view.cursorRow = nextSegment.row;
+					activeCodeEditor.view.cursorColumn = nextSegment.startColumn;
 					moved = true;
 				}
 			}
 			if (!moved && segment.row < buffer.getLineCount() - 1) {
-				editorDocumentState.cursorRow = segment.row + 1;
-				editorDocumentState.cursorColumn = 0;
+				activeCodeEditor.view.cursorRow = segment.row + 1;
+				activeCodeEditor.view.cursorColumn = 0;
 			}
 		}
 	}
-	const cursorLength = buffer.getLineEndOffset(editorDocumentState.cursorRow) - buffer.getLineStartOffset(editorDocumentState.cursorRow);
-	editorDocumentState.cursorColumn = editorViewState.layout.clampLineLength(cursorLength, editorDocumentState.cursorColumn);
+	const cursorLength = buffer.getLineEndOffset(activeCodeEditor.view.cursorRow) - buffer.getLineStartOffset(activeCodeEditor.view.cursorRow);
+	activeCodeEditor.view.cursorColumn = editorViewState.layout.clampLineLength(cursorLength, activeCodeEditor.view.cursorColumn);
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
-	editorDocumentState.emitCursorMoved();
+	activeCodeEditor.emitCursorMoved();
 }
 
 /**
@@ -157,13 +157,13 @@ export function moveCursorHorizontal(delta: number): void {
  */
 export function moveWordLeft(): void {
 	caretNavigation.clear();
-	const destination = findWordLeft(editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
-	editorDocumentState.cursorRow = destination.row;
-	editorDocumentState.cursorColumn = destination.column;
+	const destination = findWordLeft(activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
+	activeCodeEditor.view.cursorRow = destination.row;
+	activeCodeEditor.view.cursorColumn = destination.column;
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
-	editorDocumentState.emitCursorMoved();
+	activeCodeEditor.emitCursorMoved();
 }
 
 /**
@@ -171,13 +171,13 @@ export function moveWordLeft(): void {
  */
 export function moveWordRight(): void {
 	caretNavigation.clear();
-	const destination = findWordRight(editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
-	editorDocumentState.cursorRow = destination.row;
-	editorDocumentState.cursorColumn = destination.column;
+	const destination = findWordRight(activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
+	activeCodeEditor.view.cursorRow = destination.row;
+	activeCodeEditor.view.cursorColumn = destination.column;
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
-	editorDocumentState.emitCursorMoved();
+	activeCodeEditor.emitCursorMoved();
 }
 
 /**
@@ -187,7 +187,7 @@ export function moveCursorLeft(playerInput: PlayerInput): void {
 	const select = isShiftDown(playerInput);
 	const byWord = isCtrlDown(playerInput);
 	if (select) {
-		ensureSingleCursorSelectionAnchor(editorDocumentState, editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
+		ensureSingleCursorSelectionAnchor(activeCodeEditor.view, activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
 	} else if (hasSelection()) {
 		collapseSelectionTo('start');
 		breakUndoSequence();
@@ -213,7 +213,7 @@ export function moveCursorRight(playerInput: PlayerInput): void {
 	const byWord = isCtrlDown(playerInput);
 
 	if (select) {
-		ensureSingleCursorSelectionAnchor(editorDocumentState, editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
+		ensureSingleCursorSelectionAnchor(activeCodeEditor.view, activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
 	} else if (hasSelection()) {
 		collapseSelectionTo('end');
 		breakUndoSequence();
@@ -237,7 +237,7 @@ export function moveCursorRight(playerInput: PlayerInput): void {
 export function moveCursorUp(playerInput: PlayerInput): void {
 	const select = isShiftDown(playerInput);
 	if (select) {
-		ensureSingleCursorSelectionAnchor(editorDocumentState, editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
+		ensureSingleCursorSelectionAnchor(activeCodeEditor.view, activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
 	} else if (hasSelection()) {
 		collapseSelectionTo('start');
 		breakUndoSequence();
@@ -257,7 +257,7 @@ export function moveCursorUp(playerInput: PlayerInput): void {
 export function moveCursorDown(playerInput: PlayerInput): void {
 	const select = isShiftDown(playerInput);
 	if (select) {
-		ensureSingleCursorSelectionAnchor(editorDocumentState, editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
+		ensureSingleCursorSelectionAnchor(activeCodeEditor.view, activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
 	} else if (hasSelection()) {
 		collapseSelectionTo('end');
 		breakUndoSequence();
@@ -275,75 +275,75 @@ export function moveCursorDown(playerInput: PlayerInput): void {
  * Move cursor to start of line or document
  */
 export function moveCursorHome(playerInput: PlayerInput): void {
-	const previousOverride = caretNavigation.lookup(editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
+	const previousOverride = caretNavigation.lookup(activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
 	caretNavigation.clear();
-	const buffer = editorDocumentState.buffer;
+	const buffer = activeCodeEditor.model.buffer;
 	const select = isShiftDown(playerInput);
 	if (select) {
-		ensureSingleCursorSelectionAnchor(editorDocumentState, editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
+		ensureSingleCursorSelectionAnchor(activeCodeEditor.view, activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
 	} else {
 		clearSelection();
 	}
 	const ctrlDown = isCtrlDown(playerInput);
 	if (ctrlDown) {
-		editorDocumentState.cursorRow = 0;
-		editorDocumentState.cursorColumn = 0;
+		activeCodeEditor.view.cursorRow = 0;
+		activeCodeEditor.view.cursorColumn = 0;
 	} else {
 		ensureVisualLines();
-		const visualIndex = previousOverride?.visualIndex ?? editorViewState.layout.positionToVisualIndex(editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
+		const visualIndex = previousOverride?.visualIndex ?? editorViewState.layout.positionToVisualIndex(activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
 		const segment = editorViewState.layout.visualIndexToSegment(visualIndex);
 		if (segment) {
-			editorDocumentState.cursorRow = segment.row;
+			activeCodeEditor.view.cursorRow = segment.row;
 			const line = buffer.getLineContent(segment.row);
-			editorDocumentState.cursorColumn = resolveIndentAwareHome(line, segment, editorDocumentState.cursorColumn);
-			caretNavigation.capture(segment.row, editorDocumentState.cursorColumn, visualIndex, segment.startColumn);
+			activeCodeEditor.view.cursorColumn = resolveIndentAwareHome(line, segment, activeCodeEditor.view.cursorColumn);
+			caretNavigation.capture(segment.row, activeCodeEditor.view.cursorColumn, visualIndex, segment.startColumn);
 		} else {
-			editorDocumentState.cursorColumn = 0;
+			activeCodeEditor.view.cursorColumn = 0;
 		}
 	}
 	updateDesiredColumn();
 	resetBlink();
 	breakUndoSequence();
 	revealCursor();
-	editorDocumentState.emitCursorMoved();
+	activeCodeEditor.emitCursorMoved();
 }
 
 /**
  * Move cursor to end of line or document
  */
 export function moveCursorEnd(playerInput: PlayerInput): void {
-	const previousOverride = caretNavigation.lookup(editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
+	const previousOverride = caretNavigation.lookup(activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
 	caretNavigation.clear();
-	const buffer = editorDocumentState.buffer;
+	const buffer = activeCodeEditor.model.buffer;
 	const select = isShiftDown(playerInput);
 	if (select) {
-		ensureSingleCursorSelectionAnchor(editorDocumentState, editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
+		ensureSingleCursorSelectionAnchor(activeCodeEditor.view, activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
 	} else {
 		clearSelection();
 	}
 	const ctrlDown = isCtrlDown(playerInput);
 	if (ctrlDown) {
 		const lastRow = buffer.getLineCount() - 1;
-		editorDocumentState.cursorRow = lastRow;
-		editorDocumentState.cursorColumn = buffer.getLineEndOffset(lastRow) - buffer.getLineStartOffset(lastRow);
+		activeCodeEditor.view.cursorRow = lastRow;
+		activeCodeEditor.view.cursorColumn = buffer.getLineEndOffset(lastRow) - buffer.getLineStartOffset(lastRow);
 	} else {
 		ensureVisualLines();
-		const visualIndex = previousOverride?.visualIndex ?? editorViewState.layout.positionToVisualIndex(editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
+		const visualIndex = previousOverride?.visualIndex ?? editorViewState.layout.positionToVisualIndex(activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
 		const segment = editorViewState.layout.visualIndexToSegment(visualIndex);
 		if (segment) {
-			editorDocumentState.cursorRow = segment.row;
+			activeCodeEditor.view.cursorRow = segment.row;
 			const line = buffer.getLineContent(segment.row);
-			editorDocumentState.cursorColumn = resolveSegmentEnd(line, segment);
-			caretNavigation.capture(segment.row, editorDocumentState.cursorColumn, visualIndex, segment.startColumn);
+			activeCodeEditor.view.cursorColumn = resolveSegmentEnd(line, segment);
+			caretNavigation.capture(segment.row, activeCodeEditor.view.cursorColumn, visualIndex, segment.startColumn);
 		} else {
-			editorDocumentState.cursorColumn = currentLine().length;
+			activeCodeEditor.view.cursorColumn = currentLine().length;
 		}
 	}
 	updateDesiredColumn();
 	resetBlink();
 	breakUndoSequence();
 	revealCursor();
-	editorDocumentState.emitCursorMoved();
+	activeCodeEditor.emitCursorMoved();
 }
 
 /**
@@ -352,7 +352,7 @@ export function moveCursorEnd(playerInput: PlayerInput): void {
 export function pageUp(playerInput: PlayerInput): void {
 	const select = isShiftDown(playerInput);
 	if (select) {
-		ensureSingleCursorSelectionAnchor(editorDocumentState, editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
+		ensureSingleCursorSelectionAnchor(activeCodeEditor.view, activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
 	} else {
 		clearSelection();
 	}
@@ -360,7 +360,7 @@ export function pageUp(playerInput: PlayerInput): void {
 	const visualCount = editorViewState.layout.getVisualLineCount();
 	const currentVisual = resolveCursorVisualIndex();
 	const targetVisual = editorViewState.layout.clampVisualScroll(currentVisual - rows, visualCount, rows);
-	setCursorFromVisualIndex(targetVisual, editorDocumentState.desiredColumn, editorDocumentState.desiredDisplayOffset);
+	setCursorFromVisualIndex(targetVisual, activeCodeEditor.view.desiredColumn, activeCodeEditor.view.desiredDisplayOffset);
 	resetBlink();
 	breakUndoSequence();
 	revealCursor();
@@ -372,7 +372,7 @@ export function pageUp(playerInput: PlayerInput): void {
 export function pageDown(playerInput: PlayerInput): void {
 	const select = isShiftDown(playerInput);
 	if (select) {
-		ensureSingleCursorSelectionAnchor(editorDocumentState, editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
+		ensureSingleCursorSelectionAnchor(activeCodeEditor.view, activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
 	} else {
 		clearSelection();
 	}
@@ -380,7 +380,7 @@ export function pageDown(playerInput: PlayerInput): void {
 	const visualCount = editorViewState.layout.getVisualLineCount();
 	const currentVisual = resolveCursorVisualIndex();
 	const targetVisual = editorViewState.layout.clampVisualIndex(visualCount, currentVisual + rows);
-	setCursorFromVisualIndex(targetVisual, editorDocumentState.desiredColumn, editorDocumentState.desiredDisplayOffset);
+	setCursorFromVisualIndex(targetVisual, activeCodeEditor.view.desiredColumn, activeCodeEditor.view.desiredDisplayOffset);
 	resetBlink();
 	breakUndoSequence();
 	revealCursor();

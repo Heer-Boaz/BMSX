@@ -1,6 +1,6 @@
 import { buildEditorSemanticSnapshot, createEditorSemanticFrontend } from '../intellisense/frontend';
 import { CallHierarchyModel } from './model';
-import { editorDocumentState } from '../../editing/document_state';
+import { activeCodeEditor } from '../../ui/code_editor_state';
 import { SYSTEM_RESOURCE_DOMAIN } from '../../../common/resource';
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 
@@ -9,9 +9,9 @@ export type CallHierarchyQueryResult =
 	| { kind: 'missing_definition'; };
 
 export function resolveCallHierarchyAt(bridge: RuntimeLuaTooling, row: number, column: number): CallHierarchyQueryResult {
-	const resource = editorDocumentState.resource;
+	const resource = activeCodeEditor.model.resource;
 	const path = resource.path;
-	const snapshot = buildEditorSemanticSnapshot(bridge, resource, editorDocumentState.buffer);
+	const snapshot = buildEditorSemanticSnapshot(bridge, resource, activeCodeEditor.model.buffer);
 	const frontend = createEditorSemanticFrontend(bridge, snapshot);
 	const symbols = frontend.findSymbolsByPosition(path, row + 1, column + 1);
 	if (!symbols) {
@@ -21,7 +21,7 @@ export function resolveCallHierarchyAt(bridge: RuntimeLuaTooling, row: number, c
 	let rootReadOnly = false;
 	for (let index = 0; index < resources.length; index += 1) {
 		const resource = resources[index];
-		if (resource.domain === editorDocumentState.resource.domain && resource.path === path) {
+		if (resource.domain === activeCodeEditor.model.resource.domain && resource.path === path) {
 			rootReadOnly = !!resource.source.generated;
 			break;
 		}
@@ -29,8 +29,8 @@ export function resolveCallHierarchyAt(bridge: RuntimeLuaTooling, row: number, c
 	const allowedPaths = new Set<string>();
 	for (let index = 0; index < resources.length; index += 1) {
 		const resource = resources[index];
-		if ((resource.domain === editorDocumentState.resource.domain
-			|| (editorDocumentState.resource.domain !== SYSTEM_RESOURCE_DOMAIN
+		if ((resource.domain === activeCodeEditor.model.resource.domain
+			|| (activeCodeEditor.model.resource.domain !== SYSTEM_RESOURCE_DOMAIN
 				&& resource.domain === SYSTEM_RESOURCE_DOMAIN))
 			&& !!resource.source.generated === rootReadOnly) {
 			allowedPaths.add(resource.path);

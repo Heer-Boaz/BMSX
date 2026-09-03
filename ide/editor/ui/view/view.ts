@@ -14,14 +14,15 @@ import { editorPointerState } from '../../../input/pointer/state';
 import { editorCaretState } from './caret/state';
 import { getBuiltinIdentifiersSnapshot, requestSemanticRefresh } from '../../contrib/intellisense/engine';
 import { ensureCursorVisible, updateDesiredColumn } from './caret/caret';
-import { editorDocumentState, type EditorDocumentMode } from '../../editing/document_state';
+import { activeCodeEditor } from '../code_editor_state';
+import type { EditorDocumentMode } from '../../model/text_model';
 import { editorViewState } from './state';
 import {
 	ensureVisualLines,
 } from '../../common/text/layout';
 import { rewrapRuntimeErrorOverlays } from '../../../runtime_error/navigation';
 import type { InlineFieldMetrics } from '../inline/text_field';
-import type { EditorDocumentContextId } from '../../../common/editor_context';
+import type { CodeEditorInputId } from '../../../common/editor_context';
 
 function advanceInlineFieldChar(ch: string): number {
 	return editorViewState.font.advance(ch);
@@ -49,7 +50,7 @@ export function getBreakpointLaneWidth(): number {
 }
 
 export function updateGutterWidth(): number {
-	const lineCount = editorDocumentState.buffer.getLineCount();
+	const lineCount = activeCodeEditor.model.buffer.getLineCount();
 	const computedDigits = decimalDigitCount(lineCount);
 	const digitCount = computedDigits > 2 ? computedDigits : 2;
 	editorViewState.gutterWidth = getBreakpointLaneWidth() + 4 + digitCount * editorViewState.font.advance('0');
@@ -62,9 +63,9 @@ export function maximumLineLength(): number {
 	}
 	let maxLength = 0;
 	let maxRow = 0;
-	const lineCount = editorDocumentState.buffer.getLineCount();
+	const lineCount = activeCodeEditor.model.buffer.getLineCount();
 	for (let i = 0; i < lineCount; i += 1) {
-		const length = editorDocumentState.buffer.getLineEndOffset(i) - editorDocumentState.buffer.getLineStartOffset(i);
+		const length = activeCodeEditor.model.buffer.getLineEndOffset(i) - activeCodeEditor.model.buffer.getLineStartOffset(i);
 		if (length > maxLength) {
 			maxLength = length;
 			maxRow = i;
@@ -175,27 +176,27 @@ const pointerTextPosition: PointerTextPosition = {
 export function resolvePointerRow(viewportY: number, bounds: CodeAreaBounds = getCodeAreaBounds()): number {
 	ensureVisualLines();
 	const relativeY = viewportY - bounds.codeTop;
-	let visualIndex = editorViewState.scrollRow + ((relativeY / editorViewState.lineHeight) | 0);
+	let visualIndex = activeCodeEditor.view.scrollRow + ((relativeY / editorViewState.lineHeight) | 0);
 	const visualCount = editorViewState.layout.getVisualLineCount();
 	const visualLimit = visualCount > 1 ? visualCount : 1;
 	visualIndex = editorViewState.layout.clampVisualIndex(visualLimit, visualIndex);
 	const segment = editorViewState.layout.visualIndexToSegment(visualIndex);
 	if (!segment) {
 		editorPointerState.lastPointerRowResolution = null;
-		return editorViewState.layout.clampBufferRow(editorDocumentState.buffer, visualIndex);
+		return editorViewState.layout.clampBufferRow(activeCodeEditor.model.buffer, visualIndex);
 	}
 	editorPointerState.lastPointerRowResolution = { visualIndex, segment };
 	return segment.row;
 }
 
 export function resolvePointerColumn(row: number, viewportX: number, bounds: CodeAreaBounds = getCodeAreaBounds()): number {
-	const entry = editorViewState.layout.getCachedHighlight(editorDocumentState.buffer, row);
+	const entry = editorViewState.layout.getCachedHighlight(activeCodeEditor.model.buffer, row);
 	const line = entry.src;
 	if (line.length === 0) {
 		return 0;
 	}
 	const highlight = entry.hi;
-	let segmentStartColumn = editorViewState.layout.clampLineLength(line.length, editorViewState.scrollColumn);
+	let segmentStartColumn = editorViewState.layout.clampLineLength(line.length, activeCodeEditor.view.scrollColumn);
 	let segmentEndColumn = line.length;
 	const lastPointerRowResolution = editorPointerState.lastPointerRowResolution;
 	if (editorViewState.wordWrapEnabled && lastPointerRowResolution && lastPointerRowResolution.segment.row === row) {
@@ -266,17 +267,17 @@ export function handlePointerAutoScroll(viewportX: number, viewportY: number, bo
 		rowDelta = 1;
 	}
 	const rows = editorViewState.cachedVisibleRowCount;
-	editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(editorViewState.scrollRow + rowDelta, editorViewState.layout.getVisualLineCount(), rows);
+	activeCodeEditor.view.scrollRow = editorViewState.layout.clampVisualScroll(activeCodeEditor.view.scrollRow + rowDelta, editorViewState.layout.getVisualLineCount(), rows);
 	if (viewportX >= bounds.gutterLeft && !editorViewState.wordWrapEnabled) {
 		if (viewportX < bounds.textLeft) {
-			editorViewState.scrollColumn -= 1;
+			activeCodeEditor.view.scrollColumn -= 1;
 		} else if (viewportX >= bounds.codeRight) {
-			editorViewState.scrollColumn += 1;
+			activeCodeEditor.view.scrollColumn += 1;
 		}
-		editorViewState.scrollColumn = editorViewState.layout.clampHorizontalScroll(editorViewState.scrollColumn, editorViewState.cachedMaxScrollColumn);
+		activeCodeEditor.view.scrollColumn = editorViewState.layout.clampHorizontalScroll(activeCodeEditor.view.scrollColumn, editorViewState.cachedMaxScrollColumn);
 	}
 	if (editorViewState.wordWrapEnabled) {
-		editorViewState.scrollColumn = 0;
+		activeCodeEditor.view.scrollColumn = 0;
 	}
 }
 
@@ -285,7 +286,7 @@ export function scrollRows(deltaRows: number): void {
 		return;
 	}
 	ensureVisualLines();
-	editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(editorViewState.scrollRow + deltaRows, editorViewState.layout.getVisualLineCount(), editorViewState.cachedVisibleRowCount);
+	activeCodeEditor.view.scrollRow = editorViewState.layout.clampVisualScroll(activeCodeEditor.view.scrollRow + deltaRows, editorViewState.layout.getVisualLineCount(), editorViewState.cachedVisibleRowCount);
 }
 
 export function configureFontVariant(
@@ -300,7 +301,6 @@ export function configureFontVariant(
 	editorViewState.spaceAdvance = editorViewState.font.advance(' ');
 	editorInlineFieldMetrics.spaceAdvance = editorViewState.spaceAdvance;
 	editorViewState.inlineFieldMetricsRef = editorInlineFieldMetrics;
-	updateGutterWidth();
 	editorViewState.headerHeight = editorViewState.lineHeight + 4;
 	editorViewState.tabBarHeight = editorViewState.lineHeight + 3;
 	editorViewState.baseBottomMargin = editorViewState.lineHeight + 6;
@@ -322,7 +322,7 @@ export function setFontVariant(
 	clock: HostClock,
 	variant: FontVariant,
 	activeDocumentMode: EditorDocumentMode,
-	activeContextId: EditorDocumentContextId,
+	activeContextId: CodeEditorInputId,
 ): void {
 	configureFontVariant(clock, variant, activeDocumentMode);
 	ensureVisualLines();
@@ -337,16 +337,16 @@ export function toggleWordWrap(): void {
 	ensureVisualLines();
 	const previousWrap = editorViewState.wordWrapEnabled;
 	const previousVisualCount = editorViewState.layout.getVisualLineCount();
-	const previousTopIndex = editorViewState.layout.clampVisualIndex(previousVisualCount, editorViewState.scrollRow);
+	const previousTopIndex = editorViewState.layout.clampVisualIndex(previousVisualCount, activeCodeEditor.view.scrollRow);
 	const previousTopSegment = editorViewState.layout.visualIndexToSegment(previousTopIndex);
-	const anchorRow = previousTopSegment ? previousTopSegment.row : editorDocumentState.cursorRow;
+	const anchorRow = previousTopSegment ? previousTopSegment.row : activeCodeEditor.view.cursorRow;
 	const anchorColumnForWrap = previousTopSegment ? previousTopSegment.startColumn : 0;
 	const anchorColumnForUnwrap = previousTopSegment
-		? (previousWrap ? previousTopSegment.startColumn : editorViewState.scrollColumn)
-		: editorViewState.scrollColumn;
-	const previousCursorRow = editorDocumentState.cursorRow;
-	const previousCursorColumn = editorDocumentState.cursorColumn;
-	const previousDesiredColumn = editorDocumentState.desiredColumn;
+		? (previousWrap ? previousTopSegment.startColumn : activeCodeEditor.view.scrollColumn)
+		: activeCodeEditor.view.scrollColumn;
+	const previousCursorRow = activeCodeEditor.view.cursorRow;
+	const previousCursorColumn = activeCodeEditor.view.cursorColumn;
+	const previousDesiredColumn = activeCodeEditor.view.desiredColumn;
 
 	editorViewState.wordWrapEnabled = !previousWrap;
 	editorCaretState.cursorRevealSuspended = false;
@@ -354,17 +354,17 @@ export function toggleWordWrap(): void {
 	ensureVisualLines();
 	const currentVisualCount = editorViewState.layout.getVisualLineCount();
 
-	editorDocumentState.cursorRow = editorViewState.layout.clampBufferRow(editorDocumentState.buffer, previousCursorRow);
-	const currentLine = editorDocumentState.buffer.getLineContent(editorDocumentState.cursorRow);
-	editorDocumentState.cursorColumn = editorViewState.layout.clampLineLength(currentLine.length, previousCursorColumn);
-	editorDocumentState.desiredColumn = previousDesiredColumn;
+	activeCodeEditor.view.cursorRow = editorViewState.layout.clampBufferRow(activeCodeEditor.model.buffer, previousCursorRow);
+	const currentLine = activeCodeEditor.model.buffer.getLineContent(activeCodeEditor.view.cursorRow);
+	activeCodeEditor.view.cursorColumn = editorViewState.layout.clampLineLength(currentLine.length, previousCursorColumn);
+	activeCodeEditor.view.desiredColumn = previousDesiredColumn;
 
 	if (editorViewState.wordWrapEnabled) {
-		editorViewState.scrollColumn = 0;
-		editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(editorViewState.layout.positionToVisualIndex(anchorRow, anchorColumnForWrap), currentVisualCount, editorViewState.cachedVisibleRowCount);
+		activeCodeEditor.view.scrollColumn = 0;
+		activeCodeEditor.view.scrollRow = editorViewState.layout.clampVisualScroll(editorViewState.layout.positionToVisualIndex(anchorRow, anchorColumnForWrap), currentVisualCount, editorViewState.cachedVisibleRowCount);
 	} else {
-		editorViewState.scrollColumn = editorViewState.layout.clampHorizontalScroll(anchorColumnForUnwrap, computeMaximumScrollColumn());
-		editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(editorViewState.layout.positionToVisualIndex(anchorRow, editorViewState.scrollColumn), currentVisualCount, editorViewState.cachedVisibleRowCount);
+		activeCodeEditor.view.scrollColumn = editorViewState.layout.clampHorizontalScroll(anchorColumnForUnwrap, computeMaximumScrollColumn());
+		activeCodeEditor.view.scrollRow = editorViewState.layout.clampVisualScroll(editorViewState.layout.positionToVisualIndex(anchorRow, activeCodeEditor.view.scrollColumn), currentVisualCount, editorViewState.cachedVisibleRowCount);
 	}
 	editorPointerState.lastPointerRowResolution = null;
 	ensureCursorVisible();

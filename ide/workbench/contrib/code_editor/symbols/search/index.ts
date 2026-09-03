@@ -22,7 +22,7 @@ import type { RenameController } from '../../rename/controller';
 import type { CartEditor } from '../../../../../cart_editor';
 
 export function openSymbolSearch(bridge: RuntimeLuaTooling, rename: RenameController, initialQuery: string = ''): void {
-	switch (getActiveCodeTabContext().mode) {
+	switch (getActiveCodeTabContext().model.mode) {
 		case 'lua':
 			break;
 		case 'aem':
@@ -46,7 +46,7 @@ export function openSymbolSearch(bridge: RuntimeLuaTooling, rename: RenameContro
 }
 
 export function openGlobalSymbolSearch(bridge: RuntimeLuaTooling, rename: RenameController, initialQuery: string = ''): void {
-	switch (getActiveCodeTabContext().mode) {
+	switch (getActiveCodeTabContext().model.mode) {
 		case 'lua':
 			break;
 		case 'aem':

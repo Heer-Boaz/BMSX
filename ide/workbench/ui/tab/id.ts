@@ -1,6 +1,6 @@
-import type { EditorDocumentContextId } from '../../../common/editor_context';
+import type { CodeEditorInputId } from '../../../common/editor_context';
 
-export type CodeEditorTabId = EditorDocumentContextId;
+export type CodeEditorTabId = CodeEditorInputId;
 export type ResourceViewerTabId = `resource:${string}`;
 export type BehaviorLensTabId = `behavior:${string}`;
 export type ScenarioLabTabId = 'scenario-lab';

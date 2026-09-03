@@ -4,7 +4,7 @@ import { clamp } from '../../../../machine/ts/common/clamp';
 import * as constants from '../../../common/constants';
 import { api } from '../../../runtime/overlay_api';
 import { drawHighlightSlice } from './highlights';
-import { editorDocumentState } from '../../editing/document_state';
+import { activeCodeEditor } from '../../ui/code_editor_state';
 import { editorViewState } from '../../ui/view/state';
 
 export type InlineCompletionPreview = {
@@ -58,7 +58,7 @@ export function computeCursorScreenInfo(entry: CachedHighlight, textLeft: number
 	const highlight = entry.hi;
 	const columnToDisplay = highlight.columnToDisplay;
 	const clampedColumn = columnToDisplay.length > 0
-		? clamp(editorDocumentState.cursorColumn, 0, columnToDisplay.length - 1)
+		? clamp(activeCodeEditor.view.cursorColumn, 0, columnToDisplay.length - 1)
 		: 0;
 	const cursorDisplayIndex = columnToDisplay.length > 0 ? columnToDisplay[clampedColumn] : 0;
 	const limitedDisplayIndex = Math.max(sliceStartDisplay, cursorDisplayIndex);
@@ -76,12 +76,12 @@ export function computeCursorScreenInfo(entry: CachedHighlight, textLeft: number
 			cursorWidth = widthValue > 0 ? widthValue : editorViewState.charAdvance;
 		}
 	}
-	if (editorDocumentState.buffer.getLineContent(editorDocumentState.cursorRow).charAt(editorDocumentState.cursorColumn) === '\t') {
+	if (activeCodeEditor.model.buffer.getLineContent(activeCodeEditor.view.cursorRow).charAt(activeCodeEditor.view.cursorColumn) === '\t') {
 		cursorWidth = editorViewState.spaceAdvance * constants.TAB_SPACES;
 	}
 	return {
-		row: editorDocumentState.cursorRow,
-		column: editorDocumentState.cursorColumn,
+		row: activeCodeEditor.view.cursorRow,
+		column: activeCodeEditor.view.cursorColumn,
 		x: cursorX,
 		y: rowTop,
 		width: cursorWidth,

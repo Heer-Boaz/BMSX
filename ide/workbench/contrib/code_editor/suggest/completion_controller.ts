@@ -1,6 +1,7 @@
 import { clamp } from '../../../../../machine/ts/common/clamp';
 import { create_rect_bounds } from '../../../../../machine/ts/common/rect';
-import { editorDocumentState } from '../../../../editor/editing/document_state';
+import { activeCodeEditor } from '../../../../editor/ui/code_editor_state';
+import { editorTextModelService } from '../../../../editor/model/model_service';
 import { editorViewState } from '../../../../editor/ui/view/state';
 import {
 	listGlobalLuaSymbols,
@@ -90,7 +91,7 @@ export class CompletionController {
 		if (!this.isCompletionReady()) {
 			return false;
 		}
-		const lastEditAt = editorDocumentState.lastContentEditAtMs;
+		const lastEditAt = activeCodeEditor.model.lastContentEditAtMs;
 		if (lastEditAt < 0) {
 			return false;
 		}
@@ -99,19 +100,19 @@ export class CompletionController {
 	}
 
 	protected getBuffer() {
-		return editorDocumentState.buffer;
+		return activeCodeEditor.model.buffer;
 	}
 
 	protected getTextVersion(): number {
-		return editorDocumentState.textVersion;
+		return activeCodeEditor.model.version;
 	}
 
 	protected getActivePath(): string {
-		return editorDocumentState.resource.path;
+		return activeCodeEditor.model.resource.path;
 	}
 
 	protected getActiveDomain() {
-		return editorDocumentState.resource.domain;
+		return activeCodeEditor.model.resource.domain;
 	}
 
 	protected getCharAt(row: number, column: number): string {
@@ -129,16 +130,16 @@ export class CompletionController {
 	protected clampBufferPosition(row: number, column: number): { row: number; column: number } {
 		this.clampPositionScratch.row = row;
 		this.clampPositionScratch.column = column;
-		return editorViewState.layout.clampBufferPosition(editorDocumentState.buffer, this.clampPositionScratch);
+		return editorViewState.layout.clampBufferPosition(activeCodeEditor.model.buffer, this.clampPositionScratch);
 	}
 
 	protected clearSelectionAnchor(): void {
-		clearSingleCursorSelection(editorDocumentState);
+		clearSingleCursorSelection(activeCodeEditor.view);
 	}
 
 	protected getCursorPosition(): { row: number; column: number } {
-		this.cursorPositionScratch.row = editorDocumentState.cursorRow;
-		this.cursorPositionScratch.column = editorDocumentState.cursorColumn;
+		this.cursorPositionScratch.row = activeCodeEditor.view.cursorRow;
+		this.cursorPositionScratch.column = activeCodeEditor.view.cursorColumn;
 		return this.cursorPositionScratch;
 	}
 
@@ -147,11 +148,11 @@ export class CompletionController {
 		const rowCount = buffer.getLineCount();
 		const clampedRow = clamp(row, 0, rowCount - 1);
 		const line = buffer.getLineContent(clampedRow);
-		setSingleCursorPosition(editorDocumentState, clampedRow, clamp(column, 0, line.length));
+		setSingleCursorPosition(activeCodeEditor.view, clampedRow, clamp(column, 0, line.length));
 	}
 
 	protected setSelectionAnchor(row: number, column: number): void {
-		setSingleCursorSelectionAnchor(editorDocumentState, row, column);
+		setSingleCursorSelectionAnchor(activeCodeEditor.view, row, column);
 	}
 
 	private setLastCursorPosition(row: number, column: number): void {
@@ -529,7 +530,7 @@ export class CompletionController {
 				this.runtime,
 				namePath,
 				context.member.operator,
-				editorDocumentState.resource.domain,
+				activeCodeEditor.model.resource.domain,
 				this.getActivePath(),
 			);
 			if (semanticItems.length === 0) {
@@ -588,7 +589,7 @@ export class CompletionController {
 	}
 
 	private ensureLocalCompletionCache(): LocalCompletionCacheEntry {
-		const key = resourceIdentityKey(editorDocumentState.resource);
+		const key = resourceIdentityKey(activeCodeEditor.model.resource);
 		const path = this.getActivePath();
 		const currentVersion = this.getTextVersion();
 		const cached = this.localCompletionCache.get(key);
@@ -597,7 +598,7 @@ export class CompletionController {
 		}
 		const frontend = buildEditorSemanticFrontend(
 			this.bridge,
-			editorDocumentState.resource,
+			activeCodeEditor.model.resource,
 			this.getBuffer(),
 		);
 		const file = frontend.getFile(path);
@@ -1028,7 +1029,7 @@ export class CompletionController {
 		const cursor = this.getCursorPosition();
 		const frontend = buildEditorSemanticFrontend(
 			this.bridge,
-			editorDocumentState.resource,
+			activeCodeEditor.model.resource,
 			this.getBuffer(),
 		);
 		return frontend.provideSignatureHelp(
@@ -1045,8 +1046,12 @@ export class EditorCompletionController extends CompletionController {
 
 	public constructor(bridge: RuntimeLuaTooling, fault: RuntimeFaultState, runtime: Runtime) {
 		super(bridge, fault, runtime);
-		this.unsubscribeCursorMoved = editorDocumentState.onCursorMoved(() => this.onCursorMoved());
-		this.unsubscribeTextMutated = editorDocumentState.onTextMutated(edit => this.updateAfterEdit(edit));
+		this.unsubscribeCursorMoved = activeCodeEditor.onDidMoveCursor(() => this.onCursorMoved());
+		this.unsubscribeTextMutated = editorTextModelService.onDidChangeContent((model, event) => {
+			if (model === activeCodeEditor.model) {
+				this.updateAfterEdit(event.editContext);
+			}
+		});
 	}
 
 	public dispose(): void {

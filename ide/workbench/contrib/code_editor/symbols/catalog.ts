@@ -1,7 +1,7 @@
 import type { LuaSymbolEntry } from '../../../../../toolchain/ts/lua/semantic_contracts';
 import * as constants from '../../../../common/constants';
 import { computeSourceLabel } from '../../../../common/paths';
-import { editorDocumentState } from '../../../../editor/editing/document_state';
+import { activeCodeEditor } from '../../../../editor/ui/code_editor_state';
 import { showEditorMessage } from '../../../../common/feedback_state';
 import { listGlobalLuaSymbols, listLuaSymbols } from '../../../../editor/contrib/intellisense/engine';
 import { symbolKindLabel } from '../../../../../toolchain/ts/lua/semantic/model';
@@ -29,7 +29,7 @@ export function symbolSourceLabel(entry: LuaSymbolEntry): string | null {
 
 export function refreshSymbolCatalog(bridge: RuntimeLuaTooling, force: boolean): void {
 	const scope: 'local' | 'global' = symbolSearchState.global ? 'global' : 'local';
-	const descriptor = editorDocumentState.resource;
+	const descriptor = activeCodeEditor.model.resource;
 	const path = scope === 'local' ? descriptor.path : null;
 	const existing = symbolSearchState.catalogContext;
 	const unchanged = existing !== null

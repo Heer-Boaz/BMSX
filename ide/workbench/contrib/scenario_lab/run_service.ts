@@ -32,9 +32,9 @@ import {
 	applyLuaCodeTabSources,
 } from '../../../workspace/workspace';
 import {
-	markLuaCodeTabsAppliedToRuntime,
+	markLuaTextModelsAppliedToRuntime,
 	type CurrentLuaSourceSnapshot,
-	type LuaCodeTabSourceSnapshot,
+	type LuaTextModelSourceSnapshot,
 } from '../../ui/code_tab/activation';
 import { workspaceDirtyRecords } from '../../workspace/state';
 import { ScenarioExecutionService } from '../../../testing/scenario/execution_service';
@@ -48,7 +48,7 @@ import type { ScenarioTestItem } from '../../../testing/scenario/test_collection
 type PendingScenarioRun = {
 	readonly test: ScenarioTestItem;
 	readonly testSource: CurrentLuaSourceSnapshot;
-	readonly pendingProgramSources: ReadonlyArray<LuaCodeTabSourceSnapshot>;
+	readonly pendingProgramSources: ReadonlyArray<LuaTextModelSourceSnapshot>;
 	result: ScenarioRunResult | null;
 	cancelled: boolean;
 };
@@ -142,7 +142,7 @@ export class ScenarioRunService {
 	public start(
 		test: ScenarioTestItem,
 		testSource: CurrentLuaSourceSnapshot,
-		pendingProgramSources: ReadonlyArray<LuaCodeTabSourceSnapshot>,
+		pendingProgramSources: ReadonlyArray<LuaTextModelSourceSnapshot>,
 	): Promise<void> {
 		if (this.active) {
 			throw new Error('A Scenario Lab media session is already active.');
@@ -222,7 +222,7 @@ export class ScenarioRunService {
 				this.runtime,
 				canonicalBootRequired,
 			);
-			markLuaCodeTabsAppliedToRuntime(request.pendingProgramSources);
+			markLuaTextModelsAppliedToRuntime(request.pendingProgramSources);
 			const slot = request.test.resource.domain;
 			const cartridge = this.sources.cartridgeSlots[slot]!;
 			const session: ScenarioMediaSession = {

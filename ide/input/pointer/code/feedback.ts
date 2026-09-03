@@ -4,7 +4,7 @@ import { clearHoverTooltip, updateHoverTooltip } from '../../../editor/contrib/h
 import { resolvePointerTextPosition } from '../../../editor/ui/view/view';
 import type { CodeAreaBounds } from '../../../editor/ui/view/view';
 import type { PointerSnapshot } from '../../../common/models';
-import type { EditorDocumentContext } from '../../../editor/editing/document_state';
+import type { CodeEditorContext } from '../../../editor/ui/code_editor_state';
 import { isAltDown } from '../../keyboard/key_input';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
@@ -20,7 +20,7 @@ export function updateCodeAreaPointerFeedback(
 	insideCodeArea: boolean,
 	gotoModifierActive: boolean,
 	pointerSelecting: boolean,
-	activeContext: EditorDocumentContext,
+	activeContext: CodeEditorContext,
 	bounds: CodeAreaBounds
 ): void {
 	if (isCodeTabActive() && !snapshot.primaryPressed && !pointerSelecting && insideCodeArea && gotoModifierActive) {

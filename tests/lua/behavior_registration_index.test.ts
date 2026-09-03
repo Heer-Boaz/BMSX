@@ -10,10 +10,11 @@ import {
 import { resolveRuntimeResource } from '../../ide/runtime/sources';
 import { BehaviorRegistrationIndex } from '../../ide/workbench/contrib/behavior_lens/registration_index';
 import {
-	clearCodeTabContexts,
+	clearCodeEditorInputs,
 	createLuaCodeTabContext,
 	registerCodeTabContext,
 } from '../../ide/workbench/ui/code_tab/contexts';
+import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { createTestRuntimeSourceState } from '../helpers/runtime_sources';
 
 function luaSource(path: string, source: string): LuaSourceRecord {
@@ -69,7 +70,8 @@ test('behavior registration index isolates domains and rebuilds on an authored d
 		0,
 	);
 	t.after(() => {
-		clearCodeTabContexts();
+		clearCodeEditorInputs();
+		editorTextModelService.clear();
 		resetSemanticProjects();
 	});
 	const index = new BehaviorRegistrationIndex(sources);
@@ -87,14 +89,22 @@ test('behavior registration index isolates domains and rebuilds on an authored d
 	const resource = resolveRuntimeResource(sources, { domain: 0, path: slot0Path })!;
 	const context = createLuaCodeTabContext(sources, resource);
 	registerCodeTabContext(context);
-	context.buffer.insert(0, '-- authored edit\n');
+	context.model.pushEditOperations([{
+		offset: 0,
+		deleteLength: 0,
+		text: '-- authored edit\n',
+	}]);
 	const slot0Edited = index.resolve(0, 'action_effect', 'shared');
 	assert.equal(slot0Edited.length, 1);
 	assert.equal(slot0Edited[0].range.start.line, 3);
 	assert.notStrictEqual(slot0Edited, slot0Initial);
 	assert.strictEqual(index.resolve(1, 'action_effect', 'shared'), slot1Initial);
 
-	context.buffer.insert(context.buffer.length, "\neffects.register_effect('shared', {})");
+	context.model.pushEditOperations([{
+		offset: context.model.buffer.length,
+		deleteLength: 0,
+		text: "\neffects.register_effect('shared', {})",
+	}]);
 	const duplicates = index.resolve(0, 'action_effect', 'shared');
 	assert.equal(duplicates.length, 2);
 	assert.deepEqual(

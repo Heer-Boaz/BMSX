@@ -1,11 +1,11 @@
 // start hot-path -- editor text measurement/layout helpers run during render and caret updates.
-// start required-state editorDocumentState,editorViewState -- editor state roots are owned singletons in this module.
+// start required-state activeCodeEditor,editorViewState -- editor model/view and layout roots are owned singletons in their modules.
 import { getCodeAreaBounds } from '../../ui/view/view';
 import * as TextEditing from '../../editing/text_editing_and_selection';
 import type { HighlightLine } from '../../../common/models';
 import { truncateMeasuredText, writeWrappedMeasuredLine } from '../../../common/text';
 import { editorViewState } from '../../ui/view/state';
-import { editorDocumentState } from '../../editing/document_state';
+import { activeCodeEditor } from '../../ui/code_editor_state';
 import * as constants from '../../../common/constants';
 import { ERROR_OVERLAY_CONNECTOR_OFFSET, ERROR_OVERLAY_PADDING_X } from '../../../common/constants';
 
@@ -49,7 +49,7 @@ export function computeSelectionSlice(lineIndex: number, highlight: HighlightLin
 		return null;
 	}
 	const selectionStartColumn = lineIndex === start.row ? start.column : 0;
-	const lineLength = editorDocumentState.buffer.getLineEndOffset(lineIndex) - editorDocumentState.buffer.getLineStartOffset(lineIndex);
+	const lineLength = activeCodeEditor.model.buffer.getLineEndOffset(lineIndex) - activeCodeEditor.model.buffer.getLineStartOffset(lineIndex);
 	let selectionEndColumn = lineIndex === end.row ? end.column : lineLength;
 	if (lineIndex === end.row && end.column === 0 && end.row > start.row) {
 		selectionEndColumn = 0;
@@ -69,14 +69,14 @@ export function computeSelectionSlice(lineIndex: number, highlight: HighlightLin
 
 export function ensureVisualLines(): void {
 	const estimatedVisibleRowCount = editorViewState.cachedVisibleRowCount;
-	editorViewState.scrollRow = editorViewState.layout.ensureVisualLines(
-		editorDocumentState.buffer,
+	activeCodeEditor.view.scrollRow = editorViewState.layout.ensureVisualLines(
+		activeCodeEditor.model.buffer,
 		editorViewState.wordWrapEnabled,
-		editorViewState.scrollRow,
+		activeCodeEditor.view.scrollRow,
 		estimatedVisibleRowCount,
 	);
 	const visualLineCount = editorViewState.layout.getVisualLineCount();
-	editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(editorViewState.scrollRow, visualLineCount, estimatedVisibleRowCount);
+	activeCodeEditor.view.scrollRow = editorViewState.layout.clampVisualScroll(activeCodeEditor.view.scrollRow, visualLineCount, estimatedVisibleRowCount);
 }
 
 export function computeRuntimeErrorOverlayMaxWidth(): number {
@@ -99,10 +99,7 @@ export function writeWrappedOverlayLine(segments: string[], line: string, maxWid
 }
 
 export function currentLine(): string {
-	if (editorDocumentState.cursorRow < 0 || editorDocumentState.cursorRow >= editorDocumentState.buffer.getLineCount()) {
-		return '';
-	}
-	return editorDocumentState.buffer.getLineContent(editorDocumentState.cursorRow);
+	return activeCodeEditor.model.buffer.getLineContent(activeCodeEditor.view.cursorRow);
 }
 // end required-state
 // end hot-path

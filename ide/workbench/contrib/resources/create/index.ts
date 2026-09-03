@@ -52,7 +52,7 @@ export function determineCreateResourceDefaultPath(sources: RuntimeSourceState):
 		return lastDirectory;
 	}
 	const activeContext = getActiveCodeTabContext();
-	const activePath = activeContext.resource.path;
+	const activePath = activeContext.model.resource.path;
 	if (activePath.length > 0) {
 		return ensureDirectorySuffix(activePath);
 	}

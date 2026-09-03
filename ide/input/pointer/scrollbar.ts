@@ -5,6 +5,7 @@ import { bottomMargin } from '../../workbench/common/layout';
 import type { PointerSnapshot, ScrollbarKind } from '../../common/models';
 import { editorPointerState } from './state';
 import { editorViewState } from '../../editor/ui/view/state';
+import { activeCodeEditor } from '../../editor/ui/code_editor_state';
 import { editorCaretState } from '../../editor/ui/view/caret/state';
 import { getCodeAreaBounds } from '../../editor/ui/view/view';
 import { setResourceViewerScroll } from '../../workbench/contrib/resources/viewer';
@@ -29,16 +30,16 @@ export function applyScrollbarScroll(resourcePanel: ResourcePanelController, kin
 	switch (kind) {
 		case 'codeVertical': {
 			ensureVisualLines();
-			editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(Math.round(scroll), editorViewState.layout.getVisualLineCount(), editorViewState.cachedVisibleRowCount);
+			activeCodeEditor.view.scrollRow = editorViewState.layout.clampVisualScroll(Math.round(scroll), editorViewState.layout.getVisualLineCount(), editorViewState.cachedVisibleRowCount);
 			editorCaretState.cursorRevealSuspended = true;
 			break;
 		}
 		case 'codeHorizontal': {
 			if (editorViewState.wordWrapEnabled) {
-				editorViewState.scrollColumn = 0;
+				activeCodeEditor.view.scrollColumn = 0;
 				break;
 			}
-			editorViewState.scrollColumn = editorViewState.layout.clampHorizontalScroll(Math.round(scroll), editorViewState.cachedMaxScrollColumn);
+			activeCodeEditor.view.scrollColumn = editorViewState.layout.clampHorizontalScroll(Math.round(scroll), editorViewState.cachedMaxScrollColumn);
 			editorCaretState.cursorRevealSuspended = true;
 			break;
 		}

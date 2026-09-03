@@ -7,7 +7,7 @@ import { isCodeTabActive } from '../../../ui/tabs';
 import { setCursorPosition, ensureCursorVisible } from '../../../../editor/ui/view/caret/caret';
 import * as TextEditing from '../../../../editor/editing/text_editing_and_selection';
 import { editorCaretState } from '../../../../editor/ui/view/caret/state';
-import { editorDocumentState } from '../../../../editor/editing/document_state';
+import { activeCodeEditor } from '../../../../editor/ui/code_editor_state';
 import type { ResourcePanelController } from '../../resources/panel/controller';
 
 export function gotoDiagnostic(resourcePanel: ResourcePanelController, diagnostic: EditorDiagnostic): void {
@@ -21,8 +21,8 @@ export function gotoDiagnostic(resourcePanel: ResourcePanelController, diagnosti
 	if (!isCodeTabActive()) {
 		return;
 	}
-	const targetRow = clamp(diagnostic.row, 0, editorDocumentState.buffer.getLineCount() - 1);
-	const line = editorDocumentState.buffer.getLineContent(targetRow);
+	const targetRow = clamp(diagnostic.row, 0, activeCodeEditor.model.buffer.getLineCount() - 1);
+	const line = activeCodeEditor.model.buffer.getLineContent(targetRow);
 	const targetColumn = clamp(diagnostic.startColumn, 0, line.length);
 	setCursorPosition(targetRow, targetColumn);
 	TextEditing.clearSelection();

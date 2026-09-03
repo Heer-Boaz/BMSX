@@ -5,7 +5,7 @@ import { getActiveCodeTabContext } from '../../../../ui/code_tab/contexts';
 import { resetBlink } from '../../../../../editor/render/caret';
 import { applySymbolSearchFieldText, closeSymbolSearch, ensureSymbolSearchSelectionVisible } from '../../symbols/shared';
 import { resolveReferenceLookup } from '../../../../../editor/contrib/references/lookup';
-import { editorDocumentState } from '../../../../../editor/editing/document_state';
+import { activeCodeEditor } from '../../../../../editor/ui/code_editor_state';
 import { symbolSearchState } from '../../symbols/search/state';
 import { referenceState } from '../../../../../editor/contrib/references/state';
 import { buildReferenceSearchCatalog, showReferenceSearchStatusMessage } from './catalog';
@@ -16,7 +16,7 @@ import type { CartEditor } from '../../../../../cart_editor';
 
 export function openReferenceSearchPopup(bridge: RuntimeLuaTooling, rename: RenameController): void {
 	const context = getActiveCodeTabContext();
-	switch (context.mode) {
+	switch (context.model.mode) {
 		case 'lua':
 			break;
 		case 'aem':
@@ -27,10 +27,10 @@ export function openReferenceSearchPopup(bridge: RuntimeLuaTooling, rename: Rena
 	}
 	rename.cancel();
 	const result = resolveReferenceLookup(bridge, {
-		buffer: editorDocumentState.buffer,
-		cursorRow: editorDocumentState.cursorRow,
-		cursorColumn: editorDocumentState.cursorColumn,
-		identity: context.resource,
+		buffer: activeCodeEditor.model.buffer,
+		cursorRow: activeCodeEditor.view.cursorRow,
+		cursorColumn: activeCodeEditor.view.cursorColumn,
+		identity: context.model.resource,
 	});
 	if (result.kind === 'error') {
 		showEditorMessage(result.message, constants.COLOR_STATUS_WARNING, result.duration);

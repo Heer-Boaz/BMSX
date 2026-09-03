@@ -1,6 +1,6 @@
 import type { PointerSnapshot } from '../../../common/models';
 import { resourceIdentityKey } from '../../../common/resource';
-import { editorDocumentState } from '../../../editor/editing/document_state';
+import { activeCodeEditor } from '../../../editor/ui/code_editor_state';
 import { getOrCreateSemanticProject } from '../../../editor/contrib/intellisense/semantic/workspace/state';
 import { getTextSnapshot } from '../../../editor/text/source_text';
 import type { RuntimeSourceState } from '../../../runtime/sources';
@@ -41,14 +41,14 @@ export class BehaviorLensController {
 
 	public openActiveDocument(): void {
 		const context = getActiveCodeTabContext();
-		const source = getTextSnapshot(editorDocumentState.buffer);
-		const sourceVersion = context.buffer.version;
-		const sourceLine = editorDocumentState.cursorRow + 1;
-		const sourceColumn = editorDocumentState.cursorColumn + 1;
-		const tabId: BehaviorLensTabId = `behavior:${resourceIdentityKey(context.resource)}`;
+		const source = getTextSnapshot(activeCodeEditor.model.buffer);
+		const sourceVersion = context.model.version;
+		const sourceLine = activeCodeEditor.view.cursorRow + 1;
+		const sourceColumn = activeCodeEditor.view.cursorColumn + 1;
+		const tabId: BehaviorLensTabId = `behavior:${resourceIdentityKey(context.model.resource)}`;
 		let tab = editorTabGroup.findById(tabId);
 		if (tab === undefined) {
-			const document = this.buildDocument(context.resource, source);
+			const document = this.buildDocument(context.model.resource, source);
 			tab = {
 				id: tabId,
 				kind: 'behavior_lens',
@@ -72,13 +72,13 @@ export class BehaviorLensController {
 	/** Refreshes a visible source lens when its canonical code buffer advances. */
 	public updateView(view: BehaviorLensViewState): void {
 		const context = getCodeTabContextById(view.sourceContextId);
-		const sourceLine = context.cursorRow + 1;
-		const sourceColumn = context.cursorColumn + 1;
-		const sourceVersion = context.buffer.version;
+		const sourceLine = context.view.cursorRow + 1;
+		const sourceColumn = context.view.cursorColumn + 1;
+		const sourceVersion = context.model.version;
 		if (sourceVersion !== view.sourceVersion) {
 			this.refreshView(
 				view,
-				getTextSnapshot(context.buffer),
+				getTextSnapshot(context.model.buffer),
 				sourceVersion,
 				sourceLine,
 				sourceColumn,

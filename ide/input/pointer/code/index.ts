@@ -1,7 +1,7 @@
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 import type { PointerSnapshot } from '../../../common/models';
-import type { EditorDocumentContext } from '../../../editor/editing/document_state';
+import type { CodeEditorContext } from '../../../editor/ui/code_editor_state';
 import * as constants from '../../../common/constants';
 import { getCodeAreaBounds } from '../../../editor/ui/view/view';
 import { editorViewState } from '../../../editor/ui/view/state';
@@ -24,7 +24,7 @@ export function handleCodeAreaPointerInput(
 	snapshot: PointerSnapshot,
 	justPressed: boolean,
 	gotoModifierActive: boolean,
-	activeContext: EditorDocumentContext,
+	activeContext: CodeEditorContext,
 	pointerSecondaryJustPressed: boolean,
 	playerInput: PlayerInput,
 	now: number,

@@ -1,4 +1,5 @@
 import type { PieceTreeNode } from './piece_tree_buffer';
+import type { CodeEditorViewSnapshot } from '../../common/models';
 
 export type TextUndoKind = 'insert' | 'delete' | 'replace';
 
@@ -42,57 +43,8 @@ export class TextUndoOp {
 
 export class EditorUndoRecord {
 	public readonly ops: TextUndoOp[] = [];
-
-	public beforeCursorRow = 0;
-	public beforeCursorColumn = 0;
-	public beforeScrollRow = 0;
-	public beforeScrollColumn = 0;
-	public beforeHasSelectionAnchor = false;
-	public beforeSelectionAnchorRow = 0;
-	public beforeSelectionAnchorColumn = 0;
-
-	public afterCursorRow = 0;
-	public afterCursorColumn = 0;
-	public afterScrollRow = 0;
-	public afterScrollColumn = 0;
-	public afterHasSelectionAnchor = false;
-	public afterSelectionAnchorRow = 0;
-	public afterSelectionAnchorColumn = 0;
-
-	public setBeforeState(
-		cursorRow: number,
-		cursorColumn: number,
-		scrollRow: number,
-		scrollColumn: number,
-		selectionAnchorRow: number,
-		selectionAnchorColumn: number,
-		hasSelectionAnchor: boolean,
-	): void {
-		this.beforeCursorRow = cursorRow;
-		this.beforeCursorColumn = cursorColumn;
-		this.beforeScrollRow = scrollRow;
-		this.beforeScrollColumn = scrollColumn;
-		this.beforeHasSelectionAnchor = hasSelectionAnchor;
-		this.beforeSelectionAnchorRow = selectionAnchorRow;
-		this.beforeSelectionAnchorColumn = selectionAnchorColumn;
-	}
-
-	public setAfterState(
-		cursorRow: number,
-		cursorColumn: number,
-		scrollRow: number,
-		scrollColumn: number,
-		selectionAnchorRow: number,
-		selectionAnchorColumn: number,
-		hasSelectionAnchor: boolean,
-	): void {
-		this.afterCursorRow = cursorRow;
-		this.afterCursorColumn = cursorColumn;
-		this.afterScrollRow = scrollRow;
-		this.afterScrollColumn = scrollColumn;
-		this.afterHasSelectionAnchor = hasSelectionAnchor;
-		this.afterSelectionAnchorRow = selectionAnchorRow;
-		this.afterSelectionAnchorColumn = selectionAnchorColumn;
-	}
+	public beforeViewState: CodeEditorViewSnapshot | null = null;
+	public afterViewState: CodeEditorViewSnapshot | null = null;
+	public beforeStateId = 0;
+	public afterStateId = 0;
 }
-

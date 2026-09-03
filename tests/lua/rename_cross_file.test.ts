@@ -1,54 +1,18 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { CodeTabContext } from '../../ide/workbench/ui/code_tab/model';
-import { PieceTreeBuffer } from '../../ide/editor/text/piece_tree_buffer';
+import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { createLuaSemanticFrontendFromSnapshot, LuaSemanticWorkspace } from '../../ide/editor/contrib/intellisense/semantic/workspace/index';
 import { getOrCreateSemanticProject, resetSemanticProject } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
 import { CrossFileRenameManager } from '../../ide/workbench/contrib/code_editor/rename/operations';
-import {
-	buildCodeTabId,
-	registerCodeTabContext,
-} from '../../ide/workbench/ui/code_tab/contexts';
-import { codeEditorModelManager } from '../../ide/workbench/ui/code_tab/model_manager';
+import { buildCodeTabId } from '../../ide/workbench/ui/code_tab/contexts';
+import { codeEditorInputManager } from '../../ide/workbench/ui/code_tab/input_manager';
 import { editorTabGroup } from '../../ide/workbench/ui/tab/group_model';
-import {
-	SYSTEM_RESOURCE_DOMAIN,
-	type RuntimeResource,
-} from '../../ide/common/resource';
+import type { ResourceViewerTabDescriptor } from '../../ide/workbench/ui/tab/model';
+import { SYSTEM_RESOURCE_DOMAIN } from '../../ide/common/resource';
 import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import { createTestRuntimeSourceState } from '../helpers/runtime_sources';
 import { resolveRuntimeResource } from '../../ide/runtime/sources';
-
-function codeContext(resource: RuntimeResource, source: string): CodeTabContext {
-	const buffer = new PieceTreeBuffer(source);
-	return {
-		id: buildCodeTabId(resource),
-		title: resource.path,
-		resource,
-		mode: 'lua',
-		buffer,
-		cursorRow: 0,
-		cursorColumn: 0,
-		scrollRow: 0,
-		scrollColumn: 0,
-		selectionAnchor: null,
-		lastSavedSource: source,
-		saveGeneration: 0,
-		appliedGeneration: 0,
-		undoStack: [],
-		redoStack: [],
-		lastHistoryKey: null,
-		lastHistoryTimestamp: 0,
-		savePointDepth: 0,
-		dirty: false,
-		runtimeErrorOverlay: null,
-		executionStopRow: null,
-		runtimeSyncState: 'synced',
-		runtimeSyncMessage: null,
-		textVersion: buffer.version,
-	};
-}
 
 test('cross file rename updates a retained background model without opening an editor input', (t) => {
 	const files = new Map<string, string>([
@@ -100,9 +64,7 @@ test('cross file rename updates a retained background model without opening an e
 		domain: SYSTEM_RESOURCE_DOMAIN,
 		path: 'usage.lua',
 	})!;
-	const usageContext = codeContext(usageResource, usageSource);
-	registerCodeTabContext(usageContext);
-	const resourceTab = {
+	const resourceTab: ResourceViewerTabDescriptor = {
 		id: 'resource:system\0usage.lua',
 		kind: 'resource_view',
 		title: 'usage.lua',
@@ -114,11 +76,12 @@ test('cross file rename updates a retained background model without opening an e
 			title: 'usage.lua',
 			scroll: 0,
 		},
-	} as const;
+	};
 	editorTabGroup.initialize(resourceTab);
 	t.after(() => {
 		editorTabGroup.clear();
-		codeEditorModelManager.clear();
+		codeEditorInputManager.clear();
+		editorTextModelService.clear();
 	});
 
 	const definitionCol = mainSource.indexOf('state') + 1;
@@ -140,14 +103,18 @@ test('cross file rename updates a retained background model without opening an e
 	);
 	assert.equal(replacements, otherRanges.length);
 
-	assert.equal(usageContext.dirty, true);
-	assert.equal(usageContext.buffer.getText(), 'print(worldState.value)');
+	const usageModel = editorTextModelService.get(usageResource)!;
+	assert.equal(usageModel.dirty, true);
+	assert.equal(usageModel.buffer.getText(), 'print(worldState.value)');
 	assert.equal(editorTabGroup.tabs.length, 1);
 	assert.equal(editorTabGroup.activeTab, resourceTab);
-	assert.equal(codeEditorModelManager.get(usageContext.id), usageContext);
+	assert.equal(codeEditorInputManager.get(buildCodeTabId(usageResource)), undefined);
 
 	const updatedData = getOrCreateSemanticProject(SYSTEM_RESOURCE_DOMAIN).getFileData('usage.lua');
 	assert.ok(updatedData);
 	assert.equal(updatedData!.source.trim(), 'print(worldState.value)');
+
+	usageModel.undo();
+	assert.equal(usageModel.buffer.getText(), usageSource);
 
 });

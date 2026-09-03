@@ -42,7 +42,7 @@ export type EditorTabDescriptor =
 	| ScenarioLabTabDescriptor;
 
 export function editorTabDirty(tab: EditorTabDescriptor): boolean {
-	return tab.kind === 'code_editor' && tab.context.dirty;
+	return tab.kind === 'code_editor' && tab.context.model.dirty;
 }
 
 export type TabDragState = {

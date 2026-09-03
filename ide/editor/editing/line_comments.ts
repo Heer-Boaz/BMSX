@@ -4,11 +4,11 @@ import { markTextMutated } from '../common/text/runtime';
 import { resetBlink } from '../render/caret';
 import { revealCursor, updateDesiredColumn } from '../ui/view/caret/caret';
 import * as TextEditing from './text_editing_and_selection';
-import { editorDocumentState } from './document_state';
+import { activeCodeEditor } from '../ui/code_editor_state';
 import { editorViewState } from '../ui/view/state';
 
 export function toggleLineComments(): void {
-	if (editorDocumentState.readOnly) {
+	if (activeCodeEditor.model.readOnly) {
 		notifyReadOnlyEdit();
 		return;
 	}
@@ -18,7 +18,7 @@ export function toggleLineComments(): void {
 	}
 	let allCommented = true;
 	for (let row = range.startRow; row <= range.endRow; row++) {
-		const line = editorDocumentState.buffer.getLineContent(row);
+		const line = activeCodeEditor.model.buffer.getLineContent(row);
 		const commentIndex = firstNonWhitespaceIndex(line);
 		if (commentIndex >= line.length) {
 			allCommented = false;
@@ -37,7 +37,7 @@ export function toggleLineComments(): void {
 }
 
 export function addLineComments(range?: { startRow: number; endRow: number }): void {
-	if (editorDocumentState.readOnly) {
+	if (activeCodeEditor.model.readOnly) {
 		notifyReadOnlyEdit();
 		return;
 	}
@@ -48,7 +48,7 @@ export function addLineComments(range?: { startRow: number; endRow: number }): v
 	prepareUndo('comment-lines', false);
 	let changed = false;
 	for (let row = target.startRow; row <= target.endRow; row++) {
-		const originalLine = editorDocumentState.buffer.getLineContent(row);
+		const originalLine = activeCodeEditor.model.buffer.getLineContent(row);
 		const insertIndex = firstNonWhitespaceIndex(originalLine);
 		const hasContent = insertIndex < originalLine.length;
 		let insertion = '--';
@@ -58,7 +58,7 @@ export function addLineComments(range?: { startRow: number; endRow: number }): v
 				insertion = '-- ';
 			}
 		}
-		applyUndoableReplace(editorDocumentState.buffer.offsetAt(row, insertIndex), 0, insertion);
+		applyUndoableReplace(activeCodeEditor.model.buffer.offsetAt(row, insertIndex), 0, insertion);
 		editorViewState.layout.invalidateLine(row);
 		shiftPositionsForInsertion(row, insertIndex, insertion.length);
 		changed = true;
@@ -66,10 +66,10 @@ export function addLineComments(range?: { startRow: number; endRow: number }): v
 	if (!changed) {
 		return;
 	}
-	editorDocumentState.cursorRow = editorViewState.layout.clampBufferRow(editorDocumentState.buffer, editorDocumentState.cursorRow);
-	const cursorLine = editorDocumentState.buffer.getLineContent(editorDocumentState.cursorRow);
-	editorDocumentState.cursorColumn = editorViewState.layout.clampLineLength(cursorLine.length, editorDocumentState.cursorColumn);
-	editorDocumentState.selectionAnchor = TextEditing.clampSelectionPosition(editorDocumentState.selectionAnchor);
+	activeCodeEditor.view.cursorRow = editorViewState.layout.clampBufferRow(activeCodeEditor.model.buffer, activeCodeEditor.view.cursorRow);
+	const cursorLine = activeCodeEditor.model.buffer.getLineContent(activeCodeEditor.view.cursorRow);
+	activeCodeEditor.view.cursorColumn = editorViewState.layout.clampLineLength(cursorLine.length, activeCodeEditor.view.cursorColumn);
+	activeCodeEditor.view.selectionAnchor = TextEditing.clampSelectionPosition(activeCodeEditor.view.selectionAnchor);
 	markTextMutated();
 	resetBlink();
 	updateDesiredColumn();
@@ -77,7 +77,7 @@ export function addLineComments(range?: { startRow: number; endRow: number }): v
 }
 
 export function removeLineComments(range?: { startRow: number; endRow: number }): void {
-	if (editorDocumentState.readOnly) {
+	if (activeCodeEditor.model.readOnly) {
 		notifyReadOnlyEdit();
 		return;
 	}
@@ -85,10 +85,9 @@ export function removeLineComments(range?: { startRow: number; endRow: number })
 	if (target.startRow < 0 || target.endRow < target.startRow) {
 		return;
 	}
-	prepareUndo('uncomment-lines', false);
 	let changed = false;
 	for (let row = target.startRow; row <= target.endRow; row++) {
-		const originalLine = editorDocumentState.buffer.getLineContent(row);
+		const originalLine = activeCodeEditor.model.buffer.getLineContent(row);
 		const commentIndex = firstNonWhitespaceIndex(originalLine);
 		if (commentIndex >= originalLine.length) {
 			continue;
@@ -103,18 +102,21 @@ export function removeLineComments(range?: { startRow: number; endRow: number })
 				removal = 3;
 			}
 		}
-		applyUndoableReplace(editorDocumentState.buffer.offsetAt(row, commentIndex), removal, '');
+		if (!changed) {
+			prepareUndo('uncomment-lines', false);
+			changed = true;
+		}
+		applyUndoableReplace(activeCodeEditor.model.buffer.offsetAt(row, commentIndex), removal, '');
 		editorViewState.layout.invalidateLine(row);
 		shiftPositionsForRemoval(row, commentIndex, removal);
-		changed = true;
 	}
 	if (!changed) {
 		return;
 	}
-	editorDocumentState.cursorRow = editorViewState.layout.clampBufferRow(editorDocumentState.buffer, editorDocumentState.cursorRow);
-	const cursorLine = editorDocumentState.buffer.getLineContent(editorDocumentState.cursorRow);
-	editorDocumentState.cursorColumn = editorViewState.layout.clampLineLength(cursorLine.length, editorDocumentState.cursorColumn);
-	editorDocumentState.selectionAnchor = TextEditing.clampSelectionPosition(editorDocumentState.selectionAnchor);
+	activeCodeEditor.view.cursorRow = editorViewState.layout.clampBufferRow(activeCodeEditor.model.buffer, activeCodeEditor.view.cursorRow);
+	const cursorLine = activeCodeEditor.model.buffer.getLineContent(activeCodeEditor.view.cursorRow);
+	activeCodeEditor.view.cursorColumn = editorViewState.layout.clampLineLength(cursorLine.length, activeCodeEditor.view.cursorColumn);
+	activeCodeEditor.view.selectionAnchor = TextEditing.clampSelectionPosition(activeCodeEditor.view.selectionAnchor);
 	markTextMutated();
 	resetBlink();
 	updateDesiredColumn();
@@ -135,11 +137,11 @@ export function shiftPositionsForInsertion(row: number, column: number, length: 
 	if (length <= 0) {
 		return;
 	}
-	if (editorDocumentState.cursorRow === row && editorDocumentState.cursorColumn >= column) {
-		editorDocumentState.cursorColumn += length;
+	if (activeCodeEditor.view.cursorRow === row && activeCodeEditor.view.cursorColumn >= column) {
+		activeCodeEditor.view.cursorColumn += length;
 	}
-	if (editorDocumentState.selectionAnchor && editorDocumentState.selectionAnchor.row === row && editorDocumentState.selectionAnchor.column >= column) {
-		editorDocumentState.selectionAnchor.column += length;
+	if (activeCodeEditor.view.selectionAnchor && activeCodeEditor.view.selectionAnchor.row === row && activeCodeEditor.view.selectionAnchor.column >= column) {
+		activeCodeEditor.view.selectionAnchor.column += length;
 	}
 }
 
@@ -147,18 +149,18 @@ export function shiftPositionsForRemoval(row: number, column: number, length: nu
 	if (length <= 0) {
 		return;
 	}
-	if (editorDocumentState.cursorRow === row && editorDocumentState.cursorColumn > column) {
-		if (editorDocumentState.cursorColumn <= column + length) {
-			editorDocumentState.cursorColumn = column;
+	if (activeCodeEditor.view.cursorRow === row && activeCodeEditor.view.cursorColumn > column) {
+		if (activeCodeEditor.view.cursorColumn <= column + length) {
+			activeCodeEditor.view.cursorColumn = column;
 		} else {
-			editorDocumentState.cursorColumn -= length;
+			activeCodeEditor.view.cursorColumn -= length;
 		}
 	}
-	if (editorDocumentState.selectionAnchor && editorDocumentState.selectionAnchor.row === row && editorDocumentState.selectionAnchor.column > column) {
-		if (editorDocumentState.selectionAnchor.column <= column + length) {
-			editorDocumentState.selectionAnchor.column = column;
+	if (activeCodeEditor.view.selectionAnchor && activeCodeEditor.view.selectionAnchor.row === row && activeCodeEditor.view.selectionAnchor.column > column) {
+		if (activeCodeEditor.view.selectionAnchor.column <= column + length) {
+			activeCodeEditor.view.selectionAnchor.column = column;
 		} else {
-			editorDocumentState.selectionAnchor.column -= length;
+			activeCodeEditor.view.selectionAnchor.column -= length;
 		}
 	}
 }

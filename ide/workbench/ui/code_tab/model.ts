@@ -1,16 +1,13 @@
 import type { RuntimeErrorOverlay } from '../../../editor/contrib/runtime_error/model';
-import type { EditorDocumentContext } from '../../../editor/editing/document_state';
-import type { EditorDocumentContextId } from '../../../common/editor_context';
+import type { CodeEditorInputId } from '../../../common/editor_context';
+import type { EditorTextModel } from '../../../editor/model/text_model';
+import type { CodeEditorViewState } from '../../../editor/ui/code_editor_state';
 
-export type EditorRuntimeSyncState = 'synced' | 'runtime_update_pending' | 'diverged';
-
-export type CodeTabContext = EditorDocumentContext & {
-	id: EditorDocumentContextId;
+export type CodeTabContext = {
+	id: CodeEditorInputId;
 	title: string;
-	scrollRow: number;
-	scrollColumn: number;
+	model: EditorTextModel;
+	view: CodeEditorViewState;
 	runtimeErrorOverlay: RuntimeErrorOverlay;
 	executionStopRow: number;
-	runtimeSyncState: EditorRuntimeSyncState;
-	runtimeSyncMessage: string | null;
 };

@@ -19,7 +19,7 @@ export function handleEditorEditingKeys(playerInput: PlayerInput): void {
 		consumeIdeKey('Backspace', playerInput);
 		if (ctrlDown) {
 			TextEditing.deleteWordBackward();
-		} else if (!TextEditing.deleteSelectionIfPresent()) {
+		} else {
 			TextEditing.backspace();
 		}
 		return;
@@ -30,7 +30,7 @@ export function handleEditorEditingKeys(playerInput: PlayerInput): void {
 			TextEditing.deleteActiveLines();
 		} else if (ctrlDown) {
 			TextEditing.deleteWordForward();
-		} else if (!TextEditing.deleteSelectionIfPresent()) {
+		} else {
 			TextEditing.deleteForward();
 		}
 		return;

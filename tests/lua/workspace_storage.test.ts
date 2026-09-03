@@ -10,7 +10,6 @@ import {
 import type { RuntimeBreakpointState } from '../../ide/runtime/debugger_state';
 import type { KeyValueStorage } from '../../ide/workspace/key_value_storage';
 import type { TimerHandle } from '../../hosts/common/clock';
-import { PieceTreeBuffer } from '../../ide/editor/text/piece_tree_buffer';
 import { getTextSnapshot } from '../../ide/editor/text/source_text';
 import {
 	clearWorkspaceSourceCaches,
@@ -22,7 +21,6 @@ import {
 	buildWorkspaceDirtyEntryPath,
 	buildWorkspaceDirtyRecordPath,
 	loadWorkspaceSourceFile,
-	readWorkspaceLuaSourceText,
 } from '../../ide/workspace/files';
 import {
 	WORKSPACE_METADATA_DIR,
@@ -45,8 +43,11 @@ import {
 	findCodeTabContext,
 	registerCodeTabContext,
 } from '../../ide/workbench/ui/code_tab/contexts';
-import { codeEditorModelManager } from '../../ide/workbench/ui/code_tab/model_manager';
+import { codeEditorInputManager } from '../../ide/workbench/ui/code_tab/input_manager';
+import { editorTextModelService } from '../../ide/editor/model/model_service';
+import { createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
 import { editorTabGroup } from '../../ide/workbench/ui/tab/group_model';
+import type { ResourceViewerTabDescriptor } from '../../ide/workbench/ui/tab/model';
 import {
 	applyWorkspaceAutosavePayload,
 	hydrateDirtyFiles,
@@ -65,14 +66,12 @@ import {
 	workspaceState,
 } from '../../ide/workbench/workspace/state';
 import {
-	capturePendingLuaCodeTabSources,
-	markLuaCodeTabsAppliedToRuntime,
-	type LuaCodeTabSourceSnapshot,
+	capturePendingLuaTextModelSources,
+	captureCurrentLuaSource,
+	markLuaTextModelsAppliedToRuntime,
+	type LuaTextModelSourceSnapshot,
 } from '../../ide/workbench/ui/code_tab/activation';
-import { captureContextText } from '../../ide/workbench/workspace/context_snapshot';
-import { editorDocumentState, restoreDocumentStateFromContext } from '../../ide/editor/editing/document_state';
 import { configureFontVariant } from '../../ide/editor/ui/view/view';
-import { editorViewState } from '../../ide/editor/ui/view/state';
 import { DEFAULT_FONT_VARIANT } from '../../machine/ts/render/shared/bmsx_font';
 import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import {
@@ -279,9 +278,8 @@ async function resetEnvironment(storage: MockStorage): Promise<void> {
 	storage.clear();
 	clearWorkspaceSourceCaches();
 	editorTabGroup.clear();
-	codeEditorModelManager.clear();
-	editorDocumentState.buffer = new PieceTreeBuffer('');
-	editorDocumentState.readOnly = false;
+	codeEditorInputManager.clear();
+	editorTextModelService.clear();
 	globalThis.fetch = ORIGINAL_FETCH;
 }
 
@@ -307,33 +305,16 @@ function testResource(
 }
 
 function installCodeContext(path: string, source: string, domain: ResourceDomain = TEST_DOMAIN): CodeTabContext {
-	const buffer = new PieceTreeBuffer(source);
 	const resource = testResource(path, domain);
+	const model = editorTextModelService.retain(resource, 'lua', '');
+	model.restoreDirtySource(source);
 	const context: CodeTabContext = {
 		id: buildCodeTabId(resource),
 		title: path,
-		resource,
-		mode: 'lua',
-		buffer,
-		cursorRow: 0,
-		cursorColumn: 0,
-		scrollRow: 0,
-		scrollColumn: 0,
-		selectionAnchor: null,
-		lastSavedSource: source,
-		saveGeneration: 0,
-		appliedGeneration: 0,
-		undoStack: [],
-		redoStack: [],
-		lastHistoryKey: null,
-		lastHistoryTimestamp: 0,
-		savePointDepth: 0,
-		dirty: true,
+		model,
+		view: createCodeEditorViewState(),
 		runtimeErrorOverlay: null,
 		executionStopRow: null,
-		runtimeSyncState: 'synced',
-		runtimeSyncMessage: null,
-		textVersion: buffer.version,
 	};
 	registerCodeTabContext(context);
 	return context;
@@ -383,9 +364,13 @@ function writeRecord(
 	writeLocalWorkspaceRecord(storage, root, path, { contents, updatedAt });
 }
 
-function payload(dirtyFiles: WorkspaceAutosavePayload['dirtyFiles'] = []): WorkspaceAutosavePayload {
+function payload(
+	dirtyFiles: WorkspaceAutosavePayload['dirtyFiles'] = [],
+	codeEditorViews: WorkspaceAutosavePayload['codeEditorViews'] = [],
+): WorkspaceAutosavePayload {
 	return {
 		dirtyFiles,
+		codeEditorViews,
 		breakpoints: [],
 		fontVariant: DEFAULT_FONT_VARIANT,
 	};
@@ -406,7 +391,7 @@ async function startAutosaveSession(t: TestContext, storage: MockStorage, root =
 		[sourceRegistry('-- cart source', root), null],
 		TEST_DOMAIN,
 	);
-	const restored = await initializeWorkspaceStorage(workspaceEnvironment.storage, workspaceEnvironment.clock, root, sources);
+	const restored = await initializeWorkspaceStorage(storage, workspaceEnvironment.clock, root, sources);
 	await restoreWorkspaceStorageSession(
 		editorStub() as any,
 		sources,
@@ -433,7 +418,8 @@ test('resource identity keeps identical cartridge paths isolated by slot', (t) =
 	);
 	t.after(() => {
 		editorTabGroup.clear();
-		codeEditorModelManager.clear();
+		codeEditorInputManager.clear();
+		editorTextModelService.clear();
 		resetSemanticProjects();
 		clearWorkspaceSourceCaches();
 	});
@@ -486,30 +472,39 @@ test('workspace restore keeps dirty system tabs behind the development cartridge
 		editorStub() as any,
 		sources,
 		{ breakpoints: [new Map(), new Map(), new Map()] },
-		payload([{
-			domain: SYSTEM_RESOURCE_DOMAIN,
-			path: systemPath,
-			updatedAt: 80,
-			cursorRow: 0,
-			cursorColumn: 0,
-			scrollRow: 0,
-			scrollColumn: 0,
-			selectionAnchor: null,
-		}]),
+		payload(
+			[{
+				domain: SYSTEM_RESOURCE_DOMAIN,
+				path: systemPath,
+				updatedAt: 80,
+			}],
+			[{
+				domain: SYSTEM_RESOURCE_DOMAIN,
+				path: systemPath,
+				cursorRow: 0,
+				cursorColumn: 7,
+				scrollRow: 0,
+				scrollColumn: 3,
+				selectionAnchor: { row: 0, column: 2 },
+			}],
+		),
 	);
 
 	const activeTab = editorTabGroup.activeTab!;
 	assert.equal(activeTab.kind, 'code_editor');
 	const activeContext = activeTab.kind === 'code_editor' ? activeTab.context : null;
-	assert.equal(activeContext.resource.domain, 0);
-	assert.equal(activeContext.resource.path, cartridgePath);
+	assert.equal(activeContext.model.resource.domain, 0);
+	assert.equal(activeContext.model.resource.path, cartridgePath);
 	assert.equal(activeTab.id, activeContext.id);
 	const systemContext = findCodeTabContext({
 		domain: SYSTEM_RESOURCE_DOMAIN,
 		path: systemPath,
 	})!;
-	assert.equal(systemContext.dirty, true);
-	assert.equal(getTextSnapshot(systemContext.buffer), '-- dirty system source');
+	assert.equal(systemContext.model.dirty, true);
+	assert.equal(getTextSnapshot(systemContext.model.buffer), '-- dirty system source');
+	assert.equal(systemContext.view.cursorColumn, 7);
+	assert.equal(systemContext.view.scrollColumn, 3);
+	assert.deepEqual(systemContext.view.selectionAnchor, { row: 0, column: 2 });
 	assert.equal(editorTabGroup.tabs.some(tab => tab.id === systemContext.id), true);
 });
 
@@ -739,11 +734,6 @@ test('remote manifest adoption publishes after referenced records and releases t
 		domain: TEST_DOMAIN,
 		path: 'entry.lua',
 		updatedAt: 10,
-		cursorRow: 0,
-		cursorColumn: 0,
-		scrollRow: 0,
-		scrollColumn: 0,
-		selectionAnchor: null,
 	}]);
 	const remotePayload = payload([{
 		...localPayload.dirtyFiles[0],
@@ -833,11 +823,6 @@ test('cold boot uses one manifest-indexed dirty snapshot for source arbitration 
 		domain: TEST_DOMAIN,
 		path: 'entry.lua',
 		updatedAt: 80,
-		cursorRow: 0,
-		cursorColumn: 0,
-		scrollRow: 0,
-		scrollColumn: 0,
-		selectionAnchor: null,
 	}]);
 	writeRecord(
 		storage,
@@ -868,8 +853,8 @@ test('cold boot uses one manifest-indexed dirty snapshot for source arbitration 
 		rejected,
 	);
 	const context = findCodeTabContext({ domain: TEST_DOMAIN, path: 'entry.lua' })!;
-	assert.equal(getTextSnapshot(context.buffer), '-- dirty edit');
-	assert.equal(context.dirty, true);
+	assert.equal(getTextSnapshot(context.model.buffer), '-- dirty edit');
+	assert.equal(context.model.dirty, true);
 });
 
 test('manifest dirty timestamp rejects an uncommitted record generation', async (t) => {
@@ -880,11 +865,6 @@ test('manifest dirty timestamp rejects an uncommitted record generation', async 
 		domain: TEST_DOMAIN,
 		path: 'entry.lua',
 		updatedAt: 80,
-		cursorRow: 0,
-		cursorColumn: 0,
-		scrollRow: 0,
-		scrollColumn: 0,
-		selectionAnchor: null,
 	}]);
 	const uncommittedPath = buildWorkspaceDirtyRecordPath(dirtyPath, 81);
 	writeRecord(storage, 'offline-cart', uncommittedPath, '-- uncommitted edit', 81);
@@ -918,11 +898,6 @@ test('manifest dirty entry rejected by newer ROM is not hydrated', async (t) => 
 		domain: TEST_DOMAIN,
 		path: 'entry.lua',
 		updatedAt: 50,
-		cursorRow: 0,
-		cursorColumn: 0,
-		scrollRow: 0,
-		scrollColumn: 0,
-		selectionAnchor: null,
 	}]);
 	const dirtyRecordPath = buildWorkspaceDirtyRecordPath(dirtyPath, 50);
 	writeRecord(storage, 'offline-cart', dirtyRecordPath, '-- stale dirty edit', 50);
@@ -940,7 +915,7 @@ test('manifest dirty entry rejected by newer ROM is not hydrated', async (t) => 
 		rejected,
 	);
 	assert.equal(registry.records[0].src, '-- newer rom source');
-	assert.equal(findCodeTabContext({ domain: TEST_DOMAIN, path: 'entry.lua' })!.dirty, false);
+	assert.equal(findCodeTabContext({ domain: TEST_DOMAIN, path: 'entry.lua' })!.model.dirty, false);
 	assert.equal(readLocalWorkspaceRecord(storage, 'offline-cart', dirtyRecordPath)!.contents, '-- stale dirty edit');
 });
 
@@ -964,11 +939,6 @@ test('dirty records follow the physical project root owned by each resource doma
 		domain: entry.domain,
 		path: entry.path,
 		updatedAt: 70 + index,
-		cursorRow: 0,
-		cursorColumn: 0,
-		scrollRow: 0,
-		scrollColumn: 0,
-		selectionAnchor: null,
 	})));
 	for (let index = 0; index < entries.length; index += 1) {
 		const entry = entries[index];
@@ -985,7 +955,7 @@ test('dirty records follow the physical project root owned by each resource doma
 	}
 	writeRecord(storage, slot0Root, workspaceStatePath(slot0Root), JSON.stringify(session), 90);
 
-	const restored = await initializeWorkspaceStorage(workspaceEnvironment.storage, workspaceEnvironment.clock, slot0Root, sources);
+	await initializeWorkspaceStorage(workspaceEnvironment.storage, workspaceEnvironment.clock, slot0Root, sources);
 	assert.equal(workspaceDirtyRecords.size, 3);
 	for (let index = 0; index < entries.length; index += 1) {
 		const entry = entries[index];
@@ -1019,37 +989,32 @@ test('cursor-only autosave reuses retained dirty content and background metadata
 	const backgroundTab = createCodeEditorTabDescriptor(backgroundContext);
 	editorTabGroup.initialize(activeTab);
 	editorTabGroup.add(backgroundTab);
-	restoreDocumentStateFromContext(activeContext);
-	editorDocumentState.dirty = true;
-	editorViewState.scrollRow = 0;
-	editorViewState.scrollColumn = 0;
 	requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
 	await flushRequestedAutosave();
 	const firstGeneration = workspaceState.localGeneration!;
-	const activeIndex = firstGeneration.payload.dirtyFiles.findIndex(entry =>
-		entry.domain === activeContext.resource.domain && entry.path === activeContext.resource.path);
-	const backgroundIndex = firstGeneration.payload.dirtyFiles.findIndex(entry =>
-		entry.domain === backgroundContext.resource.domain && entry.path === backgroundContext.resource.path);
+	const activeIndex = firstGeneration.payload.codeEditorViews.findIndex(entry =>
+		entry.domain === activeContext.model.resource.domain && entry.path === activeContext.model.resource.path);
+	const backgroundIndex = firstGeneration.payload.codeEditorViews.findIndex(entry =>
+		entry.domain === backgroundContext.model.resource.domain && entry.path === backgroundContext.model.resource.path);
 	const dirtyPutCount = server.requests.filter(request =>
 		request.method === 'PUT' && request.path.includes('/.bmsx/dirty/')).length;
 
-	editorDocumentState.cursorColumn = 1;
+	activeContext.view.cursorColumn = 1;
 	requestWorkspaceAutosave(WorkspaceAutosaveChange.ActiveEditor);
-	activeContext.cursorColumn = editorDocumentState.cursorColumn;
 	editorTabGroup.activate(backgroundTab);
-	editorDocumentState.buffer = backgroundContext.buffer;
-	editorDocumentState.cursorColumn = backgroundContext.cursorColumn;
 	await flushRequestedAutosave();
 	const secondGeneration = workspaceState.localGeneration!;
 	assert.strictEqual(secondGeneration.dirtyRecords, firstGeneration.dirtyRecords);
+	assert.strictEqual(secondGeneration.payload.dirtyFiles, firstGeneration.payload.dirtyFiles);
 	assert.strictEqual(secondGeneration.payload.breakpoints, firstGeneration.payload.breakpoints);
 	assert.notStrictEqual(
-		secondGeneration.payload.dirtyFiles[activeIndex],
-		firstGeneration.payload.dirtyFiles[activeIndex],
+		secondGeneration.payload.codeEditorViews[activeIndex],
+		firstGeneration.payload.codeEditorViews[activeIndex],
 	);
+	assert.equal(secondGeneration.payload.codeEditorViews[activeIndex].cursorColumn, 1);
 	assert.strictEqual(
-		secondGeneration.payload.dirtyFiles[backgroundIndex],
-		firstGeneration.payload.dirtyFiles[backgroundIndex],
+		secondGeneration.payload.codeEditorViews[backgroundIndex],
+		firstGeneration.payload.codeEditorViews[backgroundIndex],
 	);
 	assert.equal(
 		server.requests.filter(request =>
@@ -1069,8 +1034,11 @@ test('record generation stays unique when the host clock does not advance', asyn
 	const firstTimestamp = workspaceDirtyRecords.get(dirtyPath)!.updatedAt;
 	const firstRecordPath = buildWorkspaceDirtyRecordPath(dirtyPath, firstTimestamp);
 
-	context.buffer.replace(0, context.buffer.length, '-- dirty B');
-	context.textVersion = context.buffer.version;
+	context.model.pushEditOperations([{
+		offset: 0,
+		deleteLength: context.model.buffer.length,
+		text: '-- dirty B',
+	}]);
 	requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
 	await flushRequestedAutosave();
 	const secondTimestamp = workspaceDirtyRecords.get(dirtyPath)!.updatedAt;
@@ -1109,8 +1077,11 @@ test('failed local state write preserves the previous manifest and immutable dir
 	const previousRecordPath = buildWorkspaceDirtyRecordPath(dirtyPath, previousRecord.updatedAt);
 	const previousStateRecord = readLocalWorkspaceRecord(storage, 'offline-cart', statePath)!;
 
-	context.buffer.replace(0, context.buffer.length, '-- dirty B');
-	context.textVersion = context.buffer.version;
+	context.model.pushEditOperations([{
+		offset: 0,
+		deleteLength: context.model.buffer.length,
+		text: '-- dirty B',
+	}]);
 	storage.failWriteKey = buildWorkspaceStorageKey('offline-cart', statePath);
 	requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
 	cancelWorkspaceAutosave();
@@ -1158,11 +1129,6 @@ test('failed dirty PUT retains the local generation and converges after reconnec
 		domain: TEST_DOMAIN,
 		path: 'src/foo.lua',
 		updatedAt: server.files.get(dirtyRecordPath)!.updatedAt,
-		cursorRow: 0,
-		cursorColumn: 0,
-		scrollRow: 0,
-		scrollColumn: 0,
-		selectionAnchor: null,
 	}]);
 });
 
@@ -1179,8 +1145,11 @@ test('failed state PUT leaves the previous remote generation recoverable and ret
 	const previousRecordPath = buildWorkspaceDirtyRecordPath(dirtyPath, previousRecord.updatedAt);
 	const previousStateRecord = server.files.get(statePath)!;
 
-	context.buffer.replace(0, context.buffer.length, '-- dirty B');
-	context.textVersion = context.buffer.version;
+	context.model.pushEditOperations([{
+		offset: 0,
+		deleteLength: context.model.buffer.length,
+		text: '-- dirty B',
+	}]);
 	server.fail('PUT', statePath);
 	requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
 	cancelWorkspaceAutosave();
@@ -1221,8 +1190,11 @@ test('remote sync publishes the exact dirty records retained with its state gene
 	const dirtyRecordPathB = buildWorkspaceDirtyRecordPath(dirtyPathB, firstEntryB.updatedAt);
 	await Promise.resolve();
 
-	contextB.buffer.replace(0, contextB.buffer.length, '-- B2');
-	contextB.textVersion = contextB.buffer.version;
+	contextB.model.pushEditOperations([{
+		offset: 0,
+		deleteLength: contextB.model.buffer.length,
+		text: '-- B2',
+	}]);
 	persistWorkspaceSessionLocally();
 	const secondGenerationB = workspaceState.localGeneration!.payload.dirtyFiles.find(
 		entry => entry.path === 'src/b.lua',
@@ -1257,7 +1229,7 @@ test('failed dirty DELETE retries after reconnect and stale orphan cannot resurr
 	);
 	assert.equal(server.files.has(dirtyRecordPath), true);
 
-	context.dirty = false;
+	context.model.completeSave(context.model.createSnapshot());
 	server.fail('DELETE', dirtyPath);
 	requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
 	cancelWorkspaceAutosave();
@@ -1282,7 +1254,7 @@ test('failed dirty DELETE retries after reconnect and stale orphan cannot resurr
 		[rebootedRegistry, null],
 		TEST_DOMAIN,
 	);
-	const restored = await initializeWorkspaceStorage(workspaceEnvironment.storage, workspaceEnvironment.clock, 'offline-cart', rebootedSources);
+	await initializeWorkspaceStorage(workspaceEnvironment.storage, workspaceEnvironment.clock, 'offline-cart', rebootedSources);
 	await applyAllWorkspaceSourceOverrides(workspaceEnvironment.storage, rebootedSources, workspaceDirtyRecords);
 	assert.equal(rebootedRegistry.records[0].src, '-- rom source');
 	assert.equal(workspaceDirtyRecords.size, 0);
@@ -1371,15 +1343,10 @@ test('dirty restore consumes retained snapshot content without a second transpor
 		domain: TEST_DOMAIN,
 		path: 'src/foo.lua',
 		updatedAt: 1,
-		cursorRow: 0,
-		cursorColumn: 0,
-		scrollRow: 0,
-		scrollColumn: 0,
-		selectionAnchor: null,
 	}]);
 	assert.equal(server.requests.length, requests);
-	assert.equal(getTextSnapshot(context.buffer), '-- restored dirty edit');
-	assert.equal(context.dirty, true);
+	assert.equal(getTextSnapshot(context.model.buffer), '-- restored dirty edit');
+	assert.equal(context.model.dirty, true);
 });
 
 test('workspace restore resolves persisted identity to the retained runtime resource', async (t) => {
@@ -1405,11 +1372,6 @@ test('workspace restore resolves persisted identity to the retained runtime reso
 		domain: TEST_DOMAIN,
 		path: retained.path,
 		updatedAt: 1,
-		cursorRow: 0,
-		cursorColumn: 0,
-		scrollRow: 0,
-		scrollColumn: 0,
-		selectionAnchor: null,
 	}]);
 	restoredPayload.breakpoints = [
 		{ domain: SYSTEM_RESOURCE_DOMAIN, path: 'base.lua', lines: [4] },
@@ -1423,8 +1385,8 @@ test('workspace restore resolves persisted identity to the retained runtime reso
 		restoredPayload,
 	);
 	const context = findCodeTabContext(retained)!;
-	assert.strictEqual(context.resource, retained);
-	assert.equal(context.buffer.getText(), '-- restored edit');
+	assert.strictEqual(context.model.resource, retained);
+	assert.equal(context.model.buffer.getText(), '-- restored edit');
 	assert.deepEqual(debuggerState.breakpoints[0].get('base.lua'), new Set([4]));
 	assert.deepEqual(debuggerState.breakpoints[1].get(retained.path), new Set([3, 9]));
 	assert.equal(debuggerState.breakpoints[2].size, 0);
@@ -1482,14 +1444,21 @@ test('generated compiler sources ignore manifest dirty records', async (t) => {
 	assert.equal(asset.src, 'return { source_addr = 1 }');
 });
 
-test('source capture reads the live editor document only for the active code tab', () => {
+test('runtime source capture reads the resource model independently of the active input', (t) => {
+	const storage = new MockStorage();
+	installOfflineWorkspace(t, storage);
+	const registry = sourceRegistry('-- packed source', 'offline-cart', 'src/foo.lua');
+	const sources = createTestRuntimeSourceState(
+		sourceRegistry('-- system source'),
+		[registry, null],
+		TEST_DOMAIN,
+	);
 	const context = installCodeContext('src/foo.lua', '-- tab buffer');
 	const codeTab = createCodeEditorTabDescriptor(context);
 	editorTabGroup.initialize(codeTab);
-	editorDocumentState.buffer = new PieceTreeBuffer('-- editor buffer');
-	assert.equal(captureContextText(context), '-- editor buffer');
+	assert.equal(captureCurrentLuaSource(sources, context.model.resource).source, '-- tab buffer');
 	const resource = testResource('image.png', TEST_DOMAIN, 'image');
-	const resourceTab = {
+	const resourceTab: ResourceViewerTabDescriptor = {
 		id: 'resource:0\0image.png',
 		kind: 'resource_view',
 		title: 'image.png',
@@ -1501,24 +1470,22 @@ test('source capture reads the live editor document only for the active code tab
 			title: 'image.png',
 			scroll: 0,
 		},
-	} as const;
+	};
 	editorTabGroup.add(resourceTab);
 	editorTabGroup.activate(resourceTab);
-	assert.equal(captureContextText(context), '-- tab buffer');
+	assert.equal(captureCurrentLuaSource(sources, context.model.resource).source, '-- tab buffer');
 });
 
 test('runtime source capture detects changed code when editor epochs collide', (t) => {
 	const storage = new MockStorage();
 	installOfflineWorkspace(t, storage);
 	const context = installCodeContext('src/foo.lua', '-- revision 2');
-	context.saveGeneration = 4;
-	context.appliedGeneration = 4;
+	context.model.markApplied(context.model.version);
 	const registry = sourceRegistry('-- revision 2', 'offline-cart', 'src/foo.lua');
 	const sources = createTestRuntimeSourceState(sourceRegistry('-- system source'), [registry, null], TEST_DOMAIN);
 	sources.cartridgeSlots[TEST_DOMAIN]!.installedBlua32Sources = new Map([['src.foo', '-- revision 1']]);
-	assert.deepEqual(capturePendingLuaCodeTabSources(sources), [{
-		contextId: context.id,
-		generation: 4,
+	assert.deepEqual(capturePendingLuaTextModelSources(sources), [{
+		version: context.model.version,
 		domain: TEST_DOMAIN,
 		path: 'src/foo.lua',
 		source: '-- revision 2',
@@ -1528,9 +1495,7 @@ test('runtime source capture detects changed code when editor epochs collide', (
 test('runtime source capture excludes source-only Lua documents', (t) => {
 	const storage = new MockStorage();
 	installOfflineWorkspace(t, storage);
-	const context = installCodeContext('tests/example_assert.lua', '-- edited test');
-	context.saveGeneration = 2;
-	context.appliedGeneration = 1;
+	installCodeContext('tests/example_assert.lua', '-- edited test');
 	const registry = sourceRegistry('-- packed test', 'offline-cart', 'tests/example_assert.lua');
 	registry.records[0].program_module = false;
 	const sources = createTestRuntimeSourceState(
@@ -1539,50 +1504,44 @@ test('runtime source capture excludes source-only Lua documents', (t) => {
 		TEST_DOMAIN,
 	);
 
-	assert.deepEqual(capturePendingLuaCodeTabSources(sources), []);
+	assert.deepEqual(capturePendingLuaTextModelSources(sources), []);
 });
 
-test('successful runtime update applies only captured Lua generations without touching AEM state', async (t) => {
+test('successful runtime update applies only captured Lua model versions without touching AEM state', (t) => {
 	const storage = new MockStorage();
 	installOfflineWorkspace(t, storage);
 	const activeLua = installCodeContext('src/foo.lua', '-- saved source');
-	activeLua.saveGeneration = 3;
-	activeLua.appliedGeneration = 2;
-	activeLua.runtimeSyncState = 'runtime_update_pending';
-	const backgroundLua: CodeTabContext = {
-		...activeLua,
-		id: 'code:src/bar.lua',
-		title: 'src/bar.lua',
-		resource: testResource('src/bar.lua'),
-		saveGeneration: 5,
-		appliedGeneration: 4,
-	};
+	activeLua.model.setRuntimeSyncState('runtime_update_pending', null);
+	const backgroundLua = installCodeContext('src/bar.lua', '-- saved source');
+	const aemResource = testResource('audio.aem', TEST_DOMAIN, 'aem');
+	const aemModel = editorTextModelService.retain(aemResource, 'aem', '');
+	aemModel.restoreDirtySource('-- audio source');
+	aemModel.setRuntimeSyncState('runtime_update_pending', null);
 	const aem: CodeTabContext = {
-		...activeLua,
-		id: 'code:audio.aem',
+		id: buildCodeTabId(aemResource),
 		title: 'audio.aem',
-		resource: testResource('audio.aem', TEST_DOMAIN, 'aem'),
-		mode: 'aem',
-		saveGeneration: 7,
-		appliedGeneration: 6,
+		model: aemModel,
+		view: createCodeEditorViewState(),
+		runtimeErrorOverlay: null,
+		executionStopRow: null,
 	};
-	registerCodeTabContext(backgroundLua);
 	registerCodeTabContext(aem);
-	editorTabGroup.initialize(createCodeEditorTabDescriptor(activeLua));
-	editorDocumentState.appliedGeneration = 2;
-	const appliedSnapshots: LuaCodeTabSourceSnapshot[] = [
-		{ contextId: activeLua.id, generation: 3, domain: TEST_DOMAIN, path: activeLua.resource.path, source: '-- saved source' },
-		{ contextId: backgroundLua.id, generation: 5, domain: TEST_DOMAIN, path: backgroundLua.resource.path, source: '-- saved source' },
+	const appliedSnapshots: LuaTextModelSourceSnapshot[] = [
+		{ version: activeLua.model.version, domain: TEST_DOMAIN, path: activeLua.model.resource.path, source: '-- saved source' },
+		{ version: backgroundLua.model.version, domain: TEST_DOMAIN, path: backgroundLua.model.resource.path, source: '-- saved source' },
 	];
-	backgroundLua.saveGeneration = 6;
-	markLuaCodeTabsAppliedToRuntime(appliedSnapshots);
-	assert.equal(activeLua.appliedGeneration, 3);
-	assert.equal(activeLua.runtimeSyncState, 'synced');
-	assert.equal(backgroundLua.appliedGeneration, 5);
-	assert.equal(backgroundLua.runtimeSyncState, 'runtime_update_pending');
-	assert.equal(aem.appliedGeneration, 6);
-	assert.equal(aem.runtimeSyncState, 'runtime_update_pending');
-	assert.equal(editorDocumentState.appliedGeneration, 3);
+	backgroundLua.model.pushEditOperations([{
+		offset: backgroundLua.model.buffer.length,
+		deleteLength: 0,
+		text: '\n-- newer edit',
+	}]);
+	markLuaTextModelsAppliedToRuntime(appliedSnapshots);
+	assert.equal(activeLua.model.appliedVersion, appliedSnapshots[0].version);
+	assert.equal(activeLua.model.runtimeSyncState, 'synced');
+	assert.equal(backgroundLua.model.appliedVersion, appliedSnapshots[1].version);
+	assert.equal(backgroundLua.model.runtimeSyncState, 'runtime_update_pending');
+	assert.equal(aemModel.appliedVersion, 1);
+	assert.equal(aemModel.runtimeSyncState, 'runtime_update_pending');
 });
 
 test('offline canonical save remains local and replicates on reconnect', async (t) => {

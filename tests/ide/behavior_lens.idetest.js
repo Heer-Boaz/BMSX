@@ -101,7 +101,7 @@ await t.frames(2);
 const sourceTab = t.activeWorkbenchTab();
 t.assert(sourceTab.kind === 'code_editor', 'Moon source did not open as a code editor input');
 const sourceTabId = sourceTab.id;
-const originalSource = sourceTab.context.buffer.getText();
+const originalSource = sourceTab.context.model.buffer.getText();
 t.command('behaviorLens');
 await t.frames(2);
 
@@ -179,9 +179,9 @@ await clickPointer(pointerX, pointerY, 6);
 const navigatedTab = t.activeWorkbenchTab();
 t.assert(navigatedTab.kind === 'code_editor' && navigatedTab.id === sourceTabId, 'double click did not return to the owning code input');
 const activeDocument = t.activeEditorDocument();
-t.assert(activeDocument.resource.path === selectedRange.path, 'double click navigated to the wrong source resource');
-t.assert(activeDocument.cursorRow === selectedRange.start.line - 1, 'double click navigated to the wrong source line');
-t.assert(activeDocument.cursorColumn === selectedRange.start.column - 1, 'double click navigated to the wrong source column');
+t.assert(activeDocument.model.resource.path === selectedRange.path, 'double click navigated to the wrong source resource');
+t.assert(activeDocument.view.cursorRow === selectedRange.start.line - 1, 'double click navigated to the wrong source line');
+t.assert(activeDocument.view.cursorColumn === selectedRange.start.column - 1, 'double click navigated to the wrong source column');
 await releasePointer(6);
 
 t.command('behaviorLens');
@@ -232,7 +232,7 @@ t.assert(targetIndex >= 0, 'top-level concurrent state is not navigable in the r
 await moveSelectionToIndex(fsmView, targetIndex, 20);
 await pressKey('Enter', 60);
 t.assert(t.activeWorkbenchTab().kind === 'code_editor', 'activating the concurrent state did not return to source');
-t.assert(t.activeEditorDocument().cursorRow === projectilesState.authoredRange.start.line - 1, 'concurrent state navigated to the wrong line');
+t.assert(t.activeEditorDocument().view.cursorRow === projectilesState.authoredRange.start.line - 1, 'concurrent state navigated to the wrong line');
 
 t.command('behaviorLens');
 await t.frames(2);
@@ -252,7 +252,7 @@ targetIndex = reopenedFsmView.rows.findIndex(row => row.node === flyingState);
 t.assert(targetIndex >= 0, 'nested state is not navigable after expanding its retained parent path');
 await moveSelectionToIndex(reopenedFsmView, targetIndex, 150);
 await pressKey('Enter', 170);
-t.assert(t.activeEditorDocument().cursorRow === flyingState.authoredRange.start.line - 1, 'nested state navigated to the wrong line');
+t.assert(t.activeEditorDocument().view.cursorRow === flyingState.authoredRange.start.line - 1, 'nested state navigated to the wrong line');
 
 t.openLuaSource('player/actioneffects.lua');
 await t.frames(2);
@@ -268,5 +268,5 @@ const periodRowIndex = effectView.rows.findIndex(row => row.node.label.startsWit
 t.assert(periodRowIndex >= 0, 'real ActionEffect period is not present in the retained rows');
 await moveSelectionToIndex(effectView, periodRowIndex, 180);
 await pressKey('Enter', 190);
-t.assert(t.activeEditorDocument().resource.path === 'player/actioneffects.lua', 'ActionEffect navigation opened the wrong source');
-t.assert(t.activeEditorDocument().cursorRow === 16, 'ActionEffect period navigated to the wrong authored line');
+t.assert(t.activeEditorDocument().model.resource.path === 'player/actioneffects.lua', 'ActionEffect navigation opened the wrong source');
+t.assert(t.activeEditorDocument().view.cursorRow === 16, 'ActionEffect period navigated to the wrong authored line');

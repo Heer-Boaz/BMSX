@@ -8,7 +8,7 @@ import { showEditorMessage } from '../../../common/feedback_state';
 import type { CartEditor } from '../../../cart_editor';
 import { getActiveCodeTabContext } from '../../ui/code_tab/contexts';
 import * as constants from '../../../common/constants';
-import { editorDocumentState } from '../../../editor/editing/document_state';
+import { activeCodeEditor } from '../../../editor/ui/code_editor_state';
 import type { ResourceDomain, ResourceIdentity } from '../../../common/resource';
 import {
 	blua32SourceRangeAtPc,
@@ -22,15 +22,15 @@ export class BreakpointController {
 
 	public constructor(private readonly state: RuntimeDebuggerState) {}
 
-	public toggleBreakpointForEditorRow(row: number = editorDocumentState.cursorRow): boolean {
+	public toggleBreakpointForEditorRow(row: number = activeCodeEditor.view.cursorRow): boolean {
 		const context = getActiveCodeTabContext();
-		if (context.mode !== 'lua') {
+		if (context.model.mode !== 'lua') {
 			return false;
 		}
-		if (row < 0 || row >= editorDocumentState.buffer.getLineCount()) {
+		if (row < 0 || row >= activeCodeEditor.model.buffer.getLineCount()) {
 			return false;
 		}
-		const resource = context.resource;
+		const resource = context.model.resource;
 		if (!resource.path) {
 			showEditorMessage('No active path available for breakpoints.', constants.COLOR_STATUS_WARNING, 1.6);
 			return false;

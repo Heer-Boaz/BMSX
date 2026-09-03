@@ -55,7 +55,7 @@ export function handleEditorContextMenuPointerSession(
 export function openEditorContextMenuAtPointer(snapshot: PointerSnapshot): boolean {
 	const bounds = getCodeAreaBounds();
 	const target = resolvePointerTextPosition(snapshot.viewportX, snapshot.viewportY, bounds);
-	const token = resolveContextMenuToken(target.row, target.column, getActiveCodeTabContext().resource.path);
+	const token = resolveContextMenuToken(target.row, target.column, getActiveCodeTabContext().model.resource.path);
 	if (!token) {
 		return false;
 	}

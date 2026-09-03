@@ -15,17 +15,21 @@ import { revealCursor } from '../../../../editor/ui/view/caret/caret';
 import { resetBlink } from '../../../../editor/render/caret';
 import { applyInlineFieldPointer, setFieldText } from '../../../../editor/ui/inline/text_field';
 import { setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../../../editor/editing/cursor/state';
-import { editorDocumentState } from '../../../../editor/editing/document_state';
+import { activeCodeEditor } from '../../../../editor/ui/code_editor_state';
 import { splitText } from '../../../../../machine/ts/common/text_lines';
 import { editorViewState } from '../../../../editor/ui/view/state';
 import type { RenameController } from '../rename/controller';
 import { editorSearchState } from './widget_state';
 import type { RuntimeSourceState } from '../../../../runtime/sources';
+import type { EditorTextModel } from '../../../../editor/model/text_model';
 
 const LOCAL_ROWS_PER_SLICE = 256;
 const GLOBAL_ROWS_PER_SLICE = 128;
 
-type LocalSearchJob = SearchComputationJob & { version: number };
+type LocalSearchJob = SearchComputationJob & {
+	model: EditorTextModel;
+	version: number;
+};
 
 function normalizeQuery(raw: string): string {
 	return editorRuntimeState.caseInsensitive ? raw.toLowerCase() : raw;
@@ -97,9 +101,9 @@ export class EditorSearchController {
 			const selected = getSelectionText();
 			if (range && selected.length > 0 && selected.indexOf('\n') === -1) {
 				applySearchFieldText(selected, true);
-				editorDocumentState.cursorRow = range.start.row;
-				editorDocumentState.cursorColumn = range.start.column;
-				editorDocumentState.emitCursorMoved();
+				activeCodeEditor.view.cursorRow = range.start.row;
+				activeCodeEditor.view.cursorColumn = range.start.column;
+				activeCodeEditor.emitCursorMoved();
 			}
 		}
 
@@ -203,12 +207,13 @@ export function startSearchJob(): void {
 
 	const job: LocalSearchJob = {
 		query: normalizeQuery(editorSearchState.query),
-		version: editorDocumentState.textVersion,
+		model: activeCodeEditor.model,
+		version: activeCodeEditor.model.version,
 		nextRow: 0,
 		matches: [],
 		firstMatchAfterCursor: -1,
-		cursorRow: editorDocumentState.cursorRow,
-		cursorColumn: editorDocumentState.cursorColumn,
+		cursorRow: activeCodeEditor.view.cursorRow,
+		cursorColumn: activeCodeEditor.view.cursorColumn,
 	};
 	editorSearchState.job = job;
 	enqueueBackgroundTask(() => runLocalSearchSlice(job));
@@ -216,12 +221,15 @@ export function startSearchJob(): void {
 
 function runLocalSearchSlice(job: LocalSearchJob): boolean {
 	if (editorSearchState.job !== job) return false;
-	if (job.query.length === 0 || job.version !== editorDocumentState.textVersion || editorSearchState.query.length === 0) {
+	if (job.query.length === 0
+		|| job.model !== activeCodeEditor.model
+		|| job.version !== job.model.version
+		|| editorSearchState.query.length === 0) {
 		editorSearchState.job = null;
 		return false;
 	}
 	let processed = 0;
-	const lineCount = editorDocumentState.buffer.getLineCount();
+	const lineCount = job.model.buffer.getLineCount();
 	while (job.nextRow < lineCount && processed < LOCAL_ROWS_PER_SLICE) {
 		const row = job.nextRow;
 		job.nextRow += 1;
@@ -236,7 +244,7 @@ function runLocalSearchSlice(job: LocalSearchJob): boolean {
 }
 
 function collectLocalMatches(job: LocalSearchJob, row: number): void {
-	const line = editorDocumentState.buffer.getLineContent(row);
+	const line = job.model.buffer.getLineContent(row);
 	if (line.length === 0) return;
 	forEachMatchInLine(line, job.query, (start, end) => {
 		const match: SearchMatch = { row, start, end };
@@ -275,11 +283,11 @@ export function cancelSearchJob(): void {
 }
 
 function clearEditorSearchSelection(): void {
-	if (!editorDocumentState.selectionAnchor) {
+	if (!activeCodeEditor.view.selectionAnchor) {
 		return;
 	}
-	editorDocumentState.selectionAnchor = null;
-	editorDocumentState.emitCursorMoved();
+	activeCodeEditor.view.selectionAnchor = null;
+	activeCodeEditor.emitCursorMoved();
 }
 
 function ensureLocalJobCompleted(): void {
@@ -388,12 +396,12 @@ export function cancelGlobalSearchJob(): void {
 function focusLocalMatch(index: number, recordNavigation: boolean): void {
 	const match = editorSearchState.matches[index];
 	const navigationCheckpoint = recordNavigation ? beginNavigationCapture() : null;
-	setSingleCursorPosition(editorDocumentState, match.row, match.start);
-	setSingleCursorSelectionAnchor(editorDocumentState, match.row, match.end);
+	setSingleCursorPosition(activeCodeEditor.view, match.row, match.start);
+	setSingleCursorSelectionAnchor(activeCodeEditor.view, match.row, match.end);
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();
-	editorDocumentState.emitCursorMoved();
+	activeCodeEditor.emitCursorMoved();
 	if (recordNavigation) {
 		completeNavigation(navigationCheckpoint);
 	}
@@ -526,7 +534,7 @@ function buildSearchResultEntry(index: number): { primary: string; secondary?: s
 	}
 
 	const match = editorSearchState.matches[index];
-	const lineText = editorDocumentState.buffer.getLineContent(match.row);
+	const lineText = activeCodeEditor.model.buffer.getLineContent(match.row);
 	return {
 		primary: `Line ${match.row + 1}`,
 		secondary: buildSnippet(lineText, match.start, match.end),

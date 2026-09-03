@@ -8,7 +8,7 @@ import { drawEditorText } from '../../editor/render/text_renderer';
 import { measureText, truncateTextToWidth } from '../../editor/common/text/layout';
 import { api } from '../../runtime/overlay_api';
 import { workspaceRecordState } from '../../workspace/records';
-import { editorDocumentState } from '../../editor/editing/document_state';
+import { activeCodeEditor } from '../../editor/ui/code_editor_state';
 import { editorViewState } from '../../editor/ui/view/state';
 import { problemsPanel } from '../contrib/problems/panel/controller';
 import { symbolSearchState } from '../contrib/code_editor/symbols/search/state';
@@ -137,10 +137,10 @@ export function renderStatusBar(
 	const context = activeTab.context;
 	let detail = '';
 	let detailColor = statusTextColor;
-	if (context.runtimeSyncState === 'diverged') {
+	if (context.model.runtimeSyncState === 'diverged') {
 		detail = 'SAVED, RUNTIME NOT APPLIED';
 		detailColor = constants.COLOR_STATUS_WARNING;
-	} else if (context.runtimeSyncState === 'runtime_update_pending') {
+	} else if (context.model.runtimeSyncState === 'runtime_update_pending') {
 		detail = 'RUNTIME UPDATE PENDING';
 	}
 	if (detail.length > 0) {
@@ -163,5 +163,5 @@ export function buildStatusLeftInfo(): string {
 		// When Problems panel is visible but not focused or no selection, don't render default editor position
 		return '';
 	}
-	return `LINE ${editorDocumentState.cursorRow + 1}/${editorDocumentState.buffer.getLineCount()} COL ${editorDocumentState.cursorColumn + 1}`;
+	return `LINE ${activeCodeEditor.view.cursorRow + 1}/${activeCodeEditor.model.buffer.getLineCount()} COL ${activeCodeEditor.view.cursorColumn + 1}`;
 }

@@ -8,15 +8,17 @@ import type { CartEditor } from '../../cart_editor';
 import { restoreBreakpointsFromPayload } from '../contrib/debugger/controller';
 import { initializeTabs } from '../ui/tabs';
 import {
-	clearCodeTabContexts,
+	clearCodeEditorInputs,
 	findCodeTabContext,
 	retainEntryTabContext,
 } from '../ui/code_tab/contexts';
+import { editorTextModelService } from '../../editor/model/model_service';
 import { restoreCodeTabForResource } from '../ui/code_tab/io';
 import { buildWorkspaceDirtyEntryPath } from '../../workspace/files';
-import { restoreWorkspaceContextSource } from './context_snapshot';
+import { restoreWorkspaceCodeEditorView } from './context_snapshot';
 import { workspaceDirtyRecords } from './state';
 import {
+	type PersistedCodeEditorView,
 	type PersistedDirtyEntry,
 	type WorkspaceAutosavePayload,
 } from './models';
@@ -29,11 +31,13 @@ export async function applyWorkspaceAutosavePayload(
 	debuggerState: RuntimeBreakpointState,
 	payload: WorkspaceAutosavePayload,
 ): Promise<void> {
-	clearCodeTabContexts();
+	clearCodeEditorInputs();
+	editorTextModelService.clear();
 	initializeTabs(retainEntryTabContext(sources));
 	editor.setFontVariant(payload.fontVariant);
 	await openDirtyFileTabs(storage, sources, payload.dirtyFiles);
 	hydrateDirtyFiles(sources, payload.dirtyFiles);
+	restoreCodeEditorViews(payload.codeEditorViews);
 	restoreBreakpointsFromPayload(debuggerState, payload.breakpoints);
 }
 
@@ -72,6 +76,14 @@ export function hydrateDirtyFiles(
 		if (!record) {
 			throw new Error(`Persisted dirty file '${dirtyPath}' was not loaded.`);
 		}
-		restoreWorkspaceContextSource(context, record.contents, entry, true);
+		context.model.restoreDirtySource(record.contents);
+	}
+}
+
+function restoreCodeEditorViews(views: PersistedCodeEditorView[]): void {
+	for (let index = 0; index < views.length; index += 1) {
+		const view = views[index];
+		const context = findCodeTabContext(view)!;
+		restoreWorkspaceCodeEditorView(context, view);
 	}
 }

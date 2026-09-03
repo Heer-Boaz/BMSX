@@ -3,7 +3,7 @@ import { intellisenseUiState } from '../../contrib/intellisense/ui_state';
 import { drawCodeAreaBackground } from './gutter';
 import { finalizeCodeAreaRender } from './tail';
 import { drawCodeAreaRows } from './rows';
-import { editorDocumentState } from '../../editing/document_state';
+import { activeCodeEditor } from '../../ui/code_editor_state';
 import { editorViewState } from '../../ui/view/state';
 import { editorRuntimeState } from '../../common/runtime_state';
 import { resolveCodeAreaViewport, type CodeAreaViewport } from '../../ui/code/area_viewport';
@@ -29,8 +29,8 @@ export function renderCodeArea(
 
 	const activeGotoHighlight = intellisenseUiState.gotoHoverHighlight;
 	const shouldRenderInlinePreview = inlineCompletionPreview !== null
-		&& inlineCompletionPreview.row === editorDocumentState.cursorRow
-		&& inlineCompletionPreview.column === editorDocumentState.cursorColumn;
+		&& inlineCompletionPreview.row === activeCodeEditor.view.cursorRow
+		&& inlineCompletionPreview.column === activeCodeEditor.view.cursorColumn;
 	const cursorInfo = drawCodeAreaRows(
 		viewport,
 		breakpointsForChunk,

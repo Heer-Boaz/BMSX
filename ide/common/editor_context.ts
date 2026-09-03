@@ -1,2 +1,2 @@
-/** Stable identity of one retained editable document context. */
-export type EditorDocumentContextId = `code:${string}`;
+/** Stable identity of one retained code-editor input. */
+export type CodeEditorInputId = `code:${string}`;

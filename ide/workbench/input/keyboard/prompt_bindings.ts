@@ -5,7 +5,7 @@ import { revealCursor, updateDesiredColumn } from '../../../editor/ui/view/caret
 import { resetBlink } from '../../../editor/render/caret';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from '../../../input/keyboard/key_input';
 import { isInlineWidgetFocused } from '../../../quick_input/inline_widget';
-import { editorDocumentState } from '../../../editor/editing/document_state';
+import { activeCodeEditor } from '../../../editor/ui/code_editor_state';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 
 function handleCreateResourceBinding(playerInput: PlayerInput, editor: CartEditor): boolean {
@@ -56,9 +56,9 @@ function handleSelectAllBinding(playerInput: PlayerInput, editor: CartEditor): b
 		return false;
 	}
 	consumeIdeKey('KeyA', playerInput);
-	const lastRowIndex = editorDocumentState.buffer.getLineCount() - 1;
-	const lastColumn = editorDocumentState.buffer.getLineEndOffset(lastRowIndex) - editorDocumentState.buffer.getLineStartOffset(lastRowIndex);
-	selectAllSingleCursor(editorDocumentState, lastRowIndex, lastColumn);
+	const lastRowIndex = activeCodeEditor.model.buffer.getLineCount() - 1;
+	const lastColumn = activeCodeEditor.model.buffer.getLineEndOffset(lastRowIndex) - activeCodeEditor.model.buffer.getLineStartOffset(lastRowIndex);
+	selectAllSingleCursor(activeCodeEditor.view, lastRowIndex, lastColumn);
 	updateDesiredColumn();
 	resetBlink();
 	revealCursor();

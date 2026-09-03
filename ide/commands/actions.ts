@@ -14,7 +14,7 @@ import type { ActionPromptAction } from '../common/models';
 import * as constants from '../common/constants';
 import { setEditorCaseInsensitivity } from '../editor/render/text_renderer';
 import { editorViewState } from '../editor/ui/view/state';
-import { capturePendingLuaCodeTabSources, markLuaCodeTabsAppliedToRuntime } from '../workbench/ui/code_tab/activation';
+import { capturePendingLuaTextModelSources, markLuaTextModelsAppliedToRuntime } from '../workbench/ui/code_tab/activation';
 import { persistWorkspaceSessionLocally } from '../workbench/workspace/storage';
 import type { CartEditor } from '../cart_editor';
 import type { RuntimeSourceState } from '../runtime/sources';
@@ -97,7 +97,7 @@ export function performHotResume(
 ): Promise<void> {
 	deactivateEditor(editor, overlayRenderer, audioOutput);
 	console.log('Performing hot resume.');
-	const pendingSources = capturePendingLuaCodeTabSources(sources);
+	const pendingSources = capturePendingLuaTextModelSources(sources);
 	persistWorkspaceSessionLocally();
 	const handleHotResumeError = (error: unknown): void => {
 		console.error(error);
@@ -131,7 +131,7 @@ export function performHotResume(
 			sources.cartridgeBlua32MediaDirty,
 			handleHotResumeError,
 			() => {
-				markLuaCodeTabsAppliedToRuntime(pendingSources);
+				markLuaTextModelsAppliedToRuntime(pendingSources);
 			},
 		);
 	}, handleHotResumeError);
@@ -151,7 +151,7 @@ export function performReboot(
 	logOutput: LogOutput,
 ): boolean {
 	deactivateEditor(editor, overlayRenderer, audioOutput);
-	const pendingSources = capturePendingLuaCodeTabSources(sources);
+	const pendingSources = capturePendingLuaTextModelSources(sources);
 	persistWorkspaceSessionLocally();
 	runtimeTasks.schedule(async () => {
 		console.info('[IDE] Performing cold reboot through bootrom');
@@ -167,7 +167,7 @@ export function performReboot(
 			audioOutput,
 			storage,
 		);
-		markLuaCodeTabsAppliedToRuntime(pendingSources);
+		markLuaTextModelsAppliedToRuntime(pendingSources);
 	}, (error) => {
 		handleLuaError(
 			logOutput,

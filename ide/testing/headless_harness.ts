@@ -6,7 +6,7 @@ import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import type { Input } from '../../hosts/common/input/manager';
 import type { KeyValueStorage } from '../workspace/key_value_storage';
 import { openLuaCodeTab } from '../workbench/ui/code_tab/io';
-import { editorDocumentState, type EditorDocumentState } from '../editor/editing/document_state';
+import { activeCodeEditor, type CodeEditorContext } from '../editor/ui/code_editor_state';
 import { activateEditor } from '../workbench/overlay_modes';
 import { selectAllSingleCursor } from '../editor/editing/cursor/state';
 import { insertText } from '../editor/editing/text_editing_and_selection';
@@ -53,7 +53,7 @@ export type HeadlessIdeHarness = {
 	getHover(row: number, column: number): CodeHoverTooltip | null;
 	getActiveWorkbenchTab(): Readonly<EditorTabDescriptor>;
 	getActiveCodeContext(): Readonly<CodeTabContext> | null;
-	getActiveEditorDocument(): Readonly<EditorDocumentState>;
+	getActiveEditorDocument(): Readonly<CodeEditorContext>;
 	getWorkbenchTabs(): readonly EditorTabDescriptor[];
 	/** Execute Hot Resume directly against the source registry's current dirty state. */
 	hotResumeCore(): void;
@@ -111,7 +111,7 @@ export function createHeadlessIdeHarness(
 		getSignatureHelp: () => ide.editor.completion.hint,
 		getActiveWorkbenchTab: () => getActiveTab(),
 		getActiveCodeContext: () => getActiveCodeTabContext(),
-		getActiveEditorDocument: () => editorDocumentState,
+		getActiveEditorDocument: () => activeCodeEditor,
 		getWorkbenchTabs: () => getTabs(),
 		getHover: (row, column) => {
 			updateHoverTooltip(
@@ -192,10 +192,10 @@ export function createHeadlessIdeHarness(
 			openLuaCodeTab(ide.editor.resourcePanel, ide.sources, resource);
 		},
 		replaceActiveCodeSource: (source: string) => {
-			const buffer = editorDocumentState.buffer;
+			const buffer = activeCodeEditor.model.buffer;
 			const lastRow = buffer.getLineCount() - 1;
 			selectAllSingleCursor(
-				editorDocumentState,
+				activeCodeEditor.view,
 				lastRow,
 				buffer.getLineEndOffset(lastRow) - buffer.getLineStartOffset(lastRow),
 			);

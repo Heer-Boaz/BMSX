@@ -1,7 +1,7 @@
 import { clamp } from '../../../../../machine/ts/common/clamp';
 import { ensureVisualLines } from '../../../common/text/layout';
 import { editorCaretState } from './state';
-import { editorDocumentState } from '../../../editing/document_state';
+import { activeCodeEditor } from '../../code_editor_state';
 import { editorViewState } from '../state';
 import { resolveCodeAreaViewport, type CodeAreaViewport } from '../../code/area_viewport';
 import { caretNavigation } from './state';
@@ -21,36 +21,36 @@ export function centerCursorVertically(): void {
 	const totalVisual = editorViewState.layout.getVisualLineCount();
 	const cursorVisual = resolveCursorVisualIndex();
 	if (rows <= 1) {
-		editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(cursorVisual, totalVisual, rows);
+		activeCodeEditor.view.scrollRow = editorViewState.layout.clampVisualScroll(cursorVisual, totalVisual, rows);
 		return;
 	}
 	const target = cursorVisual - Math.floor(rows / 2);
-	editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(target, totalVisual, rows);
+	activeCodeEditor.view.scrollRow = editorViewState.layout.clampVisualScroll(target, totalVisual, rows);
 }
 
 export function ensureCursorVisible(): void {
-	editorDocumentState.cursorRow = editorViewState.layout.clampBufferRow(editorDocumentState.buffer, editorDocumentState.cursorRow);
-	const clampedLine = editorDocumentState.buffer.getLineContent(editorDocumentState.cursorRow);
-	editorDocumentState.cursorColumn = editorViewState.layout.clampLineLength(clampedLine.length, editorDocumentState.cursorColumn);
+	activeCodeEditor.view.cursorRow = editorViewState.layout.clampBufferRow(activeCodeEditor.model.buffer, activeCodeEditor.view.cursorRow);
+	const clampedLine = activeCodeEditor.model.buffer.getLineContent(activeCodeEditor.view.cursorRow);
+	activeCodeEditor.view.cursorColumn = editorViewState.layout.clampLineLength(clampedLine.length, activeCodeEditor.view.cursorColumn);
 
 	const { rows, columns, maxScrollColumn: docMaxScrollColumn } = resolveViewportCapacity();
 	const totalVisual = editorViewState.layout.getVisualLineCount();
 	const cursorVisual = resolveCursorVisualIndex();
 	const maxScrollRow = Math.max(0, totalVisual - rows);
 	const verticalMargin = Math.min(3, Math.max(0, Math.floor(rows / 6)));
-	const topGuard = editorViewState.scrollRow + verticalMargin;
-	const bottomGuard = editorViewState.scrollRow + rows - 1 - verticalMargin;
+	const topGuard = activeCodeEditor.view.scrollRow + verticalMargin;
+	const bottomGuard = activeCodeEditor.view.scrollRow + rows - 1 - verticalMargin;
 
 	if (cursorVisual < topGuard) {
-		editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(cursorVisual - verticalMargin, totalVisual, rows);
+		activeCodeEditor.view.scrollRow = editorViewState.layout.clampVisualScroll(cursorVisual - verticalMargin, totalVisual, rows);
 	} else if (cursorVisual > bottomGuard) {
-		editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(cursorVisual - rows + 1 + verticalMargin, totalVisual, rows);
-	} else if (editorViewState.scrollRow > maxScrollRow) {
-		editorViewState.scrollRow = editorViewState.layout.clampVisualScroll(editorViewState.scrollRow, totalVisual, rows);
+		activeCodeEditor.view.scrollRow = editorViewState.layout.clampVisualScroll(cursorVisual - rows + 1 + verticalMargin, totalVisual, rows);
+	} else if (activeCodeEditor.view.scrollRow > maxScrollRow) {
+		activeCodeEditor.view.scrollRow = editorViewState.layout.clampVisualScroll(activeCodeEditor.view.scrollRow, totalVisual, rows);
 	}
 
 	if (editorViewState.wordWrapEnabled) {
-		editorViewState.scrollColumn = 0;
+		activeCodeEditor.view.scrollColumn = 0;
 		return;
 	}
 
@@ -58,15 +58,15 @@ export function ensureCursorVisible(): void {
 	const lineMaxScrollColumn = Math.max(0, lineLength - columns);
 	const maxScrollColumn = Math.min(docMaxScrollColumn, lineMaxScrollColumn);
 	const horizontalMargin = Math.min(4, Math.max(0, Math.floor(columns / 6)));
-	const leftGuard = editorViewState.scrollColumn + horizontalMargin;
-	const rightGuard = editorViewState.scrollColumn + columns - 1 - horizontalMargin;
+	const leftGuard = activeCodeEditor.view.scrollColumn + horizontalMargin;
+	const rightGuard = activeCodeEditor.view.scrollColumn + columns - 1 - horizontalMargin;
 
-	if (editorDocumentState.cursorColumn < leftGuard) {
-		editorViewState.scrollColumn = editorViewState.layout.clampHorizontalScroll(editorDocumentState.cursorColumn - horizontalMargin, maxScrollColumn);
-	} else if (editorDocumentState.cursorColumn > rightGuard) {
-		editorViewState.scrollColumn = editorViewState.layout.clampHorizontalScroll(editorDocumentState.cursorColumn - columns + 1 + horizontalMargin, maxScrollColumn);
+	if (activeCodeEditor.view.cursorColumn < leftGuard) {
+		activeCodeEditor.view.scrollColumn = editorViewState.layout.clampHorizontalScroll(activeCodeEditor.view.cursorColumn - horizontalMargin, maxScrollColumn);
+	} else if (activeCodeEditor.view.cursorColumn > rightGuard) {
+		activeCodeEditor.view.scrollColumn = editorViewState.layout.clampHorizontalScroll(activeCodeEditor.view.cursorColumn - columns + 1 + horizontalMargin, maxScrollColumn);
 	} else {
-		editorViewState.scrollColumn = editorViewState.layout.clampHorizontalScroll(editorViewState.scrollColumn, maxScrollColumn);
+		activeCodeEditor.view.scrollColumn = editorViewState.layout.clampHorizontalScroll(activeCodeEditor.view.scrollColumn, maxScrollColumn);
 	}
 }
 
@@ -75,10 +75,10 @@ export function setCursorFromVisualIndex(visualIndex: number, desiredColumnHint?
 	caretNavigation.clear();
 	const visualLines = editorViewState.layout.getVisualLines();
 	if (visualLines.length === 0) {
-		editorDocumentState.cursorRow = 0;
-		editorDocumentState.cursorColumn = 0;
+		activeCodeEditor.view.cursorRow = 0;
+		activeCodeEditor.view.cursorColumn = 0;
 		updateDesiredColumn();
-		editorDocumentState.emitCursorMoved();
+		activeCodeEditor.emitCursorMoved();
 		return;
 	}
 	const clampedIndex = editorViewState.layout.clampVisualIndex(visualLines.length, visualIndex);
@@ -86,14 +86,14 @@ export function setCursorFromVisualIndex(visualIndex: number, desiredColumnHint?
 	if (!segment) {
 		return;
 	}
-	const entry = editorViewState.layout.getCachedHighlight(editorDocumentState.buffer, segment.row);
+	const entry = editorViewState.layout.getCachedHighlight(activeCodeEditor.model.buffer, segment.row);
 	const highlight = entry.hi;
-	const line = editorDocumentState.buffer.getLineContent(segment.row);
+	const line = activeCodeEditor.model.buffer.getLineContent(segment.row);
 	const segmentStart = editorViewState.layout.clampSegmentStart(line.length, segment.startColumn);
 	const segmentEnd = editorViewState.layout.clampSegmentEnd(line.length, segmentStart, segment.endColumn);
 	const hasDesiredHint = desiredColumnHint !== undefined;
 	const hasOffsetHint = desiredOffsetHint !== undefined;
-	let targetColumn = hasDesiredHint ? desiredColumnHint! : editorDocumentState.cursorColumn;
+	let targetColumn = hasDesiredHint ? desiredColumnHint! : activeCodeEditor.view.cursorColumn;
 	if (editorViewState.wordWrapEnabled) {
 		const segmentDisplayStart = editorViewState.layout.columnToDisplay(highlight, segmentStart);
 		const segmentDisplayEnd = editorViewState.layout.columnToDisplay(highlight, segmentEnd);
@@ -114,54 +114,54 @@ export function setCursorFromVisualIndex(visualIndex: number, desiredColumnHint?
 	} else {
 		targetColumn = editorViewState.layout.clampLineLength(line.length, targetColumn);
 	}
-	editorDocumentState.cursorRow = segment.row;
-	editorDocumentState.cursorColumn = editorViewState.layout.clampLineLength(line.length, targetColumn);
-	const cursorDisplay = editorViewState.layout.columnToDisplay(highlight, editorDocumentState.cursorColumn);
+	activeCodeEditor.view.cursorRow = segment.row;
+	activeCodeEditor.view.cursorColumn = editorViewState.layout.clampLineLength(line.length, targetColumn);
+	const cursorDisplay = editorViewState.layout.columnToDisplay(highlight, activeCodeEditor.view.cursorColumn);
 	if (editorViewState.wordWrapEnabled) {
 		const hasNextSegmentSameRow = (clampedIndex + 1 < visualLines.length)
 			&& visualLines[clampedIndex + 1].row === segment.row;
-		if (editorDocumentState.cursorColumn < segmentStart) {
-			editorDocumentState.cursorColumn = segmentStart;
+		if (activeCodeEditor.view.cursorColumn < segmentStart) {
+			activeCodeEditor.view.cursorColumn = segmentStart;
 		}
-		if (segmentEnd >= segmentStart && editorDocumentState.cursorColumn > segmentEnd) {
-			editorDocumentState.cursorColumn = segmentEnd;
+		if (segmentEnd >= segmentStart && activeCodeEditor.view.cursorColumn > segmentEnd) {
+			activeCodeEditor.view.cursorColumn = segmentEnd;
 		}
-		if (hasNextSegmentSameRow && editorDocumentState.cursorColumn >= segmentEnd) {
-			editorDocumentState.cursorColumn = Math.max(segmentStart, segmentEnd - 1);
+		if (hasNextSegmentSameRow && activeCodeEditor.view.cursorColumn >= segmentEnd) {
+			activeCodeEditor.view.cursorColumn = Math.max(segmentStart, segmentEnd - 1);
 		}
 		const segmentDisplayStart = editorViewState.layout.columnToDisplay(highlight, segmentStart);
-		editorDocumentState.desiredDisplayOffset = cursorDisplay - segmentDisplayStart;
+		activeCodeEditor.view.desiredDisplayOffset = cursorDisplay - segmentDisplayStart;
 	} else {
-		editorDocumentState.desiredDisplayOffset = cursorDisplay;
+		activeCodeEditor.view.desiredDisplayOffset = cursorDisplay;
 	}
 	if (hasDesiredHint) {
-		editorDocumentState.desiredColumn = Math.max(0, desiredColumnHint!);
+		activeCodeEditor.view.desiredColumn = Math.max(0, desiredColumnHint!);
 	} else {
-		editorDocumentState.desiredColumn = editorDocumentState.cursorColumn;
+		activeCodeEditor.view.desiredColumn = activeCodeEditor.view.cursorColumn;
 	}
-	if (editorDocumentState.desiredDisplayOffset < 0) {
-		editorDocumentState.desiredDisplayOffset = 0;
+	if (activeCodeEditor.view.desiredDisplayOffset < 0) {
+		activeCodeEditor.view.desiredDisplayOffset = 0;
 	}
-	editorDocumentState.emitCursorMoved();
+	activeCodeEditor.emitCursorMoved();
 }
 
 export function updateDesiredColumn(): void {
-	editorDocumentState.desiredColumn = editorDocumentState.cursorColumn;
-	editorDocumentState.desiredDisplayOffset = 0;
-	if (editorDocumentState.cursorRow < 0 || editorDocumentState.cursorRow >= editorDocumentState.buffer.getLineCount()) {
+	activeCodeEditor.view.desiredColumn = activeCodeEditor.view.cursorColumn;
+	activeCodeEditor.view.desiredDisplayOffset = 0;
+	if (activeCodeEditor.view.cursorRow < 0 || activeCodeEditor.view.cursorRow >= activeCodeEditor.model.buffer.getLineCount()) {
 		return;
 	}
-	const entry = editorViewState.layout.getCachedHighlight(editorDocumentState.buffer, editorDocumentState.cursorRow);
+	const entry = editorViewState.layout.getCachedHighlight(activeCodeEditor.model.buffer, activeCodeEditor.view.cursorRow);
 	const highlight = entry.hi;
-	const cursorDisplay = editorViewState.layout.columnToDisplay(highlight, editorDocumentState.cursorColumn);
+	const cursorDisplay = editorViewState.layout.columnToDisplay(highlight, activeCodeEditor.view.cursorColumn);
 	let segmentStartColumn = 0;
 	if (editorViewState.wordWrapEnabled) {
 		ensureVisualLines();
-		const override = caretNavigation.lookup(editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
+		const override = caretNavigation.lookup(activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
 		if (override) {
 			segmentStartColumn = override.segmentStartColumn;
 		} else {
-			const visualIndex = editorViewState.layout.positionToVisualIndex(editorDocumentState.cursorRow, editorDocumentState.cursorColumn);
+			const visualIndex = editorViewState.layout.positionToVisualIndex(activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
 			const segment = editorViewState.layout.visualIndexToSegment(visualIndex);
 			if (segment) {
 				segmentStartColumn = segment.startColumn;
@@ -169,8 +169,8 @@ export function updateDesiredColumn(): void {
 		}
 	}
 	const segmentDisplayStart = editorViewState.layout.columnToDisplay(highlight, segmentStartColumn);
-	editorDocumentState.desiredDisplayOffset = cursorDisplay - segmentDisplayStart;
-	if (editorDocumentState.desiredDisplayOffset < 0) {
-		editorDocumentState.desiredDisplayOffset = 0;
+	activeCodeEditor.view.desiredDisplayOffset = cursorDisplay - segmentDisplayStart;
+	if (activeCodeEditor.view.desiredDisplayOffset < 0) {
+		activeCodeEditor.view.desiredDisplayOffset = 0;
 	}
 }

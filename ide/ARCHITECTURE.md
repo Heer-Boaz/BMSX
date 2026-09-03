@@ -21,6 +21,54 @@ Rules:
 - If a new module is mainly owned by one surface, place it with that surface even if other modules import it.
 - Prefer moving code to the real owner over adding wrapper layers or generic host/facade abstractions.
 
+## Text models, working copies, and editor inputs
+
+Editable text is retained by resource identity, not by the currently visible
+tab. `editor/model/model_service.ts` owns exactly one `EditorTextModel` for each
+`(domain,path)`. That model owns the PieceTree buffer, monotone content version,
+saved-state identity, dirty state, runtime-applied version, undo/redo history,
+and content/save/revert events. Its public buffer is read-only; typing and
+programmatic changes both enter through model edit operations. A multi-edit is
+one undo element and publishes one content event.
+
+A code-editor input owns only its resource model reference and its independent
+cursor, selection, desired-column, and scroll state. The active code editor is
+the single widget attachment to one such model/view pair; activation does not
+copy document data into an active-tab buffer. Closing a tab therefore does not
+discard a retained dirty model or its history. A later visual behavior editor
+must retain the same resource model and issue targeted model edits; it must not
+maintain a second JSON/source buffer or replace the whole document for a
+property change.
+
+Workspace recovery persists dirty model contents separately from code-editor
+view metadata. Rename, behavior-source indexing, Hot Resume, and autosave read
+resource models directly. Diagnostics reads the models of retained code-editor
+inputs without consulting an active-tab document copy. Completing an
+asynchronous save records the exact captured model state; an edit made while
+the write is outstanding remains dirty.
+
+This follows the production VS Code ownership pattern rather than its full
+service surface:
+
+- the model service indexes models by resource and creates the retained model:
+  <https://github.com/microsoft/vscode/blob/dc85eaf99d21fb62cc4d8b43a21625a93863cf1e/src/vs/editor/common/services/modelService.ts#L440-L481>;
+- a text model owns content events, monotone and undo-revisitable versions, and
+  atomic edit operations:
+  <https://github.com/microsoft/vscode/blob/dc85eaf99d21fb62cc4d8b43a21625a93863cf1e/src/vs/editor/common/model/textModel.ts#L244-L266>,
+  <https://github.com/microsoft/vscode/blob/dc85eaf99d21fb62cc4d8b43a21625a93863cf1e/src/vs/editor/common/model/textModel.ts#L737-L792>, and
+  <https://github.com/microsoft/vscode/blob/dc85eaf99d21fb62cc4d8b43a21625a93863cf1e/src/vs/editor/common/model/textModel.ts#L1336-L1348>;
+- the resource/model edit stack groups operations and retains cursor snapshots
+  with the undo element:
+  <https://github.com/microsoft/vscode/blob/dc85eaf99d21fb62cc4d8b43a21625a93863cf1e/src/vs/editor/common/model/editStack.ts#L384-L440>;
+- the editor widget attaches a model while view and contribution state are
+  saved/restored separately:
+  <https://github.com/microsoft/vscode/blob/dc85eaf99d21fb62cc4d8b43a21625a93863cf1e/src/vs/editor/browser/widget/codeEditor/codeEditorWidget.ts#L499-L535> and
+  <https://github.com/microsoft/vscode/blob/dc85eaf99d21fb62cc4d8b43a21625a93863cf1e/src/vs/editor/browser/widget/codeEditor/codeEditorWidget.ts#L1038-L1071>;
+- working-copy dirty tracking follows content/undo identity and a completed save
+  only cleans the version actually written:
+  <https://github.com/microsoft/vscode/blob/dc85eaf99d21fb62cc4d8b43a21625a93863cf1e/src/vs/workbench/services/textfile/common/textFileEditorModel.ts#L592-L642> and
+  <https://github.com/microsoft/vscode/blob/dc85eaf99d21fb62cc4d8b43a21625a93863cf1e/src/vs/workbench/services/textfile/common/textFileEditorModel.ts#L953-L970>.
+
 ## Retained lists and panes
 
 `workbench/ui/list_view.ts` owns the common retained-list contract: row storage,

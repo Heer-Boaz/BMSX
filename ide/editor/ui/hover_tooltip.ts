@@ -7,7 +7,7 @@ import { ensureVisualLines, measureText } from '../common/text/layout';
 import { getCodeAreaBounds, resolvePointerColumn, resolvePointerRow } from './view/view';
 import { point_in_rect } from '../../../machine/ts/common/rect';
 import { hoverState, type CodeHoverTooltip } from '../contrib/hover/state';
-import { editorDocumentState } from '../editing/document_state';
+import { activeCodeEditor } from './code_editor_state';
 import { editorViewState } from './view/state';
 import type { RectBounds } from '../../../machine/ts/common/rect';
 
@@ -31,7 +31,7 @@ export function drawHoverTooltip(codeTop: number, codeBottom: number, textLeft: 
 	ensureVisualLines();
 	const visibleRows = editorViewState.cachedVisibleRowCount;
 	const visualIndex = editorViewState.layout.positionToVisualIndex(tooltip.row, tooltip.startColumn);
-	const relativeRow = visualIndex - editorViewState.scrollRow;
+	const relativeRow = visualIndex - activeCodeEditor.view.scrollRow;
 	if (relativeRow < 0 || relativeRow >= visibleRows) {
 		tooltip.bubbleBounds = null;
 		return;
@@ -42,9 +42,9 @@ export function drawHoverTooltip(codeTop: number, codeBottom: number, textLeft: 
 		tooltip.bubbleBounds = null;
 		return;
 	}
-	const entry = editorViewState.layout.getCachedHighlight(editorDocumentState.buffer, segment.row);
+	const entry = editorViewState.layout.getCachedHighlight(activeCodeEditor.model.buffer, segment.row);
 	const highlight = entry.hi;
-	let columnStart = editorViewState.wordWrapEnabled ? segment.startColumn : editorViewState.scrollColumn;
+	let columnStart = editorViewState.wordWrapEnabled ? segment.startColumn : activeCodeEditor.view.scrollColumn;
 	if (editorViewState.wordWrapEnabled) {
 		if (columnStart < segment.startColumn || columnStart > segment.endColumn) {
 			columnStart = segment.startColumn;

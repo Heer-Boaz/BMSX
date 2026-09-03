@@ -7,7 +7,7 @@ import { LuaLexer } from '../../../../toolchain/ts/lua/syntax/lexer';
 import { splitText } from '../../../../machine/ts/common/text_lines';
 import { advanceToggleBlink } from '../view/caret/blink';
 import { editorCaretState } from '../view/caret/state';
-import { editorDocumentState } from '../../editing/document_state';
+import { activeCodeEditor } from '../code_editor_state';
 import {
 	clearSingleCursorSelection,
 	moveSingleCursor,
@@ -78,7 +78,7 @@ export function setSelectionAnchorPosition(field: TextField, row: number, column
 }
 
 const writeInlineFieldClipboard = (clipboard: Clipboard, payload: string): void => {
-	editorDocumentState.customClipboard = payload;
+	activeCodeEditor.customClipboard = payload;
 	void clipboard.writeText(payload);
 };
 
@@ -463,7 +463,7 @@ export function applyInlineFieldEditing(
 	}
 
 	if (useCtrl && isKeyJustPressed('KeyV', playerInput)) {
-		const clipboard = editorDocumentState.customClipboard;
+		const clipboard = activeCodeEditor.customClipboard;
 		if (clipboard.length > 0) {
 			let insertion = clipboard;
 			if (characterFilter) {

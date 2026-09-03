@@ -275,8 +275,8 @@ while (resultPane.selectionIndex < fireFactRowIndex) {
 await pressKey('Enter', navigationPressId);
 navigationPressId += 1;
 t.assert(t.activeWorkbenchTab().kind === 'code_editor', 'ActionEffect fact activation did not open source');
-t.assert(t.activeEditorDocument().resource.path === 'player/actioneffects.lua', 'ActionEffect fact activation opened the wrong registration resource');
-t.assert(t.activeEditorDocument().cursorRow === 15, 'ActionEffect fact activation did not select the fire_salvo registration');
+t.assert(t.activeEditorDocument().model.resource.path === 'player/actioneffects.lua', 'ActionEffect fact activation opened the wrong registration resource');
+t.assert(t.activeEditorDocument().view.cursorRow === 15, 'ActionEffect fact activation did not select the fire_salvo registration');
 
 t.command('scenarioLab');
 await t.frames(2);
@@ -296,7 +296,7 @@ t.assert(detailRow.kind === 'log', 'result navigation did not reach the first re
 await pressKey('Enter', navigationPressId);
 navigationPressId += 1;
 t.assert(t.activeWorkbenchTab().kind === 'code_editor', 'result activation did not open source');
-t.assert(t.activeEditorDocument().resource.path === detailRow.location.resource.path, 'result activation opened the wrong source resource');
+t.assert(t.activeEditorDocument().model.resource.path === detailRow.location.resource.path, 'result activation opened the wrong source resource');
 
 t.command('scenarioLab');
 await t.frames(2);

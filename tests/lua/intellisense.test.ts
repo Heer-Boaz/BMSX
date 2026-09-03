@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { CodeTabContext } from '../../ide/workbench/ui/code_tab/model';
+import type { CodeEditorContext } from '../../ide/editor/ui/code_editor_state';
+import { createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
 import { splitText } from '../../machine/ts/common/text_lines';
 import { PieceTreeBuffer } from '../../ide/editor/text/piece_tree_buffer';
+import { EditorTextModel } from '../../ide/editor/model/text_model';
+import type { DiagnosticContextInput } from '../../ide/workbench/contrib/code_editor/diagnostics/analysis';
 import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
 import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
@@ -101,32 +104,10 @@ function testLuaResource(path: string): RuntimeResource {
 	};
 }
 
-function codeContext(resource: RuntimeResource, source: string): CodeTabContext {
+function codeContext(resource: RuntimeResource, source: string): CodeEditorContext {
 	return {
-		id: resource.source.resid,
-		title: resource.path,
-		resource,
-		mode: 'lua',
-		buffer: new PieceTreeBuffer(source),
-		cursorRow: 0,
-		cursorColumn: 0,
-		scrollRow: 0,
-		scrollColumn: 0,
-		selectionAnchor: null,
-		lastSavedSource: source,
-		saveGeneration: 0,
-		appliedGeneration: 0,
-		undoStack: [],
-		redoStack: [],
-		lastHistoryKey: '',
-		lastHistoryTimestamp: 0,
-		savePointDepth: 0,
-		dirty: false,
-		runtimeErrorOverlay: null,
-		executionStopRow: null,
-		runtimeSyncState: 'synced',
-		runtimeSyncMessage: '',
-		textVersion: 1,
+		model: new EditorTextModel(resource, 'lua', source),
+		view: createCodeEditorViewState(),
 	};
 }
 
@@ -320,16 +301,16 @@ test('editor diagnostics share one retained project snapshot across open documen
 		'declaration.lua': declarationSource,
 	});
 	resetSemanticProject(SYSTEM_RESOURCE_DOMAIN);
-	const contexts = [
+	const contexts: DiagnosticContextInput[] = [
 		{
-			id: 'reader',
+			id: 'code:system\0reader.lua',
 			domain: SYSTEM_RESOURCE_DOMAIN,
 			path: 'reader.lua',
 			source: readerSource,
 			version: 1,
 		},
 		{
-			id: 'declaration',
+			id: 'code:system\0declaration.lua',
 			domain: SYSTEM_RESOURCE_DOMAIN,
 			path: 'declaration.lua',
 			source: declarationSource,

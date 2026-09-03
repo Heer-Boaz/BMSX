@@ -7,6 +7,8 @@ import {
 	getCodeTabContextById,
 	getCodeTabContexts,
 } from '../ui/code_tab/contexts';
+import { editorTextModelService } from '../../editor/model/model_service';
+import { getTextSnapshot } from '../../editor/text/source_text';
 import { serializeBreakpoints } from '../contrib/debugger/controller';
 import {
 	buildWorkspaceDirtyEntryPath,
@@ -29,9 +31,9 @@ import {
 } from './state';
 import {
 	captureContextSnapshotMetadata,
-	captureContextText,
 } from './context_snapshot';
 import {
+	type PersistedCodeEditorView,
 	type PersistedDirtyEntry,
 	WorkspaceAutosaveChange,
 	type WorkspaceAutosavePayload,
@@ -40,7 +42,7 @@ import {
 import type { CartEditor } from '../../cart_editor';
 import type { HostClock } from '../../../hosts/common/clock';
 import type { KeyValueStorage } from '../../workspace/key_value_storage';
-import type { EditorDocumentContextId } from '../../common/editor_context';
+import type { CodeEditorInputId } from '../../common/editor_context';
 
 export function commitWorkspaceSessionLocally(
 	storage: KeyValueStorage,
@@ -49,7 +51,7 @@ export function commitWorkspaceSessionLocally(
 	sources: RuntimeSourceState,
 	debuggerState: RuntimeBreakpointState,
 	changes: WorkspaceAutosaveChange,
-	metadataContextIds: ReadonlySet<EditorDocumentContextId>,
+	metadataContextIds: ReadonlySet<CodeEditorInputId>,
 ): WorkspaceSessionGeneration {
 	const previousGeneration = workspaceState.localGeneration;
 	const rebuildDirtyFiles = !previousGeneration || (changes & WorkspaceAutosaveChange.DirtyFiles);
@@ -59,18 +61,18 @@ export function commitWorkspaceSessionLocally(
 		dirtyFiles = [];
 		const records = new Map<string, WorkspaceRecord>();
 		generationDirtyRecords = records;
-		for (const context of getCodeTabContexts()) {
-			if (!context.dirty) {
+		for (const model of editorTextModelService.models) {
+			if (!model.dirty) {
 				continue;
 			}
-			const projectRootPath = runtimeSourceProjectRootPath(sources, context.resource.domain);
+			const resource = model.resource;
+			const projectRootPath = runtimeSourceProjectRootPath(sources, resource.domain);
 			const dirtyPath = buildWorkspaceDirtyEntryPath(
 				projectRootPath,
-				context.resource.domain,
-				context.resource.path,
+				resource.domain,
+				resource.path,
 			);
-			const metadata = captureContextSnapshotMetadata(context);
-			const text = captureContextText(context);
+			const text = getTextSnapshot(model.buffer);
 			let record = workspaceDirtyRecords.get(dirtyPath);
 			if (!record || record.contents !== text) {
 				record = createWorkspaceRecord(clock, text);
@@ -83,23 +85,26 @@ export function commitWorkspaceSessionLocally(
 				workspaceDirtyRecords.set(dirtyPath, record);
 			}
 			dirtyFiles.push({
-				domain: context.resource.domain,
-				path: context.resource.path,
+				domain: resource.domain,
+				path: resource.path,
 				updatedAt: record.updatedAt,
-				cursorRow: metadata.cursorRow,
-				cursorColumn: metadata.cursorColumn,
-				scrollRow: metadata.scrollRow,
-				scrollColumn: metadata.scrollColumn,
-				selectionAnchor: metadata.selectionAnchor,
 			});
 			records.set(dirtyPath, record);
 		}
 	} else {
 		dirtyFiles = previousGeneration.payload.dirtyFiles;
 		generationDirtyRecords = previousGeneration.dirtyRecords;
-		if (changes & WorkspaceAutosaveChange.ActiveEditor) {
-			dirtyFiles = captureDirtyEntryMetadata(dirtyFiles, metadataContextIds);
-		}
+	}
+	let codeEditorViews: PersistedCodeEditorView[];
+	if (rebuildDirtyFiles) {
+		codeEditorViews = captureDirtyCodeEditorViews();
+	} else if (changes & WorkspaceAutosaveChange.ActiveEditor) {
+		codeEditorViews = updateCodeEditorViews(
+			previousGeneration.payload.codeEditorViews,
+			metadataContextIds,
+		);
+	} else {
+		codeEditorViews = previousGeneration.payload.codeEditorViews;
 	}
 
 	const breakpoints = !previousGeneration || (changes & WorkspaceAutosaveChange.Breakpoints)
@@ -110,12 +115,14 @@ export function commitWorkspaceSessionLocally(
 		: previousGeneration.payload.fontVariant;
 	if (previousGeneration
 		&& dirtyFiles === previousGeneration.payload.dirtyFiles
+		&& codeEditorViews === previousGeneration.payload.codeEditorViews
 		&& breakpoints === previousGeneration.payload.breakpoints
 		&& fontVariant === previousGeneration.payload.fontVariant) {
 		return previousGeneration;
 	}
 	const payload: WorkspaceAutosavePayload = {
 		dirtyFiles,
+		codeEditorViews,
 		breakpoints,
 		fontVariant,
 	};
@@ -160,48 +167,57 @@ export function commitWorkspaceSessionLocally(
 	return { payload, stateRecord, dirtyRecords: generationDirtyRecords };
 }
 
-function captureDirtyEntryMetadata(
-	dirtyFiles: PersistedDirtyEntry[],
-	contextIds: ReadonlySet<EditorDocumentContextId>,
-): PersistedDirtyEntry[] {
-	let updatedDirtyFiles = dirtyFiles;
-	for (const contextId of contextIds) {
-		const context = getCodeTabContextById(contextId);
+function captureDirtyCodeEditorViews(): PersistedCodeEditorView[] {
+	const views: PersistedCodeEditorView[] = [];
+	for (const context of getCodeTabContexts()) {
+		if (!context.model.dirty) {
+			continue;
+		}
 		const metadata = captureContextSnapshotMetadata(context);
-		let found = false;
-		for (let index = 0; index < dirtyFiles.length; index += 1) {
-			const entry = dirtyFiles[index];
-			if (entry.domain !== context.resource.domain || entry.path !== context.resource.path) {
-				continue;
-			}
-			found = true;
-			if (dirtyEntryMetadataEquals(entry, metadata)) {
-				break;
-			}
-			if (updatedDirtyFiles === dirtyFiles) {
-				updatedDirtyFiles = dirtyFiles.slice();
-			}
-			updatedDirtyFiles[index] = {
-				domain: entry.domain,
-				path: entry.path,
-				updatedAt: entry.updatedAt,
-				cursorRow: metadata.cursorRow,
-				cursorColumn: metadata.cursorColumn,
-				scrollRow: metadata.scrollRow,
-				scrollColumn: metadata.scrollColumn,
-				selectionAnchor: metadata.selectionAnchor,
-			};
-			break;
-		}
-		if (!found) {
-			throw new Error(`Dirty editor '${context.resource.path}' is missing from the retained workspace generation.`);
-		}
+		views.push({
+			domain: context.model.resource.domain,
+			path: context.model.resource.path,
+			...metadata,
+		});
 	}
-	return updatedDirtyFiles;
+	return views;
 }
 
-function dirtyEntryMetadataEquals(
-	entry: PersistedDirtyEntry,
+function updateCodeEditorViews(
+	views: PersistedCodeEditorView[],
+	contextIds: ReadonlySet<CodeEditorInputId>,
+): PersistedCodeEditorView[] {
+	let updatedViews = views;
+	for (const contextId of contextIds) {
+		const context = getCodeTabContextById(contextId)!;
+		const metadata = captureContextSnapshotMetadata(context);
+		let matchingIndex = -1;
+		for (let index = 0; index < views.length; index += 1) {
+			const entry = views[index];
+			if (entry.domain !== context.model.resource.domain || entry.path !== context.model.resource.path) {
+				continue;
+			}
+			matchingIndex = index;
+			break;
+		}
+		const entry = views[matchingIndex]!;
+		if (codeEditorViewMetadataEquals(entry, metadata)) {
+			continue;
+		}
+		if (updatedViews === views) {
+			updatedViews = views.slice();
+		}
+		updatedViews[matchingIndex] = {
+			domain: entry.domain,
+			path: entry.path,
+			...metadata,
+		};
+	}
+	return updatedViews;
+}
+
+function codeEditorViewMetadataEquals(
+	entry: PersistedCodeEditorView,
 	metadata: ReturnType<typeof captureContextSnapshotMetadata>,
 ): boolean {
 	if (entry.cursorRow !== metadata.cursorRow

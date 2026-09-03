@@ -8,7 +8,7 @@ import type { CartEditor } from '../cart_editor';
 import type { EditorCommandId } from '../common/commands';
 import type { ActionPromptAction } from '../common/models';
 import { renameController } from '../workbench/contrib/code_editor/rename/controller';
-import { editorDocumentState } from '../editor/editing/document_state';
+import { activeCodeEditor } from '../editor/ui/code_editor_state';
 import { executeEditorSearchCommand, isEditorSearchCommand } from './search';
 import { executeEditorSymbolNavigationCommand, isEditorSymbolNavigationCommand } from './symbol_navigation';
 import { executeEditorViewCommand, isEditorViewCommand } from './view';
@@ -129,7 +129,7 @@ export class IdeCommandController {
 				this.luaTooling,
 				this.runtime,
 			);
-			if (editorDocumentState.dirty) {
+			if (activeCodeEditor.model.dirty) {
 				return false;
 			}
 		}
@@ -165,7 +165,7 @@ export class IdeCommandController {
 					&& (this.debuggerState.stopInlineDepth > 0
 						|| this.runtime.machine.cpu.getFrameDepth() > 1);
 			case 'save':
-				return isCodeTabActive() && editorDocumentState.dirty;
+				return isCodeTabActive() && activeCodeEditor.model.dirty;
 			case 'behaviorLens':
 			case 'symbolSearch':
 			case 'symbolSearchGlobal':
@@ -176,7 +176,7 @@ export class IdeCommandController {
 			case 'scenarioLab':
 				return true;
 			case 'rename':
-				return isActiveLuaCodeTab() && !editorDocumentState.readOnly;
+				return isActiveLuaCodeTab() && !activeCodeEditor.model.readOnly;
 			case 'createResource':
 			case 'findGlobal':
 			case 'findLocal':

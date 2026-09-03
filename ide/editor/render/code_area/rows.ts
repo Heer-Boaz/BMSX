@@ -9,7 +9,7 @@ import { drawReferenceHighlightsForRow, drawSearchHighlightsForRow } from './hig
 import { computeCursorScreenInfo, drawCodeRowText, type InlineCompletionPreview } from './cursor';
 import { drawDiagnosticUnderlinesForRow, drawGotoUnderlineForRow } from './underlines';
 import { drawCodeAreaRowChrome } from './gutter';
-import { editorDocumentState } from '../../editing/document_state';
+import { activeCodeEditor } from '../../ui/code_editor_state';
 import { editorViewState } from '../../ui/view/state';
 import type { CodeAreaViewport } from '../../ui/code/area_viewport';
 
@@ -38,7 +38,7 @@ export function drawCodeAreaRows(
 ): CursorScreenInfo {
 	let cursorInfo: CursorScreenInfo = null;
 	for (let i = 0; i < viewport.rows; i += 1) {
-		const visualIndex = editorViewState.scrollRow + i;
+		const visualIndex = activeCodeEditor.view.scrollRow + i;
 		const rowY = viewport.codeTop + i * editorViewState.lineHeight;
 		if (rowY >= viewport.contentBottom) {
 			break;
@@ -53,11 +53,11 @@ export function drawCodeAreaRows(
 			continue;
 		}
 		const lineIndex = segment.row;
-		const entry = editorViewState.layout.getCachedHighlight(editorDocumentState.buffer, lineIndex);
+		const entry = editorViewState.layout.getCachedHighlight(activeCodeEditor.model.buffer, lineIndex);
 		const isPrimaryVisualSegment = segment.startColumn === 0;
 		const hasBreakpointForRow = breakpointsForChunk.has(lineIndex + 1);
 		const isExecutionStopRow = runtimeErrorState.executionStopRow !== null && lineIndex === runtimeErrorState.executionStopRow;
-		const isCursorLine = lineIndex === editorDocumentState.cursorRow;
+		const isCursorLine = lineIndex === activeCodeEditor.view.cursorRow;
 		drawCodeAreaRowChrome(
 			renderFont,
 			viewport,
@@ -72,14 +72,14 @@ export function drawCodeAreaRows(
 		const highlight = entry.hi;
 		const renderText = useUppercase ? highlight.upperText : highlight.text;
 		const advancePrefix = entry.advancePrefix;
-		let columnStart = editorViewState.wordWrapEnabled ? segment.startColumn : editorViewState.scrollColumn;
+		let columnStart = editorViewState.wordWrapEnabled ? segment.startColumn : activeCodeEditor.view.scrollColumn;
 		if (editorViewState.wordWrapEnabled && (columnStart < segment.startColumn || columnStart > segment.endColumn)) {
 			columnStart = segment.startColumn;
 		}
 		const columnToDisplay = highlight.columnToDisplay;
 		const maxColumn = editorViewState.wordWrapEnabled
 			? segment.endColumn
-			: (editorDocumentState.buffer.getLineEndOffset(lineIndex) - editorDocumentState.buffer.getLineStartOffset(lineIndex));
+			: (activeCodeEditor.model.buffer.getLineEndOffset(lineIndex) - activeCodeEditor.model.buffer.getLineStartOffset(lineIndex));
 		const columnCount = editorViewState.wordWrapEnabled ? Math.max(0, maxColumn - columnStart) : viewport.sliceWidth;
 		const clampedStartColumn = Math.min(columnStart, columnToDisplay.length - 1);
 		const clampedEndColumn = Math.min(columnStart + columnCount, columnToDisplay.length - 1);

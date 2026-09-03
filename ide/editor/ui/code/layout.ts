@@ -1,5 +1,5 @@
 // start hot-path -- visual line layout and syntax highlight caching are editor-frame hot paths.
-// start required-state editorDocumentState,editorViewState -- editor layout state roots are owned singletons in this module.
+// start required-state activeCodeEditor,editorViewState -- editor model/view and layout roots are owned singletons in their modules.
 import type { HostClock, TimerHandle } from '../../../../hosts/common/clock';
 import { clamp } from '../../../../machine/ts/common/clamp';
 import { ScratchBuffer } from '../../../../machine/ts/common/scratchbuffer';
@@ -9,7 +9,7 @@ import type { FileSemanticData } from '../../../../toolchain/ts/lua/semantic/mod
 import type { SemanticSymbolKind } from '../../../../toolchain/ts/lua/semantic/symbols';
 import type { SemanticAnnotations, TokenAnnotation } from '../../../../toolchain/ts/lua/semantic/tokens';
 import type { CachedHighlight, HighlightLine, VisualLineSegment } from '../../../common/models';
-import type { EditorDocumentMode } from '../../editing/document_state';
+import type { EditorDocumentMode } from '../../model/text_model';
 import { EditorFont } from '../view/font';
 import { getTextSnapshot } from '../../text/source_text';
 import { getOrCreateSemanticProject } from '../../contrib/intellisense/semantic/workspace/state';

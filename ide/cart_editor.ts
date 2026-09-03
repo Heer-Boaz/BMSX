@@ -21,7 +21,7 @@ import type { RuntimeTaskQueue } from './runtime/task_queue';
 import { showEditorMessage, updateEditorMessage, setEditorFeedbackActive, editorFeedbackState } from './common/feedback_state';
 import { clearBackgroundTasks, runBackgroundTasks } from './common/background_tasks';
 import { editorRuntimeState } from './editor/common/runtime_state';
-import { bumpTextVersion } from './editor/common/text/runtime';
+import { invalidateLuaCommentContextFromRow } from './common/text';
 import { assertMonospace, measureText } from './editor/common/text/layout';
 import { applyRuntimeErrorOverlay } from './editor/render/error_overlay';
 import { drawEditorText, setEditorCaseInsensitivity } from './editor/render/text_renderer';
@@ -48,9 +48,10 @@ import {
 import { clearGotoHoverHighlight, clearNativeMemberCompletionCache } from './editor/contrib/intellisense/engine';
 import { referenceState } from './editor/contrib/references/state';
 import { resetSemanticProjects } from './editor/contrib/intellisense/semantic/workspace/state';
-import { editorDocumentState } from './editor/editing/document_state';
+import { activeCodeEditor } from './editor/ui/code_editor_state';
+import { editorTextModelService } from './editor/model/model_service';
 import { clearSingleCursorSelection } from './editor/editing/cursor/state';
-import { editorDiagnosticsState } from './editor/contrib/diagnostics/state';
+import { editorDiagnosticsState, markDiagnosticsDirty } from './editor/contrib/diagnostics/state';
 import { processDiagnosticsQueue } from './workbench/contrib/code_editor/diagnostics/controller';
 import { applyLineJumpFieldText } from './workbench/contrib/code_editor/find/line_jump';
 import { EditorSearchController, applySearchFieldText, cancelGlobalSearchJob, cancelSearchJob, startSearchJob } from './workbench/contrib/code_editor/find/search';
@@ -68,9 +69,9 @@ import { handleTextEditorPointerInput } from './input/pointer/dispatch';
 import { clearEditorPointerSelectionState, editorPointerState } from './input/pointer/state';
 import { handleEditorWheelInput } from './input/pointer/wheel';
 import {
-	clearCodeTabContexts,
+	clearCodeEditorInputs,
+	findCodeTabContext,
 	retainEntryTabContext,
-	updateActiveContextDirtyFlag,
 } from './workbench/ui/code_tab/contexts';
 import { storeCodeTabContext } from './workbench/ui/code_tab/activation';
 import {
@@ -182,7 +183,7 @@ export class RuntimeCartEditor implements CartEditor {
 	private readonly debuggerState: RuntimeDebuggerState;
 	private readonly overlayRenderer: OverlayRenderer;
 	private readonly unsubscribeWorkspaceCursorMoved: () => void;
-	private readonly unsubscribeWorkspaceTextMutated: () => void;
+	private readonly unsubscribeTextModelChanged: () => void;
 	private readonly chromeRenderContext: ChromeRenderContext = {
 		get viewportWidth(): number { return editorViewState.viewportWidth; },
 		get headerHeight(): number { return editorViewState.headerHeight; },
@@ -276,15 +277,21 @@ export class RuntimeCartEditor implements CartEditor {
 		this.search = new EditorSearchController(this.sources, renameController);
 		this.breakpoints = new BreakpointController(debuggerState);
 		this.clearNativeMemberCompletionCache = clearNativeMemberCompletionCache;
-		this.unsubscribeWorkspaceCursorMoved = editorDocumentState.onCursorMoved(() => {
-			if (editorDocumentState.dirty) {
+		this.unsubscribeWorkspaceCursorMoved = activeCodeEditor.onDidMoveCursor(() => {
+			if (activeCodeEditor.model.dirty) {
 				requestWorkspaceAutosave(WorkspaceAutosaveChange.ActiveEditor);
 			}
 		});
-		this.unsubscribeWorkspaceTextMutated = editorDocumentState.onTextMutated(() => {
-			updateActiveContextDirtyFlag();
+		this.unsubscribeTextModelChanged = editorTextModelService.onDidChangeContent((model, event) => {
+			const context = findCodeTabContext(model.resource);
+			if (model.mode === 'lua') {
+				invalidateLuaCommentContextFromRow(model.buffer, event.startRow);
+			}
+			if (context !== null && model.mode === 'lua') {
+				markDiagnosticsDirty(context.id);
+			}
 			requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
-			if (editorSearchState.query.length > 0) {
+			if (activeCodeEditor.model === model && editorSearchState.query.length > 0) {
 				startSearchJob();
 			}
 		});
@@ -303,9 +310,6 @@ export class RuntimeCartEditor implements CartEditor {
 		setActiveTab(this.resourcePanel, getActiveTabId());
 		const activeTab = getActiveTab();
 		const codeTabActive = activeTab.kind === 'code_editor';
-		if (codeTabActive) {
-			bumpTextVersion();
-		}
 		editorCaretState.cursorVisible = codeTabActive;
 		editorCaretState.blinkTimer = 0;
 		this.enterRenderTargets();
@@ -317,7 +321,7 @@ export class RuntimeCartEditor implements CartEditor {
 		editorCaretState.cursorRevealSuspended = false;
 		if (codeTabActive) {
 			updateDesiredColumn();
-			editorDocumentState.selectionAnchor = null;
+			activeCodeEditor.view.selectionAnchor = null;
 		}
 		editorSearchState.active = false;
 		editorSearchState.visible = false;
@@ -374,7 +378,7 @@ export class RuntimeCartEditor implements CartEditor {
 		}
 		this.completion.closeSession();
 		editorInput.applyOverrides(this.input, false, captureKeys);
-		clearSingleCursorSelection(editorDocumentState);
+		clearSingleCursorSelection(activeCodeEditor.view);
 		clearEditorPointerSelectionState();
 		editorChromeState.tabDragState = null;
 		clearGotoHoverHighlight();
@@ -401,8 +405,8 @@ export class RuntimeCartEditor implements CartEditor {
 		const runtime = this.runtime;
 		const playerInput = this.input.getPlayerInput(1);
 		editorRuntimeState.currentTimeMs = this.clock.now();
-		const scrollRow = editorViewState.scrollRow;
-		const scrollColumn = editorViewState.scrollColumn;
+		const scrollRow = activeCodeEditor.view.scrollRow;
+		const scrollColumn = activeCodeEditor.view.scrollColumn;
 		const breakpointRevision = this.breakpoints.revision;
 		handleEditorWheelInput(this, playerInput);
 		handleTextEditorPointerInput(
@@ -438,9 +442,9 @@ export class RuntimeCartEditor implements CartEditor {
 		if (this.breakpoints.revision !== breakpointRevision) {
 			workspaceChanges |= WorkspaceAutosaveChange.Breakpoints;
 		}
-		if ((editorViewState.scrollRow !== scrollRow
-			|| editorViewState.scrollColumn !== scrollColumn)
-			&& editorDocumentState.dirty) {
+		if ((activeCodeEditor.view.scrollRow !== scrollRow
+			|| activeCodeEditor.view.scrollColumn !== scrollColumn)
+			&& activeCodeEditor.model.dirty) {
 			workspaceChanges |= WorkspaceAutosaveChange.ActiveEditor;
 		}
 		if (workspaceChanges) {
@@ -524,7 +528,7 @@ export class RuntimeCartEditor implements CartEditor {
 					cursorActive,
 					getBreakpointsForChunk(
 						this.debuggerState,
-						activeTab.context.resource,
+						activeTab.context.model.resource,
 					),
 					renameActive ? renameController.getHighlightMatches() : referenceState.getMatches(),
 					renameActive ? renameController.getActiveIndex() : referenceState.getActiveIndex(),
@@ -567,7 +571,7 @@ export class RuntimeCartEditor implements CartEditor {
 				await shutdownWorkspaceStorage();
 			} finally {
 				this.unsubscribeWorkspaceCursorMoved();
-				this.unsubscribeWorkspaceTextMutated();
+				this.unsubscribeTextModelChanged();
 			}
 		}
 		clearEditorPointerSelectionState();
@@ -604,7 +608,7 @@ export class RuntimeCartEditor implements CartEditor {
 			setFontVariant(
 				this.clock,
 				variant,
-				activeTab.context.mode,
+				activeTab.context.model.mode,
 				activeTab.id,
 			);
 		} else {
@@ -694,7 +698,6 @@ export class RuntimeCartEditor implements CartEditor {
 		editorRuntimeState.caseInsensitive = false;
 		editorRuntimeState.uppercaseDisplay = true;
 		setEditorCaseInsensitivity(editorRuntimeState.uppercaseDisplay);
-		editorDocumentState.preMutationSource = null;
 		applyViewportSize(viewport);
 		resetSemanticProjects();
 		editorViewState.scrollbars = {
@@ -715,9 +718,10 @@ export class RuntimeCartEditor implements CartEditor {
 			editorRuntimeState.initialized = false;
 			return resourcePanel;
 		}
-		clearCodeTabContexts();
+		clearCodeEditorInputs();
+		editorTextModelService.clear();
 		const initialContext = retainEntryTabContext(this.sources);
-		configureFontVariant(this.clock, editorViewState.fontVariant, initialContext.mode);
+		configureFontVariant(this.clock, editorViewState.fontVariant, initialContext.model.mode);
 		resourcePanel.setFontMetrics(editorViewState.lineHeight, editorViewState.charAdvance);
 		editorSearchState.field = createInlineTextField();
 		symbolSearchState.field = createInlineTextField();
@@ -740,9 +744,8 @@ export class RuntimeCartEditor implements CartEditor {
 		initializeTabs(initialContext);
 		resourcePanel.queuePendingSelection(null);
 		editorChromeState.resourcePanelResizing = false;
-		editorDocumentState.desiredColumn = editorDocumentState.cursorColumn;
+		activeCodeEditor.view.desiredColumn = activeCodeEditor.view.cursorColumn;
 		assertMonospace();
-		editorDocumentState.lastSavedSource = '';
 		initializeNavigationState();
 		editorRuntimeState.initialized = true;
 		return resourcePanel;

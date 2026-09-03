@@ -15,7 +15,7 @@ import * as constants from '../common/constants';
 import { editorPointerState } from '../input/pointer/state';
 import { editorCaretState } from '../editor/ui/view/caret/state';
 import { runtimeErrorState } from '../editor/contrib/runtime_error/state';
-import { editorDocumentState } from '../editor/editing/document_state';
+import { activeCodeEditor } from '../editor/ui/code_editor_state';
 import { editorViewState } from '../editor/ui/view/state';
 import { splitText } from '../../machine/ts/common/text_lines';
 import {
@@ -72,7 +72,7 @@ export function focusRuntimeErrorOverlay(resourcePanel: ResourcePanelController)
 	overlay.layout = null;
 	setActiveRuntimeErrorOverlay(overlay);
 	setExecutionStopHighlightForCurrentContext(overlay.row);
-	editorDocumentState.selectionAnchor = null;
+	activeCodeEditor.view.selectionAnchor = null;
 	editorPointerState.pointerSelecting = false;
 	editorPointerState.pointerPrimaryWasPressed = false;
 	editorCaretState.cursorRevealSuspended = false;
@@ -146,7 +146,7 @@ export function focusExecutionStop(
 	editor.navigation.focusChunkSource(resource);
 	const row = line - 1;
 	setExecutionStopHighlightForCurrentContext(row);
-	editorDocumentState.selectionAnchor = null;
+	activeCodeEditor.view.selectionAnchor = null;
 	editorPointerState.pointerSelecting = false;
 	editorPointerState.pointerPrimaryWasPressed = false;
 	editorCaretState.cursorRevealSuspended = false;
@@ -197,11 +197,11 @@ export function navigateToRuntimeErrorFrameTarget(
 		);
 		return;
 	}
-	const lastRowIndex = editorDocumentState.buffer.getLineCount() - 1;
+	const lastRowIndex = activeCodeEditor.model.buffer.getLineCount() - 1;
 	const targetRow = clamp(frame.line - 1, 0, lastRowIndex);
-	const targetLine = editorDocumentState.buffer.getLineContent(targetRow);
+	const targetLine = activeCodeEditor.model.buffer.getLineContent(targetRow);
 	const targetColumn = clamp(frame.column - 1, 0, targetLine.length);
-	editorDocumentState.selectionAnchor = null;
+	activeCodeEditor.view.selectionAnchor = null;
 	editorPointerState.pointerSelecting = false;
 	resetPointerClickTracking();
 	setCursorPosition(targetRow, targetColumn);

@@ -8,7 +8,7 @@ import { resetBlink } from '../../../../editor/render/caret';
 import { revealCursor } from '../../../../editor/ui/view/caret/caret';
 import { closeSymbolSearch } from '../symbols/shared';
 import { editorCaretState } from '../../../../editor/ui/view/caret/state';
-import { editorDocumentState } from '../../../../editor/editing/document_state';
+import { activeCodeEditor } from '../../../../editor/ui/code_editor_state';
 import { createResourceState } from '../../resources/widget_state';
 import type { RuntimeLuaTooling } from '../../../../runtime/lua_tooling';
 
@@ -23,17 +23,17 @@ export function openRenamePrompt(bridge: RuntimeLuaTooling, rename: RenameContro
 	closeSymbolSearch(false);
 	createResourceState.active = false;
 	const context = getActiveCodeTabContext();
-	switch (context.mode) {
+	switch (context.model.mode) {
 		case 'lua':
 			break;
 		case 'aem':
 			return;
 	}
 	const started = rename.begin(bridge, {
-		buffer: editorDocumentState.buffer,
-		cursorRow: editorDocumentState.cursorRow,
-		cursorColumn: editorDocumentState.cursorColumn,
-		identity: context.resource,
+		buffer: activeCodeEditor.model.buffer,
+		cursorRow: activeCodeEditor.view.cursorRow,
+		cursorColumn: activeCodeEditor.view.cursorColumn,
+		identity: context.model.resource,
 	});
 	if (started) {
 		editorCaretState.cursorVisible = true;

@@ -28,7 +28,8 @@ import {
 	createLuaCodeTabContext,
 	retainEntryTabContext,
 } from '../../ide/workbench/ui/code_tab/contexts';
-import { codeEditorModelManager } from '../../ide/workbench/ui/code_tab/model_manager';
+import { codeEditorInputManager } from '../../ide/workbench/ui/code_tab/input_manager';
+import { editorTextModelService } from '../../ide/editor/model/model_service';
 
 function luaSource(path: string, resid: string, source: string): LuaSourceRecord {
 	return {
@@ -115,7 +116,8 @@ test('runtime source owner retains Lua resource identity when its source record 
 	assert.strictEqual(resolveRuntimeResourceForContext(sources, 0, 'system/main.lua')?.source, systemRegistry.records[0]);
 });
 
-test('resource panel, search, and code tabs consume the retained owner resource', () => {
+test('resource panel, search, and code tabs consume the retained owner resource', (t) => {
+	t.after(() => editorTextModelService.clear());
 	const systemRegistry = sourceRegistry('machine/ts', [
 		luaSource('system/main.lua', 'system-main', 'return 1'),
 	]);
@@ -140,12 +142,16 @@ test('resource panel, search, and code tabs consume the retained owner resource'
 	assert.strictEqual(searchEntry.resource, retained);
 
 	const context = createLuaCodeTabContext(sources, retained);
-	assert.strictEqual(context.resource, retained);
+	assert.strictEqual(context.model.resource, retained);
 });
 
 test('workspace entry tab opens the development cartridge instead of the booting BIOS', (t) => {
-	codeEditorModelManager.clear();
-	t.after(() => codeEditorModelManager.clear());
+	codeEditorInputManager.clear();
+	editorTextModelService.clear();
+	t.after(() => {
+		codeEditorInputManager.clear();
+		editorTextModelService.clear();
+	});
 	const systemRegistry = sourceRegistry('machine/bios', [
 		luaSource('system/main.lua', 'system-main', 'return 1'),
 	]);
@@ -162,11 +168,11 @@ test('workspace entry tab opens the development cartridge instead of the booting
 	sources.cartridgeSlots[0]!.rom.header.blua32ImageOffset = 64;
 
 	const context = retainEntryTabContext(sources);
-	assert.equal(context.resource.domain, 0);
-	assert.equal(context.resource.path, 'cart.lua');
-	context.cursorRow = 7;
+	assert.equal(context.model.resource.domain, 0);
+	assert.equal(context.model.resource.path, 'cart.lua');
+	context.view.cursorRow = 7;
 	assert.strictEqual(retainEntryTabContext(sources), context);
-	assert.equal(retainEntryTabContext(sources).cursorRow, 7);
+	assert.equal(retainEntryTabContext(sources).view.cursorRow, 7);
 });
 
 test('active resource catalog exposes AEM only from the active source domain', () => {

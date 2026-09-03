@@ -1,55 +1,28 @@
 import { clearForwardNavigationHistory } from '../../../navigation/navigation_history';
-import { markDiagnosticsDirty } from '../../contrib/diagnostics/state';
 import { requestSemanticRefresh, clearReferenceHighlights } from '../../contrib/intellisense/engine';
-import { getTextSnapshot } from '../../text/source_text';
-import { editorDocumentState } from '../../editing/document_state';
+import { activeCodeEditor } from '../../ui/code_editor_state';
 import { editorViewState } from '../../ui/view/state';
 import { editorRuntimeState } from '../runtime_state';
-
-export function capturePreMutationSource(): void {
-	if (!editorRuntimeState.caseInsensitive) {
-		return;
-	}
-	if (editorDocumentState.preMutationSource === null) {
-		editorDocumentState.preMutationSource = getTextSnapshot(editorDocumentState.buffer);
-	}
-}
-
-export function bumpTextVersion(): void {
-	editorDocumentState.textVersion = editorDocumentState.buffer.version;
-}
+import { captureCodeEditorViewSnapshot } from '../../editing/undo_controller';
 
 export function markTextMutated(): void {
-	const record = editorDocumentState.undoStack[editorDocumentState.undoStack.length - 1];
-	const anchor = editorDocumentState.selectionAnchor;
-	record.setAfterState(
-		editorDocumentState.cursorRow,
-		editorDocumentState.cursorColumn,
-		editorViewState.scrollRow,
-		editorViewState.scrollColumn,
-		anchor ? anchor.row : 0,
-		anchor ? anchor.column : 0,
-		anchor !== null,
-	);
-	editorDocumentState.saveGeneration += 1;
-	editorDocumentState.dirty = editorDocumentState.undoStack.length !== editorDocumentState.savePointDepth;
+	const editContext = editorRuntimeState.pendingEditContext;
+	editorRuntimeState.pendingEditContext = null;
+	if (!activeCodeEditor.model.commitEdit(captureCodeEditorViewSnapshot(), editContext)) {
+		return;
+	}
 	editorViewState.maxLineLengthDirty = true;
-	markDiagnosticsDirty(editorDocumentState.contextId);
-	bumpTextVersion();
 	clearReferenceHighlights();
 	editorViewState.layout.ensureVisualLinesDirty();
 	requestSemanticRefresh();
 	clearForwardNavigationHistory();
-	const editContext = editorRuntimeState.pendingEditContext;
-	editorRuntimeState.pendingEditContext = null;
-	editorDocumentState.emitTextMutated(editContext);
 }
 
 export function invalidateLineRange(startRow: number, endRow: number): void {
 	let from = Math.min(startRow, endRow);
 	let to = Math.max(startRow, endRow);
-	from = editorViewState.layout.clampBufferRow(editorDocumentState.buffer, from);
-	to = editorViewState.layout.clampBufferRow(editorDocumentState.buffer, to);
+	from = editorViewState.layout.clampBufferRow(activeCodeEditor.model.buffer, from);
+	to = editorViewState.layout.clampBufferRow(activeCodeEditor.model.buffer, to);
 	for (let row = from; row <= to; row += 1) {
 		editorViewState.layout.invalidateLine(row);
 	}
