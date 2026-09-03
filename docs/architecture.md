@@ -1375,59 +1375,26 @@ cook a second behavior document, cartlib does not decode an editor resource or
 bind a visual-editor manifest, and machine, TOC, cartridge model and C++ core
 remain unaware of behavior authoring.
 
-The accepted scene-authoring route follows the same source-ownership rule
-without conflating scenes with behavior definitions. A scene remains a
-structured cart-Lua definition. The cartlib `scene_library` materializes a cold
-definition revision, while `World` retains each loaded `SceneInstance` and
-admits its prefab instances; `Registry` remains the cart-wide identity owner.
-`World` owns distinct
-package-internal phases for identity allocation, final construction input,
-initialization, component/constructor construction, spawn/activation and
-admission. Ordinary `world:spawn()` calls those same primitives without a
-temporary batch. `SceneInstance` allocates runtime identities in authored order
-and the retained structural-batch owner coalesces plans per participant at the
-existing mutation barrier. It commits all terminal removals before any new
-admission, applies concrete retained mutations only after batch publication,
-drains lifecycle mutations and only then completes participants.
-A scene-local authored `member_id` is stable correspondence, while `Registry`
-continues to own a separate terminal runtime `WorldObject.id`; replacement
-allocates a new runtime identity. The open slices may not reproduce either
-lifecycle inside scene code.
+Scene authoring follows the same canonical-source rule, but its cartlib runtime
+representation is deliberately open. The first proposal copied desktop-engine
+scene state and a C ECS command buffer into Lua tables. Even a cart that used no
+scene then paid ROM, module-init, table and closure costs on the 33.8688 MHz
+guest. Those implementation slices were removed rather than wrapped or
+optimized in place.
 
-Scene membership is first-class cartlib runtime state. `World` retains its
-loaded scene instances package-internally, and each admitted authored object
-has one direct package-internal member correspondence. Terminal disposal
-updates that concrete instance at the existing World lifecycle boundary;
-`World:clear()` first transitions its instances to unload, while ordinary
-gameplay disposal or `clear_space()` leaves a tombstone. This relationship is
-not a generic observer registry, event subscription, Registry key, Studio tag,
-or per-frame scan.
-
-Scene records contain a scene-local stable `member_id`, prefab identity,
-space/position fields and only the properties explicitly published by their
-prefab owner. `member_id` is not copied to `WorldObject.id`; source/runtime
-correspondence therefore does not reuse terminal Registry identities. The open
-`world:spawn()` option table is not an authoring schema: arbitrary guest tables,
-closures and objects are not generically comparable and are never mutated as a
-property DTO. Prefab descriptors own each supported guest representation and
-whether a change uses a concrete setter or replaces the object.
-Position preserves the live cartlib representation: integer pixel coordinates
-for X/Y and the existing integer depth word for Z, not host floats or the
-unrelated machine Q16.16 geometry format.
-
-A Studio outliner or viewport is a host-side view on source and instance
-correspondence. Its commands change the shared Lua text model and, when applying
-to a suspended live guest, invoke the concrete cartlib `SceneInstance`
-operations. That instance resolves member identity, `WorldObject` position and
-prefab-owned property getters/setters; the host does not dispatch arbitrary
-class methods. It likewise does not read or write `world._objects`, component
-storage, or arbitrary Lua table shapes as a scene DTO. The complete accepted
-owner, construction, mutation, Hot Resume, source-edit, runtimebinding and
-viewport contract is
+Only the product boundary is accepted: a future visual editor is a host-side
+view on the same Lua text model, machine/ROM/TOC remain unaware of scenes, and
+the host may not treat `world._objects` or arbitrary Lua tables as its scene
+database. No `SceneInstance`, member-id scheme, property descriptor,
+construction split, structural batch, tombstone policy or guest binding is an
+architecture owner until a replacement design proves its workload and zero
+cost for carts that do not opt in. The rejected proposal and measured failure
+are recorded in
 [`studio_scene_authoring_design.md`](studio_scene_authoring_design.md).
 
-That runtime binding may not guess the compiler's sanitized hidden global for a
-dynamic Lua module. Before live scene commands, the compiler/linker tooling
+Any future guest tooling binding may not guess the compiler's sanitized hidden
+global for a dynamic Lua module. Before a feature relies on live module
+commands, the compiler/linker tooling
 owner must publish its already-known dynamic module root `(module path, global
 slot name)` records in the private BLua symbol image, and the runtime source
 owner must index them for the exact execution domain. Static/const modules have

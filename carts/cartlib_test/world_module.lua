@@ -7,6 +7,6 @@ return {
 	framebuffer_count = 1,
 	gameplay_interval_vblanks = tick_interval_vblanks,
 	frame_interval_vblanks = tick_interval_vblanks,
-	spaces = { 'main', 'alternate' },
+	spaces = { 'main' },
 	systems = { input_system, overlap_2d_system },
 }
