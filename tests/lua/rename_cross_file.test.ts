@@ -8,7 +8,7 @@ import { CrossFileRenameManager } from '../../ide/workbench/contrib/code_editor/
 import { buildCodeTabId } from '../../ide/workbench/ui/code_tab/contexts';
 import { codeEditorInputManager } from '../../ide/workbench/ui/code_tab/input_manager';
 import { editorTabGroup } from '../../ide/workbench/ui/tab/group_model';
-import type { ResourceViewerTabDescriptor } from '../../ide/workbench/ui/tab/model';
+import { ResourceViewerInput } from '../../ide/workbench/contrib/resources/editor_input';
 import { SYSTEM_RESOURCE_DOMAIN } from '../../ide/common/resource';
 import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import { createTestRuntimeSourceState } from '../helpers/runtime_sources';
@@ -64,19 +64,13 @@ test('cross file rename updates a retained background model without opening an e
 		domain: SYSTEM_RESOURCE_DOMAIN,
 		path: 'usage.lua',
 	})!;
-	const resourceTab: ResourceViewerTabDescriptor = {
-		id: 'resource:system\0usage.lua',
-		kind: 'resource_view',
-		title: 'usage.lua',
-		closable: true,
-		resource: {
+	const resourceTab = new ResourceViewerInput({
 			resource: usageResource,
 			lines: [],
 			error: '',
 			title: 'usage.lua',
 			scroll: 0,
-		},
-	};
+	});
 	editorTabGroup.initialize(resourceTab);
 	t.after(() => {
 		editorTabGroup.clear();

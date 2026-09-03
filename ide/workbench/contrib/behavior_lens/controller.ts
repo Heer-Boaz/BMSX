@@ -10,6 +10,7 @@ import { editorTabGroup } from '../../ui/tab/group_model';
 import { setActiveTab } from '../../ui/tabs';
 import type { EditorNavigationController } from '../resources/navigation';
 import type { EditorPanes } from '../../services/editor/editor_panes';
+import { BehaviorLensInput } from './editor_input';
 import {
 	createBehaviorLensLayout,
 	installBehaviorLensDocument,
@@ -31,7 +32,7 @@ import type { BehaviorLensViewState } from './view_model';
 
 const WHEEL_SCROLL_ROWS = 3;
 
-/** Workbench contribution for source-derived behavior topology. Tab descriptors own every view. */
+/** Workbench contribution for source-derived behavior topology. Inputs own every view. */
 export class BehaviorLensController {
 	public constructor(
 		private readonly sources: RuntimeSourceState,
@@ -49,19 +50,16 @@ export class BehaviorLensController {
 		let tab = editorTabGroup.findById(tabId);
 		if (tab === undefined) {
 			const document = this.buildDocument(context.model.resource, source);
-			tab = {
-				id: tabId,
-				kind: 'behavior_lens',
-				title: `LENS ${context.title}`,
-				closable: true,
-				view: createBehaviorLensViewState(
+			tab = new BehaviorLensInput(
+				createBehaviorLensViewState(
 					context.id,
 					document,
 					sourceVersion,
 					sourceLine,
 					sourceColumn,
 				),
-			};
+				context.title,
+			);
 			editorTabGroup.add(tab);
 		} else {
 			this.refreshView(tab.view, source, sourceVersion, sourceLine, sourceColumn);

@@ -22,10 +22,8 @@ import { collectDiagnosticsBatch } from '../../ide/workbench/contrib/code_editor
 import { CodeEditorInputManager, codeEditorInputManager } from '../../ide/workbench/ui/code_tab/input_manager';
 import type { CodeTabContext } from '../../ide/workbench/ui/code_tab/model';
 import { EditorTabGroupModel, editorTabGroup } from '../../ide/workbench/ui/tab/group_model';
-import type {
-	CodeEditorTabDescriptor,
-	ResourceViewerTabDescriptor,
-} from '../../ide/workbench/ui/tab/model';
+import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
+import { ResourceViewerInput } from '../../ide/workbench/contrib/resources/editor_input';
 import { clearBackgroundTasks, runBackgroundTasks } from '../../ide/common/background_tasks';
 import { startSearchJob } from '../../ide/workbench/contrib/code_editor/find/search';
 import { editorSearchState } from '../../ide/workbench/contrib/code_editor/find/widget_state';
@@ -220,14 +218,11 @@ test('tab closure leaves the separately retained code input and resource model i
 	const context = codeContext(model, createCodeEditorViewState());
 	inputs.register(context);
 	const group = new EditorTabGroupModel();
-	const tab: CodeEditorTabDescriptor = {
-		id: context.id,
-		kind: 'code_editor',
-		title: context.title,
-		closable: true,
-		context,
-	};
+	const tab = new CodeEditorInput(context);
 	group.initialize(tab);
+	assert.equal(tab.isDirty(), false);
+	model.pushEditOperations([{ offset: 11, deleteLength: 0, text: '\n' }]);
+	assert.equal(tab.isDirty(), true);
 	group.removeAt(0);
 
 	assert.equal(group.tabs.length, 0);
@@ -235,7 +230,7 @@ test('tab closure leaves the separately retained code input and resource model i
 	assert.strictEqual(inputs.get(context.id), context);
 	assert.strictEqual(models.get(resource), model);
 	assert.strictEqual(models.retain(resource, 'lua', 'discarded reload'), model);
-	assert.equal(model.buffer.getText(), 'return true');
+	assert.equal(model.buffer.getText(), 'return true\n');
 	models.clear();
 });
 
@@ -320,12 +315,7 @@ test('diagnostics select a retained dirty input while a non-code input is active
 	const model = editorTextModelService.retain(resource, 'lua', 'return true');
 	model.pushEditOperations([{ offset: 11, deleteLength: 0, text: '!' }]);
 	const context = codeContext(model, createCodeEditorViewState());
-	const resourceTab: ResourceViewerTabDescriptor = {
-		id: 'resource:0\0image.png',
-		kind: 'resource_view',
-		title: 'image.png',
-		closable: true,
-		resource: {
+	const resourceTab = new ResourceViewerInput({
 			resource: {
 				domain: 0,
 				path: 'image.png',
@@ -340,8 +330,8 @@ test('diagnostics select a retained dirty input while a non-code input is active
 			error: '',
 			title: 'image.png',
 			scroll: 0,
-		},
-	};
+	});
+	assert.equal(resourceTab.isDirty(), false);
 	codeEditorInputManager.register(context);
 	editorTabGroup.initialize(resourceTab);
 	editorDiagnosticsState.dirtyDiagnosticContexts.add(context.id);

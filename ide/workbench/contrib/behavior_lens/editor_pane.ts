@@ -4,7 +4,7 @@ import { drawEditorText } from '../../../editor/render/text_renderer';
 import { measureText } from '../../../editor/common/text/layout';
 import { editorViewState } from '../../../editor/ui/view/state';
 import type { ResourcePanelController } from '../resources/panel/controller';
-import type { BehaviorLensTabDescriptor } from '../../ui/tab/model';
+import type { BehaviorLensInput } from '../../ui/tab/model';
 import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import type { BehaviorLensController } from './controller';
 import {
@@ -13,7 +13,7 @@ import {
 } from './keyboard';
 import { drawBehaviorLens } from './render';
 
-export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<BehaviorLensTabDescriptor> {
+export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<BehaviorLensInput> {
 	public constructor(
 		resourcePanel: ResourcePanelController,
 		private readonly controller: BehaviorLensController,

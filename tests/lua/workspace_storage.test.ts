@@ -2,6 +2,7 @@ import './test_setup';
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
 import type { CodeTabContext } from '../../ide/workbench/ui/code_tab/model';
+import { ResourceViewerInput } from '../../ide/workbench/contrib/resources/editor_input';
 import {
 	SYSTEM_RESOURCE_DOMAIN,
 	resourceIdentityKey,
@@ -40,7 +41,7 @@ import {
 import { joinWorkspacePaths, resolveWorkspacePath } from '../../ide/workspace/path';
 import {
 	buildCodeTabId,
-	createCodeEditorTabDescriptor,
+	createCodeEditorInput,
 	findCodeTabContext,
 	registerCodeTabContext,
 } from '../../ide/workbench/ui/code_tab/contexts';
@@ -48,7 +49,6 @@ import { codeEditorInputManager } from '../../ide/workbench/ui/code_tab/input_ma
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
 import { editorTabGroup } from '../../ide/workbench/ui/tab/group_model';
-import type { ResourceViewerTabDescriptor } from '../../ide/workbench/ui/tab/model';
 import {
 	applyWorkspaceAutosavePayload,
 	hydrateDirtyFiles,
@@ -995,8 +995,8 @@ test('cursor-only autosave reuses retained dirty content and background metadata
 	await startAutosaveSession(t, storage);
 	const activeContext = installCodeContext('src/foo.lua', '-- dirty foreground');
 	const backgroundContext = installCodeContext('src/bar.lua', '-- dirty background');
-	const activeTab = createCodeEditorTabDescriptor(activeContext);
-	const backgroundTab = createCodeEditorTabDescriptor(backgroundContext);
+	const activeTab = createCodeEditorInput(activeContext);
+	const backgroundTab = createCodeEditorInput(backgroundContext);
 	editorTabGroup.initialize(activeTab);
 	editorTabGroup.add(backgroundTab);
 	requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
@@ -1413,19 +1413,13 @@ test('workspace recovery hydrates a dirty model retained by a non-code editor in
 	sources.resourceByIdentity.set(resourceIdentityKey(resource), resource);
 	const dirtyPath = buildWorkspaceDirtyEntryPath('offline-cart', resource.domain, resource.path);
 	workspaceDirtyRecords.set(dirtyPath, { contents: '{ "version": 1 }', updatedAt: 1 });
-	const resourceInput: ResourceViewerTabDescriptor = {
-		id: `resource:${resourceIdentityKey(resource)}`,
-		kind: 'resource_view',
-		title: 'enemy_guard.bt.jsonc',
-		closable: true,
-		resource: {
+	const resourceInput = new ResourceViewerInput({
 			resource,
 			lines: [],
 			error: '',
 			title: 'enemy_guard.bt.jsonc',
 			scroll: 0,
-		},
-	};
+	});
 	const resourceEditors = new ResourceEditorResolver([{
 		id: 'test.behaviourTree',
 		selector: { kind: 'filename_suffix', suffix: '.bt.jsonc' },
@@ -1517,23 +1511,17 @@ test('runtime source capture reads the resource model independently of the activ
 		TEST_DOMAIN,
 	);
 	const context = installCodeContext('src/foo.lua', '-- tab buffer');
-	const codeTab = createCodeEditorTabDescriptor(context);
+	const codeTab = createCodeEditorInput(context);
 	editorTabGroup.initialize(codeTab);
 	assert.equal(captureCurrentLuaSource(sources, context.model.resource).source, '-- tab buffer');
 	const resource = testResource('image.png', TEST_DOMAIN, 'image');
-	const resourceTab: ResourceViewerTabDescriptor = {
-		id: 'resource:0\0image.png',
-		kind: 'resource_view',
-		title: 'image.png',
-		closable: true,
-		resource: {
+	const resourceTab = new ResourceViewerInput({
 			resource,
 			lines: [],
 			error: '',
 			title: 'image.png',
 			scroll: 0,
-		},
-	};
+	});
 	editorTabGroup.add(resourceTab);
 	editorTabGroup.activate(resourceTab);
 	assert.equal(captureCurrentLuaSource(sources, context.model.resource).source, '-- tab buffer');

@@ -7,14 +7,17 @@ import type { EditorTextSelection } from '../../ide/editor/navigation/text_selec
 import { EditorPane } from '../../ide/workbench/services/editor/editor_pane';
 import { EditorPanes } from '../../ide/workbench/services/editor/editor_panes';
 import type {
-	BehaviorLensTabDescriptor,
-	CodeEditorTabDescriptor,
-	EditorTabDescriptor,
-	ResourceViewerTabDescriptor,
-	ScenarioLabTabDescriptor,
+	BehaviorLensInput,
+	EditorInput,
+	ScenarioLabInput,
 } from '../../ide/workbench/ui/tab/model';
+import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
+import { ResourceViewerInput } from '../../ide/workbench/contrib/resources/editor_input';
+import { EditorTextModel } from '../../ide/editor/model/text_model';
+import { createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
+import type { CodeTabContext } from '../../ide/workbench/ui/code_tab/model';
 
-class RecordingEditorPane<TInput extends EditorTabDescriptor> extends EditorPane<TInput> {
+class RecordingEditorPane<TInput extends EditorInput> extends EditorPane<TInput> {
 	public setInputCount = 0;
 	public setOptionsCount = 0;
 	public clearInputCount = 0;
@@ -82,44 +85,48 @@ class RecordingEditorPane<TInput extends EditorTabDescriptor> extends EditorPane
 	}
 }
 
-function codeInput(id: 'code:0\0a.lua' | 'code:0\0b.lua'): CodeEditorTabDescriptor {
-	return {
+function codeInput(id: 'code:0\0a.lua' | 'code:0\0b.lua'): CodeEditorInput {
+	const path = id.slice('code:0\0'.length);
+	const context: CodeTabContext = {
 		id,
-		kind: 'code_editor',
 		title: id,
-		closable: true,
-		context: {} as CodeEditorTabDescriptor['context'],
+		model: new EditorTextModel({
+			domain: 0,
+			path,
+			source: { resid: path, type: 'lua' },
+		}, 'lua', ''),
+		view: createCodeEditorViewState(),
+		runtimeErrorOverlay: null,
+		executionStopRow: null,
 	};
+	return new CodeEditorInput(context);
 }
 
-function resourceInput(): ResourceViewerTabDescriptor {
-	return {
-		id: 'resource:0\0image.png',
-		kind: 'resource_view',
+function resourceInput(): ResourceViewerInput {
+	return new ResourceViewerInput({
+		resource: { domain: 0, path: 'image.png' },
 		title: 'image.png',
-		closable: true,
-		resource: {} as ResourceViewerTabDescriptor['resource'],
-	};
+	} as ResourceViewerInput['resource']);
 }
 
 function createEditorPanes() {
-	let codePane: RecordingEditorPane<CodeEditorTabDescriptor>;
-	let resourcePane: RecordingEditorPane<ResourceViewerTabDescriptor>;
+	let codePane: RecordingEditorPane<CodeEditorInput>;
+	let resourcePane: RecordingEditorPane<ResourceViewerInput>;
 	let codeFactoryCount = 0;
 	let resourceFactoryCount = 0;
 	const editorPanes = new EditorPanes({
 		code_editor: () => {
 			codeFactoryCount += 1;
-			codePane = new RecordingEditorPane<CodeEditorTabDescriptor>();
+			codePane = new RecordingEditorPane<CodeEditorInput>();
 			return codePane;
 		},
 		resource_view: () => {
 			resourceFactoryCount += 1;
-			resourcePane = new RecordingEditorPane<ResourceViewerTabDescriptor>();
+			resourcePane = new RecordingEditorPane<ResourceViewerInput>();
 			return resourcePane;
 		},
-		behavior_lens: () => new RecordingEditorPane<BehaviorLensTabDescriptor>(),
-		scenario_lab: () => new RecordingEditorPane<ScenarioLabTabDescriptor>(),
+		behavior_lens: () => new RecordingEditorPane<BehaviorLensInput>(),
+		scenario_lab: () => new RecordingEditorPane<ScenarioLabInput>(),
 	});
 	return {
 		editorPanes,

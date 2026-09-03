@@ -4,7 +4,7 @@ import { drawEditorText } from '../../../editor/render/text_renderer';
 import { editorViewState } from '../../../editor/ui/view/state';
 import type { IdeCommandController } from '../../../commands/controller';
 import type { ResourcePanelController } from '../resources/panel/controller';
-import type { ScenarioLabTabDescriptor } from '../../ui/tab/model';
+import type { ScenarioLabInput } from '../../ui/tab/model';
 import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import type { ScenarioLabController } from './controller';
 import {
@@ -13,7 +13,7 @@ import {
 } from './keyboard';
 import { drawScenarioLab } from './render';
 
-export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<ScenarioLabTabDescriptor> {
+export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<ScenarioLabInput> {
 	public constructor(
 		resourcePanel: ResourcePanelController,
 		private readonly controller: ScenarioLabController,

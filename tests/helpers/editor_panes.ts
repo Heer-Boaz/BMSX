@@ -3,16 +3,16 @@ import type { PointerSnapshot } from '../../ide/common/models';
 import type { EditorTextSelection } from '../../ide/editor/navigation/text_selection';
 import { activateCodeEditorTab } from '../../ide/workbench/ui/code_tab/activation';
 import type {
-	BehaviorLensTabDescriptor,
-	CodeEditorTabDescriptor,
-	EditorTabDescriptor,
-	ResourceViewerTabDescriptor,
-	ScenarioLabTabDescriptor,
+	BehaviorLensInput,
+	CodeEditorInput,
+	EditorInput,
+	ResourceViewerInput,
+	ScenarioLabInput,
 } from '../../ide/workbench/ui/tab/model';
 import { EditorPane } from '../../ide/workbench/services/editor/editor_pane';
 import { EditorPanes } from '../../ide/workbench/services/editor/editor_panes';
 
-class TestEditorPane<TInput extends EditorTabDescriptor> extends EditorPane<TInput> {
+class TestEditorPane<TInput extends EditorInput> extends EditorPane<TInput> {
 	public constructor(
 		private readonly activateInput: (
 			input: TInput,
@@ -55,15 +55,15 @@ class TestEditorPane<TInput extends EditorTabDescriptor> extends EditorPane<TInp
 	}
 }
 
-function activateViewInput(_input: EditorTabDescriptor): void {
+function activateViewInput(_input: EditorInput): void {
 }
 
 /** Editor-group lifecycle used by tests that exercise workspace and navigation owners. */
 export function createTestEditorPanes(): EditorPanes {
 	return new EditorPanes({
-		code_editor: () => new TestEditorPane<CodeEditorTabDescriptor>(activateCodeEditorTab),
-		resource_view: () => new TestEditorPane<ResourceViewerTabDescriptor>(activateViewInput),
-		behavior_lens: () => new TestEditorPane<BehaviorLensTabDescriptor>(activateViewInput),
-		scenario_lab: () => new TestEditorPane<ScenarioLabTabDescriptor>(activateViewInput),
+		code_editor: () => new TestEditorPane<CodeEditorInput>(activateCodeEditorTab),
+		resource_view: () => new TestEditorPane<ResourceViewerInput>(activateViewInput),
+		behavior_lens: () => new TestEditorPane<BehaviorLensInput>(activateViewInput),
+		scenario_lab: () => new TestEditorPane<ScenarioLabInput>(activateViewInput),
 	});
 }

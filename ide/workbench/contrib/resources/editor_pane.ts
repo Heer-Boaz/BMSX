@@ -9,7 +9,7 @@ import { drawEditorText } from '../../../editor/render/text_renderer';
 import { measureText } from '../../../editor/common/text/layout';
 import { getCodeAreaBounds } from '../../../editor/ui/view/view';
 import { drawResourceViewer } from '../../render/resource_panel';
-import type { ResourceViewerTabDescriptor } from '../../ui/tab/model';
+import type { ResourceViewerInput } from '../../ui/tab/model';
 import { WorkbenchViewEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import {
 	handleResourceViewerInput,
@@ -17,7 +17,7 @@ import {
 } from '../../input/keyboard/resource_viewer_input';
 import { clampResourceViewerScroll } from './viewer';
 
-export class ResourceViewerEditorPane extends WorkbenchViewEditorPane<ResourceViewerTabDescriptor> {
+export class ResourceViewerEditorPane extends WorkbenchViewEditorPane<ResourceViewerInput> {
 	protected activate(): void {
 		closeSearch(false, true);
 		closeLineJump(false);

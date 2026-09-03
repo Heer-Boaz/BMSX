@@ -177,6 +177,36 @@ or extension registration before those product requirements exist. It also does 
 per tab: one pane instance may present many retained inputs, while the inputs
 and their resource-owned document models outlive visibility independently.
 
+### Concrete editor inputs
+
+Every retained tab is a concrete editor input owned by its contribution, not a
+plain workbench DTO. The abstract common input owns only stable input identity,
+kind, title and close policy. Explicit read-only and working-copy subclasses
+own the dirty capability instead of an optional model field. The code,
+resource-viewer, Behavior Lens and Scenario Lab contributions own their
+specific model or view references. The static `EditorInput` union remains the
+product's exhaustive built-in composition boundary.
+
+The code input projects dirty state directly from its resource-owned
+`EditorTextModel`; read-only inputs inherit the read-only `false` contract. Tab
+layout and rendering invoke `input.isDirty()` polymorphically and never infer a
+working copy from the input kind or from the active code widget. Input objects
+are allocated only when retained and are reused across pane activation.
+
+This is the small part of VS Code's `EditorInput` contract needed before
+multiple editable surfaces exist: the input owns type identity and exposes
+dirty state, while concrete custom inputs delegate that state to their retained
+document model:
+
+- <https://github.com/microsoft/vscode/blob/8d48b77e9fc7df97b659e8a04bc999bb6fb8f031/src/vs/workbench/common/editor/editorInput.ts#L95-L145>
+- <https://github.com/microsoft/vscode/blob/8d48b77e9fc7df97b659e8a04bc999bb6fb8f031/src/vs/workbench/common/editor/editorInput.ts#L204-L216>
+- <https://github.com/microsoft/vscode/blob/8d48b77e9fc7df97b659e8a04bc999bb6fb8f031/src/vs/workbench/contrib/customEditor/browser/customEditorInput.ts#L252-L280>
+
+Save/revert participation is deliberately not defaulted to a no-op on the
+base. A later editable structured input must first attach the existing working
+copy to the real workspace persistence owner; a read-only input cannot
+accidentally claim save support merely because it has a tab.
+
 ## Retained lists and panes
 
 `workbench/ui/list_view.ts` owns the common retained-list contract: row storage,

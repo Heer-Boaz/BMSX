@@ -6,30 +6,30 @@ import type {
 	ScenarioLabTabId,
 } from './id';
 import type {
-	BehaviorLensTabDescriptor,
-	CodeEditorTabDescriptor,
-	EditorTabDescriptor,
-	ResourceViewerTabDescriptor,
-	ScenarioLabTabDescriptor,
+	BehaviorLensInput,
+	CodeEditorInput,
+	EditorInput,
+	ResourceViewerInput,
+	ScenarioLabInput,
 } from './model';
 
 /**
- * Ordered editor inputs and their active selection. The active descriptor is
+ * Ordered editor inputs and their active selection. The active input is
  * retained directly, matching the editor-group model used by mature IDEs.
  */
 export class EditorTabGroupModel {
-	private readonly editorTabs: EditorTabDescriptor[] = [];
-	private activeEditor: EditorTabDescriptor | null = null;
+	private readonly editorTabs: EditorInput[] = [];
+	private activeEditor: EditorInput | null = null;
 
-	public get tabs(): readonly EditorTabDescriptor[] {
+	public get tabs(): readonly EditorInput[] {
 		return this.editorTabs;
 	}
 
-	public get activeTab(): EditorTabDescriptor | null {
+	public get activeTab(): EditorInput | null {
 		return this.activeEditor;
 	}
 
-	public initialize(initialTab: EditorTabDescriptor): void {
+	public initialize(initialTab: EditorInput): void {
 		this.clear();
 		this.editorTabs.push(initialTab);
 		this.activeEditor = initialTab;
@@ -40,20 +40,20 @@ export class EditorTabGroupModel {
 		this.activeEditor = null;
 	}
 
-	public add(tab: EditorTabDescriptor): void {
+	public add(tab: EditorInput): void {
 		this.editorTabs.push(tab);
 	}
 
-	public activate(tab: EditorTabDescriptor): void {
+	public activate(tab: EditorInput): void {
 		this.activeEditor = tab;
 	}
 
-	public findById(tabId: CodeEditorTabId): CodeEditorTabDescriptor | undefined;
-	public findById(tabId: ResourceViewerTabId): ResourceViewerTabDescriptor | undefined;
-	public findById(tabId: BehaviorLensTabId): BehaviorLensTabDescriptor | undefined;
-	public findById(tabId: ScenarioLabTabId): ScenarioLabTabDescriptor | undefined;
-	public findById(tabId: EditorTabId): EditorTabDescriptor | undefined;
-	public findById(tabId: EditorTabId): EditorTabDescriptor | undefined {
+	public findById(tabId: CodeEditorTabId): CodeEditorInput | undefined;
+	public findById(tabId: ResourceViewerTabId): ResourceViewerInput | undefined;
+	public findById(tabId: BehaviorLensTabId): BehaviorLensInput | undefined;
+	public findById(tabId: ScenarioLabTabId): ScenarioLabInput | undefined;
+	public findById(tabId: EditorTabId): EditorInput | undefined;
+	public findById(tabId: EditorTabId): EditorInput | undefined {
 		for (let index = 0; index < this.editorTabs.length; index += 1) {
 			const tab = this.editorTabs[index];
 			if (tab.id === tabId) {
@@ -63,7 +63,7 @@ export class EditorTabGroupModel {
 		return undefined;
 	}
 
-	public indexOf(tab: EditorTabDescriptor): number {
+	public indexOf(tab: EditorInput): number {
 		return this.editorTabs.indexOf(tab);
 	}
 

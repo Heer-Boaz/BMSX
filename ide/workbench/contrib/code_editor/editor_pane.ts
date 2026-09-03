@@ -35,7 +35,7 @@ import {
 	applyActiveCodeTabSelection,
 	storeCodeTabContext,
 } from '../../ui/code_tab/activation';
-import type { CodeEditorTabDescriptor } from '../../ui/tab/model';
+import type { CodeEditorInput } from '../../ui/tab/model';
 import { EditorPane } from '../../services/editor/editor_pane';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
@@ -45,7 +45,7 @@ import type { KeyValueStorage } from '../../../workspace/key_value_storage';
 import { workspaceRecordState } from '../../../workspace/records';
 import { buildStatusLeftInfo } from '../../render/status_bar_info';
 
-export class CodeEditorPane extends EditorPane<CodeEditorTabDescriptor> {
+export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 	public constructor(
 		private readonly editor: CartEditor,
 		private readonly clipboard: Clipboard,

@@ -15,6 +15,7 @@ import type { RuntimeSourceState } from '../../ide/runtime/sources';
 import type { ResourcePanelController } from '../../ide/workbench/contrib/resources/panel/controller';
 import { ResourceEditorResolver } from '../../ide/workbench/services/editor/resource_editor_resolver';
 import { createTestEditorPanes } from '../helpers/editor_panes';
+import { ResourceViewerInput } from '../../ide/workbench/contrib/resources/editor_input';
 
 function entry(path: string, row: number): NavigationHistoryEntry {
 	return {
@@ -46,19 +47,13 @@ test('history navigation awaits resource activation with its retained cursor loc
 		path: target.path,
 		source: { type: 'lua' },
 	} as RuntimeResource;
-	editorTabGroup.initialize({
-		id: 'resource:history',
-		kind: 'resource_view',
-		title: 'Resource',
-		closable: true,
-		resource: {
+	editorTabGroup.initialize(new ResourceViewerInput({
 			resource,
 			lines: [],
 			error: '',
 			title: 'Resource',
 			scroll: 0,
-		},
-	});
+	}));
 	t.after(() => editorTabGroup.clear());
 	navigationState.back.push(target);
 	const sources = {

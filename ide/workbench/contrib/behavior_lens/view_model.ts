@@ -40,7 +40,7 @@ export type BehaviorLensStatusInfo = {
 	detail: string;
 };
 
-/** Retained presentation state owned by its Behavior Lens tab descriptor. */
+/** Retained presentation state owned by its Behavior Lens input. */
 export type BehaviorLensViewState = WorkbenchListState<BehaviorLensRow, BehaviorLensLayout> & {
 	readonly sourceContextId: CodeEditorInputId;
 	readonly resource: BehaviorSourceDocument['resource'];

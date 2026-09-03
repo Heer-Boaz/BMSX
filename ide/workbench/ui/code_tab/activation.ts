@@ -24,7 +24,7 @@ import {
 	type ResourceDomain,
 	type ResourceIdentity,
 } from '../../../common/resource';
-import type { CodeEditorTabDescriptor } from '../tab/model';
+import type { CodeEditorInput } from '../tab/model';
 import { readWorkspaceLuaSourceText } from '../../../workspace/files';
 import { editorTextModelService } from '../../../editor/model/model_service';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
@@ -143,7 +143,7 @@ export function applyActiveCodeTabSelection(selection: EditorTextSelection): voi
 	activeCodeEditor.emitCursorMoved();
 }
 
-export function activateCodeEditorTab(tab: CodeEditorTabDescriptor, selection?: EditorTextSelection): void {
+export function activateCodeEditorTab(tab: CodeEditorInput, selection?: EditorTextSelection): void {
 	const context = tab.context;
 	activeCodeEditor.attach(context.model, context.view);
 	editorViewState.maxLineLengthDirty = true;

@@ -1,6 +1,6 @@
 import * as constants from '../../../common/constants';
 import type { EditorTabId } from './id';
-import { editorTabDirty, type EditorTabDescriptor } from './model';
+import type { EditorInput } from './model';
 import { clamp } from '../../../../machine/ts/common/clamp';
 import { editorChromeState } from '../chrome_state';
 import { getTabBarTotalHeight } from '../../common/layout';
@@ -45,12 +45,12 @@ function writeTabLayoutEntry(entry: TabLayoutEntry, id: EditorTabId, left: numbe
 	entry.rowIndex = rowIndex;
 }
 
-export function measureTabWidth(tab: EditorTabDescriptor): number {
+export function measureTabWidth(tab: EditorInput): number {
 	const textWidth = measureText(tab.title);
 	let indicatorWidth = 0;
 	if (tab.closable) {
 		indicatorWidth = measureText(constants.TAB_CLOSE_BUTTON_SYMBOL) + constants.TAB_CLOSE_BUTTON_PADDING_X * 2;
-	} else if (editorTabDirty(tab)) {
+	} else if (tab.isDirty()) {
 		indicatorWidth = constants.TAB_DIRTY_MARKER_METRICS.width + constants.TAB_DIRTY_MARKER_SPACING;
 	}
 	return textWidth + constants.TAB_BUTTON_PADDING_X * 2 + indicatorWidth;

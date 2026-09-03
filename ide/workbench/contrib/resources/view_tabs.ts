@@ -4,7 +4,7 @@ import { editorTabGroup } from '../../ui/tab/group_model';
 import { buildResourceViewerState } from './viewer';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { ResourceViewerState } from './model';
-import type { ResourceViewerTabDescriptor } from '../../ui/tab/model';
+import { ResourceViewerInput } from './editor_input';
 
 export function getActiveResourceViewer(): ResourceViewerState | null {
 	const tab = editorTabGroup.activeTab;
@@ -14,7 +14,7 @@ export function getActiveResourceViewer(): ResourceViewerState | null {
 export function retainResourceViewerInput(
 	sources: RuntimeSourceState,
 	resource: RuntimeResource,
-): ResourceViewerTabDescriptor {
+): ResourceViewerInput {
 	const tabId: ResourceViewerTabId = `resource:${resourceIdentityKey(resource)}`;
 	let tab = editorTabGroup.findById(tabId);
 	const state = buildResourceViewerState(sources, resource);
@@ -23,13 +23,7 @@ export function retainResourceViewerInput(
 		tab.resource = state;
 		return tab;
 	}
-	tab = {
-		id: tabId,
-		kind: 'resource_view',
-		title: state.title,
-		closable: true,
-		resource: state,
-	};
+	tab = new ResourceViewerInput(state);
 	editorTabGroup.add(tab);
 	return tab;
 }

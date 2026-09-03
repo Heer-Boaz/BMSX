@@ -1,24 +1,24 @@
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
-import type { EditorTabDescriptor, EditorTabKind } from '../../ui/tab/model';
+import type { EditorInput, EditorInputKind } from '../../ui/tab/model';
 import type { EditorPane } from './editor_pane';
 
 export type EditorPaneFactories = {
-	[TKind in EditorTabKind]: () => EditorPane<Extract<EditorTabDescriptor, { kind: TKind }>>;
+	[TKind in EditorInputKind]: () => EditorPane<Extract<EditorInput, { kind: TKind }>>;
 };
 
 /** Owns the active editor pane and its input lifecycle for one editor group. */
 export class EditorPanes {
-	private readonly panes = new Map<EditorTabKind, EditorPane<EditorTabDescriptor>>();
-	private activePaneValue: EditorPane<EditorTabDescriptor> | null = null;
+	private readonly panes = new Map<EditorInputKind, EditorPane<EditorInput>>();
+	private activePaneValue: EditorPane<EditorInput> | null = null;
 
 	public constructor(private readonly factories: EditorPaneFactories) {
 	}
 
-	public get activePane(): EditorPane<EditorTabDescriptor> {
+	public get activePane(): EditorPane<EditorInput> {
 		return this.activePaneValue!;
 	}
 
-	public openEditor(input: EditorTabDescriptor, selection?: EditorTextSelection): void {
+	public openEditor(input: EditorInput, selection?: EditorTextSelection): void {
 		const activePane = this.activePaneValue;
 		if (activePane !== null && activePane.input === input) {
 			activePane.setOptions(selection);
@@ -41,7 +41,7 @@ export class EditorPanes {
 		this.activePaneValue = null;
 	}
 
-	private getOrCreatePane(input: EditorTabDescriptor): EditorPane<EditorTabDescriptor> {
+	private getOrCreatePane(input: EditorInput): EditorPane<EditorInput> {
 		let pane = this.panes.get(input.kind);
 		if (pane === undefined) {
 			pane = this.factories[input.kind]();

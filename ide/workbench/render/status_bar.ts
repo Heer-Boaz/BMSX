@@ -11,13 +11,13 @@ import { problemsPanel } from '../contrib/problems/panel/controller';
 import { symbolSearchState } from '../contrib/code_editor/symbols/search/state';
 import type { RuntimeFaultState } from '../../runtime/fault_state';
 import type { EditorPane } from '../services/editor/editor_pane';
-import type { EditorTabDescriptor } from '../ui/tab/model';
+import type { EditorInput } from '../ui/tab/model';
 import { buildStatusLeftInfo } from './status_bar_info';
 
 export function renderStatusBar(
 	resourcePanel: ResourcePanelController,
 	fault: RuntimeFaultState,
-	editorPane: EditorPane<EditorTabDescriptor>,
+	editorPane: EditorPane<EditorInput>,
 ): void {
 	const runtimeFaulted = !!fault.faultSnapshot;
 	const statusTop = editorViewState.viewportHeight - statusAreaHeight();

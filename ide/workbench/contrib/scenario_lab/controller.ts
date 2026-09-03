@@ -42,6 +42,7 @@ import type { ScenarioLabViewState } from './view_model';
 import { createScenarioLabViewState } from './view_state';
 import type { ScenarioSourceLocation } from '../../../testing/scenario/result_service';
 import type { BehaviorRegistrationIndex } from '../behavior_lens/registration_index';
+import { ScenarioLabInput } from './editor_input';
 
 const SCENARIO_LAB_TAB_ID: ScenarioLabTabId = 'scenario-lab';
 const WHEEL_SCROLL_ROWS = 3;
@@ -189,13 +190,7 @@ export class ScenarioLabController {
 	private openView(view: ScenarioLabViewState): void {
 		let tab = editorTabGroup.findById(SCENARIO_LAB_TAB_ID);
 		if (tab === undefined) {
-			tab = {
-				id: SCENARIO_LAB_TAB_ID,
-				kind: 'scenario_lab',
-				title: 'SCENARIO LAB',
-				closable: true,
-				view,
-			};
+			tab = new ScenarioLabInput(view);
 			editorTabGroup.add(tab);
 		}
 		setActiveTab(this.editorPanes, tab.id);

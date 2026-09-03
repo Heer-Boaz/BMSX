@@ -4,7 +4,7 @@ import {
 } from '../../../runtime/sources';
 import { activeCodeEditor, createCodeEditorViewState } from '../../../editor/ui/code_editor_state';
 import type { CodeEditorTabId } from '../tab/id';
-import type { CodeEditorTabDescriptor } from '../tab/model';
+import { CodeEditorInput } from '../../contrib/code_editor/editor_input';
 import type { CodeEditorDocumentMode } from '../../../editor/model/text_model';
 import type { CodeEditorInputId } from '../../../common/editor_context';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
@@ -42,20 +42,14 @@ export function buildCodeTabId(resource: ResourceIdentity): CodeEditorTabId {
 	return `code:${resourceIdentityKey(resource)}`;
 }
 
-export function createCodeEditorTabDescriptor(context: CodeTabContext): CodeEditorTabDescriptor {
-	return {
-		id: context.id,
-		kind: 'code_editor',
-		title: context.title,
-		closable: true,
-		context,
-	};
+export function createCodeEditorInput(context: CodeTabContext): CodeEditorInput {
+	return new CodeEditorInput(context);
 }
 
-export function upsertCodeEditorTab(context: CodeTabContext): CodeEditorTabDescriptor {
+export function upsertCodeEditorTab(context: CodeTabContext): CodeEditorInput {
 	let tab = editorTabGroup.findById(context.id);
 	if (!tab) {
-		tab = createCodeEditorTabDescriptor(context);
+		tab = createCodeEditorInput(context);
 		editorTabGroup.add(tab);
 	}
 	tab.title = context.title;

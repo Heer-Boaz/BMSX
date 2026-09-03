@@ -1,10 +1,10 @@
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 import type { PointerSnapshot } from '../../../common/models';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
-import type { EditorTabDescriptor } from '../../ui/tab/model';
+import type { EditorInput } from '../../ui/tab/model';
 
 /** Retained workbench control for one editor-input kind. */
-export abstract class EditorPane<TInput extends EditorTabDescriptor> {
+export abstract class EditorPane<TInput extends EditorInput> {
 	private inputValue: TInput | null = null;
 
 	public get input(): TInput {

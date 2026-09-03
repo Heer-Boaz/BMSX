@@ -2,12 +2,12 @@
 import { editorRuntimeState } from '../../editor/common/runtime_state';
 import { editorChromeState } from './chrome_state';
 import type { EditorTabId } from './tab/id';
-import type { EditorTabDescriptor, EditorTabKind } from './tab/model';
+import type { EditorInput, EditorInputKind } from './tab/model';
 import type { CodeTabContext } from './code_tab/model';
 import { beginNavigationCapture, completeNavigation } from '../../navigation/navigation_history';
 import { closeSymbolSearch } from '../contrib/code_editor/symbols/shared';
 import {
-	createCodeEditorTabDescriptor,
+	createCodeEditorInput,
 	retainEntryTabContext,
 } from './code_tab/contexts';
 import type { EditorTextSelection } from '../../editor/navigation/text_selection';
@@ -21,16 +21,16 @@ export function initializeTabs(initialContext: CodeTabContext, editorPanes: Edit
 	editorChromeState.tabDragState = null;
 	editorChromeState.tabButtonBounds.clear();
 	editorChromeState.tabCloseButtonBounds.clear();
-	const initialTab = createCodeEditorTabDescriptor(initialContext);
+	const initialTab = createCodeEditorInput(initialContext);
 	editorTabGroup.initialize(initialTab);
 	editorPanes.openEditor(initialTab);
 }
 
-export function getActiveTabKind(): EditorTabKind {
+export function getActiveTabKind(): EditorInputKind {
 	return editorTabGroup.activeTab.kind;
 }
 
-export function getActiveTab(): EditorTabDescriptor {
+export function getActiveTab(): EditorInput {
 	return editorTabGroup.activeTab;
 }
 
@@ -87,7 +87,7 @@ export function activateCodeTab(editorPanes: EditorPanes): void {
 	}
 }
 
-export function getTabs(): readonly EditorTabDescriptor[] {
+export function getTabs(): readonly EditorInput[] {
 	return editorTabGroup.tabs;
 }
 
@@ -95,7 +95,7 @@ export function getActiveTabId(): EditorTabId {
 	return editorTabGroup.activeTab.id;
 }
 
-export function findTabById(tabId: EditorTabId): EditorTabDescriptor | undefined {
+export function findTabById(tabId: EditorTabId): EditorInput | undefined {
 	return editorTabGroup.findById(tabId);
 }
 

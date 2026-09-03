@@ -12,10 +12,10 @@ import { closeSearch } from '../../contrib/code_editor/find/search';
 import { problemsPanel } from '../../contrib/problems/panel/controller';
 import type { ResourcePanelController } from '../../contrib/resources/panel/controller';
 import { EditorPane } from '../../services/editor/editor_pane';
-import type { EditorTabDescriptor } from '../tab/model';
+import type { EditorInput } from '../tab/model';
 import { editorChromeState } from '../chrome_state';
 
-type WorkbenchViewInput = Exclude<EditorTabDescriptor, { kind: 'code_editor' }>;
+type WorkbenchViewInput = Exclude<EditorInput, { kind: 'code_editor' }>;
 
 /** Common pointer completion for non-code workbench views. */
 export abstract class WorkbenchViewEditorPane<

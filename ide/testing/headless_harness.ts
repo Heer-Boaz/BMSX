@@ -25,7 +25,7 @@ import { getActiveCodeTabContext } from '../workbench/ui/code_tab/contexts';
 import { updateHoverTooltip } from '../editor/contrib/hover/controller';
 import { hoverState, type CodeHoverTooltip } from '../editor/contrib/hover/state';
 import type { CodeTabContext } from '../workbench/ui/code_tab/model';
-import type { EditorTabDescriptor } from '../workbench/ui/tab/model';
+import type { EditorInput } from '../workbench/ui/tab/model';
 import { getActiveTab, getTabs } from '../workbench/ui/tabs';
 import type {
 	RecordedLogMessage,
@@ -51,10 +51,10 @@ export type HeadlessIdeHarness = {
 	getFaultStack(): ReadonlyArray<StackTraceFrame>;
 	getSignatureHelp(): LuaSignatureHelp | null;
 	getHover(row: number, column: number): CodeHoverTooltip | null;
-	getActiveWorkbenchTab(): Readonly<EditorTabDescriptor>;
+	getActiveWorkbenchTab(): Readonly<EditorInput>;
 	getActiveCodeContext(): Readonly<CodeTabContext> | null;
 	getActiveEditorDocument(): Readonly<CodeEditorContext>;
-	getWorkbenchTabs(): readonly EditorTabDescriptor[];
+	getWorkbenchTabs(): readonly EditorInput[];
 	/** Execute Hot Resume directly against the source registry's current dirty state. */
 	hotResumeCore(): void;
 	/** Full IDE hot-resume action, completed after its queued rebuild settles. */

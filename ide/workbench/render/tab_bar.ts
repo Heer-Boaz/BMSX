@@ -1,7 +1,7 @@
 import { api } from '../../runtime/overlay_api';
 import * as constants from '../../common/constants';
 import type { EditorTabId } from '../ui/tab/id';
-import { editorTabDirty, type EditorTabDescriptor } from '../ui/tab/model';
+import type { EditorInput } from '../ui/tab/model';
 import type { RectBounds } from '../../../machine/ts/common/rect';
 import { clear_rect_bounds, create_rect_bounds, write_rect_bounds } from '../../../machine/ts/common/rect';
 import { TAB_DIRTY_LEFT_MARGIN, TAB_DIRTY_RIGHT_MARGIN } from '../../common/constants';
@@ -11,7 +11,7 @@ import { editorTabGroup } from '../ui/tab/group_model';
 import type { ChromeRenderContext } from './chrome_context';
 
 type TabMetrics = {
-	tab: EditorTabDescriptor;
+	tab: EditorInput;
 	textWidth: number;
 	closeWidth: number;
 	indicatorWidth: number;
@@ -79,7 +79,7 @@ export function renderTabBar(context: ChromeRenderContext): number {
 		const tab = tabs[index];
 		const metric = tabMetricsScratch.get(index);
 		const textWidth = context.measureText(tab.title);
-		const dirty = editorTabDirty(tab);
+		const dirty = tab.isDirty();
 		const closable = tab.closable;
 		const closeWidth = closable
 			? closeButtonWidth + constants.TAB_CLOSE_BUTTON_PADDING_X * 2

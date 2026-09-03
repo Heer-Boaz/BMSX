@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { resourceIdentityKey, type RuntimeResource } from '../../ide/common/resource';
+import type { RuntimeResource } from '../../ide/common/resource';
 import {
 	ResourceEditorResolver,
 	type ResourceEditorRegistration,
 	type ResourceEditorSelector,
 } from '../../ide/workbench/services/editor/resource_editor_resolver';
+import { ResourceViewerInput } from '../../ide/workbench/contrib/resources/editor_input';
 
 function resource(path: string, type: RuntimeResource['source']['type']): RuntimeResource {
 	return {
@@ -24,19 +25,17 @@ function registration(id: string, selector: ResourceEditorSelector): ResourceEdi
 	return {
 		id,
 		selector,
-		createEditorInput: resource => ({
-			id: `resource:${id}:${resourceIdentityKey(resource)}`,
-			kind: 'resource_view',
-			title: id,
-			closable: true,
-			resource: {
+		createEditorInput: resource => {
+			const input = new ResourceViewerInput({
 				resource,
 				lines: [],
 				error: '',
 				title: resource.path,
 				scroll: 0,
-			},
-		}),
+			});
+			input.title = id;
+			return input;
+		},
 	};
 }
 

@@ -31,7 +31,7 @@ import { requestWorkspaceAutosave } from '../../workspace/storage';
 import { WorkspaceAutosaveChange } from '../../workspace/models';
 import type { HostClock } from '../../../../hosts/common/clock';
 import type { KeyValueStorage } from '../../../workspace/key_value_storage';
-import type { CodeEditorTabDescriptor } from '../tab/model';
+import type { CodeEditorInput } from '../tab/model';
 
 function applyCodeTabResource(context: CodeTabContext, resource: RuntimeResource): void {
 	context.model.refreshResource(resource);
@@ -41,7 +41,7 @@ function applyCodeTabResource(context: CodeTabContext, resource: RuntimeResource
 export function retainLuaCodeEditorInput(
 	sources: RuntimeSourceState,
 	resource: RuntimeResource,
-): CodeEditorTabDescriptor {
+): CodeEditorInput {
 	const context = retainLuaCodeTabContext(sources, resource);
 	return upsertCodeEditorTab(context);
 }
@@ -50,7 +50,7 @@ export async function retainAemCodeEditorInput(
 	storage: KeyValueStorage,
 	sources: RuntimeSourceState,
 	resource: RuntimeResource,
-): Promise<CodeEditorTabDescriptor> {
+): Promise<CodeEditorInput> {
 	const tabId = buildCodeTabId(resource);
 	let context = getCodeTabContextById(tabId);
 	if (!context) {
