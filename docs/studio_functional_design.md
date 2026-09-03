@@ -606,8 +606,9 @@ zijn ontworpen. Daarna volgt de geselecteerde **D + E**-route per domein, te
 beginnen met een BT-resource omdat de live BT-owner al een afzonderlijke
 admissioncompiler en een manifestachtige scheiding tussen placements en
 Task/Service/decoratorimplementaties bezit. Eerst worden documentmodel,
-schema/cooker en cart-owned admission elk als eigen complete slice gebouwd;
-pas daarna komt de editable BT-view. FSM en ActionEffects hergebruiken alleen
+schema/cooker (`BT-AUTHORED-DOCUMENT-01`) en cart-owned admission
+(`BT-RESOURCE-ADMISSION-01`) elk als eigen complete slice gebouwd; pas daarna
+komt de editable BT-view. FSM en ActionEffects hergebruiken alleen
 de bewezen textdocumentlifecycle, niet een generiek graphschema.
 
 De source-lens blijft read-only boven arbitrary Lua. Zij belooft geen exacte

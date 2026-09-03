@@ -17,6 +17,7 @@
 		"esbuild": "*",
 		"esbuild-plugin-glsl": "*",
 		"js-yaml": "*",
+		"jsonc-parser": "^3.3.1",
 		"picocolors": "*",
 		"pngjs": "*",
 		"string-width": "*",
