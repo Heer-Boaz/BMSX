@@ -262,18 +262,6 @@ export type CreateResourceState = {
 
 export type ActionPromptAction = 'hot-resume' | 'reboot' | 'close' | 'theme-toggle';
 
-export type ActionPromptLayout = {
-	bounds: RectBounds;
-	saveAndContinue: RectBounds;
-	continue: RectBounds;
-	cancel: RectBounds;
-};
-
-export type ActionPromptState = {
-	action: ActionPromptAction;
-	layout: ActionPromptLayout | null;
-};
-
 export type EditorContextTokenKind = 'identifier' | 'keyword' | 'number' | 'string' | 'operator';
 
 export type EditorContextMenuAction = Extract<EditorCommandId, 'goToDefinition' | 'referenceSearch' | 'callHierarchy' | 'rename'> | 'copy_token';

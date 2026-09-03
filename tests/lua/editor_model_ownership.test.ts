@@ -234,6 +234,19 @@ test('tab closure leaves the separately retained code input and resource model i
 	models.clear();
 });
 
+test('the model service enumerates dirty working copies independently of editor inputs', () => {
+	const models = new EditorTextModelService();
+	const first = models.retain(luaResource('first-dirty.lua'), 'lua', 'first');
+	const second = models.retain(luaResource('second-dirty.lua'), 'lua', 'second');
+	first.pushEditOperations([{ offset: first.buffer.length, deleteLength: 0, text: '-edit' }]);
+	second.pushEditOperations([{ offset: second.buffer.length, deleteLength: 0, text: '-edit' }]);
+
+	assert.deepEqual(models.dirtyWorkingCopies, [first, second]);
+	first.completeSave(first.createSnapshot());
+	assert.deepEqual(models.dirtyWorkingCopies, [second]);
+	models.clear();
+});
+
 test('attaching a retained view validates its positions against the current model', () => {
 	const model = new EditorTextModel(luaResource('reattach.lua'), 'lua', 'longIdentifier');
 	const view = createCodeEditorViewState();

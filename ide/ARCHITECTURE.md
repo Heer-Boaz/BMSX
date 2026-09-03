@@ -207,6 +207,39 @@ base. A later editable structured input must first attach the existing working
 copy to the real workspace persistence owner; a read-only input cannot
 accidentally claim save support merely because it has a tab.
 
+### Working-copy save ownership
+
+`workbench/services/working_copy/text_file_save.ts` is the persistence and
+runtime-sync boundary for retained text working copies. It receives the
+resource-owned `EditorTextModel` explicitly, snapshots the exact state being
+written, persists through the workspace owner, and only then completes that
+snapshot. Lua and AEM keep their existing producer-specific runtime update
+semantics. A behaviour-tree document currently persists its canonical JSONC
+source and remains `runtime_update_pending`; the separate cooked-asset revision
+must exist before a visual BT input is registered or claimed to support Hot
+Resume.
+
+The ordinary Save command resolves the active `EditorInput` and participates
+only when that input is a `WorkingCopyEditorInput`; it never reads the detached
+code-editor widget. Workbench actions that can replace executable media are
+different: Hot Resume and Reboot capture one stable batch of every dirty model
+retained by `EditorTextModelService`, and the prompt keeps that exact batch
+while the user decides. Save-and-continue writes the batch sequentially and
+stops on the first working copy that remains dirty. Neither prompting nor
+changing the IDE theme activates a code pane or changes the selected editor.
+
+This follows VS Code's distinction between active-editor Save, a resource-owned
+working-copy registry, and operations over an explicit set of dirty working
+copies, without copying its multi-group, untitled, Save As, cancellation, or
+dependency-injection machinery:
+
+- <https://github.com/microsoft/vscode/blob/8d48b77e9fc7df97b659e8a04bc999bb6fb8f031/src/vs/workbench/services/workingCopy/common/workingCopy.ts#L80-L100>
+- <https://github.com/microsoft/vscode/blob/8d48b77e9fc7df97b659e8a04bc999bb6fb8f031/src/vs/workbench/services/workingCopy/common/workingCopy.ts#L116-L218>
+- <https://github.com/microsoft/vscode/blob/8d48b77e9fc7df97b659e8a04bc999bb6fb8f031/src/vs/workbench/services/workingCopy/common/workingCopyService.ts#L60-L115>
+- <https://github.com/microsoft/vscode/blob/8d48b77e9fc7df97b659e8a04bc999bb6fb8f031/src/vs/workbench/services/workingCopy/common/workingCopyService.ts#L318-L344>
+- <https://github.com/microsoft/vscode/blob/8d48b77e9fc7df97b659e8a04bc999bb6fb8f031/src/vs/workbench/services/editor/browser/editorService.ts#L968-L1048>
+- <https://github.com/microsoft/vscode/blob/8d48b77e9fc7df97b659e8a04bc999bb6fb8f031/src/vs/workbench/contrib/files/browser/fileCommands.ts#L455-L500>
+
 ## Retained lists and panes
 
 `workbench/ui/list_view.ts` owns the common retained-list contract: row storage,

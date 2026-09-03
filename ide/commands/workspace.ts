@@ -1,6 +1,8 @@
-import { activateCodeTab } from '../workbench/ui/tabs';
-import { save } from '../workbench/ui/code_tab/io';
+import { getActiveTab } from '../workbench/ui/tabs';
 import { showActionPrompt } from '../workbench/contrib/modal/action_prompt';
+import { WorkingCopyEditorInput } from '../workbench/common/editor_input';
+import { saveTextFileWorkingCopy } from '../workbench/services/working_copy/text_file_save';
+import { editorTextModelService } from '../editor/model/model_service';
 import { performEditorAction } from './actions';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
@@ -9,7 +11,6 @@ import type { HostClock } from '../../hosts/common/clock';
 import type { LogOutput } from '../../hosts/common/log';
 import type { KeyValueStorage } from '../workspace/key_value_storage';
 import type { EditorCommandId, EditorWorkspaceCommandId } from '../common/commands';
-import { activeCodeEditor } from '../editor/ui/code_editor_state';
 import type { CartEditor } from '../cart_editor';
 import type { RuntimeSourceState } from '../runtime/sources';
 import type { RuntimeFaultState } from '../runtime/fault_state';
@@ -47,9 +48,11 @@ export function executeEditorWorkspaceCommand(
 	command: EditorWorkspaceCommandId,
 ): void {
 	switch (command) {
-		case 'save':
-			if (activeCodeEditor.model.dirty) {
-				void save(
+		case 'save': {
+			const activeInput = getActiveTab();
+			if (activeInput instanceof WorkingCopyEditorInput && activeInput.isDirty()) {
+				void saveTextFileWorkingCopy(
+					activeInput.workingCopy,
 					storage,
 					clock,
 					editor,
@@ -59,11 +62,12 @@ export function executeEditorWorkspaceCommand(
 				);
 			}
 			return;
+		}
 		case 'hot-resume':
-		case 'reboot':
-			activateCodeTab(editor.editorPanes);
-			if (activeCodeEditor.model.dirty) {
-				showActionPrompt(command);
+		case 'reboot': {
+			const dirtyWorkingCopies = editorTextModelService.dirtyWorkingCopies;
+			if (dirtyWorkingCopies.length !== 0) {
+				showActionPrompt(command, dirtyWorkingCopies);
 				return;
 			}
 			performEditorAction(
@@ -82,8 +86,8 @@ export function executeEditorWorkspaceCommand(
 				command,
 			);
 			return;
+		}
 		case 'theme-toggle':
-			activateCodeTab(editor.editorPanes);
 			performEditorAction(
 				editor,
 				sources,

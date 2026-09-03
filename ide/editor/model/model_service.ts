@@ -19,6 +19,16 @@ export class EditorTextModelService {
 		return this.modelsByResource.values();
 	}
 
+	public get dirtyWorkingCopies(): EditorTextModel[] {
+		const dirtyWorkingCopies: EditorTextModel[] = [];
+		for (const model of this.modelsByResource.values()) {
+			if (model.dirty) {
+				dirtyWorkingCopies.push(model);
+			}
+		}
+		return dirtyWorkingCopies;
+	}
+
 	public get(identity: ResourceIdentity): EditorTextModel | undefined {
 		return this.modelsByResource.get(resourceIdentityKey(identity));
 	}

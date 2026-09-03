@@ -1,25 +1,14 @@
 import type { RuntimeSourceState } from '../../../runtime/sources';
-import { showEditorMessage, showEditorWarningBanner } from '../../../common/feedback_state';
 import type { CodeTabContext } from './model';
 import type { RuntimeResource } from '../../../common/resource';
-import * as constants from '../../../common/constants';
-import { showLuaErrorOverlay } from '../../../runtime_error/navigation';
-import { saveLuaResourceSource } from '../../../workspace/workspace';
-import { loadWorkspaceSourceFile, persistWorkspaceSourceFile } from '../../../workspace/files';
-import { workspaceCanonicalSourceCache } from '../../../workspace/cache';
+import { loadWorkspaceSourceFile } from '../../../workspace/files';
 import { resolveWorkspacePath } from '../../../workspace/path';
-import { applyAemSourceToRuntime } from '../../../runtime/aem';
-import { extractErrorMessage } from '../../../language/lua/interpreter/value';
-import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
-import type { CartEditor } from '../../../cart_editor';
-import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import { computeResourceTabTitle } from '../tab/titles';
 import { setActiveTab } from '../tabs';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import {
 	buildCodeTabId,
 	createAemCodeTabContext,
-	getActiveCodeTabContext,
 	getCodeTabContextById,
 	registerCodeTabContext,
 	retainLuaCodeTabContext,
@@ -27,9 +16,6 @@ import {
 } from './contexts';
 import { runtimeSourceProjectRootPath } from '../../../runtime/sources';
 import type { EditorPanes } from '../../services/editor/editor_panes';
-import { requestWorkspaceAutosave } from '../../workspace/storage';
-import { WorkspaceAutosaveChange } from '../../workspace/models';
-import type { HostClock } from '../../../../hosts/common/clock';
 import type { KeyValueStorage } from '../../../workspace/key_value_storage';
 import type { CodeEditorInput } from '../tab/model';
 
@@ -79,102 +65,4 @@ export function openLuaCodeTab(
 ): void {
 	const input = retainLuaCodeEditorInput(sources, resource);
 	setActiveTab(editorPanes, input.id, selection);
-}
-
-export async function save(
-	storage: KeyValueStorage,
-	clock: HostClock,
-	editor: CartEditor,
-	sources: RuntimeSourceState,
-	luaTooling: RuntimeLuaTooling,
-	runtime: Runtime,
-): Promise<void> {
-	const context = getActiveCodeTabContext();
-	const model = context.model;
-	const snapshot = model.createSnapshot();
-	const source = snapshot.source;
-	const targetPath = model.resource.path;
-	const previousAppliedVersion = model.appliedVersion;
-	let savedLuaProgramModule = false;
-	try {
-		switch (context.model.mode) {
-			case 'lua':
-				savedLuaProgramModule = await saveLuaResourceSource(
-					storage,
-					clock,
-					sources,
-					context.model.resource,
-					source,
-				);
-				break;
-			case 'aem': {
-				const projectRootPath = runtimeSourceProjectRootPath(
-					sources,
-					context.model.resource.domain,
-				);
-				const workspacePath = resolveWorkspacePath(targetPath, projectRootPath);
-				await persistWorkspaceSourceFile(
-					storage,
-					clock,
-					workspacePath,
-					source,
-					projectRootPath,
-				);
-				workspaceCanonicalSourceCache.set(workspacePath, source);
-				break;
-			}
-		}
-		model.completeSave(snapshot);
-		requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
-		switch (context.model.mode) {
-			case 'lua':
-				if (savedLuaProgramModule) {
-					model.setRuntimeSyncState('runtime_update_pending', null);
-					showEditorMessage(`${context.title} saved (runtime update pending)`, constants.COLOR_STATUS_SUCCESS, 2.5);
-				} else {
-					model.markApplied(snapshot.version);
-					model.setRuntimeSyncState(
-						model.version === snapshot.version ? 'synced' : 'runtime_update_pending',
-						null,
-					);
-					showEditorMessage(`${context.title} saved`, constants.COLOR_STATUS_SUCCESS, 2.5);
-				}
-				return;
-			case 'aem':
-				try {
-					applyAemSourceToRuntime(
-						sources,
-						luaTooling,
-						editor,
-						runtime,
-						context.model.resource,
-						source,
-					);
-					model.markApplied(snapshot.version);
-					model.setRuntimeSyncState(
-						model.version === snapshot.version ? 'synced' : 'runtime_update_pending',
-						null,
-					);
-					showEditorMessage(`${context.title} saved`, constants.COLOR_STATUS_SUCCESS, 2.5);
-				} catch (applyError) {
-					const applyMessage = extractErrorMessage(applyError);
-					model.markApplied(previousAppliedVersion);
-					model.setRuntimeSyncState('diverged', applyMessage);
-					showEditorMessage(`${context.title} saved, but runtime apply failed`, constants.COLOR_STATUS_WARNING, 4.0);
-					showEditorWarningBanner(`Saved, but runtime apply failed: ${applyMessage}`, 5.0);
-				}
-				return;
-		}
-	} catch (error) {
-		switch (context.model.mode) {
-			case 'lua':
-				if (showLuaErrorOverlay(editor, context.model.resource, error)) {
-					return;
-				}
-				break;
-			case 'aem':
-				break;
-		}
-		showEditorMessage(extractErrorMessage(error), constants.COLOR_STATUS_ERROR, 4.0);
-	}
 }

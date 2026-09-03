@@ -136,6 +136,13 @@ t.assert(view.document === retainedDocument, 'unchanged frames rebuilt source re
 t.assert(view.rows === retainedRows && view.layout === retainedLayout, 'unchanged frames rebuilt retained layout containers');
 t.assert(view.rows[0] === retainedFirstRow, 'unchanged frames rebuilt formatted rows');
 
+t.command('theme-toggle');
+await t.frames(2);
+t.assert(t.activeWorkbenchTab() === lensTab, 'workbench theme action replaced the active custom editor input');
+t.command('theme-toggle');
+await t.frames(2);
+t.assert(t.activeWorkbenchTab() === lensTab, 'restoring the workbench theme replaced the active custom editor input');
+
 await pressKey('ArrowDown', 1);
 t.assert(view.selectionIndex === 1, 'keyboard navigation did not advance one retained row');
 

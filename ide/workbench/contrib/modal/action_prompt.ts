@@ -1,4 +1,9 @@
-import { create_rect_bounds, point_in_rect, write_rect_bounds } from '../../../../machine/ts/common/rect';
+import {
+	create_rect_bounds,
+	point_in_rect,
+	write_rect_bounds,
+	type RectBounds,
+} from '../../../../machine/ts/common/rect';
 import * as constants from '../../../common/constants';
 import { measureText } from '../../../editor/common/text/layout';
 import { drawEditorText } from '../../../editor/render/text_renderer';
@@ -7,9 +12,23 @@ import type { PlayerInput } from '../../../../hosts/common/input/player';
 import { writeCenteredDialogBounds } from '../../../editor/render/dialog_layout';
 import { api } from '../../../runtime/overlay_api';
 import { editorViewState } from '../../../editor/ui/view/state';
-import type { ActionPromptAction, ActionPromptLayout, ActionPromptState, PointerSnapshot } from '../../../common/models';
+import type { ActionPromptAction, PointerSnapshot } from '../../../common/models';
 import type { FontVariant } from '../../../../machine/ts/render/shared/bmsx_font';
 import type { CartEditor } from '../../../cart_editor';
+import type { EditorTextModel } from '../../../editor/model/text_model';
+
+type ActionPromptLayout = {
+	bounds: RectBounds;
+	saveAndContinue: RectBounds;
+	continue: RectBounds;
+	cancel: RectBounds;
+};
+
+type ActionPromptState = {
+	action: ActionPromptAction;
+	workingCopies: readonly EditorTextModel[];
+	layout: ActionPromptLayout;
+};
 
 type ActionPromptUiState = {
 	prompt: ActionPromptState | null;
@@ -25,12 +44,12 @@ export type ActionPromptChoice = 'save-continue' | 'continue' | 'cancel';
 
 const HOT_RESUME_MESSAGE_LINES = [
 	'UNSAVED CHANGES DETECTED.',
-	'SAVE BEFORE HOT-RESUME TO APPLY CODE UPDATES?',
+	'SAVE CHANGES BEFORE HOT-RESUME?',
 ] as const;
 
 const REBOOT_MESSAGE_LINES = [
 	'UNSAVED CHANGES DETECTED.',
-	'SAVE BEFORE REBOOT TO APPLY CODE UPDATES?',
+	'SAVE CHANGES BEFORE REBOOT?',
 ] as const;
 
 const CLOSE_MESSAGE_LINES = [
@@ -97,18 +116,15 @@ function createActionPromptLayout(): ActionPromptLayout {
 }
 
 const actionPromptLayout = createActionPromptLayout();
-const actionPrompt: ActionPromptState = {
-	action: 'close',
-	layout: actionPromptLayout,
-};
-
 export function hasActionPrompt(): boolean {
 	return actionPromptState.prompt !== null;
 }
 
-export function showActionPrompt(action: ActionPromptAction): void {
-	actionPrompt.action = action;
-	actionPromptState.prompt = actionPrompt;
+export function showActionPrompt(
+	action: ActionPromptAction,
+	workingCopies: readonly EditorTextModel[],
+): void {
+	actionPromptState.prompt = { action, workingCopies, layout: actionPromptLayout };
 	actionPromptLayoutAction = null;
 	updateActionPromptLayout();
 }
@@ -138,7 +154,7 @@ export function updateActionPromptLayout(): void {
 	if (isActionPromptLayoutCurrent(prompt.action)) {
 		return;
 	}
-	const layout = prompt.layout!;
+	const layout = prompt.layout;
 	const { messageLines, primaryLabel, secondaryLabel } = getActionPromptText(prompt.action);
 	let maxMessageWidth = 0;
 	for (let i = 0; i < messageLines.length; i += 1) {
@@ -175,7 +191,7 @@ export function findActionPromptChoiceAt(x: number, y: number): ActionPromptChoi
 	if (!prompt) {
 		return null;
 	}
-	const layout = prompt.layout!;
+	const layout = prompt.layout;
 	if (point_in_rect(x, y, layout.saveAndContinue)) {
 		return 'save-continue';
 	}
@@ -202,6 +218,7 @@ async function handleActionPromptSelection(
 	}
 	if (await editor.commands.executeConfirmedAction(
 		prompt.action,
+		prompt.workingCopies,
 		choice === 'save-continue',
 	)) {
 		closeActionPrompt();
@@ -246,7 +263,7 @@ export function drawActionPromptOverlay(): void {
 	api.fill_rect(0, 0, editorViewState.viewportWidth, editorViewState.viewportHeight, 0, constants.ACTION_OVERLAY_COLOR);
 	const { messageLines, primaryLabel, secondaryLabel } = getActionPromptText(prompt.action);
 	updateActionPromptLayout();
-	const layout = prompt.layout!;
+	const layout = prompt.layout;
 
 	api.fill_rect(layout.bounds.left, layout.bounds.top, layout.bounds.right, layout.bounds.bottom, 0, constants.ACTION_DIALOG_BACKGROUND_COLOR);
 	api.blit_rect(layout.bounds.left, layout.bounds.top, layout.bounds.right, layout.bounds.bottom, 0, constants.ACTION_DIALOG_BORDER_COLOR);

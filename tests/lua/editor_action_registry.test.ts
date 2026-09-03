@@ -15,6 +15,25 @@ import {
 	layoutWorkbenchActionBar,
 } from '../../ide/workbench/ui/action_bar';
 import { WORKBENCH_MENUS } from '../../ide/workbench/ui/menu/registry';
+import { EditorTextModel } from '../../ide/editor/model/text_model';
+import type { RuntimeResource } from '../../ide/common/resource';
+import {
+	actionPromptState,
+	closeActionPrompt,
+	showActionPrompt,
+} from '../../ide/workbench/contrib/modal/action_prompt';
+import { configureFontVariant } from '../../ide/editor/ui/view/view';
+import { DEFAULT_FONT_VARIANT } from '../../machine/ts/render/shared/bmsx_font';
+import type { HostClock } from '../../hosts/common/clock';
+
+const actionTestClock: HostClock = {
+	now: () => 0,
+	dateNow: () => 0,
+	scheduleOnce: () => ({
+		cancel: () => {},
+		isActive: () => false,
+	}),
+};
 
 function enabledCommands(...enabled: EditorCommandId[]): EditorCommandEnablement {
 	const commands = new Set(enabled);
@@ -79,4 +98,25 @@ test('named workbench menu materializes one retained generic action bar', () => 
 	assert.equal(actionBar.items[2].bounds.right, 200);
 	assert.equal(actionBar.items[0].bounds.top, 10);
 	assert.equal(actionBar.items[0].bounds.bottom, 20);
+});
+
+test('a workbench action prompt retains the exact dirty working-copy batch', (t) => {
+	const resource: RuntimeResource = {
+		domain: 0,
+		path: 'res/guard.bt.jsonc',
+		source: {
+			resid: 'guard',
+			type: 'data',
+			source_path: 'res/guard.bt.jsonc',
+		},
+	};
+	const model = new EditorTextModel(resource, 'behaviour_tree', '{}');
+	model.pushEditOperations([{ offset: 1, deleteLength: 0, text: ' ' }]);
+	const workingCopies = [model];
+	t.after(closeActionPrompt);
+	configureFontVariant(actionTestClock, DEFAULT_FONT_VARIANT, 'behaviour_tree');
+
+	showActionPrompt('hot-resume', workingCopies);
+	assert.strictEqual(actionPromptState.prompt!.workingCopies, workingCopies);
+	assert.strictEqual(actionPromptState.prompt!.workingCopies[0], model);
 });

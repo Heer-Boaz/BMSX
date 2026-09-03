@@ -15,10 +15,12 @@ import { executeEditorViewCommand, isEditorViewCommand } from './view';
 import { editorViewState } from '../editor/ui/view/state';
 import { problemsPanel } from '../workbench/contrib/problems/panel/controller';
 import { isActiveLuaCodeTab } from '../workbench/ui/code_tab/contexts';
-import { isBehaviorLensActive, isCodeTabActive, isScenarioLabActive } from '../workbench/ui/tabs';
+import { getActiveTab, isBehaviorLensActive, isCodeTabActive, isScenarioLabActive } from '../workbench/ui/tabs';
 import { executeEditorWorkspaceCommand, isEditorWorkspaceCommand } from './workspace';
 import { performEditorAction } from './actions';
-import { save } from '../workbench/ui/code_tab/io';
+import { WorkingCopyEditorInput } from '../workbench/common/editor_input';
+import { saveTextFileWorkingCopy } from '../workbench/services/working_copy/text_file_save';
+import type { EditorTextModel } from '../editor/model/text_model';
 import type { RuntimeSourceState } from '../runtime/sources';
 import type { RuntimeFaultState } from '../runtime/fault_state';
 import type { RuntimeLuaTooling } from '../runtime/lua_tooling';
@@ -118,19 +120,23 @@ export class IdeCommandController {
 
 	public async executeConfirmedAction(
 		action: ActionPromptAction,
+		workingCopies: readonly EditorTextModel[],
 		saveBeforeAction: boolean,
 	): Promise<boolean> {
 		if (saveBeforeAction) {
-			await save(
-				this.storage,
-				this.clock,
-				this.editor,
-				this.sources,
-				this.luaTooling,
-				this.runtime,
-			);
-			if (activeCodeEditor.model.dirty) {
-				return false;
+			for (let index = 0; index < workingCopies.length; index += 1) {
+				await saveTextFileWorkingCopy(
+					workingCopies[index],
+					this.storage,
+					this.clock,
+					this.editor,
+					this.sources,
+					this.luaTooling,
+					this.runtime,
+				);
+				if (workingCopies[index].dirty) {
+					return false;
+				}
 			}
 		}
 		return performEditorAction(
@@ -164,8 +170,12 @@ export class IdeCommandController {
 				return this.debuggerState.stopped
 					&& (this.debuggerState.stopInlineDepth > 0
 						|| this.runtime.machine.cpu.getFrameDepth() > 1);
-			case 'save':
-				return isCodeTabActive() && activeCodeEditor.model.dirty;
+			case 'save': {
+				const activeInput = getActiveTab();
+				return activeInput instanceof WorkingCopyEditorInput
+					&& !activeInput.workingCopy.readOnly
+					&& activeInput.isDirty();
+			}
 			case 'behaviorLens':
 			case 'symbolSearch':
 			case 'symbolSearchGlobal':
