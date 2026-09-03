@@ -1,6 +1,6 @@
 # Studio functioneel ontwerp
 
-Status: **geaccepteerde bouwroute A + C naar visual authoring, met geselecteerde recorded-observabilityslices**
+Status: **geaccepteerde bouwroute A + C naar typed text-backed visual authoring, met geselecteerde recorded-observabilityslices**
 
 Dit document werkt `STUDIO-FUNCTIONAL-DESIGN-01` uit vanuit de bestaande
 BMSX-representaties en productievoorbeelden. De gekozen eerste bouwroute is
@@ -401,8 +401,9 @@ builder injecteert geen Studio/cartlib-module op naam.
 ## UX- en ownershiproute
 
 Opties A en C vormen het gekozen eerste product. B blijft een latere
-observabilityfase; D en E vereisen eerst een afzonderlijke keuze voor een
-constrained authored representatie.
+observabilityfase. D en E zijn na toetsing niet twee concurrerende
+eindtoestanden: D levert de tekst-/documentlifecycle en E de expliciete
+domeinrepresentatie die een echte visual editor nodig heeft.
 
 ### Optie A — Source-first Behavior Lens
 
@@ -524,13 +525,90 @@ Dit is een nieuw product- en assetformat met compiler-, admission-, lifecycle-
 en migratiewerk. Het mag niet stilzwijgend als host-viewmodel of compatibiliteits-
 laag worden ingevoerd.
 
+### Geselecteerde combinatie D + E — typed JSONC-resources
+
+Visual authoring gebruikt afzonderlijke, typed behaviorresources als
+**canonieke JSONC-tekstdocumenten**. Dit volgt VS Code's custom-text-editorgrens:
+één tekstmodel per resource, mogelijk meerdere views, en iedere visual edit als
+een minimale edit op datzelfde document
+([documentmodel](https://github.com/microsoft/vscode-docs/blob/9d199617aec5afda97740da77c0df87d08388553/api/extension-guides/custom-editors.md#L34-L52),
+[edits en synchronisatie](https://github.com/microsoft/vscode-docs/blob/9d199617aec5afda97740da77c0df87d08388553/api/extension-guides/custom-editors.md#L140-L166)).
+De Microsoft JSONC-parser levert hiervoor een syntaxboom met bronoffsets en
+berekent formatting-behoudende property-/array-edits in plaats van het hele
+document via `JSON.stringify` te herschrijven
+([gepinde API](https://github.com/microsoft/node-jsonc-parser/blob/ee57b71dad28a973488b02d5577778c54784d76a/README.md#L156-L299)).
+De bestaande YAML-loader is geen lossless CST en wordt daarom niet als
+visual-editfundament gebruikt.
+
+Er komt nadrukkelijk geen universeel `BehaviorGraph`-DTO. De drie huidige
+domeinen krijgen een eigen schema en projectie:
+
+- een BT-resource bewaart een ordered tree met eigen node-, decorator- en
+  service-id's;
+- een FSM-resource bewaart states en transitions als afzonderlijke authored
+  elementen, plus expliciete parent-/endpoint-id's;
+- een ActionEffects-resource bewaart effectdefinities en hun relaties als een
+  typed collectie, niet als geforceerde node-edgegraph.
+
+Dat sluit aan bij BehaviorTree.CPP, waar een constrained tree-document eerst
+tegen geregistreerde node-manifests wordt geverifieerd en pas daarna wordt
+geinstantieerd
+([verificatie](https://github.com/BehaviorTree/BehaviorTree.CPP/blob/9b63b505983f76e46d90d71c87d21fad0001f8a3/src/xml_parsing.cpp#L442-L475),
+[factorycontract](https://github.com/BehaviorTree/BehaviorTree.CPP/blob/9b63b505983f76e46d90d71c87d21fad0001f8a3/include/behaviortree_cpp/bt_factory.h#L247-L343)).
+Godot bewaart state-topology, transitions en authored nodeposities op het
+state-machine-resource zelf
+([resourcevelden](https://github.com/godotengine/godot/blob/6ef60dc279b2c58a94ffc57bf98eefc9663f7907/scene/animation/animation_node_state_machine.h#L124-L144)),
+terwijl Unity's ShaderGraph nodes met stabiele GUID's en edges met
+`nodeGuid + slotId` bewaart en afgeleide lookupindices pas na deserialisatie
+opbouwt
+([nodes en edges](https://github.com/Unity-Technologies/ShaderGraph/blob/49288e5f4c6f989d5ab85e4cc025c8c34a04522c/com.unity.shadergraph/Editor/Data/Graphs/AbstractMaterialGraph.cs#L53-L122),
+[indexrebuild](https://github.com/Unity-Technologies/ShaderGraph/blob/49288e5f4c6f989d5ab85e4cc025c8c34a04522c/com.unity.shadergraph/Editor/Data/Graphs/AbstractMaterialGraph.cs#L668-L696)).
+
+Voor BMSX gelden daardoor deze identities:
+
+- `(execution domain, resource path)` identificeert het document;
+- een expliciete semantische definition-id identificeert de BT, FSM of het
+  effect naar cartcode;
+- ieder authored element bezit een onveranderlijke UUID; namen, labels,
+  arrayposities, bronregels en canvascoordinaten zijn geen identiteit;
+- verbindingen verwijzen naar element-id plus een domeinspecifieke port/rol;
+- runtime-dense slots en evaluatorindices blijven afgeleide
+  admissionrepresentaties en worden nooit teruggeschreven als authored id.
+
+Authoringlayout hoort bij het resource wanneer zij onderdeel is van de gedeelde
+graphcompositie, zoals nodeposities. Zoom, selectie, hover, collapse en scroll
+blijven per-view workbenchstate. Een documentparse bouwt per tekstversie een
+afgeleide index; draw, hit-testing en runtime-ticks parsen of indexeren niet.
+
+JSONC bevat alleen declaratieve behaviorsemantiek. Lua-taken, predicates,
+Services, statehooks en ActionEffect-handlers blijven cartcode. Een typed
+resource verwijst naar expliciete binding-id's en de cart levert die bindings
+bij de bestaande BT-, FSM- of ActionEffect-admissiongrens. Iedere behaviorowner
+bindt eenmaal en verlaagt daarna naar zijn bestaande directe closures, dense
+slots en fused framepad. Er komt geen globale stringcallbackregistry, generieke
+host-Lua-RPC of per-frame bindinglookup. Dit volgt het factory-/manifestpatroon
+van BehaviorTree.CPP zonder diens runtime-XML-parser naar de cart te kopieren.
+
+De ROM-packer valideert en kookt het document vóór packing. Het resultaat is
+gewone cartdata; TOC, machine, sockets en C++ kennen geen behavior- of
+Studio-type. Cartcode selecteert expliciet het assetadres via `bmsx/assets` en
+roept haar domeinlibrary aan. De Studio-workbench bezit de text/visual view;
+cartlib bezit uitsluitend resource-admission en uitvoering en importeert nooit
+Studio. Arbitrary Lua-registration blijft daarnaast volwaardig source-first;
+er is geen automatische round-trip of migratieclaim.
+
 ### Gekozen volgorde
 
 De productvolgorde is **A, daarna C**: eerst source-first begrip, daarna
 deterministische scenario's. **B** volgt alleen voor geselecteerde recorded
 observability nadat de benodigde semantische producers en identities expliciet
-zijn ontworpen. **D** of **E** volgt alleen wanneer de gebruiker bewust een
-constrained authoringrepresentatie kiest.
+zijn ontworpen. Daarna volgt de geselecteerde **D + E**-route per domein, te
+beginnen met een BT-resource omdat de live BT-owner al een afzonderlijke
+admissioncompiler en een manifestachtige scheiding tussen placements en
+Task/Service/decoratorimplementaties bezit. Eerst worden documentmodel,
+schema/cooker en cart-owned admission elk als eigen complete slice gebouwd;
+pas daarna komt de editable BT-view. FSM en ActionEffects hergebruiken alleen
+de bewezen textdocumentlifecycle, niet een generiek graphschema.
 
 De source-lens blijft read-only boven arbitrary Lua. Zij belooft geen exacte
 runtime-nodecorrespondentie. De eerste inspectieworkflow is stop-and-inspect en
@@ -1102,10 +1180,14 @@ staan in [`open_architecture_slices.md`](open_architecture_slices.md).
 
 ### Fase 4 — Visual authoring
 
-- verplicht productdoel, maar alleen na een geaccepteerde constrained
-  document-/resourcekeuze;
+- verplicht productdoel via afzonderlijke typed JSONC-resources;
+- eerst BT, daarna afzonderlijk FSM en ActionEffects; geen generiek
+  graphmetamodel;
 - graph edits wijzigen het echte document/resource;
 - undo, redo, save, revert en Hot Resume gebruiken de bestaande owners;
+- stabiele authored UUID's blijven gescheiden van namen, layout en runtime-
+  dense indices;
+- cartcode levert expliciete typed callbackbindings bij domain admission;
 - geen tweede graphdatabase;
 - arbitraire Lua blijft source-first.
 
@@ -1125,8 +1207,9 @@ bouwen er daarom ook geen abstractie voor:
    concrete volgende recorded observabilityworkflow nodig heeft, en of een
    niet-diagnostische owner ooit actieve periodieke effectidentiteit vereist.
 2. Welke echte produceridentiteit BT-occurrences aan runtimefeiten koppelt.
-3. Of visual authoring een constrained tekstformaat (D) of structured resource
-   (E) gebruikt.
+3. Welke exacte runtimecorrespondence een cooked BT-resource naast haar
+   authored element-id's nodig heeft; dit wordt niet door de editor-ID-keuze
+   vooruit ontworpen.
 4. Of een live-monitorlifecycle naast stop-and-inspect ooit productscope wordt.
 5. Of portable native scenario-execution ooit een afzonderlijk libretrodoel
    wordt.
@@ -1151,6 +1234,10 @@ ontworpen wanneer een latere slice een van deze productkeuzes werkelijk maakt.
 - volledige tree-, heap- of worldsnapshot per tick;
 - cartlib/BT/FSM/ActionEffect-typen in generieke lexer, parser, binder of demand
   graph;
+- een machine-/TOC-assettype voor BT, FSM, ActionEffects of Studio;
+- YAML parse/stringify of volledig JSON-stringify als visual-editpad;
+- een globale callbackregistry of callbacknaamlookup in het framepad;
+- een gedeeld generiek graphschema voor BT, FSM en ActionEffects;
 - een los graphmodel naast het canonieke document/resource;
 - beweren dat source stepping semantic stepping is;
 - TypeScript Studio/workbench in de libretro core;
