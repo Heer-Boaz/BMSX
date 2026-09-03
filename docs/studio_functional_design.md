@@ -174,14 +174,15 @@ executie is teruggekeerd
 ([gepinde productiebron](https://github.com/folgerwang/UnrealEngine/blob/99a530d4ccbe6bea1e8f49df20acfeb294006962/Engine/Plugins/Runtime/GameplayAbilities/Source/GameplayAbilities/Private/GameplayEffect.cpp#L3168-L3199)).
 
 **Gevolg voor BMSX:** `tick_periodic()` bezit zowel de due-check als de
-deadline-advance en de concrete `execute_effect()`-aanroep. Een
-`periodic_execute`-feit ontstaat daarom alleen nadat die aanroep is voltooid en
-voordat de tick-owner de eventueel gedeactiveerde lane verwijdert. Het draagt
-de rauwe scheduled gameplay-deadline die deze uitvoering bediende; de recorder
-blijft daarnaast eigenaar van het rauwe `SYS_TIME_MS`-woord waarop completion
-werd gepubliceerd. Een tijdens de handler genest trigger- of activityfeit staat
-dus vóór de completion in dezelfde componentstream. De host reconstrueert geen
-periodieke uitvoering uit projectielen, events of `next_execution_ms`.
+deadline-advance en de concrete `execute_effect()`-aanroep. Een eventuele
+completion hoort daarom na die aanroep en vóór de daaropvolgende lane-removal.
+De live dense lane bezit op dat punt echter alleen het effectrecord; de
+semantische effect-id blijft de key van `self.effects` en wordt niet in het
+record gedupliceerd. De host mag de uitvoering niet uit projectielen, events of
+`next_execution_ms` reconstrueren, maar de cartlib krijgt evenmin een debug-id,
+reverse map, parallelle id-lane of scan om deze nog niet representabele trace te
+forceren. Periodieke completion blijft dus een onderzochte maar niet gekozen
+observabilitycategorie.
 
 ## Echte BMSX-representaties
 
@@ -546,10 +547,9 @@ component causaal kunnen nestelen, delen zij één producer-owned volgorde; twee
 losse buffers die de host op millisecondetijd probeert te mergen zijn ongeldig.
 Cooldown commitment en periodieke uitvoering blijven buiten deze slice.
 BT-occurrence-identiteit is nog niet sterk genoeg en wordt niet via een van deze
-kanalen gegeneraliseerd. De vierde gekozen categorie is de concrete voltooide
-periodieke uitvoering van dezelfde ActionEffect-component. Zij hergebruikt de
-bestaande factstream en verandert trigger-admission noch activity in een
-periodiek feit.
+kanalen gegeneraliseerd. Periodieke uitvoering is geen vierde categorie: de
+dense periodieke lane heeft op haar completion-grens geen effect-id en krijgt
+geen normale runtime-state om alleen instrumentatie te bedienen.
 
 ## Observabilitycontract
 
@@ -790,35 +790,24 @@ effectpayloads, sourcemapping of een algemene lifecycle/eventfacade. Gewone
 release-, debug- en Hot Resume-bytecode bevatten geen ActionEffect-
 tracekanaal, trace-only outcomeconstant, sinkdispatch of recorderstate.
 
-### Vierde gekozen producer: voltooide ActionEffect-periodiek
+### Niet geselecteerd: ActionEffect-periodiek
 
-`STUDIO-ACTIONEFFECT-PERIODIC-TRACE-01` breidt exact dezelfde geselecteerde
-componentstream uit met `periodic_execute`. In `tick_periodic()` wordt eerst de
-deadline voor de volgende periode gecommitted. Daarna voert de component de
-effecthandler en het eventuele effectevent uit. Alleen wanneer die aanroep
-terugkeert, publiceert de component de completion met effect-id en de rauwe
-scheduled gameplay-deadline die zojuist due was. De bestaande daaropvolgende
-active-countcontrole en lane-removal blijven ongewijzigd.
+De productievoorbeelden leggen de juiste completion-grens vast, maar maken de
+BMSX-identiteit niet vanzelf representabel. Unreal draagt een
+`FActiveGameplayEffectHandle` in ieder active-effectrecord en gebruikt die ook
+voor timerdispatch, lookup en removal; het is daar dus runtime-identiteit en
+geen debugveld. BMSX bezit daarentegen één granted effectrecord onder de
+semantische key in `self.effects` en houdt in `periodic_effects` doelbewust alleen
+de directe recordreferentie voor de framehotpath.
 
-De vaste recordvorm blijft `[sequence, SYS_TIME_MS, kind, effect_id, value]`.
-Voor `periodic_execute` is `value` de scheduled gameplay-deadline als direct
-integerwoord. Er komt geen lokale numerieke kindcode, labeltabel, tweede buffer,
-host-merge of event-/projectielinferentie. Omdat completion na de handler wordt
-gepubliceerd, staan geneste trigger/activityfacts en een eventuele deactivation
-vóór de periodic completion. Dat is completion-order; de UI noemt het niet
-stilzwijgend start- of dispatch-order.
-
-De echte Nemesis-inputflow is de productworkflow: één fire-down activeert en
-triggert `fire_salvo`, het vastgehouden inputeffect voert na de authored vijftien
-gameplay-updates één periodieke salvo uit en fire-up deactiveert het effect. De
-Scenario-resultaatstream moet precies die vier categorieën tonen, terwijl de
-bestaande gameplayassertie het werkelijke projectielresultaat en de cadence
-blijft bewijzen.
-
-Niet in deze slice: cooldowncommit, grant/revoke/rebind, periodieke payloads,
-handler-events, een algemeen schedulertrace of BT-observability. Gewone release-,
-debug- en Hot Resume-bytecode blijven vrij van het kanaal, de
-`periodic_execute`-constant en sinkdispatch.
+Daarom wordt `STUDIO-ACTIONEFFECT-PERIODIC-TRACE-01` niet gebouwd. Een
+`periodic_execute`-record met effect-id zou nu uitsluitend voor observability
+een id-veld per normaal record, een tweede dense id-array, een debug-reverse-map
+of een lineaire lookup toevoegen. Een record zonder effect-id zou meerdere
+periodieke effecten van dezelfde owner niet kunnen onderscheiden. Beide routes
+schenden het ownershipcontract. De bestaande Nemesis-cadencetest blijft de
+gameplayuitvoering rechtstreeks bewijzen; Scenario Lab claimt deze categorie
+niet.
 
 ### Pauze en semantic stepping
 
@@ -1093,7 +1082,8 @@ De eerste A + C-slices vereisen geen keuze over onderstaande onderwerpen en
 bouwen er daarom ook geen abstractie voor:
 
 1. Welke semantic facts na de geselecteerde FSM- en ActionEffectcategorieen een
-   concrete volgende recorded observabilityworkflow nodig heeft.
+   concrete volgende recorded observabilityworkflow nodig heeft, en of een
+   niet-diagnostische owner ooit actieve periodieke effectidentiteit vereist.
 2. Welke echte produceridentiteit BT-occurrences aan runtimefeiten koppelt.
 3. Of visual authoring later een constrained tekstformaat (D) of structured
    resource (E) gebruikt.
