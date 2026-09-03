@@ -6,12 +6,14 @@ import {
 	scenarioTestId,
 } from '../../ide/testing/scenario/test_collection';
 import {
+	SCENARIO_RESULT_ACTIONEFFECT_TRIGGER_RETAIN_COUNT,
 	SCENARIO_RESULT_CAPTURE_RETAIN_COUNT,
 	SCENARIO_RESULT_FSM_TRANSITION_RETAIN_COUNT,
 	SCENARIO_RESULT_LOG_RETAIN_COUNT,
 	SCENARIO_RESULT_RETAIN_COUNT,
 	ScenarioResultService,
 } from '../../ide/testing/scenario/result_service';
+import { ScenarioActionEffectTriggerObservation } from '../../ide/testing/scenario/actioneffect_trigger_observation';
 import { ScenarioFsmTransitionObservation } from '../../ide/testing/scenario/fsm_transition_observation';
 import { scenarioTestAssetId } from '../../toolchain/ts/rompack/scenario_test';
 import { registerLuaSourceRecord } from '../../ide/runtime/source_registry';
@@ -96,6 +98,17 @@ test('scenario result service retains current-first runs and bounded ordered out
 			'committed',
 		);
 	}
+	const actionEffectTrace = service.beginActionEffectTriggerTrace(first, 'player.1', 'player');
+	for (let index = 0; index < SCENARIO_RESULT_ACTIONEFFECT_TRIGGER_RETAIN_COUNT + 2; index += 1) {
+		service.appendActionEffectTrigger(
+			actionEffectTrace,
+			index + 1,
+			index,
+			100 + index,
+			'fire',
+			'accepted',
+		);
+	}
 	assert.equal(
 		service.recordPresentation(first, 41),
 		SCENARIO_RESULT_CAPTURE_RETAIN_COUNT,
@@ -119,6 +132,11 @@ test('scenario result service retains current-first runs and bounded ordered out
 	assert.equal(trace.instanceId, 'object.machine');
 	assert.equal(trace.transitions.length, SCENARIO_RESULT_FSM_TRANSITION_RETAIN_COUNT);
 	assert.equal(trace.transitions.at(0).producerSequence, 3);
+	assert.equal(
+		actionEffectTrace.triggers.length,
+		SCENARIO_RESULT_ACTIONEFFECT_TRIGGER_RETAIN_COUNT,
+	);
+	assert.equal(actionEffectTrace.triggers.at(0).producerSequence, 3);
 	service.pass(first, 200);
 	assert.equal(service.liveResult, null);
 	assert.equal(first.state, 'passed');
@@ -179,6 +197,54 @@ test('scenario FSM observation consumes the fixed guest channel and fails on ove
 		trace.transitions.at(0).outcome,
 	], [1, 101, 20, 'machine:/from_1', 'machine:/to_1', 'rejected']);
 	assert.equal(trace.transitions.at(1).outcome, 'committed');
+	channel.setInteger(4, 5);
+	assert.throws(() => observation.drain(21), /overflowed its 2-record buffer/);
+});
+
+test('scenario ActionEffect observation consumes direct producer outcomes and fails on overflow', () => {
+	const cpu = createTestSystemCpu(EMPTY_IMAGE).cpu;
+	const stringPool = cpu.stringPool;
+	const outcomes = ['accepted', 'custom_gate'];
+	const records = cpu.createTable(2, 0);
+	for (let index = 1; index <= 2; index += 1) {
+		const record = cpu.createTable(4, 0);
+		record.setInteger(1, index);
+		record.setInteger(2, 300 + index);
+		record.setInteger(3, valueString(stringPool.intern('fire', false)));
+		record.setInteger(4, valueString(stringPool.intern(outcomes[index - 1], false)));
+		records.setInteger(index, record);
+	}
+	const channel = cpu.createTable(5, 0);
+	channel.setInteger(1, valueString(stringPool.intern('player.1', false)));
+	channel.setInteger(2, valueString(stringPool.intern('player', false)));
+	channel.setInteger(3, 2);
+	channel.setInteger(4, 2);
+	channel.setInteger(5, records);
+
+	const collection = new ScenarioTestCollection(createScenarioTestSourceState([
+		createScenarioTestSourceRecord('tests/carts/nemesis_s/a_assert.lua', 10),
+	]));
+	const service = new ScenarioResultService();
+	const result = service.begin(collection.resolveRoot(collection.roots[0].id)[0], 1, 10);
+	const observation = new ScenarioActionEffectTriggerObservation(
+		channel,
+		stringPool,
+		service,
+		result,
+	);
+	observation.drain(20);
+
+	const trace = result.actionEffectTriggerTrace!;
+	assert.equal(trace.ownerId, 'player.1');
+	assert.equal(trace.ownerDefinitionId, 'player');
+	assert.deepEqual([
+		trace.triggers.at(0).producerSequence,
+		trace.triggers.at(0).producerTimeMillisecondsWord,
+		trace.triggers.at(0).observedTick,
+		trace.triggers.at(0).effectId,
+		trace.triggers.at(0).outcome,
+	], [1, 301, 20, 'fire', 'accepted']);
+	assert.equal(trace.triggers.at(1).outcome, 'custom_gate');
 	channel.setInteger(4, 5);
 	assert.throws(() => observation.drain(21), /overflowed its 2-record buffer/);
 });

@@ -124,6 +124,13 @@ function resultDetailText(row: ScenarioLabResultRow): string {
 			const outcome = transition.outcome === 'committed' ? 'OK' : 'NO';
 			return `  FSM [${outcome}] ${semanticPathTail(transition.fromDefId)} > ${semanticPathTail(transition.toDefId)}  @${transition.producerTimeMillisecondsWord}MS #${transition.producerSequence}`;
 		}
+		case 'actioneffect_trigger': {
+			const trigger = row.trigger;
+			const outcome = trigger.outcome === 'accepted'
+				? 'OK'
+				: `NO:${trigger.outcome}`;
+			return `  EFFECT [${outcome}] ${trigger.effectId}  @${trigger.producerTimeMillisecondsWord}MS #${trigger.producerSequence}`;
+		}
 	}
 }
 

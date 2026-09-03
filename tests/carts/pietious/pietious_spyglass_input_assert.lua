@@ -1,5 +1,6 @@
 local world<const> = require('cartlib/world/world')
 local registry<const> = require('cartlib/registry')
+local trigger_recorder<const> = require('testlib/actioneffects/trigger_recorder')
 local player_actioneffects<const> = require('player/actioneffects')
 
 __bmsx_host_test = __bmsx_host_test or {
@@ -28,6 +29,11 @@ function __bmsx_host_test.update(_frame, _current_music)
 			assert(test.frames < 240, 'pietious gameplay did not reach main space')
 			return false
 		end
+		if test.trigger_recorder == nil then
+			local recorder<const> = trigger_recorder.new(player.actioneffects, 4)
+			test.trigger_recorder = recorder
+			return host.observe_actioneffect_triggers(recorder)
+		end
 		player:equip_subweapon('spyglass')
 		assert(player:has_tag(player_actioneffects.equip_tags.spyglass), 'spyglass tag missing')
 		assert(not player:has_tag(player_actioneffects.equip_tags.pepernoot), 'pepernoot tag survived spyglass selection')
@@ -45,5 +51,11 @@ function __bmsx_host_test.update(_frame, _current_music)
 	end
 	assert(player.pepernoot_projectile_sequence == 0, 'spyglass b press fired pepernoot')
 	assert(registry:get('pepernoot_1_1') == nil, 'spyglass b press spawned pepernoot')
+	assert(test.trigger_recorder[4] == 1,
+		'spyglass input did not publish one trigger attempt')
+	local record<const> = test.trigger_recorder[5][1]
+	assert(record[3] == 'spyglass' and record[4] == 'custom_gate',
+		'spyglass rejection did not retain its owning custom-gate outcome')
+	test.trigger_recorder:dispose()
 	return true
 end

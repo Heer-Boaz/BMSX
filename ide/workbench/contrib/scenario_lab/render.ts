@@ -45,6 +45,11 @@ function resultTextColor(row: ScenarioLabResultRow): number {
 			? constants.COLOR_STATUS_SUCCESS
 			: constants.COLOR_STATUS_WARNING;
 	}
+	if (row.kind === 'actioneffect_trigger') {
+		return row.trigger.outcome === 'accepted'
+			? constants.COLOR_STATUS_SUCCESS
+			: constants.COLOR_STATUS_WARNING;
+	}
 	if (row.kind === 'log' || row.kind === 'capture') {
 		return constants.COLOR_RESOURCE_VIEWER_TEXT;
 	}

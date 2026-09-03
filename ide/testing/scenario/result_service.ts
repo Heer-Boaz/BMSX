@@ -6,6 +6,7 @@ export const SCENARIO_RESULT_RETAIN_COUNT = 128;
 export const SCENARIO_RESULT_LOG_RETAIN_COUNT = 512;
 export const SCENARIO_RESULT_CAPTURE_RETAIN_COUNT = 64;
 export const SCENARIO_RESULT_FSM_TRANSITION_RETAIN_COUNT = 1024;
+export const SCENARIO_RESULT_ACTIONEFFECT_TRIGGER_RETAIN_COUNT = 1024;
 
 export type ScenarioRunState =
 	| 'preparing'
@@ -60,6 +61,31 @@ export type ScenarioFsmTransitionTrace = {
 	readonly transitions: ScenarioRetainedSequence<ScenarioFsmTransitionRecord>;
 };
 
+export type ScenarioActionEffectTriggerOutcome =
+	| 'accepted'
+	| 'cooldown'
+	| 'required_tag_missing'
+	| 'blocked_tag_present'
+	| 'required_state_missing'
+	| 'blocked_state_present'
+	| 'custom_gate';
+
+export type ScenarioActionEffectTriggerRecord = {
+	readonly id: string;
+	readonly producerSequence: number;
+	readonly producerTimeMillisecondsWord: number;
+	readonly observedTick: number;
+	readonly effectId: string;
+	readonly outcome: ScenarioActionEffectTriggerOutcome;
+};
+
+export type ScenarioActionEffectTriggerTrace = {
+	readonly executionDomain: 0 | 1;
+	readonly ownerId: string;
+	readonly ownerDefinitionId: string;
+	readonly triggers: ScenarioRetainedSequence<ScenarioActionEffectTriggerRecord>;
+};
+
 export type ScenarioRunResult = {
 	readonly id: string;
 	readonly sequence: number;
@@ -71,6 +97,7 @@ export type ScenarioRunResult = {
 	readonly logs: ScenarioRetainedSequence<ScenarioResultLog>;
 	readonly captures: ScenarioRetainedSequence<ScenarioResultCapture>;
 	fsmTransitionTrace: ScenarioFsmTransitionTrace | null;
+	actionEffectTriggerTrace: ScenarioActionEffectTriggerTrace | null;
 	failure: ScenarioRunFailure | null;
 	fault: FaultSnapshot | null;
 };
@@ -112,6 +139,7 @@ export class ScenarioResultService {
 	private nextLogSequence = 1;
 	private nextCaptureSequence = 1;
 	private nextFsmTransitionSequence = 1;
+	private nextActionEffectTriggerSequence = 1;
 	private _liveResult: ScenarioRunResult | null = null;
 
 	public get liveResult(): ScenarioRunResult | null {
@@ -133,6 +161,7 @@ export class ScenarioResultService {
 			logs: new ScenarioRetainedSequence(SCENARIO_RESULT_LOG_RETAIN_COUNT),
 			captures: new ScenarioRetainedSequence(SCENARIO_RESULT_CAPTURE_RETAIN_COUNT),
 			fsmTransitionTrace: null,
+			actionEffectTriggerTrace: null,
 			failure: null,
 			fault: null,
 		};
@@ -188,6 +217,47 @@ export class ScenarioResultService {
 			outcome,
 		});
 		this.nextFsmTransitionSequence += 1;
+		this.revision += 1;
+	}
+
+	public beginActionEffectTriggerTrace(
+		result: ScenarioRunResult,
+		ownerId: string,
+		ownerDefinitionId: string,
+	): ScenarioActionEffectTriggerTrace {
+		if (result.actionEffectTriggerTrace !== null) {
+			throw new Error('A scenario run can record one selected ActionEffect component.');
+		}
+		const trace: ScenarioActionEffectTriggerTrace = {
+			executionDomain: result.test.resource.domain,
+			ownerId,
+			ownerDefinitionId,
+			triggers: new ScenarioRetainedSequence(
+				SCENARIO_RESULT_ACTIONEFFECT_TRIGGER_RETAIN_COUNT,
+			),
+		};
+		result.actionEffectTriggerTrace = trace;
+		this.revision += 1;
+		return trace;
+	}
+
+	public appendActionEffectTrigger(
+		trace: ScenarioActionEffectTriggerTrace,
+		producerSequence: number,
+		producerTimeMillisecondsWord: number,
+		observedTick: number,
+		effectId: string,
+		outcome: ScenarioActionEffectTriggerOutcome,
+	): void {
+		trace.triggers.push({
+			id: `scenario-actioneffect-trigger:${this.nextActionEffectTriggerSequence}`,
+			producerSequence,
+			producerTimeMillisecondsWord,
+			observedTick,
+			effectId,
+			outcome,
+		});
+		this.nextActionEffectTriggerSequence += 1;
 		this.revision += 1;
 	}
 

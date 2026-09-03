@@ -169,6 +169,40 @@ test('scenario result projection retains FSM facts without inventing source navi
 	assert.match(view.status.info, /SOURCE UNAVAILABLE/);
 });
 
+test('scenario result projection retains direct ActionEffect trigger outcomes', (t) => {
+	const { collection, results, view } = createViewFixture(t);
+	const result = results.begin(collection.roots[0].children![0], 7, 100);
+	const trace = results.beginActionEffectTriggerTrace(
+		result,
+		'nemesis_s.player.1',
+		'nemesis_s.player',
+	);
+	results.appendActionEffectTrigger(
+		trace,
+		1,
+		1210,
+		124,
+		'fire_salvo',
+		'cooldown',
+	);
+	refreshScenarioLabProjection(view);
+	prepareScenarioLabLayout(view);
+
+	const factIndex = view.resultPane.rows.findIndex(
+		row => row.kind === 'actioneffect_trigger',
+	);
+	assert.ok(factIndex > 0);
+	const factRow = view.resultPane.rows[factIndex];
+	assert.match(factRow.text, /EFFECT \[NO:COOLDOWN\] FIRE_SALVO/);
+	selectScenarioLabResultRow(view, factIndex);
+	const activation = executeScenarioLabNavigation(view, 'activate');
+	assert.equal(activation.kind, 'changed');
+	assert.match(
+		view.status.info,
+		/ACTIONEFFECT nemesis_s\.player\.1 \/ SOURCE UNAVAILABLE/,
+	);
+});
+
 test('scenario workbench renderer uses the active tiny IDE font and retained text', (t) => {
 	const tinyFont = installTinyWorkbenchViewport(t);
 	const collection = new ScenarioTestCollection(createScenarioTestSourceState([

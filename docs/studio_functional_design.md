@@ -195,18 +195,18 @@ De feitelijke grenzen zijn:
 - de gecompileerde frame-evaluator: `fsm.lua:1599-1608` en
   [`frame_program.lua:11-88`](../cartlib/fsm/frame_program.lua).
 
-Een toekomstige trace wordt op deze eigenaargrenzen geproduceerd. Zij wordt
-niet achteraf gereconstrueerd uit `_machines`, `current_state` of andere private
-tabellen.
+De opgenomen transitiontrace wordt op deze eigenaargrenzen geproduceerd. Zij
+wordt niet achteraf gereconstrueerd uit `_machines`, `current_state` of andere
+private tabellen.
 
 ### ActionEffects
 
 [`cartlib/actioneffects/actioneffect_component.lua`](../cartlib/actioneffects/actioneffect_component.lua)
 bezit per owner de effectdefinition, `active_count`, cooldown/pending state en
-de dense periodieke lane (`actioneffect_component.lua:56-86,163-197,208-347`).
+de dense periodieke lane (`actioneffect_component.lua:44-50,127-211,310-334`).
 
 `trigger()` onderscheidt intern cooldown en gates en blijft de owner van hun
-resultaat (`actioneffect_component.lua:250-305`). De gekozen triggertrace
+resultaat (`actioneffect_component.lua:283-308`). De gekozen triggertrace
 markeert diezelfde grens met de rechtstreeks geïnterneerde outcome-string; zij
 voegt geen hostscan, code/labelvertaling of tweede evaluatie van tags, states of
 custom gates toe. Gewone builds wissen de marker en de gameplay-API blijft een
@@ -681,11 +681,24 @@ behoudt de outcome-string zonder hostvertaling. Overflow
 faalt de test. Er is geen sourcerange zolang de runtime-effect-id nog geen
 bewezen authored correspondence publiceert.
 
+De tracepoint draagt de bestaande `trigger(id, ...)`-parameter rechtstreeks.
+De gewone effectrecords krijgen dus geen gedupliceerd debug-id, de recorder
+hoeft geen tweede identity-map te onderhouden en een grant na recorderbinding
+houdt dezelfde semantiek.
+
 Deze slice observeert uitdrukkelijk niet `activate()`, `deactivate()`,
 `commit_cooldown()` of `tick_periodic()`. Zij maakt ook geen `can_trigger`-
 callback zwaarder om cart-specifieke subredenen te verzamelen. Zulke feiten
 krijgen pas een eigen slice wanneer de concrete authoring- en testworkflow hun
 identiteit en payload vereist.
+
+De deterministische O3-BLua32-test mat voor 10.000 directe accepted `plain`-
+triggers 920.007 VM-cycles in de gewone gewiste build, 940.007 cycles in de
+Scenario-build zonder geselecteerde sink en 1.240.007 cycles met de recorder:
+twee cycles voor de Scenario-selectie en vervolgens dertig cycles per
+gepubliceerd record. Na warm-up bleef de door de VM bijgehouden guest-heap over
+10.000 records exact gelijk. Dit zijn synthetische cyclemetingen van alleen de
+triggergrens, geen algemeen framebudget of low-end-hostmeting.
 
 ### Pauze en semantic stepping
 

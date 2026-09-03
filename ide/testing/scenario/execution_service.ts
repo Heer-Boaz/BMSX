@@ -14,6 +14,7 @@ import {
 import type { Runtime } from '../../../machine/ts/machine/runtime/runtime';
 import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../../machine/ts/spec/bmsx/io';
 import {
+	SCENARIO_GUEST_OBSERVE_ACTIONEFFECT_TRIGGERS_KEY,
 	SCENARIO_GUEST_OBSERVE_FSM_TRANSITIONS_KEY,
 	SCENARIO_TEST_LOADER_GLOBAL,
 } from '../../../toolchain/ts/rompack/scenario_guest_api';
@@ -27,6 +28,7 @@ import {
 	type ScenarioRunResult,
 	ScenarioResultService,
 } from './result_service';
+import { ScenarioActionEffectTriggerObservation } from './actioneffect_trigger_observation';
 import { ScenarioFsmTransitionObservation } from './fsm_transition_observation';
 
 const SCENARIO_TEST_GLOBAL = '__bmsx_host_test';
@@ -57,6 +59,7 @@ type ScenarioProtocol = {
 	readonly logKey: StringId;
 	readonly doneKey: StringId;
 	readonly observeFsmTransitionsKey: StringId;
+	readonly observeActionEffectTriggersKey: StringId;
 };
 
 type ScenarioCartPhase = {
@@ -103,6 +106,7 @@ type ScenarioExecution = {
 	logicalTicks: number;
 	tickPrepared: boolean;
 	fsmTransitionObservation: ScenarioFsmTransitionObservation | null;
+	actionEffectTriggerObservation: ScenarioActionEffectTriggerObservation | null;
 };
 
 /**
@@ -156,6 +160,7 @@ export class ScenarioExecutionService {
 			logicalTicks: 0,
 			tickPrepared: false,
 			fsmTransitionObservation: null,
+			actionEffectTriggerObservation: null,
 		};
 		this.results.appendLog(result, startTick, 'waiting for cartridge');
 	}
@@ -189,7 +194,7 @@ export class ScenarioExecutionService {
 		execution.logicalTicks += 1;
 		this.presentationResult = execution.result;
 		try {
-			this.drainFsmTransitions(execution);
+			this.drainObservations(execution);
 			this.advance(execution);
 		} catch (error) {
 			this.fail(execution, error instanceof Error ? error.message : String(error));
@@ -329,7 +334,7 @@ export class ScenarioExecutionService {
 					guestCallPending: false,
 				};
 				this.applyCommands(execution, updatePhase, this.guestResult());
-				this.drainFsmTransitions(execution);
+				this.drainObservations(execution);
 				execution.phase = updatePhase;
 				return;
 			case 'update': {
@@ -341,7 +346,7 @@ export class ScenarioExecutionService {
 				}
 				const result = this.guestResult();
 				this.applyCommands(execution, phase, result);
-				this.drainFsmTransitions(execution);
+				this.drainObservations(execution);
 				if (result === true
 					|| (valueTag(result) === ValueTag.Table
 						&& (result as Table).getStringKey(phase.protocol.doneKey) === true)) {
@@ -381,6 +386,9 @@ export class ScenarioExecutionService {
 			doneKey: cpu.stringPool.intern('done'),
 			observeFsmTransitionsKey: cpu.stringPool.intern(
 				SCENARIO_GUEST_OBSERVE_FSM_TRANSITIONS_KEY,
+			),
+			observeActionEffectTriggersKey: cpu.stringPool.intern(
+				SCENARIO_GUEST_OBSERVE_ACTIONEFFECT_TRIGGERS_KEY,
 			),
 		};
 	}
@@ -448,9 +456,21 @@ export class ScenarioExecutionService {
 		const fsmTransitionsValue = command.getStringKey(
 			protocol.observeFsmTransitionsKey,
 		);
+		const actionEffectTriggersValue = command.getStringKey(
+			protocol.observeActionEffectTriggersKey,
+		);
 		if (fsmTransitionsValue !== null) {
 			execution.fsmTransitionObservation = new ScenarioFsmTransitionObservation(
 				fsmTransitionsValue as Table,
+				this.runtime.machine.cpu.stringPool,
+				this.results,
+				execution.result,
+			);
+			return;
+		}
+		if (actionEffectTriggersValue !== null) {
+			execution.actionEffectTriggerObservation = new ScenarioActionEffectTriggerObservation(
+				actionEffectTriggersValue as Table,
 				this.runtime.machine.cpu.stringPool,
 				this.results,
 				execution.result,
@@ -516,10 +536,15 @@ export class ScenarioExecutionService {
 		);
 	}
 
-	private drainFsmTransitions(execution: ScenarioExecution): void {
-		const observation = execution.fsmTransitionObservation;
-		if (observation !== null) {
-			observation.drain(this.runtime.frameScheduler.lastTickSequence);
+	private drainObservations(execution: ScenarioExecution): void {
+		const observedTick = this.runtime.frameScheduler.lastTickSequence;
+		const fsmTransitions = execution.fsmTransitionObservation;
+		if (fsmTransitions !== null) {
+			fsmTransitions.drain(observedTick);
+		}
+		const actionEffectTriggers = execution.actionEffectTriggerObservation;
+		if (actionEffectTriggers !== null) {
+			actionEffectTriggers.drain(observedTick);
 		}
 	}
 

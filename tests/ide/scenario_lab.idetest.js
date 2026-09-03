@@ -205,26 +205,68 @@ t.assert(resultPane.rows.some(row => row.kind === 'fsm_transition' && row.transi
 'Scenario Lab did not project recorded FSM facts');
 t.capture('scenario-lab-passed-result-tiny-384x288');
 
-await pressKey('Tab', 110);
+const actionEffectTestRowIndex = testPane.rows.findIndex(row =>
+	row.kind === 'test'
+	&& row.test.resource.path === 'tests/carts/nemesis_s/nemesis_s_msx_weapons_assert.lua');
+t.assert(actionEffectTestRowIndex >= 0, 'packaged ActionEffect scenario is missing from the test tree');
+let navigationPressId = 200;
+while (testPane.selectionIndex < actionEffectTestRowIndex) {
+	await pressKey('ArrowDown', navigationPressId);
+	navigationPressId += 1;
+}
+while (testPane.selectionIndex > actionEffectTestRowIndex) {
+	await pressKey('ArrowUp', navigationPressId);
+	navigationPressId += 1;
+}
+t.assert(testPane.selectedTestId === testPane.rows[actionEffectTestRowIndex].test.id,
+'keyboard navigation did not select the ActionEffect scenario');
+await clickPointer(
+	runBounds.left + 1,
+	runBounds.top + 1,
+	300,
+);
+await releasePointer(300);
+t.assert(view.runActive, 'Run action did not start the ActionEffect scenario');
+await waitForRunToFinish(view, 1200);
+await t.frames(2);
+
+const actionEffectResult = resultPane.rows[0].result;
+t.assert(actionEffectResult.state === 'passed', 'ActionEffect scenario did not pass');
+const actionEffectTrace = actionEffectResult.actionEffectTriggerTrace;
+t.assert(actionEffectTrace !== null, 'ActionEffect scenario did not bind its selected recorder');
+t.assert(actionEffectTrace.executionDomain === 0, 'ActionEffect trace lost its cartridge execution domain');
+t.assert(actionEffectTrace.ownerId === 'nemesis_s.player.1'
+	&& actionEffectTrace.ownerDefinitionId === 'nemesis_s.player',
+'ActionEffect trace selected the wrong concrete component owner');
+t.assert(actionEffectTrace.triggers.length === 1,
+'ActionEffect trace confused periodic execution with a trigger attempt');
+const fireTrigger = actionEffectTrace.triggers.at(0);
+t.assert(fireTrigger.effectId === 'fire_salvo' && fireTrigger.outcome === 'accepted',
+'ActionEffect trace did not retain the direct accepted fire outcome');
+t.assert(resultPane.rows.some(row => row.kind === 'actioneffect_trigger' && row.trigger === fireTrigger),
+'Scenario Lab did not project recorded ActionEffect triggers');
+t.capture('scenario-lab-actioneffect-result-tiny-384x288');
+
+await pressKey('Tab', 310);
 t.assert(view.focus === 'results', 'Tab did not move focus to result history');
-await pressKey('ArrowDown', 111);
+await pressKey('ArrowDown', 311);
 const detailRow = resultPane.rows[resultPane.selectionIndex];
 t.assert(detailRow.kind === 'log', 'result navigation did not reach the first retained log');
-await pressKey('Enter', 112);
+await pressKey('Enter', 312);
 t.assert(t.activeWorkbenchTab().kind === 'code_editor', 'result activation did not open source');
 t.assert(t.activeEditorDocument().resource.path === detailRow.location.resource.path, 'result activation opened the wrong source resource');
 
 t.command('scenarioLab');
 await t.frames(2);
 t.assert(t.activeWorkbenchTab() === labTab && labTab.view === view, 'reopening duplicated the Scenario Lab input or view');
-await pressModifiedF5('ControlLeft', 120);
+await pressModifiedF5('ControlLeft', 320);
 t.assert(view.runActive, 'Ctrl+F5 did not rerun the selected scenario');
 
 t.openLuaSource('cart.lua');
 await t.frames(1);
 t.command('scenarioLab');
 await t.frames(1);
-await pressModifiedF5('ShiftLeft', 130);
+await pressModifiedF5('ShiftLeft', 330);
 await waitForRunToFinish(view, 1200);
 await t.frames(2);
 

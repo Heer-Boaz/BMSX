@@ -12,42 +12,6 @@ local bind_state_paths<const> = function(owner, paths)
 	return bound
 end
 
-local tags_allow<const> = function(owner, required, blocked)
-	if required then
-		for i = 1, #required do
-			if not owner:has_tag(required[i]) then
-				return false
-			end
-		end
-	end
-	if blocked then
-		for i = 1, #blocked do
-			if owner:has_tag(blocked[i]) then
-				return false
-			end
-		end
-	end
-	return true
-end
-
-local states_allow<const> = function(owner, required, blocked)
-	if required then
-		for i = 1, #required do
-			if not owner.state_machines:matches_state(required[i]) then
-				return false
-			end
-		end
-	end
-	if blocked then
-		for i = 1, #blocked do
-			if owner.state_machines:matches_state(blocked[i]) then
-				return false
-			end
-		end
-	end
-	return true
-end
-
 local actioneffect_component<const> = {}
 actioneffect_component.__index = actioneffect_component
 actioneffect_component.unique = true
@@ -247,14 +211,50 @@ function actioneffect_component:commit_cooldown(id, payload, ...)
 	commit_effect_cooldown(effect, self.parent, cooldown_ms)
 end
 
-local effect_allows<const> = function(effect, owner, payload, ...)
+-- Admission stays separate from cooldown commitment and execution, matching
+-- the component's public trigger phases. Scenario trace statements disappear
+-- from ordinary builds, including their id/outcome arguments.
+local effect_allows<const> = function(effect, owner, id, payload, ...)
 	local definition<const> = effect.definition
-	if not tags_allow(owner, definition.required_tags, definition.blocked_tags)
-		or not states_allow(owner, effect.required_states, effect.blocked_states) then
-		return false
+	local required_tags<const> = definition.required_tags
+	if required_tags then
+		for i = 1, #required_tags do
+			if not owner:has_tag(required_tags[i]) then
+				blua32.trace(owner.actioneffects, 'actioneffect.trigger', id, 'required_tag_missing')
+				return false
+			end
+		end
+	end
+	local blocked_tags<const> = definition.blocked_tags
+	if blocked_tags then
+		for i = 1, #blocked_tags do
+			if owner:has_tag(blocked_tags[i]) then
+				blua32.trace(owner.actioneffects, 'actioneffect.trigger', id, 'blocked_tag_present')
+				return false
+			end
+		end
+	end
+	local required_states<const> = effect.required_states
+	if required_states then
+		for i = 1, #required_states do
+			if not owner.state_machines:matches_state(required_states[i]) then
+				blua32.trace(owner.actioneffects, 'actioneffect.trigger', id, 'required_state_missing')
+				return false
+			end
+		end
+	end
+	local blocked_states<const> = effect.blocked_states
+	if blocked_states then
+		for i = 1, #blocked_states do
+			if owner.state_machines:matches_state(blocked_states[i]) then
+				blua32.trace(owner.actioneffects, 'actioneffect.trigger', id, 'blocked_state_present')
+				return false
+			end
+		end
 	end
 	local gate<const> = definition.can_trigger
 	if gate and not gate(owner, payload, ...) then
+		blua32.trace(owner.actioneffects, 'actioneffect.trigger', id, 'custom_gate')
 		return false
 	end
 	return true
@@ -289,18 +289,21 @@ function actioneffect_component:trigger(id, payload, ...)
 	local current_time_ms<const> = owner.world.gameplay_time_ms
 	local cooldown_until_ms<const> = effect.cooldown_until_ms
 	if cooldown_until_ms ~= nil and current_time_ms < cooldown_until_ms then
+		blua32.trace(self, 'actioneffect.trigger', id, 'cooldown')
 		return false
 	end
-	if not effect_allows(effect, owner, payload, ...) then
+	local definition<const> = effect.definition
+	if not effect_allows(effect, owner, id, payload, ...) then
 		return false
 	end
 	local cooldown_ms<const> = calculate_effect_cooldown(effect, owner, payload, ...)
-	if effect.definition.defer_cooldown_commit then
+	if definition.defer_cooldown_commit then
 		effect.pending_cooldown_ms = cooldown_ms
 		effect.cooldown_pending = true
 	else
 		commit_effect_cooldown(effect, owner, cooldown_ms)
 	end
+	blua32.trace(self, 'actioneffect.trigger', id, 'accepted')
 	return execute_effect(effect, owner, payload, ...)
 end
 

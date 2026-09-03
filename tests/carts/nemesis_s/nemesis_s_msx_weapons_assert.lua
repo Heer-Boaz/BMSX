@@ -1,4 +1,5 @@
 local clock<const> = require('cartlib/clock')
+local trigger_recorder<const> = require('testlib/actioneffects/trigger_recorder')
 local image<const> = require('cartlib/gx/image')
 local registry<const> = require('cartlib/registry')
 local rom_dir<const> = require('cartlib/rom_dir')
@@ -38,6 +39,11 @@ function __bmsx_host_test.update()
 	if player == nil then
 		return false
 	end
+	if test.trigger_recorder == nil then
+		local recorder<const> = trigger_recorder.new(player.actioneffects, 8)
+		test.trigger_recorder = recorder
+		return host.observe_actioneffect_triggers(recorder)
+	end
 	if test.phase == 'repeat' then
 		local repeat_period_ms<const> = 15 * clock.gameplay_delta_milliseconds()
 		local repeat_deadline_ms<const> = repeat_period_ms + clock.gameplay_delta_milliseconds()
@@ -52,7 +58,10 @@ function __bmsx_host_test.update()
 			'the held-fire effect did not repeat at the original E437 cadence')
 		assert(elapsed_ms <= repeat_deadline_ms,
 			'the held-fire effect skipped its first repeat boundary')
+		assert(test.trigger_recorder[4] == 1,
+			'periodic execution was misreported as a trigger attempt')
 		player.actioneffects:deactivate(fire_effect_id)
+		test.trigger_recorder:dispose()
 		return true
 	end
 	local stage<const> = player.stage
@@ -344,6 +353,9 @@ function __bmsx_host_test.update()
 	player.actioneffects:activate(fire_effect_id)
 	player.actioneffects:trigger(fire_effect_id)
 	assert(test.salvo_count == 1, 'the initial fire edge did not admit its immediate salvo')
+	local trigger_record<const> = test.trigger_recorder[5][1]
+	assert(trigger_record[3] == fire_effect_id and trigger_record[4] == 'accepted',
+		'the admitted fire edge did not publish its accepted trigger outcome')
 	test.repeat_start_ms = world.gameplay_time_ms
 	test.phase = 'repeat'
 	return false

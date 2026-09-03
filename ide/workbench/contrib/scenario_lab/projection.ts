@@ -195,6 +195,24 @@ function appendScenarioResultRows(
 			});
 		}
 	}
+	const actionEffectTrace = result.actionEffectTriggerTrace;
+	if (actionEffectTrace !== null) {
+		for (let index = 0; index < actionEffectTrace.triggers.length; index += 1) {
+			const trigger = actionEffectTrace.triggers.at(index);
+			pane.rows.push({
+				id: trigger.id,
+				kind: 'actioneffect_trigger',
+				result,
+				trace: actionEffectTrace,
+				trigger,
+				expandable: false,
+				expanded: false,
+				text: '',
+				twistieLeft: 0,
+				twistieRight: 0,
+			});
+		}
+	}
 	for (let index = 0; index < result.captures.length; index += 1) {
 		const capture = result.captures.at(index);
 		pane.rows.push({
