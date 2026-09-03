@@ -71,7 +71,7 @@ import {
 } from './system_texture';
 import { BoundingBoxExtractor } from './boundingbox_extractor';
 import { collectGLTFExternalBufferFileSet, loadGLTFModel } from './gltfloader';
-import type { DataResourceDatatype, TextureAtlasResource, ImageResource, Resource, resourcetype } from './rompacker.rompack';
+import type { TextureAtlasResource, ImageResource, Resource, resourcetype } from './rompacker.rompack';
 import { collectCartSourceFiles } from './cart_source_files';
 import { CART_ROM_BASE, SYSTEM_ROM_BASE, SYSTEM_ROM_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
 import {
@@ -93,8 +93,6 @@ import {
 	encodeCollisionShapeVariants,
 } from '../../toolchain/ts/rompack/collision_shape_encode';
 import { compileCollisionMap } from './collision_map_compiler';
-import { cookBehaviourTreeDocument } from '../../toolchain/ts/rompack/behaviour_tree/cook';
-import { parseBehaviourTreeDocument } from '../../toolchain/ts/rompack/behaviour_tree/document';
 // @ts-ignore
 const { join, parse, relative, resolve, sep } = require('path');
 
@@ -457,17 +455,13 @@ function buildImgMetaFromCollisionBuild(res: ImageResource, collision: ImageColl
 	return imgmeta;
 }
 
-function formatSourceDiagnostic(
-	path: string,
-	message: string,
-	line: number,
-	column: number,
-	sourceLines: readonly string[],
-): string {
-	const sourceLine = sourceLines[line - 1];
-	const gutter = `${line} | `;
-	const caret = Math.max(0, column - 1);
-	return `${path}:${line}:${column}: ${message}\n${gutter}${sourceLine}\n${' '.repeat(gutter.length + caret)}^`;
+function formatLuaCompileError(error: { path: string; message: string; line: number; column: number }, source: string): string {
+	// disable-next-line newline_normalization_pattern -- compiler diagnostics map a source location to one logical source line.
+	const lines = source.split(/\r\n|\r|\n/);
+	const sourceLine = lines[error.line - 1];
+	const gutter = `${error.line} | `;
+	const caret = Math.max(0, error.column - 1);
+	return `${error.path}:${error.line}:${error.column}: ${error.message}\n${gutter}${sourceLine}\n${' '.repeat(gutter.length + caret)}^`;
 }
 
 export function compileLuaChunkBuffer(source: string, path: string): Buffer {
@@ -484,7 +478,7 @@ export function compileLuaChunkBuffer(source: string, path: string): Buffer {
  * @param filepath The path of the resource file.
  * @returns An object containing the name, extension, and type of the resource file.
  */
-export function getResMetaByFilename(filepath: string): { name: string, ext: string, type: resourcetype, collisionType?: 'concave' | 'convex' | 'aabb', datatype?: DataResourceDatatype, update_timestamp?: number } {
+export function getResMetaByFilename(filepath: string): { name: string, ext: string, type: resourcetype, collisionType?: 'concave' | 'convex' | 'aabb', datatype?: 'json' | 'yaml' | 'bin', update_timestamp?: number } {
 	const parsed = parse(filepath);
 	const stats: Stats = statSync(filepath);
 	const rawName = parsed.name;
@@ -493,7 +487,7 @@ export function getResMetaByFilename(filepath: string): { name: string, ext: str
 	const ext = parsed.ext.toLowerCase();
 	let type: resourcetype;
 	let collisionType: 'concave' | 'convex' | 'aabb' = undefined;
-	let datatype: DataResourceDatatype = undefined;
+	let datatype: 'json' | 'yaml' | 'bin' = undefined;
 	let update_timestamp: number = undefined;
 
 	const getDataSubtype = (currentName: string): 'aem' | 'data' => {
@@ -533,13 +527,6 @@ export function getResMetaByFilename(filepath: string): { name: string, ext: str
 			name = removeExtension(name);
 			// Warn about JSON files, because YAML is preferred for better readability
 			console.log(`JSON data file detected: "${name}${ext}" (name="${name}", ext="${ext}", type="${type}"), consider using YAML (.yaml or .yml) for better readability.`);
-			break;
-		case '.jsonc':
-			if (name.endsWith('.bt')) {
-				type = 'data';
-				datatype = 'bt-jsonc';
-				name = name.slice(0, -'.bt'.length);
-			}
 			break;
 		case '.obj':
 		case '.gltf':
@@ -1047,15 +1034,7 @@ export async function generateRomAssets(
 						asset.compiled_buffer = compileLuaChunkBuffer(source, modulePath);
 					} catch (error) {
 						if (isLuaCompileError(error)) {
-							// disable-next-line newline_normalization_pattern -- diagnostics map a source location to one logical source line.
-							const sourceLines = source.split(/\r\n|\r|\n/);
-							compileErrors.push(formatSourceDiagnostic(
-								error.path,
-								error.message,
-								error.line,
-								error.column,
-								sourceLines,
-							));
+							compileErrors.push(formatLuaCompileError(error, source));
 							continue;
 						}
 						throw error;
@@ -1086,27 +1065,9 @@ export async function generateRomAssets(
 						// @ts-ignore
 						buffer = Buffer.from(encodedData);
 						break;
-					case 'bt-jsonc': {
-						const source = res.buffer.toString('utf8');
-						const parsed = parseBehaviourTreeDocument(source);
-						if (parsed.document === null) {
-							// disable-next-line newline_normalization_pattern -- diagnostics map source ranges to logical source lines.
-							const sourceLines = source.split(/\r\n|\r|\n/);
-							for (let index = 0; index < parsed.diagnostics.length; index += 1) {
-								const diagnostic = parsed.diagnostics[index];
-								compileErrors.push(formatSourceDiagnostic(
-									sourcePath!,
-									diagnostic.message,
-									diagnostic.line,
-									diagnostic.column,
-									sourceLines,
-								));
-							}
-							continue;
-						}
-						buffer = Buffer.from(encodeBinary(cookBehaviourTreeDocument(parsed.document)));
+					case 'bin':
+						// If the data is a binary file, we can use it as is
 						break;
-					}
 				}
 				romAssets.push({ resid, type, buffer, source_path: sourcePath });
 				break;
@@ -1215,7 +1176,7 @@ export async function generateRomAssets(
 		}
 	}
 	if (compileErrors.length > 0) {
-		throw new Error(`Compilation failed with ${compileErrors.length} error(s):\n${compileErrors.join('\n')}`);
+		throw new Error(`Compilation failed with ${compileErrors.length} Lua error(s):\n${compileErrors.join('\n')}`);
 	}
 	return romAssets;
 }

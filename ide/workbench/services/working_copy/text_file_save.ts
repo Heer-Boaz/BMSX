@@ -47,8 +47,7 @@ export async function saveTextFileWorkingCopy(
 					source,
 				);
 				break;
-			case 'aem':
-			case 'behaviour_tree': {
+			case 'aem': {
 				const projectRootPath = runtimeSourceProjectRootPath(
 					sources,
 					model.resource.domain,
@@ -104,10 +103,6 @@ export async function saveTextFileWorkingCopy(
 					showEditorMessage(`${title} saved, but runtime apply failed`, constants.COLOR_STATUS_WARNING, 4.0);
 					showEditorWarningBanner(`Saved, but runtime apply failed: ${applyMessage}`, 5.0);
 				}
-				return;
-			case 'behaviour_tree':
-				model.setRuntimeSyncState('runtime_update_pending', null);
-				showEditorMessage(`${title} saved (runtime update pending)`, constants.COLOR_STATUS_SUCCESS, 2.5);
 				return;
 		}
 	} catch (error) {

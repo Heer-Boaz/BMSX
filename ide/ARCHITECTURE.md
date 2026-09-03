@@ -69,32 +69,36 @@ service surface:
   <https://github.com/microsoft/vscode/blob/dc85eaf99d21fb62cc4d8b43a21625a93863cf1e/src/vs/workbench/services/textfile/common/textFileEditorModel.ts#L592-L642> and
   <https://github.com/microsoft/vscode/blob/dc85eaf99d21fb62cc4d8b43a21625a93863cf1e/src/vs/workbench/services/textfile/common/textFileEditorModel.ts#L953-L970>.
 
-### Structured text projections
+### Source-backed visual projections
 
-A typed visual editor does not turn its parsed graph into another working
-copy. `BehaviourTreeDocumentModel` retains a derived projection of an
-`EditorTextModel<'behaviour_tree'>`. The typed document, diagnostics, stable-id
-index and exact JSON paths are rebuilt exactly once for each text-model content
-event and shared by all views of that text model. A render pass reads the
-retained projection; it never parses or rebuilds topology.
+A visual behavior editor is another view on the resource-owned Lua
+`EditorTextModel`, not another working copy and not a generated behavior
+resource. The Lua parser and the workbench-owned behavior recognizer derive a
+retained BT-, FSM- or ActionEffect-projection once per text-model content
+version. Render and hit testing consume that projection; they do not parse or
+rebuild topology per frame.
 
-Structured commands write through `jsonc-parser` edit results and
-`EditorTextModel.pushEditOperations`. The adapter in
-`editor/model/jsonc_edit.ts` only translates the JSONC library's offset edit
-contract into the canonical text-model edit contract. It does not own content,
-undo state or domain semantics. A property command therefore creates one text
-undo element and the normal content event updates source and visual consumers.
-No command may mutate the parsed projection or replace the complete document
-to change one property.
+Visual commands address syntax whose provenance is known in the current Lua
+source and submit the smallest required `EditorTextEdit` batch through
+`EditorTextModel.pushEditOperations`. That gives text and visual views one undo
+record and one ordinary content event. A command never mutates the projection,
+executes Lua to discover an edit target, or serializes the complete definition.
+A dynamically composed construct can remain visible as incomplete while the
+unsupported visual mutation stays unavailable.
 
-The production references are VS Code's custom text editor contract—one text
-document, multiple views and minimal workspace edits—and Microsoft's JSONC
-edit contract, whose edits address the original source and preserve surrounding
-formatting:
+This follows VS Code's custom-text-editor contract—one standard text document,
+multiple synchronized views and minimal workspace edits—and Roslyn's
+full-fidelity source-transform principle, where tokens, whitespace and comments
+remain source information:
 
-- <https://github.com/microsoft/vscode-docs/blob/9d199617aec5afda97740da77c0df87d08388553/api/extension-guides/custom-editors.md#L34-L52>
+- <https://github.com/microsoft/vscode-docs/blob/9d199617aec5afda97740da77c0df87d08388553/api/extension-guides/custom-editors.md#L108-L114>
 - <https://github.com/microsoft/vscode-docs/blob/9d199617aec5afda97740da77c0df87d08388553/api/extension-guides/custom-editors.md#L140-L166>
-- <https://github.com/microsoft/node-jsonc-parser/blob/ee57b71dad28a973488b02d5577778c54784d76a/README.md#L256-L299>
+- <https://github.com/dotnet/roslyn/blob/6a0c2f224d2950393bb54e32c7a2ec460e9e5d83/docs/wiki/Roslyn-Overview.md#L92-L105>
+- <https://github.com/dotnet/roslyn/blob/6a0c2f224d2950393bb54e32c7a2ec460e9e5d83/docs/wiki/Roslyn-Overview.md#L125-L137>
+
+The normal Lua save and Hot Resume owners consume that same model. A visual
+editor adds no ROM-packer cooker, cartlib admission decoder, callback manifest,
+second graph database or behavior-specific machine representation.
 
 ## Resource editor resolution
 
@@ -136,9 +140,9 @@ reclassifying it:
 BMSX has no extension marketplace or user editor associations, so it does not
 copy VS Code's dynamic registration, priority and configuration machinery.
 Built-in contributions are composed once when the workbench starts and are
-ordered from specific to general. A future Behavior Tree contribution may
-therefore claim `*.bt.jsonc` while the machine-facing asset remains ordinary
-`data`; it must not add a BT asset type to the ROM TOC.
+ordered from specific to general. A future visual behavior contribution may
+therefore be selected explicitly for a Lua resource while the ordinary code
+editor remains available for that same text model.
 
 ## Editor pane lifecycle
 
@@ -214,10 +218,9 @@ runtime-sync boundary for retained text working copies. It receives the
 resource-owned `EditorTextModel` explicitly, snapshots the exact state being
 written, persists through the workspace owner, and only then completes that
 snapshot. Lua and AEM keep their existing producer-specific runtime update
-semantics. A behaviour-tree document currently persists its canonical JSONC
-source and remains `runtime_update_pending`; the separate cooked-asset revision
-must exist before a visual BT input is registered or claimed to support Hot
-Resume.
+semantics. A visual BT or FSM input participates through the Lua working copy
+and therefore uses the existing Lua Hot Resume path rather than a separate
+asset revision.
 
 The ordinary Save command resolves the active `EditorInput` and participates
 only when that input is a `WorkingCopyEditorInput`; it never reads the detached

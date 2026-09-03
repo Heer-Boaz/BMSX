@@ -41,8 +41,8 @@ function registration(id: string, selector: ResourceEditorSelector): ResourceEdi
 
 test('resource editor resolution creates an input with the first matching contribution', async () => {
 	const visualEditor = registration(
-		'studio.behaviourTree',
-		{ kind: 'filename_suffix', suffix: '.bt.jsonc' },
+		'studio.timeline',
+		{ kind: 'filename_suffix', suffix: '.timeline.yaml' },
 	);
 	const textEditor = registration('workbench.text', { kind: 'asset_type', assetType: 'lua' });
 	const resourceViewer = registration('workbench.viewer', { kind: 'all' });
@@ -51,30 +51,30 @@ test('resource editor resolution creates an input with the first matching contri
 		textEditor,
 		resourceViewer,
 	]);
-	const behaviourTree = resource('res/Enemy_Guard.BT.JSONC', 'data');
+	const timeline = resource('res/Intro.TIMELINE.YAML', 'data');
 
-	assert.equal((await resolver.resolveEditorInput(behaviourTree)).title, visualEditor.id);
-	assert.equal(behaviourTree.source.type, 'data');
+	assert.equal((await resolver.resolveEditorInput(timeline)).title, visualEditor.id);
+	assert.equal(timeline.source.type, 'data');
 	assert.equal((await resolver.resolveEditorInput(resource('cart.lua', 'lua'))).title, textEditor.id);
 	assert.equal((await resolver.resolveEditorInput(resource('sprite.png', 'image'))).title, resourceViewer.id);
 });
 
 test('an explicit editor id creates another matching input for the same resource', async () => {
 	const visualEditor = registration(
-		'studio.behaviourTree',
-		{ kind: 'filename_suffix', suffix: '.bt.jsonc' },
+		'studio.timeline',
+		{ kind: 'filename_suffix', suffix: '.timeline.yaml' },
 	);
 	const resourceViewer = registration('workbench.viewer', { kind: 'all' });
 	const resolver = new ResourceEditorResolver([visualEditor, resourceViewer]);
-	const behaviourTree = resource('res/enemy_guard.bt.jsonc', 'data');
+	const timeline = resource('res/intro.timeline.yaml', 'data');
 
-	assert.equal((await resolver.resolveEditorInput(behaviourTree)).title, visualEditor.id);
+	assert.equal((await resolver.resolveEditorInput(timeline)).title, visualEditor.id);
 	assert.equal(
-		(await resolver.resolveEditorInput(behaviourTree, resourceViewer.id)).title,
+		(await resolver.resolveEditorInput(timeline, resourceViewer.id)).title,
 		resourceViewer.id,
 	);
 	assert.throws(
-		() => resolver.resolveEditorInput(behaviourTree, 'missing.editor'),
+		() => resolver.resolveEditorInput(timeline, 'missing.editor'),
 		/No editor 'missing\.editor' is registered/,
 	);
 });

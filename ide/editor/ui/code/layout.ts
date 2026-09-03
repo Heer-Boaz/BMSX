@@ -9,7 +9,7 @@ import type { FileSemanticData } from '../../../../toolchain/ts/lua/semantic/mod
 import type { SemanticSymbolKind } from '../../../../toolchain/ts/lua/semantic/symbols';
 import type { SemanticAnnotations, TokenAnnotation } from '../../../../toolchain/ts/lua/semantic/tokens';
 import type { CachedHighlight, HighlightLine, VisualLineSegment } from '../../../common/models';
-import type { CodeEditorDocumentMode } from '../../model/text_model';
+import type { EditorDocumentMode } from '../../model/text_model';
 import { EditorFont } from '../view/font';
 import { getTextSnapshot } from '../../text/source_text';
 import { getOrCreateSemanticProject } from '../../contrib/intellisense/semantic/workspace/state';
@@ -158,7 +158,7 @@ export class CodeLayout {
 	private lastSemanticErrorChunk: string = null;
 	private builtinEpoch = 0;
 	private builtinIdentifiers: Iterable<string> = null;
-	private documentMode: CodeEditorDocumentMode = 'lua';
+	private documentMode: EditorDocumentMode = 'lua';
 
 	constructor(
 		private readonly font: EditorFont,
@@ -173,7 +173,7 @@ export class CodeLayout {
 		this.averageCharAdvance = this.font.advance('M');
 	}
 
-	public setDocumentMode(mode: CodeEditorDocumentMode): void {
+	public setDocumentMode(mode: EditorDocumentMode): void {
 		this.documentMode = mode;
 	}
 

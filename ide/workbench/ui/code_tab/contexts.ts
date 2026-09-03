@@ -5,7 +5,7 @@ import {
 import { activeCodeEditor, createCodeEditorViewState } from '../../../editor/ui/code_editor_state';
 import type { CodeEditorTabId } from '../tab/id';
 import { CodeEditorInput } from '../../contrib/code_editor/editor_input';
-import type { CodeEditorDocumentMode } from '../../../editor/model/text_model';
+import type { EditorDocumentMode } from '../../../editor/model/text_model';
 import type { CodeEditorInputId } from '../../../common/editor_context';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
 import { computeResourceTabTitle } from '../tab/titles';
@@ -25,7 +25,7 @@ function resolveLuaSource(sources: RuntimeSourceState, resource: RuntimeResource
 	return luaPipeline.resourceSourceForChunk(sources, resource);
 }
 
-function createCodeTabContext(resource: RuntimeResource, initialSource: string, mode: CodeEditorDocumentMode): CodeTabContext {
+function createCodeTabContext(resource: RuntimeResource, initialSource: string, mode: EditorDocumentMode): CodeTabContext {
 	const title = computeResourceTabTitle(resource);
 	const model = editorTextModelService.retain(resource, mode, initialSource);
 	return {

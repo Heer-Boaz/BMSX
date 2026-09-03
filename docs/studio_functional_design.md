@@ -480,140 +480,96 @@ Browser en headless tooling moeten dezelfde testidentiteit, execution owner en
 resultaatsemantiek aan hun verschillende hostlifecycles binden. Die verticale
 workflow wordt geen browserfacade rond een headless runner.
 
-### Optie D — Text-backed Visual Authoring
+### Optie D — Lua-backed Visual Authoring
 
-Een graph of statechart als alternatieve view op een gekozen constrained
-tekstrepresentatie.
-
-**Eigendom**
-
-- het workspace-document is canoniek;
-- graph edits zijn echte documentedits via normale undo/redo/save;
-- text view, visual view en Hot Resume zien dezelfde bronrevision.
-
-**Mogelijkheden**
-
-- visueel nodes/states toevoegen, verwijderen en verbinden;
-- eigenschappen en source in context bewerken;
-- normale dirty/save/revert- en Hot Resume-lifecycle.
-
-**Trade-off**
-
-Arbitraire huidige Lua-tabellen zijn niet betrouwbaar round-trippable. Deze
-optie is pas geldig nadat een constrained tekstrepresentatie expliciet is
-gekozen; zij mag geen bestaand Lua-programma destructief normaliseren.
-
-### Optie E — Dedicated structured behavior resource
-
-Een nieuw canoniek structured of binary behaviorasset met stabiele element-id's.
+Een graph of statechart is een alternatieve editorview op het bestaande
+canonieke Lua-document.
 
 **Eigendom**
 
-- het resource zelf is de authored waarheid;
-- toolchain/admission compileren het resource naar cartlib-uitvoering;
-- views en runtime decoration verwijzen naar resource-id's.
+- `EditorTextModel` blijft de enige working copy;
+- de Lua-parser en semantische analyse leveren een afgeleide BT-, FSM- of
+  ActionEffect-projectie met exacte bronranges;
+- graph-acties worden minimale source-edits via dezelfde undo/redo/save-owner;
+- de normale Lua-compile- en Hot-Resume-route blijft de enige runtime-update.
 
 **Mogelijkheden**
 
-- volledige graph editing;
-- stabiele occurrence-identiteit;
-- expliciete topology, schema en sourcecorrespondence.
+- bestaande `register(...)`-definities als graph of statechart tonen;
+- statisch herkenbare declaratieve delen visueel toevoegen, verwijderen,
+  verplaatsen en wijzigen;
+- closures, lokale constanten, comments en niet-aangeraakte bron letterlijk
+  behouden;
+- source- en visual-view gelijktijdig op dezelfde documentrevision gebruiken.
 
 **Trade-off**
 
-Dit is een nieuw product- en assetformat met compiler-, admission-, lifecycle-
-en migratiewerk. Het mag niet stilzwijgend als host-viewmodel of compatibiliteits-
-laag worden ingevoerd.
+Niet iedere dynamisch berekende Lua-waarde is visueel wijzigbaar. De editor
+mag zo'n constructie wel als source-backed en incompleet tonen, maar voert geen
+semantiek uit en normaliseert geen volledige tabel. Een concrete graphactie is
+alleen beschikbaar wanneer de language owner de te wijzigen syntax en exacte
+editranges heeft bewezen.
 
-### Geselecteerde combinatie D + E — typed JSONC-resources
+### Optie E — Dedicated structured behavior resource — niet geselecteerd
 
-Visual authoring gebruikt afzonderlijke, typed behaviorresources als
-**canonieke JSONC-tekstdocumenten**. Dit volgt VS Code's custom-text-editorgrens:
-één tekstmodel per resource, mogelijk meerdere views, en iedere visual edit als
-een minimale edit op datzelfde document
-([documentmodel](https://github.com/microsoft/vscode-docs/blob/9d199617aec5afda97740da77c0df87d08388553/api/extension-guides/custom-editors.md#L34-L52),
-[edits en synchronisatie](https://github.com/microsoft/vscode-docs/blob/9d199617aec5afda97740da77c0df87d08388553/api/extension-guides/custom-editors.md#L140-L166)).
-De Microsoft JSONC-parser levert hiervoor een syntaxboom met bronoffsets en
-berekent formatting-behoudende property-/array-edits in plaats van het hele
-document via `JSON.stringify` te herschrijven
-([gepinde API](https://github.com/microsoft/node-jsonc-parser/blob/ee57b71dad28a973488b02d5577778c54784d76a/README.md#L156-L299)).
-De bestaande YAML-loader is geen lossless CST en wordt daarom niet als
-visual-editfundament gebruikt.
+Een tweede JSONC/binary behaviorasset zou bestaande Lua-definities, callbacks
+en Hot Resume opsplitsen over twee authored waarheden. Dat is voor de huidige
+BT-, FSM- en ActionEffect-domeinen geen gerechtvaardigde productgrens. Een
+zelfstandig structured resource blijft alleen denkbaar voor een toekomstig
+domein dat niet reeds als uitvoerbare Lua-bron bestaat; het is geen migratiepad
+voor de live behaviorlibraries.
 
-Er komt nadrukkelijk geen universeel `BehaviorGraph`-DTO. De drie huidige
-domeinen krijgen een eigen schema en projectie:
+### Geselecteerd: D — Lua-source blijft canoniek
 
-- een BT-resource bewaart een ordered tree met eigen node-, decorator- en
-  service-id's;
-- een FSM-resource bewaart states en transitions als afzonderlijke authored
-  elementen, plus expliciete parent-/endpoint-id's;
-- een ActionEffects-resource bewaart effectdefinities en hun relaties als een
-  typed collectie, niet als geforceerde node-edgegraph.
+De Studio volgt VS Code's custom-text-editorcontract: één standaard
+`TextDocument` kan meerdere editorviews hebben en iedere view schrijft via
+minimale edits terug naar dat document
+([documentmodel](https://github.com/microsoft/vscode-docs/blob/9d199617aec5afda97740da77c0df87d08388553/api/extension-guides/custom-editors.md#L108-L114),
+[minimale edits](https://github.com/microsoft/vscode-docs/blob/9d199617aec5afda97740da77c0df87d08388553/api/extension-guides/custom-editors.md#L140-L166)).
+Voor source-transformaties geldt hetzelfde full-fidelity-principe als Roslyn:
+syntax, tokens, whitespace en comments blijven broninformatie in plaats van
+een opnieuw geserialiseerde graph
+([full fidelity](https://github.com/dotnet/roslyn/blob/6a0c2f224d2950393bb54e32c7a2ec460e9e5d83/docs/wiki/Roslyn-Overview.md#L92-L105),
+[trivia](https://github.com/dotnet/roslyn/blob/6a0c2f224d2950393bb54e32c7a2ec460e9e5d83/docs/wiki/Roslyn-Overview.md#L125-L137)).
+BMSX hoeft daarvoor geen tweede bestandstype te introduceren: het retained
+Lua-textmodel, de bestaande Behavior Lens source ranges en
+`EditorTextModel.pushEditOperations` vormen de juiste owners.
 
-Dat sluit aan bij BehaviorTree.CPP, waar een constrained tree-document eerst
-tegen geregistreerde node-manifests wordt geverifieerd en pas daarna wordt
-geinstantieerd
-([verificatie](https://github.com/BehaviorTree/BehaviorTree.CPP/blob/9b63b505983f76e46d90d71c87d21fad0001f8a3/src/xml_parsing.cpp#L442-L475),
-[factorycontract](https://github.com/BehaviorTree/BehaviorTree.CPP/blob/9b63b505983f76e46d90d71c87d21fad0001f8a3/include/behaviortree_cpp/bt_factory.h#L247-L343)).
-Godot bewaart state-topology, transitions en authored nodeposities op het
-state-machine-resource zelf
-([resourcevelden](https://github.com/godotengine/godot/blob/6ef60dc279b2c58a94ffc57bf98eefc9663f7907/scene/animation/animation_node_state_machine.h#L124-L144)),
-terwijl Unity's ShaderGraph nodes met stabiele GUID's en edges met
-`nodeGuid + slotId` bewaart en afgeleide lookupindices pas na deserialisatie
-opbouwt
-([nodes en edges](https://github.com/Unity-Technologies/ShaderGraph/blob/49288e5f4c6f989d5ab85e4cc025c8c34a04522c/com.unity.shadergraph/Editor/Data/Graphs/AbstractMaterialGraph.cs#L53-L122),
-[indexrebuild](https://github.com/Unity-Technologies/ShaderGraph/blob/49288e5f4c6f989d5ab85e4cc025c8c34a04522c/com.unity.shadergraph/Editor/Data/Graphs/AbstractMaterialGraph.cs#L668-L696)).
+Daaruit volgen deze grenzen:
 
-Voor BMSX gelden daardoor deze identities:
+- BT's en FSM's blijven gewone cart-Lua die rechtstreeks hun bestaande
+  libraries registreren;
+- een visual editor bezit alleen viewstate en een retained afgeleide projectie;
+- de projectie is per sourceversion en nooit een tweede authored graph;
+- property- en structurele commands richten zich op bewezen Lua-syntaxranges;
+- callbacks en vrije Lua rond de declaratieve tabellen blijven onaangeraakt;
+- Save en Hot Resume zien exact dezelfde Lua working copy als de code-editor;
+- rompacker, machine, cartridgesockets en cartlib krijgen geen Studio-format,
+  bindingmanifest, decoder of visual-editor-id.
 
-- `(execution domain, resource path)` identificeert het document;
-- een expliciete semantische definition-id identificeert de BT, FSM of het
-  effect naar cartcode;
-- ieder authored element bezit een onveranderlijke UUID; namen, labels,
-  arrayposities, bronregels en canvascoordinaten zijn geen identiteit;
-- verbindingen verwijzen naar element-id plus een domeinspecifieke port/rol;
-- runtime-dense slots en evaluatorindices blijven afgeleide
-  admissionrepresentaties en worden nooit teruggeschreven als authored id.
-
-Authoringlayout hoort bij het resource wanneer zij onderdeel is van de gedeelde
-graphcompositie, zoals nodeposities. Zoom, selectie, hover, collapse en scroll
-blijven per-view workbenchstate. Een documentparse bouwt per tekstversie een
-afgeleide index; draw, hit-testing en runtime-ticks parsen of indexeren niet.
-
-JSONC bevat alleen declaratieve behaviorsemantiek. Lua-taken, predicates,
-Services, statehooks en ActionEffect-handlers blijven cartcode. Een typed
-resource verwijst naar expliciete binding-id's en de cart levert die bindings
-bij de bestaande BT-, FSM- of ActionEffect-admissiongrens. Iedere behaviorowner
-bindt eenmaal en verlaagt daarna naar zijn bestaande directe closures, dense
-slots en fused framepad. Er komt geen globale stringcallbackregistry, generieke
-host-Lua-RPC of per-frame bindinglookup. Dit volgt het factory-/manifestpatroon
-van BehaviorTree.CPP zonder diens runtime-XML-parser naar de cart te kopieren.
-
-De ROM-packer valideert en kookt het document vóór packing. Het resultaat is
-gewone cartdata; TOC, machine, sockets en C++ kennen geen behavior- of
-Studio-type. Cartcode selecteert expliciet het assetadres via `bmsx/assets` en
-roept haar domeinlibrary aan. De Studio-workbench bezit de text/visual view;
-cartlib bezit uitsluitend resource-admission en uitvoering en importeert nooit
-Studio. Arbitrary Lua-registration blijft daarnaast volwaardig source-first;
-er is geen automatische round-trip of migratieclaim.
+De bestaande BLua32 debugranges en Lua-stackframes verbinden een gestopte
+uitvoering al met concrete sourceposities. Dat is de juiste debuggerbasis voor
+callbacks en statehooks. Een stacktrace alleen identificeert echter niet
+noodzakelijk een wachtende of reeds geretourneerde structurele BT-node: meerdere
+retained evaluators kunnen hetzelfde cartlib-instructieadres uitvoeren. Exacte
+runtime-nodecorrespondentie wordt daarom apart bewezen tegen de live evaluator-
+en execution-state-representatie. Zij mag niet worden nagebootst met labels,
+strings of Studio-hooks in normale cartlibcode.
 
 ### Gekozen volgorde
 
-De productvolgorde is **A, daarna C**: eerst source-first begrip, daarna
-deterministische scenario's. **B** volgt alleen voor geselecteerde recorded
-observability nadat de benodigde semantische producers en identities expliciet
-zijn ontworpen. Daarna volgt de geselecteerde **D + E**-route per domein, te
-beginnen met een BT-resource omdat de live BT-owner al een afzonderlijke
-admissioncompiler en een manifestachtige scheiding tussen placements en
-Task/Service/decoratorimplementaties bezit. Eerst worden documentmodel,
-schema/cooker (`BT-AUTHORED-DOCUMENT-01`) en cart-owned admission
-(`BT-RESOURCE-ADMISSION-01`) elk als eigen complete slice gebouwd; pas daarna
-komt de editable BT-view. FSM en ActionEffects hergebruiken alleen
-de bewezen textdocumentlifecycle, niet een generiek graphschema.
+De productvolgorde blijft **A, daarna C**: eerst source-first begrip, daarna
+deterministische scenario's. Voor visual authoring volgt eerst een smalle
+language-owned source-editlaag voor de reeds herkenbare Lua-registraties. Pas
+wanneer property-, insert-, delete- en move-edits bronbehoudend bewezen zijn,
+wordt een editable BT- of FSM-pane toegevoegd. De bestaande Lua-compile- en
+Hot-Resume-route is vanaf de eerste edit het uitvoerpad; er is geen cooker of
+resource-admissiontussenstap.
 
-De source-lens blijft read-only boven arbitrary Lua. Zij belooft geen exacte
-runtime-nodecorrespondentie. De eerste inspectieworkflow is stop-and-inspect en
-libretro blijft buiten de Studio-workbench.
+Recorded observability blijft een afzonderlijke testfunctie. Stackframes en
+source maps zijn debuggercorrespondentie; eventgeschiedenis en persistente
+node-status zijn niet hetzelfde contract en worden niet vermengd met authored
+source-identiteit.
 
 De eerste toegestane stap van **B** is een opgenomen FSM-transitionstream binnen
 een expliciete Scenario Lab-test. De volgende geselecteerde categorie is alleen
@@ -1181,16 +1137,15 @@ staan in [`open_architecture_slices.md`](open_architecture_slices.md).
 
 ### Fase 4 — Visual authoring
 
-- verplicht productdoel via afzonderlijke typed JSONC-resources;
-- eerst BT, daarna afzonderlijk FSM en ActionEffects; geen generiek
-  graphmetamodel;
-- graph edits wijzigen het echte document/resource;
+- verplicht productdoel via de bestaande canonieke Lua-bronnen;
+- eerst BT, daarna afzonderlijk FSM en ActionEffects; geen generiek graphmetamodel;
+- graph edits zijn minimale edits op het echte Lua-textmodel;
 - undo, redo, save, revert en Hot Resume gebruiken de bestaande owners;
-- stabiele authored UUID's blijven gescheiden van namen, layout en runtime-
-  dense indices;
-- cartcode levert expliciete typed callbackbindings bij domain admission;
+- statisch onoplosbare Lua blijft zichtbaar maar wordt niet door een graphactie
+  herschreven;
+- runtimecorrespondentie blijft gescheiden van source- en viewidentiteit;
 - geen tweede graphdatabase;
-- arbitraire Lua blijft source-first.
+- geen behaviorcooker, bindingmanifest of resource-admissionpad.
 
 ### Fase 5 — Semantic break/step
 
@@ -1208,9 +1163,9 @@ bouwen er daarom ook geen abstractie voor:
    concrete volgende recorded observabilityworkflow nodig heeft, en of een
    niet-diagnostische owner ooit actieve periodieke effectidentiteit vereist.
 2. Welke echte produceridentiteit BT-occurrences aan runtimefeiten koppelt.
-3. Welke exacte runtimecorrespondence een cooked BT-resource naast haar
-   authored element-id's nodig heeft; dit wordt niet door de editor-ID-keuze
-   vooruit ontworpen.
+3. Welke exacte runtimecorrespondence een Lua-authored BT-node naast haar
+   actuele syntaxrange nodig heeft; dit wordt niet door de editor-ID-keuze of
+   door een generieke stackframeclaim vooruit ontworpen.
 4. Of een live-monitorlifecycle naast stop-and-inspect ooit productscope wordt.
 5. Of portable native scenario-execution ooit een afzonderlijk libretrodoel
    wordt.
@@ -1240,6 +1195,8 @@ ontworpen wanneer een latere slice een van deze productkeuzes werkelijk maakt.
 - een globale callbackregistry of callbacknaamlookup in het framepad;
 - een gedeeld generiek graphschema voor BT, FSM en ActionEffects;
 - een los graphmodel naast het canonieke document/resource;
+- een tweede BT-, FSM- of ActionEffect-resource naast de canonieke Lua-bron;
+- behaviorcompilatie of callbackbinding in de ROM-packer puur voor visualisatie;
 - beweren dat source stepping semantic stepping is;
 - TypeScript Studio/workbench in de libretro core;
 - visual authoring implementeren voordat de authored representatie is gekozen;

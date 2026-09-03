@@ -207,7 +207,7 @@ test('active resource catalog exposes source-backed data only from the active so
 	]);
 	sources.cartridgeSlots[0]!.romSource = romSource([
 		{ resid: 'cart-scene', type: 'aem', source_path: 'scenes/cart.aem' },
-		{ resid: 'enemy-guard', type: 'data', source_path: 'res/data/enemy_guard.bt.jsonc' },
+		{ resid: 'enemy-guard', type: 'data', source_path: 'res/data/enemy_guard.yaml' },
 	]);
 	rebuildRuntimeSourceResources(sources);
 
@@ -225,7 +225,7 @@ test('active resource catalog exposes source-backed data only from the active so
 	});
 	const cartridgeData = resolveRuntimeResource(sources, {
 		domain: 0,
-		path: 'res/data/enemy_guard.bt.jsonc',
+		path: 'res/data/enemy_guard.yaml',
 	});
 	assert.ok(systemAem);
 	assert.ok(cartridgeAem);

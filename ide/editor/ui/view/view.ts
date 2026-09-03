@@ -15,7 +15,7 @@ import { editorCaretState } from './caret/state';
 import { getBuiltinIdentifiersSnapshot, requestSemanticRefresh } from '../../contrib/intellisense/engine';
 import { ensureCursorVisible, updateDesiredColumn } from './caret/caret';
 import { activeCodeEditor } from '../code_editor_state';
-import type { CodeEditorDocumentMode } from '../../model/text_model';
+import type { EditorDocumentMode } from '../../model/text_model';
 import { editorViewState } from './state';
 import {
 	ensureVisualLines,
@@ -292,7 +292,7 @@ export function scrollRows(deltaRows: number): void {
 export function configureFontVariant(
 	clock: HostClock,
 	variant: FontVariant,
-	activeDocumentMode: CodeEditorDocumentMode | null,
+	activeDocumentMode: EditorDocumentMode | null,
 ): void {
 	editorViewState.fontVariant = variant;
 	editorViewState.font = new EditorFont(variant);
@@ -321,7 +321,7 @@ export function configureFontVariant(
 export function setFontVariant(
 	clock: HostClock,
 	variant: FontVariant,
-	activeDocumentMode: CodeEditorDocumentMode,
+	activeDocumentMode: EditorDocumentMode,
 	activeContextId: CodeEditorInputId,
 ): void {
 	configureFontVariant(clock, variant, activeDocumentMode);

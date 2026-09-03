@@ -1,9 +1,6 @@
 import type { Position } from '../../common/models';
 import { clamp } from '../../../machine/ts/common/clamp';
-import type {
-	CodeEditorDocumentMode,
-	EditorTextModel,
-} from '../model/text_model';
+import type { EditorTextModel } from '../model/text_model';
 
 type CursorMovedListener = () => void;
 
@@ -19,7 +16,7 @@ export type CodeEditorViewState = {
 };
 
 export type CodeEditorContext = {
-	readonly model: EditorTextModel<CodeEditorDocumentMode>;
+	readonly model: EditorTextModel;
 	readonly view: CodeEditorViewState;
 };
 
@@ -38,12 +35,12 @@ export function createCodeEditorViewState(): CodeEditorViewState {
 
 /** The single code-editor widget and the model/view currently attached to it. */
 export class ActiveCodeEditorState {
-	public model: EditorTextModel<CodeEditorDocumentMode>;
+	public model: EditorTextModel;
 	public view: CodeEditorViewState;
 	public customClipboard: string = null;
 	private readonly cursorMovedListeners = new Set<CursorMovedListener>();
 
-	public attach(model: EditorTextModel<CodeEditorDocumentMode>, view: CodeEditorViewState): void {
+	public attach(model: EditorTextModel, view: CodeEditorViewState): void {
 		const buffer = model.buffer;
 		const lastRow = buffer.getLineCount() - 1;
 		view.cursorRow = clamp(view.cursorRow, 0, lastRow);

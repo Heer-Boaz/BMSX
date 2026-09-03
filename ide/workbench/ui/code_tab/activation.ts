@@ -93,11 +93,10 @@ export function capturePendingLuaTextModelSources(sources: RuntimeSourceState): 
 	const snapshots: LuaTextModelSourceSnapshot[] = [];
 	for (const model of editorTextModelService.models) {
 		switch (model.mode) {
-			case 'lua':
-				break;
-			case 'aem':
-			case 'behaviour_tree':
-				continue;
+		case 'lua':
+			break;
+		case 'aem':
+			continue;
 		}
 		const source = getTextSnapshot(model.buffer);
 		const match = resolveRuntimeLuaSource(sources, model.resource)!;

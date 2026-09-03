@@ -103,18 +103,18 @@ test('named workbench menu materializes one retained generic action bar', () => 
 test('a workbench action prompt retains the exact dirty working-copy batch', (t) => {
 	const resource: RuntimeResource = {
 		domain: 0,
-		path: 'res/guard.bt.jsonc',
+		path: 'res/guard.aem',
 		source: {
 			resid: 'guard',
-			type: 'data',
-			source_path: 'res/guard.bt.jsonc',
+			type: 'aem',
+			source_path: 'res/guard.aem',
 		},
 	};
-	const model = new EditorTextModel(resource, 'behaviour_tree', '{}');
+	const model = new EditorTextModel(resource, 'aem', '{}');
 	model.pushEditOperations([{ offset: 1, deleteLength: 0, text: ' ' }]);
 	const workingCopies = [model];
 	t.after(closeActionPrompt);
-	configureFontVariant(actionTestClock, DEFAULT_FONT_VARIANT, 'behaviour_tree');
+	configureFontVariant(actionTestClock, DEFAULT_FONT_VARIANT, 'aem');
 
 	showActionPrompt('hot-resume', workingCopies);
 	assert.strictEqual(actionPromptState.prompt!.workingCopies, workingCopies);

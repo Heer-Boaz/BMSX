@@ -7,7 +7,6 @@ gx_display.reset_320x240()
 local world<const> = require('cartlib/world/world')
 local world_module<const> = require('world_module')
 world:configure(world_module)
-require('behaviour_tree_resource_test')
 
 gx_gte_plus[gx_gte.plus_add_xy] = gx_gte.pack_i16_pair(1, 2)
 gx_gte_plus[gx_gte.plus_add_z] = 3

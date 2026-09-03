@@ -1409,7 +1409,7 @@ test('workspace recovery hydrates a dirty model retained by a non-code editor in
 		[sourceRegistry('-- cart source'), null],
 		TEST_DOMAIN,
 	);
-	const resource = testResource('res/enemy_guard.bt.jsonc', TEST_DOMAIN, 'data');
+	const resource = testResource('res/test_scene.aem', TEST_DOMAIN, 'aem');
 	sources.resourceByIdentity.set(resourceIdentityKey(resource), resource);
 	const dirtyPath = buildWorkspaceDirtyEntryPath('offline-cart', resource.domain, resource.path);
 	workspaceDirtyRecords.set(dirtyPath, { contents: '{ "version": 1 }', updatedAt: 1 });
@@ -1417,14 +1417,14 @@ test('workspace recovery hydrates a dirty model retained by a non-code editor in
 			resource,
 			lines: [],
 			error: '',
-			title: 'enemy_guard.bt.jsonc',
+		title: 'test_scene.aem',
 			scroll: 0,
 	});
 	const resourceEditors = new ResourceEditorResolver([{
-		id: 'test.behaviourTree',
-		selector: { kind: 'filename_suffix', suffix: '.bt.jsonc' },
+		id: 'test.scene',
+		selector: { kind: 'filename_suffix', suffix: '.aem' },
 		createEditorInput: (target) => {
-			editorTextModelService.retain(target, 'behaviour_tree', '{ "version": 1, "root": {} }');
+			editorTextModelService.retain(target, 'aem', '{ "events": {} }');
 			editorTabGroup.add(resourceInput);
 			return resourceInput;
 		},
@@ -1442,7 +1442,7 @@ test('workspace recovery hydrates a dirty model retained by a non-code editor in
 	);
 
 	const model = editorTextModelService.get(resource)!;
-	assert.equal(model.mode, 'behaviour_tree');
+	assert.equal(model.mode, 'aem');
 	assert.equal(model.buffer.getText(), '{ "version": 1 }');
 	assert.equal(model.dirty, true);
 	assert.equal(findCodeTabContext(resource), null);

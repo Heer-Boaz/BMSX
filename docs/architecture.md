@@ -1298,16 +1298,13 @@ const aggregates. The producer validates the schema and emits immutable ROM
 bytes plus named symbols; runtime/game code consumes those concrete
 address/length symbols through the content reader.
 
-Authored Behavior Trees follow that boundary. A `*.bt.jsonc` file is a
-workspace-owned text document, not a machine asset kind. The BT producer parses
-its JSONC syntax tree with source offsets, validates the domain-specific v1
-schema and cooks one ordinary `data` record. Authored UUIDs and display names
-do not enter the cooked record; UUID blackboard references become semantic key
-names and cart callback references remain binding ids for the later cart-owned
-admission step. The authored-document version and cooked-format version are
-independent contracts. The machine TOC, runtime, cartridge model, C++ core and
-cartlib do not know the authoring format. The complete v1 source/cook contract
-is documented in [`behaviour_tree_resource.md`](behaviour_tree_resource.md).
+Behavior Trees and FSMs remain authored as ordinary cart Lua. A visual editor
+is another view on the same resource-owned Lua text model and changes it with
+targeted source edits. The normal compiler and Hot Resume path therefore remain
+the only path from authored behavior to execution. The ROM packer does not
+cook a second behavior document, cartlib does not decode an editor resource or
+bind a visual-editor manifest, and machine, TOC, cartridge model and C++ core
+remain unaware of behavior authoring.
 
 Decoding schema-rich payloads once at cart initialization through
 address/length symbols is an acceptable cold authoring-data path. The platform

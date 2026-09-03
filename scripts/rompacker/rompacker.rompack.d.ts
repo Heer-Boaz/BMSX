@@ -30,7 +30,7 @@ export interface RomPackerOptions {
 
 export type resourcetype = Exclude<AssetType, 'texture' | 'collision_shape'> | 'atlas' | 'collision_map';
 export type collisiontype = 'concave' | 'convex' | 'aabb';
-export type DataResourceDatatype = 'json' | 'yaml' | 'bt-jsonc';
+export type datatype = 'json' | 'yaml' | 'bin';
 
 interface BaseResource<TType extends resourcetype> {
 	type: TType; // resource type
@@ -63,19 +63,10 @@ export interface AudioResource extends BaseResource<'audio'> {
 	id: number;
 }
 
-interface SerializedDataResource extends BaseResource<'data'> {
+export interface DataResource extends BaseResource<'data'> {
 	id: number;
-	datatype: 'json' | 'yaml';
+	datatype: datatype;
 }
-
-interface BehaviourTreeDocumentResource extends BaseResource<'data'> {
-	id: number;
-	datatype: 'bt-jsonc';
-	filepath: string;
-	sourcePath: string;
-}
-
-export type DataResource = SerializedDataResource | BehaviourTreeDocumentResource;
 
 export interface AemResource extends BaseResource<'aem'> {
 	id: number;
@@ -85,6 +76,7 @@ export interface AemResource extends BaseResource<'aem'> {
 
 export interface ModelResource extends BaseResource<'model'> {
 	id: number;
+	datatype: datatype;
 }
 
 export interface LuaResource extends BaseResource<'lua'> {
