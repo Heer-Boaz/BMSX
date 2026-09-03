@@ -69,6 +69,7 @@ export async function runIdeTest(options: IdeTestRunnerOptions): Promise<void> {
 		assert,
 		runtime: () => options.ide.getRuntime(),
 		sourceState: () => options.ide.getSourceState(),
+		workbenchActive: () => options.ide.isWorkbenchActive(),
 		heapBytes: () => options.ide.getTrackedLuaHeapBytes(),
 		debugStats: () => options.ide.debugStats(),
 		logMessageCount: () => options.ide.getLogMessageCount(),

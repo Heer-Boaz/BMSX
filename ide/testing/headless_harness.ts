@@ -44,6 +44,7 @@ import type {
 export type HeadlessIdeHarness = {
 	getRuntime(): Runtime;
 	getSourceState(): RuntimeSourceState;
+	isWorkbenchActive(): boolean;
 	isCartActive(): boolean;
 	getTrackedLuaHeapBytes(): number;
 	getLogMessageCount(): number;
@@ -103,6 +104,7 @@ export function createHeadlessIdeHarness(
 	return {
 		getRuntime: () => runtime,
 		getSourceState: () => ide.sources,
+		isWorkbenchActive: () => ide.overlayRenderer.active,
 		isCartActive: () => runtime.machine.cpu.isCartridgeExecutionActive(),
 		getTrackedLuaHeapBytes: () => runtime.machine.cpu.luaHeap.usedBytes(),
 		getLogMessageCount: () => logOutput.messages.length,

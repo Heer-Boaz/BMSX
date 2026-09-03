@@ -8,7 +8,7 @@ const pressKey = async (code, pressId) => {
 		timestamp: 0,
 		pressId,
 	});
-	await t.frames(1);
+	await t.frames(2);
 	t.postInput({
 		type: 'button',
 		deviceId: 'keyboard:0',
@@ -18,7 +18,7 @@ const pressKey = async (code, pressId) => {
 		timestamp: 0,
 		pressId,
 	});
-	await t.frames(1);
+	await t.frames(2);
 };
 
 const pressModifiedF5 = async (modifier, pressId) => {
@@ -59,6 +59,47 @@ const pressModifiedF5 = async (modifier, pressId) => {
 		value: 0,
 		timestamp: 0,
 		pressId,
+	});
+	await t.frames(1);
+};
+
+const openWorkbenchWithHostChord = async (pressId) => {
+	t.postInput({
+		type: 'button',
+		deviceId: 'keyboard:0',
+		code: 'ControlRight',
+		down: true,
+		value: 1,
+		timestamp: 0,
+		pressId,
+	});
+	t.postInput({
+		type: 'button',
+		deviceId: 'keyboard:0',
+		code: 'ShiftRight',
+		down: true,
+		value: 1,
+		timestamp: 0,
+		pressId: pressId + 1,
+	});
+	await t.frames(1);
+	t.postInput({
+		type: 'button',
+		deviceId: 'keyboard:0',
+		code: 'ControlRight',
+		down: false,
+		value: 0,
+		timestamp: 0,
+		pressId,
+	});
+	t.postInput({
+		type: 'button',
+		deviceId: 'keyboard:0',
+		code: 'ShiftRight',
+		down: false,
+		value: 0,
+		timestamp: 0,
+		pressId: pressId + 1,
 	});
 	await t.frames(1);
 };
@@ -106,6 +147,17 @@ const waitForRunToFinish = async (view, limit) => {
 		await t.frames(1);
 	}
 	throw new Error('Scenario Lab run did not restore canonical media');
+};
+
+const waitForLiveFsmTrace = async (view, limit) => {
+	for (let frame = 0; frame < limit; frame += 1) {
+		const result = view.resultService.liveResult;
+		if (result !== null && result.fsmTransitionTrace !== null) {
+			return result;
+		}
+		await t.frames(1);
+	}
+	throw new Error('Scenario Lab run did not enter its instrumented update phase');
 };
 
 await t.waitForCart();
@@ -170,6 +222,36 @@ await clickPointer(
 );
 await releasePointer(100);
 t.assert(view.runActive, 'Run action did not start the selected scenario');
+const interruptedResult = await waitForLiveFsmTrace(view, 600);
+t.postInput({ type: 'supervisor-request', down: true });
+await t.frames(1);
+t.postInput({ type: 'supervisor-request', down: false });
+for (let frame = 0;
+	frame < 120 && (cpu.isUserMode() || !cpu.isHaltedUntilIrq());
+	frame += 1) {
+	await t.frames(1);
+}
+t.assert(!cpu.isUserMode() && cpu.isHaltedUntilIrq(),
+	'physical supervisor request did not open the BIOS terminal during a scenario');
+t.assert(!t.workbenchActive(), 'BIOS terminal entry opened host workbench chrome');
+const terminalStartMachineTick = runtime.frameScheduler.lastTickSequence;
+const terminalStartLogCount = interruptedResult.logs.length;
+const terminalStartTransitionCount = interruptedResult.fsmTransitionTrace.transitions.length;
+await pressKey('KeyC', 200);
+await pressKey('KeyO', 201);
+await pressKey('KeyN', 202);
+await pressKey('KeyT', 203);
+t.assert(!cpu.isUserMode(), 'physical monitor text resumed the cartridge before submit');
+t.assert(runtime.frameScheduler.lastTickSequence > terminalStartMachineTick,
+	'BIOS terminal stopped the machine clock during scenario suspension');
+t.assert(interruptedResult.logs.length === terminalStartLogCount
+	&& interruptedResult.fsmTransitionTrace.transitions.length === terminalStartTransitionCount,
+	'scenario protocol or observations advanced while the BIOS terminal owned execution');
+await pressKey('Enter', 204);
+for (let frame = 0; frame < 120 && !cpu.isUserMode(); frame += 1) {
+	await t.frames(1);
+}
+t.assert(cpu.isUserMode(), 'physical CONT command did not resume scenario cartridge execution');
 await waitForRunToFinish(view, 1200);
 await t.frames(2);
 
@@ -304,11 +386,14 @@ t.assert(t.activeWorkbenchTab() === labTab && labTab.view === view, 'reopening d
 await pressModifiedF5('ControlLeft', 320);
 t.assert(view.runActive, 'Ctrl+F5 did not rerun the selected scenario');
 
-t.openLuaSource('cart.lua');
-await t.frames(1);
-t.command('scenarioLab');
-await t.frames(1);
-await pressModifiedF5('ShiftLeft', 330);
+await openWorkbenchWithHostChord(330);
+t.assert(t.workbenchActive(), 'physical Select+RB did not reopen the workbench');
+t.assert(t.activeWorkbenchTab() === labTab, 'physical IDE entry did not retain Scenario Lab');
+const stoppedMachineCycle = runtime.machine.scheduler.nowCycles;
+await t.frames(3);
+t.assert(runtime.machine.scheduler.nowCycles === stoppedMachineCycle,
+	'blocking workbench advanced the machine during an active scenario');
+await pressModifiedF5('ShiftLeft', 340);
 await waitForRunToFinish(view, 1200);
 await t.frames(2);
 

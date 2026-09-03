@@ -105,6 +105,7 @@ type ScenarioExecution = {
 	phase: ScenarioExecutionPhase;
 	logicalTicks: number;
 	tickPrepared: boolean;
+	completedTickPending: boolean;
 	fsmTransitionObservation: ScenarioFsmTransitionObservation | null;
 	actionEffectObservation: ScenarioActionEffectObservation | null;
 };
@@ -159,6 +160,7 @@ export class ScenarioExecutionService {
 			phase: { kind: 'cart', settleTicks: 0 },
 			logicalTicks: 0,
 			tickPrepared: false,
+			completedTickPending: false,
 			fsmTransitionObservation: null,
 			actionEffectObservation: null,
 		};
@@ -167,10 +169,22 @@ export class ScenarioExecutionService {
 
 	public prepareLogicalTick(): boolean {
 		const execution = this.execution!;
-		if (execution.tickPrepared) {
-			return true;
-		}
 		try {
+			if (this.handleSupervisorFault(execution)) {
+				return false;
+			}
+			if (execution.tickPrepared) {
+				return true;
+			}
+			if (this.runtime.machine.systemController.supervisorContextActive()) {
+				return true;
+			}
+			if (execution.completedTickPending) {
+				this.completeScenarioTick(execution);
+				if (this.execution === null) {
+					return false;
+				}
+			}
 			const phase = execution.phase;
 			if (phase.kind === 'update') {
 				phase.scenarioTick += 1;
@@ -190,15 +204,30 @@ export class ScenarioExecutionService {
 			return;
 		}
 		const execution = this.execution!;
-		execution.tickPrepared = false;
-		execution.logicalTicks += 1;
-		this.presentationResult = execution.result;
 		try {
-			this.drainObservations(execution);
-			this.advance(execution);
+			if (this.handleSupervisorFault(execution)) {
+				return;
+			}
+			if (!execution.tickPrepared) {
+				return;
+			}
+			execution.tickPrepared = false;
+			execution.logicalTicks += 1;
+			execution.completedTickPending = true;
+			if (this.runtime.machine.systemController.supervisorContextActive()) {
+				return;
+			}
+			this.completeScenarioTick(execution);
 		} catch (error) {
 			this.fail(execution, error instanceof Error ? error.message : String(error));
 		}
+	}
+
+	private completeScenarioTick(execution: ScenarioExecution): void {
+		execution.completedTickPending = false;
+		this.presentationResult = execution.result;
+		this.drainObservations(execution);
+		this.advance(execution);
 	}
 
 	public didPresent(presentationSequence: number): number {
@@ -221,42 +250,46 @@ export class ScenarioExecutionService {
 		this.finish();
 	}
 
-	private advance(execution: ScenarioExecution): void {
+	private handleSupervisorFault(execution: ScenarioExecution): boolean {
 		const memory = this.runtime.machine.memory;
 		if (memory.readMappedU32LE(IO_SYS_SUPERVISOR_FAULT_SEQUENCE)
-			!== this.supervisorFaultSequence) {
-			const stackText = recordSupervisorFault(
-				this.fault,
-				this.sources,
-				this.runtime,
-				this.suspendedGuest,
-			);
-			this.results.appendLog(
-				execution.result,
-				this.runtime.frameScheduler.lastTickSequence,
-				stackText,
-			);
-			this.results.requestCapture(
-				execution.result,
-				this.runtime.frameScheduler.lastTickSequence,
-				'failed',
-			);
-			this.results.fail(
-				execution.result,
-				this.runtime.frameScheduler.lastTickSequence,
-				{
-					message: this.fault.faultSnapshot.message,
-					location: {
-						resource: this.fault.faultSnapshot.resource,
-						line: this.fault.faultSnapshot.line,
-						column: this.fault.faultSnapshot.column,
-					},
-				},
-				this.fault.faultSnapshot,
-			);
-			this.finish();
-			return;
+			=== this.supervisorFaultSequence) {
+			return false;
 		}
+		const stackText = recordSupervisorFault(
+			this.fault,
+			this.sources,
+			this.runtime,
+			this.suspendedGuest,
+		);
+		this.results.appendLog(
+			execution.result,
+			this.runtime.frameScheduler.lastTickSequence,
+			stackText,
+		);
+		this.results.requestCapture(
+			execution.result,
+			this.runtime.frameScheduler.lastTickSequence,
+			'failed',
+		);
+		this.results.fail(
+			execution.result,
+			this.runtime.frameScheduler.lastTickSequence,
+			{
+				message: this.fault.faultSnapshot.message,
+				location: {
+					resource: this.fault.faultSnapshot.resource,
+					line: this.fault.faultSnapshot.line,
+					column: this.fault.faultSnapshot.column,
+				},
+			},
+			this.fault.faultSnapshot,
+		);
+		this.finish();
+		return true;
+	}
+
+	private advance(execution: ScenarioExecution): void {
 		if (this.maxLogicalTicks !== null
 			&& execution.logicalTicks >= this.maxLogicalTicks) {
 			this.fail(
