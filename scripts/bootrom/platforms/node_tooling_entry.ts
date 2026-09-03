@@ -324,9 +324,13 @@ async function main(): Promise<void> {
 				let passed = false;
 				try {
 					runtime.frameScheduler.clearQueuedTime();
-					const result = results.begin(
+					const run = results.beginRun(test.id, [{
 						test,
-						test.sourceTimestamp,
+						sourceRevision: test.sourceTimestamp,
+					}]);
+					const result = results.startItem(
+						run,
+						0,
 						runtime.frameScheduler.lastTickSequence,
 					);
 					execution.start(result);
@@ -349,6 +353,7 @@ async function main(): Promise<void> {
 								return;
 							}
 							frameLoop.stop();
+							results.completeRun(run);
 							for (let index = 0; index < result.logs.length; index += 1) {
 								inputLogger(`test:${test.id} ${result.logs.at(index).text}`);
 							}
@@ -364,6 +369,7 @@ async function main(): Promise<void> {
 						clock.scheduleOnce(options.ttlMs, () => {
 							frameLoop.stop();
 							execution.cancel();
+							results.cancelRun(run);
 							reject(new Error(`Scenario '${test.id}' did not finish before TTL.`));
 						});
 					});

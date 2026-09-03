@@ -33,23 +33,31 @@ import {
 } from '../../../workspace/workspace';
 import {
 	markLuaTextModelsAppliedToRuntime,
-	type CurrentLuaSourceSnapshot,
 	type LuaTextModelSourceSnapshot,
 } from '../../ui/code_tab/activation';
 import { workspaceDirtyRecords } from '../../workspace/state';
 import { ScenarioExecutionService } from '../../../testing/scenario/execution_service';
 import type {
+	ScenarioRun,
+	ScenarioRunItemSource,
 	ScenarioRunFailure,
-	ScenarioRunResult,
 } from '../../../testing/scenario/result_service';
 import { ScenarioResultService } from '../../../testing/scenario/result_service';
-import type { ScenarioTestItem } from '../../../testing/scenario/test_collection';
+import type {
+	ScenarioTestItem,
+	ScenarioTestNodeId,
+} from '../../../testing/scenario/test_collection';
 
-type PendingScenarioRun = {
-	readonly test: ScenarioTestItem;
-	readonly testSource: CurrentLuaSourceSnapshot;
+const SCENARIO_INTERACTIVE_MAX_LOGICAL_TICKS = 3000;
+
+export type ScenarioRunTestSource = ScenarioRunItemSource & {
+	readonly source: string;
+};
+
+type ScenarioRunRequest = {
+	readonly testSources: readonly ScenarioRunTestSource[];
 	readonly pendingProgramSources: ReadonlyArray<LuaTextModelSourceSnapshot>;
-	result: ScenarioRunResult | null;
+	readonly run: ScenarioRun;
 	cancelled: boolean;
 };
 
@@ -60,12 +68,12 @@ export type ScenarioMediaSessionEvent =
 type ScenarioMediaSessionListener = (event: ScenarioMediaSessionEvent) => void;
 
 type ScenarioMediaSession = {
-	readonly request: PendingScenarioRun;
+	readonly request: ScenarioRunRequest;
 	readonly slot: 0 | 1;
 	readonly canonicalRom: Uint8Array;
 	readonly canonicalSourceMedia: Blua32SourceMedia;
-	readonly canonicalBootRequired: boolean;
-	phase: 'building' | 'installed' | 'running' | 'restore_queued';
+	itemIndex: number;
+	phase: 'building' | 'running' | 'restore_queued';
 };
 
 function failureFromError(
@@ -104,13 +112,13 @@ function failureFromError(
 }
 
 /**
- * Owns the browser workbench's one derived-cartridge media session.
- * Collection, guest protocol execution, and retained results remain separate.
+ * Owns one browser Scenario run and its serial derived-cartridge media session.
+ * The workbench submits one resolved scope; it never schedules individual items.
  */
 export class ScenarioRunService {
 	public readonly results = new ScenarioResultService();
 	public readonly execution: ScenarioExecutionService;
-	private pendingRun: PendingScenarioRun | null = null;
+	private request: ScenarioRunRequest | null = null;
 	private mediaSession: ScenarioMediaSession | null = null;
 	private readonly mediaSessionListeners = new Set<ScenarioMediaSessionListener>();
 
@@ -131,32 +139,36 @@ export class ScenarioRunService {
 			input,
 			fault,
 			this.results,
-			null,
+			SCENARIO_INTERACTIVE_MAX_LOGICAL_TICKS,
 		);
 	}
 
 	public get active(): boolean {
-		return this.pendingRun !== null || this.mediaSession !== null;
+		return this.request !== null;
 	}
 
 	public start(
-		test: ScenarioTestItem,
-		testSource: CurrentLuaSourceSnapshot,
+		scopeId: ScenarioTestNodeId,
+		testSources: readonly ScenarioRunTestSource[],
 		pendingProgramSources: ReadonlyArray<LuaTextModelSourceSnapshot>,
 	): Promise<void> {
-		if (this.active) {
+		if (this.request !== null) {
 			throw new Error('A Scenario Lab media session is already active.');
 		}
-		const request: PendingScenarioRun = {
-			test,
-			testSource,
+		const run = this.results.beginRun(
+			scopeId,
+			testSources,
+		);
+		this.results.startItem(run, 0, 0);
+		const request: ScenarioRunRequest = {
+			testSources,
 			pendingProgramSources,
-			result: null,
+			run,
 			cancelled: false,
 		};
-		this.pendingRun = request;
+		this.request = request;
 		return this.runtimeTasks.schedule(
-			() => this.prepareRun(request),
+			() => this.prepareMediaSession(request),
 			error => this.endMediaSessionWithError(error),
 		);
 	}
@@ -167,166 +179,189 @@ export class ScenarioRunService {
 	}
 
 	public cancel(): void {
-		const pending = this.pendingRun;
-		if (pending !== null) {
-			pending.cancelled = true;
-			return;
-		}
-		const session = this.mediaSession!;
-		if (session.phase !== 'running') {
-			session.request.cancelled = true;
+		const request = this.request!;
+		request.cancelled = true;
+		const session = this.mediaSession;
+		if (session === null || session.phase !== 'running') {
 			return;
 		}
 		this.execution.cancel();
-		this.queueCanonicalRestore(session);
+		this.results.cancelRun(request.run);
+		this.queueCanonicalRestore(session, { type: 'complete' });
 	}
 
-	/** Called after the workbench host has offered the completed guest tick for presentation. */
+	/** Called after the host has offered the completed guest tick for presentation. */
 	public finishHostFrame(presentationSequence: number, presented: boolean): void {
 		if (presented) {
 			this.execution.didPresent(presentationSequence);
 		}
 		const session = this.mediaSession;
-		if (session !== null
-			&& session.phase === 'running'
-			&& !this.execution.active) {
-			this.queueCanonicalRestore(session);
+		if (session === null
+			|| session.phase !== 'running'
+			|| this.execution.active) {
+			return;
 		}
+		const request = session.request;
+		if (request.cancelled) {
+			this.results.cancelRun(request.run);
+			this.queueCanonicalRestore(session, { type: 'complete' });
+			return;
+		}
+		const nextItemIndex = session.itemIndex + 1;
+		if (nextItemIndex === request.testSources.length) {
+			this.results.completeRun(request.run);
+			this.queueCanonicalRestore(session, { type: 'complete' });
+			return;
+		}
+		session.itemIndex = nextItemIndex;
+		session.phase = 'building';
+		this.results.startItem(request.run, nextItemIndex, 0);
+		this.runtimeTasks.schedule(
+			async () => {
+				try {
+					await this.prepareItem(session);
+				} catch (error) {
+					this.failPreparation(request, error);
+				}
+			},
+			error => this.endMediaSessionWithError(error),
+		);
 	}
 
-	private async prepareRun(request: PendingScenarioRun): Promise<void> {
+	private async prepareMediaSession(request: ScenarioRunRequest): Promise<void> {
 		try {
+			if (request.cancelled) {
+				this.cancelBeforeMediaSession(request);
+				return;
+			}
 			await applyAllWorkspaceSourceOverrides(
 				this.storage,
 				this.sources,
 				workspaceDirtyRecords,
 			);
 			applyLuaCodeTabSources(this.sources, request.pendingProgramSources);
-			const result = this.results.begin(
-				request.test,
-				request.testSource.revision,
-				0,
-			);
-			request.result = result;
-			if (request.cancelled) {
-				this.results.cancel(result, 0);
-				this.pendingRun = null;
-				this.emitMediaSessionEvent({ type: 'complete' });
-				return;
+			if (blua32MediaRequiresRebuild(this.sources)) {
+				prepareBlua32MediaBoot(
+					this.sources,
+					this.luaTooling,
+					this.runtime,
+					true,
+				);
 			}
-
-			const canonicalBootRequired = blua32MediaRequiresRebuild(this.sources);
-			const interpreter = prepareBlua32MediaBoot(
-				this.sources,
-				this.luaTooling,
-				this.runtime,
-				canonicalBootRequired,
-			);
 			markLuaTextModelsAppliedToRuntime(request.pendingProgramSources);
-			const slot = request.test.resource.domain;
+			const slot = request.testSources[0].test.resource.domain;
 			const cartridge = this.sources.cartridgeSlots[slot]!;
 			const session: ScenarioMediaSession = {
 				request,
 				slot,
 				canonicalRom: cartridge.rom.bytes,
 				canonicalSourceMedia: this.sources.currentBlua32Media,
-				canonicalBootRequired,
+				itemIndex: 0,
 				phase: 'building',
 			};
 			this.mediaSession = session;
-			const scenario = await buildScenarioCartridge({
-				systemRom: this.sources.systemRom.bytes,
-				cartridge: session.canonicalRom,
-				test: {
-					sourcePath: request.test.resource.path,
-					source: request.testSource.source,
-				},
-				ramByteCount: this.runtime.machine.memory.ramByteCount(),
-				optLevel: this.sources.realtimeCompileOptLevel,
-			});
 			if (request.cancelled) {
-				this.results.cancel(result, 0);
-				if (session.canonicalBootRequired) {
-					this.bootCanonicalMedia(session, interpreter);
-				}
-				this.pendingRun = null;
-				this.mediaSession = null;
-				this.emitMediaSessionEvent({ type: 'complete' });
+				this.cancelDuringBuild(session);
 				return;
 			}
-
-			const canonicalImages = session.canonicalSourceMedia.cartridgeSlots;
-			const scenarioImages = [
-				canonicalImages[0],
-				canonicalImages[1],
-			] as [typeof canonicalImages[0], typeof canonicalImages[1]];
-			scenarioImages[slot] = createBlua32SourceImage(
-				scenario.linked.layout,
-				scenario.linked.symbols,
-			);
-			this.runtime.machine.cartridgeController.installRom(slot, scenario.layer.bytes);
-			this.sources.currentBlua32Media = {
-				system: session.canonicalSourceMedia.system,
-				cartridgeSlots: scenarioImages,
-			};
-			session.phase = 'installed';
-			this.bootMedia(interpreter);
-			this.pendingRun = null;
-			session.phase = 'running';
-			this.execution.start(result);
+			await this.prepareItem(session);
 		} catch (error) {
 			this.failPreparation(request, error);
 		}
 	}
 
-	private failPreparation(request: PendingScenarioRun, error: unknown): void {
-		const result = request.result;
-		if (result !== null && result.state === 'preparing') {
-			this.results.fail(
-				result,
-				0,
-				failureFromError(this.sources, request.test, error),
-				null,
-			);
+	private async prepareItem(session: ScenarioMediaSession): Promise<void> {
+		const request = session.request;
+		const testSource = request.testSources[session.itemIndex];
+		const scenario = await buildScenarioCartridge({
+				systemRom: this.sources.systemRom.bytes,
+				cartridge: session.canonicalRom,
+				test: {
+					sourcePath: testSource.test.resource.path,
+					source: testSource.source,
+				},
+				ramByteCount: this.runtime.machine.memory.ramByteCount(),
+				optLevel: this.sources.realtimeCompileOptLevel,
+		});
+		if (request.cancelled) {
+			this.cancelDuringBuild(session);
+			return;
 		}
+		const canonicalImages = session.canonicalSourceMedia.cartridgeSlots;
+		const scenarioImages = [
+			canonicalImages[0],
+			canonicalImages[1],
+		] as [typeof canonicalImages[0], typeof canonicalImages[1]];
+		scenarioImages[session.slot] = createBlua32SourceImage(
+			scenario.linked.layout,
+			scenario.linked.symbols,
+		);
+		this.runtime.machine.cartridgeController.installRom(
+			session.slot,
+			scenario.layer.bytes,
+		);
+		this.sources.currentBlua32Media = {
+			system: session.canonicalSourceMedia.system,
+			cartridgeSlots: scenarioImages,
+		};
+		this.bootMedia(prepareBlua32MediaBoot(
+			this.sources,
+			this.luaTooling,
+			this.runtime,
+			false,
+		));
+		session.phase = 'running';
+		this.execution.start(request.run.items[session.itemIndex]);
+	}
+
+	private cancelBeforeMediaSession(request: ScenarioRunRequest): void {
+		this.results.cancel(request.run.items[0], 0);
+		this.results.cancelRun(request.run);
+		this.request = null;
+		this.emitMediaSessionEvent({ type: 'complete' });
+	}
+
+	private cancelDuringBuild(session: ScenarioMediaSession): void {
+		const run = session.request.run;
+		this.results.cancel(run.items[session.itemIndex], 0);
+		this.results.cancelRun(run);
+		this.queueCanonicalRestore(session, { type: 'complete' });
+	}
+
+	private failPreparation(request: ScenarioRunRequest, error: unknown): void {
+		const result = this.results.activeResult!;
+		this.results.fail(
+			result,
+			0,
+			failureFromError(this.sources, result.test, error),
+			null,
+		);
+		this.results.failRun(request.run);
 		const session = this.mediaSession;
-		if (session !== null
-			&& (session.canonicalBootRequired || session.phase !== 'building')) {
-			this.bootCanonicalMedia(
-				session,
-				prepareBlua32MediaBoot(
-					this.sources,
-					this.luaTooling,
-					this.runtime,
-					false,
-				),
-			);
+		if (session !== null) {
+			this.queueCanonicalRestore(session, { type: 'error', error });
+			return;
 		}
-		this.mediaSession = null;
-		this.pendingRun = null;
+		this.request = null;
 		this.emitMediaSessionEvent({ type: 'error', error });
 	}
 
-	private queueCanonicalRestore(session: ScenarioMediaSession): void {
+	private queueCanonicalRestore(
+		session: ScenarioMediaSession,
+		event: ScenarioMediaSessionEvent,
+	): void {
 		session.phase = 'restore_queued';
 		this.runtimeTasks.schedule(() => {
-			this.bootCanonicalMedia(
-				session,
-				prepareBlua32MediaBoot(
-					this.sources,
-					this.luaTooling,
-					this.runtime,
-					false,
-				),
-			);
+			this.restoreCanonicalMedia(session);
 			this.mediaSession = null;
-			this.emitMediaSessionEvent({ type: 'complete' });
+			this.request = null;
+			this.emitMediaSessionEvent(event);
 		}, error => this.endMediaSessionWithError(error));
 	}
 
 	private endMediaSessionWithError(error: unknown): void {
-		this.pendingRun = null;
 		this.mediaSession = null;
+		this.request = null;
 		this.emitMediaSessionEvent({ type: 'error', error });
 	}
 
@@ -336,16 +371,18 @@ export class ScenarioRunService {
 		}
 	}
 
-	private bootCanonicalMedia(
-		session: ScenarioMediaSession,
-		interpreter: LuaInterpreter,
-	): void {
+	private restoreCanonicalMedia(session: ScenarioMediaSession): void {
 		this.runtime.machine.cartridgeController.installRom(
 			session.slot,
 			session.canonicalRom,
 		);
 		this.sources.currentBlua32Media = session.canonicalSourceMedia;
-		this.bootMedia(interpreter);
+		this.bootMedia(prepareBlua32MediaBoot(
+			this.sources,
+			this.luaTooling,
+			this.runtime,
+			false,
+		));
 	}
 
 	private bootMedia(interpreter: LuaInterpreter): void {

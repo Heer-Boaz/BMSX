@@ -25,7 +25,7 @@ import {
 import type { RuntimeSourceState } from '../../runtime/sources';
 import { SuspendedGuestSession } from '../../runtime/suspended_guest';
 import {
-	type ScenarioRunResult,
+	type ScenarioTestResult,
 	ScenarioResultService,
 } from './result_service';
 import { ScenarioActionEffectObservation } from './actioneffect_observation';
@@ -101,7 +101,7 @@ type ScenarioExecutionPhase =
 	| ScenarioUpdatePhase;
 
 type ScenarioExecution = {
-	readonly result: ScenarioRunResult;
+	readonly result: ScenarioTestResult;
 	phase: ScenarioExecutionPhase;
 	logicalTicks: number;
 	tickPrepared: boolean;
@@ -121,7 +121,7 @@ export class ScenarioExecutionService {
 	private readonly scheduledCommands = new Map<number, ScheduledScenarioCommand[]>();
 	private readonly updateArgs: Value[] = [0];
 	private execution: ScenarioExecution | null = null;
-	private presentationResult: ScenarioRunResult | null = null;
+	private presentationResult: ScenarioTestResult | null = null;
 	private supervisorFaultSequence = 0;
 
 	public constructor(
@@ -139,12 +139,12 @@ export class ScenarioExecutionService {
 		return this.execution !== null;
 	}
 
-	public get activeResult(): ScenarioRunResult | null {
+	public get activeResult(): ScenarioTestResult | null {
 		const execution = this.execution;
 		return execution === null ? null : execution.result;
 	}
 
-	public start(result: ScenarioRunResult): void {
+	public start(result: ScenarioTestResult): void {
 		if (this.execution !== null) {
 			throw new Error('A scenario execution is already active.');
 		}

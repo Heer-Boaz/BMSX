@@ -8,8 +8,10 @@ import {
 
 export type ScenarioTestId = `scenario:${0 | 1}:${string}`;
 export type ScenarioTestRootId = `scenario-root:${0 | 1}`;
+export type ScenarioTestNodeId = ScenarioTestRootId | ScenarioTestId;
 
 export type ScenarioTestItem = {
+	readonly kind: 'test';
 	readonly id: ScenarioTestId;
 	readonly parentId: ScenarioTestRootId;
 	readonly label: string;
@@ -22,13 +24,15 @@ export type ScenarioTestItem = {
 };
 
 export type ScenarioTestRoot = {
+	readonly kind: 'root';
 	readonly id: ScenarioTestRootId;
 	readonly domain: 0 | 1;
-	readonly projectLabel: string;
 	readonly label: string;
 	readonly testCount: number;
 	children: readonly ScenarioTestItem[] | null;
 };
+
+export type ScenarioTestNode = ScenarioTestRoot | ScenarioTestItem;
 
 type ScenarioTestCandidate = {
 	readonly assetId: string;
@@ -67,12 +71,11 @@ export class ScenarioTestCollection {
 			if (candidates.length > 0) {
 				candidates.sort((left, right) => left.sourcePath.localeCompare(right.sourcePath));
 				const rootId: ScenarioTestRootId = `scenario-root:${domain}`;
-				const projectLabel = computeSourceLabel(cartridge.projectRootPath);
 				const root: ScenarioTestRoot = {
+					kind: 'root',
 					id: rootId,
 					domain,
-					projectLabel,
-					label: `CART ${domain} / ${projectLabel}`,
+					label: computeSourceLabel(cartridge.projectRootPath),
 					testCount: candidates.length,
 					children: null,
 				};
@@ -95,11 +98,12 @@ export class ScenarioTestCollection {
 			const candidate = candidates[index];
 			const sourceLabel = computeSourceLabel(candidate.sourcePath);
 			let testLabel = sourceLabel.slice(0, -SCENARIO_TEST_SOURCE_SUFFIX.length);
-			const projectPrefix = `${root.projectLabel}_`;
+			const projectPrefix = `${root.label}_`;
 			if (testLabel.startsWith(projectPrefix)) {
 				testLabel = testLabel.slice(projectPrefix.length);
 			}
 			const test: ScenarioTestItem = {
+				kind: 'test',
 				id: scenarioTestId(root.domain, candidate.assetId),
 				parentId: rootId,
 				label: testLabel.replaceAll('_', ' '),
@@ -122,5 +126,9 @@ export class ScenarioTestCollection {
 			}
 		}
 		throw new Error(`Scenario '${sourcePath}' is not packaged in cartridge ${domain}.`);
+	}
+
+	public resolveNode(node: ScenarioTestNode): readonly ScenarioTestItem[] {
+		return node.kind === 'root' ? this.resolveRoot(node.id) : [node];
 	}
 }

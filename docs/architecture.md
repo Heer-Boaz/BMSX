@@ -914,16 +914,19 @@ registration is invented before authored subgroups exist. Expansion cards and a
 second unrelated executable cartridge do not become a second project in the
 current workspace.
 
-One `ScenarioRun` retains the resolved request, its immutable source snapshots,
-ordered test items, aggregate state and cancellation. Test items move through
+One `ScenarioRun` retains the resolved request scope, ordered test items,
+aggregate state and cancellation; its active media request retains the immutable
+per-run source snapshots only for the execution lifetime. Test items move through
 queued and running into a terminal result. Finalizing or cancelling the run
-marks every still queued or running item skipped rather than silently omitting
-it. One item failure does not prevent later selected items from running; a host
+marks every still queued item skipped rather than silently omitting it; the
+active item retains its own cancelled result. One item failure does not prevent
+later selected items from running; a host
 media/session failure terminates the run. `ScenarioResultService` owns bounded
 current-first run history and the per-item logs, captures, failures and semantic
 facts. A child result is not promoted to an unrelated top-level run. Rerun uses
-the previous resolved request rather than whichever row happens to be selected
-afterward. This is the same retained run/result split used by VS Code: explorer
+the previous run's resolved item scope rather than whichever row happens to be
+selected afterward, while taking one new immutable source batch for that new
+run. This is the same retained run/result split used by VS Code: explorer
 actions submit selected nodes in one request, the test service owns cancellation,
 and one live result retains all included items
 ([selected-node request](https://github.com/microsoft/vscode/blob/4290bede3cbc24e3fe9c979b655cebdf3b4e5f6b/src/vs/workbench/contrib/testing/browser/testExplorerActions.ts#L164-L182),
@@ -935,7 +938,12 @@ protocol against one Runtime and installs a retained raw ICU playback source.
 Scheduled input is applied before the exact logical tick's ICU sample; guest
 closures that span more than one machine tick do not stretch a requested input
 hold. It knows logical machine/scenario ticks but not elapsed host time or pacing
-policy. Each capture records its requesting logical tick and is bound only when
+policy. The browser run owner supplies a 3000-logical-tick item deadline, equal
+to the default sixty-second PAL test budget but consumed as scenario time; BIOS
+monitor ticks therefore do not consume it. Node automation derives the same
+execution-owner deadline from its explicit test TTL and still runs those ticks
+without wall-time pacing. A timed-out item fails and the retained run proceeds
+to its next queued item. Each capture records its requesting logical tick and is bound only when
 `VideoPresenter` accepts an actual presentation.
 
 The browser workbench adds an explicit scenario **media session** above those

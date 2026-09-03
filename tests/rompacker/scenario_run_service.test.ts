@@ -68,7 +68,10 @@ test('browser scenario media session installs derived execution media and restor
 	const input = new Input(clock, inputHub, -1);
 	try {
 		await mkdir(ROOT, { recursive: true });
-		const fixture = await buildScenarioMediaFixture(ROOT, PACKAGED_TEST_SOURCE);
+		const fixture = await buildScenarioMediaFixture(ROOT, [{
+			path: SCENARIO_FIXTURE_TEST_SOURCE_PATH,
+			source: PACKAGED_TEST_SOURCE,
+		}]);
 		const media = await loadRomToolingMedia(
 			fixture.systemRom,
 			[fixture.cartRom, null],
@@ -125,8 +128,12 @@ test('browser scenario media session installs derived execution media and restor
 		});
 
 		const started = runService.start(
-			scenario,
-			{ source: currentTestSource, revision: 77 },
+			scenario.id,
+			[{
+				test: scenario,
+				source: currentTestSource,
+				sourceRevision: 77,
+			}],
 			[],
 		);
 		microtasks.flush();
@@ -135,7 +142,7 @@ test('browser scenario media session installs derived execution media and restor
 		assert.deepEqual(errors, []);
 		assert.equal(runService.active, true);
 		assert.equal(runService.execution.active, true);
-		assert.equal(runService.results.liveResult?.sourceRevision, 77);
+		assert.equal(runService.results.activeResult?.sourceRevision, 77);
 		assert.equal(canonicalLayer.bytes, canonicalRom);
 		assert.equal(
 			sources.cartridgeSlots[0]!.luaSources.path2lua[SCENARIO_FIXTURE_TEST_SOURCE_PATH].src,
@@ -154,7 +161,8 @@ test('browser scenario media session installs derived execution media and restor
 		);
 
 		runService.cancel();
-		assert.equal(runService.results.results[0].state, 'cancelled');
+		assert.equal(runService.results.runs[0].state, 'cancelled');
+		assert.equal(runService.results.runs[0].items[0].state, 'cancelled');
 		const drained = runtimeTasks.schedule(() => {}, error => errors.push(error));
 		microtasks.flush();
 		await drained;

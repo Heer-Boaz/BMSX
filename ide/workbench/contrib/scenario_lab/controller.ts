@@ -28,16 +28,23 @@ import {
 	updateScenarioLabStatus,
 } from './navigation';
 import {
-	selectedScenarioTest,
 	refreshScenarioLabProjection,
+	selectedScenarioTestNode,
 } from './projection';
 import {
 	handleScenarioLabPointerInput,
 	ScenarioLabPointerResult,
 } from './pointer';
 import type { ScenarioRunService } from './run_service';
-import type { ScenarioMediaSessionEvent } from './run_service';
-import type { ScenarioTestCollection } from '../../../testing/scenario/test_collection';
+import type {
+	ScenarioMediaSessionEvent,
+	ScenarioRunTestSource,
+} from './run_service';
+import type {
+	ScenarioTestCollection,
+	ScenarioTestItem,
+	ScenarioTestNodeId,
+} from '../../../testing/scenario/test_collection';
 import type { ScenarioLabViewState } from './view_model';
 import { createScenarioLabViewState } from './view_state';
 import type { ScenarioSourceLocation } from '../../../testing/scenario/result_service';
@@ -126,8 +133,10 @@ export class ScenarioLabController {
 		const view = this.view!;
 		switch (command) {
 			case 'scenarioLab.run':
-			case 'scenarioLab.rerun':
 				this.runSelected(view);
+				return;
+			case 'scenarioLab.rerun':
+				this.rerunLast(view);
 				return;
 			case 'scenarioLab.cancel':
 				this.runs.cancel();
@@ -245,14 +254,40 @@ export class ScenarioLabController {
 	}
 
 	private runSelected(view: ScenarioLabViewState): void {
-		const test = selectedScenarioTest(view)!;
-		const testSource = captureCurrentLuaSource(this.sources, test.resource);
+		const node = selectedScenarioTestNode(view)!;
+		this.startRun(view, node.id, this.collection.resolveNode(node));
+	}
+
+	private rerunLast(view: ScenarioLabViewState): void {
+		const previous = this.runs.results.runs[0];
+		const tests = new Array<ScenarioTestItem>(previous.items.length);
+		for (let index = 0; index < previous.items.length; index += 1) {
+			tests[index] = previous.items[index].test;
+		}
+		this.startRun(view, previous.scopeId, tests);
+	}
+
+	private startRun(
+		view: ScenarioLabViewState,
+		scopeId: ScenarioTestNodeId,
+		tests: readonly ScenarioTestItem[],
+	): void {
+		const testSources = new Array<ScenarioRunTestSource>(tests.length);
+		for (let index = 0; index < tests.length; index += 1) {
+			const test = tests[index];
+			const snapshot = captureCurrentLuaSource(this.sources, test.resource);
+			testSources[index] = {
+				test,
+				source: snapshot.source,
+				sourceRevision: snapshot.revision,
+			};
+		}
 		const programSources = capturePendingLuaTextModelSources(this.sources);
 		view.runActive = true;
 		updateScenarioLabStatus(view);
 		void this.runs.start(
-			test,
-			testSource,
+			scopeId,
+			testSources,
 			programSources,
 		);
 		deactivateEditor(this.editor, this.overlayRenderer, this.audioOutput);

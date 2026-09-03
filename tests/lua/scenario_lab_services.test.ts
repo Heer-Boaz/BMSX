@@ -10,7 +10,7 @@ import {
 	SCENARIO_RESULT_CAPTURE_RETAIN_COUNT,
 	SCENARIO_RESULT_FSM_TRANSITION_RETAIN_COUNT,
 	SCENARIO_RESULT_LOG_RETAIN_COUNT,
-	SCENARIO_RESULT_RETAIN_COUNT,
+	SCENARIO_RUN_RETAIN_COUNT,
 	ScenarioResultService,
 } from '../../ide/testing/scenario/result_service';
 import { ScenarioActionEffectObservation } from '../../ide/testing/scenario/actioneffect_observation';
@@ -49,7 +49,7 @@ test('scenario collection scans cartridge registries once and resolves retained 
 	assert.equal(collection.roots.length, 1);
 	const root = collection.roots[0];
 	assert.equal(root.id, 'scenario-root:0');
-	assert.equal(root.label, 'CART 0 / nemesis_s');
+	assert.equal(root.label, 'nemesis_s');
 	assert.equal(root.testCount, 2);
 	assert.equal(root.children, null);
 
@@ -77,7 +77,8 @@ test('scenario result service retains current-first runs and bounded ordered out
 	]));
 	const item = collection.resolveRoot(collection.roots[0].id)[0];
 	const service = new ScenarioResultService();
-	const first = service.begin(item, 7, 100);
+	const firstRun = service.beginRun(item.id, [{ test: item, sourceRevision: 7 }]);
+	const first = service.startItem(firstRun, 0, 100);
 	service.markRunning(first);
 	for (let index = 0; index < SCENARIO_RESULT_LOG_RETAIN_COUNT + 2; index += 1) {
 		service.appendLog(first, index, `log ${index}`);
@@ -154,17 +155,77 @@ test('scenario result service retains current-first runs and bounded ordered out
 		'deactivate',
 	);
 	service.pass(first, 200);
-	assert.equal(service.liveResult, null);
+	service.completeRun(firstRun);
+	assert.equal(service.liveRun, null);
 	assert.equal(first.state, 'passed');
 	assert.equal(first.endTick, 200);
+	assert.equal(firstRun.state, 'passed');
+	assert.equal(firstRun.completedCount, 1);
+	assert.equal(firstRun.passedCount, 1);
 
-	for (let index = 0; index < SCENARIO_RESULT_RETAIN_COUNT; index += 1) {
-		const result = service.begin(item, index, index);
+	for (let index = 0; index < SCENARIO_RUN_RETAIN_COUNT; index += 1) {
+		const run = service.beginRun(item.id, [{ test: item, sourceRevision: index }]);
+		const result = service.startItem(run, 0, index);
 		service.cancel(result, index + 1);
+		service.cancelRun(run);
 	}
-	assert.equal(service.results.length, SCENARIO_RESULT_RETAIN_COUNT);
-	assert.equal(service.results[0].sourceRevision, SCENARIO_RESULT_RETAIN_COUNT - 1);
-	assert.equal(service.results.includes(first), false);
+	assert.equal(service.runs.length, SCENARIO_RUN_RETAIN_COUNT);
+	assert.equal(
+		service.runs[0].items[0].sourceRevision,
+		SCENARIO_RUN_RETAIN_COUNT - 1,
+	);
+	assert.equal(service.runs.includes(firstRun), false);
+	assert.equal(service.hasRetainedResult(firstRun.id), false);
+	assert.equal(service.hasRetainedResult(first.id), false);
+	assert.equal(service.latestRunForScope(item.id), service.runs[0]);
+	assert.equal(service.latestResultForTest(item.id), service.runs[0].items[0]);
+});
+
+test('scenario result service retains aggregate failure and cancellation item states', () => {
+	const collection = new ScenarioTestCollection(createScenarioTestSourceState([
+		createScenarioTestSourceRecord('tests/carts/nemesis_s/a_assert.lua', 10),
+		createScenarioTestSourceRecord('tests/carts/nemesis_s/b_assert.lua', 20),
+		createScenarioTestSourceRecord('tests/carts/nemesis_s/c_assert.lua', 30),
+	]));
+	const root = collection.roots[0];
+	const tests = collection.resolveRoot(root.id);
+	const service = new ScenarioResultService();
+	const run = service.beginRun(root.id, tests.map((item, index) => ({
+		test: item,
+		sourceRevision: index + 1,
+	})));
+	const failed = service.startItem(run, 0, 0);
+	service.fail(failed, 4, {
+		message: 'first failed',
+		location: { resource: failed.test.resource, line: 2, column: 1 },
+	}, null);
+	assert.equal(service.liveRun, run);
+	assert.equal(service.activeResult, null);
+	const passed = service.startItem(run, 1, 0);
+	service.pass(passed, 5);
+	const last = service.startItem(run, 2, 0);
+	service.pass(last, 6);
+	service.completeRun(run);
+	assert.equal(run.state, 'failed');
+	assert.equal(run.completedCount, 3);
+	assert.equal(run.passedCount, 2);
+	assert.equal(run.failedCount, 1);
+
+	const cancelled = service.beginRun(root.id, tests.map(item => ({
+		test: item,
+		sourceRevision: 1,
+	})));
+	const active = service.startItem(cancelled, 0, 0);
+	service.cancel(active, 2);
+	service.cancelRun(cancelled);
+	assert.deepEqual(cancelled.items.map(item => item.state), [
+		'cancelled',
+		'skipped',
+		'skipped',
+	]);
+	assert.equal(cancelled.completedCount, 3);
+	assert.equal(cancelled.cancelledCount, 1);
+	assert.equal(cancelled.skippedCount, 2);
 });
 
 test('scenario FSM observation consumes the fixed guest channel and fails on overflow', () => {
@@ -192,7 +253,9 @@ test('scenario FSM observation consumes the fixed guest channel and fails on ove
 		createScenarioTestSourceRecord('tests/carts/nemesis_s/a_assert.lua', 10),
 	]));
 	const service = new ScenarioResultService();
-	const result = service.begin(collection.resolveRoot(collection.roots[0].id)[0], 1, 10);
+	const item = collection.resolveRoot(collection.roots[0].id)[0];
+	const run = service.beginRun(item.id, [{ test: item, sourceRevision: 1 }]);
+	const result = service.startItem(run, 0, 10);
 	const observation = new ScenarioFsmTransitionObservation(
 		channel,
 		stringPool,
@@ -246,7 +309,9 @@ test('scenario ActionEffect observation consumes ordered producer facts and fail
 		createScenarioTestSourceRecord('tests/carts/nemesis_s/a_assert.lua', 10),
 	]));
 	const service = new ScenarioResultService();
-	const result = service.begin(collection.resolveRoot(collection.roots[0].id)[0], 1, 10);
+	const item = collection.resolveRoot(collection.roots[0].id)[0];
+	const run = service.beginRun(item.id, [{ test: item, sourceRevision: 1 }]);
+	const result = service.startItem(run, 0, 10);
 	const observation = new ScenarioActionEffectObservation(
 		channel,
 		stringPool,
@@ -286,7 +351,8 @@ test('scenario failure retains authored fault navigation', () => {
 	]));
 	const item = collection.resolveRoot(collection.roots[0].id)[0];
 	const service = new ScenarioResultService();
-	const result = service.begin(item, 10, 1);
+	const run = service.beginRun(item.id, [{ test: item, sourceRevision: 10 }]);
+	const result = service.startItem(run, 0, 1);
 	const fault = {
 		message: 'assertion failed',
 		resource: item.resource,

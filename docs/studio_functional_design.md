@@ -1034,12 +1034,19 @@ Een afzonderlijk headless proces is een testhost, geen PIE-runtime in Studio.
 De huidige cartprojectroot is een uitvoerbare suite. Een runrequest resolveert
 de geselecteerde collectie-node eenmaal, legt de volledige testbronset en open
 programmasourcebatch eenmaal vast en bewaart die scope voor rerun. Een itemfout
-annuleert de overige items niet. Cancel beëindigt het actieve item en markeert
-alle nog niet voltooide items als skipped. Een host-/mediafout beëindigt de hele
+annuleert de overige items niet. Cancel bewaart het actieve item als cancelled
+en markeert de nog queued items als skipped. Een host-/mediafout beëindigt de hele
 run. De UI roept dus niet in een lus een single-testcommand aan en construeert
 geen eigen queue. Nieuwe category-/foldernodes worden pas toegevoegd wanneer
 zulke groepen werkelijk authored zijn; zij gebruiken dan dezelfde subtree-
 resolutie.
+
+Een browseritem heeft een vaste grens van 3000 scenario-logical-ticks. Dat is
+dezelfde orde als het bestaande zestigsecondenbudget van de PAL headless-host,
+maar geen wandtimer: vrijwillige BIOS-monitoruitvoering pauzeert scenario-tijd.
+Timeout faalt alleen het item en laat de runowner het volgende queued item
+starten. Headless automation blijft haar grens uit de expliciete test-TTL
+afleiden en voert diezelfde execution owner ongepaced uit.
 
 Voor de browser bestaat een run uit één expliciete media session. De huidige
 workspacegeneratie wordt eerst de canonieke gewone ROM. Voor ieder geselecteerd

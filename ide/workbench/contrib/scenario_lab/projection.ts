@@ -1,10 +1,10 @@
 import type {
-	ScenarioRunResult,
+	ScenarioRun,
+	ScenarioTestResult,
 	ScenarioSourceLocation,
 } from '../../../testing/scenario/result_service';
 import type {
-	ScenarioTestId,
-	ScenarioTestItem,
+	ScenarioTestNode,
 } from '../../../testing/scenario/test_collection';
 import type {
 	ScenarioLabResultPaneState,
@@ -16,24 +16,11 @@ import type {
 
 type ScenarioLabIdentifiedRow = ScenarioLabTestRow | ScenarioLabResultRow;
 
-function latestResultForTest(
-	state: ScenarioLabViewState,
-	testId: ScenarioTestId,
-): ScenarioRunResult | null {
-	const results = state.resultService.results;
-	for (let index = 0; index < results.length; index += 1) {
-		if (results[index].test.id === testId) {
-			return results[index];
-		}
-	}
-	return null;
-}
-
 export function rebuildScenarioLabTestRows(state: ScenarioLabViewState): void {
 	const pane = state.testPane;
 	const selectedId = pane.selectionIndex >= 0
 		? pane.rows[pane.selectionIndex].id
-		: pane.selectedTestId;
+		: pane.selectedNodeId;
 	pane.rows.length = 0;
 	const roots = state.collection.roots;
 	for (let rootIndex = 0; rootIndex < roots.length; rootIndex += 1) {
@@ -78,7 +65,7 @@ export function rebuildScenarioLabTestRows(state: ScenarioLabViewState): void {
 	if (pane.selectionIndex < 0) {
 		pane.selectionIndex = firstScenarioTestRowIndex(pane);
 	}
-	updateSelectedScenarioTest(state);
+	updateSelectedScenarioNode(state);
 	pane.hoverIndex = -1;
 	pane.rowsDirty = false;
 	pane.textDirty = true;
@@ -108,50 +95,28 @@ function findScenarioLabRowIndex(
 	return -1;
 }
 
-export function updateSelectedScenarioTest(state: ScenarioLabViewState): void {
+export function updateSelectedScenarioNode(state: ScenarioLabViewState): void {
 	const pane = state.testPane;
-	let nextId: ScenarioTestId | null = null;
-	if (pane.selectionIndex >= 0) {
-		const row = pane.rows[pane.selectionIndex];
-		if (row.kind === 'test') {
-			nextId = row.test.id;
-		}
-	}
-	if (pane.selectedTestId !== nextId) {
-		pane.selectedTestId = nextId;
-		state.resultPane.projectedTestId = null;
+	const nextId = pane.selectionIndex < 0
+		? null
+		: pane.rows[pane.selectionIndex].id;
+	if (pane.selectedNodeId !== nextId) {
+		pane.selectedNodeId = nextId;
+		state.resultPane.projectedNodeId = null;
 	}
 }
 
-function appendScenarioResultRows(
+function appendScenarioResultDetails(
 	pane: ScenarioLabResultPaneState,
-	result: ScenarioRunResult,
+	run: ScenarioRun,
+	result: ScenarioTestResult,
 ): void {
-	const expanded = pane.expandedResultIds.has(result.id);
-	const sourceLocation: ScenarioSourceLocation = {
-		resource: result.test.resource,
-		line: 1,
-		column: 1,
-	};
-	pane.rows.push({
-		id: result.id,
-		kind: 'result',
-		result,
-		location: sourceLocation,
-		expandable: true,
-		expanded,
-		text: '',
-		twistieLeft: 0,
-		twistieRight: 0,
-	});
-	if (!expanded) {
-		return;
-	}
 	const failure = result.failure;
 	if (failure !== null) {
 		pane.rows.push({
 			id: `${result.id}:failure`,
 			kind: 'failure',
+			run,
 			result,
 			failure,
 			location: failure.location,
@@ -167,6 +132,7 @@ function appendScenarioResultRows(
 		pane.rows.push({
 			id: log.id,
 			kind: 'log',
+			run,
 			result,
 			log,
 			location: log.location,
@@ -184,6 +150,7 @@ function appendScenarioResultRows(
 			pane.rows.push({
 				id: transition.id,
 				kind: 'fsm_transition',
+				run,
 				result,
 				trace: fsmTrace,
 				transition,
@@ -202,6 +169,7 @@ function appendScenarioResultRows(
 			pane.rows.push({
 				id: fact.id,
 				kind: 'actioneffect_fact',
+				run,
 				result,
 				trace: actionEffectTrace,
 				fact,
@@ -218,6 +186,7 @@ function appendScenarioResultRows(
 		pane.rows.push({
 			id: capture.id,
 			kind: 'capture',
+			run,
 			result,
 			capture,
 			location: capture.location,
@@ -230,14 +199,54 @@ function appendScenarioResultRows(
 	}
 }
 
-function retainedResultExists(state: ScenarioLabViewState, resultId: string): boolean {
-	const results = state.resultService.results;
-	for (let index = 0; index < results.length; index += 1) {
-		if (results[index].id === resultId) {
-			return true;
+function appendScenarioRunRows(
+	pane: ScenarioLabResultPaneState,
+	run: ScenarioRun,
+): void {
+	const expanded = pane.expandedResultIds.has(run.id);
+	pane.rows.push({
+		id: run.id,
+		kind: 'run',
+		run,
+		result: null,
+		expandable: true,
+		expanded,
+		text: '',
+		twistieLeft: 0,
+		twistieRight: 0,
+	});
+	if (!expanded) {
+		return;
+	}
+	const items = run.items;
+	for (let index = 0; index < items.length; index += 1) {
+		const result = items[index];
+		const resultExpanded = pane.expandedResultIds.has(result.id);
+		const sourceLocation: ScenarioSourceLocation = {
+			resource: result.test.resource,
+			line: 1,
+			column: 1,
+		};
+		pane.rows.push({
+			id: result.id,
+			kind: 'result',
+			run,
+			result,
+			location: sourceLocation,
+			expandable: true,
+			expanded: resultExpanded,
+			text: '',
+			twistieLeft: 0,
+			twistieRight: 0,
+		});
+		if (resultExpanded) {
+			appendScenarioResultDetails(pane, run, result);
 		}
 	}
-	return false;
+}
+
+function retainedResultExists(state: ScenarioLabViewState, resultId: string): boolean {
+	return state.resultService.hasRetainedResult(resultId);
 }
 
 function pruneExpandedScenarioResults(state: ScenarioLabViewState): void {
@@ -257,7 +266,7 @@ export function refreshScenarioLabProjection(state: ScenarioLabViewState): void 
 		rebuildScenarioLabTestRows(state);
 	}
 	if (resultPane.projectedRevision === resultService.revision
-		&& resultPane.projectedTestId === testPane.selectedTestId) {
+		&& resultPane.projectedNodeId === testPane.selectedNodeId) {
 		return;
 	}
 
@@ -266,45 +275,49 @@ export function refreshScenarioLabProjection(state: ScenarioLabViewState): void 
 		: null;
 	pruneExpandedScenarioResults(state);
 	resultPane.rows.length = 0;
-	let newestResultId: string | null = null;
-	const selectedTestId = testPane.selectedTestId;
-	const previousNewestResultId = resultPane.newestResultId;
-	if (selectedTestId !== null) {
-		const results = resultService.results;
-		for (let index = 0; index < results.length; index += 1) {
-			const result = results[index];
-			if (result.test.id !== selectedTestId) {
+	let newestRunId: string | null = null;
+	const selectedNodeId = testPane.selectedNodeId;
+	const previousNewestRunId = resultPane.newestRunId;
+	if (selectedNodeId !== null) {
+		const runs = resultService.runs;
+		for (let index = 0; index < runs.length; index += 1) {
+			const run = runs[index];
+			if (run.scopeId !== selectedNodeId) {
 				continue;
 			}
-			if (newestResultId === null) {
-				newestResultId = result.id;
-				if (result.id !== previousNewestResultId) {
-					resultPane.expandedResultIds.add(result.id);
+			if (newestRunId === null) {
+				newestRunId = run.id;
+				if (run.id !== previousNewestRunId) {
+					resultPane.expandedResultIds.add(run.id);
+					resultPane.expandedResultIds.add(run.items[0].id);
 				}
 			}
-			appendScenarioResultRows(resultPane, result);
+			appendScenarioRunRows(resultPane, run);
 		}
 	}
-	const newestResultChanged = newestResultId !== previousNewestResultId;
-	resultPane.newestResultId = newestResultId;
-	resultPane.selectedTestHasResult = newestResultId !== null;
+	const newestRunChanged = newestRunId !== previousNewestRunId;
+	resultPane.newestRunId = newestRunId;
 	resultPane.selectionIndex = findScenarioLabRowIndex(
 		resultPane.rows,
-		newestResultChanged ? newestResultId : selectedResultRowId,
+		newestRunChanged ? newestRunId : selectedResultRowId,
 	);
 	if (resultPane.selectionIndex < 0 && resultPane.rows.length > 0) {
 		resultPane.selectionIndex = 0;
 	}
 	resultPane.projectedRevision = resultService.revision;
-	resultPane.projectedTestId = selectedTestId;
+	resultPane.projectedNodeId = selectedNodeId;
 	resultPane.hoverIndex = -1;
 	testPane.textDirty = true;
 	resultPane.textDirty = true;
 }
 
-export function selectedScenarioTest(state: ScenarioLabViewState): ScenarioTestItem | null {
+export function selectedScenarioTestNode(state: ScenarioLabViewState): ScenarioTestNode | null {
 	const pane = state.testPane;
-	return pane.selectionIndex < 0 ? null : pane.rows[pane.selectionIndex].test;
+	if (pane.selectionIndex < 0) {
+		return null;
+	}
+	const row = pane.rows[pane.selectionIndex];
+	return row.kind === 'root' ? row.root : row.test;
 }
 
 export function selectedScenarioResultRow(state: ScenarioLabViewState): ScenarioLabResultRow | null {
@@ -317,14 +330,11 @@ export function updateScenarioTestResultStates(state: ScenarioLabViewState): voi
 	for (let index = 0; index < rows.length; index += 1) {
 		const row = rows[index];
 		if (row.kind === 'root') {
-			row.latestState = null;
+			const run = state.resultService.latestRunForScope(row.root.id);
+			row.latestState = run === null ? null : run.state;
 			continue;
 		}
-		const latest = latestResultForTest(state, row.test.id);
-		if (latest === null) {
-			row.latestState = null;
-		} else {
-			row.latestState = latest.state;
-		}
+		const result = state.resultService.latestResultForTest(row.test.id);
+		row.latestState = result === null ? null : result.state;
 	}
 }

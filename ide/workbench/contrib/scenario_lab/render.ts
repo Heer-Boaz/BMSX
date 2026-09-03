@@ -7,7 +7,7 @@ import {
 } from '../../render/action_bar';
 import type { EditorCommandEnablement } from '../../../common/commands';
 import { prepareScenarioLabLayout } from './layout';
-import type { ScenarioRunState } from '../../../testing/scenario/result_service';
+import type { ScenarioResultState } from '../../../testing/scenario/result_service';
 import {
 	type ScenarioLabResultRow,
 	type ScenarioLabViewState,
@@ -21,8 +21,9 @@ const EMPTY_RESULTS_TEXT = 'NO RESULTS FOR SELECTED TEST';
 const TEXT_PADDING_X = 4;
 const TEXT_PADDING_Y = 2;
 
-function stateTextColor(state: ScenarioRunState | null): number {
+function stateTextColor(state: ScenarioResultState | null): number {
 	switch (state) {
+		case 'queued':
 		case 'preparing':
 		case 'running':
 			return constants.COLOR_STATUS_WARNING;
@@ -31,6 +32,7 @@ function stateTextColor(state: ScenarioRunState | null): number {
 		case 'failed':
 			return constants.COLOR_STATUS_ERROR;
 		case 'cancelled':
+		case 'skipped':
 		case null:
 			return constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM;
 	}
@@ -56,7 +58,7 @@ function resultTextColor(row: ScenarioLabResultRow): number {
 	if (row.kind === 'log' || row.kind === 'capture') {
 		return constants.COLOR_RESOURCE_VIEWER_TEXT;
 	}
-	return stateTextColor(row.result.state);
+	return stateTextColor(row.kind === 'run' ? row.run.state : row.result.state);
 }
 
 function drawToolbar(

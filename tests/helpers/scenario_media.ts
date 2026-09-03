@@ -28,7 +28,11 @@ export const SCENARIO_FIXTURE_CART_ENTRY_SOURCE = [
 export type ScenarioMediaFixture = {
 	readonly systemRom: Uint8Array;
 	readonly cartRom: Uint8Array;
-	readonly testSource: string;
+};
+
+export type ScenarioMediaTestSource = {
+	readonly path: string;
+	readonly source: string;
 };
 
 function luaEntry(source: string): RomAsset {
@@ -42,10 +46,10 @@ function luaEntry(source: string): RomAsset {
 	};
 }
 
-/** Writes a production-format BIOS/cart pair with one retained scenario source. */
+/** Writes a production-format BIOS/cart pair with retained scenario sources. */
 export async function buildScenarioMediaFixture(
 	outputDirectory: string,
-	testSource: string,
+	testSources: readonly ScenarioMediaTestSource[],
 ): Promise<ScenarioMediaFixture> {
 	const systemAssets = [luaEntry('module<entry>\nreturn true')];
 	const systemLayout = layoutRomPrefix(
@@ -84,20 +88,22 @@ export async function buildScenarioMediaFixture(
 		source_path: 'testlib/unselected.lua',
 		normalized_source_path: 'testlib/unselected.lua',
 	};
-	const packagedTest: RomAsset = {
-		resid: scenarioTestAssetId(SCENARIO_FIXTURE_TEST_SOURCE_PATH),
-		type: 'lua',
-		buffer: Buffer.from(testSource),
-		source_path: SCENARIO_FIXTURE_TEST_SOURCE_PATH,
-		normalized_source_path: SCENARIO_FIXTURE_TEST_SOURCE_PATH,
-		update_timestamp: 1234,
-	};
 	const cartAssets = [
 		luaEntry(SCENARIO_FIXTURE_CART_ENTRY_SOURCE),
 		sourceOnlyModule,
 		unselectedSourceOnlyModule,
-		packagedTest,
 	];
+	for (let index = 0; index < testSources.length; index += 1) {
+		const testSource = testSources[index];
+		cartAssets.push({
+			resid: scenarioTestAssetId(testSource.path),
+			type: 'lua',
+			buffer: Buffer.from(testSource.source),
+			source_path: testSource.path,
+			normalized_source_path: testSource.path,
+			update_timestamp: 1234 + index,
+		});
+	}
 	const cartLayout = layoutRomPrefix(cartAssets, true, MANIFEST);
 	const cartBlua32 = buildRomBlua32Tail(cartAssets, {
 		generatedLuaModules: [],
@@ -119,6 +125,5 @@ export async function buildScenarioMediaFixture(
 	return {
 		systemRom: new Uint8Array(await readFile(join(outputDirectory, 'system.debug.rom'))),
 		cartRom: new Uint8Array(await readFile(join(outputDirectory, 'cart.debug.rom'))),
-		testSource,
 	};
 }

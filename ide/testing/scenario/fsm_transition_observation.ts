@@ -6,7 +6,7 @@ import {
 } from '../../../machine/ts/machine/cpu/value';
 import {
 	type ScenarioFsmTransitionTrace,
-	type ScenarioRunResult,
+	type ScenarioTestResult,
 	ScenarioResultService,
 } from './result_service';
 
@@ -38,7 +38,7 @@ export class ScenarioFsmTransitionObservation {
 		private readonly channel: Table,
 		private readonly stringPool: StringPool,
 		private readonly results: ScenarioResultService,
-		result: ScenarioRunResult,
+		result: ScenarioTestResult,
 	) {
 		this.capacity = channel.getInteger(CHANNEL_CAPACITY) as number;
 		this.records = channel.getInteger(CHANNEL_RECORDS) as Table;

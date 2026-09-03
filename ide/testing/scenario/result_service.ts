@@ -1,19 +1,33 @@
 import type { FaultSnapshot } from '../../runtime/fault_state';
 import type { ResourceIdentity } from '../../common/resource';
-import type { ScenarioTestItem } from './test_collection';
+import type {
+	ScenarioTestId,
+	ScenarioTestItem,
+	ScenarioTestNodeId,
+} from './test_collection';
 
-export const SCENARIO_RESULT_RETAIN_COUNT = 128;
+export const SCENARIO_RUN_RETAIN_COUNT = 128;
 export const SCENARIO_RESULT_LOG_RETAIN_COUNT = 512;
 export const SCENARIO_RESULT_CAPTURE_RETAIN_COUNT = 64;
 export const SCENARIO_RESULT_FSM_TRANSITION_RETAIN_COUNT = 1024;
 export const SCENARIO_RESULT_ACTIONEFFECT_FACT_RETAIN_COUNT = 1024;
 
 export type ScenarioRunState =
-	| 'preparing'
 	| 'running'
 	| 'passed'
 	| 'failed'
 	| 'cancelled';
+
+export type ScenarioTestResultState =
+	| 'queued'
+	| 'preparing'
+	| 'running'
+	| 'passed'
+	| 'failed'
+	| 'cancelled'
+	| 'skipped';
+
+export type ScenarioResultState = ScenarioRunState | ScenarioTestResultState;
 
 export type ScenarioSourceLocation = {
 	readonly resource: ResourceIdentity;
@@ -101,13 +115,12 @@ export type ScenarioActionEffectTrace = {
 	readonly facts: ScenarioRetainedSequence<ScenarioActionEffectFact>;
 };
 
-export type ScenarioRunResult = {
+export type ScenarioTestResult = {
 	readonly id: string;
-	readonly sequence: number;
 	readonly test: ScenarioTestItem;
 	readonly sourceRevision: number;
-	readonly startTick: number;
-	state: ScenarioRunState;
+	state: ScenarioTestResultState;
+	startTick: number | null;
 	endTick: number | null;
 	readonly logs: ScenarioRetainedSequence<ScenarioResultLog>;
 	readonly captures: ScenarioRetainedSequence<ScenarioResultCapture>;
@@ -115,6 +128,24 @@ export type ScenarioRunResult = {
 	actionEffectTrace: ScenarioActionEffectTrace | null;
 	failure: ScenarioRunFailure | null;
 	fault: FaultSnapshot | null;
+};
+
+export type ScenarioRun = {
+	readonly id: string;
+	readonly sequence: number;
+	readonly scopeId: ScenarioTestNodeId;
+	readonly items: readonly ScenarioTestResult[];
+	state: ScenarioRunState;
+	completedCount: number;
+	passedCount: number;
+	failedCount: number;
+	cancelledCount: number;
+	skippedCount: number;
+};
+
+export type ScenarioRunItemSource = {
+	readonly test: ScenarioTestItem;
+	readonly sourceRevision: number;
 };
 
 /** Fixed-capacity insertion-ordered storage without overflow copies. */
@@ -148,50 +179,107 @@ function sourceStart(test: ScenarioTestItem): ScenarioSourceLocation {
 
 /** Separate, bounded owner for live and completed Scenario Lab results. */
 export class ScenarioResultService {
-	public readonly results: ScenarioRunResult[] = [];
+	public readonly runs: ScenarioRun[] = [];
 	public revision = 0;
+	private readonly retainedIds = new Set<string>();
+	private readonly latestRunsByScope = new Map<ScenarioTestNodeId, ScenarioRun>();
+	private readonly latestResultsByTest = new Map<ScenarioTestId, ScenarioTestResult>();
 	private nextRunSequence = 1;
 	private nextLogSequence = 1;
 	private nextCaptureSequence = 1;
 	private nextFsmTransitionSequence = 1;
 	private nextActionEffectFactSequence = 1;
-	private _liveResult: ScenarioRunResult | null = null;
+	private _liveRun: ScenarioRun | null = null;
+	private _activeResult: ScenarioTestResult | null = null;
 
-	public get liveResult(): ScenarioRunResult | null {
-		return this._liveResult;
+	public get liveRun(): ScenarioRun | null {
+		return this._liveRun;
 	}
 
-	public begin(test: ScenarioTestItem, sourceRevision: number, startTick: number): ScenarioRunResult {
-		if (this._liveResult !== null) {
+	public get activeResult(): ScenarioTestResult | null {
+		return this._activeResult;
+	}
+
+	public beginRun(
+		scopeId: ScenarioTestNodeId,
+		sources: readonly ScenarioRunItemSource[],
+	): ScenarioRun {
+		if (this._liveRun !== null) {
 			throw new Error('A scenario run is already active.');
 		}
-		const result: ScenarioRunResult = {
-			id: `scenario-run:${this.nextRunSequence}`,
+		const runId = `scenario-run:${this.nextRunSequence}`;
+		const items = new Array<ScenarioTestResult>(sources.length);
+		for (let index = 0; index < sources.length; index += 1) {
+			const source = sources[index];
+			items[index] = {
+				id: `${runId}:item:${index}`,
+				test: source.test,
+				sourceRevision: source.sourceRevision,
+				state: 'queued',
+				startTick: null,
+				endTick: null,
+				logs: new ScenarioRetainedSequence(SCENARIO_RESULT_LOG_RETAIN_COUNT),
+				captures: new ScenarioRetainedSequence(SCENARIO_RESULT_CAPTURE_RETAIN_COUNT),
+				fsmTransitionTrace: null,
+				actionEffectTrace: null,
+				failure: null,
+				fault: null,
+			};
+		}
+		const run: ScenarioRun = {
+			id: runId,
 			sequence: this.nextRunSequence,
-			test,
-			sourceRevision,
-			startTick,
-			state: 'preparing',
-			endTick: null,
-			logs: new ScenarioRetainedSequence(SCENARIO_RESULT_LOG_RETAIN_COUNT),
-			captures: new ScenarioRetainedSequence(SCENARIO_RESULT_CAPTURE_RETAIN_COUNT),
-			fsmTransitionTrace: null,
-			actionEffectTrace: null,
-			failure: null,
-			fault: null,
+			scopeId,
+			items,
+			state: 'running',
+			completedCount: 0,
+			passedCount: 0,
+			failedCount: 0,
+			cancelledCount: 0,
+			skippedCount: 0,
 		};
 		this.nextRunSequence += 1;
-		this.results.unshift(result);
-		if (this.results.length > SCENARIO_RESULT_RETAIN_COUNT) {
-			this.results.length = SCENARIO_RESULT_RETAIN_COUNT;
+		this.runs.unshift(run);
+		this.retainedIds.add(run.id);
+		this.latestRunsByScope.set(scopeId, run);
+		for (let index = 0; index < items.length; index += 1) {
+			const item = items[index];
+			this.retainedIds.add(item.id);
+			this.latestResultsByTest.set(item.test.id, item);
 		}
-		this._liveResult = result;
+		if (this.runs.length > SCENARIO_RUN_RETAIN_COUNT) {
+			this.removeRetainedRun(this.runs.pop()!);
+		}
+		this._liveRun = run;
+		this.revision += 1;
+		return run;
+	}
+
+	public startItem(run: ScenarioRun, itemIndex: number, startTick: number): ScenarioTestResult {
+		const result = run.items[itemIndex];
+		result.state = 'preparing';
+		result.startTick = startTick;
+		this._activeResult = result;
 		this.revision += 1;
 		return result;
 	}
 
+	public latestRunForScope(scopeId: ScenarioTestNodeId): ScenarioRun | null {
+		const run = this.latestRunsByScope.get(scopeId);
+		return run === undefined ? null : run;
+	}
+
+	public latestResultForTest(testId: ScenarioTestId): ScenarioTestResult | null {
+		const result = this.latestResultsByTest.get(testId);
+		return result === undefined ? null : result;
+	}
+
+	public hasRetainedResult(id: string): boolean {
+		return this.retainedIds.has(id);
+	}
+
 	public beginFsmTransitionTrace(
-		result: ScenarioRunResult,
+		result: ScenarioTestResult,
 		instanceId: string,
 		machineId: string,
 	): ScenarioFsmTransitionTrace {
@@ -236,7 +324,7 @@ export class ScenarioResultService {
 	}
 
 	public beginActionEffectTrace(
-		result: ScenarioRunResult,
+		result: ScenarioTestResult,
 		ownerId: string,
 		ownerDefinitionId: string,
 	): ScenarioActionEffectTrace {
@@ -299,12 +387,12 @@ export class ScenarioResultService {
 		this.revision += 1;
 	}
 
-	public markRunning(result: ScenarioRunResult): void {
+	public markRunning(result: ScenarioTestResult): void {
 		result.state = 'running';
 		this.revision += 1;
 	}
 
-	public appendLog(result: ScenarioRunResult, tick: number, text: string): void {
+	public appendLog(result: ScenarioTestResult, tick: number, text: string): void {
 		result.logs.push({
 			id: `scenario-log:${this.nextLogSequence}`,
 			tick,
@@ -315,7 +403,7 @@ export class ScenarioResultService {
 		this.revision += 1;
 	}
 
-	public requestCapture(result: ScenarioRunResult, tick: number, label: string): void {
+	public requestCapture(result: ScenarioTestResult, tick: number, label: string): void {
 		result.captures.push({
 			id: `scenario-capture:${this.nextCaptureSequence}`,
 			label,
@@ -327,7 +415,7 @@ export class ScenarioResultService {
 		this.revision += 1;
 	}
 
-	public recordPresentation(result: ScenarioRunResult, presentedFrame: number): number {
+	public recordPresentation(result: ScenarioTestResult, presentedFrame: number): number {
 		let captureCount = 0;
 		for (let index = 0; index < result.captures.length; index += 1) {
 			const capture = result.captures.at(index);
@@ -342,16 +430,16 @@ export class ScenarioResultService {
 		return captureCount;
 	}
 
-	public pass(result: ScenarioRunResult, endTick: number): void {
+	public pass(result: ScenarioTestResult, endTick: number): void {
 		this.complete(result, 'passed', endTick);
 	}
 
-	public cancel(result: ScenarioRunResult, endTick: number): void {
+	public cancel(result: ScenarioTestResult, endTick: number): void {
 		this.complete(result, 'cancelled', endTick);
 	}
 
 	public fail(
-		result: ScenarioRunResult,
+		result: ScenarioTestResult,
 		endTick: number,
 		failure: ScenarioRunFailure,
 		fault: FaultSnapshot | null,
@@ -362,13 +450,75 @@ export class ScenarioResultService {
 	}
 
 	private complete(
-		result: ScenarioRunResult,
+		result: ScenarioTestResult,
 		state: 'passed' | 'failed' | 'cancelled',
 		endTick: number,
 	): void {
 		result.state = state;
 		result.endTick = endTick;
-		this._liveResult = null;
+		const run = this._liveRun!;
+		run.completedCount += 1;
+		switch (state) {
+			case 'passed':
+				run.passedCount += 1;
+				break;
+			case 'failed':
+				run.failedCount += 1;
+				break;
+			case 'cancelled':
+				run.cancelledCount += 1;
+				break;
+		}
+		this._activeResult = null;
 		this.revision += 1;
+	}
+
+	public completeRun(run: ScenarioRun): void {
+		run.state = run.failedCount === 0 ? 'passed' : 'failed';
+		this._liveRun = null;
+		this.revision += 1;
+	}
+
+	public cancelRun(run: ScenarioRun): void {
+		this.finishIncompleteItems(run, 'cancelled');
+	}
+
+	public failRun(run: ScenarioRun): void {
+		this.finishIncompleteItems(run, 'failed');
+	}
+
+	private finishIncompleteItems(
+		run: ScenarioRun,
+		state: 'cancelled' | 'failed',
+	): void {
+		const items = run.items;
+		for (let index = 0; index < items.length; index += 1) {
+			const item = items[index];
+			if (item.state !== 'queued') {
+				continue;
+			}
+			item.state = 'skipped';
+			run.completedCount += 1;
+			run.skippedCount += 1;
+		}
+		run.state = state;
+		this._activeResult = null;
+		this._liveRun = null;
+		this.revision += 1;
+	}
+
+	private removeRetainedRun(run: ScenarioRun): void {
+		this.retainedIds.delete(run.id);
+		if (this.latestRunsByScope.get(run.scopeId) === run) {
+			this.latestRunsByScope.delete(run.scopeId);
+		}
+		const items = run.items;
+		for (let index = 0; index < items.length; index += 1) {
+			const item = items[index];
+			this.retainedIds.delete(item.id);
+			if (this.latestResultsByTest.get(item.test.id) === item) {
+				this.latestResultsByTest.delete(item.test.id);
+			}
+		}
 	}
 }

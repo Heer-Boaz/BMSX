@@ -43,7 +43,10 @@ test('scenario cartridge packages authored test source without making it a start
 			"\tassert(false, 'mapped assertion')",
 			'end',
 		].join('\n');
-		const { systemRom, cartRom } = await buildScenarioMediaFixture(ROOT, testSource);
+		const { systemRom, cartRom } = await buildScenarioMediaFixture(ROOT, [{
+			path: SCENARIO_FIXTURE_TEST_SOURCE_PATH,
+			source: testSource,
+		}]);
 		const baseToolingImage = loadBlua32ToolingImage(
 			parseCartridgePackage(cartRom),
 			CART_ROM_BASE,

@@ -146,12 +146,15 @@ const waitForRunToFinish = async (view, limit) => {
 		}
 		await t.frames(1);
 	}
-	throw new Error('Scenario Lab run did not restore canonical media');
+	const run = view.resultService.liveRun;
+	const result = view.resultService.activeResult;
+	const log = result.logs.at(result.logs.length - 1);
+	throw new Error(`Scenario Lab run did not restore canonical media: ${run.completedCount}/${run.items.length} ${result.test.resource.path} ${result.state} ${log.text}`);
 };
 
 const waitForLiveFsmTrace = async (view, limit) => {
 	for (let frame = 0; frame < limit; frame += 1) {
-		const result = view.resultService.liveResult;
+		const result = view.resultService.activeResult;
 		if (result !== null && result.fsmTransitionTrace !== null) {
 			return result;
 		}
@@ -209,7 +212,7 @@ await releasePointer(20);
 await pressKey('ArrowUp', 21);
 await pressKey('ArrowDown', 22);
 t.assert(testPane.selectionIndex === testRowIndex, 'keyboard navigation did not select the requested scenario');
-t.assert(testPane.selectedTestId === testPane.rows[testRowIndex].test.id, 'test selection lost its stable identity');
+t.assert(testPane.selectedNodeId === testPane.rows[testRowIndex].test.id, 'test selection lost its stable identity');
 t.capture('scenario-lab-tests-tiny-384x288');
 
 const runAction = view.actionBar.items[0];
@@ -259,11 +262,14 @@ t.assert(t.runtime() === runtime && runtime.machine.cpu === cpu, 'Scenario Lab r
 t.assert(sources.currentBlua32Media === canonicalMedia, 'Scenario Lab did not restore canonical tooling media');
 t.assert(sources.cartridgeSlots[0].rom === canonicalCartridge, 'Scenario Lab replaced the canonical cartridge source');
 t.assert(t.activeWorkbenchTab() === labTab, 'completed run did not return to the same Scenario Lab input');
-t.assert(resultPane.rows.length >= 4, 'completed run did not project its retained logs and capture');
-t.assert(resultPane.rows[0].result.state === 'passed', 'pause scenario did not pass');
-t.assert(resultPane.rows[0].expanded, 'new result was not expanded');
+t.assert(resultPane.rows.length >= 5, 'completed run did not project its retained item, logs and capture');
+const pauseRun = view.resultService.runs[0];
+const pauseResult = pauseRun.items[0];
+t.assert(pauseRun.state === 'passed' && pauseResult.state === 'passed', 'pause scenario did not pass');
+t.assert(resultPane.rows[0].kind === 'run' && resultPane.rows[0].expanded,
+	'new aggregate run was not expanded');
 t.assert(resultPane.selectionIndex === 0, 'new result did not become the retained result selection');
-const fsmTrace = resultPane.rows[0].result.fsmTransitionTrace;
+const fsmTrace = pauseResult.fsmTransitionTrace;
 t.assert(fsmTrace !== null, 'pause scenario did not bind its selected FSM recorder');
 t.assert(fsmTrace.executionDomain === 0, 'FSM trace lost its cartridge execution domain');
 t.assert(fsmTrace.instanceId === 'nemesis_s.director.nemesis_s.director.fsm', 'FSM trace selected the wrong concrete machine instance');
@@ -300,7 +306,7 @@ while (testPane.selectionIndex > actionEffectTestRowIndex) {
 	await pressKey('ArrowUp', navigationPressId);
 	navigationPressId += 1;
 }
-t.assert(testPane.selectedTestId === testPane.rows[actionEffectTestRowIndex].test.id,
+t.assert(testPane.selectedNodeId === testPane.rows[actionEffectTestRowIndex].test.id,
 'keyboard navigation did not select the ActionEffect scenario');
 await clickPointer(
 	runBounds.left + 1,
@@ -312,8 +318,10 @@ t.assert(view.runActive, 'Run action did not start the ActionEffect scenario');
 await waitForRunToFinish(view, 1200);
 await t.frames(2);
 
-const actionEffectResult = resultPane.rows[0].result;
-t.assert(actionEffectResult.state === 'passed', 'ActionEffect scenario did not pass');
+const actionEffectRun = view.resultService.runs[0];
+const actionEffectResult = actionEffectRun.items[0];
+t.assert(actionEffectRun.state === 'passed' && actionEffectResult.state === 'passed',
+	'ActionEffect scenario did not pass');
 const actionEffectTrace = actionEffectResult.actionEffectTrace;
 t.assert(actionEffectTrace !== null, 'ActionEffect scenario did not bind its selected recorder');
 t.assert(actionEffectTrace.executionDomain === 0, 'ActionEffect trace lost its cartridge execution domain');
@@ -397,8 +405,69 @@ await pressModifiedF5('ShiftLeft', 340);
 await waitForRunToFinish(view, 1200);
 await t.frames(2);
 
-t.assert(resultPane.rows[0].result.state === 'cancelled', 'Shift+F5 did not cancel the active scenario');
+const cancelledRun = view.resultService.runs[0];
+t.assert(cancelledRun.state === 'cancelled'
+	&& cancelledRun.items[0].state === 'cancelled',
+	'Shift+F5 did not cancel the active scenario');
 t.assert(sources.currentBlua32Media === canonicalMedia, 'cancel did not restore canonical tooling media');
 t.assert(t.activeWorkbenchTab() === labTab, 'cancel did not return to the retained Scenario Lab input');
 t.assert(t.workbenchTabs().filter(tab => tab.kind === 'scenario_lab').length === 1, 'workbench retained more than one Scenario Lab input');
 t.capture('scenario-lab-cancelled-result-tiny-384x288');
+
+const rootRow = testPane.rows[0];
+t.assert(rootRow.kind === 'root'
+	&& rootRow.text.includes('NEMESIS_S (22)')
+	&& !rootRow.text.includes('CART 0'),
+	'Scenario Lab did not present the project suite identity');
+const rootRowY = testPane.layout.contentTop + 1;
+await clickPointer(testPane.layout.contentLeft + 40, rootRowY, 400);
+await releasePointer(400);
+t.assert(testPane.selectionIndex === 0 && testPane.selectedNodeId === rootRow.root.id,
+	'pointer did not select the project suite');
+await clickPointer(runBounds.left + 1, runBounds.top + 1, 401);
+await releasePointer(401);
+t.assert(view.runActive, 'Run action did not start the selected project suite');
+await waitForRunToFinish(view, 50000);
+await t.frames(2);
+
+const suiteRun = view.resultService.runs[0];
+t.assert(suiteRun.scopeId === rootRow.root.id && suiteRun.items.length === 22,
+	'project suite did not retain all 22 selected scenarios in one run');
+t.assert(suiteRun.completedCount === 22
+	&& suiteRun.passedCount + suiteRun.failedCount === 22
+	&& suiteRun.cancelledCount === 0
+	&& suiteRun.skippedCount === 0,
+	'project suite did not execute every selected scenario to a terminal result');
+for (let index = 0; index < suiteRun.items.length; index += 1) {
+	const expectedRow = testPane.rows[index + 1];
+	t.assert(expectedRow.kind === 'test'
+		&& suiteRun.items[index].test === expectedRow.test,
+	'project suite changed the retained discovery order');
+}
+t.assert(resultPane.rows[0].kind === 'run'
+	&& resultPane.rows.filter(row => row.kind === 'result').length === 22,
+	'result projection did not retain the aggregate run and its item results');
+t.capture('scenario-lab-suite-result-tiny-384x288');
+
+await pressModifiedF5('ControlLeft', 420);
+t.assert(view.runActive, 'Ctrl+F5 did not rerun the complete project suite scope');
+const cancelledSuite = view.resultService.liveRun;
+t.assert(cancelledSuite !== null
+	&& cancelledSuite.scopeId === rootRow.root.id
+	&& cancelledSuite.items.length === 22,
+	'rerun did not preserve the previous project suite scope');
+await openWorkbenchWithHostChord(430);
+await pressModifiedF5('ShiftLeft', 440);
+await waitForRunToFinish(view, 1200);
+await t.frames(2);
+t.assert(cancelledSuite.state === 'cancelled'
+	&& cancelledSuite.completedCount === 22
+	&& cancelledSuite.items[0].state === 'cancelled',
+	'cancelled suite did not retain its active item and aggregate completion');
+for (let index = 1; index < cancelledSuite.items.length; index += 1) {
+	t.assert(cancelledSuite.items[index].state === 'skipped',
+		'cancelled suite discarded or executed an unfinished item');
+}
+t.assert(sources.currentBlua32Media === canonicalMedia
+	&& sources.cartridgeSlots[0].rom === canonicalCartridge,
+	'suite completion did not restore the canonical cartridge once');

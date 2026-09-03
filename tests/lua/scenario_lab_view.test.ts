@@ -82,7 +82,7 @@ test('scenario workbench view retains lazy test projection and contextual action
 	assert.equal(tests.length, 2);
 	assert.deepEqual(testPane.rows.map(row => row.kind), ['root', 'test', 'test']);
 	assert.equal(testPane.selectionIndex, 1);
-	assert.equal(testPane.selectedTestId, tests[0].id);
+	assert.equal(testPane.selectedNodeId, tests[0].id);
 	assert.equal(tests[0].label, 'a');
 	assert.equal(scenarioLabCommandEnabled(view, 'scenarioLab.run'), true);
 	assert.equal(scenarioLabCommandEnabled(view, 'scenarioLab.rerun'), false);
@@ -90,12 +90,17 @@ test('scenario workbench view retains lazy test projection and contextual action
 	assert.equal(view.layout.font?.variant, 'tiny');
 	assert.equal(view.layout.left, 0);
 	assert.equal(view.layout.right, VIEWPORT_WIDTH);
+	assert.match(testPane.rows[0].text, /NEMESIS_S \(2\)/);
+	executeScenarioLabNavigation(view, 'up');
+	assert.equal(testPane.selectedNodeId, root.id);
+	assert.equal(scenarioLabCommandEnabled(view, 'scenarioLab.run'), true);
+	executeScenarioLabNavigation(view, 'down');
 
 	executeScenarioLabNavigation(view, 'down');
-	const selectedId = testPane.selectedTestId;
+	const selectedId = testPane.selectedNodeId;
 	testPane.rowsDirty = true;
 	refreshScenarioLabProjection(view);
-	assert.equal(testPane.selectedTestId, selectedId);
+	assert.equal(testPane.selectedNodeId, selectedId);
 	assert.equal(testPane.selectionIndex, 2);
 
 	view.runActive = true;
@@ -107,40 +112,54 @@ test('scenario result projection follows a new run and preserves stable log iden
 	const { collection, results, view } = createViewFixture(t);
 	const testItem = collection.roots[0].children![0];
 	const resultPane = view.resultPane;
-	const first = results.begin(testItem, 7, 100);
+	const firstRun = results.beginRun(
+		testItem.id,
+		[{ test: testItem, sourceRevision: 7 }],
+	);
+	const first = results.startItem(firstRun, 0, 100);
 	results.markRunning(first);
 	for (let index = 0; index < SCENARIO_RESULT_LOG_RETAIN_COUNT; index += 1) {
 		results.appendLog(first, index, `log ${index}`);
 	}
 	refreshScenarioLabProjection(view);
 
-	assert.equal(resultPane.rows[0].id, first.id);
+	assert.equal(resultPane.rows[0].id, firstRun.id);
 	assert.equal(resultPane.rows[0].expanded, true);
-	selectScenarioLabResultRow(view, 2);
+	assert.equal(resultPane.rows[1].id, first.id);
+	assert.equal(resultPane.rows[1].expanded, true);
+	selectScenarioLabResultRow(view, 3);
 	let selectedResult = resultPane.rows[resultPane.selectionIndex];
 	const retainedLogId = selectedResult.id;
 	results.appendLog(first, SCENARIO_RESULT_LOG_RETAIN_COUNT, 'overflow log');
 	refreshScenarioLabProjection(view);
 	selectedResult = resultPane.rows[resultPane.selectionIndex];
 	assert.equal(selectedResult.id, retainedLogId);
-	assert.equal(resultPane.selectionIndex, 1);
+	assert.equal(resultPane.selectionIndex, 2);
 
 	results.pass(first, 200);
-	const second = results.begin(testItem, 8, 201);
+	results.completeRun(firstRun);
+	const secondRun = results.beginRun(
+		testItem.id,
+		[{ test: testItem, sourceRevision: 8 }],
+	);
+	const second = results.startItem(secondRun, 0, 201);
 	view.runActive = true;
 	refreshScenarioLabProjection(view);
 	selectedResult = resultPane.rows[resultPane.selectionIndex];
-	assert.equal(selectedResult.id, second.id);
+	assert.equal(selectedResult.id, secondRun.id);
 	assert.equal(resultPane.selectionIndex, 0);
 	assert.equal(scenarioLabCommandEnabled(view, 'scenarioLab.rerun'), false);
 	results.cancel(second, 202);
+	results.cancelRun(secondRun);
 	view.runActive = false;
 	assert.equal(scenarioLabCommandEnabled(view, 'scenarioLab.rerun'), true);
 });
 
 test('scenario result projection retains FSM facts without inventing source navigation', (t) => {
 	const { collection, results, view } = createViewFixture(t);
-	const result = results.begin(collection.roots[0].children![0], 7, 100);
+	const item = collection.roots[0].children![0];
+	const run = results.beginRun(item.id, [{ test: item, sourceRevision: 7 }]);
+	const result = results.startItem(run, 0, 100);
 	const trace = results.beginFsmTransitionTrace(
 		result,
 		'nemesis_s.director.nemesis_s.director.fsm',
@@ -171,7 +190,9 @@ test('scenario result projection retains FSM facts without inventing source navi
 
 test('scenario result projection retains ordered ActionEffect facts', (t) => {
 	const { collection, results, view } = createViewFixture(t);
-	const result = results.begin(collection.roots[0].children![0], 7, 100);
+	const item = collection.roots[0].children![0];
+	const run = results.beginRun(item.id, [{ test: item, sourceRevision: 7 }]);
+	const result = results.startItem(run, 0, 100);
 	const trace = results.beginActionEffectTrace(
 		result,
 		'nemesis_s.player.1',

@@ -11,7 +11,7 @@ import {
 	refreshScenarioLabProjection,
 	updateScenarioTestResultStates,
 } from './projection';
-import type { ScenarioRunState } from '../../../testing/scenario/result_service';
+import type { ScenarioResultState } from '../../../testing/scenario/result_service';
 import {
 	type ScenarioLabLayout,
 	type ScenarioLabPaneLayout,
@@ -56,16 +56,18 @@ export function createScenarioLabPaneLayout(): ScenarioLabPaneLayout {
 	};
 }
 
-function scenarioStateBadge(state: ScenarioRunState | null): string {
+function scenarioStateBadge(state: ScenarioResultState | null): string {
 	if (state === null) {
 		return '[ ]';
 	}
 	switch (state) {
+		case 'queued': return '[ ]';
 		case 'preparing': return '[...]';
 		case 'running': return '[RUN]';
 		case 'passed': return '[OK]';
 		case 'failed': return '[X]';
 		case 'cancelled': return '[-]';
+		case 'skipped': return '[>]';
 	}
 }
 
@@ -80,7 +82,7 @@ function writeScenarioTestText(state: ScenarioLabViewState): void {
 		let rawText: string;
 		if (row.kind === 'root') {
 			const marker = row.expanded ? '-' : '+';
-			rawText = `${marker} ${row.root.label}  ${row.root.testCount}`;
+			rawText = `${marker} ${row.root.label} (${row.root.testCount})`;
 		} else {
 			rawText = `  ${scenarioStateBadge(row.latestState)} ${row.test.label}`;
 		}
@@ -95,8 +97,13 @@ function writeScenarioTestText(state: ScenarioLabViewState): void {
 
 function resultSummaryText(row: ScenarioLabResultRow): string {
 	const result = row.result;
+	if (result === null) {
+		const run = row.run;
+		return `${row.expanded ? '-' : '+'} ${scenarioStateBadge(run.state)} RUN ${run.sequence}  ${run.completedCount}/${run.items.length}  OK ${run.passedCount} X ${run.failedCount} C ${run.cancelledCount} S ${run.skippedCount}`;
+	}
+	const startTick = result.startTick === null ? '...' : String(result.startTick);
 	const endTick = result.endTick === null ? '...' : String(result.endTick);
-	return `${row.expanded ? '-' : '+'} ${scenarioStateBadge(result.state)} RUN ${result.sequence}  REV ${result.sourceRevision}  T${result.startTick}-${endTick}`;
+	return `  ${row.expanded ? '-' : '+'} ${scenarioStateBadge(result.state)} ${result.test.label}  REV ${result.sourceRevision}  T${startTick}-${endTick}`;
 }
 
 function semanticPathTail(defId: string): string {
@@ -106,6 +113,7 @@ function semanticPathTail(defId: string): string {
 
 function resultDetailText(row: ScenarioLabResultRow): string {
 	switch (row.kind) {
+		case 'run':
 		case 'result':
 			return resultSummaryText(row);
 		case 'failure':
