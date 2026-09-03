@@ -1306,6 +1306,65 @@ cook a second behavior document, cartlib does not decode an editor resource or
 bind a visual-editor manifest, and machine, TOC, cartridge model and C++ core
 remain unaware of behavior authoring.
 
+The accepted scene-authoring route follows the same source-ownership rule
+without conflating scenes with behavior definitions. A scene remains a
+structured cart-Lua definition. The future cartlib scene library derives a
+retained `SceneInstance` and admits its prefab instances through `World`;
+`Registry` remains the cart-wide identity owner. Before that owner can exist,
+`World` construction must support phased multi-object construction and its
+mutation barrier must commit a terminal-old-before-new replacement batch. A
+scene-local authored `member_id` is stable correspondence, while `Registry`
+continues to own a separate terminal runtime `WorldObject.id`; replacement
+allocates a new runtime identity. The open slices may not reproduce either
+lifecycle inside scene code.
+
+Scene membership is first-class cartlib runtime state. `World` retains its
+loaded scene instances package-internally, and each admitted authored object
+has one direct package-internal member correspondence. Terminal disposal
+updates that concrete instance at the existing World lifecycle boundary;
+`World:clear()` first transitions its instances to unload, while ordinary
+gameplay disposal or `clear_space()` leaves a tombstone. This relationship is
+not a generic observer registry, event subscription, Registry key, Studio tag,
+or per-frame scan.
+
+Scene records contain a scene-local stable `member_id`, prefab identity,
+space/position fields and only the properties explicitly published by their
+prefab owner. `member_id` is not copied to `WorldObject.id`; source/runtime
+correspondence therefore does not reuse terminal Registry identities. The open
+`world:spawn()` option table is not an authoring schema: arbitrary guest tables,
+closures and objects are not generically comparable and are never mutated as a
+property DTO. Prefab descriptors own each supported guest representation and
+whether a change uses a concrete setter or replaces the object.
+Position preserves the live cartlib representation: integer pixel coordinates
+for X/Y and the existing integer depth word for Z, not host floats or the
+unrelated machine Q16.16 geometry format.
+
+A Studio outliner or viewport is a host-side view on source and instance
+correspondence. Its commands change the shared Lua text model and, when applying
+to a suspended live guest, invoke the concrete cartlib `SceneInstance`
+operations. That instance resolves member identity, `WorldObject` position and
+prefab-owned property getters/setters; the host does not dispatch arbitrary
+class methods. It likewise does not read or write `world._objects`, component
+storage, or arbitrary Lua table shapes as a scene DTO. The complete accepted
+owner, construction, mutation, Hot Resume, source-edit, runtimebinding and
+viewport contract is
+[`studio_scene_authoring_design.md`](studio_scene_authoring_design.md).
+
+That runtime binding may not guess the compiler's sanitized hidden global for a
+dynamic Lua module. Before live scene commands, the compiler/linker tooling
+owner must publish its already-known dynamic module root `(module path, global
+slot name)` records in the private BLua symbol image, and the runtime source
+owner must index them for the exact execution domain. Static/const modules have
+no runtime root record. This adds no runtime `require`, machine field, ROM-header
+ABI, cartlib hook, or hand-authored guest global.
+
+Scene Lua is not a prohibition on cooking. Like AEM, a future scene producer
+may derive a separate immutable runtime representation when a measured
+consumer requires one. Until that boundary exists, a scene cooker would only
+duplicate the Lua definition and hide missing cartlib instantiation, reference,
+identity, mutation, or Hot Resume semantics; it is therefore not part of the
+scene contract.
+
 Decoding schema-rich payloads once at cart initialization through
 address/length symbols is an acceptable cold authoring-data path. The platform
 does not mandate fixed binary layouts for every map, room, timeline, registry,

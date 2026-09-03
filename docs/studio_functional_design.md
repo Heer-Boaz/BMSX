@@ -1,12 +1,13 @@
 # Studio functioneel ontwerp
 
-Status: **geaccepteerde bouwroute A + C naar typed text-backed visual authoring, met geselecteerde recorded-observabilityslices**
+Status: **geaccepteerde source-backed bouwroute voor behavior- en scene-authoring, met geselecteerde recorded-observabilityslices**
 
 Dit document werkt `STUDIO-FUNCTIONAL-DESIGN-01` uit vanuit de bestaande
 BMSX-representaties en productievoorbeelden. De gekozen eerste bouwroute is
 **A + C**: een source-first Behavior Lens, gevolgd door een deterministisch
-Scenario Lab. Dit is niet het eindproduct: Studio moet daarna echte visual
-authoring voor onder meer BT's, FSM's en ActionEffects bieden. De eerste
+Scenario Lab. Dit is niet het eindproduct: Studio moet echte visual authoring
+voor scenes, BT's, FSM's en ActionEffects bieden. Scene-authoring volgt nu als
+eerste cartlib-/editorintegratie; de behavior-views blijven source-first. De eerste
 inspectieworkflow is stop-and-inspect; bestaande arbitrary-Lua-definities
 blijven source-first. Exacte per-node BT-runtimecorrespondence en runtime-
 observability horen niet bij de eerste source-lens. Libretro blijft
@@ -15,6 +16,12 @@ speler/core en krijgt geen Studio-workbench.
 Deze keuzes autoriseren geen viewport, cartridgefunctie, transport, guest-ABI
 of runtime-instrumentatie. Iedere implementatieslice blijft gebonden aan de
 owner- en representatiegrenzen verderop.
+
+Het uitgewerkte scene-owner-, lifecycle-, source-edit-, runtimebinding- en
+viewportcontract staat in
+[`studio_scene_authoring_design.md`](studio_scene_authoring_design.md). Dit
+functionele document kiest het product; dat document blokkeert implementatie
+tot de onderliggende owners afzonderlijk zijn gebouwd.
 
 ## Scope en ontwerpgrens
 
@@ -31,12 +38,19 @@ begrijpen en testen**. De eerste probleemruimte bestaat uit:
 - deterministische scenario-tests met input, checkpoints, traces, faults en
   captures;
 - betrouwbare navigatie tussen een authored definitie, een concrete
-  runtime-instance en de bron die die definitie voortbrengt.
+  runtime-instance en de bron die die definitie voortbrengt;
+- scenecompositie, prefabinstances, transforms, references en de concrete
+  `World`-objecten die uit die authored compositie ontstaan.
 
-Studio is geen scene-owner. Deze slice introduceert daarom geen scene graph,
-object-outliner, transform-inspector, gizmo, Studio-cartridge, socketrol,
-mailboxprotocol of tweede runtime. Cartridge-expansie blijft het zelfstandige,
-generieke machinecontract uit [architecture.md](architecture.md#cartridge-expansion).
+Studio **bezit** geen tweede scene graph, maar is daarom niet read-only. De
+host-side editor bezit de sourceprojectie, selectie, commands en viewstate en
+mag de cartlib-owned scene en `World` wijzigen via concrete `SceneInstance`-
+mutatiegrenzen. De canonieke wijziging blijft een edit in dezelfde Lua-working
+copy; een live preview of Hot-Resume-rebind richt zich op dezelfde
+scene-instance en gebruikt geen host-schaduwwereld. Deze slice introduceert
+geen Studio-cartridge, socketrol, mailboxprotocol of tweede runtime.
+Cartridge-expansie blijft het zelfstandige, generieke machinecontract uit
+[architecture.md](architecture.md#cartridge-expansion).
 
 ## Professionele uitgangspunten
 
@@ -66,6 +80,48 @@ zijn
 
 **Gevolg voor BMSX:** een graph mag een view op een echt authored document of
 resource zijn, maar wordt nooit een tweede host-side waarheidsmodel.
+
+### Een scene-editor muteert het echte editmodel
+
+Godot instantiateert een `PackedScene` als echte nodes, stelt properties en
+uitgestelde `NodePath`-references in en geeft die nodes daarna hun
+scene-eigenaarschap
+([`SceneState::instantiate`](https://github.com/godotengine/godot/blob/6ef60dc279b2c58a94ffc57bf98eefc9663f7907/scene/resources/packed_scene.cpp#L231-L756)).
+De Scene Tree Dock voert toevoegen en verwijderen via de centrale
+`EditorUndoRedoManager` uit, maar wijzigt daarbij de echte edited scene en
+stuurt dezelfde actie naar de live debugscene
+([`scene_tree_dock.cpp`](https://github.com/godotengine/godot/blob/6ef60dc279b2c58a94ffc57bf98eefc9663f7907/editor/docks/scene_tree_dock.cpp#L406-L428)).
+Unity instantiateert een prefab eveneens rechtstreeks in een expliciete
+destination `Scene`
+([`PrefabUtility.InstantiatePrefab`](https://github.com/Unity-Technologies/UnityCsReference/blob/9d487cab41b00c50af020b56d27a3c768d54f770/Editor/Mono/Prefabs/PrefabUtility.cs#L2202-L2217));
+de Hierarchy bewaart selectie en expansion als retained viewstate boven de
+scene-owned data source
+([`SceneHierarchy.Init`](https://github.com/Unity-Technologies/UnityCsReference/blob/9d487cab41b00c50af020b56d27a3c768d54f770/Editor/Mono/SceneHierarchy.cs#L225-L299)).
+
+**Gevolg voor BMSX:** `cartlib/world` bezit definitie, instantiatie,
+objectmembership en mutatie; `Registry` bezit cart-wide objectidentiteit. De
+Studio-contribution mag die werkelijkheid bewerken, maar doet dat door een
+sourcecommand op het gedeelde `EditorTextModel` en een concrete
+`SceneInstance`-operatie. De instance dispatcht position en prefabproperty naar
+hun echte owners; Studio roept geen willekeurige classmethod. Zij leest of
+schrijft nooit `world._objects`, componentstorage of willekeurige Lua-table-
+shapes als een host-side scene-DTO.
+
+### Structured source is niet hetzelfde als een cooked asset
+
+De keuze voor een structured format bepaalt nog niet of een ROM-producer nodig
+is. BMSX heeft drie verschillende representatieovergangen:
+
+| Domein | Canonieke authored representatie | Afgeleide runtime-representatie | Waarom wel of niet cooken |
+| --- | --- | --- | --- |
+| AEM | schema-owned `.aem.yaml` | immutable eventmap/filterdata in ROM | De APU-consument heeft een andere compacte datapathrepresentatie; de AEM-producer bezit die omzetting. |
+| BT/FSM | structured cart-Lua bij `library.register(...)` | compiled/rebound cartlib-programma of state tree | De bestaande Lua-compile- en Hot-Resume-route maakt een tweede behaviorasset overbodig. |
+| Scene | structured cart-Lua bij `scene_library.register(...)` | cartlib `SceneInstance` met echte `WorldObject`s | De eerste consumer kan de Lua-records direct instantiëren. Een cooker wordt pas toegevoegd als een gemeten runtimecontract een aantoonbaar andere representatie vereist. |
+
+Een cooker is dus geen fout en source-backed Lua is geen verbod op structured
+data. Fout is een tweede representatie toevoegen om ontbrekende
+scene-instantiatie, objectidentity, references, mutatie of Hot Resume te
+omzeilen. Die grenzen moeten eerst bij `cartlib/world` bestaan.
 
 ### Static topology en runtime-observaties zijn verschillende representaties
 
@@ -261,9 +317,22 @@ consumers; listener- of heapscans zijn geen vervanging.
 
 [`cartlib/world/world.lua`](../cartlib/world/world.lua) bezit precies één
 cart-world, spawn/disposal en structural barriers (`world.lua:1-33,634-728`).
-[`cartlib/registry.lua`](../cartlib/registry.lua) bezit cartbrede numeric object-
-en componentidentiteit (`registry.lua:3-79`). De host leest geen `world._objects`
+[`cartlib/registry.lua`](../cartlib/registry.lua) bezit cartbrede runtimeobject-
+en componentidentiteit; alleen automatisch uitgegeven ids zijn numeric
+(`registry.lua:3-79`). De host leest geen `world._objects`
 en maakt daar geen scene-DTO van.
+
+Er bestaat nog geen cartlib scene-definitieowner. Carts bouwen statische
+compositie nu met losse `world:spawn(...)`-aanroepen, terwijl `World` al de
+enige admission/disposalgrens en `Registry` de enige cart-wide identity-index
+bezit. De scene-route voegt daarom geen YAML- of ROM-representatie toe, maar een
+structured Lua-definitie analoog aan BT/FSM. Zij mag evenmin de open
+`world:spawn`-optionstable als authoring-schema behandelen: de prefab-owner
+publiceert expliciet de construction-only en mutable sceneproperties en hun
+guestrepresentatie. Scene-local authored member-id en terminale Registry-id
+blijven verschillende identities. De complete recordshape, constructionfasen,
+terminal-old-before-new replacementvolgorde, tombstones en Hot-Resume-semantiek staan in
+[`studio_scene_authoring_design.md`](studio_scene_authoring_design.md).
 
 Gameplay-clock suspension is cartscheduling: de frame-clock kan doorlopen
 (`world.lua:295-322`). Dat is niet hetzelfde als debugger-stop.
@@ -558,13 +627,17 @@ strings of Studio-hooks in normale cartlibcode.
 
 ### Gekozen volgorde
 
-De productvolgorde blijft **A, daarna C**: eerst source-first begrip, daarna
-deterministische scenario's. Voor visual authoring volgt eerst een smalle
-language-owned source-editlaag voor de reeds herkenbare Lua-registraties. Pas
-wanneer property-, insert-, delete- en move-edits bronbehoudend bewezen zijn,
-wordt een editable BT- of FSM-pane toegevoegd. De bestaande Lua-compile- en
-Hot-Resume-route is vanaf de eerste edit het uitvoerpad; er is geen cooker of
-resource-admissiontussenstap.
+De behavior-infrastructuurvolgorde blijft **A, daarna C**: eerst source-first
+begrip, daarna deterministische scenario's. De eerstvolgende visual-authoring-
+route is echter scenecompositie, niet een tweede behaviorrepresentatie. Zij
+begint bij de bestaande `World`-construction/barrier, daarna een cartlib-owned
+structured Lua-definitie en `SceneInstance`, vervolgens een generieke Lua-
+syntaxeditlaag, sourceprojectie, host-presentationregion en visual spatial
+query. Pas daarna volgen live runtimebinding, outliner, details en
+viewportcommands. Een editable BT- of FSM-pane blijft geparkeerd totdat die
+scenegrens en de generieke source-editgrens bewezen zijn.
+De bestaande Lua-compile- en Hot-Resume-route is vanaf de eerste edit het
+uitvoerpad; er is geen cooker of resource-admissiontussenstap.
 
 Recorded observability blijft een afzonderlijke testfunctie. Stackframes en
 source maps zijn debuggercorrespondentie; eventgeschiedenis en persistente
@@ -1078,13 +1151,15 @@ de core.
 | --- | --- | --- |
 | `machine/{ts,cpp}` | Deterministische uitvoering, save-state, CPU, memory, MMIO en devices. | Studio, BT/FSM/ActionEffect-semantiek, viewmodels. |
 | Cartridge controller/card | Twee fysieke sockets, concrete card-devices en signaalroutering. | Studio-transport, behavior-capabilities, scene/data-ABI. |
-| `cartlib` | Gameplaysemantiek en de echte BT/FSM/ActionEffect/eventgrenzen. Alleen na keuze eventueel generieke diagnostics. | Product-UI, `studio`-module, hostcontrols of source-documentmodel. |
-| Toolchain/rompack | Eventuele static correspondence en testpackaging als de gekozen authored representatie dat vereist. | Runtime scene graph of machinehot-path-DTO. |
+| `cartlib` | Gameplaysemantiek, scene definition/instance-lifecycle, `World`-mutatie en de echte BT/FSM/ActionEffect/eventgrenzen. | Product-UI, `studio`-module, hostcontrols of source-documentmodel. |
+| Toolchain/rompack | Eventuele static correspondence en testpackaging als de gekozen authored/runtime-representaties aantoonbaar verschillen. | Runtime scene graph, scene-lifecycle of machinehot-path-DTO. |
 | `ide/language` | Generieke Lua/AEM/YAML syntax en semantics. | Cartlib-nodecatalogus in lexer/parser/binder/demand graph. |
 | `ide/runtime/source_registry` | Exact geladen source records en revisions. | Behavior-runtimewaarheid. |
+| BLua private tooling symbols + `RuntimeSourceState` | Producer-owned dynamic module-rootbinding per execution domain en module path. | Runtime `require`, geraden hidden-globalnaam of scenecommandsemantiek. |
 | `ide/runtime/debugger_state` | Bestaande PC/source breakpoints en stepping. | Automatisch semantic stepping. |
-| `SuspendedGuestSession` | Lazy inspectie van echte guestwaarden wanneer uitvoering gestopt is. | Algemene live control-RPC. |
-| `ide/workbench/contrib/*` | Behavior-, trace- en testviews, commands, selectie, filters, results en sourcenavigatie. | Canonieke game/graphdata. |
+| `SuspendedGuestSession` | Lage `Value`-/member-/callgrens en argumentrepresentatie terwijl uitvoering gestopt is. | Scenecommandsemantiek, algemene live control-RPC of raw table-editor. |
+| `ide/runtime/scene_editing` | Exacte binding tussen scenecommands en de publieke cartlib scene-/objectoperaties. | Generic call-by-string, sourceprojectie of guest tableconstructie. |
+| `ide/workbench/contrib/*` | Scene-, behavior-, trace- en testviews, commands, selectie, filters, results en sourcenavigatie. | Canonieke game/graphdata of een tweede scene graph. |
 | Workspace/editor | Canonieke bron/resource, dirty state, undo/redo/save en Hot Resume. | Runtime instance state. |
 | `hosts/common` | Eén Runtime, frame lifecycle, fysieke input, audio/video en capture. | Gameplaysemantiek en Studio-Domain-DTO's. |
 | Headless tooling | Scenario-uitvoering, inputtimeline, captures en CI-resultaten. | Live productcontrolprotocol. |
@@ -1137,8 +1212,11 @@ staan in [`open_architecture_slices.md`](open_architecture_slices.md).
 
 ### Fase 4 — Visual authoring
 
-- verplicht productdoel via de bestaande canonieke Lua-bronnen;
-- eerst BT, daarna afzonderlijk FSM en ActionEffects; geen generiek graphmetamodel;
+- verplicht productdoel via canonieke Lua-bronnen;
+- eerst scenecompositie via haar eigen cartlib-definition/instancecontract;
+- daarna afzonderlijk BT, FSM en ActionEffects; geen generiek graphmetamodel;
+- een scenecommand wijzigt canonical source en dezelfde cartlib-owned editworld,
+  niet een host-schaduwwereld;
 - graph edits zijn minimale edits op het echte Lua-textmodel;
 - undo, redo, save, revert en Hot Resume gebruiken de bestaande owners;
 - statisch onoplosbare Lua blijft zichtbaar maar wordt niet door een graphactie
@@ -1175,22 +1253,26 @@ ontworpen wanneer een latere slice een van deze productkeuzes werkelijk maakt.
 
 ## No-go's
 
-- een scene-outliner, transform-details of gizmo-first Studio;
 - hostcode die `world._objects`, componenttabellen of Lua-objectshape als scene-
   of behavior-DTO leest;
+- een outliner, details-pane of gizmo boven een host-schaduwwereld of vóór een
+  cartlib scene-definition/instance-/mutatiecontract;
 - socket 1, mailbox, board-id, capabilitybit, PCRTC-circuit of cartridge-RAM als
   vooraf gekozen Studiofundament;
-- OverlayRenderer-gizmos of een guest-rendered editorviewport;
+- `OverlayRenderer` als scene-modelowner of een guest-rendered editorviewport;
 - tweede Runtime, tweede world of PIE;
 - gameplay-clock gebruiken als debugger-pause;
-- generieke `runtime.call`/`callClosure`, host-Lua-RPC of hostmutation-API;
+- generieke `runtime.call`/`callClosure`, host-Lua-RPC, raw-table-editor of
+  algemene hostmutation-API; een concrete suspended scenecommand gebruikt de
+  publieke cartlib scene-/objectoperatie;
 - dense BT execution slots, Lua-objectidentiteit of sourceregels presenteren als
   stabiele authored node-id;
 - ontbrekende ActionEffect rejection reasons in de host raden;
 - volledige tree-, heap- of worldsnapshot per tick;
 - cartlib/BT/FSM/ActionEffect-typen in generieke lexer, parser, binder of demand
   graph;
-- een machine-/TOC-assettype voor BT, FSM, ActionEffects of Studio;
+- een machine-/TOC-assettype voor scene, BT, FSM, ActionEffects of Studio zonder
+  een afzonderlijk bewezen hardware-/runtimeconsumentencontract;
 - YAML parse/stringify of volledig JSON-stringify als visual-editpad;
 - een globale callbackregistry of callbacknaamlookup in het framepad;
 - een gedeeld generiek graphschema voor BT, FSM en ActionEffects;

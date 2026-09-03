@@ -35,7 +35,7 @@ A code-editor input owns only its resource model reference and its independent
 cursor, selection, desired-column, and scroll state. The active code editor is
 the single widget attachment to one such model/view pair; activation does not
 copy document data into an active-tab buffer. Closing a tab therefore does not
-discard a retained dirty model or its history. A later visual behavior editor
+discard a retained dirty model or its history. A later visual scene or behavior editor
 must retain the same resource model and issue targeted model edits; it must not
 maintain a second JSON/source buffer or replace the whole document for a
 property change.
@@ -71,12 +71,12 @@ service surface:
 
 ### Source-backed visual projections
 
-A visual behavior editor is another view on the resource-owned Lua
-`EditorTextModel`, not another working copy and not a generated behavior
-resource. The Lua parser and the workbench-owned behavior recognizer derive a
-retained BT-, FSM- or ActionEffect-projection once per text-model content
-version. Render and hit testing consume that projection; they do not parse or
-rebuild topology per frame.
+A visual scene or behavior editor is another view on the resource-owned Lua
+`EditorTextModel`, not another working copy and not a generated behavior or
+scene resource. The Lua parser and each workbench-owned domain recognizer
+derive its retained BT-, FSM-, ActionEffect- or sceneprojection once per text-
+model content version. Render and hit testing consume that projection; they do
+not parse or rebuild topology per frame.
 
 Visual commands address syntax whose provenance is known in the current Lua
 source and submit the smallest required `EditorTextEdit` batch through
@@ -99,6 +99,33 @@ remain source information:
 The normal Lua save and Hot Resume owners consume that same model. A visual
 editor adds no ROM-packer cooker, cartlib admission decoder, callback manifest,
 second graph database or behavior-specific machine representation.
+
+Scene authoring uses the same document contract, but its runtime object and
+viewport owners are deliberately not inferred from the behavior projection.
+The accepted cross-owner design and prerequisites are documented in
+[`../docs/studio_scene_authoring_design.md`](../docs/studio_scene_authoring_design.md).
+In particular, `IDE-LUA-SYNTAX-EDIT-01` must put literal/table transformations
+at the generic Lua-language boundary before a scene contribution may issue
+them. That layer returns `EditorTextEdit`s only; it does not apply edits, know
+cartlib types, or become a second working-copy owner.
+
+Live scene commands additionally wait for
+`BLUA32-TOOLING-MODULE-ROOT-01`. A dynamic BLua module root lives in a
+compiler-owned guest global slot, but the workbench must not import the slot
+sanitizer or guess that hidden name. The compiler/linker publishes its existing
+module-path/root-slot binding in the private symbols; `RuntimeSourceState`
+indexes it for the exact execution domain. Runtime scene code resolves that
+tooling symbol and then binds fixed public scene operations. It does not add a
+runtime `require`, cart global, heap search, or generic call-by-string API.
+
+Live preview also does not turn every text change into guest execution. Before
+scene preview, `IDE-TEXT-HISTORY-PROJECTION-01` makes the existing stable
+`EditorUndoRecord` identity observable on edit/undo/redo. The text model remains
+the only stack owner and stores no feature callback or runtime payload. A scene
+preview coordinator may associate only its own successfully applied operation
+with that record, then replay its direct before/after values on undo/redo.
+Unassociated code edits, external changes, revert, or an expired runtime epoch
+never infer a guest mutation from a textual diff.
 
 ## Resource editor resolution
 
