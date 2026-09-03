@@ -38,6 +38,7 @@ input.push_context(2, 'nemesis_s', {
 	powerup = { 'x' },
 })
 local world<const> = require('cartlib/world/world')
+local scene_library<const> = require('cartlib/world/scene_library')
 local world_module<const> = require('world_module')
 world:configure(world_module)
 require('constants')
@@ -72,6 +73,7 @@ local sint_pop<const> = require('enemies/sint_pop')
 local status_bar_module<const> = require('status_bar')
 local story_module<const> = require('story')
 local title_screen_module<const> = require('title_screen')
+local root_scene<const> = require('scenes/root')
 
 local function init<init>()
 	nemesis_font.register()
@@ -112,26 +114,12 @@ local function init<init>()
 	player_module.register_player_definition()
 	status_bar_module.register_definition()
 	director_module.register_director_definition()
+	root_scene.register()
 end
 
 function new_game()
 	world:clear()
-	world:spawn(intro_module.definition_id, {
-		space_id = 'intro',
-		pos = { x = 0, y = 0, z = 0 },
-	})
-	world:spawn(story_module.definition_id, {
-		space_id = 'story',
-		pos = { x = 0, y = 0, z = 0 },
-	})
-	world:spawn(title_screen_module.definition_id, {
-		space_id = 'title',
-		pos = { x = 0, y = 0, z = 0 },
-	})
-	world:spawn(director_module.director_def_id, {
-		space_id = 'intro',
-		pos = { x = 0, y = 0, z = 0 },
-	})
+	scene_library.instantiate(root_scene.id)
 end
 
 init()
