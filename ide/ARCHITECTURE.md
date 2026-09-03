@@ -240,6 +240,40 @@ dependency-injection machinery:
 - <https://github.com/microsoft/vscode/blob/8d48b77e9fc7df97b659e8a04bc999bb6fb8f031/src/vs/workbench/services/editor/browser/editorService.ts#L968-L1048>
 - <https://github.com/microsoft/vscode/blob/8d48b77e9fc7df97b659e8a04bc999bb6fb8f031/src/vs/workbench/contrib/files/browser/fileCommands.ts#L455-L500>
 
+### Atomic authored-asset media batches
+
+An authored-data update is a build input, not an editor-side runtime override.
+`RuntimeRomAssetEditBatch` groups ordinary `(type, asset id, payload)` edits in
+the fixed execution-domain order `[system, slot 0, slot 1]`. The BLua32 media
+builder feeds each domain's complete list into `layoutBlua32PublicAssets` both
+when it derives asset-address link values and when it emits the final tail.
+`buildBlua32Tail` therefore materializes one self-consistent ROM and the runtime
+installs that medium once. It never rebuilds and installs the same domain once
+per dirty document.
+
+The representation and mirrored machine boundary are deliberately narrow:
+
+| Boundary | TypeScript representation | C++ representation |
+| --- | --- | --- |
+| Tooling edit | fixed domain tuple of readonly `RomAssetEdit[]` lists | none; C++ does not own IDE/toolchain inputs |
+| Rebuilt medium | one raw `Uint8Array` per affected ROM | one raw `std::span<const u8>` at installation |
+| Machine install | `Memory.installSystemRom` / `CartridgeController.installRom` | matching `Memory::installSystemRom` / `CartridgeController::installRom` |
+
+The only callers that walk the edit lists are media construction in
+`buildBlua32Media`, final tail layout in `layoutBlua32MediaInstallation`, and
+the offline Scenario cartridge builder. None is a frame, CPU-fetch, memory-bus
+or renderer hot path. The machine receives only finished bytes and retains no
+source path, asset kind, batch, Studio callback or revision counter.
+
+This follows Godot's production split between resource-specific importers and
+an editor filesystem that first gathers a concrete file batch and then invokes
+the import pipeline. BMSX does not copy Godot's dynamic importer registry,
+thread pool, compatibility options or sidecar cache:
+
+- <https://github.com/godotengine/godot/blob/6ef60dc279b2c58a94ffc57bf98eefc9663f7907/core/io/resource_importer.h#L110-L167>
+- <https://github.com/godotengine/godot/blob/6ef60dc279b2c58a94ffc57bf98eefc9663f7907/editor/file_system/editor_file_system.cpp#L3237-L3299>
+- <https://github.com/godotengine/godot/blob/6ef60dc279b2c58a94ffc57bf98eefc9663f7907/editor/file_system/editor_file_system.cpp#L3317-L3380>
+
 ## Retained lists and panes
 
 `workbench/ui/list_view.ts` owns the common retained-list contract: row storage,

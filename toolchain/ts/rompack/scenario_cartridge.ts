@@ -174,11 +174,11 @@ export async function buildScenarioCartridge(
 		},
 	]);
 	const changes: Blua32PublicAssetChanges = {
-		assetEdit: [
+		assetEdits: [[
 			'lua',
 			scenarioTestAssetId(options.test.sourcePath),
 			utf8Encoder.encode(options.test.source),
-		],
+		]],
 	};
 	const imageByteCount = imageEntry.end! - imageEntry.start!;
 	const compileAssets = layoutBlua32PublicAssets(layer, imageByteCount, changes);

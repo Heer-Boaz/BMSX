@@ -107,12 +107,16 @@ test('BLua32-tail rebuild preserves immutable asset metadata addresses and bytes
 		const index = await parseCartridgeIndex(initialPayload);
 		const imageEntry = index.entries.find(entry => entry.resid === BLUA32_IMAGE_ID)!;
 		const symbolsEntry = index.entries.find(entry => entry.resid === BLUA32_SYMBOLS_IMAGE_ID)!;
+		const sourceEntry = index.entries.find(entry => entry.type === 'lua' && entry.resid === 'entry')!;
 		const fontEntry = index.entries.find(entry => entry.resid === 'terminal-font')!;
 		const spriteEntry = index.entries.find(entry => entry.resid === 'sprite')!;
 		const initialHeader = parseCartHeader(initialPayload);
 		const imageStart = imageEntry.start!;
 		const initialImageEnd = imageEntry.end!;
 		const initialSymbolsEnd = symbolsEntry.end!;
+		const sourceStart = sourceEntry.start!;
+		const sourceEnd = sourceEntry.end!;
+		const sourceBytes = initialPayload.slice(sourceStart, sourceEnd);
 		const metadataStart = spriteEntry.metabuffer_start!;
 		const metadataEnd = spriteEntry.metabuffer_end!;
 		const spriteStart = spriteEntry.start!;
@@ -140,12 +144,12 @@ test('BLua32-tail rebuild preserves immutable asset metadata addresses and bytes
 		const prelinkedAssetLayout = layoutBlua32PublicAssets(
 			systemLayer,
 			changed.linked.bytes.byteLength,
-			{ assetEdit: ['image', 'sprite', editedSpriteBytes] },
+			{ assetEdits: [['image', 'sprite', editedSpriteBytes]] },
 		);
 		const largerImageAssetLayout = layoutBlua32PublicAssets(
 			systemLayer,
 			changed.linked.bytes.byteLength + 0x10000,
-			{ assetEdit: ['image', 'sprite', editedSpriteBytes] },
+			{ assetEdits: [['image', 'sprite', editedSpriteBytes]] },
 		);
 		const prelinkedSprite = prelinkedAssetLayout.entries.find(entry => entry.resid === 'sprite')!;
 		const largerImageSprite = largerImageAssetLayout.entries.find(entry => entry.resid === 'sprite')!;
@@ -191,7 +195,7 @@ test('BLua32-tail rebuild preserves immutable asset metadata addresses and bytes
 			systemLayer,
 			changed.linked,
 			changed.diagnosticSources,
-			{ assetEdit: ['image', 'sprite', editedSpriteBytes] },
+			{ assetEdits: [['image', 'sprite', editedSpriteBytes]] },
 		);
 		const assetEditedFont = assetEdited.index.entries.find(entry => entry.resid === 'terminal-font')!;
 		const assetEditedSprite = assetEdited.index.entries.find(entry => entry.resid === 'sprite')!;
@@ -203,6 +207,30 @@ test('BLua32-tail rebuild preserves immutable asset metadata addresses and bytes
 			assetEdited.bytes.subarray(assetEditedSprite.start!, assetEditedSprite.end!),
 			editedSpriteBytes,
 		);
+
+		const editedFontBytes = Uint8Array.of(0x91, 0x92, 0x93);
+		const batchEdited = buildBlua32Tail(
+			systemLayer,
+			changed.linked,
+			changed.diagnosticSources,
+			{
+				assetEdits: [
+					['image', 'sprite', editedSpriteBytes],
+					['data', 'terminal-font', editedFontBytes],
+				],
+			},
+		);
+		const batchEditedFont = batchEdited.index.entries.find(entry => entry.resid === 'terminal-font')!;
+		const batchEditedSprite = batchEdited.index.entries.find(entry => entry.resid === 'sprite')!;
+		assert.deepEqual(
+			batchEdited.bytes.subarray(batchEditedFont.start!, batchEditedFont.end!),
+			editedFontBytes,
+		);
+		assert.deepEqual(
+			batchEdited.bytes.subarray(batchEditedSprite.start!, batchEditedSprite.end!),
+			editedSpriteBytes,
+		);
+		assert.deepEqual(batchEdited.bytes.subarray(sourceStart, sourceEnd), sourceBytes);
 	} finally {
 		await rm(ROOT, { recursive: true, force: true });
 	}

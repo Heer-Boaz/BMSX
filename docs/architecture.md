@@ -1033,25 +1033,28 @@ or an explicit tooling inspection reads them.
 
 For cartridge media, `__blua32__` begins the deliberately mutable executable tail after that prefix.
 It is one ordinary TOC payload containing a fixed binary image; it has no
-generic serializer descriptor and no parallel compiled range. Editing a
-ROM-backed authoring asset is also a physical-media revision: that asset moves
-from the immutable pack prefix into the mutable tail immediately after
-`__blua32__`. Later source or asset revisions retain every public asset already
-owned by that tail and compact them against the new executable end. Unedited
-assets that still precede `__blua32__`, metadata, and manifest spans remain in
-the immutable prefix. `__blua32_symbols__`, when present, follows the authoring
-assets and contains tooling metadata only. A debug ROM also carries the compact
-`__blua32_diagnostics__` directory consumed by BIOS code. The movable TOC
-follows the complete mutable tail. Hot Resume replaces the ROM header,
-executable bytes, authoring assets, symbols, diagnostics, and TOC; it does not
-maintain a parallel host-only asset override.
+generic serializer descriptor and no parallel compiled range. Editing
+ROM-backed authoring assets is also one physical-media revision: every asset in
+the edit batch moves from the immutable pack prefix into the mutable tail
+immediately after `__blua32__`. Later source or asset revisions retain every
+public asset already owned by that tail and compact them against the new
+executable end. Unedited assets that still precede `__blua32__`, metadata, and
+manifest spans remain in the immutable prefix. `__blua32_symbols__`, when
+present, follows the authoring assets and contains tooling metadata only. A
+debug ROM also carries the compact `__blua32_diagnostics__` directory consumed
+by BIOS code. The movable TOC follows the complete mutable tail. Hot Resume
+builds and installs the ROM header, executable bytes, complete authoring-asset
+batch, symbols, diagnostics, and TOC as one medium; it does not perform a
+sequence of partially visible asset installs or maintain a parallel host-only
+asset override.
 
 System media has the separate fixed asset partition at ROM offset
 `0x00400000`, beyond the maximum system executable end. A source-only system
 revision retains every public system-asset payload at its exact physical
 address and copies those bytes directly into the rebuilt medium; executable,
-symbols, diagnostics, and TOC may change around that fixed set. Editing one
-system authoring asset moves only that asset after the retained public ranges.
+symbols, diagnostics, and TOC may change around that fixed set. Edited system
+authoring assets move after the retained public ranges in their existing TOC
+order.
 Unrelated firmware fonts, textures, and binary tables do not move merely
 because source or another asset changed, so retained guest raw pointers keep
 naming the same physical payload without heap traversal or pointer rewriting.

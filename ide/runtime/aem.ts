@@ -8,6 +8,7 @@ import {
 	buildAemValidationLookup,
 	parseStructuredTextDocument,
 } from '../../toolchain/ts/rompack/aem';
+import type { RomAssetEdit } from '../../toolchain/ts/rompack/blua32_tail';
 import {
 	SYSTEM_RESOURCE_DOMAIN,
 	type RuntimeResource,
@@ -48,13 +49,15 @@ export function applyAemSourceToRuntime(
 	const lookup = buildRuntimeAemValidationLookup(sources);
 	assertValidAemDocument(doc, lookup, resource.path);
 	const eventMap = buildAemEventMap(doc, lookup);
+	const assetEdits: [RomAssetEdit[], RomAssetEdit[], RomAssetEdit[]] = [[], [], []];
+	assetEdits[resource.domain + 1].push(['aem', assetId, encodeBinary(eventMap)]);
 	const revision = buildBlua32Revision(
 		sources,
 		luaTooling,
 		runtime,
 		resource.domain === SYSTEM_RESOURCE_DOMAIN,
 		[resource.domain === 0, resource.domain === 1],
-		[resource.domain, ['aem', assetId, encodeBinary(eventMap)]],
+		assetEdits,
 	);
 	const relocation = buildHotResumeRelocation(
 		runtime.machine.cpu,

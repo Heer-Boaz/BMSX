@@ -10,7 +10,7 @@ import {
 	installBlua32Media,
 	layoutBlua32MediaInstallation,
 	type Blua32MediaInstallation,
-	type RuntimeRomAssetRevision,
+	type RuntimeRomAssetEditBatch,
 } from './lua_pipeline';
 import { CARTRIDGE_RESOURCE_DOMAINS } from '../common/resource';
 import {
@@ -161,7 +161,7 @@ export function buildBlua32Revision(
 	runtime: Runtime,
 	rebuildSystem: boolean,
 	rebuildCartridgeSlots: readonly [boolean, boolean],
-	assetRevision?: RuntimeRomAssetRevision,
+	assetEdits?: RuntimeRomAssetEditBatch,
 ): BuiltBlua32Revision {
 	const rebuilt = buildBlua32Media(
 		sources,
@@ -169,7 +169,7 @@ export function buildBlua32Revision(
 		runtime.machine.memory.ramByteCount(),
 		rebuildSystem,
 		rebuildCartridgeSlots,
-		assetRevision,
+		assetEdits,
 	);
 	const revisions: [
 		HotResumeRevision | null,
@@ -209,7 +209,7 @@ export function buildBlua32Revision(
 	}
 
 	return {
-		mediaInstallation: layoutBlua32MediaInstallation(sources, rebuilt, assetRevision),
+		mediaInstallation: layoutBlua32MediaInstallation(sources, rebuilt, assetEdits),
 		revisions,
 	};
 }

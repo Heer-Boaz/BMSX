@@ -45,7 +45,7 @@ export type RomAssetEdit = readonly [
 ];
 
 export type Blua32PublicAssetChanges = {
-	assetEdit?: RomAssetEdit;
+	assetEdits?: ReadonlyArray<RomAssetEdit>;
 	assetAdditions?: ReadonlyArray<RomAsset>;
 };
 
@@ -56,7 +56,7 @@ export function layoutBlua32PublicAssets(
 ): RomAssetPayloadLayout {
 	const header = parseCartHeader(layer.bytes);
 	const imageOffset = header.blua32ImageOffset;
-	const assetEdit = changes?.assetEdit;
+	const assetEdits = changes?.assetEdits;
 	const assetAdditions = changes?.assetAdditions;
 	const entries: RomAsset[] = [];
 	const relocatedSources: RomAsset[] = [];
@@ -64,7 +64,7 @@ export function layoutBlua32PublicAssets(
 	let tailOffset = layer.id === 'system'
 		? SYSTEM_ROM_ASSET_OFFSET
 		: alignRomAssetOffset(imageOffset + imageByteCount);
-	let edited = false;
+	let editedAssetCount = 0;
 	for (let index = 0; index < layer.index.entries.length; index += 1) {
 		const entry = layer.index.entries[index];
 		if (entry.resid === BLUA32_IMAGE_ID
@@ -73,9 +73,17 @@ export function layoutBlua32PublicAssets(
 			|| entry.resid === BLUA32_BIOS_IMPORTS_IMAGE_ID) {
 			continue;
 		}
-		const isEdited = assetEdit
-			&& entry.type === assetEdit[0]
-			&& entry.resid === assetEdit[1];
+		let assetEdit: RomAssetEdit | undefined;
+		if (assetEdits !== undefined) {
+			for (let editIndex = 0; editIndex < assetEdits.length; editIndex += 1) {
+				const candidate = assetEdits[editIndex];
+				if (entry.type === candidate[0] && entry.resid === candidate[1]) {
+					assetEdit = candidate;
+					break;
+				}
+			}
+		}
+		const isEdited = assetEdit !== undefined;
 		const movePayloads = isEdited
 			|| (layer.id === 'cart' && (
 				(entry.start != null && entry.start >= imageOffset)
@@ -118,7 +126,7 @@ export function layoutBlua32PublicAssets(
 		};
 		if (isEdited) {
 			source.buffer = assetEdit[2];
-			edited = true;
+			editedAssetCount += 1;
 		}
 		relocatedEntryIndices.push(entries.length);
 		relocatedSources.push(source);
@@ -141,8 +149,21 @@ export function layoutBlua32PublicAssets(
 		}
 		entries[entryIndex] = relocated;
 	}
-	if (assetEdit && !edited) {
-		throw new Error(`${assetEdit[0]} asset '${assetEdit[1]}' is not present in the ROM.`);
+	if (assetEdits !== undefined && editedAssetCount !== assetEdits.length) {
+		for (let editIndex = 0; editIndex < assetEdits.length; editIndex += 1) {
+			const assetEdit = assetEdits[editIndex];
+			let present = false;
+			for (let entryIndex = 0; entryIndex < layer.index.entries.length; entryIndex += 1) {
+				const entry = layer.index.entries[entryIndex];
+				if (entry.type === assetEdit[0] && entry.resid === assetEdit[1]) {
+					present = true;
+					break;
+				}
+			}
+			if (!present) {
+				throw new Error(`${assetEdit[0]} asset '${assetEdit[1]}' is not present in the ROM.`);
+			}
+		}
 	}
 	return {
 		entries,
