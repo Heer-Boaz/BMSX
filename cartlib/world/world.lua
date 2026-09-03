@@ -42,6 +42,7 @@ local component_class_chain<const> = require('cartlib/component/component_class'
 local prefab<const> = require('cartlib/world/prefab')
 local registry<const> = require('cartlib/registry')
 local space<const> = require('cartlib/world/space')
+local structural_batch<const> = require('cartlib/world/structural_batch')
 local system_manager<const> = require('cartlib/world/system_manager')
 
 local world
@@ -59,6 +60,7 @@ local mutation_disposal<const> = 0x80
 local mutation_clear<const> = 0x100
 local mutation_gameplay_clock<const> = 0x200
 local mutation_space_unload<const> = 0x400
+local mutation_structural_batch<const> = 0x800
 local structural_mutation_mask<const> = mutation_admission
 	| mutation_component_attach
 	| mutation_object
@@ -67,6 +69,7 @@ local structural_mutation_mask<const> = mutation_admission
 	| mutation_component_detach
 	| mutation_active_space
 	| mutation_gameplay_clock
+	| mutation_structural_batch
 
 bss cartlib_render_commands: word[render_command_capacity]
 
@@ -139,6 +142,8 @@ function world_class.new()
 	self._pending_gameplay_clock_running = true
 	self._initial_space_id = nil
 	self._system_manager = system_manager.new(self)
+	self._structural_batch = structural_batch.new(self)
+	self._structural_batch_completion_pending = false
 	self.gameplay_clock_running = true
 	self.gameplay_time_ms = 0
 	self._mutation_barrier_open = false
@@ -740,6 +745,20 @@ function world_class:_flush_admissions()
 	self._pending_admission_count = 0
 end
 
+-- A structural plan joins the current World barrier. Outside a system group
+-- the same operation opens and commits one barrier synchronously.
+function world_class:_submit_structural_plan(owner, plan)
+	local direct<const> = not self._mutation_barrier_open
+	if direct then
+		self:_open_mutation_barrier()
+	end
+	self._structural_batch:enqueue(owner, plan)
+	self._pending_mutation_mask = self._pending_mutation_mask | mutation_structural_batch
+	if direct then
+		self:_commit_mutation_barrier()
+	end
+end
+
 -- A prefab instance is fully constructed before Registry, space and system
 -- views publish it. During a tick group that publication or cancellation
 -- happens at the group barrier.
@@ -824,6 +843,14 @@ function world_class:_flush_disposals()
 	self._flushing_disposals = false
 end
 
+function world_class:_commit_pending_disposals()
+	if (self._pending_mutation_mask & mutation_disposal) == 0 then
+		return
+	end
+	self:_flush_disposals()
+	self._pending_mutation_mask = self._pending_mutation_mask - mutation_disposal
+end
+
 function world_class:_open_mutation_barrier()
 	self._mutation_barrier_open = true
 end
@@ -834,6 +861,10 @@ function world_class:_flush_structural_mutations()
 	-- this barrier so no Registry or space index remains stale for another group.
 	local schedule_changed = false
 	repeat
+		if (self._pending_mutation_mask & mutation_structural_batch) ~= 0 then
+			self._pending_mutation_mask = self._pending_mutation_mask - mutation_structural_batch
+			self._structural_batch:flush()
+		end
 		if (self._pending_mutation_mask & mutation_admission) ~= 0 then
 			self._pending_mutation_mask = self._pending_mutation_mask - mutation_admission
 			self:_flush_admissions()
@@ -885,13 +916,13 @@ function world_class:_commit_mutation_barrier()
 		schedule_changed = self:_flush_structural_mutations()
 	end
 	self._mutation_barrier_open = false
-	if (self._pending_mutation_mask & mutation_disposal) ~= 0 then
-		self:_flush_disposals()
-		self._pending_mutation_mask = self._pending_mutation_mask - mutation_disposal
-	end
+	self:_commit_pending_disposals()
 	if (self._pending_mutation_mask & mutation_clear) ~= 0 then
 		self._pending_mutation_mask = self._pending_mutation_mask - mutation_clear
 		self:_commit_clear()
+		if self._structural_batch_completion_pending then
+			self._structural_batch:complete()
+		end
 		return true
 	end
 	if (self._pending_mutation_mask & mutation_space_unload) ~= 0 then
@@ -907,6 +938,9 @@ function world_class:_commit_mutation_barrier()
 			contexts[index] = nil
 			callback(context)
 		end
+	end
+	if self._structural_batch_completion_pending then
+		self._structural_batch:complete()
 	end
 	return schedule_changed
 end

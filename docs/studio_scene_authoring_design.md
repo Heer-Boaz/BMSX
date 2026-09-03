@@ -454,15 +454,38 @@ source-remove of replacement geen nieuwe binding naar het oude object laat
 staan. Een ongewijzigde reference naar een gameplay-tombstone behoudt zoals
 hierboven beschreven de bestaande runtimevalue.
 
-Dit is één expliciete, niet-rollbackbare `World` structural batch. De huidige
-barrier verwerkt admissions vóór disposals en kan daardoor replacement-
-lifecycle en callbacks niet in terminal-old-before-new-volgorde uitvoeren. De
-World-slice moet daarom één owner-gebonden batchvolgorde toevoegen: eerst
-oude/vervangen members verwijderen, daarna
-nieuwe members in authored order publiceren, vervolgens retained setters en
-references toepassen en ten slotte de normale mutationqueues volledig drainen.
-Pas daarna publiceert `SceneInstance` zijn nieuwe membercorrespondence en
-revision. Geen systemview mag een half toegepaste scene-batch observeren.
+Dit is één expliciete, niet-rollbackbare `World` structural batch. De
+barrier-owner voert haar concrete volgorde uit vóór de gewone mutationdrain:
+eerst oude/vervangen members verwijderen, daarna voor alle additions input,
+initialize, construction en lifecycle uitvoeren, vervolgens nieuwe members in
+batch- en authored order publiceren en retained setters/references toepassen.
+Daarna draint World de normale mutationqueues volledig en roept pas als laatste
+de plancompletions aan. Een toekomstige `SceneInstance` publiceert uitsluitend
+op die completion haar nieuwe membercorrespondence en revision. Geen systemview
+kan een half toegepaste scene-batch observeren.
+
+Het concrete World-plan is geen callbackcommandbuffer. Zoals Flecs een
+`ecs_cmd_t` als getagde record met operatie-eigen payload bewaart, bevat het
+plan dense arrays van records: een removal is het object zelf, een addition
+bevat object, concrete prefabdefinition en constructioninput, en een retained
+mutation heeft een numerieke World-operation plus uitsluitend haar eigen
+velden (`object/x/y/z`, `object/space_id` of
+`object/concrete-setter/value`). Dit vermijdt zowel parallelle
+`value_1/value_2/value_3`-arrays en een willekeurige ariteitsgrens als een
+closure per command. De modulevaste dispatch hoort bij de World-batchowner;
+een plan bevat geen operation-kindstring, fieldnaamlookup of undo-closure. De
+completion is één concrete function value van de planowner waarmee die owner
+pas na de volledige World-drain zijn correspondence en revision publiceert.
+World voert zelf voor alle additions achtereenvolgens input, initialize,
+component/constructor, lifecycle en publication uit.
+
+`SceneInstance` mag de pure objectshells en hun runtime-ids vóór enqueue in
+authored order reserveren om haar final membermap en cyclic inputs te bouwen;
+initialize, constructors en lifecycle beginnen pas wanneer World het nieuwste
+plan werkelijk commit. Een vóór de barrier gecoalescete revision kan daardoor
+uitsluitend ongepubliceerde shells en gereserveerde terminale ids achterlaten,
+geen lifecycle- of Registry-state. Zoals een deferred ECS entity-id wordt zo'n
+terminal id niet hergebruikt.
 
 Staat een system tick group open, dan retainen `World` en `SceneInstance` het
 plan en committen het aan de bestaande mutation barrier. Is de barrier dicht,

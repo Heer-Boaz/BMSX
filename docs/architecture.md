@@ -1385,11 +1385,14 @@ initialization, component/constructor construction, spawn/activation and
 admission. Ordinary `world:spawn()` calls those same primitives without a
 temporary batch; a future scene owner can allocate all runtime identities and
 apply all resolved peer inputs before initialization without publishing a
-half-built object. The remaining structural-batch slice must make the mutation
-barrier commit terminal-old-before-new replacement. A scene-local authored
-`member_id` is stable correspondence, while `Registry` continues to own a
-separate terminal runtime `WorldObject.id`; replacement allocates a new runtime
-identity. The open slices may not reproduce either lifecycle inside scene code.
+half-built object. Its retained structural-batch owner coalesces plans per
+participant at the existing mutation barrier, commits all terminal removals
+before any new admission, applies concrete retained setters only after batch
+publication, drains lifecycle mutations and only then completes participants.
+A scene-local authored `member_id` is stable correspondence, while `Registry`
+continues to own a separate terminal runtime `WorldObject.id`; replacement
+allocates a new runtime identity. The open slices may not reproduce either
+lifecycle inside scene code.
 
 Scene membership is first-class cartlib runtime state. `World` retains its
 loaded scene instances package-internally, and each admitted authored object
