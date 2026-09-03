@@ -145,7 +145,25 @@ publiceren die `actioneffect_component:trigger()` zelf bezit. De host raadt geen
 reden uit tags, state paths, cooldownvelden of custom componentstate. Een
 accepted trigger wordt gepubliceerd nadat zijn immediate/deferred cooldownstate
 is committed en vóór de handler een geneste trigger of event kan uitvoeren.
-Lifecycle- en periodieke feiten blijven afzonderlijke toekomstige categorieën.
+Activity- en periodieke feiten blijven afzonderlijke categorieën en worden niet
+stilzwijgend als triggeroutcome gerapporteerd.
+
+### Active-effectnotificatie volgt de statecommit
+
+Unreal publiceert een toegevoegd active effect pas vanaf de container-owner,
+nadat ongoing requirements en de bijbehorende tags/modifiers zijn verwerkt
+([gepinde productiebron](https://github.com/folgerwang/UnrealEngine/blob/99a530d4ccbe6bea1e8f49df20acfeb294006962/Engine/Plugins/Runtime/GameplayAbilities/Source/GameplayAbilities/Private/GameplayEffect.cpp#L2987-L3135)).
+Bij removal markeert dezelfde owner het effect eerst als pending, verwijdert de
+effect-owned gevolgen en publiceert daarna haar removaldelegate
+([gepinde productiebron](https://github.com/folgerwang/UnrealEngine/blob/99a530d4ccbe6bea1e8f49df20acfeb294006962/Engine/Plugins/Runtime/GameplayAbilities/Source/GameplayAbilities/Private/GameplayEffect.cpp#L3310-L3342)).
+
+**Gevolg voor BMSX:** `activate()` en `deactivate()` zijn geen kopie van
+Unreal's effectobjectlifecycle; zij retainen en releasen de BMSX-effectrecord
+voor state-scoping en periodieke scheduling. Hun producerfeit draagt daarom de
+nieuwe rauwe `active_count`, pas nadat die count en bij de eerste retain ook de
+periodieke lane/deadline zijn gecommitted. De host vertaalt dit niet naar
+`added`, `removed` of een boolean die de geneste/concurrente retainsemantiek
+verliest.
 
 ## Echte BMSX-representaties
 
@@ -497,8 +515,14 @@ de admission-uitkomst van een concrete ActionEffect-`trigger()`: de component en
 effect-id bestaan al, terwijl de producer op iedere echte afwijzingsgrens een
 reden kan behouden zonder de host state te laten reconstrueren. Activation,
 deactivation, cooldown commitment en periodieke uitvoering zijn andere feiten
-en worden niet stilzwijgend aan deze slice toegevoegd. BT-occurrence-identiteit
-is nog niet sterk genoeg en wordt niet via een van beide kanalen gegeneraliseerd.
+en worden niet stilzwijgend aan die slice toegevoegd. De derde gekozen
+categorie voegt uitsluitend de aggregate retain/release-count van
+`activate()`/`deactivate()` toe. Omdat trigger en activity van dezelfde concrete
+component causaal kunnen nestelen, delen zij één producer-owned volgorde; twee
+losse buffers die de host op millisecondetijd probeert te mergen zijn ongeldig.
+Cooldown commitment en periodieke uitvoering blijven buiten deze slice.
+BT-occurrence-identiteit is nog niet sterk genoeg en wordt niet via een van deze
+kanalen gegeneraliseerd.
 
 ## Observabilitycontract
 
@@ -699,6 +723,40 @@ twee cycles voor de Scenario-selectie en vervolgens dertig cycles per
 gepubliceerd record. Na warm-up bleef de door de VM bijgehouden guest-heap over
 10.000 records exact gelijk. Dit zijn synthetische cyclemetingen van alleen de
 triggergrens, geen algemeen framebudget of low-end-hostmeting.
+
+### Derde gekozen producer: ActionEffect-activity
+
+`STUDIO-ACTIONEFFECT-ACTIVITY-TRACE-01` breidt de geselecteerde
+componentstream uit met de echte `activate(id)`- en `deactivate(id)`-commits.
+Dit wordt geen tweede lifecyclebuffer: activiteit kan direct voor een trigger
+worden gecommitted en een latere handler kan opnieuw activeren of deactiveren.
+Eén component-recorder bewaart daarom én triggerfacts én activityfacts in de
+werkelijke producer-order.
+
+De interne Scenario-records hebben één vaste arrayvorm:
+
+| Waarde | Arrayvelden |
+| --- | --- |
+| kanaal | concrete owner-id; owner-definition-id; capacity; published sequence; retained record-array |
+| record | producer sequence; raw `SYS_TIME_MS`; fact kind; effect-id; fact value |
+
+Voor `trigger` is de fact value de rechtstreeks geïnterneerde outcome-string.
+Voor `activate` en `deactivate` is zij de nieuwe rauwe integer-`active_count`.
+De host materialiseert daar een typed fact-union van, maar behoudt één ordered
+retained sequence en doet geen state-inference. De UI mag count nul dus niet als
+`removed` hernoemen: de effectrecord blijft granted en de periodieke lane wordt
+volgens de bestaande componentsemantiek pas op haar tickgrens verwijderd.
+
+Een echte Nemesis-inputflow houdt `Space` vast en laat los. De trace moet in
+dezelfde stream `activate` count 1, een accepted `trigger` en `deactivate` count
+0 tonen, terwijl de bestaande gameplayassertie de periodieke salvo-cadans
+controleert. Dat bewijst input-, component- en observatie-integratie zonder een
+test die de drie methods zelf in de gewenste volgorde aanroept.
+
+Niet in deze slice: grant/revoke/rebind, cooldowncommit, periodic-executionfact,
+effectpayloads, sourcemapping of een algemene lifecycle/eventfacade. Gewone
+release-, debug- en Hot Resume-bytecode bevatten ook voor activity geen sink,
+branch, kindstring of recorderstate.
 
 ### Pauze en semantic stepping
 
