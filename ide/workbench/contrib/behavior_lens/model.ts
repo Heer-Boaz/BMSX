@@ -16,6 +16,14 @@ export type BehaviorSourceNodeKind =
 
 export type BehaviorSourceResolution = 'complete' | 'partial' | 'unresolved';
 
+/** Static authored occurrence of one behavior registration in a workspace generation. */
+export type BehaviorRegistrationSource = {
+	readonly resource: ResourceIdentity;
+	readonly behaviorKind: BehaviorKind;
+	readonly semanticId: string;
+	readonly range: LuaSourceRange;
+};
+
 /** Workbench-only identity for one authored source-tree occurrence. */
 export type BehaviorSourceRowKey = string;
 

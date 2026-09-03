@@ -1,9 +1,14 @@
-import type { LuaExpression } from '../../../../toolchain/ts/lua/syntax/ast';
+import { LuaSyntaxKind, type LuaExpression } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { FileSemanticData, LuaCallSite, SymbolID } from '../../../../toolchain/ts/lua/semantic/model';
 import type { ResourceIdentity } from '../../../common/resource';
 import { buildActionEffectDefinition } from './action_effect';
 import { buildBehaviorTreeDefinition } from './behavior_tree';
-import type { BehaviorKind, BehaviorSourceDocument, BehaviorSourceNode } from './model';
+import type {
+	BehaviorKind,
+	BehaviorRegistrationSource,
+	BehaviorSourceDocument,
+	BehaviorSourceNode,
+} from './model';
 import {
 	appendBehaviorSourcePath,
 	collectConstInitializers,
@@ -84,6 +89,77 @@ export function buildBehaviorSourceDocument(
 		resource,
 		definitions,
 	};
+}
+
+/**
+ * Collects source-owned registration identities without executing Lua or
+ * assigning runtime meaning to an authored occurrence.
+ */
+export function collectBehaviorRegistrationSources(
+	resource: ResourceIdentity,
+	analysis: FileSemanticData,
+): readonly BehaviorRegistrationSource[] {
+	const constInitializers = collectConstInitializers(analysis);
+	const activeDeclarations = new Set<SymbolID>();
+	const sources: BehaviorRegistrationSource[] = [];
+	for (let index = 0; index < analysis.callSites.length; index += 1) {
+		const callSite = analysis.callSites[index];
+		const registration = resolveRegistration(callSite);
+		if (registration === null) {
+			continue;
+		}
+		const idExpression = callSite.expression.arguments[0];
+		if (idExpression === undefined) {
+			continue;
+		}
+		const semanticId = resolveRegistrationId(
+			analysis,
+			constInitializers,
+			idExpression,
+			activeDeclarations,
+		);
+		if (semanticId === null) {
+			continue;
+		}
+		sources.push({
+			resource,
+			behaviorKind: registration.behaviorKind,
+			semanticId,
+			range: idExpression.range,
+		});
+	}
+	return sources;
+}
+
+function resolveRegistrationId(
+	analysis: FileSemanticData,
+	constInitializers: ReadonlyMap<SymbolID, LuaExpression>,
+	expression: LuaExpression,
+	activeDeclarations: Set<SymbolID>,
+): string | null {
+	if (expression.kind === LuaSyntaxKind.StringLiteralExpression) {
+		return expression.value;
+	}
+	if (expression.kind !== LuaSyntaxKind.IdentifierExpression) {
+		return null;
+	}
+	const declarationId = analysis.referencesBySyntax.get(expression)?.target;
+	if (declarationId === undefined || activeDeclarations.has(declarationId)) {
+		return null;
+	}
+	const initializer = constInitializers.get(declarationId);
+	if (initializer === undefined) {
+		return null;
+	}
+	activeDeclarations.add(declarationId);
+	const value = resolveRegistrationId(
+		analysis,
+		constInitializers,
+		initializer,
+		activeDeclarations,
+	);
+	activeDeclarations.delete(declarationId);
+	return value;
 }
 
 function resolveRegistration(

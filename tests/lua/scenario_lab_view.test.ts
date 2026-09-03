@@ -217,10 +217,14 @@ test('scenario result projection retains ordered ActionEffect facts', (t) => {
 	);
 	selectScenarioLabResultRow(view, factIndices[1]);
 	const activation = executeScenarioLabNavigation(view, 'activate');
-	assert.equal(activation.kind, 'changed');
+	assert.deepEqual(activation, {
+		kind: 'actioneffect-source',
+		executionDomain: 0,
+		effectId: 'fire_salvo',
+	});
 	assert.match(
 		view.status.info,
-		/ACTIONEFFECT nemesis_s\.player\.1 \/ SOURCE UNAVAILABLE/,
+		/ACTIONEFFECT fire_salvo \/ OWNER nemesis_s\.player\.1/,
 	);
 });
 

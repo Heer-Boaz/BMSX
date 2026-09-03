@@ -92,6 +92,7 @@ import { IdeCommandController } from './commands/controller';
 import { initializeNavigationState } from './navigation/navigation_history';
 import { EditorNavigationController } from './workbench/contrib/resources/navigation';
 import { BehaviorLensController } from './workbench/contrib/behavior_lens/controller';
+import { BehaviorRegistrationIndex } from './workbench/contrib/behavior_lens/registration_index';
 import { drawBehaviorLens } from './workbench/contrib/behavior_lens/render';
 import { ScenarioLabController } from './workbench/contrib/scenario_lab/controller';
 import { drawScenarioLab } from './workbench/contrib/scenario_lab/render';
@@ -264,6 +265,7 @@ export class RuntimeCartEditor implements CartEditor {
 			this.sources,
 			this.navigation,
 			this.resourcePanel,
+			new BehaviorRegistrationIndex(this.sources),
 			scenarioTests,
 			scenarioRuns,
 			this.runtime,

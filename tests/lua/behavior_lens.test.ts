@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { buildBehaviorSourceDocument } from '../../ide/workbench/contrib/behavior_lens/recognizer';
+import {
+	buildBehaviorSourceDocument,
+	collectBehaviorRegistrationSources,
+} from '../../ide/workbench/contrib/behavior_lens/recognizer';
 import type { BehaviorSourceNode } from '../../ide/workbench/contrib/behavior_lens/model';
 import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
 
@@ -126,6 +129,64 @@ test('behavior lens exposes the authored ActionEffect gates and execution fields
 	assert.ok(nodes.some(node => node.label === 'can_trigger = <function>'));
 	assert.ok(nodes.some(node => node.label === 'handler = <function>'));
 	assert.equal(nodes.filter(node => node.label === 'blocked_tags (1)').length, 3);
+});
+
+test('behavior registration correspondence resolves literal and immutable const ids', () => {
+	const nemesisPath = 'carts/nemesis_s/player/actioneffects.lua';
+	const nemesis = collectBehaviorRegistrationSources(
+		{ domain: 0, path: nemesisPath },
+		buildLuaFileSemanticData(readFileSync(nemesisPath, 'utf8'), nemesisPath),
+	);
+	assert.equal(nemesis.length, 1);
+	assert.deepEqual({
+		resource: nemesis[0].resource,
+		behaviorKind: nemesis[0].behaviorKind,
+		semanticId: nemesis[0].semanticId,
+		line: nemesis[0].range.start.line,
+	}, {
+		resource: { domain: 0, path: nemesisPath },
+		behaviorKind: 'action_effect',
+		semanticId: 'fire_salvo',
+		line: 16,
+	});
+
+	const pietiousPath = 'carts/pietious/player/actioneffects.lua';
+	const pietious = collectBehaviorRegistrationSources(
+		{ domain: 1, path: pietiousPath },
+		buildLuaFileSemanticData(readFileSync(pietiousPath, 'utf8'), pietiousPath),
+	);
+	assert.deepEqual(
+		pietious.map(source => source.semanticId),
+		['pepernoot', 'spyglass', 'halo'],
+	);
+});
+
+test('behavior registration correspondence retains duplicates and rejects dynamic ids', () => {
+	const path = 'registration_ids.lua';
+	const source = [
+		"local effects<const> = require('cartlib/actioneffects')",
+		"local root_id<const> = 'stable'",
+		'local alias_id<const> = root_id',
+		"local mutable_id = 'dynamic'",
+		'effects.register_effect(alias_id, {})',
+		"effects.register_effect('stable', {})",
+		'effects.register_effect(mutable_id, {})',
+		'effects.register_effect(build_id(), {})',
+	].join('\n');
+	const registrations = collectBehaviorRegistrationSources(
+		{ domain: 0, path },
+		buildLuaFileSemanticData(source, path),
+	);
+	assert.deepEqual(
+		registrations.map(registration => [
+			registration.semanticId,
+			registration.range.start.line,
+		]),
+		[
+			['stable', 5],
+			['stable', 6],
+		],
+	);
 });
 
 test('behavior lens keeps computed definitions dynamic and ignores shadowed module aliases', () => {

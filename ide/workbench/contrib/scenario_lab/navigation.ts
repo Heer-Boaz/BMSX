@@ -24,7 +24,12 @@ export type ScenarioLabNavigationCommand =
 export type ScenarioLabNavigationResult =
 	| { readonly kind: 'none' }
 	| { readonly kind: 'changed' }
-	| { readonly kind: 'open-source'; readonly location: ScenarioSourceLocation };
+	| { readonly kind: 'open-source'; readonly location: ScenarioSourceLocation }
+	| {
+		readonly kind: 'actioneffect-source';
+		readonly executionDomain: 0 | 1;
+		readonly effectId: string;
+	};
 
 const NAVIGATION_NONE: ScenarioLabNavigationResult = { kind: 'none' };
 const NAVIGATION_CHANGED: ScenarioLabNavigationResult = { kind: 'changed' };
@@ -38,7 +43,7 @@ export function updateScenarioLabStatus(state: ScenarioLabViewState): void {
 			return;
 		}
 		if (row !== null && row.kind === 'actioneffect_fact') {
-			state.status.info = `ACTIONEFFECT ${row.trace.ownerId} / SOURCE UNAVAILABLE`;
+			state.status.info = `ACTIONEFFECT ${row.fact.effectId} / OWNER ${row.trace.ownerId}`;
 			state.status.dirty = true;
 			return;
 		}
@@ -191,9 +196,16 @@ function activateScenarioLabSelection(state: ScenarioLabViewState): ScenarioLabN
 		toggleScenarioLabResultRow(state, state.resultPane.selectionIndex);
 		return NAVIGATION_CHANGED;
 	}
-	if (row.kind === 'fsm_transition' || row.kind === 'actioneffect_fact') {
+	if (row.kind === 'fsm_transition') {
 		updateScenarioLabStatus(state);
 		return NAVIGATION_CHANGED;
+	}
+	if (row.kind === 'actioneffect_fact') {
+		return {
+			kind: 'actioneffect-source',
+			executionDomain: row.trace.executionDomain,
+			effectId: row.fact.effectId,
+		};
 	}
 	return { kind: 'open-source', location: row.location };
 }

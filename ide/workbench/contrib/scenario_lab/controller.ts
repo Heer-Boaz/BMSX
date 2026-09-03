@@ -41,6 +41,7 @@ import type { ScenarioTestCollection } from '../../../testing/scenario/test_coll
 import type { ScenarioLabViewState } from './view_model';
 import { createScenarioLabViewState } from './view_state';
 import type { ScenarioSourceLocation } from '../../../testing/scenario/result_service';
+import type { BehaviorRegistrationIndex } from '../behavior_lens/registration_index';
 
 const SCENARIO_LAB_TAB_ID: ScenarioLabTabId = 'scenario-lab';
 const WHEEL_SCROLL_ROWS = 3;
@@ -55,6 +56,7 @@ export class ScenarioLabController {
 		private readonly sources: RuntimeSourceState,
 		private readonly navigation: EditorNavigationController,
 		private readonly resourcePanel: ResourcePanelController,
+		private readonly behaviorRegistrations: BehaviorRegistrationIndex,
 		private readonly collection: ScenarioTestCollection,
 		private readonly runs: ScenarioRunService,
 		private readonly runtime: Runtime,
@@ -88,7 +90,7 @@ export class ScenarioLabController {
 	): boolean {
 		prepareScenarioLabLayout(view);
 		const result = executeScenarioLabNavigation(view, command);
-		return this.applyNavigationResult(result);
+		return this.applyNavigationResult(view, result);
 	}
 
 	public handlePointer(
@@ -111,7 +113,10 @@ export class ScenarioLabController {
 			case ScenarioLabPointerResult.Handled:
 				return true;
 			case ScenarioLabPointerResult.Activate:
-				this.applyNavigationResult(executeScenarioLabNavigation(view, 'activate'));
+				this.applyNavigationResult(
+					view,
+					executeScenarioLabNavigation(view, 'activate'),
+				);
 				return true;
 		}
 	}
@@ -196,7 +201,10 @@ export class ScenarioLabController {
 		setActiveTab(this.resourcePanel, tab.id);
 	}
 
-	private applyNavigationResult(result: ScenarioLabNavigationResult): boolean {
+	private applyNavigationResult(
+		view: ScenarioLabViewState,
+		result: ScenarioLabNavigationResult,
+	): boolean {
 		switch (result.kind) {
 			case 'none':
 				return false;
@@ -205,6 +213,27 @@ export class ScenarioLabController {
 			case 'open-source':
 				this.openSource(result.location);
 				return true;
+			case 'actioneffect-source': {
+				const sources = this.behaviorRegistrations.resolve(
+					result.executionDomain,
+					'action_effect',
+					result.effectId,
+				);
+				if (sources.length === 1) {
+					const source = sources[0];
+					this.openSource({
+						resource: source.resource,
+						line: source.range.start.line,
+						column: source.range.start.column,
+					});
+					return true;
+				}
+				view.status.info = sources.length === 0
+					? `ACTIONEFFECT ${result.effectId} / SOURCE UNRESOLVED`
+					: `ACTIONEFFECT ${result.effectId} / ${sources.length} SOURCES`;
+				view.status.dirty = true;
+				return true;
+			}
 		}
 	}
 

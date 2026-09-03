@@ -265,10 +265,36 @@ t.capture('scenario-lab-actioneffect-result-tiny-384x288');
 
 await pressKey('Tab', 310);
 t.assert(view.focus === 'results', 'Tab did not move focus to result history');
-await pressKey('ArrowDown', 311);
+const fireFactRowIndex = resultPane.rows.findIndex(row =>
+	row.kind === 'actioneffect_fact' && row.fact === fireTrigger);
+t.assert(fireFactRowIndex > 0, 'accepted fire fact is missing from result navigation');
+while (resultPane.selectionIndex < fireFactRowIndex) {
+	await pressKey('ArrowDown', navigationPressId);
+	navigationPressId += 1;
+}
+await pressKey('Enter', navigationPressId);
+navigationPressId += 1;
+t.assert(t.activeWorkbenchTab().kind === 'code_editor', 'ActionEffect fact activation did not open source');
+t.assert(t.activeEditorDocument().resource.path === 'player/actioneffects.lua', 'ActionEffect fact activation opened the wrong registration resource');
+t.assert(t.activeEditorDocument().cursorRow === 15, 'ActionEffect fact activation did not select the fire_salvo registration');
+
+t.command('scenarioLab');
+await t.frames(2);
+t.assert(t.activeWorkbenchTab() === labTab && labTab.view === view, 'source navigation replaced the retained Scenario Lab input');
+const firstLogRowIndex = resultPane.rows.findIndex(row => row.kind === 'log');
+t.assert(firstLogRowIndex > 0, 'completed ActionEffect scenario has no retained log');
+while (resultPane.selectionIndex > firstLogRowIndex) {
+	await pressKey('ArrowUp', navigationPressId);
+	navigationPressId += 1;
+}
+while (resultPane.selectionIndex < firstLogRowIndex) {
+	await pressKey('ArrowDown', navigationPressId);
+	navigationPressId += 1;
+}
 const detailRow = resultPane.rows[resultPane.selectionIndex];
 t.assert(detailRow.kind === 'log', 'result navigation did not reach the first retained log');
-await pressKey('Enter', 312);
+await pressKey('Enter', navigationPressId);
+navigationPressId += 1;
 t.assert(t.activeWorkbenchTab().kind === 'code_editor', 'result activation did not open source');
 t.assert(t.activeEditorDocument().resource.path === detailRow.location.resource.path, 'result activation opened the wrong source resource');
 
