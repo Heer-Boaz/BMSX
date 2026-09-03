@@ -107,6 +107,13 @@ the final wildcard contribution owns the ordinary resource viewer. Editor ids
 also allow another matching editor to be selected explicitly without changing
 the resource or duplicating its document.
 
+`runtime/sources.ts` indexes source-backed ordinary `data` and `aem` assets as
+data resources alongside the Lua source registry. It does not identify which
+editor will open them. Only the active execution domain contributes data
+resources to the visible catalog, while the existing domain-qualified identity
+map retains all installed domains. Compiler-owned `code` payloads and assets
+without a source path are not source documents.
+
 This is the deliberately small built-in subset of VS Code's editor resolver:
 editors register independently against resource patterns, resolution chooses a
 matching editor/factory, and custom editors match the resource rather than

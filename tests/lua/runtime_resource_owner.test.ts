@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
 	SYSTEM_RESOURCE_DOMAIN,
 	resourceIdentityKey,
+	type RuntimeResource,
 } from '../../ide/common/resource';
 import {
 	enterCartridgeSources,
@@ -84,6 +85,17 @@ function romSource(entries: RomAsset[]): RawRomSource {
 			return type ? entries.filter(entry => entry.type === type) : entries;
 		},
 	};
+}
+
+function activeDataResources(sources: ReturnType<typeof createTestRuntimeSourceState>): RuntimeResource[] {
+	const resources: RuntimeResource[] = [];
+	for (let index = 0; index < sources.activeResources.length; index += 1) {
+		const resource = sources.activeResources[index];
+		if (resource.source.type === 'data' || resource.source.type === 'aem') {
+			resources.push(resource);
+		}
+	}
+	return resources;
 }
 
 test('runtime source owner retains Lua resource identity when its source record is replaced', () => {
@@ -175,7 +187,7 @@ test('workspace entry tab opens the development cartridge instead of the booting
 	assert.equal(retainEntryTabContext(sources).view.cursorRow, 7);
 });
 
-test('active resource catalog exposes AEM only from the active source domain', () => {
+test('active resource catalog exposes source-backed data only from the active source domain', () => {
 	const systemRegistry = sourceRegistry('machine/ts', [
 		luaSource('system/main.lua', 'system-main', 'return 1'),
 	]);
@@ -189,9 +201,13 @@ test('active resource catalog exposes AEM only from the active source domain', (
 	);
 	sources.systemRomSource = romSource([
 		{ resid: 'system-scene', type: 'aem', source_path: 'system/scene.aem' },
+		{ resid: 'system-config', type: 'data', source_path: 'system/config.json' },
+		{ resid: 'compiled-image', type: 'code', source_path: 'compiled.image' },
+		{ resid: 'source-less', type: 'data' },
 	]);
 	sources.cartridgeSlots[0]!.romSource = romSource([
 		{ resid: 'cart-scene', type: 'aem', source_path: 'scenes/cart.aem' },
+		{ resid: 'enemy-guard', type: 'data', source_path: 'res/data/enemy_guard.bt.jsonc' },
 	]);
 	rebuildRuntimeSourceResources(sources);
 
@@ -203,19 +219,32 @@ test('active resource catalog exposes AEM only from the active source domain', (
 		domain: 0,
 		path: 'scenes/cart.aem',
 	});
+	const systemData = resolveRuntimeResource(sources, {
+		domain: SYSTEM_RESOURCE_DOMAIN,
+		path: 'system/config.json',
+	});
+	const cartridgeData = resolveRuntimeResource(sources, {
+		domain: 0,
+		path: 'res/data/enemy_guard.bt.jsonc',
+	});
 	assert.ok(systemAem);
 	assert.ok(cartridgeAem);
-	assert.ok(sources.activeResources.includes(systemAem));
-	assert.ok(!sources.activeResources.includes(cartridgeAem));
+	assert.ok(systemData);
+	assert.ok(cartridgeData);
+	assert.equal(cartridgeData.source.type, 'data');
+	assert.equal(resolveRuntimeResource(sources, {
+		domain: SYSTEM_RESOURCE_DOMAIN,
+		path: 'compiled.image',
+	}), undefined);
+	assert.deepEqual(activeDataResources(sources), [systemData, systemAem]);
 
 	enterCartridgeSources(sources, 0);
-	assert.ok(!sources.activeResources.includes(systemAem));
-	assert.ok(sources.activeResources.includes(cartridgeAem));
+	assert.deepEqual(activeDataResources(sources), [cartridgeData, cartridgeAem]);
 
 	enterSystemSources(sources);
 	assert.strictEqual(
 		resolveRuntimeResource(sources, { domain: SYSTEM_RESOURCE_DOMAIN, path: 'system/scene.aem' }),
 		systemAem,
 	);
-	assert.ok(sources.activeResources.includes(systemAem));
+	assert.deepEqual(activeDataResources(sources), [systemData, systemAem]);
 });

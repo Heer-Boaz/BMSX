@@ -62,7 +62,7 @@ export type RuntimeCartridgeSourceState = {
 	romSource: RawRomSource;
 	projectRootPath: string;
 	installedBlua32Sources: ReadonlyMap<string, string>;
-	aemResources: RuntimeResource[];
+	dataResources: RuntimeResource[];
 };
 
 export type RuntimeSourceState = {
@@ -76,7 +76,7 @@ export type RuntimeSourceState = {
 	activeRomSource: RawRomSource;
 	resourceByIdentity: Map<string, RuntimeResource>;
 	luaResources: RuntimeResource[];
-	systemAemResources: RuntimeResource[];
+	systemDataResources: RuntimeResource[];
 	activeResources: RuntimeResource[];
 	systemProjectRootPath: string;
 	activeCartridgeSlot: ResourceDomain;
@@ -178,7 +178,7 @@ export function createRuntimeSourceState(
 			romSource: cartRomSource,
 			projectRootPath: cartLayer.index.projectRootPath,
 			installedBlua32Sources: indexInstalledBlua32Sources(cartLuaSources),
-			aemResources: [],
+			dataResources: [],
 		};
 		const image = loadBlua32ToolingImage(cartLayer, CART_ROM_BASE);
 		cartridgeToolingImages[slot] = image
@@ -197,7 +197,7 @@ export function createRuntimeSourceState(
 		activeRomSource: systemSource,
 		resourceByIdentity: new Map(),
 		luaResources: [],
-		systemAemResources: [],
+		systemDataResources: [],
 		activeResources: [],
 		systemProjectRootPath,
 		activeCartridgeSlot: SYSTEM_RESOURCE_DOMAIN,
@@ -226,7 +226,7 @@ export function enterSystemSources(state: RuntimeSourceState): void {
 	state.activePackage = state.systemPackage;
 	state.activeLuaSources = state.systemLuaSources;
 	state.activeRomSource = state.systemRomSource;
-	refreshActiveResources(state, state.systemAemResources);
+	refreshActiveResources(state, state.systemDataResources);
 }
 
 export function enterCartridgeSources(state: RuntimeSourceState, slot: 0 | 1): void {
@@ -235,7 +235,7 @@ export function enterCartridgeSources(state: RuntimeSourceState, slot: 0 | 1): v
 	state.activePackage = cartridge.package;
 	state.activeLuaSources = cartridge.luaSources;
 	state.activeRomSource = cartridge.romSource;
-	refreshActiveResources(state, cartridge.aemResources);
+	refreshActiveResources(state, cartridge.dataResources);
 }
 
 export function syncRuntimeSourceActivity(state: RuntimeSourceState, cartridgeSlot: ResourceDomain): void {
@@ -433,8 +433,8 @@ export function registerRuntimeLuaResource(
 	refreshActiveResources(
 		state,
 		state.activeCartridgeSlot === SYSTEM_RESOURCE_DOMAIN
-			? state.systemAemResources
-			: state.cartridgeSlots[state.activeCartridgeSlot]!.aemResources,
+			? state.systemDataResources
+			: state.cartridgeSlots[state.activeCartridgeSlot]!.dataResources,
 	);
 	return resource;
 }
@@ -451,7 +451,7 @@ export function rebuildRuntimeSourceResources(state: RuntimeSourceState): void {
 			continue;
 		}
 		retainLuaResources(previousResources, resources, state.luaResources, domain, cartridge.luaSources);
-		rebuildAemResources(previousResources, resources, cartridge.aemResources, domain, cartridge.romSource);
+		rebuildDataResources(previousResources, resources, cartridge.dataResources, domain, cartridge.romSource);
 	}
 	retainLuaResources(
 		previousResources,
@@ -460,10 +460,10 @@ export function rebuildRuntimeSourceResources(state: RuntimeSourceState): void {
 		SYSTEM_RESOURCE_DOMAIN,
 		state.systemLuaSources,
 	);
-	rebuildAemResources(
+	rebuildDataResources(
 		previousResources,
 		resources,
-		state.systemAemResources,
+		state.systemDataResources,
 		SYSTEM_RESOURCE_DOMAIN,
 		state.systemRomSource,
 	);
@@ -471,8 +471,8 @@ export function rebuildRuntimeSourceResources(state: RuntimeSourceState): void {
 	refreshActiveResources(
 		state,
 		state.activeCartridgeSlot === SYSTEM_RESOURCE_DOMAIN
-			? state.systemAemResources
-			: state.cartridgeSlots[state.activeCartridgeSlot]!.aemResources,
+			? state.systemDataResources
+			: state.cartridgeSlots[state.activeCartridgeSlot]!.dataResources,
 	);
 }
 
@@ -514,21 +514,21 @@ function retainLuaResources(
 	}
 }
 
-function rebuildAemResources(
+function rebuildDataResources(
 	previousResources: ReadonlyMap<string, RuntimeResource>,
 	resources: Map<string, RuntimeResource>,
-	aemResources: RuntimeResource[],
+	dataResources: RuntimeResource[],
 	domain: ResourceDomain,
 	romSource: RawRomSource,
 ): void {
-	aemResources.length = 0;
-	const records = romSource.list('aem');
+	dataResources.length = 0;
+	const records = romSource.list();
 	for (let index = 0; index < records.length; index += 1) {
 		const source = records[index];
-		if (!source.source_path) {
+		if ((source.type !== 'data' && source.type !== 'aem') || !source.source_path) {
 			continue;
 		}
-		aemResources.push(retainRuntimeResource(
+		dataResources.push(retainRuntimeResource(
 			previousResources,
 			resources,
 			domain,
@@ -536,16 +536,16 @@ function rebuildAemResources(
 			source,
 		));
 	}
-	sortRuntimeResources(aemResources);
+	sortRuntimeResources(dataResources);
 }
 
-function refreshActiveResources(state: RuntimeSourceState, aemResources: readonly RuntimeResource[]): void {
+function refreshActiveResources(state: RuntimeSourceState, dataResources: readonly RuntimeResource[]): void {
 	state.activeResources.length = 0;
 	for (let index = 0; index < state.luaResources.length; index += 1) {
 		state.activeResources.push(state.luaResources[index]);
 	}
-	for (let index = 0; index < aemResources.length; index += 1) {
-		state.activeResources.push(aemResources[index]);
+	for (let index = 0; index < dataResources.length; index += 1) {
+		state.activeResources.push(dataResources[index]);
 	}
 	sortRuntimeResources(state.activeResources);
 }
