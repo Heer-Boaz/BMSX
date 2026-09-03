@@ -320,6 +320,53 @@ list interface:
 - <https://github.com/microsoft/vscode/blob/f6f7c31e6cd2541fdd901f045a3418a06f2c3aca/src/vs/base/browser/ui/splitview/splitview.ts#L35-L109>
 - <https://github.com/microsoft/vscode/blob/f6f7c31e6cd2541fdd901f045a3418a06f2c3aca/src/vs/base/browser/ui/list/listView.ts#L230-L298>
 
+## Scenario runs
+
+Scenario testing keeps four boundaries distinct:
+
+- `ide/testing/scenario/test_collection.ts` owns stable suite/test identities,
+  lazy discovery and resolution of one selected collection node to ordered
+  leaves;
+- `ide/testing/scenario/execution_service.ts` owns one packaged guest protocol
+  and deterministic input at logical-tick boundaries, without host time or media
+  lifecycle;
+- `ide/testing/scenario/result_service.ts` owns bounded retained runs, ordered
+  test items and their logs, captures, failures and semantic facts;
+- `workbench/contrib/scenario_lab/run_service.ts` owns the browser-only media
+  session and serializes canonical build, per-item derived build/install/cold
+  boot, cancellation and final canonical restore through `RuntimeTaskQueue`.
+
+`ScenarioLabController` only resolves the current view selection, captures the
+source batch and invokes that service. It does not loop over tests, retain an
+execution queue, write cartridge media, aggregate result state or implement a
+second cancellation path. One request and one retained run represent either a
+leaf or the complete selected suite. A failed item does not stop later items;
+cancellation marks unfinished items skipped. Rerun preserves the previous
+resolved request.
+
+Pacing belongs above the execution service. The browser workbench host consumes
+wall time through the frame scheduler's scheduled bounded-tick operation;
+headless tooling uses the explicit bounded operation without wall time and runs
+as fast as possible. Both call the same execution service before and after every
+completed logical tick. The direct libretro input-timeline host is a separate
+native host workflow and remains unpaced by default; neither it nor the C++ core
+imports Scenario Lab.
+
+The blocking workbench and physical BIOS monitor are also different suspension
+boundaries. Opening the workbench stops machine progress through existing editor
+policy. Supervisor entry keeps the machine running but routes physical ICU input
+to firmware and pauses only scenario tick/protocol progress. The contextual
+Cancel command is exposed after the existing physical IDE chord reopens the
+workbench; no Scenario-specific global hotkey or emergency control is added.
+
+This follows VS Code's ownership of one live result for a resolved multi-item
+request rather than issuing one UI command per leaf:
+
+- <https://github.com/microsoft/vscode/blob/4290bede3cbc24e3fe9c979b655cebdf3b4e5f6b/src/vs/workbench/contrib/testing/browser/testExplorerActions.ts#L164-L182>
+- <https://github.com/microsoft/vscode/blob/4290bede3cbc24e3fe9c979b655cebdf3b4e5f6b/src/vs/workbench/contrib/testing/browser/testExplorerActions.ts#L626-L650>
+- <https://github.com/microsoft/vscode/blob/4290bede3cbc24e3fe9c979b655cebdf3b4e5f6b/src/vs/workbench/contrib/testing/common/testServiceImpl.ts#L251-L294>
+- <https://github.com/microsoft/vscode/blob/4290bede3cbc24e3fe9c979b655cebdf3b4e5f6b/src/vs/workbench/contrib/testing/common/testResult.ts#L276-L348>
+
 ## Commands, keybindings, and menus
 
 Workbench actions follow the same ownership split as VS Code's `Action2` and

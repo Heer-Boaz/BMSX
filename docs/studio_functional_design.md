@@ -996,9 +996,21 @@ wordt pas aan een werkelijk gepresenteerd frame toegewezen en bewaart daarnaast
 de logische tick die haar aanvroeg. Observability gebruikt diezelfde execution-
 ordering en leidt haar nooit uit een presentatie-index af.
 
+Pacing is evenmin een vierde scenario-tijdas. De interactieve browser voedt
+verstreken wandtijd aan een scheduleroperatie die bij iedere logische tickgrens
+terugkeert, zodat de execution owner iedere ICU-sample afzonderlijk kan
+voorbereiden zonder de PCRTC-/audiotijd te versnellen. De headless runner voedt
+geen wandtijd en loopt met dezelfde logische ticks zo snel mogelijk. De directe
+libretro-host doet hetzelfde voor een input timeline tenzij expliciet
+`--paced-timeline` is gekozen. Scenario-setup, commands, assertions en resultaten
+kennen deze hostpolicy niet en blijven daardoor identiek onder paced en unpaced
+uitvoering.
+
 ### Discovery
 
 - stabiele test-/scenario-id en hiërarchie;
+- selectie van één node en eenmalige resolutie naar de geordende leaves van die
+  node of subtree;
 - source resource en range;
 - lazy discovery waar de collectie groot is;
 - relatie van bron naar tests en van resultaat naar bron;
@@ -1008,6 +1020,7 @@ ordering en leidt haar nooit uit een presentatie-index af.
 
 - expliciete include/exclude-selectie;
 - run, cancel en rerun;
+- één retained run met geordende testitems voor zowel een leaf als een suite;
 - één Runtime per execution session;
 - genormaliseerde input op expliciete logische runtime-ticks;
 - expliciete guest-owned setup/update/assertions;
@@ -1018,17 +1031,29 @@ Een interactieve browserrun mag dezelfde Runtime rebooten of opnieuw laden als
 de gekozen workflow dat vereist; er draait geen tweede verborgen Runtime naast.
 Een afzonderlijk headless proces is een testhost, geen PIE-runtime in Studio.
 
-Voor de browser bestaat een run uit een expliciete media session. De huidige
-workspacegeneratie wordt eerst de canonieke gewone ROM; de scenario-builder
-leidt daaruit één tijdelijke executable test-ROM af en de bestaande fysieke
-socket installeert die ROM. Source registries en authoringlagen blijven
-canoniek, terwijl debugger/fault-resolutie gedurende de run naar de afgeleide
-BLua32-image wijst. Na de laatste presentatiegelegenheid van pass, failure of
-cancel wordt dezelfde canonieke ROM opnieuw geïnstalleerd en dezelfde Runtime
-normaal koud gestart. Dit is geen heap-, RAM-, VRAM- of save-state-rollback:
-herhaalbare seed en initialisatie blijven guest-owned scenario-startcondities.
-De runtime-taskqueue serialiseert build, install en herstel; de UI bezit geen
-mediawrites.
+De huidige cartprojectroot is een uitvoerbare suite. Een runrequest resolveert
+de geselecteerde collectie-node eenmaal, legt de volledige testbronset en open
+programmasourcebatch eenmaal vast en bewaart die scope voor rerun. Een itemfout
+annuleert de overige items niet. Cancel beëindigt het actieve item en markeert
+alle nog niet voltooide items als skipped. Een host-/mediafout beëindigt de hele
+run. De UI roept dus niet in een lus een single-testcommand aan en construeert
+geen eigen queue. Nieuwe category-/foldernodes worden pas toegevoegd wanneer
+zulke groepen werkelijk authored zijn; zij gebruiken dan dezelfde subtree-
+resolutie.
+
+Voor de browser bestaat een run uit één expliciete media session. De huidige
+workspacegeneratie wordt eerst de canonieke gewone ROM. Voor ieder geselecteerd
+item leidt de scenario-builder uit diezelfde canonieke bytes en de vastgelegde
+sourcebatch één tijdelijke executable test-ROM af; de bestaande fysieke socket
+installeert die ROM en voert een gewone cold boot uit. Source registries en
+authoringlagen blijven canoniek, terwijl debugger/fault-resolutie gedurende het
+item naar diens afgeleide BLua32-image wijst. Na diens laatste
+presentatiegelegenheid mag de volgende afgeleide ROM direct worden geïnstalleerd.
+Na de complete run of cancel wordt de canonieke ROM eenmaal opnieuw geïnstalleerd
+en dezelfde Runtime normaal koud gestart. Dit is geen heap-, RAM-, VRAM- of save-
+state-rollback: herhaalbare seed en initialisatie blijven guest-owned scenario-
+startcondities. De runtime-taskqueue serialiseert canonical build, itembuild,
+install, cold boot en eindherstel; de UI bezit geen mediawrites.
 
 De browserprojectie is één echte workbench-tab, geen cart-UI en geen overlay op
 de game. Zij gebruikt het tiny font en verdeelt het volledige contentvlak in
@@ -1036,26 +1061,42 @@ een retained testboom en retained resultatenboom. Beide panes zijn zelfstandige
 list views met eigen rijen, selectie, scroll, hover en viewport-layout; alleen
 de focus tussen panes behoort aan de omvattende tab. Selectie, collapse, tekst
 en hit-bounds worden niet ieder frame gereconstrueerd.
-Run/rerun/cancel zijn contextacties; een run legt de actuele geselecteerde bron
-en open programmafiles vast, verlaat daarna tijdelijk de blokkerende IDE en
-keert pas na canoniek mediaherstel naar dezelfde tab terug. Resultaat- en
+De projectroot gebruikt de cartprojectnaam en een benoemde/afgebakende testcount
+als gebruikersidentiteit. De fysieke execution domain blijft routingdata en
+wordt niet als `CART 0 /` in de primaire label gezet. Run/rerun/cancel zijn
+contextacties; een run verlaat tijdelijk de blokkerende IDE en keert pas na
+canoniek mediaherstel naar dezelfde tab terug. De bestaande fysieke hostchord
+opent de workbench tijdens een run en stopt via het gewone IDE-beleid alle
+machineprogressie; Cancel blijft daarna dezelfde contextactie. Resultaat- en
 failure-activatie loopt via de bestaande sourcenavigatie.
+
+De BIOS-terminal is geen Scenario-UI. Een fysieke supervisor-request laat de
+machine en PCRTC doorlopen, maar pauzeert scenario-tijd en guestprotocolwerk.
+Tijdens de volledige supervisortransition en monitorcontext ontvangt de ICU de
+fysieke hostinput in plaats van de retained playback. Een supervisorfault blijft
+een failure. Na een gewone resumable monitor-exit hervat playback op exact
+dezelfde scenariotick. Een scenarioboundary waarvan de ICU-sample al voltooid
+was vóór supervisor-entry blijft pending voor de post-tick-protocolstap en wordt
+na exit niet opnieuw gesampled. Er komt geen Scenario-specifieke
+terminalcommand, emergencybutton of hardcoded shortcuttekst.
 
 ### Resultaat
 
-Een resultaat kan bevatten:
+Eén retained run bevat haar resolved scope, aggregate status/counts en geordende
+testitemresultaten. Een itemresultaat kan bevatten:
 
 - test-id en source/ROM-revision waarmee de run werkelijk is uitgevoerd;
 - backend/host en scenario-startconditie;
-- running, passed, failed of cancelled;
+- queued, running, passed, failed of skipped;
 - fault en bronlocatie;
 - ordered semantic facts en checkpointvergelijkingen indien observability is
   gekozen;
 - captures en logs;
 - eerste aantoonbare afwijking.
 
-Live en voltooide resultaten hebben een begrensde history. De result owner is
-niet de runtime, testtree of UI-controller.
+Live en voltooide runs hebben een begrensde history. Nog niet voltooide items
+verdwijnen bij cancel of hostfalen niet uit die run. De result owner is niet de
+runtime, testtree of UI-controller.
 
 ## Resolutie en input
 
