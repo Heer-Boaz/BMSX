@@ -394,14 +394,14 @@ setter niet vermomd als een vrije propertybag.
 
 ## Instantiation lifecycle
 
-References vereisen een echte multi-object construction boundary. De huidige
-monolithische `World:spawn` kan forward/cyclic references niet correct aan een
-constructor aanbieden. De cartlib-slice moet de bestaande lifecycle daarom in
-package-owned fasen uitvoeren; ordinary `world:spawn` gebruikt exact dezelfde
-fasen en blijft de publieke single-objectoperatie. De fasering behoudt daarbij
-de live `spawn`-semantiek dat defaults en optionvalues vóór
-`definition.initialize` op het object staan. Een scene mag die values dus niet
-pas na initialize injecteren.
+References vereisen een echte multi-object construction boundary. `World`
+voert de eerder monolithische `spawn`-lifecycle nu uit met package-owned fasen;
+ordinary `world:spawn` gebruikt exact dezelfde fasen en blijft de publieke
+single-objectoperatie. De fasering behoudt de live `spawn`-semantiek dat
+defaults en optionvalues vóór `definition.initialize` op het object staan. Een
+scene mag die values dus niet pas na initialize injecteren. De nog open
+scene-slice ordent deze bestaande fasen voor een retained multi-objectbatch; zij
+kopieert ze niet.
 
 Voor één scene commit is de volgorde:
 

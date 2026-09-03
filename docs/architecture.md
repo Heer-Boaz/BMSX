@@ -1379,13 +1379,17 @@ The accepted scene-authoring route follows the same source-ownership rule
 without conflating scenes with behavior definitions. A scene remains a
 structured cart-Lua definition. The future cartlib scene library derives a
 retained `SceneInstance` and admits its prefab instances through `World`;
-`Registry` remains the cart-wide identity owner. Before that owner can exist,
-`World` construction must support phased multi-object construction and its
-mutation barrier must commit a terminal-old-before-new replacement batch. A
-scene-local authored `member_id` is stable correspondence, while `Registry`
-continues to own a separate terminal runtime `WorldObject.id`; replacement
-allocates a new runtime identity. The open slices may not reproduce either
-lifecycle inside scene code.
+`Registry` remains the cart-wide identity owner. `World` now owns distinct
+package-internal phases for identity allocation, final construction input,
+initialization, component/constructor construction, spawn/activation and
+admission. Ordinary `world:spawn()` calls those same primitives without a
+temporary batch; a future scene owner can allocate all runtime identities and
+apply all resolved peer inputs before initialization without publishing a
+half-built object. The remaining structural-batch slice must make the mutation
+barrier commit terminal-old-before-new replacement. A scene-local authored
+`member_id` is stable correspondence, while `Registry` continues to own a
+separate terminal runtime `WorldObject.id`; replacement allocates a new runtime
+identity. The open slices may not reproduce either lifecycle inside scene code.
 
 Scene membership is first-class cartlib runtime state. `World` retains its
 loaded scene instances package-internally, and each admitted authored object
