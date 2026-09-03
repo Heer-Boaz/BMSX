@@ -120,6 +120,10 @@ import { getMemoryAccessKindForName } from './memory_access_syntax';
 import { writeLE16, writeLE32 } from '../../../machine/ts/common/endian';
 import { utf8CodepointCount } from '../../../machine/ts/common/utf8';
 import { isReservedIntrinsicName } from './semantic/common';
+import {
+	traceSinkFieldName,
+	type TraceStatementMode,
+} from './compiler/trace_statement';
 import { IO_IRQ_FLAGS } from '../../../machine/ts/spec/bmsx/io';
 import { COP0_BAD_ADDRESS, COP0_CAUSE, COP0_EPC, COP0_EXEC, COP0_LUA_FAULT_REASON, COP0_STATUS } from '../../../machine/ts/spec/blua32/cop0';
 import {
@@ -257,6 +261,7 @@ type CompileOptionsBase = {
 	optLevel?: OptimizationLevel;
 	entrySource?: string;
 	entrySourceMap?: LuaSourceMap;
+	traceStatements?: TraceStatementMode;
 };
 
 type SystemCompileOptions = CompileOptionsBase & {
@@ -489,6 +494,7 @@ const isSmallSignedImmediate = (value: number): boolean =>
 class ProgramBuilder {
 	public readonly constPool: ProgramConstant[];
 	public readonly optLevel: OptimizationLevel;
+	public readonly emitTraceStatements: boolean;
 	private readonly constSlotByValue: Map<ProgramConstant, number>;
 	private readonly systemGlobalNameSet: Set<string>;
 	private readonly systemGlobalNames: string[] = [];
@@ -542,9 +548,11 @@ class ProgramBuilder {
 	public constructor(
 		optLevel: OptimizationLevel,
 		programDomain: ProgramCompileDomain,
+		traceStatements: TraceStatementMode,
 	) {
 		this.constPool = [];
 		this.optLevel = optLevel;
+		this.emitTraceStatements = traceStatements === 'emit';
 		this.programDomain = programDomain;
 		this.constSlotByValue = new Map<ProgramConstant, number>();
 		this.systemGlobalNameSet = new Set(SYSTEM_ROM_BOOT_SYMBOL_NAME_SET);
@@ -4340,6 +4348,9 @@ class FunctionBuilder {
 	}
 
 	private compileCallStatement(expression: LuaCallExpression): void {
+		if (this.compileBlua32TraceStatement(expression)) {
+			return;
+		}
 		const requireBinding = this.resolveRequireModuleBinding(expression);
 		if (requireBinding) {
 			this.compileRequireStatement(requireBinding);
@@ -4347,6 +4358,72 @@ class FunctionBuilder {
 		}
 		const reg = this.allocTemp();
 		this.compileCallExpression(expression, reg, 1);
+	}
+
+	private compileBlua32TraceStatement(expression: LuaCallExpression): boolean {
+		if (expression.method !== null
+			|| expression.callee.kind !== LuaSyntaxKind.MemberExpression) {
+			return false;
+		}
+		const callee = expression.callee as LuaMemberExpression;
+		if (callee.base.kind !== LuaSyntaxKind.IdentifierExpression) {
+			return false;
+		}
+		const reference = getResolvedIdentifierReference(
+			this.semantics,
+			callee.base as LuaIdentifierExpression,
+		);
+		if (reference.kind !== 'reserved_intrinsic' || reference.ref.name !== 'blua32') {
+			return false;
+		}
+		if (callee.member.name !== 'trace' && callee.member.name !== 'trace_sink') {
+			return false;
+		}
+		const trace = callee.member.name === 'trace';
+		const expectedMinimum = trace ? 2 : 3;
+		if (expression.arguments.length < expectedMinimum
+			|| (!trace && expression.arguments.length !== expectedMinimum)) {
+			throw new Error(trace
+				? 'blua32.trace expects a subject, channel and optional record values.'
+				: 'blua32.trace_sink expects a subject, channel and sink.');
+		}
+		const channelExpression = expression.arguments[1];
+		if (channelExpression.kind !== LuaSyntaxKind.StringLiteralExpression) {
+			throw new Error(`${callee.member.name} channel must be a string literal.`);
+		}
+		if (!this.program.emitTraceStatements) {
+			return true;
+		}
+		const channel = (channelExpression as LuaStringLiteralExpression).value;
+		const sinkField = this.program.constIndex(traceSinkFieldName(channel));
+		if (!trace) {
+			const subject = this.allocTemp();
+			this.compileExpressionInto(expression.arguments[0], subject, 1);
+			const sink = this.allocTemp();
+			this.compileExpressionInto(expression.arguments[2], sink, 1);
+			this.emitTableSetConst(subject, sinkField, sink);
+			return true;
+		}
+
+		const payloadCount = expression.arguments.length - 2;
+		const callBase = this.allocTempBlock(payloadCount + 2);
+		this.compileExpressionInto(expression.arguments[0], callBase, 1);
+		this.emitTableGetConst(callBase, callBase, sinkField);
+		const skip = this.emitJumpPlaceholder(OpCode.JMPIFNOT, callBase);
+		const recordField = this.program.constIndex('record');
+		this.emitSelf(callBase, callBase, recordField);
+		const argBase = callBase + 2;
+		for (let index = 0; index < payloadCount; index += 1) {
+			const argument = this.allocTemp();
+			this.compileExpressionInto(expression.arguments[index + 2], argument, 1);
+			const destination = argBase + index;
+			if (argument !== destination) {
+				this.emitABC(OpCode.MOV, destination, argument, 0);
+			}
+		}
+		this.emitABC(OpCode.CALL, callBase, encodeFixedCallArgCount(payloadCount + 1), 1);
+		this.patchJump(skip, this.code.length);
+		return true;
 	}
 
 	private compileReturn(expressions: ReadonlyArray<LuaExpression>): void {
@@ -5695,6 +5772,9 @@ class FunctionBuilder {
 		if (reference.kind !== 'reserved_intrinsic' || reference.ref.name !== 'blua32') {
 			return false;
 		}
+		if (callee.member.name === 'trace' || callee.member.name === 'trace_sink') {
+			throw new Error(`blua32.${callee.member.name} is a statement-only compiler intrinsic.`);
+		}
 		if (callee.member.name !== 'closure') {
 			throw new Error(`Unknown blua32 operation '${callee.member.name}'.`);
 		}
@@ -6175,7 +6255,11 @@ export function compileLuaChunkToProgram(
 	if (compileErrors.length > 0) {
 		throw new Error(buildCompileFailureMessage(compileErrors));
 	}
-	const programBuilder = new ProgramBuilder(optLevel, programDomain);
+	const programBuilder = new ProgramBuilder(
+		optLevel,
+		programDomain,
+		options.traceStatements ?? 'erase',
+	);
 	if (programDomain === 'cart') {
 		const biosFunctions = options.biosFunctions;
 		if (biosFunctions) {

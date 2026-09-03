@@ -627,7 +627,7 @@ Split repositories only after all of these are true:
 - External consumers exist that need independent versioning.
 
 The package boundary is `machine`, `hosts`, `toolchain`, `ide`, `extensions`,
-`third_party`, `scripts`, `cartlib`, `carts`, and `tests`. Carts are software
+`third_party`, `scripts`, `cartlib`, `testlib`, `carts`, and `tests`. Carts are software
 for the machine, not part of the machine package. `cartlib` is their reusable
 cart-ROM engine dependency, not firmware and not an emulator package.
 Current `carts/<name>` folders are cart collections with cart-local
@@ -641,6 +641,15 @@ the conventional console-SDK split exemplified by
 [PSn00bSDK's explicit SDK library targets](https://github.com/Lameguy64/PSn00bSDK/blob/5d9aa2d3dfc7d6e51c2eb942ab4cdbae5571a40a/doc/cmake_reference.md#L236-L269):
 the reusable library is a build dependency of the console executable rather
 than firmware or emulator-owned runtime state.
+
+`testlib` is the guest-side companion for explicitly packaged Scenario tests,
+not a cart runtime dependency. Only a debug cart build admits the `testlib`
+modules reachable from its source-only scenario resources; release dependency
+discovery does not include that root. A derived Scenario cartridge may execute
+those modules, while ordinary cart and cartlib sources never require them. This
+matches VSTest's separation of runner/logging from an explicitly selected
+in-process collector when collection must observe execution-owned semantics
+([pinned architecture](https://github.com/microsoft/vstest/blob/d8e681b328d3887ac4ea69e5d7a79604b736d771/docs/RFCs/0001-Test-Platform-Architecture.md#L79-L119)).
 
 The BIOS program that ships as the default system ROM lives in
 `machine/bios`. That directory contains guest source and resources for the
@@ -845,6 +854,16 @@ timing, while assertions and faults resolve to the `_assert.lua` resource and
 its exact authored line and column. Requiring the test as an independent module
 would be incorrect: BLua `require` selects static startup modules and would run
 the test before the execution owner's settle phase.
+
+The Scenario builder is also the only executable-image producer that emits
+BLua32 trace statements. Ordinary release ROMs, ordinary debug ROMs and live
+Hot Resume compile those statements in erase mode: neither their subject and
+payload expressions nor a sink lookup enters the guest instruction or constant
+streams. Scenario recompilation emits the lookup only in the derived cartridge
+used for that run. This follows Tracy's build-time instrumentation contract,
+where disabled trace macros expand to no code rather than leaving a runtime
+enabled check in the product path
+([pinned source](https://github.com/wolfpld/tracy/blob/89132aed2ad7f40e880c7e315b8e9ee5437d2277/public/tracy/Tracy.hpp#L25-L107)).
 
 Scenario discovery, execution and results remain separate retained owners in
 `ide/testing/scenario`; neither the browser panel nor the Node adapter owns
@@ -1279,6 +1298,16 @@ or mutable machine state. Cartridge objects resolve local static calls against
 their own object and BIOS calls only against the public import library.
 System and cartridge code, constants, functions, and source modules remain
 separate physical domains.
+
+`blua32.trace(subject, 'channel', ...)` and
+`blua32.trace_sink(subject, 'channel', sink)` are statement-only compiler
+intrinsics for that build-time instrumentation boundary. Channel names are
+static literals. The compiler owns their private guest-table sink slot; a
+producer and a scenario-only recorder therefore do not duplicate an encoded
+field name. Erase mode emits nothing and does not evaluate any argument. Emit
+mode evaluates the subject once, tests the selected sink before evaluating
+record payloads, and invokes its `record` method. These statements add no
+opcode, machine register, ROM wire record, firmware API or native-runtime path.
 
 Ordinary Lua globals are not merged by the linker. Each physical image carries
 the names used by its own instructions, and CPU activation maps those names to

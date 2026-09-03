@@ -542,7 +542,6 @@ function state.new(definition, target, parent, frame_work_owner, frame_work_chan
 	if self.root == self then
 		self.frame_work_owner = frame_work_owner
 		self.frame_work_changed = frame_work_changed
-		self._transition_recorder = nil
 	end
 	self.id = self:make_id()
 	self.data = {}
@@ -923,22 +922,6 @@ function state:check_state_guard_conditions(target_state)
 	return not enter_guard or enter_guard(self.target, target_state)
 end
 
-function state:attach_transition_recorder(recorder)
-	local root<const> = self.root
-	if root._transition_recorder ~= nil then
-		error('state machine "' .. root.id .. '" already has a transition recorder.')
-	end
-	root._transition_recorder = recorder
-end
-
-function state:detach_transition_recorder(recorder)
-	local root<const> = self.root
-	if root._transition_recorder ~= recorder then
-		error('state machine "' .. root.id .. '" transition recorder does not match.')
-	end
-	root._transition_recorder = nil
-end
-
 -- transition_to_state: the core state transition operation.
 -- Compiled path requests are queued at the root before reaching this method;
 -- guards are evaluated here before changing the active child.
@@ -952,10 +935,7 @@ function state:transition_to_state(state_id)
 
 	local cur<const> = self.states[state_id]
 	if not self:check_state_guard_conditions(cur) then
-		local recorder<const> = self.root._transition_recorder
-		if recorder ~= nil then
-			recorder:record(self, self.current_state, cur, false)
-		end
+		blua32.trace(self.root, 'fsm.transition', self, self.current_state, cur, false)
 		return false
 	end
 
@@ -968,10 +948,7 @@ function state:transition_to_state(state_id)
 
 	self.current_id = state_id
 	self.current_state = cur
-	local recorder<const> = self.root._transition_recorder
-	if recorder ~= nil then
-		recorder:record(self, prev_instance, cur, true)
-	end
+	blua32.trace(self.root, 'fsm.transition', self, prev_instance, cur, true)
 	local cur_def<const> = cur.definition
 	cur:add_active_subtree_tags()
 

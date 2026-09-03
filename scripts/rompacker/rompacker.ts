@@ -18,6 +18,7 @@ import {
 	buildRomBlua32Tail,
 	biosResPath,
 	cartlibLuaPath,
+	testlibLuaPath,
 	type CartRomBlua32Tail,
 	createTextureAtlases,
 	finalizeRompack,
@@ -508,6 +509,9 @@ async function main() {
 		const resourceRoots = [respath];
 		const extraLuaPathSet = new Set<string>(extraLuaRoots.map(normalizePathKey));
 		const libraryLuaPathSet = new Set<string>(libraryLuaRoots.map(normalizePathKey));
+		if (romPackDebug) {
+			libraryLuaPathSet.add(normalizePathKey(testlibLuaPath));
+		}
 		const cartSourceFiles = collectCartSourceFiles(extraLuaRoots);
 		const cartHasProgramSource = cartSourceFiles.length !== 0;
 		const scenarioTestSources = romPackDebug
@@ -644,11 +648,11 @@ async function main() {
 			}
 			await progress.taskCompleted();
 			const cartLuaRoots = Array.from(extraLuaPathSet);
-			const cartlibLuaRoots = Array.from(libraryLuaPathSet);
+			const sharedLuaRoots = Array.from(libraryLuaPathSet);
 			if (biosImportsPath !== undefined) {
-				await progress.runWithDetail('Lint cart + cartlib Lua', async () => {
+				await progress.runWithDetail('Lint cart + shared Lua', async () => {
 					await lintCartSources({ roots: cartLuaRoots, profile: 'cart' });
-					await lintCartSources({ roots: cartlibLuaRoots, profile: 'bios' });
+					await lintCartSources({ roots: sharedLuaRoots, profile: 'bios' });
 				});
 			}
 			await progress.taskCompleted();

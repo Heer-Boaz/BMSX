@@ -17,7 +17,12 @@ const MANIFEST: CartManifest = { hardware: [{ type: 'rom' }] };
 
 export const SCENARIO_FIXTURE_TEST_SOURCE_PATH = 'tests/carts/example/example_assert.lua';
 export const SCENARIO_FIXTURE_RETAINED_SOURCE = 'return "source only"';
-export const SCENARIO_FIXTURE_CART_ENTRY_SOURCE = 'module<entry>\nreturn true';
+export const SCENARIO_FIXTURE_CART_ENTRY_SOURCE = [
+	'module<entry>',
+	'local trace_subject<const> = {}',
+	"blua32.trace(trace_subject, 'fixture', true)",
+	'return true',
+].join('\n');
 
 export type ScenarioMediaFixture = {
 	readonly systemRom: Uint8Array;

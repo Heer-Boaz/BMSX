@@ -3,9 +3,9 @@ local clock<const> = require('cartlib/clock')
 local transition_recorder<const> = {}
 transition_recorder.__index = transition_recorder
 
--- The recorder itself is the retained observation channel. Immutable instance
--- identity is stored once in fields 1-3; field 4 publishes fully written
--- records from the fixed-capacity array in field 5.
+-- The recorder is loaded only into a traced Scenario cartridge. Immutable
+-- instance identity lives in fields 1-3; field 4 publishes complete records
+-- from the fixed-capacity array in field 5.
 function transition_recorder.new(machine, capacity)
 	local records<const> = {}
 	for i = 1, capacity do
@@ -19,13 +19,13 @@ function transition_recorder.new(machine, capacity)
 		records,
 	}, transition_recorder)
 	self.machine = machine
-	machine:attach_transition_recorder(self)
+	blua32.trace_sink(machine, 'fsm.transition', self)
 	return self
 end
 
--- Called only by the FSM's actual guard/commit boundary. All record storage is
--- allocated by new(); publishing the sequence last makes each slot atomic to
--- the suspended host-side scenario consumer.
+-- The traced producer calls this only on its actual guard/commit boundary.
+-- Publishing the sequence last keeps each retained slot atomic to the
+-- suspended scenario consumer.
 function transition_recorder:record(lane, previous, target, committed)
 	local sequence<const> = self[4] + 1
 	local record<const> = self[5][((sequence - 1) % self[3]) + 1]
@@ -39,7 +39,7 @@ function transition_recorder:record(lane, previous, target, committed)
 end
 
 function transition_recorder:dispose()
-	self.machine:detach_transition_recorder(self)
+	blua32.trace_sink(self.machine, 'fsm.transition', nil)
 end
 
 return transition_recorder

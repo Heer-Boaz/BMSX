@@ -1210,6 +1210,7 @@ export function buildRomBlua32Tail(
 			loadAddress: SYSTEM_ROM_BASE + imageOffset,
 			ramByteCount: options.ramByteCount,
 			optLevel: options.optLevel,
+			traceStatements: 'erase',
 			domain: 'system',
 			biosExports: options.biosExports,
 		});
@@ -1288,6 +1289,7 @@ export function buildRomBlua32Tail(
 		loadAddress: CART_ROM_BASE + options.imageOffset,
 		ramByteCount: options.ramByteCount,
 		optLevel: options.optLevel,
+		traceStatements: 'erase',
 		domain: 'cart',
 		biosImports: options.biosImports,
 	});
@@ -1720,3 +1722,4 @@ export async function isRebuildRequired(
 export const biosResPath = './machine/bios/res';
 export const biosSourcePath = './machine/bios';
 export const cartlibLuaPath = './cartlib';
+export const testlibLuaPath = './testlib';

@@ -161,6 +161,7 @@ export async function buildScenarioCartridge(
 		loadAddress: CART_ROM_BASE + imageEntry.start!,
 		ramByteCount: options.ramByteCount,
 		optLevel: options.optLevel,
+		traceStatements: 'emit',
 		domain: 'cart',
 		biosImports,
 	});

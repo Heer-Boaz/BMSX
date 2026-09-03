@@ -206,10 +206,11 @@ bezit per owner de effectdefinition, `active_count`, cooldown/pending state en
 de dense periodieke lane (`actioneffect_component.lua:56-86,163-197,208-347`).
 
 `trigger()` onderscheidt intern cooldown en gates en blijft de owner van hun
-resultaat (`actioneffect_component.lua:250-305`). De gekozen triggertrace laat
-diezelfde grens een compacte reasoncode produceren; zij voegt geen hostscan of
-tweede evaluatie van tags, states of custom gates toe. De gewone gameplay-API
-blijft een boolean retourneren.
+resultaat (`actioneffect_component.lua:250-305`). De gekozen triggertrace
+markeert diezelfde grens met de rechtstreeks geïnterneerde outcome-string; zij
+voegt geen hostscan, code/labelvertaling of tweede evaluatie van tags, states of
+custom gates toe. Gewone builds wissen de marker en de gameplay-API blijft een
+boolean retourneren.
 
 ### Events, world en identiteit
 
@@ -555,8 +556,11 @@ coördinaten. Scenario Lab bewaart daarnaast de logische tick waarop het record
 werd geobserveerd. Die observation tick wordt niet ten onrechte als de
 transition-tick gepresenteerd.
 
-Static strings, topology en sourcemetadata worden niet bij ieder feit herhaald.
-Dit is een functioneel datamodel, geen wireformat.
+Static topology en sourcemetadata worden niet bij ieder feit herhaald. Een
+producer-outcome die al een BLua stringliteral is, blijft daarentegen dezelfde
+geïnterneerde guestwaarde; zij wordt niet eerst naar een lokale numerieke code
+en daarna via een labeltabel terugvertaald. Dit is een functioneel datamodel,
+geen wireformat.
 
 Feiten ontstaan alleen bij de owning semantic boundaries:
 
@@ -583,7 +587,8 @@ Een gekozen observabilityimplementatie voldoet aan de volgende eisen:
 - geen per-frame table walk, formatting, stringbouw of allocation in de
   BT/FSM/ActionEffect-hot paths;
 - snapshots worden alleen bij pause of een gekozen checkpoint gemaakt;
-- disabled/release-overhead wordt gemeten op de echte cart-hot paths;
+- gewone release/debug-bytecode bevat geen observatiebranch of traceconstant;
+- enabled overhead wordt gemeten op de echte Scenario-cart-hot paths;
 - een generieke callback- of hookdispatch wordt niet in de normale fused
   evaluator gesmokkeld.
 
@@ -602,11 +607,15 @@ ongeschikte delen expliciet:
   volledige per-update tree-serialisatie wordt niet overgenomen.
 
 De concrete BMSX-grens is geen machine-register, cartridge-device, live-RPC of
-algemene diagnostics-hook. Expliciete guest-testcode maakt een
-`cartlib/fsm/transition_recorder` voor één via `fsm_component:get_machine()`
-verkregen root en retourneert die als Scenario Lab-setupcommand. Alleen
-`state:transition_to_state()` publiceert committed of guard-rejected records.
-De gecompileerde frame-evaluator en carts zonder recorder formatteren,
+algemene diagnostics-hook. `state:transition_to_state()` markeert alleen zijn
+werkelijke guard- en commitgrenzen met compiler-owned trace statements. Net als
+Tracy's uitgeschakelde macros verdwijnen die in gewone executable builds
+volledig
+([gepinde productiebron](https://github.com/wolfpld/tracy/blob/89132aed2ad7f40e880c7e315b8e9ee5437d2277/public/tracy/Tracy.hpp#L25-L107)).
+Alleen de afgeleide Scenario-ROM emit de sinklookup. Expliciete guest-testcode
+maakt dan een `testlib/fsm/transition_recorder` voor één via
+`fsm_component:get_machine()` verkregen root en retourneert die als Scenario
+Lab-setupcommand. De gecompileerde frame-evaluator en gewone carts formatteren,
 alloceren of dispatchen niets voor observability.
 
 De recorder alloceert zijn volledige circular buffer bij constructie en
@@ -626,19 +635,17 @@ slice claimt geen sourcecorrespondence: een record heeft expliciet geen
 bronlocatie totdat de authored registration daadwerkelijk een bewezen
 runtime-`def_id`-mapping produceert.
 
-Een deterministische O3-BLua32-microbenchmark op 10.000 directe, werkelijke
-transitions mat 1.800.007 VM-cycles zonder recorderveld en 1.840.007 cycles met
-de uitgeschakelde recordercheck: vier cycles per transition, circa 2,22%, en
-geen werk in de frame-evaluator. De geselecteerde recorder kostte in dezelfde
-test 370.000 extra cycles voor 10.000 records (37 per record). Na warm-up bleef
-de door de VM bijgehouden guest-heap over 10.000 records exact gelijk. Dit zijn
-synthetische cyclemetingen van deze transitiongrens, geen algemeen framebudget
-of low-end-hostresultaat.
+Een compilertest vergelijkt de instructiestroom, prototabel en constantpool van
+dezelfde bron met gewiste trace statements tegen bron zonder die statements.
+De instrumented O3-route en recorderretention worden afzonderlijk op echte
+transitions gemeten; zulke cyclemetingen zijn geen algemeen framebudget of
+low-end-hostresultaat.
 
 ### Tweede gekozen producer: opgenomen ActionEffect-triggeruitkomsten
 
-`STUDIO-ACTIONEFFECT-TRIGGER-TRACE-01` bindt één recorder aan de unieke
-`actioneffect_component` van één concrete registry-owner. De bestaande
+`STUDIO-ACTIONEFFECT-TRIGGER-TRACE-01` bindt één Scenario-only
+`testlib`-recorder aan de unieke `actioneffect_component` van één concrete
+registry-owner. De bestaande
 `trigger(id, payload, ...)`-grens produceert precies één feit per werkelijke
 triggerpoging. Zij onderscheidt de redenen die zij zelf al beoordeelt:
 
@@ -658,19 +665,19 @@ zijn parent in de stream verschijnen.
 
 De recorder prealloceert opnieuw een vaste circular buffer, maar FSM en
 ActionEffects krijgen geen generieke callback-, DTO- of diagnosticsfacade. Hun
-identiteit, records en producergrenzen verschillen en de normale hot paths
-betalen alleen een direct recorder-veldcheck op de gekozen semantische
-operatie. De ActionEffect-channel heeft deze vaste interne Lua/hostvorm:
+identiteit, records en producergrenzen verschillen. Gewone builds wissen de
+trace statements; alleen de afgeleide Scenario-ROM bevat de geselecteerde
+sinklookup. De ActionEffect-channel heeft deze vaste interne Lua/hostvorm:
 
 | Waarde | Arrayvelden |
 | --- | --- |
-| kanaal | concrete owner-id; owner-definition-id; capacity; published sequence; retained record-array; eenmalige rejection-reasontabel |
-| record | producer sequence; raw `SYS_TIME_MS`; effect-id; `0` voor accepted of index in de rejection-reasontabel |
+| kanaal | concrete owner-id; owner-definition-id; capacity; published sequence; retained record-array |
+| record | producer sequence; raw `SYS_TIME_MS`; effect-id; producer-owned geïnterneerde outcome-string |
 
 Scenario Lab materialiseert dit als een afzonderlijke begrensde ActionEffect-
 trace onder de static ownerheader. De execution domain komt uit het werkelijk
 uitgevoerde testresource. De host scant geen registry, world of component en
-decodeert een rejection alleen met de producer-owned reasontabel. Overflow
+behoudt de outcome-string zonder hostvertaling. Overflow
 faalt de test. Er is geen sourcerange zolang de runtime-effect-id nog geen
 bewezen authored correspondence publiceert.
 
@@ -929,7 +936,8 @@ staan in [`open_architecture_slices.md`](open_architecture_slices.md).
 - correspondence is exact of expliciet niet beschikbaar;
 - paused inspection gebruikt true guest-values;
 - geen per-frame allocaties of volledige snapshots;
-- disabled/release-overhead en retained geheugen zijn gemeten.
+- gewone bytecode/constantpools zijn trace-vrij; enabled overhead en retained
+  geheugen zijn afzonderlijk gemeten.
 
 ### Fase 4 — Optionele visual authoring
 

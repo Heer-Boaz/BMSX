@@ -11,6 +11,7 @@ import { buildLuaStackFrames } from '../../ide/runtime/stack_trace';
 import { buildScenarioCartridge } from '../../toolchain/ts/rompack/scenario_cartridge';
 import { toLuaModulePath } from '../../toolchain/ts/lua/module_path';
 import { LuaSyntaxError } from '../../toolchain/ts/lua/errors';
+import { traceSinkFieldName } from '../../toolchain/ts/lua/compiler/trace_statement';
 import { loadBlua32ToolingImage } from '../../toolchain/ts/rompack/blua32_media';
 import { loadRomToolingMedia } from '../../toolchain/ts/rompack/media';
 import { parseCartridgeIndex } from '../../toolchain/ts/rompack/loader';
@@ -41,6 +42,14 @@ test('scenario cartridge packages authored test source without making it a start
 			'end',
 		].join('\n');
 		const { systemRom, cartRom } = await buildScenarioMediaFixture(ROOT, testSource);
+		const baseToolingImage = loadBlua32ToolingImage(
+			parseCartridgePackage(cartRom),
+			CART_ROM_BASE,
+		)!;
+		assert.equal(
+			baseToolingImage.layout.constants.includes(traceSinkFieldName('fixture')),
+			false,
+		);
 		const enhancedBuild = await buildScenarioCartridge({
 			systemRom,
 			cartridge: cartRom,
@@ -79,6 +88,10 @@ test('scenario cartridge packages authored test source without making it a start
 
 		const cartPackage = parseCartridgePackage(enhanced);
 		const toolingImage = loadBlua32ToolingImage(cartPackage, CART_ROM_BASE)!;
+		assert.equal(
+			toolingImage.layout.constants.includes(traceSinkFieldName('fixture')),
+			true,
+		);
 		const testModulePath = toLuaModulePath(SCENARIO_FIXTURE_TEST_SOURCE_PATH);
 		const authoredRanges = toolingImage.symbols!.metadata.debugRanges.filter(
 			range => range !== null && range.path === testModulePath,

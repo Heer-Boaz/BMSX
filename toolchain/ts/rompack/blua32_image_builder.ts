@@ -30,6 +30,7 @@ import {
 	type LuaSourceMap,
 } from '../lua/compiler/source_map';
 import { LuaSyntaxError } from '../lua/errors';
+import type { TraceStatementMode } from '../lua/compiler/trace_statement';
 
 export type GeneratedLuaModule = {
 	path: string;
@@ -45,6 +46,7 @@ type Blua32ImageBuildOptionsBase = {
 	loadAddress: number;
 	ramByteCount: number;
 	optLevel: 0 | 1 | 2 | 3;
+	traceStatements: TraceStatementMode;
 };
 
 type SystemBlua32ImageBuildOptions = Blua32ImageBuildOptionsBase & {
@@ -186,6 +188,7 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): BuiltBlua32I
 			entrySourceMap: entry.sourceMap,
 			biosFunctions: options.biosImports.functions,
 			programDomain: 'cart',
+			traceStatements: options.traceStatements,
 		});
 		const object = encodeCompiledProgramObject(compiled);
 		return {
@@ -205,6 +208,7 @@ export function buildBlua32Image(options: Blua32ImageBuildOptions): BuiltBlua32I
 		entrySource: entry.source,
 		entrySourceMap: entry.sourceMap,
 		programDomain: 'system',
+		traceStatements: options.traceStatements,
 	});
 	const object = encodeCompiledProgramObject(compiled);
 	return {

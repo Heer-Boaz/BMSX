@@ -127,6 +127,7 @@ test('BLua32-tail rebuild preserves immutable asset metadata addresses and bytes
 			generatedLuaModules: [],
 			loadAddress: SYSTEM_ROM_BASE + imageStart,
 			optLevel: 0,
+			traceStatements: 'erase',
 			domain: 'system',
 			ramByteCount: LINK_RAM_BYTES,
 			biosExports: [],

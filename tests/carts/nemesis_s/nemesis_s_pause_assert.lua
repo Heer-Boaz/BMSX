@@ -1,7 +1,7 @@
 local registry<const> = require('cartlib/registry')
 local rom_dir<const> = require('cartlib/rom_dir')
 local world<const> = require('cartlib/world/world')
-local transition_recorder<const> = require('cartlib/fsm/transition_recorder')
+local transition_recorder<const> = require('testlib/fsm/transition_recorder')
 require('constants')
 
 local apu_slot<const>: *word = 0x08000148

@@ -75,7 +75,7 @@ const CART_MODULE_FILES = [
 	['cartlib/fsm/frame_evaluator_syntax', 'cartlib/fsm/frame_evaluator_syntax.lua'],
 	['cartlib/fsm/frame_program', 'cartlib/fsm/frame_program.lua'],
 	['cartlib/fsm/fsm', 'cartlib/fsm/fsm.lua'],
-	['cartlib/fsm/transition_recorder', 'cartlib/fsm/transition_recorder.lua'],
+	['testlib/fsm/transition_recorder', 'testlib/fsm/transition_recorder.lua'],
 	['cartlib/fsm/library', 'cartlib/fsm/library.lua'],
 	['cartlib/fsm/fsm_component', 'cartlib/fsm/fsm_component.lua'],
 	['cartlib/behaviour_tree/result', 'cartlib/behaviour_tree/result.lua'],
@@ -391,7 +391,7 @@ return target.value, active_data.retained, blackboard_instance:get(ticks_key), b
 const TRANSITION_RECORDER_ENTRY_SOURCE = `
 local fsm_library<const> = require('cartlib/fsm/library')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
-local transition_recorder<const> = require('cartlib/fsm/transition_recorder')
+local transition_recorder<const> = require('testlib/fsm/transition_recorder')
 
 local target<const> = {
 	id = 'trace_target',
@@ -451,7 +451,7 @@ end
 return run, detach, recorder
 `;
 
-function createCartlibProgramCpu(cartEntrySource: string): CPU {
+function createCartlibProgramCpu(cartEntrySource: string, traceStatements: 'erase' | 'emit' = 'erase'): CPU {
 	const systemModules = SYSTEM_MODULE_FILES.map(([path, file]) => {
 		const source = readFileSync(file, 'utf8');
 		return { path, chunk: parseLuaChunk(source, `${path}.lua`), source };
@@ -483,6 +483,7 @@ function createCartlibProgramCpu(cartEntrySource: string): CPU {
 		entrySource: cartEntrySource,
 		optLevel: 3,
 		programDomain: 'cart',
+		traceStatements,
 	});
 	const images = linkTestBlua32Pair(systemCompiled, cartCompiled);
 	const cpu: CPU = createTestBlua32PairCpu(images).cpu;
@@ -512,7 +513,7 @@ test('cartlib FSM and behaviour-tree instances retain semantic state across prog
 });
 
 test('FSM transition recorder publishes ordered fixed-capacity facts without steady-state allocation', () => {
-	const cpu = createCartlibProgramCpu(TRANSITION_RECORDER_ENTRY_SOURCE);
+	const cpu = createCartlibProgramCpu(TRANSITION_RECORDER_ENTRY_SOURCE, 'emit');
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 	const [run, detach, channel] = materializeCpuCompletionValues(cpu) as [
 		Closure,
@@ -553,9 +554,9 @@ test('FSM transition recorder publishes ordered fixed-capacity facts without ste
 	}
 
 	runCompletionClosure(cpu, detach, []);
-	const disabledCycles = runCompletionClosure(cpu, run, [10_000]);
-	assert.ok(disabledCycles <= 1_900_000, `disabled recorder check used ${disabledCycles} cycles`);
-	const recorderCycles = recordedCycles - disabledCycles;
+	const unselectedCycles = runCompletionClosure(cpu, run, [10_000]);
+	assert.ok(unselectedCycles <= 1_900_000, `unselected trace used ${unselectedCycles} cycles`);
+	const recorderCycles = recordedCycles - unselectedCycles;
 	assert.ok(recorderCycles > 0);
 	assert.ok(recorderCycles <= 400_000, `recorder used ${recorderCycles} cycles`);
 });
