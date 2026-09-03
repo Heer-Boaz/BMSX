@@ -1375,21 +1375,33 @@ cook a second behavior document, cartlib does not decode an editor resource or
 bind a visual-editor manifest, and machine, TOC, cartridge model and C++ core
 remain unaware of behavior authoring.
 
-Scene authoring follows the same canonical-source rule, but its cartlib runtime
-representation is deliberately open. The first proposal copied desktop-engine
-scene state and a C ECS command buffer into Lua tables. Even a cart that used no
-scene then paid ROM, module-init, table and closure costs on the 33.8688 MHz
-guest. Those implementation slices were removed rather than wrapped or
-optimized in place.
+Scene authoring follows the same canonical-source rule. Scenes are a valid
+composition concept; the open question is their guest representation. The
+first proposal copied desktop-engine scene state and a C ECS command buffer
+into Lua tables. Even a cart that used no scene then paid ROM, module-init,
+table and closure costs on the 33.8688 MHz guest. Those implementation slices
+were removed rather than wrapped or optimized in place.
 
-Only the product boundary is accepted: a future visual editor is a host-side
-view on the same Lua text model, machine/ROM/TOC remain unaware of scenes, and
-the host may not treat `world._objects` or arbitrary Lua tables as its scene
-database. No `SceneInstance`, member-id scheme, property descriptor,
-construction split, structural batch, tombstone policy or guest binding is an
-architecture owner until a replacement design proves its workload and zero
-cost for carts that do not opt in. The rejected proposal and measured failure
-are recorded in
+The replacement design starts from cartlib's existing structured-Lua owners.
+FSM registration compiles and rebinds because a state machine has retained
+state and repeated event/tick work. Behavior Trees lower authored topology to
+specialized evaluators and dense instance slots to keep the 50-Hz path free of
+definition interpretation. ActionEffects instead install their Lua definition
+directly and retain only granted runtime state. A scene implementation must
+justify which of those patterns its measured load/reload workload needs; the
+mere presence of a structured Lua table does not justify another compiler,
+definition copy or instance graph.
+
+The product boundary is accepted: a future visual editor is a host-side view
+on the same canonical source, machine/ROM/TOC remain unaware of scenes, and the
+host may not treat `world._objects` or arbitrary Lua tables as its scene
+database. Current carts expose both small Lua root assemblies and large
+placement sources such as Pietious' 24 rooms/122 objects and Nemesis' stage
+map. They need not share one runtime recordshape. No `SceneInstance`, member-id
+scheme, property descriptor, construction split, structural batch, tombstone
+policy or guest binding becomes an architecture owner until a current cart
+proves the state and a cart without scene imports remains cost-neutral. The
+workload analysis and gates are recorded in
 [`studio_scene_authoring_design.md`](studio_scene_authoring_design.md).
 
 Any future guest tooling binding may not guess the compiler's sanitized hidden
@@ -1401,12 +1413,14 @@ owner must index them for the exact execution domain. Static/const modules have
 no runtime root record. This adds no runtime `require`, machine field, ROM-header
 ABI, cartlib hook, or hand-authored guest global.
 
-Scene Lua is not a prohibition on cooking. Like AEM, a future scene producer
-may derive a separate immutable runtime representation when a measured
-consumer requires one. Until that boundary exists, a scene cooker would only
-duplicate the Lua definition and hide missing cartlib instantiation, reference,
-identity, mutation, or Hot Resume semantics; it is therefore not part of the
-scene contract.
+Lua source is not a prohibition on cooking. Like AEM, a large placement
+collection may derive a separate immutable runtime representation when its
+measured consumer requires one. Small root assembly, placement collections and
+dynamic gameplay spawns are distinct workloads: direct compiled Lua remains
+the baseline for the first, a retained/cooked form is an evidence-driven option
+for the second, and the third remains gameplay code. Until a concrete consumer
+requires a different form, a scene cooker would only duplicate canonical source
+and hide missing ownership; it is therefore not part of the scene contract.
 
 Decoding schema-rich payloads once at cart initialization through
 address/length symbols is an acceptable cold authoring-data path. The platform
