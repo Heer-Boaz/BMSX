@@ -8,6 +8,11 @@ import { FIX16_ONE } from '../../common/numeric';
 export const INPUT_CONTROLLER_KEY_WORD_COUNT = 8; // 256 HID usage bits
 export const INPUT_CONTROLLER_PAD_COUNT = 4;
 
+export const enum InputControllerSampleContext {
+	Normal = 0,
+	Supervisor = 1,
+}
+
 // Raw word indices in each latched pad-axes array.
 export const enum InputControllerGamepadAxis {
 	LeftX = 0,
@@ -93,7 +98,10 @@ export function createInputControllerSnapshot(): InputControllerSnapshot {
 }
 
 export interface InputControllerInputSource {
-	sampleInputControllerSnapshot(snapshot: InputControllerSnapshot): void;
+	sampleInputControllerSnapshot(
+		snapshot: InputControllerSnapshot,
+		context: InputControllerSampleContext,
+	): void;
 	supervisorRequestLineHigh(): boolean;
 	applyInputControllerVibrationEffect(padIndex: number, durationMs: number, intensity: number): void;
 }

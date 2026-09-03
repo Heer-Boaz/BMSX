@@ -16,6 +16,7 @@ import { InputControllerOutputPort } from './output_port';
 import {
 	createInputControllerSnapshot,
 	type InputControllerInputSource,
+	InputControllerSampleContext,
 } from './contracts';
 
 const INPUT_OUTPUT_REGISTER_WRITE_ADDRS = [
@@ -76,7 +77,12 @@ export class InputController {
 
 	public onVblankEdge(nowCycles: number): void {
 		if (this.sampleArmed) {
-			this.input.sampleInputControllerSnapshot(this.snapshot);
+			this.input.sampleInputControllerSnapshot(
+				this.snapshot,
+				this.system.supervisorContextActive()
+					? InputControllerSampleContext.Supervisor
+					: InputControllerSampleContext.Normal,
+			);
 		}
 		const supervisorRequestLineHigh = this.input.supervisorRequestLineHigh();
 		if (supervisorRequestLineHigh && !this.supervisorRequestLineWasHigh) {

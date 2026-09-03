@@ -19,6 +19,7 @@ import {
 	SYS_CONTROL_SUPERVISOR_ENTER,
 	SYS_CONTROL_SUPERVISOR_FAULT,
 	SYS_CONTROL_SUPERVISOR_FAULT_PUBLISH,
+	SYS_CONTROL_SUPERVISOR_LEAVE,
 	SYS_PRINT_BUFFER_BYTES,
 	SYS_STATUS_SUPERVISOR_ACTIVE,
 	SYS_STATUS_SUPERVISOR_EXIT_REQUESTED,
@@ -228,6 +229,20 @@ test('a nested supervisor fault preserves the latched exit request', () => {
 			| SYS_STATUS_SUPERVISOR_EXIT_REQUESTED
 			| SYS_STATUS_SUPERVISOR_RESUMABLE,
 	);
+	assert.equal(machine.systemController.supervisorContextActive(), true);
+	memory.writeMappedU32LE(IO_SYS_CONTROL, SYS_CONTROL_SUPERVISOR_LEAVE);
+	assert.equal(machine.systemController.supervisorContextActive(), true);
+	for (let serviceCount = 0;
+		serviceCount < 16 && machine.systemController.supervisorContextActive();
+		serviceCount += 1) {
+		const deadline = machine.scheduler.nextDeadline();
+		assert.notEqual(deadline, Number.MAX_SAFE_INTEGER);
+		machine.scheduler.advanceTo(deadline);
+		while (machine.scheduler.hasDueTimer()) {
+			machine.runDeviceService(machine.scheduler.popDueTimer());
+		}
+	}
+	assert.equal(machine.systemController.supervisorContextActive(), false);
 });
 
 test('system timing registers consume scheduler and PCRTC device state without Runtime mappings', () => {

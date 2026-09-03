@@ -15,6 +15,11 @@ namespace bmsx {
 constexpr int INPUT_CONTROLLER_KEY_WORD_COUNT = 8; // 256 HID usage bits
 constexpr int INPUT_CONTROLLER_PAD_COUNT = 4;
 
+enum class InputControllerSampleContext : u8 {
+	Normal = 0,
+	Supervisor = 1,
+};
+
 // Raw word indices in each latched pad-axes array.
 enum class InputControllerGamepadAxis : u8 {
 	LeftX = 0,
@@ -80,7 +85,9 @@ inline InputControllerSnapshot createInputControllerSnapshot() {
 class InputControllerInputSource {
 public:
 	virtual ~InputControllerInputSource() = default;
-	virtual void sampleInputControllerSnapshot(InputControllerSnapshot& snapshot) = 0;
+	virtual void sampleInputControllerSnapshot(
+		InputControllerSnapshot& snapshot,
+		InputControllerSampleContext context) = 0;
 	virtual auto supervisorRequestLineHigh() const -> bool = 0;
 	virtual void applyInputControllerVibrationEffect(i32 padIndex, f64 durationMs, f32 intensity) = 0;
 };

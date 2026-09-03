@@ -29,6 +29,7 @@ import {
 	INPUT_CONTROLLER_PAD_COUNT,
 	type InputControllerInputSource,
 	type InputControllerPadSnapshot,
+	InputControllerSampleContext,
 	type InputControllerSnapshot,
 } from '../../../machine/ts/machine/devices/input/contracts';
 import type { InputControllerPlayback } from './controller_playback';
@@ -532,8 +533,12 @@ export class Input implements InputControllerInputSource, InputEventSink {
 		return device.vibrationInitialization;
 	}
 
-	public sampleInputControllerSnapshot(snapshot: InputControllerSnapshot): void {
-		if (this.inputControllerPlayback !== null) {
+	public sampleInputControllerSnapshot(
+		snapshot: InputControllerSnapshot,
+		context: InputControllerSampleContext,
+	): void {
+		if (context === InputControllerSampleContext.Normal
+			&& this.inputControllerPlayback !== null) {
 			this.inputControllerPlayback.writeInputControllerSnapshot(snapshot);
 			return;
 		}

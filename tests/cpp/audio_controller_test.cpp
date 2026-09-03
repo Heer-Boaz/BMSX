@@ -66,7 +66,9 @@ struct AudioHarness {
 
 class SilentInputSource final : public bmsx::InputControllerInputSource {
 public:
-	void sampleInputControllerSnapshot(bmsx::InputControllerSnapshot&) override {
+	void sampleInputControllerSnapshot(
+		bmsx::InputControllerSnapshot&,
+		bmsx::InputControllerSampleContext) override {
 	}
 
 	auto supervisorRequestLineHigh() const -> bool override {

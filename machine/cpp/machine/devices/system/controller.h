@@ -64,6 +64,9 @@ public:
 			&& (m_supervisorPhase == SYSTEM_SUPERVISOR_PHASE_ENTRY_PRODUCER_QUIESCE
 				|| m_supervisorPhase >= SYSTEM_SUPERVISOR_PHASE_BUS_QUIESCE);
 	}
+	bool supervisorContextActive() const {
+		return m_supervisorPhase != SYSTEM_SUPERVISOR_PHASE_USER;
+	}
 	bool takeResetRequest();
 	SystemControllerState captureState() const;
 	void restoreState(const SystemControllerState& state);

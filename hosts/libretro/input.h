@@ -47,7 +47,8 @@ public:
 	}
 
 	void sampleInputControllerSnapshot(
-		InputControllerSnapshot& snapshot) override;
+		InputControllerSnapshot& snapshot,
+		InputControllerSampleContext context) override;
 	bool supervisorRequestLineHigh() const override {
 		return m_host_supervisor_request_high;
 	}

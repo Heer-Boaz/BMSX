@@ -293,6 +293,10 @@ export class SystemController {
 				|| this.supervisorPhase >= SYSTEM_SUPERVISOR_PHASE_BUS_QUIESCE);
 	}
 
+	public supervisorContextActive(): boolean {
+		return this.supervisorPhase !== SYSTEM_SUPERVISOR_PHASE_USER;
+	}
+
 	public takeResetRequest(): boolean {
 		const requested = this.resetRequested;
 		this.resetRequested = false;

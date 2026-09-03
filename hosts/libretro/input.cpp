@@ -472,7 +472,8 @@ bool LibretroInput::hostShortcutJustPressed(
 }
 
 void LibretroInput::sampleInputControllerSnapshot(
-		InputControllerSnapshot& snapshot) {
+		InputControllerSnapshot& snapshot,
+		InputControllerSampleContext) {
 	snapshot.keyWords = m_routed_keyboard_usage_words;
 	snapshot.pointerButtons = m_routed_pointer_buttons;
 	snapshot.pointerXQ16 = m_pointer_x_q16;

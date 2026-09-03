@@ -8,6 +8,7 @@ import { Input } from '../../hosts/common/input/manager';
 import { InputControllerPlayback } from '../../hosts/common/input/controller_playback';
 import {
 	createInputControllerSnapshot,
+	InputControllerSampleContext,
 	InputControllerGamepadAxis,
 	InputControllerGamepadButtonBit,
 } from '../../machine/ts/machine/devices/input/contracts';
@@ -95,7 +96,7 @@ test('connected gamepads retain their player port while Start is held', () => {
 	assert.equal(input.getPlayerInput(1).inputHandlers.gamepad, assigned);
 
 	const snapshot = createInputControllerSnapshot();
-	input.sampleInputControllerSnapshot(snapshot);
+	input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
 	const startMask = 1 << inputControllerGamepadButtonBit('start');
 	assert.notEqual(snapshot.pads[0].buttons & startMask, 0);
 	input.dispose();
@@ -178,7 +179,7 @@ test('player-port remaps affect only the ICU snapshot view', () => {
 	assert.equal(physical.getButtonState('a').pressed, false);
 
 	const snapshot = createInputControllerSnapshot();
-	input.sampleInputControllerSnapshot(snapshot);
+	input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
 	const buttons = snapshot.pads[0].buttons;
 	const axes = snapshot.pads[0].axesQ16;
 	assert.notEqual(buttons & (1 << InputControllerGamepadButtonBit.A), 0);
@@ -193,7 +194,7 @@ test('player-port remaps affect only the ICU snapshot view', () => {
 	assert.equal(axes[rightTriggerAxis], 0);
 
 	remap.reset();
-	input.sampleInputControllerSnapshot(snapshot);
+	input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
 	assert.equal(snapshot.pads[0].buttons & (1 << InputControllerGamepadButtonBit.A), 0);
 	assert.notEqual(snapshot.pads[0].buttons & (1 << InputControllerGamepadButtonBit.B), 0);
 	assert.equal(axes[leftX], 0);
@@ -218,14 +219,14 @@ test('control maps stay with the player port when devices are reassigned', () =>
 	input.pollInput();
 
 	const snapshot = createInputControllerSnapshot();
-	input.sampleInputControllerSnapshot(snapshot);
+	input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
 	const aMask = 1 << InputControllerGamepadButtonBit.A;
 	assert.equal(snapshot.pads[0].buttons & aMask, 0);
 	assert.notEqual(snapshot.pads[1].buttons & aMask, 0);
 	input.dispose();
 });
 
-test('input-controller playback replaces only the physical ICU view at the VBlank latch edge', () => {
+test('input-controller playback replaces normal ICU samples but not supervisor samples', () => {
 	const clock = { now: () => 0 } as HostClock;
 	const device = gamepad(0);
 	const source: InputSource = {
@@ -241,6 +242,16 @@ test('input-controller playback replaces only the physical ICU view at the VBlan
 	playback.setKeyboardKey('KeyB', true);
 	playback.setGamepadButton(0, 'b', true);
 	input.setInputControllerPlayback(playback);
+	const normal = createInputControllerSnapshot();
+	input.sampleInputControllerSnapshot(normal, InputControllerSampleContext.Normal);
+	const keyAUsage = hidKeyUsageForCode('KeyA');
+	const keyBUsage = hidKeyUsageForCode('KeyB');
+	assert.equal(normal.keyWords[keyAUsage >>> 5] & (1 << (keyAUsage & 31)), 0);
+	assert.notEqual(normal.keyWords[keyBUsage >>> 5] & (1 << (keyBUsage & 31)), 0);
+	const supervisor = createInputControllerSnapshot();
+	input.sampleInputControllerSnapshot(supervisor, InputControllerSampleContext.Supervisor);
+	assert.notEqual(supervisor.keyWords[keyAUsage >>> 5] & (1 << (keyAUsage & 31)), 0);
+	assert.equal(supervisor.keyWords[keyBUsage >>> 5] & (1 << (keyBUsage & 31)), 0);
 
 	const memory = new Memory(
 		{ systemRom: new Uint8Array(0), cartridgeSlots: cartridgeSlots() },
@@ -248,7 +259,6 @@ test('input-controller playback replaces only the physical ICU view at the VBlan
 	);
 	const machine = new Machine(memory, input, PSX_MACHINE_SPEC);
 	machine.resetDevices();
-	const keyBUsage = hidKeyUsageForCode('KeyB');
 	const keyCUsage = hidKeyUsageForCode('KeyC');
 	memory.writeMappedWord(IO_INP_CTRL, INP_CTRL_ARM);
 	playback.setKeyboardKey('KeyC', true);
@@ -293,11 +303,33 @@ test('input-controller playback replaces only the physical ICU view at the VBlan
 			& (1 << (keyCUsage & 31)),
 		0,
 	);
+	machine.systemController.requestSupervisorLineEdge();
+	memory.writeMappedWord(IO_INP_CTRL, INP_CTRL_ARM);
+	machine.inputController.onVblankEdge(3);
+	assert.notEqual(
+		memory.readIoU32(IO_INP_KEYS + (keyAUsage >>> 5) * IO_WORD_SIZE)
+			& (1 << (keyAUsage & 31)),
+		0,
+	);
+	assert.equal(
+		memory.readIoU32(IO_INP_KEYS + (keyBUsage >>> 5) * IO_WORD_SIZE)
+			& (1 << (keyBUsage & 31)),
+		0,
+	);
+	assert.notEqual(
+		memory.readIoU32(IO_INP_PADS + IO_INP_PAD_BUTTONS_OFFSET)
+			& (1 << InputControllerGamepadButtonBit.A),
+		0,
+	);
+	assert.equal(
+		memory.readIoU32(IO_INP_PADS + IO_INP_PAD_BUTTONS_OFFSET)
+			& (1 << InputControllerGamepadButtonBit.B),
+		0,
+	);
 
 	input.setInputControllerPlayback(null);
 	const physical = createInputControllerSnapshot();
-	input.sampleInputControllerSnapshot(physical);
-	const keyAUsage = hidKeyUsageForCode('KeyA');
+	input.sampleInputControllerSnapshot(physical, InputControllerSampleContext.Normal);
 	assert.notEqual(physical.keyWords[keyAUsage >>> 5] & (1 << (keyAUsage & 31)), 0);
 	assert.notEqual(
 		physical.pads[0].buttons & (1 << InputControllerGamepadButtonBit.A),

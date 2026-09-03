@@ -14,6 +14,7 @@ import {
 	INP_POINTER_BUTTON_PRIMARY,
 	InputControllerGamepadAxis,
 	InputControllerGamepadButtonBit,
+	InputControllerSampleContext,
 } from '../../machine/ts/machine/devices/input/contracts';
 import { hidKeyUsageForCode } from '../../hosts/common/input/hid_keys';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
@@ -105,7 +106,7 @@ test('host control routing reserves Select without leaking split-frame shortcuts
 	input.pollInput();
 	assert.equal(shortcutCount, 0);
 	assert.equal(keyboard.getButtonState('select').consumed, true);
-	input.sampleInputControllerSnapshot(snapshot);
+	input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
 	assert.equal(keyWordContains(snapshot.keyWords, 'ControlRight'), false);
 
 	setTime(20);
@@ -115,7 +116,7 @@ test('host control routing reserves Select without leaking split-frame shortcuts
 	assert.equal(keyboard.getButtonState('rb').consumed, true);
 	assert.equal(keyboard.getKeyState('ControlRight').consumed, true);
 	assert.equal(keyboard.getKeyState('ShiftRight').consumed, true);
-	input.sampleInputControllerSnapshot(snapshot);
+	input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
 	assert.equal(keyWordContains(snapshot.keyWords, 'ControlRight'), false);
 	assert.equal(keyWordContains(snapshot.keyWords, 'ShiftRight'), false);
 
@@ -123,7 +124,7 @@ test('host control routing reserves Select without leaking split-frame shortcuts
 	input.inputButton('keyboard:0', 'ControlRight', false, 0, 30, 1);
 	input.pollInput();
 	assert.equal(releaseCount, 1);
-	input.sampleInputControllerSnapshot(snapshot);
+	input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
 	assert.equal(keyWordContains(snapshot.keyWords, 'ShiftRight'), false);
 
 	setTime(40);
@@ -134,7 +135,7 @@ test('host control routing reserves Select without leaking split-frame shortcuts
 	input.inputButton('keyboard:0', 'Backspace', true, 1, 50, 3);
 	input.inputButton('keyboard:0', 'Enter', true, 1, 50, 4);
 	input.pollInput();
-	input.sampleInputControllerSnapshot(snapshot);
+	input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
 	assert.equal(keyWordContains(snapshot.keyWords, 'Backspace'), true);
 	assert.equal(keyWordContains(snapshot.keyWords, 'Enter'), true);
 	assert.equal(keyboard.getKeyState('Backspace').consumed, false);
@@ -213,14 +214,14 @@ test('physical and host overlay keyboards retain independent key ownership', () 
 	input.inputButton('keyboard:0', 'KeyA', true, 1, 0, 1);
 	input.setVirtualKeyboardKey('KeyA', true);
 	input.pollInput();
-	input.sampleInputControllerSnapshot(snapshot);
+	input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
 	assert.equal(keyboard.getKeyState('KeyA').pressed, true);
 	assert.equal(keyWordContains(snapshot.keyWords, 'KeyA'), true);
 
 	setTime(10);
 	input.setVirtualKeyboardKey('KeyA', false);
 	input.pollInput();
-	input.sampleInputControllerSnapshot(snapshot);
+	input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
 	assert.equal(keyboard.getKeyState('KeyA').pressed, true);
 	assert.equal(keyboard.getKeyState('KeyA').justreleased, false);
 	assert.equal(keyWordContains(snapshot.keyWords, 'KeyA'), true);
@@ -228,7 +229,7 @@ test('physical and host overlay keyboards retain independent key ownership', () 
 	setTime(20);
 	input.inputButton('keyboard:0', 'KeyA', false, 0, 20, 1);
 	input.pollInput();
-	input.sampleInputControllerSnapshot(snapshot);
+	input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
 	assert.equal(keyboard.getKeyState('KeyA').justreleased, true);
 	assert.equal(keyWordContains(snapshot.keyWords, 'KeyA'), false);
 	input.dispose();
@@ -377,7 +378,7 @@ test('quick menu routes pointer taps through retained option actions', () => {
 		);
 		input.inputButton('pointer:0', 'pointer_primary', true, 1, currentTime, pressId);
 		assert.equal(tickMenu(input, menu), HostMenuInput.Active);
-		input.sampleInputControllerSnapshot(snapshot);
+		input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
 		assert.equal(snapshot.pointerButtons & pointerMask, 0);
 		currentTime += 1;
 		setTime(currentTime);
@@ -428,7 +429,7 @@ test('on-screen keyboard owns controller navigation and emits retained HID comma
 	let pressId = 1;
 	const tickCaptured = (): HostMenuInput => {
 		const result = tickMenu(input, menu);
-		input.sampleInputControllerSnapshot(snapshot);
+		input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
 		assert.equal(snapshot.pads[0].buttons, 0);
 		return result;
 	};
@@ -458,19 +459,19 @@ test('on-screen keyboard owns controller navigation and emits retained HID comma
 	};
 	const assertPulse = (button: string, code: string): void => {
 		press(button);
-		input.sampleInputControllerSnapshot(snapshot);
+		input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
 		assert.equal(keyWordContains(snapshot.keyWords, code), true, `${button} emits ${code}`);
 		tickMenu(input, menu);
-		input.sampleInputControllerSnapshot(snapshot);
+		input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
 		assert.equal(keyWordContains(snapshot.keyWords, code), false, `${button} releases ${code}`);
 		currentTime += 1;
 	};
 	const assertChordPulse = (modifier: string, button: string, code: string): void => {
 		chord(modifier, button);
-		input.sampleInputControllerSnapshot(snapshot);
+		input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
 		assert.equal(keyWordContains(snapshot.keyWords, code), true, `${modifier}+${button} emits ${code}`);
 		tickMenu(input, menu);
-		input.sampleInputControllerSnapshot(snapshot);
+		input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
 		assert.equal(keyWordContains(snapshot.keyWords, code), false, `${modifier}+${button} releases ${code}`);
 		currentTime += 1;
 	};
@@ -493,7 +494,7 @@ test('on-screen keyboard owns controller navigation and emits retained HID comma
 	assertChordPulse('select', 'rb', 'End');
 
 	press('y');
-	input.sampleInputControllerSnapshot(snapshot);
+	input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
 	assert.equal(keyWordContains(snapshot.keyWords, 'ShiftLeft'), true);
 	menu.queueRenderCommands();
 	let keyboardFrame = hostOverlayQueue.consumeHostMenuFrame();
@@ -501,18 +502,18 @@ test('on-screen keyboard owns controller navigation and emits retained HID comma
 		index < keyboardFrame.commandCount
 		&& (ref as GlyphRenderSubmission).items === 'Q'));
 	press('a');
-	input.sampleInputControllerSnapshot(snapshot);
+	input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
 	assert.equal(keyWordContains(snapshot.keyWords, 'ShiftLeft'), true);
 	assert.equal(keyWordContains(snapshot.keyWords, 'KeyQ'), true);
 	tickMenu(input, menu);
-	input.sampleInputControllerSnapshot(snapshot);
+	input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
 	assert.equal(keyWordContains(snapshot.keyWords, 'ShiftLeft'), false);
 	assert.equal(keyWordContains(snapshot.keyWords, 'KeyQ'), false);
 	currentTime += 1;
 
 	input.inputAxis2(gamepad.id, 'ls', 1, 0, currentTime);
 	tickMenu(input, menu);
-	input.sampleInputControllerSnapshot(snapshot);
+	input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
 	assert.equal(snapshot.pads[0].axesQ16[InputControllerGamepadAxis.LeftX], 0);
 	currentTime += 1;
 	input.inputAxis2(gamepad.id, 'ls', 0, 0, currentTime);
@@ -549,7 +550,7 @@ test('on-screen keyboard owns controller navigation and emits retained HID comma
 	tickMenu(input, menu);
 	currentTime += 1;
 	tickMenu(input, menu);
-	input.sampleInputControllerSnapshot(snapshot);
+	input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
 	const primaryPointerMask = 1 << INP_POINTER_BUTTON_PRIMARY;
 	assert.equal(keyWordContains(snapshot.keyWords, 'KeyQ'), false);
 	assert.equal(snapshot.pointerButtons & primaryPointerMask, 0);
@@ -559,12 +560,12 @@ test('on-screen keyboard owns controller navigation and emits retained HID comma
 	tickMenu(input, menu);
 	currentTime += 1;
 	tickMenu(input, menu);
-	input.sampleInputControllerSnapshot(snapshot);
+	input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
 	assert.equal(keyWordContains(snapshot.keyWords, 'KeyQ'), true);
 	assert.equal(snapshot.pointerButtons & primaryPointerMask, 0);
 	currentTime += 1;
 	tickMenu(input, menu);
-	input.sampleInputControllerSnapshot(snapshot);
+	input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
 	assert.equal(keyWordContains(snapshot.keyWords, 'KeyQ'), false);
 	currentTime += 1;
 	assert.equal(chord('select', 'x'), HostMenuInput.Inactive);
@@ -605,7 +606,7 @@ test('quick menu edits the retained player-port control map', () => {
 	input.inputButton(gamepad.id, 'b', true, 1, currentTime, pressId);
 	input.pollInput();
 	const snapshot = createInputControllerSnapshot();
-	input.sampleInputControllerSnapshot(snapshot);
+	input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
 	assert.notEqual(
 		snapshot.pads[0].buttons & (1 << InputControllerGamepadButtonBit.A),
 		0,

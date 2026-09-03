@@ -35,6 +35,7 @@ import {
 	INPUT_CONTROLLER_OUTPUT_INTENSITY_Q16_ONE,
 	InputControllerGamepadAxis,
 	type InputControllerInputSource,
+	InputControllerSampleContext,
 	type InputControllerSnapshot,
 } from '../../machine/ts/machine/devices/input/contracts';
 import { Memory } from '../../machine/ts/machine/memory/memory';
@@ -70,6 +71,7 @@ function createHarness(): {
 	controller: InputController;
 	vibrations: FakeVibration[];
 	samples: () => number;
+	sampleContexts: () => readonly InputControllerSampleContext[];
 	setKey: (usage: number, down: boolean) => void;
 	setSupervisorRequestLine: (high: boolean) => void;
 } {
@@ -78,10 +80,15 @@ function createHarness(): {
 	const keyWords = new Uint32Array(INPUT_CONTROLLER_KEY_WORD_COUNT);
 	keyWords[HID_KEY_X >>> 5] = 1 << (HID_KEY_X & 31);
 	let sampleCount = 0;
+	const sampleContexts: InputControllerSampleContext[] = [];
 	let supervisorRequestLineHigh = false;
 	const input: InputControllerInputSource = {
-		sampleInputControllerSnapshot(snapshot: InputControllerSnapshot) {
+		sampleInputControllerSnapshot(
+			snapshot: InputControllerSnapshot,
+			context: InputControllerSampleContext,
+		) {
 			sampleCount += 1;
+			sampleContexts.push(context);
 			writeSample(snapshot, keyWords);
 		},
 		supervisorRequestLineHigh() {
@@ -100,6 +107,7 @@ function createHarness(): {
 		controller,
 		vibrations,
 		samples: () => sampleCount,
+		sampleContexts: () => sampleContexts,
 		setKey: (usage, down) => {
 			const mask = 1 << (usage & 31);
 			const word = usage >>> 5;
@@ -197,4 +205,20 @@ test('input controller raises one supervisor request edge and the device fence v
 	harness.machine.systemController.onService();
 	assert.equal(harness.machine.cpu.peekPendingInterrupt(), AcceptedInterruptKind.NonMaskable);
 	assert.equal(harness.controller.captureState().supervisorRequestLineHigh, true);
+});
+
+test('input controller derives source-sampling context from the supervisor phase', () => {
+	const harness = createHarness();
+	harness.setSupervisorRequestLine(true);
+	harness.memory.writeMappedWord(IO_INP_CTRL, INP_CTRL_ARM);
+	harness.controller.onVblankEdge(1);
+	assert.deepEqual(harness.sampleContexts(), [InputControllerSampleContext.Normal]);
+	assert.equal(harness.machine.systemController.supervisorContextActive(), true);
+
+	harness.memory.writeMappedWord(IO_INP_CTRL, INP_CTRL_ARM);
+	harness.controller.onVblankEdge(2);
+	assert.deepEqual(harness.sampleContexts(), [
+		InputControllerSampleContext.Normal,
+		InputControllerSampleContext.Supervisor,
+	]);
 });

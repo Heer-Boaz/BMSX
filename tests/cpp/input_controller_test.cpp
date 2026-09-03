@@ -18,7 +18,10 @@ void require(bool condition, const char* message) {
 
 class TestInput final : public bmsx::InputControllerInputSource {
 public:
-	void sampleInputControllerSnapshot(bmsx::InputControllerSnapshot& snapshot) override {
+	void sampleInputControllerSnapshot(
+		bmsx::InputControllerSnapshot& snapshot,
+		bmsx::InputControllerSampleContext context) override {
+		sampleContexts[fullSampleCount] = context;
 		fullSampleCount += 1;
 		snapshot.keyWords = keyWords;
 		snapshot.pointerXQ16 = 0x000c8000u;
@@ -45,6 +48,7 @@ public:
 	}
 
 	std::array<bmsx::u32, bmsx::INPUT_CONTROLLER_KEY_WORD_COUNT> keyWords{};
+	std::array<bmsx::InputControllerSampleContext, 2> sampleContexts{};
 	int fullSampleCount = 0;
 	bool supervisorRequestLine = false;
 };
@@ -103,6 +107,10 @@ void testArmedVblankPublishesTheFullSnapshot() {
 	harness.machine.inputController.onVblankEdge(7u);
 
 	require(harness.input.fullSampleCount == 1, "armed VBlank samples one full input frame");
+	require(
+		harness.input.sampleContexts[0] == bmsx::InputControllerSampleContext::Normal,
+		"initial BIOS execution uses the normal source-sampling context"
+	);
 	require(harness.memory.readIoU32(bmsx::IO_INP_STATUS) == 1u, "armed VBlank advances the sample sequence");
 	const bmsx::u32 f2WordAddress = bmsx::IO_INP_KEYS + (f2Usage >> 5u) * bmsx::IO_WORD_SIZE;
 	require((harness.memory.readIoU32(f2WordAddress) & (1u << (f2Usage & 31u))) != 0u,
@@ -115,10 +123,33 @@ void testArmedVblankPublishesTheFullSnapshot() {
 		"armed VBlank latches the source-port axis word directly");
 }
 
+void testSupervisorPhaseSelectsTheSourceSamplingContext() {
+	InputControllerHarness harness;
+	harness.input.supervisorRequestLine = true;
+	harness.memory.writeMappedU32LE(bmsx::IO_INP_CTRL, bmsx::INP_CTRL_ARM);
+	harness.machine.inputController.onVblankEdge(1u);
+	require(
+		harness.input.sampleContexts[0] == bmsx::InputControllerSampleContext::Normal,
+		"the request edge samples before entering the supervisor transition"
+	);
+	require(
+		harness.machine.systemController.supervisorContextActive(),
+		"the physical edge starts the retained supervisor transition"
+	);
+
+	harness.memory.writeMappedU32LE(bmsx::IO_INP_CTRL, bmsx::INP_CTRL_ARM);
+	harness.machine.inputController.onVblankEdge(2u);
+	require(
+		harness.input.sampleContexts[1] == bmsx::InputControllerSampleContext::Supervisor,
+		"the active transition selects the supervisor source-sampling context"
+	);
+}
+
 } // namespace
 
 int main() {
 	testSystemNmiEdgeDoesNotPublishAnUnarmedSnapshot();
 	testArmedVblankPublishesTheFullSnapshot();
+	testSupervisorPhaseSelectsTheSourceSamplingContext();
 	return 0;
 }

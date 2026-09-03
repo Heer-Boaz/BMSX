@@ -23,7 +23,8 @@ std::vector<std::string> transcript;
 class IdleInput final : public bmsx::InputControllerInputSource {
 public:
 	void sampleInputControllerSnapshot(
-		bmsx::InputControllerSnapshot& snapshot
+		bmsx::InputControllerSnapshot& snapshot,
+		bmsx::InputControllerSampleContext
 	) override {
 		snapshot = bmsx::createInputControllerSnapshot();
 	}

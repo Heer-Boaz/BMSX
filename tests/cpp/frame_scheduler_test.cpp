@@ -27,7 +27,9 @@ void require(bool condition, const char* message) {
 
 class TickInputSource final : public bmsx::InputControllerInputSource {
 public:
-	void sampleInputControllerSnapshot(bmsx::InputControllerSnapshot& snapshot) override {
+	void sampleInputControllerSnapshot(
+		bmsx::InputControllerSnapshot& snapshot,
+		bmsx::InputControllerSampleContext) override {
 		sampleCount += 1;
 		if (keyDown) {
 			snapshot.keyWords[TEST_KEY_USAGE >> 5u] |= 1u << (TEST_KEY_USAGE & 31u);

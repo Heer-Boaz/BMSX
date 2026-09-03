@@ -145,24 +145,41 @@ void testInputSnapshotReflectsHeldKey() {
 	input.postKeyboardEvent(RETROK_x, true);
 	input.poll(256, 240, 0.0);
 	bmsx::InputControllerSnapshot snapshot;
-	input.sampleInputControllerSnapshot(snapshot);
+	input.sampleInputControllerSnapshot(
+		snapshot,
+		bmsx::InputControllerSampleContext::Normal
+	);
 
 	constexpr uint32_t usage = bmsx::hid_key_usage::X;
 	require(
 		(snapshot.keyWords[usage >> 5u] & (1u << (usage & 31u))) != 0u,
 		"raw ICU snapshot should set the keyboard bit for a held key");
+	bmsx::InputControllerSnapshot supervisorSnapshot;
+	input.sampleInputControllerSnapshot(
+		supervisorSnapshot,
+		bmsx::InputControllerSampleContext::Supervisor
+	);
+	require(
+		(supervisorSnapshot.keyWords[usage >> 5u] & (1u << (usage & 31u))) != 0u,
+		"native physical input should fill the supervisor ICU context identically");
 
 	input.setVirtualKeyboardKey(bmsx::hid_key_usage::X, true);
 	input.postKeyboardEvent(RETROK_x, false);
 	input.poll(256, 240, 1.0);
-	input.sampleInputControllerSnapshot(snapshot);
+	input.sampleInputControllerSnapshot(
+		snapshot,
+		bmsx::InputControllerSampleContext::Normal
+	);
 	require(
 		(snapshot.keyWords[usage >> 5u] & (1u << (usage & 31u))) != 0u,
 		"virtual and physical keyboard sources must retain independent ownership");
 
 	input.setVirtualKeyboardKey(bmsx::hid_key_usage::X, false);
 	input.poll(256, 240, 2.0);
-	input.sampleInputControllerSnapshot(snapshot);
+	input.sampleInputControllerSnapshot(
+		snapshot,
+		bmsx::InputControllerSampleContext::Normal
+	);
 	require(
 		(snapshot.keyWords[usage >> 5u] & (1u << (usage & 31u))) == 0u,
 		"releasing the final keyboard source should clear the ICU key bit");
@@ -191,7 +208,10 @@ void testHostPointerConsumptionMasksGuestSnapshot() {
 
 	input.consumePointerButton(bmsx::INP_POINTER_BUTTON_PRIMARY);
 	bmsx::InputControllerSnapshot snapshot;
-	input.sampleInputControllerSnapshot(snapshot);
+	input.sampleInputControllerSnapshot(
+		snapshot,
+		bmsx::InputControllerSampleContext::Normal
+	);
 	require(
 		(snapshot.pointerButtons
 			& (1u << bmsx::INP_POINTER_BUTTON_PRIMARY)) == 0u,
@@ -201,7 +221,10 @@ void testHostPointerConsumptionMasksGuestSnapshot() {
 		"routing consumption must not mutate the physical pointer source");
 
 	input.poll(256, 240, 1.0);
-	input.sampleInputControllerSnapshot(snapshot);
+	input.sampleInputControllerSnapshot(
+		snapshot,
+		bmsx::InputControllerSampleContext::Normal
+	);
 	require(
 		(snapshot.pointerButtons
 			& (1u << bmsx::INP_POINTER_BUTTON_PRIMARY)) != 0u,
@@ -232,7 +255,10 @@ void testLibretroSupervisorRequestChordAndGuestInput() {
 	require(
 		!input.supervisorRequestLineHigh(),
 		"the reserved modifier alone must not assert the supervisor line");
-	input.sampleInputControllerSnapshot(snapshot);
+	input.sampleInputControllerSnapshot(
+		snapshot,
+		bmsx::InputControllerSampleContext::Normal
+	);
 	require(
 		(snapshot.pads[0].buttons & selectButton) == 0u,
 		"the reserved modifier must be masked before command selection");
@@ -242,7 +268,10 @@ void testLibretroSupervisorRequestChordAndGuestInput() {
 	require(
 		input.supervisorRequestLineHigh(),
 		"a completed RetroPad supervisor chord must assert the host line");
-	input.sampleInputControllerSnapshot(snapshot);
+	input.sampleInputControllerSnapshot(
+		snapshot,
+		bmsx::InputControllerSampleContext::Normal
+	);
 	require(
 		(snapshot.pads[0].buttons & supervisorChordButtons) == 0u,
 		"a completed supervisor chord must be masked from cart input");
@@ -252,7 +281,10 @@ void testLibretroSupervisorRequestChordAndGuestInput() {
 	require(
 		!input.supervisorRequestLineHigh(),
 		"releasing the modifier must lower the supervisor line");
-	input.sampleInputControllerSnapshot(snapshot);
+	input.sampleInputControllerSnapshot(
+		snapshot,
+		bmsx::InputControllerSampleContext::Normal
+	);
 	require(
 		(snapshot.pads[0].buttons & supervisorChordButtons) == 0u,
 		"the command target must remain masked until release");
@@ -279,7 +311,10 @@ void testLibretroSupervisorRequestChordAndGuestInput() {
 	require(
 		!input.supervisorRequestLineHigh(),
 		"a cart-visible F2 press must not assert the supervisor-request line");
-	input.sampleInputControllerSnapshot(snapshot);
+	input.sampleInputControllerSnapshot(
+		snapshot,
+		bmsx::InputControllerSampleContext::Normal
+	);
 	require(
 		(snapshot.keyWords[bmsx::hid_key_usage::F2 >> 5u]
 			& (1u << (bmsx::hid_key_usage::F2 & 31u))) != 0u,
@@ -293,7 +328,10 @@ void testLibretroSupervisorRequestChordAndGuestInput() {
 
 	input.postKeyboardEvent(RETROK_F2, false);
 	input.poll(256, 240, 0.0);
-	input.sampleInputControllerSnapshot(snapshot);
+	input.sampleInputControllerSnapshot(
+		snapshot,
+		bmsx::InputControllerSampleContext::Normal
+	);
 	require(
 		(snapshot.keyWords[bmsx::hid_key_usage::F2 >> 5u]
 			& (1u << (bmsx::hid_key_usage::F2 & 31u))) == 0u,
@@ -309,7 +347,10 @@ void testLibretroSupervisorRequestChordAndGuestInput() {
 
 	input.postKeyboardEvent(RETROK_RCTRL, true);
 	input.poll(256, 240, 0.0);
-	input.sampleInputControllerSnapshot(snapshot);
+	input.sampleInputControllerSnapshot(
+		snapshot,
+		bmsx::InputControllerSampleContext::Normal
+	);
 	require(
 		(snapshot.keyWords[bmsx::hid_key_usage::ControlRight >> 5u]
 			& (1u << (bmsx::hid_key_usage::ControlRight & 31u))) == 0u,
@@ -319,7 +360,10 @@ void testLibretroSupervisorRequestChordAndGuestInput() {
 	require(
 		input.supervisorRequestLineHigh(),
 		"keyboard Select plus L1 must assert the supervisor line across frames");
-	input.sampleInputControllerSnapshot(snapshot);
+	input.sampleInputControllerSnapshot(
+		snapshot,
+		bmsx::InputControllerSampleContext::Normal
+	);
 	require(
 		(snapshot.keyWords[bmsx::hid_key_usage::ShiftLeft >> 5u]
 			& (1u << (bmsx::hid_key_usage::ShiftLeft & 31u))) == 0u,
@@ -349,7 +393,10 @@ void testLibretroSupervisorRequestChordAndGuestInput() {
 	input.postKeyboardEvent(RETROK_BACKSPACE, true);
 	input.postKeyboardEvent(RETROK_RETURN, true);
 	input.poll(256, 240, 0.0);
-	input.sampleInputControllerSnapshot(snapshot);
+	input.sampleInputControllerSnapshot(
+		snapshot,
+		bmsx::InputControllerSampleContext::Normal
+	);
 	require(
 		(snapshot.keyWords[bmsx::hid_key_usage::Backspace >> 5u]
 			& (1u << (bmsx::hid_key_usage::Backspace & 31u))) != 0u &&
@@ -366,7 +413,10 @@ void testLibretroSupervisorRequestChordAndGuestInput() {
 
 	gamepadStates[1] = 1u << RETRO_DEVICE_ID_JOYPAD_SELECT;
 	input.poll(256, 240, 0.0);
-	input.sampleInputControllerSnapshot(snapshot);
+	input.sampleInputControllerSnapshot(
+		snapshot,
+		bmsx::InputControllerSampleContext::Normal
+	);
 	require(
 		(snapshot.pads[1].buttons & selectButton) == 0u,
 		"every libretro port must reserve the host shortcut modifier");
@@ -376,7 +426,10 @@ void testLibretroSupervisorRequestChordAndGuestInput() {
 	require(
 		input.hostShortcutJustPressed(quickMenuButton),
 		"a non-primary libretro port must publish the quick-menu activation edge");
-	input.sampleInputControllerSnapshot(snapshot);
+	input.sampleInputControllerSnapshot(
+		snapshot,
+		bmsx::InputControllerSampleContext::Normal
+	);
 	require(
 		(snapshot.pads[1].buttons & (selectButton | startButton)) == 0u,
 		"a non-primary host shortcut chord must remain hidden from the cart");
@@ -385,7 +438,10 @@ void testLibretroSupervisorRequestChordAndGuestInput() {
 	input.poll(256, 240, 2.0);
 	gamepadStates[1] = 1u << RETRO_DEVICE_ID_JOYPAD_RIGHT;
 	input.poll(256, 240, 3.0);
-	input.sampleInputControllerSnapshot(snapshot);
+	input.sampleInputControllerSnapshot(
+		snapshot,
+		bmsx::InputControllerSampleContext::Normal
+	);
 	require(
 		(snapshot.pads[1].buttons & rightButton) != 0u
 			&& snapshot.pads[0].buttons == 0u,

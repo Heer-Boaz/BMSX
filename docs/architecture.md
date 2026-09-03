@@ -3924,8 +3924,8 @@ The ICU supplies exactly two source-sampling contexts in the mirrored TS/C++
 port contract: normal execution and an active supervisor transition/context.
 The context is derived directly from the system controller's retained supervisor
 phase and is not separately saved. Initial BIOS boot remains normal execution;
-the context changes only when the physical supervisor controller leaves its user
-phase and changes back only after the leave fence completes. There is still one
+the context changes only when the system controller leaves its user phase and
+changes back only after the leave fence completes. There is still one
 ICU registerfile and one sample sequence, not banked input hardware.
 
 A physical host source writes the same physical snapshot in both contexts. A

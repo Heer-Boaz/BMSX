@@ -46,7 +46,9 @@ void require(bool condition, const char* message) {
 
 class SystemResetInputSource final : public bmsx::InputControllerInputSource {
 public:
-	void sampleInputControllerSnapshot(bmsx::InputControllerSnapshot&) override {}
+	void sampleInputControllerSnapshot(
+		bmsx::InputControllerSnapshot&,
+		bmsx::InputControllerSampleContext) override {}
 	auto supervisorRequestLineHigh() const -> bool override { return false; }
 	void applyInputControllerVibrationEffect(bmsx::i32, bmsx::f64, bmsx::f32) override {}
 };
@@ -403,6 +405,35 @@ void testNestedSupervisorFaultPreservesExitRequest() {
 				| bmsx::SYS_STATUS_SUPERVISOR_EXIT_REQUESTED
 				| bmsx::SYS_STATUS_SUPERVISOR_RESUMABLE),
 		"nested supervisor fault preserves the pending exit request"
+	);
+	require(
+		machine.systemController.supervisorContextActive(),
+		"source sampling remains in supervisor context before the leave fence"
+	);
+	memory.writeMappedU32LE(
+		bmsx::IO_SYS_CONTROL,
+		bmsx::SYS_CONTROL_SUPERVISOR_LEAVE
+	);
+	require(
+		machine.systemController.supervisorContextActive(),
+		"source sampling remains in supervisor context during the leave fence"
+	);
+	for (bmsx::u32 serviceCount = 0u;
+		serviceCount < 16u && machine.systemController.supervisorContextActive();
+		serviceCount += 1u) {
+		const bmsx::i64 deadline = machine.scheduler.nextDeadline();
+		require(
+			deadline != std::numeric_limits<bmsx::i64>::max(),
+			"supervisor leave retains a device-service deadline"
+		);
+		machine.scheduler.advanceTo(deadline);
+		while (machine.scheduler.hasDueTimer()) {
+			machine.runDeviceService(machine.scheduler.popDueTimer());
+		}
+	}
+	require(
+		!machine.systemController.supervisorContextActive(),
+		"source sampling returns to normal after the leave fence"
 	);
 }
 
