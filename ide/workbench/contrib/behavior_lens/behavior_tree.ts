@@ -3,6 +3,7 @@ import {
 	type LuaExpression,
 	type LuaTableConstructorExpression,
 } from '../../../../toolchain/ts/lua/syntax/ast';
+import { findNamedLuaTableField } from '../../../../toolchain/ts/lua/syntax/table_fields';
 import type { SymbolID } from '../../../../toolchain/ts/lua/semantic/model';
 import type { BehaviorSourceNode } from './model';
 import {
@@ -16,7 +17,6 @@ import {
 	createSourceNode,
 	describeResolvedSourceTable,
 	describeExpression,
-	findNamedField,
 	resolveSourceTable,
 	type BehaviorRecognizerContext,
 } from './source';
@@ -28,7 +28,7 @@ export function buildBehaviorTreeDefinition(
 ): readonly BehaviorSourceNode[] {
 	const children: BehaviorSourceNode[] = [];
 	const rootPath = appendBehaviorSourcePath('', 'root');
-	const blackboard = findNamedField(definition, 'blackboard');
+	const blackboard = findNamedLuaTableField(definition, 'blackboard');
 	if (blackboard) {
 		children.push(buildNamedTableSection(
 			context,
@@ -38,7 +38,7 @@ export function buildBehaviorTreeDefinition(
 			activeDeclarations,
 		));
 	}
-	const root = findNamedField(definition, 'root');
+	const root = findNamedLuaTableField(definition, 'root');
 	if (root) {
 		children.push(buildBehaviorTreeNode(context, rootPath, root.value, activeDeclarations));
 	}
@@ -56,7 +56,7 @@ function buildBehaviorTreeNode(
 		return createDynamicNode(context, path, 'dynamic node', expression);
 	}
 	const table = resolved.table;
-	const typeField = findNamedField(table, 'type');
+	const typeField = findNamedLuaTableField(table, 'type');
 	const typeLabel = typeField && typeField.value.kind === LuaSyntaxKind.StringLiteralExpression
 		? typeField.value.value
 		: '<dynamic type>';
@@ -111,7 +111,7 @@ function appendBehaviorTreeAttachments(
 	activeDeclarations: Set<SymbolID>,
 	children: BehaviorSourceNode[],
 ): void {
-	const services = findNamedField(table, 'services');
+	const services = findNamedLuaTableField(table, 'services');
 	if (services) {
 		children.push(buildTableArraySection(
 			context,
@@ -122,7 +122,7 @@ function appendBehaviorTreeAttachments(
 			buildBehaviorTreeService,
 		));
 	}
-	const decorators = findNamedField(table, 'decorators');
+	const decorators = findNamedLuaTableField(table, 'decorators');
 	if (decorators) {
 		children.push(buildTableArraySection(
 			context,
@@ -142,7 +142,7 @@ function appendBehaviorTreeChildren(
 	activeDeclarations: Set<SymbolID>,
 	children: BehaviorSourceNode[],
 ): void {
-	const childList = findNamedField(table, 'children');
+	const childList = findNamedLuaTableField(table, 'children');
 	if (childList) {
 		children.push(buildTableArraySection(
 			context,
@@ -154,7 +154,7 @@ function appendBehaviorTreeChildren(
 		));
 	}
 	for (const fieldName of ['main_task', 'background_tree'] as const) {
-		const field = findNamedField(table, fieldName);
+		const field = findNamedLuaTableField(table, fieldName);
 		if (field) {
 			children.push(buildBehaviorTreeNode(
 				context,
@@ -164,7 +164,7 @@ function appendBehaviorTreeChildren(
 			));
 		}
 	}
-	const choices = findNamedField(table, 'choices');
+	const choices = findNamedLuaTableField(table, 'choices');
 	if (choices) {
 		children.push(buildBehaviorTreeChoices(
 			context,
@@ -242,11 +242,11 @@ function buildBehaviorTreeChoice(
 	if (!choice) {
 		return createDynamicNode(context, path, 'dynamic choice', expression);
 	}
-	const child = findNamedField(choice.table, 'child');
+	const child = findNamedLuaTableField(choice.table, 'child');
 	if (!child) {
 		return createDynamicNode(context, path, 'choice without child', expression);
 	}
-	const weight = findNamedField(choice.table, 'weight');
+	const weight = findNamedLuaTableField(choice.table, 'weight');
 	const childNode = buildBehaviorTreeNode(
 		context,
 		appendBehaviorSourcePath(path, 'child'),
@@ -294,7 +294,7 @@ function buildBehaviorTreeAttachment(
 	if (!resolved) {
 		return createDynamicNode(context, path, `dynamic ${kind}`, expression);
 	}
-	const primary = findNamedField(resolved.table, primaryFieldName);
+	const primary = findNamedLuaTableField(resolved.table, primaryFieldName);
 	const label = primary ? describeExpression(primary.value) : `<unresolved ${kind}>`;
 	const detailFields = kind === 'service'
 		? ['interval', 'tick_on_search_start', 'restart_timer_on_each_activation']
@@ -322,7 +322,7 @@ function describePresentFields(
 	let detail = '';
 	for (let index = 0; index < fieldNames.length; index += 1) {
 		const fieldName = fieldNames[index];
-		const field = findNamedField(table, fieldName);
+		const field = findNamedLuaTableField(table, fieldName);
 		if (!field) {
 			continue;
 		}

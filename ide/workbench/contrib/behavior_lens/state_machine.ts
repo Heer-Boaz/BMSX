@@ -3,6 +3,7 @@ import {
 	type LuaExpression,
 	type LuaTableConstructorExpression,
 } from '../../../../toolchain/ts/lua/syntax/ast';
+import { findNamedLuaTableField } from '../../../../toolchain/ts/lua/syntax/table_fields';
 import type { SymbolID } from '../../../../toolchain/ts/lua/semantic/model';
 import type { BehaviorSourceNode } from './model';
 import {
@@ -16,7 +17,6 @@ import {
 	createSourceNode,
 	describeExpression,
 	describeResolvedSourceTable,
-	findNamedField,
 	resolveSourceTable,
 	type BehaviorRecognizerContext,
 	type NamedSourceField,
@@ -60,7 +60,7 @@ function appendFsmStates(
 	activeDeclarations: Set<SymbolID>,
 	children: BehaviorSourceNode[],
 ): void {
-	const statesField = findNamedField(owner, 'states');
+	const statesField = findNamedLuaTableField(owner, 'states');
 	if (!statesField) {
 		return;
 	}
@@ -69,7 +69,7 @@ function appendFsmStates(
 		children.push(createDynamicNode(context, path, 'dynamic states', statesField.value));
 		return;
 	}
-	const initialField = findNamedField(owner, 'initial');
+	const initialField = findNamedLuaTableField(owner, 'initial');
 	const initial = initialField && initialField.value.kind === LuaSyntaxKind.StringLiteralExpression
 		? initialField.value.value
 		: null;
@@ -126,7 +126,7 @@ function buildFsmState(
 		return createDynamicNode(context, path, `state ${name}: dynamic`, expression);
 	}
 	const state = resolved.table;
-	const concurrentField = findNamedField(state, 'is_concurrent');
+	const concurrentField = findNamedLuaTableField(state, 'is_concurrent');
 	const concurrent = concurrentField?.value.kind === LuaSyntaxKind.BooleanLiteralExpression
 		&& concurrentField.value.value;
 	const markers: string[] = [];
@@ -170,7 +170,7 @@ function appendFsmEventSection(
 	children: BehaviorSourceNode[],
 	fieldName: string,
 ): void {
-	const field = findNamedField(owner, fieldName);
+	const field = findNamedLuaTableField(owner, fieldName);
 	if (!field) {
 		return;
 	}
@@ -215,8 +215,8 @@ function buildFsmEvent(
 		: (event.keyKind === 'numeric' ? 'partial' : 'unresolved');
 	const handler = resolveSourceTable(context, event.field.value, activeDeclarations);
 	if (handler) {
-		const go = findNamedField(handler.table, 'go');
-		const emitter = findNamedField(handler.table, 'emitter');
+		const go = findNamedLuaTableField(handler.table, 'go');
+		const emitter = findNamedLuaTableField(handler.table, 'emitter');
 		let detail = go ? `go=${describeExpression(go.value)}` : '';
 		if (emitter) {
 			const emitterDetail = `emitter=${describeExpression(emitter.value)}`;
@@ -254,7 +254,7 @@ function appendInputHandlers(
 	activeDeclarations: Set<SymbolID>,
 	children: BehaviorSourceNode[],
 ): void {
-	const field = findNamedField(owner, 'input_event_handlers');
+	const field = findNamedLuaTableField(owner, 'input_event_handlers');
 	if (!field) {
 		return;
 	}
@@ -278,10 +278,10 @@ function buildInputHandler(
 	if (!resolved) {
 		return createDynamicNode(context, path, 'dynamic input handler', expression);
 	}
-	const pattern = findNamedField(resolved.table, 'pattern');
-	const go = findNamedField(resolved.table, 'go');
-	const playerIndex = findNamedField(resolved.table, 'player_index');
-	const emitter = findNamedField(resolved.table, 'emitter');
+	const pattern = findNamedLuaTableField(resolved.table, 'pattern');
+	const go = findNamedLuaTableField(resolved.table, 'go');
+	const playerIndex = findNamedLuaTableField(resolved.table, 'player_index');
+	const emitter = findNamedLuaTableField(resolved.table, 'emitter');
 	let detail = go ? `go=${describeExpression(go.value)}` : '';
 	if (playerIndex) {
 		const suffix = `player=${describeExpression(playerIndex.value)}`;
@@ -310,7 +310,7 @@ function appendTableMapSection(
 	children: BehaviorSourceNode[],
 	fieldName: string,
 ): void {
-	const field = findNamedField(owner, fieldName);
+	const field = findNamedLuaTableField(owner, fieldName);
 	if (!field) {
 		return;
 	}
@@ -365,7 +365,7 @@ function appendNamedSection(
 	children: BehaviorSourceNode[],
 	fieldName: string,
 ): void {
-	const field = findNamedField(owner, fieldName);
+	const field = findNamedLuaTableField(owner, fieldName);
 	if (field) {
 		children.push(buildNamedTableSection(context, path, fieldName, field.value, activeDeclarations));
 	}
@@ -379,7 +379,7 @@ function appendExpressionListSection(
 	children: BehaviorSourceNode[],
 	fieldName: string,
 ): void {
-	const field = findNamedField(owner, fieldName);
+	const field = findNamedLuaTableField(owner, fieldName);
 	if (!field) {
 		return;
 	}
@@ -401,7 +401,7 @@ function appendScalarFields(
 ): void {
 	for (let index = 0; index < SCALAR_FIELDS.length; index += 1) {
 		const fieldName = SCALAR_FIELDS[index];
-		const field = findNamedField(owner, fieldName);
+		const field = findNamedLuaTableField(owner, fieldName);
 		if (!field) {
 			continue;
 		}

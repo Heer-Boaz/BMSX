@@ -8,6 +8,7 @@ import {
 	type LuaTableField,
 } from '../../../../toolchain/ts/lua/syntax/ast';
 import { walkLuaAst } from '../../../../toolchain/ts/lua/syntax/ast/traversal';
+import { staticLuaTableFieldName } from '../../../../toolchain/ts/lua/syntax/table_fields';
 import { resolveStaticLuaExpressionPath } from '../../../../toolchain/ts/lua/semantic/expression_path';
 import type { FileSemanticData, SymbolID } from '../../../../toolchain/ts/lua/semantic/model';
 import type { SemanticValueSource, ValueAssignmentEntry } from '../../../../toolchain/ts/lua/semantic/value_graph';
@@ -248,20 +249,10 @@ export function describeResolvedSourceTable(resolved: ResolvedSourceTable): stri
 	return detail;
 }
 
-export function findNamedField(table: LuaTableConstructorExpression, name: string): LuaTableField | null {
-	for (let index = table.fields.length - 1; index >= 0; index -= 1) {
-		const field = table.fields[index];
-		if (staticFieldName(field) === name) {
-			return field;
-		}
-	}
-	return null;
-}
-
 export function collectNamedFields(table: LuaTableConstructorExpression): NamedSourceField[] {
 	const lastIndexByName = new Map<string, number>();
 	for (let index = 0; index < table.fields.length; index += 1) {
-		const name = staticFieldName(table.fields[index]);
+		const name = staticLuaTableFieldName(table.fields[index]);
 		if (name !== null) {
 			lastIndexByName.set(name, index);
 		}
@@ -272,7 +263,7 @@ export function collectNamedFields(table: LuaTableConstructorExpression): NamedS
 		if (field.kind === LuaTableFieldKind.Array) {
 			continue;
 		}
-		const name = staticFieldName(field);
+		const name = staticLuaTableFieldName(field);
 		if (name !== null && lastIndexByName.get(name) !== index) {
 			continue;
 		}
@@ -515,17 +506,6 @@ export function buildExpressionProperty(
 		resolution: 'complete',
 		children: [],
 	});
-}
-
-function staticFieldName(field: LuaTableField): string | null {
-	if (field.kind === LuaTableFieldKind.IdentifierKey) {
-		return field.name;
-	}
-	if (field.kind === LuaTableFieldKind.ExpressionKey
-		&& field.key.kind === LuaSyntaxKind.StringLiteralExpression) {
-		return field.key.value;
-	}
-	return null;
 }
 
 function sourceTableIssues(table: LuaTableConstructorExpression): SourceTableIssue {

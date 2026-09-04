@@ -321,15 +321,16 @@ en componentidentiteit; alleen automatisch uitgegeven ids zijn numeric
 (`registry.lua:3-79`). De host leest geen `world._objects`
 en maakt daar geen scene-DTO van.
 
-Er bestaat nog geen algemene cartlib scene-definitieowner. De carts tonen al
-twee echte authored vormen: kleine Lua-functies met directe
-`world:spawn(...)`-assembly en grotere placementbronnen zoals Pietious'
-`castle_map.yaml` en Nemesis' stagebron. `World` blijft de enige
-admission/disposalgrens en `Registry` de enige cart-wide identity-index. De
-scene-route forceert deze workloads niet in één recordshape. Zij vergelijkt
-eerst directe Lua met ActionEffect-achtige directe admission, BT/FSM-achtige
-verlaging en immutable placementdata. De concrete cartvoordelen en meetgate
-staan in
+De gemeten kleine-rootworkload heeft nu een opt-in scene-definitieowner:
+`cartlib/world/scene_library.lua` volgt het ActionEffect-pattern en bewaart een
+directe ordered Lua-definition. `instantiate` delegeert ieder lid aan de
+bestaande `World:spawn`-grens en retourneert alleen de scene-local membermap.
+Nemesis gebruikt dit voor zijn vier rootobjecten; een niet-importerende cart
+blijft bytegelijk. `World` blijft de enige admission/disposalgrens en `Registry`
+de enige cart-wide identity-index. Grotere placementbronnen zoals Pietious'
+`castle_map.yaml` en Nemesis' stagebron worden niet in deze recordshape
+gedwongen. Zij behouden hun eigen workload- en representatiemeting. De
+concrete cartvoordelen en meetgate staan in
 [`studio_scene_authoring_design.md`](studio_scene_authoring_design.md).
 
 Gameplay-clock suspension is cartscheduling: de frame-clock kan doorlopen
@@ -628,11 +629,11 @@ strings of Studio-hooks in normale cartlibcode.
 De behavior-infrastructuurvolgorde blijft **A, daarna C**: eerst source-first
 begrip, daarna deterministische scenario's. De eerstvolgende visual-authoring-
 route is scenecompositie, niet een tweede behaviorrepresentatie. Zij begint met
-de echte root- en placementworkloads van de huidige carts en kiest vervolgens
-één bestaande canonical source voor een source-preserving visual edit. Een
-cartlib sceneowner volgt alleen wanneer die workload load/unload/rebindstate
-nodig heeft die de huidige owner niet bezit. Een editable BT- of FSM-pane blijft
-geparkeerd totdat de generieke source-editgrens bewezen is.
+de geregistreerde Nemesis-root als bestaande canonical Lua-source. De generieke
+numeric-literal-edit en de sourceprojectie bestaan inmiddels; een visual view
+moet nu hetzelfde retained textmodel gebruiken. De grote placementworkloads
+houden hun afzonderlijke representatiebesluit. Een editable BT- of FSM-pane
+blijft geparkeerd totdat ook hun concrete visual-editoperaties zijn ontworpen.
 
 Recorded observability blijft een afzonderlijke testfunctie. Stackframes en
 source maps zijn debuggercorrespondentie; eventgeschiedenis en persistente
