@@ -1,4 +1,6 @@
 #include "machine/cpu/cpu.h"
+#include "common/endian.h"
+#include "spec/audio/apu.h"
 #include "machine/devices/input/contracts.h"
 #include "machine/runtime/cpu_executor.h"
 #include "machine/runtime/runtime.h"
@@ -12,6 +14,7 @@
 #include "support/boot_rom_fixture.h"
 #include "support/cartridge_fixture.h"
 
+#include <algorithm>
 #include <array>
 #include <stdexcept>
 #include <vector>
@@ -59,11 +62,11 @@ struct TickRuntimeFixture {
 	TickInputSource input;
 	bmsx::Runtime runtime;
 
-	TickRuntimeFixture()
+	TickRuntimeFixture(const bmsx::CartridgeSocketMediaPair& slots = bmsx::test::cartridgeSlots())
 		: runtime(
 			bmsx::RuntimeOptions{
 				systemRom,
-				bmsx::test::cartridgeSlots(),
+				slots,
 				bmsx::PSX_MACHINE_SPEC,
 			},
 			input
@@ -406,6 +409,63 @@ void testNormalHostExecutionKeepsExistingSchedulerContract() {
 	);
 }
 
+void testRuntimeCheckpointStorage() {
+	TickRuntimeFixture fixture(bmsx::CartridgeSocketMediaPair{{
+		bmsx::CartridgeCardMedia{std::nullopt, 12u, true},
+		bmsx::CartridgeCardMedia{std::nullopt, 20u, true},
+	}});
+	auto& runtime = fixture.runtime;
+	auto& memory = runtime.machine.memory;
+	auto& gpu = runtime.machine.gxGpu;
+	const auto anchor = bmsx::captureRuntimeSaveState(runtime);
+	const auto anchorBytes = bmsx::encodeRuntimeSaveState(anchor);
+	auto storage = bmsx::captureRuntimeSaveState(runtime);
+	const auto& machine = storage.machineState.machine;
+	const std::array<const bmsx::u8*, 5> regions{
+		machine.memory.ram.data(), machine.gxGpu.vramBytes.data(), machine.audio.sampleRam.data(),
+		machine.cartridge.slots[0]->ram->data(), machine.cartridge.slots[1]->ram->data(),
+	};
+	std::vector<bmsx::u8> vram(bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
+	for (bmsx::u32 pass = 1; pass <= 4; ++pass) {
+		const bmsx::u32 word = 0xfedcba00u | pass;
+		memory.writeU32(bmsx::RAM_BASE + bmsx::PSX_MACHINE_SPEC.ramBytes - 4, word);
+		for (bmsx::u32 slot = 0; slot < 2; ++slot) {
+			memory.writeMappedU32LE(bmsx::IO_CART_SELECT, 0x80000000u | slot);
+			memory.writeMappedU32LE(bmsx::CART_RAM_BASE + machine.cartridge.slots[slot]->ram->size() - 4, word ^ slot);
+		}
+		memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_ADDRESS, bmsx::APU_SAMPLE_RAM_BYTES - 4);
+		memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_CONTROL, bmsx::APU_TRANSFER_MODE_MANUAL_WRITE);
+		memory.writeMappedU32LE(bmsx::IO_APU_TRANSFER_DATA, word);
+		require(runtime.frameScheduler.runToNextLogicalTick(runtime), "sample transfer reaches its deadline");
+		std::fill(vram.begin(), vram.end(), static_cast<bmsx::u8>(pass));
+		gpu.replaceVramSnapshotBytes(vram);
+		const auto expected = bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(runtime));
+		storage = bmsx::captureRuntimeSaveState(runtime, std::move(storage));
+		require(machine.memory.ram.data() == regions[0], "main RAM buffer is reused");
+		require(machine.gxGpu.vramBytes.data() == regions[1], "VRAM buffer is reused");
+		require(machine.audio.sampleRam.data() == regions[2], "sample RAM buffer is reused");
+		require(bmsx::readLE32(machine.audio.sampleRam.data() + bmsx::APU_SAMPLE_RAM_BYTES - 4) == word, "APU transfer captured");
+		for (size_t slot = 0; slot < 2; ++slot) {
+			const auto& ram = *machine.cartridge.slots[slot]->ram;
+			require(ram.data() == regions[3 + slot], "both cartridge RAM buffers are reused");
+			require(bmsx::readLE32(ram.data() + ram.size() - 4) == (word ^ slot), "mapped cartridge bytes captured");
+		}
+		require(bmsx::encodeRuntimeSaveState(storage) == expected, "reused state equals independent capture");
+		require(bmsx::encodeRuntimeSaveState(anchor) == anchorBytes, "independent snapshot remains intact");
+	}
+	bmsx::applyRuntimeSaveState(runtime, anchor);
+	const auto restored = bmsx::captureRuntimeSaveState(runtime);
+	const auto& restoredMachine = restored.machineState.machine;
+	const auto& anchorMachine = anchor.machineState.machine;
+	require(restoredMachine.memory.ram == anchorMachine.memory.ram, "original main RAM restores intact");
+	require(restoredMachine.audio.sampleRam == anchorMachine.audio.sampleRam, "original sample RAM restores intact");
+	require(restoredMachine.gxGpu.vramBytes == anchorMachine.gxGpu.vramBytes, "original VRAM restores intact");
+	for (size_t slot = 0; slot < 2; ++slot) {
+		require(restoredMachine.cartridge.slots[slot]->ram == anchorMachine.cartridge.slots[slot]->ram, "original cartridge RAM restores intact");
+	}
+	require(restoredMachine.gxGpu.vramPresentationPending, "restore requests host redraw");
+}
+
 void testHistoryPressureAndBranch() {
 	TickRuntimeFixture fixture;
 	auto& runtime = fixture.runtime;
@@ -567,6 +627,7 @@ int main() {
 	testLogicalTickPublishesInputAndEntersWaitingCpuInterrupt();
 	testLogicalTickIsBoundedWithoutVblankDeadline();
 	testNormalHostExecutionKeepsExistingSchedulerContract();
+	testRuntimeCheckpointStorage();
 	testHistoryPressureAndBranch();
 	testInputJournalRawWordsAndWrap();
 	testHistoryUnarmedSupervisorEdge();

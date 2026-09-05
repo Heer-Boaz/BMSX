@@ -97,12 +97,14 @@ void CartridgeController::reset() {
 	publishDreqLines(1u);
 }
 
-CartridgeControllerState CartridgeController::captureState() const {
-	CartridgeControllerState state;
-	state.selectionWord = m_selectionWord;
-	if (m_cards[0]) state.slots[0] = m_cards[0]->captureState();
-	if (m_cards[1]) state.slots[1] = m_cards[1]->captureState();
-	return state;
+CartridgeControllerState CartridgeController::captureState(CartridgeControllerState storage) const {
+	storage.selectionWord = m_selectionWord;
+	for (size_t slot = 0; slot < m_cards.size(); ++slot) {
+		if (!m_cards[slot]) continue;
+		if (!storage.slots[slot]) storage.slots[slot].emplace();
+		storage.slots[slot] = m_cards[slot]->captureState(std::move(*storage.slots[slot]));
+	}
+	return storage;
 }
 
 void CartridgeController::restoreState(const CartridgeControllerState& state) {

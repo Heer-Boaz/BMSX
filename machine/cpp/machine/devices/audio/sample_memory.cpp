@@ -38,8 +38,9 @@ void ApuSampleMemory::writeWord(u32 address, u32 word) {
 	writeLE32(m_ram.data() + (address & (APU_SAMPLE_RAM_ADDRESS_MASK & ~3u)), word);
 }
 
-auto ApuSampleMemory::captureState() const -> std::vector<u8> {
-	return {m_ram.begin(), m_ram.end()};
+auto ApuSampleMemory::captureState(std::vector<u8> bytes) const -> std::vector<u8> {
+	bytes.assign(m_ram.begin(), m_ram.end());
+	return bytes;
 }
 
 void ApuSampleMemory::restoreState(const std::vector<u8>& bytes) {

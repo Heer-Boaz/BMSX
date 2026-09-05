@@ -38,7 +38,7 @@ public:
 	void onService(int64_t nowCycles);
 	void onTransferService(int64_t nowCycles);
 	[[nodiscard]] auto synchronizeOutput() -> ApuOutputRing&;
-	AudioControllerState captureState();
+	AudioControllerState captureState(std::vector<u8> sampleRam = {});
 	void restoreState(const AudioControllerState& state, int64_t nowCycles);
 
 private:

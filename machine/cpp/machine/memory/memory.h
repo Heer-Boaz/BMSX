@@ -103,7 +103,7 @@ public:
 	MemoryRegionKind mappedRegion(uint32_t addr) const;
 	u32 mappedRegionWordSpan(u32 addr, u32 wordLimit, MemoryRegionKind region) const;
 
-	MemorySaveState captureSaveState() const;
+	MemorySaveState captureSaveState(std::vector<u8> ram = {}) const;
 	void restoreSaveState(const MemorySaveState& state);
 	void clearIoSlots();
 	void clearBusFault();

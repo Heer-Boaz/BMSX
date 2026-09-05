@@ -13,7 +13,8 @@ struct RuntimeSaveState {
 	bool pendingEntryCall = false;
 };
 
-RuntimeSaveState captureRuntimeSaveState(Runtime& runtime, CpuSnapshot snapshot = {});
+// Storage is consumed; callers reusing a capture transfer its ownership with a move.
+RuntimeSaveState captureRuntimeSaveState(Runtime& runtime, RuntimeSaveState storage = {});
 enum class RuntimeRestoreOrigin { ExternalLoad, HistorySeek };
 void applyRuntimeSaveState(Runtime& runtime, const RuntimeSaveState& state, RuntimeRestoreOrigin origin = RuntimeRestoreOrigin::ExternalLoad);
 

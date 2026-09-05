@@ -133,7 +133,7 @@ export class AudioController {
 		this.activeSlots.writeActiveMask();
 	}
 
-	public captureState(): AudioControllerState {
+	public captureState(sampleRam?: Uint8Array): AudioControllerState {
 		const nowCycles = this.scheduler.currentNowCycles();
 		this.serviceClock.synchronize(nowCycles);
 		const registerWords = Array.from(this.commandLatch.registerWords);
@@ -147,7 +147,7 @@ export class AudioController {
 			eventSourceAddr: event.eventSourceAddr,
 			slotPhases: this.slots.captureSlotPhases(),
 			slotRegisterWords: this.slots.captureSlotRegisterWords(),
-			sampleRam: this.sampleMemory.captureState(),
+			sampleRam: this.sampleMemory.captureState(sampleRam),
 			sampleTransfer: this.serviceClock.captureSampleTransferState(nowCycles),
 			output: this.audioOutput.captureState(),
 			sampleCarry: this.serviceClock.captureSampleCarry(),

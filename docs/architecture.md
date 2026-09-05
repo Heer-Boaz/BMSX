@@ -1576,6 +1576,16 @@ word prefix is shared by trusted restore and external little-endian encoding;
 spare capacity and capture-writer scratch are not machine state. No graph
 compatibility reader, guest hot-path tracking or guest GC is added for capture.
 
+The same exclusive-storage contract covers main RAM, synchronized VRAM, APU
+sample RAM and the RAM devices in either cartridge socket. Capture passes an
+overwritten slot's saved buffers back to those memory owners, which copy live
+bytes directly into them. Fresh captures allocate independent buffers at the
+owner; native reuse transfers vectors with moves. Reuse consumes the former
+capture and requires the same runtime/media configuration. It does not replace
+GPU synchronization, alter device timing/IRQ capture order, compress guest
+memory, or introduce write tracking on the emulated datapaths. Scalar metadata,
+strings and capture scratch still have their existing allocation costs.
+
 Generic rewind is a shared TS/native emulator requirement, not a Studio or
 cartridge capability. `Runtime.history` owns bounded sparse checkpoints and a
 fixed raw ICU input journal; it is not included in machine save-state. It

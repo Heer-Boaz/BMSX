@@ -38,6 +38,7 @@ type StrictRuntimeMethodExclusion = { name: string; reason: string };
 type StrictRuntimeMethodParityEntry = {
 	ts: string;
 	cpp: string[];
+	cpp_class?: string;
 	methods?: string[];
 	compare_public?: boolean;
 	ts_exclusions?: StrictRuntimeMethodExclusion[];
@@ -315,7 +316,7 @@ function tsParameterNames(parameters: string): string[] {
 		const equals = name.indexOf('=');
 		if (equals >= 0) name = name.slice(0, equals);
 		name = name.replace(/\b(?:public|private|protected|readonly)\b/g, '').replace(/^\.\.\./, '').trim();
-		if (name.length !== 0) names.push(name.replace(/^_+/, ''));
+		if (name.length !== 0) names.push(name.replace(/^_+/, '').replace(/\?$/, ''));
 	}
 	return names;
 }
@@ -426,7 +427,7 @@ function collectTsStrictSymbols(file: string): StrictRuntimeSymbols {
 	return { constants, constantValues, variables, variableValues, functions, functionBodies };
 }
 
-function collectCppStrictSymbols(files: readonly string[]): StrictRuntimeSymbols {
+function collectCppStrictSymbols(files: readonly string[], methodOwner?: string): StrictRuntimeSymbols {
 	const constants = new Map<string, string>();
 	const constantValues = new Map<string, string>();
 	const variables = new Map<string, string>();
@@ -466,6 +467,7 @@ function collectCppStrictSymbols(files: readonly string[]): StrictRuntimeSymbols
 		for (const match of text.matchAll(/^[ \t]*(?:[A-Za-z_~][\w:<>,*&]*[ \t]+)+([A-Za-z_]\w*(?:::[A-Za-z_]\w*)?)\s*\(/gm)) {
 			const rawName = match[1];
 			const name = rawName.includes('::') ? rawName.slice(rawName.lastIndexOf('::') + 2) : rawName;
+			if (methodOwner !== undefined && rawName !== `${methodOwner}::${name}`) continue;
 			if (rawName.includes('::') && rawName.slice(0, rawName.lastIndexOf('::')).endsWith(name)) continue;
 			if (name === 'if' || name === 'for' || name === 'while' || name === 'switch' || name.endsWith('Thunk')) continue;
 			const openIndex = match.index! + match[0].length - 1;
@@ -477,6 +479,7 @@ function collectCppStrictSymbols(files: readonly string[]): StrictRuntimeSymbols
 			functionBodies.set(name, readDelimitedBody(text, openBraceIndex));
 		}
 		for (const className of classNames) {
+			if (methodOwner !== undefined && className !== methodOwner) continue;
 			const escapedClassName = escapedRegExpLiteral(className);
 			const constructorPattern = new RegExp(`^\\s*(?:explicit\\s+)?(?:[A-Za-z_]\\w*::)?${escapedClassName}\\s*\\(`, 'gm');
 			for (const match of text.matchAll(constructorPattern)) {
@@ -649,7 +652,7 @@ function auditStrictRuntimeMethodParity(manifest: Manifest): string[] {
 	const errors: string[] = [];
 	for (const entry of manifest.strict_runtime_method_parity) {
 		const tsSymbols = collectTsStrictSymbols(entry.ts);
-		const cppSymbols = collectCppStrictSymbols(entry.cpp);
+		const cppSymbols = collectCppStrictSymbols(entry.cpp, entry.cpp_class);
 		const compareMethod = (method: string): void => {
 			const tsParams = tsSymbols.functions.get(method);
 			const cppParams = cppSymbols.functions.get(method);

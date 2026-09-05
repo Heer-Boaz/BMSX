@@ -72,7 +72,7 @@ void restoreApuOutputVoiceState(ApuOutputMixer::VoiceRecord& record, const ApuOu
 	record.badp.previousDecodedRight = state.badp.previousDecodedRight;
 }
 
-AudioControllerState AudioController::captureState() {
+AudioControllerState AudioController::captureState(std::vector<u8> sampleRam) {
 	const i64 nowCycles = m_scheduler.currentNowCycles();
 	m_serviceClock.synchronize(nowCycles);
 	AudioControllerState state;
@@ -85,7 +85,7 @@ AudioControllerState AudioController::captureState() {
 	state.eventSourceAddr = event.eventSourceAddr;
 	state.slotPhases = m_slots.slotPhases();
 	state.slotRegisterWords = m_slots.slotRegisterWords();
-	state.sampleRam = m_sampleMemory.captureState();
+	state.sampleRam = m_sampleMemory.captureState(std::move(sampleRam));
 	state.sampleTransfer = m_serviceClock.captureSampleTransferState(nowCycles);
 	state.output = m_audioOutput.captureState();
 	state.sampleCarry = m_serviceClock.captureSampleCarry();

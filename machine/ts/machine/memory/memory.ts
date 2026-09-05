@@ -286,9 +286,10 @@ export class Memory {
 		return this.busFaultSequence;
 	}
 
-	public captureSaveState(): MemorySaveState {
+	public captureSaveState(ram: Uint8Array = new Uint8Array(this.ram.byteLength)): MemorySaveState {
+		ram.set(this.ram);
 		return {
-			ram: this.ram.slice(),
+			ram,
 			busFaultCode: this.busFaultCode,
 			busFaultAddr: this.busFaultAddr,
 			busFaultAccess: this.busFaultAccess,

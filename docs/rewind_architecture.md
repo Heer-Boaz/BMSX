@@ -174,6 +174,49 @@ restore still reconstructs the live Lua heap. Bounded slot count is not a fixed
 byte budget. Those costs need a host-specific budget before menu enablement;
 CPU-buffer reuse does not justify skipping guest work or collecting every frame.
 
+## Bulk checkpoint storage: REWIND-MEMORY-STORAGE-01
+
+This storage boundary follows DuckStation's `AllocateMemoryStates` /
+`SaveMemoryState` and MAME's `write_buffer` (sources above): devices copy their
+raw memory into exclusively owned checkpoint storage, not a fresh intermediate
+buffer subsequently copied into history. No second state format or buffer-pool
+facade is introduced.
+
+Representation and callsite inventory established before the mirrored edits:
+
+| Saved region | TypeScript | C++ | Capture owner |
+| --- | --- | --- | --- |
+| Main RAM | `Uint8Array` of machine-model RAM size | `vector<u8>` of the same size | `Memory.captureSaveState` |
+| VRAM | `Uint8Array` of synchronized device snapshot bytes | `vector<u8>` of the same bytes | `GxGpu.captureSaveState` |
+| APU sample RAM | Fixed-size `Uint8Array` | `vector<u8>` copied from the device array | `ApuSampleMemory.captureState`, through `AudioController` |
+| Socket 0/1 RAM | Present card's `Uint8Array`, or hardware absence | `optional<vector<u8>>` | `CartridgeCard.captureState`, through the controller |
+| CPU heap | Existing word arena and object index | Existing retained word arena and index | `CPU.captureRuntimeState`; representation unchanged |
+
+`captureRuntimeSaveState` accepts exclusive storage from a previous capture of
+the same runtime/media configuration. Runtime/machine capture passes the saved
+regions back to their existing owners. A fresh capture allocates them there;
+reuse overwrites them there. Native callers transfer ownership with moves, not
+vector copies. The former snapshot is consumed as storage, not retained as an
+immutable checkpoint. Independent captures and every other retained slot stay
+unchanged. There is no corrupt-state recovery or media-shape compatibility path.
+
+Changed cold callsites: `RuntimeHistory.captureCheckpoint`, runtime/machine
+save-state capture, and the four memory-region producers above. GPU/APU timing
+synchronization and dependent DMA/IRQ capture order stay intact. The backend
+must still finish pending work and synchronize VRAM before capture; storage
+reuse cannot substitute for that fence. Restore and external/libretro encoding
+continue to consume the same saved bytes. CPU instructions, RAM/MMIO writes,
+DMA transfers, rendering, audio mixing and ICU polls gain no additional work.
+
+This step targets bulk allocation churn, not retained byte count or all metadata
+allocations. Strings, CPU traversal scratch and device queue snapshots remain
+separate measured costs. Compression must be assessed on the completed owner
+blocks, including workspace and decode cost, before choosing retention policy.
+The current tree has an IMGDEC word-stream codec, not a general rewind byte
+codec; the historical `BinaryCompressor` (last tree before removal `154458d8a^`) is
+not a live dependency and has no mirrored native owner. Neither is silently
+made part of the machine or resurrected as a compatibility path.
+
 ## Delivery gates
 
 - CPU replay regressions in TS and C++: new object ids, cold/warm canonical
@@ -470,3 +513,81 @@ IDE/TS host typechecks and the actual ES2020 Browser Studio and native libretro
 product builds passed. Core-parity, architecture-boundary and indentation
 audits plus `git diff --check` passed. Host history collection remains disabled
 by default; no quickmenu control or shortcut is introduced by this slice.
+
+## Validation record: REWIND-MEMORY-STORAGE-01
+
+Mirrored regressions write high-bit words through main RAM, both cartridge RAM
+windows and the scheduled APU transfer port. Repeated runtime capture retains
+all five destination buffers and contains exactly the new live state, while an
+independent checkpoint remains unchanged and restores its original bytes.
+The GPU restore still requests host redraw; storage reuse does not erase that
+presentation invalidation. Neither socket needs executable media for RAM.
+
+The real BIOS/Nemesis conformance runner now recycles a separate destination
+across 120 ticks at each of its three anchors. It checks main RAM, VRAM and APU
+buffer identity, compares the complete reused state against a fresh capture,
+and verifies that the original anchor was not changed. Trusted restore,
+external/libretro restore, sparse history seeks and branching still pass full
+TS/C++ comparison with actual guest execution, nonempty VRAM, active BADP and
+no supervisor fault.
+
+A Node 22.23.1 probe at Nemesis tick 1200 reused CPU storage, warmed capture
+eight times, then measured 25 stationary full-runtime captures without GPU
+readback in the timed section. It kept buffer identities rooted to count the
+distinct bulk allocations; that instrumentation is not normal history retention.
+
+| Bulk destination policy | Distinct RAM/VRAM/APU buffers | Total bytes in those buffers | Median capture ms | Largest capture ms |
+| --- | ---: | ---: | ---: | ---: |
+| Before this slice | 75 | 170,393,600 | 16.5 | 19.6 |
+| Recycled owner buffers | 3 | 6,815,744 | 12.7 | 14.5 |
+
+Thus an overwritten Nemesis checkpoint no longer allocates another **6.5 MiB**
+for these three regions. Cartridge RAM adds its installed size to that saving;
+this Nemesis configuration has none. This is an allocation-churn reduction,
+not a claim that the four retained checkpoints became smaller. Timings are
+single-run instrumented observations, not browser p99 latency or zero-GC proof.
+
+The core-parity audit exposed a separate checking error: it conflated
+`AudioController::captureState` with `ApuOutputMixer::captureState` because
+both definitions occupy `audio/save_state.cpp`. Method entries can now select
+their qualified C++ class owner; the APU entry does so. Optional TS parameter
+punctuation is not part of a parameter name. A subprocess regression verifies
+acceptance of the selected owner and rejection of its missing/wrong signature,
+even when another class has the same method name. No runtime method was moved
+or excluded to silence the audit.
+
+### Existing compression assessment
+
+`src/bmsx/serializer/bincompressor.ts` was removed in `154458d8a` on
+2026-03-19; its last implementation was inspected and executed outside the
+working tree, not reintroduced. On the same real-cart tick, five warmed TS
+passes on each completed raw region produced the following means:
+
+| Region | Raw bytes | Encoded bytes | Encode ms | Decode ms |
+| --- | ---: | ---: | ---: | ---: |
+| Main RAM | 4,194,304 | 59,300 | 4.5 | 3.5 |
+| VRAM | 2,097,152 | 1,140,893 | 14.1 | 5.1 |
+| APU sample RAM | 524,288 | 6,174 | 0.3 | 0.6 |
+| CPU value/object-record words (without ordinal index) | 2,813,536 | 739,124 | 5.6 | 4.7 |
+
+All four of these zero-offset buffers round-tripped, but this is not a
+ready-to-use rewind codec. A separate deterministic byte test failed exact
+round-trip at lengths 9,000 and 65,536 with a four-byte-offset input view. Its
+word-match view starts at backing-buffer offset zero, not `input.byteOffset`.
+The implementation also creates typed-array views inside match search,
+copies its output and grows decode buffers, and has no native counterpart.
+
+The measured size reduction makes compression worth pursuing. It does not
+justify adding that historical code unchanged, using the guest IMGDEC unit
+for host history, or treating the encode/decode times as free. The next codec
+decision must compare retained-workspace block/delta implementations (including
+the openMSX/LZ4 reference above), cover exact subarray/tail behavior in both
+cores, and include decode workspace and keyframe dependencies in the history
+memory budget. No compression or new dependency is enabled by this slice.
+
+Final validation: **846 Lua tests passed, one skipped; native CTest 26/26**;
+the full real-ROM replay and post-branch cross-core comparison passed.
+Machine/toolchain/IDE/TS host typechecks, the ES2020 Browser Studio build and
+the actual native libretro product build passed. Core-parity (including the
+qualified-owner regression), architecture-boundary and indentation audits plus
+`git diff --check` passed. Host collection remains disabled by default.

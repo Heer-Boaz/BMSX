@@ -10,9 +10,9 @@ export type RuntimeSaveMachineState = {
 	schedulerNowCycles: number;
 };
 
-export function captureRuntimeSaveMachineState(runtime: Runtime): RuntimeSaveMachineState {
+export function captureRuntimeSaveMachineState(runtime: Runtime, storage?: RuntimeSaveMachineState): RuntimeSaveMachineState {
 	return {
-		machine: captureMachineSaveState(runtime.machine),
+		machine: captureMachineSaveState(runtime.machine, storage?.machine),
 		frameScheduler: runtime.frameScheduler.captureState(),
 		frameLoop: runtime.frameLoop.captureState(),
 		schedulerNowCycles: runtime.machine.scheduler.currentNowCycles(),

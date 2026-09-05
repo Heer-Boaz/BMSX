@@ -108,9 +108,14 @@ export class CartridgeCard {
 		if (this.mailbox !== null) this.mailbox.reset();
 	}
 
-	public captureState(): CartridgeCardState {
+	public captureState(storage?: CartridgeCardState): CartridgeCardState {
+		let ram: Uint8Array | null = null;
+		if (this.ram !== null) {
+			ram = storage === undefined ? new Uint8Array(this.ram.bytes.byteLength) : storage.ram!;
+			ram.set(this.ram.bytes);
+		}
 		return {
-			ram: this.ram === null ? null : this.ram.bytes.slice(),
+			ram,
 			mailbox: this.mailbox === null ? null : this.mailbox.captureState(),
 		};
 	}

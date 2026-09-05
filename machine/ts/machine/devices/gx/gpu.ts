@@ -962,10 +962,12 @@ export class GxGpu {
 		this.clearIngressContext(this.userIngressContext);
 	}
 
-	public captureSaveState(): GxGpuSaveState {
+	public captureSaveState(vramBytes: Uint8Array = new Uint8Array(this.vramSnapshotBytes.byteLength)): GxGpuSaveState {
+		const state = this.captureState();
+		vramBytes.set(this.vramSnapshotBytes);
 		return {
-			...this.captureState(),
-			vramBytes: this.vramSnapshotBytes.slice(),
+			...state,
+			vramBytes,
 		};
 	}
 

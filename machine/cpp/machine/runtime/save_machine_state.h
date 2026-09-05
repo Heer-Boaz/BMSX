@@ -16,7 +16,7 @@ struct RuntimeSaveMachineState {
 	i64 schedulerNowCycles = 0;
 };
 
-RuntimeSaveMachineState captureRuntimeSaveMachineState(Runtime& runtime);
+RuntimeSaveMachineState captureRuntimeSaveMachineState(Runtime& runtime, RuntimeSaveMachineState storage = {});
 void applyRuntimeSaveMachineState(Runtime& runtime, const RuntimeSaveMachineState& state);
 
 } // namespace bmsx

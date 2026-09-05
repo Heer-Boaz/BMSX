@@ -78,15 +78,15 @@ void CartridgeCard::reset() {
 	if (m_mailbox) m_mailbox->reset();
 }
 
-CartridgeCardState CartridgeCard::captureState() const {
-	CartridgeCardState state;
+CartridgeCardState CartridgeCard::captureState(CartridgeCardState storage) const {
 	if (m_ram) {
-		state.ram = m_ram->bytes;
+		if (!storage.ram) storage.ram.emplace();
+		storage.ram->assign(m_ram->bytes.begin(), m_ram->bytes.end());
 	}
 	if (m_mailbox) {
-		state.mailbox = m_mailbox->captureState();
+		storage.mailbox = m_mailbox->captureState();
 	}
-	return state;
+	return storage;
 }
 
 void CartridgeCard::restoreState(const CartridgeCardState& state) {

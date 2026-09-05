@@ -201,9 +201,10 @@ u32 Memory::firstBlockedMappedWordWrite(uint32_t addr, uint32_t wordCount) {
 	return NO_BLOCKED_MAPPED_WRITE;
 }
 
-MemorySaveState Memory::captureSaveState() const {
+MemorySaveState Memory::captureSaveState(std::vector<u8> ram) const {
 	MemorySaveState state;
-	state.ram = m_ram;
+	ram.assign(m_ram.begin(), m_ram.end());
+	state.ram = std::move(ram);
 	state.busFaultCode = m_busFaultCode;
 	state.busFaultAddr = m_busFaultAddr;
 	state.busFaultAccess = m_busFaultAccess;

@@ -23,7 +23,7 @@ public:
 	void clearMappedPageWriteWatches();
 	void bindMappedPage(u32 address, MappedPageBinding& out);
 	void reset();
-	CartridgeCardState captureState() const;
+	CartridgeCardState captureState(CartridgeCardState storage = {}) const;
 	void restoreState(const CartridgeCardState& state);
 	u8 readU8(u32 address) const;
 	u32 readU16(u32 address) const;

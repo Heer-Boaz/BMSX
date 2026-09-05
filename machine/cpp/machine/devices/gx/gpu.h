@@ -210,7 +210,7 @@ public:
 	void reset();
 	GxGpuState captureState();
 	void restoreState(const GxGpuState& state);
-	GxGpuSaveState captureSaveState();
+	GxGpuSaveState captureSaveState(std::vector<u8> vramBytes = {});
 	void restoreSaveState(const GxGpuSaveState& state);
 	void replaceVramSnapshotBytes(std::span<const u8> bytes);
 	u64 commitRenderedVramSnapshotBytes(std::span<const u8> bytes, size_t renderedCommandCount);

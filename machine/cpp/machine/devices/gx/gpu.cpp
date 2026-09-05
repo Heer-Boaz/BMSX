@@ -492,10 +492,11 @@ void GxGpu::leaveSupervisorContext() {
 	clearIngressContext(m_userIngressContext);
 }
 
-GxGpuSaveState GxGpu::captureSaveState() {
+GxGpuSaveState GxGpu::captureSaveState(std::vector<u8> vramBytes) {
 	GxGpuSaveState state;
 	static_cast<GxGpuState&>(state) = captureState();
-	state.vramBytes = m_vramSnapshotBytes;
+	vramBytes.assign(m_vramSnapshotBytes.begin(), m_vramSnapshotBytes.end());
+	state.vramBytes = std::move(vramBytes);
 	return state;
 }
 

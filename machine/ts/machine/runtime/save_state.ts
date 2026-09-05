@@ -1,5 +1,4 @@
 import type { CpuRuntimeState } from '../cpu/cpu';
-import { CpuSnapshot } from '../cpu/snapshot';
 import type { RuntimeSaveMachineState } from './save_machine_state';
 import type { Runtime } from './runtime';
 import { applyRuntimeSaveMachineState, captureRuntimeSaveMachineState } from './save_machine_state';
@@ -12,10 +11,11 @@ export type RuntimeSaveState = {
 
 export const enum RuntimeRestoreOrigin { ExternalLoad, HistorySeek }
 
-export function captureRuntimeSaveState(runtime: Runtime, snapshot = new CpuSnapshot()): RuntimeSaveState {
+/** Storage, when supplied, is consumed from an exclusive capture of this runtime/media. */
+export function captureRuntimeSaveState(runtime: Runtime, storage?: RuntimeSaveState): RuntimeSaveState {
 	return {
-		machineState: captureRuntimeSaveMachineState(runtime),
-		cpuState: runtime.machine.cpu.captureRuntimeState(snapshot),
+		machineState: captureRuntimeSaveMachineState(runtime, storage?.machineState),
+		cpuState: runtime.machine.cpu.captureRuntimeState(storage?.cpuState.snapshot),
 		pendingEntryCall: runtime.pendingCall === 'entry',
 	};
 }

@@ -2185,6 +2185,7 @@
 		},
 		{
 			"ts": "machine/ts/machine/devices/audio/output.ts",
+			"cpp_class": "ApuOutputMixer",
 			"cpp": [
 				"machine/cpp/machine/devices/audio/output.h",
 				"machine/cpp/machine/devices/audio/output.cpp",

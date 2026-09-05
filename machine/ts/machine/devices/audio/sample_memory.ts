@@ -46,8 +46,9 @@ export class ApuSampleMemory {
 		writeLE32(this.ram, address & (APU_SAMPLE_RAM_ADDRESS_MASK & ~3), word);
 	}
 
-	public captureState(): Uint8Array {
-		return this.ram.slice();
+	public captureState(bytes: Uint8Array = new Uint8Array(APU_SAMPLE_RAM_BYTES)): Uint8Array {
+		bytes.set(this.ram);
+		return bytes;
 	}
 
 	public restoreState(bytes: Uint8Array): void {

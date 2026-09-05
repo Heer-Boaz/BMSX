@@ -75,13 +75,13 @@ export function restoreMachineState(machine: Machine, state: MachineState): void
 	finishDeviceRestore(machine, state.systemControl);
 }
 
-export function captureMachineSaveState(machine: Machine): MachineSaveState {
+export function captureMachineSaveState(machine: Machine, storage?: MachineSaveState): MachineSaveState {
 	// See captureMachineState: GPU and APU command time own their request-line edges.
-	const gxGpu = machine.gxGpu.captureSaveState();
-	const audio = machine.audioController.captureState();
-	const cartridge = machine.cartridgeController.captureState();
+	const gxGpu = machine.gxGpu.captureSaveState(storage?.gxGpu.vramBytes);
+	const audio = machine.audioController.captureState(storage?.audio.sampleRam);
+	const cartridge = machine.cartridgeController.captureState(storage?.cartridge);
 	return {
-		memory: machine.memory.captureSaveState(),
+		memory: machine.memory.captureSaveState(storage?.memory.ram),
 		cartridge,
 		dma: machine.dmaController.captureState(),
 		geometry: machine.geometryController.captureState(),

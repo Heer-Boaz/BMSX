@@ -50,7 +50,7 @@ struct MachineSaveState {
 
 MachineState captureMachineState(Machine& machine);
 void restoreMachineState(Machine& machine, const MachineState& state);
-MachineSaveState captureMachineSaveState(Machine& machine);
+MachineSaveState captureMachineSaveState(Machine& machine, MachineSaveState storage = {});
 void restoreMachineSaveState(Machine& machine, const MachineSaveState& state);
 
 } // namespace bmsx

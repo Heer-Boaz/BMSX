@@ -38,8 +38,8 @@ void RuntimeHistory::captureCheckpoint() {
 	const size_t index = (m_firstCheckpoint + m_count) % m_checkpoints.size();
 	auto& slot = m_checkpoints[index];
 	// Only the evicted/inactive slot owns storage that may be overwritten.
-	CpuSnapshot snapshot = slot ? std::move(slot->state.cpuState.snapshot) : CpuSnapshot{};
-	slot = Checkpoint{cycles, inputJournal.endSequence, captureRuntimeSaveState(m_runtime, std::move(snapshot))};
+	RuntimeSaveState storage = slot ? std::move(slot->state) : RuntimeSaveState{};
+	slot = Checkpoint{cycles, inputJournal.endSequence, captureRuntimeSaveState(m_runtime, std::move(storage))};
 	if (m_count == m_checkpoints.size()) {
 		m_firstCheckpoint = (m_firstCheckpoint + 1) % m_checkpoints.size();
 	} else {

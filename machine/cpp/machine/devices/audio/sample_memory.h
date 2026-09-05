@@ -19,7 +19,7 @@ public:
 	bool bindSource(u32 address, u32 byteLength, u32 cartridgeSlot, ApuSourceByteView& out) const;
 	[[nodiscard]] auto readWord(u32 address) const -> u32;
 	void writeWord(u32 address, u32 word);
-	[[nodiscard]] auto captureState() const -> std::vector<u8>;
+	[[nodiscard]] auto captureState(std::vector<u8> bytes = {}) const -> std::vector<u8>;
 	void restoreState(const std::vector<u8>& bytes);
 
 private:

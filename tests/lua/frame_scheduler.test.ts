@@ -8,9 +8,18 @@ import type {
 } from '../../machine/ts/machine/devices/input/contracts';
 import { runDueRuntimeTimers } from '../../machine/ts/machine/runtime/cpu_executor';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
+import { captureRuntimeSaveState, applyRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state';
+import { encodeRuntimeSaveState } from '../../machine/ts/machine/runtime/save_state/codec';
+import type { CartridgeSocketMediaPair } from '../../machine/ts/machine/devices/cartridge/contracts';
+import { readLE32 } from '../../machine/ts/common/endian';
+import { APU_SAMPLE_RAM_BYTES, APU_TRANSFER_MODE_MANUAL_WRITE } from '../../machine/ts/spec/audio/apu';
 import { HistoryMode, HistorySeekResult } from '../../machine/ts/machine/runtime/history/history';
 import {
 	INP_CTRL_ARM,
+	IO_APU_TRANSFER_ADDRESS,
+	IO_APU_TRANSFER_CONTROL,
+	IO_APU_TRANSFER_DATA,
+	IO_CART_SELECT,
 	IO_INP_CTRL,
 	IO_INP_KEYS,
 	IO_INP_STATUS,
@@ -20,7 +29,7 @@ import {
 	IRQ_VBLANK,
 	SYS_CONTROL_RESET,
 } from '../../machine/ts/spec/bmsx/io';
-import { IO_WORD_SIZE } from '../../machine/ts/spec/bmsx/memory_map';
+import { CART_RAM_BASE, IO_WORD_SIZE, RAM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import {
 	PSX_CPU_FREQ_HZ,
 	PSX_MACHINE_SPEC,
@@ -63,7 +72,7 @@ class TickInputSource implements InputControllerInputSource {
 	}
 }
 
-function createTickRuntime(input = new TickInputSource()): {
+function createTickRuntime(input = new TickInputSource(), slots: CartridgeSocketMediaPair = cartridgeSlots()): {
 	input: TickInputSource;
 	runtime: Runtime;
 } {
@@ -83,12 +92,62 @@ function createTickRuntime(input = new TickInputSource()): {
 	});
 	const runtime = new Runtime({
 		systemRomBytes: system.romBytes,
-		cartridgeSlots: cartridgeSlots(),
+		cartridgeSlots: slots,
 		machineModel: PSX_MACHINE_SPEC,
 	}, input);
 	runtime.boot();
 	return { input, runtime };
 }
+
+test('runtime checkpoint storage reuses owner buffers without consuming independent snapshots', () => {
+	const { runtime } = createTickRuntime(new TickInputSource(), [
+		{ rom: null, ramByteCount: 12, mailboxPresent: true },
+		{ rom: null, ramByteCount: 20, mailboxPresent: true },
+	]);
+	const { memory, gxGpu } = runtime.machine;
+	const anchor = captureRuntimeSaveState(runtime);
+	const anchorBytes = encodeRuntimeSaveState(anchor);
+	let storage = captureRuntimeSaveState(runtime);
+	const regions = [storage.machineState.machine.memory.ram, storage.machineState.machine.gxGpu.vramBytes,
+		storage.machineState.machine.audio.sampleRam, storage.machineState.machine.cartridge.slots[0]!.ram!,
+		storage.machineState.machine.cartridge.slots[1]!.ram!];
+	const vram = new Uint8Array(PSX_MACHINE_SPEC.gxGpuVramBytes);
+	for (let pass = 1; pass <= 4; pass += 1) {
+		const word = (0xfedcba00 | pass) >>> 0;
+		memory.writeU32(RAM_BASE + PSX_MACHINE_SPEC.ramBytes - 4, word);
+		for (let slot = 0; slot < 2; slot += 1) {
+			memory.writeMappedU32LE(IO_CART_SELECT, (0x80000000 | slot) >>> 0);
+			memory.writeMappedU32LE(CART_RAM_BASE + regions[3 + slot].byteLength - 4, word ^ slot);
+		}
+		memory.writeMappedU32LE(IO_APU_TRANSFER_ADDRESS, APU_SAMPLE_RAM_BYTES - 4);
+		memory.writeMappedU32LE(IO_APU_TRANSFER_CONTROL, APU_TRANSFER_MODE_MANUAL_WRITE);
+		memory.writeMappedU32LE(IO_APU_TRANSFER_DATA, word);
+		assert.equal(runtime.frameScheduler.runToNextLogicalTick(), true);
+		vram.fill(pass);
+		gxGpu.replaceVramSnapshotBytes(vram);
+		const expected = captureRuntimeSaveState(runtime);
+		storage = captureRuntimeSaveState(runtime, storage);
+		const machine = storage.machineState.machine;
+		assert.equal(machine.memory.ram, regions[0]);
+		assert.equal(machine.gxGpu.vramBytes, regions[1]);
+		assert.equal(machine.audio.sampleRam, regions[2]);
+		assert.equal(readLE32(machine.audio.sampleRam, APU_SAMPLE_RAM_BYTES - 4), word);
+		for (let slot = 0; slot < 2; slot += 1) {
+			const ram = machine.cartridge.slots[slot]!.ram!;
+			assert.equal(ram, regions[3 + slot]);
+			assert.equal(readLE32(ram, ram.byteLength - 4), (word ^ slot) >>> 0);
+		}
+		assert.deepEqual(storage, expected);
+		assert.deepEqual(encodeRuntimeSaveState(anchor), anchorBytes);
+	}
+	applyRuntimeSaveState(runtime, anchor);
+	const restored = captureRuntimeSaveState(runtime).machineState.machine;
+	assert.deepEqual(restored.memory, anchor.machineState.machine.memory);
+	assert.deepEqual(restored.cartridge, anchor.machineState.machine.cartridge);
+	assert.deepEqual(restored.audio, anchor.machineState.machine.audio);
+	assert.deepEqual(restored.gxGpu.vramBytes, anchor.machineState.machine.gxGpu.vramBytes);
+	assert.equal(restored.gxGpu.vramPresentationPending, true, 'restore requests host redraw');
+});
 
 test('history checkpoint pressure suspends machine time before required input can be overwritten', () => {
 	const { runtime } = createTickRuntime();

@@ -61,23 +61,22 @@ void restoreMachineState(Machine& machine, const MachineState& state) {
 	finishDeviceRestore(machine, state.systemControl);
 }
 
-MachineSaveState captureMachineSaveState(Machine& machine) {
-	MachineSaveState state;
+MachineSaveState captureMachineSaveState(Machine& machine, MachineSaveState storage) {
 	// See captureMachineState: GPU and APU command time own their request-line edges.
-	state.gxGpu = machine.gxGpu.captureSaveState();
-	state.audio = machine.audioController.captureState();
-	state.cartridge = machine.cartridgeController.captureState();
-	state.memory = machine.memory.captureSaveState();
-	state.dma = machine.dmaController.captureState();
-	state.geometry = machine.geometryController.captureState();
-	state.gxGte = machine.gxGte.captureState();
-	state.irq = machine.irqController.captureState();
-	state.stringPool = machine.cpu.stringPool().captureState();
-	state.input = machine.inputController.captureState();
-	state.imgDec = machine.imgDecController.captureState();
-	state.systemDebugTransmit = machine.systemDebugTransmit.captureState();
-	state.systemControl = machine.systemController.captureState();
-	return state;
+	storage.gxGpu = machine.gxGpu.captureSaveState(std::move(storage.gxGpu.vramBytes));
+	storage.audio = machine.audioController.captureState(std::move(storage.audio.sampleRam));
+	storage.cartridge = machine.cartridgeController.captureState(std::move(storage.cartridge));
+	storage.memory = machine.memory.captureSaveState(std::move(storage.memory.ram));
+	storage.dma = machine.dmaController.captureState();
+	storage.geometry = machine.geometryController.captureState();
+	storage.gxGte = machine.gxGte.captureState();
+	storage.irq = machine.irqController.captureState();
+	storage.stringPool = machine.cpu.stringPool().captureState();
+	storage.input = machine.inputController.captureState();
+	storage.imgDec = machine.imgDecController.captureState();
+	storage.systemDebugTransmit = machine.systemDebugTransmit.captureState();
+	storage.systemControl = machine.systemController.captureState();
+	return storage;
 }
 
 void restoreMachineSaveState(Machine& machine, const MachineSaveState& state) {

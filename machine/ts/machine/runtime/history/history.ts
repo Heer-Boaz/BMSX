@@ -81,7 +81,7 @@ export class RuntimeHistory {
 		const index = (this.firstCheckpoint + this.count) % this.checkpoints.length;
 		const previous = this.checkpoints[index];
 		// Only the evicted/inactive slot owns storage that may be overwritten.
-		const state = captureRuntimeSaveState(this.runtime, previous === null ? undefined : previous.state.cpuState.snapshot);
+		const state = captureRuntimeSaveState(this.runtime, previous === null ? undefined : previous.state);
 		const checkpoint = { cycles, inputSequence: this.inputJournal.endSequence, state };
 		this.checkpoints[index] = checkpoint;
 		if (this.count === this.checkpoints.length) {

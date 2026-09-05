@@ -5,13 +5,12 @@
 
 namespace bmsx {
 
-RuntimeSaveMachineState captureRuntimeSaveMachineState(Runtime& runtime) {
-	RuntimeSaveMachineState state;
-	state.machine = captureMachineSaveState(runtime.machine);
-	state.frameScheduler = runtime.frameScheduler.captureState();
-	state.frameLoop = runtime.frameLoop.captureState();
-	state.schedulerNowCycles = runtime.machine.scheduler.currentNowCycles();
-	return state;
+RuntimeSaveMachineState captureRuntimeSaveMachineState(Runtime& runtime, RuntimeSaveMachineState storage) {
+	storage.machine = captureMachineSaveState(runtime.machine, std::move(storage.machine));
+	storage.frameScheduler = runtime.frameScheduler.captureState();
+	storage.frameLoop = runtime.frameLoop.captureState();
+	storage.schedulerNowCycles = runtime.machine.scheduler.currentNowCycles();
+	return storage;
 }
 
 void applyRuntimeSaveMachineState(Runtime& runtime, const RuntimeSaveMachineState& state) {

@@ -128,12 +128,12 @@ export class CartridgeController {
 		this.publishDreqLines(1);
 	}
 
-	public captureState(): CartridgeControllerState {
+	public captureState(storage?: CartridgeControllerState): CartridgeControllerState {
 		return {
 			selectionWord: this.selectionWord,
 			slots: [
-				this.cards[0] === null ? null : this.cards[0].captureState(),
-				this.cards[1] === null ? null : this.cards[1].captureState(),
+				this.cards[0] === null ? null : this.cards[0].captureState(storage === undefined ? undefined : storage.slots[0]!),
+				this.cards[1] === null ? null : this.cards[1].captureState(storage === undefined ? undefined : storage.slots[1]!),
 			],
 		};
 	}

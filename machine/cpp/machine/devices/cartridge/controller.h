@@ -38,7 +38,7 @@ public:
 	}
 	void reset();
 
-	CartridgeControllerState captureState() const;
+	CartridgeControllerState captureState(CartridgeControllerState storage = {}) const;
 	void restoreState(const CartridgeControllerState& state);
 
 	u8 readU8(u32 address, MappedBusSignals busSignals) const {
