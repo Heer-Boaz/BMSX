@@ -616,7 +616,7 @@ export class Table {
 		};
 	}
 
-	public restoreRuntimeState(state: TableRuntimeState): number {
+	public restoreRuntimeState(state: TableRuntimeState): void {
 		const previousBytes = this.getTrackedHeapBytes();
 		this.arrayCapacity = state.arrayCapacity;
 		this.hashSize = state.hashSize;
@@ -626,24 +626,16 @@ export class Table {
 		this.hashNext = state.hashNext.slice();
 		this.arrayLength = state.arrayLength;
 		this.hashDeadCount = 0;
-		let maxDeadKeyHashId = 0;
 		for (let index = 0; index < this.hashSize; index += 1) {
 			const keySlot = this.hashKeySlot(index);
 			const valueSlot = this.hashValueSlot(index);
 			if ((this.tags[keySlot] === ValueTag.Nil) !== (this.tags[valueSlot] === ValueTag.Nil)) {
 				this.hashDeadCount += 1;
-				if (this.tags[keySlot] === ValueTag.Nil) {
-					const deadKeyHashId = this.scalars[valueSlot];
-					if (deadKeyHashId > maxDeadKeyHashId) {
-						maxDeadKeyHashId = deadKeyHashId;
-					}
-				}
 			}
 		}
 		this.hashFree = state.hashFree;
 		this.tableMetatable = state.metatable;
 		this.luaHeap.adjustForRestore(previousBytes, this.getTrackedHeapBytes());
-		return maxDeadKeyHashId;
 	}
 
 	public getTrackedHeapBytes(): number {

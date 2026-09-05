@@ -1086,8 +1086,8 @@ halt_until_irq
 	assert.equal(memory.readMappedU32LE(systemSeenAddress), IRQ_VBLANK);
 	assert.equal(memory.readMappedU32LE(cartSeenAddress), 0);
 	const saved = cpu.captureRuntimeState();
-	assert.equal(saved.systemGlobals.some(entry => entry.name === 'irq'), true);
-	assert.equal(saved.globals.some(entry => entry.name === 'irq'), true);
+	assert.equal(saved.systemGlobals.some(entry => entry.key === cpu.stringPool.find('irq')), true);
+	assert.equal(saved.globalSlots.some(entry => entry.key === cpu.stringPool.find('irq')), true);
 	cpu.restoreRuntimeState(saved);
 
 	irqController.raise(IRQ_VBLANK);

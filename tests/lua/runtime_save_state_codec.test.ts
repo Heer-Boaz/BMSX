@@ -488,12 +488,17 @@ function createRuntimeSaveState(): RuntimeSaveState {
 			schedulerNowCycles: 1234,
 			},
 			cpuState: {
+				globalTableRef: 0,
+				executionResidencyMask: 3,
+				nextObjectHashId: 0xfedcba98,
+				hardHalted: true,
+				luaHeap: { trackedBytes: 2345, nextCollectionBytes: 1048576 },
 				executionCartridgeSlot: 0,
 				systemGlobals: [
-				{ name: 'irq', value: { tag: 'number', value: 7 } },
+				{ key: 1, value: { tag: 'number', value: 7 } },
 			],
-				globals: [
-					{ name: 'answer', value: { tag: 'number', value: 42 } },
+				globalSlots: [
+					{ key: 3, value: { tag: 'number', value: 42 } },
 				],
 				stringIndexTable: { tag: 'nil' },
 				frames: [],
@@ -636,8 +641,8 @@ test('runtime save-state codec preserves exception frame metadata', () => {
 
 test('runtime save-state codec preserves builtin VM primitive ids', () => {
 	const state = createRuntimeSaveState();
-	state.cpuState.globals = [
-		{ name: 'foo', value: { tag: 'builtin', id: BuiltinFunctionId.Next } },
+	state.cpuState.globalSlots = [
+		{ key: 2, value: { tag: 'builtin', id: BuiltinFunctionId.Next } },
 	];
 	state.cpuState.completionValues = [
 		{ tag: 'builtin', id: BuiltinFunctionId.StringChar },
@@ -649,7 +654,7 @@ test('runtime save-state codec preserves builtin VM primitive ids', () => {
 		PSX_MACHINE_SPEC.gxGpuVramBytes,
 	);
 
-	assert.deepEqual(decoded.cpuState.globals, state.cpuState.globals);
+	assert.deepEqual(decoded.cpuState.globalSlots, state.cpuState.globalSlots);
 	assert.deepEqual(decoded.cpuState.completionValues, state.cpuState.completionValues);
 });
 

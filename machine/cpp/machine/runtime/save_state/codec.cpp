@@ -1690,7 +1690,7 @@ CpuProtectedCallState decodeCpuProtectedCallState(const BinValue& value, const c
 
 BinValue encodeCpuRootValueState(const CpuRootValueState& state) {
 	BinObject object;
-	object["name"] = state.name;
+	object["key"] = static_cast<i64>(state.key);
 	object["value"] = encodeCpuValueState(state.value);
 	return BinValue(std::move(object));
 }
@@ -1698,7 +1698,7 @@ BinValue encodeCpuRootValueState(const CpuRootValueState& state) {
 CpuRootValueState decodeCpuRootValueState(const BinValue& value, const char* label) {
 	const BinObject& object = requireObject(value, label);
 	CpuRootValueState state;
-	state.name = requireString(requireField(object, "name", label), "cpuRootValueState.name");
+	state.key = requireU32(requireField(object, "key", label), "cpuRootValueState.key");
 	state.value = decodeCpuValueState(requireField(object, "value", label), "cpuRootValueState.value");
 	return state;
 }
@@ -1709,7 +1709,7 @@ BinValue encodeCpuRuntimeState(const CpuRuntimeState& state) {
 	object["systemGlobals"] = encodeVector(state.systemGlobals, [](const CpuRootValueState& value) {
 		return encodeCpuRootValueState(value);
 	});
-	object["globals"] = encodeVector(state.globals, [](const CpuRootValueState& value) {
+	object["globalSlots"] = encodeVector(state.globalSlots, [](const CpuRootValueState& value) {
 		return encodeCpuRootValueState(value);
 	});
 	object["stringIndexTable"] = encodeCpuValueState(state.stringIndexTable);
@@ -1729,6 +1729,14 @@ BinValue encodeCpuRuntimeState(const CpuRuntimeState& state) {
 		return BinValue(static_cast<i64>(value));
 	});
 	object["lastExecutionDomainId"] = static_cast<i64>(state.lastExecutionDomainId);
+	object["globalTableRef"] = static_cast<i64>(state.globalTableRef);
+	object["executionResidencyMask"] = static_cast<i64>(state.executionResidencyMask);
+	object["nextObjectHashId"] = static_cast<i64>(state.nextObjectHashId);
+	object["hardHalted"] = state.hardHalted;
+	BinObject luaHeap;
+	luaHeap["trackedBytes"] = static_cast<i64>(state.luaHeap.trackedBytes);
+	luaHeap["nextCollectionBytes"] = static_cast<i64>(state.luaHeap.nextCollectionBytes);
+	object["luaHeap"] = BinValue(std::move(luaHeap));
 	object["lastPc"] = static_cast<i64>(state.lastPc);
 	object["instructionBudgetRemaining"] = static_cast<i64>(state.instructionBudgetRemaining);
 	object["haltedUntilIrqFrameDepth"] = static_cast<i64>(state.haltedUntilIrqFrameDepth);
@@ -1762,9 +1770,9 @@ CpuRuntimeState decodeCpuRuntimeState(const BinValue& value, const char* label) 
 		[](const BinValue& entryValue, size_t) {
 			return decodeCpuRootValueState(entryValue, "cpuState.systemGlobals[]");
 		});
-	state.globals = decodeVector<CpuRootValueState>(requireField(object, "globals", label), "cpuState.globals",
+	state.globalSlots = decodeVector<CpuRootValueState>(requireField(object, "globalSlots", label), "cpuState.globalSlots",
 		[](const BinValue& entryValue, size_t) {
-			return decodeCpuRootValueState(entryValue, "cpuState.globals[]");
+			return decodeCpuRootValueState(entryValue, "cpuState.globalSlots[]");
 		});
 	state.stringIndexTable = decodeCpuValueState(
 		requireField(object, "stringIndexTable", label),
@@ -1794,6 +1802,13 @@ CpuRuntimeState decodeCpuRuntimeState(const BinValue& value, const char* label) 
 		requireField(object, "lastExecutionDomainId", label),
 		"cpuState.lastExecutionDomainId"
 	);
+	state.globalTableRef = requireI32(requireField(object, "globalTableRef", label), "cpuState.globalTableRef");
+	state.executionResidencyMask = requireU32(requireField(object, "executionResidencyMask", label), "cpuState.executionResidencyMask");
+	state.nextObjectHashId = requireU32(requireField(object, "nextObjectHashId", label), "cpuState.nextObjectHashId");
+	state.hardHalted = requireBool(requireField(object, "hardHalted", label), "cpuState.hardHalted");
+	const BinObject& luaHeap = requireObject(requireField(object, "luaHeap", label), "cpuState.luaHeap");
+	state.luaHeap.trackedBytes = static_cast<size_t>(requireI64(requireField(luaHeap, "trackedBytes", label), "cpuState.luaHeap.trackedBytes"));
+	state.luaHeap.nextCollectionBytes = static_cast<size_t>(requireI64(requireField(luaHeap, "nextCollectionBytes", label), "cpuState.luaHeap.nextCollectionBytes"));
 	state.lastPc = requireU32(requireField(object, "lastPc", label), "cpuState.lastPc");
 	state.instructionBudgetRemaining = requireI32(requireField(object, "instructionBudgetRemaining", label), "cpuState.instructionBudgetRemaining");
 	state.haltedUntilIrqFrameDepth = requireI32(

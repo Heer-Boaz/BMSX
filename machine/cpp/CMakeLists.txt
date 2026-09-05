@@ -685,6 +685,13 @@ if(BMSX_BUILD_TESTS)
 	target_link_libraries(bmsx_cpu_supervisor_tests PRIVATE bmsx_core bmsx_blua32_tooling)
 	add_test(NAME bmsx_cpu_supervisor_tests COMMAND bmsx_cpu_supervisor_tests)
 
+	add_executable(bmsx_cpu_save_state_replay_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/cpu_save_state_replay_test.cpp
+		${BMSX_TEST_ROM_SOURCE}
+	)
+	target_link_libraries(bmsx_cpu_save_state_replay_tests PRIVATE bmsx_core bmsx_blua32_tooling)
+	add_test(NAME bmsx_cpu_save_state_replay_tests COMMAND bmsx_cpu_save_state_replay_tests)
+
 	add_executable(bmsx_input_controller_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/input_controller_test.cpp
 	)
@@ -742,6 +749,15 @@ if(BMSX_BUILD_TESTS)
 	target_include_directories(bmsx_cartridge_conformance_runner PRIVATE
 		${BMSX_LIBRETRO_DIR}
 	)
+
+	add_executable(bmsx_runtime_replay_conformance_runner
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/runtime_replay_conformance_runner.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/common/mmap_file.cpp
+		${BMSX_LIBRETRO_DIR}/cartridge_media.cpp
+		${BMSX_LIBRETRO_DIR}/libretro_state.cpp
+	)
+	target_link_libraries(bmsx_runtime_replay_conformance_runner PRIVATE bmsx_host_support bmsx_rom_image)
+	target_include_directories(bmsx_runtime_replay_conformance_runner PRIVATE ${BMSX_LIBRETRO_DIR})
 
 	if(BMSX_ENABLE_GLES2)
 		add_executable(bmsx_libretro_hw_context_tests

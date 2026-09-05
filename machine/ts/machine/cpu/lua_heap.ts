@@ -8,6 +8,11 @@ import {
 
 const MIN_COLLECTION_BYTES = 1024 * 1024;
 
+export type LuaHeapState = {
+	trackedBytes: number;
+	nextCollectionBytes: number;
+};
+
 export class LuaHeap {
 	private trackedBytes = 0;
 	private nextCollectionBytes = MIN_COLLECTION_BYTES;
@@ -75,5 +80,17 @@ export class LuaHeap {
 
 	public usedBytes(): number {
 		return this.trackedBytes;
+	}
+
+	public captureState(): LuaHeapState {
+		return {
+			trackedBytes: this.trackedBytes,
+			nextCollectionBytes: this.nextCollectionBytes,
+		};
+	}
+
+	public restoreState(state: LuaHeapState): void {
+		this.trackedBytes = state.trackedBytes;
+		this.nextCollectionBytes = state.nextCollectionBytes;
 	}
 }

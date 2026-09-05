@@ -1594,7 +1594,7 @@ function decodeCpuProtectedCallState(value: unknown, label: string): CpuProtecte
 
 function encodeCpuRootValueState(state: CpuRootValueState): CpuRootValueState {
 	return {
-		name: state.name,
+		key: state.key,
 		value: encodeCpuValueState(state.value),
 	};
 }
@@ -1602,7 +1602,7 @@ function encodeCpuRootValueState(state: CpuRootValueState): CpuRootValueState {
 function decodeCpuRootValueState(value: unknown, label: string): CpuRootValueState {
 	const object = requireObject(value, label);
 	return {
-		name: requireObjectKey(object, 'name', label, 'cpuRootValueState.name') as string,
+		key: requireBoundedU32(requireObjectKey(object, 'key', label, 'cpuRootValueState.key'), 'cpuRootValueState.key', 0, 0xffffffff),
 		value: decodeCpuValueState(requireObjectKey(object, 'value', label, 'cpuRootValueState.value'), 'cpuRootValueState.value'),
 	};
 }
@@ -1611,7 +1611,15 @@ function encodeCpuRuntimeState(state: CpuRuntimeState): CpuRuntimeState {
 	return {
 		executionCartridgeSlot: state.executionCartridgeSlot,
 		systemGlobals: encodeVector(state.systemGlobals, encodeCpuRootValueState),
-		globals: encodeVector(state.globals, encodeCpuRootValueState),
+		globalTableRef: state.globalTableRef,
+		globalSlots: encodeVector(state.globalSlots, encodeCpuRootValueState),
+		executionResidencyMask: state.executionResidencyMask,
+		nextObjectHashId: state.nextObjectHashId,
+		hardHalted: state.hardHalted,
+		luaHeap: {
+			trackedBytes: state.luaHeap.trackedBytes,
+			nextCollectionBytes: state.luaHeap.nextCollectionBytes,
+		},
 		stringIndexTable: encodeCpuValueState(state.stringIndexTable),
 		frames: encodeVector(state.frames, encodeCpuFrameState),
 		protectedCalls: encodeVector(state.protectedCalls, encodeCpuProtectedCallState),
@@ -1643,6 +1651,7 @@ function encodeCpuRuntimeState(state: CpuRuntimeState): CpuRuntimeState {
 
 function decodeCpuRuntimeState(value: unknown, label: string): CpuRuntimeState {
 	const object = requireObject(value, label);
+	const luaHeap = requireObject(requireObjectKey(object, 'luaHeap', label, 'cpuState.luaHeap'), 'cpuState.luaHeap');
 	const executionCartridgeSlot = requireNumberValue(
 		requireObjectKey(object, 'executionCartridgeSlot', label, 'cpuState.executionCartridgeSlot'),
 		'cpuState.executionCartridgeSlot',
@@ -1659,10 +1668,18 @@ function decodeCpuRuntimeState(value: unknown, label: string): CpuRuntimeState {
 			'cpuState.systemGlobals',
 			(entry) => decodeCpuRootValueState(entry, 'cpuState.systemGlobals[]'),
 		),
-		globals: decodeVector(
-			requireObjectKey(object, 'globals', label, 'cpuState.globals'),
-			'cpuState.globals',
-			(entry) => decodeCpuRootValueState(entry, 'cpuState.globals[]'),
+		globalTableRef: requireI32(requireObjectKey(object, 'globalTableRef', label, 'cpuState.globalTableRef'), 'cpuState.globalTableRef'),
+		executionResidencyMask: requireBoundedU32(requireObjectKey(object, 'executionResidencyMask', label, 'cpuState.executionResidencyMask'), 'cpuState.executionResidencyMask', 0, 0xffffffff),
+		nextObjectHashId: requireBoundedU32(requireObjectKey(object, 'nextObjectHashId', label, 'cpuState.nextObjectHashId'), 'cpuState.nextObjectHashId', 0, 0xffffffff),
+		hardHalted: requireBooleanValue(requireObjectKey(object, 'hardHalted', label, 'cpuState.hardHalted'), 'cpuState.hardHalted'),
+		luaHeap: {
+			trackedBytes: requireI64(requireObjectKey(luaHeap, 'trackedBytes', label, 'cpuState.luaHeap.trackedBytes'), 'cpuState.luaHeap.trackedBytes'),
+			nextCollectionBytes: requireI64(requireObjectKey(luaHeap, 'nextCollectionBytes', label, 'cpuState.luaHeap.nextCollectionBytes'), 'cpuState.luaHeap.nextCollectionBytes'),
+		},
+		globalSlots: decodeVector(
+			requireObjectKey(object, 'globalSlots', label, 'cpuState.globalSlots'),
+			'cpuState.globalSlots',
+			(entry) => decodeCpuRootValueState(entry, 'cpuState.globalSlots[]'),
 		),
 		stringIndexTable: decodeCpuValueState(
 			requireObjectKey(object, 'stringIndexTable', label, 'cpuState.stringIndexTable'),

@@ -128,7 +128,7 @@ import {
 	type DecodedInstructionPage,
 } from './execution_image';
 import { ProtectedCallContinuation, ProtectedCallKind, type CallFrame } from './call_state';
-import { LuaHeap } from './lua_heap';
+import { LuaHeap, type LuaHeapState } from './lua_heap';
 
 // start repeated-sequence-acceptable -- Lua VM/table/register hot paths deliberately keep short copy/update sequences inline.
 // start normalized-body-acceptable -- Specialized Lua VM accessors stay split so the fast paths avoid dispatch helpers.
@@ -201,14 +201,19 @@ export type CpuProtectedCallState = {
 };
 
 export type CpuRootValueState = {
-	name: string;
+	key: StringId;
 	value: CpuValueState;
 };
 
 export type CpuRuntimeState = {
 	executionCartridgeSlot: ExecutionDomainId;
 	systemGlobals: CpuRootValueState[];
-	globals: CpuRootValueState[];
+	globalTableRef: number;
+	globalSlots: CpuRootValueState[];
+	executionResidencyMask: ExecutionDomainMask;
+	nextObjectHashId: number;
+	hardHalted: boolean;
+	luaHeap: LuaHeapState;
 	stringIndexTable: CpuValueState;
 	frames: CpuFrameState[];
 	protectedCalls: CpuProtectedCallState[];
@@ -492,6 +497,7 @@ export class CPU implements MappedPageInvalidator {
 		this.globals = this.createTable(0, 0);
 		this.indexKey = this.stringPool.intern('__index');
 		this.modeKey = this.stringPool.intern('__mode');
+		this.errorInErrorHandlingStringId = this.stringPool.intern('error in error handling', false);
 		this.luaFaultErrorStringIds[LUA_FAULT_REASON_UNKNOWN] = this.stringPool.intern('Attempted to get length of an unsupported value.', false);
 		this.luaFaultErrorStringIds[LUA_FAULT_REASON_CALL_NON_FUNCTION] = this.stringPool.intern('Attempted to call a non-function value.', false);
 		this.luaFaultErrorStringIds[LUA_FAULT_REASON_INDEX_NON_TABLE] = this.stringPool.intern('Attempted to index field on a non-table value.', false);
@@ -502,20 +508,13 @@ export class CPU implements MappedPageInvalidator {
 		this.luaFaultErrorStringIds[LUA_FAULT_REASON_XPCALL_HANDLER_NOT_FUNCTION] = this.stringPool.intern('xpcall error handler must be a function.', false);
 		this.luaFaultErrorStringIds[LUA_FAULT_REASON_OUT_OF_MEMORY] = this.stringPool.intern('Out of memory.', false);
 		this.luaFaultErrorStringIds[LUA_FAULT_REASON_INVALID_ARGUMENT] = this.stringPool.intern('Invalid argument.', false);
-		this.errorInErrorHandlingStringId = this.stringPool.intern('error in error handling', false);
 		this.memory.attachMappedPageInvalidator(this);
 	}
 
 	public allocateObjectHashId(): number {
 		const hashId = this.nextObjectHashId;
-		this.nextObjectHashId = hashId + 1;
+		this.nextObjectHashId = (hashId + 1) >>> 0;
 		return hashId;
-	}
-
-	private observeObjectHashId(hashId: number): void {
-		if (this.nextObjectHashId <= hashId) {
-			this.nextObjectHashId = hashId + 1;
-		}
 	}
 
 	public createTable(arraySize: number = 0, hashSize: number = 0): Table {
@@ -3272,6 +3271,8 @@ export class CPU implements MappedPageInvalidator {
 		}
 		const heapBytes = CLOSURE_HEAP_BYTES + (upvalues.length * CLOSURE_UPVALUE_SLOT_HEAP_BYTES);
 		this.luaHeap.reserve(heapBytes + (newUpvalueCount * UPVALUE_HEAP_BYTES));
+		const closure = new Closure(functionRecord.address, upvalues, heapBytes);
+		closure.hashId = this.allocateObjectHashId();
 		for (let index = 0; index < functionRecord.upvalueCount; index += 1) {
 			if (upvalues[index]) {
 				continue;
@@ -3289,8 +3290,6 @@ export class CPU implements MappedPageInvalidator {
 			this.linkOpenUpvalue(frame, upvalue);
 			upvalues[index] = upvalue;
 		}
-		const closure = new Closure(functionRecord.address, upvalues, heapBytes);
-		closure.hashId = this.allocateObjectHashId();
 		return closure;
 	}
 
@@ -4117,7 +4116,6 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public captureRuntimeState(): CpuRuntimeState {
-		this.syncGlobalSlotsToTable();
 		const objectOrdinals = new Map<Table | Closure | Upvalue, number>();
 		const objects: CpuObjectState[] = [];
 
@@ -4162,6 +4160,19 @@ export class CPU implements MappedPageInvalidator {
 				case 'table': {
 					const table = object as Table;
 					const tableState = table.captureRuntimeState();
+					const metatable = captureStoredValueState(
+						tableState.metatable ? ValueTag.Table : ValueTag.Nil,
+						NaN,
+						tableState.metatable,
+					);
+					const array = new Array(tableState.arrayCapacity);
+					for (let index = 0; index < tableState.arrayCapacity; index += 1) {
+						array[index] = captureStoredValueState(
+							tableState.tags[index],
+							tableState.scalars[index],
+							tableState.references[index],
+						);
+					}
 					const hash = new Array(tableState.hashSize);
 					for (let index = 0; index < tableState.hashSize; index += 1) {
 						const keySlot = tableState.arrayCapacity + index;
@@ -4180,14 +4191,6 @@ export class CPU implements MappedPageInvalidator {
 							next: tableState.hashNext[index],
 						};
 					}
-					const array = new Array(tableState.arrayCapacity);
-					for (let index = 0; index < tableState.arrayCapacity; index += 1) {
-						array[index] = captureStoredValueState(
-							tableState.tags[index],
-							tableState.scalars[index],
-							tableState.references[index],
-						);
-					}
 					return {
 						kind: 'table',
 						hashId: table.hashId,
@@ -4195,11 +4198,7 @@ export class CPU implements MappedPageInvalidator {
 						arrayLength: tableState.arrayLength,
 						hash,
 						hashFree: tableState.hashFree,
-						metatable: captureStoredValueState(
-							tableState.metatable ? ValueTag.Table : ValueTag.Nil,
-							NaN,
-							tableState.metatable,
-						),
+						metatable,
 					};
 				}
 				case 'upvalue': {
@@ -4233,7 +4232,7 @@ export class CPU implements MappedPageInvalidator {
 						kind: 'closure',
 						hashId: closure.hashId,
 						functionAddress: closure.functionAddress,
-						canonical: this.staticClosuresByAddress.get(closure.functionAddress) === closure,
+						canonical: closure.heapBytes === 0,
 						upvalues,
 					};
 				}
@@ -4243,7 +4242,7 @@ export class CPU implements MappedPageInvalidator {
 		const systemGlobals: CpuRootValueState[] = [];
 		for (let slot = 0; slot < this.systemGlobalNames.length; slot += 1) {
 			systemGlobals.push({
-				name: this.stringPool.toString(this.systemGlobalNames[slot]),
+				key: this.systemGlobalNames[slot],
 				value: captureStoredValueState(
 					this.systemGlobalSlots.getTag(slot),
 					this.systemGlobalSlots.getScalar(slot),
@@ -4252,27 +4251,23 @@ export class CPU implements MappedPageInvalidator {
 			});
 		}
 
-		const globals: CpuRootValueState[] = [];
-		this.globals.forEachStoredEntry((
-			keyTag,
-			keyScalar,
-			_keyReference,
-			valueTag,
-			valueScalar,
-			valueReference,
-		) => {
-			if (keyTag !== ValueTag.String) {
-				return;
-			}
-			globals.push({
-				name: this.stringPool.toString(keyScalar as StringId),
-				value: captureStoredValueState(valueTag, valueScalar, valueReference),
+		const globalTableRef = ensureObjectId(this.globals, 'table');
+		const globalSlots: CpuRootValueState[] = [];
+		for (let slot = 0; slot < this.globalNames.length; slot += 1) {
+			globalSlots.push({
+				key: this.globalNames[slot],
+				value: captureStoredValueState(
+					this.globalSlots.getTag(slot),
+					this.globalSlots.getScalar(slot),
+					this.globalSlots.getReference(slot),
+				),
 			});
-		});
+		}
 
 		const frames = new Array<CpuFrameState>(this.frames.length);
 		for (let frameIndex = 0; frameIndex < this.frames.length; frameIndex += 1) {
 			const frame = this.frames[frameIndex];
+			const closureRef = ensureObjectId(frame.closure, 'closure');
 			const registers = new Array<CpuValueState>(frame.top);
 			for (let registerIndex = 0; registerIndex < frame.top; registerIndex += 1) {
 				registers[registerIndex] = captureStoredValueState(
@@ -4293,7 +4288,7 @@ export class CPU implements MappedPageInvalidator {
 			frames[frameIndex] = {
 				functionAddress: frame.functionAddress,
 				pc: frame.pc,
-				closureRef: ensureObjectId(frame.closure, 'closure'),
+				closureRef,
 				registers,
 				varargs,
 				returnBase: frame.returnBase,
@@ -4343,10 +4338,28 @@ export class CPU implements MappedPageInvalidator {
 			this.stringIndexTable,
 		);
 
+		// Materialization order affects later object hashes even for an unrooted
+		// static closure. Preserve the entire cache, in physical-address order.
+		const canonicalClosures = Array.from(this.staticClosuresByAddress.values());
+		canonicalClosures.sort((left, right) => left.functionAddress - right.functionAddress);
+		for (const closure of canonicalClosures) {
+			ensureObjectId(closure, 'closure');
+		}
+		let executionResidencyMask = 0;
+		for (let index = 0; index < this.executionImagesByDomain.length; index += 1) {
+			if (this.executionImagesByDomain[index] !== null) {
+				executionResidencyMask |= 1 << index;
+			}
+		}
 		return {
 			executionCartridgeSlot: this.activeExecutionImage.executionDomainId,
 			systemGlobals,
-			globals,
+			globalTableRef,
+			globalSlots,
+			executionResidencyMask,
+			nextObjectHashId: this.nextObjectHashId,
+			hardHalted: this.hardHalted,
+			luaHeap: this.luaHeap.captureState(),
 			stringIndexTable,
 			frames,
 			protectedCalls,
@@ -4379,31 +4392,44 @@ export class CPU implements MappedPageInvalidator {
 	public restoreRuntimeState(state: CpuRuntimeState): void {
 		type RestoredObject = Table | Closure | Upvalue;
 		const restoredObjects = new Array<RestoredObject>(state.objects.length);
-		const executionImage = state.executionCartridgeSlot === SYSTEM_EXECUTION_DOMAIN_ID
-			? this.systemImage
-			: this.executionImageForDomain(state.executionCartridgeSlot)!;
-		let maxRestoredHashId = 0;
+		this.clearCompletionValues();
+		this.clearCallStack();
+		// Remove future materializations without changing the identity of static
+		// closures that also exist in the restored checkpoint.
+		const canonicalAddresses = new Set<number>();
+		for (const object of state.objects) {
+			if (object.kind === 'closure' && object.canonical) {
+				canonicalAddresses.add(object.functionAddress);
+			}
+		}
+		for (const address of this.staticClosuresByAddress.keys()) {
+			if (!canonicalAddresses.has(address)) {
+				this.staticClosuresByAddress.delete(address);
+			}
+		}
 
 		for (let index = 0; index < state.objects.length; index += 1) {
 			const objectState = state.objects[index];
-			if (objectState.hashId > maxRestoredHashId) {
-				maxRestoredHashId = objectState.hashId;
-			}
 			switch (objectState.kind) {
 				case 'table': {
-					this.luaHeap.restoreAllocate(Table.trackedHeapBytesForCapacities(0, 0));
-					const table = new Table(this.luaHeap, 0, 0);
+					let table: Table;
+					if (index === state.globalTableRef) {
+						table = this.globals;
+					} else {
+						this.luaHeap.restoreAllocate(Table.trackedHeapBytesForCapacities(0, 0));
+						table = new Table(this.luaHeap, 0, 0);
+					}
 					table.hashId = objectState.hashId;
 					restoredObjects[index] = table;
 					break;
 				}
 				case 'closure': {
-					const upvalues = new Array<Upvalue>(objectState.upvalues.length);
 					if (objectState.canonical) {
 						const closure = this.staticClosureAtAddress(objectState.functionAddress);
 						closure.hashId = objectState.hashId;
 						restoredObjects[index] = closure;
 					} else {
+						const upvalues = new Array<Upvalue>(objectState.upvalues.length);
 						const heapBytes = CLOSURE_HEAP_BYTES + (upvalues.length * CLOSURE_UPVALUE_SLOT_HEAP_BYTES);
 						this.luaHeap.restoreAllocate(heapBytes);
 						const closure = new Closure(objectState.functionAddress, upvalues, heapBytes);
@@ -4427,7 +4453,6 @@ export class CPU implements MappedPageInvalidator {
 					break;
 			}
 		}
-		this.observeObjectHashId(maxRestoredHashId);
 
 		let restoredTag = ValueTag.Nil;
 		let restoredScalar = NaN;
@@ -4509,7 +4534,7 @@ export class CPU implements MappedPageInvalidator {
 						hashNext[slot] = objectState.hash[slot].next;
 					}
 					decodeValueState(objectState.metatable);
-					this.observeObjectHashId(table.restoreRuntimeState({
+					table.restoreRuntimeState({
 						tags,
 						scalars,
 						references,
@@ -4519,7 +4544,7 @@ export class CPU implements MappedPageInvalidator {
 						hashNext,
 						hashFree: objectState.hashFree,
 						metatable: restoredReference as Table | null,
-					}));
+					});
 					break;
 				}
 				case 'closure': {
@@ -4544,13 +4569,35 @@ export class CPU implements MappedPageInvalidator {
 			}
 		}
 
-		this.clearCompletionValues();
-		this.clearCallStack();
-		this.globals.clear();
-		this.globals.prepareRestoreStorage(0, Table.hashCapacity(state.globals.length));
+		// Constant/string and global-slot caches must not retain entries first
+		// encountered in the discarded future. Rebuild from the same media.
+		this.memory.clearMappedPageWriteWatches();
+		this.executionImagesByDomain.fill(null);
+		this.clearGlobalSlots();
+		this.reserveGlobalSlots(true, state.systemGlobals.length);
+		for (let slot = 0; slot < state.systemGlobals.length; slot += 1) {
+			const entry = state.systemGlobals[slot];
+			this.systemGlobalNames.push(entry.key);
+			this.systemGlobalSlotByKey.set(entry.key, slot);
+			decodeValueState(entry.value);
+			this.systemGlobalSlots.setEncoded(slot, restoredTag, restoredScalar, restoredReference);
+		}
+		this.reserveGlobalSlots(false, state.globalSlots.length);
+		for (let slot = 0; slot < state.globalSlots.length; slot += 1) {
+			const entry = state.globalSlots[slot];
+			this.globalNames.push(entry.key);
+			this.globalSlotByKey.set(entry.key, slot);
+			decodeValueState(entry.value);
+			this.globalSlots.setEncoded(slot, restoredTag, restoredScalar, restoredReference);
+		}
+		for (let index = 0; index < this.executionImagesByDomain.length; index += 1) {
+			if ((state.executionResidencyMask & (1 << index)) !== 0) {
+				this.executionImageForDomain((index - 1) as ExecutionDomainId);
+			}
+		}
+		this.systemImage = this.executionImagesByDomain[SYSTEM_EXECUTION_DOMAIN_ID + 1]!;
+		const executionImage = this.executionImagesByDomain[state.executionCartridgeSlot + 1]!;
 		this.latchActiveExecutionImage(executionImage);
-		this.systemGlobalSlots.clear(this.systemGlobalNames.length);
-		this.globalSlots.clear(this.globalNames.length);
 
 		for (let frameIndex = 0; frameIndex < state.frames.length; frameIndex += 1) {
 			const frameState = state.frames[frameIndex];
@@ -4621,26 +4668,6 @@ export class CPU implements MappedPageInvalidator {
 			this.linkOpenUpvalue(frame, upvalue);
 		}
 
-		for (let index = 0; index < state.systemGlobals.length; index += 1) {
-			const entry = state.systemGlobals[index];
-			decodeValueState(entry.value);
-			this.setSystemGlobalByKey(
-				this.stringPool.intern(entry.name),
-				restoredTag,
-				restoredScalar,
-				restoredReference,
-			);
-		}
-		for (let index = 0; index < state.globals.length; index += 1) {
-			const entry = state.globals[index];
-			decodeValueState(entry.value);
-			this.setGlobalByKey(
-				this.stringPool.intern(entry.name),
-				restoredTag,
-				restoredScalar,
-				restoredReference,
-			);
-		}
 		decodeValueState(state.stringIndexTable);
 		this.stringIndexTable = restoredReference as Table | null;
 		if (state.completionValues.length > this.completionValueSlots.capacity()) {
@@ -4680,7 +4707,9 @@ export class CPU implements MappedPageInvalidator {
 		this.nmiReturnExceptionDomainWord = state.nmiReturnExceptionDomainWord;
 		this.nonMaskableInterruptPending = state.nonMaskableInterruptPending;
 		this.yieldRequested = state.yieldRequested;
-		this.collectTrackedHeapBytes();
+		this.hardHalted = state.hardHalted;
+		this.nextObjectHashId = state.nextObjectHashId;
+		this.luaHeap.restoreState(state.luaHeap);
 	}
 
 	private tableWeakMode(table: Table): number {

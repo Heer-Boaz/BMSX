@@ -8,8 +8,18 @@ namespace bmsx {
 
 class CPU;
 
+struct LuaHeapState {
+	size_t trackedBytes = 0;
+	size_t nextCollectionBytes = 0;
+};
+
 class LuaHeap {
 public:
+	LuaHeapState captureState() const { return {m_trackedBytes, m_nextCollectionBytes}; }
+	void restoreState(const LuaHeapState& state) {
+		m_trackedBytes = state.trackedBytes;
+		m_nextCollectionBytes = state.nextCollectionBytes;
+	}
 	LuaHeap(CPU& cpu, size_t ramByteCount);
 
 	void reserve(

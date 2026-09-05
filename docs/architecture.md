@@ -1558,6 +1558,20 @@ parser, or allocation. No old executable image or development-tail buffer
 remains an execution owner. Save-state retains only the current raw machine
 state and restores it against the media inserted at restore time.
 
+Runtime save-state also retains CPU allocation order, the hard-halt latch,
+the guest heap's collection schedule, the globals backing table and both
+global registerfiles. Slot keys remain raw string-pool ids. Capture does not
+synchronize a registerfile into a Lua table or run guest GC. Restore replaces
+derived execution caches from the inserted media; canonical closure residency
+and object hashes come from the snapshot, not from the discarded future.
+Native reclamation of the discarded host heap is distinct from guest GC and
+does not clear the snapshot's weak references.
+
+Generic rewind is a shared TS/native emulator requirement, not a Studio or
+cartridge capability. Its checkpoint/event-replay contract, implementation
+gates and production references are in [rewind architecture](rewind_architecture.md).
+The initial control surface is the host/quickmenu; no shortcut is reserved.
+
 Saving an AEM document follows the same physical revision path. Tooling
 validates and encodes the document, installs the rebuilt ROM, reconnects the
 resident execution image, and only then invokes the guest AEM reload entrypoint

@@ -166,7 +166,7 @@ public:
 	}
 	bool nextEntry(const Value& after, Value& key, Value& value) const;
 	TableRuntimeState captureRuntimeState() const;
-	uint32_t restoreRuntimeState(const TableRuntimeState& state);
+	void restoreRuntimeState(const TableRuntimeState& state);
 	size_t trackedHeapBytes() const;
 	void prepareRestoreStorage(size_t arrayCapacity, size_t hashCapacity);
 

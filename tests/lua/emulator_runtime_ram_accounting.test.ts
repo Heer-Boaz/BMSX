@@ -71,11 +71,12 @@ test('builtin primitive save-state uses VM id instead of stable global path', ()
 	cpu.globals.setStringKey(cpu.stringPool.intern('foo'), createBuiltinFunction(BuiltinFunctionId.Next));
 
 	const state = cpu.captureRuntimeState();
-	assert.deepEqual(state.globals, [
-		{ name: 'foo', value: { tag: 'builtin', id: BuiltinFunctionId.Next } },
-	]);
+	const globals = state.objects[state.globalTableRef];
+	assert.ok(globals.kind === 'table');
+	assert.ok(globals.hash.some(node => node.value.tag === 'builtin' && node.value.id === BuiltinFunctionId.Next));
 
 	const restoredCpu = createTestSystemCpu(EMPTY_TEST_IMAGE).cpu;
+	restoredCpu.stringPool.restoreState(cpu.stringPool.captureState());
 	restoredCpu.restoreRuntimeState(state);
 	assert.equal(
 		restoredCpu.globals.getStringKey(restoredCpu.stringPool.intern('foo')),

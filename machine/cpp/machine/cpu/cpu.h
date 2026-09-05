@@ -141,14 +141,19 @@ struct CpuProtectedCallState {
 };
 
 struct CpuRootValueState {
-	std::string name;
+	StringId key = 0;
 	CpuValueState value;
 };
 
 struct CpuRuntimeState {
 	ExecutionDomainId executionCartridgeSlot = SYSTEM_EXECUTION_DOMAIN_ID;
 	std::vector<CpuRootValueState> systemGlobals;
-	std::vector<CpuRootValueState> globals;
+	int globalTableRef = -1;
+	std::vector<CpuRootValueState> globalSlots;
+	ExecutionDomainMask executionResidencyMask = 0;
+	u32 nextObjectHashId = 1;
+	bool hardHalted = false;
+	LuaHeapState luaHeap;
 	CpuValueState stringIndexTable;
 	std::vector<CpuFrameState> frames;
 	std::vector<CpuProtectedCallState> protectedCalls;
@@ -209,12 +214,9 @@ public:
 	Closure* allocateClosure(size_t upvalueCount);
 
 	uint32_t allocateHashId() { return m_nextObjectHashId++; }
-	void observeHashId(uint32_t hashId) {
-		if (m_nextObjectHashId <= hashId) {
-			m_nextObjectHashId = hashId + 1u;
-		}
-	}
-	void collect(
+	u32 nextObjectHashId() const { return m_nextObjectHashId; }
+	void finishRestore(u32 nextObjectHashId);
+	size_t collect(
 		Value root0 = valueNil(),
 		Value root1 = valueNil(),
 		Value root2 = valueNil()
@@ -229,7 +231,7 @@ private:
 	void trace();
 	void convergeEphemerons();
 	void clearWeakTables();
-	void sweep();
+	size_t sweep();
 	void destroyObject(GCObject* object);
 
 	CPU& m_cpu;

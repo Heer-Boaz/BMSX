@@ -308,15 +308,15 @@ void testSystemAndOrdinaryGlobalRegisterfilesStayDistinct() {
 		machine.executionAddressSpace.resolveSystemDomain()
 	);
 	const bmsx::CpuRuntimeState saved = machine.cpu.captureRuntimeState();
-	require(saved.systemGlobals.size() == 1u && saved.systemGlobals[0].name == "irq" && saved.systemGlobals[0].value.numberValue == 11.0, "media remount preserves the system registerfile");
-	require(saved.globals.size() == 1u && saved.globals[0].name == "irq" && saved.globals[0].value.numberValue == 22.0, "media remount preserves the ordinary global table");
+	require(saved.systemGlobals.size() == 1u && saved.systemGlobals[0].key == irqKey && saved.systemGlobals[0].value.numberValue == 11.0, "media remount preserves the system registerfile");
+	require(saved.globalSlots.size() == 1u && saved.globalSlots[0].key == irqKey && saved.globalSlots[0].value.numberValue == 22.0, "media remount preserves the ordinary global registerfile");
 	require(bmsx::asNumber(machine.cpu.getGlobalByKey(irqKey)) == 22.0, "ordinary global lookup does not expose the system slot");
 
 	machine.cpu.setSystemGlobalByKey(irqKey, bmsx::valueNumber(33.0));
 	machine.cpu.setGlobalByKey(irqKey, bmsx::valueNumber(44.0));
 	machine.cpu.restoreRuntimeState(saved);
 	const bmsx::CpuRuntimeState restored = machine.cpu.captureRuntimeState();
-	require(restored.systemGlobals.size() == 1u && restored.systemGlobals[0].name == "irq" && restored.systemGlobals[0].value.numberValue == 11.0, "save-state restores the system registerfile independently");
+	require(restored.systemGlobals.size() == 1u && restored.systemGlobals[0].key == irqKey && restored.systemGlobals[0].value.numberValue == 11.0, "save-state restores the system registerfile independently");
 	require(bmsx::asNumber(machine.cpu.getGlobalByKey(irqKey)) == 22.0, "save-state restores the ordinary global independently");
 }
 

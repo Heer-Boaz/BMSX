@@ -230,11 +230,17 @@ void GcHeap::destroyObject(GCObject* object) {
 	}
 }
 
-void GcHeap::sweep() {
+size_t GcHeap::sweep() {
+	size_t liveBytes = 0;
 	GCObject** current = &m_objects;
 	while (*current) {
 		GCObject* object = *current;
 		if (object->marked) {
+			switch (object->type) {
+				case ObjType::Table: liveBytes += static_cast<Table*>(object)->trackedHeapBytes(); break;
+				case ObjType::Closure: liveBytes += trackedClosureBytes(*static_cast<Closure*>(object)); break;
+				case ObjType::Upvalue: liveBytes += kUpvalueHeapBytes; break;
+			}
 			object->marked = false;
 			current = &object->next;
 			continue;
@@ -242,9 +248,17 @@ void GcHeap::sweep() {
 		*current = object->next;
 		destroyObject(object);
 	}
+	return liveBytes;
 }
 
-void GcHeap::collect(
+void GcHeap::finishRestore(u32 nextObjectHashId) {
+	// Snapshot objects were marked while rebuilding, including weak referents.
+	// Reclaim only the discarded host graph; do not perform a guest collection.
+	sweep();
+	m_nextObjectHashId = nextObjectHashId;
+}
+
+size_t GcHeap::collect(
 	Value root0,
 	Value root1,
 	Value root2
@@ -261,11 +275,12 @@ void GcHeap::collect(
 	trace();
 	convergeEphemerons();
 	clearWeakTables();
-	sweep();
+	const size_t liveBytes = sweep();
 	m_stringPool.reclaimUnreachableTracked();
 	m_weakTables.clear();
 	m_weakTableModes.clear();
 	m_ephemeronTables.clear();
+	return liveBytes + m_stringPool.trackedLuaHeapBytes();
 }
 
 BuiltinResultsScratchScope::BuiltinResultsScratchScope(CPU& cpu, BuiltinResults& out) noexcept
@@ -1092,14 +1107,13 @@ void CPU::beginCompletionCallInExecutionDomain(
 }
 
 CpuRuntimeState CPU::captureRuntimeState() const {
-	const_cast<CPU&>(*this).syncGlobalSlotsToTable();
 	std::unordered_map<const void*, int> objectIds;
 	std::vector<CpuObjectState> objects;
-	std::function<CpuObjectState(GCObject*)> captureObjectState;
-	std::function<int(GCObject*)> ensureObjectId;
+	std::function<CpuObjectState(const GCObject*)> captureObjectState;
+	std::function<int(const GCObject*)> ensureObjectId;
 	std::function<CpuValueState(Value)> captureValueState;
 
-	ensureObjectId = [&](GCObject* object) -> int {
+	ensureObjectId = [&](const GCObject* object) -> int {
 		const void* key = static_cast<const void*>(object);
 		const auto it = objectIds.find(key);
 		if (it != objectIds.end()) {
@@ -1153,13 +1167,13 @@ CpuRuntimeState CPU::captureRuntimeState() const {
 		throw BMSX_RUNTIME_ERROR("Runtime snapshot cannot preserve " + std::string(valueTypeName(value)) + " value.");
 	};
 
-	captureObjectState = [&](GCObject* object) -> CpuObjectState {
+	captureObjectState = [&](const GCObject* object) -> CpuObjectState {
 		CpuObjectState state;
 		state.hashId = object->hashId;
 		switch (object->type) {
 			case ObjType::Table: {
 				state.kind = CpuObjectState::Kind::Table;
-				const TableRuntimeState tableState = static_cast<Table*>(object)->captureRuntimeState();
+				const TableRuntimeState tableState = static_cast<const Table*>(object)->captureRuntimeState();
 				state.arrayLength = tableState.arrayLength;
 				state.metatable = captureValueState(tableState.metatable ? valueTable(tableState.metatable) : valueNil());
 				state.array.reserve(tableState.array.size());
@@ -1179,11 +1193,9 @@ CpuRuntimeState CPU::captureRuntimeState() const {
 			}
 			case ObjType::Closure: {
 				state.kind = CpuObjectState::Kind::Closure;
-				Closure* closure = static_cast<Closure*>(object);
+				const Closure* closure = static_cast<const Closure*>(object);
 				state.functionAddress = closure->functionAddress;
-				const auto canonical = m_staticClosuresByAddress.find(closure->functionAddress);
-				state.closureCanonical = canonical != m_staticClosuresByAddress.end()
-					&& &canonical->second == closure;
+				state.closureCanonical = closure->trackedHeapBytes == 0;
 				state.upvalues.reserve(closure->upvalueCount);
 				for (size_t upvalueIndex = 0; upvalueIndex < closure->upvalueCount; ++upvalueIndex) {
 					state.upvalues.push_back(ensureObjectId(closure->upvalues[upvalueIndex]));
@@ -1192,7 +1204,7 @@ CpuRuntimeState CPU::captureRuntimeState() const {
 			}
 			case ObjType::Upvalue: {
 				state.kind = CpuObjectState::Kind::Upvalue;
-				Upvalue* upvalue = static_cast<Upvalue*>(object);
+				const Upvalue* upvalue = static_cast<const Upvalue*>(object);
 				state.upvalueOpen = upvalue->open;
 				state.upvalueIndex = upvalue->index;
 				if (upvalue->open) {
@@ -1218,19 +1230,18 @@ CpuRuntimeState CPU::captureRuntimeState() const {
 	for (size_t index = 0; index < m_systemGlobalNames.size(); ++index) {
 		const Value value = m_systemGlobalValues[index];
 		state.systemGlobals.push_back(CpuRootValueState{
-			m_stringPool.toString(m_systemGlobalNames[index]),
+			m_systemGlobalNames[index],
 			captureValueState(value),
 		});
 	}
-	globals->forEachEntry([&](Value key, Value value) {
-		if (!valueIsString(key)) {
-			return;
-		}
-		state.globals.push_back(CpuRootValueState{
-			m_stringPool.toString(asStringId(key)),
-			captureValueState(value),
+	state.globalTableRef = ensureObjectId(globals);
+	state.globalSlots.reserve(m_globalNames.size());
+	for (size_t index = 0; index < m_globalNames.size(); ++index) {
+		state.globalSlots.push_back(CpuRootValueState{
+			m_globalNames[index],
+			captureValueState(m_globalValues[index]),
 		});
-	});
+	}
 	state.executionCartridgeSlot = m_activeExecutionImage->executionDomainId;
 	state.frames.reserve(m_frames.size());
 	for (const auto& framePtr : m_frames) {
@@ -1288,6 +1299,27 @@ CpuRuntimeState CPU::captureRuntimeState() const {
 	state.stringIndexTable = captureValueState(
 		m_stringIndexTable ? valueTable(m_stringIndexTable) : valueNil()
 	);
+	// Cache residency is allocation state even when a static closure is no
+	// longer in a live register. Order the cold snapshot by physical address.
+	std::vector<const Closure*> canonicalClosures;
+	canonicalClosures.reserve(m_staticClosuresByAddress.size());
+	for (const auto& [address, closure] : m_staticClosuresByAddress) {
+		canonicalClosures.push_back(&closure);
+	}
+	std::sort(canonicalClosures.begin(), canonicalClosures.end(), [](const Closure* left, const Closure* right) {
+		return left->functionAddress < right->functionAddress;
+	});
+	for (const Closure* closure : canonicalClosures) {
+		ensureObjectId(closure);
+	}
+	for (size_t index = 0; index < m_executionImagesByDomain.size(); ++index) {
+		if (m_executionImagesByDomain[index]) {
+			state.executionResidencyMask |= 1u << index;
+		}
+	}
+	state.nextObjectHashId = m_heap.nextObjectHashId();
+	state.hardHalted = m_hardHalted;
+	state.luaHeap = m_luaHeap.captureState();
 	state.objects = std::move(objects);
 	state.lastExecutionDomainId = m_lastExecutionDomainId;
 	state.lastPc = lastPc;
@@ -1319,18 +1351,30 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 		Upvalue* upvalue = nullptr;
 	};
 
-	Blua32ExecutionImage* executionImage = state.executionCartridgeSlot < 0
-		? m_systemImage
-		: executionImageForDomain(state.executionCartridgeSlot);
+	m_completionValues.clear();
+	clearCallStack();
+	std::unordered_set<u32> canonicalAddresses;
+	for (const CpuObjectState& object : state.objects) {
+		if (object.kind == CpuObjectState::Kind::Closure && object.closureCanonical) {
+			canonicalAddresses.insert(object.functionAddress);
+		}
+	}
+	std::erase_if(m_staticClosuresByAddress, [&](const auto& entry) {
+		return !canonicalAddresses.contains(entry.first);
+	});
 	std::vector<RestoredObject> restoredObjects(state.objects.size());
 	for (size_t index = 0; index < state.objects.size(); ++index) {
 		const CpuObjectState& objectState = state.objects[index];
 		switch (objectState.kind) {
 			case CpuObjectState::Kind::Table:
-				m_luaHeap.restoreAllocate(Table::trackedHeapBytesForCapacities(0, 0));
-				restoredObjects[index].table = m_heap.allocate<Table>(ObjType::Table, m_luaHeap, 0, 0);
+				if (index == static_cast<size_t>(state.globalTableRef)) {
+					restoredObjects[index].table = globals;
+				} else {
+					m_luaHeap.restoreAllocate(Table::trackedHeapBytesForCapacities(0, 0));
+					restoredObjects[index].table = m_heap.allocate<Table>(ObjType::Table, m_luaHeap, 0, 0);
+				}
+				restoredObjects[index].table->marked = true;
 				restoredObjects[index].table->hashId = objectState.hashId;
-				m_heap.observeHashId(objectState.hashId);
 				break;
 			case CpuObjectState::Kind::Closure: {
 				const size_t upvalueCount = objectState.upvalues.size();
@@ -1341,19 +1385,19 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 					m_luaHeap.restoreAllocate(heapBytes);
 					restoredObjects[index].closure = allocateTrackedClosure(objectState.functionAddress, upvalueCount);
 				}
+				restoredObjects[index].closure->marked = !objectState.closureCanonical;
 				restoredObjects[index].closure->hashId = objectState.hashId;
-				m_heap.observeHashId(objectState.hashId);
 				break;
 			}
 			case CpuObjectState::Kind::Upvalue: {
 				m_luaHeap.restoreAllocate(kUpvalueHeapBytes);
 				auto* upvalue = m_heap.allocate<Upvalue>(ObjType::Upvalue);
+				upvalue->marked = true;
 				upvalue->open = false;
 				upvalue->index = objectState.upvalueIndex;
 				upvalue->frame = nullptr;
 				upvalue->value = valueNil();
 				upvalue->hashId = objectState.hashId;
-				m_heap.observeHashId(objectState.hashId);
 				restoredObjects[index].upvalue = upvalue;
 				break;
 			}
@@ -1405,7 +1449,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 				if (!isNil(metatable)) {
 					tableState.metatable = asTable(metatable);
 				}
-				m_heap.observeHashId(restoredObjects[index].table->restoreRuntimeState(tableState));
+				restoredObjects[index].table->restoreRuntimeState(tableState);
 				break;
 			}
 			case CpuObjectState::Kind::Closure: {
@@ -1427,17 +1471,33 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 		}
 	}
 
-	m_completionValues.clear();
-	clearCallStack();
-	globals->clear();
-	globals->prepareRestoreStorage(0, Table::hashCapacity(static_cast<int>(state.globals.size())));
+	m_memory.clearMappedPageWriteWatches();
+	for (auto& image : m_executionImagesByDomain) {
+		image.reset();
+	}
+	clearGlobalSlots();
+	m_systemGlobalNames.reserve(state.systemGlobals.size());
+	m_systemGlobalValues.reserve(state.systemGlobals.size());
+	for (const CpuRootValueState& entry : state.systemGlobals) {
+		m_systemGlobalSlotByKey.emplace(entry.key, m_systemGlobalNames.size());
+		m_systemGlobalNames.push_back(entry.key);
+		m_systemGlobalValues.push_back(restoreValue(entry.value));
+	}
+	m_globalNames.reserve(state.globalSlots.size());
+	m_globalValues.reserve(state.globalSlots.size());
+	for (const CpuRootValueState& entry : state.globalSlots) {
+		m_globalSlotByKey.emplace(entry.key, m_globalNames.size());
+		m_globalNames.push_back(entry.key);
+		m_globalValues.push_back(restoreValue(entry.value));
+	}
+	for (size_t index = 0; index < m_executionImagesByDomain.size(); ++index) {
+		if ((state.executionResidencyMask & (1u << index)) != 0u) {
+			executionImageForDomain(static_cast<ExecutionDomainId>(index) - 1);
+		}
+	}
+	m_systemImage = m_executionImagesByDomain[static_cast<size_t>(SYSTEM_EXECUTION_DOMAIN_ID + 1)].get();
+	Blua32ExecutionImage* executionImage = m_executionImagesByDomain[static_cast<size_t>(state.executionCartridgeSlot + 1)].get();
 	latchActiveExecutionImage(*executionImage);
-	for (Value& value : m_systemGlobalValues) {
-		value = valueNil();
-	}
-	for (Value& value : m_globalValues) {
-		value = valueNil();
-	}
 
 	for (const CpuFrameState& frameState : state.frames) {
 		readFunctionRecordOnBus(
@@ -1503,12 +1563,6 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 		linkOpenUpvalue(*frame, upvalue);
 	}
 
-	for (const CpuRootValueState& entry : state.systemGlobals) {
-		setSystemGlobalByKey(m_stringPool.intern(entry.name), restoreValue(entry.value));
-	}
-	for (const CpuRootValueState& entry : state.globals) {
-		setGlobalByKey(m_stringPool.intern(entry.name), restoreValue(entry.value));
-	}
 	const Value stringIndexTable = restoreValue(state.stringIndexTable);
 	m_stringIndexTable = isNil(stringIndexTable) ? nullptr : asTable(stringIndexTable);
 	m_completionValues.reserve(state.completionValues.size());
@@ -1535,7 +1589,9 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	m_nmiReturnExceptionDomainWord = state.nmiReturnExceptionDomainWord;
 	m_nonMaskableInterruptPending = state.nonMaskableInterruptPending;
 	m_yieldRequested = state.yieldRequested;
-	collectHeap();
+	m_hardHalted = state.hardHalted;
+	m_heap.finishRestore(state.nextObjectHashId);
+	m_luaHeap.restoreState(state.luaHeap);
 }
 
 void CPU::requestYield() {
@@ -2421,8 +2477,8 @@ void CPU::collectHeap() {
 }
 
 void CPU::collectHeap(Value root0, Value root1, Value root2) {
-	m_heap.collect(root0, root1, root2);
-	m_luaHeap.finishCollection(m_luaHeap.usedBytes());
+	const size_t liveBytes = m_heap.collect(root0, root1, root2);
+	m_luaHeap.finishCollection(liveBytes);
 }
 
 ExecutionDomainId CPU::readFrameExecutionDomain(int frameIndex) const {

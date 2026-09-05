@@ -465,3 +465,18 @@ beide vervangt de zichtbare targetmetingen hieronder.
 | `BIOS-IRQ-SCAN-01` | BIOS [`kernel/interrupts.lua`](../machine/bios/kernel/interrupts.lua) loopt `pairs(handlers)` en ackt na de scan. Cartlib [`irq.lua`](../cartlib/irq.lua) is lowest-set-bit plus ack-before-handler. Hervatten wanneer BIOS meer unmasked sources krijgt dan boot-DMA+VBlank; til de cart-dispatcher niet „voor consistentie” de firmware in. |
 | `CARTLIB-VISUAL-SORT-01` | [`cartlib/world/world.lua`](../cartlib/world/world.lua) kopieert actieve visuals en `table.sort` bij iedere depth/revision. Hervatten wanneer een cart-visualbudget die sort als producer-hotspot meet. Geen tweede draw-path op gevoel. |
 | `CARTLIB-WORLD-SINGLETON-01` | De cart-world is één module-instantie. Hervatten wanneer een gekozen productworkflow werkelijk twee gelijktijdige worlds in één ROM vereist; tot die tijd geen multi-world facade. |
+
+## Generic emulator rewind (not Studio)
+
+Contract and live-owner evidence: [rewind_architecture.md](rewind_architecture.md).
+BMSX keeps its PlayStation-class CPU/GX/PCRTC/DMA/APU model. openMSX is a
+checkpoint/event-replay algorithm reference, not a hardware blueprint.
+
+| ID | Ownership contract | Done when |
+| --- | --- | --- |
+| `REWIND-STATE-01` | Existing TS/C++ save-state preserves CPU allocation sequence, canonical closure residency, exact globals storage/registerfiles, hard halt and guest GC schedule. Capture/restore does not introduce a guest collection or synchronize stale host-derived tables. | Repeated execution and weak-collection regressions pass in both cores, and real-cart CPU/device state replays identically through trusted state and external/libretro serialization. Implemented; see the validation record in the rewind document. |
+| `REWIND-HISTORY-01` | Runtime-owned bounded checkpoints and external ICU events, including unarmed supervisor edges. Machine-time seek with backend fence service, no live input or external side effects during replay. Seeking retains future; live takeover branches. | Retention wrap, sparse seeks, recorded/live input transitions and TS/C++ replay equivalence are proven; capture/replay costs and retained memory are measured. Open. |
+| `REWIND-HOST-01` | TS player/Studio hosts and native/libretro use the same history contract. Host/quickmenu controls collection and seeking without a new shortcut. Async capture/seek keeps host event processing alive; audio/GPU delivery is distinct from emulated work. | Real host tests cover seeks, output resynchronization, reboot, media replacement, debugger/Hot Resume mutation and external save/load lifecycle. Ordinary frontend libretro rewind remains independent. Open. |
+
+The latter two rows are not complete merely because `REWIND-STATE-01` passes.
+Cross-source-revision Studio time travel is not implied by gameplay rewind.

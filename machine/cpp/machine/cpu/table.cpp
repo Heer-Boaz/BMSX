@@ -611,12 +611,11 @@ TableRuntimeState Table::captureRuntimeState() const {
 	return state;
 }
 
-uint32_t Table::restoreRuntimeState(const TableRuntimeState& state) {
+void Table::restoreRuntimeState(const TableRuntimeState& state) {
 	const size_t previousBytes = trackedHeapBytes();
 	m_array = state.array;
 	m_arrayLength = state.arrayLength;
 	allocateHash(state.hash.size());
-	uint32_t maxDeadKeyHashId = 0;
 	for (size_t index = 0; index < state.hash.size(); ++index) {
 		const TableHashNodeState& node = state.hash[index];
 		m_hashKeys[index] = node.key;
@@ -624,18 +623,11 @@ uint32_t Table::restoreRuntimeState(const TableRuntimeState& state) {
 		m_hashNext[index] = node.next;
 		if (isNil(node.key) != isNil(node.value)) {
 			++m_hashDeadCount;
-			if (isNil(node.key)) {
-				const uint32_t hashId = static_cast<uint32_t>(asNumber(node.value));
-				if (hashId > maxDeadKeyHashId) {
-					maxDeadKeyHashId = hashId;
-				}
-			}
 		}
 	}
 	m_hashFree = state.hashFree;
 	metatable = state.metatable;
 	m_luaHeap.adjustForRestore(previousBytes, trackedHeapBytes());
-	return maxDeadKeyHashId;
 }
 
 size_t Table::trackedHeapBytes() const {
