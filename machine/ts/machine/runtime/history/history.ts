@@ -41,6 +41,7 @@ export class RuntimeHistory {
 	}
 
 	public get checkpointCount(): number { return this.count; }
+	public checkpointCycles(index: number): number { return this.checkpoints[(this.firstCheckpoint + index) % this.checkpoints.length]!.cycles; }
 	public get earliestCycles(): number { return this.count === 0 ? 0 : this.checkpoints[this.firstCheckpoint]!.cycles; }
 	public get latestCycles(): number { return this.endCycles; }
 	public get executionPaused(): boolean { return this.checkpointPending || this.mode === HistoryMode.Reviewing; }
@@ -147,9 +148,10 @@ export class RuntimeHistory {
 
 	public cancelSeek(): void { this.mode = HistoryMode.Reviewing; }
 
-	/** Live takeover branches; a synchronized checkpoint must precede new input. */
+	/** A branch needs a synchronized checkpoint; rejoining the recorded end keeps its capture schedule. */
 	public resumeRecording(): void {
 		const cycles = this.runtime.machine.scheduler.currentNowCycles();
+		const rejoiningLatest = cycles === this.endCycles;
 		while (this.count > 0) {
 			const index = (this.firstCheckpoint + this.count - 1) % this.checkpoints.length;
 			if (this.checkpoints[index]!.cycles <= cycles) break;
@@ -161,6 +163,7 @@ export class RuntimeHistory {
 		this.runtime.frameLoop.abandonFrameState();
 		this.endCycles = cycles;
 		this.mode = HistoryMode.Recording;
-		this.checkpointPending = true;
+		this.checkpointPending = !rejoiningLatest || cycles >= this.nextCheckpointCycles
+			|| this.inputJournal.endSequence - this.latestCheckpointInputSequence === this.inputJournal.capacity;
 	}
 }

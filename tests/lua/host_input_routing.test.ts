@@ -1,3 +1,4 @@
+import type { HostRewind } from '../../hosts/common/rewind';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
@@ -240,7 +241,7 @@ test('quick menu accepts navigation after consuming its opening frame', () => {
 	const presenter = {
 		show_resource_usage_gizmo: false,
 	} as VideoPresenter;
-	const menu = new HostOverlayMenu(presenter, {} as Runtime, input);
+	const menu = new HostOverlayMenu(presenter, {} as Runtime, input, { returnToPresent() {} } as HostRewind);
 
 	setTime(10);
 	input.inputButton('keyboard:0', 'ControlRight', true, 1, 10, 1);
@@ -281,12 +282,12 @@ test('quick menu reassigns an onscreen-style gamepad and remains controllable on
 	const presenter = {
 		show_resource_usage_gizmo: false,
 	} as VideoPresenter;
-	const menu = new HostOverlayMenu(presenter, {} as Runtime, input);
+	const menu = new HostOverlayMenu(presenter, {} as Runtime, input, { returnToPresent() {} } as HostRewind);
 
 	openMenuWithGamepad(input, menu, gamepad.id, currentTime, 1, 2);
 	currentTime += 1;
 
-	for (let step = 0; step < 6; step += 1) {
+	for (let step = 0; step < 7; step += 1) {
 		currentTime += 1;
 		const pressId = step + 3;
 		input.inputButton(gamepad.id, 'up', true, 1, currentTime, pressId);
@@ -337,7 +338,7 @@ test('quick menu routes pointer taps through retained option actions', () => {
 			target,
 		) === DisplayPointMappingResult.Inside,
 	} as VideoPresenter;
-	const menu = new HostOverlayMenu(presenter, {} as Runtime, input);
+	const menu = new HostOverlayMenu(presenter, {} as Runtime, input, { returnToPresent() {} } as HostRewind);
 	const snapshot = createInputControllerSnapshot();
 	const pointerMask = 1 << INP_POINTER_BUTTON_PRIMARY;
 	let pressId = 1;
@@ -424,7 +425,7 @@ test('on-screen keyboard owns controller navigation and emits retained HID comma
 			target,
 		) === DisplayPointMappingResult.Inside,
 	} as VideoPresenter;
-	const menu = new HostOverlayMenu(presenter, {} as Runtime, input);
+	const menu = new HostOverlayMenu(presenter, {} as Runtime, input, { returnToPresent() {} } as HostRewind);
 	const snapshot = createInputControllerSnapshot();
 	let pressId = 1;
 	const tickCaptured = (): HostMenuInput => {
@@ -579,7 +580,7 @@ test('quick menu edits the retained player-port control map', () => {
 	const clock = { now: () => currentTime } as HostClock;
 	const { input, gamepad } = createGamepadInput(clock);
 	const presenter = { show_resource_usage_gizmo: false } as VideoPresenter;
-	const menu = new HostOverlayMenu(presenter, {} as Runtime, input);
+	const menu = new HostOverlayMenu(presenter, {} as Runtime, input, { returnToPresent() {} } as HostRewind);
 	let pressId = 1;
 	const press = (button: string): HostMenuInput => {
 		input.inputButton(gamepad.id, button, true, 1, currentTime, pressId);

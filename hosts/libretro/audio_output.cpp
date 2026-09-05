@@ -28,11 +28,11 @@ void LibretroAudioOutput::resetPlayback() {
 	m_resampler.reset();
 }
 
-bool LibretroAudioOutput::setSystemMuted(AudioController& audioController, bool muted) {
-	if (m_systemMuted == muted) {
+bool LibretroAudioOutput::setMuted(AudioController& audioController, bool muted) {
+	if (m_muted == muted) {
 		return false;
 	}
-	m_systemMuted = muted;
+	m_muted = muted;
 	resetPlayback();
 	if (muted) {
 		audioController.synchronizeOutput().clear();
@@ -41,7 +41,7 @@ bool LibretroAudioOutput::setSystemMuted(AudioController& audioController, bool 
 }
 
 void LibretroAudioOutput::collectFrame(AudioController& audioController) {
-	if (m_systemMuted) {
+	if (m_muted) {
 		m_frameCount = 0u;
 		return;
 	}

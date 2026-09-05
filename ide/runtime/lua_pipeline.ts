@@ -461,6 +461,7 @@ export function installBlua32Media(
 	runtime: Runtime,
 	installation: Blua32MediaInstallation,
 ): void {
+	runtime.history.stop();
 	const rebuilt = installation.rebuilt;
 	const systemLayer = installation.systemLayer;
 	const cartridgeLayers = installation.cartridgeLayers;

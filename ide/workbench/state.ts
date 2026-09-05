@@ -16,7 +16,7 @@ import { RuntimeLuaTooling } from '../runtime/lua_tooling';
 import { SuspendedGuestSession } from '../runtime/suspended_guest';
 import { OverlayRenderer } from '../runtime/overlay_renderer';
 import type { RuntimeSourceState } from '../runtime/sources';
-import { RuntimeTaskQueue } from '../runtime/task_queue';
+import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import { ScenarioRunService } from './contrib/scenario_lab/run_service';
 import { ScenarioTestCollection } from '../testing/scenario/test_collection';
 
@@ -30,7 +30,6 @@ export class RuntimeIdeState {
 	public readonly debugger: RuntimeDebuggerState;
 	public shortcutDisposers: Array<() => void> = [];
 	public readonly luaTooling: RuntimeLuaTooling;
-	public readonly runtimeTasks: RuntimeTaskQueue;
 	public readonly scenarioTests: ScenarioTestCollection;
 	public readonly scenarioRuns: ScenarioRunService;
 	public readonly fault: RuntimeFaultState = createRuntimeFaultState();
@@ -41,6 +40,7 @@ export class RuntimeIdeState {
 		display: EditorDisplay,
 		input: Input,
 		audioOutput: HostAudioOutput,
+		public readonly runtimeTasks: RuntimeTaskQueue,
 		public readonly storage: KeyValueStorage,
 		clock: HostClock,
 		clipboard: Clipboard,
@@ -56,7 +56,6 @@ export class RuntimeIdeState {
 			sources,
 			new SuspendedGuestSession(runtime),
 		);
-		this.runtimeTasks = new RuntimeTaskQueue(microtasks, audioOutput);
 		this.scenarioTests = new ScenarioTestCollection(sources);
 		this.scenarioRuns = new ScenarioRunService(
 			runtime,

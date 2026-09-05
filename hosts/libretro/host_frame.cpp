@@ -2,6 +2,7 @@
 
 #include "host_overlay_menu.h"
 #include "input.h"
+#include "rewind.h"
 #include "machine/runtime/runtime.h"
 #include "presentation_state.h"
 #include "render/video_presenter.h"
@@ -12,6 +13,7 @@ LibretroFrameResult runLibretroFrame(
 	Runtime& runtime,
 	LibretroInput& input,
 	HostOverlayMenu& overlayMenu,
+	HostRewind& rewind,
 	RenderPresentationState& presentation,
 	VideoPresenter& presenter,
 	f64& totalTime,
@@ -24,7 +26,7 @@ LibretroFrameResult runLibretroFrame(
 	const f64 hostFps = 1.0 / deltaTime;
 
 	const HostMenuInput hostMenuInput =
-		overlayMenu.tickInput(input, presenter, totalTime * 1000.0);
+		overlayMenu.tickInput(input, presenter, rewind, totalTime * 1000.0);
 	switch (hostMenuInput) {
 		case HostMenuInput::RebootCart:
 			return LibretroFrameResult::RebootRequested;
@@ -37,7 +39,8 @@ LibretroFrameResult runLibretroFrame(
 	const bool hostMenuActive = hostMenuInput == HostMenuInput::Active;
 
 	presentation.clearPresentation();
-	if (runtime.isDrawPending() && !hostMenuActive) {
+	rewind.service(true);
+	if (runtime.isDrawPending() && !hostMenuActive && !rewind.active) {
 		const i64 previousTickSequence = runtime.frameScheduler.lastTickSequence;
 		runtime.frameScheduler.run(runtime, hostDeltaMs);
 		GxGpu& gxGpu = runtime.machine.gxGpu;
@@ -54,7 +57,7 @@ LibretroFrameResult runLibretroFrame(
 		runtime.frameScheduler.clearQueuedTime();
 	}
 	if (hostMenuActive) {
-		overlayMenu.queueRenderCommands(presenter);
+		overlayMenu.queueRenderCommands(runtime, presenter, rewind);
 		presentation.requestHeldPresentation();
 	} else if (overlayMenu.queueFrameOverlayCommands(
 		runtime,
@@ -63,15 +66,16 @@ LibretroFrameResult runLibretroFrame(
 	)) {
 		presentation.requestHeldPresentation();
 	}
-	return presentation.render(
+	if (rewind.active) presentation.requestHeldPresentation();
+	const bool presented = presentation.render(
 		presenter,
 		runtime,
 		totalTime,
 		deltaTime,
 		false
-	)
-		? LibretroFrameResult::Presented
-		: LibretroFrameResult::NotPresented;
+	);
+	if (runtime.history.checkpointPending) rewind.service(true);
+	return presented ? LibretroFrameResult::Presented : LibretroFrameResult::NotPresented;
 }
 
 } // namespace bmsx

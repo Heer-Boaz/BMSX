@@ -47,7 +47,7 @@ import {
 	type HotResumeRevisions,
 } from './hot_resume_relocation';
 import { clearExecutionStopHighlights } from '../runtime_error/navigation';
-import type { RuntimeTaskQueue } from './task_queue';
+import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
 
 export type BuiltBlua32Revision = {

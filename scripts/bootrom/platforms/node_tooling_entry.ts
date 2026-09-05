@@ -1,3 +1,5 @@
+import { HostRewind } from '../../../hosts/common/rewind';
+import { RuntimeTaskQueue } from '../../../hosts/common/runtime_task_queue';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -150,12 +152,15 @@ async function main(): Promise<void> {
 		runtime.timing.ufpsScaled,
 	);
 	const systemOutput = new SystemOutputLog();
+	const runtimeTasks = new RuntimeTaskQueue(audioOutput, runtime, presenter);
+	const presentation = new RenderPresentationState();
+	const rewind = new HostRewind(runtime, presenter, presentation, runtimeTasks, audioOutput, logOutput);
 	const frameSession = new HostFrameSession(
 		runtime.timing.ufpsScaled,
 		clock.now(),
+		rewind,
 	);
-	const presentation = new RenderPresentationState();
-	const hostOverlayMenu = new HostOverlayMenu(presenter, runtime, input);
+	const hostOverlayMenu = new HostOverlayMenu(presenter, runtime, input, rewind);
 	const inputLogger = (message: string): void => {
 		console.log(`[bootrom:headless:input] ${message}`);
 	};
@@ -214,6 +219,7 @@ async function main(): Promise<void> {
 						videoOutput,
 						input,
 						audioOutput,
+						runtimeTasks,
 						storage,
 						clock,
 						new HeadlessClipboard(),

@@ -25,7 +25,7 @@ import type { RuntimeSourceState } from '../runtime/sources';
 import type { RuntimeFaultState } from '../runtime/fault_state';
 import type { RuntimeLuaTooling } from '../runtime/lua_tooling';
 import type { OverlayRenderer } from '../runtime/overlay_renderer';
-import type { RuntimeTaskQueue } from '../runtime/task_queue';
+import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import {
 	resumeRuntimeDebugger,
 	RuntimeDebuggerResumeMode,
@@ -133,6 +133,7 @@ export class IdeCommandController {
 					this.sources,
 					this.luaTooling,
 					this.runtime,
+					this.runtimeTasks,
 				);
 				if (workingCopies[index].dirty) {
 					return false;

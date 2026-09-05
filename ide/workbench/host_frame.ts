@@ -188,7 +188,8 @@ export function runWorkbenchHostFrame(
 			workbenchMode.tickIdeInput(ide, input);
 		}
 
-		const runtimeReady = ide.runtimeTasks.ready && !ide.fault.hostFrameFailed;
+		const runtimeReady = ide.runtimeTasks.ready && !ide.fault.hostFrameFailed && !session.rewind.active;
+		session.rewind.service(!ide.scenarioRuns.active);
 		let action: HostFrameAction;
 		if (
 			hostMenuInput !== HostMenuInput.Active
@@ -212,7 +213,7 @@ export function runWorkbenchHostFrame(
 				runtimeReady,
 				hostMenuInput,
 			);
-			if (action === HostFrameAction.Execute) {
+			if (action === HostFrameAction.Execute && ide.runtimeTasks.ready && !session.rewind.active) {
 				const scenarioExecution = ide.scenarioRuns.execution;
 				if (scenarioExecution.active) {
 					scenarioGuestFrame = true;
@@ -296,6 +297,8 @@ export function runWorkbenchHostFrame(
 			}
 		}
 		const previousPresentation = presenter.presentationSequence;
+		if (action === HostFrameAction.Execute) action = HostFrameAction.PresentPending;
+		if (session.rewind.active || !ide.runtimeTasks.ready) screen.requestHeldPresentation();
 		presentWorkbenchFrame(
 			session,
 			runtime,
@@ -312,6 +315,7 @@ export function runWorkbenchHostFrame(
 				presenter.presentationSequence !== previousPresentation,
 			);
 		}
+		if (runtime.history.checkpointPending && ide.runtimeTasks.ready) session.rewind.service(!ide.scenarioRuns.active);
 	} catch (error) {
 		workbenchMode.surfaceHostFrameError(ide, logOutput, runtime, error);
 		presentWorkbenchError(

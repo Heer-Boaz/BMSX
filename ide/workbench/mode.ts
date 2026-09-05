@@ -1,3 +1,4 @@
+import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import { KeyModifier } from '../../hosts/common/input/player';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import type { Input } from '../../hosts/common/input/manager';
@@ -45,6 +46,7 @@ export async function initializeIdeFeatures(
 	display: EditorDisplay,
 	input: Input,
 	audioOutput: HostAudioOutput,
+	runtimeTasks: RuntimeTaskQueue,
 	storage: KeyValueStorage,
 	clock: HostClock,
 	clipboard: Clipboard,
@@ -79,6 +81,7 @@ export async function initializeIdeFeatures(
 		display,
 		input,
 		audioOutput,
+		runtimeTasks,
 		storage,
 		clock,
 		clipboard,

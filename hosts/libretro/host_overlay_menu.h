@@ -8,12 +8,22 @@
 #include <array>
 #include <cstddef>
 #include <string>
+#include <string_view>
+#include <span>
 
 namespace bmsx {
 
 class Runtime;
 class VideoPresenter;
 class LibretroInput;
+class HostRewind;
+enum class HostMenuOptionId : i32;
+struct HostMenuOptionDef {
+	HostMenuOptionId id;
+	const char* label;
+	const char* const* values;
+	i32 valueCount;
+};
 
 enum class HostMenuInput : u8 {
 	Inactive,
@@ -52,18 +62,19 @@ class HostOverlayMenu {
 		Closed,
 		Options,
 		Keyboard,
+		Rewind,
 	};
 
 public:
 	HostOverlayMenu();
-	HostMenuInput tickInput(LibretroInput& input, VideoPresenter& presenter, f64 currentTimeMs);
+	HostMenuInput tickInput(LibretroInput& input, VideoPresenter& presenter, HostRewind& rewind, f64 currentTimeMs);
 	void resetInputState(LibretroInput& input);
-	void queueRenderCommands(VideoPresenter& presenter);
+	void queueRenderCommands(Runtime& runtime, VideoPresenter& presenter, HostRewind& rewind);
 	bool queueFrameOverlayCommands(Runtime& runtime, VideoPresenter& presenter, f64 hostFps);
 	bool active() const { return m_page != Page::Closed; }
 
 private:
-	static constexpr i32 OptionCount = 14;
+	static constexpr i32 OptionCount = 15;
 	static constexpr i32 UsageBarCount = 3;
 	static constexpr size_t CommandCapacity = 128;
 	struct ButtonRepeatRecord {
@@ -76,11 +87,11 @@ private:
 	void clearRenderCommands(VideoPresenter& presenter);
 	void publishRenderCommands(VideoPresenter& presenter);
 	void queueCommand(Host2DKind kind, Host2DRef ref);
-	void toggle(LibretroInput& input);
-	void close(LibretroInput& input);
+	void toggle(LibretroInput& input, HostRewind& rewind);
+	void close(LibretroInput& input, HostRewind& rewind);
 	void openKeyboard(LibretroInput& input);
 	void changeSelected(VideoPresenter& presenter, i32 direction);
-	HostMenuInput activateSelected(LibretroInput& input, VideoPresenter& presenter);
+	HostMenuInput activateSelected(LibretroInput& input, VideoPresenter& presenter, HostRewind& rewind);
 	void rebuildText(VideoPresenter& presenter);
 	bool tickPointerInput(LibretroInput& input);
 	i32 selectPointerTargetAt(i32 x, i32 y);
@@ -111,6 +122,10 @@ private:
 	bool advanceButtonRepeat(bool pressed, bool justPressed, ButtonRepeatRecord& repeat, f64 currentTimeMs, f64 frameDurationMs);
 	void resetButtonRepeats();
 
+	std::span<const HostMenuOptionDef> options;
+	i64 rewindOffsetTenths = -1;
+	i64 rewindRangeTenths = -1;
+	std::string_view rewindTitleState;
 	Page m_page = Page::Closed;
 	HostOnScreenKeyboard m_keyboard;
 	bool m_showFps = false;

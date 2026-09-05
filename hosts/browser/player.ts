@@ -1,3 +1,5 @@
+import { HostRewind } from '../common/rewind';
+import { RuntimeTaskQueue } from '../common/runtime_task_queue';
 import {
 	initializeMachineRuntime,
 	initializeMachineVideoPresenter,
@@ -46,9 +48,13 @@ async function startBrowserPlayer(): Promise<void> {
 			runtime.timing.ufpsScaled,
 		);
 		const systemOutput = new SystemOutputLog();
+		const runtimeTasks = new RuntimeTaskQueue(audioOutput, runtime, presenter);
+		const presentation = new RenderPresentationState();
+		const rewind = new HostRewind(runtime, presenter, presentation, runtimeTasks, audioOutput, options.logOutput);
 		const session = new HostFrameSession(
 			runtime.timing.ufpsScaled,
 			options.clock.now(),
+			rewind,
 		);
 		runtime.resetForSystemBoot();
 		runtime.boot();
@@ -66,11 +72,11 @@ async function startBrowserPlayer(): Promise<void> {
 				event.returnValue = 'Are you sure you want to exit this awesome game?';
 			});
 		}
-		const presentation = new RenderPresentationState();
 		const hostOverlayMenu = new HostOverlayMenu(
 			presenter,
 			runtime,
 			options.input,
+			rewind,
 		);
 		runtime.frameScheduler.clearQueuedTime();
 		const frameLoop = options.frames.start((currentTime) => {

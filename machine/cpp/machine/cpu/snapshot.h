@@ -2,7 +2,7 @@
 
 #include "common/types.h"
 #include "machine/cpu/value.h"
-#include <bit>
+#include <cstring>
 #include <functional>
 #include <span>
 
@@ -45,12 +45,16 @@ public:
 	i32 integer(u32 offset) const { return static_cast<i32>(m_words[offset]); }
 	void setWord(u32 offset, u32 value) { m_words[offset] = value; }
 	void setNumber(u32 offset, f64 value) {
-		const auto bits = std::bit_cast<u64>(value);
+		u64 bits;
+		std::memcpy(&bits, &value, sizeof(bits));
 		m_words[offset] = static_cast<u32>(bits);
 		m_words[offset + 1] = static_cast<u32>(bits >> 32);
 	}
 	f64 number(u32 offset) const {
-		return std::bit_cast<f64>(static_cast<u64>(m_words[offset]) | (static_cast<u64>(m_words[offset + 1]) << 32));
+		const u64 bits = static_cast<u64>(m_words[offset]) | (static_cast<u64>(m_words[offset + 1]) << 32);
+		f64 value;
+		std::memcpy(&value, &bits, sizeof(value));
+		return value;
 	}
 private:
 	std::vector<u32> m_words;

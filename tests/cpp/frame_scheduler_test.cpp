@@ -497,6 +497,31 @@ void testHistoryPressureAndBranch() {
 	require(history.mode == bmsx::HistoryMode::Disabled && history.checkpointCount() == 0 && history.inputJournal.storageBytes() == 0, "reset ends history");
 }
 
+void testHistoryRejoin() {
+	struct Case { size_t inputCapacity; bmsx::i64 intervalCycles; bool pending; };
+	for (const auto test : {Case{8, 0x100000000LL, false}, Case{2, 0x100000000LL, true}, Case{8, 1, true}}) {
+		TickRuntimeFixture fixture;
+		auto& runtime = fixture.runtime;
+		auto& history = runtime.history;
+		history.start({2, test.inputCapacity, test.intervalCycles});
+		history.captureCheckpoint();
+		runtime.frameScheduler.runToNextLogicalTick(runtime);
+		if (!history.checkpointPending) runtime.frameScheduler.runToNextLogicalTick(runtime);
+		const auto end = history.latestCycles();
+		const auto sequence = history.inputJournal.endSequence;
+		history.beginSeek(end);
+		for (int step = 0; history.mode == bmsx::HistoryMode::Replaying && step < 1000; ++step) {
+			require(history.advanceSeek(16384) != bmsx::HistorySeekResult::Stopped, "rejoin replay advances");
+		}
+		require(history.mode == bmsx::HistoryMode::Reviewing, "rejoin reaches recorded end");
+		history.resumeRecording();
+		require(history.checkpointPending == test.pending, "rejoin preserves interval and input-pressure capture requests");
+		require(history.checkpointCount() == 1, "looking at history must not evict a checkpoint");
+		require(history.earliestCycles() == 0 && history.latestCycles() == end, "rejoin preserves retained range");
+		require(history.inputJournal.endSequence == sequence, "rejoin preserves recorded input");
+	}
+}
+
 void testInputJournalRawWordsAndWrap() {
 	bmsx::InputJournal journal;
 	journal.reset(3);
@@ -629,6 +654,7 @@ int main() {
 	testNormalHostExecutionKeepsExistingSchedulerContract();
 	testRuntimeCheckpointStorage();
 	testHistoryPressureAndBranch();
+	testHistoryRejoin();
 	testInputJournalRawWordsAndWrap();
 	testHistoryUnarmedSupervisorEdge();
 	testCancelledHistoryTakeover();

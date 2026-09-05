@@ -15,6 +15,7 @@ type RenderPresentation = {
 
 export class RenderPresentationState {
 	private pendingPresentation = false;
+	private restoredPresentationPending = false;
 	private presentationMode: RenderPresentationMode = 'completed';
 	private presentationCommitFrame = false;
 	private readonly presentationScratch: RenderPresentation = {
@@ -67,23 +68,31 @@ export class RenderPresentationState {
 		}
 	}
 
+	public requestRestoredPresentation(): void {
+		this.restoredPresentationPending = true;
+		this.pcrtcScanoutRevision = 0;
+		this.markPresentation('completed', true);
+	}
+
 	private consumePresentation(out: RenderPresentation): boolean {
 		if (!this.pendingPresentation) {
 			return false;
 		}
 		out.mode = this.presentationMode;
 		out.commitFrame = this.presentationCommitFrame;
+		this.restoredPresentationPending = false;
 		this.clearPresentation();
 		return true;
 	}
 
 	public clearPresentation(): void {
-		this.pendingPresentation = false;
+		this.pendingPresentation = this.restoredPresentationPending;
 		this.presentationMode = 'completed';
-		this.presentationCommitFrame = false;
+		this.presentationCommitFrame = this.restoredPresentationPending;
 	}
 
 	public reset(presenter: VideoPresenter, runtime: Runtime): void {
+		this.restoredPresentationPending = false;
 		this.clearPresentation();
 		this.pcrtcScanoutRevision = 0;
 		const output = runtime.machine.gxGpu.readDeviceOutput();

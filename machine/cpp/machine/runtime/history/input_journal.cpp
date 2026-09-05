@@ -3,34 +3,34 @@
 namespace bmsx {
 
 void InputJournal::reset(size_t capacity) {
-	m_cycles = std::vector<i64>(capacity);
-	m_words = std::vector<u32>(capacity * RECORD_WORD_COUNT);
+	cycles = std::vector<i64>(capacity);
+	words = std::vector<u32>(capacity * RECORD_WORD_COUNT);
 	firstSequence = 0;
 	endSequence = 0;
 	replaySequence = 0;
-	m_sampleFlags = 0;
+	sampleFlags = 0;
 }
 
 void InputJournal::recordSample(const InputControllerSnapshot& snapshot, InputControllerSampleContext context) {
-	m_sampleFlags = 1u | (static_cast<u32>(context) << 1u);
-	storeInputControllerSnapshotWords(snapshot, m_words, (endSequence % capacity()) * RECORD_WORD_COUNT + 1);
+	sampleFlags = 1u | (static_cast<u32>(context) << 1u);
+	storeInputControllerSnapshotWords(snapshot, words, (endSequence % capacity()) * RECORD_WORD_COUNT + 1);
 }
 
 void InputJournal::recordLine(i64 cycles, bool high) {
 	const size_t index = endSequence % capacity();
-	m_cycles[index] = cycles;
-	m_words[index * RECORD_WORD_COUNT] = m_sampleFlags | (high ? SUPERVISOR_LINE_HIGH : 0u);
-	m_sampleFlags = 0;
+	this->cycles[index] = cycles;
+	words[index * RECORD_WORD_COUNT] = sampleFlags | (high ? SUPERVISOR_LINE_HIGH : 0u);
+	sampleFlags = 0;
 	++endSequence;
 	if (endSequence - firstSequence > static_cast<i64>(capacity())) ++firstSequence;
 }
 
 void InputJournal::replaySample(InputControllerSnapshot& snapshot) const {
-	loadInputControllerSnapshotWords(snapshot, m_words, (replaySequence % capacity()) * RECORD_WORD_COUNT + 1);
+	loadInputControllerSnapshotWords(snapshot, words, (replaySequence % capacity()) * RECORD_WORD_COUNT + 1);
 }
 
 bool InputJournal::replayLine() {
-	const bool high = (m_words[(replaySequence % capacity()) * RECORD_WORD_COUNT] & SUPERVISOR_LINE_HIGH) != 0u;
+	const bool high = (words[(replaySequence % capacity()) * RECORD_WORD_COUNT] & SUPERVISOR_LINE_HIGH) != 0u;
 	++replaySequence;
 	return high;
 }

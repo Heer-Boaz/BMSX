@@ -17,7 +17,7 @@ import type { ResourceIdentity } from './common/resource';
 import type { RuntimeLuaTooling } from './runtime/lua_tooling';
 import type { RuntimeDebuggerState } from './runtime/debugger_state';
 import type { OverlayRenderer } from './runtime/overlay_renderer';
-import type { RuntimeTaskQueue } from './runtime/task_queue';
+import type { RuntimeTaskQueue } from '../hosts/common/runtime_task_queue';
 import { showEditorMessage, updateEditorMessage, setEditorFeedbackActive, editorFeedbackState } from './common/feedback_state';
 import { clearBackgroundTasks, runBackgroundTasks } from './common/background_tasks';
 import { editorRuntimeState } from './editor/common/runtime_state';

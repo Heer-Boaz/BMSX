@@ -142,6 +142,11 @@ void RenderPresentationState::requestHeldPresentation() {
 	}
 }
 
+void RenderPresentationState::requestRestoredPresentation() {
+	m_pcrtcScanoutRevision = 0u;
+	markPresentation(VideoPresenter::PresentationMode::Completed, true);
+}
+
 bool RenderPresentationState::consumePresentation(RenderPresentation& outPresentation) {
 	if (!m_pendingPresentation) {
 		return false;

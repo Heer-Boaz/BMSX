@@ -184,6 +184,30 @@ test('history checkpoint pressure suspends machine time before required input ca
 	assert.equal(history.inputJournal.storageBytes, 0);
 });
 
+test('history rejoining the recorded end preserves checkpoints and pending capture pressure', () => {
+	for (const [inputCapacity, intervalCycles, pending] of [[8, 0x100000000, false], [2, 0x100000000, true], [8, 1, true]] as const) {
+		const { runtime } = createTickRuntime();
+		const history = runtime.history;
+		history.start({ checkpointCapacity: 2, inputCapacity, checkpointIntervalCycles: intervalCycles });
+		history.captureCheckpoint();
+		runtime.frameScheduler.runToNextLogicalTick();
+		if (!history.checkpointPending) runtime.frameScheduler.runToNextLogicalTick();
+		const end = history.latestCycles;
+		const sequence = history.inputJournal.endSequence;
+		history.beginSeek(end);
+		for (let step = 0; history.mode === HistoryMode.Replaying && step < 1000; step += 1) {
+			assert.notEqual(history.advanceSeek(16384), HistorySeekResult.Stopped);
+		}
+		assert.equal(history.mode, HistoryMode.Reviewing);
+		history.resumeRecording();
+		assert.equal(history.checkpointPending, pending, 'rejoin preserves interval and input-pressure capture requests');
+		assert.equal(history.checkpointCount, 1, 'looking at history must not evict a checkpoint');
+		assert.equal(history.earliestCycles, 0);
+		assert.equal(history.latestCycles, end);
+		assert.equal(history.inputJournal.endSequence, sequence);
+	}
+});
+
 test('history replays an unarmed supervisor edge through the actual ICU without reading live input', () => {
 	const { runtime, input } = createTickRuntime();
 	const gpu = runtime.machine.gxGpu;

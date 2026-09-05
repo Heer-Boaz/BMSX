@@ -22,6 +22,7 @@ public:
 	void clearPresentation();
 	void reset(VideoPresenter& presenter, Runtime& runtime);
 	void requestHeldPresentation();
+	void requestRestoredPresentation();
 	void syncAfterRuntimeUpdate(Runtime& runtime, i64 previousTickSequence);
 	bool render(
 		VideoPresenter& presenter,

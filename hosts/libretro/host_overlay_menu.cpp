@@ -3,6 +3,7 @@
 #include "common/rect.h"
 #include "hid_keys.h"
 #include "input.h"
+#include "rewind.h"
 #include "render/shared/bitmap_font.h"
 #include "machine/runtime/runtime.h"
 #include "render/video_presenter.h"
@@ -12,9 +13,33 @@
 #include <cstdio>
 
 namespace bmsx {
+enum class HostMenuOptionId : i32 {
+	ShowUsageGizmo,
+	CrtPost,
+	CrtNoise,
+	CrtColorBleed,
+	CrtScanlines,
+	CrtBlur,
+	CrtGlow,
+	CrtFringing,
+	CrtAperture,
+	DeviceQuantize,
+	HostShowFps,
+	OnScreenKeyboard,
+	Rewind,
+	Earlier,
+	Later,
+	Resume,
+	Return,
+	Pause,
+	Back,
+	RebootCart,
+	ExitGame,
+};
+
 namespace {
 
-constexpr i32 kMenuOptionCount = 14;
+constexpr i32 kMenuOptionCount = 15;
 constexpr const char* kToggleValues[] = {"OFF", "ON"};
 constexpr const char* kDeviceQuantizeValues[] = {"OFF", "RGB565", "MSX10 3:4:3"};
 constexpr const char* kTitleText = "CORE OPTIONS";
@@ -85,30 +110,6 @@ constexpr u32 kUsageOkColor = 0xff04d413u;
 constexpr u32 kUsageWarnColor = 0xffe2d204u;
 constexpr u32 kUsageDangerColor = 0xffff5134u;
 
-enum class HostMenuOptionId : i32 {
-	ShowUsageGizmo,
-	CrtPost,
-	CrtNoise,
-	CrtColorBleed,
-	CrtScanlines,
-	CrtBlur,
-	CrtGlow,
-	CrtFringing,
-	CrtAperture,
-	DeviceQuantize,
-	HostShowFps,
-	OnScreenKeyboard,
-	RebootCart,
-	ExitGame,
-};
-
-struct HostMenuOptionDef {
-	HostMenuOptionId id;
-	const char* label;
-	const char* const* values;
-	i32 valueCount;
-};
-
 constexpr std::array<HostMenuOptionDef, kMenuOptionCount> kOptions{{
 	{HostMenuOptionId::ShowUsageGizmo, "Show Usage Gizmo", kToggleValues, 2},
 	{HostMenuOptionId::CrtPost, "CRT Post-processing", kToggleValues, 2},
@@ -122,9 +123,19 @@ constexpr std::array<HostMenuOptionDef, kMenuOptionCount> kOptions{{
 	{HostMenuOptionId::DeviceQuantize, "Output Quantize", kDeviceQuantizeValues, 3},
 	{HostMenuOptionId::HostShowFps, "HOST: SHOW FPS", kToggleValues, 2},
 	{HostMenuOptionId::OnScreenKeyboard, "ON-SCREEN KEYBOARD", nullptr, 0},
+	{HostMenuOptionId::Rewind, "REWIND", nullptr, 0},
 	{HostMenuOptionId::RebootCart, "REBOOT CART", nullptr, 0},
 	{HostMenuOptionId::ExitGame, "EXIT GAME", nullptr, 0},
 }};
+
+constexpr auto kRewindOptions = std::to_array<HostMenuOptionDef>({
+	{HostMenuOptionId::Earlier, "EARLIER CHECKPOINT", nullptr, 0},
+	{HostMenuOptionId::Later, "LATER CHECKPOINT", nullptr, 0},
+	{HostMenuOptionId::Resume, "RESUME HERE", nullptr, 0},
+	{HostMenuOptionId::Return, "RETURN TO LATEST", nullptr, 0},
+	{HostMenuOptionId::Pause, "PAUSE SEEK", nullptr, 0},
+	{HostMenuOptionId::Back, "BACK", nullptr, 0},
+});
 
 i32 boolIndex(bool value) {
 	return value ? 1 : 0;
@@ -134,8 +145,8 @@ bool boolFromIndex(i32 index) {
 	return index != 0;
 }
 
-i32 optionIndex(bool showFps, VideoPresenter& presenter, i32 option) {
-	switch (kOptions[static_cast<size_t>(option)].id) {
+i32 optionIndex(bool showFps, VideoPresenter& presenter, HostMenuOptionId option) {
+	switch (option) {
 		case HostMenuOptionId::ShowUsageGizmo: return boolIndex(presenter.showResourceUsageGizmo);
 		case HostMenuOptionId::CrtPost: return boolIndex(presenter.crt_postprocessing_enabled);
 		case HostMenuOptionId::CrtNoise: return boolIndex(presenter.applyNoise);
@@ -147,6 +158,13 @@ i32 optionIndex(bool showFps, VideoPresenter& presenter, i32 option) {
 		case HostMenuOptionId::CrtAperture: return boolIndex(presenter.applyAperture);
 		case HostMenuOptionId::DeviceQuantize: return static_cast<i32>(presenter.deviceQuantizeMode());
 		case HostMenuOptionId::HostShowFps: return boolIndex(showFps);
+		case HostMenuOptionId::Rewind:
+		case HostMenuOptionId::Earlier:
+		case HostMenuOptionId::Later:
+		case HostMenuOptionId::Resume:
+		case HostMenuOptionId::Return:
+		case HostMenuOptionId::Pause:
+		case HostMenuOptionId::Back:
 		case HostMenuOptionId::OnScreenKeyboard: return 0;
 		case HostMenuOptionId::RebootCart: return 0;
 		case HostMenuOptionId::ExitGame: return 0;
@@ -154,8 +172,8 @@ i32 optionIndex(bool showFps, VideoPresenter& presenter, i32 option) {
 	return 0;
 }
 
-void setOptionIndex(bool& showFps, VideoPresenter& presenter, i32 option, i32 value) {
-	switch (kOptions[static_cast<size_t>(option)].id) {
+void setOptionIndex(bool& showFps, VideoPresenter& presenter, HostMenuOptionId option, i32 value) {
+	switch (option) {
 		case HostMenuOptionId::ShowUsageGizmo: presenter.showResourceUsageGizmo = boolFromIndex(value); break;
 		case HostMenuOptionId::CrtPost: presenter.crt_postprocessing_enabled = boolFromIndex(value); break;
 		case HostMenuOptionId::CrtNoise: presenter.applyNoise = boolFromIndex(value); break;
@@ -167,6 +185,13 @@ void setOptionIndex(bool& showFps, VideoPresenter& presenter, i32 option, i32 va
 		case HostMenuOptionId::CrtAperture: presenter.applyAperture = boolFromIndex(value); break;
 		case HostMenuOptionId::DeviceQuantize: presenter.setDeviceQuantizeMode(static_cast<DeviceQuantizeMode>(value)); break;
 		case HostMenuOptionId::HostShowFps: showFps = boolFromIndex(value); break;
+		case HostMenuOptionId::Rewind:
+		case HostMenuOptionId::Earlier:
+		case HostMenuOptionId::Later:
+		case HostMenuOptionId::Resume:
+		case HostMenuOptionId::Return:
+		case HostMenuOptionId::Pause:
+		case HostMenuOptionId::Back:
 		case HostMenuOptionId::OnScreenKeyboard: break;
 		case HostMenuOptionId::RebootCart: break;
 		case HostMenuOptionId::ExitGame: break;
@@ -232,7 +257,7 @@ void formatUsagePercentCode(char* target, size_t targetSize, i32 code) {
 
 } // namespace
 
-HostOverlayMenu::HostOverlayMenu() {
+HostOverlayMenu::HostOverlayMenu() : options(kOptions) {
 	configureRect(m_panelRect, kPanelColor);
 	configureRect(m_highlightRect, kHighlightColor);
 	configureRect(m_usagePanelRect, kUsagePanelColor);
@@ -297,10 +322,10 @@ void HostOverlayMenu::queueCommand(Host2DKind kind, Host2DRef ref) {
 	m_commandCount += 1;
 }
 
-HostMenuInput HostOverlayMenu::tickInput(LibretroInput& input, VideoPresenter& presenter, f64 currentTimeMs) {
+HostMenuInput HostOverlayMenu::tickInput(LibretroInput& input, VideoPresenter& presenter, HostRewind& rewind, f64 currentTimeMs) {
 	if (input.hostShortcutJustPressed(InputControllerGamepadButtonBit::X)) {
 		if (m_page == Page::Keyboard) {
-			close(input);
+			close(input, rewind);
 		} else {
 			openKeyboard(input);
 			consumeGamepadButtons(input);
@@ -309,9 +334,10 @@ HostMenuInput HostOverlayMenu::tickInput(LibretroInput& input, VideoPresenter& p
 		return HostMenuInput::Inactive;
 	}
 	if (input.hostShortcutJustPressed(InputControllerGamepadButtonBit::Start)) {
-		toggle(input);
+		toggle(input, rewind);
 	}
-	HostMenuInput result = m_page == Page::Options
+	const bool menuInputActive = m_page == Page::Options || m_page == Page::Rewind;
+	HostMenuInput result = menuInputActive
 		? HostMenuInput::Active
 		: HostMenuInput::Inactive;
 	const bool keyboardInputActive = m_page == Page::Keyboard;
@@ -366,13 +392,24 @@ HostMenuInput HostOverlayMenu::tickInput(LibretroInput& input, VideoPresenter& p
 				m_keyboard.command(input, command);
 			}
 		}
-	} else if (m_page == Page::Options) {
+	} else if (menuInputActive) {
 		const bool pointerActivated = tickPointerInput(input);
 		if (buttonJustPressed(input, HostMenuButtonId::B)) {
-			toggle(input);
-			result = HostMenuInput::Inactive;
+			if (m_page == Page::Rewind) {
+				rewind.returnToPresent();
+				m_page = Page::Options;
+				options = kOptions;
+				m_selected = 0;
+				m_titleGlyphs.items[0] = kTitleText;
+				m_titleGlyphs.item_end = static_cast<i32>(m_titleGlyphs.items[0].size());
+				m_dirtyText = true;
+				resetPointerPress();
+			} else {
+				toggle(input, rewind);
+				result = HostMenuInput::Inactive;
+			}
 		} else if (pointerActivated) {
-			result = activateSelected(input, presenter);
+			result = activateSelected(input, presenter, rewind);
 		} else {
 			const f64 frameDurationMs = input.frameDurationMs();
 			if (buttonRepeatEdge(
@@ -382,7 +419,7 @@ HostMenuInput HostOverlayMenu::tickInput(LibretroInput& input, VideoPresenter& p
 				currentTimeMs,
 				frameDurationMs
 			)) {
-				m_selected = m_selected == 0 ? kMenuOptionCount - 1 : m_selected - 1;
+				m_selected = m_selected == 0 ? static_cast<i32>(options.size()) - 1 : m_selected - 1;
 			}
 			if (buttonRepeatEdge(
 				input,
@@ -391,7 +428,7 @@ HostMenuInput HostOverlayMenu::tickInput(LibretroInput& input, VideoPresenter& p
 				currentTimeMs,
 				frameDurationMs
 			)) {
-				m_selected = (m_selected + 1) % kMenuOptionCount;
+				m_selected = (m_selected + 1) % static_cast<i32>(options.size());
 			}
 			if (buttonRepeatEdge(
 				input,
@@ -412,17 +449,17 @@ HostMenuInput HostOverlayMenu::tickInput(LibretroInput& input, VideoPresenter& p
 				changeSelected(presenter, 1);
 			}
 			if (buttonJustPressed(input, HostMenuButtonId::A)) {
-				result = activateSelected(input, presenter);
+				result = activateSelected(input, presenter, rewind);
 			}
 		}
 	}
 	const bool keyboardOpened = !keyboardInputActive
 		&& m_page == Page::Keyboard;
 	latchButtonStates(input);
-	if (keyboardInputActive || keyboardOpened) {
+	if (keyboardInputActive || keyboardOpened || menuInputActive) {
 		consumeGamepadButtons(input);
 	}
-	if (keyboardOpened) {
+	if (keyboardOpened || menuInputActive) {
 		for (const HostMenuButton& button : kHostMenuButtons) {
 			input.consumePhysicalKeyboardUsage(button.keyboardUsage);
 		}
@@ -434,6 +471,9 @@ void HostOverlayMenu::resetInputState(LibretroInput& input) {
 	m_keyboard.close(input);
 	input.clearExclusiveGamepadHostShortcut();
 	m_page = Page::Closed;
+	options = kOptions;
+	m_titleGlyphs.items[0] = kTitleText;
+	m_titleGlyphs.item_end = static_cast<i32>(m_titleGlyphs.items[0].size());
 	m_selected = 0;
 	m_dirtyText = true;
 	m_previousKeyboardButtonStates.fill(false);
@@ -447,10 +487,27 @@ void HostOverlayMenu::resetInputState(LibretroInput& input) {
 	resetButtonRepeats();
 }
 
-void HostOverlayMenu::queueRenderCommands(VideoPresenter& presenter) {
+void HostOverlayMenu::queueRenderCommands(Runtime& runtime, VideoPresenter& presenter, HostRewind& rewind) {
 	if (m_page == Page::Keyboard) {
 		m_keyboard.queueRenderCommands(presenter);
 		return;
+	}
+	if (m_page == Page::Rewind) {
+		const auto& history = runtime.history;
+		const i64 offset = (history.latestCycles() - rewind.positionCycles()) * 10 / runtime.timing.cpuHz;
+		const i64 range = (history.latestCycles() - history.earliestCycles()) * 10 / runtime.timing.cpuHz;
+		const std::string_view state = rewind.stopped ? "STOPPED" : history.mode == HistoryMode::Replaying ? "SEEKING" : "REWIND";
+		if (offset != rewindOffsetTenths || range != rewindRangeTenths || state != rewindTitleState) {
+			rewindOffsetTenths = offset;
+			rewindRangeTenths = range;
+			rewindTitleState = state;
+			char title[80];
+			std::snprintf(title, sizeof(title), "%s %lld.%lldS AGO / %lld.%lldS", state.data(),
+				static_cast<long long>(offset / 10), static_cast<long long>(offset % 10),
+				static_cast<long long>(range / 10), static_cast<long long>(range % 10));
+			m_titleGlyphs.items[0] = title;
+			m_titleGlyphs.item_end = static_cast<i32>(m_titleGlyphs.items[0].size());
+		}
 	}
 	clearRenderCommands(presenter);
 	const Host2DKind rectKind = Host2DKind::Rect;
@@ -463,15 +520,15 @@ void HostOverlayMenu::queueRenderCommands(VideoPresenter& presenter) {
 	const i32 padding = 4;
 	const i32 titleHeight = lineHeight;
 	const i32 titleGap = 4;
-	i32 boxWidth = font->measure(kTitleText);
-	for (const std::string& line : m_lineText) {
-		const i32 width = font->measure(line);
+	i32 boxWidth = font->measure(m_titleGlyphs.items[0]);
+	for (size_t index = 0; index < options.size(); ++index) {
+		const i32 width = font->measure(m_lineText[index]);
 		if (width > boxWidth) {
 			boxWidth = width;
 		}
 	}
 	boxWidth += padding * 2;
-	const i32 boxHeight = kMenuOptionCount * lineHeight + padding * 2;
+	const i32 boxHeight = static_cast<i32>(options.size()) * lineHeight + padding * 2;
 	const i32 totalHeight = titleHeight + titleGap + boxHeight;
 	const i32 left = (static_cast<i32>(presenter.viewportSize.x) - boxWidth) / 2;
 	const i32 top = (static_cast<i32>(presenter.viewportSize.y) - totalHeight) / 2;
@@ -480,7 +537,7 @@ void HostOverlayMenu::queueRenderCommands(VideoPresenter& presenter) {
 		static_cast<f32>(left),
 		static_cast<f32>(boxTop + padding),
 		static_cast<f32>(left + boxWidth),
-		static_cast<f32>(boxTop + padding + kMenuOptionCount * lineHeight),
+		static_cast<f32>(boxTop + padding + static_cast<i32>(options.size()) * lineHeight),
 		0.0f,
 	};
 	m_optionLineHeight = lineHeight;
@@ -490,7 +547,7 @@ void HostOverlayMenu::queueRenderCommands(VideoPresenter& presenter) {
 	m_titleGlyphs.x = static_cast<f32>(left + padding);
 	m_titleGlyphs.y = static_cast<f32>(top);
 	queueCommand(itemsKind, Host2DRef{.glyphs = &m_titleGlyphs});
-	for (i32 index = 0; index < kMenuOptionCount; index += 1) {
+	for (i32 index = 0; index < static_cast<i32>(options.size()); index += 1) {
 		const i32 y = boxTop + padding + index * lineHeight;
 		if (index == m_selected) {
 			m_highlightRect.area = RectBounds{static_cast<f32>(left), static_cast<f32>(y - 2), static_cast<f32>(left + boxWidth), static_cast<f32>(y + lineHeight - 2), 921.0f};
@@ -514,7 +571,7 @@ bool HostOverlayMenu::queueFrameOverlayCommands(Runtime& runtime, VideoPresenter
 	clearRenderCommands(presenter);
 	const Host2DKind rectKind = Host2DKind::Rect;
 	const Host2DKind itemsKind = Host2DKind::Glyphs;
-	if (m_page == Page::Options) {
+	if (m_page != Page::Closed) {
 		return false;
 	}
 	bool queued = false;
@@ -586,7 +643,7 @@ bool HostOverlayMenu::queueFrameOverlayCommands(Runtime& runtime, VideoPresenter
 	return queued;
 }
 
-void HostOverlayMenu::toggle(LibretroInput& input) {
+void HostOverlayMenu::toggle(LibretroInput& input, HostRewind& rewind) {
 	if (m_page == Page::Closed) {
 		m_page = Page::Options;
 		m_selected = 0;
@@ -595,13 +652,17 @@ void HostOverlayMenu::toggle(LibretroInput& input) {
 		resetButtonRepeats();
 		return;
 	}
-	close(input);
+	close(input, rewind);
 }
 
-void HostOverlayMenu::close(LibretroInput& input) {
+void HostOverlayMenu::close(LibretroInput& input, HostRewind& rewind) {
+	rewind.returnToPresent();
 	m_keyboard.close(input);
 	input.clearExclusiveGamepadHostShortcut();
 	m_page = Page::Closed;
+	options = kOptions;
+	m_titleGlyphs.items[0] = kTitleText;
+	m_titleGlyphs.item_end = static_cast<i32>(m_titleGlyphs.items[0].size());
 	m_selected = 0;
 	resetPointerPress();
 	m_dirtyText = true;
@@ -832,28 +893,54 @@ void HostOverlayMenu::resetButtonRepeats() {
 }
 
 void HostOverlayMenu::changeSelected(VideoPresenter& presenter, i32 direction) {
-	if (kOptions[static_cast<size_t>(m_selected)].valueCount == 0) {
+	if (options[static_cast<size_t>(m_selected)].valueCount == 0) {
 		return;
 	}
-	const i32 valueCount = kOptions[static_cast<size_t>(m_selected)].valueCount;
-	const i32 current = optionIndex(m_showFps, presenter, m_selected);
+	const i32 valueCount = options[static_cast<size_t>(m_selected)].valueCount;
+	const i32 current = optionIndex(m_showFps, presenter, options[static_cast<size_t>(m_selected)].id);
 	const i32 next = (current + valueCount + direction) % valueCount;
-	setOptionIndex(m_showFps, presenter, m_selected, next);
+	setOptionIndex(m_showFps, presenter, options[static_cast<size_t>(m_selected)].id, next);
 	m_dirtyText = true;
 }
 
 HostMenuInput HostOverlayMenu::activateSelected(
 		LibretroInput& input,
-		VideoPresenter& presenter) {
-	switch (kOptions[static_cast<size_t>(m_selected)].id) {
+		VideoPresenter& presenter,
+		HostRewind& rewind) {
+	switch (options[static_cast<size_t>(m_selected)].id) {
+		case HostMenuOptionId::Rewind:
+			if (!rewind.available()) return HostMenuInput::Active;
+			m_page = Page::Rewind;
+			options = kRewindOptions;
+			m_selected = 0;
+			rewindOffsetTenths = -1;
+			rewindRangeTenths = -1;
+			m_dirtyText = true;
+			resetPointerPress();
+			return HostMenuInput::Active;
+		case HostMenuOptionId::Earlier: rewind.stepCheckpoint(-1); return HostMenuInput::Active;
+		case HostMenuOptionId::Later: rewind.stepCheckpoint(1); return HostMenuInput::Active;
+		case HostMenuOptionId::Pause: rewind.pauseSeek(); return HostMenuInput::Active;
+		case HostMenuOptionId::Resume: close(input, rewind); rewind.resumeHere(); return HostMenuInput::Inactive;
+		case HostMenuOptionId::Return: close(input, rewind); return HostMenuInput::Inactive;
+		case HostMenuOptionId::Back:
+			rewind.returnToPresent();
+			m_page = Page::Options;
+			options = kOptions;
+			m_selected = 0;
+			m_titleGlyphs.items[0] = kTitleText;
+			m_titleGlyphs.item_end = static_cast<i32>(m_titleGlyphs.items[0].size());
+			m_dirtyText = true;
+			resetPointerPress();
+			return HostMenuInput::Active;
 		case HostMenuOptionId::OnScreenKeyboard:
 			openKeyboard(input);
 			return HostMenuInput::Inactive;
 		case HostMenuOptionId::RebootCart:
-			close(input);
+			close(input, rewind);
 			return HostMenuInput::RebootCart;
 		case HostMenuOptionId::ExitGame:
-			close(input);
+			close(input, rewind);
 			return HostMenuInput::ExitGame;
 		default:
 			changeSelected(presenter, 1);
@@ -917,12 +1004,12 @@ void HostOverlayMenu::resetPointerPress() {
 }
 
 void HostOverlayMenu::rebuildText(VideoPresenter& presenter) {
-	for (i32 index = 0; index < kMenuOptionCount; index += 1) {
-		const HostMenuOptionDef& option = kOptions[static_cast<size_t>(index)];
+	for (i32 index = 0; index < static_cast<i32>(options.size()); index += 1) {
+		const HostMenuOptionDef& option = options[static_cast<size_t>(index)];
 		if (option.valueCount == 0) {
 			m_lineText[static_cast<size_t>(index)] = option.label;
 		} else {
-			m_lineText[static_cast<size_t>(index)] = std::string(option.label) + "  " + option.values[optionIndex(m_showFps, presenter, index)];
+			m_lineText[static_cast<size_t>(index)] = std::string(option.label) + "  " + option.values[optionIndex(m_showFps, presenter, option.id)];
 		}
 		GlyphRenderSubmission& items = m_optionGlyphs[static_cast<size_t>(index)];
 		items.items[0] = m_lineText[static_cast<size_t>(index)];

@@ -7,6 +7,7 @@ import { HostMenuInput, type HostOverlayMenu } from './host_overlay_menu';
 import { LogLevel, type LogOutput } from './log';
 import type { RenderPresentationState } from './presentation_state';
 import type { SystemOutputLog } from './system_output_log';
+import type { HostRewind } from './rewind';
 import {
 	IO_SYS_STATUS,
 	SYS_STATUS_SUPERVISOR_ACTIVE,
@@ -45,7 +46,7 @@ export class HostFrameSession {
 	private pauseReasons = 0;
 	private hostUfpsScaled: number;
 
-	public constructor(ufpsScaled: number, currentTimeMs: number) {
+	public constructor(ufpsScaled: number, currentTimeMs: number, public readonly rewind: HostRewind) {
 		this.hostUfpsScaled = ufpsScaled;
 		this.currentTimeMs = currentTimeMs;
 	}
@@ -160,7 +161,7 @@ export function executeHostMenuAction(
 		case HostMenuInput.Active:
 			return false;
 		case HostMenuInput.RebootCart:
-			rebootMachine(
+			void session.rewind.tasks.schedule(async () => rebootMachine(
 				session,
 				screen,
 				runtime,
@@ -169,7 +170,7 @@ export function executeHostMenuAction(
 				audioOutput,
 				systemOutput,
 				logOutput,
-			);
+			), error => logOutput.log(LogLevel.Error, error instanceof Error ? error.message : String(error)));
 			return true;
 		case HostMenuInput.ExitGame:
 			return true;
@@ -407,11 +408,12 @@ export function runHostFrame(
 		runtime,
 		screen,
 		hostOverlayMenu,
-		true,
+		session.rewind.tasks.ready && !session.rewind.active,
 		hostMenuInput,
 	);
+	session.rewind.service(true);
 	if (action === HostFrameAction.Execute) {
-		executeHostUpdate(
+		if (session.rewind.tasks.ready && !session.rewind.active) executeHostUpdate(
 			session,
 			runtime,
 			presenter,
@@ -422,6 +424,7 @@ export function runHostFrame(
 		);
 		action = HostFrameAction.PresentPending;
 	}
+	if (session.rewind.active || !session.rewind.tasks.ready) screen.requestHeldPresentation();
 	presentHostPresentation(
 		session,
 		runtime,
@@ -432,5 +435,6 @@ export function runHostFrame(
 		hostDeltaMs,
 	);
 	systemOutput.flush(runtime, logOutput);
+	if (runtime.history.checkpointPending && session.rewind.tasks.ready) session.rewind.service(true);
 	return HostFrameRunResult.Continue;
 }

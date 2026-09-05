@@ -211,8 +211,12 @@ t.assert(
 	cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_init_count')) === initCountBeforeBreakpoint,
 	'Hot Resume tooling task executed init before the next machine frame',
 );
-await t.frames(1);
+t.assert(runtime.history.checkpointCount === 0, 'Hot Resume kept checkpoints from the previous timeline');
+// A host callback may only synchronize the new timeline's initial checkpoint.
+// Guest init must still run through the frame scheduler and hit its exact breakpoint.
+for (let frame = 0; frame < 60 && !t.debuggerStopped(); frame += 1) await t.frames(1);
 t.assert(t.debuggerStopped(), 'no-op Hot Resume did not stop at the init print breakpoint');
+t.assert(runtime.history.checkpointCount === 1, 'new timeline did not capture before guest execution');
 t.assert(sourceState.currentBlua32Media === mediaBeforeNoOpRefresh, 'no-op Hot Resume rebuilt tooling media');
 t.assert(
 	runtime.machine.memory.cartridgeController.selectedSlot() === dataOnlySlot,
@@ -235,7 +239,7 @@ t.assert(
 	cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_init_count')) === initCountBeforeBreakpoint + 1,
 	'nested Hot Resume executed its init inside the tooling task',
 );
-await t.frames(1);
+for (let frame = 0; frame < 60 && !t.debuggerStopped(); frame += 1) await t.frames(1);
 t.assert(t.debuggerStopped(), 'fresh init consumed the relocated stopped frame suppression');
 t.assert(
 	cpu.getFrameDepth() > stoppedInitFrameDepth,

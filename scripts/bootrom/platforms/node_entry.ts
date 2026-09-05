@@ -1,3 +1,5 @@
+import { HostRewind } from '../../../hosts/common/rewind';
+import { RuntimeTaskQueue } from '../../../hosts/common/runtime_task_queue';
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
 
@@ -122,13 +124,15 @@ async function main(): Promise<void> {
 	);
 	const logOutput = new ConsoleLogOutput();
 	const systemOutput = new SystemOutputLog();
-	const session = new HostFrameSession(runtime.timing.ufpsScaled, clock.now());
+	const runtimeTasks = new RuntimeTaskQueue(audioOutput, runtime, presenter);
+	const presentation = new RenderPresentationState();
+	const rewind = new HostRewind(runtime, presenter, presentation, runtimeTasks, audioOutput, logOutput);
+	const session = new HostFrameSession(runtime.timing.ufpsScaled, clock.now(), rewind);
 	runtime.resetForSystemBoot();
 	runtime.boot();
 	systemOutput.flush(runtime, logOutput);
 	audioOutput.bootstrap();
-	const presentation = new RenderPresentationState();
-	const hostOverlayMenu = new HostOverlayMenu(presenter, runtime, input);
+	const hostOverlayMenu = new HostOverlayMenu(presenter, runtime, input, rewind);
 	runtime.frameScheduler.clearQueuedTime();
 	const frameLoop = frames.start((currentTime) => {
 		const result = runHostFrame(

@@ -1,3 +1,5 @@
+import { HostRewind } from '../../../hosts/common/rewind';
+import { RuntimeTaskQueue } from '../../../hosts/common/runtime_task_queue';
 import Module from 'node:module';
 import { readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
@@ -99,13 +101,15 @@ async function main(): Promise<void> {
 		runtime.timing.ufpsScaled,
 	);
 	const systemOutput = new SystemOutputLog();
-	const session = new HostFrameSession(runtime.timing.ufpsScaled, clock.now());
+	const runtimeTasks = new RuntimeTaskQueue(audioOutput, runtime, presenter);
+	const presentation = new RenderPresentationState();
+	const rewind = new HostRewind(runtime, presenter, presentation, runtimeTasks, audioOutput, logOutput);
+	const session = new HostFrameSession(runtime.timing.ufpsScaled, clock.now(), rewind);
 	runtime.resetForSystemBoot();
 	runtime.boot();
 	systemOutput.flush(runtime, logOutput);
 	audioOutput.bootstrap();
-	const presentation = new RenderPresentationState();
-	const hostOverlayMenu = new HostOverlayMenu(presenter, runtime, input);
+	const hostOverlayMenu = new HostOverlayMenu(presenter, runtime, input, rewind);
 	runtime.frameScheduler.clearQueuedTime();
 	let currentTimeMs = session.currentTimeMs;
 	const transcriptCount = (entry: string): number => {
@@ -117,7 +121,7 @@ async function main(): Promise<void> {
 		}
 		return count;
 	};
-	const runUntil = (entry: string, count: number): void => {
+	const runUntil = async (entry: string, count: number): Promise<void> => {
 		for (let frame = 0; frame < 240; frame += 1) {
 			if (transcriptCount(entry) >= count) {
 				return;
@@ -135,16 +139,17 @@ async function main(): Promise<void> {
 				hostOverlayMenu,
 				currentTimeMs,
 			);
+			await new Promise<void>(resolve => setImmediate(resolve));
 		}
 		throw new Error(`Guest did not publish ${entry} x${count}.`);
 	};
 
-	runUntil('READY', 1);
+	await runUntil('READY', 1);
 	await presenter.backend.captureGxGpuVramSnapshot(runtime.machine.gxGpu);
 	const saved = encodeRuntimeSaveState(captureRuntimeSaveState(runtime));
 	const mailboxControl = CART_MMIO_BASE + CARTRIDGE_MAILBOX_CONTROL_OFFSET;
 	runtime.machine.memory.writeMappedU32LE(mailboxControl, CARTRIDGE_MAILBOX_CONTROL_IRQ_TRIGGER);
-	runUntil('STEP1', 1);
+	await runUntil('STEP1', 1);
 	applyRuntimeSaveState(
 		runtime,
 		decodeRuntimeSaveState(
@@ -154,7 +159,7 @@ async function main(): Promise<void> {
 		),
 	);
 	runtime.machine.memory.writeMappedU32LE(mailboxControl, CARTRIDGE_MAILBOX_CONTROL_IRQ_TRIGGER);
-	runUntil('STEP1', 2);
+	await runUntil('STEP1', 2);
 
 	process.stdout.write(`BMSX-CARTRIDGE-CONFORMANCE=${transcript.join('|')}\n`);
 }

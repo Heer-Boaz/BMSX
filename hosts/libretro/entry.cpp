@@ -26,6 +26,7 @@
 #include "input.h"
 #include "libretro_state.h"
 #include "presentation_state.h"
+#include "rewind.h"
 #include "runtime_error.h"
 #include "video_output.h"
 #include "spec/bmsx/io.h"
@@ -105,6 +106,7 @@ static const bmsx::SoftwarePresentationTarget* g_software_target = nullptr;
 static std::unique_ptr<bmsx::LibretroContent> g_content;
 static std::optional<bmsx::HostOverlayMenu> g_overlay_menu;
 static std::optional<bmsx::RenderPresentationState> g_presentation;
+static std::optional<bmsx::HostRewind> g_rewind;
 static double g_frame_time_sec =
 	static_cast<double>(bmsx::HZ_SCALE)
 	/ static_cast<double>(bmsx::GX_GPU_PCRTC_RESET_REFRESH_UFPS_SCALED);
@@ -1107,6 +1109,7 @@ static void sync_runtime_timing(bmsx::Runtime& runtime) {
 }
 
 static void activate_runtime(bmsx::Runtime& runtime) {
+	g_rewind.emplace(runtime, *g_video_presenter, *g_presentation);
 	g_audio_output->resetPlayback();
 	g_presentation->reset(*g_video_presenter, runtime);
 	sync_runtime_timing(runtime);
@@ -1121,6 +1124,7 @@ static void unload_content() {
 		g_overlay_menu->resetInputState(*g_input);
 		g_presentation->clearPresentation();
 	}
+	g_rewind.reset();
 	g_content.reset();
 	g_runtime_ufps_scaled = 0;
 	if (wasLoaded) {
@@ -1632,6 +1636,7 @@ void retro_run(void) {
 			runtime,
 			*g_input,
 			*g_overlay_menu,
+			*g_rewind,
 			*g_presentation,
 			*g_video_presenter,
 			g_total_time,
@@ -1665,17 +1670,17 @@ void retro_run(void) {
 	}
 	bmsx::flushLibretroSystemOutput(runtime, logging);
 	sync_runtime_timing(runtime);
-	const bool systemAudioMuted = (
+	const bool audioMuted = g_rewind->active || (
 		runtime.machine.memory.readIoU32(bmsx::IO_SYS_STATUS)
 		& bmsx::SYS_STATUS_SUPERVISOR_ACTIVE
 	) != 0u;
-	const bool systemAudioMuteChanged = g_audio_output->setSystemMuted(
+	const bool audioMuteChanged = g_audio_output->setMuted(
 		runtime.machine.audioController,
-		systemAudioMuted
+		audioMuted
 	);
 	g_audio_output->collectFrame(runtime.machine.audioController);
-	if (systemAudioMuteChanged) {
-		g_set_audio_transport_suspended_cb(systemAudioMuted);
+	if (audioMuteChanged) {
+		g_set_audio_transport_suspended_cb(audioMuted);
 	}
 	const bool video_frame_presented =
 		frameResult == bmsx::LibretroFrameResult::Presented;

@@ -20,15 +20,16 @@ struct HistoryOptions {
 
 class RuntimeHistory {
 public:
-	RuntimeHistory(Runtime& runtime, InputControllerInputSource& liveInput) : input(*this, liveInput), m_runtime(runtime) {}
+	RuntimeHistory(Runtime& runtime, InputControllerInputSource& liveInput) : input(*this, liveInput), runtime(runtime) {}
 	HistoryMode mode = HistoryMode::Disabled;
 	bool checkpointPending = false;
 	InputJournal inputJournal;
 	HistoryInputSource input;
 	i64 targetCycles = 0;
-	size_t checkpointCount() const { return m_count; }
-	i64 earliestCycles() const { return m_count == 0 ? 0 : m_checkpoints[m_firstCheckpoint]->cycles; }
-	i64 latestCycles() const { return m_endCycles; }
+	size_t checkpointCount() const { return count; }
+	i64 checkpointCycles(size_t index) const { return checkpoints[(firstCheckpoint + index) % checkpoints.size()]->cycles; }
+	i64 earliestCycles() const { return count == 0 ? 0 : checkpoints[firstCheckpoint]->cycles; }
+	i64 latestCycles() const { return endCycles; }
 	bool executionPaused() const { return checkpointPending || mode == HistoryMode::Reviewing; }
 	void start(const HistoryOptions& options);
 	void stop();
@@ -45,15 +46,15 @@ private:
 		i64 inputSequence;
 		RuntimeSaveState state;
 	};
-	Runtime& m_runtime;
-	std::vector<std::optional<Checkpoint>> m_checkpoints;
-	size_t m_firstCheckpoint = 0;
-	size_t m_count = 0;
-	i64 m_intervalCycles = 0;
-	i64 m_nextCheckpointCycles = 0;
-	i64 m_latestCheckpointInputSequence = 0;
-	i64 m_endCycles = 0;
-	i64 m_targetTick = 0;
+	Runtime& runtime;
+	std::vector<std::optional<Checkpoint>> checkpoints;
+	size_t firstCheckpoint = 0;
+	size_t count = 0;
+	i64 intervalCycles = 0;
+	i64 nextCheckpointCycles = 0;
+	i64 latestCheckpointInputSequence = 0;
+	i64 endCycles = 0;
+	i64 targetTick = 0;
 };
 
 } // namespace bmsx

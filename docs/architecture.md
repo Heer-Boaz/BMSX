@@ -962,7 +962,13 @@ for exactly that item.
 `ide/workbench/state.ts` is the browser-workbench composition owner that wires
 the shared scenario services to `ScenarioRunService` and the editor. Runtime
 source, debugger and task modules stay below that composition and do not import
-workbench contributions.
+workbench contributions. The runtime-operation queue is a shared host service
+in `hosts/common/runtime_task_queue.ts`, injected by the product composition
+root into both the player rewind controller and the workbench. Its promise
+tail serializes GPU-synchronized checkpoint/restore work with tooling
+mutations. IDE features receive this dependency; they neither construct a
+second queue nor import the player composition. AEM save/apply uses the same
+queue after source persistence. Pure source editing does not end history.
 
 Every selected item receives an ordinary cold boot for isolation. After an
 item's final presentation opportunity, the next derived ROM may replace it
@@ -972,7 +978,7 @@ canonical ROM bytes and canonical BLua32 source map once, followed by the
 ordinary cold-boot lifecycle on the same `Runtime`. This is not save-state
 rollback: RAM, VRAM, device reset semantics, and cart-owned seed/setup remain
 exactly those of an ordinary reboot. Compile/install/next-item/restore
-transitions are serialized by the workbench runtime-task owner; a panel never
+transitions are serialized by the shared host runtime-task owner; a panel never
 mutates machine media directly.
 The split follows production emulator media ownership: openMSX replaces a
 cartridge through its slot manager while the inserted extension owns the
@@ -1594,8 +1600,25 @@ rather than host polls or guest worldticks. Seeking restores an earlier
 checkpoint and executes the existing scheduler with recorded input and
 explicit machine-cycle grants. Review preserves future history; live takeover
 branches. Hosts own GPU synchronization, cooperative scheduling and output
-delivery, not a parallel simulation. The shared core is disabled by default;
-host lifecycle/UI integration and checkpoint-storage performance remain gates.
+delivery, not a parallel simulation. TS player/Studio and libretro continuously
+record ordinary gameplay with the same two-slot policy: a checkpoint every six
+emulated seconds and 1,024 fixed-size ICU input records. The runtime starts
+collection only when its host has assumed GPU synchronization ownership.
+Scenario test sessions do not collect ordinary player history.
+
+The existing quick menu offers earlier/later checkpoints, resume here, return
+to latest and pause seek. Review preserves the recorded future; returning to
+latest rejoins it, whereas resume here branches. TS queues GPU captures/restores
+with IDE mutation jobs; native completes the corresponding jobs synchronously.
+Both hosts service bounded replay while continuing to process menu events,
+suppress intermediate audio/debug output, and replace the held presentation
+from restored VRAM. Checkpoint capture is submitted after the tick's ordinary
+presentation rather than one host callback later. No per-frame full snapshot,
+cartlib hook or shortcut is introduced.
+
+Snapshot count is bounded; variable CPU/string and cartridge-RAM sizes mean it
+is not a fixed-MiB arena. Physical SNES Mini memory/frame-time headroom and
+compression remain separate measured storage work.
 The contract, measurements and production references are in
 [rewind architecture](rewind_architecture.md). The initial control surface is
 the host/quickmenu; no shortcut is reserved.

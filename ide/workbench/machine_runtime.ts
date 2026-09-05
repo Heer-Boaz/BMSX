@@ -1,3 +1,4 @@
+import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import { createRuntimeSourceState } from '../runtime/sources';
 import type { RuntimeIdeState } from './state';
 import { loadRomToolingMedia } from '../../toolchain/ts/rompack/media';
@@ -22,6 +23,7 @@ export async function prepareWorkbenchRuntime(
 	display: EditorDisplay,
 	input: Input,
 	audioOutput: HostAudioOutput,
+	runtimeTasks: RuntimeTaskQueue,
 	storage: KeyValueStorage,
 	clock: HostClock,
 	clipboard: Clipboard,
@@ -44,6 +46,7 @@ export async function prepareWorkbenchRuntime(
 		display,
 		input,
 		audioOutput,
+		runtimeTasks,
 		storage,
 		clock,
 		clipboard,

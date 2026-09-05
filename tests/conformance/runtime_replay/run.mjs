@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -16,7 +16,7 @@ function run(command, args) {
 run('npm', ['run', 'build:toolchain:bios', '--', '--debug', '--force']);
 run('npm', ['run', 'build:toolchain:cart', '--', cart, '--debug', '--force']);
 run('cmake', ['-S', 'machine/cpp', '-B', 'build-cpp-tests', '-G', 'Ninja', '-DBMSX_BUILD_TESTS=ON', '-DCMAKE_BUILD_TYPE=Release']);
-run('cmake', ['--build', 'build-cpp-tests', '--target', 'bmsx_runtime_replay_conformance_runner', '--parallel', '4']);
+run('cmake', ['--build', 'build-cpp-tests', '--target', 'bmsx_runtime_replay_conformance_runner', 'bmsx_host_rewind_conformance_runner', '--parallel', '4']);
 const media = ['dist/bmsx-bios.debug.rom', `dist/${cart}.debug.rom`];
 const directory = mkdtempSync(join(tmpdir(), 'bmsx-runtime-replay-'));
 const tsPrefix = join(directory, 'ts');
@@ -25,6 +25,9 @@ try {
 	run('npx', ['tsx', '--tsconfig', 'tsconfig.base.json', 'tests/conformance/runtime_replay/ts_runner.ts', ...media, tsPrefix]);
 	run('build-cpp-tests/bmsx_runtime_replay_conformance_runner', [...media, cppPrefix]);
 	run('npx', ['tsx', '--tsconfig', 'tsconfig.base.json', 'tests/conformance/runtime_replay/compare.ts', tsPrefix, cppPrefix]);
+	run('npx', ['tsx', '--tsconfig', 'tsconfig.base.json', 'tests/conformance/runtime_replay/host_ts_runner.ts', ...media]);
+	copyFileSync(media[0], join(directory, 'bmsx-bios.rom'));
+	run('build-cpp-tests/bmsx_host_rewind_conformance_runner', [directory, media[1]]);
 } finally {
 	rmSync(directory, { recursive: true, force: true });
 }

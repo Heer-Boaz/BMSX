@@ -1,8 +1,9 @@
 # Generic machine history and rewind
 
-Status: deterministic save-state and the shared TS/C++ history core are
-implemented. Collection is disabled by default; no host rewind control has
-landed yet. Rewind is an emulator facility, not a Studio or cartlib service.
+Status: deterministic save-state, shared TS/C++ history and continuous host
+collection are implemented. TS player/Studio and libretro expose checkpoint
+navigation in the existing quick menu. Rewind is an emulator facility, not a
+Studio or cartlib service. Physical SNES Mini performance remains unmeasured.
 
 ## References and ownership
 
@@ -313,8 +314,9 @@ instruction stepping remain paused. `Complete` reports the machine endpoint,
 not completion of host delivery; pending GPU work must still finish before
 presentation or capture. `cancelSeek()` also enters review at the current
 execution boundary without deleting the recorded future. Only
-`resumeRecording()` truncates future events/checkpoints and requests a fresh
-synchronized checkpoint before new live input. It clears the partial replay
+`resumeRecording()` truncates future events/checkpoints. A branch requests a
+fresh synchronized checkpoint before new live input; rejoining the recorded
+end preserves its capture schedule. It clears the partial replay
 target and grants so normal scheduling does not inherit abandoned work.
 
 These operations require a suspended machine. Before any restore, the host
@@ -325,30 +327,23 @@ finish it before a subsequent restore or branch capture.
 Reboot, external full-runtime load and external `Runtime.callClosure` execution
 end history at their runtime owners. The explicit restore-origin enum keeps
 internal seeking distinct from external load without duplicating restore.
-Media replacement, debugger mutation and Hot Resume still need the host-owner
-integration below; direct machine mutation is not silently journalled.
+The host queue serializes media replacement, AEM application and Hot Resume
+with snapshots. Direct machine mutation is not silently journalled; callers
+must end the current history before an external write.
 
-### Remaining host and storage gate
+### Host delivery and remaining storage scope
 
-No player, Studio or libretro menu starts collection yet. Before enabling it:
+The host integration below implements GPU synchronization, serialized
+operations, cooperative seeking, restored presentation and audio/debug-output
+suppression. APU clocks, DSP, DMA and GPU work still execute normally. No
+silence insertion, prebuffering, guest-time compensation or guest GC is added.
 
-- Use the existing GPU backend's synchronous/asynchronous VRAM capture contract
-  while holding execution; serialize capture, cancellation, load and media
-  operations in the host that owns those asynchronous jobs.
-- Present restored VRAM and reset derived presentation history; discard
-  intermediate audio/debug delivery and clear abandoned transport backlog.
-  APU clocks, DSP, DMA and GPU work still execute normally. Do not insert
-  silence, prebuffer audio or compensate by advancing guest time.
-- Stop history **before** media replacement, Hot Resume or debugger writes.
-  A restored machine cannot use checkpoints from a different inserted image.
-- Establish a measured retention/capture budget for the real host. The current
-  CPU graph is now stored directly in retained word arenas, and the input
-  journal is retained. Other device/string snapshots and capture scratch still
-  allocate. A bounded count is not a fixed byte arena or a zero-GC capture
-  path. Improve those storage owners rather than masking pauses with skipped
-  guest work, per-frame snapshots or UI-only rewind state.
-- Implement the host/quickmenu control surface and prove responsiveness and
-  output recovery in actual TS and libretro hosts. No shortcut is assigned.
+The common host policy is bounded by snapshot count and input-record count,
+not by a hard byte arena. CPU graph/string size, cartridge RAM and capture
+scratch still affect memory and latency. Compression and a fixed-byte arena
+are separate storage work, not prerequisites hidden behind a compatibility
+reader or dropped emulated work. ARM/QEMU proof below is functional evidence;
+it is not a measurement of total RSS or real-time headroom on physical hardware.
 
 ## Validation record: REWIND-STATE-01
 
@@ -590,4 +585,138 @@ the full real-ROM replay and post-branch cross-core comparison passed.
 Machine/toolchain/IDE/TS host typechecks, the ES2020 Browser Studio build and
 the actual native libretro product build passed. Core-parity (including the
 qualified-owner regression), architecture-boundary and indentation audits plus
-`git diff --check` passed. Host collection remains disabled by default.
+`git diff --check` passed. At this storage-prerequisite stage, host collection
+was still disabled; the host integration below supersedes that status.
+
+## Host integration contract (REWIND-HOST-01)
+
+Collection is continuous during ordinary gameplay, from boot, not enabled by
+opening the rewind menu. Reboot, external load and tooling mutations establish
+a new timeline. Scenario execution is an external test session, not ordinary
+player history. The quick menu owns navigation; no rewind shortcut is assigned.
+
+Production references checked before the host diff:
+
+- [DuckStation System](https://github.com/stenzek/duckstation/blob/master/src/core/system.cpp):
+  `AllocateMemoryStates`, `UpdateMemorySaveStateSettings`, `SetRewindState`,
+  `DoRewind`; retained slots, explicit capture frequency, message pumping while
+  reviewing, and restoration separate from ordinary paced execution.
+- [openMSX ReverseManager](https://github.com/openMSX/openMSX/blob/master/src/ReverseManager.cc):
+  sparse checkpoints plus event replay and a retained future until live takeover.
+  This is a host timeline reference, not an MSX hardware model for BMSX.
+- [RetroArch state manager](https://github.com/libretro/RetroArch/blob/master/state_manager.c):
+  bounded retention and frontend ownership. BMSX's input replay remains inside
+  the shared runtime; frontend serialize/unserialize is still an external load.
+
+### Representation and callsite table, before the mirrored host diff
+
+| State | TypeScript | C++ | Owner / active callsites |
+| --- | --- | --- | --- |
+| Checkpoint, input and cycle coordinates | Existing `RuntimeHistory`, integer `number` | Existing `RuntimeHistory`, `i64` | `captureCheckpoint`, `beginSeek`, `advanceSeek`, `resumeRecording`; no new guest state format |
+| Pending user seek / branch / return | Host enum and cycle coordinate | Host enum and `i64` | Host rewind controller, quick-menu actions; never ICU actions |
+| Exclusive asynchronous machine operations | Shared host `RuntimeTaskQueue` | Synchronous `retro_run`/load boundary | TS player/Workbench frame, checkpoint capture and existing IDE mutation tasks share one queue; no concurrent WebGPU snapshot and Hot Resume |
+| Replay work budget | 16,384-cycle grants, bounded host work time | Same grants and host work limit | Host rewind service; backend drain/readback service between grants, return to host event loop |
+| Audio delivery | Existing output ring/resampler plus rewind mute reason | Existing output ring/resampler plus rewind mute reason | Host audio owner; discard replay output, reset transport at transitions, execute APU normally |
+| Restored image | Explicit committed presentation request | Same presentation request | Presentation owner overwrites held-frame texture from restored VRAM; backend replacement serial already invalidates interlace fields |
+
+Initial retention policy deliberately uses the already measured reusable raw
+slots, as DuckStation does, rather than silently enabling the failed historical
+compressor. All hosts, including SNES Mini:
+two checkpoints, six emulated seconds apart. The journal uses 1,024 fixed input records
+(180,224 bytes). Nominal retained time after warmup is 6–12 emulated seconds; unusual PCRTC timings can exhaust the input ring earlier.
+The actual retained endpoints, not these nominal durations, drive the menu.
+
+This is a bounded **slot policy**, not a hard byte arena: CPU graph/string size
+and cartridge RAM determine snapshot size. The measured four-slot Nemesis case
+is about 44 MiB, excluding the live runtime, renderer and transient capture
+scratch. The common policy halves that measured number of resident checkpoints and
+trades that for longer replay. ARM build/functional evidence is not proof of
+real SNES Mini frame-time or total-RSS headroom. Compression and a hard byte
+arena require their own measured storage representation; neither a misleading
+fixed-MiB label nor corrupt-data compatibility is introduced to claim that gate.
+
+The initial quick-menu navigation selects retained checkpoints, not arbitrary
+frames. Input replay is still needed for returning to the latest retained
+boundary without throwing away the recorded future. There is no per-frame
+state capture and no mandatory frame-accurate timeline editor.
+
+Returning to the recorded end rejoins recording without allocating another
+checkpoint slot just for looking at history. An actual branch still requires
+an immediate synchronized checkpoint; a due timer or full newest-checkpoint
+input interval also still requests capture on rejoin. This follows the
+openMSX distinction between replay completion and discarding recorded future.
+TS/C++ `resumeRecording` recompute that same request at the runtime owner.
+
+The new host rewind class deliberately uses matching command, property and
+method names in TS/C++, including `request`, `requestedCycles`, `resumeAtTarget`,
+`stepCheckpoint`, `capture`, `restore` and `service`. The method-parity audit
+checks the shared public commands. TS queues `capture`/`restore` because WebGPU
+returns a Promise; native invokes the corresponding operations synchronously.
+
+Capture requests raised by a completed machine tick are serviced after that
+frame's presentation, rather than waiting for the next host callback to submit
+the snapshot. This avoids discarding an extra host frame at every checkpoint.
+The frame entry still services initial capture, navigation and bounded replay;
+the end-of-frame call only services a pending recording checkpoint. TS holds
+execution until its queued GPU capture finishes; native completes it inline.
+
+Names in the new history/rewind owners use ordinary `camelCase` in both
+languages. C++ member prefixes are not copied into TypeScript; existing owners
+outside this slice are not subject to a repository-wide naming migration.
+
+The SNES Mini cross-build exposed that its supported GCC 10 library does not
+provide `std::bit_cast`. `CpuSnapshot.setNumber`/`number` keep the same two raw
+32-bit words as TS's retained `DataView`; native uses fixed-size `std::memcpy`
+for the floating-point bit transfer, as the existing native value and endian
+owners do. These calls occur during CPU checkpoint capture/restore, not guest
+instruction execution. No alternate snapshot format or toolchain fallback is
+introduced.
+
+## Validation record: REWIND-HOST-01
+
+- `npm run test:runtime-replay` retains the full real-ROM state/history
+  cross-core comparison and now also runs the actual common TS host loop and
+  native libretro entrypoints. The host tests run 1,100 ordinary callbacks
+  before opening the menu, then restore checkpoints, hold machine time, suppress
+  replay audio, return to latest and resume from the past. Native additionally
+  restores an external serialized state and checks the new timeline and reboot.
+  The TS test holds a submitted backend capture while a tooling mutation and
+  cancellation arrive; the mutation cannot run against the in-flight capture.
+- `tests/conformance/runtime_replay/browser.mjs` bundles the same host owners
+  against the actual browser backend. Chrome 153 / software Vulkan passed
+  continuous collection, menu navigation, return/branch and an exact comparison
+  of all 2,097,152 restored VRAM bytes. WebGPU is asserted, not replaced by the
+  browser's WebGL fallback. The fault-gated canvas screenshot was inspected.
+  Invocation (Playwright installed as a separate host test tool):
+
+  ```sh
+  BMSX_PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs node \
+    tests/conformance/runtime_replay/browser.mjs \
+    dist/bmsx-bios.debug.rom dist/nemesis_s.debug.rom /tmp/rewind.png
+  ```
+
+  Headless Vulkan flags follow [Chrome's testing guidance](https://developer.chrome.com/blog/supercharge-web-ai-testing).
+  Merely detecting a WebGPU adapter was insufficient with an incompatible
+  headless swapchain configuration; no application fallback was added.
+- `npm run build:platform:libretro-snesmini` passed the pinned ARM cross-build,
+  imported-target-rootfs ABI audit and QEMU product smoke. The additional
+  `bmsx_host_rewind_conformance_runner` CMake target was cross-built with the
+  same SNES Mini toolchain, static compiler-runtime linkage and controller
+  layout, passed `check_abi.py`, then passed the full actual BIOS/Nemesis host
+  test under `qemu-arm-static -L .snesmini/rootfs`. This does not prove physical
+  Mini rendering, audio-driver latency or memory/frame-time headroom.
+- Quick-menu headless pixel assertions pass. The real Hot Resume IDE harness
+  passes 91 assertions, including a new timeline before scheduler-owned init;
+  it waits for the breakpoint rather than assuming an asynchronous capture
+  finishes within one host callback. Scenario Lab passes 124 assertions with
+  `--ttl 300`; the same longer test also passes on the unchanged baseline.
+- 847 Lua tests pass, one is skipped; native CTest passes 26/26. Cartridge
+  conformance and the ScenarioRunService test pass. Machine, IDE, browser and
+  Node project typechecks plus Browser Studio/player and native libretro builds
+  pass. Broad scripts/tests typechecks are not clean: an untouched model
+  resource lacks `datatype`, and legacy test typing errors remain. A detached
+  `4bd331800` worktree reproduces these; this slice adds no test type errors.
+
+No frame-time or fixed-MiB guarantee is inferred from these functional tests.
+Core method-parity, strict architecture-boundary and indentation audits pass;
+the final patch also passes `git diff --check`.

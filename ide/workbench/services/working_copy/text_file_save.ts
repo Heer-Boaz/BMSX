@@ -1,5 +1,6 @@
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import type { HostClock } from '../../../../hosts/common/clock';
+import type { RuntimeTaskQueue } from '../../../../hosts/common/runtime_task_queue';
 import type { CartEditor } from '../../../cart_editor';
 import * as constants from '../../../common/constants';
 import { showEditorMessage, showEditorWarningBanner } from '../../../common/feedback_state';
@@ -29,6 +30,7 @@ export async function saveTextFileWorkingCopy(
 	sources: RuntimeSourceState,
 	luaTooling: RuntimeLuaTooling,
 	runtime: Runtime,
+	runtimeTasks: RuntimeTaskQueue,
 ): Promise<void> {
 	const snapshot = model.createSnapshot();
 	const source = snapshot.source;
@@ -81,7 +83,7 @@ export async function saveTextFileWorkingCopy(
 				}
 				return;
 			case 'aem':
-				try {
+				await runtimeTasks.schedule(() => {
 					applyAemSourceToRuntime(
 						sources,
 						luaTooling,
@@ -96,13 +98,13 @@ export async function saveTextFileWorkingCopy(
 						null,
 					);
 					showEditorMessage(`${title} saved`, constants.COLOR_STATUS_SUCCESS, 2.5);
-				} catch (applyError) {
+				}, applyError => {
 					const applyMessage = extractErrorMessage(applyError);
 					model.markApplied(previousAppliedVersion);
 					model.setRuntimeSyncState('diverged', applyMessage);
 					showEditorMessage(`${title} saved, but runtime apply failed`, constants.COLOR_STATUS_WARNING, 4.0);
 					showEditorWarningBanner(`Saved, but runtime apply failed: ${applyMessage}`, 5.0);
-				}
+				});
 				return;
 		}
 	} catch (error) {

@@ -95,7 +95,7 @@ export class SystemDebugTransmit {
 		return false;
 	}
 
-	private clearOutput(): void {
+	public clearOutput(): void {
 		this.outputReadIndex = 0;
 		this.outputByteCount = 0;
 		this.completeByteCount = 0;

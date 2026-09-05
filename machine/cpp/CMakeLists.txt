@@ -439,6 +439,7 @@ set(BMSX_LIBRETRO_CORE_SOURCES
 	${BMSX_LIBRETRO_DIR}/mem_snapshot.cpp
 	${BMSX_LIBRETRO_DIR}/presentation_state.cpp
 	${BMSX_LIBRETRO_DIR}/runtime_error.cpp
+	${BMSX_LIBRETRO_DIR}/rewind.cpp
 	${BMSX_LIBRETRO_DIR}/host_shortcuts.c
 	${BMSX_LIBRETRO_DIR}/video_output.cpp
 )
@@ -762,6 +763,18 @@ if(BMSX_BUILD_TESTS)
 	)
 	target_link_libraries(bmsx_runtime_replay_conformance_runner PRIVATE bmsx_host_support bmsx_rom_image)
 	target_include_directories(bmsx_runtime_replay_conformance_runner PRIVATE ${BMSX_LIBRETRO_DIR})
+
+	add_executable(bmsx_host_rewind_conformance_runner
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/host_rewind_conformance_runner.cpp
+		${BMSX_LIBRETRO_DIR}/entry.cpp
+		${BMSX_LIBRETRO_CORE_SOURCES}
+	)
+	target_link_libraries(bmsx_host_rewind_conformance_runner PRIVATE bmsx_host_support bmsx_blua32_tooling)
+	target_include_directories(bmsx_host_rewind_conformance_runner PRIVATE ${BMSX_LIBRETRO_DIR})
+	if(BMSX_SNESMINI_TARGET)
+		target_compile_definitions(bmsx_host_rewind_conformance_runner PRIVATE BMSX_LIBRETRO_SNESMINI_LAYOUT=1)
+		target_link_options(bmsx_host_rewind_conformance_runner PRIVATE -static-libstdc++ -static-libgcc)
+	endif()
 
 	if(BMSX_ENABLE_GLES2)
 		add_executable(bmsx_libretro_hw_context_tests

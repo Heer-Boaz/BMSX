@@ -15,6 +15,8 @@ import {
 	HOST_ON_SCREEN_KEYBOARD_BUTTON,
 } from './input/shortcuts';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
+import { HistoryMode } from '../../machine/ts/machine/runtime/history/history';
+import type { HostRewind } from './rewind';
 import type { DeviceQuantizeMode } from '../../machine/ts/render/post/device_quantize/mode';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import type { HostMenuFrame } from '../../machine/ts/render/host_overlay/overlay_queue';
@@ -85,7 +87,20 @@ type HostMenuBackOption = {
 	readonly label: string;
 };
 
+type HostMenuRewindOption = {
+	readonly kind: 'rewind';
+	readonly label: string;
+};
+
+type HostMenuRewindCommandOption = {
+	readonly kind: 'rewind-command';
+	readonly label: string;
+	readonly command: 'earlier' | 'later' | 'resume' | 'return' | 'pause';
+};
+
 type HostMenuOption =
+	| HostMenuRewindOption
+	| HostMenuRewindCommandOption
 	| HostMenuValueOption
 	| HostMenuGamepadOption
 	| HostMenuRemapGamepadOption
@@ -189,6 +204,7 @@ const enum HostOverlayPage {
 	Options,
 	GamepadRemap,
 	Keyboard,
+	Rewind,
 }
 
 function boolIndex(value: boolean): number {
@@ -484,6 +500,7 @@ export class HostOverlayMenu {
 		{ kind: 'gamepad', label: 'PLAYER 3 CONTROLS', playerIndex: 3 },
 		{ kind: 'gamepad', label: 'PLAYER 4 CONTROLS', playerIndex: 4 },
 		{ kind: 'keyboard', label: 'ON-SCREEN KEYBOARD' },
+		{ kind: 'rewind', label: 'REWIND' },
 		{
 			kind: 'action',
 			label: 'REBOOT CART',
@@ -500,12 +517,24 @@ export class HostOverlayMenu {
 		label: 'GAMEPAD',
 	};
 	private readonly remapOptions: readonly HostMenuOption[];
+	private readonly rewindOptions: readonly HostMenuOption[] = [
+		{ kind: 'rewind-command', label: 'EARLIER CHECKPOINT', command: 'earlier' },
+		{ kind: 'rewind-command', label: 'LATER CHECKPOINT', command: 'later' },
+		{ kind: 'rewind-command', label: 'RESUME HERE', command: 'resume' },
+		{ kind: 'rewind-command', label: 'RETURN TO LATEST', command: 'return' },
+		{ kind: 'rewind-command', label: 'PAUSE SEEK', command: 'pause' },
+		{ kind: 'back', label: 'BACK' },
+	];
 	private options: readonly HostMenuOption[];
+	private rewindOffsetTenths = -1;
+	private rewindRangeTenths = -1;
+	private rewindTitleState = '';
 
 	public constructor(
 		presenter: VideoPresenter,
 		private readonly runtime: Runtime,
 		private readonly input: Input,
+		private readonly rewind: HostRewind,
 	) {
 		this.presenter = presenter;
 		this.keyboard = new HostOnScreenKeyboard(presenter, input);
@@ -584,7 +613,8 @@ export class HostOverlayMenu {
 		}
 		const pointerActivated = this.tickPointerInput();
 		if ((readButtonState(this.input, BUTTON_B) & HostButtonState.JustPressed) !== 0) {
-			if (this.page === HostOverlayPage.GamepadRemap) {
+			if (this.page === HostOverlayPage.GamepadRemap || this.page === HostOverlayPage.Rewind) {
+				if (this.page === HostOverlayPage.Rewind) this.rewind.returnToPresent();
 				this.openOptions();
 				consumeButtons(this.input, MENU_NAV_BUTTONS);
 				return HostMenuInput.Active;
@@ -643,6 +673,20 @@ export class HostOverlayMenu {
 			return;
 		}
 		this.clearRenderCommands();
+		if (this.page === HostOverlayPage.Rewind) {
+			const history = this.runtime.history;
+			const offset = Math.trunc((history.latestCycles - this.rewind.positionCycles) * 10 / this.runtime.timing.cpuHz);
+			const range = Math.trunc((history.latestCycles - history.earliestCycles) * 10 / this.runtime.timing.cpuHz);
+			const state = this.rewind.stopped ? 'STOPPED' : history.mode === HistoryMode.Replaying ? 'SEEKING' : 'REWIND';
+			if (offset !== this.rewindOffsetTenths || range !== this.rewindRangeTenths || state !== this.rewindTitleState) {
+				this.rewindOffsetTenths = offset;
+				this.rewindRangeTenths = range;
+				this.rewindTitleState = state;
+				const title = `${state} ${(offset / 10).toFixed(1)}S AGO / ${(range / 10).toFixed(1)}S`;
+				this.titleGlyphs.items = title;
+				this.titleGlyphs.item_end = title.length;
+			}
+		}
 		if (this.dirtyText) {
 			this.rebuildText();
 		}
@@ -789,6 +833,8 @@ export class HostOverlayMenu {
 		const option = this.options[this.selected];
 		switch (option.kind) {
 			case 'action':
+			case 'rewind':
+			case 'rewind-command':
 			case 'keyboard':
 			case 'reset-remap':
 			case 'back':
@@ -835,6 +881,28 @@ export class HostOverlayMenu {
 
 	private activateSelected(): HostMenuInput {
 		const option = this.options[this.selected];
+		if (option.kind === 'rewind') {
+			if (!this.rewind.available) return HostMenuInput.Active;
+			this.rootSelection = this.selected;
+			this.page = HostOverlayPage.Rewind;
+			this.options = this.rewindOptions;
+			this.selected = 0;
+			this.rewindOffsetTenths = -1;
+			this.rewindRangeTenths = -1;
+			this.resetPointerPress();
+			this.dirtyText = true;
+			return HostMenuInput.Active;
+		}
+		if (option.kind === 'rewind-command') {
+			switch (option.command) {
+				case 'earlier': this.rewind.stepCheckpoint(-1); break;
+				case 'later': this.rewind.stepCheckpoint(1); break;
+				case 'pause': this.rewind.pauseSeek(); break;
+				case 'resume': this.close(); this.rewind.resumeHere(); return HostMenuInput.Inactive;
+				case 'return': this.close(); return HostMenuInput.Inactive;
+			}
+			return HostMenuInput.Active;
+		}
 		if (option.kind === 'keyboard') {
 			this.openKeyboard();
 			return HostMenuInput.Inactive;
@@ -844,6 +912,7 @@ export class HostOverlayMenu {
 			return option.action;
 		}
 		if (option.kind === 'back') {
+			if (this.page === HostOverlayPage.Rewind) this.rewind.returnToPresent();
 			this.openOptions();
 			return HostMenuInput.Active;
 		}
@@ -886,6 +955,7 @@ export class HostOverlayMenu {
 	}
 
 	private close(): void {
+		this.rewind.returnToPresent();
 		this.keyboard.close();
 		this.input.getGlobalShortcutRegistry().setExclusiveGamepadControlShortcut(null);
 		resetControlButtonRepeats(this.input);
@@ -917,6 +987,8 @@ export class HostOverlayMenu {
 			let line: string;
 			switch (option.kind) {
 				case 'action':
+				case 'rewind':
+				case 'rewind-command':
 				case 'keyboard':
 				case 'reset-remap':
 				case 'back':

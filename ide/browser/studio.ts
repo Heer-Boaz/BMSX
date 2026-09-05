@@ -1,3 +1,5 @@
+import { HostRewind } from '../../hosts/common/rewind';
+import { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import {
 	completeBrowserBoot,
 	prepareBrowserStartup,
@@ -52,9 +54,13 @@ async function startBrowserStudio(): Promise<void> {
 			runtime.timing.ufpsScaled,
 		);
 		const systemOutput = new SystemOutputLog();
+		const runtimeTasks = new RuntimeTaskQueue(audioOutput, runtime, presenter);
+		const presentation = new RenderPresentationState();
+		const rewind = new HostRewind(runtime, presenter, presentation, runtimeTasks, audioOutput, options.logOutput);
 		const session = new HostFrameSession(
 			runtime.timing.ufpsScaled,
 			options.clock.now(),
+			rewind,
 		);
 		const ide = await prepareWorkbenchRuntime(
 			options.systemRom,
@@ -64,6 +70,7 @@ async function startBrowserStudio(): Promise<void> {
 			options.videoOutput,
 			options.input,
 			audioOutput,
+			runtimeTasks,
 			window.localStorage,
 			options.clock,
 			new BrowserClipboard(),
@@ -89,11 +96,11 @@ async function startBrowserStudio(): Promise<void> {
 		window.addEventListener('pagehide', () => {
 			persistWorkspaceSessionLocally();
 		});
-		const presentation = new RenderPresentationState();
 		const hostOverlayMenu = new HostOverlayMenu(
 			presenter,
 			runtime,
 			options.input,
+			rewind,
 		);
 		runtime.frameScheduler.clearQueuedTime();
 		const frameLoop = options.frames.start((currentTime) => {

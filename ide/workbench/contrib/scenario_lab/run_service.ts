@@ -16,7 +16,7 @@ import {
 	type Blua32SourceMedia,
 	type RuntimeSourceState,
 } from '../../../runtime/sources';
-import type { RuntimeTaskQueue } from '../../../runtime/task_queue';
+import type { RuntimeTaskQueue } from '../../../../hosts/common/runtime_task_queue';
 import {
 	clearFaultSnapshot,
 	type RuntimeFaultState,

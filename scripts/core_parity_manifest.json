@@ -2236,6 +2236,23 @@
 			],
 			"reason": "runtime_lifecycle_and_external_closure_method_contract",
 			"compare_public": true
+		},
+		{
+			"ts": "hosts/common/rewind.ts",
+			"cpp": [
+				"hosts/libretro/rewind.h",
+				"hosts/libretro/rewind.cpp"
+			],
+			"cpp_class": "HostRewind",
+			"methods": [
+				"stepCheckpoint",
+				"seekTo",
+				"returnToPresent",
+				"resumeHere",
+				"pauseSeek",
+				"service"
+			],
+			"reason": "shared_host_rewind_commands_and_bounded_replay_contract"
 		}
 	]
 }

@@ -1,3 +1,5 @@
+import { HeadlessVideoOutput } from '../../hosts/node/headless/video_output';
+import { HeadlessGPUBackend } from '../../machine/ts/render/headless/backend';
 import assert from 'node:assert/strict';
 import { mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -5,17 +7,16 @@ import { test } from 'node:test';
 
 import { HostAudioOutput } from '../../hosts/common/audio_output';
 import { Input } from '../../hosts/common/input/manager';
-import { initializeMachineRuntime } from '../../hosts/common/machine_runtime';
+import { initializeMachineRuntime, initializeMachineVideoPresenter } from '../../hosts/common/machine_runtime';
 import { DiscardingAudioSink } from '../../hosts/node/common/discarding_audio';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { HeadlessInputHub } from '../../hosts/node/headless/input';
-import { IdeMicrotaskQueue } from '../../ide/common/microtask_queue';
 import { createRuntimeDebuggerState } from '../../ide/runtime/debugger_state';
 import { createRuntimeFaultState } from '../../ide/runtime/fault_state';
 import { RuntimeLuaTooling } from '../../ide/runtime/lua_tooling';
 import { createRuntimeSourceState } from '../../ide/runtime/sources';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
-import { RuntimeTaskQueue } from '../../ide/runtime/task_queue';
+import { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import { MemoryStorage } from '../../ide/testing/memory_storage';
 import { ScenarioRunService } from '../../ide/workbench/contrib/scenario_lab/run_service';
 import { ScenarioTestCollection } from '../../ide/testing/scenario/test_collection';
@@ -95,8 +96,9 @@ test('browser scenario media session installs derived execution media and restor
 			new SuspendedGuestSession(runtime),
 		);
 		const debuggerState = createRuntimeDebuggerState(runtime, sources);
-		const microtasks = new IdeMicrotaskQueue();
-		const runtimeTasks = new RuntimeTaskQueue(microtasks, audioOutput);
+		const presenter = initializeMachineVideoPresenter(runtime, new HeadlessVideoOutput(256, 212),
+			new HeadlessGPUBackend(256, 212, PSX_MACHINE_SPEC.gxGpuVramBytes));
+		const runtimeTasks = new RuntimeTaskQueue(audioOutput, runtime, presenter);
 		const runService = new ScenarioRunService(
 			runtime,
 			sources,
@@ -136,7 +138,6 @@ test('browser scenario media session installs derived execution media and restor
 			}],
 			[],
 		);
-		microtasks.flush();
 		await started;
 
 		assert.deepEqual(errors, []);
@@ -164,7 +165,6 @@ test('browser scenario media session installs derived execution media and restor
 		assert.equal(runService.results.runs[0].state, 'cancelled');
 		assert.equal(runService.results.runs[0].items[0].state, 'cancelled');
 		const drained = runtimeTasks.schedule(() => {}, error => errors.push(error));
-		microtasks.flush();
 		await drained;
 
 		assert.deepEqual(errors, []);

@@ -22,6 +22,7 @@ const MUTE_REASON_UI = 0x02;
 const MUTE_REASON_DEBUGGER = 0x04;
 const MUTE_REASON_RUNTIME_TASK = 0x08;
 const MUTE_REASON_SYSTEM = 0x10;
+const MUTE_REASON_REWIND = 0x20;
 
 export class HostAudioOutput {
 	private muteReasons = 0;
@@ -91,6 +92,10 @@ export class HostAudioOutput {
 
 	public muteSystem(muted: boolean): void {
 		this.setMuteReason(MUTE_REASON_SYSTEM, muted);
+	}
+
+	public muteRewind(muted: boolean): void {
+		this.setMuteReason(MUTE_REASON_REWIND, muted);
 	}
 
 	private setMuteReason(reason: number, muted: boolean): void {

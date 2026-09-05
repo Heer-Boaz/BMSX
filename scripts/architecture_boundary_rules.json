@@ -39,6 +39,7 @@
 		{ "name": "ts-core", "paths": ["machine/ts/core/**"] },
 		{ "name": "ts-studio-composition", "paths": ["ide/browser/**", "ide/workbench/machine_runtime.ts", "ide/workbench/host_frame.ts"] },
 		{ "name": "ts-ide", "paths": ["ide/**"] },
+		{ "name": "ts-host-tasks", "paths": ["hosts/common/runtime_task_queue.ts"] },
 		{ "name": "ts-host-audio", "paths": ["hosts/common/audio_output.ts"] },
 		{ "name": "ts-frontend-input", "paths": ["hosts/common/input/**"] },
 		{ "name": "ts-host-contracts", "paths": ["hosts/common/clock.ts", "hosts/common/frame_loop.ts", "hosts/common/log.ts"] },
@@ -72,17 +73,17 @@
 	"rules": [
 		{
 			"from": "ts-machine-spec",
-			"deny": ["ts-suspended-guest", "ts-gx-machine", "ts-machine", "ts-blua-toolchain", "ts-rompack-toolchain", "ts-rompack", "ts-runtime-api", "ts-core", "ts-studio-composition", "ts-ide", "ts-host-contracts", "ts-host-common", "ts-browser-host", "ts-node-launch", "ts-node-player-entry", "ts-node-tooling", "ts-node-host", "ts-product-build", "ts-rompacker-tool", "ts-script-lib", "ts-render", "ts-frontend-input", "ts-audio", "ts-host-audio"],
+			"deny": ["ts-suspended-guest", "ts-gx-machine", "ts-machine", "ts-blua-toolchain", "ts-rompack-toolchain", "ts-rompack", "ts-runtime-api", "ts-core", "ts-studio-composition", "ts-ide", "ts-host-contracts", "ts-host-common", "ts-host-tasks", "ts-browser-host", "ts-node-launch", "ts-node-player-entry", "ts-node-tooling", "ts-node-host", "ts-product-build", "ts-rompacker-tool", "ts-script-lib", "ts-render", "ts-frontend-input", "ts-audio", "ts-host-audio"],
 			"reason": "TS machine specification files are dependency leaves shared by producers and consumers; they must not import emulator, compiler, tooling, host, IDE, or product implementation."
 		},
 		{
 			"from": "ts-suspended-guest",
-			"deny": ["ts-core", "ts-ide", "ts-studio-composition", "ts-host-contracts", "ts-host-common", "ts-browser-host", "ts-node-launch", "ts-node-player-entry", "ts-node-tooling", "ts-node-host", "ts-product-build", "ts-blua-toolchain", "ts-rompack-toolchain", "ts-rompacker-tool", "ts-script-lib", "ts-render", "ts-frontend-input", "ts-audio", "ts-host-audio"],
+			"deny": ["ts-core", "ts-ide", "ts-studio-composition", "ts-host-contracts", "ts-host-common", "ts-host-tasks", "ts-browser-host", "ts-node-launch", "ts-node-player-entry", "ts-node-tooling", "ts-node-host", "ts-product-build", "ts-blua-toolchain", "ts-rompack-toolchain", "ts-rompacker-tool", "ts-script-lib", "ts-render", "ts-frontend-input", "ts-audio", "ts-host-audio"],
 			"reason": "Suspended guest inspection may consume machine state but must not depend on other IDE, compiler, product, host, or backend implementation."
 		},
 		{
 			"from": "ts-gx-machine",
-			"deny": ["ts-suspended-guest", "ts-core", "ts-ide", "ts-host-contracts", "ts-host-common", "ts-blua-toolchain", "ts-rompack-toolchain", "ts-render", "ts-gx-webgl-render", "ts-software-render", "ts-frontend-input", "ts-audio", "ts-host-audio"],
+			"deny": ["ts-suspended-guest", "ts-core", "ts-ide", "ts-host-contracts", "ts-host-common", "ts-host-tasks", "ts-blua-toolchain", "ts-rompack-toolchain", "ts-render", "ts-gx-webgl-render", "ts-software-render", "ts-frontend-input", "ts-audio", "ts-host-audio"],
 			"reason": "TS GX machine code must emit the GPU command contract, not depend on render backends."
 		},
 		{
@@ -97,38 +98,43 @@
 		},
 		{
 			"from": "ts-machine",
-			"deny": ["ts-suspended-guest", "ts-core", "ts-ide", "ts-host-contracts", "ts-host-common", "ts-blua-toolchain", "ts-rompack-toolchain", "ts-render", "ts-gx-webgl-render", "ts-software-render", "ts-frontend-input", "ts-audio", "ts-host-audio"],
+			"deny": ["ts-suspended-guest", "ts-core", "ts-ide", "ts-host-contracts", "ts-host-common", "ts-host-tasks", "ts-blua-toolchain", "ts-rompack-toolchain", "ts-render", "ts-gx-webgl-render", "ts-software-render", "ts-frontend-input", "ts-audio", "ts-host-audio"],
 			"reason": "TS machine code must stay below host, IDE, render, input, audio, and language layers."
 		},
 		{
 			"from": "ts-blua-toolchain",
-			"deny": ["ts-suspended-guest", "ts-rompack-toolchain", "ts-machine", "ts-core", "ts-ide", "ts-studio-composition", "ts-host-contracts", "ts-host-common", "ts-browser-host", "ts-node-launch", "ts-node-player-entry", "ts-node-tooling", "ts-node-host", "ts-product-build", "ts-render", "ts-frontend-input", "ts-audio", "ts-host-audio"],
+			"deny": ["ts-suspended-guest", "ts-rompack-toolchain", "ts-machine", "ts-core", "ts-ide", "ts-studio-composition", "ts-host-contracts", "ts-host-common", "ts-host-tasks", "ts-browser-host", "ts-node-launch", "ts-node-player-entry", "ts-node-tooling", "ts-node-host", "ts-product-build", "ts-render", "ts-frontend-input", "ts-audio", "ts-host-audio"],
 			"reason": "The BLua frontend and compiler produce object code from machine specification contracts; they must not depend on ROM authoring, emulator, product, host, IDE, or backend implementation."
 		},
 		{
 			"from": "ts-rompack-toolchain",
-			"deny": ["ts-suspended-guest", "ts-machine", "ts-core", "ts-ide", "ts-studio-composition", "ts-host-contracts", "ts-host-common", "ts-browser-host", "ts-node-launch", "ts-node-player-entry", "ts-node-tooling", "ts-node-host", "ts-product-build", "ts-render", "ts-frontend-input", "ts-audio", "ts-host-audio"],
+			"deny": ["ts-suspended-guest", "ts-machine", "ts-core", "ts-ide", "ts-studio-composition", "ts-host-contracts", "ts-host-common", "ts-host-tasks", "ts-browser-host", "ts-node-launch", "ts-node-player-entry", "ts-node-tooling", "ts-node-host", "ts-product-build", "ts-render", "ts-frontend-input", "ts-audio", "ts-host-audio"],
 			"reason": "ROM authoring consumes BLua object code and machine wire contracts; it must not depend on emulator, product, host, IDE, or backend implementation."
 		},
 		{
 			"from": "ts-rompack",
-			"deny": ["ts-suspended-guest", "ts-machine", "ts-core", "ts-ide", "ts-host-contracts", "ts-host-common", "ts-blua-toolchain", "ts-rompack-toolchain", "ts-render", "ts-gx-webgl-render", "ts-software-render", "ts-frontend-input", "ts-audio", "ts-host-audio"],
+			"deny": ["ts-suspended-guest", "ts-machine", "ts-core", "ts-ide", "ts-host-contracts", "ts-host-common", "ts-host-tasks", "ts-blua-toolchain", "ts-rompack-toolchain", "ts-render", "ts-gx-webgl-render", "ts-software-render", "ts-frontend-input", "ts-audio", "ts-host-audio"],
 			"reason": "TS ROM wire-format code must not depend on emulator, core, host, IDE, render, input, audio, or language implementation."
 		},
 		{
 			"from": "ts-core",
-			"deny": ["ts-suspended-guest", "ts-blua-toolchain", "ts-rompack-toolchain", "ts-ide", "ts-host-contracts", "ts-host-common", "ts-node-tooling"],
+			"deny": ["ts-suspended-guest", "ts-blua-toolchain", "ts-rompack-toolchain", "ts-ide", "ts-host-contracts", "ts-host-common", "ts-host-tasks", "ts-node-tooling"],
 			"reason": "TS core owns machine construction from raw ROM media; authoring metadata, compiler, IDE, application, and validation tooling compose above it."
 		},
 		{
 			"from": "ts-runtime-api",
-			"deny": ["ts-suspended-guest", "ts-ide", "ts-host-contracts", "ts-host-common"],
+			"deny": ["ts-suspended-guest", "ts-ide", "ts-host-contracts", "ts-host-common", "ts-host-tasks"],
 			"reason": "TS runtime entrypoints must stay below the IDE composition layer."
 		},
 		{
 			"from": "ts-render",
-			"deny": ["ts-suspended-guest", "ts-ide", "ts-host-contracts", "ts-host-common"],
+			"deny": ["ts-suspended-guest", "ts-ide", "ts-host-contracts", "ts-host-common", "ts-host-tasks"],
 			"reason": "TS render primitives and backends consume mirrored render contracts and must not depend on host or IDE policy."
+		},
+		{
+			"from": "ts-host-tasks",
+			"deny": ["ts-ide", "ts-studio-composition", "ts-host-common", "ts-browser-host", "ts-node-player-entry", "ts-node-tooling", "ts-node-host", "ts-blua-toolchain", "ts-rompack-toolchain"],
+			"reason": "The injected runtime operation queue is a shared host service, not a product or workbench composition root."
 		},
 		{
 			"from": "ts-ide",
@@ -162,7 +168,7 @@
 		},
 		{
 			"from": "ts-rompacker-tool",
-			"deny": ["ts-suspended-guest", "ts-machine", "ts-core", "ts-product-build", "ts-ide", "ts-studio-composition", "ts-host-common", "ts-browser-host", "ts-node-launch", "ts-node-player-entry", "ts-node-tooling", "ts-node-host"],
+			"deny": ["ts-suspended-guest", "ts-machine", "ts-core", "ts-product-build", "ts-ide", "ts-studio-composition", "ts-host-common", "ts-host-tasks", "ts-browser-host", "ts-node-launch", "ts-node-player-entry", "ts-node-tooling", "ts-node-host"],
 			"reason": "ROM and source tooling must not depend on emulator, core, deployable products, hosts, runtime composition, Studio, or host validation tooling."
 		},
 		{

@@ -19,6 +19,7 @@ public:
 	explicit SystemDebugTransmit(Memory& memory);
 
 	void reset();
+	void clearOutput();
 	[[nodiscard]] auto captureState() const -> SystemDebugTransmitState;
 	void restoreState(const SystemDebugTransmitState& state);
 	[[nodiscard]] auto availableByteCount() const -> u32;
@@ -28,7 +29,6 @@ private:
 	void writeChar(u32 address, u32 value);
 	void flushLine(u32 address, u32 value);
 	[[nodiscard]] auto reserveBytes(u32 byteCount) -> bool;
-	void clearOutput();
 	void appendByte(u8 value);
 
 	Memory& m_memory;
