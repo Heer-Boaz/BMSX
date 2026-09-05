@@ -97,6 +97,38 @@ export function createInputControllerSnapshot(): InputControllerSnapshot {
 	};
 }
 
+export const INPUT_CONTROLLER_SNAPSHOT_WORD_COUNT = INPUT_CONTROLLER_KEY_WORD_COUNT + 5
+	+ INPUT_CONTROLLER_PAD_COUNT * (1 + INPUT_CONTROLLER_PAD_AXIS_COUNT);
+
+/** Raw snapshot storage, shared by runtime input recording and device tests. */
+export function storeInputControllerSnapshotWords(snapshot: InputControllerSnapshot, words: Uint32Array, offset: number): void {
+	words.set(snapshot.keyWords, offset);
+	offset += INPUT_CONTROLLER_KEY_WORD_COUNT;
+	words[offset++] = snapshot.pointerButtons;
+	words[offset++] = snapshot.pointerXQ16;
+	words[offset++] = snapshot.pointerYQ16;
+	words[offset++] = snapshot.pointerWheelQ16;
+	words[offset++] = snapshot.rumbleSupportMask;
+	for (let pad = 0; pad < INPUT_CONTROLLER_PAD_COUNT; pad += 1) {
+		words[offset++] = snapshot.pads[pad].buttons;
+		words.set(snapshot.pads[pad].axesQ16, offset);
+		offset += INPUT_CONTROLLER_PAD_AXIS_COUNT;
+	}
+}
+
+export function loadInputControllerSnapshotWords(snapshot: InputControllerSnapshot, words: Uint32Array, offset: number): void {
+	for (let key = 0; key < INPUT_CONTROLLER_KEY_WORD_COUNT; key += 1) snapshot.keyWords[key] = words[offset++];
+	snapshot.pointerButtons = words[offset++];
+	snapshot.pointerXQ16 = words[offset++];
+	snapshot.pointerYQ16 = words[offset++];
+	snapshot.pointerWheelQ16 = words[offset++];
+	snapshot.rumbleSupportMask = words[offset++];
+	for (let pad = 0; pad < INPUT_CONTROLLER_PAD_COUNT; pad += 1) {
+		snapshot.pads[pad].buttons = words[offset++];
+		for (let axis = 0; axis < INPUT_CONTROLLER_PAD_AXIS_COUNT; axis += 1) snapshot.pads[pad].axesQ16[axis] = words[offset++];
+	}
+}
+
 export interface InputControllerInputSource {
 	sampleInputControllerSnapshot(
 		snapshot: InputControllerSnapshot,

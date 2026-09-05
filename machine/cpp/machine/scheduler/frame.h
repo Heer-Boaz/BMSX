@@ -45,6 +45,7 @@ public:
 	bool startScheduledFrame(Runtime& runtime);
 	void run(Runtime& runtime, f64 hostDeltaMs);
 	bool runToNextLogicalTick(Runtime& runtime);
+	bool runToNextLogicalTick(Runtime& runtime, i64 cycleGrant);
 	bool runScheduledToNextLogicalTick(Runtime& runtime, f64 hostDeltaMs);
 	InstructionStepResult stepInstruction(Runtime& runtime, f64 hostDeltaMs);
 

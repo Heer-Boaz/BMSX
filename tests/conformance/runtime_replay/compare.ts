@@ -25,3 +25,7 @@ for (const checkpointTick of [2, 400, 1200]) {
 	}
 }
 console.log('RUNTIME-REPLAY-CROSS-CORE:PASS');
+const tsHistory = decodeRuntimeSaveState(readFileSync(`${tsPrefix}-history.state`), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
+const cppHistory = decodeRuntimeSaveState(readFileSync(`${cppPrefix}-history.state`), PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes);
+assert.ok(isDeepStrictEqual(tsHistory, cppHistory), 'TS/C++ full state after history seeks and live branch');
+console.log('RUNTIME-HISTORY-CROSS-CORE:PASS');

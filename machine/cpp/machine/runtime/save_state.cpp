@@ -13,7 +13,8 @@ RuntimeSaveState captureRuntimeSaveState(Runtime& runtime) {
 	return state;
 }
 
-void applyRuntimeSaveState(Runtime& runtime, const RuntimeSaveState& state) {
+void applyRuntimeSaveState(Runtime& runtime, const RuntimeSaveState& state, RuntimeRestoreOrigin origin) {
+	if (origin == RuntimeRestoreOrigin::ExternalLoad) runtime.history.stop();
 	applyRuntimeSaveMachineState(runtime, state.machineState);
 	runtime.machine.cpu.restoreRuntimeState(state.cpuState);
 	runtime.m_pendingCall = state.pendingEntryCall ? Runtime::PendingCall::Entry : Runtime::PendingCall::None;

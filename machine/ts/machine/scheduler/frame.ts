@@ -1,5 +1,6 @@
 import { Runtime } from '../runtime/runtime';
 import { InstructionStepResult } from '../runtime/frame/state';
+import { HistoryMode } from '../runtime/history/history';
 
 export type TickCompletion = {
 	sequence: number;
@@ -61,6 +62,7 @@ export class FrameSchedulerState {
 
 	private canRunScheduledUpdate(): boolean {
 		const runtime = this.runtime;
+		if (runtime.history.executionPaused) return false;
 		if (runtime.machine.gxGpu.backendServiceBlocksMachine()) {
 			return false;
 		}
@@ -81,6 +83,7 @@ export class FrameSchedulerState {
 
 	private beginScheduledExecution(hostDeltaMs: number): boolean {
 		const runtime = this.runtime;
+		if (runtime.history.executionPaused) return false;
 		if (runtime.machine.gxGpu.backendServiceBlocksMachine()) {
 			this.backendServiceSuspended = true;
 			return false;
@@ -177,6 +180,7 @@ export class FrameSchedulerState {
 	}
 
 	public run(hostDeltaMs: number): void {
+		if (this.runtime.history.mode === HistoryMode.Replaying) return;
 		const runtime = this.runtime;
 		if (!this.beginScheduledExecution(hostDeltaMs)) {
 			return;
@@ -190,9 +194,9 @@ export class FrameSchedulerState {
 		this.endScheduledExecution();
 	}
 
-	public runToNextLogicalTick(): boolean {
+	public runToNextLogicalTick(cycleGrant: number = this.runtime.timing.cycleBudgetPerFrame): boolean {
 		const runtime = this.runtime;
-		const tickBudget = runtime.timing.cycleBudgetPerFrame;
+		const tickBudget = cycleGrant;
 		if (tickBudget === 0 || !this.beginScheduledExecution(0)) {
 			return false;
 		}
@@ -234,6 +238,7 @@ export class FrameSchedulerState {
 	}
 
 	public runScheduledToNextLogicalTick(hostDeltaMs: number): boolean {
+		if (this.runtime.history.mode === HistoryMode.Replaying) return false;
 		const runtime = this.runtime;
 		const targetSequence = this.lastTickSequence + 1;
 		if (!this.beginScheduledExecution(hostDeltaMs)) {
@@ -250,6 +255,7 @@ export class FrameSchedulerState {
 	}
 
 	public stepInstruction(hostDeltaMs: number): InstructionStepResult {
+		if (this.runtime.history.mode === HistoryMode.Replaying) return InstructionStepResult.Blocked;
 		if (!this.beginScheduledExecution(hostDeltaMs)) {
 			return InstructionStepResult.Blocked;
 		}

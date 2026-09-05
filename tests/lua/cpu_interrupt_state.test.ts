@@ -76,6 +76,7 @@ import { FrameLoopState } from '../../machine/ts/machine/runtime/frame/loop';
 import { FrameSchedulerState } from '../../machine/ts/machine/scheduler/frame';
 import { DeviceScheduler } from '../../machine/ts/machine/scheduler/device';
 import { Runtime, type FrameState } from '../../machine/ts/machine/runtime/runtime';
+import { HistoryMode } from '../../machine/ts/machine/runtime/history/history';
 import {
 	createTestBlua32PairCpu,
 	createTestSystemCpu,
@@ -233,6 +234,7 @@ function makeRuntime(cpu: CPU, irqController: IrqController, sliceStats?: { begi
 		},
 	};
 	const runtime = {
+		history: { stop: () => {} },
 		machine: {
 			cpu,
 			memory: cpu.memory,
@@ -567,6 +569,7 @@ function makeHaltFrameRuntime(): Runtime {
 			cpu.runUntilDepth(targetDepth, sliceBudget),
 	};
 	const runtime = {
+		history: { mode: HistoryMode.Disabled, executionPaused: false },
 		machine: {
 			cpu,
 			memory,

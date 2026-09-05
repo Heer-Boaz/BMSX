@@ -51,6 +51,7 @@ import { runDueRuntimeTimers } from '../../machine/ts/machine/runtime/cpu_execut
 import type { InputControllerInputSource } from '../../machine/ts/machine/devices/input/contracts';
 import { applyRuntimeMachineState, captureRuntimeMachineState } from '../../machine/ts/machine/runtime/machine_state';
 import { Runtime } from '../../machine/ts/machine/runtime/runtime';
+import { HistoryMode } from '../../machine/ts/machine/runtime/history/history';
 import {
 	DEVICE_SERVICE_APU,
 	DEVICE_SERVICE_APU_TRANSFER,
@@ -297,6 +298,7 @@ test('host machine-cycle grants remain exact while PCRTC is stopped', () => {
 		},
 	};
 	const runtime = {
+		history: { mode: HistoryMode.Disabled, executionPaused: false },
 		timing: { cpuHz: 5_000_000, cpuCyclesPerMillisecond: 5_000, pcrtcRunning: false },
 		machine: {
 			gxGpu: {

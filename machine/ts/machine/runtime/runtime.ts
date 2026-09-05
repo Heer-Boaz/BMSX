@@ -13,6 +13,7 @@ import type { GxGpuPcrtcTiming } from '../devices/gx/gpu_pcrtc';
 import type { InputControllerInputSource } from '../devices/input/contracts';
 import { Machine } from '../machine';
 import { Memory } from '../memory/memory';
+import { RuntimeHistory } from './history/history';
 
 export class Runtime {
 	public readonly timing: TimingState;
@@ -36,9 +37,11 @@ export class Runtime {
 	public readonly vblank: VblankState;
 	public readonly cpuExecution: CpuExecutionState;
 	public readonly machine: Machine;
+	public readonly history: RuntimeHistory;
 	private readonly completionValues: Value[] = [];
 
 	public resetHardwareState(): void {
+		this.history.stop();
 		this.machine.scheduler.reset();
 		this.machine.resetDevices();
 		this.vblank.reset();
@@ -88,6 +91,7 @@ export class Runtime {
 		if (scheduler.isCpuSliceActive()) {
 			throw new Error('External Lua closure execution requires a suspended CPU.');
 		}
+		this.history.stop();
 		const depth = cpu.getFrameDepth();
 		const previousBudget = cpu.instructionBudgetRemaining;
 		try {
@@ -119,12 +123,13 @@ export class Runtime {
 		this.vblank = new VblankState(this);
 		this.cpuExecution = new CpuExecutionState(this);
 		this.timing = new TimingState(options.machineModel);
+		this.history = new RuntimeHistory(this, input);
 		this.machine = new Machine(
 			new Memory({
 				systemRom: options.systemRomBytes,
 				cartridgeSlots: options.cartridgeSlots,
 			}, options.machineModel.ramBytes),
-			input,
+			this.history.input,
 			options.machineModel,
 		);
 		this.machine.memory.clearIoSlots();

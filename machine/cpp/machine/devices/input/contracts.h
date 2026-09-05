@@ -3,6 +3,7 @@
 #include "machine/common/numeric.h"
 
 #include <array>
+#include <span>
 
 namespace bmsx {
 
@@ -80,6 +81,35 @@ struct InputControllerSnapshot {
 
 inline InputControllerSnapshot createInputControllerSnapshot() {
 	return InputControllerSnapshot{};
+}
+
+constexpr int INPUT_CONTROLLER_SNAPSHOT_WORD_COUNT = INPUT_CONTROLLER_KEY_WORD_COUNT + 5
+	+ INPUT_CONTROLLER_PAD_COUNT * (1 + INPUT_CONTROLLER_PAD_AXIS_COUNT);
+
+inline void storeInputControllerSnapshotWords(const InputControllerSnapshot& snapshot, std::span<u32> words, size_t offset) {
+	for (u32 key : snapshot.keyWords) words[offset++] = key;
+	words[offset++] = snapshot.pointerButtons;
+	words[offset++] = snapshot.pointerXQ16;
+	words[offset++] = snapshot.pointerYQ16;
+	words[offset++] = snapshot.pointerWheelQ16;
+	words[offset++] = snapshot.rumbleSupportMask;
+	for (const auto& pad : snapshot.pads) {
+		words[offset++] = pad.buttons;
+		for (u32 axis : pad.axesQ16) words[offset++] = axis;
+	}
+}
+
+inline void loadInputControllerSnapshotWords(InputControllerSnapshot& snapshot, std::span<const u32> words, size_t offset) {
+	for (u32& key : snapshot.keyWords) key = words[offset++];
+	snapshot.pointerButtons = words[offset++];
+	snapshot.pointerXQ16 = words[offset++];
+	snapshot.pointerYQ16 = words[offset++];
+	snapshot.pointerWheelQ16 = words[offset++];
+	snapshot.rumbleSupportMask = words[offset++];
+	for (auto& pad : snapshot.pads) {
+		pad.buttons = words[offset++];
+		for (u32& axis : pad.axesQ16) axis = words[offset++];
+	}
 }
 
 class InputControllerInputSource {

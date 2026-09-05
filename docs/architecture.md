@@ -1568,9 +1568,18 @@ Native reclamation of the discarded host heap is distinct from guest GC and
 does not clear the snapshot's weak references.
 
 Generic rewind is a shared TS/native emulator requirement, not a Studio or
-cartridge capability. Its checkpoint/event-replay contract, implementation
-gates and production references are in [rewind architecture](rewind_architecture.md).
-The initial control surface is the host/quickmenu; no shortcut is reserved.
+cartridge capability. `Runtime.history` owns bounded sparse checkpoints and a
+fixed raw ICU input journal; it is not included in machine save-state. It
+records actual ICU consumption, including unarmed supervisor-line edges,
+rather than host polls or guest worldticks. Seeking restores an earlier
+checkpoint and executes the existing scheduler with recorded input and
+explicit machine-cycle grants. Review preserves future history; live takeover
+branches. Hosts own GPU synchronization, cooperative scheduling and output
+delivery, not a parallel simulation. The shared core is disabled by default;
+host lifecycle/UI integration and checkpoint-storage performance remain gates.
+The contract, measurements and production references are in
+[rewind architecture](rewind_architecture.md). The initial control surface is
+the host/quickmenu; no shortcut is reserved.
 
 Saving an AEM document follows the same physical revision path. Tooling
 validates and encodes the document, installs the rebuilt ROM, reconnects the

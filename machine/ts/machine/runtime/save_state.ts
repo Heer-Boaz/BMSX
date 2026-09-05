@@ -9,6 +9,8 @@ export type RuntimeSaveState = {
 	pendingEntryCall: boolean;
 };
 
+export const enum RuntimeRestoreOrigin { ExternalLoad, HistorySeek }
+
 export function captureRuntimeSaveState(runtime: Runtime): RuntimeSaveState {
 	return {
 		machineState: captureRuntimeSaveMachineState(runtime),
@@ -17,7 +19,8 @@ export function captureRuntimeSaveState(runtime: Runtime): RuntimeSaveState {
 	};
 }
 
-export function applyRuntimeSaveState(runtime: Runtime, state: RuntimeSaveState): void {
+export function applyRuntimeSaveState(runtime: Runtime, state: RuntimeSaveState, origin: RuntimeRestoreOrigin = RuntimeRestoreOrigin.ExternalLoad): void {
+	if (origin === RuntimeRestoreOrigin.ExternalLoad) runtime.history.stop();
 	applyRuntimeSaveMachineState(runtime, state.machineState);
 	runtime.machine.cpu.restoreRuntimeState(state.cpuState);
 	runtime.readCompletionValues();

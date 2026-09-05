@@ -14,6 +14,7 @@
 #include "machine/runtime/cpu_executor.h"
 #include "machine/runtime/options.h"
 #include "machine/runtime/save_state.h"
+#include "machine/runtime/history/history.h"
 #include "machine/memory/memory.h"
 #include "machine/runtime/frame/loop.h"
 #include "machine/scheduler/frame.h"
@@ -38,7 +39,7 @@ public:
 	friend class FrameLoopState;
 	friend class FrameSchedulerState;
 	friend auto captureRuntimeSaveState(Runtime& runtime) -> RuntimeSaveState;
-	friend void applyRuntimeSaveState(Runtime& runtime, const RuntimeSaveState& state);
+	friend void applyRuntimeSaveState(Runtime& runtime, const RuntimeSaveState& state, RuntimeRestoreOrigin origin);
 
 	Runtime(
 		const RuntimeOptions& options,
@@ -83,6 +84,7 @@ public:
 	CpuExecutionState cpuExecution;
 	FrameLoopState frameLoop;
 	VblankState vblank;
+	RuntimeHistory history;
 private:
 	enum class PendingCall {
 		None,

@@ -280,6 +280,9 @@ add_library(bmsx_core STATIC
 	machine/save_state.cpp
 	machine/scheduler/device.cpp
 	machine/runtime/runtime.cpp
+	machine/runtime/history/history.cpp
+	machine/runtime/history/input_journal.cpp
+	machine/runtime/history/input_source.cpp
 	machine/runtime/machine_state.cpp
 	machine/runtime/save_machine_state.cpp
 	machine/runtime/save_state.cpp

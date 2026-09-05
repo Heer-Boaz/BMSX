@@ -2,6 +2,7 @@
 #include "machine/devices/input/contracts.h"
 #include "machine/runtime/cpu_executor.h"
 #include "machine/runtime/runtime.h"
+#include "machine/runtime/save_state/codec.h"
 #include "machine/scheduler/frame.h"
 #include "spec/bmsx/io.h"
 #include "spec/bmsx/memory_map.h"
@@ -30,6 +31,7 @@ public:
 	void sampleInputControllerSnapshot(
 		bmsx::InputControllerSnapshot& snapshot,
 		bmsx::InputControllerSampleContext) override {
+		require(!rejectLiveInput, "replay cannot sample live input");
 		sampleCount += 1;
 		if (keyDown) {
 			snapshot.keyWords[TEST_KEY_USAGE >> 5u] |= 1u << (TEST_KEY_USAGE & 31u);
@@ -37,7 +39,8 @@ public:
 	}
 
 	auto supervisorRequestLineHigh() const -> bool override {
-		return false;
+		require(!rejectLiveInput, "replay cannot read the live supervisor line");
+		return supervisorHigh;
 	}
 
 	void applyInputControllerVibrationEffect(bmsx::i32, bmsx::f64, bmsx::f32) override {
@@ -45,6 +48,8 @@ public:
 
 	int sampleCount = 0;
 	bool keyDown = false;
+	bool supervisorHigh = false;
+	bool rejectLiveInput = false;
 };
 
 struct TickRuntimeFixture {
@@ -401,6 +406,153 @@ void testNormalHostExecutionKeepsExistingSchedulerContract() {
 	);
 }
 
+void testHistoryPressureAndBranch() {
+	TickRuntimeFixture fixture;
+	auto& runtime = fixture.runtime;
+	auto& history = runtime.history;
+	history.start({2, 2, 0x100000000LL});
+	require(!runtime.frameScheduler.runToNextLogicalTick(runtime), "initial checkpoint suspends execution");
+	require(runtime.machine.scheduler.nowCycles() == 0, "initial capture barrier holds machine time");
+	history.captureCheckpoint();
+	require(runtime.frameScheduler.runToNextLogicalTick(runtime), "first recorded boundary");
+	const auto firstCycles = runtime.machine.scheduler.nowCycles();
+	require(runtime.frameScheduler.runToNextLogicalTick(runtime), "second recorded boundary");
+	require(history.checkpointPending, "input pressure requests a checkpoint");
+	const auto secondCycles = runtime.machine.scheduler.nowCycles();
+	runtime.frameScheduler.run(runtime, 80.0);
+	require(runtime.machine.scheduler.nowCycles() == secondCycles, "pressure cannot lose input during a host catch-up");
+	require(history.inputJournal.endSequence == 2, "no extra input while capture is pending");
+	history.captureCheckpoint();
+	require(runtime.frameScheduler.runToNextLogicalTick(runtime), "capture releases execution");
+	require(history.checkpointCount() == 1 && history.earliestCycles() == secondCycles, "expired input evicts only obsolete checkpoints");
+	history.beginSeek(firstCycles);
+	require(history.targetCycles == secondCycles && history.mode == bmsx::HistoryMode::Reviewing, "seek respects retained range");
+	runtime.frameScheduler.run(runtime, 80.0);
+	require(runtime.machine.scheduler.nowCycles() == secondCycles, "review blocks ordinary host execution");
+	require(history.advanceSeek(100) == bmsx::HistorySeekResult::Complete, "checkpoint is an exact seek endpoint");
+	history.resumeRecording();
+	require(history.checkpointPending && history.inputJournal.endSequence == 2, "live takeover branches before new input");
+	history.captureCheckpoint();
+	runtime.rebootSystem();
+	require(history.mode == bmsx::HistoryMode::Disabled && history.checkpointCount() == 0 && history.inputJournal.storageBytes() == 0, "reset ends history");
+}
+
+void testInputJournalRawWordsAndWrap() {
+	bmsx::InputJournal journal;
+	journal.reset(3);
+	bmsx::InputControllerSnapshot snapshot;
+	std::array<bmsx::u32, bmsx::INPUT_CONTROLLER_SNAPSHOT_WORD_COUNT> expected;
+	for (size_t i = 0; i < expected.size(); ++i) expected[i] = 0xfedcba98u + static_cast<bmsx::u32>(i) * 31u;
+	bmsx::loadInputControllerSnapshotWords(snapshot, expected, 0);
+	journal.recordSample(snapshot, bmsx::InputControllerSampleContext::Normal);
+	journal.recordLine(0x100000001LL, false);
+	journal.recordLine(0x100000002LL, true);
+	journal.recordSample(snapshot, bmsx::InputControllerSampleContext::Supervisor);
+	journal.recordLine(0x100000003LL, true);
+	journal.recordLine(0x100000004LL, false);
+	require(journal.firstSequence == 1 && journal.endSequence == 4, "input ring wraps");
+	require(journal.flagsAt(1) == 4 && journal.flagsAt(2) == 7 && journal.flagsAt(3) == 0, "unarmed polls and contexts retain their exact flags");
+	require(journal.cycleAt(3) == 0x100000004LL && journal.endAt(0x100000002LL) == 2, "journal retains full machine cycles");
+	require(journal.storageBytes() == 3 * (8 + 4 * (1 + bmsx::INPUT_CONTROLLER_SNAPSHOT_WORD_COUNT)), "bounded raw journal storage");
+	journal.replaySequence = 1;
+	require(journal.replayLine(), "unarmed supervisor edge replays");
+	bmsx::InputControllerSnapshot restored;
+	journal.replaySample(restored);
+	require(journal.replayLine(), "supervisor-context line replays");
+	std::array<bmsx::u32, bmsx::INPUT_CONTROLLER_SNAPSHOT_WORD_COUNT> actual;
+	bmsx::storeInputControllerSnapshotWords(restored, actual, 0);
+	require(actual == expected, "all snapshot words replay without conversion");
+	journal.branch();
+	require(journal.endSequence == 3, "input branch truncates future");
+	journal.recordLine(0x100000005LL, true);
+	require(journal.replayLine(), "new branch replaces the old future");
+}
+
+void testHistoryUnarmedSupervisorEdge() {
+	TickRuntimeFixture fixture;
+	auto& runtime = fixture.runtime;
+	auto& history = runtime.history;
+	history.start({2, 8, 0x100000000LL});
+	history.captureCheckpoint();
+	// Compare the NMI request edge; the minimal ROM has no monitor firmware
+	// to restart the quiesced PCRTC after this point.
+	for (int tick = 0; tick < 2; ++tick) {
+		fixture.input.supervisorHigh = tick == 1;
+		require(runtime.frameScheduler.runToNextLogicalTick(runtime), "recorded input boundary");
+		runtime.machine.gxGpu.retirePresentedCommands();
+	}
+	require(fixture.input.sampleCount == 0 && history.inputJournal.flagsAt(1) == 4, "unarmed ICU records the supervisor edge");
+	const auto expected = bmsx::captureRuntimeSaveState(runtime);
+	fixture.input.rejectLiveInput = true;
+	history.beginSeek(expected.machineState.schedulerNowCycles);
+	for (int step = 0; history.mode == bmsx::HistoryMode::Replaying && step < 1000; ++step) {
+		require(history.advanceSeek(16384) != bmsx::HistorySeekResult::Stopped, "supervisor replay advances");
+		runtime.machine.gxGpu.retirePresentedCommands();
+	}
+	require(history.mode == bmsx::HistoryMode::Reviewing, "supervisor replay reaches the recorded request edge");
+	auto actual = bmsx::captureRuntimeSaveState(runtime);
+	require(actual.machineState.schedulerNowCycles == expected.machineState.schedulerNowCycles, "request edge has the same machine time");
+	require(actual.machineState.frameScheduler.lastTickSequence == expected.machineState.frameScheduler.lastTickSequence, "request edge has the same PCRTC tick");
+	actual.cpuState.instructionBudgetRemaining = expected.cpuState.instructionBudgetRemaining;
+	actual.machineState.frameScheduler = expected.machineState.frameScheduler;
+	actual.machineState.frameLoop = expected.machineState.frameLoop;
+	require(bmsx::encodeRuntimeSaveState(actual) == bmsx::encodeRuntimeSaveState(expected), "unarmed supervisor edge reproduces complete guest state");
+}
+
+void testCancelledHistoryTakeover() {
+	TickRuntimeFixture fixture;
+	auto& runtime = fixture.runtime;
+	auto& history = runtime.history;
+	history.start({2, 8, 0x100000000LL});
+	history.captureCheckpoint();
+	for (int tick = 0; tick < 3; ++tick) runtime.frameScheduler.runToNextLogicalTick(runtime);
+	const auto end = history.latestCycles();
+	history.beginSeek(end);
+	require(history.advanceSeek(256) == bmsx::HistorySeekResult::Progressed, "partial seek advances");
+	require(runtime.frameScheduler.captureState().logicalTickRunPending, "partial replay has a retained scheduler target");
+	history.cancelSeek();
+	const auto cancelledCycles = runtime.machine.scheduler.nowCycles();
+	runtime.frameScheduler.run(runtime, 80.0);
+	require(runtime.machine.scheduler.nowCycles() == cancelledCycles, "cancellation suspends machine time");
+	require(history.latestCycles() == end && history.inputJournal.endSequence == 3, "cancellation retains future");
+	history.resumeRecording();
+	require(history.inputJournal.endSequence == 0 && !runtime.frameScheduler.captureState().logicalTickRunPending, "takeover branches and releases the replay scheduler target");
+	history.captureCheckpoint();
+	runtime.frameScheduler.run(runtime, runtime.timing.frameDurationMs * 2);
+	const auto before = runtime.frameScheduler.lastTickSequence;
+	require(runtime.frameScheduler.runToNextLogicalTick(runtime) && runtime.frameScheduler.lastTickSequence == before + 1, "live scheduling no longer targets a discarded replay tick");
+}
+
+void testHistoryAwaitingBackendCompletion() {
+	TickRuntimeFixture fixture;
+	auto& runtime = fixture.runtime;
+	auto& gpu = runtime.machine.gxGpu;
+	gpu.writeGp0(static_cast<bmsx::u32>(bmsx::GX_GPU_GP0_VRAM_TO_CPU_FIRST) << 24u);
+	gpu.writeGp0(0);
+	gpu.writeGp0((1u << 16u) | 1u);
+	auto& history = runtime.history;
+	history.start({2, 8, 0x100000000LL});
+	history.captureCheckpoint();
+	require(!runtime.frameScheduler.runToNextLogicalTick(runtime), "recording suspends on readback");
+	const auto& output = gpu.readDeviceOutput();
+	require(output.readbackPort.claimReadback(output.commandBuffer.executedCommandCount), "recording backend claims the request");
+	output.readbackPort.completeReadback(output.readbackPort.token());
+	require(runtime.frameScheduler.runToNextLogicalTick(runtime), "recording reaches VBlank after readback");
+	history.beginSeek(history.latestCycles());
+	require(history.advanceSeek(16384) == bmsx::HistorySeekResult::BackendPending, "replay exposes backend work");
+	require(output.readbackPort.claimReadback(output.commandBuffer.executedCommandCount), "replay backend claims the request");
+	const auto cycles = runtime.machine.scheduler.nowCycles();
+	const auto grant = runtime.frameLoop.frameState.cycleBudgetGranted;
+	require(!gpu.backendServicePending(), "readback has already been submitted");
+	require(history.advanceSeek(16384) == bmsx::HistorySeekResult::BackendPending, "submitted readback is a wait, not a stopped replay");
+	require(runtime.machine.scheduler.nowCycles() == cycles && runtime.frameLoop.frameState.cycleBudgetGranted == grant, "backend wait consumes neither cycles nor new grants");
+	output.readbackPort.completeReadback(output.readbackPort.token());
+	for (int step = 0; history.mode == bmsx::HistoryMode::Replaying && step < 100; ++step) {
+		require(history.advanceSeek(16384) != bmsx::HistorySeekResult::Stopped, "completed readback releases replay");
+	}
+	require(history.mode == bmsx::HistoryMode::Reviewing, "replay completes after backend service");
+}
+
 } // namespace
 
 int main() {
@@ -415,5 +567,10 @@ int main() {
 	testLogicalTickPublishesInputAndEntersWaitingCpuInterrupt();
 	testLogicalTickIsBoundedWithoutVblankDeadline();
 	testNormalHostExecutionKeepsExistingSchedulerContract();
+	testHistoryPressureAndBranch();
+	testInputJournalRawWordsAndWrap();
+	testHistoryUnarmedSupervisorEdge();
+	testCancelledHistoryTakeover();
+	testHistoryAwaitingBackendCompletion();
 	return 0;
 }

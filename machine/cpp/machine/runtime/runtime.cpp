@@ -10,11 +10,12 @@ Runtime::Runtime(
 	InputControllerInputSource& input
 	)
 	: timing(options.machineModel)
+	, history(*this, input)
 	, m_memory(MemoryInit{
 		options.systemRomBytes,
 		options.cartridgeSlots
 	}, options.machineModel.ramBytes)
-	, machine(m_memory, input, options.machineModel)
+	, machine(m_memory, history.input, options.machineModel)
 {
 	machine.memory.clearIoSlots();
 	machine.resetDevices();
@@ -31,6 +32,7 @@ auto Runtime::callClosure(Closure& fn, BuiltinArgsView args) -> std::span<const 
 	if (machine.scheduler.isCpuSliceActive()) {
 		throw std::runtime_error("External Lua closure execution requires a suspended CPU.");
 	}
+	history.stop();
 	const int depthBefore = cpu.getFrameDepth();
 	const int previousBudget = cpu.instructionBudgetRemaining;
 	try {
@@ -111,6 +113,7 @@ void Runtime::resetForSystemBoot() {
 }
 
 void Runtime::resetHardwareState() {
+	history.stop();
 	machine.scheduler.reset();
 	machine.resetDevices();
 	vblank.reset(*this);

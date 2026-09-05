@@ -14,6 +14,7 @@ struct RuntimeSaveState {
 };
 
 RuntimeSaveState captureRuntimeSaveState(Runtime& runtime);
-void applyRuntimeSaveState(Runtime& runtime, const RuntimeSaveState& state);
+enum class RuntimeRestoreOrigin { ExternalLoad, HistorySeek };
+void applyRuntimeSaveState(Runtime& runtime, const RuntimeSaveState& state, RuntimeRestoreOrigin origin = RuntimeRestoreOrigin::ExternalLoad);
 
 } // namespace bmsx

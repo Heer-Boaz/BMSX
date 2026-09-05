@@ -14,6 +14,7 @@ void FrameSchedulerState::accumulateHostTime(f64 deltaMs) {
 }
 
 bool FrameSchedulerState::canRunScheduledUpdate(const Runtime& runtime) const {
+	if (runtime.history.executionPaused()) return false;
 	if (runtime.machine.gxGpu.backendServiceBlocksMachine()) {
 		return false;
 	}
@@ -33,6 +34,7 @@ i64 FrameSchedulerState::takeScheduledCycleBudget(const Runtime& runtime) {
 }
 
 bool FrameSchedulerState::beginScheduledExecution(Runtime& runtime, f64 hostDeltaMs) {
+	if (runtime.history.executionPaused()) return false;
 	if (runtime.machine.gxGpu.backendServiceBlocksMachine()) {
 		m_backendServiceSuspended = true;
 		return false;
@@ -178,6 +180,7 @@ void FrameSchedulerState::beginScheduledFrame(Runtime& runtime, i64 budget, i64 
 }
 
 void FrameSchedulerState::run(Runtime& runtime, f64 hostDeltaMs) {
+	if (runtime.history.mode == HistoryMode::Replaying) return;
 	if (!beginScheduledExecution(runtime, hostDeltaMs)) {
 		return;
 	}
@@ -191,7 +194,11 @@ void FrameSchedulerState::run(Runtime& runtime, f64 hostDeltaMs) {
 }
 
 bool FrameSchedulerState::runToNextLogicalTick(Runtime& runtime) {
-	const i64 tickBudget = runtime.timing.cycleBudgetPerFrame;
+	return runToNextLogicalTick(runtime, runtime.timing.cycleBudgetPerFrame);
+}
+
+bool FrameSchedulerState::runToNextLogicalTick(Runtime& runtime, i64 cycleGrant) {
+	const i64 tickBudget = cycleGrant;
 	if (tickBudget == 0 || !beginScheduledExecution(runtime, 0.0)) {
 		return false;
 	}
@@ -233,6 +240,7 @@ bool FrameSchedulerState::runToNextLogicalTick(Runtime& runtime) {
 }
 
 bool FrameSchedulerState::runScheduledToNextLogicalTick(Runtime& runtime, f64 hostDeltaMs) {
+	if (runtime.history.mode == HistoryMode::Replaying) return false;
 	const i64 targetSequence = lastTickSequence + 1;
 	if (!beginScheduledExecution(runtime, hostDeltaMs)) {
 		return false;
@@ -248,6 +256,7 @@ bool FrameSchedulerState::runScheduledToNextLogicalTick(Runtime& runtime, f64 ho
 }
 
 InstructionStepResult FrameSchedulerState::stepInstruction(Runtime& runtime, f64 hostDeltaMs) {
+	if (runtime.history.mode == HistoryMode::Replaying) return InstructionStepResult::Blocked;
 	if (!beginScheduledExecution(runtime, hostDeltaMs)) {
 		return InstructionStepResult::Blocked;
 	}
