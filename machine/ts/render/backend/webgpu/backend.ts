@@ -117,6 +117,10 @@ export class WebGPUBackend implements GPUBackend {
 		const output = gxGpu.readDeviceOutput();
 		serviceGxGpuReadback(this.gxGpuState, gxGpu, output);
 	}
+	async finishGxGpuReadbacks(): Promise<void> {
+		// Completion can submit a deferred GPUREAD; drain the entire chain.
+		while (this.gxGpuState.gpureadCompletion !== null) await this.gxGpuState.gpureadCompletion;
+	}
 	captureGxGpuVramSnapshot(gxGpu: GxGpu): Promise<void> {
 		const output = gxGpu.readDeviceOutput();
 		return captureRenderedVramSnapshot(this.gxGpuState, gxGpu, output);

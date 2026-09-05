@@ -87,10 +87,10 @@ export class HostRewind {
 	};
 
 	private readonly restore = async (): Promise<void> => {
-		// Finish old asynchronous GPU work before replacing its machine state.
-		await this.presenter.backend.captureGxGpuVramSnapshot(this.runtime.machine.gxGpu);
+		// Finish callbacks that reference old machine state; discarded VRAM needs no download.
+		await this.presenter.backend.finishGxGpuReadbacks();
 		// Navigation may change while the submitted readback completes. Only the
-		// latest user intent is applied, after the old backend has finished.
+		// latest user intent is applied, after all old callbacks have finished.
 		if (this.request === RewindRequest.Seek) {
 			this.request = RewindRequest.None;
 			this.runtime.history.beginSeek(this.requestedCycles);

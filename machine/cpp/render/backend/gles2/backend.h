@@ -88,6 +88,7 @@ public:
 	FrameStats getFrameStats() const override { return m_stats; }
 	void executeGxGpuCommandDrain(GxGpu& gxGpu) override;
 	void executeGxGpuReadback(GxGpu& gxGpu) override;
+	void finishGxGpuReadbacks() override;
 	void captureGxGpuVramSnapshot(GxGpu& gxGpu) override;
 
 	BackendCaps getCaps() const override;

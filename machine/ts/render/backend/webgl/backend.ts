@@ -799,6 +799,7 @@ export class WebGLBackend implements GPUBackend {
 		const output = gxGpu.readDeviceOutput();
 		executeGxGpuVramCommands(this.gxGpuState, output, output.readbackPort.fenceCommandCount);
 	}
+	finishGxGpuReadbacks(): void { /* GPUREAD completes synchronously on this backend. */ }
 	captureGxGpuVramSnapshot(gxGpu: GxGpu): void {
 		const output = gxGpu.readDeviceOutput();
 		captureRenderedVramSnapshot(this.gxGpuState, gxGpu, output);

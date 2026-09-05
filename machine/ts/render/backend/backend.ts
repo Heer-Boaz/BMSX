@@ -258,6 +258,8 @@ export interface GPUBackend {
 	getFrameStats(): { draws: number; drawIndexed: number; drawsInstanced: number; drawIndexedInstanced: number; bytesUploaded: number };
 	executeGxGpuCommandDrain(gxGpu: GxGpu): void;
 	executeGxGpuReadback(gxGpu: GxGpu): void;
+	/** Complete callbacks that write machine-owned readback buffers, before state replacement. */
+	finishGxGpuReadbacks(): void | Promise<void>;
 	captureGxGpuVramSnapshot(gxGpu: GxGpu): void | Promise<void>;
 	// Optional: fine-grained upload accounting for HUD
 	accountUpload(kind: 'vertex' | 'index' | 'uniform' | 'texture', bytes: number): void;

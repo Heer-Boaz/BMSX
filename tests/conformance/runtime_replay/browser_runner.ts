@@ -1,3 +1,4 @@
+import { testWebGpuReadbackLifetime } from './browser_gpu_readbacks';
 import { createBrowserBackend } from '../../../hosts/browser/backend';
 import { BrowserVideoOutput } from '../../../hosts/browser/video_output';
 import { HostAudioOutput, type AudioOutputPuller } from '../../../hosts/common/audio_output';
@@ -155,6 +156,7 @@ export async function runBrowserRewindConformance(canvas: HTMLCanvasElement) {
 	const previewEnd = history.latestCycles + runtime.timing.cpuHz * 7;
 	for (let count = 0; count < 4000 && history.latestCycles < previewEnd; count += 1) await frame();
 	await openRewind(); await press('ShiftLeft'); await settle();
+	await testWebGpuReadbackLifetime(runtime, backend);
 	await backend.device.queue.onSubmittedWorkDone();
 	require(errors.length === 0, errors.join('\n'));
 	return { backend: backend.type, hostFrames, checkpoint, latest, audioFrames, vramBytes: expectedVram.length };

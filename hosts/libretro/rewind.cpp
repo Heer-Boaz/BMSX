@@ -66,7 +66,7 @@ void HostRewind::capture() {
 }
 
 void HostRewind::restore() {
-	presenter.backend().captureGxGpuVramSnapshot(runtime.machine.gxGpu);
+	presenter.backend().finishGxGpuReadbacks();
 	if (request == RewindRequest::Seek) {
 		request = RewindRequest::None;
 		runtime.history.beginSeek(requestedCycles);

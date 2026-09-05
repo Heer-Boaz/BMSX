@@ -28,6 +28,15 @@ constexpr u16 menuAccept = 1u << RETRO_DEVICE_ID_JOYPAD_A;
 constexpr u16 menuCancel = 1u << RETRO_DEVICE_ID_JOYPAD_B;
 constexpr u16 menuKeyboard = 1u << RETRO_DEVICE_ID_JOYPAD_X;
 #endif
+class CountingSoftwareBackend : public SoftwareBackend {
+public:
+	using SoftwareBackend::SoftwareBackend;
+	u32 vramCaptures = 0;
+	void captureGxGpuVramSnapshot(GxGpu& gpu) override {
+		++vramCaptures;
+		SoftwareBackend::captureGxGpuVramSnapshot(gpu);
+	}
+};
 u16 buttons = 0;
 u32 errors = 0;
 void require(bool condition, const char* message) {
@@ -61,7 +70,7 @@ int main(int argc, char** argv) {
 		auto& history = runtime.history;
 		retro_system_av_info avInfo{};
 		LibretroVideoOutput video(avInfo);
-		auto backend = std::make_unique<SoftwareBackend>(256, 212, PSX_MACHINE_SPEC.gxGpuVramBytes);
+		auto backend = std::make_unique<CountingSoftwareBackend>(256, 212, PSX_MACHINE_SPEC.gxGpuVramBytes);
 		auto& software = *backend;
 		VideoPresenter presenter(video, std::move(backend), 256, 212);
 		Font font;
@@ -126,9 +135,11 @@ int main(int argc, char** argv) {
 		openRewind();
 		const i64 latest = history.latestCycles();
 		const i64 oldest = history.earliestCycles();
+		const u32 capturesBeforeSeek = software.vramCaptures;
 		for (int roundTrip = 0; roundTrip < 3; ++roundTrip) {
 			press(1u << RETRO_DEVICE_ID_JOYPAD_L);
 			const i64 selected = settle();
+			require(software.vramCaptures == capturesBeforeSeek, "restore does not copy discarded VRAM");
 			require(rewind.positionCycles() == latest - runtime.timing.cpuHz, "LB retains the selected coordinate");
 			require(selected <= rewind.positionCycles() && selected > rewind.positionCycles() - runtime.timing.cycleBudgetPerFrame, "machine resolves to the preceding PCRTC boundary");
 			const size_t reviewAudio = audioFrames;

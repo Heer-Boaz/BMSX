@@ -3832,6 +3832,10 @@ void OpenGLES2Backend::executeGxGpuCommandDrain(GxGpu& gxGpu) {
 	gxGpu.retireExecutedCommands();
 }
 
+void OpenGLES2Backend::finishGxGpuReadbacks() {
+	// GPUREAD completes synchronously on this backend.
+}
+
 void OpenGLES2Backend::captureGxGpuVramSnapshot(GxGpu& gxGpu) {
 	OpenGLES2GxGpuState& gx = *m_gx_gpu;
 	const GxGpuDeviceOutput& output = gxGpu.readDeviceOutput();

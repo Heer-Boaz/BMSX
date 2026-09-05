@@ -38,7 +38,7 @@ export class RuntimeTaskQueue {
 		this.tail = this.tail.then(async () => {
 			try {
 				if (kind === RuntimeTaskKind.Mutation) {
-					await this.presenter.backend.captureGxGpuVramSnapshot(this.runtime.machine.gxGpu);
+					await this.presenter.backend.finishGxGpuReadbacks();
 					this.runtime.history.stop();
 				}
 				await task();

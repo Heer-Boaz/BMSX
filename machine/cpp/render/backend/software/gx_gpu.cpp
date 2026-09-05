@@ -110,6 +110,10 @@ void SoftwareBackend::executeGxGpuCommandDrain(GxGpu& gxGpu) {
 	gxGpu.retireExecutedCommands();
 }
 
+void SoftwareBackend::finishGxGpuReadbacks() {
+	// GPUREAD completes synchronously on this backend.
+}
+
 void SoftwareBackend::captureGxGpuVramSnapshot(GxGpu& gxGpu) {
 	const GxGpuDeviceOutput& output = gxGpu.readDeviceOutput();
 	executeGxGpuSoftwareVramCommands(

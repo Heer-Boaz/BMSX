@@ -534,6 +534,7 @@ export class HeadlessGPUBackend implements GPUBackend {
 		executeGxGpuSoftwareVramCommands(this.gxGpuSoftware, output, output.readbackPort.fenceCommandCount);
 	}
 
+	finishGxGpuReadbacks(): void { /* GPUREAD completes synchronously on this backend. */ }
 	captureGxGpuVramSnapshot(gxGpu: GxGpu): void {
 		captureGxGpuVramSnapshot(this.gxGpuSoftware, gxGpu);
 	}

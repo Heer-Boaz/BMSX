@@ -206,6 +206,8 @@ public:
 	virtual FrameStats getFrameStats() const = 0;
 	virtual void executeGxGpuCommandDrain(GxGpu& gxGpu) = 0;
 	virtual void executeGxGpuReadback(GxGpu& gxGpu) = 0;
+	// Complete callbacks writing machine-owned readback buffers before replacement.
+	virtual void finishGxGpuReadbacks() = 0;
 	virtual void captureGxGpuVramSnapshot(GxGpu& gxGpu) = 0;
 
 	// ─────────────────────────────────────────────────────────────────────────
@@ -276,6 +278,7 @@ public:
 	FrameStats getFrameStats() const override { return m_stats; }
 	void executeGxGpuCommandDrain(GxGpu& gxGpu) override;
 	void executeGxGpuReadback(GxGpu& gxGpu) override;
+	void finishGxGpuReadbacks() override;
 	void captureGxGpuVramSnapshot(GxGpu& gxGpu) override;
 
 	// Capabilities

@@ -861,3 +861,37 @@ WebGPU passes full restored-VRAM comparison and same-frame submitted-label
 assertions; the extra screenshot frame is removed. The screenshot was inspected.
 IDE Hot Resume passes 91 assertions; Scenario Lab passes 124. Host input tests,
 browser/IDE typechecks, parity/boundary/indent audits and diff checks pass.
+
+## Backend readback lifetime (REWIND-GPU-LIFETIME-01)
+
+Reference: [DuckStation GPU state commands](https://github.com/stenzek/duckstation/blob/master/src/core/gpu.cpp)
+and [its video command queue](https://github.com/stenzek/duckstation/blob/master/src/core/video_thread.cpp).
+Load and save are distinct commands, ordered with rendering; loading is not
+implemented by first saving the state that will be abandoned. BMSX has no GPU
+worker thread, but WebGPU GPUREAD completion callbacks reference machine-owned
+buffers. Those callbacks, including a deferred second GPUREAD, must finish
+before host mutations or checkpoint restore. The existing snapshot/replacement
+serial then orders the restored texture upload after preceding GPU submissions.
+
+### Representation and callsites, before mirrored edits
+
+| Operation | TypeScript | C++ | Owner / callsites |
+| --- | --- | --- | --- |
+| Complete outstanding host readbacks | `GPUBackend.finishGxGpuReadbacks(): void \| Promise<void>` | Same virtual method, `void` | `HostRewind.restore`, TS `RuntimeTaskQueue` mutations; no emulated cycles, VRAM copying or execution of discarded commands |
+| Async readback chain | Existing `gpureadCompletion` / deferred GPU and token | No async CPU callbacks in software/GLES2 | WebGPU drains the chain, not just its first promise; GL/software completion is synchronous and needs no additional fence |
+| Actual snapshot | Existing `captureGxGpuVramSnapshot(gpu)` | Same | Checkpoint capture and external save-state only; WebGPU capture also finishes the complete readback chain before downloading VRAM |
+| Mutation consumers | Hot Resume installation, AEM application, reboot, Scenario Lab media replacement | Rewind state restore | None of the TS task callbacks captures runtime state or consumes a VRAM snapshot; keeping their old blanket capture would copy unused bytes |
+
+No `glFinish`, GPU readback used as a fence, new renderer epoch, or per-frame
+promise is needed. This method guarantees CPU callback lifetime, not device-wide
+GPU idleness. GPU work and the next snapshot upload remain ordered in the same
+graphics queue/context. Checkpoint capacity, capture frequency and raw register
+representations are unchanged.
+
+GPU-lifetime validation: real-cart TS/native runs assert zero extra VRAM
+captures during seeks. The actual browser WebGPU backend test submits a GPUREAD,
+resets its FIFO before mapping completes, and submits a second deferred request.
+Separately gated real mapping callbacks prove that the replacement boundary
+waits for both, without publishing a VRAM snapshot. After restore, all 2,097,152
+VRAM bytes still match. Existing live return/branch/audio tests, browser
+typecheck, parity/boundary/indent audits and diff checks pass.

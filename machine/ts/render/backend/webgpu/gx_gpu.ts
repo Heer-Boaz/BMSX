@@ -2931,9 +2931,7 @@ export function registerGxGpuPass(registry: RenderPassLibrary): void {
 
 export async function captureRenderedVramSnapshot(gx: WebGpuGxGpuState, gxGpu: GxGpu, output: GxGpuVramSource): Promise<void> {
 	executeGxGpuVramCommands(gx, output, output.commandBuffer.executedCommandCount, false);
-	if (gx.gpureadCompletion !== null) {
-		await gx.gpureadCompletion;
-	}
+	await gx.backend.finishGxGpuReadbacks();
 	const device = gx.backend.device;
 	const encoder = device.createCommandEncoder();
 	encoder.copyTextureToBuffer(gx.vramReadbackSource, gx.vramReadbackDestination, gx.vramReadbackExtent);

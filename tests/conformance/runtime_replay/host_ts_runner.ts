@@ -35,6 +35,9 @@ async function main(): Promise<void> {
 	input.connectInputDevice({ id: 'gamepad:0', kind: 'gamepad', gamepadIndex: 0, label: 'CONFORMANCE PAD', vibrationInitialization: null, supportsVibration: false, setVibration() {} });
 	const runtime = initializeMachineRuntime(readFileSync(systemPath), [readFileSync(cartPath), null], PSX_MACHINE_SPEC, input);
 	const backend = new HeadlessGPUBackend(256, 212, PSX_MACHINE_SPEC.gxGpuVramBytes);
+	let vramCaptures = 0;
+	const captureVram = backend.captureGxGpuVramSnapshot.bind(backend);
+	backend.captureGxGpuVramSnapshot = gpu => { vramCaptures += 1; captureVram(gpu); };
 	const presenter = initializeMachineVideoPresenter(runtime, new HeadlessVideoOutput(256, 212), backend);
 	presenter.crt_postprocessing_enabled = false;
 	let puller: Puller | null = null;
@@ -137,9 +140,11 @@ async function main(): Promise<void> {
 	await openRewind();
 	const latest = history.latestCycles;
 	const oldest = history.earliestCycles;
+	const capturesBeforeSeek = vramCaptures;
 	await press('lb');
 	await settle();
 	assert.equal(history.mode, HistoryMode.Reviewing);
+	assert.equal(vramCaptures, capturesBeforeSeek, 'restoring a checkpoint does not download discarded VRAM');
 	const selected = runtime.machine.scheduler.currentNowCycles();
 	assert.ok(selected <= latest - runtime.timing.cpuHz && selected > latest - runtime.timing.cpuHz * 1.03, 'LB seeks one emulated second, using input replay between checkpoints');
 	assert.equal(history.latestCycles, latest, 'review retains future');
@@ -218,8 +223,8 @@ async function main(): Promise<void> {
 	await openRewind();
 	let releaseResume!: () => void;
 	const resumeGate = new Promise<void>(resolve => { releaseResume = resolve; });
-	const captureBeforeResume = backend.captureGxGpuVramSnapshot.bind(backend);
-	backend.captureGxGpuVramSnapshot = async gpu => { await resumeGate; captureBeforeResume(gpu); };
+	const finishBeforeResume = backend.finishGxGpuReadbacks.bind(backend);
+	backend.finishGxGpuReadbacks = async () => { await resumeGate; finishBeforeResume(); };
 	await press('lb');
 	const intended = rewind.positionCycles;
 	const intendedSequence = history.inputJournal.endAt(intended);
@@ -230,17 +235,17 @@ async function main(): Promise<void> {
 	releaseResume();
 	await settle();
 	for (let index = 0; index < 4; index += 1) await frame();
-	backend.captureGxGpuVramSnapshot = captureBeforeResume;
+	backend.finishGxGpuReadbacks = finishBeforeResume;
 	assert.equal(history.mode, HistoryMode.Recording);
 	assert.equal(history.checkpointCycles(history.checkpointCount - 1), intendedBoundary, 'live takeover captures the selected target, not an intermediate replay state');
 
-	// A delayed backend snapshot and a tooling mutation share one operation queue.
+	// A delayed backend readback and a tooling mutation share one operation queue.
 	// This deliberately controls completion; the normal run above uses the real software backend.
 	await openRewind();
 	let release!: () => void;
 	const gate = new Promise<void>(resolve => { release = resolve; });
-	const capture = backend.captureGxGpuVramSnapshot.bind(backend);
-	backend.captureGxGpuVramSnapshot = async gpu => { await gate; capture(gpu); };
+	const finish = backend.finishGxGpuReadbacks.bind(backend);
+	backend.finishGxGpuReadbacks = async () => { await gate; finish(); };
 	rewind.stepCheckpoint(-1);
 	await frame();
 	assert.equal(tasks.ready, false);
@@ -248,13 +253,13 @@ async function main(): Promise<void> {
 	let mutated = false;
 	const mutation = tasks.schedule(() => { mutated = true; assert.equal(history.mode, HistoryMode.Disabled); }, error => { throw error; });
 	for (let index = 0; index < 4; index += 1) await frame();
-	assert.equal(mutated, false, 'mutation must wait for the submitted snapshot');
+	assert.equal(mutated, false, 'mutation must wait for the submitted readback');
 	assert.equal(runtime.machine.scheduler.currentNowCycles(), heldCycles);
 	rewind.pauseSeek();
 	release();
 	await mutation;
 	assert.equal(mutated, true);
-	backend.captureGxGpuVramSnapshot = capture;
+	backend.finishGxGpuReadbacks = finish;
 	await frame();
 	assert.equal(rewind.active, false, 'mutation invalidates pending navigation');
 	assert.equal(history.checkpointCount, 1, 'new revision starts a new history');
