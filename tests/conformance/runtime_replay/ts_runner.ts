@@ -96,7 +96,12 @@ async function main(): Promise<void> {
 		applyRuntimeSaveState(runtime, decodeRuntimeSaveState(bytes, PSX_MACHINE_SPEC.ramBytes, PSX_MACHINE_SPEC.gxGpuVramBytes));
 		for (let count = 0; count < 120; count += 1) tick();
 		assert.deepEqual(capture(), expected, 'disk-codec replay must reproduce the same runtime state');
-		console.log(JSON.stringify({ host: 'ts', checkpointTick, captureMs, restoreMs, replayMs, bytes: bytes.byteLength, objects: anchor.cpuState.objects.length }));
+		console.log(JSON.stringify({
+			host: 'ts', checkpointTick, captureMs, restoreMs, replayMs, bytes: bytes.byteLength,
+			objects: anchor.cpuState.snapshot.objectCount,
+			cpuSnapshotBytes: anchor.cpuState.snapshot.words.byteLength + anchor.cpuState.snapshot.objectWords.byteLength,
+			cpuSnapshotCapacityBytes: anchor.cpuState.snapshot.capacityBytes,
+		}));
 	}
 
 	const history = runtime.history;

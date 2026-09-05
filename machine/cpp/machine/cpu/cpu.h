@@ -24,6 +24,7 @@
 #include "spec/blua32/opcode.h"
 #include "machine/cpu/table.h"
 #include "machine/cpu/value.h"
+#include "machine/cpu/snapshot.h"
 #include "spec/blua32/memory_access_kind.h"
 #include "spec/blua32/execution_domain.h"
 
@@ -67,60 +68,14 @@ struct ExecutionHookBinding {
 	ExecutionDomainMask preMaskableInterruptDomainMask;
 };
 
-enum class CpuValueStateTag : uint8_t {
-	Nil,
-	False,
-	True,
-	Number,
-	String,
-	Builtin,
-	Table,
-	Closure,
-};
-
-struct CpuValueState {
-	CpuValueStateTag tag = CpuValueStateTag::Nil;
-	double numberValue = 0;
-	StringId stringId = 0;
-	BuiltinFunctionId builtinId = BuiltinFunctionId::Next;
-	int refId = -1;
-};
-
-struct CpuTableHashNodeSnapshot {
-	CpuValueState key;
-	CpuValueState value;
-	int next = -1;
-};
-
-struct CpuObjectState {
-	enum class Kind : uint8_t {
-		Table,
-		Closure,
-		Upvalue,
-	};
-
-	Kind kind = Kind::Table;
-	uint32_t hashId = 0;
-	std::vector<CpuValueState> array;
-	size_t arrayLength = 0;
-	std::vector<CpuTableHashNodeSnapshot> hash;
-	int hashFree = -1;
-	CpuValueState metatable;
-	u32 functionAddress = 0;
-	bool closureCanonical = false;
-	std::vector<int> upvalues;
-	bool upvalueOpen = false;
-	int upvalueIndex = 0;
-	int frameIndex = -1;
-	CpuValueState upvalueValue;
-};
-
+// Saved values are u32 offsets into the snapshot word arena. Object references
+// (closureRef/globalTableRef/openUpvalues) are ordinals in its object index.
 struct CpuFrameState {
 	u32 functionAddress = 0;
 	u32 pc = 0;
 	int closureRef = -1;
-	std::vector<CpuValueState> registers;
-	std::vector<CpuValueState> varargs;
+	std::vector<u32> registers;
+	std::vector<u32> varargs;
 	int returnBase = 0;
 	int returnCount = 0;
 	int top = 0;
@@ -142,7 +97,7 @@ struct CpuProtectedCallState {
 
 struct CpuRootValueState {
 	StringId key = 0;
-	CpuValueState value;
+	u32 value = 0;
 };
 
 struct CpuRuntimeState {
@@ -154,11 +109,11 @@ struct CpuRuntimeState {
 	u32 nextObjectHashId = 1;
 	bool hardHalted = false;
 	LuaHeapState luaHeap;
-	CpuValueState stringIndexTable;
+	u32 stringIndexTable = 0;
 	std::vector<CpuFrameState> frames;
 	std::vector<CpuProtectedCallState> protectedCalls;
-	std::vector<CpuValueState> completionValues;
-	std::vector<CpuObjectState> objects;
+	std::vector<u32> completionValues;
+	CpuSnapshot snapshot;
 	std::vector<int> openUpvalues;
 	ExecutionDomainId lastExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	u32 lastPc = 0;
@@ -285,7 +240,8 @@ public:
 		ExecutionDomainId executionDomainId,
 		u32 functionAddress
 	);
-	CpuRuntimeState captureRuntimeState() const;
+	// Move an evicted snapshot here to reuse its storage without copying it.
+	CpuRuntimeState captureRuntimeState(CpuSnapshot snapshot = {}) const;
 	void restoreRuntimeState(const CpuRuntimeState& state);
 	void requestYield();
 	void haltUntilIrq();

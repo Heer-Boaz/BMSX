@@ -3,6 +3,7 @@
 #include "common/primitives.h"
 
 #include <cstring>
+#include <span>
 
 namespace bmsx {
 
@@ -63,6 +64,22 @@ inline void writeF64LE(u8* data, f64 value) {
 	static_assert(sizeof(word) == sizeof(value));
 	std::memcpy(&word, &value, sizeof(word));
 	writeLE64(data, word);
+}
+
+inline std::vector<u32> readLE32Array(std::span<const u8> data) {
+	std::vector<u32> words(data.size() / sizeof(u32));
+	for (size_t index = 0; index < words.size(); ++index) {
+		words[index] = readLE32(data.data() + index * sizeof(u32));
+	}
+	return words;
+}
+
+inline std::vector<u8> writeLE32Array(std::span<const u32> words) {
+	std::vector<u8> data(words.size() * sizeof(u32));
+	for (size_t index = 0; index < words.size(); ++index) {
+		writeLE32(data.data() + index * sizeof(u32), words[index]);
+	}
+	return data;
 }
 
 } // namespace bmsx

@@ -32,8 +32,10 @@ import {
 	decodeRuntimeSaveState,
 	encodeRuntimeSaveState,
 } from '../../machine/ts/machine/runtime/save_state/codec';
-import { decodeBinaryWithPropTable } from '../../machine/ts/common/serializer/binencoder';
+import { decodeBinaryWithPropTable, encodeBinaryWithPropTable, requireObject, requireObjectKey } from '../../machine/ts/common/serializer/binencoder';
 import { RUNTIME_SAVE_STATE_PROP_NAMES } from '../../machine/ts/machine/runtime/save_state/schema';
+import { CpuSnapshot, CpuSnapshotWriter, CPU_SNAPSHOT_VALUE_WORDS } from '../../machine/ts/machine/cpu/snapshot';
+import { ValueTag } from '../../machine/ts/machine/cpu/value';
 import { ProtectedCallKind } from '../../machine/ts/machine/cpu/call_state';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import { CPU_STATUS_CART_ENTRY } from '../../machine/ts/spec/blua32/cop0';
@@ -54,6 +56,13 @@ function numberedWords(count: number): number[] {
 }
 
 function createRuntimeSaveState(): RuntimeSaveState {
+	const snapshot = new CpuSnapshotWriter(new CpuSnapshot());
+	snapshot.reserveWords(3 * CPU_SNAPSHOT_VALUE_WORDS);
+	snapshot.setWord(0, ValueTag.Number);
+	snapshot.setNumber(1, 7);
+	snapshot.setWord(3, ValueTag.Number);
+	snapshot.setNumber(4, 42);
+	snapshot.setWord(6, ValueTag.Nil);
 	const ram = new Uint8Array(PSX_MACHINE_SPEC.ramBytes);
 	ram.set([1, 2, 3, 4]);
 	const audioRegisterWords = numberedWords(APU_PARAMETER_REGISTER_COUNT);
@@ -495,12 +504,12 @@ function createRuntimeSaveState(): RuntimeSaveState {
 				luaHeap: { trackedBytes: 2345, nextCollectionBytes: 1048576 },
 				executionCartridgeSlot: 0,
 				systemGlobals: [
-				{ key: 1, value: { tag: 'number', value: 7 } },
+				{ key: 1, value: 0 },
 			],
 				globalSlots: [
-					{ key: 3, value: { tag: 'number', value: 42 } },
+					{ key: 3, value: 3 },
 				],
-				stringIndexTable: { tag: 'nil' },
+				stringIndexTable: 6,
 				frames: [],
 			protectedCalls: [{
 				kind: ProtectedCallKind.XPCallHandler,
@@ -512,7 +521,7 @@ function createRuntimeSaveState(): RuntimeSaveState {
 				handlerRegister: 7,
 			}],
 			completionValues: [],
-			objects: [],
+			snapshot: snapshot.finish(),
 			openUpvalues: [],
 			lastExecutionDomainId: 0,
 			lastPc: 0,
@@ -561,7 +570,7 @@ test('runtime save-state codec preserves string pool ROM/runtime ownership', () 
 	assert.deepEqual(decoded.machineState.machine.systemControl, state.machineState.machine.systemControl);
 	assert.deepEqual(decoded.machineState.frameScheduler, state.machineState.frameScheduler);
 	assert.deepEqual(decoded.machineState.frameLoop, state.machineState.frameLoop);
-	assert.deepEqual(decoded.cpuState.systemGlobals, state.cpuState.systemGlobals);
+	assert.deepEqual(decoded.cpuState, state.cpuState);
 });
 
 test('runtime save-state codec rejects a nonnumeric scheduler grant remainder', () => {
@@ -619,7 +628,7 @@ test('runtime save-state codec preserves exception frame metadata', () => {
 		functionAddress: 0x10000120,
 		pc: 44,
 		closureRef: 7,
-		registers: [{ tag: 'nil' }],
+		registers: [state.cpuState.stringIndexTable],
 		varargs: [],
 		returnBase: 1,
 		returnCount: 0,
@@ -641,12 +650,17 @@ test('runtime save-state codec preserves exception frame metadata', () => {
 
 test('runtime save-state codec preserves builtin VM primitive ids', () => {
 	const state = createRuntimeSaveState();
-	state.cpuState.globalSlots = [
-		{ key: 2, value: { tag: 'builtin', id: BuiltinFunctionId.Next } },
-	];
-	state.cpuState.completionValues = [
-		{ tag: 'builtin', id: BuiltinFunctionId.StringChar },
-	];
+	const snapshot = new CpuSnapshotWriter(state.cpuState.snapshot);
+	snapshot.reserveWords(state.cpuState.snapshot.words.length);
+	const next = snapshot.reserveWords(CPU_SNAPSHOT_VALUE_WORDS);
+	snapshot.setWord(next, ValueTag.BuiltinFunction);
+	snapshot.setWord(next + 1, BuiltinFunctionId.Next);
+	const char = snapshot.reserveWords(CPU_SNAPSHOT_VALUE_WORDS);
+	snapshot.setWord(char, ValueTag.BuiltinFunction);
+	snapshot.setWord(char + 1, BuiltinFunctionId.StringChar);
+	snapshot.finish();
+	state.cpuState.globalSlots = [{ key: 2, value: next }];
+	state.cpuState.completionValues = [char];
 
 	const decoded = decodeRuntimeSaveState(
 		encodeRuntimeSaveState(state),
@@ -656,6 +670,7 @@ test('runtime save-state codec preserves builtin VM primitive ids', () => {
 
 	assert.deepEqual(decoded.cpuState.globalSlots, state.cpuState.globalSlots);
 	assert.deepEqual(decoded.cpuState.completionValues, state.cpuState.completionValues);
+	assert.deepEqual(decoded.cpuState.snapshot, state.cpuState.snapshot);
 });
 
 test('runtime save-state bytes start at the current property-table payload', () => {
@@ -663,4 +678,24 @@ test('runtime save-state bytes start at the current property-table payload', () 
 
 	assert.doesNotThrow(() => decodeBinaryWithPropTable(encoded, RUNTIME_SAVE_STATE_PROP_NAMES));
 	assert.throws(() => decodeBinaryWithPropTable(encoded.subarray(2), RUNTIME_SAVE_STATE_PROP_NAMES));
+});
+
+test('CPU word payload is little-endian and excludes unused arena capacity', () => {
+	const state = createRuntimeSaveState();
+	const payload = requireObject(decodeBinaryWithPropTable(encodeRuntimeSaveState(state), RUNTIME_SAVE_STATE_PROP_NAMES), 'payload');
+	const cpu = requireObject(requireObjectKey(payload, 'cpuState', 'payload'), 'cpuState');
+	const snapshot = requireObject(requireObjectKey(cpu, 'snapshot', 'cpuState'), 'snapshot');
+	assert.deepEqual(snapshot.words, new Uint8Array([
+		3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 28, 64,
+		3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 69, 64,
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	]));
+	assert.deepEqual(snapshot.objectWords, new Uint8Array(0));
+	assert.ok(state.cpuState.snapshot.capacityBytes > state.cpuState.snapshot.words.byteLength);
+	snapshot.words = new Uint8Array(3);
+	assert.throws(() => decodeRuntimeSaveState(
+		encodeBinaryWithPropTable(payload, RUNTIME_SAVE_STATE_PROP_NAMES),
+		PSX_MACHINE_SPEC.ramBytes,
+		PSX_MACHINE_SPEC.gxGpuVramBytes,
+	), /whole u32 words/);
 });

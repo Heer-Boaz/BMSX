@@ -1106,123 +1106,55 @@ void CPU::beginCompletionCallInExecutionDomain(
 	);
 }
 
-CpuRuntimeState CPU::captureRuntimeState() const {
-	std::unordered_map<const void*, int> objectIds;
-	std::vector<CpuObjectState> objects;
-	std::function<CpuObjectState(const GCObject*)> captureObjectState;
-	std::function<int(const GCObject*)> ensureObjectId;
-	std::function<CpuValueState(Value)> captureValueState;
-
-	ensureObjectId = [&](const GCObject* object) -> int {
-		const void* key = static_cast<const void*>(object);
-		const auto it = objectIds.find(key);
-		if (it != objectIds.end()) {
-			return it->second;
-		}
-		const int id = static_cast<int>(objects.size());
-		objectIds.emplace(key, id);
-		objects.emplace_back();
-		objects[static_cast<size_t>(id)] = captureObjectState(object);
+CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
+	snapshot.reset();
+	std::unordered_map<const GCObject*, u32> objectIds;
+	std::vector<const GCObject*> pendingObjects;
+	const auto captureObject = [&](const GCObject* object) -> u32 {
+		const auto it = objectIds.find(object);
+		if (it != objectIds.end()) return it->second;
+		const u32 id = snapshot.addObject();
+		objectIds.emplace(object, id);
+		pendingObjects.push_back(object);
 		return id;
 	};
-
-	captureValueState = [&](Value value) -> CpuValueState {
-		CpuValueState state;
-		if (isNil(value)) {
-			return state;
-		}
-		if (value == valueBool(false)) {
-			state.tag = CpuValueStateTag::False;
-			return state;
-		}
-		if (value == valueBool(true)) {
-			state.tag = CpuValueStateTag::True;
-			return state;
-		}
+	const CpuSnapshotValueWriter writeValue = [&](u32 offset, Value value) {
 		if (valueIsNumber(value)) {
-			state.tag = CpuValueStateTag::Number;
-			state.numberValue = asNumber(value);
-			return state;
+			snapshot.setWord(offset, static_cast<u32>(CpuSnapshotValueTag::Number));
+			snapshot.setNumber(offset + 1, asNumber(value));
+			return;
 		}
-		if (valueIsString(value)) {
-			state.tag = CpuValueStateTag::String;
-			state.stringId = asStringId(value);
-			return state;
+		snapshot.setWord(offset + 2, 0);
+		switch (valueTag(value)) {
+			case ValueTag::Nil:
+			case ValueTag::False:
+			case ValueTag::True:
+				// These three native tags already match the snapshot tag column.
+				snapshot.setWord(offset, static_cast<u32>(valueTag(value)));
+				snapshot.setWord(offset + 1, 0);
+				break;
+			case ValueTag::String:
+				snapshot.setWord(offset, static_cast<u32>(CpuSnapshotValueTag::String));
+				snapshot.setWord(offset + 1, asStringId(value));
+				break;
+			case ValueTag::BuiltinFunction:
+				snapshot.setWord(offset, static_cast<u32>(CpuSnapshotValueTag::BuiltinFunction));
+				snapshot.setWord(offset + 1, static_cast<u32>(asBuiltinFunction(value)->id));
+				break;
+			case ValueTag::Table:
+				snapshot.setWord(offset, static_cast<u32>(CpuSnapshotValueTag::Table));
+				snapshot.setWord(offset + 1, captureObject(asTable(value)));
+				break;
+			case ValueTag::Closure:
+				snapshot.setWord(offset, static_cast<u32>(CpuSnapshotValueTag::Closure));
+				snapshot.setWord(offset + 1, captureObject(asClosure(value)));
+				break;
 		}
-		if (valueIsBuiltinFunction(value)) {
-			state.tag = CpuValueStateTag::Builtin;
-			state.builtinId = asBuiltinFunction(value)->id;
-			return state;
-		}
-		if (valueIsTable(value)) {
-			state.tag = CpuValueStateTag::Table;
-			state.refId = ensureObjectId(asTable(value));
-			return state;
-		}
-		if (valueIsClosure(value)) {
-			state.tag = CpuValueStateTag::Closure;
-			state.refId = ensureObjectId(asClosure(value));
-			return state;
-		}
-		throw BMSX_RUNTIME_ERROR("Runtime snapshot cannot preserve " + std::string(valueTypeName(value)) + " value.");
 	};
-
-	captureObjectState = [&](const GCObject* object) -> CpuObjectState {
-		CpuObjectState state;
-		state.hashId = object->hashId;
-		switch (object->type) {
-			case ObjType::Table: {
-				state.kind = CpuObjectState::Kind::Table;
-				const TableRuntimeState tableState = static_cast<const Table*>(object)->captureRuntimeState();
-				state.arrayLength = tableState.arrayLength;
-				state.metatable = captureValueState(tableState.metatable ? valueTable(tableState.metatable) : valueNil());
-				state.array.reserve(tableState.array.size());
-				for (const Value& value : tableState.array) {
-					state.array.push_back(captureValueState(value));
-				}
-				state.hash.reserve(tableState.hash.size());
-				for (const TableHashNodeState& node : tableState.hash) {
-					state.hash.push_back(CpuTableHashNodeSnapshot{
-						captureValueState(node.key),
-						captureValueState(node.value),
-						node.next,
-					});
-				}
-				state.hashFree = tableState.hashFree;
-				return state;
-			}
-			case ObjType::Closure: {
-				state.kind = CpuObjectState::Kind::Closure;
-				const Closure* closure = static_cast<const Closure*>(object);
-				state.functionAddress = closure->functionAddress;
-				state.closureCanonical = closure->trackedHeapBytes == 0;
-				state.upvalues.reserve(closure->upvalueCount);
-				for (size_t upvalueIndex = 0; upvalueIndex < closure->upvalueCount; ++upvalueIndex) {
-					state.upvalues.push_back(ensureObjectId(closure->upvalues[upvalueIndex]));
-				}
-				return state;
-			}
-			case ObjType::Upvalue: {
-				state.kind = CpuObjectState::Kind::Upvalue;
-				const Upvalue* upvalue = static_cast<const Upvalue*>(object);
-				state.upvalueOpen = upvalue->open;
-				state.upvalueIndex = upvalue->index;
-				if (upvalue->open) {
-					int frameIndex = 0;
-					while (m_frames[static_cast<size_t>(frameIndex)].get() != upvalue->frame) {
-						frameIndex += 1;
-					}
-					state.frameIndex = frameIndex;
-					state.upvalueValue = captureValueState(upvalue->frame->registers[static_cast<size_t>(upvalue->index)]);
-				} else {
-					state.frameIndex = -1;
-					state.upvalueValue = captureValueState(upvalue->value);
-				}
-				return state;
-			}
-			default:
-				throw std::runtime_error("Unsupported runtime snapshot object.");
-		}
+	const auto captureValueState = [&](Value value) -> u32 {
+		const u32 offset = snapshot.reserveWords(CPU_SNAPSHOT_VALUE_WORDS);
+		writeValue(offset, value);
+		return offset;
 	};
 
 	CpuRuntimeState state;
@@ -1234,7 +1166,7 @@ CpuRuntimeState CPU::captureRuntimeState() const {
 			captureValueState(value),
 		});
 	}
-	state.globalTableRef = ensureObjectId(globals);
+	state.globalTableRef = captureObject(globals);
 	state.globalSlots.reserve(m_globalNames.size());
 	for (size_t index = 0; index < m_globalNames.size(); ++index) {
 		state.globalSlots.push_back(CpuRootValueState{
@@ -1249,7 +1181,7 @@ CpuRuntimeState CPU::captureRuntimeState() const {
 		CpuFrameState frameState;
 		frameState.functionAddress = frame.functionAddress;
 		frameState.pc = frame.pc;
-		frameState.closureRef = ensureObjectId(frame.closure);
+		frameState.closureRef = captureObject(frame.closure);
 		frameState.returnBase = frame.returnBase;
 		frameState.returnCount = frame.returnCount;
 		frameState.top = frame.top;
@@ -1293,7 +1225,7 @@ CpuRuntimeState CPU::captureRuntimeState() const {
 	}
 	for (const auto& frame : m_frames) {
 		for (Upvalue* upvalue = frame->openUpvalueHead; upvalue; upvalue = upvalue->nextOpen) {
-			state.openUpvalues.push_back(ensureObjectId(upvalue));
+			state.openUpvalues.push_back(captureObject(upvalue));
 		}
 	}
 	state.stringIndexTable = captureValueState(
@@ -1310,7 +1242,49 @@ CpuRuntimeState CPU::captureRuntimeState() const {
 		return left->functionAddress < right->functionAddress;
 	});
 	for (const Closure* closure : canonicalClosures) {
-		ensureObjectId(closure);
+		captureObject(closure);
+	}
+	// Reserve ordinals at each edge, then drain in ordinal order. Guest graph
+	// depth must not consume the host call stack.
+	for (u32 id = 0; id < pendingObjects.size(); ++id) {
+		const auto* object = pendingObjects[id];
+		u32 offset;
+		switch (object->type) {
+			case ObjType::Table:
+				offset = static_cast<const Table*>(object)->captureSnapshot(snapshot, writeValue);
+				break;
+			case ObjType::Closure: {
+				const auto* closure = static_cast<const Closure*>(object);
+				offset = snapshot.reserveWords(SNAP_CLOSURE_DATA + static_cast<u32>(closure->upvalueCount));
+				snapshot.setWord(offset + SNAP_CLOSURE_KIND, static_cast<u32>(CpuSnapshotObjectKind::Closure));
+				snapshot.setWord(offset + SNAP_CLOSURE_HASH_ID, closure->hashId);
+				snapshot.setWord(offset + SNAP_CLOSURE_FUNCTION_ADDRESS, closure->functionAddress);
+				snapshot.setWord(offset + SNAP_CLOSURE_CANONICAL, closure->trackedHeapBytes == 0);
+				snapshot.setWord(offset + SNAP_CLOSURE_UPVALUE_COUNT, static_cast<u32>(closure->upvalueCount));
+				for (u32 index = 0; index < closure->upvalueCount; ++index) {
+					snapshot.setWord(offset + SNAP_CLOSURE_DATA + index, captureObject(closure->upvalues[index]));
+				}
+				break;
+			}
+			case ObjType::Upvalue: {
+				const auto* upvalue = static_cast<const Upvalue*>(object);
+				offset = snapshot.reserveWords(SNAP_UPVALUE_VALUE + CPU_SNAPSHOT_VALUE_WORDS);
+				snapshot.setWord(offset + SNAP_UPVALUE_KIND, static_cast<u32>(CpuSnapshotObjectKind::Upvalue));
+				snapshot.setWord(offset + SNAP_UPVALUE_HASH_ID, upvalue->hashId);
+				snapshot.setWord(offset + SNAP_UPVALUE_OPEN, upvalue->open);
+				snapshot.setWord(offset + SNAP_UPVALUE_INDEX, static_cast<u32>(upvalue->index));
+				int frameIndex = -1;
+				if (upvalue->open) {
+					frameIndex = 0;
+					while (m_frames[static_cast<size_t>(frameIndex)].get() != upvalue->frame) ++frameIndex;
+				}
+				snapshot.setWord(offset + SNAP_UPVALUE_FRAME_INDEX, static_cast<u32>(frameIndex));
+				writeValue(offset + SNAP_UPVALUE_VALUE, upvalue->open ? upvalue->frame->registers[upvalue->index] : upvalue->value);
+				break;
+			}
+			default: __builtin_unreachable();
+		}
+		snapshot.setObjectWord(id, offset);
 	}
 	for (size_t index = 0; index < m_executionImagesByDomain.size(); ++index) {
 		if (m_executionImagesByDomain[index]) {
@@ -1320,7 +1294,7 @@ CpuRuntimeState CPU::captureRuntimeState() const {
 	state.nextObjectHashId = m_heap.nextObjectHashId();
 	state.hardHalted = m_hardHalted;
 	state.luaHeap = m_luaHeap.captureState();
-	state.objects = std::move(objects);
+	state.snapshot = std::move(snapshot);
 	state.lastExecutionDomainId = m_lastExecutionDomainId;
 	state.lastPc = lastPc;
 	state.instructionBudgetRemaining = instructionBudgetRemaining;
@@ -1345,127 +1319,83 @@ CpuRuntimeState CPU::captureRuntimeState() const {
 }
 
 void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
-	struct RestoredObject {
-		Table* table = nullptr;
-		Closure* closure = nullptr;
-		Upvalue* upvalue = nullptr;
-	};
-
+	const auto& snapshot = state.snapshot;
 	m_completionValues.clear();
 	clearCallStack();
 	std::unordered_set<u32> canonicalAddresses;
-	for (const CpuObjectState& object : state.objects) {
-		if (object.kind == CpuObjectState::Kind::Closure && object.closureCanonical) {
-			canonicalAddresses.insert(object.functionAddress);
+	for (u32 offset : snapshot.objectWords()) {
+		if (snapshot.word(offset) == static_cast<u32>(CpuSnapshotObjectKind::Closure) && snapshot.word(offset + SNAP_CLOSURE_CANONICAL) != 0) {
+			canonicalAddresses.insert(snapshot.word(offset + SNAP_CLOSURE_FUNCTION_ADDRESS));
 		}
 	}
-	std::erase_if(m_staticClosuresByAddress, [&](const auto& entry) {
-		return !canonicalAddresses.contains(entry.first);
-	});
-	std::vector<RestoredObject> restoredObjects(state.objects.size());
-	for (size_t index = 0; index < state.objects.size(); ++index) {
-		const CpuObjectState& objectState = state.objects[index];
-		switch (objectState.kind) {
-			case CpuObjectState::Kind::Table:
+	std::erase_if(m_staticClosuresByAddress, [&](const auto& entry) { return !canonicalAddresses.contains(entry.first); });
+	std::vector<GCObject*> restoredObjects(snapshot.objectCount());
+	for (size_t index = 0; index < snapshot.objectCount(); ++index) {
+		const u32 offset = snapshot.objectWord(static_cast<u32>(index));
+		switch (static_cast<CpuSnapshotObjectKind>(snapshot.word(offset))) {
+			case CpuSnapshotObjectKind::Table: {
+				Table* table;
 				if (index == static_cast<size_t>(state.globalTableRef)) {
-					restoredObjects[index].table = globals;
+					table = globals;
 				} else {
-					m_luaHeap.restoreAllocate(Table::trackedHeapBytesForCapacities(0, 0));
-					restoredObjects[index].table = m_heap.allocate<Table>(ObjType::Table, m_luaHeap, 0, 0);
+					const u32 arrayCapacity = snapshot.word(offset + SNAP_TABLE_ARRAY_CAPACITY);
+					const u32 hashSize = snapshot.word(offset + SNAP_TABLE_HASH_SIZE);
+					m_luaHeap.restoreAllocate(Table::trackedHeapBytesForCapacities(arrayCapacity, hashSize));
+					table = m_heap.allocate<Table>(ObjType::Table, m_luaHeap, arrayCapacity, hashSize);
 				}
-				restoredObjects[index].table->marked = true;
-				restoredObjects[index].table->hashId = objectState.hashId;
-				break;
-			case CpuObjectState::Kind::Closure: {
-				const size_t upvalueCount = objectState.upvalues.size();
-				if (objectState.closureCanonical) {
-					restoredObjects[index].closure = staticClosureAtAddress(objectState.functionAddress);
-				} else {
-					const size_t heapBytes = kClosureHeapBytes + (upvalueCount * kClosureUpvalueSlotHeapBytes);
-					m_luaHeap.restoreAllocate(heapBytes);
-					restoredObjects[index].closure = allocateTrackedClosure(objectState.functionAddress, upvalueCount);
-				}
-				restoredObjects[index].closure->marked = !objectState.closureCanonical;
-				restoredObjects[index].closure->hashId = objectState.hashId;
+				table->marked = true;
+				table->hashId = snapshot.word(offset + SNAP_TABLE_HASH_ID);
+				restoredObjects[index] = table;
 				break;
 			}
-			case CpuObjectState::Kind::Upvalue: {
+			case CpuSnapshotObjectKind::Closure: {
+				const u32 functionAddress = snapshot.word(offset + SNAP_CLOSURE_FUNCTION_ADDRESS);
+				const bool canonical = snapshot.word(offset + SNAP_CLOSURE_CANONICAL) != 0;
+				Closure* closure;
+				if (canonical) {
+					closure = staticClosureAtAddress(functionAddress);
+				} else {
+					const u32 upvalueCount = snapshot.word(offset + SNAP_CLOSURE_UPVALUE_COUNT);
+					m_luaHeap.restoreAllocate(kClosureHeapBytes + upvalueCount * kClosureUpvalueSlotHeapBytes);
+					closure = allocateTrackedClosure(functionAddress, upvalueCount);
+				}
+				closure->marked = !canonical;
+				closure->hashId = snapshot.word(offset + SNAP_CLOSURE_HASH_ID);
+				restoredObjects[index] = closure;
+				break;
+			}
+			case CpuSnapshotObjectKind::Upvalue: {
 				m_luaHeap.restoreAllocate(kUpvalueHeapBytes);
 				auto* upvalue = m_heap.allocate<Upvalue>(ObjType::Upvalue);
 				upvalue->marked = true;
 				upvalue->open = false;
-				upvalue->index = objectState.upvalueIndex;
+				upvalue->index = snapshot.integer(offset + SNAP_UPVALUE_INDEX);
 				upvalue->frame = nullptr;
 				upvalue->value = valueNil();
-				upvalue->hashId = objectState.hashId;
-				restoredObjects[index].upvalue = upvalue;
+				upvalue->hashId = snapshot.word(offset + SNAP_UPVALUE_HASH_ID);
+				restoredObjects[index] = upvalue;
 				break;
 			}
 		}
 	}
-
-	std::function<Value(const CpuValueState&)> restoreValue = [&](const CpuValueState& valueState) -> Value {
-		switch (valueState.tag) {
-			case CpuValueStateTag::Nil:
-				return valueNil();
-			case CpuValueStateTag::False:
-				return valueBool(false);
-			case CpuValueStateTag::True:
-				return valueBool(true);
-			case CpuValueStateTag::Number:
-				return valueNumber(valueState.numberValue);
-			case CpuValueStateTag::String:
-				return valueString(valueState.stringId);
-			case CpuValueStateTag::Builtin:
-				return createBuiltinFunction(valueState.builtinId);
-			case CpuValueStateTag::Table:
-				return valueTable(restoredObjects[static_cast<size_t>(valueState.refId)].table);
-			case CpuValueStateTag::Closure:
-				return valueClosure(restoredObjects[static_cast<size_t>(valueState.refId)].closure);
-		}
-		__builtin_unreachable();
-	};
-
-	for (size_t index = 0; index < state.objects.size(); ++index) {
-		const CpuObjectState& objectState = state.objects[index];
-		switch (objectState.kind) {
-			case CpuObjectState::Kind::Table: {
-				TableRuntimeState tableState;
-				tableState.array.reserve(objectState.array.size());
-				for (const CpuValueState& valueState : objectState.array) {
-					tableState.array.push_back(restoreValue(valueState));
-				}
-				tableState.arrayLength = objectState.arrayLength;
-				tableState.hash.reserve(objectState.hash.size());
-				for (const CpuTableHashNodeSnapshot& node : objectState.hash) {
-					tableState.hash.push_back(TableHashNodeState{
-						restoreValue(node.key),
-						restoreValue(node.value),
-						node.next,
-					});
-				}
-				tableState.hashFree = objectState.hashFree;
-				const Value metatable = restoreValue(objectState.metatable);
-				if (!isNil(metatable)) {
-					tableState.metatable = asTable(metatable);
-				}
-				restoredObjects[index].table->restoreRuntimeState(tableState);
+	const CpuSnapshotReader reader(snapshot, restoredObjects, m_builtinFunctions);
+	for (size_t index = 0; index < snapshot.objectCount(); ++index) {
+		const u32 offset = snapshot.objectWord(static_cast<u32>(index));
+		switch (static_cast<CpuSnapshotObjectKind>(snapshot.word(offset))) {
+			case CpuSnapshotObjectKind::Table:
+				static_cast<Table*>(restoredObjects[index])->restoreSnapshot(reader, offset);
 				break;
-			}
-			case CpuObjectState::Kind::Closure: {
-				Closure* closure = restoredObjects[index].closure;
-				closure->functionAddress = objectState.functionAddress;
-				for (size_t upvalueIndex = 0; upvalueIndex < objectState.upvalues.size(); ++upvalueIndex) {
-					closure->upvalues[upvalueIndex] = restoredObjects[static_cast<size_t>(objectState.upvalues[upvalueIndex])].upvalue;
+			case CpuSnapshotObjectKind::Closure: {
+				auto* closure = static_cast<Closure*>(restoredObjects[index]);
+				for (u32 slot = 0; slot < closure->upvalueCount; ++slot) {
+					closure->upvalues[slot] = static_cast<Upvalue*>(restoredObjects[snapshot.word(offset + SNAP_CLOSURE_DATA + slot)]);
 				}
 				break;
 			}
-			case CpuObjectState::Kind::Upvalue: {
-				Upvalue* upvalue = restoredObjects[index].upvalue;
-				upvalue->open = objectState.upvalueOpen;
-				upvalue->index = objectState.upvalueIndex;
-				upvalue->frame = nullptr;
-				upvalue->value = objectState.upvalueOpen ? valueNil() : restoreValue(objectState.upvalueValue);
+			case CpuSnapshotObjectKind::Upvalue: {
+				auto* upvalue = static_cast<Upvalue*>(restoredObjects[index]);
+				upvalue->open = snapshot.word(offset + SNAP_UPVALUE_OPEN) != 0;
+				upvalue->value = upvalue->open ? valueNil() : reader.readValue(offset + SNAP_UPVALUE_VALUE);
 				break;
 			}
 		}
@@ -1481,14 +1411,14 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	for (const CpuRootValueState& entry : state.systemGlobals) {
 		m_systemGlobalSlotByKey.emplace(entry.key, m_systemGlobalNames.size());
 		m_systemGlobalNames.push_back(entry.key);
-		m_systemGlobalValues.push_back(restoreValue(entry.value));
+		m_systemGlobalValues.push_back(reader.readValue(entry.value));
 	}
 	m_globalNames.reserve(state.globalSlots.size());
 	m_globalValues.reserve(state.globalSlots.size());
 	for (const CpuRootValueState& entry : state.globalSlots) {
 		m_globalSlotByKey.emplace(entry.key, m_globalNames.size());
 		m_globalNames.push_back(entry.key);
-		m_globalValues.push_back(restoreValue(entry.value));
+		m_globalValues.push_back(reader.readValue(entry.value));
 	}
 	for (size_t index = 0; index < m_executionImagesByDomain.size(); ++index) {
 		if ((state.executionResidencyMask & (1u << index)) != 0u) {
@@ -1510,7 +1440,7 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 		frame->functionAddress = frameState.functionAddress;
 		frame->executionImage = functionRecord.image;
 		frame->pc = frameState.pc;
-		frame->closure = restoredObjects[static_cast<size_t>(frameState.closureRef)].closure;
+		frame->closure = static_cast<Closure*>(restoredObjects[static_cast<size_t>(frameState.closureRef)]);
 		frame->returnBase = frameState.returnBase;
 		frame->returnCount = frameState.returnCount;
 		frame->returnToCompletionLatch = frameState.returnToCompletionLatch;
@@ -1529,10 +1459,10 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 			frame->registers[static_cast<size_t>(slot)] = valueNil();
 		}
 		for (size_t registerIndex = 0; registerIndex < frameState.registers.size(); ++registerIndex) {
-			frame->registers[registerIndex] = restoreValue(frameState.registers[registerIndex]);
+			frame->registers[registerIndex] = reader.readValue(frameState.registers[registerIndex]);
 		}
 		for (size_t varargIndex = 0; varargIndex < frameState.varargs.size(); ++varargIndex) {
-			m_stack[static_cast<size_t>(frame->varargBase) + varargIndex] = restoreValue(frameState.varargs[varargIndex]);
+			m_stack[static_cast<size_t>(frame->varargBase) + varargIndex] = reader.readValue(frameState.varargs[varargIndex]);
 		}
 		frame->top = frameState.top;
 		m_frames.push_back(std::move(frame));
@@ -1553,21 +1483,21 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	m_protectedCallDepth = state.protectedCalls.size();
 
 	for (int upvalueRef : state.openUpvalues) {
-		const CpuObjectState& objectState = state.objects[static_cast<size_t>(upvalueRef)];
-		Upvalue* upvalue = restoredObjects[static_cast<size_t>(upvalueRef)].upvalue;
-		CallFrame* frame = m_frames[static_cast<size_t>(objectState.frameIndex)].get();
+		const u32 offset = snapshot.objectWord(static_cast<u32>(upvalueRef));
+		Upvalue* upvalue = static_cast<Upvalue*>(restoredObjects[static_cast<size_t>(upvalueRef)]);
+		CallFrame* frame = m_frames[static_cast<size_t>(snapshot.integer(offset + SNAP_UPVALUE_FRAME_INDEX))].get();
 		upvalue->open = true;
-		upvalue->index = objectState.upvalueIndex;
+		upvalue->index = snapshot.integer(offset + SNAP_UPVALUE_INDEX);
 		upvalue->frame = frame;
 		upvalue->value = valueNil();
 		linkOpenUpvalue(*frame, upvalue);
 	}
 
-	const Value stringIndexTable = restoreValue(state.stringIndexTable);
+	const Value stringIndexTable = reader.readValue(state.stringIndexTable);
 	m_stringIndexTable = isNil(stringIndexTable) ? nullptr : asTable(stringIndexTable);
 	m_completionValues.reserve(state.completionValues.size());
-	for (const CpuValueState& valueState : state.completionValues) {
-		m_completionValues.push_back(restoreValue(valueState));
+	for (u32 valueState : state.completionValues) {
+		m_completionValues.push_back(reader.readValue(valueState));
 	}
 	m_lastExecutionDomainId = state.lastExecutionDomainId;
 	lastPc = state.lastPc;

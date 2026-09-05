@@ -1,9 +1,10 @@
+import { readLE32Array, writeLE32Array } from '../../../common/endian';
+import { CpuSnapshot } from '../../cpu/snapshot';
 import { decodeBinaryWithPropTable, encodeBinaryWithPropTable, requireObject, requireObjectKey } from '../../../common/serializer/binencoder';
 import { IO_DMA_CHANNEL_COUNT } from '../../../spec/bmsx/io';
 import type { MachineSaveState } from '../../save_state';
-import type { CpuFrameState, CpuObjectState, CpuProtectedCallState, CpuRootValueState, CpuRuntimeState, CpuValueState } from '../../cpu/cpu';
+import type { CpuFrameState, CpuProtectedCallState, CpuRootValueState, CpuRuntimeState } from '../../cpu/cpu';
 import type { ExecutionDomainId } from '../../../spec/blua32/execution_domain';
-import type { BuiltinFunctionId } from '../../../spec/blua32/builtin';
 import type { IrqControllerState } from '../../devices/irq/save_state';
 import type { AudioControllerState } from '../../devices/audio/save_state';
 import type {
@@ -92,8 +93,6 @@ import type { RuntimeSaveMachineState } from '../save_machine_state';
 import type { RuntimeSaveState } from '../save_state';
 import { RUNTIME_SAVE_STATE_PROP_NAMES } from './schema';
 
-type CpuTableHashNodeState = Extract<CpuObjectState, { kind: 'table' }>['hash'][number];
-
 function requireArray(value: unknown, label: string): unknown[] {
 	if (!Array.isArray(value)) {
 		throw new Error(`${label} must be an array.`);
@@ -171,6 +170,14 @@ function requireBinaryValue(value: unknown, label: string): Uint8Array {
 		throw new Error(`${label} must be binary.`);
 	}
 	return value;
+}
+
+function decodeU32Binary(value: unknown, label: string): Uint32Array {
+	const bytes = requireBinaryValue(value, label);
+	if ((bytes.byteLength & 3) !== 0) {
+		throw new Error(`${label} must contain whole u32 words.`);
+	}
+	return readLE32Array(bytes);
 }
 
 function requireBinaryFixedLength(value: unknown, label: string, byteLength: number): Uint8Array {
@@ -1387,160 +1394,6 @@ function decodeRuntimeSaveMachineState(value: unknown, label: string, ramByteCou
 	};
 }
 
-function encodeCpuValueState(state: CpuValueState): CpuValueState {
-	switch (state.tag) {
-		case 'nil':
-		case 'false':
-		case 'true':
-			return { tag: state.tag };
-		case 'number':
-			return { tag: 'number', value: state.value };
-		case 'string':
-			return { tag: 'string', id: state.id };
-		case 'builtin':
-			return { tag: 'builtin', id: state.id };
-		case 'table':
-			return { tag: 'table', id: state.id };
-		case 'closure':
-			return { tag: 'closure', id: state.id };
-	}
-}
-
-function decodeCpuValueState(value: unknown, label: string): CpuValueState {
-	const object = requireObject(value, label);
-	const tag = requireObjectKey(object, 'tag', label, 'cpuValueState.tag') as CpuValueState['tag'];
-	switch (tag) {
-		case 'nil':
-		case 'false':
-		case 'true':
-			return { tag };
-		case 'number':
-			return { tag: 'number', value: requireObjectKey(object, 'value', label, 'cpuValueState.value') as number };
-		case 'string':
-			return { tag: 'string', id: requireObjectKey(object, 'id', label, 'cpuValueState.id') as number };
-		case 'builtin':
-			return { tag: 'builtin', id: requireObjectKey(object, 'id', label, 'cpuValueState.id') as BuiltinFunctionId };
-		case 'table':
-			return { tag: 'table', id: requireObjectKey(object, 'id', label, 'cpuValueState.id') as number };
-		case 'closure':
-			return { tag: 'closure', id: requireObjectKey(object, 'id', label, 'cpuValueState.id') as number };
-	}
-	throw new Error('cpuValueState.tag is invalid.');
-}
-
-function encodeCpuTableHashNodeState(state: CpuTableHashNodeState): CpuTableHashNodeState {
-	return {
-		key: encodeCpuValueState(state.key),
-		value: encodeCpuValueState(state.value),
-		next: state.next,
-	};
-}
-
-function decodeCpuTableHashNodeState(value: unknown, label: string): CpuTableHashNodeState {
-	const object = requireObject(value, label);
-	return {
-		key: decodeCpuValueState(requireObjectKey(object, 'key', label, 'cpuObjectState.hash[].key'), 'cpuObjectState.hash[].key'),
-		value: decodeCpuValueState(requireObjectKey(object, 'value', label, 'cpuObjectState.hash[].value'), 'cpuObjectState.hash[].value'),
-		next: requireObjectKey(object, 'next', label, 'cpuObjectState.hash[].next') as number,
-	};
-}
-
-function encodeCpuObjectState(state: CpuObjectState): CpuObjectState {
-	switch (state.kind) {
-		case 'table':
-			return {
-				kind: 'table',
-				hashId: state.hashId,
-				array: encodeVector(state.array, encodeCpuValueState),
-				arrayLength: state.arrayLength,
-				hash: encodeVector(state.hash, encodeCpuTableHashNodeState),
-				hashFree: state.hashFree,
-				metatable: encodeCpuValueState(state.metatable),
-			};
-		case 'closure':
-			return {
-				kind: 'closure',
-				hashId: state.hashId,
-				functionAddress: state.functionAddress,
-				canonical: state.canonical,
-				upvalues: encodeVector(state.upvalues, (index) => index),
-			};
-		case 'upvalue':
-			return {
-				kind: 'upvalue',
-				hashId: state.hashId,
-				open: state.open,
-				index: state.index,
-				frameIndex: state.frameIndex,
-				value: encodeCpuValueState(state.value),
-			};
-	}
-}
-
-function decodeCpuObjectState(value: unknown, label: string): CpuObjectState {
-	const object = requireObject(value, label);
-	const kind = requireObjectKey(object, 'kind', label, 'cpuObjectState.kind') as CpuObjectState['kind'];
-	switch (kind) {
-		case 'table':
-			return {
-				kind: 'table',
-				hashId: requireObjectKey(object, 'hashId', label, 'cpuObjectState.hashId') as number,
-				array: decodeVector(
-					requireObjectKey(object, 'array', label, 'cpuObjectState.array'),
-					'cpuObjectState.array',
-					(entry) => decodeCpuValueState(entry, 'cpuObjectState.array[]'),
-				),
-				arrayLength: requireObjectKey(object, 'arrayLength', label, 'cpuObjectState.arrayLength') as number,
-				hash: decodeVector(
-					requireObjectKey(object, 'hash', label, 'cpuObjectState.hash'),
-					'cpuObjectState.hash',
-					(entry) => decodeCpuTableHashNodeState(entry, 'cpuObjectState.hash[]'),
-				),
-				hashFree: requireObjectKey(object, 'hashFree', label, 'cpuObjectState.hashFree') as number,
-				metatable: decodeCpuValueState(requireObjectKey(object, 'metatable', label, 'cpuObjectState.metatable'), 'cpuObjectState.metatable'),
-			};
-		case 'closure':
-			return {
-				kind: 'closure',
-				hashId: requireObjectKey(object, 'hashId', label, 'cpuObjectState.hashId') as number,
-				functionAddress: requireObjectKey(object, 'functionAddress', label, 'cpuObjectState.functionAddress') as number,
-				canonical: requireObjectKey(object, 'canonical', label, 'cpuObjectState.canonical') as boolean,
-				upvalues: decodeVector(
-					requireObjectKey(object, 'upvalues', label, 'cpuObjectState.upvalues'),
-					'cpuObjectState.upvalues',
-					(entry) => entry as number,
-				),
-			};
-		case 'upvalue':
-			return {
-				kind: 'upvalue',
-				hashId: requireObjectKey(object, 'hashId', label, 'cpuObjectState.hashId') as number,
-				open: requireObjectKey(object, 'open', label, 'cpuObjectState.open') as boolean,
-				index: requireObjectKey(object, 'index', label, 'cpuObjectState.index') as number,
-				frameIndex: requireObjectKey(object, 'frameIndex', label, 'cpuObjectState.frameIndex') as number,
-				value: decodeCpuValueState(requireObjectKey(object, 'value', label, 'cpuObjectState.value'), 'cpuObjectState.value'),
-			};
-	}
-	throw new Error('cpuObjectState.kind is invalid.');
-}
-
-function encodeCpuFrameState(state: CpuFrameState): CpuFrameState {
-	return {
-		functionAddress: state.functionAddress,
-		pc: state.pc,
-		closureRef: state.closureRef,
-		registers: encodeVector(state.registers, encodeCpuValueState),
-		varargs: encodeVector(state.varargs, encodeCpuValueState),
-		returnBase: state.returnBase,
-		returnCount: state.returnCount,
-		top: state.top,
-		returnToCompletionLatch: state.returnToCompletionLatch,
-		callSitePc: state.callSitePc,
-		isExceptionFrame: state.isExceptionFrame,
-		isNonMaskableExceptionFrame: state.isNonMaskableExceptionFrame,
-	};
-}
-
 function decodeCpuFrameState(value: unknown, label: string): CpuFrameState {
 	const object = requireObject(value, label);
 	return {
@@ -1550,12 +1403,12 @@ function decodeCpuFrameState(value: unknown, label: string): CpuFrameState {
 		registers: decodeVector(
 			requireObjectKey(object, 'registers', label, 'cpuFrameState.registers'),
 			'cpuFrameState.registers',
-			(entry) => decodeCpuValueState(entry, 'cpuFrameState.registers[]'),
+			(entry) => requireBoundedU32(entry, 'cpuFrameState.registers[]', 0, 0xffffffff),
 		),
 		varargs: decodeVector(
 			requireObjectKey(object, 'varargs', label, 'cpuFrameState.varargs'),
 			'cpuFrameState.varargs',
-			(entry) => decodeCpuValueState(entry, 'cpuFrameState.varargs[]'),
+			(entry) => requireBoundedU32(entry, 'cpuFrameState.varargs[]', 0, 0xffffffff),
 		),
 		returnBase: requireObjectKey(object, 'returnBase', label, 'cpuFrameState.returnBase') as number,
 		returnCount: requireObjectKey(object, 'returnCount', label, 'cpuFrameState.returnCount') as number,
@@ -1564,18 +1417,6 @@ function decodeCpuFrameState(value: unknown, label: string): CpuFrameState {
 		callSitePc: requireObjectKey(object, 'callSitePc', label, 'cpuFrameState.callSitePc') as number,
 		isExceptionFrame: requireObjectKey(object, 'isExceptionFrame', label, 'cpuFrameState.isExceptionFrame') as boolean,
 		isNonMaskableExceptionFrame: requireObjectKey(object, 'isNonMaskableExceptionFrame', label, 'cpuFrameState.isNonMaskableExceptionFrame') as boolean,
-	};
-}
-
-function encodeCpuProtectedCallState(state: CpuProtectedCallState): CpuProtectedCallState {
-	return {
-		kind: state.kind,
-		callerFrameIndex: state.callerFrameIndex,
-		targetFrameIndex: state.targetFrameIndex,
-		returnsToProtectedParent: state.returnsToProtectedParent,
-		callBase: state.callBase,
-		returnCount: state.returnCount,
-		handlerRegister: state.handlerRegister,
 	};
 }
 
@@ -1592,65 +1433,27 @@ function decodeCpuProtectedCallState(value: unknown, label: string): CpuProtecte
 	};
 }
 
-function encodeCpuRootValueState(state: CpuRootValueState): CpuRootValueState {
-	return {
-		key: state.key,
-		value: encodeCpuValueState(state.value),
-	};
-}
-
 function decodeCpuRootValueState(value: unknown, label: string): CpuRootValueState {
 	const object = requireObject(value, label);
 	return {
 		key: requireBoundedU32(requireObjectKey(object, 'key', label, 'cpuRootValueState.key'), 'cpuRootValueState.key', 0, 0xffffffff),
-		value: decodeCpuValueState(requireObjectKey(object, 'value', label, 'cpuRootValueState.value'), 'cpuRootValueState.value'),
+		value: requireBoundedU32(requireObjectKey(object, 'value', label, 'cpuRootValueState.value'), 'cpuRootValueState.value', 0, 0xffffffff),
 	};
 }
 
-function encodeCpuRuntimeState(state: CpuRuntimeState): CpuRuntimeState {
+function encodeCpuRuntimeState(state: CpuRuntimeState) {
 	return {
-		executionCartridgeSlot: state.executionCartridgeSlot,
-		systemGlobals: encodeVector(state.systemGlobals, encodeCpuRootValueState),
-		globalTableRef: state.globalTableRef,
-		globalSlots: encodeVector(state.globalSlots, encodeCpuRootValueState),
-		executionResidencyMask: state.executionResidencyMask,
-		nextObjectHashId: state.nextObjectHashId,
-		hardHalted: state.hardHalted,
-		luaHeap: {
-			trackedBytes: state.luaHeap.trackedBytes,
-			nextCollectionBytes: state.luaHeap.nextCollectionBytes,
+		...state,
+		snapshot: {
+			words: writeLE32Array(state.snapshot.words),
+			objectWords: writeLE32Array(state.snapshot.objectWords),
 		},
-		stringIndexTable: encodeCpuValueState(state.stringIndexTable),
-		frames: encodeVector(state.frames, encodeCpuFrameState),
-		protectedCalls: encodeVector(state.protectedCalls, encodeCpuProtectedCallState),
-		completionValues: encodeVector(state.completionValues, encodeCpuValueState),
-		objects: encodeVector(state.objects, encodeCpuObjectState),
-		openUpvalues: encodeVector(state.openUpvalues, (value) => value),
-		lastExecutionDomainId: state.lastExecutionDomainId,
-		lastPc: state.lastPc,
-		instructionBudgetRemaining: state.instructionBudgetRemaining,
-		haltedUntilIrqFrameDepth: state.haltedUntilIrqFrameDepth,
-		interruptEventPending: state.interruptEventPending,
-		memoryWriteBlocked: state.memoryWriteBlocked,
-		memoryWriteBlockedAddress: state.memoryWriteBlockedAddress,
-		statusWord: state.statusWord,
-		causeWord: state.causeWord,
-		epcWord: state.epcWord,
-		badAddressWord: state.badAddressWord,
-		luaFaultReasonWord: state.luaFaultReasonWord,
-		exceptionDomainWord: state.exceptionDomainWord,
-		nmiReturnCauseWord: state.nmiReturnCauseWord,
-		nmiReturnEpcWord: state.nmiReturnEpcWord,
-		nmiReturnBadAddressWord: state.nmiReturnBadAddressWord,
-		nmiReturnLuaFaultReasonWord: state.nmiReturnLuaFaultReasonWord,
-		nmiReturnExceptionDomainWord: state.nmiReturnExceptionDomainWord,
-		nonMaskableInterruptPending: state.nonMaskableInterruptPending,
-		yieldRequested: state.yieldRequested,
 	};
 }
 
 function decodeCpuRuntimeState(value: unknown, label: string): CpuRuntimeState {
 	const object = requireObject(value, label);
+	const snapshot = requireObject(requireObjectKey(object, 'snapshot', label, 'cpuState.snapshot'), 'cpuState.snapshot');
 	const luaHeap = requireObject(requireObjectKey(object, 'luaHeap', label, 'cpuState.luaHeap'), 'cpuState.luaHeap');
 	const executionCartridgeSlot = requireNumberValue(
 		requireObjectKey(object, 'executionCartridgeSlot', label, 'cpuState.executionCartridgeSlot'),
@@ -1681,9 +1484,9 @@ function decodeCpuRuntimeState(value: unknown, label: string): CpuRuntimeState {
 			'cpuState.globalSlots',
 			(entry) => decodeCpuRootValueState(entry, 'cpuState.globalSlots[]'),
 		),
-		stringIndexTable: decodeCpuValueState(
+		stringIndexTable: requireBoundedU32(
 			requireObjectKey(object, 'stringIndexTable', label, 'cpuState.stringIndexTable'),
-			'cpuState.stringIndexTable',
+			'cpuState.stringIndexTable', 0, 0xffffffff,
 		),
 		frames: decodeVector(
 			requireObjectKey(object, 'frames', label, 'cpuState.frames'),
@@ -1698,12 +1501,11 @@ function decodeCpuRuntimeState(value: unknown, label: string): CpuRuntimeState {
 		completionValues: decodeVector(
 			requireObjectKey(object, 'completionValues', label, 'cpuState.completionValues'),
 			'cpuState.completionValues',
-			(entry) => decodeCpuValueState(entry, 'cpuState.completionValues[]'),
+			(entry) => requireBoundedU32(entry, 'cpuState.completionValues[]', 0, 0xffffffff),
 		),
-		objects: decodeVector(
-			requireObjectKey(object, 'objects', label, 'cpuState.objects'),
-			'cpuState.objects',
-			(entry) => decodeCpuObjectState(entry, 'cpuState.objects[]'),
+		snapshot: new CpuSnapshot(
+			decodeU32Binary(requireObjectKey(snapshot, 'words', label, 'cpuState.snapshot.words'), 'cpuState.snapshot.words'),
+			decodeU32Binary(requireObjectKey(snapshot, 'objectWords', label, 'cpuState.snapshot.objectWords'), 'cpuState.snapshot.objectWords'),
 		),
 		openUpvalues: decodeVector(
 			requireObjectKey(object, 'openUpvalues', label, 'cpuState.openUpvalues'),

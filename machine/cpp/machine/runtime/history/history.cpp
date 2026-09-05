@@ -35,12 +35,14 @@ void RuntimeHistory::stop() {
 
 void RuntimeHistory::captureCheckpoint() {
 	const i64 cycles = m_runtime.machine.scheduler.currentNowCycles();
-	Checkpoint checkpoint{cycles, inputJournal.endSequence, captureRuntimeSaveState(m_runtime)};
+	const size_t index = (m_firstCheckpoint + m_count) % m_checkpoints.size();
+	auto& slot = m_checkpoints[index];
+	// Only the evicted/inactive slot owns storage that may be overwritten.
+	CpuSnapshot snapshot = slot ? std::move(slot->state.cpuState.snapshot) : CpuSnapshot{};
+	slot = Checkpoint{cycles, inputJournal.endSequence, captureRuntimeSaveState(m_runtime, std::move(snapshot))};
 	if (m_count == m_checkpoints.size()) {
-		m_checkpoints[m_firstCheckpoint] = std::move(checkpoint);
 		m_firstCheckpoint = (m_firstCheckpoint + 1) % m_checkpoints.size();
 	} else {
-		m_checkpoints[(m_firstCheckpoint + m_count) % m_checkpoints.size()] = std::move(checkpoint);
 		++m_count;
 	}
 	m_latestCheckpointInputSequence = inputJournal.endSequence;
@@ -98,7 +100,7 @@ void RuntimeHistory::resumeRecording() {
 	while (m_count > 0) {
 		const size_t index = (m_firstCheckpoint + m_count - 1) % m_checkpoints.size();
 		if (m_checkpoints[index]->cycles <= cycles) break;
-		m_checkpoints[index].reset();
+		// Discard the future logically; retain slot storage for the new branch.
 		--m_count;
 	}
 	inputJournal.branch();

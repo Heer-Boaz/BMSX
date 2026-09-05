@@ -1,3 +1,4 @@
+import { CPU_SNAPSHOT_VALUE_WORDS, CpuSnapshotObjectKind, CpuSnapshotTable } from '../../machine/ts/machine/cpu/snapshot';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -6,6 +7,7 @@ import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { BuiltinFunctionId } from '../../machine/ts/spec/blua32/builtin';
 import {
 	createBuiltinFunction,
+	ValueTag,
 	valueString,
 } from '../../machine/ts/machine/cpu/value';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
@@ -71,9 +73,16 @@ test('builtin primitive save-state uses VM id instead of stable global path', ()
 	cpu.globals.setStringKey(cpu.stringPool.intern('foo'), createBuiltinFunction(BuiltinFunctionId.Next));
 
 	const state = cpu.captureRuntimeState();
-	const globals = state.objects[state.globalTableRef];
-	assert.ok(globals.kind === 'table');
-	assert.ok(globals.hash.some(node => node.value.tag === 'builtin' && node.value.id === BuiltinFunctionId.Next));
+	const snapshot = state.snapshot;
+	const globals = snapshot.objectWord(state.globalTableRef);
+	assert.equal(snapshot.word(globals), CpuSnapshotObjectKind.Table);
+	const hashStart = globals + CpuSnapshotTable.Data + snapshot.word(globals + CpuSnapshotTable.ArrayCapacity) * CPU_SNAPSHOT_VALUE_WORDS;
+	let found = false;
+	for (let index = 0; index < snapshot.word(globals + CpuSnapshotTable.HashSize); index += 1) {
+		const value = hashStart + index * (2 * CPU_SNAPSHOT_VALUE_WORDS + 1) + CPU_SNAPSHOT_VALUE_WORDS;
+		if (snapshot.word(value) === ValueTag.BuiltinFunction && snapshot.word(value + 1) === BuiltinFunctionId.Next) found = true;
+	}
+	assert.equal(found, true);
 
 	const restoredCpu = createTestSystemCpu(EMPTY_TEST_IMAGE).cpu;
 	restoredCpu.stringPool.restoreState(cpu.stringPool.captureState());

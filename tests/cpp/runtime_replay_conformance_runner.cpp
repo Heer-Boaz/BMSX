@@ -119,7 +119,9 @@ int main(int argc, char** argv) {
 			std::cout << "{\"host\":\"cpp\",\"checkpointTick\":" << checkpointTick
 				<< ",\"captureMs\":" << captureMs << ",\"restoreMs\":" << restoreMs
 				<< ",\"replayMs\":" << replayMs << ",\"bytes\":" << bmsx::encodeRuntimeSaveState(anchor).size()
-				<< ",\"objects\":" << anchor.cpuState.objects.size() << "}\n";
+				<< ",\"objects\":" << anchor.cpuState.snapshot.objectCount()
+				<< ",\"cpuSnapshotBytes\":" << anchor.cpuState.snapshot.words().size_bytes() + anchor.cpuState.snapshot.objectWords().size_bytes()
+				<< ",\"cpuSnapshotCapacityBytes\":" << anchor.cpuState.snapshot.capacityBytes() << "}\n";
 		}
 		auto& history = runtime.history;
 		history.start({4, 96, runtime.timing.cycleBudgetPerFrame * 20});

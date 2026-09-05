@@ -8,26 +8,13 @@
 #include <vector>
 
 #include "machine/cpu/value.h"
+#include "machine/cpu/snapshot.h"
 
 namespace bmsx {
 class LuaHeap;
 
 inline constexpr int TABLE_INDEX_CHAIN_LIMIT = 32;
 inline constexpr int TABLE_INDEX_CHAIN_EXHAUSTED = -2;
-
-struct TableHashNodeState {
-	Value key = valueNil();
-	Value value = valueNil();
-	int next = -1;
-};
-
-struct TableRuntimeState {
-	std::vector<Value> array;
-	size_t arrayLength = 0;
-	std::vector<TableHashNodeState> hash;
-	int hashFree = -1;
-	Table* metatable = nullptr;
-};
 
 class Table : public GCObject {
 public:
@@ -165,8 +152,8 @@ public:
 		}
 	}
 	bool nextEntry(const Value& after, Value& key, Value& value) const;
-	TableRuntimeState captureRuntimeState() const;
-	void restoreRuntimeState(const TableRuntimeState& state);
+	u32 captureSnapshot(CpuSnapshot& snapshot, const CpuSnapshotValueWriter& writeValue) const;
+	void restoreSnapshot(const CpuSnapshotReader& reader, u32 offset);
 	size_t trackedHeapBytes() const;
 	void prepareRestoreStorage(size_t arrayCapacity, size_t hashCapacity);
 

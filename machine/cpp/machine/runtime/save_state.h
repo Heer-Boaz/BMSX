@@ -13,7 +13,7 @@ struct RuntimeSaveState {
 	bool pendingEntryCall = false;
 };
 
-RuntimeSaveState captureRuntimeSaveState(Runtime& runtime);
+RuntimeSaveState captureRuntimeSaveState(Runtime& runtime, CpuSnapshot snapshot = {});
 enum class RuntimeRestoreOrigin { ExternalLoad, HistorySeek };
 void applyRuntimeSaveState(Runtime& runtime, const RuntimeSaveState& state, RuntimeRestoreOrigin origin = RuntimeRestoreOrigin::ExternalLoad);
 

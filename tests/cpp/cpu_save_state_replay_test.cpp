@@ -4,7 +4,9 @@
 #include "spec/bmsx/model.h"
 #include "support/blua32_test_rom.h"
 
+#include <algorithm>
 #include <array>
+#include <limits>
 #include <iostream>
 #include <stdexcept>
 
@@ -160,10 +162,12 @@ void restoreUnrootedCanonicalClosure() {
 	const auto cold = cpu.captureRuntimeState();
 	cpu.runUntilDepth(0, 2);
 	const auto warm = cpu.captureRuntimeState();
-	require(warm.frames[0].registers[0].tag == bmsx::CpuValueStateTag::Nil, "static closure is no longer a guest root");
+	require(warm.snapshot.word(warm.frames[0].registers[0]) == static_cast<bmsx::u32>(bmsx::CpuSnapshotValueTag::Nil), "static closure is no longer a guest root");
 	bool captured = false;
-	for (const auto& object : warm.objects) {
-		if (object.kind == bmsx::CpuObjectState::Kind::Closure && object.closureCanonical && object.functionAddress == address) captured = true;
+	for (bmsx::u32 offset : warm.snapshot.objectWords()) {
+		if (warm.snapshot.word(offset) == static_cast<bmsx::u32>(bmsx::CpuSnapshotObjectKind::Closure)
+			&& warm.snapshot.word(offset + bmsx::SNAP_CLOSURE_CANONICAL) == 1u
+			&& warm.snapshot.word(offset + bmsx::SNAP_CLOSURE_FUNCTION_ADDRESS) == address) captured = true;
 	}
 	require(captured, "snapshot must retain unrooted canonical cache entries");
 	cpu.runUntilDepth(0, 1000);
@@ -185,11 +189,12 @@ void captureDoesNotSynchronizeGlobals() {
 	SnapshotMachine machine(image);
 	auto& cpu = machine.runtime.machine.cpu;
 	cpu.runUntilDepth(0, 1000);
-	const auto before = cpu.globals->captureRuntimeState();
+	const auto key = cpu.stringPool().intern("answer");
+	require(bmsx::isNil(cpu.globals->getStringKey(key)), "backing table starts without the registerfile write");
 	const auto snapshot = cpu.captureRuntimeState();
-	require(cpu.globals->captureRuntimeState().hash.size() == before.hash.size(), "capture must not mutate global table storage");
+	require(bmsx::isNil(cpu.globals->getStringKey(key)), "capture must not mutate global table storage");
 	cpu.restoreRuntimeState(snapshot);
-	require(cpu.globals->captureRuntimeState().hash.size() == before.hash.size(), "restore retains backing table capacity");
+	require(bmsx::isNil(cpu.globals->getStringKey(key)), "restore keeps the backing table independent of the registerfile");
 	require(bmsx::asNumber(cpu.getGlobalByKey(cpu.stringPool().intern("answer"))) == 1.0, "restore retains the newer registerfile value independently");
 }
 
@@ -213,6 +218,101 @@ void restoreHardHalt() {
 	require(after.hardHalted && after.frames[0].pc == halted.frames[0].pc, "restored hard halt does not execute further instructions");
 }
 
+void reuseSnapshotStorage() {
+	SnapshotMachine machine(allocationImage());
+	auto& cpu = machine.runtime.machine.cpu;
+	const auto key = cpu.stringPool().intern("graph");
+	auto* root = cpu.createTable(130, 0);
+	cpu.globals->setStringKey(key, bmsx::valueTable(root));
+	for (int index = 1; index <= 130; ++index) {
+		auto* child = cpu.createTable(1, 0);
+		child->hashId = 0xffffffffu;
+		child->setInteger(1, bmsx::valueTable(root));
+		root->setInteger(index, bmsx::valueTable(child));
+	}
+	const auto retained = cpu.captureRuntimeState();
+	auto recycled = cpu.captureRuntimeState();
+	const auto* words = recycled.snapshot.words().data();
+	const auto* objects = recycled.snapshot.objectWords().data();
+	const auto capacity = recycled.snapshot.capacityBytes();
+	require(recycled.snapshot.objectCount() > 130, "graph exceeds initial object-index capacity");
+	for (int pass = 0; pass < 4; ++pass) {
+		recycled = cpu.captureRuntimeState(std::move(recycled.snapshot));
+		require(recycled.snapshot.words().data() == words, "word storage is retained");
+		require(recycled.snapshot.objectWords().data() == objects, "object index storage is retained");
+		require(recycled.snapshot.capacityBytes() == capacity, "stable capture does not grow storage");
+		require(std::ranges::equal(recycled.snapshot.words(), retained.snapshot.words()), "word state matches an independent checkpoint");
+		require(std::ranges::equal(recycled.snapshot.objectWords(), retained.snapshot.objectWords()), "object index matches an independent checkpoint");
+	}
+	cpu.globals->setStringKey(key, bmsx::valueNil());
+	recycled = cpu.captureRuntimeState(std::move(recycled.snapshot));
+	require(recycled.snapshot.words().data() == words, "shorter capture retains word storage");
+	require(recycled.snapshot.objectWords().data() == objects, "shorter capture retains object index storage");
+	require(recycled.snapshot.capacityBytes() == capacity, "shorter capture retains capacity");
+	require(recycled.snapshot.words().size() < retained.snapshot.words().size(), "unused words are not active state");
+	require(recycled.snapshot.objectCount() < retained.snapshot.objectCount(), "unused object records are not active state");
+	const auto fresh = cpu.captureRuntimeState();
+	require(std::ranges::equal(recycled.snapshot.words(), fresh.snapshot.words()), "recycled storage has no stale active words");
+	require(std::ranges::equal(recycled.snapshot.objectWords(), fresh.snapshot.objectWords()), "recycled index has no stale object records");
+	cpu.restoreRuntimeState(retained);
+	auto* restored = bmsx::asTable(cpu.globals->getStringKey(key));
+	require(restored->getInteger(1) != restored->getInteger(2), "equal allocation ids do not merge snapshot identities");
+	require(bmsx::asTable(restored->getInteger(130))->getInteger(1) == bmsx::valueTable(restored), "cycle survives graph growth and restore");
+	const auto after = cpu.captureRuntimeState();
+	require(std::ranges::equal(after.snapshot.words(), retained.snapshot.words()), "the retained checkpoint remains intact");
+	require(std::ranges::equal(after.snapshot.objectWords(), retained.snapshot.objectWords()), "the retained object index remains intact");
+}
+
+void preserveSnapshotValueBits() {
+	SnapshotMachine machine(allocationImage());
+	auto& cpu = machine.runtime.machine.cpu;
+	const auto key = cpu.stringPool().intern("values");
+	const std::array values{
+		bmsx::valueNumber(-0.0), bmsx::valueNumber(0.0), bmsx::valueNumber(1.25),
+		bmsx::valueNumber(std::numeric_limits<double>::quiet_NaN()),
+		bmsx::valueNumber(std::numeric_limits<double>::infinity()),
+		bmsx::valueNumber(-std::numeric_limits<double>::infinity()),
+		bmsx::valueNumber(std::numeric_limits<double>::denorm_min()),
+		bmsx::valueNumber(std::numeric_limits<double>::max()),
+		bmsx::valueBool(false), bmsx::valueBool(true),
+		bmsx::valueString(cpu.stringPool().intern("saved")),
+		cpu.createBuiltinFunction(bmsx::BuiltinFunctionId::Next), bmsx::valueNil(),
+	};
+	auto* table = cpu.createTable(values.size(), 0);
+	cpu.globals->setStringKey(key, bmsx::valueTable(table));
+	for (size_t index = 0; index < values.size(); ++index) table->setInteger(index + 1, values[index]);
+	const auto state = cpu.captureRuntimeState();
+	cpu.restoreRuntimeState(state);
+	const auto* restored = bmsx::asTable(cpu.globals->getStringKey(key));
+	for (size_t index = 0; index < values.size(); ++index) require(restored->getInteger(index + 1) == values[index], "raw native value bits survive restore");
+	const auto after = cpu.captureRuntimeState();
+	require(std::ranges::equal(after.snapshot.words(), state.snapshot.words()), "all primitive tags and payload words survive restore");
+}
+
+void preserveDeepGraph() {
+	SnapshotMachine machine(allocationImage());
+	auto& cpu = machine.runtime.machine.cpu;
+	const auto key = cpu.stringPool().intern("deep");
+	auto* root = cpu.createTable(1, 0);
+	cpu.globals->setStringKey(key, bmsx::valueTable(root));
+	auto* tail = root;
+	for (int index = 1; index < 4096; ++index) {
+		auto* child = cpu.createTable(1, 0);
+		tail->setInteger(1, bmsx::valueTable(child));
+		tail = child;
+	}
+	tail->setInteger(1, bmsx::valueTable(root));
+	const auto state = cpu.captureRuntimeState();
+	cpu.restoreRuntimeState(state);
+	auto* restored = bmsx::asTable(cpu.globals->getStringKey(key));
+	auto* current = restored;
+	for (int index = 0; index < 4096; ++index) current = bmsx::asTable(current->getInteger(1));
+	require(current == restored, "deep cyclic graph restores every edge");
+	const auto after = cpu.captureRuntimeState();
+	require(std::ranges::equal(after.snapshot.words(), state.snapshot.words()), "deep graph preserves every word");
+	require(std::ranges::equal(after.snapshot.objectWords(), state.snapshot.objectWords()), "deep graph preserves ordinals");
+}
+
 } // namespace
 
 int main() {
@@ -224,6 +324,9 @@ int main() {
 		restoreUnrootedCanonicalClosure();
 		captureDoesNotSynchronizeGlobals();
 		restoreHardHalt();
+		reuseSnapshotStorage();
+		preserveSnapshotValueBits();
+		preserveDeepGraph();
 		std::cout << "CPU save-state replay tests passed\n";
 		return 0;
 	} catch (const std::exception& error) {

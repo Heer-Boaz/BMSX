@@ -598,36 +598,53 @@ bool Table::nextEntry(const Value& after, Value& key, Value& value) const {
 	return false;
 }
 
-TableRuntimeState Table::captureRuntimeState() const {
-	TableRuntimeState state;
-	state.array = m_array;
-	state.arrayLength = m_arrayLength;
-	state.hash.reserve(m_hashSize);
-	for (size_t index = 0; index < m_hashSize; ++index) {
-		state.hash.push_back(TableHashNodeState{ m_hashKeys[index], m_hashValues[index], m_hashNext[index] });
+u32 Table::captureSnapshot(CpuSnapshot& snapshot, const CpuSnapshotValueWriter& writeValue) const {
+	const u32 arrayCapacity = static_cast<u32>(m_array.size());
+	const u32 hashSize = static_cast<u32>(m_hashSize);
+	const u32 offset = snapshot.reserveWords(SNAP_TABLE_DATA + arrayCapacity * CPU_SNAPSHOT_VALUE_WORDS + hashSize * (2 * CPU_SNAPSHOT_VALUE_WORDS + 1));
+	snapshot.setWord(offset + SNAP_TABLE_KIND, static_cast<u32>(CpuSnapshotObjectKind::Table));
+	snapshot.setWord(offset + SNAP_TABLE_HASH_ID, hashId);
+	snapshot.setWord(offset + SNAP_TABLE_ARRAY_LENGTH, static_cast<u32>(m_arrayLength));
+	snapshot.setWord(offset + SNAP_TABLE_ARRAY_CAPACITY, arrayCapacity);
+	snapshot.setWord(offset + SNAP_TABLE_HASH_SIZE, hashSize);
+	snapshot.setWord(offset + SNAP_TABLE_HASH_FREE, static_cast<u32>(m_hashFree));
+	writeValue(offset + SNAP_TABLE_METATABLE, metatable ? valueTable(metatable) : valueNil());
+	u32 cursor = offset + SNAP_TABLE_DATA;
+	for (Value value : m_array) {
+		writeValue(cursor, value);
+		cursor += CPU_SNAPSHOT_VALUE_WORDS;
 	}
-	state.hashFree = m_hashFree;
-	state.metatable = metatable;
-	return state;
+	for (size_t index = 0; index < m_hashSize; ++index) {
+		writeValue(cursor, m_hashKeys[index]);
+		writeValue(cursor + CPU_SNAPSHOT_VALUE_WORDS, m_hashValues[index]);
+		snapshot.setWord(cursor + 2 * CPU_SNAPSHOT_VALUE_WORDS, static_cast<u32>(m_hashNext[index]));
+		cursor += 2 * CPU_SNAPSHOT_VALUE_WORDS + 1;
+	}
+	return offset;
 }
 
-void Table::restoreRuntimeState(const TableRuntimeState& state) {
-	const size_t previousBytes = trackedHeapBytes();
-	m_array = state.array;
-	m_arrayLength = state.arrayLength;
-	allocateHash(state.hash.size());
-	for (size_t index = 0; index < state.hash.size(); ++index) {
-		const TableHashNodeState& node = state.hash[index];
-		m_hashKeys[index] = node.key;
-		m_hashValues[index] = node.value;
-		m_hashNext[index] = node.next;
-		if (isNil(node.key) != isNil(node.value)) {
-			++m_hashDeadCount;
-		}
+void Table::restoreSnapshot(const CpuSnapshotReader& reader, u32 offset) {
+	const auto& snapshot = reader.snapshot;
+	const u32 arrayCapacity = snapshot.word(offset + SNAP_TABLE_ARRAY_CAPACITY);
+	const u32 hashSize = snapshot.word(offset + SNAP_TABLE_HASH_SIZE);
+	if (m_array.size() != arrayCapacity || m_hashSize != hashSize) prepareRestoreStorage(arrayCapacity, hashSize);
+	m_hashDeadCount = 0;
+	m_arrayLength = snapshot.word(offset + SNAP_TABLE_ARRAY_LENGTH);
+	m_hashFree = snapshot.integer(offset + SNAP_TABLE_HASH_FREE);
+	const Value savedMetatable = reader.readValue(offset + SNAP_TABLE_METATABLE);
+	metatable = isNil(savedMetatable) ? nullptr : asTable(savedMetatable);
+	u32 cursor = offset + SNAP_TABLE_DATA;
+	for (Value& value : m_array) {
+		value = reader.readValue(cursor);
+		cursor += CPU_SNAPSHOT_VALUE_WORDS;
 	}
-	m_hashFree = state.hashFree;
-	metatable = state.metatable;
-	m_luaHeap.adjustForRestore(previousBytes, trackedHeapBytes());
+	for (size_t index = 0; index < m_hashSize; ++index) {
+		m_hashKeys[index] = reader.readValue(cursor);
+		m_hashValues[index] = reader.readValue(cursor + CPU_SNAPSHOT_VALUE_WORDS);
+		m_hashNext[index] = snapshot.integer(cursor + 2 * CPU_SNAPSHOT_VALUE_WORDS);
+		if (isNil(m_hashKeys[index]) != isNil(m_hashValues[index])) ++m_hashDeadCount;
+		cursor += 2 * CPU_SNAPSHOT_VALUE_WORDS + 1;
+	}
 }
 
 size_t Table::trackedHeapBytes() const {

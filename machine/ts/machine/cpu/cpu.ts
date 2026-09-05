@@ -129,6 +129,7 @@ import {
 } from './execution_image';
 import { ProtectedCallContinuation, ProtectedCallKind, type CallFrame } from './call_state';
 import { LuaHeap, type LuaHeapState } from './lua_heap';
+import { CpuSnapshot, CpuSnapshotWriter, CpuSnapshotReader, CpuSnapshotObjectKind, CpuSnapshotClosure, CpuSnapshotTable, CpuSnapshotUpvalue, CPU_SNAPSHOT_VALUE_WORDS, type CpuSnapshotObject, type CpuSnapshotValueWriter } from './snapshot';
 
 // start repeated-sequence-acceptable -- Lua VM/table/register hot paths deliberately keep short copy/update sequences inline.
 // start normalized-body-acceptable -- Specialized Lua VM accessors stay split so the fast paths avoid dispatch helpers.
@@ -139,48 +140,14 @@ const CLOSURE_HEAP_BYTES = 16;
 const CLOSURE_UPVALUE_SLOT_HEAP_BYTES = 8;
 const UPVALUE_HEAP_BYTES = 24;
 
-export type CpuValueState =
-	| { tag: 'nil' }
-	| { tag: 'false' }
-	| { tag: 'true' }
-	| { tag: 'number'; value: number }
-	| { tag: 'string'; id: number }
-	| { tag: 'builtin'; id: BuiltinFunctionId }
-	| { tag: 'table'; id: number }
-	| { tag: 'closure'; id: number };
-
-export type CpuObjectState =
-	| {
-		kind: 'table';
-		hashId: number;
-		array: CpuValueState[];
-		arrayLength: number;
-		hash: Array<{ key: CpuValueState; value: CpuValueState; next: number }>;
-		hashFree: number;
-		metatable: CpuValueState;
-	}
-	| {
-		kind: 'closure';
-		hashId: number;
-		functionAddress: number;
-		canonical: boolean;
-		upvalues: number[];
-	}
-	| {
-		kind: 'upvalue';
-		hashId: number;
-		open: boolean;
-		index: number;
-		frameIndex: number;
-		value: CpuValueState;
-	};
-
+// Saved values are u32 offsets into the snapshot word arena. Object references
+// (closureRef/globalTableRef/openUpvalues) are ordinals in its object index.
 export type CpuFrameState = {
 	functionAddress: number;
 	pc: number;
 	closureRef: number;
-	registers: CpuValueState[];
-	varargs: CpuValueState[];
+	registers: number[];
+	varargs: number[];
 	returnBase: number;
 	returnCount: number;
 	top: number;
@@ -202,7 +169,7 @@ export type CpuProtectedCallState = {
 
 export type CpuRootValueState = {
 	key: StringId;
-	value: CpuValueState;
+	value: number;
 };
 
 export type CpuRuntimeState = {
@@ -214,11 +181,11 @@ export type CpuRuntimeState = {
 	nextObjectHashId: number;
 	hardHalted: boolean;
 	luaHeap: LuaHeapState;
-	stringIndexTable: CpuValueState;
+	stringIndexTable: number;
 	frames: CpuFrameState[];
 	protectedCalls: CpuProtectedCallState[];
-	completionValues: CpuValueState[];
-	objects: CpuObjectState[];
+	completionValues: number[];
+	snapshot: CpuSnapshot;
 	openUpvalues: number[];
 	lastExecutionDomainId: ExecutionDomainId;
 	lastPc: number;
@@ -4115,128 +4082,39 @@ export class CPU implements MappedPageInvalidator {
 		);
 	}
 
-	public captureRuntimeState(): CpuRuntimeState {
-		const objectOrdinals = new Map<Table | Closure | Upvalue, number>();
-		const objects: CpuObjectState[] = [];
-
-		const ensureObjectId = (object: Table | Closure | Upvalue, kind: CpuObjectState['kind']): number => {
-			if (objectOrdinals.has(object)) {
-				return objectOrdinals.get(object) as number;
-			}
-			const id = objects.length;
+	/** Reusing storage relinquishes the previous state backed by that snapshot. */
+	public captureRuntimeState(snapshot = new CpuSnapshot()): CpuRuntimeState {
+		const writer = new CpuSnapshotWriter(snapshot);
+		const objectOrdinals = new Map<CpuSnapshotObject, number>();
+		const pendingObjects: CpuSnapshotObject[] = [];
+		const pendingKinds: CpuSnapshotObjectKind[] = [];
+		const captureObject = (object: CpuSnapshotObject, kind: CpuSnapshotObjectKind): number => {
+			const found = objectOrdinals.get(object);
+			if (found !== undefined) return found;
+			const id = writer.addObject();
 			objectOrdinals.set(object, id);
-			objects.length = id + 1;
-			objects[id] = captureObjectState(object, kind);
+			pendingObjects.push(object);
+			pendingKinds.push(kind);
 			return id;
 		};
-
-		const captureStoredValueState = (
-			tag: ValueTag,
-			scalar: number,
-			reference: ValueReference,
-		): CpuValueState => {
+		const writeValue: CpuSnapshotValueWriter = (offset, tag, scalar, reference): void => {
+			writer.setWord(offset, tag);
 			switch (tag) {
+				case ValueTag.Number: writer.setNumber(offset + 1, scalar); return;
 				case ValueTag.Nil:
-					return { tag: 'nil' };
 				case ValueTag.False:
-					return { tag: 'false' };
-				case ValueTag.True:
-					return { tag: 'true' };
-				case ValueTag.Number:
-					return { tag: 'number', value: scalar };
+				case ValueTag.True: writer.setWord(offset + 1, 0); break;
 				case ValueTag.String:
-					return { tag: 'string', id: scalar as StringId };
-				case ValueTag.BuiltinFunction:
-					return { tag: 'builtin', id: scalar as BuiltinFunctionId };
-				case ValueTag.Table:
-					return { tag: 'table', id: ensureObjectId(reference as Table, 'table') };
-				case ValueTag.Closure:
-					return { tag: 'closure', id: ensureObjectId(reference as Closure, 'closure') };
+				case ValueTag.BuiltinFunction: writer.setWord(offset + 1, scalar); break;
+				case ValueTag.Table: writer.setWord(offset + 1, captureObject(reference as Table, CpuSnapshotObjectKind.Table)); break;
+				case ValueTag.Closure: writer.setWord(offset + 1, captureObject(reference as Closure, CpuSnapshotObjectKind.Closure)); break;
 			}
+			writer.setWord(offset + 2, 0);
 		};
-
-		const captureObjectState = (object: Table | Closure | Upvalue, kind: CpuObjectState['kind']): CpuObjectState => {
-			switch (kind) {
-				case 'table': {
-					const table = object as Table;
-					const tableState = table.captureRuntimeState();
-					const metatable = captureStoredValueState(
-						tableState.metatable ? ValueTag.Table : ValueTag.Nil,
-						NaN,
-						tableState.metatable,
-					);
-					const array = new Array(tableState.arrayCapacity);
-					for (let index = 0; index < tableState.arrayCapacity; index += 1) {
-						array[index] = captureStoredValueState(
-							tableState.tags[index],
-							tableState.scalars[index],
-							tableState.references[index],
-						);
-					}
-					const hash = new Array(tableState.hashSize);
-					for (let index = 0; index < tableState.hashSize; index += 1) {
-						const keySlot = tableState.arrayCapacity + index;
-						const valueSlot = tableState.arrayCapacity + tableState.hashSize + index;
-						hash[index] = {
-							key: captureStoredValueState(
-								tableState.tags[keySlot],
-								tableState.scalars[keySlot],
-								tableState.references[keySlot],
-							),
-							value: captureStoredValueState(
-								tableState.tags[valueSlot],
-								tableState.scalars[valueSlot],
-								tableState.references[valueSlot],
-							),
-							next: tableState.hashNext[index],
-						};
-					}
-					return {
-						kind: 'table',
-						hashId: table.hashId,
-						array,
-						arrayLength: tableState.arrayLength,
-						hash,
-						hashFree: tableState.hashFree,
-						metatable,
-					};
-				}
-				case 'upvalue': {
-					const upvalue = object as Upvalue;
-					let frameIndex = -1;
-					let valueTag = upvalue.valueTag;
-					let valueScalar = upvalue.valueScalar;
-					let valueReference = upvalue.valueReference;
-					if (upvalue.open) {
-						frameIndex = this.frames.indexOf(upvalue.frame);
-						valueTag = upvalue.frame!.registers.getTag(upvalue.index);
-						valueScalar = upvalue.frame!.registers.getScalar(upvalue.index);
-						valueReference = upvalue.frame!.registers.getReference(upvalue.index);
-					}
-					return {
-						kind: 'upvalue',
-						hashId: upvalue.hashId,
-						open: upvalue.open,
-						index: upvalue.index,
-						frameIndex,
-						value: captureStoredValueState(valueTag, valueScalar, valueReference),
-					};
-				}
-				case 'closure': {
-					const closure = object as Closure;
-					const upvalues = new Array(closure.upvalues.length);
-					for (let index = 0; index < closure.upvalues.length; index += 1) {
-						upvalues[index] = ensureObjectId(closure.upvalues[index], 'upvalue');
-					}
-					return {
-						kind: 'closure',
-						hashId: closure.hashId,
-						functionAddress: closure.functionAddress,
-						canonical: closure.heapBytes === 0,
-						upvalues,
-					};
-				}
-			}
+		const captureStoredValueState = (tag: ValueTag, scalar: number, reference: ValueReference): number => {
+			const offset = writer.reserveWords(CPU_SNAPSHOT_VALUE_WORDS);
+			writeValue(offset, tag, scalar, reference);
+			return offset;
 		};
 
 		const systemGlobals: CpuRootValueState[] = [];
@@ -4251,7 +4129,7 @@ export class CPU implements MappedPageInvalidator {
 			});
 		}
 
-		const globalTableRef = ensureObjectId(this.globals, 'table');
+		const globalTableRef = captureObject(this.globals, CpuSnapshotObjectKind.Table);
 		const globalSlots: CpuRootValueState[] = [];
 		for (let slot = 0; slot < this.globalNames.length; slot += 1) {
 			globalSlots.push({
@@ -4267,8 +4145,8 @@ export class CPU implements MappedPageInvalidator {
 		const frames = new Array<CpuFrameState>(this.frames.length);
 		for (let frameIndex = 0; frameIndex < this.frames.length; frameIndex += 1) {
 			const frame = this.frames[frameIndex];
-			const closureRef = ensureObjectId(frame.closure, 'closure');
-			const registers = new Array<CpuValueState>(frame.top);
+			const closureRef = captureObject(frame.closure, CpuSnapshotObjectKind.Closure);
+			const registers = new Array<number>(frame.top);
 			for (let registerIndex = 0; registerIndex < frame.top; registerIndex += 1) {
 				registers[registerIndex] = captureStoredValueState(
 					frame.registers.getTag(registerIndex),
@@ -4276,7 +4154,7 @@ export class CPU implements MappedPageInvalidator {
 					frame.registers.getReference(registerIndex),
 				);
 			}
-			const varargs = new Array<CpuValueState>(frame.varargCount);
+			const varargs = new Array<number>(frame.varargCount);
 			for (let varargIndex = 0; varargIndex < frame.varargCount; varargIndex += 1) {
 				const slot = frame.varargBase + varargIndex;
 				varargs[varargIndex] = captureStoredValueState(
@@ -4315,7 +4193,7 @@ export class CPU implements MappedPageInvalidator {
 			};
 		}
 
-		const completionValues = new Array<CpuValueState>(this.completionValueCount);
+		const completionValues = new Array<number>(this.completionValueCount);
 		for (let index = 0; index < this.completionValueCount; index += 1) {
 			completionValues[index] = captureStoredValueState(
 				this.completionValueSlots.getTag(index),
@@ -4328,7 +4206,7 @@ export class CPU implements MappedPageInvalidator {
 		for (let frameIndex = 0; frameIndex < this.frames.length; frameIndex += 1) {
 			let upvalue = this.frames[frameIndex].openUpvalueHead;
 			while (upvalue) {
-				openUpvalues.push(ensureObjectId(upvalue, 'upvalue'));
+				openUpvalues.push(captureObject(upvalue, CpuSnapshotObjectKind.Upvalue));
 				upvalue = upvalue.nextOpen;
 			}
 		}
@@ -4343,7 +4221,49 @@ export class CPU implements MappedPageInvalidator {
 		const canonicalClosures = Array.from(this.staticClosuresByAddress.values());
 		canonicalClosures.sort((left, right) => left.functionAddress - right.functionAddress);
 		for (const closure of canonicalClosures) {
-			ensureObjectId(closure, 'closure');
+			captureObject(closure, CpuSnapshotObjectKind.Closure);
+		}
+		// Reserve ordinals at each edge, then drain in ordinal order. Guest graph
+		// depth must not consume the host call stack.
+		for (let id = 0; id < pendingObjects.length; id += 1) {
+			const object = pendingObjects[id];
+			const kind = pendingKinds[id];
+			let offset: number;
+			switch (kind) {
+				case CpuSnapshotObjectKind.Table:
+					offset = (object as Table).captureSnapshot(writer, writeValue);
+					break;
+				case CpuSnapshotObjectKind.Closure: {
+					const closure = object as Closure;
+					offset = writer.reserveWords(CpuSnapshotClosure.Data + closure.upvalues.length);
+					writer.setWord(offset + CpuSnapshotClosure.Kind, kind);
+					writer.setWord(offset + CpuSnapshotClosure.HashId, closure.hashId);
+					writer.setWord(offset + CpuSnapshotClosure.FunctionAddress, closure.functionAddress);
+					writer.setWord(offset + CpuSnapshotClosure.Canonical, closure.heapBytes === 0 ? 1 : 0);
+					writer.setWord(offset + CpuSnapshotClosure.UpvalueCount, closure.upvalues.length);
+					for (let index = 0; index < closure.upvalues.length; index += 1) {
+						writer.setWord(offset + CpuSnapshotClosure.Data + index, captureObject(closure.upvalues[index], CpuSnapshotObjectKind.Upvalue));
+					}
+					break;
+				}
+				case CpuSnapshotObjectKind.Upvalue: {
+					const upvalue = object as Upvalue;
+					offset = writer.reserveWords(CpuSnapshotUpvalue.Value + CPU_SNAPSHOT_VALUE_WORDS);
+					writer.setWord(offset + CpuSnapshotUpvalue.Kind, kind);
+					writer.setWord(offset + CpuSnapshotUpvalue.HashId, upvalue.hashId);
+					writer.setWord(offset + CpuSnapshotUpvalue.Open, upvalue.open ? 1 : 0);
+					writer.setWord(offset + CpuSnapshotUpvalue.Index, upvalue.index);
+					writer.setWord(offset + CpuSnapshotUpvalue.FrameIndex, upvalue.open ? this.frames.indexOf(upvalue.frame) : -1);
+					if (upvalue.open) {
+						const registers = upvalue.frame!.registers;
+						writeValue(offset + CpuSnapshotUpvalue.Value, registers.getTag(upvalue.index), registers.getScalar(upvalue.index), registers.getReference(upvalue.index));
+					} else {
+						writeValue(offset + CpuSnapshotUpvalue.Value, upvalue.valueTag, upvalue.valueScalar, upvalue.valueReference);
+					}
+					break;
+				}
+			}
+			writer.setObjectWord(id, offset);
 		}
 		let executionResidencyMask = 0;
 		for (let index = 0; index < this.executionImagesByDomain.length; index += 1) {
@@ -4351,6 +4271,7 @@ export class CPU implements MappedPageInvalidator {
 				executionResidencyMask |= 1 << index;
 			}
 		}
+		writer.finish();
 		return {
 			executionCartridgeSlot: this.activeExecutionImage.executionDomainId,
 			systemGlobals,
@@ -4364,7 +4285,7 @@ export class CPU implements MappedPageInvalidator {
 			frames,
 			protectedCalls,
 			completionValues,
-			objects,
+			snapshot,
 			openUpvalues,
 			lastExecutionDomainId: this.lastExecutionDomainId,
 			lastPc: this.lastPc,
@@ -4390,60 +4311,59 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public restoreRuntimeState(state: CpuRuntimeState): void {
-		type RestoredObject = Table | Closure | Upvalue;
-		const restoredObjects = new Array<RestoredObject>(state.objects.length);
+		const snapshot = state.snapshot;
+		const restoredObjects = new Array<CpuSnapshotObject>(snapshot.objectCount);
 		this.clearCompletionValues();
 		this.clearCallStack();
-		// Remove future materializations without changing the identity of static
-		// closures that also exist in the restored checkpoint.
 		const canonicalAddresses = new Set<number>();
-		for (const object of state.objects) {
-			if (object.kind === 'closure' && object.canonical) {
-				canonicalAddresses.add(object.functionAddress);
+		for (let index = 0; index < snapshot.objectCount; index += 1) {
+			const offset = snapshot.objectWord(index);
+			if (snapshot.word(offset) === CpuSnapshotObjectKind.Closure && snapshot.word(offset + CpuSnapshotClosure.Canonical) !== 0) {
+				canonicalAddresses.add(snapshot.word(offset + CpuSnapshotClosure.FunctionAddress));
 			}
 		}
 		for (const address of this.staticClosuresByAddress.keys()) {
-			if (!canonicalAddresses.has(address)) {
-				this.staticClosuresByAddress.delete(address);
-			}
+			if (!canonicalAddresses.has(address)) this.staticClosuresByAddress.delete(address);
 		}
-
-		for (let index = 0; index < state.objects.length; index += 1) {
-			const objectState = state.objects[index];
-			switch (objectState.kind) {
-				case 'table': {
+		// Allocate every identity before resolving edges, including cycles and weak references.
+		for (let index = 0; index < snapshot.objectCount; index += 1) {
+			const offset = snapshot.objectWord(index);
+			switch (snapshot.word(offset)) {
+				case CpuSnapshotObjectKind.Table: {
 					let table: Table;
 					if (index === state.globalTableRef) {
 						table = this.globals;
 					} else {
-						this.luaHeap.restoreAllocate(Table.trackedHeapBytesForCapacities(0, 0));
-						table = new Table(this.luaHeap, 0, 0);
+						const arrayCapacity = snapshot.word(offset + CpuSnapshotTable.ArrayCapacity);
+						const hashSize = snapshot.word(offset + CpuSnapshotTable.HashSize);
+						this.luaHeap.restoreAllocate(Table.trackedHeapBytesForCapacities(arrayCapacity, hashSize));
+						table = new Table(this.luaHeap, arrayCapacity, hashSize);
 					}
-					table.hashId = objectState.hashId;
+					table.hashId = snapshot.word(offset + CpuSnapshotTable.HashId);
 					restoredObjects[index] = table;
 					break;
 				}
-				case 'closure': {
-					if (objectState.canonical) {
-						const closure = this.staticClosureAtAddress(objectState.functionAddress);
-						closure.hashId = objectState.hashId;
-						restoredObjects[index] = closure;
+				case CpuSnapshotObjectKind.Closure: {
+					const functionAddress = snapshot.word(offset + CpuSnapshotClosure.FunctionAddress);
+					let closure: Closure;
+					if (snapshot.word(offset + CpuSnapshotClosure.Canonical) !== 0) {
+						closure = this.staticClosureAtAddress(functionAddress);
 					} else {
-						const upvalues = new Array<Upvalue>(objectState.upvalues.length);
-						const heapBytes = CLOSURE_HEAP_BYTES + (upvalues.length * CLOSURE_UPVALUE_SLOT_HEAP_BYTES);
+						const upvalues = new Array<Upvalue>(snapshot.word(offset + CpuSnapshotClosure.UpvalueCount));
+						const heapBytes = CLOSURE_HEAP_BYTES + upvalues.length * CLOSURE_UPVALUE_SLOT_HEAP_BYTES;
 						this.luaHeap.restoreAllocate(heapBytes);
-						const closure = new Closure(objectState.functionAddress, upvalues, heapBytes);
-						closure.hashId = objectState.hashId;
-						restoredObjects[index] = closure;
+						closure = new Closure(functionAddress, upvalues, heapBytes);
 					}
+					closure.hashId = snapshot.word(offset + CpuSnapshotClosure.HashId);
+					restoredObjects[index] = closure;
 					break;
 				}
-				case 'upvalue':
+				case CpuSnapshotObjectKind.Upvalue:
 					this.luaHeap.restoreAllocate(UPVALUE_HEAP_BYTES);
 					restoredObjects[index] = {
-						hashId: objectState.hashId,
+						hashId: snapshot.word(offset + CpuSnapshotUpvalue.HashId),
 						open: false,
-						index: objectState.index,
+						index: snapshot.int(offset + CpuSnapshotUpvalue.Index),
 						frame: null,
 						valueTag: ValueTag.Nil,
 						valueScalar: NaN,
@@ -4453,117 +4373,27 @@ export class CPU implements MappedPageInvalidator {
 					break;
 			}
 		}
-
-		let restoredTag = ValueTag.Nil;
-		let restoredScalar = NaN;
-		let restoredReference: ValueReference = null;
-		const decodeValueState = (valueState: CpuValueState): void => {
-			switch (valueState.tag) {
-				case 'nil':
-					restoredTag = ValueTag.Nil;
-					restoredScalar = NaN;
-					restoredReference = null;
-					return;
-				case 'false':
-					restoredTag = ValueTag.False;
-					restoredScalar = NaN;
-					restoredReference = null;
-					return;
-				case 'true':
-					restoredTag = ValueTag.True;
-					restoredScalar = NaN;
-					restoredReference = null;
-					return;
-				case 'number':
-					restoredTag = ValueTag.Number;
-					restoredScalar = valueFromNumber(valueState.value);
-					restoredReference = null;
-					return;
-				case 'string':
-					restoredTag = ValueTag.String;
-					restoredScalar = valueState.id;
-					restoredReference = null;
-					return;
-				case 'builtin':
-					restoredTag = ValueTag.BuiltinFunction;
-					restoredScalar = valueState.id;
-					restoredReference = null;
-					return;
-				case 'table':
-					restoredTag = ValueTag.Table;
-					restoredScalar = NaN;
-					restoredReference = restoredObjects[valueState.id] as Table;
-					return;
-				case 'closure':
-					restoredTag = ValueTag.Closure;
-					restoredScalar = NaN;
-					restoredReference = restoredObjects[valueState.id] as Closure;
-			}
-		};
-
-		for (let index = 0; index < state.objects.length; index += 1) {
-			const objectState = state.objects[index];
-			switch (objectState.kind) {
-				case 'table': {
-					const table = restoredObjects[index] as Table;
-					const arrayCapacity = objectState.array.length;
-					const hashSize = objectState.hash.length;
-					const tags = new Uint8Array(arrayCapacity + (hashSize * 2));
-					const scalars = new Float64Array(tags.length);
-					scalars.fill(NaN);
-					const references = new Array<ValueReference>(tags.length);
-					references.fill(null);
-					const hashNext = new Int32Array(hashSize);
-					for (let slot = 0; slot < arrayCapacity; slot += 1) {
-						decodeValueState(objectState.array[slot]);
-						tags[slot] = restoredTag;
-						scalars[slot] = restoredScalar;
-						references[slot] = restoredReference;
-					}
-					for (let slot = 0; slot < hashSize; slot += 1) {
-						const keySlot = arrayCapacity + slot;
-						const valueSlot = arrayCapacity + hashSize + slot;
-						decodeValueState(objectState.hash[slot].key);
-						tags[keySlot] = restoredTag;
-						scalars[keySlot] = restoredScalar;
-						references[keySlot] = restoredReference;
-						decodeValueState(objectState.hash[slot].value);
-						tags[valueSlot] = restoredTag;
-						scalars[valueSlot] = restoredScalar;
-						references[valueSlot] = restoredReference;
-						hashNext[slot] = objectState.hash[slot].next;
-					}
-					decodeValueState(objectState.metatable);
-					table.restoreRuntimeState({
-						tags,
-						scalars,
-						references,
-						arrayCapacity,
-						arrayLength: objectState.arrayLength,
-						hashSize,
-						hashNext,
-						hashFree: objectState.hashFree,
-						metatable: restoredReference as Table | null,
-					});
+		const reader = new CpuSnapshotReader(snapshot, restoredObjects);
+		for (let index = 0; index < snapshot.objectCount; index += 1) {
+			const offset = snapshot.objectWord(index);
+			switch (snapshot.word(offset)) {
+				case CpuSnapshotObjectKind.Table:
+					(restoredObjects[index] as Table).restoreSnapshot(reader, offset);
 					break;
-				}
-				case 'closure': {
+				case CpuSnapshotObjectKind.Closure: {
 					const closure = restoredObjects[index] as Closure;
-					closure.functionAddress = objectState.functionAddress;
-					for (let upvalueIndex = 0; upvalueIndex < objectState.upvalues.length; upvalueIndex += 1) {
-						closure.upvalues[upvalueIndex] = restoredObjects[objectState.upvalues[upvalueIndex]] as Upvalue;
+					for (let slot = 0; slot < closure.upvalues.length; slot += 1) {
+						closure.upvalues[slot] = restoredObjects[snapshot.word(offset + CpuSnapshotClosure.Data + slot)] as Upvalue;
 					}
 					break;
 				}
-				case 'upvalue': {
+				case CpuSnapshotObjectKind.Upvalue: {
 					const upvalue = restoredObjects[index] as Upvalue;
-					upvalue.open = objectState.open;
-					upvalue.index = objectState.index;
-					upvalue.frame = null;
-					decodeValueState(objectState.value);
-					upvalue.valueTag = restoredTag;
-					upvalue.valueScalar = restoredScalar;
-					upvalue.valueReference = restoredReference;
+					upvalue.open = snapshot.word(offset + CpuSnapshotUpvalue.Open) !== 0;
+					reader.readValue(offset + CpuSnapshotUpvalue.Value);
+					upvalue.valueTag = reader.tag;
+					upvalue.valueScalar = reader.scalar;
+					upvalue.valueReference = reader.reference;
 					break;
 				}
 			}
@@ -4579,16 +4409,16 @@ export class CPU implements MappedPageInvalidator {
 			const entry = state.systemGlobals[slot];
 			this.systemGlobalNames.push(entry.key);
 			this.systemGlobalSlotByKey.set(entry.key, slot);
-			decodeValueState(entry.value);
-			this.systemGlobalSlots.setEncoded(slot, restoredTag, restoredScalar, restoredReference);
+			reader.readValue(entry.value);
+			this.systemGlobalSlots.setEncoded(slot, reader.tag, reader.scalar, reader.reference);
 		}
 		this.reserveGlobalSlots(false, state.globalSlots.length);
 		for (let slot = 0; slot < state.globalSlots.length; slot += 1) {
 			const entry = state.globalSlots[slot];
 			this.globalNames.push(entry.key);
 			this.globalSlotByKey.set(entry.key, slot);
-			decodeValueState(entry.value);
-			this.globalSlots.setEncoded(slot, restoredTag, restoredScalar, restoredReference);
+			reader.readValue(entry.value);
+			this.globalSlots.setEncoded(slot, reader.tag, reader.scalar, reader.reference);
 		}
 		for (let index = 0; index < this.executionImagesByDomain.length; index += 1) {
 			if ((state.executionResidencyMask & (1 << index)) !== 0) {
@@ -4622,21 +4452,21 @@ export class CPU implements MappedPageInvalidator {
 			frame.varargCount = frameState.varargs.length;
 			const registers = this.prepareFrameRegisters(frame, functionRecord.maxStack);
 			for (let registerIndex = 0; registerIndex < frameState.registers.length; registerIndex += 1) {
-				decodeValueState(frameState.registers[registerIndex]);
+				reader.readValue(frameState.registers[registerIndex]);
 				registers.setEncoded(
 					registerIndex,
-					restoredTag,
-					restoredScalar,
-					restoredReference,
+					reader.tag,
+					reader.scalar,
+					reader.reference,
 				);
 			}
 			for (let varargIndex = 0; varargIndex < frameState.varargs.length; varargIndex += 1) {
-				decodeValueState(frameState.varargs[varargIndex]);
+				reader.readValue(frameState.varargs[varargIndex]);
 				this.stackRegisters.setEncoded(
 					frame.varargBase + varargIndex,
-					restoredTag,
-					restoredScalar,
-					restoredReference,
+					reader.tag,
+					reader.scalar,
+					reader.reference,
 				);
 			}
 			frame.top = frameState.top;
@@ -4656,11 +4486,11 @@ export class CPU implements MappedPageInvalidator {
 		this.protectedCallDepth = state.protectedCalls.length;
 
 		for (let index = 0; index < state.openUpvalues.length; index += 1) {
-			const upvalueState = state.objects[state.openUpvalues[index]] as Extract<CpuObjectState, { kind: 'upvalue' }>;
+			const offset = snapshot.objectWord(state.openUpvalues[index]);
 			const upvalue = restoredObjects[state.openUpvalues[index]] as Upvalue;
-			const frame = this.frames[upvalueState.frameIndex];
+			const frame = this.frames[snapshot.int(offset + CpuSnapshotUpvalue.FrameIndex)];
 			upvalue.open = true;
-			upvalue.index = upvalueState.index;
+			upvalue.index = snapshot.int(offset + CpuSnapshotUpvalue.Index);
 			upvalue.frame = frame;
 			upvalue.valueTag = ValueTag.Nil;
 			upvalue.valueScalar = NaN;
@@ -4668,8 +4498,8 @@ export class CPU implements MappedPageInvalidator {
 			this.linkOpenUpvalue(frame, upvalue);
 		}
 
-		decodeValueState(state.stringIndexTable);
-		this.stringIndexTable = restoredReference as Table | null;
+		reader.readValue(state.stringIndexTable);
+		this.stringIndexTable = reader.reference as Table | null;
 		if (state.completionValues.length > this.completionValueSlots.capacity()) {
 			let capacity = this.completionValueSlots.capacity() * 2;
 			while (capacity < state.completionValues.length) {
@@ -4678,12 +4508,12 @@ export class CPU implements MappedPageInvalidator {
 			this.completionValueSlots = new ValueSlots(capacity);
 		}
 		for (let index = 0; index < state.completionValues.length; index += 1) {
-			decodeValueState(state.completionValues[index]);
+			reader.readValue(state.completionValues[index]);
 			this.completionValueSlots.setEncoded(
 				index,
-				restoredTag,
-				restoredScalar,
-				restoredReference,
+				reader.tag,
+				reader.scalar,
+				reader.reference,
 			);
 		}
 		this.completionValueCount = state.completionValues.length;

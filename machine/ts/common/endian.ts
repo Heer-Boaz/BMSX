@@ -27,3 +27,19 @@ export function writeLE32(data: Uint8Array, offset: number, value: number): void
 	data[offset + 2] = (value >>> 16) & 0xff;
 	data[offset + 3] = (value >>> 24) & 0xff;
 }
+
+export function readLE32Array(data: Uint8Array): Uint32Array {
+	const words = new Uint32Array(data.byteLength / 4);
+	for (let index = 0; index < words.length; index += 1) {
+		words[index] = readLE32(data, index * 4);
+	}
+	return words;
+}
+
+export function writeLE32Array(words: Uint32Array): Uint8Array {
+	const data = new Uint8Array(words.length * 4);
+	for (let index = 0; index < words.length; index += 1) {
+		writeLE32(data, index * 4, words[index]);
+	}
+	return data;
+}

@@ -98,9 +98,81 @@ after a checkpoint that had accounted-for but unreachable allocations.
 
 The replay comparison also exposed existing TS/native producer differences:
 error-string interning order and closure/upvalue allocation order. These now
-match at creation. Snapshot graph traversal also matches: metatable, array,
-then hash storage; frame closure before its registers. Cross-core comparison
+match at creation. The snapshot traversal in that prerequisite slice matched:
+metatable, array, then hash storage; frame closure before its registers. The
+storage slice below replaces recursive traversal with deferred object records. Cross-core comparison
 does not remap object ids, reorder saved tables, or translate string ids.
+
+## CPU checkpoint storage: REWIND-CPU-STORAGE-01
+
+The storage refactor follows the producer/writer boundary in
+[DuckStation's state wrapper](https://github.com/stenzek/duckstation/blob/master/src/util/state_wrapper.h)
+and [MAME's save manager](https://github.com/mamedev/mame/blob/master/src/emu/save.cpp):
+write owner state directly to storage, rather than construct a second object
+model for a serializer. BMSX's dynamic Lua heap needs explicit graph identity;
+[V8's snapshot sink](https://github.com/v8/v8/blob/main/src/snapshot/snapshot-source-sink.h)
+and [serializer reference map](https://github.com/v8/v8/blob/main/src/snapshot/serializer.h)
+provide that reference, not a memcpy of host pointers. Compression/delta storage
+such as [openMSX DeltaBlock](https://github.com/openMSX/openMSX/blob/master/src/utils/DeltaBlock.cc)
+operates on completed raw blocks; adding it above our previous DTO graph would
+have left the capture allocations and duplicate table copies in place.
+
+Representation table, established before the mirrored edits:
+
+| Saved representation | TS | C++ |
+| --- | --- | --- |
+| Value record | Existing `ValueTag` plus two payload words | The same tags, converted at capture/restore from native NaN-boxed `Value` |
+| Numeric payload | Low/high f64 words, no numeric conversion | The same bits via `bit_cast` |
+| String/builtin payload | Existing u32 pool/primitive id | Same; restore resolves builtin ids against the CPU-owned singleton array |
+| Table/closure payload | Object ordinal | Same; never a host pointer or guest hash id |
+| Object index | Ordinal to u32 word offset | Same |
+| Root/frame/completion values | Offsets of value records | Same |
+| Capacity | Retained typed-array buffers; a capture writer publishes exact active views | Retained vector storage with logical word/object counts |
+
+Object headers and child records are defined in `machine/cpu/snapshot`:
+tables keep nine header words, three words per array slot, and seven per hash
+node (key, value, next). Closures keep five header words and their upvalue
+ordinals. Upvalues keep eight words, including open/frame/index state and the
+saved value. A 2,048-table chain exposed a host-stack overflow in the old
+recursive capture. Following [V8's deferred object serialization](https://github.com/v8/v8/blob/main/src/snapshot/serializer.cc),
+capture now reserves ordinals at references and drains a flat pending-object
+list, in ordinal order, after root capture. There is no recursive descent or
+depth limit. Entire records are reserved before their columns are written;
+references use ordinals, never pointers into a growable buffer. Both cores
+use the same root/record order; guest hash ids remain independent of this
+snapshot-local traversal order.
+
+The capture-only reference map reserves ordinals before following edges. It
+tracks identity, not value classification. Tables write their own array/hash
+columns directly, including unused slots, chains, tombstones, metatables and
+capacity. Restore allocates every object identity before resolving edges, and
+fills final table storage directly. There is no intermediate `TableRuntimeState`
+or per-value/per-object `CpuValueState`/`CpuObjectState` DTO graph.
+
+Changed callsites are the mirrored CPU/table capture and restore boundaries,
+`captureRuntimeSaveState`, `RuntimeHistory.captureCheckpoint`, and the external
+save-state codec. Normal instruction dispatch, table mutation, guest allocation,
+guest GC, ICU polling and replay execution gain no additional work. The existing
+scalar CPU/frame metadata remains separate from the word arena.
+
+Only a checkpoint slot being overwritten may supply storage for capture.
+Expired/future checkpoints leave the logical retained range but their physical
+slots keep storage until reuse or stop. A seek does not consume its checkpoint.
+Capture reuses the evicted slot's buffers, grows geometrically when needed, and
+publishes only the active prefix. Spare capacity is neither encoded nor compared
+as machine state. TS keeps writer cursors outside the returned snapshot; it does
+not introduce JavaScript-private/WeakMap access on the ES2020 browser build.
+
+Disk and libretro serialization encode the same active words as little-endian
+binary blocks through the common endian owner. No graph DTO is reconstructed
+for disk, and no legacy graph reader remains. The trusted history path does not
+invoke the external codec or its file-boundary validation.
+
+This is not a zero-allocation full-machine capture: reference-index scratch,
+pending-object/root/frame metadata, strings and other device snapshots still allocate, and
+restore still reconstructs the live Lua heap. Bounded slot count is not a fixed
+byte budget. Those costs need a host-specific budget before menu enablement;
+CPU-buffer reuse does not justify skipping guest work or collecting every frame.
 
 ## Delivery gates
 
@@ -164,8 +236,9 @@ Checkpoint age is measured in machine cycles; requests are published at ICU
 poll boundaries. Input-arena pressure also requests a checkpoint, stopping
 before the next poll could overwrite an event needed by the newest checkpoint.
 Older checkpoints whose event range has expired leave the retained range.
-Their snapshot storage is released/replaced on cold capture, not destructed
-inside an ICU callback. Both physical rings wrap; checkpoint storage never
+Their CPU snapshot buffers are reused on cold capture, not destructed inside
+an ICU callback. Branching also discards future checkpoints logically while
+retaining physical slot storage for reuse. Both physical rings wrap; checkpoint storage never
 contains more than the configured number of snapshot slots.
 
 Capacities and the interval are positive runtime configuration, not guest
@@ -226,11 +299,11 @@ No player, Studio or libretro menu starts collection yet. Before enabling it:
 - Stop history **before** media replacement, Hot Resume or debugger writes.
   A restored machine cannot use checkpoints from a different inserted image.
 - Establish a measured retention/capture budget for the real host. The current
-  checkpoint owner allocates snapshot object graphs. A bounded count is not a
-  fixed byte arena or a zero-GC capture path. Improve that storage owner rather
-  than masking pauses with skipped guest work, per-frame snapshots or UI-only
-  rewind state. DuckStation's retained memory-state buffers are the relevant
-  storage reference; the input journal is already retained.
+  CPU graph is now stored directly in retained word arenas, and the input
+  journal is retained. Other device/string snapshots and capture scratch still
+  allocate. A bounded count is not a fixed byte arena or a zero-GC capture
+  path. Improve those storage owners rather than masking pauses with skipped
+  guest work, per-frame snapshots or UI-only rewind state.
 - Implement the host/quickmenu control surface and prove responsiveness and
   output recovery in actual TS and libretro hosts. No shortcut is assigned.
 
@@ -266,8 +339,9 @@ snapshot; restore excludes disk decoding. Replay covers all 120 machine ticks.
 | C++ | 400 | 4.3 | 3.9 | 33.7 | 8,941,643 |
 | C++ | 1200 | 5.2 | 6.5 | 11.9 | 10,235,206 |
 
-Encoded file size is not retained JS/native heap usage. The snapshot currently
-allocates its object graph. These measurements do not justify per-frame full
+Encoded file size is not retained JS/native heap usage. At this prerequisite
+stage, the snapshot still allocated its object graph. Those measurements do
+not justify per-frame full
 snapshots or a synchronous TS seek loop on the UI thread; bounded retained
 storage and interruptible replay remain gates for the next slices.
 
@@ -330,12 +404,69 @@ drop caused by `history.stop()` without executing the machine:
 
 These are allocator/GC-based estimates for this retained history, not RSS,
 encoded checkpoint sizes, portable byte limits or peak capture memory. No
-profiling allocation/GC calls were added to the runtime. Snapshot graphs,
-not the event journal, dominate retention and remain the storage performance
-gate before end-user rewind is enabled.
+profiling allocation/GC calls were added to the runtime. At this stage the
+snapshot graphs, not the event journal, dominated retention. The following
+CPU-storage slice addresses that producer; host enablement remains separate.
 
 Final checks for this history slice: 840 Lua tests passed, one skipped; native
 CTest 26/26; real-ROM replay and cross-core history comparison passed; machine,
 toolchain, IDE and TS host builds, the actual libretro product build,
 core-parity/architecture-boundary audits, indentation and `git diff --check`
 passed. These checks do not substitute for the remaining live host/UI gate.
+
+
+## Validation record: REWIND-CPU-STORAGE-01
+
+The same real BIOS/Nemesis regression still passes trusted restore, external
+state/libretro restore, all three history seeks and live branching. Cross-core
+comparison covers the complete decoded machine state, including the new word
+arenas and object indices, without remapping ids or normalizing table storage.
+Mirrored CPU regressions add buffer growth/reuse, shorter active prefixes,
+independent retained checkpoints, equal wrapped hash ids, primitive/f64 bit
+round trips and a 4,096-table cycle. The previously recursive TS capture failed
+already at 2,048 linked tables. The external codec test also checks exact
+little-endian bytes and exclusion of unused capacity.
+
+Single-run observations on 2026-09-05, Node 22.23.1 / native Release, the same
+real-ROM workload and software backends as the history record above:
+
+| Core | Five periodic captures ms | Three restores ms | Replay work ms | Largest replay call ms |
+| --- | ---: | ---: | ---: | ---: |
+| TS | 85.4 | 56.6 | 248.4 | 7.4 |
+| C++ | 28.3 | 14.1 | 7.4 | 0.6 |
+
+The replay still takes 1,788 bounded grants. These timings include the same
+backend/audio service work as the earlier history measurements; they are not
+p99 values or real browser/frontend responsiveness measurements. In particular,
+TS capture remains roughly 17 ms on average in these five samples, not a
+zero-cost or zero-GC operation.
+
+Both cores expose identical active CPU word counts and retained capacities:
+
+| Checkpoint tick | Objects | Active CPU snapshot bytes | CPU buffer capacity bytes |
+| --- | ---: | ---: | ---: |
+| 2 | 805 | 47,260 | 69,632 |
+| 400 | 13,973 | 1,728,044 | 2,162,688 |
+| 1200 | 16,389 | 2,879,092 | 4,325,376 |
+
+The same stop-at-tick-1431 retention probe, with four checkpoint slots and
+three independent reference snapshots kept rooted, now reports:
+
+- Node: `heapUsed` drops **1,584,176 bytes**, `arrayBuffers` drops
+  **44,515,840 bytes**; combined **44.0 MiB**, previously **85.7 MiB**.
+- glibc native allocation accounting: drops **46,688,672 bytes**,
+  **44.5 MiB**, previously **71.5 MiB**.
+- Input history is unchanged: **16,896 bytes** for 96 polls.
+
+The method and limitations are the same as the earlier probe: allocator/GC
+estimates, not RSS, portable byte limits, or peak transient allocation. The
+large JS object-graph retention is gone; retained arena capacity, device/string
+snapshots and capture/restore scratch still matter. Compression or device
+buffer reuse must work at those owners, not hide behind a UI rewind facade.
+
+Final validation: **844 Lua tests passed, one skipped; CTest 26/26**; full
+real-ROM TS/native replay and post-branch equality passed. Machine/toolchain/
+IDE/TS host typechecks and the actual ES2020 Browser Studio and native libretro
+product builds passed. Core-parity, architecture-boundary and indentation
+audits plus `git diff --check` passed. Host history collection remains disabled
+by default; no quickmenu control or shortcut is introduced by this slice.

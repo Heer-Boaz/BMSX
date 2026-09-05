@@ -1,6 +1,7 @@
 #include "machine/runtime/save_state/codec.h"
 
 #include "common/serializer/binencoder.h"
+#include "common/endian.h"
 #include "spec/bmsx/io.h"
 #include "spec/gx/pcrtc.h"
 #include "machine/devices/dma/controller.h"
@@ -61,6 +62,14 @@ const BinBinary& requireBinary(const BinValue& value, const char* label) {
 		throw BMSX_RUNTIME_ERROR(std::string(label) + " must be binary.");
 	}
 	return value.asBinary();
+}
+
+std::vector<u32> decodeU32Binary(const BinValue& value, const char* label) {
+	const auto& bytes = requireBinary(value, label);
+	if ((bytes.size() & 3) != 0) {
+		throw BMSX_RUNTIME_ERROR(std::string(label) + " must contain whole u32 words.");
+	}
+	return readLE32Array(bytes);
 }
 
 const BinBinary& requireBinaryWithLength(const BinValue& value, const char* label, size_t byteLength) {
@@ -252,8 +261,6 @@ std::array<i64, N> decodeI64Array(const BinValue& value, const char* label) {
 	return out;
 }
 
-BinValue encodeCpuValueState(const CpuValueState& state);
-CpuValueState decodeCpuValueState(const BinValue& value, const char* label);
 
 BinValue encodeFrameSchedulerState(const FrameSchedulerStateSnapshot& state) {
 	BinObject object;
@@ -1442,189 +1449,16 @@ RuntimeSaveMachineState decodeRuntimeSaveMachineState(
 	return state;
 }
 
-BinValue encodeCpuValueState(const CpuValueState& state) {
-	BinObject object;
-	switch (state.tag) {
-		case CpuValueStateTag::Nil:
-			object["tag"] = "nil";
-			break;
-		case CpuValueStateTag::False:
-			object["tag"] = "false";
-			break;
-		case CpuValueStateTag::True:
-			object["tag"] = "true";
-			break;
-		case CpuValueStateTag::Number:
-			object["tag"] = "number";
-			object["value"] = state.numberValue;
-			break;
-		case CpuValueStateTag::String:
-			object["tag"] = "string";
-			object["id"] = static_cast<i64>(state.stringId);
-			break;
-		case CpuValueStateTag::Builtin:
-			object["tag"] = "builtin";
-			object["id"] = static_cast<i64>(state.builtinId);
-			break;
-		case CpuValueStateTag::Table:
-			object["tag"] = "table";
-			object["id"] = static_cast<i64>(state.refId);
-			break;
-		case CpuValueStateTag::Closure:
-			object["tag"] = "closure";
-			object["id"] = static_cast<i64>(state.refId);
-			break;
-	}
-	return BinValue(std::move(object));
-}
-
-CpuValueState decodeCpuValueState(const BinValue& value, const char* label) {
-	const BinObject& object = requireObject(value, label);
-	const std::string tag = requireString(requireField(object, "tag", label), "cpuValueState.tag");
-	CpuValueState state;
-	if (tag == "nil") {
-		state.tag = CpuValueStateTag::Nil;
-		return state;
-	}
-	if (tag == "false") {
-		state.tag = CpuValueStateTag::False;
-		return state;
-	}
-	if (tag == "true") {
-		state.tag = CpuValueStateTag::True;
-		return state;
-	}
-	if (tag == "number") {
-		state.tag = CpuValueStateTag::Number;
-		state.numberValue = requireNumber(requireField(object, "value", label), "cpuValueState.value");
-		return state;
-	}
-	if (tag == "string") {
-		state.tag = CpuValueStateTag::String;
-		state.stringId = requireU32(requireField(object, "id", label), "cpuValueState.id");
-		return state;
-	}
-	if (tag == "builtin") {
-		state.tag = CpuValueStateTag::Builtin;
-		state.builtinId = static_cast<BuiltinFunctionId>(requireU32(requireField(object, "id", label), "cpuValueState.id"));
-		return state;
-	}
-	if (tag == "table") {
-		state.tag = CpuValueStateTag::Table;
-		state.refId = requireI32(requireField(object, "id", label), "cpuValueState.id");
-		return state;
-	}
-	if (tag == "closure") {
-		state.tag = CpuValueStateTag::Closure;
-		state.refId = requireI32(requireField(object, "id", label), "cpuValueState.id");
-		return state;
-	}
-	throw BMSX_RUNTIME_ERROR("cpuValueState.tag is invalid.");
-}
-
-BinValue encodeCpuObjectState(const CpuObjectState& state) {
-	BinObject object;
-	object["hashId"] = static_cast<i64>(state.hashId);
-	switch (state.kind) {
-		case CpuObjectState::Kind::Table:
-			object["kind"] = "table";
-			object["array"] = encodeVector(state.array, [](const CpuValueState& value) {
-				return encodeCpuValueState(value);
-			});
-			object["arrayLength"] = static_cast<i64>(state.arrayLength);
-			object["hash"] = encodeVector(state.hash, [](const CpuTableHashNodeSnapshot& node) {
-				BinObject encoded;
-				encoded["key"] = encodeCpuValueState(node.key);
-				encoded["value"] = encodeCpuValueState(node.value);
-				encoded["next"] = static_cast<i64>(node.next);
-				return BinValue(std::move(encoded));
-			});
-			object["hashFree"] = static_cast<i64>(state.hashFree);
-			object["metatable"] = encodeCpuValueState(state.metatable);
-			break;
-		case CpuObjectState::Kind::Closure:
-			object["kind"] = "closure";
-			object["functionAddress"] = static_cast<i64>(state.functionAddress);
-			object["canonical"] = state.closureCanonical;
-			object["upvalues"] = encodeVector(state.upvalues, [](int index) {
-				return BinValue(static_cast<i64>(index));
-			});
-			break;
-		case CpuObjectState::Kind::Upvalue:
-			object["kind"] = "upvalue";
-			object["open"] = state.upvalueOpen;
-			object["index"] = static_cast<i64>(state.upvalueIndex);
-			object["frameIndex"] = static_cast<i64>(state.frameIndex);
-			object["value"] = encodeCpuValueState(state.upvalueValue);
-			break;
-	}
-	return BinValue(std::move(object));
-}
-
-CpuObjectState decodeCpuObjectState(const BinValue& value, const char* label) {
-	const BinObject& object = requireObject(value, label);
-	const std::string kind = requireString(requireField(object, "kind", label), "cpuObjectState.kind");
-	CpuObjectState state;
-	if (kind == "table") {
-		state.kind = CpuObjectState::Kind::Table;
-		state.hashId = requireU32(requireField(object, "hashId", label), "cpuObjectState.hashId");
-		state.array = decodeVector<CpuValueState>(requireField(object, "array", label), "cpuObjectState.array",
-			[](const BinValue& entryValue, size_t) {
-				return decodeCpuValueState(entryValue, "cpuObjectState.array[]");
-			});
-		state.arrayLength = static_cast<size_t>(requireU32(requireField(object, "arrayLength", label), "cpuObjectState.arrayLength"));
-		state.hash = decodeVector<CpuTableHashNodeSnapshot>(requireField(object, "hash", label), "cpuObjectState.hash",
-			[](const BinValue& entryValue, size_t) {
-				const BinObject& entry = requireObject(entryValue, "cpuObjectState.hash[]");
-				CpuTableHashNodeSnapshot node;
-				node.key = decodeCpuValueState(requireField(entry, "key", "cpuObjectState.hash[]"), "cpuObjectState.hash[].key");
-				node.value = decodeCpuValueState(requireField(entry, "value", "cpuObjectState.hash[]"), "cpuObjectState.hash[].value");
-				node.next = requireI32(requireField(entry, "next", "cpuObjectState.hash[]"), "cpuObjectState.hash[].next");
-				return node;
-			});
-		state.hashFree = requireI32(requireField(object, "hashFree", label), "cpuObjectState.hashFree");
-		state.metatable = decodeCpuValueState(requireField(object, "metatable", label), "cpuObjectState.metatable");
-		return state;
-	}
-	if (kind == "closure") {
-		state.kind = CpuObjectState::Kind::Closure;
-		state.hashId = requireU32(requireField(object, "hashId", label), "cpuObjectState.hashId");
-		state.functionAddress = requireU32(
-			requireField(object, "functionAddress", label),
-			"cpuObjectState.functionAddress"
-		);
-		state.closureCanonical = requireBool(
-			requireField(object, "canonical", label),
-			"cpuObjectState.canonical"
-		);
-		state.upvalues = decodeVector<int>(requireField(object, "upvalues", label), "cpuObjectState.upvalues",
-			[](const BinValue& entryValue, size_t) {
-				return requireI32(entryValue, "cpuObjectState.upvalues[]");
-			});
-		return state;
-	}
-	if (kind == "upvalue") {
-		state.kind = CpuObjectState::Kind::Upvalue;
-		state.hashId = requireU32(requireField(object, "hashId", label), "cpuObjectState.hashId");
-		state.upvalueOpen = requireBool(requireField(object, "open", label), "cpuObjectState.open");
-		state.upvalueIndex = requireI32(requireField(object, "index", label), "cpuObjectState.index");
-		state.frameIndex = requireI32(requireField(object, "frameIndex", label), "cpuObjectState.frameIndex");
-		state.upvalueValue = decodeCpuValueState(requireField(object, "value", label), "cpuObjectState.value");
-		return state;
-	}
-	throw BMSX_RUNTIME_ERROR("cpuObjectState.kind is invalid.");
-}
-
 BinValue encodeCpuFrameState(const CpuFrameState& state) {
 	BinObject object;
 	object["functionAddress"] = static_cast<i64>(state.functionAddress);
 	object["pc"] = static_cast<i64>(state.pc);
 	object["closureRef"] = static_cast<i64>(state.closureRef);
-	object["registers"] = encodeVector(state.registers, [](const CpuValueState& value) {
-		return encodeCpuValueState(value);
+	object["registers"] = encodeVector(state.registers, [](u32 value) {
+		return BinValue(static_cast<i64>(value));
 	});
-	object["varargs"] = encodeVector(state.varargs, [](const CpuValueState& value) {
-		return encodeCpuValueState(value);
+	object["varargs"] = encodeVector(state.varargs, [](u32 value) {
+		return BinValue(static_cast<i64>(value));
 	});
 	object["returnBase"] = static_cast<i64>(state.returnBase);
 	object["returnCount"] = static_cast<i64>(state.returnCount);
@@ -1645,13 +1479,13 @@ CpuFrameState decodeCpuFrameState(const BinValue& value, const char* label) {
 	);
 	state.pc = requireU32(requireField(object, "pc", label), "cpuFrameState.pc");
 	state.closureRef = requireI32(requireField(object, "closureRef", label), "cpuFrameState.closureRef");
-	state.registers = decodeVector<CpuValueState>(requireField(object, "registers", label), "cpuFrameState.registers",
+	state.registers = decodeVector<u32>(requireField(object, "registers", label), "cpuFrameState.registers",
 		[](const BinValue& entryValue, size_t) {
-			return decodeCpuValueState(entryValue, "cpuFrameState.registers[]");
+			return requireU32(entryValue, "cpuFrameState.registers[]");
 		});
-	state.varargs = decodeVector<CpuValueState>(requireField(object, "varargs", label), "cpuFrameState.varargs",
+	state.varargs = decodeVector<u32>(requireField(object, "varargs", label), "cpuFrameState.varargs",
 		[](const BinValue& entryValue, size_t) {
-			return decodeCpuValueState(entryValue, "cpuFrameState.varargs[]");
+			return requireU32(entryValue, "cpuFrameState.varargs[]");
 		});
 	state.returnBase = requireI32(requireField(object, "returnBase", label), "cpuFrameState.returnBase");
 	state.returnCount = requireI32(requireField(object, "returnCount", label), "cpuFrameState.returnCount");
@@ -1691,7 +1525,7 @@ CpuProtectedCallState decodeCpuProtectedCallState(const BinValue& value, const c
 BinValue encodeCpuRootValueState(const CpuRootValueState& state) {
 	BinObject object;
 	object["key"] = static_cast<i64>(state.key);
-	object["value"] = encodeCpuValueState(state.value);
+	object["value"] = static_cast<i64>(state.value);
 	return BinValue(std::move(object));
 }
 
@@ -1699,7 +1533,7 @@ CpuRootValueState decodeCpuRootValueState(const BinValue& value, const char* lab
 	const BinObject& object = requireObject(value, label);
 	CpuRootValueState state;
 	state.key = requireU32(requireField(object, "key", label), "cpuRootValueState.key");
-	state.value = decodeCpuValueState(requireField(object, "value", label), "cpuRootValueState.value");
+	state.value = requireU32(requireField(object, "value", label), "cpuRootValueState.value");
 	return state;
 }
 
@@ -1712,19 +1546,20 @@ BinValue encodeCpuRuntimeState(const CpuRuntimeState& state) {
 	object["globalSlots"] = encodeVector(state.globalSlots, [](const CpuRootValueState& value) {
 		return encodeCpuRootValueState(value);
 	});
-	object["stringIndexTable"] = encodeCpuValueState(state.stringIndexTable);
+	object["stringIndexTable"] = static_cast<i64>(state.stringIndexTable);
 	object["frames"] = encodeVector(state.frames, [](const CpuFrameState& value) {
 		return encodeCpuFrameState(value);
 	});
 	object["protectedCalls"] = encodeVector(state.protectedCalls, [](const CpuProtectedCallState& value) {
 		return encodeCpuProtectedCallState(value);
 	});
-	object["completionValues"] = encodeVector(state.completionValues, [](const CpuValueState& value) {
-		return encodeCpuValueState(value);
+	object["completionValues"] = encodeVector(state.completionValues, [](u32 value) {
+		return BinValue(static_cast<i64>(value));
 	});
-	object["objects"] = encodeVector(state.objects, [](const CpuObjectState& value) {
-		return encodeCpuObjectState(value);
-	});
+	BinObject snapshot;
+	snapshot["words"] = BinValue(writeLE32Array(state.snapshot.words()));
+	snapshot["objectWords"] = BinValue(writeLE32Array(state.snapshot.objectWords()));
+	object["snapshot"] = BinValue(std::move(snapshot));
 	object["openUpvalues"] = encodeVector(state.openUpvalues, [](int value) {
 		return BinValue(static_cast<i64>(value));
 	});
@@ -1774,7 +1609,7 @@ CpuRuntimeState decodeCpuRuntimeState(const BinValue& value, const char* label) 
 		[](const BinValue& entryValue, size_t) {
 			return decodeCpuRootValueState(entryValue, "cpuState.globalSlots[]");
 		});
-	state.stringIndexTable = decodeCpuValueState(
+	state.stringIndexTable = requireU32(
 		requireField(object, "stringIndexTable", label),
 		"cpuState.stringIndexTable"
 	);
@@ -1786,14 +1621,14 @@ CpuRuntimeState decodeCpuRuntimeState(const BinValue& value, const char* label) 
 		[](const BinValue& entryValue, size_t) {
 			return decodeCpuProtectedCallState(entryValue, "cpuState.protectedCalls[]");
 		});
-	state.completionValues = decodeVector<CpuValueState>(requireField(object, "completionValues", label), "cpuState.completionValues",
+	state.completionValues = decodeVector<u32>(requireField(object, "completionValues", label), "cpuState.completionValues",
 		[](const BinValue& entryValue, size_t) {
-			return decodeCpuValueState(entryValue, "cpuState.completionValues[]");
+			return requireU32(entryValue, "cpuState.completionValues[]");
 		});
-	state.objects = decodeVector<CpuObjectState>(requireField(object, "objects", label), "cpuState.objects",
-		[](const BinValue& entryValue, size_t) {
-			return decodeCpuObjectState(entryValue, "cpuState.objects[]");
-		});
+	const BinObject& snapshot = requireObject(requireField(object, "snapshot", label), "cpuState.snapshot");
+	state.snapshot = CpuSnapshot(
+		decodeU32Binary(requireField(snapshot, "words", label), "cpuState.snapshot.words"),
+		decodeU32Binary(requireField(snapshot, "objectWords", label), "cpuState.snapshot.objectWords"));
 	state.openUpvalues = decodeVector<int>(requireField(object, "openUpvalues", label), "cpuState.openUpvalues",
 		[](const BinValue& entryValue, size_t) {
 			return requireI32(entryValue, "cpuState.openUpvalues[]");

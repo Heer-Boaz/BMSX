@@ -1567,6 +1567,15 @@ and object hashes come from the snapshot, not from the discarded future.
 Native reclamation of the discarded host heap is distinct from guest GC and
 does not clear the snapshot's weak references.
 
+The CPU snapshot is a retained word arena with an object-ordinal index, not a
+per-value/per-table host DTO graph. Values preserve guest tags, f64 bits and
+raw string/builtin ids; graph edges are ordinals, not host pointers or guest
+hash ids. Tables capture and restore their own complete storage directly.
+Only an overwritten history slot may supply buffers for reuse. The active
+word prefix is shared by trusted restore and external little-endian encoding;
+spare capacity and capture-writer scratch are not machine state. No graph
+compatibility reader, guest hot-path tracking or guest GC is added for capture.
+
 Generic rewind is a shared TS/native emulator requirement, not a Studio or
 cartridge capability. `Runtime.history` owns bounded sparse checkpoints and a
 fixed raw ICU input journal; it is not included in machine save-state. It
@@ -1875,13 +1884,15 @@ upvalue; frame exit detaches and closes only that frame's list. GC and
 save-state traverse the frame-owned links, so return dispatch never scans or
 compacts unrelated open upvalues.
 Snapshot object ids are reserved before an object's child values are captured,
-so cyclic/shared Lua table graphs stay object graphs rather than path lookups or
-duplicated tree materialisation.
+and record bodies are drained through a capture-only worklist. Deep, cyclic
+and shared Lua graphs do not consume the host call stack, require a depth cap,
+or turn into duplicated trees.
 Object-key hashing follows the value representation. Guest tables and closures
 receive a producer-owned identity word when created, and save-state restores
 that identity. Upvalues remain GC-owned closure cells rather than guest values
-or table keys. Table lookup and snapshot traversal do not keep separate side
-tables.
+or table keys. Table hashing consumes those guest identity words directly.
+Snapshot traversal uses a temporary reference-to-ordinal index only during
+capture; it is not a persistent guest hashing or value-classification table.
 Table save-state stores the table hash columns and free cursor because Lua
 iteration observes the current bucket walk. Restore rehydrates the owner-owned
 columns directly so `next` resumes the same table order after state replay.

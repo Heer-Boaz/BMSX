@@ -16,6 +16,7 @@ import {
 	type Value,
 	type ValueReference,
 } from './value';
+import { type CpuSnapshotWriter, CpuSnapshotObjectKind, CpuSnapshotTable, CPU_SNAPSHOT_VALUE_WORDS, type CpuSnapshotValueWriter, type CpuSnapshotReader } from './snapshot';
 import { ValueSlots, type ValueWriteTarget } from './value_slots';
 
 // start repeated-sequence-acceptable -- Lua table mutation hot paths keep direct column writes instead of routing through host-value dispatch.
@@ -30,18 +31,6 @@ const TABLE_HASH_ENTRY_BASE = -2;
 const EMPTY_TABLE_HASH_NEXT = new Int32Array(0);
 export const TABLE_INDEX_CHAIN_LIMIT = 32;
 export const TABLE_INDEX_CHAIN_EXHAUSTED = -2;
-
-export type TableRuntimeState = {
-	tags: Uint8Array;
-	scalars: Float64Array;
-	references: ValueReference[];
-	arrayCapacity: number;
-	arrayLength: number;
-	hashSize: number;
-	hashNext: Int32Array;
-	hashFree: number;
-	metatable: Table | null;
-};
 
 type StoredEntryVisitor = (
 	keyTag: ValueTag,
@@ -602,39 +591,73 @@ export class Table {
 		}
 	}
 
-	public captureRuntimeState(): TableRuntimeState {
-		return {
-			tags: this.tags.slice(),
-			scalars: this.scalars.slice(),
-			references: this.references.slice(),
-			arrayCapacity: this.arrayCapacity,
-			arrayLength: this.arrayLength,
-			hashSize: this.hashSize,
-			hashNext: this.hashNext.slice(),
-			hashFree: this.hashFree,
-			metatable: this.tableMetatable,
-		};
+	public captureSnapshot(snapshot: CpuSnapshotWriter, writeValue: CpuSnapshotValueWriter): number {
+		const offset = snapshot.reserveWords(CpuSnapshotTable.Data + this.arrayCapacity * CPU_SNAPSHOT_VALUE_WORDS + this.hashSize * (2 * CPU_SNAPSHOT_VALUE_WORDS + 1));
+		snapshot.setWord(offset + CpuSnapshotTable.Kind, CpuSnapshotObjectKind.Table);
+		snapshot.setWord(offset + CpuSnapshotTable.HashId, this.hashId);
+		snapshot.setWord(offset + CpuSnapshotTable.ArrayLength, this.arrayLength);
+		snapshot.setWord(offset + CpuSnapshotTable.ArrayCapacity, this.arrayCapacity);
+		snapshot.setWord(offset + CpuSnapshotTable.HashSize, this.hashSize);
+		snapshot.setWord(offset + CpuSnapshotTable.HashFree, this.hashFree);
+		writeValue(offset + CpuSnapshotTable.Metatable, this.tableMetatable ? ValueTag.Table : ValueTag.Nil, NaN, this.tableMetatable);
+		let cursor = offset + CpuSnapshotTable.Data;
+		for (let slot = 0; slot < this.arrayCapacity; slot += 1) {
+			writeValue(cursor, this.tags[slot], this.scalars[slot], this.references[slot]);
+			cursor += CPU_SNAPSHOT_VALUE_WORDS;
+		}
+		for (let index = 0; index < this.hashSize; index += 1) {
+			const keySlot = this.arrayCapacity + index;
+			const valueSlot = this.arrayCapacity + this.hashSize + index;
+			writeValue(cursor, this.tags[keySlot], this.scalars[keySlot], this.references[keySlot]);
+			writeValue(cursor + CPU_SNAPSHOT_VALUE_WORDS, this.tags[valueSlot], this.scalars[valueSlot], this.references[valueSlot]);
+			snapshot.setWord(cursor + 2 * CPU_SNAPSHOT_VALUE_WORDS, this.hashNext[index]);
+			cursor += 2 * CPU_SNAPSHOT_VALUE_WORDS + 1;
+		}
+		return offset;
 	}
 
-	public restoreRuntimeState(state: TableRuntimeState): void {
+	public restoreSnapshot(reader: CpuSnapshotReader, offset: number): void {
+		const snapshot = reader.snapshot;
 		const previousBytes = this.getTrackedHeapBytes();
-		this.arrayCapacity = state.arrayCapacity;
-		this.hashSize = state.hashSize;
-		this.tags = state.tags.slice();
-		this.scalars = state.scalars.slice();
-		this.references = state.references.slice();
-		this.hashNext = state.hashNext.slice();
-		this.arrayLength = state.arrayLength;
-		this.hashDeadCount = 0;
-		for (let index = 0; index < this.hashSize; index += 1) {
-			const keySlot = this.hashKeySlot(index);
-			const valueSlot = this.hashValueSlot(index);
-			if ((this.tags[keySlot] === ValueTag.Nil) !== (this.tags[valueSlot] === ValueTag.Nil)) {
-				this.hashDeadCount += 1;
-			}
+		const arrayCapacity = snapshot.word(offset + CpuSnapshotTable.ArrayCapacity);
+		const hashSize = snapshot.word(offset + CpuSnapshotTable.HashSize);
+		if (this.arrayCapacity !== arrayCapacity || this.hashSize !== hashSize) {
+			const size = arrayCapacity + 2 * hashSize;
+			this.tags = new Uint8Array(size);
+			this.scalars = new Float64Array(size);
+			this.references = new Array<ValueReference>(size);
+			this.hashNext = hashSize === 0 ? EMPTY_TABLE_HASH_NEXT : new Int32Array(hashSize);
 		}
-		this.hashFree = state.hashFree;
-		this.tableMetatable = state.metatable;
+		this.arrayCapacity = arrayCapacity;
+		this.hashSize = hashSize;
+		this.arrayLength = snapshot.word(offset + CpuSnapshotTable.ArrayLength);
+		this.hashFree = snapshot.int(offset + CpuSnapshotTable.HashFree);
+		this.hashDeadCount = 0;
+		reader.readValue(offset + CpuSnapshotTable.Metatable);
+		this.tableMetatable = reader.reference as Table | null;
+		let cursor = offset + CpuSnapshotTable.Data;
+		for (let slot = 0; slot < this.arrayCapacity; slot += 1) {
+			reader.readValue(cursor);
+			this.tags[slot] = reader.tag;
+			this.scalars[slot] = reader.scalar;
+			this.references[slot] = reader.reference;
+			cursor += CPU_SNAPSHOT_VALUE_WORDS;
+		}
+		for (let index = 0; index < this.hashSize; index += 1) {
+			const keySlot = this.arrayCapacity + index;
+			const valueSlot = this.arrayCapacity + this.hashSize + index;
+			reader.readValue(cursor);
+			this.tags[keySlot] = reader.tag;
+			this.scalars[keySlot] = reader.scalar;
+			this.references[keySlot] = reader.reference;
+			reader.readValue(cursor + CPU_SNAPSHOT_VALUE_WORDS);
+			this.tags[valueSlot] = reader.tag;
+			this.scalars[valueSlot] = reader.scalar;
+			this.references[valueSlot] = reader.reference;
+			this.hashNext[index] = snapshot.int(cursor + 2 * CPU_SNAPSHOT_VALUE_WORDS);
+			if ((this.tags[keySlot] === ValueTag.Nil) !== (this.tags[valueSlot] === ValueTag.Nil)) this.hashDeadCount += 1;
+			cursor += 2 * CPU_SNAPSHOT_VALUE_WORDS + 1;
+		}
 		this.luaHeap.adjustForRestore(previousBytes, this.getTrackedHeapBytes());
 	}
 

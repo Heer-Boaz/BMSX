@@ -78,12 +78,15 @@ export class RuntimeHistory {
 	/** The host has synchronized VRAM and kept the machine suspended throughout. */
 	public captureCheckpoint(): void {
 		const cycles = this.runtime.machine.scheduler.currentNowCycles();
-		const checkpoint = { cycles, inputSequence: this.inputJournal.endSequence, state: captureRuntimeSaveState(this.runtime) };
+		const index = (this.firstCheckpoint + this.count) % this.checkpoints.length;
+		const previous = this.checkpoints[index];
+		// Only the evicted/inactive slot owns storage that may be overwritten.
+		const state = captureRuntimeSaveState(this.runtime, previous === null ? undefined : previous.state.cpuState.snapshot);
+		const checkpoint = { cycles, inputSequence: this.inputJournal.endSequence, state };
+		this.checkpoints[index] = checkpoint;
 		if (this.count === this.checkpoints.length) {
-			this.checkpoints[this.firstCheckpoint] = checkpoint;
 			this.firstCheckpoint = (this.firstCheckpoint + 1) % this.checkpoints.length;
 		} else {
-			this.checkpoints[(this.firstCheckpoint + this.count) % this.checkpoints.length] = checkpoint;
 			this.count += 1;
 		}
 		this.latestCheckpointInputSequence = checkpoint.inputSequence;
@@ -150,7 +153,7 @@ export class RuntimeHistory {
 		while (this.count > 0) {
 			const index = (this.firstCheckpoint + this.count - 1) % this.checkpoints.length;
 			if (this.checkpoints[index]!.cycles <= cycles) break;
-			this.checkpoints[index] = null;
+			// Discard the future logically; retain slot storage for the new branch.
 			this.count -= 1;
 		}
 		this.inputJournal.branch();
