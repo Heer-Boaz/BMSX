@@ -1,8 +1,6 @@
 import { LAYER_2D_IDE } from '../../machine/ts/render/shared/layers';
 import {
 	RectRenderKind,
-	TextAlign,
-	TextBaseline,
 	type GlyphRenderSubmission,
 	type RectRenderSubmission,
 } from '../../machine/ts/render/shared/submissions';
@@ -168,8 +166,8 @@ export class HostOnScreenKeyboard {
 	private readonly titleGlyphs: GlyphRenderSubmission = {
 		x: 0, y: 0, z: 922, items: TITLE, item_start: 0, item_end: TITLE.length,
 		font: null, color: COLOR_TITLE, has_background_color: false,
-		background_color: 0xff000000, wrap_chars: 0, center_block_width: 0,
-		align: TextAlign.Start, baseline: TextBaseline.Alphabetic, layer: LAYER_2D_IDE,
+		background_color: 0xff000000,
+		layer: LAYER_2D_IDE,
 	};
 	private readonly helpGlyphs = new Array<GlyphRenderSubmission>(HELP_LINES.length);
 	private readonly keyRects = new Array<RectRenderSubmission>(KEY_DEFINITIONS.length);
@@ -206,8 +204,8 @@ export class HostOnScreenKeyboard {
 				x: 0, y: 0, z: 922, items: definition.label,
 				item_start: 0, item_end: definition.label.length, font: null,
 				color: COLOR_TEXT, has_background_color: false,
-				background_color: 0xff000000, wrap_chars: 0, center_block_width: 0,
-				align: TextAlign.Start, baseline: TextBaseline.Alphabetic, layer: LAYER_2D_IDE,
+				background_color: 0xff000000,
+				layer: LAYER_2D_IDE,
 			};
 			this.keyRects[index] = rect;
 			this.keyGlyphs[index] = glyphs;
@@ -223,8 +221,8 @@ export class HostOnScreenKeyboard {
 			const glyphs: GlyphRenderSubmission = {
 				x: 0, y: 0, z: 922, items: line, item_start: 0, item_end: line.length,
 				font: null, color: COLOR_DIM, has_background_color: false,
-				background_color: 0xff000000, wrap_chars: 0, center_block_width: 0,
-				align: TextAlign.Start, baseline: TextBaseline.Alphabetic, layer: LAYER_2D_IDE,
+				background_color: 0xff000000,
+				layer: LAYER_2D_IDE,
 			};
 			this.helpGlyphs[index] = glyphs;
 			this.commandKinds[command] = Host2DKind.Glyphs;

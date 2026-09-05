@@ -5,7 +5,7 @@ import { Host2DKind, type Host2DRef } from '../../machine/ts/render/host_overlay
 import type { HostMenuFrame } from '../../machine/ts/render/host_overlay/overlay_queue';
 import { Font } from '../../machine/ts/render/shared/bmsx_font';
 import { LAYER_2D_IDE } from '../../machine/ts/render/shared/layers';
-import { RectRenderKind, TextAlign, TextBaseline, type GlyphRenderSubmission, type RectRenderSubmission } from '../../machine/ts/render/shared/submissions';
+import { RectRenderKind, type GlyphRenderSubmission, type RectRenderSubmission } from '../../machine/ts/render/shared/submissions';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import type { HostRewind } from './rewind';
 
@@ -43,7 +43,7 @@ export class HostRewindTimeline {
 		}
 		for (let index = 0; index < this.labels.length; index += 1) {
 			const text = LABEL_TEXT[index];
-			const label: GlyphRenderSubmission = { x: 0, y: 0, z: 924, items: text, item_start: 0, item_end: text.length, font: this.font, color: COLOR_TEXT, has_background_color: false, background_color: 0, wrap_chars: 0, center_block_width: 0, align: TextAlign.Start, baseline: TextBaseline.Top, layer: LAYER_2D_IDE };
+			const label: GlyphRenderSubmission = { x: 0, y: 0, z: 924, items: text, item_start: 0, item_end: text.length, font: this.font, color: COLOR_TEXT, has_background_color: false, background_color: 0, layer: LAYER_2D_IDE };
 			this.labels[index] = label;
 			this.labelWidths[index] = this.font.measure(text);
 			this.commandKinds[this.rects.length + index] = Host2DKind.Glyphs;

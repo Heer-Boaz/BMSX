@@ -637,6 +637,12 @@ if(BMSX_BUILD_TESTS)
 	target_link_libraries(bmsx_host_system_atlas_tests PRIVATE bmsx_host_support)
 	add_test(NAME bmsx_host_system_atlas_tests COMMAND bmsx_host_system_atlas_tests)
 
+	add_executable(bmsx_glyph_runs_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/glyph_runs_test.cpp
+	)
+	target_link_libraries(bmsx_glyph_runs_tests PRIVATE bmsx_host_support)
+	add_test(NAME bmsx_glyph_runs_tests COMMAND bmsx_glyph_runs_tests)
+
 	add_executable(bmsx_dma_controller_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/dma_controller_test.cpp
 	)

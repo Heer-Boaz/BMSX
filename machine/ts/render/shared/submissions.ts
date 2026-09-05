@@ -28,8 +28,6 @@ export type RenderScale2 = {
 	y: number;
 };
 
-export const enum TextAlign { Left, Right, Center, Start, End }
-export const enum TextBaseline { Top, Hanging, Middle, Alphabetic, Ideographic, Bottom }
 export const enum RectRenderKind { Rect, Fill }
 
 export type RectRenderSubmission = {
@@ -69,6 +67,7 @@ export type PolyRenderSubmission = {
 	layer: Layer2D;
 };
 
+/** Positioned bitmap text: x/y is the top-left origin, not an alignment anchor. */
 export type GlyphRenderSubmission = {
 	x: number;
 	y: number;
@@ -80,9 +79,5 @@ export type GlyphRenderSubmission = {
 	color: color;
 	has_background_color: boolean;
 	background_color: color;
-	wrap_chars: number;
-	center_block_width: number;
-	align: TextAlign;
-	baseline: TextBaseline;
 	layer: Layer2D;
 };

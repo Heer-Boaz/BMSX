@@ -7,17 +7,10 @@ import {
 	HostOverlayQuadStream,
 } from '../../machine/ts/render/host_overlay/quad_stream';
 import { HOST_SYSTEM_ATLAS } from '../../machine/ts/render/host_overlay/atlas';
-import { Font } from '../../machine/ts/render/shared/bmsx_font';
+import { Font, type FontVariant } from '../../machine/ts/render/shared/bmsx_font';
+import { TAB_SPACES } from '../../machine/ts/render/shared/bitmap_font';
 import { LAYER_2D_IDE } from '../../machine/ts/render/shared/layers';
-import {
-	Host2DKind,
-	type Host2DRef,
-} from '../../machine/ts/render/host_overlay/commands';
-import {
-	RectRenderKind,
-	TextAlign,
-	TextBaseline,
-} from '../../machine/ts/render/shared/submissions';
+import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
 
 test('host overlay quad stream emits glyph backgrounds before atlas glyphs with atlas UVs', () => {
 	const stream = new HostOverlayQuadStream();
@@ -33,10 +26,6 @@ test('host overlay quad stream emits glyph backgrounds before atlas glyphs with 
 		color: 0xffffffff,
 		has_background_color: true,
 		background_color: 0xff102030,
-		wrap_chars: 0,
-		center_block_width: 0,
-		align: TextAlign.Start,
-		baseline: TextBaseline.Alphabetic,
 		layer: LAYER_2D_IDE,
 	});
 
@@ -63,3 +52,28 @@ test('host overlay quad stream emits glyph backgrounds before atlas glyphs with 
 	assert.equal(stream.floatData[secondGlyphBase], 10 + firstGlyph.advance);
 	assert.equal(stream.floatData[secondGlyphBase + 2], secondGlyph.width);
 });
+
+for (const variant of ['msx', 'tiny'] satisfies FontVariant[]) {
+	test(`host glyph range uses top-left coordinates and explicit tab/newline advances (${variant})`, () => {
+		const font = new Font(variant);
+		const stream = new HostOverlayQuadStream();
+		stream.appendEntry(Host2DKind.Glyphs, {
+			x: 11, y: 17, z: 0,
+			items: '_A\tB\nC_', item_start: 1, item_end: 6,
+			font, color: 0xffffffff,
+			has_background_color: false, background_color: 0,
+			layer: LAYER_2D_IDE,
+		});
+		assert.equal(stream.count, 3);
+		const expected = [
+			[11, 17],
+			[11 + font.advance('A') + TAB_SPACES * font.advance(' '), 17],
+			[11, 17 + font.lineHeight],
+		];
+		for (let index = 0; index < expected.length; index += 1) {
+			const base = index * HOST_OVERLAY_INSTANCE_FLOATS;
+			assert.deepEqual(Array.from(stream.floatData.subarray(base, base + 2)), expected[index]);
+			assert.equal(stream.textureKinds[index], HOST_OVERLAY_TEXTURE_ATLAS);
+		}
+	});
+}

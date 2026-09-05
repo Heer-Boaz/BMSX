@@ -34,7 +34,6 @@ HostRewindTimeline::HostRewindTimeline() {
 		label.font = &font;
 		label.z = 924;
 		label.color = COLOR_TEXT;
-		label.baseline = TextBaseline::Top;
 		label.layer = Layer2D::IDE;
 		labelWidths[index] = font.measure(label.items[0]);
 		commandKinds[rects.size() + index] = Host2DKind::Glyphs;

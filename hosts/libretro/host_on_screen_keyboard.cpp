@@ -157,8 +157,6 @@ HostOnScreenKeyboard::HostOnScreenKeyboard() {
 	m_title_glyphs.item_end = static_cast<i32>(m_title_glyphs.items[0].size());
 	m_title_glyphs.z = 922.0f;
 	m_title_glyphs.color = kTitleColor;
-	m_title_glyphs.align = TextAlign::Start;
-	m_title_glyphs.baseline = TextBaseline::Alphabetic;
 	m_title_glyphs.layer = Layer2D::IDE;
 	m_command_kinds[0] = Host2DKind::Rect;
 	m_command_refs[0] = Host2DRef{.rect = &m_panel_rect};
@@ -175,8 +173,6 @@ HostOnScreenKeyboard::HostOnScreenKeyboard() {
 		glyphs.item_end = static_cast<i32>(glyphs.items[0].size());
 		glyphs.z = 922.0f;
 		glyphs.color = kTextColor;
-		glyphs.align = TextAlign::Start;
-		glyphs.baseline = TextBaseline::Alphabetic;
 		glyphs.layer = Layer2D::IDE;
 		m_command_kinds[command] = Host2DKind::Rect;
 		m_command_refs[command] = Host2DRef{.rect = &rect};
@@ -191,8 +187,6 @@ HostOnScreenKeyboard::HostOnScreenKeyboard() {
 		glyphs.item_end = static_cast<i32>(glyphs.items[0].size());
 		glyphs.z = 922.0f;
 		glyphs.color = kDimColor;
-		glyphs.align = TextAlign::Start;
-		glyphs.baseline = TextBaseline::Alphabetic;
 		glyphs.layer = Layer2D::IDE;
 		m_command_kinds[command] = Host2DKind::Glyphs;
 		m_command_refs[command] = Host2DRef{.glyphs = &glyphs};

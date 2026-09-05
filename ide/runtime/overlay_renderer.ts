@@ -2,8 +2,6 @@ import type { BFont } from '../../machine/ts/render/shared/bitmap_font';
 import { Host2DKind, type Host2DRef } from '../../machine/ts/render/host_overlay/commands';
 import {
 	RectRenderKind,
-	TextAlign,
-	TextBaseline,
 	type GlyphRenderSubmission,
 	type HostImageRenderSubmission,
 	type RectRenderSubmission,
@@ -61,10 +59,6 @@ function createGlyphSubmission(): GlyphRenderSubmission {
 		color: 0xffffffff,
 		has_background_color: false,
 		background_color: 0xff000000,
-		wrap_chars: 0,
-		center_block_width: 0,
-		align: TextAlign.Start,
-		baseline: TextBaseline.Alphabetic,
 		layer: LAYER_2D_IDE,
 	};
 }
@@ -207,10 +201,6 @@ export class OverlayRenderer {
 		submission.color = color;
 		submission.has_background_color = false;
 		submission.background_color = 0xff000000;
-		submission.wrap_chars = 0;
-		submission.center_block_width = 0;
-		submission.align = TextAlign.Start;
-		submission.baseline = TextBaseline.Alphabetic;
 		submission.layer = layer;
 		this.queueCommand(Host2DKind.Glyphs, submission);
 	}

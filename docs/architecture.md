@@ -1613,8 +1613,18 @@ back to the recorded end. A pointer click seeks proportionally along the bar.
 Review preserves the recorded future; returning to latest rejoins it, whereas
 resume here branches. One overlay lifecycle owns departure, input reset and
 destination activation; the keyboard does not know about rewind cleanup.
-TS queues GPU captures/restores
-with IDE mutation jobs; native completes the corresponding jobs synchronously.
+The shared host `HostUiInput` owns physical press edges, repeat deadlines and
+pointer capture; pages choose participating sources and actions. An ownership
+change suppresses held controls until release, independently of guest input
+consumption. The selected timeline coordinate remains distinct from the
+preceding journal boundary reached by replay; relative navigation acts on the
+selected coordinate. Hosts build overlay commands after servicing/updating the
+state they present, not before it.
+TS queues GPU captures/restores with IDE mutation jobs; native completes the
+corresponding jobs synchronously. State replacement finishes outstanding CPU
+readback callbacks through `GPUBackend.finishGxGpuReadbacks`, including deferred
+GPUREAD mappings. It does not download the VRAM it is discarding. Actual
+checkpoint/save-state capture still synchronizes and copies rendered VRAM.
 Both hosts service bounded replay while continuing to process menu events,
 suppress intermediate audio/debug output, and replace the held presentation
 from restored VRAM. Checkpoint capture is submitted after the tick's ordinary
@@ -3465,6 +3475,11 @@ presenter's backend/pass lifecycle. Render modules retain only immutable
 constants, shader sources and stateless datapath functions. Constructing a
 second backend/presenter pair therefore creates an independent renderer and
 overlay lane rather than replacing process-global resources or in-flight state.
+Host glyph commands contain positioned bitmap text with a top-left origin,
+font, item range and foreground/background colors. UI layout owns alignment;
+the glyph datapath consumes advances and explicit newlines/tabs, not ignored
+alignment, baseline or wrapping metadata. Glyph backgrounds precede glyphs on
+all host backends.
 CRT noise derives its per-frame offset from the presenter frame index through
 the mirrored 32-bit hash; it does not consume a host-process random-number
 generator.

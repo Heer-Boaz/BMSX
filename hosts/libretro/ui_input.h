@@ -5,7 +5,6 @@
 
 namespace bmsx {
 class LibretroInput;
-class VideoPresenter;
 namespace HostUiInputSource {
 constexpr u8 None = 0, Keyboard = 1, Gamepad = 2, LeftStick = 4, Pointer = 8;
 }
@@ -26,7 +25,7 @@ public:
 private:
 	static constexpr size_t SourceCount = INPUT_CONTROLLER_PAD_COUNT + 1;
 	static constexpr size_t ButtonCount = INPUT_CONTROLLER_GAMEPAD_BUTTON_BIT_COUNT;
-	void updateButtons(size_t source, u32 buttons, f64 now, f64 frameDurationMs, i64 frameId);
+	void updateButtons(size_t source, u32 physicalButtons, f64 now, f64 frameDurationMs, i64 frameId);
 	void consumeSources(u8 sources, u32 keyboardButtons) const;
 	LibretroInput& input;
 	bool pointerDown = false, pointerPressed = false, pointerReleased = false, pointerBlocked = false;

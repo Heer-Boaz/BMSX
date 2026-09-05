@@ -83,10 +83,7 @@ struct PolyRenderSubmission {
 	Layer2D layer = Layer2D::World;
 };
 
-enum class TextAlign { Left, Right, Center, Start, End };
-enum class TextBaseline { Top, Hanging, Middle, Alphabetic, Ideographic, Bottom };
-
-// Glyph/text render
+// Positioned bitmap text: x/y is the top-left origin, not an alignment anchor.
 struct GlyphRenderSubmission {
 	f32 x = 0.0F;
 	f32 y = 0.0F;
@@ -98,10 +95,6 @@ struct GlyphRenderSubmission {
 	bmsx::color color = 0xffffffffU; // ARGB32
 	bool has_background_color = false;
 	bmsx::color background_color = 0xff000000U; // ARGB32
-	i32 wrap_chars = 0;
-	i32 center_block_width = 0;
-	TextAlign align = TextAlign::Start;
-	TextBaseline baseline = TextBaseline::Alphabetic;
 	Layer2D layer = Layer2D::World;
 };
 

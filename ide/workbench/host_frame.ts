@@ -294,7 +294,6 @@ export function runWorkbenchHostFrame(
 			}
 		}
 		const previousPresentation = presenter.presentationSequence;
-		if (action === HostFrameAction.Execute) action = HostFrameAction.PresentPending;
 		if (hostOverlayMenu.queueFrameOverlayCommands(session.hostFps)
 			|| session.rewind.active || !ide.runtimeTasks.ready) screen.requestHeldPresentation();
 		presentWorkbenchFrame(

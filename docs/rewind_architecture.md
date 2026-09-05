@@ -933,3 +933,56 @@ Real BIOS/Nemesis TS, native controller and libretro ABI runs pass transport,
 keyboard, cancel/branch and audio checks. The actual WebGPU run and Scenario Lab
 (124 assertions) pass. The full Lua suite passes (849 tests, one skipped).
 IDE/browser typechecks, parity/boundary/indent audits and diff checks pass.
+
+## Positioned glyph command (HOST-GLYPH-CONTRACT-01)
+
+Reference: Dear ImGui's
+[RenderTextClippedEx](https://github.com/ocornut/imgui/blob/master/imgui.cpp)
+calculates alignment before submitting positioned text to
+[ImDrawList::AddText](https://github.com/ocornut/imgui/blob/master/imgui_draw.cpp).
+BMSX adopts that ownership boundary, not ImGui's full text layout API. Its
+bitmap glyph iterator consumes a top-left origin, glyph advances and explicit
+newlines/tabs. The UI already measures and positions centered labels.
+
+The audit hypothesis that background fields were also unused was incorrect:
+quad-stream, TS headless, native software and GLES2 all render per-glyph
+backgrounds. Those fields and their ordering test remain. Only unsupported
+`align`, `baseline`, `wrap_chars` and `center_block_width` are removed. Guest
+cartlib text layout is independent and remains unchanged.
+
+### Representation and callsites, before mirrored edits
+
+| Contract | TypeScript | C++ | Owner / hot-path callsites |
+| --- | --- | --- | --- |
+| Positioned host glyph run | `GlyphRenderSubmission`: top-left `x/y`, font, item range, foreground/background, layer | Same fields; native vector of text lines | `forEachBatchBlitGlyph` emits positioned glyphs; no ignored layout flags or compatibility translation |
+| Retained producers | `HostOverlayMenu`, `HostOnScreenKeyboard`, `RewindTimeline`, IDE `OverlayRenderer` pool | Same host views; no native IDE | Views measure at layout changes and update positions/text; IDE pooled submissions no longer rewrite unsupported fields |
+| Consumers | `HostOverlayQuadStream` (WebGL/WebGPU), headless host 2D | GLES2 host pipeline and software host renderer | Existing glyph iterator and background-before-glyph passes; no additional layout pass, buffer, allocation or validation |
+
+Glyph validation: TS/native tests exercise explicit item ranges, top-left
+positions, tabs and newlines with both MSX and tiny fonts. The existing glyph
+background/atlas test remains green. Actual headless quick-menu pixel checks
+pass; native rewind and WebGPU screenshots were inspected without adding a
+settling presentation frame. Final IDE typechecking also removed an obsolete
+second Execute-to-PresentPending conversion: the execution branch already
+owns that transition.
+
+### Combined delivery validation
+
+- `test:runtime-replay`: actual BIOS/Nemesis TS/native state and history parity,
+  host-controller behavior and separate libretro ABI behavior pass.
+- Actual WebGPU deferred-GPUREAD lifetime test, all 2,097,152 restored VRAM bytes,
+  and same-frame submitted overlay status pass. Seeks perform no extra VRAM
+  captures in the TS/native controller tests.
+- Lua suite: 851 passed, one skipped. Native CTest: 28 passed. Live IDE Hot Resume:
+  91 assertions; Scenario Lab: 124 assertions. Headless quick-menu pixels pass.
+- Machine/IDE/browser/node typechecks, browser-player/browser-Studio/native
+  GLES2 product builds, parity/boundary/indent audits and diff checks pass.
+- Pinned SNES Mini build, target-rootfs ABI checks and 16-frame QEMU product
+  smoke pass. Both expanded ARM host-controller and libretro ABI rewind runs
+  also pass against that rootfs. Physical Mini memory, GPU/audio behavior and
+  frame-time headroom are not established by these runs.
+
+No capacity, checkpoint interval, compression policy, guest instruction path or
+input-journal representation changes are part of these corrections. They do
+not make full-machine capture/restore allocation-free or prove that the current
+retention policy fits a physical Mini's memory budget.
