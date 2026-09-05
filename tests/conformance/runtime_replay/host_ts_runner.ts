@@ -32,6 +32,7 @@ async function main(): Promise<void> {
 	type Puller = import('../../../hosts/common/audio_output').AudioOutputPuller;
 	const clock = new VirtualHeadlessClock();
 	const input = new Input(clock, new HeadlessInputHub(), -1);
+	input.connectInputDevice({ id: 'gamepad:0', kind: 'gamepad', gamepadIndex: 0, label: 'CONFORMANCE PAD', vibrationInitialization: null, supportsVibration: false, setVibration() {} });
 	const runtime = initializeMachineRuntime(readFileSync(systemPath), [readFileSync(cartPath), null], PSX_MACHINE_SPEC, input);
 	const backend = new HeadlessGPUBackend(256, 212, PSX_MACHINE_SPEC.gxGpuVramBytes);
 	const presenter = initializeMachineVideoPresenter(runtime, new HeadlessVideoOutput(256, 212), backend);
@@ -78,15 +79,22 @@ async function main(): Promise<void> {
 	let pressId = 1;
 	const press = async (...keys: string[]) => {
 		const id = pressId++;
-		for (const key of keys) input.inputButton('keyboard:0', key, true, 1, clock.now(), id);
+		for (const key of keys) input.inputButton('gamepad:0', key, true, 1, clock.now() + 1, id);
 		await frame();
-		for (const key of keys) input.inputButton('keyboard:0', key, false, 0, clock.now(), id);
+		for (const key of keys) input.inputButton('gamepad:0', key, false, 0, clock.now() + 1, id);
 		await frame();
 	};
 	const openRewind = async () => {
-		await press('ControlRight', 'AltRight');
-		for (let index = 0; index < 3; index += 1) await press('ArrowUp');
-		await press('KeyX');
+		await press('select', 'start');
+		for (let index = 0; index < 3; index += 1) await press('up');
+		const id = pressId++;
+		input.inputButton('gamepad:0', 'a', true, 1, clock.now() + 1, id);
+		await frame();
+		const heldCycles = runtime.machine.scheduler.currentNowCycles();
+		for (let index = 0; index < 3; index += 1) await frame();
+		assert.equal(runtime.machine.scheduler.currentNowCycles(), heldCycles, 'held accept must not activate the destination page');
+		input.inputButton('gamepad:0', 'a', false, 0, clock.now() + 1, id);
+		await frame();
 	};
 	const snapshot = (name: string) => {
 		if (!outputDirectory) return;
@@ -107,41 +115,96 @@ async function main(): Promise<void> {
 	snapshot('live');
 	await openRewind();
 	const latest = history.latestCycles;
-	const checkpoint = history.checkpointCycles(history.checkpointCount - 1);
-	await press('KeyX');
+	const oldest = history.earliestCycles;
+	await press('lb');
 	await settle();
 	assert.equal(history.mode, HistoryMode.Reviewing);
-	assert.equal(runtime.machine.scheduler.currentNowCycles(), checkpoint, 'menu selects an actual checkpoint');
+	const selected = runtime.machine.scheduler.currentNowCycles();
+	assert.ok(selected <= latest - runtime.timing.cpuHz && selected > latest - runtime.timing.cpuHz * 1.03, 'LB seeks one emulated second, using input replay between checkpoints');
 	assert.equal(history.latestCycles, latest, 'review retains future');
 	const rewindAudioFrames = audioFrames;
 	for (let index = 0; index < 5; index += 1) await frame();
 	assert.equal(audioFrames, rewindAudioFrames, 'review delivers no stale or replay audio');
-	assert.equal(runtime.machine.scheduler.currentNowCycles(), checkpoint);
+	assert.equal(runtime.machine.scheduler.currentNowCycles(), selected);
+	menu.queueRenderCommands();
+	const bar = presenter.hostOverlayQueue.consumeHostMenuFrame();
+	const { Host2DKind } = await import('../../../machine/ts/render/host_overlay/commands');
+	for (let index = 0; index < bar.commandCount; index += 1) {
+		if (bar.commandKinds[index] === Host2DKind.Rect) {
+			const rect = bar.commandRefs[index] as import('../../../machine/ts/render/shared/submissions').RectRenderSubmission;
+			assert.ok(rect.area.top >= presenter.viewportSize.y - 38 && rect.area.bottom <= presenter.viewportSize.y - 6, 'transport leaves the game area unobstructed');
+		} else {
+			const label = bar.commandRefs[index] as import('../../../machine/ts/render/shared/submissions').GlyphRenderSubmission;
+			assert.equal(label.font!.lineHeight, 6, 'transport uses the existing tiny font');
+			assert.ok(label.x >= 6 && label.x + label.font!.measure(label.items as string) <= presenter.viewportSize.x - 6, 'every transport label fits inside the game viewport');
+		}
+	}
 	snapshot('rewind');
 	const reviewed = captureRuntimeSaveState(runtime);
-	// Return to latest replays recorded input, while the host menu stays responsive.
-	for (let index = 0; index < 3; index += 1) await press('ArrowDown');
-	await press('KeyX');
-	await settle();
+	await press('rb'); await settle();
+	assert.ok(runtime.machine.scheduler.currentNowCycles() > selected, 'RB seeks forward without resuming gameplay');
+	assert.equal(history.mode, HistoryMode.Reviewing);
+	await press('rb'); await settle();
+	assert.equal(runtime.machine.scheduler.currentNowCycles(), latest, 'timeline includes the recorded end');
+	// Holding a shoulder uses the host repeat cadence and clamps at the oldest boundary.
+	input.inputButton('gamepad:0', 'lb', true, 1, clock.now() + 1, pressId++);
+	for (let index = 0; index < 80; index += 1) await frame();
+	input.inputButton('gamepad:0', 'lb', false, 0, clock.now() + 1, pressId++);
+	await frame(); await settle();
+	assert.equal(runtime.machine.scheduler.currentNowCycles(), oldest);
+	await press('lb'); await settle();
+	assert.equal(runtime.machine.scheduler.currentNowCycles(), oldest, 'holding at the range end never wraps');
+	snapshot('oldest');
+	// B cancels the transport; it is not a navigation item in a second menu.
+	await press('b'); await settle();
 	for (let index = 0; index < 12; index += 1) await frame();
 	assert.equal(rewind.active, false);
 	assert.equal(history.mode, HistoryMode.Recording);
 	assert.ok(runtime.machine.scheduler.currentNowCycles() >= latest);
-	assert.ok(audioFrames > rewindAudioFrames, 'live audio resumes after returning');
+	assert.ok(audioFrames > rewindAudioFrames, 'live audio resumes after cancelling');
 
 	await openRewind();
-	await press('KeyX');
-	await settle();
+	await press('lb'); await settle();
 	const branchCycles = runtime.machine.scheduler.currentNowCycles();
 	const branchEnd = history.latestCycles;
-	await press('ArrowDown'); await press('ArrowDown'); await press('KeyX');
-	await settle();
+	await press('start'); await settle();
+	for (let index = 0; index < 3; index += 1) await frame();
 	assert.equal(history.mode, HistoryMode.Recording);
 	assert.equal(rewind.active, false);
-	assert.ok(history.latestCycles < branchEnd, 'resume here truncates the old future');
+	assert.ok(history.latestCycles < branchEnd, 'START branches from the selected position');
 	for (let index = 0; index < 20; index += 1) await frame();
 	assert.ok(runtime.machine.scheduler.currentNowCycles() > branchCycles);
 	snapshot('branched');
+
+	// The transition lifecycle, not the destination keyboard, cancels a rewind session.
+	await openRewind(); await press('lb'); await settle();
+	const beforeKeyboard = history.latestCycles;
+	await press('select', 'x'); await settle();
+	for (let index = 0; index < 12; index += 1) await frame();
+	assert.equal(rewind.active, false);
+	assert.ok(runtime.machine.scheduler.currentNowCycles() >= beforeKeyboard, 'rewind -> keyboard preserves the recorded future');
+	await press('select', 'x');
+	for (let index = 0; index < 60; index += 1) await frame();
+
+	// START accepts the selected target even while its old GPU readback is in flight.
+	await openRewind();
+	let releaseResume!: () => void;
+	const resumeGate = new Promise<void>(resolve => { releaseResume = resolve; });
+	const captureBeforeResume = backend.captureGxGpuVramSnapshot.bind(backend);
+	backend.captureGxGpuVramSnapshot = async gpu => { await resumeGate; captureBeforeResume(gpu); };
+	await press('lb');
+	const intended = rewind.positionCycles;
+	const intendedSequence = history.inputJournal.endAt(intended);
+	const intendedBoundary = history.inputJournal.cycleAt(intendedSequence - 1);
+	assert.equal(tasks.ready, false);
+	await press('start');
+	assert.equal(rewind.positionCycles, intended, 'accept must not replace the pending target with the recorded end');
+	releaseResume();
+	await settle();
+	for (let index = 0; index < 4; index += 1) await frame();
+	backend.captureGxGpuVramSnapshot = captureBeforeResume;
+	assert.equal(history.mode, HistoryMode.Recording);
+	assert.equal(history.checkpointCycles(history.checkpointCount - 1), intendedBoundary, 'live takeover captures the selected target, not an intermediate replay state');
 
 	// A delayed backend snapshot and a tooling mutation share one operation queue.
 	// This deliberately controls completion; the normal run above uses the real software backend.
@@ -168,7 +231,7 @@ async function main(): Promise<void> {
 	assert.equal(rewind.active, false, 'mutation invalidates pending navigation');
 	assert.equal(history.checkpointCount, 1, 'new revision starts a new history');
 	assert.ok(suspensions >= 2, 'rewind transitions suspend audio transport');
-	console.log(JSON.stringify({ host: 'ts-host-rewind', checkpoint, latest, branchCycles, audioFrames, suspensions,
+	console.log(JSON.stringify({ host: 'ts-host-rewind', selected, latest, branchCycles, audioFrames, suspensions,
 		reviewedObjects: reviewed.cpuState.snapshot.objectCount, checkpoints: history.checkpointCount }));
 	console.log('RUNTIME-HOST-REWIND:PASS');
 	input.dispose();

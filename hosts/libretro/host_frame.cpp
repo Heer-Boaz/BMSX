@@ -26,7 +26,7 @@ LibretroFrameResult runLibretroFrame(
 	const f64 hostFps = 1.0 / deltaTime;
 
 	const HostMenuInput hostMenuInput =
-		overlayMenu.tickInput(input, presenter, rewind, totalTime * 1000.0);
+		overlayMenu.tickInput(runtime, input, presenter, rewind, totalTime * 1000.0);
 	switch (hostMenuInput) {
 		case HostMenuInput::RebootCart:
 			return LibretroFrameResult::RebootRequested;

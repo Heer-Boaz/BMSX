@@ -593,7 +593,8 @@ was still disabled; the host integration below supersedes that status.
 Collection is continuous during ordinary gameplay, from boot, not enabled by
 opening the rewind menu. Reboot, external load and tooling mutations establish
 a new timeline. Scenario execution is an external test session, not ordinary
-player history. The quick menu owns navigation; no rewind shortcut is assigned.
+player history. The quick menu opens the transport bar described in
+`REWIND-UI-01` below; no rewind shortcut is assigned.
 
 Production references checked before the host diff:
 
@@ -635,10 +636,10 @@ real SNES Mini frame-time or total-RSS headroom. Compression and a hard byte
 arena require their own measured storage representation; neither a misleading
 fixed-MiB label nor corrupt-data compatibility is introduced to claim that gate.
 
-The initial quick-menu navigation selects retained checkpoints, not arbitrary
-frames. Input replay is still needed for returning to the latest retained
-boundary without throwing away the recorded future. There is no per-frame
-state capture and no mandatory frame-accurate timeline editor.
+The original checkpoint-only command list is superseded by `REWIND-UI-01`:
+the transport seeks through recorded time using the same input replay between
+sparse snapshots. Returning to the latest retained boundary preserves the
+recorded future. There is still no per-frame state capture.
 
 Returning to the recorded end rejoins recording without allocating another
 checkpoint slot just for looking at history. An actual branch still requires
@@ -720,3 +721,88 @@ introduced.
 No frame-time or fixed-MiB guarantee is inferred from these functional tests.
 Core method-parity, strict architecture-boundary and indentation audits pass;
 the final patch also passes `git diff --check`.
+
+## Rewind transport UI (REWIND-UI-01)
+
+The initial command-list submenu is rejected: rewind is a transport over the
+game image, not a list of separate seek/return/pause actions. The quick menu is
+only the entry point. A compact bottom bar owns the timeline, selected time and
+control hints, using the existing host tiny-font atlas. The game retains its
+viewport and is not resized or replaced with a second render target.
+
+References examined before this mirrored UI diff:
+
+- [Nintendo's demonstration, 2:35](https://youtu.be/f4Ge7iVyOyw?t=155) and
+  [official Rewind controls](https://en-americas-support.nintendo.com/app/answers/detail/a_id/27462/p/172/c/898):
+  game-first transport presentation, L/R navigation and START for live takeover.
+- [openMSX ImGuiReverseBar](https://github.com/openMSX/openMSX/blob/master/src/imgui/ImGuiReverseBar.cc):
+  a bottom-positioned time range/cursor, proportional pointer seeking and
+  delayed commands to the existing replay owner, not UI-owned snapshots.
+- [mpv OSC](https://github.com/mpv-player/mpv/blob/master/player/lua/osc.lua):
+  bottom-bar layout and coalesced, non-identical seek requests. Its Lua player
+  integration is not an invitation to move this host UI into guest cartlib.
+- [MAME menu lifecycle](https://github.com/mamedev/mame/blob/master/src/frontend/mame/ui/menu.cpp):
+  stack changes deactivate the previous owner and reset UI input centrally;
+  the destination menu does not clean up whichever screen happened to precede it.
+
+### Representation and hot-path callsites, before implementation
+
+| State | TypeScript | C++ | Owner / callsites |
+| --- | --- | --- | --- |
+| Recorded range / seek target | Existing integer cycle `number` | Existing `i64` | `RuntimeHistory`, `HostRewind.seekTo`; storage and journal unchanged |
+| Transport inputs | Normalized host LB/RB, A/START, B; existing repeat state | Same controller bits and native repeat state | `HostOverlayMenu.tickInput`; consumed before live ICU input, including the exit frame |
+| Previous button state | Input owner keeps physical pressed state separate from consumption | Normalized physical button bits; keyboard navigation also includes its existing stick thresholds | `HostOverlayMenu.latchButtonStates` must not latch consumed output as a release; holding the opening button does not activate the destination page |
+| Timeline navigation | One emulated-second relative steps; pointer position mapped to range | Same integer-cycle target calculation | `HostRewindTimeline.moveCursor` / `seekAt`; existing replay snaps to a recorded PCRTC boundary |
+| Bottom bar | Retained rectangles, glyph submissions and host command arrays | Same retained submissions / arrays | `HostRewindTimeline.queueRenderCommands`; no per-frame buffer construction |
+| Pending live takeover | Existing seek intent plus `resumeAtTarget` latch | Same | `HostRewind.resumeHere` / `service`: START during seek resumes at the selected target, not an intermediate replay state |
+| Overlay transition | Page plus Accept/Cancel/Discard outcome | Same enums | `HostOverlayMenu.transitionTo` is the only page writer after construction; departure, pointer/repeat reset, exclusive input and destination activation are one lifecycle |
+
+Opening the keyboard must not know about rewind. A transition deactivates its
+old page before activating its destination. Leaving rewind accepts the selected
+position, cancels back to the recorded end, or discards the UI session when the
+native runtime is unloaded. Leaving the keyboard releases its virtual key pulse
+through the existing next-poll input publication boundary. Every transition
+consumes routed controller input for its exit frame, including shortcut routes.
+Every route uses this lifecycle, not destination-specific cleanup calls. This
+is a bounded state machine for the existing host overlays, not a new workbench
+navigation framework or a generic callback facade.
+
+LB/RB (or left/right) move through the recorded range; holding uses the existing
+host button-repeat cadence. START/A resumes at the selected position; B or the
+existing menu chord cancels and returns to the recorded end. A pointer click on
+the bar seeks directly. Seeking is visibly distinguished from a completed
+preview. No new activation shortcut is introduced.
+
+The two-checkpoint capacity and six-second capture interval are unchanged.
+Navigating between checkpoints reuses the existing input replay; it does not
+capture every frame, increase capacity or expose guest objects to the UI.
+
+### UI and lifecycle validation
+
+- Real BIOS/Nemesis TS and libretro host runs cover a held opening button,
+  LB/RB navigation between checkpoints, held-repeat bounds, B cancel, START
+  branch and rewind-to-keyboard cancellation. Native also covers external
+  save/load and reboot. The native held-button regression failed before its
+  latch was corrected to read physical input instead of consumed output.
+- TS accepts the intended journal boundary while a submitted GPU capture is
+  deliberately held; START cannot resume from an intermediate replay state.
+  The input-routing test checks virtual-key release on the next input poll
+  and consumption of the departing page's controller input on its exit frame.
+- The actual browser WebGPU test exercises both clickable track endpoints,
+  LB/RB keyboard aliases, return and branch, and compares all 2,097,152 bytes
+  of restored VRAM. Browser and native software screenshots were inspected:
+  the game retains its viewport, the transport stays at the bottom, and the
+  tiny-font labels fit. TS assertions also inspect the retained submissions'
+  bounds and six-pixel font height.
+- `npm run test:runtime-replay` passes real-cart state/history cross-core
+  comparison and both host runs. Lua tests pass 847 with one skipped; native
+  CTest passes 26/26. Quick-menu headless pixel assertions still pass.
+- Browser player/Studio and native libretro product builds pass. The SNES Mini
+  core build, target-rootfs ABI audit and QEMU product smoke pass; the expanded
+  actual libretro host test also passes under ARM/QEMU with the Mini controller
+  layout. This is not physical Mini memory, GPU or frame-time evidence.
+
+Machine, IDE, browser and Node project typechecks, method-parity, strict
+architecture-boundary and indentation audits pass, as does `git diff --check`.
+No new snapshot allocation or capture frequency is introduced by this UI slice;
+the existing storage limitations above still apply.

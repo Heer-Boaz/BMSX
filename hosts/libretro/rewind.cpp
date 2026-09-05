@@ -17,6 +17,7 @@ HostRewind::HostRewind(Runtime& runtime, VideoPresenter& presenter, RenderPresen
 		options{2, 1024, runtime.timing.cpuHz * 6} {}
 
 bool HostRewind::available() const { return runtime.history.checkpointCount() != 0; }
+bool HostRewind::seeking() const { return request == RewindRequest::Seek || runtime.history.mode == HistoryMode::Replaying; }
 i64 HostRewind::positionCycles() const {
 	return request == RewindRequest::Seek ? requestedCycles
 		: active ? runtime.history.targetCycles : runtime.history.latestCycles();
@@ -54,7 +55,10 @@ void HostRewind::returnToPresent() {
 	resumeAtTarget = true;
 }
 
-void HostRewind::resumeHere() { request = RewindRequest::Resume; }
+void HostRewind::resumeHere() {
+	if (seeking()) resumeAtTarget = true;
+	else request = RewindRequest::Resume;
+}
 void HostRewind::pauseSeek() { request = RewindRequest::Pause; }
 
 void HostRewind::capture() {

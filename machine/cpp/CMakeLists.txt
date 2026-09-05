@@ -440,6 +440,7 @@ set(BMSX_LIBRETRO_CORE_SOURCES
 	${BMSX_LIBRETRO_DIR}/presentation_state.cpp
 	${BMSX_LIBRETRO_DIR}/runtime_error.cpp
 	${BMSX_LIBRETRO_DIR}/rewind.cpp
+	${BMSX_LIBRETRO_DIR}/rewind_timeline.cpp
 	${BMSX_LIBRETRO_DIR}/host_shortcuts.c
 	${BMSX_LIBRETRO_DIR}/video_output.cpp
 )

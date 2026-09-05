@@ -33,6 +33,7 @@ export class HostRewind {
 	}
 
 	public get available(): boolean { return this.runtime.history.checkpointCount !== 0; }
+	public get seeking(): boolean { return this.request === RewindRequest.Seek || this.runtime.history.mode === HistoryMode.Replaying; }
 	public get positionCycles(): number {
 		return this.request === RewindRequest.Seek ? this.requestedCycles
 			: this.active ? this.runtime.history.targetCycles : this.runtime.history.latestCycles;
@@ -71,7 +72,10 @@ export class HostRewind {
 		this.resumeAtTarget = true;
 	}
 
-	public resumeHere(): void { this.request = RewindRequest.Resume; }
+	public resumeHere(): void {
+		if (this.seeking) this.resumeAtTarget = true;
+		else this.request = RewindRequest.Resume;
+	}
 	public pauseSeek(): void { this.request = RewindRequest.Pause; }
 
 	private readonly onError = (error: unknown): void => {

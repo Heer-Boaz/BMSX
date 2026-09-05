@@ -2253,6 +2253,16 @@
 				"service"
 			],
 			"reason": "shared_host_rewind_commands_and_bounded_replay_contract"
+		},
+		{
+			"ts": "hosts/common/rewind_timeline.ts",
+			"cpp": [
+				"hosts/libretro/rewind_timeline.h",
+				"hosts/libretro/rewind_timeline.cpp"
+			],
+			"cpp_class": "HostRewindTimeline",
+			"methods": ["moveCursor", "seekAt", "queueRenderCommands"],
+			"reason": "shared_host_rewind_timeline_transport_contract"
 		}
 	]
 }

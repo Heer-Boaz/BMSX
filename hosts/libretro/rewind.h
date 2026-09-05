@@ -17,6 +17,7 @@ public:
 	bool active = false;
 	bool stopped = false;
 	bool available() const;
+	bool seeking() const;
 	i64 positionCycles() const;
 	void stepCheckpoint(i32 direction);
 	void seekTo(i64 cycles);

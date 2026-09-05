@@ -1121,7 +1121,7 @@ static void unload_content() {
 	const bool wasLoaded = g_content != nullptr;
 	if (wasLoaded) {
 		g_input->reset();
-		g_overlay_menu->resetInputState(*g_input);
+		g_overlay_menu->resetInputState(*g_input, *g_rewind);
 		g_presentation->clearPresentation();
 	}
 	g_rewind.reset();

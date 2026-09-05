@@ -564,6 +564,24 @@ test('on-screen keyboard owns controller navigation and emits retained HID comma
 	input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
 	assert.equal(keyWordContains(snapshot.keyWords, 'KeyQ'), true);
 	assert.equal(snapshot.pointerButtons & primaryPointerMask, 0);
+	// The host-menu transition must deactivate the keyboard before its next
+	// keyboard tick would normally release this virtual key pulse.
+	currentTime += 1;
+	input.inputButton('keyboard:0', 'ControlRight', true, 1, currentTime, pressId++);
+	input.inputButton('keyboard:0', 'AltRight', true, 1, currentTime, pressId++);
+	input.inputAxis2(gamepad.id, 'ls', 1, 0, currentTime);
+	assert.equal(tickMenu(input, menu), HostMenuInput.Inactive);
+	input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
+	assert.equal(snapshot.pads[0].axesQ16[InputControllerGamepadAxis.LeftX], 0, 'the transition consumes controller input on the exit frame');
+	currentTime += 1;
+	input.inputButton('keyboard:0', 'ControlRight', false, 0, currentTime, pressId++);
+	input.inputButton('keyboard:0', 'AltRight', false, 0, currentTime, pressId++);
+	input.inputAxis2(gamepad.id, 'ls', 0, 0, currentTime);
+	tickMenu(input, menu);
+	input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
+	assert.equal(keyWordContains(snapshot.keyWords, 'KeyQ'), false, 'keyboard -> closed publishes the key release on the next input poll');
+	currentTime += 1;
+	assert.equal(chord('select', 'x'), HostMenuInput.Inactive);
 	currentTime += 1;
 	tickMenu(input, menu);
 	input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);

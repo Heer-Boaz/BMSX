@@ -15,8 +15,12 @@
 namespace {
 #if defined(BMSX_LIBRETRO_SNESMINI_LAYOUT)
 constexpr uint16_t menuAccept = 1u << RETRO_DEVICE_ID_JOYPAD_B;
+constexpr uint16_t menuCancel = 1u << RETRO_DEVICE_ID_JOYPAD_A;
+constexpr uint16_t menuKeyboard = 1u << RETRO_DEVICE_ID_JOYPAD_Y;
 #else
 constexpr uint16_t menuAccept = 1u << RETRO_DEVICE_ID_JOYPAD_A;
+constexpr uint16_t menuCancel = 1u << RETRO_DEVICE_ID_JOYPAD_B;
+constexpr uint16_t menuKeyboard = 1u << RETRO_DEVICE_ID_JOYPAD_X;
 #endif
 std::string systemDirectory;
 std::string outputDirectory;
@@ -100,18 +104,35 @@ void press(uint16_t mask) {
 	buttons = mask; frame(); buttons = 0; frame();
 }
 
-void openRewind() {
-	press((1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | (1u << RETRO_DEVICE_ID_JOYPAD_START));
-	for (int index = 0; index < 3; ++index) press(1u << RETRO_DEVICE_ID_JOYPAD_UP);
-	press(menuAccept);
-}
-
 bmsx::RuntimeSaveState capture() {
 	std::vector<bmsx::u8> envelope(retro_serialize_size());
 	require(retro_serialize(envelope.data(), envelope.size()), "external state capture failed");
 	const auto size = bmsx::readLE32(envelope.data() + 4);
 	return bmsx::decodeRuntimeSaveState(std::span<const bmsx::u8>(envelope.data() + 8, size),
 		bmsx::PSX_MACHINE_SPEC.ramBytes, bmsx::PSX_MACHINE_SPEC.gxGpuVramBytes);
+}
+
+void openRewind() {
+	press((1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | (1u << RETRO_DEVICE_ID_JOYPAD_START));
+	for (int index = 0; index < 3; ++index) press(1u << RETRO_DEVICE_ID_JOYPAD_UP);
+	buttons = menuAccept; frame();
+	const auto heldCycles = capture().machineState.schedulerNowCycles;
+	for (int index = 0; index < 3; ++index) frame();
+	require(capture().machineState.schedulerNowCycles == heldCycles, "held accept must not activate the destination page");
+	buttons = 0; frame();
+}
+
+bmsx::i64 settleReview() {
+	auto previous = capture().machineState.schedulerNowCycles;
+	unsigned stable = 0;
+	for (unsigned count = 0; count < 4000 && stable < 3; ++count) {
+		frame();
+		const auto current = capture().machineState.schedulerNowCycles;
+		stable = current == previous ? stable + 1 : 0;
+		previous = current;
+	}
+	require(stable == 3, "timeline seek must complete and hold its preview");
+	return previous;
 }
 
 void snapshot(const char* name) {
@@ -145,18 +166,26 @@ int main(int argc, char** argv) {
 		const auto latest = capture().machineState.schedulerNowCycles;
 		snapshot("live");
 		openRewind();
-		press(menuAccept);
+		press(1u << RETRO_DEVICE_ID_JOYPAD_L);
+		settleReview();
 		const auto reviewed = capture();
 		const auto checkpoint = reviewed.machineState.schedulerNowCycles;
-		require(checkpoint < latest, "menu must restore a continuously recorded checkpoint");
+		require(checkpoint < latest, "LB must preview recorded time");
 		require(reviewed.cpuState.executionCartridgeSlot == 0, "game CPU domain restored");
 		const auto reviewAudio = audioFrames;
 		for (int index = 0; index < 5; ++index) frame();
 		require(capture().machineState.schedulerNowCycles == checkpoint, "review holds machine time");
 		require(audioFrames == reviewAudio && audioSuspended, "review must mute and clear abandoned audio");
 		snapshot("rewind");
-		for (int index = 0; index < 3; ++index) press(1u << RETRO_DEVICE_ID_JOYPAD_DOWN);
-		press(menuAccept);
+		buttons = 1u << RETRO_DEVICE_ID_JOYPAD_L;
+		for (int index = 0; index < 80; ++index) frame();
+		buttons = 0; frame();
+		const auto oldest = settleReview();
+		require(oldest < checkpoint, "holding LB repeats through the timeline");
+		press(1u << RETRO_DEVICE_ID_JOYPAD_L);
+		require(settleReview() == oldest, "holding at the oldest boundary never wraps");
+		snapshot("oldest");
+		press(menuCancel);
 		for (int index = 0; index < 4000 && audioSuspended; ++index) frame();
 		require(!audioSuspended, "return to latest must finish bounded replay");
 		for (int index = 0; index < 12; ++index) frame();
@@ -164,15 +193,27 @@ int main(int argc, char** argv) {
 		require(audioFrames > reviewAudio, "live audio resumes after return");
 		openRewind();
 		const auto branchEnd = capture().machineState.schedulerNowCycles;
-		press(menuAccept);
-		const auto branchCycles = capture().machineState.schedulerNowCycles;
-		press(1u << RETRO_DEVICE_ID_JOYPAD_DOWN); press(1u << RETRO_DEVICE_ID_JOYPAD_DOWN);
-		press(menuAccept);
+		press(1u << RETRO_DEVICE_ID_JOYPAD_L);
+		const auto branchCycles = settleReview();
+		press(1u << RETRO_DEVICE_ID_JOYPAD_R);
+		require(settleReview() > branchCycles, "RB must preview later time");
+		press(1u << RETRO_DEVICE_ID_JOYPAD_L);
+		settleReview();
+		press(1u << RETRO_DEVICE_ID_JOYPAD_START);
+		for (int index = 0; index < 4000 && audioSuspended; ++index) frame();
 		const auto branched = capture().machineState.schedulerNowCycles;
 		require(!audioSuspended && branched < branchEnd, "resume here must branch, not return to future");
 		for (int index = 0; index < 20; ++index) frame();
 		require(capture().machineState.schedulerNowCycles > branchCycles, "branched gameplay advances");
 		snapshot("branched");
+		openRewind();
+		const auto beforeKeyboard = capture().machineState.schedulerNowCycles;
+		press(1u << RETRO_DEVICE_ID_JOYPAD_L); settleReview();
+		press((1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | menuKeyboard);
+		for (int index = 0; index < 4000 && audioSuspended; ++index) frame();
+		require(!audioSuspended, "rewind -> keyboard cancels the departing review session");
+		require(capture().machineState.schedulerNowCycles >= beforeKeyboard, "rewind -> keyboard preserves the recorded future");
+		press((1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | menuKeyboard);
 		std::vector<bmsx::u8> saved(retro_serialize_size());
 		require(retro_serialize(saved.data(), saved.size()), "frontend state capture failed");
 		const auto savedCycles = capture().machineState.schedulerNowCycles;
@@ -180,10 +221,9 @@ int main(int argc, char** argv) {
 		require(retro_unserialize(saved.data(), saved.size()), "frontend state load failed");
 		require(capture().machineState.schedulerNowCycles == savedCycles, "frontend load restores machine time");
 		for (int index = 0; index < 5; ++index) frame();
-		openRewind(); press(menuAccept);
+		openRewind(); press(1u << RETRO_DEVICE_ID_JOYPAD_L); settleReview();
 		require(capture().machineState.schedulerNowCycles == savedCycles, "external load starts a fresh history at the loaded state");
-		for (int index = 0; index < 3; ++index) press(1u << RETRO_DEVICE_ID_JOYPAD_DOWN);
-		press(menuAccept);
+		press(menuCancel);
 		for (int index = 0; index < 4000 && audioSuspended; ++index) frame();
 		require(!audioSuspended, "loaded timeline rejoins live output");
 		retro_reset();

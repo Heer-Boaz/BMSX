@@ -1606,9 +1606,14 @@ emulated seconds and 1,024 fixed-size ICU input records. The runtime starts
 collection only when its host has assumed GPU synchronization ownership.
 Scenario test sessions do not collect ordinary player history.
 
-The existing quick menu offers earlier/later checkpoints, resume here, return
-to latest and pause seek. Review preserves the recorded future; returning to
-latest rejoins it, whereas resume here branches. TS queues GPU captures/restores
+The existing quick menu opens a compact rewind bar at the bottom of the game
+viewport, using the host tiny font. LB/RB or left/right seek through the recorded
+range, START/A resumes at the selected position, and B or the menu chord cancels
+back to the recorded end. A pointer click seeks proportionally along the bar.
+Review preserves the recorded future; returning to latest rejoins it, whereas
+resume here branches. One overlay lifecycle owns departure, input reset and
+destination activation; the keyboard does not know about rewind cleanup.
+TS queues GPU captures/restores
 with IDE mutation jobs; native completes the corresponding jobs synchronously.
 Both hosts service bounded replay while continuing to process menu events,
 suppress intermediate audio/debug output, and replace the held presentation
@@ -1620,8 +1625,8 @@ Snapshot count is bounded; variable CPU/string and cartridge-RAM sizes mean it
 is not a fixed-MiB arena. Physical SNES Mini memory/frame-time headroom and
 compression remain separate measured storage work.
 The contract, measurements and production references are in
-[rewind architecture](rewind_architecture.md). The initial control surface is
-the host/quickmenu; no shortcut is reserved.
+[rewind architecture](rewind_architecture.md). The host/quickmenu remains the
+entry point; no new shortcut is reserved.
 
 Saving an AEM document follows the same physical revision path. Tooling
 validates and encodes the document, installs the rebuilt ROM, reconnects the

@@ -2,14 +2,13 @@
 
 #include "common/primitives.h"
 #include "host_on_screen_keyboard.h"
+#include "rewind_timeline.h"
 #include "machine/devices/input/contracts.h"
 #include "render/host_overlay/commands.h"
 #include "render/shared/submissions.h"
 #include <array>
 #include <cstddef>
 #include <string>
-#include <string_view>
-#include <span>
 
 namespace bmsx {
 
@@ -17,13 +16,6 @@ class Runtime;
 class VideoPresenter;
 class LibretroInput;
 class HostRewind;
-enum class HostMenuOptionId : i32;
-struct HostMenuOptionDef {
-	HostMenuOptionId id;
-	const char* label;
-	const char* const* values;
-	i32 valueCount;
-};
 
 enum class HostMenuInput : u8 {
 	Inactive,
@@ -39,6 +31,9 @@ enum class HostMenuButtonId : u8 {
 	Right,
 	A,
 	B,
+	LeftBumper,
+	RightBumper,
+	Start,
 	Count,
 };
 
@@ -53,6 +48,8 @@ enum class HostMenuRepeatId : u8 {
 	CursorRight,
 	Home,
 	End,
+	LeftBumper,
+	RightBumper,
 	Count,
 	None = 0xff,
 };
@@ -64,11 +61,12 @@ class HostOverlayMenu {
 		Keyboard,
 		Rewind,
 	};
+	enum class Outcome { Cancel, Accept, Discard };
 
 public:
 	HostOverlayMenu();
-	HostMenuInput tickInput(LibretroInput& input, VideoPresenter& presenter, HostRewind& rewind, f64 currentTimeMs);
-	void resetInputState(LibretroInput& input);
+	HostMenuInput tickInput(Runtime& runtime, LibretroInput& input, VideoPresenter& presenter, HostRewind& rewind, f64 currentTimeMs);
+	void resetInputState(LibretroInput& input, HostRewind& rewind);
 	void queueRenderCommands(Runtime& runtime, VideoPresenter& presenter, HostRewind& rewind);
 	bool queueFrameOverlayCommands(Runtime& runtime, VideoPresenter& presenter, f64 hostFps);
 	bool active() const { return m_page != Page::Closed; }
@@ -87,9 +85,8 @@ private:
 	void clearRenderCommands(VideoPresenter& presenter);
 	void publishRenderCommands(VideoPresenter& presenter);
 	void queueCommand(Host2DKind kind, Host2DRef ref);
-	void toggle(LibretroInput& input, HostRewind& rewind);
-	void close(LibretroInput& input, HostRewind& rewind);
-	void openKeyboard(LibretroInput& input);
+	void transitionTo(Page next, LibretroInput& input, HostRewind& rewind, Outcome outcome = Outcome::Cancel);
+	HostMenuInput tickTimelineInput(Runtime& runtime, LibretroInput& input, HostRewind& rewind, f64 currentTimeMs);
 	void changeSelected(VideoPresenter& presenter, i32 direction);
 	HostMenuInput activateSelected(LibretroInput& input, VideoPresenter& presenter, HostRewind& rewind);
 	void rebuildText(VideoPresenter& presenter);
@@ -122,10 +119,7 @@ private:
 	bool advanceButtonRepeat(bool pressed, bool justPressed, ButtonRepeatRecord& repeat, f64 currentTimeMs, f64 frameDurationMs);
 	void resetButtonRepeats();
 
-	std::span<const HostMenuOptionDef> options;
-	i64 rewindOffsetTenths = -1;
-	i64 rewindRangeTenths = -1;
-	std::string_view rewindTitleState;
+	HostRewindTimeline timeline;
 	Page m_page = Page::Closed;
 	HostOnScreenKeyboard m_keyboard;
 	bool m_showFps = false;

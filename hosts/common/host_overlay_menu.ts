@@ -15,8 +15,8 @@ import {
 	HOST_ON_SCREEN_KEYBOARD_BUTTON,
 } from './input/shortcuts';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
-import { HistoryMode } from '../../machine/ts/machine/runtime/history/history';
 import type { HostRewind } from './rewind';
+import { HostRewindTimeline } from './rewind_timeline';
 import type { DeviceQuantizeMode } from '../../machine/ts/render/post/device_quantize/mode';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import type { HostMenuFrame } from '../../machine/ts/render/host_overlay/overlay_queue';
@@ -92,15 +92,8 @@ type HostMenuRewindOption = {
 	readonly label: string;
 };
 
-type HostMenuRewindCommandOption = {
-	readonly kind: 'rewind-command';
-	readonly label: string;
-	readonly command: 'earlier' | 'later' | 'resume' | 'return' | 'pause';
-};
-
 type HostMenuOption =
 	| HostMenuRewindOption
-	| HostMenuRewindCommandOption
 	| HostMenuValueOption
 	| HostMenuGamepadOption
 	| HostMenuRemapGamepadOption
@@ -133,6 +126,7 @@ const LEFT_STICK_DOWN_SIGNAL = 'on-screen-keyboard:left-stick-down';
 const NAVIGATION_AXIS_THRESHOLD = 0.5;
 
 const MENU_NAV_BUTTONS = [BUTTON_UP, BUTTON_DOWN, BUTTON_LEFT, BUTTON_RIGHT, BUTTON_A, BUTTON_B, BUTTON_START] as const;
+const REWIND_BUTTONS = [...MENU_NAV_BUTTONS, BUTTON_LEFT_BUMPER, BUTTON_RIGHT_BUMPER] as const;
 
 type OnScreenKeyboardCommandBinding = {
 	readonly button: HostMenuButton;
@@ -206,6 +200,8 @@ const enum HostOverlayPage {
 	Keyboard,
 	Rewind,
 }
+
+const enum HostOverlayOutcome { Cancel, Accept, Discard }
 
 function boolIndex(value: boolean): number {
 	return value ? 1 : 0;
@@ -517,18 +513,8 @@ export class HostOverlayMenu {
 		label: 'GAMEPAD',
 	};
 	private readonly remapOptions: readonly HostMenuOption[];
-	private readonly rewindOptions: readonly HostMenuOption[] = [
-		{ kind: 'rewind-command', label: 'EARLIER CHECKPOINT', command: 'earlier' },
-		{ kind: 'rewind-command', label: 'LATER CHECKPOINT', command: 'later' },
-		{ kind: 'rewind-command', label: 'RESUME HERE', command: 'resume' },
-		{ kind: 'rewind-command', label: 'RETURN TO LATEST', command: 'return' },
-		{ kind: 'rewind-command', label: 'PAUSE SEEK', command: 'pause' },
-		{ kind: 'back', label: 'BACK' },
-	];
+	private readonly timeline = new HostRewindTimeline();
 	private options: readonly HostMenuOption[];
-	private rewindOffsetTenths = -1;
-	private rewindRangeTenths = -1;
-	private rewindTitleState = '';
 
 	public constructor(
 		presenter: VideoPresenter,
@@ -563,7 +549,7 @@ export class HostOverlayMenu {
 			shortcuts.registerControlShortcut(
 				playerIndex,
 				BUTTON_START,
-				() => this.toggle(),
+				() => this.transitionTo(this.page === HostOverlayPage.Closed ? HostOverlayPage.Options : HostOverlayPage.Closed),
 			);
 			shortcuts.registerControlShortcut(
 				playerIndex,
@@ -594,11 +580,7 @@ export class HostOverlayMenu {
 	public tickInput(): HostMenuInput {
 		if (this.onScreenKeyboardShortcutRequested) {
 			this.onScreenKeyboardShortcutRequested = false;
-			if (this.page === HostOverlayPage.Keyboard) {
-				this.close();
-			} else {
-				this.openKeyboard();
-			}
+			this.transitionTo(this.page === HostOverlayPage.Keyboard ? HostOverlayPage.Closed : HostOverlayPage.Keyboard);
 			return HostMenuInput.Inactive;
 		}
 		if (this.page === HostOverlayPage.Closed) {
@@ -607,19 +589,21 @@ export class HostOverlayMenu {
 		if (this.page === HostOverlayPage.Keyboard) {
 			return this.tickKeyboardInput();
 		}
+		if (this.page === HostOverlayPage.Rewind) {
+			return this.tickTimelineInput();
+		}
 		if (this.controllerPortRevision !== this.input.controllerPortRevision) {
 			this.controllerPortRevision = this.input.controllerPortRevision;
 			this.dirtyText = true;
 		}
 		const pointerActivated = this.tickPointerInput();
 		if ((readButtonState(this.input, BUTTON_B) & HostButtonState.JustPressed) !== 0) {
-			if (this.page === HostOverlayPage.GamepadRemap || this.page === HostOverlayPage.Rewind) {
-				if (this.page === HostOverlayPage.Rewind) this.rewind.returnToPresent();
-				this.openOptions();
+			if (this.page === HostOverlayPage.GamepadRemap) {
+				this.transitionTo(HostOverlayPage.Options);
 				consumeButtons(this.input, MENU_NAV_BUTTONS);
 				return HostMenuInput.Active;
 			} else {
-				this.toggle();
+				this.transitionTo(HostOverlayPage.Closed);
 			}
 			consumeButtons(this.input, MENU_NAV_BUTTONS);
 			return HostMenuInput.Inactive;
@@ -648,6 +632,34 @@ export class HostOverlayMenu {
 		return result;
 	}
 
+	private tickTimelineInput(): HostMenuInput {
+		const pointerActivated = this.tickPointerInput();
+		let result = HostMenuInput.Active;
+		if ((readButtonState(this.input, BUTTON_B) & HostButtonState.JustPressed) !== 0) {
+			this.transitionTo(HostOverlayPage.Closed);
+			result = HostMenuInput.Inactive;
+		} else if (((readButtonState(this.input, BUTTON_START) | readButtonState(this.input, BUTTON_A)) & HostButtonState.JustPressed) !== 0) {
+			this.transitionTo(HostOverlayPage.Closed, HostOverlayOutcome.Accept);
+			result = HostMenuInput.Inactive;
+		} else if (pointerActivated) {
+			this.timeline.seekAt(this.runtime, this.rewind, this.pointerPosition.x);
+		} else {
+			const leftBumper = buttonEdge(this.input, BUTTON_LEFT_BUMPER);
+			const rightBumper = buttonEdge(this.input, BUTTON_RIGHT_BUMPER);
+			const left = buttonEdge(this.input, BUTTON_LEFT);
+			const right = buttonEdge(this.input, BUTTON_RIGHT);
+			const backward = leftBumper || left;
+			const forward = rightBumper || right;
+			if (backward !== forward) this.timeline.moveCursor(this.runtime, this.rewind, backward ? -1 : 1);
+		}
+		consumeGamepadInput(this.input);
+		for (let playerIndex = 1; playerIndex <= Input.PLAYERS_MAX; playerIndex += 1) {
+			const keyboard = this.input.getPlayerInput(playerIndex).inputHandlers.keyboard;
+			for (const button of REWIND_BUTTONS) keyboard?.consumeButton(button);
+		}
+		return result;
+	}
+
 	private clearRenderCommands(): void {
 		this.commandCount = 0;
 		this.presenter.hostOverlayQueue.clearHostMenuFrame();
@@ -672,21 +684,11 @@ export class HostOverlayMenu {
 			this.keyboard.queueRenderCommands();
 			return;
 		}
-		this.clearRenderCommands();
 		if (this.page === HostOverlayPage.Rewind) {
-			const history = this.runtime.history;
-			const offset = Math.trunc((history.latestCycles - this.rewind.positionCycles) * 10 / this.runtime.timing.cpuHz);
-			const range = Math.trunc((history.latestCycles - history.earliestCycles) * 10 / this.runtime.timing.cpuHz);
-			const state = this.rewind.stopped ? 'STOPPED' : history.mode === HistoryMode.Replaying ? 'SEEKING' : 'REWIND';
-			if (offset !== this.rewindOffsetTenths || range !== this.rewindRangeTenths || state !== this.rewindTitleState) {
-				this.rewindOffsetTenths = offset;
-				this.rewindRangeTenths = range;
-				this.rewindTitleState = state;
-				const title = `${state} ${(offset / 10).toFixed(1)}S AGO / ${(range / 10).toFixed(1)}S`;
-				this.titleGlyphs.items = title;
-				this.titleGlyphs.item_end = title.length;
-			}
+			this.timeline.queueRenderCommands(this.runtime, this.presenter, this.rewind);
+			return;
 		}
+		this.clearRenderCommands();
 		if (this.dirtyText) {
 			this.rebuildText();
 		}
@@ -820,21 +822,11 @@ export class HostOverlayMenu {
 		this.queueCommand(Host2DKind.Glyphs, pct);
 	}
 
-	private toggle(): void {
-		if (this.page === HostOverlayPage.Closed) {
-			this.rootSelection = 0;
-			this.openOptions();
-			return;
-		}
-		this.close();
-	}
-
 	private changeSelected(direction: number): void {
 		const option = this.options[this.selected];
 		switch (option.kind) {
 			case 'action':
 			case 'rewind':
-			case 'rewind-command':
 			case 'keyboard':
 			case 'reset-remap':
 			case 'back':
@@ -884,36 +876,19 @@ export class HostOverlayMenu {
 		if (option.kind === 'rewind') {
 			if (!this.rewind.available) return HostMenuInput.Active;
 			this.rootSelection = this.selected;
-			this.page = HostOverlayPage.Rewind;
-			this.options = this.rewindOptions;
-			this.selected = 0;
-			this.rewindOffsetTenths = -1;
-			this.rewindRangeTenths = -1;
-			this.resetPointerPress();
-			this.dirtyText = true;
-			return HostMenuInput.Active;
-		}
-		if (option.kind === 'rewind-command') {
-			switch (option.command) {
-				case 'earlier': this.rewind.stepCheckpoint(-1); break;
-				case 'later': this.rewind.stepCheckpoint(1); break;
-				case 'pause': this.rewind.pauseSeek(); break;
-				case 'resume': this.close(); this.rewind.resumeHere(); return HostMenuInput.Inactive;
-				case 'return': this.close(); return HostMenuInput.Inactive;
-			}
+			this.transitionTo(HostOverlayPage.Rewind);
 			return HostMenuInput.Active;
 		}
 		if (option.kind === 'keyboard') {
-			this.openKeyboard();
+			this.transitionTo(HostOverlayPage.Keyboard);
 			return HostMenuInput.Inactive;
 		}
 		if (option.kind === 'action') {
-			this.close();
+			this.transitionTo(HostOverlayPage.Closed);
 			return option.action;
 		}
 		if (option.kind === 'back') {
-			if (this.page === HostOverlayPage.Rewind) this.rewind.returnToPresent();
-			this.openOptions();
+			this.transitionTo(HostOverlayPage.Options);
 			return HostMenuInput.Active;
 		}
 		if (option.kind === 'reset-remap') {
@@ -923,61 +898,64 @@ export class HostOverlayMenu {
 		}
 		if (option.kind === 'gamepad'
 			&& this.page === HostOverlayPage.Options) {
-			this.openGamepadRemap(option.playerIndex);
+			this.rootSelection = this.selected;
+			this.remapPlayerIndex = option.playerIndex;
+			this.transitionTo(HostOverlayPage.GamepadRemap);
 			return HostMenuInput.Active;
 		}
 		this.changeSelected(1);
 		return HostMenuInput.Active;
 	}
 
-	private openOptions(): void {
-		this.page = HostOverlayPage.Options;
-		this.options = this.rootOptions;
-		this.selected = this.rootSelection;
-		this.titleGlyphs.items = TITLE_TEXT;
-		this.titleGlyphs.item_end = TITLE_TEXT.length;
+	private transitionTo(next: HostOverlayPage, outcome = HostOverlayOutcome.Cancel): void {
+		switch (this.page) {
+			case HostOverlayPage.Keyboard:
+				this.keyboard.close();
+				break;
+			case HostOverlayPage.Rewind:
+				if (outcome === HostOverlayOutcome.Accept) this.rewind.resumeHere();
+				else if (outcome === HostOverlayOutcome.Cancel) this.rewind.returnToPresent();
+				break;
+			case HostOverlayPage.Closed:
+			case HostOverlayPage.Options:
+			case HostOverlayPage.GamepadRemap:
+				break;
+		}
+		this.page = next;
 		this.resetPointerPress();
-		this.controllerPortRevision = this.input.controllerPortRevision;
-		this.dirtyText = true;
-	}
-
-	private openGamepadRemap(playerIndex: number): void {
-		this.rootSelection = this.selected;
-		this.remapPlayerIndex = playerIndex;
-		this.page = HostOverlayPage.GamepadRemap;
-		this.options = this.remapOptions;
-		this.selected = 0;
-		const title = `PLAYER ${playerIndex} CONTROLS`;
-		this.titleGlyphs.items = title;
-		this.titleGlyphs.item_end = title.length;
-		this.resetPointerPress();
-		this.dirtyText = true;
-	}
-
-	private close(): void {
-		this.rewind.returnToPresent();
-		this.keyboard.close();
-		this.input.getGlobalShortcutRegistry().setExclusiveGamepadControlShortcut(null);
-		resetControlButtonRepeats(this.input);
-		this.page = HostOverlayPage.Closed;
-		this.options = this.rootOptions;
-		this.titleGlyphs.items = TITLE_TEXT;
-		this.titleGlyphs.item_end = TITLE_TEXT.length;
-		this.selected = 0;
-		this.resetPointerPress();
-		this.dirtyText = true;
-	}
-
-	private openKeyboard(): void {
-		this.page = HostOverlayPage.Keyboard;
-		this.keyboard.open();
-		this.input.getGlobalShortcutRegistry().setExclusiveGamepadControlShortcut(
-			HOST_ON_SCREEN_KEYBOARD_BUTTON,
-		);
+		this.pointerTimestamp = -1;
 		resetControlButtonRepeats(this.input);
 		consumeGamepadInput(this.input);
-		this.pointerTimestamp = -1;
-		this.resetPointerPress();
+		this.input.getGlobalShortcutRegistry().setExclusiveGamepadControlShortcut(
+			next === HostOverlayPage.Keyboard ? HOST_ON_SCREEN_KEYBOARD_BUTTON : null,
+		);
+		this.dirtyText = true;
+		switch (next) {
+			case HostOverlayPage.Closed:
+				this.rootSelection = 0;
+				this.selected = 0;
+				break;
+			case HostOverlayPage.Options:
+				this.options = this.rootOptions;
+				this.selected = this.rootSelection;
+				this.titleGlyphs.items = TITLE_TEXT;
+				this.titleGlyphs.item_end = TITLE_TEXT.length;
+				this.controllerPortRevision = this.input.controllerPortRevision;
+				break;
+			case HostOverlayPage.GamepadRemap: {
+				this.options = this.remapOptions;
+				this.selected = 0;
+				const title = `PLAYER ${this.remapPlayerIndex} CONTROLS`;
+				this.titleGlyphs.items = title;
+				this.titleGlyphs.item_end = title.length;
+				break;
+			}
+			case HostOverlayPage.Keyboard:
+				this.keyboard.open();
+				break;
+			case HostOverlayPage.Rewind:
+				break;
+		}
 	}
 
 	private rebuildText(): void {
@@ -988,7 +966,6 @@ export class HostOverlayMenu {
 			switch (option.kind) {
 				case 'action':
 				case 'rewind':
-				case 'rewind-command':
 				case 'keyboard':
 				case 'reset-remap':
 				case 'back':
@@ -1101,6 +1078,9 @@ export class HostOverlayMenu {
 	private selectPointerTargetAt(x: number, y: number): number {
 		if (this.page === HostOverlayPage.Keyboard) {
 			return this.keyboard.selectAt(x, y);
+		}
+		if (this.page === HostOverlayPage.Rewind) {
+			return point_in_rect(x, y, this.timeline.hitRect) ? 0 : -1;
 		}
 		if (!point_in_rect(x, y, this.optionHitRect)) {
 			return -1;
