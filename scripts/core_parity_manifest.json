@@ -2263,6 +2263,20 @@
 			"cpp_class": "HostRewindTimeline",
 			"methods": ["moveCursor", "seekAt", "queueRenderCommands"],
 			"reason": "shared_host_rewind_timeline_transport_contract"
+		},
+		{
+			"ts": "hosts/common/input/ui.ts",
+			"cpp": ["hosts/libretro/ui_input.h", "hosts/libretro/ui_input.cpp"],
+			"cpp_class": "HostUiInput",
+			"methods": ["reset", "update", "updateButtons", "buttonJustPressed", "buttonRepeatEdge", "gamepadButtonPressed", "gamepadButtonJustPressed", "gamepadButtonRepeatEdge", "activatePointer", "consume"],
+			"reason": "shared_host_ui_input_lifetime"
+		},
+		{
+			"ts": "hosts/common/input/button_repeat.ts",
+			"cpp": ["hosts/libretro/button_repeat.h", "hosts/libretro/button_repeat.cpp"],
+			"cpp_class": "ButtonRepeat",
+			"methods": ["reset", "update"],
+			"reason": "shared_host_button_repeat_cadence"
 		}
 	]
 }

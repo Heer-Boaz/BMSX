@@ -632,3 +632,68 @@ test('quick menu edits the retained player-port control map', () => {
 	);
 	input.dispose();
 });
+
+test('host UI reset suppresses held controls and repeat deadlines until physical release', async () => {
+	const { HostUiInput, HostUiInputSource } = await import('../../hosts/common/input/ui');
+	let time = 0;
+	const clock = { now: () => time } as HostClock;
+	const { input, gamepad } = createGamepadInput(clock);
+	input.setFrameDurationMs(20);
+	const ui = new HostUiInput(input, {} as VideoPresenter);
+	ui.reset(HostUiInputSource.Gamepad | HostUiInputSource.LeftStick, 0);
+	const tick = () => { time += 20; input.pollInput(); ui.update(time); };
+	tick();
+	input.inputButton(gamepad.id, 'lb', true, 1, time + 1, 1);
+	tick();
+	assert.equal(ui.buttonJustPressed(InputControllerGamepadButtonBit.LeftBumper), true);
+	assert.equal(ui.buttonRepeatEdge(InputControllerGamepadButtonBit.LeftBumper), true);
+	for (let frame = 1; frame < 15; frame += 1) {
+		tick();
+		assert.equal(ui.buttonRepeatEdge(InputControllerGamepadButtonBit.LeftBumper), false);
+	}
+	tick();
+	assert.equal(ui.buttonRepeatEdge(InputControllerGamepadButtonBit.LeftBumper), true);
+	assert.equal(ui.buttonRepeatEdge(InputControllerGamepadButtonBit.LeftBumper), true, 'same-frame queries do not advance the cadence');
+	ui.consume();
+	const snapshot = createInputControllerSnapshot();
+	input.sampleInputControllerSnapshot(snapshot, InputControllerSampleContext.Normal);
+	assert.equal(snapshot.pads[0].buttons, 0, 'UI consumption excludes its controls from the routed ICU sample');
+	assert.equal(ui.gamepadButtonPressed(0, InputControllerGamepadButtonBit.LeftBumper), true, 'consumption does not alter physical history');
+	ui.reset(HostUiInputSource.Gamepad | HostUiInputSource.LeftStick, 0);
+	for (let frame = 0; frame < 40; frame += 1) {
+		tick();
+		assert.equal(ui.buttonJustPressed(InputControllerGamepadButtonBit.LeftBumper), false);
+		assert.equal(ui.buttonRepeatEdge(InputControllerGamepadButtonBit.LeftBumper), false, 'held input stays suppressed, not just delayed');
+	}
+	input.inputButton(gamepad.id, 'lb', false, 0, time + 1, 1); tick();
+	input.inputButton(gamepad.id, 'lb', true, 1, time + 1, 2); tick();
+	assert.equal(ui.buttonJustPressed(InputControllerGamepadButtonBit.LeftBumper), true);
+	input.inputAxis2(gamepad.id, 'ls', 1, 0, time + 1); tick();
+	assert.equal(ui.buttonJustPressed(InputControllerGamepadButtonBit.Right), true);
+	ui.reset(HostUiInputSource.Gamepad | HostUiInputSource.LeftStick, 0);
+	for (let frame = 0; frame < 20; frame += 1) { tick(); assert.equal(ui.buttonRepeatEdge(InputControllerGamepadButtonBit.Right), false); }
+	input.dispose();
+});
+
+test('host UI pointer capture cannot activate the destination of a transition', async () => {
+	const { HostUiInput, HostUiInputSource } = await import('../../hosts/common/input/ui');
+	const { input, setTime } = createInput();
+	const presenter = { mapDisplayPointToViewport: (x: number, y: number, target: { x: number; y: number }) => {
+		target.x = x; target.y = y; return true;
+	} } as VideoPresenter;
+	const ui = new HostUiInput(input, presenter);
+	let time = 0;
+	const tick = () => { setTime(++time); input.pollInput(); ui.update(time); };
+	ui.reset(HostUiInputSource.Pointer, 0);
+	input.inputAxis2('pointer:0', 'pointer_position', 10, 10, time); tick();
+	input.inputButton('pointer:0', 'pointer_primary', true, 1, time, 1); tick();
+	assert.equal(ui.activatePointer(4), false);
+	ui.reset(HostUiInputSource.Pointer, 0); tick();
+	input.inputButton('pointer:0', 'pointer_primary', false, 0, time, 1); tick();
+	assert.equal(ui.activatePointer(4), false, 'release over the same target id in a different page is not a click');
+	input.inputButton('pointer:0', 'pointer_primary', true, 1, time, 2); tick();
+	assert.equal(ui.activatePointer(4), false);
+	input.inputButton('pointer:0', 'pointer_primary', false, 0, time, 2); tick();
+	assert.equal(ui.activatePointer(4), true, 'a new press/release belongs to the new input owner');
+	input.dispose();
+});

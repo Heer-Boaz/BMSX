@@ -72,9 +72,6 @@ constexpr unsigned kRetroMouseIdMiddle = 6u;
 constexpr unsigned kRetroMouseIdButton4 = 9u;
 constexpr unsigned kRetroMouseIdButton5 = 10u;
 
-constexpr unsigned kRetroPointerIdX = 0u;
-constexpr unsigned kRetroPointerIdY = 1u;
-constexpr unsigned kRetroPointerIdPressed = 2u;
 
 constexpr std::array<i16, RETROK_LAST> makeRetroKeyHidUsages() {
 	std::array<i16, RETROK_LAST> usages{};
@@ -310,15 +307,15 @@ void LibretroInput::poll(
 	const i16 mouseWheelDown =
 		m_input_state_callback(0u, RETRO_DEVICE_MOUSE, 0u, kRetroMouseIdWheelDown);
 	const i16 pointerRawX =
-		m_input_state_callback(0u, RETRO_DEVICE_POINTER, 0u, kRetroPointerIdX);
+		m_input_state_callback(0u, RETRO_DEVICE_POINTER, 0u, RETRO_DEVICE_ID_POINTER_X);
 	const i16 pointerRawY =
-		m_input_state_callback(0u, RETRO_DEVICE_POINTER, 0u, kRetroPointerIdY);
+		m_input_state_callback(0u, RETRO_DEVICE_POINTER, 0u, RETRO_DEVICE_ID_POINTER_Y);
 	const bool pointerPressed =
 		m_input_state_callback(
 			0u,
 			RETRO_DEVICE_POINTER,
 			0u,
-			kRetroPointerIdPressed) != 0;
+			RETRO_DEVICE_ID_POINTER_PRESSED) != 0;
 
 	m_pointer_buttons =
 		(m_input_state_callback(

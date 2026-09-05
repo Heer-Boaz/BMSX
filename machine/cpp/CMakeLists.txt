@@ -435,6 +435,8 @@ set(BMSX_LIBRETRO_CORE_SOURCES
 	${BMSX_LIBRETRO_DIR}/host_on_screen_keyboard.cpp
 	${BMSX_LIBRETRO_DIR}/host_overlay_menu.cpp
 	${BMSX_LIBRETRO_DIR}/input.cpp
+	${BMSX_LIBRETRO_DIR}/ui_input.cpp
+	${BMSX_LIBRETRO_DIR}/button_repeat.cpp
 	${BMSX_LIBRETRO_DIR}/libretro_state.cpp
 	${BMSX_LIBRETRO_DIR}/mem_snapshot.cpp
 	${BMSX_LIBRETRO_DIR}/presentation_state.cpp
@@ -764,6 +766,17 @@ if(BMSX_BUILD_TESTS)
 	)
 	target_link_libraries(bmsx_runtime_replay_conformance_runner PRIVATE bmsx_host_support bmsx_rom_image)
 	target_include_directories(bmsx_runtime_replay_conformance_runner PRIVATE ${BMSX_LIBRETRO_DIR})
+
+	add_executable(bmsx_host_ui_input_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/host_ui_input_test.cpp
+		${BMSX_LIBRETRO_DIR}/input.cpp
+		${BMSX_LIBRETRO_DIR}/ui_input.cpp
+		${BMSX_LIBRETRO_DIR}/button_repeat.cpp
+		${BMSX_LIBRETRO_DIR}/host_shortcuts.c
+	)
+	target_link_libraries(bmsx_host_ui_input_tests PRIVATE bmsx_host_support)
+	target_include_directories(bmsx_host_ui_input_tests PRIVATE ${BMSX_LIBRETRO_DIR})
+	add_test(NAME bmsx_host_ui_input_tests COMMAND bmsx_host_ui_input_tests)
 
 	foreach(runner IN ITEMS host_rewind libretro_rewind)
 		add_executable(bmsx_${runner}_conformance_runner

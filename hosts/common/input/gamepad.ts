@@ -65,6 +65,9 @@ export class GamepadInput implements GamepadInputHandler {
 		return getPressedState(this.buttonStates, btn);
 	}
 
+	public physicalGamepadButtonsWord(): number { return this.inputControllerButtons; }
+	public physicalGamepadAxisWord(axis: InputControllerGamepadAxis): number { return this.inputControllerAxesQ16[axis]; }
+
 	public writeInputControllerPadSnapshot(snapshot: InputControllerPadSnapshot): void {
 		snapshot.buttons = this.routedInputControllerButtons;
 		snapshot.axesQ16.set(this.routedInputControllerAxesQ16);

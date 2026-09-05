@@ -81,7 +81,7 @@ int main(int argc, char** argv) {
 		RenderPresentationState presentation;
 		presentation.reset(presenter, runtime);
 		HostRewind rewind(runtime, presenter, presentation);
-		HostOverlayMenu menu;
+		HostOverlayMenu menu(input);
 		LibretroAudioOutput audio;
 		f64 totalTime = 0;
 		size_t audioFrames = 0;

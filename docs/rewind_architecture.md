@@ -823,7 +823,7 @@ Implementation order, with a separately validated commit for each owner:
 3. Give host UI edges, repeats and pointer capture one input owner. Pages own
    bindings and actions, not physical-history bookkeeping or repeat algorithms.
 4. Make positioned glyph runs the actual render-command contract; remove
-   unsupported layout/background fields, rather than pretending to implement
+   unsupported layout fields, rather than pretending to implement
    alignment in the blitter.
 
 References reviewed before the transport/phase diff:
@@ -895,3 +895,41 @@ Separately gated real mapping callbacks prove that the replacement boundary
 waits for both, without publishing a VRAM snapshot. After restore, all 2,097,152
 VRAM bytes still match. Existing live return/branch/audio tests, browser
 typecheck, parity/boundary/indent audits and diff checks pass.
+
+## Host UI input owner (HOST-UI-INPUT-01)
+
+Reference: [MAME ui_input_manager](https://github.com/mamedev/mame/blob/master/src/emu/uiinput.cpp)
+keeps physical UI state and repeat deadlines outside individual menus. Its reset
+state suppresses held controls until release; clearing a repeat map alone is
+not a reset. [MAME menu transitions](https://github.com/mamedev/mame/blob/master/src/frontend/mame/ui/menu.cpp)
+reset input on ownership changes. BMSX follows this distinction without copying
+MAME's entire menu framework or involving the guest ICU.
+
+### Representation and callsites, before mirrored edits
+
+| State | TypeScript | C++ | Owner / hot-path callsites |
+| --- | --- | --- | --- |
+| Host UI controls | Existing `InputControllerGamepadButtonBit` indices / `u32` masks | Same enum / masks | `HostUiInput.update`: keyboard aliases plus four physical pads; no machine sampling, remapping or guest action maps |
+| Input participation | Host-only Keyboard/Gamepad/LeftStick/Pointer flags and keyboard-control mask | Same flags / mask | Menu transition `reset`; views choose sources, the input owner has no page enum, keyboard command or rewind action |
+| Physical / suppressed / edge masks | Retained typed arrays | Fixed arrays | `updateButtons`; transitions suppress every held control until its physical release, independently of routed consumption |
+| Repeat deadlines | Shared `ButtonRepeat`, also used by `PlayerInput` | Same `ButtonRepeat` | One retained record per source/control; repeated queries share the frame result, no second cadence implementation or per-transition map allocation for host overlays |
+| Pointer capture | Viewport position, changed/down/up flags, captured target | Same fields | Input owner maps/samples once; view hit-tests only on changes and supplies target to `activatePointer`; transition reset cancels capture |
+| Input routing | Existing device consumption methods | Existing libretro input consumption | `HostUiInput.consume` after handling; reset consumes departing/entering sources on the transition frame. OSK leaves physical keyboard input to the game |
+
+The menu only chooses actions and hit targets. It must not latch physical state,
+own repeat arrays, reconstruct stick directions, or duplicate input consumption
+across its return paths. Poll, handle, consume is one frame phase; a transition
+cannot create a synthetic press from consumed output. Closed overlays do no UI
+sampling work. The existing quick-menu and OSK shortcuts remain unchanged.
+
+Pointer callback IDs now come from the owning libretro ABI header, matching
+[libretro-common](https://github.com/libretro/libretro-common/blob/master/include/libretro.h),
+rather than input.cpp-local constants.
+
+Input validation: TS and native tests cover held-button/stick suppression until
+release, repeat cadence and same-frame queries, physical state after consumption,
+and pointer capture cancellation across transitions with the same target ID.
+Real BIOS/Nemesis TS, native controller and libretro ABI runs pass transport,
+keyboard, cancel/branch and audio checks. The actual WebGPU run and Scenario Lab
+(124 assertions) pass. The full Lua suite passes (849 tests, one skipped).
+IDE/browser typechecks, parity/boundary/indent audits and diff checks pass.

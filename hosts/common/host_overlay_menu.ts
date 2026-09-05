@@ -2,8 +2,8 @@ import { RectRenderKind, TextAlign, TextBaseline, type GlyphRenderSubmission, ty
 import { LAYER_2D_IDE } from '../../machine/ts/render/shared/layers';
 import { Host2DKind, type Host2DRef } from '../../machine/ts/render/host_overlay/commands';
 import { Input } from './input/manager';
-import type { PlayerInput } from './input/player';
-import type { BGamepadButton, ButtonId } from './input/models';
+import { HostUiInput, HostUiInputSource } from './input/ui';
+import { InputControllerGamepadButtonBit } from '../../machine/ts/machine/devices/input/contracts';
 import {
 	GAMEPAD_REMAP_CONTROLS,
 	gamepadRemapChoiceIndex,
@@ -103,30 +103,24 @@ type HostMenuOption =
 	| HostMenuResetRemapOption
 	| HostMenuBackOption;
 
-type HostMenuButton = BGamepadButton;
+type HostMenuButton = InputControllerGamepadButtonBit;
 
-const BUTTON_START: HostMenuButton = HOST_MENU_BUTTON;
-const BUTTON_UP: HostMenuButton = 'up';
-const BUTTON_DOWN: HostMenuButton = 'down';
-const BUTTON_LEFT: HostMenuButton = 'left';
-const BUTTON_RIGHT: HostMenuButton = 'right';
-const BUTTON_A: HostMenuButton = 'a';
-const BUTTON_B: HostMenuButton = 'b';
-const BUTTON_X: HostMenuButton = 'x';
-const BUTTON_Y: HostMenuButton = 'y';
-const BUTTON_LEFT_BUMPER: HostMenuButton = 'lb';
-const BUTTON_RIGHT_BUMPER: HostMenuButton = 'rb';
-const BUTTON_LEFT_TRIGGER: HostMenuButton = 'lt';
-const BUTTON_RIGHT_TRIGGER: HostMenuButton = 'rt';
-const BUTTON_SELECT: HostMenuButton = 'select';
-const LEFT_STICK_LEFT_SIGNAL = 'on-screen-keyboard:left-stick-left';
-const LEFT_STICK_RIGHT_SIGNAL = 'on-screen-keyboard:left-stick-right';
-const LEFT_STICK_UP_SIGNAL = 'on-screen-keyboard:left-stick-up';
-const LEFT_STICK_DOWN_SIGNAL = 'on-screen-keyboard:left-stick-down';
-const NAVIGATION_AXIS_THRESHOLD = 0.5;
-
-const MENU_NAV_BUTTONS = [BUTTON_UP, BUTTON_DOWN, BUTTON_LEFT, BUTTON_RIGHT, BUTTON_A, BUTTON_B, BUTTON_START] as const;
-const REWIND_BUTTONS = [...MENU_NAV_BUTTONS, BUTTON_LEFT_BUMPER, BUTTON_RIGHT_BUMPER] as const;
+const BUTTON_START: HostMenuButton = InputControllerGamepadButtonBit.Start;
+const BUTTON_UP: HostMenuButton = InputControllerGamepadButtonBit.Up;
+const BUTTON_DOWN: HostMenuButton = InputControllerGamepadButtonBit.Down;
+const BUTTON_LEFT: HostMenuButton = InputControllerGamepadButtonBit.Left;
+const BUTTON_RIGHT: HostMenuButton = InputControllerGamepadButtonBit.Right;
+const BUTTON_A: HostMenuButton = InputControllerGamepadButtonBit.A;
+const BUTTON_B: HostMenuButton = InputControllerGamepadButtonBit.B;
+const BUTTON_X: HostMenuButton = InputControllerGamepadButtonBit.X;
+const BUTTON_Y: HostMenuButton = InputControllerGamepadButtonBit.Y;
+const BUTTON_LEFT_BUMPER: HostMenuButton = InputControllerGamepadButtonBit.LeftBumper;
+const BUTTON_RIGHT_BUMPER: HostMenuButton = InputControllerGamepadButtonBit.RightBumper;
+const BUTTON_LEFT_TRIGGER: HostMenuButton = InputControllerGamepadButtonBit.LeftTrigger;
+const BUTTON_RIGHT_TRIGGER: HostMenuButton = InputControllerGamepadButtonBit.RightTrigger;
+const BUTTON_SELECT: HostMenuButton = InputControllerGamepadButtonBit.Select;
+const MENU_KEYBOARD_BUTTONS = (1 << BUTTON_UP) | (1 << BUTTON_DOWN) | (1 << BUTTON_LEFT) | (1 << BUTTON_RIGHT)
+	| (1 << BUTTON_A) | (1 << BUTTON_B) | (1 << BUTTON_START) | (1 << BUTTON_LEFT_BUMPER) | (1 << BUTTON_RIGHT_BUMPER);
 
 type OnScreenKeyboardCommandBinding = {
 	readonly button: HostMenuButton;
@@ -188,11 +182,6 @@ const COLOR_USAGE_OK = 0xff04d413;
 const COLOR_USAGE_WARN = 0xffe2d204;
 const COLOR_USAGE_DANGER = 0xffff5134;
 
-const enum HostButtonState {
-	Pressed = 1,
-	JustPressed = 2,
-}
-
 const enum HostOverlayPage {
 	Closed,
 	Options,
@@ -209,129 +198,6 @@ function boolIndex(value: boolean): number {
 
 function boolFromIndex(index: number): boolean {
 	return index !== 0;
-}
-
-function readPlayerButtonState(player: PlayerInput, button: HostMenuButton): number {
-	let result = 0;
-	const gamepadState = player.inputHandlers.gamepad?.getButtonState(button);
-	if (gamepadState && !gamepadState.consumed) {
-		if (gamepadState.pressed) {
-			result |= HostButtonState.Pressed;
-		}
-		if (gamepadState.justpressed) {
-			result |= HostButtonState.JustPressed;
-		}
-	}
-	const keyboardState = player.inputHandlers.keyboard?.getButtonState(button);
-	if (keyboardState && !keyboardState.consumed) {
-		if (keyboardState.pressed) {
-			result |= HostButtonState.Pressed;
-		}
-		if (keyboardState.justpressed) {
-			result |= HostButtonState.JustPressed;
-		}
-	}
-	return result;
-}
-
-function readButtonState(input: Input, button: HostMenuButton): number {
-	let result = 0;
-	for (let playerIndex = 1; playerIndex <= Input.PLAYERS_MAX; playerIndex += 1) {
-		result |= readPlayerButtonState(input.getPlayerInput(playerIndex), button);
-	}
-	return result;
-}
-
-function buttonEdge(input: Input, button: HostMenuButton): boolean {
-	let edge = false;
-	for (let playerIndex = 1; playerIndex <= Input.PLAYERS_MAX; playerIndex += 1) {
-		const player = input.getPlayerInput(playerIndex);
-		if (player.controlButtonRepeatEdge(button, 'gamepad')) {
-			edge = true;
-		}
-		if (player.controlButtonRepeatEdge(button, 'keyboard')) {
-			edge = true;
-		}
-	}
-	return edge;
-}
-
-function gamepadButtonEdge(input: Input, button: ButtonId): boolean {
-	let edge = false;
-	for (let playerIndex = 1; playerIndex <= Input.PLAYERS_MAX; playerIndex += 1) {
-		if (input.getPlayerInput(playerIndex).controlButtonRepeatEdge(button, 'gamepad')) {
-			edge = true;
-		}
-	}
-	return edge;
-}
-
-function gamepadAxisEdge(
-	input: Input,
-	signal: ButtonId,
-	component: 0 | 1,
-	direction: -1 | 1,
-): boolean {
-	let edge = false;
-	for (let playerIndex = 1; playerIndex <= Input.PLAYERS_MAX; playerIndex += 1) {
-		const player = input.getPlayerInput(playerIndex);
-		const gamepad = player.inputHandlers.gamepad;
-		let pressed = false;
-		if (gamepad !== null) {
-			const value = gamepad.getButtonState('ls').value2d![component];
-			pressed = direction < 0
-				? value <= -NAVIGATION_AXIS_THRESHOLD
-				: value >= NAVIGATION_AXIS_THRESHOLD;
-		}
-		if (player.controlSignalRepeatEdge(signal, 'gamepad', pressed)) {
-			edge = true;
-		}
-	}
-	return edge;
-}
-
-function consumeButtons(input: Input, buttons: readonly HostMenuButton[]): void {
-	for (let playerIndex = 1; playerIndex <= Input.PLAYERS_MAX; playerIndex += 1) {
-		const player = input.getPlayerInput(playerIndex);
-		for (let index = 0; index < buttons.length; index += 1) {
-			const button = buttons[index];
-			player.inputHandlers.gamepad?.consumeButton(button);
-			player.inputHandlers.keyboard?.consumeButton(button);
-		}
-	}
-}
-
-function consumeGamepadInput(input: Input): void {
-	for (let playerIndex = 1; playerIndex <= Input.PLAYERS_MAX; playerIndex += 1) {
-		input.getPlayerInput(playerIndex).inputHandlers.gamepad?.consumeAllInput();
-	}
-}
-
-function resetControlButtonRepeats(input: Input): void {
-	for (let playerIndex = 1; playerIndex <= Input.PLAYERS_MAX; playerIndex += 1) {
-		input.getPlayerInput(playerIndex).resetControlButtonRepeats();
-	}
-}
-
-function onScreenKeyboardCommand(input: Input): OnScreenKeyboardCommand {
-	for (let bindingIndex = 0; bindingIndex < ON_SCREEN_KEYBOARD_COMMAND_BINDINGS.length; bindingIndex += 1) {
-		const binding = ON_SCREEN_KEYBOARD_COMMAND_BINDINGS[bindingIndex];
-		for (let playerIndex = 1; playerIndex <= Input.PLAYERS_MAX; playerIndex += 1) {
-			const player = input.getPlayerInput(playerIndex);
-			const gamepad = player.inputHandlers.gamepad;
-			if (gamepad === null
-				|| gamepad.getButtonState(BUTTON_SELECT).pressed !== binding.requiresSelect) {
-				continue;
-			}
-			const active = binding.repeat
-				? player.controlButtonRepeatEdge(binding.button, 'gamepad')
-				: gamepad.getButtonState(binding.button).justpressed;
-			if (active) {
-				return binding.command;
-			}
-		}
-	}
-	return OnScreenKeyboardCommand.None;
 }
 
 function usageColor(ratio: number): number {
@@ -378,10 +244,7 @@ export class HostOverlayMenu {
 	private readonly presenter: VideoPresenter;
 	private page = HostOverlayPage.Closed;
 	private readonly keyboard: HostOnScreenKeyboard;
-	private readonly pointerPosition = { x: 0, y: 0 };
-	private pointerTimestamp = -1;
-	private pointerPressPage = HostOverlayPage.Closed;
-	private pointerPressTarget = -1;
+	private readonly uiInput: HostUiInput;
 	private readonly optionHitRect = create_rect_bounds();
 	private optionLineHeight = 0;
 	private selected = 0;
@@ -524,6 +387,7 @@ export class HostOverlayMenu {
 	) {
 		this.presenter = presenter;
 		this.keyboard = new HostOnScreenKeyboard(presenter, input);
+		this.uiInput = new HostUiInput(input, presenter);
 		const remapOptions: HostMenuOption[] = new Array(
 			GAMEPAD_REMAP_CONTROLS.length + 3,
 		);
@@ -548,7 +412,7 @@ export class HostOverlayMenu {
 		for (let playerIndex = 1; playerIndex <= Input.PLAYERS_MAX; playerIndex += 1) {
 			shortcuts.registerControlShortcut(
 				playerIndex,
-				BUTTON_START,
+				HOST_MENU_BUTTON,
 				() => this.transitionTo(this.page === HostOverlayPage.Closed ? HostOverlayPage.Options : HostOverlayPage.Closed),
 			);
 			shortcuts.registerControlShortcut(
@@ -581,8 +445,14 @@ export class HostOverlayMenu {
 		if (this.onScreenKeyboardShortcutRequested) {
 			this.onScreenKeyboardShortcutRequested = false;
 			this.transitionTo(this.page === HostOverlayPage.Keyboard ? HostOverlayPage.Closed : HostOverlayPage.Keyboard);
-			return HostMenuInput.Inactive;
 		}
+		this.uiInput.update(this.input.getPlayerInput(1).pollTimestampMs);
+		const result = this.handleInput();
+		this.uiInput.consume();
+		return result;
+	}
+
+	private handleInput(): HostMenuInput {
 		if (this.page === HostOverlayPage.Closed) {
 			return HostMenuInput.Inactive;
 		}
@@ -597,66 +467,62 @@ export class HostOverlayMenu {
 			this.dirtyText = true;
 		}
 		const pointerActivated = this.tickPointerInput();
-		if ((readButtonState(this.input, BUTTON_B) & HostButtonState.JustPressed) !== 0) {
+		if (this.uiInput.buttonJustPressed(BUTTON_B)) {
 			if (this.page === HostOverlayPage.GamepadRemap) {
 				this.transitionTo(HostOverlayPage.Options);
-				consumeButtons(this.input, MENU_NAV_BUTTONS);
+
 				return HostMenuInput.Active;
 			} else {
 				this.transitionTo(HostOverlayPage.Closed);
 			}
-			consumeButtons(this.input, MENU_NAV_BUTTONS);
+
 			return HostMenuInput.Inactive;
 		}
 		if (pointerActivated) {
 			const result = this.activateSelected();
-			consumeButtons(this.input, MENU_NAV_BUTTONS);
+
 			return result;
 		}
-		if (buttonEdge(this.input, BUTTON_UP)) {
+		if (this.uiInput.buttonRepeatEdge(BUTTON_UP)) {
 			this.selected = this.selected === 0 ? this.options.length - 1 : this.selected - 1;
 		}
-		if (buttonEdge(this.input, BUTTON_DOWN)) {
+		if (this.uiInput.buttonRepeatEdge(BUTTON_DOWN)) {
 			this.selected = (this.selected + 1) % this.options.length;
 		}
-		if (buttonEdge(this.input, BUTTON_LEFT)) {
+		if (this.uiInput.buttonRepeatEdge(BUTTON_LEFT)) {
 			this.changeSelected(-1);
 		}
-		if (buttonEdge(this.input, BUTTON_RIGHT)) {
+		if (this.uiInput.buttonRepeatEdge(BUTTON_RIGHT)) {
 			this.changeSelected(1);
 		}
-		const result = (readButtonState(this.input, BUTTON_A) & HostButtonState.JustPressed) !== 0
+		const result = this.uiInput.buttonJustPressed(BUTTON_A)
 			? this.activateSelected()
 			: HostMenuInput.Active;
-		consumeButtons(this.input, MENU_NAV_BUTTONS);
+
 		return result;
 	}
 
 	private tickTimelineInput(): HostMenuInput {
 		const pointerActivated = this.tickPointerInput();
 		let result = HostMenuInput.Active;
-		if ((readButtonState(this.input, BUTTON_B) & HostButtonState.JustPressed) !== 0) {
+		if (this.uiInput.buttonJustPressed(BUTTON_B)) {
 			this.transitionTo(HostOverlayPage.Closed);
 			result = HostMenuInput.Inactive;
-		} else if (((readButtonState(this.input, BUTTON_START) | readButtonState(this.input, BUTTON_A)) & HostButtonState.JustPressed) !== 0) {
+		} else if (this.uiInput.buttonJustPressed(BUTTON_START) || this.uiInput.buttonJustPressed(BUTTON_A)) {
 			this.transitionTo(HostOverlayPage.Closed, HostOverlayOutcome.Accept);
 			result = HostMenuInput.Inactive;
 		} else if (pointerActivated) {
-			this.timeline.seekAt(this.runtime, this.rewind, this.pointerPosition.x);
+			this.timeline.seekAt(this.runtime, this.rewind, this.uiInput.pointerPosition.x);
 		} else {
-			const leftBumper = buttonEdge(this.input, BUTTON_LEFT_BUMPER);
-			const rightBumper = buttonEdge(this.input, BUTTON_RIGHT_BUMPER);
-			const left = buttonEdge(this.input, BUTTON_LEFT);
-			const right = buttonEdge(this.input, BUTTON_RIGHT);
+			const leftBumper = this.uiInput.buttonRepeatEdge(BUTTON_LEFT_BUMPER);
+			const rightBumper = this.uiInput.buttonRepeatEdge(BUTTON_RIGHT_BUMPER);
+			const left = this.uiInput.buttonRepeatEdge(BUTTON_LEFT);
+			const right = this.uiInput.buttonRepeatEdge(BUTTON_RIGHT);
 			const backward = leftBumper || left;
 			const forward = rightBumper || right;
 			if (backward !== forward) this.timeline.moveCursor(this.runtime, this.rewind, backward ? -1 : 1);
 		}
-		consumeGamepadInput(this.input);
-		for (let playerIndex = 1; playerIndex <= Input.PLAYERS_MAX; playerIndex += 1) {
-			const keyboard = this.input.getPlayerInput(playerIndex).inputHandlers.keyboard;
-			for (const button of REWIND_BUTTONS) keyboard?.consumeButton(button);
-		}
+
 		return result;
 	}
 
@@ -919,10 +785,10 @@ export class HostOverlayMenu {
 				break;
 		}
 		this.page = next;
-		this.resetPointerPress();
-		this.pointerTimestamp = -1;
-		resetControlButtonRepeats(this.input);
-		consumeGamepadInput(this.input);
+		const sources = next === HostOverlayPage.Closed ? HostUiInputSource.None
+			: next === HostOverlayPage.Keyboard ? HostUiInputSource.Gamepad | HostUiInputSource.LeftStick | HostUiInputSource.Pointer
+				: HostUiInputSource.Gamepad | HostUiInputSource.Keyboard | HostUiInputSource.Pointer;
+		this.uiInput.reset(sources, MENU_KEYBOARD_BUTTONS);
 		this.input.getGlobalShortcutRegistry().setExclusiveGamepadControlShortcut(
 			next === HostOverlayPage.Keyboard ? HOST_ON_SCREEN_KEYBOARD_BUTTON : null,
 		);
@@ -1002,74 +868,47 @@ export class HostOverlayMenu {
 		const pointerActivated = this.tickPointerInput();
 		if (pointerActivated) {
 			this.keyboard.activate();
-			consumeGamepadInput(this.input);
+
 			return HostMenuInput.Inactive;
 		}
-		const dpadUp = gamepadButtonEdge(this.input, BUTTON_UP);
-		const stickUp = gamepadAxisEdge(this.input, LEFT_STICK_UP_SIGNAL, 1, -1);
-		if (dpadUp || stickUp) {
+		if (this.uiInput.buttonRepeatEdge(BUTTON_UP)) {
 			this.keyboard.moveVertical(-1);
 		}
-		const dpadDown = gamepadButtonEdge(this.input, BUTTON_DOWN);
-		const stickDown = gamepadAxisEdge(this.input, LEFT_STICK_DOWN_SIGNAL, 1, 1);
-		if (dpadDown || stickDown) {
+		if (this.uiInput.buttonRepeatEdge(BUTTON_DOWN)) {
 			this.keyboard.moveVertical(1);
 		}
-		const dpadLeft = gamepadButtonEdge(this.input, BUTTON_LEFT);
-		const stickLeft = gamepadAxisEdge(this.input, LEFT_STICK_LEFT_SIGNAL, 0, -1);
-		if (dpadLeft || stickLeft) {
+		if (this.uiInput.buttonRepeatEdge(BUTTON_LEFT)) {
 			this.keyboard.moveHorizontal(-1);
 		}
-		const dpadRight = gamepadButtonEdge(this.input, BUTTON_RIGHT);
-		const stickRight = gamepadAxisEdge(this.input, LEFT_STICK_RIGHT_SIGNAL, 0, 1);
-		if (dpadRight || stickRight) {
+		if (this.uiInput.buttonRepeatEdge(BUTTON_RIGHT)) {
 			this.keyboard.moveHorizontal(1);
 		}
-		const command = onScreenKeyboardCommand(this.input);
+		const command = this.onScreenKeyboardCommand();
 		if (command !== OnScreenKeyboardCommand.None) {
 			this.keyboard.command(command);
 		}
-		consumeGamepadInput(this.input);
+
 		return HostMenuInput.Inactive;
 	}
 
+	private onScreenKeyboardCommand(): OnScreenKeyboardCommand {
+		for (const binding of ON_SCREEN_KEYBOARD_COMMAND_BINDINGS) {
+			for (let player = 0; player < Input.PLAYERS_MAX; player += 1) {
+				if (this.uiInput.gamepadButtonPressed(player, BUTTON_SELECT) !== binding.requiresSelect) continue;
+				const active = binding.repeat
+					? this.uiInput.gamepadButtonRepeatEdge(player, binding.button)
+					: this.uiInput.gamepadButtonJustPressed(player, binding.button);
+				if (active) return binding.command;
+			}
+		}
+		return OnScreenKeyboardCommand.None;
+	}
+
 	private tickPointerInput(): boolean {
-		const pointer = this.input.getPlayerInput(1).inputHandlers.pointer!;
-		const pointerPosition = pointer.getButtonState('pointer_position');
-		const pointerPrimary = pointer.getButtonState('pointer_primary');
-		const pressed = pointerPrimary.justpressed && !pointerPrimary.consumed;
-		const released = pointerPrimary.justreleased && !pointerPrimary.consumed;
-		let target = -1;
-		if (pointer.positionValid
-			&& (pointerPosition.timestamp !== this.pointerTimestamp || pressed || released)) {
-			this.pointerTimestamp = pointerPosition.timestamp;
-			const screenPosition = pointerPosition.value2d!;
-			if (this.presenter.mapDisplayPointToViewport(
-				screenPosition[0],
-				screenPosition[1],
-				this.pointerPosition,
-			)) {
-				target = this.selectPointerTargetAt(
-					this.pointerPosition.x,
-					this.pointerPosition.y,
-				);
-			}
-		}
-		if (pressed) {
-			this.pointerPressPage = this.page;
-			this.pointerPressTarget = target;
-		}
-		let activated = false;
-		if (released) {
-			if (target >= 0
-				&& this.pointerPressPage === this.page
-				&& this.pointerPressTarget === target) {
-				activated = true;
-			}
-			this.resetPointerPress();
-		}
-		pointer.consumeButton('pointer_primary');
-		return activated;
+		const input = this.uiInput;
+		const target = input.pointerValid && input.pointerChanged
+			? this.selectPointerTargetAt(input.pointerPosition.x, input.pointerPosition.y) : -1;
+		return input.activatePointer(target);
 	}
 
 	private selectPointerTargetAt(x: number, y: number): number {
@@ -1089,8 +928,4 @@ export class HostOverlayMenu {
 		return index;
 	}
 
-	private resetPointerPress(): void {
-		this.pointerPressPage = HostOverlayPage.Closed;
-		this.pointerPressTarget = -1;
-	}
 }

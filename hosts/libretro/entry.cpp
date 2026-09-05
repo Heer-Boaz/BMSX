@@ -1325,7 +1325,7 @@ void retro_init(void) {
 	g_video_presenter->setDeviceQuantizeMode(g_device_quantize_mode);
 	g_video_presenter->showResourceUsageGizmo = g_resource_usage_gizmo_enabled;
 
-	g_overlay_menu.emplace();
+	g_overlay_menu.emplace(*g_input);
 	g_presentation.emplace();
 	g_total_time = 0.0;
 	g_runtime_ufps_scaled = 0;
