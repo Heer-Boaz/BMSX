@@ -56,12 +56,10 @@ LibretroFrameResult runLibretroFrame(
 	} else if (runtime.isDrawPending()) {
 		runtime.frameScheduler.clearQueuedTime();
 	}
-	if (hostMenuActive) {
-		overlayMenu.queueRenderCommands(runtime, presenter, rewind);
-		presentation.requestHeldPresentation();
-	} else if (overlayMenu.queueFrameOverlayCommands(
+	if (overlayMenu.queueFrameOverlayCommands(
 		runtime,
 		presenter,
+		rewind,
 		hostFps
 	)) {
 		presentation.requestHeldPresentation();

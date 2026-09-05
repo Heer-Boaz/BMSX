@@ -64,15 +64,36 @@ async function main(): Promise<void> {
 	const menu = new HostOverlayMenu(presenter, runtime, input, rewind);
 	const output = new SystemOutputLog();
 	const history = runtime.history;
+	const { Host2DKind } = await import('../../../machine/ts/render/host_overlay/commands');
+	let renderedTimelineStatus: string | undefined;
+	const publishMenu = presenter.hostOverlayQueue.publishHostMenuFrame.bind(presenter.hostOverlayQueue);
+	presenter.hostOverlayQueue.publishHostMenuFrame = frame => {
+		// Observe the submitted view; do not queue a second draw after service.
+		let timeline = false;
+		let status = '';
+		for (let index = 0; index < frame.commandCount; index += 1) {
+			if (frame.commandKinds[index] !== Host2DKind.Glyphs) continue;
+			const text = (frame.commandRefs[index] as import('../../../machine/ts/render/shared/submissions').GlyphRenderSubmission).items as string;
+			timeline ||= text.startsWith('REWIND ');
+			if (text === 'SEEKING' || text === 'STOPPED') status = text;
+		}
+		if (timeline) renderedTimelineStatus = status;
+		publishMenu(frame);
+	};
 	const frame = async () => {
+		renderedTimelineStatus = undefined;
 		clock.advance(runtime.timing.frameDurationMs);
 		runHostFrame(session, runtime, presenter, input, audioOutput, output, log, presentation, menu, clock.now());
+		if (renderedTimelineStatus !== undefined) {
+			const expected = rewind.stopped ? 'STOPPED' : rewind.seeking ? 'SEEKING' : '';
+			assert.equal(renderedTimelineStatus, expected, 'overlay reflects completion in the serviced host frame');
+		}
 		await new Promise<void>(resolve => setImmediate(resolve));
 		assert.equal(runtime.machine.memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE), 0, 'real cart fault');
 		assert.equal(errors.length, 0, errors.join('\n'));
 	};
 	const settle = async () => {
-		for (let count = 0; count < 4000 && (!tasks.ready || history.mode === HistoryMode.Replaying); count += 1) await frame();
+		for (let count = 0; count < 4000 && (!tasks.ready || rewind.seeking); count += 1) await frame();
 		assert.equal(tasks.ready, true);
 		assert.notEqual(history.mode, HistoryMode.Replaying, 'seek must finish');
 	};
@@ -128,7 +149,6 @@ async function main(): Promise<void> {
 	assert.equal(runtime.machine.scheduler.currentNowCycles(), selected);
 	menu.queueRenderCommands();
 	const bar = presenter.hostOverlayQueue.consumeHostMenuFrame();
-	const { Host2DKind } = await import('../../../machine/ts/render/host_overlay/commands');
 	for (let index = 0; index < bar.commandCount; index += 1) {
 		if (bar.commandKinds[index] === Host2DKind.Rect) {
 			const rect = bar.commandRefs[index] as import('../../../machine/ts/render/shared/submissions').RectRenderSubmission;
@@ -144,8 +164,16 @@ async function main(): Promise<void> {
 	await press('rb'); await settle();
 	assert.ok(runtime.machine.scheduler.currentNowCycles() > selected, 'RB seeks forward without resuming gameplay');
 	assert.equal(history.mode, HistoryMode.Reviewing);
+	assert.equal(rewind.positionCycles, latest, 'LB/RB round trip preserves the selected coordinate');
+	assert.equal(runtime.machine.scheduler.currentNowCycles(), latest, 'one RB returns to the recorded end without rounding drift');
 	await press('rb'); await settle();
 	assert.equal(runtime.machine.scheduler.currentNowCycles(), latest, 'timeline includes the recorded end');
+	for (let roundTrip = 0; roundTrip < 2; roundTrip += 1) {
+		await press('lb'); await settle();
+		assert.equal(rewind.positionCycles, latest - runtime.timing.cpuHz, 'selected coordinate survives journal rounding');
+		await press('rb'); await settle();
+		assert.equal(runtime.machine.scheduler.currentNowCycles(), latest, 'repeated round trips have no drift');
+	}
 	// Holding a shoulder uses the host repeat cadence and clamps at the oldest boundary.
 	input.inputButton('gamepad:0', 'lb', true, 1, clock.now() + 1, pressId++);
 	for (let index = 0; index < 80; index += 1) await frame();

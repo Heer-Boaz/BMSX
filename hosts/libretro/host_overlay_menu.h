@@ -68,7 +68,7 @@ public:
 	HostMenuInput tickInput(Runtime& runtime, LibretroInput& input, VideoPresenter& presenter, HostRewind& rewind, f64 currentTimeMs);
 	void resetInputState(LibretroInput& input, HostRewind& rewind);
 	void queueRenderCommands(Runtime& runtime, VideoPresenter& presenter, HostRewind& rewind);
-	bool queueFrameOverlayCommands(Runtime& runtime, VideoPresenter& presenter, f64 hostFps);
+	bool queueFrameOverlayCommands(Runtime& runtime, VideoPresenter& presenter, HostRewind& rewind, f64 hostFps);
 	bool active() const { return m_page != Page::Closed; }
 
 private:

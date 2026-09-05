@@ -56,16 +56,37 @@ export async function runBrowserRewindConformance(canvas: HTMLCanvasElement) {
 	const output = new SystemOutputLog();
 	const history = runtime.history;
 	let hostFrames = 0;
+	const { Host2DKind } = await import('../../../machine/ts/render/host_overlay/commands');
+	let renderedTimelineStatus: string | undefined;
+	const publishMenu = presenter.hostOverlayQueue.publishHostMenuFrame.bind(presenter.hostOverlayQueue);
+	presenter.hostOverlayQueue.publishHostMenuFrame = frame => {
+		// Observe the submitted view; do not queue a second draw after service.
+		let timeline = false;
+		let status = '';
+		for (let index = 0; index < frame.commandCount; index += 1) {
+			if (frame.commandKinds[index] !== Host2DKind.Glyphs) continue;
+			const text = (frame.commandRefs[index] as import('../../../machine/ts/render/shared/submissions').GlyphRenderSubmission).items as string;
+			timeline ||= text.startsWith('REWIND ');
+			if (text === 'SEEKING' || text === 'STOPPED') status = text;
+		}
+		if (timeline) renderedTimelineStatus = status;
+		publishMenu(frame);
+	};
 	const frame = async () => {
+		renderedTimelineStatus = undefined;
 		clock.advance(runtime.timing.frameDurationMs);
 		runHostFrame(session, runtime, presenter, input, audioOutput, output, log, presentation, menu, clock.now());
+		if (renderedTimelineStatus !== undefined) {
+			const expected = rewind.stopped ? 'STOPPED' : rewind.seeking ? 'SEEKING' : '';
+			require(renderedTimelineStatus === expected, 'overlay reflects completion in the serviced host frame');
+		}
 		hostFrames += 1;
 		await new Promise<void>(resolve => setTimeout(resolve, 0));
 		require(runtime.machine.memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE) === 0, 'real cart fault');
 		require(errors.length === 0, errors.join('\n'));
 	};
 	const settle = async () => {
-		for (let count = 0; count < 8000 && (!tasks.ready || history.mode === HistoryMode.Replaying); count += 1) await frame();
+		for (let count = 0; count < 8000 && (!tasks.ready || rewind.seeking); count += 1) await frame();
 		require(tasks.ready && history.mode !== HistoryMode.Replaying, 'asynchronous seek must complete');
 	};
 	let pressId = 1;
@@ -93,7 +114,7 @@ export async function runBrowserRewindConformance(canvas: HTMLCanvasElement) {
 	const selected = runtime.machine.scheduler.currentNowCycles();
 	require(history.mode === HistoryMode.Reviewing && selected < latest, 'LB keyboard binding previews recorded time');
 	await press('ShiftRight'); await settle();
-	require(runtime.machine.scheduler.currentNowCycles() > selected, 'RB keyboard binding previews later time');
+	require(runtime.machine.scheduler.currentNowCycles() === latest && rewind.positionCycles === latest, 'LB/RB round trip returns exactly to the recorded end');
 	// The slider uses screen-space pointer input, not a test-only seek command.
 	const clickTimeline = async (viewportX: number) => {
 		const bounds = canvas.getBoundingClientRect();
@@ -134,7 +155,6 @@ export async function runBrowserRewindConformance(canvas: HTMLCanvasElement) {
 	const previewEnd = history.latestCycles + runtime.timing.cpuHz * 7;
 	for (let count = 0; count < 4000 && history.latestCycles < previewEnd; count += 1) await frame();
 	await openRewind(); await press('ShiftLeft'); await settle();
-	await frame();
 	await backend.device.queue.onSubmittedWorkDone();
 	require(errors.length === 0, errors.join('\n'));
 	return { backend: backend.type, hostFrames, checkpoint, latest, audioFrames, vramBytes: expectedVram.length };

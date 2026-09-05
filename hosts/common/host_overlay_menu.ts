@@ -748,14 +748,11 @@ export class HostOverlayMenu {
 	}
 
 	public queueFrameOverlayCommands(hostFps: number): boolean {
-		if (this.page === HostOverlayPage.Keyboard) {
-			this.keyboard.queueRenderCommands();
+		if (this.page !== HostOverlayPage.Closed) {
+			this.queueRenderCommands();
 			return true;
 		}
 		this.clearRenderCommands();
-		if (this.page !== HostOverlayPage.Closed) {
-			return false;
-		}
 		const presenter = this.presenter;
 		const font = presenter.default_font;
 		let queued = false;

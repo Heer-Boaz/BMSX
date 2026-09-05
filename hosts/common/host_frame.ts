@@ -204,38 +204,23 @@ export function beginHostFrame(
 	return hostDeltaMs;
 }
 
-export function prepareHostPresentation(
+/** Select execution policy before machine execution; drawing belongs to the presentation phase. */
+export function prepareHostUpdate(
 	session: HostFrameSession,
 	runtime: Runtime,
-	screen: RenderPresentationState,
-	hostOverlayMenu: HostOverlayMenu,
 	runReady: boolean,
 	hostMenuInput: HostMenuInput,
 ): HostFrameAction {
 	if (hostMenuInput === HostMenuInput.Active) {
-		screen.clearPresentation();
 		runtime.frameScheduler.clearQueuedTime();
-		hostOverlayMenu.queueRenderCommands();
-		screen.requestHeldPresentation();
 		return HostFrameAction.PresentPending;
 	}
-	if (session.paused) {
-		hostOverlayMenu.queueFrameOverlayCommands(session.hostFps);
-		return HostFrameAction.PresentPaused;
-	}
-
-	const hostOverlayQueued = hostOverlayMenu.queueFrameOverlayCommands(session.hostFps);
-	screen.clearPresentation();
+	if (session.paused) return HostFrameAction.PresentPaused;
 	if (!runReady) {
 		runtime.frameScheduler.clearQueuedTime();
+		return HostFrameAction.PresentPending;
 	}
-	if (hostOverlayQueued) {
-		screen.requestHeldPresentation();
-	}
-	if (runReady) {
-		return HostFrameAction.Execute;
-	}
-	return HostFrameAction.PresentPending;
+	return HostFrameAction.Execute;
 }
 
 export function syncAfterRuntimeUpdate(
@@ -403,17 +388,16 @@ export function runHostFrame(
 	)) {
 		return HostFrameRunResult.Continue;
 	}
-	let action = prepareHostPresentation(
+	screen.clearPresentation();
+	session.rewind.service(true);
+	let action = prepareHostUpdate(
 		session,
 		runtime,
-		screen,
-		hostOverlayMenu,
 		session.rewind.tasks.ready && !session.rewind.active,
 		hostMenuInput,
 	);
-	session.rewind.service(true);
 	if (action === HostFrameAction.Execute) {
-		if (session.rewind.tasks.ready && !session.rewind.active) executeHostUpdate(
+		executeHostUpdate(
 			session,
 			runtime,
 			presenter,
@@ -424,7 +408,8 @@ export function runHostFrame(
 		);
 		action = HostFrameAction.PresentPending;
 	}
-	if (session.rewind.active || !session.rewind.tasks.ready) screen.requestHeldPresentation();
+	if (hostOverlayMenu.queueFrameOverlayCommands(session.hostFps)
+		|| session.rewind.active || !session.rewind.tasks.ready) screen.requestHeldPresentation();
 	presentHostPresentation(
 		session,
 		runtime,

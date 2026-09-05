@@ -35,8 +35,7 @@ export class HostRewind {
 	public get available(): boolean { return this.runtime.history.checkpointCount !== 0; }
 	public get seeking(): boolean { return this.request === RewindRequest.Seek || this.runtime.history.mode === HistoryMode.Replaying; }
 	public get positionCycles(): number {
-		return this.request === RewindRequest.Seek ? this.requestedCycles
-			: this.active ? this.runtime.history.targetCycles : this.runtime.history.latestCycles;
+		return this.active ? this.requestedCycles : this.runtime.history.latestCycles;
 	}
 
 	public stepCheckpoint(direction: number): void {
@@ -148,6 +147,7 @@ export class HostRewind {
 				} else {
 					history.cancelSeek();
 					history.targetCycles = runtime.machine.scheduler.currentNowCycles();
+					this.requestedCycles = history.targetCycles;
 					this.presentationPending = true;
 				}
 				this.resumeAtTarget = false;
@@ -172,6 +172,7 @@ export class HostRewind {
 				if (result === HistorySeekResult.Stopped) {
 					history.cancelSeek();
 					history.targetCycles = runtime.machine.scheduler.currentNowCycles();
+					this.requestedCycles = history.targetCycles;
 					this.stopped = true;
 					this.resumeAtTarget = false;
 				}

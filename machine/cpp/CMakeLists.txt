@@ -765,17 +765,19 @@ if(BMSX_BUILD_TESTS)
 	target_link_libraries(bmsx_runtime_replay_conformance_runner PRIVATE bmsx_host_support bmsx_rom_image)
 	target_include_directories(bmsx_runtime_replay_conformance_runner PRIVATE ${BMSX_LIBRETRO_DIR})
 
-	add_executable(bmsx_host_rewind_conformance_runner
-		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/host_rewind_conformance_runner.cpp
-		${BMSX_LIBRETRO_DIR}/entry.cpp
-		${BMSX_LIBRETRO_CORE_SOURCES}
-	)
-	target_link_libraries(bmsx_host_rewind_conformance_runner PRIVATE bmsx_host_support bmsx_blua32_tooling)
-	target_include_directories(bmsx_host_rewind_conformance_runner PRIVATE ${BMSX_LIBRETRO_DIR})
-	if(BMSX_SNESMINI_TARGET)
-		target_compile_definitions(bmsx_host_rewind_conformance_runner PRIVATE BMSX_LIBRETRO_SNESMINI_LAYOUT=1)
-		target_link_options(bmsx_host_rewind_conformance_runner PRIVATE -static-libstdc++ -static-libgcc)
-	endif()
+	foreach(runner IN ITEMS host_rewind libretro_rewind)
+		add_executable(bmsx_${runner}_conformance_runner
+			${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/${runner}_conformance_runner.cpp
+			${BMSX_LIBRETRO_CORE_SOURCES}
+		)
+		target_link_libraries(bmsx_${runner}_conformance_runner PRIVATE bmsx_host_support bmsx_blua32_tooling)
+		target_include_directories(bmsx_${runner}_conformance_runner PRIVATE ${BMSX_LIBRETRO_DIR})
+		if(BMSX_SNESMINI_TARGET)
+			target_compile_definitions(bmsx_${runner}_conformance_runner PRIVATE BMSX_LIBRETRO_SNESMINI_LAYOUT=1)
+			target_link_options(bmsx_${runner}_conformance_runner PRIVATE -static-libstdc++ -static-libgcc)
+		endif()
+	endforeach()
+	target_sources(bmsx_libretro_rewind_conformance_runner PRIVATE ${BMSX_LIBRETRO_DIR}/entry.cpp)
 
 	if(BMSX_ENABLE_GLES2)
 		add_executable(bmsx_libretro_hw_context_tests

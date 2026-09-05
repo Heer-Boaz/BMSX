@@ -7,7 +7,7 @@ import {
 	HostFrameRunResult,
 	type HostFramePresentation,
 	type HostFrameSession,
-	prepareHostPresentation,
+	prepareHostUpdate,
 	presentHostPresentation,
 	syncAfterRuntimeUpdate,
 } from '../../hosts/common/host_frame';
@@ -83,7 +83,6 @@ function runWorkbenchOverlay(
 	runtime: Runtime,
 	hostDeltaMs: number,
 ): void {
-	screen.clearPresentation();
 	runtime.frameScheduler.clearQueuedTime();
 	workbenchMode.tickIDE(ide, hostDeltaMs / 1000);
 	screen.requestHeldPresentation();
@@ -188,14 +187,14 @@ export function runWorkbenchHostFrame(
 			workbenchMode.tickIdeInput(ide, input);
 		}
 
-		const runtimeReady = ide.runtimeTasks.ready && !ide.fault.hostFrameFailed && !session.rewind.active;
+		screen.clearPresentation();
 		session.rewind.service(!ide.scenarioRuns.active);
+		const runtimeReady = ide.runtimeTasks.ready && !ide.fault.hostFrameFailed && !session.rewind.active;
 		let action: HostFrameAction;
 		if (
 			hostMenuInput !== HostMenuInput.Active
 			&& ide.overlayRenderer.active
 		) {
-			hostOverlayMenu.queueFrameOverlayCommands(session.hostFps);
 			runWorkbenchOverlay(ide, screen, runtime, hostDeltaMs);
 			ide.microtasks.flush();
 			action = HostFrameAction.PresentPending;
@@ -205,15 +204,13 @@ export function runWorkbenchHostFrame(
 				&& !session.paused
 				&& runtimeReady
 			);
-			action = prepareHostPresentation(
+			action = prepareHostUpdate(
 				session,
 				runtime,
-				screen,
-				hostOverlayMenu,
 				runtimeReady,
 				hostMenuInput,
 			);
-			if (action === HostFrameAction.Execute && ide.runtimeTasks.ready && !session.rewind.active) {
+			if (action === HostFrameAction.Execute) {
 				const scenarioExecution = ide.scenarioRuns.execution;
 				if (scenarioExecution.active) {
 					scenarioGuestFrame = true;
@@ -298,7 +295,8 @@ export function runWorkbenchHostFrame(
 		}
 		const previousPresentation = presenter.presentationSequence;
 		if (action === HostFrameAction.Execute) action = HostFrameAction.PresentPending;
-		if (session.rewind.active || !ide.runtimeTasks.ready) screen.requestHeldPresentation();
+		if (hostOverlayMenu.queueFrameOverlayCommands(session.hostFps)
+			|| session.rewind.active || !ide.runtimeTasks.ready) screen.requestHeldPresentation();
 		presentWorkbenchFrame(
 			session,
 			runtime,

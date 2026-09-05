@@ -19,8 +19,7 @@ HostRewind::HostRewind(Runtime& runtime, VideoPresenter& presenter, RenderPresen
 bool HostRewind::available() const { return runtime.history.checkpointCount() != 0; }
 bool HostRewind::seeking() const { return request == RewindRequest::Seek || runtime.history.mode == HistoryMode::Replaying; }
 i64 HostRewind::positionCycles() const {
-	return request == RewindRequest::Seek ? requestedCycles
-		: active ? runtime.history.targetCycles : runtime.history.latestCycles();
+	return active ? requestedCycles : runtime.history.latestCycles();
 }
 
 void HostRewind::stepCheckpoint(i32 direction) {
@@ -117,6 +116,7 @@ void HostRewind::service(bool collect) {
 			else {
 				history.cancelSeek();
 				history.targetCycles = runtime.machine.scheduler.currentNowCycles();
+				requestedCycles = history.targetCycles;
 				presentationPending = true;
 			}
 			resumeAtTarget = false;
@@ -141,6 +141,7 @@ void HostRewind::service(bool collect) {
 			if (result == HistorySeekResult::Stopped) {
 				history.cancelSeek();
 				history.targetCycles = runtime.machine.scheduler.currentNowCycles();
+				requestedCycles = history.targetCycles;
 				stopped = true;
 				resumeAtTarget = false;
 			}

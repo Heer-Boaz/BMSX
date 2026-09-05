@@ -5,7 +5,7 @@ import {
 	HostFrameAction,
 	HostFrameRunResult,
 	type HostFrameSession,
-	prepareHostPresentation,
+	prepareHostUpdate,
 	presentHostPresentation,
 	syncAfterRuntimeUpdate,
 } from '../../../hosts/common/host_frame';
@@ -56,12 +56,11 @@ export function runCpuProfileHostFrame(
 	)) {
 		return HostFrameRunResult.Continue;
 	}
-	let action = prepareHostPresentation(
+	screen.clearPresentation();
+	let action = prepareHostUpdate(
 		frameSession,
 		runtime,
-		screen,
-		hostOverlayMenu,
-		true,
+		frameSession.rewind.tasks.ready,
 		hostMenuInput,
 	);
 	if (action === HostFrameAction.Execute) {
@@ -100,6 +99,7 @@ export function runCpuProfileHostFrame(
 		);
 		action = HostFrameAction.PresentPending;
 	}
+	if (hostOverlayMenu.queueFrameOverlayCommands(frameSession.hostFps)) screen.requestHeldPresentation();
 	presentHostPresentation(
 		frameSession,
 		runtime,

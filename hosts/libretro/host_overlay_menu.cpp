@@ -539,17 +539,14 @@ void HostOverlayMenu::queueRenderCommands(Runtime& runtime, VideoPresenter& pres
 	publishRenderCommands(presenter);
 }
 
-bool HostOverlayMenu::queueFrameOverlayCommands(Runtime& runtime, VideoPresenter& presenter, f64 hostFps) {
-	if (m_page == Page::Keyboard) {
-		m_keyboard.queueRenderCommands(presenter);
+bool HostOverlayMenu::queueFrameOverlayCommands(Runtime& runtime, VideoPresenter& presenter, HostRewind& rewind, f64 hostFps) {
+	if (m_page != Page::Closed) {
+		queueRenderCommands(runtime, presenter, rewind);
 		return true;
 	}
 	clearRenderCommands(presenter);
 	const Host2DKind rectKind = Host2DKind::Rect;
 	const Host2DKind itemsKind = Host2DKind::Glyphs;
-	if (m_page != Page::Closed) {
-		return false;
-	}
 	bool queued = false;
 	BFont* font = presenter.default_font;
 	if (m_showFps) {

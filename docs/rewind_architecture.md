@@ -806,3 +806,58 @@ Machine, IDE, browser and Node project typechecks, method-parity, strict
 architecture-boundary and indentation audits pass, as does `git diff --check`.
 No new snapshot allocation or capture frequency is introduced by this UI slice;
 the existing storage limitations above still apply.
+
+## Transport ownership corrections (REWIND-OWNERS-01)
+
+The UI validation above missed a cursor round-trip error and a stale completed
+preview label. It also used serialization as a native completion probe and a
+VRAM download as a GPU fence. These are not compatibility requirements.
+
+Implementation order, with a separately validated commit for each owner:
+
+1. Separate selected transport time from resolved replay time; draw after
+   service/update in all hosts. Observe native controller completion directly;
+   keep external libretro ABI tests separate from controller tests.
+2. Separate GPU state-replacement synchronization from snapshot readback.
+   Checkpoints still materialize VRAM; replacing discarded state must not.
+3. Give host UI edges, repeats and pointer capture one input owner. Pages own
+   bindings and actions, not physical-history bookkeeping or repeat algorithms.
+4. Make positioned glyph runs the actual render-command contract; remove
+   unsupported layout/background fields, rather than pretending to implement
+   alignment in the blitter.
+
+References reviewed before the transport/phase diff:
+
+- [Qt QAbstractSlider](https://github.com/qt/qtbase/blob/dev/src/widgets/widgets/qabstractslider.cpp):
+  slider position and committed value are distinct; relative actions operate
+  on the slider position. BMSX keeps the selected cycle coordinate even when
+  replay resolves it to the preceding recorded PCRTC boundary.
+- [MAME menu processing](https://github.com/mamedev/mame/blob/master/src/frontend/mame/ui/menu.cpp):
+  input handling and drawing are separate phases. Commands are built from the
+  state being presented, not before the operation that changes that state.
+
+### Representation and hot-path callsites, before mirrored edits
+
+| State / operation | TypeScript | C++ | Owner and callsites |
+| --- | --- | --- | --- |
+| Selected transport coordinate | `HostRewind.requestedCycles: number` (integer cycles) | `HostRewind::requestedCycles: i64` | `seekTo`, `positionCycles`, timeline `moveCursor`/`seekAt`; retained throughout review, including pending/coalesced seeks |
+| Resolved replay boundary | Existing `RuntimeHistory.targetCycles` | Same `i64` field | `beginSeek` resolves against the journal; no extra presentation copy |
+| Interrupted replay coordinate | Scheduler cycle count | Same `i64` count | `service` Pause/Stopped adopts the reached cycle as both resolved and selected position |
+| Frame phases | `runHostFrame`, `runWorkbenchHostFrame`, tooling `runCpuProfileHostFrame` | `runLibretroFrame` | Poll/route input; clear presentation once; service/update; queue current overlay; present; capture due checkpoint |
+| Overlay output | Retained host command arrays | Same retained arrays | `HostOverlayMenu.queueFrameOverlayCommands` selects the active page or passive FPS/usage overlay after update |
+| Completion observation | Public `seeking`, task readiness, history mode | Public `seeking()`, history mode | Real-cart conformance runners; no stable-cycle heuristic, test-only core API or per-poll serialization |
+
+The cursor must return exactly to the recorded end after LB then RB, both
+after each seek completes and when requests are coalesced. Only a deliberate
+range clamp or interrupted replay changes the selected coordinate. The actual
+machine still stops on a journal boundary, not on an invented partial frame.
+
+Transport/phase validation: the added real BIOS/Nemesis regression failed at
+748,124,835 instead of 748,805,462 cycles before the fix. TS and native controller
+runs now pass repeated LB/RB round trips, held navigation, cancel, branch and
+keyboard transitions. The separate libretro ABI run passes audio transport,
+external save/load and reset without using save-state as a completion probe.
+WebGPU passes full restored-VRAM comparison and same-frame submitted-label
+assertions; the extra screenshot frame is removed. The screenshot was inspected.
+IDE Hot Resume passes 91 assertions; Scenario Lab passes 124. Host input tests,
+browser/IDE typechecks, parity/boundary/indent audits and diff checks pass.
