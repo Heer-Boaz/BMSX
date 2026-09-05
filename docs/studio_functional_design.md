@@ -22,6 +22,11 @@ De scene-workloads, sourcegrens en 33.8688-MHz-runtimegate staan in
 functionele document kiest het product; de sceneanalyse kiest pas een
 runtimeowner nadat een huidige cart daar aantoonbaar voordeel van heeft.
 
+De samenhang tussen spelen, host-pauze, rewind, inspectie, Hot Resume en
+testwerk staat in [studio_development_workflows.md](studio_development_workflows.md).
+Die inventarisatie benoemt gecombineerde acceptatieproeven en huidige gaten;
+zij is geen verklaring dat de complete Studio-flow al werkt.
+
 ## Scope en ontwerpgrens
 
 Studio moet makers helpen om het gedrag van een game te **modelleren,
