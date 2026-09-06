@@ -8,8 +8,8 @@ import type { EditorScenarioLabCommandId } from '../../../common/commands';
 import { activateEditor, deactivateEditor } from '../../overlay_modes';
 import {
 	captureCurrentLuaSource,
-	capturePendingLuaTextModelSources,
-} from '../../ui/code_tab/activation';
+	captureLuaTextModelSources,
+} from '../../services/working_copy/lua_sources';
 import type { ScenarioLabTabId } from '../../ui/tab/id';
 import { editorTabGroup } from '../../ui/tab/group_model';
 import { isScenarioLabActive, setActiveTab } from '../../ui/tabs';
@@ -282,7 +282,7 @@ export class ScenarioLabController {
 				sourceRevision: snapshot.revision,
 			};
 		}
-		const programSources = capturePendingLuaTextModelSources(this.sources);
+		const programSources = captureLuaTextModelSources(this.sources);
 		view.runActive = true;
 		updateScenarioLabStatus(view);
 		void this.runs.start(

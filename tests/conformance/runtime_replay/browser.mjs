@@ -23,7 +23,7 @@ for (const backend of studio ? ['software', 'webgl2', 'webgpu'] : ['webgpu']) {
 		if (studio) {
 			for (const root of ['carts/nemesis_s', 'cartlib', 'machine/bios']) {
 				await cp(root, join(directory, root), { recursive: true,
-					filter: async path => (await stat(path)).isDirectory() || path.endsWith('.lua') });
+					filter: async path => (await stat(path)).isDirectory() || path.endsWith('.lua') || path.endsWith('.aem.yaml') });
 			}
 		}
 		// The actual product file API, rooted in an isolated workspace. No recovery

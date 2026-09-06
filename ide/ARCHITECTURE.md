@@ -54,7 +54,9 @@ the candidate revision inside the shared exclusive operation queue. Build
 diagnostics do not fabricate a guest stack or prevent resuming the installed
 program. The built revision retains which source domains were explicitly edited;
 mechanically relinked media do not imply another cart's init should run.
-Actual installation marks only the captured versions applied. It clears old
+Only the installed-source maps establish which code is applied. They are
+compared with the current text, including undo/redo and edits made while a
+build was queued; no model-side acknowledgement guesses that state. Installation clears old
 runtime-error adornments and reports code installation, not a premature claim
 that guest init has finished.
 
@@ -80,7 +82,7 @@ scope are in [`docs/studio_development_workflows.md`](../docs/studio_development
 Editable text is retained by resource identity, not by the currently visible
 tab. `editor/model/model_service.ts` owns exactly one `EditorTextModel` for each
 `(domain,path)`. That model owns the PieceTree buffer, monotone content version,
-saved-state identity, dirty state, runtime-applied version, undo/redo history,
+saved-state identity, dirty state, undo/redo history,
 and content/save/revert events. Its public buffer is read-only; typing and
 programmatic changes both enter through model edit operations. A multi-edit is
 one undo element and publishes one content event.
@@ -122,6 +124,42 @@ service surface:
   only cleans the version actually written:
   <https://github.com/microsoft/vscode/blob/dc85eaf99d21fb62cc4d8b43a21625a93863cf1e/src/vs/workbench/services/textfile/common/textFileEditorModel.ts#L592-L642> and
   <https://github.com/microsoft/vscode/blob/dc85eaf99d21fb62cc4d8b43a21625a93863cf1e/src/vs/workbench/services/textfile/common/textFileEditorModel.ts#L953-L970>.
+
+### Authored, saved, and installed source revisions
+
+`workbench/services/working_copy/lua_sources.ts` captures all retained authored
+program-models at command admission, including clean documents and documents
+without a visible code tab. Capture is an undo boundary. Hot Resume, explicit
+Reboot and Scenario Lab apply workspace overrides first and those captured
+models last. `applyLuaTextModelSources` only dirties changed build inputs. A
+later edit cannot silently become part of that accepted source batch.
+
+`runtime_source_status.ts` projects the actual installed source, not an editor
+version counter. The existing per-domain `installedBlua32Sources` maps are
+replaced by media installation; saves and rejected builds do not change them.
+The projection retains source resolution and caches text equality by model
+version and installed source. Stable status drawing performs only retained
+lookups, without rescanning text, parsing Lua or allocating source snapshots.
+Undo can therefore return to installed source while remaining dirty relative
+to disk, or return to saved source while newer code remains installed.
+
+AEM's existing save/apply owner records its installed authored source and apply
+failure in `RuntimeSourceState.aemSourceApplications`. Those are tooling-only
+operation records, not a second asset store or serialized device data. Opening
+an AEM file does not establish that its workspace text produced the loaded
+cooked asset; before an actual apply its source status is untracked, not synced.
+AEM preparation builds and relocates before installation and resolves assets
+in the resource's domain, not the active view's package. A rejected source build
+records an outcome without blocking the installed execution; failures after
+installation retain the ordinary operational error boundary. No acknowledgement
+is rolled back.
+Source-only Lua documents do not claim executable-code apply status.
+
+The production references and the combined text/lens/save/apply proof are in
+[`docs/studio_development_workflows.md`](../docs/studio_development_workflows.md#w04-authored-document-versus-geïnstalleerde-bron).
+No source undo changes emulation state or undoes guest initialization. Scene
+instance synchronization and writable visual-property commands remain separate
+contracts, not implied features of this source revision owner.
 
 ### Source-backed visual projections
 

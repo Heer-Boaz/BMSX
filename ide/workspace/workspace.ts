@@ -11,6 +11,7 @@ import {
 } from '../common/resource';
 import {
 	applyWorkspaceSourceOverrides,
+	readWorkspaceLuaSourceText,
 	persistWorkspaceSourceFile,
 } from './files';
 import {
@@ -61,13 +62,16 @@ function resolveEditableLuaSource(
 	return { registry: source.registry, asset: source.record };
 }
 
-export function applyLuaCodeTabSources(
+export function applyLuaTextModelSources(
 	sources: RuntimeSourceState,
 	snapshots: ReadonlyArray<ResourceIdentity & { source: string }>,
 ): void {
 	for (let index = 0; index < snapshots.length; index += 1) {
 		const snapshot = snapshots[index];
 		const target = resolveEditableLuaSource(sources, snapshot);
+		if (readWorkspaceLuaSourceText(target.registry, target.asset) === snapshot.source) {
+			continue;
+		}
 		setWorkspaceLuaSourceOverride(target.registry, target.asset.source_path, snapshot.source);
 		markLuaSourceRegistryChanged(sources, target.registry);
 	}

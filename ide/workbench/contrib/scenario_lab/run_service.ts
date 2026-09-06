@@ -29,12 +29,9 @@ import {
 import type { KeyValueStorage } from '../../../workspace/key_value_storage';
 import {
 	applyAllWorkspaceSourceOverrides,
-	applyLuaCodeTabSources,
+	applyLuaTextModelSources,
 } from '../../../workspace/workspace';
-import {
-	markLuaTextModelsAppliedToRuntime,
-	type LuaTextModelSourceSnapshot,
-} from '../../ui/code_tab/activation';
+import type { LuaTextModelSourceSnapshot } from '../../services/working_copy/lua_sources';
 import { workspaceDirtyRecords } from '../../workspace/state';
 import { ScenarioExecutionService } from '../../../testing/scenario/execution_service';
 import type {
@@ -56,7 +53,7 @@ export type ScenarioRunTestSource = ScenarioRunItemSource & {
 
 type ScenarioRunRequest = {
 	readonly testSources: readonly ScenarioRunTestSource[];
-	readonly pendingProgramSources: ReadonlyArray<LuaTextModelSourceSnapshot>;
+	readonly programSources: ReadonlyArray<LuaTextModelSourceSnapshot>;
 	readonly run: ScenarioRun;
 	cancelled: boolean;
 };
@@ -150,7 +147,7 @@ export class ScenarioRunService {
 	public start(
 		scopeId: ScenarioTestNodeId,
 		testSources: readonly ScenarioRunTestSource[],
-		pendingProgramSources: ReadonlyArray<LuaTextModelSourceSnapshot>,
+		programSources: ReadonlyArray<LuaTextModelSourceSnapshot>,
 	): Promise<void> {
 		if (this.request !== null) {
 			throw new Error('A Scenario Lab media session is already active.');
@@ -162,7 +159,7 @@ export class ScenarioRunService {
 		this.results.startItem(run, 0, 0);
 		const request: ScenarioRunRequest = {
 			testSources,
-			pendingProgramSources,
+			programSources,
 			run,
 			cancelled: false,
 		};
@@ -239,7 +236,7 @@ export class ScenarioRunService {
 				this.sources,
 				workspaceDirtyRecords,
 			);
-			applyLuaCodeTabSources(this.sources, request.pendingProgramSources);
+			applyLuaTextModelSources(this.sources, request.programSources);
 			if (blua32MediaRequiresRebuild(this.sources)) {
 				prepareBlua32MediaBoot(
 					this.sources,
@@ -248,7 +245,6 @@ export class ScenarioRunService {
 					true,
 				);
 			}
-			markLuaTextModelsAppliedToRuntime(request.pendingProgramSources);
 			const slot = request.testSources[0].test.resource.domain;
 			const cartridge = this.sources.cartridgeSlots[slot]!;
 			const session: ScenarioMediaSession = {

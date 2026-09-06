@@ -11,6 +11,7 @@ import { IO_WORD_SIZE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { HostPauseReason } from '../../../hosts/common/execution_control';
 import { hidKeyUsageForCode } from '../../../hosts/common/input/hid_keys';
 import { check, type StudioFixture } from './studio_fixture';
+import { testAemSourceApplication, testCapturedSourceApply, testSourceUndoAfterApply, testSourceViewsBeforeApply } from './studio_source_workflows';
 
 /** The same developer loop runs on every renderer, without backend-specific tests. */
 export async function runStudioWorkflows(test: StudioFixture) {
@@ -71,7 +72,7 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	const actorBefore = title();
 	const countBefore = guest.readStringMember(actorBefore, 'selected_player_count');
 	const newRule = "pattern = 'right[jp]'";
-	harness.replaceActiveCodeSource(source.replace(originalRule, newRule));
+	const firstInstalledSource = await testSourceViewsBeforeApply(test, model, originalRule, newRule);
 	check(cycles() === selected && history.mode === HistoryMode.Reviewing, 'typing does not mutate runtime');
 	const oldMedia = ide.sources.currentBlua32Media;
 	await press('ControlLeft', 'ShiftLeft', 'KeyS');
@@ -94,6 +95,7 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	await press('ControlRight', 'ShiftRight');
 	await runMenuCommand('pause');
 	const pausedAt = cycles();
+	await testSourceUndoAfterApply(test, model, firstInstalledSource, source);
 	const pausedAudio = observations.audioFrames;
 	for (let index = 0; index < 5; index += 1) await frame();
 	await press('ControlRight', 'ShiftRight');
@@ -276,6 +278,8 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	await click(pauseItem.bounds, 8);
 	check(execution.userPaused && ide.editor.isActive, 'pointer Pause does not close or replace the IDE');
 	await click(editorChromeState.menuEntryBounds.run);
+	await testCapturedSourceApply(test);
+	await testAemSourceApplication(test);
 	return { hostFrames: observations.hostFrames, selected, pausedAt, secondAt, steppedAt, beforeRejected,
 		audioFrames: observations.audioFrames, expectedFaultSequence: observations.expectedFaultSequence, inspected: inspected.contentLines };
 }

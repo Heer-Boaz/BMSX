@@ -1,7 +1,9 @@
 # Studio: ontwikkelworkflows en acceptatiegrenzen
 
-Status: **W01-W03 geïmplementeerd en gecombineerd getest**. W04-W09 blijven
-ontwerp- en verificatiegrenzen, niet een claim dat de volledige Studio af is.
+Status: **W01-W03 en W04's document/apply-owner geïmplementeerd en gecombineerd
+getest**. W04 gebruikt de bestaande read-only Lens; writable visual commands
+blijven bij de source-adapters. W05-W09 blijven ontwerp- en verificatiegrenzen,
+niet een claim dat de volledige Studio af is.
 Gecontroleerd op 2026-09-06; oorspronkelijke inventarisatie op `7ffd43824`,
 falende browser-Studio-proef vóór de implementatie op `9cb4cf93b`.
 
@@ -78,6 +80,79 @@ De generieke rewindhistorie werkt met machinecycli/PCRTC-inputgrenzen. Een
 toekomstige Studio-knop voor één worldtick moet de echte cartlib-grens volgen;
 zij mag niet toevallig één host-renderframe uitvoeren en dat een worldtick noemen.
 
+## W04: authored document versus geïnstalleerde bron
+
+Vooraf vastgesteld op `e60e25f51`: een model-edit en een source-undo na apply
+laten `EditorTextModel.runtimeSyncState` ten onrechte op `synced` staan.
+Een monotone editversie is bovendien geen identiteit van geïnstalleerde code:
+undo, opnieuw openen en een build vanuit een andere working copy kunnen die
+gelijkstelling verbreken. Deze slice herstelt eerst die owner, niet de scene-UI.
+
+Productiebronnen opnieuw gelezen vóór de implementatie:
+
+- [VS Code TextFileEditorModel](https://github.com/microsoft/vscode/blob/48ac1875628144c02d79ff412e0323af9991dfc7/src/vs/workbench/services/textfile/common/textFileEditorModel.ts):
+  saved-state volgt undo-identiteit; een asynchrone save maakt geen latere edit schoon.
+- [VS Code TextModel](https://github.com/microsoft/vscode/blob/48ac1875628144c02d79ff412e0323af9991dfc7/src/vs/editor/common/model/textModel.ts):
+  monotone wijzigingsversies en undo-revisies zijn verschillende representaties.
+- [Roslyn CommittedSolution](https://github.com/dotnet/roslyn/blob/d7b7579180d60dcff342863163485202f778fb34/src/Features/Core/Portable/EditAndContinue/CommittedSolution.cs):
+  de bron die werkelijk in de geladen code zit is de apply-baseline, niet het
+  huidige workspacebestand. BMSX bezit die bron al bij de media-installatie;
+  Roslyn's checksumrecovery voor ontbrekende buildnotificaties is hier niet nodig.
+- [VS Code custom text editor](https://github.com/microsoft/vscode-extension-samples/blob/65c1c44800eeac6fb065a54823ee5ae62c79540a/custom-editor-sample/src/catScratchEditor.ts):
+  views volgen het document; een view is niet de eigenaar van save of undo.
+  Het voorbeeld is geen vrijbrief voor whole-document serialization van Lua.
+
+| Representatie / overgang | Owner en contract vóór de diff |
+| --- | --- |
+| Huidige tekst, saved-state, undo | `EditorTextModel`; geen runtime-applied versie of handmatig sync-vlaggetje meer. Save en undo schrijven geen emulatiestate. |
+| Geïnstalleerde Lua-bron | De bestaande `RuntimeSourceState`-maps per execution domain. Alleen de media-installatie vervangt deze maps; een save of afgewezen build niet. |
+| Zichtbare apply-status | Working-copy runtime-sourceprojectie vergelijkt de modeltekst met die geïnstalleerde bron. Het resultaat wordt per modelversie/bronrevisie gecachet; renderen doet geen herhaalde tekstvergelijking of bronresolutie. Source-only Lua is niet uitvoerbare code. |
+| Hot Resume-/Reboot-/scenariobuild | Eén snapshot van alle retained program-models, los van actieve of gesloten views. Workspace-overrides eerst, die expliciet vastgelegde modellen daarna. De bronowner markeert alleen een werkelijk veranderde buildinput dirty. Geen handmatige `markApplied`-acknowledgement naast de echte installatie. |
+| AEM | De bestaande AEM-installatie bezit haar laatst werkelijk geïnstalleerde authored bron en eventuele apply-fout, niet het textmodel. Zonder zo'n bronbewijs betekent een geopend bestand niet automatisch dat zijn tekst in ROM zit. Save/apply blijft de bestaande opdracht; geen nieuw AEM-formaat of cooker. |
+| Viewwisseling | De bestaande Behavior Lens volgt hetzelfde retained model. Deze slice bouwt geen visual-propertycommand, live-instance-edit of nieuw sceneformaat. `IDE-SCENE-SOURCE-ADAPTER-01` blijft afzonderlijk open. |
+
+Dit is uitsluitend TypeScript-tooling/workbench-state. Machine, C++ runtime,
+cartlib, instructies, snapshots en rewindjournal krijgen geen nieuwe velden of
+checks. Aanroepgrenzen: statusprojectie van de zichtbare editor; cold save,
+modelcapture, media-installatie en AEM-apply. Geen emulatie-hot-path of
+per-frame dirty-modelscan.
+
+### W04-uitvoeringsbewijs (2026-09-06)
+
+`studio_source_workflows.ts` draait in dezelfde echte BIOS/Nemesis-browserlus
+als W01-W03, afzonderlijk op software, WebGL2 en WebGPU. De productie-workspace-API
+werkt op een tijdelijke kopie van de echte Lua- en AEM-sources. Aangetoond:
+
+- één minimale FSM-bronedit, tekst/Lens wisselen, undo/redo, echte save en
+  sluiten/heropenen van de codetab behouden hetzelfde model;
+- save en source-undo laten de gepauzeerde machine, geïnstalleerde code en
+  concrete actor ongemoeid; na Hot Resume werkt de gewijzigde inputregel op
+  dezelfde actor;
+- oude bron opslaan na source-undo vervangt geen geïnstalleerde code; redo kan
+  tegelijk **dirty ten opzichte van disk** en **gelijk aan geïnstalleerde code** zijn;
+- een echte exclusieve queuebarrière houdt Hot Resume vast; latere tekst komt
+  niet in die build en blijft na installatie pending. Undo bereikt precies de
+  vastgelegde apply-revisie, zonder de machine terug te zetten;
+- de echte Nemesis-AEM doorloopt save/install, undo/redo, een ongeldige YAML-save
+  en reparatie. De fout vervangt geen media en latch't geen execution failure.
+  De AEM-owner bouwt/relocateert vóór installatie, resolveert assets in het
+  resource-domain en publiceert pas bij installatie de authored bron;
+- een expliciete reboot leest oudere opgeslagen workspacebron, maar installeert
+  de bij aanvraag vastgelegde modelbron. Typen na aanvraag blijft pending.
+  Deze controle bewijst bronvolgorde, niet alle W09-inspectie-/mediaswitchflows.
+
+De bronstatus wordt na het verdwijnen van de tijdelijke feedback daadwerkelijk
+getekend met het IDE-tiny-font. De aanvullende WebGPU-callbackproef blijft
+apart: de document/apply-workflow zelf vereist geen specifieke renderer.
+
+Aanvullende regressiegates: Lua-suite (856 geslaagd, één bestaande skip), de Hot Resume-proef
+(92 assertions), Scenario Lab (124), bestaande Lens-bediening (61), IDE-typecheck,
+core-parity, strict architecture boundaries, indentation en `git diff --check`.
+De brede test-typecheck behoudt de 52 bestaande diagnostieken; dat is geen groene
+repo-brede typecheck. Er is geen native-runtimewijziging of nieuwe SNES-mini-
+performanceclaim. De scene-property-UI en live-instance-toepassing zijn niet
+stilzwijgend meegeleverd door deze source-owner-slice.
+
 ## W01-W03 als complete ontwikkellus
 
 ### Uitvoeringscontract en representaties vóór de implementatiediff
@@ -146,7 +221,8 @@ toegepast. `actions.ts` bereidt de vastgelegde textmodelversies voor en bouwt
 binnen die exclusieve taak. Compileerdiagnostiek blijft bron-/taakdiagnostiek;
 zij verzint geen guest-stack en blokkeert hervatten niet. De gebouwde revisie
 behoudt de expliciet gewijzigde execution domains, los van mechanisch
-meegerelinkte media. Pas de installatiestap markeert die bronversies toegepast.
+meegerelinkte media. Alleen de installatiestap vervangt de werkelijk geïnstalleerde bronmaps;
+de working-copyprojectie vergelijkt die met de actuele tekst.
 
 Een apply-fout na aanvaarde supervisor-return is niet gelijk aan een
 compileerfout vóór uitvoering: de BIOS kan al hebben uitgepakt. De huidige
@@ -156,7 +232,7 @@ bestaande supervisor-return/completion-call-route, behoudt de actor en wist de
 oude inspectie en foutadornments pas bij de volgende geslaagde installatie.
 
 Dat werkpakket is niet tegelijk een worldtick-stepper, sceneviewport,
-live-instance-inspector of uitbreiding van Scenario Lab. W04-W09 blijven wel
+live-instance-inspector of uitbreiding van Scenario Lab. De verdere W04-source-adapters en W05-W09 blijven
 zichtbare aansluitvoorwaarden; als de eerste slice hun owners raakt, worden
 hun relevante overgangen in dezelfde slice getest.
 

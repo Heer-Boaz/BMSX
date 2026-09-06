@@ -1,4 +1,3 @@
-import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { CartEditor } from '../../../cart_editor';
 import type { CodeTabContext } from './model';
 import { activeCodeEditor } from '../../../editor/ui/code_editor_state';
@@ -16,49 +15,8 @@ import { getTextSnapshot } from '../../../editor/text/source_text';
 import { editorPointerState } from '../../../input/pointer/state';
 import { runtimeErrorState } from '../../../editor/contrib/runtime_error/state';
 import { setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../../editor/editing/cursor/state';
-import {
-	resolveRuntimeLuaSource,
-} from '../../../runtime/sources';
-import {
-	SYSTEM_RESOURCE_DOMAIN,
-	type ResourceDomain,
-	type ResourceIdentity,
-} from '../../../common/resource';
 import type { CodeEditorInput } from '../tab/model';
-import { readWorkspaceLuaSourceText } from '../../../workspace/files';
-import { editorTextModelService } from '../../../editor/model/model_service';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
-
-export type LuaTextModelSourceSnapshot = {
-	version: number;
-	domain: ResourceDomain;
-	path: string;
-	source: string;
-};
-
-export type CurrentLuaSourceSnapshot = {
-	readonly source: string;
-	readonly revision: number;
-};
-
-/** Reads the current editor generation when open, otherwise the workspace-backed source record. */
-export function captureCurrentLuaSource(
-	sources: RuntimeSourceState,
-	resource: ResourceIdentity,
-): CurrentLuaSourceSnapshot {
-	const model = editorTextModelService.get(resource);
-	if (model !== undefined) {
-		return {
-			source: getTextSnapshot(model.buffer),
-			revision: model.version,
-		};
-	}
-	const match = resolveRuntimeLuaSource(sources, resource)!;
-	return {
-		source: readWorkspaceLuaSourceText(match.registry, match.record),
-		revision: match.record.update_timestamp,
-	};
-}
 
 function setCodeTabDiagnosticsState(context: CodeTabContext): void {
 	const model = context.model;
@@ -87,49 +45,6 @@ function setCodeTabDiagnosticsState(context: CodeTabContext): void {
 export function storeCodeTabContext(context: CodeTabContext): void {
 	context.runtimeErrorOverlay = runtimeErrorState.activeOverlay;
 	context.executionStopRow = runtimeErrorState.executionStopRow;
-}
-
-export function capturePendingLuaTextModelSources(sources: RuntimeSourceState): LuaTextModelSourceSnapshot[] {
-	const snapshots: LuaTextModelSourceSnapshot[] = [];
-	for (const model of editorTextModelService.models) {
-		switch (model.mode) {
-		case 'lua':
-			break;
-		case 'aem':
-			continue;
-		}
-		const source = getTextSnapshot(model.buffer);
-		const match = resolveRuntimeLuaSource(sources, model.resource)!;
-		if (!match.record.program_module) {
-			continue;
-		}
-		const installedSources = match.domain === SYSTEM_RESOURCE_DOMAIN
-			? sources.systemInstalledBlua32Sources
-			: sources.cartridgeSlots[match.domain]!.installedBlua32Sources;
-		if (model.version === model.appliedVersion
-			&& source === installedSources.get(match.record.module_path)) {
-			continue;
-		}
-		snapshots.push({
-			version: model.version,
-			domain: model.resource.domain,
-			path: model.resource.path,
-			source,
-		});
-	}
-	return snapshots;
-}
-
-export function markLuaTextModelsAppliedToRuntime(snapshots: ReadonlyArray<LuaTextModelSourceSnapshot>): void {
-	for (let index = 0; index < snapshots.length; index += 1) {
-		const snapshot = snapshots[index];
-		const model = editorTextModelService.get(snapshot)!;
-		model.markApplied(snapshot.version);
-		model.setRuntimeSyncState(
-			model.version === snapshot.version ? 'synced' : 'runtime_update_pending',
-			null,
-		);
-	}
 }
 
 export function applyActiveCodeTabSelection(selection: EditorTextSelection): void {

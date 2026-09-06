@@ -4205,6 +4205,19 @@ source of truth. Runtime and tooling diagnostics use host logging and
 IDE error owners; they are not BIOS monitor commands and must not be swallowed
 by deferred host code.
 
+Authored editor text, persisted text and installed program sources are distinct
+tooling states. The resource-owned text model owns undo and saved-state, not a
+runtime-applied version counter. Studio projects apply status from the exact
+source maps published by media installation. Saves, source undo and rejected
+builds cannot acknowledge an installation or change emulation time. Accepted
+source-build commands capture retained program documents once and apply them
+after asynchronous workspace reads; later typing belongs to a later request.
+AEM's existing save/apply route likewise records its authored source at the
+actual asset installation. These source/application records remain exclusively
+in IDE tooling, outside cartridge ABI, machine state and rewind snapshots.
+The workflow contract and production references are in
+[`studio_development_workflows.md`](studio_development_workflows.md).
+
 The workbench observes the physical supervisor-fault sequence while the BIOS
 monitor remains visible and retains the corresponding tooling fault snapshot.
 It does not replace the monitor by activating the editor. On the next explicit

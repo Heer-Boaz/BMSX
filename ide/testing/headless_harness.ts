@@ -1,3 +1,4 @@
+import { captureLuaTextModelSources } from '../workbench/services/working_copy/lua_sources';
 import { buildBlua32Revision, hotResume } from '../runtime/hot_resume';
 import { blua32MediaRequiresRebuild } from '../runtime/lua_pipeline';
 import { performHotResume } from '../commands/actions';
@@ -180,6 +181,7 @@ export function createHeadlessIdeHarness(
 			runtime,
 			audioOutput,
 			storage,
+			captureLuaTextModelSources(ide.sources),
 		),
 		executeCommand: command => ide.editor.commands.execute(command),
 		openLuaSource: (path: string) => {

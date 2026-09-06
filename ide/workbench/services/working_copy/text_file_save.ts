@@ -6,7 +6,7 @@ import * as constants from '../../../common/constants';
 import { showEditorMessage, showEditorWarningBanner } from '../../../common/feedback_state';
 import type { EditorTextModel } from '../../../editor/model/text_model';
 import { extractErrorMessage } from '../../../language/lua/interpreter/value';
-import { applyAemSourceToRuntime } from '../../../runtime/aem';
+import { buildAemSourceRevision, installAemSourceRevision, recordAemSourceApplyFailure, type BuiltAemSourceRevision } from '../../../runtime/aem';
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import {
 	runtimeSourceProjectRootPath,
@@ -20,6 +20,7 @@ import { resolveWorkspacePath } from '../../../workspace/path';
 import { saveLuaResourceSource } from '../../../workspace/workspace';
 import { WorkspaceAutosaveChange } from '../../workspace/models';
 import { requestWorkspaceAutosave } from '../../workspace/storage';
+import { getTextFileRuntimeSourceStatus } from './runtime_source_status';
 
 /** Persists one retained text working copy and updates its runtime-sync state. */
 export async function saveTextFileWorkingCopy(
@@ -36,7 +37,6 @@ export async function saveTextFileWorkingCopy(
 	const source = snapshot.source;
 	const targetPath = model.resource.path;
 	const title = model.resource.path;
-	const previousAppliedVersion = model.appliedVersion;
 	let savedLuaProgramModule = false;
 	try {
 		switch (model.mode) {
@@ -70,42 +70,34 @@ export async function saveTextFileWorkingCopy(
 		requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
 		switch (model.mode) {
 			case 'lua':
-				if (savedLuaProgramModule) {
-					model.setRuntimeSyncState('runtime_update_pending', null);
+				if (savedLuaProgramModule && getTextFileRuntimeSourceStatus(sources, model) === 'pending') {
 					showEditorMessage(`${title} saved (runtime update pending)`, constants.COLOR_STATUS_SUCCESS, 2.5);
 				} else {
-					model.markApplied(snapshot.version);
-					model.setRuntimeSyncState(
-						model.version === snapshot.version ? 'synced' : 'runtime_update_pending',
-						null,
-					);
 					showEditorMessage(`${title} saved`, constants.COLOR_STATUS_SUCCESS, 2.5);
 				}
 				return;
-			case 'aem':
-				await runtimeTasks.schedule(() => {
-					applyAemSourceToRuntime(
-						sources,
-						luaTooling,
-						editor,
-						runtime,
-						model.resource,
-						source,
-					);
-					model.markApplied(snapshot.version);
-					model.setRuntimeSyncState(
-						model.version === snapshot.version ? 'synced' : 'runtime_update_pending',
-						null,
-					);
-					showEditorMessage(`${title} saved`, constants.COLOR_STATUS_SUCCESS, 2.5);
-				}, applyError => {
+			case 'aem': {
+				const reportApplyError = (applyError: unknown): void => {
 					const applyMessage = extractErrorMessage(applyError);
-					model.markApplied(previousAppliedVersion);
-					model.setRuntimeSyncState('diverged', applyMessage);
+					recordAemSourceApplyFailure(sources, model.resource);
 					showEditorMessage(`${title} saved, but runtime apply failed`, constants.COLOR_STATUS_WARNING, 4.0);
 					showEditorWarningBanner(`Saved, but runtime apply failed: ${applyMessage}`, 5.0);
-				});
+				};
+				await runtimeTasks.schedule(() => {
+					let built: BuiltAemSourceRevision;
+					try {
+						built = buildAemSourceRevision(sources, luaTooling, runtime, model.resource, source);
+					} catch (error) {
+						// Rejected authored input has not touched the machine. Keep it
+						// runnable, just as for a rejected Lua source build.
+						reportApplyError(error);
+						return;
+					}
+					installAemSourceRevision(sources, luaTooling, editor, runtime, built);
+					showEditorMessage(`${title} saved`, constants.COLOR_STATUS_SUCCESS, 2.5);
+				}, reportApplyError);
 				return;
+			}
 		}
 	} catch (error) {
 		if (model.mode === 'lua' && showLuaErrorOverlay(editor, model.resource, error)) {

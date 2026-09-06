@@ -1,6 +1,6 @@
 import type { HostExecutionControl } from '../../hosts/common/execution_control';
 import { editorRuntimeState } from '../editor/common/runtime_state';
-import { applyAllWorkspaceSourceOverrides, applyLuaCodeTabSources } from '../workspace/workspace';
+import { applyAllWorkspaceSourceOverrides, applyLuaTextModelSources } from '../workspace/workspace';
 import { workspaceDirtyRecords } from '../workbench/workspace/state';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
@@ -16,7 +16,7 @@ import type { ActionPromptAction } from '../common/models';
 import * as constants from '../common/constants';
 import { setEditorCaseInsensitivity } from '../editor/render/text_renderer';
 import { editorViewState } from '../editor/ui/view/state';
-import { capturePendingLuaTextModelSources, markLuaTextModelsAppliedToRuntime } from '../workbench/ui/code_tab/activation';
+import { captureLuaTextModelSources } from '../workbench/services/working_copy/lua_sources';
 import { persistWorkspaceSessionLocally } from '../workbench/workspace/storage';
 import type { CartEditor } from '../cart_editor';
 import type { RuntimeSourceState } from '../runtime/sources';
@@ -103,7 +103,7 @@ export function performHotResume(
 	logOutput: LogOutput,
 ): Promise<void> {
 	console.log('Performing hot resume.');
-	const pendingSources = capturePendingLuaTextModelSources(sources);
+	const sourceSnapshots = captureLuaTextModelSources(sources);
 	persistWorkspaceSessionLocally();
 	const handleHotResumeError = (error: unknown): void => {
 		console.error(error);
@@ -114,7 +114,7 @@ export function performHotResume(
 		let built: BuiltBlua32Revision | null;
 		try {
 			await applyAllWorkspaceSourceOverrides(storage, sources, workspaceDirtyRecords);
-			applyLuaCodeTabSources(sources, pendingSources);
+			applyLuaTextModelSources(sources, sourceSnapshots);
 			built = blua32MediaRequiresRebuild(sources)
 				? buildBlua32Revision(sources, luaTooling, runtime,
 					sources.systemBlua32MediaDirty, sources.cartridgeBlua32MediaDirty)
@@ -137,7 +137,6 @@ export function performHotResume(
 			built,
 			handleHotResumeError,
 			() => {
-				markLuaTextModelsAppliedToRuntime(pendingSources);
 				showEditorMessage('Hot Resume: code applied', constants.COLOR_STATUS_TEXT, 2.0);
 			},
 		);
@@ -161,11 +160,10 @@ export function performReboot(
 	logOutput: LogOutput,
 ): boolean {
 	deactivateEditor(editor, overlayRenderer, audioOutput);
-	const pendingSources = capturePendingLuaTextModelSources(sources);
+	const sourceSnapshots = captureLuaTextModelSources(sources);
 	persistWorkspaceSessionLocally();
 	runtimeTasks.schedule(async () => {
 		console.info('[IDE] Performing cold reboot through bootrom');
-		applyLuaCodeTabSources(sources, pendingSources);
 		await rebootPreparedRuntime(
 			sources,
 			fault,
@@ -176,8 +174,8 @@ export function performReboot(
 			runtime,
 			audioOutput,
 			storage,
+			sourceSnapshots,
 		);
-		markLuaTextModelsAppliedToRuntime(pendingSources);
 		execution.requestExecution(true);
 	}, (error) => {
 		handleLuaError(

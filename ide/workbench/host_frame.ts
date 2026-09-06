@@ -1,3 +1,4 @@
+import { captureLuaTextModelSources } from './services/working_copy/lua_sources';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import {
 	advanceHostScheduledLogicalTick,
@@ -51,6 +52,7 @@ function executeWorkbenchHostMenuAction(
 				ide.scenarioRuns.cancel();
 				return true;
 			}
+			const sourceSnapshots = captureLuaTextModelSources(ide.sources);
 			ide.runtimeTasks.schedule(async () => {
 				await rebootPreparedRuntime(
 					ide.sources,
@@ -62,6 +64,7 @@ function executeWorkbenchHostMenuAction(
 					runtime,
 					audioOutput,
 					ide.storage,
+					sourceSnapshots,
 				);
 				screen.reset(presenter, runtime);
 			}, (error) => {

@@ -23,6 +23,7 @@ import {
 	buildWorkspaceDirtyEntryPath,
 	buildWorkspaceDirtyRecordPath,
 	loadWorkspaceSourceFile,
+	readWorkspaceLuaSourceText,
 } from '../../ide/workspace/files';
 import {
 	WORKSPACE_METADATA_DIR,
@@ -67,21 +68,23 @@ import {
 	workspaceState,
 } from '../../ide/workbench/workspace/state';
 import {
-	capturePendingLuaTextModelSources,
+	captureLuaTextModelSources,
 	captureCurrentLuaSource,
-	markLuaTextModelsAppliedToRuntime,
-	type LuaTextModelSourceSnapshot,
-} from '../../ide/workbench/ui/code_tab/activation';
+} from '../../ide/workbench/services/working_copy/lua_sources';
+import { getTextFileRuntimeSourceStatus } from '../../ide/workbench/services/working_copy/runtime_source_status';
+import { recordAemSourceApplyFailure } from '../../ide/runtime/aem';
 import { configureFontVariant } from '../../ide/editor/ui/view/view';
 import { DEFAULT_FONT_VARIANT } from '../../machine/ts/render/shared/bmsx_font';
 import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import {
 	applyAllWorkspaceSourceOverrides,
+	applyLuaTextModelSources,
 	saveLuaResourceSource,
 } from '../../ide/workspace/workspace';
 import {
 	resolveRuntimeLuaSource,
 	resolveRuntimeResource,
+	rebuildRuntimeSourceResources,
 } from '../../ide/runtime/sources';
 import {
 	getOrCreateSemanticProject,
@@ -1527,16 +1530,16 @@ test('runtime source capture reads the resource model independently of the activ
 	assert.equal(captureCurrentLuaSource(sources, context.model.resource).source, '-- tab buffer');
 });
 
-test('runtime source capture detects changed code when editor epochs collide', (t) => {
+test('runtime source capture retains documents whose buffer differs from installed media', (t) => {
 	const storage = new MockStorage();
 	installOfflineWorkspace(t, storage);
 	const context = installCodeContext('src/foo.lua', '-- revision 2');
-	context.model.markApplied(context.model.version);
 	const registry = sourceRegistry('-- revision 2', 'offline-cart', 'src/foo.lua');
 	const sources = createTestRuntimeSourceState(sourceRegistry('-- system source'), [registry, null], TEST_DOMAIN);
 	sources.cartridgeSlots[TEST_DOMAIN]!.installedBlua32Sources = new Map([['src.foo', '-- revision 1']]);
-	assert.deepEqual(capturePendingLuaTextModelSources(sources), [{
+	assert.deepEqual(captureLuaTextModelSources(sources), [{
 		version: context.model.version,
+		stateId: context.model.createSnapshot().stateId,
 		domain: TEST_DOMAIN,
 		path: 'src/foo.lua',
 		source: '-- revision 2',
@@ -1555,44 +1558,105 @@ test('runtime source capture excludes source-only Lua documents', (t) => {
 		TEST_DOMAIN,
 	);
 
-	assert.deepEqual(capturePendingLuaTextModelSources(sources), []);
+	assert.deepEqual(captureLuaTextModelSources(sources), []);
+	assert.equal(getTextFileRuntimeSourceStatus(sources, editorTextModelService.get({ domain: TEST_DOMAIN, path: 'tests/example_assert.lua' })!), 'source_only');
 });
 
-test('successful runtime update applies only captured Lua model versions without touching AEM state', (t) => {
+test('captured program documents remain authoritative over a later workspace refresh', (t) => {
 	const storage = new MockStorage();
 	installOfflineWorkspace(t, storage);
-	const activeLua = installCodeContext('src/foo.lua', '-- saved source');
-	activeLua.model.setRuntimeSyncState('runtime_update_pending', null);
-	const backgroundLua = installCodeContext('src/bar.lua', '-- saved source');
-	const aemResource = testResource('audio.aem', TEST_DOMAIN, 'aem');
-	const aemModel = editorTextModelService.retain(aemResource, 'aem', '');
-	aemModel.restoreDirtySource('-- audio source');
-	aemModel.setRuntimeSyncState('runtime_update_pending', null);
-	const aem: CodeTabContext = {
-		id: buildCodeTabId(aemResource),
-		title: 'audio.aem',
-		model: aemModel,
-		view: createCodeEditorViewState(),
-		runtimeErrorOverlay: null,
-		executionStopRow: null,
-	};
-	registerCodeTabContext(aem);
-	const appliedSnapshots: LuaTextModelSourceSnapshot[] = [
-		{ version: activeLua.model.version, domain: TEST_DOMAIN, path: activeLua.model.resource.path, source: '-- saved source' },
-		{ version: backgroundLua.model.version, domain: TEST_DOMAIN, path: backgroundLua.model.resource.path, source: '-- saved source' },
-	];
-	backgroundLua.model.pushEditOperations([{
-		offset: backgroundLua.model.buffer.length,
-		deleteLength: 0,
-		text: '\n-- newer edit',
-	}]);
-	markLuaTextModelsAppliedToRuntime(appliedSnapshots);
-	assert.equal(activeLua.model.appliedVersion, appliedSnapshots[0].version);
-	assert.equal(activeLua.model.runtimeSyncState, 'synced');
-	assert.equal(backgroundLua.model.appliedVersion, appliedSnapshots[1].version);
-	assert.equal(backgroundLua.model.runtimeSyncState, 'runtime_update_pending');
-	assert.equal(aemModel.appliedVersion, 1);
-	assert.equal(aemModel.runtimeSyncState, 'runtime_update_pending');
+	const context = installCodeContext('src/foo.lua', '-- installed source');
+	const registry = sourceRegistry('-- installed source', 'offline-cart', 'src/foo.lua');
+	const sources = createTestRuntimeSourceState(sourceRegistry('-- system source'), [registry, null], TEST_DOMAIN);
+	const snapshots = captureLuaTextModelSources(sources);
+	assert.equal(snapshots.length, 1, 'unchanged open models must also pin the request source');
+	applyLuaTextModelSources(sources, snapshots);
+	assert.equal(sources.cartridgeBlua32MediaDirty[TEST_DOMAIN], false, 'unchanged input must not request a rebuild');
+	registry.records[0].src = '-- subsequently saved source';
+	context.model.pushEditOperations([{ offset: context.model.buffer.length, deleteLength: 0, text: '\n-- subsequent typing' }]);
+	applyLuaTextModelSources(sources, snapshots);
+	assert.equal(readWorkspaceLuaSourceText(registry, registry.records[0]), snapshots[0].source);
+	assert.equal(sources.cartridgeBlua32MediaDirty[TEST_DOMAIN], true);
+	assert.equal(getTextFileRuntimeSourceStatus(sources, context.model), 'pending');
+});
+
+test('AEM status has no assumed source baseline and failed apply does not restore a previous acknowledgement', (t) => {
+	const storage = new MockStorage();
+	installOfflineWorkspace(t, storage);
+	const sources = createTestRuntimeSourceState(sourceRegistry('-- system source'), [sourceRegistry('-- cart source'), null], TEST_DOMAIN);
+	const model = editorTextModelService.retain(testResource('audio.aem', TEST_DOMAIN, 'aem'), 'aem', 'events: {}');
+	assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'untracked');
+	sources.aemSourceApplications.set(resourceIdentityKey(model.resource), { installedSource: 'events: {}', failed: false });
+	assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'applied');
+	model.pushEditOperations([{ offset: model.buffer.length, deleteLength: 0, text: '\n# edited' }]);
+	assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'pending');
+	model.undo();
+	assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'applied');
+	recordAemSourceApplyFailure(sources, model.resource);
+	assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'failed');
+	assert.equal(sources.aemSourceApplications.get(resourceIdentityKey(model.resource))!.installedSource, 'events: {}');
+});
+
+test('installed source status follows actual media rather than model epochs or saved state', (t) => {
+	const storage = new MockStorage();
+	installOfflineWorkspace(t, storage);
+	const context = installCodeContext('src/foo.lua', '-- edited source');
+	const registry = sourceRegistry('-- installed source', 'offline-cart', 'src/foo.lua');
+	const sources = createTestRuntimeSourceState(sourceRegistry('-- system source'), [registry, null], TEST_DOMAIN);
+	const model = context.model;
+	assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'pending');
+	model.completeSave(model.createSnapshot());
+	assert.equal(model.dirty, false);
+	assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'pending');
+
+	const captured = captureLuaTextModelSources(sources);
+	model.pushEditOperations([{ offset: model.buffer.length, deleteLength: 0, text: '\n-- newer edit' }]);
+	sources.cartridgeSlots[TEST_DOMAIN]!.installedBlua32Sources = new Map([['src.foo', captured[0].source]]);
+	assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'pending');
+	model.undo();
+	assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'applied');
+	assert.equal(model.dirty, false);
+	model.redo();
+	assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'pending');
+	model.undo();
+	model.pushEditOperations([{ offset: model.buffer.length, deleteLength: 0, text: '\n-- other branch' }]);
+	assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'pending');
+	model.revert();
+	assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'applied');
+});
+
+test('source status follows a replaced source record under the same retained resource', (t) => {
+	const storage = new MockStorage();
+	installOfflineWorkspace(t, storage);
+	const registry = sourceRegistry('-- source', 'offline-cart', 'src/foo.lua');
+	const sources = createTestRuntimeSourceState(sourceRegistry('-- system source'), [registry, null], TEST_DOMAIN);
+	const resource = resolveRuntimeResource(sources, { domain: TEST_DOMAIN, path: 'src/foo.lua' })!;
+	const model = editorTextModelService.retain(resource, 'lua', '-- source');
+	assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'applied');
+	registerLuaSourceRecord(registry, { ...registry.records[0], program_module: false });
+	rebuildRuntimeSourceResources(sources);
+	assert.equal(resolveRuntimeResource(sources, model.resource), resource);
+	assert.equal(getTextFileRuntimeSourceStatus(sources, model), 'source_only');
+});
+
+test('source application status keeps equal module paths in their physical execution domains', (t) => {
+	const storage = new MockStorage();
+	installOfflineWorkspace(t, storage);
+	const sources = createTestRuntimeSourceState(
+		sourceRegistry('-- system', 'machine/bios', 'src/foo.lua'),
+		[sourceRegistry('-- slot zero', 'cart-zero', 'src/foo.lua'), sourceRegistry('-- slot one', 'cart-one', 'src/foo.lua')],
+		TEST_DOMAIN,
+	);
+	const system = installCodeContext('src/foo.lua', '-- system', -1).model;
+	const zero = installCodeContext('src/foo.lua', '-- slot zero', 0).model;
+	const one = installCodeContext('src/foo.lua', '-- slot one', 1).model;
+	assert.equal(getTextFileRuntimeSourceStatus(sources, system), 'applied');
+	assert.equal(getTextFileRuntimeSourceStatus(sources, zero), 'applied');
+	assert.equal(getTextFileRuntimeSourceStatus(sources, one), 'applied');
+	sources.cartridgeSlots[1]!.installedBlua32Sources = new Map([['src.foo', '-- slot zero']]);
+	assert.equal(getTextFileRuntimeSourceStatus(sources, system), 'applied');
+	assert.equal(getTextFileRuntimeSourceStatus(sources, zero), 'applied');
+	assert.equal(getTextFileRuntimeSourceStatus(sources, one), 'pending');
 });
 
 test('offline canonical save remains local and replicates on reconnect', async (t) => {

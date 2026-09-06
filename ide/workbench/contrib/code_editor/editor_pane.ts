@@ -44,6 +44,7 @@ import type { RuntimeDebuggerState } from '../../../runtime/debugger_state';
 import type { KeyValueStorage } from '../../../workspace/key_value_storage';
 import { workspaceRecordState } from '../../../workspace/records';
 import { buildStatusLeftInfo } from '../../render/status_bar_info';
+import { getTextFileRuntimeSourceStatus } from '../../services/working_copy/runtime_source_status';
 
 export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 	public constructor(
@@ -213,11 +214,23 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 		const context = this.input.context;
 		let detail = '';
 		let detailColor = textColor;
-		if (context.model.runtimeSyncState === 'diverged') {
-			detail = 'SAVED, RUNTIME NOT APPLIED';
-			detailColor = constants.COLOR_STATUS_WARNING;
-		} else if (context.model.runtimeSyncState === 'runtime_update_pending') {
-			detail = 'RUNTIME UPDATE PENDING';
+		switch (getTextFileRuntimeSourceStatus(this.sources, context.model)) {
+			case 'applied':
+				detail = 'SOURCE APPLIED';
+				break;
+			case 'pending':
+				detail = 'SOURCE NOT APPLIED';
+				break;
+			case 'failed':
+				detail = 'ASSET APPLY FAILED';
+				detailColor = constants.COLOR_STATUS_WARNING;
+				break;
+			case 'untracked':
+				detail = 'SOURCE NOT CHECKED';
+				break;
+			case 'source_only':
+				detail = 'SOURCE ONLY';
+				break;
 		}
 		if (detail.length > 0) {
 			drawEditorText(

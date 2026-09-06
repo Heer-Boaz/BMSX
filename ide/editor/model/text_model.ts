@@ -7,7 +7,6 @@ import type { TextBuffer } from '../text/text_buffer';
 import { EditorUndoRecord, TextUndoOp } from '../text/undo';
 
 export type EditorDocumentMode = 'lua' | 'aem';
-export type EditorRuntimeSyncState = 'synced' | 'runtime_update_pending' | 'diverged';
 
 export type EditorTextEdit = {
 	offset: number;
@@ -53,10 +52,7 @@ export class EditorTextModel {
 	private savedStateId = 0;
 	private resourceValue: RuntimeResource;
 	private lastSavedSourceValue: string;
-	private appliedVersionValue = 1;
 	private lastContentEditAtMsValue = -1;
-	private runtimeSyncStateValue: EditorRuntimeSyncState = 'synced';
-	private runtimeSyncMessageValue: string | null = null;
 	private lastHistoryKey: string | null = null;
 	private lastHistoryTimestamp = 0;
 	private pendingRecord: EditorUndoRecord | null = null;
@@ -100,20 +96,8 @@ export class EditorTextModel {
 		return this.lastSavedSourceValue;
 	}
 
-	public get appliedVersion(): number {
-		return this.appliedVersionValue;
-	}
-
 	public get lastContentEditAtMs(): number {
 		return this.lastContentEditAtMsValue;
-	}
-
-	public get runtimeSyncState(): EditorRuntimeSyncState {
-		return this.runtimeSyncStateValue;
-	}
-
-	public get runtimeSyncMessage(): string | null {
-		return this.runtimeSyncMessageValue;
 	}
 
 	public refreshResource(resource: RuntimeResource): void {
@@ -350,15 +334,6 @@ export class EditorTextModel {
 		for (const listener of this.saveListeners) {
 			listener();
 		}
-	}
-
-	public markApplied(version: number): void {
-		this.appliedVersionValue = version;
-	}
-
-	public setRuntimeSyncState(state: EditorRuntimeSyncState, message: string | null): void {
-		this.runtimeSyncStateValue = state;
-		this.runtimeSyncMessageValue = message;
 	}
 
 	public recordContentEdit(timestamp: number): void {

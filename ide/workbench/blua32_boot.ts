@@ -20,11 +20,12 @@ import {
 } from '../runtime/debugger_state';
 import type { CartEditor } from '../cart_editor';
 import type { OverlayRenderer } from '../runtime/overlay_renderer';
-import { applyAllWorkspaceSourceOverrides } from '../workspace/workspace';
+import { applyAllWorkspaceSourceOverrides, applyLuaTextModelSources } from '../workspace/workspace';
 import { workspaceDirtyRecords } from './workspace/state';
 import { deactivateEditor } from './overlay_modes';
 import { handleLuaError } from './runtime_errors';
 import { clearExecutionStopHighlights } from '../runtime_error/navigation';
+import type { LuaTextModelSourceSnapshot } from './services/working_copy/lua_sources';
 
 export function startPreparedRuntime(
 	state: RuntimeIdeState,
@@ -51,6 +52,7 @@ async function prepareRebootToBootRom(
 	overlayRenderer: OverlayRenderer,
 	audioOutput: HostAudioOutput,
 	storage: KeyValueStorage,
+	sourceSnapshots: ReadonlyArray<LuaTextModelSourceSnapshot>,
 ): Promise<boolean> {
 	clearFaultSnapshot(fault);
 	clearExecutionStopHighlights();
@@ -61,6 +63,7 @@ async function prepareRebootToBootRom(
 		sources,
 		workspaceDirtyRecords,
 	);
+	applyLuaTextModelSources(sources, sourceSnapshots);
 	enterSystemSources(sources);
 	return blua32MediaRequiresRebuild(sources);
 }
@@ -75,6 +78,7 @@ export async function rebootPreparedRuntime(
 	runtime: Runtime,
 	audioOutput: HostAudioOutput,
 	storage: KeyValueStorage,
+	sourceSnapshots: ReadonlyArray<LuaTextModelSourceSnapshot>,
 ): Promise<void> {
 	discardRuntimeDebuggerPlans(debuggerState);
 	const rebuildBlua32Media = await prepareRebootToBootRom(
@@ -84,6 +88,7 @@ export async function rebootPreparedRuntime(
 		overlayRenderer,
 		audioOutput,
 		storage,
+		sourceSnapshots,
 	);
 	const interpreter = prepareBlua32MediaBoot(
 		sources,

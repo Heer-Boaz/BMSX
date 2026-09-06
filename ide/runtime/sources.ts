@@ -65,6 +65,11 @@ export type RuntimeCartridgeSourceState = {
 	dataResources: RuntimeResource[];
 };
 
+export type AemSourceApplication = {
+	installedSource: string | undefined;
+	failed: boolean;
+};
+
 export type RuntimeSourceState = {
 	systemRom: RomToolingLayer<'system'>;
 	cartridgeSlots: [RuntimeCartridgeSourceState | null, RuntimeCartridgeSourceState | null];
@@ -84,6 +89,7 @@ export type RuntimeSourceState = {
 	systemBlua32MediaDirty: boolean;
 	cartridgeBlua32MediaDirty: [boolean, boolean];
 	systemInstalledBlua32Sources: ReadonlyMap<string, string>;
+	aemSourceApplications: Map<string, AemSourceApplication>;
 	currentBlua32Media: Blua32SourceMedia;
 };
 
@@ -205,6 +211,7 @@ export function createRuntimeSourceState(
 		systemBlua32MediaDirty: false,
 		cartridgeBlua32MediaDirty: [false, false],
 		systemInstalledBlua32Sources: indexInstalledBlua32Sources(systemLuaSources),
+		aemSourceApplications: new Map(),
 		currentBlua32Media: {
 			system: systemImage
 				? createBlua32SystemSourceImage(
