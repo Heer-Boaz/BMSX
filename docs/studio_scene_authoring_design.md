@@ -346,6 +346,61 @@ Productiereferenties:
 Deze proef sluit alleen de geteste bronbewerking en definitie-/instantiegrens;
 zij is geen algemene live-reconcilevoorziening of UI-acceptatiegate.
 
+### `IDE-SCENE-SOURCE-ADAPTER-01`: focus- en commandowner eerst
+
+**Open architectuurvoorwaarde, geen geïmplementeerde UI.** De eerste aanzet
+leidde Undo/Redo af uit `EditorPane.input instanceof WorkingCopyEditorInput`
+en gaf iedere pane `hasPendingEdits = false` en een succesvolle
+`commitPendingEdits()`-stub. Die aanzet en de nog niet aangesloten
+integercontrol zijn teruggenomen. Een ander capabilityflag of een wrapper
+rond dezelfde inferentie zou deze grens niet herstellen.
+
+De live owners op `0b67396b9` laten het ontbrekende contract zien:
+
+- `EditorPane` bezit input-/viewlifecycle, niet de keuze tussen een gefocust
+  tekstveld en de onderliggende documenthistorie.
+- Undo/Redo zit nu in de code-editorbindings; `undo_controller` herstelt ook
+  cursor en selectie. Rechtstreeks `workingCopy.undo()` vanuit de basisklasse
+  zou die concrete viewverantwoordelijkheid overslaan.
+- Globale keyboardcommands worden vóór pane-input afgehandeld; pointerchrome
+  wordt vóór pane-pointerinput afgehandeld. Een propertyveld krijgt daardoor
+  niet vanzelf een submit- of focusovergang vóór Save, Hot Resume of tabwissel.
+- `setActiveTab` verandert de actieve tab voordat de vorige pane wordt
+  losgekoppeld. Achteraf een veto of successtub op `clearInput` toevoegen is
+  dus geen samenhangende focus-/inputovergang.
+
+De professionele referentie scheidt deze verantwoordelijkheden:
+
+- [VS Code `EditorPane`](https://github.com/microsoft/vscode/blob/48ac1875628144c02d79ff412e0323af9991dfc7/src/vs/workbench/browser/parts/editor/editorPane.ts#L106-L154)
+  bezit de input-/viewlifecycle.
+- [VS Code `MultiCommand`](https://github.com/microsoft/vscode/blob/48ac1875628144c02d79ff412e0323af9991dfc7/src/vs/editor/browser/editorExtensions.ts#L203-L250)
+  en [focusafhankelijke tekstcommands](https://github.com/microsoft/vscode/blob/48ac1875628144c02d79ff412e0323af9991dfc7/src/vs/editor/browser/coreCommands.ts#L305-L350)
+  laten concrete bijdragen de commandafhandeling bezitten. Editor-tekstfocus
+  en focus in een invoerveld zijn verschillende targets. Een target dat geen
+  wijziging uitvoert blijft de command afhandelen; lege historie is geen reden
+  om alsnog het onderliggende document te wijzigen.
+- [VS Code custom-editorbijdrage](https://github.com/microsoft/vscode/blob/48ac1875628144c02d79ff412e0323af9991dfc7/src/vs/workbench/contrib/customEditor/browser/customEditors.ts#L132-L170)
+  registreert haar eigen Undo/Redo-route. De inputclassificatie staat bij die
+  bijdrage, niet als editbeleid op iedere pane.
+- [Godot `EditorSpinSlider`](https://github.com/godotengine/godot/blob/34d06658a85845111a50db9e485ec4a0701d4298/editor/gui/editor_spin_slider.cpp#L630-L738)
+  behandelt submit en focusverlies bij de concrete invoercontrol. BMSX kan
+  daarbij niet stilzwijgend rekenen op DOM-focus: de IDE is canvas-rendered.
+
+Vóór de visuele transformedit moet één samenhangende route bestaan voor
+focus, commandtarget en acceptatie van invoer. Documenthistorie blijft bij het
+gedeelde `EditorTextModel`; de concrete editor verzorgt zijn viewherstel.
+Drafttekst is controlstate, geen tweede authored document. De exacte
+submit-/focuslifecycle moet nog worden uitgewerkt: geen stille draftdiscard,
+geen save/apply van ongemerkt oudere bytes en geen per-command
+`commitPendingEdits`-sprinkling. Dit rechtvaardigt geen algemene herschrijving
+van de workbench of nieuwe runtime-/cartliblagen.
+
+De acceptatieproef moet fysieke keyboard-, menu- en pointerroutes gebruiken:
+document versus gefocust veld, lege historie, read-only input, wisselen van
+resource en een lopende invoer gevolgd door Save/Hot Resume. Pas daarna telt
+één minimale scene-edit via het bestaande sourcemodel als bedienbare feature.
+Een losse registrytest of een directe modelaanroep sluit deze gate niet.
+
 ## No-go's
 
 - scenes afwijzen omdat de eerste Lua-runtime fout was;
