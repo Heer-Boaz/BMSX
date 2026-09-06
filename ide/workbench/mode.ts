@@ -134,15 +134,6 @@ export function registerRuntimeShortcuts(
 			audioOutput,
 		),
 	));
-	// The workbench keybinding service owns editor focus; these are the same
-	// commands while the game/timeline owns focus, not browser-only pause state.
-	for (const [key, command] of [['F6', 'pause'], ['F5', 'debugContinue']] as const) {
-		disposers.push(registry.registerKeyboardShortcut(1, key, () => {
-			if (state.editor.isActive || !state.editor.commands.isEnabled(command)) return;
-			input.getPlayerInput(1).inputHandlers.keyboard!.consumeKey(key);
-			state.editor.commands.execute(command);
-		}));
-	}
 	disposers.push(registry.registerKeyboardShortcut(1, 'KeyT', () => {
 		input.getPlayerInput(1).inputHandlers.keyboard?.consumeKey('KeyT');
 		const next = state.editor.fontVariant === 'tiny' ? 'msx' : 'tiny';

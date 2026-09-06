@@ -996,16 +996,18 @@ retention policy fits a physical Mini's memory budget.
 
 The combined contract and production references are in
 [Studio development workflows](studio_development_workflows.md). Host pause is
-independent of rewind and of editor focus. The Run menu and F6/F5 use the same
-Pause/Continue command owner; no DOM pause overlay remains. Both host menus
+independent of rewind and of editor focus. The Run menu has one checked Pause
+toggle, without a gameplay shortcut. F5/F6 remain guest keyboard input outside
+the IDE; debugger Continue is enabled only at a debugger stop. No DOM pause
+overlay or frame-stepping control is introduced. Both host menus
 support Retain when yielding to another view. The generic post-restore
 notification ends old inspector references without serializing debugger state.
 
 Source compilation is non-mutating preparation within the shared GPU-exclusive
 task queue. A compile rejection leaves installed media, position, history and
-Continue intact. Actual Hot Resume installation or accepted supervisor-return
-execution invalidates the previous history. New collection waits for annotated
-init to complete, including debugger stops and fault repair. This does not
+the ability to resume intact. Actual Hot Resume installation or accepted
+supervisor-return execution invalidates the previous history. New collection
+waits for annotated init to complete, including debugger stops and fault repair. This does not
 retain a timeline across code revisions or introduce replay of tool commands.
 
 Validation on 2026-09-06:
@@ -1015,9 +1017,11 @@ Validation on 2026-09-06:
   workspace/browser session. Repeated rewind/pause/FSM edits on the retained
   actor, current hover inspection after restore, compile rejection,
   breakpoint/step inside init, fault repair and pointer Run-menu actions pass
-  on all three. Only the additional real pending `mapAsync` callback test is
-  WebGPU-specific. All three tiny-font screenshots were inspected; no obsolete
-  fault adornments after repair.
+  on all three. The corrected menu-only pause toggle and F5/F6 down/up in real
+  ICU keyboard registers are part of the same workflow, including holding a
+  pointer press without repeated toggling. Only the additional real pending
+  `mapAsync` callback test is WebGPU-specific. All three tiny-font screenshots
+  were inspected; no obsolete fault adornments after repair.
 - Player WebGPU restore still compares all 2,097,152 VRAM bytes and the actual
   deferred-readback callback lifetime. TS/native real-ROM replay/history,
   host-controller and libretro ABI tests pass. Native Retain preserves both

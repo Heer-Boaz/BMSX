@@ -30,13 +30,16 @@ services and the one `RuntimeTaskQueue`, not `HostFrameSession`, the quick-menu
 object or `RenderPresentationState`, into IDE commands. Dependency audits keep
 execution services distinct from presentation and product/frame composition.
 
-Pause (F6), Continue (F5) and the existing source steps are registered commands
-with ordinary enabled/checked contexts in the Run menu and keybinding service.
-The inactive-editor input route dispatches the same Pause/Continue commands,
-not a browser DOM-only debugger-pause implementation. Continue releases only
-requested pause; source steps retain it. Neither command overrides an independent
-fullscreen/initialization pause. No emulated pause register or cartlib hook is
-involved, and a source step is not advertised as one worldtick.
+The Run menu owns a single checked Pause toggle with no gameplay shortcut.
+Turning it off releases requested pause and returns to the game, except at a
+debugger stop where the inspector remains visible. Continue (F5) and source
+steps are debugger commands, dispatched only by the active IDE keybinding
+service; Continue requires an actual debugger stop. F5/F6 outside the IDE stay
+guest keyboard input, including while the host is paused. The existing pointer
+press edge handles the toggle once per click, without another input latch.
+Source steps retain requested pause. No command overrides an independent
+fullscreen/initialization pause, adds a guest pause register, or presents a
+source step as one worldtick.
 
 `CartEditor.onDidChangeActive` reports real view transitions. The workbench
 composition dismisses the host modal with Retain on editor activation and
@@ -48,7 +51,7 @@ do not reach back into that composition to implement their own transitions.
 
 Hot Resume captures text-model versions, applies workspace sources and builds
 the candidate revision inside the shared exclusive operation queue. Build
-diagnostics do not fabricate a guest stack or disable Continue of the installed
+diagnostics do not fabricate a guest stack or prevent resuming the installed
 program. The built revision retains which source domains were explicitly edited;
 mechanically relinked media do not imply another cart's init should run.
 Actual installation marks only the captured versions applied. It clears old

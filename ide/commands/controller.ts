@@ -59,8 +59,16 @@ export class IdeCommandController {
 	public execute(command: EditorCommandId): void {
 		switch (command) {
 			case 'pause':
-				if (this.rewind.active) this.rewind.pauseSeek();
-				this.execution.setPauseReason(HostPauseReason.Requested, true);
+				if (this.execution.userPaused) {
+					if (this.rewind.active) this.rewind.resumeHere();
+					this.execution.requestExecution(true);
+					if (!this.debuggerState.stopped) {
+						deactivateEditor(this.editor, this.overlayRenderer, this.audioOutput);
+					}
+				} else {
+					if (this.rewind.active) this.rewind.pauseSeek();
+					this.execution.setPauseReason(HostPauseReason.Requested, true);
+				}
 				return;
 			case 'scenarioLab.run':
 			case 'scenarioLab.rerun':
@@ -73,13 +81,11 @@ export class IdeCommandController {
 			case 'debugStepOver':
 				if (this.rewind.active) this.rewind.resumeHere();
 				this.execution.requestExecution(command === 'debugContinue');
-				if (this.debuggerState.stopped) {
-					resumeRuntimeDebugger(this.debuggerState,
-						command === 'debugStepInto' ? RuntimeDebuggerResumeMode.StepInto
-							: command === 'debugStepOut' ? RuntimeDebuggerResumeMode.StepOut
-								: command === 'debugStepOver' ? RuntimeDebuggerResumeMode.StepOver
-									: RuntimeDebuggerResumeMode.Continue);
-				}
+				resumeRuntimeDebugger(this.debuggerState,
+					command === 'debugStepInto' ? RuntimeDebuggerResumeMode.StepInto
+						: command === 'debugStepOut' ? RuntimeDebuggerResumeMode.StepOut
+							: command === 'debugStepOver' ? RuntimeDebuggerResumeMode.StepOver
+								: RuntimeDebuggerResumeMode.Continue);
 				clearExecutionStopHighlights();
 				deactivateEditor(this.editor, this.overlayRenderer, this.audioOutput);
 				return;
@@ -166,14 +172,13 @@ export class IdeCommandController {
 	public isEnabled(command: EditorCommandId): boolean {
 		switch (command) {
 			case 'pause':
-				return !this.execution.userPaused || this.rewind.seeking;
+				return !this.execution.userPaused || this.runtimeTasks.ready;
 			case 'scenarioLab.run':
 			case 'scenarioLab.rerun':
 			case 'scenarioLab.cancel':
 				return this.editor.scenarioLab.isCommandEnabled(command);
 			case 'debugContinue':
-				return this.runtimeTasks.ready && (this.debuggerState.stopped
-					|| this.execution.userPaused || this.rewind.active);
+				return this.runtimeTasks.ready && this.debuggerState.stopped;
 			case 'debugStepInto':
 			case 'debugStepOver':
 				return this.runtimeTasks.ready && !this.rewind.seeking && this.debuggerState.stopped;

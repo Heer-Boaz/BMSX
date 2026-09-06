@@ -3,11 +3,10 @@ import { check, type StudioFixture } from './studio_fixture';
 
 /** Additional WebGPU-only callback lifetime test, not a requirement of the developer loop. */
 export async function testStudioWebGpuReadbacks(test: StudioFixture, backend: WebGPUBackend) {
-	const { runtime, ide, execution, rewind, tasks, history, harness, frame, until, press, cycles } = test;
+	const { runtime, ide, execution, rewind, tasks, history, harness, frame, until, press, runMenuCommand, cycles } = test;
 	const source = harness.getActiveEditorDocument().model.buffer.getText();
 	check(source.includes("pattern = 'up[jp]'"), 'readback test starts from the repaired FSM revision');
-	await press('Escape');
-	await press('F5');
+	await runMenuCommand('pause');
 	// Hold the actual WebGPU snapshot mapping, not a fake readback or a GP0
 	// packet spliced into the real cart's in-progress DMA command stream.
 	const readbackBuffer = backend.gxGpuState.vramReadbackBuffer;
@@ -22,7 +21,9 @@ export async function testStudioWebGpuReadbacks(test: StudioFixture, backend: We
 		return undefined;
 	};
 	await until(() => mapping, 'next continuous checkpoint maps actual VRAM');
-	await press('F6');
+	await press('ControlRight', 'ShiftRight');
+	await runMenuCommand('pause');
+	await press('ControlRight', 'ShiftRight');
 	await press('ControlRight', 'AltRight');
 	for (let index = 0; index < 3; index += 1) await press('ArrowUp');
 	await press('KeyX');
@@ -46,8 +47,8 @@ export async function testStudioWebGpuReadbacks(test: StudioFixture, backend: We
 		&& history.checkpointCount !== 0, 'pending apply completes at retained position');
 	check(history.earliestCycles >= mappingAt, 'superseded seeks cannot win after code apply');
 
-	await press('F6');
 	await press('ControlRight', 'ShiftRight');
+	await runMenuCommand('pause');
 	check(execution.userPaused && ide.editor.isActive, 'readback completion leaves pause and IDE commands usable');
 	return { mappingAt };
 }

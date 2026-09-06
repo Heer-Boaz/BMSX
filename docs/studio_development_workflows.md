@@ -66,7 +66,7 @@ Hot Resume-semantiek implementeert.
 | Onderdeel | Live owner / waarneming | Vervolg vóór een bredere claim |
 | --- | --- | --- |
 | Host-pauze en rewind | `HostExecutionControl` in `hosts/common/execution_control.ts` bezit pauzeredenen en expliciete uitvoeringsopdrachten; `HostRewind` bezit review/seek. `HostFrameSession` bezit alleen de frame-timing en verwijzingen naar die services. | W01-W03 gebruiken dezelfde geïnjecteerde owners; geen DOM-only pause-controller of feature die de hele host-framecompositie importeert. |
-| Rewind verlaten | `HostOverlayMenu.transitionTo`: Accept → `resumeHere`, Cancel → `returnToPresent`, Retain → `pauseSeek`, Discard → geen nieuwe history-opdracht. | `CartEditor.onDidChangeActive` wordt in de productcompositie gekoppeld aan Retain. Een view kiezen branch't niet; Continue en een aanvaarde code-installatie zijn expliciete andere opdrachten. |
+| Rewind verlaten | `HostOverlayMenu.transitionTo`: Accept → `resumeHere`, Cancel → `returnToPresent`, Retain → `pauseSeek`, Discard → geen nieuwe history-opdracht. | `CartEditor.onDidChangeActive` wordt in de productcompositie gekoppeld aan Retain. Een view kiezen branch't niet; expliciet hervatten en een aanvaarde code-installatie zijn andere opdrachten. |
 | Inspectie na restore | `Runtime.onStateRestored` meldt voltooide restore aan de debugger-/fault-/sourceowners. | Oude frames, hover/cache en foutcontext verdwijnen; breakpointdefinities blijven en hun PCs worden opnieuw gebonden. Herstelde tabellen worden opnieuw gelezen via de bestaande guest-representatie. |
 | Hot Resume/FSM | `ide/runtime/hot_resume.ts` plant completion calls; `cartlib/fsm/library.lua` registreert en rebindt levende machines. | De browserproef verandert een echte FSM-regel en behoudt de actor. Geen aparte FSM-Hot-Resume-route of stille state-reset. Zie hieronder voor de afzonderlijke plicht onterechte weigeringen op te lossen. |
 | Historie na apply | De queue serialiseert; de werkelijk muterende media-/init-owner stopt historie. Bronbuild en relocatie gaan vooraf aan installatie. | Geen historie over oude en nieuwe code mengen. Supervisor-return en `<init>` zijn toolgestuurde uitvoering, niet gewone opgenomen ICU-input. Pas na afloop begint een nieuwe geschiedenis op de behouden positie. |
@@ -88,19 +88,29 @@ De proef gebruikt `prepareWorkbenchRuntime` en `runWorkbenchHostFrame`.
 
 | Opdracht / overgang | Owner en effect |
 | --- | --- |
-| Pause | Het command stopt een lopende seek op de bereikte positie en zet `HostExecutionControl.Requested`; de audio-owner dempt de uitvoer. Geen guest-instructie of history-branch. |
+| Pause-toggle aan | Het command stopt een lopende seek op de bereikte positie en zet `HostExecutionControl.Requested`; de audio-owner dempt de uitvoer. Geen guest-instructie of history-branch. |
+| Dezelfde Pause-toggle uit | Expliciet de reviewpositie overnemen en gebruikerspauze opheffen. Terug naar de game, behalve bij een echte debuggerstop: die blijft zichtbaar. Andere pauzeredenen blijven gelden. |
 | Fullscreen / vibratie-initialisatie | Eigen pauzeredenen. Afronden kan de gebruikersreden niet wissen. |
 | IDE openen | De host-menunavigatie verlaat de modal met Retain, niet Accept/Cancel. Editorfocus verandert geen tijdpositie en branch't de historie niet. |
-| Continue | Expliciet de reviewpositie overnemen, gebruikerspauze opheffen en zo nodig de debugger laten doorgaan. Andere pauzeredenen blijven gelden. |
+| Debugger-Continue | Alleen beschikbaar bij een echte debuggerstop in de IDE; hervat die stop en heft gebruikerspauze op. Geen tweede knop voor gewone hostpauze. |
 | Debuggerstap | Bestaande source-stepper mag uitvoeren onder gebruikerspauze; fullscreen/initialisatie blijven blokkeren. Na de stap blijft de gebruikerspauze staan. Geen worldtick claim. |
 | Hot Resume | Bestaande bronbuild/relocatie, vervolgens installatie/`<init>`. De muterende owner verbreekt historie, niet de wachtrij vóór de build. Alleen een geaccepteerde opdracht heft gebruikerspauze op. |
 | Restore | De Runtime publiceert een post-restore-notificatie buiten de machine-/CPU-hot-path. Tooling vervangt de stop/inspectiecontext; machine snapshots bevatten geen debugger- of UI-state. |
 
-Pause (F6) en Continue (F5) zijn gewone geregistreerde opdrachten in het
-Run-menu, met dezelfde enabled/checked-context en keyboard-dispatch buiten de
-editor. Source Step blijft de bestaande debuggeropdracht. De eerste werkelijke
-uitvoering na Continue/Step verbruikt de wandtijd-reset; een opdracht na de
-frame-invoer mag niet alsnog de oude pauzeduur aan de scheduler geven.
+Hostpauze is één aangevinkte toggle in het Run-menu, zonder gameplayshortcut.
+F5/F6 worden buiten de IDE niet onderschept, ook niet als de host al gepauzeerd
+is. De bestaande pointer-pressedge voert de toggle eenmaal uit; een knop
+vasthouden toggelt niet ieder frame opnieuw. Debugger-Continue (F5) en Source
+Step blijven bestaande IDE-opdrachten voor een echte debuggerstop. De eerste
+werkelijke uitvoering na hervatten/stappen verbruikt de wandtijd-reset; een
+opdracht na de frame-invoer mag niet alsnog de oude pauzeduur aan de scheduler
+geven. Dit is geen frame-/worldtick-steppingfunctie.
+
+De eerdere globale F5/F6-registratie is verwijderd. Referentie voor deze
+grens is [MAME's ingame UI-handler](https://github.com/mamedev/mame/blob/master/src/frontend/mame/ui/ui.cpp):
+keyboardmachines kunnen de UI-bediening uitschakelen; de pause-toggle gebruikt
+een pressedge en draait niet buiten die UI-context. BMSX gebruikt de bestaande
+IDE-focus en menu-input, niet een extra MAME-modus of een nieuwe globale toets.
 
 Broncode gelezen: MAME `running_machine::pause/resume/toggle_pause` en
 postload-notifiers; VS Code `debugCommands.ts` (pause/continue/source-steps
@@ -134,7 +144,7 @@ guest-uitvoering krijgt geen extra allocaties, epochcontrole of inspectiechecks.
 De queue bezit GPU-callbackvolgorde, niet de beslissing of bron kan worden
 toegepast. `actions.ts` bereidt de vastgelegde textmodelversies voor en bouwt
 binnen die exclusieve taak. Compileerdiagnostiek blijft bron-/taakdiagnostiek;
-zij verzint geen guest-stack en vergrendelt Continue niet. De gebouwde revisie
+zij verzint geen guest-stack en blokkeert hervatten niet. De gebouwde revisie
 behoudt de expliciet gewijzigde execution domains, los van mechanisch
 meegerelinkte media. Pas de installatiestap markeert die bronversies toegepast.
 
@@ -201,14 +211,17 @@ De drie backendconfiguraties slagen met dezelfde machineposities bij de
 gecontroleerde stop-/applyovergangen. De tiny-fontscreenshots van alle drie
 zijn geïnspecteerd. De proef bewijst:
 
-- Pauze zonder rewind; onafhankelijke fullscreen-/initialisatie-redenen;
-  Continue zonder wandtijd-inhaalslag en source-step onder gebruikerspauze.
+- Pauze zonder rewind via één menu-toggle; onafhankelijke fullscreen-/
+  initialisatie-redenen; hervatten zonder wandtijd-inhaalslag en source-step
+  onder gebruikerspauze. F5/F6 down/up bereiken tijdens gameplay de echte ICU;
+  dezelfde toetsen heffen een hostpauze niet op. Vasthouden van de menuknop
+  voert geen herhaalde toggles uit.
 - Tijdlijn → vasthouden → IDE → echte FSM-regel wijzigen → Hot Resume;
   dezelfde actor, veranderde inputrespons, meerdere opeenvolgende revisies.
 - Breakpoint → inspectie → rewind → opnieuw inspecteren; bronbreakpoints
   blijven terwijl guest-table-identiteit en de hover/stack-context vervangen worden.
 - Compileerfout vóór installatie: dezelfde cycles, media en historie; de
-  editor blijft op de gewijzigde bron en Continue blijft bruikbaar.
+  editor blijft op de gewijzigde bron en hervatten blijft bruikbaar.
 - Breakpoint en source-step binnen `<init>`; geen replayregistratie van de
   toolgestuurde init; nieuwe historie pas na het einde van die uitvoering.
 - Herhaalde seek-/editopdrachten tijdens een werkelijk uitgestelde WebGPU

@@ -980,11 +980,15 @@ editor feature nor the keyboard page implements rewind cleanup. Boundary
 audits distinguish these execution services from host presentation and product
 composition instead of admitting all host imports into IDE features.
 
-The Run menu and existing command/keybinding owners expose Pause (F6) and
-Continue (F5); source steps remain debugger commands. Pause may hold an ordinary
-game without entering rewind. IDE focus does not release requested pause or
-accept/cancel a timeline position. Continue explicitly takes over a reviewed
-position and releases only requested pause. Source steps may execute under
+The Run menu exposes one checked Pause toggle, without a gameplay keyboard
+binding. Toggling it off explicitly takes over a reviewed position and releases
+only requested pause. It returns focus to the game unless an actual debugger
+stop still needs inspection. Pause may hold an ordinary game without entering
+rewind. IDE focus alone does not release requested pause or accept/cancel a
+timeline position. Debugger Continue (F5) and source steps remain scoped to the
+active IDE and a debugger stop; they are not global gameplay shortcuts or a
+second host-pause control. F5/F6 remain ordinary guest keyboard input outside
+the IDE. Source steps may execute under
 requested pause but not under fullscreen/initialization reasons. The first
 actual execution consumes the elapsed-time reset, including commands arriving
 after host input polling, so paused wall time cannot become catch-up work.

@@ -23,6 +23,9 @@ import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../../machine/ts/spec/bmsx/
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { buildModuleExportSlotName } from '../../../toolchain/ts/lua/module_path';
 import type { GPUBackend } from '../../../machine/ts/render/backend/backend';
+import type { EditorCommandId } from '../../../ide/common/commands';
+import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
+import { TOP_BAR_MENUS, type TopBarMenuItem } from '../../../ide/workbench/ui/top_bar/menu';
 
 export function check(condition: boolean, message: string): void {
 	if (!condition) throw new Error(message);
@@ -82,16 +85,25 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 		for (const key of keys) setKey(key, false);
 		await frame();
 	};
-	const click = async (bounds: RectBounds) => {
+	const click = async (bounds: RectBounds, heldFrames = 1) => {
 		const displayRect = display.measureDisplay();
+		const viewport = ide.overlayRenderer.viewportSize;
 		input.inputAxis2('pointer:0', 'pointer_position',
-			displayRect.left + (bounds.left + bounds.right) * displayRect.width / (presenter.viewportSize.x * 2),
-			displayRect.top + (bounds.top + bounds.bottom) * displayRect.height / (presenter.viewportSize.y * 2), clock.now());
+			displayRect.left + (bounds.left + bounds.right) * displayRect.width / (viewport.width * 2),
+			displayRect.top + (bounds.top + bounds.bottom) * displayRect.height / (viewport.height * 2), clock.now());
 		await frame();
 		input.inputButton('pointer:0', 'pointer_primary', true, 1, clock.now(), ++pressId);
-		await frame();
+		for (let index = 0; index < heldFrames; index += 1) await frame();
 		input.inputButton('pointer:0', 'pointer_primary', false, 0, clock.now(), ++pressId);
 		await frame();
+	};
+	const runMenuCommand = async (command: EditorCommandId) => {
+		check(ide.editor.isActive, 'Run-menu commands require editor focus');
+		if (editorChromeState.openMenuId !== 'run') await click(editorChromeState.menuEntryBounds.run);
+		check(editorChromeState.openMenuId === 'run', 'Run menu opens through its visible pointer target');
+		const item = TOP_BAR_MENUS.run.items.find((item): item is TopBarMenuItem => item.type === 'command' && item.command === command);
+		check(!item.disabled, `Run-menu command must be enabled: ${command}`);
+		await click(item.bounds);
 	};
 	const settle = () => until(() => tasks.ready && !rewind.seeking, 'seek/queue must settle');
 	const guest = ide.luaTooling.suspendedGuest;
@@ -107,8 +119,8 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 		throw new Error('real title actor missing');
 	};
 	audio.bootstrap();
-	return { runtime, ide, execution, rewind, tasks, history, harness, guest, clock, observations,
-		frame, until, setKey, press, click, settle, cycles, title };
+	return { runtime, ide, execution, rewind, tasks, history, harness, guest, clock, input, observations,
+		frame, until, setKey, press, click, runMenuCommand, settle, cycles, title };
 }
 
 export type StudioFixture = Awaited<ReturnType<typeof createStudioFixture>>;
