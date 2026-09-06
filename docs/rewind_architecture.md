@@ -61,6 +61,99 @@ Studio or cartlib service. Physical SNES Mini performance remains unmeasured.
    shortcut is reserved. Collection/seek state and retained range must be
    visible; a seek must not freeze host event processing.
 
+## Paced review playback: REWIND-PLAYBACK-01
+
+The original transport implements seeking and live takeover, not playback of
+retained history. This slice adds that missing operation. LB/RB still seek one
+emulated second; A toggles recorded playback/pause; START takes live control;
+B cancels back to the retained present. The pointer can select the timeline and
+activate those same transport actions. Controls exist only in the open host
+transport; no gameplay keyboard shortcut or cartlib worldtick stepping is added.
+
+The production reference is [openMSX ReverseManager](https://github.com/openMSX/openMSX/blob/master/src/ReverseManager.cc):
+`goTo` reconstructs a position, `replayNextEvent` supplies the original external
+events at machine time, and `stopReplay` truncates future events only on takeover.
+[Its reverse bar](https://github.com/openMSX/openMSX/blob/master/src/imgui/ImGuiReverseBar.cc)
+projects current/begin/end and distinguishes view-only replay from recording.
+BMSX adopts that separation, not MSX devices, board replacement, implicit
+takeover on input, or a claim about closed-source Clover/Castlevania internals.
+
+Representation table established before mirrored edits:
+
+| Representation | TypeScript | C++ |
+| --- | --- | --- |
+| Replay input and retained future | Existing `HistoryMode.Replaying`, `InputJournal`, checkpoint slots | Same |
+| Resume replay without restoring | `RuntimeHistory.beginPlayback`, existing machine-cycle/tick coordinates | Same names, i64 coordinates |
+| Wall-paced replay | `RuntimeHistory.advancePlayback` uses the existing `FrameSchedulerState.runScheduledToNextLogicalTick` | Same; host time remains f64 milliseconds |
+| Transport intent | `RewindRequest`, `afterSeek`, `playbackActive` in `HostRewind` | Same names and values; no new `m_` naming |
+| Visible cursor | Requested coordinate during seek; actual scheduler cycles during playback/pause | Same |
+| UI | Retained tiny-font labels and hit rectangles owned by `HostRewindTimeline` | Same arrays and action ids |
+
+Affected hot-path callsites: mirrored `FrameSchedulerState.runScheduledToNextLogicalTick`,
+`HostRewind.service`/`runPlayback`, TS `runHostFrame` and `runWorkbenchHostFrame`,
+native `runLibretroFrame`, libretro audio delivery and both timeline input/render
+owners. Input consumption stays in the existing `HistoryInputSource`; no new
+per-instruction check, per-frame checkpoint, input copy, save-state codec or
+second wall-clock accumulator is introduced. Playback continues the current
+machine and journal cursor. Seeking may restore; Play/Pause may not.
+
+Playback consumes normal host-time cycle grants, not the unpaced seek budget.
+It presents and delivers current audio, suppresses live ICU input/vibration,
+preserves future history, and pauses at its recorded end. A pause retains the
+actual suspended machine boundary, including a position between checkpoints;
+resuming does not charge paused wall time. Seek/Play/Takeover requests while a
+GPU fence is pending retain the latest accepted intent. Opening the IDE retains
+and pauses review before source editing/Hot Resume. Independent host pause
+reasons still govern execution; explicit Play/Takeover releases only Requested,
+not fullscreen/vibration initialization. The transport is not a second Studio
+pause owner. `HostFrameSession.syncMachineOutput` projects timing and supervisor
+audio state for both live and replay execution; libretro already performs those
+projections at its frame-output boundary.
+
+Proof gate: real BIOS/Nemesis TS and native hosts, libretro ABI, input-sensitive
+deterministic replay comparison, unchanged history/capture counts during
+playback, 50/60/144-Hz host pacing, repeated Play/Pause and held-button edges,
+recorded-end stop, arbitrary-position takeover, pointer targets, pending backend
+work, and the software/WebGL2/WebGPU Studio workflow. Physical SNES Mini timing
+and worldtick stepping remain separate, unproved surfaces.
+
+### Playback validation (2026-09-06)
+
+- `npm run test:runtime-replay`: real BIOS/Nemesis full-state comparisons now
+  include ordinary paced replay from an earlier reviewed position to the
+  retained end. Both cores reject any live input/vibration during replay and
+  reproduce guest state without translating values or object identities.
+  TS/native host-controller runs and the libretro ABI run pass.
+- The host-controller runs exercise held A, repeated pause/play, fresh replay
+  audio, unchanged game pixels on pause, automatic end pause, pointer
+  Play/Pause/Takeover/Cancel, and a new branch checkpoint at the exact paused
+  playback position. Capture/restore counts do not
+  increase during Play/Pause. TS additionally verifies independent pause
+  reasons and queued Play superseded by Seek/Takeover during a backend wait.
+- Mirrored scheduler tests pass for 50/60/144-Hz host deltas, a pause between
+  input boundaries, continuation without restore, and backend latency. A fence
+  completion consumes its already accepted grant, never the intervening wall
+  time. Paused playback consumes no wall-time budget.
+- The software/WebGL2/WebGPU Studio matrix passes playback → pause → playback
+  → IDE → source edit → Hot Resume, then the existing repeated edits, real
+  breakpoint/step, rejected build and guest-init repair. Each renderer retains
+  cycle **718177228** for the first edit. The additional WebGPU test queues
+  playback during an actual mapped-buffer wait, then supersedes it with IDE
+  retention and Hot Resume. This is Chrome's software GPU test environment,
+  not physical GPU or Mini hardware evidence.
+- Lua suite: **852 passed, 1 skipped**. Native CTest: **28 passed**. Separate
+  live Hot Resume harness: **92 assertions**; Scenario Lab: **124 assertions**.
+  Browser player/Studio, headless tooling and native libretro product builds
+  pass. Product machine,
+  common-host, browser and IDE typechecks, core parity, strict boundaries and
+  indentation audits pass. The broad tests typecheck still has the same
+  **52 pre-existing diagnostics**; it is not reported as green.
+
+Two six-second checkpoint slots, 1,024 input records and the save-state format
+are unchanged. No new physical SNES Mini or ARM performance measurement is
+claimed for this slice. The playback work does not complete W04-W09 or add
+frame/worldtick stepping.
+
 ## Prerequisite: exact CPU restore
 
 The initial live-owner probe (`return {}`, restore the same checkpoint three
@@ -754,11 +847,11 @@ References examined before this mirrored UI diff:
 | State | TypeScript | C++ | Owner / callsites |
 | --- | --- | --- | --- |
 | Recorded range / seek target | Existing integer cycle `number` | Existing `i64` | `RuntimeHistory`, `HostRewind.seekTo`; storage and journal unchanged |
-| Transport inputs | Normalized host LB/RB, A/START, B; existing repeat state | Same controller bits and native repeat state | `HostOverlayMenu.tickInput`; consumed before live ICU input, including the exit frame |
+| Transport inputs | Normalized host LB/RB, A playback, START takeover, B; existing repeat state | Same controller bits and native repeat state | `HostOverlayMenu.tickInput`; consumed before live ICU input, including the exit frame |
 | Previous button state | Input owner keeps physical pressed state separate from consumption | Normalized physical button bits; keyboard navigation also includes its existing stick thresholds | `HostOverlayMenu.latchButtonStates` must not latch consumed output as a release; holding the opening button does not activate the destination page |
 | Timeline navigation | One emulated-second relative steps; pointer position mapped to range | Same integer-cycle target calculation | `HostRewindTimeline.moveCursor` / `seekAt`; existing replay snaps to a recorded PCRTC boundary |
 | Bottom bar | Retained rectangles, glyph submissions and host command arrays | Same retained submissions / arrays | `HostRewindTimeline.queueRenderCommands`; no per-frame buffer construction |
-| Pending live takeover | Existing seek intent plus `resumeAtTarget` latch | Same | `HostRewind.resumeHere` / `service`: START during seek resumes at the selected target, not an intermediate replay state |
+| Pending live takeover/playback | Seek intent plus `afterSeek` request | Same | `HostRewind.resumeHere` / `togglePlayback` / `service`: START or A during seek waits for the selected target; Pause or a newer seek supersedes that intent |
 | Overlay transition | Page plus Accept/Cancel/Discard/Retain outcome | Same enums | `HostOverlayMenu.transitionTo` is the only page writer after construction; departure, pointer/repeat reset, exclusive input and destination activation are one lifecycle |
 
 Opening the keyboard must not know about rewind. A transition deactivates its
@@ -773,10 +866,11 @@ is a bounded state machine for the existing host overlays, not a new workbench
 navigation framework or a generic callback facade.
 
 LB/RB (or left/right) move through the recorded range; holding uses the existing
-host button-repeat cadence. START/A resumes at the selected position; B or the
-existing menu chord cancels and returns to the recorded end. A pointer click on
-the bar seeks directly. Seeking is visibly distinguished from a completed
-preview. No new activation shortcut is introduced.
+host button-repeat cadence. A now toggles recorded playback/pause and START
+takes live control, as specified in REWIND-PLAYBACK-01 above. B or the existing
+menu chord cancels and returns to the recorded end. Pointer hit targets expose
+the same actions. Seeking, playback and paused review are visibly distinct.
+No new activation shortcut is introduced.
 
 The two-checkpoint capacity and six-second capture interval are unchanged.
 Navigating between checkpoints reuses the existing input replay; it does not

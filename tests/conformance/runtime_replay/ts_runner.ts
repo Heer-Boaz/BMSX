@@ -136,16 +136,20 @@ async function main(): Promise<void> {
 	let seekWorkMs = 0;
 	let maxSeekStepMs = 0;
 	let seekRestoreMs = 0;
-	for (const index of [111, 55, 77]) {
+	for (const [index, playback] of [[111, false], [55, false], [111, true], [77, false]] as const) {
 		const expected = references.get(index)!;
 		const restoreStart = performance.now();
-		history.beginSeek(expected.machineState.schedulerNowCycles);
-		seekRestoreMs += performance.now() - restoreStart;
+		if (playback) history.beginPlayback();
+		else history.beginSeek(expected.machineState.schedulerNowCycles);
+		if (!playback) seekRestoreMs += performance.now() - restoreStart;
 		for (let step = 0; history.mode === HistoryMode.Replaying && step < 10000; step += 1) {
 			const stepStart = performance.now();
-			const result = history.advanceSeek(16384);
-			seekSteps += 1;
-			assert.notEqual(result, HistorySeekResult.Stopped, 'recorded replay must progress');
+			if (playback) history.advancePlayback(1000 / 60);
+			else {
+				const result = history.advanceSeek(16384);
+				seekSteps += 1;
+				assert.notEqual(result, HistorySeekResult.Stopped, 'recorded replay must progress');
+			}
 			while (gpu.backendServicePending()) {
 				if (gpu.backendCommandDrainPending()) backend.executeGxGpuCommandDrain(gpu);
 				else backend.executeGxGpuReadback(gpu);
@@ -154,8 +158,8 @@ async function main(): Promise<void> {
 			gpu.retirePresentedCommands();
 			runtime.machine.audioController.synchronizeOutput().clear();
 			const elapsed = performance.now() - stepStart;
-			seekWorkMs += elapsed;
-			if (elapsed > maxSeekStepMs) maxSeekStepMs = elapsed;
+			if (!playback) seekWorkMs += elapsed;
+			if (!playback && elapsed > maxSeekStepMs) maxSeekStepMs = elapsed;
 		}
 		assert.equal(history.mode, HistoryMode.Reviewing);
 		assert.equal(history.latestCycles, retainedEnd, 'seek retains the recorded future');

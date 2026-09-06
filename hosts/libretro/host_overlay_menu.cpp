@@ -336,15 +336,19 @@ HostMenuInput HostOverlayMenu::handleInput(Runtime& runtime, LibretroInput& inpu
 
 HostMenuInput HostOverlayMenu::tickTimelineInput(Runtime& runtime, LibretroInput& input, HostRewind& rewind) {
 	const bool pointerActivated = tickPointerInput();
-	if (uiInput.buttonJustPressed(InputControllerGamepadButtonBit::B)) {
+	const TimelineAction pointerAction = pointerActivated
+		? timeline.selectAt(uiInput.pointerX, uiInput.pointerY) : TimelineAction::None;
+	if (uiInput.buttonJustPressed(InputControllerGamepadButtonBit::B) || pointerAction == TimelineAction::Cancel) {
 		transitionTo(Page::Closed, input, rewind);
 		return HostMenuInput::Inactive;
 	}
-	if (uiInput.buttonJustPressed(InputControllerGamepadButtonBit::Start) || uiInput.buttonJustPressed(InputControllerGamepadButtonBit::A)) {
+	if (uiInput.buttonJustPressed(InputControllerGamepadButtonBit::Start) || pointerAction == TimelineAction::Resume) {
 		transitionTo(Page::Closed, input, rewind, Outcome::Accept);
 		return HostMenuInput::Inactive;
 	}
-	if (pointerActivated) {
+	if (uiInput.buttonJustPressed(InputControllerGamepadButtonBit::A) || pointerAction == TimelineAction::Playback) {
+		rewind.togglePlayback();
+	} else if (pointerAction == TimelineAction::Seek) {
 		timeline.seekAt(runtime, rewind, uiInput.pointerX);
 	} else {
 		const bool leftBumper = uiInput.buttonRepeatEdge(InputControllerGamepadButtonBit::LeftBumper);
@@ -604,7 +608,7 @@ i32 HostOverlayMenu::selectPointerTargetAt(i32 x, i32 y) {
 		return m_keyboard.selectAt(x, y);
 	}
 	if (m_page == Page::Rewind) {
-		return point_in_rect(static_cast<f32>(x), static_cast<f32>(y), timeline.hitRect) ? 0 : -1;
+		return static_cast<i32>(timeline.selectAt(x, y));
 	}
 	if (!point_in_rect(static_cast<f32>(x), static_cast<f32>(y), m_optionHitRect)) {
 		return -1;

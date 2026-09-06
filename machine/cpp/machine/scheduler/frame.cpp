@@ -240,7 +240,6 @@ bool FrameSchedulerState::runToNextLogicalTick(Runtime& runtime, i64 cycleGrant)
 }
 
 bool FrameSchedulerState::runScheduledToNextLogicalTick(Runtime& runtime, f64 hostDeltaMs) {
-	if (runtime.history.mode == HistoryMode::Replaying) return false;
 	const i64 targetSequence = lastTickSequence + 1;
 	if (!beginScheduledExecution(runtime, hostDeltaMs)) {
 		return false;

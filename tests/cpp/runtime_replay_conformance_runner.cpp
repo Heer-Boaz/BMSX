@@ -155,16 +155,20 @@ int main(int argc, char** argv) {
 		double seekWorkMs = 0;
 		double maxSeekStepMs = 0;
 		double seekRestoreMs = 0;
-		for (int index : {111, 55, 77}) {
+		for (const auto [index, playback] : {std::pair{111, false}, std::pair{55, false}, std::pair{111, true}, std::pair{77, false}}) {
 			const auto& expected = references.at(index);
 			const auto restoreStart = Clock::now();
-			history.beginSeek(expected.machineState.schedulerNowCycles);
-			seekRestoreMs += std::chrono::duration<double, std::milli>(Clock::now() - restoreStart).count();
+			if (playback) history.beginPlayback();
+			else history.beginSeek(expected.machineState.schedulerNowCycles);
+			if (!playback) seekRestoreMs += std::chrono::duration<double, std::milli>(Clock::now() - restoreStart).count();
 			for (int step = 0; history.mode == bmsx::HistoryMode::Replaying && step < 10000; ++step) {
 				const auto stepStart = Clock::now();
-				const auto result = history.advanceSeek(16384);
-				++seekSteps;
-				require(result != bmsx::HistorySeekResult::Stopped, "recorded replay must progress");
+				if (playback) history.advancePlayback(1000.0 / 60);
+				else {
+					const auto result = history.advanceSeek(16384);
+					++seekSteps;
+					require(result != bmsx::HistorySeekResult::Stopped, "recorded replay must progress");
+				}
 				while (gpu.backendServicePending()) {
 					if (gpu.backendCommandDrainPending()) backend.executeGxGpuCommandDrain(gpu);
 					else backend.executeGxGpuReadback(gpu);
@@ -173,8 +177,8 @@ int main(int argc, char** argv) {
 				gpu.retirePresentedCommands();
 				runtime.machine.audioController.synchronizeOutput().clear();
 				const auto elapsed = std::chrono::duration<double, std::milli>(Clock::now() - stepStart).count();
-				seekWorkMs += elapsed;
-				if (elapsed > maxSeekStepMs) maxSeekStepMs = elapsed;
+				if (!playback) seekWorkMs += elapsed;
+				if (!playback && elapsed > maxSeekStepMs) maxSeekStepMs = elapsed;
 			}
 			require(history.mode == bmsx::HistoryMode::Reviewing, "seek reaches its target");
 			require(history.latestCycles() == retainedEnd, "seek retains the recorded future");

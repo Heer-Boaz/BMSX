@@ -1,5 +1,5 @@
 import { clamp } from '../../machine/ts/common/clamp';
-import { create_rect_bounds, write_rect_bounds } from '../../machine/ts/common/rect';
+import { create_rect_bounds, point_in_rect, write_rect_bounds } from '../../machine/ts/common/rect';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { Host2DKind, type Host2DRef } from '../../machine/ts/render/host_overlay/commands';
 import type { HostMenuFrame } from '../../machine/ts/render/host_overlay/overlay_queue';
@@ -10,15 +10,16 @@ import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import type { HostRewind } from './rewind';
 
 const enum TimelineRect { Panel, Track, Fill, Cursor }
-const enum TimelineLabel { Range, Position, Status, Navigation, Resume, Cancel }
+const enum TimelineLabel { Range, Position, Status, Navigation, Playback, Resume, Cancel }
+export const enum TimelineAction { None = -1, Seek, Playback, Resume, Cancel }
 const RECT_COLORS = [0xe8070b10, 0xff46525e, 0xff5bc6ff, 0xffefefef] as const;
-const LABEL_TEXT = ['', '', '', 'LB <  RB >', 'START PLAY', 'B CANCEL'] as const;
+const LABEL_TEXT = ['', '', '', 'LB <  RB >', 'A PLAY', 'START GAME', 'B CANCEL'] as const;
 const COLOR_TEXT = 0xffefefef;
 const COLOR_SEEKING = 0xffffce66;
 
 /** Host transport view. Snapshot storage and replay remain in their existing owners. */
 export class HostRewindTimeline {
-	public readonly hitRect = create_rect_bounds();
+	private readonly hitRects = [create_rect_bounds(), create_rect_bounds(), create_rect_bounds(), create_rect_bounds()];
 	private readonly font = new Font({ variant: 'tiny' });
 	private readonly rects: RectRenderSubmission[] = new Array(RECT_COLORS.length);
 	private readonly labels: GlyphRenderSubmission[] = new Array(LABEL_TEXT.length);
@@ -33,6 +34,7 @@ export class HostRewindTimeline {
 	private rangeTenths = -1;
 	private offsetTenths = -1;
 	private statusText = '';
+	private playbackShown = false;
 
 	public constructor() {
 		for (let index = 0; index < this.rects.length; index += 1) {
@@ -50,6 +52,13 @@ export class HostRewindTimeline {
 			this.commandRefs[this.rects.length + index] = label;
 		}
 		this.labels[TimelineLabel.Status].color = COLOR_SEEKING;
+	}
+
+	public selectAt(x: number, y: number): TimelineAction {
+		for (let index = 0; index < this.hitRects.length; index += 1) {
+			if (point_in_rect(x, y, this.hitRects[index])) return index;
+		}
+		return TimelineAction.None;
 	}
 
 	public moveCursor(runtime: Runtime, rewind: HostRewind, direction: number): void {
@@ -88,19 +97,27 @@ export class HostRewindTimeline {
 			label.item_end = text.length;
 			this.labelWidths[TimelineLabel.Position] = this.font.measure(text);
 		}
-		const status = rewind.stopped ? 'STOPPED' : rewind.seeking ? 'SEEKING' : '';
+		const status = rewind.stopped ? 'STOPPED' : rewind.seeking ? 'SEEKING' : rewind.playing ? 'REPLAY' : 'PAUSED';
 		if (status !== this.statusText) {
 			this.statusText = status;
 			this.labels[TimelineLabel.Status].items = status;
 			this.labels[TimelineLabel.Status].item_end = status.length;
 			this.labelWidths[TimelineLabel.Status] = this.font.measure(status);
 		}
+		if (this.playbackShown !== rewind.playing) {
+			this.playbackShown = rewind.playing;
+			const text = rewind.playing ? 'A PAUSE' : 'A PLAY';
+			const label = this.labels[TimelineLabel.Playback];
+			label.items = text;
+			label.item_end = text.length;
+			this.labelWidths[TimelineLabel.Playback] = this.font.measure(text);
+		}
 		const left = 6;
 		const right = presenter.viewportSize.x - 6;
 		const top = presenter.viewportSize.y - 38;
 		const trackLeft = left + 6;
 		const trackRight = right - 6;
-		write_rect_bounds(this.hitRect, left, top + 10, right, top + 22);
+		write_rect_bounds(this.hitRects[TimelineAction.Seek], left, top + 10, right, top + 22);
 		const cursor = range === 0 ? trackRight : trackLeft + Math.trunc((position - history.earliestCycles) * (trackRight - trackLeft) / range);
 		write_rect_bounds(this.rects[TimelineRect.Panel].area, left, top, right, top + 32);
 		write_rect_bounds(this.rects[TimelineRect.Track].area, trackLeft, top + 15, trackRight, top + 18);
@@ -112,10 +129,18 @@ export class HostRewindTimeline {
 		this.labels[TimelineLabel.Position].x = trackRight - this.labelWidths[TimelineLabel.Position];
 		this.labels[TimelineLabel.Status].x = center - Math.trunc(this.labelWidths[TimelineLabel.Status] / 2);
 		this.labels[TimelineLabel.Navigation].x = trackLeft;
-		this.labels[TimelineLabel.Resume].x = center - Math.trunc(this.labelWidths[TimelineLabel.Resume] / 2);
 		this.labels[TimelineLabel.Cancel].x = trackRight - this.labelWidths[TimelineLabel.Cancel];
+		const resumeX = this.labels[TimelineLabel.Cancel].x - 8 - this.labelWidths[TimelineLabel.Resume];
+		this.labels[TimelineLabel.Resume].x = resumeX;
+		this.labels[TimelineLabel.Playback].x = Math.trunc((trackLeft + this.labelWidths[TimelineLabel.Navigation]
+			+ resumeX - this.labelWidths[TimelineLabel.Playback]) / 2);
 		for (let index = 0; index < this.labels.length; index += 1) {
 			this.labels[index].y = top + (index < TimelineLabel.Navigation ? 4 : 24);
+		}
+		for (let index = TimelineAction.Playback; index <= TimelineAction.Cancel; index += 1) {
+			const labelIndex = TimelineLabel.Playback + index - TimelineAction.Playback;
+			const label = this.labels[labelIndex];
+			write_rect_bounds(this.hitRects[index], label.x - 2, top + 22, label.x + this.labelWidths[labelIndex] + 2, top + 32);
 		}
 		presenter.hostOverlayQueue.publishHostMenuFrame(this.renderFrame);
 	}

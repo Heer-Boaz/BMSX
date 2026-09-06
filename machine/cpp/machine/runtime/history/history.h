@@ -39,6 +39,8 @@ public:
 	void beginSeek(i64 cycles);
 	HistorySeekResult advanceSeek(i64 cycleGrant);
 	void cancelSeek() { mode = HistoryMode::Reviewing; }
+	void beginPlayback();
+	void advancePlayback(f64 hostDeltaMs);
 	void resumeRecording();
 private:
 	struct Checkpoint {

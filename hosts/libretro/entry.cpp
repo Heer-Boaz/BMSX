@@ -1670,7 +1670,7 @@ void retro_run(void) {
 	}
 	bmsx::flushLibretroSystemOutput(runtime, logging);
 	sync_runtime_timing(runtime);
-	const bool audioMuted = g_rewind->active || (
+	const bool audioMuted = g_rewind->audioMuted() || (
 		runtime.machine.memory.readIoU32(bmsx::IO_SYS_STATUS)
 		& bmsx::SYS_STATUS_SUPERVISOR_ACTIVE
 	) != 0u;

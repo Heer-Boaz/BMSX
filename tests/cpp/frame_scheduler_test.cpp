@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <stdexcept>
 #include <vector>
 
@@ -584,6 +585,53 @@ void testHistoryUnarmedSupervisorEdge() {
 	require(bmsx::encodeRuntimeSaveState(actual) == bmsx::encodeRuntimeSaveState(expected), "unarmed supervisor edge reproduces complete guest state");
 }
 
+void testPacedHistoryPlayback() {
+	for (const int rate : {50, 60, 144}) {
+		TickRuntimeFixture fixture;
+		auto& runtime = fixture.runtime;
+		auto& history = runtime.history;
+		fixture.input.keyDown = true;
+		runtime.machine.memory.writeIoU32(bmsx::IO_INP_CTRL, bmsx::INP_CTRL_ARM);
+		history.start({2, 64, 0x100000000LL});
+		history.captureCheckpoint();
+		for (int tick = 0; tick < 20; ++tick) runtime.frameScheduler.runToNextLogicalTick(runtime);
+		const auto expected = bmsx::captureRuntimeSaveState(runtime);
+		const auto end = history.latestCycles();
+		const auto sequence = history.inputJournal.endSequence;
+		const int sampleCount = fixture.input.sampleCount;
+		fixture.input.keyDown = false;
+		fixture.input.rejectLiveInput = true;
+		int restores = 0;
+		runtime.onStateRestored = [&]() { ++restores; };
+		history.beginSeek(history.earliestCycles());
+		history.beginPlayback();
+		history.advancePlayback(5.123);
+		const auto pausedAt = runtime.machine.scheduler.nowCycles();
+		require(pausedAt > 0 && pausedAt < runtime.timing.cycleBudgetPerFrame, "playback uses a fractional host-time grant");
+		history.cancelSeek();
+		history.advancePlayback(600000);
+		require(runtime.machine.scheduler.nowCycles() == pausedAt, "pause holds between input boundaries");
+		history.beginPlayback();
+		history.advancePlayback(0);
+		require(runtime.machine.scheduler.nowCycles() == pausedAt, "resume does not charge paused time or old grants");
+		int frames = 0;
+		for (; history.mode == bmsx::HistoryMode::Replaying && frames < 200; ++frames) history.advancePlayback(1000.0 / rate);
+		require(history.mode == bmsx::HistoryMode::Reviewing && runtime.machine.scheduler.nowCycles() == end, "playback stops at recorded end");
+		const auto duration = (end - pausedAt) / runtime.timing.cpuCyclesPerMillisecond;
+		require(std::abs(frames * 1000.0 / rate - duration) <= 1000.0 / rate, "playback obeys normal 50/60/144-Hz host pacing");
+		require(restores == 1 && history.checkpointCount() == 1, "Play/Pause continues the current machine, without restore/capture");
+		require(history.latestCycles() == end && history.inputJournal.endSequence == sequence && history.inputJournal.replaySequence == sequence, "playback preserves future input");
+		require(fixture.input.sampleCount == sampleCount, "playback does not consume live input");
+		auto actual = bmsx::captureRuntimeSaveState(runtime);
+		actual.cpuState.instructionBudgetRemaining = expected.cpuState.instructionBudgetRemaining;
+		actual.machineState.frameScheduler = expected.machineState.frameScheduler;
+		actual.machineState.frameLoop = expected.machineState.frameLoop;
+		require(actual.machineState.machine.gxGpu.vramPresentationPending, "restore requests a host redraw");
+		actual.machineState.machine.gxGpu.vramPresentationPending = expected.machineState.machine.gxGpu.vramPresentationPending;
+		require(bmsx::encodeRuntimeSaveState(actual) == bmsx::encodeRuntimeSaveState(expected), "all guest state is identical apart from host scheduling/delivery metadata");
+	}
+}
+
 void testCancelledHistoryTakeover() {
 	TickRuntimeFixture fixture;
 	auto& runtime = fixture.runtime;
@@ -636,6 +684,19 @@ void testHistoryAwaitingBackendCompletion() {
 		require(history.advanceSeek(16384) != bmsx::HistorySeekResult::Stopped, "completed readback releases replay");
 	}
 	require(history.mode == bmsx::HistoryMode::Reviewing, "replay completes after backend service");
+	history.beginSeek(history.earliestCycles());
+	history.beginPlayback();
+	history.advancePlayback(runtime.timing.frameDurationMs);
+	require(output.readbackPort.claimReadback(output.commandBuffer.executedCommandCount), "paced replay exposes the same backend request");
+	const auto playbackBlocked = runtime.machine.scheduler.nowCycles();
+	const auto playbackGrant = runtime.frameLoop.frameState.cycleBudgetGranted;
+	history.advancePlayback(600000);
+	require(runtime.machine.scheduler.nowCycles() == playbackBlocked, "pending playback fence consumes no cycles");
+	output.readbackPort.completeReadback(output.readbackPort.token());
+	history.advancePlayback(600000);
+	require(runtime.frameScheduler.lastTickBudgetGranted == playbackGrant && runtime.machine.scheduler.nowCycles() - playbackBlocked <= playbackGrant, "completion consumes the already accepted grant, not backend latency");
+	for (int step = 0; step < 10; ++step) history.advancePlayback(runtime.timing.frameDurationMs);
+	require(history.mode == bmsx::HistoryMode::Reviewing, "paced replay completes after backend service");
 }
 
 } // namespace
@@ -657,6 +718,7 @@ int main() {
 	testHistoryRejoin();
 	testInputJournalRawWordsAndWrap();
 	testHistoryUnarmedSupervisorEdge();
+	testPacedHistoryPlayback();
 	testCancelledHistoryTakeover();
 	testHistoryAwaitingBackendCompletion();
 	return 0;

@@ -189,6 +189,10 @@ export function runWorkbenchHostFrame(
 
 		screen.clearPresentation();
 		session.rewind.service(!ide.scenarioRuns.active && !ide.debugger.plans.mutationActive);
+		if (session.rewind.playing && !session.execution.executionBlocked() && !ide.fault.hostFrameFailed) {
+			session.rewind.runPlayback(session.execution.consumeElapsedTime(hostDeltaMs));
+			session.syncMachineOutput(runtime, input, audioOutput);
+		}
 		if (ide.debugger.stopPresentationPending) {
 			activateEditor(ide.editor, ide.sources, ide.overlayRenderer, runtime, audioOutput);
 			presentRuntimeDebuggerStop(ide.editor, ide.debugger);

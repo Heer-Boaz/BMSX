@@ -1,4 +1,4 @@
-import { HostExecutionControl } from '../../../hosts/common/execution_control';
+import { HostExecutionControl, HostPauseReason } from '../../../hosts/common/execution_control';
 import assert from 'node:assert/strict';
 import Module from 'node:module';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -37,9 +37,12 @@ async function main(): Promise<void> {
 	const runtime = initializeMachineRuntime(readFileSync(systemPath), [readFileSync(cartPath), null], PSX_MACHINE_SPEC, input);
 	const backend = new HeadlessGPUBackend(256, 212, PSX_MACHINE_SPEC.gxGpuVramBytes);
 	let vramCaptures = 0;
+	let restores = 0;
+	runtime.onStateRestored = () => { restores += 1; };
 	const captureVram = backend.captureGxGpuVramSnapshot.bind(backend);
 	backend.captureGxGpuVramSnapshot = gpu => { vramCaptures += 1; captureVram(gpu); };
-	const presenter = initializeMachineVideoPresenter(runtime, new HeadlessVideoOutput(256, 212), backend);
+	const video = new HeadlessVideoOutput(256, 212);
+	const presenter = initializeMachineVideoPresenter(runtime, video, backend);
 	presenter.crt_postprocessing_enabled = false;
 	let puller: Puller | null = null;
 	let audioFrames = 0;
@@ -80,7 +83,7 @@ async function main(): Promise<void> {
 			if (frame.commandKinds[index] !== Host2DKind.Glyphs) continue;
 			const text = (frame.commandRefs[index] as import('../../../machine/ts/render/shared/submissions').GlyphRenderSubmission).items as string;
 			timeline ||= text.startsWith('REWIND ');
-			if (text === 'SEEKING' || text === 'STOPPED') status = text;
+			if (text === 'SEEKING' || text === 'STOPPED' || text === 'REPLAY' || text === 'PAUSED') status = text;
 		}
 		if (timeline) renderedTimelineStatus = status;
 		publishMenu(frame);
@@ -90,7 +93,7 @@ async function main(): Promise<void> {
 		clock.advance(runtime.timing.frameDurationMs);
 		runHostFrame(session, runtime, presenter, input, audioOutput, output, log, presentation, menu, clock.now());
 		if (renderedTimelineStatus !== undefined) {
-			const expected = rewind.stopped ? 'STOPPED' : rewind.seeking ? 'SEEKING' : '';
+			const expected = rewind.stopped ? 'STOPPED' : rewind.seeking ? 'SEEKING' : rewind.playing ? 'REPLAY' : 'PAUSED';
 			assert.equal(renderedTimelineStatus, expected, 'overlay reflects completion in the serviced host frame');
 		}
 		await new Promise<void>(resolve => setImmediate(resolve));
@@ -108,6 +111,27 @@ async function main(): Promise<void> {
 		for (const key of keys) input.inputButton('gamepad:0', key, true, 1, clock.now() + 1, id);
 		await frame();
 		for (const key of keys) input.inputButton('gamepad:0', key, false, 0, clock.now() + 1, id);
+		await frame();
+	};
+	const clickTimeline = async (labelText: string, heldFrames = 1) => {
+		menu.queueRenderCommands();
+		const bar = presenter.hostOverlayQueue.consumeHostMenuFrame();
+		const display = video.measureDisplay();
+		let found = false;
+		for (let index = 0; index < bar.commandCount; index += 1) {
+			if (bar.commandKinds[index] !== Host2DKind.Glyphs) continue;
+			const label = bar.commandRefs[index] as import('../../../machine/ts/render/shared/submissions').GlyphRenderSubmission;
+			if (label.items !== labelText) continue;
+			found = true;
+			input.inputAxis2('pointer:0', 'pointer_position',
+				display.left + (label.x + label.font!.measure(labelText) / 2) * display.width / presenter.viewportSize.x,
+				display.top + (label.y + label.font!.lineHeight / 2) * display.height / presenter.viewportSize.y, clock.now());
+		}
+		assert.ok(found, `visible transport button ${labelText}`);
+		await frame();
+		input.inputButton('pointer:0', 'pointer_primary', true, 1, clock.now(), pressId++);
+		for (let index = 0; index < heldFrames; index += 1) await frame();
+		input.inputButton('pointer:0', 'pointer_primary', false, 0, clock.now(), pressId++);
 		await frame();
 	};
 	const openRewind = async () => {
@@ -190,8 +214,54 @@ async function main(): Promise<void> {
 	await press('lb'); await settle();
 	assert.equal(runtime.machine.scheduler.currentNowCycles(), oldest, 'holding at the range end never wraps');
 	snapshot('oldest');
+	// Replay uses the existing machine/journal, normal pacing, and a distinct toggle.
+	const playbackEnd = history.latestCycles;
+	const playbackSequence = history.inputJournal.endSequence;
+	const playbackRestores = restores;
+	const playbackCaptures = vramCaptures;
+	const playbackAudio = audioFrames;
+	audible = false;
+	execution.setPauseReason(HostPauseReason.Requested, true);
+	execution.setPauseReason(HostPauseReason.Fullscreen, true);
+	input.inputButton('gamepad:0', 'a', true, 1, clock.now() + 1, pressId++);
+	for (let index = 0; index < 3; index += 1) await frame();
+	assert.ok(rewind.playing && !execution.userPaused && execution.paused, 'Play releases user pause, not independent host reasons');
+	assert.equal(runtime.machine.scheduler.currentNowCycles(), oldest);
+	execution.setPauseReason(HostPauseReason.Fullscreen, false);
+	for (let index = 0; index < 21; index += 1) await frame();
+	assert.equal(rewind.playing, true, 'held A starts replay only once');
+	assert.equal(renderedTimelineStatus, 'REPLAY', 'playback keeps the transport visible');
+	const replayedCycles = runtime.machine.scheduler.currentNowCycles() - oldest;
+	assert.ok(Math.abs(replayedCycles - runtime.timing.cpuHz * runtime.timing.frameDurationMs * 20 / 1000) <= runtime.timing.cycleBudgetPerFrame, 'replay obeys host/PCRTC pacing, not the fast seek budget');
+	input.inputButton('gamepad:0', 'a', false, 0, clock.now() + 1, pressId++);
+	await frame();
+	assert.ok(audible && audioFrames > playbackAudio, 'paced replay delivers fresh nonzero emulated audio');
+	snapshot('playing-before-pause');
+	const playingPixels = backend.borrowPresentedPixels().slice(0, backend.framebufferWidth * (backend.framebufferHeight - 38) * 4);
+	await press('a');
+	assert.ok(playingPixels.every((value, index) => value === backend.borrowPresentedPixels()[index]), 'pause retains the presented game image');
+	const previewPaused = runtime.machine.scheduler.currentNowCycles();
+	const previewAudio = audioFrames;
+	assert.ok(!rewind.playing && rewind.active && history.mode === HistoryMode.Reviewing);
+	for (let index = 0; index < 8; index += 1) await frame();
+	assert.equal(runtime.machine.scheduler.currentNowCycles(), previewPaused, 'A pauses at the actual playback position');
+	assert.equal(rewind.positionCycles, previewPaused, 'cursor follows actual playback, not its destination');
+	assert.equal(audioFrames, previewAudio, 'paused replay drains no old audio');
+	assert.equal(history.latestCycles, playbackEnd);
+	assert.equal(history.inputJournal.endSequence, playbackSequence);
+	assert.equal(restores, playbackRestores, 'Play/Pause never restores');
+	assert.equal(vramCaptures, playbackCaptures, 'Play/Pause never captures');
+	snapshot('playback-paused');
+	clock.advance(600_000);
+	await press('a');
+	assert.ok(runtime.machine.scheduler.currentNowCycles() - previewPaused <= runtime.timing.cycleBudgetPerFrame * 2, 'Play discards paused wall time');
+	for (let index = 0; index < 800 && rewind.playing; index += 1) await frame();
+	assert.equal(runtime.machine.scheduler.currentNowCycles(), playbackEnd, 'playback stops exactly at the recorded end');
+	assert.ok(!rewind.playing && rewind.active, 'end of replay does not silently take live control');
+	assert.equal(renderedTimelineStatus, 'PAUSED', 'recorded end keeps the paused transport visible');
+	assert.equal(history.inputJournal.endSequence, playbackSequence);
 	// B cancels the transport; it is not a navigation item in a second menu.
-	await press('b'); await settle();
+	await clickTimeline('B CANCEL'); await settle();
 	for (let index = 0; index < 12; index += 1) await frame();
 	assert.equal(rewind.active, false);
 	assert.equal(history.mode, HistoryMode.Recording);
@@ -200,13 +270,19 @@ async function main(): Promise<void> {
 
 	await openRewind();
 	await press('lb'); await settle();
+	await clickTimeline('A PLAY', 5);
+	assert.equal(rewind.playing, true, 'pointer activates playback');
+	for (let index = 0; index < 7; index += 1) await frame();
+	await clickTimeline('A PAUSE', 4);
+	assert.equal(rewind.playing, false, 'pointer pauses playback');
 	const branchCycles = runtime.machine.scheduler.currentNowCycles();
 	const branchEnd = history.latestCycles;
-	await press('start'); await settle();
+	await clickTimeline('START GAME'); await settle();
 	for (let index = 0; index < 3; index += 1) await frame();
 	assert.equal(history.mode, HistoryMode.Recording);
 	assert.equal(rewind.active, false);
 	assert.ok(history.latestCycles < branchEnd, 'START branches from the selected position');
+	assert.equal(history.checkpointCycles(history.checkpointCount - 1), branchCycles, 'takeover captures the exact paused playback position, not a nearby checkpoint');
 	for (let index = 0; index < 20; index += 1) await frame();
 	assert.ok(runtime.machine.scheduler.currentNowCycles() > branchCycles);
 	snapshot('branched');
@@ -228,6 +304,10 @@ async function main(): Promise<void> {
 	const finishBeforeResume = backend.finishGxGpuReadbacks.bind(backend);
 	backend.finishGxGpuReadbacks = async () => { await resumeGate; finishBeforeResume(); };
 	await press('lb');
+	await press('a');
+	assert.ok(rewind.playing && rewind.seeking, 'Play can be queued while a seek awaits a backend fence');
+	await press('lb');
+	assert.equal(rewind.playing, false, 'a newer seek replaces queued playback');
 	const intended = rewind.positionCycles;
 	const intendedSequence = history.inputJournal.endAt(intended);
 	const intendedBoundary = history.inputJournal.cycleAt(intendedSequence - 1);

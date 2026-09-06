@@ -9,9 +9,9 @@
 namespace bmsx {
 namespace {
 enum TimelineRect { Panel, Track, Fill, Cursor };
-enum TimelineLabel { Range, Position, Status, Navigation, Resume, Cancel };
+enum TimelineLabel { Range, Position, Status, Navigation, Playback, Resume, Cancel };
 constexpr std::array<u32, 4> RECT_COLORS{0xe8070b10u, 0xff46525eu, 0xff5bc6ffu, 0xffefefefu};
-constexpr std::array<const char*, 6> LABEL_TEXT{"", "", "", "LB <  RB >", "START PLAY", "B CANCEL"};
+constexpr std::array<const char*, 7> LABEL_TEXT{"", "", "", "LB <  RB >", "A PLAY", "START GAME", "B CANCEL"};
 constexpr u32 COLOR_TEXT = 0xffefefefu;
 constexpr u32 COLOR_SEEKING = 0xffffce66u;
 }
@@ -40,6 +40,13 @@ HostRewindTimeline::HostRewindTimeline() {
 		commandRefs[rects.size() + index].glyphs = &label;
 	}
 	labels[Status].color = COLOR_SEEKING;
+}
+
+TimelineAction HostRewindTimeline::selectAt(i32 x, i32 y) const {
+	for (size_t index = 0; index < hitRects.size(); ++index) {
+		if (point_in_rect(static_cast<f32>(x), static_cast<f32>(y), hitRects[index])) return static_cast<TimelineAction>(index);
+	}
+	return TimelineAction::None;
 }
 
 void HostRewindTimeline::moveCursor(Runtime& runtime, HostRewind& rewind, i32 direction) {
@@ -83,19 +90,26 @@ void HostRewindTimeline::queueRenderCommands(Runtime& runtime, VideoPresenter& p
 		label.item_end = static_cast<i32>(label.items[0].size());
 		labelWidths[Position] = font.measure(label.items[0]);
 	}
-	const std::string_view status = rewind.stopped ? "STOPPED" : rewind.seeking() ? "SEEKING" : "";
+	const std::string_view status = rewind.stopped ? "STOPPED" : rewind.seeking() ? "SEEKING" : rewind.playing() ? "REPLAY" : "PAUSED";
 	if (status != statusText) {
 		statusText = status;
 		labels[Status].items[0] = status;
 		labels[Status].item_end = static_cast<i32>(status.size());
 		labelWidths[Status] = font.measure(labels[Status].items[0]);
 	}
+	if (playbackShown != rewind.playing()) {
+		playbackShown = rewind.playing();
+		auto& label = labels[Playback];
+		label.items[0] = rewind.playing() ? "A PAUSE" : "A PLAY";
+		label.item_end = static_cast<i32>(label.items[0].size());
+		labelWidths[Playback] = font.measure(label.items[0]);
+	}
 	const i32 left = 6;
 	const i32 right = static_cast<i32>(presenter.viewportSize.x) - 6;
 	const i32 top = static_cast<i32>(presenter.viewportSize.y) - 38;
 	const i32 trackLeft = left + 6;
 	const i32 trackRight = right - 6;
-	write_rect_bounds(hitRect, left, top + 10, right, top + 22);
+	write_rect_bounds(hitRects[static_cast<size_t>(TimelineAction::Seek)], left, top + 10, right, top + 22);
 	const i32 cursor = range == 0 ? trackRight : trackLeft + static_cast<i32>((position - history.earliestCycles()) * (trackRight - trackLeft) / range);
 	write_rect_bounds(rects[Panel].area, left, top, right, top + 32);
 	write_rect_bounds(rects[Track].area, trackLeft, top + 15, trackRight, top + 18);
@@ -107,10 +121,17 @@ void HostRewindTimeline::queueRenderCommands(Runtime& runtime, VideoPresenter& p
 	labels[Position].x = trackRight - labelWidths[Position];
 	labels[Status].x = center - labelWidths[Status] / 2;
 	labels[Navigation].x = trackLeft;
-	labels[Resume].x = center - labelWidths[Resume] / 2;
 	labels[Cancel].x = trackRight - labelWidths[Cancel];
+	const i32 resumeX = static_cast<i32>(labels[Cancel].x) - 8 - labelWidths[Resume];
+	labels[Resume].x = resumeX;
+	labels[Playback].x = (trackLeft + labelWidths[Navigation] + resumeX - labelWidths[Playback]) / 2;
 	for (size_t index = 0; index < labels.size(); ++index) {
 		labels[index].y = static_cast<f32>(top + (index < Navigation ? 4 : 24));
+	}
+	for (size_t index = static_cast<size_t>(TimelineAction::Playback); index <= static_cast<size_t>(TimelineAction::Cancel); ++index) {
+		const size_t labelIndex = Playback + index - static_cast<size_t>(TimelineAction::Playback);
+		const auto& label = labels[labelIndex];
+		write_rect_bounds(hitRects[index], label.x - 2, top + 22, label.x + labelWidths[labelIndex] + 2, top + 32);
 	}
 	presenter.hostOverlayQueue.publishHostMenuFrame(renderFrame);
 }

@@ -30,9 +30,11 @@ export async function testStudioWebGpuReadbacks(test: StudioFixture, backend: We
 	const mappingAt = cycles();
 	rewind.seekTo(history.earliestCycles);
 	rewind.seekTo(history.latestCycles);
+	await press('KeyX');
+	check(rewind.playing && rewind.seeking, 'playback intent can wait for an actual WebGPU mapping');
 	await frame();
 	await press('ControlRight', 'ShiftRight');
-	check(ide.editor.isActive && execution.userPaused && cycles() === mappingAt, 'IDE stays reachable during GPU fence');
+	check(ide.editor.isActive && !execution.userPaused && !rewind.playing && cycles() === mappingAt, 'IDE cancels pending playback while retaining the actual state during a GPU fence');
 	harness.openLuaSource('title_screen.lua');
 	harness.replaceActiveCodeSource(source.replace("pattern = 'up[jp]'", "pattern = 'right[jp]'"));
 	const mappingMedia = ide.sources.currentBlua32Media;

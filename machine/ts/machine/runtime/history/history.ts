@@ -148,6 +148,27 @@ export class RuntimeHistory {
 
 	public cancelSeek(): void { this.mode = HistoryMode.Reviewing; }
 
+	/** Continue the retained input stream from this machine, without a checkpoint restore. */
+	public beginPlayback(): void {
+		const checkpoint = this.checkpoints[this.firstCheckpoint]!;
+		this.targetCycles = this.endCycles;
+		this.targetTick = checkpoint.state.machineState.frameScheduler.lastTickSequence
+			+ this.inputJournal.endSequence - checkpoint.inputSequence;
+		this.runtime.frameScheduler.reset();
+		this.runtime.frameLoop.abandonFrameState();
+		this.mode = this.runtime.frameScheduler.lastTickSequence === this.targetTick ? HistoryMode.Reviewing : HistoryMode.Replaying;
+	}
+
+	/** Consume the ordinary host-time budget, stopping before input beyond the recorded end. */
+	public advancePlayback(hostDeltaMs: number): void {
+		while (this.mode === HistoryMode.Replaying) {
+			const completed = this.runtime.frameScheduler.runScheduledToNextLogicalTick(hostDeltaMs);
+			hostDeltaMs = 0;
+			if (this.runtime.frameScheduler.lastTickSequence === this.targetTick) this.mode = HistoryMode.Reviewing;
+			if (!completed) break;
+		}
+	}
+
 	/** A branch needs a synchronized checkpoint; rejoining the recorded end keeps its capture schedule. */
 	public resumeRecording(): void {
 		const cycles = this.runtime.machine.scheduler.currentNowCycles();

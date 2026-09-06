@@ -160,6 +160,18 @@ int main(int argc, char** argv) {
 		press(1u << RETRO_DEVICE_ID_JOYPAD_L);
 		require(audioSuspended, "seeking suspends frontend audio");
 		require(audioFrames == reviewAudio, "seeking delivers no replay audio");
+		// The frontend API must also expose watch/pause, not only seek/takeover.
+		for (int index = 0; index < 120; ++index) frame();
+		const auto beforeReplay = capture().machineState.schedulerNowCycles;
+		press(menuAccept);
+		for (int index = 0; index < 12; ++index) frame();
+		require(!audioSuspended && audioFrames > reviewAudio, "recorded playback uses frontend audio");
+		require(capture().machineState.schedulerNowCycles > beforeReplay, "recorded playback advances the actual machine");
+		press(menuAccept);
+		const auto previewPaused = capture().machineState.schedulerNowCycles;
+		const auto pausedAudio = audioFrames;
+		for (int index = 0; index < 12; ++index) frame();
+		require(audioSuspended && audioFrames == pausedAudio && capture().machineState.schedulerNowCycles == previewPaused, "A pauses replay at its current machine position");
 		press(menuCancel);
 		for (int index = 0; index < 4000 && audioSuspended; ++index) frame();
 		require(!audioSuspended, "cancel rejoins live frontend audio transport");

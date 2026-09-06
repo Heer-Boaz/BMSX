@@ -40,6 +40,7 @@ LibretroFrameResult runLibretroFrame(
 
 	presentation.clearPresentation();
 	rewind.service(true);
+	rewind.runPlayback(hostDeltaMs);
 	if (runtime.isDrawPending() && !hostMenuActive && !rewind.active) {
 		const i64 previousTickSequence = runtime.frameScheduler.lastTickSequence;
 		runtime.frameScheduler.run(runtime, hostDeltaMs);

@@ -63,18 +63,20 @@ export class HostFrameSession {
 		}
 	}
 
-	public syncMachineTiming(
+	public syncMachineOutput(
 		runtime: Runtime,
 		input: Input,
 		audioOutput: HostAudioOutput,
 	): void {
 		const ufpsScaled = runtime.timing.ufpsScaled;
-		if (ufpsScaled === this.hostUfpsScaled) {
-			return;
+		if (ufpsScaled !== this.hostUfpsScaled) {
+			this.hostUfpsScaled = ufpsScaled;
+			input.setFrameDurationMs(runtime.timing.frameDurationMs);
+			audioOutput.syncTiming(ufpsScaled);
 		}
-		this.hostUfpsScaled = ufpsScaled;
-		input.setFrameDurationMs(runtime.timing.frameDurationMs);
-		audioOutput.syncTiming(ufpsScaled);
+		audioOutput.muteSystem(
+			(runtime.machine.memory.readIoU32(IO_SYS_STATUS) & SYS_STATUS_SUPERVISOR_ACTIVE) !== 0,
+		);
 	}
 }
 
@@ -91,7 +93,7 @@ function rebootMachine(
 	runtime.rebootSystem();
 	screen.reset(presenter, runtime);
 	systemOutput.flush(runtime, logOutput);
-	session.syncMachineTiming(runtime, input, audioOutput);
+	session.syncMachineOutput(runtime, input, audioOutput);
 	audioOutput.restart(runtime.timing.ufpsScaled);
 	audioOutput.muteSystem(false);
 }
@@ -181,10 +183,7 @@ export function syncAfterRuntimeUpdate(
 	screen: RenderPresentationState,
 	previousTickSequence: number,
 ): void {
-	session.syncMachineTiming(runtime, input, audioOutput);
-	audioOutput.muteSystem(
-		(runtime.machine.memory.readIoU32(IO_SYS_STATUS) & SYS_STATUS_SUPERVISOR_ACTIVE) !== 0,
-	);
+	session.syncMachineOutput(runtime, input, audioOutput);
 	screen.syncAfterRuntimeUpdate(runtime, previousTickSequence);
 }
 
@@ -339,6 +338,10 @@ export function runHostFrame(
 	}
 	screen.clearPresentation();
 	session.rewind.service(true);
+	if (session.rewind.playing && !session.execution.executionBlocked()) {
+		session.rewind.runPlayback(session.execution.consumeElapsedTime(hostDeltaMs));
+		session.syncMachineOutput(runtime, input, audioOutput);
+	}
 	let action = prepareHostUpdate(
 		session,
 		runtime,

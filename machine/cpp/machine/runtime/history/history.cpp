@@ -95,6 +95,25 @@ HistorySeekResult RuntimeHistory::advanceSeek(i64 cycleGrant) {
 	return runtime.machine.scheduler.currentNowCycles() == before ? HistorySeekResult::Stopped : HistorySeekResult::Progressed;
 }
 
+void RuntimeHistory::beginPlayback() {
+	const auto& checkpoint = *checkpoints[firstCheckpoint];
+	targetCycles = endCycles;
+	targetTick = checkpoint.state.machineState.frameScheduler.lastTickSequence
+		+ inputJournal.endSequence - checkpoint.inputSequence;
+	runtime.frameScheduler.reset();
+	runtime.frameLoop.abandonFrameState(runtime);
+	mode = runtime.frameScheduler.lastTickSequence == targetTick ? HistoryMode::Reviewing : HistoryMode::Replaying;
+}
+
+void RuntimeHistory::advancePlayback(f64 hostDeltaMs) {
+	while (mode == HistoryMode::Replaying) {
+		const bool completed = runtime.frameScheduler.runScheduledToNextLogicalTick(runtime, hostDeltaMs);
+		hostDeltaMs = 0;
+		if (runtime.frameScheduler.lastTickSequence == targetTick) mode = HistoryMode::Reviewing;
+		if (!completed) break;
+	}
+}
+
 void RuntimeHistory::resumeRecording() {
 	const i64 cycles = runtime.machine.scheduler.currentNowCycles();
 	const bool rejoiningLatest = cycles == endCycles;

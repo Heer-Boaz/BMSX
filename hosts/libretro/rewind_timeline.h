@@ -12,26 +12,29 @@ namespace bmsx {
 class Runtime;
 class VideoPresenter;
 class HostRewind;
+enum class TimelineAction { None = -1, Seek, Playback, Resume, Cancel };
 
 class HostRewindTimeline final {
 public:
 	HostRewindTimeline();
-	RectBounds hitRect;
+	TimelineAction selectAt(i32 x, i32 y) const;
 	void moveCursor(Runtime& runtime, HostRewind& rewind, i32 direction);
 	void seekAt(Runtime& runtime, HostRewind& rewind, i32 x);
 	void queueRenderCommands(Runtime& runtime, VideoPresenter& presenter, HostRewind& rewind);
 
 private:
+	std::array<RectBounds, 4> hitRects{};
 	Font font{FontVariant::Tiny};
 	std::array<RectRenderSubmission, 4> rects;
-	std::array<GlyphRenderSubmission, 6> labels;
-	std::array<i32, 6> labelWidths;
-	std::array<Host2DKind, 10> commandKinds;
-	std::array<Host2DRef, 10> commandRefs;
+	std::array<GlyphRenderSubmission, 7> labels;
+	std::array<i32, 7> labelWidths;
+	std::array<Host2DKind, 11> commandKinds;
+	std::array<Host2DRef, 11> commandRefs;
 	HostMenuFrame renderFrame{commandKinds.data(), commandRefs.data(), commandKinds.size()};
 	i64 rangeTenths = -1;
 	i64 offsetTenths = -1;
 	std::string_view statusText;
+	bool playbackShown = false;
 };
 
 } // namespace bmsx

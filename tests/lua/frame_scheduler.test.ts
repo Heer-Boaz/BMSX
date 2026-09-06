@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { isDeepStrictEqual } from 'node:util';
 import { test } from 'node:test';
 
 import { AcceptedInterruptKind } from '../../machine/ts/machine/cpu/cpu';
@@ -256,6 +257,55 @@ test('history replays an unarmed supervisor edge through the actual ICU without 
 	assert.deepEqual(runtime.machine.irqController.captureState(), expectedIrq);
 });
 
+test('paced history playback resumes the same machine and journal at 50/60/144 Hz', () => {
+	for (const rate of [50, 60, 144]) {
+		const { runtime, input } = createTickRuntime();
+		const history = runtime.history;
+		input.keyDown = true;
+		runtime.machine.memory.writeIoU32(IO_INP_CTRL, INP_CTRL_ARM);
+		history.start({ checkpointCapacity: 2, inputCapacity: 64, checkpointIntervalCycles: 0x100000000 });
+		history.captureCheckpoint();
+		for (let tick = 0; tick < 20; tick += 1) runtime.frameScheduler.runToNextLogicalTick();
+		const expected = captureRuntimeSaveState(runtime);
+		const end = history.latestCycles;
+		const sequence = history.inputJournal.endSequence;
+		const sampleCount = input.sampleCount;
+		input.keyDown = false;
+		input.rejectLiveInput = true;
+		let restores = 0;
+		runtime.onStateRestored = () => { restores += 1; };
+		history.beginSeek(history.earliestCycles);
+		history.beginPlayback();
+		history.advancePlayback(5.123);
+		const pausedAt = runtime.machine.scheduler.nowCycles;
+		assert.ok(pausedAt > 0 && pausedAt < runtime.timing.cycleBudgetPerFrame, 'playback uses a fractional host-time grant');
+		history.cancelSeek();
+		history.advancePlayback(600_000);
+		assert.equal(runtime.machine.scheduler.nowCycles, pausedAt, 'pause holds a position between input boundaries');
+		history.beginPlayback();
+		history.advancePlayback(0);
+		assert.equal(runtime.machine.scheduler.nowCycles, pausedAt, 'resume consumes no paused time or old grant');
+		let frames = 0;
+		for (; history.mode === HistoryMode.Replaying && frames < 200; frames += 1) history.advancePlayback(1000 / rate);
+		assert.equal(history.mode, HistoryMode.Reviewing, 'playback stops at its recorded end');
+		assert.equal(runtime.machine.scheduler.nowCycles, end);
+		assert.ok(Math.abs(frames * 1000 / rate - (end - pausedAt) / runtime.timing.cpuCyclesPerMillisecond) <= 1000 / rate);
+		assert.equal(restores, 1, 'Play/Pause must not restore a checkpoint each frame or each toggle');
+		assert.equal(history.latestCycles, end);
+		assert.equal(history.inputJournal.endSequence, sequence);
+		assert.equal(history.inputJournal.replaySequence, sequence);
+		assert.equal(history.checkpointCount, 1);
+		assert.equal(input.sampleCount, sampleCount, 'live input is not consumed');
+		const actual = captureRuntimeSaveState(runtime);
+		actual.cpuState.instructionBudgetRemaining = expected.cpuState.instructionBudgetRemaining;
+		actual.machineState.frameScheduler = expected.machineState.frameScheduler;
+		actual.machineState.frameLoop = expected.machineState.frameLoop;
+		assert.equal(actual.machineState.machine.gxGpu.vramPresentationPending, true, 'restore requests a host redraw');
+		actual.machineState.machine.gxGpu.vramPresentationPending = expected.machineState.machine.gxGpu.vramPresentationPending;
+		assert.ok(isDeepStrictEqual(encodeRuntimeSaveState(actual), encodeRuntimeSaveState(expected)), 'all guest state is identical; only host scheduling/delivery metadata differs');
+	}
+});
+
 test('cancelled replay preserves future until takeover and discards its partial scheduling grant on takeover', () => {
 	const { runtime } = createTickRuntime();
 	const history = runtime.history;
@@ -309,6 +359,21 @@ test('history seek yields while a submitted backend readback is awaiting complet
 	for (let step = 0; history.mode === HistoryMode.Replaying && step < 100; step += 1) {
 		assert.notEqual(history.advanceSeek(16384), HistorySeekResult.Stopped);
 	}
+	assert.equal(history.mode, HistoryMode.Reviewing);
+	// Paced replay uses the same fence owner, including its host-time reset.
+	history.beginSeek(history.earliestCycles);
+	history.beginPlayback();
+	history.advancePlayback(runtime.timing.frameDurationMs);
+	assert.equal(output.readbackPort.claimReadback(output.commandBuffer.executedCommandCount), true);
+	const playbackBlocked = runtime.machine.scheduler.nowCycles;
+	const playbackGrant = runtime.frameLoop.frameState.cycleBudgetGranted;
+	history.advancePlayback(600_000);
+	assert.equal(runtime.machine.scheduler.nowCycles, playbackBlocked);
+	output.readbackPort.completeReadback(output.readbackPort.token);
+	history.advancePlayback(600_000);
+	assert.equal(runtime.frameScheduler.lastTickBudgetGranted, playbackGrant, 'completion consumes only the already accepted grant, not backend latency');
+	assert.ok(runtime.machine.scheduler.nowCycles - playbackBlocked <= playbackGrant);
+	for (let step = 0; step < 10; step += 1) history.advancePlayback(runtime.timing.frameDurationMs);
 	assert.equal(history.mode, HistoryMode.Reviewing);
 });
 

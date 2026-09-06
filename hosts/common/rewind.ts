@@ -7,7 +7,7 @@ import { LogLevel, type LogOutput } from './log';
 import type { RenderPresentationState } from './presentation_state';
 import { RuntimeTaskKind, type RuntimeTaskQueue } from './runtime_task_queue';
 
-const enum RewindRequest { None, Seek, Resume, Pause }
+const enum RewindRequest { None, Seek, Resume, Pause, Play }
 const REPLAY_CYCLE_GRANT = 16384;
 const REPLAY_WORK_MS = 8;
 
@@ -17,7 +17,9 @@ export class HostRewind {
 	public stopped = false;
 	private request = RewindRequest.None;
 	private requestedCycles = 0;
-	private resumeAtTarget = false;
+	private afterSeek = RewindRequest.None;
+	private playbackActive = false;
+	private playbackTimeResetPending = false;
 	private presentationPending = false;
 	private readonly options: HistoryOptions;
 
@@ -33,8 +35,11 @@ export class HostRewind {
 	}
 
 	public get available(): boolean { return this.runtime.history.checkpointCount !== 0; }
-	public get seeking(): boolean { return this.request === RewindRequest.Seek || this.runtime.history.mode === HistoryMode.Replaying; }
+	public get seeking(): boolean { return this.request === RewindRequest.Seek || (this.request !== RewindRequest.Pause && !this.playbackActive && this.runtime.history.mode === HistoryMode.Replaying); }
+	public get playing(): boolean { return this.request !== RewindRequest.Pause && (this.playbackActive || this.request === RewindRequest.Play || this.afterSeek === RewindRequest.Play); }
+	public get audioMuted(): boolean { return this.active && !this.playbackActive; }
 	public get positionCycles(): number {
+		if (this.playbackActive) return this.runtime.machine.scheduler.currentNowCycles();
 		return this.active ? this.requestedCycles : this.runtime.history.latestCycles;
 	}
 
@@ -58,7 +63,8 @@ export class HostRewind {
 		const history = this.runtime.history;
 		this.requestedCycles = clamp(cycles, history.earliestCycles, history.latestCycles);
 		this.request = RewindRequest.Seek;
-		this.resumeAtTarget = false;
+		this.afterSeek = RewindRequest.None;
+		this.playbackActive = false;
 		this.presentationPending = false;
 		this.active = true;
 		this.stopped = false;
@@ -68,14 +74,26 @@ export class HostRewind {
 	public returnToPresent(): void {
 		if (!this.active) return;
 		this.seekTo(this.runtime.history.latestCycles);
-		this.resumeAtTarget = true;
+		this.afterSeek = RewindRequest.Resume;
 	}
 
 	public resumeHere(): void {
-		if (this.seeking) this.resumeAtTarget = true;
+		if (this.seeking) this.afterSeek = RewindRequest.Resume;
 		else this.request = RewindRequest.Resume;
 	}
-	public pauseSeek(): void { this.request = RewindRequest.Pause; }
+	public pauseSeek(): void {
+		this.request = RewindRequest.Pause;
+		this.afterSeek = RewindRequest.None;
+	}
+
+	public togglePlayback(): void {
+		if (this.playing) this.pauseSeek();
+		else if (this.seeking) this.afterSeek = RewindRequest.Play;
+		else if (!this.active) {
+			this.seekTo(this.runtime.history.latestCycles);
+			this.afterSeek = RewindRequest.Play;
+		} else this.request = RewindRequest.Play;
+	}
 
 	private readonly onError = (error: unknown): void => {
 		this.logOutput.log(LogLevel.Error, error instanceof Error ? error.message : String(error));
@@ -107,7 +125,8 @@ export class HostRewind {
 			history.stop();
 			this.active = false;
 			this.request = RewindRequest.None;
-			this.resumeAtTarget = false;
+			this.afterSeek = RewindRequest.None;
+			this.playbackActive = false;
 			this.presentationPending = false;
 			this.stopped = false;
 			this.audioOutput.muteRewind(false);
@@ -116,7 +135,8 @@ export class HostRewind {
 		if (history.mode === HistoryMode.Disabled) {
 			this.active = false;
 			this.request = RewindRequest.None;
-			this.resumeAtTarget = false;
+			this.afterSeek = RewindRequest.None;
+			this.playbackActive = false;
 			this.presentationPending = false;
 			this.stopped = false;
 			this.audioOutput.muteRewind(false);
@@ -136,21 +156,32 @@ export class HostRewind {
 				this.request = RewindRequest.None;
 				if (history.mode !== HistoryMode.Recording) history.resumeRecording();
 				this.active = false;
-				this.resumeAtTarget = false;
+				this.afterSeek = RewindRequest.None;
+				this.playbackActive = false;
 				this.audioOutput.muteRewind(false);
 				break;
+			case RewindRequest.Play:
+				this.request = RewindRequest.None;
+				history.beginPlayback();
+				this.playbackActive = history.mode === HistoryMode.Replaying;
+				this.playbackTimeResetPending = true;
+				this.requestedCycles = runtime.machine.scheduler.currentNowCycles();
+				this.stopped = false;
+				this.audioOutput.muteRewind(this.audioMuted);
+				return;
 			case RewindRequest.Pause:
 				this.request = RewindRequest.None;
 				if (history.mode === HistoryMode.Recording) {
 					this.active = false;
-					this.audioOutput.muteRewind(false);
 				} else {
 					history.cancelSeek();
 					history.targetCycles = runtime.machine.scheduler.currentNowCycles();
 					this.requestedCycles = history.targetCycles;
 					this.presentationPending = true;
 				}
-				this.resumeAtTarget = false;
+				this.afterSeek = RewindRequest.None;
+				this.playbackActive = false;
+				this.audioOutput.muteRewind(this.audioMuted);
 				break;
 			case RewindRequest.None:
 				break;
@@ -159,7 +190,7 @@ export class HostRewind {
 			void this.tasks.schedule(this.capture, this.onError, RuntimeTaskKind.History);
 			return;
 		}
-		if (!this.active) return;
+		if (!this.active || this.playbackActive) return;
 		if (history.mode === HistoryMode.Replaying) {
 			const previousTick = runtime.frameScheduler.lastTickSequence;
 			const deadline = performance.now() + REPLAY_WORK_MS;
@@ -174,7 +205,7 @@ export class HostRewind {
 					history.targetCycles = runtime.machine.scheduler.currentNowCycles();
 					this.requestedCycles = history.targetCycles;
 					this.stopped = true;
-					this.resumeAtTarget = false;
+					this.afterSeek = RewindRequest.None;
 				}
 				if (result === HistorySeekResult.Complete || result === HistorySeekResult.Stopped) this.presentationPending = true;
 				if (gpu.backendServiceBlocksMachine() || performance.now() >= deadline) break;
@@ -187,6 +218,34 @@ export class HostRewind {
 			this.presentation.requestRestoredPresentation();
 			this.presentationPending = false;
 		}
-		if (history.mode === HistoryMode.Reviewing && !this.presentationPending && this.resumeAtTarget) this.request = RewindRequest.Resume;
+		if (history.mode === HistoryMode.Reviewing && !this.presentationPending && this.afterSeek !== RewindRequest.None) {
+			this.request = this.afterSeek;
+			this.afterSeek = RewindRequest.None;
+		}
+	}
+
+	/** Normal paced execution of recorded input, separate from fast seek reconstruction. */
+	public runPlayback(hostDeltaMs: number): void {
+		if (!this.playbackActive || !this.tasks.ready) return;
+		if (this.playbackTimeResetPending) {
+			this.playbackTimeResetPending = false;
+			hostDeltaMs = 0;
+		}
+		const runtime = this.runtime;
+		const history = runtime.history;
+		const gpu = runtime.machine.gxGpu;
+		const previousTick = runtime.frameScheduler.lastTickSequence;
+		history.advancePlayback(hostDeltaMs);
+		while (gpu.backendServicePending()) {
+			if (gpu.backendCommandDrainPending()) this.presenter.backend.executeGxGpuCommandDrain(gpu);
+			else this.presenter.backend.executeGxGpuReadback(gpu);
+			history.advancePlayback(0);
+		}
+		this.presentation.syncAfterRuntimeUpdate(runtime, previousTick);
+		this.requestedCycles = runtime.machine.scheduler.currentNowCycles();
+		if (history.mode === HistoryMode.Reviewing) {
+			this.playbackActive = false;
+			this.audioOutput.muteRewind(true);
+		}
 	}
 }

@@ -17,8 +17,11 @@ HostRewind::HostRewind(Runtime& runtime, VideoPresenter& presenter, RenderPresen
 		options{2, 1024, runtime.timing.cpuHz * 6} {}
 
 bool HostRewind::available() const { return runtime.history.checkpointCount() != 0; }
-bool HostRewind::seeking() const { return request == RewindRequest::Seek || runtime.history.mode == HistoryMode::Replaying; }
+bool HostRewind::seeking() const { return request == RewindRequest::Seek || (request != RewindRequest::Pause && !playbackActive && runtime.history.mode == HistoryMode::Replaying); }
+bool HostRewind::playing() const { return request != RewindRequest::Pause && (playbackActive || request == RewindRequest::Play || afterSeek == RewindRequest::Play); }
+bool HostRewind::audioMuted() const { return active && !playbackActive; }
 i64 HostRewind::positionCycles() const {
+	if (playbackActive) return runtime.machine.scheduler.currentNowCycles();
 	return active ? requestedCycles : runtime.history.latestCycles();
 }
 
@@ -42,7 +45,8 @@ void HostRewind::seekTo(i64 cycles) {
 	const auto& history = runtime.history;
 	requestedCycles = std::clamp(cycles, history.earliestCycles(), history.latestCycles());
 	request = RewindRequest::Seek;
-	resumeAtTarget = false;
+	afterSeek = RewindRequest::None;
+	playbackActive = false;
 	presentationPending = false;
 	active = true;
 	stopped = false;
@@ -51,14 +55,26 @@ void HostRewind::seekTo(i64 cycles) {
 void HostRewind::returnToPresent() {
 	if (!active) return;
 	seekTo(runtime.history.latestCycles());
-	resumeAtTarget = true;
+	afterSeek = RewindRequest::Resume;
 }
 
 void HostRewind::resumeHere() {
-	if (seeking()) resumeAtTarget = true;
+	if (seeking()) afterSeek = RewindRequest::Resume;
 	else request = RewindRequest::Resume;
 }
-void HostRewind::pauseSeek() { request = RewindRequest::Pause; }
+void HostRewind::pauseSeek() {
+	request = RewindRequest::Pause;
+	afterSeek = RewindRequest::None;
+}
+
+void HostRewind::togglePlayback() {
+	if (playing()) pauseSeek();
+	else if (seeking()) afterSeek = RewindRequest::Play;
+	else if (!active) {
+		seekTo(runtime.history.latestCycles());
+		afterSeek = RewindRequest::Play;
+	} else request = RewindRequest::Play;
+}
 
 void HostRewind::capture() {
 	presenter.backend().captureGxGpuVramSnapshot(runtime.machine.gxGpu);
@@ -82,7 +98,8 @@ void HostRewind::service(bool collect) {
 		history.stop();
 		active = false;
 		request = RewindRequest::None;
-		resumeAtTarget = false;
+		afterSeek = RewindRequest::None;
+		playbackActive = false;
 		presentationPending = false;
 		stopped = false;
 		return;
@@ -90,7 +107,8 @@ void HostRewind::service(bool collect) {
 	if (history.mode == HistoryMode::Disabled) {
 		active = false;
 		request = RewindRequest::None;
-		resumeAtTarget = false;
+		afterSeek = RewindRequest::None;
+		playbackActive = false;
 		presentationPending = false;
 		stopped = false;
 		history.start(options);
@@ -108,8 +126,17 @@ void HostRewind::service(bool collect) {
 			request = RewindRequest::None;
 			if (history.mode != HistoryMode::Recording) history.resumeRecording();
 			active = false;
-			resumeAtTarget = false;
+			afterSeek = RewindRequest::None;
+			playbackActive = false;
 			break;
+		case RewindRequest::Play:
+			request = RewindRequest::None;
+			history.beginPlayback();
+			playbackActive = history.mode == HistoryMode::Replaying;
+			playbackTimeResetPending = true;
+			requestedCycles = runtime.machine.scheduler.currentNowCycles();
+			stopped = false;
+			return;
 		case RewindRequest::Pause:
 			request = RewindRequest::None;
 			if (history.mode == HistoryMode::Recording) active = false;
@@ -119,7 +146,8 @@ void HostRewind::service(bool collect) {
 				requestedCycles = history.targetCycles;
 				presentationPending = true;
 			}
-			resumeAtTarget = false;
+			afterSeek = RewindRequest::None;
+			playbackActive = false;
 			break;
 		case RewindRequest::None:
 			break;
@@ -128,7 +156,7 @@ void HostRewind::service(bool collect) {
 		capture();
 		return;
 	}
-	if (!active) return;
+	if (!active || playbackActive) return;
 	if (history.mode == HistoryMode::Replaying) {
 		const i64 previousTick = runtime.frameScheduler.lastTickSequence;
 		const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(REPLAY_WORK_MS);
@@ -143,7 +171,7 @@ void HostRewind::service(bool collect) {
 				history.targetCycles = runtime.machine.scheduler.currentNowCycles();
 				requestedCycles = history.targetCycles;
 				stopped = true;
-				resumeAtTarget = false;
+				afterSeek = RewindRequest::None;
 			}
 			if (result == HistorySeekResult::Complete || result == HistorySeekResult::Stopped) presentationPending = true;
 			if (gpu.backendServiceBlocksMachine() || std::chrono::steady_clock::now() >= deadline) break;
@@ -156,7 +184,31 @@ void HostRewind::service(bool collect) {
 		presentation.requestRestoredPresentation();
 		presentationPending = false;
 	}
-	if (history.mode == HistoryMode::Reviewing && !presentationPending && resumeAtTarget) request = RewindRequest::Resume;
+	if (history.mode == HistoryMode::Reviewing && !presentationPending && afterSeek != RewindRequest::None) {
+		request = afterSeek;
+		afterSeek = RewindRequest::None;
+	}
+}
+
+void HostRewind::runPlayback(f64 hostDeltaMs) {
+	if (!playbackActive) return;
+	if (playbackTimeResetPending) {
+		playbackTimeResetPending = false;
+		hostDeltaMs = 0;
+	}
+	auto& history = runtime.history;
+	auto& gpu = runtime.machine.gxGpu;
+	auto& backend = presenter.backend();
+	const i64 previousTick = runtime.frameScheduler.lastTickSequence;
+	history.advancePlayback(hostDeltaMs);
+	while (gpu.backendServicePending()) {
+		if (gpu.backendCommandDrainPending()) backend.executeGxGpuCommandDrain(gpu);
+		else backend.executeGxGpuReadback(gpu);
+		history.advancePlayback(0);
+	}
+	presentation.syncAfterRuntimeUpdate(runtime, previousTick);
+	requestedCycles = runtime.machine.scheduler.currentNowCycles();
+	if (history.mode == HistoryMode::Reviewing) playbackActive = false;
 }
 
 } // namespace bmsx

@@ -11,6 +11,7 @@
 #include "spec/bmsx/model.h"
 
 #include <cstdarg>
+#include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -51,7 +52,14 @@ void RETRO_CALLCONV logMessage(retro_log_level level, const char* format, ...) {
 	va_end(arguments);
 }
 void poll() {}
+int16_t pointerX = 0, pointerY = 0;
+bool pointerPressed = false;
 int16_t inputState(unsigned port, unsigned device, unsigned, unsigned id) {
+	if (port == 0 && device == RETRO_DEVICE_POINTER) {
+		if (id == RETRO_DEVICE_ID_POINTER_X) return pointerX;
+		if (id == RETRO_DEVICE_ID_POINTER_Y) return pointerY;
+		if (id == RETRO_DEVICE_ID_POINTER_PRESSED) return pointerPressed;
+	}
 	return port == 0 && device == RETRO_DEVICE_JOYPAD && (buttons & (1u << id)) != 0 ? 1 : 0;
 }
 bool RETRO_CALLCONV supervisorRequest() { return false; }
@@ -98,7 +106,7 @@ int main(int argc, char** argv) {
 			input.poll(static_cast<i32>(presenter.viewportSize.x), static_cast<i32>(presenter.viewportSize.y), (totalTime + delta) * 1000.0);
 			runLibretroFrame(runtime, input, menu, rewind, presentation, presenter, totalTime, delta);
 			audio.setEmulationFrameTimeSec(delta);
-			audio.setMuted(runtime.machine.audioController, rewind.active || (runtime.machine.memory.readIoU32(IO_SYS_STATUS) & SYS_STATUS_SUPERVISOR_ACTIVE) != 0u);
+			audio.setMuted(runtime.machine.audioController, rewind.audioMuted() || (runtime.machine.memory.readIoU32(IO_SYS_STATUS) & SYS_STATUS_SUPERVISOR_ACTIVE) != 0u);
 			audio.collectFrame(runtime.machine.audioController);
 			audioFrames += audio.frameCount();
 			for (size_t index = 0; index < audio.frameCount() * 2; ++index) audible |= audio.data()[index] != 0;
@@ -113,6 +121,27 @@ int main(int argc, char** argv) {
 		const auto returnLive = [&]() {
 			for (unsigned count = 0; count < 4000 && rewind.active; ++count) frame();
 			require(!rewind.active && history.mode == HistoryMode::Recording, "controller must rejoin live recording");
+		};
+		const auto clickTimeline = [&](std::string_view labelText, int heldFrames = 1) {
+			menu.queueRenderCommands(runtime, presenter, rewind);
+			const auto bar = presenter.hostOverlayQueue.consumeHostMenuFrame();
+			bool found = false;
+			for (size_t index = 0; index < bar.commandCount; ++index) {
+				if (bar.commandKinds[index] != Host2DKind::Glyphs) continue;
+				const auto& label = *bar.commandRefs[index].glyphs;
+				if (label.items[0] != labelText) continue;
+				found = true;
+				const i32 x = static_cast<i32>(label.x) + label.font->measure(label.items[0]) / 2;
+				const i32 y = static_cast<i32>(label.y) + 3;
+				pointerX = static_cast<i16>(x * 65534 / (static_cast<i32>(presenter.viewportSize.x) - 1) - 32767);
+				pointerY = static_cast<i16>(y * 65534 / (static_cast<i32>(presenter.viewportSize.y) - 1) - 32767);
+			}
+			require(found, "visible pointer transport button");
+			frame();
+			pointerPressed = true;
+			for (int index = 0; index < heldFrames; ++index) frame();
+			pointerPressed = false;
+			frame();
 		};
 		const auto openRewind = [&]() {
 			press((1u << RETRO_DEVICE_ID_JOYPAD_SELECT) | (1u << RETRO_DEVICE_ID_JOYPAD_START));
@@ -163,21 +192,54 @@ int main(int argc, char** argv) {
 		require(settle() == oldest, "oldest boundary never wraps");
 		snapshot("oldest");
 		require(restoredStates != 0 && restoredCycles == oldest, "post-restore notification observes installed machine state");
+		const auto playbackSequence = history.inputJournal.endSequence;
+		const auto playbackRestores = restoredStates;
+		const auto playbackCaptures = software.vramCaptures;
+		const auto playbackAudio = audioFrames;
+		audible = false;
+		buttons = menuAccept;
+		for (int index = 0; index < 21; ++index) frame();
+		require(rewind.playing() && menu.active(), "held A starts replay only once and retains the transport");
+		const auto replayedCycles = runtime.machine.scheduler.currentNowCycles() - oldest;
+		require(std::abs(replayedCycles - runtime.timing.cpuHz * runtime.timing.frameDurationMs * 20 / 1000) <= runtime.timing.cycleBudgetPerFrame, "replay obeys normal host/PCRTC pacing");
+		buttons = 0; frame();
+		require(audible && audioFrames > playbackAudio, "paced replay delivers fresh nonzero audio");
+		press(menuAccept);
+		const auto previewPaused = runtime.machine.scheduler.currentNowCycles();
+		const auto previewAudio = audioFrames;
+		require(!rewind.playing() && rewind.active && history.mode == HistoryMode::Reviewing, "A pauses replay without takeover");
+		for (int index = 0; index < 8; ++index) frame();
+		require(runtime.machine.scheduler.currentNowCycles() == previewPaused && rewind.positionCycles() == previewPaused, "pause retains the actual replay position");
+		require(audioFrames == previewAudio && history.latestCycles() == latest && history.inputJournal.endSequence == playbackSequence, "pause preserves future and stops audio");
+		require(restoredStates == playbackRestores && software.vramCaptures == playbackCaptures, "Play/Pause does not restore or capture");
+		snapshot("playback-paused");
+		press(menuAccept);
+		for (int index = 0; index < 800 && rewind.playing(); ++index) frame();
+		require(runtime.machine.scheduler.currentNowCycles() == latest && !rewind.playing() && menu.active() && rewind.active, "recorded end pauses, not live takeover");
+		press(1u << RETRO_DEVICE_ID_JOYPAD_L); settle();
+		const auto retained = runtime.machine.scheduler.currentNowCycles();
 		menu.dismiss(input, rewind);
 		for (int index = 0; index < 5; ++index) frame();
-		require(!menu.active() && rewind.active && runtime.machine.scheduler.currentNowCycles() == oldest
+		require(!menu.active() && rewind.active && runtime.machine.scheduler.currentNowCycles() == retained
 			&& history.latestCycles() == latest, "external view navigation retains selected state and recorded future");
 		openRewind();
-		press(menuCancel); returnLive();
+		clickTimeline("B CANCEL"); returnLive();
 		for (int index = 0; index < 12; ++index) frame();
 		require(runtime.machine.scheduler.currentNowCycles() >= latest, "cancel preserves the recorded future");
 		openRewind();
 		const i64 branchEnd = history.latestCycles();
 		press(1u << RETRO_DEVICE_ID_JOYPAD_L);
-		const i64 branch = settle();
-		press(1u << RETRO_DEVICE_ID_JOYPAD_START); returnLive();
+		settle();
+		clickTimeline("A PLAY", 5);
+		require(rewind.playing(), "pointer starts playback");
+		for (int index = 0; index < 7; ++index) frame();
+		clickTimeline("A PAUSE", 4);
+		require(!rewind.playing(), "pointer pauses playback");
+		const i64 branch = runtime.machine.scheduler.currentNowCycles();
+		clickTimeline("START GAME"); returnLive();
 		for (int index = 0; index < 20; ++index) frame();
 		require(runtime.machine.scheduler.currentNowCycles() > branch && history.latestCycles() < branchEnd, "START branches at the selected position");
+		require(history.checkpointCycles(history.checkpointCount() - 1) == branch, "takeover captures the exact paused playback position, not a nearby checkpoint");
 		snapshot("branched");
 		openRewind();
 		const i64 beforeKeyboard = history.latestCycles();

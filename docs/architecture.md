@@ -1653,13 +1653,18 @@ at a breakpoint or repaired after a guest fault.
 
 The existing quick menu opens a compact rewind bar at the bottom of the game
 viewport, using the host tiny font. LB/RB or left/right seek through the recorded
-range, START/A resumes at the selected position, and B or the menu chord cancels
-back to the recorded end. A pointer click seeks proportionally along the bar.
+range, A toggles recorded playback/pause, START takes live control at the current
+position, and B or the menu chord cancels back to the recorded end. A pointer
+click seeks proportionally along the bar; the transport labels are also buttons.
+Playback uses normal host-time scheduling with the retained ICU journal and
+current machine, not repeated checkpoint restores or the fast-seek budget. It
+delivers current video/audio, preserves the future, and pauses at the recorded
+end. Play/Pause retains actual machine cycles; no cartlib worldtick is inferred.
 Review preserves the recorded future; returning to latest rejoins it, whereas
 resume here branches. One overlay lifecycle owns departure, input reset and
 destination activation; the keyboard does not know about rewind cleanup.
 External view navigation uses the same lifecycle with Retain: it stops a seek
-at its reached position without accepting a branch or cancelling to the old
+or playback at its reached position without accepting a branch or cancelling to the old
 present. Explicit execution uses Discard for the modal while its execution or
 media owner handles takeover. These outcomes exist in both host implementations.
 The shared host `HostUiInput` owns physical press edges, repeat deadlines and

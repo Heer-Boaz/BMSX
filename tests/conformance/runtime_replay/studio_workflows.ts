@@ -42,9 +42,21 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	await press('ShiftLeft');
 	await settle();
 	check(history.mode === HistoryMode.Reviewing, 'real timeline selects history');
-	const selected = cycles();
+	const seekPosition = cycles();
+	const recordedEnd = history.latestCycles;
+	await press('KeyX');
+	check(rewind.playing, 'A starts recorded playback inside the timeline');
+	for (let index = 0; index < 7; index += 1) await frame();
+	await press('KeyX');
+	let selected = cycles();
+	check(!rewind.playing && selected > seekPosition && selected < recordedEnd,
+		'A pauses at the actual playback position, without takeover');
+	check(history.latestCycles === recordedEnd, 'watching history retains its future');
+	await press('KeyX');
+	await frame();
 	await press('ControlRight', 'ShiftRight');
-	check(ide.editor.isActive, 'W02: IDE is reachable directly from timeline');
+	selected = cycles();
+	check(ide.editor.isActive && !rewind.playing, 'W02: IDE opening pauses an actively playing timeline at its current position');
 	await runMenuCommand('pause');
 	check(execution.paused, 'W02: host pause must retain the selected position independently of rewind');
 	for (let index = 0; index < 5; index += 1) await frame();

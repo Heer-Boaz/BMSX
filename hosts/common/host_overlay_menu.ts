@@ -1,4 +1,4 @@
-import type { HostExecutionControl } from './execution_control';
+import { HostPauseReason, type HostExecutionControl } from './execution_control';
 import { RectRenderKind, type GlyphRenderSubmission, type RectRenderSubmission } from '../../machine/ts/render/shared/submissions';
 import { LAYER_2D_IDE } from '../../machine/ts/render/shared/layers';
 import { Host2DKind, type Host2DRef } from '../../machine/ts/render/host_overlay/commands';
@@ -17,7 +17,7 @@ import {
 } from './input/shortcuts';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { HostRewind } from './rewind';
-import { HostRewindTimeline } from './rewind_timeline';
+import { HostRewindTimeline, TimelineAction } from './rewind_timeline';
 import type { DeviceQuantizeMode } from '../../machine/ts/render/post/device_quantize/mode';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import type { HostMenuFrame } from '../../machine/ts/render/host_overlay/overlay_queue';
@@ -385,7 +385,7 @@ export class HostOverlayMenu {
 		private readonly runtime: Runtime,
 		private readonly input: Input,
 		private readonly rewind: HostRewind,
-		execution: HostExecutionControl,
+		private readonly execution: HostExecutionControl,
 	) {
 		this.presenter = presenter;
 		this.keyboard = new HostOnScreenKeyboard(presenter, input);
@@ -507,14 +507,19 @@ export class HostOverlayMenu {
 
 	private tickTimelineInput(): HostMenuInput {
 		const pointerActivated = this.tickPointerInput();
+		const pointerAction = pointerActivated
+			? this.timeline.selectAt(this.uiInput.pointerPosition.x, this.uiInput.pointerPosition.y) : TimelineAction.None;
 		let result = HostMenuInput.Active;
-		if (this.uiInput.buttonJustPressed(BUTTON_B)) {
+		if (this.uiInput.buttonJustPressed(BUTTON_B) || pointerAction === TimelineAction.Cancel) {
 			this.transitionTo(HostOverlayPage.Closed);
 			result = HostMenuInput.Inactive;
-		} else if (this.uiInput.buttonJustPressed(BUTTON_START) || this.uiInput.buttonJustPressed(BUTTON_A)) {
+		} else if (this.uiInput.buttonJustPressed(BUTTON_START) || pointerAction === TimelineAction.Resume) {
 			this.transitionTo(HostOverlayPage.Closed, HostOverlayOutcome.Accept);
 			result = HostMenuInput.Inactive;
-		} else if (pointerActivated) {
+		} else if (this.uiInput.buttonJustPressed(BUTTON_A) || pointerAction === TimelineAction.Playback) {
+			if (!this.rewind.playing) this.execution.setPauseReason(HostPauseReason.Requested, false);
+			this.rewind.togglePlayback();
+		} else if (pointerAction === TimelineAction.Seek) {
 			this.timeline.seekAt(this.runtime, this.rewind, this.uiInput.pointerPosition.x);
 		} else {
 			const leftBumper = this.uiInput.buttonRepeatEdge(BUTTON_LEFT_BUMPER);
@@ -784,7 +789,10 @@ export class HostOverlayMenu {
 				this.keyboard.close();
 				break;
 			case HostOverlayPage.Rewind:
-				if (outcome === HostOverlayOutcome.Accept) this.rewind.resumeHere();
+				if (outcome === HostOverlayOutcome.Accept) {
+					this.execution.setPauseReason(HostPauseReason.Requested, false);
+					this.rewind.resumeHere();
+				}
 				else if (outcome === HostOverlayOutcome.Cancel) this.rewind.returnToPresent();
 				else if (outcome === HostOverlayOutcome.Retain && this.rewind.active) this.rewind.pauseSeek();
 				break;
@@ -925,7 +933,7 @@ export class HostOverlayMenu {
 			return this.keyboard.selectAt(x, y);
 		}
 		if (this.page === HostOverlayPage.Rewind) {
-			return point_in_rect(x, y, this.timeline.hitRect) ? 0 : -1;
+			return this.timeline.selectAt(x, y);
 		}
 		if (!point_in_rect(x, y, this.optionHitRect)) {
 			return -1;

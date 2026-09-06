@@ -238,7 +238,6 @@ export class FrameSchedulerState {
 	}
 
 	public runScheduledToNextLogicalTick(hostDeltaMs: number): boolean {
-		if (this.runtime.history.mode === HistoryMode.Replaying) return false;
 		const runtime = this.runtime;
 		const targetSequence = this.lastTickSequence + 1;
 		if (!this.beginScheduledExecution(hostDeltaMs)) {
