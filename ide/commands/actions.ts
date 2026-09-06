@@ -1,12 +1,14 @@
+import type { HostExecutionControl } from '../../hosts/common/execution_control';
 import { editorRuntimeState } from '../editor/common/runtime_state';
 import { applyAllWorkspaceSourceOverrides, applyLuaCodeTabSources } from '../workspace/workspace';
 import { workspaceDirtyRecords } from '../workbench/workspace/state';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import type { Input } from '../../hosts/common/input/manager';
-import type { LogOutput } from '../../hosts/common/log';
+import { LogLevel, type LogOutput } from '../../hosts/common/log';
 import type { KeyValueStorage } from '../workspace/key_value_storage';
-import { hotResume } from '../runtime/hot_resume';
+import { buildBlua32Revision, hotResume, type BuiltBlua32Revision } from '../runtime/hot_resume';
+import { blua32MediaRequiresRebuild } from '../runtime/lua_pipeline';
 import { deactivateEditor } from '../workbench/overlay_modes';
 import { handleLuaError } from '../workbench/runtime_errors';
 import { rebootPreparedRuntime } from '../workbench/blua32_boot';
@@ -23,6 +25,7 @@ import type { RuntimeLuaTooling } from '../runtime/lua_tooling';
 import type { OverlayRenderer } from '../runtime/overlay_renderer';
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import type { RuntimeDebuggerState } from '../runtime/debugger_state';
+import { showEditorMessage } from '../common/feedback_state';
 
 export function performEditorAction(
 	editor: CartEditor,
@@ -32,6 +35,7 @@ export function performEditorAction(
 	debuggerState: RuntimeDebuggerState,
 	input: Input,
 	runtimeTasks: RuntimeTaskQueue,
+	execution: HostExecutionControl,
 	overlayRenderer: OverlayRenderer,
 	runtime: Runtime,
 	audioOutput: HostAudioOutput,
@@ -49,6 +53,7 @@ export function performEditorAction(
 				debuggerState,
 				input,
 				runtimeTasks,
+				execution,
 				overlayRenderer,
 				runtime,
 				audioOutput,
@@ -64,6 +69,7 @@ export function performEditorAction(
 				luaTooling,
 				debuggerState,
 				runtimeTasks,
+				execution,
 				overlayRenderer,
 				runtime,
 				audioOutput,
@@ -89,35 +95,36 @@ export function performHotResume(
 	debuggerState: RuntimeDebuggerState,
 	input: Input,
 	runtimeTasks: RuntimeTaskQueue,
+	execution: HostExecutionControl,
 	overlayRenderer: OverlayRenderer,
 	runtime: Runtime,
 	audioOutput: HostAudioOutput,
 	storage: KeyValueStorage,
 	logOutput: LogOutput,
 ): Promise<void> {
-	deactivateEditor(editor, overlayRenderer, audioOutput);
 	console.log('Performing hot resume.');
 	const pendingSources = capturePendingLuaTextModelSources(sources);
 	persistWorkspaceSessionLocally();
 	const handleHotResumeError = (error: unknown): void => {
 		console.error(error);
-		handleLuaError(
-			logOutput,
-			fault,
-			sources,
-			runtime,
-			luaTooling.suspendedGuest,
-			error,
-		);
+		logOutput.log(LogLevel.Error, error instanceof Error ? error.message : String(error));
 		editor.handleRuntimeTaskError(error, 'Failed to resume game');
 	};
 	return runtimeTasks.schedule(async () => {
-		await applyAllWorkspaceSourceOverrides(
-			storage,
-			sources,
-			workspaceDirtyRecords,
-		);
-		applyLuaCodeTabSources(sources, pendingSources);
+		let built: BuiltBlua32Revision | null;
+		try {
+			await applyAllWorkspaceSourceOverrides(storage, sources, workspaceDirtyRecords);
+			applyLuaCodeTabSources(sources, pendingSources);
+			built = blua32MediaRequiresRebuild(sources)
+				? buildBlua32Revision(sources, luaTooling, runtime,
+					sources.systemBlua32MediaDirty, sources.cartridgeBlua32MediaDirty)
+				: null;
+		} catch (error) {
+			// Source/build rejection precedes machine mutation. Keep the installed
+			// execution available; the operation queue must not latch a host fault.
+			handleHotResumeError(error);
+			return;
+		}
 		hotResume(
 			sources,
 			luaTooling,
@@ -127,13 +134,15 @@ export function performHotResume(
 			runtimeTasks,
 			editor,
 			runtime,
-			sources.systemBlua32MediaDirty,
-			sources.cartridgeBlua32MediaDirty,
+			built,
 			handleHotResumeError,
 			() => {
 				markLuaTextModelsAppliedToRuntime(pendingSources);
+				showEditorMessage('Hot Resume: code applied', constants.COLOR_STATUS_TEXT, 2.0);
 			},
 		);
+		execution.requestExecution(true);
+		deactivateEditor(editor, overlayRenderer, audioOutput);
 	}, handleHotResumeError);
 }
 
@@ -144,6 +153,7 @@ export function performReboot(
 	luaTooling: RuntimeLuaTooling,
 	debuggerState: RuntimeDebuggerState,
 	runtimeTasks: RuntimeTaskQueue,
+	execution: HostExecutionControl,
 	overlayRenderer: OverlayRenderer,
 	runtime: Runtime,
 	audioOutput: HostAudioOutput,
@@ -168,6 +178,7 @@ export function performReboot(
 			storage,
 		);
 		markLuaTextModelsAppliedToRuntime(pendingSources);
+		execution.requestExecution(true);
 	}, (error) => {
 		handleLuaError(
 			logOutput,

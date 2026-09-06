@@ -51,6 +51,11 @@ export class RuntimeDebuggerPlanManager {
 		return this.controlPlan !== null;
 	}
 
+	/** Tool-driven execution is not a replayable interval of ordinary guest input. */
+	public get mutationActive(): boolean {
+		return this.controlPlan !== null || this.completionBatches.length !== 0;
+	}
+
 	public get executionDomainMask(): ExecutionDomainMask {
 		return this.controlPlan === null ? 0 : this.controlPlan.executionDomainMask;
 	}

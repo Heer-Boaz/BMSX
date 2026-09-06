@@ -1300,7 +1300,7 @@ test('Hot Resume rejects an unmapped continuation before any physical state writ
 			target,
 			null,
 		], cpu.getFrameDepth()),
-		/Hot resume could not relocate/,
+		/Hot Resume could not map/,
 	);
 	assert.equal(cpu.readFrameFunctionAddress(0), functionAddress);
 	assert.equal(cpu.readFramePc(0), framePc);

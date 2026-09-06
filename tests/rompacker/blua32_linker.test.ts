@@ -306,6 +306,17 @@ test('compiler vectors become distinct physical BLua32 function addresses', () =
 	assert.equal(linked.exceptionFunctionAddress, addresses[object.vectors.exceptionProtoIndex]);
 	assert.deepEqual(linked.symbols.metadata.functionIds, compiled.metadata.protoIds);
 	assert.equal(irqOps.at(-1), OpCode.RFE);
+	for (const protoIndex of [object.vectors.irqProtoIndex, object.vectors.exceptionProtoIndex]) {
+		const points = compiled.metadata.resumePointsByProto[protoIndex];
+		assert.equal(points.length, 1, 'generated exception return owns a hidden remap point');
+		const point = points[0];
+		assert.equal(point.op, OpCode.RFE);
+		assert.equal(point.wordOffset * INSTRUCTION_BYTES, compiled.program.protos[protoIndex].codeLen - INSTRUCTION_BYTES);
+		assert.deepEqual(point.liveRegisters, []);
+		assert.deepEqual(point.uses, []);
+		assert.deepEqual(point.defs, []);
+		assert.deepEqual(compiled.metadata.statementPointsByProto[protoIndex], [], 'remap point is not a source breakpoint');
+	}
 });
 
 test('compiler object and physical BLua32 image ignore source registry enumeration order', () => {

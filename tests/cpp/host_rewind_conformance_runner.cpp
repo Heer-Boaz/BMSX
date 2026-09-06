@@ -68,6 +68,12 @@ int main(int argc, char** argv) {
 		require(content != nullptr, "real cartridge admission failed");
 		auto& runtime = content->runtime;
 		auto& history = runtime.history;
+		u32 restoredStates = 0;
+		i64 restoredCycles = 0;
+		runtime.onStateRestored = [&]() {
+			++restoredStates;
+			restoredCycles = runtime.machine.scheduler.currentNowCycles();
+		};
 		retro_system_av_info avInfo{};
 		LibretroVideoOutput video(avInfo);
 		auto backend = std::make_unique<CountingSoftwareBackend>(256, 212, PSX_MACHINE_SPEC.gxGpuVramBytes);
@@ -156,6 +162,12 @@ int main(int argc, char** argv) {
 		press(1u << RETRO_DEVICE_ID_JOYPAD_L);
 		require(settle() == oldest, "oldest boundary never wraps");
 		snapshot("oldest");
+		require(restoredStates != 0 && restoredCycles == oldest, "post-restore notification observes installed machine state");
+		menu.dismiss(input, rewind);
+		for (int index = 0; index < 5; ++index) frame();
+		require(!menu.active() && rewind.active && runtime.machine.scheduler.currentNowCycles() == oldest
+			&& history.latestCycles() == latest, "external view navigation retains selected state and recorded future");
+		openRewind();
 		press(menuCancel); returnLive();
 		for (int index = 0; index < 12; ++index) frame();
 		require(runtime.machine.scheduler.currentNowCycles() >= latest, "cancel preserves the recorded future");

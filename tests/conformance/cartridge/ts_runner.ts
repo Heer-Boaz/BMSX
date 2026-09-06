@@ -1,3 +1,4 @@
+import { HostExecutionControl } from '../../../hosts/common/execution_control';
 import { HostRewind } from '../../../hosts/common/rewind';
 import { RuntimeTaskQueue } from '../../../hosts/common/runtime_task_queue';
 import Module from 'node:module';
@@ -101,15 +102,16 @@ async function main(): Promise<void> {
 		runtime.timing.ufpsScaled,
 	);
 	const systemOutput = new SystemOutputLog();
-	const runtimeTasks = new RuntimeTaskQueue(audioOutput, runtime, presenter);
+	const runtimeTasks = new RuntimeTaskQueue(audioOutput, presenter);
 	const presentation = new RenderPresentationState();
+	const execution = new HostExecutionControl(audioOutput);
 	const rewind = new HostRewind(runtime, presenter, presentation, runtimeTasks, audioOutput, logOutput);
-	const session = new HostFrameSession(runtime.timing.ufpsScaled, clock.now(), rewind);
+	const session = new HostFrameSession(runtime.timing.ufpsScaled, clock.now(), rewind, execution);
 	runtime.resetForSystemBoot();
 	runtime.boot();
 	systemOutput.flush(runtime, logOutput);
 	audioOutput.bootstrap();
-	const hostOverlayMenu = new HostOverlayMenu(presenter, runtime, input, rewind);
+	const hostOverlayMenu = new HostOverlayMenu(presenter, runtime, input, rewind, execution);
 	runtime.frameScheduler.clearQueuedTime();
 	let currentTimeMs = session.currentTimeMs;
 	const transcriptCount = (entry: string): number => {

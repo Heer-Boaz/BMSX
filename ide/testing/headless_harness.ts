@@ -1,4 +1,5 @@
-import { hotResume } from '../runtime/hot_resume';
+import { buildBlua32Revision, hotResume } from '../runtime/hot_resume';
+import { blua32MediaRequiresRebuild } from '../runtime/lua_pipeline';
 import { performHotResume } from '../commands/actions';
 import { rebootPreparedRuntime } from '../workbench/blua32_boot';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
@@ -136,8 +137,10 @@ export function createHeadlessIdeHarness(
 				ide.runtimeTasks,
 				ide.editor,
 				runtime,
-				ide.sources.systemBlua32MediaDirty,
-				ide.sources.cartridgeBlua32MediaDirty,
+				blua32MediaRequiresRebuild(ide.sources)
+					? buildBlua32Revision(ide.sources, ide.luaTooling, runtime,
+						ide.sources.systemBlua32MediaDirty, ide.sources.cartridgeBlua32MediaDirty)
+					: null,
 				handleHotResumeError,
 				null,
 			);
@@ -151,6 +154,7 @@ export function createHeadlessIdeHarness(
 				ide.debugger,
 				input,
 				ide.runtimeTasks,
+				ide.execution,
 				ide.overlayRenderer,
 				runtime,
 				audioOutput,

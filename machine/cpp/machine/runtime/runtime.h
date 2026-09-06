@@ -20,6 +20,7 @@
 #include "machine/scheduler/frame.h"
 #include "common/primitives.h"
 #include <cstddef>
+#include <functional>
 #include <memory>
 #include <span>
 #include <utility>
@@ -85,6 +86,8 @@ public:
 	FrameLoopState frameLoop;
 	VblankState vblank;
 	RuntimeHistory history;
+	// Host/tooling observers discard borrowed inspection state after a restore.
+	std::function<void()> onStateRestored;
 private:
 	enum class PendingCall {
 		None,

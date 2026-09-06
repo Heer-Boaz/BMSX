@@ -1,3 +1,4 @@
+import { HostExecutionControl } from '../../../hosts/common/execution_control';
 import assert from 'node:assert/strict';
 import Module from 'node:module';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -60,11 +61,12 @@ async function main(): Promise<void> {
 	const audioOutput = new HostAudioOutput(sink, runtime.machine.audioController, runtime.machine.audioOutput.outputRing, runtime.timing.ufpsScaled);
 	const errors: string[] = [];
 	const log = { log(level: number, message: string) { if (level === 3) errors.push(message); } };
-	const tasks = new RuntimeTaskQueue(audioOutput, runtime, presenter);
+	const tasks = new RuntimeTaskQueue(audioOutput, presenter);
 	const presentation = new RenderPresentationState();
+	const execution = new HostExecutionControl(audioOutput);
 	const rewind = new HostRewind(runtime, presenter, presentation, tasks, audioOutput, log);
-	const session = new HostFrameSession(runtime.timing.ufpsScaled, clock.now(), rewind);
-	const menu = new HostOverlayMenu(presenter, runtime, input, rewind);
+	const session = new HostFrameSession(runtime.timing.ufpsScaled, clock.now(), rewind, execution);
+	const menu = new HostOverlayMenu(presenter, runtime, input, rewind, execution);
 	const output = new SystemOutputLog();
 	const history = runtime.history;
 	const { Host2DKind } = await import('../../../machine/ts/render/host_overlay/commands');
@@ -251,7 +253,11 @@ async function main(): Promise<void> {
 	assert.equal(tasks.ready, false);
 	const heldCycles = runtime.machine.scheduler.currentNowCycles();
 	let mutated = false;
-	const mutation = tasks.schedule(() => { mutated = true; assert.equal(history.mode, HistoryMode.Disabled); }, error => { throw error; });
+	const mutation = tasks.schedule(() => {
+		assert.notEqual(history.mode, HistoryMode.Disabled, 'queue admission does not mutate history');
+		runtime.history.stop();
+		mutated = true;
+	}, error => { throw error; });
 	for (let index = 0; index < 4; index += 1) await frame();
 	assert.equal(mutated, false, 'mutation must wait for the submitted readback');
 	assert.equal(runtime.machine.scheduler.currentNowCycles(), heldCycles);

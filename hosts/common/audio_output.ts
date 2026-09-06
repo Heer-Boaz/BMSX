@@ -19,7 +19,6 @@ export interface HostAudioSink {
 
 const MUTE_REASON_PAUSE = 0x01;
 const MUTE_REASON_UI = 0x02;
-const MUTE_REASON_DEBUGGER = 0x04;
 const MUTE_REASON_RUNTIME_TASK = 0x08;
 const MUTE_REASON_SYSTEM = 0x10;
 const MUTE_REASON_REWIND = 0x20;
@@ -80,10 +79,6 @@ export class HostAudioOutput {
 
 	public muteUi(muted: boolean): void {
 		this.setMuteReason(MUTE_REASON_UI, muted);
-	}
-
-	public muteDebugger(muted: boolean): void {
-		this.setMuteReason(MUTE_REASON_DEBUGGER, muted);
 	}
 
 	public muteRuntimeTask(muted: boolean): void {

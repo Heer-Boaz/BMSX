@@ -1,3 +1,4 @@
+import type { HostExecutionControl } from './execution_control';
 import { RectRenderKind, type GlyphRenderSubmission, type RectRenderSubmission } from '../../machine/ts/render/shared/submissions';
 import { LAYER_2D_IDE } from '../../machine/ts/render/shared/layers';
 import { Host2DKind, type Host2DRef } from '../../machine/ts/render/host_overlay/commands';
@@ -190,7 +191,7 @@ const enum HostOverlayPage {
 	Rewind,
 }
 
-const enum HostOverlayOutcome { Cancel, Accept, Discard }
+export const enum HostOverlayOutcome { Cancel, Accept, Discard, Retain }
 
 function boolIndex(value: boolean): number {
 	return value ? 1 : 0;
@@ -384,6 +385,7 @@ export class HostOverlayMenu {
 		private readonly runtime: Runtime,
 		private readonly input: Input,
 		private readonly rewind: HostRewind,
+		execution: HostExecutionControl,
 	) {
 		this.presenter = presenter;
 		this.keyboard = new HostOnScreenKeyboard(presenter, input);
@@ -409,6 +411,7 @@ export class HostOverlayMenu {
 		this.remapOptions = remapOptions;
 		this.options = this.rootOptions;
 		const shortcuts = input.getGlobalShortcutRegistry();
+		execution.onWillExecute(() => this.dismiss(HostOverlayOutcome.Discard));
 		for (let playerIndex = 1; playerIndex <= Input.PLAYERS_MAX; playerIndex += 1) {
 			shortcuts.registerControlShortcut(
 				playerIndex,
@@ -770,6 +773,11 @@ export class HostOverlayMenu {
 		return HostMenuInput.Active;
 	}
 
+	/** Yield modal focus without accepting a branch or cancelling back to the present. */
+	public dismiss(outcome = HostOverlayOutcome.Retain): void {
+		this.transitionTo(HostOverlayPage.Closed, outcome);
+	}
+
 	private transitionTo(next: HostOverlayPage, outcome = HostOverlayOutcome.Cancel): void {
 		switch (this.page) {
 			case HostOverlayPage.Keyboard:
@@ -778,6 +786,7 @@ export class HostOverlayMenu {
 			case HostOverlayPage.Rewind:
 				if (outcome === HostOverlayOutcome.Accept) this.rewind.resumeHere();
 				else if (outcome === HostOverlayOutcome.Cancel) this.rewind.returnToPresent();
+				else if (outcome === HostOverlayOutcome.Retain && this.rewind.active) this.rewind.pauseSeek();
 				break;
 			case HostOverlayPage.Closed:
 			case HostOverlayPage.Options:

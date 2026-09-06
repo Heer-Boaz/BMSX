@@ -126,8 +126,9 @@ export class RenderPresentationState {
 		hostDeltaMs: number,
 	): void {
 		runtime.frameScheduler.clearQueuedTime();
-		this.clearPresentation();
-		this.presentFrame(presenter, runtime, currentTimeMs, hostDeltaMs, 'completed', false);
+		if (!this.presentPending(presenter, runtime, currentTimeMs, hostDeltaMs)) {
+			this.presentFrame(presenter, runtime, currentTimeMs, hostDeltaMs, 'completed', false);
+		}
 	}
 
 	public presentPending(

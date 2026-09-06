@@ -30,6 +30,7 @@ import {
 	didExecuteRuntimeDebuggerPlan,
 	didFaultRuntimeDebuggerPlan,
 	willExecuteRuntimeDebuggerPlan,
+	runtimeDebuggerExecutionRequested,
 } from '../runtime/debugger_state';
 
 function executeWorkbenchHostMenuAction(
@@ -163,7 +164,6 @@ export function runWorkbenchHostFrame(
 		hostDeltaMs = beginHostFrame(
 			session,
 			input,
-			audioOutput,
 			logOutput,
 			currentTime,
 		);
@@ -188,7 +188,11 @@ export function runWorkbenchHostFrame(
 		}
 
 		screen.clearPresentation();
-		session.rewind.service(!ide.scenarioRuns.active);
+		session.rewind.service(!ide.scenarioRuns.active && !ide.debugger.plans.mutationActive);
+		if (ide.debugger.stopPresentationPending) {
+			activateEditor(ide.editor, ide.sources, ide.overlayRenderer, runtime, audioOutput);
+			presentRuntimeDebuggerStop(ide.editor, ide.debugger);
+		}
 		const runtimeReady = ide.runtimeTasks.ready && !ide.fault.hostFrameFailed && !session.rewind.active;
 		let action: HostFrameAction;
 		if (
@@ -201,7 +205,7 @@ export function runWorkbenchHostFrame(
 		} else {
 			const machineWillAdvance = (
 				hostMenuInput === HostMenuInput.Inactive
-				&& !session.paused
+				&& !session.execution.executionBlocked(runtimeDebuggerExecutionRequested(ide.debugger))
 				&& runtimeReady
 			);
 			action = prepareHostUpdate(
@@ -209,13 +213,14 @@ export function runWorkbenchHostFrame(
 				runtime,
 				runtimeReady,
 				hostMenuInput,
+				runtimeDebuggerExecutionRequested(ide.debugger),
 			);
 			if (action === HostFrameAction.Execute) {
 				const scenarioExecution = ide.scenarioRuns.execution;
 				if (scenarioExecution.active) {
 					scenarioGuestFrame = true;
 					const previousTickSequence = runtime.frameScheduler.lastTickSequence;
-					let scheduledDeltaMs = hostDeltaMs;
+					let scheduledDeltaMs = session.execution.consumeElapsedTime(hostDeltaMs);
 					let machineAdvanced = false;
 					while (scenarioExecution.active && scenarioExecution.prepareLogicalTick()) {
 						const completed = advanceHostScheduledLogicalTick(
@@ -275,6 +280,7 @@ export function runWorkbenchHostFrame(
 					} else if (ide.debugger.plans.controlActive) {
 						didExecuteRuntimeDebuggerPlan(ide.debugger);
 					}
+					ide.debugger.plans.pruneCompletedCompletionBatches();
 					if (ide.debugger.stopPresentationPending) {
 						activateEditor(
 							ide.editor,
@@ -312,7 +318,9 @@ export function runWorkbenchHostFrame(
 				presenter.presentationSequence !== previousPresentation,
 			);
 		}
-		if (runtime.history.checkpointPending && ide.runtimeTasks.ready) session.rewind.service(!ide.scenarioRuns.active);
+		if (runtime.history.checkpointPending && ide.runtimeTasks.ready) {
+			session.rewind.service(!ide.scenarioRuns.active && !ide.debugger.plans.mutationActive);
+		}
 	} catch (error) {
 		workbenchMode.surfaceHostFrameError(ide, logOutput, runtime, error);
 		presentWorkbenchError(

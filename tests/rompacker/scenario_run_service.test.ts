@@ -98,7 +98,7 @@ test('browser scenario media session installs derived execution media and restor
 		const debuggerState = createRuntimeDebuggerState(runtime, sources);
 		const presenter = initializeMachineVideoPresenter(runtime, new HeadlessVideoOutput(256, 212),
 			new HeadlessGPUBackend(256, 212, PSX_MACHINE_SPEC.gxGpuVramBytes));
-		const runtimeTasks = new RuntimeTaskQueue(audioOutput, runtime, presenter);
+		const runtimeTasks = new RuntimeTaskQueue(audioOutput, presenter);
 		const runService = new ScenarioRunService(
 			runtime,
 			sources,

@@ -32,7 +32,6 @@ export function runHeadlessScenarioFrame(
 	const hostDeltaMs = beginHostFrame(
 		session,
 		input,
-		audioOutput,
 		logOutput,
 		currentTime,
 	);

@@ -330,6 +330,10 @@ internal seeking distinct from external load without duplicating restore.
 The host queue serializes media replacement, AEM application and Hot Resume
 with snapshots. Direct machine mutation is not silently journalled; callers
 must end the current history before an external write.
+Queue admission and source/build rejection do not end history. The accepted
+media, completion-call or supervisor-return owner does. Studio's pending
+supervisor/init batches suspend collection until they finish; the physical
+input journal is not misrepresented as containing tool-directed execution.
 
 ### Host delivery and remaining storage scope
 
@@ -755,12 +759,13 @@ References examined before this mirrored UI diff:
 | Timeline navigation | One emulated-second relative steps; pointer position mapped to range | Same integer-cycle target calculation | `HostRewindTimeline.moveCursor` / `seekAt`; existing replay snaps to a recorded PCRTC boundary |
 | Bottom bar | Retained rectangles, glyph submissions and host command arrays | Same retained submissions / arrays | `HostRewindTimeline.queueRenderCommands`; no per-frame buffer construction |
 | Pending live takeover | Existing seek intent plus `resumeAtTarget` latch | Same | `HostRewind.resumeHere` / `service`: START during seek resumes at the selected target, not an intermediate replay state |
-| Overlay transition | Page plus Accept/Cancel/Discard outcome | Same enums | `HostOverlayMenu.transitionTo` is the only page writer after construction; departure, pointer/repeat reset, exclusive input and destination activation are one lifecycle |
+| Overlay transition | Page plus Accept/Cancel/Discard/Retain outcome | Same enums | `HostOverlayMenu.transitionTo` is the only page writer after construction; departure, pointer/repeat reset, exclusive input and destination activation are one lifecycle |
 
 Opening the keyboard must not know about rewind. A transition deactivates its
 old page before activating its destination. Leaving rewind accepts the selected
-position, cancels back to the recorded end, or discards the UI session when the
-native runtime is unloaded. Leaving the keyboard releases its virtual key pulse
+position, cancels back to the recorded end, retains the reached position for
+another view, or discards the UI session when its execution owner takes over or
+the native runtime is unloaded. Leaving the keyboard releases its virtual key pulse
 through the existing next-poll input publication boundary. Every transition
 consumes routed controller input for its exit frame, including shortcut routes.
 Every route uses this lifecycle, not destination-specific cleanup calls. This
@@ -986,3 +991,51 @@ No capacity, checkpoint interval, compression policy, guest instruction path or
 input-journal representation changes are part of these corrections. They do
 not make full-machine capture/restore allocation-free or prove that the current
 retention policy fits a physical Mini's memory budget.
+
+## Studio execution loop (W01-W03)
+
+The combined contract and production references are in
+[Studio development workflows](studio_development_workflows.md). Host pause is
+independent of rewind and of editor focus. The Run menu and F6/F5 use the same
+Pause/Continue command owner; no DOM pause overlay remains. Both host menus
+support Retain when yielding to another view. The generic post-restore
+notification ends old inspector references without serializing debugger state.
+
+Source compilation is non-mutating preparation within the shared GPU-exclusive
+task queue. A compile rejection leaves installed media, position, history and
+Continue intact. Actual Hot Resume installation or accepted supervisor-return
+execution invalidates the previous history. New collection waits for annotated
+init to complete, including debugger stops and fault repair. This does not
+retain a timeline across code revisions or introduce replay of tool commands.
+
+Validation on 2026-09-06:
+
+- `test:studio-workflows`: actual BIOS/Nemesis and browser-Studio composition
+  run the same workflow with software, WebGL2 and WebGPU, each in an isolated
+  workspace/browser session. Repeated rewind/pause/FSM edits on the retained
+  actor, current hover inspection after restore, compile rejection,
+  breakpoint/step inside init, fault repair and pointer Run-menu actions pass
+  on all three. Only the additional real pending `mapAsync` callback test is
+  WebGPU-specific. All three tiny-font screenshots were inspected; no obsolete
+  fault adornments after repair.
+- Player WebGPU restore still compares all 2,097,152 VRAM bytes and the actual
+  deferred-readback callback lifetime. TS/native real-ROM replay/history,
+  host-controller and libretro ABI tests pass. Native Retain preserves both
+  the selected state and recorded future; post-restore observes installed state.
+- Live IDE Hot Resume: 92 assertions; Scenario Lab: 124. The separate unpaced
+  headless `nemesis_s_pause_assert.lua` scenario also passes. Lua tests: 851
+  passed, one skipped; ROM/compiler/tooling tests: 119 passed; CTest: 28 passed.
+- Machine, IDE, common/browser/node host and Lua/ROM toolchain typechecks pass;
+  browser player/Studio, Node tooling and libretro product builds pass. Parity,
+  strict architecture-boundary and indentation audits pass.
+- Broad `tsc -p tests` and `tsc -p scripts` are **not green**: respectively 52
+  diagnostics and the `rombuilder.ts` missing model `datatype` diagnostic also
+  reproduce identically from an isolated archive of pre-slice `9cb4cf93b`.
+  No new diagnostics remain; these wider pre-existing errors were not hidden
+  by changing tsconfig or weakening types.
+
+There is no new physical Mini, ARM memory-budget or sustained frame-time
+measurement in this Studio slice. Checkpoint capacity, input stride, guest
+timing and the TS/native rewind algorithms are unchanged. Current closure and
+static-layout migration limitations remain explicit in the workflow document;
+the passing loop is not a claim that every possible Lua edit is supported.

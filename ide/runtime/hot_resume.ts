@@ -46,11 +46,12 @@ import {
 	type HotResumeRevision,
 	type HotResumeRevisions,
 } from './hot_resume_relocation';
-import { clearExecutionStopHighlights } from '../runtime_error/navigation';
+import { clearAllRuntimeErrorOverlays } from '../runtime_error/navigation';
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
 
 export type BuiltBlua32Revision = {
+	sourceEditDomains: ExecutionDomainMask;
 	mediaInstallation: Blua32MediaInstallation;
 	revisions: HotResumeRevisions;
 };
@@ -209,6 +210,11 @@ export function buildBlua32Revision(
 	}
 
 	return {
+		// Linker closure can rebuild an unchanged cart after a BIOS edit. Only
+		// the explicitly edited source domains request another init call.
+		sourceEditDomains: (rebuildSystem ? executionDomainBit(SYSTEM_EXECUTION_DOMAIN_ID) : 0)
+			| (rebuildCartridgeSlots[0] ? executionDomainBit(0) : 0)
+			| (rebuildCartridgeSlots[1] ? executionDomainBit(1) : 0),
 		mediaInstallation: layoutBlua32MediaInstallation(sources, rebuilt, assetEdits),
 		revisions,
 	};
@@ -251,26 +257,16 @@ export function hotResume(
 	runtimeTasks: RuntimeTaskQueue,
 	editor: CartEditor,
 	runtime: Runtime,
-	rebuildSystem: boolean,
-	rebuildCartridgeSlots: readonly [boolean, boolean],
+	built: BuiltBlua32Revision | null,
 	onDeferredError: (error: unknown) => void,
 	installationCompleted: (() => void) | null,
 ): void {
 	try {
-		const rebuildCartridgeSlot0 = rebuildCartridgeSlots[0];
-		const rebuildCartridgeSlot1 = rebuildCartridgeSlots[1];
-		const rebuildMedia = rebuildSystem
-			|| rebuildCartridgeSlot0
-			|| rebuildCartridgeSlot1;
-		const built = rebuildMedia
-			? buildBlua32Revision(
-				sources,
-				luaTooling,
-				runtime,
-				rebuildSystem,
-				rebuildCartridgeSlots,
-			)
-			: null;
+		const sourceEditDomains = built === null ? 0 : built.sourceEditDomains;
+		const rebuildSystem = (sourceEditDomains & executionDomainBit(SYSTEM_EXECUTION_DOMAIN_ID)) !== 0;
+		const rebuildCartridgeSlot0 = (sourceEditDomains & executionDomainBit(0)) !== 0;
+		const rebuildCartridgeSlot1 = (sourceEditDomains & executionDomainBit(1)) !== 0;
+		const rebuildMedia = built !== null;
 		const freshMedia = built === null
 			? sources.currentBlua32Media
 			: built.mediaInstallation.sourceMedia;
@@ -375,6 +371,9 @@ export function hotResume(
 		};
 		if (deferUntilUserExecution) {
 			const targetFrameIndex = userFrameDepth - 1;
+			// The accepted supervisor-return plan executes against the retained
+			// machine, not against recorded historical input.
+			runtime.history.stop();
 			pushRuntimeDebuggerControlPlan(
 				debuggerState,
 				new HotResumeSupervisorPlan(
@@ -413,6 +412,9 @@ function applyPreparedHotResume(
 	const relocation = prepared.built === null
 		? null
 		: buildHotResumeRelocation(cpu, prepared.built.revisions, retainedFrameCount);
+	// Preparation (including relocation rejection) leaves history untouched.
+	// A no-source-change resume still mutates the heap through its init calls.
+	if (prepared.built === null) runtime.history.stop();
 	if (prepared.failedCompletionFrameIndex >= 0) {
 		cpu.abortCompletionCall(prepared.failedCompletionFrameIndex);
 		debuggerState.plans.discardCompletionBatchesFrom(
@@ -435,7 +437,7 @@ function applyPreparedHotResume(
 	luaTooling.luaInterpreter.clearLastFaultEnvironment();
 	clearFaultSnapshot(fault);
 	resetHandledLuaErrors(fault);
-	clearExecutionStopHighlights();
+	clearAllRuntimeErrorOverlays();
 	applyRuntimeDebuggerHotResume(
 		debuggerState,
 		buildRuntimeBreakpointPcs(debuggerState, prepared.media),

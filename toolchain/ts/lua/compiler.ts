@@ -1608,6 +1608,9 @@ class FunctionBuilder {
 			this.emitABC(OpCode.CALL, callBase, encodeFixedCallArgCount(1), 0);
 			this.patchJump(jumpOut, this.code.length);
 			this.emitABC(OpCode.RFE, 0, 0, 0);
+			// Hidden remap boundary for the last-executed RFE, even when linking
+			// changed this generated vector's other instruction words.
+			this.code[this.code.length - 1].resumeRange = { path: range.path, start: range.end, end: range.end };
 		});
 		this.finalizeLabels();
 	}
@@ -1621,6 +1624,9 @@ class FunctionBuilder {
 			this.emitABC(OpCode.MOV, callBase + 1, 0, 0);
 			this.emitABC(OpCode.CALL, callBase, encodeFixedCallArgCount(1), 0);
 			this.emitABC(OpCode.RFE, 0, 0, 0);
+			// Hidden remap boundary for the last-executed RFE, even when linking
+			// changed this generated vector's other instruction words.
+			this.code[this.code.length - 1].resumeRange = { path: range.path, start: range.end, end: range.end };
 		});
 		this.finalizeLabels();
 	}

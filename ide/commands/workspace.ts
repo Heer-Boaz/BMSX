@@ -1,3 +1,4 @@
+import type { HostExecutionControl } from '../../hosts/common/execution_control';
 import { getActiveTab } from '../workbench/ui/tabs';
 import { showActionPrompt } from '../workbench/contrib/modal/action_prompt';
 import { WorkingCopyEditorInput } from '../workbench/common/editor_input';
@@ -39,6 +40,7 @@ export function executeEditorWorkspaceCommand(
 	debuggerState: RuntimeDebuggerState,
 	input: Input,
 	runtimeTasks: RuntimeTaskQueue,
+	execution: HostExecutionControl,
 	overlayRenderer: OverlayRenderer,
 	runtime: Runtime,
 	audioOutput: HostAudioOutput,
@@ -79,6 +81,7 @@ export function executeEditorWorkspaceCommand(
 				debuggerState,
 				input,
 				runtimeTasks,
+				execution,
 				overlayRenderer,
 				runtime,
 				audioOutput,
@@ -97,6 +100,7 @@ export function executeEditorWorkspaceCommand(
 				debuggerState,
 				input,
 				runtimeTasks,
+				execution,
 				overlayRenderer,
 				runtime,
 				audioOutput,

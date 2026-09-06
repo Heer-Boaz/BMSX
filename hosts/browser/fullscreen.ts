@@ -1,13 +1,11 @@
+import { HostPauseReason, type HostExecutionControl } from '../common/execution_control';
 import { LogLevel } from '../common/log';
-import type { HostAudioOutput } from '../common/audio_output';
-import type { HostFrameSession } from '../common/host_frame';
 import type { Input } from '../common/input/manager';
 import type { LogOutput } from '../common/log';
 
 export function bindBrowserFullscreenShortcut(
 	input: Input,
-	session: HostFrameSession,
-	audioOutput: HostAudioOutput,
+	execution: HostExecutionControl,
 	logOutput: LogOutput,
 ): void {
 	input.getGlobalShortcutRegistry().registerKeyboardShortcut(1, 'F11', () => {
@@ -20,7 +18,7 @@ export function bindBrowserFullscreenShortcut(
 				return;
 			}
 			window.removeEventListener('keyup', onKeyUp);
-			session.setPaused(true, audioOutput);
+			execution.setPauseReason(HostPauseReason.Fullscreen, true);
 			try {
 				if (enterFullscreen) {
 					await document.documentElement.requestFullscreen();
@@ -33,7 +31,7 @@ export function bindBrowserFullscreenShortcut(
 					error instanceof Error ? error.message : String(error),
 				);
 			} finally {
-				session.setPaused(false, audioOutput);
+				execution.setPauseReason(HostPauseReason.Fullscreen, false);
 			}
 		};
 		window.addEventListener('keyup', onKeyUp);

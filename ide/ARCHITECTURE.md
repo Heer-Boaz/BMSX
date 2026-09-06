@@ -21,6 +21,57 @@ Rules:
 - If a new module is mainly owned by one surface, place it with that surface even if other modules import it.
 - Prefer moving code to the real owner over adding wrapper layers or generic host/facade abstractions.
 
+## Execution, view lifetime, and restored inspection
+
+Host execution is independent of editor focus. `hosts/common/execution_control.ts`
+owns the requested/fullscreen/initialization pause mask and explicit execution
+notifications; `HostRewind` owns timeline review. The product injects these
+services and the one `RuntimeTaskQueue`, not `HostFrameSession`, the quick-menu
+object or `RenderPresentationState`, into IDE commands. Dependency audits keep
+execution services distinct from presentation and product/frame composition.
+
+Pause (F6), Continue (F5) and the existing source steps are registered commands
+with ordinary enabled/checked contexts in the Run menu and keybinding service.
+The inactive-editor input route dispatches the same Pause/Continue commands,
+not a browser DOM-only debugger-pause implementation. Continue releases only
+requested pause; source steps retain it. Neither command overrides an independent
+fullscreen/initialization pause. No emulated pause register or cartlib hook is
+involved, and a source step is not advertised as one worldtick.
+
+`CartEditor.onDidChangeActive` reports real view transitions. The workbench
+composition dismisses the host modal with Retain on editor activation and
+updates the host audio UI reason. Retain freezes a seek without branching or
+returning to the recorded present. Explicit execution dismisses the modal with
+Discard; the command or accepted media owner chooses timeline takeover. Input
+reset and modal departure stay in the existing host-menu lifecycle. Features
+do not reach back into that composition to implement their own transitions.
+
+Hot Resume captures text-model versions, applies workspace sources and builds
+the candidate revision inside the shared exclusive operation queue. Build
+diagnostics do not fabricate a guest stack or disable Continue of the installed
+program. The built revision retains which source domains were explicitly edited;
+mechanically relinked media do not imply another cart's init should run.
+Actual installation marks only the captured versions applied. It clears old
+runtime-error adornments and reports code installation, not a premature claim
+that guest init has finished.
+
+History is invalidated at accepted mutation, not queue admission. Supervisor
+return and annotated-init batches run through the existing ordinary debugger
+and scheduler but are not admitted as replayable physical-input execution.
+History resumes after the batch completes. Compile failure before installation
+retains the execution; a guest fault during init remains a real inspectable
+fault, repaired through the existing supervisor/completion ownership.
+
+The generic runtime's post-restore notification invalidates IDE execution stops,
+plan state, fault/hover/completion caches and rebuilds breakpoint PCs and active
+source identity. Breakpoint definitions and text models survive. The inspector
+reacquires restored guest tables via `SuspendedGuestSession`, never a retained
+host projection of the pre-restore heap. Deactivating the code view also ends
+the live hover query. Machine snapshots contain none of this IDE state.
+
+The production examples, combined browser-Studio proof and remaining authoring
+scope are in [`docs/studio_development_workflows.md`](../docs/studio_development_workflows.md).
+
 ## Text models, working copies, and editor inputs
 
 Editable text is retained by resource identity, not by the currently visible

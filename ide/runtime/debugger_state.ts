@@ -288,6 +288,10 @@ export function resumeRuntimeDebugger(
 	updateExecutionHookBinding(state);
 }
 
+export function runtimeDebuggerExecutionRequested(state: RuntimeDebuggerState): boolean {
+	return state.stepMode !== RuntimeDebuggerStepMode.None || state.plans.controlActive;
+}
+
 export function resetRuntimeDebuggerExecution(state: RuntimeDebuggerState): void {
 	discardRuntimeDebuggerPlans(state);
 	state.stopped = false;

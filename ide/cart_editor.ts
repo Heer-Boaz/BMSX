@@ -1,3 +1,6 @@
+import { clearHoverTooltip } from './editor/contrib/hover/controller';
+import type { HostRewind } from '../hosts/common/rewind';
+import type { HostExecutionControl } from '../hosts/common/execution_control';
 import type { HostAudioOutput } from '../hosts/common/audio_output';
 import type { Input } from '../hosts/common/input/manager';
 import type { Runtime } from '../machine/ts/machine/runtime/runtime';
@@ -137,6 +140,7 @@ export type CartEditor = {
 	readonly fontVariant: Parameters<typeof setFontVariant>[1];
 	activate: () => void;
 	deactivate: () => void;
+	onDidChangeActive(listener: (active: boolean) => void): () => void;
 	tickInput: () => void;
 	update: (deltaSeconds: number) => void;
 	draw: () => void;
@@ -154,6 +158,7 @@ export type CartEditor = {
 };
 
 export class RuntimeCartEditor implements CartEditor {
+	private readonly activeListeners = new Set<(active: boolean) => void>();
 	public readonly blocksRuntimePipeline = true;
 	public readonly isAvailable: boolean;
 	public readonly completion: EditorCompletionController;
@@ -220,6 +225,8 @@ export class RuntimeCartEditor implements CartEditor {
 		luaTooling: RuntimeLuaTooling,
 		debuggerState: RuntimeDebuggerState,
 		runtimeTasks: RuntimeTaskQueue,
+		execution: HostExecutionControl,
+		rewind: HostRewind,
 		overlayRenderer: OverlayRenderer,
 		scenarioTests: ScenarioTestCollection,
 		scenarioRuns: ScenarioRunService,
@@ -246,6 +253,8 @@ export class RuntimeCartEditor implements CartEditor {
 			debuggerState,
 			input,
 			runtimeTasks,
+			execution,
+			rewind,
 			overlayRenderer,
 			runtime,
 			audioOutput,
@@ -332,6 +341,7 @@ export class RuntimeCartEditor implements CartEditor {
 	public get fontVariant(): Parameters<typeof setFontVariant>[1] { return editorViewState.fontVariant; }
 
 	public activate(): void {
+		const wasActive = this.isActive;
 		const runtime = this.runtime;
 		const activeSlot = runtime.machine.cpu.activeCartridgeSlot();
 		if (!this.isAvailable || !blua32ToolingImageForDomain(this.sources.currentBlua32Media, activeSlot)?.symbols) {
@@ -394,9 +404,16 @@ export class RuntimeCartEditor implements CartEditor {
 				this.fault.faultOverlayNeedsFlush = false;
 			}
 		}
+		if (!wasActive) for (const listener of this.activeListeners) listener(true);
+	}
+
+	public onDidChangeActive(listener: (active: boolean) => void): () => void {
+		this.activeListeners.add(listener);
+		return () => this.activeListeners.delete(listener);
 	}
 
 	public deactivate(): void {
+		const wasActive = this.isActive;
 		const activeTab = getActiveTab();
 		if (activeTab.kind === 'code_editor') {
 			storeCodeTabContext(activeTab.context);
@@ -408,6 +425,7 @@ export class RuntimeCartEditor implements CartEditor {
 			this.restoreCrtPostprocessingFromEditor();
 		}
 		this.completion.closeSession();
+		clearHoverTooltip();
 		editorInput.applyOverrides(this.input, false, captureKeys);
 		clearSingleCursorSelection(activeCodeEditor.view);
 		clearEditorPointerSelectionState();
@@ -430,6 +448,7 @@ export class RuntimeCartEditor implements CartEditor {
 		editorDiagnosticsState.diagnosticsTaskPending = false;
 		editorRuntimeState.lastReportedSemanticError = null;
 		this.leaveRenderTargets();
+		if (wasActive) for (const listener of this.activeListeners) listener(false);
 	}
 
 	public tickInput(): void {

@@ -34,7 +34,7 @@ Options:
 }
 
 const dir = path.resolve(String(getArg('dir', 'd', 'dist')));
-const port = Number(getArg('port', 'p', '8080')) || 8080;
+const port = Number(getArg('port', 'p', '8080'));
 const host = String(getArg('host', 'H', '0.0.0.0'));
 const spa = Boolean(getArg('spa', '', false));
 const cacheArg = String(getArg('cache', '', 'no-store'));
@@ -328,6 +328,7 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(port, host, () => {
+	const port = server.address().port;
 	const ips = getLocalIPs();
 	console.log(`Serving ${root}\n  http://localhost:${port}/\n`);
 	if (defaultFile) {

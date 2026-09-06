@@ -502,6 +502,10 @@ bool HostOverlayMenu::queueFrameOverlayCommands(Runtime& runtime, VideoPresenter
 	return queued;
 }
 
+void HostOverlayMenu::dismiss(LibretroInput& input, HostRewind& rewind, Outcome outcome) {
+	transitionTo(Page::Closed, input, rewind, outcome);
+}
+
 void HostOverlayMenu::transitionTo(Page next, LibretroInput& input, HostRewind& rewind, Outcome outcome) {
 	switch (m_page) {
 		case Page::Keyboard:
@@ -510,6 +514,7 @@ void HostOverlayMenu::transitionTo(Page next, LibretroInput& input, HostRewind& 
 		case Page::Rewind:
 			if (outcome == Outcome::Accept) rewind.resumeHere();
 			else if (outcome == Outcome::Cancel) rewind.returnToPresent();
+			else if (outcome == Outcome::Retain && rewind.active) rewind.pauseSeek();
 			break;
 		case Page::Closed:
 		case Page::Options:

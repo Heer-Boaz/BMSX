@@ -17,6 +17,7 @@ void applyRuntimeSaveState(Runtime& runtime, const RuntimeSaveState& state, Runt
 	applyRuntimeSaveMachineState(runtime, state.machineState);
 	runtime.machine.cpu.restoreRuntimeState(state.cpuState);
 	runtime.m_pendingCall = state.pendingEntryCall ? Runtime::PendingCall::Entry : Runtime::PendingCall::None;
+	if (runtime.onStateRestored) runtime.onStateRestored();
 }
 
 } // namespace bmsx

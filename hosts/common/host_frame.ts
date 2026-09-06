@@ -1,3 +1,4 @@
+import { HostPauseReason, type HostExecutionControl } from './execution_control';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import type { HostAudioOutput } from './audio_output';
@@ -14,16 +15,6 @@ import {
 } from '../../machine/ts/spec/bmsx/io';
 
 const MAX_HOST_FRAME_DELTA_MS = 250;
-
-const enum HostPauseReason {
-	Requested = 1 << 0,
-	VibrationInitialization = 1 << 1,
-	Debugger = 1 << 2,
-}
-
-const HOST_PAUSE_AUDIO_REASONS =
-	HostPauseReason.Requested
-	| HostPauseReason.VibrationInitialization;
 
 export const enum HostFrameAction {
 	Execute,
@@ -43,45 +34,23 @@ export const enum HostFrameRunResult {
 export class HostFrameSession {
 	public currentTimeMs: number;
 	public hostFps = 0;
-	private pauseReasons = 0;
 	private hostUfpsScaled: number;
 
-	public constructor(ufpsScaled: number, currentTimeMs: number, public readonly rewind: HostRewind) {
+	public constructor(
+		ufpsScaled: number,
+		currentTimeMs: number,
+		public readonly rewind: HostRewind,
+		public readonly execution: HostExecutionControl,
+	) {
 		this.hostUfpsScaled = ufpsScaled;
 		this.currentTimeMs = currentTimeMs;
 	}
 
-	public get paused(): boolean {
-		return this.pauseReasons !== 0;
-	}
-
-	public get vibrationInitializationActive(): boolean {
-		return (this.pauseReasons & HostPauseReason.VibrationInitialization) !== 0;
-	}
-
-	public setPaused(paused: boolean, audioOutput: HostAudioOutput): void {
-		if (!this.updatePauseReason(HostPauseReason.Requested, paused)) {
-			return;
-		}
-		audioOutput.mutePause(
-			(this.pauseReasons & HOST_PAUSE_AUDIO_REASONS) !== 0,
-		);
-	}
-
-	public setDebuggerPaused(paused: boolean, audioOutput: HostAudioOutput): void {
-		if (!this.updatePauseReason(HostPauseReason.Debugger, paused)) {
-			return;
-		}
-		audioOutput.muteDebugger(paused);
-	}
-
 	public async initializeVibration(
 		initialization: VibrationInitialization,
-		audioOutput: HostAudioOutput,
 		logOutput: LogOutput,
 	): Promise<void> {
-		this.updatePauseReason(HostPauseReason.VibrationInitialization, true);
-		audioOutput.mutePause(true);
+		this.execution.setPauseReason(HostPauseReason.VibrationInitialization, true);
 		try {
 			await initialization.initialize();
 		} catch (error) {
@@ -90,10 +59,7 @@ export class HostFrameSession {
 				error instanceof Error ? error.message : String(error),
 			);
 		} finally {
-			this.updatePauseReason(HostPauseReason.VibrationInitialization, false);
-			audioOutput.mutePause(
-				(this.pauseReasons & HOST_PAUSE_AUDIO_REASONS) !== 0,
-			);
+			this.execution.setPauseReason(HostPauseReason.VibrationInitialization, false);
 		}
 	}
 
@@ -109,21 +75,6 @@ export class HostFrameSession {
 		this.hostUfpsScaled = ufpsScaled;
 		input.setFrameDurationMs(runtime.timing.frameDurationMs);
 		audioOutput.syncTiming(ufpsScaled);
-	}
-
-	private updatePauseReason(
-		reason: HostPauseReason,
-		active: boolean,
-	): boolean {
-		const previous = this.pauseReasons;
-		const next = active
-			? previous | reason
-			: previous & ~reason;
-		if (next === previous) {
-			return false;
-		}
-		this.pauseReasons = next;
-		return true;
 	}
 }
 
@@ -180,17 +131,15 @@ export function executeHostMenuAction(
 export function beginHostFrame(
 	session: HostFrameSession,
 	input: Input,
-	audioOutput: HostAudioOutput,
 	logOutput: LogOutput,
 	currentTime: number,
 ): number {
 	input.pollInput();
-	if (!session.vibrationInitializationActive) {
+	if (!session.execution.vibrationInitializationActive) {
 		const initialization = input.takePendingVibrationInitialization();
 		if (initialization) {
 			void session.initializeVibration(
 				initialization,
-				audioOutput,
 				logOutput,
 			);
 		}
@@ -210,12 +159,13 @@ export function prepareHostUpdate(
 	runtime: Runtime,
 	runReady: boolean,
 	hostMenuInput: HostMenuInput,
+	explicitStep = false,
 ): HostFrameAction {
 	if (hostMenuInput === HostMenuInput.Active) {
 		runtime.frameScheduler.clearQueuedTime();
 		return HostFrameAction.PresentPending;
 	}
-	if (session.paused) return HostFrameAction.PresentPaused;
+	if (session.execution.executionBlocked(explicitStep)) return HostFrameAction.PresentPaused;
 	if (!runReady) {
 		runtime.frameScheduler.clearQueuedTime();
 		return HostFrameAction.PresentPending;
@@ -260,7 +210,7 @@ export function executeHostUpdate(
 	hostDeltaMs: number,
 ): void {
 	const previousTickSequence = runtime.frameScheduler.lastTickSequence;
-	runtime.frameScheduler.run(hostDeltaMs);
+	runtime.frameScheduler.run(session.execution.consumeElapsedTime(hostDeltaMs));
 	const gxGpu = runtime.machine.gxGpu;
 	while (gxGpu.backendServicePending()) {
 		serviceNextGxBackendRequest(runtime, presenter);
@@ -367,7 +317,6 @@ export function runHostFrame(
 	const hostDeltaMs = beginHostFrame(
 		session,
 		input,
-		audioOutput,
 		logOutput,
 		currentTime,
 	);

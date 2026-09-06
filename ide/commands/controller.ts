@@ -1,3 +1,5 @@
+import type { HostRewind } from '../../hosts/common/rewind';
+import { HostPauseReason, type HostExecutionControl } from '../../hosts/common/execution_control';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
 import type { Input } from '../../hosts/common/input/manager';
@@ -43,6 +45,8 @@ export class IdeCommandController {
 		private readonly debuggerState: RuntimeDebuggerState,
 		private readonly input: Input,
 		private readonly runtimeTasks: RuntimeTaskQueue,
+		private readonly execution: HostExecutionControl,
+		private readonly rewind: HostRewind,
 		private readonly overlayRenderer: OverlayRenderer,
 		private readonly runtime: Runtime,
 		private readonly audioOutput: HostAudioOutput,
@@ -54,28 +58,28 @@ export class IdeCommandController {
 
 	public execute(command: EditorCommandId): void {
 		switch (command) {
+			case 'pause':
+				if (this.rewind.active) this.rewind.pauseSeek();
+				this.execution.setPauseReason(HostPauseReason.Requested, true);
+				return;
 			case 'scenarioLab.run':
 			case 'scenarioLab.rerun':
 			case 'scenarioLab.cancel':
 				this.editor.scenarioLab.executeCommand(command);
 				return;
 			case 'debugContinue':
-				resumeRuntimeDebugger(this.debuggerState, RuntimeDebuggerResumeMode.Continue);
-				clearExecutionStopHighlights();
-				deactivateEditor(this.editor, this.overlayRenderer, this.audioOutput);
-				return;
 			case 'debugStepInto':
-				resumeRuntimeDebugger(this.debuggerState, RuntimeDebuggerResumeMode.StepInto);
-				clearExecutionStopHighlights();
-				deactivateEditor(this.editor, this.overlayRenderer, this.audioOutput);
-				return;
 			case 'debugStepOut':
-				resumeRuntimeDebugger(this.debuggerState, RuntimeDebuggerResumeMode.StepOut);
-				clearExecutionStopHighlights();
-				deactivateEditor(this.editor, this.overlayRenderer, this.audioOutput);
-				return;
 			case 'debugStepOver':
-				resumeRuntimeDebugger(this.debuggerState, RuntimeDebuggerResumeMode.StepOver);
+				if (this.rewind.active) this.rewind.resumeHere();
+				this.execution.requestExecution(command === 'debugContinue');
+				if (this.debuggerState.stopped) {
+					resumeRuntimeDebugger(this.debuggerState,
+						command === 'debugStepInto' ? RuntimeDebuggerResumeMode.StepInto
+							: command === 'debugStepOut' ? RuntimeDebuggerResumeMode.StepOut
+								: command === 'debugStepOver' ? RuntimeDebuggerResumeMode.StepOver
+									: RuntimeDebuggerResumeMode.Continue);
+				}
 				clearExecutionStopHighlights();
 				deactivateEditor(this.editor, this.overlayRenderer, this.audioOutput);
 				return;
@@ -105,6 +109,7 @@ export class IdeCommandController {
 				this.debuggerState,
 				this.input,
 				this.runtimeTasks,
+				this.execution,
 				this.overlayRenderer,
 				this.runtime,
 				this.audioOutput,
@@ -148,6 +153,7 @@ export class IdeCommandController {
 			this.debuggerState,
 			this.input,
 			this.runtimeTasks,
+			this.execution,
 			this.overlayRenderer,
 			this.runtime,
 			this.audioOutput,
@@ -159,16 +165,20 @@ export class IdeCommandController {
 
 	public isEnabled(command: EditorCommandId): boolean {
 		switch (command) {
+			case 'pause':
+				return !this.execution.userPaused || this.rewind.seeking;
 			case 'scenarioLab.run':
 			case 'scenarioLab.rerun':
 			case 'scenarioLab.cancel':
 				return this.editor.scenarioLab.isCommandEnabled(command);
 			case 'debugContinue':
+				return this.runtimeTasks.ready && (this.debuggerState.stopped
+					|| this.execution.userPaused || this.rewind.active);
 			case 'debugStepInto':
 			case 'debugStepOver':
-				return this.debuggerState.stopped;
+				return this.runtimeTasks.ready && !this.rewind.seeking && this.debuggerState.stopped;
 			case 'debugStepOut':
-				return this.debuggerState.stopped
+				return this.runtimeTasks.ready && !this.rewind.seeking && this.debuggerState.stopped
 					&& (this.debuggerState.stopInlineDepth > 0
 						|| this.runtime.machine.cpu.getFrameDepth() > 1);
 			case 'save': {
@@ -204,6 +214,8 @@ export class IdeCommandController {
 
 	public isActive(command: EditorCommandId): boolean {
 		switch (command) {
+			case 'pause':
+				return this.execution.userPaused;
 			case 'resources':
 				return this.editor.resourcePanel.isVisible();
 			case 'problems':

@@ -32,12 +32,12 @@ class HostOverlayMenu {
 		Keyboard,
 		Rewind,
 	};
-	enum class Outcome { Cancel, Accept, Discard };
-
 public:
+	enum class Outcome { Cancel, Accept, Discard, Retain };
 	explicit HostOverlayMenu(LibretroInput& input);
 	HostMenuInput tickInput(Runtime& runtime, LibretroInput& input, VideoPresenter& presenter, HostRewind& rewind, f64 currentTimeMs);
 	void resetInputState(LibretroInput& input, HostRewind& rewind);
+	void dismiss(LibretroInput& input, HostRewind& rewind, Outcome outcome = Outcome::Retain);
 	void queueRenderCommands(Runtime& runtime, VideoPresenter& presenter, HostRewind& rewind);
 	bool queueFrameOverlayCommands(Runtime& runtime, VideoPresenter& presenter, HostRewind& rewind, f64 hostFps);
 	bool active() const { return m_page != Page::Closed; }

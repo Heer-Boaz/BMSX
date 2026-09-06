@@ -540,7 +540,9 @@ function collectCppRuntimePublicMethods(files: readonly string[]): Set<string> {
 		if (!inPublicSection || line.length === 0 || line.startsWith('friend ') || line.startsWith('using ')) {
 			continue;
 		}
-		const match = /\b([A-Za-z_]\w*)\s*\(/.exec(line);
+		// Require a declaration's return type before its method name. A function
+		// type inside a data member (e.g. std::function<void()>) is not a method.
+		const match = /^(?:[A-Za-z_~][\w:<>,*&]*[ \t]+)+([A-Za-z_]\w*)\s*\(/.exec(line);
 		if (!match) {
 			continue;
 		}

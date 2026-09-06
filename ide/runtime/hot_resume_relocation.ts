@@ -168,7 +168,7 @@ export function buildHotResumeRelocation(
 
 	if (unmappedCount > 0) {
 		throw new Error(
-			`Hot resume could not relocate ${unmappedCount} active execution word(s) after an incompatible edit.`,
+			`Hot Resume could not map ${unmappedCount} execution word(s) to the rebuilt program.`,
 		);
 	}
 	return relocation;

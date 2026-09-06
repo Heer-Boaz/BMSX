@@ -1,5 +1,6 @@
+import { HostExecutionControl } from '../../../hosts/common/execution_control';
 import { testWebGpuReadbackLifetime } from './browser_gpu_readbacks';
-import { createBrowserBackend } from '../../../hosts/browser/backend';
+import { createWebGPUBackend } from '../../../hosts/browser/backend';
 import { BrowserVideoOutput } from '../../../hosts/browser/video_output';
 import { HostAudioOutput, type AudioOutputPuller } from '../../../hosts/common/audio_output';
 import { HostFrameSession, runHostFrame } from '../../../hosts/common/host_frame';
@@ -13,7 +14,6 @@ import { SystemOutputLog } from '../../../hosts/common/system_output_log';
 import { VirtualHeadlessClock } from '../../../hosts/node/headless/clock';
 import { HeadlessInputHub } from '../../../hosts/node/headless/input';
 import { HistoryMode } from '../../../machine/ts/machine/runtime/history/history';
-import { WebGPUBackend } from '../../../machine/ts/render/backend/webgpu/backend';
 import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../../machine/ts/spec/bmsx/io';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 
@@ -28,8 +28,8 @@ export async function runBrowserRewindConformance(canvas: HTMLCanvasElement) {
 	const clock = new VirtualHeadlessClock();
 	const input = new Input(clock, new HeadlessInputHub(), -1);
 	const runtime = initializeMachineRuntime(bios, [cart, null], PSX_MACHINE_SPEC, input);
-	const backend = await createBrowserBackend(canvas, PSX_MACHINE_SPEC.gxGpuVramBytes);
-	require(backend instanceof WebGPUBackend, 'this test requires actual WebGPU, not browser fallback');
+	const adapter = await navigator.gpu.requestAdapter();
+	const backend = await createWebGPUBackend(canvas, adapter, PSX_MACHINE_SPEC.gxGpuVramBytes);
 	const errors: string[] = [];
 	backend.device.addEventListener('uncapturederror', event => errors.push(event.error.message));
 	const presenter = initializeMachineVideoPresenter(runtime, new BrowserVideoOutput(canvas, null), backend);
@@ -49,11 +49,12 @@ export async function runBrowserRewindConformance(canvas: HTMLCanvasElement) {
 		resume() {}, suspend() {}, setEmulationFrameTimeSec() {},
 	}, runtime.machine.audioController, runtime.machine.audioOutput.outputRing, runtime.timing.ufpsScaled);
 	const log = { log(level: number, message: string) { if (level === 3) errors.push(message); } };
-	const tasks = new RuntimeTaskQueue(audioOutput, runtime, presenter);
+	const tasks = new RuntimeTaskQueue(audioOutput, presenter);
 	const presentation = new RenderPresentationState();
+	const execution = new HostExecutionControl(audioOutput);
 	const rewind = new HostRewind(runtime, presenter, presentation, tasks, audioOutput, log);
-	const session = new HostFrameSession(runtime.timing.ufpsScaled, clock.now(), rewind);
-	const menu = new HostOverlayMenu(presenter, runtime, input, rewind);
+	const session = new HostFrameSession(runtime.timing.ufpsScaled, clock.now(), rewind, execution);
+	const menu = new HostOverlayMenu(presenter, runtime, input, rewind, execution);
 	const output = new SystemOutputLog();
 	const history = runtime.history;
 	let hostFrames = 0;

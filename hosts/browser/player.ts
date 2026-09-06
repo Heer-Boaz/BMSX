@@ -1,3 +1,4 @@
+import { HostExecutionControl } from '../common/execution_control';
 import { HostRewind } from '../common/rewind';
 import { RuntimeTaskQueue } from '../common/runtime_task_queue';
 import {
@@ -48,13 +49,15 @@ async function startBrowserPlayer(): Promise<void> {
 			runtime.timing.ufpsScaled,
 		);
 		const systemOutput = new SystemOutputLog();
-		const runtimeTasks = new RuntimeTaskQueue(audioOutput, runtime, presenter);
+		const runtimeTasks = new RuntimeTaskQueue(audioOutput, presenter);
 		const presentation = new RenderPresentationState();
+		const execution = new HostExecutionControl(audioOutput);
 		const rewind = new HostRewind(runtime, presenter, presentation, runtimeTasks, audioOutput, options.logOutput);
 		const session = new HostFrameSession(
 			runtime.timing.ufpsScaled,
 			options.clock.now(),
 			rewind,
+			execution,
 		);
 		runtime.resetForSystemBoot();
 		runtime.boot();
@@ -62,8 +65,7 @@ async function startBrowserPlayer(): Promise<void> {
 		audioOutput.bootstrap();
 		bindBrowserFullscreenShortcut(
 			options.input,
-			session,
-			audioOutput,
+			execution,
 			options.logOutput,
 		);
 		if (!BMSX_BROWSER_DEBUG) {
@@ -77,6 +79,7 @@ async function startBrowserPlayer(): Promise<void> {
 			runtime,
 			options.input,
 			rewind,
+			execution,
 		);
 		runtime.frameScheduler.clearQueuedTime();
 		const frameLoop = options.frames.start((currentTime) => {

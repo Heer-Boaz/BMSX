@@ -29,6 +29,7 @@ export type EditorWorkspaceCommandId =
 	| 'theme-toggle';
 
 export type EditorDebugCommandId =
+	| 'pause'
 	| 'debugContinue'
 	| 'debugStepInto'
 	| 'debugStepOut'

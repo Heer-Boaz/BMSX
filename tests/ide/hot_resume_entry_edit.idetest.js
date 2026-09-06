@@ -212,11 +212,11 @@ t.assert(
 	'Hot Resume tooling task executed init before the next machine frame',
 );
 t.assert(runtime.history.checkpointCount === 0, 'Hot Resume kept checkpoints from the previous timeline');
-// A host callback may only synchronize the new timeline's initial checkpoint.
-// Guest init must still run through the frame scheduler and hit its exact breakpoint.
+// Host-directed init is not a journal of ordinary physical input. Collection
+// restarts only after all completion calls finish, not in the middle of init.
 for (let frame = 0; frame < 60 && !t.debuggerStopped(); frame += 1) await t.frames(1);
 t.assert(t.debuggerStopped(), 'no-op Hot Resume did not stop at the init print breakpoint');
-t.assert(runtime.history.checkpointCount === 1, 'new timeline did not capture before guest execution');
+t.assert(runtime.history.checkpointCount === 0, 'history captured an unreplayable in-progress init');
 t.assert(sourceState.currentBlua32Media === mediaBeforeNoOpRefresh, 'no-op Hot Resume rebuilt tooling media');
 t.assert(
 	runtime.machine.memory.cartridgeController.selectedSlot() === dataOnlySlot,
@@ -258,6 +258,7 @@ t.command('debugContinue');
 await t.frames(60);
 
 t.assert(!t.debuggerStopped(), 'relocated stopped init immediately retriggered its breakpoint');
+t.assert(runtime.history.checkpointCount !== 0, 'completed nested init did not start its new timeline');
 t.assert(
 	cpu.getGlobalByKey(cpu.stringPool.intern('hot_resume_init_count')) === initCountBeforeBreakpoint + 2,
 	'continuing nested init breakpoints reran init',

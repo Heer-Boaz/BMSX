@@ -1,3 +1,7 @@
+import { updateGamePipelineExts } from './overlay_modes';
+import type { HostRewind } from '../../hosts/common/rewind';
+import type { HostExecutionControl } from '../../hosts/common/execution_control';
+import type { HostOverlayMenu } from '../../hosts/common/host_overlay_menu';
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import { createRuntimeSourceState } from '../runtime/sources';
 import type { RuntimeIdeState } from './state';
@@ -24,6 +28,9 @@ export async function prepareWorkbenchRuntime(
 	input: Input,
 	audioOutput: HostAudioOutput,
 	runtimeTasks: RuntimeTaskQueue,
+	execution: HostExecutionControl,
+	rewind: HostRewind,
+	hostMenu: HostOverlayMenu,
 	storage: KeyValueStorage,
 	clock: HostClock,
 	clipboard: Clipboard,
@@ -47,6 +54,8 @@ export async function prepareWorkbenchRuntime(
 		input,
 		audioOutput,
 		runtimeTasks,
+		execution,
+		rewind,
 		storage,
 		clock,
 		clipboard,
@@ -56,6 +65,10 @@ export async function prepareWorkbenchRuntime(
 		{ width: viewport.x, height: viewport.y },
 		sources,
 	);
+	ide.editor.onDidChangeActive(active => {
+		if (active) hostMenu.dismiss();
+		updateGamePipelineExts(ide.editor, ide.overlayRenderer, audioOutput);
+	});
 	startPreparedRuntime(ide, runtime, logOutput);
 	return ide;
 }

@@ -1,3 +1,4 @@
+import { HostExecutionControl } from '../../hosts/common/execution_control';
 import { HostRewind } from '../../hosts/common/rewind';
 import { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import {
@@ -9,7 +10,6 @@ import { BrowserClipboard } from './clipboard';
 import { IdeMicrotaskQueue } from '../common/microtask_queue';
 import { prepareWorkbenchRuntime } from '../workbench/machine_runtime';
 import { bindBrowserFullscreenShortcut } from '../../hosts/browser/fullscreen';
-import { bindBrowserDebuggerPauseShortcut } from './debugger_pause';
 import { defaultResourcePanelRatio } from '../workbench/contrib/resources/panel/layout';
 import { persistWorkspaceSessionLocally } from '../workbench/workspace/storage';
 import {
@@ -54,13 +54,22 @@ async function startBrowserStudio(): Promise<void> {
 			runtime.timing.ufpsScaled,
 		);
 		const systemOutput = new SystemOutputLog();
-		const runtimeTasks = new RuntimeTaskQueue(audioOutput, runtime, presenter);
+		const runtimeTasks = new RuntimeTaskQueue(audioOutput, presenter);
 		const presentation = new RenderPresentationState();
+		const execution = new HostExecutionControl(audioOutput);
 		const rewind = new HostRewind(runtime, presenter, presentation, runtimeTasks, audioOutput, options.logOutput);
 		const session = new HostFrameSession(
 			runtime.timing.ufpsScaled,
 			options.clock.now(),
 			rewind,
+			execution,
+		);
+		const hostOverlayMenu = new HostOverlayMenu(
+			presenter,
+			runtime,
+			options.input,
+			rewind,
+			execution,
 		);
 		const ide = await prepareWorkbenchRuntime(
 			options.systemRom,
@@ -71,6 +80,9 @@ async function startBrowserStudio(): Promise<void> {
 			options.input,
 			audioOutput,
 			runtimeTasks,
+			execution,
+			rewind,
+			hostOverlayMenu,
 			window.localStorage,
 			options.clock,
 			new BrowserClipboard(),
@@ -82,11 +94,9 @@ async function startBrowserStudio(): Promise<void> {
 		audioOutput.bootstrap();
 		bindBrowserFullscreenShortcut(
 			options.input,
-			session,
-			audioOutput,
+			execution,
 			options.logOutput,
 		);
-		bindBrowserDebuggerPauseShortcut(options.input, session, audioOutput);
 		window.addEventListener('beforeunload', (event) => {
 			if (!BMSX_BROWSER_DEBUG) {
 				event.preventDefault();
@@ -96,12 +106,6 @@ async function startBrowserStudio(): Promise<void> {
 		window.addEventListener('pagehide', () => {
 			persistWorkspaceSessionLocally();
 		});
-		const hostOverlayMenu = new HostOverlayMenu(
-			presenter,
-			runtime,
-			options.input,
-			rewind,
-		);
 		runtime.frameScheduler.clearQueuedTime();
 		const frameLoop = options.frames.start((currentTime) => {
 			options.browserInput.poll(currentTime);

@@ -1,5 +1,4 @@
 import type { HostAudioOutput } from './audio_output';
-import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 
 export const enum RuntimeTaskKind { Mutation, History }
@@ -12,7 +11,6 @@ export class RuntimeTaskQueue {
 
 	public constructor(
 		private readonly audioOutput: HostAudioOutput,
-		private readonly runtime: Runtime,
 		private readonly presenter: VideoPresenter,
 	) {
 	}
@@ -39,7 +37,6 @@ export class RuntimeTaskQueue {
 			try {
 				if (kind === RuntimeTaskKind.Mutation) {
 					await this.presenter.backend.finishGxGpuReadbacks();
-					this.runtime.history.stop();
 				}
 				await task();
 			} catch (error) {

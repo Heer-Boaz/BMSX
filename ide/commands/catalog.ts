@@ -32,6 +32,7 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	save: { title: 'Save' },
 	'theme-toggle': { title: 'Toggle Theme' },
 	debugContinue: { title: 'Continue' },
+	pause: { title: 'Pause' },
 	debugStepInto: { title: 'Step Into' },
 	debugStepOut: { title: 'Step Out' },
 	debugStepOver: { title: 'Step Over' },

@@ -185,6 +185,7 @@ function errorStackFunctionName(callFrames: ReadonlyArray<LuaCallFrame>, luaFram
 
 export function clearFaultSnapshot(fault: RuntimeFaultState): void {
 	fault.faultSnapshot = null;
+	fault.lastLuaCallStack = [];
 	fault.lastCpuFaultSnapshot = [];
 	fault.lastCpuFaultExecutionDomainId = -1;
 	fault.lastCpuFaultPc = 0;

@@ -38,6 +38,8 @@ export class Runtime {
 	public readonly cpuExecution: CpuExecutionState;
 	public readonly machine: Machine;
 	public readonly history: RuntimeHistory;
+	/** Host/tooling observers must discard borrowed inspection state after a restore. */
+	public onStateRestored: (() => void) | null = null;
 	private readonly completionValues: Value[] = [];
 
 	public resetHardwareState(): void {

@@ -32,6 +32,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'resources' },
 	],
 	'menubar.run': [
+		{ type: 'command', command: 'pause' },
 		{ type: 'command', command: 'debugContinue' },
 		{ type: 'command', command: 'debugStepOver' },
 		{ type: 'command', command: 'debugStepInto' },

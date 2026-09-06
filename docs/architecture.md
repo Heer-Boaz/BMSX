@@ -970,6 +970,36 @@ mutations. IDE features receive this dependency; they neither construct a
 second queue nor import the player composition. AEM save/apply uses the same
 queue after source persistence. Pure source editing does not end history.
 
+`HostExecutionControl` owns requested/fullscreen/initialization pause reasons
+and explicit Continue/Step intent independently of `HostFrameSession` pacing.
+The composition injects this lower host service and `HostRewind` into the
+workbench. IDE features do not import the host frame loop, menu or presentation
+state. `CartEditor.onDidChangeActive` and the execution owner's `onWillExecute`
+event let the composition/menu apply their own view lifecycle; neither an
+editor feature nor the keyboard page implements rewind cleanup. Boundary
+audits distinguish these execution services from host presentation and product
+composition instead of admitting all host imports into IDE features.
+
+The Run menu and existing command/keybinding owners expose Pause (F6) and
+Continue (F5); source steps remain debugger commands. Pause may hold an ordinary
+game without entering rewind. IDE focus does not release requested pause or
+accept/cancel a timeline position. Continue explicitly takes over a reviewed
+position and releases only requested pause. Source steps may execute under
+requested pause but not under fullscreen/initialization reasons. The first
+actual execution consumes the elapsed-time reset, including commands arriving
+after host input polling, so paused wall time cannot become catch-up work.
+These are host/tooling policies, not guest gameplay-clock changes or pause MMIO.
+Libretro's ordinary pause remains frontend-owned by withholding `retro_run`.
+
+Source/build rejection occurs before machine mutation and does not latch the
+operation queue's execution-failure state. The installed execution and history
+remain available; compiler diagnostics are not represented as guest faults.
+The rebuilt revision carries the explicitly edited execution-domain mask, not
+one inferred from mechanically relinked media. Actual accepted media writes or
+tool-directed completion execution end history at their owning boundaries;
+queue admission alone does not. Existing operation failure stops still apply
+to failed mutation, without rollback or a Run Anyway route.
+
 Every selected item receives an ordinary cold boot for isolation. After an
 item's final presentation opportunity, the next derived ROM may replace it
 directly; every build still consumes the retained canonical ROM rather than the
@@ -1536,6 +1566,12 @@ relocation for every active frame function address and continuation PC, every
 child-frame callsite in its parent execution domain, the active exception
 `EPC`, a nested NMI return `EPC`, and the latched instruction domain/PC pair.
 A missing map rejects the edit before any Hot Resume media or CPU state write.
+That check is not evidence that the edit is semantically incompatible. Missing
+compiler metadata for otherwise continuable code is a producer defect, not a
+reason to guess a PC or weaken the proof. The generated IRQ/exception `RFE`
+has an explicit hidden resume point at its module's end through the existing
+source-revision and liveness machinery. It creates no statement breakpoint,
+guest instruction, machine-side source metadata or native-core difference.
 If a recoverable synchronous fault interrupted a CPU completion call, the proof
 targets the retained frame prefix below that call. A physical completion root is
 identified only by the CPU-owned `returnToCompletionLatch` bit. IDE state
@@ -1605,6 +1641,11 @@ record ordinary gameplay with the same two-slot policy: a checkpoint every six
 emulated seconds and 1,024 fixed-size ICU input records. The runtime starts
 collection only when its host has assumed GPU synchronization ownership.
 Scenario test sessions do not collect ordinary player history.
+Studio-controlled supervisor-return and annotated-init batches also suspend
+collection: those completion calls and programmatic supervisor input are not
+ordinary historical physical-input execution. Collection restarts on the
+retained machine only after the batch completes, including when it was stopped
+at a breakpoint or repaired after a guest fault.
 
 The existing quick menu opens a compact rewind bar at the bottom of the game
 viewport, using the host tiny font. LB/RB or left/right seek through the recorded
@@ -1613,6 +1654,10 @@ back to the recorded end. A pointer click seeks proportionally along the bar.
 Review preserves the recorded future; returning to latest rejoins it, whereas
 resume here branches. One overlay lifecycle owns departure, input reset and
 destination activation; the keyboard does not know about rewind cleanup.
+External view navigation uses the same lifecycle with Retain: it stops a seek
+at its reached position without accepting a branch or cancelling to the old
+present. Explicit execution uses Discard for the modal while its execution or
+media owner handles takeover. These outcomes exist in both host implementations.
 The shared host `HostUiInput` owns physical press edges, repeat deadlines and
 pointer capture; pages choose participating sources and actions. An ownership
 change suppresses held controls until release, independently of guest input
@@ -1630,6 +1675,14 @@ suppress intermediate audio/debug output, and replace the held presentation
 from restored VRAM. Checkpoint capture is submitted after the tick's ordinary
 presentation rather than one host callback later. No per-frame full snapshot,
 cartlib hook or shortcut is introduced.
+
+Both runtimes notify an optional `onStateRestored` observer once after a
+complete state application. This is not serialized state or a CPU/per-frame
+hook. Studio invalidates its old stop/plans, fault frames, hover and completion
+caches and refreshes breakpoint PCs and source activity at that boundary.
+Breakpoint definitions and authored documents remain. Guest tables reconstructed
+by restore are read again through the existing suspended-guest representation;
+old object references are not presented as current inspection.
 
 Snapshot count is bounded; variable CPU/string and cartridge-RAM sizes mean it
 is not a fixed-MiB arena. Physical SNES Mini memory/frame-time headroom and
@@ -1680,8 +1733,14 @@ rollback, special opcode, host callback, or machine-side reload state. Existing
 carts keep their ordinary cold `init()` and `new_game()` calls in source; Hot
 Resume calls only the closure marked `<init>`. Those names remain cart code
 rather than a BMSX ABI. Captured-upvalue layout, static-closure identity mode,
-annotated-function layout, or static-storage layout changes remain incompatible
-revisions and are reported before media or CPU state writes.
+annotated-function layout, or static-storage layout changes are currently
+rejected before media or CPU state writes. These are limits of the current
+retained-layout proof, not a claim that all such source edits are intrinsically
+impossible: supporting them requires an explicit migration of the affected live
+storage and closures. Ordinary edits must not be refused merely because tooling
+omitted a mapping. A source compile error or genuinely ambiguous deleted active
+continuation is different from a missing compiler capability; neither permits
+a silent cold boot.
 
 Hot Resume requested from a firmware monitor or another in-flight exception
 uses a two-phase debugger plan instead of installing an image over live BIOS
@@ -1708,8 +1767,9 @@ now supervisor-free retained frame prefix, discards the exact failed completion
 root or its IDE-owned annotated-init batch, installs the media, applies the raw
 relocation, and stages a fresh annotated-init batch. It again returns without
 executing guest code. The next ordinary host frame runs init and then resumes
-the retained game. Batch records are inspected and pruned only when another Hot
-Resume is prepared; ordinary host frames do no batch bookkeeping. Plan
+the retained game. Host frames prune outstanding batch records after execution
+so history admission observes completion rather than recording tool-directed
+execution. The empty list performs no frame scan or allocation. Plan
 lifecycle callbacks rebind the instrumented executor only when either raw hook
 mask changes, rather than rescanning breakpoint state on every host frame.
 
@@ -1725,6 +1785,13 @@ phase two has successfully installed them. The queued plan, source revision,
 batch list, frame fence, and breakpoint policy live entirely in IDE/debugger
 state; the CPU, system controller, firmware, and normal scheduler contain no Hot
 Resume state or branch.
+
+Successful installation clears obsolete runtime-error adornments as well as
+the fault/inspection snapshot; the source-applied marker and status report
+installation, not successful completion of the still-pending guest init.
+An init fault remains a real visible fault and is repaired through the existing
+completion/supervisor route. Combined workflow evidence and remaining Studio
+scope are recorded in [Studio development workflows](studio_development_workflows.md).
 
 BLua sections are machine storage, not runtime metadata. Firmware `.rodata` and
 `.data` load bytes live in `SYSTEM_ROM`; cartridge `.rodata` and `.data` load
@@ -3778,7 +3845,7 @@ machine-output latency. Clearing or underrunning host transport can produce
 silence only; it cannot backpressure the APU.
 
 `hosts/common/HostAudioOutput` owns the TypeScript browser/Node transport
-lifecycle and distinct pause, Studio, debugger, runtime-task and physical-system
+lifecycle and distinct pause, Studio, rewind, runtime-task and physical-system
 mute reasons. After each machine update it observes raw
 `SYS_STATUS.SUPERVISOR_ACTIVE`. The inactive-to-active edge detaches the puller,
 resets the resampler, clears AOUT and the existing AudioWorklet transport

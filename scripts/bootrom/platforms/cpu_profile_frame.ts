@@ -35,7 +35,6 @@ export function runCpuProfileHostFrame(
 	const hostDeltaMs = beginHostFrame(
 		frameSession,
 		input,
-		audioOutput,
 		logOutput,
 		currentTime,
 	);
@@ -65,7 +64,7 @@ export function runCpuProfileHostFrame(
 	);
 	if (action === HostFrameAction.Execute) {
 		const previousTickSequence = runtime.frameScheduler.lastTickSequence;
-		let stepDeltaMs = hostDeltaMs;
+		let stepDeltaMs = frameSession.execution.consumeElapsedTime(hostDeltaMs);
 		while (true) {
 			const result = runtime.frameScheduler.stepInstruction(stepDeltaMs);
 			stepDeltaMs = 0;

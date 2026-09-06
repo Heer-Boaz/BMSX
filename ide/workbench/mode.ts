@@ -1,3 +1,5 @@
+import type { HostRewind } from '../../hosts/common/rewind';
+import type { HostExecutionControl } from '../../hosts/common/execution_control';
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import { KeyModifier } from '../../hosts/common/input/player';
 import type { HostAudioOutput } from '../../hosts/common/audio_output';
@@ -47,6 +49,8 @@ export async function initializeIdeFeatures(
 	input: Input,
 	audioOutput: HostAudioOutput,
 	runtimeTasks: RuntimeTaskQueue,
+	execution: HostExecutionControl,
+	rewind: HostRewind,
 	storage: KeyValueStorage,
 	clock: HostClock,
 	clipboard: Clipboard,
@@ -82,6 +86,8 @@ export async function initializeIdeFeatures(
 		input,
 		audioOutput,
 		runtimeTasks,
+		execution,
+		rewind,
 		storage,
 		clock,
 		clipboard,
@@ -128,6 +134,15 @@ export function registerRuntimeShortcuts(
 			audioOutput,
 		),
 	));
+	// The workbench keybinding service owns editor focus; these are the same
+	// commands while the game/timeline owns focus, not browser-only pause state.
+	for (const [key, command] of [['F6', 'pause'], ['F5', 'debugContinue']] as const) {
+		disposers.push(registry.registerKeyboardShortcut(1, key, () => {
+			if (state.editor.isActive || !state.editor.commands.isEnabled(command)) return;
+			input.getPlayerInput(1).inputHandlers.keyboard!.consumeKey(key);
+			state.editor.commands.execute(command);
+		}));
+	}
 	disposers.push(registry.registerKeyboardShortcut(1, 'KeyT', () => {
 		input.getPlayerInput(1).inputHandlers.keyboard?.consumeKey('KeyT');
 		const next = state.editor.fontVariant === 'tiny' ? 'msx' : 'tiny';
