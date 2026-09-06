@@ -145,6 +145,13 @@ De bronstatus wordt na het verdwijnen van de tijdelijke feedback daadwerkelijk
 getekend met het IDE-tiny-font. De aanvullende WebGPU-callbackproef blijft
 apart: de document/apply-workflow zelf vereist geen specifieke renderer.
 
+De aansluitende `studio_scene_source.ts`-proef gebruikt daarna dezelfde
+documentketen voor één echte Nemesis-root-fieldedit, inclusief comments en
+grouping. Hot Resume behoudt de levende actorpositie; de expliciete reboot
+instantiateert de gewijzigde definitie. Dit sluit de language-editprerequisite,
+niet de nog ontbrekende visuele scene-bediening. Het ontwerp en de afzonderlijke
+validatie staan in [het sceneontwerp](studio_scene_authoring_design.md#literal-editowner-grens-vóór-de-visuele-adapter).
+
 Aanvullende regressiegates: Lua-suite (856 geslaagd, één bestaande skip), de Hot Resume-proef
 (92 assertions), Scenario Lab (124), bestaande Lens-bediening (61), IDE-typecheck,
 core-parity, strict architecture boundaries, indentation en `git diff --check`.

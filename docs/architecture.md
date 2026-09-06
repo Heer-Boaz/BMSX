@@ -1415,6 +1415,13 @@ cook a second behavior document, cartlib does not decode an editor resource or
 bind a visual-editor manifest, and machine, TOC, cartridge model and C++ core
 remain unaware of behavior authoring.
 
+Source-edit commands retain the syntax owner of the authored value. The first
+numeric command targets a complete Lua table-field value, not an arbitrary
+literal inside an expression. The language layer returns ordered number/sign
+token edits to the shared text model; comments, grouping and whitespace are
+not reconstructed by scene or behavior contributions. No machine, cartlib or
+per-frame work is involved in that cold authoring operation.
+
 Scene authoring follows the same canonical-source rule. Scenes are a valid
 composition concept. The rejected first proposal copied desktop-engine scene
 state and a C ECS command buffer into the general Lua `World`; even a cart that

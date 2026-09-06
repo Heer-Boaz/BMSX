@@ -196,12 +196,18 @@ Scene authoring uses the same document contract, but its runtime object and
 viewport owners are deliberately not inferred from the behavior projection.
 The accepted cross-owner design and prerequisites are documented in
 [`../docs/studio_scene_authoring_design.md`](../docs/studio_scene_authoring_design.md).
-The first writable primitive is deliberately narrower. Existing signed numeric
-literals can be replaced exactly from their syntax range at the generic Lua-
-language boundary. That layer returns an `EditorTextEdit` only; it does not
-apply edits, know cartlib types, or become a second working-copy owner. This is
-enough for the first transform edit without pretending that the current syntax
-tree is already full-fidelity.
+The first writable primitive is deliberately narrower: a complete table-field
+value that is a numeric literal or its unary negation. Scene positions retain
+the syntax fields, not detached literal subtrees. The generic Lua-language
+owner returns an ordered `EditorTextEdit[]` changing only the number token and,
+when needed, the unary-minus token. Intervening parentheses, comments and
+whitespace are never included in a replacement range. Computed field values
+remain code; changing a literal subtree inside a larger expression would need
+its parent's precedence context. This layer does not apply edits, know cartlib
+types, or become a second working-copy owner. One batch is one undo element;
+an unchanged token produces no document mutation. This is enough for the first
+transform edit without pretending that the current syntax tree is already
+full-fidelity.
 
 Table insertion, removal and reordering are a separate language-architecture
 slice. The current parser consumes separators and the lexer discards whitespace

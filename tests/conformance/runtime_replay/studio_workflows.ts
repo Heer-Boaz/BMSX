@@ -11,6 +11,7 @@ import { IO_WORD_SIZE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { HostPauseReason } from '../../../hosts/common/execution_control';
 import { hidKeyUsageForCode } from '../../../hosts/common/input/hid_keys';
 import { check, type StudioFixture } from './studio_fixture';
+import { testSceneSourceEdits } from './studio_scene_source';
 import { testAemSourceApplication, testCapturedSourceApply, testSourceUndoAfterApply, testSourceViewsBeforeApply } from './studio_source_workflows';
 
 /** The same developer loop runs on every renderer, without backend-specific tests. */
@@ -280,6 +281,7 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	await click(editorChromeState.menuEntryBounds.run);
 	await testCapturedSourceApply(test);
 	await testAemSourceApplication(test);
+	await testSceneSourceEdits(test);
 	return { hostFrames: observations.hostFrames, selected, pausedAt, secondAt, steppedAt, beforeRejected,
 		audioFrames: observations.audioFrames, expectedFaultSequence: observations.expectedFaultSequence, inspected: inspected.contentLines };
 }

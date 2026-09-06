@@ -1,13 +1,14 @@
 import type {
 	LuaExpression,
 	LuaSourceRange,
+	LuaTableField,
 } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { ResourceIdentity } from '../../../common/resource';
 
 export type SceneSourcePosition = {
-	readonly x: LuaExpression;
-	readonly y: LuaExpression;
-	readonly z: LuaExpression;
+	readonly x: LuaTableField;
+	readonly y: LuaTableField;
+	readonly z: LuaTableField;
 };
 
 export type SceneSourceObject = {

@@ -127,8 +127,8 @@ function readPosition(position: LuaTableConstructorExpression): SceneSourcePosit
 		return null;
 	}
 	return {
-		x: x.value,
-		y: y.value,
-		z: z.value,
+		x,
+		y,
+		z,
 	};
 }

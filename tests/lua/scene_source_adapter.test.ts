@@ -4,7 +4,7 @@ import { test } from 'node:test';
 
 import type { RuntimeResource } from '../../ide/common/resource';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
-import { createLuaIntegerLiteralEdit } from '../../ide/language/lua/source_edits';
+import { createLuaTableFieldIntegerEdits } from '../../ide/language/lua/source_edits';
 import { buildSceneSourceDocument } from '../../ide/workbench/contrib/scene_editor/source';
 import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
 import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
@@ -44,9 +44,9 @@ test('scene source adapter projects the real Nemesis root without executing Lua'
 		[19, 27, 35, 43],
 	);
 	assert.ok(scene.objects.every(object => object.kind === 'object'
-		&& object.position!.x.kind === LuaSyntaxKind.NumericLiteralExpression
-		&& object.position!.y.kind === LuaSyntaxKind.NumericLiteralExpression
-		&& object.position!.z.kind === LuaSyntaxKind.NumericLiteralExpression));
+		&& object.position!.x.value.kind === LuaSyntaxKind.NumericLiteralExpression
+		&& object.position!.y.value.kind === LuaSyntaxKind.NumericLiteralExpression
+		&& object.position!.z.value.kind === LuaSyntaxKind.NumericLiteralExpression));
 });
 
 test('scene position edit changes the canonical Nemesis source through its text model', () => {
@@ -60,9 +60,9 @@ test('scene position edit changes the canonical Nemesis source through its text 
 	const object = document.scenes[0].objects[0];
 	assert.equal(object.kind, 'object');
 	if (object.kind === 'object') {
-		const edit = createLuaIntegerLiteralEdit(model.buffer, object.position!.x, 65536);
-		assert.notEqual(edit, null);
-		model.pushEditOperations([edit!]);
+		const edits = createLuaTableFieldIntegerEdits(model.buffer, object.position!.x, 65536);
+		assert.notEqual(edits, null);
+		model.pushEditOperations(edits!);
 	}
 
 	const changed = source.replace('pos = { x = 0, y = 0, z = 0 }', 'pos = { x = 65536, y = 0, z = 0 }');
@@ -74,9 +74,9 @@ test('scene position edit changes the canonical Nemesis source through its text 
 	const reparsedObject = reparsed.scenes[0].objects[0];
 	assert.equal(reparsedObject.kind, 'object');
 	if (reparsedObject.kind === 'object') {
-		assert.equal(reparsedObject.position!.x.kind, LuaSyntaxKind.NumericLiteralExpression);
-		if (reparsedObject.position!.x.kind === LuaSyntaxKind.NumericLiteralExpression) {
-			assert.equal(reparsedObject.position.x.value, 65536);
+		assert.equal(reparsedObject.position!.x.value.kind, LuaSyntaxKind.NumericLiteralExpression);
+		if (reparsedObject.position!.x.value.kind === LuaSyntaxKind.NumericLiteralExpression) {
+			assert.equal(reparsedObject.position.x.value.value, 65536);
 		}
 	}
 	model.undo();
@@ -110,9 +110,9 @@ test('scene source adapter accepts only direct definitions through immutable mod
 	const object = document.scenes[0].objects[0];
 	assert.equal(object.kind, 'object');
 	if (object.kind === 'object') {
-		assert.equal(object.position!.x.kind, LuaSyntaxKind.NumericLiteralExpression);
-		assert.equal(object.position!.y.kind, LuaSyntaxKind.IdentifierExpression);
-		assert.equal(object.position!.z.kind, LuaSyntaxKind.UnaryExpression);
+		assert.equal(object.position!.x.value.kind, LuaSyntaxKind.NumericLiteralExpression);
+		assert.equal(object.position!.y.value.kind, LuaSyntaxKind.IdentifierExpression);
+		assert.equal(object.position!.z.value.kind, LuaSyntaxKind.UnaryExpression);
 	}
 	assert.equal(document.scenes[0].objects[1].kind, 'dynamic');
 });

@@ -1,64 +1,82 @@
 import {
 	LuaSyntaxKind,
 	LuaUnaryOperator,
-	type LuaExpression,
 	type LuaNumericLiteralExpression,
-	type LuaSourceRange,
+	type LuaTableField,
 } from '../../../toolchain/ts/lua/syntax/ast';
 import type { EditorTextEdit } from '../../editor/model/text_model';
 import type { TextBuffer } from '../../editor/text/text_buffer';
 
 /**
- * Creates the minimal text edit for an existing positive or negative integer
- * literal. Other expressions remain source-owned and are not rewritten.
+ * Replaces a complete table-field value consisting of a numeric literal or
+ * its unary negation. Only the numeric and sign tokens change; intervening
+ * parentheses, comments and whitespace remain in the canonical document.
+ *
+ * The field is the syntax boundary: replacing an arbitrary literal subtree
+ * with a negative expression could change its parent's operator binding.
  */
-export function createLuaIntegerLiteralEdit(
+export function createLuaTableFieldIntegerEdits(
 	buffer: TextBuffer,
-	expression: LuaExpression,
+	field: LuaTableField,
 	value: number,
-): EditorTextEdit | null {
+): EditorTextEdit[] | null {
+	const expression = field.value;
 	let literal: LuaNumericLiteralExpression;
-	let range: LuaSourceRange;
 	if (expression.kind === LuaSyntaxKind.NumericLiteralExpression) {
 		literal = expression;
-		range = expression.range;
 	} else if (expression.kind === LuaSyntaxKind.UnaryExpression
 		&& expression.operator === LuaUnaryOperator.Negate
 		&& expression.operand.kind === LuaSyntaxKind.NumericLiteralExpression) {
 		literal = expression.operand;
-		range = expression.range;
 	} else {
 		return null;
+	}
+	const previousValue = expression.kind === LuaSyntaxKind.UnaryExpression ? -literal.value : literal.value;
+	if (value === previousValue) {
+		return [];
 	}
 
 	const literalStart = buffer.offsetAt(literal.range.start.line - 1, literal.range.start.column - 1);
 	const literalEnd = buffer.offsetAt(literal.range.end.line - 1, literal.range.end.column);
 	const literalSource = buffer.getTextRange(literalStart, literalEnd);
-	const replacement = formatIntegerLiteral(value, literalSource);
-	const start = buffer.offsetAt(range.start.line - 1, range.start.column - 1);
-	const end = buffer.offsetAt(range.end.line - 1, range.end.column);
-	return {
-		offset: start,
-		deleteLength: end - start,
-		text: replacement,
-	};
+	const negative = value < 0;
+	const magnitude = negative ? -value : value;
+	const digits = formatIntegerLiteral(magnitude, literalSource);
+	const edits: EditorTextEdit[] = [];
+	let replacement = digits;
+	if (expression.kind === LuaSyntaxKind.UnaryExpression) {
+		if (!negative) {
+			edits.push({
+				offset: buffer.offsetAt(expression.range.start.line - 1, expression.range.start.column - 1),
+				deleteLength: 1,
+				text: '',
+			});
+		}
+	} else if (negative) {
+		replacement = '-' + digits;
+	}
+	if (replacement !== literalSource) {
+		edits.push({
+			offset: literalStart,
+			deleteLength: literalEnd - literalStart,
+			text: replacement,
+		});
+	}
+	return edits;
 }
 
 function formatIntegerLiteral(value: number, previous: string): string {
-	const negative = value < 0;
-	const magnitude = negative ? -value : value;
-	const sign = negative ? '-' : '';
 	const hexadecimal = /^0([xX])([0-9a-fA-F]+)$/.exec(previous);
 	if (hexadecimal !== null) {
 		const previousDigits = hexadecimal[2];
-		let digits = magnitude.toString(16).padStart(previousDigits.length, '0');
+		let digits = value.toString(16).padStart(previousDigits.length, '0');
 		if (previousDigits === previousDigits.toUpperCase()) {
 			digits = digits.toUpperCase();
 		}
-		return `${sign}0${hexadecimal[1]}${digits}`;
+		return `0${hexadecimal[1]}${digits}`;
 	}
 	if (/^[0-9]+$/.test(previous)) {
-		return sign + magnitude.toString(10).padStart(previous.length, '0');
+		return value.toString(10).padStart(previous.length, '0');
 	}
 	return String(value);
 }

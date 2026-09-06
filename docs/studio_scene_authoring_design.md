@@ -273,6 +273,79 @@ een expliciete correspondence- en mutatiegrens; de host leest niet
 6. Retained reconcile, picking en directe live preview volgen pas wanneer de
    source-editor een concrete mutatie van een levende instance vereist.
 
+### Literal-editowner: grens vóór de visuele adapter
+
+De live controle van `IDE-LUA-NUMERIC-LITERAL-EDIT-01` vond drie fouten: de
+vervanging van de volledige unary-range maakt van `-(42)` de ongeldige bron
+`17)`, verwijdert comments tussen `-` en de literal en plakt in `return-42`
+het keyword aan de nieuwe waarde. Een losse literal vervangen door `-42`
+is bovendien geen contextvrije expressie-edit: in `2^2` verandert dat de
+operatorbinding. De scene-editor krijgt geen eigen correctiepad hiervoor.
+
+`IDE-LUA-TABLE-VALUE-EDIT-01` vervangt daarom de te algemene API door een
+**complete table-field-value**-edit. Dat is de werkelijke authoringgrens van
+de bestaande consumer. Een field bezit zijn hele value-expression; een
+literal in een berekening is geen editable field-value. De language-owner
+schrijft uitsluitend de numeric token en, bij een tekenwisseling, de
+bestaande unary-minus-token. Haakjes, comments en whitespace daartussen
+blijven bytegelijk. Meerdere tokenedits vormen één geordende textmodelbatch,
+geen tweede undo-owner. Dit vereist geen lexer-, parser- of compilerwijziging.
+
+| Representatie | Owner / consumer |
+| --- | --- |
+| `LuaTableField`, met complete `value`-AST | toolchain syntax; sceneprojectie bewaart het field in plaats van alleen de expressie |
+| geordende `EditorTextEdit[]`, of niet-editable dynamische value | `ide/language/lua/source_edits.ts`; geen feature-local range- of tekenbewerking |
+| documentmutatie, één undo-element, saved/installed revisies | bestaand `EditorTextModel` en working-copy/apply-services |
+
+De huidige callsites zijn de literal-edittests, de Nemesis-sceneprojectietests
+en `tests/conformance/runtime_replay/studio_scene_source.ts`. Er is nog geen
+product-UI- of framecallsite; ongewijzigde frames, compiler en TS/C++-machine
+krijgen geen extra werk of state. De bron wordt alleen op een expliciete edit
+gelezen; een ongewijzigde waarde bewaart ook exponentnotatie en creëert geen
+undo-element. Table insertion/removal/reorder blijft de aparte full-fidelity-
+syntaxgate; deze beperkte token-edit pretendeert die niet op te lossen.
+
+Productiereferenties:
+
+- [Roslyn `CSharpSyntaxGenerator`](https://github.com/dotnet/roslyn/blob/d7b7579180d60dcff342863163485202f778fb34/src/Workspaces/CSharp/Portable/CodeGeneration/CSharpSyntaxGenerator.cs#L3364-L3442)
+  bewaart syntax/trivia en behandelt operatorprecedentie bij het opbouwen van
+  expressies. BMSX serialiseert geen expression-subtree: de huidige AST mist
+  daarvoor de haakjes/trivia. De concrete table-value-grens voorkomt juist dat
+  de feature ontbrekende syntaxcontext moet raden.
+- [VS Code `CustomTextEditorModel`](https://github.com/microsoft/vscode/blob/48ac1875628144c02d79ff412e0323af9991dfc7/src/vs/workbench/contrib/customEditor/common/customTextEditorModel.ts)
+  houdt custom views aan het resource-owned textmodel en zijn save-lifecycle;
+  [custom-editor undo/redo](https://github.com/microsoft/vscode/blob/48ac1875628144c02d79ff412e0323af9991dfc7/src/vs/workbench/contrib/customEditor/browser/customEditorInput.ts#L358-L365)
+  blijft documentgeschiedenis, geen aparte visuele historie.
+
+#### Uitvoeringsbewijs (2026-09-06)
+
+- De 10 gerichte literal-/sceneprojectietests bewijzen sign flips, geneste
+  haakjes, line-/long-bracketcomments, CRLF, hexconventies, no-op en één
+  documentmutatie/undo-element. De gewijzigde snippets worden ook werkelijk
+  door BLua32 gecompileerd en uitgevoerd, waaronder O3; computed fields worden
+  niet herschreven.
+- De echte BIOS/Nemesis-Studio-lus doorloopt dezelfde nieuwe sceneproef op
+  software, WebGL2 en WebGPU. Zij verandert het bestaande title-member in
+  `scenes/root.lua`, behoudt handgeschreven grouping/comment en alle andere
+  bytes, en gebruikt fysieke undo/redo/save plus de gewone Hot-Resume-owner.
+  De bestaande title-actor behoudt identity en x. Na de daaropvolgende
+  **expliciete** productreboot heeft de normaal geïnstantieerde actor x=17.
+  Geen speciale guestprobe, vervangende scene-runtime of handmatige
+  world-mutatie is toegevoegd.
+- De finale bronweergaven zijn vastgelegd in
+  `/tmp/bmsx-scene-edit-final-{software,webgl2,webgpu}.png`: geïnspecteerd,
+  dezelfde gedecodeerde pixels, bestaand IDE-tiny-font en `SOURCE APPLIED`.
+  Dit is bronweergavebewijs, geen visuele scene-editor- of fysieke
+  GPU/SNES-mini-performanceclaim.
+- Regressie: Lua 861 geslaagd, één bestaande skip; Hot Resume 92 assertions;
+  IDE-typecheck, strict architecture-boundaries, core-parity, indentation en
+  diff-check geslaagd. De brede test-typecheck houdt dezelfde 52 bestaande
+  diagnostics; die is niet groen verklaard.
+
+`IDE-SCENE-SOURCE-ADAPTER-01` blijft open voor de echte bedienbare visuele view.
+Deze proef sluit alleen de geteste bronbewerking en definitie-/instantiegrens;
+zij is geen algemene live-reconcilevoorziening of UI-acceptatiegate.
+
 ## No-go's
 
 - scenes afwijzen omdat de eerste Lua-runtime fout was;
