@@ -1354,19 +1354,15 @@ export class LuaParser {
 		const fields: LuaTableField[] = [];
 		if (!this.check(LuaTokenType.RightBrace)) {
 			while (true) {
+				const fieldStart = this.current();
 				if (this.match(LuaTokenType.LeftBracket)) {
 					const keyExpression = this.parseExpression();
 					this.consume(LuaTokenType.RightBracket, 'Expected "]" after table key.');
 					this.consume(LuaTokenType.Equal, 'Expected "=" after table key.');
 					const valueExpression = this.parseExpression();
-					const range: LuaSourceRange = {
-						path: this.path,
-						start: keyExpression.range.start,
-						end: valueExpression.range.end,
-					};
 					const field: LuaTableExpressionField = {
 						kind: LuaTableFieldKind.ExpressionKey,
-						range,
+						range: this.rangeAroundNode(fieldStart, valueExpression, this.previous()),
 						key: keyExpression,
 						value: valueExpression,
 					};
@@ -1376,14 +1372,9 @@ export class LuaParser {
 					const nameToken = this.advance();
 					this.consume(LuaTokenType.Equal, 'Expected "=" after table identifier key.');
 					const valueExpression = this.parseExpression();
-					const range: LuaSourceRange = {
-						path: this.path,
-						start: this.positionFromToken(nameToken),
-						end: valueExpression.range.end,
-					};
 					const field: LuaTableIdentifierField = {
 						kind: LuaTableFieldKind.IdentifierKey,
-						range,
+						range: this.rangeAroundNode(fieldStart, valueExpression, this.previous()),
 						name: nameToken.lexeme,
 						value: valueExpression,
 					};
@@ -1393,7 +1384,7 @@ export class LuaParser {
 					const valueExpression = this.parseExpression();
 					const field: LuaTableArrayField = {
 						kind: LuaTableFieldKind.Array,
-						range: valueExpression.range,
+						range: this.rangeAroundNode(fieldStart, valueExpression, this.previous()),
 						value: valueExpression,
 					};
 					fields.push(field);
@@ -1555,6 +1546,19 @@ export class LuaParser {
 			path: this.path,
 			start: this.positionFromToken(startToken),
 			end: this.endPositionFromToken(endToken),
+		};
+	}
+
+	/** Reuses immutable positions (or the whole range) when a field adds no syntax there. */
+	private rangeAroundNode(startToken: LuaToken, node: LuaNode, endToken: LuaToken): LuaSourceRange {
+		const { range } = node;
+		const sameStart = range.start.line === startToken.line && range.start.column === startToken.column;
+		const sameEnd = range.end.line === endToken.endLine && range.end.column === endToken.endColumn;
+		if (sameStart && sameEnd) return range;
+		return {
+			path: this.path,
+			start: sameStart ? range.start : this.positionFromToken(startToken),
+			end: sameEnd ? range.end : this.endPositionFromToken(endToken),
 		};
 	}
 

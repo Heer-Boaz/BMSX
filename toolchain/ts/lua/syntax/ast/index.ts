@@ -336,6 +336,7 @@ export type LuaTableExpressionField = {
 	readonly range: LuaSourceRange;
 };
 
+/** Range covers all field tokens, including grouping/brackets, but not its separator or exterior trivia. */
 export type LuaTableField = LuaTableArrayField | LuaTableIdentifierField | LuaTableExpressionField;
 
 export type LuaTableConstructorExpression = LuaNode & {

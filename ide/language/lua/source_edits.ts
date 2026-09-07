@@ -5,8 +5,29 @@ import {
 	type LuaSourceRange,
 	type LuaTableField,
 } from '../../../toolchain/ts/lua/syntax/ast';
+import { findLuaTableFieldSeparator } from '../../../toolchain/ts/lua/syntax/table_fields';
+import type { LuaToken } from '../../../toolchain/ts/lua/syntax/token';
 import type { EditorTextEdit } from '../../editor/model/text_model';
 import type { TextBuffer } from '../../editor/text/text_buffer';
+
+/**
+ * Removes a field and its following separator, retaining all exterior trivia.
+ * The field and tokens belong to a complete parse of the current buffer version.
+ */
+export function createLuaTableFieldRemovalEdits(
+	buffer: TextBuffer,
+	tokens: readonly LuaToken[],
+	field: LuaTableField,
+): EditorTextEdit[] {
+	const start = buffer.offsetAt(field.range.start.line - 1, field.range.start.column - 1);
+	const end = buffer.offsetAt(field.range.end.line - 1, field.range.end.column);
+	const edits: EditorTextEdit[] = [{ offset: start, deleteLength: end - start, text: '' }];
+	const separator = findLuaTableFieldSeparator(tokens, field);
+	if (separator !== null) {
+		edits.push({ offset: buffer.offsetAt(separator.line - 1, separator.column - 1), deleteLength: separator.lexeme.length, text: '' });
+	}
+	return edits;
+}
 
 export function readLuaSourceRange(buffer: TextBuffer, range: LuaSourceRange): string {
 	return buffer.getTextRange(

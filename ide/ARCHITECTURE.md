@@ -209,19 +209,32 @@ an unchanged token produces no document mutation. This is enough for the first
 transform edit without pretending that the current syntax tree is already
 full-fidelity.
 
-Table insertion, removal and reordering are a separate language-architecture
-slice. The current parser consumes separators, so AST field ranges cannot own
-those edits without guessing over raw source. The shared lexer now has an
-opt-in trivia scan, used by Format Document instead of a second comment regex;
-default compiler/analysis scans still allocate only significant tokens.
+The parser now owns complete table-field ranges, including expression-key
+brackets and grouping, while child expressions keep their semantic ranges.
+`ParsedLuaChunk.tokens` already owns separators. A language-owned removal
+primitive deletes a complete field and its following comma/semicolon as
+separate spans in one edit batch, keeping every exterior comment and whitespace
+byte. It consumes a complete parse of the current buffer version; it does not
+guess syntax from text. Identical immutable ranges/endpoints remain shared.
+There are no new AST properties or per-field trivia arrays.
+
+This does not supply travelling-trivia ownership for insertion/reordering or
+an error tree for structural edits on recovered source. The shared lexer also
+has an opt-in trivia scan, used by Format Document instead of a second comment
+regex; default compiler/analysis scans still allocate only significant tokens.
 Formatting preserves string/comment content on opening and closing lines as
-well as their interiors. A lossless lexical stream is not yet a full-fidelity
-syntax tree: before structural edits exist, the syntax owner must model
-token/trivia attachment and punctuation, with compiler, semantic, memory and
-incremental-analysis costs. The live consumer inventory and remaining gates
-are in [`../docs/lua_source_syntax_design.md`](../docs/lua_source_syntax_design.md).
-Scene, BT and FSM contributions must not each grow their own comma/comment
-scanners in the meantime.
+well as their interiors. The remaining syntax gates and measured costs are in
+[`../docs/lua_source_syntax_design.md`](../docs/lua_source_syntax_design.md).
+Scene, BT and FSM contributions must not grow their own comma/comment scanners.
+
+The Scene Editor Remove action is not shipped. Its actual Nemesis product
+trial exposed a separate compiler/linker closure-layout limitation: removing
+the title member removes a capture and shifts another live capture slot.
+Ordinary Hot Resume correctly rejects that incompatible layout. The syntax
+primitive does not bypass this guard, restart execution, mutate a living actor
+or add a dummy cartlib dependency to make an editor command appear to work.
+Capture correspondence and live-cell identity must be resolved at their owners
+before the complete Remove/Save/Hot Resume workflow can be delivered.
 
 The first scene source adapter edits the registered structured Lua definition
 and uses the ordinary save plus Hot Resume path. Registration changes the

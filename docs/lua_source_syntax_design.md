@@ -3,14 +3,15 @@
 ## Scope
 
 Lua remains the authored document for scenes, BTs, FSMs and ordinary code.
-The existing number/sign-token edits remain valid. Inserting, removing or
-moving a table member needs more source information than the current AST
-provides; it must not be implemented by a contribution scanning for commas or
-comments.
+The existing number/sign-token edits remain valid. Structural edits must use
+parser-owned field boundaries and lexical punctuation, not a contribution
+scanning source text for commas or comments.
 
-This slice establishes the lexical owner and removes the formatter's second
-comment recognizer. It does **not** claim that a lossless token stream is a
-full-fidelity syntax tree or enable structural Scene Editor commands.
+The lexical slice removes the formatter's second comment recognizer. The field-
+range slice adds one conservative language-owned deletion primitive. Neither
+claims a full-fidelity syntax tree. The Scene Editor Remove action remains
+**unshipped**: its product trial exposed a separate closure-layout dependency
+in ordinary Hot Resume, documented below.
 
 ## Production references and decisions
 
@@ -29,28 +30,29 @@ full-fidelity syntax tree or enable structural Scene Editor commands.
   A future BMSX structural syntax owner must make this attachment explicit;
   the formatter does not invent it.
 - Full Moon's [punctuated lists](https://github.com/Kampfkarren/full-moon/blob/60f02d5dc2236b57355557e4c306046081fc2fdd/full-moon/src/ast/punctuated.rs#L1-L38)
-  retain values **and** separators. That is the missing parser information,
-  not an inferred `field.range` extension. Roslyn's separated syntax lists
-  make the same distinction. Copying their entire native tree object model
-  into every BMSX compiler parse is not justified by this first consumer.
+  retain values **and** separators. Roslyn's separated syntax lists make the
+  same distinction. Live BMSX already retains separators in `ParsedLuaChunk.tokens`;
+  completing the parser-owned field ranges makes those tokens navigable for a
+  bounded deletion. Copying an entire native tree model into every compiler
+  parse is not justified by this first consumer.
 
 ## Live owners and consumers
 
 | Owner / consumers | Current representation and consequence |
 | --- | --- |
 | `toolchain/ts/lua/syntax/lexer.ts`, `token.ts` | One scanner for BLua lexical grammar, decoded literals, raw lexemes and source positions. Default tokens exclude trivia. Opt-in tokens include horizontal whitespace, LF line breaks, line comments and long-bracket comments. |
-| `syntax/parser.ts`, `syntax/ast/index.ts` | Significant-token recursive descent. Tables retain semantic field order, but not separator tokens. Expression-key ranges start inside `[...]`; grouping parentheses are consumed without a separate AST node. These ranges cannot describe a whole authored field. |
+| `syntax/parser.ts`, `syntax/ast/index.ts` | Significant-token recursive descent. Each field range now covers its complete consumed syntax, including `[...]` and grouping. The child expression keeps its semantic range. No punctuation/trivia fields are added to the AST; separators remain in the parse token array. |
 | `analysis/parse.ts`, `analysis/cache.ts` | `ParsedLuaChunk` already retains the significant tokens. The cache owns the source plus parse by path/source equality. Recovery stops lexical scanning at the first lexical error, while statement recovery can skip significant tokens. Neither is a full-fidelity error tree. |
 | `semantic/model.ts`, `semantic/frontend.ts`; IDE diagnostics, workspace project and intellisense | Consume that shared parse and immutable binder facts. The intellisense engine also reads significant tokens directly. No new trivia allocations or token indices are imposed on these consumers in this slice. |
 | `toolchain/ts/lua/compiler.ts`, `compiler/compile_value_flow.ts`, compiler `passes/{const_module_exports,expression_paths,module_shape,static_functions}.ts` | Consume the semantic AST, not an editor syntax tree. Compiler output and table evaluation order must stay unchanged. Source locations also serve diagnostics/debugging; they must not be repurposed as mutable punctuation metadata. |
-| `scripts/rompacker/rombuilder.ts` | Direct lexer/parser for AST encoding and module closure. Adding editor metadata to the encoded AST would change the build representation; this slice does not do that. |
+| `scripts/rompacker/rombuilder.ts` | Direct lexer/parser for AST encoding and module closure. No AST properties are added. Corrected field ranges change encoded source metadata; executable-image equality is checked separately from whole-ROM equality. |
 | `scripts/rompacker/cart_lua_linter_runtime.ts`, `scripts/lint/rules/lua_cart/`, `scripts/audit_core_parity.ts` | Significant-token and AST readers. They continue to consume the default scan. |
 | `ide/runtime/source_registry.ts`, `ide/language/lua/interpreter/interpreter.ts` | Runtime-source/debugger metadata and host interpreter use parsed chunks. No guest/runtime syntax representation is added. |
 | `ide/language/lua/formatter.ts` | Requests trivia from the lexer. Indentation uses only significant tokens; string/comment extents determine which line prefixes/suffixes are actual token content. |
-| `ide/language/lua/source_edits.ts`, Scene Editor and Behavior Lens adapters | Keep their current AST-backed literal edits. No structural text scan, second model, runtime execution or scene-specific syntax token. |
+| `ide/language/lua/source_edits.ts`, Scene Editor and Behavior Lens adapters | The language owner provides literal edits and complete-field deletion. The shipped adapters still expose literal edits only. No structural text scan, second model, runtime execution or scene-specific syntax token. |
 
 No machine or C++ runtime representation changes. The edited paths run on
-source analysis or an explicit Format Document command, not a guest worldtick,
+source analysis or an explicit language edit/Format Document command, not a guest worldtick,
 scanout or idle IDE render.
 
 ## Lexical contract
@@ -82,20 +84,72 @@ short-string `\z` continuations and whitespace. It does not merely
 protect the interior lines of `[[...]]`. No comment-looking substring can
 protect unrelated code from indentation.
 
-## Structural-edit gate still open
+## Complete-field deletion primitive
 
-Before adding a parser representation or Scene Editor add/remove/reorder:
+### Syntax ownership
 
-- The parser must expose complete authored field bounds, enclosing braces,
-  optional comma/semicolon separators and their attachment. Retokenizing an
-  AST range cannot recover discarded parentheses or a bracket outside it.
+The earlier gate grouped removal with insertion/movement too broadly. Live
+`ParsedLuaChunk.tokens` already retains separators. What is missing for a
+bounded removal is the **complete parser-owned field range**, not a second
+lexer, trivia tree or per-node side table.
+
+TypeScript's [list deletion](https://github.com/microsoft/TypeScript/blob/c63de15a992d37f0d6cec03ac7631872838602cb/src/services/textChanges.ts#L1851-L1869)
+uses the syntactic list and its following comma. Its
+[next-comma lookup](https://github.com/microsoft/TypeScript/blob/c63de15a992d37f0d6cec03ac7631872838602cb/src/services/textChanges.ts#L608-L617)
+queries tokens rather than searching text. Roslyn's
+[`KeepExteriorTrivia`](https://github.com/dotnet/roslyn/blob/ca7d6c1a040cda9fecd1ffe3720fb971251ace67/src/Compilers/Core/Portable/Syntax/SyntaxRemoveOptions.cs#L17-L34)
+distinguishes outside comments from content inside the removed node. BMSX's
+first operation takes that explicit, conservative policy:
+
+- The parser produces a field range from its first consumed token through its
+  last consumed token, including expression-key brackets and value grouping,
+  but excluding the separator and exterior trivia. Child expression ranges
+  retain their existing semantic meaning. Identical immutable ranges/endpoints
+  are shared with the value node, rather than allocating duplicate positions
+  for the ordinary ungrouped fields.
+- `syntax/table_fields.ts` finds the following separator by binary search in
+  the retained significant tokens. This is token navigation over a
+  parser-proven boundary, not reconstruction of Lua syntax by text scanning.
+- The Lua edit owner returns the field deletion and, if present, a separate
+  deletion of its following comma/semicolon. The trivia between them and all
+  other exterior trivia stay byte-for-byte. Comments **inside** the field are
+  removed with the field. Remaining indentation/blank lines are not tidied as
+  a hidden formatting operation. A previous separator may become a legal Lua
+  trailing separator; no synthetic comma is needed for last-member removal.
+- The primitive consumes the field and token array from one complete parse of
+  the current buffer version. The caller owns source-version/syntax-error
+  admission; the primitive does not reparse, validate internal DTOs or scan
+  text. It returns one ordered edit batch; it does not own application/history.
+- The future Scene Editor action must share the language cache's parsed result,
+  not build a second contribution parser. It must accept pending property
+  text before selecting syntax, return focus to document history after
+  deletion and clear a deleted selection. Dynamic entries, recovered source
+  and read-only documents do not admit that action.
+- Source removal is not actor disposal. Registration/Hot Resume still affects
+  future instantiations only; there is no heap walk, cartlib hook or automatic
+  reboot. The attempted product integration hit the closure gate below and
+  was withdrawn rather than delivered with a broken Save & Resume workflow.
+
+There are no new AST properties, serialized syntax records or default trivia
+arrays. Corrected field source ranges can change encoded AST resource bytes;
+compiled instructions, literals and child-expression/debugger locations must
+be compared separately rather than promising identical whole ROMs.
+
+### Remaining insertion/movement and error-tree work
+
+Before adding insertion, movement or edits on recovered syntax:
+
+- Complete field bounds and token-owned separators now exist. Insertion and
+  movement still need an explicit list-boundary and travelling-trivia policy;
+  retokenizing a semantic child expression cannot supply that ownership.
 - Trivia attachment belongs to the syntax owner. Initial/EOF trivia,
   same-line comments, standalone comment lines and blank lines require tests;
   a move must state what travels with the member versus stays with its list.
-  Removal also needs an explicit keep-comment policy, not implicit deletion.
+  The deletion primitive above deliberately keeps all exterior trivia; it
+  does not decide what comments should travel with a moved member.
 - A source-version-owned syntax result must be shared with semantic analysis
   rather than reparsing in each contribution. No duplicate token stream per
-  scene, and no source syntax metadata in compiled/encoded AST output.
+  scene, and no new editor-only syntax properties in encoded AST output.
 - Compare retained source-token references against a full concrete tree on
   actual workspace files before choosing storage. Default compilation should
   not pay for editor-only token/trivia arrays. This is an ownership decision,
@@ -108,10 +162,68 @@ Before adding a parser representation or Scene Editor add/remove/reorder:
   on recovered tables. No successful rewrite of incomplete syntax, guessed
   delimiters or discarded error suffix.
 
-The lexical work below is independently useful to the shipped formatter. It
-does not smuggle in a partial structural rewriter while these gates are open.
+The deletion primitive proves syntax edits, not an end-to-end scene product.
 
-## Evidence
+## Hot Resume dependency discovered by the product trial
+
+On the actual debug Nemesis ROM, delete only the third `objects` field in
+`scenes/root.lua` (the `title_screen` entry) and use ordinary Save & Hot Resume.
+No grouping/comment fixture is needed. The current revision builder rejects:
+
+```text
+Hot resume cannot change closure identity for
+'module:scenes/root/module/decl:root_scene.register'.
+```
+
+Recompiling the 179 actual program/generated modules confirms the exact change
+at O3; the original rebuild reproduces the installed layout:
+
+| Capture slot | Installed / unchanged rebuild | After deleting the title member |
+| ---: | --- | --- |
+| 0 | `scene_library`, parent register 0 | unchanged |
+| 1 | `root_scene`, parent register 5 | unchanged |
+| 2 | `intro`, parent register 2 | unchanged |
+| 3 | `story`, parent register 3 | unchanged |
+| 4 | `title_screen`, parent register 4 | `director`, parent register 1 |
+| 5 | `director`, parent register 1 | absent |
+
+All descriptors are `inStack=true`; `staticClosure=false` before and after.
+The compiler allocates captures by use and compacts unused slots. The linker
+keeps function-record identity across revisions but does not preserve capture
+layout. An old live closure still has six cells: installing the new code
+without mapping them would read the title cell as `director`. The guard in
+`blua32_revision.ts` is therefore necessary, not a UI inconvenience.
+
+The reference is Roslyn's actual
+[`EncVariableSlotAllocator.TryGetPreviousClosure` / `TryGetPreviousLambda`](https://github.com/dotnet/roslyn/blob/ca7d6c1a040cda9fecd1ffe3720fb971251ace67/src/Compilers/Core/Portable/Emit/EditAndContinue/EncVariableSlotAllocator.cs#L302-L354):
+it maps prior syntax and checks closure compatibility rather than equating
+a method's name with its captured environment. Its
+[closure lowering](https://github.com/dotnet/roslyn/blob/ca7d6c1a040cda9fecd1ffe3720fb971251ace67/src/Compilers/CSharp/Portable/Lowering/ClosureConversion/ClosureConversion.cs#L350-L418)
+separates environment identity from captured fields. This is an ownership
+reference, not a request to copy CLR display classes into BLua32 or defer an
+unsupported edit to a runtime exception.
+
+The next compiler/linker slice must establish lexical capture correspondence
+across revisions before choosing stable capture slots or explicit cell
+relocation. The current debug names and numeric parent descriptors are not a
+sufficient general identity for shadowed/reordered declarations. Required
+proof includes capture contraction/permutation, parent-register movement,
+nested captures, shared open/closed cells, repeated remove/undo/reapply and
+static/dynamic closure transitions. New captures whose original value no
+longer exists require an explicit supported/unsupported contract, not invented
+values. No blanket de-optimization, scene-specific dummy capture, guessed
+name match, skipped guard or rebuild/restart fallback. Any runtime changes
+require the TS/C++ representation/callsite table first.
+
+The attempted software-browser trial passed actual pointer Remove, pending
+valid/invalid property acceptance, grouped field/comment preservation and
+separate field/document Undo/Redo. It then failed the installed-source check
+after the error above. That is **failed product evidence**, not a pass or a
+skipped acceptance requirement. No Remove command, menu entry or half-enabled
+contribution is included in this slice. Existing numeric Scene Editor
+workflows remain the shipped surface.
+
+## Lexical-slice evidence
 
 Measured against `899f36690`, Node 22.23.1, on the 312 tracked Lua sources under
 `cartlib`, `machine/bios` and `carts` (2,147,679 UTF-8 bytes). All 312 parse;
@@ -159,3 +271,51 @@ Correctness and product evidence:
 - IDE typecheck, strict architecture boundaries, core parity, indentation and
   `git diff --check` pass. The broad tests typecheck has exactly the same 52
   pre-existing diagnostics, not a clean-tests-typecheck claim.
+
+## Complete-field slice evidence
+
+Measured against `bbf772bc1`, Node 22.23.1, on the same 312 tracked Lua files
+(2,147,679 source bytes). The complete default token arrays match exactly.
+Of 14,077 fields, 1,020 acquire corrected ranges; every other AST property and
+all child-expression ranges match. All files participate, including compiler,
+BIOS and game sources; no error cases are excluded.
+
+Separately bundled owners, eight warmups, 31 alternating timing pairs with GC
+before each sample, and seven retained-heap samples per version. No concurrent
+build/browser/test during measurement:
+
+| Operation, whole corpus | Baseline | Complete fields |
+| --- | ---: | ---: |
+| Scan + parse median | 73.25 ms | 74.84 ms |
+| Retained complete parses after GC, median | 95.92 MiB | 95.97 MiB |
+
+This run was about 2% slower; it does not establish a speedup or a frame-budget
+guarantee. The observed retained-heap difference is about 51 KiB and is small
+relative to heap-measurement variance. The first implementation allocated
+every field range/endpoint afresh and measured about 0.86 MiB extra; sharing
+unchanged immutable ranges/endpoints removes that unnecessary representation
+duplication. No AST properties, punctuation records or default trivia arrays
+were added. The existing 191-file semantic profile measured the Nemesis-root
+per-edit parse median at 0.124 ms before and 0.128 ms after.
+
+Validation of the landed language slice:
+
+- Six new regressions cover complete key/grouping spans, nested syntax,
+  comment-looking strings, CRLF/exterior comments, first/middle/last/sole
+  removal, reparse, repeated edits, one content event and one document
+  Undo/Redo batch. Changed sources also execute on the actual BLua32 CPU.
+- `test:lua`: **893 pass**, one existing skip; `test:rompacker`: **119 pass**.
+  No new skipped/todo test substitutes for the failed Remove product trial.
+- Forced BIOS/Nemesis debug rebuilds preserve the complete decoded executable
+  layouts/bytes (294,780 and 634,580 bytes respectively) and debug symbols
+  exactly. Whole ROMs differ because encoded AST ranges are corrected;
+  Nemesis has the same byte count and BIOS is four bytes smaller.
+- The **existing shipped** Studio workflows pass on software, WebGL2 and
+  WebGPU, including Format Document, source/property editing, concrete focus
+  and history, Save, ordinary Hot Resume and explicit cold instantiation.
+  Final Scene Editor captures have identical decoded pixels across backends.
+  This is regression evidence, not a claim that the withheld Remove action
+  or changed closure layouts work.
+- Lua-toolchain/IDE typechecks, strict architecture boundaries, core parity,
+  indentation and `git diff --check` pass. The tests-project typecheck output
+  is byte-for-byte identical to the 52-diagnostic baseline.
