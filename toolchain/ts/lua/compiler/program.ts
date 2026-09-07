@@ -49,6 +49,14 @@ export type LocalSlotDebug = {
 	inlineCallSites: ReadonlyArray<InlineCallSite>;
 };
 
+/** Lexical origin of a captured cell, independent of its creation route. */
+export type CapturedLocalDebug = {
+	functionId: string;
+	name: string;
+	definition: SourceRange;
+	scope: SourceRange;
+};
+
 export type ProgramMetadata = ProgramRuntimeSymbols & {
 	protoDisplayNames: string[];
 	debugRanges: ReadonlyArray<SourceRange | null>;
@@ -56,7 +64,8 @@ export type ProgramMetadata = ProgramRuntimeSymbols & {
 	statementPointsByProto: ReadonlyArray<ReadonlyArray<ProgramStatementPoint>>;
 	resumePointsByProto: ReadonlyArray<ReadonlyArray<ProgramResumePoint>>;
 	localSlotsByProto: ReadonlyArray<ReadonlyArray<LocalSlotDebug>>;
-	upvalueNamesByProto: ReadonlyArray<ReadonlyArray<string>>;
+	capturedLocals: ReadonlyArray<CapturedLocalDebug>;
+	upvalueBindingsByProto: ReadonlyArray<ReadonlyArray<number>>;
 };
 
 export type Program = {

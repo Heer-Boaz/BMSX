@@ -45,14 +45,24 @@ test('BLua32 function names and inline call-site chains round-trip through the s
 			statementPointsByFunction: [],
 			resumePointsByFunction: [],
 			localSlotsByFunction: [],
-			upvalueNamesByFunction: [],
+			capturedLocals: [{
+				functionId: 'module:cart/module', name: 'value',
+				definition: innerCallRange, scope: outerCallRange,
+			}],
+			upvalueBindingsByFunction: [[0]],
 		},
 	};
 
 	const decoded = decodeBlua32SymbolsImage(encodeBlua32SymbolsImage(symbols));
+	assert.deepEqual(decoded.metadata.capturedLocals, symbols.metadata.capturedLocals);
+	assert.deepEqual(decoded.metadata.upvalueBindingsByFunction, [[0]]);
 	assert.deepEqual(decoded.metadata.functionDisplayNames, ['invoke']);
 	assert.deepEqual(decoded.metadata.debugInlineCallSiteChains, [[], inlineCallSites]);
 	assert.deepEqual(decoded.metadata.debugInlineCallSiteChainIds, [1, 0]);
 	assert.deepEqual(blua32InlineCallSitesAtPc(decoded, 0x2000, 0x2000), inlineCallSites);
 	assert.deepEqual(blua32InlineCallSitesAtPc(decoded, 0x2000, 0x2000 + INSTRUCTION_BYTES), []);
+	assert.throws(
+		() => decodeBlua32SymbolsImage(encodeBlua32SymbolsImage({ ...symbols, version: BLUA32_SYMBOLS_VERSION - 1 })),
+		/BLua32 symbols version is unsupported/,
+	);
 });

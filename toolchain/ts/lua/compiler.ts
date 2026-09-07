@@ -44,6 +44,7 @@ import {
 import { OpCode, encodeFixedCallArgCount } from '../../../machine/ts/spec/blua32/opcode';
 import type { SourceRange } from './source_range';
 import type {
+	CapturedLocalDebug,
 	InlineCallSite,
 	LocalSlotDebug,
 	Program,
@@ -307,6 +308,8 @@ type LocalBinding = {
 	symbolHandle: string;
 	name: string;
 	reg: number;
+	debugSlotIndex: number;
+	captureIndex: number;
 	kind: LocalBindingKind;
 	constValue: ProgramConstant | null;
 	hasConstValue: boolean;
@@ -509,7 +512,8 @@ class ProgramBuilder {
 	public readonly protoStatementPoints: ReadonlyArray<ProgramStatementPoint>[] = [];
 	public readonly protoResumePoints: ReadonlyArray<ProgramResumePoint>[] = [];
 	public readonly protoLocalSlots: ReadonlyArray<LocalSlotDebug>[] = [];
-	public readonly protoUpvalueNames: ReadonlyArray<string>[] = [];
+	public readonly capturedLocals: CapturedLocalDebug[] = [];
+	public readonly protoUpvalueBindings: ReadonlyArray<number>[] = [];
 	public readonly protoInstructionSets: InstructionSet[] = [];
 	public readonly protoIds: string[] = [];
 	public readonly protoDisplayNames: string[] = [];
@@ -820,7 +824,7 @@ class ProgramBuilder {
 		statementPoints: ReadonlyArray<ProgramStatementPoint>,
 		resumePoints: ReadonlyArray<ProgramResumePoint>,
 		localSlots: ReadonlyArray<LocalSlotDebug>,
-		upvalueNames: ReadonlyArray<string>,
+		upvalueBindings: ReadonlyArray<number>,
 		protoId: string,
 		displayName: string,
 		instructionSet: InstructionSet,
@@ -838,7 +842,7 @@ class ProgramBuilder {
 		this.protoStatementPoints.push(statementPoints);
 		this.protoResumePoints.push(resumePoints);
 		this.protoLocalSlots.push(localSlots);
-		this.protoUpvalueNames.push(upvalueNames);
+		this.protoUpvalueBindings.push(upvalueBindings);
 		this.protoInstructionSets.push(instructionSet);
 		this.protoIds.push(protoId);
 		this.protoDisplayNames.push(displayName);
@@ -974,10 +978,6 @@ class ProgramBuilder {
 		return this.protos[protoIndex].upvalueDescs.length === 0;
 	}
 
-	public getProtoUpvalueNames(protoIndex: number): ReadonlyArray<string> {
-		return this.protoUpvalueNames[protoIndex];
-	}
-
 	public protoReturnsOne(protoIndex: number): boolean {
 		return this.protoReturnsOneValue[protoIndex];
 	}
@@ -1108,7 +1108,8 @@ class ProgramBuilder {
 			statementPointsByProto: this.protoStatementPoints,
 			resumePointsByProto: this.protoResumePoints,
 			localSlotsByProto: this.protoLocalSlots,
-			upvalueNamesByProto: this.protoUpvalueNames,
+			capturedLocals: this.capturedLocals,
+			upvalueBindingsByProto: this.protoUpvalueBindings,
 			globalNames: this.globalNames,
 			systemGlobalNames: this.systemGlobalNames,
 			exportProtoIdBySlot: this.exportProtoIdBySlot,
@@ -1270,7 +1271,7 @@ class FunctionBuilder {
 	private readonly scopeStack: ScopeFrame[] = [];
 	private readonly localDebugSlots: LocalSlotDebug[] = [];
 	private readonly upvalueDescs: UpvalueDesc[] = [];
-	private readonly upvalueNames: string[] = [];
+	private readonly upvalueBindings: number[] = [];
 	private readonly upvalueSlotBySymbolHandle = new Map<string, number>();
 	private readonly loopStack: LoopContext[] = [];
 	private readonly labelPositions = new Map<string, number>();
@@ -1892,7 +1893,7 @@ class FunctionBuilder {
 			compactUnusedUpvalues(
 				this.code,
 				this.upvalueDescs,
-				this.upvalueNames,
+				this.upvalueBindings,
 				(protoIndex: number) => this.program.protos[protoIndex].upvalueDescs,
 			);
 			this.maxStack = Math.max(this.maxStack, computeMaxRegister(this.code) + 1);
@@ -2154,8 +2155,8 @@ class FunctionBuilder {
 		return this.upvalueDescs;
 	}
 
-	public getUpvalueNames(): ReadonlyArray<string> {
-		return this.upvalueNames;
+	public getUpvalueBindings(): ReadonlyArray<number> {
+		return this.upvalueBindings;
 	}
 
 	public getLocalDebugSlots(): ReadonlyArray<LocalSlotDebug> {
@@ -2227,6 +2228,8 @@ class FunctionBuilder {
 			symbolHandle,
 			name,
 			reg,
+			debugSlotIndex: this.localDebugSlots.length,
+			captureIndex: -1,
 			kind,
 			constValue,
 			hasConstValue,
@@ -2309,7 +2312,7 @@ class FunctionBuilder {
 		return binding.reg;
 	}
 
-	private resolveUpvalue(symbolHandle: string, name: string): number | null {
+	private resolveUpvalue(symbolHandle: string): number | null {
 		const slot = this.upvalueSlotBySymbolHandle.get(symbolHandle);
 		if (slot) {
 			return slot - 1;
@@ -2319,17 +2322,27 @@ class FunctionBuilder {
 		}
 		const parentLocal = this.parent.localBindings.get(symbolHandle);
 		if (parentLocal) {
+			if (parentLocal.captureIndex === -1) {
+				const local = this.parent.localDebugSlots[parentLocal.debugSlotIndex];
+				parentLocal.captureIndex = this.program.capturedLocals.length;
+				this.program.capturedLocals.push({
+					functionId: this.parent.protoId,
+					name: local.name,
+					definition: local.definition,
+					scope: local.scope,
+				});
+			}
 			const index = this.upvalueDescs.length;
 			this.upvalueDescs.push({ inStack: true, index: parentLocal.reg });
-			this.upvalueNames.push(name);
+			this.upvalueBindings.push(parentLocal.captureIndex);
 			this.upvalueSlotBySymbolHandle.set(symbolHandle, index + 1);
 			return index;
 		}
-		const parentUpvalue = this.parent.resolveUpvalue(symbolHandle, name);
+		const parentUpvalue = this.parent.resolveUpvalue(symbolHandle);
 		if (parentUpvalue || parentUpvalue === 0) {
 			const index = this.upvalueDescs.length;
 			this.upvalueDescs.push({ inStack: false, index: parentUpvalue });
-			this.upvalueNames.push(name);
+			this.upvalueBindings.push(this.parent.upvalueBindings[parentUpvalue]);
 			this.upvalueSlotBySymbolHandle.set(symbolHandle, index + 1);
 			return index;
 		}
@@ -2388,7 +2401,7 @@ class FunctionBuilder {
 		if (!symbolHandle) {
 			return null;
 		}
-		return this.resolveUpvalue(symbolHandle, this.getReferenceName(reference));
+		return this.resolveUpvalue(symbolHandle);
 	}
 
 	private resolveReferenceConstBinding(reference: LuaBoundReference): LocalBinding | null {
@@ -6056,7 +6069,7 @@ function compileFunctionExpression(
 			maxStack: builder.getMaxStack(),
 			upvalueDescs: builder.getUpvalueDescs(),
 			staticClosure: false,
-	}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), localSlots, builder.getUpvalueNames(), protoId, functionDisplayName, instructionSet);
+	}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), localSlots, builder.getUpvalueBindings(), protoId, functionDisplayName, instructionSet);
 	return protoIndex;
 }
 
@@ -6327,8 +6340,8 @@ export function compileLuaChunkToProgram(
 				const protoId = buildProtoId(moduleProtoId, `static:${fn.symbolHandle}`);
 				const protoIndex = compileFunctionExpression(programBuilder, fn.expression, staticScope, false, protoId, fn.displayName, module.path, semantics, frontend);
 				if (!programBuilder.protoHasNoUpvalues(protoIndex)) {
-					const upvalueNames = programBuilder.getProtoUpvalueNames(protoIndex);
-					throw new Error(`Const module '${module.path}' function export '${fn.symbolHandle}' captures runtime local '${upvalueNames[0]}'; function exports may use compile-time constants, parameters, function-local declarations, static calls, and static storage only.`);
+					const capturedLocal = programBuilder.capturedLocals[programBuilder.protoUpvalueBindings[protoIndex][0]];
+					throw new Error(`Const module '${module.path}' function export '${fn.symbolHandle}' captures runtime local '${capturedLocal.name}'; function exports may use compile-time constants, parameters, function-local declarations, static calls, and static storage only.`);
 				}
 				assertStaticFunctionInstructionSet(module.path, fn.symbolHandle, programBuilder.protoInstructionSets[protoIndex], programBuilder.constPool);
 				programBuilder.markStaticClosureProto(protoIndex);
@@ -6374,7 +6387,7 @@ export function compileLuaChunkToProgram(
 			maxStack: entryBuilder.getMaxStack(),
 			upvalueDescs: entryBuilder.getUpvalueDescs(),
 			staticClosure: false,
-		}, entryCode, entryRanges, entryBuilder.getInlineCallSites(), entryConstRelocs, entryBuilder.getStatementPoints(), entryBuilder.getResumePoints(), entryLocalSlots, entryBuilder.getUpvalueNames(), entryProtoId, 'entry', entryInstructionSet);
+		}, entryCode, entryRanges, entryBuilder.getInlineCallSites(), entryConstRelocs, entryBuilder.getStatementPoints(), entryBuilder.getResumePoints(), entryLocalSlots, entryBuilder.getUpvalueBindings(), entryProtoId, 'entry', entryInstructionSet);
 	} catch (error) {
 		compileErrors.push(toCompileError(error, chunk.range.path, 'entry', sourceMaps));
 	}
@@ -6411,7 +6424,7 @@ export function compileLuaChunkToProgram(
 				maxStack: builder.getMaxStack(),
 				upvalueDescs: builder.getUpvalueDescs(),
 				staticClosure: false,
-			}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), localSlots, builder.getUpvalueNames(), moduleProtoId, 'module', instructionSet);
+			}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), localSlots, builder.getUpvalueBindings(), moduleProtoId, 'module', instructionSet);
 			programBuilder.recordModuleProto(module.path, protoIndex);
 		} catch (error) {
 			compileErrors.push(toCompileError(error, module.path, 'module', sourceMaps));

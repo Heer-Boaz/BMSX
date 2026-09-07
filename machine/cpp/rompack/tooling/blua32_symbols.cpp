@@ -242,10 +242,20 @@ auto decodeMetadata(const BinValue& value) -> Blua32DebugMetadata {
 		}
 	}
 
-	const BinArray& upvalueNames = value.require("upvalueNamesByFunction").asArray();
-	metadata.upvalueNamesByFunction.resize(upvalueNames.size());
-	for (size_t functionIndex = 0; functionIndex < upvalueNames.size(); ++functionIndex) {
-		metadata.upvalueNamesByFunction[functionIndex] = decodeStringArray(upvalueNames[functionIndex]);
+	const BinArray& upvalueBindings = value.require("upvalueBindingsByFunction").asArray();
+	metadata.upvalueBindingsByFunction.resize(upvalueBindings.size());
+	for (size_t functionIndex = 0; functionIndex < upvalueBindings.size(); ++functionIndex) {
+		metadata.upvalueBindingsByFunction[functionIndex] = decodeU32Array(upvalueBindings[functionIndex]);
+	}
+	const BinArray& capturedLocals = value.require("capturedLocals").asArray();
+	metadata.capturedLocals.reserve(capturedLocals.size());
+	for (const BinValue& local : capturedLocals) {
+		metadata.capturedLocals.push_back(Blua32CapturedLocalDebug{
+			local.require("functionId").asString(),
+			local.require("name").asString(),
+			decodeSourceRange(local.require("definition")),
+			decodeSourceRange(local.require("scope")),
+		});
 	}
 	return metadata;
 }
@@ -318,12 +328,23 @@ auto encodeMetadata(const Blua32DebugMetadata& metadata) -> BinValue {
 	}
 	value["localSlotsByFunction"] = BinValue(std::move(localSlots));
 
-	BinArray upvalueNames;
-	upvalueNames.reserve(metadata.upvalueNamesByFunction.size());
-	for (const std::vector<std::string>& functionNames : metadata.upvalueNamesByFunction) {
-		upvalueNames.push_back(encodeStringArray(functionNames));
+	BinArray upvalueBindings;
+	upvalueBindings.reserve(metadata.upvalueBindingsByFunction.size());
+	for (const std::vector<u32>& functionBindings : metadata.upvalueBindingsByFunction) {
+		upvalueBindings.push_back(encodeU32Array(functionBindings));
 	}
-	value["upvalueNamesByFunction"] = BinValue(std::move(upvalueNames));
+	value["upvalueBindingsByFunction"] = BinValue(std::move(upvalueBindings));
+	BinArray capturedLocals;
+	capturedLocals.reserve(metadata.capturedLocals.size());
+	for (const Blua32CapturedLocalDebug& local : metadata.capturedLocals) {
+		BinObject binding;
+		binding["functionId"] = BinValue(local.functionId);
+		binding["name"] = BinValue(local.name);
+		binding["definition"] = encodeSourceRange(local.definition);
+		binding["scope"] = encodeSourceRange(local.scope);
+		capturedLocals.emplace_back(std::move(binding));
+	}
+	value["capturedLocals"] = BinValue(std::move(capturedLocals));
 	return BinValue(std::move(value));
 }
 

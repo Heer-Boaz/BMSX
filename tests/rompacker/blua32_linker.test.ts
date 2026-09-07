@@ -106,7 +106,8 @@ function makeMetadata(
 		statementPointsByProto: protoIds.map(() => []),
 		resumePointsByProto: protoIds.map(() => []),
 		localSlotsByProto: protoIds.map(() => []),
-		upvalueNamesByProto: protoIds.map(() => []),
+		capturedLocals: [],
+		upvalueBindingsByProto: protoIds.map(() => []),
 		globalNames,
 		systemGlobalNames,
 		exportProtoIdBySlot,
@@ -187,7 +188,7 @@ function setFunctionIds(
 	metadata.statementPointsByProto = ids.map(() => []);
 	metadata.resumePointsByProto = ids.map(() => []);
 	metadata.localSlotsByProto = ids.map(() => []);
-	metadata.upvalueNamesByProto = ids.map(() => []);
+	metadata.upvalueBindingsByProto = ids.map(() => []);
 }
 
 function decodeBx(code: Uint8Array, wordIndex: number): number {
@@ -981,12 +982,15 @@ test('BLua32 hot revision leaves a sequence point crossing an edit unmapped', ()
 test('BLua32 hot revision rejects captured-upvalue layout changes', () => {
 	const initial = makeSystemObject([{ op: OpCode.RET, a: 0, b: 1, c: 0 }]);
 	initial.object.sections.text.protos[0].upvalueDescs = [{ inStack: true, index: 0 }];
-	initial.metadata.upvalueNamesByProto = [['state']];
+	const definition: SourceRange = { path: 'entry', start: { line: 1, column: 7 }, end: { line: 1, column: 11 } };
+	initial.metadata.capturedLocals = [{ functionId: 'parent', name: 'state', definition, scope: definition }];
+	initial.metadata.upvalueBindingsByProto = [[0]];
 	const previous = linkSystemBlua32Image(initial.object, initial.metadata, SYSTEM_ROM_BASE + 0x100, LINK_TARGET_RAM_BYTES, []);
 
 	const changed = makeSystemObject([{ op: OpCode.RET, a: 0, b: 1, c: 0 }]);
 	changed.object.sections.text.protos[0].upvalueDescs = [{ inStack: true, index: 1 }];
-	changed.metadata.upvalueNamesByProto = [['replacement']];
+	changed.metadata.capturedLocals = [{ functionId: 'parent', name: 'replacement', definition, scope: definition }];
+	changed.metadata.upvalueBindingsByProto = [[0]];
 	const linked = linkSystemBlua32Image(
 		changed.object,
 		changed.metadata,
@@ -1058,6 +1062,97 @@ test('BLua32 hot revision preserves removed function records while leaving their
 	assert.deepEqual(linked.symbols.metadata.debugInlineCallSiteChainIds, [0, 0]);
 });
 
+test('BLua32 relinks live and tombstoned captures from their own declaration generations', () => {
+	const sources = [
+		'local old = 10\nfunction removed() return old end',
+		'local value = 20\nfunction fresh() return value end',
+		'local unused = 0\n\nlocal value = 30\nfunction fresh() return value end',
+	];
+	const compile = (source: string) => compileLuaChunkToProgram(
+		parseLuaChunk(source, 'entry'), [], { entrySource: source, programDomain: 'system', optLevel: 3 },
+	);
+	const initial = compile(sources[0]);
+	let linked = linkSystemBlua32Image(
+		encodeCompiledProgramObject(initial), initial.metadata, SYSTEM_ROM_BASE + 0x100, LINK_TARGET_RAM_BYTES, [],
+	);
+	const oldLocal = linked.symbols.metadata.capturedLocals[0];
+	const removedId = linked.symbols.metadata.functionIds.find(id => id.endsWith('/decl:removed'))!;
+	for (const source of sources.slice(1)) {
+		const compiled = compile(source);
+		const previous = linked;
+		linked = linkSystemBlua32Image(
+			encodeCompiledProgramObject(compiled), compiled.metadata, SYSTEM_ROM_BASE + 0x100, LINK_TARGET_RAM_BYTES, [],
+			{ image: previous.layout, symbols: previous.symbols },
+		);
+		const metadata = linked.symbols.metadata;
+		const removedIndex = metadata.functionIds.indexOf(removedId);
+		const freshIndex = metadata.functionIds.findIndex(id => id.endsWith('/decl:fresh'));
+		assert.notEqual(removedIndex, -1);
+		assert.notEqual(freshIndex, -1);
+		const oldBinding = metadata.upvalueBindingsByFunction[removedIndex][0];
+		const freshBinding = metadata.upvalueBindingsByFunction[freshIndex][0];
+		assert.notEqual(oldBinding, freshBinding);
+		assert.equal(metadata.capturedLocals.length, 2);
+		assert.deepEqual(metadata.capturedLocals[oldBinding], oldLocal);
+		assert.deepEqual(metadata.capturedLocals[freshBinding], compiled.metadata.capturedLocals[0]);
+		assert.equal(metadata.capturedLocals[oldBinding].functionId, metadata.capturedLocals[freshBinding].functionId);
+		assert.equal(metadata.localSlotsByFunction[removedIndex].length, 0);
+	}
+	assert.equal(linked.symbols.metadata.capturedLocals.find(local => local.name === 'value')!.definition.start.line, 3);
+});
+
+test('BLua32 capture-table reindexing is not a closure identity change', () => {
+	const range: SourceRange = { path: 'entry', start: { line: 1, column: 7 }, end: { line: 1, column: 11 } };
+	const local = { functionId: 'parent', name: 'state', definition: range, scope: range };
+	const initial = makeSystemObject([{ op: OpCode.RET, a: 0, b: 1, c: 0 }]);
+	initial.object.sections.text.protos[0].upvalueDescs = [{ inStack: true, index: 0 }];
+	initial.metadata.capturedLocals = [local];
+	initial.metadata.upvalueBindingsByProto = [[0]];
+	const previous = linkSystemBlua32Image(initial.object, initial.metadata, SYSTEM_ROM_BASE + 0x100, LINK_TARGET_RAM_BYTES, []);
+	const changed = makeSystemObject([{ op: OpCode.RET, a: 0, b: 1, c: 0 }]);
+	changed.object.sections.text.protos[0].upvalueDescs = [{ inStack: true, index: 0 }];
+	changed.metadata.capturedLocals = [{ ...local, name: 'unreferenced' }, local];
+	changed.metadata.upvalueBindingsByProto = [[1]];
+	const linked = linkSystemBlua32Image(changed.object, changed.metadata, SYSTEM_ROM_BASE + 0x100, LINK_TARGET_RAM_BYTES, []);
+	assert.deepEqual(linked.symbols.metadata.capturedLocals, [local]);
+	assert.doesNotThrow(() => buildBlua32ExecutionRevision(previous.layout, previous.symbols, NO_SOURCES, linked, NO_SOURCES));
+
+	changed.metadata.capturedLocals = [{ ...local, functionId: 'anotherParent' }];
+	changed.metadata.upvalueBindingsByProto = [[0]];
+	const replaced = linkSystemBlua32Image(changed.object, changed.metadata, SYSTEM_ROM_BASE + 0x100, LINK_TARGET_RAM_BYTES, []);
+	assert.throws(
+		() => buildBlua32ExecutionRevision(previous.layout, previous.symbols, NO_SOURCES, replaced, NO_SOURCES),
+		/Hot resume cannot change closure identity/,
+	);
+});
+
+test('BLua32 provenance does not admit a compacted closure over existing live cells', () => {
+	const before = 'local first = {}\nlocal second = {}\nfunction gather() return { first, second } end';
+	const after = before.replace('{ first, second }', '{ second }');
+	const compile = (source: string) => compileLuaChunkToProgram(
+		parseLuaChunk(source, 'entry'), [], { entrySource: source, programDomain: 'system', optLevel: 3 },
+	);
+	const initial = compile(before);
+	const previous = linkSystemBlua32Image(
+		encodeCompiledProgramObject(initial), initial.metadata, SYSTEM_ROM_BASE + 0x100, LINK_TARGET_RAM_BYTES, [],
+	);
+	const changed = compile(after);
+	const linked = linkSystemBlua32Image(
+		encodeCompiledProgramObject(changed), changed.metadata, SYSTEM_ROM_BASE + 0x100, LINK_TARGET_RAM_BYTES, [],
+		{ image: previous.layout, symbols: previous.symbols },
+	);
+	const functionIndex = previous.symbols.metadata.functionIds.findIndex(id => id.endsWith('/decl:gather'));
+	assert.notEqual(functionIndex, -1);
+	assert.equal(previous.layout.functions[functionIndex].upvalues.length, 2);
+	assert.equal(linked.layout.functions[functionIndex].upvalues.length, 1);
+	assert.throws(
+		() => buildBlua32ExecutionRevision(
+			previous.layout, previous.symbols, new Map([['entry', before]]), linked, new Map([['entry', after]]),
+		),
+		/Hot resume cannot change closure identity for 'module:entry\/entry\/decl:gather'/,
+	);
+});
+
 test('BLua32 Hot Resume rejects a static-closure identity change at a stable function address', () => {
 	const initial = makeSystemObject([
 		{ op: OpCode.RET, a: 0, b: 1, c: 0 },
@@ -1117,7 +1212,9 @@ test('BLua32 Hot Resume preserves function-record addresses across reorder, remo
 		['entry', 'middle', 'tail'],
 		['entryName', 'middleName', 'tailName'],
 	);
-	initial.metadata.upvalueNamesByProto = [[], ['captured'], []];
+	const definition: SourceRange = { path: 'entry', start: { line: 1, column: 7 }, end: { line: 1, column: 14 } };
+	initial.metadata.capturedLocals = [{ functionId: 'entry', name: 'captured', definition, scope: definition }];
+	initial.metadata.upvalueBindingsByProto = [[], [0], []];
 	const previous = linkSystemBlua32Image(initial.object, initial.metadata, SYSTEM_ROM_BASE + 0x100, LINK_TARGET_RAM_BYTES, []);
 
 	const changed = makeSystemObject([
@@ -1160,7 +1257,8 @@ test('BLua32 Hot Resume preserves function-record addresses across reorder, remo
 	assert.equal(decodeBx(linked.layout.textBytes, 1), linked.symbols.functionAddresses[2] >> 4);
 	assert.equal(linked.layout.functions[1].staticClosure, false);
 	assert.deepEqual(linked.layout.functions[1].upvalues, [{ inStack: true, index: 0 }]);
-	assert.deepEqual(linked.symbols.metadata.upvalueNamesByFunction[1], ['captured']);
+	assert.deepEqual(linked.symbols.metadata.upvalueBindingsByFunction[1], [0]);
+	assert.deepEqual(linked.symbols.metadata.capturedLocals, initial.metadata.capturedLocals);
 	assert.equal(linked.layout.functions[1].codeByteCount, INSTRUCTION_BYTES);
 	assert.equal(
 		(readInstructionWord(
@@ -1210,7 +1308,8 @@ test('BLua32 Hot Resume preserves function-record addresses across reorder, remo
 		['entry', 'middle', 'tail', 'new'],
 		['entryName', 'middleName', 'tailName', 'newName'],
 	);
-	reinserted.metadata.upvalueNamesByProto = [[], ['captured'], [], []];
+	reinserted.metadata.capturedLocals = initial.metadata.capturedLocals;
+	reinserted.metadata.upvalueBindingsByProto = [[], [0], [], []];
 	const restored = linkSystemBlua32Image(
 		reinserted.object,
 		reinserted.metadata,

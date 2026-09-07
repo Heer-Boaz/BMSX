@@ -1037,16 +1037,20 @@ function resolveRuntimeLocalChainValue(
 			break;
 		}
 		if (!upvalueFound && physicalFrameRange.path === requestedPath) {
-			const frameUpvalueNames = symbols.metadata.upvalueNamesByFunction[functionIndex];
-			const upvalueIndex = frameUpvalueNames.indexOf(rootName);
+			const frameUpvalueBindings = symbols.metadata.upvalueBindingsByFunction[functionIndex];
 			const upvalueCount = useFaultSnapshot
 				? faultFrames[frameIndex].upvalues.length
 				: cpu.getFrameUpvalueCount(frameIndex);
-			if (upvalueIndex >= 0 && upvalueIndex < upvalueCount) {
+			for (let upvalueIndex = 0; upvalueIndex < upvalueCount; upvalueIndex += 1) {
+				const binding = symbols.metadata.capturedLocals[frameUpvalueBindings[upvalueIndex]];
+				if (binding.name !== rootName) {
+					continue;
+				}
 				rawUpvalue = useFaultSnapshot
 					? faultFrames[frameIndex].upvalues[upvalueIndex]
 					: cpu.readFrameUpvalue(frameIndex, upvalueIndex);
 				upvalueFound = true;
+				break;
 			}
 		}
 	}

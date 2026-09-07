@@ -1,5 +1,6 @@
 import type { SourcePosition, SourceRange } from '../source_range';
 import type {
+	CapturedLocalDebug,
 	InlineCallSite,
 	LocalSlotDebug,
 	ProgramMetadata,
@@ -277,5 +278,10 @@ export function mapProgramMetadataSourceRanges(
 		statementPointsByProto,
 		resumePointsByProto,
 		localSlotsByProto,
+		capturedLocals: metadata.capturedLocals.map((local): CapturedLocalDebug => ({
+			...local,
+			definition: mapLuaSourceRange(sourceMaps, local.definition),
+			scope: mapLuaSourceRange(sourceMaps, local.scope),
+		})),
 	};
 }

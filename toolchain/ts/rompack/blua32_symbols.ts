@@ -4,7 +4,7 @@ import type { OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import type { SourceRange } from '../lua/source_range';
 
 export const BLUA32_SYMBOLS_IMAGE_ID = '__blua32_symbols__';
-export const BLUA32_SYMBOLS_VERSION = 4;
+export const BLUA32_SYMBOLS_VERSION = 5;
 
 export type Blua32StaticLayoutToken = {
 	lo: number;
@@ -35,6 +35,13 @@ export type Blua32LocalSlotDebug = {
 	inlineCallSites: ReadonlyArray<Blua32InlineCallSite>;
 };
 
+export type Blua32CapturedLocalDebug = {
+	functionId: string;
+	name: string;
+	definition: SourceRange;
+	scope: SourceRange;
+};
+
 export type Blua32ResumePoint = {
 	wordOffset: number;
 	range: SourceRange;
@@ -63,7 +70,8 @@ export type Blua32DebugMetadata = {
 	statementPointsByFunction: ReadonlyArray<ReadonlyArray<Blua32StatementPoint>>;
 	resumePointsByFunction: ReadonlyArray<ReadonlyArray<Blua32ResumePoint>>;
 	localSlotsByFunction: ReadonlyArray<ReadonlyArray<Blua32LocalSlotDebug>>;
-	upvalueNamesByFunction: ReadonlyArray<ReadonlyArray<string>>;
+	capturedLocals: ReadonlyArray<Blua32CapturedLocalDebug>;
+	upvalueBindingsByFunction: ReadonlyArray<ReadonlyArray<number>>;
 };
 
 export type Blua32SymbolsImage = {

@@ -5,7 +5,7 @@ import type { Instruction } from './index';
 export function compactUnusedUpvalues(
 	instructions: Instruction[],
 	descriptors: UpvalueDesc[],
-	names: string[],
+	bindings: number[],
 	closureUpvalues: (protoIndex: number) => UpvalueDesc[],
 ): void {
 	const count = descriptors.length;
@@ -57,11 +57,11 @@ export function compactUnusedUpvalues(
 		}
 		remap[index] = nextIndex;
 		descriptors[nextIndex] = descriptors[index];
-		names[nextIndex] = names[index];
+		bindings[nextIndex] = bindings[index];
 		nextIndex += 1;
 	}
 	descriptors.length = liveCount;
-	names.length = liveCount;
+	bindings.length = liveCount;
 
 	for (let instructionIndex = 0; instructionIndex < instructions.length; instructionIndex += 1) {
 		const instruction = instructions[instructionIndex];

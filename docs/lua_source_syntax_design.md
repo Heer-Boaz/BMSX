@@ -13,6 +13,11 @@ claims a full-fidelity syntax tree. The Scene Editor Remove action remains
 **unshipped**: its product trial exposed a separate closure-layout dependency
 in ordinary Hot Resume, documented below.
 
+The [capture-provenance prerequisite](lua_capture_identity_design.md) now carries
+defining declarations through compilation, optimization and TS/C++ symbols.
+It does not yet supply cross-revision correspondence or capture-slot retention;
+the Remove product gate remains closed.
+
 ## Production references and decisions
 
 - TypeScript's [scanner](https://github.com/microsoft/TypeScript/blob/c63de15a992d37f0d6cec03ac7631872838602cb/src/compiler/scanner.ts#L1891-L1964)

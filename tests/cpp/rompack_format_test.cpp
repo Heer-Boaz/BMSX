@@ -49,9 +49,22 @@ int main() {
 	symbols.metadata.localSlotsByFunction = {{
 		{"value", 1, innerCallRange, outerCallRange, inlineCallSites},
 	}};
+	symbols.metadata.capturedLocals = {
+		{"module:cart/module", "value", innerCallRange, outerCallRange},
+	};
+	symbols.metadata.upvalueBindingsByFunction = {{0u}};
 
 	const std::vector<bmsx::u8> encodedSymbols = bmsx::encodeBlua32SymbolsImage(symbols);
 	const bmsx::Blua32SymbolsImage decodedSymbols = bmsx::decodeBlua32SymbolsImage(encodedSymbols);
+	if (decodedSymbols.metadata.capturedLocals.size() != 1u
+		|| decodedSymbols.metadata.capturedLocals[0].functionId != "module:cart/module"
+		|| decodedSymbols.metadata.capturedLocals[0].name != "value"
+		|| decodedSymbols.metadata.capturedLocals[0].definition.path != "cart.lua"
+		|| decodedSymbols.metadata.capturedLocals[0].definition.start.line != 11
+		|| decodedSymbols.metadata.capturedLocals[0].scope.end.column != 14
+		|| decodedSymbols.metadata.upvalueBindingsByFunction != std::vector<std::vector<bmsx::u32>>{{0u}}) {
+		throw std::runtime_error("BLua32 captured-local provenance did not round-trip");
+	}
 	if (decodedSymbols.version != bmsx::BLUA32_SYMBOLS_VERSION
 		|| bmsx::blua32FunctionDisplayNameById(decodedSymbols, "entry") != "entryDisplay"
 		|| decodedSymbols.metadata.debugRanges.size() != 2u

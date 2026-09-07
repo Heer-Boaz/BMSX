@@ -81,7 +81,7 @@ std::vector<u8> makeMinimalDiagnosticBootRom(RomImageDomain domain) {
 	symbols.metadata.debugInlineCallSiteChainIds.push_back(0u);
 	symbols.metadata.resumePointsByFunction.resize(image.functions.size());
 	symbols.metadata.localSlotsByFunction.resize(image.functions.size());
-	symbols.metadata.upvalueNamesByFunction.resize(image.functions.size());
+	symbols.metadata.upvalueBindingsByFunction.resize(image.functions.size());
 	image.toolingSymbols = encodeBlua32SymbolsImage(symbols);
 	return encodeBlua32TestRom(domain, image).bytes;
 }

@@ -13,7 +13,7 @@
 namespace bmsx {
 
 constexpr const char* BLUA32_SYMBOLS_IMAGE_ID = "__blua32_symbols__";
-constexpr u32 BLUA32_SYMBOLS_VERSION = 4u;
+constexpr u32 BLUA32_SYMBOLS_VERSION = 5u;
 
 struct Blua32InlineCallSite {
 	std::string calleeFunctionId;
@@ -26,6 +26,13 @@ struct Blua32LocalSlotDebug {
 	SourceRange definition;
 	SourceRange scope;
 	std::vector<Blua32InlineCallSite> inlineCallSites;
+};
+
+struct Blua32CapturedLocalDebug {
+	std::string functionId;
+	std::string name;
+	SourceRange definition;
+	SourceRange scope;
 };
 
 struct Blua32ResumePoint {
@@ -56,7 +63,8 @@ struct Blua32DebugMetadata {
 	std::vector<std::vector<Blua32StatementPoint>> statementPointsByFunction;
 	std::vector<std::vector<Blua32ResumePoint>> resumePointsByFunction;
 	std::vector<std::vector<Blua32LocalSlotDebug>> localSlotsByFunction;
-	std::vector<std::vector<std::string>> upvalueNamesByFunction;
+	std::vector<Blua32CapturedLocalDebug> capturedLocals;
+	std::vector<std::vector<u32>> upvalueBindingsByFunction;
 };
 
 struct Blua32StaticLayoutToken {

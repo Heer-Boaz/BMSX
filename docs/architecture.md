@@ -1579,6 +1579,21 @@ reinserting the removed id restores its original slot. Slots are never reused
 for a different identity while live closures may still exist. An ordinary cold
 ROM build has no previous lineage and emits a compact table.
 
+Capture provenance is compiler/tooling data, not CPU state. Debug symbols own a
+`capturedLocals` table containing the defining function, name, declaration and
+scope; each function's `upvalueBindingsByFunction` references that table by
+index. Nested captures retain the ultimate defining local, not the name of an
+intermediate slot. Optimization compacts these indices with the creation
+descriptors. Linking relocates current and tombstoned indices from their own
+declaration tables, without making old captures point at a rebuilt parent's
+new locals. TS and C++ tooling use the same version-5 symbols format. Physical
+upvalue descriptors, closure cells and instructions are unchanged.
+These debug indices are not cross-revision identities: lexical correspondence
+and pre-lowering capture-slot preservation remain an open Hot Resume gate.
+The current strict layout check is not weakened by the added metadata. See
+[capture identity](lua_capture_identity_design.md) for references, boundaries
+and validation.
+
 The tooling sidecar maps only compatible sequence points into the revised text.
 Closure addresses do not move and the CPU does not traverse or rewrite the Lua
 heap. Before the ROM owner installs any rebuilt bytes, IDE tooling walks the

@@ -313,9 +313,15 @@ return nested()
 
 	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 0), [22]);
 	assert.deepEqual(runCompiledLua(source, INLINE_TEST_PATH, 3), [22]);
-	assert.deepEqual(compiled.metadata.upvalueNamesByProto[outerProtoIndex], ['retained']);
+	const outerBindings = compiled.metadata.upvalueBindingsByProto[outerProtoIndex];
+	assert.deepEqual(outerBindings.map(index => compiled.metadata.capturedLocals[index].name), ['retained']);
+	const nestedBindings = compiled.metadata.upvalueBindingsByProto[nestedProtoIndex];
+	assert.ok(nestedBindings.includes(outerBindings[0]));
 	assert.equal(compiled.program.protos[outerProtoIndex].upvalueDescs.length, 1);
 	assert.equal(nestedParentCapture.index, 0);
+	assert.ok(compiled.metadata.capturedLocals.some(local => local.name === 'identity'));
+	const linked = linkTestSystemBlua32(compiled);
+	assert.ok(!linked.symbols.metadata.capturedLocals.some(local => local.name === 'identity'));
 });
 
 test('a nested closure write invalidates a mutable local call target', () => {

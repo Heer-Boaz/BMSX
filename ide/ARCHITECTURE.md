@@ -230,6 +230,10 @@ Scene, BT and FSM contributions must not grow their own comma/comment scanners.
 The Scene Editor Remove action is not shipped. Its actual Nemesis product
 trial exposed a separate compiler/linker closure-layout limitation: removing
 the title member removes a capture and shifts another live capture slot.
+Compiler-owned capture provenance now reaches TS/C++ debug symbols through
+indexed declaration records, rather than a name-only array. This does not yet
+preserve slots across revisions; see
+[`../docs/lua_capture_identity_design.md`](../docs/lua_capture_identity_design.md).
 Ordinary Hot Resume correctly rejects that incompatible layout. The syntax
 primitive does not bypass this guard, restart execution, mutate a living actor
 or add a dummy cartlib dependency to make an editor command appear to work.

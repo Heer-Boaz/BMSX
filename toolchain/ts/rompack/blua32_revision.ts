@@ -1,5 +1,6 @@
 import type { Blua32FunctionRecord, Blua32ImageLayout } from './blua32_image';
 import type {
+	Blua32CapturedLocalDebug,
 	Blua32InlineCallSite,
 	Blua32LocalSlotDebug,
 	Blua32ResumePoint,
@@ -247,21 +248,26 @@ function functionCodeMatches(
 
 function closureLayoutMatches(
 	previousFunction: Blua32FunctionRecord,
-	previousNames: ReadonlyArray<string>,
+	previousBindings: ReadonlyArray<number>,
+	previousLocals: ReadonlyArray<Blua32CapturedLocalDebug>,
 	freshFunction: Blua32FunctionRecord,
-	freshNames: ReadonlyArray<string>,
+	freshBindings: ReadonlyArray<number>,
+	freshLocals: ReadonlyArray<Blua32CapturedLocalDebug>,
 ): boolean {
 	if (previousFunction.staticClosure !== freshFunction.staticClosure
 		|| previousFunction.upvalues.length !== freshFunction.upvalues.length
-		|| previousNames.length !== freshNames.length) {
+		|| previousBindings.length !== freshBindings.length) {
 		return false;
 	}
 	for (let index = 0; index < previousFunction.upvalues.length; index += 1) {
 		const previous = previousFunction.upvalues[index];
 		const fresh = freshFunction.upvalues[index];
+		const previousLocal = previousLocals[previousBindings[index]];
+		const freshLocal = freshLocals[freshBindings[index]];
 		if (previous.inStack !== fresh.inStack
 			|| previous.index !== fresh.index
-			|| previousNames[index] !== freshNames[index]) {
+			|| previousLocal.functionId !== freshLocal.functionId
+			|| previousLocal.name !== freshLocal.name) {
 			return false;
 		}
 	}
@@ -405,9 +411,11 @@ export function buildBlua32ExecutionRevision(
 		const freshFunction = linked.layout.functions[freshIndex];
 		if (!closureLayoutMatches(
 			previousFunction,
-			previousSymbols.metadata.upvalueNamesByFunction[previousIndex],
+			previousSymbols.metadata.upvalueBindingsByFunction[previousIndex],
+			previousSymbols.metadata.capturedLocals,
 			freshFunction,
-			linked.symbols.metadata.upvalueNamesByFunction[freshIndex],
+			linked.symbols.metadata.upvalueBindingsByFunction[freshIndex],
+			linked.symbols.metadata.capturedLocals,
 		)) {
 			throw new Error(`Hot resume cannot change closure identity for '${functionId}'.`);
 		}
