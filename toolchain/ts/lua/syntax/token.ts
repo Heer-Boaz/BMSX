@@ -66,6 +66,14 @@ export const enum LuaTokenType {
 	While,
 	Vararg,
 	Eof,
+	WhitespaceTrivia,
+	NewLineTrivia,
+	SingleLineCommentTrivia,
+	MultiLineCommentTrivia,
+}
+
+export function isLuaTrivia(type: LuaTokenType): boolean {
+	return type >= LuaTokenType.WhitespaceTrivia && type <= LuaTokenType.MultiLineCommentTrivia;
 }
 
 export type LuaTokenLiteral = number | string | boolean;

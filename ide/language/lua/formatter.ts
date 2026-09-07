@@ -1,10 +1,12 @@
 import { LuaLexer } from '../../../toolchain/ts/lua/syntax/lexer';
 import type { LuaToken } from '../../../toolchain/ts/lua/syntax/token';
-import { LuaTokenType } from '../../../toolchain/ts/lua/syntax/token';
+import { isLuaTrivia, LuaTokenType } from '../../../toolchain/ts/lua/syntax/token';
 
 type LineMetadata = {
 	decreaseBefore: number;
 	increaseAfter: number;
+	preserveLeadingWhitespace: boolean;
+	preserveTrailingWhitespace: boolean;
 };
 
 const OPENING_TOKENS = new Set<LuaTokenType>([
@@ -28,15 +30,12 @@ export function formatLuaDocument(source: string, lines: readonly string[]): str
 	if (source.length === 0) {
 		return '';
 	}
-	const lexer = new LuaLexer(source, 'lua-editor');
+	const lexer = new LuaLexer(source, 'lua-editor', /*skipTrivia*/ false);
 	const tokens = lexer.scanTokens();
-	const tokensByLine = buildTokensByLine(tokens);
-	const preservedLines = determinePreservedLines(source, tokens, lines);
-	const metadata = computeLineMetadata(lines.length, tokensByLine);
+	const metadata = computeLineMetadata(lines.length, tokens);
 	const formatted: string[] = [];
 	let indentLevel = 0;
 	for (let index = 0; index < lines.length; index += 1) {
-		const lineNumber = index + 1;
 		const info = metadata[index];
 		const decrease = info.decreaseBefore;
 		if (decrease > 0) {
@@ -45,16 +44,13 @@ export function formatLuaDocument(source: string, lines: readonly string[]): str
 				indentLevel = 0;
 			}
 		}
-		const originalLine = lines[index];
-		if (preservedLines.has(lineNumber)) {
-			formatted.push(originalLine);
+		let content = lines[index];
+		if (!info.preserveLeadingWhitespace) content = content.replace(/^\s+/u, '');
+		if (!info.preserveTrailingWhitespace) content = content.replace(/\s+$/u, '');
+		if (content.length === 0 || info.preserveLeadingWhitespace) {
+			formatted.push(content);
 		} else {
-			const content = originalLine.replace(/^\s+/u, '').replace(/\s+$/u, '');
-			if (content.length === 0) {
-				formatted.push('');
-			} else {
-				formatted.push(repeatIndent(indentLevel) + content);
-			}
+			formatted.push('\t'.repeat(indentLevel) + content);
 		}
 		const increase = info.increaseAfter;
 		if (increase !== 0) {
@@ -67,127 +63,45 @@ export function formatLuaDocument(source: string, lines: readonly string[]): str
 	return formatted.join('\n');
 }
 
-function buildTokensByLine(tokens: readonly LuaToken[]): Map<number, LuaToken[]> {
-	const map = new Map<number, LuaToken[]>();
-	for (let index = 0; index < tokens.length; index += 1) {
-		const token = tokens[index];
-		if (token.type === LuaTokenType.Eof) {
-			continue;
-		}
-		let bucket = map.get(token.line);
-		if (!bucket) {
-			bucket = [];
-			map.set(token.line, bucket);
-		}
-		bucket.push(token);
-	}
-	return map;
-}
-
-function determinePreservedLines(source: string, tokens: readonly LuaToken[], lines: readonly string[]): Set<number> {
-	const preserved = new Set<number>();
-	const lineCount = lines.length;
-	for (let index = 0; index < tokens.length; index += 1) {
-		const token = tokens[index];
-		if (token.type !== LuaTokenType.String) {
-			continue;
-		}
-		if (!token.lexeme.startsWith('[')) {
-			continue;
-		}
-		if (token.endLine - token.line < 2) {
-			continue;
-		}
-		for (let line = token.line + 1; line < token.endLine; line += 1) {
-			preserved.add(line);
-		}
-	}
-	const pattern = /--\[(=*)\[(?:[\s\S]*?)\]\1\]/g;
-	const lineStarts = buildLineStartIndices(lines);
-	let match: RegExpExecArray;
-	while ((match = pattern.exec(source)) !== null) {
-		const startIndex = match.index;
-		const block = match[0];
-		const startLine = lineNumberForIndex(lineStarts, startIndex);
-		const endLine = lineNumberForIndex(lineStarts, startIndex + block.length - 1);
-		if (endLine - startLine < 2) {
-			continue;
-		}
-		for (let lineNumber = startLine + 1; lineNumber < endLine; lineNumber += 1) {
-			if (lineNumber > lineCount) {
-				break;
-			}
-			preserved.add(lineNumber);
-		}
-	}
-	return preserved;
-}
-
-function buildLineStartIndices(lines: readonly string[]): number[] {
-	const starts: number[] = [0];
-	let offset = 0;
-	for (let index = 0; index < lines.length - 1; index += 1) {
-		offset += lines[index].length + 1;
-		starts.push(offset);
-	}
-	return starts;
-}
-
-function lineNumberForIndex(starts: readonly number[], index: number): number {
-	let low = 0;
-	let high = starts.length - 1;
-	while (low <= high) {
-		const mid = (low + high) >>> 1;
-		if (starts[mid] <= index) {
-			low = mid + 1;
-		} else {
-			high = mid - 1;
-		}
-	}
-	return high + 1;
-}
-
-function computeLineMetadata(lineCount: number, tokensByLine: ReadonlyMap<number, LuaToken[]>): LineMetadata[] {
+function computeLineMetadata(lineCount: number, tokens: readonly LuaToken[]): LineMetadata[] {
 	const metadata: LineMetadata[] = new Array(lineCount);
 	for (let index = 0; index < lineCount; index += 1) {
-		const tokens = tokensByLine.get(index + 1);
-		if (!tokens || tokens.length === 0) {
-			metadata[index] = { decreaseBefore: 0, increaseAfter: 0 };
-			continue;
-		}
-		let leadingClosers = 0;
-		for (let tokenIndex = 0; tokenIndex < tokens.length; tokenIndex += 1) {
-			const type = tokens[tokenIndex].type;
-			if (!CLOSING_TOKENS.has(type)) {
-				break;
-			}
-			leadingClosers += 1;
-		}
-		let totalClosers = 0;
-		let openers = 0;
-		for (let tokenIndex = 0; tokenIndex < tokens.length; tokenIndex += 1) {
-			const type = tokens[tokenIndex].type;
-			if (CLOSING_TOKENS.has(type)) {
-				totalClosers += 1;
-			}
-			if (OPENING_TOKENS.has(type)) {
-				openers += 1;
-			}
-		}
-		const closersAfter = totalClosers - leadingClosers;
 		metadata[index] = {
-			decreaseBefore: leadingClosers,
-			increaseAfter: openers - closersAfter,
+			decreaseBefore: 0,
+			increaseAfter: 0,
+			preserveLeadingWhitespace: false,
+			preserveTrailingWhitespace: false,
 		};
 	}
-	return metadata;
-}
-
-function repeatIndent(count: number): string {
-	if (count <= 0) {
-		return '';
+	let tokenLine = 0;
+	let atLineStart = true;
+	for (let index = 0; index < tokens.length; index += 1) {
+		const token = tokens[index];
+		if (token.type === LuaTokenType.Eof) break;
+		const info = metadata[token.line - 1];
+		if (token.type === LuaTokenType.String || token.type === LuaTokenType.MultiLineCommentTrivia) {
+			// Prefixes/suffixes crossing a token are content, not indentation.
+			for (let line = token.line; line < token.endLine; line += 1) {
+				metadata[line - 1].preserveTrailingWhitespace = true;
+				metadata[line].preserveLeadingWhitespace = true;
+			}
+		} else if (token.type === LuaTokenType.SingleLineCommentTrivia) {
+			info.preserveTrailingWhitespace = true;
+		}
+		if (isLuaTrivia(token.type)) continue;
+		if (token.line !== tokenLine) {
+			tokenLine = token.line;
+			atLineStart = true;
+		}
+		if (CLOSING_TOKENS.has(token.type)) {
+			if (atLineStart) info.decreaseBefore += 1;
+			else info.increaseAfter -= 1;
+		} else {
+			atLineStart = false;
+		}
+		if (OPENING_TOKENS.has(token.type)) info.increaseAfter += 1;
 	}
-	return '\t'.repeat(count);
+	return metadata;
 }
 export function resolveOffsetPosition(lines: readonly string[], offset: number): { row: number; column: number; } {
 	let remaining = offset;

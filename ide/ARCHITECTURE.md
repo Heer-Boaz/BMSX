@@ -210,12 +210,18 @@ transform edit without pretending that the current syntax tree is already
 full-fidelity.
 
 Table insertion, removal and reordering are a separate language-architecture
-slice. The current parser consumes separators and the lexer discards whitespace
-and comments, so AST field ranges cannot own those edits without guessing over
-raw source. Before those operations exist, the Lua syntax owner must explicitly
-model token/trivia ownership and its compiler, semantic, formatter, memory and
-incremental-analysis costs. Scene, BT and FSM contributions must not each grow
-their own comma/comment scanners in the meantime.
+slice. The current parser consumes separators, so AST field ranges cannot own
+those edits without guessing over raw source. The shared lexer now has an
+opt-in trivia scan, used by Format Document instead of a second comment regex;
+default compiler/analysis scans still allocate only significant tokens.
+Formatting preserves string/comment content on opening and closing lines as
+well as their interiors. A lossless lexical stream is not yet a full-fidelity
+syntax tree: before structural edits exist, the syntax owner must model
+token/trivia attachment and punctuation, with compiler, semantic, memory and
+incremental-analysis costs. The live consumer inventory and remaining gates
+are in [`../docs/lua_source_syntax_design.md`](../docs/lua_source_syntax_design.md).
+Scene, BT and FSM contributions must not each grow their own comma/comment
+scanners in the meantime.
 
 The first scene source adapter edits the registered structured Lua definition
 and uses the ordinary save plus Hot Resume path. Registration changes the

@@ -5,6 +5,7 @@ import { LuaTokenType, resolveKeyword } from './token';
 export class LuaLexer {
 	private readonly source: string;
 	private readonly path: string;
+	private readonly skipTrivia: boolean;
 	private currentIndex: number;
 	private line: number;
 	private column: number;
@@ -12,9 +13,10 @@ export class LuaLexer {
 	private tokenStartLine: number;
 	private tokenStartColumn: number;
 
-	constructor(source: string, path: string) {
+	constructor(source: string, path: string, skipTrivia = true) {
 		this.source = source;
 		this.path = path;
+		this.skipTrivia = skipTrivia;
 		this.currentIndex = 0;
 		this.line = 1;
 		this.column = 1;
@@ -115,7 +117,7 @@ export class LuaLexer {
 				return;
 			case '-':
 				if (this.match('-')) {
-					this.skipComment();
+					this.scanComment(tokens);
 					return;
 				}
 				if (this.match('>')) {
@@ -191,8 +193,13 @@ export class LuaLexer {
 			case '\r':
 			case '\t':
 			case '\v':
+				if (!this.skipTrivia) {
+					while (this.currentChar() === char) this.advance();
+					this.pushToken(tokens, LuaTokenType.WhitespaceTrivia, null);
+				}
 				return;
 			case '\n':
+				if (!this.skipTrivia) this.pushToken(tokens, LuaTokenType.NewLineTrivia, null);
 				return;
 			default:
 				if (LuaLexer.isDigit(char)) {
@@ -207,17 +214,19 @@ export class LuaLexer {
 		}
 	}
 
-	private skipComment(): void {
+	private scanComment(tokens: LuaToken[]): void {
 		if (this.currentChar() === '[') {
 			const level = this.determineLongBracketLevelAt(this.currentIndex);
 			if (level >= 0) {
 				this.advance();
 				this.consumeLongBracketDelimiterTail(level, '[');
 				this.skipLongBracketContent(level);
+				if (!this.skipTrivia) this.pushToken(tokens, LuaTokenType.MultiLineCommentTrivia, null);
 				return;
 			}
 		}
 		this.skipLineComment();
+		if (!this.skipTrivia) this.pushToken(tokens, LuaTokenType.SingleLineCommentTrivia, null);
 	}
 
 	private skipLineComment(): void {
