@@ -37,7 +37,9 @@ import {
 import { editorViewState } from './editor/ui/view/state';
 import { ensureCursorVisible, updateDesiredColumn } from './editor/ui/view/caret/caret';
 import { editorCaretState } from './editor/ui/view/caret/state';
-import { updateBlink, createInlineTextField } from './editor/ui/inline/text_field';
+import { updateBlink } from './editor/ui/inline/text_field';
+import { bindQuickInputFields } from './quick_input/fields';
+import { inputFocus } from './input/focus';
 import { Scrollbar, ScrollbarController } from './editor/ui/scrollbar';
 import { clearRuntimeErrorOverlay } from './editor/contrib/runtime_error/navigation';
 import {
@@ -194,6 +196,8 @@ export class RuntimeCartEditor implements CartEditor {
 	private readonly overlayRenderer: OverlayRenderer;
 	private readonly unsubscribeWorkspaceCursorMoved: () => void;
 	private readonly unsubscribeTextModelChanged: () => void;
+	private readonly unbindQuickInputFields: () => void;
+	private readonly unbindProblemsPanel: () => void;
 	private readonly chromeRenderContext: ChromeRenderContext = {
 		get viewportWidth(): number { return editorViewState.viewportWidth; },
 		get headerHeight(): number { return editorViewState.headerHeight; },
@@ -273,8 +277,6 @@ export class RuntimeCartEditor implements CartEditor {
 				this,
 				this.clipboard,
 				this.microtasks,
-				this.storage,
-				this.clock,
 				this.sources,
 				this.luaTooling,
 				this.fault,
@@ -314,6 +316,12 @@ export class RuntimeCartEditor implements CartEditor {
 		);
 		this.crossFileRename = new CrossFileRenameManager(this.sources);
 		this.search = new EditorSearchController(this.sources, renameController);
+		this.unbindQuickInputFields = bindQuickInputFields(
+			this, this.sources, this.luaTooling, this.clipboard, this.microtasks, this.storage, this.clock,
+		);
+		this.unbindProblemsPanel = problemsPanel.focusTarget.bindKeyboard(
+			input => problemsPanel.handleKeyboard(input, this.editorPanes),
+		);
 		this.breakpoints = new BreakpointController(debuggerState);
 		this.clearNativeMemberCompletionCache = clearNativeMemberCompletionCache;
 		this.initializeEditorGroup();
@@ -364,9 +372,9 @@ export class RuntimeCartEditor implements CartEditor {
 			updateDesiredColumn();
 			activeCodeEditor.view.selectionAnchor = null;
 		}
-		editorSearchState.active = false;
+		editorSearchState.field.focusTarget.release();
 		editorSearchState.visible = false;
-		lineJumpState.active = false;
+		lineJumpState.field.focusTarget.release();
 		lineJumpState.visible = false;
 		lineJumpState.value = '';
 		if (codeTabActive) {
@@ -413,6 +421,7 @@ export class RuntimeCartEditor implements CartEditor {
 	}
 
 	public deactivate(): void {
+		inputFocus.setTarget(null);
 		const wasActive = this.isActive;
 		const activeTab = getActiveTab();
 		if (activeTab.kind === 'code_editor') {
@@ -433,9 +442,9 @@ export class RuntimeCartEditor implements CartEditor {
 		clearGotoHoverHighlight();
 		editorViewState.scrollbarController.cancel();
 		editorCaretState.cursorRevealSuspended = false;
-		editorSearchState.active = false;
+		editorSearchState.field.focusTarget.release();
 		editorSearchState.visible = false;
-		lineJumpState.active = false;
+		lineJumpState.field.focusTarget.release();
 		lineJumpState.visible = false;
 		closeBlockingWorkbenchModal();
 		closeCreateResourcePrompt(false);
@@ -457,7 +466,9 @@ export class RuntimeCartEditor implements CartEditor {
 		const scrollRow = activeCodeEditor.view.scrollRow;
 		const scrollColumn = activeCodeEditor.view.scrollColumn;
 		const breakpointRevision = this.breakpoints.revision;
-		handleEditorWheelInput(this, playerInput);
+		if (!hasBlockingWorkbenchModal()) {
+			handleEditorWheelInput(this, playerInput);
+		}
 		handleTextEditorPointerInput(
 			this.display,
 			playerInput,
@@ -534,11 +545,13 @@ export class RuntimeCartEditor implements CartEditor {
 	}
 
 	public async shutdown(): Promise<void> {
+		this.unbindQuickInputFields();
+		this.unbindProblemsPanel();
 		this.completion.dispose();
 		this.scenarioLab.dispose();
 		clearExecutionStopHighlights();
 		if (this.isAvailable) {
-			this.editorPanes.clearEditor();
+			this.editorPanes.dispose();
 		}
 		editorInput.applyOverrides(this.input, false, captureKeys);
 		if (editorViewState.dimCrtInEditor) {
@@ -561,7 +574,7 @@ export class RuntimeCartEditor implements CartEditor {
 		clearEditorPointerSelectionState();
 		clearGotoHoverHighlight();
 		editorCaretState.cursorRevealSuspended = false;
-		editorSearchState.active = false;
+		editorSearchState.field.focusTarget.release();
 		editorSearchState.visible = false;
 		cancelSearchJob();
 		cancelGlobalSearchJob();
@@ -569,14 +582,15 @@ export class RuntimeCartEditor implements CartEditor {
 		this.resetGlobalSearchView();
 		editorSearchState.currentIndex = -1;
 		applySearchFieldText('', true);
-		lineJumpState.active = false;
+		lineJumpState.field.focusTarget.release();
 		lineJumpState.visible = false;
 		applyLineJumpFieldText('', true);
-		createResourceState.active = false;
+		createResourceState.field.focusTarget.release();
 		createResourceState.visible = false;
 		applyCreateResourceFieldText('', true);
 		createResourceState.error = null;
 		createResourceState.working = false;
+		createResourceState.field.readOnly = false;
 		closeBlockingWorkbenchModal();
 		this.resourcePanel.hide();
 		editorChromeState.resourcePanelResizing = false;
@@ -706,11 +720,6 @@ export class RuntimeCartEditor implements CartEditor {
 		editorTextModelService.clear();
 		configureFontVariant(this.clock, editorViewState.fontVariant, 'lua');
 		resourcePanel.setFontMetrics(editorViewState.lineHeight, editorViewState.charAdvance);
-		editorSearchState.field = createInlineTextField();
-		symbolSearchState.field = createInlineTextField();
-		resourceSearchState.field = createInlineTextField();
-		lineJumpState.field = createInlineTextField();
-		createResourceState.field = createInlineTextField();
 		applySearchFieldText(editorSearchState.query, true);
 		applySymbolSearchFieldText(symbolSearchState.query, true);
 		applyResourceSearchFieldText(resourceSearchState.query, true);

@@ -1,6 +1,7 @@
 import type { Position } from '../../common/models';
 import { clamp } from '../../../machine/ts/common/clamp';
 import type { EditorTextModel } from '../model/text_model';
+import { inputFocus } from '../../input/focus';
 
 type CursorMovedListener = () => void;
 
@@ -35,9 +36,9 @@ export function createCodeEditorViewState(): CodeEditorViewState {
 
 /** The single code-editor widget and the model/view currently attached to it. */
 export class ActiveCodeEditorState {
+	public readonly focusTarget = inputFocus.createTarget();
 	public model: EditorTextModel;
 	public view: CodeEditorViewState;
-	public customClipboard: string = null;
 	private readonly cursorMovedListeners = new Set<CursorMovedListener>();
 
 	public attach(model: EditorTextModel, view: CodeEditorViewState): void {

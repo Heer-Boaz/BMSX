@@ -2,13 +2,12 @@ import * as constants from '../../../common/constants';
 import { showEditorMessage } from '../../../common/feedback_state';
 import { applyInlineFieldEditing } from '../../../editor/ui/inline/text_field';
 import { applySymbolSearchSelection } from '../../../workbench/contrib/code_editor/symbols/search/index';
-import { moveSymbolSearchSelection, updateSymbolSearchMatches } from '../../../workbench/contrib/code_editor/symbols/search/catalog';
+import { moveSymbolSearchSelection } from '../../../workbench/contrib/code_editor/symbols/search/catalog';
 import { closeSymbolSearch, ensureSymbolSearchSelectionVisible } from '../../../workbench/contrib/code_editor/symbols/shared';
 import { consumeIdeKey, isKeyJustPressed, isShiftDown, shouldRepeatKeyFromPlayer } from '../../keyboard/key_input';
 import { symbolSearchPageSize } from '../../../workbench/common/layout';
 import { symbolSearchState } from '../../../workbench/contrib/code_editor/symbols/search/state';
 import type { CartEditor } from '../../../cart_editor';
-import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 import type { Clipboard } from '../../../common/clipboard';
 import type { MicrotaskQueue } from '../../../common/microtask_queue';
@@ -18,7 +17,6 @@ export function handleSymbolSearchInput(
 	clipboard: Clipboard,
 	microtasks: MicrotaskQueue,
 	editor: CartEditor,
-	bridge: RuntimeLuaTooling,
 ): void {
 	const shiftDown = isShiftDown(playerInput);
 	if (isKeyJustPressed('Enter', playerInput)) {
@@ -71,11 +69,7 @@ export function handleSymbolSearchInput(
 		ensureSymbolSearchSelectionVisible();
 		return;
 	}
-	const textChanged = applyInlineFieldEditing(playerInput, clipboard, symbolSearchState.field, {
+	applyInlineFieldEditing(playerInput, clipboard, symbolSearchState.field, {
 		allowSpace: true,
 	});
-	symbolSearchState.query = symbolSearchState.field.text;
-	if (textChanged) {
-			updateSymbolSearchMatches(bridge);
-	}
 }

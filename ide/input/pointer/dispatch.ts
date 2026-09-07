@@ -35,6 +35,15 @@ export function handleTextEditorPointerInput(
 	const justReleased = (buttonMask & POINTER_PRIMARY_JUST_RELEASED) !== 0;
 	const pointerSecondaryJustPressed = (buttonMask & POINTER_SECONDARY_JUST_PRESSED) !== 0;
 	const pointerAuxJustPressed = (buttonMask & POINTER_AUX_JUST_PRESSED) !== 0;
+	if (hasBlockingWorkbenchModal()) {
+		if (justPressed) {
+			handleBlockingWorkbenchModalPointer(editor, snapshot);
+		}
+		stopPointerSelectionAndResetClicks(snapshot);
+		clearHoverTooltip();
+		clearGotoHoverHighlight();
+		return;
+	}
 	const activeTab = getActiveTab();
 	if (activeTab.kind === 'code_editor' && handleEditorContextMenuPointer(
 		clipboard,
@@ -55,15 +64,7 @@ export function handleTextEditorPointerInput(
 	if (handleEditorPanelPointer(editor.resourcePanel, editor.editorPanes, snapshot, justPressed, justReleased)) {
 		return;
 	}
-	if (hasBlockingWorkbenchModal()) {
-		if (justPressed) {
-			handleBlockingWorkbenchModalPointer(editor, snapshot);
-		}
-		stopPointerSelectionAndResetClicks(snapshot);
-		clearHoverTooltip();
-		clearGotoHoverHighlight();
-		return;
-	}
+
 	editor.editorPanes.activePane.handlePointer(
 		snapshot,
 		justPressed,

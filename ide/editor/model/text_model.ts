@@ -92,6 +92,14 @@ export class EditorTextModel {
 		return this.resourceValue.source.generated === true;
 	}
 
+	public get canUndo(): boolean {
+		return this.undoStack.length > 0;
+	}
+
+	public get canRedo(): boolean {
+		return this.redoStack.length > 0;
+	}
+
 	public get lastSavedSource(): string {
 		return this.lastSavedSourceValue;
 	}

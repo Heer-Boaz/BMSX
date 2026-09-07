@@ -7,6 +7,7 @@ import type { EditorCommandId } from './commands';
 import type { RectBounds } from '../../machine/ts/common/rect';
 import type { LuaMemberCompletionContext } from '../../toolchain/ts/lua/semantic/completion';
 import type { CodeEditorInputId } from './editor_context';
+import type { TextField } from '../editor/ui/inline/text_field_model';
 export type { RuntimeResource } from './resource';
 
 export type Position = { row: number; column: number };
@@ -202,7 +203,6 @@ export type ResourceBrowserItem = {
 
 export type SearchState = {
 	field: TextField;
-	active: boolean;
 	visible: boolean;
 	query: string;
 	matches: SearchMatch[];
@@ -217,7 +217,6 @@ export type SearchState = {
 
 export type ResourceSearchState = {
 	field: TextField;
-	active: boolean;
 	visible: boolean;
 	query: string;
 	catalog: ResourceCatalogEntry[];
@@ -229,7 +228,6 @@ export type ResourceSearchState = {
 
 export type SymbolSearchState = {
 	field: TextField;
-	active: boolean;
 	visible: boolean;
 	query: string;
 	global: boolean;
@@ -245,14 +243,12 @@ export type SymbolSearchState = {
 
 export type LineJumpState = {
 	field: TextField;
-	active: boolean;
 	visible: boolean;
 	value: string;
 };
 
 export type CreateResourceState = {
 	field: TextField;
-	active: boolean;
 	visible: boolean;
 	path: string;
 	error: string;
@@ -300,19 +296,6 @@ export type PointerSnapshot = {
 	insideViewport: boolean;
 	valid: boolean;
 	primaryPressed: boolean;
-};
-
-export type TextField = {
-	text: string;
-	lines: string[];
-	cursorRow: number;
-	cursorColumn: number;
-	selectionAnchor?: Position;
-	selectionAnchorScratch: Position;
-	desiredColumn?: number;
-	pointerSelecting?: boolean;
-	lastPointerClickTimeMs?: number;
-	lastPointerClickColumn?: number;
 };
 
 export type InlineInputOptions = {

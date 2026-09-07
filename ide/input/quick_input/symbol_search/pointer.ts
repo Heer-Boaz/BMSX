@@ -27,7 +27,7 @@ export function handleSymbolSearchPointer(
 	const insideBar = point_in_rect(snapshot.viewportX, snapshot.viewportY, bounds);
 	if (!insideBar) {
 		if (justPressed) {
-			symbolSearchState.active = false;
+			symbolSearchState.field.focusTarget.release();
 		}
 		symbolSearchState.hoverIndex = -1;
 		return false;
@@ -38,7 +38,7 @@ export function handleSymbolSearchPointer(
 			closeLineJump(false);
 			closeSearch(false, true);
 			symbolSearchState.visible = true;
-			symbolSearchState.active = true;
+			symbolSearchState.field.focusTarget.focus();
 			activateQuickInputField(resourcePanel);
 		}
 		const label = symbolSearchFieldLabel();

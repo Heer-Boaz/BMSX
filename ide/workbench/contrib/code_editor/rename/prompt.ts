@@ -21,7 +21,7 @@ export function openRenamePrompt(bridge: RuntimeLuaTooling, rename: RenameContro
 	closeLineJump(false);
 	closeResourceSearch(false);
 	closeSymbolSearch(false);
-	createResourceState.active = false;
+	createResourceState.field.focusTarget.release();
 	const context = getActiveCodeTabContext();
 	switch (context.model.mode) {
 		case 'lua':

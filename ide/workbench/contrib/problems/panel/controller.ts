@@ -22,6 +22,7 @@ import type { PlayerInput } from '../../../../../hosts/common/input/player';
 import { handleProblemsPanelNavigationCommand, type ProblemsPanelCommand } from './navigation';
 import { handleProblemsPanelPointerInput, handleProblemsPanelWheelInput } from './pointer';
 import type { EditorPanes } from '../../../services/editor/editor_panes';
+import { inputFocus } from '../../../../input/focus';
 
 export {
 	getProblemsPanelBounds,
@@ -33,7 +34,7 @@ const EMPTY_DIAGNOSTICS: EditorDiagnostic[] = [];
 
 export class ProblemsPanelController {
 	private visible = false;
-	private focused = false;
+	public readonly focusTarget = inputFocus.createTarget();
 	private diagnostics: EditorDiagnostic[] = EMPTY_DIAGNOSTICS;
 	private selectionIndex = -1;
 	private hoverIndex = -1;
@@ -50,7 +51,7 @@ export class ProblemsPanelController {
 	}
 
 	public get isFocused(): boolean {
-		return this.focused;
+		return this.focusTarget.hasFocus;
 	}
 
 	public get selectedDiagnostic(): EditorDiagnostic {
@@ -70,7 +71,6 @@ export class ProblemsPanelController {
 	public show(): void {
 		if (this.visible) return;
 		this.visible = true;
-		this.focused = false; // do not steal caret focus
 		this.scrollIndex = 0; // open at top
 		this.hoverIndex = -1;
 		this.selectionIndex = -1; // no implicit selection on open
@@ -82,13 +82,14 @@ export class ProblemsPanelController {
 			return;
 		}
 		this.visible = false;
-		this.focused = false;
+		this.focusTarget.release();
 		this.hoverIndex = -1;
 		this.cachedLayout = null;
 	}
 
 	public setFocused(focused: boolean): void {
-		this.focused = focused;
+		if (focused) this.focusTarget.focus();
+		else this.focusTarget.release();
 		if (!focused) {
 			this.hoverIndex = -1;
 		}
@@ -156,7 +157,7 @@ export class ProblemsPanelController {
 			return;
 		}
 		const layout = this.prepareLayout(bounds);
-		if (this.focused && this.selectionIndex >= 0) {
+		if (this.isFocused && this.selectionIndex >= 0) {
 			this.revealSelection(layout, this.lastAvailableWidth);
 		}
 		drawProblemsPanelSurface(
@@ -256,9 +257,9 @@ export function drawProblemsPanel() {
 	problemsPanel.draw(bounds);
 	return bounds;
 }
-export function toggleProblemsPanel(): void {
+export function toggleProblemsPanel(editorPanes: EditorPanes): void {
 	if (problemsPanel.isVisible) {
-		hideProblemsPanel();
+		hideProblemsPanel(editorPanes);
 		return;
 	}
 	showProblemsPanel();
@@ -270,8 +271,9 @@ export function showProblemsPanel(): void {
 	// problemsPanel.setFocused(true);
 }
 
-export function hideProblemsPanel(): void {
+export function hideProblemsPanel(editorPanes: EditorPanes): void {
+	const restoreEditorFocus = problemsPanel.isFocused;
 	problemsPanel.hide();
-	problemsPanel.setFocused(false);
+	if (restoreEditorFocus) editorPanes.activePane.focus();
 	resetBlink();
 }

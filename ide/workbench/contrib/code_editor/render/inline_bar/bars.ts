@@ -23,7 +23,6 @@ import {
 } from '../../../../common/layout';
 import { measureText } from '../../../../../editor/common/text/layout';
 import { renderInlineBarField, renderInlineBarFrame } from './common';
-import { problemsPanel } from '../../../problems/panel/controller';
 import { renameController } from '../../rename/controller';
 import { symbolSearchState } from '../../symbols/search/state';
 import { symbolSearchFieldLabel } from '../../symbols/shared';
@@ -125,14 +124,13 @@ export function renderCreateResourceBar(): void {
 	if (!bounds) return;
 	renderInlineBarFrame(bounds.left, bounds.top, bounds.right, bounds.bottom, constants.COLOR_CREATE_RESOURCE_BACKGROUND, constants.COLOR_CREATE_RESOURCE_OUTLINE);
 
-	const blockActiveCarets = problemsPanel.isVisible && problemsPanel.isFocused;
 	const fieldState = renderInlineBarField(
 		createResourceState.field,
 		'NEW FILE:',
 		4,
 		bounds.top + constants.CREATE_RESOURCE_BAR_MARGIN_Y,
-		createResourceState.active && !blockActiveCarets,
-		createResourceState.active,
+		createResourceState.field.focusTarget.hasFocus,
+		createResourceState.field.focusTarget.hasFocus,
 		constants.COLOR_CREATE_RESOURCE_TEXT,
 		'ENTER LUA PATH',
 		constants.COLOR_CREATE_RESOURCE_PLACEHOLDER,
@@ -156,8 +154,7 @@ export function renderSearchBar(): void {
 	const bounds = getSearchBarBounds();
 	if (!bounds) return;
 	renderInlineBarFrame(bounds.left, bounds.top, bounds.right, bounds.bottom, constants.COLOR_SEARCH_BACKGROUND, constants.COLOR_SEARCH_OUTLINE);
-	const blockActiveCarets = problemsPanel.isVisible && problemsPanel.isFocused;
-	const active = !!editorSearchState.active && !blockActiveCarets;
+	const active = editorSearchState.field.focusTarget.hasFocus;
 	const labelY = bounds.top + constants.SEARCH_BAR_MARGIN_Y;
 	renderInlineBarField(
 		editorSearchState.field,
@@ -206,7 +203,7 @@ export function renderResourceSearchBar(): void {
 	const bounds = getResourceSearchBarBounds();
 	if (!bounds) return;
 	renderInlineBarFrame(bounds.left, bounds.top, bounds.right, bounds.bottom, constants.COLOR_QUICK_OPEN_BACKGROUND, constants.COLOR_QUICK_OPEN_OUTLINE);
-	const active = !!resourceSearchState.active && !problemsPanel.isVisible && !problemsPanel.isFocused;
+	const active = resourceSearchState.field.focusTarget.hasFocus;
 	renderInlineBarField(
 		resourceSearchState.field,
 		'FILE :',
@@ -236,7 +233,7 @@ export function renderSymbolSearchBar(): void {
 	if (!bounds) return;
 	renderInlineBarFrame(bounds.left, bounds.top, bounds.right, bounds.bottom, constants.COLOR_SYMBOL_SEARCH_BACKGROUND, constants.COLOR_SYMBOL_SEARCH_OUTLINE);
 	const mode = symbolSearchState.mode;
-	const active = !!symbolSearchState.active;
+	const active = symbolSearchState.field.focusTarget.hasFocus;
 	const placeholder = mode === 'references'
 		? 'FILTER REFERENCES'
 		: mode === 'definitions'
@@ -307,8 +304,7 @@ export function renderRenameBar(): void {
 	const bounds = getRenameBarBounds();
 	if (!bounds) return;
 	renderInlineBarFrame(bounds.left, bounds.top, bounds.right, bounds.bottom, constants.COLOR_SEARCH_BACKGROUND, constants.COLOR_SEARCH_OUTLINE);
-	const blockActiveCarets = problemsPanel.isVisible && problemsPanel.isFocused;
-	const active = !!renameController.isActive() && !blockActiveCarets;
+	const active = renameController.isActive();
 	const labelY = bounds.top + constants.SEARCH_BAR_MARGIN_Y;
 	const fieldState = renderInlineBarField(
 		renameController.getField(),
@@ -346,7 +342,7 @@ export function renderLineJumpBar(): void {
 	const bounds = getLineJumpBarBounds();
 	if (!bounds) return;
 	renderInlineBarFrame(bounds.left, bounds.top, bounds.right, bounds.bottom, constants.COLOR_LINE_JUMP_BACKGROUND, constants.COLOR_LINE_JUMP_OUTLINE);
-	const active = !!lineJumpState.active;
+	const active = lineJumpState.field.focusTarget.hasFocus;
 	renderInlineBarField(
 		lineJumpState.field,
 		'LINE #:',

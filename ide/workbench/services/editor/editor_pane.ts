@@ -27,6 +27,10 @@ export abstract class EditorPane<TInput extends EditorInput> {
 
 	protected abstract activate(selection?: EditorTextSelection): void;
 
+	public abstract focus(): void;
+
+	public abstract dispose(): void;
+
 	public update(_deltaSeconds: number): void {
 	}
 

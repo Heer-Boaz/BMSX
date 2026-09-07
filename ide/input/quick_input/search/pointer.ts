@@ -37,7 +37,7 @@ export function handleSearchPointer(editorPanes: EditorPanes, sources: RuntimeSo
 	const insideBar = point_in_rect(snapshot.viewportX, snapshot.viewportY, bounds);
 	if (!insideBar) {
 		if (justPressed) {
-			editorSearchState.active = false;
+			editorSearchState.field.focusTarget.release();
 			editorSearchState.hoverIndex = -1;
 		}
 		return false;
@@ -48,7 +48,7 @@ export function handleSearchPointer(editorPanes: EditorPanes, sources: RuntimeSo
 		if (justPressed) {
 			closeLineJump(false);
 			editorSearchState.visible = true;
-			editorSearchState.active = true;
+			editorSearchState.field.focusTarget.focus();
 			activateQuickInputField(resourcePanel);
 		}
 		const label = editorSearchState.scope === 'global' ? 'SEARCH ALL:' : 'SEARCH:';

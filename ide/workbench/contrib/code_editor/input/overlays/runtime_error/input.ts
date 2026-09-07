@@ -1,4 +1,4 @@
-import { writeClipboard } from '../../../../../../editor/editing/text_editing_and_selection';
+import { writeClipboard } from '../../../../../../input/clipboard';
 import { buildRuntimeErrorOverlayCopyText } from '../../../../../../editor/contrib/runtime_error/overlay';
 import type { PointerSnapshot } from '../../../../../../common/models';
 import { handleRuntimeErrorOverlayPointerClick, setRuntimeErrorOverlayExpanded } from './pointer/actions';

@@ -1,7 +1,6 @@
 import { activeSearchMatchCount, applySearchSelection, jumpToNextMatch, jumpToPreviousMatch, searchPageSize, stepSearchSelection } from '../../../workbench/contrib/code_editor/find/search';
 import { applyInlineFieldEditing } from '../../../editor/ui/inline/text_field';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from '../../keyboard/key_input';
-import { redo, undo } from '../../../editor/editing/undo_controller';
 import { openGlobalSearchMatch } from '../../../workbench/contrib/find/global_search_navigation';
 import { editorSearchState } from '../../../workbench/contrib/code_editor/find/widget_state';
 import type { CartEditor } from '../../../cart_editor';
@@ -69,25 +68,6 @@ export function handleSearchInput(
 		search.openSearch(false, 'local');
 		return;
 	}
-	if ((ctrlDown || metaDown) && shouldRepeatKeyFromPlayer('KeyZ', playerInput)) {
-		consumeIdeKey('KeyZ', playerInput);
-		if (shiftDown) {
-			redo();
-		} else {
-			undo();
-		}
-		return;
-	}
-	if ((ctrlDown || metaDown) && shouldRepeatKeyFromPlayer('KeyY', playerInput)) {
-		consumeIdeKey('KeyY', playerInput);
-		redo();
-		return;
-	}
-	if (ctrlDown && isKeyJustPressed('KeyS', playerInput)) {
-		consumeIdeKey('KeyS', playerInput);
-		editor.commands.execute('save');
-		return;
-	}
 	const hasResults = activeSearchMatchCount() > 0;
 	const previewLocal = editorSearchState.scope === 'local';
 	if (isKeyJustPressed('Enter', playerInput)) {
@@ -142,11 +122,7 @@ export function handleSearchInput(
 			return;
 		}
 	}
-	const textChanged = applyInlineFieldEditing(playerInput, clipboard, editorSearchState.field, {
+	applyInlineFieldEditing(playerInput, clipboard, editorSearchState.field, {
 		allowSpace: true,
 	});
-	editorSearchState.query = editorSearchState.field.text;
-	if (textChanged) {
-		search.onSearchQueryChanged();
-	}
 }

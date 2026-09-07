@@ -1,6 +1,7 @@
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import type { EditorInput, EditorInputKind } from '../../ui/tab/model';
 import type { EditorPane } from './editor_pane';
+import { inputFocus } from '../../../input/focus';
 
 export type EditorPaneFactories = {
 	[TKind in EditorInputKind]: () => EditorPane<Extract<EditorInput, { kind: TKind }>>;
@@ -22,14 +23,14 @@ export class EditorPanes {
 		const activePane = this.activePaneValue;
 		if (activePane !== null && activePane.input === input) {
 			activePane.setOptions(selection);
+			activePane.focus();
 			return;
 		}
-		if (activePane !== null) {
-			activePane.clearInput();
-		}
+		this.clearEditor();
 		const pane = this.getOrCreatePane(input);
 		this.activePaneValue = pane;
 		pane.setInput(input, selection);
+		pane.focus();
 	}
 
 	public clearEditor(): void {
@@ -37,8 +38,15 @@ export class EditorPanes {
 		if (activePane === null) {
 			return;
 		}
+		inputFocus.setTarget(null);
 		activePane.clearInput();
 		this.activePaneValue = null;
+	}
+
+	public dispose(): void {
+		this.clearEditor();
+		for (const pane of this.panes.values()) pane.dispose();
+		this.panes.clear();
 	}
 
 	private getOrCreatePane(input: EditorInput): EditorPane<EditorInput> {

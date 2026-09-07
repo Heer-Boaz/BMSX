@@ -41,6 +41,8 @@ export type EditorScenarioLabCommandId =
 	| 'scenarioLab.cancel';
 
 export type EditorCommandId =
+	| 'undo'
+	| 'redo'
 	| EditorSearchCommandId
 	| EditorSymbolNavigationCommandId
 	| EditorViewCommandId

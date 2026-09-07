@@ -1,7 +1,8 @@
 import { resolveReferenceLookup, type ReferenceLookupOptions } from '../../../../editor/contrib/references/lookup';
 import { type ReferenceMatchInfo } from '../../../../editor/contrib/references/state';
-import type { InlineInputOptions, TextField, SearchMatch } from '../../../../common/models';
-import { applyInlineFieldEditing, createInlineTextField, setFieldText } from '../../../../editor/ui/inline/text_field';
+import type { InlineInputOptions, SearchMatch } from '../../../../common/models';
+import { TextField } from '../../../../editor/ui/inline/text_field_model';
+import { applyInlineFieldEditing, setFieldText } from '../../../../editor/ui/inline/text_field';
 import * as constants from '../../../../common/constants';
 import { clamp } from '../../../../../machine/ts/common/clamp';
 import { LuaLexer } from '../../../../../toolchain/ts/lua/syntax/lexer';
@@ -15,14 +16,14 @@ import type { RuntimeLuaTooling } from '../../../../runtime/lua_tooling';
 import type { CrossFileRenameManager } from './operations';
 import type { PlayerInput } from '../../../../../hosts/common/input/player';
 import type { Clipboard } from '../../../../common/clipboard';
+import { activeCodeEditor } from '../../../../editor/ui/code_editor_state';
 
 export type RenameStartOptions = ReferenceLookupOptions;
 
 const EMPTY_RENAME_MATCHES: SearchMatch[] = [];
 
 export class RenameController {
-	private readonly field: TextField = createInlineTextField();
-	private active = false;
+	private readonly field = new TextField(activeCodeEditor.focusTarget);
 	private visible = false;
 	private matches: SearchMatch[] = EMPTY_RENAME_MATCHES;
 	private info: ReferenceMatchInfo = null;
@@ -39,6 +40,11 @@ export class RenameController {
 		}
 		return LuaLexer.isIdentifierPart(value.charAt(0));
 	};
+
+	public constructor() {
+		this.field.focusTarget.onDidFocus(() => setSingleCursorSelectionAnchor(this.field, 0, 0));
+		this.field.focusTarget.onDidBlur(() => this.dismiss());
+	}
 
 	public begin(bridge: RuntimeLuaTooling, options: RenameStartOptions): boolean {
 		const lookup = resolveReferenceLookup(bridge, options);
@@ -64,16 +70,16 @@ export class RenameController {
 		this.activeIndex = initialIndex;
 		this.expressionLabel = info.expression;
 		this.resetInlineField(currentName);
-		this.active = true;
 		this.visible = true;
+		this.field.focusTarget.focus();
 		return true;
 	}
 
 	public cancel(): void {
-		if (!this.active) {
+		if (!this.isActive()) {
 			return;
 		}
-		this.close();
+		this.field.focusTarget.release();
 	}
 
 	public handleInput(
@@ -81,7 +87,7 @@ export class RenameController {
 		clipboard: Clipboard,
 		crossFileRename: CrossFileRenameManager,
 	): void {
-		if (!this.active) {
+		if (!this.isActive()) {
 			return;
 		}
 		handleRenameControllerInput(playerInput, clipboard, this, crossFileRename);
@@ -92,7 +98,7 @@ export class RenameController {
 	}
 
 	public isActive(): boolean {
-		return this.active;
+		return this.field.focusTarget.hasFocus;
 	}
 
 	public isVisible(): boolean {
@@ -120,7 +126,7 @@ export class RenameController {
 	}
 
 	public commit(crossFileRename: CrossFileRenameManager): void {
-		if (!this.active || !this.info) {
+		if (!this.isActive() || !this.info) {
 			return;
 		}
 		const nextName = this.field.text.trim();
@@ -135,12 +141,12 @@ export class RenameController {
 				showEditorMessage('Identifier contains invalid characters', constants.COLOR_STATUS_WARNING, 1.8);
 				return;
 			case 'unchanged':
-				this.close();
+				this.field.focusTarget.release();
 				return;
 		}
 		const updatedMatches = commitRename(crossFileRename, this.matches, nextName, this.activeIndex, this.info);
 		showEditorMessage(`Renamed ${updatedMatches} reference${updatedMatches === 1 ? '' : 's'} to ${nextName}`, constants.COLOR_STATUS_SUCCESS, 1.6);
-		this.close();
+		this.field.focusTarget.release();
 	}
 
 	public applyFieldEditing(playerInput: PlayerInput, clipboard: Clipboard): void {
@@ -149,15 +155,13 @@ export class RenameController {
 
 	private resetInlineField(value: string): void {
 		setFieldText(this.field, value, true);
-		setSingleCursorSelectionAnchor(this.field, 0, 0);
 		this.field.desiredColumn = this.field.cursorColumn;
 		this.field.pointerSelecting = false;
 		this.field.lastPointerClickTimeMs = 0;
 		this.field.lastPointerClickColumn = -1;
 	}
 
-	private close(): void {
-		this.active = false;
+	private dismiss(): void {
 		this.visible = false;
 		this.matches = EMPTY_RENAME_MATCHES;
 		this.info = null;

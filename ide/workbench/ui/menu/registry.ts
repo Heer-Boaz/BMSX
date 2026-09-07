@@ -2,6 +2,7 @@ import type { EditorCommandId } from '../../../common/commands';
 
 export type WorkbenchDropdownMenuId =
 	| 'menubar.file'
+	| 'menubar.edit'
 	| 'menubar.run'
 	| 'menubar.view';
 
@@ -20,6 +21,7 @@ export type WorkbenchMenuItem = WorkbenchMenuCommandItem | WorkbenchMenuSeparato
 
 type WorkbenchMenuContributions = {
 	readonly 'menubar.file': readonly WorkbenchMenuItem[];
+	readonly 'menubar.edit': readonly WorkbenchMenuItem[];
 	readonly 'menubar.run': readonly WorkbenchMenuItem[];
 	readonly 'menubar.view': readonly WorkbenchMenuItem[];
 	readonly 'scenarioLab.title': readonly WorkbenchMenuCommandItem[];
@@ -30,6 +32,10 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 	'menubar.file': [
 		{ type: 'command', command: 'save' },
 		{ type: 'command', command: 'resources' },
+	],
+	'menubar.edit': [
+		{ type: 'command', command: 'undo' },
+		{ type: 'command', command: 'redo' },
 	],
 	'menubar.run': [
 		{ type: 'command', command: 'pause' },

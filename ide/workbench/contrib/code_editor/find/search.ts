@@ -3,7 +3,8 @@ import { showEditorMessage } from '../../../../common/feedback_state';
 import * as constants from '../../../../common/constants';
 import { clamp, clamp_wrap } from '../../../../../machine/ts/common/clamp';
 import { getSelectionRange, getSelectionText } from '../../../../editor/editing/text_editing_and_selection';
-import type { GlobalSearchJob, GlobalSearchMatch, SearchComputationJob, SearchMatch, TextField } from '../../../../common/models';
+import type { GlobalSearchJob, GlobalSearchMatch, SearchComputationJob, SearchMatch } from '../../../../common/models';
+import type { TextField } from '../../../../editor/ui/inline/text_field_model';
 import * as luaPipeline from '../../../../runtime/lua_pipeline';
 import { enqueueBackgroundTask } from '../../../../common/background_tasks';
 import { beginNavigationCapture, completeNavigation } from '../../../../navigation/navigation_history';
@@ -92,7 +93,7 @@ export class EditorSearchController {
 		}
 
 		editorSearchState.visible = true;
-		editorSearchState.active = true;
+		editorSearchState.field.focusTarget.focus();
 
 		applySearchFieldText(editorSearchState.query, true);
 
@@ -134,7 +135,7 @@ export class EditorSearchController {
 }
 
 export function closeSearch(clearQuery: boolean, forceHide = false): void {
-	editorSearchState.active = false;
+	editorSearchState.field.focusTarget.release();
 	editorSearchState.hoverIndex = -1;
 	editorSearchState.displayOffset = 0;
 
@@ -169,7 +170,7 @@ export function closeSearch(clearQuery: boolean, forceHide = false): void {
 }
 
 export function focusEditorFromSearch(): void {
-	editorSearchState.active = false;
+	editorSearchState.field.focusTarget.release();
 	editorSearchState.hoverIndex = -1;
 	editorSearchState.field.selectionAnchor = null;
 	editorSearchState.field.pointerSelecting = false;
@@ -273,7 +274,7 @@ function completeLocalSearchJob(job: LocalSearchJob): void {
 	const initialIndex = job.firstMatchAfterCursor >= 0 ? job.firstMatchAfterCursor : 0;
 	editorSearchState.currentIndex = clamp(initialIndex, 0, job.matches.length - 1);
 	ensureSearchSelectionVisible();
-	if (editorSearchState.active) {
+	if (editorSearchState.field.focusTarget.hasFocus) {
 		applySearchSelection(editorSearchState.currentIndex, { preview: true, keepSearchActive: true });
 	}
 }
@@ -433,7 +434,7 @@ export function stepSearchSelection(delta: number, options?: { wrap?: boolean; p
 		return;
 	}
 	const preview = options?.preview;
-	const keepSearchActive = options?.keepSearchActive || editorSearchState.active;
+	const keepSearchActive = options?.keepSearchActive || editorSearchState.field.focusTarget.hasFocus;
 	const next = nextSearchIndex(delta, options?.wrap);
 	applySearchSelection(next, { preview, keepSearchActive });
 }
@@ -451,7 +452,7 @@ export function applySearchSelection(index: number, options?: { preview?: boolea
 	}
 
 	if (!options?.preview && !options?.keepSearchActive) {
-		editorSearchState.active = false;
+		editorSearchState.field.focusTarget.release();
 		editorSearchState.field.selectionAnchor = null;
 		editorSearchState.field.pointerSelecting = false;
 	}

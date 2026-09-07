@@ -81,7 +81,7 @@ export class CompletionController {
 		if (isReadOnlyCodeTab()) {
 			return false;
 		}
-		if (editorSearchState.active || symbolSearchState.active || lineJumpState.active || resourceSearchState.active || createResourceState.active) {
+		if (editorSearchState.field.focusTarget.hasFocus || symbolSearchState.field.focusTarget.hasFocus || lineJumpState.field.focusTarget.hasFocus || resourceSearchState.field.focusTarget.hasFocus || createResourceState.field.focusTarget.hasFocus) {
 			return false;
 		}
 		return true;

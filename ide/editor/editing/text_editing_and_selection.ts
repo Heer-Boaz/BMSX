@@ -36,6 +36,7 @@ import {
 } from './cursor/state';
 import { findWordBoundsInLine, findWordLeftOffset, findWordRightOffset } from './cursor/words';
 import type { Clipboard } from '../../common/clipboard';
+import { writeClipboard } from '../../input/clipboard';
 
 const tmpPosition: MutableTextPosition = { row: 0, column: 0 };
 const wordPositionScratch: MutableTextPosition = { row: 0, column: 0 };
@@ -969,9 +970,9 @@ export async function cutLineToClipboard(clipboard: Clipboard): Promise<void> {
 /**
  * Pastes text from the editor's internal clipboard.
  */
-export function pasteFromClipboard(): void {
-	const text = activeCodeEditor.customClipboard;
-	if (text === null || text.length === 0) {
+export function pasteFromClipboard(clipboard: Clipboard): void {
+	const text = clipboard.text;
+	if (text.length === 0) {
 		showEditorMessage('Editor clipboard is empty', constants.COLOR_STATUS_WARNING, 1.5);
 		return;
 	}
@@ -986,31 +987,6 @@ export function pasteFromClipboard(): void {
 		insertClipboardText(text);
 	}
 	showEditorMessage('Pasted from editor clipboard', constants.COLOR_STATUS_SUCCESS, 1.5);
-}
-
-/**
- * Writes text to both the internal clipboard and the system clipboard.
- * @param text The text to write
- * @param successMessage Message to show on success
- */
-export async function writeClipboard(
-	clipboard: Clipboard,
-	text: string,
-	successMessage: string,
-): Promise<void> {
-	activeCodeEditor.customClipboard = text;
-	if (!clipboard.isSupported()) {
-		const message = successMessage + ' (Editor clipboard only)';
-		showEditorMessage(message, constants.COLOR_STATUS_SUCCESS, 1.5);
-		return;
-	}
-	try {
-		await clipboard.writeText(text);
-		showEditorMessage(successMessage, constants.COLOR_STATUS_SUCCESS, 1.5);
-	}
-	catch (error) {
-		showEditorMessage('System clipboard write failed. Editor clipboard updated.', constants.COLOR_STATUS_WARNING, 3.5);
-	}
 }
 
 export function applyDocumentFormatting(): void {

@@ -14,6 +14,7 @@ import type { ResourcePanelController } from '../../contrib/resources/panel/cont
 import { EditorPane } from '../../services/editor/editor_pane';
 import type { EditorInput } from '../tab/model';
 import { editorChromeState } from '../chrome_state';
+import { inputFocus } from '../../../input/focus';
 
 type WorkbenchViewInput = Exclude<EditorInput, { kind: 'code_editor' }>;
 
@@ -21,6 +22,17 @@ type WorkbenchViewInput = Exclude<EditorInput, { kind: 'code_editor' }>;
 export abstract class WorkbenchViewEditorPane<
 	TInput extends WorkbenchViewInput,
 > extends EditorPane<TInput> {
+	private readonly focusTarget = inputFocus.createTarget();
+	private readonly unbindKeyboard = this.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
+
+	public focus(): void {
+		this.focusTarget.focus();
+	}
+
+	public dispose(): void {
+		this.unbindKeyboard();
+	}
+
 	public handlePointer(
 		snapshot: PointerSnapshot,
 		justPressed: boolean,
@@ -29,6 +41,7 @@ export abstract class WorkbenchViewEditorPane<
 		now: number,
 		_gotoModifierActive: boolean,
 	): void {
+		if (justPressed) this.focus();
 		const handled = this.handleViewPointer(snapshot, justPressed, now);
 		if (handled && justPressed) {
 			playerInput.inputHandlers.pointer?.consumeButton('pointer_primary');

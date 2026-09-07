@@ -10,6 +10,7 @@ import { focusEditorFromSymbolSearch } from '../contrib/code_editor/symbols/shar
 import { activeCodeEditor } from '../../editor/ui/code_editor_state';
 
 export function focusPrimaryEditorSurface(editor: CartEditor): void {
+	activeCodeEditor.focusTarget.focus();
 	clearReferenceHighlights();
 	editor.resourcePanel.setFocused(false);
 	focusEditorFromLineJump();

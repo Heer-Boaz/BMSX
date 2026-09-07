@@ -1,8 +1,9 @@
 import type { CreateResourceState, ResourceSearchState } from '../../../common/models';
+import { TextField } from '../../../editor/ui/inline/text_field_model';
+import { activeCodeEditor } from '../../../editor/ui/code_editor_state';
 
 export const resourceSearchState: ResourceSearchState = {
-	field: undefined!,
-	active: false,
+	field: new TextField(activeCodeEditor.focusTarget),
 	visible: false,
 	query: '',
 	catalog: [],
@@ -13,8 +14,7 @@ export const resourceSearchState: ResourceSearchState = {
 };
 
 export const createResourceState: CreateResourceState = {
-	field: undefined!,
-	active: false,
+	field: new TextField(activeCodeEditor.focusTarget),
 	visible: false,
 	path: '',
 	error: null,

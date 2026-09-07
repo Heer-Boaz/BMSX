@@ -82,7 +82,7 @@ function handleResourceSearchWheel(
 	const pointerInQuickOpen = bounds !== null
 		&& activePointer !== null
 		&& point_in_rect(activePointer.viewportX, activePointer.viewportY, bounds);
-	if (!pointerInQuickOpen && !resourceSearchState.active) {
+	if (!pointerInQuickOpen && !resourceSearchState.field.focusTarget.hasFocus) {
 		return false;
 	}
 	moveResourceSearchSelection(direction * steps);

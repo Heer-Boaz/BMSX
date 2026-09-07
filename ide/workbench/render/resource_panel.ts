@@ -92,7 +92,7 @@ export function renderResourcePanel(controller: ResourcePanelController): void {
 	const scrollEndCandidate = scrollStart + capacity;
 	const scrollEnd = scrollEndCandidate < itemCount ? scrollEndCandidate : itemCount;
 	const highlightIndex = controller.hoverIndex >= 0 ? controller.hoverIndex : controller.selectionIndex;
-	const panelActive = controller.focused;
+	const panelActive = controller.isFocused();
 	const scrollX = controller.hscroll;
 	const highlightColor = resolveThemeTokenColor(constants.COLOR_RESOURCE_PANEL_HIGHLIGHT);
 

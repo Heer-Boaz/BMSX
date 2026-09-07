@@ -1,6 +1,6 @@
 import { charAdvance, getCursorOffset, selectionAnchorOffset } from './text_field';
 import type { InlineFieldMetrics } from './text_field';
-import type { TextField } from '../../../common/models';
+import type { TextField } from './text_field_model';
 
 export type InlineFieldSelectionState = {
 	cursorOffset: number;

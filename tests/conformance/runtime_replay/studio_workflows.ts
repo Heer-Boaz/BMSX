@@ -12,6 +12,8 @@ import { HostPauseReason } from '../../../hosts/common/execution_control';
 import { hidKeyUsageForCode } from '../../../hosts/common/input/hid_keys';
 import { check, type StudioFixture } from './studio_fixture';
 import { testSceneSourceEdits } from './studio_scene_source';
+import { testStudioFocus } from './studio_focus';
+import { editorSearchState } from '../../../ide/workbench/contrib/code_editor/find/widget_state';
 import { testAemSourceApplication, testCapturedSourceApply, testSourceUndoAfterApply, testSourceViewsBeforeApply } from './studio_source_workflows';
 
 /** The same developer loop runs on every renderer, without backend-specific tests. */
@@ -65,6 +67,7 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	check(cycles() === selected, 'opening IDE must not replay or return to the present');
 	check(observations.suspended, 'paused Studio suppresses audio transport');
 	// Source-only typing preserves both machine state and rewind history.
+	await testStudioFocus(test);
 	harness.openLuaSource('title_screen.lua');
 	const model = harness.getActiveEditorDocument().model;
 	const source = model.buffer.getText();
@@ -76,8 +79,17 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	const firstInstalledSource = await testSourceViewsBeforeApply(test, model, originalRule, newRule);
 	check(cycles() === selected && history.mode === HistoryMode.Reviewing, 'typing does not mutate runtime');
 	const oldMedia = ide.sources.currentBlua32Media;
+	await press('ControlLeft', 'KeyF');
+	await press('KeyQ');
+	const pendingQuery = editorSearchState.field.text;
 	await press('ControlLeft', 'ShiftLeft', 'KeyS');
 	check(actionPromptState.prompt?.action === 'hot-resume', 'real command opens dirty-source prompt');
+	await press('ControlLeft', 'KeyZ');
+	check(model.buffer.getText() === firstInstalledSource && editorSearchState.field.text === pendingQuery,
+		'focus: modal keyboard scope blocks both document and field history');
+	await click(editorChromeState.menuEntryBounds.edit);
+	check(editorChromeState.openMenuId === null && actionPromptState.prompt !== null,
+		'focus: modal pointer scope blocks underlying editor commands');
 	await press('Enter');
 	await until(() => tasks.ready && ide.sources.currentBlua32Media !== oldMedia && !ide.debugger.plans.controlActive,
 		'Hot Resume installs edited source through product commands');

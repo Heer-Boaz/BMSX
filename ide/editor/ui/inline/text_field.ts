@@ -1,13 +1,13 @@
 import { CHARACTER_CODES, CHARACTER_MAP } from '../../../common/character_map';
 import * as constants from '../../../common/constants';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
-import type { InlineInputOptions, Position, TextField } from '../../../common/models';
+import type { InlineInputOptions, Position } from '../../../common/models';
+import type { TextField } from './text_field_model';
 import { clamp } from '../../../../machine/ts/common/clamp';
 import { LuaLexer } from '../../../../toolchain/ts/lua/syntax/lexer';
 import { splitText } from '../../../../machine/ts/common/text_lines';
 import { advanceToggleBlink } from '../view/caret/blink';
 import { editorCaretState } from '../view/caret/state';
-import { activeCodeEditor } from '../code_editor_state';
 import {
 	clearSingleCursorSelection,
 	moveSingleCursor,
@@ -19,6 +19,7 @@ import { findWordBoundsInLine, findWordLeftOffset, findWordRightOffset } from '.
 import { editorRuntimeState } from '../../common/runtime_state';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 import type { Clipboard } from '../../../common/clipboard';
+import { writeClipboard } from '../../../input/clipboard';
 
 export type InlineFieldMetrics = {
 	advanceChar: (ch: string) => number;
@@ -77,18 +78,18 @@ export function setSelectionAnchorPosition(field: TextField, row: number, column
 	setSingleCursorSelectionAnchor(field, row, column);
 }
 
-const writeInlineFieldClipboard = (clipboard: Clipboard, payload: string): void => {
-	activeCodeEditor.customClipboard = payload;
-	void clipboard.writeText(payload);
-};
-
-const applyTextUpdate = (field: TextField, nextText: string, nextCursorOffset: number): void => {
+const applyTextUpdate = (field: TextField, nextText: string, nextCursorOffset: number): boolean => {
+	if (field.readOnly) return false;
+	const changed = nextText !== field.text;
+	if (changed) field.recordEdit();
 	const lines = splitText(nextText);
 	field.text = nextText;
 	field.lines = lines;
 	offsetToPosition(lines, nextCursorOffset, scratchPosition);
 	setSingleCursorPosition(field, scratchPosition.row, scratchPosition.column);
 	clearSingleCursorSelection(field);
+	if (changed) field.didChangeText();
+	return changed;
 };
 
 const totalLength = (field: TextField): number => {
@@ -101,21 +102,6 @@ const totalLength = (field: TextField): number => {
 	}
 	return length;
 };
-
-export function createInlineTextField(): TextField {
-	return {
-		text: '',
-		lines: [''],
-		cursorRow: 0,
-		cursorColumn: 0,
-		selectionAnchor: null,
-		selectionAnchorScratch: { row: 0, column: 0 },
-		desiredColumn: 0,
-		pointerSelecting: false,
-		lastPointerClickTimeMs: 0,
-		lastPointerClickColumn: -1,
-	};
-}
 
 const cursorOffset = (field: TextField): number => positionToOffset(field.lines, field.cursorRow, field.cursorColumn);
 
@@ -175,8 +161,7 @@ export function deleteSelection(field: TextField): boolean {
 	const end = anchorOffset < cursorOffsetValue ? cursorOffsetValue : anchorOffset;
 	const text = field.text;
 	const nextText = text.slice(0, start) + text.slice(end);
-	applyTextUpdate(field, nextText, start);
-	return true;
+	return applyTextUpdate(field, nextText, start);
 }
 
 export function selectionLength(field: TextField): number {
@@ -197,13 +182,14 @@ export function insertValue(field: TextField, value: string): boolean {
 	if (value.length === 0) {
 		return false;
 	}
-	deleteSelection(field);
 	const text = field.text;
 	const offset = cursorOffset(field);
-	const nextText = text.slice(0, offset) + value + text.slice(offset);
-	const nextCursor = offset + value.length;
-	applyTextUpdate(field, nextText, nextCursor);
-	return true;
+	const anchor = selectionAnchorOffset(field);
+	const start = anchor === null ? offset : Math.min(anchor, offset);
+	const end = anchor === null ? offset : Math.max(anchor, offset);
+	const nextText = text.slice(0, start) + value + text.slice(end);
+	const nextCursor = start + value.length;
+	return applyTextUpdate(field, nextText, nextCursor);
 }
 
 export function backspace(field: TextField): boolean {
@@ -216,8 +202,7 @@ export function backspace(field: TextField): boolean {
 	}
 	const text = field.text;
 	const nextText = text.slice(0, offset - 1) + text.slice(offset);
-	applyTextUpdate(field, nextText, offset - 1);
-	return true;
+	return applyTextUpdate(field, nextText, offset - 1);
 }
 
 export function deleteForward(field: TextField): boolean {
@@ -230,8 +215,7 @@ export function deleteForward(field: TextField): boolean {
 		return false;
 	}
 	const nextText = text.slice(0, offset) + text.slice(offset + 1);
-	applyTextUpdate(field, nextText, offset);
-	return true;
+	return applyTextUpdate(field, nextText, offset);
 }
 
 export function deleteWordBackward(field: TextField): boolean {
@@ -257,8 +241,7 @@ export function deleteWordBackward(field: TextField): boolean {
 		return false;
 	}
 	const nextText = text.slice(0, index) + text.slice(offset);
-	applyTextUpdate(field, nextText, index);
-	return true;
+	return applyTextUpdate(field, nextText, index);
 }
 
 export function deleteWordForward(field: TextField): boolean {
@@ -284,8 +267,7 @@ export function deleteWordForward(field: TextField): boolean {
 		return false;
 	}
 	const nextText = text.slice(0, offset) + text.slice(index);
-	applyTextUpdate(field, nextText, offset);
-	return true;
+	return applyTextUpdate(field, nextText, offset);
 }
 
 export function moveCursor(field: TextField, row: number, column: number, extendSelection: boolean): void {
@@ -400,6 +382,7 @@ export function registerPointerClick(field: TextField, column: number, doubleCli
 }
 
 export function setFieldText(field: TextField, value: string, moveCursorToEnd: boolean): void {
+	field.clearHistory();
 	const lines = splitText(value);
 	field.text = value;
 	field.lines = lines;
@@ -441,7 +424,7 @@ export function applyInlineFieldEditing(
 		const selected = selectedText(field);
 		const payload = selected && selected.length > 0 ? selected : field.text;
 		if (payload.length > 0) {
-			writeInlineFieldClipboard(clipboard, payload);
+			void writeClipboard(clipboard, payload, 'Copied selection to clipboard');
 		}
 		consumeIdeKey('KeyC', playerInput);
 	}
@@ -456,16 +439,16 @@ export function applyInlineFieldEditing(
 			}
 		}
 		if (payload && payload.length > 0) {
-			writeInlineFieldClipboard(clipboard, payload);
+			void writeClipboard(clipboard, payload, 'Cut selection to clipboard');
 			textChanged = deleteSelection(field) || textChanged;
 		}
 		consumeIdeKey('KeyX', playerInput);
 	}
 
 	if (useCtrl && isKeyJustPressed('KeyV', playerInput)) {
-		const clipboard = activeCodeEditor.customClipboard;
-		if (clipboard.length > 0) {
-			let insertion = clipboard;
+		const payload = clipboard.text;
+		if (payload.length > 0) {
+			let insertion = payload;
 			if (characterFilter) {
 				let filtered = '';
 				for (let i = 0; i < insertion.length; i += 1) {

@@ -48,7 +48,7 @@ test('weighted command keybindings resolve the contextual Scenario Lab F5 action
 			'F5',
 			KeyModifier.none,
 			enabledCommands('debugContinue', 'scenarioLab.run'),
-		),
+		)!.command,
 		'scenarioLab.run',
 	);
 	assert.equal(
@@ -56,7 +56,7 @@ test('weighted command keybindings resolve the contextual Scenario Lab F5 action
 			'F5',
 			KeyModifier.none,
 			enabledCommands('debugContinue'),
-		),
+		)!.command,
 		'debugContinue',
 	);
 	assert.equal(
@@ -64,7 +64,7 @@ test('weighted command keybindings resolve the contextual Scenario Lab F5 action
 			'F5',
 			KeyModifier.ctrl,
 			enabledCommands('scenarioLab.rerun'),
-		),
+		)!.command,
 		'scenarioLab.rerun',
 	);
 	assert.equal(
@@ -72,7 +72,7 @@ test('weighted command keybindings resolve the contextual Scenario Lab F5 action
 			'F5',
 			KeyModifier.shift,
 			enabledCommands('scenarioLab.cancel'),
-		),
+		)!.command,
 		'scenarioLab.cancel',
 	);
 	assert.equal(EDITOR_COMMAND_KEYBINDING_LABELS.get('debugContinue'), 'F5');

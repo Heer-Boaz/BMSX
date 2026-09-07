@@ -348,24 +348,24 @@ zij is geen algemene live-reconcilevoorziening of UI-acceptatiegate.
 
 ### `IDE-SCENE-SOURCE-ADAPTER-01`: focus- en commandowner eerst
 
-**Open architectuurvoorwaarde, geen geïmplementeerde UI.** De eerste aanzet
+**Focusfundament geïmplementeerd; visuele sourcecontrol blijft open.** De eerste aanzet
 leidde Undo/Redo af uit `EditorPane.input instanceof WorkingCopyEditorInput`
 en gaf iedere pane `hasPendingEdits = false` en een succesvolle
 `commitPendingEdits()`-stub. Die aanzet en de nog niet aangesloten
 integercontrol zijn teruggenomen. Een ander capabilityflag of een wrapper
 rond dezelfde inferentie zou deze grens niet herstellen.
 
-De live owners op `0b67396b9` laten het ontbrekende contract zien:
+De audit op `0b67396b9` legde het ontbrekende contract vast:
 
 - `EditorPane` bezit input-/viewlifecycle, niet de keuze tussen een gefocust
   tekstveld en de onderliggende documenthistorie.
-- Undo/Redo zit nu in de code-editorbindings; `undo_controller` herstelt ook
+- Undo/Redo zat in de code-editorbindings; `undo_controller` herstelt ook
   cursor en selectie. Rechtstreeks `workingCopy.undo()` vanuit de basisklasse
   zou die concrete viewverantwoordelijkheid overslaan.
-- Globale keyboardcommands worden vóór pane-input afgehandeld; pointerchrome
-  wordt vóór pane-pointerinput afgehandeld. Een propertyveld krijgt daardoor
+- Globale keyboardcommands werden vóór pane-input afgehandeld; pointerchrome
+  werd vóór pane-pointerinput afgehandeld. Een propertyveld kreeg daardoor
   niet vanzelf een submit- of focusovergang vóór Save, Hot Resume of tabwissel.
-- `setActiveTab` verandert de actieve tab voordat de vorige pane wordt
+- `setActiveTab` veranderde de actieve tab voordat de vorige pane werd
   losgekoppeld. Achteraf een veto of successtub op `clearInput` toevoegen is
   dus geen samenhangende focus-/inputovergang.
 
@@ -386,20 +386,45 @@ De professionele referentie scheidt deze verantwoordelijkheden:
   behandelt submit en focusverlies bij de concrete invoercontrol. BMSX kan
   daarbij niet stilzwijgend rekenen op DOM-focus: de IDE is canvas-rendered.
 
-Vóór de visuele transformedit moet één samenhangende route bestaan voor
-focus, commandtarget en acceptatie van invoer. Documenthistorie blijft bij het
-gedeelde `EditorTextModel`; de concrete editor verzorgt zijn viewherstel.
-Drafttekst is controlstate, geen tweede authored document. De exacte
-submit-/focuslifecycle moet nog worden uitgewerkt: geen stille draftdiscard,
-geen save/apply van ongemerkt oudere bytes en geen per-command
-`commitPendingEdits`-sprinkling. Dit rechtvaardigt geen algemene herschrijving
-van de workbench of nieuwe runtime-/cartliblagen.
+`IDE-FOCUS-COMMAND-01` herstelt nu die focusgrens in de bestaande IDE:
 
-De acceptatieproef moet fysieke keyboard-, menu- en pointerroutes gebruiken:
-document versus gefocust veld, lege historie, read-only input, wisselen van
-resource en een lopende invoer gevolgd door Save/Hot Resume. Pas daarna telt
-één minimale scene-edit via het bestaande sourcemodel als bedienbare feature.
-Een losse registrytest of een directe modelaanroep sluit deze gate niet.
+- `input/focus.ts` bezit één controltarget met keyboardhandler, concrete
+  commandbijdragen en focus-/blurnotificaties. Er is geen parallelle
+  widget-`active`-state of Undo/Redo-inferentie op de pane-basisklasse.
+- `TextField` bezit veldhistorie en publiceert zowel typen als Undo/Redo via
+  dezelfde content-event. Documenthistorie blijft bij het gedeelde
+  `EditorTextModel`; de code-editorbijdrage gebruikt `undo_controller` voor
+  viewherstel. Lege of read-only historie valt niet door naar een ander model.
+- Keyboard en Edit-menu kiezen dezelfde target. Tabwissel blur't de oude
+  control voordat de actieve tab en pane-input veranderen. Modale input wordt
+  vóór alle achtergrondchrome afgevangen, niet met guards in ieder veld.
+- Find is query-invoer, geen source. Rename accepteert zijn refactor expliciet
+  en annuleert de onafgemaakte invoer bij focusverlies, zoals VS Code. Dit is
+  **geen** generiek beleid voor een toekomstige propertycontrol.
+
+De echte browserproef `runtime_replay/studio_focus.ts` bedient keyboard, Edit-
+menu, Find, Rename, quick-inputvelden en tabwissel via inputevents in de normale
+Studio-compositie.
+Zij controleert document- versus veldhistorie, repeat tot lege historie,
+Cut/Paste, read-only gegenereerde bron, blur op het nog gekoppelde oude resource
+en focusretour van Resources naar de niet-codepane Scenario Lab.
+`studio_workflows.ts` vervolgt Save/Hot Resume met een actief veld en
+controleert ook dat de echte modale prompt achtergrondinput blokkeert. Dezelfde
+proef draait met software, WebGL2 en WebGPU en de bestaande IDE tiny font.
+
+Validatie: `npm run test:studio-workflows`, `npm run test:lua` (867 geslaagd,
+één bestaande skip), `npm run test:hot-resume` (92 assertions), IDE-typecheck,
+core-parity- en strikte architecture-boundary-audit. De brede
+`tsc --noEmit -p tests` heeft dezelfde 52 bestaande diagnostics als de schone
+`f16edc7ca`-baseline; deze slice voegt geen test-typefout toe.
+
+**Nog open vóór de visuele transformedit:** de concrete source-propertycontrol
+en haar acceptatie van complete, gedeeltelijke of ongeldige draftinvoer bij
+Save, Hot Resume en focusverlies. Geen stille propertydiscard, geen save/apply
+van ongemerkt oudere bytes en geen per-command `commitPendingEdits`-sprinkling.
+De werkende Find-/Rename-route bewijst het focusfundament, niet een nog niet
+gebouwde scenecontrol. Pas een fysiek bediende minimale scene-edit via hetzelfde
+sourcemodel sluit `IDE-SCENE-SOURCE-ADAPTER-01`.
 
 ## No-go's
 

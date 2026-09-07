@@ -22,6 +22,7 @@ export const editorChromeState: EditorChromeState = {
 	topBarBounds: create_rect_bounds(),
 	menuEntryBounds: {
 		file: create_rect_bounds(),
+		edit: create_rect_bounds(),
 		run: create_rect_bounds(),
 		view: create_rect_bounds(),
 	},

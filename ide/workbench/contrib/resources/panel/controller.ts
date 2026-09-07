@@ -45,6 +45,8 @@ import {
 import type { ResourceIdentity } from '../../../../common/resource';
 import type { CartEditor } from '../../../../cart_editor';
 import type { RuntimeSourceState } from '../../../../runtime/sources';
+import { inputFocus } from '../../../../input/focus';
+import { handleResourcePanelKeyboardInput } from './keyboard';
 
 export type ResourcePanelItemMetrics = {
 	item: ResourceBrowserItem;
@@ -80,7 +82,7 @@ function createResourcePanelItemMetrics(): ResourcePanelItemMetrics {
 export class ResourcePanelController {
 	private static readonly EMPTY_ITEMS: ResourceBrowserItem[] = [];
 	public visible = false;
-	public focused = false;
+	public readonly focusTarget = inputFocus.createTarget();
 	private widthRatio: number;
 	private filterMode: ResourcePanelFilterMode = 'lua_only';
 	private mode: 'resources' | 'command' = 'resources';
@@ -115,6 +117,7 @@ export class ResourcePanelController {
 		this.widthRatio = initialWidthRatio;
 		this.resourceVertical = scrollbars.resourceVertical;
 		this.resourceHorizontal = scrollbars.resourceHorizontal;
+		this.focusTarget.bindKeyboard(input => handleResourcePanelKeyboardInput(input, this));
 	}
 
 	public setFontMetrics(lineHeight: number, charAdvance: number): void {
@@ -125,8 +128,14 @@ export class ResourcePanelController {
 
 	// === Panel lifecycle ===
 	isVisible(): boolean { return this.visible; }
-	isFocused(): boolean { return this.focused; }
-	setFocused(focused: boolean): void { this.focused = focused; }
+	isFocused(): boolean { return this.focusTarget.hasFocus; }
+	setFocused(focused: boolean): void {
+		if (focused) {
+			this.focusTarget.focus();
+		} else if (this.focusTarget.hasFocus) {
+			this.editor.editorPanes.activePane.focus();
+		}
+	}
 	getFilterMode(): 'lua_only' | 'all' { return this.filterMode; }
 	getMode(): 'resources' | 'command' { return this.mode; }
 
@@ -142,7 +151,7 @@ export class ResourcePanelController {
 		this.widthRatio = clamped;
 		this.mode = 'resources';
 		this.visible = true;
-		this.focused = true;
+		this.focusTarget.focus();
 		this.refresh();
 	}
 
@@ -156,7 +165,7 @@ export class ResourcePanelController {
 		this.widthRatio = clamped;
 		this.mode = 'command';
 		this.visible = true;
-		this.focused = true;
+		this.focusTarget.focus();
 		this.callHierarchyModel = model;
 		this.callHierarchyDirection = CallHierarchyDirection.CallsTo;
 		this.callHierarchyExpandedNodeIds.clear();
@@ -187,7 +196,7 @@ export class ResourcePanelController {
 
 	hide(): void {
 		this.visible = false;
-		this.focused = false;
+		this.setFocused(false);
 		this.resetState();
 		this.mode = 'resources';
 		this.callHierarchyModel = null;
@@ -295,7 +304,7 @@ export class ResourcePanelController {
 		}
 		this.widthRatio = clampedRatio;
 		this.visible = true;
-		this.focused = true;
+		this.focusTarget.focus();
 		this.publishCodeAreaLeft();
 		this.clampHScroll();
 		this.ensureSelectionVisible();

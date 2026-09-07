@@ -6,7 +6,7 @@ import {
 	type WorkbenchDropdownMenuId,
 } from '../menu/registry';
 
-export const MENU_IDS = ['file', 'run', 'view'] as const;
+export const MENU_IDS = ['file', 'edit', 'run', 'view'] as const;
 export type MenuId = typeof MENU_IDS[number];
 
 export type TopBarMenuSeparator = { readonly type: 'separator' };
@@ -51,6 +51,11 @@ const runMenu: TopBarMenuEntry = {
 	label: 'RUN',
 	items: projectTopBarMenu('menubar.run'),
 };
+const editMenu: TopBarMenuEntry = {
+	id: 'edit',
+	label: 'EDIT',
+	items: projectTopBarMenu('menubar.edit'),
+};
 const viewMenu: TopBarMenuEntry = {
 	id: 'view',
 	label: 'VIEW',
@@ -59,12 +64,14 @@ const viewMenu: TopBarMenuEntry = {
 
 export const TOP_BAR_MENUS: Readonly<Record<MenuId, TopBarMenuEntry>> = {
 	file: fileMenu,
+	edit: editMenu,
 	run: runMenu,
 	view: viewMenu,
 };
 
 export const TOP_BAR_MENU_ENTRIES: readonly TopBarMenuEntry[] = [
 	fileMenu,
+	editMenu,
 	runMenu,
 	viewMenu,
 ];

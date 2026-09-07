@@ -3,6 +3,7 @@ import type {
 	EditorCommandId,
 } from '../../common/commands';
 import { KeyModifier } from '../../../hosts/common/input/player';
+import { inputFocus } from '../focus';
 
 export type EditorModifierConstraint = {
 	readonly any?: KeyModifier;
@@ -19,6 +20,9 @@ export type EditorCommandKeybinding = {
 	readonly code: string;
 	readonly command: EditorCommandId;
 	readonly modifiers: EditorModifierConstraint;
+	/** Applicability is distinct from command enablement (e.g. empty field history). */
+	readonly when?: () => boolean;
+	readonly repeat?: boolean;
 };
 
 export type EditorCommandKeybindingGroup = {
@@ -35,6 +39,10 @@ const NO_MODIFIERS: EditorModifierConstraint = {
 };
 
 const editorContribKeybindings: readonly EditorCommandKeybinding[] = [
+	{ code: 'KeyZ', command: 'undo', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS }, when: () => inputFocus.getCommand('undo') !== undefined, repeat: true },
+	{ code: 'KeyZ', command: 'redo', modifiers: { any: PRIMARY_MODIFIER, required: KeyModifier.shift, forbidden: KeyModifier.alt }, when: () => inputFocus.getCommand('redo') !== undefined, repeat: true },
+	{ code: 'KeyY', command: 'redo', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS }, when: () => inputFocus.getCommand('redo') !== undefined, repeat: true },
+	{ code: 'KeyS', command: 'save', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS } },
 	{ code: 'KeyO', command: 'symbolSearch', modifiers: { any: PRIMARY_MODIFIER, required: KeyModifier.shift } },
 	{ code: 'KeyE', command: 'runtimeErrorFocus', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS } },
 	{ code: 'Comma', command: 'symbolSearch', modifiers: { required: KeyModifier.ctrl | KeyModifier.alt } },
@@ -113,15 +121,15 @@ export function resolveEditorCommandKeybinding(
 	code: string,
 	modifiers: KeyModifier,
 	commands: EditorCommandEnablement,
-): EditorCommandId | null {
+): EditorCommandKeybinding | null {
 	for (let groupIndex = EDITOR_DEFAULT_KEYBINDING_GROUPS.length - 1; groupIndex >= 0; groupIndex -= 1) {
 		const bindings = EDITOR_DEFAULT_KEYBINDING_GROUPS[groupIndex].bindings;
 		for (let bindingIndex = bindings.length - 1; bindingIndex >= 0; bindingIndex -= 1) {
 			const binding = bindings[bindingIndex];
 			if (binding.code === code
 				&& matchesModifierConstraint(binding.modifiers, modifiers)
-				&& commands.isEnabled(binding.command)) {
-				return binding.command;
+				&& (binding.when === undefined ? commands.isEnabled(binding.command) : binding.when())) {
+				return binding;
 			}
 		}
 	}

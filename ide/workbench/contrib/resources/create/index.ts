@@ -27,16 +27,17 @@ export function openCreateResourcePrompt(
 	}
 	applyCreateResourceFieldText(defaultPath, true);
 	createResourceState.visible = true;
-	createResourceState.active = true;
+	createResourceState.field.focusTarget.focus();
 	createResourceState.error = null;
 	editorCaretState.cursorVisible = true;
 	resetBlink();
 }
 
 export function closeCreateResourcePrompt(focusEditor: boolean): void {
-	createResourceState.active = false;
+	createResourceState.field.focusTarget.release();
 	createResourceState.visible = false;
 	createResourceState.working = false;
+	createResourceState.field.readOnly = false;
 	if (focusEditor) {
 		focusEditorFromSearch();
 		focusEditorFromLineJump();

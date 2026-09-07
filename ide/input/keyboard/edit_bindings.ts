@@ -1,14 +1,10 @@
-import type { IdeCommandController } from '../../commands/controller';
+import { activeCodeEditor } from '../../editor/ui/code_editor_state';
 import { jumpToNextMatch, jumpToPreviousMatch } from '../../workbench/contrib/code_editor/find/search';
-import { isEditableCodeTab, isReadOnlyCodeTab } from '../../workbench/ui/code_tab/contexts';
-import { isCodeTabActive } from '../../workbench/ui/tabs';
 import { notifyReadOnlyEdit } from '../../editor/ui/view/view';
 import { toggleLineComments } from '../../editor/editing/line_comments';
-import { redo, undo } from '../../editor/editing/undo_controller';
 import { applyDocumentFormatting, copySelectionToClipboard, cutLineToClipboard, cutSelectionToClipboard, pasteFromClipboard } from '../../editor/editing/text_editing_and_selection';
 import * as TextEditing from '../../editor/editing/text_editing_and_selection';
-import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown, shouldRepeatKeyFromPlayer } from './key_input';
-import { isInlineWidgetFocused } from '../../quick_input/inline_widget';
+import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from './key_input';
 import { editorSearchState } from '../../workbench/contrib/code_editor/find/widget_state';
 import type { PlayerInput } from '../../../hosts/common/input/player';
 import type { Clipboard } from '../../common/clipboard';
@@ -26,49 +22,6 @@ export function handleSearchNavigationKeybinding(playerInput: PlayerInput): bool
 	return true;
 }
 
-function handleUndoBinding(playerInput: PlayerInput): boolean {
-	if (!(isCtrlDown(playerInput) || isMetaDown(playerInput)) || !shouldRepeatKeyFromPlayer('KeyZ', playerInput)) {
-		return false;
-	}
-	consumeIdeKey('KeyZ', playerInput);
-	if (!isEditableCodeTab()) {
-		notifyReadOnlyEdit();
-		return true;
-	}
-	if (isShiftDown(playerInput)) {
-		redo();
-	} else {
-		undo();
-	}
-	return true;
-}
-
-function handleRedoBinding(playerInput: PlayerInput): boolean {
-	if (!(isCtrlDown(playerInput) || isMetaDown(playerInput)) || !shouldRepeatKeyFromPlayer('KeyY', playerInput)) {
-		return false;
-	}
-	consumeIdeKey('KeyY', playerInput);
-	if (!isEditableCodeTab()) {
-		notifyReadOnlyEdit();
-		return true;
-	}
-	redo();
-	return true;
-}
-
-function handleSaveBinding(playerInput: PlayerInput, commands: IdeCommandController): boolean {
-	if (!isCtrlDown(playerInput) || isShiftDown(playerInput) || !isKeyJustPressed('KeyS', playerInput)) {
-		return false;
-	}
-	consumeIdeKey('KeyS', playerInput);
-	if (isReadOnlyCodeTab()) {
-		notifyReadOnlyEdit();
-		return true;
-	}
-	commands.execute('save');
-	return true;
-}
-
 function handleCopyBinding(playerInput: PlayerInput, clipboard: Clipboard): boolean {
 	if (!isCtrlDown(playerInput) || !isKeyJustPressed('KeyC', playerInput)) {
 		return false;
@@ -83,7 +36,7 @@ function handleCutBinding(playerInput: PlayerInput, clipboard: Clipboard): boole
 		return false;
 	}
 	consumeIdeKey('KeyX', playerInput);
-	if (isReadOnlyCodeTab()) {
+	if (activeCodeEditor.model.readOnly) {
 		if (TextEditing.hasSelection()) {
 			void copySelectionToClipboard(clipboard);
 		} else {
@@ -99,16 +52,16 @@ function handleCutBinding(playerInput: PlayerInput, clipboard: Clipboard): boole
 	return true;
 }
 
-function handlePasteBinding(playerInput: PlayerInput): boolean {
+function handlePasteBinding(playerInput: PlayerInput, clipboard: Clipboard): boolean {
 	if (!isCtrlDown(playerInput) || isShiftDown(playerInput) || !isKeyJustPressed('KeyV', playerInput)) {
 		return false;
 	}
 	consumeIdeKey('KeyV', playerInput);
-	if (isReadOnlyCodeTab()) {
+	if (activeCodeEditor.model.readOnly) {
 		notifyReadOnlyEdit();
 		return true;
 	}
-	pasteFromClipboard();
+	pasteFromClipboard(clipboard);
 	return true;
 }
 
@@ -117,7 +70,7 @@ function handleEditableCodeBinding(playerInput: PlayerInput, code: string, match
 		return false;
 	}
 	consumeIdeKey(code, playerInput);
-	if (!isEditableCodeTab()) {
+	if (activeCodeEditor.model.readOnly) {
 		notifyReadOnlyEdit();
 		return true;
 	}
@@ -144,9 +97,6 @@ function handleIndentationBinding(playerInput: PlayerInput, code: string, applyE
 }
 
 export function handleCodeFormattingKeybinding(playerInput: PlayerInput): boolean {
-	if (!isCodeTabActive() || editorSearchState.active || isInlineWidgetFocused()) {
-		return false;
-	}
 	if (!isAltDown(playerInput) || !isShiftDown(playerInput) || isCtrlDown(playerInput) || isMetaDown(playerInput) || !isKeyJustPressed('KeyF', playerInput)) {
 		return false;
 	}
@@ -158,14 +108,10 @@ export function handleCodeFormattingKeybinding(playerInput: PlayerInput): boolea
 export function handleEditorClipboardAndCommandBindings(
 	playerInput: PlayerInput,
 	clipboard: Clipboard,
-	commands: IdeCommandController,
 ): boolean {
-	return handleUndoBinding(playerInput)
-		|| handleRedoBinding(playerInput)
-		|| handleSaveBinding(playerInput, commands)
-		|| handleCopyBinding(playerInput, clipboard)
+	return handleCopyBinding(playerInput, clipboard)
 		|| handleCutBinding(playerInput, clipboard)
-		|| handlePasteBinding(playerInput)
+		|| handlePasteBinding(playerInput, clipboard)
 		|| handleToggleCommentBinding(playerInput, 'Slash')
 		|| handleToggleCommentBinding(playerInput, 'NumpadDivide')
 		|| handleIndentationBinding(playerInput, 'BracketRight', TextEditing.indentSelectionOrLine)

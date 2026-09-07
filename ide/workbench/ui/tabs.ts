@@ -17,6 +17,7 @@ import { editorTabGroup } from './tab/group_model';
 import type { EditorPanes } from '../services/editor/editor_panes';
 
 export function initializeTabs(initialContext: CodeTabContext, editorPanes: EditorPanes): void {
+	editorPanes.clearEditor();
 	editorChromeState.tabHoverId = null;
 	editorChromeState.tabDragState = null;
 	editorChromeState.tabButtonBounds.clear();
@@ -69,6 +70,8 @@ export function setActiveTab(
 		}
 		return;
 	}
+	// End the old control's input while its resource and view are still attached.
+	editorPanes.clearEditor();
 	editorTabGroup.activate(tab);
 	editorPanes.openEditor(tab, selection);
 	if (navigationCheckpoint) {

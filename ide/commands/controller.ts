@@ -35,6 +35,7 @@ import {
 } from '../runtime/debugger_state';
 import { clearExecutionStopHighlights } from '../runtime_error/navigation';
 import { deactivateEditor } from '../workbench/overlay_modes';
+import { inputFocus } from '../input/focus';
 
 export class IdeCommandController {
 	public constructor(
@@ -58,6 +59,10 @@ export class IdeCommandController {
 
 	public execute(command: EditorCommandId): void {
 		switch (command) {
+			case 'undo':
+			case 'redo':
+				inputFocus.executeCommand(command);
+				return;
 			case 'pause':
 				if (this.execution.userPaused) {
 					if (this.rewind.active) this.rewind.resumeHere();
@@ -171,6 +176,11 @@ export class IdeCommandController {
 
 	public isEnabled(command: EditorCommandId): boolean {
 		switch (command) {
+			case 'undo':
+			case 'redo': {
+				const implementation = inputFocus.getCommand(command);
+				return implementation !== undefined && implementation.isEnabled();
+			}
 			case 'pause':
 				return !this.execution.userPaused || this.runtimeTasks.ready;
 			case 'scenarioLab.run':

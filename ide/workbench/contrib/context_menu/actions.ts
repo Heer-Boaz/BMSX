@@ -1,7 +1,7 @@
 import type { IdeCommandController } from '../../../commands/controller';
 import type { CartEditor } from '../../../cart_editor';
 import { focusEditorAtPosition } from '../../ui/focus';
-import { writeClipboard } from '../../../editor/editing/text_editing_and_selection';
+import { writeClipboard } from '../../../input/clipboard';
 import type { EditorContextMenuAction, EditorContextToken } from '../../../common/models';
 import type { Clipboard } from '../../../common/clipboard';
 

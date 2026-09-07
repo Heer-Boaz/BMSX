@@ -21,13 +21,13 @@ export function openLineJump(): void {
 	closeSearch(false, true);
 	renameController.cancel();
 	lineJumpState.visible = true;
-	lineJumpState.active = true;
+	lineJumpState.field.focusTarget.focus();
 	applyLineJumpFieldText('', true);
 	resetBlink();
 }
 
 export function closeLineJump(clearValue: boolean): void {
-	lineJumpState.active = false;
+	lineJumpState.field.focusTarget.release();
 	lineJumpState.visible = false;
 	if (clearValue) {
 		applyLineJumpFieldText('', true);
@@ -38,10 +38,10 @@ export function closeLineJump(clearValue: boolean): void {
 }
 
 export function focusEditorFromLineJump(): void {
-	if (!lineJumpState.active && !lineJumpState.visible) {
+	if (!lineJumpState.field.focusTarget.hasFocus && !lineJumpState.visible) {
 		return;
 	}
-	lineJumpState.active = false;
+	lineJumpState.field.focusTarget.release();
 	lineJumpState.visible = false;
 	lineJumpState.field.selectionAnchor = null;
 	lineJumpState.field.pointerSelecting = false;

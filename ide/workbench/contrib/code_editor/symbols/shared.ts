@@ -9,7 +9,7 @@ export function closeSymbolSearch(clearQuery: boolean): void {
 	if (clearQuery) {
 		applySymbolSearchFieldText('', true);
 	}
-	symbolSearchState.active = false;
+	symbolSearchState.field.focusTarget.release();
 	symbolSearchState.visible = false;
 	symbolSearchState.global = false;
 	symbolSearchState.mode = 'symbols';
@@ -24,10 +24,10 @@ export function closeSymbolSearch(clearQuery: boolean): void {
 }
 
 export function focusEditorFromSymbolSearch(): void {
-	if (!symbolSearchState.active && !symbolSearchState.visible) {
+	if (!symbolSearchState.field.focusTarget.hasFocus && !symbolSearchState.visible) {
 		return;
 	}
-	symbolSearchState.active = false;
+	symbolSearchState.field.focusTarget.release();
 	if (symbolSearchState.query.length === 0) {
 		symbolSearchState.visible = false;
 		symbolSearchState.matches = [];

@@ -26,19 +26,19 @@ export function handleEscapeKey(): boolean {
 		closeCreateResourcePrompt(true);
 		return true;
 	}
-	if (symbolSearchState.active || symbolSearchState.visible) {
+	if (symbolSearchState.field.focusTarget.hasFocus || symbolSearchState.visible) {
 		closeSymbolSearch(false);
 		return true;
 	}
-	if (resourceSearchState.active || resourceSearchState.visible) {
+	if (resourceSearchState.field.focusTarget.hasFocus || resourceSearchState.visible) {
 		closeResourceSearch(false);
 		return true;
 	}
-	if (lineJumpState.active || lineJumpState.visible) {
+	if (lineJumpState.field.focusTarget.hasFocus || lineJumpState.visible) {
 		closeLineJump(false);
 		return true;
 	}
-	if (editorSearchState.active || editorSearchState.visible) {
+	if (editorSearchState.field.focusTarget.hasFocus || editorSearchState.visible) {
 		closeSearch(false, true);
 		return true;
 	}

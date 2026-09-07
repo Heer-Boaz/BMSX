@@ -37,6 +37,7 @@ export async function confirmCreateResourcePrompt(
 		return;
 	}
 	createResourceState.working = true;
+	createResourceState.field.readOnly = true;
 	resetBlink();
 	const contents = constants.DEFAULT_NEW_LUA_RESOURCE_CONTENT;
 	try {
@@ -61,6 +62,7 @@ export async function confirmCreateResourcePrompt(
 		showEditorMessage(`Failed to create resource: ${simplified}`, constants.COLOR_STATUS_WARNING, 4.0);
 	} finally {
 		createResourceState.working = false;
+		createResourceState.field.readOnly = false;
 		resetBlink();
 	}
 }

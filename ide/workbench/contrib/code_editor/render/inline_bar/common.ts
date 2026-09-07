@@ -1,5 +1,5 @@
 import * as constants from '../../../../../common/constants';
-import type { TextField } from '../../../../../common/models';
+import type { TextField } from '../../../../../editor/ui/inline/text_field_model';
 import { measureInlineFieldDecoration } from '../../../../../editor/ui/inline/field_view';
 import { api } from '../../../../../runtime/overlay_api';
 import { drawEditorText } from '../../../../../editor/render/text_renderer';

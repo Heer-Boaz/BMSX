@@ -28,7 +28,7 @@ export function handleResourceSearchPointer(
 	const insideBar = point_in_rect(snapshot.viewportX, snapshot.viewportY, bounds);
 	if (!insideBar) {
 		if (justPressed) {
-			resourceSearchState.active = false;
+			resourceSearchState.field.focusTarget.release();
 		}
 		resourceSearchState.hoverIndex = -1;
 		return false;
@@ -40,7 +40,7 @@ export function handleResourceSearchPointer(
 			closeSearch(false, true);
 			closeSymbolSearch(false);
 			resourceSearchState.visible = true;
-			resourceSearchState.active = true;
+			resourceSearchState.field.focusTarget.focus();
 			activateQuickInputField(resourcePanel);
 		}
 		processInlineFieldPointer(resourceSearchState.field, quickInputTextLeft('FILE :'), snapshot.viewportX, justPressed, snapshot.primaryPressed);

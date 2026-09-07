@@ -14,13 +14,13 @@ export function handleLineJumpPointer(resourcePanel: ResourcePanelController, sn
 	const insideBar = point_in_rect(snapshot.viewportX, snapshot.viewportY, bounds);
 	if (!insideBar) {
 		if (justPressed) {
-			lineJumpState.active = false;
+			lineJumpState.field.focusTarget.release();
 		}
 		return false;
 	}
 	if (justPressed) {
 		closeSearch(false, true);
-		lineJumpState.active = true;
+		lineJumpState.field.focusTarget.focus();
 		activateQuickInputField(resourcePanel);
 	}
 	processInlineFieldPointer(lineJumpState.field, quickInputTextLeft('LINE #:'), snapshot.viewportX, justPressed, snapshot.primaryPressed);

@@ -9,6 +9,8 @@ export type EditorCommandPresentation = {
 export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	Record<EditorCommandId, EditorCommandPresentation>
 > = {
+	undo: { title: 'Undo' },
+	redo: { title: 'Redo' },
 	symbolSearch: { title: 'Go to Symbol' },
 	symbolSearchGlobal: { title: 'Go to Symbol in Workspace' },
 	resourceSearch: { title: 'Go to File' },

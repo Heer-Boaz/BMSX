@@ -5,7 +5,7 @@ import { applyResourceSearchSelection, closeResourceSearch, focusEditorFromResou
 import { applyLineJumpFieldText, openLineJump } from '../../../workbench/contrib/code_editor/find/line_jump';
 import { consumeIdeKey, isKeyJustPressed, isShiftDown, shouldRepeatKeyFromPlayer } from '../../keyboard/key_input';
 import { resourceSearchWindowCapacity } from '../../../workbench/common/layout';
-import { ensureResourceSearchSelectionVisible, moveResourceSearchSelection, updateResourceSearchMatches } from '../../../workbench/contrib/resources/search/catalog';
+import { ensureResourceSearchSelectionVisible, moveResourceSearchSelection } from '../../../workbench/contrib/resources/search/catalog';
 import { openGlobalSymbolSearch, openSymbolSearch } from '../../../workbench/contrib/code_editor/symbols/search/index';
 import { lineJumpState } from '../../../workbench/contrib/code_editor/find/widget_state';
 import { resourceSearchState } from '../../../workbench/contrib/resources/widget_state';
@@ -86,7 +86,6 @@ export function handleResourceSearchInput(
 	const textChanged = applyInlineFieldEditing(playerInput, clipboard, resourceSearchState.field, {
 		allowSpace: true,
 	});
-	resourceSearchState.query = resourceSearchState.field.text;
 	if (!textChanged) {
 		return;
 	}
@@ -113,5 +112,4 @@ export function handleResourceSearchInput(
 		}
 		return;
 	}
-	updateResourceSearchMatches();
 }

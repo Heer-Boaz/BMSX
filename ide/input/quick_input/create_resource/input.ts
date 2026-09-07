@@ -1,6 +1,5 @@
 import * as constants from '../../../common/constants';
 import { applyInlineFieldEditing } from '../../../editor/ui/inline/text_field';
-import { resetBlink } from '../../../editor/render/caret';
 import { closeCreateResourcePrompt } from '../../../workbench/contrib/resources/create/index';
 import { confirmCreateResourcePrompt, isValidCreateResourceCharacter } from '../../../workbench/contrib/resources/create/operation';
 import { consumeIdeKey, isKeyJustPressed } from '../../keyboard/key_input';
@@ -34,14 +33,9 @@ export function handleCreateResourceInput(
 	if (createResourceState.working) {
 		return;
 	}
-	const textChanged = applyInlineFieldEditing(playerInput, clipboard, createResourceState.field, {
+	applyInlineFieldEditing(playerInput, clipboard, createResourceState.field, {
 		allowSpace: true,
 		characterFilter: (value: string): boolean => isValidCreateResourceCharacter(value),
 		maxLength: constants.CREATE_RESOURCE_MAX_PATH_LENGTH,
 	});
-	if (textChanged) {
-		createResourceState.error = null;
-		resetBlink();
-	}
-	createResourceState.path = createResourceState.field.text;
 }

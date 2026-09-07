@@ -37,7 +37,7 @@ export function openDefinitionSearch(
 		return true;
 	}
 	referenceState.clear();
-	if (symbolSearchState.visible || symbolSearchState.active) {
+	if (symbolSearchState.visible || symbolSearchState.field.focusTarget.hasFocus) {
 		closeSymbolSearch(false);
 	}
 	rename.cancel();
@@ -45,7 +45,7 @@ export function openDefinitionSearch(
 	symbolSearchState.mode = 'definitions';
 	symbolSearchState.global = true;
 	symbolSearchState.visible = true;
-	symbolSearchState.active = true;
+	symbolSearchState.field.focusTarget.focus();
 	applySymbolSearchFieldText('', true);
 	updateSymbolSearchMatches(bridge);
 	ensureSymbolSearchSelectionVisible();

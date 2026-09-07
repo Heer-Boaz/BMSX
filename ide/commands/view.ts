@@ -23,7 +23,7 @@ export function executeEditorViewCommand(editor: CartEditor, command: EditorView
 			editor.resourcePanel.togglePanel();
 			return;
 		case 'problems':
-			toggleProblemsPanel();
+			toggleProblemsPanel(editor.editorPanes);
 			return;
 		case 'behaviorLens':
 			editor.behaviorLens.openActiveDocument();

@@ -1,10 +1,8 @@
 import type { CartEditor } from '../../../cart_editor';
-import { isCodeTabActive } from '../../ui/tabs';
 import { selectAllSingleCursor } from '../../../editor/editing/cursor/state';
 import { revealCursor, updateDesiredColumn } from '../../../editor/ui/view/caret/caret';
 import { resetBlink } from '../../../editor/render/caret';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from '../../../input/keyboard/key_input';
-import { isInlineWidgetFocused } from '../../../quick_input/inline_widget';
 import { activeCodeEditor } from '../../../editor/ui/code_editor_state';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 
@@ -36,7 +34,7 @@ function handleLocalFindBinding(playerInput: PlayerInput, editor: CartEditor): b
 }
 
 function handleDefinitionAndReferenceBinding(playerInput: PlayerInput, editor: CartEditor): boolean {
-	if (isInlineWidgetFocused() || !isKeyJustPressed('F12', playerInput)) {
+	if (!isKeyJustPressed('F12', playerInput)) {
 		return false;
 	}
 	consumeIdeKey('F12', playerInput);
@@ -48,11 +46,8 @@ function handleDefinitionAndReferenceBinding(playerInput: PlayerInput, editor: C
 	return true;
 }
 
-function handleSelectAllBinding(playerInput: PlayerInput, editor: CartEditor): boolean {
-	if (!(isCtrlDown(playerInput) || isMetaDown(playerInput)) || isInlineWidgetFocused() || !isCodeTabActive() || !isKeyJustPressed('KeyA', playerInput)) {
-		return false;
-	}
-	if (editor.resourcePanel.isFocused()) {
+function handleSelectAllBinding(playerInput: PlayerInput): boolean {
+	if (!(isCtrlDown(playerInput) || isMetaDown(playerInput)) || !isKeyJustPressed('KeyA', playerInput)) {
 		return false;
 	}
 	consumeIdeKey('KeyA', playerInput);
@@ -79,6 +74,6 @@ export function handleEditorPromptBindings(playerInput: PlayerInput, editor: Car
 		|| handleGlobalFindBinding(playerInput, editor)
 		|| handleLocalFindBinding(playerInput, editor)
 		|| handleDefinitionAndReferenceBinding(playerInput, editor)
-		|| handleSelectAllBinding(playerInput, editor)
+		|| handleSelectAllBinding(playerInput)
 		|| handleLineJumpBinding(playerInput, editor);
 }

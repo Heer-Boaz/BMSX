@@ -14,12 +14,12 @@ export function handleCreateResourcePointer(resourcePanel: ResourcePanelControll
 	const insideBar = point_in_rect(snapshot.viewportX, snapshot.viewportY, bounds);
 	if (!insideBar) {
 		if (justPressed) {
-			createResourceState.active = false;
+			createResourceState.field.focusTarget.release();
 		}
 		return false;
 	}
 	if (justPressed) {
-		createResourceState.active = true;
+		createResourceState.field.focusTarget.focus();
 		activateQuickInputField(resourcePanel);
 	}
 	processInlineFieldPointer(createResourceState.field, quickInputTextLeft('NEW FILE:'), snapshot.viewportX, justPressed, snapshot.primaryPressed);

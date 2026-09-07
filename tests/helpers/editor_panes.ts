@@ -11,8 +11,11 @@ import type {
 } from '../../ide/workbench/ui/tab/model';
 import { EditorPane } from '../../ide/workbench/services/editor/editor_pane';
 import { EditorPanes } from '../../ide/workbench/services/editor/editor_panes';
+import { inputFocus } from '../../ide/input/focus';
 
 class TestEditorPane<TInput extends EditorInput> extends EditorPane<TInput> {
+	private readonly focusTarget = inputFocus.createTarget();
+	private readonly unbindKeyboard = this.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
 	public constructor(
 		private readonly activateInput: (
 			input: TInput,
@@ -25,6 +28,14 @@ class TestEditorPane<TInput extends EditorInput> extends EditorPane<TInput> {
 	// disable-next-line single_line_method_pattern -- Test panes exercise the production input lifecycle through the supplied activation contract.
 	protected activate(selection?: EditorTextSelection): void {
 		this.activateInput(this.input, selection);
+	}
+
+	public focus(): void {
+		this.focusTarget.focus();
+	}
+
+	public dispose(): void {
+		this.unbindKeyboard();
 	}
 
 	public draw(): void {

@@ -489,6 +489,63 @@ view or operation state and never embeds manually maintained shortcut strings.
 If a surface presents a shortcut, it obtains the label from the keybinding
 catalog rather than duplicating it in a menu or view.
 
+### Canvas focus and text commands
+
+`input/focus.ts` owns one retained `InputFocusTarget`. Code text, inline fields,
+resource/problems panels and non-code editor views bind their own keyboard
+handler; the input dispatcher calls that target after workbench keybindings.
+There is no second per-widget `active`/`focused` boolean or keyboard switch that
+guesses focus from the active tab. Visibility remains separate: a Find result
+can remain visible while code text has focus. Caret presentation consumes the
+same focus owner.
+
+A focus transition first detaches the departing target, emits its blur event,
+then installs and notifies the new target. The editor group releases the old
+control **before** replacing the active resource or clearing its pane input.
+`EditorPane` owns only view/input lifecycle (`focus`, `clearInput`, `dispose`),
+not history inferred from its input class. Concrete owners bind at construction
+or workbench composition and unbind at disposal; dispatch does not build a
+handler list or allocate a new command context each frame.
+
+Undo/Redo are registered by the actual control. The code contribution uses the
+shared `EditorTextModel` and existing `undo_controller` for cursor/selection
+restoration. Blurring code ends its typing undo group. `TextField` owns its own
+small text/caret/selection history; typing, Cut/Paste and history traversal emit
+the same content-change event. Query/result owners subscribe once. Programmatic
+field resets start a new history, and a field locked during resource creation
+does not admit edits. Empty or disabled field history still owns the keybinding:
+it never falls through into the underlying document. A target's parent is only
+its focus-return destination, not command inheritance.
+
+The Edit menu and repeatable Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z and Ctrl/Cmd+Y bindings
+use these contributions. Keybinding applicability is distinct from command
+enablement so an empty field consumes Undo without enabling the menu item.
+Menus retain the invoking editor control's command context. The existing
+blocking-modal scope intercepts **all** pointer, wheel and keyboard input before
+background menus, panels or controls; individual controls need no modal guards.
+The clipboard provider, not the active code widget, owns the shared text cache
+and the optional OS write. Input controls publish clipboard feedback through
+`input/clipboard.ts`.
+
+Save and Hot Resume remain document/source operations, not an implicit acceptance
+of every open input. Find text is a query, not source. Rename is an explicit
+refactor: Enter accepts, Escape or loss of editor-control focus dismisses its
+unsubmitted draft. A future source-property control must define its own
+acceptance lifecycle before a visual edit can claim Save/Hot Resume support;
+there is no generic successful `commitPendingEdits` stub.
+
+Production references for these specific boundaries:
+
+- [Godot Viewport focus owner and notifications](https://github.com/godotengine/godot/blob/34d06658a85845111a50db9e485ec4a0701d4298/scene/main/viewport.cpp#L2732-L2757)
+  and [detach-before-blur](https://github.com/godotengine/godot/blob/34d06658a85845111a50db9e485ec4a0701d4298/scene/main/viewport.cpp#L3795-L3807).
+- [VS Code concrete text-command targets](https://github.com/microsoft/vscode/blob/48ac1875628144c02d79ff412e0323af9991dfc7/src/vs/editor/browser/coreCommands.ts#L305-L350).
+  BMSX adopts control-owned handling, not the final VS Code active-editor
+  fallback when another view has focus.
+- [Godot LineEdit history](https://github.com/godotengine/godot/blob/34d06658a85845111a50db9e485ec4a0701d4298/scene/gui/line_edit.cpp#L1790-L1854)
+  and [VS Code Rename input lifecycle](https://github.com/microsoft/vscode/blob/48ac1875628144c02d79ff412e0323af9991dfc7/src/vs/editor/contrib/rename/browser/renameWidget.ts#L467-L525).
+- [VS Code modal input containment](https://github.com/microsoft/vscode/blob/48ac1875628144c02d79ff412e0323af9991dfc7/src/vs/base/browser/ui/dialog/dialog.ts)
+  and [clipboard-service storage](https://github.com/microsoft/vscode/blob/48ac1875628144c02d79ff412e0323af9991dfc7/src/vs/platform/clipboard/browser/clipboardService.ts#L117-L155).
+
 The production references are VS Code's single action registration path, which
 publishes one command descriptor into command, menu, and keybinding registries,
 and its weighted/contextual keybinding resolver:

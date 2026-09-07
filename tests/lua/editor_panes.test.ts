@@ -16,8 +16,11 @@ import { ResourceViewerInput } from '../../ide/workbench/contrib/resources/edito
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
 import type { CodeTabContext } from '../../ide/workbench/ui/code_tab/model';
+import { inputFocus } from '../../ide/input/focus';
 
 class RecordingEditorPane<TInput extends EditorInput> extends EditorPane<TInput> {
+	public readonly focusTarget = inputFocus.createTarget();
+	private readonly unbindKeyboard = this.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
 	public setInputCount = 0;
 	public setOptionsCount = 0;
 	public clearInputCount = 0;
@@ -28,6 +31,14 @@ class RecordingEditorPane<TInput extends EditorInput> extends EditorPane<TInput>
 	public wheelCount = 0;
 	public statusCount = 0;
 	public selection: EditorTextSelection | undefined;
+
+	public focus(): void {
+		this.focusTarget.focus();
+	}
+
+	public dispose(): void {
+		this.unbindKeyboard();
+	}
 
 	public override setInput(input: TInput, selection?: EditorTextSelection): void {
 		this.setInputCount += 1;
@@ -178,6 +189,27 @@ test('editor panes retain one lazy pane per input kind and apply the input lifec
 	harness.editorPanes.clearEditor();
 	codeClearInputCounts.push(codePane.clearInputCount);
 	assert.deepEqual(codeClearInputCounts, [1, 2, 3, 3]);
+});
+
+test('input blur completes against the old attached resource before the next pane attaches', () => {
+	const harness = createEditorPanes();
+	const first = codeInput('code:0\0a.lua');
+	const second = codeInput('code:0\0b.lua');
+	harness.editorPanes.openEditor(first);
+	const pane = harness.codePane();
+	let blurs = 0;
+	const unsubscribe = pane.focusTarget.onDidBlur(() => {
+		assert.equal(pane.input, first);
+		assert.equal(pane.clearInputCount, 0);
+		blurs += 1;
+	});
+	harness.editorPanes.openEditor(second);
+	assert.equal(blurs, 1);
+	assert.equal(pane.input, second);
+	assert.equal(pane.focusTarget.hasFocus, true);
+	unsubscribe();
+	harness.editorPanes.dispose();
+	assert.equal(inputFocus.target, null);
 });
 
 test('editor pane hot paths dispatch directly to the retained active pane', () => {

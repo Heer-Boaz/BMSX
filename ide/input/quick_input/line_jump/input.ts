@@ -26,13 +26,9 @@ export function handleLineJumpInput(playerInput: PlayerInput, clipboard: Clipboa
 		return;
 	}
 	const digitFilter = (value: string): boolean => value >= '0' && value <= '9';
-	const textChanged = applyInlineFieldEditing(playerInput, clipboard, lineJumpState.field, {
+	applyInlineFieldEditing(playerInput, clipboard, lineJumpState.field, {
 		allowSpace: false,
 		characterFilter: digitFilter,
 		maxLength: 6,
 	});
-	lineJumpState.value = lineJumpState.field.text;
-	if (textChanged) {
-		return;
-	}
 }

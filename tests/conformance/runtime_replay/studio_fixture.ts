@@ -85,16 +85,16 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 		for (const key of keys) setKey(key, false);
 		await frame();
 	};
-	const click = async (bounds: RectBounds, heldFrames = 1) => {
+	const click = async (bounds: RectBounds, heldFrames = 1, button: 'pointer_primary' | 'pointer_secondary' = 'pointer_primary') => {
 		const displayRect = display.measureDisplay();
 		const viewport = ide.overlayRenderer.viewportSize;
 		input.inputAxis2('pointer:0', 'pointer_position',
 			displayRect.left + (bounds.left + bounds.right) * displayRect.width / (viewport.width * 2),
 			displayRect.top + (bounds.top + bounds.bottom) * displayRect.height / (viewport.height * 2), clock.now());
 		await frame();
-		input.inputButton('pointer:0', 'pointer_primary', true, 1, clock.now(), ++pressId);
+		input.inputButton('pointer:0', button, true, 1, clock.now(), ++pressId);
 		for (let index = 0; index < heldFrames; index += 1) await frame();
-		input.inputButton('pointer:0', 'pointer_primary', false, 0, clock.now(), ++pressId);
+		input.inputButton('pointer:0', button, false, 0, clock.now(), ++pressId);
 		await frame();
 	};
 	const runMenuCommand = async (command: EditorCommandId) => {

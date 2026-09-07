@@ -1,5 +1,4 @@
 import type { PlayerInput } from '../../../../hosts/common/input/player';
-import type { HostClock } from '../../../../hosts/common/clock';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import type { CartEditor } from '../../../cart_editor';
 import type { Clipboard } from '../../../common/clipboard';
@@ -17,17 +16,15 @@ import { measureText } from '../../../editor/common/text/layout';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import { handleEditorClipboardAndCommandBindings, handleCodeFormattingKeybinding, handleSearchNavigationKeybinding } from '../../../input/keyboard/edit_bindings';
 import { handleEditorPromptBindings } from '../../input/keyboard/prompt_bindings';
-import { handleInlineWidgetInput, renderInlineWidgets } from '../../../quick_input/inline_widget';
+import { renderInlineWidgets } from '../../../quick_input/inline_widget';
 import { handleQuickInputPointer } from '../../../input/quick_input/pointer/dispatch';
 import { handleCodeAreaPointerInput } from '../../../input/pointer/code/index';
 import { editorPointerState } from '../../../input/pointer/state';
 import { editorInput } from './input/keyboard/text_input';
 import { renameController } from './rename/controller';
 import { referenceState } from '../../../editor/contrib/references/state';
-import { editorSearchState, lineJumpState } from './find/widget_state';
+import { editorSearchState } from './find/widget_state';
 import { getBreakpointsForChunk } from '../debugger/controller';
-import { problemsPanel } from '../problems/panel/controller';
-import { createResourceState } from '../resources/widget_state';
 import { renderEditorContextMenu } from '../../render/context_menu';
 import { editorChromeState } from '../../ui/chrome_state';
 import {
@@ -41,18 +38,19 @@ import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import type { RuntimeFaultState } from '../../../runtime/fault_state';
 import type { RuntimeDebuggerState } from '../../../runtime/debugger_state';
-import type { KeyValueStorage } from '../../../workspace/key_value_storage';
 import { workspaceRecordState } from '../../../workspace/records';
 import { buildStatusLeftInfo } from '../../render/status_bar_info';
 import { getTextFileRuntimeSourceStatus } from '../../services/working_copy/runtime_source_status';
+import { activeCodeEditor } from '../../../editor/ui/code_editor_state';
+import { undo, redo } from '../../../editor/editing/undo_controller';
 
 export class CodeEditorPane extends EditorPane<CodeEditorInput> {
+	private readonly unbindKeyboard = activeCodeEditor.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
+	private readonly unbindBlur = activeCodeEditor.focusTarget.onDidBlur(() => activeCodeEditor.model.breakUndoSequence());
 	public constructor(
 		private readonly editor: CartEditor,
 		private readonly clipboard: Clipboard,
 		private readonly microtasks: MicrotaskQueue,
-		private readonly storage: KeyValueStorage,
-		private readonly clock: HostClock,
 		private readonly sources: RuntimeSourceState,
 		private readonly luaTooling: RuntimeLuaTooling,
 		private readonly fault: RuntimeFaultState,
@@ -60,6 +58,23 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 		private readonly debuggerState: RuntimeDebuggerState,
 	) {
 		super();
+		activeCodeEditor.focusTarget.registerCommand('undo', {
+			isEnabled: () => !activeCodeEditor.model.readOnly && activeCodeEditor.model.canUndo,
+			run: undo,
+		});
+		activeCodeEditor.focusTarget.registerCommand('redo', {
+			isEnabled: () => !activeCodeEditor.model.readOnly && activeCodeEditor.model.canRedo,
+			run: redo,
+		});
+	}
+
+	public focus(): void {
+		activeCodeEditor.focusTarget.focus();
+	}
+
+	public dispose(): void {
+		this.unbindKeyboard();
+		this.unbindBlur();
 	}
 
 	protected activate(selection?: EditorTextSelection): void {
@@ -92,14 +107,11 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 
 	public draw(): void {
 		renderInlineWidgets();
-		const resourcePanel = this.editor.resourcePanel;
-		const problemsPanelHasFocus = problemsPanel.isVisible && problemsPanel.isFocused;
-		const cursorActive = !(editorSearchState.active || lineJumpState.active || resourcePanel.isFocused() || createResourceState.active || problemsPanelHasFocus);
 		const renameActive = renameController.isActive();
 		const codeAreaViewport = renderCodeArea(
 			this.editor.completion,
 			this.editor.completion.getInlineCompletionPreview(),
-			cursorActive,
+			activeCodeEditor.focusTarget.hasFocus,
 			getBreakpointsForChunk(
 				this.debuggerState,
 				this.input.context.model.resource,
@@ -117,23 +129,10 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 		if (handleEditorPromptBindings(playerInput, this.editor)) {
 			return;
 		}
-		if (handleInlineWidgetInput(
-			playerInput,
-			this.clipboard,
-			this.microtasks,
-			this.storage,
-			this.clock,
-			this.editor,
-			this.sources,
-			this.luaTooling,
-			this.editor.crossFileRename,
-		)) {
-			return;
-		}
 		if (handleSearchNavigationKeybinding(playerInput)) {
 			return;
 		}
-		if (handleEditorClipboardAndCommandBindings(playerInput, this.clipboard, this.editor.commands)) {
+		if (handleEditorClipboardAndCommandBindings(playerInput, this.clipboard)) {
 			return;
 		}
 		if (this.editor.completion.handleKeybindings(playerInput)) {

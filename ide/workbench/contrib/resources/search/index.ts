@@ -20,7 +20,7 @@ export function openResourceSearch(sources: RuntimeSourceState, initialQuery: st
 	closeSymbolSearch(false);
 	renameController.cancel();
 	resourceSearchState.visible = true;
-	resourceSearchState.active = true;
+	resourceSearchState.field.focusTarget.focus();
 	applyResourceSearchFieldText(initialQuery, true);
 	refreshResourceCatalog(sources);
 	updateResourceSearchMatches();
@@ -32,7 +32,7 @@ export function closeResourceSearch(clearQuery: boolean): void {
 	if (clearQuery) {
 		applyResourceSearchFieldText('', true);
 	}
-	resourceSearchState.active = false;
+	resourceSearchState.field.focusTarget.release();
 	resourceSearchState.visible = false;
 	resourceSearchState.matches = [];
 	resourceSearchState.selectionIndex = -1;
@@ -44,10 +44,10 @@ export function closeResourceSearch(clearQuery: boolean): void {
 }
 
 export function focusEditorFromResourceSearch(): void {
-	if (!resourceSearchState.active && !resourceSearchState.visible) {
+	if (!resourceSearchState.field.focusTarget.hasFocus && !resourceSearchState.visible) {
 		return;
 	}
-	resourceSearchState.active = false;
+	resourceSearchState.field.focusTarget.release();
 	if (resourceSearchState.query.length === 0) {
 		resourceSearchState.visible = false;
 		resourceSearchState.matches = [];

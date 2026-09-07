@@ -37,7 +37,7 @@ export function openSymbolSearch(bridge: RuntimeLuaTooling, rename: RenameContro
 	symbolSearchState.locationCatalog = [];
 	symbolSearchState.global = false;
 	symbolSearchState.visible = true;
-	symbolSearchState.active = true;
+	symbolSearchState.field.focusTarget.focus();
 	applySymbolSearchFieldText(initialQuery, true);
 	refreshSymbolCatalog(bridge, true);
 	updateSymbolSearchMatches(bridge);
@@ -61,7 +61,7 @@ export function openGlobalSymbolSearch(bridge: RuntimeLuaTooling, rename: Rename
 	symbolSearchState.locationCatalog = [];
 	symbolSearchState.global = true;
 	symbolSearchState.visible = true;
-	symbolSearchState.active = true;
+	symbolSearchState.field.focusTarget.focus();
 	applySymbolSearchFieldText(initialQuery, true);
 	refreshSymbolCatalog(bridge, true);
 	updateSymbolSearchMatches(bridge);
