@@ -37,6 +37,12 @@ import { clearExecutionStopHighlights } from '../runtime_error/navigation';
 import { deactivateEditor } from '../workbench/overlay_modes';
 import { inputFocus } from '../input/focus';
 
+// Source-consuming commands accept the concrete control's value before dirty
+// model selection, prompts or asynchronous source capture (Godot EditorData).
+const SOURCE_COMMANDS = new Set<EditorCommandId>([
+	'save', 'hot-resume', 'reboot', 'scenarioLab.run', 'scenarioLab.rerun',
+]);
+
 export class IdeCommandController {
 	public constructor(
 		private readonly editor: CartEditor,
@@ -58,6 +64,8 @@ export class IdeCommandController {
 	}
 
 	public execute(command: EditorCommandId): void {
+		const edit = inputFocus.target?.edit;
+		if (SOURCE_COMMANDS.has(command) && edit !== undefined && !edit.commit()) return;
 		switch (command) {
 			case 'undo':
 			case 'redo':
@@ -200,9 +208,10 @@ export class IdeCommandController {
 				const activeInput = getActiveTab();
 				return activeInput instanceof WorkingCopyEditorInput
 					&& !activeInput.workingCopy.readOnly
-					&& activeInput.isDirty();
+					&& (activeInput.isDirty() || inputFocus.target?.edit?.pending === true);
 			}
 			case 'behaviorLens':
+			case 'sceneEditor':
 			case 'symbolSearch':
 			case 'symbolSearchGlobal':
 			case 'referenceSearch':
@@ -211,6 +220,8 @@ export class IdeCommandController {
 				return isActiveLuaCodeTab();
 			case 'scenarioLab':
 				return true;
+			case 'sceneEditor.source':
+				return getActiveTab().kind === 'scene_editor';
 			case 'rename':
 				return isActiveLuaCodeTab() && !activeCodeEditor.model.readOnly;
 			case 'createResource':

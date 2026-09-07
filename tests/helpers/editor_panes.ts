@@ -1,3 +1,4 @@
+import type { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import type { PlayerInput } from '../../hosts/common/input/player';
 import type { PointerSnapshot } from '../../ide/common/models';
 import type { EditorTextSelection } from '../../ide/editor/navigation/text_selection';
@@ -76,5 +77,6 @@ export function createTestEditorPanes(): EditorPanes {
 		resource_view: () => new TestEditorPane<ResourceViewerInput>(activateViewInput),
 		behavior_lens: () => new TestEditorPane<BehaviorLensInput>(activateViewInput),
 		scenario_lab: () => new TestEditorPane<ScenarioLabInput>(activateViewInput),
+		scene_editor: () => new TestEditorPane<SceneEditorInput>(activateViewInput),
 	});
 }

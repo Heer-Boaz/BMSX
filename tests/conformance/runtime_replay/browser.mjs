@@ -60,7 +60,11 @@ for (const backend of studio ? ['software', 'webgl2', 'webgpu'] : ['webgpu']) {
 		}
 		if (studio) {
 			const savedSource = await readFile(join(directory, 'carts/nemesis_s/title_screen.lua'), 'utf8');
-			if (!savedSource.includes("pattern = 'left[jp]'")) throw new Error('Save did not persist the second FSM revision through the real workspace API');
+			// Scene Editor's final Save & Resume deliberately saves all dirty sources,
+			// including the repaired FSM which earlier workflows left unsaved.
+			if (!savedSource.includes("pattern = 'up[jp]'")) throw new Error('Save & Resume did not persist the final FSM revision through the real workspace API');
+			const savedScene = await readFile(join(directory, 'carts/nemesis_s/scenes/root.lua'), 'utf8');
+			if (!savedScene.includes('( --[[source-owned anchor]]\n\t\t\t\t\t17)')) throw new Error('Scene Editor did not persist the accepted position and original trivia');
 		}
 		console.log(JSON.stringify({ backend, ...result }));
 		console.log(studio ? `STUDIO-WORKFLOWS:${backend}:PASS` : 'RUNTIME-WEBGPU-REWIND:PASS');

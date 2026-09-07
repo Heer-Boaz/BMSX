@@ -22,7 +22,7 @@ type WorkbenchViewInput = Exclude<EditorInput, { kind: 'code_editor' }>;
 export abstract class WorkbenchViewEditorPane<
 	TInput extends WorkbenchViewInput,
 > extends EditorPane<TInput> {
-	private readonly focusTarget = inputFocus.createTarget();
+	protected readonly focusTarget = inputFocus.createTarget();
 	private readonly unbindKeyboard = this.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
 
 	public focus(): void {
@@ -41,7 +41,6 @@ export abstract class WorkbenchViewEditorPane<
 		now: number,
 		_gotoModifierActive: boolean,
 	): void {
-		if (justPressed) this.focus();
 		const handled = this.handleViewPointer(snapshot, justPressed, now);
 		if (handled && justPressed) {
 			playerInput.inputHandlers.pointer?.consumeButton('pointer_primary');
@@ -54,9 +53,10 @@ export abstract class WorkbenchViewEditorPane<
 
 	protected handleViewPointer(
 		_snapshot: PointerSnapshot,
-		_justPressed: boolean,
+		justPressed: boolean,
 		_now: number,
 	): boolean {
+		if (justPressed) this.focus();
 		return false;
 	}
 }

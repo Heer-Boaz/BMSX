@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import type { RuntimeResource } from '../../ide/common/resource';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
-import { createLuaTableFieldIntegerEdits } from '../../ide/language/lua/source_edits';
+import { createLuaTableFieldIntegerEdits, readLuaSourceRange, readLuaTableFieldInteger } from '../../ide/language/lua/source_edits';
 import {
 	LuaSyntaxKind,
 	LuaTableFieldKind,
@@ -85,6 +85,20 @@ test('Lua integer edits do not reinterpret dynamic expressions', () => {
 		createLuaTableFieldIntegerEdits(model.buffer, fields.get('dynamic')!, 12),
 		null,
 	);
+	assert.equal(model.buffer.getText(), source);
+});
+
+test('source numeric control reads literal values only, preserving source ranges and integer eligibility', () => {
+	const source = 'local values = { zero = -(0), max = 2147483647, min = -( --[[keep]]\r\n2147483648), hex = 0X11, exponent = 1e3, fraction = 1.5, outside = 2147483648, dynamic = origin + 1 }';
+	const fields = parseFields(source);
+	const model = new EditorTextModel(resource, 'lua', source);
+	assert.equal(readLuaTableFieldInteger(fields.get('zero')!), -0);
+	assert.equal(readLuaTableFieldInteger(fields.get('max')!), 0x7fffffff);
+	assert.equal(readLuaTableFieldInteger(fields.get('min')!), -0x80000000);
+	assert.equal(readLuaTableFieldInteger(fields.get('hex')!), 17);
+	assert.equal(readLuaTableFieldInteger(fields.get('exponent')!), 1000);
+	for (const key of ['fraction', 'outside', 'dynamic']) assert.equal(readLuaTableFieldInteger(fields.get(key)!), null);
+	assert.equal(readLuaSourceRange(model.buffer, fields.get('dynamic')!.value.range), 'origin + 1');
 	assert.equal(model.buffer.getText(), source);
 });
 

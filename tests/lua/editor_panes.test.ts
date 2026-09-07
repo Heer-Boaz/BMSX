@@ -1,3 +1,4 @@
+import type { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
@@ -138,6 +139,7 @@ function createEditorPanes() {
 		},
 		behavior_lens: () => new RecordingEditorPane<BehaviorLensInput>(),
 		scenario_lab: () => new RecordingEditorPane<ScenarioLabInput>(),
+		scene_editor: () => new RecordingEditorPane<SceneEditorInput>(),
 	});
 	return {
 		editorPanes,

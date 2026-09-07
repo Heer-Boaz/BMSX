@@ -1459,6 +1459,16 @@ needed. A cart without scene imports remains byte- and runtime-neutral. The
 workload analysis and gates are recorded in
 [`studio_scene_authoring_design.md`](studio_scene_authoring_design.md).
 
+The first host-side Scene Editor is now a second view of Nemesis' canonical
+root-scene Lua document. It edits direct integer position fields through the
+language-owned number/sign token edits and shared document history, without
+interpreting dynamic composition. A concrete field owns its draft history and
+acceptance; the workbench command boundary accepts valid property text before
+Save/Hot Resume chooses or captures source documents. This adds no guest hooks,
+machine fields or cartlib validation. The visible definition/new-instance
+distinction is intentional: applying a definition does not move existing actors.
+The focus, source and UI contracts live in `ide/ARCHITECTURE.md`.
+
 Any future guest tooling binding may not guess the compiler's sanitized hidden
 global for a dynamic Lua module. Before a feature relies on live module
 commands, the compiler/linker tooling

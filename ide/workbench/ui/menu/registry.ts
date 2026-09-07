@@ -6,7 +6,7 @@ export type WorkbenchDropdownMenuId =
 	| 'menubar.run'
 	| 'menubar.view';
 
-export type WorkbenchActionMenuId = 'scenarioLab.title';
+export type WorkbenchActionMenuId = 'scenarioLab.title' | 'sceneEditor.title';
 
 export type WorkbenchMenuCommandItem = {
 	readonly type: 'command';
@@ -25,6 +25,7 @@ type WorkbenchMenuContributions = {
 	readonly 'menubar.run': readonly WorkbenchMenuItem[];
 	readonly 'menubar.view': readonly WorkbenchMenuItem[];
 	readonly 'scenarioLab.title': readonly WorkbenchMenuCommandItem[];
+	readonly 'sceneEditor.title': readonly WorkbenchMenuCommandItem[];
 };
 
 /** Immutable built-in menu contributions; renderers only project these items. */
@@ -48,6 +49,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'reboot' },
 	],
 	'menubar.view': [
+		{ type: 'command', command: 'sceneEditor' },
 		{ type: 'command', command: 'behaviorLens' },
 		{ type: 'command', command: 'scenarioLab' },
 		{ type: 'command', command: 'problems' },
@@ -60,4 +62,5 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'scenarioLab.rerun' },
 		{ type: 'command', command: 'scenarioLab.cancel' },
 	],
+	'sceneEditor.title': [{ type: 'command', command: 'sceneEditor.source' }],
 };

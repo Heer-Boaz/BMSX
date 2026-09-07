@@ -1,7 +1,7 @@
 # Studio scene-authoringarchitectuur
 
-Status: **`STUDIO-SCENE-RUNTIME-DESIGN-03`; directe opt-in
-scenedefinitie gekozen, retained live-reconcile nog niet ontworpen**
+Status: **Directe opt-in scenedefinitie en eerste source-propertyview gebouwd;
+retained live-reconcile nog niet ontworpen.**
 
 Scenes zijn een legitiem engine- en Studio-concept. De fout in de eerste
 implementatie was niet dat zij structured scenes introduceerde of dat een cart
@@ -342,13 +342,13 @@ Productiereferenties:
   diff-check geslaagd. De brede test-typecheck houdt dezelfde 52 bestaande
   diagnostics; die is niet groen verklaard.
 
-`IDE-SCENE-SOURCE-ADAPTER-01` blijft open voor de echte bedienbare visuele view.
-Deze proef sluit alleen de geteste bronbewerking en definitie-/instantiegrens;
+Die eerdere proef liet `IDE-SCENE-SOURCE-ADAPTER-01` open voor de echte bedienbare
+visuele view. Zij sloot alleen de geteste bronbewerking en definitie-/instantiegrens;
 zij is geen algemene live-reconcilevoorziening of UI-acceptatiegate.
 
 ### `IDE-SCENE-SOURCE-ADAPTER-01`: focus- en commandowner eerst
 
-**Focusfundament geïmplementeerd; visuele sourcecontrol blijft open.** De eerste aanzet
+**Voorafgaande focus-slice.** De eerste aanzet
 leidde Undo/Redo af uit `EditorPane.input instanceof WorkingCopyEditorInput`
 en gaf iedere pane `hasPendingEdits = false` en een succesvolle
 `commitPendingEdits()`-stub. Die aanzet en de nog niet aangesloten
@@ -418,13 +418,109 @@ core-parity- en strikte architecture-boundary-audit. De brede
 `tsc --noEmit -p tests` heeft dezelfde 52 bestaande diagnostics als de schone
 `f16edc7ca`-baseline; deze slice voegt geen test-typefout toe.
 
-**Nog open vóór de visuele transformedit:** de concrete source-propertycontrol
+**Acceptatiegate na de focus-slice:** de concrete source-propertycontrol
 en haar acceptatie van complete, gedeeltelijke of ongeldige draftinvoer bij
 Save, Hot Resume en focusverlies. Geen stille propertydiscard, geen save/apply
 van ongemerkt oudere bytes en geen per-command `commitPendingEdits`-sprinkling.
 De werkende Find-/Rename-route bewijst het focusfundament, niet een nog niet
 gebouwde scenecontrol. Pas een fysiek bediende minimale scene-edit via hetzelfde
 sourcemodel sluit `IDE-SCENE-SOURCE-ADAPTER-01`.
+
+### `IDE-SCENE-SOURCE-ADAPTER-01`: bedienbare bronproperty
+
+**Geïmplementeerd op één bestaande productiebron:** open Nemesis
+`scenes/root.lua`, kies **View → Scene Editor**, selecteer een member en bewerk
+x/y/z. Dit is een bronview op de directe `scene_library.register`-compositie,
+geen nieuwe scene-database, runtime-inspector of 3D-viewport. De bestaande
+IDE-tiny-font, retained list en gedeelde action bar vormen het 384×288-scherm.
+**Source** navigeert naar de geselecteerde definitie in hetzelfde document.
+
+#### Eerst bestudeerde productieowners
+
+- [Godot `EditorSpinSlider`](https://github.com/godotengine/godot/blob/34d06658a85845111a50db9e485ec4a0701d4298/editor/gui/editor_spin_slider.cpp#L630-L738)
+  scheidt tijdelijke veldtekst van de property en accepteert bij submission of
+  focusverlies. De control programmeert expliciet volgende/vorige focus.
+- [Godot scene-save](https://github.com/godotengine/godot/blob/34d06658a85845111a50db9e485ec4a0701d4298/editor/editor_node.cpp#L2512-L2535)
+  verwerkt editorwijzigingen vóór het opslaan;
+  [`EditorData::apply_changes_in_editors`](https://github.com/godotengine/godot/blob/34d06658a85845111a50db9e485ec4a0701d4298/editor/editor_data.cpp#L427-L431)
+  roept de betreffende bijdragen aan. BMSX heeft één gefocuste canvascontrol,
+  niet Godots node-inspector of een permanente draft op iedere pane.
+- [VS Code `SettingNumberRenderer`](https://github.com/microsoft/vscode/blob/48ac1875628144c02d79ff412e0323af9991dfc7/src/vs/workbench/contrib/preferences/browser/settingsTree.ts#L1991-L2050)
+  houdt invoertekst, validatie van menselijke invoer en propertymutatie uit elkaar.
+  De eerder onderzochte custom-text-editor- en tokeneditowners blijven leidend
+  voor documentidentiteit en bronbehoud.
+- [VS Code `OutlineModel` source-elementidentiteit](https://github.com/microsoft/vscode/blob/48ac1875628144c02d79ff412e0323af9991dfc7/src/vs/editor/contrib/documentSymbols/browser/outlineModel.ts#L36-L54)
+  behoudt namen over edits en onderscheidt herhaalde namen met bronranges. De
+  sceneview gebruikt dit voor selectie, niet als runtime-objectidentiteit.
+- [Godot `LineEdit` selectieforeground](https://github.com/godotengine/godot/blob/34d06658a85845111a50db9e485ec4a0701d4298/scene/gui/line_edit.cpp#L1447-L1554)
+  gebruikt een aparte tekstkleur voor de geselecteerde span. De integercontrol
+  gebruikt daarvoor de bestaande IDE-themekleur, zonder per-frame substringkopie;
+  een fout blijft ook met geselecteerde tekst zichtbaar aan de veldrand.
+
+Niet overgenomen: Godots expressie-evaluator, lege tekst als nul, stille
+ongeldige-invoerdiscard of desktop-engine-sceneopslag in cartlib.
+
+#### Concrete lifecycle
+
+| Gebeurtenis | Effect |
+| --- | --- |
+| Typen / veld-Undo/Redo | Alleen het concrete `TextField` verandert; nog geen Lua-edit. |
+| Enter of geldige focusovergang | Eén integeracceptatie geeft één bronbatch via het bestaande language-owned tokeneditpad. Veldhistorie wordt afgerond; documenthistorie blijft behouden. |
+| Save / Hot Resume / Reboot | Eén command-admissionpunt accepteert het echte `InputEdit` vóór dirty-modelselectie, prompt of asynchrone sourcecapture. Save is ook beschikbaar voor een pending veld op een schoon document. |
+| Ongeldige Enter / sourcecommand | Veld blijft gefocust, de tekst blijft staan en de IDE toont een fout; geen broncapture of runtimewijziging. |
+| Escape | Expliciete annulering, geen documentedit. |
+| Ongeldige focusovergang | Draft wordt afgewezen en gereset met de zichtbare melding “Invalid integer edit cancelled; source unchanged.” Er blijft geen verborgen draft aan een andere member/resource hangen. |
+| Tab / Shift+Tab | Volgt de door de view geprogrammeerde editable controls. Code-Tab blijft bronbewerking. |
+| Member-/resourcewissel, tab sluiten of IDE verbergen | De normale blurroute voltooit de oude control terwijl haar input nog gekoppeld is, niet achteraf op de nieuwe resource. |
+
+Het pane bezit alleen zijn concrete documentcommands. Geen `instanceof`
+selectie of succesvolle draftstub op de generieke `EditorPane`; Find en Rename
+krijgen geen impliciete propertyacceptatie. Pointerhit-testing kiest het
+werkelijke kindveld vóór een focusovergang, zodat klikken ín dat veld geen
+kunstmatige parent-blur veroorzaakt.
+
+`SceneEditorController` herbouwt de projectie uitsluitend bij een nieuwe
+`EditorTextModel.version`. De view bewaart labels, selectie, geometry en
+focusvolgorde. De renderer parse't geen Lua en bouwt geen rij-/propertyrecords
+per frame. De invoer accepteert decimale signed-32-bit integers; de bronreader
+biedt alleen complete literal/unary-minusvelden daarvoor aan. Een expressie
+zoals `origin + 1` blijft zichtbaar als Lua-source. Explicit-key/dynamische
+compositie blijft expliciet partial. Er komt geen float-/Q16-conversie in de
+feature, geen guest-validatie en geen nieuwe code op het worldtickpad.
+
+De property verandert de **scenedefinitie voor nieuwe instanties**. Save
+installeert geen Lua; Hot Resume installeert de bron en voert de bestaande
+`<init>`-route uit, maar verplaatst of vervangt de levende actor niet. De view
+zegt dit zichtbaar. Live-instance-edits blijven een afzonderlijk nog te
+ontwerpen cartlib-/correspondencecontract.
+
+#### Bewijs (2026-09-07)
+
+`tests/conformance/runtime_replay/studio_scene_source.ts` gebruikt nu echte
+View-menu-, member-, property-, Source- en tabhit-targets, keyboardtyping en de
+normale Save/Hot-Resume-prompt. Geen rechtstreekse modelcall voert de geteste
+visuele propertymutatie uit. Alleen de fixture voegt handgeschreven comment/
+grouping en unsupported sourcevormen toe. De proef controleert onder meer:
+
+- lokale veldhistorie zonder document-fallthrough, één undo voor sign+getal;
+- focusretour, Tab/Shift+Tab, code-Tab en blur op de oude resource bij panehergebruik;
+- ongeldige Enter/Save/Hot Resume en zichtbare afwijzing bij focusverlies;
+- shared-model Source-navigatie, undo-readback, readonly, herhaalde namen en partial/dynamische bron;
+- Save vóór broncapture en Save & Resume met een nog onafgemaakt numeriek veld;
+- exact behouden comments/grouping, actoridentity/x behouden bij Hot Resume,
+  en de normaal geïnstantieerde actor met x=17 na expliciete productreboot;
+- gepauzeerde machine ongewijzigd tijdens edits en IDE hide/reopen.
+
+Dezelfde productroute draait op software, WebGL2 en WebGPU. De runner controleert
+ook de werkelijk geschreven Lua-bestanden via de echte workspace-file-API.
+De screenshots `/tmp/bmsx-scene-ui-final-{software,webgl2,webgpu}.png` zijn
+UI-bewijs, geen fysieke-GPU- of SNES-mini-performancebewijs. Deze host-only
+slice wijzigt machine, C++, cartlib en carts niet.
+
+Regressie: 872 Lua-tests geslaagd, één bestaande skip; Hot Resume 92 assertions;
+IDE-typecheck, strikte architecture-boundaries, core-parity, indentation en
+`git diff --check`. De brede tests-typecheck houdt dezelfde 52 bestaande
+diagnostics als de schone `6d6e454ef`-baseline.
 
 ## No-go's
 

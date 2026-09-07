@@ -2,10 +2,35 @@ import {
 	LuaSyntaxKind,
 	LuaUnaryOperator,
 	type LuaNumericLiteralExpression,
+	type LuaSourceRange,
 	type LuaTableField,
 } from '../../../toolchain/ts/lua/syntax/ast';
 import type { EditorTextEdit } from '../../editor/model/text_model';
 import type { TextBuffer } from '../../editor/text/text_buffer';
+
+export function readLuaSourceRange(buffer: TextBuffer, range: LuaSourceRange): string {
+	return buffer.getTextRange(
+		buffer.offsetAt(range.start.line - 1, range.start.column - 1),
+		buffer.offsetAt(range.end.line - 1, range.end.column),
+	);
+}
+
+/** Reads an authored literal accepted by the integer control, never evaluates Lua. */
+export function readLuaTableFieldInteger(field: LuaTableField): number | null {
+	const literal = numericFieldLiteral(field);
+	if (literal === null) return null;
+	const value = field.value.kind === LuaSyntaxKind.UnaryExpression ? -literal.value : literal.value;
+	return value === (value | 0) ? value : null;
+}
+
+function numericFieldLiteral(field: LuaTableField): LuaNumericLiteralExpression | null {
+	const expression = field.value;
+	if (expression.kind === LuaSyntaxKind.NumericLiteralExpression) return expression;
+	if (expression.kind === LuaSyntaxKind.UnaryExpression
+		&& expression.operator === LuaUnaryOperator.Negate
+		&& expression.operand.kind === LuaSyntaxKind.NumericLiteralExpression) return expression.operand;
+	return null;
+}
 
 /**
  * Replaces a complete table-field value consisting of a numeric literal or
@@ -21,16 +46,8 @@ export function createLuaTableFieldIntegerEdits(
 	value: number,
 ): EditorTextEdit[] | null {
 	const expression = field.value;
-	let literal: LuaNumericLiteralExpression;
-	if (expression.kind === LuaSyntaxKind.NumericLiteralExpression) {
-		literal = expression;
-	} else if (expression.kind === LuaSyntaxKind.UnaryExpression
-		&& expression.operator === LuaUnaryOperator.Negate
-		&& expression.operand.kind === LuaSyntaxKind.NumericLiteralExpression) {
-		literal = expression.operand;
-	} else {
-		return null;
-	}
+	const literal = numericFieldLiteral(field);
+	if (literal === null) return null;
 	const previousValue = expression.kind === LuaSyntaxKind.UnaryExpression ? -literal.value : literal.value;
 	if (value === previousValue) {
 		return [];

@@ -6,8 +6,17 @@ export type FocusCommand = {
 	run(): void;
 };
 
+/** A concrete control's unsubmitted value, never a pane-wide success stub. */
+export interface InputEdit {
+	readonly pending: boolean;
+	commit(): boolean;
+}
+
 /** A retained canvas control, not a document or an editor-input classification. */
 export class InputFocusTarget {
+	public edit: InputEdit | undefined;
+	public next: InputFocusTarget | null = null;
+	public previous: InputFocusTarget | null = null;
 	private readonly commands = new Map<EditorCommandId, FocusCommand>();
 	private readonly blurListeners = new Set<() => void>();
 	private readonly focusListeners = new Set<() => void>();
@@ -106,6 +115,16 @@ export class InputFocusService {
 
 	public handleKeyboard(input: PlayerInput): void {
 		if (this.targetValue !== null) this.targetValue.handleKeyboard(input);
+	}
+
+	/** The containing view programs its focus order, excluding disabled controls. */
+	public moveFocus(backward: boolean): boolean {
+		const target = this.targetValue;
+		if (target === null) return false;
+		const destination = backward ? target.previous : target.next;
+		if (destination === null) return false;
+		this.setTarget(destination);
+		return true;
 	}
 }
 

@@ -225,6 +225,20 @@ concrete cartlib operation and correspondence owner first. Until that owner
 exists, the IDE adds no hidden module-root lookup, runtime `require`, heap scan,
 generic call-by-string route, undo callback or guessed guest mutation.
 
+`View > Scene Editor` opens that adapter on the active Lua document. Its
+`SceneEditorInput` attaches the same `EditorTextModel` as the code input.
+The controller projects direct `scene_library.register` definitions at a new
+source version using the shared text snapshot. Selection uses source names and
+range-based disambiguation like [VS Code OutlineModel](https://github.com/microsoft/vscode/blob/48ac1875628144c02d79ff412e0323af9991dfc7/src/vs/editor/contrib/documentSymbols/browser/outlineModel.ts#L36-L54),
+not evaluated runtime ids; the pane owns member selection and document commands, and its
+three `IntegerInput` controls own unsubmitted position text. Layout, rows,
+source labels, field geometry and focus order are retained. Rendering uses the
+existing IDE tiny font and shared list/action-bar/text primitives at 384x288;
+there is no guest viewport, graph evaluation or per-frame source parse.
+Unsupported position expressions remain visible as source, partial composition
+is labelled partial, and generated documents have no edit controls. Source
+navigation uses the ordinary resource/navigation owner.
+
 ## Resource editor resolution
 
 A ROM resource keeps its producer-owned asset type. The workbench does not add
@@ -530,9 +544,27 @@ and the optional OS write. Input controls publish clipboard feedback through
 Save and Hot Resume remain document/source operations, not an implicit acceptance
 of every open input. Find text is a query, not source. Rename is an explicit
 refactor: Enter accepts, Escape or loss of editor-control focus dismisses its
-unsubmitted draft. A future source-property control must define its own
-acceptance lifecycle before a visual edit can claim Save/Hot Resume support;
-there is no generic successful `commitPendingEdits` stub.
+unsubmitted draft. The concrete `IntegerInput` instead contributes an `InputEdit`
+to its focus target. Decimal signed-integer text is human input, not a runtime
+DTO: Enter or valid focus loss accepts one value change; Escape cancels it.
+Invalid Enter or a source command leaves the draft focused with an error.
+Invalid focus loss rejects and resets the draft with a visible warning, not a
+silent source mutation. A successful acceptance resets only the field history;
+the document batch remains undoable from either source view.
+
+The command controller accepts a contributed edit once before a source-consuming
+command chooses dirty models, opens a prompt or captures asynchronous build
+inputs. Save is enabled for a pending property even when its document was clean.
+Find and Rename contribute no implicit source acceptance, and generic panes
+have no `commitPendingEdits` success stub. View switches and IDE hiding use the
+normal blur lifecycle while the old input is still attached. Pointer targets
+are chosen by the concrete view before focus changes, so clicking within a
+field does not first blur it through its parent pane.
+
+The containing view programs next/previous targets for its editable controls.
+Unmodified Tab/Shift+Tab traverses only that declared order. Controls without
+an order, including code text, retain their ordinary Tab semantics. These links
+are focus navigation, not document-command inheritance.
 
 Production references for these specific boundaries:
 
@@ -545,6 +577,11 @@ Production references for these specific boundaries:
   and [VS Code Rename input lifecycle](https://github.com/microsoft/vscode/blob/48ac1875628144c02d79ff412e0323af9991dfc7/src/vs/editor/contrib/rename/browser/renameWidget.ts#L467-L525).
 - [VS Code modal input containment](https://github.com/microsoft/vscode/blob/48ac1875628144c02d79ff412e0323af9991dfc7/src/vs/base/browser/ui/dialog/dialog.ts)
   and [clipboard-service storage](https://github.com/microsoft/vscode/blob/48ac1875628144c02d79ff412e0323af9991dfc7/src/vs/platform/clipboard/browser/clipboardService.ts#L117-L155).
+- [Godot value submission, focus loss and focus order](https://github.com/godotengine/godot/blob/34d06658a85845111a50db9e485ec4a0701d4298/editor/gui/editor_spin_slider.cpp#L630-L738)
+  and [editor changes before scene save](https://github.com/godotengine/godot/blob/34d06658a85845111a50db9e485ec4a0701d4298/editor/editor_node.cpp#L2512-L2535).
+  BMSX does not copy Godot's expression evaluator or silent invalid-input path.
+- [VS Code numeric settings control](https://github.com/microsoft/vscode/blob/48ac1875628144c02d79ff412e0323af9991dfc7/src/vs/workbench/contrib/preferences/browser/settingsTree.ts#L1991-L2050)
+  separates text input, human-input validation and the accepted property change.
 
 The production references are VS Code's single action registration path, which
 publishes one command descriptor into command, menu, and keybinding registries,

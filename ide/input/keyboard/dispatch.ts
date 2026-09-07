@@ -4,6 +4,7 @@ import { handleEditorGlobalBindings } from './global_bindings';
 import type { PlayerInput } from '../../../hosts/common/input/player';
 import { handleWorkbenchTabInput } from '../../workbench/input/keyboard/tab_input';
 import { inputFocus } from '../focus';
+import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from './key_input';
 
 export function handleEditorInput(
 	playerInput: PlayerInput,
@@ -14,6 +15,11 @@ export function handleEditorInput(
 		return;
 	}
 	if (handleWorkbenchTabInput(playerInput, editor.editorPanes, sources)) {
+		return;
+	}
+	if (isKeyJustPressed('Tab', playerInput) && !isCtrlDown(playerInput) && !isMetaDown(playerInput) && !isAltDown(playerInput)
+		&& inputFocus.moveFocus(isShiftDown(playerInput))) {
+		consumeIdeKey('Tab', playerInput);
 		return;
 	}
 	inputFocus.handleKeyboard(playerInput);

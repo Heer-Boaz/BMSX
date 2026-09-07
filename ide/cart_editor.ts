@@ -1,3 +1,5 @@
+import { SceneEditorController } from './workbench/contrib/scene_editor/controller';
+import { SceneEditorPane } from './workbench/contrib/scene_editor/editor_pane';
 import { clearHoverTooltip } from './editor/contrib/hover/controller';
 import type { HostRewind } from '../hosts/common/rewind';
 import type { HostExecutionControl } from '../hosts/common/execution_control';
@@ -135,6 +137,7 @@ export type CartEditor = {
 	readonly resourceEditors: ResourceEditorResolver;
 	readonly editorPanes: EditorPanes;
 	readonly navigation: EditorNavigationController;
+	readonly sceneEditor: SceneEditorController;
 	readonly behaviorLens: BehaviorLensController;
 	readonly scenarioLab: ScenarioLabController;
 	readonly crossFileRename: CrossFileRenameManager;
@@ -171,6 +174,7 @@ export class RuntimeCartEditor implements CartEditor {
 	public readonly resourceEditors: ResourceEditorResolver;
 	public readonly editorPanes: EditorPanes;
 	public readonly navigation: EditorNavigationController;
+	public readonly sceneEditor: SceneEditorController;
 	public readonly behaviorLens: BehaviorLensController;
 	public readonly scenarioLab: ScenarioLabController;
 	public readonly crossFileRename: CrossFileRenameManager;
@@ -285,6 +289,7 @@ export class RuntimeCartEditor implements CartEditor {
 			),
 			resource_view: () => new ResourceViewerEditorPane(),
 			behavior_lens: () => new BehaviorLensEditorPane(this.resourcePanel, this.behaviorLens),
+			scene_editor: () => new SceneEditorPane(this.resourcePanel, this.sceneEditor, this.commands, this.sources, this.clipboard),
 			scenario_lab: () => new ScenarioLabEditorPane(
 				this.resourcePanel,
 				this.scenarioLab,
@@ -297,6 +302,7 @@ export class RuntimeCartEditor implements CartEditor {
 			this.resourceEditors,
 			this.editorPanes,
 		);
+		this.sceneEditor = new SceneEditorController(this.sources, this.editorPanes, this.navigation);
 		this.behaviorLens = new BehaviorLensController(
 			this.sources,
 			this.navigation,

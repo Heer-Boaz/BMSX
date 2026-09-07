@@ -48,6 +48,7 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 		justPressed: boolean,
 		now: number,
 	): boolean {
+		if (justPressed) this.focus();
 		const view = this.input.view;
 		return this.controller.handlePointer(view, snapshot, justPressed, now);
 	}

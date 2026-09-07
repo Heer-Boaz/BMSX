@@ -111,3 +111,27 @@ test('a busy readonly input retains history without admitting edits or history c
 	field.undo();
 	assert.equal(field.text, '');
 });
+
+test('the view declares a retained focus order; controls without an order keep their own Tab semantics', () => {
+	const focus = new InputFocusService();
+	const view = focus.createTarget();
+	const x = focus.createTarget(view);
+	const z = focus.createTarget(view);
+	view.next = x; x.next = z; z.next = view;
+	view.previous = z; z.previous = x; x.previous = view;
+	view.focus();
+	assert.equal(focus.moveFocus(false), true);
+	assert.equal(focus.target, x);
+	assert.equal(focus.moveFocus(false), true);
+	assert.equal(focus.target, z);
+	assert.equal(focus.moveFocus(true), true);
+	assert.equal(focus.target, x);
+	assert.equal(focus.moveFocus(true), true);
+	assert.equal(focus.target, view);
+	const code = focus.createTarget();
+	code.focus();
+	assert.equal(focus.moveFocus(false), false);
+	assert.equal(focus.target, code);
+	focus.setTarget(null);
+	assert.equal(focus.moveFocus(true), false);
+});
