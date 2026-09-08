@@ -417,7 +417,6 @@ local register_definition<const> = function()
 			fsm_component.factory({ story_fsm_id }),
 		},
 		defaults = {
-			id = story_instance_id,
 			player_index = 1,
 			curtain_count = 0,
 			curtain_start = 126,

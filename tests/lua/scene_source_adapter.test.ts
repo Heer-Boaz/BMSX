@@ -41,11 +41,11 @@ test('scene source adapter projects the real Nemesis root without executing Lua'
 		'a complete projection retains the actual ordered parent fields');
 	assert.deepEqual(
 		scene.objects.map(object => object.kind === 'object' ? object.memberId.range.start.line : -1),
-		[15, 23, 31, 39],
+		[15, 24, 33, 42],
 	);
 	assert.deepEqual(
 		scene.objects.map(object => object.kind === 'object' ? object.position!.x.range.start.line : -1),
-		[19, 27, 35, 43],
+		[20, 29, 38, 47],
 	);
 	assert.ok(scene.objects.every(object => object.kind === 'object'
 		&& object.position!.x.value.kind === LuaSyntaxKind.NumericLiteralExpression

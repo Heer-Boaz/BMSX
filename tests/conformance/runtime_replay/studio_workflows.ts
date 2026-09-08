@@ -2,6 +2,7 @@ import { testSceneMemberRemoval } from './studio_scene_removal';
 import { testSceneSourceTree } from './studio_scene_tree';
 import { testSceneMemberMoves } from './studio_scene_moves';
 import { testSceneFieldInsertion } from './studio_scene_insertion';
+import { testScenePlacementIdentity } from './studio_scene_identity';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { getCodeTabContexts } from '../../../ide/workbench/ui/code_tab/contexts';
 import { runtimeErrorState } from '../../../ide/editor/contrib/runtime_error/state';
@@ -303,6 +304,7 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	await testSceneMemberRemoval(test);
 	await testSceneMemberMoves(test);
 	await testSceneFieldInsertion(test);
+	await testScenePlacementIdentity(test);
 	await testSceneSourceEdits(test);
 	return { hostFrames: observations.hostFrames, selected, pausedAt, secondAt, steppedAt, beforeRejected,
 		audioFrames: observations.audioFrames, expectedFaultSequence: observations.expectedFaultSequence, inspected: inspected.contentLines };

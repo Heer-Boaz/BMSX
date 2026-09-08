@@ -464,7 +464,6 @@ local register_definition<const> = function()
 			fsm_component.factory({ title_fsm_id }),
 		},
 		defaults = {
-			id = title_instance_id,
 			player_index = 1,
 			imgid = 'title_screen_1',
 			selected_player_count = 1,

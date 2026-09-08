@@ -144,7 +144,6 @@ local register_definition<const> = function()
 			fsm_component.factory({ intro_fsm_id }),
 		},
 		defaults = {
-			id = intro_instance_id,
 			imgid = 'intro_konami',
 			player_index = 1,
 		},

@@ -254,6 +254,96 @@ De runtime blijft eigenaar van echte `WorldObject`s. Live preview vereist later
 een expliciete correspondence- en mutatiegrens; de host leest niet
 `world._objects`, scant geen heap en maakt geen schaduwwereld.
 
+### Instance-identiteit vóór prefabplaatsing (2026-09-08)
+
+De vier Nemesis-rootprefabs hadden hun vaste Registry-id in `defaults`.
+Een tweede plaatsing zonder expliciete ID-override erfde daardoor de naam van
+het bestaande rootobject. De Add-view mag dat niet omzeilen met een prefabfilter,
+een verzonnen naam of een bijzondere `World:spawn`-route.
+
+Defold scheidt
+[`PrototypeDesc` van `InstanceDesc.id`](https://github.com/defold/defold/blob/dce8e2fd6b7c466f695c8e84e9151fbbf6f2f4fa/engine/gameobject/proto/gameobject/gameobject_ddf.proto#L55-L85).
+Zijn [collectioninstantiatie](https://github.com/defold/defold/blob/dce8e2fd6b7c466f695c8e84e9151fbbf6f2f4fa/engine/gameobject/src/gameobject/gameobject.cpp#L1464-L1525)
+maakt het object uit het prototype en koppelt daarna de naam uit de plaatsing;
+losse instantiatie heeft een aparte
+[ID-producer](https://github.com/defold/defold/blob/dce8e2fd6b7c466f695c8e84e9151fbbf6f2f4fa/engine/gameobject/src/gameobject/gameobject.cpp#L1053-L1061).
+Godot kent [runtime-identiteit toe bij objectconstructie](https://github.com/godotengine/godot/blob/6ef60dc279b2c58a94ffc57bf98eefc9663f7907/core/object/object.cpp#L2354-L2365),
+niet door een levende ObjectID uit het prototype te kopiëren. BMSX neemt deze
+ownershipgrens over, niet hun pad-/hash-ABI, objectdatabase of herstelpaden.
+
+De concrete slice verplaatst alleen de vier vaste Nemesis-rootnamen van
+prefabdefaults naar hun bestaande `objects[].options.id` in `scenes/root.lua`.
+Scene-local `member_id` en cart-wide Registry-id blijven verschillende waarden
+met verschillende owners, ook waar de rootassembly bewust dezelfde string
+kiest. Een extra plaatsing zonder `options.id` gebruikt de bestaande
+`Registry:next_id()`-route. Dit maakt geen extra director tot zinvolle gameplay:
+eventkanalen, Space en overige constructioninput blijven expliciet cart-owned.
+
+`World`, `prefab`, `Registry` en `scene_library` krijgen geen nieuw veld,
+validator, identiteitsoverride, naamgenerator of instancemodel. Andere carts en
+prefabs worden niet preventief gemigreerd. Deze broncorrectie alleen levert nog
+geen prefabkeuze, Add-/Duplicate-UI of live scene-reconcile.
+
+Gate: de echte Nemesis-cart moet vier soorten prefabs herhaald kunnen
+instantiëren met dezelfde scene-local namen en verschillende Registry-ids,
+inclusief componentidentiteit en disposal zonder de oorspronkelijke roots te
+raken. Behoud van de bestaande cartflow en Studio Save/Hot Resume worden apart
+getoetst, niet afgeleid uit deze identiteitstest. Meet de release-O3-image en
+dezelfde bootwerklast vóór/na de correctie; er mag geen extra guestframewerk of
+algemene scene-infrastructuur ontstaan.
+
+#### Bewijs en kosten
+
+- `nemesis_s_scene_identity_assert.lua` draait in de echte gepackte cart en
+  maakt zestien extra actors uit de vier echte prefabs, met hun componenten.
+  Herhaalde instantiatie behoudt de authored options en scene-local namen;
+  disposal verwijdert alleen de extra actors/componenten. De oorspronkelijke
+  rootnamen blijven geregistreerd. Op de vooraf gebouwde parent-ROM treedt de
+  echte `registry.register duplicate id "nemesis_s.intro"` op; op de gewijzigde
+  ROM slaagt de proef. Geen vereenvoudigde nep-prefabs of extra spawnroute.
+- `studio_scene_identity.ts` verplaatst de namen als testfixture in alle vijf
+  echte Lua-documenten naar defaults en via fysieke Undo terug naar de
+  sceneplaatsingen. Beide revisies doorlopen gewone Save & Hot Resume, met
+  behoud van de bestaande actors en capturelayout. De volledige browserworkflow
+  slaagt op software, WebGL2 en WebGPU; de uiteindelijke Scene-view is op alle
+  drie bekeken. De probe voegt geen compatibiliteitspad toe aan het product.
+- De bestaande stage-boot-, pause- en game-over/new-game-scenario's slagen.
+  `nemesis_s_demo.json` voltooit op beide ROM's tot frame 983; captures 601 en
+  971 zijn byte-identiek. `test:runtime-replay` bewijst daarnaast TS/C++
+  replay/history-pariteit en de bestaande libretro-rewind-ABI met deze cart.
+  De zestien-instance-scenario zelf is alleen in de TS-toolinghost uitgevoerd.
+- `test:lua`: 951 geslaagd, één bestaande skip; `test:rompacker`: 122 geslaagd.
+  IDE-typecheck, core-parity, strikte architecture-boundary-audit, inspringing
+  en `git diff --check` slagen. De brede tests-typecheck houdt dezelfde 52
+  bestaande diagnosticlocaties/codes als de `e6fd751eb`-baseline.
+
+Dezelfde release-O3-BIOS, cartassets en vijf virtuele seconden in de gewone
+CPU-profiler geven onderstaande vergelijking. De nieuwe scenarioasset zit in
+beide meet-ROM's, zodat haar verpakking de delta niet beïnvloedt.
+
+| Maat | Prefab-owned namen | Placement-owned namen | Delta |
+| --- | ---: | ---: | ---: |
+| Totale ROM-bytes | 19.875.880 | 19.875.896 | +16 |
+| BLua-imagebytes | 634.580 | 634.596 | +16 |
+| Functies | 1.776 | 1.776 | 0 |
+| Uitgevoerde instructies | 2.546.723 | 2.546.727 | +4 |
+| Uitgevoerde geschatte basiscyles | 2.876.350 | 2.876.354 | +4 |
+| Table-creations | 18.521 | 18.521 | 0 |
+
+Dit meet de koude bootwerklast, niet een verzadigd gameplayframe. De vijf
+productiebronnen veranderen alleen vier defaultvelden in vier bestaande
+placementvelden; cartlib, machine, compiler en IDE-productcode zijn ongewijzigd.
+TS en C++ consumeren dezelfde gewijzigde Lua-bytecode.
+
+**Open, niet groen verklaard:** `nemesis_s_cinematic_flow_assert.lua` haalt op
+zowel parent als wijziging de limiet van 180 virtuele seconden; dit was ook al
+bij `NEMESIS-ROOT-SCENE-01` vastgelegd. De oorzaak is niet vastgesteld en deze
+proef telt niet als diffbewijs. De verwachte duplicate-id-fault op de parent
+legt bovendien een secundaire hostfout bloot: `Cannot read properties of null
+(reading 'record')` bij foutpresentatie. Ook die eigenaar moet nog worden
+onderzocht; deze slice verstopt geen van beide fouten achter een guard of
+verhoogde productlimiet. Logs en captures staan in `/tmp/bmsx-scene-identity/`.
+
 ## Bouwvolgorde
 
 1. **`CARTLIB-SCENE-COLLECTION-01`** — land de gemeten opt-in directe

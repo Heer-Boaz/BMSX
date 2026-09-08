@@ -15,6 +15,7 @@ function root_scene.register()
 				member_id = intro.instance_id,
 				definition_id = intro.definition_id,
 				options = {
+					id = intro.instance_id,
 					space_id = 'intro',
 					pos = { x = 0, y = 0, z = 0 },
 				},
@@ -23,6 +24,7 @@ function root_scene.register()
 				member_id = story.instance_id,
 				definition_id = story.definition_id,
 				options = {
+					id = story.instance_id,
 					space_id = 'story',
 					pos = { x = 0, y = 0, z = 0 },
 				},
@@ -31,6 +33,7 @@ function root_scene.register()
 				member_id = title_screen.instance_id,
 				definition_id = title_screen.definition_id,
 				options = {
+					id = title_screen.instance_id,
 					space_id = 'title',
 					pos = { x = 0, y = 0, z = 0 },
 				},
@@ -39,6 +42,7 @@ function root_scene.register()
 				member_id = director.director_instance_id,
 				definition_id = director.director_def_id,
 				options = {
+					id = director.director_instance_id,
 					space_id = 'intro',
 					pos = { x = 0, y = 0, z = 0 },
 				},

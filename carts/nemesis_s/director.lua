@@ -498,7 +498,6 @@ local register_director_definition<const> = function()
 			new_cheat_input,
 		},
 		defaults = {
-			id = ids_director_instance,
 			player_index = 1,
 			frame = 0,
 			player_count = 1,
