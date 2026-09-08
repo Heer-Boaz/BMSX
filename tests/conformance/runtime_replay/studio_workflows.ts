@@ -1,3 +1,4 @@
+import { testStudioNavigation } from './studio_navigation';
 import { testSceneMemberRemoval } from './studio_scene_removal';
 import { testSceneSourceTree } from './studio_scene_tree';
 import { testSceneMemberMoves } from './studio_scene_moves';
@@ -303,6 +304,7 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	await testSourceFormatting(test);
 	await testSceneSourceTree(test);
 	await testStudioQuickPick(test);
+	await testStudioNavigation(test);
 	await testSceneMemberRemoval(test);
 	await testSceneMemberMoves(test);
 	await testSceneFieldInsertion(test);

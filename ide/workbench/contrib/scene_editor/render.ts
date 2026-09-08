@@ -30,6 +30,7 @@ export function layoutSceneEditor(input: SceneEditorInput, contentChanged: boole
 		clampWorkbenchListScroll(input.outline);
 		layoutSceneOutlineNodes(input.outline.roots, treeLayout);
 		layoutWorkbenchActionBar(input.actionBar, layout.right - 4, layout.top, layout.top + rowHeight, measureText);
+		input.sourceText = truncateTextToWidth(input.workingCopy.resource.path, input.actionBar.items[0].bounds.left - 8);
 		for (let index = 0; index < input.properties.length; index += 1) {
 			write_rect_bounds(input.properties[index].bounds, layout.detailsLeft + 18,
 				layout.top + rowHeight * (5 + index * 2), layout.right - 8, layout.top + rowHeight * (6 + index * 2));
@@ -58,7 +59,7 @@ export function drawSceneEditor(input: SceneEditorInput, controls: readonly Inte
 	const color = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT;
 	const rowHeight = outline.layout.rowHeight;
 	api.fill_rect(layout.left, layout.top, layout.right, layout.bottom, 0, constants.COLOR_CODE_BACKGROUND);
-	api.blit_text_inline_with_font('SCENE DEFINITIONS', 4, layout.top + 2, 0, color, font);
+	api.blit_text_inline_with_font(input.sourceText, 4, layout.top + 2, 0, color, font);
 	renderWorkbenchActionBar(input.actionBar, commands, font);
 	api.blit_text_inline_with_font('SCENES / MEMBERS', 4, layout.top + rowHeight + 2, 0, color, font);
 	api.fill_rect(layout.detailsLeft - 1, layout.top + rowHeight, layout.detailsLeft, layout.bottom, 0, constants.COLOR_HEADER_BUTTON_BORDER);

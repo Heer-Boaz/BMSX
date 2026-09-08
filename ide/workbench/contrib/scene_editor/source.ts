@@ -55,6 +55,11 @@ export function buildSceneSourceDocument(
 	return { resource, scenes };
 }
 
+/** Recognized registrations remain discoverable while their authored arguments are incomplete. */
+export function hasSceneSourceDefinitions(analysis: FileSemanticData): boolean {
+	return analysis.callSites.some(isSceneRegistration);
+}
+
 function isSceneRegistration(callSite: LuaCallSite): boolean {
 	const target = callSite.moduleTarget;
 	return callSite.expression.method === null

@@ -11,24 +11,26 @@ import {
 	handleBehaviorLensGamepadInput,
 	handleBehaviorLensKeyboardInput,
 } from './keyboard';
+import type { IdeCommandController } from '../../../commands/controller';
+import { updateWorkbenchActionBarPointer } from '../../input/pointer/action_bar';
 import { drawBehaviorLens } from './render';
 
 export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<BehaviorLensInput> {
 	public constructor(
 		resourcePanel: ResourcePanelController,
 		private readonly controller: BehaviorLensController,
+		private readonly commands: IdeCommandController,
 	) {
 		super(resourcePanel);
 	}
 
 	public override update(): void {
-		const view = this.input.view;
-		this.controller.updateView(view);
+		this.controller.updateView(this.input);
 	}
 
 	public draw(): void {
 		const view = this.input.view;
-		drawBehaviorLens(view);
+		drawBehaviorLens(view, this.commands);
 	}
 
 	public handleKeyboard(playerInput: PlayerInput): void {
@@ -42,6 +44,11 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		justPressed: boolean,
 		now: number,
 	): boolean {
+		const command = updateWorkbenchActionBarPointer(this.input.view.actionBar, snapshot);
+		if (command !== null) {
+			if (justPressed && this.commands.isEnabled(command)) this.commands.execute(command);
+			return true;
+		}
 		if (justPressed) this.focus();
 		const view = this.input.view;
 		return this.controller.handlePointer(view, snapshot, justPressed, now);

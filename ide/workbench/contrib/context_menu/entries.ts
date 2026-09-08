@@ -1,13 +1,7 @@
-import { DEFAULT_LUA_BUILTIN_NAMES } from '../../../../toolchain/ts/lua/builtin_descriptors';
-import { luaBuiltinMetadata } from '../../../runtime/lua_builtins';
-import { resolveLuaIdentifierChainRoot } from '../../../language/lua/identifier_chain';
 import type { EditorContextMenuEntry, EditorContextToken } from '../../../common/models';
 
 export function buildEditorContextMenuEntries(token: EditorContextToken, editable: boolean): EditorContextMenuEntry[] {
 	if (token.kind !== 'identifier' || !token.expression || token.expression.length === 0) {
-		return [];
-	}
-	if (isBuiltinContextExpression(token.expression)) {
 		return [];
 	}
 	const entries: EditorContextMenuEntry[] = [
@@ -19,21 +13,4 @@ export function buildEditorContextMenuEntries(token: EditorContextToken, editabl
 		entries.push({ action: 'rename', label: 'Rename Symbol', enabled: true });
 	}
 	return entries;
-}
-
-function isBuiltinContextExpression(expression: string): boolean {
-	const root = resolveLuaIdentifierChainRoot(expression);
-	if (root.length === 0) {
-		return false;
-	}
-	const name = root.trim();
-	if (luaBuiltinMetadata.has(name)) {
-		return true;
-	}
-	for (let index = 0; index < DEFAULT_LUA_BUILTIN_NAMES.length; index += 1) {
-		if (DEFAULT_LUA_BUILTIN_NAMES[index] === name) {
-			return true;
-		}
-	}
-	return false;
 }

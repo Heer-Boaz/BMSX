@@ -29,6 +29,7 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	scenarioLab: { title: 'Scenario Lab' },
 	sceneEditor: { title: 'Scene Editor' },
 	'sceneEditor.source': { title: 'Source' },
+	'behaviorLens.source': { title: 'Source' },
 	'sceneEditor.removeMember': { title: 'Remove' },
 	'sceneEditor.moveMemberUp': { title: 'Up' },
 	'sceneEditor.moveMemberDown': { title: 'Down' },

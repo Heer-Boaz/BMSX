@@ -18,6 +18,7 @@ export class SceneEditorInput extends WorkingCopyEditorInput<SceneEditorTabId, '
 	public parsed: ParsedLuaChunk;
 	public sceneText = '';
 	public definitionText = '';
+	public sourceText = '';
 	public readonly selectionRange: TrackedTextRange = { start: 0, end: 0 };
 	public readonly outline: WorkbenchTreeState<SceneOutlineElement> = {
 		roots: [], rows: [], selectionIndex: -1, scroll: 0, hoverIndex: -1,
@@ -34,7 +35,7 @@ export class SceneEditorInput extends WorkingCopyEditorInput<SceneEditorTabId, '
 		detailsLeft: 0,
 	};
 
-	public constructor(public readonly workingCopy: EditorTextModel, sourceTitle: string) {
-		super(`scene:${resourceIdentityKey(workingCopy.resource)}`, 'scene_editor', `SCENE ${sourceTitle}`, true);
+	public constructor(public readonly workingCopy: EditorTextModel) {
+		super(`scene:${resourceIdentityKey(workingCopy.resource)}`, 'scene_editor', 'SCENE EDITOR', true);
 	}
 }

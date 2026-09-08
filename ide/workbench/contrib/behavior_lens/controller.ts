@@ -1,13 +1,15 @@
 import type { PointerSnapshot } from '../../../common/models';
 import { resourceIdentityKey } from '../../../common/resource';
-import { activeCodeEditor } from '../../../editor/ui/code_editor_state';
+import { editorTextModelService } from '../../../editor/model/model_service';
+import { resourceSourceForChunk } from '../../../runtime/lua_pipeline';
+import type { RuntimeResource } from '../../../common/resource';
 import { getOrCreateSemanticProject } from '../../../editor/contrib/intellisense/semantic/workspace/state';
 import { getTextSnapshot } from '../../../editor/text/source_text';
 import type { RuntimeSourceState } from '../../../runtime/sources';
-import { getActiveCodeTabContext, getCodeTabContextById } from '../../ui/code_tab/contexts';
+import { getActiveCodeTabContext } from '../../ui/code_tab/contexts';
 import type { BehaviorLensTabId } from '../../ui/tab/id';
 import { editorTabGroup } from '../../ui/tab/group_model';
-import { setActiveTab } from '../../ui/tabs';
+import { getActiveTab, setActiveTab } from '../../ui/tabs';
 import type { EditorNavigationController } from '../resources/navigation';
 import type { EditorPanes } from '../../services/editor/editor_panes';
 import { BehaviorLensInput } from './editor_input';
@@ -29,6 +31,7 @@ import { BehaviorLensPointerResult, handleBehaviorLensPointerInput } from './poi
 import { buildBehaviorSourceDocument } from './recognizer';
 import type { BehaviorSourceDocument } from './model';
 import type { BehaviorLensViewState } from './view_model';
+import { createWorkbenchActionBar } from '../../ui/action_bar';
 
 const WHEEL_SCROLL_ROWS = 3;
 
@@ -40,55 +43,49 @@ export class BehaviorLensController {
 		private readonly editorPanes: EditorPanes,
 	) {}
 
-	public openActiveDocument(): void {
+	public openResource(resource: RuntimeResource): void {
 		const context = getActiveCodeTabContext();
-		const source = getTextSnapshot(activeCodeEditor.model.buffer);
-		const sourceVersion = context.model.version;
-		const sourceLine = activeCodeEditor.view.cursorRow + 1;
-		const sourceColumn = activeCodeEditor.view.cursorColumn + 1;
-		const tabId: BehaviorLensTabId = `behavior:${resourceIdentityKey(context.model.resource)}`;
+		const model = editorTextModelService.retain(resource, 'lua', resourceSourceForChunk(this.sources, resource));
+		const source = getTextSnapshot(model.buffer);
+		const sourceVersion = model.version;
+		const sourceLine = context?.model === model ? context.view.cursorRow + 1 : 1;
+		const sourceColumn = context?.model === model ? context.view.cursorColumn + 1 : 1;
+		const tabId: BehaviorLensTabId = `behavior:${resourceIdentityKey(resource)}`;
 		let tab = editorTabGroup.findById(tabId);
 		if (tab === undefined) {
-			const document = this.buildDocument(context.model.resource, source);
+			const document = this.buildDocument(resource, source);
 			tab = new BehaviorLensInput(
+				model,
 				createBehaviorLensViewState(
-					context.id,
 					document,
 					sourceVersion,
 					sourceLine,
 					sourceColumn,
 				),
-				context.title,
 			);
 			editorTabGroup.add(tab);
-		} else {
+		} else if (context?.model === model) {
 			this.refreshView(tab.view, source, sourceVersion, sourceLine, sourceColumn);
+		} else {
+			this.updateView(tab);
 		}
 		setActiveTab(this.editorPanes, tab.id);
 	}
 
 	/** Refreshes a visible source lens when its canonical code buffer advances. */
-	public updateView(view: BehaviorLensViewState): void {
-		const context = getCodeTabContextById(view.sourceContextId);
-		const sourceLine = context.view.cursorRow + 1;
-		const sourceColumn = context.view.cursorColumn + 1;
-		const sourceVersion = context.model.version;
-		if (sourceVersion !== view.sourceVersion) {
-			this.refreshView(
-				view,
-				getTextSnapshot(context.model.buffer),
-				sourceVersion,
-				sourceLine,
-				sourceColumn,
-			);
-			return;
+	public updateView(input: BehaviorLensInput): void {
+		const { view, workingCopy } = input;
+		if (workingCopy.version !== view.sourceVersion) {
+			this.refreshView(view, getTextSnapshot(workingCopy.buffer), workingCopy.version, view.sourceLine, view.sourceColumn);
 		}
-		if (sourceLine === view.sourceLine && sourceColumn === view.sourceColumn) {
-			return;
-		}
-		setBehaviorLensSourcePosition(view, view.resource.path, sourceLine, sourceColumn);
-		prepareBehaviorLensLayout(view);
-		finishBehaviorLensNavigation(view);
+	}
+
+	public openSource(): void {
+		const input = getActiveTab();
+		if (input.kind !== 'behavior_lens') return;
+		this.updateView(input);
+		if (selectedBehaviorLensSourceRange(input.view) === null) this.openSourcePosition(input.view);
+		else this.openSelectedSource(input.view);
 	}
 
 	public handlePointer(
@@ -193,14 +190,13 @@ export class BehaviorLensController {
 }
 
 function createBehaviorLensViewState(
-	sourceContextId: BehaviorLensViewState['sourceContextId'],
 	document: BehaviorSourceDocument,
 	sourceVersion: number,
 	sourceLine: number,
 	sourceColumn: number,
 ): BehaviorLensViewState {
 	const view: BehaviorLensViewState = {
-		sourceContextId,
+		actionBar: createWorkbenchActionBar('behaviorLens.title'),
 		resource: document.resource,
 		document,
 		sourceVersion,

@@ -269,8 +269,14 @@ concrete cartlib operation and correspondence owner first. Until that owner
 exists, the IDE adds no hidden module-root lookup, runtime `require`, heap scan,
 generic call-by-string route, undo callback or guessed guest mutation.
 
-`View > Scene Editor` opens that adapter on the active Lua document. Its
-`SceneEditorInput` attaches the same `EditorTextModel` as the code input.
+`View > Scene Editor` opens that adapter on a source with recognized scene
+registrations. `contrib/source_views/quick_access.ts` admits the active
+resource-owned working copy, or explicitly offers matching workspace documents
+in Quick Input. The same route admits Behavior Lens from any workbench pane,
+including Scenario Lab. Recognition remains contribution-owned and uses the
+current unsaved text; an entry file with no registrations is not a scene.
+`SceneEditorInput` attaches the resource-owned `EditorTextModel` directly,
+without creating or requiring a code tab.
 The controller projects direct `scene_library.register` definitions at a new
 source version using the shared text snapshot. The retained source outline has
 one root per direct definition, including empty or keyed-only definitions, and
@@ -407,8 +413,13 @@ resource-viewer, Behavior Lens and Scenario Lab contributions own their
 specific model or view references. The static `EditorInput` union remains the
 product's exhaustive built-in composition boundary.
 
-The code input projects dirty state directly from its resource-owned
-`EditorTextModel`; read-only inputs inherit the read-only `false` contract. Tab
+Code, Scene Editor and Behavior Lens inputs project dirty state directly from
+their resource-owned `EditorTextModel`; read-only inputs inherit the read-only
+`false` contract. The lens is a read-only *control* over a mutable source model,
+not a separate immutable document. Neither source projection depends on the
+lifetime of a code-tab context. Both name the tool in the tab and identify the
+source in the view header; a contributed Source action opens the selected
+syntax location through resource navigation. Tab
 layout and rendering invoke `input.isDirty()` polymorphically and never infer a
 working copy from the input kind or from the active code widget. Input objects
 are allocated only when retained and are reused across pane activation.
@@ -540,7 +551,8 @@ paired selected foreground/background for all row text, including descriptions;
 normal black text is never reused over the blue selection fill.
 
 `contrib/resources/quick_access.ts` produces display items referencing the
-source owner's exact `RuntimeResource` objects. Acceptance hides before
+source owner's exact `RuntimeResource` objects. The path is displayed once,
+alongside resource kind and domain, not repeated as an asset id. Acceptance hides before
 ordinary resource navigation. Matching does not guess paths or merge
 same-named resources from different domains. There is no second resource
 catalog owner, code-tab activation prerequisite, or generic prefab/scene schema.

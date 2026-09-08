@@ -36,7 +36,7 @@ export function layoutQuickPick(input: QuickInputController): void {
 		input.placeholderText = truncateTextToWidth(input.placeholder, right - left - 14);
 		for (const row of input.model.entries) {
 			row.labelText = truncateTextToWidth(row.item.label, right - left - 14);
-			row.descriptionText = truncateTextToWidth(row.item.description, (right - left) / 2 - 8);
+			row.descriptionText = truncateTextToWidth(row.item.description, (right - left) / (row.item.detail.length === 0 ? 1 : 2) - 8);
 			row.detailText = truncateTextToWidth(row.item.detail, (right - left) / 2 - 8);
 		}
 		input.labelsDirty = false;

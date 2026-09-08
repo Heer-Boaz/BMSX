@@ -21,6 +21,7 @@ export type EditorViewCommandId =
 	| 'scenarioLab'
 	| 'sceneEditor'
 	| 'sceneEditor.source'
+	| 'behaviorLens.source'
 	| 'filter'
 	| 'wrap';
 

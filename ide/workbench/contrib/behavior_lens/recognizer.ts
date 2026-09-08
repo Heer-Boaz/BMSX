@@ -162,6 +162,10 @@ function resolveRegistrationId(
 	return value;
 }
 
+export function hasBehaviorSourceDefinitions(analysis: FileSemanticData): boolean {
+	return analysis.callSites.some(callSite => resolveRegistration(callSite) !== null);
+}
+
 function resolveRegistration(
 	callSite: LuaCallSite,
 ): BehaviorRegistration | null {

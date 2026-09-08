@@ -291,7 +291,7 @@ export class RuntimeCartEditor implements CartEditor {
 				this.debuggerState,
 			),
 			resource_view: () => new ResourceViewerEditorPane(),
-			behavior_lens: () => new BehaviorLensEditorPane(this.resourcePanel, this.behaviorLens),
+			behavior_lens: () => new BehaviorLensEditorPane(this.resourcePanel, this.behaviorLens, this.commands),
 			scene_editor: () => new SceneEditorPane(this.resourcePanel, this.sceneEditor, this.commands, this.sources, this.clipboard),
 			scenario_lab: () => new ScenarioLabEditorPane(
 				this.resourcePanel,

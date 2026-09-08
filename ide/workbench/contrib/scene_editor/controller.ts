@@ -7,7 +7,9 @@ import { createLuaTableFieldMoveEdit } from '../../../language/lua/table_field_m
 import { getCachedLuaParse } from '../../../../toolchain/ts/lua/analysis/cache';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import { resourceIdentityKey } from '../../../common/resource';
-import { getActiveCodeTabContext } from '../../ui/code_tab/contexts';
+import { editorTextModelService } from '../../../editor/model/model_service';
+import { resourceSourceForChunk } from '../../../runtime/lua_pipeline';
+import type { RuntimeResource } from '../../../common/resource';
 import { editorTabGroup } from '../../ui/tab/group_model';
 import { getActiveTab, setActiveTab } from '../../ui/tabs';
 import { revealWorkbenchListSelection } from '../../ui/list_view';
@@ -25,12 +27,12 @@ export class SceneEditorController {
 		private readonly navigation: EditorNavigationController,
 	) {}
 
-	public openActiveDocument(): void {
-		const context = getActiveCodeTabContext();
-		const id = `scene:${resourceIdentityKey(context.model.resource)}` as const;
+	public openResource(resource: RuntimeResource): void {
+		const model = editorTextModelService.retain(resource, 'lua', resourceSourceForChunk(this.sources, resource));
+		const id = `scene:${resourceIdentityKey(resource)}` as const;
 		let input = editorTabGroup.findById(id);
 		if (input === undefined) {
-			input = new SceneEditorInput(context.model, context.title);
+			input = new SceneEditorInput(model);
 			editorTabGroup.add(input);
 		}
 		setActiveTab(this.panes, input.id);
@@ -39,6 +41,7 @@ export class SceneEditorController {
 	public openSource(): void {
 		const input = getActiveTab();
 		if (input.kind !== 'scene_editor') return;
+		this.refresh(input);
 		const row = input.outline.rows[input.outline.selectionIndex]?.element;
 		const position = row === undefined ? null : {
 			row: row.source.start.line - 1,

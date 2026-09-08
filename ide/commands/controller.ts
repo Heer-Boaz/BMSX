@@ -42,6 +42,7 @@ import { inputFocus } from '../input/focus';
 const SOURCE_COMMANDS = new Set<EditorCommandId>([
 	'save', 'hot-resume', 'reboot', 'scenarioLab.run', 'scenarioLab.rerun',
 	'sceneEditor.removeMember', 'sceneEditor.moveMemberUp', 'sceneEditor.moveMemberDown',
+	'sceneEditor', 'behaviorLens', 'sceneEditor.source', 'behaviorLens.source',
 ]);
 
 export class IdeCommandController {
@@ -126,7 +127,7 @@ export class IdeCommandController {
 			return;
 		}
 		if (isEditorViewCommand(command)) {
-			executeEditorViewCommand(this.editor, command);
+			executeEditorViewCommand(this.editor, this.sources, command);
 			return;
 		}
 		if (isEditorWorkspaceCommand(command)) {
@@ -226,8 +227,6 @@ export class IdeCommandController {
 					&& !activeInput.workingCopy.readOnly
 					&& (activeInput.isDirty() || inputFocus.target?.edit?.pending === true);
 			}
-			case 'behaviorLens':
-			case 'sceneEditor':
 			case 'symbolSearch':
 			case 'symbolSearchGlobal':
 			case 'referenceSearch':
@@ -235,9 +234,13 @@ export class IdeCommandController {
 			case 'callHierarchy':
 				return isActiveLuaCodeTab();
 			case 'scenarioLab':
+			case 'behaviorLens':
+			case 'sceneEditor':
 				return true;
 			case 'sceneEditor.source':
 				return getActiveTab().kind === 'scene_editor';
+			case 'behaviorLens.source':
+				return getActiveTab().kind === 'behavior_lens';
 			case 'rename':
 				return isActiveLuaCodeTab() && !activeCodeEditor.model.readOnly;
 			case 'createResource':

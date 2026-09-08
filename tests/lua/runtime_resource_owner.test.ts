@@ -147,9 +147,12 @@ test('resource panel, search, and code tabs consume the retained owner resource'
 		.find(item => item.resource?.path === retained.path && item.resource.domain === retained.domain)!;
 	assert.strictEqual(panelItem.resource, retained);
 
-	const searchEntry = buildResourceQuickPickItems(sources)
+	const searchEntry = buildResourceQuickPickItems(sources.activeResources)
 		.find(entry => entry.resource.path === retained.path && entry.resource.domain === retained.domain)!;
 	assert.strictEqual(searchEntry.resource, retained);
+	assert.equal(searchEntry.label, retained.path);
+	assert.equal(searchEntry.description, 'LUA / SLOT 0');
+	assert.equal(searchEntry.detail, '', 'resource path and asset id are not displayed twice');
 
 	const context = createLuaCodeTabContext(sources, retained);
 	assert.strictEqual(context.model.resource, retained);

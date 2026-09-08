@@ -44,7 +44,7 @@ export function executeEditorSearchCommand(
 			openGlobalSymbolSearch(luaTooling, rename);
 			return;
 		case 'resourceSearch':
-			editor.quickInput.pick('GO TO FILE', 'Type to filter files', buildResourceQuickPickItems(sources),
+			editor.quickInput.pick('GO TO FILE', 'Type to filter files', buildResourceQuickPickItems(sources.activeResources),
 				item => { void editor.navigation.openResource(item.resource); });
 			return;
 		case 'runtimeErrorFocus':

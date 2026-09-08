@@ -598,12 +598,17 @@ sourcemodel sluit `IDE-SCENE-SOURCE-ADAPTER-01`.
 
 ### `IDE-SCENE-SOURCE-ADAPTER-01`: bedienbare bronproperty
 
-**Geïmplementeerd op één bestaande productiebron:** open Nemesis
-`scenes/root.lua`, kies **View → Scene Editor**, selecteer een member en bewerk
+**Geïmplementeerd op één bestaande productiebron:** kies **View → Scene Editor**
+en selecteer Nemesis `scenes/root.lua` in de bronkiezer (bij een al geopend
+scenedocument is die keuze niet nodig), selecteer een member en bewerk
 x/y/z. Dit is een bronview op de directe `scene_library.register`-compositie,
 geen nieuwe scene-database, runtime-inspector of 3D-viewport. De bestaande
 IDE-tiny-font, retained list en gedeelde action bar vormen het 384×288-scherm.
 **Source** navigeert naar de geselecteerde definitie in hetzelfde document.
+De tab heet **Scene Editor**; het bronpad staat in de viewheader. Dezelfde
+bronadmission maakt Behavior Lens en Scene Editor bereikbaar vanuit Scenario
+Lab en vanuit elkaar. Zie `studio_navigation_review.md` voor het contract en
+de regressieproef van deze route.
 
 #### Eerst bestudeerde productieowners
 

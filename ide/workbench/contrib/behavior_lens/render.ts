@@ -4,15 +4,19 @@ import { api } from '../../../runtime/overlay_api';
 import { prepareBehaviorLensLayout } from './layout';
 import type { BehaviorLensViewState } from './view_model';
 
+import type { EditorCommandEnablement } from '../../../common/commands';
+import { renderWorkbenchActionBar } from '../../render/action_bar';
+
 const EMPTY_LENS_TEXT = 'NO STATIC BEHAVIOR REGISTRATIONS';
 
 /** Draws only retained rows; source recognition and row formatting run elsewhere. */
-export function drawBehaviorLens(state: BehaviorLensViewState): void {
+export function drawBehaviorLens(state: BehaviorLensViewState, commands: EditorCommandEnablement): void {
 	const layout = prepareBehaviorLensLayout(state);
 	api.fill_rect(layout.left, layout.top, layout.right, layout.bottom, 0, constants.COLOR_RESOURCE_VIEWER_BACKGROUND);
 	api.fill_rect(layout.left, layout.top, layout.right, layout.headerBottom, 0, constants.COLOR_PROBLEMS_PANEL_HEADER_BACKGROUND);
 	api.fill_rect(layout.left, layout.headerBottom, layout.right, layout.headerBottom + 1, 0, constants.COLOR_TAB_BORDER);
 	const renderFont = editorViewState.font.renderFont();
+	renderWorkbenchActionBar(state.actionBar, commands, renderFont);
 	api.blit_text_inline_span_with_font(
 		layout.headerText,
 		0,

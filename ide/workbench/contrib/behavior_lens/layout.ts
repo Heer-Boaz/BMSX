@@ -1,5 +1,5 @@
 import { uppercaseOutsideStrings } from '../../../common/text';
-import { truncateTextToWidth } from '../../../editor/common/text/layout';
+import { measureText, truncateTextToWidth } from '../../../editor/common/text/layout';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { updateFullWidthWorkbenchLayout } from '../../common/layout';
 import {
@@ -8,6 +8,8 @@ import {
 } from '../../ui/list_view';
 import type { BehaviorKind, BehaviorSourceDocument, BehaviorSourceNode, BehaviorSourceRowKey } from './model';
 import type { BehaviorLensLayout, BehaviorLensViewState } from './view_model';
+
+import { layoutWorkbenchActionBar } from '../../ui/action_bar';
 
 const HEADER_PADDING_X = 4;
 const HEADER_PADDING_Y = 2;
@@ -98,6 +100,7 @@ export function prepareBehaviorLensLayout(state: BehaviorLensViewState): Behavio
 	const layout = state.layout;
 	if (updateFullWidthWorkbenchLayout(layout)) {
 		layout.headerBottom = layout.top + editorViewState.lineHeight + HEADER_PADDING_Y * 2;
+		layoutWorkbenchActionBar(state.actionBar, layout.right - 4, layout.top, layout.headerBottom, measureText);
 		layoutWorkbenchList(
 			layout,
 			layout.left + CONTENT_PADDING_X,
@@ -179,10 +182,10 @@ function writeRetainedText(state: BehaviorLensViewState): void {
 		row.twistieLeft = layout.contentLeft + row.depth * indentWidth;
 		row.twistieRight = row.twistieLeft + markerHitWidth;
 	}
-	const rawHeader = `BEHAVIOR SOURCE  ${state.document.resource.path}  ${state.document.definitions.length} DEF`;
+	const rawHeader = state.document.resource.path;
 	layout.headerText = truncateTextToWidth(
 		uppercaseOutsideStrings(rawHeader),
-		layout.right - layout.left - HEADER_PADDING_X * 2,
+		state.actionBar.items[0].bounds.left - layout.left - HEADER_PADDING_X * 2,
 	);
 }
 

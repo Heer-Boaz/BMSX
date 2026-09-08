@@ -185,7 +185,12 @@ export async function testSceneSourceEdits(test: StudioFixture): Promise<void> {
 	harness.openLuaSource(GX_REGISTER_SOURCE_PATH);
 	const generated = harness.getActiveEditorDocument().model;
 	const generatedSource = generated.buffer.getText();
-	const readonlyScene = await openSceneEditor(test);
+	// A retained projection can be empty (e.g. after deleting its final registration).
+	// Attach explicitly here to test readonly pane lifecycle, not source discovery.
+	ide.editor.sceneEditor.openResource(generated.resource);
+	await frame();
+	const readonlyScene = getActiveTab();
+	if (readonlyScene.kind !== 'scene_editor') throw new Error('scene: readonly projection was not attached');
 	check(readonlyScene.workingCopy === generated && generated.readOnly && readonlyScene.outline.rows.length === 0,
 		'scene: readonly non-scene source does not invent a scene or an edit route');
 	check(!ide.editor.commands.isEnabled('sceneEditor.removeMember'), 'scene: readonly source does not admit Remove');
