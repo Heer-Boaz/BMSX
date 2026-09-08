@@ -12,7 +12,7 @@ import { buildSceneSourceDocument } from '../../../ide/workbench/contrib/scene_e
 import { getTextFileRuntimeSourceStatus } from '../../../ide/workbench/services/working_copy/runtime_source_status';
 import { check, type StudioFixture } from './studio_fixture';
 
-async function openSceneEditor(test: StudioFixture): Promise<SceneEditorInput> {
+export async function openSceneEditor(test: StudioFixture): Promise<SceneEditorInput> {
 	await test.click(editorChromeState.menuEntryBounds.view);
 	const item = TOP_BAR_MENUS.view.items.find((entry): entry is TopBarMenuItem => entry.type === 'command' && entry.command === 'sceneEditor')!;
 	check(!item.disabled, 'scene: the actual View menu admits the Lua document');

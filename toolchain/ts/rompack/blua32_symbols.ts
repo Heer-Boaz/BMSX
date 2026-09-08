@@ -1,10 +1,11 @@
+import type { CapturedLocalKind } from '../lua/compiler/capture_kind';
 import { decodeBinary, encodeBinary } from '../../../machine/ts/common/serializer/binencoder';
 import { INSTRUCTION_BYTES } from '../../../machine/ts/spec/blua32/instruction_format';
 import type { OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import type { SourceRange } from '../lua/source_range';
 
 export const BLUA32_SYMBOLS_IMAGE_ID = '__blua32_symbols__';
-export const BLUA32_SYMBOLS_VERSION = 5;
+export const BLUA32_SYMBOLS_VERSION = 6;
 
 export type Blua32StaticLayoutToken = {
 	lo: number;
@@ -38,8 +39,9 @@ export type Blua32LocalSlotDebug = {
 export type Blua32CapturedLocalDebug = {
 	functionId: string;
 	name: string;
-	definition: SourceRange;
-	scope: SourceRange;
+	kind: CapturedLocalKind;
+	/** Current defining syntax, or null after that declaration was removed. */
+	definition: SourceRange | null;
 };
 
 export type Blua32ResumePoint = {
@@ -61,6 +63,7 @@ export type Blua32StatementPoint = {
 export type Blua32DebugMetadata = {
 	functionIds: string[];
 	functionDisplayNames: string[];
+	functionDefinitions: ReadonlyArray<SourceRange | null>;
 	globalNames: string[];
 	systemGlobalNames: string[];
 	staticFunctionIdBySlot: { [slotName: string]: string };

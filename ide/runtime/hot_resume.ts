@@ -170,6 +170,7 @@ export function buildBlua32Revision(
 		runtime.machine.memory.ramByteCount(),
 		rebuildSystem,
 		rebuildCartridgeSlots,
+		'live',
 		assetEdits,
 	);
 	const revisions: [
@@ -187,6 +188,7 @@ export function buildBlua32Revision(
 				sources.systemInstalledBlua32Sources,
 				rebuilt.system.linked,
 				rebuilt.system.sources,
+				rebuilt.system.sourceCorrespondence,
 			),
 		};
 	}
@@ -205,6 +207,7 @@ export function buildBlua32Revision(
 				cartridge.installedBlua32Sources,
 				image.linked,
 				image.sources,
+				image.sourceCorrespondence,
 			),
 		};
 	}

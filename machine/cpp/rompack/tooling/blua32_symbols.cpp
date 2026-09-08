@@ -191,6 +191,12 @@ auto decodeMetadata(const BinValue& value) -> Blua32DebugMetadata {
 		metadata.staticFunctionIdBySlot.emplace(slot, functionId.asString());
 	}
 
+	const BinArray& functionDefinitions = value.require("functionDefinitions").asArray();
+	metadata.functionDefinitions.reserve(functionDefinitions.size());
+	for (const BinValue& range : functionDefinitions) {
+		metadata.functionDefinitions.push_back(range.isNull() ? std::nullopt : std::optional<SourceRange>(decodeSourceRange(range)));
+	}
+
 	const BinArray& debugRanges = value.require("debugRanges").asArray();
 	metadata.debugRanges.reserve(debugRanges.size());
 	for (const BinValue& range : debugRanges) {
@@ -250,11 +256,12 @@ auto decodeMetadata(const BinValue& value) -> Blua32DebugMetadata {
 	const BinArray& capturedLocals = value.require("capturedLocals").asArray();
 	metadata.capturedLocals.reserve(capturedLocals.size());
 	for (const BinValue& local : capturedLocals) {
+		const BinValue& definition = local.require("definition");
 		metadata.capturedLocals.push_back(Blua32CapturedLocalDebug{
 			local.require("functionId").asString(),
 			local.require("name").asString(),
-			decodeSourceRange(local.require("definition")),
-			decodeSourceRange(local.require("scope")),
+			static_cast<CapturedLocalKind>(local.require("kind").toI32()),
+			definition.isNull() ? std::nullopt : std::optional<SourceRange>(decodeSourceRange(definition)),
 		});
 	}
 	return metadata;
@@ -273,6 +280,12 @@ auto encodeMetadata(const Blua32DebugMetadata& metadata) -> BinValue {
 	}
 	value["staticFunctionIdBySlot"] = BinValue(std::move(staticFunctionIdBySlot));
 
+	BinArray functionDefinitions;
+	functionDefinitions.reserve(metadata.functionDefinitions.size());
+	for (const std::optional<SourceRange>& range : metadata.functionDefinitions) {
+		functionDefinitions.push_back(range.has_value() ? encodeSourceRange(range.value()) : BinValue(nullptr));
+	}
+	value["functionDefinitions"] = BinValue(std::move(functionDefinitions));
 	BinArray debugRanges;
 	debugRanges.reserve(metadata.debugRanges.size());
 	for (const std::optional<SourceRange>& range : metadata.debugRanges) {
@@ -340,8 +353,8 @@ auto encodeMetadata(const Blua32DebugMetadata& metadata) -> BinValue {
 		BinObject binding;
 		binding["functionId"] = BinValue(local.functionId);
 		binding["name"] = BinValue(local.name);
-		binding["definition"] = encodeSourceRange(local.definition);
-		binding["scope"] = encodeSourceRange(local.scope);
+		binding["kind"] = BinValue(static_cast<i32>(local.kind));
+		binding["definition"] = local.definition.has_value() ? encodeSourceRange(local.definition.value()) : BinValue(nullptr);
 		capturedLocals.emplace_back(std::move(binding));
 	}
 	value["capturedLocals"] = BinValue(std::move(capturedLocals));

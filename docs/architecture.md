@@ -1580,19 +1580,30 @@ for a different identity while live closures may still exist. An ordinary cold
 ROM build has no previous lineage and emits a compact table.
 
 Capture provenance is compiler/tooling data, not CPU state. Debug symbols own a
-`capturedLocals` table containing the defining function, name, declaration and
-scope; each function's `upvalueBindingsByFunction` references that table by
-index. Nested captures retain the ultimate defining local, not the name of an
-intermediate slot. Optimization compacts these indices with the creation
-descriptors. Linking relocates current and tombstoned indices from their own
-declaration tables, without making old captures point at a rebuilt parent's
-new locals. TS and C++ tooling use the same version-5 symbols format. Physical
-upvalue descriptors, closure cells and instructions are unchanged.
-These debug indices are not cross-revision identities: lexical correspondence
-and pre-lowering capture-slot preservation remain an open Hot Resume gate.
-The current strict layout check is not weakened by the added metadata. See
-[capture identity](lua_capture_identity_design.md) for references, boundaries
-and validation.
+`capturedLocals` table containing the defining function, name, local/parameter/
+receiver kind and current declaration; each function's
+`upvalueBindingsByFunction` references that table by index. Nested captures
+retain the ultimate defining local. `functionDefinitions` associates emitted
+functions with their current syntax, independently of their durable function id.
+TS and C++ tooling share version-6 symbols and the numeric capture-kind enum.
+Physical upvalue descriptors, closure cells and instructions are unchanged.
+
+Explicit live compilation matches lexical tokens and binder-scope ancestry,
+then reserves each old capture slot against a currently visible bound local
+**before lowering or optimization**. O3 retains that prefix; cold compilation
+still compacts unused captures. Anonymous functions reuse the id attached to
+the matched installed definition, not an id reconstructed from old line numbers.
+The revision proof compares corresponding defining declarations and slot counts;
+a fresh closure's parent-register creation route need not match the old route.
+No existing cell is rewritten, padded, populated with a dummy value or migrated.
+
+The linker remaps tombstone origins through the same source correspondence.
+A deleted defining declaration becomes explicitly absent (`definition: null`),
+not a stale coordinate that can alias a later same-name local. New captures,
+deleted/reparented origins and incompatible execution continuations still fail
+before installation. Capture contraction/permutation does not require a reboot.
+See [capture identity](lua_capture_identity_design.md) for production references,
+limits and the actual Studio/CPU validation.
 
 The tooling sidecar maps only compatible sequence points into the revised text.
 Closure addresses do not move and the CPU does not traverse or rewrite the Lua

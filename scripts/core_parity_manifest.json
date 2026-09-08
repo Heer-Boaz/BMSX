@@ -1263,6 +1263,11 @@
 			"reason": "blua32_tooling_media_filename_parity"
 		},
 		{
+			"ts": "toolchain/ts/lua/compiler/capture_kind.ts",
+			"cpp": ["machine/cpp/rompack/tooling/capture_kind.h"],
+			"reason": "compiler_capture_classification_tooling_filename_parity"
+		},
+		{
 			"ts": "toolchain/ts/rompack/blua32_symbols.ts",
 			"cpp": [
 				"machine/cpp/rompack/tooling/blua32_symbols.h",
@@ -1361,6 +1366,11 @@
 			"cpp_headers": [
 				"machine/cpp/rompack/tooling/blua32_image.h"
 			]
+		},
+		{
+			"ts": "toolchain/ts/lua/compiler/capture_kind.ts",
+			"cpp_headers": ["machine/cpp/rompack/tooling/capture_kind.h"],
+			"reason": "compiler_capture_classification_is_shared_by_tooling_symbols"
 		},
 		{
 			"ts": "toolchain/ts/rompack/blua32_symbols.ts",

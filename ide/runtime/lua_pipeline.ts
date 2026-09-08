@@ -1,3 +1,5 @@
+import { LuaCaptureLayout } from '../../toolchain/ts/lua/compiler/capture_layout';
+import { LuaSourceCorrespondence } from '../../toolchain/ts/lua/semantic/source_correspondence';
 import type { LuaChunk } from '../../toolchain/ts/lua/syntax/ast/index';
 import { LuaInterpreter } from '../language/lua/interpreter/interpreter';
 import { compileLuaChunkToProgram, encodeCompiledProgramObject } from '../../toolchain/ts/lua/compiler';
@@ -58,6 +60,7 @@ export type RebuiltBlua32Image<
 	previousImage: Blua32ImageLayout;
 	previousSymbols: Blua32SymbolsImage;
 	sources: ReadonlyMap<string, string>;
+	sourceCorrespondence: LuaSourceCorrespondence;
 	diagnosticSources: Blua32DiagnosticSourceMap;
 	entrySourcePath: string;
 };
@@ -252,6 +255,7 @@ export function buildBlua32Media(
 	ramByteCount: number,
 	rebuildSystem: boolean,
 	rebuildCartridgeSlots: readonly [boolean, boolean],
+	mode: 'live' | 'boot',
 	assetEdits?: RuntimeRomAssetEditBatch,
 ): RebuiltBlua32Media {
 	const systemRegistry = sources.systemLuaSources;
@@ -284,6 +288,7 @@ export function buildBlua32Media(
 				imageOffset,
 			),
 		);
+		const sourceCorrespondence = new LuaSourceCorrespondence(sources.systemInstalledBlua32Sources, programSources.sources);
 		const compiledSystem = compileLuaChunkToProgram(
 			programSources.entry.chunk,
 			programSources.modules,
@@ -291,6 +296,7 @@ export function buildBlua32Media(
 				optLevel: sources.realtimeCompileOptLevel,
 				entrySource: programSources.entry.source,
 				programDomain: 'system',
+				captureLayout: mode === 'live' ? new LuaCaptureLayout(installedSystem.symbols!.metadata, sourceCorrespondence) : undefined,
 			},
 		);
 		const systemObject = encodeCompiledProgramObject(compiledSystem);
@@ -300,7 +306,7 @@ export function buildBlua32Media(
 			imageAddress,
 			ramByteCount,
 			BIOS_FUNCTION_EXPORTS,
-			{ image: installedSystem.layout, symbols: installedSystem.symbols! },
+			{ image: installedSystem.layout, symbols: installedSystem.symbols!, captureSources: sourceCorrespondence },
 		);
 		biosImports = linked.biosImports;
 		rebuiltSystem = {
@@ -308,6 +314,7 @@ export function buildBlua32Media(
 			previousImage: installedSystem.layout,
 			previousSymbols: installedSystem.symbols!,
 			sources: programSources.sources,
+			sourceCorrespondence,
 			diagnosticSources: programSources.diagnosticSources,
 			entrySourcePath: programSources.entrySourcePath,
 		};
@@ -339,6 +346,7 @@ export function buildBlua32Media(
 				imageOffset,
 			),
 		);
+		const sourceCorrespondence = new LuaSourceCorrespondence(cartridge.installedBlua32Sources, programSources.sources);
 		const compiled = compileLuaChunkToProgram(
 			programSources.entry.chunk,
 			programSources.modules,
@@ -347,6 +355,7 @@ export function buildBlua32Media(
 				entrySource: programSources.entry.source,
 				biosFunctions: biosImports.functions,
 				programDomain: 'cart',
+				captureLayout: mode === 'live' ? new LuaCaptureLayout(installed.symbols!.metadata, sourceCorrespondence) : undefined,
 			},
 		);
 		const cartObject = encodeCompiledProgramObject(compiled);
@@ -357,7 +366,7 @@ export function buildBlua32Media(
 			compiled.metadata,
 			imageAddress,
 			ramByteCount,
-			{ image: installed.layout, symbols: installed.symbols! },
+			{ image: installed.layout, symbols: installed.symbols!, captureSources: sourceCorrespondence },
 		);
 		const publicAssets = layoutBlua32PublicAssets(
 			cartridge.rom,
@@ -377,11 +386,13 @@ export function buildBlua32Media(
 				imageOffset,
 			),
 		);
+		sourceCorrespondence.invalidate(ROM_ASSET_SYMBOL_MODULE_PATH);
 		rebuiltCartridgeSlots[slot] = {
 			linked,
 			previousImage: installed.layout,
 			previousSymbols: installed.symbols!,
 			sources: programSources.sources,
+			sourceCorrespondence,
 			diagnosticSources: programSources.diagnosticSources,
 			entrySourcePath: programSources.entrySourcePath,
 		};
@@ -506,6 +517,7 @@ export function prepareBlua32MediaBoot(
 			runtime.machine.memory.ramByteCount(),
 			sources.systemBlua32MediaDirty,
 			sources.cartridgeBlua32MediaDirty,
+			'boot',
 		);
 		installBlua32Media(
 			sources,

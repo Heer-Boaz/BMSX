@@ -1,5 +1,6 @@
 // start repeated-sequence-acceptable -- Program codegen keeps opcode/slot emission direct; helper extraction would add dispatch in compile hot paths.
 // start normalized-body-acceptable -- Resolver/emitter specializations share shapes but preserve distinct compiler ownership.
+import { CapturedLocalKind } from './compiler/capture_kind';
 import {
 	LuaAssignmentOperator,
 	LuaBinaryOperator,
@@ -43,6 +44,8 @@ import {
 } from './syntax/ast';
 import { OpCode, encodeFixedCallArgCount } from '../../../machine/ts/spec/blua32/opcode';
 import type { SourceRange } from './source_range';
+import { sourceRangesEqual } from './source_range';
+import type { LuaCaptureLayout } from './compiler/capture_layout';
 import type {
 	CapturedLocalDebug,
 	InlineCallSite,
@@ -263,6 +266,7 @@ type CompileOptionsBase = {
 	entrySource?: string;
 	entrySourceMap?: LuaSourceMap;
 	traceStatements?: TraceStatementMode;
+	captureLayout?: LuaCaptureLayout;
 };
 
 type SystemCompileOptions = CompileOptionsBase & {
@@ -290,7 +294,7 @@ type ScopeFrame = {
 	range: SourceRange;
 };
 
-type LocalBindingKind = 'local' | 'const' | 'parameter';
+type LocalBindingKind = 'local' | 'const' | 'parameter' | 'receiver';
 
 type RelocatableConstExportValue = Extract<ConstExportValue, {
 	kind: 'bss_addr' | 'data_addr' | 'rodata_addr' | 'link_value';
@@ -506,6 +510,7 @@ class ProgramBuilder {
 	private readonly globalSlotByName: Map<string, number> = new Map();
 	public readonly protos: Proto[] = [];
 	public readonly protoCode: Uint8Array[] = [];
+	public readonly functionDefinitions: Array<SourceRange | null> = [];
 	public readonly protoRanges: ReadonlyArray<SourceRange | null>[] = [];
 	public readonly protoInlineCallSites: ReadonlyArray<ReadonlyArray<InlineCallSite>>[] = [];
 	public readonly protoConstRelocs: ReadonlyArray<ProgramCompilerConstReloc>[] = [];
@@ -553,6 +558,7 @@ class ProgramBuilder {
 		optLevel: OptimizationLevel,
 		programDomain: ProgramCompileDomain,
 		traceStatements: TraceStatementMode,
+		public readonly captureLayout?: LuaCaptureLayout,
 	) {
 		this.constPool = [];
 		this.optLevel = optLevel;
@@ -565,6 +571,21 @@ class ProgramBuilder {
 				this.resolveSystemGlobalSlot(SYSTEM_ROM_BOOT_PRIMITIVE_NAMES[index]);
 			}
 		}
+	}
+
+	public anonymousProtoId(parentId: string, range: SourceRange): string {
+		const previousId = this.captureLayout?.functionId(range);
+		if (previousId !== undefined) {
+			return previousId;
+		}
+		const baseId = buildProtoId(parentId, buildAnonymousHint(range));
+		let id = baseId;
+		let ordinal = 0;
+		while (this.captureLayout?.hasFunction(id) || this.protoIndexById.has(id)) {
+			ordinal += 1;
+			id = `${baseId}#${ordinal}`;
+		}
+		return id;
 	}
 
 	public constIndex(value: ProgramConstant): number {
@@ -828,6 +849,7 @@ class ProgramBuilder {
 		protoId: string,
 		displayName: string,
 		instructionSet: InstructionSet,
+		definition: SourceRange | null = null,
 	): number {
 		if (this.protoIndexById.has(protoId)) {
 			throw new Error(`[ProgramBuilder] Duplicate proto id '${protoId}'.`);
@@ -837,6 +859,7 @@ class ProgramBuilder {
 		this.protos.push(proto);
 		this.protoCode.push(code);
 		this.protoRanges.push(ranges);
+		this.functionDefinitions.push(definition);
 		this.protoInlineCallSites.push(inlineCallSites);
 		this.protoConstRelocs.push(constRelocs);
 		this.protoStatementPoints.push(statementPoints);
@@ -1101,6 +1124,7 @@ class ProgramBuilder {
 			appendOffsetBytes += chunk.length;
 		}
 		const metadata: ProgramMetadata = {
+			functionDefinitionsByProto: this.functionDefinitions,
 			debugRanges: fullRanges,
 			debugInlineCallSites: fullInlineCallSites,
 			protoIds: this.protoIds,
@@ -1272,6 +1296,7 @@ class FunctionBuilder {
 	private readonly localDebugSlots: LocalSlotDebug[] = [];
 	private readonly upvalueDescs: UpvalueDesc[] = [];
 	private readonly upvalueBindings: number[] = [];
+	private readonly retainedUpvalueCount: number;
 	private readonly upvalueSlotBySymbolHandle = new Map<string, number>();
 	private readonly loopStack: LoopContext[] = [];
 	private readonly labelPositions = new Map<string, number>();
@@ -1332,6 +1357,30 @@ class FunctionBuilder {
 			this.moduleCompileContext = this.moduleCompileContext || parent.moduleCompileContext;
 			this.staticCallTargetScope = this.staticCallTargetScope || parent.staticCallTargetScope;
 			this.moduleCompileInfo = this.moduleCompileInfo || parent.moduleCompileInfo;
+		}
+		const previousSlots = program.captureLayout?.slots(this.protoId);
+		this.retainedUpvalueCount = previousSlots === undefined ? 0 : previousSlots.length;
+		if (previousSlots !== undefined) {
+			for (const slot of previousSlots) {
+				const layout = program.captureLayout!;
+				const previous = layout.baseline.capturedLocals[slot];
+				const definition = layout.definition(slot);
+				let defining = this.parent;
+				while (defining !== null && defining.protoId !== previous.functionId) defining = defining.parent;
+				let symbolHandle: string | undefined;
+				if (defining !== null) {
+					for (const binding of defining.localBindings.values()) {
+						if (sourceRangesEqual(defining.localDebugSlots[binding.debugSlotIndex].definition, definition)) {
+							symbolHandle = binding.symbolHandle;
+							break;
+						}
+					}
+				}
+				if (symbolHandle === undefined) {
+					throw new Error(`Hot resume cannot retain capture '${previous.name}' in '${this.protoId}': its defining local is not visible.`);
+				}
+				this.resolveUpvalue(symbolHandle);
+			}
 		}
 	}
 
@@ -1463,7 +1512,7 @@ class FunctionBuilder {
 		this.flowAnalysis = new ValueKindFlowAnalyzer(expression.body.body, this.semantics);
 		this.pushScope(expression.body.range);
 		if (implicitSelf) {
-			this.declareLocal(IMPLICIT_SELF_SYMBOL_HANDLE, 'self', expression.range, expression.range, 'parameter');
+			this.declareLocal(IMPLICIT_SELF_SYMBOL_HANDLE, 'self', expression.range, expression.range, 'receiver');
 		}
 		for (let i = 0; i < expression.parameters.length; i += 1) {
 			const parameter = expression.parameters[i];
@@ -1895,6 +1944,7 @@ class FunctionBuilder {
 				this.upvalueDescs,
 				this.upvalueBindings,
 				(protoIndex: number) => this.program.protos[protoIndex].upvalueDescs,
+				this.retainedUpvalueCount,
 			);
 			this.maxStack = Math.max(this.maxStack, computeMaxRegister(this.code) + 1);
 		}
@@ -2328,8 +2378,9 @@ class FunctionBuilder {
 				this.program.capturedLocals.push({
 					functionId: this.parent.protoId,
 					name: local.name,
+					kind: parentLocal.kind === 'receiver' ? CapturedLocalKind.Receiver
+						: parentLocal.kind === 'parameter' ? CapturedLocalKind.Parameter : CapturedLocalKind.Local,
 					definition: local.definition,
-					scope: local.scope,
 				});
 			}
 			const index = this.upvalueDescs.length;
@@ -3274,7 +3325,9 @@ class FunctionBuilder {
 		let closureProtoIndex: number | null = null;
 		this.withRange(expression.range, () => {
 			if (expression.kind === LuaSyntaxKind.FunctionExpression) {
-				const protoId = buildProtoId(this.protoId, protoIdHint ?? buildAnonymousHint(expression.range));
+				const protoId = protoIdHint === null
+					? this.program.anonymousProtoId(this.protoId, expression.range)
+					: buildProtoId(this.protoId, protoIdHint);
 				const displayName = functionDisplayNameHint ?? `${this.functionDisplayName}.<anonymous>`;
 				closureProtoIndex = compileFunctionExpression(this.program, expression as LuaFunctionExpression, this, false, protoId, displayName, this.moduleId, this.semantics, this.frontend);
 				this.emitABx(OpCode.CLOSURE, target, closureProtoIndex);
@@ -4825,7 +4878,9 @@ class FunctionBuilder {
 					this.emitABC(OpCode.VARARG, target, resultCount, 0);
 					return;
 				case LuaSyntaxKind.FunctionExpression: {
-					const protoId = buildProtoId(this.protoId, protoIdHint ?? buildAnonymousHint(expression.range));
+					const protoId = protoIdHint === null
+						? this.program.anonymousProtoId(this.protoId, expression.range)
+						: buildProtoId(this.protoId, protoIdHint);
 					const displayName = functionDisplayNameHint ?? `${this.functionDisplayName}.<anonymous>`;
 					const protoIndex = compileFunctionExpression(this.program, expression as LuaFunctionExpression, this, false, protoId, displayName, this.moduleId, this.semantics, this.frontend);
 					this.emitABx(OpCode.CLOSURE, target, protoIndex);
@@ -6069,7 +6124,7 @@ function compileFunctionExpression(
 			maxStack: builder.getMaxStack(),
 			upvalueDescs: builder.getUpvalueDescs(),
 			staticClosure: false,
-	}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), localSlots, builder.getUpvalueBindings(), protoId, functionDisplayName, instructionSet);
+	}, code, ranges, builder.getInlineCallSites(), constRelocs, builder.getStatementPoints(), builder.getResumePoints(), localSlots, builder.getUpvalueBindings(), protoId, functionDisplayName, instructionSet, expression.range);
 	return protoIndex;
 }
 
@@ -6278,6 +6333,7 @@ export function compileLuaChunkToProgram(
 		optLevel,
 		programDomain,
 		options.traceStatements ?? 'erase',
+		options.captureLayout,
 	);
 	if (programDomain === 'cart') {
 		const biosFunctions = options.biosFunctions;

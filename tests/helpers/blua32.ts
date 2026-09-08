@@ -133,7 +133,7 @@ type RawTestCartBlua32Object = {
 	metadata: ProgramMetadata;
 };
 
-function writeTestRom(linked: LinkedBlua32Image): Uint8Array {
+export function writeTestBlua32Rom(linked: LinkedBlua32Image): Uint8Array {
 	const rom = new Uint8Array(TEST_EXECUTABLE_OFFSET + linked.bytes.byteLength);
 	rom.set(linked.bytes, TEST_EXECUTABLE_OFFSET);
 	writeCartRomHeader(rom, {
@@ -184,7 +184,7 @@ function testImage(linked: LinkedSystemBlua32Image, vectors: TestBlua32Vectors):
 		biosImports: linked.biosImports,
 		vectors,
 		staticModulePaths: [],
-		romBytes: writeTestRom(linked),
+		romBytes: writeTestBlua32Rom(linked),
 	};
 }
 
@@ -235,6 +235,7 @@ function createRawTestBlua32Object(
 		statementPointsByProto: functions.map(() => []),
 		resumePointsByProto: functions.map(() => []),
 		localSlotsByProto: functions.map(() => []),
+		functionDefinitionsByProto: functions.map(() => null),
 		capturedLocals: [],
 		upvalueBindingsByProto: functions.map(() => []),
 	};
@@ -383,8 +384,8 @@ export function linkRawTestBlua32Pair(
 		cartSymbols: cart.symbols,
 		cartVectors: rawTestVectors(cartSource, cart),
 		cartStaticModulePaths: [],
-		systemRomBytes: writeTestRom(system),
-		cartRomBytes: writeTestRom(cart),
+		systemRomBytes: writeTestBlua32Rom(system),
+		cartRomBytes: writeTestBlua32Rom(cart),
 	};
 }
 
@@ -404,7 +405,7 @@ export function linkTestSystemBlua32(
 		biosImports: linked.biosImports,
 		vectors: testVectors(compiled, linked),
 		staticModulePaths: compiled.staticModulePaths,
-		romBytes: writeTestRom(linked),
+		romBytes: writeTestBlua32Rom(linked),
 	};
 }
 
@@ -472,8 +473,8 @@ export function linkTestBlua32Pair(
 		cartSymbols: cart.symbols,
 		cartVectors: testVectors(cartCompiled, cart),
 		cartStaticModulePaths: cartCompiled.staticModulePaths,
-		systemRomBytes: writeTestRom(system),
-		cartRomBytes: writeTestRom(cart),
+		systemRomBytes: writeTestBlua32Rom(system),
+		cartRomBytes: writeTestBlua32Rom(cart),
 	};
 }
 

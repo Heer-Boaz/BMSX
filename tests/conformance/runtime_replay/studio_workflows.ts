@@ -1,3 +1,4 @@
+import { testSceneCaptureRetention } from './studio_scene_capture_retention';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { getCodeTabContexts } from '../../../ide/workbench/ui/code_tab/contexts';
 import { runtimeErrorState } from '../../../ide/editor/contrib/runtime_error/state';
@@ -295,6 +296,7 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	await testCapturedSourceApply(test);
 	await testAemSourceApplication(test);
 	await testSourceFormatting(test);
+	await testSceneCaptureRetention(test);
 	await testSceneSourceEdits(test);
 	return { hostFrames: observations.hostFrames, selected, pausedAt, secondAt, steppedAt, beforeRejected,
 		audioFrames: observations.audioFrames, expectedFaultSequence: observations.expectedFaultSequence, inspected: inspected.contentLines };

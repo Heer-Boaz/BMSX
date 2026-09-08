@@ -4,8 +4,9 @@ export type SourceLocation = {
 	readonly path: string;
 } & SourcePosition;
 
-export function sourceRangeStartKey(range: SourceRange): string {
-	return `${range.start.line}:${range.start.column}`;
+
+export function sourcePositionKey(position: SourcePosition): string {
+	return `${position.line}:${position.column}`;
 }
 
 export function sourceRangeKey(range: SourceRange): string {

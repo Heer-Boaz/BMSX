@@ -85,9 +85,6 @@ test('captured-local provenance maps once to authored declarations and retains b
 	assert.equal(local.name, 'value');
 	assert.equal(local.functionId, generated.metadata.capturedLocals[0].functionId);
 	assert.deepEqual(local.definition, { path: TEST_RANGE_PATH, start: { line: 1, column: 7 }, end: { line: 1, column: 11 } });
-	assert.equal(local.scope.path, TEST_RANGE_PATH);
-	assert.equal(local.scope.start.line, 1);
-	assert.equal(local.scope.end.line, 2);
 	assert.deepEqual(authored.metadata.upvalueBindingsByProto, generated.metadata.upvalueBindingsByProto);
 	assert.equal(authored.metadata.upvalueBindingsByProto.flat().length, 2);
 });

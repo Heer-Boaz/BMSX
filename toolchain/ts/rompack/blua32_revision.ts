@@ -1,3 +1,6 @@
+import { CapturedLocalKind } from '../lua/compiler/capture_kind';
+import { LuaSourceCorrespondence } from '../lua/semantic/source_correspondence';
+import { sourceRangesEqual } from '../lua/source_range';
 import type { Blua32FunctionRecord, Blua32ImageLayout } from './blua32_image';
 import type {
 	Blua32CapturedLocalDebug,
@@ -253,6 +256,7 @@ function closureLayoutMatches(
 	freshFunction: Blua32FunctionRecord,
 	freshBindings: ReadonlyArray<number>,
 	freshLocals: ReadonlyArray<Blua32CapturedLocalDebug>,
+	correspondence: LuaSourceCorrespondence,
 ): boolean {
 	if (previousFunction.staticClosure !== freshFunction.staticClosure
 		|| previousFunction.upvalues.length !== freshFunction.upvalues.length
@@ -260,14 +264,16 @@ function closureLayoutMatches(
 		return false;
 	}
 	for (let index = 0; index < previousFunction.upvalues.length; index += 1) {
-		const previous = previousFunction.upvalues[index];
-		const fresh = freshFunction.upvalues[index];
 		const previousLocal = previousLocals[previousBindings[index]];
 		const freshLocal = freshLocals[freshBindings[index]];
-		if (previous.inStack !== fresh.inStack
-			|| previous.index !== fresh.index
+		if (previousLocal.definition === null || freshLocal.definition === null) return false;
+		const definition = previousLocal.kind === CapturedLocalKind.Receiver
+			? correspondence.functionRange(previousLocal.definition)
+			: correspondence.declaration(previousLocal.definition);
+		if (definition === undefined
 			|| previousLocal.functionId !== freshLocal.functionId
-			|| previousLocal.name !== freshLocal.name) {
+			|| previousLocal.kind !== freshLocal.kind
+			|| !sourceRangesEqual(definition, freshLocal.definition)) {
 			return false;
 		}
 	}
@@ -386,6 +392,7 @@ export function buildBlua32ExecutionRevision(
 	previousSources: ReadonlyMap<string, string>,
 	linked: LinkedBlua32Image,
 	sources: ReadonlyMap<string, string>,
+	correspondence = new LuaSourceCorrespondence(previousSources, sources),
 ): Blua32ExecutionImageRevision {
 	if (previousSymbols.staticLayoutToken.lo !== linked.symbols.staticLayoutToken.lo
 		|| previousSymbols.staticLayoutToken.hi !== linked.symbols.staticLayoutToken.hi) {
@@ -409,13 +416,15 @@ export function buildBlua32ExecutionRevision(
 		}
 		const previousFunction = previousImage.functions[previousIndex];
 		const freshFunction = linked.layout.functions[freshIndex];
-		if (!closureLayoutMatches(
+		// A linker-owned tombstone retains its old cells and has no new source declaration.
+		if (linked.functionProtoIndices[freshIndex] >= 0 && !closureLayoutMatches(
 			previousFunction,
 			previousSymbols.metadata.upvalueBindingsByFunction[previousIndex],
 			previousSymbols.metadata.capturedLocals,
 			freshFunction,
 			linked.symbols.metadata.upvalueBindingsByFunction[freshIndex],
 			linked.symbols.metadata.capturedLocals,
+			correspondence,
 		)) {
 			throw new Error(`Hot resume cannot change closure identity for '${functionId}'.`);
 		}

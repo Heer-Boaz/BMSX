@@ -1,3 +1,4 @@
+import { CapturedLocalKind } from '../../toolchain/ts/lua/compiler/capture_kind';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -36,6 +37,7 @@ test('BLua32 function names and inline call-site chains round-trip through the s
 		metadata: {
 			functionIds: ['module:cart/module/anon:4:2:4:14'],
 			functionDisplayNames: ['invoke'],
+			functionDefinitions: [innerCallRange],
 			globalNames: [],
 			systemGlobalNames: [],
 			staticFunctionIdBySlot: {},
@@ -46,8 +48,9 @@ test('BLua32 function names and inline call-site chains round-trip through the s
 			resumePointsByFunction: [],
 			localSlotsByFunction: [],
 			capturedLocals: [{
+				kind: CapturedLocalKind.Local,
 				functionId: 'module:cart/module', name: 'value',
-				definition: innerCallRange, scope: outerCallRange,
+				definition: innerCallRange,
 			}],
 			upvalueBindingsByFunction: [[0]],
 		},
@@ -61,6 +64,15 @@ test('BLua32 function names and inline call-site chains round-trip through the s
 	assert.deepEqual(decoded.metadata.debugInlineCallSiteChainIds, [1, 0]);
 	assert.deepEqual(blua32InlineCallSitesAtPc(decoded, 0x2000, 0x2000), inlineCallSites);
 	assert.deepEqual(blua32InlineCallSitesAtPc(decoded, 0x2000, 0x2000 + INSTRUCTION_BYTES), []);
+	const removed: Blua32SymbolsImage = {
+		...symbols,
+		metadata: {
+			...symbols.metadata,
+			functionDefinitions: [null],
+			capturedLocals: [{ ...symbols.metadata.capturedLocals[0], kind: CapturedLocalKind.Parameter, definition: null }],
+		},
+	};
+	assert.deepEqual(decodeBlua32SymbolsImage(encodeBlua32SymbolsImage(removed)), removed);
 	assert.throws(
 		() => decodeBlua32SymbolsImage(encodeBlua32SymbolsImage({ ...symbols, version: BLUA32_SYMBOLS_VERSION - 1 })),
 		/BLua32 symbols version is unsupported/,

@@ -49,19 +49,22 @@ int main() {
 	symbols.metadata.localSlotsByFunction = {{
 		{"value", 1, innerCallRange, outerCallRange, inlineCallSites},
 	}};
+	symbols.metadata.functionDefinitions = {innerCallRange};
 	symbols.metadata.capturedLocals = {
-		{"module:cart/module", "value", innerCallRange, outerCallRange},
+		{"module:cart/module", "value", bmsx::CapturedLocalKind::Local, innerCallRange},
 	};
 	symbols.metadata.upvalueBindingsByFunction = {{0u}};
 
 	const std::vector<bmsx::u8> encodedSymbols = bmsx::encodeBlua32SymbolsImage(symbols);
 	const bmsx::Blua32SymbolsImage decodedSymbols = bmsx::decodeBlua32SymbolsImage(encodedSymbols);
-	if (decodedSymbols.metadata.capturedLocals.size() != 1u
+	if (decodedSymbols.metadata.functionDefinitions.size() != 1u
+		|| decodedSymbols.metadata.functionDefinitions[0]->start.line != 11
+		|| decodedSymbols.metadata.capturedLocals.size() != 1u
 		|| decodedSymbols.metadata.capturedLocals[0].functionId != "module:cart/module"
 		|| decodedSymbols.metadata.capturedLocals[0].name != "value"
-		|| decodedSymbols.metadata.capturedLocals[0].definition.path != "cart.lua"
-		|| decodedSymbols.metadata.capturedLocals[0].definition.start.line != 11
-		|| decodedSymbols.metadata.capturedLocals[0].scope.end.column != 14
+		|| decodedSymbols.metadata.capturedLocals[0].kind != bmsx::CapturedLocalKind::Local
+		|| decodedSymbols.metadata.capturedLocals[0].definition->path != "cart.lua"
+		|| decodedSymbols.metadata.capturedLocals[0].definition->start.line != 11
 		|| decodedSymbols.metadata.upvalueBindingsByFunction != std::vector<std::vector<bmsx::u32>>{{0u}}) {
 		throw std::runtime_error("BLua32 captured-local provenance did not round-trip");
 	}
@@ -84,6 +87,16 @@ int main() {
 		|| decodedSymbols.metadata.localSlotsByFunction[0][0].inlineCallSites[1].callRange.path
 			!= "cart.lua") {
 		throw std::runtime_error("BLua32 inline call-site symbols did not round-trip");
+	}
+
+	symbols.metadata.functionDefinitions[0].reset();
+	symbols.metadata.capturedLocals[0].definition.reset();
+	symbols.metadata.capturedLocals[0].kind = bmsx::CapturedLocalKind::Receiver;
+	const auto removedSymbols = bmsx::decodeBlua32SymbolsImage(bmsx::encodeBlua32SymbolsImage(symbols));
+	if (removedSymbols.metadata.functionDefinitions[0].has_value()
+		|| removedSymbols.metadata.capturedLocals[0].definition.has_value()
+		|| removedSymbols.metadata.capturedLocals[0].kind != bmsx::CapturedLocalKind::Receiver) {
+		throw std::runtime_error("BLua32 removed declaration did not round-trip");
 	}
 
 	std::array<bmsx::u8, bmsx::CART_ROM_HEADER_SIZE - 1u> truncated{};

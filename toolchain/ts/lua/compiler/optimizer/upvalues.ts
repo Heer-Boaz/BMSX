@@ -7,6 +7,7 @@ export function compactUnusedUpvalues(
 	descriptors: UpvalueDesc[],
 	bindings: number[],
 	closureUpvalues: (protoIndex: number) => UpvalueDesc[],
+	retainedCount = 0,
 ): void {
 	const count = descriptors.length;
 	if (count === 0) {
@@ -14,6 +15,7 @@ export function compactUnusedUpvalues(
 	}
 
 	const remap = new Int32Array(count);
+	remap.fill(1, 0, retainedCount);
 	const childProtos = new Set<number>();
 	for (let instructionIndex = 0; instructionIndex < instructions.length; instructionIndex += 1) {
 		const instruction = instructions[instructionIndex];

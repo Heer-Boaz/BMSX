@@ -1,3 +1,4 @@
+import type { CapturedLocalKind } from './capture_kind';
 import type { SourceRange } from '../source_range';
 import type { OpCode } from '../../../../machine/ts/spec/blua32/opcode';
 
@@ -50,14 +51,16 @@ export type LocalSlotDebug = {
 };
 
 /** Lexical origin of a captured cell, independent of its creation route. */
+
 export type CapturedLocalDebug = {
 	functionId: string;
 	name: string;
+	kind: CapturedLocalKind;
 	definition: SourceRange;
-	scope: SourceRange;
 };
 
 export type ProgramMetadata = ProgramRuntimeSymbols & {
+	functionDefinitionsByProto: ReadonlyArray<SourceRange | null>;
 	protoDisplayNames: string[];
 	debugRanges: ReadonlyArray<SourceRange | null>;
 	debugInlineCallSites: ReadonlyArray<ReadonlyArray<InlineCallSite>>;

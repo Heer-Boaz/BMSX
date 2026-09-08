@@ -1,5 +1,7 @@
 #pragma once
 
+#include "rompack/tooling/capture_kind.h"
+
 #include "common/primitives.h"
 #include "rompack/tooling/source_range.h"
 #include "spec/blua32/opcode.h"
@@ -13,7 +15,7 @@
 namespace bmsx {
 
 constexpr const char* BLUA32_SYMBOLS_IMAGE_ID = "__blua32_symbols__";
-constexpr u32 BLUA32_SYMBOLS_VERSION = 5u;
+constexpr u32 BLUA32_SYMBOLS_VERSION = 6u;
 
 struct Blua32InlineCallSite {
 	std::string calleeFunctionId;
@@ -31,8 +33,8 @@ struct Blua32LocalSlotDebug {
 struct Blua32CapturedLocalDebug {
 	std::string functionId;
 	std::string name;
-	SourceRange definition;
-	SourceRange scope;
+	CapturedLocalKind kind;
+	std::optional<SourceRange> definition;
 };
 
 struct Blua32ResumePoint {
@@ -54,6 +56,7 @@ struct Blua32StatementPoint {
 struct Blua32DebugMetadata {
 	std::vector<std::string> functionIds;
 	std::vector<std::string> functionDisplayNames;
+	std::vector<std::optional<SourceRange>> functionDefinitions;
 	std::vector<std::string> globalNames;
 	std::vector<std::string> systemGlobalNames;
 	std::unordered_map<std::string, std::string> staticFunctionIdBySlot;

@@ -278,10 +278,10 @@ export function mapProgramMetadataSourceRanges(
 		statementPointsByProto,
 		resumePointsByProto,
 		localSlotsByProto,
+		functionDefinitionsByProto: metadata.functionDefinitionsByProto.map(range => range === null ? null : mapLuaSourceRange(sourceMaps, range)),
 		capturedLocals: metadata.capturedLocals.map((local): CapturedLocalDebug => ({
 			...local,
 			definition: mapLuaSourceRange(sourceMaps, local.definition),
-			scope: mapLuaSourceRange(sourceMaps, local.scope),
 		})),
 	};
 }

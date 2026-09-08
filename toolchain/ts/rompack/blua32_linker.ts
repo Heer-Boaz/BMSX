@@ -1,3 +1,5 @@
+import { CapturedLocalKind } from '../lua/compiler/capture_kind';
+import type { SourceRange } from '../lua/source_range';
 import { OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import {
 	BASE_BX_BITS,
@@ -71,6 +73,7 @@ import {
 	type Blua32StaticLayoutToken,
 	type Blua32SymbolsImage,
 } from './blua32_symbols';
+import type { LuaSourceCorrespondence } from '../lua/semantic/source_correspondence';
 import type {
 	ProgramBssSymbol,
 	ProgramBiosFunctionConstReloc,
@@ -105,6 +108,8 @@ export type LinkedBlua32ImageBase = {
 	bytes: Uint8Array;
 	layout: Blua32ImageLayout;
 	symbols: Blua32SymbolsImage;
+	/** Current object proto per function slot; -1 is a retained tombstone. Tooling only. */
+	functionProtoIndices: readonly number[];
 	startupFunctionAddress: number;
 	irqFunctionAddress: number;
 	exceptionFunctionAddress: number;
@@ -125,6 +130,8 @@ export type LinkedBlua32Image = LinkedCartBlua32Image | LinkedSystemBlua32Image;
 export type Blua32LinkBaseline = {
 	image: Blua32ImageLayout;
 	symbols: Blua32SymbolsImage;
+	/** Live source correspondence for origins retained by removed functions. */
+	captureSources?: LuaSourceCorrespondence;
 };
 
 type ObjectConstant = null | boolean | number | string;
@@ -266,6 +273,7 @@ function relocateCapturedLocals(
 	sourceLocals: ReadonlyArray<Blua32CapturedLocalDebug>,
 	remap: Int32Array,
 	capturedLocals: Blua32CapturedLocalDebug[],
+	previous?: Blua32LinkBaseline,
 ): ReadonlyArray<number> {
 	if (bindings.length === 0) {
 		return bindings;
@@ -276,7 +284,19 @@ function relocateCapturedLocals(
 		let index = remap[sourceIndex];
 		if (index === -1) {
 			index = capturedLocals.length;
-			capturedLocals.push(sourceLocals[sourceIndex]);
+			const local = sourceLocals[sourceIndex];
+			if (previous === undefined) {
+				capturedLocals.push(local);
+			} else {
+				let definition: SourceRange | null = null;
+				if (local.definition !== null && previous.captureSources !== undefined) {
+					const mapped = local.kind === CapturedLocalKind.Receiver
+						? previous.captureSources.functionRange(local.definition)
+						: previous.captureSources.declaration(local.definition);
+					if (mapped !== undefined) definition = mapped;
+				}
+				capturedLocals.push({ ...local, definition });
+			}
 			remap[sourceIndex] = index;
 		}
 		relocated[slot] = index;
@@ -1001,10 +1021,12 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		? new Int32Array(input.previous!.symbols.metadata.capturedLocals.length).fill(-1)
 		: null;
 	const functionDisplayNames = new Array<string>(functionCount);
+	const functionDefinitions = new Array<SourceRange | null>(functionCount);
 	const noDebugRecords: readonly [] = [];
 	for (let slot = 0; slot < functionCount; slot += 1) {
 		const protoIndex = functionLayout.protoIndexBySlot[slot];
 		if (protoIndex < 0) {
+			functionDefinitions[slot] = null;
 			functionDisplayNames[slot] = input.previous!.symbols.metadata.functionDisplayNames[slot];
 			statementPointsByFunction[slot] = noDebugRecords;
 			resumePointsByFunction[slot] = noDebugRecords;
@@ -1015,10 +1037,12 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 					input.previous!.symbols.metadata.capturedLocals,
 					previousCaptureRemap!,
 					capturedLocals,
+					input.previous!,
 				);
 			continue;
 		}
 		functionDisplayNames[slot] = input.metadata.protoDisplayNames[protoIndex];
+		functionDefinitions[slot] = input.metadata.functionDefinitionsByProto[protoIndex];
 		statementPointsByFunction[slot] = input.metadata.statementPointsByProto[protoIndex];
 		resumePointsByFunction[slot] = input.metadata.resumePointsByProto[protoIndex];
 		localSlotsByFunction[slot] = input.metadata.localSlotsByProto[protoIndex];
@@ -1035,6 +1059,7 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 	const metadata: Blua32DebugMetadata = {
 		functionIds: functionLayout.functionIds,
 		functionDisplayNames,
+		functionDefinitions,
 		globalNames: globalNameLayout.names,
 		systemGlobalNames: systemGlobalNameLayout.names,
 		staticFunctionIdBySlot: input.metadata.exportProtoIdBySlot,
@@ -1070,6 +1095,7 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 			bytes,
 			layout,
 			symbols,
+			functionProtoIndices: functionLayout.protoIndexBySlot,
 			biosImports: {
 				cartridgeStaticRamBase: input.bssAddress + bss.byteCount,
 				functions: input.biosExports.map((entry, index) => ({
@@ -1089,6 +1115,7 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		bytes,
 		layout,
 		symbols,
+		functionProtoIndices: functionLayout.protoIndexBySlot,
 		startupFunctionAddress: functionAddressByProtoIndex[object.vectors.resetProtoIndex],
 		irqFunctionAddress: functionAddressByProtoIndex[object.vectors.irqProtoIndex],
 		exceptionFunctionAddress: functionAddressByProtoIndex[object.vectors.exceptionProtoIndex],

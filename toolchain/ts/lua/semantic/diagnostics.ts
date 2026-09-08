@@ -22,7 +22,7 @@ import {
 } from './model';
 import type { WorkspaceSymbolResolver } from './workspace_symbol_resolver';
 import { getCachedLuaParse } from '../analysis/cache';
-import { sourceRangeStartKey } from './source_range';
+import { sourcePositionKey } from './source_range';
 import { buildLuaKnownNameSet, isReservedMemoryMapName, semanticSymbolKindToLuaSymbolKind } from './common';
 import {
 	formatLuaCallReferencePath,
@@ -487,7 +487,7 @@ function collectAllowedReservedMemoryRanges(chunk: LuaChunk): Set<string> {
 		switch (expression.kind) {
 			case LuaSyntaxKind.IndexExpression:
 				if (expression.base.kind === LuaSyntaxKind.IdentifierExpression && isReservedMemoryMapName(expression.base.name)) {
-					allowed.add(sourceRangeStartKey(expression.base.range));
+					allowed.add(sourcePositionKey(expression.base.range.start));
 				}
 				visitExpression(expression.base);
 				visitExpression(expression.index);
@@ -562,7 +562,7 @@ function addReservedMemoryDiagnosticsFromSemantic(
 		if (!isReservedMemoryMapName(ref.name) || ref.referenceKind !== 'identifier' || ref.namePath.length !== 1) {
 			continue;
 		}
-		if (allowedReservedRanges.has(sourceRangeStartKey(ref.range))) {
+		if (allowedReservedRanges.has(sourcePositionKey(ref.range.start))) {
 			continue;
 		}
 		pushRangeDiagnostic(diagnostics, ref.range, `'${ref.name}' is a reserved memory map. Use direct indexing syntax like ${ref.name}[addr].`, 'error');
