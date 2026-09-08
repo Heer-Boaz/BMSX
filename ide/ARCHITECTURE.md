@@ -610,13 +610,31 @@ Scenario testing keeps four boundaries distinct:
   session and serializes canonical build, per-item derived build/install/cold
   boot, cancellation and final canonical restore through `RuntimeTaskQueue`.
 
+`scenario_lab/media_build.ts` prepares dirty canonical ROM layers and the first
+derived test cartridge without machine writes. The run service publishes them
+only after both builds succeed and the request remains uncancelled, then opens
+the media session. Failed initial preparation cannot reboot the existing game
+or acknowledge uninstalled source. Later-item failure restores canonical media
+because that session really has installed a derived cartridge. The existing
+IDE `installBlua32Media` coordinates physical ROM-byte publication and source
+bookkeeping; it is not an execution-image or source-revision API on the CPU.
+
+Scenario protocol calls execute outside outstanding exception frames. The
+shared execution service uses the CPU-owned outer return depth and existing
+suspended executor before admitting a new callback. Other `Runtime.callClosure`
+callers keep their explicit current-context semantics. No cartlib hook, IRQ-mode
+rewrite or host DMA loop is introduced.
+
 `ScenarioLabController` only resolves the current view selection, captures the
 source batch and invokes that service. It does not loop over tests, retain an
 execution queue, write cartridge media, aggregate result state or implement a
 second cancellation path. One request and one retained run represent either a
 leaf or the complete selected suite. A failed item does not stop later items;
 cancellation marks unfinished items skipped. Rerun preserves the previous
-resolved request.
+resolved request. The service publishes `started` only after the first item
+actually starts; the controller then releases user-requested pause through
+`HostExecutionControl`. Failed preparation and subsequent batch items preserve
+pause, and other host pause reasons retain their independent ownership.
 
 Pacing belongs above the execution service. The browser workbench host consumes
 wall time through the frame scheduler's scheduled bounded-tick operation;

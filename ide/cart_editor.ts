@@ -320,6 +320,7 @@ export class RuntimeCartEditor implements CartEditor {
 			scenarioTests,
 			scenarioRuns,
 			this.runtime,
+			execution,
 			this.overlayRenderer,
 			audioOutput,
 		);

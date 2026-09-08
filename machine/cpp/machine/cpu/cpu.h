@@ -293,6 +293,7 @@ public:
 	void abortCompletionCall(int frameIndex);
 	auto readCompletionValues() const -> std::span<const Value>;
 	bool isExceptionFrame(int frameIndex) const;
+	int readExceptionReturnFrameDepth() const;
 	bool isNonMaskableExceptionFrame(int frameIndex) const;
 	int getFrameRegisterCount(int frameIndex) const;
 	Value readFrameRegister(int frameIndex, int registerIndex) const;

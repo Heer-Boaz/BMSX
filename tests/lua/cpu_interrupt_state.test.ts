@@ -802,6 +802,26 @@ test('CPU closure calls that execute HALT without a scheduled interrupt park wit
 	assert.deepEqual(out, []);
 });
 
+test('exception return depth names the outer continuation across a nested NMI', () => {
+	const { cpu, memory, irqController } = makeHaltCpu();
+	const depth = cpu.getFrameDepth();
+	const pc = cpu.readFramePc(depth - 1);
+	assert.equal(cpu.readExceptionReturnFrameDepth(), -1);
+	memory.writeMappedWord(IO_IRQ_MASK, IRQ_VBLANK);
+	irqController.raise(IRQ_VBLANK);
+	assert.equal(cpu.enterPendingInterrupt(), true);
+	assert.equal(cpu.readExceptionReturnFrameDepth(), depth);
+	cpu.requestNonMaskableInterrupt();
+	assert.equal(cpu.enterPendingInterrupt(), true);
+	assert.equal(cpu.getFrameDepth(), depth + 2);
+	assert.equal(cpu.readExceptionReturnFrameDepth(), depth, 'nested exception does not replace the outer return target');
+	assert.equal(cpu.runUntilDepth(depth, 100), RunResult.Halted);
+	assert.equal(cpu.getFrameDepth(), depth);
+	assert.equal(cpu.readFramePc(depth - 1), pc, 'actual RFE returns without executing the interrupted instruction');
+	assert.equal(cpu.isUserMode(), true);
+	assert.equal(cpu.readExceptionReturnFrameDepth(), -1);
+});
+
 test('suspended completion execution runs above a parked frame and re-exposes the latent HALT latch', () => {
 	const { cpu, irqController } = makeHaltCpu();
 	const runtime = makeRuntime(cpu, irqController);

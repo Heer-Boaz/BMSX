@@ -12,6 +12,7 @@ import {
 	ValueTag,
 } from '../../../machine/ts/machine/cpu/value';
 import type { Runtime } from '../../../machine/ts/machine/runtime/runtime';
+import { CpuSuspendedRunResult } from '../../../machine/ts/machine/runtime/cpu_executor';
 import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../../machine/ts/spec/bmsx/io';
 import {
 	SCENARIO_GUEST_OBSERVE_ACTIONEFFECTS_KEY,
@@ -432,6 +433,13 @@ export class ScenarioExecutionService {
 		args: ReadonlyArray<Value>,
 	): boolean {
 		if (!phase.guestCallPending) {
+			// Protocol callbacks are ordinary guest work, not IRQ handlers. Execute
+			// the physical return first: a callback can itself need DMA/IRQ service.
+			const returnDepth = this.runtime.machine.cpu.readExceptionReturnFrameDepth();
+			if (returnDepth !== -1
+				&& this.runtime.cpuExecution.runSuspendedUntilDepth(returnDepth) !== CpuSuspendedRunResult.Completed) {
+				return false;
+			}
 			this.runtime.callClosure(fn, args);
 			phase.guestCallPending = this.runtime.completionCallPending();
 			return !phase.guestCallPending;

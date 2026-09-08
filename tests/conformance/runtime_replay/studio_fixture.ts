@@ -115,8 +115,10 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 		check(picker.visible && picker.title === 'COMMAND PALETTE', 'palette: the IDE shortcut opens the shared picker');
 		clipboard.text = label;
 		await press('ControlLeft', 'KeyV');
-		check(picker.model.list.rows.length === 1 && picker.model.list.rows[0].item.label === label,
-			`palette: ${label} resolves to one enabled registered command`);
+		const commandIndex = picker.model.list.rows.findIndex(row => row.item.label === label);
+		check(commandIndex >= 0, `palette: ${label} is an enabled registered command`);
+		for (let index = 0; index < commandIndex; index += 1) await press('ArrowDown');
+		check(picker.model.list.selectionIndex === commandIndex, `palette: keyboard selects ${label}`);
 		await press('Enter');
 	};
 	const settle = () => until(() => tasks.ready && !rewind.seeking, 'seek/queue must settle');

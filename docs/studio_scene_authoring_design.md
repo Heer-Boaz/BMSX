@@ -335,13 +335,15 @@ productiebronnen veranderen alleen vier defaultvelden in vier bestaande
 placementvelden; cartlib, machine, compiler en IDE-productcode zijn ongewijzigd.
 TS en C++ consumeren dezelfde gewijzigde Lua-bytecode.
 
-**Open, niet groen verklaard:** `nemesis_s_cinematic_flow_assert.lua` haalt op
+**Historisch geen diffbewijs:** `nemesis_s_cinematic_flow_assert.lua` haalde op
 zowel parent als wijziging de limiet van 180 virtuele seconden; dit was ook al
-bij `NEMESIS-ROOT-SCENE-01` vastgelegd. De oorzaak is niet vastgesteld en deze
-proef telt niet als diffbewijs. De verwachte duplicate-id-fault op de parent
+bij `NEMESIS-ROOT-SCENE-01` vastgelegd. De afzonderlijke
+[Scenario-admission-slice](scenario_call_admission.md) heeft inmiddels de
+call-boven-IRQ-oorzaak hersteld en de echte cinematic voltooid. Dat verandert
+niet het bewijs van deze eerdere scene-slice. De verwachte duplicate-id-fault op de parent
 legt bovendien een secundaire hostfout bloot: `Cannot read properties of null
 (reading 'record')` bij foutpresentatie. Ook die eigenaar moet nog worden
-onderzocht; deze slice verstopt geen van beide fouten achter een guard of
+onderzocht; deze scene-slice verstopte geen van beide fouten achter een guard of
 verhoogde productlimiet. Logs en captures staan in `/tmp/bmsx-scene-identity/`.
 
 ### Workbench-keuze vóór prefabplaatsing (2026-09-08)

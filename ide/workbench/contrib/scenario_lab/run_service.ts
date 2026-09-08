@@ -2,13 +2,14 @@ import type { HostAudioOutput } from '../../../../hosts/common/audio_output';
 import type { Input } from '../../../../hosts/common/input/manager';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import { LuaError } from '../../../../toolchain/ts/lua/errors';
-import { buildScenarioCartridge } from '../../../../toolchain/ts/rompack/scenario_cartridge';
+import { buildScenarioCartridge, type BuiltScenarioCartridge } from '../../../../toolchain/ts/rompack/scenario_cartridge';
 import type { LuaInterpreter } from '../../../language/lua/interpreter/interpreter';
 import {
-	blua32MediaRequiresRebuild,
 	bootInstalledBlua32Media,
+	installBlua32Media,
 	prepareBlua32MediaBoot,
 } from '../../../runtime/lua_pipeline';
+import { buildScenarioRunMedia } from './media_build';
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import {
 	createBlua32SourceImage,
@@ -59,6 +60,7 @@ type ScenarioRunRequest = {
 };
 
 export type ScenarioMediaSessionEvent =
+	| { readonly type: 'started' }
 	| { readonly type: 'complete' }
 	| { readonly type: 'error'; readonly error: unknown };
 
@@ -170,7 +172,7 @@ export class ScenarioRunService {
 		);
 	}
 
-	public onDidEndMediaSession(listener: ScenarioMediaSessionListener): () => void {
+	public onDidChangeMediaSession(listener: ScenarioMediaSessionListener): () => void {
 		this.mediaSessionListeners.add(listener);
 		return () => this.mediaSessionListeners.delete(listener);
 	}
@@ -237,15 +239,22 @@ export class ScenarioRunService {
 				workspaceDirtyRecords,
 			);
 			applyLuaTextModelSources(this.sources, request.programSources);
-			if (blua32MediaRequiresRebuild(this.sources)) {
-				prepareBlua32MediaBoot(
-					this.sources,
-					this.luaTooling,
-					this.runtime,
-					true,
-				);
+			const first = request.testSources[0];
+			const slot = first.test.resource.domain;
+			const prepared = await buildScenarioRunMedia(
+				this.sources,
+				this.luaTooling,
+				slot,
+				{ sourcePath: first.test.resource.path, source: first.source },
+				this.runtime.machine.memory.ramByteCount(),
+			);
+			if (request.cancelled) {
+				this.cancelBeforeMediaSession(request);
+				return;
 			}
-			const slot = request.testSources[0].test.resource.domain;
+			if (prepared.canonical !== null) {
+				installBlua32Media(this.sources, this.runtime, prepared.canonical);
+			}
 			const cartridge = this.sources.cartridgeSlots[slot]!;
 			const session: ScenarioMediaSession = {
 				request,
@@ -256,11 +265,7 @@ export class ScenarioRunService {
 				phase: 'building',
 			};
 			this.mediaSession = session;
-			if (request.cancelled) {
-				this.cancelDuringBuild(session);
-				return;
-			}
-			await this.prepareItem(session);
+			this.startItem(session, prepared.scenario, prepared.interpreter);
 		} catch (error) {
 			this.failPreparation(request, error);
 		}
@@ -283,6 +288,15 @@ export class ScenarioRunService {
 			this.cancelDuringBuild(session);
 			return;
 		}
+		this.startItem(session, scenario, prepareBlua32MediaBoot(
+			this.sources,
+			this.luaTooling,
+			this.runtime,
+			false,
+		));
+	}
+
+	private startItem(session: ScenarioMediaSession, scenario: BuiltScenarioCartridge, interpreter: LuaInterpreter): void {
 		const canonicalImages = session.canonicalSourceMedia.cartridgeSlots;
 		const scenarioImages = [
 			canonicalImages[0],
@@ -300,14 +314,12 @@ export class ScenarioRunService {
 			system: session.canonicalSourceMedia.system,
 			cartridgeSlots: scenarioImages,
 		};
-		this.bootMedia(prepareBlua32MediaBoot(
-			this.sources,
-			this.luaTooling,
-			this.runtime,
-			false,
-		));
+		this.bootMedia(interpreter);
 		session.phase = 'running';
-		this.execution.start(request.run.items[session.itemIndex]);
+		this.execution.start(session.request.run.items[session.itemIndex]);
+		if (session.itemIndex === 0) {
+			this.emitMediaSessionEvent({ type: 'started' });
+		}
 	}
 
 	private cancelBeforeMediaSession(request: ScenarioRunRequest): void {
@@ -344,7 +356,7 @@ export class ScenarioRunService {
 
 	private queueCanonicalRestore(
 		session: ScenarioMediaSession,
-		event: ScenarioMediaSessionEvent,
+		event: Exclude<ScenarioMediaSessionEvent, { readonly type: 'started' }>,
 	): void {
 		session.phase = 'restore_queued';
 		this.runtimeTasks.schedule(() => {

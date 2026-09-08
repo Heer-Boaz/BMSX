@@ -24,8 +24,9 @@ await t.waitForCart();
 const runtime = t.runtime();
 const sources = t.sourceState();
 const canonicalMedia = sources.currentBlua32Media;
-const canonicalRom = sources.cartridgeSlots[0].rom;
+const canonicalRom = sources.cartridgeSlots[0].rom.bytes;
 t.openLuaSource('cart.lua');
+t.command('pause');
 await palette('scenario lab');
 const tab = t.activeWorkbenchTab();
 t.assert(tab.kind === 'scenario_lab', 'Command Palette did not open Scenario Lab');
@@ -58,7 +59,7 @@ for (let frame = 0; frame < 300 && view.runActive; frame++) await t.frames(1);
 t.assert(!view.runActive && run.state === 'cancelled' && result.state === 'cancelled',
 	'Cancel Run did not complete through the Palette');
 t.assert(t.runtime() === runtime && sources.currentBlua32Media === canonicalMedia
-	&& sources.cartridgeSlots[0].rom === canonicalRom,
+	&& sources.cartridgeSlots[0].rom.bytes === canonicalRom,
 	'cancel did not restore the canonical media on the same runtime');
 t.assert(t.workbenchActive() && t.activeWorkbenchTab() === tab,
 	'cancel did not return to the originating Scenario Lab input');

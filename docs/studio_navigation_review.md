@@ -125,21 +125,9 @@ from the Palette. Ctrl/Cmd+Shift+P is offered only while the IDE owns input.
 - Strict architecture audit: zero issues. Core-parity audit, indentation and
   `git diff --check` passed; no mirrored runtime or cartlib code changed.
 
-## Remaining slices, not claimed as implemented
+## Follow-up slice: scenario call admission
 
-### Shared symbol Quick Access
-
-The shared surface is appropriate for choosing a symbol, but migrating only
-its drawing would relocate ownership problems. Keep the existing symbol
-widgets until a provider owns the semantic query lifetime, typed source ranges,
-selection preview and cancellation/focus return. Reference lists, call
-hierarchies and Find/Replace retain their separate inspection/edit semantics.
-
-### Cinematic scenario guest-call admission
-
-The run's eventual timeout is not cinematic completion. Actual packaged code
-reaches `gameplay ready`; its setup completion call then remains pending. A
-350-frame stack capture shows:
+The original timeout was not cinematic completion. The captured stack was:
 
 ```text
 entry → vblank.wait → irq
@@ -148,18 +136,35 @@ entry → vblank.wait → irq
   → atlas.load → imgdec.upload → dma.wait0_idle [HALT_UNTIL_IRQ]
 ```
 
-The CPU is in IRQ mode. `dma.wait0_idle` waits for the completion sequence
-advanced by the cart IRQ handler, underneath which setup was injected. The
-live owner defect is therefore guest-call admission into an interrupted
-continuation, not a slow cinematic or a need for a longer timeout. The
-temporary stack probe is `/tmp/bmsx-studio-review/cinematic_stack.idetest.js`;
-the committed Palette scenario test reproduces entry into setup and proves
-that host cancellation still works. Physical IDE chord plus Shift+F5 also
-passed the canonical-media restoration probe.
+The shared Scenario execution owner now executes the outstanding exception
+frames to their physical return depth before admitting ordinary protocol work.
+The CPU exposes that read-only depth in TS/C++; generic `Runtime.callClosure`
+keeps its current-context semantics. No DMA polling, forced user mode, changed
+timeout or cartlib workaround. The pre-edit representation table and production
+references are in [the admission contract](scenario_call_admission.md).
 
-Before changing this owner, study production debugger inferior-call execution
-and map Runtime completion calls, CPU IRQ/return latches, scheduler boundaries,
-Hot Resume and their C++ mirrors. Merely skipping a call at an IRQ-mode frame
-boundary can starve it forever; forcing user mode, polling DMA from the host,
-or rewriting the scenario to avoid its ordinary asset loads is not a fix.
-No CPU/runtime/cartlib patch or timeout change is part of these UI slices.
+Launch proofs also exposed premature canonical installation/reboot on failed
+preparation and an inherited user Pause blocking a successful Run. Canonical
+and first-test ROMs are now unpublished build outputs until preparation
+succeeds. Only the first actual start releases Requested pause through the
+host owner; independent holds remain intact.
+
+Validation: the shipped cinematic passes its guest assertions. Physical
+Run/Rerun/IDE-chord/Cancel, failed-build preservation, independent fullscreen
+hold and post-cancel scene navigation pass in the complete Studio workflows on
+software, WebGL2 and WebGPU. The separate real-build headless test covers dirty
+canonical source and cancellation before publication. Native CPU/system tests,
+964 Lua tests (one existing skip), 122 ROM-packer tests and the architecture /
+core-parity audits pass. Broad test typechecking retains 52 baseline diagnostics.
+Full evidence and scope are recorded in the admission document; artifacts are
+under `/tmp/bmsx-scenario-admission/`.
+
+## Remaining slice, not claimed as implemented
+
+### Shared symbol Quick Access
+
+The shared surface is appropriate for choosing a symbol, but migrating only
+its drawing would relocate ownership problems. Keep the existing symbol
+widgets until a provider owns the semantic query lifetime, typed source ranges,
+selection preview and cancellation/focus return. Reference lists, call
+hierarchies and Find/Replace retain their separate inspection/edit semantics.

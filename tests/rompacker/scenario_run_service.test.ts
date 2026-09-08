@@ -120,10 +120,13 @@ test('browser scenario media session installs derived execution media and restor
 		const canonicalSourceMedia = sources.currentBlua32Media;
 		const currentTestSource = PACKAGED_TEST_SOURCE.replace('\treturn true', '\treturn false');
 		const errors: unknown[] = [];
+		let starts = 0;
 		let completed = 0;
-		const disposeMediaSessionListener = runService.onDidEndMediaSession(event => {
+		const disposeMediaSessionListener = runService.onDidChangeMediaSession(event => {
 			if (event.type === 'error') {
 				errors.push(event.error);
+			} else if (event.type === 'started') {
+				starts += 1;
 			} else {
 				completed += 1;
 			}
@@ -143,6 +146,8 @@ test('browser scenario media session installs derived execution media and restor
 		assert.deepEqual(errors, []);
 		assert.equal(runService.active, true);
 		assert.equal(runService.execution.active, true);
+		assert.equal(starts, 1);
+		assert.equal(completed, 0);
 		assert.equal(runService.results.activeResult?.sourceRevision, 77);
 		assert.equal(canonicalLayer.bytes, canonicalRom);
 		assert.equal(
@@ -170,6 +175,7 @@ test('browser scenario media session installs derived execution media and restor
 		assert.deepEqual(errors, []);
 		assert.equal(runService.active, false);
 		assert.equal(runService.execution.active, false);
+		assert.equal(starts, 1);
 		assert.equal(completed, 1);
 		assert.equal(sources.currentBlua32Media, canonicalSourceMedia);
 		assert.equal(sources.cartridgeSlots[0]!.rom, canonicalLayer);

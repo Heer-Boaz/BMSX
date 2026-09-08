@@ -289,10 +289,7 @@ export function hotResume(
 		let userFrameDepth = cpu.getFrameDepth();
 		let failedCompletionFrameIndex = -1;
 		if (deferUntilUserExecution) {
-			userFrameDepth = 0;
-			while (!cpu.isExceptionFrame(userFrameDepth)) {
-				userFrameDepth += 1;
-			}
+			userFrameDepth = cpu.readExceptionReturnFrameDepth();
 			if (supervisorActive) {
 				const exceptionFunctionAddress = sources.systemRom.header.blua32ExceptionFunctionAddress;
 				let supervisorExceptionFrameIndex = cpu.getFrameDepth() - 1;

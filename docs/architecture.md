@@ -935,6 +935,16 @@ and one live result retains all included items
 
 `ScenarioExecutionService` alone advances the packaged loader/ready/setup/update
 protocol against one Runtime and installs a retained raw ICU playback source.
+These callbacks are ordinary guest work. Before admitting a new call, the
+service reads the CPU's outermost exception return depth and uses the existing
+`runSuspendedUntilDepth` executor to execute outstanding exception frames through
+their real return. A halted device path, pending backend operation or debugger
+stop leaves the protocol call unstarted. It does not force user mode, drive DMA
+from the host or merely skip every IRQ-aligned frame. `Runtime.callClosure`
+retains its current-context meaning for other tooling callers. The CPU owns
+only the read-only frame-depth projection, mirrored in TS/C++; it has no
+Scenario admission policy. See [the admission contract](scenario_call_admission.md).
+
 Scheduled input is applied before the exact logical tick's ICU sample; guest
 closures that span more than one machine tick do not stretch a requested input
 hold. It knows logical machine/scenario ticks but not elapsed host time or pacing
@@ -949,15 +959,28 @@ to its next queued item. Each capture records its requesting logical tick and is
 The browser workbench adds an explicit scenario **media session** above those
 owners. The workspace/source registries and their `RomToolingLayer`s stay
 the canonical authoring media. Starting a run first commits the current editor
-generation, applies workspace overrides, rebuilds dirty ordinary BLua32 media
-through the existing compiler/install owner, and captures every selected test
-source plus the open program-source batch exactly once. Each test item is then
+generation and captures every selected test source plus the open program-source
+batch exactly once. Workspace overrides and the captured program sources feed
+the ordinary compiler. Dirty canonical ROM layers and the first derived test
+ROM are prepared without installing either. Only successful preparation and
+uncancelled launch admit publication through the existing ROM owners and open
+the media session. Failure or cancellation before this boundary leaves the
+old ROM bytes, installed-source baseline and machine continuation untouched;
+there is no session to restore and no rollback. Each later test item is then
 compiled from those snapshots and the retained canonical ROM into its own
 derived cartridge ROM. Only the physical ROM component in that test's already
 occupied socket is replaced; cartridge RAM, mailbox devices, the second socket,
 and the canonical authoring layers are not reclassified or copied into a Studio
 model. The matching derived BLua32 source image is the current debugger/fault map
 for exactly that item.
+
+The first successful item publishes the run's `started` event. The workbench
+consumes this explicit Run/Rerun intent through `HostExecutionControl`, releasing
+only user-requested pause. Independent host holds remain active; failed
+preparation and later items do not release pause. Build preparation follows
+VS Code's prelaunch-work boundary and successful-start publication follows
+Godot's run owner, without importing a second process or Runtime model
+([production references](scenario_call_admission.md#adjacent-proven-launch-defect-before-its-diff)).
 
 `ide/workbench/state.ts` is the browser-workbench composition owner that wires
 the shared scenario services to `ScenarioRunService` and the editor. Runtime

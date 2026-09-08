@@ -1,4 +1,5 @@
 import type { HostAudioOutput } from '../../../../hosts/common/audio_output';
+import type { HostExecutionControl } from '../../../../hosts/common/execution_control';
 import type { PointerSnapshot } from '../../../common/models';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import type { CartEditor } from '../../../cart_editor';
@@ -68,11 +69,12 @@ export class ScenarioLabController {
 		private readonly collection: ScenarioTestCollection,
 		private readonly runs: ScenarioRunService,
 		private readonly runtime: Runtime,
+		private readonly execution: HostExecutionControl,
 		private readonly overlayRenderer: OverlayRenderer,
 		private readonly audioOutput: HostAudioOutput,
 	) {
-		this.disposeMediaSessionListener = this.runs.onDidEndMediaSession(
-			event => this.handleMediaSessionEnd(event),
+		this.disposeMediaSessionListener = this.runs.onDidChangeMediaSession(
+			event => this.handleMediaSessionChange(event),
 		);
 	}
 
@@ -293,8 +295,12 @@ export class ScenarioLabController {
 		deactivateEditor(this.editor, this.overlayRenderer, this.audioOutput);
 	}
 
-	private handleMediaSessionEnd(event: ScenarioMediaSessionEvent): void {
+	private handleMediaSessionChange(event: ScenarioMediaSessionEvent): void {
 		const view = this.view!;
+		if (event.type === 'started') {
+			this.execution.requestExecution(true);
+			return;
+		}
 		if (event.type === 'error') {
 			this.handleRunError(view, event.error);
 			return;

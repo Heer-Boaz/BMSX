@@ -2457,6 +2457,14 @@ bool CPU::isExceptionFrame(int frameIndex) const {
 	return m_frames[static_cast<size_t>(frameIndex)]->isExceptionFrame;
 }
 
+// Frame depth reached after all currently active exception roots return.
+int CPU::readExceptionReturnFrameDepth() const {
+	for (size_t frameIndex = 0; frameIndex < m_frames.size(); frameIndex += 1) {
+		if (m_frames[frameIndex]->isExceptionFrame) return static_cast<int>(frameIndex);
+	}
+	return -1;
+}
+
 bool CPU::isNonMaskableExceptionFrame(int frameIndex) const {
 	return m_frames[static_cast<size_t>(frameIndex)]->isNonMaskableExceptionFrame;
 }

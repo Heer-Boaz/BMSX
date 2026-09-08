@@ -1056,6 +1056,29 @@ void testInstrumentedMaskableInterruptFenceDoesNotDelayPendingNmi() {
 	require(machine.cpu.readFramePc(frameDepth - 1) == userPc, "user instruction remains unexecuted");
 }
 
+void testExceptionReturnDepthNamesOuterContinuationAcrossNestedNmi() {
+	bmsx::test::Blua32TestImage systemImage = makeSupervisorSystemImage();
+	systemImage.startupFunctionIndex = EXEC_CART_FUNCTION;
+	CpuTestMachine machine(std::move(systemImage));
+	require(machine.cpu.runUntilDepth(0, 100) == bmsx::RunResult::Halted, "cart reaches HALT before exception admission");
+	const int depth = machine.cpu.getFrameDepth();
+	const bmsx::u32 pc = machine.cpu.readFramePc(depth - 1);
+	require(machine.cpu.readExceptionReturnFrameDepth() == -1, "ordinary continuation has no exception return target");
+	machine.memory.writeMappedU32LE(bmsx::IO_IRQ_MASK, bmsx::IRQ_VBLANK);
+	machine.irq.raise(bmsx::IRQ_VBLANK);
+	require(machine.cpu.enterPendingInterrupt(), "pending IRQ enters the cart handler");
+	require(machine.cpu.readExceptionReturnFrameDepth() == depth, "IRQ names its outer return target");
+	machine.cpu.requestNonMaskableInterrupt();
+	require(machine.cpu.enterPendingInterrupt(), "NMI preempts the cart IRQ");
+	require(machine.cpu.getFrameDepth() == depth + 2, "both exception roots remain on the stack");
+	require(machine.cpu.readExceptionReturnFrameDepth() == depth, "nested exception does not replace the outer return target");
+	require(machine.cpu.runUntilDepth(depth, 100) == bmsx::RunResult::Halted, "actual exception instructions return to the outer depth");
+	require(machine.cpu.getFrameDepth() == depth, "both exception roots returned");
+	require(machine.cpu.readFramePc(depth - 1) == pc, "RFE returns without executing the interrupted instruction");
+	require(machine.cpu.isUserMode(), "actual RFE restores user mode");
+	require(machine.cpu.readExceptionReturnFrameDepth() == -1, "completed exception roots are no longer present");
+}
+
 void testSuspendedCompletionExecutionRunsAboveParkedFrame() {
 	bmsx::test::Blua32TestImage systemImage = makeSupervisorSystemImage();
 	systemImage.startupFunctionIndex = EXEC_CART_FUNCTION;
@@ -1494,6 +1517,7 @@ int main() {
 	testInstrumentedExecutionObservesCrossDomainCallAndReturn();
 	testInstrumentedExecutionFenceStopsBeforePendingIrqDelivery();
 	testInstrumentedMaskableInterruptFenceDoesNotDelayPendingNmi();
+	testExceptionReturnDepthNamesOuterContinuationAcrossNestedNmi();
 	testSuspendedCompletionExecutionRunsAboveParkedFrame();
 	testRfeResumesAtAnyMappedInstructionAddress();
 	testMappedBusErrorsEnterTheSystemExceptionVector();

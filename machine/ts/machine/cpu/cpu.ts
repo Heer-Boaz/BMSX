@@ -1967,6 +1967,14 @@ export class CPU implements MappedPageInvalidator {
 		return this.frames[frameIndex].isExceptionFrame;
 	}
 
+	/** Frame depth reached after all currently active exception roots return. */
+	public readExceptionReturnFrameDepth(): number {
+		for (let frameIndex = 0; frameIndex < this.frames.length; frameIndex += 1) {
+			if (this.frames[frameIndex].isExceptionFrame) return frameIndex;
+		}
+		return -1;
+	}
+
 	public isNonMaskableExceptionFrame(frameIndex: number): boolean {
 		return this.frames[frameIndex].isNonMaskableExceptionFrame;
 	}
