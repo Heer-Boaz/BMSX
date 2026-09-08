@@ -1,3 +1,4 @@
+import { showCommandPalette } from '../workbench/contrib/commands/quick_access';
 import { focusRuntimeErrorOverlay } from '../runtime_error/navigation';
 import { buildResourceQuickPickItems } from '../workbench/contrib/resources/quick_access';
 import { openLineJump } from '../workbench/contrib/code_editor/find/line_jump';
@@ -13,6 +14,7 @@ import type { RuntimeLuaTooling } from '../runtime/lua_tooling';
 
 export function isEditorSearchCommand(command: EditorCommandId): command is EditorSearchCommandId {
 	switch (command) {
+		case 'commandPalette':
 		case 'symbolSearch':
 		case 'symbolSearchGlobal':
 		case 'resourceSearch':
@@ -37,6 +39,9 @@ export function executeEditorSearchCommand(
 	command: EditorSearchCommandId,
 ): void {
 	switch (command) {
+		case 'commandPalette':
+			showCommandPalette(editor.quickInput, editor.commands);
+			return;
 		case 'symbolSearch':
 			openSymbolSearch(luaTooling, rename);
 			return;
@@ -44,7 +49,7 @@ export function executeEditorSearchCommand(
 			openGlobalSymbolSearch(luaTooling, rename);
 			return;
 		case 'resourceSearch':
-			editor.quickInput.pick('GO TO FILE', 'Type to filter files', buildResourceQuickPickItems(sources.activeResources),
+			editor.quickInput.pick('GO TO FILE', 'Type to filter files', () => buildResourceQuickPickItems(sources.activeResources),
 				item => { void editor.navigation.openResource(item.resource); });
 			return;
 		case 'runtimeErrorFocus':

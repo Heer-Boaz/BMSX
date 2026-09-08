@@ -24,9 +24,10 @@ export function createWorkbenchActionBar(menuId: WorkbenchActionMenuId): Workben
 	const items = new Array<WorkbenchActionBarItem>(menu.length);
 	for (let index = 0; index < menu.length; index += 1) {
 		const contribution = menu[index];
+		const presentation = EDITOR_COMMAND_PRESENTATION[contribution.command];
 		items[index] = {
 			command: contribution.command,
-			label: EDITOR_COMMAND_PRESENTATION[contribution.command].title,
+			label: presentation.shortTitle === undefined ? presentation.title : presentation.shortTitle,
 			bounds: create_rect_bounds(),
 		};
 	}

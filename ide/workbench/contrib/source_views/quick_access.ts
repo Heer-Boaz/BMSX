@@ -37,7 +37,7 @@ export function openSourceView(
 	for (const resource of sources.luaResources) {
 		if (view.accepts(sourceAnalysis(sources, resource))) resources.push(resource);
 	}
-	picker.pick(view.title, 'Choose a source document', buildResourceQuickPickItems(resources),
+	picker.pick(view.title, 'Choose a source document', () => buildResourceQuickPickItems(resources),
 		item => view.openResource(item.resource));
 }
 

@@ -60,9 +60,12 @@ for (const backend of studio ? ['software', 'webgl2', 'webgpu'] : ['webgpu']) {
 		}
 		if (studio) {
 			const savedSource = await readFile(join(directory, 'carts/nemesis_s/title_screen.lua'), 'utf8');
-			// Scene Editor's final Save & Resume deliberately saves all dirty sources,
-			// including the repaired FSM which earlier workflows left unsaved.
-			if (!savedSource.includes("pattern = 'up[jp]'")) throw new Error('Save & Resume did not persist the final FSM revision through the real workspace API');
+			// Save & Reboot follows the extra WebGPU callback-lifetime test, which
+			// applies a further right-key FSM revision while a real readback is held.
+			const finalRule = backend === 'webgpu' ? "pattern = 'right[jp]'" : "pattern = 'up[jp]'";
+			if (!savedSource.includes(finalRule) || !savedSource.endsWith('\n-- W04 reboot request\n')) {
+				throw new Error('Save & Reboot did not persist the final accepted FSM revision through the real workspace API');
+			}
 			const savedScene = await readFile(join(directory, 'carts/nemesis_s/scenes/root.lua'), 'utf8');
 			if (!savedScene.includes('( --[[source-owned anchor]]\n\t\t\t\t\t17)')) throw new Error('Scene Editor did not persist the accepted position and original trivia');
 		}

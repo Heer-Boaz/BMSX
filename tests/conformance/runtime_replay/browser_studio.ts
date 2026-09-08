@@ -6,7 +6,7 @@ import { runStudioWorkflows } from './studio_workflows';
 import { testStudioWebGpuReadbacks } from './studio_webgpu_readbacks';
 import { testCapturedSourceReboot } from './studio_source_workflows';
 import { testSceneSourceAfterReboot, presentSceneEditor } from './studio_scene_source';
-import { presentWorkbenchQuickPick } from './studio_quick_pick';
+import { presentCommandPalette } from './studio_command_palette';
 
 /** Independent renderer projects run the same Studio workflow. */
 export const studioBackends = {
@@ -17,7 +17,7 @@ export const studioBackends = {
 		await testCapturedSourceReboot(test);
 		await testSceneSourceAfterReboot(test);
 		await presentSceneEditor(test);
-		await presentWorkbenchQuickPick(test);
+		await presentCommandPalette(test);
 		// Publish the real software-rendered final framebuffer for the screenshot.
 		// No replacement drawing or per-frame screenshot conversion.
 		canvas.width = backend.framebufferWidth;
@@ -34,7 +34,7 @@ export const studioBackends = {
 		await testCapturedSourceReboot(test);
 		await testSceneSourceAfterReboot(test);
 		await presentSceneEditor(test);
-		await presentWorkbenchQuickPick(test);
+		await presentCommandPalette(test);
 		check(backend.gl.getError() === backend.gl.NO_ERROR, 'WebGL2 workflow raised a graphics error');
 		return result;
 	},
@@ -49,7 +49,7 @@ export const studioBackends = {
 		await testCapturedSourceReboot(test);
 		await testSceneSourceAfterReboot(test);
 		await presentSceneEditor(test);
-		await presentWorkbenchQuickPick(test);
+		await presentCommandPalette(test);
 		check(errors.length === 0, errors.join('\n'));
 		return { ...result, readbacks };
 	},

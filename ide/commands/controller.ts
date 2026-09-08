@@ -35,7 +35,7 @@ import {
 } from '../runtime/debugger_state';
 import { clearExecutionStopHighlights } from '../runtime_error/navigation';
 import { deactivateEditor } from '../workbench/overlay_modes';
-import { inputFocus } from '../input/focus';
+import { inputFocus, type InputFocusTarget } from '../input/focus';
 
 // Source-consuming commands accept the concrete control's value before dirty
 // model selection, prompts or asynchronous source capture (Godot EditorData).
@@ -193,7 +193,7 @@ export class IdeCommandController {
 		);
 	}
 
-	public isEnabled(command: EditorCommandId): boolean {
+	public isEnabled(command: EditorCommandId, focus: InputFocusTarget | null = inputFocus.target): boolean {
 		switch (command) {
 			case 'sceneEditor.moveMemberUp':
 				return this.editor.sceneEditor.canMoveSelectedMember(-1);
@@ -203,7 +203,7 @@ export class IdeCommandController {
 				return this.editor.sceneEditor.canRemoveSelectedMember();
 			case 'undo':
 			case 'redo': {
-				const implementation = inputFocus.getCommand(command);
+				const implementation = focus?.getCommand(command);
 				return implementation !== undefined && implementation.isEnabled();
 			}
 			case 'pause':
@@ -225,7 +225,7 @@ export class IdeCommandController {
 				const activeInput = getActiveTab();
 				return activeInput instanceof WorkingCopyEditorInput
 					&& !activeInput.workingCopy.readOnly
-					&& (activeInput.isDirty() || inputFocus.target?.edit?.pending === true);
+					&& (activeInput.isDirty() || focus?.edit?.pending === true);
 			}
 			case 'symbolSearch':
 			case 'symbolSearchGlobal':

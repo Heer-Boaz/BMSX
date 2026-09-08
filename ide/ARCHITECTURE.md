@@ -559,9 +559,32 @@ catalog owner, code-tab activation prerequisite, or generic prefab/scene schema.
 The removed `@`/`#`/`:` redirection to code-only widgets is not emulated;
 explicit symbol and line commands retain their own contexts.
 
+`pick` admits a typed item provider once, after focus has left the invoking
+control. Replacing a picker first restores the original control; its ordinary
+blur policy runs before enumeration. The provider receives that control
+explicitly, not the new query field's command context. No provider work runs
+on filtering or presentation frames.
+
+`contrib/commands/quick_access.ts` projects the existing command catalog,
+categories and keybinding labels into this picker. `IdeCommandController`
+evaluates focus-dependent availability against the explicit invoking control;
+menu/key queries keep their default current-focus semantics. Query Undo stays
+local. Accept returns focus, checks current command availability, then uses
+ordinary command execution, pending-edit acceptance and confirmation dialogs.
+An action that became unavailable during an asynchronous operation is reported
+as unavailable, not executed against a missing run. There is no second command
+registry or palette-specific Save/Hot Resume/Reboot path. Short toolbar titles
+and full command titles are presentation metadata of the same action.
+
+Command Palette is available through View and Ctrl/Cmd+Shift+P while the IDE
+owns input. Gameplay retains those keys. Shared symbol Quick Access remains
+separate work: the provider must retain semantic-query, source-range preview
+and cancellation ownership before replacing its existing widget.
+
 This takes the current production VS Code Quick Input ownership, not its DOM,
 service registry, animations or compatibility paths:
 
+- [command enumeration in the invoking editor context](https://github.com/microsoft/vscode/blob/a47dab6a0a5258924b2454f64fc373fc7e657677/src/vs/workbench/contrib/quickaccess/browser/commandsQuickAccess.ts#L224-L268);
 - [focus acquisition and blur](https://github.com/microsoft/vscode/blob/a47dab6a0a5258924b2454f64fc373fc7e657677/src/vs/platform/quickinput/browser/quickInputController.ts#L337-L356);
 - [focus return only while the popup still owns it](https://github.com/microsoft/vscode/blob/a47dab6a0a5258924b2454f64fc373fc7e657677/src/vs/platform/quickinput/browser/quickInputController.ts#L824-L860);
 - [separate popup and focused-item color roles](https://github.com/microsoft/vscode/blob/a47dab6a0a5258924b2454f64fc373fc7e657677/src/vs/platform/theme/common/colors/quickpickColors.ts#L17-L59);

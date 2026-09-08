@@ -75,7 +75,7 @@ test('quick input owns root focus; cancellation returns to the actual invoking c
 	const pane = inputFocus.createTarget();
 	const property = new TextField(pane);
 	property.focusTarget.focus();
-	picker.pick('Files', 'Filter', items, () => assert.fail('cancel accepted an item'));
+	picker.pick('Files', 'Filter', () => items, () => assert.fail('cancel accepted an item'));
 	assert.equal(picker.field.focusTarget.parent, null);
 	assert.equal(inputFocus.target, picker.field.focusTarget);
 	picker.hide();
@@ -89,10 +89,37 @@ test('quick input blur does not restore a departing pane over the new focus owne
 	const first = inputFocus.createTarget();
 	const next = inputFocus.createTarget();
 	first.focus();
-	picker.pick('Files', 'Filter', items, () => assert.fail('blur accepted an item'));
+	picker.pick('Files', 'Filter', () => items, () => assert.fail('blur accepted an item'));
 	next.focus();
 	assert.equal(picker.visible, false);
 	assert.equal(inputFocus.target, next);
+});
+
+test('item providers observe the invoking control after blur, not the replaced query context', t => {
+	const picker = createPicker(t);
+	const origin = inputFocus.createTarget();
+	let blurs = 0;
+	let provisions = 0;
+	origin.onDidBlur(() => { blurs += 1; });
+	origin.focus();
+	picker.pick('Old', 'Filter', () => items, () => assert.fail('old picker accepted'));
+	insertValue(picker.field, 'old query');
+	picker.pick('Commands', 'Filter', focus => {
+		provisions += 1;
+		assert.equal(focus, origin);
+		assert.equal(blurs, 2, 'replace restores origin, then its new blur precedes admission');
+		assert.equal(inputFocus.target, picker.field.focusTarget, 'provider receives context explicitly without focus swapping');
+		return items;
+	}, item => {
+		assert.equal(item, items[0]);
+		assert.equal(inputFocus.target, origin, 'execution happens in the restored invoking context');
+	});
+	picker.model.filter('root');
+	picker.update();
+	picker.update();
+	assert.equal(provisions, 1, 'typing and draw frames do not rebuild the command catalog');
+	assert.equal(picker.field.canUndo, false, 'replaced query history does not leak into the new session');
+	picker.accept();
 });
 
 test('quick input replacement and acceptance hide before handing the exact typed item to navigation', t => {
@@ -100,9 +127,9 @@ test('quick input replacement and acceptance hide before handing the exact typed
 	const original = inputFocus.createTarget();
 	const destination = inputFocus.createTarget();
 	original.focus();
-	picker.pick('Old', 'Filter', items, () => assert.fail('replaced picker accepted'));
+	picker.pick('Old', 'Filter', () => items, () => assert.fail('replaced picker accepted'));
 	let accepted = 0;
-	picker.pick('New', 'Filter', items, item => {
+	picker.pick('New', 'Filter', () => items, item => {
 		assert.equal(item, items[1]);
 		assert.equal(item.resourceId, 20);
 		assert.equal(picker.visible, false);
@@ -126,7 +153,7 @@ test('quick input Undo/Redo refilters only its field and never the invoking docu
 	const document = inputFocus.createTarget();
 	document.registerCommand('undo', { isEnabled: () => true, run: () => assert.fail('document Undo') });
 	document.focus();
-	picker.pick('Files', 'Filter', items, () => {});
+	picker.pick('Files', 'Filter', () => items, () => {});
 	insertValue(picker.field, 'slot 1');
 	assert.equal(picker.model.list.rows.length, 1);
 	inputFocus.executeCommand('undo');
@@ -140,7 +167,7 @@ test('quick input Undo/Redo refilters only its field and never the invoking docu
 
 test('retained picker frames do not refilter, rebuild labels or measure the query again', t => {
 	const picker = createPicker(t);
-	picker.pick('Files', 'Filter', items, () => {});
+	picker.pick('Files', 'Filter', () => items, () => {});
 	insertValue(picker.field, 'root');
 	picker.update();
 	const advances = picker.textViewport.advances;
@@ -181,7 +208,7 @@ test('single-line viewport reveals the caret using whole proportional glyphs and
 
 test('query pointer hit testing uses the scrolled text origin, not an unrelated code column', t => {
 	const picker = createPicker(t);
-	picker.pick('Files', 'Filter', items, () => {});
+	picker.pick('Files', 'Filter', () => items, () => {});
 	insertValue(picker.field, 'scenes/root.lua '.repeat(30));
 	picker.update();
 	const start = picker.textViewport.start;
@@ -196,7 +223,7 @@ test('query pointer hit testing uses the scrolled text origin, not an unrelated 
 
 test('picker uses the actual tiny font and draws only a bounded span of an unbounded query', t => {
 	const picker = createPicker(t);
-	picker.pick('GO TO FILE', 'Type to filter files', items, () => {});
+	picker.pick('GO TO FILE', 'Type to filter files', () => items, () => {});
 	insertValue(picker.field, 'very_long_query_'.repeat(50));
 	picker.update();
 	assert.equal(picker.field.text.length, 800);

@@ -1,6 +1,6 @@
 # Studio navigation and command admission
 
-## Live defects (2026-09-08)
+## Reported defects and pre-change owners (2026-09-08)
 
 - Code context menus blacklist builtin *names*, including source-defined globals.
   Identifier spelling does not determine whether navigation is available.
@@ -69,33 +69,97 @@ and positions, dirty models, focus return, and the three browser renderers.
   `git diff --check` passed. This slice changes no machine/guest representation.
 - Artifacts: `/tmp/bmsx-studio-review/`.
 
-## Next slices, not claimed as implemented
+## Concrete Palette admission contract (fixed before the second diff)
 
-### Command context before Command Palette
+The production [QuickPick owner](https://github.com/microsoft/vscode/blob/a47dab6a0a5258924b2454f64fc373fc7e657677/src/vs/platform/quickinput/browser/quickInput.ts)
+separates showing/focusing the UI from providing its items. VS Code's command
+provider enumerates enabled commands in the invoking editor's scoped context,
+not the quick-input textbox's edit context.
 
-The existing picker currently admits a static typed item array. Menus preserve
-control focus; a palette must acquire its own text focus. `Undo`, `Save`, source
-commands and scenario cancellation therefore cannot derive their target from
-whichever field happens to have focus while the palette is visible.
+BMSX needs this ordering at its existing synchronous picker boundary, not a new
+command registry or a speculative asynchronous provider framework:
 
-Verify VS Code's Quick Input session/provider lifecycle and scoped command
-context before extending this owner. Gates: opening/replacing/cancelling a
-palette preserves the invoking editor identity; query Undo stays local;
-executing a selected command restores the originating context first; pending
-property edits follow their concrete owner; an asynchronously completed run
-cannot leave an executable stale Cancel item. No duplicate palette command
-registry, command-specific shortcuts, synthetic success or silent rescue path.
+1. End a replaced picker and restore its actual invoking control.
+2. Capture that control, then transfer focus to Quick Input. Ordinary control
+   blur completes before provider enumeration (including property acceptance).
+3. Invoke the typed item provider once with the captured focus target. The
+   command controller evaluates focus-dependent commands against that explicit
+   target; default menu/key queries continue to use current focus without a
+   context-object allocation per frame.
+4. Filtering and query history remain picker-owned. Acceptance closes/restores
+   focus before command admission/execution. Availability is checked again at
+   this user-input boundary: e.g. an asynchronous run can finish during choice.
+   If it did, report unavailability rather than dereferencing a missing run.
+5. Titles/categories and optional short toolbar titles live in the existing
+   command catalog. The Palette derives every item from that catalog and the
+   existing keybinding table. It has no independent execute map or allowlist.
 
-Only after those gates: Command Palette metadata over the real command catalog,
-IDE-scoped Ctrl/Cmd+Shift+P, categories and keybinding labels, then actual
-Hot Resume/Reboot/view/run/cancel workflows. Sharing symbol pickers is a separate
-migration that must preserve query and preview semantics, not a cosmetic move.
+Gates: replaced pickers cannot make Palette Undo target the old query; code
+Undo targets code, a scene-property draft cannot become document Undo after
+blur; Save/Hot Resume capture accepted source values; empty results do nothing;
+Escape restores origin; actual View, Save, Hot Resume and Reboot commands work
+from the Palette. Ctrl/Cmd+Shift+P is offered only while the IDE owns input.
 
-### Cinematic scenario diagnosis
+## Landed Palette proof
 
-User confirmed that the run eventually ends. The earlier 180-second headless
-failure and the interactive logical-tick timeout are not completion proof.
-Separate readiness/guest-call progress from input/cancel admission and verify
-both on the shipped scenario. Do not raise limits, skip checks, or call the
-incident fixed because a timeout terminates it. No scenario changes landed in
-this navigation slice.
+- The complete Studio browser workflow passes on software, WebGL2 and WebGPU,
+  including actual Ctrl+Shift+P and View-menu admission. Query history stays
+  separate from code and property history; replaced pickers return the real
+  non-code control. A busy runtime queue prevents a stale Resume selection.
+- Actual Palette commands open Scenario Lab and source-backed views, save
+  accepted scene properties, undo the source edit, and perform dirty-source
+  Save & Hot Resume and Save & Reboot. The browser driver checks the resulting
+  workspace files, including the additional WebGPU readback-test FSM revision.
+- `tests/ide/command_palette_scenario.idetest.js` runs the shipped cinematic
+  scenario through the Palette, reopens Studio with the physical host chord,
+  and cancels through the Palette. Ten assertions include suspended machine
+  cycles, cancelled result state and canonical media restoration on the same
+  Runtime. This proves cancellation, not successful cinematic completion.
+- Inspected 384×288 Palette output uses the IDE tiny font. All three renderer
+  screenshots have SHA-256
+  `e65e9e25d0f89a9e52281d9e646d615a4cd552c86bc9415a0a2be549ed9124b7`.
+- Lua tests: 963 passed, one existing skip. IDE typecheck passed; broad test
+  typechecking retains the same 52 baseline diagnostics. Browser Studio and
+  Node headless-tooling products were rebuilt. Artifacts remain under
+  `/tmp/bmsx-studio-review/`.
+- Strict architecture audit: zero issues. Core-parity audit, indentation and
+  `git diff --check` passed; no mirrored runtime or cartlib code changed.
+
+## Remaining slices, not claimed as implemented
+
+### Shared symbol Quick Access
+
+The shared surface is appropriate for choosing a symbol, but migrating only
+its drawing would relocate ownership problems. Keep the existing symbol
+widgets until a provider owns the semantic query lifetime, typed source ranges,
+selection preview and cancellation/focus return. Reference lists, call
+hierarchies and Find/Replace retain their separate inspection/edit semantics.
+
+### Cinematic scenario guest-call admission
+
+The run's eventual timeout is not cinematic completion. Actual packaged code
+reaches `gameplay ready`; its setup completion call then remains pending. A
+350-frame stack capture shows:
+
+```text
+entry → vblank.wait → irq
+  → __bmsx_host_test.setup [completion latch]
+  → story event / FSM transitions → title_screen.enter_idle
+  → atlas.load → imgdec.upload → dma.wait0_idle [HALT_UNTIL_IRQ]
+```
+
+The CPU is in IRQ mode. `dma.wait0_idle` waits for the completion sequence
+advanced by the cart IRQ handler, underneath which setup was injected. The
+live owner defect is therefore guest-call admission into an interrupted
+continuation, not a slow cinematic or a need for a longer timeout. The
+temporary stack probe is `/tmp/bmsx-studio-review/cinematic_stack.idetest.js`;
+the committed Palette scenario test reproduces entry into setup and proves
+that host cancellation still works. Physical IDE chord plus Shift+F5 also
+passed the canonical-media restoration probe.
+
+Before changing this owner, study production debugger inferior-call execution
+and map Runtime completion calls, CPU IRQ/return latches, scheduler boundaries,
+Hot Resume and their C++ mirrors. Merely skipping a call at an IRQ-mode frame
+boundary can starve it forever; forcing user mode, polling DMA from the host,
+or rewriting the scenario to avoid its ordinary asset loads is not a fix.
+No CPU/runtime/cartlib patch or timeout change is part of these UI slices.

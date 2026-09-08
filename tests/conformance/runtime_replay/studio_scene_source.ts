@@ -234,7 +234,7 @@ export async function testSceneSourceEdits(test: StudioFixture): Promise<void> {
 	await press('Digit1');
 	await press('Digit7');
 	check(x.pending && scene.properties[0].value === 18, 'scene: Hot Resume starts with an actual unsubmitted value');
-	await press('ControlLeft', 'ShiftLeft', 'KeyS');
+	await test.runPaletteCommand('Run: Hot Resume');
 	check(actionPromptState.prompt !== null && actionPromptState.prompt.workingCopies.includes(model)
 		&& model.buffer.getText() === expected && !x.pending, 'scene: Hot Resume accepts the field before selecting dirty working copies');
 	await press('Enter');

@@ -1,3 +1,4 @@
+import { testStudioCommandPalette } from './studio_command_palette';
 import { testStudioNavigation } from './studio_navigation';
 import { testSceneMemberRemoval } from './studio_scene_removal';
 import { testSceneSourceTree } from './studio_scene_tree';
@@ -32,6 +33,8 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	await press('Space');
 	await press('Space');
 	await until(() => guest.readStringMember(title(), 'visible') === true, 'title visible');
+	await press('ControlLeft', 'ShiftLeft', 'KeyP');
+	check(!ide.editor.isActive && !execution.userPaused, 'palette: Ctrl+Shift+P is not a gameplay shortcut');
 	for (const key of ['F5', 'F6']) {
 		const usage = hidKeyUsageForCode(key);
 		const address = IO_INP_KEYS + (usage >>> 5) * IO_WORD_SIZE;
@@ -305,6 +308,7 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	await testSceneSourceTree(test);
 	await testStudioQuickPick(test);
 	await testStudioNavigation(test);
+	await testStudioCommandPalette(test);
 	await testSceneMemberRemoval(test);
 	await testSceneMemberMoves(test);
 	await testSceneFieldInsertion(test);

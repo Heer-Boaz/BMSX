@@ -51,6 +51,7 @@ const editorContribKeybindings: readonly EditorCommandKeybinding[] = [
 ];
 
 const workbenchContribKeybindings: readonly EditorCommandKeybinding[] = [
+	{ code: 'KeyP', command: 'commandPalette', modifiers: { any: PRIMARY_MODIFIER, required: KeyModifier.shift, forbidden: KeyModifier.alt } },
 	{ code: 'F5', command: 'debugContinue', modifiers: NO_MODIFIERS },
 	{ code: 'F10', command: 'debugStepOver', modifiers: NO_MODIFIERS },
 	{ code: 'F11', command: 'debugStepInto', modifiers: NO_MODIFIERS },

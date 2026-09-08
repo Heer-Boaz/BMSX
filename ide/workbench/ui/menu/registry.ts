@@ -50,6 +50,8 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'reboot' },
 	],
 	'menubar.view': [
+		{ type: 'command', command: 'commandPalette' },
+		{ type: 'separator' },
 		{ type: 'command', command: 'sceneEditor' },
 		{ type: 'command', command: 'behaviorLens' },
 		{ type: 'command', command: 'scenarioLab' },

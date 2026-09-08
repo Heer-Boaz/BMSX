@@ -109,6 +109,16 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 		check(!item.disabled, `Run-menu command must be enabled: ${command}`);
 		await click(item.bounds);
 	};
+	const runPaletteCommand = async (label: string): Promise<void> => {
+		await press('ControlLeft', 'ShiftLeft', 'KeyP');
+		const picker = ide.editor.quickInput;
+		check(picker.visible && picker.title === 'COMMAND PALETTE', 'palette: the IDE shortcut opens the shared picker');
+		clipboard.text = label;
+		await press('ControlLeft', 'KeyV');
+		check(picker.model.list.rows.length === 1 && picker.model.list.rows[0].item.label === label,
+			`palette: ${label} resolves to one enabled registered command`);
+		await press('Enter');
+	};
 	const settle = () => until(() => tasks.ready && !rewind.seeking, 'seek/queue must settle');
 	const guest = ide.luaTooling.suspendedGuest;
 	// Diagnostic reads use the same raw guest representation as the inspector.
@@ -124,7 +134,7 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 	};
 	audio.bootstrap();
 	return { runtime, ide, execution, rewind, tasks, history, harness, guest, clock, input, clipboard, observations,
-		frame, until, setKey, setPointerButton, press, click, runMenuCommand, settle, cycles, title };
+		frame, until, setKey, setPointerButton, press, click, runMenuCommand, runPaletteCommand, settle, cycles, title };
 }
 
 export type StudioFixture = Awaited<ReturnType<typeof createStudioFixture>>;

@@ -54,9 +54,19 @@ export class QuickInputController {
 
 	public get visible(): boolean { return this.session !== null; }
 
-	public pick<T extends QuickPickItem>(title: string, placeholder: string, items: readonly T[], accept: (item: T) => void): void {
+	public pick<T extends QuickPickItem>(
+		title: string,
+		placeholder: string,
+		provideItems: (origin: InputFocusTarget | null) => readonly T[],
+		accept: (item: T) => void,
+	): void {
 		this.hide();
-		this.session = { returnFocus: inputFocus.target, accept: index => accept(items[index]) };
+		const returnFocus = inputFocus.target;
+		// A provider observes the invoking control after its ordinary blur policy,
+		// never the previous popup's query or an unaccepted property draft.
+		this.field.focusTarget.focus();
+		const items = provideItems(returnFocus);
+		this.session = { returnFocus, accept: index => accept(items[index]) };
 		this.title = title;
 		this.placeholder = placeholder;
 		this.model.setItems(items);
@@ -64,7 +74,6 @@ export class QuickInputController {
 		setFieldText(this.field, '', true);
 		this.model.filter('');
 		this.layoutDirty = true;
-		this.field.focusTarget.focus();
 		this.update();
 		resetBlink();
 	}

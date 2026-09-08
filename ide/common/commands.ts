@@ -1,4 +1,5 @@
 export type EditorSearchCommandId =
+	| 'commandPalette'
 	| 'symbolSearch'
 	| 'symbolSearchGlobal'
 	| 'resourceSearch'
