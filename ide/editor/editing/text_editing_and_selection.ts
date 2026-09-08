@@ -21,6 +21,7 @@ import * as constants from '../../common/constants';
 import { formatLuaDocument } from '../../language/lua/formatter';
 import { extractErrorMessage } from '../../language/lua/interpreter/value';
 import { getLinesSnapshot, getTextSnapshot } from '../text/source_text';
+import { extractIndentation } from '../text/indentation';
 import type { MutableTextPosition, TextBuffer } from '../text/text_buffer';
 import { prepareUndo, applyUndoableReplace, recordEditContext } from './undo_controller';
 import { formatAemDocument } from '../../language/aem/editor';
@@ -352,42 +353,6 @@ export function insertLineBreak(): void {
 	updateDesiredColumn();
 	clearSelection();
 	revealCursor();
-}
-
-/**
- * Extracts the leading whitespace indentation from a string.
- * @param value The string to extract indentation from
- * @returns The indentation string (spaces and tabs)
- */
-export function extractIndentation(value: string): string {
-	let result = '';
-	for (let i = 0; i < value.length; i += 1) {
-		const ch = value.charAt(i);
-		if (ch === ' ' || ch === '\t') {
-			result += ch;
-		} else {
-			break;
-		}
-	}
-	return result;
-}
-
-/**
- * Counts the number of leading indentation characters (spaces and tabs).
- * @param line The line to count indentation for
- * @returns The number of leading whitespace characters
- */
-export function countLeadingIndent(line: string): number {
-	let count = 0;
-	while (count < line.length) {
-		const ch = line.charAt(count);
-		if (ch === '\t' || ch === ' ') {
-			count += 1;
-		} else {
-			break;
-		}
-	}
-	return count;
 }
 
 /**

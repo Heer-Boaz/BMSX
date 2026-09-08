@@ -262,8 +262,8 @@ een expliciete correspondence- en mutatiegrens; de host leest niet
    productieconsument en bewijs de echte cartflow.
 3. **`IDE-LUA-NUMERIC-LITERAL-EDIT-01`** — bewijs eerst één generieke minimale
    language-owned edit voor bestaande signed numeric literals. De huidige AST
-   volstaat daarvoor; table insertion/removal/reorder wacht op een afzonderlijk
-   full-fidelity token-/trivia-ontwerp en wordt niet met feature-local
+   volstaat daarvoor; table insertion/removal/reorder vereist het afzonderlijke
+   token-/trivia-ontwerp in `lua_source_syntax_design.md` en wordt niet met feature-local
    sourcetekstlogica nagebootst.
 4. **`IDE-SCENE-SOURCE-ADAPTER-01`** — bouw op die bestaande canonical source
    een source-preserving visual projectie plus één echte transformedit. Geen
@@ -302,9 +302,10 @@ Nemesis-sceneprojectietests en
 `tests/conformance/runtime_replay/studio_scene_source.ts`. Ongewijzigde frames,
 compiler en TS/C++-machine krijgen geen extra werk of state. De bron wordt alleen op een expliciete edit
 gelezen; een ongewijzigde waarde bewaart ook exponentnotatie en creëert geen
-undo-element. Table insertion/reorder blijft de aparte full-fidelity-syntaxgate;
-removal heeft inmiddels zijn eigen language-owner en onderstaande UI-slice.
-Deze beperkte number/sign-tokenedit pretendeert die niet op te lossen.
+undo-element. Removal, aangrenzende beweging en plaatsing van complete fields
+hebben inmiddels eigen language-owners in `lua_source_syntax_design.md`; Remove
+en Up/Down hebben onderstaande UI-slices. Fieldplaatsing levert nog geen
+constructioninput of Add-UI. Deze number/sign-tokenedit vervangt die owners niet.
 
 Productiereferenties:
 

@@ -53,7 +53,7 @@ in [scene authoring](studio_scene_authoring_design.md).
 | `ide/runtime/source_registry.ts`, `ide/language/lua/interpreter/interpreter.ts` | Runtime-source/debugger metadata and host interpreter use parsed chunks. No guest/runtime syntax representation is added. |
 | `ide/language/lua/formatter.ts` | Requests trivia from the lexer. Indentation uses only significant tokens; string/comment extents determine which line prefixes/suffixes are actual token content. |
 | `syntax/token_navigation.ts`, `syntax/table_fields.ts` | Token navigation owns Full Moon-style trivia attachment and punctuated field spans, on demand over the existing lossless scan. Default AST/token storage stays unchanged. |
-| `ide/language/lua/{source_edits,table_field_moves}.ts`, Scene Editor and Behavior Lens adapters | The language owner provides literal edits, complete-field deletion and adjacent-field movement. No contribution-local structural text scan, second model, runtime execution or scene-specific syntax token. |
+| `ide/language/lua/{source_edits,table_field_moves,table_field_insertion}.ts`, Scene Editor and Behavior Lens adapters | The language owner provides literal edits, complete-field deletion, adjacent-field movement and placement of already constructed complete fields. No contribution-local structural text scan, second model, runtime execution or scene-specific syntax token. |
 
 No machine or C++ runtime representation changes. The edited paths run on
 source analysis or an explicit language edit/Format Document command, not a guest worldtick,
@@ -185,6 +185,121 @@ uses its actual parser field bounds, and the complete product run was repeated
 on software, WebGL2 and WebGPU. No product parser recovery or mutation bypass
 was added to make that failed fixture pass.
 
+## Field insertion contract (2026-09-08)
+
+The insertion primitive places **one already constructed complete field's
+source** at an explicit index in the current parser-owned table. It is a source
+placement operation, not a prefab chooser, AST factory, fragment parser or
+live-instance command. Its producer supplies valid field syntax without exterior
+trivia/separator; the field's interior bytes remain unchanged. Future external
+text/paste admission must use the language parser, not this primitive as a
+validation or repair layer. No invented spans or synthetic parser nodes.
+
+The concrete production references are TypeScript
+[`ChangeTracker.insertNodeInListAfter`](https://github.com/microsoft/TypeScript/blob/c63de15a992d37f0d6cec03ac7631872838602cb/src/services/textChanges.ts#L1032-L1125)
+(next-sibling anchors, separate punctuation, a missing separator before trailing
+comments, and insertion without replacing the whole list),
+[`SmartIndenter`](https://github.com/microsoft/TypeScript/blob/c63de15a992d37f0d6cec03ac7631872838602cb/src/services/formatting/smartIndenter.ts#L113-L156)
+(existing list indentation versus the enclosing block's child indentation),
+and Full Moon's
+[`Punctuated::push_punctuated`](https://github.com/Kampfkarren/full-moon/blob/60f02d5dc2236b57355557e4c306046081fc2fdd/full-moon/src/ast/punctuated.rs#L183-L211).
+Use the existing BLua lexer and trivia attachment, not their native AST stores,
+JavaScript grammar, full-file formatter or defensive recovery paths.
+
+- The caller admits a current complete parse, the real parent table and an
+  index in `0..fields.length`. This applies to all Lua field kinds, not a scene
+  schema. Dynamic Lua is not evaluated or normalized.
+- Insertion before a sibling precedes that sibling's owned leading trivia.
+  Its documentation is not copied or transferred. A line-start insertion uses
+  sibling indentation plus a newline; an inline insertion uses a separator
+  plus one space. Existing source bytes are never deleted or reformatted.
+- Append follows the last field's attached comments. A missing old separator
+  is inserted at the complete field end, **before** those comments. Existing
+  comma/semicolon spelling and the last field's trailing-separator policy are
+  retained; a list without a separator supplies the grammar's comma.
+- Empty tables use their actual brace tokens. Opening-brace trailing and
+  closing-brace leading comments remain outside the new field. Multiline
+  insertion uses the last sibling's indentation, or the opening line's
+  indentation plus BMSX's ordinary tab when no separate sibling line exists.
+  New boundary line breaks follow the opening source line's LF/CRLF. Existing
+  line endings, string content, comments and field interiors are untouched.
+- Inline append keeps final horizontal padding before the closing brace;
+  an empty inline table repeats that padding around its first field. Compact
+  `{}` remains compact. This does not invoke Format Document.
+- The placement owner returns only insertion edits. Coincident punctuation
+  and field offsets become one edit, so the producer defines their order.
+  `EditorTextModel` owns one batch/event/history element and exact Undo/Redo.
+  Expression evaluation and result arity remain compiler-owned. The current
+  BLua `compileTableConstructor` requests one result per field, including the
+  last call expression; stock-Lua tail expansion is not an editor assumption.
+  Do not wrap or rewrite an old expression to change that language contract.
+- The existing indentation utility moves out of the active-editor module into
+  the shared text owner. Enter and structural source edits use that same
+  whitespace rule, with one slice instead of character-by-character strings.
+
+| Callsite | Representation / cost |
+| --- | --- |
+| Explicit language insertion | Current buffer snapshot, actual table/index and complete field source; one opt-in lossless scan and bounded token/line queries; at most two insertion edits. |
+| Code-editor Enter | Existing leading spaces/tabs; shared text utility, no new editor or language state. |
+| Scene Editor stable update/render, compiler and guest runtime | No new callsite, metadata, trivia cache or frame work. |
+
+Gate: exact source/trivia tests, every insertion boundary in the real Lua corpus,
+unchanged AST except the new field, real BLua evaluation/array order, single
+document history and a real Nemesis remove/reinsert/source-application trial.
+The latter invokes the language primitive on the actual working copy, then
+uses ordinary Studio input/Save/Hot Resume; it is **not proof of an Add UI**.
+No scene construction defaults, runtime heap reader or new capture bypass.
+
+### Insertion evidence and cost
+
+The reproducible corpus gate is
+`tests/conformance/lua_source/insertion.ts`, deliberately separate from the fast
+unit suite:
+
+```sh
+node --import tsx --import ./tests/lua/test_setup.ts tests/conformance/lua_source/insertion.ts
+```
+
+All **312 tracked Lua sources**, 2,147,679 bytes and **5,272 tables** participate,
+including **972 empty tables**. Each table's `0..fields.length` boundaries
+produced **19,349 insertions**. Every result parses without recovery; its entire
+AST matches the original with exactly the new field inserted, excluding only
+source coordinates. No file or failed syntax is excluded. This is structural
+proof, not a claim that insertion preserves intentional evaluation semantics.
+Nine targeted tests separately cover field interiors, all field kinds, trivia,
+padding, grouping, LF/CRLF, separators, actual BLua evaluation/array order and
+one-batch Undo/Redo. The full Lua suite passes **951 tests**, with one skip.
+
+`studio_scene_insertion.ts` removes the actual Nemesis title member through the
+Remove hit target, installs that contraction, reinserts the captured authored
+field through the language primitive, and restores the original via history.
+Ordinary Save & Hot Resume installs all three revisions. The director selection
+survives insertion before it; actual pointer focus binds the restored position
+field; Undo/Redo uses the shared document. The six installed capture cells and
+the living actor/position are retained. Software, WebGL2 and WebGPU pass the
+whole Studio workflow, including the subsequent position edit and cold boot.
+This tests source application, **not a visual Add command or new prefab input**.
+The final screenshots were inspected and have identical bytes across backends.
+
+Isolated Node 22.23.1 edit-construction measurements used the retained source
+snapshot/parse, eight warmups, 31 samples and GC before each sample:
+
+| Actual source | Source bytes | Repetitions per sample | Before sibling | Append |
+| --- | ---: | ---: | ---: | ---: |
+| `carts/nemesis_s/scenes/root.lua` | 1,129 | 1,000 | 0.025 ms | 0.025 ms |
+| `carts/pietious/player/player.lua` (largest corpus file) | 100,446 | 20 | 2.20 ms | 2.16 ms |
+
+These medians include the opt-in lexical scan and insertion construction, not
+model application, semantic refresh, drawing or compilation. There is no new
+guest, compiler or idle-frame callsite. Build, IDE typecheck, strict boundaries,
+core parity, indentation and diff checks pass. The tests-wide typecheck has the
+same 52 pre-existing diagnostics, with no additions.
+
+Artifacts: `/tmp/bmsx-field-insertion/`. Initial probes caught two incorrect new
+test expectations: stock-Lua tail-result expansion and the director's export
+name. Both were corrected against their live owners, without a compiler change,
+runtime recovery path or weakened product assertion.
+
 ## Complete-field deletion primitive
 
 ### Syntax ownership
@@ -236,14 +351,15 @@ arrays. Corrected field source ranges can change encoded AST resource bytes;
 compiled instructions, literals and child-expression/debugger locations must
 be compared separately rather than promising identical whole ROMs.
 
-### Remaining insertion and error-tree work
+### Remaining construction, reparenting and error-tree work
 
-Before adding insertion, reparenting or edits on recovered syntax:
+Before adding field-construction UI, reparenting or edits on recovered syntax:
 
 - Complete field bounds, separators and travelling-trivia ownership now exist.
-  Adjacent movement above does not establish new-field construction or
-  cross-list indentation/style policy. Retokenizing a semantic child expression
-  cannot supply the parent syntax ownership.
+  The insertion primitive places already constructed source; it does not
+  establish prefab/options input, field generation or cross-list interior
+  indentation/style policy. Retokenizing a semantic child expression cannot
+  supply the parent syntax ownership.
 - Trivia attachment belongs to the syntax owner. Removal deliberately keeps
   all exterior trivia; movement carries its token-owned trivia. A new operation
   must state how it treats the enclosing list rather than silently invoking a
