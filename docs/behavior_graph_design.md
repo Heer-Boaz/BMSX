@@ -1,8 +1,9 @@
 # Grafische Behavior Lens: bron, relaties en canvas
 
-Status: **architectuurcontract, nog geen grafische implementatie.** Getoetst
-aan de live owners op `09b84195e`. De eerstvolgende slice is de BT-bronprojectie,
-niet een renderer. De huidige Lens blijft bruikbaar tijdens die wijziging.
+Status: **BT-bronprojectie geïmplementeerd; nog geen grafisch canvas.** Het
+architectuurcontract is getoetst op `09b84195e`; `STUDIO-BT-SOURCE-GRAPH-01`
+volgt hieronder met implementatie en bewijs van 9 september 2026. De huidige
+Lens blijft een outline. Eerstvolgend is de gedeelde viewport-/clipgrens.
 
 ## Doel en grens
 
@@ -42,8 +43,19 @@ Zij zijn niet automatisch onderdeel van deze visualisatieslices.
   retained node-/wiregeometrie voor tekenen en aanwijzen. Zijn TUI-cellen en
   authored workflow-DAG zijn niet BMSX' representatie. Met name de
   topologische layout kan niet ongewijzigd cyclische FSM's plaatsen.
-  [WorkflowScene](https://github.com/Heer-Boaz/aigen/blob/1125c7bcb0fb22cdf334f4fb1182357fb58d0b8f/aigen/workflow_scene.py),
-  [DAG-layout](https://github.com/Heer-Boaz/aigen/blob/1125c7bcb0fb22cdf334f4fb1182357fb58d0b8f/aigen/workflow_layout.py#L226-L246).
+  [WorkflowScene](https://github.com/Heer-Boaz/aigen/blob/5248d9c9a0b3bb1cde45a9088c9427d20d8f1b91/aigen/workflow_scene.py),
+  [DAG-layout](https://github.com/Heer-Boaz/aigen/blob/5248d9c9a0b3bb1cde45a9088c9427d20d8f1b91/aigen/workflow_layout.py#L226-L246).
+  De vernieuwde inspector past zich aan selectie en beschikbare ruimte aan;
+  zijn layoutowner behoudt de gemounte editors en hun document-/undo-state.
+  Dat ownershipvoorbeeld hoort bij de latere canvas-slice, niet bij een
+  tweede BMSX-documentlaag:
+  [panegeometrie](https://github.com/Heer-Boaz/aigen/blob/5248d9c9a0b3bb1cde45a9088c9427d20d8f1b91/aigen/workflow_editor_layout.py#L44-L114).
+- **BehaviorTree.CPP** bouwt afzonderlijke uitvoerende nodes per bezoek en
+  voegt ordinary children in bronvolgorde toe. Dit ondersteunt het onderscheid
+  tussen gedeelde definitiebron en afzonderlijke subtree-occurrences; BMSX'
+  eigen `node_program.lua` blijft de semantische owner. Geen XML-runtime,
+  subtreefactory of extra defensieve traversal-laag voor de source lens:
+  [nodeconstructie en recursie](https://github.com/BehaviorTree/BehaviorTree.CPP/blob/9b63b505983f76e46d90d71c87d21fad0001f8a3/src/xml_parsing.cpp#L1042-L1092).
 - **VS Code/Roslyn** blijven de referenties voor één textmodel en minimale
   bronbewerkingen, zoals vastgelegd in
   [Source-backed visual projections](../ide/ARCHITECTURE.md#source-backed-visual-projections).
@@ -56,10 +68,10 @@ gebouwde BMSX-grafiek correct, leesbaar of snel is.
 
 | Owner | Wat bestaat | Wat vóór een grafiek moet veranderen |
 | --- | --- | --- |
-| `ide/workbench/contrib/behavior_lens/registrations.ts`, `registration_index.ts` | Semantisch herkende registrations, per resource én occurrence; workspace-generation-index | Een gekozen occurrence over edits volgen; een bestandsnaam of runtime-id is geen unieke registrationidentiteit |
-| `behavior_lens/model.ts`, `behavior_tree.ts`, `state_machine.ts`, `source.ts` | Source ranges, lokale const-table-resolutie, incomplete syntax en retained outline-topologie | Controlrollen, ordered relaties en FSM-overgangen moeten expliciete bronfeiten worden; niet teruggeparste `label`-/`detail`-strings |
-| `behavior_lens/controller.ts`, `editor_input.ts`, `view_model.ts` | Resource-owned input; refresh bij eigen textmodelversie; listselectie/collapse | Broncorrespondentie hoort bij de retained input; grafiekviewport is geen listscroll. Cross-file feiten vereisen ook semantic-generation-invalidering |
-| `ide/editor/text/text_change.ts`, `scene_editor/controller.ts` | Gedeelde UTF-16-rangemapping; Scene Editor volgt ranges ook terwijl zijn pane verborgen is | Hergebruik deze tekstgrens voor behavior-occurrences; geen lokale offsetcorrecties of namesake matching |
+| `ide/workbench/contrib/behavior_lens/registrations.ts`, `registration_index.ts` | Semantisch herkende registrations, per resource én occurrence; workspace-generation-index | Het retained input volgt de gekozen call over edits; de catalogus levert geen duurzame identiteit op basis van bestandsnaam of runtime-id |
+| `behavior_lens/model.ts`, `behavior_tree_model.ts`, `behavior_tree.ts`, `source.ts` | Typed BT-controlrollen, ordered relaties, attachments en provenance op dezelfde objecten als de outline; lokale const-table-resolutie en incomplete syntax | FSM-overgangen moeten nog expliciete bronfeiten worden; geen teruggeparste `label`-/`detail`-strings |
+| `behavior_lens/controller.ts`, `editor_input.ts`, `view_model.ts`, `source_correspondence.ts` | Resource-owned input; refresh bij eigen textmodelversie; selectie/collapse en gekozen registration via gemapte occurrence-ketens | Grafiekviewport is geen listscroll. Cross-file feiten vereisen ook semantic-generation-invalidering |
+| `ide/editor/text/text_change.ts`, `scene_editor/controller.ts`, `behavior_lens/source_correspondence.ts` | Gedeelde UTF-16-rangemapping; beide projecties volgen ranges ook terwijl hun pane verborgen is | Geen lokale offsetcorrecties of namesake matching |
 | `ide/workbench/ui`, `ide/workbench/render` | List/tree, focus, action bars en pane-lifecycle | Er is nog geen gedeeld graphcontrol met node-/edgegeometrie, canvasinteractie en clipping |
 | `ide/runtime/overlay_renderer.ts`, `machine/ts/render/host_overlay` | Pooled overlaycommands; bestaande `Poly`-route in quad-stream en headless renderer | IDE exposeert die lijnroute nog niet; er is geen per-control clipcontract voor tekst, lijnen en vlakken |
 | `cartlib/behaviour_tree/node_program.lua`, `cartlib/fsm/fsm.lua`, `fsm_component.lua` | De uitvoersemantiek die het beeld moet respecteren | Geen wijziging voor deze visualisatie; geen hostgeschreven tweede runtime |
@@ -245,7 +257,7 @@ alleen een typecheck slaagt. De latere rijen zijn nog te toetsen hypotheses.
 
 | Slice | Afgebakende eindtoestand en bewijs |
 | --- | --- |
-| `STUDIO-BT-SOURCE-GRAPH-01` — eerst | De bestaande recognizer levert typed ordered BT-occurrences/relaties met echte provenance. Outline en registratiekeuze consumeren diezelfde feiten. Selectie/collapse volgen bewezen bronwijzigingen, ook bij verborgen pane. Fixtures: twee registrations in één file, drie uses van één subtree, parallelrollen, weights/attachments, comments vóór bron, gewijzigde initializer, insert/delete/reorder van occurrences en onbekende constructies. Geen graphrenderer of runtimewijziging. |
+| `STUDIO-BT-SOURCE-GRAPH-01` — geïmplementeerd | De bestaande recognizer levert typed ordered BT-occurrences/relaties met echte provenance. Outline en registratiekeuze consumeren diezelfde feiten. Selectie/collapse volgen bewezen bronwijzigingen, ook bij verborgen pane. Fixtures: twee registrations in één file, drie uses van één subtree, parallelrollen, weights/attachments, comments vóór bron, gewijzigde initializer, insert/delete/reorder van occurrences en onbekende constructies. Geen graphrenderer of runtimewijziging. |
 | `IDE-GRAPH-VIEWPORT-01` | Na ontwerp van de rendergrens: gedeeld retained canvas met clipping, pan, node-/edgeselectie en focus/lifecycle. Domeinvrije fixture bewijst half-zichtbare tekst/lijnen/nodes, rand-hit-testing en held-pointer paneovergang op alle drie backends. Geen behaviorsemantiek; generieke control alleen voor de concrete eerstvolgende BT-consument, geen extensieframework. |
 | `STUDIO-BT-GRAPH-VIEW-01` | Eén gekozen BT als ordered visuele boom, attachments/details, collapse, source-navigation en relationship-based keyboard/controllerbediening. Inspecteer echte 384×288-captures en bronnavigatie na pan/collapse/tabwisseling. Een brede en diepe fixture meet projection/layout/hit/draw apart; idle/hover/pan bewijzen geen herhaalde herkenning. Echte carts blijven integratiesmoke. Dit is nog geen editable BT. |
 | `STUDIO-FSM-SOURCE-GRAPH-01` | Na BT: typed containment/entry/transitionfeiten met bewijs en expliciete onbekende relaties; geen lines uit strings. Fixtures bewijzen scopes, guards, directe paths, ondersteunde callbacks, meerdere machines en dynamische targets. Iedere ondersteunde path-/callbackvorm volgt de runtime-owner; cross-file bewijs kan niet zonder semantic-generation-invalidering. |
@@ -264,6 +276,62 @@ Lua-fixtures in de bestaande testharness; geen vervangende fake parser,
 source-rangeproducer of inputowner. Nemesis/Pietious laten bruikbaarheid en
 integratie zien, maar hun huidige namen en regelnummers definiëren de API niet.
 
-Dit document levert geen rendercapture of performancemeting op. Het legt de
-owners, eerste bewijsbare slice en de nog te nemen ontwerpbeslissingen vast;
-runtime- en UX-claims volgen pas bij de betreffende implementatie.
+### Bewijs van de BT-bronslice — 9 september 2026
+
+`behavior_tree_model.ts` geeft de bestaande source-occurrences typed root-,
+branch- en attachmentvelden. Weights, primary fields en listentries behouden
+de echte AST-velden; geen omweg via displaystrings, genormaliseerde runtimewaarden
+of een parallelle graaf. Alleen de bij de nodevariant behorende velden zijn
+controlbranches. Incidentele `children` op een `wait` blijven source-informatie.
+Computed arraymembership blijft expliciet onopgelost in de sectionbron, niet
+een gegokte ordered child. Bekende mutaties worden niet uitgevoerd.
+
+`source_correspondence.ts` volgt half-open UTF-16-spans met de bestaande
+text-change-owner, ook in verborgen inputs. Een match vereist een overeenkomende
+parent-occurrence en dezelfde gemapte syntactische use, niet alleen een
+gedeelde initializer. Een verwijderde use wordt niet vervangen door zijn
+namesake; cut/paste of later Undo bewijst geen move-identiteit. Bronopenen na
+refresh gebruikt actuele nodes, niet eerder bewaarde regel-/kolomcoördinaten.
+De pane bezit clickhistorie; inputwisseling beëindigt die gesture en een
+nieuwe sourcegeneration kan de oude clicked node niet opnieuw activeren.
+
+De live proef vond daarnaast een prerequisite: directe
+`EditorTextModel.pushEditOperations` konden een zichtbare code-layout met oude
+regels achterlaten. De codepane subscribeert nu op model-contentevents en
+`CodeLayout` invalideert de getroffen regels. `PieceTreeBuffer` blijft de
+tekst- en offset→positie-owner; `textChangesEndOffset` bepaalt uitsluitend de
+eindoffset van een applied-order editbatch. Geen renderergrenzencheck,
+test-only layoutreset of per-frame documentvergelijking. Dit volgt de
+model-events→view-lines-koppeling van
+[VS Code ViewModel](https://github.com/microsoft/vscode/blob/48ac1875628144c02d79ff412e0323af9991dfc7/src/vs/editor/common/viewModel/viewModelImpl.ts).
+
+- `tests/helpers/behavior_source_fixture.ts` levert dezelfde zelfstandige Lua
+  aan unit- en live Studio-tests. `tests/lua/behavior_source_graph.test.ts`
+  toetst branches/weights/attachments, hergebruik, duplicates, incomplete
+  syntax, hidden edits, delete/replace/Undo, reorder en een 64-level subtree.
+  Gemeenschappelijke range-invarianten worden ook met zelfstandige FSM- en
+  ActionEffect-bron getoetst.
+- `studio_behavior_source.ts` gebruikt de echte palette, paneactivatie,
+  keyboard/pointer, textmodel-events en Undo. Beide echte carts slagen voor
+  de navigatieproef op software, WebGL2 en WebGPU. Een held Source-press wordt
+  geen tekstselectie; verborgen bronwijzigingen volgen dezelfde occurrence;
+  30 idle frames behouden document en rijobjecten. Machinepositie en
+  geïnstalleerde media veranderen niet.
+- De volledige Studio-workflow slaagt op alle drie backends, inclusief
+  source-apply, Hot Resume, scene-edits en de bestaande negatieve faulttests.
+  Captures zijn geïnspecteerd: dit bewijst de bestaande outline/codeweergave,
+  niet de leesbaarheid van een nog ontbrekende grafiek.
+- IDE-typecheck, Lua-tests, rompacker-tests, core-parity, architecture-boundary
+  audit en indentcheck slagen. De hele tests-typecheck heeft 52 bestaande
+  diagnostics; een compilerhostvergelijking tegen `6b3a84ac5` geeft exact
+  dezelfde diagnostics, geen nieuwe.
+
+Kostenmeting op Node 22.23.1, 10 warmups en 20 samples, reeds opgebouwde
+syntax/bindingdata: 131 source-nodes kosten circa 0,11 ms projectie en 0,08 ms
+reconciliatie; 10.243 source-nodes uit 1.024 hergebruikte subtrees circa
+3,93 ms en 3,65 ms. De eerdere outline-only projectie kostte in die grote
+fixture circa 2,27 ms: de typed feiten/correspondentie zijn dus niet gratis.
+Twee rangemapping-events samen kosten daar circa 0,07 ms. Dit zijn lokale
+medianen, geen parser-, canvas-, GPU- of prestatietoezegging voor elk apparaat.
+Reconciliatie indexeert kandidaten per gematchte parent, geen globale
+kwadratische namesake-scan; dit werk draait niet tijdens idle draw.

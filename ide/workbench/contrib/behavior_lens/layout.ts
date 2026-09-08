@@ -2,6 +2,8 @@ import { uppercaseOutsideStrings } from '../../../common/text';
 import { measureText, truncateTextToWidth } from '../../../editor/common/text/layout';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { updateFullWidthWorkbenchLayout } from '../../common/layout';
+import type { TextBuffer } from '../../../editor/text/text_buffer';
+import { reconcileBehaviorLensSource } from './source_correspondence';
 import {
 	clampWorkbenchListScroll,
 	layoutWorkbenchList,
@@ -39,60 +41,21 @@ export function createBehaviorLensLayout(): BehaviorLensLayout {
 }
 
 /**
- * Installs one immutable source model while preserving view state for row keys
- * that still occur in the new source generation.
+ * Installs one source generation using text-owner correspondence, never old row keys.
  */
 export function installBehaviorLensDocument(
 	state: BehaviorLensViewState,
 	document: BehaviorSourceDocument,
+	buffer: TextBuffer,
 ): void {
-	const selectedRowKey = state.selectionIndex >= 0 && state.selectionIndex < state.rows.length
-		? state.rows[state.selectionIndex].node.rowKey
-		: null;
-	const previousRowKeys = new Set(state.nodesByRowKey.keys());
-	state.document = document;
-	state.sourceNodes.length = 0;
-	state.nodesByRowKey.clear();
-	state.parentRowKeyByRowKey.clear();
-	state.sourceMatchRowKeys.clear();
-
-	indexSourceNodes(state, document.definitions, null, 0, previousRowKeys);
-	for (const rowKey of state.collapsedRowKeys) {
-		if (!state.nodesByRowKey.has(rowKey)) {
-			state.collapsedRowKeys.delete(rowKey);
-		}
-	}
-
+	const selectedRowKey = reconcileBehaviorLensSource(state, document, buffer);
+	state.selectionIndex = -1;
 	state.rowsDirty = true;
 	rebuildBehaviorLensRows(state);
 	state.rowsDirty = false;
 	state.textDirty = true;
-	if (selectedRowKey !== null) {
-		const selectedIndex = findVisibleRowIndex(state, selectedRowKey);
-		state.selectionIndex = selectedIndex >= 0 ? selectedIndex : defaultSelectionIndex(state);
-	} else {
-		state.selectionIndex = defaultSelectionIndex(state);
-	}
+	state.selectionIndex = selectedRowKey === null ? -1 : findVisibleRowIndex(state, selectedRowKey);
 	state.hoverIndex = -1;
-}
-
-function indexSourceNodes(
-	state: BehaviorLensViewState,
-	nodes: readonly BehaviorSourceNode[],
-	parentRowKey: BehaviorSourceRowKey | null,
-	depth: number,
-	previousRowKeys: ReadonlySet<BehaviorSourceRowKey>,
-): void {
-	for (let index = 0; index < nodes.length; index += 1) {
-		const node = nodes[index];
-		state.sourceNodes.push(node);
-		state.nodesByRowKey.set(node.rowKey, node);
-		state.parentRowKeyByRowKey.set(node.rowKey, parentRowKey);
-		if (node.children.length > 0 && depth > 1 && !previousRowKeys.has(node.rowKey)) {
-			state.collapsedRowKeys.add(node.rowKey);
-		}
-		indexSourceNodes(state, node.children, node.rowKey, depth + 1, previousRowKeys);
-	}
 }
 
 /** Writes the retained layout only when the tree, font, or viewport changed. */
@@ -132,9 +95,9 @@ export function rebuildBehaviorLensRows(state: BehaviorLensViewState): void {
 	appendVisibleRows(state, state.document.definitions, 0, null);
 	if (selectedRowKey !== null) {
 		const selectedIndex = findVisibleRowIndex(state, selectedRowKey);
-		state.selectionIndex = selectedIndex >= 0 ? selectedIndex : defaultSelectionIndex(state);
+		state.selectionIndex = selectedIndex;
 	} else {
-		state.selectionIndex = defaultSelectionIndex(state);
+		state.selectionIndex = -1;
 	}
 	state.hoverIndex = -1;
 }
@@ -210,8 +173,4 @@ export function findVisibleRowIndex(
 		}
 	}
 	return -1;
-}
-
-function defaultSelectionIndex(state: BehaviorLensViewState): number {
-	return state.rows.length > 0 ? 0 : -1;
 }

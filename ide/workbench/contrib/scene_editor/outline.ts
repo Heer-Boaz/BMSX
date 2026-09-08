@@ -1,6 +1,6 @@
 import type { LuaSourceRange } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { TrackedTextRange } from '../../../editor/text/text_change';
-import { readLuaSourceRange, readLuaTableFieldInteger } from '../../../language/lua/source_edits';
+import { luaSourceRangeToTextRange, readLuaSourceRange, readLuaTableFieldInteger } from '../../../language/lua/source_edits';
 import { appendWorkbenchTreeNode, rebuildWorkbenchTreeRows, type WorkbenchTreeNode } from '../../ui/tree_view';
 import type { SceneSourceDefinition, SceneSourceDocument, SceneSourceEntry } from './model';
 import type { SceneEditorInput } from './editor_input';
@@ -25,10 +25,7 @@ export function installSceneOutline(input: SceneEditorInput, document: SceneSour
 	}
 	outline.roots.length = 0;
 	for (const scene of document.scenes) {
-		const span = {
-			start: buffer.offsetAt(scene.range.start.line - 1, scene.range.start.column - 1),
-			end: buffer.offsetAt(scene.range.end.line - 1, scene.range.end.column),
-		};
+		const span = luaSourceRangeToTextRange(buffer, scene.range);
 		const prior = previous.get(span.start);
 		const root = appendWorkbenchTreeNode(outline, null, {
 			kind: 'scene', scene, source: scene.range, span,
@@ -40,7 +37,7 @@ export function installSceneOutline(input: SceneEditorInput, document: SceneSour
 			const range = entry.field.range;
 			appendWorkbenchTreeNode(outline, root, {
 				kind: 'member', scene, entry, index, source: range,
-				span: { start: buffer.offsetAt(range.start.line - 1, range.start.column - 1), end: buffer.offsetAt(range.end.line - 1, range.end.column) },
+				span: luaSourceRangeToTextRange(buffer, range),
 				label: readLuaSourceRange(buffer, entry.kind === 'object' ? entry.memberId.range : entry.field.value.range).replace(/\s+/g, ' '),
 				detail: entry.kind === 'object' ? readLuaSourceRange(buffer, entry.definitionId.range).replace(/\s+/g, ' ') : 'Dynamic Lua composition',
 				displayLabel: '',

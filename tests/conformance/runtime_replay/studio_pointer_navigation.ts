@@ -5,9 +5,9 @@ import { getCodeAreaBounds } from '../../../ide/editor/ui/view/view';
 import { editorContextMenuState } from '../../../ide/workbench/contrib/context_menu/state';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { resolveRuntimeResource } from '../../../ide/runtime/sources';
-import type { BehaviorLensViewState } from '../../../ide/workbench/contrib/behavior_lens/view_model';
-import { chooseBehavior } from './studio_behavior_picker';
+import { chooseBehavior, revealLensRow } from './studio_behavior_picker';
 import { check, type StudioFixture } from './studio_fixture';
+import { testStudioBehaviorSourceGraph } from './studio_behavior_source';
 
 export type NavigationCart = 'nemesis_s' | 'pietious';
 const CASES = {
@@ -44,22 +44,6 @@ function assertSourcePosition(path: string, line: number, column: number, route:
 		`${route}: expected ${path}:${line}:${column}, got ${model.resource.path}:${view.cursorRow + 1}:${view.cursorColumn + 1}`);
 	check(view.selectionAnchor === null || (view.selectionAnchor.row === view.cursorRow && view.selectionAnchor.column === view.cursorColumn),
 		`${route}: navigation must not turn the old pointer hold into a text selection`);
-}
-
-async function revealLensRow(test: StudioFixture, view: BehaviorLensViewState, key: string): Promise<void> {
-	const ancestors: string[] = [];
-	let parent = view.parentRowKeyByRowKey.get(key)!;
-	while (parent !== null) {
-		ancestors.push(parent);
-		parent = view.parentRowKeyByRowKey.get(parent)!;
-	}
-	for (let index = ancestors.length - 1; index >= -1; index -= 1) {
-		const target = index === -1 ? key : ancestors[index];
-		const row = view.rows.findIndex(entry => entry.node.rowKey === target);
-		check(row >= 0, 'navigation: expanded parent exposes its source child');
-		while (view.selectionIndex !== row) await test.press(view.selectionIndex < row ? 'ArrowDown' : 'ArrowUp');
-		if (index !== -1 && !view.rows[row].expanded) await test.press('ArrowRight');
-	}
 }
 
 export async function testStudioPointerNavigation(test: StudioFixture, cart: NavigationCart): Promise<void> {
@@ -144,5 +128,6 @@ export async function runStudioPointerNavigation(test: StudioFixture, cart: Navi
 	await test.press('ControlRight', 'ShiftRight');
 	await test.runMenuCommand('pause');
 	await testStudioPointerNavigation(test, cart);
+	await testStudioBehaviorSourceGraph(test);
 	return { hostFrames: test.observations.hostFrames, selected: test.cycles() };
 }

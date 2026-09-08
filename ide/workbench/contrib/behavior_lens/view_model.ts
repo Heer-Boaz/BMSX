@@ -1,5 +1,8 @@
 import type { EditorFont } from '../../../editor/ui/view/font';
-import type { WorkbenchActionBarState } from '../../ui/action_bar';
+import type { TrackedTextRange } from '../../../editor/text/text_change';
+import type { EditorTextModel } from '../../../editor/model/text_model';
+import { createWorkbenchActionBar, type WorkbenchActionBarState } from '../../ui/action_bar';
+import { createBehaviorLensLayout, installBehaviorLensDocument } from './layout';
 import type {
 	WorkbenchListLayout,
 	WorkbenchListState,
@@ -46,8 +49,8 @@ export type BehaviorLensViewState = WorkbenchListState<BehaviorLensRow, Behavior
 	readonly resource: BehaviorSourceDocument['resource'];
 	document: BehaviorSourceDocument;
 	sourceVersion: number;
-	sourceLine: number;
-	sourceColumn: number;
+	definitionRowKey: BehaviorSourceRowKey | null;
+	sourceRanges: Map<BehaviorSourceRowKey, TrackedTextRange>;
 	readonly sourceNodes: BehaviorSourceNode[];
 	readonly nodesByRowKey: Map<BehaviorSourceRowKey, BehaviorSourceNode>;
 	readonly parentRowKeyByRowKey: Map<BehaviorSourceRowKey, BehaviorSourceRowKey | null>;
@@ -56,6 +59,31 @@ export type BehaviorLensViewState = WorkbenchListState<BehaviorLensRow, Behavior
 	rowsDirty: boolean;
 	textDirty: boolean;
 	readonly status: BehaviorLensStatusInfo;
-	lastPointerClickTimeMs: number;
-	lastPointerClickRowKey: BehaviorSourceRowKey | null;
 };
+
+/** Input-owned source/view state; pixel layout is prepared only by the active pane. */
+export function createBehaviorLensViewState(document: BehaviorSourceDocument, model: EditorTextModel): BehaviorLensViewState {
+	const view: BehaviorLensViewState = {
+		actionBar: createWorkbenchActionBar('behaviorLens.title'),
+		resource: document.resource,
+		document: { resource: document.resource, definitions: [] },
+		sourceVersion: model.version,
+		definitionRowKey: null,
+		sourceRanges: new Map(),
+		rows: [],
+		sourceNodes: [],
+		nodesByRowKey: new Map(),
+		parentRowKeyByRowKey: new Map(),
+		collapsedRowKeys: new Set(),
+		sourceMatchRowKeys: new Set(),
+		selectionIndex: -1,
+		scroll: 0,
+		hoverIndex: -1,
+		rowsDirty: true,
+		textDirty: true,
+		layout: createBehaviorLensLayout(),
+		status: { info: '', detail: '' },
+	};
+	installBehaviorLensDocument(view, document, model.buffer);
+	return view;
+}

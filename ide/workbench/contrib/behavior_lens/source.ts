@@ -15,6 +15,7 @@ import type { SemanticValueSource, ValueAssignmentEntry } from '../../../../tool
 import { resourceIdentityKey, type ResourceIdentity } from '../../../common/resource';
 import type {
 	BehaviorKind,
+	BehaviorDynamicSourceNode,
 	BehaviorSourceNode,
 	BehaviorSourceNodeKind,
 	BehaviorSourceResolution,
@@ -32,9 +33,9 @@ export type BehaviorRecognizerContext = {
 	readonly constInitializers: ReadonlyMap<SymbolID, LuaExpression>;
 	readonly mutatedDeclarations: ReadonlySet<SymbolID>;
 	readonly anchor: string;
-	readonly behaviorKind: BehaviorKind;
+	readonly registrationRange: LuaSourceRange;
 	readonly sourceIncomplete: boolean;
-};
+} & ({ readonly behaviorKind: 'behavior_tree' } | { readonly behaviorKind: 'state_machine' } | { readonly behaviorKind: 'action_effect' });
 
 export type ResolvedSourceTable = {
 	readonly table: LuaTableConstructorExpression;
@@ -44,7 +45,7 @@ export type ResolvedSourceTable = {
 	readonly resolution: BehaviorSourceResolution;
 };
 
-type SourceNodeInput = {
+export type SourceNodeInput = {
 	readonly kind: BehaviorSourceNodeKind;
 	readonly label: string;
 	readonly detail: string;
@@ -66,6 +67,8 @@ export type SourceNodeBuilder = (
 	path: string,
 	expression: LuaExpression,
 	activeDeclarations: Set<SymbolID>,
+	field: LuaTableField,
+	index: number | null,
 ) => BehaviorSourceNode;
 
 export function behaviorSourceFieldSegment(entry: NamedSourceField, index: number): string {
@@ -323,7 +326,7 @@ export function createDynamicNode(
 	path: string,
 	label: string,
 	expression: LuaExpression,
-): BehaviorSourceNode {
+): BehaviorDynamicSourceNode {
 	return createSourceNode(context, path, {
 		kind: 'dynamic',
 		label,
@@ -335,11 +338,16 @@ export function createDynamicNode(
 	});
 }
 
-export function createSourceNode(
-	context: BehaviorRecognizerContext,
+export function createSourceNode<C extends BehaviorRecognizerContext, T extends SourceNodeInput>(
+	context: C,
 	path: string,
-	input: SourceNodeInput,
-): BehaviorSourceNode {
+	input: T,
+): Omit<T, 'resolution'> & {
+	readonly rowKey: string;
+	readonly behaviorKind: C['behaviorKind'];
+	readonly occurrenceRange: LuaSourceRange;
+	readonly resolution: BehaviorSourceResolution;
+} {
 	let resolution = input.resolution;
 	if (resolution !== 'unresolved') {
 		for (let index = 0; index < input.children.length; index += 1) {
@@ -353,15 +361,12 @@ export function createSourceNode(
 		}
 	}
 	return {
+		...input,
 		rowKey: `${context.anchor}${path}`,
 		behaviorKind: context.behaviorKind,
-		kind: input.kind,
-		label: input.label,
-		detail: input.detail,
-		authoredRange: input.authoredRange,
-		referenceRange: input.referenceRange,
+		occurrenceRange: input.kind === 'definition' ? context.registrationRange
+			: input.referenceRange !== null ? input.referenceRange : input.authoredRange,
 		resolution,
-		children: input.children,
 	};
 }
 
@@ -442,6 +447,8 @@ export function buildTableArraySection(
 			appendBehaviorSourcePath(path, `array:${index + 1}`),
 			entries[index].value,
 			activeDeclarations,
+			entries[index],
+			resolved.resolution === 'complete' ? index + 1 : null,
 		));
 	}
 	for (let index = 0; index < keyedFields.length; index += 1) {
@@ -456,6 +463,8 @@ export function buildTableArraySection(
 				appendBehaviorSourcePath(entryPath, 'value'),
 				entry.field.value,
 				activeDeclarations,
+				entry.field,
+				null,
 			);
 			children.push(createSourceNode(context, entryPath, {
 				kind: 'section',

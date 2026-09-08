@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import type { CodeEditorViewSnapshot } from '../../ide/common/models';
 import type { RuntimeResource } from '../../ide/common/resource';
 import { EditorTextModel, type EditorTextModelContentChangeEvent } from '../../ide/editor/model/text_model';
-import { mapTrackedTextRange, type EditorTextChange } from '../../ide/editor/text/text_change';
+import { mapTrackedTextRange, textChangesEndOffset, type EditorTextChange } from '../../ide/editor/text/text_change';
 
 const resource: RuntimeResource = {
 	domain: 0, path: 'tracked.lua',
@@ -59,6 +59,7 @@ test('the text model emits applied-order changes for atomic edits, Undo and Redo
 		{ offset: 0, deletedLength: 1, insertedLength: 6 },
 	]);
 	assert.deepEqual(range, { start: 9, end: 17 });
+	assert.equal(textChangesEndOffset(events[0].changes), 15);
 	assert.equal(model.buffer.getTextRange(range.start, range.end), 'tarXYZet');
 	model.undo();
 	assert.deepEqual(events[1].changes, [
@@ -66,6 +67,7 @@ test('the text model emits applied-order changes for atomic edits, Undo and Redo
 		{ offset: 7, deletedLength: 3, insertedLength: 1 },
 	]);
 	assert.deepEqual(range, { start: 4, end: 10 });
+	assert.equal(textChangesEndOffset(events[1].changes), 8);
 	assert.equal(model.buffer.getTextRange(range.start, range.end), 'target');
 	model.redo();
 	assert.deepEqual(events[2].changes, events[0].changes);
@@ -76,6 +78,16 @@ test('the text model emits applied-order changes for atomic edits, Undo and Redo
 	model.undo();
 	assert.equal(range.start, range.end, 'history does not recreate a removed selection');
 	assert.deepEqual(events[0].changes[1], { offset: 0, deletedLength: 1, insertedLength: 6 }, 'retained events are independent of mutable history');
+});
+
+test('affected text extent belongs to the final buffer, including deletions and overlapping applied edits', () => {
+	const cases: readonly [readonly EditorTextChange[], number][] = [
+		[[{ offset: 3, deletedLength: 5, insertedLength: 0 }], 3],
+		[[{ offset: 3, deletedLength: 0, insertedLength: 5 }, { offset: 0, deletedLength: 10, insertedLength: 1 }], 1],
+		[[{ offset: 3, deletedLength: 0, insertedLength: 5 }, { offset: 10, deletedLength: 2, insertedLength: 0 }], 10],
+		[[{ offset: 10, deletedLength: 1, insertedLength: 2 }, { offset: 5, deletedLength: 0, insertedLength: 4 }], 16],
+	];
+	for (const [changes, end] of cases) assert.equal(textChangesEndOffset(changes), end);
 });
 
 test('coalesced typing emits only the new replacements, while history emits the complete inverse', () => {

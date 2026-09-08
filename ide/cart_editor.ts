@@ -345,6 +345,7 @@ export class RuntimeCartEditor implements CartEditor {
 		});
 		this.unsubscribeTextModelChanged = editorTextModelService.onDidChangeContent((model, event) => {
 			this.sceneEditor.onDidChangeContent(model, event);
+			this.behaviorLens.onDidChangeContent(model, event);
 			const context = findCodeTabContext(model.resource);
 			if (model.mode === 'lua') {
 				invalidateLuaCommentContextFromRow(model.buffer, event.startRow);

@@ -1,12 +1,10 @@
 import { clamp } from '../../../../machine/ts/common/clamp';
 import type { LuaSourceRange } from '../../../../toolchain/ts/lua/syntax/ast';
-import { compareSourcePosition, sourcePositionInRange } from '../../../../toolchain/ts/lua/semantic/source_range';
 import {
 	findVisibleRowIndex,
 	rebuildBehaviorLensRows,
 } from './layout';
 import { revealWorkbenchListSelection } from '../../ui/list_view';
-import type { BehaviorSourceNode, BehaviorSourceRowKey } from './model';
 import type { BehaviorLensViewState } from './view_model';
 
 export type BehaviorLensNavigationCommand =
@@ -43,16 +41,17 @@ export function executeBehaviorLensNavigation(
 	if (state.rows.length === 0) {
 		return BehaviorLensNavigationResult.None;
 	}
-	const selectionIndex = state.selectionIndex >= 0 ? state.selectionIndex : 0;
+	const selectionIndex = state.selectionIndex;
 	switch (command) {
 		case 'up': return selectRow(state, selectionIndex - 1);
 		case 'down': return selectRow(state, selectionIndex + 1);
-		case 'page-up': return selectRow(state, selectionIndex - state.layout.visibleRowCount);
-		case 'page-down': return selectRow(state, selectionIndex + state.layout.visibleRowCount);
+		case 'page-up': return selectRow(state, selectionIndex < 0 ? state.scroll : selectionIndex - state.layout.visibleRowCount);
+		case 'page-down': return selectRow(state, selectionIndex < 0
+			? state.scroll + state.layout.visibleRowCount - 1 : selectionIndex + state.layout.visibleRowCount);
 		case 'home': return selectRow(state, 0);
 		case 'end': return selectRow(state, state.rows.length - 1);
-		case 'left': return collapseOrSelectParent(state, selectionIndex);
-		case 'right': return expandOrSelectChild(state, selectionIndex);
+		case 'left': return selectionIndex < 0 ? BehaviorLensNavigationResult.None : collapseOrSelectParent(state, selectionIndex);
+		case 'right': return selectionIndex < 0 ? BehaviorLensNavigationResult.None : expandOrSelectChild(state, selectionIndex);
 	}
 }
 
@@ -126,103 +125,6 @@ export function toggleBehaviorLensRow(state: BehaviorLensViewState, rowIndex: nu
 	state.rowsDirty = false;
 	state.textDirty = true;
 	updateBehaviorLensStatus(state);
-}
-
-/**
- * Matches a source position to every view occurrence of the narrowest authored
- * initializer range. A direct reference at the position takes precedence.
- */
-export function setBehaviorLensSourcePosition(
-	state: BehaviorLensViewState,
-	path: string,
-	line: number,
-	column: number,
-): number {
-	state.sourceLine = line;
-	state.sourceColumn = column;
-	state.sourceMatchRowKeys.clear();
-	const reference = narrowestRangeAtPosition(state.sourceNodes, path, line, column, true);
-	const authored = reference === null
-		? narrowestRangeAtPosition(state.sourceNodes, path, line, column, false)
-		: null;
-	const target = reference === null ? authored : reference;
-	if (target === null) {
-		return 0;
-	}
-	const matchReference = reference !== null;
-	for (let index = 0; index < state.sourceNodes.length; index += 1) {
-		const node = state.sourceNodes[index];
-		const candidate = matchReference ? node.referenceRange : node.authoredRange;
-		if (candidate !== null && sourceRangesEqual(candidate, target)) {
-			state.sourceMatchRowKeys.add(node.rowKey);
-			expandAncestors(state, node.rowKey);
-		}
-	}
-	if (state.rowsDirty) {
-		rebuildBehaviorLensRows(state);
-		state.rowsDirty = false;
-		state.textDirty = true;
-	}
-	for (let index = 0; index < state.rows.length; index += 1) {
-		if (state.sourceMatchRowKeys.has(state.rows[index].node.rowKey)) {
-			state.selectionIndex = index;
-			break;
-		}
-	}
-	return state.sourceMatchRowKeys.size;
-}
-
-function narrowestRangeAtPosition(
-	nodes: readonly BehaviorSourceNode[],
-	path: string,
-	line: number,
-	column: number,
-	reference: boolean,
-): LuaSourceRange | null {
-	let best: LuaSourceRange | null = null;
-	for (let index = 0; index < nodes.length; index += 1) {
-		const node = nodes[index];
-		const candidate = reference ? node.referenceRange : node.authoredRange;
-		if (candidate === null || candidate.path !== path || !sourcePositionInRange(line, column, candidate)) {
-			continue;
-		}
-		if (best === null || sourceRangeIsInside(candidate, best)) {
-			best = candidate;
-		}
-	}
-	return best;
-}
-
-function sourceRangeIsInside(candidate: LuaSourceRange, outer: LuaSourceRange): boolean {
-	return compareSourcePosition(
-		candidate.start.line,
-		candidate.start.column,
-		outer.start.line,
-		outer.start.column,
-	) >= 0 && compareSourcePosition(
-		candidate.end.line,
-		candidate.end.column,
-		outer.end.line,
-		outer.end.column,
-	) <= 0;
-}
-
-function sourceRangesEqual(left: LuaSourceRange, right: LuaSourceRange): boolean {
-	return left.path === right.path
-		&& left.start.line === right.start.line
-		&& left.start.column === right.start.column
-		&& left.end.line === right.end.line
-		&& left.end.column === right.end.column;
-}
-
-function expandAncestors(state: BehaviorLensViewState, rowKey: BehaviorSourceRowKey): void {
-	let parentRowKey = state.parentRowKeyByRowKey.get(rowKey)!;
-	while (parentRowKey !== null) {
-		if (state.collapsedRowKeys.delete(parentRowKey)) {
-			state.rowsDirty = true;
-		}
-		parentRowKey = state.parentRowKeyByRowKey.get(parentRowKey)!;
-	}
 }
 
 export function selectedBehaviorLensSourceRange(state: BehaviorLensViewState): LuaSourceRange | null {

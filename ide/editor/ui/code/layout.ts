@@ -9,7 +9,8 @@ import type { FileSemanticData } from '../../../../toolchain/ts/lua/semantic/mod
 import type { SemanticSymbolKind } from '../../../../toolchain/ts/lua/semantic/symbols';
 import type { SemanticAnnotations, TokenAnnotation } from '../../../../toolchain/ts/lua/semantic/tokens';
 import type { CachedHighlight, HighlightLine, VisualLineSegment } from '../../../common/models';
-import type { EditorDocumentMode } from '../../model/text_model';
+import type { EditorDocumentMode, EditorTextModelContentChangeEvent } from '../../model/text_model';
+import { textChangesEndOffset } from '../../text/text_change';
 import { EditorFont } from '../view/font';
 import { getTextSnapshot } from '../../text/source_text';
 import { getOrCreateSemanticProject } from '../../contrib/intellisense/semantic/workspace/state';
@@ -118,6 +119,7 @@ function ensureVisualLineSegment(target: VisualLineSegmentTarget, index: number)
  * CartEditor delegates expensive computations here so the orchestrator stays lean.
  */
 export class CodeLayout {
+	private readonly changedEndPosition: Position = { row: 0, column: 0 };
 	private readonly highlightCache: Map<number, CachedHighlight> = new Map();
 	private readonly maxHighlightCache: number;
 	private visualLines: VisualLineSegment[] = [];
@@ -225,6 +227,13 @@ export class CodeLayout {
 	public invalidateLine(row: number): void {
 		this.highlightCache.delete(row);
 		this.markVisualLinesDirtyForRows(row, row);
+	}
+
+	/** Model events invalidate the projection regardless of which editor produced the edit. */
+	public onDidChangeContent(buffer: TextBuffer, event: EditorTextModelContentChangeEvent): void {
+		buffer.positionAt(textChangesEndOffset(event.changes), this.changedEndPosition);
+		this.invalidateHighlightsFromRow(event.startRow);
+		this.markVisualLinesDirtyForRows(event.startRow, this.changedEndPosition.row);
 	}
 
 	public invalidateHighlightsFromRow(row: number): void {

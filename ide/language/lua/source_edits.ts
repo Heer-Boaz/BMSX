@@ -9,6 +9,15 @@ import { findLuaTableFieldSeparator } from '../../../toolchain/ts/lua/syntax/tab
 import type { LuaToken } from '../../../toolchain/ts/lua/syntax/token';
 import type { EditorTextEdit } from '../../editor/model/text_model';
 import type { TextBuffer } from '../../editor/text/text_buffer';
+import type { TrackedTextRange } from '../../editor/text/text_change';
+
+/** Lua ranges are one-based and inclusive; text markers are half-open UTF-16 offsets. */
+export function luaSourceRangeToTextRange(buffer: TextBuffer, range: LuaSourceRange): TrackedTextRange {
+	return {
+		start: buffer.offsetAt(range.start.line - 1, range.start.column - 1),
+		end: buffer.offsetAt(range.end.line - 1, range.end.column),
+	};
+}
 
 /**
  * Removes a field and its following separator, retaining all exterior trivia.

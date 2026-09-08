@@ -11,6 +11,16 @@ export type TrackedTextRange = {
 	end: number;
 };
 
+/** End of the affected text in the final buffer, for changes in application order. */
+export function textChangesEndOffset(changes: readonly EditorTextChange[]): number {
+	let end = 0;
+	for (const change of changes) {
+		if (change.offset < end) end += change.insertedLength - change.deletedLength;
+		end = Math.max(end, change.offset + change.insertedLength);
+	}
+	return end;
+}
+
 /**
  * VS Code nodeAcceptEdit with NeverGrowsWhenTypingAtEdges and collapseOnReplace.
  * Only existing source is tracked: replacing it completely clears the range,

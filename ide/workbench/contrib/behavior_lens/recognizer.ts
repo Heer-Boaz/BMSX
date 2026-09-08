@@ -6,7 +6,7 @@ import { buildActionEffectDefinition } from './action_effect';
 import { buildBehaviorTreeDefinition } from './behavior_tree';
 import type {
 	BehaviorSourceDocument,
-	BehaviorSourceNode,
+	BehaviorSourceDefinition,
 } from './model';
 import {
 	appendBehaviorSourcePath,
@@ -16,7 +16,7 @@ import {
 	describeResolvedSourceTable,
 	resolveSourceTable,
 	type BehaviorRecognizerContext,
-	type ResolvedSourceTable,
+	type SourceNodeInput,
 } from './source';
 import { buildStateMachineDefinition } from './state_machine';
 
@@ -30,7 +30,7 @@ export function buildBehaviorSourceDocument(
 ): BehaviorSourceDocument {
 	const { constInitializers, registrations } = collectBehaviorRegistrations(resource, analysis);
 	const mutatedDeclarations = collectMutatedDeclarations(analysis);
-	const definitions: BehaviorSourceNode[] = [];
+	const definitions: BehaviorSourceDefinition[] = [];
 	for (const registration of registrations) {
 		definitions.push(buildDefinition(analysis, constInitializers, mutatedDeclarations, registration));
 	}
@@ -45,7 +45,7 @@ function buildDefinition(
 	constInitializers: ReadonlyMap<SymbolID, LuaExpression>,
 	mutatedDeclarations: ReadonlySet<SymbolID>,
 	registration: BehaviorRegistration,
-): BehaviorSourceNode {
+): BehaviorSourceDefinition {
 	const call = registration.callSite.expression;
 	const idLabel = registration.idLabel;
 	const definitionExpression = call.arguments[registration.definitionArgument];
@@ -55,11 +55,16 @@ function buildDefinition(
 		mutatedDeclarations,
 		anchor: registration.anchor,
 		behaviorKind: registration.behaviorKind,
+		registrationRange: call.range,
 		sourceIncomplete: analysis.syntaxError !== null,
 	};
 	const definitionPath = appendBehaviorSourcePath('', 'definition');
+	const activeDeclarations = new Set<SymbolID>();
+	const resolved = definitionExpression
+		? resolveSourceTable(context, definitionExpression, activeDeclarations) : null;
+	let input: SourceNodeInput & { kind: 'definition' };
 	if (!definitionExpression) {
-		return createSourceNode(context, definitionPath, {
+		input = {
 			kind: 'definition',
 			label: `${definitionKindLabel(registration.behaviorKind)} ${idLabel}`,
 			detail: 'registration has no definition argument',
@@ -67,60 +72,42 @@ function buildDefinition(
 			referenceRange: null,
 			resolution: 'unresolved',
 			children: [],
-		});
-	}
-	const activeDeclarations = new Set<SymbolID>();
-	const resolved = resolveSourceTable(context, definitionExpression, activeDeclarations);
-	if (!resolved) {
-		const dynamic = createDynamicNode(
-			context,
-			appendBehaviorSourcePath(definitionPath, 'value'),
-			'definition',
-			definitionExpression,
-		);
-		return createSourceNode(context, definitionPath, {
+		};
+	} else if (resolved === null) {
+		input = {
 			kind: 'definition',
 			label: `${definitionKindLabel(registration.behaviorKind)} ${idLabel}`,
-			detail: sourceDetail(context, 'unresolved registration definition'),
+			detail: context.sourceIncomplete ? 'unresolved registration definition | syntax recovery' : 'unresolved registration definition',
 			authoredRange: definitionExpression.range,
 			referenceRange: null,
 			resolution: 'unresolved',
-			children: [dynamic],
-		});
+			children: [createDynamicNode(context, appendBehaviorSourcePath(definitionPath, 'value'), 'definition', definitionExpression)],
+		};
+	} else {
+		const resolvedDetail = describeResolvedSourceTable(resolved);
+		let detail = resolvedDetail.length > 0 ? `source initializer ${resolvedDetail}` : 'source initializer';
+		if (context.sourceIncomplete) detail += ' | syntax recovery';
+		input = {
+			kind: 'definition',
+			label: `${definitionKindLabel(registration.behaviorKind)} ${idLabel}`,
+			detail,
+			authoredRange: resolved.table.range,
+			referenceRange: resolved.referenceRange,
+			resolution: resolved.resolution,
+			children: [],
+		};
 	}
-	const resolvedDetail = describeResolvedSourceTable(resolved);
-	let detail = resolvedDetail.length > 0
-		? `source initializer ${resolvedDetail}`
-		: 'source initializer';
-	if (context.sourceIncomplete) {
-		detail += ' | syntax recovery';
+	if (context.behaviorKind === 'behavior_tree') {
+		const body = resolved === null
+			? { root: null, blackboard: null, children: input.children }
+			: buildBehaviorTreeDefinition(context, resolved.table, activeDeclarations);
+		return createSourceNode(context, definitionPath, { ...input, ...body });
 	}
 	return createSourceNode(context, definitionPath, {
-		kind: 'definition',
-		label: `${definitionKindLabel(registration.behaviorKind)} ${idLabel}`,
-		detail,
-		authoredRange: resolved.table.range,
-		referenceRange: resolved.referenceRange,
-		resolution: resolved.resolution,
-		children: buildDefinitionChildren(context, resolved, activeDeclarations),
+		...input,
+		children: resolved === null ? input.children
+			: context.behaviorKind === 'state_machine'
+				? buildStateMachineDefinition(context, resolved.table, activeDeclarations)
+				: buildActionEffectDefinition(context, resolved.table, activeDeclarations),
 	});
-}
-
-function sourceDetail(context: BehaviorRecognizerContext, detail: string): string {
-	return context.sourceIncomplete ? `${detail} | syntax recovery` : detail;
-}
-
-function buildDefinitionChildren(
-	context: BehaviorRecognizerContext,
-	resolved: ResolvedSourceTable,
-	activeDeclarations: Set<SymbolID>,
-): readonly BehaviorSourceNode[] {
-	switch (context.behaviorKind) {
-		case 'behavior_tree':
-			return buildBehaviorTreeDefinition(context, resolved.table, activeDeclarations);
-		case 'state_machine':
-			return buildStateMachineDefinition(context, resolved.table, activeDeclarations);
-		case 'action_effect':
-			return buildActionEffectDefinition(context, resolved.table, activeDeclarations);
-	}
 }

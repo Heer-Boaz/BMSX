@@ -14,8 +14,12 @@ import {
 import type { IdeCommandController } from '../../../commands/controller';
 import { updateWorkbenchActionBarPointer } from '../../input/pointer/action_bar';
 import { drawBehaviorLens } from './render';
+import { prepareBehaviorLensLayout } from './layout';
+import { BehaviorLensPointer, BehaviorLensPointerResult } from './pointer';
 
 export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<BehaviorLensInput> {
+	private readonly pointer = new BehaviorLensPointer();
+
 	public constructor(
 		resourcePanel: ResourcePanelController,
 		private readonly controller: BehaviorLensController,
@@ -26,6 +30,12 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 
 	public override update(): void {
 		this.controller.updateView(this.input);
+	}
+
+	public override clearInput(): void {
+		this.pointer.cancel();
+		this.input.view.hoverIndex = -1;
+		super.clearInput();
 	}
 
 	public draw(): void {
@@ -51,7 +61,10 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		}
 		if (justPressed) this.focus();
 		const view = this.input.view;
-		return this.controller.handlePointer(view, snapshot, justPressed, now);
+		prepareBehaviorLensLayout(view);
+		const result = this.pointer.handle(view, snapshot, justPressed, now);
+		if (result === BehaviorLensPointerResult.Activate) this.controller.openSource();
+		return result !== BehaviorLensPointerResult.Outside;
 	}
 
 	public handleWheel(

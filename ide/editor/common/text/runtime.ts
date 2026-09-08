@@ -1,5 +1,4 @@
 import { clearForwardNavigationHistory } from '../../../navigation/navigation_history';
-import { requestSemanticRefresh, clearReferenceHighlights } from '../../contrib/intellisense/engine';
 import { activeCodeEditor } from '../../ui/code_editor_state';
 import { editorViewState } from '../../ui/view/state';
 import { editorRuntimeState } from '../runtime_state';
@@ -11,10 +10,6 @@ export function markTextMutated(): void {
 	if (!activeCodeEditor.model.commitEdit(captureCodeEditorViewSnapshot(), editContext)) {
 		return;
 	}
-	editorViewState.maxLineLengthDirty = true;
-	clearReferenceHighlights();
-	editorViewState.layout.ensureVisualLinesDirty();
-	requestSemanticRefresh();
 	clearForwardNavigationHistory();
 }
 

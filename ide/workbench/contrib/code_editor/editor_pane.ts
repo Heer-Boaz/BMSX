@@ -43,8 +43,10 @@ import { buildStatusLeftInfo } from '../../render/status_bar_info';
 import { getTextFileRuntimeSourceStatus } from '../../services/working_copy/runtime_source_status';
 import { activeCodeEditor } from '../../../editor/ui/code_editor_state';
 import { undo, redo } from '../../../editor/editing/undo_controller';
+import { clearReferenceHighlights, requestSemanticRefresh } from '../../../editor/contrib/intellisense/engine';
 
 export class CodeEditorPane extends EditorPane<CodeEditorInput> {
+	private unsubscribeContentChange: () => void;
 	private readonly unbindKeyboard = activeCodeEditor.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
 	private readonly unbindBlur = activeCodeEditor.focusTarget.onDidBlur(() => activeCodeEditor.model.breakUndoSequence());
 	public constructor(
@@ -81,6 +83,12 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 		this.editor.resourcePanel.hide();
 		editorChromeState.resourcePanelResizing = false;
 		activateCodeEditorTab(this.input, selection);
+		this.unsubscribeContentChange = this.input.context.model.onDidChangeContent(event => {
+			editorViewState.layout.onDidChangeContent(this.input.context.model.buffer, event);
+			editorViewState.maxLineLengthDirty = true;
+			clearReferenceHighlights();
+			requestSemanticRefresh();
+		});
 	}
 
 	public override setOptions(selection?: EditorTextSelection): void {
@@ -90,6 +98,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 	}
 
 	public override clearInput(): void {
+		this.unsubscribeContentChange();
 		storeCodeTabContext(this.input.context);
 		super.clearInput();
 	}

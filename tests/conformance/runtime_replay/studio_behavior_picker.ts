@@ -1,3 +1,4 @@
+import type { BehaviorLensViewState } from '../../../ide/workbench/contrib/behavior_lens/view_model';
 import { inputFocus } from '../../../ide/input/focus';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { check, type StudioFixture } from './studio_fixture';
@@ -12,6 +13,23 @@ export async function chooseBehavior(test: StudioFixture, label: string, title =
 		`behavior picker: logical behavior ${label} is independently selectable`);
 	await test.press('Enter');
 }
+
+export async function revealLensRow(test: StudioFixture, view: BehaviorLensViewState, key: string): Promise<void> {
+	const ancestors: string[] = [];
+	let parent = view.parentRowKeyByRowKey.get(key)!;
+	while (parent !== null) {
+		ancestors.push(parent);
+		parent = view.parentRowKeyByRowKey.get(parent)!;
+	}
+	for (let index = ancestors.length - 1; index >= -1; index -= 1) {
+		const target = index === -1 ? key : ancestors[index];
+		const row = view.rows.findIndex(entry => entry.node.rowKey === target);
+		check(row >= 0, 'navigation: expanded parent exposes its source child');
+		while (view.selectionIndex !== row) await test.press(view.selectionIndex < row ? 'ArrowDown' : 'ArrowUp');
+		if (index !== -1 && !view.rows[row].expanded) await test.press('ArrowRight');
+	}
+}
+
 
 export async function testStudioBehaviorPicker(test: StudioFixture): Promise<void> {
 	const { ide, harness, press, click, clipboard, cycles, runPaletteCommand } = test;

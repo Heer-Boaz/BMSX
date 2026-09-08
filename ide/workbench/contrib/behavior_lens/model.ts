@@ -1,5 +1,6 @@
 import type { LuaSourceRange } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { ResourceIdentity } from '../../../common/resource';
+import type { BehaviorTreeSourceDefinition } from './behavior_tree_model';
 
 export type BehaviorKind = 'behavior_tree' | 'state_machine' | 'action_effect';
 
@@ -41,12 +42,21 @@ export type BehaviorSourceNode = {
 	readonly detail: string;
 	readonly authoredRange: LuaSourceRange;
 	readonly referenceRange: LuaSourceRange | null;
+	/** Syntactic use in this parent occurrence, not the shared initializer. */
+	readonly occurrenceRange: LuaSourceRange;
 	readonly resolution: BehaviorSourceResolution;
 	readonly children: readonly BehaviorSourceNode[];
 };
 
+export type BehaviorDynamicSourceNode = BehaviorSourceNode & { readonly kind: 'dynamic' };
+
+export type BehaviorSourceDefinition = BehaviorTreeSourceDefinition | (BehaviorSourceNode & {
+	readonly kind: 'definition';
+	readonly behaviorKind: 'state_machine' | 'action_effect';
+});
+
 /** Immutable source topology for one authored Lua document generation. */
 export type BehaviorSourceDocument = {
 	readonly resource: ResourceIdentity;
-	readonly definitions: readonly BehaviorSourceNode[];
+	readonly definitions: readonly BehaviorSourceDefinition[];
 };

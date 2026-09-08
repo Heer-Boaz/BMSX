@@ -178,6 +178,14 @@ executes Lua to discover an edit target, or serializes the complete definition.
 A dynamically composed construct can remain visible as incomplete while the
 unsupported visual mutation stays unavailable.
 
+The active code pane subscribes to that same model's content events. Its
+`CodeLayout` invalidates affected source lines even when a visual command, not
+keyboard editing, produced the change. The applied-order change extent comes
+from `editor/text/text_change.ts`; offset-to-line conversion stays with
+`PieceTreeBuffer.positionAt`. Drawing does not repair stale row references or
+poll document versions. The pane detaches this subscription when its input
+changes; activation rebuilds the new input's layout.
+
 This follows VS Code's custom-text-editor contract—one standard text document,
 multiple synchronized views and minimal workspace edits—and Roslyn's
 full-fidelity source-transform principle, where tokens, whitespace and comments
@@ -192,16 +200,23 @@ The normal Lua save and Hot Resume owners consume that same model. A visual
 editor adds no ROM-packer cooker, cartlib admission decoder, callback manifest,
 second graph database or behavior-specific machine representation.
 
-The planned graphical Behavior Lens is specified in
+The graphical Behavior Lens contracts are specified in
 [`../docs/behavior_graph_design.md`](../docs/behavior_graph_design.md).
-Its prerequisite is typed, source-backed occurrence/relationship information,
-not a renderer interpreting outline labels. BT order belongs to Lua; FSM edges
+The implemented BT prerequisite exposes typed root, branch and attachment
+information on the same source objects as the outline, not a renderer
+interpreting labels. Weights and fields remain syntax nodes. BT order belongs
+to Lua; FSM edges
 require proven scope, target and provenance. Retained canvas geometry belongs
 to a shared workbench control, independently of document identity and runtime
-execution slots. Source correspondence reuses the existing text-change owner;
+execution slots. Input-owned registration/selection/collapse correspondence
+maps source-use spans through the existing text-change owner, including hidden
+inputs, and matches each use under its corresponding parent. Shared initializer
+ranges or generation-local row keys alone do not identify an occurrence.
+Deleting/replacing a use clears affected correspondence; later Undo does not
+guess it back. Click gestures belong to the pane and one source generation;
 cross-file facts also require the existing semantic-generation invalidation.
 The current Lens is still an outline. Graph controls, clipping, BT/FSM graph
-views and their runtime/UX evidence are not implemented by that design.
+views and their runtime/UX evidence remain separate, unimplemented slices.
 
 Scene authoring uses the same document contract, but its runtime object and
 viewport owners are deliberately not inferred from the behavior projection.
