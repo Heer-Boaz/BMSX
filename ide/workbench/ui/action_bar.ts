@@ -1,6 +1,6 @@
 import type { RectBounds } from '../../../machine/ts/common/rect';
 import { create_rect_bounds, write_rect_bounds } from '../../../machine/ts/common/rect';
-import { EDITOR_COMMAND_PRESENTATION } from '../../commands/catalog';
+import { editorCommandTitle } from '../../commands/catalog';
 import type { EditorCommandId } from '../../common/commands';
 import { WORKBENCH_MENUS, type WorkbenchActionMenuId } from './menu/registry';
 
@@ -24,10 +24,9 @@ export function createWorkbenchActionBar(menuId: WorkbenchActionMenuId): Workben
 	const items = new Array<WorkbenchActionBarItem>(menu.length);
 	for (let index = 0; index < menu.length; index += 1) {
 		const contribution = menu[index];
-		const presentation = EDITOR_COMMAND_PRESENTATION[contribution.command];
 		items[index] = {
 			command: contribution.command,
-			label: presentation.shortTitle === undefined ? presentation.title : presentation.shortTitle,
+			label: editorCommandTitle(contribution.command, false, true),
 			bounds: create_rect_bounds(),
 		};
 	}

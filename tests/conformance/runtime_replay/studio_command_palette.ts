@@ -19,6 +19,13 @@ export async function testStudioCommandPalette(test: StudioFixture): Promise<voi
 	await press('KeyQ');
 	check(model.buffer.getText() !== original, 'palette: real source edit precedes command selection');
 	await press('ControlLeft', 'ShiftLeft', 'KeyP');
+	for (const label of ['Behavior Lens: Open', 'Behavior Lens: Open ActionEffect', 'Behavior Lens: Open State Machine (FSM)',
+		'Behavior Lens: Open Behavior Tree (BT)', 'Scene Editor: Open', 'Scenario Lab: Open', 'Preferences: Toggle Theme',
+		'Search: Find', 'Edit: Rename Symbol', 'View: Problems Panel']) {
+		check(picker.model.entries.some(row => row.item.label === label), `palette: ${label} is categorized by task, not menu location`);
+	}
+	check(!picker.model.entries.some(row => /^View: (Behavior|Scenario|Scene)/.test(row.item.label)),
+		'palette: opening a tool belongs with its own actions rather than the View catch-all');
 	check(picker.model.entries.some(row => row.item.label === 'Edit: Undo'),
 		'palette: editor Undo is admitted in the source context despite empty query history');
 	await press('KeyU');
@@ -42,7 +49,7 @@ export async function testStudioCommandPalette(test: StudioFixture): Promise<voi
 	releaseTask();
 	await task;
 	await until(() => tasks.ready, 'palette: occupied queue settles without altering pause');
-	await runPaletteCommand('View: Scenario Lab');
+	await runPaletteCommand('Scenario Lab: Open');
 	const scenario = getActiveTab();
 	check(scenario.kind === 'scenario_lab', 'palette: Scenario Lab is an ordinary registered command');
 	const scenarioFocus = inputFocus.target;
@@ -57,7 +64,7 @@ export async function testStudioCommandPalette(test: StudioFixture): Promise<voi
 	check(picker.visible && picker.model.list.selectionIndex === -1, 'palette: empty results have no synthetic command');
 	await press('Escape');
 	check(inputFocus.target === scenarioFocus, 'palette: cancellation restores the actual non-code control');
-	await runPaletteCommand('View: Scene Editor');
+	await runPaletteCommand('Scene Editor: Open');
 	check(picker.visible && picker.title === 'SCENE EDITOR', 'palette: command-to-picker handoff begins a new source-choice session');
 	clipboard.text = 'scenes/root.lua';
 	await press('ControlLeft', 'KeyV');

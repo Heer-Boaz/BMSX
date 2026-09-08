@@ -11,6 +11,9 @@ export function isEditorViewCommand(command: EditorCommandId): command is Editor
 		case 'resources':
 		case 'problems':
 		case 'behaviorLens':
+		case 'behaviorLens.actionEffects':
+		case 'behaviorLens.stateMachines':
+		case 'behaviorLens.behaviorTrees':
 		case 'scenarioLab':
 		case 'sceneEditor':
 		case 'sceneEditor.source':
@@ -33,6 +36,15 @@ export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSou
 			return;
 		case 'behaviorLens':
 			editor.behaviorLens.open();
+			return;
+		case 'behaviorLens.actionEffects':
+			editor.behaviorLens.open('action_effect');
+			return;
+		case 'behaviorLens.stateMachines':
+			editor.behaviorLens.open('state_machine');
+			return;
+		case 'behaviorLens.behaviorTrees':
+			editor.behaviorLens.open('behavior_tree');
 			return;
 		case 'scenarioLab':
 			editor.scenarioLab.open();

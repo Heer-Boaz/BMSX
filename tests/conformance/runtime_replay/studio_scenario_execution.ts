@@ -6,7 +6,7 @@ import { check, type StudioFixture } from './studio_fixture';
 export async function testStudioScenarioExecution(test: StudioFixture): Promise<void> {
 	const { ide, runtime, execution, tasks, press, until, cycles, runPaletteCommand, frame, harness, clipboard } = test;
 	check(execution.userPaused && ide.editor.isActive, 'scenario: testing can start from explicitly paused gameplay');
-	await runPaletteCommand('View: Scenario Lab');
+	await runPaletteCommand('Scenario Lab: Open');
 	const tab = getActiveTab();
 	if (tab.kind !== 'scenario_lab') throw new Error('scenario: actual Scenario Lab input missing');
 	const view = tab.view;
@@ -24,7 +24,7 @@ export async function testStudioScenarioExecution(test: StudioFixture): Promise<
 	const model = harness.getActiveEditorDocument().model;
 	const source = model.buffer.getText();
 	model.pushEditOperations([{ offset: model.buffer.length, deleteLength: 0, text: '\nend end\n' }]);
-	await runPaletteCommand('View: Scenario Lab');
+	await runPaletteCommand('Scenario Lab: Open');
 	const beforeRejected = cycles();
 	await runPaletteCommand('Scenario Lab: Run Scenarios');
 	await until(() => !view.runActive && tasks.ready, 'scenario: invalid source preparation reports failure');
@@ -34,7 +34,7 @@ export async function testStudioScenarioExecution(test: StudioFixture): Promise<
 	harness.openLuaSource(row.test.resource.path);
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === source, 'scenario: source repair restores the exact original test');
-	await runPaletteCommand('View: Scenario Lab');
+	await runPaletteCommand('Scenario Lab: Open');
 	execution.setPauseReason(HostPauseReason.Fullscreen, true);
 	await runPaletteCommand('Scenario Lab: Run Scenarios');
 	await until(() => !execution.userPaused && tasks.ready, 'scenario: successful preparation starts the explicit Run');
@@ -68,7 +68,7 @@ export async function testStudioScenarioExecution(test: StudioFixture): Promise<
 		&& getActiveTab() === tab && ide.editor.isActive && !runtime.completionCallPending(),
 		'scenario: cancellation restores the canonical media without a stale completion call');
 	await runPaletteCommand('Run: Pause');
-	await runPaletteCommand('View: Scene Editor');
+	await runPaletteCommand('Scene Editor: Open');
 	const picker = ide.editor.quickInput;
 	check(picker.visible && picker.title === 'SCENE EDITOR', 'scenario: canonical source views remain available after Cancel');
 	clipboard.text = 'scenes/root.lua';

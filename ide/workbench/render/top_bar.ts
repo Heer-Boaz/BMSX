@@ -133,7 +133,7 @@ function renderMenuDropdown(menu: TopBarMenuEntry, anchor: RectBounds, itemHeigh
 		}
 		const textX = bounds.left + paddingX * 2 + markerSize;
 		const textY = bounds.top + constants.HEADER_BUTTON_PADDING_Y;
-		const label = editorCommandTitle(item.command, item.active);
+		const label = editorCommandTitle(item.command, item.active, true);
 		context.drawText(label, textX, textY, Z_MENU_DROPDOWN_TEXT, textColor);
 		const keybinding = EDITOR_COMMAND_KEYBINDING_LABELS.get(item.command);
 		if (keybinding !== undefined) {
@@ -158,7 +158,7 @@ function computeDropdownWidth(menu: TopBarMenuEntry, markerSize: number, padding
 		if (item.type === 'separator') {
 			continue;
 		}
-		const labelWidth = context.measureText(editorCommandTitle(item.command, item.active));
+		const labelWidth = context.measureText(editorCommandTitle(item.command, item.active, true));
 		const keybinding = EDITOR_COMMAND_KEYBINDING_LABELS.get(item.command);
 		const width = keybinding === undefined
 			? labelWidth

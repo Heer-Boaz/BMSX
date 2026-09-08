@@ -8,7 +8,7 @@ import { testCapturedSourceReboot } from './studio_source_workflows';
 import { testSceneSourceAfterReboot, presentSceneEditor } from './studio_scene_source';
 import { presentCommandPalette } from './studio_command_palette';
 import { testStudioScenarioExecution } from './studio_scenario_execution';
-import { presentBehaviorPicker } from './studio_behavior_picker';
+import { presentActionEffects } from './studio_behavior_kinds';
 
 /** Independent renderer projects run the same Studio workflow. */
 export const studioBackends = {
@@ -21,7 +21,7 @@ export const studioBackends = {
 		await testStudioScenarioExecution(test);
 		await presentSceneEditor(test);
 		await presentCommandPalette(test);
-		await presentBehaviorPicker(test);
+		await presentActionEffects(test);
 		// Publish the real software-rendered final framebuffer for the screenshot.
 		// No replacement drawing or per-frame screenshot conversion.
 		canvas.width = backend.framebufferWidth;
@@ -40,7 +40,7 @@ export const studioBackends = {
 		await testStudioScenarioExecution(test);
 		await presentSceneEditor(test);
 		await presentCommandPalette(test);
-		await presentBehaviorPicker(test);
+		await presentActionEffects(test);
 		check(backend.gl.getError() === backend.gl.NO_ERROR, 'WebGL2 workflow raised a graphics error');
 		return result;
 	},
@@ -57,7 +57,7 @@ export const studioBackends = {
 		await testStudioScenarioExecution(test);
 		await presentSceneEditor(test);
 		await presentCommandPalette(test);
-		await presentBehaviorPicker(test);
+		await presentActionEffects(test);
 		check(errors.length === 0, errors.join('\n'));
 		return { ...result, readbacks };
 	},

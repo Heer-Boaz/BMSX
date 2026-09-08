@@ -43,6 +43,7 @@ const SOURCE_COMMANDS = new Set<EditorCommandId>([
 	'save', 'hot-resume', 'reboot', 'scenarioLab.run', 'scenarioLab.rerun',
 	'sceneEditor.removeMember', 'sceneEditor.moveMemberUp', 'sceneEditor.moveMemberDown',
 	'sceneEditor', 'behaviorLens', 'sceneEditor.source', 'behaviorLens.source',
+	'behaviorLens.actionEffects', 'behaviorLens.stateMachines', 'behaviorLens.behaviorTrees',
 ]);
 
 export class IdeCommandController {
@@ -235,6 +236,9 @@ export class IdeCommandController {
 				return isActiveLuaCodeTab();
 			case 'scenarioLab':
 			case 'behaviorLens':
+			case 'behaviorLens.actionEffects':
+			case 'behaviorLens.stateMachines':
+			case 'behaviorLens.behaviorTrees':
 			case 'sceneEditor':
 				return true;
 			case 'sceneEditor.source':

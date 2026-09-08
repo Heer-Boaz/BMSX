@@ -19,29 +19,32 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	resourceSearch: { category: 'Go', title: 'Go to File' },
 	runtimeErrorFocus: { category: 'Go', title: 'Go to Runtime Error' },
 	createResource: { category: 'File', title: 'New Resource' },
-	findGlobal: { category: 'Go', title: 'Find in Workspace' },
-	findLocal: { category: 'Go', title: 'Find' },
+	findGlobal: { category: 'Search', title: 'Find in Workspace' },
+	findLocal: { category: 'Search', title: 'Find' },
 	lineJump: { category: 'Go', title: 'Go to Line' },
 	referenceSearch: { category: 'Go', title: 'Go to References' },
-	rename: { category: 'Go', title: 'Rename Symbol' },
+	rename: { category: 'Edit', title: 'Rename Symbol' },
 	goToDefinition: { category: 'Go', title: 'Go to Definition' },
 	callHierarchy: { category: 'Go', title: 'Show Call Hierarchy' },
 	resources: { category: 'View', title: 'Show Files', activeTitle: 'Hide Files' },
 	problems: { category: 'View', title: 'Problems Panel' },
-	behaviorLens: { category: 'View', title: 'Behavior Lens' },
-	scenarioLab: { category: 'View', title: 'Scenario Lab' },
-	sceneEditor: { category: 'View', title: 'Scene Editor' },
+	behaviorLens: { category: 'Behavior Lens', title: 'Open', shortTitle: 'Behavior Lens' },
+	'behaviorLens.actionEffects': { category: 'Behavior Lens', title: 'Open ActionEffect' },
+	'behaviorLens.stateMachines': { category: 'Behavior Lens', title: 'Open State Machine (FSM)' },
+	'behaviorLens.behaviorTrees': { category: 'Behavior Lens', title: 'Open Behavior Tree (BT)' },
+	scenarioLab: { category: 'Scenario Lab', title: 'Open', shortTitle: 'Scenario Lab' },
+	sceneEditor: { category: 'Scene Editor', title: 'Open', shortTitle: 'Scene Editor' },
 	'sceneEditor.source': { category: 'Scene Editor', title: 'Open Source', shortTitle: 'Source' },
 	'behaviorLens.source': { category: 'Behavior Lens', title: 'Open Source', shortTitle: 'Source' },
 	'sceneEditor.removeMember': { category: 'Scene Editor', title: 'Remove Member', shortTitle: 'Remove' },
 	'sceneEditor.moveMemberUp': { category: 'Scene Editor', title: 'Move Member Up', shortTitle: 'Up' },
 	'sceneEditor.moveMemberDown': { category: 'Scene Editor', title: 'Move Member Down', shortTitle: 'Down' },
-	filter: { category: 'View', title: 'All Resources', activeTitle: 'Lua Files Only' },
+	filter: { category: 'File', title: 'All Resources', activeTitle: 'Lua Files Only' },
 	wrap: { category: 'View', title: 'Word Wrap' },
 	'hot-resume': { category: 'Run', title: 'Hot Resume' },
 	reboot: { category: 'Run', title: 'Reboot' },
 	save: { category: 'File', title: 'Save' },
-	'theme-toggle': { category: 'View', title: 'Toggle Theme' },
+	'theme-toggle': { category: 'Preferences', title: 'Toggle Theme' },
 	debugContinue: { category: 'Debug', title: 'Continue' },
 	pause: { category: 'Run', title: 'Pause', activeTitle: 'Resume' },
 	debugStepInto: { category: 'Debug', title: 'Step Into' },
@@ -54,9 +57,8 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 
 export const EDITOR_COMMAND_IDS = Object.keys(EDITOR_COMMAND_PRESENTATION) as EditorCommandId[];
 
-export function editorCommandTitle(command: EditorCommandId, active: boolean): string {
+export function editorCommandTitle(command: EditorCommandId, active: boolean, renderShortTitle = false): string {
 	const presentation = EDITOR_COMMAND_PRESENTATION[command];
-	return active && presentation.activeTitle !== undefined
-		? presentation.activeTitle
-		: presentation.title;
+	if (active && presentation.activeTitle !== undefined) return presentation.activeTitle;
+	return renderShortTitle && presentation.shortTitle !== undefined ? presentation.shortTitle : presentation.title;
 }

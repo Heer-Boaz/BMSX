@@ -30,13 +30,18 @@ import {
 } from './navigation';
 import { BehaviorLensPointerResult, handleBehaviorLensPointerInput } from './pointer';
 import { buildBehaviorSourceDocument } from './recognizer';
-import type { BehaviorRegistrationSource, BehaviorSourceDocument } from './model';
+import type { BehaviorKind, BehaviorRegistrationSource, BehaviorSourceDocument } from './model';
 import type { BehaviorRegistrationIndex } from './registration_index';
 import { buildBehaviorQuickPickItems } from './quick_access';
 import type { BehaviorLensViewState } from './view_model';
 import { createWorkbenchActionBar } from '../../ui/action_bar';
 
 const WHEEL_SCROLL_ROWS = 3;
+const PICKER_TITLES: Readonly<Record<BehaviorKind, string>> = {
+	action_effect: 'ACTIONEFFECTS',
+	state_machine: 'STATE MACHINES',
+	behavior_tree: 'BEHAVIOR TREES',
+};
 
 /** Workbench contribution for source-derived behavior topology. Inputs own every view. */
 export class BehaviorLensController {
@@ -48,9 +53,9 @@ export class BehaviorLensController {
 		private readonly registrations: BehaviorRegistrationIndex,
 	) {}
 
-	public open(): void {
-		this.quickInput.pick('BEHAVIOR LENS', 'Choose an FSM, BT or ActionEffect',
-			() => buildBehaviorQuickPickItems(this.sources, this.registrations),
+	public open(kind: BehaviorKind | null = null): void {
+		this.quickInput.pick(kind === null ? 'BEHAVIOR LENS' : PICKER_TITLES[kind], 'Choose a definition',
+			() => buildBehaviorQuickPickItems(this.sources, this.registrations, kind),
 			item => this.openDefinition(item.registration));
 	}
 

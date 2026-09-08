@@ -4350,6 +4350,9 @@ registration index serves discovery and runtime-id-to-source lookup, while
 the selected document alone builds its lens topology. Computed ids remain
 authored expressions. The resource-owned model and occurrence-qualified row
 key select the exact definition even when registrations share an initializer.
+ActionEffect/FSM/BT opening commands constrain that same index by producer
+kind, not by file or search-label spelling. Tool command categories are
+independent of View-menu placement and do not introduce another view owner.
 See [Behavior Quick Access](behavior_quick_access.md).
 
 `RuntimeSourceState` owns one retained IDE resource identity per installed

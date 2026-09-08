@@ -8,7 +8,7 @@ export async function testStudioBehaviorNavigation(test: StudioFixture): Promise
 	const position = cycles();
 	console.info('STUDIO: Moon timeline source reveal and automatic signature help');
 	harness.openLuaSource('cart.lua');
-	await runPaletteCommand('View: Behavior Lens');
+	await runPaletteCommand('Behavior Lens: Open');
 	check(ide.editor.quickInput.visible, 'behavior navigation: palette offers behavior registrations');
 	clipboard.text = 'moon_death_ray';
 	await press('ControlLeft', 'KeyV');
@@ -46,7 +46,7 @@ export async function testStudioBehaviorNavigation(test: StudioFixture): Promise
 		'behavior navigation: the actual enclosing FSM registration signature is resolved, not suppressed');
 	await press('ArrowDown');
 	check(document.view.cursorRow === 79, 'behavior navigation: keyboard remains responsive after the idle semantic query');
-	await runPaletteCommand('View: Behavior Lens');
+	await runPaletteCommand('Behavior Lens: Open');
 	await chooseBehavior(test, 'FSM ids_moon_death_ray_fsm');
 	check(getActiveTab() === lens, 'behavior navigation: palette can reopen the retained view after parameter help');
 	check(cycles() === position, 'behavior navigation: source navigation does not run or mutate the paused machine');

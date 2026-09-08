@@ -585,7 +585,15 @@ ordinary command execution, pending-edit acceptance and confirmation dialogs.
 An action that became unavailable during an asynchronous operation is reported
 as unavailable, not executed against a missing run. There is no second command
 registry or palette-specific Save/Hot Resume/Reboot path. Short toolbar titles
-and full command titles are presentation metadata of the same action.
+and full command titles are presentation metadata of the same action. Compact
+dropdowns and title action bars request the same short title from the catalog;
+the palette keeps the category-qualified full title. Categories describe the
+task owner, independently of menu placement: opening Scene Editor, Behavior
+Lens and Scenario Lab groups with their own actions, not with View commands.
+The behavior contribution offers kind-specific ActionEffect/FSM/BT choices
+over its one retained registration index. The requested producer kind is
+independent of query text; no second view or source schema is introduced.
+See [typed behavior entry points and production references](../docs/behavior_quick_access.md#typed-entry-points-and-command-categories).
 
 Command Palette is available through View and Ctrl/Cmd+Shift+P while the IDE
 owns input. Gameplay retains those keys. Shared symbol Quick Access remains

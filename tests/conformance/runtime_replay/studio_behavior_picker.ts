@@ -3,9 +3,9 @@ import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { check, type StudioFixture } from './studio_fixture';
 
 /** Accept a unique behavior through the actual shared query field and keyboard. */
-export async function chooseBehavior(test: StudioFixture, label: string): Promise<void> {
+export async function chooseBehavior(test: StudioFixture, label: string, title = 'BEHAVIOR LENS'): Promise<void> {
 	const picker = test.ide.editor.quickInput;
-	check(picker.visible && picker.title === 'BEHAVIOR LENS', 'behavior picker: the command offers registrations');
+	check(picker.visible && picker.title === title, 'behavior picker: the command offers registrations');
 	test.clipboard.text = label;
 	await test.press('ControlLeft', 'KeyV');
 	check(picker.model.list.rows.length === 1 && picker.model.list.rows[0].item.label === label,
@@ -33,7 +33,7 @@ export async function testStudioBehaviorPicker(test: StudioFixture): Promise<voi
 	const lines = model.buffer.getText().split('\n');
 	const secondLine = lines.findIndex(line => line.startsWith("fsm_library.register('picker.second'"));
 	const lastLine = lines.findLastIndex(line => line.startsWith("fsm_library.register('picker.same'"));
-	await runPaletteCommand('View: Behavior Lens');
+	await runPaletteCommand('Behavior Lens: Open');
 	await chooseBehavior(test, 'FSM picker.second');
 	const lens = getActiveTab();
 	if (lens.kind !== 'behavior_lens') throw new Error('behavior picker: selected lens missing');
@@ -44,13 +44,13 @@ export async function testStudioBehaviorPicker(test: StudioFixture): Promise<voi
 	check(harness.getActiveEditorDocument().model === model && harness.getActiveEditorDocument().view.cursorRow === secondLine
 		&& harness.getActiveEditorDocument().view.cursorColumn === lines[secondLine].indexOf('picker_shared'),
 		'behavior picker: Source opens the chosen registration reference, not the shared initializer');
-	await runPaletteCommand('View: Behavior Lens');
+	await runPaletteCommand('Behavior Lens: Open');
 	await chooseBehavior(test, 'FSM picker.first');
 	check(getActiveTab() === lens && lens.view.rows[lens.view.selectionIndex].node.label === "FSM 'picker.first'"
 		&& lens.view.rows[lens.view.selectionIndex].node.rowKey !== secondKey,
 		'behavior picker: another FSM in the same document reuses the model and selects its own root');
-	await runPaletteCommand('View: Scenario Lab');
-	await runPaletteCommand('View: Behavior Lens');
+	await runPaletteCommand('Scenario Lab: Open');
+	await runPaletteCommand('Behavior Lens: Open');
 	const picker = ide.editor.quickInput;
 	clipboard.text = 'FSM picker.same';
 	await press('ControlLeft', 'KeyV');
@@ -67,7 +67,7 @@ export async function testStudioBehaviorPicker(test: StudioFixture): Promise<voi
 		&& lens.view.selectionIndex < lens.view.scroll + lens.view.layout.visibleRowCount,
 		'behavior picker: exact duplicate occurrence is selected and revealed');
 	const focus = inputFocus.target;
-	await runPaletteCommand('View: Behavior Lens');
+	await runPaletteCommand('Behavior Lens: Open');
 	await press('Escape');
 	check(inputFocus.target === focus && getActiveTab() === lens
 		&& lens.view.rows[lens.view.selectionIndex].node === selected,
@@ -76,7 +76,7 @@ export async function testStudioBehaviorPicker(test: StudioFixture): Promise<voi
 	check(harness.getActiveEditorDocument().view.cursorRow === lastLine, 'behavior picker: duplicate Source goes to its own call');
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === original, 'behavior picker: ordinary source Undo removes the temporary authored definitions');
-	await runPaletteCommand('View: Behavior Lens');
+	await runPaletteCommand('Behavior Lens: Open');
 	clipboard.text = 'picker.';
 	await press('ControlLeft', 'KeyV');
 	check(picker.model.list.selectionIndex === -1, 'behavior picker: catalog consumes the undone source generation');
@@ -86,12 +86,4 @@ export async function testStudioBehaviorPicker(test: StudioFixture): Promise<voi
 	check(cycles() === position && ide.sources.currentBlua32Media === media,
 		'behavior picker: source discovery and selection neither run nor replace the machine');
 	harness.openLuaSource('scenes/root.lua');
-}
-
-export async function presentBehaviorPicker(test: StudioFixture): Promise<void> {
-	await test.runPaletteCommand('View: Behavior Lens');
-	check(test.ide.editor.quickInput.model.entries.some(row => row.item.label === 'BT moon_tree.id')
-		&& test.ide.editor.quickInput.model.entries.some(row => row.item.label === 'FSM ids_moon_death_ray_fsm'),
-		'behavior picker: actual cart BTs and FSMs share the constrained-resolution picker');
-	await test.frame();
 }

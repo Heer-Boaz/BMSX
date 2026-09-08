@@ -158,6 +158,53 @@ test('behavior registration index resolves separate FSM ids in the same Lua docu
 	assert.strictEqual(index.resolve(0, 'state_machine', 'enemy'), enemy);
 });
 
+test('kind-specific behavior picks select producer kinds, not names, files or query prefixes', (t) => {
+	const path = 'behaviors.lua';
+	const source = [
+		"local fsm<const> = require('cartlib/fsm/library')",
+		"local bt<const> = require('cartlib/behaviour_tree/library')",
+		"local effects<const> = require('cartlib/actioneffects')",
+		"fsm.register('EFFECT shared', {})",
+		"bt.register('EFFECT shared', {})",
+		"effects.register_effect('EFFECT shared', {})",
+		"effects.register_effect('EFFECT shared', {})",
+		'effects.register_effect(compute_id(), {})',
+	].join('\n');
+	const sources = createTestRuntimeSourceState(
+		sourceRegistry('machine/bios', [luaSource('system.lua', 'return true')]),
+		[sourceRegistry('carts/game', [luaSource(path, source)]), null],
+		0,
+	);
+	t.after(() => {
+		clearCodeEditorInputs();
+		editorTextModelService.clear();
+		resetSemanticProjects();
+	});
+	const index = new BehaviorRegistrationIndex(sources);
+	const all = buildBehaviorQuickPickItems(sources, index);
+	assert.equal(all.length, 5);
+	for (const kind of ['action_effect', 'state_machine', 'behavior_tree'] as const) {
+		const picks = buildBehaviorQuickPickItems(sources, index, kind);
+		assert.deepEqual(picks.map(pick => pick.registration),
+			all.filter(pick => pick.registration.behaviorKind === kind).map(pick => pick.registration));
+		assert.equal(picks.length, kind === 'action_effect' ? 3 : 1);
+		const query = new QuickPickModel();
+		query.setItems(picks);
+		query.filter('EFFECT shared');
+		assert.equal(query.list.rows.length, kind === 'action_effect' ? 2 : 1);
+		query.filter('');
+		assert.equal(query.list.rows.length, picks.length, 'clearing text cannot escape the requested behavior kind');
+	}
+	const effects = buildBehaviorQuickPickItems(sources, index, 'action_effect');
+	assert.notEqual(effects[0].registration.rowKey, effects[1].registration.rowKey);
+	assert.ok(effects.some(pick => pick.registration.semanticId === null), 'dynamic ids remain available in the typed choice');
+	const model = editorTextModelService.retain(resolveRuntimeResource(sources, { domain: 0, path })!, 'lua', source);
+	model.pushEditOperations([{ offset: 0, deleteLength: source.length, text: 'return true' }]);
+	assert.equal(buildBehaviorQuickPickItems(sources, index, 'action_effect').length, 0, 'no file or other-kind fallback after removing authored effects');
+	model.undo();
+	assert.equal(buildBehaviorQuickPickItems(sources, index, 'action_effect').length, 3);
+});
+
 test('behavior registration index isolates domains and rebuilds on an authored document generation', (t) => {
 	const slot0Path = 'slot0/effects.lua';
 	const slot1Path = 'slot1/effects.lua';
