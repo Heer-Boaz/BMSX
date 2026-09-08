@@ -1,4 +1,5 @@
 import { testSceneMemberRemoval } from './studio_scene_removal';
+import { testSceneSourceTree } from './studio_scene_tree';
 import { testSceneMemberMoves } from './studio_scene_moves';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { getCodeTabContexts } from '../../../ide/workbench/ui/code_tab/contexts';
@@ -297,6 +298,7 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	await testCapturedSourceApply(test);
 	await testAemSourceApplication(test);
 	await testSourceFormatting(test);
+	await testSceneSourceTree(test);
 	await testSceneMemberRemoval(test);
 	await testSceneMemberMoves(test);
 	await testSceneSourceEdits(test);

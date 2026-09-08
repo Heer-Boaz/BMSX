@@ -2,7 +2,7 @@ import { getOrCreateSemanticProject } from '../../../editor/contrib/intellisense
 import { getTextSnapshot } from '../../../editor/text/source_text';
 import type { EditorTextModel, EditorTextModelContentChangeEvent } from '../../../editor/model/text_model';
 import { mapTrackedTextRange } from '../../../editor/text/text_change';
-import { createLuaTableFieldRemovalEdits, readLuaSourceRange, readLuaTableFieldInteger } from '../../../language/lua/source_edits';
+import { createLuaTableFieldRemovalEdits } from '../../../language/lua/source_edits';
 import { createLuaTableFieldMoveEdit } from '../../../language/lua/table_field_moves';
 import { getCachedLuaParse } from '../../../../toolchain/ts/lua/analysis/cache';
 import type { RuntimeSourceState } from '../../../runtime/sources';
@@ -15,6 +15,7 @@ import type { EditorPanes } from '../../services/editor/editor_panes';
 import type { EditorNavigationController } from '../resources/navigation';
 import { SceneEditorInput } from './editor_input';
 import { buildSceneSourceDocument } from './source';
+import { installSceneOutline, selectSceneOutlineRow, type SceneMemberElement } from './outline';
 
 /** Source projection admission; no world reads or runtime scene ownership. */
 export class SceneEditorController {
@@ -38,47 +39,49 @@ export class SceneEditorController {
 	public openSource(): void {
 		const input = getActiveTab();
 		if (input.kind !== 'scene_editor') return;
-		const row = input.members.rows[input.members.selectionIndex];
+		const row = input.outline.rows[input.outline.selectionIndex]?.element;
 		const position = row === undefined ? null : {
-			row: row.entry.field.range.start.line - 1,
-			startColumn: row.entry.field.range.start.column - 1,
-			endColumn: row.entry.field.range.start.column - 1,
+			row: row.source.start.line - 1,
+			startColumn: row.source.start.column - 1,
+			endColumn: row.source.start.column - 1,
 		};
 		this.navigation.focusChunkSourceForContext(input.workingCopy.resource.domain, input.workingCopy.resource.path, position);
 	}
 
-	public canRemoveSelectedMember(): boolean {
+	/** Current source-command target; definition roots and source-only rows are not members. */
+	private editableMember(): SceneMemberElement | undefined {
 		const input = getActiveTab();
-		if (input.kind !== 'scene_editor' || input.workingCopy.readOnly || input.parsed.syntaxError !== null) return false;
-		return input.members.rows[input.members.selectionIndex]?.entry.kind === 'object';
+		if (input.kind !== 'scene_editor' || input.workingCopy.readOnly || input.parsed.syntaxError !== null) return undefined;
+		const row = input.outline.rows[input.outline.selectionIndex]?.element;
+		return row?.kind === 'member' && row.entry.kind === 'object' ? row : undefined;
 	}
+
+	public canRemoveSelectedMember(): boolean { return this.editableMember() !== undefined; }
 
 	public removeSelectedMember(): void {
 		const input = getActiveTab();
 		if (input.kind !== 'scene_editor') return;
-		// Command admission may have accepted a property draft. Use its new
-		// source generation, not the field range from the preceding render.
+		// Command admission may have accepted a property draft. Use its new source generation.
 		this.refresh(input);
-		if (!this.canRemoveSelectedMember()) return;
-		const row = input.members.rows[input.members.selectionIndex];
+		const row = this.editableMember();
+		if (row === undefined) return;
 		this.panes.activePane.focus();
 		input.workingCopy.pushEditOperations(createLuaTableFieldRemovalEdits(input.workingCopy.buffer, input.parsed.tokens, row.entry.field));
 		// Do not let a surviving namesake inherit the removed member's selection.
-		this.select(input, -1);
+		selectSceneOutlineRow(input, -1);
 	}
 
 	public onDidChangeContent(model: EditorTextModel, event: EditorTextModelContentChangeEvent): void {
 		for (const input of editorTabGroup.tabs) {
 			if (input.kind === 'scene_editor' && input.workingCopy === model) {
 				mapTrackedTextRange(input.selectionRange, event.changes);
+				for (const root of input.outline.roots) mapTrackedTextRange(root.element.span, event.changes);
 			}
 		}
 	}
 
 	public canMoveSelectedMember(direction: -1 | 1): boolean {
-		const input = getActiveTab();
-		if (input.kind !== 'scene_editor' || input.workingCopy.readOnly || input.parsed.syntaxError !== null) return false;
-		const row = input.members.rows[input.members.selectionIndex];
+		const row = this.editableMember();
 		return row !== undefined && row.scene.resolution === 'complete'
 			&& row.index + direction >= 0 && row.index + direction < row.scene.objects.length;
 	}
@@ -88,17 +91,18 @@ export class SceneEditorController {
 		if (input.kind !== 'scene_editor') return;
 		this.refresh(input); // Source-command admission may have accepted a property.
 		if (!this.canMoveSelectedMember(direction)) return;
-		const index = input.members.selectionIndex;
-		const row = input.members.rows[index];
+		const row = this.editableMember()!;
+		const parentIndex = input.outline.roots.indexOf(input.outline.rows[input.outline.selectionIndex].parent!);
 		this.panes.activePane.focus();
 		input.workingCopy.pushEditOperations([createLuaTableFieldMoveEdit(
 			input.workingCopy.buffer, input.workingCopy.resource.path, row.scene.objectsTable, row.index, direction,
 		)]);
 		this.refresh(input);
-		// The explicit operation knows its destination; text Undo/Redo does not
-		// guess moved-member identity from labels or neighbouring source.
-		this.select(input, index + direction);
-		revealWorkbenchListSelection(input.members);
+		// Explicit source operation: same definition, known child destination.
+		// Text Undo/Redo never guesses moved-member identity from labels.
+		const destination = input.outline.roots[parentIndex].children[row.index + direction];
+		selectSceneOutlineRow(input, input.outline.rows.indexOf(destination));
+		revealWorkbenchListSelection(input.outline);
 	}
 
 	public refresh(input: SceneEditorInput): void {
@@ -109,44 +113,7 @@ export class SceneEditorController {
 		const source = getTextSnapshot(model.buffer);
 		input.parsed = getCachedLuaParse({ path: model.resource.path, source }).parsed;
 		const document = buildSceneSourceDocument(model.resource, project.updateDocument(model.resource.path, source, input.parsed));
-		input.partial = document.scenes.some(scene => scene.resolution === 'partial');
-		const rows = input.members.rows;
-		rows.length = 0;
-		let selectionIndex = -1;
-		for (const scene of document.scenes) {
-			const sceneLabel = readLuaSourceRange(model.buffer, scene.id.range).replace(/\s+/g, ' ');
-			for (let index = 0; index < scene.objects.length; index += 1) {
-				const entry = scene.objects[index];
-				const range = entry.field.range;
-				if (model.buffer.offsetAt(range.start.line - 1, range.start.column - 1) === input.selectionRange.start
-					&& model.buffer.offsetAt(range.end.line - 1, range.end.column) === input.selectionRange.end) {
-					selectionIndex = rows.length;
-				}
-				const label = readLuaSourceRange(model.buffer, entry.kind === 'object' ? entry.memberId.range : entry.field.value.range).replace(/\s+/g, ' ');
-				rows.push({
-					sceneLabel, label, displayLabel: '', entry, scene, index,
-					definition: entry.kind === 'object' ? readLuaSourceRange(model.buffer, entry.definitionId.range).replace(/\s+/g, ' ') : 'Dynamic Lua composition',
-				});
-			}
-		}
-		if (input.version === 0 && rows.length > 0) selectionIndex = 0;
+		installSceneOutline(input, document);
 		input.version = model.version;
-		this.select(input, selectionIndex);
-	}
-
-	public select(input: SceneEditorInput, index: number): void {
-		input.members.selectionIndex = index;
-		const row = input.members.rows[index];
-		input.selectionRange.start = row === undefined ? 0
-			: input.workingCopy.buffer.offsetAt(row.entry.field.range.start.line - 1, row.entry.field.range.start.column - 1);
-		input.selectionRange.end = row === undefined ? 0
-			: input.workingCopy.buffer.offsetAt(row.entry.field.range.end.line - 1, row.entry.field.range.end.column);
-		for (const property of input.properties) {
-			const field = row !== undefined && row.entry.kind === 'object' && row.entry.position !== null
-				? row.entry.position[property.axis] : null;
-			property.field = field;
-			property.value = field === null ? null : readLuaTableFieldInteger(field);
-			property.sourceText = field === null ? 'Lua source' : readLuaSourceRange(input.workingCopy.buffer, field.value.range).replace(/\s+/g, ' ');
-		}
 	}
 }

@@ -22,11 +22,20 @@ export async function openSceneEditor(test: StudioFixture): Promise<SceneEditorI
 	return input;
 }
 
-export async function selectMember(test: StudioFixture, input: SceneEditorInput, index: number): Promise<void> {
-	const layout = input.members.layout;
-	const top = layout.contentTop + (index - input.members.scroll) * layout.rowHeight;
+export async function selectSceneRow(test: StudioFixture, input: SceneEditorInput, index: number): Promise<void> {
+	const layout = input.outline.layout;
+	check(index >= input.outline.scroll && index < input.outline.scroll + layout.visibleRowCount && index < input.outline.rows.length,
+		`scene: row ${index} has a visible pointer target`);
+	const top = layout.contentTop + (index - input.outline.scroll) * layout.rowHeight;
 	await test.click({ left: layout.contentLeft, right: layout.contentRight, top, bottom: top + layout.rowHeight });
-	check(input.members.selectionIndex === index, 'scene: actual member row is selected by its visible pointer target');
+	check(input.outline.selectionIndex === index, 'scene: actual tree row is selected by its visible pointer target');
+}
+
+export async function selectMember(test: StudioFixture, input: SceneEditorInput, index: number, sceneIndex = 0): Promise<void> {
+	const member = input.outline.roots[sceneIndex].children[index];
+	const rowIndex = input.outline.rows.indexOf(member);
+	check(rowIndex >= 0 && member.element.kind === 'member', 'scene: requested source member is visible in its own definition');
+	await selectSceneRow(test, input, rowIndex);
 }
 
 /** Real menu, row, property, focus, history and source-command input on the shipped cart. */
@@ -59,12 +68,12 @@ export async function testSceneSourceEdits(test: StudioFixture): Promise<void> {
 	await press('ControlLeft', 'KeyS');
 	await until(() => !model.dirty, 'scene: save the hand-authored source fixture before testing a clean-document property edit');
 	const scene = await openSceneEditor(test);
-	check(scene.workingCopy === model && scene.members.rows.length === 4, 'scene: visual view shares the actual resource-owned source model');
+	check(scene.workingCopy === model && scene.outline.roots[0].children.length === 4, 'scene: visual view shares the actual resource-owned source model');
 	await selectMember(test, scene, 2);
-	const retainedRow = scene.members.rows[2];
+	const retainedRow = scene.outline.roots[0].children[2];
 	const retainedField = scene.properties[0].field;
 	for (let index = 0; index < 8; index += 1) await frame();
-	check(scene.members.rows[2] === retainedRow && scene.properties[0].field === retainedField,
+	check(scene.outline.roots[0].children[2] === retainedRow && scene.properties[0].field === retainedField,
 		'scene: stable visible frames retain the same row and source projection objects');
 	const pane = ide.editor.editorPanes.activePane;
 	if (!(pane instanceof SceneEditorPane)) throw new Error('scene: the actual Scene Editor pane must own these controls');
@@ -139,12 +148,12 @@ export async function testSceneSourceEdits(test: StudioFixture): Promise<void> {
 	model.pushEditOperations([{ offset: expected.indexOf(storyName), deleteLength: storyName.length, text: 'intro.instance_id' }]);
 	await openSceneEditor(test);
 	await selectMember(test, scene, 1);
-	check(scene.members.rows[0].label === scene.members.rows[1].label
-		&& scene.members.rows[0].entry.field !== scene.members.rows[1].entry.field, 'scene: repeated source expressions retain their distinct syntax fields');
+	check(scene.outline.roots[0].children[0].element.label === scene.outline.roots[0].children[1].element.label
+		&& scene.outline.roots[0].children[0].element.source !== scene.outline.roots[0].children[1].element.source, 'scene: repeated source expressions retain their distinct syntax fields');
 	await click(scene.properties[0].bounds);
 	await press('Digit5');
 	await press('Enter');
-	check(scene.members.selectionIndex === 1 && scene.properties[0].value === 5, 'scene: accepting a repeated-name member never redirects selection to its namesake');
+	check(scene.outline.selectionIndex === 2 && scene.properties[0].value === 5, 'scene: accepting a repeated-name member never redirects selection to its namesake');
 	await press('ControlLeft', 'KeyZ');
 	await click(scene.actionBar.items[0].bounds);
 	await press('ControlLeft', 'KeyZ');
@@ -161,7 +170,7 @@ export async function testSceneSourceEdits(test: StudioFixture): Promise<void> {
 	]);
 	const dynamic = model.buffer.getText();
 	await openSceneEditor(test);
-	check(scene.partial && scene.members.rows.length === 3, 'scene: explicit-key composition is labelled partial, not invented as ordered runtime members');
+	check(scene.outline.roots[0].element.scene.resolution === 'partial' && scene.outline.roots[0].children.length === 3, 'scene: explicit-key composition is labelled partial, not invented as ordered runtime members');
 	check(x.field.readOnly && scene.properties[0].sourceText.includes('origin + 1'), 'scene: dynamic Lua is shown as source, not evaluated or overwritten');
 	await click(scene.properties[0].bounds);
 	await press('Digit7');
@@ -177,7 +186,7 @@ export async function testSceneSourceEdits(test: StudioFixture): Promise<void> {
 	const generated = harness.getActiveEditorDocument().model;
 	const generatedSource = generated.buffer.getText();
 	const readonlyScene = await openSceneEditor(test);
-	check(readonlyScene.workingCopy === generated && generated.readOnly && readonlyScene.members.rows.length === 0,
+	check(readonlyScene.workingCopy === generated && generated.readOnly && readonlyScene.outline.rows.length === 0,
 		'scene: readonly non-scene source does not invent a scene or an edit route');
 	check(!ide.editor.commands.isEnabled('sceneEditor.removeMember'), 'scene: readonly source does not admit Remove');
 	check(!ide.editor.commands.isEnabled('sceneEditor.moveMemberUp') && !ide.editor.commands.isEnabled('sceneEditor.moveMemberDown'),
@@ -189,7 +198,7 @@ export async function testSceneSourceEdits(test: StudioFixture): Promise<void> {
 		'scene: readonly view commands never target the previous editable input');
 	harness.openLuaSource('scenes/root.lua');
 	await openSceneEditor(test);
-	check(!scene.partial, 'scene: undoing the source edit restores complete projection');
+	check(scene.outline.roots[0].element.scene.resolution === 'complete', 'scene: undoing the source edit restores complete projection');
 	await click(scene.properties[0].bounds);
 	await press('Digit2');
 	await press('Digit2');

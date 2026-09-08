@@ -272,15 +272,32 @@ generic call-by-string route, undo callback or guessed guest mutation.
 `View > Scene Editor` opens that adapter on the active Lua document. Its
 `SceneEditorInput` attaches the same `EditorTextModel` as the code input.
 The controller projects direct `scene_library.register` definitions at a new
-source version using the shared text snapshot. Names are display labels, not
-selection anchors or runtime ids; the list needs no synthetic outline ids.
-Selection tracks the full field's
+source version using the shared text snapshot. The retained source outline has
+one root per direct definition, including empty or keyed-only definitions, and
+ordered member children. `workbench/ui/tree_view.ts` owns parent/children/depth,
+collapse, the visible node list and tree navigation, reusing the existing list
+geometry/scroll/reveal owner. It knows no Lua or scene semantics. As in
+[VS Code's source outline](https://github.com/microsoft/vscode/blob/a47dab6a0a5258924b2454f64fc373fc7e657677/src/vs/workbench/contrib/outline/browser/outlinePane.ts#L255-L288),
+label clicks select and twistie clicks expand; childless roots have no twistie.
+Left collapses/ascends, Right expands/descends. Collapsing a selected descendant
+selects its visible ancestor rather than retaining an invisible edit target.
+Only member selection binds member commands and position controls; an empty
+definition is not a synthetic member or an absent scene.
+
+Names are display labels, not selection anchors or runtime ids. Selection
+tracks the full definition or field's
 source span through the text model's actual changes, including Undo/Redo while
 the scene view is hidden. A removed/replaced span collapses instead of selecting
-a surviving namesake. Only the initial projection chooses the first member.
+a surviving namesake. Only the initial projection chooses the first root.
+`scene_editor/outline.ts` also retains root collapse state by the mapped
+definition span across source generations, including hidden-source edits.
+Complete replacement/deletion clears correspondence; no name/id fallback or
+separate undo history resurrects it. A member move selects its known
+parent/child destination, never an assumed adjacent visible list index.
 The pane owns document commands, and its three `IntegerInput` controls own
 unsubmitted position text. Layout, rows,
-source labels, field geometry and focus order are retained. Rendering uses the
+source labels, field geometry and focus order are retained. Visible tree rows
+are rebuilt only on source/topology or collapse changes. Rendering uses the
 existing IDE tiny font and shared list/action-bar/text primitives at 384x288;
 there is no guest viewport, graph evaluation or per-frame source parse.
 Unsupported position expressions remain visible as source, partial composition

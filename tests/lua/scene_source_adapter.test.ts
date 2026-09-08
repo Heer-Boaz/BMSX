@@ -53,6 +53,19 @@ test('scene source adapter projects the real Nemesis root without executing Lua'
 		&& object.position!.z.value.kind === LuaSyntaxKind.NumericLiteralExpression));
 });
 
+test('scene projection retains empty and keyed-only definitions as distinct source roots', () => {
+	const source = "local scenes<const> = require('cartlib/world/scene_library')\n"
+		+ "scenes.register('same', { objects = {} })\n"
+		+ "scenes.register('same', { objects = { [1] = make_member() } })\n"
+		+ "scenes.register('same', { objects = { make_member() } })";
+	const document = buildSceneSourceDocument({ domain: 0, path: 'scene.lua' }, buildLuaFileSemanticData(source, 'scene.lua'));
+	assert.equal(document.scenes.length, 3);
+	assert.deepEqual(document.scenes.map(scene => scene.objects.length), [0, 0, 1]);
+	assert.deepEqual(document.scenes.map(scene => scene.resolution), ['complete', 'partial', 'partial']);
+	assert.deepEqual(document.scenes.map(scene => scene.range.start.line), [2, 3, 4]);
+	assert.equal(document.scenes[2].objects[0].kind, 'dynamic');
+});
+
 test('scene member moves use the retained parent table and preserve neighbouring definitions', () => {
 	const path = 'scene.lua';
 	const first = "\t-- first\n\t{ member_id = 'same', definition_id = 'one' },\n";

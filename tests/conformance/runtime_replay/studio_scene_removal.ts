@@ -1,7 +1,7 @@
 import type { EditorTextModel } from '../../../ide/editor/model/text_model';
 import { actionPromptState } from '../../../ide/workbench/contrib/modal/action_prompt';
 import { SceneEditorPane } from '../../../ide/workbench/contrib/scene_editor/editor_pane';
-import { openSceneEditor, selectMember } from './studio_scene_source';
+import { openSceneEditor, selectMember, selectSceneRow } from './studio_scene_source';
 import { check, type StudioFixture } from './studio_fixture';
 
 async function saveAndResume(test: StudioFixture, model: EditorTextModel, expected: string): Promise<void> {
@@ -27,9 +27,9 @@ export async function testSceneMemberRemoval(test: StudioFixture): Promise<void>
 	const pane = ide.editor.editorPanes.activePane;
 	if (!(pane instanceof SceneEditorPane)) throw new Error('remove: actual Scene Editor pane required');
 	const x = pane.controls[0];
-	const field = scene.members.rows[2].entry.field;
-	const start = model.buffer.offsetAt(field.range.start.line - 1, field.range.start.column - 1);
-	const end = model.buffer.offsetAt(field.range.end.line - 1, field.range.end.column);
+	const field = scene.outline.roots[0].children[2].element.source;
+	const start = model.buffer.offsetAt(field.start.line - 1, field.start.column - 1);
+	const end = model.buffer.offsetAt(field.end.line - 1, field.end.column);
 	const member = original.slice(start, end);
 	const leading = '-- keep member documentation\n\t\t\t';
 	const trailing = ' -- keep exterior, not a comma token\n\t\t\t';
@@ -52,9 +52,9 @@ export async function testSceneMemberRemoval(test: StudioFixture): Promise<void>
 	check(names.length === 6 && names[4] === 'title_screen' && names[5] === 'director',
 		'remove: real installed register closure owns six distinct cells');
 	const parsed = scene.parsed;
-	const row = scene.members.rows[2];
+	const row = scene.outline.roots[0].children[2];
 	for (let index = 0; index < 8; index += 1) await frame();
-	check(scene.parsed === parsed && scene.members.rows[2] === row,
+	check(scene.parsed === parsed && scene.outline.roots[0].children[2] === row,
 		'remove: action enablement and stable visible frames retain the parse and projection');
 
 	await click(scene.properties[0].bounds);
@@ -67,7 +67,7 @@ export async function testSceneMemberRemoval(test: StudioFixture): Promise<void>
 	await press('Digit1');
 	await press('Digit8');
 	await click(remove.bounds, 8);
-	check(model.buffer.getText() === removed && scene.members.rows.length === 3 && scene.members.selectionIndex === -1,
+	check(model.buffer.getText() === removed && scene.outline.roots[0].children.length === 3 && scene.outline.selectionIndex === -1,
 		'remove: one held pointer press removes the grouped member, keeps exterior comments and clears selection');
 	check(x.field.focusTarget.parent!.hasFocus && !x.pending && x.field.readOnly && !ide.editor.commands.isEnabled('sceneEditor.removeMember'),
 		'remove: document pane owns history after deletion, not a detached property draft');
@@ -79,7 +79,7 @@ export async function testSceneMemberRemoval(test: StudioFixture): Promise<void>
 		'remove: source deletion never mutates the paused machine or disposes the live actor');
 
 	await press('ControlLeft', 'KeyZ');
-	check(scene.members.selectionIndex === -1, 'remove: Undo does not invent a selection');
+	check(scene.outline.selectionIndex === -1, 'remove: Undo does not invent a selection');
 	await selectMember(test, scene, 2);
 	check(scene.properties[0].value === 18 && x.field.text === '18' && model.buffer.getText().includes(authoredMember.replace('x = 0', 'x = 18')),
 		'remove: one Undo restores field and punctuation with the accepted draft value and rebinds the control');
@@ -111,10 +111,10 @@ export async function testSceneMemberRemoval(test: StudioFixture): Promise<void>
 	harness.openLuaSource('scenes/root.lua');
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- preceding source edit\n' }]);
 	await openSceneEditor(test);
-	check(scene.members.selectionIndex === 2 && scene.members.rows[2].entry.field.range.start.line === field.range.start.line + 1,
+	check(scene.outline.selectionIndex === 3 && scene.outline.roots[0].children[2].element.source.start.line === field.start.line + 1,
 		'remove: a hidden scene view follows its selected source through a preceding code edit');
 	await press('ControlLeft', 'KeyZ');
-	check(scene.members.selectionIndex === 2, 'remove: inverse source mapping preserves the original member');
+	check(scene.outline.selectionIndex === 3, 'remove: inverse source mapping preserves the original member');
 	model.pushEditOperations([{ offset: model.buffer.length, deleteLength: 0, text: '\n@' }]);
 	await frame();
 	const malformed = model.buffer.getText();
@@ -123,13 +123,13 @@ export async function testSceneMemberRemoval(test: StudioFixture): Promise<void>
 	check(model.buffer.getText() === malformed, 'remove: disabled action does not rewrite an incomplete document');
 	await press('ControlLeft', 'KeyZ');
 
-	const currentField = scene.members.rows[2].entry.field;
-	const currentStart = model.buffer.offsetAt(currentField.range.start.line - 1, currentField.range.start.column - 1);
-	const currentEnd = model.buffer.offsetAt(currentField.range.end.line - 1, currentField.range.end.column);
+	const currentField = scene.outline.roots[0].children[2].element.source;
+	const currentStart = model.buffer.offsetAt(currentField.start.line - 1, currentField.start.column - 1);
+	const currentEnd = model.buffer.offsetAt(currentField.end.line - 1, currentField.end.column);
 	model.pushEditOperations([{ offset: currentStart, deleteLength: currentEnd - currentStart, text: 'make_member()' }]);
 	await frame();
 	await selectMember(test, scene, 2);
-	check(scene.partial && !ide.editor.commands.isEnabled('sceneEditor.removeMember'), 'remove: selected dynamic composition remains source-only');
+	check(scene.outline.roots[0].element.scene.resolution === 'partial' && !ide.editor.commands.isEnabled('sceneEditor.removeMember'), 'remove: selected dynamic composition remains source-only');
 	await selectMember(test, scene, 0);
 	check(ide.editor.commands.isEnabled('sceneEditor.removeMember'), 'remove: another dynamic entry does not hide a direct member\'s syntax ownership');
 	await press('ControlLeft', 'KeyZ');
@@ -139,26 +139,31 @@ export async function testSceneMemberRemoval(test: StudioFixture): Promise<void>
 	model.pushEditOperations([{ offset: original.indexOf(storyName), deleteLength: storyName.length, text: 'intro.instance_id' }]);
 	await frame();
 	await selectMember(test, scene, 0);
-	check(scene.members.rows[0].label === scene.members.rows[1].label, 'remove: duplicate-name source fixture');
+	check(scene.outline.roots[0].children[0].element.label === scene.outline.roots[0].children[1].element.label, 'remove: duplicate-name source fixture');
 	await click(remove.bounds);
-	check(scene.members.rows.length === 3 && scene.members.selectionIndex === -1 && x.field.readOnly,
+	check(scene.outline.roots[0].children.length === 3 && scene.outline.selectionIndex === -1 && x.field.readOnly,
 		'remove: surviving namesake never inherits selection or property focus');
 	await press('ControlLeft', 'KeyZ');
-	check(scene.members.rows.length === 4 && scene.members.selectionIndex === -1, 'remove: restoring duplicate source keeps selection empty');
+	check(scene.outline.roots[0].children.length === 4 && scene.outline.selectionIndex === -1, 'remove: restoring duplicate source keeps selection empty');
 	await selectMember(test, scene, 0);
 	await press('ControlLeft', 'KeyY');
-	check(scene.members.rows.length === 3 && scene.members.selectionIndex === -1 && x.field.readOnly,
+	check(scene.outline.roots[0].children.length === 3 && scene.outline.selectionIndex === -1 && x.field.readOnly,
 		'remove: document Redo also clears the deleted selection instead of transferring it to a namesake');
 	await press('ControlLeft', 'KeyZ');
 	await press('ControlLeft', 'KeyZ');
 	for (let index = 3; index >= 0; index -= 1) {
 		await selectMember(test, scene, index);
 		await click(remove.bounds);
-		check(scene.members.rows.length === index && scene.members.selectionIndex === -1,
+		check(scene.outline.roots[0].children.length === index && scene.outline.selectionIndex === -1,
 			'remove: last-member deletion leaves no implicit next target');
 	}
 	check(!ide.editor.commands.isEnabled('sceneEditor.removeMember') && x.field.readOnly,
 		'remove: an empty definition has no member action or editable property');
+	check(scene.outline.roots.length === 1 && scene.outline.rows.length === 1 && scene.outline.rows[0].element.kind === 'scene',
+		'remove: removing the last member preserves the actual empty definition in the outline');
+	await selectSceneRow(test, scene, 0);
+	check(scene.definitionText === '0 MEMBERS' && x.field.readOnly && !ide.editor.commands.isEnabled('sceneEditor.removeMember'),
+		'remove: the remaining empty definition can be selected but not mistaken for a removable member');
 	for (let index = 0; index < 4; index += 1) await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === original && !model.dirty, 'remove: all admission fixtures leave the real saved document intact');
 }

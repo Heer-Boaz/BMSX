@@ -1,5 +1,4 @@
 import { point_in_rect } from '../../../../machine/ts/common/rect';
-import { clamp } from '../../../../machine/ts/common/clamp';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 import type { Clipboard } from '../../../common/clipboard';
 import type { PointerSnapshot } from '../../../common/models';
@@ -13,11 +12,13 @@ import { createLuaTableFieldIntegerEdits } from '../../../language/lua/source_ed
 import { getTextFileRuntimeSourceStatus } from '../../services/working_copy/runtime_source_status';
 import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import { revealWorkbenchListSelection, scrollWorkbenchList, workbenchListRowIndexAtPosition } from '../../ui/list_view';
+import { navigateWorkbenchTree, setWorkbenchTreeCollapsed, workbenchTreeTwistieContainsPosition } from '../../ui/tree_view';
 import { updateWorkbenchActionBarPointer } from '../../input/pointer/action_bar';
 import type { ResourcePanelController } from '../resources/panel/controller';
 import type { SceneEditorController } from './controller';
 import { POSITION_AXES, type SceneEditorInput } from './editor_input';
 import { drawSceneEditor, layoutSceneEditor } from './render';
+import { selectSceneOutlineRow } from './outline';
 
 /** Concrete editable view: document history here, draft history in each field. */
 export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInput> {
@@ -85,21 +86,22 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 		this.boundVersion = this.input.version;
 	}
 
-	private select(index: number): void {
+	private select(index: number, toggle: boolean): void {
 		this.focus();
 		this.controller.refresh(this.input);
-		this.controller.select(this.input, index);
+		if (toggle) setWorkbenchTreeCollapsed(this.input.outline, index, !this.input.outline.rows[index].collapsed);
+		selectSceneOutlineRow(this.input, index);
+		const contentChanged = this.boundVersion !== this.input.version;
 		this.bindProperties();
-		revealWorkbenchListSelection(this.input.members);
-		layoutSceneEditor(this.input, true);
+		revealWorkbenchListSelection(this.input.outline);
+		layoutSceneEditor(this.input, contentChanged, true);
 	}
 
 	public handleKeyboard(input: PlayerInput): void {
-		const members = this.input.members;
-		for (const [code, delta] of MEMBER_NAVIGATION) {
+		for (const [code, command] of TREE_NAVIGATION) {
 			if (shouldRepeatKeyFromPlayer(code, input)) {
 				consumeIdeKey(code, input);
-				if (members.rows.length > 0) this.select(clamp(members.selectionIndex + delta, 0, members.rows.length - 1));
+				if (navigateWorkbenchTree(this.input.outline, command)) this.select(this.input.outline.selectionIndex, false);
 				return;
 			}
 		}
@@ -123,17 +125,17 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 				return true;
 			}
 		}
-		const index = workbenchListRowIndexAtPosition(this.input.members, snapshot.viewportX, snapshot.viewportY);
-		this.input.members.hoverIndex = index;
+		const index = workbenchListRowIndexAtPosition(this.input.outline, snapshot.viewportX, snapshot.viewportY);
+		this.input.outline.hoverIndex = index;
 		if (justPressed) {
-			if (index >= 0) this.select(index);
+			if (index >= 0) this.select(index, workbenchTreeTwistieContainsPosition(this.input.outline, index, snapshot.viewportX));
 			else this.focus();
 		}
 		return index >= 0;
 	}
 
 	public handleWheel(direction: number, steps: number, _pointer: PointerSnapshot | null, input: PlayerInput): void {
-		scrollWorkbenchList(this.input.members, direction * steps * 3);
+		scrollWorkbenchList(this.input.outline, direction * steps * 3);
 		input.inputHandlers.pointer?.consumeButton('pointer_wheel');
 	}
 
@@ -147,7 +149,10 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 	}
 }
 
-const MEMBER_NAVIGATION = [['ArrowUp', -1], ['ArrowDown', 1]] as const;
+const TREE_NAVIGATION = [
+	['ArrowUp', 'up'], ['ArrowDown', 'down'], ['ArrowLeft', 'left'], ['ArrowRight', 'right'],
+	['PageUp', 'page-up'], ['PageDown', 'page-down'], ['Home', 'home'], ['End', 'end'],
+] as const;
 const SOURCE_STATUS = {
 	applied: 'SOURCE APPLIED', pending: 'SOURCE NOT APPLIED', failed: 'SOURCE APPLY FAILED',
 	untracked: 'SOURCE STATUS UNKNOWN', source_only: 'SOURCE ONLY',

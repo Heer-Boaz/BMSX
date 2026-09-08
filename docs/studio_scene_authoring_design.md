@@ -604,8 +604,9 @@ vier echte source-installaties en hun capture-/actoridentitychecks. Bewezen:
   gebruiken dezelfde histories en controls;
 - gelijknamige members blijven ook bij reselection → Redo correct; een verborgen
   sceneview volgt zijn bronbereik door een voorafgaande code-edit en zijn Undo;
-- laatste/enige members verwijderen laat de lijst leeg en de inspector zonder
-  editable controls; één Undo per member herstelt de oorspronkelijke bron;
+- laatste/enige members verwijderen laat de memberchildren leeg en de inspector
+  zonder editable controls; de latere source-tree behoudt de selecteerbare
+  definitieroot. Eén Undo per member herstelt de oorspronkelijke bron;
 - recovered syntax, readonly en geselecteerde dynamische source worden niet
   structureel gewijzigd; een ander direct member in een partial compositie
   blijft beschikbaar;
@@ -707,6 +708,108 @@ Regressie van deze slice: **934 Lua-tests geslaagd**, één bestaande skip;
 architecture-boundaries, core-parity, indentation en productbuild slagen.
 De tests-projecttypecheck heeft exact dezelfde **52 bestaande diagnostics**;
 geen nieuwe C++-runtime- of targethardwareclaim. `git diff --check` is schoon.
+
+## Selecteerbare sourcehiërarchie (2026-09-08)
+
+De bestaande sourceprojectie bewaart ook `objects = {}`, maar de eerste view
+vlakte uitsluitend members af. Daardoor verdween een geldige lege definitie
+en meldde de view ten onrechte dat er geen scenes waren. Een Add-actie daarop
+zou haar parent moeten raden. Eerst krijgt de view echte definitieroots met
+memberchildren; toevoegen en prefab-/optionskeuze blijven een volgende slice.
+
+Referentie is VS Code op `a47dab6a0a5258924b2454f64fc373fc7e657677`:
+[IndexTreeModel](https://github.com/microsoft/vscode/blob/a47dab6a0a5258924b2454f64fc373fc7e657677/src/vs/base/browser/ui/tree/indexTreeModel.ts#L483-L576)
+bezit parent/children/depth/collapse en de zichtbare lijst,
+[AbstractTree](https://github.com/microsoft/vscode/blob/a47dab6a0a5258924b2454f64fc373fc7e657677/src/vs/base/browser/ui/tree/abstractTree.ts#L3320-L3376)
+bezit Left = collapse/parent en Right = expand/child, en de
+[OutlinePane](https://github.com/microsoft/vscode/blob/a47dab6a0a5258924b2454f64fc373fc7e657677/src/vs/workbench/contrib/outline/browser/outlinePane.ts#L255-L288)
+configureert een source-outline met enkelvoudige selectie en alleen
+twistie-click-expansie. Geen DOM-, async-provider-, multiselectie-, filter- of
+diff-framework kopiëren voor de hier benodigde retained tree.
+
+- De gedeelde workbench-tree bezit topology, zichtbare rows, collapse en
+  parent/child-/lijstnavigatie. De bestaande list-owner blijft eigenaar van
+  hit-test, scrolling en reveal. Scene-sourcebouw blijft in de contribution;
+  de tree kent geen Lua, scene, prefab, member-id of guest.
+- Een root is de echte directe scenedefinitie, ook met nul children. Alleen
+  memberselectie bindt membercommands en positioncontrols. Partial hoort bij
+  de betreffende definitie, niet bij een fictieve globale memberlijst.
+- Expansie is uitsluitend viewstate. Labels identificeren geen nodes. Op een
+  nieuwe sourceversie correspondeert een root alleen via haar bestaande
+  tracked, non-growing definitiebereik. Verwijdering/vervanging wist die
+  correspondentie; Undo zoekt geen gelijknamige vervanger. Modelchanges mappen
+  ook verborgen roots. Selectie gebruikt dezelfde bestaande bronbereik-owner.
+- Alleen de eerste projectie selecteert de eerste root. Viewnavigatie kiest
+  expliciet zichtbare targets. Collapse laat geen verborgen member als
+  edittarget achter: een geselecteerde descendant gaat naar de ingeklapte
+  parent. Lege roots hebben geen twistie en geen membereditcontrols.
+- Remove wist de verwijderde selectie, niet haar parent uit de tree. Up/Down
+  gebruikt nog steeds dezelfde volledige objects-table en lokale memberindex;
+  na de edit kiest zij de bekende parent/child-bestemming, niet een vermeende
+  naastliggende rij in de geflatte zichtbare lijst.
+- Source navigeert naar de geselecteerde definitie of het member op hetzelfde
+  document. De bestaande focus-/draftacceptatie en gewone documenthistorie
+  blijven eigenaar van edits; uitklappen wordt geen undoable bronbewerking.
+- Topology en labels worden alleen bij sourcewijziging opgebouwd; zichtbare
+  rows alleen daarbij en bij collapse/expand. Layouttekst blijft retained.
+  Selectie past alleen inspector-/propertytekst aan; alle boomlabels opnieuw
+  opmaken hoort uitsluitend bij source-/font-/viewportwijziging, ook voor
+  children die tijdens die wijziging ingeklapt zijn. Geen sourceparse,
+  treebouw of tijdelijke rowobjects per frame.
+
+Gate: generieke meerlaagse treeproeven plus echte Studio-input voor lege,
+meervoudige, partial en gelijknamige scenes, twistie/keyboard/scroll/focus,
+verborgen-sourcewijzigingen en selectie/collapse-retentie. De bestaande
+Remove-, Up/Down-, property-, Save/Hot Resume- en rebootproeven moeten op alle
+drie browserbackends blijven slagen. Geen cartlib-, machine- of C++-wijziging.
+
+### Kosten van de tree-owner
+
+De zichtbare lijst wordt in-place herbouwd met bestaande nodereferenties, in
+O(zichtbare nodes) per topology-/collapsewijziging; niet per frame of pijlstap.
+Er is hier geen subtree-diffindex of tweede nodecache nodig. Sourcecorrespondence
+gebruikt één tijdelijke start-offsetmap per nieuwe projectie, niet een
+kwadratische zoekactie over gelijknamige definities.
+
+`/tmp/bmsx-scene-tree/cost.ts` meet op Node 22.23.1, met 8 warmups en 31 samples
+en expliciete GC tussen samples:
+
+| workload | nieuwe tree uit gecachete sourceprojectie | collapse + expand |
+| --- | ---: | ---: |
+| echte Nemesis-root, 1.129 bytes, 5 nodes | 0,00203 ms | 0,000077 ms |
+| synthetische 1.000 definities, 462.951 bytes, 5.000 nodes | 3,74 ms | 0,0704 ms |
+
+Dit zijn medianen van uitsluitend de genoemde hostoperaties, exclusief parse,
+semantiek, fontlayout, textmodelmutatie, render en Hot Resume; geen claim over
+totale interactielatentie of targethardware. Topology-install maakt de nieuwe
+sourcegeneratie; collapse/expand bewaart nodes en de rowarray. Er komt nul
+gueststate of worldtickwerk bij.
+
+### Productbewijs
+
+`studio_scene_tree.ts` bedient de echte View-menu-, rij- en twistiehit-targets
+en keyboardfocus. Zij bewijst definitie versus member, initial-rootselectie,
+eenmalig togglen bij held pointer, Left/Right/Home/End, propertyacceptatie bij
+collapse, Source naar de juiste documentpositie en onafhankelijke identiteit
+van gelijknamige roots. Lege en keyed-only partial definities blijven zichtbaar
+en selecteerbaar. Verborgen bronverschuiving, rename, Undo en volledige
+definitievervanging gebruiken de bestaande tracked bronbereiken; geen
+naamherstel. De gewone Remove-proef verwijdert daarnaast alle echte Nemesis-
+members en selecteert de overblijvende lege definitie.
+
+De volledige Studio-workflow slaagt op **software, WebGL2 en WebGPU**, inclusief
+alle bestaande member-/property-edits, bronhistorie, gewone Save & Hot Resume,
+behoud van levende actors, rewind, foutreparatie en expliciete nieuwe
+instantiatie na reboot. De eindbeelden zijn bytegelijk; de softwarecapture is
+visueel bekeken op de daadwerkelijke tiny-fontlayout. Artefacten staan in
+`/tmp/bmsx-scene-tree/`.
+
+**942 Lua-tests geslaagd**, één bestaande skip; zeven generieke treeproeven en
+één empty/partial sourceprojectieproef zijn toegevoegd. IDE-typecheck,
+architecture-boundaries, core-parity, indentation en de browser-Studiobuild
+slagen. De tests-projecttypecheck heeft dezelfde **52 bestaande diagnostics**;
+er zijn geen nieuwe. Geen Add-actie, guestwijziging, C++-runtimeproef of
+claim dat hiermee live-instance-editing is gebouwd.
 
 ## No-go's
 

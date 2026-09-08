@@ -1,6 +1,6 @@
 import { actionPromptState } from '../../../ide/workbench/contrib/modal/action_prompt';
 import { SceneEditorPane } from '../../../ide/workbench/contrib/scene_editor/editor_pane';
-import { openSceneEditor, selectMember } from './studio_scene_source';
+import { openSceneEditor, selectMember, selectSceneRow } from './studio_scene_source';
 import { check, type StudioFixture } from './studio_fixture';
 
 /** Real sibling-move commands, canonical Lua history and ordinary source application. */
@@ -16,13 +16,13 @@ export async function testSceneMemberMoves(test: StudioFixture): Promise<void> {
 	const x = pane.controls[0];
 	const up = scene.actionBar.items.find(item => item.command === 'sceneEditor.moveMemberUp')!;
 	const down = scene.actionBar.items.find(item => item.command === 'sceneEditor.moveMemberDown')!;
-	const fields = scene.members.rows.map(row => row.entry.field);
-	const firstStart = model.buffer.getLineStartOffset(fields[1].range.start.line - 1);
-	const secondStart = model.buffer.getLineStartOffset(fields[2].range.start.line - 1);
-	const after = model.buffer.getLineStartOffset(fields[3].range.start.line - 1);
+	const fields = scene.outline.roots[0].children.map(node => node.element.source);
+	const firstStart = model.buffer.getLineStartOffset(fields[1].start.line - 1);
+	const secondStart = model.buffer.getLineStartOffset(fields[2].start.line - 1);
+	const after = model.buffer.getLineStartOffset(fields[3].start.line - 1);
 	const first = original.slice(firstStart, secondStart);
-	const memberStart = model.buffer.offsetAt(fields[2].range.start.line - 1, fields[2].range.start.column - 1);
-	const memberEnd = model.buffer.offsetAt(fields[2].range.end.line - 1, fields[2].range.end.column);
+	const memberStart = model.buffer.offsetAt(fields[2].start.line - 1, fields[2].start.column - 1);
+	const memberEnd = model.buffer.offsetAt(fields[2].end.line - 1, fields[2].end.column);
 	const second = '\t\t\t-- title documentation\n\t\t\t( --[[grouped member]]\n\t\t\t'
 		+ original.slice(memberStart, memberEnd) + '), -- title inline\n';
 	// Hand-authored fixture; the visual action, not this setup, performs the move.
@@ -41,9 +41,9 @@ export async function testSceneMemberMoves(test: StudioFixture): Promise<void> {
 	const functionIndex = prior.metadata.functionIds.indexOf(functionId);
 	const names = prior.metadata.upvalueBindingsByFunction[functionIndex].map(slot => prior.metadata.capturedLocals[slot].name);
 	const parsed = scene.parsed;
-	const retained = scene.members.rows[2];
+	const retained = scene.outline.roots[0].children[2];
 	for (let index = 0; index < 8; index += 1) await frame();
-	check(scene.parsed === parsed && scene.members.rows[2] === retained, 'move: stable visible frames retain syntax and rows');
+	check(scene.parsed === parsed && scene.outline.roots[0].children[2] === retained, 'move: stable visible frames retain syntax and rows');
 
 	await click(scene.properties[0].bounds);
 	await press('Minus');
@@ -55,16 +55,16 @@ export async function testSceneMemberMoves(test: StudioFixture): Promise<void> {
 	await press('Digit1');
 	await press('Digit8');
 	await click(up.bounds, 8);
-	check(model.buffer.getText() === moved && scene.members.selectionIndex === 1
-		&& scene.members.rows[1].label === 'title_screen.instance_id' && x.field.text === '18',
+	check(model.buffer.getText() === moved && scene.outline.selectionIndex === 2
+		&& scene.outline.roots[0].children[1].element.label === 'title_screen.instance_id' && x.field.text === '18',
 		'move: held Up accepts the draft, moves complete grouped syntax and comments once, and follows the member');
 	check(x.field.focusTarget.parent!.hasFocus && !x.pending && !x.field.readOnly,
 		'move: pane document history owns focus; controls are rebound to the moved field');
 	await click(down.bounds);
-	check(model.buffer.getText() === authored18 && scene.members.selectionIndex === 2,
+	check(model.buffer.getText() === authored18 && scene.outline.selectionIndex === 3,
 		'move: Down follows the same member back without changing its source bytes');
 	await press('ControlLeft', 'KeyZ');
-	check(model.buffer.getText() === moved && scene.members.selectionIndex === -1 && x.field.readOnly,
+	check(model.buffer.getText() === moved && scene.outline.selectionIndex === -1 && x.field.readOnly,
 		'move: text Undo restores content without guessing a moved selection');
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === authored18, 'move: one Undo per structural operation');
@@ -73,7 +73,7 @@ export async function testSceneMemberMoves(test: StudioFixture): Promise<void> {
 	check(model.buffer.getText() === authored && x.field.text === '0', 'move: accepted property owns its preceding Undo element');
 	await press('ControlLeft', 'KeyY');
 	await press('ControlLeft', 'KeyY');
-	check(model.buffer.getText() === moved && scene.members.selectionIndex === -1,
+	check(model.buffer.getText() === moved && scene.outline.selectionIndex === -1,
 		'move: Redo does not transfer a replaced source selection to a neighbour');
 	check(cycles() === before && title() === actor && ide.sources.currentBlua32Media === media,
 		'move: editing order never runs or reorders living actors');
@@ -121,7 +121,7 @@ export async function testSceneMemberMoves(test: StudioFixture): Promise<void> {
 		model.pushEditOperations([{ offset: objectsStart, deleteLength: 0, text: insertion }]);
 		await frame();
 		await selectMember(test, scene, 1);
-		check(scene.partial && !ide.editor.commands.isEnabled(up.command) && !ide.editor.commands.isEnabled(down.command),
+		check(scene.outline.roots[0].element.scene.resolution === 'partial' && !ide.editor.commands.isEnabled(up.command) && !ide.editor.commands.isEnabled(down.command),
 			'move: a partial list cannot pretend its visible entries are the full ordered table');
 		await press('ControlLeft', 'KeyZ');
 	}
@@ -131,12 +131,12 @@ export async function testSceneMemberMoves(test: StudioFixture): Promise<void> {
 	await frame();
 	await selectMember(test, scene, 1);
 	await click(up.bounds);
-	check(scene.members.selectionIndex === 0 && scene.members.rows[0].label === scene.members.rows[1].label
-		&& scene.members.rows[0].definition === 'story.definition_id', 'move: identical labels do not obscure the explicit syntax destination');
+	check(scene.outline.selectionIndex === 1 && scene.outline.roots[0].children[0].element.label === scene.outline.roots[0].children[1].element.label
+		&& scene.outline.roots[0].children[0].element.detail === 'story.definition_id', 'move: identical labels do not obscure the explicit syntax destination');
 	await click(scene.properties[0].bounds);
 	await press('Digit9');
 	await press('Enter');
-	check(scene.members.selectionIndex === 0 && scene.properties[0].value === 9, 'move: the rebound property edits the moved member');
+	check(scene.outline.selectionIndex === 1 && scene.properties[0].value === 9, 'move: the rebound property edits the moved member');
 	await selectMember(test, scene, 1);
 	check(scene.properties[0].value === 0, 'move: a namesake neighbour was not edited');
 	for (let index = 0; index < 3; index += 1) await press('ControlLeft', 'KeyZ');
@@ -147,16 +147,18 @@ export async function testSceneMemberMoves(test: StudioFixture): Promise<void> {
 	await frame();
 	await selectMember(test, scene, 3);
 	check(!ide.editor.commands.isEnabled(down.command), 'move: cannot cross from the first scene into the next visible scene');
-	await selectMember(test, scene, 4);
+	await selectMember(test, scene, 0, 1);
 	check(!ide.editor.commands.isEnabled(up.command) && ide.editor.commands.isEnabled(down.command), 'move: scene-local first index, not the flattened view index, owns admission');
-	const lastVisible = scene.members.layout.visibleRowCount - 1;
-	await selectMember(test, scene, lastVisible);
-	const label = scene.members.rows[lastVisible].label;
+	const lastVisible = scene.outline.layout.visibleRowCount - 1;
+	await selectSceneRow(test, scene, lastVisible);
+	const member = scene.outline.rows[lastVisible].element;
+	check(member.kind === 'member' && member.scene === scene.outline.roots[1].element.scene, 'move: viewport endpoint lies inside the second definition');
+	const label = member.label;
 	await click(down.bounds);
-	check(scene.members.selectionIndex === lastVisible + 1 && scene.members.scroll === 1
-		&& scene.members.rows[lastVisible + 1].label === label, 'move: selected destination is revealed beyond the old visible range');
+	check(scene.outline.selectionIndex === lastVisible + 1 && scene.outline.scroll === 1
+		&& scene.outline.rows[lastVisible + 1].element.label === label, 'move: selected destination is revealed beyond the old visible range');
 	await press('ControlLeft', 'KeyZ');
-	check(scene.members.selectionIndex === -1, 'move: history clears the replaced source target, not a row with the same index');
+	check(scene.outline.selectionIndex === -1, 'move: history clears the replaced source target, not a row with the same index');
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === original && !model.dirty, 'move: admission fixtures restore the actual saved root exactly');
 }
