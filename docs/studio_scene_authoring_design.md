@@ -640,6 +640,74 @@ Artefacten: `/tmp/bmsx-scene-remove/` (inclusief de eerst falende Redo-proef,
 de referentie-oracle, microbenchmark en de complete browserproef).
 Geen C++-/cartlib-/compiler-/ROMwijziging; geen nieuwe native-runtimeclaim.
 
+## Direct sourcemember verplaatsen (2026-09-08)
+
+Up/Down veranderen uitsluitend de volgorde in één complete directe
+scenedefinitie. Het professionele voorbeeld is Godots
+[`TOOL_MOVE_UP` / `TOOL_MOVE_DOWN`](https://github.com/godotengine/godot/blob/6a0f6f32cfb2ce4cc5bad6641d0afda413b62a9d/editor/docks/scene_tree_dock.cpp#L894-L971):
+admission binnen dezelfde parent, één undo-operatie, expliciete bestemming en
+selectie zichtbaar houden. Niet overgenomen: native live-nodeownership,
+multi-selection, deferred-redrawtrucs of een tweede document naast Lua.
+
+De [language-owner](lua_source_syntax_design.md#adjacent-field-movement-contract-2026-09-08)
+bezit volledige field/separator/triviaspans. De sourceprojectie bewaart de echte
+objects-table en lokale memberindex. De normale workbenchcommand-/actionbarroute
+accepteert eerst een geldig gefocust propertydraft en leest daarna de actuele
+parse. Ongeldige drafts houden focus en foutmelding; aan een endpoint, bij
+readonly/recovered syntax, zonder selectie of in partial compositie is de
+bijbehorende verplaatsing niet beschikbaar. Geen verplaatsing naar een andere
+scenedefinitie, ook niet wanneer die als volgende rij zichtbaar is.
+
+De command focust documenthistorie, schrijft één language-owned edit, herleest
+de projectie en selecteert de bekende nieuwe memberindex. De selectie blijft
+zichtbaar. Undo/Redo bezitten uitsluitend dezelfde Lua-sourcegeschiedenis;
+volledige tekstvervanging wist de betrokken tracked selectie zoals bij Remove,
+zonder labelmatching of een verborgen tweede selectiehistorie. Een vooraf
+geaccepteerde property blijft een afzonderlijke Undo-eenheid.
+
+Save & Hot Resume registreert de nieuwe volgorde voor toekomstige instanties;
+levende actors worden niet gesorteerd, vervangen of opnieuw gespawnd. Geen
+cartlib-, compiler-, machine- of C++-wijziging voor deze host-authoringslice.
+De productgate blijft echte pointer/focus/history/source-apply op software,
+WebGL2 en WebGPU, naast lexicale en BLua32-uitvoeringsregressies.
+
+### Bewijs en kosten
+
+`studio_scene_moves.ts` doorloopt de echte Up/Down-hit-targets en twee gewone
+Save & Hot Resume-installaties. De proef bewijst:
+
+- een vastgehouden pointer verplaatst eenmaal; geldige x=18-acceptatie gebeurt
+  vóór syntaxcapture, ongeldige tekst houdt veldfocus en een zichtbare fout;
+- complete grouped fields met documentatie/inlinecomments reizen mee, Down
+  brengt hetzelfde member terug, en propertyacceptatie heeft een aparte
+  document-Undo-eenheid;
+- controls volgen de expliciet verplaatste bron ook bij gelijknamige members;
+  Undo/Redo raden geen selectie, de nieuwe bestemming wordt voorbij de oude
+  zichtbare rijen gescrold, en endpoint-/partial-/recovered-/readonly-admission
+  kan niet via een visueel aangrenzende tweede scenedefinitie worden omzeild;
+- Save en geïnstalleerde Lua zijn exact gelijk. Het omwisselen van title/story
+  verandert capturegebruik zonder de bestaande slots te herinterpreteren.
+  De levende title-actor en zijn positie blijven gelijk; herstel loopt via
+  gewone bron-Undo en reapplication, niet reboot of guest-disposal.
+
+Software, WebGL2 en WebGPU slagen op dezelfde workflow, inclusief de bestaande
+Remove-, property-, rewind-, fault-repair- en expliciete cold-instantiatieproef.
+De eindbeelden zijn bytegelijk; de softwarecapture is visueel bekeken op de
+bestaande tiny-fontlayout. Geen claim over fysieke GPU- of SNES-mini-prestaties.
+
+De [taalmetingen](lua_source_syntax_design.md#movement-evidence-and-cost) dekken
+alle 9.777 aangrenzende fieldparen in 312 echte Lua-bestanden. De expliciete
+move-editconstructie meet mediaan 0,024 ms op de Nemesis-root en 2,16 ms op het
+grootste corpusbestand; niet de volledige IDE-/semantic-/Hot-Resume-route.
+Er komt geen guestwerk of per-frame parse bij. Artefacten staan in
+`/tmp/bmsx-scene-order/`.
+
+Regressie van deze slice: **934 Lua-tests geslaagd**, één bestaande skip;
+**122 rompacker-tests geslaagd**. IDE- en Lua-toolchaintypechecks, strikte
+architecture-boundaries, core-parity, indentation en productbuild slagen.
+De tests-projecttypecheck heeft exact dezelfde **52 bestaande diagnostics**;
+geen nieuwe C++-runtime- of targethardwareclaim. `git diff --check` is schoon.
+
 ## No-go's
 
 - scenes afwijzen omdat de eerste Lua-runtime fout was;

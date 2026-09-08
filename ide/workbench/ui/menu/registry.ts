@@ -64,6 +64,8 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 	],
 	'sceneEditor.title': [
 		{ type: 'command', command: 'sceneEditor.source' },
+		{ type: 'command', command: 'sceneEditor.moveMemberUp' },
+		{ type: 'command', command: 'sceneEditor.moveMemberDown' },
 		{ type: 'command', command: 'sceneEditor.removeMember' },
 	],
 };

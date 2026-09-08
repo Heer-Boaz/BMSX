@@ -8,7 +8,7 @@ import { WorkingCopyEditorInput } from '../../common/editor_input';
 import type { SceneEditorTabId } from '../../ui/tab/id';
 import type { WorkbenchListState } from '../../ui/list_view';
 import { createWorkbenchActionBar } from '../../ui/action_bar';
-import type { SceneSourceEntry } from './model';
+import type { SceneSourceDefinition, SceneSourceEntry } from './model';
 import type { FullWidthWorkbenchLayout } from '../../common/layout';
 
 export const POSITION_AXES = ['x', 'y', 'z'] as const;
@@ -19,6 +19,8 @@ export type SceneMemberRow = {
 	displayLabel: string;
 	definition: string;
 	entry: SceneSourceEntry;
+	scene: SceneSourceDefinition;
+	index: number;
 };
 
 export class SceneEditorInput extends WorkingCopyEditorInput<SceneEditorTabId, 'scene_editor'> {

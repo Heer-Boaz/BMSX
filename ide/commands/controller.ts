@@ -41,7 +41,7 @@ import { inputFocus } from '../input/focus';
 // model selection, prompts or asynchronous source capture (Godot EditorData).
 const SOURCE_COMMANDS = new Set<EditorCommandId>([
 	'save', 'hot-resume', 'reboot', 'scenarioLab.run', 'scenarioLab.rerun',
-	'sceneEditor.removeMember',
+	'sceneEditor.removeMember', 'sceneEditor.moveMemberUp', 'sceneEditor.moveMemberDown',
 ]);
 
 export class IdeCommandController {
@@ -68,6 +68,12 @@ export class IdeCommandController {
 		const edit = inputFocus.target?.edit;
 		if (SOURCE_COMMANDS.has(command) && edit !== undefined && !edit.commit()) return;
 		switch (command) {
+			case 'sceneEditor.moveMemberUp':
+				this.editor.sceneEditor.moveSelectedMember(-1);
+				return;
+			case 'sceneEditor.moveMemberDown':
+				this.editor.sceneEditor.moveSelectedMember(1);
+				return;
 			case 'sceneEditor.removeMember':
 				this.editor.sceneEditor.removeSelectedMember();
 				return;
@@ -188,6 +194,10 @@ export class IdeCommandController {
 
 	public isEnabled(command: EditorCommandId): boolean {
 		switch (command) {
+			case 'sceneEditor.moveMemberUp':
+				return this.editor.sceneEditor.canMoveSelectedMember(-1);
+			case 'sceneEditor.moveMemberDown':
+				return this.editor.sceneEditor.canMoveSelectedMember(1);
 			case 'sceneEditor.removeMember':
 				return this.editor.sceneEditor.canRemoveSelectedMember();
 			case 'undo':

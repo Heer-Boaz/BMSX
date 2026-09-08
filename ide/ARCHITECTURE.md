@@ -218,8 +218,14 @@ byte. It consumes a complete parse of the current buffer version; it does not
 guess syntax from text. Identical immutable ranges/endpoints remain shared.
 There are no new AST properties or per-field trivia arrays.
 
-This does not supply travelling-trivia ownership for insertion/reordering or
-an error tree for structural edits on recovered source. The shared lexer also
+Adjacent field movement now uses syntax-owned trivia attachment over that
+same lexer's opt-in scan. Following trivia through the first newline belongs
+to the preceding token; the remainder leads the next. Complete field/separator
+pairs exchange exact spans. The braces keep their own trivia, and an originally
+separator-less last field gains a comma before its trailing comments when moved
+before a sibling. No default trivia tree, formatting pass or source normalization.
+Insertion/reparenting and structural edits on recovered source still need their
+own construction/error-tree contracts. The shared lexer also
 has an opt-in trivia scan, used by Format Document instead of a second comment
 regex; default compiler/analysis scans still allocate only significant tokens.
 Formatting preserves string/comment content on opening and closing lines as
@@ -235,6 +241,17 @@ property before the controller reads the new source ranges. An invalid draft
 keeps its focus and error; an accepted property and the structural edit are
 separate ordinary document-Undo elements. Removing a member focuses document
 history and clears the inspector selection, without deleting a living actor.
+
+The Up/Down actions retain the actual parent objects-table and scene-local
+index in the source projection. They admit only a sibling in the same complete
+direct definition, never a visually adjacent row across scene boundaries or
+partial composition. The same source-command preflight accepts pending values
+before current syntax is read. One language-owned replacement is one document
+history element. The explicit command focuses document history, selects its
+known destination in the refreshed projection and reveals that row. Ordinary
+text Undo/Redo clears the replaced source selection rather than matching names
+or maintaining a second selection history. Stable frames do not relex/reparse;
+the lossless token scan exists only during an explicit move command.
 
 Its original Nemesis trial exposed a separate compiler/linker closure-layout
 limitation. That owner now retains original live capture slots before lowering;

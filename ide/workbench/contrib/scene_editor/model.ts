@@ -1,6 +1,7 @@
 import type {
 	LuaExpression,
 	LuaSourceRange,
+	LuaTableConstructorExpression,
 	LuaTableField,
 } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { ResourceIdentity } from '../../../common/resource';
@@ -29,6 +30,7 @@ export type SceneSourceEntry = SceneSourceObject | SceneSourceDynamicObject;
 export type SceneSourceDefinition = {
 	readonly range: LuaSourceRange;
 	readonly id: LuaExpression;
+	readonly objectsTable: LuaTableConstructorExpression;
 	readonly objects: readonly SceneSourceEntry[];
 	readonly resolution: 'complete' | 'partial';
 };

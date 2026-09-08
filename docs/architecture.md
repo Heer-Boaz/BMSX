@@ -1461,13 +1461,15 @@ workload analysis and gates are recorded in
 
 The first host-side Scene Editor is now a second view of Nemesis' canonical
 root-scene Lua document. It edits direct integer position fields through the
-language-owned number/sign token edits, and removes direct members through
-complete parser-owned table fields and separators. Both use shared document
-history, without interpreting dynamic composition. The selected source span
+language-owned number/sign token edits, removes direct members through
+complete parser-owned table fields and separators, and moves adjacent members
+within the same complete direct definition. Movement carries lexer-owned
+field/separator trivia, not reconstructed lines or a serialized scenegraph.
+All use shared document history, without interpreting dynamic composition. The selected source span
 follows actual document changes, including Undo/Redo; deleted source is not
 reidentified by a surviving object's name. A concrete field owns its draft history and
 acceptance; the workbench command boundary accepts valid property text before
-Remove reads edit ranges or Save/Hot Resume chooses or captures source documents. This adds no guest hooks,
+Remove/Up/Down read edit ranges or Save/Hot Resume chooses or captures source documents. This adds no guest hooks,
 machine fields or cartlib validation. The visible definition/new-instance
 distinction is intentional: applying a definition does not move or dispose existing actors.
 The focus, source and UI contracts live in `ide/ARCHITECTURE.md`.

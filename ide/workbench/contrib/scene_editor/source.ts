@@ -47,6 +47,7 @@ export function buildSceneSourceDocument(
 		scenes.push({
 			range: definition.range,
 			id,
+			objectsTable: objectsField.value,
 			objects: objects.entries,
 			resolution: objects.complete ? 'complete' : 'partial',
 		});

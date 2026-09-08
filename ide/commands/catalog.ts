@@ -30,6 +30,8 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	sceneEditor: { title: 'Scene Editor' },
 	'sceneEditor.source': { title: 'Source' },
 	'sceneEditor.removeMember': { title: 'Remove' },
+	'sceneEditor.moveMemberUp': { title: 'Up' },
+	'sceneEditor.moveMemberDown': { title: 'Down' },
 	filter: { title: 'All Resources', activeTitle: 'Lua Files Only' },
 	wrap: { title: 'Word Wrap' },
 	'hot-resume': { title: 'Hot Resume' },

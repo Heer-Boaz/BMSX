@@ -3,12 +3,14 @@ import { getTextSnapshot } from '../../../editor/text/source_text';
 import type { EditorTextModel, EditorTextModelContentChangeEvent } from '../../../editor/model/text_model';
 import { mapTrackedTextRange } from '../../../editor/text/text_change';
 import { createLuaTableFieldRemovalEdits, readLuaSourceRange, readLuaTableFieldInteger } from '../../../language/lua/source_edits';
+import { createLuaTableFieldMoveEdit } from '../../../language/lua/table_field_moves';
 import { getCachedLuaParse } from '../../../../toolchain/ts/lua/analysis/cache';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import { resourceIdentityKey } from '../../../common/resource';
 import { getActiveCodeTabContext } from '../../ui/code_tab/contexts';
 import { editorTabGroup } from '../../ui/tab/group_model';
 import { getActiveTab, setActiveTab } from '../../ui/tabs';
+import { revealWorkbenchListSelection } from '../../ui/list_view';
 import type { EditorPanes } from '../../services/editor/editor_panes';
 import type { EditorNavigationController } from '../resources/navigation';
 import { SceneEditorInput } from './editor_input';
@@ -73,6 +75,32 @@ export class SceneEditorController {
 		}
 	}
 
+	public canMoveSelectedMember(direction: -1 | 1): boolean {
+		const input = getActiveTab();
+		if (input.kind !== 'scene_editor' || input.workingCopy.readOnly || input.parsed.syntaxError !== null) return false;
+		const row = input.members.rows[input.members.selectionIndex];
+		return row !== undefined && row.scene.resolution === 'complete'
+			&& row.index + direction >= 0 && row.index + direction < row.scene.objects.length;
+	}
+
+	public moveSelectedMember(direction: -1 | 1): void {
+		const input = getActiveTab();
+		if (input.kind !== 'scene_editor') return;
+		this.refresh(input); // Source-command admission may have accepted a property.
+		if (!this.canMoveSelectedMember(direction)) return;
+		const index = input.members.selectionIndex;
+		const row = input.members.rows[index];
+		this.panes.activePane.focus();
+		input.workingCopy.pushEditOperations([createLuaTableFieldMoveEdit(
+			input.workingCopy.buffer, input.workingCopy.resource.path, row.scene.objectsTable, row.index, direction,
+		)]);
+		this.refresh(input);
+		// The explicit operation knows its destination; text Undo/Redo does not
+		// guess moved-member identity from labels or neighbouring source.
+		this.select(input, index + direction);
+		revealWorkbenchListSelection(input.members);
+	}
+
 	public refresh(input: SceneEditorInput): void {
 		const model = input.workingCopy;
 		if (input.version === model.version) return;
@@ -87,7 +115,8 @@ export class SceneEditorController {
 		let selectionIndex = -1;
 		for (const scene of document.scenes) {
 			const sceneLabel = readLuaSourceRange(model.buffer, scene.id.range).replace(/\s+/g, ' ');
-			for (const entry of scene.objects) {
+			for (let index = 0; index < scene.objects.length; index += 1) {
+				const entry = scene.objects[index];
 				const range = entry.field.range;
 				if (model.buffer.offsetAt(range.start.line - 1, range.start.column - 1) === input.selectionRange.start
 					&& model.buffer.offsetAt(range.end.line - 1, range.end.column) === input.selectionRange.end) {
@@ -95,7 +124,7 @@ export class SceneEditorController {
 				}
 				const label = readLuaSourceRange(model.buffer, entry.kind === 'object' ? entry.memberId.range : entry.field.value.range).replace(/\s+/g, ' ');
 				rows.push({
-					sceneLabel, label, displayLabel: '', entry,
+					sceneLabel, label, displayLabel: '', entry, scene, index,
 					definition: entry.kind === 'object' ? readLuaSourceRange(model.buffer, entry.definitionId.range).replace(/\s+/g, ' ') : 'Dynamic Lua composition',
 				});
 			}

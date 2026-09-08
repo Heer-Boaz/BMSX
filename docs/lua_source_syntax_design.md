@@ -9,14 +9,12 @@ scanning source text for commas or comments.
 
 The lexical slice removes the formatter's second comment recognizer. The field-
 range slice adds one conservative language-owned deletion primitive. Neither
-claims a full-fidelity syntax tree. The Scene Editor Remove action remains
-**unshipped**: its product trial exposed a separate closure-layout dependency
-in ordinary Hot Resume, documented below.
-
-The [capture-provenance prerequisite](lua_capture_identity_design.md) now carries
-defining declarations through compilation, optimization and TS/C++ symbols.
-It does not yet supply cross-revision correspondence or capture-slot retention;
-the Remove product gate remains closed.
+claims a full-fidelity syntax tree. The initial Remove trial exposed a separate
+closure-layout dependency, recorded below as historical failed evidence.
+The [capture owner](lua_capture_identity_design.md) now supplies correspondence
+and live slot retention, and the subsequent Scene Editor Remove slice passes
+the actual three-backend source-application workflow. Its current evidence is
+in [scene authoring](studio_scene_authoring_design.md).
 
 ## Production references and decisions
 
@@ -32,7 +30,7 @@ the Remove product gate remains closed.
   line break. Lua's Full Moon has the corresponding
   [leading/trailing ownership](https://github.com/Kampfkarren/full-moon/blob/60f02d5dc2236b57355557e4c306046081fc2fdd/full-moon/src/tokenizer/lexer.rs#L130-L176)
   and [newline rule](https://github.com/Kampfkarren/full-moon/blob/60f02d5dc2236b57355557e4c306046081fc2fdd/full-moon/src/tokenizer/lexer.rs#L213-L258).
-  A future BMSX structural syntax owner must make this attachment explicit;
+  BMSX's on-demand structural token navigation uses this attachment;
   the formatter does not invent it.
 - Full Moon's [punctuated lists](https://github.com/Kampfkarren/full-moon/blob/60f02d5dc2236b57355557e4c306046081fc2fdd/full-moon/src/ast/punctuated.rs#L1-L38)
   retain values **and** separators. Roslyn's separated syntax lists make the
@@ -54,7 +52,8 @@ the Remove product gate remains closed.
 | `scripts/rompacker/cart_lua_linter_runtime.ts`, `scripts/lint/rules/lua_cart/`, `scripts/audit_core_parity.ts` | Significant-token and AST readers. They continue to consume the default scan. |
 | `ide/runtime/source_registry.ts`, `ide/language/lua/interpreter/interpreter.ts` | Runtime-source/debugger metadata and host interpreter use parsed chunks. No guest/runtime syntax representation is added. |
 | `ide/language/lua/formatter.ts` | Requests trivia from the lexer. Indentation uses only significant tokens; string/comment extents determine which line prefixes/suffixes are actual token content. |
-| `ide/language/lua/source_edits.ts`, Scene Editor and Behavior Lens adapters | The language owner provides literal edits and complete-field deletion. The shipped adapters still expose literal edits only. No structural text scan, second model, runtime execution or scene-specific syntax token. |
+| `syntax/token_navigation.ts`, `syntax/table_fields.ts` | Token navigation owns Full Moon-style trivia attachment and punctuated field spans, on demand over the existing lossless scan. Default AST/token storage stays unchanged. |
+| `ide/language/lua/{source_edits,table_field_moves}.ts`, Scene Editor and Behavior Lens adapters | The language owner provides literal edits, complete-field deletion and adjacent-field movement. No contribution-local structural text scan, second model, runtime execution or scene-specific syntax token. |
 
 No machine or C++ runtime representation changes. The edited paths run on
 source analysis or an explicit language edit/Format Document command, not a guest worldtick,
@@ -88,6 +87,103 @@ string/comment content, including opening-line suffixes, closing-line prefixes,
 short-string `\z` continuations and whitespace. It does not merely
 protect the interior lines of `[[...]]`. No comment-looking substring can
 protect unrelated code from indentation.
+
+## Adjacent field movement contract (2026-09-08)
+
+The next bounded consumer is scene member Up/Down within one direct definition.
+Source order is meaningful: `scene_library.instantiate` spawns in that order.
+The operation must move syntax, not serialize a second scene model or swap lines.
+
+Full Moon's leading/trailing ownership and punctuated lists above are the
+reference. TypeScript's actual
+[organize-imports edits](https://github.com/microsoft/TypeScript/blob/c63de15a992d37f0d6cec03ac7631872838602cb/src/services/organizeImports.ts#L150-L188)
+also move attached trivia with declarations while keeping exterior header
+content separate. BMSX does not copy its file-header heuristic or formatter:
+the enclosing Lua brace and each field/separator have explicit token ownership.
+
+- On an explicit edit, the existing lossless lexer produces the token stream.
+  Default parser/compiler scans and AST storage do not change. The syntax owner
+  locates complete fields in that stream and supplies their attached spans.
+  No contribution-local scanner, comment matching or punctuation search.
+- A token owns following trivia through the first newline token, inclusive.
+  Remaining trivia before the next significant token is that token's leading
+  trivia. A newline *inside* a long comment does not split its attachment.
+  This is Full Moon's rule applied to the existing BLua lexer tokens.
+- A movable pair consists of the complete field, its optional following
+  separator, and the first/last token's owned trivia. Trivia between field and
+  separator is inside the pair. Opening-brace trailing and closing-brace
+  leading trivia stay at the table boundary. Inline comments travel with the
+  preceding pair; standalone documentation after that newline travels with
+  the next pair. Removal keeps its distinct keep-exterior-trivia policy.
+- Two adjacent pairs exchange exact source spans. If the former last field
+  has no separator, inserting one comma immediately after its complete syntax
+  is necessary when it moves before a sibling. Existing commas/semicolons are
+  retained, including a now-trailing separator. No global formatting, newline
+  normalization, reindentation or lost comments; inline and multiline layout
+  follow the authored tokens rather than a new style heuristic.
+- The language edit consumes a table/index/direction from a complete parse of
+  the current buffer. The caller admits the sibling before calling. One
+  replacement covers the two pairs; Undo restores every original byte,
+  including an originally absent trailing separator. No per-field cache or
+  runtime validation of parser-owned data.
+- The explicit command selects the known destination index in its refreshed
+  source projection and focuses document history. Ordinary Undo/Redo use the
+  existing text-change mapping: replacement clears the affected selection;
+  namesakes do not inherit it. No parallel selection history or name matching.
+
+| Callsite | Cost / owner |
+| --- | --- |
+| Explicit Lua table move | One opt-in lexical pass of the cached source snapshot; token searches and trivia navigation only at the two fields; one replacement string and one document edit. |
+| Scene source projection after a version change | Retains the actual parent table and scene-local index, not a new graph or a copy of the definition. |
+| Menu enablement / stable pane update / draw | Retained selection, bounds and resolution checks only. No lexical scan, parse or edit records. |
+| Compiler, guest worldtick, rendering devices, C++ runtime | No added representation or callsite. |
+
+Required gate: exact trivia/punctuation and CPU evaluation-order tests, shared
+document history, real Up/Down hit targets, pending valid/invalid properties,
+same-definition endpoints, partial/recovered/readonly admission, repeated names,
+and Save & Hot Resume with the same living actors on all three browser backends.
+This does not supply insertion, reparenting, live-instance moves or error-tree
+editing.
+
+### Movement evidence and cost
+
+All **312 tracked Lua sources** under cartlib, BIOS and carts participate:
+2,147,679 source bytes, 5,272 tables and 624,837 lossless tokens. The attachment
+spans partition each entire token stream, including file/EOF trivia. Every
+adjacent field pair (**9,777 moves**) was exchanged through the actual language
+primitive and reparsed. The complete AST, excluding source-coordinate metadata,
+matches the original with exactly that field pair reversed; no files or errors
+were excluded. This checks grammar/tree preservation, not runtime equivalence
+of intentionally changed evaluation order.
+
+Repository regressions separately prove actual BLua32 evaluation/array order,
+keyed/nested fields, duplicate names, grouping, comment-looking strings, `\z`,
+Unicode, CRLF, long-comment newline attachment, absent separators, repeated
+moves and byte-exact Undo/Redo. The Scene Editor product workflow supplies the
+real command/focus/source-installation proof, not a synthetic scene ROM.
+
+An isolated Node 22.23.1 measurement of **edit construction only** used eight
+warmups and 31 samples, GC before each sample, and the already retained source
+snapshot/parse. Median per explicit language operation:
+
+| Actual source | Source bytes | Repetitions per sample | Median |
+| --- | ---: | ---: | ---: |
+| `carts/nemesis_s/scenes/root.lua` | 1,129 | 1,000 | 0.024 ms |
+| `carts/pietious/player/player.lua` (largest corpus file) | 100,446 | 20 | 2.16 ms |
+
+These times include the opt-in lexical scan, token navigation and replacement
+construction; they exclude document application, semantic refresh, painting
+and compilation/Hot Resume. They are not a whole-IDE or target-hardware frame
+budget. The default lexer/parser/AST representation is unchanged, and no
+trivia/token-reference tree is retained between commands. The scene view adds
+its actual parent-definition reference and scene-local index for admission;
+it does not rescan source during menu enablement or stable renders.
+
+Validation/evidence artifacts: `/tmp/bmsx-scene-order/`. The initial browser
+attempt caught a malformed hand-authored test fixture; the corrected fixture
+uses its actual parser field bounds, and the complete product run was repeated
+on software, WebGL2 and WebGPU. No product parser recovery or mutation bypass
+was added to make that failed fixture pass.
 
 ## Complete-field deletion primitive
 
@@ -125,33 +221,33 @@ first operation takes that explicit, conservative policy:
   the current buffer version. The caller owns source-version/syntax-error
   admission; the primitive does not reparse, validate internal DTOs or scan
   text. It returns one ordered edit batch; it does not own application/history.
-- The future Scene Editor action must share the language cache's parsed result,
-  not build a second contribution parser. It must accept pending property
+- The Scene Editor action shares the language cache's parsed result,
+  rather than building a second contribution parser. It must accept pending property
   text before selecting syntax, return focus to document history after
   deletion and clear a deleted selection. Dynamic entries, recovered source
   and read-only documents do not admit that action.
 - Source removal is not actor disposal. Registration/Hot Resume still affects
   future instantiations only; there is no heap walk, cartlib hook or automatic
-  reboot. The attempted product integration hit the closure gate below and
-  was withdrawn rather than delivered with a broken Save & Resume workflow.
+  reboot. The initial product integration hit the closure gate below and
+  was withdrawn; the subsequent capture-owner and Remove slices closed it.
 
 There are no new AST properties, serialized syntax records or default trivia
 arrays. Corrected field source ranges can change encoded AST resource bytes;
 compiled instructions, literals and child-expression/debugger locations must
 be compared separately rather than promising identical whole ROMs.
 
-### Remaining insertion/movement and error-tree work
+### Remaining insertion and error-tree work
 
-Before adding insertion, movement or edits on recovered syntax:
+Before adding insertion, reparenting or edits on recovered syntax:
 
-- Complete field bounds and token-owned separators now exist. Insertion and
-  movement still need an explicit list-boundary and travelling-trivia policy;
-  retokenizing a semantic child expression cannot supply that ownership.
-- Trivia attachment belongs to the syntax owner. Initial/EOF trivia,
-  same-line comments, standalone comment lines and blank lines require tests;
-  a move must state what travels with the member versus stays with its list.
-  The deletion primitive above deliberately keeps all exterior trivia; it
-  does not decide what comments should travel with a moved member.
+- Complete field bounds, separators and travelling-trivia ownership now exist.
+  Adjacent movement above does not establish new-field construction or
+  cross-list indentation/style policy. Retokenizing a semantic child expression
+  cannot supply the parent syntax ownership.
+- Trivia attachment belongs to the syntax owner. Removal deliberately keeps
+  all exterior trivia; movement carries its token-owned trivia. A new operation
+  must state how it treats the enclosing list rather than silently invoking a
+  formatter or copying a contribution's source scanner.
 - A source-version-owned syntax result must be shared with semantic analysis
   rather than reparsing in each contribution. No duplicate token stream per
   scene, and no new editor-only syntax properties in encoded AST output.
@@ -169,11 +265,17 @@ Before adding insertion, movement or edits on recovered syntax:
 
 The deletion primitive proves syntax edits, not an end-to-end scene product.
 
-## Hot Resume dependency discovered by the product trial
+## Historical Hot Resume dependency discovered by the first product trial
+
+This records the failed trial at the complete-field slice, not the current
+capture implementation. Capture provenance, cross-revision correspondence and
+pre-lowering slot retention subsequently closed this gate. The original failed
+evidence remains here; current proof is in `lua_capture_identity_design.md`
+and `studio_scene_authoring_design.md`.
 
 On the actual debug Nemesis ROM, delete only the third `objects` field in
 `scenes/root.lua` (the `title_screen` entry) and use ordinary Save & Hot Resume.
-No grouping/comment fixture is needed. The current revision builder rejects:
+No grouping/comment fixture was needed. That revision builder rejected:
 
 ```text
 Hot resume cannot change closure identity for
@@ -193,8 +295,8 @@ at O3; the original rebuild reproduces the installed layout:
 | 5 | `director`, parent register 1 | absent |
 
 All descriptors are `inStack=true`; `staticClosure=false` before and after.
-The compiler allocates captures by use and compacts unused slots. The linker
-keeps function-record identity across revisions but does not preserve capture
+The compiler allocated captures by use and compacted unused slots. The linker
+kept function-record identity across revisions but did not preserve capture
 layout. An old live closure still has six cells: installing the new code
 without mapping them would read the title cell as `director`. The guard in
 `blua32_revision.ts` is therefore necessary, not a UI inconvenience.
@@ -208,9 +310,9 @@ separates environment identity from captured fields. This is an ownership
 reference, not a request to copy CLR display classes into BLua32 or defer an
 unsupported edit to a runtime exception.
 
-The next compiler/linker slice must establish lexical capture correspondence
-across revisions before choosing stable capture slots or explicit cell
-relocation. The current debug names and numeric parent descriptors are not a
+The required compiler/linker prerequisite was lexical capture correspondence
+across revisions before stable capture slots or explicit cell
+relocation. Debug names and numeric parent descriptors alone are not a
 sufficient general identity for shadowed/reordered declarations. Required
 proof includes capture contraction/permutation, parent-register movement,
 nested captures, shared open/closed cells, repeated remove/undo/reapply and
@@ -225,8 +327,8 @@ valid/invalid property acceptance, grouped field/comment preservation and
 separate field/document Undo/Redo. It then failed the installed-source check
 after the error above. That is **failed product evidence**, not a pass or a
 skipped acceptance requirement. No Remove command, menu entry or half-enabled
-contribution is included in this slice. Existing numeric Scene Editor
-workflows remain the shipped surface.
+contribution was included in that slice. The later Remove implementation,
+not a reclassification of this failure, supplies its product proof.
 
 ## Lexical-slice evidence
 

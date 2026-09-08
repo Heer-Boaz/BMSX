@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import type { RuntimeResource } from '../../ide/common/resource';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { createLuaTableFieldIntegerEdits, createLuaTableFieldRemovalEdits, readLuaSourceRange } from '../../ide/language/lua/source_edits';
+import { createLuaTableFieldMoveEdit } from '../../ide/language/lua/table_field_moves';
 import { buildSceneSourceDocument } from '../../ide/workbench/contrib/scene_editor/source';
 import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
 import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
@@ -36,6 +37,8 @@ test('scene source adapter projects the real Nemesis root without executing Lua'
 	assert.equal(scene.resolution, 'complete');
 	assert.equal(scene.id.kind, LuaSyntaxKind.MemberExpression);
 	assert.equal(scene.objects.length, 4);
+	assert.deepEqual(scene.objects.map(object => object.field), scene.objectsTable.fields,
+		'a complete projection retains the actual ordered parent fields');
 	assert.deepEqual(
 		scene.objects.map(object => object.kind === 'object' ? object.memberId.range.start.line : -1),
 		[15, 23, 31, 39],
@@ -48,6 +51,28 @@ test('scene source adapter projects the real Nemesis root without executing Lua'
 		&& object.position!.x.value.kind === LuaSyntaxKind.NumericLiteralExpression
 		&& object.position!.y.value.kind === LuaSyntaxKind.NumericLiteralExpression
 		&& object.position!.z.value.kind === LuaSyntaxKind.NumericLiteralExpression));
+});
+
+test('scene member moves use the retained parent table and preserve neighbouring definitions', () => {
+	const path = 'scene.lua';
+	const first = "\t-- first\n\t{ member_id = 'same', definition_id = 'one' },\n";
+	const second = "\t-- second\n\t({ member_id = 'same', definition_id = 'two' });\n";
+	const header = "local scenes<const> = require('cartlib/world/scene_library')\nscenes.register('root', { objects = {\n";
+	const footer = "} })\nscenes.register('other', { objects = { { member_id = 'same', definition_id = 'three' } } })";
+	const source = header + first + second + footer;
+	const model = new EditorTextModel(luaResource(path), 'lua', source);
+	const document = buildSceneSourceDocument(model.resource, buildLuaFileSemanticData(source, path));
+	assert.equal(document.scenes.length, 2);
+	assert.equal(document.scenes[0].resolution, 'complete');
+	assert.equal(document.scenes[1].objects.length, 1);
+	model.pushEditOperations([createLuaTableFieldMoveEdit(model.buffer, path, document.scenes[0].objectsTable, 1, -1)]);
+	assert.equal(model.buffer.getText(), header + second + first + footer);
+	const moved = buildSceneSourceDocument(model.resource, buildLuaFileSemanticData(model.buffer.getText(), path));
+	assert.deepEqual(moved.scenes.map(scene => scene.objects.map(object =>
+		object.kind === 'object' ? readLuaSourceRange(model.buffer, object.definitionId.range) : 'dynamic',
+	)), [["'two'", "'one'"], ["'three'"]]);
+	model.undo();
+	assert.equal(model.buffer.getText(), source);
 });
 
 test('scene position edit changes the canonical Nemesis source through its text model', () => {

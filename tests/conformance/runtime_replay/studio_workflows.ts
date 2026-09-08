@@ -1,4 +1,5 @@
 import { testSceneMemberRemoval } from './studio_scene_removal';
+import { testSceneMemberMoves } from './studio_scene_moves';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { getCodeTabContexts } from '../../../ide/workbench/ui/code_tab/contexts';
 import { runtimeErrorState } from '../../../ide/editor/contrib/runtime_error/state';
@@ -297,6 +298,7 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	await testAemSourceApplication(test);
 	await testSourceFormatting(test);
 	await testSceneMemberRemoval(test);
+	await testSceneMemberMoves(test);
 	await testSceneSourceEdits(test);
 	return { hostFrames: observations.hostFrames, selected, pausedAt, secondAt, steppedAt, beforeRejected,
 		audioFrames: observations.audioFrames, expectedFaultSequence: observations.expectedFaultSequence, inspected: inspected.contentLines };

@@ -46,6 +46,8 @@ export type EditorCommandId =
 	| 'undo'
 	| 'redo'
 	| 'sceneEditor.removeMember'
+	| 'sceneEditor.moveMemberUp'
+	| 'sceneEditor.moveMemberDown'
 	| EditorSearchCommandId
 	| EditorSymbolNavigationCommandId
 	| EditorViewCommandId

@@ -180,6 +180,8 @@ export async function testSceneSourceEdits(test: StudioFixture): Promise<void> {
 	check(readonlyScene.workingCopy === generated && generated.readOnly && readonlyScene.members.rows.length === 0,
 		'scene: readonly non-scene source does not invent a scene or an edit route');
 	check(!ide.editor.commands.isEnabled('sceneEditor.removeMember'), 'scene: readonly source does not admit Remove');
+	check(!ide.editor.commands.isEnabled('sceneEditor.moveMemberUp') && !ide.editor.commands.isEnabled('sceneEditor.moveMemberDown'),
+		'scene: readonly source does not admit member movement');
 	await press('Tab');
 	await press('Digit7');
 	await press('ControlLeft', 'KeyZ');

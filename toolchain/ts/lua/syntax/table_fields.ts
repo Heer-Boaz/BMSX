@@ -4,21 +4,32 @@ import {
 	type LuaTableConstructorExpression,
 	type LuaTableField,
 } from './ast';
-import { LuaTokenType, type LuaToken } from './token';
+import { isLuaTrivia, LuaTokenType, type LuaToken } from './token';
+import { findLuaTokenAfterPosition, luaTokenLeadingTriviaStart, luaTokenTrailingTriviaEnd } from './token_navigation';
 
 /** Uses the parser-owned complete field end; never scans source for punctuation. */
 export function findLuaTableFieldSeparator(tokens: readonly LuaToken[], field: LuaTableField): LuaToken | null {
-	const end = field.range.end;
-	let low = 0;
-	let high = tokens.length;
-	while (low < high) {
-		const middle = (low + high) >>> 1;
-		const token = tokens[middle];
-		if (token.line < end.line || (token.line === end.line && token.column <= end.column)) low = middle + 1;
-		else high = middle;
-	}
-	const next = tokens[low];
+	const next = tokens[findLuaTokenAfterPosition(tokens, field.range.end)];
 	return next.type === LuaTokenType.Comma || next.type === LuaTokenType.Semicolon ? next : null;
+}
+
+/** Half-open field/separator pair with attached trivia, from a lossless token scan. */
+export function getLuaTableFieldTriviaSpan(tokens: readonly LuaToken[], field: LuaTableField): {
+	startToken: LuaToken;
+	endToken: LuaToken;
+	separator: LuaToken | null;
+} {
+	const first = findLuaTokenAfterPosition(tokens, field.range.start) - 1;
+	const after = findLuaTokenAfterPosition(tokens, field.range.end);
+	let next = after;
+	while (isLuaTrivia(tokens[next].type)) next += 1;
+	const token = tokens[next];
+	const separator = token.type === LuaTokenType.Comma || token.type === LuaTokenType.Semicolon ? token : null;
+	return {
+		startToken: tokens[luaTokenLeadingTriviaStart(tokens, first)],
+		endToken: tokens[luaTokenTrailingTriviaEnd(tokens, separator === null ? after - 1 : next)],
+		separator,
+	};
 }
 
 /** Resolves the Lua key of an identifier field or a static string-key field. */

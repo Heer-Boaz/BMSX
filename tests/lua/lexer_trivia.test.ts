@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
 import { isLuaTrivia, LuaTokenType } from '../../toolchain/ts/lua/syntax/token';
+import { luaTokenLeadingTriviaStart, luaTokenTrailingTriviaEnd } from '../../toolchain/ts/lua/syntax/token_navigation';
 
 const sources = [
 	'',
@@ -42,6 +43,29 @@ test('lexer classifies comments, whitespace and newlines without probing string 
 	]);
 	assert.deepEqual([tokens[3].line, tokens[3].column, tokens[3].endLine, tokens[3].endColumn], [2, 2, 3, 10]);
 	assert.equal(tokens[5].literal, '--[[');
+});
+
+test('token attachment partitions lossless source including file-leading and EOF trivia', () => {
+	for (const source of sources) {
+		const tokens = new LuaLexer(source, 'trivia.lua', false).scanTokens();
+		let end = 0;
+		for (let index = 0; index < tokens.length; index += 1) {
+			if (isLuaTrivia(tokens[index].type)) continue;
+			assert.equal(luaTokenLeadingTriviaStart(tokens, index), end, source);
+			end = tokens[index].type === LuaTokenType.Eof ? tokens.length : luaTokenTrailingTriviaEnd(tokens, index);
+		}
+		assert.equal(end, tokens.length);
+	}
+	const source = '-- file\nlocal --[[inside\ncomment]] \r\n -- name\n name -- inline\n\n-- eof';
+	const tokens = new LuaLexer(source, 'trivia.lua', false).scanTokens();
+	const attached: string[] = [];
+	for (let index = 0; index < tokens.length; index += 1) {
+		if (isLuaTrivia(tokens[index].type)) continue;
+		const start = luaTokenLeadingTriviaStart(tokens, index);
+		const end = tokens[index].type === LuaTokenType.Eof ? tokens.length : luaTokenTrailingTriviaEnd(tokens, index);
+		attached.push(tokens.slice(start, end).map(token => token.lexeme).join(''));
+	}
+	assert.deepEqual(attached, ['-- file\nlocal --[[inside\ncomment]] \r\n', ' -- name\n name -- inline\n', '\n-- eof']);
 });
 
 test('default scanning produces only EOF for a trivia-only document', () => {
