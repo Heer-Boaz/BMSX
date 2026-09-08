@@ -69,7 +69,7 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 		observations.hostFrames += 1;
 		await new Promise<void>(resolve => setTimeout(resolve, 0));
 		check(!ide.fault.hostFrameFailed, 'workbench host frame failed');
-		check(runtime.machine.memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE) <= observations.expectedFaultSequence, 'unexpected Nemesis fault');
+		check(runtime.machine.memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE) <= observations.expectedFaultSequence, 'unexpected guest fault');
 	};
 	const until = async (predicate: () => boolean, message: string) => {
 		console.info(`STUDIO: ${message}`);
@@ -89,12 +89,15 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 		for (const key of keys) setKey(key, false);
 		await frame();
 	};
-	const click = async (bounds: RectBounds, heldFrames = 1, button: 'pointer_primary' | 'pointer_secondary' = 'pointer_primary') => {
+	const movePointer = (bounds: RectBounds) => {
 		const displayRect = display.measureDisplay();
 		const viewport = ide.overlayRenderer.viewportSize;
 		input.inputAxis2('pointer:0', 'pointer_position',
 			displayRect.left + (bounds.left + bounds.right) * displayRect.width / (viewport.width * 2),
 			displayRect.top + (bounds.top + bounds.bottom) * displayRect.height / (viewport.height * 2), clock.now());
+	};
+	const click = async (bounds: RectBounds, heldFrames = 1, button: 'pointer_primary' | 'pointer_secondary' = 'pointer_primary') => {
+		movePointer(bounds);
 		await frame();
 		setPointerButton(button, true);
 		for (let index = 0; index < heldFrames; index += 1) await frame();
@@ -136,7 +139,7 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 	};
 	audio.bootstrap();
 	return { runtime, ide, execution, rewind, tasks, history, harness, guest, clock, input, clipboard, observations,
-		frame, until, setKey, setPointerButton, press, click, runMenuCommand, runPaletteCommand, settle, cycles, title };
+		frame, until, setKey, setPointerButton, press, movePointer, click, runMenuCommand, runPaletteCommand, settle, cycles, title };
 }
 
 export type StudioFixture = Awaited<ReturnType<typeof createStudioFixture>>;

@@ -498,7 +498,6 @@ export function applyRuntimeErrorOverlay(
 	activeCodeEditor.view.cursorColumn = targetColumn;
 	activeCodeEditor.view.selectionAnchor = null;
 	editorPointerState.pointerSelecting = false;
-	editorPointerState.pointerPrimaryWasPressed = false;
 	editorViewState.scrollbarController.cancel();
 	editorCaretState.cursorRevealSuspended = false;
 	centerCursorVertically();

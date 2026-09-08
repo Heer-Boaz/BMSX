@@ -43,7 +43,7 @@ export function handleSymbolSearchPointer(
 		}
 		const label = symbolSearchFieldLabel();
 		processInlineFieldPointer(symbolSearchState.field, quickInputTextLeft(label), snapshot.viewportX, justPressed, snapshot.primaryPressed);
-		finishQuickInputPointer(snapshot);
+		finishQuickInputPointer();
 		return true;
 	}
 	const hoverIndex = resolveSymbolSearchHoverIndex(snapshot.viewportY, fieldBottom);
@@ -54,10 +54,10 @@ export function handleSymbolSearchPointer(
 			ensureSymbolSearchSelectionVisible();
 		}
 		applySymbolSearchSelection(microtasks, editor, hoverIndex);
-		finishQuickInputPointer(snapshot);
+		finishQuickInputPointer();
 		return true;
 	}
-	finishQuickInputPointer(snapshot);
+	finishQuickInputPointer();
 	return true;
 }
 

@@ -12,7 +12,7 @@ import { clearGotoHoverHighlight, clearReferenceHighlights, requestSemanticRefre
 import { clearHoverTooltip } from '../../../editor/contrib/hover/controller';
 import { resetBlink } from '../../../editor/render/caret';
 import { getTextSnapshot } from '../../../editor/text/source_text';
-import { editorPointerState } from '../../../input/pointer/state';
+import { clearEditorPointerSelectionState } from '../../../input/pointer/state';
 import { runtimeErrorState } from '../../../editor/contrib/runtime_error/state';
 import { setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../../editor/editing/cursor/state';
 import type { CodeEditorInput } from '../tab/model';
@@ -50,8 +50,7 @@ export function storeCodeTabContext(context: CodeTabContext): void {
 export function applyActiveCodeTabSelection(selection: EditorTextSelection): void {
 	setSingleCursorPosition(activeCodeEditor.view, selection.row, selection.startColumn);
 	setSingleCursorSelectionAnchor(activeCodeEditor.view, selection.row, selection.endColumn);
-	editorPointerState.pointerSelecting = false;
-	editorPointerState.pointerPrimaryWasPressed = false;
+	clearEditorPointerSelectionState();
 	ensureCursorVisible();
 	resetBlink();
 	activeCodeEditor.emitCursorMoved();
@@ -69,8 +68,7 @@ export function activateCodeEditorTab(tab: CodeEditorInput, selection?: EditorTe
 	requestSemanticRefresh();
 	updateDesiredColumn();
 	resetBlink();
-	editorPointerState.pointerSelecting = false;
-	editorPointerState.pointerPrimaryWasPressed = false;
+	clearEditorPointerSelectionState();
 	if (selection) {
 		applyActiveCodeTabSelection(selection);
 	}

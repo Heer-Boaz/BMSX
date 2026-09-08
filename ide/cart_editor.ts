@@ -380,7 +380,6 @@ export class RuntimeCartEditor implements CartEditor {
 		this.overlayRenderer.active = true;
 		setEditorFeedbackActive(true);
 		editorPointerState.pointerSelecting = false;
-		editorPointerState.pointerPrimaryWasPressed = false;
 		editorCaretState.cursorRevealSuspended = false;
 		if (codeTabActive) {
 			updateDesiredColumn();

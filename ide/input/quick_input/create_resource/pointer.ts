@@ -23,6 +23,6 @@ export function handleCreateResourcePointer(resourcePanel: ResourcePanelControll
 		activateQuickInputField(resourcePanel);
 	}
 	processInlineFieldPointer(createResourceState.field, quickInputTextLeft('NEW FILE:'), snapshot.viewportX, justPressed, snapshot.primaryPressed);
-	finishQuickInputPointer(snapshot);
+	finishQuickInputPointer();
 	return true;
 }

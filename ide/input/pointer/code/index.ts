@@ -5,7 +5,7 @@ import type { CodeEditorContext } from '../../../editor/ui/code_editor_state';
 import * as constants from '../../../common/constants';
 import { getCodeAreaBounds } from '../../../editor/ui/view/view';
 import { editorViewState } from '../../../editor/ui/view/state';
-import { handleCodeAreaPointerGuards } from './guard';
+import { processRuntimeErrorOverlayPointer } from '../../../workbench/contrib/code_editor/input/overlays/runtime_error/input';
 import { handleCodeAreaPrimaryPressPointer } from './primary_press';
 import { handleCodeAreaGutterPointer, handleCodeAreaSecondaryPointer } from './secondary_actions';
 import { updateCodeAreaPointerFeedback } from './feedback';
@@ -34,7 +34,7 @@ export function handleCodeAreaPointerInput(
 	const contentBottom = editorViewState.codeHorizontalScrollbarVisible
 		? bounds.codeBottom - constants.SCROLLBAR_WIDTH
 		: bounds.codeBottom;
-	if (handleCodeAreaPointerGuards(
+	if (processRuntimeErrorOverlayPointer(
 		clipboard,
 		editor,
 		snapshot,
@@ -84,5 +84,4 @@ export function handleCodeAreaPointerInput(
 		activeContext,
 		bounds,
 	);
-	editorPointerState.pointerPrimaryWasPressed = snapshot.primaryPressed;
 }

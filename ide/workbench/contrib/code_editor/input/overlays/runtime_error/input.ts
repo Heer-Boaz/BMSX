@@ -39,7 +39,6 @@ export function processRuntimeErrorOverlayPointer(
 		return true;
 	}
 	editorPointerState.pointerSelecting = false;
-	editorPointerState.pointerPrimaryWasPressed = snapshot.primaryPressed;
 	resetPointerClickTracking();
 	if (pointerHit === RUNTIME_ERROR_OVERLAY_POINTER_COPY_BUTTON) {
 		const payload = buildRuntimeErrorOverlayCopyText(overlay);

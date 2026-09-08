@@ -1,33 +1,17 @@
 import type { PlayerInput } from '../../../hosts/common/input/player';
-import { editorPointerState } from './state';
 
 export const POINTER_PRIMARY_JUST_PRESSED = 1;
 export const POINTER_PRIMARY_JUST_RELEASED = 2;
 export const POINTER_SECONDARY_JUST_PRESSED = 4;
 export const POINTER_AUX_JUST_PRESSED = 8;
 
-export function computeEditorPointerButtonMask(
-	playerInput: PlayerInput,
-	primaryPressed: boolean
-): number {
+/** Project producer-owned event edges; navigation never changes physical input. */
+export function computeEditorPointerButtonMask(playerInput: PlayerInput): number {
+	const primaryState = playerInput.getRawButtonState('pointer_primary', 'pointer');
 	const secondaryState = playerInput.getRawButtonState('pointer_secondary', 'pointer');
-	const secondaryPressed = secondaryState.pressed && !secondaryState.consumed;
-	const secondaryJustPressed = secondaryState.justpressed && !secondaryState.consumed
-		|| (secondaryPressed && !editorPointerState.pointerSecondaryWasPressed);
 	const auxState = playerInput.getRawButtonState('pointer_aux', 'pointer');
-	const auxPressed = auxState.pressed && !auxState.consumed;
-	const auxJustPressed = auxState.justpressed && !auxState.consumed
-		|| (auxPressed && !editorPointerState.pointerAuxWasPressed);
-	editorPointerState.pointerSecondaryWasPressed = secondaryPressed;
-	editorPointerState.pointerAuxWasPressed = auxPressed;
-	const primaryWasPressed = editorPointerState.pointerPrimaryWasPressed;
-	const primaryJustPressed = primaryPressed && !primaryWasPressed;
-	const primaryJustReleased = !primaryPressed && primaryWasPressed;
-	if (primaryJustReleased || (!primaryPressed && editorPointerState.pointerSelecting)) {
-		editorPointerState.pointerSelecting = false;
-	}
-	return (primaryJustPressed ? POINTER_PRIMARY_JUST_PRESSED : 0)
-		| (primaryJustReleased ? POINTER_PRIMARY_JUST_RELEASED : 0)
-		| (secondaryJustPressed ? POINTER_SECONDARY_JUST_PRESSED : 0)
-		| (auxJustPressed ? POINTER_AUX_JUST_PRESSED : 0);
+	return (!primaryState.consumed && primaryState.justpressed ? POINTER_PRIMARY_JUST_PRESSED : 0)
+		| (!primaryState.consumed && primaryState.justreleased ? POINTER_PRIMARY_JUST_RELEASED : 0)
+		| (!secondaryState.consumed && secondaryState.justpressed ? POINTER_SECONDARY_JUST_PRESSED : 0)
+		| (!auxState.consumed && auxState.justpressed ? POINTER_AUX_JUST_PRESSED : 0);
 }

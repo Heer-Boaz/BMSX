@@ -8,7 +8,7 @@ import { renameController } from '../../../workbench/contrib/code_editor/rename/
 import type { PointerSnapshot } from '../../../common/models';
 import * as TextEditing from '../../../editor/editing/text_editing_and_selection';
 import * as constants from '../../../common/constants';
-import { editorPointerState, stopPointerSelectionAndResetClicks } from '../state';
+import { editorPointerState, clearEditorPointerSelectionState } from '../state';
 import { activeCodeEditor } from '../../../editor/ui/code_editor_state';
 import type { CartEditor } from '../../../cart_editor';
 import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
@@ -37,7 +37,7 @@ export function handleCodeAreaPrimaryPressPointer(
 		targetRow,
 		targetColumn,
 	)) {
-		stopPointerSelectionAndResetClicks(snapshot);
+		clearEditorPointerSelectionState();
 		return true;
 	}
 	if (registerCodePointerClick(targetRow, targetColumn, now)) {
@@ -47,7 +47,7 @@ export function handleCodeAreaPrimaryPressPointer(
 	}
 	setSingleCursorSelectionAnchor(activeCodeEditor.view, targetRow, targetColumn);
 	setCursorPosition(targetRow, targetColumn);
-	editorPointerState.pointerSelecting = true;
+	editorPointerState.pointerSelecting = snapshot.primaryPressed;
 	return false;
 }
 

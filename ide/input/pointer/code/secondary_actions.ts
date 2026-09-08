@@ -4,7 +4,7 @@ import { resolvePointerRow } from '../../../editor/ui/view/view';
 import type { CodeAreaBounds } from '../../../editor/ui/view/view';
 import { openEditorContextMenuFromPointer } from '../context_menu/input';
 import type { PointerSnapshot } from '../../../common/models';
-import { stopPointerSelectionAndResetClicks } from '../state';
+import { clearEditorPointerSelectionState } from '../state';
 
 export function handleCodeAreaSecondaryPointer(
 	snapshot: PointerSnapshot,
@@ -16,7 +16,7 @@ export function handleCodeAreaSecondaryPointer(
 	if (!pointerSecondaryJustPressed || !insideCodeArea || inGutter || !openEditorContextMenuFromPointer(snapshot, playerInput)) {
 		return false;
 	}
-	stopPointerSelectionAndResetClicks(snapshot);
+	clearEditorPointerSelectionState();
 	return true;
 }
 
@@ -34,6 +34,6 @@ export function handleCodeAreaGutterPointer(
 	if (!breakpoints.toggleBreakpointForEditorRow(targetRow)) {
 		return false;
 	}
-	stopPointerSelectionAndResetClicks(snapshot);
+	clearEditorPointerSelectionState();
 	return true;
 }

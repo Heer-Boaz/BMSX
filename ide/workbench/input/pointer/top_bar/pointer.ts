@@ -28,20 +28,20 @@ export function handleTopBarPointer(commands: IdeCommandController, snapshot: Po
 		const menuId = findBoundedIdAtPoint(MENU_IDS, editorChromeState.menuEntryBounds, x, y);
 		if (menuId) {
 			editorChromeState.openMenuId = editorChromeState.openMenuId === menuId ? null : menuId;
-			consumeChromePointerPress(snapshot);
+			consumeChromePointerPress();
 			return true;
 		}
 		if (menuOpen) {
 			editorChromeState.openMenuId = null;
 			editorChromeState.menuDropdownBounds = null;
-			consumeChromePointerPress(snapshot);
+			consumeChromePointerPress();
 			return true;
 		}
 		return false;
 	}
 	const command = findTopBarCommandAtPoint(editorChromeState.openMenuId!, x, y);
 	if (command === null) {
-		consumeChromePointerPress(snapshot);
+		consumeChromePointerPress();
 		return true;
 	}
 	if (commands.isEnabled(command)) {
@@ -49,7 +49,7 @@ export function handleTopBarPointer(commands: IdeCommandController, snapshot: Po
 		editorChromeState.openMenuId = null;
 		editorChromeState.menuDropdownBounds = null;
 	}
-	consumeChromePointerPress(snapshot);
+	consumeChromePointerPress();
 	return true;
 }
 

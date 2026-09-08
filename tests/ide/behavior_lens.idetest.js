@@ -191,6 +191,7 @@ await t.frames(1);
 t.assert(view.selectionIndex === selectionAfterClick, 'held pointer press repeated Behavior Lens activation');
 await releasePointer(5);
 await clickPointer(pointerX, pointerY, 6);
+await t.frames(4);
 
 const navigatedTab = t.activeWorkbenchTab();
 t.assert(navigatedTab.kind === 'code_editor' && navigatedTab.id === sourceTabId, 'double click did not return to the owning code input');

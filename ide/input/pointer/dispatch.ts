@@ -4,7 +4,7 @@ import { clearHoverTooltip } from '../../editor/contrib/hover/controller';
 import { computeEditorPointerButtonMask, POINTER_AUX_JUST_PRESSED, POINTER_PRIMARY_JUST_PRESSED, POINTER_PRIMARY_JUST_RELEASED, POINTER_SECONDARY_JUST_PRESSED } from './buttons';
 import { prepareEditorPointerFrame, readEditorPointerSnapshot } from './frame';
 import { handleEditorPanelPointer } from './panel';
-import { editorPointerState, stopPointerSelectionAndResetClicks } from './state';
+import { clearEditorPointerSelectionState } from './state';
 import { isCtrlDown, isMetaDown } from '../keyboard/key_input';
 import { handleEditorContextMenuPointer } from './context_menu/input';
 import { handleEditorChromePointerDispatch } from './chrome_dispatch';
@@ -32,7 +32,7 @@ export function handleTextEditorPointerInput(
 	if (prepareEditorPointerFrame(editor.resourcePanel, snapshot, gotoModifierActive, blockingModal || quickInputVisible)) {
 		return;
 	}
-	const buttonMask = computeEditorPointerButtonMask(playerInput, snapshot.primaryPressed);
+	const buttonMask = computeEditorPointerButtonMask(playerInput);
 	const justPressed = (buttonMask & POINTER_PRIMARY_JUST_PRESSED) !== 0;
 	const justReleased = (buttonMask & POINTER_PRIMARY_JUST_RELEASED) !== 0;
 	const pointerSecondaryJustPressed = (buttonMask & POINTER_SECONDARY_JUST_PRESSED) !== 0;
@@ -41,14 +41,14 @@ export function handleTextEditorPointerInput(
 		if (justPressed) {
 			handleBlockingWorkbenchModalPointer(editor, snapshot);
 		}
-		stopPointerSelectionAndResetClicks(snapshot);
+		clearEditorPointerSelectionState();
 		clearHoverTooltip();
 		clearGotoHoverHighlight();
 		return;
 	}
 	if (quickInputVisible) {
 		if (snapshot.valid) editor.quickInput.handlePointer(snapshot, justPressed);
-		stopPointerSelectionAndResetClicks(snapshot);
+		clearEditorPointerSelectionState();
 		clearHoverTooltip();
 		clearGotoHoverHighlight();
 		return;
@@ -62,7 +62,6 @@ export function handleTextEditorPointerInput(
 		pointerSecondaryJustPressed,
 		playerInput,
 	)) {
-		editorPointerState.pointerPrimaryWasPressed = snapshot.primaryPressed;
 		clearHoverTooltip();
 		clearGotoHoverHighlight();
 		return;

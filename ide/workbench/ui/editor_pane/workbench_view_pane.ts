@@ -4,7 +4,7 @@ import { clearGotoHoverHighlight } from '../../../editor/contrib/intellisense/en
 import { clearHoverTooltip } from '../../../editor/contrib/hover/controller';
 import { editorCaretState } from '../../../editor/ui/view/caret/state';
 import { editorViewState } from '../../../editor/ui/view/state';
-import { editorPointerState, stopPointerSelectionAndResetClicks } from '../../../input/pointer/state';
+import { editorPointerState, clearEditorPointerSelectionState } from '../../../input/pointer/state';
 import { runtimeErrorState } from '../../../editor/contrib/runtime_error/state';
 import { closeEditorContextMenu } from '../../contrib/context_menu/widget';
 import { closeLineJump } from '../../contrib/code_editor/find/line_jump';
@@ -45,7 +45,7 @@ export abstract class WorkbenchViewEditorPane<
 		if (handled && justPressed) {
 			playerInput.inputHandlers.pointer?.consumeButton('pointer_primary');
 		}
-		stopPointerSelectionAndResetClicks(snapshot);
+		clearEditorPointerSelectionState();
 		editorPointerState.lastPointerRowResolution = null;
 		clearHoverTooltip();
 		clearGotoHoverHighlight();

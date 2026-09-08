@@ -22,6 +22,6 @@ export function handleRenamePointer(resourcePanel: ResourcePanelController, snap
 		activateQuickInputField(resourcePanel);
 	}
 	processInlineFieldPointer(renameController.getField(), quickInputTextLeft('RENAME:'), snapshot.viewportX, justPressed, snapshot.primaryPressed);
-	finishQuickInputPointer(snapshot);
+	finishQuickInputPointer();
 	return true;
 }

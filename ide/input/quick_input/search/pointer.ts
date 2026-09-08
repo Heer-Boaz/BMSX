@@ -53,7 +53,7 @@ export function handleSearchPointer(editorPanes: EditorPanes, sources: RuntimeSo
 		}
 		const label = editorSearchState.scope === 'global' ? 'SEARCH ALL:' : 'SEARCH:';
 		processInlineFieldPointer(editorSearchState.field, quickInputTextLeft(label), snapshot.viewportX, justPressed, snapshot.primaryPressed);
-		finishQuickInputPointer(snapshot);
+		finishQuickInputPointer();
 		return true;
 	}
 	const hoverIndex = resolveSearchHoverIndex(snapshot.viewportY, fieldBottom);
@@ -67,10 +67,10 @@ export function handleSearchPointer(editorPanes: EditorPanes, sources: RuntimeSo
 			}
 		}
 		applySearchPointerSelection(editorPanes, sources, hoverIndex);
-		finishQuickInputPointer(snapshot);
+		finishQuickInputPointer();
 		return true;
 	}
-	finishQuickInputPointer(snapshot);
+	finishQuickInputPointer();
 	return true;
 }
 

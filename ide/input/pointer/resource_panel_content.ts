@@ -46,7 +46,6 @@ export function handleResourcePanelPointer(
 		resourcePanel.hoverIndex = -1;
 	}
 	editorPointerState.pointerSelecting = false;
-	editorPointerState.pointerPrimaryWasPressed = snapshot.primaryPressed;
 	clearGotoHoverHighlight();
 	return true;
 }

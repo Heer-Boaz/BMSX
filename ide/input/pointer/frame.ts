@@ -68,11 +68,11 @@ export function prepareEditorPointerFrame(
 		if (editorViewState.scrollbarController.update(snapshot.viewportX, snapshot.viewportY, snapshot.primaryPressed, (kind, scroll) => applyScrollbarScroll(resourcePanel, kind, scroll))) {
 			editorPointerState.pointerSelecting = false;
 			clearHoverTooltip();
-			editorPointerState.pointerPrimaryWasPressed = snapshot.primaryPressed;
 			return true;
 		}
 	}
 	if (!snapshot.primaryPressed) {
+		editorPointerState.pointerSelecting = false;
 		editorSearchState.field.pointerSelecting = false;
 		symbolSearchState.field.pointerSelecting = false;
 		lineJumpState.field.pointerSelecting = false;

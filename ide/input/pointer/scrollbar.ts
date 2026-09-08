@@ -22,7 +22,6 @@ export function handleEditorScrollbarPointer(resourcePanel: ResourcePanelControl
 	editorPointerState.pointerSelecting = false;
 	clearHoverTooltip();
 	clearGotoHoverHighlight();
-	editorPointerState.pointerPrimaryWasPressed = snapshot.primaryPressed;
 	return true;
 }
 

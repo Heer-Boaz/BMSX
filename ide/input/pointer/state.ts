@@ -8,9 +8,6 @@ type PointerRowResolution = {
 type EditorPointerState = {
 	lastPointerSnapshot: PointerSnapshot;
 	pointerSelecting: boolean;
-	pointerPrimaryWasPressed: boolean;
-	pointerSecondaryWasPressed: boolean;
-	pointerAuxWasPressed: boolean;
 	lastPointerClickTimeMs: number;
 	lastPointerClickRow: number;
 	lastPointerClickColumn: number;
@@ -20,9 +17,6 @@ type EditorPointerState = {
 export const editorPointerState: EditorPointerState = {
 	lastPointerSnapshot: null,
 	pointerSelecting: false,
-	pointerPrimaryWasPressed: false,
-	pointerSecondaryWasPressed: false,
-	pointerAuxWasPressed: false,
 	lastPointerClickTimeMs: 0,
 	lastPointerClickRow: -1,
 	lastPointerClickColumn: -1,
@@ -37,16 +31,5 @@ export function resetPointerClickTracking(): void {
 
 export function clearEditorPointerSelectionState(): void {
 	editorPointerState.pointerSelecting = false;
-	editorPointerState.pointerPrimaryWasPressed = false;
-	editorPointerState.pointerAuxWasPressed = false;
-}
-
-export function stopPointerSelection(snapshot: PointerSnapshot): void {
-	editorPointerState.pointerSelecting = false;
-	editorPointerState.pointerPrimaryWasPressed = snapshot.primaryPressed;
-}
-
-export function stopPointerSelectionAndResetClicks(snapshot: PointerSnapshot): void {
 	resetPointerClickTracking();
-	stopPointerSelection(snapshot);
 }

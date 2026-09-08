@@ -6,9 +6,11 @@ import { join, parse, resolve } from 'node:path';
 
 // Playwright is a host test tool, not part of the product bundle.
 const { chromium } = await import(process.env.BMSX_PLAYWRIGHT_MODULE || 'playwright');
-const studio = process.argv[2] === '--studio';
-const [bios, cart, screenshot] = process.argv.slice(studio ? 3 : 2);
-if (!bios || !cart) throw new Error('Usage: browser.mjs [--studio] SYSTEM_ROM CART_ROM [SCREENSHOT_PNG]');
+const navigation = process.argv[2] === '--studio-navigation' ? process.argv[3] : null;
+const studio = process.argv[2] === '--studio' || navigation !== null;
+const studioLabel = navigation === null ? 'STUDIO-WORKFLOWS' : 'STUDIO-NAVIGATION';
+const [bios, cart, screenshot] = process.argv.slice(navigation !== null ? 4 : studio ? 3 : 2);
+if (!bios || !cart) throw new Error('Usage: browser.mjs [--studio | --studio-navigation CART_FOLDER] SYSTEM_ROM CART_ROM [SCREENSHOT_PNG]');
 for (const backend of studio ? ['software', 'webgl2', 'webgpu'] : ['webgpu']) {
 	const directory = await mkdtemp(join(tmpdir(), `bmsx-${backend}-rewind-`));
 	let browser;
@@ -21,7 +23,7 @@ for (const backend of studio ? ['software', 'webgl2', 'webgpu'] : ['webgpu']) {
 		await copyFile(bios, join(directory, 'bios.rom'));
 		await copyFile(cart, join(directory, 'cart.rom'));
 		if (studio) {
-			for (const root of ['carts/nemesis_s', 'cartlib', 'machine/bios']) {
+			for (const root of [`carts/${navigation === null ? 'nemesis_s' : navigation}`, 'cartlib', 'machine/bios']) {
 				await cp(root, join(directory, root), { recursive: true,
 					filter: async path => (await stat(path)).isDirectory() || path.endsWith('.lua') || path.endsWith('.aem.yaml') });
 			}
@@ -48,17 +50,17 @@ for (const backend of studio ? ['software', 'webgl2', 'webgpu'] : ['webgpu']) {
 		page.on('pageerror', error => { pageErrors.push(error); console.error(error); });
 		page.on('console', message => console.log(`[browser:${message.type()}] ${message.text()}`));
 		await page.goto(address);
-		const result = await page.evaluate(async ({ studio, backend }) => {
+		const result = await page.evaluate(async ({ studio, backend, navigation }) => {
 			const test = await import('/test.js');
-			return studio ? test.studioBackends[backend](document.querySelector('canvas'))
+			return studio ? test.studioBackends[backend](document.querySelector('canvas'), navigation)
 				: test.runBrowserRewindConformance(document.querySelector('canvas'));
-		}, { studio, backend });
+		}, { studio, backend, navigation });
 		if (pageErrors.length !== 0) throw new AggregateError(pageErrors, 'Uncaught browser workflow errors');
 		if (screenshot) {
 			const { dir, name, ext } = parse(screenshot);
 			await page.screenshot({ path: studio ? join(dir, `${name}-${backend}${ext}`) : screenshot });
 		}
-		if (studio) {
+		if (studio && navigation === null) {
 			const savedSource = await readFile(join(directory, 'carts/nemesis_s/title_screen.lua'), 'utf8');
 			// Save & Reboot follows the extra WebGPU callback-lifetime test, which
 			// applies a further right-key FSM revision while a real readback is held.
@@ -70,7 +72,7 @@ for (const backend of studio ? ['software', 'webgl2', 'webgpu'] : ['webgpu']) {
 			if (!savedScene.includes('( --[[source-owned anchor]]\n\t\t\t\t\t17)')) throw new Error('Scene Editor did not persist the accepted position and original trivia');
 		}
 		console.log(JSON.stringify({ backend, ...result }));
-		console.log(studio ? `STUDIO-WORKFLOWS:${backend}:PASS` : 'RUNTIME-WEBGPU-REWIND:PASS');
+		console.log(studio ? `${studioLabel}:${backend}:PASS` : 'RUNTIME-WEBGPU-REWIND:PASS');
 	} finally {
 		if (browser) await browser.close();
 		if (server && server.exitCode === null && server.signalCode === null) {
@@ -81,4 +83,4 @@ for (const backend of studio ? ['software', 'webgl2', 'webgpu'] : ['webgpu']) {
 		await rm(directory, { recursive: true, force: true });
 	}
 }
-if (studio) console.log('STUDIO-WORKFLOWS:PASS');
+if (studio) console.log(`${studioLabel}:PASS`);

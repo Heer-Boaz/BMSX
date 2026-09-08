@@ -1,4 +1,3 @@
-import type { PointerSnapshot } from '../../../common/models';
 import { clearGotoHoverHighlight } from '../../../editor/contrib/intellisense/engine';
 import { clearHoverTooltip } from '../../../editor/contrib/hover/controller';
 import { resetBlink } from '../../../editor/render/caret';
@@ -13,9 +12,8 @@ export function activateQuickInputField(resourcePanel: ResourcePanelController):
 	resetBlink();
 }
 
-export function finishQuickInputPointer(snapshot: PointerSnapshot): void {
+export function finishQuickInputPointer(): void {
 	editorPointerState.pointerSelecting = false;
-	editorPointerState.pointerPrimaryWasPressed = snapshot.primaryPressed;
 	clearHoverTooltip();
 	clearGotoHoverHighlight();
 }

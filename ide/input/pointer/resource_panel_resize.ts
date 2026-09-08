@@ -3,7 +3,7 @@ import * as constants from '../../common/constants';
 import { clearGotoHoverHighlight } from '../../editor/contrib/intellisense/engine';
 import { editorViewState } from '../../editor/ui/view/state';
 import { editorChromeState } from '../../workbench/ui/chrome_state';
-import { editorPointerState, stopPointerSelectionAndResetClicks } from './state';
+import { clearEditorPointerSelectionState } from './state';
 import type { ResourcePanelController } from '../../workbench/contrib/resources/panel/controller';
 
 export function handleResourcePanelResizePointer(resourcePanel: ResourcePanelController, snapshot: PointerSnapshot, justPressed: boolean): boolean {
@@ -21,7 +21,7 @@ export function handleResourcePanelResizePointer(resourcePanel: ResourcePanelCon
 	if (bounds && bounds.right > bounds.left) {
 		editorChromeState.resourcePanelResizing = true;
 		resourcePanel.setFocused(true);
-		stopPointerSelectionAndResetClicks(snapshot);
+		clearEditorPointerSelectionState();
 	}
 	clearGotoHoverHighlight();
 	return true;
@@ -30,7 +30,6 @@ export function handleResourcePanelResizePointer(resourcePanel: ResourcePanelCon
 function updateResourcePanelResize(resourcePanel: ResourcePanelController, snapshot: PointerSnapshot): void {
 	if (!snapshot.valid || !snapshot.primaryPressed) {
 		editorChromeState.resourcePanelResizing = false;
-		editorPointerState.pointerPrimaryWasPressed = snapshot.primaryPressed;
 		clearGotoHoverHighlight();
 		return;
 	}
@@ -41,7 +40,7 @@ function updateResourcePanelResize(resourcePanel: ResourcePanelController, snaps
 		editorViewState.layout.markVisualLinesDirty();
 	}
 	resourcePanel.setFocused(true);
-	stopPointerSelectionAndResetClicks(snapshot);
+	clearEditorPointerSelectionState();
 	clearGotoHoverHighlight();
 }
 

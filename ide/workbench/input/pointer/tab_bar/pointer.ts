@@ -28,14 +28,14 @@ export function handleTabBarPointer(
 			endTabDrag();
 			closeTab(editorPanes, sources, tab.id);
 			editorChromeState.tabHoverId = null;
-			consumeChromePointerPress(snapshot);
+			consumeChromePointerPress();
 			return true;
 		}
 		const tabBounds = editorChromeState.tabButtonBounds.get(tab.id);
 		if (tabBounds && point_in_rect(x, y, tabBounds)) {
 			beginTabDrag(tab.id, x);
 			setActiveTab(editorPanes, tab.id);
-			consumeChromePointerPress(snapshot);
+			consumeChromePointerPress();
 			return true;
 		}
 	}
@@ -66,7 +66,7 @@ export function handleTabBarMiddleClick(
 		if (point_in_rect(x, y, bounds)) {
 			closeTab(editorPanes, sources, tab.id);
 			playerInput.inputHandlers.pointer?.consumeButton('pointer_aux');
-			consumeChromePointerPress(snapshot);
+			consumeChromePointerPress();
 			return true;
 		}
 	}

@@ -74,7 +74,6 @@ export function focusRuntimeErrorOverlay(editorPanes: EditorPanes): boolean {
 	setExecutionStopHighlightForCurrentContext(overlay.row);
 	activeCodeEditor.view.selectionAnchor = null;
 	editorPointerState.pointerSelecting = false;
-	editorPointerState.pointerPrimaryWasPressed = false;
 	editorCaretState.cursorRevealSuspended = false;
 	editorViewState.scrollbarController.cancel();
 	setCursorPosition(overlay.row, overlay.column);
@@ -148,7 +147,6 @@ export function focusExecutionStop(
 	setExecutionStopHighlightForCurrentContext(row);
 	activeCodeEditor.view.selectionAnchor = null;
 	editorPointerState.pointerSelecting = false;
-	editorPointerState.pointerPrimaryWasPressed = false;
 	editorCaretState.cursorRevealSuspended = false;
 	editorViewState.scrollbarController.cancel();
 	setCursorPosition(row, column - 1);

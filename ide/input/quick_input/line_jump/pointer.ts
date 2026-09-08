@@ -24,6 +24,6 @@ export function handleLineJumpPointer(resourcePanel: ResourcePanelController, sn
 		activateQuickInputField(resourcePanel);
 	}
 	processInlineFieldPointer(lineJumpState.field, quickInputTextLeft('LINE #:'), snapshot.viewportX, justPressed, snapshot.primaryPressed);
-	finishQuickInputPointer(snapshot);
+	finishQuickInputPointer();
 	return true;
 }

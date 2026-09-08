@@ -4,7 +4,7 @@ import { clearGotoHoverHighlight } from '../../editor/contrib/intellisense/engin
 import { clearHoverTooltip } from '../../editor/contrib/hover/controller';
 import { getProblemsPanelBounds, isPointerOverProblemsPanelDivider, problemsPanel, setProblemsPanelHeightFromViewportY } from '../../workbench/contrib/problems/panel/controller';
 import { editorChromeState } from '../../workbench/ui/chrome_state';
-import { editorPointerState, stopPointerSelectionAndResetClicks } from './state';
+import { clearEditorPointerSelectionState } from './state';
 import type { EditorPanes } from '../../workbench/services/editor/editor_panes';
 
 export function handleProblemsPanelResizePointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
@@ -19,7 +19,7 @@ export function handleProblemsPanelResizePointer(snapshot: PointerSnapshot, just
 		return false;
 	}
 	editorChromeState.problemsPanelResizing = true;
-	stopPointerSelectionAndResetClicks(snapshot);
+	clearEditorPointerSelectionState();
 	clearGotoHoverHighlight();
 	return true;
 }
@@ -44,7 +44,7 @@ export function handleProblemsPanelPointer(
 	if (!problemsPanel.handlePointer(editorPanes, snapshot, justPressed, justReleased, problemsBounds)) {
 		return false;
 	}
-	stopPointerSelectionAndResetClicks(snapshot);
+	clearEditorPointerSelectionState();
 	clearHoverTooltip();
 	clearGotoHoverHighlight();
 	return true;
@@ -53,11 +53,10 @@ export function handleProblemsPanelPointer(
 function updateProblemsPanelResize(snapshot: PointerSnapshot): void {
 	if (!snapshot.valid || !snapshot.primaryPressed) {
 		editorChromeState.problemsPanelResizing = false;
-		editorPointerState.pointerPrimaryWasPressed = snapshot.primaryPressed;
 		clearGotoHoverHighlight();
 		return;
 	}
 	setProblemsPanelHeightFromViewportY(snapshot.viewportY);
-	stopPointerSelectionAndResetClicks(snapshot);
+	clearEditorPointerSelectionState();
 	clearGotoHoverHighlight();
 }

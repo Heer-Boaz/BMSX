@@ -531,6 +531,20 @@ list interface:
 - <https://github.com/microsoft/vscode/blob/f6f7c31e6cd2541fdd901f045a3418a06f2c3aca/src/vs/base/browser/ui/splitview/splitview.ts#L35-L109>
 - <https://github.com/microsoft/vscode/blob/f6f7c31e6cd2541fdd901f045a3418a06f2c3aca/src/vs/base/browser/ui/list/listView.ts#L230-L298>
 
+## Workbench pointer input
+
+The host `PointerInput` owns physical button levels and event-latched press/
+release edges. Workbench dispatch projects those edges directly, respecting
+current-frame input consumption; views do not reconstruct a second button
+history. A held pointer cannot become a new press after source navigation,
+editor activation or dismissal of an exclusive input surface.
+
+The IDE owns gestures separately: code selection, click counting, field
+selection, scrollbars and tab/panel dragging. Source selection and input
+changes cancel their affected gestures without resetting physical input.
+Production references, the held-navigation regression and validation are in
+[`studio_pointer_navigation.md`](../docs/studio_pointer_navigation.md).
+
 ## Workbench Quick Input
 
 `workbench/services/quick_input/` owns a single transient picker above the
