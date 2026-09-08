@@ -509,6 +509,56 @@ list interface:
 - <https://github.com/microsoft/vscode/blob/f6f7c31e6cd2541fdd901f045a3418a06f2c3aca/src/vs/base/browser/ui/splitview/splitview.ts#L35-L109>
 - <https://github.com/microsoft/vscode/blob/f6f7c31e6cd2541fdd901f045a3418a06f2c3aca/src/vs/base/browser/ui/list/listView.ts#L230-L298>
 
+## Workbench Quick Input
+
+`workbench/services/quick_input/` owns a single transient picker above the
+workbench, not an inline widget in the active code editor. The existing
+`TextField` owns typing and local Undo/Redo; the existing focus service owns
+its concrete root target. Cancellation restores the actual invoking control.
+Blur closes without restoring focus over the destination. IDE deactivation
+therefore dismisses the picker through the normal focus lifecycle, without
+feature-specific close calls in tabs, navigation or scene properties.
+
+The workbench dispatches popup pointer/wheel input before underlying chrome,
+pane input and scrollbar dragging. An outside primary press cancels without
+click-through; a held press does not activate an underlying control afterward.
+The pointer-frame owner keeps sampling snapshots/releases but ends lower
+scrollbar, tab and panel-resize gestures while an exclusive input surface is
+active. A gesture is cancelled, not suspended for the popup's later dismissal.
+The popup owns Escape before a lower code widget. Shared command routing still
+targets the input field's history. Property drafts continue to use their own
+ordinary blur policy; the chooser neither commits nor validates scene data.
+
+`QuickPickModel` retains rows, search keys and filtered row storage. Filtering
+runs on field changes, not frames. Labels are measured only when items,
+viewport width or font change. `editor/ui/inline/single_line_viewport.ts`
+retains glyph advances and reveals a bounded whole-glyph span of the complete
+single-line query, without a query-length cap or substring drawing. The picker
+uses the active IDE font and does not modify code-area geometry.
+Its normal surface follows the workbench theme. The theme owner supplies a
+paired selected foreground/background for all row text, including descriptions;
+normal black text is never reused over the blue selection fill.
+
+`contrib/resources/quick_access.ts` produces display items referencing the
+source owner's exact `RuntimeResource` objects. Acceptance hides before
+ordinary resource navigation. Matching does not guess paths or merge
+same-named resources from different domains. There is no second resource
+catalog owner, code-tab activation prerequisite, or generic prefab/scene schema.
+The removed `@`/`#`/`:` redirection to code-only widgets is not emulated;
+explicit symbol and line commands retain their own contexts.
+
+This takes the current production VS Code Quick Input ownership, not its DOM,
+service registry, animations or compatibility paths:
+
+- [focus acquisition and blur](https://github.com/microsoft/vscode/blob/a47dab6a0a5258924b2454f64fc373fc7e657677/src/vs/platform/quickinput/browser/quickInputController.ts#L337-L356);
+- [focus return only while the popup still owns it](https://github.com/microsoft/vscode/blob/a47dab6a0a5258924b2454f64fc373fc7e657677/src/vs/platform/quickinput/browser/quickInputController.ts#L824-L860);
+- [separate popup and focused-item color roles](https://github.com/microsoft/vscode/blob/a47dab6a0a5258924b2454f64fc373fc7e657677/src/vs/platform/theme/common/colors/quickpickColors.ts#L17-L59);
+- [Godot LineEdit caret reveal](https://github.com/godotengine/godot/blob/6a0f6f32cfb2ce4cc5bad6641d0afda413b62a9d/scene/gui/line_edit.cpp#L2380-L2396).
+- [Godot viewport input blocking drops the previous mouse focus](https://github.com/godotengine/godot/blob/6a0f6f32cfb2ce4cc5bad6641d0afda413b62a9d/scene/main/viewport.cpp#L3729-L3758).
+
+Prefab selection and instance construction remain a separate scene-authoring
+contract. A general picker does not justify guessing constructor options.
+
 ## Scenario runs
 
 Scenario testing keeps four boundaries distinct:

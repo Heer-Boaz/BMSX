@@ -56,8 +56,9 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 	const rewind = new HostRewind(runtime, presenter, screen, tasks, audio, log);
 	const session = new HostFrameSession(runtime.timing.ufpsScaled, clock.now(), rewind, execution);
 	const menu = new HostOverlayMenu(presenter, runtime, input, rewind, execution);
+	const clipboard = new BrowserClipboard();
 	const ide = await prepareWorkbenchRuntime(bios, [cart, null], runtime, presenter, display, input,
-		audio, tasks, execution, rewind, menu, localStorage, clock, new BrowserClipboard(), new IdeMicrotaskQueue(), log, 0.3);
+		audio, tasks, execution, rewind, menu, localStorage, clock, clipboard, new IdeMicrotaskQueue(), log, 0.3);
 	const output = new SystemOutputLog();
 	const harness = createHeadlessIdeHarness(ide, runtime, input, audio, localStorage, log);
 	const history = runtime.history;
@@ -79,6 +80,9 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 	const setKey = (key: string, down: boolean) => {
 		input.inputButton('keyboard:0', key, down, down ? 1 : 0, clock.now(), ++pressId);
 	};
+	const setPointerButton = (button: 'pointer_primary' | 'pointer_secondary', down: boolean) => {
+		input.inputButton('pointer:0', button, down, down ? 1 : 0, clock.now(), ++pressId);
+	};
 	const press = async (...keys: string[]) => {
 		for (const key of keys) setKey(key, true);
 		await frame();
@@ -92,9 +96,9 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 			displayRect.left + (bounds.left + bounds.right) * displayRect.width / (viewport.width * 2),
 			displayRect.top + (bounds.top + bounds.bottom) * displayRect.height / (viewport.height * 2), clock.now());
 		await frame();
-		input.inputButton('pointer:0', button, true, 1, clock.now(), ++pressId);
+		setPointerButton(button, true);
 		for (let index = 0; index < heldFrames; index += 1) await frame();
-		input.inputButton('pointer:0', button, false, 0, clock.now(), ++pressId);
+		setPointerButton(button, false);
 		await frame();
 	};
 	const runMenuCommand = async (command: EditorCommandId) => {
@@ -119,8 +123,8 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 		throw new Error('real title actor missing');
 	};
 	audio.bootstrap();
-	return { runtime, ide, execution, rewind, tasks, history, harness, guest, clock, input, observations,
-		frame, until, setKey, press, click, runMenuCommand, settle, cycles, title };
+	return { runtime, ide, execution, rewind, tasks, history, harness, guest, clock, input, clipboard, observations,
+		frame, until, setKey, setPointerButton, press, click, runMenuCommand, settle, cycles, title };
 }
 
 export type StudioFixture = Awaited<ReturnType<typeof createStudioFixture>>;

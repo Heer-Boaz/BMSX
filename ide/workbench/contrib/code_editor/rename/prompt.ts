@@ -1,7 +1,6 @@
 import type { RenameController } from './controller';
 import { closeSearch } from '../find/search';
 import { getActiveCodeTabContext, isEditableCodeTab } from '../../../ui/code_tab/contexts';
-import { closeResourceSearch } from '../../resources/search/index';
 import { closeLineJump } from '../find/line_jump';
 import { notifyReadOnlyEdit } from '../../../../editor/ui/view/view';
 import { resetBlink } from '../../../../editor/render/caret';
@@ -19,7 +18,6 @@ export function openRenamePrompt(bridge: RuntimeLuaTooling, rename: RenameContro
 	}
 	closeSearch(false, true);
 	closeLineJump(false);
-	closeResourceSearch(false);
 	closeSymbolSearch(false);
 	createResourceState.field.focusTarget.release();
 	const context = getActiveCodeTabContext();

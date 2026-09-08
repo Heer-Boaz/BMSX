@@ -7,7 +7,6 @@ import { closeSearch } from '../../find/search';
 import { getActiveCodeTabContext } from '../../../../ui/code_tab/contexts';
 import { resetBlink } from '../../../../../editor/render/caret';
 import { refreshSymbolCatalog } from '../catalog';
-import { closeResourceSearch } from '../../../resources/search/index';
 import { closeLineJump } from '../../find/line_jump';
 import { applyReferenceSearchSelection } from '../../references/search/index';
 import { applyDefinitionSearchSelection } from '../../definitions/search/index';
@@ -31,7 +30,6 @@ export function openSymbolSearch(bridge: RuntimeLuaTooling, rename: RenameContro
 	clearReferenceHighlights();
 	closeSearch(false, true);
 	closeLineJump(false);
-	closeResourceSearch(false);
 	rename.cancel();
 	symbolSearchState.mode = 'symbols';
 	symbolSearchState.locationCatalog = [];
@@ -55,7 +53,6 @@ export function openGlobalSymbolSearch(bridge: RuntimeLuaTooling, rename: Rename
 	clearReferenceHighlights();
 	closeSearch(false, true);
 	closeLineJump(false);
-	closeResourceSearch(false);
 	rename.cancel();
 	symbolSearchState.mode = 'symbols';
 	symbolSearchState.locationCatalog = [];

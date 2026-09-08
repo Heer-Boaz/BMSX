@@ -1,5 +1,5 @@
 import { focusRuntimeErrorOverlay } from '../runtime_error/navigation';
-import { openResourceSearch } from '../workbench/contrib/resources/search/index';
+import { buildResourceQuickPickItems } from '../workbench/contrib/resources/quick_access';
 import { openLineJump } from '../workbench/contrib/code_editor/find/line_jump';
 import { openCreateResourcePrompt } from '../workbench/contrib/resources/create/index';
 import { openReferenceSearchPopup } from '../workbench/contrib/code_editor/references/search/index';
@@ -44,7 +44,8 @@ export function executeEditorSearchCommand(
 			openGlobalSymbolSearch(luaTooling, rename);
 			return;
 		case 'resourceSearch':
-			openResourceSearch(sources);
+			editor.quickInput.pick('GO TO FILE', 'Type to filter files', buildResourceQuickPickItems(sources),
+				item => { void editor.navigation.openResource(item.resource); });
 			return;
 		case 'runtimeErrorFocus':
 			focusRuntimeErrorOverlay(editor.editorPanes);

@@ -5,7 +5,6 @@ import { focusEditorFromSearch } from '../contrib/code_editor/find/search';
 import { clearReferenceHighlights } from '../../editor/contrib/intellisense/engine';
 import { focusEditorFromLineJump } from '../contrib/code_editor/find/line_jump';
 import { resetBlink } from '../../editor/render/caret';
-import { focusEditorFromResourceSearch } from '../contrib/resources/search/index';
 import { focusEditorFromSymbolSearch } from '../contrib/code_editor/symbols/shared';
 import { activeCodeEditor } from '../../editor/ui/code_editor_state';
 
@@ -15,7 +14,6 @@ export function focusPrimaryEditorSurface(editor: CartEditor): void {
 	editor.resourcePanel.setFocused(false);
 	focusEditorFromLineJump();
 	focusEditorFromSearch();
-	focusEditorFromResourceSearch();
 	focusEditorFromSymbolSearch();
 	editor.completion.closeSession();
 }

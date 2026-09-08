@@ -8,7 +8,7 @@ import { handleEscapeKey } from './modal_input';
 import { ESCAPE_KEY } from '../../common/constants';
 import type { PlayerInput } from '../../../hosts/common/input/player';
 
-function handleEscapeBinding(playerInput: PlayerInput): boolean {
+export function handleEscapeBinding(playerInput: PlayerInput): boolean {
 	if (!isKeyJustPressed(ESCAPE_KEY, playerInput) || !handleEscapeKey()) {
 		return false;
 	}
@@ -16,10 +16,7 @@ function handleEscapeBinding(playerInput: PlayerInput): boolean {
 	return true;
 }
 
-export function handleEditorGlobalBindings(playerInput: PlayerInput, commands: IdeCommandController): boolean {
-	if (handleEscapeBinding(playerInput)) {
-		return true;
-	}
+export function handleEditorCommandBindings(playerInput: PlayerInput, commands: IdeCommandController): boolean {
 	const modifiers = playerInput.getModifiers();
 	for (let index = 0; index < EDITOR_KEYBINDING_CODES.length; index += 1) {
 		const code = EDITOR_KEYBINDING_CODES[index];

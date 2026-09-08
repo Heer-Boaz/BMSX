@@ -344,6 +344,84 @@ legt bovendien een secundaire hostfout bloot: `Cannot read properties of null
 onderzocht; deze slice verstopt geen van beide fouten achter een guard of
 verhoogde productlimiet. Logs en captures staan in `/tmp/bmsx-scene-identity/`.
 
+### Workbench-keuze vóór prefabplaatsing (2026-09-08)
+
+De audit vóór deze slice vond geen workbenchcontrol: `resourceSearchState.field`
+had `activeCodeEditor.focusTarget` als parent, alleen `CodeEditorPane` tekende
+zijn inline bar en verwerkte zijn pointerinput. Het workbenchcommando was wel
+beschikbaar vanuit Scene Editor en Scenario Lab. Een prefabkiezer mag deze
+onzichtbare code-editorroute niet hergebruiken of een verborgen tab openen.
+
+De referentie is VS Codes
+[`QuickInputController`](https://github.com/microsoft/vscode/blob/a47dab6a0a5258924b2454f64fc373fc7e657677/src/vs/platform/quickinput/browser/quickInputController.ts#L337-L356):
+de tijdelijke keuze heeft eigen focus; de caller blijft eigenaar van de items
+en de gekozen bewerking. [Sluiten](https://github.com/microsoft/vscode/blob/a47dab6a0a5258924b2454f64fc373fc7e657677/src/vs/platform/quickinput/browser/quickInputController.ts#L824-L860)
+herstelt de invoking control alleen wanneer focus niet al elders heen ging.
+Defolds [collection Add](https://github.com/defold/defold/blob/dce8e2fd6b7c466f695c8e84e9151fbbf6f2f4fa/editor/src/clj/editor/collection.clj#L717-L734)
+laat de resourcekeuze aan de gedeelde dialoog en de instanceconstructie aan de
+collectionowner. Godots
+[`CreateDialog`](https://github.com/godotengine/godot/blob/6a0f6f32cfb2ce4cc5bad6641d0afda413b62a9d/editor/gui/create_dialog.cpp#L740-L779)
+gebruikt zijn daadwerkelijke class/script-constructieowner; dat rechtvaardigt
+geen gegokte Lua-ctoropties of een tweede prefabdatabase in BMSX.
+
+`IDE-WORKBENCH-QUICK-PICK-01` vervangt daarom de oude bestandskiezer door één
+workbench-owned tijdelijke keuze met het bestaande `TextField`, focusmodel en
+retained list. De concrete resourcecontribution levert bestaande
+`RuntimeResource`-identiteiten; filteren, selectie en layout veranderen die
+identiteiten niet. Accept sluit de keuze vóór gewone resource-navigation.
+Escape herstelt de invoking control; blur sluit zonder focus terug te stelen.
+Een klik buiten de keuze annuleert zonder de onderliggende actie te activeren.
+Query-Undo/Redo blijft veldhistorie. Er komt geen prefab-/sceneconcept in de
+gedeelde control, geen nieuwe gaststate en geen per-frame catalogusopbouw.
+
+De picker ligt boven de workbench, niet in de layout van de codebuffer. Lange
+queries blijven bewerkbaar via een begrensd horizontaal tekstveldviewport,
+zoals [Godots LineEdit](https://github.com/godotengine/godot/blob/6a0f6f32cfb2ce4cc5bad6641d0afda413b62a9d/scene/gui/line_edit.cpp#L2380-L2396).
+Er is geen afkaplimiet op de menselijke zoektekst. De oude impliciete
+`@`/`#`/`:`-sprongen naar code-editorwidgets vervallen; bestaande expliciete
+symbol-/regelcommando's blijven bij hun eigen context. Een toekomstige
+Quick-Access-providerroute wordt niet met featurebranches nagebootst.
+
+Gate: fysieke bestandskeuze vanuit code, Scene Editor en Scenario Lab; annuleren
+met behoud van de oorspronkelijke pane/veld-focus; queryhistory zonder
+documentmutatie; pointerselectie zonder click-through; lange query, resize en
+geen match. De bestaande Studio/Hot-Resume-proef draait op alle drie renderers.
+De slice levert nog geen Add-UI: prefabkeuze en correcte constructioninput
+blijven een afzonderlijk authoringcontract, niet een reden om cartlib uit te
+breiden met editor-schema's.
+
+#### Uitvoeringsbewijs
+
+- De oude resource-search-state, catalogus en code-inline input/renderpaden zijn
+  verwijderd. Het bestaande Ctrl/Meta+Comma-commando opent de workbenchpicker;
+  accepteren gebruikt dezelfde `RuntimeResource` en gewone navigation-owner.
+- `studio_quick_pick.ts` draait in de bestaande echte BIOS/Nemesis-browserlus
+  op software, WebGL2 en WebGPU. Zij dekt Scene Editor en Scenario Lab,
+  property- versus query- versus documenthistorie, geldige/ongeldige
+  property-blur, lange clipboardinvoer, Home/End, geen matches, wheel,
+  keyboard- en held-pointeracceptatie, buitenklik zonder menuactivatie,
+  Escape vóór een achterliggende Find, IDE hide/reopen en een echte vastgehouden
+  code-scrollbardrag. Geen alternatieve cart, scene-runtime of Lua-call.
+- De pointer-frame-owner beëindigt onderliggende gestures bij exclusieve input;
+  de popup bevat daarvoor geen pane-specifieke cleanup. Referentie:
+  [Godot viewport mouse-focus release](https://github.com/godotengine/godot/blob/6a0f6f32cfb2ce4cc5bad6641d0afda413b62a9d/scene/main/viewport.cpp#L3729-L3758).
+- Screenshotcontrole vond zwart op de oude blauwe selectieachtergrond. Dit is
+  bij de thema-owner hersteld: normale workbenchkleuren en een gekoppelde
+  selectievoorgrond/-achtergrond voor alle rijlabels, overeenkomstig
+  [VS Codes Quick Input-kleurrollen](https://github.com/microsoft/vscode/blob/a47dab6a0a5258924b2454f64fc373fc7e657677/src/vs/platform/theme/common/colors/quickpickColors.ts#L17-L59).
+  De finale tiny-fontbeelden op 384×288 zijn geïnspecteerd en gelijk voor de drie
+  renderers: `/tmp/bmsx-scene-placement/quick-pick-final-*.png`.
+- Tien gerichte tests bewijzen retained item-/rijidentiteit, complete catalogus,
+  focuslifecycle, veldhistorie, 1.000 stabiele updates zonder filtering of
+  tekstmeting, proportionele glyphgrenzen, scrolled pointer-hit-testing, resize
+  en selectievoorgrond in beide thema's. Regressie: Lua **961 geslaagd, één
+  bestaande skip**; rompacker **122 geslaagd**; IDE-typecheck, Studio-productbuild,
+  strict architecture-boundaries, core-parity, indentation en diff-check groen.
+  De brede test-typecheck houdt dezelfde **52 bestaande diagnostics**.
+
+Dit sluit de workbench-keuzeprerequisite, niet de prefabplaatsing. Cartlib,
+de machine, gast-ABI en Hot-Resume-semantiek zijn in deze slice niet veranderd.
+
 ## Bouwvolgorde
 
 1. **`CARTLIB-SCENE-COLLECTION-01`** — land de gemeten opt-in directe

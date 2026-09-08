@@ -27,7 +27,9 @@ export function handleTextEditorPointerInput(
 	const metaDown = isMetaDown(playerInput);
 	const gotoModifierActive = ctrlDown || metaDown;
 	const snapshot = readEditorPointerSnapshot(display, playerInput);
-	if (prepareEditorPointerFrame(editor.resourcePanel, snapshot, gotoModifierActive)) {
+	const blockingModal = hasBlockingWorkbenchModal();
+	const quickInputVisible = editor.quickInput.visible;
+	if (prepareEditorPointerFrame(editor.resourcePanel, snapshot, gotoModifierActive, blockingModal || quickInputVisible)) {
 		return;
 	}
 	const buttonMask = computeEditorPointerButtonMask(playerInput, snapshot.primaryPressed);
@@ -35,10 +37,17 @@ export function handleTextEditorPointerInput(
 	const justReleased = (buttonMask & POINTER_PRIMARY_JUST_RELEASED) !== 0;
 	const pointerSecondaryJustPressed = (buttonMask & POINTER_SECONDARY_JUST_PRESSED) !== 0;
 	const pointerAuxJustPressed = (buttonMask & POINTER_AUX_JUST_PRESSED) !== 0;
-	if (hasBlockingWorkbenchModal()) {
+	if (blockingModal) {
 		if (justPressed) {
 			handleBlockingWorkbenchModalPointer(editor, snapshot);
 		}
+		stopPointerSelectionAndResetClicks(snapshot);
+		clearHoverTooltip();
+		clearGotoHoverHighlight();
+		return;
+	}
+	if (quickInputVisible) {
+		if (snapshot.valid) editor.quickInput.handlePointer(snapshot, justPressed);
 		stopPointerSelectionAndResetClicks(snapshot);
 		clearHoverTooltip();
 		clearGotoHoverHighlight();

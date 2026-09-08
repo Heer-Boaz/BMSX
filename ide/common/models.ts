@@ -76,19 +76,6 @@ export type SymbolSearchResult = {
 	catalogIndex: number;
 };
 
-export type ResourceCatalogEntry = {
-	resource: RuntimeResource;
-	displayPath: string;
-	searchKey: string;
-	typeLabel: string;
-	assetLabel: string;
-};
-
-export type ResourceSearchResult = {
-	entry: ResourceCatalogEntry;
-	matchIndex: number;
-};
-
 export type LuaCompletionKind =
 	| 'keyword'
 	| 'local'
@@ -213,17 +200,6 @@ export type SearchState = {
 	scope: 'local' | 'global';
 	globalMatches: GlobalSearchMatch[];
 	globalJob: GlobalSearchJob;
-};
-
-export type ResourceSearchState = {
-	field: TextField;
-	visible: boolean;
-	query: string;
-	catalog: ResourceCatalogEntry[];
-	matches: ResourceSearchResult[];
-	selectionIndex: number;
-	displayOffset: number;
-	hoverIndex: number;
 };
 
 export type SymbolSearchState = {

@@ -9,13 +9,9 @@ import {
 	getCreateResourceBarBounds,
 	getLineJumpBarBounds,
 	getRenameBarBounds,
-	getResourceSearchBarBounds,
 	getSearchBarBounds,
 	getSymbolSearchBarBounds,
-	isResourceSearchCompactMode,
 	isSymbolSearchCompactMode,
-	resourceSearchEntryHeight,
-	resourceSearchVisibleResultCount,
 	searchResultEntryHeight,
 	searchVisibleResultCount,
 	symbolSearchEntryHeight,
@@ -26,21 +22,13 @@ import { renderInlineBarField, renderInlineBarFrame } from './common';
 import { renameController } from '../../rename/controller';
 import { symbolSearchState } from '../../symbols/search/state';
 import { symbolSearchFieldLabel } from '../../symbols/shared';
-import { createResourceState, resourceSearchState } from '../../../resources/widget_state';
+import { createResourceState } from '../../../resources/widget_state';
 import type { SymbolSearchResult } from '../../../../../common/models';
 
 type InlineSearchResultEntry = {
 	primary: string;
 	secondary?: string;
 	detail?: string;
-};
-
-type InlineResourceSearchResult = {
-	entry: {
-		typeLabel: string;
-		displayPath: string;
-		assetLabel?: string;
-	};
 };
 
 const drawSearchResultRow = (entry: InlineSearchResultEntry, rowTop: number): void => {
@@ -56,27 +44,6 @@ const drawSearchResultRow = (entry: InlineSearchResultEntry, rowTop: number): vo
 	}
 	if (entry.secondary) {
 		drawEditorText(editorViewState.font, entry.secondary, paddingX, secondaryY, 0, constants.COLOR_SEARCH_SECONDARY_TEXT);
-	}
-};
-
-const drawResourceSearchResultRow = (match: InlineResourceSearchResult, rowTop: number): void => {
-	let textX = constants.QUICK_OPEN_RESULT_PADDING_X;
-	const kindText = match.entry.typeLabel;
-	const detail = match.entry.assetLabel ?? '';
-	if (kindText.length > 0) {
-		drawEditorText(editorViewState.font, kindText, textX, rowTop, 0, constants.COLOR_QUICK_OPEN_KIND);
-		textX += measureText(kindText) + editorViewState.spaceAdvance;
-	}
-	drawEditorText(editorViewState.font, match.entry.displayPath, textX, rowTop, 0, constants.COLOR_QUICK_OPEN_TEXT);
-	if (isResourceSearchCompactMode()) {
-		const secondaryY = rowTop + editorViewState.lineHeight;
-		if (detail.length > 0) {
-			drawEditorText(editorViewState.font, detail, constants.QUICK_OPEN_RESULT_PADDING_X, secondaryY, 0, constants.COLOR_QUICK_OPEN_KIND);
-		}
-	} else if (detail.length > 0) {
-		const detailWidth = measureText(detail);
-		const detailX = editorViewState.viewportWidth - detailWidth - constants.QUICK_OPEN_RESULT_PADDING_X;
-		drawEditorText(editorViewState.font, detail, detailX, rowTop, 0, constants.COLOR_QUICK_OPEN_KIND);
 	}
 };
 
@@ -197,35 +164,6 @@ export function renderSearchBar(): void {
 	const rowHeight = searchResultEntryHeight();
 
 	renderResultList(getVisibleSearchResultEntries(), visible, editorSearchState.displayOffset ?? 0, editorSearchState.displayOffset ?? 0, rowHeight, resultsTop, bounds.right, editorSearchState.currentIndex ?? -1, editorSearchState.hoverIndex ?? -1, drawSearchResultRow);
-}
-
-export function renderResourceSearchBar(): void {
-	const bounds = getResourceSearchBarBounds();
-	if (!bounds) return;
-	renderInlineBarFrame(bounds.left, bounds.top, bounds.right, bounds.bottom, constants.COLOR_QUICK_OPEN_BACKGROUND, constants.COLOR_QUICK_OPEN_OUTLINE);
-	const active = resourceSearchState.field.focusTarget.hasFocus;
-	renderInlineBarField(
-		resourceSearchState.field,
-		'FILE :',
-		4,
-		bounds.top + constants.QUICK_OPEN_BAR_MARGIN_Y,
-		active,
-		active,
-		constants.COLOR_QUICK_OPEN_TEXT,
-		'TYPE TO FILTER (@/# PREFIX)',
-		constants.COLOR_QUICK_OPEN_PLACEHOLDER,
-		editorViewState.charAdvance,
-	);
-
-	const visible = resourceSearchVisibleResultCount();
-	if (visible <= 0) return;
-	const baseHeight = editorViewState.lineHeight + constants.QUICK_OPEN_BAR_MARGIN_Y * 2;
-	const separatorTop = bounds.top + baseHeight;
-	api.fill_rect(bounds.left, separatorTop, bounds.right, separatorTop + constants.QUICK_OPEN_RESULT_SPACING, 0, constants.COLOR_QUICK_OPEN_OUTLINE);
-	const resultsTop = separatorTop + constants.QUICK_OPEN_RESULT_SPACING;
-	const rowHeight = resourceSearchEntryHeight();
-
-	renderResultList(resourceSearchState.matches, visible, resourceSearchState.displayOffset ?? 0, 0, rowHeight, resultsTop, bounds.right, resourceSearchState.selectionIndex ?? -1, resourceSearchState.hoverIndex ?? -1, drawResourceSearchResultRow);
 }
 
 export function renderSymbolSearchBar(): void {

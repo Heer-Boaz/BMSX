@@ -1,4 +1,5 @@
 import { SceneEditorController } from './workbench/contrib/scene_editor/controller';
+import { QuickInputController } from './workbench/services/quick_input/controller';
 import { SceneEditorPane } from './workbench/contrib/scene_editor/editor_pane';
 import { clearHoverTooltip } from './editor/contrib/hover/controller';
 import type { HostRewind } from '../hosts/common/rewind';
@@ -91,8 +92,7 @@ import { closeBlockingWorkbenchModal, drawBlockingWorkbenchModal, handleBlocking
 import { drawProblemsPanel, problemsPanel } from './workbench/contrib/problems/panel/controller';
 import { ResourcePanelController } from './workbench/contrib/resources/panel/controller';
 import { applyCreateResourceFieldText, closeCreateResourcePrompt } from './workbench/contrib/resources/create/index';
-import { createResourceState, resourceSearchState } from './workbench/contrib/resources/widget_state';
-import { applyResourceSearchFieldText } from './workbench/contrib/resources/search/index';
+import { createResourceState } from './workbench/contrib/resources/widget_state';
 import { IdeCommandController } from './commands/controller';
 import { initializeNavigationState } from './navigation/navigation_history';
 import { EditorNavigationController } from './workbench/contrib/resources/navigation';
@@ -138,6 +138,7 @@ export type CartEditor = {
 	readonly editorPanes: EditorPanes;
 	readonly navigation: EditorNavigationController;
 	readonly sceneEditor: SceneEditorController;
+	readonly quickInput: QuickInputController;
 	readonly behaviorLens: BehaviorLensController;
 	readonly scenarioLab: ScenarioLabController;
 	readonly crossFileRename: CrossFileRenameManager;
@@ -175,6 +176,7 @@ export class RuntimeCartEditor implements CartEditor {
 	public readonly editorPanes: EditorPanes;
 	public readonly navigation: EditorNavigationController;
 	public readonly sceneEditor: SceneEditorController;
+	public readonly quickInput: QuickInputController;
 	public readonly behaviorLens: BehaviorLensController;
 	public readonly scenarioLab: ScenarioLabController;
 	public readonly crossFileRename: CrossFileRenameManager;
@@ -272,6 +274,7 @@ export class RuntimeCartEditor implements CartEditor {
 		);
 		this.completion = new EditorCompletionController(luaTooling, fault, runtime);
 		this.resourcePanel = this.initialize(resourcePanelWidthRatio, viewport, fontVariant);
+		this.quickInput = new QuickInputController(clipboard);
 		this.resourceEditors = createResourceEditorResolver(
 			storage,
 			this.sources,
@@ -516,6 +519,7 @@ export class RuntimeCartEditor implements CartEditor {
 		updateBlink(deltaSeconds);
 		updateEditorMessage(deltaSeconds);
 		this.editorPanes.activePane.update(deltaSeconds);
+		this.quickInput.update();
 		if (editorDiagnosticsState.diagnosticsDirty) {
 			processDiagnosticsQueue(
 				this.luaTooling,
@@ -546,12 +550,14 @@ export class RuntimeCartEditor implements CartEditor {
 		drawProblemsPanel();
 		renderStatusBar(this.resourcePanel, this.fault, this.editorPanes.activePane);
 		renderTopBarDropdown(this.chromeRenderContext);
+		this.quickInput.draw();
 		if (hasBlockingWorkbenchModal()) {
 			drawBlockingWorkbenchModal();
 		}
 	}
 
 	public async shutdown(): Promise<void> {
+		this.quickInput.dispose();
 		this.unbindQuickInputFields();
 		this.unbindProblemsPanel();
 		this.completion.dispose();
@@ -729,7 +735,6 @@ export class RuntimeCartEditor implements CartEditor {
 		resourcePanel.setFontMetrics(editorViewState.lineHeight, editorViewState.charAdvance);
 		applySearchFieldText(editorSearchState.query, true);
 		applySymbolSearchFieldText(symbolSearchState.query, true);
-		applyResourceSearchFieldText(resourceSearchState.query, true);
 		applyLineJumpFieldText(lineJumpState.value, true);
 		applyCreateResourceFieldText(createResourceState.path, true);
 		this.completion.closeSession();

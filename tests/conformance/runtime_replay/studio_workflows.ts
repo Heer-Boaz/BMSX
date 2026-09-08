@@ -19,6 +19,7 @@ import { check, type StudioFixture } from './studio_fixture';
 import { testSceneSourceEdits } from './studio_scene_source';
 import { testSourceFormatting } from './studio_source_formatting';
 import { testStudioFocus } from './studio_focus';
+import { testStudioQuickPick } from './studio_quick_pick';
 import { editorSearchState } from '../../../ide/workbench/contrib/code_editor/find/widget_state';
 import { testAemSourceApplication, testCapturedSourceApply, testSourceUndoAfterApply, testSourceViewsBeforeApply } from './studio_source_workflows';
 
@@ -301,6 +302,7 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	await testAemSourceApplication(test);
 	await testSourceFormatting(test);
 	await testSceneSourceTree(test);
+	await testStudioQuickPick(test);
 	await testSceneMemberRemoval(test);
 	await testSceneMemberMoves(test);
 	await testSceneFieldInsertion(test);

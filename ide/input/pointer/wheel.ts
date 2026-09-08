@@ -7,14 +7,11 @@ import type { ResourcePanelController } from '../../workbench/contrib/resources/
 import type { PointerSnapshot } from '../../common/models';
 import { getProblemsPanelBounds } from '../../workbench/contrib/problems/panel/controller';
 import { isPointInHoverTooltip, pointerHitsHoverTarget, adjustHoverTooltipScroll } from '../../editor/ui/hover_tooltip';
-import { getResourceSearchBarBounds } from '../../workbench/common/layout';
-import { moveResourceSearchSelection } from '../../workbench/contrib/resources/search/catalog';
 import { isShiftDown } from '../keyboard/key_input';
 import { scrollResourceBrowserHorizontal } from '../../workbench/input/keyboard/resource_viewer_input';
 import { editorPointerState } from './state';
 import { hoverState } from '../../editor/contrib/hover/state';
 import { editorViewState } from '../../editor/ui/view/state';
-import { resourceSearchState } from '../../workbench/contrib/resources/widget_state';
 
 export function handleEditorWheelInput(editor: CartEditor, playerInput: PlayerInput): void {
 	const wheelState = playerInput.getRawButtonState('pointer_wheel', 'pointer');
@@ -28,12 +25,14 @@ export function handleEditorWheelInput(editor: CartEditor, playerInput: PlayerIn
 	const magnitude = Math.abs(delta);
 	const steps = ~~(magnitude / constants.WHEEL_SCROLL_STEP);
 	const direction = delta > 0 ? 1 : -1;
+	if (editor.quickInput.visible) {
+		editor.quickInput.handleWheel(direction * steps);
+		playerInput.inputHandlers.pointer.consumeButton('pointer_wheel');
+		return;
+	}
 	const pointer = editorPointerState.lastPointerSnapshot;
 	const activePointer = pointer !== null && pointer.valid && pointer.insideViewport ? pointer : null;
 	if (handleHoverTooltipWheel(direction, steps, activePointer, playerInput)) {
-		return;
-	}
-	if (handleResourceSearchWheel(direction, steps, activePointer, playerInput)) {
 		return;
 	}
 	if (handleResourcePanelWheel(editor.resourcePanel, direction, steps, activePointer, playerInput)) {
@@ -65,27 +64,6 @@ function handleHoverTooltipWheel(
 	if (!pointerInTooltip) {
 		return false;
 	}
-	playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');
-	return true;
-}
-
-function handleResourceSearchWheel(
-	direction: number,
-	steps: number,
-	activePointer: PointerSnapshot,
-	playerInput: PlayerInput
-): boolean {
-	if (!resourceSearchState.visible) {
-		return false;
-	}
-	const bounds = getResourceSearchBarBounds();
-	const pointerInQuickOpen = bounds !== null
-		&& activePointer !== null
-		&& point_in_rect(activePointer.viewportX, activePointer.viewportY, bounds);
-	if (!pointerInQuickOpen && !resourceSearchState.field.focusTarget.hasFocus) {
-		return false;
-	}
-	moveResourceSearchSelection(direction * steps);
 	playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');
 	return true;
 }

@@ -39,10 +39,7 @@ import type { LuaSignatureHelp } from '../../../../../toolchain/ts/lua/semantic/
 import { clearSingleCursorSelection, setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../../../editor/editing/cursor/state';
 import type { Runtime } from '../../../../../machine/ts/machine/runtime/runtime';
 import type { PlayerInput } from '../../../../../hosts/common/input/player';
-import { createResourceState, resourceSearchState } from '../../resources/widget_state';
 import { editorRuntimeState } from '../../../../editor/common/runtime_state';
-import { editorSearchState, lineJumpState } from '../find/widget_state';
-import { symbolSearchState } from '../symbols/search/state';
 import type { RuntimeLuaTooling } from '../../../../runtime/lua_tooling';
 import type { RuntimeFaultState } from '../../../../runtime/fault_state';
 
@@ -81,7 +78,7 @@ export class CompletionController {
 		if (isReadOnlyCodeTab()) {
 			return false;
 		}
-		if (editorSearchState.field.focusTarget.hasFocus || symbolSearchState.field.focusTarget.hasFocus || lineJumpState.field.focusTarget.hasFocus || resourceSearchState.field.focusTarget.hasFocus || createResourceState.field.focusTarget.hasFocus) {
+		if (!activeCodeEditor.focusTarget.hasFocus) {
 			return false;
 		}
 		return true;

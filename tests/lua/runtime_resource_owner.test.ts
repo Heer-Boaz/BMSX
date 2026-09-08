@@ -23,8 +23,7 @@ import type { RomAsset } from '../../toolchain/ts/rompack/assets';
 import type { RawRomSource } from '../../toolchain/ts/rompack/source';
 import { createTestRuntimeSourceState } from '../helpers/runtime_sources';
 import { buildResourcePanelItems } from '../../ide/workbench/contrib/resources/panel/items';
-import { refreshResourceCatalog } from '../../ide/workbench/contrib/resources/search/catalog';
-import { resourceSearchState } from '../../ide/workbench/contrib/resources/widget_state';
+import { buildResourceQuickPickItems } from '../../ide/workbench/contrib/resources/quick_access';
 import {
 	createLuaCodeTabContext,
 	retainEntryTabContext,
@@ -148,8 +147,7 @@ test('resource panel, search, and code tabs consume the retained owner resource'
 		.find(item => item.resource?.path === retained.path && item.resource.domain === retained.domain)!;
 	assert.strictEqual(panelItem.resource, retained);
 
-	refreshResourceCatalog(sources);
-	const searchEntry = resourceSearchState.catalog
+	const searchEntry = buildResourceQuickPickItems(sources)
 		.find(entry => entry.resource.path === retained.path && entry.resource.domain === retained.domain)!;
 	assert.strictEqual(searchEntry.resource, retained);
 

@@ -7,7 +7,7 @@ import { computeSearchPageStats } from '../contrib/code_editor/find/search';
 import { editorSearchState, lineJumpState } from '../contrib/code_editor/find/widget_state';
 import { symbolSearchState } from '../contrib/code_editor/symbols/search/state';
 import { renameController } from '../contrib/code_editor/rename/controller';
-import { createResourceState, resourceSearchState } from '../contrib/resources/widget_state';
+import { createResourceState } from '../contrib/resources/widget_state';
 import type { EditorFont } from '../../editor/ui/view/font';
 
 export type FullWidthWorkbenchLayout = {
@@ -142,35 +142,6 @@ export function searchResultEntryHeight(): number {
 	return editorViewState.lineHeight * 2;
 }
 
-export function isResourceSearchCompactMode(): boolean {
-	return editorViewState.viewportWidth <= constants.SYMBOL_SEARCH_COMPACT_WIDTH;
-}
-
-export function resourceSearchEntryHeight(): number {
-	return isResourceSearchCompactMode() ? editorViewState.lineHeight * 2 : editorViewState.lineHeight;
-}
-
-export function resourceSearchPageSize(): number {
-	return isResourceSearchCompactMode() ? constants.QUICK_OPEN_COMPACT_MAX_RESULTS : constants.QUICK_OPEN_MAX_RESULTS;
-}
-
-export function resourceSearchWindowCapacity(): number {
-	return resourceSearchState.visible ? resourceSearchPageSize() : 0;
-}
-
-export function resourceSearchVisibleResultCount(): number {
-	if (!resourceSearchState.visible) {
-		return 0;
-	}
-	const remainingCandidate = resourceSearchState.matches.length - resourceSearchState.displayOffset;
-	const remaining = remainingCandidate > 0 ? remainingCandidate : 0;
-	const capacity = resourceSearchWindowCapacity();
-	if (capacity <= 0) {
-		return remaining;
-	}
-	return remaining < capacity ? remaining : capacity;
-}
-
 export function isSymbolSearchCompactMode(): boolean {
 	return editorViewState.viewportWidth <= constants.SYMBOL_SEARCH_COMPACT_WIDTH;
 }
@@ -231,18 +202,6 @@ export function getSearchBarHeight(): number {
 	return baseHeight + constants.SEARCH_RESULT_SPACING + visible * searchResultEntryHeight();
 }
 
-export function getResourceSearchBarHeight(): number {
-	if (!resourceSearchState.visible) {
-		return 0;
-	}
-	const baseHeight = editorViewState.lineHeight + constants.QUICK_OPEN_BAR_MARGIN_Y * 2;
-	const visible = resourceSearchVisibleResultCount();
-	if (visible <= 0) {
-		return baseHeight;
-	}
-	return baseHeight + constants.QUICK_OPEN_RESULT_SPACING + visible * resourceSearchEntryHeight();
-}
-
 export function getSymbolSearchBarHeight(): number {
 	if (!symbolSearchState.visible) {
 		return 0;
@@ -284,7 +243,6 @@ function createBarBounds(): BarBounds {
 const barHeightGetters = [
 	getCreateResourceBarHeight,
 	getSearchBarHeight,
-	getResourceSearchBarHeight,
 	getSymbolSearchBarHeight,
 	getRenameBarHeight,
 	getLineJumpBarHeight,
@@ -292,9 +250,8 @@ const barHeightGetters = [
 
 const inlineBarLayout: InlineBarLayout = {
 	codeViewportTop: 0,
-	barHeight: [0, 0, 0, 0, 0, 0],
+	barHeight: [0, 0, 0, 0, 0],
 	barBounds: [
-		createBarBounds(),
 		createBarBounds(),
 		createBarBounds(),
 		createBarBounds(),
@@ -324,9 +281,6 @@ function computeInlineBarLayoutStamp(): number {
 	stamp = addLayoutStamp(stamp, editorSearchState.matches.length);
 	stamp = addLayoutStamp(stamp, editorSearchState.globalMatches.length);
 	stamp = addLayoutStamp(stamp, editorSearchState.displayOffset);
-	stamp = addLayoutStamp(stamp, resourceSearchState.visible ? 1 : 0);
-	stamp = addLayoutStamp(stamp, resourceSearchState.matches.length);
-	stamp = addLayoutStamp(stamp, resourceSearchState.displayOffset);
 	stamp = addLayoutStamp(stamp, symbolSearchState.visible ? 1 : 0);
 	stamp = addLayoutStamp(stamp, symbolSearchState.matches.length);
 	stamp = addLayoutStamp(stamp, symbolSearchState.displayOffset);
@@ -390,7 +344,6 @@ function getInlineBarBounds(barIndex: number): BarBounds | null {
 
 export function getCreateResourceBarBounds(): BarBounds | null { return getInlineBarBounds(0); }
 export function getSearchBarBounds(): BarBounds | null { return getInlineBarBounds(1); }
-export function getResourceSearchBarBounds(): BarBounds | null { return getInlineBarBounds(2); }
-export function getSymbolSearchBarBounds(): BarBounds | null { return getInlineBarBounds(3); }
-export function getRenameBarBounds(): BarBounds | null { return getInlineBarBounds(4); }
-export function getLineJumpBarBounds(): BarBounds | null { return getInlineBarBounds(5); }
+export function getSymbolSearchBarBounds(): BarBounds | null { return getInlineBarBounds(2); }
+export function getRenameBarBounds(): BarBounds | null { return getInlineBarBounds(3); }
+export function getLineJumpBarBounds(): BarBounds | null { return getInlineBarBounds(4); }

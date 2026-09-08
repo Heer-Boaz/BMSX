@@ -9,12 +9,10 @@ import type { RuntimeSourceState } from '../runtime/sources';
 import { editorSearchState, lineJumpState } from '../workbench/contrib/code_editor/find/widget_state';
 import { symbolSearchState } from '../workbench/contrib/code_editor/symbols/search/state';
 import { updateSymbolSearchMatches } from '../workbench/contrib/code_editor/symbols/search/catalog';
-import { updateResourceSearchMatches } from '../workbench/contrib/resources/search/catalog';
-import { createResourceState, resourceSearchState } from '../workbench/contrib/resources/widget_state';
+import { createResourceState } from '../workbench/contrib/resources/widget_state';
 import { renameController } from '../workbench/contrib/code_editor/rename/controller';
 import { handleCreateResourceInput } from '../input/quick_input/create_resource/input';
 import { handleLineJumpInput } from '../input/quick_input/line_jump/input';
-import { handleResourceSearchInput } from '../input/quick_input/resource_search/input';
 import { handleSearchInput } from '../input/quick_input/search/input';
 import { handleSymbolSearchInput } from '../input/quick_input/symbol_search/input';
 
@@ -35,9 +33,6 @@ export function bindQuickInputFields(
 		symbolSearchState.field.focusTarget.bindKeyboard(
 			input => handleSymbolSearchInput(input, clipboard, microtasks, editor),
 		),
-		resourceSearchState.field.focusTarget.bindKeyboard(
-			input => handleResourceSearchInput(input, clipboard, microtasks, editor, tooling, renameController),
-		),
 		lineJumpState.field.focusTarget.bindKeyboard(input => handleLineJumpInput(input, clipboard)),
 		createResourceState.field.focusTarget.bindKeyboard(
 			input => handleCreateResourceInput(input, clipboard, storage, clock, editor, sources),
@@ -53,11 +48,6 @@ export function bindQuickInputFields(
 		symbolSearchState.field.onDidChangeText(() => {
 			symbolSearchState.query = symbolSearchState.field.text;
 			updateSymbolSearchMatches(tooling);
-			resetBlink();
-		}),
-		resourceSearchState.field.onDidChangeText(() => {
-			resourceSearchState.query = resourceSearchState.field.text;
-			updateResourceSearchMatches();
 			resetBlink();
 		}),
 		lineJumpState.field.onDidChangeText(() => {

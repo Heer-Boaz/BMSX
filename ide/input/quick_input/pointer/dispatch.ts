@@ -2,7 +2,6 @@ import type { CartEditor } from '../../../cart_editor';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { PointerSnapshot } from '../../../common/models';
 import { handleCreateResourcePointer } from '../create_resource/pointer';
-import { handleResourceSearchPointer } from '../resource_search/pointer';
 import { handleSymbolSearchPointer } from '../symbol_search/pointer';
 import { handleRenamePointer } from '../rename/pointer';
 import { handleLineJumpPointer } from '../line_jump/pointer';
@@ -18,9 +17,6 @@ export function handleQuickInputPointer(
 ): boolean {
 	const resourcePanel = editor.resourcePanel;
 	if (handleCreateResourcePointer(resourcePanel, snapshot, justPressed)) {
-		return true;
-	}
-	if (handleResourceSearchPointer(microtasks, editor, resourcePanel, snapshot, justPressed)) {
 		return true;
 	}
 	if (handleSymbolSearchPointer(microtasks, resourcePanel, editor, snapshot, justPressed)) {

@@ -4,12 +4,14 @@ import { clearGotoHoverHighlight } from '../../editor/contrib/intellisense/engin
 import { clearHoverTooltip } from '../../editor/contrib/hover/controller';
 import { mapScreenPointToViewport } from '../../editor/ui/view/view';
 import { updateTabHoverState } from '../../workbench/input/pointer/tab_bar/pointer';
+import { editorChromeState } from '../../workbench/ui/chrome_state';
+import { endTabDrag } from '../../workbench/ui/tab/drag';
 import type { PointerSnapshot } from '../../common/models';
 import { editorPointerState } from './state';
 import { editorViewState } from '../../editor/ui/view/state';
 import { editorSearchState, lineJumpState } from '../../workbench/contrib/code_editor/find/widget_state';
 import { symbolSearchState } from '../../workbench/contrib/code_editor/symbols/search/state';
-import { createResourceState, resourceSearchState } from '../../workbench/contrib/resources/widget_state';
+import { createResourceState } from '../../workbench/contrib/resources/widget_state';
 import type { ResourcePanelController } from '../../workbench/contrib/resources/panel/controller';
 import type { EditorDisplay } from '../../common/viewport';
 
@@ -37,13 +39,26 @@ export function readEditorPointerSnapshot(display: EditorDisplay, playerInput: P
 	};
 }
 
-export function prepareEditorPointerFrame(resourcePanel: ResourcePanelController, snapshot: PointerSnapshot, gotoModifierActive: boolean): boolean {
+export function prepareEditorPointerFrame(
+	resourcePanel: ResourcePanelController,
+	snapshot: PointerSnapshot,
+	gotoModifierActive: boolean,
+	workbenchInputBlocked: boolean,
+): boolean {
 	if (!gotoModifierActive) {
 		clearGotoHoverHighlight();
 	}
-	updateTabHoverState(snapshot);
+	if (workbenchInputBlocked) {
+		// An exclusive input surface ends lower gestures; it never suspends a
+		// captured drag to resume later with the popup's release/cancel press.
+		endTabDrag();
+		editorChromeState.tabHoverId = null;
+		editorChromeState.resourcePanelResizing = false;
+	} else {
+		updateTabHoverState(snapshot);
+	}
 	editorPointerState.lastPointerSnapshot = snapshot.valid ? snapshot : null;
-	if (!snapshot.valid) {
+	if (!snapshot.valid || workbenchInputBlocked) {
 		editorViewState.scrollbarController.cancel();
 		editorPointerState.lastPointerRowResolution = null;
 		clearGotoHoverHighlight();
@@ -60,11 +75,9 @@ export function prepareEditorPointerFrame(resourcePanel: ResourcePanelController
 	if (!snapshot.primaryPressed) {
 		editorSearchState.field.pointerSelecting = false;
 		symbolSearchState.field.pointerSelecting = false;
-		resourceSearchState.field.pointerSelecting = false;
 		lineJumpState.field.pointerSelecting = false;
 		createResourceState.field.pointerSelecting = false;
 		symbolSearchState.hoverIndex = -1;
-		resourceSearchState.hoverIndex = -1;
 	}
 	return false;
 }
