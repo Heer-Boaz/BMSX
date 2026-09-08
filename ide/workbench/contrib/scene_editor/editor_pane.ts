@@ -23,6 +23,7 @@ import { drawSceneEditor, layoutSceneEditor } from './render';
 export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInput> {
 	public readonly controls: readonly IntegerInput[];
 	private status = '';
+	private boundVersion = 0;
 
 	public constructor(resourcePanel: ResourcePanelController,
 		private readonly controller: SceneEditorController,
@@ -53,7 +54,8 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 	}
 
 	public override update(): void {
-		const changed = this.controller.refresh(this.input);
+		this.controller.refresh(this.input);
+		const changed = this.boundVersion !== this.input.version;
 		if (changed) this.bindProperties();
 		layoutSceneEditor(this.input, changed);
 		this.status = SOURCE_STATUS[getTextFileRuntimeSourceStatus(this.sources, this.input.workingCopy)];
@@ -80,6 +82,7 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 			previous.next = this.focusTarget;
 			this.focusTarget.previous = previous;
 		}
+		this.boundVersion = this.input.version;
 	}
 
 	private select(index: number): void {

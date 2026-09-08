@@ -22,7 +22,7 @@ export async function openSceneEditor(test: StudioFixture): Promise<SceneEditorI
 	return input;
 }
 
-async function selectMember(test: StudioFixture, input: SceneEditorInput, index: number): Promise<void> {
+export async function selectMember(test: StudioFixture, input: SceneEditorInput, index: number): Promise<void> {
 	const layout = input.members.layout;
 	const top = layout.contentTop + (index - input.members.scroll) * layout.rowHeight;
 	await test.click({ left: layout.contentLeft, right: layout.contentRight, top, bottom: top + layout.rowHeight });
@@ -140,7 +140,7 @@ export async function testSceneSourceEdits(test: StudioFixture): Promise<void> {
 	await openSceneEditor(test);
 	await selectMember(test, scene, 1);
 	check(scene.members.rows[0].label === scene.members.rows[1].label
-		&& scene.members.rows[0].sourceId !== scene.members.rows[1].sourceId, 'scene: repeated source expressions remain distinct view elements');
+		&& scene.members.rows[0].entry.field !== scene.members.rows[1].entry.field, 'scene: repeated source expressions retain their distinct syntax fields');
 	await click(scene.properties[0].bounds);
 	await press('Digit5');
 	await press('Enter');
@@ -179,6 +179,7 @@ export async function testSceneSourceEdits(test: StudioFixture): Promise<void> {
 	const readonlyScene = await openSceneEditor(test);
 	check(readonlyScene.workingCopy === generated && generated.readOnly && readonlyScene.members.rows.length === 0,
 		'scene: readonly non-scene source does not invent a scene or an edit route');
+	check(!ide.editor.commands.isEnabled('sceneEditor.removeMember'), 'scene: readonly source does not admit Remove');
 	await press('Tab');
 	await press('Digit7');
 	await press('ControlLeft', 'KeyZ');

@@ -1,5 +1,6 @@
 import type { PieceTreeNode } from './piece_tree_buffer';
 import type { CodeEditorViewSnapshot } from '../../common/models';
+import type { EditorTextChange } from './text_change';
 
 export type TextUndoKind = 'insert' | 'delete' | 'replace';
 
@@ -47,4 +48,18 @@ export class EditorUndoRecord {
 	public afterViewState: CodeEditorViewSnapshot | null = null;
 	public beforeStateId = 0;
 	public afterStateId = 0;
+
+	/** Immutable, forward-oriented changes; never expose mutable undo subtrees to views. */
+	public getTextChanges(startIndex = 0, inverse = false): EditorTextChange[] {
+		const changes = new Array<EditorTextChange>(this.ops.length - startIndex);
+		for (let index = 0; index < changes.length; index += 1) {
+			const op = this.ops[inverse ? this.ops.length - 1 - index : startIndex + index];
+			changes[index] = {
+				offset: op.offset,
+				deletedLength: inverse ? op.insertedLen : op.deletedLen,
+				insertedLength: inverse ? op.deletedLen : op.insertedLen,
+			};
+		}
+		return changes;
+	}
 }

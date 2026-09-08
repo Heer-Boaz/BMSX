@@ -11,6 +11,8 @@ Live compilation now retains the six original slots before lowering. Source
 removal, Undo and reapplication run through ordinary Save & Hot Resume and
 `<init>`, preserving the live heap. This is the compiler prerequisite, **not**
 the Scene Editor Remove button or a general-purpose heap migration system.
+The subsequent UI slice and its actual pointer/draft/history proof are described
+in [`studio_scene_authoring_design.md`](studio_scene_authoring_design.md#direct-sourcemember-verwijderen-2026-09-08).
 
 ## Production references
 
@@ -159,6 +161,7 @@ sample. They are not whole-build peak memory, native tooling memory, or a
   reoccupying its coordinates. No general source-history identity service was
   introduced.
 - The actual Remove button, pending-draft admission, post-removal focus and
-  visible-selection handling remain `IDE-SCENE-MEMBER-REMOVE-01` and need their
-  own input-level proof. No unshipped button or compatibility feature flag is
-  exposed by this slice.
+  visible-selection handling belong to the separate `IDE-SCENE-MEMBER-REMOVE-01`
+  UI slice. Its input-level proof now extends the source-only capture trial
+  described above; see the scene-authoring design. The compiler slice itself
+  introduced no button or compatibility feature flag.

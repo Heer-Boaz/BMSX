@@ -1,6 +1,8 @@
 import { create_rect_bounds } from '../../../../machine/ts/common/rect';
 import type { LuaTableField } from '../../../../toolchain/ts/lua/syntax/ast';
+import type { ParsedLuaChunk } from '../../../../toolchain/ts/lua/analysis/parse';
 import type { EditorTextModel } from '../../../editor/model/text_model';
+import type { TrackedTextRange } from '../../../editor/text/text_change';
 import { resourceIdentityKey } from '../../../common/resource';
 import { WorkingCopyEditorInput } from '../../common/editor_input';
 import type { SceneEditorTabId } from '../../ui/tab/id';
@@ -12,7 +14,6 @@ import type { FullWidthWorkbenchLayout } from '../../common/layout';
 export const POSITION_AXES = ['x', 'y', 'z'] as const;
 
 export type SceneMemberRow = {
-	sourceId: string;
 	sceneLabel: string;
 	label: string;
 	displayLabel: string;
@@ -22,9 +23,11 @@ export type SceneMemberRow = {
 
 export class SceneEditorInput extends WorkingCopyEditorInput<SceneEditorTabId, 'scene_editor'> {
 	public version = 0;
+	public parsed: ParsedLuaChunk;
 	public partial = false;
 	public sceneText = '';
 	public definitionText = '';
+	public readonly selectionRange: TrackedTextRange = { start: 0, end: 0 };
 	public readonly members: WorkbenchListState<SceneMemberRow> = {
 		rows: [], selectionIndex: -1, scroll: 0, hoverIndex: -1,
 		layout: { contentLeft: 0, contentTop: 0, contentRight: 0, contentBottom: 0, rowHeight: 0, visibleRowCount: 0 },

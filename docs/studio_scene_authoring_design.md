@@ -297,13 +297,14 @@ geen tweede undo-owner. Dit vereist geen lexer-, parser- of compilerwijziging.
 | geordende `EditorTextEdit[]`, of niet-editable dynamische value | `ide/language/lua/source_edits.ts`; geen feature-local range- of tekenbewerking |
 | documentmutatie, één undo-element, saved/installed revisies | bestaand `EditorTextModel` en working-copy/apply-services |
 
-De huidige callsites zijn de literal-edittests, de Nemesis-sceneprojectietests
-en `tests/conformance/runtime_replay/studio_scene_source.ts`. Er is nog geen
-product-UI- of framecallsite; ongewijzigde frames, compiler en TS/C++-machine
-krijgen geen extra werk of state. De bron wordt alleen op een expliciete edit
+De huidige callsites zijn `SceneEditorPane`, de literal-edittests, de
+Nemesis-sceneprojectietests en
+`tests/conformance/runtime_replay/studio_scene_source.ts`. Ongewijzigde frames,
+compiler en TS/C++-machine krijgen geen extra werk of state. De bron wordt alleen op een expliciete edit
 gelezen; een ongewijzigde waarde bewaart ook exponentnotatie en creëert geen
-undo-element. Table insertion/removal/reorder blijft de aparte full-fidelity-
-syntaxgate; deze beperkte token-edit pretendeert die niet op te lossen.
+undo-element. Table insertion/reorder blijft de aparte full-fidelity-syntaxgate;
+removal heeft inmiddels zijn eigen language-owner en onderstaande UI-slice.
+Deze beperkte number/sign-tokenedit pretendeert die niet op te lossen.
 
 Productiereferenties:
 
@@ -521,6 +522,123 @@ Regressie: 872 Lua-tests geslaagd, één bestaande skip; Hot Resume 92 assertion
 IDE-typecheck, strikte architecture-boundaries, core-parity, indentation en
 `git diff --check`. De brede tests-typecheck houdt dezelfde 52 bestaande
 diagnostics als de schone `6d6e454ef`-baseline.
+
+## Direct sourcemember verwijderen (2026-09-08)
+
+`IDE-SCENE-MEMBER-REMOVE-01` sluit aan op de nu bewezen capture-layoutowner;
+het is uitsluitend IDE-werk. Geen wijzigingen aan machine, C++, cartlib of de
+Lua-definitie van een cart. Het contract vóór de UI-diff:
+
+- De sourceprojectie bewaart het echte `LuaTableField`, niet een afgeleid
+  verwijderbereik. Eén `ParsedLuaChunk` uit de bestaande analysis-cache voedt
+  de semantic projectie, syntaxadmission en language-owned separatorverwijdering.
+- De normale `sceneEditor.title`-menubijdrage levert Remove. De bestaande
+  sourcecommand-admission accepteert het gefocuste integerdraft vóór ranges
+  worden gelezen. Ongeldige menselijke tekst blijft zichtbaar en gefocust;
+  verwijderen begint niet. Readonly, recovered syntax, geen selectie en een
+  geselecteerde dynamische compositie bieden geen structurele mutatie aan.
+- Na acceptatie herleest de controller de actuele sourcegeneratie. Eén
+  `EditorTextModel.pushEditOperations` verwijdert het complete veld plus zijn
+  volgende separator; exterior comments/whitespace blijven exact staan. Een
+  geaccepteerde property is een eigen voorafgaande document-Undo-eenheid.
+- Focus gaat vóór verwijderen naar het concrete pane dat documenthistorie
+  bezit. De verwijderde selectie wordt expliciet gewist; een gelijknamige
+  overlevende rij wordt niet ongevraagd de nieuwe edit-target. Alleen de eerste
+  projectie selecteert automatisch de eerste rij. Undo/Redo veranderen dezelfde
+  bron, niet een tweede scenegraph of een apart selectie-undo-model.
+- Selectie volgt een bronbereik via de werkelijke textmodelwijzigingen, niet de
+  label-/outline-id. De eerste productproef vond anders een echte fout bij
+  Remove → Undo → gelijknamige rij selecteren → Redo. De documentowner
+  publiceert nu replacementlengtes in toepassingsvolgorde, ook voor inverse
+  geschiedenis en alleen het nieuwe gedeelte van een coalesced type-edit.
+  De gedeelde text-owner mapt één retained bronspan per open scene-input;
+  volledige vervanging/deletie klapt het bereik dicht. De bestaande
+  model-servicecallback onderhoudt dit ook bij een verborgen sceneview, zonder
+  nieuwe inputabonnementen, een render-diff of een tweede selectiehistorie.
+  De oude label-/range-idgenerator en zijn `Set` zijn verwijderd: de lijst heeft
+  naast zijn syntaxfields en tracked selectie geen synthetische ids nodig.
+- Het pane onthoudt de bronversie waaraan zijn controls zijn gebonden. Zo kan
+  command-admission de projectie synchroniseren zonder de daaropvolgende
+  control-/layoutupdate weg te nemen. Stabiele frames behouden parse, rijen,
+  controls en layout; geen nieuwe frame-loop of worldtickwerk.
+- Save en Hot Resume blijven de normale bronroute. `<init>` verandert de
+  definitie voor toekomstige instanties, niet de reeds levende actor. De
+  capture-layoutchecks blijven actief, zonder reboot of dummycapture als uitweg.
+
+Voor de concrete operatie zijn deze productie-implementaties opnieuw gelezen:
+
+- [VS Code notebook `runDeleteAction`](https://github.com/microsoft/vscode/blob/48ac1875628144c02d79ff412e0323af9991dfc7/src/vs/workbench/contrib/notebook/browser/controller/cellOperations.ts#L123-L186):
+  structurele wijziging via het documentmodel; focus en selectie zijn onderdeel
+  van de operatie, niet een bijwerking van toevallige nieuwe arrayindices.
+- [Godot `SceneTreeDock::_delete_confirm`](https://github.com/godotengine/godot/blob/6a0f6f32cfb2ce4cc5bad6641d0afda413b62a9d/editor/docks/scene_tree_dock.cpp#L2933-L3040):
+  eigen Undo-actie en het loskoppelen van de inspector na verwijderen.
+- [Godot `EditorData::apply_changes_in_editors`](https://github.com/godotengine/godot/blob/6a0f6f32cfb2ce4cc5bad6641d0afda413b62a9d/editor/editor_data.cpp#L427-L431):
+  concrete editors leveren hun pending waarden vóór sourceconsumptie. BMSX
+  gebruikt daarvoor de reeds gebouwde `InputEdit`-/commandroute.
+- [VS Code `IModelContentChangedEvent`](https://github.com/microsoft/vscode/blob/48ac1875628144c02d79ff412e0323af9991dfc7/src/vs/editor/common/textModelEvents.ts#L40-L86)
+  en [`nodeAcceptEdit`](https://github.com/microsoft/vscode/blob/48ac1875628144c02d79ff412e0323af9991dfc7/src/vs/editor/common/model/intervalTree.ts#L398-L490):
+  de documentowner levert concrete changes en source-markers volgen die
+  changes. BMSX gebruikt `NeverGrowsWhenTypingAtEdges` plus
+  `collapseOnReplaceEdit`, zonder VS Codes complete decoration-/intervaltree.
+  BMSX-history publiceert zijn opeenvolgende bewerkingen in echte applicatievolgorde,
+  niet alsof elke inverse offset nog naar hetzelfde beginsnapshot verwijst.
+
+Niet overgenomen: Godots live-nodeverwijdering, selectierescue, force-redraw-hack
+of een notebookdocument naast Lua. De BMSX-owner blijft het Lua-textdocument.
+De productproef doorloopt de werkelijke pointer-, draft-, Undo/Redo- en
+Save & Hot Resume-route op software, WebGL2 en WebGPU; types en syntax-unittests
+zijn daarvoor geen vervanging.
+
+### Bewijs en kosten
+
+`tests/conformance/runtime_replay/studio_scene_removal.ts` vervangt de eerdere
+source-only capturetrial door de normale Remove-hit-target. Zij bewaart ook de
+vier echte source-installaties en hun capture-/actoridentitychecks. Bewezen:
+
+- een ongeldige draft blokkeert Remove met veldfocus en zichtbare fout;
+- een geldige x=18-draft wordt vóór de structurele edit geaccepteerd; een
+  vastgehouden pointer verwijdert precies één volledig gegroepeerd member en
+  zijn separator, met exterior comments/whitespace exact behouden;
+- document-Undo herstelt eerst de verwijderde bron mét x=18, daarna pas de
+  propertyacceptatie; Redo, lege inspector/focusroute en no-selection-admission
+  gebruiken dezelfde histories en controls;
+- gelijknamige members blijven ook bij reselection → Redo correct; een verborgen
+  sceneview volgt zijn bronbereik door een voorafgaande code-edit en zijn Undo;
+- laatste/enige members verwijderen laat de lijst leeg en de inspector zonder
+  editable controls; één Undo per member herstelt de oorspronkelijke bron;
+- recovered syntax, readonly en geselecteerde dynamische source worden niet
+  structureel gewijzigd; een ander direct member in een partial compositie
+  blijft beschikbaar;
+- Remove → Save & Hot Resume → Undo → reapply → Undo bewaart de oorspronkelijke
+  zes capture-cellen en de levende Nemesis-actor. Geen guest-disposal of
+  impliciete reboot. De bestaande daaropvolgende property-/reboot-/rewind-/
+  foutreparatieproeven en de echte workspace-file-API blijven onderdeel van de run.
+
+De vereenvoudigde non-growing marker-mapping is apart vergeleken met de
+ongewijzigde `nodeAcceptEdit`-functie uit de hierboven gepinde VS Code-revisie:
+**569.772 combinaties**, allemaal gelijk (niet-lege ranges in documenten van
+1–16 code-units, insertielengtes 0–6). De repositorytests dekken ook de
+eventvolgorde, meerdere edits per batch, inverse/coalesced geschiedenis,
+retentie van events en volledige revert/restore. De mapping introduceert geen
+syntaxheuristiek of matcher op namen.
+
+Alleen echte documentmutaties maken de immutable event-array en één record met
+offset/deletielengte/insertielengte per replacement. Geen extra brontekstkopie.
+Stabiele zichtbare frames behouden dezelfde parse, rijen en controls; de oude
+synthetische idgenerator vervalt. Een kleine Node 22.23.1-proef (3 warmups,
+9 samples, 10.000 single-value textmodelbatches met één listener) mat een mediaan
+van **4,78 ms vóór / 5,32 ms na** de nieuwe change-events. Dit is alleen
+textmodel-eventkost, niet totale IDE-/GPU- of guestperformance; de machine- en
+worldtickpaden veranderen niet.
+
+Regressie: **927 Lua-tests geslaagd**, één bestaande skip; IDE-typecheck groen.
+De tests-projecttypecheck heeft exact dezelfde **52 bestaande diagnostics** als
+de schone baseline. Strikte architecture-boundaries, core-parity, indentation,
+productbuild en `git diff --check` slagen. Alle drie de browserbackends slagen
+met fault-gated output en bytegelijke eindbeelden; software is visueel bekeken.
+Artefacten: `/tmp/bmsx-scene-remove/` (inclusief de eerst falende Redo-proef,
+de referentie-oracle, microbenchmark en de complete browserproef).
+Geen C++-/cartlib-/compiler-/ROMwijziging; geen nieuwe native-runtimeclaim.
 
 ## No-go's
 

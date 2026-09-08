@@ -4,10 +4,11 @@ import { test } from 'node:test';
 
 import type { RuntimeResource } from '../../ide/common/resource';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
-import { createLuaTableFieldIntegerEdits } from '../../ide/language/lua/source_edits';
+import { createLuaTableFieldIntegerEdits, createLuaTableFieldRemovalEdits, readLuaSourceRange } from '../../ide/language/lua/source_edits';
 import { buildSceneSourceDocument } from '../../ide/workbench/contrib/scene_editor/source';
 import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
 import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
+import { getCachedLuaParse } from '../../toolchain/ts/lua/analysis/cache';
 
 function luaResource(path: string): RuntimeResource {
 	return {
@@ -115,4 +116,29 @@ test('scene source adapter accepts only direct definitions through immutable mod
 		assert.equal(object.position!.z.value.kind, LuaSyntaxKind.UnaryExpression);
 	}
 	assert.equal(document.scenes[0].objects[1].kind, 'dynamic');
+});
+
+test('scene members retain complete parser fields for source-only removal and document history', () => {
+	const path = 'scene.lua';
+	const member = "(( --[[inside]] { member_id = 'hero', definition_id = 'player' }))";
+	const source = "local scenes<const> = require('cartlib/world/scene_library')\n"
+		+ "scenes.register('root', { objects = {\n\t-- before\n\t" + member
+		+ " -- exterior , ;\n\t; -- after\n\tbuild_object(),\n} })";
+	const model = new EditorTextModel(luaResource(path), 'lua', source);
+	const parsed = getCachedLuaParse({ path, source }).parsed;
+	const document = buildSceneSourceDocument(model.resource, buildLuaFileSemanticData(source, path, parsed));
+	const [direct, dynamic] = document.scenes[0].objects;
+	assert.equal(direct.kind, 'object');
+	assert.equal(readLuaSourceRange(model.buffer, direct.field.range), member);
+	assert.equal(dynamic.kind, 'dynamic');
+	assert.equal(readLuaSourceRange(model.buffer, dynamic.field.range), 'build_object()');
+	assert.equal(document.scenes[0].resolution, 'partial');
+	model.pushEditOperations(createLuaTableFieldRemovalEdits(model.buffer, parsed.tokens, direct.field));
+	const removed = source.replace(member, '').replace('\t; -- after', '\t -- after');
+	assert.equal(model.buffer.getText(), removed);
+	assert.equal(getCachedLuaParse({ path, source: removed }).syntaxError, null);
+	model.undo();
+	assert.equal(model.buffer.getText(), source);
+	model.redo();
+	assert.equal(model.buffer.getText(), removed);
 });

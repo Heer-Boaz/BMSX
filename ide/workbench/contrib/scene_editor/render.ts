@@ -52,6 +52,7 @@ export function drawSceneEditor(input: SceneEditorInput, controls: readonly Inte
 			members.layout.contentRight, y + rowHeight, 0, constants.COLOR_RESOURCE_PANEL_HIGHLIGHT);
 		api.blit_text_inline_with_font(members.rows[index].displayLabel, 4, y + 2, 0, color, font);
 	}
+	if (members.selectionIndex === -1) return;
 	const x = layout.detailsLeft + 4;
 	api.blit_text_inline_with_font(input.sceneText, x, layout.top + rowHeight * 2 + 2, 0, color, font);
 	api.blit_text_inline_with_font(input.definitionText, x, layout.top + rowHeight * 3 + 2, 0, color, font);

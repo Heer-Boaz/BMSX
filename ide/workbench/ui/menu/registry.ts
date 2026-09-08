@@ -62,5 +62,8 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'scenarioLab.rerun' },
 		{ type: 'command', command: 'scenarioLab.cancel' },
 	],
-	'sceneEditor.title': [{ type: 'command', command: 'sceneEditor.source' }],
+	'sceneEditor.title': [
+		{ type: 'command', command: 'sceneEditor.source' },
+		{ type: 'command', command: 'sceneEditor.removeMember' },
+	],
 };

@@ -45,6 +45,7 @@ export type EditorScenarioLabCommandId =
 export type EditorCommandId =
 	| 'undo'
 	| 'redo'
+	| 'sceneEditor.removeMember'
 	| EditorSearchCommandId
 	| EditorSymbolNavigationCommandId
 	| EditorViewCommandId

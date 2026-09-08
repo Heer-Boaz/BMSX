@@ -13,7 +13,7 @@ export type SceneSourcePosition = {
 
 export type SceneSourceObject = {
 	readonly kind: 'object';
-	readonly range: LuaSourceRange;
+	readonly field: LuaTableField;
 	readonly memberId: LuaExpression;
 	readonly definitionId: LuaExpression;
 	readonly position: SceneSourcePosition | null;
@@ -21,8 +21,7 @@ export type SceneSourceObject = {
 
 export type SceneSourceDynamicObject = {
 	readonly kind: 'dynamic';
-	readonly range: LuaSourceRange;
-	readonly expression: LuaExpression;
+	readonly field: LuaTableField;
 };
 
 export type SceneSourceEntry = SceneSourceObject | SceneSourceDynamicObject;

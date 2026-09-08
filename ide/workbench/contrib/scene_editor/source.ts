@@ -2,6 +2,7 @@ import {
 	LuaSyntaxKind,
 	LuaTableFieldKind,
 	type LuaTableConstructorExpression,
+	type LuaTableField,
 } from '../../../../toolchain/ts/lua/syntax/ast';
 import { findNamedLuaTableField } from '../../../../toolchain/ts/lua/syntax/table_fields';
 import type { FileSemanticData, LuaCallSite } from '../../../../toolchain/ts/lua/semantic/model';
@@ -78,22 +79,21 @@ function collectSceneObjects(objects: LuaTableConstructorExpression): {
 		if (field.value.kind !== LuaSyntaxKind.TableConstructorExpression) {
 			entries.push({
 				kind: 'dynamic',
-				range: field.range,
-				expression: field.value,
+				field,
 			});
 			complete = false;
 			continue;
 		}
-		const object = buildSceneObject(field.value);
+		const object = buildSceneObject(field, field.value);
 		entries.push(object === null
-			? { kind: 'dynamic', range: field.range, expression: field.value }
+			? { kind: 'dynamic', field }
 			: object);
 		complete = complete && object !== null;
 	}
 	return { entries, complete };
 }
 
-function buildSceneObject(table: LuaTableConstructorExpression): SceneSourceObject | null {
+function buildSceneObject(field: LuaTableField, table: LuaTableConstructorExpression): SceneSourceObject | null {
 	const memberId = findNamedLuaTableField(table, 'member_id');
 	const definitionId = findNamedLuaTableField(table, 'definition_id');
 	if (memberId === null || definitionId === null) {
@@ -102,7 +102,7 @@ function buildSceneObject(table: LuaTableConstructorExpression): SceneSourceObje
 	const options = findNamedLuaTableField(table, 'options');
 	return {
 		kind: 'object',
-		range: table.range,
+		field,
 		memberId: memberId.value,
 		definitionId: definitionId.value,
 		position: options !== null && options.value.kind === LuaSyntaxKind.TableConstructorExpression

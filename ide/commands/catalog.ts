@@ -29,6 +29,7 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	scenarioLab: { title: 'Scenario Lab' },
 	sceneEditor: { title: 'Scene Editor' },
 	'sceneEditor.source': { title: 'Source' },
+	'sceneEditor.removeMember': { title: 'Remove' },
 	filter: { title: 'All Resources', activeTitle: 'Lua Files Only' },
 	wrap: { title: 'Word Wrap' },
 	'hot-resume': { title: 'Hot Resume' },

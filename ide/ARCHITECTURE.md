@@ -227,18 +227,22 @@ well as their interiors. The remaining syntax gates and measured costs are in
 [`../docs/lua_source_syntax_design.md`](../docs/lua_source_syntax_design.md).
 Scene, BT and FSM contributions must not grow their own comma/comment scanners.
 
-The Scene Editor Remove action is not shipped. Its actual Nemesis product
-trial exposed a separate compiler/linker closure-layout limitation: removing
-the title member removes a capture and shifts another live capture slot.
-Compiler-owned capture provenance now reaches TS/C++ debug symbols through
-indexed declaration records, rather than a name-only array. This does not yet
-preserve slots across revisions; see
-[`../docs/lua_capture_identity_design.md`](../docs/lua_capture_identity_design.md).
-Ordinary Hot Resume correctly rejects that incompatible layout. The syntax
-primitive does not bypass this guard, restart execution, mutate a living actor
-or add a dummy cartlib dependency to make an editor command appear to work.
-Capture correspondence and live-cell identity must be resolved at their owners
-before the complete Remove/Save/Hot Resume workflow can be delivered.
+The Scene Editor's Remove action consumes that language-owned field removal.
+It shares the current parse with semantic analysis and is unavailable for
+readonly documents, recovered syntax, no selection or a selected dynamic
+composition. The workbench's source-command admission accepts the focused
+property before the controller reads the new source ranges. An invalid draft
+keeps its focus and error; an accepted property and the structural edit are
+separate ordinary document-Undo elements. Removing a member focuses document
+history and clears the inspector selection, without deleting a living actor.
+
+Its original Nemesis trial exposed a separate compiler/linker closure-layout
+limitation. That owner now retains original live capture slots before lowering;
+see [`../docs/lua_capture_identity_design.md`](../docs/lua_capture_identity_design.md).
+Ordinary Save & Hot Resume and `<init>` therefore apply the title-member removal
+and its Undo/reapplication in the same heap. The compiler's incompatibility
+checks remain active. The UI does not bypass them, restart execution, pad a
+descriptor or add a dummy cartlib dependency.
 
 The first scene source adapter edits the registered structured Lua definition
 and uses the ordinary save plus Hot Resume path. Registration changes the
@@ -251,16 +255,32 @@ generic call-by-string route, undo callback or guessed guest mutation.
 `View > Scene Editor` opens that adapter on the active Lua document. Its
 `SceneEditorInput` attaches the same `EditorTextModel` as the code input.
 The controller projects direct `scene_library.register` definitions at a new
-source version using the shared text snapshot. Selection uses source names and
-range-based disambiguation like [VS Code OutlineModel](https://github.com/microsoft/vscode/blob/48ac1875628144c02d79ff412e0323af9991dfc7/src/vs/editor/contrib/documentSymbols/browser/outlineModel.ts#L36-L54),
-not evaluated runtime ids; the pane owns member selection and document commands, and its
-three `IntegerInput` controls own unsubmitted position text. Layout, rows,
+source version using the shared text snapshot. Names are display labels, not
+selection anchors or runtime ids; the list needs no synthetic outline ids.
+Selection tracks the full field's
+source span through the text model's actual changes, including Undo/Redo while
+the scene view is hidden. A removed/replaced span collapses instead of selecting
+a surviving namesake. Only the initial projection chooses the first member.
+The pane owns document commands, and its three `IntegerInput` controls own
+unsubmitted position text. Layout, rows,
 source labels, field geometry and focus order are retained. Rendering uses the
 existing IDE tiny font and shared list/action-bar/text primitives at 384x288;
 there is no guest viewport, graph evaluation or per-frame source parse.
 Unsupported position expressions remain visible as source, partial composition
 is labelled partial, and generated documents have no edit controls. Source
 navigation uses the ordinary resource/navigation owner.
+
+`EditorTextModelContentChangeEvent.changes` describes replacements in application
+order, with offsets into each preceding change's output. History produces the
+correct inverse order and lengths; coalesced typing publishes only the newly
+committed replacements. These immutable length records never expose undo
+subtrees or duplicate source text. `editor/text/text_change.ts` implements
+non-growing, collapse-on-replace source ranges following [VS Code's marker
+mapping](https://github.com/microsoft/vscode/blob/48ac1875628144c02d79ff412e0323af9991dfc7/src/vs/editor/common/model/intervalTree.ts#L398-L490).
+The existing model-service event updates retained scene inputs, without a new
+per-input subscription/lifetime or a render-time diff. The pane separately
+remembers its bound source generation, so command-admission refresh cannot
+consume the view's pending control/layout update.
 
 ## Resource editor resolution
 

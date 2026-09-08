@@ -5,6 +5,7 @@ import { PieceTreeBuffer } from '../text/piece_tree_buffer';
 import { getTextSnapshot } from '../text/source_text';
 import type { TextBuffer } from '../text/text_buffer';
 import { EditorUndoRecord, TextUndoOp } from '../text/undo';
+import type { EditorTextChange } from '../text/text_change';
 
 export type EditorDocumentMode = 'lua' | 'aem';
 
@@ -21,6 +22,7 @@ export type EditorTextModelContentChangeEvent = {
 	version: number;
 	startRow: number;
 	editContext: EditContext | null;
+	readonly changes: readonly EditorTextChange[];
 };
 
 export type EditorTextModelSnapshot = {
@@ -201,13 +203,14 @@ export class EditorTextModel {
 		this.currentStateId = this.nextStateId;
 		this.nextStateId += 1;
 		record.afterStateId = this.currentStateId;
+		const changes = record.getTextChanges(this.pendingOpStart);
 		this.pendingOpStart = record.ops.length;
 		this.lastHistoryTimestamp = this.pendingHistoryTimestamp;
 		this.lastHistoryKey = this.pendingHistoryMerge ? this.pendingHistoryKey : null;
 		this.versionValue += 1;
 		const startRow = this.pendingStartRow;
 		this.clearPreparedEdit();
-		this.emitContentChange('edit', startRow, editContext);
+		this.emitContentChange('edit', startRow, editContext, changes);
 		this.emitDirtyChange(wasDirty);
 		return true;
 	}
@@ -245,7 +248,7 @@ export class EditorTextModel {
 		this.nextStateId += 1;
 		record.afterStateId = this.currentStateId;
 		this.versionValue += 1;
-		this.emitContentChange('edit', startRow, null);
+		this.emitContentChange('edit', startRow, null, record.getTextChanges());
 		this.emitDirtyChange(wasDirty);
 	}
 
@@ -278,7 +281,7 @@ export class EditorTextModel {
 		this.currentStateId = record.beforeStateId;
 		this.versionValue += 1;
 		this.breakUndoSequence();
-		this.emitContentChange('undo', 0, null);
+		this.emitContentChange('undo', 0, null, record.getTextChanges(0, true));
 		this.emitDirtyChange(wasDirty);
 		return record;
 	}
@@ -312,7 +315,7 @@ export class EditorTextModel {
 		this.currentStateId = record.afterStateId;
 		this.versionValue += 1;
 		this.breakUndoSequence();
-		this.emitContentChange('redo', 0, null);
+		this.emitContentChange('redo', 0, null, record.getTextChanges());
 		this.emitDirtyChange(wasDirty);
 		return record;
 	}
@@ -350,18 +353,20 @@ export class EditorTextModel {
 
 	public restoreDirtySource(source: string): void {
 		const wasDirty = this.dirty;
+		const deletedLength = this.pieceTree.length;
 		this.replaceContents(source);
 		this.currentStateId = this.nextStateId;
 		this.nextStateId += 1;
-		this.emitContentChange('restore', 0, null);
+		this.emitContentChange('restore', 0, null, [{ offset: 0, deletedLength, insertedLength: source.length }]);
 		this.emitDirtyChange(wasDirty);
 	}
 
 	public revert(): void {
 		const wasDirty = this.dirty;
+		const deletedLength = this.pieceTree.length;
 		this.replaceContents(this.lastSavedSourceValue);
 		this.currentStateId = this.savedStateId;
-		this.emitContentChange('revert', 0, null);
+		this.emitContentChange('revert', 0, null, [{ offset: 0, deletedLength, insertedLength: this.lastSavedSourceValue.length }]);
 		this.emitDirtyChange(wasDirty);
 		for (const listener of this.revertListeners) {
 			listener();
@@ -455,12 +460,13 @@ export class EditorTextModel {
 		this.pendingHistoryMerge = false;
 	}
 
-	private emitContentChange(kind: EditorTextModelChangeKind, startRow: number, editContext: EditContext | null): void {
+	private emitContentChange(kind: EditorTextModelChangeKind, startRow: number, editContext: EditContext | null, changes: readonly EditorTextChange[]): void {
 		const event: EditorTextModelContentChangeEvent = {
 			kind,
 			version: this.versionValue,
 			startRow,
 			editContext,
+			changes,
 		};
 		for (const listener of this.contentChangeListeners) {
 			listener(event);
