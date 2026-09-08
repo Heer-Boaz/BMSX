@@ -1,4 +1,5 @@
-import type { LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
+import type { FileSemanticData, LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
+import type { ResourceDomain } from '../../../common/resource';
 import type {
 	EditorLuaSemanticProject,
 	SemanticDocumentInput,
@@ -12,12 +13,13 @@ import type {
 	BehaviorKind,
 	BehaviorRegistrationSource,
 } from './model';
-import { collectBehaviorRegistrationSources } from './recognizer';
+import { collectBehaviorRegistrations } from './registrations';
 
 const EMPTY_REGISTRATION_SOURCES: readonly BehaviorRegistrationSource[] = [];
 
 type BehaviorRegistrationGeneration = {
 	readonly snapshot: LuaSemanticWorkspaceSnapshot;
+	readonly registrations: readonly BehaviorRegistrationSource[];
 	readonly sourcesByKind: ReadonlyMap<
 		BehaviorKind,
 		ReadonlyMap<string, readonly BehaviorRegistrationSource[]>
@@ -26,11 +28,9 @@ type BehaviorRegistrationGeneration = {
 
 /** Workspace-generation index for source-owned behavior registrations. */
 export class BehaviorRegistrationIndex {
-	private readonly generations: [
-		BehaviorRegistrationGeneration | null,
-		BehaviorRegistrationGeneration | null,
-	] = [null, null];
-	private readonly documentVersions = new WeakMap<EditorTextModel, number>();
+	private readonly generations = new Map<ResourceDomain, BehaviorRegistrationGeneration>();
+	private readonly files = new Map<ResourceDomain, WeakMap<FileSemanticData, readonly BehaviorRegistrationSource[]>>();
+	private readonly documentVersions = new WeakMap<EditorLuaSemanticProject, WeakMap<EditorTextModel, number>>();
 
 	public constructor(private readonly sources: RuntimeSourceState) {}
 
@@ -39,33 +39,46 @@ export class BehaviorRegistrationIndex {
 		behaviorKind: BehaviorKind,
 		semanticId: string,
 	): readonly BehaviorRegistrationSource[] {
+		return this.getGeneration(executionDomain).sourcesByKind.get(behaviorKind)?.get(semanticId)
+			|| EMPTY_REGISTRATION_SOURCES;
+	}
+
+	public getRegistrations(domain: ResourceDomain): readonly BehaviorRegistrationSource[] {
+		return this.getGeneration(domain).registrations;
+	}
+
+	private getGeneration(executionDomain: ResourceDomain): BehaviorRegistrationGeneration {
 		const project = getOrCreateSemanticProject(executionDomain);
 		project.synchronizeRuntimeSources(this.sources);
 		this.synchronizeOpenDocuments(executionDomain, project);
 		const snapshot = project.getSnapshot();
-		let generation = this.generations[executionDomain];
-		if (generation === null || generation.snapshot !== snapshot) {
+		let generation = this.generations.get(executionDomain);
+		if (generation === undefined || generation.snapshot !== snapshot) {
 			generation = this.buildGeneration(executionDomain, snapshot);
-			this.generations[executionDomain] = generation;
+			this.generations.set(executionDomain, generation);
 		}
-		return generation.sourcesByKind.get(behaviorKind)?.get(semanticId)
-			|| EMPTY_REGISTRATION_SOURCES;
+		return generation;
 	}
 
 	private synchronizeOpenDocuments(
-		executionDomain: 0 | 1,
+		executionDomain: ResourceDomain,
 		project: EditorLuaSemanticProject,
 	): void {
+		let documentVersions = this.documentVersions.get(project);
+		if (documentVersions === undefined) {
+			documentVersions = new WeakMap();
+			this.documentVersions.set(project, documentVersions);
+		}
 		let changedDocuments: SemanticDocumentInput[] | null = null;
 		for (const model of editorTextModelService.models) {
 			if (model.mode !== 'lua' || model.resource.domain !== executionDomain) {
 				continue;
 			}
 			const version = model.version;
-			if (this.documentVersions.get(model) === version) {
+			if (documentVersions.get(model) === version) {
 				continue;
 			}
-			this.documentVersions.set(model, version);
+			documentVersions.set(model, version);
 			if (changedDocuments === null) {
 				changedDocuments = [];
 			}
@@ -80,31 +93,33 @@ export class BehaviorRegistrationIndex {
 	}
 
 	private buildGeneration(
-		executionDomain: 0 | 1,
+		executionDomain: ResourceDomain,
 		snapshot: LuaSemanticWorkspaceSnapshot,
 	): BehaviorRegistrationGeneration {
+		let files = this.files.get(executionDomain);
+		if (files === undefined) {
+			files = new WeakMap();
+			this.files.set(executionDomain, files);
+		}
+		const allRegistrations: BehaviorRegistrationSource[] = [];
 		const sourcesByKind = new Map<
 			BehaviorKind,
 			Map<string, BehaviorRegistrationSource[]>
 		>();
-		const records = this.sources.cartridgeSlots[executionDomain]!.luaSources.records;
-		for (let recordIndex = 0; recordIndex < records.length; recordIndex += 1) {
-			const record = records[recordIndex];
-			if (!record.program_module || record.generated) {
-				continue;
+		for (const resource of this.sources.luaResources) {
+			if (resource.domain !== executionDomain) continue;
+			const analysis = snapshot.getFileData(resource.path)!;
+			let registrations = files.get(analysis);
+			if (registrations === undefined) {
+				registrations = collectBehaviorRegistrations(resource, analysis).registrations;
+				files.set(analysis, registrations);
 			}
-			const resource = {
-				domain: executionDomain,
-				path: record.source_path,
-			} as const;
-			const registrations = collectBehaviorRegistrationSources(
-				resource,
-				snapshot.getFileData(record.source_path)!,
-			);
 			for (let registrationIndex = 0;
 				registrationIndex < registrations.length;
 				registrationIndex += 1) {
 				const registration = registrations[registrationIndex];
+				allRegistrations.push(registration);
+				if (registration.semanticId === null) continue;
 				let sourcesById = sourcesByKind.get(registration.behaviorKind);
 				if (sourcesById === undefined) {
 					sourcesById = new Map();
@@ -118,6 +133,6 @@ export class BehaviorRegistrationIndex {
 				matchingSources.push(registration);
 			}
 		}
-		return { snapshot, sourcesByKind };
+		return { snapshot, registrations: allRegistrations, sourcesByKind };
 	}
 }

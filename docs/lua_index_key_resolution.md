@@ -42,9 +42,10 @@ allocation is introduced. The CPU, C++ machine and cartlib are unaffected.
 
 A `BehaviorSourceDocument` already contains multiple `definitions`. Each
 registration has its own behavior kind, authored identity/occurrence, row keys
-and exact source ranges. The current admission picker chooses a Lua document;
-it does not impose one FSM per file. Regression coverage must distinguish two
-FSM registrations and identically named child states in that same document.
+and exact source ranges. The document is the text-model owner, not a one-FSM
+limit. The subsequent [Behavior Quick Access](behavior_quick_access.md) slice
+replaces file-level admission with individual registration choices. Regression
+coverage distinguishes two FSMs and identically named states in one document.
 
 ## Validation
 

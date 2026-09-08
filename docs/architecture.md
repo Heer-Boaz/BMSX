@@ -4342,6 +4342,16 @@ table references do not authorize reverse-storage expansion of a key into
 unbounded equivalent access paths. See [indexed-access ownership and its
 Studio regression](lua_index_key_resolution.md).
 
+Behavior navigation is a workbench contribution over those retained source
+facts, not framework knowledge in the language service. Its Quick Input
+results are individual FSM/BT/ActionEffect registration occurrences; a Lua
+file is their source container, not the choice's identity. A shared shallow
+registration index serves discovery and runtime-id-to-source lookup, while
+the selected document alone builds its lens topology. Computed ids remain
+authored expressions. The resource-owned model and occurrence-qualified row
+key select the exact definition even when registrations share an initializer.
+See [Behavior Quick Access](behavior_quick_access.md).
+
 `RuntimeSourceState` owns one retained IDE resource identity per installed
 `(domain, path)`. That identity points at the owning `RomAsset` or
 `LuaSourceRecord`; tabs, navigation, search, workspace restore, and resource

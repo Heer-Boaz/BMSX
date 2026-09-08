@@ -306,17 +306,20 @@ export class RuntimeCartEditor implements CartEditor {
 			this.editorPanes,
 		);
 		this.sceneEditor = new SceneEditorController(this.sources, this.editorPanes, this.navigation);
+		const behaviorRegistrations = new BehaviorRegistrationIndex(this.sources);
 		this.behaviorLens = new BehaviorLensController(
 			this.sources,
 			this.navigation,
 			this.editorPanes,
+			this.quickInput,
+			behaviorRegistrations,
 		);
 		this.scenarioLab = new ScenarioLabController(
 			this,
 			this.sources,
 			this.navigation,
 			this.editorPanes,
-			new BehaviorRegistrationIndex(this.sources),
+			behaviorRegistrations,
 			scenarioTests,
 			scenarioRuns,
 			this.runtime,

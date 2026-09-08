@@ -21,6 +21,15 @@ const pressKey = async (code, pressId) => {
 	await t.frames(1);
 };
 
+let choicePressId = 1000;
+const chooseBehavior = async query => {
+	t.command('behaviorLens');
+	for (const character of query) {
+		await pressKey(character === ' ' ? 'Space' : `Key${character.toUpperCase()}`, ++choicePressId);
+	}
+	await pressKey('Enter', ++choicePressId);
+};
+
 const pressGamepad = async (code, pressId) => {
 	t.postInput({
 		type: 'button',
@@ -102,7 +111,7 @@ const sourceTab = t.activeWorkbenchTab();
 t.assert(sourceTab.kind === 'code_editor', 'Moon source did not open as a code editor input');
 const sourceTabId = sourceTab.id;
 const originalSource = sourceTab.context.model.buffer.getText();
-t.command('behaviorLens');
+await chooseBehavior('bt moon');
 await t.frames(2);
 
 const lensTab = t.activeWorkbenchTab();
@@ -191,7 +200,7 @@ t.assert(activeDocument.view.cursorRow === selectedRange.start.line - 1, 'double
 t.assert(activeDocument.view.cursorColumn === selectedRange.start.column - 1, 'double click navigated to the wrong source column');
 await releasePointer(6);
 
-t.command('behaviorLens');
+await chooseBehavior('bt moon');
 await t.frames(2);
 const reopenedTab = t.activeWorkbenchTab();
 t.assert(reopenedTab === lensTab && reopenedTab.view === view, 'reopening duplicated the Behavior Lens input or its view state');
@@ -203,7 +212,7 @@ await pressKey('Escape', 7);
 t.assert(t.activeWorkbenchTab().kind === 'code_editor', 'Escape did not return to source');
 t.replaceActiveCodeSource(`-- behavior lens refresh\n${originalSource}`);
 await t.frames(2);
-t.command('behaviorLens');
+await chooseBehavior('bt moon');
 await t.frames(2);
 
 const refreshedTab = t.activeWorkbenchTab();
@@ -219,7 +228,7 @@ t.assert(
 await pressKey('Escape', 8);
 t.openLuaSource('player/player.lua');
 await t.frames(2);
-t.command('behaviorLens');
+await chooseBehavior('fsm ids player');
 await t.frames(2);
 
 const fsmTab = t.activeWorkbenchTab();
@@ -241,7 +250,7 @@ await pressKey('Enter', 60);
 t.assert(t.activeWorkbenchTab().kind === 'code_editor', 'activating the concurrent state did not return to source');
 t.assert(t.activeEditorDocument().view.cursorRow === projectilesState.authoredRange.start.line - 1, 'concurrent state navigated to the wrong line');
 
-t.command('behaviorLens');
+await chooseBehavior('fsm ids player');
 await t.frames(2);
 const reopenedFsmView = t.activeWorkbenchTab().view;
 const activeStateIndex = reopenedFsmView.rows.findIndex(row => row.node.kind === 'state' && row.node.label === 'active');
@@ -263,7 +272,7 @@ t.assert(t.activeEditorDocument().view.cursorRow === flyingState.authoredRange.s
 
 t.openLuaSource('player/actioneffects.lua');
 await t.frames(2);
-t.command('behaviorLens');
+await chooseBehavior('effect fire salvo');
 await t.frames(2);
 
 const effectTab = t.activeWorkbenchTab();

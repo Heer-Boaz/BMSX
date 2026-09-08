@@ -8,6 +8,7 @@ import { TOP_BAR_MENUS, type TopBarMenuItem } from '../../../ide/workbench/ui/to
 import { selectedBehaviorLensSourceRange } from '../../../ide/workbench/contrib/behavior_lens/navigation';
 import type { EditorViewCommandId } from '../../../ide/common/commands';
 import { check, type StudioFixture } from './studio_fixture';
+import { chooseBehavior } from './studio_behavior_picker';
 
 async function openView(test: StudioFixture, command: EditorViewCommandId): Promise<void> {
 	await test.click(editorChromeState.menuEntryBounds.view);
@@ -64,7 +65,7 @@ export async function testStudioNavigation(test: StudioFixture): Promise<void> {
 		'navigation: Source reveals the selected scene syntax in root.lua, not cart.lua');
 	await openView(test, 'sceneEditor');
 	await openView(test, 'behaviorLens');
-	await chooseSource(test, 'title_screen.lua');
+	await chooseBehavior(test, 'FSM nemesis_s.title_screen.fsm');
 	const lens = getActiveTab();
 	if (lens.kind !== 'behavior_lens') throw new Error('navigation: selected lens input missing');
 	check(lens.title === 'BEHAVIOR LENS' && lens.view.document.definitions.length > 0,
@@ -76,6 +77,7 @@ export async function testStudioNavigation(test: StudioFixture): Promise<void> {
 		&& activeCodeEditor.view.cursorRow === sourceRange.start.line - 1,
 		'navigation: visible Lens Source action reveals the selected FSM source range');
 	await openView(test, 'behaviorLens');
+	await chooseBehavior(test, 'FSM nemesis_s.title_screen.fsm');
 	closeTab(ide.editor.editorPanes, ide.sources, code.id);
 	await frame();
 	check(getActiveTab() === lens, 'navigation: lens remains attached when its code tab closes');
@@ -85,7 +87,7 @@ export async function testStudioNavigation(test: StudioFixture): Promise<void> {
 	check(getActiveTab() === scene, 'navigation: Scenario Lab opens the same retained scene model');
 	await openView(test, 'scenarioLab');
 	await openView(test, 'behaviorLens');
-	await chooseSource(test, 'title_screen.lua');
+	await chooseBehavior(test, 'FSM nemesis_s.title_screen.fsm');
 	check(getActiveTab() === lens, 'navigation: Scenario Lab opens the retained lens without a code-tab requirement');
 	check(cycles() === position, 'navigation: choosing sources does not mutate or run the paused machine');
 	harness.openLuaSource('scenes/root.lua');

@@ -16,9 +16,10 @@
 1. Context menus offer the existing source commands for identifiers; the language
    service owns definition/reference/rename results, not a UI builtin-name list.
 2. Source views consume `EditorTextModel`, independently of code-pane lifetime.
-   From a supported active source, View opens its projection. Otherwise View
-   explicitly offers matching Lua documents in the workbench Quick Pick, using
-   the existing recognizers and current unsaved text. No guessed entry file,
+   Scene admission opens a supported active source or offers matching Lua
+   documents. Behavior Lens instead always offers individual FSM/BT/ActionEffect
+   registrations, using the shared source index and current unsaved text; see
+   [Behavior Quick Access](behavior_quick_access.md). No guessed entry file,
    runtime object walk, source execution or extra authored database.
 3. Tab titles name the tools: Scene Editor and Behavior Lens. The view header
    identifies the actual source. Both have a visible Source action that opens

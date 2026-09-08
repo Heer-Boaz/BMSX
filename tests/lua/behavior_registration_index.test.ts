@@ -9,6 +9,10 @@ import {
 } from '../../ide/runtime/source_registry';
 import { resolveRuntimeResource } from '../../ide/runtime/sources';
 import { BehaviorRegistrationIndex } from '../../ide/workbench/contrib/behavior_lens/registration_index';
+import { buildBehaviorQuickPickItems } from '../../ide/workbench/contrib/behavior_lens/quick_access';
+import { buildBehaviorSourceDocument } from '../../ide/workbench/contrib/behavior_lens/recognizer';
+import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
+import { QuickPickModel } from '../../ide/workbench/services/quick_input/model';
 import {
 	clearCodeEditorInputs,
 	createLuaCodeTabContext,
@@ -48,6 +52,82 @@ function sourceRegistry(projectRootPath: string, records: readonly LuaSourceReco
 	}
 	return registry;
 }
+
+test('behavior picks preserve registration occurrences, kinds, domains and unresolved authored ids', (t) => {
+	const path = 'actors.lua';
+	const source = [
+		"local fsm<const> = require('cartlib/fsm/library')",
+		"local bt<const> = require('cartlib/behaviour_tree/library')",
+		"local id<const> = 'shared'",
+		'local blueprint<const> = { states = { idle = {} } }',
+		'fsm.register(id, blueprint)',
+		'fsm.register(id, blueprint)',
+		"bt.register(id, { root = { type = 'task' } })",
+		'fsm.register(build_id(), {})',
+		'fsm.register(',
+	].join('\n');
+	const slot1 = "local fsm<const> = require('cartlib/fsm/library')\nfsm.register('shared', {})";
+	const sources = createTestRuntimeSourceState(
+		sourceRegistry('machine/bios', [luaSource('system.lua', 'return true')]),
+		[
+			sourceRegistry('carts/game', [luaSource(path, source), luaSource('other.lua', 'return true')]),
+			sourceRegistry('carts/extension', [luaSource(path, slot1)]),
+		],
+		0,
+	);
+	t.after(() => {
+		clearCodeEditorInputs();
+		editorTextModelService.clear();
+		resetSemanticProjects();
+	});
+	const index = new BehaviorRegistrationIndex(sources);
+	const registrations = index.getRegistrations(0);
+	const definitionKeys = buildBehaviorSourceDocument({ domain: 0, path }, buildLuaFileSemanticData(source, path))
+		.definitions.map(node => node.rowKey);
+	assert.deepEqual(registrations.map(registration => registration.rowKey), definitionKeys);
+	assert.equal(new Set(definitionKeys).size, 5);
+	assert.deepEqual(registrations.map(registration => registration.semanticId), ['shared', 'shared', 'shared', null, null]);
+	assert.deepEqual(index.resolve(0, 'state_machine', 'shared'), registrations.slice(0, 2));
+	assert.deepEqual(index.resolve(0, 'behavior_tree', 'shared'), [registrations[2]]);
+	assert.deepEqual(index.resolve(0, 'state_machine', 'build_id()'), []);
+	assert.strictEqual(index.getRegistrations(0), registrations);
+	const items = buildBehaviorQuickPickItems(sources, index);
+	assert.equal(items.length, 6);
+	assert.equal(items[0].label, 'BT shared', 'picks sort by behavior label, not source-file or registration order');
+	assert.ok(items.every(item => item.description === path));
+	const firstFsm = items.find(item => item.registration === registrations[0])!;
+	const secondFsm = items.find(item => item.registration === registrations[1])!;
+	const slot1Fsm = items.find(item => item.registration.resource.domain === 1)!;
+	assert.notEqual(firstFsm.detail, secondFsm.detail);
+	assert.notEqual(firstFsm.detail, slot1Fsm.detail);
+	const picker = new QuickPickModel();
+	picker.setItems(items);
+	picker.filter('FSM shared');
+	assert.equal(picker.list.rows.length, 3);
+	picker.filter('BT shared');
+	assert.equal(picker.list.rows.length, 1);
+	assert.strictEqual(picker.list.rows[0].item, items[0]);
+	assert.equal(slot1Fsm.detail, 'SLOT 1 / 2:14');
+	picker.filter('actors.lua 2:14');
+	assert.equal(picker.list.rows.length, 1);
+	assert.strictEqual(picker.list.rows[0].item, slot1Fsm);
+	picker.filter('not_a_behavior');
+	assert.equal(picker.list.selectionIndex, -1);
+
+	const other = editorTextModelService.retain(resolveRuntimeResource(sources, { domain: 0, path: 'other.lua' })!, 'lua', 'return true');
+	other.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- unrelated\n' }]);
+	assert.notStrictEqual(index.getRegistrations(0), registrations);
+	assert.strictEqual(index.getRegistrations(0)[0], registrations[0], 'unchanged file retains its shallow registration objects');
+	const model = editorTextModelService.retain(resolveRuntimeResource(sources, { domain: 0, path })!, 'lua', source);
+	model.pushEditOperations([{ offset: source.indexOf("'shared'"), deleteLength: 8, text: "'renamed'" }]);
+	assert.equal(index.getRegistrations(0)[0].label, 'FSM renamed');
+	assert.deepEqual(index.resolve(0, 'state_machine', 'shared'), []);
+	assert.equal(index.resolve(1, 'state_machine', 'shared').length, 1);
+	resetSemanticProjects();
+	assert.equal(index.getRegistrations(0)[0].label, 'FSM renamed', 'a new semantic project still consumes dirty retained models');
+	model.undo();
+	assert.equal(index.getRegistrations(0)[0].label, 'FSM shared');
+});
 
 test('behavior registration index resolves separate FSM ids in the same Lua document', (t) => {
 	const path = 'actors.lua';

@@ -20,7 +20,9 @@ export type BehaviorSourceResolution = 'complete' | 'partial' | 'unresolved';
 export type BehaviorRegistrationSource = {
 	readonly resource: ResourceIdentity;
 	readonly behaviorKind: BehaviorKind;
-	readonly semanticId: string;
+	readonly semanticId: string | null;
+	readonly label: string;
+	readonly rowKey: BehaviorSourceRowKey;
 	readonly range: LuaSourceRange;
 };
 

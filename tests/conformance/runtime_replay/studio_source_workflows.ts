@@ -4,6 +4,7 @@ import { getTextFileRuntimeSourceStatus } from '../../../ide/workbench/services/
 import { closeTab, getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { editorFeedbackState } from '../../../ide/common/feedback_state';
 import { check, type StudioFixture } from './studio_fixture';
+import { chooseBehavior } from './studio_behavior_picker';
 
 /** W04 uses actual text commands and the existing read-only source lens, not a second authored format. */
 export async function testSourceViewsBeforeApply(
@@ -24,6 +25,7 @@ export async function testSourceViewsBeforeApply(
 	check(model.dirty && status() === 'pending', 'W04: typing immediately differs from both saved and installed source');
 	const sourceTab = getActiveTab();
 	harness.executeCommand('behaviorLens');
+	await chooseBehavior(test, 'FSM nemesis_s.title_screen.fsm');
 	await frame();
 	const lens = getActiveTab();
 	if (lens.kind !== 'behavior_lens') throw new Error('W04: source lens command must open a visual view');
@@ -39,6 +41,7 @@ export async function testSourceViewsBeforeApply(
 	await until(() => !model.dirty, 'W04: actual workspace save completes');
 	check(model.lastSavedSource === edited && status() === 'pending', 'W04: saved source is not automatically installed code');
 	harness.executeCommand('behaviorLens');
+	await chooseBehavior(test, 'FSM nemesis_s.title_screen.fsm');
 	await frame();
 	check(getActiveTab() === lens && lens.view.sourceVersion === model.version, 'W04: the retained source lens refreshes after undo and redo');
 	closeTab(ide.editor.editorPanes, ide.sources, sourceTab.id);

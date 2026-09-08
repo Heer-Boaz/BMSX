@@ -1,5 +1,6 @@
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { check, type StudioFixture } from './studio_fixture';
+import { chooseBehavior } from './studio_behavior_picker';
 
 /** Source reveal must survive the automatically scheduled semantic query, not just place the cursor. */
 export async function testStudioBehaviorNavigation(test: StudioFixture): Promise<void> {
@@ -8,7 +9,7 @@ export async function testStudioBehaviorNavigation(test: StudioFixture): Promise
 	console.info('STUDIO: Moon timeline source reveal and automatic signature help');
 	harness.openLuaSource('cart.lua');
 	await runPaletteCommand('View: Behavior Lens');
-	check(ide.editor.quickInput.visible, 'behavior navigation: palette opens source admission');
+	check(ide.editor.quickInput.visible, 'behavior navigation: palette offers behavior registrations');
 	clipboard.text = 'moon_death_ray';
 	await press('ControlLeft', 'KeyV');
 	check(ide.editor.quickInput.model.list.rows.length === 1, 'behavior navigation: actual Moon source is selected');
@@ -46,6 +47,7 @@ export async function testStudioBehaviorNavigation(test: StudioFixture): Promise
 	await press('ArrowDown');
 	check(document.view.cursorRow === 79, 'behavior navigation: keyboard remains responsive after the idle semantic query');
 	await runPaletteCommand('View: Behavior Lens');
+	await chooseBehavior(test, 'FSM ids_moon_death_ray_fsm');
 	check(getActiveTab() === lens, 'behavior navigation: palette can reopen the retained view after parameter help');
 	check(cycles() === position, 'behavior navigation: source navigation does not run or mutate the paused machine');
 	harness.openLuaSource('scenes/root.lua');

@@ -5,7 +5,6 @@ import type { EditorCommandId, EditorViewCommandId } from '../common/commands';
 import type { RuntimeSourceState } from '../runtime/sources';
 import { openSourceView } from '../workbench/contrib/source_views/quick_access';
 import { hasSceneSourceDefinitions } from '../workbench/contrib/scene_editor/source';
-import { hasBehaviorSourceDefinitions } from '../workbench/contrib/behavior_lens/recognizer';
 
 export function isEditorViewCommand(command: EditorCommandId): command is EditorViewCommandId {
 	switch (command) {
@@ -33,10 +32,7 @@ export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSou
 			toggleProblemsPanel(editor.editorPanes);
 			return;
 		case 'behaviorLens':
-			openSourceView(sources, editor.quickInput, {
-				title: 'BEHAVIOR LENS', accepts: hasBehaviorSourceDefinitions,
-				openResource: resource => editor.behaviorLens.openResource(resource),
-			});
+			editor.behaviorLens.open();
 			return;
 		case 'scenarioLab':
 			editor.scenarioLab.open();

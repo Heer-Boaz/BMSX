@@ -2,11 +2,10 @@ import type { PointerSnapshot } from '../../../common/models';
 import { resourceIdentityKey } from '../../../common/resource';
 import { editorTextModelService } from '../../../editor/model/model_service';
 import { resourceSourceForChunk } from '../../../runtime/lua_pipeline';
-import type { RuntimeResource } from '../../../common/resource';
 import { getOrCreateSemanticProject } from '../../../editor/contrib/intellisense/semantic/workspace/state';
 import { getTextSnapshot } from '../../../editor/text/source_text';
-import type { RuntimeSourceState } from '../../../runtime/sources';
-import { getActiveCodeTabContext } from '../../ui/code_tab/contexts';
+import { resolveRuntimeResource, type RuntimeSourceState } from '../../../runtime/sources';
+import type { QuickInputController } from '../../services/quick_input/controller';
 import type { BehaviorLensTabId } from '../../ui/tab/id';
 import { editorTabGroup } from '../../ui/tab/group_model';
 import { getActiveTab, setActiveTab } from '../../ui/tabs';
@@ -15,6 +14,7 @@ import type { EditorPanes } from '../../services/editor/editor_panes';
 import { BehaviorLensInput } from './editor_input';
 import {
 	createBehaviorLensLayout,
+	findVisibleRowIndex,
 	installBehaviorLensDocument,
 	prepareBehaviorLensLayout,
 } from './layout';
@@ -24,12 +24,15 @@ import {
 	executeBehaviorLensNavigation,
 	finishBehaviorLensNavigation,
 	selectedBehaviorLensSourceRange,
+	selectBehaviorLensRow,
 	setBehaviorLensSourcePosition,
 	type BehaviorLensNavigationCommand,
 } from './navigation';
 import { BehaviorLensPointerResult, handleBehaviorLensPointerInput } from './pointer';
 import { buildBehaviorSourceDocument } from './recognizer';
-import type { BehaviorSourceDocument } from './model';
+import type { BehaviorRegistrationSource, BehaviorSourceDocument } from './model';
+import type { BehaviorRegistrationIndex } from './registration_index';
+import { buildBehaviorQuickPickItems } from './quick_access';
 import type { BehaviorLensViewState } from './view_model';
 import { createWorkbenchActionBar } from '../../ui/action_bar';
 
@@ -41,15 +44,23 @@ export class BehaviorLensController {
 		private readonly sources: RuntimeSourceState,
 		private readonly navigation: EditorNavigationController,
 		private readonly editorPanes: EditorPanes,
+		private readonly quickInput: QuickInputController,
+		private readonly registrations: BehaviorRegistrationIndex,
 	) {}
 
-	public openResource(resource: RuntimeResource): void {
-		const context = getActiveCodeTabContext();
+	public open(): void {
+		this.quickInput.pick('BEHAVIOR LENS', 'Choose an FSM, BT or ActionEffect',
+			() => buildBehaviorQuickPickItems(this.sources, this.registrations),
+			item => this.openDefinition(item.registration));
+	}
+
+	public openDefinition(registration: BehaviorRegistrationSource): void {
+		const resource = resolveRuntimeResource(this.sources, registration.resource)!;
 		const model = editorTextModelService.retain(resource, 'lua', resourceSourceForChunk(this.sources, resource));
 		const source = getTextSnapshot(model.buffer);
 		const sourceVersion = model.version;
-		const sourceLine = context?.model === model ? context.view.cursorRow + 1 : 1;
-		const sourceColumn = context?.model === model ? context.view.cursorColumn + 1 : 1;
+		const sourceLine = registration.range.start.line;
+		const sourceColumn = registration.range.start.column;
 		const tabId: BehaviorLensTabId = `behavior:${resourceIdentityKey(resource)}`;
 		let tab = editorTabGroup.findById(tabId);
 		if (tab === undefined) {
@@ -64,11 +75,17 @@ export class BehaviorLensController {
 				),
 			);
 			editorTabGroup.add(tab);
-		} else if (context?.model === model) {
-			this.refreshView(tab.view, source, sourceVersion, sourceLine, sourceColumn);
 		} else {
 			this.updateView(tab);
 		}
+		const view = tab.view;
+		view.sourceLine = sourceLine;
+		view.sourceColumn = sourceColumn;
+		view.sourceMatchRowKeys.clear();
+		view.sourceMatchRowKeys.add(registration.rowKey);
+		prepareBehaviorLensLayout(view);
+		selectBehaviorLensRow(view, findVisibleRowIndex(view, registration.rowKey));
+		finishBehaviorLensNavigation(view);
 		setActiveTab(this.editorPanes, tab.id);
 	}
 

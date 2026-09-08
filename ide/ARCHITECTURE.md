@@ -272,9 +272,20 @@ generic call-by-string route, undo callback or guessed guest mutation.
 `View > Scene Editor` opens that adapter on a source with recognized scene
 registrations. `contrib/source_views/quick_access.ts` admits the active
 resource-owned working copy, or explicitly offers matching workspace documents
-in Quick Input. The same route admits Behavior Lens from any workbench pane,
-including Scenario Lab. Recognition remains contribution-owned and uses the
-current unsaved text; an entry file with no registrations is not a scene.
+in Quick Input. Recognition remains contribution-owned and uses the current
+unsaved text; an entry file with no registrations is not a scene.
+
+`View > Behavior Lens` always offers individual FSM, BT and ActionEffect
+registrations in Quick Input, including from an existing code or lens pane.
+The behavior contribution's shallow registration producer owns authored ids,
+resolved ids when available, kind, exact source locations and occurrence keys.
+Its retained index serves both this picker and Scenario Lab's id-to-source
+lookup; unknown ids remain source expressions rather than guessed runtime ids.
+Labels name behaviors; path and domain/line are secondary disambiguation.
+Acceptance selects and reveals the exact definition in the resource-owned
+lens, without building other documents' topology or creating one text model
+per behavior. See [Behavior Quick Access](../docs/behavior_quick_access.md).
+
 `SceneEditorInput` attaches the resource-owned `EditorTextModel` directly,
 without creating or requiring a code tab.
 The controller projects direct `scene_library.register` definitions at a new
