@@ -192,6 +192,17 @@ The normal Lua save and Hot Resume owners consume that same model. A visual
 editor adds no ROM-packer cooker, cartlib admission decoder, callback manifest,
 second graph database or behavior-specific machine representation.
 
+The planned graphical Behavior Lens is specified in
+[`../docs/behavior_graph_design.md`](../docs/behavior_graph_design.md).
+Its prerequisite is typed, source-backed occurrence/relationship information,
+not a renderer interpreting outline labels. BT order belongs to Lua; FSM edges
+require proven scope, target and provenance. Retained canvas geometry belongs
+to a shared workbench control, independently of document identity and runtime
+execution slots. Source correspondence reuses the existing text-change owner;
+cross-file facts also require the existing semantic-generation invalidation.
+The current Lens is still an outline. Graph controls, clipping, BT/FSM graph
+views and their runtime/UX evidence are not implemented by that design.
+
 Scene authoring uses the same document contract, but its runtime object and
 viewport owners are deliberately not inferred from the behavior projection.
 The accepted cross-owner design and prerequisites are documented in
