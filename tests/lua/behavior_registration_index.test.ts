@@ -49,6 +49,35 @@ function sourceRegistry(projectRootPath: string, records: readonly LuaSourceReco
 	return registry;
 }
 
+test('behavior registration index resolves separate FSM ids in the same Lua document', (t) => {
+	const path = 'actors.lua';
+	const source = [
+		"local fsm<const> = require('cartlib/fsm/library')",
+		"fsm.register('player', { states = { idle = {} } })",
+		"fsm.register('enemy', { states = { idle = {} } })",
+	].join('\n');
+	const sources = createTestRuntimeSourceState(
+		sourceRegistry('machine/bios', [luaSource('system.lua', 'return true')]),
+		[sourceRegistry('carts/game', [luaSource(path, source)]), null],
+		0,
+	);
+	t.after(() => {
+		clearCodeEditorInputs();
+		editorTextModelService.clear();
+		resetSemanticProjects();
+	});
+	const index = new BehaviorRegistrationIndex(sources);
+	const player = index.resolve(0, 'state_machine', 'player');
+	const enemy = index.resolve(0, 'state_machine', 'enemy');
+	assert.equal(player.length, 1);
+	assert.equal(enemy.length, 1);
+	assert.deepEqual(player[0].resource, enemy[0].resource);
+	assert.equal(player[0].range.start.line, 2);
+	assert.equal(enemy[0].range.start.line, 3);
+	assert.strictEqual(index.resolve(0, 'state_machine', 'player'), player);
+	assert.strictEqual(index.resolve(0, 'state_machine', 'enemy'), enemy);
+});
+
 test('behavior registration index isolates domains and rebuilds on an authored document generation', (t) => {
 	const slot0Path = 'slot0/effects.lua';
 	const slot1Path = 'slot1/effects.lua';

@@ -587,6 +587,42 @@ test('semantic workspace keeps parameter-keyed table writes contextual to each i
 	assert.equal(semanticSymbolAt(snapshot, 'main.lua', 22, memberColumn(lines[21], 'left_only')), null);
 });
 
+test('semantic workspace reads index keys as values through reciprocal table maps', async () => {
+	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
+	const lines = [
+		'local first<const> = {}',
+		'local second<const> = {}',
+		'local forward<const> = {}',
+		'local reverse<const> = {}',
+		'forward[first] = second',
+		'reverse[second] = first',
+		'local left<const> = {}',
+		'function left:left_only() end',
+		'local right<const> = {}',
+		'function right:right_only() end',
+		'local objects<const> = {}',
+		'objects[first] = left',
+		'objects[second] = right',
+		'objects[first]:left_only()',
+		'objects[second]:right_only()',
+		'objects[reverse[second]]:left_only()',
+		'objects[forward[first]]:right_only()',
+		'objects[first]:right_only()',
+		'objects[second]:left_only()',
+	];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('main.lua', lines.join('\n'));
+	const snapshot = workspace.getSnapshot();
+	for (const line of [14, 16]) {
+		assert.equal(semanticSymbolAt(snapshot, 'main.lua', line, memberColumn(lines[line - 1], 'left_only'))!.declaration.range.start.line, 8);
+	}
+	for (const line of [15, 17]) {
+		assert.equal(semanticSymbolAt(snapshot, 'main.lua', line, memberColumn(lines[line - 1], 'right_only'))!.declaration.range.start.line, 10);
+	}
+	assert.equal(semanticSymbolAt(snapshot, 'main.lua', 18, memberColumn(lines[17], 'right_only')), null);
+	assert.equal(semanticSymbolAt(snapshot, 'main.lua', 19, memberColumn(lines[18], 'left_only')), null);
+});
+
 test('semantic workspace maps numeric loop keys to the shared table element domain', async () => {
 	const { LuaSemanticWorkspace } = await semanticWorkspaceModulePromise;
 	const lines = [

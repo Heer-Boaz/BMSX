@@ -201,7 +201,8 @@ export class SemanticMemberQuery {
 				}
 				case TermKind.Index: {
 					const bases = this.collectLocationAlternatives(terms.base(current), depth + 1);
-					const keys = this.collectLocationAlternatives(
+					// Keys are values, not reverse aliases of storage containing them.
+					const keys = this.collectAlternatives(
 						terms.operand(current) as TermID,
 						depth + 2,
 					);

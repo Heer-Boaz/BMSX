@@ -1,4 +1,5 @@
 import { testStudioCommandPalette } from './studio_command_palette';
+import { testStudioBehaviorNavigation } from './studio_behavior_navigation';
 import { testStudioNavigation } from './studio_navigation';
 import { testSceneMemberRemoval } from './studio_scene_removal';
 import { testSceneSourceTree } from './studio_scene_tree';
@@ -308,6 +309,7 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	await testSceneSourceTree(test);
 	await testStudioQuickPick(test);
 	await testStudioNavigation(test);
+	await testStudioBehaviorNavigation(test);
 	await testStudioCommandPalette(test);
 	await testSceneMemberRemoval(test);
 	await testSceneMemberMoves(test);

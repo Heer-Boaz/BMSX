@@ -103,6 +103,35 @@ test('behavior lens recognizes a function-local cartlib module alias', () => {
 	assert.equal(document.definitions[0].children[0].label, 'task');
 });
 
+test('behavior lens distinguishes multiple FSMs and same-named states in one Lua source', () => {
+	const path = 'actors.lua';
+	const analysis = buildLuaFileSemanticData([
+		"local fsm<const> = require('cartlib/fsm/library')",
+		"fsm.register('player', { states = { idle = {}, active = {} } })",
+		"fsm.register('enemy', { states = { idle = {}, active = {} } })",
+	].join('\n'), path);
+	const resource = { domain: 0 as const, path };
+	const document = buildBehaviorSourceDocument(resource, analysis);
+	assert.deepEqual(document.definitions.map(node => [node.behaviorKind, node.label]), [
+		['state_machine', "FSM 'player'"],
+		['state_machine', "FSM 'enemy'"],
+	]);
+	const states = document.definitions.map(definition => flatten([definition]).filter(node => node.kind === 'state'));
+	assert.deepEqual(states.map(nodes => nodes.map(node => node.label)), [
+		['idle', 'active'],
+		['idle', 'active'],
+	]);
+	assert.deepEqual(states.map(nodes => nodes.map(node => node.authoredRange.start.line)), [[2, 2], [3, 3]]);
+	assert.notEqual(states[0][0].rowKey, states[1][0].rowKey);
+	assert.notEqual(states[0][1].rowKey, states[1][1].rowKey);
+	assert.deepEqual(
+		collectBehaviorRegistrationSources(resource, analysis).map(registration => [
+			registration.semanticId, registration.range.start.line,
+		]),
+		[['player', 2], ['enemy', 3]],
+	);
+});
+
 test('behavior lens accepts only immutable module bindings and dot-call registration ABI', () => {
 	const mutable = buildDocument('mutable_alias.lua', [
 		"local trees = require('cartlib/behaviour_tree/library')",

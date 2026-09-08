@@ -4335,6 +4335,13 @@ source ranges, start-position fallbacks, or synthesized references. Source
 ranges remain the correct boundary for cursor- and protocol-originated queries,
 where no syntax node exists at the callsite.
 
+Semantic indexed access keeps object storage and key values distinct. Object
+queries may follow location aliases to find writes; index operands consume
+forward value alternatives, exactly as stored-key comparisons do. Reciprocal
+table references do not authorize reverse-storage expansion of a key into
+unbounded equivalent access paths. See [indexed-access ownership and its
+Studio regression](lua_index_key_resolution.md).
+
 `RuntimeSourceState` owns one retained IDE resource identity per installed
 `(domain, path)`. That identity points at the owning `RomAsset` or
 `LuaSourceRecord`; tabs, navigation, search, workspace restore, and resource
