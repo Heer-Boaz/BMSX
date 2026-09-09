@@ -36,6 +36,7 @@ export class EditorTabGroupModel {
 	}
 
 	public clear(): void {
+		for (const tab of this.editorTabs) tab.dispose();
 		this.editorTabs.length = 0;
 		this.activeEditor = null;
 	}
@@ -73,6 +74,7 @@ export class EditorTabGroupModel {
 		if (this.activeEditor === removed) {
 			this.activeEditor = null;
 		}
+		removed.dispose();
 	}
 
 	public move(fromIndex: number, toIndex: number): void {

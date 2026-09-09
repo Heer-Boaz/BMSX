@@ -104,6 +104,7 @@ import type { ScenarioRunService } from './workbench/contrib/scenario_lab/run_se
 import type { ScenarioTestCollection } from './testing/scenario/test_collection';
 import { editorChromeState } from './workbench/ui/chrome_state';
 import { getActiveTab, getActiveTabId, initializeTabs, setActiveTab } from './workbench/ui/tabs';
+import { editorTabGroup } from './workbench/ui/tab/group_model';
 import { drawResourcePanel } from './workbench/render/resource_panel';
 import { renderStatusBar } from './workbench/render/status_bar';
 import { renderTabBar } from './workbench/render/tab_bar';
@@ -588,6 +589,7 @@ export class RuntimeCartEditor implements CartEditor {
 			} finally {
 				this.unsubscribeWorkspaceCursorMoved();
 				this.unsubscribeTextModelChanged();
+				editorTabGroup.clear();
 			}
 		}
 		clearEditorPointerSelectionState();

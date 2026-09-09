@@ -17,12 +17,17 @@ try {
 	await build({ entryPoints: [resolve(import.meta.dirname, 'browser.ts')], bundle: true, platform: 'browser', format: 'esm',
 		target: 'es2020', tsconfig: 'tsconfig.base.json', outfile: join(directory, 'test.js'), loader: { '.glsl': 'text', '.wgsl': 'text' } });
 	const script = await readFile(join(directory, 'test.js'));
-	const worker = await readFile('node_modules/elkjs/lib/elk-worker.min.js');
+	const worker = await readFile('dist/graph-layout.worker.js');
 	server = createServer((request, response) => {
 		if (request.url === '/test.js') {
 			response.setHeader('Content-Type', 'text/javascript'); response.end(script);
-		} else if (request.url === '/elk-worker.min.js') {
+		} else if (request.url === '/graph-layout.worker.js') {
 			response.setHeader('Content-Type', 'text/javascript'); response.end(worker);
+		} else if (request.url === '/worker-crash.js') {
+			response.setHeader('Content-Type', 'text/javascript');
+			response.end('onmessage = () => { throw new Error("Deliberate layout Worker fault"); };');
+		} else if (request.url === '/worker-missing.js') {
+			response.writeHead(404); response.end();
 		} else {
 			response.setHeader('Content-Type', 'text/html');
 			response.end('<!doctype html><link rel="icon" href="data:,"><style>body{margin:0}canvas{image-rendering:pixelated}</style><canvas></canvas>');
@@ -100,6 +105,11 @@ try {
 			await target.screenshot({ path: join(artifacts, `compound-${scope.toLowerCase()}-${backend}.png`) });
 		}
 		console.log(JSON.stringify({ backend, compound, visibleRoutes }));
+		const lifetime = await page.evaluate(async () => {
+			const { exerciseGraphLayoutLifetime, exerciseGraphWorkerFailures } = await import('/test.js');
+			return { ...await exerciseGraphLayoutLifetime(window.fixture), failures: await exerciseGraphWorkerFailures() };
+		});
+		console.log(JSON.stringify({ backend, lifetime }));
 		for (const [width, height] of [[256, 192], [384, 288]]) {
 			await page.evaluate(([width, height]) => window.fixture.resize(width, height), [width, height]);
 			const resized = PNG.sync.read(await target.screenshot());

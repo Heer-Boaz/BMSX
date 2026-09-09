@@ -1,4 +1,5 @@
-import type { ELK, ElkExtendedEdge, ElkNode } from 'elkjs/lib/elk-api';
+import type { ElkExtendedEdge, ElkNode } from 'elkjs/lib/elk-api';
+import type { GraphLayoutEngine } from '../../services/graph_layout/engine';
 import { create_rect_bounds, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { BFont } from '../../../../machine/ts/render/shared/bitmap_font';
 import { createWorkbenchGraphEdge, createWorkbenchGraphLabel, createWorkbenchGraphModel, type WorkbenchGraphEdge,
@@ -33,7 +34,7 @@ const LAYOUT_OPTIONS = {
  */
 export async function layoutWorkbenchCompoundGraph<
 	Node extends WorkbenchCompoundNode<Node>, Link extends WorkbenchCompoundLink<Node>,
->(font: BFont, roots: readonly Node[], links: readonly Link[], engine: Pick<ELK, 'layout'>): Promise<WorkbenchCompoundModel<Node, Link>> {
+>(font: BFont, roots: readonly Node[], links: readonly Link[], engine: GraphLayoutEngine): Promise<WorkbenchCompoundModel<Node, Link>> {
 	const nodes: Node[] = [];
 	const boundsById = new Map<string, RectBounds>();
 	boundsById.set('layout', create_rect_bounds());
@@ -75,8 +76,8 @@ export async function layoutWorkbenchCompoundGraph<
 	}
 	placeNodes(result);
 	const output: (WorkbenchGraphEdge & { readonly link: Link })[] = [];
-	for (let index = 0; index < result.edges.length; index += 1) {
-		const edge = result.edges[index];
+	for (let index = 0; index < result.edges!.length; index += 1) {
+		const edge = result.edges![index];
 		// ELK stores these edges at the request root, but assigns their actual
 		// coordinate container after hierarchical routing. It is not the array owner.
 		const origin = boundsById.get(edge.container!)!;

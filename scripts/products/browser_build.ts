@@ -3,7 +3,7 @@ import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { build } from 'esbuild';
 import { glsl } from 'esbuild-plugin-glsl';
 
-import { assertPlayerBundleBoundary } from '../analysis/product_bundle_boundary';
+import { assertPlayerBundleBoundary, assertStudioBundleBoundary } from '../analysis/product_bundle_boundary';
 import { productNeedsRebuild } from './rebuild';
 import { javascriptProductFilename } from './targets';
 
@@ -24,6 +24,7 @@ const BROWSER_STUDIO_SOURCE_ROOTS = [
 	'runtime',
 	'scripts/products/browser_build.ts',
 	'toolchain/ts',
+	'package-lock.json',
 ] as const;
 
 const BROWSER_IMAGE_PATHS = [
@@ -122,14 +123,24 @@ export async function buildBrowserPlayer(options: BrowserProductBuildOptions): P
 export async function buildBrowserStudio(options: BrowserProductBuildOptions): Promise<void> {
 	const filename = javascriptProductFilename('browser-studio', options.debug);
 	const distPath = `./dist/${filename}`;
-	if (!options.force && !await productNeedsRebuild(distPath, BROWSER_STUDIO_SOURCE_ROOTS)) {
+	const workerPath = './dist/graph-layout.worker.js';
+	if (!options.force && !await productNeedsRebuild(distPath, BROWSER_STUDIO_SOURCE_ROOTS)
+		&& !await productNeedsRebuild(workerPath, BROWSER_STUDIO_SOURCE_ROOTS)) {
 		return;
 	}
 
 	await ensureBrowserOutputDirectories();
 	const romPath = `./rom/${filename}`;
-	await buildBrowserBundle('./ide/browser/studio.ts', romPath, options.debug, 'iife');
+	const inputs = await buildBrowserBundle('./ide/browser/studio.ts', romPath, options.debug, 'iife');
+	assertStudioBundleBoundary(inputs);
 	await copyFile(romPath, distPath);
+	// Standalone worker asset: the layout engine must not enter the Studio UI bundle.
+	await copyFile('./node_modules/elkjs/lib/elk-worker.min.js', './rom/graph-layout.worker.js');
+	await copyFile('./rom/graph-layout.worker.js', workerPath);
+	for (const directory of ['./rom', './dist']) {
+		await copyFile('./node_modules/elkjs/LICENSE.md', `${directory}/elkjs.LICENSE.txt`);
+		await copyFile('./ide/browser/third_party_notices.md', `${directory}/studio.THIRD_PARTY_NOTICES.txt`);
+	}
 }
 
 function applyTemplateValues(template: string, values: Readonly<Record<string, string>>): string {

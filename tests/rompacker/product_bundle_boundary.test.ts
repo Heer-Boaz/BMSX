@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { assertPlayerBundleBoundary } from '../../scripts/analysis/product_bundle_boundary';
+import { assertPlayerBundleBoundary, assertStudioBundleBoundary } from '../../scripts/analysis/product_bundle_boundary';
 
 test('player bundle boundary accepts machine and host sources', () => {
 	assert.doesNotThrow(() => {
@@ -30,10 +30,22 @@ test('player bundle boundary rejects IDE, compiler, and tooling sources', () => 
 		'scripts/bootrom/platforms/headless_capture.ts',
 		'ide/testing/scenario/execution_service.ts',
 		'scripts/bootrom/platforms/hostrunner/scenario_host_frame.ts',
+		'node_modules/elkjs/lib/elk.bundled.js',
 	]) {
 		assert.throws(
 			() => assertPlayerBundleBoundary('test player', { [source]: {} }),
 			(error: Error) => error.message.includes(source),
 		);
+	}
+});
+
+test('Studio UI accepts the worker client but never the layout engine, including in-process ELK', () => {
+	assert.doesNotThrow(() => assertStudioBundleBoundary({
+		'ide/browser/graph_layout.ts': {},
+		'ide/workbench/services/graph_layout/async_layout.ts': {},
+		'ide/workbench/ui/graph/compound_layout.ts': {},
+	}));
+	for (const path of ['elk.bundled.js', 'elk-api.js', 'elk-worker.min.js', 'main.js']) {
+		assert.throws(() => assertStudioBundleBoundary({ [`node_modules/elkjs/lib/${path}`]: {} }), /worker-only/);
 	}
 });

@@ -240,10 +240,26 @@ relative nodes and container-relative edge routes/labels become canvas geometry
 once, after routing. The shared renderer paints container bodies behind edges
 and opaque cards/headers above them; hit testing and reveal use the same header,
 label and arrow geometry. This does not flatten a statechart into a tree.
-The real-Worker conformance runs all three browser renderers. Browser product
-worker lifetime, latest-source-generation publication and return-proof selection
-remain prerequisites to connecting this adapter to the concrete FSM input;
-the current FSM still uses its outline. See `docs/behavior_graph_design.md`.
+The real-Worker conformance runs all three browser renderers. The current FSM
+still uses its outline. See `docs/behavior_graph_design.md`.
+
+Editor inputs now own disposable resources. Group removal/reset disposes inputs;
+pane deactivation only detaches the reusable control. The last active input is
+detached before disposal, and shutdown preserves inputs through autosave capture.
+Resource-owned text models and retained code-view contexts have separate lifetimes.
+`workbench/services/graph_layout/async_layout.ts` owns a lazy engine and one active
+layout plus the newest pending factory, coalescing before projection/measurement.
+Its explicit idle/pending/ready/failed/disposed state belongs to the input, not a
+callback that activates a pane. Invalidating revokes publication and waiting work;
+disposal also terminates the worker. Async failures are state, never empty success.
+`browser/graph_layout.ts` directly consumes the pinned upstream ELK worker protocol
+and owns pending replies, native worker faults and termination. Product packaging
+copies the unmodified worker with license/source notice. The bundle boundary
+rejects ELK code in the Studio UI and player; there is no UI-thread fallback,
+second RPC protocol, GWT-error decoder or global environment shim.
+The concrete FSM contribution must still connect source/definition/font changes
+to this lifetime and establish per-return-proof correspondence before switching
+its presentation. The independent conformance input is not that feature.
 
 `behavior_lens/graph_projection.ts` projects typed source relationships into
 measured cards and source-backed links. `graph_geometry.ts` places the ordered

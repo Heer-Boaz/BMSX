@@ -7,6 +7,7 @@ const PLAYER_FORBIDDEN_SOURCE_PATHS = [
 	'scripts/products/',
 	'scripts/rompacker/',
 	'scripts/lib/',
+	'node_modules/elkjs/',
 	'scripts/bootrom/platforms/input_timeline.ts',
 	'scripts/bootrom/platforms/node_tooling_entry.ts',
 	'scripts/bootrom/platforms/node_tooling_options.ts',
@@ -47,5 +48,14 @@ export function assertPlayerBundleBoundary(
 	if (violations.length > 0) {
 		violations.sort();
 		throw new Error(`${product} includes tooling sources:\n${violations.join('\n')}`);
+	}
+}
+
+/** A promise around a UI-thread ELK engine is not a browser worker. */
+export function assertStudioBundleBoundary(inputs: Readonly<Record<string, unknown>>): void {
+	for (const inputPath of Object.keys(inputs)) {
+		if (repositoryPath(inputPath).startsWith('node_modules/elkjs/')) {
+			throw new Error(`Browser Studio UI includes worker-only layout code: ${inputPath}`);
+		}
 	}
 }

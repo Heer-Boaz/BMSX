@@ -6,6 +6,8 @@ de concrete BT-slice op `a9953b819`. Onderstaande bewijssecties horen bij de
 gebouwde grenzen. FSM-bronstructuur en lokaal bewezen pad-/returnrelaties zijn
 nu ook gebouwd, met het hieronder afgebakende callbackcontract. De generieke
 compound-layout-/rendergrens is getoetst met ELK en een echte browserworker.
+De input-/worker-lifetime en latest-generation-layoutsession zijn nu ook
+gebouwd en onafhankelijk getoetst; de concrete broncontribution volgt nog.
 FSM en ActionEffect houden hun outline; de FSM-inputintegratie volgt afzonderlijk.
 Deze visualisatie is nog geen authoring.
 
@@ -97,6 +99,7 @@ gebouwde BMSX-grafiek correct, leesbaar of snel is.
 | `behavior_lens/controller.ts`, `editor_input.ts`, `view_model.ts`, `source_correspondence.ts` | Resource-owned input; refresh bij eigen textmodelversie; selectie/collapse en gekozen registration via gemapte occurrence-ketens | Grafiekviewport is geen listscroll. Cross-file feiten vereisen ook semantic-generation-invalidering |
 | `ide/editor/text/text_change.ts`, `scene_editor/controller.ts`, `behavior_lens/source_correspondence.ts` | Gedeelde UTF-16-rangemapping; beide projecties volgen ranges ook terwijl hun pane verborgen is | Geen lokale offsetcorrecties of namesake matching |
 | `ide/workbench/ui/graph`, `ide/workbench/render/graph.ts` | Retained node-/edgegeometrie, viewport, selectie, hit testing en pane-owned control; tree- en compound-layout | BT-relaties en bronactivatie zitten in de concrete contribution; de FSM vereist nog asynchrone generatiepublicatie en afzonderlijke return-proofcorrespondentie |
+| `workbench/services/graph_layout`, `browser/graph_layout.ts`, `common/editor_input.ts` | Inputresources, lazy engine, latest-only factories, publicatie/fout/dispose en echte Worker-replies | Gebouwd en onafhankelijk getoetst; concrete FSM-broninvalidatie en return-proofselectie worden nog aangesloten. Eén engine per gestarte session, geen workerallocatie voor ongebruikte inputs |
 | `ide/runtime/overlay_renderer.ts`, TS/C++ `render/host_overlay` | Pooled overlaycommands, `Poly`-exposure en geordende cliprects | Clip-stack, scissor-batches en software-rastergrens gebouwd; geen feature-local glyph- of lijnclipper |
 | `ide/input/pointer/capture.ts`, `dispatch.ts` | Eén captured fysieke gesture vóór gewone pane-/chrome-hit-tests | Graphcontrol gebruikt deze route; bestaande andere controls zijn hiermee niet allemaal gemigreerd |
 | `cartlib/behaviour_tree/node_program.lua`, `cartlib/fsm/fsm.lua`, `fsm_component.lua` | De uitvoersemantiek die het beeld moet respecteren | Geen wijziging voor deze visualisatie; geen hostgeschreven tweede runtime |
@@ -483,7 +486,8 @@ alleen een typecheck slaagt. De latere rijen zijn nog te toetsen hypotheses.
 | `STUDIO-BT-GRAPH-VIEW-01` — geïmplementeerd | Eén gekozen BT als ordered visuele boom, attachments/details, collapse, source-navigation en relationship-based keyboard/controllerbediening. Inspecteer echte 384×288-captures en bronnavigatie na pan/collapse/tabwisseling. Een brede en diepe fixture meet projection/layout/hit/draw apart; idle/hover/pan bewijzen geen herhaalde herkenning. Echte carts blijven integratiesmoke. Dit is nog geen editable BT. |
 | `STUDIO-FSM-SOURCE-GRAPH-01` | **Gebouwd binnen het afgebakende lokale callbackcontract:** typed containment/entry/transitionfeiten met bewijs en expliciete onbekende relaties; geen lines uit strings. Fixtures bewijzen scopes, guards, directe paths, ondersteunde callbacks, meerdere machines en dynamische targets. Iedere ondersteunde path-/callbackvorm volgt de runtime-owner; cross-file bewijs kan niet zonder semantic-generation-invalidering. |
 | `STUDIO-GRAPH-COMPOUND-LAYOUT-01` — geïmplementeerd | Generieke ELK Layered-grens, geneste nodes, cycles/self-loops/parallelle links, gemeten labels en gedeelde body/header-paint/hit-geometrie. Echte worker plus alle drie browserrenderers; geen bron- of runtimekennis in de layoutrequest. |
-| `STUDIO-FSM-GRAPH-VIEW-01` | Eerst productworker/lifetime, input-owned latest-generation-publicatie en return-proofcorrespondentie, daarna de brongebonden view. Fixture met self-loop, twee edges tussen dezelfde states, parenthandler, nested en concurrent scopes; edges blijven selecteerbaar en verwijzen naar hun eigen bewijs. Geen tree/DAG-normalisatie. |
+| `STUDIO-GRAPH-LAYOUT-LIFETIME-01` — geïmplementeerd | Inputdispose, lazy native Worker, expliciete fouten en één lopende/nieuwste wachtende layoutgeneratie. De onafhankelijke input/model/pane-proef test hidden edits, Undo/Redo, coalescing en close zonder focusdiefstal. Productasset is upstream-bytegelijk; de buildgate sluit ELK uit de Studio-UI en player. |
+| `STUDIO-FSM-GRAPH-VIEW-01` | Sluit de gebouwde layoutlifetime aan op de concrete broninput en bouw afzonderlijke return-proofcorrespondentie vóór de view. Fixture met self-loop, twee edges tussen dezelfde states, parenthandler, nested en concurrent scopes; edges blijven selecteerbaar en verwijzen naar hun eigen bewijs. Geen tree/DAG-normalisatie. |
 
 `STUDIO-BT-VISUAL-EDITOR-01` blijft het afzonderlijke **authoring**contract.
 Nieuwe add/remove/reorder/connect-commands moeten hun minimale Lua-edit en
@@ -758,3 +762,84 @@ Commando's, fixturebetekenis en bewijsgrenzen staan in
 [`graph_viewport/README.md`](../tests/conformance/graph_viewport/README.md).
 De volledige FSM-productview en broncorrespondentie van meerdere returns
 blijven uitdrukkelijk open.
+
+### Layoutlifetime — ownerbesluit vóór implementatie
+
+De volgende voorwaarde sluit de levensduur van inputs en layoutgeneraties,
+niet de concrete FSM-view. Live `EditorTabGroupModel.removeAt/clear` verwijdert
+nu alleen referenties; `EditorPanes.clearEditor` beëindigt uitsluitend de
+zichtbare control. Geen van beide bezit nog input-owned asynchroon werk.
+
+Productiereferenties, VS Code `b4e90b1a76bcb6e9b07adbee522d75a7fa4a5b1d`:
+
+- [`EditorInput`](https://github.com/microsoft/vscode/blob/b4e90b1a76bcb6e9b07adbee522d75a7fa4a5b1d/src/vs/workbench/common/editor/editorInput.ts)
+  en [`EditorGroupView.handleOnDidCloseEditor`](https://github.com/microsoft/vscode/blob/b4e90b1a76bcb6e9b07adbee522d75a7fa4a5b1d/src/vs/workbench/browser/parts/editor/editorGroupView.ts):
+  inputresources worden bij sluiten opgeruimd, niet bij pane-deactivatie.
+  BMSX heeft één groep: geen multi-group-refcount of side-by-sidefacade nodig.
+- [`Throttler`](https://github.com/microsoft/vscode/blob/b4e90b1a76bcb6e9b07adbee522d75a7fa4a5b1d/src/vs/base/common/async.ts):
+  één lopende taak en alleen de nieuwste nog niet begonnen factory. Geen
+  onbegrensde wachtrij van layouts voor iedere toetsaanslag.
+- [`DocumentSymbolsOutline._createOutline`](https://github.com/microsoft/vscode/blob/b4e90b1a76bcb6e9b07adbee522d75a7fa4a5b1d/src/vs/workbench/contrib/codeEditor/browser/outline/documentSymbolsOutline.ts):
+  annulering vóór resultaatpublicatie. Een oude berekening mag afronden maar
+  geen nieuwe bronversie overschrijven. De input bezit het resultaat; een
+  callback activeert geen pane en steelt geen focus.
+- [`WebWorkerProtocol`](https://github.com/microsoft/vscode/blob/b4e90b1a76bcb6e9b07adbee522d75a7fa4a5b1d/src/vs/base/common/worker/webWorker.ts):
+  expliciete request/reply-correspondentie. BMSX heeft één layoutmethode nodig,
+  geen dynamische RPC-proxy, channelregistry of runtime-messagevalidatie.
+
+| Owner | Contract |
+| --- | --- |
+| Editorinput / disposable store | Sluiten en groepsreset beëindigen inputresources. De resource-owned `EditorTextModel` en retained code-viewcontext blijven apart bestaan. Werkbenchshutdown ruimt inputs pas na autosavecapture op. |
+| Asynchrone graph-layoutsession | Lazy engine; `idle / pending / ready / failed / disposed`. Request vervangt de wachtende factory en trekt de oude publicatierechten in. Invalidatie verwijdert ook nog niet gestart werk. Dispose beëindigt de engine. Geen oude grafiek als geslaagde nieuwe generatie. |
+| Browser-workerclient | Bezit native Worker en pending replies. Worker-/deserialisatiefout beëindigt de worker en reject alle lopende requests; dispose doet hetzelfde. Geen hangende promise, herstart of UI-threadfallback. |
+| Upstream worker / productbuild | Het ongewijzigde ELK-workerbestand draait als echte Worker. Alleen de bestaande geometrie-input en geometrie-uitkomst gaan over de grens. Het Studio-product verpakt het workerbestand plus licentie/bronverwijzing; tests halen geen alternatief uit `node_modules`. |
+| Concrete bronprojectie, vervolg | Verbindt model-change, definitiekeuze en font/collapse met invalidatie/request; bewaart return-proofcorrespondentie. De shared session leest geen Lua, actieve tab of globale documentstate. |
+
+De upstream ELK-client bezit geen volledige native Worker-error-/dispose-
+afhandeling voor pending promises. De eerste browserproef wees bovendien de
+hypothese “bundled API in een worker-entry” af: de gepubliceerde 0.12.0-bundle
+exporteert daar niet de FakeWorker die zijn eigen client verwacht. Geen
+`document`-shim, aanpassing van upstream of fallback om dit te verbergen.
+
+Het product kopieert daarom het **ongewijzigde** `elk-worker.min.js`; de client
+spreekt rechtstreeks diens bestaande `register/layout`-protocol uit
+[`ElkJs.exportLayout`](https://github.com/kieler/elkjs/blob/ff5771d7165445c42c408bb8a090c8035272218c/src/java/org/eclipse/elk/js/ElkJs.java),
+ook getoetst aan het geïnstalleerde 0.12.0-bestand. Eén resolvermap bezit alle
+layoutreplies; geen tweede map rondom onafsluitbare upstream workerpromises,
+eigen workerprotocol, globale aanpassing of lokale GWT-exceptiondecoder.
+Register-ack heeft geen data; fouten hebben een `error`-veld en layoutreplies
+hebben `data`. Native structured clone draagt de error zoals geproduceerd.
+Bestaande Node-geometrietoetsen blijven expliciet in-process; een headless
+IDE-compositie wordt pas bij de concrete view aangesloten. Fouten blijven fouten.
+
+### Bewijs layoutlifetime — 9 september 2026
+
+- **1.043 Lua-tests geslaagd, 1 skip**. Daaronder acht afzonderlijke lifetime-
+  proeven en de last-tab-close-regressie: pane detach vóór inputdispose,
+  vervolgens een nieuw inputobject met de bestaande codecontext/working copy.
+  Die regressie faalt met de parent-close-route en slaagt met de nieuwe route.
+  Drie product-bundleboundarytests slagen; de Studio-productbuild weigert
+  ELK in de UI-bundle en verpakt het upstream-workerbestand bytegelijk.
+- De onafhankelijke browserproef slaagt op software, WebGL2 en WebGPU.
+  Een burst van **1.001** requests met echte modelwijzigingen start slechts
+  **twee** factories; de andere worden vóór projection/meting weggegooid.
+  Hidden Undo/Redo, actualisatie bij verborgen input, close tijdens fysieke
+  pan en een Undo ná close behouden de juiste input-, focus- en modelowners.
+- Alle drie backends toetsen de echte Worker op clone/send-fout, ELK-foutreply,
+  beëindiging met pending requests, uitvoeringsfout en een HTTP-404 voor het
+  workerbestand. Pending promises eindigen; geen herstart, empty-success of
+  UI-threadfallback. Tijdens de lifetimeproef blijven negen render/inputframes
+  lopen. De bestaande compoundproef behoudt 25 route-/headerpixelorakels per
+  backend; native 384×288-tinyfont-captures zijn bekeken.
+- De volledige bestaande Studio-workflows slagen op alle drie backends,
+  inclusief bron/Undo, BT en FSM/FX-outlines, Save/Hot Resume/reboot,
+  Scenario Lab en palette/capture. Dit bewijst regressiebehoud; de fixture is
+  **niet** de concrete toekomstige FSM-view of haar broncorrespondentie.
+- IDE-typecheck, strict architecture-boundaries (0), core-parity, scoped
+  indentation en diffcheck slagen. Tests-brede typecheck: dezelfde **51**
+  diagnostics als `fc89a230e`, byte-identiek; geen claim van repo-breed groen.
+
+Geen nieuwe layout in het renderframepad, guestdata, cartlib, C++-runtime of
+Hot-Resume-contract. De aansluitende FSM-slice moet de concrete broninvalidatie,
+font/definitiekeuze, pending/foutpresentatie en afzonderlijke return-proofselectie
+nog bouwen; een generieke session alleen bewijst die usecases niet.

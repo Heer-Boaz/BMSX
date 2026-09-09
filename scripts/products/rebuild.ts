@@ -11,6 +11,7 @@ const PRODUCT_SOURCE_EXTENSIONS = new Set([
 	'.json',
 	'.jsx',
 	'.lua',
+	'.md',
 	'.ts',
 	'.tsx',
 	'.wgsl',

@@ -28,6 +28,7 @@ import { WorkbenchGraphPointerResult } from '../../../ide/workbench/ui/graph/con
 import { createGraphFixturePanes } from './pane';
 import { hostOverlayPrimitives } from '../../helpers/host_overlay_primitives';
 export { exerciseCompoundGraph } from './compound';
+export { exerciseGraphLayoutLifetime, exerciseGraphWorkerFailures } from './lifetime';
 
 function check(condition: boolean, message: string): void {
 	if (!condition) throw new Error(message);
@@ -95,7 +96,7 @@ export async function createFixture(canvas: HTMLCanvasElement, kind: 'software' 
 	second.layout(8, 24, 376, 240);
 	editorViewState.viewportWidth = WIDTH;
 	editorViewState.viewportHeight = HEIGHT;
-	const { panes, pane, inputs } = createGraphFixturePanes([view, second]);
+	const { panes, pane, inputs, group } = createGraphFixturePanes([view, second]);
 	panes.openEditor(inputs[0]);
 	let pressId = 0;
 	const draw = () => {
@@ -156,7 +157,7 @@ export async function createFixture(canvas: HTMLCanvasElement, kind: 'software' 
 		commandKinds: kinds, commandRefs: refs, commandCount: 3 };
 	return {
 		exercise, draw,
-		view, font, move, button, step,
+		view, otherView: second, font, move, button, step, panes, inputs, group,
 		healthy,
 		resize(width: number, height: number) {
 			// Retain the editor's logical layout choice while the game target changes.

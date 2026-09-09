@@ -126,7 +126,7 @@ export function closeTab(
 			? tabs[index - 1]
 			: tabs[index + 1];
 		setActiveTab(editorPanes, fallback.id);
-	}
+	} else if (isActive) editorPanes.clearEditor();
 	editorTabGroup.removeAt(index);
 	if (editorTabGroup.tabs.length === 0) {
 		initializeTabs(retainEntryTabContext(sources), editorPanes);

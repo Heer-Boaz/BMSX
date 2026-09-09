@@ -3,13 +3,15 @@ import type { PointerSnapshot } from '../../../ide/common/models';
 import { inputFocus } from '../../../ide/input/focus';
 import { pointerCapture } from '../../../ide/input/pointer/capture';
 import { EditorTextModel } from '../../../ide/editor/model/text_model';
-import { createCodeEditorViewState } from '../../../ide/editor/ui/code_editor_state';
-import { CodeEditorInput } from '../../../ide/workbench/contrib/code_editor/editor_input';
+import type { CodeEditorInput } from '../../../ide/workbench/contrib/code_editor/editor_input';
 import { EditorPane } from '../../../ide/workbench/services/editor/editor_pane';
 import { EditorPanes } from '../../../ide/workbench/services/editor/editor_panes';
 import { WorkbenchGraphControl, WorkbenchGraphPointerResult } from '../../../ide/workbench/ui/graph/control';
 import type { WorkbenchGraphViewport } from '../../../ide/workbench/ui/graph/viewport';
 import { drawWorkbenchGraph } from '../../../ide/workbench/render/graph';
+import { BrowserGraphLayoutEngine } from '../../../ide/browser/graph_layout';
+import { GraphLayoutTestInput } from '../../helpers/graph_layout_input';
+import { EditorTabGroupModel } from '../../../ide/workbench/ui/tab/group_model';
 
 /** A domain-free test contribution, mounted by the production editor-group owner. */
 class GraphFixturePane extends EditorPane<CodeEditorInput> {
@@ -37,12 +39,16 @@ export function createGraphFixturePanes(views: readonly WorkbenchGraphViewport[]
 	// Neither the text model nor a Lua recognizer builds this graph.
 	const inputs = views.map((_, index) => {
 		const path = `graph-fixture-${index}.lua`;
-		return new CodeEditorInput({ id: `code:0\0${path}`, title: path,
-			model: new EditorTextModel({ domain: 0, path, source: { resid: path, type: 'lua' } }, 'lua', ''),
-			view: createCodeEditorViewState(), runtimeErrorOverlay: null, executionStopRow: null });
+		return new GraphLayoutTestInput(
+			new EditorTextModel({ domain: 0, path, source: { resid: path, type: 'lua' } }, 'lua', ''),
+			() => new BrowserGraphLayoutEngine(new Worker('/graph-layout.worker.js')),
+		);
 	});
 	const pane = new GraphFixturePane(new Map(inputs.map((input, index) => [input, views[index]])));
 	const unused = (): never => { throw new Error('Only the domain-free fixture is registered in this editor group'); };
 	const panes = new EditorPanes({ code_editor: () => pane, behavior_lens: unused, resource_view: unused, scenario_lab: unused, scene_editor: unused });
-	return { inputs, pane, panes };
+	const group = new EditorTabGroupModel();
+	group.initialize(inputs[0]);
+	for (let index = 1; index < inputs.length; index += 1) group.add(inputs[index]);
+	return { inputs, pane, panes, group };
 }

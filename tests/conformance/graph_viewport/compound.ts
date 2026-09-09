@@ -1,4 +1,4 @@
-import ELK from 'elkjs/lib/elk-api';
+import { BrowserGraphLayoutEngine } from '../../../ide/browser/graph_layout';
 import { createWorkbenchGraphModel } from '../../../ide/workbench/ui/graph/model';
 import { layoutWorkbenchCompoundGraph } from '../../../ide/workbench/ui/graph/compound_layout';
 import { compoundGraphFixture } from '../../helpers/compound_graph_fixture';
@@ -10,8 +10,7 @@ function check(condition: boolean, message: string): void {
 
 /** Real worker and shared physical graph controls, without a cart or FSM UI mock. */
 export async function exerciseCompoundGraph(fixture: Awaited<ReturnType<typeof createFixture>>) {
-	const worker = new Worker('/elk-worker.min.js');
-	const engine = new ELK({ workerFactory: () => worker, algorithms: ['layered'] });
+	const engine = new BrowserGraphLayoutEngine(new Worker('/graph-layout.worker.js'));
 	const graph = compoundGraphFixture(fixture.font);
 	let frames = 0;
 	let frameRequest: number;
@@ -88,6 +87,6 @@ export async function exerciseCompoundGraph(fixture: Awaited<ReturnType<typeof c
 		};
 	} finally {
 		cancelAnimationFrame(frameRequest);
-		engine.terminateWorker();
+		engine.dispose();
 	}
 }
