@@ -22,6 +22,12 @@ parent; verplaatste expressions kunnen andere locals capturen. Beide owners
 moeten vóór een parentwissel correct werken, niet door een edge-update worden
 omzeild. De syntax-/Undo-/CPU-proeven en resterende gates staan in dat ontwerp.
 
+[`IDE-LUA-RELOCATION-BINDINGS-01`](lua_relocation_bindings_design.md) levert nu
+de lexicale analyse op echte bindings, inclusief impliciete `self` en `...`.
+Gelijke namen/waarden zijn geen bewijs; een andere scope op zichzelf evenmin
+een afwijzingsgrond. Dit activeert nog geen graphcommand: target-ownership,
+parentwissel-selectie en de live-Hot-Resume-proef blijven afzonderlijke gates.
+
 ## Getoetste productievoorbeelden
 
 - [LimboAI, Move Up/Down](https://github.com/limbonaut/limboai/blob/3f14ea4c26911e8b8e30c6bcdb575fc589a59deb/editor/limbo_ai_editor_plugin.cpp#L660-L719):

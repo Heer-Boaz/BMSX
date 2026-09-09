@@ -102,6 +102,7 @@ export type Decl = {
 };
 
 export type SemanticScope = {
+	readonly kind: ScopeKind;
 	readonly startInclusive: SourcePosition;
 	readonly endExclusive: SourcePosition;
 	readonly parentIndex: number;
@@ -254,7 +255,7 @@ export function buildLuaSemanticWorkspaceSnapshot(
 	return workspace.getSnapshot();
 }
 
-type ScopeKind = 'path' | 'function' | 'block' | 'loop';
+type ScopeKind = 'path' | 'function' | 'method' | 'block' | 'loop';
 
 type Scope = {
 	index: number;
@@ -745,6 +746,7 @@ class SemanticBuilder {
 					localFunction.functionExpression,
 					undefined,
 					declarationValueSource(decl.id),
+					'function',
 				);
 				break;
 			}
@@ -771,6 +773,7 @@ class SemanticBuilder {
 						scopeRef: scope,
 						isGlobal,
 						active: true,
+						lexical: false,
 					});
 					this.properties.set(symbolKey, decl);
 					if (functionOwner) {
@@ -814,6 +817,7 @@ class SemanticBuilder {
 					functionDeclaration.functionExpression,
 					methodSelfPath,
 					declarationValueSource(decl.id),
+					methodName === undefined ? 'function' : 'method',
 					methodReceiverClass,
 				);
 				break;
@@ -855,7 +859,7 @@ class SemanticBuilder {
 						const functionValue = targetInfo?.decl
 							? declarationValueSource(targetInfo.decl.id)
 							: this.createExpressionValueSource(valueExpression);
-						this.visitFunctionExpression(valueExpression, selfPath, functionValue);
+						this.visitFunctionExpression(valueExpression, selfPath, functionValue, 'function');
 						if (targetInfo?.valueTarget) {
 							this.recordValueFlow(targetInfo.valueTarget, functionValue, 'value');
 						}
@@ -1168,7 +1172,7 @@ class SemanticBuilder {
 				const functionValue = context.tableBaseDecl
 					? declarationValueSource(context.tableBaseDecl.id)
 					: this.createExpressionValueSource(expression);
-				this.visitFunctionExpression(expression, undefined, functionValue);
+				this.visitFunctionExpression(expression, undefined, functionValue, 'function');
 				return { namePath: null, decl: context.tableBaseDecl, valueSource: functionValue };
 			}
 			case LuaSyntaxKind.TableConstructorExpression: {
@@ -1341,6 +1345,7 @@ class SemanticBuilder {
 		expression: LuaFunctionExpression,
 		methodSelfPath: readonly string[] | undefined,
 		functionValue: FunctionSemanticValueSource,
+		scopeKind: 'function' | 'method',
 		methodReceiverClass?: SemanticValueSource,
 	): void {
 		const explicitReceiverClass = !methodReceiverClass && methodSelfPath
@@ -1374,7 +1379,7 @@ class SemanticBuilder {
 		};
 		this.functionValueFlowStack.push(valueFlow);
 		const block = expression.body;
-		this.enterScope(block.startInclusive, block.endExclusive, 'function');
+		this.enterScope(block.startInclusive, block.endExclusive, scopeKind);
 		const inheritedMethodSelfPath = this.currentMethodSelfPath();
 		const inheritedMethodSelfScope = this.methodSelfScopeStack[this.methodSelfScopeStack.length - 1];
 		const effectiveMethodSelfPath = methodSelfPath ?? inheritedMethodSelfPath;
@@ -1832,6 +1837,7 @@ class SemanticBuilder {
 			scopeRef: scope,
 			isGlobal: false,
 			active: activate,
+			lexical: true,
 		});
 		if (activate) {
 			this.addBinding(scope, decl);
@@ -1852,6 +1858,7 @@ class SemanticBuilder {
 			scopeRef: scope,
 			isGlobal: false,
 			active: true,
+			lexical: true,
 		});
 		this.addBinding(scope, decl);
 		this.recordDefinitionAnnotation(decl);
@@ -1870,6 +1877,7 @@ class SemanticBuilder {
 			scopeRef: scope,
 			isGlobal: scope.kind === 'path',
 			active: true,
+			lexical: true,
 		});
 		this.addBinding(scope, decl);
 		if (decl.isGlobal) {
@@ -1891,6 +1899,7 @@ class SemanticBuilder {
 			scopeRef: scope,
 			isGlobal: scope.kind === 'path',
 			active: true,
+			lexical: true,
 		});
 		this.addBinding(scope, decl);
 		if (decl.isGlobal) {
@@ -1912,6 +1921,7 @@ class SemanticBuilder {
 			scopeRef: scope,
 			isGlobal: scope.kind === 'path',
 			active: true,
+			lexical: true,
 		});
 		this.addBinding(scope, decl);
 		if (decl.isGlobal) {
@@ -1933,6 +1943,7 @@ class SemanticBuilder {
 			scopeRef: scope,
 			isGlobal: scope.kind === 'path',
 			active: true,
+			lexical: true,
 		});
 		this.addBinding(scope, decl);
 		if (decl.isGlobal) {
@@ -1954,6 +1965,7 @@ class SemanticBuilder {
 			scopeRef: scope,
 			isGlobal: true,
 			active: true,
+			lexical: false,
 		});
 		this.globalsByKey.set(decl.symbolKey, decl);
 		this.recordDefinitionAnnotation(decl);
@@ -1998,6 +2010,7 @@ class SemanticBuilder {
 			scopeRef: scope,
 			isGlobal,
 			active: true,
+			lexical: false,
 		});
 		this.properties.set(key, decl);
 		if (ownerKey) {
@@ -2084,6 +2097,7 @@ class SemanticBuilder {
 		scopeRef: Scope;
 		isGlobal: boolean;
 		active: boolean;
+		lexical: boolean;
 	}): InternalDecl {
 		const { syntax, namePath, name, kind, range, scopeRef, isGlobal, active } = options;
 		const id = createSymbolId(this.path, range, kind, namePath);
@@ -2101,7 +2115,7 @@ class SemanticBuilder {
 			scopeRef,
 			active,
 		};
-		if (namePath.length === 1) {
+		if (options.lexical) {
 			scopeRef.declarationIndices.push(this.decls.length);
 		}
 		this.decls.push(decl);
@@ -2638,6 +2652,7 @@ function toDecl(internal: InternalDecl): Decl {
 
 function toSemanticScope(scope: Scope): SemanticScope {
 	return {
+		kind: scope.kind,
 		startInclusive: {
 			line: scope.startInclusive.line,
 			column: scope.startInclusive.column,

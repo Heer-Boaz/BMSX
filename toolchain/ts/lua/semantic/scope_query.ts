@@ -31,12 +31,18 @@ export function findInnermostScopeIndex(
 	return -1;
 }
 
-export function findVisibleDeclarationAt(
+export type LuaLexicalBinding =
+	| { readonly kind: 'declaration'; readonly declaration: Decl }
+	| { readonly kind: 'receiver'; readonly scopeIndex: number }
+	| { readonly kind: 'global'; readonly name: string };
+
+/** Lexical storage identity, not a declaration's inferred value or receiver class. */
+export function findLuaLexicalBindingAt(
 	source: FileSemanticData,
 	name: string,
 	line: number,
 	column: number,
-): Decl | undefined {
+): LuaLexicalBinding {
 	let scopeIndex = findInnermostScopeIndex(source, line, column);
 	while (scopeIndex >= 0) {
 		const scope = source.scopes[scopeIndex];
@@ -50,12 +56,22 @@ export function findVisibleDeclarationAt(
 					declaration.visibleFrom.line,
 					declaration.visibleFrom.column,
 				) > 0) {
-				return declaration;
+				return { kind: 'declaration', declaration };
 			}
 		}
+		if (name === 'self' && scope.kind === 'method') return { kind: 'receiver', scopeIndex };
 		scopeIndex = scope.parentIndex;
 	}
-	return undefined;
+	return { kind: 'global', name };
+}
+
+/** Varargs belong to the nearest function, never to an enclosing variadic one. */
+export function findLuaFunctionScopeIndexAt(source: FileSemanticData, line: number, column: number): number {
+	let scopeIndex = findInnermostScopeIndex(source, line, column);
+	while (source.scopes[scopeIndex].kind === 'block' || source.scopes[scopeIndex].kind === 'loop') {
+		scopeIndex = source.scopes[scopeIndex].parentIndex;
+	}
+	return scopeIndex;
 }
 
 export function findImplicitSelfValueAt(
@@ -95,6 +111,7 @@ export function collectVisibleDeclarationsAt(
 			names.add(declaration.name);
 			declarations.push(declaration);
 		}
+		if (scope.kind === 'method') names.add('self');
 		scopeIndex = scope.parentIndex;
 	}
 	return declarations;

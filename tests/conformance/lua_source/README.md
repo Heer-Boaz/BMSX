@@ -40,3 +40,27 @@ payload must remain three UTF-16 units even when the gap grows from 1,600 to
 
 Existing `moves.ts` and `insertion.ts` retain their independent full-AST gates;
 transfer does not change their punctuation, layout or marker contracts.
+
+## Lexical relocation
+
+```sh
+npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
+  tests/lua/lua_relocation.test.ts
+npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+  tests/conformance/lua_source/relocation.ts
+npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+  tests/conformance/lua_source/profile_relocation.ts
+```
+
+`relocation.ts` transfers the middle field of each nonempty constructor to the
+next legal target and **rebinds the resulting source**. Ordinary edit-mapped
+origin markers determine whether its declarations/receivers/varargs are still
+the same ones. Prospective changed-binding evidence must match that actual
+rebind. This is separate from the whole-AST syntax oracle above and from the
+independent compiled BLua tests of ordinary captures, implicit `self` and `...`.
+
+The profiler separates binder production from dependency collection and retained
+destination queries. `--binder-only` skips relocation queries for comparison
+with a bundle using the previous binder owner. Use identical bundling/settings
+and run without other tests. No result is a guest, renderer, Hot Resume or
+complete-frame performance claim; see `docs/lua_relocation_bindings_design.md`.

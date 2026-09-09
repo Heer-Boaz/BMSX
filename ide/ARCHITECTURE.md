@@ -463,6 +463,12 @@ intervening document to preserve a deleted marker. Semantic admission and
 selection across a parent change remain prerequisites for graph reconnect;
 structural edits on recovered source still need an error-tree contract. See
 [`../docs/lua_table_transfer_design.md`](../docs/lua_table_transfer_design.md).
+The semantic binder owns lexical membership separately from global writes and
+table properties. Its scope kinds distinguish method-owned receivers from
+ordinary functions. `LuaRelocationAnalysis` retains one semantic snapshot,
+collects free value-name/vararg bindings and reports exact destination changes;
+it does not infer identity from receiver classes or rewrite captures. See
+[`../docs/lua_relocation_bindings_design.md`](../docs/lua_relocation_bindings_design.md).
 The shared lexer also
 has an opt-in trivia scan, used by Format Document instead of a second comment
 regex; default compiler/analysis scans still allocate only significant tokens.

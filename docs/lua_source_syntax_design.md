@@ -387,6 +387,11 @@ document or pretend a deleted marker retains identity. It preserves travelling
 layout rather than formatting. Destination binding analysis and selection
 across a parent change remain separate prerequisites for reconnect UI.
 
+The [relocation-binding owner](lua_relocation_bindings_design.md) now supplies
+prospective lexical analysis over the retained binder facts, without reparsing
+or applying/rolling back the edit. Unchanged bindings do not imply unchanged
+evaluation order, target-list ownership or live closure compatibility.
+
 Before adding field-construction UI, reparenting or edits on recovered syntax:
 
 - Complete field bounds, separators and travelling-trivia ownership now exist.
