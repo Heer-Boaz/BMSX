@@ -96,6 +96,13 @@ must retain the same resource model and issue targeted model edits; it must not
 maintain a second JSON/source buffer or replace the whole document for a
 property change.
 
+Before/after selection travels with that document's edit history as typed,
+input-independent state. The retained code-input manager consumes code-owned
+state from the content event, even when a visual editor invoked Undo/Redo and
+the code widget is hidden. Widget activation/history reveal handles geometry;
+the text model does not know cursor or graph representations. See
+[edit-associated source selection](../docs/editor_edit_bookmarks_design.md).
+
 Workspace recovery persists dirty model contents separately from code-editor
 view metadata. A working copy can acquire its first code view after its content
 backup. Metadata requests retain the emitting model/view pair; the next
@@ -277,7 +284,13 @@ maps source-use spans through the existing text-change owner, including hidden
 inputs, and matches each use under its corresponding parent. Shared initializer
 ranges or generation-local row keys alone do not identify an occurrence.
 Deleting/replacing a use clears affected correspondence; later Undo does not
-guess it back. Click gestures belong to the pane and one source generation;
+guess it back. An explicit command may instead attach before/after selection
+bookmarks to the existing document history. These record the exact occurrence
+path, not persistent graph identity. Hidden views map one pending bookmark;
+fresh projections resolve it through their existing source-range index. The
+text model retains typed edit state without knowing code-view or Lens payloads.
+See [`../docs/editor_edit_bookmarks_design.md`](../docs/editor_edit_bookmarks_design.md).
+Click gestures belong to the pane and one source generation;
 cross-file facts also require the existing semantic-generation invalidation.
 A chosen BT or FSM has a concrete graph; a chosen ActionEffect has a grouped
 source-property inspector, not a flowchart.
@@ -459,8 +472,9 @@ before a sibling. No default trivia tree, formatting pass or source normalizatio
 Insertion places producer-owned complete field syntax. Cross-constructor
 transfer instead consumes the existing punctuated span, deletes/inserts only
 that payload and returns its exact final source range. It does not copy the
-intervening document to preserve a deleted marker. Semantic admission and
-selection across a parent change remain prerequisites for graph reconnect;
+intervening document to preserve a deleted marker. Explicit before/after
+bookmarks now provide parent-changing selection through document history;
+semantic and target-role admission remain prerequisites for graph reconnect;
 structural edits on recovered source still need an error-tree contract. See
 [`../docs/lua_table_transfer_design.md`](../docs/lua_table_transfer_design.md).
 The semantic binder owns lexical membership separately from global writes and
@@ -980,8 +994,9 @@ or workbench composition and unbind at disposal; dispatch does not build a
 handler list or allocate a new command context each frame.
 
 Undo/Redo are registered by the actual control. The code contribution uses the
-shared `EditorTextModel` and existing `undo_controller` for cursor/selection
-restoration. Blurring code ends its typing undo group. `TextField` owns its own
+shared `EditorTextModel`; the retained input restores cursor/selection from its
+content event, and `undo_controller` reveals the active widget's result.
+Blurring code ends its typing undo group. `TextField` owns its own
 small text/caret/selection history; typing, Cut/Paste and history traversal emit
 the same content-change event. Query/result owners subscribe once. Programmatic
 field resets start a new history, and a field locked during resource creation

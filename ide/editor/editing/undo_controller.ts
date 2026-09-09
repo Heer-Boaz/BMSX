@@ -6,7 +6,7 @@ import { ensureCursorVisible } from '../ui/view/caret/caret';
 import { requestSemanticRefresh } from '../contrib/intellisense/engine';
 import type { CodeEditorViewSnapshot, Position } from '../../common/models';
 import { editorCaretState } from '../ui/view/caret/state';
-import { activeCodeEditor } from '../ui/code_editor_state';
+import { activeCodeEditor, applyCodeEditorViewSnapshot, codeEditorEditState } from '../ui/code_editor_state';
 import { editorViewState } from '../ui/view/state';
 
 export function prepareUndo(key: string, allowMerge: boolean): void {
@@ -14,7 +14,7 @@ export function prepareUndo(key: string, allowMerge: boolean): void {
 	if (model.readOnly) {
 		return;
 	}
-	model.prepareUndo(key, allowMerge, editorRuntimeState.currentTimeMs, captureCodeEditorViewSnapshot());
+	model.prepareUndo(key, allowMerge, editorRuntimeState.currentTimeMs, codeEditorEditState.of(captureCodeEditorViewSnapshot()));
 }
 
 export function applyUndoableReplace(offset: number, deleteLength: number, insertText: string): void {
@@ -31,11 +31,7 @@ export function undo(): void {
 	if (record === null) {
 		return;
 	}
-	if (record.beforeViewState !== null) {
-		restoreCodeEditorViewSnapshot(record.beforeViewState);
-	} else {
-		refreshAfterHistoryChange();
-	}
+	refreshAfterHistoryChange();
 }
 
 export function redo(): void {
@@ -48,11 +44,7 @@ export function redo(): void {
 	if (record === null) {
 		return;
 	}
-	if (record.afterViewState !== null) {
-		restoreCodeEditorViewSnapshot(record.afterViewState);
-	} else {
-		refreshAfterHistoryChange();
-	}
+	refreshAfterHistoryChange();
 }
 
 export function breakUndoSequence(): void {
@@ -88,17 +80,10 @@ export function restoreCodeEditorViewSnapshot(
 	snapshot: CodeEditorViewSnapshot,
 	options?: RestoreCodeEditorViewSnapshotOptions,
 ): void {
-	const view = activeCodeEditor.view;
 	editorViewState.maxLineLengthDirty = true;
 	editorViewState.layout.markVisualLinesDirty();
 	editorViewState.layout.invalidateHighlightsFromRow(0);
-	view.cursorRow = snapshot.cursorRow;
-	view.cursorColumn = snapshot.cursorColumn;
-	view.scrollRow = snapshot.scrollRow;
-	view.scrollColumn = snapshot.scrollColumn;
-	view.selectionAnchor = snapshot.selectionAnchor === null
-		? null
-		: { row: snapshot.selectionAnchor.row, column: snapshot.selectionAnchor.column };
+	applyCodeEditorViewSnapshot(activeCodeEditor.view, snapshot);
 	updateDesiredColumn();
 	resetBlink();
 	editorCaretState.cursorRevealSuspended = false;

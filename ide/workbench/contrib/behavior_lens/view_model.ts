@@ -10,6 +10,7 @@ import type { BehaviorGraphModel } from './graph_model';
 import { createBehaviorLensLayout, installBehaviorLensDocument } from './layout';
 import type { BehaviorSourceDocument, BehaviorSourceNode, BehaviorSourceRowKey } from './model';
 import type { BehaviorSourceSelection } from './source_selection';
+import type { BehaviorSourceBookmark } from './source_bookmark';
 import type { StateMachineSourceIndex } from './state_machine_index';
 import type { AsyncGraphLayoutState } from '../../services/graph_layout/async_layout';
 import type { StateGraphModel } from './state_graph_model';
@@ -66,6 +67,8 @@ export type BehaviorLensViewState = {
 	sourceVersion: number;
 	definitionRowKey: BehaviorSourceRowKey | null;
 	selection: BehaviorSourceSelection | null;
+	/** One edit-associated selection waiting for the next source projection, not history. */
+	selectionBookmark: BehaviorSourceBookmark | undefined;
 	stateMachines: StateMachineSourceIndex;
 	sourceRanges: Map<BehaviorSourceRowKey, TrackedTextRange>;
 	readonly sourceNodes: BehaviorSourceNode[];
@@ -107,6 +110,7 @@ export function createBehaviorLensViewState(document: BehaviorSourceDocument, mo
 		sourceVersion: model.version,
 		definitionRowKey: null,
 		selection: null,
+		selectionBookmark: undefined,
 		stateMachines: { bodies: new Map(), references: new Map() },
 		sourceRanges: new Map(),
 		sourceNodes: [],

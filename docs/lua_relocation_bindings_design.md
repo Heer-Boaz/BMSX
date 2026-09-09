@@ -61,6 +61,11 @@ Graph-parent correspondence, target list/role/shared-constructor admission,
 selection through Undo and actual Save/Hot Resume of relocated callbacks remain
 separate gates. No reconnect UI is enabled by this slice.
 
+The subsequent [edit-bookmark slice](editor_edit_bookmarks_design.md) supplies
+explicit parent-changing selection through document Undo/Redo. It does not
+weaken or replace this lexical analysis, target-role admission or capture/Hot
+Resume correspondence.
+
 ## Evidence
 
 - Eleven independent tests cover lexical membership, equal-valued shadows,

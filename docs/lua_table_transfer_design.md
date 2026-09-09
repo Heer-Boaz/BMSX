@@ -12,6 +12,11 @@ compares free declaration, receiver and vararg identities at a destination.
 Graph-parent correspondence, target ownership and actual transfer Hot Resume
 remain separate gates; this syntax operation still has no reconnect UI.
 
+The [edit-bookmark owner](editor_edit_bookmarks_design.md) now supplies explicit
+before/after source selection through the same text history, including a chosen
+new parent occurrence. It does not change this primitive's semantic admission
+or supply a reconnect gesture.
+
 ## Production references and differences
 
 - [VS Code DragAndDropCommand](https://github.com/microsoft/vscode/blob/585a254fad3a58b3d454622a9a1cf61358e5fc58/src/vs/editor/contrib/dnd/browser/dragAndDropCommand.ts#L23-L96)

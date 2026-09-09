@@ -1,11 +1,12 @@
 import * as constants from '../../common/constants';
-import type { CodeEditorViewSnapshot, EditContext } from '../../common/models';
+import type { EditContext } from '../../common/models';
 import type { RuntimeResource } from '../../common/resource';
 import { PieceTreeBuffer } from '../text/piece_tree_buffer';
 import { getTextSnapshot } from '../text/source_text';
 import type { TextBuffer } from '../text/text_buffer';
 import { EditorUndoRecord, TextUndoOp } from '../text/undo';
 import type { EditorTextChange } from '../text/text_change';
+import type { EditorEditState } from './edit_state';
 
 export type EditorDocumentMode = 'lua' | 'aem';
 
@@ -23,6 +24,8 @@ export type EditorTextModelContentChangeEvent = {
 	startRow: number;
 	editContext: EditContext | null;
 	readonly changes: readonly EditorTextChange[];
+	/** Result state for this edit/Undo/Redo; interpreted only by its originating editor kind. */
+	readonly editState: EditorEditState | null;
 };
 
 export type EditorTextModelSnapshot = {
@@ -138,19 +141,21 @@ export class EditorTextModel {
 		key: string,
 		allowMerge: boolean,
 		timestamp: number,
-		beforeViewState: CodeEditorViewSnapshot,
+		beforeEditState: EditorEditState,
 	): void {
 		this.clearPreparedEdit();
+		const lastRecord = this.undoStack[this.undoStack.length - 1];
 		const shouldMerge = allowMerge
 			&& this.lastHistoryKey === key
-			&& timestamp - this.lastHistoryTimestamp <= constants.UNDO_COALESCE_INTERVAL_MS;
+			&& timestamp - this.lastHistoryTimestamp <= constants.UNDO_COALESCE_INTERVAL_MS
+			&& lastRecord.afterEditState!.type === beforeEditState.type;
 		if (shouldMerge) {
-			this.pendingRecord = this.undoStack[this.undoStack.length - 1];
+			this.pendingRecord = lastRecord;
 			this.pendingRecordIsNew = false;
 		} else {
 			const record = new EditorUndoRecord();
-			record.beforeViewState = beforeViewState;
-			record.afterViewState = beforeViewState;
+			record.beforeEditState = beforeEditState;
+			record.afterEditState = beforeEditState;
 			record.beforeStateId = this.currentStateId;
 			this.pendingRecord = record;
 			this.pendingRecordIsNew = true;
@@ -187,7 +192,7 @@ export class EditorTextModel {
 		record.ops.push(op);
 	}
 
-	public commitEdit(afterViewState: CodeEditorViewSnapshot, editContext: EditContext | null): boolean {
+	public commitEdit(afterEditState: EditorEditState, editContext: EditContext | null): boolean {
 		const record = this.pendingRecord;
 		if (record.ops.length === this.pendingOpStart) {
 			this.clearPreparedEdit();
@@ -199,7 +204,7 @@ export class EditorTextModel {
 			this.clearRedoStack();
 			this.pendingRecordIsNew = false;
 		}
-		record.afterViewState = afterViewState;
+		record.afterEditState = afterEditState;
 		this.currentStateId = this.nextStateId;
 		this.nextStateId += 1;
 		record.afterStateId = this.currentStateId;
@@ -210,7 +215,7 @@ export class EditorTextModel {
 		this.versionValue += 1;
 		const startRow = this.pendingStartRow;
 		this.clearPreparedEdit();
-		this.emitContentChange('edit', startRow, editContext, changes);
+		this.emitContentChange('edit', startRow, editContext, changes, record.afterEditState);
 		this.emitDirtyChange(wasDirty);
 		return true;
 	}
@@ -221,8 +226,8 @@ export class EditorTextModel {
 	 */
 	public pushEditOperations(
 		edits: readonly EditorTextEdit[],
-		beforeViewState: CodeEditorViewSnapshot | null = null,
-		afterViewState: CodeEditorViewSnapshot | null = null,
+		beforeEditState: EditorEditState | null = null,
+		computeAfterEditState: ((changes: readonly EditorTextChange[]) => EditorEditState) | null = null,
 	): void {
 		if (edits.length === 0) {
 			return;
@@ -230,8 +235,7 @@ export class EditorTextModel {
 		const wasDirty = this.dirty;
 		this.breakUndoSequence();
 		const record = new EditorUndoRecord();
-		record.beforeViewState = beforeViewState;
-		record.afterViewState = afterViewState;
+		record.beforeEditState = beforeEditState;
 		record.beforeStateId = this.currentStateId;
 		this.pushUndoRecord(record);
 		this.clearRedoStack();
@@ -248,7 +252,9 @@ export class EditorTextModel {
 		this.nextStateId += 1;
 		record.afterStateId = this.currentStateId;
 		this.versionValue += 1;
-		this.emitContentChange('edit', startRow, null, record.getTextChanges());
+		const changes = record.getTextChanges();
+		if (computeAfterEditState !== null) record.afterEditState = computeAfterEditState(changes);
+		this.emitContentChange('edit', startRow, null, changes, record.afterEditState);
 		this.emitDirtyChange(wasDirty);
 	}
 
@@ -281,7 +287,7 @@ export class EditorTextModel {
 		this.currentStateId = record.beforeStateId;
 		this.versionValue += 1;
 		this.breakUndoSequence();
-		this.emitContentChange('undo', 0, null, record.getTextChanges(0, true));
+		this.emitContentChange('undo', 0, null, record.getTextChanges(0, true), record.beforeEditState);
 		this.emitDirtyChange(wasDirty);
 		return record;
 	}
@@ -315,7 +321,7 @@ export class EditorTextModel {
 		this.currentStateId = record.afterStateId;
 		this.versionValue += 1;
 		this.breakUndoSequence();
-		this.emitContentChange('redo', 0, null, record.getTextChanges());
+		this.emitContentChange('redo', 0, null, record.getTextChanges(), record.afterEditState);
 		this.emitDirtyChange(wasDirty);
 		return record;
 	}
@@ -460,13 +466,14 @@ export class EditorTextModel {
 		this.pendingHistoryMerge = false;
 	}
 
-	private emitContentChange(kind: EditorTextModelChangeKind, startRow: number, editContext: EditContext | null, changes: readonly EditorTextChange[]): void {
+	private emitContentChange(kind: EditorTextModelChangeKind, startRow: number, editContext: EditContext | null, changes: readonly EditorTextChange[], editState: EditorEditState | null = null): void {
 		const event: EditorTextModelContentChangeEvent = {
 			kind,
 			version: this.versionValue,
 			startRow,
 			editContext,
 			changes,
+			editState,
 		};
 		for (const listener of this.contentChangeListeners) {
 			listener(event);

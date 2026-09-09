@@ -6,10 +6,18 @@ import type { BehaviorLensViewState } from './view_model';
 import type { BehaviorSourceSelection } from './source_selection';
 import { mapStateMachineSourceSelection, reconcileStateMachineSourceSelection } from './state_machine_selection';
 import type { StateMachineSourceDefinition } from './state_machine_model';
+import type { EditorEditState } from '../../../editor/model/edit_state';
+import { behaviorSourceEditState, mapBehaviorSourceBookmark } from './source_bookmark';
 
 /** Tracks the existing generation even while another pane edits its document. */
-export function mapBehaviorLensSourceRanges(state: BehaviorLensViewState, changes: readonly EditorTextChange[]): void {
+export function mapBehaviorLensSourceRanges(state: BehaviorLensViewState, changes: readonly EditorTextChange[], editState: EditorEditState | null = null): void {
 	for (const span of state.sourceRanges.values()) mapTrackedTextRange(span, changes);
+	if (editState !== null && editState.is(behaviorSourceEditState)) {
+		const bookmark = editState.value;
+		state.selectionBookmark = { kind: bookmark.kind, path: bookmark.path.map(step => ({ ...step })) };
+	} else if (state.selectionBookmark !== undefined) {
+		mapBehaviorSourceBookmark(state.selectionBookmark, changes);
+	}
 	const selection = state.selection;
 	if (selection !== null && (selection.kind === 'state-outcome' || selection.kind === 'state-entry')) {
 		mapStateMachineSourceSelection(selection, changes);

@@ -1,5 +1,5 @@
 import { clearForwardNavigationHistory } from '../../../navigation/navigation_history';
-import { activeCodeEditor } from '../../ui/code_editor_state';
+import { activeCodeEditor, codeEditorEditState } from '../../ui/code_editor_state';
 import { editorViewState } from '../../ui/view/state';
 import { editorRuntimeState } from '../runtime_state';
 import { captureCodeEditorViewSnapshot } from '../../editing/undo_controller';
@@ -7,7 +7,7 @@ import { captureCodeEditorViewSnapshot } from '../../editing/undo_controller';
 export function markTextMutated(): void {
 	const editContext = editorRuntimeState.pendingEditContext;
 	editorRuntimeState.pendingEditContext = null;
-	if (!activeCodeEditor.model.commitEdit(captureCodeEditorViewSnapshot(), editContext)) {
+	if (!activeCodeEditor.model.commitEdit(codeEditorEditState.of(captureCodeEditorViewSnapshot()), editContext)) {
 		return;
 	}
 	clearForwardNavigationHistory();

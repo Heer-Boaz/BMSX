@@ -64,3 +64,13 @@ destination queries. `--binder-only` skips relocation queries for comparison
 with a bundle using the previous binder owner. Use identical bundling/settings
 and run without other tests. No result is a guest, renderer, Hot Resume or
 complete-frame performance claim; see `docs/lua_relocation_bindings_design.md`.
+
+## Edit-associated selection
+
+The independent `editor_edit_state.test.ts` and `behavior_source_bookmark.test.ts`
+gates exercise before/after selection on the same document Undo record. The
+actual Studio suites additionally run `studio_source_bookmarks.ts` against
+physical source navigation, hidden Lens refresh and normal history commands.
+`profile_bookmarks.ts` measures retained source-path capture/resolution and
+typed-state history production separately from parsing/rendering. Contract,
+primary references and commands: `docs/editor_edit_bookmarks_design.md`.

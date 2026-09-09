@@ -227,7 +227,7 @@ export class BehaviorLensController {
 	public onDidChangeContent(model: EditorTextModel, event: EditorTextModelContentChangeEvent): void {
 		for (const input of editorTabGroup.tabs) {
 			if (input.kind === 'behavior_lens' && input.workingCopy === model) {
-				mapBehaviorLensSourceRanges(input.view, event.changes);
+				mapBehaviorLensSourceRanges(input.view, event.changes, event.editState);
 				input.invalidatePresentation();
 			}
 		}

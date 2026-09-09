@@ -1,3 +1,4 @@
+import { codeEditorEditState } from '../../ide/editor/ui/code_editor_state';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { CodeEditorViewSnapshot } from '../../ide/common/models';
@@ -94,12 +95,12 @@ test('coalesced typing emits only the new replacements, while history emits the 
 	const model = new EditorTextModel(resource, 'lua', 'abc');
 	const events: EditorTextModelContentChangeEvent[] = [];
 	model.onDidChangeContent(event => events.push(event));
-	model.prepareUndo('typing', true, 1, view);
+	model.prepareUndo('typing', true, 1, codeEditorEditState.of(view));
 	model.applyUndoableReplace(3, 0, 'X');
-	model.commitEdit(view, null);
-	model.prepareUndo('typing', true, 2, view);
+	model.commitEdit(codeEditorEditState.of(view), null);
+	model.prepareUndo('typing', true, 2, codeEditorEditState.of(view));
 	model.applyUndoableReplace(4, 0, 'Y');
-	model.commitEdit(view, null);
+	model.commitEdit(codeEditorEditState.of(view), null);
 	assert.deepEqual(events[0].changes, [{ offset: 3, deletedLength: 0, insertedLength: 1 }]);
 	assert.deepEqual(events[1].changes, [{ offset: 4, deletedLength: 0, insertedLength: 1 }]);
 	model.undo();

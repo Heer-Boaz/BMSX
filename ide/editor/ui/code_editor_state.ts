@@ -1,7 +1,11 @@
-import type { Position } from '../../common/models';
+import { EditorEditStateType } from '../model/edit_state';
+import type { CodeEditorViewSnapshot, Position } from '../../common/models';
 import { clamp } from '../../../machine/ts/common/clamp';
 import type { EditorTextModel } from '../model/text_model';
 import { inputFocus } from '../../input/focus';
+import { clearSingleCursorSelection, setSingleCursorSelectionAnchor } from '../editing/cursor/state';
+
+export const codeEditorEditState = new EditorEditStateType<CodeEditorViewSnapshot>();
 
 type CursorMovedListener = () => void;
 
@@ -32,6 +36,17 @@ export function createCodeEditorViewState(): CodeEditorViewState {
 		scrollRow: 0,
 		scrollColumn: 0,
 	};
+}
+
+/** Applies model-associated state to a retained view, without touching the active widget. */
+export function applyCodeEditorViewSnapshot(view: CodeEditorViewState, snapshot: CodeEditorViewSnapshot): void {
+	view.cursorRow = snapshot.cursorRow;
+	view.cursorColumn = snapshot.cursorColumn;
+	view.scrollRow = snapshot.scrollRow;
+	view.scrollColumn = snapshot.scrollColumn;
+	const anchor = snapshot.selectionAnchor;
+	if (anchor === null) clearSingleCursorSelection(view);
+	else setSingleCursorSelectionAnchor(view, anchor.row, anchor.column);
 }
 
 /** The single code-editor widget and the model/view currently attached to it. */

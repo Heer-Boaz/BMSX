@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import type { CodeEditorViewSnapshot } from '../../ide/common/models';
+import { EditorEditStateType } from '../../ide/editor/model/edit_state';
 import type { RuntimeResource } from '../../ide/common/resource';
 import { editorDiagnosticsState } from '../../ide/editor/contrib/diagnostics/state';
 import {
@@ -13,6 +14,7 @@ import {
 	editorTextModelService,
 } from '../../ide/editor/model/model_service';
 import {
+	codeEditorEditState,
 	ActiveCodeEditorState,
 	activeCodeEditor,
 	createCodeEditorViewState,
@@ -55,14 +57,14 @@ function luaResource(path: string): RuntimeResource {
 	};
 }
 
-function viewSnapshot(view: CodeEditorViewState): CodeEditorViewSnapshot {
-	return {
+function viewSnapshot(view: CodeEditorViewState) {
+	return codeEditorEditState.of({
 		cursorRow: view.cursorRow,
 		cursorColumn: view.cursorColumn,
 		scrollRow: view.scrollRow,
 		scrollColumn: view.scrollColumn,
 		selectionAnchor: view.selectionAnchor,
-	};
+	});
 }
 
 function codeContext(model: EditorTextModel, view: CodeEditorViewState): CodeTabContext {
@@ -120,10 +122,10 @@ test('one text model publishes atomic edits and lifecycle events to two independ
 
 	const undone = model.undo();
 	assert.equal(model.buffer.getText(), 'alpha beta!');
-	assert.equal(undone!.beforeViewState, null);
+	assert.equal(undone!.beforeEditState, null);
 	const redone = model.redo();
 	assert.equal(model.buffer.getText(), 'omega gamma!');
-	assert.equal(redone!.afterViewState, null);
+	assert.equal(redone!.afterEditState, null);
 
 	const saved = model.createSnapshot();
 	model.completeSave(saved);
@@ -234,6 +236,53 @@ test('tab closure leaves the separately retained code input and resource model i
 	models.clear();
 });
 
+test('retained code inputs consume document edit state independently of the active widget and Undo caller', () => {
+	const model = new EditorTextModel(luaResource('hidden-code.lua'), 'lua', 'abc');
+	const view = createCodeEditorViewState();
+	const inputs = new CodeEditorInputManager();
+	inputs.register(codeContext(model, view));
+	const other = new EditorTextModel(luaResource('active-code.lua'), 'lua', 'other');
+	const otherView = createCodeEditorViewState();
+	activeCodeEditor.attach(other, otherView);
+	const before = codeEditorEditState.of({ cursorRow: 0, cursorColumn: 3, scrollRow: 0, scrollColumn: 0, selectionAnchor: { row: 0, column: 1 } });
+	const after = codeEditorEditState.of({ ...before.value, cursorColumn: 4 });
+	model.pushEditOperations([{ offset: 3, deleteLength: 0, text: 'x' }], before, () => after);
+	assert.equal(view.cursorColumn, 4);
+	assert.equal(view.selectionAnchor, view.selectionAnchorScratch, 'state application reuses the input-owned cursor anchor');
+	assert.notEqual(view.selectionAnchor, before.value.selectionAnchor);
+	model.undo();
+	assert.equal(view.cursorColumn, 3);
+	view.selectionAnchor.column = 2;
+	assert.equal(before.value.selectionAnchor.column, 1, 'view changes cannot alter history values');
+	model.redo();
+	assert.equal(view.cursorColumn, 4);
+	assert.equal(view.selectionAnchor.column, 1);
+	assert.equal(activeCodeEditor.model, other);
+	assert.equal(otherView.cursorColumn, 0, 'history does not mutate the active unrelated code widget');
+	inputs.clear(); model.dispose(); other.dispose();
+});
+
+test('code input replacement/clear releases old subscriptions and foreign edit-state types do not become cursor snapshots', () => {
+	const model = new EditorTextModel(luaResource('subscription.lua'), 'lua', 'abc');
+	const inputs = new CodeEditorInputManager();
+	const oldView = createCodeEditorViewState();
+	const view = createCodeEditorViewState();
+	inputs.register(codeContext(model, oldView));
+	inputs.register(codeContext(model, view));
+	const before = viewSnapshot(view);
+	const after = codeEditorEditState.of({ ...before.value, cursorColumn: 4 });
+	model.pushEditOperations([{ offset: 3, deleteLength: 0, text: 'x' }], before, () => after);
+	assert.equal(view.cursorColumn, 4);
+	assert.equal(oldView.cursorColumn, 0);
+	const foreign = new EditorEditStateType<CodeEditorViewSnapshot>();
+	model.pushEditOperations([{ offset: 4, deleteLength: 0, text: 'y' }], foreign.of(before.value), () => foreign.of(before.value));
+	assert.equal(view.cursorColumn, 4, 'payload shape is not ownership');
+	inputs.clear();
+	model.undo(); model.undo();
+	assert.equal(view.cursorColumn, 4, 'cleared inputs no longer consume model events');
+	model.dispose();
+});
+
 test('the model service enumerates dirty working copies independently of editor inputs', () => {
 	const models = new EditorTextModelService();
 	const first = models.retain(luaResource('first-dirty.lua'), 'lua', 'first');
@@ -280,11 +329,14 @@ test('restoring a view does not lend mutable selection state from undo history',
 	assert.equal(snapshot.selectionAnchor.column, 1);
 });
 
-test('backspace over a selection commits one model-owned undo element', () => {
+test('backspace over a selection commits one model-owned undo element', t => {
 	const model = new EditorTextModel(luaResource('selection-backspace.lua'), 'lua', 'root');
 	const view = createCodeEditorViewState();
 	view.cursorColumn = 4;
 	view.selectionAnchor = { row: 0, column: 0 };
+	const inputs = new CodeEditorInputManager();
+	inputs.register(codeContext(model, view));
+	t.after(() => inputs.clear());
 	activeCodeEditor.attach(model, view);
 	configureFontVariant(editorTestClock, DEFAULT_FONT_VARIANT, 'lua');
 

@@ -28,6 +28,13 @@ Gelijke namen/waarden zijn geen bewijs; een andere scope op zichzelf evenmin
 een afwijzingsgrond. Dit activeert nog geen graphcommand: target-ownership,
 parentwissel-selectie en de live-Hot-Resume-proef blijven afzonderlijke gates.
 
+[`IDE-EDIT-SELECTION-BOOKMARKS-01`](editor_edit_bookmarks_design.md) levert die
+expliciete parentwissel-selectie nu via de bestaande documentgeschiedenis.
+Voor/na-bookmarks bevatten echte bronvoorkomenpaden, ook bij gedeelde
+initializers, en worden in een verborgen Lens pas bij bronprojectie opgelost.
+Geen tweede history of losser overeenkomstenalgoritme. Reconnect-admission,
+subtree-foldbeleid en live Hot Resume zijn hiermee niet als gebouwd afgevinkt.
+
 ## Getoetste productievoorbeelden
 
 - [LimboAI, Move Up/Down](https://github.com/limbonaut/limboai/blob/3f14ea4c26911e8b8e30c6bcdb575fc589a59deb/editor/limbo_ai_editor_plugin.cpp#L660-L719):

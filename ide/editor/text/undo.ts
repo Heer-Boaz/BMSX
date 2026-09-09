@@ -1,5 +1,5 @@
 import type { PieceTreeNode } from './piece_tree_buffer';
-import type { CodeEditorViewSnapshot } from '../../common/models';
+import type { EditorEditState } from '../model/edit_state';
 import type { EditorTextChange } from './text_change';
 
 export type TextUndoKind = 'insert' | 'delete' | 'replace';
@@ -44,8 +44,8 @@ export class TextUndoOp {
 
 export class EditorUndoRecord {
 	public readonly ops: TextUndoOp[] = [];
-	public beforeViewState: CodeEditorViewSnapshot | null = null;
-	public afterViewState: CodeEditorViewSnapshot | null = null;
+	public beforeEditState: EditorEditState | null = null;
+	public afterEditState: EditorEditState | null = null;
 	public beforeStateId = 0;
 	public afterStateId = 0;
 

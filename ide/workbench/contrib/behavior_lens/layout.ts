@@ -4,6 +4,7 @@ import { editorViewState } from '../../../editor/ui/view/state';
 import { updateFullWidthWorkbenchLayout } from '../../common/layout';
 import type { TextBuffer } from '../../../editor/text/text_buffer';
 import { reconcileBehaviorLensSource } from './source_correspondence';
+import { resolveBehaviorSourceBookmark } from './source_bookmark';
 import {
 	clampWorkbenchListScroll,
 	layoutWorkbenchList,
@@ -48,6 +49,17 @@ export function installBehaviorLensDocument(
 	buffer: TextBuffer,
 ): void {
 	state.selection = reconcileBehaviorLensSource(state, document, buffer);
+	const bookmark = state.selectionBookmark;
+	state.selectionBookmark = undefined;
+	if (bookmark !== undefined) {
+		const path = resolveBehaviorSourceBookmark(bookmark, state);
+		state.selection = null;
+		if (path !== undefined) {
+			selectBehaviorLensDefinition(state, path[0].rowKey);
+			state.selection = { kind: bookmark.kind, rowKey: path[path.length - 1].rowKey };
+			for (let index = 0; index < path.length - 1; index += 1) state.collapsedRowKeys.delete(path[index].rowKey);
+		}
+	}
 	state.stateMachines = indexStateMachineSource(document);
 	state.headerDirty = true;
 	if (state.presentation.kind !== 'outline') state.presentation.dirty = true;
