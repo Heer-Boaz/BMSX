@@ -7,8 +7,9 @@ gebouwde grenzen. FSM-bronstructuur en lokaal bewezen pad-/returnrelaties zijn
 nu ook gebouwd, met het hieronder afgebakende callbackcontract. De generieke
 compound-layout-/rendergrens is getoetst met ELK en een echte browserworker.
 De input-/worker-lifetime en latest-generation-layoutsession zijn nu ook
-gebouwd en onafhankelijk getoetst; de concrete broncontribution volgt nog.
-FSM en ActionEffect houden hun outline; de FSM-inputintegratie volgt afzonderlijk.
+gebouwd en onafhankelijk getoetst. Afzonderlijke FSM-return-/entryselectie is
+nu bron-owned, met de bestaande Details/Source-route als concrete consumer.
+FSM en ActionEffect houden hun outline; de asynchrone FSM-grafiek volgt afzonderlijk.
 Deze visualisatie is nog geen authoring.
 
 ## Doel en grens
@@ -487,7 +488,8 @@ alleen een typecheck slaagt. De latere rijen zijn nog te toetsen hypotheses.
 | `STUDIO-FSM-SOURCE-GRAPH-01` | **Gebouwd binnen het afgebakende lokale callbackcontract:** typed containment/entry/transitionfeiten met bewijs en expliciete onbekende relaties; geen lines uit strings. Fixtures bewijzen scopes, guards, directe paths, ondersteunde callbacks, meerdere machines en dynamische targets. Iedere ondersteunde path-/callbackvorm volgt de runtime-owner; cross-file bewijs kan niet zonder semantic-generation-invalidering. |
 | `STUDIO-GRAPH-COMPOUND-LAYOUT-01` — geïmplementeerd | Generieke ELK Layered-grens, geneste nodes, cycles/self-loops/parallelle links, gemeten labels en gedeelde body/header-paint/hit-geometrie. Echte worker plus alle drie browserrenderers; geen bron- of runtimekennis in de layoutrequest. |
 | `STUDIO-GRAPH-LAYOUT-LIFETIME-01` — geïmplementeerd | Inputdispose, lazy native Worker, expliciete fouten en één lopende/nieuwste wachtende layoutgeneratie. De onafhankelijke input/model/pane-proef test hidden edits, Undo/Redo, coalescing en close zonder focusdiefstal. Productasset is upstream-bytegelijk; de buildgate sluit ELK uit de Studio-UI en player. |
-| `STUDIO-FSM-GRAPH-VIEW-01` | Sluit de gebouwde layoutlifetime aan op de concrete broninput en bouw afzonderlijke return-proofcorrespondentie vóór de view. Fixture met self-loop, twee edges tussen dezelfde states, parenthandler, nested en concurrent scopes; edges blijven selecteerbaar en verwijzen naar hun eigen bewijs. Geen tree/DAG-normalisatie. |
+| `STUDIO-FSM-SOURCE-SELECTION-01` — geïmplementeerd | Bronselectie onderscheidt een gewone node, BT-verbinding, FSM-outcome en expliciete entry. De slot-occurrence plus binding/callback/returnanker bepaalt correspondentie, niet het edge-ordinal of target. Details/Source, hidden edits, Undo en popupinvalidatie gebruiken deze echte inputowner. |
+| `STUDIO-FSM-GRAPH-VIEW-01` | Sluit de gebouwde layoutlifetime en bronselectie aan op de concrete FSM-grafiek. Fixture met self-loop, twee edges tussen dezelfde states, parenthandler, nested en concurrent scopes; edges blijven selecteerbaar en verwijzen naar hun eigen bewijs. Geen tree/DAG-normalisatie. |
 
 `STUDIO-BT-VISUAL-EDITOR-01` blijft het afzonderlijke **authoring**contract.
 Nieuwe add/remove/reorder/connect-commands moeten hun minimale Lua-edit en
@@ -840,6 +842,119 @@ IDE-compositie wordt pas bij de concrete view aangesloten. Fouten blijven fouten
   diagnostics als `fc89a230e`, byte-identiek; geen claim van repo-breed groen.
 
 Geen nieuwe layout in het renderframepad, guestdata, cartlib, C++-runtime of
-Hot-Resume-contract. De aansluitende FSM-slice moet de concrete broninvalidatie,
-font/definitiekeuze, pending/foutpresentatie en afzonderlijke return-proofselectie
-nog bouwen; een generieke session alleen bewijst die usecases niet.
+Hot-Resume-contract. De aansluitende FSM-slice moet de concrete layoutinvalidatie,
+font/definitiekeuze en pending/foutpresentatie nog bouwen; een generieke session
+alleen bewijst die usecases niet. De afzonderlijke bronselectie volgt hieronder.
+
+## Afzonderlijke FSM-bronselectie — 9 september 2026
+
+De bronrij en de getekende edge zijn verschillende representaties. De vroegere
+`selectedRowKey` plus grafiekspecifieke `selectionKind` was voldoende voor één
+BT-verbinding per occurrence, maar niet voor meerdere returns uit één callback.
+De input bezit nu één discriminated source-selection; de viewport bezit alleen
+de geselecteerde geometrie uit haar eigen layoutgeneratie. Source-navigation
+leest actuele bronfeiten, niet een nog te vervangen grafiekresultaat.
+
+Getoetste productiereferenties:
+
+- VS Code bewaart references afzonderlijk van decorations; de textmodel-markers
+  volgen edits en de reference-owner beslist welke bron nog correspondeert.
+  Overgenomen: die scheiding en edit-affinity, niet een tekstlengteheuristiek
+  als bewijs van callbackbinding.
+  [References](https://github.com/microsoft/vscode/blob/b4e90b1a76bcb6e9b07adbee522d75a7fa4a5b1d/src/vs/editor/contrib/gotoSymbol/browser/peek/referencesWidget.ts#L42-L161),
+  [markerregels](https://github.com/microsoft/vscode/blob/b4e90b1a76bcb6e9b07adbee522d75a7fa4a5b1d/src/vs/editor/common/model/intervalTree.ts#L416-L511).
+- CodeMirror maakt expliciet onderscheid tussen posities verplaatsen en hun
+  oorspronkelijke bronkarakter verliezen (`MapMode.TrackAfter`). Dat is de
+  referentie voor een syntax-startanker, niet voor het kiezen van een
+  dichtstbijzijnde overgebleven return.
+  [Source-affine posities](https://github.com/codemirror/state/blob/9c801279cb83011e6f92af778f4443406e8f1200/src/change.ts#L5-L15),
+  [mapping](https://github.com/codemirror/state/blob/9c801279cb83011e6f92af778f4443406e8f1200/src/change.ts#L105-L141).
+- VS Code beëindigt de listeners van een Quick Pick met de picksessie. BMSX
+  geeft de bestaande provider een session-owned `DisposableStore`; een
+  bronpicker bindt daarin de textmodel-subscriptie. Geen tweede popupcontroller,
+  globale bronversieguard, stilzwijgende stale-coordinate-acceptatie of retry.
+  [Quick Pick lifecycle](https://github.com/microsoft/vscode/blob/b4e90b1a76bcb6e9b07adbee522d75a7fa4a5b1d/src/vs/platform/quickinput/browser/quickInputController.ts#L478-L555).
+
+Concrete ownership:
+
+- De bestaande parent/use-correspondentie moet eerst dezelfde registration,
+  states-use en consumerslot bewijzen. Twee uses van dezelfde callback zijn
+  verschillende contexts, ook als hun returnsyntax exact dezelfde AST-node is.
+- Direct bewijs volgt de bindingsexpressie, niet het geïnitialiseerde const-
+  literal. Returnbewijs volgt binding, callbackrange en return-startanker.
+  De nieuwe parse moet die return opnieuw als immediate return van dezelfde
+  gebonden callback publiceren. Een nieuwe gelijknamige functie, geneste
+  callback, verwijderde consumer of proof-kindwissel correspondeert niet.
+- Entry bewaart de declarerende `owner` los van `origin`: concurrent entry
+  ontstaat vanuit de parent, terwijl `is_concurrent` bij het child hoort.
+  Alleen een expliciet veld is een navigeerbare entrybron; impliciete entry
+  krijgt geen verzonnen veld of hostgekozen eerste child.
+- Alleen de gekozen proof houdt extra editmarkers vast. Referenties worden
+  eenmaal per bronversie geïndexeerd; menugeschiktheid is een maplookup en
+  labels worden alleen bij openen gebouwd. Geen nieuwe per-frame sourcepass,
+  callbackinstrumentatie, graphdatabase of runtime-/C++-wijziging.
+- Details/Source zijn al een concrete consumer in de bestaande outline. De
+  kiezer onderscheidt gelijke returns met hun bronlocatie en noemt een
+  resolved target een **mogelijke** path. Unknown/no-path blijft expliciet.
+  Een gewijzigde bron sluit de geopende bronkeuze. Accept, cancel, blur en
+  vervanging beëindigen de subscriptie vóór focusoverdracht/navigatie; een
+  oude bron kan daarna geen nieuwe, ongerelateerde picker sluiten.
+
+De eerste testversie volgde het **hele** returnbereik. Een wijziging van
+`return next_path` naar `return nil` kon nog corresponderen, maar Undo naar de
+langere expressie liet volgens de bestaande never-grow-markerregel het oude
+rechtereind achter. Dit is geen fout in PieceTree of reden voor een lokale
+cursorcorrectie: een volledig gemarkeerde tekstspan is niet dezelfde identity
+als het begin van een opnieuw bewezen returnstatement. Daarom volgen returns
+en entryvelden hun oorspronkelijke startkarakter via de centrale Lua/text-
+conversie en dezelfde bestaande editmapper. Callback-/bindingspans blijven
+volledig. Verwijdering van het anker of zijn enclosing use maakt selectie leeg;
+Undo herstelt tekst, niet een op naam gereconstrueerde selectie.
+
+De FSM-grafiek is hiermee **nog niet opgeleverd**. Zij moet de bestaande
+asynchrone layoutsession nog concreet aansluiten, pending/failed source state
+presenteren en deze evidence-identiteit aan meerdere getekende edges koppelen.
+BT-tree-navigation of `edgesBySource` wordt niet als FSM-many-edge-model gebruikt.
+
+### Bewijs van deze selectiegrens
+
+- `state_machine_selection.test.ts`: twaalf zelfstandige sourceproeven voor
+  identieke returns, inline/const callbacks, meerdere uses en registrations,
+  UTF-16-edits, invoegen van een gelijke return, binder-shadowing, nested
+  functies, directe bindingsbron, expliciete initial/concurrent-entry en
+  verwijderen/Undo zonder namesake-herstel. De text-ownerproef borgt apart het
+  verschil tussen span-affinity en syntax-startidentity.
+- `studio_fsm_selection.ts` gebruikt de echte registrationpicker, Details,
+  command palette en Source. Een ingedrukte muisknop wordt niet als selectie-
+  drag meegenomen naar code. Hidden edits en gewone Undo volgen de juiste
+  return, ook als diens ordinal verandert. Wijzigen van de bron met de kiezer
+  open beëindigt die snapshot. Machinepositie en geïnstalleerde media blijven
+  ongewijzigd. De fixture is authored Lua, niet een fake cartridge of een
+  golden regelnummer uit een game.
+- Nemesis- én Pietious-navigatieruns en de volledige Studio-workflow slagen op
+  **software, WebGL2 en WebGPU**. Die laatste omvat ook BT-view, source-save,
+  Scene Editor, Hot Resume/reboot en Scenario Lab met bestaande faultgates.
+  De evidencekiezer is visueel geïnspecteerd met de echte tiny font op alle
+  drie backends. Voor de softwarecapture zijn de daadwerkelijke gepresenteerde
+  framebufferbytes eenmaal naar de screenshotcanvas gepubliceerd; de headless
+  testbackend tekent niet doorlopend naar een browsercanvas.
+- `npm run test:lua`: **1.058 geslaagd, 1 bestaande skip** (1.059 totaal).
+  IDE-typecheck, Browser Studio- en Node-headless-productbuild slagen. De
+  headless Behavior Lens-proef slaagt met **62 assertions**. De tests-brede
+  typecheck houdt exact dezelfde **51 diagnostics** als `f28ccc83e`; die
+  bestaande fouten zijn niet als groen gerapporteerd. Architecture boundaries,
+  core parity, scoped indentation en diff-check slagen.
+
+`profile_fsm.ts` meet op Node 22.23.1, met de bestaande 10 warmups en mediaan
+van 25 samples, de nieuwe koude grenzen afzonderlijk:
+
+| Fixture | Referentie-index | Inputrefresh incl. broncorrespondentie | Gekozen returnbewijs mappen (insert/delete-paar) |
+| --- | --- | --- | --- |
+| 73 scopes / 72 slots | 0,012 ms | 0,105 ms | 0,052 microseconde |
+| 3.073 scopes / 3.072 slots | 0,318 ms | 4,235 ms | 0,052 microseconde |
+
+Dit meet cached-semantic sourcewerk en de gekozen markers, niet parsing,
+GPU-werk, volledige Studio-frametijd of fysieke-deviceperformance. De gehele
+bronprojectie meet in dezelfde run 0,394 / 5,596 ms; de kolommen zijn afzonderlijke
+experimenten en geen optelbare framebegroting. Logs en inspectiecaptures van
+het landingsbewijs staan in `/tmp/bmsx-fsm-proof`.

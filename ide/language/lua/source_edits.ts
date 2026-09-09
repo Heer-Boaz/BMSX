@@ -2,6 +2,7 @@ import {
 	LuaSyntaxKind,
 	LuaUnaryOperator,
 	type LuaNumericLiteralExpression,
+	type LuaSourcePosition,
 	type LuaSourceRange,
 	type LuaTableField,
 } from '../../../toolchain/ts/lua/syntax/ast';
@@ -17,6 +18,22 @@ export function luaSourceRangeToTextRange(buffer: TextBuffer, range: LuaSourceRa
 		start: buffer.offsetAt(range.start.line - 1, range.start.column - 1),
 		end: buffer.offsetAt(range.end.line - 1, range.end.column),
 	};
+}
+
+/** Compare current syntax with an edit-mapped marker without allocating another span. */
+export function luaSourceRangeMatchesTextRange(buffer: TextBuffer, range: LuaSourceRange, tracked: TrackedTextRange): boolean {
+	return tracked.start !== tracked.end && buffer.offsetAt(range.start.line - 1, range.start.column - 1) === tracked.start
+		&& buffer.offsetAt(range.end.line - 1, range.end.column) === tracked.end;
+}
+
+/** Character-affine syntax anchor (CodeMirror TrackAfter), using the same edit mapper. */
+export function luaSourcePositionToTextRange(buffer: TextBuffer, position: LuaSourcePosition): TrackedTextRange {
+	const start = buffer.offsetAt(position.line - 1, position.column - 1);
+	return { start, end: start + 1 };
+}
+
+export function luaSourcePositionMatchesTextRange(buffer: TextBuffer, position: LuaSourcePosition, tracked: TrackedTextRange): boolean {
+	return tracked.start !== tracked.end && buffer.offsetAt(position.line - 1, position.column - 1) === tracked.start;
 }
 
 /**

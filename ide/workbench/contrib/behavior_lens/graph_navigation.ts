@@ -6,8 +6,7 @@ import { BehaviorLensNavigationResult, type BehaviorLensNavigationCommand, updat
 /** Selection correspondence is a source occurrence plus its presentation role, never a hidden row. */
 export function acceptBehaviorGraphSelection(state: BehaviorLensViewState, graph: BehaviorLensGraph): void {
 	const item = graph.viewport.selection;
-	state.selectedRowKey = item === null ? null : item.source.rowKey;
-	if (item !== null) graph.selectionKind = item.kind;
+	state.selection = item === null ? null : { kind: item.kind === 'node' ? 'node' : 'tree-edge', rowKey: item.source.rowKey };
 	updateBehaviorLensStatus(state);
 }
 

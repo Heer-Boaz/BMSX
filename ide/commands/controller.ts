@@ -247,7 +247,9 @@ export class IdeCommandController {
 				return getActiveTab().kind === 'scene_editor';
 			case 'behaviorLens.details': {
 				const input = getActiveTab();
-				if (input.kind !== 'behavior_lens' || input.view.presentation.kind !== 'graph') return false;
+				if (input.kind !== 'behavior_lens' || input.view.selection === null) return false;
+				if (input.view.stateMachineReferences.has(input.view.selection.rowKey)) return true;
+				if (input.view.presentation.kind !== 'graph') return false;
 				const item = input.view.presentation.viewport.selection;
 				if (item === null) return false;
 				return (item.kind === 'node' ? item : item.child).details.length > 0;

@@ -29,14 +29,14 @@ export async function revealLensOccurrence(test: StudioFixture, view: BehaviorLe
 	if (view.presentation.kind === 'graph') {
 		const path = new Set([...ancestors, key]);
 		await test.press('Home');
-		while (view.selectedRowKey !== key) {
-			const before = view.selectedRowKey;
+		while (view.selection?.rowKey !== key) {
+			const before = view.selection?.rowKey;
 			await test.press('ArrowDown');
-			check(view.selectedRowKey !== before, 'navigation: graph child navigation makes progress');
-			while (!path.has(view.selectedRowKey!)) {
-				const sibling = view.selectedRowKey;
+			check(view.selection?.rowKey !== before, 'navigation: graph child navigation makes progress');
+			while (!path.has(view.selection!.rowKey)) {
+				const sibling = view.selection?.rowKey;
 				await test.press('ArrowRight');
-				check(view.selectedRowKey !== sibling, 'navigation: graph sibling navigation reaches the authored path');
+				check(view.selection?.rowKey !== sibling, 'navigation: graph sibling navigation reaches the authored path');
 			}
 		}
 		return;

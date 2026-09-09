@@ -96,15 +96,15 @@ export async function testStudioBehaviorSourceGraph(test: StudioFixture): Promis
 	const parsed = getCachedLuaParse({ source: model.buffer.getText(), path: model.resource.path }).parsed;
 	model.pushEditOperations(createLuaTableFieldRemovalEdits(model.buffer, parsed.tokens, nextEntries[2].field));
 	await click(editorChromeState.tabButtonBounds.get(lens.id)!);
-	check(view.selectedRowKey === null && viewport.selection === null, 'source graph: deleting the selected occurrence does not choose its namesake');
+	check(view.selection === null && viewport.selection === null, 'source graph: deleting the selected occurrence does not choose its namesake');
 	await press('Enter');
 	check(getActiveTab() === lens, 'source graph: an absent selection has no stale source action');
 	await click(editorChromeState.tabButtonBounds.get(code.id)!);
 	await press('ControlLeft', 'KeyZ');
 	await click(editorChromeState.tabButtonBounds.get(lens.id)!);
-	check(view.selectedRowKey === null && viewport.selection === null, 'source graph: ordinary Undo does not invent correspondence for a removed selection');
+	check(view.selection === null && viewport.selection === null, 'source graph: ordinary Undo does not invent correspondence for a removed selection');
 	await press('ArrowDown');
-	check(view.selectedRowKey === view.definitionRowKey, 'source graph: explicit keyboard navigation starts at the root card after removal');
+	check(view.selection?.rowKey === view.definitionRowKey, 'source graph: explicit keyboard navigation starts at the root card after removal');
 	await click(editorChromeState.tabButtonBounds.get(code.id)!);
 	for (let index = 0; index < 3; index += 1) await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === original, 'source graph: ordinary source Undo removes all fixture edits');

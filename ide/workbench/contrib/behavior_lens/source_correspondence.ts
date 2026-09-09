@@ -3,10 +3,17 @@ import { mapTrackedTextRange, type EditorTextChange, type TrackedTextRange } fro
 import { luaSourceRangeToTextRange } from '../../../language/lua/source_edits';
 import type { BehaviorSourceDocument, BehaviorSourceNode, BehaviorSourceRowKey } from './model';
 import type { BehaviorLensViewState } from './view_model';
+import type { BehaviorSourceSelection } from './source_selection';
+import { mapStateMachineSourceSelection, reconcileStateMachineSourceSelection } from './state_machine_selection';
+import type { StateMachineSourceDefinition } from './state_machine_model';
 
 /** Tracks the existing generation even while another pane edits its document. */
 export function mapBehaviorLensSourceRanges(state: BehaviorLensViewState, changes: readonly EditorTextChange[]): void {
 	for (const span of state.sourceRanges.values()) mapTrackedTextRange(span, changes);
+	const selection = state.selection;
+	if (selection !== null && (selection.kind === 'state-outcome' || selection.kind === 'state-entry')) {
+		mapStateMachineSourceSelection(selection, changes);
+	}
 	if (state.presentation.kind === 'outline') state.presentation.hoverIndex = -1;
 }
 
@@ -18,8 +25,9 @@ export function reconcileBehaviorLensSource(
 	state: BehaviorLensViewState,
 	document: BehaviorSourceDocument,
 	buffer: TextBuffer,
-): BehaviorSourceRowKey | null {
-	const selectedKey = state.selectedRowKey;
+): BehaviorSourceSelection | null {
+	const selection = state.selection;
+	const selectedKey = selection?.rowKey;
 	const oldDefinitionKey = state.definitionRowKey;
 	const oldRanges = state.sourceRanges;
 	const oldCollapsed = new Set(state.collapsedRowKeys);
@@ -64,5 +72,15 @@ export function reconcileBehaviorLensSource(
 	visit(document.definitions, oldDefinitions, null, 0);
 	state.document = document;
 	state.sourceRanges = newRanges;
-	return selected;
+	if (selected === null) return null;
+	const previousSelection = selection!;
+	if (previousSelection.kind === 'node' || previousSelection.kind === 'tree-edge') return { kind: previousSelection.kind, rowKey: selected };
+	let rootKey: BehaviorSourceRowKey = selected;
+	let parent = state.parentRowKeyByRowKey.get(rootKey)!;
+	while (parent !== null) {
+		rootKey = parent;
+		parent = state.parentRowKeyByRowKey.get(rootKey)!;
+	}
+	const definition = document.definitions.find((node): node is StateMachineSourceDefinition => node.behaviorKind === 'state_machine' && node.rowKey === rootKey)!;
+	return reconcileStateMachineSourceSelection(previousSelection, definition, selected, buffer);
 }

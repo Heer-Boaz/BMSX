@@ -5,6 +5,10 @@ import { collectBehaviorRegistrations } from '../../../ide/workbench/contrib/beh
 import { buildStateMachineBody } from '../../../ide/workbench/contrib/behavior_lens/state_machine';
 import { buildStateMachineRelations } from '../../../ide/workbench/contrib/behavior_lens/state_machine_relations';
 import { collectMutatedDeclarations, resolveSourceTable, type BehaviorRecognizerContext } from '../../../ide/workbench/contrib/behavior_lens/source';
+import { EditorTextModel } from '../../../ide/editor/model/text_model';
+import { createBehaviorLensViewState } from '../../../ide/workbench/contrib/behavior_lens/view_model';
+import { installBehaviorLensDocument } from '../../../ide/workbench/contrib/behavior_lens/layout';
+import { indexStateMachineSourceReferences, mapStateMachineSourceSelection, selectStateMachineSource } from '../../../ide/workbench/contrib/behavior_lens/state_machine_selection';
 
 
 for (const siblings of [24, 1024]) {
@@ -18,6 +22,17 @@ machines.register('profile', { initial = 'lane0', states = { ${Array.from({ leng
 	const semantic = buildLuaFileSemanticData(source, resource.path);
 	const sourceProjectionMs = medianMilliseconds(() => { buildBehaviorSourceDocument(resource, semantic); });
 	const document = buildBehaviorSourceDocument(resource, semantic);
+	const referenceIndexMs = medianMilliseconds(() => { indexStateMachineSourceReferences(document); });
+	const model = new EditorTextModel({ ...resource, source: { resid: 'fsm_profile', type: 'lua' } }, 'lua', source);
+	const view = createBehaviorLensViewState(document, model, 'outline');
+	const references = [...view.stateMachineReferences.values()];
+	const selected = selectStateMachineSource(references.findLast(items => items[0].kind === 'state-outcome' && items[0].outcome.proof.kind === 'return')![0], model.buffer);
+	view.selection = selected;
+	const inputRefreshMs = medianMilliseconds(() => { installBehaviorLensDocument(view, document, model.buffer); });
+	const roundtrip = [{ offset: 0, deletedLength: 0, insertedLength: 1 }, { offset: 0, deletedLength: 1, insertedLength: 0 }];
+	const selectedProofMapMs = medianMilliseconds(() => {
+		for (let index = 0; index < 1000; index += 1) mapStateMachineSourceSelection(selected, roundtrip);
+	}) / 1000;
 	const registrationSet = collectBehaviorRegistrations(resource, semantic);
 	const registration = registrationSet.registrations[0];
 	const context: BehaviorRecognizerContext = {
@@ -32,6 +47,6 @@ machines.register('profile', { initial = 'lane0', states = { ${Array.from({ leng
 	const relations = buildStateMachineRelations(context, document.definitions[0].rowKey, body);
 	if (relations.transitions.length !== siblings * 3 || relations.entries.length !== siblings + 1) throw new Error('profile must retain every authored scope and handler');
 	console.log(JSON.stringify({ siblings, scopes: siblings * 3 + 1, transitions: relations.transitions.length,
-		sourceProjectionMs, structureMs, relationsMs,
+		sourceProjectionMs, structureMs, relationsMs, referenceIndexMs, inputRefreshMs, selectedProofMapMs,
 		boundary: 'source generation on cached semantic data; structure and binding isolated; excludes parsing, drawing and total Studio frame' }));
 }

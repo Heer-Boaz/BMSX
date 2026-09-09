@@ -19,6 +19,7 @@ import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
 import type { GlyphRenderSubmission } from '../../machine/ts/render/shared/submissions';
 import * as constants from '../../ide/common/constants';
 import { resolveThemeTokenColor } from '../../ide/theme/tokens';
+import { EditorTextModel } from '../../ide/editor/model/text_model';
 
 const items = [
 	{ label: 'scenes/root.lua', description: 'LUA / SLOT 0', detail: 'root', resourceId: 10 },
@@ -34,6 +35,47 @@ function createPicker(t: TestContext): QuickInputController {
 	t.after(() => { picker.dispose(); inputFocus.setTarget(null); });
 	return picker;
 }
+
+test('source-bound quick input cancels its snapshot on content change and releases the subscription', t => {
+	const picker = createPicker(t);
+	const model = new EditorTextModel({ domain: 0, path: 'proof.lua', source: { resid: 'proof', type: 'lua' } }, 'lua', 'return 1');
+	const origin = inputFocus.createTarget();
+	origin.focus();
+	let invalidations = 0;
+	picker.pick('Source', 'Filter', (_focus, disposables) => {
+		disposables.add({ dispose: model.onDidChangeContent(() => { invalidations += 1; picker.hide(); }) });
+		return items;
+	}, () => assert.fail('invalidated source accepted'));
+	model.pushEditOperations([{ offset: 7, deleteLength: 1, text: '2' }]);
+	assert.equal(picker.visible, false);
+	assert.equal(inputFocus.target, origin);
+	assert.equal(invalidations, 1);
+	picker.pick('Files', 'Filter', () => items, () => {});
+	model.undo();
+	assert.equal(picker.visible, true, 'the expired source session cannot hide a newer unrelated picker');
+	assert.equal(invalidations, 1);
+});
+
+test('quick input session resources end before accept, replacement, blur, cancellation and disposal', t => {
+	const picker = createPicker(t);
+	for (const route of ['accept', 'replacement', 'blur', 'cancel', 'dispose'] as const) {
+		const origin = inputFocus.createTarget();
+		origin.focus();
+		let disposals = 0;
+		picker.pick('Scoped', 'Filter', (_focus, disposables) => {
+			disposables.add({ dispose: () => { disposals += 1; } });
+			return items;
+		}, () => { assert.equal(route, 'accept'); assert.equal(disposals, 1, 'cleanup precedes source navigation'); });
+		if (route === 'accept') picker.accept();
+		else if (route === 'replacement') {
+			picker.pick('New', 'Filter', () => { assert.equal(disposals, 1); return items; }, () => {});
+			picker.hide();
+		} else if (route === 'blur') inputFocus.createTarget().focus();
+		else if (route === 'cancel') picker.hide();
+		else picker.dispose();
+		assert.equal(disposals, 1, route);
+	}
+});
 
 test('quick pick filtering retains caller items, rows and result storage across queries', () => {
 	const model = new QuickPickModel();

@@ -49,7 +49,7 @@ export async function testStudioFsmSource(test: StudioFixture): Promise<void> {
 	await click(editorChromeState.tabButtonBounds.get(lens.id)!);
 	const current = definition(view);
 	const changed = current.transitions.find(transition => transition.slot.kind === 'update')!;
-	check(current !== first && view.selectedRowKey === changed.slot.source.rowKey, 'FSM source: activation refreshes the selected source occurrence');
+	check(current !== first && view.selection?.rowKey === changed.slot.source.rowKey, 'FSM source: activation refreshes the selected source occurrence');
 	const outcome = changed.outcomes[0].target;
 	check(outcome.kind === 'path' && outcome.target === changed.origin, 'FSM source: the const callback target follows the edited generation within its own scope');
 	const retained = view.document;

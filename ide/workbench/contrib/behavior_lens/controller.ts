@@ -23,6 +23,7 @@ import {
 	executeBehaviorLensNavigation,
 	finishBehaviorLensNavigation,
 	selectedBehaviorLensSourceRange,
+	updateBehaviorLensStatus,
 	type BehaviorLensNavigationCommand,
 } from './navigation';
 import { buildBehaviorSourceDocument } from './recognizer';
@@ -31,6 +32,8 @@ import type { BehaviorRegistrationIndex } from './registration_index';
 import { toggleBehaviorGraphBranch } from './graph_navigation';
 import { buildBehaviorQuickPickItems } from './quick_access';
 import { createBehaviorLensViewState, type BehaviorLensViewState } from './view_model';
+import { buildStateMachineSourceDetails } from './state_machine_details';
+import { selectStateMachineSource } from './state_machine_selection';
 
 const PICKER_TITLES: Readonly<Record<BehaviorKind, string>> = {
 	action_effect: 'ACTIONEFFECTS',
@@ -103,11 +106,28 @@ export class BehaviorLensController {
 		if (input.kind !== 'behavior_lens') return;
 		this.updateView(input);
 		const view = input.view;
+		if (view.selection === null) return;
+		const references = view.stateMachineReferences.get(view.selection.rowKey);
+		if (references !== undefined) {
+			this.quickInput.pick('FSM SOURCE EVIDENCE', 'Choose the binding, return or entry source', (_origin, disposables) => {
+				// An open source snapshot ends with its text generation. Never accept stale coordinates.
+				disposables.add({ dispose: input.workingCopy.onDidChangeContent(() => this.quickInput.hide()) });
+				return buildStateMachineSourceDetails(references);
+			}, detail => {
+				view.selection = selectStateMachineSource(detail.reference, input.workingCopy.buffer);
+				updateBehaviorLensStatus(view);
+				this.openSelectedSource(view);
+			});
+			return;
+		}
 		if (view.presentation.kind !== 'graph') return;
 		const item = view.presentation.viewport.selection;
 		if (item === null) return;
 		const node = item.kind === 'node' ? item : item.child;
-		this.quickInput.pick('BT SOURCE DETAILS', 'Choose a field to open its source', () => node.details,
+		this.quickInput.pick('BT SOURCE DETAILS', 'Choose a field to open its source', (_origin, disposables) => {
+			disposables.add({ dispose: input.workingCopy.onDidChangeContent(() => this.quickInput.hide()) });
+			return node.details;
+		},
 			detail => this.navigation.focusChunkSourceForContext(view.resource.domain, detail.range.path, {
 				row: detail.range.start.line - 1, startColumn: detail.range.start.column - 1, endColumn: detail.range.start.column - 1,
 			}));

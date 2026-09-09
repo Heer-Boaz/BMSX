@@ -224,7 +224,21 @@ guess it back. Click gestures belong to the pane and one source generation;
 cross-file facts also require the existing semantic-generation invalidation.
 A chosen BT now has a concrete graph; FSM and ActionEffect retain their
 outline. Source selection lives outside the discriminated presentation, not
-in an invisible row list. `workbench/ui/graph` and
+in an invisible row list. It is now a discriminated source selection: node,
+BT connection, FSM outcome or explicit entry. FSM proof selection additionally
+tracks the binding use, bound callback and return syntax start; its declaring
+slot must first correspond under the same source occurrence chain. Equal
+targets and identical return text never identify an edge. Entry owner and
+transition origin are separate: a concurrent declaration belongs to its own
+state while entry originates at the parent. Only selected proof anchors are
+mapped on content changes, including while the pane is hidden. Geometry does
+not supply source coordinates. The shared Details command now exposes these
+FSM references through Quick Input without executing Lua or authoring a second
+graph. A picker session owns its provider subscriptions; content invalidation
+closes a source snapshot, and accept/cancel/blur/replacement dispose those
+subscriptions before returning focus or navigating. See the pinned VS Code and
+CodeMirror references and edit-affinity decision in the graph design.
+`workbench/ui/graph` and
 `workbench/render/graph.ts` now own a shared retained canvas: one measured
 geometry generation for draw and hit testing, input-owned pan/selection and a
 pane-owned control for focus and gestures. Clip commands go through the shared

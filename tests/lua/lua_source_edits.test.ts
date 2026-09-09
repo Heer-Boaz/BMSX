@@ -3,7 +3,9 @@ import { test } from 'node:test';
 
 import type { RuntimeResource } from '../../ide/common/resource';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
-import { createLuaTableFieldIntegerEdits, readLuaSourceRange, readLuaTableFieldInteger } from '../../ide/language/lua/source_edits';
+import { createLuaTableFieldIntegerEdits, luaSourcePositionMatchesTextRange, luaSourcePositionToTextRange,
+	luaSourceRangeMatchesTextRange, luaSourceRangeToTextRange, readLuaSourceRange, readLuaTableFieldInteger } from '../../ide/language/lua/source_edits';
+import { mapTrackedTextRange } from '../../ide/editor/text/text_change';
 import {
 	LuaSyntaxKind,
 	LuaTableFieldKind,
@@ -23,6 +25,27 @@ const resource: RuntimeResource = {
 		generated: false,
 	},
 };
+
+test('Lua syntax-start anchors survive expression-end growth without changing ordinary tracked-range affinity', () => {
+	const model = new EditorTextModel(resource, 'lua', '-- 🐉\nreturn next_path');
+	const syntax = () => parseLuaChunk(model.buffer.getText(), resource.path).chunk.body[0];
+	const statement = syntax();
+	const range = luaSourceRangeToTextRange(model.buffer, statement.range);
+	const start = luaSourcePositionToTextRange(model.buffer, statement.range.start);
+	assert.deepEqual(start, { start: 6, end: 7 }, 'source positions use UTF-16, not byte offsets or display columns');
+	model.onDidChangeContent(event => { mapTrackedTextRange(range, event.changes); mapTrackedTextRange(start, event.changes); });
+	model.pushEditOperations([{ offset: 13, deleteLength: 9, text: 'nil' }]);
+	assert.equal(luaSourceRangeMatchesTextRange(model.buffer, syntax().range, range), true);
+	model.undo();
+	assert.equal(luaSourceRangeMatchesTextRange(model.buffer, syntax().range, range), false,
+		'NeverGrowsWhenTypingAtEdges does not adopt the longer replacement at the old end');
+	assert.equal(luaSourcePositionMatchesTextRange(model.buffer, syntax().range.start, start), true,
+		'the return statement still begins at the same surviving source character');
+	model.pushEditOperations([{ offset: start.start, deleteLength: 1, text: 'r' }]);
+	model.undo();
+	assert.equal(luaSourcePositionMatchesTextRange(model.buffer, syntax().range.start, start), false,
+		'deletion and Undo do not recreate the source character selected by the user');
+});
 
 function parseFields(source: string): Map<string, LuaTableField> {
 	const statement = parseLuaChunk(source, resource.path).chunk.body[0];

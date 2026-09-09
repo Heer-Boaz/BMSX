@@ -12,11 +12,11 @@ export function prepareBehaviorGraphLayout(state: BehaviorLensViewState, graph: 
 		const model = layoutBehaviorTreeGraph(projectBehaviorTreeGraph(definition !== undefined && definition.behaviorKind === 'behavior_tree' ? definition : null,
 			state.collapsedRowKeys, font));
 		viewport.setModel(model, null);
-		if (state.selectedRowKey !== null) {
-			const next = graph.selectionKind === 'node' ? model.nodesBySource.get(state.selectedRowKey) : model.edgesBySource.get(state.selectedRowKey);
+		if (state.selection !== null) {
+			const next = state.selection.kind === 'node' ? model.nodesBySource.get(state.selection.rowKey) : model.edgesBySource.get(state.selection.rowKey);
 			// A surviving source occurrence can cease to be a visible control-flow item
 			// (for example, membership becomes dynamic). Do not select an unseen source.
-			if (next === undefined) state.selectedRowKey = null;
+			if (next === undefined) state.selection = null;
 			else {
 				viewport.selection = next;
 				if (selected !== null) viewport.pan(next.bounds.left - selected.bounds.left, next.bounds.top - selected.bounds.top);

@@ -83,10 +83,10 @@ function appendEntries(scope: StateMachineScope, resolve: (expression: LuaExpres
 			target = child === undefined ? { kind: 'unresolved', reason: 'missing-state' }
 				: child === null ? { kind: 'unresolved', reason: 'unknown-states' } : { kind: 'state', rowKey: child.rowKey };
 		}
-		entries.push({ kind: 'initial', origin: scope.rowKey, field, target });
+		entries.push({ kind: 'initial', owner: scope.rowKey, origin: scope.rowKey, field, target });
 	}
 	if (scope.parent !== null && scope.concurrent !== false) {
-		entries.push({ kind: 'concurrent', origin: scope.parent.rowKey, field: scope.body.concurrent,
+		entries.push({ kind: 'concurrent', owner: scope.rowKey, origin: scope.parent.rowKey, field: scope.body.concurrent,
 			target: !scope.addressComplete ? { kind: 'unresolved', reason: 'partial-source' }
 				: scope.concurrent === undefined ? { kind: 'unresolved', reason: 'dynamic-value' } : { kind: 'state', rowKey: scope.rowKey } });
 	}

@@ -19,7 +19,7 @@ export async function testStudioBehaviorGraphControls(test: StudioFixture, view:
 	await press('ArrowDown');
 	const sequence = viewport.selection;
 	if (sequence?.kind !== 'node') throw new Error('BT controls: root node not selected');
-	await runPaletteCommand('Behavior Lens: Open BT Source Details');
+	await runPaletteCommand('Behavior Lens: Open Source Details');
 	const picker = ide.editor.quickInput;
 	check(picker.title === 'BT SOURCE DETAILS' && picker.model.entries.some(row => row.item.label === 'num_loops'),
 		'BT controls: real source details include decorator policy, not execution children');
@@ -95,7 +95,7 @@ export async function testStudioBehaviorGraphControls(test: StudioFixture, view:
 	check(view.collapsedRowKeys.has(first.source.rowKey), 'BT controls: visible Children action folds the actual selected node');
 	await press('ArrowRight');
 	await press('ArrowRight');
-	const weightedKey = view.selectedRowKey!;
+	const weightedKey = view.selection!.rowKey;
 	await press('ArrowDown');
 	check(viewport.selection?.kind === 'node' && viewport.selection.lines[0] === 'CHOICE 1  W=2',
 		'BT controls: expanding the weighted branch reveals its first authored choice');
@@ -113,7 +113,7 @@ export async function testStudioBehaviorGraphControls(test: StudioFixture, view:
 		'BT controls: choice detail opens the actual weight expression');
 	await click(editorChromeState.tabButtonBounds.get(lens.id)!);
 	await press('ArrowUp');
-	check(view.selectedRowKey === weightedKey, 'BT controls: child returns to its weighted parent');
+	check(view.selection?.rowKey === weightedKey, 'BT controls: child returns to its weighted parent');
 	await press('Space');
 	await press('Home');
 }

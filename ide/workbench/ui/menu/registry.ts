@@ -73,6 +73,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 	],
 	'behaviorLens.title': [
 		{ type: 'command', command: 'behaviorLens.source' },
+		{ type: 'command', command: 'behaviorLens.details' },
 	],
 	'sceneEditor.title': [
 		{ type: 'command', command: 'sceneEditor.source' },

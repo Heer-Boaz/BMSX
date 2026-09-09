@@ -80,3 +80,26 @@ machines.register('fixture.first', {
 })
 machines.register('fixture.second', { states = { idle = {}, active = {} } })
 `;
+
+/** Identical returns and reused callbacks deliberately have different source-use owners. */
+export const FSM_PROOF_SOURCE = `local machines<const> = require('cartlib/fsm/library')
+local next_path<const> = '../active'
+local step<const> = function(owner)
+	if owner.first then return next_path end
+	if owner.again then return next_path end
+	return nil
+end
+local shared<const> = {
+	initial = 'idle',
+	states = {
+		idle = {
+			update = step,
+			on = { direct = next_path, wrapped = { go = step } },
+		},
+		active = {},
+		lane = { is_concurrent = true, initial = 'idle', states = { idle = {} } },
+	},
+}
+machines.register('fixture.proofs', { initial = 'left', states = { left = shared, right = shared } })
+machines.register('fixture.proofs', shared)
+`;

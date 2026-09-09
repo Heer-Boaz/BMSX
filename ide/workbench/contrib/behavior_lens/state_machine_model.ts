@@ -87,6 +87,8 @@ export type StateMachineSourceTransition = {
 
 export type StateMachineSourceEntry = {
 	readonly kind: 'initial' | 'concurrent';
+	/** Declaring scope; a concurrent entry's origin is its parent, not this owner. */
+	readonly owner: BehaviorSourceRowKey;
 	readonly origin: BehaviorSourceRowKey;
 	readonly field: LuaTableField | null;
 	readonly target: { readonly kind: 'state'; readonly rowKey: BehaviorSourceRowKey } | StateMachineSourceUnknown;

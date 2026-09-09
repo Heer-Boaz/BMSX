@@ -11,6 +11,7 @@ import {
 import type { BehaviorKind, BehaviorSourceDocument, BehaviorSourceNode, BehaviorSourceRowKey } from './model';
 import { createBehaviorLensGraph, createBehaviorLensOutline, type BehaviorLensLayout, type BehaviorLensViewState, type BehaviorLensOutline } from './view_model';
 import { prepareBehaviorGraphLayout } from './graph_layout';
+import { indexStateMachineSourceReferences } from './state_machine_selection';
 
 import { layoutWorkbenchActionBar } from '../../ui/action_bar';
 
@@ -44,7 +45,8 @@ export function installBehaviorLensDocument(
 	document: BehaviorSourceDocument,
 	buffer: TextBuffer,
 ): void {
-	state.selectedRowKey = reconcileBehaviorLensSource(state, document, buffer);
+	state.selection = reconcileBehaviorLensSource(state, document, buffer);
+	state.stateMachineReferences = indexStateMachineSourceReferences(document);
 	state.headerDirty = true;
 	if (state.presentation.kind === 'graph') state.presentation.dirty = true;
 	else {
@@ -57,11 +59,11 @@ export function installBehaviorLensDocument(
 /** An explicit picker choice selects a presentation; disappearing source does not select another definition. */
 export function selectBehaviorLensDefinition(state: BehaviorLensViewState, key: BehaviorSourceRowKey): void {
 	const previousKey = state.definitionRowKey;
-	state.definitionRowKey = state.selectedRowKey = key;
+	state.definitionRowKey = key;
+	state.selection = { kind: 'node', rowKey: key };
 	const definition = state.document.definitions.find(node => node.rowKey === key)!;
 	if (definition.behaviorKind === 'behavior_tree' && state.presentation.kind === 'graph') {
 		const graph = state.presentation;
-		graph.selectionKind = 'node';
 		if (previousKey === key) graph.viewport.selection = graph.viewport.model.nodesBySource.get(key)!;
 		else {
 			graph.viewport.selection = null;
@@ -114,7 +116,7 @@ export function prepareBehaviorLensLayout(state: BehaviorLensViewState): Behavio
 export function rebuildBehaviorLensRows(state: BehaviorLensViewState, outline: BehaviorLensOutline): void {
 	outline.rows.length = 0;
 	appendVisibleRows(state, outline, state.document.definitions, 0, null);
-	outline.selectionIndex = state.selectedRowKey === null ? -1 : findVisibleRowIndex(outline, state.selectedRowKey);
+	outline.selectionIndex = state.selection === null ? -1 : findVisibleRowIndex(outline, state.selection.rowKey);
 	outline.hoverIndex = -1;
 }
 

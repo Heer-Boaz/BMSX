@@ -96,13 +96,13 @@ export function handleBehaviorLensGamepadInput(
 		controller.executeNavigation(view, 'right');
 		return true;
 	}
+	const details = gamepad.getButtonState('x');
+	if (details.justpressed && !details.consumed) {
+		gamepad.consumeButton('x');
+		controller.openDetails();
+		return true;
+	}
 	if (view.presentation.kind === 'graph') {
-		const details = gamepad.getButtonState('x');
-		if (details.justpressed && !details.consumed) {
-			gamepad.consumeButton('x');
-			controller.openDetails();
-			return true;
-		}
 		const collapse = gamepad.getButtonState('y');
 		if (collapse.justpressed && !collapse.consumed) {
 			gamepad.consumeButton('y');

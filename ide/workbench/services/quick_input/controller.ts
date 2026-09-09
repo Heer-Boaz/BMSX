@@ -1,6 +1,7 @@
 import { create_rect_bounds, point_in_rect } from '../../../../machine/ts/common/rect';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 import type { Clipboard } from '../../../common/clipboard';
+import { DisposableStore } from '../../../common/lifecycle';
 import type { PointerSnapshot } from '../../../common/models';
 import * as constants from '../../../common/constants';
 import { inputFocus, type InputFocusTarget } from '../../../input/focus';
@@ -18,6 +19,7 @@ import { drawQuickPick, layoutQuickPick } from './render';
 type QuickPickSession = {
 	readonly accept: (itemIndex: number) => void;
 	readonly returnFocus: InputFocusTarget | null;
+	readonly disposables: DisposableStore;
 };
 
 /** One transient workbench surface, independent of editor panes and their documents. */
@@ -57,7 +59,7 @@ export class QuickInputController {
 	public pick<T extends QuickPickItem>(
 		title: string,
 		placeholder: string,
-		provideItems: (origin: InputFocusTarget | null) => readonly T[],
+		provideItems: (origin: InputFocusTarget | null, disposables: DisposableStore) => readonly T[],
 		accept: (item: T) => void,
 	): void {
 		this.hide();
@@ -65,8 +67,9 @@ export class QuickInputController {
 		// A provider observes the invoking control after its ordinary blur policy,
 		// never the previous popup's query or an unaccepted property draft.
 		this.field.focusTarget.focus();
-		const items = provideItems(returnFocus);
-		this.session = { returnFocus, accept: index => accept(items[index]) };
+		const disposables = new DisposableStore();
+		const items = provideItems(returnFocus, disposables);
+		this.session = { returnFocus, disposables, accept: index => accept(items[index]) };
 		this.title = title;
 		this.placeholder = placeholder;
 		this.model.setItems(items);
@@ -82,6 +85,7 @@ export class QuickInputController {
 		const session = this.session;
 		if (session === null) return;
 		this.session = null;
+		session.disposables.dispose();
 		this.model.entries.length = 0;
 		this.model.list.rows.length = 0;
 		this.model.list.selectionIndex = -1;

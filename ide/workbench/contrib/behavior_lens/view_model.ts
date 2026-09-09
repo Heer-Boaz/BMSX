@@ -9,6 +9,8 @@ import { createWorkbenchGraphModel } from '../../ui/graph/model';
 import type { BehaviorGraphModel } from './graph_model';
 import { createBehaviorLensLayout, installBehaviorLensDocument } from './layout';
 import type { BehaviorSourceDocument, BehaviorSourceNode, BehaviorSourceRowKey } from './model';
+import type { BehaviorSourceSelection } from './source_selection';
+import type { StateMachineSourceReference } from './state_machine_selection';
 
 export type BehaviorLensRow = {
 	readonly node: BehaviorSourceNode;
@@ -37,7 +39,6 @@ export type BehaviorLensGraph = {
 	readonly kind: 'graph';
 	readonly actionBar: WorkbenchActionBarState;
 	readonly viewport: WorkbenchGraphViewport<BehaviorGraphModel>;
-	selectionKind: 'node' | 'edge';
 	dirty: boolean;
 	initialPosition: boolean;
 };
@@ -48,7 +49,8 @@ export type BehaviorLensViewState = {
 	document: BehaviorSourceDocument;
 	sourceVersion: number;
 	definitionRowKey: BehaviorSourceRowKey | null;
-	selectedRowKey: BehaviorSourceRowKey | null;
+	selection: BehaviorSourceSelection | null;
+	stateMachineReferences: ReadonlyMap<BehaviorSourceRowKey, readonly StateMachineSourceReference[]>;
 	sourceRanges: Map<BehaviorSourceRowKey, TrackedTextRange>;
 	readonly sourceNodes: BehaviorSourceNode[];
 	readonly nodesByRowKey: Map<BehaviorSourceRowKey, BehaviorSourceNode>;
@@ -71,7 +73,7 @@ export function createBehaviorLensGraph(): BehaviorLensGraph {
 	return { kind: 'graph', actionBar: createWorkbenchActionBar('behaviorLens.graph.title'),
 		viewport: new WorkbenchGraphViewport<BehaviorGraphModel>({ ...createWorkbenchGraphModel(editorViewState.font.renderFont(), [], []),
 			nodesBySource: new Map(), edgesBySource: new Map() }),
-		selectionKind: 'node', dirty: true, initialPosition: true };
+		dirty: true, initialPosition: true };
 }
 
 /** Input-owned source/view state; pixel layout is prepared only by the active pane. */
@@ -81,7 +83,8 @@ export function createBehaviorLensViewState(document: BehaviorSourceDocument, mo
 		document: { resource: document.resource, definitions: [] },
 		sourceVersion: model.version,
 		definitionRowKey: null,
-		selectedRowKey: null,
+		selection: null,
+		stateMachineReferences: new Map(),
 		sourceRanges: new Map(),
 		sourceNodes: [],
 		nodesByRowKey: new Map(),

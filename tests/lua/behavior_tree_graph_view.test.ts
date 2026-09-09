@@ -55,6 +55,7 @@ test('graph projects one registration, original child order, distinct shared use
 		assert.equal(edge.range, child.source.occurrenceRange);
 		assert.ok(edge.points[1] >= sequence.bounds.bottom);
 	}
+	for (const edge of graph.edges) assert.deepEqual(edge.range, edge.source.occurrenceRange, 'tree connections use their source occurrence, independent of geometry');
 	assert.notDeepEqual(graph.edgesBySource.get(first.source.rowKey)!.range, graph.edgesBySource.get(second.source.rowKey)!.range);
 });
 
@@ -133,7 +134,7 @@ test('concrete graph retains layout, source-backed edge selection and its screen
 	f.model.pushEditOperations([{ offset: span.start, deleteLength: span.end - span.start, text: 'leaf' }]);
 	installBehaviorLensDocument(view, f.project(), f.model.buffer);
 	prepareBehaviorLensLayout(view);
-	assert.equal(view.selectedRowKey, null);
+	assert.equal(view.selection, null);
 	assert.equal(viewport.selection, null);
 	const secondDefinition = view.document.definitions[1];
 	selectBehaviorLensDefinition(view, secondDefinition.rowKey);
@@ -165,6 +166,8 @@ trees.register('choices', { root = { type = 'weighted_random_selector', choices 
 	assert.equal(b.source, second.node);
 	assert.equal(a.range, first.field.value.range);
 	assert.equal(b.range, second.field.value.range);
+	assert.deepEqual(a.range, a.source.occurrenceRange);
+	assert.deepEqual(b.range, b.source.occurrenceRange);
 	assert.equal(readLuaSourceRange(f.model.buffer, a.range), 'choice');
 	assert.equal(readLuaSourceRange(f.model.buffer, b.range), 'choice');
 	assert.notEqual(a.range.start.column, b.range.start.column);

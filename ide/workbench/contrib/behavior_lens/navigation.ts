@@ -7,6 +7,7 @@ import {
 } from './layout';
 import { revealWorkbenchListSelection } from '../../ui/list_view';
 import type { BehaviorLensOutline, BehaviorLensViewState } from './view_model';
+import { stateMachineSourceRange } from './state_machine_selection';
 
 export type BehaviorLensNavigationCommand =
 	| 'up'
@@ -69,7 +70,7 @@ function selectRow(
 		return BehaviorLensNavigationResult.None;
 	}
 	outline.selectionIndex = nextIndex;
-	state.selectedRowKey = outline.rows[nextIndex].node.rowKey;
+	state.selection = { kind: 'node', rowKey: outline.rows[nextIndex].node.rowKey };
 	outline.hoverIndex = -1;
 	return BehaviorLensNavigationResult.Changed;
 }
@@ -115,7 +116,7 @@ function expandOrSelectChild(
 }
 
 export function selectBehaviorLensRow(state: BehaviorLensViewState, outline: BehaviorLensOutline, rowIndex: number): void {
-	state.selectedRowKey = rowIndex < 0 ? null : outline.rows[rowIndex].node.rowKey;
+	state.selection = rowIndex < 0 ? null : { kind: 'node', rowKey: outline.rows[rowIndex].node.rowKey };
 	outline.selectionIndex = rowIndex;
 	outline.hoverIndex = -1;
 	updateBehaviorLensStatus(state);
@@ -128,7 +129,7 @@ export function toggleBehaviorLensRow(state: BehaviorLensViewState, outline: Beh
 	} else {
 		state.collapsedRowKeys.delete(row.node.rowKey);
 	}
-	state.selectedRowKey = outline.rows[rowIndex].node.rowKey;
+	state.selection = { kind: 'node', rowKey: outline.rows[rowIndex].node.rowKey };
 	outline.selectionIndex = rowIndex;
 	outline.rowsDirty = true;
 	rebuildBehaviorLensRows(state, outline);
@@ -138,10 +139,11 @@ export function toggleBehaviorLensRow(state: BehaviorLensViewState, outline: Beh
 }
 
 export function selectedBehaviorLensSourceRange(state: BehaviorLensViewState): LuaSourceRange | null {
-	if (state.selectedRowKey === null) return null;
-	const presentation = state.presentation;
-	if (presentation.kind === 'graph' && presentation.viewport.selection?.kind === 'edge') return presentation.viewport.selection.range;
-	const node = state.nodesByRowKey.get(state.selectedRowKey)!;
+	const selection = state.selection;
+	if (selection === null) return null;
+	if (selection.kind === 'state-outcome' || selection.kind === 'state-entry') return stateMachineSourceRange(selection);
+	const node = state.nodesByRowKey.get(selection.rowKey)!;
+	if (selection.kind === 'tree-edge') return node.occurrenceRange;
 	return node.referenceRange !== null ? node.referenceRange : node.authoredRange;
 }
 
@@ -157,7 +159,9 @@ export function updateBehaviorLensStatus(state: BehaviorLensViewState): void {
 		: `${state.document.definitions.length} DEF  ${state.sourceNodes.length} SOURCE NODES`;
 	const range = selectedBehaviorLensSourceRange(state);
 	if (range === null) { state.status.detail = ''; return; }
-	const node = state.nodesByRowKey.get(state.selectedRowKey!)!;
-	const kind = state.presentation.kind === 'graph' ? state.presentation.selectionKind : node.kind;
+	const selection = state.selection!;
+	const node = state.nodesByRowKey.get(selection.rowKey)!;
+	const kind = selection.kind === 'state-outcome' ? selection.outcome.proof.kind
+		: selection.kind === 'state-entry' ? selection.entry.kind : selection.kind === 'tree-edge' ? 'edge' : node.kind;
 	state.status.detail = `${kind.toUpperCase()}  LN ${range.start.line}:${range.start.column}`;
 }

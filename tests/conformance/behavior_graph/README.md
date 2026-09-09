@@ -110,6 +110,14 @@ const callback target, activation, retained idle generations and ordinary Undo.
 It does not compile/install fixture media, replace the machine or depend on a
 particular game's FSM line numbers.
 
+`studio_fsm_selection.ts` also opens the actual Details action and command
+palette on a reused callback with identical returns. A held click on the second
+return opens that return's source. Prefix/return insertion, ordinary Undo,
+deletion with hidden Undo, and invalidating an open source picker exercise the
+input-owned proof selection and shared Quick Input session lifetime. The
+fixture is `FSM_PROOF_SOURCE`, not the live Nemesis/Pietious source schema.
+The FSM presentation remains an outline until the separate graph slice lands.
+
 The implemented callback subset is inline functions and file-local `<const>`
 bindings. Returns in nested functions, root entry and exit handlers are not
 transition-return evidence. `no-path` describes only the returned-path channel,
@@ -122,3 +130,8 @@ The FSM profile separates whole source generation on cached semantic data from
 source structure and scope/return binding. The two fixtures have 73/3,073 scopes
 and 72/3,072 transition slots. It uses the same warmup/median measurement owner
 as the BT profile; parsing, drawing and total Studio frame time are excluded.
+It now also measures the cold reference index, input refresh with source
+correspondence, and mapping just the selected proof through an insert/delete
+roundtrip (1,000 iterations per sample, reported per iteration). The reference
+index is built at source-generation boundaries; picker labels are built on
+opening. Neither phase belongs to the lens draw/hover/pan loop.
