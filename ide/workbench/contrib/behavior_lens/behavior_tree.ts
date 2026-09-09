@@ -9,7 +9,7 @@ import type { SymbolID } from '../../../../toolchain/ts/lua/semantic/model';
 import type { BehaviorDynamicSourceNode, BehaviorSourceNode } from './model';
 import type {
 	BehaviorTreeSourceAttachment, BehaviorTreeSourceAttachmentGroup, BehaviorTreeSourceBody,
-	BehaviorTreeSourceBranch, BehaviorTreeSourceChoice, BehaviorTreeSourceEntry, BehaviorTreeSourceNode,
+	BehaviorTreeSourceBranch, BehaviorTreeSourceChoice, BehaviorTreeSourceNode,
 } from './behavior_tree_model';
 import {
 	appendBehaviorSourcePath,
@@ -24,6 +24,7 @@ import {
 	describeExpression,
 	resolveSourceTable,
 	type BehaviorRecognizerContext,
+	type BehaviorSourceArrayEntry,
 } from './source';
 
 export function buildBehaviorTreeDefinition(
@@ -132,7 +133,7 @@ function appendBehaviorTreeAttachments(
 	for (const role of ['services', 'decorators'] as const) {
 		const field = findNamedLuaTableField(table, role);
 		if (!field) continue;
-		const entries: BehaviorTreeSourceEntry<BehaviorTreeSourceAttachment | BehaviorDynamicSourceNode>[] = [];
+		const entries: BehaviorSourceArrayEntry<BehaviorTreeSourceAttachment | BehaviorDynamicSourceNode>[] = [];
 		const source = buildTableArraySection(
 			context,
 			appendBehaviorSourcePath(path, role),
@@ -162,7 +163,7 @@ function appendBehaviorTreeChildren(
 ): void {
 	const childList = findNamedLuaTableField(table, 'children');
 	if (childList) {
-		const entries: BehaviorTreeSourceEntry<BehaviorTreeSourceNode>[] = [];
+		const entries: BehaviorSourceArrayEntry<BehaviorTreeSourceNode>[] = [];
 		const source = buildTableArraySection(
 			context,
 			appendBehaviorSourcePath(path, 'children'),
@@ -213,7 +214,7 @@ function buildBehaviorTreeChoices(
 	activeDeclarations: Set<SymbolID>,
 ): Extract<BehaviorTreeSourceBranch, { role: 'choices' }> {
 	const expression = field.value;
-	const choices: BehaviorTreeSourceEntry<BehaviorTreeSourceChoice | BehaviorDynamicSourceNode>[] = [];
+	const choices: BehaviorSourceArrayEntry<BehaviorTreeSourceChoice | BehaviorDynamicSourceNode>[] = [];
 	const resolved = resolveSourceTable(context, expression, activeDeclarations);
 	if (!resolved) {
 		return { role: 'choices', field, entries: choices, source: createDynamicNode(context, path, 'dynamic choices', expression) };

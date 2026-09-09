@@ -61,6 +61,13 @@ export type SourceNodeInput = {
 	readonly children: readonly BehaviorSourceNode[];
 };
 
+/** One syntactic list entry; explicit/computed keys are not inferred list indices. */
+export type BehaviorSourceArrayEntry<T extends BehaviorSourceNode> = {
+	readonly field: LuaTableField;
+	readonly index: number | null;
+	readonly node: T;
+};
+
 export type NamedSourceField = {
 	readonly name: string | null;
 	readonly keyKind: 'named' | 'numeric' | 'computed';
@@ -464,7 +471,7 @@ export function buildTableArraySection(
 	expression: LuaExpression,
 	activeDeclarations: Set<SymbolID>,
 	buildChild: SourceNodeBuilder,
-): BehaviorSourceNode {
+): BehaviorSourceTableSection {
 	const resolved = resolveSourceTable(context, expression, activeDeclarations);
 	if (!resolved) {
 		return createDynamicNode(context, path, `unresolved ${label}`, expression);
@@ -520,6 +527,8 @@ export function buildTableArraySection(
 	}
 	return createSourceNode(context, path, {
 		kind: 'section',
+		table: resolved.table,
+		issues: resolved.issues,
 		label: resolved.resolution === 'complete'
 			? `${label} (${entries.length})`
 			: `${label} (${children.length} authored)`,

@@ -1,12 +1,6 @@
 import type { LuaTableConstructorExpression, LuaTableField } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { BehaviorDynamicSourceNode, BehaviorSourceNode } from './model';
-
-/** One syntactic list entry; explicit/computed keys are not inferred list indices. */
-export type BehaviorTreeSourceEntry<T extends BehaviorSourceNode> = {
-	readonly field: LuaTableField;
-	readonly index: number | null;
-	readonly node: T;
-};
+import type { BehaviorSourceArrayEntry } from './source';
 
 export type BehaviorTreeSourceChoice = BehaviorSourceNode & {
 	readonly kind: 'section';
@@ -18,12 +12,12 @@ export type BehaviorTreeSourceBranch = {
 	readonly role: 'children';
 	readonly field: LuaTableField;
 	readonly source: BehaviorSourceNode;
-	readonly entries: readonly BehaviorTreeSourceEntry<BehaviorTreeSourceNode>[];
+	readonly entries: readonly BehaviorSourceArrayEntry<BehaviorTreeSourceNode>[];
 } | {
 	readonly role: 'choices';
 	readonly field: LuaTableField;
 	readonly source: BehaviorSourceNode;
-	readonly entries: readonly BehaviorTreeSourceEntry<BehaviorTreeSourceChoice | BehaviorDynamicSourceNode>[];
+	readonly entries: readonly BehaviorSourceArrayEntry<BehaviorTreeSourceChoice | BehaviorDynamicSourceNode>[];
 } | {
 	readonly role: 'main_task' | 'background_tree';
 	readonly field: LuaTableField;
@@ -40,7 +34,7 @@ export type BehaviorTreeSourceAttachmentGroup = {
 	readonly role: 'services' | 'decorators';
 	readonly field: LuaTableField;
 	readonly source: BehaviorSourceNode;
-	readonly entries: readonly BehaviorTreeSourceEntry<BehaviorTreeSourceAttachment | BehaviorDynamicSourceNode>[];
+	readonly entries: readonly BehaviorSourceArrayEntry<BehaviorTreeSourceAttachment | BehaviorDynamicSourceNode>[];
 };
 
 /** The very same occurrence object that the outline displays, with typed relationships. */

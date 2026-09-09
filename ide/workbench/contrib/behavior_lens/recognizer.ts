@@ -2,7 +2,7 @@ import type { LuaExpression } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { FileSemanticData, SymbolID } from '../../../../toolchain/ts/lua/semantic/model';
 import type { ResourceIdentity } from '../../../common/resource';
 import { collectBehaviorRegistrations, definitionKindLabel, type BehaviorRegistration } from './registrations';
-import { buildActionEffectDefinition } from './action_effect';
+import { buildActionEffectBody } from './action_effect';
 import { buildBehaviorTreeDefinition } from './behavior_tree';
 import type {
 	BehaviorSourceDocument,
@@ -111,9 +111,7 @@ function buildDefinition(
 			: buildStateMachineRelations(context, context.anchor + definitionPath, source.body);
 		return createSourceNode(context, definitionPath, { ...input, ...source, ...relations });
 	}
-	return createSourceNode(context, definitionPath, {
-		...input,
-		children: resolved === null ? input.children
-			: buildActionEffectDefinition(context, resolved.table, activeDeclarations),
-	});
+	const source = resolved === null ? { body: null, children: input.children }
+		: buildActionEffectBody(context, resolved, activeDeclarations);
+	return createSourceNode(context, definitionPath, { ...input, ...source });
 }

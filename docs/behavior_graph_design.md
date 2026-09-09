@@ -1104,3 +1104,125 @@ voor 73 / 3.073 scopes, en inputrefresh inclusief broncorrespondentie op
 framebegroting. Commando's staan in `tests/conformance/behavior_graph/README.md`;
 de lokale logs, de eerst falende Details-proef en inspectiebeelden staan in
 `/tmp/bmsx-fsm-graph`.
+
+## ActionEffect — broncontract vóór visualisatie, 9 september 2026
+
+Getoetste uitgangssituatie: `7310e911d`. De huidige effectrecognizer produceert
+alleen outline-nodes en opgemaakte labels. Zij bewaart geen typed effectvelden
+of requirement-listentries, en verbergt computed velden die een effectveld
+kunnen overschrijven. Een canvas dat daar semantiek uit terugleest is de
+verkeerde owner, ook wanneer het er visueel goed uitziet.
+
+### Productiereferenties
+
+- [Unity VolumeComponentEditor](https://github.com/Unity-Technologies/Graphics/blob/a7e4c051d256a781ab362c64316b125a1e104694/Packages/com.unity.render-pipelines.core/Editor/Volume/VolumeComponentEditor.cs#L300-L356)
+  bewaart propertybindingen en displaymetadata bij de editorinitialisatie;
+  het tekenen consumeert die retained bindings. Dit nemen we over als grens,
+  niet Unity-reflectie, SerializedObject of een registry van propertydrawers.
+- [Godot EditorInspector](https://github.com/godotengine/godot/blob/9552dfb6859a1aaba1e570b8e0ef5c599b830f19/editor/inspector/editor_inspector.cpp#L4504-L4554)
+  onderscheidt propertygroepen van graph-topologie. Een verzameling effect-
+  requirements is niet vanzelf een reeks uitvoerende nodes. Godots live-object-
+  propertymodel vervangen we hier door de bestaande Lua-textmodelbron.
+- [VS Code JSON document symbols](https://github.com/microsoft/vscode-json-languageservice/blob/2ff90f8f5e8e2399c5f78c7f7bdee92a4774fbe8/src/services/jsonDocumentSymbols.ts#L104-L190)
+  projecteert typed AST-properties met hun eigen ranges naar presentatie.
+  Labels zijn geen terug te parsen bronmodel. Geen JSON-route, resultlimiet of
+  settings-specialcase wordt naar de Lua-contribution gekopieerd.
+- [Epic Gameplay Effects](https://dev.epicgames.com/documentation/unreal-engine/gameplay-effects-for-the-gameplay-ability-system-in-unreal-engine)
+  is een conceptreferentie voor data-only effectdefinities met requirements,
+  timing en execution. Dit is documentatie, niet publiek onderzocht Unreal-
+  implementatiebewijs. De uitvoeringssemantiek komt uitsluitend uit cartlib.
+
+### Live uitvoering: geen geïmporteerde GAS-/FSM-semantiek
+
+| Owner / grens | Wat deze daadwerkelijk doet |
+| --- | --- |
+| `actioneffects.register_effect` | Publiceert de definitie; rebindt de bestaande, geregistreerde componenten die dit effect bezitten. |
+| `grant_effect` | Maakt runtime-presence; past `initial_cooldown_ms` eenmaal toe en bindt indien nodig requirement-statepaths. |
+| `trigger` | Checkt cooldown, vereiste/geblokkeerde tags en statepaths, dan `can_trigger`. Berekent cooldown en commit direct of bewaart die voor expliciete commit; voert daarna uit. |
+| `calculate_effect_cooldown` | `calculate_cooldown_ms` vervangt het statische `cooldown_ms`, ook als de callback nil retourneert. Geen hostberekening van milliseconden of RNG. |
+| `commit_cooldown` | Consumeert een pending duration of berekent er een; het beginpunt is de gameplay-tijd op het commitmoment. Geen automatische completion-edge uit een definitie. |
+| `activate` / `tick_periodic` | Refcounted activering en retained periodieke lane. Een vervallen periode roept execution rechtstreeks aan, **niet** trigger/gates/cooldown. |
+| `execute_effect` | Handler mag event/payload vervangen met zijn twee niet-nil returns. `false` als event onderdrukt emit; `nil` behoudt het geconfigureerde event. Ook dit bewijst geen willekeurige callback-effecten. |
+| `rebind_effect` | Behoudt effectrecord, activity en cooldownstate; bindt statepaths opnieuw en plant een actieve period opnieuw. Herhaalt de initial cooldown niet. |
+
+De bronprojectie kopieert deze runtimefasen niet als een tweede executable model.
+`event` is een outputveld, geen inputtrigger. Requirements worden niet als
+periodieke gates getekend; een handler krijgt geen gegokte event-/spawnedge.
+
+### Eerste complete slice: `STUDIO-ACTIONEFFECT-SOURCE-01`
+
+- De recognizer levert één typed effectbody met constructor, source-issues en
+  authored fields. Valuevelden houden hun exacte `LuaTableField`; de vier
+  requirementlijsten houden hun tabel, syntactische entries en proven index.
+  Unknown/computed effectkeys blijven expliciet navigeerbare bronvelden.
+- Outline en typed body wijzen naar **dezelfde** source-node-objecten. Bestaande
+  const-table-resolutie, duplicate-fieldbetekenis en occurrence-correspondentie
+  blijven de owners; geen tweede parser, stringdecoder of geëvalueerde waarden.
+- Een array-entry hoort bij de gedeelde source-array-owner, niet bij BT wanneer
+  ActionEffect dezelfde representatie consumeert. De shared array-section
+  bewaart haar constructor/issues zelf; geen opnieuw oplossen bij een consumer.
+- Geen nullable veld-DTO met defaults voor afwezige properties. Geen runtime-
+  validatie of effectmetadata in cartlib, compiler, machine, ROM of C++.
+- Zelfstandige fixtures toetsen alle effectvelden, const-hergebruik, meerdere
+  registrations, last-write, computed keys, expliciete arraykeys, incomplete
+  bron, source-links, hidden edits en Undo. Een proef op de echte gecompileerde
+  cartlib bewaakt de bovenstaande trigger/periodic/commit/rebind-grenzen.
+- Kosten worden gemeten op cached semantic data, gescheiden van parsing en
+  tekenen. De bestaande Studio-workflows blijven de live-gate.
+
+De daaropvolgende **visualisatie** krijgt een eigen ontwerp op deze typed
+velden: gegroepeerde properties/requirements waar geen authored topology bestaat,
+alleen bewezen relaties waar die wél bestaat. Deze bronslice levert nog geen
+nieuw canvas, callbackanalyse of visual-authoring op.
+
+### Gebouwd en getoetst
+
+`action_effect_model.ts` bezit de typed velden; `action_effect.ts` bouwt body en
+outline samen. `source.ts` bewaart de constructor/issues van een array-section
+en bezit nu de reeds bestaande syntactische entryrepresentatie die BT ook
+consumeert. Onbekende extra statische velden blijven in de originele constructor;
+zij krijgen geen ingebouwde effectrol. Er zijn geen cartlib-, toolchain-,
+machine-, renderer- of C++-wijzigingen.
+
+- Lua-suite: **1.074 geslaagd, 1 bestaande skip**, waaronder zes zelfstandige
+  sourceproeven en de nieuwe gecompileerde phase-oracle. De eerste incomplete-
+  bronfixture verwachtte ten onrechte dat parser recovery een onafgesloten
+  registration behield; de proef is aan de echte parsergrens gecorrigeerd,
+  zonder recoveryheuristiek in de contribution.
+- ROM-packer: **123 geslaagd**; productbuilds Browser Studio en Node tooling
+  geslaagd; headless Behavior Lens **58 assertions**. IDE-typecheck groen.
+  Het tests-project behoudt de **51 bestaande diagnostics** op dezelfde
+  locaties/codes als `7310e911d`; dit is geen volledig groene tests-typecheck.
+- Beide cart-navigationruns en de volledige Studio-workflow slagen ieder op
+  software, WebGL2 en WebGPU. De nieuwe ActionEffect-proef gebruikt dezelfde
+  zelfstandige canonical Lua als de runtime-oracle, uitsluitend in het gewone
+  textmodel. Zij test twee effects met gedeelde initializer, exacte held Source-
+  gestures, verborgen UTF-16-edits, Undo, computed keys en requirement-entries.
+  Dertig idle frames behouden sourcegeneration en rowstorage zonder layoutrequest;
+  de gepauzeerde machinepositie en geïnstalleerde media veranderen niet.
+- De drie 384×288-uitvoeren van de partial fixture zijn visueel geïnspecteerd
+  via echte rendererpixels. Dit bewijst de bestaande tiny-fontoutline, geen
+  nieuw effectcanvas of fysieke-hardwareperformance. Architecture-boundaries
+  strict (nul issues), core-parity, indentationcheck en `git diff --check` slagen.
+
+Koude Node 22.23.1-metingen, 10 warmups / 25 mediaansamples, zonder gelijktijdige
+tests of browserrun:
+
+| Fixture | Sourcegeneration op cached semantic data | Eén typed body | Inputrefresh met broncorrespondentie |
+| --- | ---: | ---: | ---: |
+| 24 effects / 408 sourcenodes | 0,346 ms | 0,00383 ms | 0,129 ms |
+| 1.024 effects / 17.408 sourcenodes | 6,512 ms | 0,00395 ms | 9,871 ms |
+
+De single-bodykolom gebruikt batches van 1.000. Deze experimenten zijn niet
+optelbaar en meten geen parsing, GPU, complete Studio-frame of guest-runtime.
+Een afzonderlijke vóór/na-bundelproef met dezelfde fixtures en drie processenparen
+meet effect-sourcegeneration bij 1.024 registrations op 4,13–4,41 → 4,40–4,48 ms.
+De BT-stressbron met 1.024 gedeelde subtrees gaat van 1,06–1,13 → 1,37–1,72 ms:
+de extra retained table/issues-referenties in array-sections zijn dus **niet
+gratis** bij sourcegeneration. Dit is een gemeten koude regressie, niet een
+claim van nul overhead. De gewijzigde code zit niet in draw/hit/gameplay;
+de bestaande BT-drawproef behoudt zijn quadopslag en doet nul nieuwe fontmetingen
+na warmup. De standalone tsx-profielen en de afzonderlijke bundelproef hebben
+verschillende module/JIT-context en zijn geen onderling uitwisselbare timings.
+Commando's staan in `tests/conformance/behavior_graph/README.md`; lokale logs,
+baselinevergelijking en inspectiebeelden staan in `/tmp/bmsx-actioneffect-source`.

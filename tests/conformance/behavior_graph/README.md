@@ -177,3 +177,43 @@ draw costs include normal culling, not emission of every offscreen card. Retaine
 model/buffer identities and no further font measurements are checked. These
 numbers exclude GPU rasterization, total Studio frame time and physical-device
 performance; the script is not a JavaScript allocation profiler.
+
+## ActionEffect source prerequisite
+
+```sh
+npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
+  tests/lua/actioneffect_source.test.ts tests/lua/actioneffect_trace.test.ts
+npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+  tests/conformance/behavior_graph/profile_actioneffect.ts
+```
+
+`actioneffect_source_fixture.ts` supplies independent canonical Lua to both the
+source recognizer and the actual compiled cartlib oracle. Source tests retain
+all twelve supported fields, AST values without host evaluation/defaults,
+requirement table/list provenance, shared constructors and distinct registrations,
+computed keys, last static fields, known mutation, incomplete source and Undo.
+Unrecoverable registrations are not reconstructed beyond the parser's output.
+
+The existing component/compiler harness executes `actioneffect_phase_fixture.ts`
+with the real public registration, registry and component owners. It verifies
+grant-time initial cooldown, trigger admission, immediate/deferred commitment,
+handler event/payload nil-versus-false semantics, periodic gate bypass,
+refcounted activity and rebind preserving runtime state. This does not run in
+the editor or add runtime metadata for visualization. Ordinary trace erasure
+and measured hot-path/retained-heap tests remain part of that same suite.
+
+Both browser navigation runs and the full Studio suite include
+`studio_actioneffect_source.ts`: multiple effects in one text model, exact held
+Source gestures, hidden UTF-16 edits, activation refresh, ordinary Undo, and
+explicit computed fields and requirement-entry source links. The capture point
+is `STUDIO: ActionEffect partial source ready for visual inspection`. Idle frames
+reuse the source generation/outline rows and request no graph layout; machine
+cycles and installed media remain unchanged. This is still the existing tiny-font
+outline, not the subsequent grouped effect visualization or authoring feature.
+
+The cold profile measures 24/1,024 registrations sharing a twelve-field
+constructor (408/17,408 source nodes). It separates source generation on cached
+semantic data, construction of a single typed body, and input refresh including
+source correspondence (single-body timing uses batches of 1,000). These are
+distinct experiments, not additive frame costs;
+they exclude parsing, drawing, runtime execution and total Studio frame time.

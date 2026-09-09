@@ -213,7 +213,16 @@ cross-file callbacks remain unresolved. Callback return facts are not a proof
 that the callback executes or has no other imperative effects. The cartlib path
 grammar lives in `toolchain/ts/cartlib/fsm`, not in the renderer or generic Lua
 binder. See the documented subset and compiled-runtime oracle before extending
-these facts. Retained canvas geometry belongs
+these facts. ActionEffect bodies retain the twelve authored value/requirement
+fields as original AST fields, with the same source nodes consumed by the
+outline. Requirement sections retain their constructor/issues and syntactic
+entries through the shared source-array owner, not a BT-owned representation.
+Computed effect keys stay visible and unresolved; missing fields acquire no
+defaults, callbacks are not executed, and an unresolved list is not a proven
+empty requirement set. This is property source evidence, not an execution
+graph: cartlib's periodic lane bypasses trigger gates/cooldown, and event is
+an output rather than an input trigger. The compiled cartlib oracle and pinned
+property-editor references are documented in the graph design. Retained canvas geometry belongs
 to a shared workbench control, independently of document identity and runtime
 execution slots. Input-owned registration/selection/collapse correspondence
 maps source-use spans through the existing text-change owner, including hidden
@@ -222,8 +231,8 @@ ranges or generation-local row keys alone do not identify an occurrence.
 Deleting/replacing a use clears affected correspondence; later Undo does not
 guess it back. Click gestures belong to the pane and one source generation;
 cross-file facts also require the existing semantic-generation invalidation.
-A chosen BT now has a concrete graph; FSM and ActionEffect retain their
-outline. Source selection lives outside the discriminated presentation, not
+A chosen BT or FSM now has a concrete graph; ActionEffect retains its outline.
+Source selection lives outside the discriminated presentation, not
 in an invisible row list. It is now a discriminated source selection: node,
 BT connection, FSM outcome or explicit entry. FSM proof selection additionally
 tracks the binding use, bound callback and return syntax start; its declaring

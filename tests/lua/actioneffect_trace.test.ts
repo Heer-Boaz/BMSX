@@ -18,6 +18,8 @@ import {
 	linkTestBlua32Pair,
 } from '../helpers/blua32';
 import { materializeCpuCompletionValues, parseLuaChunk } from './cpu_test_harness';
+import { ACTIONEFFECT_SOURCE } from '../helpers/actioneffect_source_fixture';
+import { ACTIONEFFECT_PHASE_ENTRY } from '../helpers/actioneffect_phase_fixture';
 
 const SYSTEM_ENTRY_SOURCE = `
 require('base')
@@ -42,6 +44,9 @@ const SYSTEM_MODULE_FILES = [
 ] as const;
 
 const CART_MODULE_FILES = [
+	['cartlib/actioneffects', 'cartlib/actioneffects.lua'],
+	['cartlib/registry', 'cartlib/registry.lua'],
+	['cartlib/util/dense_set', 'cartlib/util/dense_set.lua'],
 	['cartlib/component/base_component', 'cartlib/component/base_component.lua'],
 	['cartlib/clock', 'cartlib/clock.lua'],
 	['cartlib/actioneffects/actioneffect_component', 'cartlib/actioneffects/actioneffect_component.lua'],
@@ -239,6 +244,7 @@ function compileActionEffectProgram(
 		sourceModule(path, readFileSync(file, 'utf8')),
 	);
 	cartModules.push(sourceModule('cartlib/event_emitter', EVENT_EMITTER_STUB_SOURCE));
+	cartModules.push(sourceModule('fixture/effects', ACTIONEFFECT_SOURCE));
 	const system = compileLuaChunkToProgram(
 		parseLuaChunk(SYSTEM_ENTRY_SOURCE, 'boot.lua'),
 		systemModules,
@@ -435,6 +441,14 @@ test('ActionEffect activity facts observe the committed count and periodic lane'
 		assert.equal(observation.getInteger(6), 125);
 		assert.equal(observation.getInteger(7), 1);
 	}
+});
+
+test('source-visible ActionEffect fields obey real cartlib trigger, periodic, commit and rebind phases', () => {
+	const compiled = compileActionEffectProgram('erase', ACTIONEFFECT_PHASE_ENTRY);
+	const cpu = createTestBlua32PairCpu(linkTestBlua32Pair(compiled.system, compiled.cart)).cpu;
+	cpu.installBootPrimitives();
+	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [true]);
 });
 
 test('ordinary ActionEffect bytecode contains no trace channel or outcome labels', () => {
