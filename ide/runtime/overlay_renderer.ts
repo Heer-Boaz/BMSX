@@ -1,9 +1,11 @@
 import type { BFont } from '../../machine/ts/render/shared/bitmap_font';
 import { Host2DKind, type Host2DRef } from '../../machine/ts/render/host_overlay/commands';
+import type { HostOverlayClipRect } from '../../machine/ts/render/host_overlay/clip';
 import {
 	RectRenderKind,
 	type GlyphRenderSubmission,
 	type HostImageRenderSubmission,
+	type PolyRenderSubmission,
 	type RectRenderSubmission,
 	type color,
 } from '../../machine/ts/render/shared/submissions';
@@ -20,9 +22,16 @@ type OverlayCommandBuffer = {
 	rectPool: RectRenderSubmission[];
 	imagePool: HostImageRenderSubmission[];
 	itemPool: GlyphRenderSubmission[];
+	polyPool: PolyRenderSubmission[];
+	clipPool: HostOverlayClipRect[];
+	clipStack: HostOverlayClipRect[];
+	fullClip: HostOverlayClipRect;
 	rectCount: number;
 	imageCount: number;
 	itemCount: number;
+	polyCount: number;
+	clipCount: number;
+	clipDepth: number;
 };
 
 function createRectSubmission(): RectRenderSubmission {
@@ -66,6 +75,7 @@ function createGlyphSubmission(): GlyphRenderSubmission {
 function createOverlayCommandBuffer(): OverlayCommandBuffer {
 	const commandKinds: Host2DKind[] = [];
 	const commandRefs: Host2DRef[] = [];
+	const fullClip = { left: 0, top: 0, right: 0, bottom: 0 };
 	return {
 		commandKinds,
 		commandRefs,
@@ -73,8 +83,6 @@ function createOverlayCommandBuffer(): OverlayCommandBuffer {
 		frame: {
 			logicalWidth: 0,
 			logicalHeight: 0,
-			renderWidth: 0,
-			renderHeight: 0,
 			commandKinds,
 			commandRefs,
 			commandCount: 0,
@@ -82,9 +90,16 @@ function createOverlayCommandBuffer(): OverlayCommandBuffer {
 		rectPool: [],
 		imagePool: [],
 		itemPool: [],
+		polyPool: [],
+		clipPool: [],
+		clipStack: [fullClip],
+		fullClip,
 		rectCount: 0,
 		imageCount: 0,
 		itemCount: 0,
+		polyCount: 0,
+		clipCount: 0,
+		clipDepth: 1,
 	};
 }
 
@@ -96,8 +111,6 @@ export class OverlayRenderer {
 	private standbyBuffer = createOverlayCommandBuffer();
 	private frameLogicalWidth = 0;
 	private frameLogicalHeight = 0;
-	private frameRenderWidth = 0;
-	private frameRenderHeight = 0;
 	private overrideSize: Viewport = null;
 
 	public constructor(private readonly queue: HostOverlayQueue) {
@@ -131,14 +144,59 @@ export class OverlayRenderer {
 		buffer.rectCount = 0;
 		buffer.imageCount = 0;
 		buffer.itemCount = 0;
-		const offscreen = presenter.offscreenCanvasSize;
+		buffer.polyCount = 0;
+		buffer.clipCount = 0;
+		buffer.clipDepth = 1;
 		const logical = presenter.viewportSize;
-		const renderWidth = this.overrideSize ? this.overrideSize.width : offscreen.x;
-		const renderHeight = this.overrideSize ? this.overrideSize.height : offscreen.y;
 		this.frameLogicalWidth = logical.x;
 		this.frameLogicalHeight = logical.y;
-		this.frameRenderWidth = renderWidth;
-		this.frameRenderHeight = renderHeight;
+		buffer.fullClip.right = logical.x;
+		buffer.fullClip.bottom = logical.y;
+	}
+
+	public pushClipRect(left: number, top: number, right: number, bottom: number): void {
+		const buffer = this.activeBuffer;
+		const parent = buffer.clipStack[buffer.clipDepth - 1];
+		let clip = buffer.clipPool[buffer.clipCount];
+		if (clip === undefined) {
+			clip = { left: 0, top: 0, right: 0, bottom: 0 };
+			buffer.clipPool.push(clip);
+		}
+		buffer.clipCount += 1;
+		clip.left = Math.max(parent.left, left);
+		clip.top = Math.max(parent.top, top);
+		clip.right = Math.max(clip.left, Math.min(parent.right, right));
+		clip.bottom = Math.max(clip.top, Math.min(parent.bottom, bottom));
+		buffer.clipStack[buffer.clipDepth++] = clip;
+		this.queueCommand(Host2DKind.Clip, clip);
+	}
+
+	public popClipRect(): void {
+		const buffer = this.activeBuffer;
+		buffer.clipDepth -= 1;
+		this.queueCommand(Host2DKind.Clip, buffer.clipStack[buffer.clipDepth - 1]);
+	}
+
+	/** Translates a retained route into the published buffer, never mutating the source geometry. */
+	public polyline(points: readonly number[], x: number, y: number, z: number, thickness: number, color: color, layer: Layer2D): void {
+		const buffer = this.activeBuffer;
+		let submission = buffer.polyPool[buffer.polyCount];
+		if (submission === undefined) {
+			submission = { points: [], z: 0, thickness: 1, color: 0, layer };
+			buffer.polyPool.push(submission);
+		}
+		buffer.polyCount += 1;
+		const target = submission.points;
+		target.length = points.length;
+		for (let index = 0; index < points.length; index += 2) {
+			target[index] = points[index] + x;
+			target[index + 1] = points[index + 1] + y;
+		}
+		submission.z = z;
+		submission.thickness = thickness;
+		submission.color = color;
+		submission.layer = layer;
+		this.queueCommand(Host2DKind.Poly, submission);
 	}
 
 	public fillRect(left: number, top: number, right: number, bottom: number, z: number, color: color, layer: Layer2D): void {
@@ -260,8 +318,6 @@ export class OverlayRenderer {
 		const frame = publishedBuffer.frame;
 		frame.logicalWidth = this.frameLogicalWidth;
 		frame.logicalHeight = this.frameLogicalHeight;
-		frame.renderWidth = this.frameRenderWidth;
-		frame.renderHeight = this.frameRenderHeight;
 		frame.commandCount = publishedBuffer.commandCount;
 		this.queue.publishOverlayFrame(frame);
 	}

@@ -1,7 +1,7 @@
 import type { RenderPassLibrary } from '../backend/pass/library';
 import type { GxGpuPipelineState, HostOverlayPipelineState, RenderPassStateRegistry } from '../backend/backend';
 import type { HostMenuPipelineState } from '../backend/backend';
-import { renderHeadlessHost2DEntry } from './host_2d';
+import { beginHeadlessHost2D, renderHeadlessHost2DEntry } from './host_2d';
 import { renderGxGpuSoftwareFrame } from '../backend/software/gx_gpu';
 import { applyHeadlessDeviceQuantize } from '../post/device_quantize/headless/pipeline';
 import { DeviceQuantizeMode } from '../post/device_quantize/mode';
@@ -51,14 +51,16 @@ function registerHeadlessGxGpuPass(registry: RenderPassLibrary): void {
 }
 
 export function drawHeadlessHostMenuLayer(backend: HeadlessGPUBackend, frame: HostMenuPipelineState): void {
+	beginHeadlessHost2D(backend.hostOverlayContext, backend.framebufferPixels, backend.framebufferWidth, backend.framebufferHeight);
 	for (let index = 0; index < frame.commandCount; index += 1) {
-		renderHeadlessHost2DEntry(backend.glyphContext, backend.framebufferPixels, backend.framebufferWidth, backend.framebufferHeight, frame.commandKinds[index], frame.commandRefs[index]);
+		renderHeadlessHost2DEntry(backend.hostOverlayContext, frame.commandKinds[index], frame.commandRefs[index]);
 	}
 }
 
 export function drawHeadlessHostOverlayFrame(backend: HeadlessGPUBackend, frame: HostOverlayPipelineState): void {
+	beginHeadlessHost2D(backend.hostOverlayContext, backend.framebufferPixels, backend.framebufferWidth, backend.framebufferHeight);
 	for (let index = 0; index < frame.commandCount; index += 1) {
-		renderHeadlessHost2DEntry(backend.glyphContext, backend.framebufferPixels, backend.framebufferWidth, backend.framebufferHeight, frame.commandKinds[index], frame.commandRefs[index]);
+		renderHeadlessHost2DEntry(backend.hostOverlayContext, frame.commandKinds[index], frame.commandRefs[index]);
 	}
 }
 

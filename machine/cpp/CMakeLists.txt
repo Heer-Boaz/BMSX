@@ -15,6 +15,7 @@ option(BMSX_BUILD_LIBRETRO "Build libretro core" ON)
 option(BMSX_BUILD_LIBRETRO_HOST "Build libretro host executable" OFF)
 option(BMSX_BUILD_SDL "Build SDL standalone executable" OFF)
 option(BMSX_BUILD_TESTS "Build unit tests" OFF)
+option(BMSX_BUILD_EGL_TESTS "Build headless EGL renderer conformance tests (requires GLES2 and EGL 1.5)" OFF)
 option(BMSX_ENABLE_LTO "Enable Link Time Optimization" OFF)
 option(BMSX_ENABLE_ZLIB "Enable PNG screenshot output" ON)
 set(BMSX_ENABLE_GLES2_DEFAULT ON)
@@ -636,6 +637,25 @@ if(BMSX_BUILD_TESTS)
 	)
 	target_link_libraries(bmsx_host_system_atlas_tests PRIVATE bmsx_host_support)
 	add_test(NAME bmsx_host_system_atlas_tests COMMAND bmsx_host_system_atlas_tests)
+
+	add_executable(bmsx_host_overlay_clip_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/host_overlay_clip_test.cpp
+	)
+	target_link_libraries(bmsx_host_overlay_clip_tests PRIVATE bmsx_host_support)
+	add_test(NAME bmsx_host_overlay_clip_tests COMMAND bmsx_host_overlay_clip_tests)
+
+	if(BMSX_BUILD_EGL_TESTS)
+		if(NOT BMSX_ENABLE_GLES2)
+			message(FATAL_ERROR "BMSX_BUILD_EGL_TESTS requires BMSX_ENABLE_GLES2")
+		endif()
+		find_package(PkgConfig REQUIRED)
+		pkg_check_modules(EGL REQUIRED IMPORTED_TARGET egl>=1.5)
+		add_executable(bmsx_host_overlay_gles2_tests
+			${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/host_overlay_gles2_test.cpp
+		)
+		target_link_libraries(bmsx_host_overlay_gles2_tests PRIVATE bmsx_host_support PkgConfig::EGL)
+		add_test(NAME bmsx_host_overlay_gles2_tests COMMAND bmsx_host_overlay_gles2_tests)
+	endif()
 
 	add_executable(bmsx_glyph_runs_tests
 		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/glyph_runs_test.cpp

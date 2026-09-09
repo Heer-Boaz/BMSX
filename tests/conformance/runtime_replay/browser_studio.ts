@@ -9,6 +9,7 @@ import { testSceneSourceAfterReboot, presentSceneEditor } from './studio_scene_s
 import { presentCommandPalette } from './studio_command_palette';
 import { testStudioScenarioExecution } from './studio_scenario_execution';
 import { presentActionEffects } from './studio_behavior_kinds';
+import { testStudioPointerCapture } from './studio_pointer_capture';
 import { runStudioPointerNavigation, type NavigationCart } from './studio_pointer_navigation';
 
 /** Independent renderer projects run the same Studio workflow. */
@@ -24,6 +25,7 @@ export const studioBackends = {
 			await presentSceneEditor(test);
 			await presentCommandPalette(test);
 			await presentActionEffects(test);
+			await testStudioPointerCapture(test);
 		}
 		// Publish the real software-rendered final framebuffer for the screenshot.
 		// No replacement drawing or per-frame screenshot conversion.
@@ -45,6 +47,7 @@ export const studioBackends = {
 			await presentSceneEditor(test);
 			await presentCommandPalette(test);
 			await presentActionEffects(test);
+			await testStudioPointerCapture(test);
 		}
 		check(backend.gl.getError() === backend.gl.NO_ERROR, 'WebGL2 workflow raised a graphics error');
 		return result;
@@ -64,6 +67,7 @@ export const studioBackends = {
 			await presentSceneEditor(test);
 			await presentCommandPalette(test);
 			await presentActionEffects(test);
+			await testStudioPointerCapture(test);
 		}
 		check(errors.length === 0, errors.join('\n'));
 		return { ...result, readbacks };

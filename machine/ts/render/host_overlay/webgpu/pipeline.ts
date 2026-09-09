@@ -17,6 +17,7 @@ import {
 } from '../quad_stream';
 import { createHostMenuState, createHostOverlayState, writeHostMenuState, writeHostOverlayState } from '../pipeline';
 import { HOST_SYSTEM_ATLAS } from '../atlas';
+import { HostOverlayClipState } from '../clip';
 import vertexShaderCode from './shaders/host_overlay.vert.wgsl';
 import fragmentShaderCode from './shaders/host_overlay.frag.wgsl';
 
@@ -30,6 +31,7 @@ type HostOverlayRuntime = {
 	colorAttachment: ColorAttachmentSpec;
 	passDesc: RenderPassDesc;
 	stream: HostOverlayQuadStream;
+	clip: HostOverlayClipState;
 	hostAtlasTexture: GPUTexture;
 	uniformScratch: Float32Array;
 };
@@ -132,6 +134,7 @@ function createRuntime(backend: WebGPUBackend): HostOverlayRuntime {
 		colorAttachment,
 		passDesc: { label: 'HostOverlay (WebGPU)', color: colorAttachment },
 		stream,
+		clip: new HostOverlayClipState(),
 		hostAtlasTexture,
 		uniformScratch: new Float32Array(OVERLAY_UNIFORM_FLOATS),
 	};
@@ -173,7 +176,16 @@ function renderStream(backend: WebGPUBackend, runtime: HostOverlayRuntime, state
 	pass.encoder.setBindGroup(0, runtime.bindGroup);
 	pass.encoder.setVertexBuffer(0, runtime.instanceFloatBuffer);
 	pass.encoder.setVertexBuffer(1, runtime.instanceTextureKindBuffer);
-	pass.encoder.draw(6, count);
+	const clip = runtime.clip;
+	clip.reset(state.overlayWidth, state.overlayHeight, state.width, state.height);
+	for (let index = 0; index < stream.batchCount; index += 1) {
+		const batch = stream.batches[index];
+		const end = index + 1 < stream.batchCount ? stream.batches[index + 1].start : count;
+		clip.set(batch.clip);
+		if (end === batch.start || clip.left === clip.right || clip.top === clip.bottom) continue;
+		pass.encoder.setScissorRect(clip.left, clip.top, clip.right - clip.left, clip.bottom - clip.top);
+		pass.encoder.draw(6, end - batch.start, 0, batch.start);
+	}
 	backend.endRenderPass(pass);
 }
 
@@ -197,7 +209,7 @@ export function registerHostOverlayPassesWebGPU(registry: RenderPassLibrary): vo
 		shouldExecute: presenter => presenter.hostOverlayQueue.hasPendingOverlayFrame(),
 		exec: (backend, _fbo, state: RenderPassStateRegistry['host_overlay']) => {
 			const stream = runtime.stream;
-			stream.reset();
+			stream.reset(state.overlayWidth, state.overlayHeight);
 			for (let index = 0; index < state.commandCount; index += 1) {
 				stream.appendEntry(state.commandKinds[index], state.commandRefs[index]);
 			}
@@ -213,7 +225,7 @@ export function registerHostOverlayPassesWebGPU(registry: RenderPassLibrary): vo
 		shouldExecute: presenter => presenter.hostOverlayQueue.hasPendingHostMenuFrame(),
 		exec: (backend, _fbo, state: RenderPassStateRegistry['host_menu']) => {
 			const stream = runtime.stream;
-			stream.reset();
+			stream.reset(state.overlayWidth, state.overlayHeight);
 			for (let index = 0; index < state.commandCount; index += 1) {
 				stream.appendEntry(state.commandKinds[index], state.commandRefs[index]);
 			}

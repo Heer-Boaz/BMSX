@@ -215,8 +215,21 @@ ranges or generation-local row keys alone do not identify an occurrence.
 Deleting/replacing a use clears affected correspondence; later Undo does not
 guess it back. Click gestures belong to the pane and one source generation;
 cross-file facts also require the existing semantic-generation invalidation.
-The current Lens is still an outline. Graph controls, clipping, BT/FSM graph
-views and their runtime/UX evidence remain separate, unimplemented slices.
+The current Lens is still an outline. `workbench/ui/graph` and
+`workbench/render/graph.ts` now own a shared retained canvas: one measured
+geometry generation for draw and hit testing, input-owned pan/selection and a
+pane-owned control for focus and gestures. Clip commands go through the shared
+overlay renderer, not feature-local glyph/line clipping. The graph control has
+no Lua, BT/FSM semantics or document-undo owner. Concrete BT/FSM layouts,
+relationship navigation and their live UX evidence remain subsequent slices.
+
+`input/pointer/capture.ts` owns delivery of a captured physical gesture before
+ordinary pane/chrome hit testing. Release, invalid/outside-display input,
+exclusive popup/menu input, pane detachment and IDE deactivation end capture;
+they never postpone it until a popup closes. The owner is detached before its
+cancel callback. Focus and capture are distinct: menus may retain command
+focus while ending a drag. The graph control uses this route without inventing
+button edges; other existing controls have not all been migrated to it.
 
 Scene authoring uses the same document contract, but its runtime object and
 viewport owners are deliberately not inferred from the behavior projection.

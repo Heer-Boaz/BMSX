@@ -4485,6 +4485,17 @@ WebGPU is the default accelerated browser backend and WebGL2 is its fallback;
 host validation failures do not reverse that ownership or introduce a second
 presentation facade.
 
+Host-overlay coordinates belong to the publication's logical pixel space;
+the presenter owns the current target dimensions at pass execution. A saved
+IDE layout size does not program a game/rewind framebuffer. `Host2DKind.Clip`
+is an ordered half-open, top-left-origin logical-pixel rectangle in that same
+lane. The producer intersects nested clips and retains each published rect
+until consumption. Each pass starts with the full target clip. WebGL2/WebGPU
+batch at changed clips, GLES2 programs scissor at the command boundary, and
+software bounds its fill/atlas loops before rasterization. Scissor does not
+persist into the next pass. Clipping does not change geometry, glyph advances
+or image UVs, and does not add a guest register or GX command.
+
 The platform atlas producer is the sole owner of the host-UI atlas layout. It
 emits the RGBA bytes and the image descriptors as native generated data for
 both runtimes. The shared descriptor order is `width`, `height`, `pixels`,

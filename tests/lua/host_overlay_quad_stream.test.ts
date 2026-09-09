@@ -55,7 +55,7 @@ test('host overlay quad stream emits glyph backgrounds before atlas glyphs with 
 
 for (const variant of ['msx', 'tiny'] satisfies FontVariant[]) {
 	test(`host glyph range uses top-left coordinates and explicit tab/newline advances (${variant})`, () => {
-		const font = new Font(variant);
+		const font = new Font({ variant });
 		const stream = new HostOverlayQuadStream();
 		stream.appendEntry(Host2DKind.Glyphs, {
 			x: 11, y: 17, z: 0,

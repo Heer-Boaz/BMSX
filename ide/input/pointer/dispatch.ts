@@ -14,6 +14,9 @@ import type { Clipboard } from '../../common/clipboard';
 import type { EditorDisplay } from '../../common/viewport';
 import { getActiveTab } from '../../workbench/ui/tabs';
 import { handleBlockingWorkbenchModalPointer, hasBlockingWorkbenchModal } from '../../workbench/contrib/modal/blocking_modal';
+import { pointerCapture } from './capture';
+import { editorChromeState } from '../../workbench/ui/chrome_state';
+import { editorContextMenuState } from '../../workbench/contrib/context_menu/state';
 
 export function handleTextEditorPointerInput(
 	display: EditorDisplay,
@@ -29,6 +32,8 @@ export function handleTextEditorPointerInput(
 	const snapshot = readEditorPointerSnapshot(display, playerInput);
 	const blockingModal = hasBlockingWorkbenchModal();
 	const quickInputVisible = editor.quickInput.visible;
+	if (pointerCapture.dispatch(snapshot, blockingModal || quickInputVisible
+		|| editorChromeState.openMenuId !== null || editorContextMenuState.visible)) return;
 	if (prepareEditorPointerFrame(editor.resourcePanel, snapshot, gotoModifierActive, blockingModal || quickInputVisible)) {
 		return;
 	}

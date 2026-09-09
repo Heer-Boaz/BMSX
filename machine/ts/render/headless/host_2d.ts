@@ -17,59 +17,73 @@ import type {
 import { RectRenderKind } from '../shared/submissions';
 import { blendPixel } from './pixel_ops';
 import type { FontGlyph } from '../shared/bitmap_font';
+import type { HostOverlayClipRect, HostOverlayClipState } from '../host_overlay/clip';
 
-export type HeadlessGlyphContext = {
+export type HeadlessHost2DContext = {
 	target: Uint8Array;
 	width: number;
-	height: number;
 	colorValue: number;
 	hasBackgroundColor: boolean;
 	backgroundColor: number;
 	lineHeight: number;
+	clip: HostOverlayClipState;
 };
 
-export function renderHeadlessHost2DEntry(context: HeadlessGlyphContext, target: Uint8Array, width: number, height: number, kind: Host2DKind, item: Host2DRef): void {
+export function beginHeadlessHost2D(context: HeadlessHost2DContext, target: Uint8Array, width: number, height: number): void {
+	context.target = target;
+	context.width = width;
+	context.clip.reset(width, height, width, height);
+}
+
+export function renderHeadlessHost2DEntry(context: HeadlessHost2DContext, kind: Host2DKind, item: Host2DRef): void {
 	switch (kind) {
+		case Host2DKind.Clip:
+			context.clip.set(item as HostOverlayClipRect);
+			return;
 		case Host2DKind.Rect:
-			drawRect(target, width, height, item as RectRenderSubmission);
+			drawRect(context, item as RectRenderSubmission);
 			return;
 		case Host2DKind.Glyphs:
-			drawBatchBlit(context, target, width, height, item as GlyphRenderSubmission);
+			drawBatchBlit(context, item as GlyphRenderSubmission);
 			return;
 		case Host2DKind.Img:
-			drawImage(target, width, height, item as HostImageRenderSubmission);
+			drawImage(context, item as HostImageRenderSubmission);
 			return;
 		case Host2DKind.Poly:
-			drawPoly(target, width, height, item as PolyRenderSubmission);
+			drawPoly(context, item as PolyRenderSubmission);
 			return;
 	}
 }
 
-function drawRect(target: Uint8Array, width: number, height: number, command: RectRenderSubmission): void {
+function drawRect(context: HeadlessHost2DContext, command: RectRenderSubmission): void {
 	const area = command.area;
+	const left = Math.trunc(area.left);
+	const top = Math.trunc(area.top);
+	const right = left + Math.trunc(area.right - area.left);
+	const bottom = top + Math.trunc(area.bottom - area.top);
 	const colorValue = command.color;
 	if (command.kind === RectRenderKind.Fill) {
-		fillRect(target, width, height, area.left, area.top, area.right, area.bottom, colorValue);
+		fillRect(context, left, top, right, bottom, colorValue);
 		return;
 	}
-	fillRect(target, width, height, area.left, area.top, area.right, area.top + 1, colorValue);
-	fillRect(target, width, height, area.left, area.bottom - 1, area.right, area.bottom, colorValue);
-	fillRect(target, width, height, area.left, area.top, area.left + 1, area.bottom, colorValue);
-	fillRect(target, width, height, area.right - 1, area.top, area.right, area.bottom, colorValue);
+	fillRect(context, left, top, right, top + 1, colorValue);
+	fillRect(context, left, bottom - 1, right, bottom, colorValue);
+	fillRect(context, left, top, left + 1, bottom, colorValue);
+	fillRect(context, right - 1, top, right, bottom, colorValue);
 }
 
-function drawPoly(target: Uint8Array, width: number, height: number, command: PolyRenderSubmission): void {
+function drawPoly(context: HeadlessHost2DContext, command: PolyRenderSubmission): void {
 	const points = command.points;
 	for (let index = 0; index + 3 < points.length; index += 2) {
-		drawLine(target, width, height, points[index], points[index + 1], points[index + 2], points[index + 3], command.thickness, command.color);
+		drawLine(context, points[index], points[index + 1], points[index + 2], points[index + 3], command.thickness, command.color);
 	}
 }
 
-function drawLine(target: Uint8Array, width: number, height: number, x0: number, y0: number, x1: number, y1: number, thickness: number, colorValue: color): void {
-	let ix0 = x0;
-	let iy0 = y0;
-	const ix1 = x1;
-	const iy1 = y1;
+function drawLine(context: HeadlessHost2DContext, x0: number, y0: number, x1: number, y1: number, thickness: number, colorValue: color): void {
+	let ix0 = Math.trunc(x0);
+	let iy0 = Math.trunc(y0);
+	const ix1 = Math.trunc(x1);
+	const iy1 = Math.trunc(y1);
 	let dx = ix1 - ix0;
 	let dy = iy1 - iy0;
 	const sx = dx < 0 ? -1 : 1;
@@ -77,10 +91,10 @@ function drawLine(target: Uint8Array, width: number, height: number, x0: number,
 	if (dx < 0) dx = -dx;
 	if (dy < 0) dy = -dy;
 	let err = dx - dy;
-	const thicknessPixels = thickness;
+	const thicknessPixels = Math.trunc(thickness);
 	const half = thicknessPixels >> 1;
 	for (; ;) {
-		fillRect(target, width, height, ix0 - half, iy0 - half, ix0 - half + thicknessPixels, iy0 - half + thicknessPixels, colorValue);
+		fillRect(context, ix0 - half, iy0 - half, ix0 - half + thicknessPixels, iy0 - half + thicknessPixels, colorValue);
 		if (ix0 === ix1 && iy0 === iy1) {
 			return;
 		}
@@ -96,14 +110,12 @@ function drawLine(target: Uint8Array, width: number, height: number, x0: number,
 	}
 }
 
-function drawImage(target: Uint8Array, width: number, height: number, command: HostImageRenderSubmission): void {
+function drawImage(context: HeadlessHost2DContext, command: HostImageRenderSubmission): void {
 	const source = hostSystemAtlasImage(command.imgid);
 	const scale = command.scale;
 	const flip = command.flip;
 	drawHostAtlasRect(
-		target,
-		width,
-		height,
+		context,
 		source.u,
 		source.v,
 		source.w,
@@ -118,10 +130,7 @@ function drawImage(target: Uint8Array, width: number, height: number, command: H
 	);
 }
 
-function drawBatchBlit(context: HeadlessGlyphContext, target: Uint8Array, width: number, height: number, command: GlyphRenderSubmission): void {
-	context.target = target;
-	context.width = width;
-	context.height = height;
+function drawBatchBlit(context: HeadlessHost2DContext, command: GlyphRenderSubmission): void {
 	context.colorValue = command.color;
 	context.hasBackgroundColor = command.has_background_color;
 	context.backgroundColor = command.background_color;
@@ -129,27 +138,15 @@ function drawBatchBlit(context: HeadlessGlyphContext, target: Uint8Array, width:
 	forEachBatchBlitGlyph(command, context, drawHeadlessGlyph);
 }
 
-function drawHeadlessGlyph(context: HeadlessGlyphContext, item: FontGlyph, x: number, y: number): void {
-	const target = context.target;
-	const width = context.width;
-	const height = context.height;
+function drawHeadlessGlyph(context: HeadlessHost2DContext, item: FontGlyph, x: number, y: number): void {
 	if (context.hasBackgroundColor) {
-			fillRect(
-				target,
-				width,
-				height,
-				x,
-				y,
-				x + item.advance,
-				y + context.lineHeight,
-				context.backgroundColor,
-			);
+		const left = Math.trunc(x);
+		const top = Math.trunc(y);
+		fillRect(context, left, top, left + item.advance, top + context.lineHeight, context.backgroundColor);
 	}
 	const source = hostSystemAtlasImage(item.imgid);
 	drawHostAtlasRect(
-		target,
-		width,
-		height,
+		context,
 		source.u,
 		source.v,
 		source.w,
@@ -164,15 +161,14 @@ function drawHeadlessGlyph(context: HeadlessGlyphContext, item: FontGlyph, x: nu
 	);
 }
 
-function fillRect(target: Uint8Array, width: number, height: number, left: number, top: number, right: number, bottom: number, colorValue: color): void {
-	left = left;
-	top = top;
-	right = right;
-	bottom = bottom;
-	if (left < 0) left = 0;
-	if (top < 0) top = 0;
-	if (right > width) right = width;
-	if (bottom > height) bottom = height;
+function fillRect(context: HeadlessHost2DContext, left: number, top: number, right: number, bottom: number, colorValue: color): void {
+	const target = context.target;
+	const width = context.width;
+	const clip = context.clip;
+	left = Math.max(clip.left, left);
+	top = Math.max(clip.top, top);
+	right = Math.min(clip.right, right);
+	bottom = Math.min(clip.bottom, bottom);
 	const r = (colorValue >>> 16) & 0xff, g = (colorValue >>> 8) & 0xff, b = colorValue & 0xff, a = (colorValue >>> 24) & 0xff;
 	for (let y = top; y < bottom; y += 1) {
 		let offset = (y * width + left) * 4;
@@ -183,9 +179,7 @@ function fillRect(target: Uint8Array, width: number, height: number, left: numbe
 	}
 }
 
-function drawHostAtlasRect(target: Uint8Array,
-	width: number,
-	height: number,
+function drawHostAtlasRect(context: HeadlessHost2DContext,
 	sourceX: number,
 	sourceY: number,
 	sourceW: number,
@@ -197,20 +191,23 @@ function drawHostAtlasRect(target: Uint8Array,
 	flipH: boolean,
 	flipV: boolean,
 	colorValue: color): void {
+	const target = context.target;
+	const width = context.width;
+	const clip = context.clip;
 	const atlas = HOST_SYSTEM_ATLAS.pixels;
 	const colorR = (colorValue >>> 16) & 0xff, colorG = (colorValue >>> 8) & 0xff, colorB = colorValue & 0xff, colorA = (colorValue >>> 24) & 0xff;
-	const dstXi = dstX;
-	const dstYi = dstY;
-	const dstWi = dstW;
-	const dstHi = dstH;
+	const dstXi = Math.trunc(dstX);
+	const dstYi = Math.trunc(dstY);
+	const dstWi = Math.trunc(dstW);
+	const dstHi = Math.trunc(dstH);
 	let startX = dstXi;
 	let startY = dstYi;
 	let endX = dstXi + dstWi;
 	let endY = dstYi + dstHi;
-	if (startX < 0) startX = 0;
-	if (startY < 0) startY = 0;
-	if (endX > width) endX = width;
-	if (endY > height) endY = height;
+	if (startX < clip.left) startX = clip.left;
+	if (startY < clip.top) startY = clip.top;
+	if (endX > clip.right) endX = clip.right;
+	if (endY > clip.bottom) endY = clip.bottom;
 	for (let y = startY; y < endY; y += 1) {
 		const relY = y - dstYi;
 		const sampleY = flipV ? (dstHi - 1 - relY) : relY;

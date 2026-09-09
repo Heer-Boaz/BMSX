@@ -166,6 +166,7 @@ void SoftwareBackend::applyFramebufferTarget(u32* fb, i32 width, i32 height, i32
 	m_width = width;
 	m_height = height;
 	m_pitch = pitch;
+	hostOverlayClip.reset(width, height, width, height);
 }
 
 void SoftwareBackend::resizePresentationTarget(i32 width, i32 height) {
@@ -464,11 +465,11 @@ void SoftwareBackend::drawLine(i32 x0, i32 y0, i32 x1, i32 y1, u32 color) {
 }
 
 void SoftwareBackend::fillRect(i32 x, i32 y, i32 w, i32 h, u32 color) {
-	// Clip to screen bounds
-	i32 x0 = std::max(0, x);
-	i32 y0 = std::max(0, y);
-	i32 x1 = std::min(m_width, x + w);
-	i32 y1 = std::min(m_height, y + h);
+	// Raster bounds are programmed at the host overlay pass boundary.
+	i32 x0 = std::max(hostOverlayClip.left, x);
+	i32 y0 = std::max(hostOverlayClip.top, y);
+	i32 x1 = std::min(hostOverlayClip.right, x + w);
+	i32 y1 = std::min(hostOverlayClip.bottom, y + h);
 
 	if (x0 >= x1 || y0 >= y1) return;
 

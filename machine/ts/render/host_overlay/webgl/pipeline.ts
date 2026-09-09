@@ -17,6 +17,7 @@ import {
 } from '../quad_stream';
 import { createHostMenuState, createHostOverlayState, writeHostMenuState, writeHostOverlayState } from '../pipeline';
 import { HOST_SYSTEM_ATLAS } from '../atlas';
+import { HostOverlayClipState } from '../clip';
 import vertexShaderCode from './shaders/host_overlay.vert.glsl';
 import fragmentShaderCode from './shaders/host_overlay.frag.glsl';
 
@@ -31,6 +32,10 @@ type HostOverlayRuntime = {
 	stream: HostOverlayQuadStream;
 	instanceCapacity: number;
 	frameUniforms: FrameUniformState<WebGLBuffer>;
+	clip: HostOverlayClipState;
+	floatAttributeLocations: number[];
+	textureKindLocation: number;
+	instanceStart: number;
 };
 
 const HOST_OVERLAY_TEXTURE_UNIT = 0;
@@ -44,11 +49,29 @@ const UNIT_QUAD_CORNERS = new Float32Array([
 	1, 1,
 ]);
 
-function bindFloatAttribute(gl: WebGL2RenderingContext, program: WebGLProgram, name: string, size: number, offset: number): void {
-	const location = gl.getAttribLocation(program, name);
-	gl.enableVertexAttribArray(location);
-	gl.vertexAttribPointer(location, size, gl.FLOAT, false, HOST_OVERLAY_INSTANCE_FLOAT_BYTES, offset);
-	gl.vertexAttribDivisor(location, 1);
+const INSTANCE_ATTRIBUTES = [
+	{ name: 'i_origin', size: 2, offset: 0 },
+	{ name: 'i_axis_x', size: 2, offset: 2 * Float32Array.BYTES_PER_ELEMENT },
+	{ name: 'i_axis_y', size: 2, offset: 4 * Float32Array.BYTES_PER_ELEMENT },
+	{ name: 'i_uv0', size: 2, offset: 6 * Float32Array.BYTES_PER_ELEMENT },
+	{ name: 'i_uv1', size: 2, offset: 8 * Float32Array.BYTES_PER_ELEMENT },
+	{ name: 'i_color', size: 4, offset: 10 * Float32Array.BYTES_PER_ELEMENT },
+];
+
+// WebGL2 has no base-instance draw. The pass owns its VAO's instance origins.
+function bindInstanceStart(backend: WebGLBackend, state: HostOverlayRuntime, start: number): void {
+	if (state.instanceStart === start) return;
+	const gl = state.gl;
+	backend.bindArrayBuffer(state.instanceFloatBuffer);
+	for (let index = 0; index < INSTANCE_ATTRIBUTES.length; index += 1) {
+		const attribute = INSTANCE_ATTRIBUTES[index];
+		gl.vertexAttribPointer(state.floatAttributeLocations[index], attribute.size, gl.FLOAT, false,
+			HOST_OVERLAY_INSTANCE_FLOAT_BYTES, start * HOST_OVERLAY_INSTANCE_FLOAT_BYTES + attribute.offset);
+	}
+	backend.bindArrayBuffer(state.instanceTextureKindBuffer);
+	gl.vertexAttribIPointer(state.textureKindLocation, 1, gl.UNSIGNED_INT, Uint32Array.BYTES_PER_ELEMENT,
+		start * Uint32Array.BYTES_PER_ELEMENT);
+	state.instanceStart = start;
 }
 
 function createRuntime(backend: WebGLBackend, program: WebGLProgram, frameUniforms: FrameUniformState<WebGLBuffer>): HostOverlayRuntime {
@@ -66,12 +89,14 @@ function createRuntime(backend: WebGLBackend, program: WebGLProgram, frameUnifor
 	gl.enableVertexAttribArray(cornerLocation);
 	gl.vertexAttribPointer(cornerLocation, 2, gl.FLOAT, false, 0, 0);
 	backend.bindArrayBuffer(instanceFloatBuffer);
-	bindFloatAttribute(gl, program, 'i_origin', 2, 0);
-	bindFloatAttribute(gl, program, 'i_axis_x', 2, 2 * Float32Array.BYTES_PER_ELEMENT);
-	bindFloatAttribute(gl, program, 'i_axis_y', 2, 4 * Float32Array.BYTES_PER_ELEMENT);
-	bindFloatAttribute(gl, program, 'i_uv0', 2, 6 * Float32Array.BYTES_PER_ELEMENT);
-	bindFloatAttribute(gl, program, 'i_uv1', 2, 8 * Float32Array.BYTES_PER_ELEMENT);
-	bindFloatAttribute(gl, program, 'i_color', 4, 10 * Float32Array.BYTES_PER_ELEMENT);
+	const floatAttributeLocations: number[] = [];
+	for (const attribute of INSTANCE_ATTRIBUTES) {
+		const location = gl.getAttribLocation(program, attribute.name);
+		floatAttributeLocations.push(location);
+		gl.enableVertexAttribArray(location);
+		gl.vertexAttribPointer(location, attribute.size, gl.FLOAT, false, HOST_OVERLAY_INSTANCE_FLOAT_BYTES, attribute.offset);
+		gl.vertexAttribDivisor(location, 1);
+	}
 	backend.bindArrayBuffer(instanceTextureKindBuffer);
 	const textureKindLocation = gl.getAttribLocation(program, 'i_texture_kind');
 	gl.enableVertexAttribArray(textureKindLocation);
@@ -93,6 +118,10 @@ function createRuntime(backend: WebGLBackend, program: WebGLProgram, frameUnifor
 		stream,
 		instanceCapacity: stream.capacity,
 		frameUniforms,
+		clip: new HostOverlayClipState(),
+		floatAttributeLocations,
+		textureKindLocation,
+		instanceStart: 0,
 	};
 }
 
@@ -132,7 +161,20 @@ function renderStream(backend: WebGLBackend, state: HostOverlayRuntime, passStat
 		backend.updateVertexBuffer(state.instanceFloatBuffer, stream.floatData, 0, 0, count * HOST_OVERLAY_INSTANCE_FLOATS);
 		backend.updateVertexBuffer(state.instanceTextureKindBuffer, stream.textureKinds, 0, 0, count);
 	}
-	backend.drawInstanced(HOST_OVERLAY_DRAW_PASS, 6, count, 0, 0);
+	const gl = state.gl;
+	const clip = state.clip;
+	clip.reset(passState.overlayWidth, passState.overlayHeight, passState.width, passState.height);
+	gl.enable(gl.SCISSOR_TEST);
+	for (let index = 0; index < stream.batchCount; index += 1) {
+		const batch = stream.batches[index];
+		const end = index + 1 < stream.batchCount ? stream.batches[index + 1].start : count;
+		clip.set(batch.clip);
+		if (end === batch.start || clip.left === clip.right || clip.top === clip.bottom) continue;
+		gl.scissor(clip.left, passState.height - clip.bottom, clip.right - clip.left, clip.bottom - clip.top);
+		bindInstanceStart(backend, state, batch.start);
+		backend.drawInstanced(HOST_OVERLAY_DRAW_PASS, 6, end - batch.start, 0, 0);
+	}
+	gl.disable(gl.SCISSOR_TEST);
 	backend.bindVertexArray(null);
 	backend.setBlendEnabled(false);
 	backend.setDepthMask(true);
@@ -140,7 +182,7 @@ function renderStream(backend: WebGLBackend, state: HostOverlayRuntime, passStat
 
 function renderOverlay(backend: WebGLBackend, state: HostOverlayRuntime, passState: HostOverlayPipelineState): void {
 	const stream = state.stream;
-	stream.reset();
+	stream.reset(passState.overlayWidth, passState.overlayHeight);
 	for (let index = 0; index < passState.commandCount; index += 1) {
 		stream.appendEntry(passState.commandKinds[index], passState.commandRefs[index]);
 	}
@@ -149,7 +191,7 @@ function renderOverlay(backend: WebGLBackend, state: HostOverlayRuntime, passSta
 
 function renderHostMenu(backend: WebGLBackend, state: HostOverlayRuntime, passState: HostMenuPipelineState): void {
 	const stream = state.stream;
-	stream.reset();
+	stream.reset(passState.overlayWidth, passState.overlayHeight);
 	for (let index = 0; index < passState.commandCount; index += 1) {
 		stream.appendEntry(passState.commandKinds[index], passState.commandRefs[index]);
 	}

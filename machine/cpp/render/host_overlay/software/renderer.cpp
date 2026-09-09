@@ -81,21 +81,20 @@ void drawAtlasPixelsSoftware(SoftwareBackend& backend,
 	};
 	const i32 pixelsPerRow = backend.pitch() / static_cast<i32>(sizeof(u32));
 	u32* framebuffer = backend.framebuffer();
-	for (i32 y = 0; y < dstH; y += 1) {
-		const i32 targetY = dstY + y;
-		if (targetY < 0 || targetY >= backend.height()) {
-			continue;
-		}
-		const i32 sampleY = flipV ? dstH - 1 - y : y;
+	const auto& clip = backend.hostOverlayClip;
+	const i32 startX = std::max(clip.left, dstX);
+	const i32 startY = std::max(clip.top, dstY);
+	const i32 endX = std::min(clip.right, dstX + dstW);
+	const i32 endY = std::min(clip.bottom, dstY + dstH);
+	for (i32 targetY = startY; targetY < endY; targetY += 1) {
+		const i32 relY = targetY - dstY;
+		const i32 sampleY = flipV ? dstH - 1 - relY : relY;
 		const i32 sourceY = static_cast<i32>(sourceV) + sampleY * static_cast<i32>(sourceH) / dstH;
 		const u8* sourceRow = atlasPixels.data() + static_cast<size_t>(sourceY) * static_cast<size_t>(atlasWidth) * 4u;
 		u32* targetRow = framebuffer + static_cast<size_t>(targetY) * static_cast<size_t>(pixelsPerRow);
-		for (i32 x = 0; x < dstW; x += 1) {
-			const i32 targetX = dstX + x;
-			if (targetX < 0 || targetX >= backend.width()) {
-				continue;
-			}
-			const i32 sampleX = flipH ? dstW - 1 - x : x;
+		for (i32 targetX = startX; targetX < endX; targetX += 1) {
+			const i32 relX = targetX - dstX;
+			const i32 sampleX = flipH ? dstW - 1 - relX : relX;
 			const i32 sourceX = static_cast<i32>(sourceU) + sampleX * static_cast<i32>(sourceW) / dstW;
 			const u8* sourcePixel = sourceRow + static_cast<size_t>(sourceX) * 4u;
 			blendTintedSoftwarePixel(targetRow[targetX], sourcePixel, tint);
@@ -198,12 +197,13 @@ void drawGlyphsSoftware(SoftwareBackend& backend, const GlyphRenderSubmission& c
 } // namespace
 
 void beginHostOverlaySoftware(SoftwareBackend& backend, const Host2DPipelineState& state) {
-	(void)backend;
 	(void)state;
+	backend.hostOverlayClip.reset(backend.width(), backend.height(), backend.width(), backend.height());
 }
 
 void renderHost2DEntrySoftware(SoftwareBackend& backend, Host2DKind kind, Host2DRef ref) {
 	switch (kind) {
+		case Host2DKind::Clip: backend.hostOverlayClip.set(*ref.clip); return;
 		case Host2DKind::Img: drawImageSoftware(backend, *ref.img); return;
 		case Host2DKind::Rect: drawRectSoftware(backend, *ref.rect); return;
 		case Host2DKind::Poly: drawPolySoftware(backend, *ref.poly); return;
@@ -212,7 +212,7 @@ void renderHost2DEntrySoftware(SoftwareBackend& backend, Host2DKind kind, Host2D
 }
 
 void endHostOverlaySoftware(SoftwareBackend& backend) {
-	(void)backend;
+	backend.hostOverlayClip.reset(backend.width(), backend.height(), backend.width(), backend.height());
 }
 
 } // namespace bmsx

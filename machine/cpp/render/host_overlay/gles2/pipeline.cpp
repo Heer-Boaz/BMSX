@@ -236,8 +236,12 @@ void shutdownHostOverlayGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& 
 }
 
 void beginHostOverlayGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& pipeline, const Host2DPipelineState& state) {
-	backend.setRenderTarget(backend.backbuffer(), state.overlayWidth, state.overlayHeight);
-	glViewport(0, 0, state.overlayWidth, state.overlayHeight);
+	backend.setRenderTarget(backend.backbuffer(), state.width, state.height);
+	glViewport(0, 0, state.width, state.height);
+	pipeline.targetHeight = state.height;
+	pipeline.clip.reset(state.overlayWidth, state.overlayHeight, state.width, state.height);
+	glEnable(GL_SCISSOR_TEST);
+	glScissor(0, 0, state.width, state.height);
 	glDisable(GL_DEPTH_TEST);
 	glDisable(GL_CULL_FACE);
 	glEnable(GL_BLEND);
@@ -248,6 +252,12 @@ void beginHostOverlayGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& pip
 
 void renderHost2DEntryGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& pipeline, Host2DKind kind, Host2DRef ref) {
 	switch (kind) {
+		case Host2DKind::Clip: {
+			auto& clip = pipeline.clip;
+			clip.set(*ref.clip);
+			glScissor(clip.left, pipeline.targetHeight - clip.bottom, clip.right - clip.left, clip.bottom - clip.top);
+			return;
+		}
 		case Host2DKind::Img: {
 			const auto& command = *ref.img;
 			drawHostAtlasImageGLES2(backend, pipeline, command.imgid, command.pos.x, command.pos.y, command.scale.x, command.scale.y, command.flip, command.colorize);
@@ -260,6 +270,7 @@ void renderHost2DEntryGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& pi
 }
 
 void endHostOverlayGLES2(OpenGLES2Backend&, HostOverlayGLES2State&) {
+	glDisable(GL_SCISSOR_TEST);
 	glDisable(GL_BLEND);
 	glDepthMask(GL_TRUE);
 }

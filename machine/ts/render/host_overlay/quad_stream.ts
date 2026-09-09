@@ -4,6 +4,7 @@ import {
 } from './atlas';
 import { forEachBatchBlitGlyph } from '../shared/glyph_runs';
 import type { FontGlyph } from '../shared/bitmap_font';
+import type { HostOverlayClipRect } from './clip';
 import {
 	Host2DKind,
 	type Host2DRef,
@@ -26,21 +27,37 @@ const INITIAL_INSTANCE_CAPACITY = 4096;
 const HOST_ATLAS_U_SCALE = 1 / HOST_SYSTEM_ATLAS.width;
 const HOST_ATLAS_V_SCALE = 1 / HOST_SYSTEM_ATLAS.height;
 
+export type HostOverlayBatch = {
+	start: number;
+	clip: HostOverlayClipRect;
+};
+
 export class HostOverlayQuadStream {
 	public floatData = new Float32Array(INITIAL_INSTANCE_CAPACITY * HOST_OVERLAY_INSTANCE_FLOATS);
 	public textureKinds = new Uint32Array(INITIAL_INSTANCE_CAPACITY);
 	public capacity = INITIAL_INSTANCE_CAPACITY;
 	public count = 0;
+	private readonly fullClip: HostOverlayClipRect = { left: 0, top: 0, right: 0, bottom: 0 };
+	public readonly batches: HostOverlayBatch[] = [{ start: 0, clip: this.fullClip }];
+	public batchCount = 1;
 	private glyphBackgroundLineHeight = 0;
 	private glyphBackgroundColor = 0;
 	private glyphColor = 0;
 
-	public reset(): void {
+	public reset(logicalWidth: number, logicalHeight: number): void {
 		this.count = 0;
+		this.fullClip.right = logicalWidth;
+		this.fullClip.bottom = logicalHeight;
+		this.batchCount = 1;
+		this.batches[0].start = 0;
+		this.batches[0].clip = this.fullClip;
 	}
 
 	public appendEntry(kind: Host2DKind, command: Host2DRef): void {
 		switch (kind) {
+			case Host2DKind.Clip:
+				this.setClip(command as HostOverlayClipRect);
+				return;
 			case Host2DKind.Rect:
 				this.appendRect(command as RectRenderSubmission);
 				return;
@@ -54,6 +71,25 @@ export class HostOverlayQuadStream {
 				this.appendPoly(command as PolyRenderSubmission);
 				return;
 		}
+	}
+
+	private setClip(clip: HostOverlayClipRect): void {
+		const current = this.batches[this.batchCount - 1];
+		const previous = current.clip;
+		if (previous.left === clip.left && previous.top === clip.top
+			&& previous.right === clip.right && previous.bottom === clip.bottom) return;
+		if (current.start === this.count) {
+			current.clip = clip;
+			return;
+		}
+		let batch = this.batches[this.batchCount];
+		if (batch === undefined) {
+			batch = { start: 0, clip };
+			this.batches.push(batch);
+		}
+		batch.start = this.count;
+		batch.clip = clip;
+		this.batchCount += 1;
 	}
 
 	private ensureCapacity(required: number): void {

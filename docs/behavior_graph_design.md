@@ -1,9 +1,10 @@
 # Grafische Behavior Lens: bron, relaties en canvas
 
-Status: **BT-bronprojectie geïmplementeerd; nog geen grafisch canvas.** Het
-architectuurcontract is getoetst op `09b84195e`; `STUDIO-BT-SOURCE-GRAPH-01`
-volgt hieronder met implementatie en bewijs van 9 september 2026. De huidige
-Lens blijft een outline. Eerstvolgend is de gedeelde viewport-/clipgrens.
+Status: **BT-bronprojectie en gedeelde graphviewport geïmplementeerd.** Het
+architectuurcontract is eerst getoetst op `09b84195e`; de twee gebouwde
+ownercontracten hebben hieronder hun bewijs van 9 september 2026. De huidige
+Lens blijft een outline. Eerstvolgend is `STUDIO-BT-GRAPH-VIEW-01`: de concrete
+BT-layout en bediening op deze gedeelde viewport, nog geen authoring.
 
 ## Doel en grens
 
@@ -72,8 +73,9 @@ gebouwde BMSX-grafiek correct, leesbaar of snel is.
 | `behavior_lens/model.ts`, `behavior_tree_model.ts`, `behavior_tree.ts`, `source.ts` | Typed BT-controlrollen, ordered relaties, attachments en provenance op dezelfde objecten als de outline; lokale const-table-resolutie en incomplete syntax | FSM-overgangen moeten nog expliciete bronfeiten worden; geen teruggeparste `label`-/`detail`-strings |
 | `behavior_lens/controller.ts`, `editor_input.ts`, `view_model.ts`, `source_correspondence.ts` | Resource-owned input; refresh bij eigen textmodelversie; selectie/collapse en gekozen registration via gemapte occurrence-ketens | Grafiekviewport is geen listscroll. Cross-file feiten vereisen ook semantic-generation-invalidering |
 | `ide/editor/text/text_change.ts`, `scene_editor/controller.ts`, `behavior_lens/source_correspondence.ts` | Gedeelde UTF-16-rangemapping; beide projecties volgen ranges ook terwijl hun pane verborgen is | Geen lokale offsetcorrecties of namesake matching |
-| `ide/workbench/ui`, `ide/workbench/render` | List/tree, focus, action bars en pane-lifecycle | Er is nog geen gedeeld graphcontrol met node-/edgegeometrie, canvasinteractie en clipping |
-| `ide/runtime/overlay_renderer.ts`, `machine/ts/render/host_overlay` | Pooled overlaycommands; bestaande `Poly`-route in quad-stream en headless renderer | IDE exposeert die lijnroute nog niet; er is geen per-control clipcontract voor tekst, lijnen en vlakken |
+| `ide/workbench/ui/graph`, `ide/workbench/render/graph.ts` | Retained node-/edgegeometrie, viewport, selectie, hit testing en pane-owned control | Gedeelde viewport gebouwd; BT/FSM-layout, relationship-navigation en bronactivatie blijven bij de concrete contributions |
+| `ide/runtime/overlay_renderer.ts`, TS/C++ `render/host_overlay` | Pooled overlaycommands, `Poly`-exposure en geordende cliprects | Clip-stack, scissor-batches en software-rastergrens gebouwd; geen feature-local glyph- of lijnclipper |
+| `ide/input/pointer/capture.ts`, `dispatch.ts` | Eén captured fysieke gesture vóór gewone pane-/chrome-hit-tests | Graphcontrol gebruikt deze route; bestaande andere controls zijn hiermee niet allemaal gemigreerd |
 | `cartlib/behaviour_tree/node_program.lua`, `cartlib/fsm/fsm.lua`, `fsm_component.lua` | De uitvoersemantiek die het beeld moet respecteren | Geen wijziging voor deze visualisatie; geen hostgeschreven tweede runtime |
 
 ## Eén bronprojectie, twee verschillende domeinen
@@ -212,18 +214,37 @@ een nieuwe press te maken. Focus, action bars, menu's en command palette lopen
 via de bestaande commandroutes. Geen lokale shortcut-hintstrip of nieuwe
 globale gameplaytoetsen. Zie [pointer ownership](studio_pointer_navigation.md).
 
+`WorkbenchGraphViewport` bewaart modelgeneratie, pan en selectie bij het input.
+`WorkbenchGraphControl` bewaart focus, hover, dubbelklik en draganchors bij de
+pane. `PointerCaptureService` routeert de lopende fysieke gesture vóór gewone
+hit testing, ook buiten de controlbounds. Release, verlaten van het display,
+een modal/palette/menu, pane-detach of IDE-deactivatie beëindigt capture;
+sluiten van een popup hervat de oude gesture niet. De service ontkoppelt vóór
+de cancelcallback; alleen de eigenaar kan zichzelf releasen. Het model levert
+geen nieuwe buttonhistorie. Dit volgt de scheiding in
+[VS Code GlobalPointerMoveMonitor](https://github.com/microsoft/vscode/blob/48ac1875628144c02d79ff412e0323af9991dfc7/src/vs/base/browser/globalPointerMoveMonitor.ts)
+en [Godots mouse-focus-route](https://github.com/godotengine/godot/blob/9552dfb6859a1aaba1e570b8e0ef5c599b830f19/scene/main/viewport.cpp#L2113-L2147).
+Browser-pointercapture van het fysieke inputdevice blijft de hostowner;
+geen DOM-widgetfacade of overgenomen exception/fallback-pad in het control.
+
+Nodebounds en lijnpunten worden eenmaal met het echte font gemeten. Tekenen
+en hit testing gebruiken dezelfde geometrie; nodes winnen boven achterliggende
+edges en de dichtstbijzijnde zichtbare lijn wint binnen de hitradius. Hover
+hergebruikt de vorige hit bij gelijke modelgeneratie en graphcoördinaten.
+Een modelwisseling krijgt haar selectiecorrespondentie expliciet van de
+domeinowner, niet via namen, rijen of guessed indices.
+
 ### Rendererprerequisite, niet wegtekenen
 
-Het host-overlaycommand `Poly` kan reeds lijnsegmenten leveren; voeg niet
-nogmaals een feature-local lijnrasterizer toe. De ontbrekende IDE-exposure en
-een echte per-control clipgrens horen bij de gedeelde overlayowner. Pannende
+Het host-overlaycommand `Poly` levert lijnsegmenten; de IDE-exposure en
+per-control clipgrens zijn bij de gedeelde overlayowner gebouwd. Pannende
 tekst, nodes en edges mogen niet over tabs, menu of status heen tekenen of
 buiten het canvas klikbaar zijn. Achteraf chrome erover schilderen, uitsluitend
 volledig zichtbare nodes tekenen of per-feature glyphs afsnijden is geen clipcontract.
 
-De viewport-slice ontwerpt deze grens vóór zijn implementatie tegen de
-bestaande quad-stream, headless en backendconsumenten. Een gedeelde host-render-
-representatiewijziging benoemt vooraf de TS/C++-spiegels en hot-pathcallsites;
+De viewport-slice heeft deze grens vóór zijn implementatie getoetst tegen de
+bestaande quad-stream, headless en backendconsumenten. Onderstaande
+representatietabel benoemt de TS/C++-spiegels en hot-pathcallsites;
 zij is geen nieuw GX/PCRTC-register of C++-Studio-UI. Software, WebGL2 en WebGPU
 krijgen hetzelfde productbewijs. Godots GraphEdit schakelt hiervoor zijn
 bestaande Control-clipping in, niet een graphspecifiek afdekvlak:
@@ -250,6 +271,43 @@ bestaande Control-clipping in, niet een graphspecifiek afdekvlak:
   noodzaak. Meet ook hergebruikte subtrees: het aantal uitgeklapte occurrences,
   niet alleen het aantal bronregels, bepaalt dit werk.
 
+### Clipgrens — representatie vóór de implementatie
+
+Getoetst op `305a23c65`. Referentie is Dear ImGui's retained clip-stack en
+draw-commandgrenzen; niet zijn vertexformaat of globale UI-context:
+[clip-stack](https://github.com/ocornut/imgui/blob/ea6d21687bec144dd7aee0f4db37f7c61a8799bb/imgui_draw.cpp#L665-L694),
+[batches](https://github.com/ocornut/imgui/blob/ea6d21687bec144dd7aee0f4db37f7c61a8799bb/imgui_draw.cpp#L591-L610),
+[WebGPU-scissor](https://github.com/ocornut/imgui/blob/ea6d21687bec144dd7aee0f4db37f7c61a8799bb/backends/imgui_impl_wgpu.cpp#L588-L601).
+
+| Representatie | TypeScript | C++ | Owner / betekenis |
+| --- | --- | --- | --- |
+| `HostOverlayClipRect` | vier integer `number`-grenzen | vier `i32`-grenzen | Halfopen logical-pixelrect, top-left origin; geen GX-register of scene-type |
+| `Host2DKind.Clip` / `Host2DRef` | kind + rectreferentie | kind + union-rectpointer | Geordende clipwijziging in dezelfde publication lane; geldig tot consumptie |
+| `HostOverlayClipState` | `reset`, `set`, `left/top/right/bottom`, dimensies | dezelfde namen en berekeningen | Rendertarget-owner schaalt naar pixels, truncateert en intersecteert met target; lege intersectie tekent niets |
+| Nested clip-stack | gepoold in beide `OverlayRenderer`-buffers | geen native IDE-producent | Push intersecteert met parent; pop publiceert parent; opnieuw gebruiken van stackdiepte muteert geen eerdere commandreferentie |
+| Quads / drawgrenzen | retained quad-stream met clipbatches | bestaande immediate GLES2-pipeline | WebGL2 bindt instance-offsets per batch; WebGPU gebruikt `firstInstance`; GLES2 zet scissor bij een clipcommand |
+| Softwareclip | retained context van headless backend | retained clipstate van software backend | Fill- en atlasloops begrenzen hun rasterwerk vooraf, niet per pixel een nieuw clipfilter |
+| Frame- versus targetafmetingen | `HostOverlayFrame.logicalWidth/Height`; pass `width/height` uit presenter | dezelfde velden en owner | De publicatie bezit logische tekenruimte, niet de framebuffer. `renderWidth/Height` vervallen; een bewaarde IDE-viewport mag de actuele game-/rewindtarget niet overschrijven |
+
+Hot-path callsites: `OverlayRenderer.beginFrame/pushClipRect/popClipRect/endFrame`,
+`HostOverlayQuadStream.reset/appendEntry`, WebGL2/WebGPU `renderStream`, headless
+`drawHeadlessHostOverlayFrame/drawHeadlessHostMenuLayer/renderHeadlessHost2DEntry`,
+C++ `beginHostOverlaySoftware/renderHost2DEntrySoftware`,
+`SoftwareBackend::fillRect`, de software-atlasloops en
+`beginHostOverlayGLES2/renderHost2DEntryGLES2/endHostOverlayGLES2`.
+De volledige Studio-rewindproef vond een oude 384×288 IDE-override bij een
+actuele 256×192 target. De bijbehorende ownerwijziging raakt
+`writeHostOverlayState` / `writeHostOverlayPassState` en de gepoolde
+`OverlayRenderer`-publicatie; niet iedere backend krijgt een herstelpad.
+Net als bij de host-menu-lane komen de fysieke passafmetingen van de presenter.
+GLES2 consumeert diezelfde `width/height` voor target, viewport en scissor;
+`overlayWidth/Height` blijft uitsluitend de logische shader-/clipruimte.
+Iedere lane begint opnieuw met de volledige targetclip. Accelerated clipping
+wordt aan het paseinde uitgezet; geen capture/restore van vreemde renderstate.
+Dit verandert geen guest-datapath, scanout, z-order of commandpayload van de
+bestaande tekenprimitieven. Pannen hergebruikt lijnroutes; alleen de bestaande
+Poly-submission vertaalt punten naar schermcoördinaten in retained opslag.
+
 ## Bouwvolgorde en bewijs
 
 Dit zijn opeenvolgende ownercontracten. Geen enkele rij heet klaar doordat
@@ -258,7 +316,7 @@ alleen een typecheck slaagt. De latere rijen zijn nog te toetsen hypotheses.
 | Slice | Afgebakende eindtoestand en bewijs |
 | --- | --- |
 | `STUDIO-BT-SOURCE-GRAPH-01` — geïmplementeerd | De bestaande recognizer levert typed ordered BT-occurrences/relaties met echte provenance. Outline en registratiekeuze consumeren diezelfde feiten. Selectie/collapse volgen bewezen bronwijzigingen, ook bij verborgen pane. Fixtures: twee registrations in één file, drie uses van één subtree, parallelrollen, weights/attachments, comments vóór bron, gewijzigde initializer, insert/delete/reorder van occurrences en onbekende constructies. Geen graphrenderer of runtimewijziging. |
-| `IDE-GRAPH-VIEWPORT-01` | Na ontwerp van de rendergrens: gedeeld retained canvas met clipping, pan, node-/edgeselectie en focus/lifecycle. Domeinvrije fixture bewijst half-zichtbare tekst/lijnen/nodes, rand-hit-testing en held-pointer paneovergang op alle drie backends. Geen behaviorsemantiek; generieke control alleen voor de concrete eerstvolgende BT-consument, geen extensieframework. |
+| `IDE-GRAPH-VIEWPORT-01` — geïmplementeerd | Gedeeld retained canvas met clipping, pan, node-/edgeselectie en focus/lifecycle. Domeinvrije fixture bewijst half-zichtbare tekst/lijnen/nodes, targetwissels, rand-hit-testing en held-pointer paneovergang op alle drie backends. De echte Studio-palette onderbreekt capture via de centrale dispatcher. Geen behaviorsemantiek of extensieframework. |
 | `STUDIO-BT-GRAPH-VIEW-01` | Eén gekozen BT als ordered visuele boom, attachments/details, collapse, source-navigation en relationship-based keyboard/controllerbediening. Inspecteer echte 384×288-captures en bronnavigatie na pan/collapse/tabwisseling. Een brede en diepe fixture meet projection/layout/hit/draw apart; idle/hover/pan bewijzen geen herhaalde herkenning. Echte carts blijven integratiesmoke. Dit is nog geen editable BT. |
 | `STUDIO-FSM-SOURCE-GRAPH-01` | Na BT: typed containment/entry/transitionfeiten met bewijs en expliciete onbekende relaties; geen lines uit strings. Fixtures bewijzen scopes, guards, directe paths, ondersteunde callbacks, meerdere machines en dynamische targets. Iedere ondersteunde path-/callbackvorm volgt de runtime-owner; cross-file bewijs kan niet zonder semantic-generation-invalidering. |
 | `STUDIO-FSM-GRAPH-VIEW-01` | Eerst de professionele layout-/routingkeuze voor cycli en hiërarchie uitwerken en meten, daarna de view. Fixture met self-loop, twee edges tussen dezelfde states, parenthandler, nested en concurrent scopes; edges blijven selecteerbaar en verwijzen naar hun eigen bewijs. Geen tree/DAG-normalisatie. |
@@ -335,3 +393,50 @@ Twee rangemapping-events samen kosten daar circa 0,07 ms. Dit zijn lokale
 medianen, geen parser-, canvas-, GPU- of prestatietoezegging voor elk apparaat.
 Reconciliatie indexeert kandidaten per gematchte parent, geen globale
 kwadratische namesake-scan; dit werk draait niet tijdens idle draw.
+
+### Bewijs van de gedeelde viewport — 9 september 2026
+
+`tests/conformance/graph_viewport/README.md` bevat de reproduceerbare commando's
+en expliciete bewijsgrenzen. Dit is de canvasbasis, niet de concrete BT-view.
+
+- `host_overlay_clip.test.ts`, `workbench_graph.test.ts` en
+  `pointer_capture.test.ts` bewijzen retained clips/commandbuffers, geometrie,
+  edgeafstand/hitvolgorde, halfopen grenzen, reveal, dubbele clicks en
+  gesturebeëindiging bij focus-/input-/modelwisseling. De bestaande
+  quad-streamtest gebruikt nu werkelijk beide fontvarianten: de oude
+  `new Font(variant)` gaf ten onrechte een string aan een options-constructor.
+- De domeinvrije browserfixture draait op **software, WebGL2 en WebGPU**.
+  Zes gedeeltelijk zichtbare primitiefsoorten leveren per backend een exacte
+  pixel-crop van hun eigen ongeclipte raster. Echte pointer-/keyboardinput,
+  editorpane-hergebruik en 384×288→256×192→384×288-targetwissels slagen.
+  Tiny-font-captures zijn bekeken; dit is nog geen bewijs voor BT-layout-UX.
+- **Native software en GLES2** slagen met hetzelfde primitivecorpus.
+  Het GLES2-pad draait op een echte EGL-rendercontext en toetst tevens lege
+  clips, logical→physical-schaal en het loslaten van scissor aan het paseinde.
+  GX/GPU- en glyph-runregressies slagen eveneens (4 native tests samen).
+  Geen claim over een fysieke SNES-mini of ieder GPU-driverplatform.
+- De volledige **Studio-workflow** slaagt op alle drie browserbackends,
+  inclusief de echte rewind-/Hot-Resume-/source-editflow en de bestaande
+  negatieve faulttests. De toegevoegde proef opent de echte Command Palette
+  terwijl een fysieke gesture captured is: die stopt definitief. Geen
+  test-only reset of vervangende featuredispatcher.
+- De Studio-proef vond de hierboven beschreven dubbele targetowner. Een
+  kleinere echte framebuffer kreeg de oude IDE-afmetingen als scissor.
+  `HostOverlayFrame` publiceert nu uitsluitend zijn logische ruimte;
+  passafmetingen komen van de presenter. Geen corrupt-state-clamp of
+  WebGPU-only workaround. De software-lijnproef vond daarnaast fractionele
+  eindpunten in een integer Bresenham-loop: conversie gebeurt nu op de
+  rastergrens zoals in C++, niet in het graphcontrol.
+- IDE-typecheck, browser-productbuild, **1.007 Lua-tests geslaagd / 1 skip**,
+  core-parity, strict architecture-boundaries (0), indent en diffcheck slagen.
+  De volledige tests-typecheck is niet groen: **51 bestaande diagnostics**.
+  Vergelijking met `305a23c65` geeft alleen het verdwijnen van de genoemde
+  font-constructorfout (52→51), geen nieuwe diagnostics.
+
+Kostenproef: Node 22.23.1, 256 nodes/255 routes, 1.000 warmups en daarna
+5.000 idle- en 5.000 panframes. Koude geometrie circa 1,0 ms; warm
+command-emission plus quad-stream circa 24 µs idle en 27 µs bij pan per frame.
+De stationaire pointer doet één hit-test, warm wordt het font nulmaal opnieuw
+gemeten en de quadbacking blijft hetzelfde object. Deze lokale meting omvat
+geen Lua-projectie, GPU-upload/raster of totale Studio-frametijd en is geen
+bewijs van nul JavaScriptallocaties of een snelheidsgarantie voor andere hosts.

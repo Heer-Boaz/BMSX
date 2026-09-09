@@ -19,7 +19,8 @@ import { registerHostOverlayPass_Headless, registerHostMenuPass_Headless } from 
 import { captureGxGpuVramSnapshot, executeGxGpuSoftwareVramCommands } from '../backend/software/gx_gpu';
 import { GxGpuSoftwareState } from '../backend/software/gx_gpu_state';
 import type { GxGpu } from '../../machine/devices/gx/gpu';
-import type { HeadlessGlyphContext } from './host_2d';
+import type { HeadlessHost2DContext } from './host_2d';
+import { HostOverlayClipState } from '../host_overlay/clip';
 
 export interface HeadlessPresentedFrame {
 	frameIndex: number;
@@ -127,14 +128,14 @@ export class HeadlessGPUBackend implements GPUBackend {
 		height: 0,
 	};
 	private presentedFrameCount = 0;
-	public readonly glyphContext: HeadlessGlyphContext = {
+	public readonly hostOverlayContext: HeadlessHost2DContext = {
 		target: this.framebufferPixels,
 		width: 0,
-		height: 0,
 		colorValue: 0,
 		hasBackgroundColor: false,
 		backgroundColor: 0,
 		lineHeight: 0,
+		clip: new HostOverlayClipState(),
 	};
 
 	constructor(

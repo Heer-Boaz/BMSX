@@ -3,8 +3,6 @@ import type { Host2DKind, Host2DRef } from './commands';
 export type HostOverlayFrame = {
 	logicalWidth: number;
 	logicalHeight: number;
-	renderWidth: number;
-	renderHeight: number;
 	commandKinds: readonly Host2DKind[];
 	commandRefs: readonly Host2DRef[];
 	commandCount: number;

@@ -11,6 +11,18 @@ export class OverlayApi {
 		this.renderer = renderer;
 	}
 
+	public pushClipRect(left: number, top: number, right: number, bottom: number): void {
+		this.renderer.pushClipRect(left, top, right, bottom);
+	}
+
+	public popClipRect(): void {
+		this.renderer.popClipRect();
+	}
+
+	public polyline(points: readonly number[], x: number, y: number, z: number, thickness: number, colorindex: number): void {
+		this.renderer.polyline(points, x, y, z, thickness, resolveThemeTokenColor(colorindex), LAYER_2D_IDE);
+	}
+
 	public fill_rect(x0: number, y0: number, x1: number, y1: number, z: number, colorindex: number): void {
 		this.renderer.fillRect(x0, y0, x1, y1, z, resolveThemeTokenColor(colorindex), LAYER_2D_IDE);
 	}

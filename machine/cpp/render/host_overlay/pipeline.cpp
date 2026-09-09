@@ -12,8 +12,8 @@ void writeHostOverlayPassState(
 	state.time = ctx.time;
 	state.delta = ctx.delta;
 	const HostOverlayFrame frame = presenter.hostOverlayQueue.consumeOverlayFrame();
-	state.width = frame.renderWidth;
-	state.height = frame.renderHeight;
+	state.width = static_cast<i32>(presenter.offscreenCanvasSize.x);
+	state.height = static_cast<i32>(presenter.offscreenCanvasSize.y);
 	state.overlayWidth = frame.logicalWidth;
 	state.overlayHeight = frame.logicalHeight;
 	state.commandKinds = frame.commandKinds;

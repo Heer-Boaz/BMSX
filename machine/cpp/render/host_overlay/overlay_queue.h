@@ -8,8 +8,6 @@ namespace bmsx {
 struct HostOverlayFrame {
 	i32 logicalWidth = 0;
 	i32 logicalHeight = 0;
-	i32 renderWidth = 0;
-	i32 renderHeight = 0;
 	const Host2DKind* commandKinds = nullptr;
 	const Host2DRef* commandRefs = nullptr;
 	size_t commandCount = 0;

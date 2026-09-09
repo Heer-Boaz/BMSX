@@ -2,6 +2,7 @@ import type { EditorTextSelection } from '../../../editor/navigation/text_select
 import type { EditorInput, EditorInputKind } from '../../ui/tab/model';
 import type { EditorPane } from './editor_pane';
 import { inputFocus } from '../../../input/focus';
+import { pointerCapture } from '../../../input/pointer/capture';
 
 export type EditorPaneFactories = {
 	[TKind in EditorInputKind]: () => EditorPane<Extract<EditorInput, { kind: TKind }>>;
@@ -38,6 +39,7 @@ export class EditorPanes {
 		if (activePane === null) {
 			return;
 		}
+		pointerCapture.cancel();
 		inputFocus.setTarget(null);
 		activePane.clearInput();
 		this.activePaneValue = null;

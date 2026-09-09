@@ -18,9 +18,10 @@ export function createHostOverlayState(): HostOverlayPipelineState {
 }
 
 export function writeHostOverlayState(ctx: RenderGraphPassContext, state: HostOverlayPipelineState): void {
-	const frame = ctx.presenter.hostOverlayQueue.consumeOverlayFrame();
-	state.width = frame.renderWidth;
-	state.height = frame.renderHeight;
+	const presenter = ctx.presenter;
+	const frame = presenter.hostOverlayQueue.consumeOverlayFrame();
+	state.width = presenter.offscreenCanvasSize.x;
+	state.height = presenter.offscreenCanvasSize.y;
 	state.overlayWidth = frame.logicalWidth;
 	state.overlayHeight = frame.logicalHeight;
 	state.time = ctx.time;

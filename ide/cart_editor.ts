@@ -43,6 +43,7 @@ import { editorCaretState } from './editor/ui/view/caret/state';
 import { updateBlink } from './editor/ui/inline/text_field';
 import { bindQuickInputFields } from './quick_input/fields';
 import { inputFocus } from './input/focus';
+import { pointerCapture } from './input/pointer/capture';
 import { Scrollbar, ScrollbarController } from './editor/ui/scrollbar';
 import { clearRuntimeErrorOverlay } from './editor/contrib/runtime_error/navigation';
 import {
@@ -435,6 +436,7 @@ export class RuntimeCartEditor implements CartEditor {
 	}
 
 	public deactivate(): void {
+		pointerCapture.cancel();
 		inputFocus.setTarget(null);
 		const wasActive = this.isActive;
 		const activeTab = getActiveTab();

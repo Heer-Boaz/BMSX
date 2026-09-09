@@ -49,6 +49,7 @@
 #ifndef BMSX_BACKEND_H
 #define BMSX_BACKEND_H
 
+#include "render/host_overlay/clip.h"
 #include "render/backend/software/gx_gpu_state.h"
 #include "texture_params.h"
 #include <array>
@@ -287,6 +288,7 @@ public:
 	// ─────────────────────────────────────────────────────────────────────────
 	// Software-specific drawing primitives
 	// ─────────────────────────────────────────────────────────────────────────
+	HostOverlayClipState hostOverlayClip;
 	void setPixel(i32 x, i32 y, u32 color);
 	void drawLine(i32 x0, i32 y0, i32 x1, i32 y1, u32 color);
 	void fillRect(i32 x, i32 y, i32 w, i32 h, u32 color);
