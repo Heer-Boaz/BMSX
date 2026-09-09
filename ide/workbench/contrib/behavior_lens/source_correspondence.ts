@@ -7,7 +7,7 @@ import type { BehaviorLensViewState } from './view_model';
 /** Tracks the existing generation even while another pane edits its document. */
 export function mapBehaviorLensSourceRanges(state: BehaviorLensViewState, changes: readonly EditorTextChange[]): void {
 	for (const span of state.sourceRanges.values()) mapTrackedTextRange(span, changes);
-	state.hoverIndex = -1;
+	if (state.presentation.kind === 'outline') state.presentation.hoverIndex = -1;
 }
 
 /**
@@ -19,7 +19,7 @@ export function reconcileBehaviorLensSource(
 	document: BehaviorSourceDocument,
 	buffer: TextBuffer,
 ): BehaviorSourceRowKey | null {
-	const selectedKey = state.selectionIndex < 0 ? null : state.rows[state.selectionIndex].node.rowKey;
+	const selectedKey = state.selectedRowKey;
 	const oldDefinitionKey = state.definitionRowKey;
 	const oldRanges = state.sourceRanges;
 	const oldCollapsed = new Set(state.collapsedRowKeys);

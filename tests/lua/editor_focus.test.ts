@@ -55,6 +55,40 @@ test('empty and disabled focused history cannot fall through to document command
 	assert.equal(documentUndos, 1);
 });
 
+test('graph folding binds unmodified Space only to the concrete graph focus', (t) => {
+	t.after(() => inputFocus.setTarget(null));
+	const graph = inputFocus.createTarget();
+	let enabled = true;
+	let folds = 0;
+	graph.registerCommand('behaviorLens.toggleBranch', {
+		isEnabled: () => enabled,
+		run: () => { folds += 1; },
+	});
+	const commands = { isEnabled: () => true };
+	graph.focus();
+	const binding = resolveEditorCommandKeybinding('Space', KeyModifier.none, commands)!;
+	assert.equal(binding.command, 'behaviorLens.toggleBranch');
+	assert.notEqual(binding.repeat, true, 'folding uses the existing just-pressed command path');
+	inputFocus.executeCommand(binding.command);
+	assert.equal(folds, 1);
+	for (const modifier of [KeyModifier.ctrl, KeyModifier.meta, KeyModifier.shift, KeyModifier.alt]) {
+		assert.equal(resolveEditorCommandKeybinding('Space', modifier, commands), null);
+	}
+	enabled = false;
+	assert.equal(resolveEditorCommandKeybinding('Space', KeyModifier.none, commands), binding,
+		'a graph without an expandable selection still owns its binding');
+	inputFocus.executeCommand(binding.command);
+	assert.equal(folds, 1);
+	const field = new TextField(graph);
+	field.focusTarget.focus();
+	assert.equal(resolveEditorCommandKeybinding('Space', KeyModifier.none, commands), null,
+		'text input does not inherit the graph shortcut');
+	field.focusTarget.release();
+	assert.equal(inputFocus.target, graph);
+	graph.release();
+	assert.equal(resolveEditorCommandKeybinding('Space', KeyModifier.none, commands), null);
+});
+
 test('input history restores content and selection, replaces selection as one operation, and publishes changes', () => {
 	const field = new TextField();
 	let changes = 0;

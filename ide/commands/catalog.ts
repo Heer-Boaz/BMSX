@@ -35,6 +35,8 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	scenarioLab: { category: 'Scenario Lab', title: 'Open', shortTitle: 'Scenario Lab' },
 	sceneEditor: { category: 'Scene Editor', title: 'Open', shortTitle: 'Scene Editor' },
 	'sceneEditor.source': { category: 'Scene Editor', title: 'Open Source', shortTitle: 'Source' },
+	'behaviorLens.details': { category: 'Behavior Lens', title: 'Open BT Source Details', shortTitle: 'Details' },
+	'behaviorLens.toggleBranch': { category: 'Behavior Lens', title: 'Toggle BT Children', shortTitle: 'Children' },
 	'behaviorLens.source': { category: 'Behavior Lens', title: 'Open Source', shortTitle: 'Source' },
 	'sceneEditor.removeMember': { category: 'Scene Editor', title: 'Remove Member', shortTitle: 'Remove' },
 	'sceneEditor.moveMemberUp': { category: 'Scene Editor', title: 'Move Member Up', shortTitle: 'Up' },

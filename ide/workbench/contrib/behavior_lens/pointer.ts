@@ -3,7 +3,7 @@ import type { PointerSnapshot } from '../../../common/models';
 import { workbenchListRowIndexAtPosition } from '../../ui/list_view';
 import { selectBehaviorLensRow, toggleBehaviorLensRow } from './navigation';
 import type { BehaviorSourceNode } from './model';
-import type { BehaviorLensViewState } from './view_model';
+import type { BehaviorLensOutline, BehaviorLensViewState } from './view_model';
 
 export const enum BehaviorLensPointerResult {
 	Outside,
@@ -22,6 +22,7 @@ export class BehaviorLensPointer {
 
 	public handle(
 		state: BehaviorLensViewState,
+		outline: BehaviorLensOutline,
 		snapshot: PointerSnapshot,
 		justPressed: boolean,
 		currentTimeMs: number,
@@ -34,24 +35,24 @@ export class BehaviorLensPointer {
 			&& snapshot.viewportY >= layout.top
 			&& snapshot.viewportY < layout.bottom;
 		if (!inside) {
-			state.hoverIndex = -1;
+			outline.hoverIndex = -1;
 			return BehaviorLensPointerResult.Outside;
 		}
-		const rowIndex = workbenchListRowIndexAtPosition(state, snapshot.viewportX, snapshot.viewportY);
-		state.hoverIndex = rowIndex;
+		const rowIndex = workbenchListRowIndexAtPosition(outline, snapshot.viewportX, snapshot.viewportY);
+		outline.hoverIndex = rowIndex;
 		if (!justPressed || rowIndex < 0) {
 			return BehaviorLensPointerResult.Handled;
 		}
 
-		const row = state.rows[rowIndex];
+		const row = outline.rows[rowIndex];
 		if (row.expandable
 			&& snapshot.viewportX >= row.twistieLeft
 			&& snapshot.viewportX < row.twistieRight) {
-			toggleBehaviorLensRow(state, rowIndex);
+			toggleBehaviorLensRow(state, outline, rowIndex);
 			this.cancel();
 			return BehaviorLensPointerResult.Handled;
 		}
-		selectBehaviorLensRow(state, rowIndex);
+		selectBehaviorLensRow(state, outline, rowIndex);
 
 		const doubleClick = this.lastClickNode === row.node
 			&& currentTimeMs - this.lastClickTimeMs <= constants.DOUBLE_CLICK_MAX_INTERVAL_MS;

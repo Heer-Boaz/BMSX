@@ -42,7 +42,7 @@ import { inputFocus, type InputFocusTarget } from '../input/focus';
 const SOURCE_COMMANDS = new Set<EditorCommandId>([
 	'save', 'hot-resume', 'reboot', 'scenarioLab.run', 'scenarioLab.rerun',
 	'sceneEditor.removeMember', 'sceneEditor.moveMemberUp', 'sceneEditor.moveMemberDown',
-	'sceneEditor', 'behaviorLens', 'sceneEditor.source', 'behaviorLens.source',
+	'sceneEditor', 'behaviorLens', 'sceneEditor.source', 'behaviorLens.source', 'behaviorLens.details',
 	'behaviorLens.actionEffects', 'behaviorLens.stateMachines', 'behaviorLens.behaviorTrees',
 ]);
 
@@ -81,6 +81,7 @@ export class IdeCommandController {
 				return;
 			case 'undo':
 			case 'redo':
+			case 'behaviorLens.toggleBranch':
 				inputFocus.executeCommand(command);
 				return;
 			case 'pause':
@@ -203,7 +204,8 @@ export class IdeCommandController {
 			case 'sceneEditor.removeMember':
 				return this.editor.sceneEditor.canRemoveSelectedMember();
 			case 'undo':
-			case 'redo': {
+			case 'redo':
+			case 'behaviorLens.toggleBranch': {
 				const implementation = focus?.getCommand(command);
 				return implementation !== undefined && implementation.isEnabled();
 			}
@@ -243,6 +245,13 @@ export class IdeCommandController {
 				return true;
 			case 'sceneEditor.source':
 				return getActiveTab().kind === 'scene_editor';
+			case 'behaviorLens.details': {
+				const input = getActiveTab();
+				if (input.kind !== 'behavior_lens' || input.view.presentation.kind !== 'graph') return false;
+				const item = input.view.presentation.viewport.selection;
+				if (item === null) return false;
+				return (item.kind === 'node' ? item : item.child).details.length > 0;
+			}
 			case 'behaviorLens.source':
 				return getActiveTab().kind === 'behavior_lens';
 			case 'rename':

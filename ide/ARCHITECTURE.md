@@ -215,13 +215,33 @@ ranges or generation-local row keys alone do not identify an occurrence.
 Deleting/replacing a use clears affected correspondence; later Undo does not
 guess it back. Click gestures belong to the pane and one source generation;
 cross-file facts also require the existing semantic-generation invalidation.
-The current Lens is still an outline. `workbench/ui/graph` and
+A chosen BT now has a concrete graph; FSM and ActionEffect retain their
+outline. Source selection lives outside the discriminated presentation, not
+in an invisible row list. `workbench/ui/graph` and
 `workbench/render/graph.ts` now own a shared retained canvas: one measured
 geometry generation for draw and hit testing, input-owned pan/selection and a
 pane-owned control for focus and gestures. Clip commands go through the shared
 overlay renderer, not feature-local glyph/line clipping. The graph control has
-no Lua, BT/FSM semantics or document-undo owner. Concrete BT/FSM layouts,
-relationship navigation and their live UX evidence remain subsequent slices.
+no Lua, BT/FSM semantics or document-undo owner. Its input policy can be bound
+by the concrete pane without replacing physical focus or capture.
+
+`behavior_lens/graph_projection.ts` projects typed source relationships into
+measured cards and source-backed links. `graph_geometry.ts` places the ordered
+tree using the shared D3-derived tidy-tree layout and routes through level
+gaps; `graph_layout.ts` owns invalidation and selected-item screen anchoring.
+The common source correspondence remaps either a node use or a connection use.
+In particular a weighted connection owns its choice occurrence, not the
+shared choice initializer's child field. Details use the existing Quick Pick
+and exact source ranges; they are not editable properties or an inspector DTO.
+Space/Y and the registered Children command fold only the selected occurrence;
+the graph focus target owns that command, with unmodified Space registered in
+the shared keybinding resolver. Text fields above the graph retain Space as
+text input; palette execution uses the invoking control's focus context.
+Keyboard/controller navigation follows parent, first child and siblings. Source
+and Details commands use the same action bars and Command Palette as other
+contributions. Pan, hover and selection never reparse or relayout the tree.
+There is no zoom-to-fit, permanent side panel, guest hook or visual serializer.
+FSM relationship proof and cyclic layout remain separate slices.
 
 `input/pointer/capture.ts` owns delivery of a captured physical gesture before
 ordinary pane/chrome hit testing. Release, invalid/outside-display input,

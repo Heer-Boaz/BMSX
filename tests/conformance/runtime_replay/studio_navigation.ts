@@ -71,7 +71,7 @@ export async function testStudioNavigation(test: StudioFixture): Promise<void> {
 	check(lens.title === 'BEHAVIOR LENS' && lens.view.document.definitions.length > 0,
 		'navigation: the actual title FSM is visible under its tool title');
 	const sourceRange = selectedBehaviorLensSourceRange(lens.view)!;
-	await click(lens.view.actionBar.items[0].bounds);
+	await click(lens.view.presentation.actionBar.items[0].bounds);
 	const code = getActiveTab();
 	check(code.kind === 'code_editor' && activeCodeEditor.model === lens.workingCopy
 		&& activeCodeEditor.view.cursorRow === sourceRange.start.line - 1,

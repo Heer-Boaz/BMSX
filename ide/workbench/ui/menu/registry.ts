@@ -6,7 +6,7 @@ export type WorkbenchDropdownMenuId =
 	| 'menubar.run'
 	| 'menubar.view';
 
-export type WorkbenchActionMenuId = 'scenarioLab.title' | 'sceneEditor.title' | 'behaviorLens.title';
+export type WorkbenchActionMenuId = 'scenarioLab.title' | 'sceneEditor.title' | 'behaviorLens.title' | 'behaviorLens.graph.title';
 
 export type WorkbenchMenuCommandItem = {
 	readonly type: 'command';
@@ -25,6 +25,7 @@ type WorkbenchMenuContributions = {
 	readonly 'menubar.run': readonly WorkbenchMenuItem[];
 	readonly 'menubar.view': readonly WorkbenchMenuItem[];
 	readonly 'scenarioLab.title': readonly WorkbenchMenuCommandItem[];
+	readonly 'behaviorLens.graph.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'behaviorLens.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'sceneEditor.title': readonly WorkbenchMenuCommandItem[];
 };
@@ -64,6 +65,11 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'scenarioLab.run' },
 		{ type: 'command', command: 'scenarioLab.rerun' },
 		{ type: 'command', command: 'scenarioLab.cancel' },
+	],
+	'behaviorLens.graph.title': [
+		{ type: 'command', command: 'behaviorLens.source' },
+		{ type: 'command', command: 'behaviorLens.details' },
+		{ type: 'command', command: 'behaviorLens.toggleBranch' },
 	],
 	'behaviorLens.title': [
 		{ type: 'command', command: 'behaviorLens.source' },

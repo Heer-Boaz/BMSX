@@ -20,9 +20,10 @@ function fixture(source = BEHAVIOR_SOURCE_FIXTURE) {
 		source: { resid: 'behavior_fixture', type: 'lua', source_path: 'behavior_fixture.lua', generated: false },
 	}, 'lua', source);
 	const project = () => buildBehaviorSourceDocument(model.resource, buildLuaFileSemanticData(model.buffer.getText(), model.resource.path));
-	const input = new BehaviorLensInput(model, createBehaviorLensViewState(project(), model));
+	const input = new BehaviorLensInput(model, createBehaviorLensViewState(project(), model, 'outline'));
 	model.onDidChangeContent(event => mapBehaviorLensSourceRanges(input.view, event.changes));
-	return { model, input, view: input.view, refresh() {
+	assert.ok(input.view.presentation.kind === 'outline');
+	return { model, input, view: input.view, outline: input.view.presentation, refresh() {
 		installBehaviorLensDocument(input.view, project(), model.buffer);
 		input.view.sourceVersion = model.version;
 	} };
@@ -45,9 +46,9 @@ function childEntries(node: BehaviorTreeSourceNode) {
 
 function select(f: ReturnType<typeof fixture>, node: BehaviorSourceNode) {
 	f.view.collapsedRowKeys.clear();
-	rebuildBehaviorLensRows(f.view);
-	selectBehaviorLensRow(f.view, findVisibleRowIndex(f.view, node.rowKey));
-	assert.ok(f.view.selectionIndex >= 0);
+	rebuildBehaviorLensRows(f.view, f.outline);
+	selectBehaviorLensRow(f.view, f.outline, findVisibleRowIndex(f.outline, node.rowKey));
+	assert.ok(f.outline.selectionIndex >= 0);
 }
 
 test('typed BT relationships and the outline use the same occurrence objects and original syntax', () => {
@@ -139,7 +140,7 @@ test('deep reused subtrees retain separate occurrence chains through source edit
 	select(f, leaves[1]);
 	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- shifted deep source\n' }]);
 	f.refresh();
-	assert.equal(f.view.rows[f.view.selectionIndex].node, f.view.sourceNodes.filter(node => node.label === 'wait')[1]);
+	assert.equal(f.outline.rows[f.outline.selectionIndex].node, f.view.sourceNodes.filter(node => node.label === 'wait')[1]);
 });
 
 test('hidden-pane edits preserve selected reused descendants, independent collapse and the chosen duplicate registration', () => {
@@ -162,7 +163,7 @@ test('hidden-pane edits preserve selected reused descendants, independent collap
 	const nextEntries = childEntries(tree(f).root!);
 	const nextSelected = childEntries(nextEntries[2].node)[0].node;
 	assert.notEqual(nextSelected.rowKey, oldSelectedKey, 'the source use survived while its array-derived row key changed');
-	assert.equal(f.view.rows[f.view.selectionIndex].node, nextSelected);
+	assert.equal(f.outline.rows[f.outline.selectionIndex].node, nextSelected);
 	assert.ok(f.view.collapsedRowKeys.has(nextEntries[1].node.rowKey));
 	assert.ok(!f.view.collapsedRowKeys.has(nextEntries[2].node.rowKey));
 	assert.equal(f.view.definitionRowKey, tree(f).rowKey);
@@ -178,12 +179,12 @@ test('removing a reused occurrence never selects the next namesake, including un
 		f.model.pushEditOperations(createLuaTableFieldRemovalEdits(f.model.buffer, parsed.tokens, entries[0].field));
 		if (undoBeforeRefresh) f.model.undo();
 		f.refresh();
-		assert.equal(f.view.selectionIndex, -1);
+		assert.equal(f.outline.selectionIndex, -1);
 		assert.equal(selectedBehaviorLensSourceRange(f.view), null);
 		if (!undoBeforeRefresh) {
 			f.model.undo();
 			f.refresh();
-			assert.equal(f.view.selectionIndex, -1);
+			assert.equal(f.outline.selectionIndex, -1);
 		}
 	}
 });
@@ -197,7 +198,7 @@ test('inserting a same-id registration preserves the original registration rathe
 	f.model.pushEditOperations([{ offset: first.start, deleteLength: 0,
 		text: "trees.register('fixture.tree', { root = { type = 'wait' } })\n" }]);
 	f.refresh();
-	assert.equal(f.view.rows[f.view.selectionIndex].node, tree(f, 2));
+	assert.equal(f.outline.rows[f.outline.selectionIndex].node, tree(f, 2));
 	assert.equal(f.view.definitionRowKey, tree(f, 2).rowKey);
 	assert.notEqual(f.view.definitionRowKey, definition.rowKey);
 });
@@ -213,9 +214,9 @@ test('reordering source preserves untouched occurrences but does not infer cut/p
 			deleteLength: 0, text: '\n\t\t\tshared,' }]);
 		f.refresh();
 		if (movingSelected) {
-			assert.equal(f.view.selectionIndex, -1, 'a source move needs explicit correspondence, not a namesake search');
+			assert.equal(f.outline.selectionIndex, -1, 'a source move needs explicit correspondence, not a namesake search');
 		} else {
-			assert.equal(f.view.rows[f.view.selectionIndex].node, childEntries(childEntries(tree(f).root!)[0].node)[0].node);
+			assert.equal(f.outline.rows[f.outline.selectionIndex].node, childEntries(childEntries(tree(f).root!)[0].node)[0].node);
 		}
 	}
 });
@@ -223,14 +224,14 @@ test('reordering source preserves untouched occurrences but does not infer cut/p
 test('an absent selection stays absent until explicit navigation, which starts at the first row', () => {
 	const f = fixture();
 	const collapsed = [...f.view.collapsedRowKeys];
-	assert.equal(f.view.selectionIndex, -1);
+	assert.equal(f.outline.selectionIndex, -1);
 	for (const command of ['activate', 'left', 'right'] as const) {
 		assert.equal(executeBehaviorLensNavigation(f.view, command), BehaviorLensNavigationResult.None);
-		assert.equal(f.view.selectionIndex, -1);
+		assert.equal(f.outline.selectionIndex, -1);
 	}
 	assert.deepEqual([...f.view.collapsedRowKeys], collapsed);
 	assert.equal(executeBehaviorLensNavigation(f.view, 'down'), BehaviorLensNavigationResult.Changed);
-	assert.equal(f.view.selectionIndex, 0);
+	assert.equal(f.outline.selectionIndex, 0);
 });
 
 test('partial initializer edits preserve a reference occurrence; replacing that reference clears it', () => {
@@ -240,12 +241,12 @@ test('partial initializer edits preserve a reference occurrence; replacing that 
 	const text = f.model.buffer.getText();
 	f.model.pushEditOperations([{ offset: text.indexOf('duration_ticks = 2') + 'duration_ticks = '.length, deleteLength: 1, text: '22' }]);
 	f.refresh();
-	assert.equal(f.view.rows[f.view.selectionIndex].node, childEntries(tree(f).root!)[1].node);
+	assert.equal(f.outline.rows[f.outline.selectionIndex].node, childEntries(tree(f).root!)[1].node);
 	const current = childEntries(tree(f).root!)[1];
 	const span = luaSourceRangeToTextRange(f.model.buffer, current.field.value.range);
 	f.model.pushEditOperations([{ offset: span.start, deleteLength: span.end - span.start, text: 'leaf' }]);
 	f.refresh();
-	assert.equal(f.view.selectionIndex, -1);
+	assert.equal(f.outline.selectionIndex, -1);
 });
 
 test('a source replacement cannot reattach selection or collapse to a same-named definition', () => {
@@ -256,7 +257,7 @@ test('a source replacement cannot reattach selection or collapse to a same-named
 	f.view.collapsedRowKeys.add(definition.rowKey);
 	f.model.pushEditOperations([{ offset: 0, deleteLength: f.model.buffer.length, text: BEHAVIOR_SOURCE_FIXTURE }]);
 	f.refresh();
-	assert.equal(f.view.selectionIndex, -1);
+	assert.equal(f.outline.selectionIndex, -1);
 	assert.equal(f.view.definitionRowKey, null);
 	assert.ok(!f.view.collapsedRowKeys.has(tree(f).rowKey));
 });
@@ -292,5 +293,5 @@ effects.register_effect('effect', { period_ms = 2, blocked_tags = { 'busy' },
 	select(f, update);
 	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- moved source\n' }]);
 	f.refresh();
-	assert.equal(f.view.rows[f.view.selectionIndex].node, f.view.sourceNodes.filter(node => node.label === 'update = actor.idle')[1]);
+	assert.equal(f.outline.rows[f.outline.selectionIndex].node, f.view.sourceNodes.filter(node => node.label === 'update = actor.idle')[1]);
 });

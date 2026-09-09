@@ -1,10 +1,10 @@
 # Grafische Behavior Lens: bron, relaties en canvas
 
-Status: **BT-bronprojectie en gedeelde graphviewport geïmplementeerd.** Het
-architectuurcontract is eerst getoetst op `09b84195e`; de twee gebouwde
-ownercontracten hebben hieronder hun bewijs van 9 september 2026. De huidige
-Lens blijft een outline. Eerstvolgend is `STUDIO-BT-GRAPH-VIEW-01`: de concrete
-BT-layout en bediening op deze gedeelde viewport, nog geen authoring.
+Status: **BT-bronprojectie, gedeelde graphviewport en concrete BT-view
+geïmplementeerd.** Het architectuurcontract is eerst getoetst op `09b84195e`;
+de concrete BT-slice op `a9953b819`. Onderstaande bewijssecties horen bij de
+gebouwde grenzen. FSM en ActionEffect houden hun outline. FSM-relatiebewijs en
+cyclische plaatsing volgen afzonderlijk; deze BT-view is nog geen authoring.
 
 ## Doel en grens
 
@@ -40,6 +40,26 @@ Zij zijn niet automatisch onderdeel van deze visualisatieslices.
   Hier bepaalt Lua de childvolgorde, niet het canvas.
   [Plaatsing](https://github.com/BehaviorTree/Groot/blob/70973d004365f16d47a8c7bd9c5d84fa0bb9d05d/bt_editor/utils.cpp#L89-L264),
   [geometrisch gesorteerde children](https://github.com/BehaviorTree/Groot/blob/70973d004365f16d47a8c7bd9c5d84fa0bb9d05d/bt_editor/utils.cpp#L38-L83).
+- **D3 hierarchy** levert het Buchheim/Reingold–Tilford tidy-tree-algoritme.
+  De kleine, ISC-gelicentieerde implementatie is geadapteerd in de gedeelde
+  layoutowner: gemeten halve nodebreedtes plus gap vervangen unit separation;
+  de hoogtes per niveau volgen Groot. Geen hele D3-dependency, screen-size
+  normalization, viewport-zoom of herhaald verschuiven van alle descendants.
+  De iteratieve traversals behouden de aangeleverde siblingvolgorde.
+  [Algoritme](https://github.com/d3/d3-hierarchy/blob/c6fa6b98d1028e80b27982c003a2a5ac5e8e3c87/src/tree.js),
+  [ISC-licentie](https://github.com/d3/d3-hierarchy/blob/e6210810070d4e6360d0b4d8cecd2de8f2ca2ae9/LICENSE).
+- **VS Code tree traits** plaatsen selectie op tree-niveau omdat een
+  samengevouwen occurrence geen zichtbare listrij hoeft te hebben. De Lens
+  bewaart daarom source-selection buiten de discriminated outline/graph-
+  presentatie; de BT heeft geen verborgen outline als navigation owner.
+  [Tree traits](https://github.com/microsoft/vscode/blob/1e1ee361e263c95c283dddceae3a7bd3373590ee/src/vs/base/browser/ui/tree/abstractTree.ts#L2398-L2420).
+- **VS Code list commands** registreren Space als command met concrete
+  controlfocus, niet met een actieve-tab-check. De BT gebruikt daarom de
+  bestaande focuscommand-/keybindingowner; een Quick Input-tekstveld boven
+  de grafiek houdt zijn spaties. Geen globale gameplaybinding of eigen
+  raw-Space-dispatch in de contribution.
+  [Toggle Expand](https://github.com/microsoft/vscode/blob/1e1ee361e263c95c283dddceae3a7bd3373590ee/src/vs/workbench/browser/actions/listCommands.ts#L697-L717),
+  [focus zonder tekstinput](https://github.com/microsoft/vscode/blob/1e1ee361e263c95c283dddceae3a7bd3373590ee/src/vs/platform/list/browser/listService.ts#L106-L109).
 - **aigen** is het eigen UX-voorbeeld: canvas centraal, details op verzoek,
   retained node-/wiregeometrie voor tekenen en aanwijzen. Zijn TUI-cellen en
   authored workflow-DAG zijn niet BMSX' representatie. Met name de
@@ -73,7 +93,7 @@ gebouwde BMSX-grafiek correct, leesbaar of snel is.
 | `behavior_lens/model.ts`, `behavior_tree_model.ts`, `behavior_tree.ts`, `source.ts` | Typed BT-controlrollen, ordered relaties, attachments en provenance op dezelfde objecten als de outline; lokale const-table-resolutie en incomplete syntax | FSM-overgangen moeten nog expliciete bronfeiten worden; geen teruggeparste `label`-/`detail`-strings |
 | `behavior_lens/controller.ts`, `editor_input.ts`, `view_model.ts`, `source_correspondence.ts` | Resource-owned input; refresh bij eigen textmodelversie; selectie/collapse en gekozen registration via gemapte occurrence-ketens | Grafiekviewport is geen listscroll. Cross-file feiten vereisen ook semantic-generation-invalidering |
 | `ide/editor/text/text_change.ts`, `scene_editor/controller.ts`, `behavior_lens/source_correspondence.ts` | Gedeelde UTF-16-rangemapping; beide projecties volgen ranges ook terwijl hun pane verborgen is | Geen lokale offsetcorrecties of namesake matching |
-| `ide/workbench/ui/graph`, `ide/workbench/render/graph.ts` | Retained node-/edgegeometrie, viewport, selectie, hit testing en pane-owned control | Gedeelde viewport gebouwd; BT/FSM-layout, relationship-navigation en bronactivatie blijven bij de concrete contributions |
+| `ide/workbench/ui/graph`, `ide/workbench/render/graph.ts` | Retained node-/edgegeometrie, viewport, selectie, hit testing en pane-owned control | Gedeelde viewport en gemeten tree-layout gebouwd; BT-relaties en bronactivatie zitten in de concrete contribution, FSM-layout volgt afzonderlijk |
 | `ide/runtime/overlay_renderer.ts`, TS/C++ `render/host_overlay` | Pooled overlaycommands, `Poly`-exposure en geordende cliprects | Clip-stack, scissor-batches en software-rastergrens gebouwd; geen feature-local glyph- of lijnclipper |
 | `ide/input/pointer/capture.ts`, `dispatch.ts` | Eén captured fysieke gesture vóór gewone pane-/chrome-hit-tests | Graphcontrol gebruikt deze route; bestaande andere controls zijn hiermee niet allemaal gemigreerd |
 | `cartlib/behaviour_tree/node_program.lua`, `cartlib/fsm/fsm.lua`, `fsm_component.lua` | De uitvoersemantiek die het beeld moet respecteren | Geen wijziging voor deze visualisatie; geen hostgeschreven tweede runtime |
@@ -310,6 +330,38 @@ Poly-submission vertaalt punten naar schermcoördinaten in retained opslag.
 
 ## Bouwvolgorde en bewijs
 
+### Concrete BT-view: ownerbesluit vóór implementatie
+
+Getoetst op `a9953b819`. De Lens-selectie verhuist van de zichtbare rij-index
+naar een source-occurrence-key. De bestaande text-range-correspondentie blijft
+die key over edits volgen. Een discriminated presentation bevat óf de bestaande
+outline, óf een retained BT-grafiek; geen onzichtbare outline die de grafiek
+bestuurt. De gekozen registration bepaalt de BT-root. Een ontbrekende of
+dynamische bron wordt als zodanig getoond, niet als verzonnen lege geldige boom.
+
+Layout volgt D3 hierarchy's Buchheim/Reingold–Tilford-implementatie: twee
+iteratieve walks, contourthreads en uitgestelde subtreeverschuivingen. Alleen
+de vaste-size-layout wordt overgenomen; scheiding gebruikt gemeten nodebreedtes,
+en niveaus de maximale nodehoogte. Geen sortering op schermposities,
+zoom-to-fit of herhaalde subtreeverplaatsing per parent. De bronlicentie blijft
+bij de gedeelde tree-layout-owner. Groot is de referentie voor gemeten BT-nodes
+en levelafstand; niet zijn geometrische childsortering.
+[D3 tree](https://github.com/d3/d3-hierarchy/blob/v3.1.2/src/tree.js).
+
+De contribution vertaalt alleen typed branches naar verbindingen. Kindnummers,
+weights en main/background-rollen blijven leesbaar bij de childcard; services
+en decorators worden als attachments aangegeven, nooit gewone controlchildren.
+De bestaande Quick Input toont op verzoek source-details/properties en hun
+bronlocaties. Dit is een read-only bronkeuze, geen generieke property-inspector
+of authoringfacade. Collapse/expand, details en source krijgen echte commands
+in de bestaande action-bar-/palette-owner, geen los toetsen-hintstrookje.
+
+Keyboard/controller volgen parent/child/sibling-relaties en onthullen selectie;
+blank-canvas-drag en wheel pannen. De pane bindt de toepasselijke keyboardroute
+aan het graph-focus-target; de gedeelde canvas krijgt geen BT-kennis. Draw, hover
+en pan vernieuwen geen bronprojectie, labels of layout. Nieuwe tests gebruiken
+vaste Lua-fixtures; carts blijven integratiesmoke.
+
 Dit zijn opeenvolgende ownercontracten. Geen enkele rij heet klaar doordat
 alleen een typecheck slaagt. De latere rijen zijn nog te toetsen hypotheses.
 
@@ -317,7 +369,7 @@ alleen een typecheck slaagt. De latere rijen zijn nog te toetsen hypotheses.
 | --- | --- |
 | `STUDIO-BT-SOURCE-GRAPH-01` — geïmplementeerd | De bestaande recognizer levert typed ordered BT-occurrences/relaties met echte provenance. Outline en registratiekeuze consumeren diezelfde feiten. Selectie/collapse volgen bewezen bronwijzigingen, ook bij verborgen pane. Fixtures: twee registrations in één file, drie uses van één subtree, parallelrollen, weights/attachments, comments vóór bron, gewijzigde initializer, insert/delete/reorder van occurrences en onbekende constructies. Geen graphrenderer of runtimewijziging. |
 | `IDE-GRAPH-VIEWPORT-01` — geïmplementeerd | Gedeeld retained canvas met clipping, pan, node-/edgeselectie en focus/lifecycle. Domeinvrije fixture bewijst half-zichtbare tekst/lijnen/nodes, targetwissels, rand-hit-testing en held-pointer paneovergang op alle drie backends. De echte Studio-palette onderbreekt capture via de centrale dispatcher. Geen behaviorsemantiek of extensieframework. |
-| `STUDIO-BT-GRAPH-VIEW-01` | Eén gekozen BT als ordered visuele boom, attachments/details, collapse, source-navigation en relationship-based keyboard/controllerbediening. Inspecteer echte 384×288-captures en bronnavigatie na pan/collapse/tabwisseling. Een brede en diepe fixture meet projection/layout/hit/draw apart; idle/hover/pan bewijzen geen herhaalde herkenning. Echte carts blijven integratiesmoke. Dit is nog geen editable BT. |
+| `STUDIO-BT-GRAPH-VIEW-01` — geïmplementeerd | Eén gekozen BT als ordered visuele boom, attachments/details, collapse, source-navigation en relationship-based keyboard/controllerbediening. Inspecteer echte 384×288-captures en bronnavigatie na pan/collapse/tabwisseling. Een brede en diepe fixture meet projection/layout/hit/draw apart; idle/hover/pan bewijzen geen herhaalde herkenning. Echte carts blijven integratiesmoke. Dit is nog geen editable BT. |
 | `STUDIO-FSM-SOURCE-GRAPH-01` | Na BT: typed containment/entry/transitionfeiten met bewijs en expliciete onbekende relaties; geen lines uit strings. Fixtures bewijzen scopes, guards, directe paths, ondersteunde callbacks, meerdere machines en dynamische targets. Iedere ondersteunde path-/callbackvorm volgt de runtime-owner; cross-file bewijs kan niet zonder semantic-generation-invalidering. |
 | `STUDIO-FSM-GRAPH-VIEW-01` | Eerst de professionele layout-/routingkeuze voor cycli en hiërarchie uitwerken en meten, daarna de view. Fixture met self-loop, twee edges tussen dezelfde states, parenthandler, nested en concurrent scopes; edges blijven selecteerbaar en verwijzen naar hun eigen bewijs. Geen tree/DAG-normalisatie. |
 
@@ -440,3 +492,58 @@ De stationaire pointer doet één hit-test, warm wordt het font nulmaal opnieuw
 gemeten en de quadbacking blijft hetzelfde object. Deze lokale meting omvat
 geen Lua-projectie, GPU-upload/raster of totale Studio-frametijd en is geen
 bewijs van nul JavaScriptallocaties of een snelheidsgarantie voor andere hosts.
+
+### Bewijs van de concrete BT-view — 9 september 2026
+
+De input bezit nu source-selection buiten een discriminated outline/graph-
+presentatie. FSM/ActionEffect blijven hun bestaande outline gebruiken; een
+gekozen BT bouwt geen verborgen lijst. De concrete projection consumeert typed
+branches en de nieuwe afzonderlijke `referenceLabel` van de sourceproducer,
+geen teruggeparste displaystring. D3's tidy-layout zit bij de gedeelde graph-
+owner; de contribution bezit de source-links en orthogonale routing. Rechte
+verbindingen bevatten geen redundante nulsegmenten. Collapse en bronrefresh
+bewaren de schermpositie van de bewezen selectie; een niet meer zichtbare
+controlflow-occurrence wordt niet als onzichtbaar geselecteerd object bewaard.
+
+Een verbinding heeft eigen bronprovenance. Bij een weighted choice is dat de
+choice-use in de ordered lijst, niet de `child`-use in een gedeelde initializer.
+Node-activatie kan die childbron juist wel openen. Dezelfde bestaande source-
+correspondentie volgt beide selectierollen. Details bieden individuele
+bronvelden via Quick Input, zonder dubbele policy-samenvattingen of een tweede
+propertymodel. Onopgeloste membership krijgt een expliciete bronkaart.
+
+Reproduceerbare commando's en bewijsgrenzen staan in
+[`tests/conformance/behavior_graph/README.md`](../tests/conformance/behavior_graph/README.md).
+De onafhankelijke bron-/layouttests omvatten hergebruikte choices, variabele
+nodeafmetingen, brede/asymmetrische bomen en een iteratieve boom van 10.000
+niveaus. De live Studio-proef gebruikt dezelfde vaste Lua als tekstmodelbron,
+nooit een geïnjecteerde executable of guest-hook. Toetsen/controller volgen
+parent/child/siblings; Space/Y toggelt één occurrence via de concrete graph-
+focuscommand. Ctrl+Space en spaties in de palette wijzigen de grafiek niet.
+De echte action bar en
+palette openen details/bron, inclusief een edge en weight/decorator-field.
+Hidden edits, pane gestures, delete/Undo en retained idle frames blijven getest.
+
+De volledige Studio-workflow en de afzonderlijke Nemesis-/Pietious-navigatie
+slagen op software, WebGL2 en WebGPU. De bekeken captures gebruiken de echte
+384×288-ruimte en het IDE-tiny-font, inclusief clipping onder meerregelige tabs.
+De bestaande headless Behavior Lens-proef slaagt met 62 assertions.
+IDE-typecheck, browser-/headless-productbuild, **1.016 Lua-tests / 1 skip**,
+core-parity, strict architecture-boundaries (0), indent en diffcheck slagen.
+De tests-brede typecheck houdt **51 bestaande diagnostics** ten opzichte van
+`a9953b819`; alleen de volgorde van twee unionleden in één diagnostic verschilt,
+geen nieuwe fout of verschoven foutlocatie. De oude gamegebonden golden tests
+blijven de aparte `IDE-STUDIO-TEST-FIXTURES-01`-backlog.
+
+Kosten op Node 22.23.1, medianen uit de gedocumenteerde profile:
+
+| Volledig uitgeklapte fixture | Bronprojectie | Kaartprojectie/meting | Layout + routes | Hit | Draw + quadstream |
+| --- | --- | --- | --- | --- | --- |
+| 24 hergebruikte subtrees / 74 kaarten | 0,13 ms | 0,20 ms | 0,055 ms | 0,49 µs | 15 µs |
+| 1.024 hergebruikte subtrees / 3.074 kaarten | 1,92 ms | 3,38 ms | 0,42 ms | 23 µs | 156 µs |
+
+Warm tekenen meet geen fonts opnieuw en behoudt de quadbacking. Dit zijn
+lokale hostmetingen zonder parsing, GPU-upload/raster of totale Studio-frametijd;
+geen prestatiegarantie, nulallocatieclaim of kosten in de 33.8688-MHz-guest.
+FSM-relatiebewijs/cyclische layout, graph-authoring en runtime-execution-overlay
+zijn hiermee nadrukkelijk niet gebouwd.

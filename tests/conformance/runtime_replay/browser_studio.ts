@@ -1,3 +1,4 @@
+import { presentBehaviorTreeGraph } from './studio_behavior_graph';
 import { createWebGLBackend, createWebGPUBackend } from '../../../hosts/browser/backend';
 import { HeadlessGPUBackend } from '../../../machine/ts/render/headless/backend';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
@@ -27,6 +28,7 @@ export const studioBackends = {
 			await presentActionEffects(test);
 			await testStudioPointerCapture(test);
 		}
+		await presentBehaviorTreeGraph(test);
 		// Publish the real software-rendered final framebuffer for the screenshot.
 		// No replacement drawing or per-frame screenshot conversion.
 		canvas.width = backend.framebufferWidth;
@@ -49,6 +51,7 @@ export const studioBackends = {
 			await presentActionEffects(test);
 			await testStudioPointerCapture(test);
 		}
+		await presentBehaviorTreeGraph(test);
 		check(backend.gl.getError() === backend.gl.NO_ERROR, 'WebGL2 workflow raised a graphics error');
 		return result;
 	},
@@ -69,6 +72,7 @@ export const studioBackends = {
 			await presentActionEffects(test);
 			await testStudioPointerCapture(test);
 		}
+		await presentBehaviorTreeGraph(test);
 		check(errors.length === 0, errors.join('\n'));
 		return { ...result, readbacks };
 	},

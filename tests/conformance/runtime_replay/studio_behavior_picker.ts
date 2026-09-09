@@ -14,19 +14,40 @@ export async function chooseBehavior(test: StudioFixture, label: string, title =
 	await test.press('Enter');
 }
 
-export async function revealLensRow(test: StudioFixture, view: BehaviorLensViewState, key: string): Promise<void> {
+export function behaviorOutline(view: BehaviorLensViewState) {
+	if (view.presentation.kind !== 'outline') throw new Error('behavior: expected the FSM/ActionEffect outline');
+	return view.presentation;
+}
+
+export async function revealLensOccurrence(test: StudioFixture, view: BehaviorLensViewState, key: string): Promise<void> {
 	const ancestors: string[] = [];
 	let parent = view.parentRowKeyByRowKey.get(key)!;
 	while (parent !== null) {
 		ancestors.push(parent);
 		parent = view.parentRowKeyByRowKey.get(parent)!;
 	}
+	if (view.presentation.kind === 'graph') {
+		const path = new Set([...ancestors, key]);
+		await test.press('Home');
+		while (view.selectedRowKey !== key) {
+			const before = view.selectedRowKey;
+			await test.press('ArrowDown');
+			check(view.selectedRowKey !== before, 'navigation: graph child navigation makes progress');
+			while (!path.has(view.selectedRowKey!)) {
+				const sibling = view.selectedRowKey;
+				await test.press('ArrowRight');
+				check(view.selectedRowKey !== sibling, 'navigation: graph sibling navigation reaches the authored path');
+			}
+		}
+		return;
+	}
+	const outline = view.presentation;
 	for (let index = ancestors.length - 1; index >= -1; index -= 1) {
 		const target = index === -1 ? key : ancestors[index];
-		const row = view.rows.findIndex(entry => entry.node.rowKey === target);
+		const row = outline.rows.findIndex(entry => entry.node.rowKey === target);
 		check(row >= 0, 'navigation: expanded parent exposes its source child');
-		while (view.selectionIndex !== row) await test.press(view.selectionIndex < row ? 'ArrowDown' : 'ArrowUp');
-		if (index !== -1 && !view.rows[row].expanded) await test.press('ArrowRight');
+		while (outline.selectionIndex !== row) await test.press(outline.selectionIndex < row ? 'ArrowDown' : 'ArrowUp');
+		if (index !== -1 && !outline.rows[row].expanded) await test.press('ArrowRight');
 	}
 }
 
@@ -55,17 +76,17 @@ export async function testStudioBehaviorPicker(test: StudioFixture): Promise<voi
 	await chooseBehavior(test, 'FSM picker.second');
 	const lens = getActiveTab();
 	if (lens.kind !== 'behavior_lens') throw new Error('behavior picker: selected lens missing');
-	check(lens.workingCopy === model && lens.view.rows[lens.view.selectionIndex].node.label === "FSM 'picker.second'",
+	check(lens.workingCopy === model && behaviorOutline(lens.view).rows[behaviorOutline(lens.view).selectionIndex].node.label === "FSM 'picker.second'",
 		'behavior picker: selects the second registration, not the first definition or the current code cursor');
-	const secondKey = lens.view.rows[lens.view.selectionIndex].node.rowKey;
-	await click(lens.view.actionBar.items[0].bounds);
+	const secondKey = behaviorOutline(lens.view).rows[behaviorOutline(lens.view).selectionIndex].node.rowKey;
+	await click(lens.view.presentation.actionBar.items[0].bounds);
 	check(harness.getActiveEditorDocument().model === model && harness.getActiveEditorDocument().view.cursorRow === secondLine
 		&& harness.getActiveEditorDocument().view.cursorColumn === lines[secondLine].indexOf('picker_shared'),
 		'behavior picker: Source opens the chosen registration reference, not the shared initializer');
 	await runPaletteCommand('Behavior Lens: Open');
 	await chooseBehavior(test, 'FSM picker.first');
-	check(getActiveTab() === lens && lens.view.rows[lens.view.selectionIndex].node.label === "FSM 'picker.first'"
-		&& lens.view.rows[lens.view.selectionIndex].node.rowKey !== secondKey,
+	check(getActiveTab() === lens && behaviorOutline(lens.view).rows[behaviorOutline(lens.view).selectionIndex].node.label === "FSM 'picker.first'"
+		&& behaviorOutline(lens.view).rows[behaviorOutline(lens.view).selectionIndex].node.rowKey !== secondKey,
 		'behavior picker: another FSM in the same document reuses the model and selects its own root');
 	await runPaletteCommand('Scenario Lab: Open');
 	await runPaletteCommand('Behavior Lens: Open');
@@ -80,17 +101,17 @@ export async function testStudioBehaviorPicker(test: StudioFixture): Promise<voi
 	await click({ left: layout.contentLeft, right: layout.contentRight,
 		top: layout.contentTop + layout.rowHeight, bottom: layout.contentTop + layout.rowHeight * 2 }, 3);
 	check(getActiveTab() === lens, 'behavior picker: pointer selection reuses the retained lens');
-	const selected = lens.view.rows[lens.view.selectionIndex].node;
-	check(selected.referenceRange!.start.line === lastLine + 1 && lens.view.selectionIndex >= lens.view.scroll
-		&& lens.view.selectionIndex < lens.view.scroll + lens.view.layout.visibleRowCount,
+	const selected = behaviorOutline(lens.view).rows[behaviorOutline(lens.view).selectionIndex].node;
+	check(selected.referenceRange!.start.line === lastLine + 1 && behaviorOutline(lens.view).selectionIndex >= behaviorOutline(lens.view).scroll
+		&& behaviorOutline(lens.view).selectionIndex < behaviorOutline(lens.view).scroll + behaviorOutline(lens.view).layout.visibleRowCount,
 		'behavior picker: exact duplicate occurrence is selected and revealed');
 	const focus = inputFocus.target;
 	await runPaletteCommand('Behavior Lens: Open');
 	await press('Escape');
 	check(inputFocus.target === focus && getActiveTab() === lens
-		&& lens.view.rows[lens.view.selectionIndex].node === selected,
+		&& behaviorOutline(lens.view).rows[behaviorOutline(lens.view).selectionIndex].node === selected,
 		'behavior picker: cancellation preserves invoking focus and selection');
-	await click(lens.view.actionBar.items[0].bounds);
+	await click(lens.view.presentation.actionBar.items[0].bounds);
 	check(harness.getActiveEditorDocument().view.cursorRow === lastLine, 'behavior picker: duplicate Source goes to its own call');
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === original, 'behavior picker: ordinary source Undo removes the temporary authored definitions');

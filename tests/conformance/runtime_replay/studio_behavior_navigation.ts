@@ -1,6 +1,6 @@
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { check, type StudioFixture } from './studio_fixture';
-import { chooseBehavior } from './studio_behavior_picker';
+import { chooseBehavior, behaviorOutline } from './studio_behavior_picker';
 
 /** Source reveal must survive the automatically scheduled semantic query, not just place the cursor. */
 export async function testStudioBehaviorNavigation(test: StudioFixture): Promise<void> {
@@ -17,7 +17,7 @@ export async function testStudioBehaviorNavigation(test: StudioFixture): Promise
 	const lens = getActiveTab();
 	if (lens.kind !== 'behavior_lens') throw new Error('behavior navigation: selected lens missing');
 	check(lens.workingCopy.resource.path === 'enemies/moon_death_ray.lua', 'behavior navigation: actual cart source model');
-	const state = lens.view;
+	const state = behaviorOutline(lens.view);
 	for (const line of [76, 78]) {
 		const index = state.rows.findIndex(row => row.node.authoredRange.start.line === line);
 		check(index >= 0, `behavior navigation: authored row ${line} is visible`);

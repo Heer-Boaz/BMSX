@@ -5,7 +5,7 @@ import { getCodeAreaBounds } from '../../../ide/editor/ui/view/view';
 import { editorContextMenuState } from '../../../ide/workbench/contrib/context_menu/state';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { resolveRuntimeResource } from '../../../ide/runtime/sources';
-import { chooseBehavior, revealLensRow } from './studio_behavior_picker';
+import { chooseBehavior, revealLensOccurrence } from './studio_behavior_picker';
 import { check, type StudioFixture } from './studio_fixture';
 import { testStudioBehaviorSourceGraph } from './studio_behavior_source';
 
@@ -111,10 +111,21 @@ export async function testStudioPointerNavigation(test: StudioFixture, cart: Nav
 	const source = node.referenceRange === null ? node.authoredRange : node.referenceRange;
 	check(source.path === spec.sourcePath && source.start.line === spec.sourceLine && source.start.column === spec.sourceColumn,
 		`${cart}: lens source owner expected ${spec.sourcePath}:${spec.sourceLine}:${spec.sourceColumn}, got ${source.path}:${source.start.line}:${source.start.column}`);
-	await revealLensRow(test, view, node.rowKey);
-	const selected = view.rows[view.selectionIndex];
-	const top = view.layout.contentTop + (view.selectionIndex - view.scroll) * view.layout.rowHeight;
-	const bounds = { left: selected.twistieRight, right: view.layout.contentRight, top, bottom: top + view.layout.rowHeight };
+	await revealLensOccurrence(test, view, node.rowKey);
+	const presentation = view.presentation;
+	let bounds;
+	if (presentation.kind === 'outline') {
+		const selected = presentation.rows[presentation.selectionIndex];
+		const top = presentation.layout.contentTop + (presentation.selectionIndex - presentation.scroll) * presentation.layout.rowHeight;
+		bounds = { left: selected.twistieRight, right: presentation.layout.contentRight, top, bottom: top + presentation.layout.rowHeight };
+	} else {
+		const viewport = presentation.viewport;
+		const card = viewport.model.nodesBySource.get(node.rowKey)!;
+		bounds = { left: card.bounds.left + viewport.bounds.left - viewport.scrollX,
+			right: card.bounds.right + viewport.bounds.left - viewport.scrollX,
+			top: card.bounds.top + viewport.bounds.top - viewport.scrollY,
+			bottom: card.bounds.bottom + viewport.bounds.top - viewport.scrollY };
+	}
 	await click(bounds);
 	await click(bounds, 6);
 	assertSourcePosition(spec.sourcePath, spec.sourceLine, spec.sourceColumn, `${cart} held lens double-click`);

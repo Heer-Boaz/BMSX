@@ -28,9 +28,10 @@ export class WorkbenchGraphControl implements PointerCaptureTarget {
 	private readonly unbindKeyboard: () => void;
 	private readonly unbindBlur: () => void;
 
-	public constructor(focus: InputFocusService, private readonly capture: PointerCaptureService, parent: InputFocusTarget | null = null) {
+	public constructor(focus: InputFocusService, private readonly capture: PointerCaptureService,
+		keyboard: (input: PlayerInput) => void = input => this.handleKeyboard(input), parent: InputFocusTarget | null = null) {
 		this.focusTarget = focus.createTarget(parent);
-		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
+		this.unbindKeyboard = this.focusTarget.bindKeyboard(keyboard);
 		this.unbindBlur = this.focusTarget.onDidBlur(() => this.cancelPointer());
 	}
 

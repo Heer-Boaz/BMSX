@@ -14,26 +14,24 @@ import type { EditorNavigationController } from '../resources/navigation';
 import type { EditorPanes } from '../../services/editor/editor_panes';
 import { BehaviorLensInput } from './editor_input';
 import {
-	findVisibleRowIndex,
+	selectBehaviorLensDefinition,
 	installBehaviorLensDocument,
 	prepareBehaviorLensLayout,
 } from './layout';
-import { scrollWorkbenchList } from '../../ui/list_view';
 import {
 	BehaviorLensNavigationResult,
 	executeBehaviorLensNavigation,
 	finishBehaviorLensNavigation,
 	selectedBehaviorLensSourceRange,
-	selectBehaviorLensRow,
 	type BehaviorLensNavigationCommand,
 } from './navigation';
 import { buildBehaviorSourceDocument } from './recognizer';
 import type { BehaviorKind, BehaviorRegistrationSource, BehaviorSourceDocument } from './model';
 import type { BehaviorRegistrationIndex } from './registration_index';
+import { toggleBehaviorGraphBranch } from './graph_navigation';
 import { buildBehaviorQuickPickItems } from './quick_access';
 import { createBehaviorLensViewState, type BehaviorLensViewState } from './view_model';
 
-const WHEEL_SCROLL_ROWS = 3;
 const PICKER_TITLES: Readonly<Record<BehaviorKind, string>> = {
 	action_effect: 'ACTIONEFFECTS',
 	state_machine: 'STATE MACHINES',
@@ -66,18 +64,17 @@ export class BehaviorLensController {
 			const document = this.buildDocument(resource, source);
 			tab = new BehaviorLensInput(
 				model,
-				createBehaviorLensViewState(document, model),
+				createBehaviorLensViewState(document, model, registration.behaviorKind === 'behavior_tree' ? 'graph' : 'outline'),
 			);
 			editorTabGroup.add(tab);
 		} else {
 			this.updateView(tab);
 		}
 		const view = tab.view;
-		view.definitionRowKey = registration.rowKey;
+		selectBehaviorLensDefinition(view, registration.rowKey);
 		view.sourceMatchRowKeys.clear();
 		view.sourceMatchRowKeys.add(registration.rowKey);
 		prepareBehaviorLensLayout(view);
-		selectBehaviorLensRow(view, findVisibleRowIndex(view, registration.rowKey));
 		finishBehaviorLensNavigation(view);
 		setActiveTab(this.editorPanes, tab.id);
 	}
@@ -101,11 +98,26 @@ export class BehaviorLensController {
 		else this.openSelectedSource(input.view);
 	}
 
-	public handleWheel(view: BehaviorLensViewState, direction: number, steps: number): boolean {
-		prepareBehaviorLensLayout(view);
-		const previousScroll = view.scroll;
-		scrollWorkbenchList(view, direction * steps * WHEEL_SCROLL_ROWS);
-		return view.scroll !== previousScroll;
+	public openDetails(): void {
+		const input = getActiveTab();
+		if (input.kind !== 'behavior_lens') return;
+		this.updateView(input);
+		const view = input.view;
+		if (view.presentation.kind !== 'graph') return;
+		const item = view.presentation.viewport.selection;
+		if (item === null) return;
+		const node = item.kind === 'node' ? item : item.child;
+		this.quickInput.pick('BT SOURCE DETAILS', 'Choose a field to open its source', () => node.details,
+			detail => this.navigation.focusChunkSourceForContext(view.resource.domain, detail.range.path, {
+				row: detail.range.start.line - 1, startColumn: detail.range.start.column - 1, endColumn: detail.range.start.column - 1,
+			}));
+	}
+
+	public toggleBranch(): void {
+		const input = getActiveTab();
+		if (input.kind !== 'behavior_lens') return;
+		this.updateView(input);
+		if (input.view.presentation.kind === 'graph') toggleBehaviorGraphBranch(input.view, input.view.presentation);
 	}
 
 	public executeNavigation(
@@ -126,7 +138,7 @@ export class BehaviorLensController {
 			finishBehaviorLensNavigation(view);
 			return true;
 		}
-		return false;
+		return result === BehaviorLensNavigationResult.Panned;
 	}
 
 	public onDidChangeContent(model: EditorTextModel, event: EditorTextModelContentChangeEvent): void {

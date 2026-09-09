@@ -26,6 +26,7 @@ export type EditorViewCommandId =
 	| 'sceneEditor'
 	| 'sceneEditor.source'
 	| 'behaviorLens.source'
+	| 'behaviorLens.details'
 	| 'filter'
 	| 'wrap';
 
@@ -50,6 +51,7 @@ export type EditorScenarioLabCommandId =
 export type EditorCommandId =
 	| 'undo'
 	| 'redo'
+	| 'behaviorLens.toggleBranch'
 	| 'sceneEditor.removeMember'
 	| 'sceneEditor.moveMemberUp'
 	| 'sceneEditor.moveMemberDown'

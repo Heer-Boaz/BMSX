@@ -1055,8 +1055,10 @@ projection, selection, scroll, hover and list viewport; the parent passes split 
 both pane layouts. Root and result expansion, stable-id selection, pane focus,
 formatted rows and hit bounds survive frames and are rebuilt only when the
 collection, result revision, font or viewport changes. The same workbench-list
-owner supplies row hit-testing, reveal and scroll invariants to Behavior Lens.
-Run, rerun and cancel
+owner supplies row hit-testing, reveal and scroll invariants to Behavior Lens
+outlines. A selected BT uses the shared retained graph viewport instead; its
+source selection is independent of presentation, and its typed Lua relationships
+are not reconstructed from list rows. Run, rerun and cancel
 are typed workbench commands. Their labels, keybindings and named view-title
 menu placement are separate declarations; the generic action bar invokes the
 same command ids as keyboard and controller input. A feature does not render

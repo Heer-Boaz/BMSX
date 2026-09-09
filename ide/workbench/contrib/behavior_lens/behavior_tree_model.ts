@@ -48,6 +48,7 @@ export type BehaviorTreeSourceNode = BehaviorDynamicSourceNode | (BehaviorSource
 	readonly kind: 'node';
 	readonly table: LuaTableConstructorExpression;
 	readonly nodeType: string | null;
+	readonly referenceLabel: string;
 	readonly branches: readonly BehaviorTreeSourceBranch[];
 	readonly attachments: readonly BehaviorTreeSourceAttachmentGroup[];
 });

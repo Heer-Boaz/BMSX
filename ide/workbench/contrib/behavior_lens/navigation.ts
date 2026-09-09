@@ -1,3 +1,4 @@
+import { executeBehaviorGraphNavigation } from './graph_navigation';
 import { clamp } from '../../../../machine/ts/common/clamp';
 import type { LuaSourceRange } from '../../../../toolchain/ts/lua/syntax/ast';
 import {
@@ -5,7 +6,7 @@ import {
 	rebuildBehaviorLensRows,
 } from './layout';
 import { revealWorkbenchListSelection } from '../../ui/list_view';
-import type { BehaviorLensViewState } from './view_model';
+import type { BehaviorLensOutline, BehaviorLensViewState } from './view_model';
 
 export type BehaviorLensNavigationCommand =
 	| 'up'
@@ -24,129 +25,139 @@ export const enum BehaviorLensNavigationResult {
 	Changed,
 	Activate,
 	Back,
+	Panned,
 }
 
 export function executeBehaviorLensNavigation(
 	state: BehaviorLensViewState,
 	command: BehaviorLensNavigationCommand,
 ): BehaviorLensNavigationResult {
+	const outline = state.presentation;
+	if (outline.kind === 'graph') return executeBehaviorGraphNavigation(state, outline, command);
 	if (command === 'back') {
 		return BehaviorLensNavigationResult.Back;
 	}
 	if (command === 'activate') {
-		return state.selectionIndex >= 0
+		return outline.selectionIndex >= 0
 			? BehaviorLensNavigationResult.Activate
 			: BehaviorLensNavigationResult.None;
 	}
-	if (state.rows.length === 0) {
+	if (outline.rows.length === 0) {
 		return BehaviorLensNavigationResult.None;
 	}
-	const selectionIndex = state.selectionIndex;
+	const selectionIndex = outline.selectionIndex;
 	switch (command) {
-		case 'up': return selectRow(state, selectionIndex - 1);
-		case 'down': return selectRow(state, selectionIndex + 1);
-		case 'page-up': return selectRow(state, selectionIndex < 0 ? state.scroll : selectionIndex - state.layout.visibleRowCount);
-		case 'page-down': return selectRow(state, selectionIndex < 0
-			? state.scroll + state.layout.visibleRowCount - 1 : selectionIndex + state.layout.visibleRowCount);
-		case 'home': return selectRow(state, 0);
-		case 'end': return selectRow(state, state.rows.length - 1);
-		case 'left': return selectionIndex < 0 ? BehaviorLensNavigationResult.None : collapseOrSelectParent(state, selectionIndex);
-		case 'right': return selectionIndex < 0 ? BehaviorLensNavigationResult.None : expandOrSelectChild(state, selectionIndex);
+		case 'up': return selectRow(state, outline, selectionIndex - 1);
+		case 'down': return selectRow(state, outline, selectionIndex + 1);
+		case 'page-up': return selectRow(state, outline, selectionIndex < 0 ? outline.scroll : selectionIndex - outline.layout.visibleRowCount);
+		case 'page-down': return selectRow(state, outline, selectionIndex < 0
+			? outline.scroll + outline.layout.visibleRowCount - 1 : selectionIndex + outline.layout.visibleRowCount);
+		case 'home': return selectRow(state, outline, 0);
+		case 'end': return selectRow(state, outline, outline.rows.length - 1);
+		case 'left': return selectionIndex < 0 ? BehaviorLensNavigationResult.None : collapseOrSelectParent(state, outline, selectionIndex);
+		case 'right': return selectionIndex < 0 ? BehaviorLensNavigationResult.None : expandOrSelectChild(state, outline, selectionIndex);
 	}
 }
 
 function selectRow(
 	state: BehaviorLensViewState,
+	outline: BehaviorLensOutline,
 	index: number,
 ): BehaviorLensNavigationResult {
-	const nextIndex = clamp(index, 0, state.rows.length - 1);
-	if (nextIndex === state.selectionIndex) {
+	const nextIndex = clamp(index, 0, outline.rows.length - 1);
+	if (nextIndex === outline.selectionIndex) {
 		return BehaviorLensNavigationResult.None;
 	}
-	state.selectionIndex = nextIndex;
-	state.hoverIndex = -1;
+	outline.selectionIndex = nextIndex;
+	state.selectedRowKey = outline.rows[nextIndex].node.rowKey;
+	outline.hoverIndex = -1;
 	return BehaviorLensNavigationResult.Changed;
 }
 
 function collapseOrSelectParent(
 	state: BehaviorLensViewState,
+	outline: BehaviorLensOutline,
 	selectionIndex: number,
 ): BehaviorLensNavigationResult {
-	const row = state.rows[selectionIndex];
+	const row = outline.rows[selectionIndex];
 	if (row.expandable && row.expanded) {
 		state.collapsedRowKeys.add(row.node.rowKey);
-		state.rowsDirty = true;
-		rebuildBehaviorLensRows(state);
-		state.rowsDirty = false;
-		state.textDirty = true;
+		outline.rowsDirty = true;
+		rebuildBehaviorLensRows(state, outline);
+		outline.rowsDirty = false;
+		outline.textDirty = true;
 		return BehaviorLensNavigationResult.Changed;
 	}
 	if (row.parentRowKey === null) {
 		return BehaviorLensNavigationResult.None;
 	}
-	return selectRow(state, findVisibleRowIndex(state, row.parentRowKey));
+	return selectRow(state, outline, findVisibleRowIndex(outline, row.parentRowKey));
 }
 
 function expandOrSelectChild(
 	state: BehaviorLensViewState,
+	outline: BehaviorLensOutline,
 	selectionIndex: number,
 ): BehaviorLensNavigationResult {
-	const row = state.rows[selectionIndex];
+	const row = outline.rows[selectionIndex];
 	if (!row.expandable) {
 		return BehaviorLensNavigationResult.None;
 	}
 	if (!row.expanded) {
 		state.collapsedRowKeys.delete(row.node.rowKey);
-		state.rowsDirty = true;
-		rebuildBehaviorLensRows(state);
-		state.rowsDirty = false;
-		state.textDirty = true;
+		outline.rowsDirty = true;
+		rebuildBehaviorLensRows(state, outline);
+		outline.rowsDirty = false;
+		outline.textDirty = true;
 		return BehaviorLensNavigationResult.Changed;
 	}
-	return selectRow(state, selectionIndex + 1);
+	return selectRow(state, outline, selectionIndex + 1);
 }
 
-export function selectBehaviorLensRow(state: BehaviorLensViewState, rowIndex: number): void {
-	state.selectionIndex = rowIndex;
-	state.hoverIndex = -1;
+export function selectBehaviorLensRow(state: BehaviorLensViewState, outline: BehaviorLensOutline, rowIndex: number): void {
+	state.selectedRowKey = rowIndex < 0 ? null : outline.rows[rowIndex].node.rowKey;
+	outline.selectionIndex = rowIndex;
+	outline.hoverIndex = -1;
 	updateBehaviorLensStatus(state);
 }
 
-export function toggleBehaviorLensRow(state: BehaviorLensViewState, rowIndex: number): void {
-	const row = state.rows[rowIndex];
+export function toggleBehaviorLensRow(state: BehaviorLensViewState, outline: BehaviorLensOutline, rowIndex: number): void {
+	const row = outline.rows[rowIndex];
 	if (row.expanded) {
 		state.collapsedRowKeys.add(row.node.rowKey);
 	} else {
 		state.collapsedRowKeys.delete(row.node.rowKey);
 	}
-	state.selectionIndex = rowIndex;
-	state.rowsDirty = true;
-	rebuildBehaviorLensRows(state);
-	state.rowsDirty = false;
-	state.textDirty = true;
+	state.selectedRowKey = outline.rows[rowIndex].node.rowKey;
+	outline.selectionIndex = rowIndex;
+	outline.rowsDirty = true;
+	rebuildBehaviorLensRows(state, outline);
+	outline.rowsDirty = false;
+	outline.textDirty = true;
 	updateBehaviorLensStatus(state);
 }
 
 export function selectedBehaviorLensSourceRange(state: BehaviorLensViewState): LuaSourceRange | null {
-	if (state.selectionIndex < 0) {
-		return null;
-	}
-	const node = state.rows[state.selectionIndex].node;
+	if (state.selectedRowKey === null) return null;
+	const presentation = state.presentation;
+	if (presentation.kind === 'graph' && presentation.viewport.selection?.kind === 'edge') return presentation.viewport.selection.range;
+	const node = state.nodesByRowKey.get(state.selectedRowKey)!;
 	return node.referenceRange !== null ? node.referenceRange : node.authoredRange;
 }
 
 export function finishBehaviorLensNavigation(state: BehaviorLensViewState): void {
-	revealWorkbenchListSelection(state);
+	if (state.presentation.kind === 'outline') revealWorkbenchListSelection(state.presentation);
+	else if (state.presentation.viewport.selection !== null) state.presentation.viewport.reveal(state.presentation.viewport.selection);
 	updateBehaviorLensStatus(state);
 }
 
 export function updateBehaviorLensStatus(state: BehaviorLensViewState): void {
-	state.status.info = `${state.document.definitions.length} DEF  ${state.sourceNodes.length} SOURCE NODES`;
-	if (state.selectionIndex < 0) {
-		state.status.detail = '';
-		return;
-	}
-	const node = state.rows[state.selectionIndex].node;
-	const range = node.referenceRange !== null ? node.referenceRange : node.authoredRange;
-	state.status.detail = `${node.kind.toUpperCase()}  LN ${range.start.line}:${range.start.column}`;
+	state.status.info = state.presentation.kind === 'graph'
+		? `${state.presentation.viewport.model.nodes.length} CARDS`
+		: `${state.document.definitions.length} DEF  ${state.sourceNodes.length} SOURCE NODES`;
+	const range = selectedBehaviorLensSourceRange(state);
+	if (range === null) { state.status.detail = ''; return; }
+	const node = state.nodesByRowKey.get(state.selectedRowKey!)!;
+	const kind = state.presentation.kind === 'graph' ? state.presentation.selectionKind : node.kind;
+	state.status.detail = `${kind.toUpperCase()}  LN ${range.start.line}:${range.start.column}`;
 }

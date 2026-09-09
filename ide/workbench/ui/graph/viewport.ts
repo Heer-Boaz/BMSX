@@ -4,18 +4,20 @@ import type { WorkbenchGraphItem, WorkbenchGraphModel } from './model';
 export const GRAPH_EDGE_HIT_RADIUS = 3;
 const REVEAL_MARGIN = 6;
 
+type GraphItem<Model extends WorkbenchGraphModel> = Model['nodes'][number] | Model['edges'][number];
+
 /** Input-owned view state; no gesture, source recognizer or layout algorithm. */
-export class WorkbenchGraphViewport {
+export class WorkbenchGraphViewport<Model extends WorkbenchGraphModel = WorkbenchGraphModel> {
 	public readonly bounds = create_rect_bounds();
 	public scrollX = 0;
 	public scrollY = 0;
-	public selection: WorkbenchGraphItem | null = null;
+	public selection: GraphItem<Model> | null = null;
 
-	public constructor(public model: WorkbenchGraphModel) {
+	public constructor(public model: Model) {
 	}
 
 	/** The domain owner supplies the proven correspondence, or no selection. */
-	public setModel(model: WorkbenchGraphModel, selection: WorkbenchGraphItem | null): void {
+	public setModel(model: Model, selection: GraphItem<Model> | null): void {
 		this.model = model;
 		this.selection = selection;
 	}
@@ -35,7 +37,7 @@ export class WorkbenchGraphViewport {
 		this.scrollY = revealAxis(this.scrollY, this.bounds.bottom - this.bounds.top, bounds.top, bounds.bottom);
 	}
 
-	public hitTest(viewportX: number, viewportY: number): WorkbenchGraphItem | null {
+	public hitTest(viewportX: number, viewportY: number): GraphItem<Model> | null {
 		if (!point_in_rect(viewportX, viewportY, this.bounds)) return null;
 		const x = viewportX - this.bounds.left + this.scrollX;
 		const y = viewportY - this.bounds.top + this.scrollY;
@@ -44,7 +46,7 @@ export class WorkbenchGraphViewport {
 			const node = model.nodes[index];
 			if (point_in_rect(x, y, node.bounds)) return node;
 		}
-		let closest: WorkbenchGraphItem | null = null;
+		let closest: GraphItem<Model> | null = null;
 		let distance = GRAPH_EDGE_HIT_RADIUS * GRAPH_EDGE_HIT_RADIUS;
 		for (let index = model.edges.length - 1; index >= 0; index -= 1) {
 			const edge = model.edges[index];

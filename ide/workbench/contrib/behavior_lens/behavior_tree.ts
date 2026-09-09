@@ -84,6 +84,7 @@ function buildBehaviorTreeNode(
 		kind: 'node',
 		table,
 		nodeType,
+		referenceLabel: resolved.referenceLabel,
 		branches,
 		attachments,
 		label: typeLabel,
