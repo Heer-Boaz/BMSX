@@ -14,6 +14,105 @@ met expliciete browser- en Node-workercompositie. ActionEffect heeft nu een
 [gegroepeerde bronproperty-view](actioneffect_properties_design.md), geen flowchart.
 Deze visualisatie is nog geen authoring.
 
+## BT-listbewijs versus inhoudsresolutie
+
+`STUDIO-BT-MEMBERSHIP-EVIDENCE-01` is gebouwd en corrigeert een ownerfout vóór
+authoring. `createSourceNode` vat de resolutie van alle descendants samen;
+de BT-grafiek gebruikte die samenvatting ten onrechte als bewijs dat de
+parentlijst geen bekende volgorde had. `{ leaf, make_node(), leaf }` verdween
+daardoor achter één `PARTIAL MEMBERSHIP`-kaart. Beide nieuwe regressies
+(children en weighted choices) falen op `c246b156b` vóór de productwijziging.
+
+Productievoorbeeld: LimboAI bouwt eerst de concrete
+[childstructuur](https://github.com/limbonaut/limboai/blob/3f14ea4c26911e8b8e30c6bcdb575fc589a59deb/editor/task_tree.cpp#L46-L61)
+en presenteert [configuratiewaarschuwingen afzonderlijk](https://github.com/limbonaut/limboai/blob/3f14ea4c26911e8b8e30c6bcdb575fc589a59deb/editor/task_tree.cpp#L106-L122).
+Dat is het overgenomen onderscheid, niet een Lua-analyser uit LimboAI of een
+claim dat diens resource-tree arbitrary Lua uitvoert. BMSX gebruikt de eigen
+reeds aanwezige syntax-/binderfeiten, niet LimboAI's resource-objectidentiteit.
+
+- De source-array-owner bewaart al de originele table en `SourceTableIssue`.
+  BT-children, choices en attachments moeten die getypeerde section behouden,
+  niet terugbrengen tot een algemene displaynode en vervolgens haar warning
+  als lijstbewijs lezen. De choice-wrapper bewaart eveneens eigen table-issues.
+- Een resolved array zonder numeric/computed keys of bekende tablemutatie
+  heeft bekende authored posities, óók als één waarde een opaque builder is.
+  Een verbinding naar zo'n opaque kaart benoemt die source-slot, niet de
+  uitkomst of uitvoerbaarheid van de builder. Geen hostevaluatie, defaultnode
+  of synthetische subtree. BLua's tableconstructor consumeert één resultaat
+  per field; stock-Lua tail expansion is hier geen aanname. Een builder kan
+  alsnog nil of ongeschikte data teruggeven: het aantal authored posities is
+  niet een voorspelling van de uiteindelijke runtime-arraylengte.
+- Een onbekende/numeric/computed/gemuteerde lijst blijft een afzonderlijke
+  source-only membership-kaart. Die onzekerheid verbergt geen bewezen
+  siblings in een bovenliggende lijst. Aggregate `resolution` blijft de
+  waarschuwing voor gedeeltelijke inhoud en is geen authoring-admission.
+- Weighted edges houden de echte choice-use als bron, terwijl de kaart naar
+  de child-use blijft wijzen. De weight blijft de authored AST-expression.
+  Attachmentaantallen gebruiken hetzelfde lijstbewijs; ontbrekende/dynamische
+  attachmentinhoud blijft in Details zichtbaar, niet als control-flow-child.
+- Bronwijzigingen, hidden-pane mapping, collapse, selection en Undo blijven
+  bij de bestaande textmodel-/occurrence-owners. Er komt geen eigen history,
+  nieuwe source-id, rendererfallback, parserwijziging of runtimecontract bij.
+
+De wijziging draait uitsluitend bij koude bron-/kaartprojectie. De warme
+draw/hit/pan-loop en machine/C++/cartlib blijven ongewijzigd. De productgate
+omvat zelfstandige fixtures, dezelfde Lua op de echte BLua/cartlib-harness,
+Source en hidden edits/Undo in de Studio op alle drie backends, plus afzonderlijk
+gemeten koude projectie en warme presentatie. Dit levert nog geen move/add-
+actie of bewijs voor mutation/alias/cross-file dataflow buiten de bestaande
+source-resolver.
+
+### Bewijs en kosten van deze correctie
+
+- Zes onafhankelijke source-/graphproeven bewijzen children, choices,
+  nested unknown membership, attachmentinhoud, oorspronkelijke table/fields,
+  gedeelde initializers, verschillende occurrences, numeric/computed keys,
+  bekende aliasmutatie, empty versus unknown, hidden edits, selectie en Undo.
+  De twee oorspronkelijke regressies falen op de parent en slagen op de fix.
+- Dezelfde `behavior_membership_fixture.ts` wordt op de bestaande echte
+  BIOS/cart-CPU-harness gecompileerd en uitgevoerd. De sequence voert vier
+  children in volgorde `1212` uit, inclusief de in de editor opaque builders
+  en een nested listbuilder. Een builder retourneert twee waarden; ook op de
+  laatste arraypositie neemt BLua daarvan precies één waarde op. Geen nieuwe
+  loader, ROM-type of cartlib-testdubbel.
+- `studio_bt_membership.ts` gebruikt deze bron in één echt paused textmodel:
+  Command Palette, alle vier children/choices, fysieke keyboard/controller-
+  navigatie, afzonderlijke choice-edge- en weight-Source, held pointer,
+  verborgen UTF-16 edits en normale code-Undo. Het medium en de machinepositie
+  blijven gelijk. Zes echte 384×288-captures met tiny-font zijn geïnspecteerd;
+  alle vier authored slots zijn zichtbaar, niet verstopt achter een warning.
+- Volledige Studio-workflow en cart-navigation op software/WebGL2/WebGPU
+  slagen; dit is Chromium/SwiftShader, geen fysieke-GPU-prestatieclaim.
+  `test:lua`: **1.092 geslaagd + 1 bestaande skip**. ROM-packer: **123**.
+  IDE-typecheck, beide productbuilds, 59 headless Lensasserties, strict
+  architecture-audit, core-parity, indent- en diff-check slagen. De tests-brede
+  typecheck houdt **51 bestaande diagnostics**; alleen twee bestaande
+  harnesslocaties verschuiven door de fixture-import. Zij is niet groen.
+
+`profile.ts`, Node 22.23.1, reeds opgebouwde semantische bron, 10 warmups en
+25 mediane samples; warme samples bevatten 1.000 operaties:
+
+| Fixture | Kaarten | Bron (ms) | Kaarten (ms) | Layout (ms) | Hit (µs) | Draw + quads (µs) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 24 complete subtrees | 74 | 0,131 | 0,207 | 0,080 | 0,150 | 13,7 |
+| 1.024 complete subtrees | 3.074 | 1,863 | 3,573 | 0,428 | 9,662 | 152,5 |
+| 24 subtrees met opaque child | 74 | 0,070 | 0,117 | 0,018 | 0,161 | 15,0 |
+| 1.024 subtrees met opaque child | 3.074 | 1,512 | 4,087 | 0,411 | 10,060 | 148,9 |
+
+De complete parentfixture mat respectievelijk 0,133/1,943 ms bron,
+0,215/3,306 ms kaartprojectie en 14,3/160,9 µs draw + quads. Dit zijn
+losse microbenchmarks, geen claim van versnelling of onveranderlijke timings.
+De opaque variant behoudt nu werkelijk dezelfde 74/3.074 kaarten in plaats
+van een bijna lege grafiek. Warme draw doet nul fontmetingen en behoudt de
+quadopslag. Parser, GPU-upload/raster, totale Studio-frametijd en een JS-
+allocatieprofiel vallen buiten de meting. Productdelta: uitsluitend retained
+table/issue-feiten voor choices en directe consumptie van bestaand lijstbewijs;
+geen extra analysepass, framecallsite of guestwerk.
+
+Reproduceerbare commando's en capturepunten staan in
+`tests/conformance/behavior_graph/README.md`; lokale logs/baseline/captures
+staan onder `/tmp/bmsx-bt-order`.
+
 ## Doel en grens
 
 Maak gedrag ruimtelijk leesbaar: bij een BT de ordered boom met zijn

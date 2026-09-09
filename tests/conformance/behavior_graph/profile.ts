@@ -16,9 +16,9 @@ class MeasuredFont extends Font {
 	public override measure(text: string): number { this.measurements += 1; return super.measure(text); }
 }
 
-for (const siblings of [24, 1024]) {
+for (const [siblings, opaqueChild] of [[24, false], [1024, false], [24, true], [1024, true]] as const) {
 	const source = `local trees<const> = require('cartlib/behaviour_tree/library')
-local shared<const> = { type = 'sequence', children = { { type = 'wait', duration_ticks = 2 }, { type = 'task', task = actions.move } } }
+local shared<const> = { type = 'sequence', children = { { type = 'wait', duration_ticks = 2 }, ${opaqueChild ? 'make_node()' : "{ type = 'task', task = actions.move }"} } }
 trees.register('profile', { root = { type = 'sequence', children = { ${'shared,'.repeat(siblings)} } } })`;
 	const resource = { domain: 0 as const, path: 'profile.lua' };
 	const semantic = buildLuaFileSemanticData(source, resource.path);
@@ -50,7 +50,7 @@ trees.register('profile', { root = { type = 'sequence', children = { ${'shared,'
 	const backing = stream.floatData;
 	const measurements = font.measurements;
 	const drawAndQuadsMicroseconds = medianMilliseconds(() => { for (let index = 0; index < 1000; index += 1) draw(); });
-	console.log(JSON.stringify({ siblings, nodes: view.model.nodes.length, sourceProjectionMs, cardProjectionMs, layoutAndRoutesMs,
+	console.log(JSON.stringify({ siblings, opaqueChild, nodes: view.model.nodes.length, sourceProjectionMs, cardProjectionMs, layoutAndRoutesMs,
 		hitMicroseconds, drawAndQuadsMicroseconds, warmFontMeasurements: font.measurements - measurements, retainedQuadStorage: backing === stream.floatData,
 		boundary: 'cold source/card/layout phases; warm hit and overlay emission plus quad stream; excludes parsing, GPU upload/raster and total Studio frame' }));
 }

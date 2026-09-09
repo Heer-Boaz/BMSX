@@ -259,6 +259,8 @@ function buildBehaviorTreeChoices(
 	}
 	const source = createSourceNode(context, path, {
 		kind: 'section',
+		table: resolved.table,
+		issues: resolved.issues,
 		label: resolved.resolution === 'complete'
 			? `choices (${entries.length})`
 			: `choices (${children.length} authored)`,
@@ -296,6 +298,7 @@ function buildBehaviorTreeChoice(
 	);
 	return createSourceNode(context, path, {
 		kind: 'section',
+		issues: choice.issues,
 		weight,
 		child: childNode,
 		label,

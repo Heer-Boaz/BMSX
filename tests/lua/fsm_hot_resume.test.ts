@@ -16,6 +16,7 @@ import { BLUA32_FIRMWARE_MODULE_SOURCE } from '../../toolchain/ts/rompack/blua32
 import { createTestBlua32PairCpu, linkTestBlua32Pair } from '../helpers/blua32';
 import { materializeCpuCompletionValues, parseLuaChunk } from './cpu_test_harness';
 import { FSM_PATH_CASES, FSM_SCOPE_SOURCE } from '../helpers/fsm_source_fixture';
+import { BT_MEMBERSHIP_SOURCE } from '../helpers/behavior_membership_fixture';
 
 const SYSTEM_MODULE_FILES = [
 	['base', 'machine/bios/base.lua'],
@@ -498,6 +499,20 @@ function runCompletionClosure(cpu: CPU, closure: Closure, args: number[]): numbe
 	assert.equal(cpu.runUntilDepth(0, budget), RunResult.Halted);
 	return budget - cpu.instructionBudgetRemaining;
 }
+
+test('BT source membership fixture executes its opaque builders and ordered children only in compiled cartlib', () => {
+	const cpu = createCartlibProgramCpu(BT_MEMBERSHIP_SOURCE + `
+local program<const> = require('cartlib/behaviour_tree/program').compile('oracle', { root = sequence })
+local target<const> = { order = 0 }
+local execution<const> = { _execution_state = program.create_execution_state() }
+assert(#sequence_children == 4, 'BLua table fields consume one result, including a last builder call')
+assert(sequence_children[3] == nested and #nested.children == 1, 'nested builder owns its own child list')
+local status<const> = program.evaluate(target, execution, program.operand)
+return status == result.success, target.order
+`);
+	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [true, 1212]);
+});
 
 test('cartlib FSM and behaviour-tree instances retain semantic state across program replacement', () => {
 	const cpu = createCartlibProgramCpu(CART_ENTRY_SOURCE);

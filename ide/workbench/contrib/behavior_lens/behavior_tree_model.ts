@@ -1,9 +1,10 @@
 import type { LuaTableConstructorExpression, LuaTableField } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { BehaviorDynamicSourceNode, BehaviorSourceNode } from './model';
-import type { BehaviorSourceArrayEntry } from './source';
+import type { BehaviorSourceArrayEntry, BehaviorSourceTableSection, SourceTableIssue } from './source';
 
 export type BehaviorTreeSourceChoice = BehaviorSourceNode & {
 	readonly kind: 'section';
+	readonly issues: SourceTableIssue;
 	readonly weight: LuaTableField | null;
 	readonly child: BehaviorTreeSourceNode;
 };
@@ -11,12 +12,12 @@ export type BehaviorTreeSourceChoice = BehaviorSourceNode & {
 export type BehaviorTreeSourceBranch = {
 	readonly role: 'children';
 	readonly field: LuaTableField;
-	readonly source: BehaviorSourceNode;
+	readonly source: BehaviorSourceTableSection;
 	readonly entries: readonly BehaviorSourceArrayEntry<BehaviorTreeSourceNode>[];
 } | {
 	readonly role: 'choices';
 	readonly field: LuaTableField;
-	readonly source: BehaviorSourceNode;
+	readonly source: BehaviorSourceTableSection;
 	readonly entries: readonly BehaviorSourceArrayEntry<BehaviorTreeSourceChoice | BehaviorDynamicSourceNode>[];
 } | {
 	readonly role: 'main_task' | 'background_tree';
@@ -33,7 +34,7 @@ export type BehaviorTreeSourceAttachment = BehaviorSourceNode & {
 export type BehaviorTreeSourceAttachmentGroup = {
 	readonly role: 'services' | 'decorators';
 	readonly field: LuaTableField;
-	readonly source: BehaviorSourceNode;
+	readonly source: BehaviorSourceTableSection;
 	readonly entries: readonly BehaviorSourceArrayEntry<BehaviorTreeSourceAttachment | BehaviorDynamicSourceNode>[];
 };
 

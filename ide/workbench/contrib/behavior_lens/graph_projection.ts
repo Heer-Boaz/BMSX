@@ -6,7 +6,7 @@ import type { BehaviorTreeSourceDefinition, BehaviorTreeSourceNode } from './beh
 import type { BehaviorSourceNode, BehaviorSourceRowKey } from './model';
 import type { BehaviorGraphDetail, BehaviorGraphProjection, BehaviorGraphNode } from './graph_model';
 import { appendBehaviorGraphFields, appendBehaviorGraphSourceDetails } from './graph_details';
-import { describeExpression } from './source';
+import { describeExpression, SourceTableIssue } from './source';
 
 /** Cold projection from typed source relationships. No label parsing or execution inference. */
 export function projectBehaviorTreeGraph(
@@ -46,8 +46,9 @@ export function projectBehaviorTreeGraph(
 			appendBehaviorGraphFields(details, source.table, 'NODE', relationships);
 			for (const group of source.attachments) {
 				const label = group.role === 'services' ? 'SVC' : 'DEC';
-				text += `\n${label} ${group.source.resolution === 'complete' ? group.entries.length : '?'}`;
-				if (group.source.resolution !== 'complete') appendBehaviorGraphSourceDetails(details, group.source, group.role);
+				const membershipKnown = group.source.kind === 'section' && group.source.issues === SourceTableIssue.None;
+				text += `\n${label} ${membershipKnown ? group.entries.length : '?'}`;
+				if (!membershipKnown) appendBehaviorGraphSourceDetails(details, group.source, group.role);
 				else {
 					for (const entry of group.entries) {
 						if (entry.node.kind === 'dynamic') appendBehaviorGraphSourceDetails(details, entry.node, group.role);
@@ -78,7 +79,8 @@ export function projectBehaviorTreeGraph(
 					behavior(branch.node, node, branch.role, branch.field.value.range);
 					continue;
 				}
-				if (branch.source.resolution !== 'complete') {
+				// A warning inside one member does not revoke the enclosing list's order.
+				if (branch.source.kind === 'dynamic' || branch.source.issues !== SourceTableIssue.None) {
 					const details: BehaviorGraphDetail[] = [];
 					appendBehaviorGraphSourceDetails(details, branch.source, branch.role);
 					card(branch.source, `${branch.role}\n? PARTIAL MEMBERSHIP`, node, false, details, branch.field.value.range);
@@ -100,7 +102,7 @@ export function projectBehaviorTreeGraph(
 							label += `  W=${weight}`;
 							details.push({ label: 'weight', description: weight, detail: 'CHOICE', range: choice.weight.value.range });
 						} else label += '  W=?';
-						if (choice.resolution !== 'complete') label += ' ? SOURCE';
+						if (choice.issues !== SourceTableIssue.None) label += ' ? SOURCE';
 						behavior(choice.child, node, label, entry.field.value.range, details, choice);
 					}
 				}

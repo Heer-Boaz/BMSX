@@ -205,7 +205,16 @@ The graphical Behavior Lens contracts are specified in
 The implemented BT prerequisite exposes typed root, branch and attachment
 information on the same source objects as the outline, not a renderer
 interpreting labels. Weights and fields remain syntax nodes. BT order belongs
-to Lua. FSM source bodies now retain child occurrences, guard fields and
+to Lua. A BT list retains its actual source-table section and local table issues;
+aggregate descendant `resolution` is a content warning, not membership evidence.
+An opaque member does not hide its ordered siblings or the known wrapper weight.
+Only unresolved/numeric-keyed/computed-keyed/known-mutated membership uses a
+source-only list card.
+Links to opaque values identify authored slots, not evaluated builder results or
+guaranteed runtime children; attachment counts likewise count source slots.
+No new parse, scan or topology work runs in draw/hit/pan. The independent source,
+compiled-cartlib and three-backend gates are in the graph design.
+FSM source bodies now retain child occurrences, guard fields and
 consumer slots. A cold second pass binds initial/concurrent entries and possible
 returned paths to those occurrence keys within one registration. Inline and
 file-local const callbacks retain binding/function/return syntax; member and

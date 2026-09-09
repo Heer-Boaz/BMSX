@@ -9,7 +9,7 @@ runtime or authored scene data. See
 
 ```sh
 npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
-  tests/lua/behavior_source_graph.test.ts tests/lua/behavior_tree_graph_view.test.ts \
+  tests/lua/behavior_source_graph.test.ts tests/lua/behavior_tree_graph_view.test.ts tests/lua/behavior_tree_membership.test.ts \
   tests/lua/workbench_tree_layout.test.ts tests/lua/workbench_graph.test.ts \
   tests/lua/editor_focus.test.ts
 ```
@@ -21,6 +21,8 @@ fake parser, second graph schema or generated game ROM. Tests cover:
 - ordered children, parallel roles, choice weights, attachments and blackboard;
 - a weighted link's **choice use**, distinct from its shared initializer/child;
 - partial membership and dynamic roots without fabricated ordered endpoints;
+- local list evidence independent from descendant warnings: opaque builders do
+  not hide known children/choices, wrapper weights or attachment slot counts;
 - source-backed node/edge selection, hidden edits, removal, Undo and pan anchors;
 - variable-width/height tidy layout, asymmetry and a 10,000-level iterative tree;
 - shared retained geometry, clipping, pointer capture and focus/input lifecycle.
@@ -57,8 +59,19 @@ presentation leaves its fixture in the unsaved text model. It never installs a
 fixture cartridge. Captures show the expanded weighted fixture at 384×288 with
 the actual IDE tiny font, not a mock drawing or a screenshot of a game BT.
 
+`studio_bt_membership.ts` installs `behavior_membership_fixture.ts` in the same
+paused textmodel and tests known sibling slots around opaque builders, a nested
+unknown list, weighted connection versus child/weight Source, held pointer,
+keyboard/controller navigation, hidden UTF-16 edits, Undo and retained idle
+geometry. The capture points are `STUDIO: BT partial children ready for visual
+inspection` and `STUDIO: BT partial choices ready for visual inspection`.
+The independent `behavior_tree_membership.test.ts` tests also retain original
+list constructor/issues, alias identity, known mutation and numeric/computed
+keys. `fsm_hot_resume.test.ts` runs that exact authored source on its existing
+real BLua/cartlib CPU harness; the opaque builders execute there, not in the IDE.
+
 The full Studio suite also checks the ordinary Scene Editor, FSM graph,
-ActionEffect outline, focus, source save, pause/rewind/Hot Resume, reboot and Scenario Lab.
+ActionEffect inspector, focus, source save, pause/rewind/Hot Resume, reboot and Scenario Lab.
 Expected negative guest-fault cases retain their existing fault gate. A passing
 build alone is not evidence for these workflows or physical-device performance.
 
@@ -80,7 +93,9 @@ npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
 The profile measures source recognition on already-built semantic data, source-
 to-card projection, tidy placement plus routes, hit testing and warm overlay
 emission plus quad-stream conversion **separately**. It uses 24 and 1,024 shared
-subtree uses, fully expanded (74 and 3,074 cards). Cold phases have 10 warmups
+subtree uses, fully expanded (74 and 3,074 cards), each with complete source and
+with an opaque child. Both shapes retain all those cards; a descendant warning
+must not collapse the enclosing membership. Cold phases have 10 warmups
 and 25 median samples; warm phases have 1,000 operations per sample. Font
 measurement count and quad-backing identity are checked after draw warmup.
 This excludes parsing, GPU upload/raster and total Studio frame time; it is not

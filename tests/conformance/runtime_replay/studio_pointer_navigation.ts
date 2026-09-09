@@ -9,6 +9,7 @@ import { resolveRuntimeResource } from '../../../ide/runtime/sources';
 import { chooseBehavior, revealLensOccurrence } from './studio_behavior_picker';
 import { check, type StudioFixture } from './studio_fixture';
 import { testStudioBehaviorSourceGraph } from './studio_behavior_source';
+import { testStudioBtMembership } from './studio_bt_membership';
 import { testStudioFsmSource } from './studio_fsm_source';
 import { testStudioActionEffectSource } from './studio_actioneffect_source';
 import { testStudioFsmSelection } from './studio_fsm_selection';
@@ -143,6 +144,7 @@ export async function runStudioPointerNavigation(test: StudioFixture, cart: Navi
 	await test.runMenuCommand('pause');
 	await testStudioPointerNavigation(test, cart);
 	await testStudioBehaviorSourceGraph(test);
+	await testStudioBtMembership(test);
 	await testStudioFsmSource(test);
 	await testStudioActionEffectSource(test);
 	await testStudioFsmSelection(test);
