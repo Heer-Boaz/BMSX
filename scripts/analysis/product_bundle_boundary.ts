@@ -51,11 +51,11 @@ export function assertPlayerBundleBoundary(
 	}
 }
 
-/** A promise around a UI-thread ELK engine is not a browser worker. */
-export function assertStudioBundleBoundary(inputs: Readonly<Record<string, unknown>>): void {
+/** Layout algorithms belong to a worker asset, not the Studio main thread. */
+export function assertStudioBundleBoundary(product: string, inputs: Readonly<Record<string, unknown>>): void {
 	for (const inputPath of Object.keys(inputs)) {
 		if (repositoryPath(inputPath).startsWith('node_modules/elkjs/')) {
-			throw new Error(`Browser Studio UI includes worker-only layout code: ${inputPath}`);
+			throw new Error(`${product} includes worker-only layout code: ${inputPath}`);
 		}
 	}
 }

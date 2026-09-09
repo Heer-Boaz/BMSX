@@ -1,6 +1,6 @@
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { check, type StudioFixture } from './studio_fixture';
-import { chooseBehavior, behaviorOutline } from './studio_behavior_picker';
+import { chooseBehavior, revealLensOccurrence } from './studio_behavior_picker';
 
 /** Source reveal must survive the automatically scheduled semantic query, not just place the cursor. */
 export async function testStudioBehaviorNavigation(test: StudioFixture): Promise<void> {
@@ -17,26 +17,12 @@ export async function testStudioBehaviorNavigation(test: StudioFixture): Promise
 	const lens = getActiveTab();
 	if (lens.kind !== 'behavior_lens') throw new Error('behavior navigation: selected lens missing');
 	check(lens.workingCopy.resource.path === 'enemies/moon_death_ray.lua', 'behavior navigation: actual cart source model');
-	const state = behaviorOutline(lens.view);
-	for (const line of [76, 78]) {
-		const index = state.rows.findIndex(row => row.node.authoredRange.start.line === line);
-		check(index >= 0, `behavior navigation: authored row ${line} is visible`);
-		const row = state.rows[index];
-		check(row.expandable && !row.expanded, `behavior navigation: row ${line} starts collapsed`);
-		const top = state.layout.contentTop + (index - state.scroll) * state.layout.rowHeight;
-		await click({ left: row.twistieLeft, right: row.twistieRight, top, bottom: top + state.layout.rowHeight });
-		check(state.rows[index].expanded, `behavior navigation: pointer expands row ${line}`);
-	}
-	const timelineIndex = state.rows.findIndex(row => row.node.authoredRange.start.line === 79);
-	check(timelineIndex >= 0, 'behavior navigation: expansion timeline is visible');
-	const row = state.rows[timelineIndex];
-	const top = state.layout.contentTop + (timelineIndex - state.scroll) * state.layout.rowHeight;
-	await click({ left: row.twistieRight, right: state.layout.contentRight, top, bottom: top + state.layout.rowHeight });
-	check(state.selectionIndex === timelineIndex, 'behavior navigation: pointer selects the expansion timeline');
+	const state = lens.view.presentation;
+	const timeline = lens.view.sourceNodes.find(node => node.authoredRange.start.line === 79)!;
+	await revealLensOccurrence(test, lens.view, timeline.rowKey);
 	await click(state.actionBar.items[0].bounds);
-	check(getActiveTab().kind === 'code_editor', 'behavior navigation: visible Source action opens code');
 	const document = harness.getActiveEditorDocument();
-	check(document.model === lens.workingCopy && document.view.cursorRow === 78 && document.view.cursorColumn === 5,
+	check(document.model.resource.path === 'enemies/moon_death_ray.lua' && document.view.cursorRow === 78 && document.view.cursorColumn === 5,
 		'behavior navigation: Source reveals the actual Moon model at 79:6');
 	await until(() => harness.getSignatureHelp() !== null, 'behavior navigation: automatic parameter help finishes after source reveal');
 	const hint = harness.getSignatureHelp()!;

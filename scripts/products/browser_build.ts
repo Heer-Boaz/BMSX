@@ -132,14 +132,14 @@ export async function buildBrowserStudio(options: BrowserProductBuildOptions): P
 	await ensureBrowserOutputDirectories();
 	const romPath = `./rom/${filename}`;
 	const inputs = await buildBrowserBundle('./ide/browser/studio.ts', romPath, options.debug, 'iife');
-	assertStudioBundleBoundary(inputs);
+	assertStudioBundleBoundary('Browser Studio UI', inputs);
 	await copyFile(romPath, distPath);
 	// Standalone worker asset: the layout engine must not enter the Studio UI bundle.
 	await copyFile('./node_modules/elkjs/lib/elk-worker.min.js', './rom/graph-layout.worker.js');
 	await copyFile('./rom/graph-layout.worker.js', workerPath);
 	for (const directory of ['./rom', './dist']) {
 		await copyFile('./node_modules/elkjs/LICENSE.md', `${directory}/elkjs.LICENSE.txt`);
-		await copyFile('./ide/browser/third_party_notices.md', `${directory}/studio.THIRD_PARTY_NOTICES.txt`);
+		await copyFile('./ide/common/third_party_notices.md', `${directory}/studio.THIRD_PARTY_NOTICES.txt`);
 	}
 }
 

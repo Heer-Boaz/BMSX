@@ -1,4 +1,5 @@
 import { create_rect_bounds, point_in_rect, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
+import { clamp } from '../../../../machine/ts/common/clamp';
 import type { WorkbenchGraphItem, WorkbenchGraphModel } from './model';
 
 export const GRAPH_EDGE_HIT_RADIUS = 3;
@@ -29,6 +30,18 @@ export class WorkbenchGraphViewport<Model extends WorkbenchGraphModel = Workbenc
 	public pan(deltaX: number, deltaY: number): void {
 		this.scrollX += deltaX;
 		this.scrollY += deltaY;
+	}
+
+	/** Roving diagram selection follows retained node/edge order, independent of topology. */
+	public selectRelative(direction: 1 | -1): void {
+		const { nodes, edges } = this.model;
+		const count = nodes.length + edges.length;
+		if (count === 0) return;
+		const selected = this.selection;
+		const index = selected === null ? (direction === 1 ? -1 : count)
+			: selected.kind === 'node' ? nodes.indexOf(selected) : nodes.length + edges.indexOf(selected);
+		const next = clamp(index + direction, 0, count - 1);
+		this.selection = next < nodes.length ? nodes[next] : edges[next - nodes.length];
 	}
 
 	public reveal(item: WorkbenchGraphItem): void {

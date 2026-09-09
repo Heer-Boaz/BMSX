@@ -33,7 +33,7 @@ function fixture(source = FSM_PROOF_SOURCE) {
 }
 
 function outcomes(f: ReturnType<typeof fixture>, slot = 'update', use = 0) {
-	return [...f.view.stateMachineReferences.values()].filter(references => references[0].kind === 'state-outcome'
+	return [...f.view.stateMachines.references.values()].filter(references => references[0].kind === 'state-outcome'
 		&& references[0].transition.slot.kind === slot)[use];
 }
 
@@ -225,7 +225,7 @@ test('direct evidence points at the binding use, not its const initializer, and 
 
 test('explicit entry identity uses its declaring owner and role, not the parent origin or child label', () => {
 	const f = fixture();
-	const references = [...f.view.stateMachineReferences.values()].find(items => items.length === 2 && items.every(item => item.kind === 'state-entry'))!;
+	const references = [...f.view.stateMachines.references.values()].find(items => items.length === 2 && items.every(item => item.kind === 'state-entry'))!;
 	const concurrent = references.find(item => item.kind === 'state-entry' && item.entry.kind === 'concurrent')!;
 	assert.ok(concurrent.kind === 'state-entry');
 	assert.notEqual(concurrent.entry.owner, concurrent.entry.origin);
@@ -246,7 +246,7 @@ test('explicit entry identity uses its declaring owner and role, not the parent 
 
 test('an explicit initial field keeps its own evidence when a longer target is edited and undone', () => {
 	const f = fixture();
-	const initial = [...f.view.stateMachineReferences.values()].flat().find(reference => reference.kind === 'state-entry'
+	const initial = [...f.view.stateMachines.references.values()].flat().find(reference => reference.kind === 'state-entry'
 		&& reference.entry.kind === 'initial' && readLuaSourceRange(f.model.buffer, reference.field.value.range) === "'idle'")!;
 	assert.ok(initial.kind === 'state-entry');
 	f.choose(initial);

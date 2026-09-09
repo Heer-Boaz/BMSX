@@ -1,3 +1,4 @@
+import type { GraphLayoutEngineFactory } from './services/graph_layout/engine';
 import type { HostRewind } from '../../hosts/common/rewind';
 import type { HostExecutionControl } from '../../hosts/common/execution_control';
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
@@ -59,6 +60,7 @@ export async function initializeIdeFeatures(
 	resourcePanelWidthRatio: number,
 	viewport: Viewport,
 	sources: RuntimeSourceState,
+	createGraphLayoutEngine: GraphLayoutEngineFactory,
 ): Promise<RuntimeIdeState> {
 	constants.setIdeThemeVariant(constants.DEFAULT_THEME);
 	const editorAvailable = runtimeSourcesSupportIde(sources);
@@ -96,6 +98,7 @@ export async function initializeIdeFeatures(
 		resourcePanelWidthRatio,
 		viewport,
 		sources,
+		createGraphLayoutEngine,
 	);
 	seedDefaultLuaBuiltins();
 	updateGamePipelineExts(state.editor, state.overlayRenderer, audioOutput);

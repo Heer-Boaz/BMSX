@@ -33,14 +33,14 @@ Chromium uses SwiftShader for the accelerated API paths in this headless test.
   with the geometry. GPU validation errors fail the run.
 - Screenshots are written to the supplied directory (default: ignored local
   `screenshots/`). These deliberately clipped geometry fixtures do not prove
-  the readability of a future BT/FSM layout.
+  the readability of a concrete BT/FSM layout; those have separate Studio tests.
 
 ## Compound layout prerequisite
 
 The same browser command also runs `compound.ts` with the unmodified **elkjs
 0.12.0** Worker packaged as `dist/graph-layout.worker.js` by the product builder.
-The production `BrowserGraphLayoutEngine` consumes its existing protocol and
-owns pending replies/error/termination. Tests no longer serve a separate engine
+The production `BrowserGraphLayoutEngine` owns native errors/termination and
+uses the shared `GraphLayoutRequests` protocol owner for pending replies. Tests no longer serve a separate engine
 from `node_modules`. The product build gate rejects ELK inside the Studio UI
 bundle. The input/render loop advances during layout; ordinary retained draw/hit
 needs no worker. This geometry probe terminates its engine after completion.
@@ -89,13 +89,13 @@ reset. `editor_panes.test.ts` also exercises the real last-tab-close route and
 asserts that the pane is detached *before* disposal, including reopening its
 retained entry context.
 
-These close the **layout/render and lifetime boundaries**, not
-`STUDIO-FSM-GRAPH-VIEW-01`. The concrete FSM outline is unchanged. Its source
-contribution must still connect source/definition/font changes to the session
-and implement per-return-proof correspondence before switching that view.
-No callback, source AST, cart ABI or graph-authoring model crosses the layout
-engine boundary. Node geometry tests are still explicitly in-process; the
-future headless IDE contribution is not inferred from the browser fixture.
+These tests prove the **layout/render and lifetime boundaries**. The concrete
+FSM contribution now connects source/definition/font changes and per-return
+selection to the same session; its separate integration proof is documented in
+[`behavior_graph/README.md`](../behavior_graph/README.md). No callback, source
+AST, cart ABI or graph-authoring model crosses the layout engine boundary.
+Node geometry tests remain explicitly in-process; actual headless Studio uses
+a native thread and a separately bundled worker asset, with its own tests.
 
 The existing full Studio runner additionally exercises capture interruption
 through the **actual** dispatcher and Command Palette in

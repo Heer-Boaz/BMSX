@@ -9,9 +9,10 @@ import {
 	layoutWorkbenchList,
 } from '../../ui/list_view';
 import type { BehaviorKind, BehaviorSourceDocument, BehaviorSourceNode, BehaviorSourceRowKey } from './model';
-import { createBehaviorLensGraph, createBehaviorLensOutline, type BehaviorLensLayout, type BehaviorLensViewState, type BehaviorLensOutline } from './view_model';
+import { createBehaviorLensGraph, createBehaviorLensOutline, createBehaviorLensStateGraph, type BehaviorLensLayout, type BehaviorLensViewState, type BehaviorLensOutline } from './view_model';
 import { prepareBehaviorGraphLayout } from './graph_layout';
-import { indexStateMachineSourceReferences } from './state_machine_selection';
+import { indexStateMachineSource } from './state_machine_index';
+import { stateGraphSelection } from './state_graph_navigation';
 
 import { layoutWorkbenchActionBar } from '../../ui/action_bar';
 
@@ -46,9 +47,9 @@ export function installBehaviorLensDocument(
 	buffer: TextBuffer,
 ): void {
 	state.selection = reconcileBehaviorLensSource(state, document, buffer);
-	state.stateMachineReferences = indexStateMachineSourceReferences(document);
+	state.stateMachines = indexStateMachineSource(document);
 	state.headerDirty = true;
-	if (state.presentation.kind === 'graph') state.presentation.dirty = true;
+	if (state.presentation.kind !== 'outline') state.presentation.dirty = true;
 	else {
 		rebuildBehaviorLensRows(state, state.presentation);
 		state.presentation.rowsDirty = false;
@@ -72,6 +73,13 @@ export function selectBehaviorLensDefinition(state: BehaviorLensViewState, key: 
 		}
 	} else if (definition.behaviorKind === 'behavior_tree') {
 		state.presentation = createBehaviorLensGraph();
+	} else if (definition.behaviorKind === 'state_machine') {
+		if (state.presentation.kind !== 'state-graph') state.presentation = createBehaviorLensStateGraph();
+		else if (previousKey !== key) {
+			state.presentation.dirty = true;
+			state.presentation.initialPosition = true;
+		}
+		else state.presentation.viewport.selection = stateGraphSelection(state.presentation.viewport.model, state.selection);
 	} else if (state.presentation.kind === 'outline') {
 		state.presentation.selectionIndex = findVisibleRowIndex(state.presentation, key);
 	} else state.presentation = createBehaviorLensOutline();
@@ -100,6 +108,7 @@ export function prepareBehaviorLensLayout(state: BehaviorLensViewState): Behavio
 		prepareBehaviorGraphLayout(state, presentation, editorViewState.font.renderFont());
 		return layout;
 	}
+	if (presentation.kind === 'state-graph') return layout;
 	if (presentation.rowsDirty) {
 		rebuildBehaviorLensRows(state, presentation);
 		presentation.rowsDirty = false;

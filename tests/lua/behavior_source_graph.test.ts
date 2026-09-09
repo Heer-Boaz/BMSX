@@ -1,3 +1,6 @@
+import { Worker } from 'node:worker_threads';
+import { resolve } from 'node:path';
+import { NodeGraphLayoutEngine } from '../../ide/node/graph_layout';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
@@ -20,7 +23,7 @@ function fixture(source = BEHAVIOR_SOURCE_FIXTURE) {
 		source: { resid: 'behavior_fixture', type: 'lua', source_path: 'behavior_fixture.lua', generated: false },
 	}, 'lua', source);
 	const project = () => buildBehaviorSourceDocument(model.resource, buildLuaFileSemanticData(model.buffer.getText(), model.resource.path));
-	const input = new BehaviorLensInput(model, createBehaviorLensViewState(project(), model, 'outline'));
+	const input = new BehaviorLensInput(model, createBehaviorLensViewState(project(), model, 'outline'), () => new NodeGraphLayoutEngine(new Worker(resolve('ide/node/graph_layout_worker.cjs'))));
 	model.onDidChangeContent(event => mapBehaviorLensSourceRanges(input.view, event.changes));
 	assert.ok(input.view.presentation.kind === 'outline');
 	return { model, input, view: input.view, outline: input.view.presentation, refresh() {

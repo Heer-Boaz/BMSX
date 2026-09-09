@@ -7,7 +7,7 @@ import type { BehaviorLensViewState } from '../../../ide/workbench/contrib/behav
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { FSM_PROOF_SOURCE } from '../../helpers/fsm_source_fixture';
-import { behaviorOutline, revealLensOccurrence } from './studio_behavior_picker';
+import { revealLensOccurrence } from './studio_behavior_picker';
 import { check, type StudioFixture } from './studio_fixture';
 
 function selectedProof(view: BehaviorLensViewState) {
@@ -36,12 +36,13 @@ export async function testStudioFsmSelection(test: StudioFixture): Promise<void>
 	const lens = getActiveTab();
 	if (lens.kind !== 'behavior_lens') throw new Error('FSM proof: expected the real source input');
 	const view = lens.view;
-	const outline = behaviorOutline(view);
+	const graph = view.presentation;
+	if (graph.kind !== 'state-graph') throw new Error('FSM proof: expected the concrete state graph');
 	const definition = view.document.definitions[0];
 	if (definition.behaviorKind !== 'state_machine') throw new Error('FSM proof: expected the authored machine');
 	const right = definition.transitions.filter(transition => transition.slot.kind === 'update')[1];
 	await revealLensOccurrence(test, view, right.slot.source.rowKey);
-	await click(outline.actionBar.items[1].bounds);
+	await click(graph.actionBar.items[1].bounds);
 	check(picker.visible && picker.title === 'FSM SOURCE EVIDENCE', 'FSM proof: shared Details action opens its own source choices');
 	clipboard.text = 'return next_path';
 	await press('ControlLeft', 'KeyV');
@@ -59,6 +60,15 @@ export async function testStudioFsmSelection(test: StudioFixture): Promise<void>
 		'FSM proof: held picker acceptance opens the second return, not the binding, initializer or a dragged code selection');
 	check(selectedProof(view).transition === right && selectedProof(view).outcome === right.outcomes[1],
 		'FSM proof: the same callback return remains scoped to its right-hand use');
+	check(graph.viewport.selection?.kind === 'edge'
+		&& graph.viewport.selection.link.reference.kind === 'state-outcome'
+		&& graph.viewport.selection.link.reference.outcome === right.outcomes[1],
+		'FSM proof: Details selects the exact geometric proof, not the previously highlighted state');
+	const selectedGeometry = graph.viewport.model;
+	await click(editorChromeState.tabButtonBounds.get(lens.id)!);
+	check(graph.viewport.model === selectedGeometry && graph.viewport.selection?.kind === 'edge',
+		'FSM proof: returning from source reveals that proof without relayout');
+	await click(graph.actionBar.items[0].bounds);
 	const oldDocument = view.document;
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- 🐉 shifted evidence\n' }]);
 	model.pushEditOperations([{ offset: model.buffer.getText().indexOf('\tif owner.again'), deleteLength: 0,
@@ -67,7 +77,7 @@ export async function testStudioFsmSelection(test: StudioFixture): Promise<void>
 	check(view.document === oldDocument, 'FSM proof: hidden input maps evidence without rebuilding source');
 	await click(editorChromeState.tabButtonBounds.get(lens.id)!);
 	check(selectedProof(view).outcome === selectedProof(view).transition.outcomes[2], 'FSM proof: correspondence follows the old return past a newly inserted identical return');
-	await click(outline.actionBar.items[0].bounds, 6);
+	await click(graph.actionBar.items[0].bounds, 6);
 	check(activeCodeEditor.view.cursorRow === 6 && !hasSelection(), 'FSM proof: Source consumes current parsed evidence after UTF-16 edits');
 	await press('ControlLeft', 'KeyZ');
 	await click(editorChromeState.tabButtonBounds.get(lens.id)!);
@@ -80,12 +90,12 @@ export async function testStudioFsmSelection(test: StudioFixture): Promise<void>
 	await frame();
 	model.undo();
 	await frame();
-	await click(outline.actionBar.items[0].bounds);
+	await click(graph.actionBar.items[0].bounds);
 	const span = luaSourceRangeToTextRange(model.buffer, selectedBehaviorLensSourceRange(view)!);
 	model.pushEditOperations([{ offset: span.start, deleteLength: span.end - span.start, text: '' }]);
 	model.undo();
 	await click(editorChromeState.tabButtonBounds.get(lens.id)!);
-	check(view.selection === null && outline.selectionIndex === -1,
+	check(view.selection === null && view.presentation.kind === 'state-graph' && view.presentation.viewport.selection === null,
 		'FSM proof: deleting and undoing the selected return while hidden cannot select its namesake');
 	await click(editorChromeState.tabButtonBounds.get(code.id)!);
 	await press('ControlLeft', 'KeyZ');

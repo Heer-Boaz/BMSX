@@ -1,3 +1,4 @@
+import { BrowserGraphLayoutEngine } from './graph_layout';
 import { HostExecutionControl } from '../../hosts/common/execution_control';
 import { HostRewind } from '../../hosts/common/rewind';
 import { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
@@ -89,6 +90,7 @@ async function startBrowserStudio(): Promise<void> {
 			new IdeMicrotaskQueue(),
 			options.logOutput,
 			defaultResourcePanelRatio(window.innerWidth / window.screen.width),
+			() => new BrowserGraphLayoutEngine(new Worker(new URL('./graph-layout.worker.js', document.baseURI))),
 		);
 		systemOutput.flush(runtime, options.logOutput);
 		audioOutput.bootstrap();

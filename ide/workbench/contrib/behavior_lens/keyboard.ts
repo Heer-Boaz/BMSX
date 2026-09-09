@@ -1,6 +1,6 @@
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 import { inputFocus } from '../../../input/focus';
-import { consumeIdeKey, isKeyJustPressed, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
+import { consumeIdeKey, isKeyJustPressed, shouldRepeatKeyFromPlayer, isShiftDown, isCtrlDown, isMetaDown, isAltDown } from '../../../input/keyboard/key_input';
 import type { BehaviorLensController } from './controller';
 import type { BehaviorLensViewState } from './view_model';
 
@@ -9,6 +9,12 @@ export function handleBehaviorLensKeyboardInput(
 	playerInput: PlayerInput,
 	controller: BehaviorLensController,
 ): boolean {
+	if (view.presentation.kind === 'state-graph' && isKeyJustPressed('Tab', playerInput)
+		&& !isCtrlDown(playerInput) && !isMetaDown(playerInput) && !isAltDown(playerInput)) {
+		consumeIdeKey('Tab', playerInput);
+		controller.executeNavigation(view, isShiftDown(playerInput) ? 'previous' : 'next');
+		return true;
+	}
 	if (shouldRepeatKeyFromPlayer('ArrowUp', playerInput)) {
 		consumeIdeKey('ArrowUp', playerInput);
 		controller.executeNavigation(view, 'up');
@@ -78,12 +84,12 @@ export function handleBehaviorLensGamepadInput(
 	}
 	if (playerInput.controlButtonRepeatEdge('up', 'gamepad')) {
 		gamepad.consumeButton('up');
-		controller.executeNavigation(view, 'up');
+		controller.executeNavigation(view, view.presentation.kind === 'state-graph' ? 'previous' : 'up');
 		return true;
 	}
 	if (playerInput.controlButtonRepeatEdge('down', 'gamepad')) {
 		gamepad.consumeButton('down');
-		controller.executeNavigation(view, 'down');
+		controller.executeNavigation(view, view.presentation.kind === 'state-graph' ? 'next' : 'down');
 		return true;
 	}
 	if (playerInput.controlButtonRepeatEdge('left', 'gamepad')) {

@@ -23,7 +23,6 @@ import {
 	executeBehaviorLensNavigation,
 	finishBehaviorLensNavigation,
 	selectedBehaviorLensSourceRange,
-	updateBehaviorLensStatus,
 	type BehaviorLensNavigationCommand,
 } from './navigation';
 import { buildBehaviorSourceDocument } from './recognizer';
@@ -32,8 +31,11 @@ import type { BehaviorRegistrationIndex } from './registration_index';
 import { toggleBehaviorGraphBranch } from './graph_navigation';
 import { buildBehaviorQuickPickItems } from './quick_access';
 import { createBehaviorLensViewState, type BehaviorLensViewState } from './view_model';
-import { buildStateMachineSourceDetails } from './state_machine_details';
 import { selectStateMachineSource } from './state_machine_selection';
+import { editorViewState } from '../../../editor/ui/view/state';
+import type { GraphLayoutEngineFactory } from '../../services/graph_layout/engine';
+import { acceptStateGraphSelection, stateGraphSelection } from './state_graph_navigation';
+import { buildStateMachineDetails } from './state_machine_details';
 
 const PICKER_TITLES: Readonly<Record<BehaviorKind, string>> = {
 	action_effect: 'ACTIONEFFECTS',
@@ -49,6 +51,7 @@ export class BehaviorLensController {
 		private readonly editorPanes: EditorPanes,
 		private readonly quickInput: QuickInputController,
 		private readonly registrations: BehaviorRegistrationIndex,
+		private readonly createGraphLayoutEngine: GraphLayoutEngineFactory,
 	) {}
 
 	public open(kind: BehaviorKind | null = null): void {
@@ -68,16 +71,19 @@ export class BehaviorLensController {
 			tab = new BehaviorLensInput(
 				model,
 				createBehaviorLensViewState(document, model, registration.behaviorKind === 'behavior_tree' ? 'graph' : 'outline'),
+				this.createGraphLayoutEngine,
 			);
 			editorTabGroup.add(tab);
 		} else {
 			this.updateView(tab);
 		}
 		const view = tab.view;
+		if (view.definitionRowKey !== registration.rowKey) tab.invalidateGraph();
 		selectBehaviorLensDefinition(view, registration.rowKey);
 		view.sourceMatchRowKeys.clear();
 		view.sourceMatchRowKeys.add(registration.rowKey);
 		prepareBehaviorLensLayout(view);
+		tab.updateGraph(editorViewState.font.renderFont());
 		finishBehaviorLensNavigation(view);
 		setActiveTab(this.editorPanes, tab.id);
 	}
@@ -85,12 +91,14 @@ export class BehaviorLensController {
 	/** Refreshes a visible source lens when its canonical code buffer advances. */
 	public updateView(input: BehaviorLensInput): void {
 		const { view, workingCopy } = input;
-		if (workingCopy.version !== view.sourceVersion) {
+		const sourceChanged = workingCopy.version !== view.sourceVersion;
+		if (sourceChanged) {
 			installBehaviorLensDocument(view, this.buildDocument(view.resource, getTextSnapshot(workingCopy.buffer)), workingCopy.buffer);
 			view.sourceVersion = workingCopy.version;
-			prepareBehaviorLensLayout(view);
-			finishBehaviorLensNavigation(view);
 		}
+		prepareBehaviorLensLayout(view);
+		input.updateGraph(editorViewState.font.renderFont());
+		if (sourceChanged) finishBehaviorLensNavigation(view);
 	}
 
 	public openSource(): void {
@@ -107,15 +115,17 @@ export class BehaviorLensController {
 		this.updateView(input);
 		const view = input.view;
 		if (view.selection === null) return;
-		const references = view.stateMachineReferences.get(view.selection.rowKey);
-		if (references !== undefined) {
-			this.quickInput.pick('FSM SOURCE EVIDENCE', 'Choose the binding, return or entry source', (_origin, disposables) => {
-				// An open source snapshot ends with its text generation. Never accept stale coordinates.
+		if (view.nodesByRowKey.get(view.selection.rowKey)!.behaviorKind === 'state_machine') {
+			this.quickInput.pick('FSM SOURCE EVIDENCE', 'Choose a field, return or entry source', (_origin, disposables) => {
 				disposables.add({ dispose: input.workingCopy.onDidChangeContent(() => this.quickInput.hide()) });
-				return buildStateMachineSourceDetails(references);
+				return buildStateMachineDetails(view);
 			}, detail => {
-				view.selection = selectStateMachineSource(detail.reference, input.workingCopy.buffer);
-				updateBehaviorLensStatus(view);
+				view.selection = detail.source.kind === 'node' ? detail.source : selectStateMachineSource(detail.source, input.workingCopy.buffer);
+				if (view.presentation.kind === 'state-graph') {
+					const viewport = view.presentation.viewport;
+					viewport.selection = stateGraphSelection(viewport.model, view.selection);
+				}
+				finishBehaviorLensNavigation(view);
 				this.openSelectedSource(view);
 			});
 			return;
@@ -155,6 +165,10 @@ export class BehaviorLensController {
 			return true;
 		}
 		if (result === BehaviorLensNavigationResult.Changed) {
+			if (view.presentation.kind === 'state-graph') {
+				const input = getActiveTab();
+				if (input.kind === 'behavior_lens') acceptStateGraphSelection(view, view.presentation, input.workingCopy.buffer);
+			}
 			finishBehaviorLensNavigation(view);
 			return true;
 		}
@@ -165,6 +179,7 @@ export class BehaviorLensController {
 		for (const input of editorTabGroup.tabs) {
 			if (input.kind === 'behavior_lens' && input.workingCopy === model) {
 				mapBehaviorLensSourceRanges(input.view, event.changes);
+				input.invalidateGraph();
 			}
 		}
 	}

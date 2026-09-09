@@ -1,3 +1,4 @@
+import type { GraphLayoutEngineFactory } from './workbench/services/graph_layout/engine';
 import { SceneEditorController } from './workbench/contrib/scene_editor/controller';
 import { QuickInputController } from './workbench/services/quick_input/controller';
 import { SceneEditorPane } from './workbench/contrib/scene_editor/editor_pane';
@@ -242,6 +243,7 @@ export class RuntimeCartEditor implements CartEditor {
 		overlayRenderer: OverlayRenderer,
 		scenarioTests: ScenarioTestCollection,
 		scenarioRuns: ScenarioRunService,
+		createGraphLayoutEngine: GraphLayoutEngineFactory,
 	) {
 		this.runtime = runtime;
 		this.presenter = presenter;
@@ -315,6 +317,7 @@ export class RuntimeCartEditor implements CartEditor {
 			this.editorPanes,
 			this.quickInput,
 			behaviorRegistrations,
+			createGraphLayoutEngine,
 		);
 		this.scenarioLab = new ScenarioLabController(
 			this,

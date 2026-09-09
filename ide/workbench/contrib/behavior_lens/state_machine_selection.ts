@@ -2,7 +2,7 @@ import type { LuaExpression, LuaSourceRange, LuaTableField } from '../../../../t
 import type { TextBuffer } from '../../../editor/text/text_buffer';
 import { mapTrackedTextRange, type EditorTextChange, type TrackedTextRange } from '../../../editor/text/text_change';
 import { luaSourcePositionMatchesTextRange, luaSourcePositionToTextRange, luaSourceRangeMatchesTextRange, luaSourceRangeToTextRange } from '../../../language/lua/source_edits';
-import type { BehaviorSourceDocument, BehaviorSourceRowKey } from './model';
+import type { BehaviorSourceRowKey } from './model';
 import type { StateMachineSourceDefinition, StateMachineSourceEntry, StateMachineSourceOutcome, StateMachineSourceTransition } from './state_machine_model';
 
 /** A source-generation reference, never an edge ordinal or an endpoint pair. */
@@ -33,25 +33,6 @@ export type StateMachineSourceSelection = (Extract<StateMachineSourceReference, 
 }) | (Extract<StateMachineSourceReference, { kind: 'state-entry' }> & {
 	readonly tracked: TrackedTextRange;
 });
-
-/** Cold source index for commands and projections; no search during menu painting. */
-export function indexStateMachineSourceReferences(document: BehaviorSourceDocument): ReadonlyMap<BehaviorSourceRowKey, readonly StateMachineSourceReference[]> {
-	const references = new Map<BehaviorSourceRowKey, StateMachineSourceReference[]>();
-	for (const definition of document.definitions) {
-		if (definition.behaviorKind !== 'state_machine') continue;
-		for (const entry of definition.entries) {
-			if (entry.field === null) continue; // Implicit runtime entry has no authored field to select.
-			let items = references.get(entry.owner);
-			if (items === undefined) { items = []; references.set(entry.owner, items); }
-			items.push({ kind: 'state-entry', rowKey: entry.owner, entry, field: entry.field });
-		}
-		for (const transition of definition.transitions) {
-			const rowKey = transition.slot.source.rowKey;
-			references.set(rowKey, transition.outcomes.map(outcome => ({ kind: 'state-outcome', rowKey, transition, outcome })));
-		}
-	}
-	return references;
-}
 
 /** Only the selected evidence is tracked, not every possible edge in the document. */
 export function selectStateMachineSource(reference: StateMachineSourceReference, buffer: TextBuffer): StateMachineSourceSelection {

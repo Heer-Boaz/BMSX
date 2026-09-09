@@ -1,3 +1,4 @@
+import type { GraphLayoutEngineFactory } from './services/graph_layout/engine';
 import { updateGamePipelineExts } from './overlay_modes';
 import type { HostRewind } from '../../hosts/common/rewind';
 import type { HostExecutionControl } from '../../hosts/common/execution_control';
@@ -37,6 +38,7 @@ export async function prepareWorkbenchRuntime(
 	microtasks: MicrotaskQueue,
 	logOutput: LogOutput,
 	resourcePanelWidthRatio: number,
+	createGraphLayoutEngine: GraphLayoutEngineFactory,
 ): Promise<RuntimeIdeState> {
 	const media = await loadRomToolingMedia(
 		systemRom,
@@ -64,6 +66,7 @@ export async function prepareWorkbenchRuntime(
 		resourcePanelWidthRatio,
 		{ width: viewport.x, height: viewport.y },
 		sources,
+		createGraphLayoutEngine,
 	);
 	ide.editor.onDidChangeActive(active => {
 		if (active) hostMenu.dismiss();

@@ -1,9 +1,9 @@
-import { access, mkdir } from 'node:fs/promises';
+import { access, copyFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { build, type BuildOptions } from 'esbuild';
 
-import { assertPlayerBundleBoundary } from '../analysis/product_bundle_boundary';
+import { assertPlayerBundleBoundary, assertStudioBundleBoundary } from '../analysis/product_bundle_boundary';
 import { productNeedsRebuild } from './rebuild';
 import {
 	javascriptProductFilename,
@@ -26,6 +26,7 @@ const NODE_PLAYER_SOURCE_ROOTS = [
 const NODE_TOOLING_SOURCE_ROOTS = [
 	'hosts/node',
 	'ide',
+	'package-lock.json',
 	'machine/ts',
 	'runtime',
 	'scripts/bootrom',
@@ -92,15 +93,21 @@ export async function buildNodeHeadlessTooling(options: NodeProductBuildOptions)
 		'dist',
 		javascriptProductFilename('node-headless-tooling', options.debug),
 	);
-	if (!options.force && !await productNeedsRebuild(outPath, NODE_TOOLING_SOURCE_ROOTS)) {
+	if (!options.force && !await productNeedsRebuild(outPath, NODE_TOOLING_SOURCE_ROOTS)
+		&& !await productNeedsRebuild('dist/graph-layout.node-worker.cjs', ['ide/node/graph_layout_worker.cjs', 'package-lock.json'])) {
 		return;
 	}
 
 	await mkdir(join(process.cwd(), 'dist'), { recursive: true });
-	await buildNodeBundle(
+	await build({ entryPoints: ['ide/node/graph_layout_worker.cjs'], outfile: 'dist/graph-layout.node-worker.cjs',
+		bundle: true, platform: 'node', target: 'node22', format: 'cjs', legalComments: 'eof' });
+	await copyFile('node_modules/elkjs/LICENSE.md', 'dist/elkjs.LICENSE.txt');
+	await copyFile('ide/common/third_party_notices.md', 'dist/studio.THIRD_PARTY_NOTICES.txt');
+	const inputs = await buildNodeBundle(
 		NODE_TOOLING_ENTRY_PATH,
 		outPath,
 		'headless',
 		options.debug,
 	);
+	assertStudioBundleBoundary('Node headless tooling', inputs);
 }

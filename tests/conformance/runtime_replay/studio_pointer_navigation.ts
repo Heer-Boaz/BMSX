@@ -1,3 +1,4 @@
+import { testStudioStateGraph } from './studio_state_graph';
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { queryDefinitionsAt } from '../../../ide/editor/contrib/definitions/query';
 import { editorViewState } from '../../../ide/editor/ui/view/state';
@@ -116,6 +117,10 @@ export async function testStudioPointerNavigation(test: StudioFixture, cart: Nav
 	await revealLensOccurrence(test, view, node.rowKey);
 	const presentation = view.presentation;
 	let bounds;
+	if (presentation.kind === 'state-graph') {
+		await click(presentation.actionBar.items[0].bounds, 6);
+		assertSourcePosition(spec.sourcePath, spec.sourceLine, spec.sourceColumn, `${cart} held FSM source action`);
+	} else {
 	if (presentation.kind === 'outline') {
 		const selected = presentation.rows[presentation.selectionIndex];
 		const top = presentation.layout.contentTop + (presentation.selectionIndex - presentation.scroll) * presentation.layout.rowHeight;
@@ -131,6 +136,7 @@ export async function testStudioPointerNavigation(test: StudioFixture, cart: Nav
 	await click(bounds);
 	await click(bounds, 6);
 	assertSourcePosition(spec.sourcePath, spec.sourceLine, spec.sourceColumn, `${cart} held lens double-click`);
+	}
 	check(model.buffer.getText() === original && cycles() === position && ide.sources.currentBlua32Media === media,
 		`${cart}: navigation changes neither source nor paused machine/media`);
 }
@@ -144,5 +150,6 @@ export async function runStudioPointerNavigation(test: StudioFixture, cart: Navi
 	await testStudioBehaviorSourceGraph(test);
 	await testStudioFsmSource(test);
 	await testStudioFsmSelection(test);
+	await testStudioStateGraph(test);
 	return { hostFrames: test.observations.hostFrames, selected: test.cycles() };
 }

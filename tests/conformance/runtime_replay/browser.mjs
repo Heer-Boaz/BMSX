@@ -23,6 +23,7 @@ for (const backend of studio ? ['software', 'webgl2', 'webgpu'] : ['webgpu']) {
 		await copyFile(bios, join(directory, 'bios.rom'));
 		await copyFile(cart, join(directory, 'cart.rom'));
 		if (studio) {
+			await copyFile('dist/graph-layout.worker.js', join(directory, 'graph-layout.worker.js'));
 			for (const root of [`carts/${navigation === null ? 'nemesis_s' : navigation}`, 'cartlib', 'machine/bios']) {
 				await cp(root, join(directory, root), { recursive: true,
 					filter: async path => (await stat(path)).isDirectory() || path.endsWith('.lua') || path.endsWith('.aem.yaml') });

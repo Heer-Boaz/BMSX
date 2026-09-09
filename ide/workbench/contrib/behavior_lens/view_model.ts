@@ -10,7 +10,10 @@ import type { BehaviorGraphModel } from './graph_model';
 import { createBehaviorLensLayout, installBehaviorLensDocument } from './layout';
 import type { BehaviorSourceDocument, BehaviorSourceNode, BehaviorSourceRowKey } from './model';
 import type { BehaviorSourceSelection } from './source_selection';
-import type { StateMachineSourceReference } from './state_machine_selection';
+import type { StateMachineSourceIndex } from './state_machine_index';
+import type { AsyncGraphLayoutState } from '../../services/graph_layout/async_layout';
+import type { StateGraphModel } from './state_graph_model';
+import { emptyStateGraph } from './state_graph_projection';
 
 export type BehaviorLensRow = {
 	readonly node: BehaviorSourceNode;
@@ -43,6 +46,18 @@ export type BehaviorLensGraph = {
 	initialPosition: boolean;
 };
 
+export type BehaviorLensStateGraph = {
+	readonly kind: 'state-graph';
+	readonly actionBar: WorkbenchActionBarState;
+	readonly viewport: WorkbenchGraphViewport<StateGraphModel>;
+	/** Reused non-interactive geometry while a source/font generation is not published. */
+	emptyModel: StateGraphModel;
+	/** The input publishes the session state during its normal update, never from a worker callback. */
+	layoutState: AsyncGraphLayoutState<StateGraphModel>;
+	dirty: boolean;
+	initialPosition: boolean;
+};
+
 /** Source selection belongs to the input, never to a visible list's row number. */
 export type BehaviorLensViewState = {
 	readonly resource: BehaviorSourceDocument['resource'];
@@ -50,14 +65,14 @@ export type BehaviorLensViewState = {
 	sourceVersion: number;
 	definitionRowKey: BehaviorSourceRowKey | null;
 	selection: BehaviorSourceSelection | null;
-	stateMachineReferences: ReadonlyMap<BehaviorSourceRowKey, readonly StateMachineSourceReference[]>;
+	stateMachines: StateMachineSourceIndex;
 	sourceRanges: Map<BehaviorSourceRowKey, TrackedTextRange>;
 	readonly sourceNodes: BehaviorSourceNode[];
 	readonly nodesByRowKey: Map<BehaviorSourceRowKey, BehaviorSourceNode>;
 	readonly parentRowKeyByRowKey: Map<BehaviorSourceRowKey, BehaviorSourceRowKey | null>;
 	readonly collapsedRowKeys: Set<BehaviorSourceRowKey>;
 	readonly sourceMatchRowKeys: Set<BehaviorSourceRowKey>;
-	presentation: BehaviorLensOutline | BehaviorLensGraph;
+	presentation: BehaviorLensOutline | BehaviorLensGraph | BehaviorLensStateGraph;
 	readonly layout: BehaviorLensLayout;
 	headerDirty: boolean;
 	readonly status: { info: string; detail: string };
@@ -76,6 +91,13 @@ export function createBehaviorLensGraph(): BehaviorLensGraph {
 		dirty: true, initialPosition: true };
 }
 
+export function createBehaviorLensStateGraph(): BehaviorLensStateGraph {
+	const emptyModel = emptyStateGraph(editorViewState.font.renderFont());
+	return { kind: 'state-graph', actionBar: createWorkbenchActionBar('behaviorLens.title'),
+		viewport: new WorkbenchGraphViewport(emptyModel), emptyModel,
+		layoutState: { kind: 'idle' }, dirty: true, initialPosition: true };
+}
+
 /** Input-owned source/view state; pixel layout is prepared only by the active pane. */
 export function createBehaviorLensViewState(document: BehaviorSourceDocument, model: EditorTextModel, presentation: 'outline' | 'graph'): BehaviorLensViewState {
 	const view: BehaviorLensViewState = {
@@ -84,7 +106,7 @@ export function createBehaviorLensViewState(document: BehaviorSourceDocument, mo
 		sourceVersion: model.version,
 		definitionRowKey: null,
 		selection: null,
-		stateMachineReferences: new Map(),
+		stateMachines: { bodies: new Map(), references: new Map() },
 		sourceRanges: new Map(),
 		sourceNodes: [],
 		nodesByRowKey: new Map(),

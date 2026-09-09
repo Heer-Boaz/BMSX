@@ -1,3 +1,4 @@
+import { BrowserGraphLayoutEngine } from '../../../ide/browser/graph_layout';
 import type { RectBounds } from '../../../machine/ts/common/rect';
 import { HostExecutionControl } from '../../../hosts/common/execution_control';
 import { BrowserVideoOutput } from '../../../hosts/browser/video_output';
@@ -58,7 +59,7 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 	const menu = new HostOverlayMenu(presenter, runtime, input, rewind, execution);
 	const clipboard = new BrowserClipboard();
 	const ide = await prepareWorkbenchRuntime(bios, [cart, null], runtime, presenter, display, input,
-		audio, tasks, execution, rewind, menu, localStorage, clock, clipboard, new IdeMicrotaskQueue(), log, 0.3);
+		audio, tasks, execution, rewind, menu, localStorage, clock, clipboard, new IdeMicrotaskQueue(), log, 0.3, () => new BrowserGraphLayoutEngine(new Worker('/graph-layout.worker.js')));
 	const output = new SystemOutputLog();
 	const harness = createHeadlessIdeHarness(ide, runtime, input, audio, localStorage, log);
 	const history = runtime.history;

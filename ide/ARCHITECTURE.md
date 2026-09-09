@@ -254,8 +254,10 @@ relative nodes and container-relative edge routes/labels become canvas geometry
 once, after routing. The shared renderer paints container bodies behind edges
 and opaque cards/headers above them; hit testing and reveal use the same header,
 label and arrow geometry. This does not flatten a statechart into a tree.
-The real-Worker conformance runs all three browser renderers. The current FSM
-still uses its outline. See `docs/behavior_graph_design.md`.
+The real-Worker conformance runs all three browser renderers. The concrete FSM
+uses this compound graph, while ActionEffect retains its outline. Canvas geometry
+is snapped once to the bitmap pixel grid at the ELK result boundary. See
+`docs/behavior_graph_design.md`.
 
 Editor inputs now own disposable resources. Group removal/reset disposes inputs;
 pane deactivation only detaches the reusable control. The last active input is
@@ -266,14 +268,34 @@ layout plus the newest pending factory, coalescing before projection/measurement
 Its explicit idle/pending/ready/failed/disposed state belongs to the input, not a
 callback that activates a pane. Invalidating revokes publication and waiting work;
 disposal also terminates the worker. Async failures are state, never empty success.
-`browser/graph_layout.ts` directly consumes the pinned upstream ELK worker protocol
-and owns pending replies, native worker faults and termination. Product packaging
-copies the unmodified worker with license/source notice. The bundle boundary
-rejects ELK code in the Studio UI and player; there is no UI-thread fallback,
+`services/graph_layout/worker_requests.ts` owns the pinned upstream ELK request
+protocol. `browser/graph_layout.ts` and `node/graph_layout.ts` own their native
+worker transports, faults and termination. The Node worker entry bridges the
+upstream in-process endpoint to `parentPort`, without an environment shim.
+Product packaging copies the browser worker unmodified and separately bundles
+the Node worker endpoint/bridge, with the upstream license/source notice. The bundle boundary
+rejects ELK code in browser/Node Studio main-thread bundles and players; there is no UI-thread fallback,
 second RPC protocol, GWT-error decoder or global environment shim.
-The concrete FSM contribution must still connect source/definition/font changes
-to this lifetime and establish per-return-proof correspondence before switching
-its presentation. The independent conformance input is not that feature.
+`BehaviorLensInput` owns that session. Source changes revoke pending publication
+and old hit geometry immediately, including while hidden. Definition/font changes
+request a fresh measured generation; the active pane's normal update alone
+publishes it, never an async callback that activates/focuses a pane. A retained
+empty model represents pending/failed/removed geometry, not a successful layout.
+`state_machine_index.ts` indexes typed bodies and proof references per document.
+`state_graph_projection.ts` preserves state containment and emits a distinct edge
+per proven entry/return/direct outcome; maps key edges by the current proof object,
+not by a callback row or endpoint pair. Unknown/no-path outcomes stay explicit
+source evidence on the owning state and in Details, with no fictional endpoint.
+The common source correspondence remains authoritative through edits and Undo;
+a surviving proof that becomes `return nil` keeps source selection but has no
+geometric selection. Details enumerates owned source fields without descending
+into child states. Accepting a source choice selects/reveals the corresponding
+edge immediately, or clears geometric selection for a source-only field; it
+does not wait for an edit or relayout to remove the previous highlight.
+Graph Tab/Shift+Tab traverses nodes and edges; arrows pan.
+Gamepad up/down traverses, left/right pans, A opens Source and X opens Details.
+All these routes are focus-local, never gameplay shortcuts. FSM collapse/graph
+authoring and cross-file transition inference are not part of this slice.
 
 `behavior_lens/graph_projection.ts` projects typed source relationships into
 measured cards and source-backed links. `graph_geometry.ts` places the ordered

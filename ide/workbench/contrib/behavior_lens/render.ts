@@ -30,10 +30,13 @@ export function drawBehaviorLens(state: BehaviorLensViewState, commands: EditorC
 		renderFont,
 	);
 	const outline = state.presentation;
-	if (outline.kind === 'graph') {
+	if (outline.kind !== 'outline') {
 		drawWorkbenchGraph(outline.viewport, hover, focused);
 		if (outline.viewport.model.nodes.length === 0) {
-			api.blit_text_inline_with_font('DEFINITION REMOVED - CHOOSE A BEHAVIOR', layout.left + 4, layout.headerBottom + 8,
+			const message = outline.kind === 'state-graph' && outline.layoutState.kind === 'pending' ? 'LAYING OUT STATE MACHINE...'
+				: outline.kind === 'state-graph' && outline.layoutState.kind === 'failed' ? 'LAYOUT FAILED - SOURCE REMAINS AVAILABLE'
+					: 'DEFINITION REMOVED - CHOOSE A BEHAVIOR';
+			api.blit_text_inline_with_font(message, layout.left + 4, layout.headerBottom + 8,
 				0, constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM, renderFont);
 		}
 		return;

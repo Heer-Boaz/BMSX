@@ -1,3 +1,5 @@
+import { Worker } from 'node:worker_threads';
+import { NodeGraphLayoutEngine } from '../../../ide/node/graph_layout';
 import { HostExecutionControl } from '../../../hosts/common/execution_control';
 import { HostRewind } from '../../../hosts/common/rewind';
 import { RuntimeTaskQueue } from '../../../hosts/common/runtime_task_queue';
@@ -232,6 +234,7 @@ async function main(): Promise<void> {
 						microtasks,
 						logOutput,
 						RESOURCE_PANEL_DEFAULT_RATIO,
+						() => new NodeGraphLayoutEngine(new Worker(path.join(__dirname, 'graph-layout.node-worker.cjs'))),
 					);
 					systemOutput.flush(runtime, logOutput);
 					audioOutput.bootstrap();

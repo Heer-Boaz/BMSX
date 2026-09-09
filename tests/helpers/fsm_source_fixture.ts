@@ -103,3 +103,16 @@ local shared<const> = {
 machines.register('fixture.proofs', { initial = 'left', states = { left = shared, right = shared } })
 machines.register('fixture.proofs', shared)
 `;
+
+/** Two return proofs, a cycle and a self-loop for concrete diagram/pixel-grid evidence. */
+export const FSM_DIAGRAM_SOURCE = `local fsm<const> = require('cartlib/fsm/library')
+local choose<const> = function(actor)
+ if actor.ready then return '../active' end
+ if actor.test then return '../active' end
+ return nil
+end
+fsm.register('fixture.diagram', { initial = 'idle', states = {
+ idle = { update = choose },
+ active = { on = { again = '../active', reset = '../idle' } },
+}})
+`;

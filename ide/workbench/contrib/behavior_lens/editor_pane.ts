@@ -3,6 +3,7 @@ import { pointerCapture } from '../../../input/pointer/capture';
 import { WorkbenchGraphControl, WorkbenchGraphPointerResult } from '../../ui/graph/control';
 import { scrollWorkbenchList } from '../../ui/list_view';
 import { acceptBehaviorGraphSelection } from './graph_navigation';
+import { acceptStateGraphSelection } from './state_graph_navigation';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 import type { PointerSnapshot } from '../../../common/models';
 import { drawEditorText } from '../../../editor/render/text_renderer';
@@ -48,12 +49,11 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		this.pointer.cancel();
 		this.graph.clearInput();
 		this.controller.updateView(this.input);
-		prepareBehaviorLensLayout(this.input.view);
-		if (this.input.view.presentation.kind === 'graph') this.graph.setInput(this.input.view.presentation.viewport);
+		if (this.input.view.presentation.kind !== 'outline') this.graph.setInput(this.input.view.presentation.viewport);
 	}
 
 	public override focus(): void {
-		if (this.input.view.presentation.kind === 'graph') this.graph.focusTarget.focus();
+		if (this.input.view.presentation.kind !== 'outline') this.graph.focusTarget.focus();
 		else super.focus();
 	}
 
@@ -97,9 +97,12 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		if (justPressed) this.focus();
 		const view = this.input.view;
 		prepareBehaviorLensLayout(view);
-		if (view.presentation.kind === 'graph') {
+		if (view.presentation.kind !== 'outline') {
 			const result = this.graph.handlePointer(snapshot, justPressed, now);
-			if (justPressed && result !== WorkbenchGraphPointerResult.Outside) acceptBehaviorGraphSelection(view, view.presentation);
+			if (justPressed && result !== WorkbenchGraphPointerResult.Outside) {
+				if (view.presentation.kind === 'graph') acceptBehaviorGraphSelection(view, view.presentation);
+				else acceptStateGraphSelection(view, view.presentation, this.input.workingCopy.buffer);
+			}
 			if (result === WorkbenchGraphPointerResult.Activate) this.controller.openSource();
 			return result !== WorkbenchGraphPointerResult.Outside;
 		}
@@ -116,7 +119,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 	): void {
 		const view = this.input.view;
 		prepareBehaviorLensLayout(view);
-		if (view.presentation.kind === 'graph') {
+		if (view.presentation.kind !== 'outline') {
 			if (activePointer === null || !this.graph.handleWheel(activePointer, 0, direction * steps * 16)) return;
 		} else scrollWorkbenchList(view.presentation, direction * steps * 3);
 		playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');

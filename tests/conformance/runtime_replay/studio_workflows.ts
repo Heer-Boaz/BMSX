@@ -1,3 +1,4 @@
+import { testStudioStateGraph } from './studio_state_graph';
 import { testStudioCommandPalette } from './studio_command_palette';
 import { testStudioBehaviorNavigation } from './studio_behavior_navigation';
 import { testStudioBehaviorPicker } from './studio_behavior_picker';
@@ -320,6 +321,7 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	await testStudioBehaviorSourceGraph(test);
 	await testStudioFsmSource(test);
 	await testStudioFsmSelection(test);
+	await testStudioStateGraph(test);
 	await testStudioCommandPalette(test);
 	await testSceneMemberRemoval(test);
 	await testSceneMemberMoves(test);

@@ -152,6 +152,29 @@ test('reveal minimally scrolls into view and aligns oversized subjects instead o
 	assert.equal(view.scrollX, -26);
 });
 
+test('roving graph selection visits retained nodes and edges in both directions, including edge-only and empty models', () => {
+	const { view, a, b, edge, model } = fixture();
+	for (const expected of [a, b, edge, edge]) {
+		view.selectRelative(1);
+		assert.equal(view.selection, expected);
+	}
+	for (const expected of [b, a, a]) {
+		view.selectRelative(-1);
+		assert.equal(view.selection, expected);
+	}
+	view.selection = null;
+	view.selectRelative(-1);
+	assert.equal(view.selection, edge);
+	assert.equal(view.model, model, 'traversal does not rebuild geometry');
+	view.setModel(createWorkbenchGraphModel(font, [], [edge]), null);
+	view.selectRelative(1);
+	assert.equal(view.selection, edge);
+	view.setModel(createWorkbenchGraphModel(font, [], []), null);
+	view.selectRelative(-1);
+	view.selectRelative(1);
+	assert.equal(view.selection, null);
+});
+
 test('only a physical press begins a pan; capture can leave the control but cannot cross blur or attachment', () => {
 	const { view } = fixture();
 	const focus = new InputFocusService();

@@ -1,4 +1,5 @@
 import { executeBehaviorGraphNavigation } from './graph_navigation';
+import { executeStateGraphNavigation } from './state_graph_navigation';
 import { clamp } from '../../../../machine/ts/common/clamp';
 import type { LuaSourceRange } from '../../../../toolchain/ts/lua/syntax/ast';
 import {
@@ -10,6 +11,7 @@ import type { BehaviorLensOutline, BehaviorLensViewState } from './view_model';
 import { stateMachineSourceRange } from './state_machine_selection';
 
 export type BehaviorLensNavigationCommand =
+	| 'next' | 'previous'
 	| 'up'
 	| 'down'
 	| 'page-up'
@@ -35,6 +37,7 @@ export function executeBehaviorLensNavigation(
 ): BehaviorLensNavigationResult {
 	const outline = state.presentation;
 	if (outline.kind === 'graph') return executeBehaviorGraphNavigation(state, outline, command);
+	if (outline.kind === 'state-graph') return executeStateGraphNavigation(state, outline, command);
 	if (command === 'back') {
 		return BehaviorLensNavigationResult.Back;
 	}
@@ -154,8 +157,9 @@ export function finishBehaviorLensNavigation(state: BehaviorLensViewState): void
 }
 
 export function updateBehaviorLensStatus(state: BehaviorLensViewState): void {
-	state.status.info = state.presentation.kind === 'graph'
-		? `${state.presentation.viewport.model.nodes.length} CARDS`
+	state.status.info = state.presentation.kind !== 'outline'
+		? state.presentation.kind === 'state-graph' ? `${state.presentation.viewport.model.nodes.length} SCOPES / POSSIBLE PATHS`
+			: `${state.presentation.viewport.model.nodes.length} CARDS`
 		: `${state.document.definitions.length} DEF  ${state.sourceNodes.length} SOURCE NODES`;
 	const range = selectedBehaviorLensSourceRange(state);
 	if (range === null) { state.status.detail = ''; return; }

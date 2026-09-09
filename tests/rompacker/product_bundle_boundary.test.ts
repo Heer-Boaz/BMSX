@@ -39,13 +39,15 @@ test('player bundle boundary rejects IDE, compiler, and tooling sources', () => 
 	}
 });
 
-test('Studio UI accepts the worker client but never the layout engine, including in-process ELK', () => {
-	assert.doesNotThrow(() => assertStudioBundleBoundary({
+test('Studio main-thread bundles accept native worker clients but never the layout engine, including in-process ELK', () => {
+	assert.doesNotThrow(() => assertStudioBundleBoundary('Studio', {
 		'ide/browser/graph_layout.ts': {},
+		'ide/node/graph_layout.ts': {},
+		'ide/workbench/services/graph_layout/worker_requests.ts': {},
 		'ide/workbench/services/graph_layout/async_layout.ts': {},
 		'ide/workbench/ui/graph/compound_layout.ts': {},
 	}));
 	for (const path of ['elk.bundled.js', 'elk-api.js', 'elk-worker.min.js', 'main.js']) {
-		assert.throws(() => assertStudioBundleBoundary({ [`node_modules/elkjs/lib/${path}`]: {} }), /worker-only/);
+		assert.throws(() => assertStudioBundleBoundary('Studio', { [`node_modules/elkjs/lib/${path}`]: {} }), /worker-only/);
 	}
 });

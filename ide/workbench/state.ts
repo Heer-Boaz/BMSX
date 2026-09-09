@@ -1,3 +1,4 @@
+import type { GraphLayoutEngineFactory } from './services/graph_layout/engine';
 import type { HostRewind } from '../../hosts/common/rewind';
 import type { HostExecutionControl } from '../../hosts/common/execution_control';
 import type { EditorDisplay, Viewport } from '../common/viewport';
@@ -57,6 +58,7 @@ export class RuntimeIdeState {
 		resourcePanelWidthRatio: number,
 		viewport: Viewport,
 		public readonly sources: RuntimeSourceState,
+		createGraphLayoutEngine: GraphLayoutEngineFactory,
 	) {
 		this.debugger = createRuntimeDebuggerState(runtime, sources);
 		this.overlayRenderer = new OverlayRenderer(presenter.hostOverlayQueue);
@@ -100,6 +102,7 @@ export class RuntimeIdeState {
 			this.overlayRenderer,
 			this.scenarioTests,
 			this.scenarioRuns,
+			createGraphLayoutEngine,
 		);
 		this.overlayRenderer.setViewportSize(viewport);
 		this.editor.updateViewport(viewport);

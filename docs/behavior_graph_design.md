@@ -9,7 +9,8 @@ compound-layout-/rendergrens is getoetst met ELK en een echte browserworker.
 De input-/worker-lifetime en latest-generation-layoutsession zijn nu ook
 gebouwd en onafhankelijk getoetst. Afzonderlijke FSM-return-/entryselectie is
 nu bron-owned, met de bestaande Details/Source-route als concrete consumer.
-FSM en ActionEffect houden hun outline; de asynchrone FSM-grafiek volgt afzonderlijk.
+De concrete asynchrone FSM-grafiek is nu aangesloten op dezelfde workbench,
+met expliciete browser- en Node-workercompositie. ActionEffect houdt zijn outline.
 Deze visualisatie is nog geen authoring.
 
 ## Doel en grens
@@ -99,8 +100,8 @@ gebouwde BMSX-grafiek correct, leesbaar of snel is.
 | `behavior_lens/model.ts`, `behavior_tree_model.ts`, `behavior_tree.ts`, `source.ts` | Typed BT-controlrollen, ordered relaties, attachments en provenance op dezelfde objecten als de outline; lokale const-table-resolutie en incomplete syntax | FSM heeft nu afzonderlijke typed bodies, slots en scopegebonden entry-/returnfeiten; geen teruggeparste `label`-/`detail`-strings |
 | `behavior_lens/controller.ts`, `editor_input.ts`, `view_model.ts`, `source_correspondence.ts` | Resource-owned input; refresh bij eigen textmodelversie; selectie/collapse en gekozen registration via gemapte occurrence-ketens | Grafiekviewport is geen listscroll. Cross-file feiten vereisen ook semantic-generation-invalidering |
 | `ide/editor/text/text_change.ts`, `scene_editor/controller.ts`, `behavior_lens/source_correspondence.ts` | Gedeelde UTF-16-rangemapping; beide projecties volgen ranges ook terwijl hun pane verborgen is | Geen lokale offsetcorrecties of namesake matching |
-| `ide/workbench/ui/graph`, `ide/workbench/render/graph.ts` | Retained node-/edgegeometrie, viewport, selectie, hit testing en pane-owned control; tree- en compound-layout | BT-relaties en bronactivatie zitten in de concrete contribution; de FSM vereist nog asynchrone generatiepublicatie en afzonderlijke return-proofcorrespondentie |
-| `workbench/services/graph_layout`, `browser/graph_layout.ts`, `common/editor_input.ts` | Inputresources, lazy engine, latest-only factories, publicatie/fout/dispose en echte Worker-replies | Gebouwd en onafhankelijk getoetst; concrete FSM-broninvalidatie en return-proofselectie worden nog aangesloten. Eén engine per gestarte session, geen workerallocatie voor ongebruikte inputs |
+| `ide/workbench/ui/graph`, `ide/workbench/render/graph.ts` | Retained node-/edgegeometrie, viewport, selectie, hit testing en pane-owned control; tree- en compound-layout | BT-relaties en bronactivatie zitten in de concrete contribution; FSM-publicatie volgt de input-owned asyncsession en bron-owned return-proofcorrespondentie |
+| `workbench/services/graph_layout`, `browser/graph_layout.ts`, `common/editor_input.ts` | Inputresources, lazy engine, latest-only factories, publicatie/fout/dispose en echte Worker-replies | Gebouwd en onafhankelijk getoetst; concrete FSM-broninvalidatie en return-proofselectie zijn aangesloten. Eén engine per gestarte session, geen workerallocatie voor ongebruikte inputs |
 | `ide/runtime/overlay_renderer.ts`, TS/C++ `render/host_overlay` | Pooled overlaycommands, `Poly`-exposure en geordende cliprects | Clip-stack, scissor-batches en software-rastergrens gebouwd; geen feature-local glyph- of lijnclipper |
 | `ide/input/pointer/capture.ts`, `dispatch.ts` | Eén captured fysieke gesture vóór gewone pane-/chrome-hit-tests | Graphcontrol gebruikt deze route; bestaande andere controls zijn hiermee niet allemaal gemigreerd |
 | `cartlib/behaviour_tree/node_program.lua`, `cartlib/fsm/fsm.lua`, `fsm_component.lua` | De uitvoersemantiek die het beeld moet respecteren | Geen wijziging voor deze visualisatie; geen hostgeschreven tweede runtime |
@@ -489,7 +490,7 @@ alleen een typecheck slaagt. De latere rijen zijn nog te toetsen hypotheses.
 | `STUDIO-GRAPH-COMPOUND-LAYOUT-01` — geïmplementeerd | Generieke ELK Layered-grens, geneste nodes, cycles/self-loops/parallelle links, gemeten labels en gedeelde body/header-paint/hit-geometrie. Echte worker plus alle drie browserrenderers; geen bron- of runtimekennis in de layoutrequest. |
 | `STUDIO-GRAPH-LAYOUT-LIFETIME-01` — geïmplementeerd | Inputdispose, lazy native Worker, expliciete fouten en één lopende/nieuwste wachtende layoutgeneratie. De onafhankelijke input/model/pane-proef test hidden edits, Undo/Redo, coalescing en close zonder focusdiefstal. Productasset is upstream-bytegelijk; de buildgate sluit ELK uit de Studio-UI en player. |
 | `STUDIO-FSM-SOURCE-SELECTION-01` — geïmplementeerd | Bronselectie onderscheidt een gewone node, BT-verbinding, FSM-outcome en expliciete entry. De slot-occurrence plus binding/callback/returnanker bepaalt correspondentie, niet het edge-ordinal of target. Details/Source, hidden edits, Undo en popupinvalidatie gebruiken deze echte inputowner. |
-| `STUDIO-FSM-GRAPH-VIEW-01` | Sluit de gebouwde layoutlifetime en bronselectie aan op de concrete FSM-grafiek. Fixture met self-loop, twee edges tussen dezelfde states, parenthandler, nested en concurrent scopes; edges blijven selecteerbaar en verwijzen naar hun eigen bewijs. Geen tree/DAG-normalisatie. |
+| `STUDIO-FSM-GRAPH-VIEW-01` — geïmplementeerd | Concrete compound FSM-view op de input-owned asyncsession, typed source-index en één edge per bewijs. Bron-/definition-/fontwijziging revoke oude publicatie/hits; browser en Node hebben expliciete native workers. Scopes, concurrent/initial entries, cycli, self-loops en parallelle returns; onbekende/no-path uitkomsten zijn bronbewijs zonder verzonnen endpoint. Details/Source, Tab/Shift+Tab, pan en pane-dispose gebruiken bestaande workbenchowners. Zelfstandige sourcefixtures en echte 384×288-werkbenchproeven; geen authoring of runtimegraph. |
 
 `STUDIO-BT-VISUAL-EDITOR-01` blijft het afzonderlijke **authoring**contract.
 Nieuwe add/remove/reorder/connect-commands moeten hun minimale Lua-edit en
@@ -958,3 +959,148 @@ GPU-werk, volledige Studio-frametijd of fysieke-deviceperformance. De gehele
 bronprojectie meet in dezelfde run 0,394 / 5,596 ms; de kolommen zijn afzonderlijke
 experimenten en geen optelbare framebegroting. Logs en inspectiecaptures van
 het landingsbewijs staan in `/tmp/bmsx-fsm-proof`.
+
+## Concrete FSM-view — ownerbesluit en begrenzing, 9 september 2026
+
+Deze slice sluit de bestaande drie voorwaarden aan; zij introduceert geen
+FSM-interpreter of generiek plugin-framework. De Lua-parser/binder, cartlib,
+machine en C++-core zijn ongewijzigd.
+
+### Productiereferenties en wat daadwerkelijk is overgenomen
+
+- [Sprotty ELK-adapter](https://github.com/eclipse-sprotty/sprotty/blob/21b80fc2c852411261a692c834d2a4390ba7f2df/packages/sprotty-elk/src/elk-layout.ts):
+  bronmodel en gemeten layoutinput apart; apply op de ongepubliceerde generatie.
+- [Stately graph layout](https://github.com/statelyai/graph/blob/df45573f17ce6ae3e23e1bf2cbbc91fbe0b54a22/src/layout/elk.ts):
+  een geïnjecteerde engine en expliciet gemeten containment, niet een BT/DAG-sort.
+- [Godot state-machine editor](https://github.com/godotengine/godot/blob/9552dfb6859a1aaba1e570b8e0ef5c599b830f19/editor/animation/animation_state_machine_editor.cpp):
+  afzonderlijke node- en transitionselectie op werkelijk getekende geometrie.
+  Godots endpoint-paaridentiteit is hier **niet** overgenomen: één Lua-binding
+  kan meerdere gelijke returns hebben; iedere proof blijft afzonderlijk.
+- [React Flow nodes](https://github.com/xyflow/xyflow/blob/0a1f9575b25679f2880175de8d3eae21aedde921/packages/react/src/components/NodeWrapper/index.tsx)
+  en [edges](https://github.com/xyflow/xyflow/blob/0a1f9575b25679f2880175de8d3eae21aedde921/packages/react/src/components/EdgeWrapper/index.tsx):
+  nodes én verbindingen zijn via keyboard bereikbaar, met reveal. Hier als
+  roving canvasselectie via Tab/Shift+Tab; arrows pannen de read-only diagram.
+  Geen DOM per node en geen extra focus-/documentowner.
+- [ELK Node-compositie](https://github.com/kieler/elkjs/blob/ff5771d7165445c42c408bb8a090c8035272218c/src/js/main-node.js),
+  [upstream workerendpoint](https://github.com/kieler/elkjs/blob/ff5771d7165445c42c408bb8a090c8035272218c/src/java/org/eclipse/elk/js/ElkJs.java)
+  en [Node native worker lifecycle](https://github.com/nodejs/node/blob/v22.23.1/doc/api/worker_threads.md):
+  dezelfde upstream request/reply-ABI, met native thread-events en termination.
+  De Node-mainthread bevat de layoutengine niet; één thread per gestarte input
+  wordt hergebruikt, niet een nieuwe thread per edit of frame.
+
+### Geen geredde verkeerde transporthypothese
+
+De eerste Node-proef gebruikte de upstream in-process SDK. Het tekenen werkte,
+maar `terminateWorker()` riep een niet-bestaande `FakeWorker.terminate` aan.
+Geen guard, lege dispose of patch van de SDK: de uiteindelijke Node-worker
+bezit de echte thread; zijn kleine entry verbindt `parentPort` rechtstreeks
+met upstream `Worker.postMessage/onmessage`. De gedeelde requestowner bezit
+ids, pending promises en registratie; transportowners bezitten native faults
+én afsluiten. De door ELK genoemde
+[`web-worker`-adapter, 1.4.1](https://github.com/developit/web-worker/blob/1fda46ca4529fd40274c1e5bbe899a138a158f10/src/node/index.js)
+is ook gelezen, maar
+niet toegevoegd: zijn onderzochte classic-loadpad logt een laadfout zonder die
+als mislukt request te publiceren. Geen extra dependency of globals-shim.
+
+De workerentry wordt als eigen Node-productasset gebundeld, inclusief ELK;
+hij vereist bij deployment geen losse `node_modules`-lookup. De browserworker
+blijft bytegelijk aan het npm-artefact. Beide producten leveren de upstream
+licentie en bronverwijzing mee. De Node-hoofdexecutable, browser-UI en players
+bevatten geen ELK-algoritme.
+
+### Bron, presentatie en bediening
+
+- De source-index bewaart typed bodies en afzonderlijke entry/outcome-references
+  eenmaal per documentgeneratie. Geen casts van algemene outline-nodes naar FSM-
+  bodies, bronparsing in render, of tags/handlers in de generieke layoutengine.
+- De graaf toont één registration. Containment blijft genest; parenthandlers
+  worden niet over childstates gekopieerd. Initial/concurrent labels zijn
+  entryrelaties, overige pijlen **mogelijke geretourneerde paths**.
+- Unknown en no-path zijn zichtbare source-notities op de eigen scope. Details
+  toont de afzonderlijke bindingen/returns en overige eigen velden, inclusief
+  guards. Zij worden niet uitgevoerd; imperatieve effecten blijven onbewezen.
+- Bronselectie overleeft een bewezen return die van path naar nil verandert;
+  geometrische selectie wordt dan leeg omdat er geen pijl meer bestaat. Dit
+  is bewust verschillende domeinstate, niet een `undefined → null`-DTO-adapter
+  of selectie van een nabijgelegen pijl/ancestor.
+- De input-owned asyncsession wordt ook bij verborgen edits geïnvalideerd.
+  Oude geometrie is meteen niet-interactief; de font-owned lege generatie wordt
+  hergebruikt, niet per toetsaanslag opgebouwd. Alleen de gewone view-update
+  publiceert het nieuwste resultaat en revealt een corresponderende selectie.
+  Pending/failed/removed hebben zichtbare presentatie, geen stille outlinefallback.
+- Selectie en pan gebruiken bestaande controls. Tab/Shift+Tab doorlopen kaarten
+  en pijlen; pijltjestoetsen pannen, Enter/Source openen de geselecteerde bron.
+  Gamepad up/down doorloopt, left/right pant, A opent Source en X Details.
+  Geen gameplaybindingen of FSM-collapse die een verborgen target omleidt.
+
+### Visuele proef vond een ontbrekende pixelgrens
+
+De eerste echte screenshots toonden bij WebGL2 een beschadigde tweede regel
+van een self-looplabel, terwijl dezelfde bron-/hittests slaagden. ELK had het
+label op een halve pixel gecentreerd. De shared compound-layout-owner publiceert
+nu eenmaal integer-pixelcoördinaten voor nodes, routes en labels, zodat tekst,
+bounds en reveal dezelfde grid gebruiken. Geen WebGL-only fontfix, shaderhack
+of herhaald afronden in de FSM-renderloop. De zelfstandige geometrieproeven
+controleren die integergrens en de endpoints; nieuwe echte screenshots tonen
+het label weer leesbaar op software, WebGL2 én WebGPU.
+
+Nog niet gebouwd: FSM-authoring, collapse, cross-file/member-returnbewijs,
+imperatieve runtime-flow of ActionEffect-graph. Dit is de concrete read-only
+FSM-slice, niet de belofte dat alle Studio-workflows al perfect zijn.
+
+### Landingsbewijs en afzonderlijke kosten
+
+- De zelfstandige Lua-fixtures testen de concrete input met een echte Node-
+  worker, niet een handgeschreven graphantwoord. Een gecontroleerde session
+  regelt uitsluitend de completionvolgorde; ELK levert de echte geometrie.
+  Parallelle returns, hergebruik, concurrent entries, parenthandlers, cycli,
+  self-loops, path→nil, fontwissels en verborgen edits blijven afzonderlijke
+  bron-/layoutgevallen. Native laad-, registratie- en afsluitfouten worden getest.
+- Een extra live regressie faalde eerst op **Details → gekozen return → Source
+  → terug naar grafiek**: de bronselectie was juist, maar de oude kaart bleef
+  geometrisch geselecteerd. De keuze-owner koppelt nu onmiddellijk dezelfde
+  proof aan de bestaande edge en revealt haar; een source-only veld wist juist
+  de geometrische selectie. Geen relayout, ancestorfallback of reparatiewerk in
+  de tekenlus. De onafhankelijke Studio-proef bewaakt beide routes.
+- De volledige Studio-workflow en beide cart-navigaties slagen op software,
+  WebGL2 en WebGPU, inclusief de nieuwe `studio_state_graph.ts`. De tests gebruiken
+  de echte registratiekiezer, native worker, Details/Source, keyboard, held-pointer
+  navigatie, pane-detach en model-Undo. Scenario-cancel, pauze/rewind, Hot Resume,
+  reboot en de bestaande guest-faultgates blijven onderdeel van de volledige proef.
+- De generieke viewportproef slaagt opnieuw op alle drie backends: zes croporacles,
+  25 zichtbare routes, targetwissels, echte workerfouten en fysieke inputlifetime.
+  Zij vervangt de concrete FSM-bronproeven of visuele tiny-fontinspectie niet.
+- `npm run test:lua`: **1.067 geslaagd, 1 bestaande skip**; `test:rompacker`:
+  **123 geslaagd**. IDE-typecheck, beide productbuilds en de echte headless
+  Behavior Lens-test (**58 assertions**) slagen. De tests-brede typecheck houdt
+  exact dezelfde **51 diagnostics** als `68ab2d1f5`; dat is geen groene typecheck.
+  Architecture boundaries, core parity, scoped indentation en diff-check slagen.
+- Beide main-thread-productbundles gebruiken dezelfde worker-only buildgate.
+  Het browserartefact is bytegelijk aan `elk-worker.min.js`; een gekopieerd Node-
+  workerartefact buiten de checkout voert zelfstandig layout uit, zonder een
+  `node_modules`-directory naast dat artefact.
+
+`profile_state_graph.ts` meet op Node 22.23.1 zes generaties per concrete input:
+eerste layout inclusief threadstart, daarna mediaan van vijf layouts op dezelfde
+thread. Bronprojectie/meting, transport, routing en publication vallen binnen
+deze layoutgrens; parsing niet.
+
+| Zelfstandige fixture | Eerste layout incl. threadstart | Layout op bestaande thread | Warm draw + overlayquads |
+| --- | --- | --- | --- |
+| 4 scopes / 5 edges | 184,58 ms | 8,53 ms | 6,04 µs |
+| 37 scopes / 49 edges | 225,82 ms | 30,39 ms | 12,05 µs |
+| 145 scopes / 193 edges | 337,48 ms | 85,00 ms | 14,17 µs |
+
+De drawkolom gebruikt een vaste 384×288-viewport op een inner scope, inclusief
+normale culling; zij tekent niet alle offscreen kaarten. Warm update en draw
+gebruiken batches van 1.000, met de gedeelde 10 warmups / 25 mediaansamples.
+Geen nieuwe fontmetingen en dezelfde model-/quadopslag na warmup zijn expliciet
+gecontroleerd. Dit is geen JavaScript-allocatieprofiel, GPU-rastermeting, complete
+Studio-frametijd of fysieke-devicegarantie. De ELK-thread werkt buiten de UI-loop.
+
+De source-only profiler meet de nieuwe typed body+reference-index op 0,017 / 0,482 ms
+voor 73 / 3.073 scopes, en inputrefresh inclusief broncorrespondentie op
+0,112 / 4,386 ms. Dit zijn afzonderlijke koude experimenten, geen optelbare
+framebegroting. Commando's staan in `tests/conformance/behavior_graph/README.md`;
+de lokale logs, de eerst falende Details-proef en inspectiebeelden staan in
+`/tmp/bmsx-fsm-graph`.

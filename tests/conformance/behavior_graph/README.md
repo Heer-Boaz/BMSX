@@ -1,6 +1,6 @@
-# Source-backed BT graph
+# Source-backed behavior graphs
 
-The concrete Behavior Lens graph consumes the existing typed source projection.
+The concrete BT and FSM Behavior Lens graphs consume the typed source projection.
 Lua remains the document; graph cards, links, fold state and geometry are not
 runtime or authored scene data. See
 [the owner contract and pinned production references](../../../docs/behavior_graph_design.md).
@@ -57,8 +57,8 @@ presentation leaves its fixture in the unsaved text model. It never installs a
 fixture cartridge. Captures show the expanded weighted fixture at 384×288 with
 the actual IDE tiny font, not a mock drawing or a screenshot of a game BT.
 
-The full Studio suite also checks the ordinary Scene Editor, FSM/ActionEffect
-outlines, focus, source save, pause/rewind/Hot Resume, reboot and Scenario Lab.
+The full Studio suite also checks the ordinary Scene Editor, FSM graph,
+ActionEffect outline, focus, source save, pause/rewind/Hot Resume, reboot and Scenario Lab.
 Expected negative guest-fault cases retain their existing fault gate. A passing
 build alone is not evidence for these workflows or physical-device performance.
 
@@ -86,7 +86,7 @@ measurement count and quad-backing identity are checked after draw warmup.
 This excludes parsing, GPU upload/raster and total Studio frame time; it is not
 a JavaScript zero-allocation proof or a speed guarantee for another host.
 
-## FSM source prerequisites (no FSM layout yet)
+## FSM source contracts
 
 ```sh
 npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
@@ -116,7 +116,10 @@ return opens that return's source. Prefix/return insertion, ordinary Undo,
 deletion with hidden Undo, and invalidating an open source picker exercise the
 input-owned proof selection and shared Quick Input session lifetime. The
 fixture is `FSM_PROOF_SOURCE`, not the live Nemesis/Pietious source schema.
-The FSM presentation remains an outline until the separate graph slice lands.
+These source contracts now run through the concrete FSM graph and its shared
+source inspector; they do not depend on obsolete outline twisties or row hits.
+Returning from Details/Source must highlight the chosen proof without a new
+layout. A source-only field must not leave the old graph card highlighted.
 
 The implemented callback subset is inline functions and file-local `<const>`
 bindings. Returns in nested functions, root entry and exit handlers are not
@@ -135,3 +138,42 @@ correspondence, and mapping just the selected proof through an insert/delete
 roundtrip (1,000 iterations per sample, reported per iteration). The reference
 index is built at source-generation boundaries; picker labels are built on
 opening. Neither phase belongs to the lens draw/hover/pan loop.
+
+## Concrete FSM graph and native transport
+
+```sh
+npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
+  tests/lua/state_graph_view.test.ts tests/lua/state_machine_selection.test.ts \
+  tests/lua/graph_layout_node.test.ts tests/lua/graph_layout_lifetime.test.ts
+npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+  tests/conformance/behavior_graph/profile_state_graph.ts
+```
+
+The input tests use a real Node worker thread and the same upstream ELK endpoint
+as Browser Studio. They exercise nested/concurrent scopes, shared occurrences,
+parallel returns, cycles, self-loops, parent handlers, partial/unknown source,
+path-to-nil selection, Undo, font changes, coalescing and explicit failure/close.
+One fixture produces actual half-pixel ELK labels: the compound publication
+boundary must snap to one integer canvas grid for text, bounds and reveal.
+Transport tests cover native disposal, missing worker assets and registration
+failure with a queued late reply. No no-op disposal or in-process host fallback.
+
+`studio_state_graph.ts` is part of both browser navigation runs and the full
+Studio run above. It installs `FSM_DIAGRAM_SOURCE` into the paused text model,
+uses the actual registration picker and packaged worker, and checks physical
+edge double-click, Tab traversal, pan, hidden source refresh, detached pointer
+capture and canonical Undo. It does not advance the machine or install media.
+The capture point is `STUDIO: FSM diagram ready for visual inspection`; it shows
+two identical returns as separate selectable arrows and a labelled self-loop.
+The headless IDE test uses its product-bundled native Node worker, not the
+in-process engine used by the domain-free geometry unit tests.
+
+The concrete profile has 4/37/145 scopes and 5/49/193 edges. It reports the first
+layout including thread startup, then the median of five layouts on that thread.
+That boundary includes source-to-card measurement, clone/transport, ELK routing
+and publication, not parsing. Warm update and overlay/quad emission use 1,000
+operations per sample. The viewport stays 384×288 and reveals one inner scope:
+draw costs include normal culling, not emission of every offscreen card. Retained
+model/buffer identities and no further font measurements are checked. These
+numbers exclude GPU rasterization, total Studio frame time and physical-device
+performance; the script is not a JavaScript allocation profiler.

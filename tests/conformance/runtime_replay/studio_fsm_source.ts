@@ -5,7 +5,7 @@ import type { BehaviorLensViewState } from '../../../ide/workbench/contrib/behav
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { FSM_BEHAVIOR_SOURCE } from '../../helpers/fsm_source_fixture';
-import { behaviorOutline, chooseBehavior, revealLensOccurrence } from './studio_behavior_picker';
+import { chooseBehavior, revealLensOccurrence } from './studio_behavior_picker';
 import { check, type StudioFixture } from './studio_fixture';
 
 function definition(view: BehaviorLensViewState): StateMachineSourceDefinition {
@@ -30,7 +30,7 @@ export async function testStudioFsmSource(test: StudioFixture): Promise<void> {
 	const lens = getActiveTab();
 	if (lens.kind !== 'behavior_lens') throw new Error('FSM source: expected the real Behavior Lens input');
 	const view = lens.view;
-	const outline = behaviorOutline(view);
+	const outline = view.presentation;
 	const first = definition(view);
 	const update = first.transitions.find(transition => transition.slot.kind === 'update')!;
 	await revealLensOccurrence(test, view, update.slot.source.rowKey);

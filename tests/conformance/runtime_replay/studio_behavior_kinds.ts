@@ -66,7 +66,7 @@ export async function testStudioBehaviorKinds(test: StudioFixture): Promise<void
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
 	await chooseBehavior(test, 'FSM nemesis_s.title_screen.fsm', 'STATE MACHINES');
 	const fsm = getActiveTab();
-	check(fsm.kind === 'behavior_lens' && behaviorOutline(fsm.view).rows[behaviorOutline(fsm.view).selectionIndex].node.behaviorKind === 'state_machine',
+	check(fsm.kind === 'behavior_lens' && fsm.view.nodesByRowKey.get(fsm.view.selection!.rowKey)!.behaviorKind === 'state_machine',
 		'behavior kinds: typed FSM selection reaches its definition from the effect lens');
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
 	check(picker.title === 'BEHAVIOR TREES' && picker.model.entries.length > 0

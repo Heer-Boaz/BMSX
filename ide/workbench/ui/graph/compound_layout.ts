@@ -65,12 +65,14 @@ export async function layoutWorkbenchCompoundGraph<
 			layoutOptions: { 'elk.edgeLabels.placement': 'CENTER' } };
 	});
 	const result = await engine.layout({ id: 'layout', children, edges, layoutOptions: LAYOUT_OPTIONS });
+	// ELK may center routes/labels on half pixels. Publish pixel-grid geometry once;
+	// bitmap glyphs, hit bounds and retained pan/reveal must consume that same grid.
 	function placeNodes(parent: ElkNode): void {
 		const origin = boundsById.get(parent.id)!;
 		for (const child of parent.children!) {
-			const x = origin.left + child.x!;
-			const y = origin.top + child.y!;
-			write_rect_bounds(boundsById.get(child.id)!, x, y, x + child.width!, y + child.height!);
+			const x = Math.round(origin.left + child.x!);
+			const y = Math.round(origin.top + child.y!);
+			write_rect_bounds(boundsById.get(child.id)!, x, y, x + Math.round(child.width!), y + Math.round(child.height!));
 			placeNodes(child);
 		}
 	}
@@ -83,16 +85,16 @@ export async function layoutWorkbenchCompoundGraph<
 		const origin = boundsById.get(edge.container!)!;
 		// Binary Layered edges have one connected section after compound postprocess.
 		const section = edge.sections![0];
-		const points = [origin.left + section.startPoint.x, origin.top + section.startPoint.y];
+		const points = [Math.round(origin.left + section.startPoint.x), Math.round(origin.top + section.startPoint.y)];
 		if (section.bendPoints !== undefined) {
-			for (const point of section.bendPoints) points.push(origin.left + point.x, origin.top + point.y);
+			for (const point of section.bendPoints) points.push(Math.round(origin.left + point.x), Math.round(origin.top + point.y));
 		}
-		points.push(origin.left + section.endPoint.x, origin.top + section.endPoint.y);
+		points.push(Math.round(origin.left + section.endPoint.x), Math.round(origin.top + section.endPoint.y));
 		const { link, labels: edgeLabels } = linksById.get(edge.id)!;
 		for (let labelIndex = 0; labelIndex < edgeLabels.length; labelIndex += 1) {
 			const label = edge.labels![labelIndex];
-			const x = origin.left + label.x!;
-			const y = origin.top + label.y!;
+			const x = Math.round(origin.left + label.x!);
+			const y = Math.round(origin.top + label.y!);
 			write_rect_bounds(edgeLabels[labelIndex].bounds, x, y, x + label.width!, y + label.height!);
 		}
 		output.push({ ...createWorkbenchGraphEdge(points, edgeLabels, true), link });

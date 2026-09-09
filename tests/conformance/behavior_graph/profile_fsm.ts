@@ -1,3 +1,4 @@
+import { indexStateMachineSource } from '../../../ide/workbench/contrib/behavior_lens/state_machine_index';
 import { medianMilliseconds } from '../../helpers/performance';
 import { buildLuaFileSemanticData, type SymbolID } from '../../../toolchain/ts/lua/semantic/model';
 import { buildBehaviorSourceDocument } from '../../../ide/workbench/contrib/behavior_lens/recognizer';
@@ -8,7 +9,7 @@ import { collectMutatedDeclarations, resolveSourceTable, type BehaviorRecognizer
 import { EditorTextModel } from '../../../ide/editor/model/text_model';
 import { createBehaviorLensViewState } from '../../../ide/workbench/contrib/behavior_lens/view_model';
 import { installBehaviorLensDocument } from '../../../ide/workbench/contrib/behavior_lens/layout';
-import { indexStateMachineSourceReferences, mapStateMachineSourceSelection, selectStateMachineSource } from '../../../ide/workbench/contrib/behavior_lens/state_machine_selection';
+import { mapStateMachineSourceSelection, selectStateMachineSource } from '../../../ide/workbench/contrib/behavior_lens/state_machine_selection';
 
 
 for (const siblings of [24, 1024]) {
@@ -22,10 +23,10 @@ machines.register('profile', { initial = 'lane0', states = { ${Array.from({ leng
 	const semantic = buildLuaFileSemanticData(source, resource.path);
 	const sourceProjectionMs = medianMilliseconds(() => { buildBehaviorSourceDocument(resource, semantic); });
 	const document = buildBehaviorSourceDocument(resource, semantic);
-	const referenceIndexMs = medianMilliseconds(() => { indexStateMachineSourceReferences(document); });
+	const referenceIndexMs = medianMilliseconds(() => { indexStateMachineSource(document); });
 	const model = new EditorTextModel({ ...resource, source: { resid: 'fsm_profile', type: 'lua' } }, 'lua', source);
 	const view = createBehaviorLensViewState(document, model, 'outline');
-	const references = [...view.stateMachineReferences.values()];
+	const references = [...view.stateMachines.references.values()];
 	const selected = selectStateMachineSource(references.findLast(items => items[0].kind === 'state-outcome' && items[0].outcome.proof.kind === 'return')![0], model.buffer);
 	view.selection = selected;
 	const inputRefreshMs = medianMilliseconds(() => { installBehaviorLensDocument(view, document, model.buffer); });

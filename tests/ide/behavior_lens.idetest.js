@@ -237,7 +237,10 @@ await t.frames(2);
 const fsmTab = t.activeWorkbenchTab();
 t.assert(fsmTab.kind === 'behavior_lens', 'player FSM did not open in a Behavior Lens input');
 const fsmView = fsmTab.view;
-t.assert(fsmView.presentation.kind === 'outline', 'FSM must keep its outline');
+t.assert(fsmView.presentation.kind === 'state-graph', 'FSM must open its compound graph');
+await fsmTab.graphLayout.settled;
+await t.frames(1);
+t.assert(fsmView.presentation.layoutState.kind === 'ready', 'Node layout engine did not complete the actual FSM');
 t.assert(fsmView.document.definitions.length === 1, 'player source should expose one FSM registration');
 t.assert(fsmView.document.definitions[0].behaviorKind === 'state_machine', 'player registration was not recognized as an FSM');
 const flyingState = fsmView.sourceNodes.find(node => node.kind === 'state' && node.label === 'flying');
@@ -247,31 +250,21 @@ t.assert(flyingState.detail === 'initial', 'nested FSM initial-state semantics a
 t.assert(projectilesState.authoredRange.start.line === 1410, 'concurrent projectiles state lost its authored source range');
 t.assert(projectilesState.detail === 'concurrent', 'concurrent FSM semantics are missing');
 
-let targetIndex = fsmView.presentation.rows.findIndex(row => row.node === projectilesState);
-t.assert(targetIndex >= 0, 'top-level concurrent state is not navigable in the retained rows');
-await moveSelectionToIndex(fsmView.presentation, targetIndex, 20);
-await pressKey('Enter', 60);
+const stateGraph = fsmView.presentation.viewport;
+t.assert(stateGraph.model.nodesBySource.has(projectilesState.rowKey), 'concurrent state has no diagram card');
+const projectilesIndex = stateGraph.model.nodes.indexOf(stateGraph.model.nodesBySource.get(projectilesState.rowKey));
+for (let index = 0; index < projectilesIndex; index += 1) await pressKey('Tab', ++choicePressId);
+await pressKey('Enter', ++choicePressId);
 t.assert(t.activeWorkbenchTab().kind === 'code_editor', 'activating the concurrent state did not return to source');
 t.assert(t.activeEditorDocument().view.cursorRow === projectilesState.authoredRange.start.line - 1, 'concurrent state navigated to the wrong line');
-
 await chooseBehavior('fsm ids player');
 await t.frames(2);
-const reopenedFsmView = t.activeWorkbenchTab().view;
-const activeStateIndex = reopenedFsmView.presentation.rows.findIndex(row => row.node.kind === 'state' && row.node.label === 'active');
-t.assert(activeStateIndex >= 0, 'parent state is not visible in the retained FSM outline');
-await moveSelectionToIndex(reopenedFsmView.presentation, activeStateIndex, 70);
-await pressKey('ArrowRight', 110);
-const nestedStatesIndex = reopenedFsmView.presentation.rows.findIndex(row =>
-	row.node.kind === 'section'
-	&& row.node.label.startsWith('states')
-	&& row.parentRowKey === reopenedFsmView.presentation.rows[activeStateIndex].node.rowKey);
-t.assert(nestedStatesIndex >= 0, 'expanded parent state does not expose its nested states section');
-await moveSelectionToIndex(reopenedFsmView.presentation, nestedStatesIndex, 100);
-await pressKey('ArrowRight', 140);
-targetIndex = reopenedFsmView.presentation.rows.findIndex(row => row.node === flyingState);
-t.assert(targetIndex >= 0, 'nested state is not navigable after expanding its retained parent path');
-await moveSelectionToIndex(reopenedFsmView.presentation, targetIndex, 150);
-await pressKey('Enter', 170);
+t.assert(stateGraph.model.nodesBySource.has(flyingState.rowKey), 'nested state is missing from compound containment');
+const activeState = stateGraph.model.nodes.find(node => node.source.label === 'active');
+t.assert(activeState.children.some(node => node.source === flyingState), 'nested state was flattened out of its parent');
+const flyingIndex = stateGraph.model.nodes.indexOf(stateGraph.model.nodesBySource.get(flyingState.rowKey));
+for (let index = 0; index < flyingIndex; index += 1) await pressKey('Tab', ++choicePressId);
+await pressKey('Enter', ++choicePressId);
 t.assert(t.activeEditorDocument().view.cursorRow === flyingState.authoredRange.start.line - 1, 'nested state navigated to the wrong line');
 
 t.openLuaSource('player/actioneffects.lua');
