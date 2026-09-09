@@ -5,7 +5,8 @@ import {
 	type WorkspaceAutosavePayload,
 	type WorkspaceSessionGeneration,
 } from './models';
-import type { CodeEditorInputId } from '../../common/editor_context';
+import type { EditorTextModel } from '../../editor/model/text_model';
+import type { CodeEditorViewState } from '../../editor/ui/code_editor_state';
 
 type WorkspaceState = {
 	projectRootPath: string | null;
@@ -21,7 +22,7 @@ type WorkspaceState = {
 };
 
 export const workspaceDirtyRecords = new Map<string, WorkspaceRecord>();
-export const workspacePendingMetadataContextIds = new Set<CodeEditorInputId>();
+export const workspacePendingCodeEditorViews = new Map<EditorTextModel, CodeEditorViewState>();
 
 export const workspaceState: WorkspaceState = {
 	projectRootPath: null,

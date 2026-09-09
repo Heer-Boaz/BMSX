@@ -25,9 +25,10 @@ export async function testStudioBtMoves(test: StudioFixture): Promise<void> {
 	const view = lens.view;
 	const graph = lens.view.presentation;
 	const viewport = graph.viewport;
-	const earlier = graph.actionBar.items.find(item => item.command === 'behaviorLens.moveChildEarlier')!;
-	const later = graph.actionBar.items.find(item => item.command === 'behaviorLens.moveChildLater')!;
-	check(!ide.editor.commands.isEnabled(earlier.command) && !ide.editor.commands.isEnabled(later.command), 'BT moves: registration is not an ordered child');
+	const earlier = 'behaviorLens.moveChildEarlier';
+	const later = 'behaviorLens.moveChildLater';
+	check(graph.actionBar.items.length === 3, 'BT title exposes navigation and expansion, not Earlier/Later buttons');
+	check(!ide.editor.commands.isEnabled(earlier) && !ide.editor.commands.isEnabled(later), 'BT moves: registration is not an ordered child');
 	await press('ArrowDown');
 	await press('ArrowDown');
 	await press('ArrowRight');
@@ -36,12 +37,12 @@ export async function testStudioBtMoves(test: StudioFixture): Promise<void> {
 	if (selected?.kind !== 'node') throw new Error('BT moves: selected nested branch missing');
 	check(selected.children.length === 2, 'BT moves: expand the selected branch before reordering');
 	const version = model.version;
-	await click(earlier.bounds, 8);
+	await runPaletteCommand('Behavior Lens: Move BT Child Earlier');
 	const moved = model.buffer.getText();
 	check(model.version === version + 1 && viewport.selection?.kind === 'node' && viewport.selection.lines[0] === 'CHILD 1'
 		&& viewport.selection.children.length === 2 && readLuaSourceRange(model.buffer, viewport.selection.source.occurrenceRange) === 'nested',
-		'BT moves: held Earlier moves once across metadata and preserves selected subtree expansion');
-	check(!ide.editor.commands.isEnabled(earlier.command) && ide.editor.commands.isEnabled(later.command), 'BT moves: source index owns endpoint admission');
+		'BT moves: the explicit command moves once across metadata and preserves selected subtree expansion');
+	check(!ide.editor.commands.isEnabled(earlier) && ide.editor.commands.isEnabled(later), 'BT moves: source index owns endpoint admission');
 	console.info('STUDIO: BT reordered children ready for visual inspection');
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === BT_ORDER_SOURCE && viewport.selection?.kind === 'node' && viewport.selection.lines[0] === 'CHILD 2',
@@ -83,7 +84,7 @@ export async function testStudioBtMoves(test: StudioFixture): Promise<void> {
 	const y = edge.points[edge.points.length - 1] - 6 + viewport.bounds.top - viewport.scrollY;
 	await click({ left: x, right: x + 1, top: y, bottom: y + 1 });
 	check(viewport.selection === edge, 'BT moves: pointer selects the actual weighted connection');
-	await click(earlier.bounds, 6);
+	await runPaletteCommand('Behavior Lens: Move BT Child Earlier');
 	check(viewport.selection?.kind === 'edge' && viewport.selection.child.lines[0] === 'CHOICE 2  W=3'
 		&& readLuaSourceRange(model.buffer, viewport.selection.range) === '{ weight = 3, child = make_node(3) }',
 		'BT moves: complete weighted wrapper moves, not just its child expression');
@@ -95,24 +96,23 @@ export async function testStudioBtMoves(test: StudioFixture): Promise<void> {
 	model.refreshResource({ ...resource, source: { ...resource.source, generated: true } });
 	await frame();
 	const readonlyVersion = model.version;
-	check(model.readOnly && !ide.editor.commands.isEnabled(earlier.command) && !ide.editor.commands.isEnabled('undo'),
+	check(model.readOnly && !ide.editor.commands.isEnabled(earlier) && !ide.editor.commands.isEnabled('undo'),
 		'BT moves: a generated resource has no mutation or document-history command despite a valid selected member');
-	await click(earlier.bounds);
 	await press('ControlLeft', 'KeyZ');
-	ide.editor.commands.execute(earlier.command);
+	ide.editor.commands.execute(earlier);
 	check(model.version === readonlyVersion, 'BT moves: readonly admission also holds at the command execution boundary');
 	model.refreshResource(resource);
 	model.pushEditOperations([{ offset: model.buffer.length, deleteLength: 0, text: '\n@' }]);
-	check(!ide.editor.commands.isEnabled(earlier.command), 'BT moves: old geometry does not authorize an edit in a new source generation');
+	check(!ide.editor.commands.isEnabled(earlier), 'BT moves: old geometry does not authorize an edit in a new source generation');
 	await frame();
-	check(!ide.editor.commands.isEnabled(earlier.command) && !ide.editor.commands.isEnabled(later.command), 'BT moves: syntax recovery is not editable source');
-	await click(earlier.bounds);
-	check(model.buffer.getText() === BT_ORDER_SOURCE + '\n@', 'BT moves: disabled action does not edit recovered syntax');
+	check(!ide.editor.commands.isEnabled(earlier) && !ide.editor.commands.isEnabled(later), 'BT moves: syntax recovery is not editable source');
+	ide.editor.commands.execute(earlier);
+	check(model.buffer.getText() === BT_ORDER_SOURCE + '\n@', 'BT moves: disabled command does not edit recovered syntax');
 	await press('ControlLeft', 'KeyZ');
 	const retained = viewport.model;
 	const retainedDocument = view.document;
 	for (let index = 0; index < 30; index += 1) await frame();
-	check(viewport.model === retained && view.document === retainedDocument, 'BT moves: buttons add no warm source or geometry work');
+	check(viewport.model === retained && view.document === retainedDocument, 'BT moves: commands add no warm source or geometry work');
 	await click(editorChromeState.tabButtonBounds.get(code.id)!);
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === original && cycles() === position && ide.sources.currentBlua32Media === media,

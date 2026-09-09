@@ -3,6 +3,7 @@ import { clamp } from '../../../machine/ts/common/clamp';
 import type { CodeEditorViewSnapshot, Position } from '../../common/models';
 import { restoreCodeEditorViewSnapshot } from '../../editor/editing/undo_controller';
 import type { CodeTabContext } from '../ui/code_tab/model';
+import type { CodeEditorViewState } from '../../editor/ui/code_editor_state';
 import { getActiveCodeTabContextId } from '../ui/code_tab/contexts';
 import type { SnapshotMetadata } from './models';
 
@@ -47,8 +48,7 @@ export function restoreWorkspaceCodeEditorView(
 	}
 }
 
-export function captureContextSnapshotMetadata(context: CodeTabContext): SnapshotMetadata {
-	const view = context.view;
+export function captureCodeEditorViewMetadata(view: CodeEditorViewState): SnapshotMetadata {
 	return {
 		cursorRow: view.cursorRow,
 		cursorColumn: view.cursorColumn,

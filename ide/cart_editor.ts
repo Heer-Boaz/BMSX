@@ -84,6 +84,7 @@ import { storeCodeTabContext } from './workbench/ui/code_tab/activation';
 import {
 	cancelWorkspaceAutosave,
 	requestWorkspaceAutosave,
+	requestWorkspaceCodeEditorViewAutosave,
 	runWorkspaceAutosaveTick,
 	shutdownWorkspaceStorage,
 } from './workbench/workspace/storage';
@@ -344,9 +345,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.clearNativeMemberCompletionCache = clearNativeMemberCompletionCache;
 		this.initializeEditorGroup();
 		this.unsubscribeWorkspaceCursorMoved = activeCodeEditor.onDidMoveCursor(() => {
-			if (activeCodeEditor.model.dirty) {
-				requestWorkspaceAutosave(WorkspaceAutosaveChange.ActiveEditor);
-			}
+			requestWorkspaceCodeEditorViewAutosave(activeCodeEditor);
 		});
 		this.unsubscribeTextModelChanged = editorTextModelService.onDidChangeContent((model, event) => {
 			this.sceneEditor.onDidChangeContent(model, event);
@@ -509,17 +508,11 @@ export class RuntimeCartEditor implements CartEditor {
 			this,
 			this.sources,
 		);
-		let workspaceChanges = WorkspaceAutosaveChange.None;
 		if (this.breakpoints.revision !== breakpointRevision) {
-			workspaceChanges |= WorkspaceAutosaveChange.Breakpoints;
+			requestWorkspaceAutosave(WorkspaceAutosaveChange.Breakpoints);
 		}
-		if ((activeCodeEditor.view.scrollRow !== scrollRow
-			|| activeCodeEditor.view.scrollColumn !== scrollColumn)
-			&& activeCodeEditor.model.dirty) {
-			workspaceChanges |= WorkspaceAutosaveChange.ActiveEditor;
-		}
-		if (workspaceChanges) {
-			requestWorkspaceAutosave(workspaceChanges);
+		if (activeCodeEditor.view.scrollRow !== scrollRow || activeCodeEditor.view.scrollColumn !== scrollColumn) {
+			requestWorkspaceCodeEditorViewAutosave(activeCodeEditor);
 		}
 	}
 

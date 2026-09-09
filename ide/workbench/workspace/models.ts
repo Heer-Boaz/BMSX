@@ -33,10 +33,10 @@ export type WorkspaceAutosavePayload = {
 export const enum WorkspaceAutosaveChange {
 	None = 0,
 	DirtyFiles = 1 << 0,
-	ActiveEditor = 1 << 1,
+	CodeEditorViews = 1 << 1,
 	Breakpoints = 1 << 2,
 	Font = 1 << 3,
-	All = DirtyFiles | ActiveEditor | Breakpoints | Font,
+	All = DirtyFiles | CodeEditorViews | Breakpoints | Font,
 }
 
 export type WorkspaceSessionGeneration = {

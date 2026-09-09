@@ -25,7 +25,7 @@ import {
 import { joinWorkspacePaths } from '../../workspace/path';
 import {
 	workspaceDirtyRecords,
-	workspacePendingMetadataContextIds,
+	workspacePendingCodeEditorViews,
 	workspaceState,
 } from './state';
 import { applyWorkspaceAutosavePayload } from './restore';
@@ -43,7 +43,7 @@ import {
 	WorkspaceAutosaveChange,
 	type WorkspaceAutosavePayload,
 } from './models';
-import { getActiveCodeTabContextId } from '../ui/code_tab/contexts';
+import type { CodeEditorContext } from '../../editor/ui/code_editor_state';
 
 const WORKSPACE_AUTOSAVE_DELAY_MS = 2500;
 const WORKSPACE_RECONNECT_DELAY_MS = WORKSPACE_AUTOSAVE_DELAY_MS * 4;
@@ -94,7 +94,7 @@ export async function shutdownWorkspaceStorage(): Promise<void> {
 			workspaceState.remoteDirtyRecords = null;
 			workspaceState.pendingChanges = WorkspaceAutosaveChange.None;
 			workspaceDirtyRecords.clear();
-			workspacePendingMetadataContextIds.clear();
+			workspacePendingCodeEditorViews.clear();
 			editor = null;
 			sources = null;
 			debuggerState = null;
@@ -289,12 +289,18 @@ export async function restoreWorkspaceStorageSession(
 	}
 }
 
+/** Capture the emitting model/view pair, not the tab active at the later autosave tick. */
+export function requestWorkspaceCodeEditorViewAutosave({ model, view }: CodeEditorContext): void {
+	if (!editor || !model.dirty) return;
+	workspacePendingCodeEditorViews.set(model, view);
+	workspaceState.pendingChanges |= WorkspaceAutosaveChange.CodeEditorViews;
+	workspaceState.requestedRevision += 1;
+	scheduleWorkspaceAutosave();
+}
+
 export function requestWorkspaceAutosave(changes: WorkspaceAutosaveChange): void {
 	if (!editor) {
 		return;
-	}
-	if (changes & WorkspaceAutosaveChange.ActiveEditor) {
-		workspacePendingMetadataContextIds.add(getActiveCodeTabContextId()!);
 	}
 	workspaceState.pendingChanges |= changes;
 	workspaceState.requestedRevision += 1;
@@ -343,12 +349,12 @@ export function runWorkspaceAutosaveTick(): Promise<void> | void {
 			sources,
 			debuggerState,
 			changes,
-			workspacePendingMetadataContextIds,
+			workspacePendingCodeEditorViews,
 		);
 		workspaceState.localGeneration = generation;
 		workspaceState.localRevision = targetRevision;
 		workspaceState.pendingChanges &= ~changes;
-		workspacePendingMetadataContextIds.clear();
+		workspacePendingCodeEditorViews.clear();
 		if (generation === previousGeneration
 			&& workspaceState.remoteRevision === previousLocalRevision) {
 			workspaceState.remoteRevision = targetRevision;
@@ -406,11 +412,11 @@ function commitRequestedWorkspaceSessionLocally(): void {
 		sources,
 		debuggerState,
 		workspaceState.pendingChanges,
-		workspacePendingMetadataContextIds,
+		workspacePendingCodeEditorViews,
 	);
 	workspaceState.localRevision = workspaceState.requestedRevision;
 	workspaceState.pendingChanges = WorkspaceAutosaveChange.None;
-	workspacePendingMetadataContextIds.clear();
+	workspacePendingCodeEditorViews.clear();
 }
 
 function scheduleWorkspaceReconnect(): void {

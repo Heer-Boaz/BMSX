@@ -48,7 +48,7 @@ import {
 } from '../../ide/workbench/ui/code_tab/contexts';
 import { codeEditorInputManager } from '../../ide/workbench/ui/code_tab/input_manager';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
-import { createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
+import { ActiveCodeEditorState, createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
 import { editorTabGroup } from '../../ide/workbench/ui/tab/group_model';
 import {
 	applyWorkspaceAutosavePayload,
@@ -59,6 +59,7 @@ import {
 	initializeWorkspaceStorage,
 	persistWorkspaceSessionLocally,
 	requestWorkspaceAutosave,
+	requestWorkspaceCodeEditorViewAutosave,
 	restoreWorkspaceStorageSession,
 	runWorkspaceAutosaveTick,
 	shutdownWorkspaceStorage,
@@ -992,6 +993,50 @@ test('idle workspace has no periodic autosave callback or materialization work',
 	assert.equal(clock.activeCount, 0);
 });
 
+test('a dirty working copy can acquire its first code view after the content backup', async (t) => {
+	const storage = new MockStorage();
+	const { server } = installWorkspaceServer(t, storage);
+	const sources = await startAutosaveSession(t, storage);
+	const resource = resolveRuntimeResource(sources, { domain: TEST_DOMAIN, path: 'entry.lua' })!;
+	const model = editorTextModelService.retain(resource, 'lua', '-- cart source');
+	model.pushEditOperations([{ offset: model.buffer.length, deleteLength: 0, text: '\n-- visual edit' }]);
+	requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
+	await flushRequestedAutosave();
+	const backup = workspaceState.localGeneration!;
+	assert.equal(backup.payload.dirtyFiles.length, 1);
+	assert.equal(backup.payload.codeEditorViews.length, 0);
+	const context: CodeTabContext = {
+		id: buildCodeTabId(resource), title: 'entry.lua', model, view: createCodeEditorViewState(),
+		runtimeErrorOverlay: null, executionStopRow: null,
+	};
+	registerCodeTabContext(context);
+	editorTabGroup.initialize(createCodeEditorInput(context));
+	context.view.cursorRow = 1;
+	context.view.cursorColumn = 3;
+	const version = model.version;
+	const writes = server.requests.filter(request => request.method === 'PUT' && request.path.includes('/.bmsx/dirty/')).length;
+	requestWorkspaceCodeEditorViewAutosave(context);
+	await flushRequestedAutosave();
+	const generation = workspaceState.localGeneration!;
+	assert.equal(generation.payload.codeEditorViews.length, 1);
+	assert.equal(generation.payload.codeEditorViews[0].cursorRow, 1);
+	assert.equal(generation.payload.codeEditorViews[0].cursorColumn, 3);
+	assert.strictEqual(generation.dirtyRecords, backup.dirtyRecords);
+	assert.strictEqual(generation.payload.dirtyFiles, backup.payload.dirtyFiles);
+	assert.equal(model.version, version);
+	assert.equal(server.requests.filter(request => request.method === 'PUT' && request.path.includes('/.bmsx/dirty/')).length, writes);
+	const restored = await initializeWorkspaceStorage(storage, workspaceEnvironment.clock, 'offline-cart', sources);
+	installWorkspaceRestoreView();
+	await restoreWorkspaceStorageSession(editorStub(storage, sources) as any, sources,
+		{ breakpoints: [new Map(), new Map(), new Map()] }, restored, new Set());
+	const restoredContext = findCodeTabContext(resource)!;
+	assert.notStrictEqual(restoredContext.model, model);
+	assert.equal(restoredContext.model.buffer.getText(), '-- cart source\n-- visual edit');
+	assert.equal(restoredContext.model.dirty, true);
+	assert.equal(restoredContext.view.cursorRow, 1);
+	assert.equal(restoredContext.view.cursorColumn, 3);
+});
+
 test('cursor-only autosave reuses retained dirty content and background metadata', async (t) => {
 	const storage = new MockStorage();
 	const { server } = installWorkspaceServer(t, storage);
@@ -1013,7 +1058,7 @@ test('cursor-only autosave reuses retained dirty content and background metadata
 		request.method === 'PUT' && request.path.includes('/.bmsx/dirty/')).length;
 
 	activeContext.view.cursorColumn = 1;
-	requestWorkspaceAutosave(WorkspaceAutosaveChange.ActiveEditor);
+	requestWorkspaceCodeEditorViewAutosave(activeContext);
 	editorTabGroup.activate(backgroundTab);
 	await flushRequestedAutosave();
 	const secondGeneration = workspaceState.localGeneration!;
@@ -1034,6 +1079,63 @@ test('cursor-only autosave reuses retained dirty content and background metadata
 			request.method === 'PUT' && request.path.includes('/.bmsx/dirty/')).length,
 		dirtyPutCount,
 	);
+});
+
+test('view metadata belongs to the emitting model even when a different tab is active', async (t) => {
+	const storage = new MockStorage();
+	installWorkspaceServer(t, storage);
+	await startAutosaveSession(t, storage);
+	const first = installCodeContext('same.lua', '-- first', 0);
+	const second = installCodeContext('same.lua', '-- second', -1);
+	editorTabGroup.initialize(createCodeEditorInput(second));
+	requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
+	await flushRequestedAutosave();
+	const widget = new ActiveCodeEditorState();
+	widget.attach(first.model, first.view);
+	first.view.cursorColumn = 2;
+	requestWorkspaceCodeEditorViewAutosave(widget);
+	widget.attach(second.model, second.view);
+	second.view.cursorColumn = 5;
+	requestWorkspaceCodeEditorViewAutosave(widget);
+	await flushRequestedAutosave();
+	const views = workspaceState.localGeneration!.payload.codeEditorViews;
+	assert.equal(views.find(view => view.domain === 0)!.cursorColumn, 2);
+	assert.equal(views.find(view => view.domain === -1)!.cursorColumn, 5);
+});
+
+test('clean navigation and unchanged metadata do not schedule or rewrite recovery contents', async (t) => {
+	const storage = new MockStorage();
+	const { clock, server } = installWorkspaceServer(t, storage);
+	const sources = await startAutosaveSession(t, storage);
+	const resource = resolveRuntimeResource(sources, { domain: TEST_DOMAIN, path: 'entry.lua' })!;
+	const model = editorTextModelService.retain(resource, 'lua', '-- cart source');
+	const context = { model, view: createCodeEditorViewState() };
+	context.view.cursorColumn = 3;
+	const revision = workspaceState.requestedRevision;
+	requestWorkspaceCodeEditorViewAutosave(context);
+	assert.equal(workspaceState.requestedRevision, revision);
+	assert.equal(clock.activeCount, 0);
+	assert.equal(model.version, 1);
+	assert.equal(model.canUndo, false);
+	assert.equal(model.dirty, false);
+	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- edit\n' }]);
+	requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
+	await flushRequestedAutosave();
+	requestWorkspaceCodeEditorViewAutosave(context);
+	await flushRequestedAutosave();
+	const generation = workspaceState.localGeneration!;
+	const requestCount = server.requests.length;
+	requestWorkspaceCodeEditorViewAutosave(context);
+	await flushRequestedAutosave();
+	assert.strictEqual(workspaceState.localGeneration, generation);
+	assert.equal(server.requests.length, requestCount);
+	// Save/Undo can make a queued view clean before the timer captures it.
+	requestWorkspaceCodeEditorViewAutosave(context);
+	model.undo();
+	requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
+	await flushRequestedAutosave();
+	assert.deepEqual(workspaceState.localGeneration!.payload.dirtyFiles, []);
+	assert.deepEqual(workspaceState.localGeneration!.payload.codeEditorViews, []);
 });
 
 test('record generation stays unique when the host clock does not advance', async (t) => {

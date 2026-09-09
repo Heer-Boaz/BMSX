@@ -75,7 +75,7 @@ The full Studio suite also checks the ordinary Scene Editor, FSM graph,
 ActionEffect inspector, focus, source save, pause/rewind/Hot Resume, reboot and Scenario Lab.
 
 `studio_bt_moves.ts` uses the independent `behavior_order_fixture.ts`: actual
-Earlier/Later actions, held pointer, metadata versus child order, weighted
+Earlier/Later palette commands, held Source pointer, metadata versus child order, weighted
 wrappers, shared initializers, expanded source selection, graph/code/palette
 Undo/Redo, source navigation, readonly/current-generation admission and retained
 warm geometry. Capture markers: `STUDIO: BT reordered children ready for visual
@@ -83,6 +83,14 @@ inspection` and `STUDIO: BT reordered choices ready for visual inspection`.
 The [authoring contract](../../../docs/behavior_tree_authoring_design.md) keeps
 this bounded action separate from a complete visual editor or a live-BT-rebind
 end-to-end claim.
+
+The Pietious navigation profile additionally runs `studio_source_recovery.ts`:
+the first code view can follow a visual edit and its timed autosave. Source,
+Enter, double-click and Details navigation must emit no content edits or dirty
+state; the ordinary timer and closing/reopening the IDE remain active.
+Independent collection/session tests live in `workspace_storage.test.ts`.
+See [the recovery contract](../../../docs/studio_source_recovery_design.md)
+for the reproduced failure and the separate unreproduced dirty-source report.
 Expected negative guest-fault cases retain their existing fault gate. A passing
 build alone is not evidence for these workflows or physical-device performance.
 

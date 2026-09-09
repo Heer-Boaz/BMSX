@@ -1,3 +1,4 @@
+import { testStudioSourceRecovery } from './studio_source_recovery';
 import { testStudioStateGraph } from './studio_state_graph';
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { queryDefinitionsAt } from '../../../ide/editor/contrib/definitions/query';
@@ -143,6 +144,7 @@ export async function runStudioPointerNavigation(test: StudioFixture, cart: Navi
 	await test.until(() => test.harness.isCartActive(), `${cart}: boot the actual cart`);
 	await test.press('ControlRight', 'ShiftRight');
 	await test.runMenuCommand('pause');
+	if (cart === 'pietious') await testStudioSourceRecovery(test);
 	await testStudioPointerNavigation(test, cart);
 	await testStudioBehaviorSourceGraph(test);
 	await testStudioBtMembership(test);

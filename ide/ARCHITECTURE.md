@@ -97,7 +97,12 @@ maintain a second JSON/source buffer or replace the whole document for a
 property change.
 
 Workspace recovery persists dirty model contents separately from code-editor
-view metadata. Rename, behavior-source indexing, Hot Resume, and autosave read
+view metadata. A working copy can acquire its first code view after its content
+backup. Metadata requests retain the emitting model/view pair; the next
+generation inserts or updates that resource's view without rewriting source
+records or consulting the active tab. Clean navigation is not a dirty edit.
+See [source recovery](../docs/studio_source_recovery_design.md) for lifecycle
+and regression evidence. Rename, behavior-source indexing, Hot Resume, and autosave read
 resource models directly. Diagnostics reads the models of retained code-editor
 inputs without consulting an active-tab document copy. Completing an
 asynchronous save records the exact captured model state; an edit made while

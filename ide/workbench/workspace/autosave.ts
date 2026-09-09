@@ -4,7 +4,6 @@ import {
 } from '../../runtime/sources';
 import type { RuntimeBreakpointState } from '../../runtime/debugger_state';
 import {
-	getCodeTabContextById,
 	getCodeTabContexts,
 } from '../ui/code_tab/contexts';
 import { editorTextModelService } from '../../editor/model/model_service';
@@ -30,7 +29,7 @@ import {
 	workspaceState,
 } from './state';
 import {
-	captureContextSnapshotMetadata,
+	captureCodeEditorViewMetadata,
 } from './context_snapshot';
 import {
 	type PersistedCodeEditorView,
@@ -42,7 +41,8 @@ import {
 import type { CartEditor } from '../../cart_editor';
 import type { HostClock } from '../../../hosts/common/clock';
 import type { KeyValueStorage } from '../../workspace/key_value_storage';
-import type { CodeEditorInputId } from '../../common/editor_context';
+import type { EditorTextModel } from '../../editor/model/text_model';
+import type { CodeEditorViewState } from '../../editor/ui/code_editor_state';
 
 export function commitWorkspaceSessionLocally(
 	storage: KeyValueStorage,
@@ -51,7 +51,7 @@ export function commitWorkspaceSessionLocally(
 	sources: RuntimeSourceState,
 	debuggerState: RuntimeBreakpointState,
 	changes: WorkspaceAutosaveChange,
-	metadataContextIds: ReadonlySet<CodeEditorInputId>,
+	metadataViews: ReadonlyMap<EditorTextModel, CodeEditorViewState>,
 ): WorkspaceSessionGeneration {
 	const previousGeneration = workspaceState.localGeneration;
 	const rebuildDirtyFiles = !previousGeneration || (changes & WorkspaceAutosaveChange.DirtyFiles);
@@ -98,10 +98,10 @@ export function commitWorkspaceSessionLocally(
 	let codeEditorViews: PersistedCodeEditorView[];
 	if (rebuildDirtyFiles) {
 		codeEditorViews = captureDirtyCodeEditorViews();
-	} else if (changes & WorkspaceAutosaveChange.ActiveEditor) {
+	} else if (changes & WorkspaceAutosaveChange.CodeEditorViews) {
 		codeEditorViews = updateCodeEditorViews(
 			previousGeneration.payload.codeEditorViews,
-			metadataContextIds,
+			metadataViews,
 		);
 	} else {
 		codeEditorViews = previousGeneration.payload.codeEditorViews;
@@ -173,7 +173,7 @@ function captureDirtyCodeEditorViews(): PersistedCodeEditorView[] {
 		if (!context.model.dirty) {
 			continue;
 		}
-		const metadata = captureContextSnapshotMetadata(context);
+		const metadata = captureCodeEditorViewMetadata(context.view);
 		views.push({
 			domain: context.model.resource.domain,
 			path: context.model.resource.path,
@@ -185,31 +185,32 @@ function captureDirtyCodeEditorViews(): PersistedCodeEditorView[] {
 
 function updateCodeEditorViews(
 	views: PersistedCodeEditorView[],
-	contextIds: ReadonlySet<CodeEditorInputId>,
+	metadataViews: ReadonlyMap<EditorTextModel, CodeEditorViewState>,
 ): PersistedCodeEditorView[] {
 	let updatedViews = views;
-	for (const contextId of contextIds) {
-		const context = getCodeTabContextById(contextId)!;
-		const metadata = captureContextSnapshotMetadata(context);
+	for (const [model, view] of metadataViews) {
+		// Save/Undo may have completed since this view requested recovery metadata.
+		if (!model.dirty) continue;
+		const metadata = captureCodeEditorViewMetadata(view);
 		let matchingIndex = -1;
 		for (let index = 0; index < views.length; index += 1) {
 			const entry = views[index];
-			if (entry.domain !== context.model.resource.domain || entry.path !== context.model.resource.path) {
+			if (entry.domain !== model.resource.domain || entry.path !== model.resource.path) {
 				continue;
 			}
 			matchingIndex = index;
 			break;
 		}
-		const entry = views[matchingIndex]!;
-		if (codeEditorViewMetadataEquals(entry, metadata)) {
+		if (matchingIndex !== -1 && codeEditorViewMetadataEquals(views[matchingIndex], metadata)) {
 			continue;
 		}
 		if (updatedViews === views) {
 			updatedViews = views.slice();
 		}
-		updatedViews[matchingIndex] = {
-			domain: entry.domain,
-			path: entry.path,
+		// A visual working copy can acquire its first code view after its backup.
+		updatedViews[matchingIndex === -1 ? updatedViews.length : matchingIndex] = {
+			domain: model.resource.domain,
+			path: model.resource.path,
 			...metadata,
 		};
 	}
@@ -218,7 +219,7 @@ function updateCodeEditorViews(
 
 function codeEditorViewMetadataEquals(
 	entry: PersistedCodeEditorView,
-	metadata: ReturnType<typeof captureContextSnapshotMetadata>,
+	metadata: ReturnType<typeof captureCodeEditorViewMetadata>,
 ): boolean {
 	if (entry.cursorRow !== metadata.cursorRow
 		|| entry.cursorColumn !== metadata.cursorColumn

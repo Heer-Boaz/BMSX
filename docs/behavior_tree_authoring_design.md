@@ -1,7 +1,9 @@
 # BT-authoring: bronbehoudend herordenen
 
-`STUDIO-BT-CHILD-MOVE-01` bouwt uitsluitend **Earlier/Later** op bestaande
-ordered `children` en weighted `choices`. `STUDIO-BT-VISUAL-EDITOR-01` blijft
+`STUDIO-BT-CHILD-MOVE-01` bouwt broncommands voor bestaande ordered `children`
+en weighted `choices`. De afgewezen **Earlier/Later-knoppen zijn uit de
+graph-header verwijderd**; de expliciete commands blijven in de Command
+Palette, niet als vervanging voor slepen. `STUDIO-BT-VISUAL-EDITOR-01` blijft
 het grotere, nog onvoltooide authoringcontract. Geen Add/Remove/Connect,
 drag-to-reorder, property-editor of runtime-observer in deze slice.
 
@@ -30,7 +32,7 @@ drag-to-reorder, property-editor of runtime-observer in deze slice.
 | Command-admission | Writable, actuele sourcegeneration, complete syntax en een echte eerdere/latere arrayentry. Root, parallelrollen en onbekende membership hebben geen move-target. |
 | Expliciete edit | Vertaal de twee echte arrayentries naar hun lexical fieldindices; laat de gedeelde Lua-owner de minimale editbatch maken. |
 | Text/history | Twee of drie edits, één Undo-element/content-event. Geselecteerde syntax wordt niet vervangen; bestaande source-correspondence volgt haar. |
-| Focus/UI | Echte action-bar en Command Palette. Graph-control en overige Lens-control binden elk expliciet document-Undo/Redo. Geen parent-commandfallback of globale gameplaytoets. |
+| Focus/UI | Source/Details/Children in de action-bar; herordenen via expliciete Command Palette-commands. Graph-control en overige Lens-control binden elk expliciet document-Undo/Redo. Geen parent-commandfallback of globale gameplaytoets. |
 | Compiler/cartlib/machine | Ongewijzigd. Cartlib compileert de gewijzigde Lua-order; normal Save/Hot Resume blijft de bestaande install/rebind-route. Geen nieuwe gueststate of C++-representatie. |
 
 Een opaque builder **binnen** een bewezen lijst verhindert de bronbewerking
@@ -89,6 +91,41 @@ De bestaande productworkflow en de CPU-oracle zijn afzonderlijk bewijs. Een
 specifieke live BT-reorder/rebind-sessie via Hot Resume is hiermee niet als
 nieuwe end-to-end proef afgevinkt.
 
+## Volgende interactiegrens: slepen en verbindingen
+
+De op Git gecontroleerde aigen-versie is
+[`5248d9c`](https://github.com/Heer-Boaz/aigen/tree/5248d9c9a0b3bb1cde45a9088c9427d20d8f1b91).
+[`WorkflowCanvas`](https://github.com/Heer-Boaz/aigen/blob/5248d9c9a0b3bb1cde45a9088c9427d20d8f1b91/aigen/workflow_canvas.py#L261-L439)
+onderscheidt node-/port-hit, capture, tijdelijke preview en één commit na
+een geldige release. Een klik of geannuleerde gesture muteert het document
+niet. [`WorkflowEditBuffer`](https://github.com/Heer-Boaz/aigen/blob/5248d9c9a0b3bb1cde45a9088c9427d20d8f1b91/aigen/workflow_edit_buffer.py#L319-L383)
+bezit reconnect en zijn Undo-wijziging, niet de renderer.
+
+Dit is het referentiecontract voor de volgende slice, **nog niet gebouwd**:
+
+1. De gedeelde graph-control bezit press/drag/release/cancel en pointercapture.
+   De bijdrage levert bewezen source-members en dropdoelen. Geen BT-parser of
+   world-mutatie in generieke input/rendercode.
+2. Preview en insertion-/poortmarkering zijn viewstate. Tijdens bewegen geen
+   Lua-edit, herparse, history-element of autosave. Escape, blur, sluiten en
+   een nieuwe sourcegeneration annuleren de gesture.
+3. Een expliciete reorder-drop binnen de bewezen lijst doet één gewone
+   source-editbatch via de bestaande taalowner. Geen reeks Earlier/Later-
+   commands per hover of een delete-plus-recreate van het geselecteerde kind.
+4. Nodepositie is niet automatisch uitvoervolgorde. Aigen bewaart layout in
+   zijn eigen workflowdocument; dat rechtvaardigt geen editor-coördinaten in
+   cartlib/Lua of wijziging van een BT doordat iemand alleen het diagram ordent.
+5. Reconnect vereist een eigen bewezen Lua-bronbewerking: nieuwe parent/list,
+   gewicht/rol, scope en gedeelde const-initializers moeten hun bestaande
+   betekenis behouden. Een zichtbare lijn alleen is geen schrijfbevoegdheid.
+   Geen runtimegraph, tweede authored graph of gegokte callbackrelatie.
+
+Bewijs vóór afronding: dezelfde fysieke drop over alle drie backends, geen
+dirty state bij klik/cancel/ongeldige drop, één Undo per geldige drop, hidden
+source edits en generation-cancel, plus dezelfde source-/scope-oracles als de
+keyboardcommands. De autosavefix wordt niet afhankelijk gemaakt van deze
+grotere interactieslice.
+
 ## Kosten
 
 Warm command-enablement leest uitsluitend behouden pointers, documentversie,
@@ -104,7 +141,7 @@ Metingen en reproductie: `tests/conformance/behavior_graph/profile.ts`,
 `/tmp/bmsx-bt-move/`. Zie de validatieresultaten hieronder voor de afgebakende
 hostkosten, niet een totale Studio-frame- of doelhardwaregarantie.
 
-### Gemeten hostkosten en validatie (2026-09-09)
+### Gemeten hostkosten en validatie van de oorspronkelijke commandslice (2026-09-09)
 
 Geïsoleerde Node 22.23.1-metingen, tien warmups en mediaan van 25 samples.
 Moveconstructie gebruikt dezelfde bewaarde parse/sourcesnapshot; de grootste
