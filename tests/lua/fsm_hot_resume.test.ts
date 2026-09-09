@@ -20,6 +20,7 @@ import { BT_MEMBERSHIP_SOURCE } from '../helpers/behavior_membership_fixture';
 import { BT_ORDER_SOURCE } from '../helpers/behavior_order_fixture';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { createLuaTableFieldMoveEdits } from '../../ide/language/lua/table_field_moves';
+import { removeBehaviorTreeChild } from '../../ide/workbench/contrib/behavior_lens/behavior_tree_edit';
 import { buildBehaviorSourceDocument } from '../../ide/workbench/contrib/behavior_lens/recognizer';
 import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
 
@@ -555,6 +556,39 @@ return target.order, weighted.choices[${destination === 0 ? 1 : 3}].weight, weig
 `);
 		assert.equal(choiceCpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 		assert.deepEqual(materializeCpuCompletionValues(choiceCpu), [expected, 9, true]);
+	}
+});
+
+test('BT source removal changes actual compiled task order without deleting referenced definitions or choice weights', () => {
+	const resource = { domain: 0 as const, path: 'remove.lua', source: { type: 'lua' as const, resid: 'remove' } };
+	for (const [definitionIndex, index, expected] of [[0, 0, 123], [0, 1, 13], [0, 2, 112], [2, 1, 13]] as const) {
+		const model = new EditorTextModel(resource, 'lua', BT_ORDER_SOURCE);
+		const definition = buildBehaviorSourceDocument(resource, buildLuaFileSemanticData(BT_ORDER_SOURCE, resource.path)).definitions[definitionIndex];
+		assert.ok(definition.behaviorKind === 'behavior_tree' && definition.root?.kind === 'node');
+		const branch = definition.root.branches[0];
+		assert.ok((branch.role === 'children' || branch.role === 'choices') && branch.source.kind === 'section');
+		removeBehaviorTreeChild(model, { table: branch.source.table, entries: branch.entries, index });
+		const execution = definitionIndex === 0 ? `
+local program<const> = require('cartlib/behaviour_tree/program').compile('oracle', { root = root })
+assert(program.evaluate(target, { _execution_state = program.create_execution_state() }, program.operand) == result.success)
+assert(#children == 2 and children.note == 'metadata is not a child')
+` : `
+assert(#weighted.choices == 2 and weighted.choices[1].weight == 1 and weighted.choices[2].weight == 3)
+assert(weighted.choices.note == 'metadata is not a choice')
+for index = 1, #weighted.choices do
+	local program<const> = require('cartlib/behaviour_tree/program').compile('oracle', { root = weighted.choices[index].child })
+	assert(program.evaluate(target, { _execution_state = program.create_execution_state() }, program.operand) == result.success)
+end
+`;
+		const cpu = createCartlibProgramCpu(model.buffer.getText() + `
+local target<const> = { order = 0 }
+${execution}
+return target.order, #nested.children, nested.children[1] == leaf
+`);
+		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [expected, 2, true]);
+		model.undo();
+		assert.equal(model.buffer.getText(), BT_ORDER_SOURCE);
 	}
 });
 

@@ -1,16 +1,29 @@
 import type { BehaviorTreeSourceMember } from './behavior_tree_model';
 import type { BehaviorLensViewState } from './view_model';
 import type { EditorTextModel } from '../../../editor/model/text_model';
+import { getTextSnapshot } from '../../../editor/text/source_text';
+import { createLuaTableFieldRemovalEdits } from '../../../language/lua/source_edits';
 import { createLuaTableFieldMoveEdits } from '../../../language/lua/table_field_moves';
+import { getCachedLuaParse } from '../../../../toolchain/ts/lua/analysis/cache';
 
 /** Constant-time command admission from the current projection's source evidence. */
-export function behaviorTreeMoveTarget(view: BehaviorLensViewState, direction: -1 | 1): BehaviorTreeSourceMember | undefined {
-	if (!view.document.syntaxComplete || view.presentation.kind !== 'graph') return undefined;
+export function behaviorTreeEditTarget(view: BehaviorLensViewState): BehaviorTreeSourceMember | null {
+	if (!view.document.syntaxComplete || view.presentation.kind !== 'graph') return null;
 	const selection = view.presentation.viewport.selection;
-	if (selection === null) return undefined;
-	const member = (selection.kind === 'node' ? selection : selection.child).member;
+	if (selection === null) return null;
+	return (selection.kind === 'node' ? selection : selection.child).member;
+}
+
+export function behaviorTreeMoveTarget(view: BehaviorLensViewState, direction: -1 | 1): BehaviorTreeSourceMember | undefined {
+	const member = behaviorTreeEditTarget(view);
 	if (member !== null && member.index + direction >= 0 && member.index + direction < member.entries.length) return member;
 	return undefined;
+}
+
+/** Remove the authored list entry, not its referenced initializer or a guessed runtime node. */
+export function removeBehaviorTreeChild(model: EditorTextModel, member: BehaviorTreeSourceMember): void {
+	const parsed = getCachedLuaParse({ path: model.resource.path, source: getTextSnapshot(model.buffer) }).parsed;
+	model.pushEditOperations(createLuaTableFieldRemovalEdits(model.buffer, parsed.tokens, member.entries[member.index].field));
 }
 
 /** Array ranks are not lexical field indices: named metadata stays ordinary Lua. */

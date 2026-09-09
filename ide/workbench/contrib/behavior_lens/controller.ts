@@ -36,7 +36,7 @@ import { editorViewState } from '../../../editor/ui/view/state';
 import type { GraphLayoutEngineFactory } from '../../services/graph_layout/engine';
 import { acceptStateGraphSelection, stateGraphSelection } from './state_graph_navigation';
 import { buildStateMachineDetails } from './state_machine_details';
-import { behaviorTreeMoveTarget, moveBehaviorTreeChild } from './behavior_tree_edit';
+import { behaviorTreeEditTarget, behaviorTreeMoveTarget, moveBehaviorTreeChild, removeBehaviorTreeChild } from './behavior_tree_edit';
 
 const PICKER_TITLES: Readonly<Record<BehaviorKind, string>> = {
 	action_effect: 'ACTIONEFFECTS',
@@ -156,6 +156,25 @@ export class BehaviorLensController {
 		const input = getActiveTab();
 		return input.kind === 'behavior_lens' && !input.workingCopy.readOnly
 			&& input.workingCopy.version === input.view.sourceVersion && behaviorTreeMoveTarget(input.view, direction) !== undefined;
+	}
+
+	public canRemoveSelectedChild(): boolean {
+		const input = getActiveTab();
+		return input.kind === 'behavior_lens' && !input.workingCopy.readOnly
+			&& input.workingCopy.version === input.view.sourceVersion && behaviorTreeEditTarget(input.view) !== null;
+	}
+
+	public removeSelectedChild(): void {
+		const input = getActiveTab();
+		if (input.kind !== 'behavior_lens' || input.workingCopy.readOnly) return;
+		this.updateView(input);
+		const member = behaviorTreeEditTarget(input.view);
+		if (member === null) return;
+		this.editorPanes.activePane.focus();
+		removeBehaviorTreeChild(input.workingCopy, member);
+		// Ordinary source correspondence clears the deleted occurrence, including
+		// shared/identical uses. It must not select its former index or a namesake.
+		this.updateView(input);
 	}
 
 	public moveSelectedChild(direction: -1 | 1): void {

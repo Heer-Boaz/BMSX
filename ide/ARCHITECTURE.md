@@ -230,6 +230,18 @@ copies per graph occurrence. The language-owned move and ordinary text mapping
 retain the selected subtree through Undo/Redo. Both concrete lens focus targets
 explicitly bind document history; parent focus does not provide command fallback.
 See [`../docs/behavior_tree_authoring_design.md`](../docs/behavior_tree_authoring_design.md).
+
+BT removal consumes that same proven member and the existing Lua field-removal
+owner. It removes the source field and its separator, not a referenced initializer;
+weighted cards/edges remove the complete choice. Exterior trivia and unrelated
+syntax remain unchanged. One document edit/Undo clears the deleted source
+selection without choosing a successor or restoring selection by name on Undo.
+The normal command palette/action-bar expose Remove; unmodified Delete belongs
+only to concrete graph focus and does not repeat or intercept code/gameplay input.
+An empty authored table remains a table, not an editor-generated replacement
+task or a promise that every composite can execute it. No new guest state or
+runtime validator is introduced.
+
 FSM source bodies now retain child occurrences, guard fields and
 consumer slots. A cold second pass binds initial/concurrent entries and possible
 returned paths to those occurrence keys within one registration. Inline and

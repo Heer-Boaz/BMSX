@@ -54,6 +54,7 @@ export type EditorCommandId =
 	| 'behaviorLens.toggleBranch'
 	| 'behaviorLens.moveChildEarlier'
 	| 'behaviorLens.moveChildLater'
+	| 'behaviorLens.removeChild'
 	| 'sceneEditor.removeMember'
 	| 'sceneEditor.moveMemberUp'
 	| 'sceneEditor.moveMemberDown'

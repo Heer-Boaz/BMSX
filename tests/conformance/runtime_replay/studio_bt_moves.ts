@@ -27,7 +27,7 @@ export async function testStudioBtMoves(test: StudioFixture): Promise<void> {
 	const viewport = graph.viewport;
 	const earlier = 'behaviorLens.moveChildEarlier';
 	const later = 'behaviorLens.moveChildLater';
-	check(graph.actionBar.items.length === 3, 'BT title exposes navigation and expansion, not Earlier/Later buttons');
+	check(!graph.actionBar.items.some(item => item.command === earlier || item.command === later), 'BT title has no Earlier/Later buttons');
 	check(!ide.editor.commands.isEnabled(earlier) && !ide.editor.commands.isEnabled(later), 'BT moves: registration is not an ordered child');
 	await press('ArrowDown');
 	await press('ArrowDown');

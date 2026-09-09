@@ -324,3 +324,31 @@ milliseconds are numerically microseconds per operation. Ten warmups, median of
 25; run without other tests. Retained geometry, feedback, quad backing and one
 session/no stationary hit are assertions. This is not allocation profiling,
 GPU raster/upload timing, full-frame timing or target-hardware certification.
+
+## BT source removal
+
+```sh
+npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
+  tests/lua/behavior_tree_removal.test.ts tests/lua/lua_table_removal.test.ts \
+  tests/lua/editor_focus.test.ts tests/lua/fsm_hot_resume.test.ts
+npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+  tests/conformance/behavior_graph/profile_edit.ts
+```
+
+`studio_bt_remove.ts` shares the independent authored order fixture with the
+source and real BLua/cartlib tests. The actual palette, tiny-font Remove action
+and focus-scoped Delete remove a single source-list entry, including a weighted
+wrapper selected through its connection. Source navigation, code Delete, hidden
+Undo/Redo, readonly/generation admission and a captured drag interrupted by a
+source deletion use the normal workbench routes. The removed occurrence loses
+selection; no successor or restored namesake inherits it. Runtime media and
+the paused machine remain unchanged. Capture markers are `STUDIO: BT removal
+action ready for visual inspection` and `STUDIO: BT removed child ready for
+visual inspection`.
+
+`profile_edit.ts` separates retained membership admission, syntax-edit construction,
+PieceTree apply/Undo and the concrete source-removal entrypoint plus Undo at
+24/1,024 siblings. Each timing uses batches of 1,000, ten warmups and the median
+of 25. The last timing includes source snapshot/cache access after each Undo,
+but no semantic refresh or graph rebuild. It is not a full edit-to-visible-frame,
+heap-allocation, GPU or Hot Resume benchmark. Run measurements without other tests.

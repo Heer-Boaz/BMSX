@@ -39,6 +39,7 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	'behaviorLens.toggleBranch': { category: 'Behavior Lens', title: 'Toggle BT Children', shortTitle: 'Children' },
 	'behaviorLens.moveChildEarlier': { category: 'Behavior Lens', title: 'Move BT Child Earlier', shortTitle: 'Earlier' },
 	'behaviorLens.moveChildLater': { category: 'Behavior Lens', title: 'Move BT Child Later', shortTitle: 'Later' },
+	'behaviorLens.removeChild': { category: 'Behavior Lens', title: 'Remove BT Child', shortTitle: 'Remove' },
 	'behaviorLens.source': { category: 'Behavior Lens', title: 'Open Source', shortTitle: 'Source' },
 	'sceneEditor.removeMember': { category: 'Scene Editor', title: 'Remove Member', shortTitle: 'Remove' },
 	'sceneEditor.moveMemberUp': { category: 'Scene Editor', title: 'Move Member Up', shortTitle: 'Up' },

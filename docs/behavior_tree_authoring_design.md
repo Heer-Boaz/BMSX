@@ -9,6 +9,9 @@ de fysieke reorder-interactie op dezelfde bronowner toe.
 authoringcontract. Geen Add/Remove/Connect, property-editor of runtime-observer
 in deze twee slices.
 
+`STUDIO-BT-CHILD-REMOVE-01` voegt hieronder de afzonderlijke source-removalgrens
+toe. Dit maakt reparent/reconnect nog niet beschikbaar.
+
 ## Getoetste productievoorbeelden
 
 - [LimboAI, Move Up/Down](https://github.com/limbonaut/limboai/blob/3f14ea4c26911e8b8e30c6bcdb575fc589a59deb/editor/limbo_ai_editor_plugin.cpp#L660-L719):
@@ -281,3 +284,78 @@ Studio-frametijd. Parsing, drop-editkosten en Hot Resume liggen buiten deze meti
 Reproductie staat in `tests/conformance/behavior_graph/README.md`; lokale logs,
 metingen en captures staan onder `/tmp/bmsx-bt-drag/`. Reconnect/reparent en de
 niet-gereproduceerde spontane dirty-melding zijn hiermee niet afgevinkt.
+
+## `STUDIO-BT-CHILD-REMOVE-01`: een authored occurrence verwijderen
+
+De [LimboAI remove-actie](https://github.com/limbonaut/limboai/blob/3f14ea4c26911e8b8e30c6bcdb575fc589a59deb/editor/limbo_ai_editor_plugin.cpp#L822-L855)
+bewerkt de echte parent-childrelatie via één documentactie, inclusief de
+oorspronkelijke positie voor Undo. Zijn resourceclones en globale-history-hack
+horen niet bij onze Lua-owner. [Aigen delete](https://github.com/Heer-Boaz/aigen/blob/5248d9c9a0b3bb1cde45a9088c9427d20d8f1b91/aigen/workflow_edit_buffer.py#L182-L241)
+bevestigt dezelfde grens: het document bezit node/verbinding/order en commit;
+de canvasrenderer niet. In BMSX is dat document de bestaande Lua-working-copy.
+
+| Owner | Removalcontract |
+| --- | --- |
+| Graphprojectie | Dezelfde bewezen `BehaviorTreeSourceMember` als reorder. Een kaart en zijn inkomende edge wijzen voor verwijderen op hetzelfde arrayfield; weighted payload is de hele choice-wrapper. |
+| Command/focus | `Remove BT Child` in de bestaande palette en `Remove` in de graph-action-bar; Delete uitsluitend bij concrete graphfocus, zonder key-repeat. Writable, actuele generation, complete syntax en proven membership zijn vereist. Root, parallelrollen, attachments en onbekende membership hebben geen target. |
+| Lua-source-editowner | `createLuaTableFieldRemovalEdits` verwijdert exact fieldsyntax en eigen separator. Alle exterior comments/whitespace, andere fields en referenced initializers blijven bytegelijk. Geen formatter, lokale scanner of nieuwe deleteprimitive. De expliciete command leest de actuele tokens via de gedeelde parsecache. |
+| Text/history | Eén `pushEditOperations`, één content-event en één Undo-element. Geen graphhistory, delete-loop per node of autosave tijdens pointer-hover. |
+| Source correspondence | De verwijderde use verliest selectie; een namesake of opvolger erft die niet. De gekozen registratie blijft behouden. Undo herstelt exacte bron, niet de reeds verwijderde selectie/folds. Geen tweede identiteit bovenop source-ranges. |
+
+Een alias verwijderen wist zijn **use**, niet de gedeelde initializer.
+Een field verwijderen uit een gedeelde constructor verandert daarentegen
+iedere bronprojectie van die constructor; de gekozen registratie krijgt geen
+privékopie. Ook een opaque expression kan als compleet sourcefield verwijderd
+worden. De host evalueert die expression niet en telt geen runtimeobjecten.
+
+De laatste entry mag worden verwijderd: de constructor blijft bestaan, met
+zijn metadata en exterior trivia. Dit is een syntaxedit, geen belofte dat een
+willekeurige BT daarna uitvoerbaar is. De live cartlib-owner definieert een lege
+sequence als success en een lege selector als failure; randomized composites
+vereisen een uitvoerbare keuzelijst. De editor verzint daarvoor geen default
+child, guestvalidator of ander runtimegedrag.
+
+Warm enablement leest uitsluitend retained membership, versie, readonly en
+focus. Tokens/source worden alleen bij de expliciete verwijderactie opgevraagd.
+Machine, compiler, cartlib, wereldtick en C++ blijven ongewijzigd.
+
+### Validatie van source-removal (2026-09-09)
+
+- **1.126 Lua-tests geslaagd, één bestaande skip.** Zeven zelfstandige
+  removalproeven dekken first/middle/last/sole, opaque members, wrapper versus
+  child, gedeelde constructors, namesakes, exterior trivia, source-correspondence
+  en Undo/Redo. De gedeelde focusproef bewaakt Delete zonder modifiers/repeat en
+  zonder overerving naar tekstvelden of gameplay.
+- De echte BLua/cartlib-proef compileert de gewijzigde onafhankelijke fixture:
+  verwijderde children geven uitvoervolgorde `123`, `13` of `112`; de weighted
+  proef behoudt de gewichten `1` en `3` bij de overgebleven eigen children.
+  Dit is guestuitvoeringsbewijs, geen nieuwe live BT-Hot-Resume-rebindproef.
+- De volledige Studio-workflow en de Pietious navigation/recovery-workflow
+  slagen op **software, WebGL2 en WebGPU**. Fysieke Source, code-Delete,
+  action-bar, palette, hidden Undo/Redo, readonly/generation en Delete tijdens
+  een bewezen werkende captured drag gebruiken de gewone hostinput. Zes echte
+  384×288 tiny-fontcaptures geïnspecteerd; de toolbar past en een verwijderd
+  child laat geen verkeerde selectie achter. Chromium/SwiftShader is geen
+  fysieke-GPU-certificering.
+- IDE-typecheck, browser/headless-productbuilds en headless Behavior Lens
+  (**59 assertions**) slagen. Strikte architecture-audit: nul issues;
+  core-parity, indentation- en diff-check slagen. Tests-project: **51 bestaande
+  diagnostics, nul extra file/code/message/multiplicity**; twee offsets zijn
+  door een import verschoven. Dit project is dus niet volledig typecheckgroen.
+
+Geïsoleerde Node 22.23.1-meting: 1.000 operaties per sample, tien warmups,
+mediaan van 25. Alle onderstaande waarden zijn microseconden per operatie:
+
+| Siblings / source UTF-16 | Retained admission | Editconstructie | PieceTree apply + Undo | Removal-entrypoint + Undo |
+| --- | ---: | ---: | ---: | ---: |
+| 24 / 1.158 | 0,023 | 0,116 | 0,516 | 0,805 |
+| 1.024 / 41.158 | 0,007 | 0,042 | 0,691 | 0,980 |
+
+Twee edits verwijderen in beide fixtures zes UTF-16-eenheden. De bron-/graph-
+projectie blijft behouden tijdens de admissionproef. De laatste kolom bevat
+snapshot-/parsecachetoegang na Undo, niet semantic refresh, relayout, render,
+Save/Hot Resume of totale Studio-frametijd. Submicrosecondeverschillen zijn
+gevoelig voor JIT/callshape; dit is geen schaalbaarheidswinst of heap-profiel.
+Reproductie: `tests/conformance/behavior_graph/profile_edit.ts`; alle logs,
+metingen en captures: `/tmp/bmsx-bt-authoring-next/`. Reparent/reconnect en de
+afzonderlijke, nog niet gereproduceerde dirty-source-melding blijven open.

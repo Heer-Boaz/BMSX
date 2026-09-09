@@ -62,6 +62,10 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 			},
 			run: () => this.controller.toggleBranch(),
 		});
+		this.graph.focusTarget.registerCommand('behaviorLens.removeChild', {
+			isEnabled: () => this.controller.canRemoveSelectedChild(),
+			run: () => this.controller.removeSelectedChild(),
+		});
 	}
 
 	protected override activate(): void {

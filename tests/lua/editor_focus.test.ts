@@ -89,6 +89,36 @@ test('graph folding binds unmodified Space only to the concrete graph focus', (t
 	assert.equal(resolveEditorCommandKeybinding('Space', KeyModifier.none, commands), null);
 });
 
+test('BT Delete belongs to graph focus, does not repeat, and cannot consume text-field or gameplay input', t => {
+	t.after(() => inputFocus.setTarget(null));
+	const graph = inputFocus.createTarget();
+	let enabled = true;
+	let removals = 0;
+	graph.registerCommand('behaviorLens.removeChild', {
+		isEnabled: () => enabled,
+		run: () => { removals += 1; },
+	});
+	const commands = { isEnabled: () => true };
+	graph.focus();
+	const binding = resolveEditorCommandKeybinding('Delete', KeyModifier.none, commands)!;
+	assert.equal(binding.command, 'behaviorLens.removeChild');
+	assert.notEqual(binding.repeat, true);
+	inputFocus.executeCommand(binding.command);
+	assert.equal(removals, 1);
+	for (const modifier of [KeyModifier.ctrl, KeyModifier.meta, KeyModifier.shift, KeyModifier.alt]) {
+		assert.equal(resolveEditorCommandKeybinding('Delete', modifier, commands), null);
+	}
+	enabled = false;
+	inputFocus.executeCommand(binding.command);
+	assert.equal(removals, 1);
+	const field = new TextField(graph);
+	field.focusTarget.focus();
+	assert.equal(resolveEditorCommandKeybinding('Delete', KeyModifier.none, commands), null, 'no parent binding inheritance');
+	field.focusTarget.release();
+	graph.release();
+	assert.equal(resolveEditorCommandKeybinding('Delete', KeyModifier.none, commands), null);
+});
+
 test('input history restores content and selection, replaces selection as one operation, and publishes changes', () => {
 	const field = new TextField();
 	let changes = 0;
