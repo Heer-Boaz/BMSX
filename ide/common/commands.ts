@@ -52,6 +52,8 @@ export type EditorCommandId =
 	| 'undo'
 	| 'redo'
 	| 'behaviorLens.toggleBranch'
+	| 'behaviorLens.moveChildEarlier'
+	| 'behaviorLens.moveChildLater'
 	| 'sceneEditor.removeMember'
 	| 'sceneEditor.moveMemberUp'
 	| 'sceneEditor.moveMemberDown'

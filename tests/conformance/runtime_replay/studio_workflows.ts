@@ -5,6 +5,7 @@ import { testStudioBehaviorPicker } from './studio_behavior_picker';
 import { testStudioBehaviorKinds } from './studio_behavior_kinds';
 import { testStudioBehaviorSourceGraph } from './studio_behavior_source';
 import { testStudioBtMembership } from './studio_bt_membership';
+import { testStudioBtMoves } from './studio_bt_moves';
 import { testStudioFsmSource } from './studio_fsm_source';
 import { testStudioActionEffectSource } from './studio_actioneffect_source';
 import { testStudioFsmSelection } from './studio_fsm_selection';
@@ -322,6 +323,7 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	await testStudioBehaviorKinds(test);
 	await testStudioBehaviorSourceGraph(test);
 	await testStudioBtMembership(test);
+	await testStudioBtMoves(test);
 	await testStudioFsmSource(test);
 	await testStudioActionEffectSource(test);
 	await testStudioFsmSelection(test);

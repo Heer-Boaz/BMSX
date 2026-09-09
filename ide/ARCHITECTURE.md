@@ -214,6 +214,17 @@ Links to opaque values identify authored slots, not evaluated builder results or
 guaranteed runtime children; attachment counts likewise count source slots.
 No new parse, scan or topology work runs in draw/hit/pan. The independent source,
 compiled-cartlib and three-backend gates are in the graph design.
+BT Earlier/Later commands edit an actual `children`/`choices` source-list member,
+not its canvas position. The cold projection retains the constructor, original
+entries and selected entry index; command enablement is constant-time. Current
+complete syntax, writable source and a proven sibling are required; an opaque
+member value is not an unknown list. Weighted edges and child cards move the
+whole choice field, retaining weight/child association. Named metadata does not
+become a child index. Shared const lists remain one authored source, not private
+copies per graph occurrence. The language-owned move and ordinary text mapping
+retain the selected subtree through Undo/Redo. Both concrete lens focus targets
+explicitly bind document history; parent focus does not provide command fallback.
+See [`../docs/behavior_tree_authoring_design.md`](../docs/behavior_tree_authoring_design.md).
 FSM source bodies now retain child occurrences, guard fields and
 consumer slots. A cold second pass binds initial/concurrent entries and possible
 returned paths to those occurrence keys within one registration. Inline and
@@ -401,10 +412,10 @@ byte. It consumes a complete parse of the current buffer version; it does not
 guess syntax from text. Identical immutable ranges/endpoints remain shared.
 There are no new AST properties or per-field trivia arrays.
 
-Adjacent field movement now uses syntax-owned trivia attachment over that
+Field movement now uses syntax-owned trivia attachment over that
 same lexer's opt-in scan. Following trivia through the first newline belongs
 to the preceding token; the remainder leads the next. Complete field/separator
-pairs exchange exact spans. The braces keep their own trivia, and an originally
+pairs retain exact spans during a move. The braces keep their own trivia, and an originally
 separator-less last field gains a comma before its trailing comments when moved
 before a sibling. No default trivia tree, formatting pass or source normalization.
 Insertion/reparenting and structural edits on recovered source still need their
@@ -429,11 +440,12 @@ The Up/Down actions retain the actual parent objects-table and scene-local
 index in the source projection. They admit only a sibling in the same complete
 direct definition, never a visually adjacent row across scene boundaries or
 partial composition. The same source-command preflight accepts pending values
-before current syntax is read. One language-owned replacement is one document
-history element. The explicit command focuses document history, selects its
-known destination in the refreshed projection and reveals that row. Ordinary
-text Undo/Redo clears the replaced source selection rather than matching names
-or maintaining a second selection history. Stable frames do not relex/reparse;
+before current syntax is read. One language-owned edit batch is one document
+history element. The language operation moves intervening text around the
+selected field without replacing it. Existing source markers therefore follow
+that same member during edits and Undo/Redo, without a destination-index
+selection override or second selection history. The command focuses document
+history and reveals the retained selection. Stable frames do not relex/reparse;
 the lossless token scan exists only during an explicit move command.
 
 Its original Nemesis trial exposed a separate compiler/linker closure-layout

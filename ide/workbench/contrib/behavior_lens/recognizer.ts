@@ -37,6 +37,7 @@ export function buildBehaviorSourceDocument(
 	}
 	return {
 		resource,
+		syntaxComplete: analysis.syntaxError === null,
 		definitions,
 	};
 }

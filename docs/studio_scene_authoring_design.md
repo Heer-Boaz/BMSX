@@ -835,12 +835,14 @@ readonly/recovered syntax, zonder selectie of in partial compositie is de
 bijbehorende verplaatsing niet beschikbaar. Geen verplaatsing naar een andere
 scenedefinitie, ook niet wanneer die als volgende rij zichtbaar is.
 
-De command focust documenthistorie, schrijft één language-owned edit, herleest
-de projectie en selecteert de bekende nieuwe memberindex. De selectie blijft
-zichtbaar. Undo/Redo bezitten uitsluitend dezelfde Lua-sourcegeschiedenis;
-volledige tekstvervanging wist de betrokken tracked selectie zoals bij Remove,
-zonder labelmatching of een verborgen tweede selectiehistorie. Een vooraf
-geaccepteerde property blijft een afzonderlijke Undo-eenheid.
+De command focust documenthistorie, schrijft één language-owned editbatch en
+herleest de projectie. Sinds de
+[bronbehoudende BT-moveslice](behavior_tree_authoring_design.md) verplaatst de
+taalowner de omringende tekst zonder de geselecteerde syntax te vervangen.
+De bestaande bronbereik-mapping houdt dezelfde member zichtbaar, ook door
+Undo/Redo; de oude expliciete root/child-bestemmingsindex is verwijderd. Geen
+labelmatching of verborgen tweede selectiehistorie. Een vooraf geaccepteerde
+property blijft een afzonderlijke Undo-eenheid.
 
 Save & Hot Resume registreert de nieuwe volgorde voor toekomstige instanties;
 levende actors worden niet gesorteerd, vervangen of opnieuw gespawnd. Geen
@@ -872,7 +874,7 @@ Remove-, property-, rewind-, fault-repair- en expliciete cold-instantiatieproef.
 De eindbeelden zijn bytegelijk; de softwarecapture is visueel bekeken op de
 bestaande tiny-fontlayout. Geen claim over fysieke GPU- of SNES-mini-prestaties.
 
-De [taalmetingen](lua_source_syntax_design.md#movement-evidence-and-cost) dekken
+De oorspronkelijke [taalmetingen](lua_source_syntax_design.md#original-adjacent-replacement-evidence-and-cost) dekken
 alle 9.777 aangrenzende fieldparen in 312 echte Lua-bestanden. De expliciete
 move-editconstructie meet mediaan 0,024 ms op de Nemesis-root en 2,16 ms op het
 grootste corpusbestand; niet de volledige IDE-/semantic-/Hot-Resume-route.
@@ -921,8 +923,9 @@ diff-framework kopiëren voor de hier benodigde retained tree.
   parent. Lege roots hebben geen twistie en geen membereditcontrols.
 - Remove wist de verwijderde selectie, niet haar parent uit de tree. Up/Down
   gebruikt nog steeds dezelfde volledige objects-table en lokale memberindex;
-  na de edit kiest zij de bekende parent/child-bestemming, niet een vermeende
-  naastliggende rij in de geflatte zichtbare lijst.
+  de geselecteerde fieldbytes blijven nu behouden. De bestaande source-mapping
+  vindt haar nieuwe positie, niet een vermeende naastliggende rij in de
+  geflatte zichtbare lijst of een apart bewaarde bestemmingsindex.
 - Source navigeert naar de geselecteerde definitie of het member op hetzelfde
   document. De bestaande focus-/draftacceptatie en gewone documenthistorie
   blijven eigenaar van edits; uitklappen wordt geen undoable bronbewerking.

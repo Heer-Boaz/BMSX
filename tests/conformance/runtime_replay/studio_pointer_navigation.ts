@@ -10,6 +10,7 @@ import { chooseBehavior, revealLensOccurrence } from './studio_behavior_picker';
 import { check, type StudioFixture } from './studio_fixture';
 import { testStudioBehaviorSourceGraph } from './studio_behavior_source';
 import { testStudioBtMembership } from './studio_bt_membership';
+import { testStudioBtMoves } from './studio_bt_moves';
 import { testStudioFsmSource } from './studio_fsm_source';
 import { testStudioActionEffectSource } from './studio_actioneffect_source';
 import { testStudioFsmSelection } from './studio_fsm_selection';
@@ -145,6 +146,7 @@ export async function runStudioPointerNavigation(test: StudioFixture, cart: Navi
 	await testStudioPointerNavigation(test, cart);
 	await testStudioBehaviorSourceGraph(test);
 	await testStudioBtMembership(test);
+	await testStudioBtMoves(test);
 	await testStudioFsmSource(test);
 	await testStudioActionEffectSource(test);
 	await testStudioFsmSelection(test);

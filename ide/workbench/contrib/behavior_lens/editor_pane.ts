@@ -41,6 +41,16 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		private readonly commands: IdeCommandController,
 	) {
 		super(resourcePanel);
+		for (const target of [this.focusTarget, this.graph.focusTarget]) {
+			target.registerCommand('undo', {
+				isEnabled: () => !this.input.workingCopy.readOnly && this.input.workingCopy.canUndo,
+				run: () => { this.input.workingCopy.undo(); },
+			});
+			target.registerCommand('redo', {
+				isEnabled: () => !this.input.workingCopy.readOnly && this.input.workingCopy.canRedo,
+				run: () => { this.input.workingCopy.redo(); },
+			});
+		}
 		this.graph.focusTarget.registerCommand('behaviorLens.toggleBranch', {
 			isEnabled: () => {
 				const presentation = this.input.view.presentation;

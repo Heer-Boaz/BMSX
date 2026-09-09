@@ -71,6 +71,8 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'behaviorLens.source' },
 		{ type: 'command', command: 'behaviorLens.details' },
 		{ type: 'command', command: 'behaviorLens.toggleBranch' },
+		{ type: 'command', command: 'behaviorLens.moveChildEarlier' },
+		{ type: 'command', command: 'behaviorLens.moveChildLater' },
 	],
 	'behaviorLens.title': [
 		{ type: 'command', command: 'behaviorLens.source' },

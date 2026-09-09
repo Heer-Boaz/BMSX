@@ -12,7 +12,9 @@ nu bron-owned, met de bestaande Details/Source-route als concrete consumer.
 De concrete asynchrone FSM-grafiek is nu aangesloten op dezelfde workbench,
 met expliciete browser- en Node-workercompositie. ActionEffect heeft nu een
 [gegroepeerde bronproperty-view](actioneffect_properties_design.md), geen flowchart.
-Deze visualisatie is nog geen authoring.
+De eerste afgebakende authoringactie is nu
+[BT-children herordenen via Lua](behavior_tree_authoring_design.md).
+Dit is nog geen complete BT-editor of FSM-/ActionEffect-authoring.
 
 ## BT-listbewijs versus inhoudsresolutie
 
@@ -593,7 +595,9 @@ alleen een typecheck slaagt. De latere rijen zijn nog te toetsen hypotheses.
 | `STUDIO-FSM-GRAPH-VIEW-01` — geïmplementeerd | Concrete compound FSM-view op de input-owned asyncsession, typed source-index en één edge per bewijs. Bron-/definition-/fontwijziging revoke oude publicatie/hits; browser en Node hebben expliciete native workers. Scopes, concurrent/initial entries, cycli, self-loops en parallelle returns; onbekende/no-path uitkomsten zijn bronbewijs zonder verzonnen endpoint. Details/Source, Tab/Shift+Tab, pan en pane-dispose gebruiken bestaande workbenchowners. Zelfstandige sourcefixtures en echte 384×288-werkbenchproeven; geen authoring of runtimegraph. |
 
 `STUDIO-BT-VISUAL-EDITOR-01` blijft het afzonderlijke **authoring**contract.
-Nieuwe add/remove/reorder/connect-commands moeten hun minimale Lua-edit en
+BT Earlier/Later is afzonderlijk gebouwd met het
+[bronbehoudende movecontract](behavior_tree_authoring_design.md).
+Verdere add/remove/connect/property-commands moeten hun minimale Lua-edit en
 broncorrespondentie bewijzen voordat zij beschikbaar worden. Canvaslayout
 wijzigt geen bron en krijgt geen plaats in cartlib of ROM. ActionEffects
 behouden voorlopig hun eigen huidige Lens-presentatie; zij worden niet in een

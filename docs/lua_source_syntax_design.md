@@ -115,25 +115,33 @@ the enclosing Lua brace and each field/separator have explicit token ownership.
   leading trivia stay at the table boundary. Inline comments travel with the
   preceding pair; standalone documentation after that newline travels with
   the next pair. Removal keeps its distinct keep-exterior-trivia policy.
-- Two adjacent pairs exchange exact source spans. If the former last field
+- A selected pair moves to another sibling index. If the former last field
   has no separator, inserting one comma immediately after its complete syntax
   is necessary when it moves before a sibling. Existing commas/semicolons are
   retained, including a now-trailing separator. No global formatting, newline
   normalization, reindentation or lost comments; inline and multiline layout
   follow the authored tokens rather than a new style heuristic.
-- The language edit consumes a table/index/direction from a complete parse of
-  the current buffer. The caller admits the sibling before calling. One
-  replacement covers the two pairs; Undo restores every original byte,
+- The language edit consumes a table/source-index/destination-index from a
+  complete current-buffer parse. The caller admits distinct sibling indices.
+  Two or three insert/delete edits form one document batch; Undo restores every original byte,
   including an originally absent trailing separator. No per-field cache or
   runtime validation of parser-owned data.
-- The explicit command selects the known destination index in its refreshed
-  source projection and focuses document history. Ordinary Undo/Redo use the
-  existing text-change mapping: replacement clears the affected selection;
-  namesakes do not inherit it. No parallel selection history or name matching.
+- Following [VS Code MoveLinesCommand](https://github.com/microsoft/vscode/blob/30e67b4c96266198aed7e9b77c6687ff753106a2/src/vs/editor/contrib/linesOperations/browser/moveLinesCommand.ts#L99-L232),
+  the selected source stays in the document: the intervening sibling block is
+  deleted and inserted on its other side. Non-growing source markers follow
+  the selected field and its descendants through normal edits, Undo and Redo.
+  A necessary comma is inserted before trailing comments, merging coincident
+  insertion anchors. No relocation annotations, second history or name matching.
+- Non-adjacent moves retain the relative order of all other fields. For example,
+  moving `B` earlier in `{A, metadata=1, B}` produces `{B, A, metadata=1}`;
+  moving `A` later produces `{metadata=1, B, A}`. BT array rank is not a lexical
+  field index: its contribution supplies the two actual syntax-field indices.
+  Other replaced source is still subject to ordinary marker invalidation; this
+  does not promise identity for arbitrary cut/paste or restored deleted nodes.
 
 | Callsite | Cost / owner |
 | --- | --- |
-| Explicit Lua table move | One opt-in lexical pass of the cached source snapshot; token searches and trivia navigation only at the two fields; one replacement string and one document edit. |
+| Explicit Lua table move | One opt-in lexical pass of the cached source snapshot; token searches and trivia navigation at the two fields; copy only the intervening source block, at most three edits in one document history element. |
 | Scene source projection after a version change | Retains the actual parent table and scene-local index, not a new graph or a copy of the definition. |
 | Menu enablement / stable pane update / draw | Retained selection, bounds and resolution checks only. No lexical scan, parse or edit records. |
 | Compiler, guest worldtick, rendering devices, C++ runtime | No added representation or callsite. |
@@ -145,7 +153,7 @@ and Save & Hot Resume with the same living actors on all three browser backends.
 This does not supply insertion, reparenting, live-instance moves or error-tree
 editing.
 
-### Movement evidence and cost
+### Original adjacent-replacement evidence and cost
 
 All **312 tracked Lua sources** under cartlib, BIOS and carts participate:
 2,147,679 source bytes, 5,272 tables and 624,837 lossless tokens. The attachment
@@ -184,6 +192,24 @@ attempt caught a malformed hand-authored test fixture; the corrected fixture
 uses its actual parser field bounds, and the complete product run was repeated
 on software, WebGL2 and WebGPU. No product parser recovery or mutation bypass
 was added to make that failed fixture pass.
+
+### Retained-source movement (2026-09-09)
+
+The current implementation supersedes the single-replacement operation above.
+`tests/conformance/lua_source/moves.ts` exercises both adjacent directions and
+both end-to-end directions on the current corpus: **312 files, 2,147,702 bytes,
+5,272 tables, 23,262 moves**. Each move uses actual PieceTree history, compares
+the complete reparsed AST against exactly the requested field permutation,
+checks the retained source span, and undoes to byte-identical original text.
+The corpus is not a gameplay-equivalence test: explicit reordering can change
+evaluation order. Independent BLua/cartlib tests verify that intended change.
+
+`lua_table_moves.test.ts` also covers every source/destination pair in mixed
+array/named/nested fields, UTF-16, CRLF, absent separators, distinct insertion
+anchors and a nested marker through Undo/Redo. The Scene Editor no longer
+reselects by a captured root/child index; its existing mapped source selection
+now suffices. The BT contribution uses that same primitive and history. Current
+costs and product evidence are in [the BT authoring slice](behavior_tree_authoring_design.md).
 
 ## Field insertion contract (2026-09-08)
 

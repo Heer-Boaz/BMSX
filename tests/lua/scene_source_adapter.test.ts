@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import type { RuntimeResource } from '../../ide/common/resource';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { createLuaTableFieldIntegerEdits, createLuaTableFieldRemovalEdits, readLuaSourceRange } from '../../ide/language/lua/source_edits';
-import { createLuaTableFieldMoveEdit } from '../../ide/language/lua/table_field_moves';
+import { createLuaTableFieldMoveEdits } from '../../ide/language/lua/table_field_moves';
 import { buildSceneSourceDocument } from '../../ide/workbench/contrib/scene_editor/source';
 import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
 import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
@@ -78,7 +78,7 @@ test('scene member moves use the retained parent table and preserve neighbouring
 	assert.equal(document.scenes.length, 2);
 	assert.equal(document.scenes[0].resolution, 'complete');
 	assert.equal(document.scenes[1].objects.length, 1);
-	model.pushEditOperations([createLuaTableFieldMoveEdit(model.buffer, path, document.scenes[0].objectsTable, 1, -1)]);
+	model.pushEditOperations(createLuaTableFieldMoveEdits(model.buffer, path, document.scenes[0].objectsTable, 1, 0));
 	assert.equal(model.buffer.getText(), header + second + first + footer);
 	const moved = buildSceneSourceDocument(model.resource, buildLuaFileSemanticData(model.buffer.getText(), path));
 	assert.deepEqual(moved.scenes.map(scene => scene.objects.map(object =>

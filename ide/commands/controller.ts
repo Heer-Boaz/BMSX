@@ -43,6 +43,7 @@ import { inputFocus, type InputFocusTarget } from '../input/focus';
 const SOURCE_COMMANDS = new Set<EditorCommandId>([
 	'save', 'hot-resume', 'reboot', 'scenarioLab.run', 'scenarioLab.rerun',
 	'sceneEditor.removeMember', 'sceneEditor.moveMemberUp', 'sceneEditor.moveMemberDown',
+	'behaviorLens.moveChildEarlier', 'behaviorLens.moveChildLater',
 	'sceneEditor', 'behaviorLens', 'sceneEditor.source', 'behaviorLens.source', 'behaviorLens.details',
 	'behaviorLens.actionEffects', 'behaviorLens.stateMachines', 'behaviorLens.behaviorTrees',
 ]);
@@ -71,6 +72,12 @@ export class IdeCommandController {
 		const edit = inputFocus.target?.edit;
 		if (SOURCE_COMMANDS.has(command) && edit !== undefined && !edit.commit()) return;
 		switch (command) {
+			case 'behaviorLens.moveChildEarlier':
+				this.editor.behaviorLens.moveSelectedChild(-1);
+				return;
+			case 'behaviorLens.moveChildLater':
+				this.editor.behaviorLens.moveSelectedChild(1);
+				return;
 			case 'sceneEditor.moveMemberUp':
 				this.editor.sceneEditor.moveSelectedMember(-1);
 				return;
@@ -198,6 +205,10 @@ export class IdeCommandController {
 
 	public isEnabled(command: EditorCommandId, focus: InputFocusTarget | null = inputFocus.target): boolean {
 		switch (command) {
+			case 'behaviorLens.moveChildEarlier':
+				return this.editor.behaviorLens.canMoveSelectedChild(-1);
+			case 'behaviorLens.moveChildLater':
+				return this.editor.behaviorLens.canMoveSelectedChild(1);
 			case 'sceneEditor.moveMemberUp':
 				return this.editor.sceneEditor.canMoveSelectedMember(-1);
 			case 'sceneEditor.moveMemberDown':

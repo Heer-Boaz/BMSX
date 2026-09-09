@@ -57,5 +57,6 @@ export type BehaviorSourceDefinition = BehaviorTreeSourceDefinition | StateMachi
 /** Immutable source topology for one authored Lua document generation. */
 export type BehaviorSourceDocument = {
 	readonly resource: ResourceIdentity;
+	readonly syntaxComplete: boolean;
 	readonly definitions: readonly BehaviorSourceDefinition[];
 };

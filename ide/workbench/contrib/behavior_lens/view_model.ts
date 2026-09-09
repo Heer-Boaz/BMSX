@@ -103,7 +103,7 @@ export function createBehaviorLensStateGraph(): BehaviorLensStateGraph {
 export function createBehaviorLensViewState(document: BehaviorSourceDocument, model: EditorTextModel, presentation: BehaviorLensViewState['presentation']['kind']): BehaviorLensViewState {
 	const view: BehaviorLensViewState = {
 		resource: document.resource,
-		document: { resource: document.resource, definitions: [] },
+		document: { resource: document.resource, syntaxComplete: document.syntaxComplete, definitions: [] },
 		sourceVersion: model.version,
 		definitionRowKey: null,
 		selection: null,

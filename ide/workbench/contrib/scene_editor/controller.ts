@@ -3,7 +3,7 @@ import { getTextSnapshot } from '../../../editor/text/source_text';
 import type { EditorTextModel, EditorTextModelContentChangeEvent } from '../../../editor/model/text_model';
 import { mapTrackedTextRange } from '../../../editor/text/text_change';
 import { createLuaTableFieldRemovalEdits } from '../../../language/lua/source_edits';
-import { createLuaTableFieldMoveEdit } from '../../../language/lua/table_field_moves';
+import { createLuaTableFieldMoveEdits } from '../../../language/lua/table_field_moves';
 import { getCachedLuaParse } from '../../../../toolchain/ts/lua/analysis/cache';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import { resourceIdentityKey } from '../../../common/resource';
@@ -95,16 +95,11 @@ export class SceneEditorController {
 		this.refresh(input); // Source-command admission may have accepted a property.
 		if (!this.canMoveSelectedMember(direction)) return;
 		const row = this.editableMember()!;
-		const parentIndex = input.outline.roots.indexOf(input.outline.rows[input.outline.selectionIndex].parent!);
 		this.panes.activePane.focus();
-		input.workingCopy.pushEditOperations([createLuaTableFieldMoveEdit(
-			input.workingCopy.buffer, input.workingCopy.resource.path, row.scene.objectsTable, row.index, direction,
-		)]);
+		input.workingCopy.pushEditOperations(createLuaTableFieldMoveEdits(
+			input.workingCopy.buffer, input.workingCopy.resource.path, row.scene.objectsTable, row.index, row.index + direction,
+		));
 		this.refresh(input);
-		// Explicit source operation: same definition, known child destination.
-		// Text Undo/Redo never guesses moved-member identity from labels.
-		const destination = input.outline.roots[parentIndex].children[row.index + direction];
-		selectSceneOutlineRow(input, input.outline.rows.indexOf(destination));
 		revealWorkbenchListSelection(input.outline);
 	}
 

@@ -64,8 +64,8 @@ export async function testSceneMemberMoves(test: StudioFixture): Promise<void> {
 	check(model.buffer.getText() === authored18 && scene.outline.selectionIndex === 3,
 		'move: Down follows the same member back without changing its source bytes');
 	await press('ControlLeft', 'KeyZ');
-	check(model.buffer.getText() === moved && scene.outline.selectionIndex === -1 && x.field.readOnly,
-		'move: text Undo restores content without guessing a moved selection');
+	check(model.buffer.getText() === moved && scene.outline.selectionIndex === 2 && !x.field.readOnly,
+		'move: text Undo tracks the retained member source and keeps its inspector bound');
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === authored18, 'move: one Undo per structural operation');
 	await selectMember(test, scene, 2);
@@ -73,8 +73,8 @@ export async function testSceneMemberMoves(test: StudioFixture): Promise<void> {
 	check(model.buffer.getText() === authored && x.field.text === '0', 'move: accepted property owns its preceding Undo element');
 	await press('ControlLeft', 'KeyY');
 	await press('ControlLeft', 'KeyY');
-	check(model.buffer.getText() === moved && scene.outline.selectionIndex === -1,
-		'move: Redo does not transfer a replaced source selection to a neighbour');
+	check(model.buffer.getText() === moved && scene.outline.selectionIndex === 2,
+		'move: Redo follows the same retained member without a destination-index selection override');
 	check(cycles() === before && title() === actor && ide.sources.currentBlua32Media === media,
 		'move: editing order never runs or reorders living actors');
 
@@ -158,7 +158,8 @@ export async function testSceneMemberMoves(test: StudioFixture): Promise<void> {
 	check(scene.outline.selectionIndex === lastVisible + 1 && scene.outline.scroll === 1
 		&& scene.outline.rows[lastVisible + 1].element.label === label, 'move: selected destination is revealed beyond the old visible range');
 	await press('ControlLeft', 'KeyZ');
-	check(scene.outline.selectionIndex === -1, 'move: history clears the replaced source target, not a row with the same index');
+	check(scene.outline.selectionIndex === lastVisible && scene.outline.rows[lastVisible].element.label === label,
+		'move: history tracks the retained source back to its original sibling position');
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === original && !model.dirty, 'move: admission fixtures restore the actual saved root exactly');
 }

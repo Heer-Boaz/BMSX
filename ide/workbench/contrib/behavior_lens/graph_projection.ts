@@ -2,7 +2,7 @@ import type { BFont } from '../../../../machine/ts/render/shared/bitmap_font';
 import type { LuaSourceRange, LuaTableField } from '../../../../toolchain/ts/lua/syntax/ast';
 import { uppercaseOutsideStrings } from '../../../common/text';
 import { createWorkbenchGraphNode } from '../../ui/graph/model';
-import type { BehaviorTreeSourceDefinition, BehaviorTreeSourceNode } from './behavior_tree_model';
+import type { BehaviorTreeSourceDefinition, BehaviorTreeSourceMember, BehaviorTreeSourceNode } from './behavior_tree_model';
 import type { BehaviorSourceNode, BehaviorSourceRowKey } from './model';
 import type { BehaviorGraphDetail, BehaviorGraphProjection, BehaviorGraphNode } from './graph_model';
 import { appendBehaviorGraphFields, appendBehaviorGraphSourceDetails } from './graph_details';
@@ -20,9 +20,10 @@ export function projectBehaviorTreeGraph(
 	const pending: { source: Extract<BehaviorTreeSourceNode, { kind: 'node' }>; node: BehaviorGraphNode }[] = [];
 
 	function card(source: BehaviorSourceNode, text: string, parent: BehaviorGraphNode | null,
-		expandable: boolean, details: BehaviorGraphDetail[], range: LuaSourceRange, connectionSource = source): BehaviorGraphNode {
+		expandable: boolean, details: BehaviorGraphDetail[], range: LuaSourceRange, connectionSource = source,
+		member: BehaviorTreeSourceMember | null = null): BehaviorGraphNode {
 		const node: BehaviorGraphNode = { ...createWorkbenchGraphNode(font, uppercaseOutsideStrings(text), 0, 0),
-			source, parent, expandable, details, children: [] };
+			source, parent, member, expandable, details, children: [] };
 		nodes.push(node);
 		nodesBySource.set(source.rowKey, node);
 		if (parent !== null) {
@@ -33,7 +34,8 @@ export function projectBehaviorTreeGraph(
 	}
 
 	function behavior(source: BehaviorTreeSourceNode, parent: BehaviorGraphNode, role: string, range: LuaSourceRange,
-		details: BehaviorGraphDetail[] = [], connectionSource: BehaviorSourceNode = source): void {
+		details: BehaviorGraphDetail[] = [], connectionSource: BehaviorSourceNode = source,
+		member: BehaviorTreeSourceMember | null = null): void {
 		let expandable = false;
 		let text = role;
 		if (source.kind === 'node') {
@@ -62,7 +64,7 @@ export function projectBehaviorTreeGraph(
 		}
 		if (source.resolution !== 'complete') text += '\n? PARTIAL SOURCE';
 		if (expandable) text += collapsed.has(source.rowKey) ? '\n+ CHILDREN' : '\n- CHILDREN';
-		const node = card(source, text, parent, expandable, details, range, connectionSource);
+		const node = card(source, text, parent, expandable, details, range, connectionSource, member);
 		if (source.kind === 'node' && expandable && !collapsed.has(source.rowKey)) pending.push({ source, node });
 	}
 
@@ -87,12 +89,18 @@ export function projectBehaviorTreeGraph(
 					continue;
 				}
 				if (branch.role === 'children') {
-					for (const entry of branch.entries) behavior(entry.node, node, `CHILD ${entry.index}`, entry.field.value.range);
+					for (let index = 0; index < branch.entries.length; index += 1) {
+						const entry = branch.entries[index];
+						behavior(entry.node, node, `CHILD ${entry.index}`, entry.field.value.range, [], entry.node,
+							{ table: branch.source.table, entries: branch.entries, index });
+					}
 				} else {
-					for (const entry of branch.entries) {
+					for (let index = 0; index < branch.entries.length; index += 1) {
+						const entry = branch.entries[index];
+						const member = { table: branch.source.table, entries: branch.entries, index };
 						const choice = entry.node;
 						if (choice.kind === 'dynamic') {
-							behavior(choice, node, `CHOICE ${entry.index}`, entry.field.value.range);
+							behavior(choice, node, `CHOICE ${entry.index}`, entry.field.value.range, [], choice, member);
 							continue;
 						}
 						const details: BehaviorGraphDetail[] = [];
@@ -103,7 +111,7 @@ export function projectBehaviorTreeGraph(
 							details.push({ label: 'weight', description: weight, detail: 'CHOICE', range: choice.weight.value.range });
 						} else label += '  W=?';
 						if (choice.issues !== SourceTableIssue.None) label += ' ? SOURCE';
-						behavior(choice.child, node, label, entry.field.value.range, details, choice);
+						behavior(choice.child, node, label, entry.field.value.range, details, choice, member);
 					}
 				}
 			}

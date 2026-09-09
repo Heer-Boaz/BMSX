@@ -36,6 +36,8 @@ import { editorViewState } from '../../../editor/ui/view/state';
 import type { GraphLayoutEngineFactory } from '../../services/graph_layout/engine';
 import { acceptStateGraphSelection, stateGraphSelection } from './state_graph_navigation';
 import { buildStateMachineDetails } from './state_machine_details';
+import { behaviorTreeMoveTarget } from './behavior_tree_edit';
+import { createLuaTableFieldMoveEdits } from '../../../language/lua/table_field_moves';
 
 const PICKER_TITLES: Readonly<Record<BehaviorKind, string>> = {
 	action_effect: 'ACTIONEFFECTS',
@@ -149,6 +151,25 @@ export class BehaviorLensController {
 		if (input.kind !== 'behavior_lens') return;
 		this.updateView(input);
 		if (input.view.presentation.kind === 'graph') toggleBehaviorGraphBranch(input.view, input.view.presentation);
+	}
+
+	public canMoveSelectedChild(direction: -1 | 1): boolean {
+		const input = getActiveTab();
+		return input.kind === 'behavior_lens' && !input.workingCopy.readOnly
+			&& input.workingCopy.version === input.view.sourceVersion && behaviorTreeMoveTarget(input.view, direction) !== undefined;
+	}
+
+	public moveSelectedChild(direction: -1 | 1): void {
+		const input = getActiveTab();
+		if (input.kind !== 'behavior_lens' || input.workingCopy.readOnly) return;
+		this.updateView(input);
+		const member = behaviorTreeMoveTarget(input.view, direction);
+		if (member === undefined) return;
+		const fields = member.table.fields;
+		this.editorPanes.activePane.focus();
+		input.workingCopy.pushEditOperations(createLuaTableFieldMoveEdits(input.workingCopy.buffer, input.workingCopy.resource.path,
+			member.table, fields.indexOf(member.entries[member.index].field), fields.indexOf(member.entries[member.index + direction].field)));
+		this.updateView(input);
 	}
 
 	public executeNavigation(

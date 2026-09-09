@@ -17,6 +17,11 @@ import { createTestBlua32PairCpu, linkTestBlua32Pair } from '../helpers/blua32';
 import { materializeCpuCompletionValues, parseLuaChunk } from './cpu_test_harness';
 import { FSM_PATH_CASES, FSM_SCOPE_SOURCE } from '../helpers/fsm_source_fixture';
 import { BT_MEMBERSHIP_SOURCE } from '../helpers/behavior_membership_fixture';
+import { BT_ORDER_SOURCE } from '../helpers/behavior_order_fixture';
+import { EditorTextModel } from '../../ide/editor/model/text_model';
+import { createLuaTableFieldMoveEdits } from '../../ide/language/lua/table_field_moves';
+import { buildBehaviorSourceDocument } from '../../ide/workbench/contrib/behavior_lens/recognizer';
+import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
 
 const SYSTEM_MODULE_FILES = [
 	['base', 'machine/bios/base.lua'],
@@ -512,6 +517,45 @@ return status == result.success, target.order
 `);
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [true, 1212]);
+});
+
+test('source-owned BT moves change actual compiled task order and keep choice weights attached to their children', () => {
+	for (const [destination, expected] of [[0, 1213], [3, 1312]] as const) {
+		const resource = { domain: 0 as const, path: 'order.lua', source: { type: 'lua' as const, resid: 'order' } };
+		const model = new EditorTextModel(resource, 'lua', BT_ORDER_SOURCE);
+		const definition = buildBehaviorSourceDocument(resource, buildLuaFileSemanticData(BT_ORDER_SOURCE, resource.path)).definitions[0];
+		assert.ok(definition.behaviorKind === 'behavior_tree' && definition.root?.kind === 'node');
+		const branch = definition.root.branches[0];
+		assert.ok(branch.role === 'children' && branch.source.kind === 'section');
+		model.pushEditOperations(createLuaTableFieldMoveEdits(model.buffer, resource.path, branch.source.table, 2, destination));
+		const cpu = createCartlibProgramCpu(model.buffer.getText() + `
+local program<const> = require('cartlib/behaviour_tree/program').compile('oracle', { root = root })
+local target<const> = { order = 0 }
+local execution<const> = { _execution_state = program.create_execution_state() }
+local status<const> = program.evaluate(target, execution, program.operand)
+return status == result.success, target.order, #children, children.note == 'metadata is not a child'
+`);
+		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [true, expected, 3, true]);
+		model.undo();
+		assert.equal(model.buffer.getText(), BT_ORDER_SOURCE);
+		const weighted = buildBehaviorSourceDocument(resource, buildLuaFileSemanticData(BT_ORDER_SOURCE, resource.path)).definitions[2];
+		assert.ok(weighted.behaviorKind === 'behavior_tree' && weighted.root?.kind === 'node');
+		const choices = weighted.root.branches[0];
+		assert.ok(choices.role === 'choices' && choices.source.kind === 'section');
+		model.pushEditOperations(createLuaTableFieldMoveEdits(model.buffer, resource.path, choices.source.table, 2, destination));
+		const choiceCpu = createCartlibProgramCpu(model.buffer.getText() + `
+local target<const> = { order = 0 }
+for index = 1, #weighted.choices do
+	local choice<const> = weighted.choices[index]
+	local program<const> = require('cartlib/behaviour_tree/program').compile('choice', { root = choice.child })
+	program.evaluate(target, { _execution_state = program.create_execution_state() }, program.operand)
+end
+return target.order, weighted.choices[${destination === 0 ? 1 : 3}].weight, weighted.choices.note == 'metadata is not a choice'
+`);
+		assert.equal(choiceCpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+		assert.deepEqual(materializeCpuCompletionValues(choiceCpu), [expected, 9, true]);
+	}
 });
 
 test('cartlib FSM and behaviour-tree instances retain semantic state across program replacement', () => {

@@ -2,6 +2,13 @@ import type { LuaTableConstructorExpression, LuaTableField } from '../../../../t
 import type { BehaviorDynamicSourceNode, BehaviorSourceNode } from './model';
 import type { BehaviorSourceArrayEntry, BehaviorSourceTableSection, SourceTableIssue } from './source';
 
+/** A proven authored list position, independent of the member's content resolution. */
+export type BehaviorTreeSourceMember = {
+	readonly table: LuaTableConstructorExpression;
+	readonly entries: readonly BehaviorSourceArrayEntry<BehaviorSourceNode>[];
+	readonly index: number;
+};
+
 export type BehaviorTreeSourceChoice = BehaviorSourceNode & {
 	readonly kind: 'section';
 	readonly issues: SourceTableIssue;
