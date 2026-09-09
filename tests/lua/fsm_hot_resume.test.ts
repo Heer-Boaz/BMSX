@@ -15,6 +15,7 @@ import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { BLUA32_FIRMWARE_MODULE_SOURCE } from '../../toolchain/ts/rompack/blua32_firmware_module';
 import { createTestBlua32PairCpu, linkTestBlua32Pair } from '../helpers/blua32';
 import { materializeCpuCompletionValues, parseLuaChunk } from './cpu_test_harness';
+import { FSM_PATH_CASES, FSM_SCOPE_SOURCE } from '../helpers/fsm_source_fixture';
 
 const SYSTEM_MODULE_FILES = [
 	['base', 'machine/bios/base.lua'],
@@ -559,4 +560,28 @@ test('FSM transition recorder publishes ordered fixed-capacity facts without ste
 	const recorderCycles = recordedCycles - unselectedCycles;
 	assert.ok(recorderCycles > 0);
 	assert.ok(recorderCycles <= 400_000, `recorder used ${recorderCycles} cycles`);
+});
+
+
+test('FSM source path fixture agrees with real compiled cartlib plans, not a mock resolver', () => {
+	const checks = FSM_PATH_CASES.map((entry, index) => {
+		const origin = 'definition' + entry.origin.map(key => `.states[ [==[${key}]==] ]`).join('');
+		const steps = entry.steps.map(([key, concurrent], step) => `
+		assert(plan[${step * 2 + 1}] == [==[${key}]==], 'key ${index}:${step}')
+		assert((not not plan[${step * 2 + 2}]) == ${concurrent}, 'lane ${index}:${step}')`).join('');
+		return `do
+		local plan<const> = fsm.bind_state_path(${origin}, [==[${entry.path}]==])
+		assert(plan.abs == ${entry.absolute}, 'absolute ${index}')
+		assert(plan.up == ${entry.up}, 'up ${index}')
+		assert(plan.count == ${entry.steps.length}, 'count ${index}')${steps}
+	end`;
+	}).join('\n');
+	const cpu = createCartlibProgramCpu(FSM_SCOPE_SOURCE + `
+local fsm<const> = require('cartlib/fsm/fsm')
+local definition<const> = fsm.state_definition.new('fixture.paths', blueprint)
+${checks}
+return ${FSM_PATH_CASES.length}
+`);
+	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [FSM_PATH_CASES.length]);
 });

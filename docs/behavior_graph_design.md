@@ -3,8 +3,10 @@
 Status: **BT-bronprojectie, gedeelde graphviewport en concrete BT-view
 geïmplementeerd.** Het architectuurcontract is eerst getoetst op `09b84195e`;
 de concrete BT-slice op `a9953b819`. Onderstaande bewijssecties horen bij de
-gebouwde grenzen. FSM en ActionEffect houden hun outline. FSM-relatiebewijs en
-cyclische plaatsing volgen afzonderlijk; deze BT-view is nog geen authoring.
+gebouwde grenzen. FSM-bronstructuur en lokaal bewezen pad-/returnrelaties zijn
+nu ook gebouwd, met het hieronder afgebakende callbackcontract. FSM en
+ActionEffect houden hun outline; cyclische plaatsing volgt afzonderlijk.
+Deze visualisatie is nog geen authoring.
 
 ## Doel en grens
 
@@ -90,7 +92,7 @@ gebouwde BMSX-grafiek correct, leesbaar of snel is.
 | Owner | Wat bestaat | Wat vóór een grafiek moet veranderen |
 | --- | --- | --- |
 | `ide/workbench/contrib/behavior_lens/registrations.ts`, `registration_index.ts` | Semantisch herkende registrations, per resource én occurrence; workspace-generation-index | Het retained input volgt de gekozen call over edits; de catalogus levert geen duurzame identiteit op basis van bestandsnaam of runtime-id |
-| `behavior_lens/model.ts`, `behavior_tree_model.ts`, `behavior_tree.ts`, `source.ts` | Typed BT-controlrollen, ordered relaties, attachments en provenance op dezelfde objecten als de outline; lokale const-table-resolutie en incomplete syntax | FSM-overgangen moeten nog expliciete bronfeiten worden; geen teruggeparste `label`-/`detail`-strings |
+| `behavior_lens/model.ts`, `behavior_tree_model.ts`, `behavior_tree.ts`, `source.ts` | Typed BT-controlrollen, ordered relaties, attachments en provenance op dezelfde objecten als de outline; lokale const-table-resolutie en incomplete syntax | FSM heeft nu afzonderlijke typed bodies, slots en scopegebonden entry-/returnfeiten; geen teruggeparste `label`-/`detail`-strings |
 | `behavior_lens/controller.ts`, `editor_input.ts`, `view_model.ts`, `source_correspondence.ts` | Resource-owned input; refresh bij eigen textmodelversie; selectie/collapse en gekozen registration via gemapte occurrence-ketens | Grafiekviewport is geen listscroll. Cross-file feiten vereisen ook semantic-generation-invalidering |
 | `ide/editor/text/text_change.ts`, `scene_editor/controller.ts`, `behavior_lens/source_correspondence.ts` | Gedeelde UTF-16-rangemapping; beide projecties volgen ranges ook terwijl hun pane verborgen is | Geen lokale offsetcorrecties of namesake matching |
 | `ide/workbench/ui/graph`, `ide/workbench/render/graph.ts` | Retained node-/edgegeometrie, viewport, selectie, hit testing en pane-owned control | Gedeelde viewport en gemeten tree-layout gebouwd; BT-relaties en bronactivatie zitten in de concrete contribution, FSM-layout volgt afzonderlijk |
@@ -175,6 +177,113 @@ Een FSM mag cyclisch en genest/concurrent zijn. BT-tree-layout of aigens
 DAG-sort mag hem niet platdrukken. De concrete plaatsings- en routingkeuze
 voor cycli, self-loops en parallelle edges is een expliciete ontwerpgrens vóór
 de FSM-view-slice, niet een stilzwijgende grid- of force-layout-workaround.
+
+### Ownerbesluit vóór de FSM-bronimplementatie — 9 september 2026
+
+Vóór deze slice produceerde `state_machine.ts` uitsluitend outlinegegevens.
+Diezelfde occurrences krijgen typed state-containment, initial/concurrency-
+velden, guards en callback-/transitionslots. Een koude tweede passage bindt
+relaties binnen **één registration** aan occurrencekeys, niet aan displaylabels
+of gelijknamige states uit andere machines. Er komt geen tweede runtimegraph.
+
+Referentie: Stately's machine-extractor bewaart AST-nodes en statecontainment
+apart van transitionconfiguraties en hun originscope
+([structuur](https://github.com/statelyai/xstate-tools/blob/fc7a85d780cd8ea4ea21fb423f2477e01e2f1dc3/packages/machine-extractor/src/MachineExtractResult.ts#L190-L260),
+[transitions](https://github.com/statelyai/xstate-tools/blob/fc7a85d780cd8ea4ea21fb423f2477e01e2f1dc3/packages/machine-extractor/src/MachineExtractResult.ts#L397-L493)).
+XState bindt targets vanuit de declarerende state, met afzonderlijke guards
+([binding](https://github.com/statelyai/xstate/blob/21872cdc93a3baddbcf43f1d83553991d39f28ab/packages/core/src/stateUtils.ts#L281-L312)).
+Alleen die ownership wordt overgenomen: geen XState-dotpaths, ID-fallbacks,
+`join('')`-padvergelijkingen, interpreter of lifecycle-semantiek.
+
+De live cartlib-owner bepaalt de precieze contracten:
+
+- `fsm.lua:compile_definition_path_plan` begint relatieve paden bij de
+  declarerende scope. `/`, `..`, quoted segments en de lookupvolgorde
+  exact → `_naam` → `#naam` worden afzonderlijk bewezen. Een gequote `/`
+  binnen een statenaam is geen containmentseparator. Padnormalisatie mag
+  niet eerst een ongeldige descent wegstrepen met een latere `..`.
+- Padtokens horen bij centrale cartlib-tooling (`toolchain/ts/cartlib/fsm`),
+  niet bij een renderer-local parser of de generieke Lua-binder. De resolver
+  consumeert typed containment; de runtime blijft de semantische oracle.
+- `initial` is een directe childkey, **geen transitionpad**. Een ontbrekende
+  initial blijft runtimebepaald; de host kopieert geen guest-`pairs`-volgorde.
+  Concurrent entry en gewone initial entry zijn afzonderlijke relaties.
+- `on`, input-`go`, timeline-`on_finished`, `update` en niet-root
+  `entering_state` consumeren returnpaths. `exiting_state` doet dat niet;
+  ook root-`entering_state` wordt niet door `start` aangeroepen. Parenthandlers
+  blijven bij hun eigen scope vanwege child-first eventdispatch.
+- Een pathbewijs bewaart iedere overgebleven scope/target-stap. `can_enter`
+  behoort aan het target, `can_exit` aan het op dat moment actieve child;
+  geen stilzwijgende vaste exitguard van de handlerstate. Guards blijven
+  bronvelden, worden niet uitgevoerd of als altijd-waar beoordeeld.
+- De eerste callbacktranche volgt inline functies en file-local `<const>`-
+  aliases via binderidentity. Zij bewaart binding, functie en eerste return-
+  expressie; nested functies en extra returnwaarden worden niet meegerekend.
+  Dit bewijst syntactische mogelijkheden onder de callbackvoorwaarden, niet
+  daadwerkelijke uitvoering. Dynamische uitkomsten blijven zichtbaar.
+- Member-/cross-file callbacks en losse imperatieve calls krijgen geen
+  verzonnen callerscope of endpoint. Uitbreiding vereist generieke semantische
+  binding én bijbehorende generation-invalidering, niet een naamheuristiek.
+  Bekende mutatie, onvolledige syntax of onzekere states-membership mag nooit
+  een complete targetbinding opleveren.
+
+Bewijs: zelfstandige Lua-fixtures voor nesting/concurrency/guards, meerdere
+registrations, aliases, callbackslots en onzekere relaties; dezelfde pathmatrix
+tegen de werkelijk gecompileerde `cartlib/fsm/fsm.lua`. De bestaande Studio-
+outline blijft werken en bronrefresh wordt in de echte workbench getest.
+Geen graphlayout, authoring, guest-instrumentatie of TS/C++-machinewijziging
+in deze slice.
+
+### Bewijs FSM-broncontract — 9 september 2026
+
+- Zeven onafhankelijke sourceproeven in `state_machine_source.test.ts` toetsen
+  dezelfde occurrence-objecten, scopes/guards, binderidentity, directe en
+  callbackpaths, eerste returnwaarde, uitgesloten consumers, dynamische bron,
+  ontbrekende initialisatie, Lua-truth en bekende mutatie. Gamebronnen zijn
+  niet hun schema of golden regelnummers.
+- Twintig expliciete pathplannen uit `fsm_source_fixture.ts` zijn ook door
+  de echte gecompileerde `fsm.lua` uitgevoerd via de bestaande BIOS/cart-
+  CPU-harness in `fsm_hot_resume.test.ts`. Geen tweede resolver als testoracle.
+- De echte Studio-proef opent dezelfde zelfstandige Lua-fixture via de
+  FSM-registrationkiezer. Verborgen bronedits wijzigen een lokaal const-
+  callbacktarget; activering, held Source, dertig ongewijzigde frames en
+  normale Undo bewaren de juiste scope en bronpositie. Machinepositie en
+  geïnstalleerd medium blijven onaangeraakt.
+- Beide cart-navigatiesmokes én de volledige Studio-workflow slagen op
+  **software, WebGL2 en WebGPU**. Dat omvat ook rewind/Hot Resume, bron-save,
+  Scene Editor, BT/ActionEffect, Scenario Lab en de bestaande negatieve
+  faultproeven. Deze browserruns gebruiken Chromium/SwiftShader, geen bewijs
+  van fysieke GPU-prestaties. De vaste Moon-navigatieproef vond een regressie
+  bij computed timelinekeys: de declarerende mapentry bezit nu weer de
+  bronspan inclusief sleutel, niet alleen de tabelwaarde. De zelfstandige
+  fixture borgt die owner eveneens; geen cursorcorrectie in de consumer.
+- `npm run test:lua`: **1.024 geslaagd, 1 bestaande skip** (1.025 totaal).
+  IDE-typecheck en beide productbuilds slagen; de tests-brede typecheck houdt
+  dezelfde **51 bestaande diagnostics** als HEAD, alleen twee regelnummers
+  verschuiven door de fixture-import. Headless Behavior Lens: 62 assertions.
+  Core-parity, strict architecture-boundaries, indent en diff-check slagen.
+
+`profile_fsm.ts` meet op Node 22.23.1 na 10 warmups de mediaan van 25 samples:
+
+| Bronfixture | Gehele projectie | Structuur apart | Scope-/returnbinding apart |
+| --- | --- | --- | --- |
+| 73 scopes, 72 slots | 0,380 ms | 0,179 ms | 0,058 ms |
+| 3.073 scopes, 3.072 slots | 6,090 ms | 4,698 ms | 1,030 ms |
+
+Dit zijn koude bronoperaties op reeds beschikbare semantische data. Parsing,
+tekenen en totale Studio-frametijd vallen erbuiten; de afzonderlijke medianen
+zijn geen optelbare framebegroting. Callbackbodies worden per registration
+éénmaal doorlopen, daarna tegen iedere eigen originscope gebonden. De live
+proef bewaart de document-/relatie-identiteit op ongewijzigde frames; dit is
+geen algemene JavaScript-zero-allocationclaim. Runtime/cartlib kregen geen
+nieuwe records, callbacks of werk per worldtick.
+
+De scope blijft bewust begrensd: member-/cross-file callbacks en losse
+imperatieve calls krijgen geen fictieve endpoints. `no-path` betekent alleen
+geen geretourneerd transitionpad, niet dat een callback zonder effecten is.
+De FSM-layout voor cycli, self-loops, parallelle edges en concurrent scopes is
+nog niet gebouwd. Reproduceerbare commando's staan in
+`tests/conformance/behavior_graph/README.md`.
 
 ## Bronidentiteit, navigatie en geldigheid
 
@@ -370,7 +479,7 @@ alleen een typecheck slaagt. De latere rijen zijn nog te toetsen hypotheses.
 | `STUDIO-BT-SOURCE-GRAPH-01` — geïmplementeerd | De bestaande recognizer levert typed ordered BT-occurrences/relaties met echte provenance. Outline en registratiekeuze consumeren diezelfde feiten. Selectie/collapse volgen bewezen bronwijzigingen, ook bij verborgen pane. Fixtures: twee registrations in één file, drie uses van één subtree, parallelrollen, weights/attachments, comments vóór bron, gewijzigde initializer, insert/delete/reorder van occurrences en onbekende constructies. Geen graphrenderer of runtimewijziging. |
 | `IDE-GRAPH-VIEWPORT-01` — geïmplementeerd | Gedeeld retained canvas met clipping, pan, node-/edgeselectie en focus/lifecycle. Domeinvrije fixture bewijst half-zichtbare tekst/lijnen/nodes, targetwissels, rand-hit-testing en held-pointer paneovergang op alle drie backends. De echte Studio-palette onderbreekt capture via de centrale dispatcher. Geen behaviorsemantiek of extensieframework. |
 | `STUDIO-BT-GRAPH-VIEW-01` — geïmplementeerd | Eén gekozen BT als ordered visuele boom, attachments/details, collapse, source-navigation en relationship-based keyboard/controllerbediening. Inspecteer echte 384×288-captures en bronnavigatie na pan/collapse/tabwisseling. Een brede en diepe fixture meet projection/layout/hit/draw apart; idle/hover/pan bewijzen geen herhaalde herkenning. Echte carts blijven integratiesmoke. Dit is nog geen editable BT. |
-| `STUDIO-FSM-SOURCE-GRAPH-01` | Na BT: typed containment/entry/transitionfeiten met bewijs en expliciete onbekende relaties; geen lines uit strings. Fixtures bewijzen scopes, guards, directe paths, ondersteunde callbacks, meerdere machines en dynamische targets. Iedere ondersteunde path-/callbackvorm volgt de runtime-owner; cross-file bewijs kan niet zonder semantic-generation-invalidering. |
+| `STUDIO-FSM-SOURCE-GRAPH-01` | **Gebouwd binnen het afgebakende lokale callbackcontract:** typed containment/entry/transitionfeiten met bewijs en expliciete onbekende relaties; geen lines uit strings. Fixtures bewijzen scopes, guards, directe paths, ondersteunde callbacks, meerdere machines en dynamische targets. Iedere ondersteunde path-/callbackvorm volgt de runtime-owner; cross-file bewijs kan niet zonder semantic-generation-invalidering. |
 | `STUDIO-FSM-GRAPH-VIEW-01` | Eerst de professionele layout-/routingkeuze voor cycli en hiërarchie uitwerken en meten, daarna de view. Fixture met self-loop, twee edges tussen dezelfde states, parenthandler, nested en concurrent scopes; edges blijven selecteerbaar en verwijzen naar hun eigen bewijs. Geen tree/DAG-normalisatie. |
 
 `STUDIO-BT-VISUAL-EDITOR-01` blijft het afzonderlijke **authoring**contract.

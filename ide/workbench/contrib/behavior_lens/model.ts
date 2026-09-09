@@ -1,6 +1,7 @@
 import type { LuaSourceRange } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { ResourceIdentity } from '../../../common/resource';
 import type { BehaviorTreeSourceDefinition } from './behavior_tree_model';
+import type { StateMachineSourceDefinition } from './state_machine_model';
 
 export type BehaviorKind = 'behavior_tree' | 'state_machine' | 'action_effect';
 
@@ -50,9 +51,9 @@ export type BehaviorSourceNode = {
 
 export type BehaviorDynamicSourceNode = BehaviorSourceNode & { readonly kind: 'dynamic' };
 
-export type BehaviorSourceDefinition = BehaviorTreeSourceDefinition | (BehaviorSourceNode & {
+export type BehaviorSourceDefinition = BehaviorTreeSourceDefinition | StateMachineSourceDefinition | (BehaviorSourceNode & {
 	readonly kind: 'definition';
-	readonly behaviorKind: 'state_machine' | 'action_effect';
+	readonly behaviorKind: 'action_effect';
 });
 
 /** Immutable source topology for one authored Lua document generation. */

@@ -1440,6 +1440,15 @@ cook a second behavior document, cartlib does not decode an editor resource or
 bind a visual-editor manifest, and machine, TOC, cartridge model and C++ core
 remain unaware of behavior authoring.
 
+FSM source structure and possible transition-return facts belong to the IDE
+contribution, once per source generation. They refer to those same authored
+occurrences, not a second runtime graph. The cartlib path grammar's tooling
+owner is `toolchain/ts/cartlib/fsm/state_path.ts`; scoped resolution consumes
+the IDE's typed containment. The generic Lua binder knows no FSM rules, and
+the runtime remains the semantic oracle. Unknown callbacks/targets and implicit
+initialization remain explicit unknowns, not fabricated edges. The supported
+source subset and production references are in `behavior_graph_design.md`.
+
 Source-edit commands retain the syntax owner of the authored value. The first
 numeric command targets a complete Lua table-field value, not an arbitrary
 literal inside an expression. The language layer returns ordered number/sign

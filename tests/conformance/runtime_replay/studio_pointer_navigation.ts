@@ -8,6 +8,7 @@ import { resolveRuntimeResource } from '../../../ide/runtime/sources';
 import { chooseBehavior, revealLensOccurrence } from './studio_behavior_picker';
 import { check, type StudioFixture } from './studio_fixture';
 import { testStudioBehaviorSourceGraph } from './studio_behavior_source';
+import { testStudioFsmSource } from './studio_fsm_source';
 
 export type NavigationCart = 'nemesis_s' | 'pietious';
 const CASES = {
@@ -140,5 +141,6 @@ export async function runStudioPointerNavigation(test: StudioFixture, cart: Navi
 	await test.runMenuCommand('pause');
 	await testStudioPointerNavigation(test, cart);
 	await testStudioBehaviorSourceGraph(test);
+	await testStudioFsmSource(test);
 	return { hostFrames: test.observations.hostFrames, selected: test.cycles() };
 }

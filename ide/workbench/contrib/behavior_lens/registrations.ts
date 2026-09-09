@@ -2,7 +2,7 @@ import { LuaSyntaxKind, type LuaExpression } from '../../../../toolchain/ts/lua/
 import type { FileSemanticData, LuaCallSite, SymbolID } from '../../../../toolchain/ts/lua/semantic/model';
 import type { ResourceIdentity } from '../../../common/resource';
 import type { BehaviorKind, BehaviorRegistrationSource } from './model';
-import { appendBehaviorSourcePath, collectConstInitializers, createBehaviorSourceAnchor, describeExpression } from './source';
+import { appendBehaviorSourcePath, collectConstInitializers, createBehaviorSourceAnchor, describeExpression, resolveConstSourceExpression } from './source';
 
 type BehaviorRegistrationKind = {
 	readonly behaviorKind: BehaviorKind;
@@ -55,7 +55,8 @@ export function collectBehaviorRegistrations(resource: ResourceIdentity, analysi
 		if (registration === null) continue;
 		const idExpression = callSite.expression.arguments[0];
 		const idLabel = idExpression ? describeExpression(idExpression) : '<unresolved id>';
-		const semanticId = idExpression ? resolveRegistrationId(analysis, constInitializers, idExpression, activeDeclarations) : null;
+		const idValue = idExpression && resolveConstSourceExpression(analysis, constInitializers, idExpression, activeDeclarations);
+		const semanticId = idValue?.kind === LuaSyntaxKind.StringLiteralExpression ? idValue.value : null;
 		const occurrenceKey = `${registration.behaviorKind}\0${idLabel}`;
 		const occurrence = occurrences.get(occurrenceKey) || 0;
 		occurrences.set(occurrenceKey, occurrence + 1);
@@ -74,37 +75,6 @@ export function collectBehaviorRegistrations(resource: ResourceIdentity, analysi
 		});
 	}
 	return { constInitializers, registrations };
-}
-
-function resolveRegistrationId(
-	analysis: FileSemanticData,
-	constInitializers: ReadonlyMap<SymbolID, LuaExpression>,
-	expression: LuaExpression,
-	activeDeclarations: Set<SymbolID>,
-): string | null {
-	if (expression.kind === LuaSyntaxKind.StringLiteralExpression) {
-		return expression.value;
-	}
-	if (expression.kind !== LuaSyntaxKind.IdentifierExpression) {
-		return null;
-	}
-	const declarationId = analysis.referencesBySyntax.get(expression)?.target;
-	if (declarationId === undefined || activeDeclarations.has(declarationId)) {
-		return null;
-	}
-	const initializer = constInitializers.get(declarationId);
-	if (initializer === undefined) {
-		return null;
-	}
-	activeDeclarations.add(declarationId);
-	const value = resolveRegistrationId(
-		analysis,
-		constInitializers,
-		initializer,
-		activeDeclarations,
-	);
-	activeDeclarations.delete(declarationId);
-	return value;
 }
 
 function resolveRegistration(

@@ -85,3 +85,40 @@ and 25 median samples; warm phases have 1,000 operations per sample. Font
 measurement count and quad-backing identity are checked after draw warmup.
 This excludes parsing, GPU upload/raster and total Studio frame time; it is not
 a JavaScript zero-allocation proof or a speed guarantee for another host.
+
+## FSM source prerequisites (no FSM layout yet)
+
+```sh
+npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
+  tests/lua/state_machine_source.test.ts tests/lua/fsm_hot_resume.test.ts
+npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+  tests/conformance/behavior_graph/profile_fsm.ts
+```
+
+`tests/helpers/fsm_source_fixture.ts` contains authored Lua independent from the
+carts. Its path matrix is checked both against the source binding and the real
+compiled `cartlib/fsm/fsm.lua` on the existing BIOS/cart CPU harness. Expected
+plans are explicit; neither implementation generates the other's expectations.
+The matrix covers root/relative paths, cancelled descents, concurrent steps,
+exact/_/# lookup and quoted/escaped names. Source tests also cover first-result
+callback evidence, scoped aliases, guards, parent handlers, initial entries,
+multiple registrations, duplicate keys, partial source and known mutation.
+
+The same browser commands above now run `studio_fsm_source.ts`: a real paused
+Studio text model, registration picker, held Source clicks, hidden edits to a
+const callback target, activation, retained idle generations and ordinary Undo.
+It does not compile/install fixture media, replace the machine or depend on a
+particular game's FSM line numbers.
+
+The implemented callback subset is inline functions and file-local `<const>`
+bindings. Returns in nested functions, root entry and exit handlers are not
+transition-return evidence. `no-path` describes only the returned-path channel,
+not absence of imperative effects. Member/cross-file callbacks, arbitrary calls
+and dynamic targets do not acquire guessed endpoints. An absent explicit initial
+state does not acquire host `pairs` ordering. See the pinned reference and scope
+contract in `docs/behavior_graph_design.md` before extending this subset.
+
+The FSM profile separates whole source generation on cached semantic data from
+source structure and scope/return binding. The two fixtures have 73/3,073 scopes
+and 72/3,072 transition slots. It uses the same warmup/median measurement owner
+as the BT profile; parsing, drawing and total Studio frame time are excluded.

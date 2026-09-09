@@ -18,7 +18,8 @@ import {
 	type BehaviorRecognizerContext,
 	type SourceNodeInput,
 } from './source';
-import { buildStateMachineDefinition } from './state_machine';
+import { buildStateMachineBody } from './state_machine';
+import { buildStateMachineRelations } from './state_machine_relations';
 
 /**
  * Derives a behavior outline from the retained syntax and binding facts for one
@@ -103,11 +104,16 @@ function buildDefinition(
 			: buildBehaviorTreeDefinition(context, resolved.table, activeDeclarations);
 		return createSourceNode(context, definitionPath, { ...input, ...body });
 	}
+	if (context.behaviorKind === 'state_machine') {
+		const source = resolved === null ? { body: null, children: input.children }
+			: buildStateMachineBody(context, '', resolved, activeDeclarations);
+		const relations = source.body === null ? { entries: [], transitions: [] }
+			: buildStateMachineRelations(context, context.anchor + definitionPath, source.body);
+		return createSourceNode(context, definitionPath, { ...input, ...source, ...relations });
+	}
 	return createSourceNode(context, definitionPath, {
 		...input,
 		children: resolved === null ? input.children
-			: context.behaviorKind === 'state_machine'
-				? buildStateMachineDefinition(context, resolved.table, activeDeclarations)
-				: buildActionEffectDefinition(context, resolved.table, activeDeclarations),
+			: buildActionEffectDefinition(context, resolved.table, activeDeclarations),
 	});
 }

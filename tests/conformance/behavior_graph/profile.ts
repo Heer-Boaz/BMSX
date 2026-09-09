@@ -1,4 +1,4 @@
-import { performance } from 'node:perf_hooks';
+import { medianMilliseconds } from '../../helpers/performance';
 import { Font } from '../../../machine/ts/render/shared/bmsx_font';
 import { HostOverlayQuadStream } from '../../../machine/ts/render/host_overlay/quad_stream';
 import { buildLuaFileSemanticData } from '../../../toolchain/ts/lua/semantic/model';
@@ -10,17 +10,6 @@ import { drawWorkbenchGraph } from '../../../ide/workbench/render/graph';
 import { api } from '../../../ide/runtime/overlay_api';
 import { createHostOverlayFixture } from '../../helpers/host_overlay';
 
-function medianMilliseconds(run: () => void): number {
-	for (let index = 0; index < 10; index += 1) run();
-	const samples: number[] = [];
-	for (let index = 0; index < 25; index += 1) {
-		const start = performance.now();
-		run();
-		samples.push(performance.now() - start);
-	}
-	samples.sort((a, b) => a - b);
-	return samples[12];
-}
 
 class MeasuredFont extends Font {
 	public measurements = 0;

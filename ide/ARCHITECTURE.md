@@ -205,8 +205,15 @@ The graphical Behavior Lens contracts are specified in
 The implemented BT prerequisite exposes typed root, branch and attachment
 information on the same source objects as the outline, not a renderer
 interpreting labels. Weights and fields remain syntax nodes. BT order belongs
-to Lua; FSM edges
-require proven scope, target and provenance. Retained canvas geometry belongs
+to Lua. FSM source bodies now retain child occurrences, guard fields and
+consumer slots. A cold second pass binds initial/concurrent entries and possible
+returned paths to those occurrence keys within one registration. Inline and
+file-local const callbacks retain binding/function/return syntax; member and
+cross-file callbacks remain unresolved. Callback return facts are not a proof
+that the callback executes or has no other imperative effects. The cartlib path
+grammar lives in `toolchain/ts/cartlib/fsm`, not in the renderer or generic Lua
+binder. See the documented subset and compiled-runtime oracle before extending
+these facts. Retained canvas geometry belongs
 to a shared workbench control, independently of document identity and runtime
 execution slots. Input-owned registration/selection/collapse correspondence
 maps source-use spans through the existing text-change owner, including hidden

@@ -45,6 +45,12 @@ export type ResolvedSourceTable = {
 	readonly resolution: BehaviorSourceResolution;
 };
 
+export type BehaviorSourceTableSection = BehaviorDynamicSourceNode | (BehaviorSourceNode & {
+	readonly kind: 'section';
+	readonly table: LuaTableConstructorExpression;
+	readonly issues: SourceTableIssue;
+});
+
 export type SourceNodeInput = {
 	readonly kind: BehaviorSourceNodeKind;
 	readonly label: string;
@@ -115,6 +121,22 @@ export function collectConstInitializers(analysis: FileSemanticData): ReadonlyMa
 		}
 	});
 	return initializers;
+}
+
+/** Follow only binder-proven local const aliases; leave unresolved syntax intact. */
+export function resolveConstSourceExpression(
+	analysis: FileSemanticData, initializers: ReadonlyMap<SymbolID, LuaExpression>,
+	expression: LuaExpression, active: Set<SymbolID>,
+): LuaExpression {
+	if (expression.kind !== LuaSyntaxKind.IdentifierExpression) return expression;
+	const declaration = analysis.referencesBySyntax.get(expression)?.target;
+	if (declaration === undefined || active.has(declaration)) return expression;
+	const initializer = initializers.get(declaration);
+	if (initializer === undefined) return expression;
+	active.add(declaration);
+	const resolved = resolveConstSourceExpression(analysis, initializers, initializer, active);
+	active.delete(declaration);
+	return resolved;
 }
 
 /** Finds declarations whose table identity has a syntactically known write. */
@@ -376,11 +398,18 @@ export function buildNamedTableSection(
 	label: string,
 	expression: LuaExpression,
 	activeDeclarations: Set<SymbolID>,
-): BehaviorSourceNode {
+): BehaviorSourceTableSection {
 	const resolved = resolveSourceTable(context, expression, activeDeclarations);
 	if (!resolved) {
 		return createDynamicNode(context, path, `unresolved ${label}`, expression);
 	}
+	return buildResolvedTableSection(context, path, label, resolved, resolved.table.range);
+}
+
+/** A resolved table with its authored owner span (a map entry may include its key). */
+export function buildResolvedTableSection(
+	context: BehaviorRecognizerContext, path: string, label: string, resolved: ResolvedSourceTable, authoredRange: LuaSourceRange,
+): Extract<BehaviorSourceTableSection, { kind: 'section' }> {
 	const fields = collectNamedFields(resolved.table);
 	const children: BehaviorSourceNode[] = [];
 	for (let index = 0; index < fields.length; index += 1) {
@@ -415,11 +444,13 @@ export function buildNamedTableSection(
 	}
 	return createSourceNode(context, path, {
 		kind: 'section',
+		table: resolved.table,
+		issues: resolved.issues,
 		label: resolved.resolution === 'complete'
 			? `${label} (${children.length})`
 			: `${label} (${children.length} authored)`,
 		detail: describeResolvedSourceTable(resolved),
-		authoredRange: resolved.table.range,
+		authoredRange,
 		referenceRange: resolved.referenceRange,
 		resolution: resolved.resolution,
 		children,
