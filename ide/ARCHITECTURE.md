@@ -456,8 +456,14 @@ to the preceding token; the remainder leads the next. Complete field/separator
 pairs retain exact spans during a move. The braces keep their own trivia, and an originally
 separator-less last field gains a comma before its trailing comments when moved
 before a sibling. No default trivia tree, formatting pass or source normalization.
-Insertion/reparenting and structural edits on recovered source still need their
-own construction/error-tree contracts. The shared lexer also
+Insertion places producer-owned complete field syntax. Cross-constructor
+transfer instead consumes the existing punctuated span, deletes/inserts only
+that payload and returns its exact final source range. It does not copy the
+intervening document to preserve a deleted marker. Semantic admission and
+selection across a parent change remain prerequisites for graph reconnect;
+structural edits on recovered source still need an error-tree contract. See
+[`../docs/lua_table_transfer_design.md`](../docs/lua_table_transfer_design.md).
+The shared lexer also
 has an opt-in trivia scan, used by Format Document instead of a second comment
 regex; default compiler/analysis scans still allocate only significant tokens.
 Formatting preserves string/comment content on opening and closing lines as

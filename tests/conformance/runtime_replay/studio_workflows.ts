@@ -9,6 +9,7 @@ import { testStudioBtMoves } from './studio_bt_moves';
 import { testStudioBtDrag } from './studio_bt_drag';
 import { testStudioBtRemove } from './studio_bt_remove';
 import { testStudioBtDuplicate } from './studio_bt_duplicate';
+import { testStudioTableTransfer } from './studio_table_transfer';
 import { testStudioFsmSource } from './studio_fsm_source';
 import { testStudioActionEffectSource } from './studio_actioneffect_source';
 import { testStudioFsmSelection } from './studio_fsm_selection';
@@ -330,6 +331,7 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	await testStudioBtDrag(test);
 	await testStudioBtRemove(test);
 	await testStudioBtDuplicate(test);
+	await testStudioTableTransfer(test);
 	await testStudioFsmSource(test);
 	await testStudioActionEffectSource(test);
 	await testStudioFsmSelection(test);

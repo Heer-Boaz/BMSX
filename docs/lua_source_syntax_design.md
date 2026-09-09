@@ -53,7 +53,7 @@ in [scene authoring](studio_scene_authoring_design.md).
 | `ide/runtime/source_registry.ts`, `ide/language/lua/interpreter/interpreter.ts` | Runtime-source/debugger metadata and host interpreter use parsed chunks. No guest/runtime syntax representation is added. |
 | `ide/language/lua/formatter.ts` | Requests trivia from the lexer. Indentation uses only significant tokens; string/comment extents determine which line prefixes/suffixes are actual token content. |
 | `syntax/token_navigation.ts`, `syntax/table_fields.ts` | Token navigation owns Full Moon-style trivia attachment and punctuated field spans, on demand over the existing lossless scan. Default AST/token storage stays unchanged. |
-| `ide/language/lua/{source_edits,table_field_moves,table_field_insertion}.ts`, Scene Editor and Behavior Lens adapters | The language owner provides literal edits, complete-field deletion, adjacent-field movement and placement of already constructed complete fields. No contribution-local structural text scan, second model, runtime execution or scene-specific syntax token. |
+| `ide/language/lua/{source_edits,table_field_moves,table_field_insertion,table_field_transfer}.ts`, Scene Editor and Behavior Lens adapters | The language owner provides literal edits, complete-field deletion, sibling movement, placement of already constructed complete fields and lossless cross-constructor transfer. No contribution-local structural text scan, second model, runtime execution or scene-specific syntax token. |
 
 No machine or C++ runtime representation changes. The edited paths run on
 source analysis or an explicit language edit/Format Document command, not a guest worldtick,
@@ -378,6 +378,14 @@ compiled instructions, literals and child-expression/debugger locations must
 be compared separately rather than promising identical whole ROMs.
 
 ### Remaining construction, reparenting and error-tree work
+
+[`IDE-LUA-TABLE-FIELD-TRANSFER-01`](lua_table_transfer_design.md) now provides
+the syntax operation between two complete current-source constructors. It
+moves the token-owned field span in one delete/insert batch and returns its
+exact final range. Unlike same-list rotation, it does not copy the intervening
+document or pretend a deleted marker retains identity. It preserves travelling
+layout rather than formatting. Destination binding analysis and selection
+across a parent change remain separate prerequisites for reconnect UI.
 
 Before adding field-construction UI, reparenting or edits on recovered syntax:
 

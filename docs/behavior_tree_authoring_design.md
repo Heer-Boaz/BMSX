@@ -15,6 +15,13 @@ toe. Dit maakt reparent/reconnect nog niet beschikbaar.
 `STUDIO-BT-CHILD-DUPLICATE-01` gebruikt vervolgens dezelfde bewezen membership
 en de bestaande Lua-insertionowner, zonder een nieuwe graphidentiteit.
 
+[`IDE-LUA-TABLE-FIELD-TRANSFER-01`](lua_table_transfer_design.md) levert daarna
+de taalprimitive voor verplaatsing tussen constructors, **zonder** graphcommand
+of reconnect-interactie. De huidige source-correspondence vereist dezelfde
+parent; verplaatste expressions kunnen andere locals capturen. Beide owners
+moeten vóór een parentwissel correct werken, niet door een edge-update worden
+omzeild. De syntax-/Undo-/CPU-proeven en resterende gates staan in dat ontwerp.
+
 ## Getoetste productievoorbeelden
 
 - [LimboAI, Move Up/Down](https://github.com/limbonaut/limboai/blob/3f14ea4c26911e8b8e30c6bcdb575fc589a59deb/editor/limbo_ai_editor_plugin.cpp#L660-L719):

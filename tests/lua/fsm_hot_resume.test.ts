@@ -21,6 +21,7 @@ import { BT_ORDER_SOURCE } from '../helpers/behavior_order_fixture';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { createLuaTableFieldMoveEdits } from '../../ide/language/lua/table_field_moves';
 import { duplicateBehaviorTreeChild, removeBehaviorTreeChild } from '../../ide/workbench/contrib/behavior_lens/behavior_tree_edit';
+import { createLuaTableFieldTransfer } from '../../ide/language/lua/table_field_transfer';
 import { buildBehaviorSourceDocument } from '../../ide/workbench/contrib/behavior_lens/recognizer';
 import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
 
@@ -624,6 +625,36 @@ return target.order, #nested.children, same_value
 `);
 		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [expected, 2, sameValue]);
+		model.undo();
+		assert.equal(model.buffer.getText(), BT_ORDER_SOURCE);
+	}
+});
+
+test('language-owned field transfer changes actual compiled BT composition without a host graph or runtime clone', () => {
+	const resource = { domain: 0 as const, path: 'transfer.lua', source: { type: 'lua' as const, resid: 'transfer' } };
+	for (const inward of [false, true]) {
+		const model = new EditorTextModel(resource, 'lua', BT_ORDER_SOURCE);
+		const definition = buildBehaviorSourceDocument(resource, buildLuaFileSemanticData(BT_ORDER_SOURCE, resource.path)).definitions[0];
+		assert.ok(definition.behaviorKind === 'behavior_tree' && definition.root?.kind === 'node');
+		const outer = definition.root.branches[0];
+		assert.ok(outer.role === 'children' && outer.source.kind === 'section');
+		const node = outer.entries[1].node;
+		assert.ok(node.kind === 'node');
+		const inner = node.branches[0];
+		assert.ok(inner.role === 'children' && inner.source.kind === 'section');
+		const transfer = inward
+			? createLuaTableFieldTransfer(model.buffer, resource.path, outer.entries[2].field, inner.source.table, 0)
+			: createLuaTableFieldTransfer(model.buffer, resource.path, inner.entries[1].field, outer.source.table, outer.source.table.fields.length);
+		model.pushEditOperations(transfer.edits);
+		const cpu = createCartlibProgramCpu(model.buffer.getText() + `
+local target<const> = { order = 0 }
+local program<const> = require('cartlib/behaviour_tree/program').compile('oracle', { root = root })
+assert(program.evaluate(target, { _execution_state = program.create_execution_state() }, program.operand) == result.success)
+assert(children.note == 'metadata is not a child')
+return target.order, #children, #nested.children
+`);
+		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), inward ? [1312, 2, 3] : [1132, 4, 1]);
 		model.undo();
 		assert.equal(model.buffer.getText(), BT_ORDER_SOURCE);
 	}
