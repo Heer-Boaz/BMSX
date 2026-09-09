@@ -242,6 +242,17 @@ An empty authored table remains a table, not an editor-generated replacement
 task or a promise that every composite can execute it. No new guest state or
 runtime validator is introduced.
 
+BT duplication uses that same member admission and the existing Lua table-field
+insertion owner. It inserts the complete field before the retained selected
+syntax; ordinary text correspondence therefore selects the second occurrence
+and preserves its folds through Undo/Redo, including while the Lens is hidden.
+Aliases stay aliases, weighted wrappers keep their child and weight, and shared
+constructors are edited once. Exterior documentation is not copied. No new
+selection identity, graph history, runtime clone or Lua evaluator is introduced.
+Duplicate is a normal palette/action-bar command; Ctrl/Cmd+D belongs only to
+concrete graph focus and does not repeat. Warm enablement is retained O(1);
+only the explicit edit copies source and invokes the language insertion owner.
+
 FSM source bodies now retain child occurrences, guard fields and
 consumer slots. A cold second pass binds initial/concurrent entries and possible
 returned paths to those occurrence keys within one registration. Inline and

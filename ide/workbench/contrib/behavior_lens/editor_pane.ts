@@ -62,8 +62,12 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 			},
 			run: () => this.controller.toggleBranch(),
 		});
+		this.graph.focusTarget.registerCommand('behaviorLens.duplicateChild', {
+			isEnabled: () => this.controller.canEditSelectedChild(),
+			run: () => this.controller.duplicateSelectedChild(),
+		});
 		this.graph.focusTarget.registerCommand('behaviorLens.removeChild', {
-			isEnabled: () => this.controller.canRemoveSelectedChild(),
+			isEnabled: () => this.controller.canEditSelectedChild(),
 			run: () => this.controller.removeSelectedChild(),
 		});
 	}

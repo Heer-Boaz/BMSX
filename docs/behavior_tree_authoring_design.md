@@ -1,4 +1,4 @@
-# BT-authoring: bronbehoudend herordenen
+# BT-authoring: bronbehoudende Lua-bewerkingen
 
 `STUDIO-BT-CHILD-MOVE-01` bouwt broncommands voor bestaande ordered `children`
 en weighted `choices`. De afgewezen **Earlier/Later-knoppen zijn uit de
@@ -11,6 +11,9 @@ in deze twee slices.
 
 `STUDIO-BT-CHILD-REMOVE-01` voegt hieronder de afzonderlijke source-removalgrens
 toe. Dit maakt reparent/reconnect nog niet beschikbaar.
+
+`STUDIO-BT-CHILD-DUPLICATE-01` gebruikt vervolgens dezelfde bewezen membership
+en de bestaande Lua-insertionowner, zonder een nieuwe graphidentiteit.
 
 ## Getoetste productievoorbeelden
 
@@ -359,3 +362,79 @@ gevoelig voor JIT/callshape; dit is geen schaalbaarheidswinst of heap-profiel.
 Reproductie: `tests/conformance/behavior_graph/profile_edit.ts`; alle logs,
 metingen en captures: `/tmp/bmsx-bt-authoring-next/`. Reparent/reconnect en de
 afzonderlijke, nog niet gereproduceerde dirty-source-melding blijven open.
+
+## `STUDIO-BT-CHILD-DUPLICATE-01`: een authored occurrence dupliceren
+
+[LimboAI Duplicate](https://github.com/limbonaut/limboai/blob/3f14ea4c26911e8b8e30c6bcdb575fc589a59deb/editor/limbo_ai_editor_plugin.cpp#L773-L799)
+plaatst een sibling naast de selectie, commit één documentactie en selecteert
+de tweede occurrence. Zijn resourceclone is niet de representatie van onze
+Lua-bron. [VS Code CopyLinesCommand](https://github.com/microsoft/vscode/blob/2adb41dd5fd68625317fb612e2d892c60b3a26aa/src/vs/editor/contrib/linesOperations/browser/copyLinesCommand.ts#L59-L71)
+levert het passende textmodelpatroon: kopieer vóór de geselecteerde tekst,
+behoud die tekst zelf en volg de gewone tracked selection naar de tweede
+occurrence. Geen nieuwe insertion-result-id, graphhistory of indexoverride.
+
+| Owner | Duplicatecontract |
+| --- | --- |
+| Admission | Dezelfde writable/current-generation/complete-syntax/listmembergrens als Remove. Geen root, parallelrol, attachment of gegokte dynamische membership. |
+| Lua-source-editowner | Lees het complete field, zonder exterior trivia/separator; `createLuaTableFieldInsertionEdits` voegt het vóór datzelfde lexical field in. Arrayrank is geen lexical index. De bestaande taalowner kiest separator, indentation en newline; geen BT-printer. |
+| Betekenis | Een alias-use blijft een alias-use; een inline constructor wordt als bron gekopieerd. Een weighted kaart of verbinding dupliceert de gehele choice-wrapper, inclusief weight en interne comments. Geen hostevaluatie of materialisatie van de initializer. |
+| Text/history | Eén `pushEditOperations` en één Undo-element. De geselecteerde bytes blijven staan; normale source-correspondence behoudt de selectie op de tweede occurrence, ook bij hidden Undo/Redo. Haar uitgeklapte takken blijven behouden; de nieuwe eerdere occurrence krijgt gewone initiële viewstate. |
+| Focus/UI | Duplicate in de gedeelde graph-action-bar en `Behavior Lens: Duplicate BT Child` in de palette. Ctrl/Cmd+D uitsluitend bij concrete graphfocus, zonder repeat; geen keyhandler in de bijdrage en geen binding in gameplay of tekstvelden. |
+
+Exterior comments blijven bij de behouden fieldsyntax; zij worden niet
+gedupliceerd of als nieuwe documentatie geïnterpreteerd. Interne bronbytes,
+waaronder grouping, comments, strings en callbacks, blijven exact. Een gedeelde
+constructor wordt eenmaal aangepast en verandert dus al zijn bronprojecties;
+de gekozen registratie blijft gekozen. Dit garandeert geen tweede runtimeobject
+of diepe clone van gedeelde Lua-tabellen.
+
+Alle warme enablement blijft retained O(1), zonder lexing, textcopies of nieuwe
+graphprojectie. Alleen de expliciete edit leest fieldsyntax en laat de bestaande
+insertionowner eenmaal lexen. Compiler, cartlib, machine en C++ blijven
+ongewijzigd. Reparent/reconnect vereist nog scope-/binding- en ownershipbewijs;
+deze lokale kopie is daarvoor geen shortcut.
+
+### Validatie van source-duplicatie (2026-09-09)
+
+- **1.133 Lua-tests geslaagd, één bestaande skip.** De nieuwe zelfstandige
+  sourceproeven dekken first/middle/last/sole, metadata, grouping/CRLF/interne
+  comments, alias/opaque/inline syntax, complete weighted wrappers, gedeelde
+  constructors, herhaalde copies en geselecteerde folds door hidden Undo/Redo.
+  De bestaande gemeenschappelijke admissionproeven blijven gelden voor roots,
+  parallelrollen, attachments, unknown/keyed/mutated lists en recovery.
+- De echte BLua/cartlib-oracle bewijst uitvoervolgorde `11123`, `112123` of
+  `11233`: alias-entries blijven dezelfde Lua-waarde; twee builder-calls of
+  inline choice-constructors leveren hun eigen waarden. De weighted proef
+  behoudt `1,9,9,3` en de oorspronkelijke childreferenties. Dit is geen nieuwe
+  live BT-Hot-Resume-rebindproef.
+- Volledige Studio-workflow en Pietious navigation/autosave-recovery slagen
+  op **software, WebGL2 en WebGPU**. Action-bar, palette-origin, Ctrl/Cmd+D,
+  held input, source-links, codefocus, hidden Undo/Redo, readonly/generation en
+  dupliceren tijdens een bewezen werkende captured drag gebruiken echte
+  hostinput. Zes echte tiny-fontcaptures geïnspecteerd: toolbar en vier siblings
+  passen; de geselecteerde tweede occurrence behoudt haar uitgeklapte subtree.
+  Chromium/SwiftShader, geen fysieke-GPU-certificering.
+- Browser/headless-productbuilds, IDE-typecheck en headless Behavior Lens
+  (**59 assertions**) slagen. Strikte architecture-audit: nul issues; core-parity,
+  indentation- en diff-check slagen. Tests-project: **51 bestaande diagnostics,
+  dezelfde file/code/message/multiplicity**. Twee bestaande offsets verschuiven
+  door de import; het tests-project is niet volledig typecheckgroen.
+
+Geïsoleerde Node 22.23.1-meting, tien warmups en mediaan van 25; alle waarden
+hieronder zijn microseconden per operatie:
+
+| Siblings / source UTF-16 | Retained admission | Duplicateconstructie | PieceTree apply + Undo | Duplicate-entrypoint + Undo |
+| --- | ---: | ---: | ---: | ---: |
+| 24 / 1.158 | 0,023 | 10,779 | 0,395 | 11,502 |
+| 1.024 / 41.158 | 0,008 | 258,425 | 0,440 | 262,888 |
+
+Constructie/entrypoint gebruikt 100 operaties per sample, admission/apply 1.000.
+De kopie voegt in deze fixtures één edit van zeven UTF-16-eenheden toe. De
+expliciete insertionowner lext eenmaal: die kosten groeien met de brongrootte,
+niet tijdens enablement/draw/hover. Dit meet geen semantic refresh, relayout,
+autosave, Save/Hot Resume, GPU of totale edit-to-visible-frametijd en is geen
+heap-profiel. Reproductie: `tests/conformance/behavior_graph/profile_edit.ts`;
+logs, primaire referentiecode en captures: `/tmp/bmsx-bt-duplicate/`.
+
+Reparent/reconnect en de afzonderlijke nog niet gereproduceerde spontane
+dirty-source-melding zijn hiermee niet afgevinkt.

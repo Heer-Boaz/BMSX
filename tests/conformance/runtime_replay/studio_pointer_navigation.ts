@@ -14,6 +14,7 @@ import { testStudioBtMembership } from './studio_bt_membership';
 import { testStudioBtMoves } from './studio_bt_moves';
 import { testStudioBtDrag } from './studio_bt_drag';
 import { testStudioBtRemove } from './studio_bt_remove';
+import { testStudioBtDuplicate } from './studio_bt_duplicate';
 import { testStudioFsmSource } from './studio_fsm_source';
 import { testStudioActionEffectSource } from './studio_actioneffect_source';
 import { testStudioFsmSelection } from './studio_fsm_selection';
@@ -153,6 +154,7 @@ export async function runStudioPointerNavigation(test: StudioFixture, cart: Navi
 	await testStudioBtMoves(test);
 	await testStudioBtDrag(test);
 	await testStudioBtRemove(test);
+	await testStudioBtDuplicate(test);
 	await testStudioFsmSource(test);
 	await testStudioActionEffectSource(test);
 	await testStudioFsmSelection(test);

@@ -352,3 +352,35 @@ PieceTree apply/Undo and the concrete source-removal entrypoint plus Undo at
 of 25. The last timing includes source snapshot/cache access after each Undo,
 but no semantic refresh or graph rebuild. It is not a full edit-to-visible-frame,
 heap-allocation, GPU or Hot Resume benchmark. Run measurements without other tests.
+
+## BT source duplication
+
+```sh
+npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
+  tests/lua/behavior_tree_duplicate.test.ts tests/lua/lua_table_insertion.test.ts \
+  tests/lua/behavior_tree_removal.test.ts tests/lua/editor_focus.test.ts \
+  tests/lua/fsm_hot_resume.test.ts
+npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+  tests/conformance/behavior_graph/profile_edit.ts
+```
+
+The independent fixture covers first/middle/last/sole copies, metadata, alias
+versus inline/builder syntax, complete weighted wrappers, CRLF/grouping/interior
+trivia, shared constructors and selection/folds through repeated and hidden
+Undo/Redo. The compiled BLua/cartlib oracle proves execution order and shared
+alias versus distinct constructor identity; it is not a live BT rebind test.
+Common removal-admission tests also cover roots, parallel roles, attachments,
+unknown/keyed/mutated lists and recovery; duplicate consumes the same evidence.
+
+`studio_bt_duplicate.ts` runs in both actual Studio workflows and the navigation
+gate. It exercises held action-bar/shortcut input, palette origin, source links,
+code focus, hidden history, readonly/current-generation admission and duplication
+during an actually admitted drag. The paused machine/media must not change.
+Capture markers are `STUDIO: BT duplicate action ready for visual inspection`
+and `STUDIO: BT duplicated child ready for visual inspection`.
+
+The additional `profile_edit.ts` results measure duplicate construction and the
+entrypoint+Undo in batches of 100, and preconstructed PieceTree apply+Undo in
+batches of 1,000, converted to microseconds per operation. All use ten warmups
+and the median of 25 samples. The existing insertion owner's lexing is included;
+semantic reprojection, graph layout/render, autosave and Hot Resume are not.

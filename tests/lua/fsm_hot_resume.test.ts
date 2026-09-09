@@ -20,7 +20,7 @@ import { BT_MEMBERSHIP_SOURCE } from '../helpers/behavior_membership_fixture';
 import { BT_ORDER_SOURCE } from '../helpers/behavior_order_fixture';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { createLuaTableFieldMoveEdits } from '../../ide/language/lua/table_field_moves';
-import { removeBehaviorTreeChild } from '../../ide/workbench/contrib/behavior_lens/behavior_tree_edit';
+import { duplicateBehaviorTreeChild, removeBehaviorTreeChild } from '../../ide/workbench/contrib/behavior_lens/behavior_tree_edit';
 import { buildBehaviorSourceDocument } from '../../ide/workbench/contrib/behavior_lens/recognizer';
 import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
 
@@ -587,6 +587,43 @@ return target.order, #nested.children, nested.children[1] == leaf
 `);
 		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [expected, 2, true]);
+		model.undo();
+		assert.equal(model.buffer.getText(), BT_ORDER_SOURCE);
+	}
+});
+
+test('BT source duplication executes the copied Lua uses and keeps choice weights, rather than cloning runtime nodes', () => {
+	const resource = { domain: 0 as const, path: 'duplicate.lua', source: { type: 'lua' as const, resid: 'duplicate' } };
+	for (const [definitionIndex, index, expected, sameValue] of [[0, 0, 11123, true], [0, 1, 112123, true], [0, 2, 11233, false], [2, 1, 112123, false]] as const) {
+		const model = new EditorTextModel(resource, 'lua', BT_ORDER_SOURCE);
+		const definition = buildBehaviorSourceDocument(resource, buildLuaFileSemanticData(BT_ORDER_SOURCE, resource.path)).definitions[definitionIndex];
+		assert.ok(definition.behaviorKind === 'behavior_tree' && definition.root?.kind === 'node');
+		const branch = definition.root.branches[0];
+		assert.ok((branch.role === 'children' || branch.role === 'choices') && branch.source.kind === 'section');
+		duplicateBehaviorTreeChild(model, { table: branch.source.table, entries: branch.entries, index });
+		const execution = definitionIndex === 0 ? `
+local program<const> = require('cartlib/behaviour_tree/program').compile('oracle', { root = root })
+assert(program.evaluate(target, { _execution_state = program.create_execution_state() }, program.operand) == result.success)
+assert(#children == 4 and children.note == 'metadata is not a child')
+local same_value<const> = children[${index + 1}] == children[${index + 2}]
+` : `
+assert(#weighted.choices == 4 and weighted.choices[1].weight == 1 and weighted.choices[2].weight == 9
+	and weighted.choices[3].weight == 9 and weighted.choices[4].weight == 3)
+assert(weighted.choices.note == 'metadata is not a choice')
+assert(weighted.choices[2].child == nested and weighted.choices[3].child == nested)
+for index = 1, #weighted.choices do
+	local program<const> = require('cartlib/behaviour_tree/program').compile('oracle', { root = weighted.choices[index].child })
+	assert(program.evaluate(target, { _execution_state = program.create_execution_state() }, program.operand) == result.success)
+end
+local same_value<const> = weighted.choices[2] == weighted.choices[3]
+`;
+		const cpu = createCartlibProgramCpu(model.buffer.getText() + `
+local target<const> = { order = 0 }
+${execution}
+return target.order, #nested.children, same_value
+`);
+		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [expected, 2, sameValue]);
 		model.undo();
 		assert.equal(model.buffer.getText(), BT_ORDER_SOURCE);
 	}

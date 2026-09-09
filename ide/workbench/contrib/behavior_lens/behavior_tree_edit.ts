@@ -2,7 +2,8 @@ import type { BehaviorTreeSourceMember } from './behavior_tree_model';
 import type { BehaviorLensViewState } from './view_model';
 import type { EditorTextModel } from '../../../editor/model/text_model';
 import { getTextSnapshot } from '../../../editor/text/source_text';
-import { createLuaTableFieldRemovalEdits } from '../../../language/lua/source_edits';
+import { createLuaTableFieldRemovalEdits, readLuaSourceRange } from '../../../language/lua/source_edits';
+import { createLuaTableFieldInsertionEdits } from '../../../language/lua/table_field_insertion';
 import { createLuaTableFieldMoveEdits } from '../../../language/lua/table_field_moves';
 import { getCachedLuaParse } from '../../../../toolchain/ts/lua/analysis/cache';
 
@@ -24,6 +25,13 @@ export function behaviorTreeMoveTarget(view: BehaviorLensViewState, direction: -
 export function removeBehaviorTreeChild(model: EditorTextModel, member: BehaviorTreeSourceMember): void {
 	const parsed = getCachedLuaParse({ path: model.resource.path, source: getTextSnapshot(model.buffer) }).parsed;
 	model.pushEditOperations(createLuaTableFieldRemovalEdits(model.buffer, parsed.tokens, member.entries[member.index].field));
+}
+
+/** Insert before the retained field: its tracked selection becomes the second occurrence. */
+export function duplicateBehaviorTreeChild(model: EditorTextModel, member: BehaviorTreeSourceMember): void {
+	const field = member.entries[member.index].field;
+	model.pushEditOperations(createLuaTableFieldInsertionEdits(model.buffer, model.resource.path, member.table,
+		member.table.fields.indexOf(field), readLuaSourceRange(model.buffer, field.range)));
 }
 
 /** Array ranks are not lexical field indices: named metadata stays ordinary Lua. */

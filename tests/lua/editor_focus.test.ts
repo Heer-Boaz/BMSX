@@ -119,6 +119,39 @@ test('BT Delete belongs to graph focus, does not repeat, and cannot consume text
 	assert.equal(resolveEditorCommandKeybinding('Delete', KeyModifier.none, commands), null);
 });
 
+test('BT duplicate uses Ctrl/Cmd+D only at concrete graph focus, without repeat or field inheritance', t => {
+	t.after(() => inputFocus.setTarget(null));
+	const graph = inputFocus.createTarget();
+	let enabled = true;
+	let copies = 0;
+	graph.registerCommand('behaviorLens.duplicateChild', {
+		isEnabled: () => enabled,
+		run: () => { copies += 1; },
+	});
+	const commands = { isEnabled: () => true };
+	graph.focus();
+	for (const modifier of [KeyModifier.ctrl, KeyModifier.meta]) {
+		const binding = resolveEditorCommandKeybinding('KeyD', modifier, commands)!;
+		assert.equal(binding.command, 'behaviorLens.duplicateChild');
+		assert.notEqual(binding.repeat, true);
+		inputFocus.executeCommand(binding.command);
+		for (const extra of [KeyModifier.shift, KeyModifier.alt]) {
+			assert.equal(resolveEditorCommandKeybinding('KeyD', modifier | extra, commands), null);
+		}
+	}
+	assert.equal(copies, 2);
+	assert.equal(resolveEditorCommandKeybinding('KeyD', KeyModifier.none, commands), null);
+	enabled = false;
+	inputFocus.executeCommand('behaviorLens.duplicateChild');
+	assert.equal(copies, 2);
+	const field = new TextField(graph);
+	field.focusTarget.focus();
+	assert.equal(resolveEditorCommandKeybinding('KeyD', KeyModifier.ctrl, commands), null);
+	field.focusTarget.release();
+	graph.release();
+	assert.equal(resolveEditorCommandKeybinding('KeyD', KeyModifier.ctrl, commands), null);
+});
+
 test('input history restores content and selection, replaces selection as one operation, and publishes changes', () => {
 	const field = new TextField();
 	let changes = 0;

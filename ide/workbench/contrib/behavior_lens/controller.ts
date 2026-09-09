@@ -36,7 +36,7 @@ import { editorViewState } from '../../../editor/ui/view/state';
 import type { GraphLayoutEngineFactory } from '../../services/graph_layout/engine';
 import { acceptStateGraphSelection, stateGraphSelection } from './state_graph_navigation';
 import { buildStateMachineDetails } from './state_machine_details';
-import { behaviorTreeEditTarget, behaviorTreeMoveTarget, moveBehaviorTreeChild, removeBehaviorTreeChild } from './behavior_tree_edit';
+import { behaviorTreeEditTarget, behaviorTreeMoveTarget, duplicateBehaviorTreeChild, moveBehaviorTreeChild, removeBehaviorTreeChild } from './behavior_tree_edit';
 
 const PICKER_TITLES: Readonly<Record<BehaviorKind, string>> = {
 	action_effect: 'ACTIONEFFECTS',
@@ -158,10 +158,21 @@ export class BehaviorLensController {
 			&& input.workingCopy.version === input.view.sourceVersion && behaviorTreeMoveTarget(input.view, direction) !== undefined;
 	}
 
-	public canRemoveSelectedChild(): boolean {
+	public canEditSelectedChild(): boolean {
 		const input = getActiveTab();
 		return input.kind === 'behavior_lens' && !input.workingCopy.readOnly
 			&& input.workingCopy.version === input.view.sourceVersion && behaviorTreeEditTarget(input.view) !== null;
+	}
+
+	public duplicateSelectedChild(): void {
+		const input = getActiveTab();
+		if (input.kind !== 'behavior_lens' || input.workingCopy.readOnly) return;
+		this.updateView(input);
+		const member = behaviorTreeEditTarget(input.view);
+		if (member === null) return;
+		this.editorPanes.activePane.focus();
+		duplicateBehaviorTreeChild(input.workingCopy, member);
+		this.updateView(input);
 	}
 
 	public removeSelectedChild(): void {
