@@ -277,9 +277,11 @@ t.assert(effectTab.kind === 'behavior_lens', 'real ActionEffect did not open in 
 const effectView = effectTab.view;
 t.assert(effectView.document.definitions.length === 1, 'Nemesis player source should expose one ActionEffect registration');
 t.assert(effectView.document.definitions[0].behaviorKind === 'action_effect', 'registration was not recognized as an ActionEffect');
-const periodRowIndex = effectView.presentation.rows.findIndex(row => row.node.label.startsWith('period_ms ='));
+t.assert(effectView.presentation.kind === 'properties', 'ActionEffect must open its property inspector');
+const properties = effectView.presentation.tree;
+const periodRowIndex = properties.rows.findIndex(row => row.element.kind === 'property' && row.element.source.label.startsWith('period_ms ='));
 t.assert(periodRowIndex >= 0, 'real ActionEffect period is not present in the retained rows');
-await moveSelectionToIndex(effectView.presentation, periodRowIndex, 180);
+await moveSelectionToIndex(properties, periodRowIndex, 180);
 await pressKey('Enter', 190);
 t.assert(t.activeEditorDocument().model.resource.path === 'player/actioneffects.lua', 'ActionEffect navigation opened the wrong source');
 t.assert(t.activeEditorDocument().view.cursorRow === 16, 'ActionEffect period navigated to the wrong authored line');

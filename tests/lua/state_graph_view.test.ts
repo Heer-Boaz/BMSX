@@ -26,22 +26,22 @@ function fixture(source = FSM_PROOF_SOURCE, factory: GraphLayoutEngineFactory = 
 	const resource = { domain: 0 as const, path: 'graph.lua', source: { resid: 'graph', type: 'lua' as const } };
 	const model = new EditorTextModel(resource, 'lua', source);
 	const document = () => buildBehaviorSourceDocument(resource, buildLuaFileSemanticData(model.buffer.getText(), resource.path));
-	const view = createBehaviorLensViewState(document(), model, 'outline');
+	const view = createBehaviorLensViewState(document(), model, 'state-graph');
 	const input = new BehaviorLensInput(model, view, factory);
-	model.onDidChangeContent(event => { mapBehaviorLensSourceRanges(view, event.changes); input.invalidateGraph(); });
+	model.onDidChangeContent(event => { mapBehaviorLensSourceRanges(view, event.changes); input.invalidatePresentation(); });
 	selectBehaviorLensDefinition(view, view.document.definitions[0].rowKey);
 	const graph = view.presentation;
 	if (graph.kind !== 'state-graph') throw new Error('Fixture must open the concrete FSM presentation');
 	graph.viewport.layout(0, 0, 384, 288);
-	const refresh = () => { installBehaviorLensDocument(view, document(), model.buffer); view.sourceVersion = model.version; input.updateGraph(font); };
-	const settle = async () => { await input.graphLayout.settled; input.updateGraph(font); assert.equal(graph.layoutState.kind, 'ready'); };
+	const refresh = () => { installBehaviorLensDocument(view, document(), model.buffer); view.sourceVersion = model.version; input.updatePresentation(font); };
+	const settle = async () => { await input.graphLayout.settled; input.updatePresentation(font); assert.equal(graph.layoutState.kind, 'ready'); };
 	return { input, model, view, graph, refresh, settle };
 }
 
 test('FSM graph retains containment, concurrent entry and separate edges for identical returns in shared uses', async () => {
 	const f = fixture();
 	try {
-		f.input.updateGraph(font);
+		f.input.updatePresentation(font);
 		assert.equal(f.graph.layoutState.kind, 'pending');
 		assert.equal(f.graph.viewport.model.nodes.length, 0);
 		await f.settle();
@@ -65,7 +65,7 @@ test('FSM graph retains containment, concurrent entry and separate edges for ide
 		acceptStateGraphSelection(f.view, f.graph, f.model.buffer);
 		assert.equal(stateGraphSelection(model, f.view.selection), updates[3]);
 		const retained = f.graph.viewport.model;
-		for (let index = 0; index < 100; index += 1) f.input.updateGraph(font);
+		for (let index = 0; index < 100; index += 1) f.input.updatePresentation(font);
 		assert.equal(f.graph.viewport.model, retained, 'idle frames do not project, measure or reroute');
 	} finally { f.input.dispose(); }
 });
@@ -73,7 +73,7 @@ test('FSM graph retains containment, concurrent entry and separate edges for ide
 test('FSM graph shows unknown/no-path evidence without endpoints and preserves source selection when its path becomes nil', async () => {
 	const f = fixture();
 	try {
-		f.input.updateGraph(font); await f.settle();
+		f.input.updatePresentation(font); await f.settle();
 		const edge = f.graph.viewport.model.edges.find(edge => edge.link.reference.kind === 'state-outcome' && edge.link.reference.transition.slot.kind === 'update')!;
 		f.graph.viewport.selection = edge;
 		acceptStateGraphSelection(f.view, f.graph, f.model.buffer);
@@ -99,7 +99,7 @@ fsm.register('cyclic', { initial = 'a', on = { parent = '/a' }, states = {
  b = { on = { back = '../a' } },
 }})`);
 	try {
-		f.input.updateGraph(font); await f.settle();
+		f.input.updatePresentation(font); await f.settle();
 		const model = f.graph.viewport.model;
 		const root = model.nodes[0];
 		for (const node of model.nodes) for (const coordinate of Object.values(node.bounds)) assert.equal(coordinate, Math.round(coordinate));
@@ -137,7 +137,7 @@ test('concrete input coalesces edits, hides stale geometry, publishes no obsolet
 	const f = fixture(FSM_PROOF_SOURCE, () => { creates += 1; return held; });
 	try {
 		assert.equal(creates, 0, 'input construction is not engine startup');
-		f.input.updateGraph(font);
+		f.input.updatePresentation(font);
 		const old = held.jobs[0];
 		f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- moved\n' }]);
 		f.refresh();
@@ -154,11 +154,11 @@ test('concrete input coalesces edits, hides stale geometry, publishes no obsolet
 		const reference = f.graph.viewport.model.edges.find(edge => edge.link.reference.kind === 'state-outcome')!.link.reference;
 		f.view.selection = selectStateMachineSource(reference, f.model.buffer);
 		assert.ok(reference.kind === 'state-outcome' && reference.outcome.proof.kind === 'return' && reference.outcome.proof.statement.range.start.line >= 6);
-		f.input.updateGraph(new Font({ variant: 'msx' }));
+		f.input.updatePresentation(new Font({ variant: 'msx' }));
 		assert.equal(f.graph.layoutState.kind, 'pending', 'font measurement starts a new unpublished generation');
 		held.jobs[2].reject(new Error('deliberate layout failure'));
 		await f.input.graphLayout.settled;
-		f.input.updateGraph(f.graph.viewport.model.font);
+		f.input.updatePresentation(f.graph.viewport.model.font);
 		assert.equal(f.graph.layoutState.kind, 'failed');
 		assert.equal(f.graph.viewport.model.nodes.length, 0);
 		assert.equal(held.jobs.length, 3, 'failure never retries or selects another layout');
@@ -174,7 +174,7 @@ test('ELK half-pixel labels become one integer canvas generation rather than per
 		dispose() { real.dispose(); },
 	}));
 	try {
-		f.input.updateGraph(font); await f.settle();
+		f.input.updatePresentation(font); await f.settle();
 		assert.ok(output.edges!.some(edge => edge.labels!.some(label => label.x! % 1 !== 0 || label.y! % 1 !== 0)),
 			'this independent fixture must exercise actual fractional ELK label placement');
 		for (const edge of f.graph.viewport.model.edges) {

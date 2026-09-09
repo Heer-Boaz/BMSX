@@ -70,7 +70,8 @@ export class BehaviorLensController {
 			const document = this.buildDocument(resource, source);
 			tab = new BehaviorLensInput(
 				model,
-				createBehaviorLensViewState(document, model, registration.behaviorKind === 'behavior_tree' ? 'graph' : 'outline'),
+				createBehaviorLensViewState(document, model, registration.behaviorKind === 'behavior_tree' ? 'graph'
+					: registration.behaviorKind === 'action_effect' ? 'properties' : 'state-graph'),
 				this.createGraphLayoutEngine,
 			);
 			editorTabGroup.add(tab);
@@ -78,12 +79,12 @@ export class BehaviorLensController {
 			this.updateView(tab);
 		}
 		const view = tab.view;
-		if (view.definitionRowKey !== registration.rowKey) tab.invalidateGraph();
+		if (view.definitionRowKey !== registration.rowKey) tab.invalidatePresentation();
 		selectBehaviorLensDefinition(view, registration.rowKey);
 		view.sourceMatchRowKeys.clear();
 		view.sourceMatchRowKeys.add(registration.rowKey);
 		prepareBehaviorLensLayout(view);
-		tab.updateGraph(editorViewState.font.renderFont());
+		tab.updatePresentation(editorViewState.font.renderFont());
 		finishBehaviorLensNavigation(view);
 		setActiveTab(this.editorPanes, tab.id);
 	}
@@ -97,7 +98,7 @@ export class BehaviorLensController {
 			view.sourceVersion = workingCopy.version;
 		}
 		prepareBehaviorLensLayout(view);
-		input.updateGraph(editorViewState.font.renderFont());
+		input.updatePresentation(editorViewState.font.renderFont());
 		if (sourceChanged) finishBehaviorLensNavigation(view);
 	}
 
@@ -179,7 +180,7 @@ export class BehaviorLensController {
 		for (const input of editorTabGroup.tabs) {
 			if (input.kind === 'behavior_lens' && input.workingCopy === model) {
 				mapBehaviorLensSourceRanges(input.view, event.changes);
-				input.invalidateGraph();
+				input.invalidatePresentation();
 			}
 		}
 	}

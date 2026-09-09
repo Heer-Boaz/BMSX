@@ -6,7 +6,7 @@ export type WorkbenchDropdownMenuId =
 	| 'menubar.run'
 	| 'menubar.view';
 
-export type WorkbenchActionMenuId = 'scenarioLab.title' | 'sceneEditor.title' | 'behaviorLens.title' | 'behaviorLens.graph.title';
+export type WorkbenchActionMenuId = 'scenarioLab.title' | 'sceneEditor.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.properties.title';
 
 export type WorkbenchMenuCommandItem = {
 	readonly type: 'command';
@@ -27,6 +27,7 @@ type WorkbenchMenuContributions = {
 	readonly 'scenarioLab.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'behaviorLens.graph.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'behaviorLens.title': readonly WorkbenchMenuCommandItem[];
+	readonly 'behaviorLens.properties.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'sceneEditor.title': readonly WorkbenchMenuCommandItem[];
 };
 
@@ -75,6 +76,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'behaviorLens.source' },
 		{ type: 'command', command: 'behaviorLens.details' },
 	],
+	'behaviorLens.properties.title': [{ type: 'command', command: 'behaviorLens.source' }],
 	'sceneEditor.title': [
 		{ type: 'command', command: 'sceneEditor.source' },
 		{ type: 'command', command: 'sceneEditor.moveMemberUp' },

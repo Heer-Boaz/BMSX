@@ -116,6 +116,7 @@ export async function testStudioBehaviorGraphControls(test: StudioFixture, view:
 	check(view.selection?.rowKey === weightedKey, 'BT controls: child returns to its weighted parent');
 	await press('Space');
 	await press('Home');
+	input.disconnectInputDevice('gamepad:0');
 }
 
 /** Final screenshot state, using the same real picker and independent authored Lua. */

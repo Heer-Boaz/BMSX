@@ -12,7 +12,7 @@ import { createLuaTableFieldIntegerEdits } from '../../../language/lua/source_ed
 import { getTextFileRuntimeSourceStatus } from '../../services/working_copy/runtime_source_status';
 import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import { revealWorkbenchListSelection, scrollWorkbenchList, workbenchListRowIndexAtPosition } from '../../ui/list_view';
-import { navigateWorkbenchTree, setWorkbenchTreeCollapsed, workbenchTreeTwistieContainsPosition } from '../../ui/tree_view';
+import { navigateWorkbenchTree, setWorkbenchTreeCollapsed, workbenchTreeTwistieContainsPosition, WorkbenchTreeNavigationResult } from '../../ui/tree_view';
 import { updateWorkbenchActionBarPointer } from '../../input/pointer/action_bar';
 import type { ResourcePanelController } from '../resources/panel/controller';
 import type { SceneEditorController } from './controller';
@@ -101,7 +101,7 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 		for (const [code, command] of TREE_NAVIGATION) {
 			if (shouldRepeatKeyFromPlayer(code, input)) {
 				consumeIdeKey(code, input);
-				if (navigateWorkbenchTree(this.input.outline, command)) this.select(this.input.outline.selectionIndex, false);
+				if (navigateWorkbenchTree(this.input.outline, command) !== WorkbenchTreeNavigationResult.None) this.select(this.input.outline.selectionIndex, false);
 				return;
 			}
 		}

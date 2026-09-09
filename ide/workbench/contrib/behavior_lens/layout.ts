@@ -9,10 +9,11 @@ import {
 	layoutWorkbenchList,
 } from '../../ui/list_view';
 import type { BehaviorKind, BehaviorSourceDocument, BehaviorSourceNode, BehaviorSourceRowKey } from './model';
-import { createBehaviorLensGraph, createBehaviorLensOutline, createBehaviorLensStateGraph, type BehaviorLensLayout, type BehaviorLensViewState, type BehaviorLensOutline } from './view_model';
+import { createBehaviorLensGraph, createBehaviorLensStateGraph, type BehaviorLensLayout, type BehaviorLensViewState, type BehaviorLensOutline } from './view_model';
 import { prepareBehaviorGraphLayout } from './graph_layout';
 import { indexStateMachineSource } from './state_machine_index';
 import { stateGraphSelection } from './state_graph_navigation';
+import { createBehaviorLensEffectProperties } from './action_effect_properties';
 
 import { layoutWorkbenchActionBar } from '../../ui/action_bar';
 
@@ -80,9 +81,15 @@ export function selectBehaviorLensDefinition(state: BehaviorLensViewState, key: 
 			state.presentation.initialPosition = true;
 		}
 		else state.presentation.viewport.selection = stateGraphSelection(state.presentation.viewport.model, state.selection);
-	} else if (state.presentation.kind === 'outline') {
-		state.presentation.selectionIndex = findVisibleRowIndex(state.presentation, key);
-	} else state.presentation = createBehaviorLensOutline();
+	} else if (state.presentation.kind === 'properties') {
+		state.presentation.selectedGroup = undefined;
+		state.presentation.tree.selectionIndex = -1;
+		state.presentation.tree.hoverIndex = -1;
+		if (previousKey !== key) {
+			state.presentation.collapsedGroups.clear();
+			state.presentation.dirty = true;
+		}
+	} else state.presentation = createBehaviorLensEffectProperties();
 	state.headerDirty = true;
 }
 
@@ -101,14 +108,14 @@ export function prepareBehaviorLensLayout(state: BehaviorLensViewState): Behavio
 			layoutWorkbenchList(presentation.layout, layout.left + CONTENT_PADDING_X, layout.headerBottom + 1,
 				layout.right - CONTENT_PADDING_X, layout.bottom, layout.rowHeight);
 			presentation.textDirty = true;
-		} else presentation.viewport.layout(layout.left, layout.headerBottom + 1, layout.right, layout.bottom);
+		} else if (presentation.kind !== 'properties') presentation.viewport.layout(layout.left, layout.headerBottom + 1, layout.right, layout.bottom);
 		state.headerDirty = false;
 	}
 	if (presentation.kind === 'graph') {
 		prepareBehaviorGraphLayout(state, presentation, editorViewState.font.renderFont());
 		return layout;
 	}
-	if (presentation.kind === 'state-graph') return layout;
+	if (presentation.kind === 'state-graph' || presentation.kind === 'properties') return layout;
 	if (presentation.rowsDirty) {
 		rebuildBehaviorLensRows(state, presentation);
 		presentation.rowsDirty = false;

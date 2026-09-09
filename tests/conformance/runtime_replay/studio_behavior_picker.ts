@@ -1,6 +1,8 @@
 import type { StateMachineDetail } from '../../../ide/workbench/contrib/behavior_lens/state_machine_details';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import type { BehaviorLensViewState } from '../../../ide/workbench/contrib/behavior_lens/view_model';
+import type { EffectPropertyElement } from '../../../ide/workbench/contrib/behavior_lens/action_effect_properties';
+import type { WorkbenchTreeNode } from '../../../ide/workbench/ui/tree_view';
 import { inputFocus } from '../../../ide/input/focus';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { check, type StudioFixture } from './studio_fixture';
@@ -16,12 +18,28 @@ export async function chooseBehavior(test: StudioFixture, label: string, title =
 	await test.press('Enter');
 }
 
-export function behaviorOutline(view: BehaviorLensViewState) {
-	if (view.presentation.kind !== 'outline') throw new Error('behavior: expected the FSM/ActionEffect outline');
-	return view.presentation;
-}
-
 export async function revealLensOccurrence(test: StudioFixture, view: BehaviorLensViewState, key: string): Promise<void> {
+	if (view.presentation.kind === 'properties') {
+		const properties = view.presentation;
+		const target = properties.nodesBySource.get(key)!;
+		check(target !== undefined, 'property navigation: this authored occurrence has a retained property');
+		const path: WorkbenchTreeNode<EffectPropertyElement>[] = [];
+		for (let node: WorkbenchTreeNode<EffectPropertyElement> | null = target; node !== null; node = node.parent) path.push(node);
+		await test.press('Home');
+		for (let index = path.length - 1; index >= 0; index -= 1) {
+			const node = path[index];
+			const row = properties.tree.rows.indexOf(node);
+			check(row >= 0, 'property navigation: expanded parent exposes this exact child');
+			while (properties.tree.selectionIndex !== row) {
+				const before = properties.tree.selectionIndex;
+				await test.press(before < row ? 'ArrowDown' : 'ArrowUp');
+				check(properties.tree.selectionIndex !== before, 'property navigation makes progress through the real keyboard owner');
+			}
+			if (index > 0 && node.collapsed) await test.press('ArrowRight');
+		}
+		check(view.selection?.rowKey === key, 'property navigation selects the original source occurrence, not its category');
+		return;
+	}
 	if (view.presentation.kind === 'state-graph') {
 		const lens = getActiveTab();
 		if (lens.kind !== 'behavior_lens') throw new Error('FSM navigation requires its active input');

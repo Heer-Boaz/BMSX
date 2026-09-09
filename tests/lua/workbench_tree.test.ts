@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { layoutWorkbenchList, workbenchListRowIndexAtPosition } from '../../ide/workbench/ui/list_view';
 import {
 	appendWorkbenchTreeNode, navigateWorkbenchTree, rebuildWorkbenchTreeRows, setWorkbenchTreeCollapsed,
-	workbenchTreeTwistieContainsPosition, type WorkbenchTreeState,
+	workbenchTreeTwistieContainsPosition, WorkbenchTreeNavigationResult, type WorkbenchTreeState,
 } from '../../ide/workbench/ui/tree_view';
 
 function tree(): WorkbenchTreeState<string> {
@@ -62,14 +62,14 @@ test('tree Left/Right follow expand/child and collapse/parent, not adjacent root
 	const leaf = appendWorkbenchTreeNode(state, branch, 'leaf');
 	const tail = appendWorkbenchTreeNode(state, null, 'tail');
 	rebuildWorkbenchTreeRows(state, root);
-	navigateWorkbenchTree(state, 'right');
+	assert.equal(navigateWorkbenchTree(state, 'right'), WorkbenchTreeNavigationResult.Collapse);
 	assert.equal(root.collapsed, false);
 	assert.equal(state.selectionIndex, 0, 'first Right expands, not selects a child');
-	navigateWorkbenchTree(state, 'right');
+	assert.equal(navigateWorkbenchTree(state, 'right'), WorkbenchTreeNavigationResult.Selection);
 	assert.equal(state.rows[state.selectionIndex], branch);
 	navigateWorkbenchTree(state, 'right');
 	assert.equal(state.rows[state.selectionIndex], leaf);
-	assert.equal(navigateWorkbenchTree(state, 'right'), false);
+	assert.equal(navigateWorkbenchTree(state, 'right'), WorkbenchTreeNavigationResult.None);
 	navigateWorkbenchTree(state, 'left');
 	assert.equal(state.rows[state.selectionIndex], branch);
 	navigateWorkbenchTree(state, 'left');
@@ -79,12 +79,12 @@ test('tree Left/Right follow expand/child and collapse/parent, not adjacent root
 	assert.equal(state.rows[state.selectionIndex], root);
 	navigateWorkbenchTree(state, 'left');
 	assert.deepEqual(state.rows, [root, tail]);
-	assert.equal(navigateWorkbenchTree(state, 'left'), false);
+	assert.equal(navigateWorkbenchTree(state, 'left'), WorkbenchTreeNavigationResult.None);
 });
 
 test('tree navigation from no selection selects exactly one explicit visible target', () => {
 	const state = tree();
-	assert.equal(navigateWorkbenchTree(state, 'down'), false);
+	assert.equal(navigateWorkbenchTree(state, 'down'), WorkbenchTreeNavigationResult.None);
 	const root = appendWorkbenchTreeNode(state, null, 'root');
 	const tail = appendWorkbenchTreeNode(state, null, 'tail');
 	rebuildWorkbenchTreeRows(state, null);

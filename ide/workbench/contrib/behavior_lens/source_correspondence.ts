@@ -15,6 +15,7 @@ export function mapBehaviorLensSourceRanges(state: BehaviorLensViewState, change
 		mapStateMachineSourceSelection(selection, changes);
 	}
 	if (state.presentation.kind === 'outline') state.presentation.hoverIndex = -1;
+	else if (state.presentation.kind === 'properties') state.presentation.tree.hoverIndex = -1;
 }
 
 /**

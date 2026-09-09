@@ -1,10 +1,10 @@
 import { inputFocus } from '../../../ide/input/focus';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { check, type StudioFixture } from './studio_fixture';
-import { chooseBehavior, behaviorOutline } from './studio_behavior_picker';
+import { chooseBehavior, revealLensOccurrence } from './studio_behavior_picker';
 
 export async function testStudioBehaviorKinds(test: StudioFixture): Promise<void> {
-	const { ide, harness, runPaletteCommand, press, click, clipboard, cycles } = test;
+	const { ide, harness, runPaletteCommand, press, clipboard, cycles } = test;
 	const position = cycles();
 	const media = ide.sources.currentBlua32Media;
 	const picker = ide.editor.quickInput;
@@ -22,16 +22,17 @@ export async function testStudioBehaviorKinds(test: StudioFixture): Promise<void
 	const lens = getActiveTab();
 	if (lens.kind !== 'behavior_lens') throw new Error('behavior kinds: selected ActionEffect lens missing');
 	const model = lens.workingCopy;
+	const properties = lens.view.presentation;
+	if (properties.kind !== 'properties') throw new Error('behavior kinds: ActionEffect must open its property presentation');
 	check(model.resource.path === 'player/actioneffects.lua'
-		&& behaviorOutline(lens.view).rows[behaviorOutline(lens.view).selectionIndex].node.behaviorKind === 'action_effect',
+		&& lens.view.nodesByRowKey.get(lens.view.definitionRowKey!)!.behaviorKind === 'action_effect',
 		'behavior kinds: effect selection reveals the actual definition in its resource-owned model');
-	const period = behaviorOutline(lens.view).rows.findIndex(row => row.node.label.startsWith('period_ms ='));
-	check(period >= 0 && behaviorOutline(lens.view).rows.some(row => row.node.label.startsWith('handler =')),
+	const period = properties.tree.rows.find(row => row.element.kind === 'property' && row.element.source.label.startsWith('period_ms ='))!;
+	check(period !== undefined && properties.tree.rows.some(row => row.element.kind === 'property' && row.element.source.label.startsWith('handler =')),
 		'behavior kinds: the real effect exposes its authored period and handler');
-	const state = behaviorOutline(lens.view);
-	const node = state.rows[period].node;
-	const top = state.layout.contentTop + (period - state.scroll) * state.layout.rowHeight;
-	await click({ left: state.rows[period].twistieRight, right: state.layout.contentRight, top, bottom: top + state.layout.rowHeight });
+	if (period.element.kind !== 'property') throw new Error('behavior kinds: period must retain its authored field');
+	const node = period.element.source;
+	await revealLensOccurrence(test, lens.view, node.rowKey);
 	await runPaletteCommand('Behavior Lens: Open Source');
 	const document = harness.getActiveEditorDocument();
 	check(document.model === model && document.view.cursorRow === node.authoredRange.start.line - 1
@@ -43,16 +44,16 @@ export async function testStudioBehaviorKinds(test: StudioFixture): Promise<void
 	model.pushEditOperations([{ offset: original.indexOf(expression), deleteLength: expression.length, text: '80' }]);
 	await runPaletteCommand('Behavior Lens: Open ActionEffect');
 	await chooseBehavior(test, 'EFFECT fire_salvo', 'ACTIONEFFECTS');
-	check(getActiveTab() === lens && behaviorOutline(lens.view).rows.some(row => row.node.label === 'period_ms = 80'),
+	check(getActiveTab() === lens && properties.tree.rows.some(row => row.element.kind === 'property' && row.element.source.label === 'period_ms = 80'),
 		'behavior kinds: the same ActionEffect lens reflects dirty canonical Lua without a new document or runtime edit');
 	await runPaletteCommand('Behavior Lens: Open Source');
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === original, 'behavior kinds: ordinary source Undo restores the effect definition');
 	await runPaletteCommand('Behavior Lens: Open ActionEffect');
 	await chooseBehavior(test, 'EFFECT fire_salvo', 'ACTIONEFFECTS');
-	check(!behaviorOutline(lens.view).rows.some(row => row.node.label === 'period_ms = 80'), 'behavior kinds: source Undo refreshes the retained lens');
+	check(!properties.tree.rows.some(row => row.element.kind === 'property' && row.element.source.label === 'period_ms = 80'), 'behavior kinds: source Undo refreshes the retained lens');
 	const focus = inputFocus.target;
-	const selected = behaviorOutline(lens.view).rows[behaviorOutline(lens.view).selectionIndex].node;
+	const selected = lens.view.selection;
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
 	check(picker.title === 'STATE MACHINES' && picker.model.entries.length > 0
 		&& picker.model.entries.every(row => row.item.label.startsWith('FSM ')), 'behavior kinds: FSM command applies a kind constraint');
@@ -61,7 +62,7 @@ export async function testStudioBehaviorKinds(test: StudioFixture): Promise<void
 	await press('Enter');
 	check(picker.visible && picker.model.list.selectionIndex === -1, 'behavior kinds: an effect query cannot bypass the FSM kind');
 	await press('Escape');
-	check(inputFocus.target === focus && getActiveTab() === lens && behaviorOutline(lens.view).rows[behaviorOutline(lens.view).selectionIndex].node === selected,
+	check(inputFocus.target === focus && getActiveTab() === lens && lens.view.selection === selected,
 		'behavior kinds: cancellation preserves the actual ActionEffect view, focus and selection');
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
 	await chooseBehavior(test, 'FSM nemesis_s.title_screen.fsm', 'STATE MACHINES');

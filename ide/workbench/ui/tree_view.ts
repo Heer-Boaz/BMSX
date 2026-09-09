@@ -61,9 +61,11 @@ export function setWorkbenchTreeCollapsed<Element>(state: WorkbenchTreeState<Ele
 
 export type WorkbenchTreeNavigation = 'up' | 'down' | 'page-up' | 'page-down' | 'home' | 'end' | 'left' | 'right';
 
+export const enum WorkbenchTreeNavigationResult { None, Selection, Collapse }
+
 /** VS Code tree navigation: Left collapses/ascends, Right expands/descends. */
-export function navigateWorkbenchTree<Element>(state: WorkbenchTreeState<Element>, command: WorkbenchTreeNavigation): boolean {
-	if (state.rows.length === 0) return false;
+export function navigateWorkbenchTree<Element>(state: WorkbenchTreeState<Element>, command: WorkbenchTreeNavigation): WorkbenchTreeNavigationResult {
+	if (state.rows.length === 0) return WorkbenchTreeNavigationResult.None;
 	let next = state.selectionIndex;
 	if (next < 0) next = command === 'end' ? state.rows.length - 1 : 0;
 	else {
@@ -77,25 +79,25 @@ export function navigateWorkbenchTree<Element>(state: WorkbenchTreeState<Element
 			case 'left':
 				if (setWorkbenchTreeCollapsed(state, next, true)) {
 					revealWorkbenchListSelection(state);
-					return true;
+					return WorkbenchTreeNavigationResult.Collapse;
 				}
 				if (state.rows[next].parent !== null) next = state.rows.indexOf(state.rows[next].parent!);
 				break;
 			case 'right':
 				if (setWorkbenchTreeCollapsed(state, next, false)) {
 					revealWorkbenchListSelection(state);
-					return true;
+					return WorkbenchTreeNavigationResult.Collapse;
 				}
 				if (state.rows[next].children.length > 0) next += 1;
 				break;
 		}
 	}
 	next = clamp(next, 0, state.rows.length - 1);
-	if (next === state.selectionIndex) return false;
+	if (next === state.selectionIndex) return WorkbenchTreeNavigationResult.None;
 	state.selectionIndex = next;
 	state.hoverIndex = -1;
 	revealWorkbenchListSelection(state);
-	return true;
+	return WorkbenchTreeNavigationResult.Selection;
 }
 
 /** The caller supplies the row found by the shared list hit test. */

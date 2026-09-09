@@ -10,7 +10,8 @@ De input-/worker-lifetime en latest-generation-layoutsession zijn nu ook
 gebouwd en onafhankelijk getoetst. Afzonderlijke FSM-return-/entryselectie is
 nu bron-owned, met de bestaande Details/Source-route als concrete consumer.
 De concrete asynchrone FSM-grafiek is nu aangesloten op dezelfde workbench,
-met expliciete browser- en Node-workercompositie. ActionEffect houdt zijn outline.
+met expliciete browser- en Node-workercompositie. ActionEffect heeft nu een
+[gegroepeerde bronproperty-view](actioneffect_properties_design.md), geen flowchart.
 Deze visualisatie is nog geen authoring.
 
 ## Doel en grens
@@ -1226,3 +1227,15 @@ na warmup. De standalone tsx-profielen en de afzonderlijke bundelproef hebben
 verschillende module/JIT-context en zijn geen onderling uitwisselbare timings.
 Commando's staan in `tests/conformance/behavior_graph/README.md`; lokale logs,
 baselinevergelijking en inspectiebeelden staan in `/tmp/bmsx-actioneffect-source`.
+
+
+### Vervolg: gegroepeerde effectpresentatie
+
+`STUDIO-ACTIONEFFECT-PROPERTY-VIEW-01` consumeert nu dit typed broncontract
+in een gedeelde property-tree-control. De historische source-prerequisiteproeven
+hierboven bewezen nog de outline; het actuele product toont groepen, aparte
+label-/waardekolommen en uitleg met behoud van dezelfde authored bronidentiteit.
+Architectuur, gepinde property-editorreferenties, zelfstandige fixtures, echte
+Studio-proeven en kosten staan in
+[`actioneffect_properties_design.md`](actioneffect_properties_design.md).
+Geen callbackevaluatie, execution-flowchart of property-authoring in deze slice.

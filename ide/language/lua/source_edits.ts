@@ -62,6 +62,13 @@ export function readLuaSourceRange(buffer: TextBuffer, range: LuaSourceRange): s
 	);
 }
 
+/** A single-line source excerpt, not reprinted Lua. Multiline syntax is explicitly truncated. */
+export function readLuaSourceLinePreview(buffer: TextBuffer, range: LuaSourceRange): string {
+	if (range.start.line === range.end.line) return readLuaSourceRange(buffer, range);
+	const row = range.start.line - 1;
+	return buffer.getTextRange(buffer.offsetAt(row, range.start.column - 1), buffer.getLineEndOffset(row)) + '...';
+}
+
 /** Reads an authored literal accepted by the integer control, never evaluates Lua. */
 export function readLuaTableFieldInteger(field: LuaTableField): number | null {
 	const literal = numericFieldLiteral(field);

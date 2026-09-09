@@ -30,8 +30,8 @@ local shared<const> = { initial = 'idle', states = { idle = { update = step }, a
 fsm.register('profile', { initial = 'lane0', states = { ${Array.from({ length: copies }, (_, index) => `lane${index} = shared`).join(',')} } })`;
 		const model = new EditorTextModel({ domain: 0, path: 'profile.lua', source: { resid: 'profile', type: 'lua' } }, 'lua', source);
 		const document = buildBehaviorSourceDocument(model.resource, buildLuaFileSemanticData(source, model.resource.path));
-		const view = createBehaviorLensViewState(document, model, 'outline');
 		editorViewState.font = new EditorFont('tiny');
+		const view = createBehaviorLensViewState(document, model, 'state-graph');
 		selectBehaviorLensDefinition(view, document.definitions[0].rowKey);
 		const graph = view.presentation;
 		assert.ok(graph.kind === 'state-graph');
@@ -42,9 +42,9 @@ fsm.register('profile', { initial = 'lane0', states = { ${Array.from({ length: c
 			for (let index = 0; index < 6; index += 1) {
 				graph.dirty = true;
 				const start = performance.now();
-				input.updateGraph(font);
+				input.updatePresentation(font);
 				await input.graphLayout.settled;
-				input.updateGraph(font);
+				input.updatePresentation(font);
 				assert.equal(graph.layoutState.kind, 'ready');
 				samples.push(performance.now() - start);
 			}
@@ -65,7 +65,7 @@ fsm.register('profile', { initial = 'lane0', states = { ${Array.from({ length: c
 			const storage = stream.floatData;
 			const measurements = font.measurements;
 			// 1,000 operations measured in milliseconds -> microseconds per operation.
-			const warmUpdateMicroseconds = medianMilliseconds(() => { for (let index = 0; index < 1000; index += 1) input.updateGraph(font); });
+			const warmUpdateMicroseconds = medianMilliseconds(() => { for (let index = 0; index < 1000; index += 1) input.updatePresentation(font); });
 			const drawAndQuadsMicroseconds = medianMilliseconds(() => { for (let index = 0; index < 1000; index += 1) draw(); });
 			assert.equal(graph.viewport.model, generation);
 			assert.equal(stream.floatData, storage);

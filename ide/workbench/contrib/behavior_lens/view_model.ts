@@ -14,6 +14,7 @@ import type { StateMachineSourceIndex } from './state_machine_index';
 import type { AsyncGraphLayoutState } from '../../services/graph_layout/async_layout';
 import type { StateGraphModel } from './state_graph_model';
 import { emptyStateGraph } from './state_graph_projection';
+import { createBehaviorLensEffectProperties, type BehaviorLensEffectProperties } from './action_effect_properties';
 
 export type BehaviorLensRow = {
 	readonly node: BehaviorSourceNode;
@@ -72,7 +73,7 @@ export type BehaviorLensViewState = {
 	readonly parentRowKeyByRowKey: Map<BehaviorSourceRowKey, BehaviorSourceRowKey | null>;
 	readonly collapsedRowKeys: Set<BehaviorSourceRowKey>;
 	readonly sourceMatchRowKeys: Set<BehaviorSourceRowKey>;
-	presentation: BehaviorLensOutline | BehaviorLensGraph | BehaviorLensStateGraph;
+	presentation: BehaviorLensOutline | BehaviorLensGraph | BehaviorLensStateGraph | BehaviorLensEffectProperties;
 	readonly layout: BehaviorLensLayout;
 	headerDirty: boolean;
 	readonly status: { info: string; detail: string };
@@ -99,7 +100,7 @@ export function createBehaviorLensStateGraph(): BehaviorLensStateGraph {
 }
 
 /** Input-owned source/view state; pixel layout is prepared only by the active pane. */
-export function createBehaviorLensViewState(document: BehaviorSourceDocument, model: EditorTextModel, presentation: 'outline' | 'graph'): BehaviorLensViewState {
+export function createBehaviorLensViewState(document: BehaviorSourceDocument, model: EditorTextModel, presentation: BehaviorLensViewState['presentation']['kind']): BehaviorLensViewState {
 	const view: BehaviorLensViewState = {
 		resource: document.resource,
 		document: { resource: document.resource, definitions: [] },
@@ -113,7 +114,8 @@ export function createBehaviorLensViewState(document: BehaviorSourceDocument, mo
 		parentRowKeyByRowKey: new Map(),
 		collapsedRowKeys: new Set(),
 		sourceMatchRowKeys: new Set(),
-		presentation: presentation === 'graph' ? createBehaviorLensGraph() : createBehaviorLensOutline(),
+		presentation: presentation === 'graph' ? createBehaviorLensGraph() : presentation === 'state-graph' ? createBehaviorLensStateGraph()
+			: presentation === 'properties' ? createBehaviorLensEffectProperties() : createBehaviorLensOutline(),
 		layout: createBehaviorLensLayout(),
 		headerDirty: true,
 		status: { info: '', detail: '' },

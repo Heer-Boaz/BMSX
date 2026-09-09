@@ -9,7 +9,7 @@ export function handleBehaviorLensKeyboardInput(
 	playerInput: PlayerInput,
 	controller: BehaviorLensController,
 ): boolean {
-	if (view.presentation.kind === 'state-graph' && isKeyJustPressed('Tab', playerInput)
+	if ((view.presentation.kind === 'state-graph' || view.presentation.kind === 'properties') && isKeyJustPressed('Tab', playerInput)
 		&& !isCtrlDown(playerInput) && !isMetaDown(playerInput) && !isAltDown(playerInput)) {
 		consumeIdeKey('Tab', playerInput);
 		controller.executeNavigation(view, isShiftDown(playerInput) ? 'previous' : 'next');

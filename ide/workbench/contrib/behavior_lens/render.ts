@@ -8,6 +8,7 @@ import type { BehaviorLensViewState } from './view_model';
 
 import type { EditorCommandEnablement } from '../../../common/commands';
 import { renderWorkbenchActionBar } from '../../render/action_bar';
+import { drawWorkbenchPropertyTree } from '../../render/property_tree';
 
 const EMPTY_LENS_TEXT = 'NO STATIC BEHAVIOR REGISTRATIONS';
 
@@ -30,6 +31,12 @@ export function drawBehaviorLens(state: BehaviorLensViewState, commands: EditorC
 		renderFont,
 	);
 	const outline = state.presentation;
+	if (outline.kind === 'properties') {
+		drawWorkbenchPropertyTree(outline.tree);
+		if (outline.tree.roots.length === 0) api.blit_text_inline_with_font(outline.emptyText, layout.left + 4,
+			layout.headerBottom + 8, 0, constants.COLOR_RESOURCE_VIEWER_TEXT, renderFont);
+		return;
+	}
 	if (outline.kind !== 'outline') {
 		drawWorkbenchGraph(outline.viewport, hover, focused);
 		if (outline.viewport.model.nodes.length === 0) {

@@ -10,6 +10,10 @@ import type { StateGraphModel } from './state_graph_model';
 import { emptyStateGraph, layoutStateGraph } from './state_graph_projection';
 import { stateGraphSelection } from './state_graph_navigation';
 import { updateBehaviorLensStatus } from './navigation';
+import { projectActionEffectProperties } from './action_effect_properties';
+import type { ActionEffectSourceDefinition } from './action_effect_model';
+import { layoutWorkbenchPropertyTree } from '../../ui/property_tree';
+import { measureTextRange } from '../../../editor/common/text/layout';
 
 /** Retained input for one source-derived behavior view. */
 export class BehaviorLensInput extends WorkingCopyEditorInput<BehaviorLensTabId, 'behavior_lens'> {
@@ -26,39 +30,56 @@ export class BehaviorLensInput extends WorkingCopyEditorInput<BehaviorLensTabId,
 	}
 
 	/** Called even for hidden inputs: no old source generation may publish or remain interactive. */
-	public invalidateGraph(): void {
+	public invalidatePresentation(): void {
 		this.graphLayout.invalidate();
-		const graph = this.view.presentation;
-		if (graph.kind !== 'state-graph') return;
-		graph.dirty = true;
-		graph.layoutState = this.graphLayout.state;
-		graph.viewport.setModel(graph.emptyModel, null);
+		const presentation = this.view.presentation;
+		if (presentation.kind === 'properties') {
+			presentation.dirty = true;
+			presentation.tree.rows.length = 0;
+			presentation.tree.selectionIndex = -1;
+			presentation.tree.hoverIndex = -1;
+			return;
+		}
+		if (presentation.kind !== 'state-graph') return;
+		presentation.dirty = true;
+		presentation.layoutState = this.graphLayout.state;
+		presentation.viewport.setModel(presentation.emptyModel, null);
 	}
 
-	public updateGraph(font: BFont): void {
+	public updatePresentation(font: BFont): void {
 		const view = this.view;
-		const graph = view.presentation;
-		if (graph.kind !== 'state-graph') return;
-		const viewport = graph.viewport;
-		if (graph.dirty || viewport.model.font !== font) {
-			if (graph.emptyModel.font !== font) graph.emptyModel = emptyStateGraph(font);
+		const presentation = view.presentation;
+		if (presentation.kind === 'properties') {
+			if (presentation.dirty) {
+				const definition = view.document.definitions.find((node): node is ActionEffectSourceDefinition =>
+					node.behaviorKind === 'action_effect' && node.rowKey === view.definitionRowKey);
+				projectActionEffectProperties(view, presentation, definition, this.workingCopy.buffer);
+				presentation.dirty = false;
+			}
+			layoutWorkbenchPropertyTree(presentation.tree, font, measureTextRange, view.layout.left, view.layout.headerBottom + 1, view.layout.right, view.layout.bottom);
+			return;
+		}
+		if (presentation.kind !== 'state-graph') return;
+		const viewport = presentation.viewport;
+		if (presentation.dirty || viewport.model.font !== font) {
+			if (presentation.emptyModel.font !== font) presentation.emptyModel = emptyStateGraph(font);
 			const definition = view.document.definitions.find(node => node.rowKey === view.definitionRowKey);
 			if (definition === undefined) this.graphLayout.invalidate();
 			else if (definition.behaviorKind === 'state_machine') {
 				const references = view.stateMachines.references;
 				this.graphLayout.request(engine => layoutStateGraph(definition, references, font, engine));
 			}
-			viewport.setModel(graph.emptyModel, null);
-			graph.dirty = false;
+			viewport.setModel(presentation.emptyModel, null);
+			presentation.dirty = false;
 		}
 		const state = this.graphLayout.state;
-		graph.layoutState = state;
+		presentation.layoutState = state;
 		if (state.kind === 'ready' && viewport.model !== state.model) {
 			viewport.setModel(state.model, stateGraphSelection(state.model, view.selection));
-			if (graph.initialPosition) {
+			if (presentation.initialPosition) {
 				viewport.scrollX = 0;
 				viewport.scrollY = 0;
-				graph.initialPosition = false;
+				presentation.initialPosition = false;
 			}
 			if (viewport.selection !== null) viewport.reveal(viewport.selection);
 			updateBehaviorLensStatus(view);

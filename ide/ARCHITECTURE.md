@@ -231,7 +231,8 @@ ranges or generation-local row keys alone do not identify an occurrence.
 Deleting/replacing a use clears affected correspondence; later Undo does not
 guess it back. Click gestures belong to the pane and one source generation;
 cross-file facts also require the existing semantic-generation invalidation.
-A chosen BT or FSM now has a concrete graph; ActionEffect retains its outline.
+A chosen BT or FSM has a concrete graph; a chosen ActionEffect has a grouped
+source-property inspector, not a flowchart.
 Source selection lives outside the discriminated presentation, not
 in an invisible row list. It is now a discriminated source selection: node,
 BT connection, FSM outcome or explicit entry. FSM proof selection additionally
@@ -264,9 +265,42 @@ once, after routing. The shared renderer paints container bodies behind edges
 and opaque cards/headers above them; hit testing and reveal use the same header,
 label and arrow geometry. This does not flatten a statechart into a tree.
 The real-Worker conformance runs all three browser renderers. The concrete FSM
-uses this compound graph, while ActionEffect retains its outline. Canvas geometry
+uses this compound graph; ActionEffect uses the property-tree control. Canvas geometry
 is snapped once to the bitmap pixel grid at the ELK result boundary. See
 `docs/behavior_graph_design.md`.
+
+`workbench/ui/property_tree.ts` and `workbench/render/property_tree.ts` own the
+shared retained property columns, measured text and bounded description footer.
+They use the existing tree/list and overlay clipping owners, with whole hittable
+rows above the footer. `property_tree_pointer.ts` owns generic click/fold/activate
+gestures; a gesture belongs to a retained node, never to a recycled row index.
+Tree navigation distinguishes selection from collapse rather than requiring a
+contribution to scan or snapshot folds. The pane uses the normal focus, keyboard,
+controller, wheel, action-menu and Source-navigation routes. Enter/A folds a
+selected group; activating a property opens its source. Pointer sequences end on
+detach/focus loss and cannot cross source generations; keyboard/controller
+navigation and wheel input also end the previous click sequence.
+
+`behavior_lens/action_effect_properties.ts` binds one chosen typed effect body to
+this control on source changes, not in draw/hit/idle updates. Groups are display
+metadata (Grant, Trigger requirements, Cooldown, Periodic, Execution, Unresolved
+source), with no invented Lua nodes or execution order. Properties and requirement
+entries retain their original source objects. Group folds are input preferences,
+separate from source-node correspondence, and another chosen definition clears
+them. Selecting a group clears field selection; Source then opens the chosen
+registration. Source edits invalidate hidden hit rows immediately; the ordinary
+input refresh maps source selection/folds and publishes new property rows. An
+unresolved body, an empty body and a removed definition remain distinct states;
+none selects a namesake or falls back to an outline. No graph engine is started.
+Values are source excerpts, not calculated values or runtime defaults. The shared
+Lua source reader preserves text and explicitly truncates multiline previews;
+it does not collapse whitespace inside literals or reprint Lua. Inline functions
+have a compact display marker and keep their original source link. This slice is
+read-only, with no property-write stubs, reflected live objects, new working copy
+or runtime metadata. The explicit raw-source outline remains a source-contract
+test presentation, not a hidden navigation owner or automatic product fallback.
+See [`actioneffect_properties_design.md`](../docs/actioneffect_properties_design.md)
+for the pinned production examples, semantics, evidence and measured costs.
 
 Editor inputs now own disposable resources. Group removal/reset disposes inputs;
 pane deactivation only detaches the reusable control. The last active input is

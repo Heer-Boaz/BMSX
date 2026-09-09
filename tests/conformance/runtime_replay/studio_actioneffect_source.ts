@@ -1,14 +1,16 @@
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
+import { inputFocus } from '../../../ide/input/focus';
+import { WHEEL_SCROLL_STEP } from '../../../ide/common/constants';
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { ACTIONEFFECT_PARTIAL_SOURCE, ACTIONEFFECT_SOURCE } from '../../helpers/actioneffect_source_fixture';
-import { behaviorOutline, chooseBehavior, revealLensOccurrence } from './studio_behavior_picker';
+import { chooseBehavior, revealLensOccurrence } from './studio_behavior_picker';
 import { check, type StudioFixture } from './studio_fixture';
 
 /** Same canonical fixture as the compiled cartlib oracle, edited only in the paused source model. */
 export async function testStudioActionEffectSource(test: StudioFixture): Promise<void> {
-	const { ide, harness, click, frame, press, runPaletteCommand, cycles } = test;
+	const { ide, harness, input, clock, click, frame, press, runPaletteCommand, cycles } = test;
 	console.info('STUDIO: ActionEffect typed properties and requirements retain actual source occurrences');
 	const position = cycles();
 	const media = ide.sources.currentBlua32Media;
@@ -22,18 +24,65 @@ export async function testStudioActionEffectSource(test: StudioFixture): Promise
 	const lens = getActiveTab();
 	if (lens.kind !== 'behavior_lens') throw new Error('ActionEffect source: expected the actual lens input');
 	const view = lens.view;
-	const outline = behaviorOutline(view);
+	const properties = view.presentation;
+	if (properties.kind !== 'properties') throw new Error('ActionEffects must open the concrete property inspector');
 	const second = view.document.definitions[1];
 	if (second.behaviorKind !== 'action_effect') throw new Error('ActionEffect source: expected the second fixture registration');
 	check(view.definitionRowKey === second.rowKey && second.body!.fields.length === 12,
 		'ActionEffect source: picker selects the second effect, not its file or shared initializer');
 	for (let index = 0; index < second.body!.fields.length; index += 1) {
-		check(second.body!.fields[index].source === second.children[index], 'ActionEffect source: typed fields and visible outline share one source occurrence');
+		check(second.body!.fields[index].source === second.children[index], 'ActionEffect source: typed fields and property inspector share one source occurrence');
 	}
+	await press('Home');
+	const grant = properties.tree.roots[0];
+	test.setKey('Enter', true);
+	for (let index = 0; index < 6; index += 1) await frame();
+	test.setKey('Enter', false); await frame();
+	check(grant.collapsed && view.selection === null && getActiveTab() === lens, 'ActionEffect controls: held Enter folds once without opening fake group source');
+	await press('Enter');
+	const groupBounds = { left: properties.tree.layout.valueLeft, right: properties.tree.layout.contentRight,
+		top: properties.tree.layout.contentTop, bottom: properties.tree.layout.contentTop + properties.tree.layout.rowHeight };
+	await click(groupBounds); await click(groupBounds);
+	check(grant.collapsed && properties.collapsedGroups.has('grant'), 'ActionEffect controls: group double-click folds its retained children');
+	const focus = inputFocus.target;
+	await press('ControlLeft', 'ShiftLeft', 'KeyP');
+	await press('ArrowRight');
+	check(grant.collapsed, 'ActionEffect controls: palette arrows cannot operate the hidden property tree');
+	await press('Escape');
+	check(inputFocus.target === focus, 'ActionEffect controls: palette cancellation restores property focus');
+	input.connectInputDevice({ id: 'gamepad:0', kind: 'gamepad', gamepadIndex: 0, label: 'PROPERTY CONFORMANCE PAD',
+		vibrationInitialization: null, supportsVibration: false, setVibration() {} });
+	await frame();
+	let padPressId = 81000;
+	for (const button of ['right', 'down', 'left']) {
+		input.inputButton('gamepad:0', button, true, 1, clock.now() + 1, ++padPressId); await frame();
+		input.inputButton('gamepad:0', button, false, 0, clock.now() + 1, ++padPressId); await frame();
+	}
+	check(!grant.collapsed && properties.tree.rows[properties.tree.selectionIndex] === grant,
+		'ActionEffect controls: controller expands, enters a property and returns to its actual group');
+	input.inputButton('gamepad:0', 'a', true, 1, clock.now() + 1, ++padPressId);
+	for (let index = 0; index < 6; index += 1) await frame();
+	input.inputButton('gamepad:0', 'a', false, 0, clock.now() + 1, ++padPressId); await frame();
+	check(grant.collapsed && getActiveTab() === lens, 'ActionEffect controls: held controller A folds once');
+	input.disconnectInputDevice('gamepad:0');
+	await press('ArrowRight');
 	const period = second.body!.fields.find(field => field.kind === 'value' && field.name === 'period_ms')!;
 	await revealLensOccurrence(test, view, period.source.rowKey);
-	await click(outline.actionBar.items[0].bounds, 6);
+	console.info('STUDIO: ActionEffect complete properties ready for visual inspection');
+	const tree = properties.tree;
+	const propertyTop = tree.layout.contentTop + (tree.selectionIndex - tree.scroll) * tree.layout.rowHeight;
+	const propertyBounds = { left: tree.layout.valueLeft, right: tree.layout.contentRight, top: propertyTop, bottom: propertyTop + tree.layout.rowHeight };
+	await click(propertyBounds);
+	await press('ControlLeft', 'ShiftLeft', 'KeyP');
+	await press('Escape');
+	await click(propertyBounds, 6);
+	check(getActiveTab() === lens, 'ActionEffect controls: palette focus interrupts a property double-click sequence');
+	await click(propertyBounds, 6);
 	const row = ACTIONEFFECT_SOURCE.split('\n').findIndex(line => line.includes('period_ms = 20'));
+	check(getActiveTab() === code && activeCodeEditor.view.cursorRow === row && !hasSelection(),
+		'ActionEffect controls: held property double-click opens its exact source without a code drag');
+	await click(editorChromeState.tabButtonBounds.get(lens.id)!);
+	await click(properties.actionBar.items[0].bounds, 6);
 	check(getActiveTab() === code && activeCodeEditor.view.cursorRow === row && !hasSelection(),
 		'ActionEffect source: held Source click opens the selected field without dragging code');
 	const oldDocument = view.document;
@@ -49,25 +98,43 @@ export async function testStudioActionEffectSource(test: StudioFixture): Promise
 	check(current !== second && view.definitionRowKey === current.rowKey && view.selection!.rowKey === changed.source.rowKey
 		&& changed.source.label === 'period_ms = 35', 'ActionEffect source: activation refreshes the field within the selected registration');
 	const retained = view.document;
-	const rows = outline.rows;
+	const rows = properties.tree.rows;
 	for (let index = 0; index < 30; index += 1) await frame();
-	check(view.document === retained && outline.rows === rows && lens.graphLayout.state.kind === 'idle',
-		'ActionEffect source: idle frames reuse source and outline storage and never request a graph layout');
-	await click(outline.actionBar.items[0].bounds, 6);
+	check(view.document === retained && properties.tree.rows === rows && lens.graphLayout.state.kind === 'idle',
+		'ActionEffect source: idle frames reuse source and property storage and never request a graph layout');
+	await click(properties.actionBar.items[0].bounds, 6);
 	check(activeCodeEditor.view.cursorRow === row + 1 && !hasSelection(), 'ActionEffect source: navigation follows UTF-16 source edits');
 	await press('ControlLeft', 'KeyZ');
 	await click(editorChromeState.tabButtonBounds.get(lens.id)!);
 	check(view.nodesByRowKey.get(view.selection!.rowKey)!.label === 'period_ms = 20'
 		&& view.definitionRowKey === view.document.definitions[1].rowKey, 'ActionEffect source: ordinary Undo restores the value in the same effect occurrence');
-	await click(outline.actionBar.items[0].bounds);
+	await click(properties.actionBar.items[0].bounds);
 	await press('ControlLeft', 'KeyZ');
 	await runPaletteCommand('Behavior Lens: Open ActionEffect');
 	await chooseBehavior(test, 'EFFECT fixture.first', 'ACTIONEFFECTS');
 	check(getActiveTab() === lens && view.definitionRowKey === view.document.definitions[0].rowKey,
 		'ActionEffect source: both registrations remain independently selectable in the same retained input');
-	await click(outline.actionBar.items[0].bounds);
+	await click(properties.actionBar.items[0].bounds);
 	check(activeCodeEditor.view.cursorRow === ACTIONEFFECT_SOURCE.split('\n').findIndex(line => line.startsWith("effects.register_effect('fixture.first'")),
 		'ActionEffect source: definition Source opens its registration use, not the shared constructor');
+	model.pushEditOperations([{ offset: model.buffer.getText().indexOf("{ 'ready' }"), deleteLength: "{ 'ready' }".length,
+		text: "{ 'ready', 'aim', 'armed', 'visible', 'grounded', 'moving', 'awake' }" }]);
+	await click(editorChromeState.tabButtonBounds.get(lens.id)!);
+	await press('Home');
+	check(tree.rows.length > tree.layout.visibleRowCount, 'ActionEffect controls: authored requirements exceed the actual property viewport');
+	test.movePointer({ left: 200, right: 202, top: tree.layout.contentTop + 4, bottom: tree.layout.contentTop + 6 });
+	await frame();
+	input.inputAxis1('pointer:0', 'pointer_wheel', WHEEL_SCROLL_STEP * 2, clock.now());
+	await frame();
+	check(tree.scroll > 0, 'ActionEffect controls: physical wheel scrolls the property list');
+	await press('End');
+	check(tree.selectionIndex === tree.rows.length - 1 && tree.scroll === tree.rows.length - tree.layout.visibleRowCount,
+		'ActionEffect controls: End reveals the final source property at native font size');
+	await press('Home');
+	check(tree.scroll === 0, 'ActionEffect controls: Home reveals the first group');
+	await click(properties.actionBar.items[0].bounds);
+	await press('ControlLeft', 'KeyZ');
+	check(model.buffer.getText() === ACTIONEFFECT_SOURCE, 'ActionEffect controls: ordinary source Undo removes the scroll fixture');
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: ACTIONEFFECT_PARTIAL_SOURCE }]);
 	await runPaletteCommand('Behavior Lens: Open ActionEffect');
 	await chooseBehavior(test, 'EFFECT fixture.partial', 'ACTIONEFFECTS');
@@ -77,14 +144,14 @@ export async function testStudioActionEffectSource(test: StudioFixture): Promise
 	check(unknown.kind === 'unknown' && unknown.source.resolution === 'unresolved', 'ActionEffect source: computed field remains an explicit source occurrence');
 	await revealLensOccurrence(test, view, unknown.source.rowKey);
 	console.info('STUDIO: ActionEffect partial source ready for visual inspection');
-	await click(outline.actionBar.items[0].bounds, 6);
+	await click(properties.actionBar.items[0].bounds, 6);
 	check(activeCodeEditor.view.cursorRow === 4 && activeCodeEditor.view.cursorColumn === 1 && !hasSelection(),
 		'ActionEffect source: unknown-field Source navigates to its computed Lua key');
 	await click(editorChromeState.tabButtonBounds.get(lens.id)!);
 	const required = partial.body!.fields[2];
 	if (required.kind !== 'list') throw new Error('ActionEffect source: expected authored requirement list');
 	await revealLensOccurrence(test, view, required.entries[1].node.rowKey);
-	await click(outline.actionBar.items[0].bounds, 6);
+	await click(properties.actionBar.items[0].bounds, 6);
 	check(activeCodeEditor.view.cursorRow === 1 && activeCodeEditor.view.cursorColumn === ACTIONEFFECT_PARTIAL_SOURCE.split('\n')[1].indexOf("'fourth'") && !hasSelection(),
 		'ActionEffect source: requirement entry opens its initializer expression, not the effect field or a guessed dense index');
 	await press('ControlLeft', 'KeyZ');

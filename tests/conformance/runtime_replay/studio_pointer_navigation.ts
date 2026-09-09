@@ -117,26 +117,20 @@ export async function testStudioPointerNavigation(test: StudioFixture, cart: Nav
 		`${cart}: lens source owner expected ${spec.sourcePath}:${spec.sourceLine}:${spec.sourceColumn}, got ${source.path}:${source.start.line}:${source.start.column}`);
 	await revealLensOccurrence(test, view, node.rowKey);
 	const presentation = view.presentation;
-	let bounds;
 	if (presentation.kind === 'state-graph') {
 		await click(presentation.actionBar.items[0].bounds, 6);
 		assertSourcePosition(spec.sourcePath, spec.sourceLine, spec.sourceColumn, `${cart} held FSM source action`);
 	} else {
-	if (presentation.kind === 'outline') {
-		const selected = presentation.rows[presentation.selectionIndex];
-		const top = presentation.layout.contentTop + (presentation.selectionIndex - presentation.scroll) * presentation.layout.rowHeight;
-		bounds = { left: selected.twistieRight, right: presentation.layout.contentRight, top, bottom: top + presentation.layout.rowHeight };
-	} else {
+		if (presentation.kind !== 'graph') throw new Error('navigation: this fixture requires the concrete BT graph');
 		const viewport = presentation.viewport;
 		const card = viewport.model.nodesBySource.get(node.rowKey)!;
-		bounds = { left: card.bounds.left + viewport.bounds.left - viewport.scrollX,
+		const bounds = { left: card.bounds.left + viewport.bounds.left - viewport.scrollX,
 			right: card.bounds.right + viewport.bounds.left - viewport.scrollX,
 			top: card.bounds.top + viewport.bounds.top - viewport.scrollY,
 			bottom: card.bounds.bottom + viewport.bounds.top - viewport.scrollY };
-	}
-	await click(bounds);
-	await click(bounds, 6);
-	assertSourcePosition(spec.sourcePath, spec.sourceLine, spec.sourceColumn, `${cart} held lens double-click`);
+		await click(bounds);
+		await click(bounds, 6);
+		assertSourcePosition(spec.sourcePath, spec.sourceLine, spec.sourceColumn, `${cart} held lens double-click`);
 	}
 	check(model.buffer.getText() === original && cycles() === position && ide.sources.currentBlua32Media === media,
 		`${cart}: navigation changes neither source nor paused machine/media`);

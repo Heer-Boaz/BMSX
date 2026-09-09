@@ -9,6 +9,8 @@ import {
 import { revealWorkbenchListSelection } from '../../ui/list_view';
 import type { BehaviorLensOutline, BehaviorLensViewState } from './view_model';
 import { stateMachineSourceRange } from './state_machine_selection';
+import { navigateWorkbenchTree, setWorkbenchTreeCollapsed, WorkbenchTreeNavigationResult } from '../../ui/tree_view';
+import { acceptEffectPropertySelection } from './action_effect_properties';
 
 export type BehaviorLensNavigationCommand =
 	| 'next' | 'previous'
@@ -38,6 +40,22 @@ export function executeBehaviorLensNavigation(
 	const outline = state.presentation;
 	if (outline.kind === 'graph') return executeBehaviorGraphNavigation(state, outline, command);
 	if (outline.kind === 'state-graph') return executeStateGraphNavigation(state, outline, command);
+	if (outline.kind === 'properties') {
+		if (command === 'back') return BehaviorLensNavigationResult.Back;
+		if (command === 'activate') {
+			const selected = outline.tree.rows[outline.tree.selectionIndex];
+			if (selected?.element.kind === 'group') {
+				setWorkbenchTreeCollapsed(outline.tree, outline.tree.selectionIndex, !selected.collapsed);
+				acceptEffectPropertySelection(state, outline, true);
+				return BehaviorLensNavigationResult.Changed;
+			}
+			return state.selection === null ? BehaviorLensNavigationResult.None : BehaviorLensNavigationResult.Activate;
+		}
+		const result = navigateWorkbenchTree(outline.tree, command === 'next' ? 'down' : command === 'previous' ? 'up' : command);
+		if (result === WorkbenchTreeNavigationResult.None) return BehaviorLensNavigationResult.None;
+		acceptEffectPropertySelection(state, outline, result === WorkbenchTreeNavigationResult.Collapse);
+		return BehaviorLensNavigationResult.Changed;
+	}
 	if (command === 'back') {
 		return BehaviorLensNavigationResult.Back;
 	}
@@ -152,12 +170,13 @@ export function selectedBehaviorLensSourceRange(state: BehaviorLensViewState): L
 
 export function finishBehaviorLensNavigation(state: BehaviorLensViewState): void {
 	if (state.presentation.kind === 'outline') revealWorkbenchListSelection(state.presentation);
+	else if (state.presentation.kind === 'properties') revealWorkbenchListSelection(state.presentation.tree);
 	else if (state.presentation.viewport.selection !== null) state.presentation.viewport.reveal(state.presentation.viewport.selection);
 	updateBehaviorLensStatus(state);
 }
 
 export function updateBehaviorLensStatus(state: BehaviorLensViewState): void {
-	state.status.info = state.presentation.kind !== 'outline'
+	state.status.info = state.presentation.kind === 'properties' ? state.presentation.summary : state.presentation.kind !== 'outline'
 		? state.presentation.kind === 'state-graph' ? `${state.presentation.viewport.model.nodes.length} SCOPES / POSSIBLE PATHS`
 			: `${state.presentation.viewport.model.nodes.length} CARDS`
 		: `${state.document.definitions.length} DEF  ${state.sourceNodes.length} SOURCE NODES`;

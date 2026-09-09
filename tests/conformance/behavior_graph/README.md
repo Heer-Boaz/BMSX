@@ -207,9 +207,9 @@ Both browser navigation runs and the full Studio suite include
 Source gestures, hidden UTF-16 edits, activation refresh, ordinary Undo, and
 explicit computed fields and requirement-entry source links. The capture point
 is `STUDIO: ActionEffect partial source ready for visual inspection`. Idle frames
-reuse the source generation/outline rows and request no graph layout; machine
-cycles and installed media remain unchanged. This is still the existing tiny-font
-outline, not the subsequent grouped effect visualization or authoring feature.
+reuse the source generation/property rows and request no graph layout; machine
+cycles and installed media remain unchanged. The property-view slice below now
+uses these same fixtures; the earlier source prerequisite proved only the outline.
 
 The cold profile measures 24/1,024 registrations sharing a twelve-field
 constructor (408/17,408 source nodes). It separates source generation on cached
@@ -217,3 +217,43 @@ semantic data, construction of a single typed body, and input refresh including
 source correspondence (single-body timing uses batches of 1,000). These are
 distinct experiments, not additive frame costs;
 they exclude parsing, drawing, runtime execution and total Studio frame time.
+
+
+## ActionEffect property inspector
+
+```sh
+npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
+  tests/lua/workbench_property_tree.test.ts tests/lua/actioneffect_properties.test.ts \
+  tests/lua/workbench_tree.test.ts
+npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+  tests/conformance/behavior_graph/profile_actioneffect_properties.ts
+```
+
+The generic control tests use actual tiny-font metrics, retained tree nodes and
+real overlay/quad emission. They cover bounded label/value columns, whole hittable
+rows, footer clipping, navigation/collapse results, resize, scroll, gesture
+identity and unchanged-frame storage/measurement invariants. The domain tests
+use independent Lua, not current cart line numbers: one chosen shared registration,
+all authored fields and requirement occurrences, partial/empty/removed source,
+exact source excerpts (including spaces and long-string case), separate category
+and source folds, hidden UTF-16 edits, Undo and no graph-engine startup.
+
+`studio_actioneffect_source.ts` additionally drives the real pane through held
+Enter, group double-click, controller navigation/A, palette interruption, property
+double-click and the shared Source action. A popup interrupts even an unfinished
+double-click; an edited larger requirement list exercises physical wheel and
+Home/End before normal Undo removes it. Hidden edits invalidate old hit rows;
+reactivation retains the corresponding field and ordinary Undo restores it.
+The complete capture point is
+`STUDIO: ActionEffect complete properties ready for visual inspection`; the
+partial-source point above remains. Both depict the same real 384x288 property
+view, not a separate test renderer or a graph layout with invented edges.
+
+The profile varies the chosen effect's requirements from 1 to 256 to 4,096,
+keeping all twelve effect fields. It separates cold source-to-property projection
+from cold column/text layout. Warm concrete-input updates, pointer hit testing and
+real overlay/quad emission use batches of 1,000 (10 warmups/25 median samples).
+Source analysis and Lua execution are outside that boundary. The font counter,
+retained roots/rows/quad storage and never-created graph engine are assertions,
+not a JavaScript heap profiler or a claim about GPU rasterization, total Studio
+frame time or physical GPU performance. Run measurements without other tests.
