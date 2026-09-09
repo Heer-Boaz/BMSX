@@ -91,7 +91,7 @@ export function beginTabDrag(tabId: EditorTabId, pointerX: number): void {
 export function updateTabDrag(pointerX: number, pointerY: number): void {
 	const state = editorChromeState.tabDragState!;
 	const distance = Math.abs(pointerX - state.startX);
-	if (!state.hasDragged && distance < constants.TAB_DRAG_ACTIVATION_THRESHOLD) {
+	if (!state.hasDragged && distance < constants.POINTER_DRAG_ACTIVATION_THRESHOLD) {
 		return;
 	}
 	if (!state.hasDragged) {

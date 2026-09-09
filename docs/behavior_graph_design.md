@@ -458,7 +458,9 @@ pane. `PointerCaptureService` routeert de lopende fysieke gesture vóór gewone
 hit testing, ook buiten de controlbounds. Release, verlaten van het display,
 een modal/palette/menu, pane-detach of IDE-deactivatie beëindigt capture;
 sluiten van een popup hervat de oude gesture niet. De service ontkoppelt vóór
-de cancelcallback; alleen de eigenaar kan zichzelf releasen. Het model levert
+de release-/cancelcallback; alleen de bestaande fysieke, niet-geconsumeerde
+release-edge mag een drop committen. Verloren/geconsumeerde input annuleert.
+Alleen de eigenaar kan zichzelf releasen. Het model levert
 geen nieuwe buttonhistorie. Dit volgt de scheiding in
 [VS Code GlobalPointerMoveMonitor](https://github.com/microsoft/vscode/blob/48ac1875628144c02d79ff412e0323af9991dfc7/src/vs/base/browser/globalPointerMoveMonitor.ts)
 en [Godots mouse-focus-route](https://github.com/godotengine/godot/blob/9552dfb6859a1aaba1e570b8e0ef5c599b830f19/scene/main/viewport.cpp#L2113-L2147).

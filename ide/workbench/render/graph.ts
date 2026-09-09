@@ -2,9 +2,10 @@ import * as colors from '../../common/constants';
 import { api } from '../../runtime/overlay_api';
 import { GRAPH_LABEL_PADDING, GRAPH_NODE_PADDING, type WorkbenchGraphItem } from '../ui/graph/model';
 import type { WorkbenchGraphViewport } from '../ui/graph/viewport';
+import type { WorkbenchGraphDragFeedback } from '../ui/graph/drag';
 
 /** Draw the retained layout; partial primitives are clipped by the render owner. */
-export function drawWorkbenchGraph(view: WorkbenchGraphViewport, hover: WorkbenchGraphItem | null, focused: boolean): void {
+export function drawWorkbenchGraph(view: WorkbenchGraphViewport, hover: WorkbenchGraphItem | null, focused: boolean, drag?: WorkbenchGraphDragFeedback): void {
 	const bounds = view.bounds;
 	const offsetX = bounds.left - view.scrollX;
 	const offsetY = bounds.top - view.scrollY;
@@ -60,6 +61,27 @@ export function drawWorkbenchGraph(view: WorkbenchGraphViewport, hover: Workbenc
 			api.blit_text_inline_with_font(line, left + GRAPH_NODE_PADDING, y, 0,
 				selected ? colors.COLOR_SELECTION_TEXT : colors.COLOR_RESOURCE_VIEWER_TEXT, model.font);
 			y += model.font.lineHeight;
+		}
+	}
+	if (drag !== undefined) {
+		const source = drag.source;
+		const left = Math.round(source.bounds.left + drag.offsetX + offsetX);
+		// Keep the payload above a valid insertion sector, so its marker cannot obscure the label.
+		const top = Math.round((drag.accepted ? drag.marker.top : source.bounds.top + drag.offsetY) + offsetY - source.headerHeight - 6);
+		const right = left + source.bounds.right - source.bounds.left;
+		const color = drag.accepted ? colors.COLOR_PROBLEMS_PANEL_SELECTION_BORDER : colors.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM;
+		api.fill_rect(left, top, right, top + source.headerHeight, 0, colors.COLOR_PROBLEMS_PANEL_HEADER_BACKGROUND);
+		api.blit_rect(left, top, right, top + source.headerHeight, 0, color);
+		let y = top + GRAPH_NODE_PADDING;
+		for (const line of source.lines) {
+			api.blit_text_inline_with_font(line, left + GRAPH_NODE_PADDING, y, 0, color, model.font);
+			y += model.font.lineHeight;
+		}
+		if (drag.accepted) {
+			const marker = drag.marker;
+			api.fill_rect(marker.left + offsetX, marker.top + offsetY, marker.right + offsetX, marker.bottom + offsetY, 0, color);
+			api.fill_rect(marker.left - 2 + offsetX, marker.top + offsetY, marker.right + 2 + offsetX, marker.top + 2 + offsetY, 0, color);
+			api.fill_rect(marker.left - 2 + offsetX, marker.bottom - 2 + offsetY, marker.right + 2 + offsetX, marker.bottom + offsetY, 0, color);
 		}
 	}
 	if (focused) api.blit_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, colors.COLOR_PROBLEMS_PANEL_SELECTION_BORDER);

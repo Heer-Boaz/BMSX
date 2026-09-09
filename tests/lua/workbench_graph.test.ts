@@ -186,7 +186,7 @@ test('only a physical press begins a pan; capture can leave the control but cann
 	assert.equal(view.scrollX, 0, 'held pointer entering a pane is not a press');
 	control.handlePointer(pointer(80, 95, true), true, 2);
 	assert.equal(focus.target, control.focusTarget);
-	assert.equal(capture.dispatch(pointer(140, 110, true), false), true);
+	assert.equal(capture.dispatch(pointer(140, 110, true), false, false, 3), true);
 	assert.deepEqual([view.scrollX, view.scrollY], [-60, -15]);
 	focus.setTarget(null);
 	control.handlePointer(pointer(90, 90, true), false, 4);
@@ -229,7 +229,7 @@ test('model replacement cancels a pan; empty-space clicks and wheel are bounded 
 	control.handlePointer(pointer(80, 95, true), true, 1);
 	assert.equal(view.selection, null);
 	view.setModel({ ...model }, null);
-	assert.equal(capture.dispatch(pointer(100, 95, true), false), true);
+	assert.equal(capture.dispatch(pointer(100, 95, true), false, false, 2), true);
 	assert.equal(view.scrollX, 0);
 	assert.equal(control.handleWheel(pointer(120, 30), 0, 10), false);
 	assert.equal(control.handleWheel(pointer(60, 60), 0, 10), true);
@@ -292,4 +292,164 @@ test('stationary pointer polling reuses the hit result until geometry, viewport 
 	control.handlePointer(position, false, 103);
 	assert.equal(view.hitTests, 4);
 	control.dispose();
+});
+
+/** A domain consumer, independent of Lua, tests the shared gesture lifecycle. */
+function dragFixture() {
+	const f = fixture();
+	const focus = new InputFocusService();
+	const capture = new PointerCaptureService();
+	const control = new WorkbenchGraphControl(focus, capture);
+	const counts = { starts: 0, overs: 0, drops: 0, current: true };
+	const feedback = { source: f.a, marker: { left: 40, top: 10, right: 42, bottom: 30 }, offsetX: 0, offsetY: 0, accepted: false };
+	control.setInput(f.view, () => {
+		counts.starts += 1;
+		return {
+			feedback,
+			isCurrent: () => counts.current,
+			dragOver: (x: number) => { counts.overs += 1; feedback.accepted = x >= 60; },
+			drop: () => {
+				assert.equal(control.dragFeedback, undefined, 'gesture detaches before the domain edits or navigates');
+				counts.drops += 1;
+			},
+		};
+	});
+	control.handlePointer(pointer(22, 22, true), true, 0);
+	return { ...f, control, capture, focus, feedback, counts };
+}
+
+test('a click allocates no drag session and still double-clicks; threshold begins a preview without a drop', () => {
+	const f = dragFixture();
+	f.capture.dispatch(pointer(24, 24, true), false, false, 20);
+	assert.equal(f.counts.starts, 0);
+	f.capture.dispatch(pointer(24, 24), false, true, 40);
+	assert.equal(f.control.dragFeedback, undefined);
+	assert.equal(f.counts.drops, 0);
+	assert.equal(f.control.handlePointer(pointer(22, 22, true), true, 60), Result.Activate);
+	assert.equal(f.counts.starts, 0);
+	f.control.dispose();
+});
+
+test('drag movement retains geometry and feedback; release commits once at the actual release target', () => {
+	const f = dragFixture();
+	const geometry = JSON.stringify(f.model);
+	f.capture.dispatch(pointer(60, 60, true), false, false, 20);
+	assert.equal(f.control.dragFeedback, f.feedback);
+	assert.equal(f.counts.drops, 0);
+	for (let frame = 2; frame < 102; frame += 1) f.capture.dispatch(pointer(60, 60, true), false, false, frame * 20);
+	assert.equal(f.counts.starts, 1);
+	assert.equal(f.counts.overs, 1, 'stationary warm polling performs no repeated domain hit work');
+	assert.equal(JSON.stringify(f.model), geometry, 'preview does not move retained model nodes');
+	f.capture.dispatch(pointer(70, 60), false, true, 2040);
+	assert.equal(f.counts.drops, 1);
+	assert.equal(f.counts.overs, 2, 'release position supersedes previous hover');
+	f.capture.dispatch(pointer(70, 60), false, true, 2060);
+	assert.equal(f.counts.drops, 1);
+	f.control.dispose();
+});
+
+test('release over invalid space, outside the graph, or consumed input cannot commit a previously accepted target', () => {
+	for (const [x, y, released] of [[50, 60, true], [121, 60, true], [60, 60, false]] as const) {
+		const f = dragFixture();
+		f.capture.dispatch(pointer(60, 60, true), false, false, 20);
+		assert.equal(f.feedback.accepted, true);
+		f.capture.dispatch(pointer(x, y), false, released, 40);
+		assert.equal(f.counts.drops, 0);
+		assert.equal(f.control.dragFeedback, undefined);
+		f.control.dispose();
+	}
+});
+
+test('coalesced press/move/release uses the same threshold and a single drop', () => {
+	const f = dragFixture();
+	f.capture.dispatch(pointer(60, 60), false, true, 20);
+	assert.equal(f.counts.starts, 1);
+	assert.equal(f.counts.overs, 1);
+	assert.equal(f.counts.drops, 1);
+	f.control.dispose();
+});
+
+test('blur, detachment, model generation and domain invalidation clear feedback without waiting for pointer motion', () => {
+	for (const interrupt of ['blur', 'detach', 'model', 'domain', 'selection'] as const) {
+		const f = dragFixture();
+		f.capture.dispatch(pointer(60, 60, true), false, false, 20);
+		if (interrupt === 'blur') f.focus.setTarget(null);
+		else if (interrupt === 'detach') { f.control.clearInput(); f.control.setInput(f.view); }
+		else if (interrupt === 'model') f.view.setModel({ ...f.model }, null);
+		else if (interrupt === 'selection') f.view.selection = f.b;
+		else f.counts.current = false;
+		f.control.update();
+		assert.equal(f.control.dragFeedback, undefined);
+		assert.equal(f.capture.dispatch(pointer(70, 60), false, true, 40), false);
+		assert.equal(f.counts.drops, 0);
+		f.control.dispose();
+	}
+});
+
+test('a pending drag cannot adopt a selection chosen after the physical press', () => {
+	const f = dragFixture();
+	f.view.selection = f.b;
+	f.capture.dispatch(pointer(60, 60, true), false, false, 20);
+	assert.equal(f.counts.starts, 0);
+	f.capture.dispatch(pointer(60, 60), false, true, 40);
+	assert.equal(f.counts.drops, 0);
+	f.control.dispose();
+});
+
+test('edge scrolling is host-time based and keeps the payload, not frame-paced or a new source projection', () => {
+	const results: number[] = [];
+	for (const fps of [50, 60, 120]) {
+		const f = dragFixture();
+		f.capture.dispatch(pointer(119, 60, true), false, false, 20);
+		for (let frame = 1; frame <= fps; frame += 1) f.capture.dispatch(pointer(119, 60, true), false, false, 20 + frame * 1000 / fps);
+		results.push(f.view.scrollX);
+		assert.equal(f.counts.starts, 1);
+		assert.equal(f.view.model, f.model);
+		f.control.dispose();
+	}
+	for (const x of results) assert.ok(Math.abs(x - 110) < 1e-9);
+});
+
+test('drag preview reuses clipped overlay command and glyph storage without changing the graph', () => {
+	const f = dragFixture();
+	f.capture.dispatch(pointer(60, 60, true), false, false, 20);
+	const geometry = JSON.stringify(f.model);
+	const { presenter, renderer, queue } = createHostOverlayFixture(160, 120);
+	const draw = () => {
+		renderer.beginFrame(presenter);
+		api.beginFrame(renderer);
+		drawWorkbenchGraph(f.view, f.control.hover, true, f.control.dragFeedback);
+		renderer.endFrame();
+		return queue.consumeOverlayFrame();
+	};
+	const first = draw();
+	const refs = first.commandRefs.slice(0, first.commandCount);
+	draw();
+	for (let frame = 0; frame < 50; frame += 1) {
+		const current = draw();
+		assert.equal(current.commandCount, refs.length);
+		for (let index = 0; index < refs.length; index += 1) assert.equal(current.commandRefs[index], refs[index]);
+		draw();
+	}
+	assert.equal(JSON.stringify(f.model), geometry);
+	assert.equal(f.counts.starts, 1);
+	assert.equal(f.counts.overs, 1);
+	assert.equal(f.control.dragFeedback, f.feedback);
+	f.control.dispose();
+});
+
+test('wheel scrolling during a drag refreshes insertion feedback without replacing its source or committing', () => {
+	const f = dragFixture();
+	const position = pointer(60, 60, true);
+	f.capture.dispatch(position, false, false, 20);
+	assert.equal(f.control.handleWheel(position, 10, 4), true);
+	assert.deepEqual([f.view.scrollX, f.view.scrollY], [10, 4]);
+	assert.equal(f.control.dragFeedback, f.feedback);
+	assert.equal(f.counts.overs, 2);
+	assert.equal(f.counts.starts, 1);
+	assert.equal(f.counts.drops, 0);
+	f.capture.dispatch(pointer(60, 60), false, true, 40);
+	assert.equal(f.counts.drops, 1);
+	assert.equal(f.counts.overs, 2, 'release at the same world position reuses the wheel-refreshed target');
+	f.control.dispose();
 });

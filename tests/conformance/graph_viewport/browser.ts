@@ -18,7 +18,7 @@ import { VideoPresenter } from '../../../machine/ts/render/video_presenter';
 import { OverlayRenderer } from '../../../ide/runtime/overlay_renderer';
 import { api } from '../../../ide/runtime/overlay_api';
 import { editorViewState } from '../../../ide/editor/ui/view/state';
-import { computeEditorPointerButtonMask, POINTER_PRIMARY_JUST_PRESSED } from '../../../ide/input/pointer/buttons';
+import { computeEditorPointerButtonMask, POINTER_PRIMARY_JUST_PRESSED, POINTER_PRIMARY_JUST_RELEASED } from '../../../ide/input/pointer/buttons';
 import { readEditorPointerSnapshot } from '../../../ide/input/pointer/frame';
 import { inputFocus } from '../../../ide/input/focus';
 import { pointerCapture } from '../../../ide/input/pointer/capture';
@@ -115,7 +115,7 @@ export async function createFixture(canvas: HTMLCanvasElement, kind: 'software' 
 		input.pollInput();
 		const mask = computeEditorPointerButtonMask(player);
 		const snapshot = readEditorPointerSnapshot(display, player);
-		if (!pointerCapture.dispatch(snapshot, false)) panes.activePane.handlePointer(snapshot, (mask & POINTER_PRIMARY_JUST_PRESSED) !== 0, false, player, clock.now(), false);
+		if (!pointerCapture.dispatch(snapshot, false, (mask & POINTER_PRIMARY_JUST_RELEASED) !== 0, clock.now())) panes.activePane.handlePointer(snapshot, (mask & POINTER_PRIMARY_JUST_PRESSED) !== 0, false, player, clock.now(), false);
 		inputFocus.handleKeyboard(player);
 		draw();
 	};

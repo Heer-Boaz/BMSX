@@ -2,6 +2,7 @@ import * as constants from '../../../common/constants';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { drawWorkbenchGraph } from '../../render/graph';
 import type { WorkbenchGraphItem } from '../../ui/graph/model';
+import type { WorkbenchGraphDragFeedback } from '../../ui/graph/drag';
 import { api } from '../../../runtime/overlay_api';
 import { prepareBehaviorLensLayout } from './layout';
 import type { BehaviorLensViewState } from './view_model';
@@ -13,7 +14,7 @@ import { drawWorkbenchPropertyTree } from '../../render/property_tree';
 const EMPTY_LENS_TEXT = 'NO STATIC BEHAVIOR REGISTRATIONS';
 
 /** Draws the retained presentation; source recognition and layout generation run elsewhere. */
-export function drawBehaviorLens(state: BehaviorLensViewState, commands: EditorCommandEnablement, hover: WorkbenchGraphItem | null, focused: boolean): void {
+export function drawBehaviorLens(state: BehaviorLensViewState, commands: EditorCommandEnablement, hover: WorkbenchGraphItem | null, focused: boolean, drag?: WorkbenchGraphDragFeedback): void {
 	const layout = prepareBehaviorLensLayout(state);
 	if (state.presentation.kind === 'outline') api.fill_rect(layout.left, layout.top, layout.right, layout.bottom, 0, constants.COLOR_RESOURCE_VIEWER_BACKGROUND);
 	api.fill_rect(layout.left, layout.top, layout.right, layout.headerBottom, 0, constants.COLOR_PROBLEMS_PANEL_HEADER_BACKGROUND);
@@ -38,7 +39,7 @@ export function drawBehaviorLens(state: BehaviorLensViewState, commands: EditorC
 		return;
 	}
 	if (outline.kind !== 'outline') {
-		drawWorkbenchGraph(outline.viewport, hover, focused);
+		drawWorkbenchGraph(outline.viewport, hover, focused, drag);
 		if (outline.viewport.model.nodes.length === 0) {
 			const message = outline.kind === 'state-graph' && outline.layoutState.kind === 'pending' ? 'LAYING OUT STATE MACHINE...'
 				: outline.kind === 'state-graph' && outline.layoutState.kind === 'failed' ? 'LAYOUT FAILED - SOURCE REMAINS AVAILABLE'

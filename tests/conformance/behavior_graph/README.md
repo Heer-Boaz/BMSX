@@ -291,3 +291,36 @@ Source analysis and Lua execution are outside that boundary. The font counter,
 retained roots/rows/quad storage and never-created graph engine are assertions,
 not a JavaScript heap profiler or a claim about GPU rasterization, total Studio
 frame time or physical GPU performance. Run measurements without other tests.
+
+## BT drag-to-reorder
+
+```sh
+npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
+  tests/lua/pointer_capture.test.ts tests/lua/workbench_graph.test.ts \
+  tests/lua/behavior_tree_edit.test.ts tests/lua/behavior_tree_drag.test.ts
+npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+  tests/conformance/behavior_graph/profile_drag.ts
+```
+
+`studio_bt_drag.ts` runs in both the full Studio workflow and the Pietious
+navigation workflow, on software/WebGL2/WebGPU. It edits independent Lua in the
+ordinary working copy, not cart-specific line numbers or a generated graph ROM.
+Physical press/move/release covers nonadjacent sibling insertion, weighted
+connection payloads, source navigation and hidden Undo, Escape, palette, outside
+drop, readonly/source-version cancellation, physical wheel and edge scrolling
+through a twelve-child tree. No viewport-state write is used to reach the
+initially offscreen destination. A press/drag never installs or resumes a cart.
+
+Capture points are `STUDIO: BT drag preview ready for visual inspection` and
+`STUDIO: BT offscreen sibling insertion ready for visual inspection`.
+Inspect payload text, insertion marker, clipping and the tiny font at the
+actual 384x288 viewport. The software host exposes its real presented framebuffer;
+GPU backends are captured from their actual canvas, not reconstructed geometry.
+
+`profile_drag.ts` uses 24/1,024 siblings and measures stationary hover, stationary
+capture, changing-pointer hit/admission and actual preview/overlay/quad emission
+separately. One thousand operations per sample means the reported batch
+milliseconds are numerically microseconds per operation. Ten warmups, median of
+25; run without other tests. Retained geometry, feedback, quad backing and one
+session/no stationary hit are assertions. This is not allocation profiling,
+GPU raster/upload timing, full-frame timing or target-hardware certification.

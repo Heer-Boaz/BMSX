@@ -32,14 +32,14 @@ export function handleTextEditorPointerInput(
 	const snapshot = readEditorPointerSnapshot(display, playerInput);
 	const blockingModal = hasBlockingWorkbenchModal();
 	const quickInputVisible = editor.quickInput.visible;
+	const buttonMask = computeEditorPointerButtonMask(playerInput);
+	const justReleased = (buttonMask & POINTER_PRIMARY_JUST_RELEASED) !== 0;
 	if (pointerCapture.dispatch(snapshot, blockingModal || quickInputVisible
-		|| editorChromeState.openMenuId !== null || editorContextMenuState.visible)) return;
+		|| editorChromeState.openMenuId !== null || editorContextMenuState.visible, justReleased, now)) return;
 	if (prepareEditorPointerFrame(editor.resourcePanel, snapshot, gotoModifierActive, blockingModal || quickInputVisible)) {
 		return;
 	}
-	const buttonMask = computeEditorPointerButtonMask(playerInput);
 	const justPressed = (buttonMask & POINTER_PRIMARY_JUST_PRESSED) !== 0;
-	const justReleased = (buttonMask & POINTER_PRIMARY_JUST_RELEASED) !== 0;
 	const pointerSecondaryJustPressed = (buttonMask & POINTER_SECONDARY_JUST_PRESSED) !== 0;
 	const pointerAuxJustPressed = (buttonMask & POINTER_AUX_JUST_PRESSED) !== 0;
 	if (blockingModal) {

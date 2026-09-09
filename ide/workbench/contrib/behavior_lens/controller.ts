@@ -36,8 +36,7 @@ import { editorViewState } from '../../../editor/ui/view/state';
 import type { GraphLayoutEngineFactory } from '../../services/graph_layout/engine';
 import { acceptStateGraphSelection, stateGraphSelection } from './state_graph_navigation';
 import { buildStateMachineDetails } from './state_machine_details';
-import { behaviorTreeMoveTarget } from './behavior_tree_edit';
-import { createLuaTableFieldMoveEdits } from '../../../language/lua/table_field_moves';
+import { behaviorTreeMoveTarget, moveBehaviorTreeChild } from './behavior_tree_edit';
 
 const PICKER_TITLES: Readonly<Record<BehaviorKind, string>> = {
 	action_effect: 'ACTIONEFFECTS',
@@ -165,10 +164,8 @@ export class BehaviorLensController {
 		this.updateView(input);
 		const member = behaviorTreeMoveTarget(input.view, direction);
 		if (member === undefined) return;
-		const fields = member.table.fields;
 		this.editorPanes.activePane.focus();
-		input.workingCopy.pushEditOperations(createLuaTableFieldMoveEdits(input.workingCopy.buffer, input.workingCopy.resource.path,
-			member.table, fields.indexOf(member.entries[member.index].field), fields.indexOf(member.entries[member.index + direction].field)));
+		moveBehaviorTreeChild(input.workingCopy, member, member.index + direction);
 		this.updateView(input);
 	}
 

@@ -1,7 +1,8 @@
 import type { PointerSnapshot } from '../../common/models';
 
 export interface PointerCaptureTarget {
-	handleCapturedPointer(snapshot: PointerSnapshot): void;
+	handleCapturedPointer(snapshot: PointerSnapshot, now: number): void;
+	releaseCapturedPointer(snapshot: PointerSnapshot, now: number): void;
 	cancelPointer(): void;
 }
 
@@ -25,18 +26,24 @@ export class PointerCaptureService {
 	}
 
 	/** Blocking ends capture; it never postpones a drag until the popup closes. */
-	public dispatch(snapshot: PointerSnapshot, blocked: boolean): boolean {
+	public dispatch(snapshot: PointerSnapshot, blocked: boolean, justReleased: boolean, now: number): boolean {
 		const target = this.target;
 		if (target === null) return false;
 		if (blocked || !snapshot.valid || !snapshot.insideViewport) {
 			this.cancel();
 			return false;
 		}
+		if (justReleased) {
+			this.target = null;
+			target.releaseCapturedPointer(snapshot, now);
+			return true;
+		}
+		// Consumed/lost input is not a physical release and must never commit a drop.
 		if (!snapshot.primaryPressed) {
 			this.cancel();
 			return true;
 		}
-		target.handleCapturedPointer(snapshot);
+		target.handleCapturedPointer(snapshot, now);
 		return true;
 	}
 }

@@ -7,7 +7,7 @@ export async function testStudioPointerCapture(test: StudioFixture): Promise<voi
 	check(ide.editor.isActive, 'pointer capture requires an active workbench');
 	let moves = 0;
 	let stops = 0;
-	const target = { handleCapturedPointer() { moves += 1; }, cancelPointer() { stops += 1; } };
+	const target = { handleCapturedPointer() { moves += 1; }, releaseCapturedPointer() { throw new Error('palette interruption is not a drop'); }, cancelPointer() { stops += 1; } };
 	movePointer({ left: 80, top: 100, right: 82, bottom: 102 });
 	await frame();
 	setPointerButton('pointer_primary', true);

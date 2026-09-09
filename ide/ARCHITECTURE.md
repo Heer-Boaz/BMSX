@@ -387,9 +387,19 @@ FSM relationship proof and cyclic layout remain separate slices.
 ordinary pane/chrome hit testing. Release, invalid/outside-display input,
 exclusive popup/menu input, pane detachment and IDE deactivation end capture;
 they never postpone it until a popup closes. The owner is detached before its
-cancel callback. Focus and capture are distinct: menus may retain command
+release/cancel callback. Only the existing unconsumed physical release edge
+authorizes a drop; lost or consumed pressed state cancels instead. Focus and capture are distinct: menus may retain command
 focus while ending a drag. The graph control uses this route without inventing
 button edges; other existing controls have not all been migrated to it.
+
+For BT sibling reorder, the graph control owns press/threshold, captured source
+selection, retained preview, host-time edge scrolling and interruption. The
+contribution supplies a source-version-owned drag session, decides sibling
+insertion sectors and commits one ordinary Lua text edit on an accepted release.
+It does not move nodes during preview or infer reparenting from diagram position.
+The generic control/renderer knows no BT syntax; `behavior_tree_drag.ts` knows
+no new input edges or document history. See
+[`../docs/behavior_tree_authoring_design.md`](../docs/behavior_tree_authoring_design.md).
 
 Scene authoring uses the same document contract, but its runtime object and
 viewport owners are deliberately not inferred from the behavior projection.

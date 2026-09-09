@@ -25,11 +25,13 @@ import { BehaviorLensPointer, BehaviorLensPointerResult } from './pointer';
 import { WorkbenchPropertyTreePointer, WorkbenchPropertyPointerResult } from '../../ui/property_tree_pointer';
 import { acceptEffectPropertySelection } from './action_effect_properties';
 import { finishBehaviorLensNavigation } from './navigation';
+import { beginBehaviorTreeDrag } from './behavior_tree_drag';
 
 export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<BehaviorLensInput> {
 	private readonly pointer = new BehaviorLensPointer();
 	private readonly properties = new WorkbenchPropertyTreePointer();
 	private readonly graph = new WorkbenchGraphControl(inputFocus, pointerCapture, input => this.handleKeyboard(input), this.focusTarget);
+	private readonly startGraphDrag = () => beginBehaviorTreeDrag(this.input.workingCopy, this.input.view);
 	private readonly unbindPointerBlur = this.focusTarget.onDidBlur(() => {
 		this.pointer.cancel();
 		this.properties.cancel();
@@ -69,7 +71,8 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		this.graph.clearInput();
 		this.controller.updateView(this.input);
 		const presentation = this.input.view.presentation;
-		if (presentation.kind === 'graph' || presentation.kind === 'state-graph') this.graph.setInput(presentation.viewport);
+		if (presentation.kind === 'graph') this.graph.setInput(presentation.viewport, this.startGraphDrag);
+		else if (presentation.kind === 'state-graph') this.graph.setInput(presentation.viewport);
 	}
 
 	public override focus(): void {
@@ -86,6 +89,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 
 	public override update(): void {
 		this.controller.updateView(this.input);
+		this.graph.update();
 	}
 
 	public override clearInput(): void {
@@ -99,7 +103,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 
 	public draw(): void {
 		const view = this.input.view;
-		drawBehaviorLens(view, this.commands, this.graph.hover, this.graph.focusTarget.hasFocus);
+		drawBehaviorLens(view, this.commands, this.graph.hover, this.graph.focusTarget.hasFocus, this.graph.dragFeedback);
 	}
 
 	public handleKeyboard(playerInput: PlayerInput): void {
@@ -107,6 +111,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 			|| handleBehaviorLensGamepadInput(this.input.view, playerInput, this.controller)) {
 			this.pointer.cancel();
 			this.properties.cancel();
+			this.graph.cancelPointer();
 		}
 	}
 

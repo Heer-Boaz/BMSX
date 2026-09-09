@@ -3,9 +3,11 @@
 `STUDIO-BT-CHILD-MOVE-01` bouwt broncommands voor bestaande ordered `children`
 en weighted `choices`. De afgewezen **Earlier/Later-knoppen zijn uit de
 graph-header verwijderd**; de expliciete commands blijven in de Command
-Palette, niet als vervanging voor slepen. `STUDIO-BT-VISUAL-EDITOR-01` blijft
-het grotere, nog onvoltooide authoringcontract. Geen Add/Remove/Connect,
-drag-to-reorder, property-editor of runtime-observer in deze slice.
+Palette, niet als vervanging voor slepen. `STUDIO-BT-DRAG-REORDER-01` voegt
+de fysieke reorder-interactie op dezelfde bronowner toe.
+`STUDIO-BT-VISUAL-EDITOR-01` blijft het grotere, nog onvoltooide
+authoringcontract. Geen Add/Remove/Connect, property-editor of runtime-observer
+in deze twee slices.
 
 ## Getoetste productievoorbeelden
 
@@ -91,7 +93,7 @@ De bestaande productworkflow en de CPU-oracle zijn afzonderlijk bewijs. Een
 specifieke live BT-reorder/rebind-sessie via Hot Resume is hiermee niet als
 nieuwe end-to-end proef afgevinkt.
 
-## Volgende interactiegrens: slepen en verbindingen
+## Referentiecontract: slepen en verbindingen
 
 De op Git gecontroleerde aigen-versie is
 [`5248d9c`](https://github.com/Heer-Boaz/aigen/tree/5248d9c9a0b3bb1cde45a9088c9427d20d8f1b91).
@@ -101,7 +103,8 @@ een geldige release. Een klik of geannuleerde gesture muteert het document
 niet. [`WorkflowEditBuffer`](https://github.com/Heer-Boaz/aigen/blob/5248d9c9a0b3bb1cde45a9088c9427d20d8f1b91/aigen/workflow_edit_buffer.py#L319-L383)
 bezit reconnect en zijn Undo-wijziging, niet de renderer.
 
-Dit is het referentiecontract voor de volgende slice, **nog niet gebouwd**:
+Dit is het referentiecontract. De reorder-interactie wordt hieronder apart
+gebouwd; reconnect/reparent blijft **nog niet gebouwd**:
 
 1. De gedeelde graph-control bezit press/drag/release/cancel en pointercapture.
    De bijdrage levert bewezen source-members en dropdoelen. Geen BT-parser of
@@ -191,3 +194,90 @@ De eerste browserproef vond dat graphfocus zijn eigen commandtarget nodig
 heeft; beide concrete Lens-controls binden nu hun documenthistorie expliciet.
 Er is geen commandbubbling of feature-lokale Ctrl-Z-handler toegevoegd. De
 herhaalde productproeven gebruiken uitsluitend deze definitieve route.
+
+## `STUDIO-BT-DRAG-REORDER-01`: interactiecontract
+
+De volgende afgebakende stap is dezelfde bronlijst herordenen met slepen,
+**niet** het vrij positioneren van nodes of het impliciet wijzigen van hun
+parent. Een kaart of verbinding begint een kandidaatgesture; pas na de
+gedeelde pointerdrempel ontstaat een drag. De linker-/rechterhelft van een
+siblingkaart betekent vóór/na die entry. Een verticale insertionmarkering
+maakt de geaccepteerde bestemming zichtbaar. Een drop zonder effectieve
+orderwijziging doet niets. Weighted wrappers bewegen als één sourceentry.
+
+De referenties zijn opnieuw op Git gecontroleerd:
+
+- [aigen WorkflowCanvas](https://github.com/Heer-Boaz/aigen/blob/5248d9c9a0b3bb1cde45a9088c9427d20d8f1b91/aigen/workflow_canvas.py#L261-L439):
+  gesture en preview zijn tijdelijk; geldige release vraagt één documentedit.
+  Zijn opgeslagen nodeposities worden niet als BT-executievolgorde gekopieerd.
+- [LimboAI TaskTree](https://github.com/limbonaut/limboai/blob/3f14ea4c26911e8b8e30c6bcdb575fc589a59deb/editor/task_tree.cpp#L358-L515):
+  expliciete insertionsector, normaliseren naar de echte parent/index, daarna
+  een editverzoek. BMSX ondersteunt in deze stap uitsluitend dezelfde bewezen
+  bronlijst; LimboAI's resourcevalidatie en reparenting worden niet overgenomen.
+- [VS Code ListView](https://github.com/microsoft/vscode/blob/5644d4912d4671e81dc6894d3b13dc1603e9d9d1/src/vs/base/browser/ui/list/listView.ts#L1330-L1455):
+  contribution-owned dropadmission, retained insertionfeedback en het beëindigen
+  van de gesture vóór de docconsumer. Randscrollen hoort bij het control.
+- [Godot GraphEdit](https://github.com/godotengine/godot/blob/9552dfb6859a1aaba1e570b8e0ef5c599b830f19/scene/gui/graph_edit.cpp#L2002-L2168):
+  bewegingsfeedback staat los van het beëindigde moveverzoek.
+
+| Owner | Verantwoordelijkheid |
+| --- | --- |
+| `input/pointer/buttons` | De bestaande fysieke, niet-geconsumeerde release-edge; `!primaryPressed` is niet voldoende. |
+| `PointerCaptureService` | Capture loskoppelen vóór release/cancel-callbacks. Modal, ongeldige pointer, schermverlaten en verloren/geconsumeerde input annuleren, nooit droppen. |
+| `WorkbenchGraphControl` | Pressdrempel, vastgehouden press-selectie, capture, pan versus drag, Escape/blur/detach, modelgeneration, hosttijd-gebaseerd randscrollen, wielscrollen met behoud van capture, releasepositie en warme hitcache. |
+| Graph drag session | Eén transient bijdrage met bronpayload, retained feedback, actuele admission en een dropconsumer; geen generieke AST- of documentkennis in de control. |
+| `behavior_tree_drag` | Concrete sourcegeneration en writable status; dezelfde constructor én dezelfde zichtbare parent-occurrence. Links/rechts normaliseren naar de uiteindelijke arrayrank. Geen drop op geraden verbindingen of dynamische lijstleden. |
+| `behavior_tree_edit` | Zet arrayranks om in echte lexical fields en gebruikt de bestaande Lua-table-move-owner. Commands en drag delen deze grens. |
+| Graph renderer | Alleen clipped preview en insertionmarkering uit retained geometry; geen bronquery of persistente nodebeweging. |
+
+Tijdens bewegen geen Lua-edits, herparses, history-elementen of autosave.
+De drag maakt eenmaal een kleine sessie; stationair buiten de scrollmarges
+worden hits en dropadmission niet opnieuw berekend. Sourcewijziging, readonly
+worden, graphvervanging, blur, menu en Escape beëindigen de gesture. De
+releasepositie wordt nog beoordeeld; een eerder geldig hoverdoel geeft geen
+recht om elders te droppen. Een geldige drop is één bestaande texteditbatch,
+één content-event en één Undo-element. Er is geen rollback of preview-edit.
+
+Reconnect/reparent, scopeverplaatsing en een eigen canvas-layoutdocument
+vallen buiten deze stap. De melding van spontaan dirty worden bij Source
+blijft afzonderlijk open zolang die niet gereproduceerd is.
+
+### Validatie van drag-reorder (2026-09-09)
+
+- **37** gerichte capture/graph/sourceproeven; de volledige Lua-suite:
+  **1.117 geslaagd, één bestaande skip**. De insertionmatrix omvat ieder
+  before/after-doel van drie siblings, metadata, opaque waarden, weighted
+  node/edge-payloads, no-op, descendant/andere-occurrence-afwijzing en één Undo.
+- De volledige echte Studio-workflow **én** de Pietious navigation/recovery-route
+  slagen op software, WebGL2 en WebGPU. De nieuwe dragproef gebruikt zelfstandige
+  authored Lua; de omliggende cartflows blijven integratiesmoke. Source,
+  hidden Undo, Escape, palette, buiten-drop, readonly/sourcewijziging, werkelijk
+  wielscrollen en randscrollen met held pointer zijn via echte hostinput bediend.
+- De domeinvrije graph-viewportgate slaagt op alle drie backends, inclusief
+  zes pixel-crop-oracles per backend, target resize en pane-/capturelifecycle.
+  De echte 384×288-previewcaptures zijn geïnspecteerd: tiny-fontpayload boven
+  de insertionmarkering, geen label dat door de dropmarkering wordt bedekt.
+  GPU-tests gebruiken Chromium/SwiftShader, geen certificering van fysieke GPU's.
+- Browser Studio en Node tooling herbouwd; headless Behavior Lens:
+  **59 assertions**. IDE-typecheck, strict architecture-boundaries (nul issues),
+  core-parity, indentationcheck en `git diff --check` slagen. Het tests-project
+  heeft **51 bestaande typecheckdiagnostics, nul extra**; dat project is niet groen.
+
+Geïsoleerde Node 22.23.1-metingen, 1.000 operaties per sample, tien warmups,
+mediaan van 25. Eenheden hieronder zijn microseconden per operatie:
+
+| Siblings | Stationaire hover | Stationaire drag | Bewegende drag/hit | Preview + overlay/quad-emissie |
+| ---: | ---: | ---: | ---: | ---: |
+| 24 | 0,006 | 0,029 | 0,059 | 7,454 |
+| 1.024 | 0,060 | 0,017 | 1,201 | 12,679 |
+
+Dit zijn afzonderlijke hostmetingen, geen onderling snelheidswinstbewijs:
+JIT/callshape beïnvloedt vooral de zeer kleine stationaire getallen. Bewegende
+hit-testing gebruikt de bestaande lineaire graph-hitowner; stationair zijn er
+**nul nieuwe hitqueries**. Eén dragsessie en dezelfde graph/feedback/quadbuffers
+blijven behouden. Dit bewijst geen totale heapallocatie, GPU-kosten of volledige
+Studio-frametijd. Parsing, drop-editkosten en Hot Resume liggen buiten deze meting.
+
+Reproductie staat in `tests/conformance/behavior_graph/README.md`; lokale logs,
+metingen en captures staan onder `/tmp/bmsx-bt-drag/`. Reconnect/reparent en de
+niet-gereproduceerde spontane dirty-melding zijn hiermee niet afgevinkt.
