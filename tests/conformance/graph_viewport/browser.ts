@@ -22,11 +22,12 @@ import { computeEditorPointerButtonMask, POINTER_PRIMARY_JUST_PRESSED } from '..
 import { readEditorPointerSnapshot } from '../../../ide/input/pointer/frame';
 import { inputFocus } from '../../../ide/input/focus';
 import { pointerCapture } from '../../../ide/input/pointer/capture';
-import { createWorkbenchGraphNode, createWorkbenchGraphEdge } from '../../../ide/workbench/ui/graph/model';
+import { createWorkbenchGraphNode, createWorkbenchGraphEdge, createWorkbenchGraphModel, type WorkbenchGraphModel } from '../../../ide/workbench/ui/graph/model';
 import { WorkbenchGraphViewport } from '../../../ide/workbench/ui/graph/viewport';
 import { WorkbenchGraphPointerResult } from '../../../ide/workbench/ui/graph/control';
 import { createGraphFixturePanes } from './pane';
 import { hostOverlayPrimitives } from '../../helpers/host_overlay_primitives';
+export { exerciseCompoundGraph } from './compound';
 
 function check(condition: boolean, message: string): void {
 	if (!condition) throw new Error(message);
@@ -87,8 +88,8 @@ export async function createFixture(canvas: HTMLCanvasElement, kind: 'software' 
 	const middle = createWorkbenchGraphNode(font, 'RETAINED NODE\nSHARED GEOMETRY', 130, 75);
 	const last = createWorkbenchGraphNode(font, 'PARTIAL RIGHT\nAND BOTTOM', 326, 208);
 	const edge = createWorkbenchGraphEdge([-35, 160, 355, 160, 355, 240]);
-	const model = { font, nodes: [first, middle, last], edges: [edge, createWorkbenchGraphEdge([50, -30, 310, 240])] };
-	const view = new WorkbenchGraphViewport(model);
+	const model = createWorkbenchGraphModel(font, [first, middle, last], [edge, createWorkbenchGraphEdge([50, -30, 310, 240])]);
+	const view = new WorkbenchGraphViewport<WorkbenchGraphModel>(model);
 	const second = new WorkbenchGraphViewport(model);
 	view.layout(8, 24, 376, 240);
 	second.layout(8, 24, 376, 240);
@@ -155,6 +156,7 @@ export async function createFixture(canvas: HTMLCanvasElement, kind: 'software' 
 		commandKinds: kinds, commandRefs: refs, commandCount: 3 };
 	return {
 		exercise, draw,
+		view, font, move, button, step,
 		healthy,
 		resize(width: number, height: number) {
 			// Retain the editor's logical layout choice while the game target changes.

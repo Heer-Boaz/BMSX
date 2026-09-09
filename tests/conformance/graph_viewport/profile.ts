@@ -5,7 +5,7 @@ import { InputFocusService } from '../../../ide/input/focus';
 import { PointerCaptureService } from '../../../ide/input/pointer/capture';
 import { api } from '../../../ide/runtime/overlay_api';
 import { drawWorkbenchGraph } from '../../../ide/workbench/render/graph';
-import { createWorkbenchGraphNode, createWorkbenchGraphEdge, type WorkbenchGraphEdge } from '../../../ide/workbench/ui/graph/model';
+import { createWorkbenchGraphNode, createWorkbenchGraphEdge, createWorkbenchGraphModel, type WorkbenchGraphEdge } from '../../../ide/workbench/ui/graph/model';
 import { WorkbenchGraphViewport } from '../../../ide/workbench/ui/graph/viewport';
 import { WorkbenchGraphControl } from '../../../ide/workbench/ui/graph/control';
 import { createHostOverlayFixture } from '../../helpers/host_overlay';
@@ -28,7 +28,7 @@ for (let index = 1; index < nodes.length; index += 1) {
 	edges.push(createWorkbenchGraphEdge([from.right, from.top + 8, to.left, to.top + 8]));
 }
 const coldMilliseconds = performance.now() - coldStart;
-const view = new MeasuredViewport({ font, nodes, edges });
+const view = new MeasuredViewport(createWorkbenchGraphModel(font, nodes, edges));
 view.layout(8, 24, 376, 240);
 const control = new WorkbenchGraphControl(new InputFocusService(), new PointerCaptureService());
 control.setInput(view);

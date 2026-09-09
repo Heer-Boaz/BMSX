@@ -1,4 +1,4 @@
-import { createWorkbenchGraphEdge } from '../../ui/graph/model';
+import { createWorkbenchGraphEdge, createWorkbenchGraphModel } from '../../ui/graph/model';
 import { layoutWorkbenchTree } from '../../ui/graph/tree_layout';
 import type { BehaviorSourceRowKey } from './model';
 import type { BehaviorGraphEdge, BehaviorGraphModel, BehaviorGraphProjection } from './graph_model';
@@ -20,5 +20,5 @@ export function layoutBehaviorTreeGraph(projection: BehaviorGraphProjection): Be
 		edges.push(edge);
 		edgesBySource.set(source.rowKey, edge);
 	}
-	return { font, nodes, edges, nodesBySource, edgesBySource };
+	return { ...createWorkbenchGraphModel(font, nodes, edges), nodesBySource, edgesBySource };
 }

@@ -34,6 +34,47 @@ Chromium uses SwiftShader for the accelerated API paths in this headless test.
   `screenshots/`). These deliberately clipped geometry fixtures do not prove
   the readability of a future BT/FSM layout.
 
+## Compound layout prerequisite
+
+The same browser command also runs `compound.ts` with the unmodified **elkjs
+0.12.0** Worker served from the installed package. The ELK API runs on the main
+thread; Layered runs in an actual browser `Worker`, not the bundled in-process
+engine. The existing input/render loop advances during layout. Engine lifetime
+belongs to this fixture, not to a feature-global singleton. It is terminated
+after the one generation completes; ordinary retained draw/hit needs no worker.
+
+`tests/helpers/compound_graph_fixture.ts` is independent geometry, not authored
+Lua or a generated ROM. Eight nodes/ten links cover nested scopes, cycles,
+self-loops (including the root), parent/child and cross-scope routes, and two
+identically labelled links with distinct retained proof identities. Tests use
+physical label clicks, header clicks and pan inside the container. Labels do
+not replace line/arrow hit testing. Each backend also compares the same layout
+with/without one edge: 25 visible route probes must survive the container body,
+and opaque card/header interiors must remain unchanged. These are within-backend
+raster oracles, not claims of pixel-identical line rasterization across APIs.
+Room/lane captures use the actual tiny font without zoom-to-fit shrinking.
+
+```sh
+npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
+  tests/lua/workbench_compound_layout.test.ts tests/lua/workbench_graph.test.ts
+npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+  tests/conformance/graph_viewport/profile_compound.ts
+```
+
+The Node tests use the explicitly selected in-process ELK implementation. They
+check coordinate containers/endpoints, separate labels/proofs, node/label
+non-overlap, minimum header size, empty/disconnected graphs, deterministic
+generations, arrow bounds/hits and direct propagation of engine errors. They
+do not stand in for the actual Worker test. The profile reports one first and
+five subsequent independent generations (median), for 8/128/512 nodes, plus
+batched warm hit/draw+quad-stream costs and retained storage/font measurement.
+
+This closes the **layout/render boundary**, not `STUDIO-FSM-GRAPH-VIEW-01`.
+The concrete FSM outline is unchanged. Product worker composition, asynchronous
+source-generation publication/cancellation and per-return-proof correspondence
+must be implemented before switching that view. No callback, source AST, cart
+ABI or new graph authoring model is part of the generic layout request.
+
 The existing full Studio runner additionally exercises capture interruption
 through the **actual** dispatcher and Command Palette in
 `runtime_replay/studio_pointer_capture.ts`; closing the palette while held must

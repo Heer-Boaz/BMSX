@@ -4,8 +4,9 @@ Status: **BT-bronprojectie, gedeelde graphviewport en concrete BT-view
 geïmplementeerd.** Het architectuurcontract is eerst getoetst op `09b84195e`;
 de concrete BT-slice op `a9953b819`. Onderstaande bewijssecties horen bij de
 gebouwde grenzen. FSM-bronstructuur en lokaal bewezen pad-/returnrelaties zijn
-nu ook gebouwd, met het hieronder afgebakende callbackcontract. FSM en
-ActionEffect houden hun outline; cyclische plaatsing volgt afzonderlijk.
+nu ook gebouwd, met het hieronder afgebakende callbackcontract. De generieke
+compound-layout-/rendergrens is getoetst met ELK en een echte browserworker.
+FSM en ActionEffect houden hun outline; de FSM-inputintegratie volgt afzonderlijk.
 Deze visualisatie is nog geen authoring.
 
 ## Doel en grens
@@ -95,7 +96,7 @@ gebouwde BMSX-grafiek correct, leesbaar of snel is.
 | `behavior_lens/model.ts`, `behavior_tree_model.ts`, `behavior_tree.ts`, `source.ts` | Typed BT-controlrollen, ordered relaties, attachments en provenance op dezelfde objecten als de outline; lokale const-table-resolutie en incomplete syntax | FSM heeft nu afzonderlijke typed bodies, slots en scopegebonden entry-/returnfeiten; geen teruggeparste `label`-/`detail`-strings |
 | `behavior_lens/controller.ts`, `editor_input.ts`, `view_model.ts`, `source_correspondence.ts` | Resource-owned input; refresh bij eigen textmodelversie; selectie/collapse en gekozen registration via gemapte occurrence-ketens | Grafiekviewport is geen listscroll. Cross-file feiten vereisen ook semantic-generation-invalidering |
 | `ide/editor/text/text_change.ts`, `scene_editor/controller.ts`, `behavior_lens/source_correspondence.ts` | Gedeelde UTF-16-rangemapping; beide projecties volgen ranges ook terwijl hun pane verborgen is | Geen lokale offsetcorrecties of namesake matching |
-| `ide/workbench/ui/graph`, `ide/workbench/render/graph.ts` | Retained node-/edgegeometrie, viewport, selectie, hit testing en pane-owned control | Gedeelde viewport en gemeten tree-layout gebouwd; BT-relaties en bronactivatie zitten in de concrete contribution, FSM-layout volgt afzonderlijk |
+| `ide/workbench/ui/graph`, `ide/workbench/render/graph.ts` | Retained node-/edgegeometrie, viewport, selectie, hit testing en pane-owned control; tree- en compound-layout | BT-relaties en bronactivatie zitten in de concrete contribution; de FSM vereist nog asynchrone generatiepublicatie en afzonderlijke return-proofcorrespondentie |
 | `ide/runtime/overlay_renderer.ts`, TS/C++ `render/host_overlay` | Pooled overlaycommands, `Poly`-exposure en geordende cliprects | Clip-stack, scissor-batches en software-rastergrens gebouwd; geen feature-local glyph- of lijnclipper |
 | `ide/input/pointer/capture.ts`, `dispatch.ts` | Eén captured fysieke gesture vóór gewone pane-/chrome-hit-tests | Graphcontrol gebruikt deze route; bestaande andere controls zijn hiermee niet allemaal gemigreerd |
 | `cartlib/behaviour_tree/node_program.lua`, `cartlib/fsm/fsm.lua`, `fsm_component.lua` | De uitvoersemantiek die het beeld moet respecteren | Geen wijziging voor deze visualisatie; geen hostgeschreven tweede runtime |
@@ -174,9 +175,10 @@ De losse imperatieve aanroep in `ray_finished` bewijst niet op zichzelf
 worden geen duurzame testverwachtingen.
 
 Een FSM mag cyclisch en genest/concurrent zijn. BT-tree-layout of aigens
-DAG-sort mag hem niet platdrukken. De concrete plaatsings- en routingkeuze
-voor cycli, self-loops en parallelle edges is een expliciete ontwerpgrens vóór
-de FSM-view-slice, niet een stilzwijgende grid- of force-layout-workaround.
+DAG-sort mag hem niet platdrukken. ELK Layered is na de hieronder beschreven
+compound-proef gekozen voor cycli, self-loops en parallelle edges. De
+asynchrone inputintegratie blijft een expliciete grens vóór de FSM-view,
+niet een stilzwijgende grid- of force-layout-workaround.
 
 ### Ownerbesluit vóór de FSM-bronimplementatie — 9 september 2026
 
@@ -281,8 +283,8 @@ nieuwe records, callbacks of werk per worldtick.
 De scope blijft bewust begrensd: member-/cross-file callbacks en losse
 imperatieve calls krijgen geen fictieve endpoints. `no-path` betekent alleen
 geen geretourneerd transitionpad, niet dat een callback zonder effecten is.
-De FSM-layout voor cycli, self-loops, parallelle edges en concurrent scopes is
-nog niet gebouwd. Reproduceerbare commando's staan in
+Ten tijde van deze bron-slice was de compound-layout nog niet gebouwd;
+het latere layoutbewijs staat onderaan. Reproduceerbare broncommando's staan in
 `tests/conformance/behavior_graph/README.md`.
 
 ## Bronidentiteit, navigatie en geldigheid
@@ -480,7 +482,8 @@ alleen een typecheck slaagt. De latere rijen zijn nog te toetsen hypotheses.
 | `IDE-GRAPH-VIEWPORT-01` — geïmplementeerd | Gedeeld retained canvas met clipping, pan, node-/edgeselectie en focus/lifecycle. Domeinvrije fixture bewijst half-zichtbare tekst/lijnen/nodes, targetwissels, rand-hit-testing en held-pointer paneovergang op alle drie backends. De echte Studio-palette onderbreekt capture via de centrale dispatcher. Geen behaviorsemantiek of extensieframework. |
 | `STUDIO-BT-GRAPH-VIEW-01` — geïmplementeerd | Eén gekozen BT als ordered visuele boom, attachments/details, collapse, source-navigation en relationship-based keyboard/controllerbediening. Inspecteer echte 384×288-captures en bronnavigatie na pan/collapse/tabwisseling. Een brede en diepe fixture meet projection/layout/hit/draw apart; idle/hover/pan bewijzen geen herhaalde herkenning. Echte carts blijven integratiesmoke. Dit is nog geen editable BT. |
 | `STUDIO-FSM-SOURCE-GRAPH-01` | **Gebouwd binnen het afgebakende lokale callbackcontract:** typed containment/entry/transitionfeiten met bewijs en expliciete onbekende relaties; geen lines uit strings. Fixtures bewijzen scopes, guards, directe paths, ondersteunde callbacks, meerdere machines en dynamische targets. Iedere ondersteunde path-/callbackvorm volgt de runtime-owner; cross-file bewijs kan niet zonder semantic-generation-invalidering. |
-| `STUDIO-FSM-GRAPH-VIEW-01` | Eerst de professionele layout-/routingkeuze voor cycli en hiërarchie uitwerken en meten, daarna de view. Fixture met self-loop, twee edges tussen dezelfde states, parenthandler, nested en concurrent scopes; edges blijven selecteerbaar en verwijzen naar hun eigen bewijs. Geen tree/DAG-normalisatie. |
+| `STUDIO-GRAPH-COMPOUND-LAYOUT-01` — geïmplementeerd | Generieke ELK Layered-grens, geneste nodes, cycles/self-loops/parallelle links, gemeten labels en gedeelde body/header-paint/hit-geometrie. Echte worker plus alle drie browserrenderers; geen bron- of runtimekennis in de layoutrequest. |
+| `STUDIO-FSM-GRAPH-VIEW-01` | Eerst productworker/lifetime, input-owned latest-generation-publicatie en return-proofcorrespondentie, daarna de brongebonden view. Fixture met self-loop, twee edges tussen dezelfde states, parenthandler, nested en concurrent scopes; edges blijven selecteerbaar en verwijzen naar hun eigen bewijs. Geen tree/DAG-normalisatie. |
 
 `STUDIO-BT-VISUAL-EDITOR-01` blijft het afzonderlijke **authoring**contract.
 Nieuwe add/remove/reorder/connect-commands moeten hun minimale Lua-edit en
@@ -656,3 +659,102 @@ lokale hostmetingen zonder parsing, GPU-upload/raster of totale Studio-frametijd
 geen prestatiegarantie, nulallocatieclaim of kosten in de 33.8688-MHz-guest.
 FSM-relatiebewijs/cyclische layout, graph-authoring en runtime-execution-overlay
 zijn hiermee nadrukkelijk niet gebouwd.
+
+### Compound-layout: ownerbesluit vóór de FSM-view — 9 september 2026
+
+De gedeelde BT-canvas mist containment, gerichte routes en gemeten edgelabels.
+Die geometrie hoort bij `workbench/ui/graph` en `workbench/render/graph`, niet
+in de FSM-contribution. Daarom krijgt `STUDIO-FSM-GRAPH-VIEW-01` eerst een
+afzonderlijk toetsbare layout-/rendergrens. De FSM blijft gedurende deze
+voorwaarde een outline; dit is nog geen nieuwe source-selection-lifecycle.
+
+Bestudeerde productiecode:
+
+- [ELK Layered](https://github.com/eclipse-elk/elk/blob/8aaa3c145c2a18a38aabbc725aa3791ddc517a76/plugins/org.eclipse.elk.alg.layered/src/org/eclipse/elk/alg/layered/ElkLayered.java):
+  cycle-breaking, layering, crossing minimization, placement en routing, met
+  afzonderlijke compound preprocess/postprocess. Geen eigen verkleinde router.
+- [Stately graph](https://github.com/statelyai/graph/blob/df45573f17ce6ae3e23e1bf2cbbc91fbe0b54a22/src/layout/elk.ts)
+  en [XState Viz](https://github.com/statelyai/xstate-viz/blob/d3779b5e15b4d3496f94133c53db2076ca2acdd9/src/graphUtils.ts):
+  eerst meten, dan hiërarchische layout; een onzichtbare layout-root maakt ook
+  de echte root als edge-endpoint mogelijk. Overgenomen: containment en aparte
+  labelgeometrie. Niet overgenomen: DOM-polling, retry-configuraties en defaults
+  die onvolledige input verhullen.
+- [Sprotty ELK](https://github.com/eclipse-sprotty/sprotty/blob/21b80fc2c852411261a692c834d2a4390ba7f2df/packages/sprotty-elk/src/elk-layout.ts):
+  transformatie, asynchrone engine, geometriepublicatie zijn aparte fasen.
+  Domeinobjecten horen niet in workerberichten.
+
+Gekozen engine: ongewijzigd `elkjs` **0.12.0**, EPL-2.0. Alleen Layered,
+orthogonale routes, geneste children, vaste seed/modelvolgorde, geen edge merge.
+De adapter ontvangt de engine expliciet; geen singleton, hostdetectie of
+main-thread fallback. Een kleine proef (8 nodes, 9 edges, inclusief nesting,
+cycles, parent/child en root-self-loop) kostte circa 67 ms koud en 13–17 ms warm
+op deze host. Browsergebruik vereist dus een echte Worker; een Promise rond
+de in-process engine is geen off-thread uitvoering.
+
+Contract van deze voorwaarde:
+
+- Eén ongepubliceerde generatie bevat gemeten nodes en expliciete endpoint-
+  referenties. Layout verandert uitsluitend haar geometrie. Geen AST, callbacks,
+  cartbytes of grafieksemantiek in de ELK-request; geen bron-id-stringparsing.
+- Nodes worden in parent-paintvolgorde afgevlakt. Nodeposities zijn lokaal aan
+  hun parent; edgeroutes/labels gebruiken ELK's **container**, die niet altijd
+  de array-owner is. De adapter zet dit eenmaal om naar canvascoördinaten.
+- Containerbody achter routes; kaart/header vóór routes. Een containerheader
+  is de selecteerbare/revealbare node, niet zijn hele gevulde rechthoek.
+  Lege binnenruimte blijft beschikbaar voor pan; labels en pijlen zijn
+  onderdelen van precies hun eigen edge en delen paint-/hitgeometrie.
+- De modelproducer indexeert de container- en edgelabellagen eenmaal na layout.
+  Warme draw/hit scant niet alle BT-nodes/edges om lege lagen te ontdekken.
+  De indexen verwijzen naar dezelfde geometrie, geen gekopieerde shapes.
+- Cycles, self-loops en parallelle edges blijven afzonderlijke verbindingen.
+  Geen omzetting naar een boom, omkering van bronfeiten, label-overlapfix achteraf
+  of herroutering naar een ingeklapte ancestor.
+- Koude meting/layout en warme draw/hit zijn apart gemeten. De onafhankelijke
+  browserproef gebruikt een echte worker en de bestaande software/WebGL2/WebGPU-
+  overlayowners op 384×288; dit is geen bewijs voor de nog ontbrekende FSM-UX.
+
+Vóór aansluiting op Behavior Lens moet de inputowner nog latest-generation
+publicatie, edit/close-annulering en afzonderlijke return-proofcorrespondentie
+bezitten. Eén callbacksourcerij kan meerdere pijlen leveren; de bestaande
+BT-`edgesBySource`-map is daarvoor nadrukkelijk niet het contract.
+
+### Bewijs compound-layout-/rendergrens — 9 september 2026
+
+- **1.034 Lua-tests geslaagd, 1 skip**, IDE-typecheck en browser-productbuild.
+  De tests-brede typecheck heeft dezelfde **51 diagnostics** als `063e577b8`,
+  byte-identiek in de baseline/worktree-vergelijking; dus niet repo-breed groen.
+- De onafhankelijke fixture werkt met de echte Worker op software, WebGL2 en
+  WebGPU: tijdens de koude layout blijven acht input/renderframes lopen.
+  Alle tien verbindingen behouden hun objectidentiteit; per backend bewijzen
+  25 routeprobes en headerinterieurs de paintvolgorde. Fysieke label-/header-
+  selectie en binnenruimtepan slagen, inclusief twee identieke `GO`-labels.
+  Room-/lane-captures zijn bekeken op native 384×288 met het tiny-font.
+- De volledige Studio-workflows slagen op alle drie browserbackends, inclusief
+  bestaande BT-bediening, FSM/FX-outlines, bron/Undo, rewind/Hot Resume, reboot,
+  Scenario Lab, negatieve faultcases en onderbreking van pointer capture via
+  de echte palette. Geen nieuwe testverwachting op cartregelnummers.
+- Strict architecture-boundaries (0), core-parity, indent en diffcheck slagen.
+  Geen machine/cartlib/C++-wijziging of claim over een fysieke SNES-mini.
+
+Node 22.23.1, vijf onafhankelijke vervolggeneraties na de eerste (mediaan):
+
+| Nodes / links | Volledige layout + geometrie | Hit | Warm draw + quadstream |
+| --- | --- | --- | --- |
+| 8 / 10 | 13,6 ms | 0,12 µs | 4,8 µs |
+| 128 / 175 | 89,7 ms | 1,48 µs | 6,6 µs |
+| 512 / 703 | 268,1 ms | 6,54 µs | 12,4 µs |
+
+De eerste kleine Node-layout kostte 73,6 ms. Warm blijven fontmetingsteller en
+quadbacking gelijk. ELK is dus geen renderframewerk; de toekomstige inputowner
+moet verzoeken coalescen en alleen een nog geldige generatie publiceren.
+Een gelijk gebundelde BT-vergelijking met `063e577b8` houdt warm draw ongeveer
+gelijk: 74 kaarten circa 7,06→7,08 µs, 3.074 kaarten 91,0→93,3 µs; hit circa
+0,17→0,15 en 10,25→8,84 µs. De eerst gevonden lege-lagenscans zijn daarom
+vervangen door koude modelindexen, geen per-frame featureflags.
+
+Dit zijn lokale hostkosten zonder parsing, GPU-upload/raster of totale
+Studio-frametijd; geen nulallocatieclaim of garantie op andere hardware.
+Commando's, fixturebetekenis en bewijsgrenzen staan in
+[`graph_viewport/README.md`](../tests/conformance/graph_viewport/README.md).
+De volledige FSM-productview en broncorrespondentie van meerdere returns
+blijven uitdrukkelijk open.

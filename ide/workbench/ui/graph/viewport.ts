@@ -34,7 +34,8 @@ export class WorkbenchGraphViewport<Model extends WorkbenchGraphModel = Workbenc
 	public reveal(item: WorkbenchGraphItem): void {
 		const bounds = item.bounds;
 		this.scrollX = revealAxis(this.scrollX, this.bounds.right - this.bounds.left, bounds.left, bounds.right);
-		this.scrollY = revealAxis(this.scrollY, this.bounds.bottom - this.bounds.top, bounds.top, bounds.bottom);
+		this.scrollY = revealAxis(this.scrollY, this.bounds.bottom - this.bounds.top, bounds.top,
+			item.kind === 'node' ? bounds.top + item.headerHeight : bounds.bottom);
 	}
 
 	public hitTest(viewportX: number, viewportY: number): GraphItem<Model> | null {
@@ -44,7 +45,12 @@ export class WorkbenchGraphViewport<Model extends WorkbenchGraphModel = Workbenc
 		const model = this.model;
 		for (let index = model.nodes.length - 1; index >= 0; index -= 1) {
 			const node = model.nodes[index];
-			if (point_in_rect(x, y, node.bounds)) return node;
+			if (x >= node.bounds.left && x < node.bounds.right && y >= node.bounds.top && y < node.bounds.top + node.headerHeight) return node;
+		}
+		// Labels paint over routes, but under node headers/cards.
+		for (let index = model.labelledEdges.length - 1; index >= 0; index -= 1) {
+			const edge = model.labelledEdges[index];
+			for (const label of edge.labels) if (point_in_rect(x, y, label.bounds)) return edge;
 		}
 		let closest: GraphItem<Model> | null = null;
 		let distance = GRAPH_EDGE_HIT_RADIUS * GRAPH_EDGE_HIT_RADIUS;
@@ -53,12 +59,14 @@ export class WorkbenchGraphViewport<Model extends WorkbenchGraphModel = Workbenc
 			const bounds = edge.bounds;
 			if (x < bounds.left - GRAPH_EDGE_HIT_RADIUS || x > bounds.right + GRAPH_EDGE_HIT_RADIUS
 				|| y < bounds.top - GRAPH_EDGE_HIT_RADIUS || y > bounds.bottom + GRAPH_EDGE_HIT_RADIUS) continue;
-			const points = edge.points;
-			for (let offset = 0; offset + 3 < points.length; offset += 2) {
-				const candidate = segmentDistanceSquared(x, y, points[offset], points[offset + 1], points[offset + 2], points[offset + 3]);
-				if (candidate < distance || (closest === null && candidate === distance)) {
-					closest = edge;
-					distance = candidate;
+			for (let path = 0; path < 2; path += 1) {
+				const points = path === 0 ? edge.points : edge.arrow;
+				for (let offset = 0; offset + 3 < points.length; offset += 2) {
+					const candidate = segmentDistanceSquared(x, y, points[offset], points[offset + 1], points[offset + 2], points[offset + 3]);
+					if (candidate < distance || (closest === null && candidate === distance)) {
+						closest = edge;
+						distance = candidate;
+					}
 				}
 			}
 		}

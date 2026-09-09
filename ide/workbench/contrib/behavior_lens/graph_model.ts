@@ -26,9 +26,7 @@ export type BehaviorGraphProjection = {
 	readonly links: readonly { child: BehaviorGraphNode; source: BehaviorSourceNode; range: LuaSourceRange }[];
 };
 
-export type BehaviorGraphModel = WorkbenchGraphModel & {
-	readonly nodes: readonly BehaviorGraphNode[];
-	readonly edges: readonly BehaviorGraphEdge[];
+export type BehaviorGraphModel = WorkbenchGraphModel<BehaviorGraphNode, BehaviorGraphEdge> & {
 	readonly nodesBySource: ReadonlyMap<BehaviorSourceRowKey, BehaviorGraphNode>;
 	readonly edgesBySource: ReadonlyMap<BehaviorSourceRowKey, BehaviorGraphEdge>;
 };

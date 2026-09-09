@@ -5,6 +5,7 @@ import { createWorkbenchActionBar, type WorkbenchActionBarState } from '../../ui
 import type { FullWidthWorkbenchLayout } from '../../common/layout';
 import type { WorkbenchListState } from '../../ui/list_view';
 import { WorkbenchGraphViewport } from '../../ui/graph/viewport';
+import { createWorkbenchGraphModel } from '../../ui/graph/model';
 import type { BehaviorGraphModel } from './graph_model';
 import { createBehaviorLensLayout, installBehaviorLensDocument } from './layout';
 import type { BehaviorSourceDocument, BehaviorSourceNode, BehaviorSourceRowKey } from './model';
@@ -68,8 +69,8 @@ export function createBehaviorLensOutline(): BehaviorLensOutline {
 
 export function createBehaviorLensGraph(): BehaviorLensGraph {
 	return { kind: 'graph', actionBar: createWorkbenchActionBar('behaviorLens.graph.title'),
-		viewport: new WorkbenchGraphViewport<BehaviorGraphModel>({ font: editorViewState.font.renderFont(),
-			nodes: [], edges: [], nodesBySource: new Map(), edgesBySource: new Map() }),
+		viewport: new WorkbenchGraphViewport<BehaviorGraphModel>({ ...createWorkbenchGraphModel(editorViewState.font.renderFont(), [], []),
+			nodesBySource: new Map(), edgesBySource: new Map() }),
 		selectionKind: 'node', dirty: true, initialPosition: true };
 }
 

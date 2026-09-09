@@ -232,6 +232,19 @@ overlay renderer, not feature-local glyph/line clipping. The graph control has
 no Lua, BT/FSM semantics or document-undo owner. Its input policy can be bound
 by the concrete pane without replacing physical focus or capture.
 
+`workbench/ui/graph/compound_layout.ts` is the domain-free ELK Layered adapter
+for binary directed links and nested measured nodes. It retains typed node/link
+identity locally; only layout geometry crosses the explicitly supplied engine
+boundary. A layout generation is unpublished while the engine runs. Parent-
+relative nodes and container-relative edge routes/labels become canvas geometry
+once, after routing. The shared renderer paints container bodies behind edges
+and opaque cards/headers above them; hit testing and reveal use the same header,
+label and arrow geometry. This does not flatten a statechart into a tree.
+The real-Worker conformance runs all three browser renderers. Browser product
+worker lifetime, latest-source-generation publication and return-proof selection
+remain prerequisites to connecting this adapter to the concrete FSM input;
+the current FSM still uses its outline. See `docs/behavior_graph_design.md`.
+
 `behavior_lens/graph_projection.ts` projects typed source relationships into
 measured cards and source-backed links. `graph_geometry.ts` places the ordered
 tree using the shared D3-derived tidy-tree layout and routes through level

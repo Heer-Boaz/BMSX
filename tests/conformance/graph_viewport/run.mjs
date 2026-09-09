@@ -17,9 +17,12 @@ try {
 	await build({ entryPoints: [resolve(import.meta.dirname, 'browser.ts')], bundle: true, platform: 'browser', format: 'esm',
 		target: 'es2020', tsconfig: 'tsconfig.base.json', outfile: join(directory, 'test.js'), loader: { '.glsl': 'text', '.wgsl': 'text' } });
 	const script = await readFile(join(directory, 'test.js'));
+	const worker = await readFile('node_modules/elkjs/lib/elk-worker.min.js');
 	server = createServer((request, response) => {
 		if (request.url === '/test.js') {
 			response.setHeader('Content-Type', 'text/javascript'); response.end(script);
+		} else if (request.url === '/elk-worker.min.js') {
+			response.setHeader('Content-Type', 'text/javascript'); response.end(worker);
 		} else {
 			response.setHeader('Content-Type', 'text/html');
 			response.end('<!doctype html><link rel="icon" href="data:,"><style>body{margin:0}canvas{image-rendering:pixelated}</style><canvas></canvas>');
@@ -60,6 +63,43 @@ try {
 		}
 		await page.evaluate(() => window.fixture.draw());
 		await target.screenshot({ path: join(artifacts, `graph-${backend}.png`) });
+		const compound = await page.evaluate(async () => {
+			const { exerciseCompoundGraph } = await import('/test.js');
+			window.compound = await exerciseCompoundGraph(window.fixture);
+			return window.compound.info;
+		});
+		let visibleRoutes = 0;
+		for (let index = 0; index < compound.edges; index += 1) {
+			await page.evaluate(index => window.compound.renderEdge(index, false), index);
+			const background = PNG.sync.read(await target.screenshot());
+			const edge = await page.evaluate(index => window.compound.renderEdge(index, true), index);
+			const foreground = PNG.sync.read(await target.screenshot());
+			for (const probe of edge.probes) {
+				let changed = 0;
+				for (let y = probe.y - 1; y <= probe.y + 1; y += 1) {
+					for (let x = probe.x - 1; x <= probe.x + 1; x += 1) {
+						const offset = (y * foreground.width + x) * 4;
+						for (let channel = 0; channel < 3; channel += 1) if (background.data[offset + channel] !== foreground.data[offset + channel]) changed += 1;
+					}
+				}
+				assert.ok(changed > 0, `${backend} ${edge.proof}: compound body must not erase its route at ${probe.x},${probe.y}`);
+				visibleRoutes += 1;
+			}
+			for (const header of edge.headers) {
+				for (let y = Math.round(Math.max(header.top, edge.bounds.top)) + 1; y < Math.min(header.bottom, edge.bounds.bottom) - 1; y += 1) {
+					for (let x = Math.round(Math.max(header.left, edge.bounds.left)) + 1; x < Math.min(header.right, edge.bounds.right) - 1; x += 1) {
+						const offset = (y * foreground.width + x) * 4;
+						for (let channel = 0; channel < 3; channel += 1) assert.equal(foreground.data[offset + channel], background.data[offset + channel], `${backend} ${edge.proof}: opaque card/header`);
+					}
+				}
+			}
+		}
+		assert.ok(visibleRoutes >= 10, 'route raster oracle must exercise multiple compound sections');
+		for (const scope of ['ROOM', 'LANES']) {
+			await page.evaluate(scope => window.compound.present(scope), scope);
+			await target.screenshot({ path: join(artifacts, `compound-${scope.toLowerCase()}-${backend}.png`) });
+		}
+		console.log(JSON.stringify({ backend, compound, visibleRoutes }));
 		for (const [width, height] of [[256, 192], [384, 288]]) {
 			await page.evaluate(([width, height]) => window.fixture.resize(width, height), [width, height]);
 			const resized = PNG.sync.read(await target.screenshot());
