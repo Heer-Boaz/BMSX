@@ -4,6 +4,11 @@ Uitgangspunt: `96957d571`, 9 september 2026. `STUDIO-ACTIONEFFECT-SOURCE-01`
 is gebouwd. `STUDIO-ACTIONEFFECT-PROPERTY-VIEW-01` is nu eveneens
 geïmplementeerd; onderaan staan het uitgevoerde bewijs en de afbakening.
 
+De [gebruikersreview na A04, B06](behavior_authoring_ux_review.md#b06--actioneffect-inspectie-vanuit-functionaliteit)
+vraagt een herontwerp van dubbele lijstpreviews, callbackpresentatie en echte
+propertybewerkingen. Dat vervolg is nog niet gebouwd; de bestaande bron- en
+runtimegrenzen hieronder blijven gelden, niet iedere huidige presentatiedetail.
+
 ## Getoetste productiereferenties
 
 - [Godot EditorProperty](https://github.com/godotengine/godot/blob/9552dfb6859a1aaba1e570b8e0ef5c599b830f19/editor/inspector/editor_inspector.cpp#L428-L584)

@@ -510,3 +510,20 @@ zou hier opnieuw om de ontbrekende input-owner heen werken.
 de hand van productiecode, los van focus en capture; ook testen bij paneelgrenzen,
 popups, canvas-verlaten en detach. Dit is bewust niet als extra handmatige
 hoverreset in de A02-layoutslice gebouwd.
+
+### Aanvullende behavior-gebruikersreview na A04 (2026-09-10)
+
+De gebruikersproef bevestigt de bruikbare basis van graphdrag en Undo, maar toont
+andere open contracten: echte BT-reparenting, betekenisvolle kaartinhoud,
+FSM-entrypresentatie, algemene multi-filebronprovenance, contextmenu's,
+ActionEffect-inspectie/-bewerking en zoom. Dit zijn geen alsnog geslaagde gates
+van A01–A04 en niet uitsluitend cosmetische wensen.
+
+De [behavior-review en eindcontracten B01–B07](behavior_authoring_ux_review.md)
+leggen de live oorzaken, opnieuw gelezen productievoorbeelden en bouwvolgorde
+vast. Vier onafhankelijke Lua-tegenproeven bevestigen onder meer het verschil
+tussen beschikbare transferanalyse en ontbrekende reparent-UI, de filelokale
+FSM-resolutie en de dubbele requirementweergave. De generieke Lua-frontend kent
+in de twee-bestandenproef het target al; de behavior-reader consumeert die
+workspace-bronkennis nog niet. **Audit/ontwerp, nog geen
+productiecodecorrectie.** A05–A09 blijven daarnaast open.

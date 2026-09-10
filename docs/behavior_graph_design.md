@@ -1,5 +1,10 @@
 # Grafische Behavior Lens: bron, relaties en canvas
 
+De [gebruikersreview na A04](behavior_authoring_ux_review.md) scherpt de nog open
+UX-/broncontracten aan: kaartinhoud, inspectie, reparent, contextmenu, multi-file,
+entrypresentatie en zoom. Onderstaande historische bewijssecties verklaren die
+nieuwe contracten niet als geïmplementeerd.
+
 Status: **BT-bronprojectie, gedeelde graphviewport en concrete BT-view
 geïmplementeerd.** Het architectuurcontract is eerst getoetst op `09b84195e`;
 de concrete BT-slice op `a9953b819`. Onderstaande bewijssecties horen bij de

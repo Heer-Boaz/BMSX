@@ -472,6 +472,23 @@ en een passende productie-implementatie, vóór featurewerk.
 | `STUDIO-UX-A08` | Onafhankelijke workflowfixtures en gerichte volledige-hostmetingen, naast de bestaande microbenchmarks. | Werkelijke Studio-framekosten en rewind memory/latency per target; fysieke SNES Mini-resultaten niet afleiden uit een PC-run. |
 | `STUDIO-UX-A09` | Gedeelde hover-target/enter/leave-owner in pointerdispatch, los van focus en capture. Aanvullend gereproduceerd tijdens A02. | Hover eindigt bij overstap naar Problems/chrome/popup, canvas-verlaten en detach; geen feature-lokale clears of nep-snapshots. |
 
+### Aanvullende behavior-review na A04
+
+De [nieuwe gebruikersreview](behavior_authoring_ux_review.md) onderscheidt
+ontbrekende functionaliteit van presentatieproblemen. Deze contracten zijn
+**nog niet geïmplementeerd**. De review bepaalt hun bouwvolgorde en afhankelijkheden;
+de algemene A05–A09-contracten worden hierdoor niet als afgerond beschouwd.
+
+| ID | Eigenaar / contract | Gate |
+| --- | --- | --- |
+| `STUDIO-BEHAVIOR-UX-B01` | Betekenisvolle BT/FSM-kaarten en leesbare, source-linked inspectie; technische bewijsdetails niet permanent op het canvas. | Eerst details-compositie meten op tiny-resolutie met ander paneel open. Geen verloren informatie of gesuggereerde volledigheid; inspectie/Source/Back blijven non-mutating. |
+| `STUDIO-BEHAVIOR-UX-B02` | Eén contextmenu-owner met bijdrage-eigen target/commands, niet verplicht een code-token. | Code/node/edge/property/canvas, keyboard/focus/cancel, source-lifetime en echte command-admission; creation vereist een eigen source-editcontract. |
+| `STUDIO-BEHAVIOR-UX-B03` | BT reparent-gesture consumeert bestaande transfer-, binding-, review- en Undo-owners. | Vóór/na/in, lege parent en enige member; shared consumers, cycles, lexical bindings; één Undo en Save/Hot Resume. Eerst same-document, geen stilzwijgende cross-fileoperatie. |
+| `STUDIO-BEHAVIOR-UX-B04` | Generieke workspace-bronfeiten; resource-eigen ranges/models en dependency-invalidation voor behavior-projecties. | Imported tables/membercallbacks; unsaved dependencywijziging zonder registration-edit; exacte Source/Back en edit-owner. Geen behavior-specifieke tweede semantic engine. |
+| `STUDIO-BEHAVIOR-UX-B05` | FSM entry-elementen onderscheiden van events, binnen hun eigen scope, op dezelfde typed entryreferentie. | Nested/concurrent initial, Source/Set Initial/Undo, actuele layout/hits; geen fake state/event/Lua-range. |
+| `STUDIO-BEHAVIOR-UX-B06` | ActionEffect-values, requirements en callbacks als bruikbare source-properties, zonder dubbele lijstpreview of runtime-evaluatie. | Twaalf bestaande rollen volledig vindbaar; complete details/source; echte property-edit met draft/cancel/Undo. Geen extra cartlib-metadata. |
+| `STUDIO-BEHAVIOR-UX-B07` | Eén graph/viewport-zoomtransformatie voor render, input, scroll en reveal; minimap eventueel daarna. | Zoomanker, tiny-glyphs, negatieve graphruimte, hit/drop/reveal en software/WebGL2/WebGPU; geen automatische shrink-to-fit of sourcewijziging. |
+
 ## Validatiebasis voor inputwerk
 
 Een inputslice is pas overdraagbaar wanneer de relevante subset hiervan groen
