@@ -4417,6 +4417,14 @@ intermediate storage. Binding-write facts include nested closures and writes
 whose RHS is not modeled. See [parameter context and remaining producer
 boundaries](lua_parameter_context.md).
 
+Implicit method receivers enter the ordinary lexical binding map before explicit
+parameters. Identifier reads and writes retain the same storage source, separate
+from a written declaration/navigation target. Named and implicit parameter
+writes use the same summary classification. Method dispatch consumes receiver
+values, not a binder override to the original class path; candidate-call
+relevance closes transitively without publishing namesake call facts. See
+[receiver binding and remaining query-context boundaries](lua_receiver_binding.md).
+
 Semantic indexed access keeps object storage and key values distinct. Object
 queries may follow location aliases to find writes; index operands consume
 forward value alternatives, exactly as stored-key comparisons do. Reciprocal

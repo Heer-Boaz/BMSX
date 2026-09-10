@@ -79,8 +79,8 @@ export function findImplicitSelfValueAt(
 	line: number,
 	column: number,
 ): SemanticValueSource | undefined {
-	const scopeIndex = findInnermostScopeIndex(source, line, column);
-	return scopeIndex < 0 ? undefined : source.scopes[scopeIndex].implicitSelfValue;
+	const binding = findLuaLexicalBindingAt(source, 'self', line, column);
+	return binding.kind === 'receiver' ? source.scopes[binding.scopeIndex].implicitSelfValue : undefined;
 }
 
 export function collectVisibleDeclarationsAt(

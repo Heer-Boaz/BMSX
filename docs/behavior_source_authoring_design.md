@@ -22,6 +22,9 @@ uitvoerings-/exclusiviteitsbewijs. De huidige Lens-recognizer is ongewijzigd.
 De [parametercorrectie](lua_parameter_context.md) onderscheidt inmiddels
 ingangswaarden van formele bindings die geschreven worden. Zij verhelpt
 argumentvervuiling door reassignments, maar voltooit de querycontext niet.
+De [receiverbinding](lua_receiver_binding.md) corrigeert vervolgens zowel de
+semantische als de gecompileerde implicit-`self`-writes. Ook methodedispatch
+gebruikt geen naamgebaseerde terugval naar de oorspronkelijke receiver meer.
 
 ## 1. Beslissing
 

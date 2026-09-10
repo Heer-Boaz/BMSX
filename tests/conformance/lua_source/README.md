@@ -24,6 +24,8 @@ code: retained-parse binding, fresh identities/summaries, fresh workspace plus
 first member query, and retained lookups. Run it without other tests. It does not
 measure parsing, rendering, guest execution, Hot Resume or heap allocations.
 Evidence and remaining boundaries: `docs/lua_function_source_ownership.md`.
+The profiler now reports both explicit-parameter functions and implicit-receiver
+methods; group results by `declarationStyle` as well as body count.
 
 `semantic_write_owners.test.ts` separately verifies that the body containing a
 write is not inferred from the destination's declaration scope. It tests
@@ -39,6 +41,11 @@ retained lookups, for both read-only and written parameters, using the same
 entrypoints on baseline/current bundles.
 Run it with the same command as the other profilers, without concurrent tests.
 Scope, primary references and remaining gaps: `docs/lua_parameter_context.md`.
+
+`semantic_receiver_binding.test.ts` extends the binding contract to implicit
+parameters, including O0/O3 compiled execution and receiver-dependent forwarding
+chains. `capture_retention.test.ts` exercises rebinding a real captured receiver
+cell before and after Hot Resume. See `docs/lua_receiver_binding.md`.
 
 ## Structural transfer
 

@@ -501,8 +501,11 @@ contextcontract; geen certainty-check om de bestaande mogelijke-symbolen-API.
 Een verdere [parameter-/contextcorrectie](lua_parameter_context.md) scheidt
 immutable ingangswaarden van beschrijfbare formele bindings. Captured writes en
 geneste storagepaden volgen hun echte owners; read-only formals krijgen geen
-extra aliaslaag. De hypothetische querycontext en implicit-`self`-writebinding
-blijven open, evenals de sterkere B04-bronquery.
+extra aliaslaag. De [implicit-receiverbinding](lua_receiver_binding.md) gebruikt
+inmiddels dezelfde lexical read/write-route, inclusief captured writes en Hot
+Resume. De oorspronkelijke receiverpath-fallback is verwijderd; demandselectie
+volgt ook transitieve receivercalls zonder namesake-effects te publiceren.
+De hypothetische querycontext en de sterkere B04-bronquery blijven open.
 
 | ID | Eigenaar / contract | Gate |
 | --- | --- | --- |

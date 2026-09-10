@@ -147,12 +147,9 @@ complete source origins or exclusive-callee certainty.
 - [Hypothetical composition versus call-instantiated effects](lua_write_ownership.md#still-open-hypothetical-projection-is-not-execution-evidence)
   still needs an explicit query-context contract. This correction does not make
   the possible-symbols API a source-completeness or exclusive-callee proof.
-- The binder currently handles **writes to implicit `self`** differently from
-  its reads: `function receiver:change() self = replacement return self end`
-  introduces a global write while the return still reads the implicit receiver.
-  A negative test checking only that `receiver` is unchanged would miss this.
-  The identifier-binding producer must unify those routes; no receiver-specific
-  query fallback was added here. Explicit named formals have the tested contract.
+- The implicit-`self` read/write mismatch found by this slice is corrected in
+  the subsequent [receiver-binding slice](lua_receiver_binding.md), including
+  compiled execution and shared captured cells through Hot Resume.
 - Unknown written contributions, all return lanes, source occurrences,
   statement order and the previously documented compiler prototype-id collision
   are not completed by this slice. Lens recognition/edit admission is unchanged.

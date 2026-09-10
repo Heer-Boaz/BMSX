@@ -134,6 +134,38 @@ return object:make(7)`;
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [7]);
 });
 
+test('Hot Resume retains the shared implicit receiver cell used by a reader and a rebinding writer', () => {
+	const before = `local object = { value = 2 }
+function object:make()
+	local function read() return self.value end
+	local function write(value) self = { value = value } end
+	return read, write
+end
+return object:make()`;
+	const initial = compile(before);
+	const { cpu, memory, executionAddressSpace } = createTestSystemCpu(linkTestSystemBlua32(initial.compiled));
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	const [read, write] = materializeCpuCompletionValues(cpu) as Closure[];
+	assert.deepEqual(names(initial, '/local:read'), ['self']);
+	assert.deepEqual(names(initial, '/local:write'), ['self']);
+	const receiver = initial.compiled.metadata.capturedLocals.find(local => local.name === 'self')!;
+	assert.equal(receiver.kind, CapturedLocalKind.Receiver);
+	cpu.beginCompletionCall(write, [40]);
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	const fresh = compile(before.replace('value = value }', 'value = value + 1 }'), initial);
+	prove(initial, fresh);
+	memory.installSystemRom(writeTestBlua32Rom(fresh.linked));
+	cpu.replaceExecutionImage(executionAddressSpace.resolveSystemDomain());
+	cpu.beginCompletionCall(read);
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [40], 'the existing cell survives installation');
+	cpu.beginCompletionCall(write, [50]);
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	cpu.beginCompletionCall(read);
+	assert.equal(cpu.runUntilDepth(0, 100000), RunResult.Halted);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [51], 'the existing writer runs the new body on that same cell');
+});
+
 test('new live captures still reject instead of inventing missing cells', () => {
 	const before = 'local first = 1\nlocal second = 2\nfunction read() return first end';
 	const initial = compile(before);

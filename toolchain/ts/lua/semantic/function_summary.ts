@@ -499,8 +499,8 @@ export class FunctionSummaryStore {
 			// has no modeled value. Use binding writes, not known-value aliases.
 			for (let referenceIndex = 0; referenceIndex < file.refs.length; referenceIndex += 1) {
 				const reference = file.refs[referenceIndex];
-				if (reference.isWrite && reference.target !== undefined) {
-					parameterOwnerByRoot.delete(identities.rawRootId({ kind: 'declaration', declId: reference.target }));
+				if (reference.isWrite && reference.binding !== undefined) {
+					parameterOwnerByRoot.delete(identities.rawRootId(reference.binding.root));
 				}
 			}
 		}

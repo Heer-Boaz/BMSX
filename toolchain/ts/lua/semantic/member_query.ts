@@ -712,7 +712,10 @@ export class SemanticMemberQuery {
 		const objects = this.collectLocationAlternatives(objectTerm, depth + 1);
 		const prototypes = this.instantiation.prototypes;
 		for (let link = 1; link <= prototypes.count; link += 1) {
-			const owners = this.collectLocationAlternatives(prototypes.owner(link), depth + 2);
+			const owner = prototypes.owner(link);
+			// Match each owner once, then consume its existing adjacency list.
+			if (prototypes.first(owner) !== link) continue;
+			const owners = this.collectLocationAlternatives(owner, depth + 2);
 			let matches = false;
 			for (let ownerIndex = 0; ownerIndex < owners.length && !matches; ownerIndex += 1) {
 				for (let objectIndex = 0; objectIndex < objects.length; objectIndex += 1) {
@@ -722,9 +725,11 @@ export class SemanticMemberQuery {
 					}
 				}
 			}
-			const source = prototypes.target(link);
-			if (matches && !sources.includes(source)) {
-				sources.push(source);
+			if (matches) {
+				for (let target = link; target !== 0; target = prototypes.next(target)) {
+					const source = prototypes.target(target);
+					if (!sources.includes(source)) sources.push(source);
+				}
 			}
 		}
 		this.semanticPrototypeSourceRevision[objectTerm] = revision;

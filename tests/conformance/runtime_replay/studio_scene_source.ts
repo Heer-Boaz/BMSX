@@ -239,9 +239,11 @@ export async function testSceneSourceEdits(test: StudioFixture): Promise<void> {
 	check(actionPromptState.prompt !== null && actionPromptState.prompt.workingCopies.includes(model)
 		&& model.buffer.getText() === expected && !x.pending, 'scene: Hot Resume accepts the field before selecting dirty working copies');
 	await press('Enter');
-	await until(() => tasks.ready && !runtime.completionCallPending() && !ide.debugger.plans.mutationActive,
+	// Save finishes before dispatch queues Hot Resume; initial runtime idleness
+	// does not mean that the accepted prompt has applied its source revision.
+	await until(() => actionPromptState.prompt === null
+		&& tasks.ready && !runtime.completionCallPending() && !ide.debugger.plans.mutationActive,
 		'scene: edited root definition passes actual Hot Resume and init');
-	await until(() => actionPromptState.prompt === null, 'scene: accepted source action completes its real prompt');
 	check(model.lastSavedSource === expected, 'scene: Save and Resume persisted the accepted field');
 	check(ide.sources.cartridgeSlots[0]!.installedBlua32Sources.get('scenes/root') === expected,
 		'scene: actual installed code owns the new source revision');

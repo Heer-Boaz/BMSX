@@ -60,6 +60,7 @@ import {
 	tableValueSource,
 	unknownValueSource,
 	type CallValueEntry,
+	type DeclarationSemanticValueSource,
 	type DeclarationValueEntry,
 	type FunctionReturnValueEntry,
 	type FunctionSemanticValueSource,
@@ -107,6 +108,7 @@ export type SemanticScope = {
 	readonly endExclusive: SourcePosition;
 	readonly parentIndex: number;
 	readonly declarationIndices: readonly number[];
+	/** The parameter declared by this method scope, not an inherited visible value. */
 	readonly implicitSelfValue?: SemanticValueSource;
 };
 
@@ -121,6 +123,8 @@ export type Ref = {
 	isCall: boolean;
 	caller?: SymbolID;
 	referenceKind: 'identifier' | 'self' | 'member' | 'method';
+	/** Identifier storage, independent of a written declaration/navigation target. */
+	binding?: FunctionSemanticValueSource;
 	staticExpressionPath: string | null;
 	receiverSymbolKey?: string;
 	receiverValue?: SemanticValueSource;
@@ -262,7 +266,7 @@ type Scope = {
 	startInclusive: SourcePosition;
 	endExclusive: SourcePosition;
 	parent: Scope;
-	bindings: Map<string, InternalDecl[]>;
+	bindings: Map<string, InternalBinding>;
 	declarationIndices: number[];
 	implicitSelfValue?: SemanticValueSource;
 };
@@ -270,7 +274,16 @@ type Scope = {
 type InternalDecl = Decl & {
 	scopeRef: Scope;
 	active: boolean;
+	valueSource: DeclarationSemanticValueSource;
 };
+
+type ImplicitReceiverBinding = {
+	readonly kind: 'receiver';
+	readonly name: 'self';
+	readonly valueSource: OwnedSemanticValueSource;
+};
+
+type InternalBinding = InternalDecl | ImplicitReceiverBinding;
 
 type ResolvedNamePath = {
 	namePath: string[] | null;
@@ -592,7 +605,6 @@ class SemanticBuilder {
 	private readonly decls: InternalDecl[] = [];
 	private readonly declById: Map<SymbolID, InternalDecl> = new Map();
 	private readonly refs: Ref[] = [];
-	private readonly deferredMethodTargets: Ref[] = [];
 	private readonly memberAccesses: MemberAccessEntry[] = [];
 	private readonly declarationIdsBySyntax: Map<LuaIdentifierExpression, SymbolID> = new Map();
 	private readonly referencesBySyntax: Map<LuaIdentifierExpression, Ref> = new Map();
@@ -600,9 +612,6 @@ class SemanticBuilder {
 	private readonly moduleReferences: LuaStringLiteralExpression[] = [];
 	private readonly callSites: LuaCallSite[] = [];
 	private readonly functionSignaturesByPath: Map<string, FunctionSignatureInfo> = new Map();
-	private readonly methodSelfPathStack: (readonly string[] | undefined)[] = [];
-	private readonly methodSelfScopeStack: (Scope | undefined)[] = [];
-	private readonly methodSelfValueStack: (OwnedSemanticValueSource | undefined)[] = [];
 	private readonly declarationValues: DeclarationValueEntry[] = [];
 	// Builder-only indices: member declaration lookup and per-body value deduplication.
 	private readonly declarationValuesByDeclaration: Map<SymbolID, DeclarationValueEntry[]> = new Map();
@@ -637,13 +646,6 @@ class SemanticBuilder {
 		);
 		for (let index = 0; index < this.chunk.body.length; index += 1) {
 			this.visitStatement(this.chunk.body[index]);
-		}
-		for (let index = 0; index < this.deferredMethodTargets.length; index += 1) {
-			const reference = this.deferredMethodTargets[index];
-			const declaration = this.properties.get(reference.symbolKey);
-			if (declaration !== undefined) {
-				reference.target = declaration.id;
-			}
 		}
 		this.leaveScope();
 		return {
@@ -703,7 +705,7 @@ class SemanticBuilder {
 						tableBasePath: targetDecl?.namePath,
 					};
 					if (targetDecl) {
-						context.tableOwner = declarationValueSource(targetDecl.id);
+						context.tableOwner = targetDecl.valueSource;
 					}
 					const valueInfo = this.visitExpression(valueExpression, context);
 					if (targetDecl) {
@@ -745,10 +747,13 @@ class SemanticBuilder {
 				const symbolKey = joinNamePath(namePath);
 				const functionOwner = this.resolveMemberOwnerSource(namePath);
 				const scope = this.currentScope();
-				let decl = functionOwner
-					? this.propertiesByOwner.get(this.memberOwnerKey(functionOwner, namePath[namePath.length - 1]))
-					: this.resolveName(namePath[0]) ?? this.properties.get(symbolKey);
-				if (!decl) {
+				const identifierTarget = namePath.length === 1
+					? this.handleIdentifierExpression(functionDeclaration.name.path[0], true, false, 'function')
+					: undefined;
+				let decl = identifierTarget
+					? identifierTarget.decl
+					: this.propertiesByOwner.get(this.memberOwnerKey(functionOwner, namePath[namePath.length - 1]));
+				if (!identifierTarget && !decl) {
 					const isGlobal = scope.kind === 'path';
 					const declarationName = functionDeclaration.name.method
 						?? functionDeclaration.name.path[functionDeclaration.name.path.length - 1];
@@ -782,8 +787,10 @@ class SemanticBuilder {
 						owner: functionOwner,
 					});
 				}
-				this.recordFunctionNameReferences(functionDeclaration);
-				this.recordFunctionDeclarationWriteReference(functionDeclaration, decl);
+				if (!identifierTarget) {
+					this.recordFunctionNameReferences(functionDeclaration);
+					this.recordFunctionDeclarationWriteReference(functionDeclaration, decl);
+				}
 				const functionPath = functionDeclaration.name.path;
 				const baseNames = new Array<string>(functionPath.length);
 				for (let pathIndex = 0; pathIndex < functionPath.length; pathIndex += 1) {
@@ -803,12 +810,13 @@ class SemanticBuilder {
 					methodSelfPath = baseNames.slice(0, -1);
 				}
 				const functionValue = this.createExpressionValueSource(functionDeclaration.functionExpression);
-				this.setDeclarationValue(decl, functionValue);
+				if (decl) this.setDeclarationValue(decl, functionValue);
+				else this.recordValueFlow(identifierTarget.valueSource, functionValue, 'value');
 				this.visitFunctionExpression(
 					functionDeclaration.functionExpression,
 					methodSelfPath,
 					functionValue,
-					decl.id,
+					decl?.id,
 					methodName === undefined ? 'function' : 'method',
 					methodReceiverClass,
 				);
@@ -829,7 +837,7 @@ class SemanticBuilder {
 						}
 						: { tableBaseDecl: null, tableBasePath: null };
 					if (targetInfo?.decl) {
-						context.tableOwner = declarationValueSource(targetInfo.decl.id);
+						context.tableOwner = targetInfo.decl.valueSource;
 					}
 					const valueExpression = assignment.right[index];
 					if (valueExpression.kind === LuaSyntaxKind.FunctionExpression) {
@@ -875,7 +883,7 @@ class SemanticBuilder {
 				}
 				for (let index = 0; index < assignment.left.length; index += 1) {
 					const target = assignment.left[index];
-					if (target.kind !== LuaSyntaxKind.IdentifierExpression) {
+					if (target.kind !== LuaSyntaxKind.IdentifierExpression || !targets[index].decl) {
 						continue;
 					}
 					this.setModuleAlias(targets[index].decl, targets[index].moduleAlias);
@@ -1083,7 +1091,7 @@ class SemanticBuilder {
 					: this.visitCallTarget(callExpression.callee, context);
 				const requireArgument = resolveBuiltinRequireArgument(
 					callExpression,
-					calleeInfo !== null && calleeInfo.decl === null,
+					calleeInfo?.valueSource?.root.kind === 'global',
 				);
 				if (requireArgument) {
 					this.moduleReferences.push(requireArgument);
@@ -1280,7 +1288,7 @@ class SemanticBuilder {
 					const valueContext: ExpressionContext = {
 						tableBaseDecl: decl,
 						tableBasePath: decl.namePath,
-						tableOwner: declarationValueSource(decl.id),
+						tableOwner: decl.valueSource,
 					};
 					if (field.value.kind === LuaSyntaxKind.FunctionExpression) {
 						this.recordFunctionSignature(decl, joinNamePath(decl.namePath), field.value, 'function');
@@ -1312,7 +1320,7 @@ class SemanticBuilder {
 						const valueInfo = this.visitExpression(field.value, {
 							tableBaseDecl: decl,
 							tableBasePath: decl.namePath,
-							tableOwner: declarationValueSource(decl.id),
+							tableOwner: decl.valueSource,
 						});
 						this.setDeclarationValue(decl, valueInfo?.valueSource);
 						break;
@@ -1378,42 +1386,32 @@ class SemanticBuilder {
 		this.functionValueFlowStack.push(valueFlow);
 		const block = expression.body;
 		this.enterScope(block.startInclusive, block.endExclusive, scopeKind);
-		const inheritedMethodSelfPath = this.currentMethodSelfPath();
-		const inheritedMethodSelfScope = this.methodSelfScopeStack[this.methodSelfScopeStack.length - 1];
-		const effectiveMethodSelfPath = methodSelfPath ?? inheritedMethodSelfPath;
-		this.methodSelfPathStack.push(effectiveMethodSelfPath?.slice());
-		this.methodSelfScopeStack.push(methodSelfPath ? this.currentScope() : inheritedMethodSelfScope);
-		const implicitSelfValue = receiver ?? this.currentMethodSelfValue();
-		this.methodSelfValueStack.push(implicitSelfValue);
-		this.currentScope().implicitSelfValue = implicitSelfValue;
+		if (receiver) {
+			this.retainOwnedValueSource(receiver);
+			this.currentScope().bindings.set('self', { kind: 'receiver', name: 'self', valueSource: receiver });
+			this.currentScope().implicitSelfValue = receiver;
+		}
 		for (let index = 0; index < expression.parameters.length; index += 1) {
 			const parameter = this.declareParameter(expression.parameters[index]);
-			parameters[index + (receiver ? 1 : 0)] = declarationValueSource(parameter.id);
+			parameters[index + (receiver ? 1 : 0)] = parameter.valueSource;
 		}
 		this.visitBlock(block);
-		this.methodSelfValueStack.pop();
-		this.methodSelfScopeStack.pop();
-		this.methodSelfPathStack.pop();
 		this.leaveScope();
 		this.functionValueFlowStack.pop();
 		this.functionValueFlows.push(valueFlow);
 	}
 
-	private currentMethodSelfPath(): readonly string[] | undefined {
-		if (this.methodSelfPathStack.length === 0) {
-			return undefined;
-		}
-		return this.methodSelfPathStack[this.methodSelfPathStack.length - 1];
-	}
-
-	private currentMethodSelfValue(): OwnedSemanticValueSource | undefined {
-		return this.methodSelfValueStack[this.methodSelfValueStack.length - 1];
-	}
-
 	private handleAssignmentTarget(target: LuaAssignableExpression): AssignmentTargetInfo {
 		switch (target.kind) {
-			case LuaSyntaxKind.IdentifierExpression:
-				return this.assignIdentifier(target);
+			case LuaSyntaxKind.IdentifierExpression: {
+				const binding = this.handleIdentifierExpression(target, true);
+				return {
+					decl: binding.decl,
+					namePath: binding.namePath,
+					path: target.name,
+					valueTarget: binding.decl ? undefined : binding.valueSource,
+				};
+			}
 			case LuaSyntaxKind.MemberExpression:
 				return this.assignMember(target);
 			case LuaSyntaxKind.IndexExpression:
@@ -1427,50 +1425,6 @@ class SemanticBuilder {
 			default:
 				return { decl: null, namePath: null, path: null };
 		}
-	}
-
-	private assignIdentifier(identifier: LuaIdentifierExpression): AssignmentTargetInfo {
-		const existing = this.resolveName(identifier.name);
-		const range = identifier.range;
-		if (existing) {
-			this.recordReference({
-				syntax: identifier,
-				namePath: existing.namePath,
-				name: identifier.name,
-				range,
-				target: existing.id,
-				isWrite: true,
-				referenceKind: 'identifier',
-				staticExpressionPath: identifier.name,
-			});
-			return { decl: existing, namePath: existing.namePath, path: identifier.name };
-		}
-		const globalDecl = this.globalsByKey.get(identifier.name);
-		if (globalDecl) {
-			this.recordReference({
-				syntax: identifier,
-				namePath: globalDecl.namePath,
-				name: identifier.name,
-				range,
-				target: globalDecl.id,
-				isWrite: true,
-				referenceKind: 'identifier',
-				staticExpressionPath: identifier.name,
-			});
-			return { decl: globalDecl, namePath: globalDecl.namePath, path: identifier.name };
-		}
-		const decl = this.declareGlobal(identifier, range);
-		this.recordReference({
-			syntax: identifier,
-			namePath: decl.namePath,
-			name: identifier.name,
-			range,
-			target: decl.id,
-			isWrite: true,
-			referenceKind: 'identifier',
-			staticExpressionPath: identifier.name,
-		});
-		return { decl, namePath: decl.namePath, path: identifier.name };
 	}
 
 	private assignMember(member: LuaMemberExpression): AssignmentTargetInfo {
@@ -1564,18 +1518,7 @@ class SemanticBuilder {
 	}
 
 	private recordMethodReference(callExpression: LuaCallExpression, calleeInfo: ResolvedNamePath): Ref {
-		let basePath = resolveReferencedBasePath(calleeInfo, callExpression.callee);
-		let implicitSelfReceiver = false;
-		if (basePath
-			&& basePath.length === 1
-			&& basePath[0] === 'self'
-			&& (!calleeInfo || !calleeInfo.decl)) {
-			const methodSelfPath = this.currentMethodSelfPath();
-			if (methodSelfPath && methodSelfPath.length > 0) {
-				basePath = methodSelfPath.slice();
-				implicitSelfReceiver = true;
-			}
-		}
+		const basePath = resolveReferencedBasePath(calleeInfo, callExpression.callee);
 		const receiverSymbolKey = calleeInfo?.decl?.symbolKey || (calleeInfo?.namePath && joinNamePath(calleeInfo.namePath));
 		const method = callExpression.method;
 		this.recordMemberAccess(
@@ -1591,7 +1534,7 @@ class SemanticBuilder {
 			calleeInfo?.valueSource,
 			methodName,
 			calleeInfo?.decl,
-		) ?? (implicitSelfReceiver || !calleeInfo?.valueSource
+		) ?? (!calleeInfo?.valueSource
 			? this.properties.get(joinNamePath(namePath))
 			: undefined);
 		const targetId = decl?.id;
@@ -1611,113 +1554,53 @@ class SemanticBuilder {
 			receiverValue: calleeInfo?.valueSource,
 			isCall: true,
 		});
-		if (implicitSelfReceiver && targetId === undefined) {
-			this.deferredMethodTargets.push(reference);
-		}
 		return reference;
 	}
 
 	private recordFunctionSignature(
-		decl: InternalDecl,
+		decl: InternalDecl | undefined,
 		path: string,
 		expression: LuaFunctionExpression,
 		declarationStyle: 'function' | 'method',
 	): void {
-		decl.signature = registerFunctionFromExpression(
+		const signature = registerFunctionFromExpression(
 			this.functionSignaturesByPath,
 			path,
 			expression,
 			declarationStyle,
 		);
+		if (decl) decl.signature = signature;
 	}
 
-	private handleIdentifierExpression(identifier: LuaIdentifierExpression, isWrite: boolean, isCall = false): ResolvedNamePath {
+	private handleIdentifierExpression(
+		identifier: LuaIdentifierExpression,
+		isWrite: boolean,
+		isCall = false,
+		declarationKind: 'global' | 'function' = 'global',
+	): ResolvedNamePath {
 		const range = identifier.range;
-		const resolved = this.resolveName(identifier.name);
+		let binding = this.resolveName(identifier.name) ?? this.globalsByKey.get(identifier.name);
+		if (!binding && isWrite) binding = this.declareGlobal(identifier, range, declarationKind);
+		const decl = binding?.kind === 'receiver' ? undefined : binding;
 		const namePath = [identifier.name];
-		if (identifier.name === 'self') {
-			const methodSelfPath = this.currentMethodSelfPath();
-			if (methodSelfPath && methodSelfPath.length > 0) {
-				const methodSelfScope = this.methodSelfScopeStack[this.methodSelfScopeStack.length - 1];
-				let bindingScope = resolved?.scopeRef;
-				while (bindingScope && bindingScope !== methodSelfScope) {
-					bindingScope = bindingScope.parent;
-				}
-				if (!bindingScope) {
-					const classValue = this.resolveValueSourceFromNamePath(methodSelfPath);
-					this.recordReference({
-						syntax: identifier,
-						namePath,
-						name: identifier.name,
-						range,
-						isWrite,
-						referenceKind: 'self',
-						staticExpressionPath: identifier.name,
-						isCall,
-					});
-					return {
-						namePath,
-						decl: null,
-						valueSource: this.currentMethodSelfValue()
-							?? (classValue ? appendValueInstance(classValue) : undefined),
-					};
-				}
-			}
-		}
-		const targetId = resolved?.id;
-		if (resolved) {
-			this.recordReference({
-				syntax: identifier,
-				namePath,
-				name: identifier.name,
-				range,
-				target: targetId,
-				isWrite,
-				referenceKind: 'identifier',
-				staticExpressionPath: identifier.name,
-				isCall,
-			});
-			return {
-				namePath,
-				decl: resolved,
-				valueSource: this.unknownValueDeclarations.has(resolved.id)
-					? unknownValueSource()
-					: declarationValueSource(resolved.id),
-			};
-		}
-		const globalDecl = this.globalsByKey.get(identifier.name);
-		if (globalDecl) {
-			this.recordReference({
-				syntax: identifier,
-				namePath,
-				name: identifier.name,
-				range,
-				target: globalDecl.id,
-				isWrite,
-				referenceKind: 'identifier',
-				staticExpressionPath: identifier.name,
-				isCall,
-			});
-			return {
-				namePath,
-				decl: globalDecl,
-				valueSource: declarationValueSource(globalDecl.id),
-			};
-		}
 		this.recordReference({
 			syntax: identifier,
 			namePath,
 			name: identifier.name,
 			range,
+			target: decl?.id,
 			isWrite,
-			referenceKind: 'identifier',
+			referenceKind: binding?.kind === 'receiver' ? 'self' : 'identifier',
+			binding: binding?.valueSource,
 			staticExpressionPath: identifier.name,
 			isCall,
 		});
 		return {
 			namePath,
-			decl: null,
-			valueSource: globalValueSource(identifier.name),
+			decl,
+			valueSource: !isWrite && decl && this.unknownValueDeclarations.has(decl.id)
+				? unknownValueSource()
+				: binding ? binding.valueSource : globalValueSource(identifier.name),
 		};
 	}
 
@@ -1825,7 +1708,7 @@ class SemanticBuilder {
 			lexical: true,
 		});
 		if (activate) {
-			this.addBinding(scope, decl);
+			scope.bindings.set(decl.name, decl);
 		}
 		this.recordDefinitionAnnotation(decl);
 		return decl;
@@ -1845,7 +1728,7 @@ class SemanticBuilder {
 			active: true,
 			lexical: true,
 		});
-		this.addBinding(scope, decl);
+		scope.bindings.set(decl.name, decl);
 		this.recordDefinitionAnnotation(decl);
 		return decl;
 	}
@@ -1864,7 +1747,7 @@ class SemanticBuilder {
 			active: true,
 			lexical: true,
 		});
-		this.addBinding(scope, decl);
+		scope.bindings.set(decl.name, decl);
 		if (decl.isGlobal) {
 			this.globalsByKey.set(decl.symbolKey, decl);
 		}
@@ -1886,7 +1769,7 @@ class SemanticBuilder {
 			active: true,
 			lexical: true,
 		});
-		this.addBinding(scope, decl);
+		scope.bindings.set(decl.name, decl);
 		if (decl.isGlobal) {
 			this.globalsByKey.set(decl.symbolKey, decl);
 		}
@@ -1908,7 +1791,7 @@ class SemanticBuilder {
 			active: true,
 			lexical: true,
 		});
-		this.addBinding(scope, decl);
+		scope.bindings.set(decl.name, decl);
 		if (decl.isGlobal) {
 			this.globalsByKey.set(decl.symbolKey, decl);
 		}
@@ -1930,7 +1813,7 @@ class SemanticBuilder {
 			active: true,
 			lexical: true,
 		});
-		this.addBinding(scope, decl);
+		scope.bindings.set(decl.name, decl);
 		if (decl.isGlobal) {
 			this.globalsByKey.set(decl.symbolKey, decl);
 		}
@@ -1938,14 +1821,14 @@ class SemanticBuilder {
 		return decl;
 	}
 
-	private declareGlobal(identifier: LuaIdentifierExpression, range: LuaSourceRange): InternalDecl {
+	private declareGlobal(identifier: LuaIdentifierExpression, range: LuaSourceRange, kind: 'global' | 'function' = 'global'): InternalDecl {
 		const scope = this.scopeStack[0];
 		const namePath = [identifier.name];
 		const decl = this.createDecl({
 			syntax: identifier,
 			namePath,
 			name: identifier.name,
-			kind: 'global',
+			kind,
 			range,
 			scopeRef: scope,
 			isGlobal: true,
@@ -2091,6 +1974,7 @@ class SemanticBuilder {
 			isGlobal,
 			scopeRef,
 			active,
+			valueSource: declarationValueSource(id),
 		};
 		if (options.lexical) {
 			scopeRef.declarationIndices.push(this.decls.length);
@@ -2119,6 +2003,7 @@ class SemanticBuilder {
 		target?: SymbolID;
 		isWrite: boolean;
 		referenceKind: 'identifier' | 'self' | 'member' | 'method';
+		binding?: FunctionSemanticValueSource;
 		staticExpressionPath: string | null;
 		receiverSymbolKey?: string;
 		receiverValue?: SemanticValueSource;
@@ -2134,6 +2019,7 @@ class SemanticBuilder {
 			isWrite: options.isWrite,
 			isCall: !!options.isCall,
 			referenceKind: options.referenceKind,
+			binding: options.binding,
 			staticExpressionPath: options.staticExpressionPath,
 			receiverSymbolKey: options.receiverSymbolKey,
 			receiverValue: options.receiverValue,
@@ -2178,7 +2064,8 @@ class SemanticBuilder {
 			namePath.push(name);
 			let targetDecl: InternalDecl = null;
 			if (namePath.length === 1) {
-				targetDecl = this.resolveName(name) ?? this.globalsByKey.get(name);
+				this.handleIdentifierExpression(identifier, false);
+				continue;
 			} else {
 				const owner = this.resolveValueSourceFromNamePath(namePath.slice(0, -1));
 				targetDecl = owner
@@ -2202,21 +2089,14 @@ class SemanticBuilder {
 		const path = statement.name.path;
 		const method = statement.name.method;
 		const declarationName = method ?? path[path.length - 1];
-		let targetDecl: InternalDecl = decl;
-		if (!method && path.length === 1) {
-			targetDecl = this.resolveName(path[0].name);
-			if (!targetDecl && this.currentScope().kind === 'path') {
-				targetDecl = decl;
-			}
-		}
 		this.recordReference({
 			syntax: declarationName,
 			namePath: decl.namePath,
 			name: decl.name,
 			range: declarationName.range,
-			target: targetDecl?.id,
+			target: decl.id,
 			isWrite: true,
-			referenceKind: method ? 'method' : (decl.namePath.length === 1 ? 'identifier' : 'member'),
+			referenceKind: method ? 'method' : 'member',
 			staticExpressionPath: resolveStaticLuaNamePath(decl.namePath),
 		});
 	}
@@ -2290,9 +2170,9 @@ class SemanticBuilder {
 		if (namePath.length === 0) {
 			return undefined;
 		}
-		const root = this.resolveName(namePath[0]) ?? this.globalsByKey.get(namePath[0]);
-		let source = root
-			? declarationValueSource(root.id)
+		const binding = this.resolveName(namePath[0]) ?? this.globalsByKey.get(namePath[0]);
+		let source = binding
+			? binding.valueSource
 			: globalValueSource(namePath[0]);
 		for (let index = 1; index < namePath.length; index += 1) {
 			source = appendValueMember(source, namePath[index]);
@@ -2375,7 +2255,8 @@ class SemanticBuilder {
 			return null;
 		}
 		if (path.length === 1) {
-			return this.resolveName(path[0]) ?? this.globalsByKey.get(path[0]);
+			const binding = this.resolveName(path[0]) ?? this.globalsByKey.get(path[0]);
+			return binding?.kind === 'receiver' ? undefined : binding;
 		}
 		const owner = this.resolveValueSourceFromNamePath(path.slice(0, -1));
 		return owner
@@ -2469,25 +2350,16 @@ class SemanticBuilder {
 			return;
 		}
 		decl.visibleFrom = visibleFrom;
-		this.addBinding(decl.scopeRef, decl);
+		decl.scopeRef.bindings.set(decl.name, decl);
 		decl.active = true;
 	}
 
-	private addBinding(scope: Scope, decl: InternalDecl): void {
-		let bucket = scope.bindings.get(decl.name);
-		if (!bucket) {
-			bucket = [];
-			scope.bindings.set(decl.name, bucket);
-		}
-		bucket.push(decl);
-	}
-
-	private resolveName(name: string): InternalDecl {
+	private resolveName(name: string): InternalBinding {
 		let scope: Scope = this.currentScope();
 		while (scope) {
-			const bucket = scope.bindings.get(name);
-			if (bucket && bucket.length > 0) {
-				return bucket[bucket.length - 1] ;
+			const binding = scope.bindings.get(name);
+			if (binding) {
+				return binding;
 			}
 			scope = scope.parent;
 		}
@@ -2511,7 +2383,6 @@ class SemanticBuilder {
 			parent: this.scopeStack.length > 0 ? this.scopeStack[this.scopeStack.length - 1] : null,
 			bindings: new Map(),
 			declarationIndices: [],
-			implicitSelfValue: this.currentMethodSelfValue(),
 		};
 		this.scopes.push(scope);
 		this.scopeStack.push(scope);

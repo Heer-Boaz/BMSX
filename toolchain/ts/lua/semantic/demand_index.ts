@@ -533,8 +533,7 @@ export class SemanticDemandIndex {
 	private buildEffectCallSelection(name: SemanticNameID): readonly (readonly SummaryCall[])[] {
 		const summaries = this.summaries.list();
 		const relevantSummaries: boolean[] = [];
-		const selectableFunctionNames: boolean[] = [];
-		const propagatingFunctionNames: boolean[] = [];
+		const relevantFunctionNames: boolean[] = [];
 		for (let summaryIndex = 0; summaryIndex < summaries.length; summaryIndex += 1) {
 			const summary = summaries[summaryIndex];
 			for (let writeIndex = 0; writeIndex < summary.writes.length; writeIndex += 1) {
@@ -542,14 +541,14 @@ export class SemanticDemandIndex {
 					this.markRelevantSummary(
 						summary.id,
 						relevantSummaries,
-						selectableFunctionNames,
-						propagatingFunctionNames,
-						true,
+						relevantFunctionNames,
 					);
 					break;
 				}
 			}
 		}
+		// Candidate relevance is transitive, including receiver-dependent hops.
+		// This selects calls to solve; only callable resolution publishes callees.
 		for (;;) {
 			let changed = false;
 			for (let summaryIndex = 0; summaryIndex < summaries.length; summaryIndex += 1) {
@@ -564,14 +563,12 @@ export class SemanticDemandIndex {
 					const contextual = parameterDependent
 						&& candidateName !== undefined
 						&& this.callRequiresCandidateSelection(call)
-						&& propagatingFunctionNames[candidateName];
+						&& relevantFunctionNames[candidateName];
 					if (direct || contextual) {
 						if (this.markRelevantSummary(
 							summary.id,
 							relevantSummaries,
-							selectableFunctionNames,
-							propagatingFunctionNames,
-							direct,
+							relevantFunctionNames,
 						)) {
 							changed = true;
 						}
@@ -589,7 +586,7 @@ export class SemanticDemandIndex {
 			selected[summary.id] = this.selectDependencyCalls(
 				summary,
 				relevantSummaries,
-				selectableFunctionNames,
+				relevantFunctionNames,
 				name,
 				false,
 				false,
@@ -601,21 +598,15 @@ export class SemanticDemandIndex {
 	private markRelevantSummary(
 		summary: FunctionSummaryID,
 		relevantSummaries: boolean[],
-		selectableFunctionNames: boolean[],
-		propagatingFunctionNames: boolean[],
-		publishName: boolean,
+		relevantFunctionNames: boolean[],
 	): boolean {
-		let changed = !relevantSummaries[summary];
+		if (relevantSummaries[summary]) return false;
 		relevantSummaries[summary] = true;
 		const functionName = this.functionNameBySummary[summary];
 		if (functionName !== undefined) {
-			selectableFunctionNames[functionName] = true;
-			if (publishName && !propagatingFunctionNames[functionName]) {
-				propagatingFunctionNames[functionName] = true;
-				changed = true;
-			}
+			relevantFunctionNames[functionName] = true;
 		}
-		return changed;
+		return true;
 	}
 
 	private callTargetsRelevantSummary(
