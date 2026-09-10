@@ -20,7 +20,7 @@ export function buildStateMachineSourceDetails(references: readonly StateMachine
 			const expression = proof.kind === 'direct' ? proof.expression : proof.statement.expressions[0];
 			label = proof.kind === 'direct' ? `binding ${describeExpression(proof.expression)}`
 				: expression === undefined ? 'return' : `return ${describeExpression(expression)}`;
-			detail = target.kind === 'path' ? `POSSIBLE PATH: ${target.literal.value}`
+			detail = target.kind === 'path' ? `POSSIBLE PATH: ${target.text}`
 				: target.kind === 'no-path' ? `NO RETURNED PATH: ${target.reason}` : `UNRESOLVED: ${target.reason}`;
 		}
 		return { reference, label, description: `LN ${range.start.line}:${range.start.column}`, detail };

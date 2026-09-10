@@ -1,21 +1,8 @@
-import { parseFsmStatePath } from '../../../../toolchain/ts/cartlib/fsm/state_path';
-import { LuaSyntaxKind, type LuaStringLiteralExpression } from '../../../../toolchain/ts/lua/syntax/ast';
+import type { FsmStatePath } from '../../../../toolchain/ts/cartlib/fsm/state_path';
+import { LuaSyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { BehaviorSourceRowKey } from './model';
-import type { StateMachineSourceBody, StateMachineSourcePath, StateMachineSourceUnknown } from './state_machine_model';
+import type { StateMachineScope, StateMachineSourceBody, StateMachineSourcePath, StateMachineSourceUnknown } from './state_machine_model';
 import { resolveConstSourceExpression, SourceTableIssue, type BehaviorRecognizerContext } from './source';
-
-/** Cold binding index. The retained output refers to the existing source occurrence keys. */
-export type StateMachineScope = {
-	readonly kind: 'scope';
-	readonly rowKey: BehaviorSourceRowKey;
-	readonly body: StateMachineSourceBody;
-	readonly parent: StateMachineScope | null;
-	readonly children: Map<string, StateMachineScope | null>;
-	readonly addressComplete: boolean;
-	readonly membersComplete: boolean;
-	readonly bindingsComplete: boolean;
-	readonly concurrent: boolean | undefined;
-};
 
 /** Lua truth, not JavaScript truth: zero and empty strings are both true. */
 function sourceConcurrency(context: BehaviorRecognizerContext, body: StateMachineSourceBody): boolean | undefined {
@@ -36,24 +23,25 @@ function sourceConcurrency(context: BehaviorRecognizerContext, body: StateMachin
 
 export function indexStateMachineScopes(context: BehaviorRecognizerContext, rootKey: BehaviorSourceRowKey, body: StateMachineSourceBody): readonly StateMachineScope[] {
 	const scopes: StateMachineScope[] = [];
-	function add(rowKey: BehaviorSourceRowKey, body: StateMachineSourceBody, parent: StateMachineScope | null): StateMachineScope {
+	function add(rowKey: BehaviorSourceRowKey, body: StateMachineSourceBody, parent: StateMachineScope | null, name: string | undefined): StateMachineScope {
 		const addressComplete = !context.sourceIncomplete && (parent === null || parent.addressComplete && parent.membersComplete);
 		const states = body.states;
 		const membersComplete = body.issues === SourceTableIssue.None
 			&& (states === null || states.kind === 'resolved' && states.issues === SourceTableIssue.None);
-		const scope: StateMachineScope = { kind: 'scope', rowKey, body, parent, children: new Map(), addressComplete, membersComplete,
+		const scope: StateMachineScope = { kind: 'scope', rowKey, body, parent, name, depth: parent === null ? 0 : parent.depth + 1,
+			children: new Map(), addressComplete, membersComplete,
 			bindingsComplete: addressComplete && body.issues === SourceTableIssue.None, concurrent: sourceConcurrency(context, body) };
 		scopes.push(scope);
 		return scope;
 	}
-	add(rootKey, body, null);
+	add(rootKey, body, null, undefined);
 	for (let index = 0; index < scopes.length; index += 1) {
 		const scope = scopes[index];
 		const states = scope.body.states;
 		if (states === null || states.kind === 'dynamic') continue;
 		for (const entry of states.entries) {
 			if (entry.name === null) continue;
-			scope.children.set(entry.name, entry.node.kind === 'state' ? add(entry.node.rowKey, entry.node.body, scope) : null);
+			scope.children.set(entry.name, entry.node.kind === 'state' ? add(entry.node.rowKey, entry.node.body, scope, entry.name) : null);
 		}
 	}
 	return scopes;
@@ -72,8 +60,7 @@ function pathChild(scope: StateMachineScope, key: string): StateMachineScope | S
 
 /** Same plan semantics as fsm.lua, including cancelled descents and concurrent steps. */
 export function bindStateMachineSourcePath(root: StateMachineScope, origin: StateMachineScope,
-	literal: LuaStringLiteralExpression): StateMachineSourcePath | StateMachineSourceUnknown {
-	const path = parseFsmStatePath(literal.value);
+	path: FsmStatePath): StateMachineSourcePath | StateMachineSourceUnknown {
 	if (path.kind === 'invalid') return { kind: 'unresolved', reason: path.reason };
 	if (!origin.addressComplete) return { kind: 'unresolved', reason: 'partial-source' };
 	let scope = path.absolute ? root : origin;
@@ -94,5 +81,5 @@ export function bindStateMachineSourcePath(root: StateMachineScope, origin: Stat
 		}
 	}
 	if (!path.absolute && up === 0 && steps.length === 0) return { kind: 'unresolved', reason: 'empty-path' };
-	return { kind: 'path', literal, absolute: path.absolute, up, steps, target: scope.rowKey };
+	return { kind: 'path', text: path.text, absolute: path.absolute, up, steps, target: scope.rowKey };
 }

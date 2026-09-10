@@ -108,7 +108,7 @@ function buildDefinition(
 	if (context.behaviorKind === 'state_machine') {
 		const source = resolved === null ? { body: null, children: input.children }
 			: buildStateMachineBody(context, '', resolved, activeDeclarations);
-		const relations = source.body === null ? { entries: [], transitions: [] }
+		const relations = source.body === null ? { scopes: [], entries: [], transitions: [] }
 			: buildStateMachineRelations(context, context.anchor + definitionPath, source.body);
 		return createSourceNode(context, definitionPath, { ...input, ...source, ...relations });
 	}

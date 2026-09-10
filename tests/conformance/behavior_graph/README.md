@@ -158,6 +158,33 @@ definition installation and entering/resetting a living state machine.
 
 ### Existing source and graph contracts
 
+`STUDIO-FSM-RETARGET-EVIDENCE-01` adds a separate source-operation analysis, not
+an exposed command or endpoint-drag gesture:
+
+```sh
+npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
+  tests/lua/state_machine_retarget.test.ts tests/lua/state_machine_source.test.ts \
+  tests/lua/state_machine_selection.test.ts tests/lua/fsm_hot_resume.test.ts
+npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+  tests/conformance/behavior_graph/profile_retarget.ts
+```
+
+`fsm_retarget_fixture.ts` supplies independent authored definitions and an
+explicit path-plan matrix. Tests check preserved/widened anchors, exact keys,
+unaddressable navigation operators, the `no_op` sentinel, shared return uses
+across registrations, incomplete consumers, and byte-exact edit/Undo through
+the ordinary Lua string edit owner. The real BLua/cartlib oracle compiles each
+proposed descriptor and executes a retargeted callback with guards and exit/
+entry handlers after ordinary definition rebind. This is not an end-to-end
+retarget gesture or a new host Hot Resume proof.
+
+The profiler separates retained-source projection, analysis+first candidate
+and repeated current-candidate queries. Only current evidence is retained;
+visited targets do not accumulate a plan cache. It excludes parser, layout,
+pointer routing, GPU, guest execution, Hot Resume, complete frames and heap/GC.
+The existing real-browser source/navigation and full Studio suites above remain
+the integration gates for the changed typed source facts and source links.
+
 ```sh
 npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
   tests/lua/state_machine_source.test.ts tests/lua/fsm_hot_resume.test.ts

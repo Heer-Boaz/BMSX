@@ -275,6 +275,20 @@ or machine changes are introduced. See
 for source admission, real-backend live installation proof and unfinished
 state/transition/drag authoring gates.
 
+`state_machine_retarget.ts` is the next source-operation contract, not an
+enabled gesture. Relation binding retains its existing occurrence scopes and
+the resolved source value for every known direct/return proof, even when target
+membership is incomplete. Transitions refer directly to their origin scope;
+geometry consumes its row key. The cartlib path owner produces parsed segments
+and their original/generated text. Binding consumes them directly instead of
+manufacturing AST literals or reparsing a proposal for every shared consumer.
+Retarget analysis preserves the chosen absolute/relative anchor, widens it only
+when necessary, binds all recognized uses of the same literal and retains only
+the current candidate's evidence. It does not edit shared aliases, normalize
+unaddressable keys, invent state entry for a zero-step plan or cache a quadratic
+set of candidate-by-consumer plans. Physical retargeting still requires exact
+proof bookmarks and a shared connection-preview/control contract.
+
 FSM source bodies now retain child occurrences, guard fields and
 consumer slots. A cold second pass binds initial/concurrent entries and possible
 returned paths to those occurrence keys within one registration. Inline and

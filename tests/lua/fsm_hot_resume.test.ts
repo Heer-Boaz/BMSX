@@ -28,6 +28,10 @@ import { BehaviorTreeTransferAnalysis } from '../../ide/workbench/contrib/behavi
 import { FSM_INITIAL_SOURCE } from '../helpers/fsm_initial_fixture';
 import { indexStateMachineSource } from '../../ide/workbench/contrib/behavior_lens/state_machine_index';
 import { setStateMachineInitial } from '../../ide/workbench/contrib/behavior_lens/state_machine_initial';
+import { FSM_RETARGET_EXECUTION_SOURCE, FSM_RETARGET_PATH_CASES, FSM_RETARGET_PATH_SOURCE } from '../helpers/fsm_retarget_fixture';
+import { StateMachineRetargetAnalysis } from '../../ide/workbench/contrib/behavior_lens/state_machine_retarget';
+import { quoteLuaString } from '../../toolchain/ts/lua/syntax/string_literal';
+import { createLuaStringValueEdit } from '../../ide/language/lua/source_edits';
 
 const SYSTEM_MODULE_FILES = [
 	['base', 'machine/bios/base.lua'],
@@ -825,4 +829,87 @@ return ${FSM_PATH_CASES.length}
 `);
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [FSM_PATH_CASES.length]);
+});
+
+test('retarget descriptors compile to the exact cartlib anchor and guarded/concurrent step plan', () => {
+	const resource = { domain: 0 as const, path: 'retarget.lua' };
+	const document = buildBehaviorSourceDocument(resource, buildLuaFileSemanticData(FSM_RETARGET_PATH_SOURCE, resource.path));
+	const definition = document.definitions[0];
+	assert.ok(definition.behaviorKind === 'state_machine');
+	const checks = FSM_RETARGET_PATH_CASES.map((entry, index) => {
+		let origin = definition.scopes[0];
+		for (const key of entry.origin) origin = origin.children.get(key)!;
+		let target = definition.scopes[0];
+		for (const key of entry.target) target = target.children.get(key)!;
+		const transition = definition.transitions.find(item => item.origin === origin && item.slot.source.label === entry.event)!;
+		const check = new StateMachineRetargetAnalysis(document, transition, transition.outcomes[0]).checkTarget(target);
+		assert.ok(check.kind === 'available');
+		const luaOrigin = 'definition' + entry.origin.map(key => `.states[${quoteLuaString(key)}]`).join('');
+		const steps = entry.steps.map(([key, concurrent], step) => `
+		assert(plan[${step * 2 + 1}] == ${quoteLuaString(key)}, 'key ${index}:${step}')
+		assert((not not plan[${step * 2 + 2}]) == ${concurrent}, 'lane ${index}:${step}')`).join('');
+		return `do
+		local plan<const> = fsm.bind_state_path(${luaOrigin}, ${quoteLuaString(check.text)})
+		assert(plan.abs == ${entry.absolute}, 'absolute ${index}')
+		assert(plan.up == ${entry.up}, 'up ${index}')
+		assert(plan.count == ${entry.steps.length}, 'count ${index}')${steps}
+	end`;
+	}).join('\n');
+	const cpu = createCartlibProgramCpu(FSM_RETARGET_PATH_SOURCE + `
+local fsm<const> = require('cartlib/fsm/fsm')
+local definition<const> = fsm.state_definition.new('retarget.oracle', blueprint)
+${checks}
+return ${FSM_RETARGET_PATH_CASES.length}
+`);
+	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [FSM_RETARGET_PATH_CASES.length]);
+});
+
+test('a retargeted callback preserves live rebind identity, dispatch effects, guards and exit/entry ordering', () => {
+	const resource = { domain: 0 as const, path: 'execution.lua', source: { type: 'lua' as const, resid: 'execution' } };
+	const model = new EditorTextModel(resource, 'lua', FSM_RETARGET_EXECUTION_SOURCE);
+	const document = buildBehaviorSourceDocument(resource, buildLuaFileSemanticData(FSM_RETARGET_EXECUTION_SOURCE, resource.path));
+	const definition = document.definitions[0];
+	assert.ok(definition.behaviorKind === 'state_machine');
+	const transition = definition.transitions[0];
+	const check = new StateMachineRetargetAnalysis(document, transition, transition.outcomes[0])
+		.checkTarget(definition.scopes[0].children.get('other')!);
+	assert.ok(check.kind === 'available');
+	model.pushEditOperations([createLuaStringValueEdit(model.buffer, check.literal, check.text)]);
+	assert.equal(model.buffer.getText(), FSM_RETARGET_EXECUTION_SOURCE.replace("--[[chosen path]] 'active'", "--[[chosen path]] 'other'"));
+	const cpu = createCartlibProgramCpu(`
+local registry<const> = require('cartlib/registry')
+local events<const> = require('cartlib/event_emitter')
+local component<const> = require('cartlib/fsm/fsm_component')
+local fsm<const> = require('cartlib/fsm/fsm')
+local target<const> = {id='retarget-test', active=true, tags={}, allowed=false, calls=0, guards=0, exits=0, entries=0}
+function target:_retain_tag(tag) self.tags[tag]=true end
+function target:_release_tag(tag) self.tags[tag]=nil end
+target.events = events.events_of(target)
+do ${FSM_RETARGET_EXECUTION_SOURCE} end
+local machines<const> = component.factory({'fixture.execution'})({parent=target})
+machines.id='retarget-test-fsm'
+machines:on_attach()
+registry:register(machines)
+registry:index(machines, component)
+machines:start()
+local machine<const> = machines:get_machine('fixture.execution')
+local idle<const> = machine.current_state
+local data<const> = machine.data
+do ${model.buffer.getText()} end
+assert(machines:get_machine('fixture.execution')==machine and machine.current_state==idle and machine.data==data and data.retained==73)
+target.events:emit('choose')
+assert(machine.current_state==idle and target.calls==1 and target.guards==1 and target.exits==0 and target.entries==0)
+target.allowed=true
+target.events:emit('choose')
+assert(machine.current_id=='other' and target.calls==2 and target.guards==2 and target.exits==1 and target.entries==1)
+local other<const> = machine.current_state
+fsm.transition_state_path(other, fsm.bind_state_path(other.definition, '../'))
+assert(machine.current_state==other and target.exits==1 and target.entries==1, 'upward traversal is not state re-entry')
+return true
+`);
+	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [true]);
+	model.undo(); assert.equal(model.buffer.getText(), FSM_RETARGET_EXECUTION_SOURCE);
+	model.dispose();
 });

@@ -51,7 +51,7 @@ export async function testStudioFsmSource(test: StudioFixture): Promise<void> {
 	const changed = current.transitions.find(transition => transition.slot.kind === 'update')!;
 	check(current !== first && view.selection?.rowKey === changed.slot.source.rowKey, 'FSM source: activation refreshes the selected source occurrence');
 	const outcome = changed.outcomes[0].target;
-	check(outcome.kind === 'path' && outcome.target === changed.origin, 'FSM source: the const callback target follows the edited generation within its own scope');
+	check(outcome.kind === 'path' && outcome.target === changed.origin.rowKey, 'FSM source: the const callback target follows the edited generation within its own scope');
 	const retained = view.document;
 	for (let index = 0; index < 30; index += 1) await frame();
 	check(view.document === retained && definition(view).transitions === current.transitions,
@@ -62,7 +62,7 @@ export async function testStudioFsmSource(test: StudioFixture): Promise<void> {
 	await click(editorChromeState.tabButtonBounds.get(lens.id)!);
 	const undone = definition(view).transitions.find(transition => transition.slot.kind === 'update')!;
 	const restored = undone.outcomes[0].target;
-	check(restored.kind === 'path' && restored.target !== undone.origin && restored.literal.value === '../active',
+	check(restored.kind === 'path' && restored.target !== undone.origin.rowKey && restored.text === '../active',
 		'FSM source: ordinary text Undo restores the original scoped target, without graph-owned state');
 	await click(outline.actionBar.items[0].bounds);
 	await press('ControlLeft', 'KeyZ');

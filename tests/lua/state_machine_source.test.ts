@@ -8,7 +8,8 @@ import { collectConstInitializers, collectMutatedDeclarations, type BehaviorReco
 import type { StateMachineSourceDefinition, StateMachineSourceState } from '../../ide/workbench/contrib/behavior_lens/state_machine_model';
 import { bindStateMachineSourcePath, indexStateMachineScopes } from '../../ide/workbench/contrib/behavior_lens/state_machine_scope';
 import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
-import { LuaSyntaxKind, type LuaStringLiteralExpression } from '../../toolchain/ts/lua/syntax/ast';
+import { parseFsmStatePath } from '../../toolchain/ts/cartlib/fsm/state_path';
+import type { LuaStringLiteralExpression } from '../../toolchain/ts/lua/syntax/ast';
 import { FSM_BEHAVIOR_SOURCE, FSM_PATH_CASES, FSM_SCOPE_SOURCE } from '../helpers/fsm_source_fixture';
 
 function fixture(source = FSM_BEHAVIOR_SOURCE) {
@@ -39,15 +40,6 @@ function context(f: ReturnType<typeof fixture>): BehaviorRecognizerContext {
 		anchor: '', registrationRange: f.definition.occurrenceRange, sourceIncomplete: f.analysis.syntaxError !== null, behaviorKind: 'state_machine' };
 }
 
-function authoredPath(path: string): LuaStringLiteralExpression {
-	const chunk = buildLuaFileSemanticData(`return [==[${path}]==]`, 'path.lua').chunk;
-	const statement = chunk.body[0];
-	assert.ok(statement.kind === LuaSyntaxKind.ReturnStatement);
-	const expression = statement.expressions[0];
-	assert.ok(expression.kind === LuaSyntaxKind.StringLiteralExpression);
-	return expression;
-}
-
 test('FSM containment, guards and transitions refer to the same authored occurrences, not names or outline labels', () => {
 	const f = fixture();
 	const root = f.definition;
@@ -70,7 +62,7 @@ test('FSM containment, guards and transitions refer to the same authored occurre
 	for (const side of ['left', 'right']) {
 		const child = stateAt(root, side, 'idle');
 		const active = stateAt(root, side, 'active');
-		const transitions = root.transitions.filter(transition => transition.origin === child.rowKey);
+		const transitions = root.transitions.filter(transition => transition.origin.rowKey === child.rowKey);
 		assert.deepEqual(transitions.map(transition => transition.slot.kind), ['update', 'enter', 'event', 'event', 'timeline-finished', 'input']);
 		for (const transition of transitions) {
 			assert.equal(nodes.get(transition.slot.source.rowKey), transition.slot.source);
@@ -83,19 +75,19 @@ test('FSM containment, guards and transitions refer to the same authored occurre
 			assert.equal(path.up, 1);
 		}
 		// Parent event propagation does not invent an edge from each descendant.
-		const reset = root.transitions.filter(transition => transition.slot.source.label === 'reset' && transition.origin === stateAt(root, side).rowKey);
+		const reset = root.transitions.filter(transition => transition.slot.source.label === 'reset' && transition.origin.rowKey === stateAt(root, side).rowKey);
 		assert.equal(reset.length, 1);
 		assert.equal(reset[0].outcomes[0].target.kind, 'path');
 	}
-	assert.equal(root.transitions.some(transition => transition.origin === root.rowKey), false, 'root enter is not invoked by start');
-	const update = root.transitions.find(transition => transition.origin === idle.rowKey && transition.slot.kind === 'update')!;
+	assert.equal(root.transitions.some(transition => transition.origin.rowKey === root.rowKey), false, 'root enter is not invoked by start');
+	const update = root.transitions.find(transition => transition.origin.rowKey === idle.rowKey && transition.slot.kind === 'update')!;
 	assert.deepEqual(update.outcomes.map(outcome => outcome.target.kind), ['path', 'no-path']);
 	const proof = update.outcomes[0].proof;
 	assert.ok(proof.kind === 'return');
 	assert.equal(f.read(proof.binding), 'step');
 	assert.equal(f.read(proof.statement), "return next_path, '/ignored-second-result'");
 	assert.ok(f.read(proof.callback).startsWith('function(owner)'));
-	const timeline = root.transitions.find(transition => transition.origin === idle.rowKey && transition.slot.kind === 'timeline-finished')!;
+	const timeline = root.transitions.find(transition => transition.origin.rowKey === idle.rowKey && transition.slot.kind === 'timeline-finished')!;
 	assert.ok(f.read({ range: timeline.slot.source.occurrenceRange }).startsWith('[clips.intro] = {'),
 		'the timeline declaration owns its source range, including the computed key');
 	assert.ok(timeline.outcomes[0].proof.kind === 'return');
@@ -108,7 +100,7 @@ test('FSM source binding follows cartlib path plans, including relative origins,
 	const scopes = indexStateMachineScopes(context(f), f.definition.rowKey, f.definition.body!);
 	for (const expected of FSM_PATH_CASES) {
 		const origin = stateAt(f.definition, ...expected.origin);
-		const actual = bindStateMachineSourcePath(scopes[0], scopes.find(scope => scope.rowKey === origin.rowKey)!, authoredPath(expected.path));
+		const actual = bindStateMachineSourcePath(scopes[0], scopes.find(scope => scope.rowKey === origin.rowKey)!, parseFsmStatePath(expected.path));
 		assert.ok(actual.kind === 'path', expected.path);
 		assert.equal(actual.absolute, expected.absolute, expected.path);
 		assert.equal(actual.up, expected.up, expected.path);
@@ -125,7 +117,7 @@ test('FSM source binding follows cartlib path plans, including relative origins,
 		['room/../../idle', 'above-root'], ['missing/../room', 'missing-state'], ["['unclosed", 'unterminated-quoted-segment'],
 		["['room'x", 'unterminated-quoted-segment'], ['fixture.paths:/room', 'missing-state'],
 	]) {
-		assert.deepEqual(bindStateMachineSourcePath(scopes[0], scopes[0], authoredPath(path)), { kind: 'unresolved', reason }, path);
+		assert.deepEqual(bindStateMachineSourcePath(scopes[0], scopes[0], parseFsmStatePath(path)), { kind: 'unresolved', reason }, path);
 	}
 });
 
@@ -235,12 +227,12 @@ machines.register('slots', { states = {
 } })`);
 	const transitions = f.definition.transitions;
 	const idle = stateAt(f.definition, 'idle');
-	for (const transition of transitions.filter(transition => transition.origin === idle.rowKey)) {
+	for (const transition of transitions.filter(transition => transition.origin.rowKey === idle.rowKey)) {
 		assert.deepEqual(transition.outcomes[0].target, transition.slot.source.label === 'bad'
 			? { kind: 'unresolved', reason: 'invalid-value' }
 			: { kind: 'no-path', reason: transition.slot.kind === 'enter' ? 'false' : 'nil' });
 	}
 	const active = stateAt(f.definition, 'active');
-	assert.deepEqual(transitions.find(transition => transition.origin === active.rowKey)!.outcomes[0].target,
+	assert.deepEqual(transitions.find(transition => transition.origin.rowKey === active.rowKey)!.outcomes[0].target,
 		{ kind: 'unresolved', reason: 'invalid-value' });
 });

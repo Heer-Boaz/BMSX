@@ -100,12 +100,12 @@ test('edited const targets rebind the same return proof through normal Undo/Redo
 	f.refresh();
 	let selected = selectedOutcome(f);
 	assert.ok(selected.outcome.target.kind === 'path');
-	assert.equal(selected.outcome.target.target, selected.transition.origin);
+	assert.equal(selected.outcome.target.target, selected.transition.origin.rowKey);
 	f.model.undo();
 	f.refresh();
 	selected = selectedOutcome(f);
 	assert.ok(selected.outcome.target.kind === 'path');
-	assert.notEqual(selected.outcome.target.target, selected.transition.origin);
+	assert.notEqual(selected.outcome.target.target, selected.transition.origin.rowKey);
 	f.model.redo();
 	f.refresh();
 	f.model.pushEditOperations([{ offset, deleteLength: "'../idle'".length, text: "'../missing'" }]);

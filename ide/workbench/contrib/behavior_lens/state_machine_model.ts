@@ -1,4 +1,4 @@
-import type { LuaExpression, LuaFunctionExpression, LuaReturnStatement, LuaStringLiteralExpression,
+import type { LuaExpression, LuaFunctionExpression, LuaReturnStatement,
 	LuaTableConstructorExpression, LuaTableField } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { BehaviorSourceTableSection, ResolvedSourceTable, SourceTableIssue } from './source';
 import type { BehaviorDynamicSourceNode, BehaviorSourceNode, BehaviorSourceRowKey } from './model';
@@ -47,6 +47,21 @@ export type StateMachineSourceState = BehaviorSourceNode & {
 	readonly body: StateMachineSourceBody;
 };
 
+/** Source occurrence scopes, retained from the cold relation-binding pass. */
+export type StateMachineScope = {
+	readonly kind: 'scope';
+	readonly rowKey: BehaviorSourceRowKey;
+	readonly body: StateMachineSourceBody;
+	readonly parent: StateMachineScope | null;
+	readonly name: string | undefined;
+	readonly depth: number;
+	readonly children: Map<string, StateMachineScope | null>;
+	readonly addressComplete: boolean;
+	readonly membersComplete: boolean;
+	readonly bindingsComplete: boolean;
+	readonly concurrent: boolean | undefined;
+};
+
 export type StateMachineSourceUnknown = {
 	readonly kind: 'unresolved';
 	readonly reason: 'dynamic-value' | 'unknown-callback' | 'partial-source' | 'implicit-initial'
@@ -57,7 +72,7 @@ export type StateMachineSourceUnknown = {
 /** Binding steps, not an assertion that runtime guards permit a transition. */
 export type StateMachineSourcePath = {
 	readonly kind: 'path';
-	readonly literal: LuaStringLiteralExpression;
+	readonly text: string;
 	readonly absolute: boolean;
 	readonly up: number;
 	readonly target: BehaviorSourceRowKey;
@@ -71,6 +86,8 @@ export type StateMachineSourcePath = {
 export type StateMachineSourceOutcome = {
 	readonly proof: { readonly kind: 'direct'; readonly expression: LuaExpression }
 		| { readonly kind: 'return'; readonly binding: LuaExpression; readonly callback: LuaFunctionExpression; readonly statement: LuaReturnStatement };
+	/** Resolved authored value, even when a consumer's path binding is incomplete. */
+	readonly value: LuaExpression | undefined;
 	readonly target: StateMachineSourcePath | StateMachineSourceUnknown | {
 		/** No returned path, not a claim that the callback has no imperative effects. */
 		readonly kind: 'no-path';
@@ -80,7 +97,7 @@ export type StateMachineSourceOutcome = {
 
 /** Possible returned paths, not an evaluated control-flow graph or a runtime dispatch guarantee. */
 export type StateMachineSourceTransition = {
-	readonly origin: BehaviorSourceRowKey;
+	readonly origin: StateMachineScope;
 	readonly slot: StateMachineSourceSlot;
 	readonly outcomes: readonly StateMachineSourceOutcome[];
 };
@@ -98,6 +115,7 @@ export type StateMachineSourceDefinition = BehaviorSourceNode & {
 	readonly kind: 'definition';
 	readonly behaviorKind: 'state_machine';
 	readonly body: StateMachineSourceBody | null;
+	readonly scopes: readonly StateMachineScope[];
 	readonly entries: readonly StateMachineSourceEntry[];
 	readonly transitions: readonly StateMachineSourceTransition[];
 };

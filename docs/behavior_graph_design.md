@@ -15,6 +15,9 @@ met expliciete browser- en Node-workercompositie. ActionEffect heeft nu een
 BT-authoring heeft nu [bronbehoudende childbewerkingen](behavior_tree_authoring_design.md).
 De eerste FSM-authoringactie is nu [een beginstate kiezen op de kaart](state_machine_authoring_design.md),
 met dezelfde Lua-bron, documenthistorie en bewezen Save/Hot Resume-route.
+Het volgende retarget-broncontract is ook gebouwd: echte scopes, afzonderlijke
+bronwaarde-/targetbewijzen en toetsing van alle herkende gedeelde literaluses.
+Dit is een voorwaarde voor endpointdrag, nog geen nieuwe editorbediening.
 Dit is nog geen complete BT-/FSM-editor of ActionEffect-authoring.
 
 ## BT-listbewijs versus inhoudsresolutie

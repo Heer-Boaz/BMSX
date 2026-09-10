@@ -34,9 +34,9 @@ export async function layoutStateGraph(definition: StateMachineSourceDefinition,
 			if (outcome.target.kind === 'unresolved') unknown += 1;
 			else if (outcome.target.kind === 'no-path') noPath += 1;
 		}
-		if (unknown > 0 || noPath > 0) note(transition.origin,
+		if (unknown > 0 || noPath > 0) note(transition.origin.rowKey,
 			`${transition.slot.kind}: ${unknown} UNKNOWN / ${noPath} NO PATH`);
-		else if (transition.outcomes.length === 0) note(transition.origin, `${transition.slot.kind}: NO RETURN EVIDENCE`);
+		else if (transition.outcomes.length === 0) note(transition.origin.rowKey, `${transition.slot.kind}: NO RETURN EVIDENCE`);
 	}
 	const nodesBySource = new Map<BehaviorSourceRowKey, StateGraphNode>();
 	function node(source: BehaviorSourceNode, body: StateMachineSourceBody | null): StateGraphNode {
@@ -69,7 +69,7 @@ export async function layoutStateGraph(definition: StateMachineSourceDefinition,
 			if (reference.kind !== 'state-outcome' || reference.outcome.target.kind !== 'path') continue;
 			const range = stateMachineSourceRange(reference);
 			const title = transition.slot.kind === 'update' || transition.slot.kind === 'enter' ? transition.slot.kind : transition.slot.source.label;
-			links.push({ source: nodesBySource.get(transition.origin)!, target: nodesBySource.get(reference.outcome.target.target)!, reference,
+			links.push({ source: nodesBySource.get(transition.origin.rowKey)!, target: nodesBySource.get(reference.outcome.target.target)!, reference,
 				label: uppercaseOutsideStrings(`${title}\n${reference.outcome.proof.kind} LN ${range.start.line}:${range.start.column}`) });
 		}
 	}

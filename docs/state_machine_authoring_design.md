@@ -89,6 +89,67 @@ its next construction; the editor does not secretly patch the retained table.
 Each stage must remain useful and independently verifiable. Runtime observation
 is not a substitute for authoring, and a source test is not a live-install proof.
 
+## Retargeting: source contract before the gesture
+
+`STUDIO-FSM-RETARGET-EVIDENCE-01` implements the next source boundary, not a
+drag control or an enabled editor command. The existing selection history and
+shared node-drag preview cannot be relabelled as transition-endpoint editing.
+
+Stately's [reanchor operation](https://github.com/statelyai/xstate-tools/blob/fc7a85d780cd8ea4ea21fb423f2477e01e2f1dc3/packages/machine-extractor/src/MachineExtractResult.ts#L1308-L1382)
+retains the actual transition and distinguishes source/target changes from its
+external-transition semantics. Its [target descriptor owner](https://github.com/statelyai/xstate-tools/blob/fc7a85d780cd8ea4ea21fb423f2477e01e2f1dc3/packages/machine-extractor/src/MachineExtractResult.ts#L2487-L2566)
+consumes concrete state addresses, not graph labels. BMSX follows those ownership
+decisions but must use `fsm.lua`'s actual path-plan semantics:
+
+- Retain the scope objects already produced by source binding. Their child keys
+  and parent links identify occurrences; shared constructors are not one scope.
+- Keep the resolved source value/proof separate from path binding. A locally
+  known return remains known when a consumer has incomplete state membership;
+  incomplete binding must not erase that shared source use.
+- Retarget only a literal at the selected field/first return. A constant alias
+  is not permission to rewrite its initializer; other return expressions and
+  arbitrary Lua remain source edits.
+- Preserve the old absolute/relative anchor. For a relative path, never reduce
+  its existing upward count; widen that anchor only when the chosen target lies
+  outside it. Ancestor traversal is not state entry. A zero-step relative plan
+  without upward movement is unrepresentable, not an invented self-transition.
+- Emit exact child keys through cartlib tooling. `_`/`#` aliases are not needed
+  when the real key is known. Quote path delimiters separately from Lua string
+  quoting. `''`, `'.'` and `'..'` are not addressable child keys in this grammar,
+  even when quoted; do not silently reinterpret them. The full `no_op` sentinel
+  must not replace a real child named `no_op`.
+- The path owner produces both its text and parsed segments. Binding consumes
+  those segments directly; a proposed descriptor is not encoded and reparsed
+  once per consumer. Source relation binding parses a repeated text once per
+  registration while retaining distinct return/slot identities.
+- One analysis gathers recognized uses of the same resolved literal across
+  registrations. Each candidate binds the proposed text in every such consumer
+  and exposes their resulting plans. A previously unresolved or newly dangling
+  recognized consumer prevents automatic retargeting. This is not a claim to
+  enumerate arbitrary runtime calls or escaped Lua tables.
+- Retain only the current candidate result for one source-operation lifetime.
+  Repeated queries allocate/parse/scan nothing; changing target releases the
+  previous evidence. Do not grow a candidates-by-consumers plan cache.
+
+Before exposing this through a gesture, the exact selected transition proof
+must survive its literal replacement and Undo/Redo through document edit
+bookmarks. Connection-preview geometry must also get an explicit shared control
+representation; it is not a fake dragged node or an FSM-specific pointer loop.
+
+### Owning representations
+
+| Owner | Representation | Consumers |
+| --- | --- | --- |
+| `toolchain/ts/cartlib/fsm/state_path.ts` | Original/generated text plus decoded path segments; syntax failure remains explicit | Source binding, retarget analysis, compiled-runtime oracle |
+| `state_machine_relations.ts` | Actual origin scope and resolved authored value alongside each direct/return proof, independently of target uncertainty | Graph projection, Details/Source, shared-use analysis |
+| `state_machine_scope.ts` | Occurrence parent/name/depth and real child membership; bound up/step/concurrency plan | Relations and candidate binding; no graph-label lookup or synthetic AST literal |
+| `state_machine_retarget.ts` | Selected literal, recognized source uses and one retained candidate result | Independent source-edit/runtime tests; gesture admission follows separately |
+
+These are host tooling/source representations. Cartlib, compiler/runtime ABI,
+TS/C++ machine state and the frame execution path are unchanged. The graph
+consumes `transition.origin.rowKey`; the editor does not rejoin that key to a
+second reconstructed scope tree or serialize scope objects into worker requests.
+
 ## Evidence — 10 September 2026
 
 - Independent Lua fixtures cover nested/shared parents across registrations,
@@ -147,3 +208,49 @@ commands are in [the conformance README](../tests/conformance/behavior_graph/REA
 Local logs, index comparison harness and real-backend captures are under
 `/tmp/bmsx-fsm-authoring/`; no generated images or machine-specific golden data
 are required by the tests.
+
+## Retarget evidence and costs — 10 September 2026
+
+- Eight independent source tests cover anchors, exact keys, no-op/unrepresentable
+  candidates, shared returns and direct/wrapped fields, aliases, syntax recovery,
+  incomplete/dangling consumers, exact edit/Undo, and bounded current-candidate
+  retention. These fixtures do not depend on a game's current definitions.
+- The real BLua/cartlib oracle checks **16 explicit expected path plans** against
+  the generated descriptors, including concurrent steps and the `no_op` child.
+  Another compiled-runtime test installs the edited callback by ordinary library
+  re-registration: the living FSM/data retain identity, a blocked guard prevents
+  exit/entry, and subsequent accepted dispatch uses the new target with the same
+  callback effects and exit/entry counts. A zero-step upward plan does not re-enter
+  a state. This is a rebind/dispatch oracle, not a new host Hot Resume workflow.
+- The ordinary Pietious navigation and full Studio suites pass on software,
+  WebGL2 and WebGPU, including Source/Details, hidden history, Set Initial,
+  pause/rewind, existing Hot Resume/reboot and Scenario Lab gates. Accelerated
+  tests use Chromium/SwiftShader. Headless Behavior Lens passes **59 assertions**.
+- Lua: **1,198 passed, one skipped, zero failed**. IDE typecheck, browser/headless
+  product builds, strict architecture boundaries, core parity and indentation
+  pass. Tests-project diagnostics remain **51**, with unchanged file/code/message
+  counts against `f5a5596ea`; this is not a clean tests-project typecheck.
+
+On Node 22.23.1, four isolated processes per case use ten warmups and the median
+of 25 samples. The numbers below are medians of those four process medians.
+An identical bundled retained-source projection probe compares `f5a5596ea` with
+this source-owner change: **0.0650 → 0.0736 ms** for 32 registrations and
+**3.5125 → 3.4591 ms** for 1,024. The small case has a measured cold cost increase;
+the large case is not evidence of a general speedup or a no-regression guarantee.
+
+The separate `tsx` conformance profiler measures one shared callback across
+those registrations, without parsing the document or invoking an editor command:
+
+| Registrations / recognized uses | Analysis + first candidate µs | Repeated current candidate µs | Source projection ms |
+| --- | ---: | ---: | ---: |
+| 32 | 1.89 | 0.00150 | 0.205 |
+| 1,024 | 79.54 | 0.00145 | 6.895 |
+
+Scope objects/child maps now remain with the source generation (96/3,072 scopes
+in this fixture); this retention is intentional and not a zero-memory claim.
+Candidate evidence retains O(shared uses × path depth) plans for **one target**,
+not every visited target. Parser, layout, pointer routing, GPU, guest execution,
+Hot Resume, total frame time and heap/GC profiling are outside these measurements.
+Commands are in the [conformance README](../tests/conformance/behavior_graph/README.md);
+local comparison harnesses, logs and real-backend captures are under
+`/tmp/bmsx-fsm-retarget/`.

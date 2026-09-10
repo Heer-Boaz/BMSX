@@ -1,6 +1,7 @@
 /** Cartlib state-path grammar, not a filesystem path or an XState target. */
 export type FsmStatePath = {
 	readonly kind: 'path';
+	readonly text: string;
 	readonly absolute: boolean;
 	readonly segments: readonly string[];
 } | {
@@ -42,5 +43,27 @@ export function parseFsmStatePath(path: string): FsmStatePath {
 			segments.push(path.slice(start, index));
 		}
 	}
-	return { kind: 'path', absolute: path[0] === '/', segments };
+	return { kind: 'path', text: path, absolute: path[0] === '/', segments };
+}
+
+const quotedSegmentNeeded = /['\\/]/;
+const quotedSegmentEscapes = /['\\]/g;
+
+/** Exact child keys, not runtime _/# aliases. Undefined means no such path spelling exists. */
+export function createFsmStatePath(absolute: boolean, up: number, keys: readonly string[]): Extract<FsmStatePath, { kind: 'path' }> | undefined {
+	if (!absolute && up === 0 && keys.length === 0) return undefined;
+	let text = (absolute ? '/' : '') + '../'.repeat(up);
+	const segments: string[] = [];
+	for (let index = 0; index < up; index += 1) segments.push('..');
+	for (let index = 0; index < keys.length; index += 1) {
+		const key = keys[index];
+		// Quoting does not protect these keys from the runtime's navigation operators.
+		if (key === '' || key === '.' || key === '..') return undefined;
+		segments.push(key);
+		if (index !== 0) text += '/';
+		// no_op is intercepted by transition dispatch before path parsing.
+		text += key === 'no_op' || quotedSegmentNeeded.test(key)
+			? "['" + key.replace(quotedSegmentEscapes, '\\$&') + "']" : key;
+	}
+	return { kind: 'path', text, absolute, segments };
 }
