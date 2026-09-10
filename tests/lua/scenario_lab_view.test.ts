@@ -13,6 +13,7 @@ import {
 import { refreshScenarioLabProjection } from '../../ide/workbench/contrib/scenario_lab/projection';
 import { drawScenarioLab } from '../../ide/workbench/contrib/scenario_lab/render';
 import { prepareScenarioLabLayout } from '../../ide/workbench/contrib/scenario_lab/layout';
+import { ScenarioLabNavigationSelection } from '../../ide/workbench/contrib/scenario_lab/navigation_selection';
 import {
 	SCENARIO_RESULT_LOG_RETAIN_COUNT,
 	ScenarioResultService,
@@ -153,6 +154,44 @@ test('scenario result projection follows a new run and preserves stable log iden
 	results.cancelRun(secondRun);
 	view.runActive = false;
 	assert.equal(scenarioLabCommandEnabled(view, 'scenarioLab.rerun'), true);
+});
+
+test('navigation restores a result by identity after log eviction and keeps the saved collapsed run', t => {
+	const { collection, results, view } = createViewFixture(t);
+	const item = collection.roots[0].children![0];
+	const run = results.beginRun(item.id, [{ test: item, sourceRevision: 1 }]);
+	const result = results.startItem(run, 0, 0);
+	for (let index = 0; index < SCENARIO_RESULT_LOG_RETAIN_COUNT; index += 1) results.appendLog(result, index, `entry ${index}`);
+	refreshScenarioLabProjection(view);
+	selectScenarioLabResultRow(view, 4);
+	const id = view.resultPane.rows[4].id;
+	view.focus = 'results';
+	const selected = new ScenarioLabNavigationSelection(view);
+	t.after(() => selected.dispose());
+	view.focus = 'tests';
+	executeScenarioLabNavigation(view, 'down');
+	assert.notEqual(view.testPane.selectedNodeId, item.id);
+	results.appendLog(result, 999, 'shift visible ordinal');
+	selected.restore(view); prepareScenarioLabLayout(view);
+	assert.equal(view.focus, 'results');
+	assert.equal(view.testPane.selectedNodeId, item.id);
+	assert.equal(view.resultPane.rows[view.resultPane.selectionIndex].id, id);
+	assert.equal(view.resultPane.selectionIndex, 3);
+	// Collapsed expansion state must not be mistaken for a newly selected run.
+	view.resultPane.expandedResultIds.clear();
+	view.resultPane.projectedRevision = -1;
+	refreshScenarioLabProjection(view);
+	const collapsed = new ScenarioLabNavigationSelection(view);
+	t.after(() => collapsed.dispose());
+	view.focus = 'tests';
+	executeScenarioLabNavigation(view, 'down'); refreshScenarioLabProjection(view);
+	collapsed.restore(view); prepareScenarioLabLayout(view);
+	assert.equal(view.resultPane.rows.length, 1);
+	assert.equal(view.resultPane.rows[0].expanded, false);
+	// Once an old log is evicted, history must not silently adopt the next row.
+	for (let index = 0; index < SCENARIO_RESULT_LOG_RETAIN_COUNT; index += 1) results.appendLog(result, 1000 + index, `new ${index}`);
+	selected.restore(view); prepareScenarioLabLayout(view);
+	assert.equal(view.resultPane.selectionIndex, -1);
 });
 
 test('scenario result projection retains FSM facts without inventing source navigation', (t) => {

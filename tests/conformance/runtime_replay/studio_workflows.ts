@@ -1,3 +1,4 @@
+import { testStudioNavigationHistory } from './studio_navigation_history';
 import { testStudioStateGraph } from './studio_state_graph';
 import { testStudioFsmInitial } from './studio_fsm_initial';
 import { testStudioFsmBookmarks } from './studio_fsm_bookmarks';
@@ -96,6 +97,7 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	check(observations.suspended, 'paused Studio suppresses audio transport');
 	// Source-only typing preserves both machine state and rewind history.
 	await testStudioFocus(test);
+	await testStudioNavigationHistory(test);
 	harness.openLuaSource('title_screen.lua');
 	const model = harness.getActiveEditorDocument().model;
 	const source = model.buffer.getText();

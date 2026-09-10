@@ -1,3 +1,5 @@
+import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
+import { ScenarioLabNavigationSelection } from './navigation_selection';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 import type { PointerSnapshot } from '../../../common/models';
 import { drawEditorText } from '../../../editor/render/text_renderer';
@@ -19,6 +21,11 @@ import { handleScenarioLabPointerInput, ScenarioLabPointerResult } from './point
 import { updateScenarioLabStatus } from './navigation';
 
 export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<ScenarioLabInput> {
+	public override getSelection(): ScenarioLabNavigationSelection {
+		this.controller.updateView(this.input.view);
+		return new ScenarioLabNavigationSelection(this.input.view);
+	}
+
 	private readonly resultsFocus = inputFocus.createTarget(this.focusTarget);
 	private readonly unbindResultsKeyboard = this.resultsFocus.bindKeyboard(input => this.handleKeyboard(input));
 	private readonly unbindTestsFocus = this.focusTarget.onDidFocus(() => {
@@ -46,8 +53,9 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 		this.focusTarget.previous = this.actionBar.focusTarget;
 	}
 
-	protected override activate(): void {
+	protected override activate(_selection?: EditorTextSelection, navigationSelection?: ScenarioLabNavigationSelection): void {
 		super.activate();
+		navigationSelection?.restore(this.input.view);
 		this.controller.updateView(this.input.view);
 		this.actionBar.setInput(this.input.view.actionBar, this.focusTarget);
 	}

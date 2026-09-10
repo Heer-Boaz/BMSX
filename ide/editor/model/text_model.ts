@@ -48,6 +48,7 @@ export class EditorTextModel {
 	private readonly undoStack: EditorUndoRecord[] = [];
 	private readonly redoStack: EditorUndoRecord[] = [];
 	private readonly contentChangeListeners = new Set<ContentChangeListener>();
+	private readonly beforeContentChangeListeners = new Set<WorkingCopyListener>();
 	private readonly dirtyChangeListeners = new Set<WorkingCopyListener>();
 	private readonly saveListeners = new Set<WorkingCopyListener>();
 	private readonly revertListeners = new Set<WorkingCopyListener>();
@@ -117,6 +118,16 @@ export class EditorTextModel {
 		this.resourceValue = resource;
 	}
 
+	/** One pre-edit boundary for model observers that track positions in the old buffer. */
+	public onWillChangeContent(listener: WorkingCopyListener): () => void {
+		this.beforeContentChangeListeners.add(listener);
+		return () => this.beforeContentChangeListeners.delete(listener);
+	}
+
+	private emitBeforeContentChange(): void {
+		for (const listener of this.beforeContentChangeListeners) listener();
+	}
+
 	public onDidChangeContent(listener: ContentChangeListener): () => void {
 		this.contentChangeListeners.add(listener);
 		return () => this.contentChangeListeners.delete(listener);
@@ -172,6 +183,7 @@ export class EditorTextModel {
 			return;
 		}
 		const record = this.pendingRecord;
+		if (record.ops.length === this.pendingOpStart) this.emitBeforeContentChange();
 		const op = new TextUndoOp();
 		this.pieceTree.positionAt(offset, editStartPosition);
 		const startRow = editStartPosition.row;
@@ -232,6 +244,7 @@ export class EditorTextModel {
 		if (edits.length === 0) {
 			return;
 		}
+		this.emitBeforeContentChange();
 		const wasDirty = this.dirty;
 		this.breakUndoSequence();
 		const record = new EditorUndoRecord();
@@ -263,6 +276,7 @@ export class EditorTextModel {
 		if (this.undoStack.length === 0) {
 			return null;
 		}
+		this.emitBeforeContentChange();
 		const wasDirty = this.dirty;
 		const record = this.undoStack.pop()!;
 		const ops = record.ops;
@@ -297,6 +311,7 @@ export class EditorTextModel {
 		if (this.redoStack.length === 0) {
 			return null;
 		}
+		this.emitBeforeContentChange();
 		const wasDirty = this.dirty;
 		const record = this.redoStack.pop()!;
 		const ops = record.ops;
@@ -358,6 +373,7 @@ export class EditorTextModel {
 	}
 
 	public restoreDirtySource(source: string): void {
+		this.emitBeforeContentChange();
 		const wasDirty = this.dirty;
 		const deletedLength = this.pieceTree.length;
 		this.replaceContents(source);
@@ -368,6 +384,7 @@ export class EditorTextModel {
 	}
 
 	public revert(): void {
+		this.emitBeforeContentChange();
 		const wasDirty = this.dirty;
 		const deletedLength = this.pieceTree.length;
 		this.replaceContents(this.lastSavedSourceValue);
@@ -382,6 +399,7 @@ export class EditorTextModel {
 	public dispose(): void {
 		this.clearHistory();
 		this.contentChangeListeners.clear();
+		this.beforeContentChangeListeners.clear();
 		this.dirtyChangeListeners.clear();
 		this.saveListeners.clear();
 		this.revertListeners.clear();

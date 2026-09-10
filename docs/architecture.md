@@ -1445,6 +1445,15 @@ cook a second behavior document, cartlib does not decode an editor resource or
 bind a visual-editor manifest, and machine, TOC, cartridge model and C++ core
 remain unaware of behavior authoring.
 
+Workbench navigation retains the concrete editor identity and a contribution-owned
+selection/viewstate, not just a code position. Source, definition and Back/Forward
+share that single host navigation history across Behavior Lens, Scene, Scenario
+and code/resource views. Source-model changes map bookmarks; restoring one never
+restores document bytes, invokes Hot Resume or mutates machine state. Input and
+subscription lifetimes, registered source reopening and asynchronous viewport
+restoration are specified in `workbench_navigation_history_design.md`. This is
+distinct from document Undo, workspace-session persistence and machine rewind.
+
 BT and FSM diagrams are fully expanded over their recognized source structure.
 The host workbench graph owns finite padded canvas navigation and shared
 horizontal/vertical scrollbars, not guest input or authored geometry. Middle

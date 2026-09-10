@@ -404,6 +404,53 @@ Stationaire layout en scroll meten geen tekst opnieuw; tekst-/rect-/thumb- en
 quadopslag blijven behouden. Dat is gericht bewijs, **geen** volledige host- of
 SNES-Mini-performancemeting. A03–A08 blijven afzonderlijke open contracten.
 
+### A03 — gecorrigeerd en beproefd (2026-09-10)
+
+De bestaande Back/Forward-owner bewaart nu de concrete editorbestemming en
+een optionele bijdrage-eigen selectie. Code/resource-inputs hebben een
+geregistreerde heropenroute; niet-heropenbare visual-inputs verliezen hun
+history-inschrijvingen bij disposal. Selecties en hun bronabonnementen worden
+vrijgegeven bij duplicaten, eviction, branch pruning, consumption en shutdown.
+Er is geen aparte Lens-stack. `Go: Back`/`Go: Forward` en Alt+Left/Right zijn
+workbench-commands, niet meer uitsluitend code-editor-keybindings.
+
+De concrete pane consumeert haar restore-optie tijdens één activatie, vóór
+controlbinding. Bronbookmarks behouden registratie, BT-occurrencepad of exacte
+FSM-return/binding; zij bewaren geen oude graph/AST. Asynchrone FSM-layout
+consumeert de bewaarde viewport na publicatie. Scene-members en Scenario-tests/
+results gebruiken eveneens hun eigen selectie-identiteit. Een verdwenen bron
+of geëvicte resultaat krijgt niet de volgende ordinal of een gelijknamige node.
+
+De volledige Studio-regressie onthulde bovendien dat externe bronedits een
+verborgen codecursor op verwijderde regels konden achterlaten. De oude
+history-clamp verborg dit. `CodeEditorViewBinding` volgt daarom bij de
+textmodelgrens ook edits zonder code-eigen editstate; expliciete code-Undo/
+Redo-resultaten blijven leidend. Visuele wrap-scrollrows zijn geen bufferregels.
+Er is geen extra grenscontrole of reparatiepad aan de history-consumer toegevoegd.
+
+Ontwerp, de vooraf bekeken VS Code/CodeMirror-productiebronnen en reproduceerbare
+gates: [`workbench_navigation_history_design.md`](workbench_navigation_history_design.md).
+De onafhankelijke `navigation.ts`-fixture beproeft echte Studio-input, FSM-worker,
+Source/Definition/Back/Back/Forward, UTF-16-prefixedits, gedeelde BT-occurrences,
+verwijdering/Undo, ActionEffect-properties, Scene-members, Scenario-bronnen en
+gesloten source-tabs. Versie/dirty/modelbytes en gepauzeerde machine/media zijn
+expliciete orakels. Een afzonderlijke resultaatproef toetst logevictie en bewaarde
+collapsed-state, zonder een bepaalde game-scenario uit te voeren.
+
+**Bewijs:** volledige Studio-workflows geslaagd op **software, WebGL2 en WebGPU**;
+Lua-suite **1272 geslaagd, 1 bestaande skip**. IDE-typecheck, browser-Studio-build,
+strict architecture boundaries (0 issues), core-parity en `git diff --check`
+slagen. De tests-typecheck houdt exact dezelfde **51 bestaande diagnostieken**
+als na A02 (vergeleken zonder verschoven regelnummers). Eindlogs en screenshots
+staan lokaal onder `/tmp/bmsx-a03/`. De suite bevat opzettelijke compile/guestfaults
+en bestaande sourcefetch-404's; dit is geen claim van nul consolemeldingen.
+
+Stationaire frames capturen of remappen geen history; stacks zijn begrensd op
+64 entries elk en mapping gebruikt modelwijzigingen. Dit is geen volledige
+host-/SNES-Mini-performancemeting. **A04–A09 blijven open**: A03 verandert niet
+de definitiegranulariteit van tabs, preview/pinnen, sessieherstel, Scenario-output,
+zoekbediening of hover-leave.
+
 ### A09 — aanvullend P2: pointer-leave heeft nog geen gedeelde eigenaar
 
 Bij de A02-review is in de echte software-Studio ook deze tegenproef uitgevoerd:

@@ -1,3 +1,5 @@
+import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
+import { BehaviorLensNavigationSelection } from './navigation_selection';
 import { isShiftDown } from '../../../input/keyboard/key_input';
 import { inputFocus } from '../../../input/focus';
 import { pointerCapture } from '../../../input/pointer/capture';
@@ -34,6 +36,11 @@ import { WorkbenchSourceEditReview } from '../../ui/source_edit_review/control';
 import type { WorkbenchGraphDragSource } from '../../ui/graph/drag';
 
 export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<BehaviorLensInput> {
+	public override getSelection(): BehaviorLensNavigationSelection {
+		this.controller.updateView(this.input);
+		return new BehaviorLensNavigationSelection(this.input);
+	}
+
 	private readonly pointer = new BehaviorLensPointer();
 	private readonly properties = new WorkbenchPropertyTreePointer();
 	private readonly graph = new WorkbenchGraphControl(inputFocus, pointerCapture, input => this.handleKeyboard(input), this.focusTarget);
@@ -91,13 +98,13 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		});
 	}
 
-	protected override activate(): void {
+	protected override activate(_selection?: EditorTextSelection, navigationSelection?: BehaviorLensNavigationSelection): void {
 		super.activate();
 		this.pointer.cancel();
 		this.properties.cancel();
 		this.sourceEditReview.clear();
 		this.graph.clearInput();
-		this.controller.updateView(this.input);
+		this.controller.updateView(this.input, navigationSelection);
 		const presentation = this.input.view.presentation;
 		if (presentation.kind === 'graph') this.graph.setInput(presentation.viewport, this.graphDragSource);
 		else if (presentation.kind === 'state-graph') this.graph.setInput(presentation.viewport, this.stateMachineDragSource);

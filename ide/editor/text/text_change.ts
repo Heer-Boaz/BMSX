@@ -11,6 +11,18 @@ export type TrackedTextRange = {
 	end: number;
 };
 
+/** Position mapping (CodeMirror ChangeDesc.mapPos), in our application-order changes. */
+export function mapTextOffset(offset: number, changes: readonly EditorTextChange[], association: -1 | 1): number {
+	for (const change of changes) {
+		const end = change.offset + change.deletedLength;
+		if (offset < change.offset) continue;
+		if (offset > end || (offset === end && change.deletedLength > 0)) offset += change.insertedLength - change.deletedLength;
+		else if (offset === change.offset && change.deletedLength > 0) offset = change.offset;
+		else offset = change.offset + (association < 0 ? 0 : change.insertedLength);
+	}
+	return offset;
+}
+
 /** End of the affected text in the final buffer, for changes in application order. */
 export function textChangesEndOffset(changes: readonly EditorTextChange[]): number {
 	let end = 0;

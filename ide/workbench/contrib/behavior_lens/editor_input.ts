@@ -40,6 +40,10 @@ export class BehaviorLensInput extends WorkingCopyEditorInput<BehaviorLensTabId,
 			presentation.tree.hoverIndex = -1;
 			return;
 		}
+		if (presentation.kind === 'graph') {
+			presentation.dirty = true;
+			return;
+		}
 		if (presentation.kind !== 'state-graph') return;
 		presentation.dirty = true;
 		presentation.layoutState = this.graphLayout.state;
@@ -76,13 +80,20 @@ export class BehaviorLensInput extends WorkingCopyEditorInput<BehaviorLensTabId,
 		presentation.layoutState = state;
 		if (state.kind === 'ready' && viewport.model !== state.model) {
 			viewport.setModel(state.model, stateGraphSelection(state.model, view.selection));
-			if (presentation.initialPosition) {
+			if (presentation.position === 'preserve' && viewport.selection !== null) viewport.reveal(viewport.selection);
+			updateBehaviorLensStatus(view);
+		}
+		const position = presentation.position;
+		if (state.kind === 'ready' && position !== 'preserve') {
+			if (position === 'initial') {
 				viewport.scrollX = 0;
 				viewport.scrollY = 0;
-				presentation.initialPosition = false;
+				if (viewport.selection !== null) viewport.reveal(viewport.selection);
+			} else {
+				viewport.scrollX = position.scrollX;
+				viewport.scrollY = position.scrollY;
 			}
-			if (viewport.selection !== null) viewport.reveal(viewport.selection);
-			updateBehaviorLensStatus(view);
+			presentation.position = 'preserve';
 		}
 	}
 }

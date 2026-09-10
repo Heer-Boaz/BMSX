@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import type { CodeEditorViewSnapshot } from '../../ide/common/models';
 import type { RuntimeResource } from '../../ide/common/resource';
 import { EditorTextModel, type EditorTextModelContentChangeEvent } from '../../ide/editor/model/text_model';
-import { mapTrackedTextRange, textChangesEndOffset, type EditorTextChange } from '../../ide/editor/text/text_change';
+import { mapTextOffset, mapTrackedTextRange, textChangesEndOffset, type EditorTextChange } from '../../ide/editor/text/text_change';
 
 const resource: RuntimeResource = {
 	domain: 0, path: 'tracked.lua',
@@ -13,6 +13,25 @@ const resource: RuntimeResource = {
 const view: CodeEditorViewSnapshot = {
 	cursorRow: 0, cursorColumn: 0, scrollRow: 0, scrollColumn: 0, selectionAnchor: null,
 };
+
+test('text positions map replacement boundaries and insertion affinity in UTF-16 application order', () => {
+	const replacement = [{ offset: 3, deletedLength: 4, insertedLength: 2 }];
+	const expected = [[2, 2], [3, 3], [3, 5], [3, 5], [3, 5], [5, 5], [6, 6]];
+	for (let offset = 2; offset <= 8; offset += 1) {
+		assert.deepEqual([-1, 1].map(association => mapTextOffset(offset, replacement, association as -1 | 1)), expected[offset - 2]);
+	}
+	const insertion = [{ offset: 3, deletedLength: 0, insertedLength: '🐉'.length }];
+	assert.equal(mapTextOffset(3, insertion, -1), 3);
+	assert.equal(mapTextOffset(3, insertion, 1), 5);
+	assert.equal(mapTextOffset(4, insertion, -1), 6);
+	const changes = [
+		{ offset: 8, deletedLength: 2, insertedLength: 0 },
+		{ offset: 2, deletedLength: 0, insertedLength: 5 },
+		{ offset: 0, deletedLength: 1, insertedLength: 0 },
+	];
+	assert.equal(mapTextOffset(11, changes, 1), 13);
+	assert.equal(mapTextOffset(9, changes, -1), 12);
+});
 
 test('source ranges follow edits without growing at their edges or adopting replacement text', () => {
 	const cases: readonly [EditorTextChange, number, number][] = [

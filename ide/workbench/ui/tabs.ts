@@ -1,3 +1,4 @@
+import type { EditorPaneSelection } from '../services/editor/editor_selection';
 // disable cross_layer_import_pattern -- workbench tabs own editor/resource tab activation lifecycle.
 import { editorRuntimeState } from '../../editor/common/runtime_state';
 import { editorChromeState } from './chrome_state';
@@ -55,17 +56,18 @@ export function setActiveTab(
 	editorPanes: EditorPanes,
 	tabId: EditorTabId,
 	selection?: EditorTextSelection,
+	navigationSelection?: EditorPaneSelection,
 ): void {
 	const tab = editorTabGroup.findById(tabId)!;
 	const activeTab = editorTabGroup.activeTab;
 	const isSameTab = activeTab === tab;
-	const navigationCheckpoint = tab.kind === 'code_editor' && (!isSameTab || selection)
+	const navigationCheckpoint = (!isSameTab || selection || navigationSelection)
 		? beginNavigationCapture()
 		: null;
 	closeSymbolSearch(true);
 	if (isSameTab) {
-		editorPanes.openEditor(tab, selection);
-		if (navigationCheckpoint) {
+		editorPanes.openEditor(tab, selection, navigationSelection);
+		if (!isSameTab || selection || navigationSelection) {
 			completeNavigation(navigationCheckpoint);
 		}
 		return;
@@ -73,8 +75,8 @@ export function setActiveTab(
 	// End the old control's input while its resource and view are still attached.
 	editorPanes.clearEditor();
 	editorTabGroup.activate(tab);
-	editorPanes.openEditor(tab, selection);
-	if (navigationCheckpoint) {
+	editorPanes.openEditor(tab, selection, navigationSelection);
+	if (!isSameTab || selection || navigationSelection) {
 		completeNavigation(navigationCheckpoint);
 	}
 }

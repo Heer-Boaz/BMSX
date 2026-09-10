@@ -1,20 +1,13 @@
-import type { EditorNavigationController } from '../../../resources/navigation';
 import * as TextEditing from '../../../../../editor/editing/text_editing_and_selection';
 import { moveCursorDown, moveCursorEnd, moveCursorHome, moveCursorLeft, moveCursorRight, moveCursorUp, pageDown, pageUp } from '../../../../../editor/ui/view/caret/caret';
-import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isShiftDown, shouldRepeatKeyFromPlayer } from '../../../../../input/keyboard/key_input';
+import { consumeIdeKey, isAltDown, isShiftDown, shouldRepeatKeyFromPlayer } from '../../../../../input/keyboard/key_input';
 import type { PlayerInput } from '../../../../../../hosts/common/input/player';
 
-type NavigationHistoryCommands = {
-	goBackward(): Promise<void>;
-	goForward(): Promise<void>;
-};
-
-export function handleEditorNavigationKeys(playerInput: PlayerInput, navigation: EditorNavigationController): void {
-	const ctrlDown = isCtrlDown(playerInput);
+export function handleEditorNavigationKeys(playerInput: PlayerInput): void {
 	const shiftDown = isShiftDown(playerInput);
 	const altDown = isAltDown(playerInput);
 	if (altDown) {
-		handleEditorAltNavigation(playerInput, navigation, ctrlDown, shiftDown);
+		handleEditorAltNavigation(playerInput, shiftDown);
 		return;
 	}
 	if (shouldRepeatKeyFromPlayer('ArrowLeft', playerInput)) {
@@ -58,19 +51,7 @@ export function handleEditorNavigationKeys(playerInput: PlayerInput, navigation:
 	}
 }
 
-function handleEditorAltNavigation(playerInput: PlayerInput, navigation: NavigationHistoryCommands, ctrlDown: boolean, shiftDown: boolean): void {
-	if (!ctrlDown && !shiftDown) {
-		if (isKeyJustPressed('ArrowLeft', playerInput)) {
-			consumeIdeKey('ArrowLeft', playerInput);
-			void navigation.goBackward();
-			return;
-		}
-		if (isKeyJustPressed('ArrowRight', playerInput)) {
-			consumeIdeKey('ArrowRight', playerInput);
-			void navigation.goForward();
-			return;
-		}
-	}
+function handleEditorAltNavigation(playerInput: PlayerInput, shiftDown: boolean): void {
 	let movedAlt = false;
 	if (shouldRepeatKeyFromPlayer('ArrowUp', playerInput)) {
 		consumeIdeKey('ArrowUp', playerInput);

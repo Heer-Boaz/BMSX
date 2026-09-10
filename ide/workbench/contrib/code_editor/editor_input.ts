@@ -2,6 +2,9 @@ import type { EditorTextModel } from '../../../editor/model/text_model';
 import { WorkingCopyEditorInput } from '../../common/editor_input';
 import type { CodeEditorTabId } from '../../ui/tab/id';
 import type { CodeTabContext } from '../../ui/code_tab/model';
+import type { ResourceEditorIdentity } from '../../common/editor_input';
+
+export const WORKBENCH_TEXT_EDITOR_ID = 'workbench.editor.text';
 
 /** Text-editor view state for one retained resource-owned working copy. */
 export class CodeEditorInput extends WorkingCopyEditorInput<CodeEditorTabId, 'code_editor'> {
@@ -11,5 +14,9 @@ export class CodeEditorInput extends WorkingCopyEditorInput<CodeEditorTabId, 'co
 
 	public get workingCopy(): EditorTextModel {
 		return this.context.model;
+	}
+
+	public override toResourceEditor(): ResourceEditorIdentity {
+		return { resource: this.workingCopy.resource, editorId: WORKBENCH_TEXT_EDITOR_ID };
 	}
 }

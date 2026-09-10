@@ -45,10 +45,14 @@ import { getTextFileRuntimeSourceStatus } from '../../services/working_copy/runt
 import { activeCodeEditor } from '../../../editor/ui/code_editor_state';
 import { undo, redo } from '../../../editor/editing/undo_controller';
 import { clearReferenceHighlights, requestSemanticRefresh } from '../../../editor/contrib/intellisense/engine';
+import { CodeEditorNavigationSelection } from './navigation_selection';
 
 const CODE_SCROLLBARS = ['codeVertical', 'codeHorizontal'] as const;
 
 export class CodeEditorPane extends EditorPane<CodeEditorInput> {
+	public override getSelection(): CodeEditorNavigationSelection {
+		return new CodeEditorNavigationSelection(this.input);
+	}
 	private unsubscribeContentChange: () => void;
 	private readonly unbindKeyboard = activeCodeEditor.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
 	private readonly unbindBlur = activeCodeEditor.focusTarget.onDidBlur(() => activeCodeEditor.model.breakUndoSequence());
@@ -82,10 +86,10 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 		this.unbindBlur();
 	}
 
-	protected activate(selection?: EditorTextSelection): void {
+	protected activate(selection?: EditorTextSelection, navigationSelection?: CodeEditorNavigationSelection): void {
 		this.editor.resourcePanel.hide();
 		editorChromeState.resourcePanelResizing = false;
-		activateCodeEditorTab(this.input, selection);
+		activateCodeEditorTab(this.input, selection, navigationSelection);
 		this.unsubscribeContentChange = this.input.context.model.onDidChangeContent(event => {
 			editorViewState.layout.onDidChangeContent(this.input.context.model.buffer, event);
 			editorViewState.maxLineLengthDirty = true;
@@ -94,10 +98,11 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 		});
 	}
 
-	public override setOptions(selection?: EditorTextSelection): void {
+	public override setOptions(selection?: EditorTextSelection, navigationSelection?: CodeEditorNavigationSelection): void {
 		if (selection) {
 			applyActiveCodeTabSelection(selection);
 		}
+		navigationSelection?.restore(this.input);
 	}
 
 	public override clearInput(): void {

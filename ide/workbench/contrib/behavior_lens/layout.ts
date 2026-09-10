@@ -4,7 +4,7 @@ import { editorViewState } from '../../../editor/ui/view/state';
 import { updateFullWidthWorkbenchLayout } from '../../common/layout';
 import type { TextBuffer } from '../../../editor/text/text_buffer';
 import { reconcileBehaviorLensSource } from './source_correspondence';
-import { resolveBehaviorSourceBookmark } from './source_bookmark';
+import { resolveBehaviorSourceBookmark, type BehaviorSourceBookmark } from './source_bookmark';
 import { reconcileStateMachineSourceSelection } from './state_machine_selection';
 import {
 	clampWorkbenchListScroll,
@@ -53,25 +53,27 @@ export function installBehaviorLensDocument(
 	state.selection = reconcileBehaviorLensSource(state, document, buffer);
 	const bookmark = state.selectionBookmark;
 	state.selectionBookmark = undefined;
-	if (bookmark !== undefined) {
-		const path = resolveBehaviorSourceBookmark(bookmark, state);
-		state.selection = null;
-		if (path !== undefined) {
-			selectBehaviorLensDefinition(state, path[0].rowKey);
-			const rowKey = path[path.length - 1].rowKey;
-			if (bookmark.kind === 'node' || bookmark.kind === 'tree-edge') state.selection = { kind: bookmark.kind, rowKey };
-			else state.selection = reconcileStateMachineSourceSelection(bookmark, state.stateMachines.references.get(rowKey), buffer);
-			if (state.presentation.kind === 'outline' || state.presentation.kind === 'properties') {
-				for (let index = 0; index < path.length - 1; index += 1) state.presentation.collapsedRowKeys.delete(path[index].rowKey);
-			}
-		}
-	}
+	if (bookmark !== undefined) restoreBehaviorSourceBookmark(state, bookmark, buffer);
 	state.headerDirty = true;
 	if (state.presentation.kind !== 'outline') state.presentation.dirty = true;
 	else {
 		rebuildBehaviorLensRows(state, state.presentation);
 		state.presentation.rowsDirty = false;
 		state.presentation.textDirty = true;
+	}
+}
+
+/** Both edit-associated selection and navigation restore use the same source proof. */
+export function restoreBehaviorSourceBookmark(state: BehaviorLensViewState, bookmark: BehaviorSourceBookmark, buffer: TextBuffer): void {
+	const path = resolveBehaviorSourceBookmark(bookmark, state);
+	state.selection = null;
+	if (path === undefined) return; // The authored occurrence was removed.
+	selectBehaviorLensDefinition(state, path[0].rowKey);
+	const rowKey = path[path.length - 1].rowKey;
+	if (bookmark.kind === 'node' || bookmark.kind === 'tree-edge') state.selection = { kind: bookmark.kind, rowKey };
+	else state.selection = reconcileStateMachineSourceSelection(bookmark, state.stateMachines.references.get(rowKey), buffer);
+	if (state.presentation.kind === 'outline' || state.presentation.kind === 'properties') {
+		for (let index = 0; index < path.length - 1; index += 1) state.presentation.collapsedRowKeys.delete(path[index].rowKey);
 	}
 }
 
@@ -87,7 +89,7 @@ export function selectBehaviorLensDefinition(state: BehaviorLensViewState, key: 
 		else {
 			graph.viewport.selection = null;
 			graph.dirty = true;
-			graph.initialPosition = true;
+			graph.position = 'initial';
 		}
 	} else if (definition.behaviorKind === 'behavior_tree') {
 		state.presentation = createBehaviorLensGraph();
@@ -95,7 +97,7 @@ export function selectBehaviorLensDefinition(state: BehaviorLensViewState, key: 
 		if (state.presentation.kind !== 'state-graph') state.presentation = createBehaviorLensStateGraph();
 		else if (previousKey !== key) {
 			state.presentation.dirty = true;
-			state.presentation.initialPosition = true;
+			state.presentation.position = 'initial';
 		}
 		else state.presentation.viewport.selection = stateGraphSelection(state.presentation.viewport.model, state.selection);
 	} else if (state.presentation.kind === 'properties') {

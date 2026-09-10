@@ -1,5 +1,11 @@
 import type { EditorTextModel } from '../../editor/model/text_model';
 import { DisposableStore, type IDisposable } from '../../common/lifecycle';
+import type { ResourceIdentity } from '../../common/resource';
+
+export type ResourceEditorIdentity = {
+	readonly resource: ResourceIdentity;
+	readonly editorId: string;
+};
 
 /** Retained workbench input identity and presentation shared by every editor kind. */
 export abstract class AbstractEditorInput<
@@ -7,6 +13,15 @@ export abstract class AbstractEditorInput<
 	TKind extends string,
 > implements IDisposable {
 	protected readonly disposables = new DisposableStore();
+	private readonly disposeListeners = new Set<() => void>();
+
+	/** Only inputs with a registered resource opener can outlive closing their tab. */
+	public toResourceEditor?(): ResourceEditorIdentity;
+
+	public onWillDispose(listener: () => void): () => void {
+		this.disposeListeners.add(listener);
+		return () => this.disposeListeners.delete(listener);
+	}
 
 	public constructor(
 		public readonly id: TId,
@@ -20,6 +35,8 @@ export abstract class AbstractEditorInput<
 
 	/** Input resources end at close, not when its reusable pane is detached. */
 	public dispose(): void {
+		for (const listener of this.disposeListeners) listener();
+		this.disposeListeners.clear();
 		this.disposables.dispose();
 	}
 }

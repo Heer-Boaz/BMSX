@@ -763,7 +763,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.resourcePanel.queuePendingSelection(null);
 		editorChromeState.resourcePanelResizing = false;
 		activeCodeEditor.view.desiredColumn = activeCodeEditor.view.cursorColumn;
-		initializeNavigationState();
+		initializeNavigationState(this.editorPanes);
 		editorRuntimeState.initialized = true;
 	}
 

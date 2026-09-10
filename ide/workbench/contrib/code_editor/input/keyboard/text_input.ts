@@ -13,7 +13,7 @@ export class InputController {
 		if (handleEditorBreakpointInput(playerInput, editor.breakpoints)) {
 			return;
 		}
-		handleEditorNavigationKeys(playerInput, editor.navigation);
+		handleEditorNavigationKeys(playerInput);
 		handleEditorEditingKeys(playerInput);
 		const ctrlDown = isCtrlDown(playerInput);
 		const metaDown = isMetaDown(playerInput);

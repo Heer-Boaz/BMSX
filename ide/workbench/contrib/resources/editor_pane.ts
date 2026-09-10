@@ -1,3 +1,5 @@
+import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
+import { ResourceViewerNavigationSelection } from './navigation_selection';
 import { handleEditorScrollbarPointer } from '../../../input/pointer/scrollbar';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 import type { PointerSnapshot } from '../../../common/models';
@@ -21,12 +23,17 @@ import { clampResourceViewerScroll } from './viewer';
 const VIEWER_SCROLLBARS = ['viewerVertical'] as const;
 
 export class ResourceViewerEditorPane extends WorkbenchViewEditorPane<ResourceViewerInput> {
-	protected activate(): void {
+	public override getSelection(): ResourceViewerNavigationSelection {
+		return new ResourceViewerNavigationSelection(this.input.resource.scroll);
+	}
+
+	protected activate(_selection?: EditorTextSelection, navigationSelection?: ResourceViewerNavigationSelection): void {
 		closeSearch(false, true);
 		closeLineJump(false);
 		editorCaretState.cursorRevealSuspended = false;
 		runtimeErrorState.activeOverlay = null;
 		runtimeErrorState.executionStopRow = null;
+		navigationSelection?.restore(this.input.resource);
 		clampResourceViewerScroll(
 			this.input.resource,
 			getCodeAreaBounds(),

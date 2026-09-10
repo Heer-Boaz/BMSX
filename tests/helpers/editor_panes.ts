@@ -1,3 +1,5 @@
+import type { EditorPaneSelection } from '../../ide/workbench/services/editor/editor_selection';
+import { CodeEditorNavigationSelection } from '../../ide/workbench/contrib/code_editor/navigation_selection';
 import type { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import type { PlayerInput } from '../../hosts/common/input/player';
 import type { PointerSnapshot } from '../../ide/common/models';
@@ -21,14 +23,17 @@ class TestEditorPane<TInput extends EditorInput> extends EditorPane<TInput> {
 		private readonly activateInput: (
 			input: TInput,
 			selection?: EditorTextSelection,
+			navigationSelection?: EditorPaneSelection,
 		) => void,
+		captureSelection?: (input: TInput) => EditorPaneSelection,
 	) {
 		super();
+		if (captureSelection !== undefined) this.getSelection = () => captureSelection(this.input);
 	}
 
 	// disable-next-line single_line_method_pattern -- Test panes exercise the production input lifecycle through the supplied activation contract.
-	protected activate(selection?: EditorTextSelection): void {
-		this.activateInput(this.input, selection);
+	protected activate(selection?: EditorTextSelection, navigationSelection?: EditorPaneSelection): void {
+		this.activateInput(this.input, selection, navigationSelection);
 	}
 
 	public focus(): void {
@@ -73,7 +78,7 @@ function activateViewInput(_input: EditorInput): void {
 /** Editor-group lifecycle used by tests that exercise workspace and navigation owners. */
 export function createTestEditorPanes(): EditorPanes {
 	return new EditorPanes({
-		code_editor: () => new TestEditorPane<CodeEditorInput>(activateCodeEditorTab),
+		code_editor: () => new TestEditorPane<CodeEditorInput>(activateCodeEditorTab, input => new CodeEditorNavigationSelection(input)),
 		resource_view: () => new TestEditorPane<ResourceViewerInput>(activateViewInput),
 		behavior_lens: () => new TestEditorPane<BehaviorLensInput>(activateViewInput),
 		scenario_lab: () => new TestEditorPane<ScenarioLabInput>(activateViewInput),

@@ -7,8 +7,8 @@ import {
 	type ResourceEditorRegistration,
 } from '../../services/editor/resource_editor_resolver';
 
-export const WORKBENCH_TEXT_EDITOR_ID = 'workbench.editor.text';
-export const WORKBENCH_RESOURCE_VIEWER_ID = 'workbench.editor.resourceViewer';
+import { WORKBENCH_TEXT_EDITOR_ID } from '../code_editor/editor_input';
+import { WORKBENCH_RESOURCE_VIEWER_ID } from './editor_input';
 
 /** Built-in resource editor contributions, ordered from specific to general. */
 export function createResourceEditorResolver(

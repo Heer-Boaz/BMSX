@@ -3,7 +3,7 @@ import { mapTrackedTextRange, type EditorTextChange, type TrackedTextRange } fro
 import type { BehaviorSourceNode, BehaviorSourceRowKey } from './model';
 import type { BehaviorLensViewState } from './view_model';
 import type { BehaviorSourceSelection } from './source_selection';
-import { copyStateMachineSourceBookmark, mapStateMachineSourceSelection, type StateMachineSourceBookmark } from './state_machine_selection';
+import { copyStateMachineSourceBookmark, mapStateMachineSourceSelection, stateMachineSourceBookmarksEqual, type StateMachineSourceBookmark } from './state_machine_selection';
 
 export type BehaviorSourceBookmarkStep = TrackedTextRange & Pick<BehaviorSourceNode, 'kind' | 'behaviorKind'>;
 
@@ -32,7 +32,7 @@ export function captureBehaviorSourceBookmark(
 		: { ...copyStateMachineSourceBookmark(selection), path };
 }
 
-/** History owns immutable values; each live pending selection owns its mapped copy. */
+/** Undo records own immutable values; live selections and navigation own mapped copies. */
 export function copyBehaviorSourceBookmark<S extends BehaviorSourceBookmark>(bookmark: S): BehaviorSourceBookmark & Pick<S, 'kind'>;
 export function copyBehaviorSourceBookmark(bookmark: BehaviorSourceBookmark): BehaviorSourceBookmark {
 	const path = bookmark.path.map(step => ({ ...step }));
@@ -40,7 +40,7 @@ export function copyBehaviorSourceBookmark(bookmark: BehaviorSourceBookmark): Be
 		: { ...copyStateMachineSourceBookmark(bookmark), path };
 }
 
-/** A live pending selection may track edits; history values themselves are never mapped. */
+/** Map a live selection or navigation bookmark, never an immutable undo record. */
 export function mapBehaviorSourceBookmark(bookmark: BehaviorSourceBookmark, changes: readonly EditorTextChange[]): void {
 	for (const step of bookmark.path) mapTrackedTextRange(step, changes);
 	if (bookmark.kind === 'state-outcome' || bookmark.kind === 'state-entry') mapStateMachineSourceSelection(bookmark, changes);
@@ -62,4 +62,16 @@ export function resolveBehaviorSourceBookmark(
 		candidates = node.children;
 	}
 	return path;
+}
+
+export function behaviorSourceBookmarksEqual(a: BehaviorSourceBookmark | undefined, b: BehaviorSourceBookmark | undefined): boolean {
+	if (a === undefined || b === undefined) return a === b;
+	if (a.kind !== b.kind || a.path.length !== b.path.length) return false;
+	for (let index = 0; index < a.path.length; index += 1) {
+		const left = a.path[index];
+		const right = b.path[index];
+		if (left.kind !== right.kind || left.behaviorKind !== right.behaviorKind || left.start !== right.start || left.end !== right.end) return false;
+	}
+	if (a.kind === 'node' || a.kind === 'tree-edge') return true;
+	return b.kind !== 'node' && b.kind !== 'tree-edge' && stateMachineSourceBookmarksEqual(a, b);
 }

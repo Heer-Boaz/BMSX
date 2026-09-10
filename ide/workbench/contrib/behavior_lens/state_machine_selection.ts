@@ -80,6 +80,20 @@ export function mapStateMachineSourceSelection(selection: StateMachineSourceBook
 	}
 }
 
+/** Compare the evidence itself; two returns to the same state are distinct locations. */
+export function stateMachineSourceBookmarksEqual(a: StateMachineSourceBookmark, b: StateMachineSourceBookmark): boolean {
+	if (a.kind === 'state-entry') return b.kind === 'state-entry' && a.tracked.entryKind === b.tracked.entryKind
+		&& a.tracked.start === b.tracked.start && a.tracked.end === b.tracked.end;
+	if (b.kind !== 'state-outcome') return false;
+	const left = a.tracked;
+	const right = b.tracked;
+	if (left.slotKind !== right.slotKind || left.bindingKind !== right.bindingKind
+		|| left.binding.start !== right.binding.start || left.binding.end !== right.binding.end) return false;
+	return left.kind === 'direct' ? right.kind === 'direct' : right.kind === 'return'
+		&& left.callback.start === right.callback.start && left.callback.end === right.callback.end
+		&& left.statementStart.start === right.statementStart.start && left.statementStart.end === right.statementStart.end;
+}
+
 /** The caller has already proved the containing registration/slot occurrence. */
 export function reconcileStateMachineSourceSelection(
 	selection: StateMachineSourceBookmark, references: readonly StateMachineSourceReference[] | undefined, buffer: TextBuffer,

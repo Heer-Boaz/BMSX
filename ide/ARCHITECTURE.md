@@ -99,9 +99,26 @@ property change.
 Before/after selection travels with that document's edit history as typed,
 input-independent state. The retained code-input manager consumes code-owned
 state from the content event, even when a visual editor invoked Undo/Redo and
-the code widget is hidden. Widget activation/history reveal handles geometry;
+the code widget is hidden. Its `CodeEditorViewBinding` also maps cursor/anchor
+positions for edits without code-owned result state: one model pre-edit event
+captures offsets in the old buffer, the content event maps those offsets into
+the new buffer. A hidden view cannot retain positions on removed lines. Visual
+scroll rows are never treated as buffer rows. Widget activation/history reveal handles geometry;
 the text model does not know cursor or graph representations. See
 [edit-associated source selection](../docs/editor_edit_bookmarks_design.md).
+
+Workbench Back/Forward is a separate bounded navigation history, not document
+Undo or a visual-editor-local stack. `navigation/navigation_history.ts` captures
+the active pane's input identity and optional contribution-owned selection.
+Resource-editor identities reopen through the existing registration; concrete
+non-reopenable input entries end on input disposal. Each entry owns its mapped
+bookmarks and subscriptions. The pane consumes its selection option once during
+activation, before controls bind; an asynchronous FSM layout consumes the saved
+viewport after publication rather than running initial reveal over it. Shared
+`Go: Back`/`Go: Forward` commands and workbench Alt+Left/Right use this same owner
+from every editor kind. Source edits remap locations without restoring old text,
+adopting a same-named deleted occurrence or changing the paused machine.
+See [navigation design and proof](../docs/workbench_navigation_history_design.md).
 
 Workspace recovery persists dirty model contents separately from code-editor
 view metadata. A working copy can acquire its first code view after its content

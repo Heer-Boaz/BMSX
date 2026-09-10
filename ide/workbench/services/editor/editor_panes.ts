@@ -1,3 +1,5 @@
+import type { EditorPaneSelection } from './editor_selection';
+import { initializeNavigationState, resetNavigationHistoryState } from '../../../navigation/navigation_history';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import type { EditorInput, EditorInputKind } from '../../ui/tab/model';
 import type { EditorPane } from './editor_pane';
@@ -14,23 +16,24 @@ export class EditorPanes {
 	private activePaneValue: EditorPane<EditorInput> | null = null;
 
 	public constructor(private readonly factories: EditorPaneFactories) {
+		initializeNavigationState(this);
 	}
 
-	public get activePane(): EditorPane<EditorInput> {
-		return this.activePaneValue!;
+	public get activePane(): EditorPane<EditorInput> | null {
+		return this.activePaneValue;
 	}
 
-	public openEditor(input: EditorInput, selection?: EditorTextSelection): void {
+	public openEditor(input: EditorInput, selection?: EditorTextSelection, navigationSelection?: EditorPaneSelection): void {
 		const activePane = this.activePaneValue;
 		if (activePane !== null && activePane.input === input) {
-			activePane.setOptions(selection);
+			activePane.setOptions(selection, navigationSelection);
 			activePane.focus();
 			return;
 		}
 		this.clearEditor();
 		const pane = this.getOrCreatePane(input);
 		this.activePaneValue = pane;
-		pane.setInput(input, selection);
+		pane.setInput(input, selection, navigationSelection);
 		pane.focus();
 	}
 
@@ -46,6 +49,7 @@ export class EditorPanes {
 	}
 
 	public dispose(): void {
+		resetNavigationHistoryState();
 		this.clearEditor();
 		for (const pane of this.panes.values()) pane.dispose();
 		this.panes.clear();

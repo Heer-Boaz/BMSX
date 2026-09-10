@@ -41,12 +41,15 @@ export type BehaviorLensOutline = WorkbenchListState<BehaviorLensRow> & {
 	textDirty: boolean;
 };
 
+/** Placement is consumed once geometry exists, including asynchronous FSM layouts. */
+export type BehaviorGraphPosition = 'initial' | 'preserve' | { readonly scrollX: number; readonly scrollY: number };
+
 export type BehaviorLensGraph = {
 	readonly kind: 'graph';
 	readonly actionBar: WorkbenchActionBarState;
 	readonly viewport: WorkbenchGraphViewport<BehaviorGraphModel>;
 	dirty: boolean;
-	initialPosition: boolean;
+	position: BehaviorGraphPosition;
 };
 
 export type BehaviorLensStateGraph = {
@@ -58,7 +61,7 @@ export type BehaviorLensStateGraph = {
 	/** The input publishes the session state during its normal update, never from a worker callback. */
 	layoutState: AsyncGraphLayoutState<StateGraphModel>;
 	dirty: boolean;
-	initialPosition: boolean;
+	position: BehaviorGraphPosition;
 };
 
 /** Source selection belongs to the input, never to a visible list's row number. */
@@ -92,14 +95,14 @@ export function createBehaviorLensGraph(): BehaviorLensGraph {
 	return { kind: 'graph', actionBar: createWorkbenchActionBar('behaviorLens.graph.title'),
 		viewport: new WorkbenchGraphViewport<BehaviorGraphModel>({ ...createWorkbenchGraphModel(editorViewState.font.renderFont(), [], []),
 			nodesBySource: new Map(), edgesBySource: new Map() }),
-		dirty: true, initialPosition: true };
+		dirty: true, position: 'initial' };
 }
 
 export function createBehaviorLensStateGraph(): BehaviorLensStateGraph {
 	const emptyModel = emptyStateGraph(editorViewState.font.renderFont());
 	return { kind: 'state-graph', actionBar: createWorkbenchActionBar('behaviorLens.stateGraph.title'),
 		viewport: new WorkbenchGraphViewport(emptyModel), emptyModel,
-		layoutState: { kind: 'idle' }, dirty: true, initialPosition: true };
+		layoutState: { kind: 'idle' }, dirty: true, position: 'initial' };
 }
 
 /** Input-owned source/view state; pixel layout is prepared only by the active pane. */

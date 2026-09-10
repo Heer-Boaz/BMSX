@@ -7,6 +7,9 @@ import { prepareBehaviorLensLayout, selectBehaviorLensDefinition } from '../../i
 import { behaviorSourceEditState } from '../../ide/workbench/contrib/behavior_lens/source_bookmark';
 import { readLuaSourceRange } from '../../ide/language/lua/source_edits';
 import { createLuaTableFieldTransfer } from '../../ide/language/lua/table_field_transfer';
+import { BehaviorLensInput } from '../../ide/workbench/contrib/behavior_lens/editor_input';
+import { BehaviorLensNavigationSelection } from '../../ide/workbench/contrib/behavior_lens/navigation_selection';
+import { removeBehaviorTreeChild } from '../../ide/workbench/contrib/behavior_lens/behavior_tree_edit';
 
 function fixture(t: TestContext, weighted = false, edge = false, definition = 1) {
 	const source = weighted ? BT_TRANSFER_SOURCE
@@ -138,4 +141,52 @@ test('unannotated transfers keep the strict parent-correspondence rule rather th
 	assert.equal(f.view.selection, null);
 	f.model.undo(); f.refresh();
 	assert.equal(f.view.selection, null);
+});
+
+test('navigation restores a mapped occurrence and pan after choosing another registration, not the old graph object', t => {
+	const f = fixture(t);
+	const input = new BehaviorLensInput(f.model, f.view, () => assert.fail('BT layout must not start an FSM worker'));
+	t.after(() => input.dispose());
+	f.viewport.scrollX = 37; f.viewport.scrollY = 19;
+	const selected = new BehaviorLensNavigationSelection(input);
+	t.after(() => selected.dispose());
+	const oldGraph = f.viewport.model;
+	selectBehaviorLensDefinition(f.view, f.view.document.definitions[0].rowKey);
+	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- 🐉 shifted\n' }]);
+	f.refresh();
+	const version = f.model.version;
+	selected.restore(input); prepareBehaviorLensLayout(f.view);
+	assert.equal(f.view.definitionRowKey, f.view.document.definitions[1].rowKey);
+	assert.ok(f.view.presentation.kind === 'graph');
+	const viewport = f.view.presentation.viewport;
+	assert.notEqual(viewport.model, oldGraph);
+	assert.ok(viewport.selection?.kind === 'node');
+	assert.equal(viewport.selection.member!.index, 1);
+	assert.equal(viewport.selection.parent!.member!.index, 0);
+	assert.equal(viewport.scrollX, 37); assert.equal(viewport.scrollY, 19);
+	assert.equal(f.model.version, version);
+	const restored = new BehaviorLensNavigationSelection(input);
+	assert.ok(selected.matches(restored)); restored.dispose();
+});
+
+test('a removed history occurrence does not select a surviving namesake, even after Undo reintroduces its bytes', t => {
+	const f = fixture(t);
+	const input = new BehaviorLensInput(f.model, f.view, () => assert.fail('BT layout must not start an FSM worker'));
+	t.after(() => input.dispose());
+	const selected = new BehaviorLensNavigationSelection(input);
+	t.after(() => selected.dispose());
+	removeBehaviorTreeChild(f.model, f.member);
+	f.refresh(); selected.restore(input); prepareBehaviorLensLayout(f.view);
+	assert.equal(f.view.definitionRowKey, f.view.document.definitions[1].rowKey);
+	assert.equal(f.view.selection, null);
+	assert.equal(f.viewport.selection, null);
+	f.model.undo(); f.refresh();
+	selected.restore(input); prepareBehaviorLensLayout(f.view);
+	assert.equal(f.view.selection, null, 'only an edit-associated Undo selection can explicitly restore a deleted occurrence');
+	assert.equal(f.viewport.selection, null);
+	const source = f.model.buffer.getText();
+	f.model.pushEditOperations([{ offset: 0, deleteLength: source.length, text: source }]);
+	f.refresh(); selected.restore(input); prepareBehaviorLensLayout(f.view);
+	assert.equal(f.view.definitionRowKey, null, 'a replaced registration cannot adopt another definition with the same id');
+	assert.equal(f.viewport.model.nodes.length, 0);
 });

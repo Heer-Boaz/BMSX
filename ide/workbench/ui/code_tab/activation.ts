@@ -1,3 +1,4 @@
+import type { CodeEditorNavigationSelection } from '../../contrib/code_editor/navigation_selection';
 import type { CartEditor } from '../../../cart_editor';
 import type { CodeTabContext } from './model';
 import { activeCodeEditor } from '../../../editor/ui/code_editor_state';
@@ -56,7 +57,7 @@ export function applyActiveCodeTabSelection(selection: EditorTextSelection): voi
 	activeCodeEditor.emitCursorMoved();
 }
 
-export function activateCodeEditorTab(tab: CodeEditorInput, selection?: EditorTextSelection): void {
+export function activateCodeEditorTab(tab: CodeEditorInput, selection?: EditorTextSelection, navigationSelection?: CodeEditorNavigationSelection): void {
 	const context = tab.context;
 	activeCodeEditor.attach(context.model, context.view);
 	editorViewState.maxLineLengthDirty = true;
@@ -72,6 +73,7 @@ export function activateCodeEditorTab(tab: CodeEditorInput, selection?: EditorTe
 	if (selection) {
 		applyActiveCodeTabSelection(selection);
 	}
+	navigationSelection?.restore(tab);
 	refreshActiveDiagnostics();
 }
 

@@ -1,3 +1,5 @@
+import type { BehaviorLensNavigationSelection } from './navigation_selection';
+import { captureNavigation } from '../../../navigation/navigation_history';
 import type { EditorTextModel, EditorTextModelContentChangeEvent } from '../../../editor/model/text_model';
 import { mapBehaviorLensSourceRanges } from './source_correspondence';
 import { resourceIdentityKey } from '../../../common/resource';
@@ -63,45 +65,48 @@ export class BehaviorLensController {
 	}
 
 	public openDefinition(registration: BehaviorRegistrationSource): void {
-		const resource = resolveRuntimeResource(this.sources, registration.resource)!;
-		const model = editorTextModelService.retain(resource, 'lua', resourceSourceForChunk(this.sources, resource));
-		const source = getTextSnapshot(model.buffer);
-		const tabId: BehaviorLensTabId = `behavior:${resourceIdentityKey(resource)}`;
-		let tab = editorTabGroup.findById(tabId);
-		if (tab === undefined) {
-			const document = this.buildDocument(resource, source);
-			tab = new BehaviorLensInput(
-				model,
-				createBehaviorLensViewState(document, model, registration.behaviorKind === 'behavior_tree' ? 'graph'
-					: registration.behaviorKind === 'action_effect' ? 'properties' : 'state-graph'),
-				this.createGraphLayoutEngine,
-			);
-			editorTabGroup.add(tab);
-		} else {
-			this.updateView(tab);
-		}
-		const view = tab.view;
-		if (view.definitionRowKey !== registration.rowKey) tab.invalidatePresentation();
-		selectBehaviorLensDefinition(view, registration.rowKey);
-		view.sourceMatchRowKeys.clear();
-		view.sourceMatchRowKeys.add(registration.rowKey);
-		prepareBehaviorLensLayout(view);
-		tab.updatePresentation(editorViewState.font.renderFont());
-		finishBehaviorLensNavigation(view);
-		setActiveTab(this.editorPanes, tab.id);
+		captureNavigation(() => {
+			const resource = resolveRuntimeResource(this.sources, registration.resource)!;
+			const model = editorTextModelService.retain(resource, 'lua', resourceSourceForChunk(this.sources, resource));
+			const source = getTextSnapshot(model.buffer);
+			const tabId: BehaviorLensTabId = `behavior:${resourceIdentityKey(resource)}`;
+			let tab = editorTabGroup.findById(tabId);
+			if (tab === undefined) {
+				const document = this.buildDocument(resource, source);
+				tab = new BehaviorLensInput(
+					model,
+					createBehaviorLensViewState(document, model, registration.behaviorKind === 'behavior_tree' ? 'graph'
+						: registration.behaviorKind === 'action_effect' ? 'properties' : 'state-graph'),
+					this.createGraphLayoutEngine,
+				);
+				editorTabGroup.add(tab);
+			} else {
+				this.updateView(tab);
+			}
+			const view = tab.view;
+			if (view.definitionRowKey !== registration.rowKey) tab.invalidatePresentation();
+			selectBehaviorLensDefinition(view, registration.rowKey);
+			view.sourceMatchRowKeys.clear();
+			view.sourceMatchRowKeys.add(registration.rowKey);
+			prepareBehaviorLensLayout(view);
+			tab.updatePresentation(editorViewState.font.renderFont());
+			finishBehaviorLensNavigation(view);
+			setActiveTab(this.editorPanes, tab.id);
+		});
 	}
 
 	/** Refreshes a visible source lens when its canonical code buffer advances. */
-	public updateView(input: BehaviorLensInput): void {
+	public updateView(input: BehaviorLensInput, navigationSelection?: BehaviorLensNavigationSelection): void {
 		const { view, workingCopy } = input;
 		const sourceChanged = workingCopy.version !== view.sourceVersion;
 		if (sourceChanged) {
 			installBehaviorLensDocument(view, this.buildDocument(view.resource, getTextSnapshot(workingCopy.buffer)), workingCopy.buffer);
 			view.sourceVersion = workingCopy.version;
 		}
+		navigationSelection?.restore(input);
 		prepareBehaviorLensLayout(view);
 		input.updatePresentation(editorViewState.font.renderFont());
-		if (sourceChanged) finishBehaviorLensNavigation(view);
+		if (sourceChanged && navigationSelection === undefined) finishBehaviorLensNavigation(view);
 	}
 
 	/** Review navigation keeps the actual consumer/return, not just the shared literal. */

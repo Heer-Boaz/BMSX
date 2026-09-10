@@ -1,3 +1,4 @@
+import { navigationState } from '../navigation/navigation_history';
 import { hasStateMachineDetails } from '../workbench/contrib/behavior_lens/state_machine_details';
 import type { HostRewind } from '../../hosts/common/rewind';
 import { HostPauseReason, type HostExecutionControl } from '../../hosts/common/execution_control';
@@ -41,6 +42,7 @@ import { inputFocus, type InputFocusTarget } from '../input/focus';
 // Source-consuming commands accept the concrete control's value before dirty
 // model selection, prompts or asynchronous source capture (Godot EditorData).
 const SOURCE_COMMANDS = new Set<EditorCommandId>([
+	'navigateBack', 'navigateForward',
 	'save', 'hot-resume', 'reboot', 'scenarioLab.run', 'scenarioLab.rerun',
 	'sceneEditor.removeMember', 'sceneEditor.moveMemberUp', 'sceneEditor.moveMemberDown',
 	'behaviorLens.moveChildEarlier', 'behaviorLens.moveChildLater', 'behaviorLens.removeChild', 'behaviorLens.duplicateChild',
@@ -73,6 +75,12 @@ export class IdeCommandController {
 		const edit = inputFocus.target?.commandContext.edit;
 		if (SOURCE_COMMANDS.has(command) && edit !== undefined && !edit.commit()) return;
 		switch (command) {
+			case 'navigateBack':
+				void this.editor.navigation.goBackward();
+				return;
+			case 'navigateForward':
+				void this.editor.navigation.goForward();
+				return;
 			case 'behaviorLens.moveChildEarlier':
 				this.editor.behaviorLens.moveSelectedChild(-1);
 				return;
@@ -212,6 +220,10 @@ export class IdeCommandController {
 	public isEnabled(command: EditorCommandId, focus: InputFocusTarget | null = inputFocus.target): boolean {
 		const context = focus?.commandContext;
 		switch (command) {
+			case 'navigateBack':
+				return navigationState.captureSuspendDepth === 0 && navigationState.back.length > 0;
+			case 'navigateForward':
+				return navigationState.captureSuspendDepth === 0 && navigationState.forward.length > 0;
 			case 'behaviorLens.moveChildEarlier':
 				return this.editor.behaviorLens.canMoveSelectedChild(-1);
 			case 'behaviorLens.moveChildLater':

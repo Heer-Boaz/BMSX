@@ -77,13 +77,16 @@ export class EditorNavigationController {
 	}
 
 	private async openHistoryEntry(target: NavigationHistoryEntry): Promise<void> {
-		await withNavigationCaptureSuspended(async () => {
-			const resource = resolveRuntimeResource(this.sources, target)!;
-			await this.openResource(resource, {
-				row: target.row,
-				startColumn: target.column,
-				endColumn: target.column,
+		try {
+			await withNavigationCaptureSuspended(async () => {
+				const destination = target.target;
+				const input = destination.kind === 'input' ? destination.input
+					: await this.editorResolver.resolveEditorInput(resolveRuntimeResource(this.sources, destination.resource)!, destination.editorId);
+				setActiveTab(this.editorPanes, input.id, undefined, target.selection);
+				releaseResourcePanelFocus(this.resourcePanel);
 			});
-		});
+		} finally {
+			target.dispose();
+		}
 	}
 }

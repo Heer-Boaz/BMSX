@@ -1,3 +1,5 @@
+import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
+import { SceneEditorNavigationSelection } from './navigation_selection';
 import { PointerButton } from '../../../input/pointer/buttons';
 import { point_in_rect } from '../../../../machine/ts/common/rect';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
@@ -12,7 +14,7 @@ import { editorViewState } from '../../../editor/ui/view/state';
 import { createLuaTableFieldIntegerEdits } from '../../../language/lua/source_edits';
 import { getTextFileRuntimeSourceStatus } from '../../services/working_copy/runtime_source_status';
 import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
-import { revealWorkbenchListSelection, scrollWorkbenchList, workbenchListContainsPosition, workbenchListRowIndexAtPosition } from '../../ui/list_view';
+import { clampWorkbenchListScroll, revealWorkbenchListSelection, scrollWorkbenchList, workbenchListContainsPosition, workbenchListRowIndexAtPosition } from '../../ui/list_view';
 import { navigateWorkbenchTree, setWorkbenchTreeCollapsed, workbenchTreeTwistieContainsPosition, WorkbenchTreeNavigationResult } from '../../ui/tree_view';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
 import { WorkbenchScrollControl } from '../../ui/scroll_control';
@@ -27,6 +29,11 @@ import { selectSceneOutlineRow } from './outline';
 
 /** Concrete editable view: document history here, draft history in each field. */
 export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInput> {
+	public override getSelection(): SceneEditorNavigationSelection {
+		this.controller.refresh(this.input);
+		return new SceneEditorNavigationSelection(this.input);
+	}
+
 	public readonly controls: readonly IntegerInput[];
 	private status = '';
 	private boundVersion = 0;
@@ -59,13 +66,20 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 		});
 	}
 
-	protected override activate(): void {
+	protected override activate(_selection?: EditorTextSelection, navigationSelection?: SceneEditorNavigationSelection): void {
 		super.activate();
 		this.actionBar.setInput(this.input.actionBar, this.focusTarget);
 		this.details.setInput(this.input.details);
 		this.controller.refresh(this.input);
+		navigationSelection?.restore(this.input);
 		this.bindProperties();
 		layoutSceneEditor(this.input, true);
+		if (navigationSelection !== undefined) {
+			this.input.outline.scroll = navigationSelection.outlineScroll;
+			clampWorkbenchListScroll(this.input.outline);
+			this.input.details.scrollbar.setScroll(navigationSelection.detailsScroll);
+			layoutSceneEditor(this.input, false);
+		}
 		this.details.lineStep = this.input.outline.layout.rowHeight;
 	}
 

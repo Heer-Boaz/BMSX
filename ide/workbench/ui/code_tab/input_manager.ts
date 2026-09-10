@@ -1,11 +1,11 @@
 import type { CodeEditorInputId } from '../../../common/editor_context';
 import type { CodeTabContext } from './model';
-import { applyCodeEditorViewSnapshot, codeEditorEditState } from '../../../editor/ui/code_editor_state';
+import { CodeEditorViewBinding } from '../../../editor/ui/code_editor_view_binding';
 
 /** Retained code-editor inputs and their per-view state. */
 export class CodeEditorInputManager {
 	private readonly inputsById = new Map<CodeEditorInputId, CodeTabContext>();
-	private readonly contentSubscriptions = new Map<CodeEditorInputId, () => void>();
+	private readonly viewBindings = new Map<CodeEditorInputId, CodeEditorViewBinding>();
 
 	public get inputs(): IterableIterator<CodeTabContext> {
 		return this.inputsById.values();
@@ -20,18 +20,15 @@ export class CodeEditorInputManager {
 	}
 
 	public register(input: CodeTabContext): void {
-		const previous = this.contentSubscriptions.get(input.id);
-		if (previous !== undefined) previous();
+		const previous = this.viewBindings.get(input.id);
+		if (previous !== undefined) previous.dispose();
 		this.inputsById.set(input.id, input);
-		this.contentSubscriptions.set(input.id, input.model.onDidChangeContent(event => {
-			const state = event.editState;
-			if (state !== null && state.is(codeEditorEditState)) applyCodeEditorViewSnapshot(input.view, state.value);
-		}));
+		this.viewBindings.set(input.id, new CodeEditorViewBinding(input.model, input.view));
 	}
 
 	public clear(): void {
-		for (const unsubscribe of this.contentSubscriptions.values()) unsubscribe();
-		this.contentSubscriptions.clear();
+		for (const binding of this.viewBindings.values()) binding.dispose();
+		this.viewBindings.clear();
 		this.inputsById.clear();
 	}
 }

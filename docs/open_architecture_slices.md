@@ -466,7 +466,6 @@ en een passende productie-implementatie, vóór featurewerk.
 
 | ID | Eigenaar / contract | Gate |
 | --- | --- | --- |
-| `STUDIO-UX-A03` | Navigation history bewaart een editor-input met een bijdrage-eigen selectie, niet uitsluitend codeposities. | Visual → Source → Back/Forward herstelt dezelfde view en selectie zonder tekstwijziging of aparte Lens-stack. |
 | `STUDIO-UX-A04` | Viewidentiteit en preview/open/pin-contract onderscheiden definities zonder hun gedeelde textmodel te dupliceren. | Meerdere FSMs/BTs in één bestand kunnen bewust afzonderlijk open; titels en bronidentiteit blijven onderscheidbaar. |
 | `STUDIO-UX-A05` | Scenario-resultaatinspectie onderscheidt volledige output, berichtidentiteit en optionele bronlocatie. | Lange logs zijn volledig leesbaar; meerdere ActionEffect-bronmatches gebruiken de bestaande keuze-owner. Geen verzonnen bron voor onbekende runtimefeiten. |
 | `STUDIO-UX-A06` | Gedeeld keuzecontrol met provider-eigen matching, zichtbare matches en volledige lijstbediening. | Palette, files en symbols delen relevante UI/lifecycle zonder hun verschillende zoeksemantiek samen te drukken. |

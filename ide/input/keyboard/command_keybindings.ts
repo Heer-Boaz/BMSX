@@ -51,6 +51,8 @@ const editorContribKeybindings: readonly EditorCommandKeybinding[] = [
 ];
 
 const workbenchContribKeybindings: readonly EditorCommandKeybinding[] = [
+	{ code: 'ArrowLeft', command: 'navigateBack', modifiers: { required: KeyModifier.alt, forbidden: PRIMARY_MODIFIER | KeyModifier.shift } },
+	{ code: 'ArrowRight', command: 'navigateForward', modifiers: { required: KeyModifier.alt, forbidden: PRIMARY_MODIFIER | KeyModifier.shift } },
 	{ code: 'KeyP', command: 'commandPalette', modifiers: { any: PRIMARY_MODIFIER, required: KeyModifier.shift, forbidden: KeyModifier.alt } },
 	{ code: 'KeyD', command: 'behaviorLens.duplicateChild', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS }, when: () => inputFocus.getCommand('behaviorLens.duplicateChild') !== undefined },
 	{ code: 'Delete', command: 'behaviorLens.removeChild', modifiers: NO_MODIFIERS, when: () => inputFocus.getCommand('behaviorLens.removeChild') !== undefined },

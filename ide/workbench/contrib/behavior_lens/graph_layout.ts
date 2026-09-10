@@ -19,14 +19,17 @@ export function prepareBehaviorGraphLayout(state: BehaviorLensViewState, graph: 
 			if (next === undefined) state.selection = null;
 			else {
 				viewport.selection = next;
-				if (selected !== null) viewport.pan(next.bounds.left - selected.bounds.left, next.bounds.top - selected.bounds.top);
+				if (selected !== null && graph.position === 'preserve') viewport.pan(next.bounds.left - selected.bounds.left, next.bounds.top - selected.bounds.top);
 			}
 		}
 		graph.dirty = false;
 	}
-	if (graph.initialPosition) {
+	if (graph.position === 'initial') {
 		viewport.scrollX = -Math.round((viewport.bounds.right - viewport.bounds.left) / 2);
 		viewport.scrollY = -8;
-		graph.initialPosition = false;
+	} else if (graph.position !== 'preserve') {
+		viewport.scrollX = graph.position.scrollX;
+		viewport.scrollY = graph.position.scrollY;
 	}
+	graph.position = 'preserve';
 }

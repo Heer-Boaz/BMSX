@@ -12,6 +12,7 @@ import { mapBehaviorLensSourceRanges } from '../../ide/workbench/contrib/behavio
 import { selectStateMachineSource, type StateMachineSourceReference } from '../../ide/workbench/contrib/behavior_lens/state_machine_selection';
 import { buildStateMachineSourceDetails } from '../../ide/workbench/contrib/behavior_lens/state_machine_details';
 import { FSM_PROOF_SOURCE } from '../helpers/fsm_source_fixture';
+import { behaviorSourceBookmarksEqual, captureBehaviorSourceBookmark } from '../../ide/workbench/contrib/behavior_lens/source_bookmark';
 
 function fixture(source = FSM_PROOF_SOURCE) {
 	const model = new EditorTextModel({ domain: 0, path: 'fsm_proofs.lua', source: { resid: 'fsm_proofs', type: 'lua' } }, 'lua', source);
@@ -68,6 +69,19 @@ test('source evidence distinguishes identical returns, shared callbacks and regi
 	f.refresh();
 	assert.notEqual(selectedOutcome(f).outcome, old.outcome, 'source generation replaces AST evidence, not just coordinates');
 	assert.equal(selectedOutcome(f).outcome.proof.kind, 'return');
+});
+
+test('navigation equality compares actual return evidence and the containing registration, not the returned path', () => {
+	const f = fixture();
+	const left = outcomes(f);
+	f.choose(left[1]);
+	const selected = captureBehaviorSourceBookmark(f.view, f.view.selection!);
+	for (const reference of [left[0], outcomes(f, 'update', 1)[1], outcomes(f, 'update', 2)[1]]) {
+		f.choose(reference);
+		assert.equal(behaviorSourceBookmarksEqual(selected, captureBehaviorSourceBookmark(f.view, f.view.selection!)), false);
+	}
+	f.choose(left[1]);
+	assert.equal(behaviorSourceBookmarksEqual(selected, captureBehaviorSourceBookmark(f.view, f.view.selection!)), true);
 });
 
 test('hidden UTF-16 edits and inserting an equal return preserve the actual proof, not its outcome index', () => {
