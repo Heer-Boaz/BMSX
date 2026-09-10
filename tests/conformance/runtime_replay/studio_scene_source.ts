@@ -102,6 +102,7 @@ export async function testSceneSourceEdits(test: StudioFixture): Promise<void> {
 	check(model.buffer.getText() === expected && x.field.text === '17', 'scene: physical Redo restores the source-preserving property edit');
 
 	await press('Tab');
+	await press('Tab');
 	check(x.field.focusTarget.hasFocus, 'scene: the view focus order enters the first editable property');
 	await press('Minus');
 	await press('Enter');

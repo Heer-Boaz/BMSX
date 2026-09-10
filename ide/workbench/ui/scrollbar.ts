@@ -68,6 +68,12 @@ export class Scrollbar {
 	public getThumb(): RectBounds | null { return this.visible ? this.thumb : null; }
 	public getScroll(): number { return this.scrollValue; }
 
+	/** Reveal a content interval with minimal movement; oversized items lead-align. */
+	public reveal(start: number, end: number, margin = 0): void {
+		if (end - start > this.viewportSize - margin * 2 || start < this.scrollValue + margin) this.setScroll(start - margin);
+		else if (end > this.scrollValue + this.viewportSize - margin) this.setScroll(end - this.viewportSize + margin);
+	}
+
 	/** The control has hit a visible track. Track clicks center the thumb before capture. */
 	public beginDrag(pointer: number): number {
 		const start = this.orientation === 'vertical' ? this.thumb.top : this.thumb.left;

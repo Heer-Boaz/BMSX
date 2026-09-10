@@ -28,7 +28,8 @@ Undo history never falls through to document Undo. Pointer presses on toolbar
 buttons preserve the focused field, including pending-value admission.
 
 Each contribution programs a retained focus order: content/toolbar for Lens,
-outline/editable fields/toolbar for Scene, tests/results/toolbar for Scenario
+outline/scroll area/editable fields/toolbar for Scene (the scroll area is added
+by [A02](workbench_scroll_views_design.md) and skipped for empty content), tests/results/toolbar for Scenario
 Lab, impacts/toolbar for Source Edit Review. Tab and Shift+Tab traverse controls;
 toolbar Left/Right and Home/End traverse enabled actions. Escape returns to its
 content control. FSM Up/Down traverse its already-retained nodes and relations;

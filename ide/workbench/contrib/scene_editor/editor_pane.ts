@@ -12,15 +12,17 @@ import { editorViewState } from '../../../editor/ui/view/state';
 import { createLuaTableFieldIntegerEdits } from '../../../language/lua/source_edits';
 import { getTextFileRuntimeSourceStatus } from '../../services/working_copy/runtime_source_status';
 import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
-import { revealWorkbenchListSelection, scrollWorkbenchList, workbenchListRowIndexAtPosition } from '../../ui/list_view';
+import { revealWorkbenchListSelection, scrollWorkbenchList, workbenchListContainsPosition, workbenchListRowIndexAtPosition } from '../../ui/list_view';
 import { navigateWorkbenchTree, setWorkbenchTreeCollapsed, workbenchTreeTwistieContainsPosition, WorkbenchTreeNavigationResult } from '../../ui/tree_view';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
+import { WorkbenchScrollControl } from '../../ui/scroll_control';
 import { inputFocus } from '../../../input/focus';
 import { pointerCapture } from '../../../input/pointer/capture';
 import type { ResourcePanelController } from '../resources/panel/controller';
 import type { SceneEditorController } from './controller';
 import { POSITION_AXES, type SceneEditorInput } from './editor_input';
-import { drawSceneEditor, layoutSceneEditor } from './render';
+import { drawSceneEditor } from './render';
+import { layoutSceneEditor } from './layout';
 import { selectSceneOutlineRow } from './outline';
 
 /** Concrete editable view: document history here, draft history in each field. */
@@ -29,6 +31,8 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 	private status = '';
 	private boundVersion = 0;
 	private readonly actionBar: WorkbenchActionBarControl;
+	private readonly details: WorkbenchScrollControl;
+	private readonly unbindFieldFocus: readonly (() => void)[];
 
 	public constructor(resourcePanel: ResourcePanelController,
 		private readonly controller: SceneEditorController,
@@ -38,10 +42,13 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 	) {
 		super(resourcePanel);
 		this.actionBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, commands, this.focusTarget);
+		this.details = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget);
+		this.details.focusTarget.commandContext = this.focusTarget;
 		this.controls = POSITION_AXES.map((_axis, index) => new IntegerInput(this.focusTarget, clipboard, value => {
 			const property = this.input.properties[index];
 			this.input.workingCopy.pushEditOperations(createLuaTableFieldIntegerEdits(this.input.workingCopy.buffer, property.field!, value)!);
 		}));
+		this.unbindFieldFocus = this.controls.map((control, index) => control.field.focusTarget.onDidFocus(() => this.revealProperty(index)));
 		this.focusTarget.registerCommand('undo', {
 			isEnabled: () => !this.input.workingCopy.readOnly && this.input.workingCopy.canUndo,
 			run: () => { this.input.workingCopy.undo(); },
@@ -55,9 +62,11 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 	protected override activate(): void {
 		super.activate();
 		this.actionBar.setInput(this.input.actionBar, this.focusTarget);
+		this.details.setInput(this.input.details);
 		this.controller.refresh(this.input);
 		this.bindProperties();
 		layoutSceneEditor(this.input, true);
+		this.details.lineStep = this.input.outline.layout.rowHeight;
 	}
 
 	public override update(): void {
@@ -65,15 +74,34 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 		const changed = this.boundVersion !== this.input.version;
 		if (changed) this.bindProperties();
 		this.actionBar.update();
-		layoutSceneEditor(this.input, changed);
+		if (layoutSceneEditor(this.input, changed)) {
+			this.details.lineStep = this.input.outline.layout.rowHeight;
+			for (let index = 0; index < this.controls.length; index += 1) {
+				if (this.controls[index].field.focusTarget.hasFocus) this.revealProperty(index);
+			}
+		}
+		this.details.update();
 		this.status = SOURCE_STATUS[getTextFileRuntimeSourceStatus(this.sources, this.input.workingCopy)];
 	}
 
-	public draw(): void { drawSceneEditor(this.input, this.controls, this.commands); }
+	public draw(): void { drawSceneEditor(this.input, this.controls, this.commands, this.details.focusTarget.hasFocus); }
+
+	private revealProperty(index: number): void {
+		const bounds = this.input.properties[index].contentBounds;
+		this.input.details.scrollbar.reveal(bounds.top, bounds.bottom, 2);
+		layoutSceneEditor(this.input, false);
+	}
 
 	private bindProperties(): void {
 		let previous = this.focusTarget;
-		this.focusTarget.next = null;
+		// An empty scroll area is pointer-focusable but not a Tab stop. Its local
+		// neighbours still belong to this input, never to the preceding member.
+		this.details.focusTarget.previous = this.focusTarget;
+		this.details.focusTarget.next = this.actionBar.focusTarget;
+		if (this.input.outline.selectionIndex >= 0) {
+			previous.next = this.details.focusTarget;
+			previous = this.details.focusTarget;
+		}
 		this.focusTarget.previous = null;
 		for (let index = 0; index < this.controls.length; index += 1) {
 			const property = this.input.properties[index];
@@ -119,15 +147,18 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 	}
 
 	protected override handleViewPointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
+		if (!point_in_rect(snapshot.viewportX, snapshot.viewportY, this.input.layout)) return false;
 		if (this.actionBar.handlePointer(snapshot)) return true;
 		for (let index = 0; index < this.controls.length; index += 1) {
 			const control = this.controls[index];
 			const bounds = this.input.properties[index].bounds;
-			if (!control.field.readOnly && (point_in_rect(snapshot.viewportX, snapshot.viewportY, bounds) || control.field.pointerSelecting)) {
+			if (!control.field.readOnly && ((point_in_rect(snapshot.viewportX, snapshot.viewportY, this.input.details.bounds)
+				&& point_in_rect(snapshot.viewportX, snapshot.viewportY, bounds)) || control.field.pointerSelecting)) {
 				control.handlePointer(bounds.left + 3, snapshot.viewportX, justPressed, ((snapshot.pressedButtons & PointerButton.Primary) !== 0));
 				return true;
 			}
 		}
+		if (this.details.handlePointer(snapshot)) return true;
 		const index = workbenchListRowIndexAtPosition(this.input.outline, snapshot.viewportX, snapshot.viewportY);
 		this.input.outline.hoverIndex = index;
 		if (justPressed) {
@@ -137,9 +168,15 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 		return index >= 0;
 	}
 
-	public handleWheel(direction: number, steps: number, _pointer: PointerSnapshot | null, input: PlayerInput): void {
-		scrollWorkbenchList(this.input.outline, direction * steps * 3);
-		input.inputHandlers.pointer?.consumeButton('pointer_wheel');
+	public handleWheel(direction: number, steps: number, pointer: PointerSnapshot | null, input: PlayerInput): void {
+		if (pointer === null) return;
+		if (this.details.handleWheel(pointer, direction * steps * this.details.lineStep * 3)) {
+			layoutSceneEditor(this.input, false);
+			input.inputHandlers.pointer?.consumeButton('pointer_wheel');
+		} else if (workbenchListContainsPosition(this.input.outline, pointer.viewportX, pointer.viewportY)) {
+			scrollWorkbenchList(this.input.outline, direction * steps * 3);
+			input.inputHandlers.pointer?.consumeButton('pointer_wheel');
+		}
 	}
 
 	public drawStatusBar(top: number, color: number): void {
@@ -148,12 +185,15 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 
 	public override dispose(): void {
 		this.actionBar.dispose();
+		this.details.dispose();
+		for (const unbind of this.unbindFieldFocus) unbind();
 		for (const control of this.controls) control.dispose();
 		super.dispose();
 	}
 
 	public override clearInput(): void {
 		this.actionBar.clearInput();
+		this.details.clearInput();
 		super.clearInput();
 	}
 }

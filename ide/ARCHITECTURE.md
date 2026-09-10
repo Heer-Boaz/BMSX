@@ -662,6 +662,22 @@ selects its visible ancestor rather than retaining an invisible edit target.
 Only member selection binds member commands and position controls; an empty
 definition is not a synthetic member or an absent scene.
 
+Scene details are a measured vertical content view, not fixed screen rows.
+`workbench/ui/scroll_viewport.ts` owns its clip, reserved track and content-to-screen
+projection; the existing `Scrollbar` owns position, range, thumb geometry and
+interval reveal (also used by graph viewports). `scene_editor/layout.ts` measures
+wrapped labels, field rectangles and explanatory notes on source/selection/layout
+changes. Scroll only projects retained rectangles. Render and pointer input use
+the same clipped viewport; the outline's partial last row is neither drawn nor hit.
+`WorkbenchScrollControl` owns capture and keyboard scrolling, not documents.
+Wheel/scrollbar interaction preserves a focused field's draft; field focus and
+layout changes reveal that field. Manual scroll is not undone by stationary
+updates. Tab traverses outline, scroll area, editable fields and title actions;
+the scroll area uses the pane's explicit document command context. Its own
+arrows/Page Up/Down/Home/End reach even read-only content. Geometry changes and
+pane detach cancel physical capture. See the production references and evidence
+contract in [Workbench scroll views](../docs/workbench_scroll_views_design.md).
+
 Names are display labels, not selection anchors or runtime ids. Selection
 tracks the full definition or field's
 source span through the text model's actual changes, including Undo/Redo while

@@ -366,7 +366,59 @@ IDE-typecheck, browser-Studio-build, strict architecture boundaries (0 issues),
 core-parity en `git diff --check` slagen. De brede tests-typecheck heeft nog
 de **51 bestaande diagnostieken**; A01 voegt er geen toe.
 
-**A02–A08 blijven open.** A01 sluit geen paneelruimte-, navigatie-, identiteit-,
+**Na A01 bleven A02–A08 open.** A01 sluit geen paneelruimte-, navigatie-, identiteit-,
 sessie-, output- of zoekprobleem en bewijst geen volledige host-/SNES-Mini-
 performance. De resterende contracten staan afzonderlijk in
 [`open_architecture_slices.md`](open_architecture_slices.md#studio-correcties-uit-de-ux-architectuuraudit).
+
+### A02 — gecorrigeerd en beproefd (2026-09-10)
+
+Scene-details gebruiken nu een gedeelde `WorkbenchScrollViewport` met gemeten
+inhoud, een gereserveerde scrollbartrack en één content-/schermprojectie.
+`Scrollbar` blijft eigenaar van bereik/positie/thumb en interval-reveal;
+ook graph-viewports gebruiken nu die reveal-owner. De Scene-layout meet
+regels, velden en toelichting uit font en breedte, niet uit vaste schermrijen.
+Renderclipping en veldhits gebruiken hetzelfde viewport. De aparte
+`WorkbenchScrollControl` bezit capture en keyboardscroll, zonder waarden te
+accepteren door wheel of thumbdrag. Focus en resize revealen het juiste veld;
+stationaire updates draaien handmatig scrollen niet terug.
+
+Ontwerp en de vooraf bekeken Godot/VS Code-bronnen:
+[`workbench_scroll_views_design.md`](workbench_scroll_views_design.md).
+De onafhankelijke Lua-fixture staat in `tests/fixtures/studio/scene_viewport.ts`.
+Zij test geen regelnummers, namen of gedrag van bestaande game-definities.
+De echte Studio-proef gebruikt wel de bestaande ROM/workspace als transport.
+
+**Bewijs:** 20 gerichte viewport/scrollbar/graph-tests; volledige Lua-suite
+**1259 geslaagd, 1 bestaande skip**. De daadwerkelijke Studio-workflows slagen
+op software, WebGL2 en WebGPU, inclusief beide fonts, meerdere tabrijen,
+fysiek resizen van Problems tot nul hoogte, Tab-reveal naar Z, het klikken op
+geklipte veldgeometrie, draftbehoud tijdens scroll/capture/Escape, een Z-edit met
+document-Undo en de focusroute van een leeg geworden inspector. Tiny- en
+MSX-fontscreenshots zijn op alle drie renderers bekeken.
+IDE-typecheck, browser-Studio-build, strict architecture boundaries (0 issues),
+core-parity en `git diff --check` slagen. De tests-typecheck houdt dezelfde
+51 bestaande diagnostieken; geen nieuwe in deze slice.
+
+Stationaire layout en scroll meten geen tekst opnieuw; tekst-/rect-/thumb- en
+quadopslag blijven behouden. Dat is gericht bewijs, **geen** volledige host- of
+SNES-Mini-performancemeting. A03–A08 blijven afzonderlijke open contracten.
+
+### A09 — aanvullend P2: pointer-leave heeft nog geen gedeelde eigenaar
+
+Bij de A02-review is in de echte software-Studio ook deze tegenproef uitgevoerd:
+Source hoveren en daarna de pointer zonder klikken naar Problems verplaatsen.
+`actionBar.hoveredCommand` blijft `sceneEditor.source`, terwijl de pointer het
+control heeft verlaten. Dit is een presentatieprobleem, geen herhaalde
+command-uitvoering. Capture-cancel/release uit A01 is een ander contract.
+
+De router in `ide/input/pointer/dispatch.ts` stuurt de nieuwe pointer naar het
+paneel dat hem afhandelt; het vorige control krijgt geen leave-notificatie.
+`WorkbenchActionBarControl` kan zijn hover alleen bij een eigen inputevent of
+capture-cancel bijwerken. Een Scene-lokale clear of rondgestuurde nep-snapshot
+zou hier opnieuw om de ontbrekende input-owner heen werken.
+
+**Open correctie/gate:** generieke hover-target/enter/leave-dispatch ontwerpen aan
+de hand van productiecode, los van focus en capture; ook testen bij paneelgrenzen,
+popups, canvas-verlaten en detach. Dit is bewust niet als extra handmatige
+hoverreset in de A02-layoutslice gebouwd.

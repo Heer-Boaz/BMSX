@@ -1,3 +1,4 @@
+import { testStudioSceneViewport } from './studio_scene_viewport';
 import { runStudioFsmDragLive } from './studio_fsm_drag_live';
 import { runStudioFsmInitialLive } from './studio_fsm_initial_live';
 import { presentBehaviorTreeGraph } from './studio_behavior_graph';
@@ -31,6 +32,7 @@ export const studioBackends = {
 			await testStudioPointerCapture(test);
 		}
 		if (fsm === null) await presentBehaviorTreeGraph(test);
+		if (navigation === null && fsm === null) await testStudioSceneViewport(test);
 		// Publish the real software-rendered final framebuffer for the screenshot.
 		// No replacement drawing or per-frame screenshot conversion.
 		canvas.width = backend.framebufferWidth;
@@ -54,6 +56,7 @@ export const studioBackends = {
 			await testStudioPointerCapture(test);
 		}
 		if (fsm === null) await presentBehaviorTreeGraph(test);
+		if (navigation === null && fsm === null) await testStudioSceneViewport(test);
 		check(backend.gl.getError() === backend.gl.NO_ERROR, 'WebGL2 workflow raised a graphics error');
 		return result;
 	},
@@ -75,6 +78,7 @@ export const studioBackends = {
 			await testStudioPointerCapture(test);
 		}
 		if (fsm === null) await presentBehaviorTreeGraph(test);
+		if (navigation === null && fsm === null) await testStudioSceneViewport(test);
 		check(errors.length === 0, errors.join('\n'));
 		return { ...result, readbacks };
 	},

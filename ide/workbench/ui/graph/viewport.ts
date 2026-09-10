@@ -79,9 +79,9 @@ export class WorkbenchGraphViewport<Model extends WorkbenchGraphModel = Workbenc
 
 	public reveal(item: WorkbenchGraphItem): void {
 		const bounds = item.bounds;
-		this.scrollX = revealAxis(this.scrollX, this.bounds.right - this.bounds.left, bounds.left, bounds.right);
-		this.scrollY = revealAxis(this.scrollY, this.bounds.bottom - this.bounds.top, bounds.top,
-			item.kind === 'node' ? bounds.top + item.headerHeight : bounds.bottom);
+		this.horizontalScrollbar.reveal(bounds.left, bounds.right, REVEAL_MARGIN);
+		this.verticalScrollbar.reveal(bounds.top,
+			item.kind === 'node' ? bounds.top + item.headerHeight : bounds.bottom, REVEAL_MARGIN);
 	}
 
 	public hitTest(viewportX: number, viewportY: number): GraphItem<Model> | null {
@@ -127,12 +127,6 @@ export class WorkbenchGraphViewport<Model extends WorkbenchGraphModel = Workbenc
 			&& bounds.left - margin < x + this.bounds.right - this.bounds.left
 			&& bounds.top - margin < y + this.bounds.bottom - this.bounds.top;
 	}
-}
-
-function revealAxis(scroll: number, extent: number, start: number, end: number): number {
-	if (end - start > extent - REVEAL_MARGIN * 2 || start < scroll + REVEAL_MARGIN) return start - REVEAL_MARGIN;
-	if (end > scroll + extent - REVEAL_MARGIN) return end - extent + REVEAL_MARGIN;
-	return scroll;
 }
 
 function segmentDistanceSquared(x: number, y: number, x0: number, y0: number, x1: number, y1: number): number {

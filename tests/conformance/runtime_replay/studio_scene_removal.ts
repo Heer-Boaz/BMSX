@@ -83,6 +83,10 @@ export async function testSceneMemberRemoval(test: StudioFixture): Promise<void>
 	await press('Digit7');
 	check(scene.actionBar.hasFocus && !x.field.focusTarget.hasFocus && model.buffer.getText() === removed,
 		'remove: empty inspector is skipped; the toolbar remains keyboard accessible without an edit route');
+	await click(scene.details.bounds);
+	await press('Tab');
+	check(scene.actionBar.hasFocus && !x.field.focusTarget.hasFocus && model.buffer.getText() === removed,
+		'A02: clicking an empty inspector cannot resurrect the previous member in its focus route');
 	check(cycles() === before && title() === actor && ide.sources.currentBlua32Media === media,
 		'remove: source deletion never mutates the paused machine or disposes the live actor');
 
@@ -170,7 +174,7 @@ export async function testSceneMemberRemoval(test: StudioFixture): Promise<void>
 	check(scene.outline.roots.length === 1 && scene.outline.rows.length === 1 && scene.outline.rows[0].element.kind === 'scene',
 		'remove: removing the last member preserves the actual empty definition in the outline');
 	await selectSceneRow(test, scene, 0);
-	check(scene.definitionText === '0 MEMBERS' && x.field.readOnly && !ide.editor.commands.isEnabled('sceneEditor.removeMember'),
+	check(scene.detailsText.some(line => line.text === '0 MEMBERS') && x.field.readOnly && !ide.editor.commands.isEnabled('sceneEditor.removeMember'),
 		'remove: the remaining empty definition can be selected but not mistaken for a removable member');
 	for (let index = 0; index < 4; index += 1) await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === original && !model.dirty, 'remove: all admission fixtures leave the real saved document intact');
