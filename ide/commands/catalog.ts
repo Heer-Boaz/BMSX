@@ -34,6 +34,8 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	resources: { category: 'View', title: 'Show Files', activeTitle: 'Hide Files' },
 	problems: { category: 'View', title: 'Problems Panel' },
 	behaviorLens: { category: 'Behavior Lens', title: 'Open', shortTitle: 'Behavior Lens' },
+	'behaviorLens.preview': { category: 'Behavior Lens', title: 'Preview Definition' },
+	keepEditor: { category: 'Editor', title: 'Keep Open' },
 	'behaviorLens.actionEffects': { category: 'Behavior Lens', title: 'Open ActionEffect' },
 	'behaviorLens.stateMachines': { category: 'Behavior Lens', title: 'Open State Machine (FSM)' },
 	'behaviorLens.behaviorTrees': { category: 'Behavior Lens', title: 'Open Behavior Tree (BT)' },

@@ -57,7 +57,9 @@ export function completeNavigation(previous: NavigationHistoryEntry | null): voi
 		return;
 	}
 	const next = createNavigationEntry();
-	if (previous !== null) {
+	// Replacement can close the departure input during this navigation. Its
+	// lifetime listener has already retired the pending entry as well as the stacks.
+	if (previous !== null && !previous.isDisposed) {
 		if (next === null || !areNavigationEntriesEqual(previous, next)) {
 			pushUniqueNavigationEntry(navigationState.back, previous);
 			clearForwardNavigationHistory();
@@ -67,11 +69,11 @@ export function completeNavigation(previous: NavigationHistoryEntry | null): voi
 }
 
 /** One explicit navigation may change a retained input before opening its pane. */
-export function captureNavigation(operation: () => void): void {
+export function captureNavigation<T>(operation: () => T): T {
 	const previous = beginNavigationCapture();
 	navigationState.captureSuspendDepth += 1;
 	try {
-		operation();
+		return operation();
 	} finally {
 		navigationState.captureSuspendDepth -= 1;
 		completeNavigation(previous);

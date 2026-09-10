@@ -19,6 +19,8 @@ export type EditorViewCommandId =
 	| 'resources'
 	| 'problems'
 	| 'behaviorLens'
+	| 'behaviorLens.preview'
+	| 'keepEditor'
 	| 'behaviorLens.actionEffects'
 	| 'behaviorLens.stateMachines'
 	| 'behaviorLens.behaviorTrees'

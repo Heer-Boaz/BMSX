@@ -3,6 +3,7 @@ import { resourceIdentityKey } from '../../../common/resource';
 import type { ResourceViewerTabId } from '../../ui/tab/id';
 import type { ResourceViewerState } from './model';
 import type { ResourceEditorIdentity } from '../../common/editor_input';
+import { sourceTabDescription } from '../../ui/tab/titles';
 
 export const WORKBENCH_RESOURCE_VIEWER_ID = 'workbench.editor.resourceViewer';
 
@@ -15,6 +16,7 @@ export class ResourceViewerInput extends ReadonlyEditorInput<ResourceViewerTabId
 			resource.title,
 			true,
 		);
+		this.setLabel(resource.title, sourceTabDescription(resource.resource));
 	}
 
 	public override toResourceEditor(): ResourceEditorIdentity {

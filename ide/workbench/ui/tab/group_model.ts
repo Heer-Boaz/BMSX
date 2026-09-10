@@ -12,14 +12,24 @@ import type {
 	ResourceViewerInput,
 	ScenarioLabInput,
 } from './model';
+import { DisposableStore } from '../../../common/lifecycle';
+
+export type EditorOpenOptions = { readonly pinned?: boolean };
 
 /**
  * Ordered editor inputs and their active selection. The active input is
  * retained directly, matching the editor-group model used by mature IDEs.
  */
 export class EditorTabGroupModel {
+	public revision = 0;
 	private readonly editorTabs: EditorInput[] = [];
 	private activeEditor: EditorInput | null = null;
+	private previewEditor: EditorInput | null = null;
+	private readonly listeners = new Map<EditorInput, DisposableStore>();
+	private readonly labels = new Map<EditorInput, string>();
+
+	public get previewTab(): EditorInput | null { return this.previewEditor; }
+	public getLabel(tab: EditorInput): string { return this.labels.get(tab)!; }
 
 	public get tabs(): readonly EditorInput[] {
 		return this.editorTabs;
@@ -31,22 +41,60 @@ export class EditorTabGroupModel {
 
 	public initialize(initialTab: EditorInput): void {
 		this.clear();
-		this.editorTabs.push(initialTab);
+		this.add(initialTab);
 		this.activeEditor = initialTab;
 	}
 
 	public clear(): void {
+		for (const listener of this.listeners.values()) listener.dispose();
+		this.listeners.clear();
 		for (const tab of this.editorTabs) tab.dispose();
 		this.editorTabs.length = 0;
 		this.activeEditor = null;
+		this.previewEditor = null;
+		this.labels.clear();
+		this.revision += 1;
 	}
 
-	public add(tab: EditorInput): void {
-		this.editorTabs.push(tab);
+	/** The workbench detaches a replaced pane before changing group membership. */
+	public add(tab: EditorInput, options: EditorOpenOptions = {}): void {
+		const preview = options.pinned === false && tab.closable && !tab.isDirty();
+		let index = this.editorTabs.length;
+		if (preview && this.previewEditor !== null) {
+			index = this.indexOf(this.previewEditor);
+			this.removeAt(index);
+		}
+		this.editorTabs.splice(index, 0, tab);
+		if (preview) this.previewEditor = tab;
+		const listeners = new DisposableStore();
+		listeners.add({ dispose: tab.onDidChangeLabel(() => this.updateLabels()) });
+		if (tab.onDidChangeDirty !== undefined) listeners.add({ dispose: tab.onDidChangeDirty(() => {
+			if (tab.isDirty()) this.pin(tab);
+		}) });
+		this.listeners.set(tab, listeners);
+		this.updateLabels();
+	}
+
+	public pin(tab: EditorInput): void {
+		if (this.previewEditor !== tab) return;
+		this.previewEditor = null;
+		this.updateLabels();
+	}
+
+	/** Label work belongs to membership/metadata changes, not the render loop. */
+	private updateLabels(): void {
+		this.revision += 1;
+		const counts = new Map<string, number>();
+		for (const tab of this.editorTabs) counts.set(tab.title, (counts.get(tab.title) || 0) + 1);
+		for (const tab of this.editorTabs) {
+			const label = counts.get(tab.title)! > 1 && tab.description.length > 0 ? `${tab.title} - ${tab.description}` : tab.title;
+			this.labels.set(tab, tab === this.previewEditor ? `PREVIEW: ${label}` : label);
+		}
 	}
 
 	public activate(tab: EditorInput): void {
 		this.activeEditor = tab;
+		this.revision += 1;
 	}
 
 	public findById(tabId: CodeEditorTabId): CodeEditorInput | undefined;
@@ -70,11 +118,16 @@ export class EditorTabGroupModel {
 
 	public removeAt(index: number): void {
 		const removed = this.editorTabs[index];
+		this.listeners.get(removed)!.dispose();
+		this.listeners.delete(removed);
+		this.labels.delete(removed);
 		this.editorTabs.splice(index, 1);
 		if (this.activeEditor === removed) {
 			this.activeEditor = null;
 		}
+		if (this.previewEditor === removed) this.previewEditor = null;
 		removed.dispose();
+		this.updateLabels();
 	}
 
 	public move(fromIndex: number, toIndex: number): void {
@@ -89,6 +142,7 @@ export class EditorTabGroupModel {
 			}
 		}
 		this.editorTabs[toIndex] = tab;
+		this.revision += 1;
 	}
 }
 

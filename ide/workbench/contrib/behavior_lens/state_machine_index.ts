@@ -12,8 +12,12 @@ export type StateMachineSourceIndex = {
 	readonly retargetable: ReadonlySet<StateMachineSourceOutcome>;
 };
 
-/** Cold, typed source index for graph projection, inspectors and command enablement. */
+const indices = new WeakMap<BehaviorSourceDocument, StateMachineSourceIndex>();
+
+/** Shared immutable generation index, not one rebuild for each definition view. */
 export function indexStateMachineSource(document: BehaviorSourceDocument): StateMachineSourceIndex {
+	const existing = indices.get(document);
+	if (existing !== undefined) return existing;
 	const bodies = new Map<BehaviorSourceRowKey, StateMachineSourceBody | null>();
 	const references = new Map<BehaviorSourceRowKey, StateMachineSourceReference[]>();
 	const initialTargets = new Map<BehaviorSourceRowKey, StateMachineInitialTarget>();
@@ -43,5 +47,7 @@ export function indexStateMachineSource(document: BehaviorSourceDocument): State
 			}
 		}
 	}
-	return { bodies, references, initialTargets, scopes, retargetable };
+	const index = { bodies, references, initialTargets, scopes, retargetable };
+	indices.set(document, index);
+	return index;
 }

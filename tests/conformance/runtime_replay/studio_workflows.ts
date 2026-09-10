@@ -1,3 +1,4 @@
+import { testStudioDefinitionInputs } from './studio_definition_inputs';
 import { testStudioNavigationHistory } from './studio_navigation_history';
 import { testStudioStateGraph } from './studio_state_graph';
 import { testStudioFsmInitial } from './studio_fsm_initial';
@@ -98,6 +99,7 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	// Source-only typing preserves both machine state and rewind history.
 	await testStudioFocus(test);
 	await testStudioNavigationHistory(test);
+	await testStudioDefinitionInputs(test);
 	harness.openLuaSource('title_screen.lua');
 	const model = harness.getActiveEditorDocument().model;
 	const source = model.buffer.getText();

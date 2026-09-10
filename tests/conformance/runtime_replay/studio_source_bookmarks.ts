@@ -3,7 +3,6 @@ import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selec
 import { readLuaSourceRange } from '../../../ide/language/lua/source_edits';
 import { getOrCreateSemanticProject } from '../../../ide/editor/contrib/intellisense/semantic/workspace/state';
 import { BehaviorTreeTransferAnalysis } from '../../../ide/workbench/contrib/behavior_lens/behavior_tree_transfer';
-import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { BT_TRANSFER_SOURCE, transferBehaviorFixtureSelection } from '../../helpers/behavior_transfer_fixture';
 import { chooseBehavior } from './studio_behavior_picker';
@@ -73,20 +72,20 @@ export async function testStudioSourceBookmarks(test: StudioFixture): Promise<vo
 	const typingColumn = activeCodeEditor.view.cursorColumn;
 	await press('Space');
 	check(activeCodeEditor.view.cursorColumn === typingColumn + 1, 'bookmark: physical typing produces code-owned edit state');
-	await click(editorChromeState.tabButtonBounds.get(lens.id)!);
+	await test.clickTab(lens.id);
 	await runPaletteCommand('Edit: Undo');
 	check(getActiveTab() === lens && code.context.view.cursorRow === typingRow && code.context.view.cursorColumn === typingColumn,
 		'bookmark: graph Undo restores the hidden code input through the document event, without a code Undo caller');
 	await runPaletteCommand('Edit: Redo');
 	check(code.context.view.cursorColumn === typingColumn + 1, 'bookmark: graph Redo restores the hidden code result too');
 	await runPaletteCommand('Edit: Undo');
-	await click(editorChromeState.tabButtonBounds.get(code.id)!);
+	await test.clickTab(code.id);
 	check(activeCodeEditor.view.cursorRow === typingRow && activeCodeEditor.view.cursorColumn === typingColumn
 		&& model.buffer.getText() === transferred, 'bookmark: reattaching the code widget consumes the retained restored cursor');
 	const hiddenDocument = view.document;
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === BT_TRANSFER_SOURCE && view.document === hiddenDocument, 'bookmark: code Undo delivers selection without rebuilding a hidden lens');
-	await click(editorChromeState.tabButtonBounds.get(lens.id)!);
+	await test.clickTab(lens.id);
 	check(viewport.selection?.kind === 'node' && viewport.selection.parent!.member!.index === 0
 		&& view.definitionRowKey === view.document.definitions[1].rowKey, 'bookmark: source projection resolves the recorded original parent when reopened');
 	await runPaletteCommand('Edit: Redo');
@@ -98,7 +97,7 @@ export async function testStudioSourceBookmarks(test: StudioFixture): Promise<vo
 	check(view.document === retained && viewport.model === geometry && view.selectionBookmark === undefined,
 		'bookmark: stable frames retain the same source and geometry; no pending bookmark is replayed');
 	await runPaletteCommand('Edit: Undo');
-	await click(editorChromeState.tabButtonBounds.get(code.id)!);
+	await test.clickTab(code.id);
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === original && cycles() === position && ide.sources.currentBlua32Media === media,
 		'bookmark: ordinary history removes the fixture, without execution, source installation or guest-state changes');

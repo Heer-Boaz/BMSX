@@ -660,9 +660,13 @@ resolved ids when available, kind, exact source locations and occurrence keys.
 Its retained index serves both this picker and Scenario Lab's id-to-source
 lookup; unknown ids remain source expressions rather than guessed runtime ids.
 Labels name behaviors; path and domain/line are secondary disambiguation.
-Acceptance selects and reveals the exact definition in the resource-owned
-lens, without building other documents' topology or creating one text model
-per behavior. See [Behavior Quick Access](../docs/behavior_quick_access.md).
+Acceptance opens the exact registration occurrence in its own retained input;
+the source resource still owns the one shared text model. Reopening a surviving
+occurrence preserves its input, selection and viewport. Source topology, FSM
+indices and mapped occurrence indices are shared document generations, not
+duplicated for each view. Other documents' topology is not built by this opener.
+See [Behavior Quick Access](../docs/behavior_quick_access.md) and
+[definition input lifetime](../docs/workbench_definition_inputs_design.md).
 
 `SceneEditorInput` attaches the resource-owned `EditorTextModel` directly,
 without creating or requiring a code tab.
@@ -812,7 +816,7 @@ and their resource-owned document models outlive visibility independently.
 
 Every retained tab is a concrete editor input owned by its contribution, not a
 plain workbench DTO. The abstract common input owns only stable input identity,
-kind, title and close policy. Explicit read-only and working-copy subclasses
+kind, title/description metadata and close policy. Explicit read-only and working-copy subclasses
 own the dirty capability instead of an optional model field. The code,
 resource-viewer, Behavior Lens and Scenario Lab contributions own their
 specific model or view references. The static `EditorInput` union remains the
@@ -820,14 +824,31 @@ product's exhaustive built-in composition boundary.
 
 Code, Scene Editor and Behavior Lens inputs project dirty state directly from
 their resource-owned `EditorTextModel`; read-only inputs inherit the read-only
-`false` contract. The lens is a read-only *control* over a mutable source model,
-not a separate immutable document. Neither source projection depends on the
-lifetime of a code-tab context. Both name the tool in the tab and identify the
-source in the view header; a contributed Source action opens the selected
-syntax location through resource navigation. Tab
+`false` contract. The lens is a source-editing projection over that model,
+not a separate document. Neither source projection depends on the
+lifetime of a code-tab context. Behavior inputs name their definition; Scene
+inputs name their tool. The group adds source descriptions for duplicate titles;
+a contributed Source action opens the selected syntax location through resource
+navigation. Tab
 layout and rendering invoke `input.isDirty()` polymorphically and never infer a
 working copy from the input kind or from the active code widget. Input objects
 are allocated only when retained and are reused across pane activation.
+
+`EditorTabGroupModel` owns one explicit clean preview slot. Normal Open keeps an
+input; Preview may replace the previous preview only after its pane detaches.
+Keep Open, tab double-click, tab drag and working-copy dirty changes promote it;
+Undo to clean does not unpin it. An input is never repurposed to another
+registration. Deleting its registration leaves that input without a target,
+not pointing at the next ordinal or a same-named insertion.
+
+Chrome uses one clipped horizontal tab row, with the shared scrollbar and
+captured thumb control. It publishes a bounded pixel height to layout, not an
+unbounded row count. Group/geometry changes request active reveal; ordinary
+scrolling does not. Tab drop feedback and captured host-time edge scrolling
+precede the accepted group move. Label measurement and geometry are retained,
+offscreen tabs are not painted, and disposal releases their hit rectangles.
+The design and production references are in
+[`workbench_definition_inputs_design.md`](../docs/workbench_definition_inputs_design.md).
 
 This is the small part of VS Code's `EditorInput` contract needed before
 multiple editable surfaces exist: the input owns type identity and exposes

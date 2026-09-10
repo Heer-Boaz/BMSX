@@ -1,6 +1,7 @@
+import { editorTabGroup } from '../../../ide/workbench/ui/tab/group_model';
 import { NAVIGATION_SOURCE } from '../../fixtures/studio/navigation';
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
-import { getActiveTab } from '../../../ide/workbench/ui/tabs';
+import { closeTab, getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { selectedBehaviorLensSourceRange } from '../../../ide/workbench/contrib/behavior_lens/navigation';
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
 import { chooseBehavior, revealLensOccurrence } from './studio_behavior_picker';
@@ -11,6 +12,7 @@ import { check, type StudioFixture } from './studio_fixture';
 export async function testStudioNavigationHistory(test: StudioFixture): Promise<void> {
 	const { ide, harness, press, frame, click, runPaletteCommand } = test;
 	console.info('STUDIO A03: diagram -> Source -> definition -> Back -> Back -> Forward');
+	const initialTabs = new Set(editorTabGroup.tabs);
 	const cycles = test.cycles();
 	const media = ide.sources.currentBlua32Media;
 	harness.openLuaSource('cart.lua'); // Workspace transport only; all assertions use the independent fixture.
@@ -74,21 +76,24 @@ export async function testStudioNavigationHistory(test: StudioFixture): Promise<
 	await chooseBehavior(test, 'FSM navigation.fsm.two', 'STATE MACHINES');
 	await press('AltLeft', 'ArrowLeft');
 	check(getActiveTab() === lens && view.definitionRowKey === view.document.definitions[0].rowKey && view.selection?.kind === 'state-outcome',
-		'A03: choosing another definition in the retained input captures the old definition before mutating it');
+		'A03/A04: Back from another definition restores the original input and its exact selection');
 	await lens.graphLayout.settled; await frame();
 	check(graph.viewport.scrollX === scrollX && graph.viewport.scrollY === scrollY, 'A03: repeated definition switching keeps the saved viewport');
 
-	console.info('STUDIO A03: FSM history, mapped returns, async viewport and same-input selection passed');
+	console.info('STUDIO A03/A04: FSM history, mapped returns, async viewport and definition inputs passed');
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
 	await chooseBehavior(test, 'BT navigation.tree.one', 'BEHAVIOR TREES');
-	if (view.presentation.kind !== 'graph') throw new Error('A03: BT presentation missing');
-	const tree = view.presentation;
+	const treeInput = getActiveTab();
+	if (treeInput.kind !== 'behavior_lens') throw new Error('A04: BT input missing');
+	const treeView = treeInput.view;
+	if (treeView.presentation.kind !== 'graph') throw new Error('A03: BT presentation missing');
+	const tree = treeView.presentation;
 	await press('Home'); await press('ArrowDown'); await press('ArrowDown'); await press('ArrowRight');
-	const occurrence = view.selection!.rowKey;
-	const treeSource = selectedBehaviorLensSourceRange(view)!;
+	const occurrence = treeView.selection!.rowKey;
+	const treeSource = selectedBehaviorLensSourceRange(treeView)!;
 	await click(tree.actionBar.items[0].bounds);
 	await press('AltLeft', 'ArrowLeft');
-	check(getActiveTab() === lens && view.selection!.rowKey === occurrence && view.presentation.kind === 'graph', 'A03: Back restores the second shared BT occurrence');
+	check(getActiveTab() === treeInput && treeView.selection!.rowKey === occurrence && treeView.presentation.kind === 'graph', 'A03: Back restores the second shared BT occurrence');
 	await runPaletteCommand('Behavior Lens: Open ActionEffect');
 	await chooseBehavior(test, 'EFFECT navigation.effect', 'ACTIONEFFECTS');
 	const effectInput = getActiveTab();
@@ -99,30 +104,30 @@ export async function testStudioNavigationHistory(test: StudioFixture): Promise<
 	await revealLensOccurrence(test, effectInput.view, period.rowKey);
 	await click(effectInput.view.presentation.actionBar.items[0].bounds);
 	await press('AltLeft', 'ArrowLeft');
-	check(getActiveTab() === lens && effectInput.view.presentation.kind === 'properties' && view.selection!.rowKey === period.rowKey,
+	check(getActiveTab() === effectInput && effectInput.view.presentation.kind === 'properties' && effectInput.view.selection!.rowKey === period.rowKey,
 		'A03: ActionEffect Source returns to its exact authored property');
 	// Cross-kind restoration must rebind reusable graph/property controls, not just change their data.
 	await press('AltLeft', 'ArrowLeft');
-	check(view.presentation.kind === 'graph' && view.selection!.rowKey === occurrence
-		&& selectedBehaviorLensSourceRange(view)!.start.line === treeSource.start.line, 'A03: Back across presentation kinds restores the BT');
+	check(treeView.presentation.kind === 'graph' && treeView.selection!.rowKey === occurrence
+		&& selectedBehaviorLensSourceRange(treeView)!.start.line === treeSource.start.line, 'A03: Back across presentation kinds restores the BT');
 	await press('ArrowLeft');
-	check(view.selection!.rowKey !== occurrence, 'A03: the restored graph receives physical keyboard navigation');
+	check(treeView.selection!.rowKey !== occurrence, 'A03: the restored graph receives physical keyboard navigation');
 	await press('Home'); await press('ArrowDown'); await press('ArrowDown');
-	const removedSource = selectedBehaviorLensSourceRange(view)!;
+	const removedSource = selectedBehaviorLensSourceRange(treeView)!;
 	const removedOffset = model.buffer.offsetAt(removedSource.start.line - 1, removedSource.start.column - 1);
 	check(model.buffer.getTextRange(removedOffset, removedOffset + 4) === 'leaf', 'A03: choose the second shared leaf occurrence');
-	await click(view.presentation.actionBar.items[0].bounds);
+	await click(treeView.presentation.actionBar.items[0].bounds);
 	model.pushEditOperations([{ offset: removedOffset, deleteLength: 4, text: '' }]);
 	await press('AltLeft', 'ArrowLeft');
-	check(getActiveTab() === lens && view.selection === null && view.presentation.viewport.selection === null,
+	check(getActiveTab() === treeInput && treeView.selection === null && treeView.presentation.viewport.selection === null,
 		'A03: a deleted history occurrence cannot select the remaining identical leaf');
 	await press('AltLeft', 'ArrowRight');
 	await press('ControlLeft', 'KeyZ');
 	await press('AltLeft', 'ArrowLeft');
-	check(view.selection === null && model.buffer.getText() === prefix + NAVIGATION_SOURCE,
+	check(treeView.selection === null && model.buffer.getText() === prefix + NAVIGATION_SOURCE,
 		'A03: Undo restores source bytes, not a deleted navigation selection');
 
-	await click(view.presentation.actionBar.items[0].bounds);
+	await click(treeView.presentation.actionBar.items[0].bounds);
 	const scene = await openSceneEditor(test);
 	await selectMember(test, scene, 1);
 	const member = scene.selectionRange.start;
@@ -153,6 +158,7 @@ export async function testStudioNavigationHistory(test: StudioFixture): Promise<
 	check(getActiveTab() === scenario && scenario.view.testPane.selectedNodeId === testId && scenario.view.focus === 'tests',
 		'A03: Scenario source returns to its exact test selection');
 	check(test.cycles() === cycles && ide.sources.currentBlua32Media === media, 'A03: all history routes preserve the paused machine and installed media');
+	for (const input of [...editorTabGroup.tabs]) if (!initialTabs.has(input) && input.kind === 'behavior_lens') closeTab(ide.editor.editorPanes, ide.sources, input.id);
 	harness.openLuaSource('cart.lua'); await frame();
 	console.info('STUDIO A03: shared history routes passed');
 }

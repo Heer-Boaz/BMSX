@@ -2,16 +2,12 @@ import type { BehaviorLensNavigationSelection } from './navigation_selection';
 import { captureNavigation } from '../../../navigation/navigation_history';
 import type { EditorTextModel, EditorTextModelContentChangeEvent } from '../../../editor/model/text_model';
 import { mapBehaviorLensSourceRanges } from './source_correspondence';
-import { resourceIdentityKey } from '../../../common/resource';
 import { editorTextModelService } from '../../../editor/model/model_service';
 import { resourceSourceForChunk } from '../../../runtime/lua_pipeline';
-import { getOrCreateSemanticProject } from '../../../editor/contrib/intellisense/semantic/workspace/state';
-import { getTextSnapshot } from '../../../editor/text/source_text';
 import { resolveRuntimeResource, type RuntimeSourceState } from '../../../runtime/sources';
 import type { QuickInputController } from '../../services/quick_input/controller';
-import type { BehaviorLensTabId } from '../../ui/tab/id';
-import { editorTabGroup } from '../../ui/tab/group_model';
-import { getActiveTab, setActiveTab } from '../../ui/tabs';
+import { editorTabGroup, type EditorOpenOptions } from '../../ui/tab/group_model';
+import { getActiveTab, openEditorTab } from '../../ui/tabs';
 import type { EditorNavigationController } from '../resources/navigation';
 import type { EditorPanes } from '../../services/editor/editor_panes';
 import { BehaviorLensInput } from './editor_input';
@@ -27,8 +23,9 @@ import {
 	selectedBehaviorLensSourceRange,
 	type BehaviorLensNavigationCommand,
 } from './navigation';
-import { buildBehaviorSourceDocument } from './recognizer';
-import type { BehaviorKind, BehaviorRegistrationSource, BehaviorSourceDocument } from './model';
+import { BehaviorSourceDocuments } from './source_documents';
+import { luaSourceRangeToTextRange } from '../../../language/lua/source_edits';
+import type { BehaviorKind, BehaviorRegistrationSource } from './model';
 import type { BehaviorRegistrationIndex } from './registration_index';
 import { buildBehaviorQuickPickItems } from './quick_access';
 import { createBehaviorLensViewState, type BehaviorLensViewState } from './view_model';
@@ -49,6 +46,7 @@ const PICKER_TITLES: Readonly<Record<BehaviorKind, string>> = {
 
 /** Workbench contribution for source-derived behavior topology. Inputs own every view. */
 export class BehaviorLensController {
+	private readonly documents: BehaviorSourceDocuments;
 	public constructor(
 		private readonly sources: RuntimeSourceState,
 		private readonly navigation: EditorNavigationController,
@@ -56,42 +54,42 @@ export class BehaviorLensController {
 		private readonly quickInput: QuickInputController,
 		private readonly registrations: BehaviorRegistrationIndex,
 		private readonly createGraphLayoutEngine: GraphLayoutEngineFactory,
-	) {}
+	) { this.documents = new BehaviorSourceDocuments(sources); }
 
-	public open(kind: BehaviorKind | null = null): void {
+	public open(kind: BehaviorKind | null = null, options: EditorOpenOptions = {}): void {
 		this.quickInput.pick(kind === null ? 'BEHAVIOR LENS' : PICKER_TITLES[kind], 'Choose a definition',
 			() => buildBehaviorQuickPickItems(this.sources, this.registrations, kind),
-			item => this.openDefinition(item.registration));
+			item => this.openDefinition(item.registration, options));
 	}
 
-	public openDefinition(registration: BehaviorRegistrationSource): void {
-		captureNavigation(() => {
+	public openDefinition(registration: BehaviorRegistrationSource, options: EditorOpenOptions = {}): BehaviorLensInput {
+		return captureNavigation(() => {
 			const resource = resolveRuntimeResource(this.sources, registration.resource)!;
 			const model = editorTextModelService.retain(resource, 'lua', resourceSourceForChunk(this.sources, resource));
-			const source = getTextSnapshot(model.buffer);
-			const tabId: BehaviorLensTabId = `behavior:${resourceIdentityKey(resource)}`;
-			let tab = editorTabGroup.findById(tabId);
-			if (tab === undefined) {
-				const document = this.buildDocument(resource, source);
-				tab = new BehaviorLensInput(
-					model,
-					createBehaviorLensViewState(document, model, registration.behaviorKind === 'behavior_tree' ? 'graph'
-						: registration.behaviorKind === 'action_effect' ? 'properties' : 'state-graph'),
-					this.createGraphLayoutEngine,
-				);
-				editorTabGroup.add(tab);
-			} else {
-				this.updateView(tab);
+			const occurrence = luaSourceRangeToTextRange(model.buffer, registration.occurrenceRange);
+			let input: BehaviorLensInput | undefined;
+			for (const candidate of editorTabGroup.tabs) {
+				if (candidate.kind !== 'behavior_lens' || candidate.workingCopy !== model || candidate.view.definitionRowKey === null) continue;
+				const view = candidate.view;
+				const span = view.source.ranges.get(view.definitionRowKey)!;
+				if (span.start !== span.end && span.start === occurrence.start && span.end === occurrence.end
+					&& view.source.nodesByRowKey.get(view.definitionRowKey)!.behaviorKind === registration.behaviorKind) {
+					input = candidate;
+					break;
+				}
 			}
-			const view = tab.view;
-			if (view.definitionRowKey !== registration.rowKey) tab.invalidatePresentation();
-			selectBehaviorLensDefinition(view, registration.rowKey);
-			view.sourceMatchRowKeys.clear();
-			view.sourceMatchRowKeys.add(registration.rowKey);
-			prepareBehaviorLensLayout(view);
-			tab.updatePresentation(editorViewState.font.renderFont());
-			finishBehaviorLensNavigation(view);
-			setActiveTab(this.editorPanes, tab.id);
+			if (input === undefined) {
+				const view = createBehaviorLensViewState(this.documents.get(model), model,
+					registration.behaviorKind === 'behavior_tree' ? 'graph'
+						: registration.behaviorKind === 'action_effect' ? 'properties' : 'state-graph');
+				selectBehaviorLensDefinition(view, registration.rowKey);
+				view.sourceMatchRowKeys.add(registration.rowKey);
+				input = new BehaviorLensInput(model, view, this.createGraphLayoutEngine);
+				input.updateLabel();
+			}
+			// Reopening a surviving occurrence preserves its selection and viewport.
+			openEditorTab(this.editorPanes, input, options);
+			return input;
 		});
 	}
 
@@ -100,10 +98,11 @@ export class BehaviorLensController {
 		const { view, workingCopy } = input;
 		const sourceChanged = workingCopy.version !== view.sourceVersion;
 		if (sourceChanged) {
-			installBehaviorLensDocument(view, this.buildDocument(view.resource, getTextSnapshot(workingCopy.buffer)), workingCopy.buffer);
+			installBehaviorLensDocument(view, this.documents.get(workingCopy), workingCopy.buffer);
 			view.sourceVersion = workingCopy.version;
 		}
 		navigationSelection?.restore(input);
+		if (sourceChanged || navigationSelection !== undefined) input.updateLabel();
 		prepareBehaviorLensLayout(view);
 		input.updatePresentation(editorViewState.font.renderFont());
 		if (sourceChanged && navigationSelection === undefined) finishBehaviorLensNavigation(view);
@@ -111,8 +110,10 @@ export class BehaviorLensController {
 
 	/** Review navigation keeps the actual consumer/return, not just the shared literal. */
 	public openStateMachineUseSource(input: BehaviorLensInput, use: StateMachinePathUse): void {
-		const view = input.view;
-		selectBehaviorLensDefinition(view, use.definition.rowKey);
+		const target = input.view.definitionRowKey === use.definition.rowKey ? input
+			: this.openDefinition(this.registrations.getRegistrations(input.view.resource.domain)
+				.find(candidate => candidate.rowKey === use.definition.rowKey)!);
+		const view = target.view;
 		view.selection = selectStateMachineSource({ kind: 'state-outcome', rowKey: use.transition.slot.source.rowKey,
 			transition: use.transition, outcome: use.outcome }, input.workingCopy.buffer);
 		finishBehaviorLensNavigation(view);
@@ -133,7 +134,7 @@ export class BehaviorLensController {
 		this.updateView(input);
 		const view = input.view;
 		if (view.selection === null) return;
-		if (view.nodesByRowKey.get(view.selection.rowKey)!.behaviorKind === 'state_machine') {
+		if (view.source.nodesByRowKey.get(view.selection.rowKey)!.behaviorKind === 'state_machine') {
 			this.quickInput.pick('FSM SOURCE EVIDENCE', 'Choose a field, return or entry source', (_origin, disposables) => {
 				disposables.add({ dispose: input.workingCopy.onDidChangeContent(() => this.quickInput.hide()) });
 				return buildStateMachineDetails(view);
@@ -254,22 +255,10 @@ export class BehaviorLensController {
 	public onDidChangeContent(model: EditorTextModel, event: EditorTextModelContentChangeEvent): void {
 		for (const input of editorTabGroup.tabs) {
 			if (input.kind === 'behavior_lens' && input.workingCopy === model) {
-				mapBehaviorLensSourceRanges(input.view, event.changes, event.editState);
+				mapBehaviorLensSourceRanges(input.view, event);
 				input.invalidatePresentation();
 			}
 		}
-	}
-
-	private buildDocument(
-		resource: BehaviorSourceDocument['resource'],
-		source: string,
-	): BehaviorSourceDocument {
-		const project = getOrCreateSemanticProject(resource.domain);
-		project.synchronizeRuntimeSources(this.sources);
-		return buildBehaviorSourceDocument(
-			resource,
-			project.updateDocument(resource.path, source),
-		);
 	}
 
 	private openSelectedSource(view: BehaviorLensViewState): void {
@@ -293,7 +282,7 @@ export class BehaviorLensController {
 			this.navigation.focusChunkSourceForContext(view.resource.domain, view.resource.path);
 			return;
 		}
-		const range = view.nodesByRowKey.get(view.definitionRowKey)!.occurrenceRange;
+		const range = view.source.nodesByRowKey.get(view.definitionRowKey)!.occurrenceRange;
 		this.navigation.focusChunkSourceForContext(view.resource.domain, range.path, {
 			row: range.start.line - 1,
 			startColumn: range.start.column - 1,

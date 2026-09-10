@@ -18,7 +18,7 @@ function fixture(source = FSM_PROOF_SOURCE) {
 	const model = new EditorTextModel({ domain: 0, path: 'fsm_proofs.lua', source: { resid: 'fsm_proofs', type: 'lua' } }, 'lua', source);
 	const project = () => buildBehaviorSourceDocument(model.resource, buildLuaFileSemanticData(model.buffer.getText(), model.resource.path));
 	const view = createBehaviorLensViewState(project(), model, 'outline');
-	model.onDidChangeContent(event => mapBehaviorLensSourceRanges(view, event.changes));
+	model.onDidChangeContent(event => mapBehaviorLensSourceRanges(view, event));
 	return { model, view, refresh() {
 		installBehaviorLensDocument(view, project(), model.buffer);
 		view.sourceVersion = model.version;
@@ -175,7 +175,7 @@ test('deleting the selected proof, binding, callback or parent use clears select
 			const selected = selectedOutcome(f);
 			const proof = selected.outcome.proof;
 			assert.ok(proof.kind === 'return');
-			const parent = f.view.sourceNodes.find(node => node.kind === 'state' && node.label === 'right')!;
+			const parent = f.view.source.nodes.find(node => node.kind === 'state' && node.label === 'right')!;
 			const range = part === 'parent' ? parent.occurrenceRange : proof[part].range;
 			f.replace(range, '');
 			if (undoBeforeRefresh) f.model.undo();
@@ -268,10 +268,10 @@ test('an explicit initial field keeps its own evidence when a longer target is e
 	f.refresh();
 	let selection = f.view.selection;
 	assert.ok(selection?.kind === 'state-entry' && selection.entry.target.kind === 'state');
-	assert.equal(f.view.nodesByRowKey.get(selection.entry.target.rowKey)!.label, 'active');
+	assert.equal(f.view.source.nodesByRowKey.get(selection.entry.target.rowKey)!.label, 'active');
 	f.model.undo();
 	f.refresh();
 	selection = f.view.selection;
 	assert.ok(selection?.kind === 'state-entry' && selection.entry.target.kind === 'state');
-	assert.equal(f.view.nodesByRowKey.get(selection.entry.target.rowKey)!.label, 'idle');
+	assert.equal(f.view.source.nodesByRowKey.get(selection.entry.target.rowKey)!.label, 'idle');
 });

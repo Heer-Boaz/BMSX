@@ -5,7 +5,7 @@ import { editorChromeState } from './chrome_state';
 import type { EditorTabId } from './tab/id';
 import type { EditorInput, EditorInputKind } from './tab/model';
 import type { CodeTabContext } from './code_tab/model';
-import { beginNavigationCapture, completeNavigation } from '../../navigation/navigation_history';
+import { beginNavigationCapture, captureNavigation, completeNavigation } from '../../navigation/navigation_history';
 import { closeSymbolSearch } from '../contrib/code_editor/symbols/shared';
 import {
 	createCodeEditorInput,
@@ -14,13 +14,15 @@ import {
 import type { EditorTextSelection } from '../../editor/navigation/text_selection';
 import { endTabDrag } from './tab/drag';
 import type { RuntimeSourceState } from '../../runtime/sources';
-import { editorTabGroup } from './tab/group_model';
+import { editorTabGroup, type EditorOpenOptions } from './tab/group_model';
 import type { EditorPanes } from '../services/editor/editor_panes';
 
 export function initializeTabs(initialContext: CodeTabContext, editorPanes: EditorPanes): void {
 	editorPanes.clearEditor();
 	editorChromeState.tabHoverId = null;
-	editorChromeState.tabDragState = null;
+	editorChromeState.lastTabClickId = null;
+	editorChromeState.tabScrollControl.cancelPointer();
+	editorChromeState.tabScrollbar.setScroll(0);
 	editorChromeState.tabButtonBounds.clear();
 	editorChromeState.tabCloseButtonBounds.clear();
 	const initialTab = createCodeEditorInput(initialContext);
@@ -52,6 +54,18 @@ export function isScenarioLabActive(): boolean {
 	return getActiveTabKind() === 'scenario_lab';
 }
 
+/** Opening is distinct from activation: only an explicit preview can replace a tab. */
+export function openEditorTab(editorPanes: EditorPanes, input: EditorInput, options: EditorOpenOptions = {}): void {
+	captureNavigation(() => {
+		if (editorTabGroup.indexOf(input) === -1) {
+			// Focus/capture must end while the previous input is still alive.
+			editorPanes.clearEditor();
+			editorTabGroup.add(input, options);
+		} else if (options.pinned !== false) editorTabGroup.pin(input);
+		setActiveTab(editorPanes, input.id);
+	});
+}
+
 export function setActiveTab(
 	editorPanes: EditorPanes,
 	tabId: EditorTabId,
@@ -66,6 +80,7 @@ export function setActiveTab(
 		: null;
 	closeSymbolSearch(true);
 	if (isSameTab) {
+		editorTabGroup.activate(tab);
 		editorPanes.openEditor(tab, selection, navigationSelection);
 		if (!isSameTab || selection || navigationSelection) {
 			completeNavigation(navigationCheckpoint);

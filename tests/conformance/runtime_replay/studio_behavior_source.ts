@@ -3,7 +3,6 @@ import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selec
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { createLuaTableFieldRemovalEdits, luaSourceRangeToTextRange } from '../../../ide/language/lua/source_edits';
 import type { BehaviorLensViewState } from '../../../ide/workbench/contrib/behavior_lens/view_model';
-import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { getCachedLuaParse } from '../../../toolchain/ts/lua/analysis/cache';
 import { BEHAVIOR_SOURCE_FIXTURE } from '../../helpers/behavior_source_fixture';
@@ -58,7 +57,7 @@ export async function testStudioBehaviorSourceGraph(test: StudioFixture): Promis
 		bottom: card.bounds.bottom + viewport.bounds.top - viewport.scrollY };
 	await click(bounds);
 	await click(graph.actionBar.items[0].bounds);
-	await click(editorChromeState.tabButtonBounds.get(lens.id)!);
+	await test.clickTab(lens.id);
 	await click(bounds);
 	check(getActiveTab() === lens, 'source graph: pane switching cancels the earlier click, not a double-click on return');
 	await click(graph.actionBar.items[0].bounds, 6);
@@ -75,7 +74,7 @@ export async function testStudioBehaviorSourceGraph(test: StudioFixture): Promis
 	model.pushEditOperations([{ offset: insertion.start + prefix.length, deleteLength: 0, text: "{ type = 'wait' }, " }]);
 	await frame();
 	check(view.document === oldDocument, 'source graph: hidden edits map source correspondence without rebuilding the lens');
-	await click(editorChromeState.tabButtonBounds.get(lens.id)!);
+	await test.clickTab(lens.id);
 	const nextEntries = fixtureChildren(view);
 	const nextShared = nextEntries[2].node;
 	if (nextShared.kind !== 'node' || nextShared.branches[0].role !== 'children') throw new Error('source graph: moved occurrence missing');
@@ -96,17 +95,17 @@ export async function testStudioBehaviorSourceGraph(test: StudioFixture): Promis
 		&& !hasSelection(), 'source graph: Source uses the new generation, including the UTF-16 insertion');
 	const parsed = getCachedLuaParse({ source: model.buffer.getText(), path: model.resource.path }).parsed;
 	model.pushEditOperations(createLuaTableFieldRemovalEdits(model.buffer, parsed.tokens, nextEntries[2].field));
-	await click(editorChromeState.tabButtonBounds.get(lens.id)!);
+	await test.clickTab(lens.id);
 	check(view.selection === null && viewport.selection === null, 'source graph: deleting the selected occurrence does not choose its namesake');
 	await press('Enter');
 	check(getActiveTab() === lens, 'source graph: an absent selection has no stale source action');
-	await click(editorChromeState.tabButtonBounds.get(code.id)!);
+	await test.clickTab(code.id);
 	await press('ControlLeft', 'KeyZ');
-	await click(editorChromeState.tabButtonBounds.get(lens.id)!);
+	await test.clickTab(lens.id);
 	check(view.selection === null && viewport.selection === null, 'source graph: ordinary Undo does not invent correspondence for a removed selection');
 	await press('ArrowDown');
 	check(view.selection?.rowKey === view.definitionRowKey, 'source graph: explicit keyboard navigation starts at the root card after removal');
-	await click(editorChromeState.tabButtonBounds.get(code.id)!);
+	await test.clickTab(code.id);
 	for (let index = 0; index < 3; index += 1) await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === original, 'source graph: ordinary source Undo removes all fixture edits');
 	check(cycles() === position && ide.sources.currentBlua32Media === media,

@@ -1454,6 +1454,17 @@ subscription lifetimes, registered source reopening and asynchronous viewport
 restoration are specified in `workbench_navigation_history_design.md`. This is
 distinct from document Undo, workspace-session persistence and machine rewind.
 
+Behavior editor inputs address individual Lua registration occurrences, not
+entire source files. Multiple definitions share one resource-owned text model,
+undo history and source-generation indices, while each input retains its own
+selection and presentation. Explicit Preview uses the workbench group's single
+clean preview slot; normal Open, Keep Open or source editing retain the input.
+The workbench tab strip is one horizontally scrollable row, so retaining more
+definitions cannot consume unbounded editor height. Input correspondence,
+labels, disposal, pointer capture and validation are specified in
+[`workbench_definition_inputs_design.md`](workbench_definition_inputs_design.md).
+No guest registration id, machine state or ROM representation is added.
+
 BT and FSM diagrams are fully expanded over their recognized source structure.
 The host workbench graph owns finite padded canvas navigation and shared
 horizontal/vertical scrollbars, not guest input or authored geometry. Middle
@@ -4392,9 +4403,9 @@ facts, not framework knowledge in the language service. Its Quick Input
 results are individual FSM/BT/ActionEffect registration occurrences; a Lua
 file is their source container, not the choice's identity. A shared shallow
 registration index serves discovery and runtime-id-to-source lookup, while
-the selected document alone builds its lens topology. Computed ids remain
-authored expressions. The resource-owned model and occurrence-qualified row
-key select the exact definition even when registrations share an initializer.
+requested document generations alone build shared lens topology. Computed ids
+remain authored expressions. The resource-owned model and mapped registration
+occurrence identify the exact input even when registrations share an initializer.
 ActionEffect/FSM/BT opening commands constrain that same index by producer
 kind, not by file or search-label spelling. Tool command categories are
 independent of View-menu placement and do not introduce another view owner.

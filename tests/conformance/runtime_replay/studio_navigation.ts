@@ -68,8 +68,8 @@ export async function testStudioNavigation(test: StudioFixture): Promise<void> {
 	await chooseBehavior(test, 'FSM nemesis_s.title_screen.fsm');
 	const lens = getActiveTab();
 	if (lens.kind !== 'behavior_lens') throw new Error('navigation: selected lens input missing');
-	check(lens.title === 'BEHAVIOR LENS' && lens.view.document.definitions.length > 0,
-		'navigation: the actual title FSM is visible under its tool title');
+	check(lens.title === 'FSM nemesis_s.title_screen.fsm' && lens.view.document.definitions.length > 0,
+		'navigation: the actual title FSM is visible under its definition title');
 	const sourceRange = selectedBehaviorLensSourceRange(lens.view)!;
 	await click(lens.view.presentation.actionBar.items[0].bounds);
 	const code = getActiveTab();

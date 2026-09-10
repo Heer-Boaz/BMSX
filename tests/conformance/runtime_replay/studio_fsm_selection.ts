@@ -4,7 +4,6 @@ import { inputFocus } from '../../../ide/input/focus';
 import { luaSourceRangeToTextRange } from '../../../ide/language/lua/source_edits';
 import { selectedBehaviorLensSourceRange } from '../../../ide/workbench/contrib/behavior_lens/navigation';
 import type { BehaviorLensViewState } from '../../../ide/workbench/contrib/behavior_lens/view_model';
-import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { FSM_PROOF_SOURCE } from '../../helpers/fsm_source_fixture';
 import { revealLensOccurrence } from './studio_behavior_picker';
@@ -65,7 +64,7 @@ export async function testStudioFsmSelection(test: StudioFixture): Promise<void>
 		&& graph.viewport.selection.link.reference.outcome === right.outcomes[1],
 		'FSM proof: Details selects the exact geometric proof, not the previously highlighted state');
 	const selectedGeometry = graph.viewport.model;
-	await click(editorChromeState.tabButtonBounds.get(lens.id)!);
+	await test.clickTab(lens.id);
 	check(graph.viewport.model === selectedGeometry && graph.viewport.selection?.kind === 'edge',
 		'FSM proof: returning from source reveals that proof without relayout');
 	await click(graph.actionBar.items[0].bounds);
@@ -75,12 +74,12 @@ export async function testStudioFsmSelection(test: StudioFixture): Promise<void>
 		text: '\tif owner.extra then return next_path end\n' }]);
 	await frame();
 	check(view.document === oldDocument, 'FSM proof: hidden input maps evidence without rebuilding source');
-	await click(editorChromeState.tabButtonBounds.get(lens.id)!);
+	await test.clickTab(lens.id);
 	check(selectedProof(view).outcome === selectedProof(view).transition.outcomes[2], 'FSM proof: correspondence follows the old return past a newly inserted identical return');
 	await click(graph.actionBar.items[0].bounds, 6);
 	check(activeCodeEditor.view.cursorRow === 6 && !hasSelection(), 'FSM proof: Source consumes current parsed evidence after UTF-16 edits');
 	await press('ControlLeft', 'KeyZ');
-	await click(editorChromeState.tabButtonBounds.get(lens.id)!);
+	await test.clickTab(lens.id);
 	check(selectedProof(view).outcome === selectedProof(view).transition.outcomes[1], 'FSM proof: ordinary Undo restores the selected occurrence, not an ordinal');
 	const focus = inputFocus.target;
 	await runPaletteCommand('Behavior Lens: Open Source Details');
@@ -94,10 +93,10 @@ export async function testStudioFsmSelection(test: StudioFixture): Promise<void>
 	const span = luaSourceRangeToTextRange(model.buffer, selectedBehaviorLensSourceRange(view)!);
 	model.pushEditOperations([{ offset: span.start, deleteLength: span.end - span.start, text: '' }]);
 	model.undo();
-	await click(editorChromeState.tabButtonBounds.get(lens.id)!);
+	await test.clickTab(lens.id);
 	check(view.selection === null && view.presentation.kind === 'state-graph' && view.presentation.viewport.selection === null,
 		'FSM proof: deleting and undoing the selected return while hidden cannot select its namesake');
-	await click(editorChromeState.tabButtonBounds.get(code.id)!);
+	await test.clickTab(code.id);
 	await press('ControlLeft', 'KeyZ');
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === original, 'FSM proof: ordinary source Undo removes the independent fixture');

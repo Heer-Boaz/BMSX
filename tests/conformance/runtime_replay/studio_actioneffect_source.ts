@@ -2,7 +2,6 @@ import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selec
 import { inputFocus } from '../../../ide/input/focus';
 import { WHEEL_SCROLL_STEP } from '../../../ide/common/constants';
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
-import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { ACTIONEFFECT_PARTIAL_SOURCE, ACTIONEFFECT_SOURCE } from '../../helpers/actioneffect_source_fixture';
 import { chooseBehavior, revealLensOccurrence } from './studio_behavior_picker';
@@ -21,10 +20,10 @@ export async function testStudioActionEffectSource(test: StudioFixture): Promise
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: ACTIONEFFECT_SOURCE }]);
 	await runPaletteCommand('Behavior Lens: Open ActionEffect');
 	await chooseBehavior(test, 'EFFECT fixture.second', 'ACTIONEFFECTS');
-	const lens = getActiveTab();
+	let lens = getActiveTab();
 	if (lens.kind !== 'behavior_lens') throw new Error('ActionEffect source: expected the actual lens input');
-	const view = lens.view;
-	const properties = view.presentation;
+	let view = lens.view;
+	let properties = view.presentation;
 	if (properties.kind !== 'properties') throw new Error('ActionEffects must open the concrete property inspector');
 	const second = view.document.definitions[1];
 	if (second.behaviorKind !== 'action_effect') throw new Error('ActionEffect source: expected the second fixture registration');
@@ -69,7 +68,7 @@ export async function testStudioActionEffectSource(test: StudioFixture): Promise
 	const period = second.body!.fields.find(field => field.kind === 'value' && field.name === 'period_ms')!;
 	await revealLensOccurrence(test, view, period.source.rowKey);
 	console.info('STUDIO: ActionEffect complete properties ready for visual inspection');
-	const tree = properties.tree;
+	let tree = properties.tree;
 	const propertyTop = tree.layout.contentTop + (tree.selectionIndex - tree.scroll) * tree.layout.rowHeight;
 	const propertyBounds = { left: tree.layout.valueLeft, right: tree.layout.contentRight, top: propertyTop, bottom: propertyTop + tree.layout.rowHeight };
 	await click(propertyBounds);
@@ -81,7 +80,7 @@ export async function testStudioActionEffectSource(test: StudioFixture): Promise
 	const row = ACTIONEFFECT_SOURCE.split('\n').findIndex(line => line.includes('period_ms = 20'));
 	check(getActiveTab() === code && activeCodeEditor.view.cursorRow === row && !hasSelection(),
 		'ActionEffect controls: held property double-click opens its exact source without a code drag');
-	await click(editorChromeState.tabButtonBounds.get(lens.id)!);
+	await test.clickTab(lens.id);
 	await click(properties.actionBar.items[0].bounds, 6);
 	check(getActiveTab() === code && activeCodeEditor.view.cursorRow === row && !hasSelection(),
 		'ActionEffect source: held Source click opens the selected field without dragging code');
@@ -91,7 +90,7 @@ export async function testStudioActionEffectSource(test: StudioFixture): Promise
 	model.pushEditOperations([{ offset, deleteLength: 2, text: '35' }]);
 	await frame();
 	check(view.document === oldDocument, 'ActionEffect source: hidden edits map source correspondence without projecting per frame');
-	await click(editorChromeState.tabButtonBounds.get(lens.id)!);
+	await test.clickTab(lens.id);
 	const current = view.document.definitions[1];
 	if (current.behaviorKind !== 'action_effect') throw new Error('ActionEffect source: current definition must be an effect');
 	const changed = current.body!.fields.find(field => field.kind === 'value' && field.name === 'period_ms')!;
@@ -105,21 +104,25 @@ export async function testStudioActionEffectSource(test: StudioFixture): Promise
 	await click(properties.actionBar.items[0].bounds, 6);
 	check(activeCodeEditor.view.cursorRow === row + 1 && !hasSelection(), 'ActionEffect source: navigation follows UTF-16 source edits');
 	await press('ControlLeft', 'KeyZ');
-	await click(editorChromeState.tabButtonBounds.get(lens.id)!);
-	check(view.nodesByRowKey.get(view.selection!.rowKey)!.label === 'period_ms = 20'
+	await test.clickTab(lens.id);
+	check(view.source.nodesByRowKey.get(view.selection!.rowKey)!.label === 'period_ms = 20'
 		&& view.definitionRowKey === view.document.definitions[1].rowKey, 'ActionEffect source: ordinary Undo restores the value in the same effect occurrence');
 	await click(properties.actionBar.items[0].bounds);
 	await press('ControlLeft', 'KeyZ');
 	await runPaletteCommand('Behavior Lens: Open ActionEffect');
 	await chooseBehavior(test, 'EFFECT fixture.first', 'ACTIONEFFECTS');
+	const chosen2 = getActiveTab();
+	if (chosen2.kind !== 'behavior_lens' || chosen2.view.presentation.kind !== 'properties') throw new Error('ActionEffect: selected definition input missing');
+	check(chosen2 !== lens && chosen2.workingCopy === model, 'ActionEffect: distinct definition input shares the text owner');
+	lens = chosen2; view = lens.view; properties = chosen2.view.presentation; tree = properties.tree;
 	check(getActiveTab() === lens && view.definitionRowKey === view.document.definitions[0].rowKey,
-		'ActionEffect source: both registrations remain independently selectable in the same retained input');
+		'ActionEffect source: both registrations remain independently selectable with their own retained inputs');
 	await click(properties.actionBar.items[0].bounds);
 	check(activeCodeEditor.view.cursorRow === ACTIONEFFECT_SOURCE.split('\n').findIndex(line => line.startsWith("effects.register_effect('fixture.first'")),
 		'ActionEffect source: definition Source opens its registration use, not the shared constructor');
 	model.pushEditOperations([{ offset: model.buffer.getText().indexOf("{ 'ready' }"), deleteLength: "{ 'ready' }".length,
 		text: "{ 'ready', 'aim', 'armed', 'visible', 'grounded', 'moving', 'awake' }" }]);
-	await click(editorChromeState.tabButtonBounds.get(lens.id)!);
+	await test.clickTab(lens.id);
 	await press('Home');
 	check(tree.rows.length > tree.layout.visibleRowCount, 'ActionEffect controls: authored requirements exceed the actual property viewport');
 	test.movePointer({ left: 200, right: 202, top: tree.layout.contentTop + 4, bottom: tree.layout.contentTop + 6 });
@@ -138,6 +141,10 @@ export async function testStudioActionEffectSource(test: StudioFixture): Promise
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: ACTIONEFFECT_PARTIAL_SOURCE }]);
 	await runPaletteCommand('Behavior Lens: Open ActionEffect');
 	await chooseBehavior(test, 'EFFECT fixture.partial', 'ACTIONEFFECTS');
+	const chosen3 = getActiveTab();
+	if (chosen3.kind !== 'behavior_lens' || chosen3.view.presentation.kind !== 'properties') throw new Error('ActionEffect: selected definition input missing');
+	check(chosen3 !== lens && chosen3.workingCopy === model, 'ActionEffect: distinct definition input shares the text owner');
+	lens = chosen3; view = lens.view; properties = chosen3.view.presentation; tree = properties.tree;
 	const partial = view.document.definitions[0];
 	if (partial.behaviorKind !== 'action_effect') throw new Error('ActionEffect source: expected partial fixture');
 	const unknown = partial.body!.fields[1];
@@ -147,7 +154,7 @@ export async function testStudioActionEffectSource(test: StudioFixture): Promise
 	await click(properties.actionBar.items[0].bounds, 6);
 	check(activeCodeEditor.view.cursorRow === 4 && activeCodeEditor.view.cursorColumn === 1 && !hasSelection(),
 		'ActionEffect source: unknown-field Source navigates to its computed Lua key');
-	await click(editorChromeState.tabButtonBounds.get(lens.id)!);
+	await test.clickTab(lens.id);
 	const required = partial.body!.fields[2];
 	if (required.kind !== 'list') throw new Error('ActionEffect source: expected authored requirement list');
 	await revealLensOccurrence(test, view, required.entries[1].node.rowKey);

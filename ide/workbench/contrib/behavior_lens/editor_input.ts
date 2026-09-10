@@ -1,4 +1,3 @@
-import { resourceIdentityKey } from '../../../common/resource';
 import { WorkingCopyEditorInput } from '../../common/editor_input';
 import type { EditorTextModel } from '../../../editor/model/text_model';
 import type { BehaviorLensTabId } from '../../ui/tab/id';
@@ -14,19 +13,34 @@ import { projectActionEffectProperties } from './action_effect_properties';
 import type { ActionEffectSourceDefinition } from './action_effect_model';
 import { layoutWorkbenchPropertyTree } from '../../ui/property_tree';
 import { measureTextRange } from '../../../editor/common/text/layout';
+import { sourceTabDescription } from '../../ui/tab/titles';
+
+let nextInputId = 0;
 
 /** Retained input for one source-derived behavior view. */
 export class BehaviorLensInput extends WorkingCopyEditorInput<BehaviorLensTabId, 'behavior_lens'> {
 	public readonly graphLayout: AsyncGraphLayout<StateGraphModel>;
+	private definitionTitle = 'BEHAVIOR LENS';
 
 	public constructor(public readonly workingCopy: EditorTextModel, public readonly view: BehaviorLensViewState, createEngine: GraphLayoutEngineFactory) {
 		super(
-			`behavior:${resourceIdentityKey(view.resource)}`,
+			`behavior:${nextInputId++}`,
 			'behavior_lens',
 			'BEHAVIOR LENS',
 			true,
 		);
 		this.graphLayout = this.disposables.add(new AsyncGraphLayout(createEngine));
+	}
+
+	public updateLabel(): void {
+		const view = this.view;
+		if (view.definitionRowKey === null) {
+			this.setLabel(`${this.definitionTitle} (removed)`, sourceTabDescription(view.resource));
+			return;
+		}
+		const definition = view.source.nodesByRowKey.get(view.definitionRowKey)!;
+		this.definitionTitle = definition.label;
+		this.setLabel(this.definitionTitle, sourceTabDescription(view.resource, definition.occurrenceRange.start.line));
 	}
 
 	/** Called even for hidden inputs: no old source generation may publish or remain interactive. */

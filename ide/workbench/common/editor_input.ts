@@ -14,9 +14,29 @@ export abstract class AbstractEditorInput<
 > implements IDisposable {
 	protected readonly disposables = new DisposableStore();
 	private readonly disposeListeners = new Set<() => void>();
+	private readonly labelListeners = new Set<() => void>();
+	private inputTitle: string;
+	private inputDescription = '';
 
 	/** Only inputs with a registered resource opener can outlive closing their tab. */
 	public toResourceEditor?(): ResourceEditorIdentity;
+	public onDidChangeDirty?(listener: () => void): () => void;
+
+	public get title(): string { return this.inputTitle; }
+	public set title(value: string) { this.setLabel(value, this.inputDescription); }
+	public get description(): string { return this.inputDescription; }
+
+	public setLabel(title: string, description: string): void {
+		if (title === this.inputTitle && description === this.inputDescription) return;
+		this.inputTitle = title;
+		this.inputDescription = description;
+		for (const listener of this.labelListeners) listener();
+	}
+
+	public onDidChangeLabel(listener: () => void): () => void {
+		this.labelListeners.add(listener);
+		return () => this.labelListeners.delete(listener);
+	}
 
 	public onWillDispose(listener: () => void): () => void {
 		this.disposeListeners.add(listener);
@@ -26,9 +46,10 @@ export abstract class AbstractEditorInput<
 	public constructor(
 		public readonly id: TId,
 		public readonly kind: TKind,
-		public title: string,
+		title: string,
 		public readonly closable: boolean,
 	) {
+		this.inputTitle = title;
 	}
 
 	public abstract isDirty(): boolean;
@@ -37,6 +58,7 @@ export abstract class AbstractEditorInput<
 	public dispose(): void {
 		for (const listener of this.disposeListeners) listener();
 		this.disposeListeners.clear();
+		this.labelListeners.clear();
 		this.disposables.dispose();
 	}
 }
@@ -57,6 +79,10 @@ export abstract class WorkingCopyEditorInput<
 	TKind extends string,
 > extends AbstractEditorInput<TId, TKind> {
 	public abstract get workingCopy(): EditorTextModel;
+
+	public override onDidChangeDirty(listener: () => void): () => void {
+		return this.workingCopy.onDidChangeDirty(listener);
+	}
 
 	public isDirty(): boolean {
 		return this.workingCopy.dirty;

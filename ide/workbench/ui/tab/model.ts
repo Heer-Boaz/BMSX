@@ -24,7 +24,11 @@ export type {
 
 export type TabDragState = {
 	tabId: EditorTabId;
-	pointerOffset: number;
 	startX: number;
+	startY: number;
 	hasDragged: boolean;
+	pointerTime: number;
+	revision: number;
+	targetIndex: number;
+	markerX: number;
 };

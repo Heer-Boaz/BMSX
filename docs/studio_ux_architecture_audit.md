@@ -451,6 +451,47 @@ host-/SNES-Mini-performancemeting. **A04–A09 blijven open**: A03 verandert nie
 de definitiegranulariteit van tabs, preview/pinnen, sessieherstel, Scenario-output,
 zoekbediening of hover-leave.
 
+### A04 — gecorrigeerd en beproefd (2026-09-10)
+
+Een Behavior-input bezit nu één registratie-occurrence, niet het gehele bestand.
+Afzonderlijke FSMs, BTs en ActionEffects blijven naast elkaar open; opnieuw openen
+van dezelfde overlevende occurrence bewaart selectie en viewport. Het gedeelde
+textmodel, undo-verleden, source-topologie, FSM-index en gemapte bronindex worden
+niet per view gedupliceerd. Een modelwijziging wordt per gedeelde bronindex eenmaal
+gemapt. Undo in een zusterview neemt niet langer de registratie van de bewerking
+over. Hernoemen/prefix-edits volgen de bestaande correspondentie; een verwijderde
+registratie wordt geen volgende ordinal of gelijknamige vervanger.
+
+De workbenchgroep bezit één expliciete schone Preview. Open/Keep Open, tab-
+double-click, tabdrag en een dirty working copy behouden de input. Een vervangen
+preview wordt pas na pane-detach gesloten; ook een al gecapturede history-entry
+van die gesloten input wordt niet meer gepubliceerd. Tabtitels benoemen de
+definitie; de groep voegt bij gelijke titels bronbeschrijvingen toe.
+
+De complete regressie onthulde een echte prerequisite: meer behouden tabs lieten
+de oude onbeperkte tabrijen alle editorruimte innemen, tot Problems niet meer
+te resizen was. De gedeelde tabstrip is daarom één geclipte horizontale rij met
+scrollbar geworden, niet een test die tabs sluit om ruimte te maken. Wheel/thumb
+behouden editorfocus; actieve reveal draait handmatig scrollen niet terug.
+Tabdrag gebruikt de bestaande capture-service, host-time edge-scroll en zichtbare
+insertion feedback; alleen de geaccepteerde drop wijzigt de groepvolgorde.
+
+Ontwerp, de vooraf gelezen gepinde VS Code-bronnen en reproduceerbare gates:
+[`workbench_definition_inputs_design.md`](workbench_definition_inputs_design.md).
+**Bewijs:** volledige Studio-workflows geslaagd op **software, WebGL2 en WebGPU**,
+inclusief onafhankelijke definitie-/preview-/Undo-fixtures, fysieke wheel/thumb/
+tabdrag, source/Back/Forward en Scene/Problems met een overvolle tabstrip bij
+beide fonts. Lua-suite: **1285 geslaagd, 1 bestaande skip**. IDE-typecheck,
+browser-Studio-build, strict boundaries (0 issues), core-parity en `git diff
+--check` slagen. De tests-typecheck behoudt exact de **51 bestaande diagnostieken**.
+Logs en screenshots staan lokaal onder `/tmp/bmsx-a04/`; de browserproef bevat
+opzettelijke compile/guestfaults en bestaande sourcefetch-404's.
+
+De gerichte proeven controleren gedeelde generaties, eenmalige mapping,
+retained labelmetingen, zichtbare-only painting en disposal van tabgeometrie.
+Dit is geen volledige host-/GC-/SNES-Mini-performancemeting. **A05–A09 blijven
+open**, inclusief workbench-sessionserialization los van recovery-backups.
+
 ### A09 — aanvullend P2: pointer-leave heeft nog geen gedeelde eigenaar
 
 Bij de A02-review is in de echte software-Studio ook deze tegenproef uitgevoerd:

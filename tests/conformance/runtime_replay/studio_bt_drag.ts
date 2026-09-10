@@ -3,7 +3,6 @@ import { WHEEL_SCROLL_STEP } from '../../../ide/common/constants';
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
 import { readLuaSourceRange } from '../../../ide/language/lua/source_edits';
 import type { BehaviorGraphNode } from '../../../ide/workbench/contrib/behavior_lens/graph_model';
-import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { BT_ORDER_SOURCE } from '../../helpers/behavior_order_fixture';
 import { chooseBehavior } from './studio_behavior_picker';
@@ -22,10 +21,10 @@ export async function testStudioBtDrag(test: StudioFixture): Promise<void> {
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: BT_ORDER_SOURCE }]);
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
 	await chooseBehavior(test, 'BT fixture.order', 'BEHAVIOR TREES');
-	const lens = getActiveTab();
+	let lens = getActiveTab();
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'graph') throw new Error('BT drag requires the concrete graph');
-	const graph = lens.view.presentation;
-	const viewport = graph.viewport;
+	let graph = lens.view.presentation;
+	let viewport = graph.viewport;
 	const children = () => viewport.model.nodes[0].children[0].children;
 	const point = (x: number, y: number) => ({ left: x, right: x, top: y, bottom: y });
 	const cardPoint = (node: BehaviorGraphNode, before: boolean) => point(
@@ -61,7 +60,7 @@ export async function testStudioBtDrag(test: StudioFixture): Promise<void> {
 		&& model.buffer.getText() === moved, 'BT drag: Source navigates to the moved occurrence without a leaked pointer or extra edit');
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === BT_ORDER_SOURCE, 'BT drag: one code Undo restores the complete drag edit');
-	await click(editorChromeState.tabButtonBounds.get(lens.id)!);
+	await test.clickTab(lens.id);
 	check(viewport.selection === children()[0], 'BT drag: hidden Undo restores the selected occurrence');
 
 	version = model.version;
@@ -110,6 +109,12 @@ export async function testStudioBtDrag(test: StudioFixture): Promise<void> {
 
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
 	await chooseBehavior(test, 'BT fixture.weighted-order', 'BEHAVIOR TREES');
+	const nextDefinition2 = getActiveTab();
+	if (nextDefinition2.kind !== 'behavior_lens' || nextDefinition2.view.presentation.kind !== 'graph') throw new Error('BT: separate definition graph missing');
+	check(nextDefinition2 !== lens && nextDefinition2.workingCopy === model, 'BT: another definition has its own input and the same working copy');
+	lens = nextDefinition2;
+	graph = nextDefinition2.view.presentation;
+	viewport = graph.viewport;
 	const child = children()[2];
 	const edge = viewport.model.edges.find(edge => edge.child === child)!;
 	movePointer(point(edge.points[edge.points.length - 2] + viewport.bounds.left - viewport.scrollX,
@@ -133,6 +138,12 @@ export async function testStudioBtDrag(test: StudioFixture): Promise<void> {
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: wide }]);
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
 	await chooseBehavior(test, 'BT fixture.wide', 'BEHAVIOR TREES');
+	const nextDefinition3 = getActiveTab();
+	if (nextDefinition3.kind !== 'behavior_lens' || nextDefinition3.view.presentation.kind !== 'graph') throw new Error('BT: separate definition graph missing');
+	check(nextDefinition3 !== lens && nextDefinition3.workingCopy === model, 'BT: another definition has its own input and the same working copy');
+	lens = nextDefinition3;
+	graph = nextDefinition3.view.presentation;
+	viewport = graph.viewport;
 	await press('ArrowDown');
 	await press('ArrowDown');
 	check(viewport.selection === children()[0], 'BT drag: ordinary graph navigation reveals the first wide-list child');
@@ -155,7 +166,7 @@ export async function testStudioBtDrag(test: StudioFixture): Promise<void> {
 	check(model.buffer.getText() === wide, 'BT drag: scroll plus drop remains one history element');
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === BT_ORDER_SOURCE, 'BT drag: previous authored document is restored by its own Undo');
-	await click(editorChromeState.tabButtonBounds.get(code.id)!);
+	await test.clickTab(code.id);
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === original && cycles() === position && ide.sources.currentBlua32Media === media,
 		'BT drag: fixture edits restore the source without modifying or resuming the paused machine');

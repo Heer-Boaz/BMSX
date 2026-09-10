@@ -1,4 +1,5 @@
 import { PointerButton } from '../../../input/pointer/buttons';
+import { dragScrollSpeed } from '../drag_scroll';
 import type { Scrollbar } from '../scrollbar';
 import { point_in_rect } from '../../../../machine/ts/common/rect';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
@@ -14,8 +15,6 @@ import { hitWorkbenchGraphConnectionHandle, type WorkbenchGraphConnectionEnd, ty
 
 export const enum WorkbenchGraphPointerResult { Outside, Handled, Selection, Activate }
 const enum Gesture { None, Pan, Scrollbar, PendingDrag, Drag }
-const DRAG_SCROLL_MARGIN = 12;
-const DRAG_SCROLL_SPEED = 120; // Viewport pixels per host second, not emulated frames.
 
 /** Pane-owned control. Input/view state survives detachment; physical gestures do not. */
 export class WorkbenchGraphControl implements PointerCaptureTarget {
@@ -325,9 +324,3 @@ const PAN_KEYS = [
 	{ code: 'ArrowLeft', x: -16, y: 0 }, { code: 'ArrowRight', x: 16, y: 0 },
 	{ code: 'ArrowUp', x: 0, y: -16 }, { code: 'ArrowDown', x: 0, y: 16 },
 ];
-
-function dragScrollSpeed(position: number, start: number, end: number): number {
-	if (position < start + DRAG_SCROLL_MARGIN) return -DRAG_SCROLL_SPEED * (start + DRAG_SCROLL_MARGIN - position) / DRAG_SCROLL_MARGIN;
-	if (position > end - DRAG_SCROLL_MARGIN) return DRAG_SCROLL_SPEED * (position - end + DRAG_SCROLL_MARGIN) / DRAG_SCROLL_MARGIN;
-	return 0;
-}

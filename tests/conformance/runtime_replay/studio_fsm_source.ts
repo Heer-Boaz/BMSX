@@ -2,7 +2,6 @@ import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selec
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import type { StateMachineSourceDefinition } from '../../../ide/workbench/contrib/behavior_lens/state_machine_model';
 import type { BehaviorLensViewState } from '../../../ide/workbench/contrib/behavior_lens/view_model';
-import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { FSM_BEHAVIOR_SOURCE } from '../../helpers/fsm_source_fixture';
 import { chooseBehavior, revealLensOccurrence } from './studio_behavior_picker';
@@ -46,7 +45,7 @@ export async function testStudioFsmSource(test: StudioFixture): Promise<void> {
 	model.pushEditOperations([{ offset: targetOffset + prefix.length, deleteLength: "'../active'".length, text: "'../idle'" }]);
 	await frame();
 	check(view.document === oldDocument, 'FSM source: a hidden lens does not rebuild its retained facts per frame');
-	await click(editorChromeState.tabButtonBounds.get(lens.id)!);
+	await test.clickTab(lens.id);
 	const current = definition(view);
 	const changed = current.transitions.find(transition => transition.slot.kind === 'update')!;
 	check(current !== first && view.selection?.rowKey === changed.slot.source.rowKey, 'FSM source: activation refreshes the selected source occurrence');
@@ -59,7 +58,7 @@ export async function testStudioFsmSource(test: StudioFixture): Promise<void> {
 	await click(outline.actionBar.items[0].bounds, 6);
 	check(activeCodeEditor.view.cursorRow === row + 1 && !hasSelection(), 'FSM source: Source follows the new UTF-16 source coordinates');
 	await press('ControlLeft', 'KeyZ');
-	await click(editorChromeState.tabButtonBounds.get(lens.id)!);
+	await test.clickTab(lens.id);
 	const undone = definition(view).transitions.find(transition => transition.slot.kind === 'update')!;
 	const restored = undone.outcomes[0].target;
 	check(restored.kind === 'path' && restored.target !== undone.origin.rowKey && restored.text === '../active',

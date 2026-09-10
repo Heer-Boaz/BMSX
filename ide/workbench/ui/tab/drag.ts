@@ -1,142 +1,77 @@
 import * as constants from '../../../common/constants';
+import type { PointerSnapshot } from '../../../common/models';
 import type { EditorTabId } from './id';
-import type { EditorInput } from './model';
-import { clamp } from '../../../../machine/ts/common/clamp';
+import { point_in_rect } from '../../../../machine/ts/common/rect';
+import { pointerCapture, type PointerCaptureTarget } from '../../../input/pointer/capture';
+import { PointerButton } from '../../../input/pointer/buttons';
 import { editorChromeState } from '../chrome_state';
-import { getTabBarTotalHeight } from '../../common/layout';
-import { measureText } from '../../../editor/common/text/layout';
 import { resetPointerClickTracking } from '../../../input/pointer/state';
-import { editorViewState } from '../../../editor/ui/view/state';
+import { dragScrollSpeed } from '../drag_scroll';
 import { editorTabGroup } from './group_model';
 
-export type TabLayoutEntry = {
-	id: EditorTabId | null;
-	left: number;
-	right: number;
-	width: number;
-	center: number;
-	rowIndex: number;
+const dragCapture: PointerCaptureTarget = {
+	handleCapturedPointer(snapshot, now) { updateTabDrag(snapshot, now, true); },
+	releaseCapturedPointer(snapshot, now) {
+		updateTabDrag(snapshot, now, false);
+		const state = editorChromeState.tabDragState;
+		if (state === null) return; // A group change ended this gesture.
+		const from = editorTabGroup.indexOf(editorTabGroup.findById(state.tabId)!);
+		const to = state.targetIndex;
+		endTabDrag();
+		if (to >= 0) editorTabGroup.move(from, to);
+	},
+	cancelPointer: endTabDrag,
 };
 
-const tabLayoutScratch: TabLayoutEntry[] = [];
-
-function getTabLayoutEntry(index: number): TabLayoutEntry {
-	let entry = tabLayoutScratch[index];
-	if (!entry) {
-		entry = {
-			id: null,
-			left: 0,
-			right: 0,
-			width: 0,
-			center: 0,
-			rowIndex: 0,
-		};
-		tabLayoutScratch[index] = entry;
-	}
-	return entry;
-}
-
-function writeTabLayoutEntry(entry: TabLayoutEntry, id: EditorTabId, left: number, right: number, width: number, rowIndex: number): void {
-	entry.id = id;
-	entry.left = left;
-	entry.right = right;
-	entry.width = width;
-	entry.center = (left + right) * 0.5;
-	entry.rowIndex = rowIndex;
-}
-
-export function measureTabWidth(tab: EditorInput): number {
-	const textWidth = measureText(tab.title);
-	let indicatorWidth = 0;
-	if (tab.closable) {
-		indicatorWidth = measureText(constants.TAB_CLOSE_BUTTON_SYMBOL) + constants.TAB_CLOSE_BUTTON_PADDING_X * 2;
-	} else if (tab.isDirty()) {
-		indicatorWidth = constants.TAB_DIRTY_MARKER_METRICS.width + constants.TAB_DIRTY_MARKER_SPACING;
-	}
-	return textWidth + constants.TAB_BUTTON_PADDING_X * 2 + indicatorWidth;
-}
-
-export function computeTabLayout(): TabLayoutEntry[] {
-	const layout = tabLayoutScratch;
-	const tabs = editorTabGroup.tabs;
-	layout.length = tabs.length;
-	for (let index = 0; index < tabs.length; index += 1) {
-		const tab = tabs[index];
-		const entry = getTabLayoutEntry(index);
-		const bounds = editorChromeState.tabButtonBounds.get(tab.id)!;
-		const left = bounds.left;
-		const right = bounds.right;
-		const width = right - left;
-		const rowIndex = ((bounds.top - editorViewState.headerHeight) / editorViewState.tabBarHeight) | 0;
-		writeTabLayoutEntry(entry, tab.id, left, right, width, rowIndex);
-	}
-	return layout;
-}
-
-export function beginTabDrag(tabId: EditorTabId, pointerX: number): void {
-	if (editorTabGroup.tabs.length <= 1) {
-		editorChromeState.tabDragState = null;
-		return;
-	}
-	const bounds = editorChromeState.tabButtonBounds.get(tabId)!;
-	const pointerOffset = pointerX - bounds.left;
+/** Tab drag is a captured gesture; the group changes order only on an accepted drop. */
+export function beginTabDrag(tabId: EditorTabId, snapshot: PointerSnapshot, now: number): void {
+	if (editorTabGroup.tabs.length <= 1) return;
+	pointerCapture.capture(dragCapture);
 	editorChromeState.tabDragState = {
-		tabId,
-		pointerOffset,
-		startX: pointerX,
-		hasDragged: false,
+		tabId, startX: snapshot.viewportX, startY: snapshot.viewportY,
+		hasDragged: false, pointerTime: now, revision: editorTabGroup.revision,
+		targetIndex: -1, markerX: 0,
 	};
+	if ((snapshot.justReleasedButtons & PointerButton.Primary) !== 0) dragCapture.releaseCapturedPointer(snapshot, now);
 }
 
-export function updateTabDrag(pointerX: number, pointerY: number): void {
+function updateTabDrag(snapshot: PointerSnapshot, now: number, scroll: boolean): void {
 	const state = editorChromeState.tabDragState!;
-	const distance = Math.abs(pointerX - state.startX);
-	if (!state.hasDragged && distance < constants.POINTER_DRAG_ACTIVATION_THRESHOLD) {
-		return;
-	}
+	if (state.revision !== editorTabGroup.revision) { endTabDrag(); return; }
+	const x = snapshot.viewportX, y = snapshot.viewportY;
 	if (!state.hasDragged) {
+		if (Math.max(Math.abs(x - state.startX), Math.abs(y - state.startY)) < constants.POINTER_DRAG_ACTIVATION_THRESHOLD) return;
 		state.hasDragged = true;
+		editorChromeState.lastTabClickId = null;
+		editorTabGroup.pin(editorTabGroup.findById(state.tabId)!);
+		state.revision = editorTabGroup.revision;
+		state.pointerTime = now;
 		resetPointerClickTracking();
 	}
-	const layout = computeTabLayout();
-	let currentIndex = 0;
-	while (layout[currentIndex].id !== state.tabId) {
-		currentIndex += 1;
-	}
-	const dragged = layout[currentIndex];
-	const pointerLeft = pointerX - state.pointerOffset;
-	const pointerCenter = pointerLeft + (dragged.width >> 1);
-	const totalTabHeight = getTabBarTotalHeight();
-	const withinTabBar = pointerY >= editorViewState.headerHeight && pointerY < editorViewState.headerHeight + totalTabHeight;
-	const maxRowIndex = editorViewState.tabBarRowCount - 1;
-	const pointerRow = withinTabBar
-		? clamp(((pointerY - editorViewState.headerHeight) / editorViewState.tabBarHeight) | 0, 0, maxRowIndex)
-		: dragged.rowIndex;
-	const rowStride = editorViewState.viewportWidth + constants.TAB_BUTTON_SPACING * 4;
-	const pointerValue = pointerRow * rowStride + pointerCenter;
-	let desiredIndex = currentIndex;
-	for (let i = 0; i < layout.length; i += 1) {
-		const item = layout[i];
-		const itemValue = item.rowIndex * rowStride + item.center;
-		if (pointerValue > itemValue) {
-			desiredIndex = i + 1;
-		}
-	}
-	if (desiredIndex > currentIndex) {
-		desiredIndex -= 1;
-	}
-	if (desiredIndex === currentIndex) {
-		return;
-	}
+	const elapsed = (now - state.pointerTime) / 1000;
+	state.pointerTime = now;
+	state.targetIndex = -1;
+	if (!point_in_rect(x, y, editorChromeState.tabBarBounds)) return;
 	const tabs = editorTabGroup.tabs;
-	let tabIndex = 0;
-	while (tabs[tabIndex].id !== state.tabId) {
-		tabIndex += 1;
+	const scrollbar = editorChromeState.tabScrollbar;
+	// Hit the last published geometry; scrolling is applied after finding this drop target.
+	let insertion = 0;
+	for (const tab of tabs) {
+		const bounds = editorChromeState.tabButtonBounds.get(tab.id)!;
+		if (x < (bounds.left + bounds.right) / 2) break;
+		insertion += 1;
 	}
-	const targetIndex = clamp(desiredIndex, 0, tabs.length - 1);
-	editorTabGroup.move(tabIndex, targetIndex);
+	const from = editorTabGroup.indexOf(editorTabGroup.findById(state.tabId)!);
+	const to = insertion > from ? insertion - 1 : insertion;
+	if (to !== from) {
+		const bounds = editorChromeState.tabButtonBounds.get(tabs[insertion === tabs.length ? insertion - 1 : insertion].id)!;
+		state.markerX = (insertion === tabs.length ? bounds.right : bounds.left) + Math.round(scrollbar.getScroll());
+		state.targetIndex = to;
+	}
+	if (scroll) scrollbar.setScroll(scrollbar.getScroll() + dragScrollSpeed(x, 0, editorChromeState.tabBarBounds.right) * elapsed);
 }
 
 export function endTabDrag(): void {
+	pointerCapture.release(dragCapture);
 	editorChromeState.tabDragState = null;
 }

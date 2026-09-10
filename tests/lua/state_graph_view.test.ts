@@ -33,7 +33,7 @@ function fixture(source = FSM_PROOF_SOURCE, factory: GraphLayoutEngineFactory = 
 	const document = () => buildBehaviorSourceDocument(resource, buildLuaFileSemanticData(model.buffer.getText(), resource.path));
 	const view = createBehaviorLensViewState(document(), model, 'state-graph');
 	const input = new BehaviorLensInput(model, view, factory);
-	model.onDidChangeContent(event => { mapBehaviorLensSourceRanges(view, event.changes, event.editState); input.invalidatePresentation(); });
+	model.onDidChangeContent(event => { mapBehaviorLensSourceRanges(view, event); input.invalidatePresentation(); });
 	selectBehaviorLensDefinition(view, view.document.definitions[0].rowKey);
 	const graph = view.presentation;
 	if (graph.kind !== 'state-graph') throw new Error('Fixture must open the concrete FSM presentation');

@@ -2,7 +2,6 @@ import { FSM_INITIAL_SOURCE } from '../../helpers/fsm_initial_fixture';
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
 import { inputFocus } from '../../../ide/input/focus';
-import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { chooseBehavior, revealLensOccurrence } from './studio_behavior_picker';
 import { check, type StudioFixture } from './studio_fixture';
@@ -47,7 +46,7 @@ export async function testStudioFsmInitial(test: StudioFixture): Promise<void> {
 	check(inputFocus.getCommand('behaviorLens.setInitialState') === undefined, 'initial: code focus has no graph-authoring command');
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === FSM_INITIAL_SOURCE, 'initial: code Undo restores the token while the graph is hidden');
-	await click(editorChromeState.tabButtonBounds.get(lens.id)!);
+	await test.clickTab(lens.id);
 	await lens.graphLayout.settled; await frame();
 	check(ide.editor.commands.isEnabled('behaviorLens.setInitialState'), 'initial: hidden Undo preserves the selected state');
 	await runPaletteCommand('State Machine: Set Selected State as Initial');

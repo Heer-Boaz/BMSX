@@ -25,7 +25,7 @@ export async function testStudioBehaviorKinds(test: StudioFixture): Promise<void
 	const properties = lens.view.presentation;
 	if (properties.kind !== 'properties') throw new Error('behavior kinds: ActionEffect must open its property presentation');
 	check(model.resource.path === 'player/actioneffects.lua'
-		&& lens.view.nodesByRowKey.get(lens.view.definitionRowKey!)!.behaviorKind === 'action_effect',
+		&& lens.view.source.nodesByRowKey.get(lens.view.definitionRowKey!)!.behaviorKind === 'action_effect',
 		'behavior kinds: effect selection reveals the actual definition in its resource-owned model');
 	const period = properties.tree.rows.find(row => row.element.kind === 'property' && row.element.source.label.startsWith('period_ms ='))!;
 	check(period !== undefined && properties.tree.rows.some(row => row.element.kind === 'property' && row.element.source.label.startsWith('handler =')),
@@ -67,7 +67,7 @@ export async function testStudioBehaviorKinds(test: StudioFixture): Promise<void
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
 	await chooseBehavior(test, 'FSM nemesis_s.title_screen.fsm', 'STATE MACHINES');
 	const fsm = getActiveTab();
-	check(fsm.kind === 'behavior_lens' && fsm.view.nodesByRowKey.get(fsm.view.selection!.rowKey)!.behaviorKind === 'state_machine',
+	check(fsm.kind === 'behavior_lens' && fsm.view.source.nodesByRowKey.get(fsm.view.selection!.rowKey)!.behaviorKind === 'state_machine',
 		'behavior kinds: typed FSM selection reaches its definition from the effect lens');
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
 	check(picker.title === 'BEHAVIOR TREES' && picker.model.entries.length > 0

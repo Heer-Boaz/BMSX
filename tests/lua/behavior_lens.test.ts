@@ -97,7 +97,7 @@ test('behavior lens recognizes a function-local cartlib module alias', () => {
 	].join('\n');
 	const document = buildDocument('function_local_tree.lua', source);
 	assert.equal(document.definitions.length, 1);
-	assert.equal(document.definitions[0].label, "BT 'guard'");
+	assert.equal(document.definitions[0].label, 'BT guard');
 	assert.equal(document.definitions[0].children[0].label, 'task');
 });
 
@@ -111,8 +111,8 @@ test('behavior lens distinguishes multiple FSMs and same-named states in one Lua
 	const resource = { domain: 0 as const, path };
 	const document = buildBehaviorSourceDocument(resource, analysis);
 	assert.deepEqual(document.definitions.map(node => [node.behaviorKind, node.label]), [
-		['state_machine', "FSM 'player'"],
-		['state_machine', "FSM 'enemy'"],
+		['state_machine', 'FSM player'],
+		['state_machine', 'FSM enemy'],
 	]);
 	const states = document.definitions.map(definition => flatten([definition]).filter(node => node.kind === 'state'));
 	assert.deepEqual(states.map(nodes => nodes.map(node => node.label)), [
@@ -148,9 +148,9 @@ test('behavior lens exposes the authored ActionEffect gates and execution fields
 	const path = 'carts/pietious/player/actioneffects.lua';
 	const document = buildDocument(path, readFileSync(path, 'utf8'));
 	assert.deepEqual(document.definitions.map(node => node.label), [
-		"EFFECT 'pepernoot'",
-		"EFFECT 'spyglass'",
-		"EFFECT 'halo'",
+		'EFFECT pepernoot',
+		'EFFECT spyglass',
+		'EFFECT halo',
 	]);
 	const nodes = flatten(document.definitions);
 	assert.ok(nodes.some(node => node.label === 'can_trigger = <function>'));
@@ -230,7 +230,7 @@ test('behavior lens keeps computed definitions dynamic and ignores shadowed modu
 	].join('\n');
 	const document = buildDocument('dynamic_tree.lua', source);
 	assert.equal(document.definitions.length, 1);
-	assert.equal(document.definitions[0].label, "BT 'dynamic'");
+	assert.equal(document.definitions[0].label, 'BT dynamic');
 	assert.equal(document.definitions[0].resolution, 'unresolved');
 	assert.equal(document.definitions[0].children[0].kind, 'dynamic');
 });
@@ -269,7 +269,7 @@ test('behavior lens leaves ordinary Lua empty and retains an incomplete registra
 		"bt.register('broken', ",
 	].join('\n'));
 	assert.equal(incomplete.definitions.length, 1);
-	assert.equal(incomplete.definitions[0].label, "BT 'broken'");
+	assert.equal(incomplete.definitions[0].label, 'BT broken');
 	assert.equal(incomplete.definitions[0].resolution, 'unresolved');
 	assert.equal(incomplete.definitions[0].detail, 'registration has no definition argument');
 });

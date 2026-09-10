@@ -2,7 +2,6 @@ import { FSM_DIAGRAM_SOURCE } from '../../helpers/fsm_source_fixture';
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
 import { inputFocus } from '../../../ide/input/focus';
-import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { chooseBehavior } from './studio_behavior_picker';
 import { check, type StudioFixture } from './studio_fixture';
@@ -52,7 +51,7 @@ export async function testStudioStateGraph(test: StudioFixture): Promise<void> {
 	check(getActiveTab() === code && activeCodeEditor.view.cursorRow === 3 && !hasSelection(), 'FSM diagram: held edge double-click opens its own return without drag');
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- moved graph source\n' }]);
 	check(graph.viewport.model.nodes.length === 0 && lens.graphLayout.state.kind === 'idle', 'FSM diagram: hidden edit revokes publication and hits immediately');
-	await click(editorChromeState.tabButtonBounds.get(lens.id)!);
+	await test.clickTab(lens.id);
 	const focusAfterActivation = inputFocus.target;
 	await lens.graphLayout.settled;
 	await frame();
@@ -80,7 +79,7 @@ export async function testStudioStateGraph(test: StudioFixture): Promise<void> {
 	await press('ControlLeft', 'KeyZ');
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === original, 'FSM diagram: canonical Undo removes the independent authored fixture');
-	await click(editorChromeState.tabButtonBounds.get(lens.id)!);
+	await test.clickTab(lens.id);
 	await frame();
 	check(view.definitionRowKey === null && graph.viewport.model.nodes.length === 0, 'FSM diagram: removed registration does not display an old or neighboring machine');
 	harness.openLuaSource('cart.lua');

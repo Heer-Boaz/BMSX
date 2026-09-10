@@ -1,4 +1,4 @@
-import type { TrackedTextRange } from '../../../editor/text/text_change';
+import { BehaviorSourceIndex } from './source_index';
 import { editorViewState } from '../../../editor/ui/view/state';
 import type { EditorTextModel } from '../../../editor/model/text_model';
 import { createWorkbenchActionBar, type WorkbenchActionBarState } from '../../ui/action_bar';
@@ -74,10 +74,7 @@ export type BehaviorLensViewState = {
 	/** One edit-associated selection waiting for the next source projection, not history. */
 	selectionBookmark: BehaviorSourceBookmark | undefined;
 	stateMachines: StateMachineSourceIndex;
-	sourceRanges: Map<BehaviorSourceRowKey, TrackedTextRange>;
-	readonly sourceNodes: BehaviorSourceNode[];
-	readonly nodesByRowKey: Map<BehaviorSourceRowKey, BehaviorSourceNode>;
-	readonly parentRowKeyByRowKey: Map<BehaviorSourceRowKey, BehaviorSourceRowKey | null>;
+	source: BehaviorSourceIndex;
 	readonly sourceMatchRowKeys: Set<BehaviorSourceRowKey>;
 	presentation: BehaviorLensOutline | BehaviorLensGraph | BehaviorLensStateGraph | BehaviorLensEffectProperties;
 	readonly layout: BehaviorLensLayout;
@@ -115,10 +112,7 @@ export function createBehaviorLensViewState(document: BehaviorSourceDocument, mo
 		selection: null,
 		selectionBookmark: undefined,
 		stateMachines: { bodies: new Map(), references: new Map(), initialTargets: new Map(), scopes: new Map(), retargetable: new Set() },
-		sourceRanges: new Map(),
-		sourceNodes: [],
-		nodesByRowKey: new Map(),
-		parentRowKeyByRowKey: new Map(),
+		source: new BehaviorSourceIndex({ resource: document.resource, syntaxComplete: true, definitions: [] }, model.buffer),
 		sourceMatchRowKeys: new Set(),
 		presentation: presentation === 'graph' ? createBehaviorLensGraph() : presentation === 'state-graph' ? createBehaviorLensStateGraph()
 			: presentation === 'properties' ? createBehaviorLensEffectProperties() : createBehaviorLensOutline(),

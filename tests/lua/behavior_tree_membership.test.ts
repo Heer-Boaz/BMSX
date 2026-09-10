@@ -148,7 +148,7 @@ test('nested membership warnings, shared occurrences, hidden edits and Undo use 
 	Object.assign(editorViewState, { font: new EditorFont('tiny'), viewportWidth: 384, viewportHeight: 288, lineHeight: 6, codeAreaTop: 24, codeAreaBottom: 276 });
 	const f = fixture();
 	const view = createBehaviorLensViewState(f.document, f.model, 'graph');
-	f.model.onDidChangeContent(event => mapBehaviorLensSourceRanges(view, event.changes));
+	f.model.onDidChangeContent(event => mapBehaviorLensSourceRanges(view, event));
 	selectBehaviorLensDefinition(view, f.document.definitions[1].rowKey);
 	prepareBehaviorLensLayout(view);
 	assert.ok(view.presentation.kind === 'graph');

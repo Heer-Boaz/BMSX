@@ -9,22 +9,31 @@ import { editorTabGroup } from '../../../ui/tab/group_model';
 import type { RuntimeSourceState } from '../../../../runtime/sources';
 import type { EditorPanes } from '../../../services/editor/editor_panes';
 import type { EditorTabId } from '../../../ui/tab/id';
+import { DOUBLE_CLICK_MAX_INTERVAL_MS } from '../../../../common/constants';
 
 export function handleTabBarPointer(
 	editorPanes: EditorPanes,
 	sources: RuntimeSourceState,
 	snapshot: PointerSnapshot,
+	now: number,
 ): boolean {
 	const x = snapshot.viewportX;
 	const y = snapshot.viewportY;
 	if (!point_in_rect(x, y, editorChromeState.tabBarBounds)) {
+		editorChromeState.lastTabClickId = null;
 		return false;
+	}
+	if (editorChromeState.tabScrollControl.begin(snapshot)) {
+		editorChromeState.lastTabClickId = null;
+		consumeChromePointerPress();
+		return true;
 	}
 	const tabs = editorTabGroup.tabs;
 	for (let index = 0; index < tabs.length; index += 1) {
 		const tab = tabs[index];
 		const closeBounds = editorChromeState.tabCloseButtonBounds.get(tab.id);
 		if (closeBounds && point_in_rect(x, y, closeBounds)) {
+			editorChromeState.lastTabClickId = null;
 			endTabDrag();
 			closeTab(editorPanes, sources, tab.id);
 			editorChromeState.tabHoverId = null;
@@ -33,12 +42,18 @@ export function handleTabBarPointer(
 		}
 		const tabBounds = editorChromeState.tabButtonBounds.get(tab.id);
 		if (tabBounds && point_in_rect(x, y, tabBounds)) {
-			beginTabDrag(tab.id, x);
+			const twice = editorChromeState.lastTabClickId === tab.id
+				&& now - editorChromeState.lastTabClickTime <= DOUBLE_CLICK_MAX_INTERVAL_MS;
+			if (twice) editorTabGroup.pin(tab);
+			editorChromeState.lastTabClickId = twice ? null : tab.id;
+			editorChromeState.lastTabClickTime = now;
 			setActiveTab(editorPanes, tab.id);
+			beginTabDrag(tab.id, snapshot, now);
 			consumeChromePointerPress();
 			return true;
 		}
 	}
+	editorChromeState.lastTabClickId = null;
 	return false;
 }
 

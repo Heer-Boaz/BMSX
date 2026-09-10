@@ -2,7 +2,6 @@ import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
 import { findCodeTabContext } from '../../../ide/workbench/ui/code_tab/contexts';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
-import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { workspaceState } from '../../../ide/workbench/workspace/state';
 import { chooseBehavior } from './studio_behavior_picker';
 import { check, type StudioFixture } from './studio_fixture';
@@ -46,7 +45,7 @@ export async function testStudioSourceRecovery(test: StudioFixture): Promise<voi
 	let navigationEdits = 0;
 	const unsubscribe = model.onDidChangeContent(() => navigationEdits += 1);
 	for (const route of ['source', 'enter', 'double-click', 'details'] as const) {
-		await click(editorChromeState.tabButtonBounds.get(lens.id)!);
+		await test.clickTab(lens.id);
 		if (route === 'source') await click(graph.actionBar.items[0].bounds, 8);
 		else if (route === 'enter') await press('Enter');
 		else if (route === 'double-click') {

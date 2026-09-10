@@ -1,7 +1,7 @@
 import type { LuaExpression } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { FileSemanticData, SymbolID } from '../../../../toolchain/ts/lua/semantic/model';
 import type { ResourceIdentity } from '../../../common/resource';
-import { collectBehaviorRegistrations, definitionKindLabel, type BehaviorRegistration } from './registrations';
+import { collectBehaviorRegistrations, type BehaviorRegistration } from './registrations';
 import { buildActionEffectBody } from './action_effect';
 import { buildBehaviorTreeDefinition } from './behavior_tree';
 import type {
@@ -49,7 +49,6 @@ function buildDefinition(
 	registration: BehaviorRegistration,
 ): BehaviorSourceDefinition {
 	const call = registration.callSite.expression;
-	const idLabel = registration.idLabel;
 	const definitionExpression = call.arguments[registration.definitionArgument];
 	const context: BehaviorRecognizerContext = {
 		analysis,
@@ -68,7 +67,7 @@ function buildDefinition(
 	if (!definitionExpression) {
 		input = {
 			kind: 'definition',
-			label: `${definitionKindLabel(registration.behaviorKind)} ${idLabel}`,
+			label: registration.label,
 			detail: 'registration has no definition argument',
 			authoredRange: call.range,
 			referenceRange: null,
@@ -78,7 +77,7 @@ function buildDefinition(
 	} else if (resolved === null) {
 		input = {
 			kind: 'definition',
-			label: `${definitionKindLabel(registration.behaviorKind)} ${idLabel}`,
+			label: registration.label,
 			detail: context.sourceIncomplete ? 'unresolved registration definition | syntax recovery' : 'unresolved registration definition',
 			authoredRange: definitionExpression.range,
 			referenceRange: null,
@@ -91,7 +90,7 @@ function buildDefinition(
 		if (context.sourceIncomplete) detail += ' | syntax recovery';
 		input = {
 			kind: 'definition',
-			label: `${definitionKindLabel(registration.behaviorKind)} ${idLabel}`,
+			label: registration.label,
 			detail,
 			authoredRange: resolved.table.range,
 			referenceRange: resolved.referenceRange,

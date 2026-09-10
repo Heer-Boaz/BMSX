@@ -2,8 +2,43 @@ import { ScrollbarController } from '../../ide/editor/ui/scrollbar_controller';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Scrollbar } from '../../ide/workbench/ui/scrollbar';
+import { WorkbenchScrollbarControl } from '../../ide/workbench/ui/scrollbar_control';
+import { PointerCaptureService } from '../../ide/input/pointer/capture';
+import { PointerButton } from '../../ide/input/pointer/buttons';
+import type { PointerSnapshot } from '../../ide/common/models';
 
 for (const orientation of ['horizontal', 'vertical'] as const) {
+	test(`${orientation} captured scrollbar releases outside its track and ends when geometry changes`, () => {
+		const bar = new Scrollbar(orientation), capture = new PointerCaptureService();
+		const control = new WorkbenchScrollbarControl(bar, capture);
+		const track = orientation === 'horizontal' ? { left: 10, top: 110, right: 110, bottom: 113 } : { left: 110, top: 10, right: 113, bottom: 110 };
+		bar.layout(track, 400, 100, 0);
+		const event = (position: number, held = 0, down = 0, up = 0): PointerSnapshot => ({
+			viewportX: orientation === 'horizontal' ? position : 111,
+			viewportY: orientation === 'vertical' ? position : 111,
+			valid: true, insideViewport: true, pressedButtons: held, justPressedButtons: down, justReleasedButtons: up,
+		});
+		const primary = PointerButton.Primary;
+		assert.equal(control.begin(event(14, primary, primary)), true);
+		assert.equal(capture.active, true);
+		capture.dispatch(event(40, primary), false, 20);
+		const scroll = bar.getScroll(); assert.ok(scroll > 0);
+		const revision = bar.revision;
+		for (let i = 0; i < 100; i += 1) { bar.layout(track, 400, 100, scroll); control.update(); }
+		assert.equal(bar.revision, revision); assert.equal(capture.active, true);
+		const release = event(89, 0, 0, primary);
+		if (orientation === 'horizontal') release.viewportY = 50; else release.viewportX = 50;
+		capture.dispatch(release, false, 40);
+		assert.equal(bar.getScroll(), 300); assert.equal(capture.active, false);
+		assert.equal(control.begin(event(60, 0, primary, primary)), true, 'a coalesced track click completes immediately');
+		assert.equal(bar.getScroll(), 150); assert.equal(capture.active, false);
+		control.begin(event(60, primary, primary));
+		bar.layout(track, 500, 100, 150); control.update();
+		assert.equal(capture.active, false); assert.equal(bar.getScroll(), 150);
+		bar.layout(track, 100, 100, 0);
+		assert.equal(control.begin(event(60, primary, primary)), false, 'non-scrollable content never captures');
+	});
+
 	test(`${orientation} scrollbar maps thumb travel to the full content range and retains geometry`, () => {
 		const bar = new Scrollbar(orientation);
 		const track = orientation === 'horizontal' ? { left: 10, top: 110, right: 110, bottom: 113 } : { left: 110, top: 10, right: 113, bottom: 110 };

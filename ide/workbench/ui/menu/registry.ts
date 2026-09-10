@@ -43,6 +43,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 	'menubar.file': [
 		{ type: 'command', command: 'save' },
 		{ type: 'command', command: 'resources' },
+		{ type: 'command', command: 'keepEditor' },
 	],
 	'menubar.edit': [
 		{ type: 'command', command: 'undo' },

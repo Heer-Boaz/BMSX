@@ -3,6 +3,7 @@ import { WorkingCopyEditorInput } from '../../common/editor_input';
 import type { CodeEditorTabId } from '../../ui/tab/id';
 import type { CodeTabContext } from '../../ui/code_tab/model';
 import type { ResourceEditorIdentity } from '../../common/editor_input';
+import { sourceTabDescription } from '../../ui/tab/titles';
 
 export const WORKBENCH_TEXT_EDITOR_ID = 'workbench.editor.text';
 
@@ -10,6 +11,7 @@ export const WORKBENCH_TEXT_EDITOR_ID = 'workbench.editor.text';
 export class CodeEditorInput extends WorkingCopyEditorInput<CodeEditorTabId, 'code_editor'> {
 	public constructor(public context: CodeTabContext) {
 		super(context.id, 'code_editor', context.title, true);
+		this.setLabel(context.title, sourceTabDescription(context.model.resource));
 	}
 
 	public get workingCopy(): EditorTextModel {

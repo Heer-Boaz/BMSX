@@ -119,7 +119,7 @@ export async function testStudioPointerNavigation(test: StudioFixture, cart: Nav
 	const lens = getActiveTab();
 	if (lens.kind !== 'behavior_lens') throw new Error('navigation: actual behavior lens missing');
 	const view = lens.view;
-	const node = view.sourceNodes.find(node => cart === 'nemesis_s'
+	const node = view.source.nodes.find(node => cart === 'nemesis_s'
 		? node.label === 'update = sneeuwpop.update_idle'
 		: node.detail.startsWith('move_out_backward') && node.referenceRange!.start.line === spec.sourceLine)!;
 	const source = node.referenceRange === null ? node.authoredRange : node.referenceRange;

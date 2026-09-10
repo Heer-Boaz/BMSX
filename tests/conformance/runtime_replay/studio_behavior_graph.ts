@@ -1,7 +1,6 @@
 import { testStudioGraphNavigation } from './studio_graph_navigation';
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { editorViewState } from '../../../ide/editor/ui/view/state';
-import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import type { BehaviorLensViewState } from '../../../ide/workbench/contrib/behavior_lens/view_model';
 import { BEHAVIOR_SOURCE_FIXTURE } from '../../helpers/behavior_source_fixture';
@@ -31,7 +30,7 @@ export async function testStudioBehaviorGraphControls(test: StudioFixture, view:
 	await press('Enter');
 	check(getActiveTab().kind === 'code_editor' && activeCodeEditor.view.cursorRow === detail.range.start.line - 1
 		&& activeCodeEditor.view.cursorColumn === detail.range.start.column - 1, 'BT controls: detail activation opens its exact Lua value');
-	await click(editorChromeState.tabButtonBounds.get(lens.id)!);
+	await test.clickTab(lens.id);
 	await press('ArrowDown');
 	const first = viewport.selection;
 	if (first?.kind !== 'node') throw new Error('BT controls: first child not selected');
@@ -81,7 +80,7 @@ export async function testStudioBehaviorGraphControls(test: StudioFixture, view:
 	await click(graph.actionBar.items[0].bounds, 6);
 	check(activeCodeEditor.view.cursorRow === edge.range.start.line - 1 && activeCodeEditor.view.cursorColumn === edge.range.start.column - 1,
 		'BT controls: connection Source opens this occurrence, not the shared initializer');
-	await click(editorChromeState.tabButtonBounds.get(lens.id)!);
+	await test.clickTab(lens.id);
 	// Continue through weighted members without a separate expansion gesture.
 	await press('Home');
 	await press('ArrowDown');
@@ -104,7 +103,7 @@ export async function testStudioBehaviorGraphControls(test: StudioFixture, view:
 	await press('Enter');
 	check(activeCodeEditor.view.cursorRow === weight.range.start.line - 1 && activeCodeEditor.view.cursorColumn === weight.range.start.column - 1,
 		'BT controls: choice detail opens the actual weight expression');
-	await click(editorChromeState.tabButtonBounds.get(lens.id)!);
+	await test.clickTab(lens.id);
 	await press('ArrowUp');
 	check(view.selection?.rowKey === weightedKey, 'BT controls: child returns to its weighted parent');
 	await press('Space');

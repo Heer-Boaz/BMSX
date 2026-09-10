@@ -5,6 +5,7 @@ import { api } from '../../runtime/overlay_api';
 
 /** Retained thumb geometry. Content coordinates need not be pixels (code uses rows/columns). */
 export class Scrollbar {
+	public revision = 0;
 	private readonly track = create_rect_bounds();
 	private readonly thumb = create_rect_bounds();
 	private visible = false;
@@ -25,6 +26,7 @@ export class Scrollbar {
 		if (this.contentSize !== contentSize || this.viewportSize !== viewportSize || this.minScrollValue !== minimum
 			|| this.track.left !== track.left || this.track.top !== track.top
 			|| this.track.right !== track.right || this.track.bottom !== track.bottom) {
+			this.revision += 1;
 			write_rect_bounds(this.track, track.left, track.top, track.right, track.bottom);
 			this.contentSize = contentSize;
 			this.viewportSize = viewportSize;

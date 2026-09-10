@@ -1,4 +1,5 @@
 import { navigationState } from '../navigation/navigation_history';
+import { editorTabGroup } from '../workbench/ui/tab/group_model';
 import { hasStateMachineDetails } from '../workbench/contrib/behavior_lens/state_machine_details';
 import type { HostRewind } from '../../hosts/common/rewind';
 import { HostPauseReason, type HostExecutionControl } from '../../hosts/common/execution_control';
@@ -48,6 +49,7 @@ const SOURCE_COMMANDS = new Set<EditorCommandId>([
 	'behaviorLens.moveChildEarlier', 'behaviorLens.moveChildLater', 'behaviorLens.removeChild', 'behaviorLens.duplicateChild',
 	'behaviorLens.setInitialState',
 	'sceneEditor', 'behaviorLens', 'sceneEditor.source', 'behaviorLens.source', 'behaviorLens.details',
+	'behaviorLens.preview',
 	'behaviorLens.actionEffects', 'behaviorLens.stateMachines', 'behaviorLens.behaviorTrees',
 ]);
 
@@ -220,6 +222,8 @@ export class IdeCommandController {
 	public isEnabled(command: EditorCommandId, focus: InputFocusTarget | null = inputFocus.target): boolean {
 		const context = focus?.commandContext;
 		switch (command) {
+			case 'keepEditor':
+				return editorTabGroup.previewTab !== null && editorTabGroup.previewTab === editorTabGroup.activeTab;
 			case 'navigateBack':
 				return navigationState.captureSuspendDepth === 0 && navigationState.back.length > 0;
 			case 'navigateForward':
@@ -274,6 +278,7 @@ export class IdeCommandController {
 				return isActiveLuaCodeTab();
 			case 'scenarioLab':
 			case 'behaviorLens':
+			case 'behaviorLens.preview':
 			case 'behaviorLens.actionEffects':
 			case 'behaviorLens.stateMachines':
 			case 'behaviorLens.behaviorTrees':
@@ -284,7 +289,7 @@ export class IdeCommandController {
 			case 'behaviorLens.details': {
 				const input = getActiveTab();
 				if (input.kind !== 'behavior_lens' || input.view.selection === null) return false;
-				if (input.view.nodesByRowKey.get(input.view.selection.rowKey)!.behaviorKind === 'state_machine') return hasStateMachineDetails(input.view);
+				if (input.view.source.nodesByRowKey.get(input.view.selection.rowKey)!.behaviorKind === 'state_machine') return hasStateMachineDetails(input.view);
 				if (input.view.presentation.kind !== 'graph') return false;
 				const item = input.view.presentation.viewport.selection;
 				if (item === null) return false;

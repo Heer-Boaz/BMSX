@@ -1,5 +1,6 @@
 import { SCENE_VIEWPORT_SOURCE } from '../../fixtures/studio/scene_viewport';
-import { WHEEL_SCROLL_STEP } from '../../../ide/common/constants';
+import { SCROLLBAR_WIDTH, WHEEL_SCROLL_STEP } from '../../../ide/common/constants';
+import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { editorViewState } from '../../../ide/editor/ui/view/state';
 import { inputFocus } from '../../../ide/input/focus';
 import { pointerCapture } from '../../../ide/input/pointer/capture';
@@ -12,12 +13,12 @@ import { check, type StudioFixture } from './studio_fixture';
 export async function testStudioSceneViewport(test: StudioFixture): Promise<void> {
 	const { harness, ide, frame, press, movePointer, setPointerButton, runPaletteCommand } = test;
 	ide.editor.setFontVariant('tiny');
-	// Open actual workspace inputs until the tab-bar owner publishes a second row.
+	// Open actual workspace inputs until the tab-bar owner publishes horizontal overflow.
 	// Their contents and names are irrelevant to this form fixture.
 	for (const resource of ide.sources.luaResources) {
 		if (resource.domain !== 0) continue;
 		harness.openLuaSource(resource.path); await frame(); await frame();
-		if (editorViewState.tabBarRowCount > 1) break;
+		if (editorChromeState.tabScrollbar.isVisible()) break;
 	}
 	harness.openLuaSource('scenes/root.lua'); // Existing transport; no assertions depend on this cart's definitions.
 	const model = harness.getActiveEditorDocument().model;
@@ -50,7 +51,8 @@ export async function testStudioSceneViewport(test: StudioFixture): Promise<void
 	};
 	for (const variant of ['msx', 'tiny'] as const) {
 		ide.editor.setFontVariant(variant); await frame(); await frame();
-		check(editorViewState.tabBarRowCount > 1, 'A02: actual tab wrapping contributes to available height');
+		check(editorChromeState.tabScrollbar.isVisible() && editorViewState.tabBarTotalHeight === editorViewState.tabBarHeight + SCROLLBAR_WIDTH,
+			'A02/A04: overflowing tabs remain one bounded row at either font');
 		if (!problemsPanel.isVisible) await runPaletteCommand('View: Problems Panel');
 		const bodyTop = scene.layout.top + (editorViewState.lineHeight + 4) * 2;
 		await resize(bodyTop + 52);

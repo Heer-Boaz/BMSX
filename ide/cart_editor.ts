@@ -459,7 +459,6 @@ export class RuntimeCartEditor implements CartEditor {
 		editorInput.applyOverrides(this.input, false, captureKeys);
 		clearSingleCursorSelection(activeCodeEditor.view);
 		clearEditorPointerSelectionState();
-		editorChromeState.tabDragState = null;
 		clearGotoHoverHighlight();
 		editorViewState.scrollbarController.cancel();
 		editorCaretState.cursorRevealSuspended = false;
@@ -548,7 +547,7 @@ export class RuntimeCartEditor implements CartEditor {
 
 		renderTopBar(this.commands, this.chromeRenderContext);
 
-		editorViewState.tabBarRowCount = renderTabBar(this.chromeRenderContext);
+		editorViewState.tabBarTotalHeight = renderTabBar(this.chromeRenderContext);
 		refreshWorkbenchLayout();
 		drawResourcePanel(this.resourcePanel);
 		this.editorPanes.activePane.draw();

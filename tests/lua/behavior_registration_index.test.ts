@@ -1,3 +1,6 @@
+import { getBehaviorSourceIndex } from '../../ide/workbench/contrib/behavior_lens/source_index';
+import { BehaviorSourceDocuments } from '../../ide/workbench/contrib/behavior_lens/source_documents';
+import { indexStateMachineSource } from '../../ide/workbench/contrib/behavior_lens/state_machine_index';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
@@ -267,4 +270,33 @@ test('behavior registration index isolates domains and rebuilds on an authored d
 		duplicates.map(candidate => candidate.range.start.line),
 		[3, 4],
 	);
+});
+
+test('definition views share one lazy source generation and immutable FSM index per working copy', t => {
+	const path = 'definitions.lua';
+	const source = "local fsm<const> = require('cartlib/fsm/library')\n" +
+		"fsm.register('first', { states = { idle = {} } })\nfsm.register('second', { states = { idle = {} } })";
+	const sources = createTestRuntimeSourceState(sourceRegistry('machine/bios', [luaSource('system.lua', 'return true')]),
+		[sourceRegistry('carts/fixture', [luaSource(path, source)]), null], 0);
+	t.after(() => { editorTextModelService.clear(); resetSemanticProjects(); });
+	const model = editorTextModelService.retain(resolveRuntimeResource(sources, { domain: 0, path })!, 'lua', source);
+	const documents = new BehaviorSourceDocuments(sources);
+	const first = documents.get(model);
+	const fsm = indexStateMachineSource(first);
+	const positions = getBehaviorSourceIndex(first, model.buffer);
+	const originalStart = positions.ranges.get(first.definitions[1].rowKey)!.start;
+	model.onDidChangeContent(event => {
+		for (let view = 0; view < 10; view += 1) positions.acceptChange(event);
+	});
+	for (let request = 0; request < 1000; request += 1) {
+		assert.equal(documents.get(model), first);
+		assert.equal(indexStateMachineSource(first), fsm);
+		assert.equal(getBehaviorSourceIndex(first, model.buffer), positions);
+	}
+	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- moved\n' }]);
+	assert.equal(positions.ranges.get(first.definitions[1].rowKey)!.start, originalStart + '-- moved\n'.length, 'ten views consume one mapped offset change, not ten copies of it');
+	const second = documents.get(model);
+	assert.notEqual(second, first); assert.equal(documents.get(model), second);
+	assert.notEqual(indexStateMachineSource(second), fsm);
+	assert.equal(second.definitions[1].occurrenceRange.start.line, first.definitions[1].occurrenceRange.start.line + 1);
 });

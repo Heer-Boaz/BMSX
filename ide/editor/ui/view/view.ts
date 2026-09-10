@@ -303,6 +303,7 @@ export function configureFontVariant(
 	editorViewState.inlineFieldMetricsRef = editorInlineFieldMetrics;
 	editorViewState.headerHeight = editorViewState.lineHeight + 4;
 	editorViewState.tabBarHeight = editorViewState.lineHeight + 3;
+	editorViewState.tabBarTotalHeight = editorViewState.tabBarHeight;
 	editorViewState.baseBottomMargin = editorViewState.lineHeight + 6;
 	editorViewState.layout = new CodeLayout(editorViewState.font, {
 		maxHighlightCache: 512,

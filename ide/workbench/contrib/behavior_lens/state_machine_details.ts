@@ -35,14 +35,14 @@ export function hasStateMachineDetails(view: BehaviorLensViewState): boolean {
 	const key = view.selection!.rowKey;
 	const references = view.stateMachines.references.get(key);
 	if (references !== undefined && references.length > 0) return true;
-	const node = view.nodesByRowKey.get(key)!;
+	const node = view.source.nodesByRowKey.get(key)!;
 	const body = view.stateMachines.bodies.get(key);
 	return node.children.length > (body !== undefined && body !== null && body.states !== null ? 1 : 0);
 }
 
 /** Inspector choices belong to the selected source scope, not its rendered rectangle. */
 export function buildStateMachineDetails(view: BehaviorLensViewState): readonly StateMachineDetail[] {
-	const selected = view.nodesByRowKey.get(view.selection!.rowKey)!;
+	const selected = view.source.nodesByRowKey.get(view.selection!.rowKey)!;
 	const details: StateMachineDetail[] = [];
 	const statesSource = view.stateMachines.bodies.get(selected.rowKey)?.states?.source;
 	function append(node: BehaviorSourceNode, prefix: string): void {

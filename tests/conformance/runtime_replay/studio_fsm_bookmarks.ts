@@ -4,7 +4,6 @@ import { selectedBehaviorLensSourceRange } from '../../../ide/workbench/contrib/
 import { retargetStateMachineTransition } from '../../../ide/workbench/contrib/behavior_lens/state_machine_edit';
 import { StateMachineRetargetAnalysis } from '../../../ide/workbench/contrib/behavior_lens/state_machine_retarget';
 import type { BehaviorLensViewState } from '../../../ide/workbench/contrib/behavior_lens/view_model';
-import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { FSM_RETARGET_SOURCE } from '../../helpers/fsm_retarget_fixture';
 import { chooseBehavior } from './studio_behavior_picker';
@@ -75,7 +74,7 @@ export async function testStudioFsmBookmarks(test: StudioFixture): Promise<void>
 		await press('ControlLeft', 'KeyZ');
 		check(model.buffer.getText() === FSM_RETARGET_SOURCE && view.document === hidden,
 			'FSM bookmark: code Undo restores text and leaves one pending selection, without parsing a hidden Lens');
-		await click(editorChromeState.tabButtonBounds.get(lens.id)!); await ready();
+		await test.clickTab(lens.id); await ready();
 		const before = selectedOutcome(view);
 		check(before.outcome.target.kind === 'path' && before.outcome.target.text === '../active'
 			&& before.outcome === before.transition.outcomes[outcomeIndex], 'FSM bookmark: reopening resolves the recorded original proof');
@@ -87,7 +86,7 @@ export async function testStudioFsmBookmarks(test: StudioFixture): Promise<void>
 		check(graph.viewport.model === retained && view.selectionBookmark === undefined, 'FSM bookmark: stable frames never replay history');
 		await runPaletteCommand('Edit: Undo'); await ready();
 	}
-	await click(editorChromeState.tabButtonBounds.get(code.id)!);
+	await test.clickTab(code.id);
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === original && cycles() === position && ide.sources.currentBlua32Media === media,
 		'FSM bookmark: ordinary Undo removes the fixture, without guest execution or source installation');

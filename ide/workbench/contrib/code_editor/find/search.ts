@@ -475,7 +475,7 @@ export function searchPageSize(): number {
 	const reservedHeight = editorViewState.lineHeight * 6;
 	const available = editorViewState.viewportHeight
 		- editorViewState.headerHeight
-		- editorViewState.tabBarHeight * editorViewState.tabBarRowCount
+		- editorViewState.tabBarTotalHeight
 		- baseHeight
 		- reservedHeight;
 	const fit = Math.floor(available / rowHeight);

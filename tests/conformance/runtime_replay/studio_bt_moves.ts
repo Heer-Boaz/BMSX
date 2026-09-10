@@ -1,7 +1,6 @@
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
 import { readLuaSourceRange } from '../../../ide/language/lua/source_edits';
-import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { BT_ORDER_SOURCE } from '../../helpers/behavior_order_fixture';
 import { chooseBehavior } from './studio_behavior_picker';
@@ -20,11 +19,11 @@ export async function testStudioBtMoves(test: StudioFixture): Promise<void> {
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: BT_ORDER_SOURCE }]);
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
 	await chooseBehavior(test, 'BT fixture.order', 'BEHAVIOR TREES');
-	const lens = getActiveTab();
+	let lens = getActiveTab();
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'graph') throw new Error('BT moves: concrete graph required');
-	const view = lens.view;
-	const graph = lens.view.presentation;
-	const viewport = graph.viewport;
+	let view = lens.view;
+	let graph = lens.view.presentation;
+	let viewport = graph.viewport;
 	const earlier = 'behaviorLens.moveChildEarlier';
 	const later = 'behaviorLens.moveChildLater';
 	check(!graph.actionBar.items.some(item => item.command === earlier || item.command === later), 'BT title has no Earlier/Later buttons');
@@ -57,21 +56,35 @@ export async function testStudioBtMoves(test: StudioFixture): Promise<void> {
 	const document = view.document;
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === BT_ORDER_SOURCE && view.document === document, 'BT moves: hidden code Undo maps source without rebuilding the lens');
-	await click(editorChromeState.tabButtonBounds.get(lens.id)!);
+	await test.clickTab(lens.id);
 	check(viewport.selection?.kind === 'node' && viewport.selection.lines[0] === 'CHILD 2' && viewport.selection.children.length === 2,
 		'BT moves: returning to the lens preserves the same nested occurrence and expansion');
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
 	await chooseBehavior(test, 'BT fixture.shared-order', 'BEHAVIOR TREES');
+	const nextDefinition2 = getActiveTab();
+	if (nextDefinition2.kind !== 'behavior_lens' || nextDefinition2.view.presentation.kind !== 'graph') throw new Error('BT: separate definition graph missing');
+	check(nextDefinition2 !== lens && nextDefinition2.workingCopy === model, 'BT: another definition has its own input and the same working copy');
+	lens = nextDefinition2;
+	view = lens.view;
+	graph = nextDefinition2.view.presentation;
+	viewport = graph.viewport;
 	await press('ArrowDown');
 	await press('ArrowDown');
 	await press('ArrowRight');
 	await runPaletteCommand('Behavior Lens: Move BT Child Earlier');
 	check(getActiveTab() === lens && lens.workingCopy === model && model.buffer.getText() === moved
-		&& view.definitionRowKey === view.document.definitions[1].rowKey, 'BT moves: shared initializer is edited once without changing definition identity');
+		&& view.definitionRowKey === view.document.definitions[1].rowKey, 'BT moves: shared initializer is edited once in its chosen definition input');
 	await runPaletteCommand('Edit: Undo');
 	check(model.buffer.getText() === BT_ORDER_SOURCE, 'BT moves: no separate graph history');
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
 	await chooseBehavior(test, 'BT fixture.weighted-order', 'BEHAVIOR TREES');
+	const nextDefinition3 = getActiveTab();
+	if (nextDefinition3.kind !== 'behavior_lens' || nextDefinition3.view.presentation.kind !== 'graph') throw new Error('BT: separate definition graph missing');
+	check(nextDefinition3 !== lens && nextDefinition3.workingCopy === model, 'BT: another definition has its own input and the same working copy');
+	lens = nextDefinition3;
+	view = lens.view;
+	graph = nextDefinition3.view.presentation;
+	viewport = graph.viewport;
 	await press('ArrowDown');
 	await press('ArrowDown');
 	await press('ArrowRight');
@@ -112,7 +125,7 @@ export async function testStudioBtMoves(test: StudioFixture): Promise<void> {
 	const retainedDocument = view.document;
 	for (let index = 0; index < 30; index += 1) await frame();
 	check(viewport.model === retained && view.document === retainedDocument, 'BT moves: commands add no warm source or geometry work');
-	await click(editorChromeState.tabButtonBounds.get(code.id)!);
+	await test.clickTab(code.id);
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === original && cycles() === position && ide.sources.currentBlua32Media === media,
 		'BT moves: all fixture edits undo without running or modifying the paused machine');

@@ -52,13 +52,8 @@ let statusMessageCachedVisible = false;
 let statusMessageCachedText = '';
 let statusMessageCachedMaxWidth = -1;
 
-export function getTabBarTotalHeight(): number {
-	const rowCount = editorViewState.tabBarRowCount > 1 ? editorViewState.tabBarRowCount : 1;
-	return editorViewState.tabBarHeight * rowCount;
-}
-
 export function topMargin(): number {
-	return editorViewState.headerHeight + getTabBarTotalHeight() + 2;
+	return editorViewState.headerHeight + editorViewState.tabBarTotalHeight + 2;
 }
 
 export function getStatusMessageLines(): string[] {
@@ -123,7 +118,7 @@ export function getVisibleProblemsPanelHeight(): number {
 	if (planned <= 0) {
 		return 0;
 	}
-	const maxAvailable = editorViewState.viewportHeight - statusAreaHeight() - (editorViewState.headerHeight + getTabBarTotalHeight());
+	const maxAvailable = editorViewState.viewportHeight - statusAreaHeight() - (editorViewState.headerHeight + editorViewState.tabBarTotalHeight);
 	if (maxAvailable <= 0) {
 		return 0;
 	}
@@ -273,7 +268,7 @@ function computeInlineBarLayoutStamp(): number {
 	stamp = addLayoutStamp(stamp, editorViewState.viewportHeight);
 	stamp = addLayoutStamp(stamp, editorViewState.headerHeight);
 	stamp = addLayoutStamp(stamp, editorViewState.tabBarHeight);
-	stamp = addLayoutStamp(stamp, editorViewState.tabBarRowCount);
+	stamp = addLayoutStamp(stamp, editorViewState.tabBarTotalHeight);
 	stamp = addLayoutStamp(stamp, editorViewState.lineHeight);
 	stamp = addLayoutStamp(stamp, createResourceState.visible ? 1 : 0);
 	stamp = addLayoutStamp(stamp, editorSearchState.visible ? 1 : 0);

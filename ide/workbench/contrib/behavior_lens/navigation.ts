@@ -163,7 +163,7 @@ export function selectedBehaviorLensSourceRange(state: BehaviorLensViewState): L
 	const selection = state.selection;
 	if (selection === null) return null;
 	if (selection.kind === 'state-outcome' || selection.kind === 'state-entry') return stateMachineSourceRange(selection);
-	const node = state.nodesByRowKey.get(selection.rowKey)!;
+	const node = state.source.nodesByRowKey.get(selection.rowKey)!;
 	if (selection.kind === 'tree-edge') return node.occurrenceRange;
 	return node.referenceRange !== null ? node.referenceRange : node.authoredRange;
 }
@@ -179,11 +179,11 @@ export function updateBehaviorLensStatus(state: BehaviorLensViewState): void {
 	state.status.info = state.presentation.kind === 'properties' ? state.presentation.summary : state.presentation.kind !== 'outline'
 		? state.presentation.kind === 'state-graph' ? `${state.presentation.viewport.model.nodes.length} SCOPES / POSSIBLE PATHS`
 			: `${state.presentation.viewport.model.nodes.length} CARDS`
-		: `${state.document.definitions.length} DEF  ${state.sourceNodes.length} SOURCE NODES`;
+		: `${state.document.definitions.length} DEF  ${state.source.nodes.length} SOURCE NODES`;
 	const range = selectedBehaviorLensSourceRange(state);
 	if (range === null) { state.status.detail = ''; return; }
 	const selection = state.selection!;
-	const node = state.nodesByRowKey.get(selection.rowKey)!;
+	const node = state.source.nodesByRowKey.get(selection.rowKey)!;
 	const kind = selection.kind === 'state-outcome' ? selection.outcome.proof.kind
 		: selection.kind === 'state-entry' ? selection.entry.kind : selection.kind === 'tree-edge' ? 'edge' : node.kind;
 	state.status.detail = `${kind.toUpperCase()}  LN ${range.start.line}:${range.start.column}`;

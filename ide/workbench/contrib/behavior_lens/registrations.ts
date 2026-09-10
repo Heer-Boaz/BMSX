@@ -67,6 +67,7 @@ export function collectBehaviorRegistrations(resource: ResourceIdentity, analysi
 			semanticId,
 			label: `${definitionKindLabel(registration.behaviorKind)} ${semanticId === null ? idLabel : semanticId}`,
 			range: idExpression ? idExpression.range : callSite.expression.range,
+			occurrenceRange: callSite.expression.range,
 			rowKey: anchor + appendBehaviorSourcePath('', 'definition'),
 			callSite,
 			definitionArgument: registration.definitionArgument,

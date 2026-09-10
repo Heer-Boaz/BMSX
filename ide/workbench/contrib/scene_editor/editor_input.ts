@@ -11,6 +11,7 @@ import { createWorkbenchActionBar } from '../../ui/action_bar';
 import type { SceneOutlineElement } from './outline';
 import type { FullWidthWorkbenchLayout } from '../../common/layout';
 import { WorkbenchScrollViewport } from '../../ui/scroll_viewport';
+import { sourceTabDescription } from '../../ui/tab/titles';
 
 export const POSITION_AXES = ['x', 'y', 'z'] as const;
 
@@ -39,5 +40,6 @@ export class SceneEditorInput extends WorkingCopyEditorInput<SceneEditorTabId, '
 
 	public constructor(public readonly workingCopy: EditorTextModel) {
 		super(`scene:${resourceIdentityKey(workingCopy.resource)}`, 'scene_editor', 'SCENE EDITOR', true);
+		this.setLabel(this.title, sourceTabDescription(workingCopy.resource));
 	}
 }

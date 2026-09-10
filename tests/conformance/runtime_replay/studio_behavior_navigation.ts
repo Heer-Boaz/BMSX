@@ -18,7 +18,7 @@ export async function testStudioBehaviorNavigation(test: StudioFixture): Promise
 	if (lens.kind !== 'behavior_lens') throw new Error('behavior navigation: selected lens missing');
 	check(lens.workingCopy.resource.path === 'enemies/moon_death_ray.lua', 'behavior navigation: actual cart source model');
 	const state = lens.view.presentation;
-	const timeline = lens.view.sourceNodes.find(node => node.authoredRange.start.line === 79)!;
+	const timeline = lens.view.source.nodes.find(node => node.authoredRange.start.line === 79)!;
 	await revealLensOccurrence(test, lens.view, timeline.rowKey);
 	await click(state.actionBar.items[0].bounds);
 	const document = harness.getActiveEditorDocument();

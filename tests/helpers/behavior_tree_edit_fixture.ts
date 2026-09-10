@@ -21,7 +21,7 @@ export function createBehaviorTreeEditFixture(t: TestContext, source = BT_ORDER_
 	const project = () => buildBehaviorSourceDocument(model.resource, buildLuaFileSemanticData(model.buffer.getText(), model.resource.path));
 	const document = project();
 	const view = createBehaviorLensViewState(document, model, 'graph');
-	model.onDidChangeContent(event => mapBehaviorLensSourceRanges(view, event.changes, event.editState));
+	model.onDidChangeContent(event => mapBehaviorLensSourceRanges(view, event));
 	selectBehaviorLensDefinition(view, document.definitions[definition].rowKey);
 	prepareBehaviorLensLayout(view);
 	assert.ok(view.presentation.kind === 'graph');

@@ -4,9 +4,12 @@
 
 `Behavior Lens: Open` chooses an authored FSM, BT or ActionEffect registration,
 never a Lua file. Invoking the command always offers that choice, including
-from code or an existing lens. A resource remains the text-model/tab owner;
-accepting a result selects and reveals that exact definition in the retained
-lens. Multiple registrations in one file and duplicate ids are separate picks.
+from code or an existing lens. A resource remains the text-model owner;
+each registration occurrence has its own retained lens input. Multiple
+registrations in one file and duplicate ids are separate picks and can remain
+open together. Reopening the same surviving occurrence preserves its selection.
+The group preview and tab lifetime contract is specified in
+[`workbench_definition_inputs_design.md`](workbench_definition_inputs_design.md).
 
 The production reference is VS Code's [workspace symbol provider](https://github.com/microsoft/vscode/blob/4603a7f7b9102fb602967c9518ac60acddd735a6/src/vs/workbench/contrib/search/browser/symbolsQuickAccess.ts#L125-L208):
 the primary label is the symbol, the container/source path is secondary, and

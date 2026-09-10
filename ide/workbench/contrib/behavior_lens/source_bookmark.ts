@@ -23,9 +23,9 @@ export function captureBehaviorSourceBookmark(
 	const path: BehaviorSourceBookmarkStep[] = [];
 	let key: BehaviorSourceRowKey | null = selection.rowKey;
 	while (key !== null) {
-		const node = view.nodesByRowKey.get(key)!;
-		path.push({ ...view.sourceRanges.get(key)!, kind: node.kind, behaviorKind: node.behaviorKind });
-		key = view.parentRowKeyByRowKey.get(key)!;
+		const node = view.source.nodesByRowKey.get(key)!;
+		path.push({ ...view.source.ranges.get(key)!, kind: node.kind, behaviorKind: node.behaviorKind });
+		key = view.source.parentByRowKey.get(key)!;
 	}
 	path.reverse();
 	return selection.kind === 'node' || selection.kind === 'tree-edge' ? { kind: selection.kind, path }
@@ -54,7 +54,7 @@ export function resolveBehaviorSourceBookmark(
 	for (const step of bookmark.path) {
 		const node = candidates.find(candidate => {
 			if (candidate.kind !== step.kind || candidate.behaviorKind !== step.behaviorKind) return false;
-			const span = view.sourceRanges.get(candidate.rowKey)!;
+			const span = view.source.ranges.get(candidate.rowKey)!;
 			return step.start !== step.end && span.start === step.start && span.end === step.end;
 		});
 		if (node === undefined) return undefined; // A later source edit can delete the selected occurrence.

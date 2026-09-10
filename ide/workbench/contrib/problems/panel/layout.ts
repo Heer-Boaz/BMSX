@@ -5,7 +5,7 @@ import { measureText, measureTextRange } from '../../../../editor/common/text/la
 import { writeWrappedMeasuredText } from '../../../../common/text';
 import { clamp } from '../../../../../machine/ts/common/clamp';
 import { create_rect_bounds, write_rect_bounds } from '../../../../../machine/ts/common/rect';
-import { getVisibleProblemsPanelHeight, statusAreaHeight, getTabBarTotalHeight } from '../../../common/layout';
+import { getVisibleProblemsPanelHeight, statusAreaHeight } from '../../../common/layout';
 import * as constants from '../../../../common/constants';
 import { problemsPanel } from './controller';
 import { editorViewState } from '../../../../editor/ui/view/state';
@@ -187,7 +187,7 @@ export function isPointerOverProblemsPanelDivider(x: number, y: number): boolean
 export function setProblemsPanelHeightFromViewportY(viewportY: number): void {
 	const statusHeight = statusAreaHeight();
 	const bottom = editorViewState.viewportHeight - statusHeight;
-	const minTop = editorViewState.headerHeight + getTabBarTotalHeight() + 1;
+	const minTop = editorViewState.headerHeight + editorViewState.tabBarTotalHeight + 1;
 	const minHeight = problemsPanelHeaderHeight()
 		+ constants.PROBLEMS_PANEL_CONTENT_PADDING_Y * 2
 		+ Math.max(1, constants.PROBLEMS_PANEL_MIN_VISIBLE_ROWS) * editorViewState.lineHeight;

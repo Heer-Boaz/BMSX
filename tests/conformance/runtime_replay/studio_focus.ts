@@ -131,7 +131,7 @@ export async function testStudioFocus(test: StudioFixture): Promise<void> {
 	const unbind = renameField.focusTarget.onDidBlur(() => {
 		blurOnOldInput = getActiveTab() === titleTab && activeCodeEditor.model === model;
 	});
-	await click(editorChromeState.tabButtonBounds.get(readonlyTab.id)!);
+	await test.clickTab(readonlyTab.id);
 	unbind();
 	check(blurOnOldInput && !renameController.isVisible() && activeCodeEditor.model === readonlyModel,
 		'focus: tab switch notifies the departing control before changing the resource; unfinished Rename is dismissed');
@@ -148,7 +148,7 @@ export async function testStudioFocus(test: StudioFixture): Promise<void> {
 	await press('ControlLeft', 'KeyZ');
 	check(field.text === 'x' && readonlyModel.buffer.getText() === generated, 'focus: Find remains editable over a readonly document');
 	await press('Escape');
-	await click(editorChromeState.tabButtonBounds.get(titleTab.id)!);
+	await test.clickTab(titleTab.id);
 	check(activeCodeEditor.focusTarget.hasFocus && activeCodeEditor.model === model && cycles() === position,
 		'focus: returning to code restores its owner without executing the paused machine');
 	// Leave an empty query for subsequent independent source-application workflows.
@@ -172,7 +172,7 @@ export async function testStudioFocus(test: StudioFixture): Promise<void> {
 	await press('Escape');
 	check(inputFocus.target === viewTarget && model.buffer.getText() === original,
 		'focus: closing Resources restores the actual non-code pane, not the old code editor');
-	await click(editorChromeState.tabButtonBounds.get(titleTab.id)!);
+	await test.clickTab(titleTab.id);
 	check(activeCodeEditor.focusTarget.hasFocus && cycles() === position, 'focus: input tests leave the paused machine unchanged');
 }
 

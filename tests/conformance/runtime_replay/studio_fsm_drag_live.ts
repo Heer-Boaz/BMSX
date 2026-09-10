@@ -2,7 +2,6 @@ import { testStudioGraphNavigation } from './studio_graph_navigation';
 import { FSM_RETARGET_CART_SOURCE } from '../../helpers/fsm_retarget_fixture';
 import { actionPromptState } from '../../../ide/workbench/contrib/modal/action_prompt';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
-import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/behavior_lens/editor_pane';
 import { selectedBehaviorLensSourceRange } from '../../../ide/workbench/contrib/behavior_lens/navigation';
 import { getTextFileRuntimeSourceStatus } from '../../../ide/workbench/services/working_copy/runtime_source_status';
@@ -85,8 +84,8 @@ export async function runStudioFsmDragLive(test: StudioFixture) {
 	await begin(); await release(); await press('Escape');
 	check(!review.visible && getActiveTab() === lens, 'FSM drag: review Escape discards without navigating');
 	await begin(); await release();
-	await click(editorChromeState.tabButtonBounds.get(code.id)!);
-	await click(editorChromeState.tabButtonBounds.get(lens.id)!); await ready();
+	await test.clickTab(code.id);
+	await test.clickTab(lens.id); await ready();
 	check(!review.visible, 'FSM drag: changing panes disposes the proposal');
 	await begin(); await release();
 	const resource = model.resource;
@@ -110,7 +109,7 @@ export async function runStudioFsmDragLive(test: StudioFixture) {
 	check(activeCodeEditor.view.cursorRow === range.start.line - 1 && activeCodeEditor.view.cursorColumn === range.start.column - 1,
 		'FSM drag: impact Source reaches the exact callback return');
 	unchanged(version, 'FSM drag: impact Source does not dirty source');
-	await click(editorChromeState.tabButtonBounds.get(lens.id)!); await ready();
+	await test.clickTab(lens.id); await ready();
 	await begin(); await release();
 	await runPaletteCommand('Review: Apply Source Edit'); await ready();
 	check(!review.visible && model.version === version + 1, 'FSM drag: palette restores review focus before applying');
@@ -132,7 +131,7 @@ export async function runStudioFsmDragLive(test: StudioFixture) {
 	check(getActiveTab() === code && model.version === version + 1 && !hasSelection(), 'FSM drag: post-edit Source is read-only navigation');
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === FSM_RETARGET_CART_SOURCE, 'FSM drag: one hidden code Undo restores source');
-	await click(editorChromeState.tabButtonBounds.get(lens.id)!); await ready();
+	await test.clickTab(lens.id); await ready();
 	await runPaletteCommand('Edit: Redo'); await ready();
 	check(model.buffer.getText() === changed && viewport.selection?.kind === 'edge' && viewport.selection.link.target.source.label === 'other',
 		'FSM drag: graph palette Redo restores source and selection');

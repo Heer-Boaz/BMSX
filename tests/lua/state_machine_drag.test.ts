@@ -31,7 +31,7 @@ function fixture(t: TestContext, source = FSM_RETARGET_SOURCE) {
 	const bySource = new Map<string, StateGraphNode>();
 	for (const scope of view.stateMachines.scopes.values()) {
 		const node: StateGraphNode = { ...createWorkbenchGraphNode(font, scope.name ?? 'ROOT', nodes.length * 100, 20),
-			source: view.nodesByRowKey.get(scope.rowKey)!, children: [] };
+			source: view.source.nodesByRowKey.get(scope.rowKey)!, children: [] };
 		nodes.push(node); bySource.set(scope.rowKey, node);
 	}
 	const edges: StateGraphEdge[] = [];

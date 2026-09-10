@@ -1,5 +1,4 @@
 import type { StateMachineDetail } from '../../../ide/workbench/contrib/behavior_lens/state_machine_details';
-import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import type { BehaviorLensViewState } from '../../../ide/workbench/contrib/behavior_lens/view_model';
 import type { EffectPropertyElement } from '../../../ide/workbench/contrib/behavior_lens/action_effect_properties';
 import type { WorkbenchTreeNode } from '../../../ide/workbench/ui/tree_view';
@@ -48,7 +47,7 @@ export async function revealLensOccurrence(test: StudioFixture, view: BehaviorLe
 		const graph = view.presentation;
 		check(graph.layoutState.kind === 'ready', 'FSM navigation: actual layout completed');
 		let owner = key;
-		while (!graph.viewport.model.nodesBySource.has(owner)) owner = view.parentRowKeyByRowKey.get(owner)!;
+		while (!graph.viewport.model.nodesBySource.has(owner)) owner = view.source.parentByRowKey.get(owner)!;
 		await test.press('Home');
 		const ownerIndex = graph.viewport.model.nodes.indexOf(graph.viewport.model.nodesBySource.get(owner)!);
 		for (let step = 0; step < ownerIndex; step += 1) await test.press('ArrowDown');
@@ -63,16 +62,16 @@ export async function revealLensOccurrence(test: StudioFixture, view: BehaviorLe
 		check(picker.visible && index >= 0, 'FSM navigation: owning state exposes the exact authored field');
 		for (let step = 0; step < index; step += 1) await test.press('ArrowDown');
 		await test.press('Enter');
-		await test.click(editorChromeState.tabButtonBounds.get(lens.id)!);
+		await test.clickTab(lens.id);
 		check(view.selection!.rowKey === key, 'FSM navigation: Details preserves field source selection on returning to the graph');
 		check(graph.viewport.selection === null, 'FSM navigation: a source-only field does not leave an unrelated card highlighted');
 		return;
 	}
 	const ancestors: string[] = [];
-	let parent = view.parentRowKeyByRowKey.get(key)!;
+	let parent = view.source.parentByRowKey.get(key)!;
 	while (parent !== null) {
 		ancestors.push(parent);
-		parent = view.parentRowKeyByRowKey.get(parent)!;
+		parent = view.source.parentByRowKey.get(parent)!;
 	}
 	if (view.presentation.kind === 'graph') {
 		const path = new Set([...ancestors, key]);
@@ -124,18 +123,19 @@ export async function testStudioBehaviorPicker(test: StudioFixture): Promise<voi
 	await chooseBehavior(test, 'FSM picker.second');
 	const lens = getActiveTab();
 	if (lens.kind !== 'behavior_lens') throw new Error('behavior picker: selected lens missing');
-	check(lens.workingCopy === model && lens.view.nodesByRowKey.get(lens.view.selection!.rowKey)!.label === "FSM 'picker.second'",
+	check(lens.workingCopy === model && lens.view.source.nodesByRowKey.get(lens.view.selection!.rowKey)!.label === 'FSM picker.second',
 		'behavior picker: selects the second registration, not the first definition or the current code cursor');
-	const secondKey = lens.view.nodesByRowKey.get(lens.view.selection!.rowKey)!.rowKey;
+	const secondKey = lens.view.source.nodesByRowKey.get(lens.view.selection!.rowKey)!.rowKey;
 	await click(lens.view.presentation.actionBar.items[0].bounds);
 	check(harness.getActiveEditorDocument().model === model && harness.getActiveEditorDocument().view.cursorRow === secondLine
 		&& harness.getActiveEditorDocument().view.cursorColumn === lines[secondLine].indexOf('picker_shared'),
 		'behavior picker: Source opens the chosen registration reference, not the shared initializer');
 	await runPaletteCommand('Behavior Lens: Open');
 	await chooseBehavior(test, 'FSM picker.first');
-	check(getActiveTab() === lens && lens.view.nodesByRowKey.get(lens.view.selection!.rowKey)!.label === "FSM 'picker.first'"
-		&& lens.view.nodesByRowKey.get(lens.view.selection!.rowKey)!.rowKey !== secondKey,
-		'behavior picker: another FSM in the same document reuses the model and selects its own root');
+	const first = getActiveTab();
+	check(first.kind === 'behavior_lens' && first !== lens && first.workingCopy === model && first.title === 'FSM picker.first'
+		&& lens.view.definitionRowKey === secondKey,
+		'behavior picker: separate FSM inputs share one model without overwriting the earlier definition');
 	await runPaletteCommand('Scenario Lab: Open');
 	await runPaletteCommand('Behavior Lens: Open');
 	const picker = ide.editor.quickInput;
@@ -148,17 +148,19 @@ export async function testStudioBehaviorPicker(test: StudioFixture): Promise<voi
 	const layout = picker.model.list.layout;
 	await click({ left: layout.contentLeft, right: layout.contentRight,
 		top: layout.contentTop + layout.rowHeight, bottom: layout.contentTop + layout.rowHeight * 2 }, 3);
-	check(getActiveTab() === lens, 'behavior picker: pointer selection reuses the retained lens');
-	const selected = lens.view.nodesByRowKey.get(lens.view.selection!.rowKey)!;
+	const duplicate = getActiveTab();
+	if (duplicate.kind !== 'behavior_lens') throw new Error('behavior picker: duplicate input missing');
+	check(duplicate !== lens && duplicate.workingCopy === model, 'behavior picker: pointer selection opens a distinct definition view');
+	const selected = duplicate.view.source.nodesByRowKey.get(duplicate.view.selection!.rowKey)!;
 	check(selected.referenceRange!.start.line === lastLine + 1,
 		'behavior picker: exact duplicate occurrence is selected and revealed');
 	const focus = inputFocus.target;
 	await runPaletteCommand('Behavior Lens: Open');
 	await press('Escape');
-	check(inputFocus.target === focus && getActiveTab() === lens
-		&& lens.view.nodesByRowKey.get(lens.view.selection!.rowKey)! === selected,
+	check(inputFocus.target === focus && getActiveTab() === duplicate
+		&& duplicate.view.source.nodesByRowKey.get(duplicate.view.selection!.rowKey)! === selected,
 		'behavior picker: cancellation preserves invoking focus and selection');
-	await click(lens.view.presentation.actionBar.items[0].bounds);
+	await click(duplicate.view.presentation.actionBar.items[0].bounds);
 	check(harness.getActiveEditorDocument().view.cursorRow === lastLine, 'behavior picker: duplicate Source goes to its own call');
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === original, 'behavior picker: ordinary source Undo removes the temporary authored definitions');

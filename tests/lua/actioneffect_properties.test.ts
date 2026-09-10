@@ -24,7 +24,7 @@ function fixture(source = ACTIONEFFECT_SOURCE, chosen = 0) {
 	const document = () => buildBehaviorSourceDocument(resource, buildLuaFileSemanticData(model.buffer.getText(), resource.path));
 	const view = createBehaviorLensViewState(document(), model, 'properties');
 	const input = new BehaviorLensInput(model, view, () => assert.fail('property inputs must not construct a graph-layout engine'));
-	model.onDidChangeContent(event => { mapBehaviorLensSourceRanges(view, event.changes); input.invalidatePresentation(); });
+	model.onDidChangeContent(event => { mapBehaviorLensSourceRanges(view, event); input.invalidatePresentation(); });
 	selectBehaviorLensDefinition(view, view.document.definitions[chosen].rowKey);
 	const properties = view.presentation;
 	assert.ok(properties.kind === 'properties');

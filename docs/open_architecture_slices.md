@@ -466,10 +466,9 @@ en een passende productie-implementatie, vóór featurewerk.
 
 | ID | Eigenaar / contract | Gate |
 | --- | --- | --- |
-| `STUDIO-UX-A04` | Viewidentiteit en preview/open/pin-contract onderscheiden definities zonder hun gedeelde textmodel te dupliceren. | Meerdere FSMs/BTs in één bestand kunnen bewust afzonderlijk open; titels en bronidentiteit blijven onderscheidbaar. |
 | `STUDIO-UX-A05` | Scenario-resultaatinspectie onderscheidt volledige output, berichtidentiteit en optionele bronlocatie. | Lange logs zijn volledig leesbaar; meerdere ActionEffect-bronmatches gebruiken de bestaande keuze-owner. Geen verzonnen bron voor onbekende runtimefeiten. |
 | `STUDIO-UX-A06` | Gedeeld keuzecontrol met provider-eigen matching, zichtbare matches en volledige lijstbediening. | Palette, files en symbols delen relevante UI/lifecycle zonder hun verschillende zoeksemantiek samen te drukken. |
-| `STUDIO-UX-A07` | Workbench-sessionserialization staat los van dirty-working-copybackup. | Herstart herstelt visual inputs, actieve tab en bijdrage-eigen viewstate; geen legacy/compatibility readers. Eerst A04/A03-contracten vastleggen. |
+| `STUDIO-UX-A07` | Workbench-sessionserialization staat los van dirty-working-copybackup. | Herstart herstelt visual inputs, actieve tab en bijdrage-eigen viewstate; geen legacy/compatibility readers. Bouw op de vastgelegde A04/A03-contracten. |
 | `STUDIO-UX-A08` | Onafhankelijke workflowfixtures en gerichte volledige-hostmetingen, naast de bestaande microbenchmarks. | Werkelijke Studio-framekosten en rewind memory/latency per target; fysieke SNES Mini-resultaten niet afleiden uit een PC-run. |
 | `STUDIO-UX-A09` | Gedeelde hover-target/enter/leave-owner in pointerdispatch, los van focus en capture. Aanvullend gereproduceerd tijdens A02. | Hover eindigt bij overstap naar Problems/chrome/popup, canvas-verlaten en detach; geen feature-lokale clears of nep-snapshots. |
 

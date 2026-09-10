@@ -5,12 +5,15 @@ import type { EditorCommandId, EditorViewCommandId } from '../common/commands';
 import type { RuntimeSourceState } from '../runtime/sources';
 import { openSourceView } from '../workbench/contrib/source_views/quick_access';
 import { hasSceneSourceDefinitions } from '../workbench/contrib/scene_editor/source';
+import { editorTabGroup } from '../workbench/ui/tab/group_model';
 
 export function isEditorViewCommand(command: EditorCommandId): command is EditorViewCommandId {
 	switch (command) {
 		case 'resources':
 		case 'problems':
 		case 'behaviorLens':
+		case 'behaviorLens.preview':
+		case 'keepEditor':
 		case 'behaviorLens.actionEffects':
 		case 'behaviorLens.stateMachines':
 		case 'behaviorLens.behaviorTrees':
@@ -37,6 +40,12 @@ export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSou
 			return;
 		case 'behaviorLens':
 			editor.behaviorLens.open();
+			return;
+		case 'behaviorLens.preview':
+			editor.behaviorLens.open(null, { pinned: false });
+			return;
+		case 'keepEditor':
+			editorTabGroup.pin(editorTabGroup.activeTab);
 			return;
 		case 'behaviorLens.actionEffects':
 			editor.behaviorLens.open('action_effect');

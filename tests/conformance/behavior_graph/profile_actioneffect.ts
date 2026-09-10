@@ -30,8 +30,8 @@ for (const registrations of [24, 1024]) {
 	const singleBodyMs = medianMilliseconds(() => {
 		for (let index = 0; index < 1000; index += 1) buildActionEffectBody(context, table, active);
 	}) / 1000;
-	if (document.definitions.length !== registrations || view.sourceNodes.length !== registrations * 17) throw new Error('profile must retain every registration, field and requirement');
-	console.log(JSON.stringify({ registrations, fields: registrations * 12, sourceNodes: view.sourceNodes.length,
+	if (document.definitions.length !== registrations || view.source.nodes.length !== registrations * 17) throw new Error('profile must retain every registration, field and requirement');
+	console.log(JSON.stringify({ registrations, fields: registrations * 12, sourceNodes: view.source.nodes.length,
 		sourceProjectionMs, singleBodyMs, inputRefreshMs,
 		boundary: 'cold source generation on cached semantic data, one body, and input refresh measured separately; excludes parsing, drawing, runtime and total Studio frame' }));
 }

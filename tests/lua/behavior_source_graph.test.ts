@@ -24,7 +24,7 @@ function fixture(source = BEHAVIOR_SOURCE_FIXTURE) {
 	}, 'lua', source);
 	const project = () => buildBehaviorSourceDocument(model.resource, buildLuaFileSemanticData(model.buffer.getText(), model.resource.path));
 	const input = new BehaviorLensInput(model, createBehaviorLensViewState(project(), model, 'outline'), () => new NodeGraphLayoutEngine(new Worker(resolve('ide/node/graph_layout_worker.cjs'))));
-	model.onDidChangeContent(event => mapBehaviorLensSourceRanges(input.view, event.changes));
+	model.onDidChangeContent(event => mapBehaviorLensSourceRanges(input.view, event));
 	assert.ok(input.view.presentation.kind === 'outline');
 	return { model, input, view: input.view, outline: input.view.presentation, refresh() {
 		installBehaviorLensDocument(input.view, project(), model.buffer);
@@ -136,14 +136,14 @@ test('deep reused subtrees retain separate occurrence chains through source edit
 	}
 	lines.push("trees.register('deep', { root = { type = 'sequence', children = { n64, n64 } } })");
 	const f = fixture(lines.join('\n'));
-	const leaves = f.view.sourceNodes.filter(node => node.label === 'wait');
+	const leaves = f.view.source.nodes.filter(node => node.label === 'wait');
 	assert.equal(leaves.length, 2);
 	assert.deepEqual(leaves[0].occurrenceRange, leaves[1].occurrenceRange, 'shared descendants alone do not identify the parent use');
 	assert.notEqual(leaves[0].rowKey, leaves[1].rowKey);
 	select(f, leaves[1]);
 	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- shifted deep source\n' }]);
 	f.refresh();
-	assert.equal(f.outline.rows[f.outline.selectionIndex].node, f.view.sourceNodes.filter(node => node.label === 'wait')[1]);
+	assert.equal(f.outline.rows[f.outline.selectionIndex].node, f.view.source.nodes.filter(node => node.label === 'wait')[1]);
 });
 
 test('hidden-pane edits preserve selected reused descendants, independent collapse and the chosen duplicate registration', () => {
@@ -292,9 +292,9 @@ effects.register_effect('effect', { period_ms = 2, blocked_tags = { 'busy' },
 	const entry = childEntries(tree(f).root!)[0];
 	assert.equal(entry.field.value.kind, LuaSyntaxKind.IdentifierExpression);
 	assert.deepEqual(f.view.document.definitions.slice(2).map(node => node.behaviorKind), ['state_machine', 'state_machine', 'action_effect']);
-	const update = f.view.sourceNodes.filter(node => node.label === 'update = actor.idle')[1];
+	const update = f.view.source.nodes.filter(node => node.label === 'update = actor.idle')[1];
 	select(f, update);
 	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- moved source\n' }]);
 	f.refresh();
-	assert.equal(f.outline.rows[f.outline.selectionIndex].node, f.view.sourceNodes.filter(node => node.label === 'update = actor.idle')[1]);
+	assert.equal(f.outline.rows[f.outline.selectionIndex].node, f.view.source.nodes.filter(node => node.label === 'update = actor.idle')[1]);
 });

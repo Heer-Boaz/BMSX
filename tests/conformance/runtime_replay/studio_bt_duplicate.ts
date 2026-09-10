@@ -1,7 +1,6 @@
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
 import { readLuaSourceRange } from '../../../ide/language/lua/source_edits';
-import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { BT_ORDER_SOURCE } from '../../helpers/behavior_order_fixture';
 import { chooseBehavior } from './studio_behavior_picker';
@@ -20,10 +19,10 @@ export async function testStudioBtDuplicate(test: StudioFixture): Promise<void> 
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: BT_ORDER_SOURCE }]);
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
 	await chooseBehavior(test, 'BT fixture.order', 'BEHAVIOR TREES');
-	const lens = getActiveTab();
+	let lens = getActiveTab();
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'graph') throw new Error('BT duplication requires the concrete graph');
-	const graph = lens.view.presentation;
-	const viewport = graph.viewport;
+	let graph = lens.view.presentation;
+	let viewport = graph.viewport;
 	const children = () => viewport.model.nodes[0].children[0].children;
 	const duplicate = 'behaviorLens.duplicateChild';
 	const button = graph.actionBar.items.find(item => item.command === duplicate)!;
@@ -63,7 +62,7 @@ export async function testStudioBtDuplicate(test: StudioFixture): Promise<void> 
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === BT_ORDER_SOURCE && lens.view.document === hiddenDocument,
 		'BT duplicate: hidden document Undo does not eagerly reproject a graph');
-	await click(editorChromeState.tabButtonBounds.get(lens.id)!);
+	await test.clickTab(lens.id);
 	check(viewport.selection === children()[1] && children()[1].children.length === 2,
 		'BT duplicate: Undo follows retained source back to the original expanded occurrence');
 	await runPaletteCommand('Edit: Redo');
@@ -81,6 +80,12 @@ export async function testStudioBtDuplicate(test: StudioFixture): Promise<void> 
 	await press('ControlLeft', 'KeyZ');
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
 	await chooseBehavior(test, 'BT fixture.weighted-order', 'BEHAVIOR TREES');
+	const nextDefinition2 = getActiveTab();
+	if (nextDefinition2.kind !== 'behavior_lens' || nextDefinition2.view.presentation.kind !== 'graph') throw new Error('BT: separate definition graph missing');
+	check(nextDefinition2 !== lens && nextDefinition2.workingCopy === model, 'BT: another definition has its own input and the same working copy');
+	lens = nextDefinition2;
+	graph = nextDefinition2.view.presentation;
+	viewport = graph.viewport;
 	await press('ArrowDown');
 	await press('ArrowDown');
 	await press('ArrowRight');
@@ -144,7 +149,7 @@ export async function testStudioBtDuplicate(test: StudioFixture): Promise<void> 
 	for (let index = 0; index < 30; index += 1) await frame();
 	check(viewport.model === retained && lens.view.document === document && model.version === version,
 		'BT duplicate: warm command admission does not rebuild source or geometry');
-	await click(editorChromeState.tabButtonBounds.get(code.id)!);
+	await test.clickTab(code.id);
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === original && cycles() === position && ide.sources.currentBlua32Media === media,
 		'BT duplicate: all fixture edits undo without changing the paused machine or installed media');

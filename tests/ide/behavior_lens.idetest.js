@@ -126,13 +126,13 @@ const retainedFirstNode = viewport.model.nodes[0];
 
 t.assert(view.resource.path === 'enemies/moon_tree.lua', 'Behavior Lens lost its source resource identity');
 t.assert(view.document.definitions.length === 1, 'Moon source should expose one behavior-tree registration');
-t.assert(view.sourceNodes.length === 99, 'Moon behavior-tree topology is incomplete');
+t.assert(view.source.nodes.length === 99, 'Moon behavior-tree topology is incomplete');
 t.assert(viewport.model.nodes[0].source === view.document.definitions[0], 'graph registration owns its root occurrence');
 t.assert(view.layout.viewportWidth === 384 && view.layout.viewportHeight === 288, 'test did not exercise the constrained IDE viewport');
 t.assert(view.layout.font.variant === 'tiny', 'Behavior Lens did not use the active IDE tiny font');
 t.assert(view.layout.rowHeight === 6, 'Behavior Lens row metrics do not come from the tiny IDE font');
 
-const flyAttackOccurrences = view.sourceNodes.filter(node =>
+const flyAttackOccurrences = view.source.nodes.filter(node =>
 	node.authoredRange.start.line === 14
 		&& node.referenceRange !== null
 		&& (node.referenceRange.start.line === 149 || node.referenceRange.start.line === 182));
@@ -211,7 +211,7 @@ t.assert(reopenedTab === lensTab && reopenedTab.view === view, 'reopening duplic
 t.assert(t.workbenchTabs().filter(tab => tab.kind === 'behavior_lens').length === 1, 'source owns more than one Behavior Lens input');
 
 const selectedRowKey = view.selection.rowKey;
-const selectedAuthoredLine = view.nodesByRowKey.get(selectedRowKey).authoredRange.start.line;
+const selectedAuthoredLine = view.source.nodesByRowKey.get(selectedRowKey).authoredRange.start.line;
 await pressKey('Escape', 7);
 t.assert(t.activeWorkbenchTab().kind === 'code_editor', 'Escape did not return to source');
 t.replaceActiveCodeSource(`-- behavior lens refresh\n${originalSource}`);
@@ -224,7 +224,7 @@ t.assert(refreshedTab === lensTab && refreshedTab.view === view, 'source refresh
 t.assert(view.document !== retainedDocument, 'source edit did not install a new immutable topology generation');
 t.assert(view.presentation.viewport === viewport && view.layout === retainedLayout, 'source refresh replaced retained view containers');
 t.assert(
-	view.nodesByRowKey.get(view.selection.rowKey).authoredRange.start.line === selectedAuthoredLine + 1,
+	view.source.nodesByRowKey.get(view.selection.rowKey).authoredRange.start.line === selectedAuthoredLine + 1,
 	'explicitly reopening the registration did not select the new source generation',
 );
 
@@ -243,8 +243,8 @@ await t.frames(1);
 t.assert(fsmView.presentation.layoutState.kind === 'ready', 'Node layout engine did not complete the actual FSM');
 t.assert(fsmView.document.definitions.length === 1, 'player source should expose one FSM registration');
 t.assert(fsmView.document.definitions[0].behaviorKind === 'state_machine', 'player registration was not recognized as an FSM');
-const flyingState = fsmView.sourceNodes.find(node => node.kind === 'state' && node.label === 'flying');
-const projectilesState = fsmView.sourceNodes.find(node => node.kind === 'state' && node.label === 'projectiles');
+const flyingState = fsmView.source.nodes.find(node => node.kind === 'state' && node.label === 'flying');
+const projectilesState = fsmView.source.nodes.find(node => node.kind === 'state' && node.label === 'projectiles');
 t.assert(flyingState.authoredRange.start.line === 1370, 'nested flying state lost its authored source range');
 t.assert(flyingState.detail === 'initial', 'nested FSM initial-state semantics are missing');
 t.assert(projectilesState.authoredRange.start.line === 1410, 'concurrent projectiles state lost its authored source range');

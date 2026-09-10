@@ -26,6 +26,9 @@ import { buildModuleExportSlotName } from '../../../toolchain/ts/lua/module_path
 import type { GPUBackend } from '../../../machine/ts/render/backend/backend';
 import type { EditorCommandId } from '../../../ide/common/commands';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
+import { editorViewState } from '../../../ide/editor/ui/view/state';
+import type { EditorTabId } from '../../../ide/workbench/ui/tab/id';
+import { WHEEL_SCROLL_STEP } from '../../../ide/common/constants';
 import { TOP_BAR_MENUS, type TopBarMenuItem } from '../../../ide/workbench/ui/top_bar/menu';
 
 export function check(condition: boolean, message: string): void {
@@ -105,6 +108,22 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 		setPointerButton(button, false);
 		await frame();
 	};
+	/** Reach an offscreen tab through the real wheel route, then click its visible label. */
+	const clickTab = async (id: EditorTabId, heldFrames = 1) => {
+		await frame();
+		const bounds = editorChromeState.tabButtonBounds.get(id)!;
+		const width = editorChromeState.tabBarBounds.right;
+		const delta = bounds.left < 0 ? bounds.left : bounds.right > width ? bounds.right - width : 0;
+		if (delta !== 0) {
+			movePointer(editorChromeState.tabBarBounds); await frame();
+			const steps = Math.sign(delta) * Math.ceil(Math.abs(delta) / (editorViewState.charAdvance * 4));
+			input.inputAxis1('pointer:0', 'pointer_wheel', steps * WHEEL_SCROLL_STEP, clock.now());
+			await frame();
+		}
+		const left = Math.max(0, bounds.left), right = Math.min(width, bounds.right);
+		check(right > left, `tab ${id} is reachable through horizontal scrolling`);
+		await click({ left, right, top: bounds.top, bottom: bounds.bottom }, heldFrames);
+	};
 	const runMenuCommand = async (command: EditorCommandId) => {
 		check(ide.editor.isActive, 'Run-menu commands require editor focus');
 		if (editorChromeState.openMenuId !== 'run') await click(editorChromeState.menuEntryBounds.run);
@@ -140,7 +159,7 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 	};
 	audio.bootstrap();
 	return { runtime, ide, execution, rewind, tasks, history, harness, guest, clock, input, clipboard, observations,
-		frame, until, setKey, setPointerButton, press, movePointer, click, runMenuCommand, runPaletteCommand, settle, cycles, title };
+		frame, until, setKey, setPointerButton, press, movePointer, click, clickTab, runMenuCommand, runPaletteCommand, settle, cycles, title };
 }
 
 export type StudioFixture = Awaited<ReturnType<typeof createStudioFixture>>;

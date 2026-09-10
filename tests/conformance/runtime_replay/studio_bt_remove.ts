@@ -1,7 +1,6 @@
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
 import { readLuaSourceRange } from '../../../ide/language/lua/source_edits';
-import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { BT_ORDER_SOURCE } from '../../helpers/behavior_order_fixture';
 import { chooseBehavior } from './studio_behavior_picker';
@@ -20,10 +19,10 @@ export async function testStudioBtRemove(test: StudioFixture): Promise<void> {
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: BT_ORDER_SOURCE }]);
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
 	await chooseBehavior(test, 'BT fixture.order', 'BEHAVIOR TREES');
-	const lens = getActiveTab();
+	let lens = getActiveTab();
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'graph') throw new Error('BT removal requires the concrete graph');
-	const graph = lens.view.presentation;
-	const viewport = graph.viewport;
+	let graph = lens.view.presentation;
+	let viewport = graph.viewport;
 	const children = () => viewport.model.nodes[0].children[0].children;
 	const remove = 'behaviorLens.removeChild';
 	const button = graph.actionBar.items.find(item => item.command === remove)!;
@@ -60,7 +59,7 @@ export async function testStudioBtRemove(test: StudioFixture): Promise<void> {
 	check(model.buffer.getText() === BT_ORDER_SOURCE.replace('\tnested; -- nested inline', '\tested; -- nested inline'),
 		'BT removal: code Delete edits text, not the hidden graph member');
 	await press('ControlLeft', 'KeyZ');
-	await click(editorChromeState.tabButtonBounds.get(lens.id)!);
+	await test.clickTab(lens.id);
 	check(model.buffer.getText() === BT_ORDER_SOURCE && viewport.selection === null,
 		'BT removal: replacing the identifier start invalidates its range; Undo does not invent source identity');
 	await press('Home');
@@ -109,7 +108,7 @@ export async function testStudioBtRemove(test: StudioFixture): Promise<void> {
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === BT_ORDER_SOURCE && lens.view.document === hiddenDocument,
 		'BT removal: one hidden code Undo restores the entire source edit without eager graph work');
-	await click(editorChromeState.tabButtonBounds.get(lens.id)!);
+	await test.clickTab(lens.id);
 	check(viewport.selection === null && children().length === 3, 'BT removal: Undo does not select a restored or same-index node');
 	await runPaletteCommand('Edit: Redo');
 	check(model.buffer.getText() === removed && viewport.selection === null, 'BT removal: graph palette uses the same document Redo');
@@ -123,6 +122,12 @@ export async function testStudioBtRemove(test: StudioFixture): Promise<void> {
 	await press('ControlLeft', 'KeyZ');
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
 	await chooseBehavior(test, 'BT fixture.weighted-order', 'BEHAVIOR TREES');
+	const nextDefinition2 = getActiveTab();
+	if (nextDefinition2.kind !== 'behavior_lens' || nextDefinition2.view.presentation.kind !== 'graph') throw new Error('BT: separate definition graph missing');
+	check(nextDefinition2 !== lens && nextDefinition2.workingCopy === model, 'BT: another definition has its own input and the same working copy');
+	lens = nextDefinition2;
+	graph = nextDefinition2.view.presentation;
+	viewport = graph.viewport;
 	await press('ArrowDown');
 	await press('ArrowDown');
 	await press('ArrowRight');
@@ -191,7 +196,7 @@ export async function testStudioBtRemove(test: StudioFixture): Promise<void> {
 	for (let index = 0; index < 30; index += 1) await frame();
 	check(viewport.model === retained && lens.view.document === document && model.version === version,
 		'BT removal: warm action-bar enablement adds no source/graph work');
-	await click(editorChromeState.tabButtonBounds.get(code.id)!);
+	await test.clickTab(code.id);
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === original && cycles() === position && ide.sources.currentBlua32Media === media,
 		'BT removal: fixture edits undo completely without touching the paused machine or installed media');

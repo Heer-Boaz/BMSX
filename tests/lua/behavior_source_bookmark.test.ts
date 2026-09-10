@@ -89,21 +89,20 @@ test('replacing selected source still clears selection; identical text is not a 
 	f.model.undo(); f.refresh();
 	assert.equal(f.view.selection, null, 'ordinary replacement Undo carries no explicit selection');
 	f.model.undo(); f.refresh();
-	assert.ok(f.viewport.selection?.kind === 'node');
-	assert.equal(f.viewport.selection.parent!.member!.index, 0, 'the transfer record itself restores its explicit origin');
+	assert.equal(f.view.definitionRowKey, null);
+	assert.equal(f.viewport.selection, null, 'an edit bookmark cannot rebind a deleted definition input');
 });
 
-test('a later definition choice does not change the selection recorded with a document edit', t => {
+test('a document edit bookmark cannot retarget another definition view', t => {
 	const f = fixture(t);
 	f.transfer(); f.refresh();
 	selectBehaviorLensDefinition(f.view, f.view.document.definitions[0].rowKey);
 	f.model.undo(); f.refresh();
-	assert.equal(f.view.definitionRowKey, f.view.document.definitions[1].rowKey);
-	assert.ok(f.viewport.selection?.kind === 'node');
-	assert.equal(f.viewport.selection.parent!.member!.index, 0);
+	assert.equal(f.view.definitionRowKey, f.view.document.definitions[0].rowKey);
+	assert.equal(f.view.selection!.rowKey, f.view.definitionRowKey);
 });
 
-test('a chosen destination under another registration is explicit edit state, not the previously active definition', t => {
+test('cross-registration transfer records retain their destination without retargeting the origin view', t => {
 	const f = fixture(t, false, false, 0);
 	const definition = f.view.document.definitions[1];
 	assert.ok(definition.behaviorKind === 'behavior_tree' && definition.root?.kind === 'node');
@@ -112,11 +111,11 @@ test('a chosen destination under another registration is explicit edit state, no
 	const target = children.entries[2].node.branches[0];
 	assert.ok(target.role === 'children');
 	transferBehaviorFixtureSelection(f.model, f.view, f.member, target); f.refresh();
-	assert.equal(f.view.definitionRowKey, f.view.document.definitions[1].rowKey);
+	assert.equal(f.view.definitionRowKey, f.view.document.definitions[0].rowKey);
 	f.model.undo(); f.refresh();
 	assert.equal(f.view.definitionRowKey, f.view.document.definitions[0].rowKey);
 	f.model.redo(); f.refresh();
-	assert.equal(f.view.definitionRowKey, f.view.document.definitions[1].rowKey);
+	assert.equal(f.view.definitionRowKey, f.view.document.definitions[0].rowKey);
 });
 
 test('a bookmark can retain a selected descendant whose initializer bytes were not part of the transferred field', t => {

@@ -12,6 +12,7 @@ import { scrollResourceBrowserHorizontal } from '../../workbench/input/keyboard/
 import { editorPointerState } from './state';
 import { hoverState } from '../../editor/contrib/hover/state';
 import { editorViewState } from '../../editor/ui/view/state';
+import { editorChromeState } from '../../workbench/ui/chrome_state';
 
 export function handleEditorWheelInput(editor: CartEditor, playerInput: PlayerInput): void {
 	const wheelState = playerInput.getRawButtonState('pointer_wheel', 'pointer');
@@ -33,6 +34,13 @@ export function handleEditorWheelInput(editor: CartEditor, playerInput: PlayerIn
 	const pointer = editorPointerState.lastPointerSnapshot;
 	const activePointer = pointer !== null && pointer.valid && pointer.insideViewport ? pointer : null;
 	if (handleHoverTooltipWheel(direction, steps, activePointer, playerInput)) {
+		return;
+	}
+	if (activePointer !== null && point_in_rect(activePointer.viewportX, activePointer.viewportY, editorChromeState.tabBarBounds)) {
+		editorChromeState.tabScrollControl.cancelPointer();
+		const bar = editorChromeState.tabScrollbar;
+		bar.setScroll(bar.getScroll() + direction * steps * editorViewState.charAdvance * 4);
+		playerInput.inputHandlers.pointer.consumeButton('pointer_wheel');
 		return;
 	}
 	if (handleResourcePanelWheel(editor.resourcePanel, direction, steps, activePointer, playerInput)) {

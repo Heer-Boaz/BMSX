@@ -17,7 +17,7 @@ export type EditorViewState = {
 	gutterWidth: number;
 	headerHeight: number;
 	tabBarHeight: number;
-	tabBarRowCount: number;
+	tabBarTotalHeight: number;
 	baseBottomMargin: number;
 	codeAreaLeft: number;
 	codeAreaTop: number;
@@ -49,7 +49,7 @@ export const editorViewState: EditorViewState = {
 	gutterWidth: 0,
 	headerHeight: 0,
 	tabBarHeight: 0,
-	tabBarRowCount: 1,
+	tabBarTotalHeight: 0,
 	baseBottomMargin: 0,
 	codeAreaLeft: 0,
 	codeAreaTop: 0,

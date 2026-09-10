@@ -208,10 +208,10 @@ export async function testSceneSourceEdits(test: StudioFixture): Promise<void> {
 	await click(scene.properties[0].bounds);
 	await press('Digit2');
 	await press('Digit2');
-	await click(editorChromeState.tabButtonBounds.get(readonlyScene.id)!);
+	await test.clickTab(readonlyScene.id);
 	check(getActiveTab() === readonlyScene && model.buffer.getText() === expected.replace('\t17)', '\t22)')
 		&& generated.buffer.getText() === generatedSource, 'scene: switching inputs of the same retained pane accepts against the departing resource');
-	await click(editorChromeState.tabButtonBounds.get(scene.id)!);
+	await test.clickTab(scene.id);
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === expected && x.field.text === '17', 'scene: document history remains attached to the correct resource after pane reuse');
 	await click(scene.properties[0].bounds);

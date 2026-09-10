@@ -27,6 +27,8 @@ export type BehaviorRegistrationSource = {
 	readonly label: string;
 	readonly rowKey: BehaviorSourceRowKey;
 	readonly range: LuaSourceRange;
+	/** Complete registration occurrence, distinct from the id's navigation range. */
+	readonly occurrenceRange: LuaSourceRange;
 };
 
 /** Workbench-only identity for one authored source-tree occurrence. */

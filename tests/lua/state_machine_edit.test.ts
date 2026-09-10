@@ -24,7 +24,7 @@ function fixture(t: TestContext, source = FSM_RETARGET_SOURCE, definitionIndex =
 	t.after(() => model.dispose());
 	const project = () => buildBehaviorSourceDocument(model.resource, buildLuaFileSemanticData(model.buffer.getText(), model.resource.path));
 	const view = createBehaviorLensViewState(project(), model, 'outline');
-	model.onDidChangeContent(event => mapBehaviorLensSourceRanges(view, event.changes, event.editState));
+	model.onDidChangeContent(event => mapBehaviorLensSourceRanges(view, event));
 	const definition = view.document.definitions[definitionIndex];
 	assert.ok(definition.behaviorKind === 'state_machine');
 	const scope = definition.scopes[0].children.get(branch)!;
@@ -112,13 +112,16 @@ test('hidden edits map proof coordinates, not history values; identical inserted
 	f.model.redo(); f.model.undo(); f.refresh(); f.checkSelection('../active');
 });
 
-test('the recorded registration is restored even if another definition was chosen before Undo', t => {
+test('shared FSM source Undo does not retarget another definition view', t => {
 	const f = fixture(t, FSM_RETARGET_SOURCE, 1, 'left');
 	f.edit(); f.refresh();
 	selectBehaviorLensDefinition(f.view, f.view.document.definitions[0].rowKey);
-	f.model.undo(); f.refresh(); f.checkSelection('../active');
-	selectBehaviorLensDefinition(f.view, f.view.document.definitions[0].rowKey);
-	f.model.redo(); f.refresh(); f.checkSelection('../other');
+	f.model.undo(); f.refresh();
+	assert.equal(f.view.definitionRowKey, f.view.document.definitions[0].rowKey);
+	assert.equal(f.view.selection!.rowKey, f.view.definitionRowKey);
+	f.model.redo(); f.refresh();
+	assert.equal(f.view.definitionRowKey, f.view.document.definitions[0].rowKey);
+	assert.equal(f.view.selection!.rowKey, f.view.definitionRowKey);
 });
 
 test('ordinary replacement of binding, return, callback or parent still deletes pending correspondence, even with hidden Undo', t => {
