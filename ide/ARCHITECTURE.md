@@ -474,9 +474,19 @@ transfer instead consumes the existing punctuated span, deletes/inserts only
 that payload and returns its exact final source range. It does not copy the
 intervening document to preserve a deleted marker. Explicit before/after
 bookmarks now provide parent-changing selection through document history;
-semantic and target-role admission remain prerequisites for graph reconnect;
+a reconnect command must consume the source-role, dependency and lexical
+evidence described below rather than infer admission from visible edges;
 structural edits on recovered source still need an error-tree contract. See
 [`../docs/lua_table_transfer_design.md`](../docs/lua_table_transfer_design.md).
+The [BT transfer query](../docs/behavior_tree_transfer_admission_design.md)
+now retains actual branch ownership in list membership and local constructor
+issues separately from inherited display resolution. An explicit analysis
+indexes recognized child/choice/attachment consumers across the source document,
+checks reachable constructor dependencies and uses the existing lexical
+relocation owner. Compatible sharing remains sharing; mismatched roles do not
+invent or discard weights. Cached candidate checks do no source/graph work.
+This is source evidence, not whole-program effects or live closure migration;
+reconnect UI still requires the command/fold and actual Hot Resume gates.
 The semantic binder owns lexical membership separately from global writes and
 table properties. Its scope kinds distinguish method-owned receivers from
 ordinary functions. `LuaRelocationAnalysis` retains one semantic snapshot,

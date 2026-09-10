@@ -24,6 +24,7 @@ import { duplicateBehaviorTreeChild, removeBehaviorTreeChild } from '../../ide/w
 import { createLuaTableFieldTransfer } from '../../ide/language/lua/table_field_transfer';
 import { buildBehaviorSourceDocument } from '../../ide/workbench/contrib/behavior_lens/recognizer';
 import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
+import { BehaviorTreeTransferAnalysis } from '../../ide/workbench/contrib/behavior_lens/behavior_tree_transfer';
 
 const SYSTEM_MODULE_FILES = [
 	['base', 'machine/bios/base.lua'],
@@ -568,7 +569,7 @@ test('BT source removal changes actual compiled task order without deleting refe
 		assert.ok(definition.behaviorKind === 'behavior_tree' && definition.root?.kind === 'node');
 		const branch = definition.root.branches[0];
 		assert.ok((branch.role === 'children' || branch.role === 'choices') && branch.source.kind === 'section');
-		removeBehaviorTreeChild(model, { table: branch.source.table, entries: branch.entries, index });
+		removeBehaviorTreeChild(model, { table: branch.source.table, branch, index });
 		const execution = definitionIndex === 0 ? `
 local program<const> = require('cartlib/behaviour_tree/program').compile('oracle', { root = root })
 assert(program.evaluate(target, { _execution_state = program.create_execution_state() }, program.operand) == result.success)
@@ -601,7 +602,7 @@ test('BT source duplication executes the copied Lua uses and keeps choice weight
 		assert.ok(definition.behaviorKind === 'behavior_tree' && definition.root?.kind === 'node');
 		const branch = definition.root.branches[0];
 		assert.ok((branch.role === 'children' || branch.role === 'choices') && branch.source.kind === 'section');
-		duplicateBehaviorTreeChild(model, { table: branch.source.table, entries: branch.entries, index });
+		duplicateBehaviorTreeChild(model, { table: branch.source.table, branch, index });
 		const execution = definitionIndex === 0 ? `
 local program<const> = require('cartlib/behaviour_tree/program').compile('oracle', { root = root })
 assert(program.evaluate(target, { _execution_state = program.create_execution_state() }, program.operand) == result.success)
@@ -657,6 +658,42 @@ return target.order, #children, #nested.children
 		assert.deepEqual(materializeCpuCompletionValues(cpu), inward ? [1312, 2, 3] : [1132, 4, 1]);
 		model.undo();
 		assert.equal(model.buffer.getText(), BT_ORDER_SOURCE);
+	}
+});
+
+test('admitted BT transfers compile with actual source sharing and cartlib task order', () => {
+	const resource = { domain: 0 as const, path: 'admitted.lua', source: { type: 'lua' as const, resid: 'admitted' } };
+	for (const inward of [false, true]) {
+		const model = new EditorTextModel(resource, 'lua', BT_ORDER_SOURCE);
+		const semantic = buildLuaFileSemanticData(BT_ORDER_SOURCE, resource.path);
+		const document = buildBehaviorSourceDocument(resource, semantic);
+		const definition = document.definitions[0];
+		assert.ok(definition.behaviorKind === 'behavior_tree' && definition.root?.kind === 'node');
+		const outer = definition.root.branches[0];
+		assert.ok(outer.role === 'children' && outer.source.kind === 'section');
+		const nested = outer.entries[1].node;
+		assert.ok(nested.kind === 'node');
+		const inner = nested.branches[0];
+		assert.ok(inner.role === 'children' && inner.source.kind === 'section');
+		const origin = inward ? outer : inner;
+		const target = inward ? inner : outer;
+		assert.ok(origin.source.kind === 'section' && target.source.kind === 'section');
+		const member = { table: origin.source.table, branch: origin, index: 0 };
+		const admission = new BehaviorTreeTransferAnalysis(document, semantic, member);
+		assert.equal(admission.checkTarget(target).kind, 'available');
+		model.pushEditOperations(createLuaTableFieldTransfer(model.buffer, resource.path, origin.entries[0].field,
+			target.source.table, target.source.table.fields.length).edits);
+		const cpu = createCartlibProgramCpu(model.buffer.getText() + `
+local target<const> = {order=0}
+local program<const> = require('cartlib/behaviour_tree/program').compile('oracle', {root=root})
+assert(program.evaluate(target, {_execution_state=program.create_execution_state()}, program.operand) == result.success)
+return target.order, #children, #nested.children, children.note == 'metadata is not a child'
+`);
+		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), inward ? [1213, 2, 3, true] : [1231, 4, 1, true]);
+		model.undo();
+		assert.equal(model.buffer.getText(), BT_ORDER_SOURCE);
+		model.dispose();
 	}
 });
 

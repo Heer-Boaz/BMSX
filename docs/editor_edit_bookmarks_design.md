@@ -67,6 +67,10 @@ command contract, not to a universal history snapshot.
 - No machine, C++, cartlib, guest heap, installed-media or autosave format change.
   The history state is session-owned data, not persisted workspace metadata.
 
+The subsequent [transfer-admission owner](behavior_tree_transfer_admission_design.md)
+supplies source-list role/sharing, subtree and binding queries. It does not
+turn these bookmarks into reconnect UI or remove the live-installation gate.
+
 ## Validation
 
 `editor_edit_state.test.ts` covers publication after the actual edit, one-time

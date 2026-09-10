@@ -17,19 +17,19 @@ export function behaviorTreeEditTarget(view: BehaviorLensViewState): BehaviorTre
 
 export function behaviorTreeMoveTarget(view: BehaviorLensViewState, direction: -1 | 1): BehaviorTreeSourceMember | undefined {
 	const member = behaviorTreeEditTarget(view);
-	if (member !== null && member.index + direction >= 0 && member.index + direction < member.entries.length) return member;
+	if (member !== null && member.index + direction >= 0 && member.index + direction < member.branch.entries.length) return member;
 	return undefined;
 }
 
 /** Remove the authored list entry, not its referenced initializer or a guessed runtime node. */
 export function removeBehaviorTreeChild(model: EditorTextModel, member: BehaviorTreeSourceMember): void {
 	const parsed = getCachedLuaParse({ path: model.resource.path, source: getTextSnapshot(model.buffer) }).parsed;
-	model.pushEditOperations(createLuaTableFieldRemovalEdits(model.buffer, parsed.tokens, member.entries[member.index].field));
+	model.pushEditOperations(createLuaTableFieldRemovalEdits(model.buffer, parsed.tokens, member.branch.entries[member.index].field));
 }
 
 /** Insert before the retained field: its tracked selection becomes the second occurrence. */
 export function duplicateBehaviorTreeChild(model: EditorTextModel, member: BehaviorTreeSourceMember): void {
-	const field = member.entries[member.index].field;
+	const field = member.branch.entries[member.index].field;
 	model.pushEditOperations(createLuaTableFieldInsertionEdits(model.buffer, model.resource.path, member.table,
 		member.table.fields.indexOf(field), readLuaSourceRange(model.buffer, field.range)));
 }
@@ -38,5 +38,5 @@ export function duplicateBehaviorTreeChild(model: EditorTextModel, member: Behav
 export function moveBehaviorTreeChild(model: EditorTextModel, member: BehaviorTreeSourceMember, destination: number): void {
 	const fields = member.table.fields;
 	model.pushEditOperations(createLuaTableFieldMoveEdits(model.buffer, model.resource.path, member.table,
-		fields.indexOf(member.entries[member.index].field), fields.indexOf(member.entries[destination].field)));
+		fields.indexOf(member.branch.entries[member.index].field), fields.indexOf(member.branch.entries[destination].field)));
 }

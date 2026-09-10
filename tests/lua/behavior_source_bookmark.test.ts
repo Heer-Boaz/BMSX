@@ -29,7 +29,7 @@ function fixture(t: TestContext, weighted = false, edge = false, definition = 1)
 	f.view.collapsedRowKeys.clear(); f.graph.dirty = true; prepareBehaviorLensLayout(f.view);
 	f.viewport.selection = edge ? f.viewport.model.edgesBySource.get(node.rowKey)! : f.viewport.model.nodesBySource.get(node.rowKey)!;
 	acceptBehaviorGraphSelection(f.view, f.graph);
-	const member = { table: origin.source.table, entries: origin.entries, index: 1 };
+	const member = { table: origin.source.table, branch: origin, index: 1 };
 	return { ...f, source, target, member, transfer: () => transferBehaviorFixtureSelection(f.model, f.view, member, target) };
 }
 
@@ -132,7 +132,7 @@ test('a bookmark can retain a selected descendant whose initializer bytes were n
 test('unannotated transfers keep the strict parent-correspondence rule rather than guessing a moved selection', t => {
 	const f = fixture(t);
 	assert.ok(f.target.source.kind === 'section');
-	const transfer = createLuaTableFieldTransfer(f.model.buffer, f.model.resource.path, f.member.entries[1].field,
+	const transfer = createLuaTableFieldTransfer(f.model.buffer, f.model.resource.path, f.member.branch.entries[1].field,
 		f.target.source.table, f.target.source.table.fields.length);
 	f.model.pushEditOperations(transfer.edits); f.refresh();
 	assert.equal(f.view.selection, null);

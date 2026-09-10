@@ -384,3 +384,34 @@ entrypoint+Undo in batches of 100, and preconstructed PieceTree apply+Undo in
 batches of 1,000, converted to microseconds per operation. All use ten warmups
 and the median of 25 samples. The existing insertion owner's lexing is included;
 semantic reprojection, graph layout/render, autosave and Hot Resume are not.
+
+## BT cross-parent transfer admission
+
+```sh
+npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
+  tests/lua/behavior_tree_transfer.test.ts tests/lua/fsm_hot_resume.test.ts
+npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+  tests/conformance/behavior_graph/profile_transfer_admission.ts
+```
+
+The independent source cases distinguish compatible shared lists from conflicting
+child/choice/service/decorator roles, same-list reorder, overlapping syntax,
+alias-descendant cycles, unresolved topology and actual lexical binding changes.
+The compiled BLua/cartlib oracle performs admitted inward/outward transfers and
+observes task order, list sizes and metadata, followed by exact source Undo.
+This is not a transferred-callback Hot Resume test.
+
+`studio_source_bookmarks.ts` queries the actual retained source/semantic snapshot
+across two registrations and four shared destination occurrences before its
+existing transfer/history/navigation workflow. Repeated admission must retain
+the result without changing source or layout. Both actual Studio workflows run
+this probe on software/WebGL2/WebGPU. There is no new reconnect gesture or command.
+
+`profile_transfer_admission.ts` varies shared destination registrations from 32 to
+1,024. It separates analysis plus first query, retained cache hits and source
+projection without rebinding. Batches contain 100, 10,000 and 10 operations
+respectively; ten warmups, median of 25 samples. Run without concurrent tests.
+It does not measure pointer interaction, graph layout, complete-frame time or
+heap/GC costs. The design, production references, baseline producer comparison
+and remaining command/fold/live-install gates are in
+`docs/behavior_tree_transfer_admission_design.md`.

@@ -14,7 +14,7 @@ export function beginBehaviorTreeDrag(model: EditorTextModel, view: BehaviorLens
 	const selected = viewport.selection;
 	if (selected === null) return undefined;
 	const node = selected.kind === 'node' ? selected : selected.child;
-	if (node.member === null || node.member.entries.length < 2) return undefined;
+	if (node.member === null || node.member.branch.entries.length < 2) return undefined;
 	return new BehaviorTreeDrag(model, viewport, node, node.member);
 }
 

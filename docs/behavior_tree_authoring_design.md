@@ -35,6 +35,13 @@ initializers, en worden in een verborgen Lens pas bij bronprojectie opgelost.
 Geen tweede history of losser overeenkomstenalgoritme. Reconnect-admission,
 subtree-foldbeleid en live Hot Resume zijn hiermee niet als gebouwd afgevinkt.
 
+[`STUDIO-BT-TRANSFER-ADMISSION-01`](behavior_tree_transfer_admission_design.md)
+levert nu de query op daadwerkelijke bronlijsten: compatibele gedeelde consumers,
+children/choices/attachment-rollen, constructorafhankelijkheden en bestaande
+lexicale bindings. Zij gebruikt lokale constructorissues, niet inherited
+displaywarnings of zichtbare ancestry. Geen nieuw graphcommand; foldbeleid en
+de daadwerkelijke callback-installatie blijven vereist vóór reconnect-UI.
+
 ## Getoetste productievoorbeelden
 
 - [LimboAI, Move Up/Down](https://github.com/limbonaut/limboai/blob/3f14ea4c26911e8b8e30c6bcdb575fc589a59deb/editor/limbo_ai_editor_plugin.cpp#L660-L719):

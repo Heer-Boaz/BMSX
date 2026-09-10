@@ -1,6 +1,8 @@
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
 import { readLuaSourceRange } from '../../../ide/language/lua/source_edits';
+import { getOrCreateSemanticProject } from '../../../ide/editor/contrib/intellisense/semantic/workspace/state';
+import { BehaviorTreeTransferAnalysis } from '../../../ide/workbench/contrib/behavior_lens/behavior_tree_transfer';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { BT_TRANSFER_SOURCE, transferBehaviorFixtureSelection } from '../../helpers/behavior_transfer_fixture';
@@ -39,6 +41,18 @@ export async function testStudioSourceBookmarks(test: StudioFixture): Promise<vo
 	const target = children.entries[2].node.branches[0];
 	if (target.role !== 'children') throw new Error('bookmark: destination list required');
 	let version = model.version;
+	const semantic = getOrCreateSemanticProject(model.resource.domain).updateDocument(model.resource.path, model.buffer.getText());
+	const admission = new BehaviorTreeTransferAnalysis(view.document, semantic, selected.member);
+	const candidate = admission.checkTarget(target);
+	check(candidate.kind === 'available' && candidate.targetUses.length === 4 && admission.sourceUses.length === 2,
+		'bookmark: transfer admission sees both registrations and every shared destination use, not just visible cards');
+	const moving = selected.member.branch.entries[selected.member.index].node;
+	if (moving.kind !== 'node' || moving.branches[0].role !== 'children') throw new Error('bookmark: moving subtree list required');
+	const rejected = admission.checkTarget(moving.branches[0]);
+	check(rejected.kind === 'unavailable' && rejected.reason === 'cycle', 'bookmark: the initializer descendant is not an admissible parent');
+	const currentGeometry = viewport.model;
+	for (let index = 0; index < 1000; index += 1) check(admission.checkTarget(target) === candidate, 'bookmark: candidate evidence is retained');
+	check(model.version === version && viewport.model === currentGeometry, 'bookmark: admission changes neither source nor layout');
 	transferBehaviorFixtureSelection(model, view, selected.member, target);
 	await frame();
 	const after = viewport.selection;

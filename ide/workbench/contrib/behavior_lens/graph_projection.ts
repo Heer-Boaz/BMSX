@@ -92,12 +92,12 @@ export function projectBehaviorTreeGraph(
 					for (let index = 0; index < branch.entries.length; index += 1) {
 						const entry = branch.entries[index];
 						behavior(entry.node, node, `CHILD ${entry.index}`, entry.field.value.range, [], entry.node,
-							{ table: branch.source.table, entries: branch.entries, index });
+							{ table: branch.source.table, branch, index });
 					}
 				} else {
 					for (let index = 0; index < branch.entries.length; index += 1) {
 						const entry = branch.entries[index];
-						const member = { table: branch.source.table, entries: branch.entries, index };
+						const member = { table: branch.source.table, branch, index };
 						const choice = entry.node;
 						if (choice.kind === 'dynamic') {
 							behavior(choice, node, `CHOICE ${entry.index}`, entry.field.value.range, [], choice, member);

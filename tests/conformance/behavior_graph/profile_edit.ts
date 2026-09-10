@@ -33,7 +33,7 @@ for (const siblings of [24, 1024]) {
 	});
 	assert.ok(admitted > 0);
 	const parsed = getCachedLuaParse({ path: model.resource.path, source }).parsed;
-	const field = member.entries[member.index].field;
+	const field = member.branch.entries[member.index].field;
 	let constructed = 0;
 	const constructMicroseconds = medianMilliseconds(() => {
 		for (let index = 0; index < 1000; index += 1) {

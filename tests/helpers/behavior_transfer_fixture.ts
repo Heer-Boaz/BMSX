@@ -28,7 +28,7 @@ export function transferBehaviorFixtureSelection(
 	if (selection.kind !== 'node' && selection.kind !== 'tree-edge' || target.source.kind !== 'section') {
 		throw new Error('transfer fixture requires a BT selection and complete target list');
 	}
-	const entry = member.entries[member.index];
+	const entry = member.branch.entries[member.index];
 	const before = captureBehaviorSourceBookmark(view, selection.rowKey, selection.kind);
 	const moving = captureBehaviorSourceBookmark(view, entry.node.rowKey, selection.kind);
 	const destination = captureBehaviorSourceBookmark(view, target.source.rowKey, selection.kind);

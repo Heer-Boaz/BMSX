@@ -13,7 +13,7 @@ test('BT reorder uses array membership, not lexical indices or descendant warnin
 	f.select(1);
 	const member = behaviorTreeMoveTarget(f.view, -1)!;
 	assert.equal(member.index, 1);
-	assert.equal(member.table.fields.indexOf(member.entries[1].field), 2, 'named metadata is not a BT child');
+	assert.equal(member.table.fields.indexOf(member.branch.entries[1].field), 2, 'named metadata is not a BT child');
 	assert.equal(f.view.document.definitions[0].resolution, 'partial', 'opaque descendants do not disable authored reordering');
 	f.move(-1);
 	assert.equal(f.model.buffer.getText(), BT_ORDER_SOURCE.replace(

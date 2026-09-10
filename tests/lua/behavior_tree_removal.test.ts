@@ -18,7 +18,7 @@ test('BT removal deletes the selected source field, preserving initializers, met
 		const f = fixture(t);
 		f.select(index);
 		const member = behaviorTreeEditTarget(f.view)!;
-		assert.equal(readLuaSourceRange(f.model.buffer, member.entries[member.index].field.range), field);
+		assert.equal(readLuaSourceRange(f.model.buffer, member.branch.entries[member.index].field.range), field);
 		assert.equal(member.table.fields.length, 4, 'named metadata is not a child rank');
 		let events = 0;
 		f.model.onDidChangeContent(() => { events += 1; });
@@ -122,7 +122,7 @@ trees.register('sole', { root = { type = '${nodeType}', ${fields} } })`;
 		const f = fixture(t, source);
 		f.select(0);
 		const member = behaviorTreeEditTarget(f.view)!;
-		assert.equal(member.entries.length, 1);
+		assert.equal(member.branch.entries.length, 1);
 		removeBehaviorTreeChild(f.model, member);
 		f.refresh();
 		assert.equal(f.view.document.syntaxComplete, true);

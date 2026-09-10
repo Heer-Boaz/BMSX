@@ -5,7 +5,7 @@ import type { BehaviorSourceArrayEntry, BehaviorSourceTableSection, SourceTableI
 /** A proven authored list position, independent of the member's content resolution. */
 export type BehaviorTreeSourceMember = {
 	readonly table: LuaTableConstructorExpression;
-	readonly entries: readonly BehaviorSourceArrayEntry<BehaviorSourceNode>[];
+	readonly branch: BehaviorTreeSourceList;
 	readonly index: number;
 };
 
@@ -32,6 +32,8 @@ export type BehaviorTreeSourceBranch = {
 	readonly node: BehaviorTreeSourceNode;
 };
 
+export type BehaviorTreeSourceList = Extract<BehaviorTreeSourceBranch, { role: 'children' | 'choices' }>;
+
 export type BehaviorTreeSourceAttachment = BehaviorSourceNode & {
 	readonly kind: 'service' | 'decorator';
 	readonly table: LuaTableConstructorExpression;
@@ -49,6 +51,8 @@ export type BehaviorTreeSourceAttachmentGroup = {
 export type BehaviorTreeSourceNode = BehaviorDynamicSourceNode | (BehaviorSourceNode & {
 	readonly kind: 'node';
 	readonly table: LuaTableConstructorExpression;
+	/** Local constructor evidence, not aggregate warnings from descendants/attachments. */
+	readonly issues: SourceTableIssue;
 	readonly nodeType: string | null;
 	readonly referenceLabel: string;
 	readonly branches: readonly BehaviorTreeSourceBranch[];

@@ -84,6 +84,7 @@ function buildBehaviorTreeNode(
 	return createSourceNode(context, path, {
 		kind: 'node',
 		table,
+		issues: resolved.issues,
 		nodeType,
 		referenceLabel: resolved.referenceLabel,
 		branches,
