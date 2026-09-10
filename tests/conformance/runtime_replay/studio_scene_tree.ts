@@ -27,8 +27,10 @@ export async function testSceneSourceTree(test: StudioFixture): Promise<void> {
 	const pane = ide.editor.editorPanes.activePane;
 	if (!(pane instanceof SceneEditorPane)) throw new Error('tree: actual Scene Editor pane required');
 	const x = pane.controls[0];
-	check(pane.controls.every(control => control.field.readOnly) && x.field.focusTarget.parent!.next === null,
-		'tree: a definition root has no member property focus route');
+	check(pane.controls.every(control => control.field.readOnly), 'tree: a definition root has no editable member properties');
+	await press('Tab');
+	check(scene.actionBar.hasFocus && !x.field.focusTarget.hasFocus, 'tree: Tab skips disabled fields and reaches the toolbar');
+	await press('Escape');
 	for (const command of ['sceneEditor.removeMember', 'sceneEditor.moveMemberUp', 'sceneEditor.moveMemberDown'] as const) {
 		check(!ide.editor.commands.isEnabled(command), 'tree: roots never admit a member command');
 	}

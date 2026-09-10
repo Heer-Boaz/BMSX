@@ -9,7 +9,7 @@ import { check, type StudioFixture } from './studio_fixture';
 
 /** Physical source-removal commands, not a feature-local graph model or mock keyboard route. */
 export async function testStudioBtRemove(test: StudioFixture): Promise<void> {
-	const { ide, harness, frame, press, click, cycles, runPaletteCommand, movePointer, setPointerButton } = test;
+	const { ide, harness, frame, press, click, cycles, runPaletteCommand, movePointer, setPointerButton, setKey } = test;
 	console.info('STUDIO: BT remove / focus / shared source history');
 	const position = cycles();
 	const media = ide.sources.currentBlua32Media;
@@ -39,7 +39,18 @@ export async function testStudioBtRemove(test: StudioFixture): Promise<void> {
 	await press('ArrowRight');
 	check(viewport.selection === children()[1] && ide.editor.commands.isEnabled(remove), 'BT removal: keyboard selects the actual source member');
 	const selected = children()[1];
-	await click(sourceButton.bounds, 6);
+	movePointer(sourceButton.bounds); await frame();
+	setPointerButton('pointer_primary', true); await frame();
+	check(getActiveTab() === lens && model.version === version, 'A01: Source does not navigate on mouse down');
+	movePointer(viewport.bounds); setPointerButton('pointer_primary', false); await frame();
+	check(getActiveTab() === lens && model.version === version, 'A01: releasing Source outside cancels navigation');
+	await press('Tab');
+	check(graph.actionBar.hasFocus && ide.editor.commands.isEnabled(remove), 'A01: toolbar focus keeps graph command context');
+	await press('Home');
+	setKey('Enter', true);
+	for (let index = 0; index < 6; index += 1) await frame();
+	check(getActiveTab() === lens && model.version === version, 'A01: held toolbar Enter does not navigate or edit');
+	setKey('Enter', false); await frame();
 	check(getActiveTab() === code && model.version === version && !hasSelection()
 		&& activeCodeEditor.view.cursorRow === selected.source.occurrenceRange.start.line - 1
 		&& activeCodeEditor.view.cursorColumn === selected.source.occurrenceRange.start.column - 1,
@@ -60,7 +71,28 @@ export async function testStudioBtRemove(test: StudioFixture): Promise<void> {
 	check(children()[1].children.length === 2, 'BT removal: the selected subtree is expanded');
 	version = model.version;
 	console.info('STUDIO: BT removal action ready for visual inspection');
-	await click(button.bounds, 6);
+	for (const cancel of ['outside', 'escape', 'palette']) {
+		movePointer(button.bounds); await frame(); setPointerButton('pointer_primary', true); await frame();
+		check(model.version === version, 'A01: Remove is only armed while held');
+		if (cancel === 'outside') movePointer(viewport.bounds);
+		else if (cancel === 'escape') await press('Escape');
+		else await press('ControlLeft', 'ShiftLeft', 'KeyP');
+		setPointerButton('pointer_primary', false); await frame();
+		if (cancel === 'palette') await press('Escape');
+		check(model.version === version && viewport.selection === children()[1], 'A01: cancelled Remove preserves exact source/selection');
+	}
+	await press('Tab'); await press('End');
+	check(graph.actionBar.items[graph.actionBar.focusedIndex].command === remove, 'A01: End reaches enabled Remove');
+	await press('ControlLeft', 'ShiftLeft', 'KeyP');
+	check(ide.editor.quickInput.model.list.rows.some(row => row.item.label === 'Behavior Lens: Remove BT Child'),
+		'A01: palette invoked from toolbar resolves the graph owner');
+	await press('Escape');
+	check(graph.actionBar.hasFocus, 'A01: palette dismissal returns to the toolbar');
+	await press('Escape');
+	movePointer(button.bounds); await frame(); setPointerButton('pointer_primary', true);
+	for (let index = 0; index < 6; index += 1) await frame();
+	check(model.version === version, 'A01: held destructive button does not write before release');
+	setPointerButton('pointer_primary', false); await frame();
 	const removed = BT_ORDER_SOURCE.replace('\tnested; -- nested inline', '\t -- nested inline');
 	check(model.version === version + 1 && model.buffer.getText() === removed && children().length === 2
 		&& viewport.selection === null && lens.view.selection === null && !ide.editor.commands.isEnabled(remove),

@@ -19,7 +19,7 @@ import {
 	handleBehaviorLensKeyboardInput,
 } from './keyboard';
 import type { IdeCommandController } from '../../../commands/controller';
-import { updateWorkbenchActionBarPointer } from '../../input/pointer/action_bar';
+import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
 import { drawBehaviorLens } from './render';
 import { prepareBehaviorLensLayout } from './layout';
 import { BehaviorLensPointer, BehaviorLensPointerResult } from './pointer';
@@ -37,7 +37,8 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 	private readonly pointer = new BehaviorLensPointer();
 	private readonly properties = new WorkbenchPropertyTreePointer();
 	private readonly graph = new WorkbenchGraphControl(inputFocus, pointerCapture, input => this.handleKeyboard(input), this.focusTarget);
-	public readonly sourceEditReview = new WorkbenchSourceEditReview(inputFocus, this.graph.focusTarget);
+	public readonly sourceEditReview = new WorkbenchSourceEditReview(inputFocus, pointerCapture, this.graph.focusTarget);
+	private readonly actionBar: WorkbenchActionBarControl;
 	private readonly stateMachineDrop: StateMachineRetargetDrop = (selection, target) => {
 		const input = this.input;
 		if (target.uses.length === 1) retargetStateMachineTransition(input.workingCopy, input.view, selection, target);
@@ -65,6 +66,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		private readonly commands: IdeCommandController,
 	) {
 		super(resourcePanel);
+		this.actionBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, commands, this.focusTarget);
 		for (const target of [this.focusTarget, this.graph.focusTarget, this.sourceEditReview.focusTarget]) {
 			target.registerCommand('undo', {
 				isEnabled: () => !this.input.workingCopy.readOnly && this.input.workingCopy.canUndo,
@@ -99,6 +101,12 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		const presentation = this.input.view.presentation;
 		if (presentation.kind === 'graph') this.graph.setInput(presentation.viewport, this.graphDragSource);
 		else if (presentation.kind === 'state-graph') this.graph.setInput(presentation.viewport, this.stateMachineDragSource);
+		const content = presentation.kind === 'graph' || presentation.kind === 'state-graph' ? this.graph.focusTarget : this.focusTarget;
+		this.actionBar.setInput(presentation.actionBar, content);
+		content.next = this.actionBar.focusTarget;
+		content.previous = this.actionBar.focusTarget;
+		this.actionBar.focusTarget.next = content;
+		this.actionBar.focusTarget.previous = content;
 	}
 
 	public override focus(): void {
@@ -109,6 +117,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 	}
 
 	public override dispose(): void {
+		this.actionBar.dispose();
 		this.sourceEditReview.dispose();
 		this.graph.dispose();
 		this.unbindPointerBlur();
@@ -119,9 +128,11 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		this.controller.updateView(this.input);
 		this.sourceEditReview.update();
 		this.graph.update();
+		this.actionBar.update();
 	}
 
 	public override clearInput(): void {
+		this.actionBar.clearInput();
 		this.sourceEditReview.clear();
 		this.pointer.cancel();
 		this.properties.cancel();
@@ -157,11 +168,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 			this.sourceEditReview.layout(editorViewState.font.renderFont(), measureTextRange, measureText, prepareBehaviorLensLayout(this.input.view));
 			return this.sourceEditReview.handlePointer(snapshot, justPressed, now);
 		}
-		const command = updateWorkbenchActionBarPointer(this.input.view.presentation.actionBar, snapshot);
-		if (command !== null) {
-			if (justPressed && this.commands.isEnabled(command)) this.commands.execute(command);
-			return true;
-		}
+		if (this.actionBar.handlePointer(snapshot)) return true;
 		if (justPressed) this.focus();
 		const view = this.input.view;
 		prepareBehaviorLensLayout(view);

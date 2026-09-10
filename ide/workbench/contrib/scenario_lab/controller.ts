@@ -32,10 +32,6 @@ import {
 	refreshScenarioLabProjection,
 	selectedScenarioTestNode,
 } from './projection';
-import {
-	handleScenarioLabPointerInput,
-	ScenarioLabPointerResult,
-} from './pointer';
 import type { ScenarioRunService } from './run_service';
 import type {
 	ScenarioMediaSessionEvent,
@@ -101,34 +97,6 @@ export class ScenarioLabController {
 		prepareScenarioLabLayout(view);
 		const result = executeScenarioLabNavigation(view, command);
 		return this.applyNavigationResult(view, result);
-	}
-
-	public handlePointer(
-		view: ScenarioLabViewState,
-		snapshot: PointerSnapshot,
-		justPressed: boolean,
-		currentTimeMs: number,
-	): boolean {
-		prepareScenarioLabLayout(view);
-		const result = handleScenarioLabPointerInput(
-			view,
-			snapshot,
-			justPressed,
-			currentTimeMs,
-			this.editor.commands,
-		);
-		switch (result) {
-			case ScenarioLabPointerResult.Outside:
-				return false;
-			case ScenarioLabPointerResult.Handled:
-				return true;
-			case ScenarioLabPointerResult.Activate:
-				this.applyNavigationResult(
-					view,
-					executeScenarioLabNavigation(view, 'activate'),
-				);
-				return true;
-		}
 	}
 
 	public executeCommand(command: EditorScenarioLabCommandId): void {

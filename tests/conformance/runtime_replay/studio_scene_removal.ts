@@ -18,7 +18,7 @@ async function saveAndResume(test: StudioFixture, model: EditorTextModel, expect
 
 /** Real Remove hit target, source-command admission, focus, history and live capture retention. */
 export async function testSceneMemberRemoval(test: StudioFixture): Promise<void> {
-	const { harness, ide, frame, press, click, cycles, title, guest, runMenuCommand } = test;
+	const { harness, ide, frame, press, click, cycles, title, guest, runMenuCommand, movePointer, setPointerButton } = test;
 	harness.openLuaSource('scenes/root.lua');
 	const model = harness.getActiveEditorDocument().model;
 	const original = model.buffer.getText();
@@ -66,6 +66,14 @@ export async function testSceneMemberRemoval(test: StudioFixture): Promise<void>
 	await click(scene.properties[0].bounds);
 	await press('Digit1');
 	await press('Digit8');
+	movePointer(remove.bounds); await frame(); setPointerButton('pointer_primary', true); await frame();
+	check(model.buffer.getText() === authored && x.field.focusTarget.hasFocus && x.pending,
+		'A01: arming Remove does not accept or blur the focused draft');
+	const outline = scene.outline.layout;
+	movePointer({ left: outline.contentLeft, right: outline.contentLeft + 2, top: outline.contentTop, bottom: outline.contentTop + 2 });
+	setPointerButton('pointer_primary', false); await frame();
+	check(model.buffer.getText() === authored && x.field.focusTarget.hasFocus && x.pending,
+		'A01: cancelling a toolbar press retains the field and its unsubmitted value');
 	await click(remove.bounds, 8);
 	check(model.buffer.getText() === removed && scene.outline.roots[0].children.length === 3 && scene.outline.selectionIndex === -1,
 		'remove: one held pointer press removes the grouped member, keeps exterior comments and clears selection');
@@ -73,8 +81,8 @@ export async function testSceneMemberRemoval(test: StudioFixture): Promise<void>
 		'remove: document pane owns history after deletion, not a detached property draft');
 	await press('Tab');
 	await press('Digit7');
-	check(x.field.focusTarget.parent!.hasFocus && model.buffer.getText() === removed,
-		'remove: empty inspector has no focus or keyboard edit route');
+	check(scene.actionBar.hasFocus && !x.field.focusTarget.hasFocus && model.buffer.getText() === removed,
+		'remove: empty inspector is skipped; the toolbar remains keyboard accessible without an edit route');
 	check(cycles() === before && title() === actor && ide.sources.currentBlua32Media === media,
 		'remove: source deletion never mutates the paused machine or disposes the live actor');
 

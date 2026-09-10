@@ -127,5 +127,7 @@ export async function presentBehaviorTreeGraph(test: StudioFixture): Promise<voi
 	await test.press('ArrowRight');
 	await test.press('ArrowDown');
 	await test.press('ArrowUp');
+	await test.press('Tab');
+	await test.press('Home');
 	await test.frame();
 }

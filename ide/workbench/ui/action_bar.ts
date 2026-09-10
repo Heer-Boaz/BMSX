@@ -16,6 +16,9 @@ export type WorkbenchActionBarItem = {
 export type WorkbenchActionBarState = {
 	readonly items: readonly WorkbenchActionBarItem[];
 	hoveredCommand: EditorCommandId | null;
+	pressedCommand: EditorCommandId | null;
+	focusedIndex: number;
+	hasFocus: boolean;
 };
 
 /** Materializes a named menu once into retained view-title action state. */
@@ -30,7 +33,7 @@ export function createWorkbenchActionBar(menuId: WorkbenchActionMenuId): Workben
 			bounds: create_rect_bounds(),
 		};
 	}
-	return { items, hoveredCommand: null };
+	return { items, hoveredCommand: null, pressedCommand: null, focusedIndex: -1, hasFocus: false };
 }
 
 export function layoutWorkbenchActionBar(

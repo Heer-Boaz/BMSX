@@ -12,19 +12,68 @@ import {
 	handleScenarioLabKeyboardInput,
 } from './keyboard';
 import { drawScenarioLab } from './render';
+import { inputFocus } from '../../../input/focus';
+import { pointerCapture } from '../../../input/pointer/capture';
+import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
+import { handleScenarioLabPointerInput, ScenarioLabPointerResult } from './pointer';
+import { updateScenarioLabStatus } from './navigation';
 
 export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<ScenarioLabInput> {
+	private readonly resultsFocus = inputFocus.createTarget(this.focusTarget);
+	private readonly unbindResultsKeyboard = this.resultsFocus.bindKeyboard(input => this.handleKeyboard(input));
+	private readonly unbindTestsFocus = this.focusTarget.onDidFocus(() => {
+		this.input.view.focus = 'tests';
+		updateScenarioLabStatus(this.input.view);
+	});
+	private readonly unbindResultsFocus = this.resultsFocus.onDidFocus(() => {
+		this.input.view.focus = 'results';
+		updateScenarioLabStatus(this.input.view);
+	});
+	private readonly actionBar: WorkbenchActionBarControl;
+
 	public constructor(
 		resourcePanel: ResourcePanelController,
 		private readonly controller: ScenarioLabController,
 		private readonly commands: IdeCommandController,
 	) {
 		super(resourcePanel);
+		this.actionBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, commands, this.focusTarget);
+		this.focusTarget.next = this.resultsFocus;
+		this.resultsFocus.previous = this.focusTarget;
+		this.resultsFocus.next = this.actionBar.focusTarget;
+		this.actionBar.focusTarget.previous = this.resultsFocus;
+		this.actionBar.focusTarget.next = this.focusTarget;
+		this.focusTarget.previous = this.actionBar.focusTarget;
+	}
+
+	protected override activate(): void {
+		super.activate();
+		this.controller.updateView(this.input.view);
+		this.actionBar.setInput(this.input.view.actionBar, this.focusTarget);
+	}
+
+	public override focus(): void {
+		if (this.input.view.focus === 'results') this.resultsFocus.focus();
+		else super.focus();
+	}
+
+	public override clearInput(): void {
+		this.actionBar.clearInput();
+		super.clearInput();
+	}
+
+	public override dispose(): void {
+		this.actionBar.dispose();
+		this.unbindResultsKeyboard();
+		this.unbindTestsFocus();
+		this.unbindResultsFocus();
+		super.dispose();
 	}
 
 	public override update(): void {
 		const view = this.input.view;
 		this.controller.updateView(view);
+		this.actionBar.update();
 	}
 
 	public draw(): void {
@@ -48,9 +97,16 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 		justPressed: boolean,
 		now: number,
 	): boolean {
-		if (justPressed) this.focus();
 		const view = this.input.view;
-		return this.controller.handlePointer(view, snapshot, justPressed, now);
+		if (this.actionBar.handlePointer(snapshot)) {
+			if (justPressed) { view.lastPointerClickTimeMs = 0; view.lastPointerClickRowId = null; }
+			return true;
+		}
+		const result = handleScenarioLabPointerInput(view, snapshot, justPressed, now);
+		if (result === ScenarioLabPointerResult.Outside) return false;
+		if (justPressed) this.focus();
+		if (result === ScenarioLabPointerResult.Activate) this.controller.executeNavigation(view, 'activate');
+		return true;
 	}
 
 	public handleWheel(

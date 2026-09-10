@@ -14,6 +14,8 @@ export interface InputEdit {
 
 /** A retained canvas control, not a document or an editor-input classification. */
 export class InputFocusTarget {
+	/** Explicit action context, not inheritance through the focus-return parent. */
+	public commandContext: InputFocusTarget = this;
 	public edit: InputEdit | undefined;
 	public next: InputFocusTarget | null = null;
 	public previous: InputFocusTarget | null = null;
@@ -103,7 +105,7 @@ export class InputFocusService {
 	}
 
 	public getCommand(command: EditorCommandId): FocusCommand | undefined {
-		return this.targetValue?.getCommand(command);
+		return this.targetValue?.commandContext.getCommand(command);
 	}
 
 	public executeCommand(command: EditorCommandId): void {

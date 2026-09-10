@@ -51,7 +51,7 @@ export async function revealLensOccurrence(test: StudioFixture, view: BehaviorLe
 		while (!graph.viewport.model.nodesBySource.has(owner)) owner = view.parentRowKeyByRowKey.get(owner)!;
 		await test.press('Home');
 		const ownerIndex = graph.viewport.model.nodes.indexOf(graph.viewport.model.nodesBySource.get(owner)!);
-		for (let step = 0; step < ownerIndex; step += 1) await test.press('Tab');
+		for (let step = 0; step < ownerIndex; step += 1) await test.press('ArrowDown');
 		check(view.selection!.rowKey === owner, 'FSM navigation: traversal reaches the owning state');
 		if (owner === key) return;
 		await test.click(graph.actionBar.items[1].bounds);

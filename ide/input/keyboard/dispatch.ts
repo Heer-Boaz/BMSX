@@ -4,6 +4,7 @@ import { handleEditorCommandBindings, handleEscapeBinding } from './global_bindi
 import type { PlayerInput } from '../../../hosts/common/input/player';
 import { handleWorkbenchTabInput } from '../../workbench/input/keyboard/tab_input';
 import { inputFocus } from '../focus';
+import { pointerCapture } from '../pointer/capture';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from './key_input';
 
 export function handleEditorInput(
@@ -11,6 +12,11 @@ export function handleEditorInput(
 	editor: CartEditor,
 	sources: RuntimeSourceState,
 ): void {
+	if (pointerCapture.active && isKeyJustPressed('Escape', playerInput)) {
+		consumeIdeKey('Escape', playerInput);
+		pointerCapture.cancel();
+		return;
+	}
 	if (!editor.quickInput.visible && handleEscapeBinding(playerInput)) {
 		return;
 	}

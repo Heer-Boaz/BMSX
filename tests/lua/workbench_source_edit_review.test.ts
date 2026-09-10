@@ -4,6 +4,7 @@ import test, { type TestContext } from 'node:test';
 import { HostOverlayQuadStream } from '../../machine/ts/render/host_overlay/quad_stream';
 import { Font } from '../../machine/ts/render/shared/bmsx_font';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
+import { PointerCaptureService } from '../../ide/input/pointer/capture';
 import { InputFocusService } from '../../ide/input/focus';
 import { WorkbenchSourceEditReview } from '../../ide/workbench/ui/source_edit_review/control';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
@@ -14,7 +15,7 @@ function fixture(t: TestContext, count = 36) {
 	const model = new EditorTextModel({ domain: 0, path: 'review.lua', source: { type: 'lua', resid: 'review' } }, 'lua', "return 'before'");
 	const focus = new InputFocusService();
 	const parent = focus.createTarget();
-	const review = new WorkbenchSourceEditReview(focus, parent);
+	const review = new WorkbenchSourceEditReview(focus, new PointerCaptureService(), parent);
 	const font = new Font({ variant: 'tiny' });
 	let measurements = 0;
 	const measure = (text: string, start: number, end: number) => { measurements += 1; return font.measure(text.slice(start, end)); };

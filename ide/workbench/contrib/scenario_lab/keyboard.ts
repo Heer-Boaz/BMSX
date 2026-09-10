@@ -28,7 +28,6 @@ const scenarioLabKeyboardRepeatNavigationBindings: readonly ScenarioLabKeyboardN
 ];
 
 const scenarioLabKeyboardPressNavigationBindings: readonly ScenarioLabKeyboardNavigationBinding[] = [
-	{ code: 'Tab', command: 'focus-next' },
 	{ code: 'Enter', command: 'activate' },
 	{ code: 'NumpadEnter', command: 'activate' },
 ];

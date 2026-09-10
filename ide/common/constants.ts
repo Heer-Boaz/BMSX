@@ -439,6 +439,8 @@ function buildHeaderButtonBase(theme: ThemeDefinition) {
 		disabledText: theme.text.dim,
 		activeBackground: theme.status.warning,
 		activeText: theme.text.topBar,
+		pressedBackground: theme.text.selection,
+		pressedText: theme.text.selectionText,
 	};
 }
 
@@ -543,6 +545,8 @@ export let COLOR_HEADER_BUTTON_TEXT: number;
 export let COLOR_HEADER_BUTTON_TEXT_DISABLED: number;
 export let COLOR_HEADER_BUTTON_ACTIVE_BACKGROUND: number;
 export let COLOR_HEADER_BUTTON_ACTIVE_TEXT: number;
+export let COLOR_HEADER_BUTTON_PRESSED_BACKGROUND: number;
+export let COLOR_HEADER_BUTTON_PRESSED_TEXT: number;
 export let ACTION_DIALOG_BACKGROUND_COLOR: number;
 export let ACTION_DIALOG_BORDER_COLOR: number;
 export let ACTION_DIALOG_TEXT_COLOR: number;
@@ -684,6 +688,8 @@ function applyThemeDefinition(theme: ThemeDefinition): void {
 	COLOR_HEADER_BUTTON_TEXT_DISABLED = headerButtons.disabledText;
 	COLOR_HEADER_BUTTON_ACTIVE_BACKGROUND = headerButtons.activeBackground;
 	COLOR_HEADER_BUTTON_ACTIVE_TEXT = headerButtons.activeText;
+	COLOR_HEADER_BUTTON_PRESSED_BACKGROUND = headerButtons.pressedBackground;
+	COLOR_HEADER_BUTTON_PRESSED_TEXT = headerButtons.pressedText;
 	ACTION_DIALOG_BACKGROUND_COLOR = action.dialogBackground;
 	ACTION_DIALOG_BORDER_COLOR = action.dialogBorder;
 	ACTION_DIALOG_TEXT_COLOR = action.dialogText;

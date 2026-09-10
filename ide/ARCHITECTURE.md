@@ -466,7 +466,8 @@ geometric selection. Details enumerates owned source fields without descending
 into child states. Accepting a source choice selects/reveals the corresponding
 edge immediately, or clears geometric selection for a source-only field; it
 does not wait for an edit or relayout to remove the previous highlight.
-Graph Tab/Shift+Tab traverses nodes and edges; arrows pan.
+Graph Up/Down traverses nodes and edges; Shift+Up/Down and Left/Right pan.
+Tab/Shift+Tab moves between the graph control and its title toolbar.
 Gamepad up/down traverses, left/right pans, A opens Source and X opens Details.
 All these routes are focus-local, never gameplay shortcuts. FSM collapse/graph
 authoring and cross-file transition inference are not part of this slice.
@@ -1135,10 +1136,29 @@ normal blur lifecycle while the old input is still attached. Pointer targets
 are chosen by the concrete view before focus changes, so clicking within a
 field does not first blur it through its parent pane.
 
-The containing view programs next/previous targets for its editable controls.
+The containing view programs next/previous targets for its content controls and toolbar.
 Unmodified Tab/Shift+Tab traverses only that declared order. Controls without
 an order, including code text, retain their ordinary Tab semantics. These links
 are focus navigation, not document-command inheritance.
+
+`InputFocusTarget.commandContext` explicitly identifies the action owner (the
+control itself by default). A toolbar carries its content control's context;
+command enablement, palette-origin queries, keybindings, pending-value admission
+and execution resolve that same owner. The focus-return `parent` still provides
+no command fallback, including for a field with empty Undo history.
+
+`WorkbenchActionBarControl` attaches to retained input-owned items/geometry.
+Primary down arms an enabled action, using the shared pointer capture without
+blurring a field; only release on the original button invokes the command.
+Focus/capture loss, Escape, input replacement or disablement cancels the press.
+Its single Tab stop uses Left/Right and Home/End to visit enabled actions;
+unmodified Enter/NumpadEnter/Space pairs down with release without repeats.
+The render owner distinguishes hover, pressed and disabled states and draws a
+focus underline in the button padding, independent of theme color equality.
+Scene, Lens, Scenario Lab and Source Edit Review use this one control, not local
+press-time dispatch. Scenario tests/results have separate physical focus targets;
+their selection state no longer doubles as a feature-local Tab router.
+See [A01 ownership and production references](../docs/workbench_action_controls_design.md).
 
 Production references for these specific boundaries:
 

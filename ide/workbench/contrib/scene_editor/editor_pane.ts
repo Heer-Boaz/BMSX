@@ -14,7 +14,9 @@ import { getTextFileRuntimeSourceStatus } from '../../services/working_copy/runt
 import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import { revealWorkbenchListSelection, scrollWorkbenchList, workbenchListRowIndexAtPosition } from '../../ui/list_view';
 import { navigateWorkbenchTree, setWorkbenchTreeCollapsed, workbenchTreeTwistieContainsPosition, WorkbenchTreeNavigationResult } from '../../ui/tree_view';
-import { updateWorkbenchActionBarPointer } from '../../input/pointer/action_bar';
+import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
+import { inputFocus } from '../../../input/focus';
+import { pointerCapture } from '../../../input/pointer/capture';
 import type { ResourcePanelController } from '../resources/panel/controller';
 import type { SceneEditorController } from './controller';
 import { POSITION_AXES, type SceneEditorInput } from './editor_input';
@@ -26,6 +28,7 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 	public readonly controls: readonly IntegerInput[];
 	private status = '';
 	private boundVersion = 0;
+	private readonly actionBar: WorkbenchActionBarControl;
 
 	public constructor(resourcePanel: ResourcePanelController,
 		private readonly controller: SceneEditorController,
@@ -34,6 +37,7 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 		clipboard: Clipboard,
 	) {
 		super(resourcePanel);
+		this.actionBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, commands, this.focusTarget);
 		this.controls = POSITION_AXES.map((_axis, index) => new IntegerInput(this.focusTarget, clipboard, value => {
 			const property = this.input.properties[index];
 			this.input.workingCopy.pushEditOperations(createLuaTableFieldIntegerEdits(this.input.workingCopy.buffer, property.field!, value)!);
@@ -50,6 +54,7 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 
 	protected override activate(): void {
 		super.activate();
+		this.actionBar.setInput(this.input.actionBar, this.focusTarget);
 		this.controller.refresh(this.input);
 		this.bindProperties();
 		layoutSceneEditor(this.input, true);
@@ -59,6 +64,7 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 		this.controller.refresh(this.input);
 		const changed = this.boundVersion !== this.input.version;
 		if (changed) this.bindProperties();
+		this.actionBar.update();
 		layoutSceneEditor(this.input, changed);
 		this.status = SOURCE_STATUS[getTextFileRuntimeSourceStatus(this.sources, this.input.workingCopy)];
 	}
@@ -80,10 +86,10 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 				previous = control.field.focusTarget;
 			}
 		}
-		if (previous !== this.focusTarget) {
-			previous.next = this.focusTarget;
-			this.focusTarget.previous = previous;
-		}
+		previous.next = this.actionBar.focusTarget;
+		this.actionBar.focusTarget.previous = previous;
+		this.actionBar.focusTarget.next = this.focusTarget;
+		this.focusTarget.previous = this.actionBar.focusTarget;
 		this.boundVersion = this.input.version;
 	}
 
@@ -113,11 +119,7 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 	}
 
 	protected override handleViewPointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
-		const command = updateWorkbenchActionBarPointer(this.input.actionBar, snapshot);
-		if (command !== null) {
-			if (justPressed && this.commands.isEnabled(command)) this.commands.execute(command);
-			return true;
-		}
+		if (this.actionBar.handlePointer(snapshot)) return true;
 		for (let index = 0; index < this.controls.length; index += 1) {
 			const control = this.controls[index];
 			const bounds = this.input.properties[index].bounds;
@@ -145,8 +147,14 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 	}
 
 	public override dispose(): void {
+		this.actionBar.dispose();
 		for (const control of this.controls) control.dispose();
 		super.dispose();
+	}
+
+	public override clearInput(): void {
+		this.actionBar.clearInput();
+		super.clearInput();
 	}
 }
 

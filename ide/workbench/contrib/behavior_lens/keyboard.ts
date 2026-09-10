@@ -1,5 +1,5 @@
 import type { PlayerInput } from '../../../../hosts/common/input/player';
-import { consumeIdeKey, isKeyJustPressed, shouldRepeatKeyFromPlayer, isShiftDown, isCtrlDown, isMetaDown, isAltDown } from '../../../input/keyboard/key_input';
+import { consumeIdeKey, isKeyJustPressed, shouldRepeatKeyFromPlayer, isShiftDown } from '../../../input/keyboard/key_input';
 import type { BehaviorLensController } from './controller';
 import type { BehaviorLensViewState } from './view_model';
 
@@ -8,20 +8,14 @@ export function handleBehaviorLensKeyboardInput(
 	playerInput: PlayerInput,
 	controller: BehaviorLensController,
 ): boolean {
-	if ((view.presentation.kind === 'state-graph' || view.presentation.kind === 'properties') && isKeyJustPressed('Tab', playerInput)
-		&& !isCtrlDown(playerInput) && !isMetaDown(playerInput) && !isAltDown(playerInput)) {
-		consumeIdeKey('Tab', playerInput);
-		controller.executeNavigation(view, isShiftDown(playerInput) ? 'previous' : 'next');
-		return true;
-	}
 	if (shouldRepeatKeyFromPlayer('ArrowUp', playerInput)) {
 		consumeIdeKey('ArrowUp', playerInput);
-		controller.executeNavigation(view, 'up');
+		controller.executeNavigation(view, view.presentation.kind === 'state-graph' && !isShiftDown(playerInput) ? 'previous' : 'up');
 		return true;
 	}
 	if (shouldRepeatKeyFromPlayer('ArrowDown', playerInput)) {
 		consumeIdeKey('ArrowDown', playerInput);
-		controller.executeNavigation(view, 'down');
+		controller.executeNavigation(view, view.presentation.kind === 'state-graph' && !isShiftDown(playerInput) ? 'next' : 'down');
 		return true;
 	}
 	if (shouldRepeatKeyFromPlayer('ArrowLeft', playerInput)) {

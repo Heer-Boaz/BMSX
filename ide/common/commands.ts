@@ -72,3 +72,7 @@ export type EditorCommandId =
 export type EditorCommandEnablement = {
 	isEnabled(command: EditorCommandId): boolean;
 };
+
+export interface EditorCommandRunner extends EditorCommandEnablement {
+	execute(command: EditorCommandId): void;
+}

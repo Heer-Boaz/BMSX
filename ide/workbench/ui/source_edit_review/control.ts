@@ -6,9 +6,10 @@ import type { EditorCommandId } from '../../../common/commands';
 import type { PointerSnapshot } from '../../../common/models';
 import { truncateMeasuredText, type TextRangeMeasure } from '../../../common/text';
 import type { InputFocusService, InputFocusTarget } from '../../../input/focus';
+import type { PointerCaptureService } from '../../../input/pointer/capture';
 import { consumeIdeKey, isKeyJustPressed, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
-import { updateWorkbenchActionBarPointer } from '../../input/pointer/action_bar';
 import { createWorkbenchActionBar, layoutWorkbenchActionBar } from '../action_bar';
+import { WorkbenchActionBarControl } from '../action_bar_control';
 import { scrollWorkbenchList } from '../list_view';
 import { createWorkbenchPropertyTree, layoutWorkbenchPropertyTree } from '../property_tree';
 import { WorkbenchPropertyTreePointer, WorkbenchPropertyPointerResult } from '../property_tree_pointer';
@@ -33,11 +34,17 @@ export class WorkbenchSourceEditReview {
 	private input: SourceEditReview | undefined;
 	private readonly pointer = new WorkbenchPropertyTreePointer();
 	private readonly unbindKeyboard: () => void;
+	private readonly actionControl: WorkbenchActionBarControl;
 	private unbindSource: (() => void) | undefined;
 	private layoutDirty = true;
 
-	public constructor(private readonly focus: InputFocusService, parent: InputFocusTarget) {
+	public constructor(focus: InputFocusService, capture: PointerCaptureService, parent: InputFocusTarget) {
 		this.focusTarget = focus.createTarget(parent);
+		this.actionControl = new WorkbenchActionBarControl(focus, capture, this, this.focusTarget);
+		this.focusTarget.next = this.actionControl.focusTarget;
+		this.focusTarget.previous = this.actionControl.focusTarget;
+		this.actionControl.focusTarget.next = this.focusTarget;
+		this.actionControl.focusTarget.previous = this.focusTarget;
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
 		this.focusTarget.registerCommand('sourceEditReview.apply', { isEnabled: () => this.isEnabled('sourceEditReview.apply'), run: () => this.apply() });
 		this.focusTarget.registerCommand('sourceEditReview.discard', { isEnabled: () => this.visible, run: () => this.clear() });
@@ -49,6 +56,7 @@ export class WorkbenchSourceEditReview {
 	public show(input: SourceEditReview): void {
 		this.clear();
 		this.input = input;
+		this.actionControl.setInput(this.actionBar, this.focusTarget);
 		for (let index = 0; index < input.items.length; index += 1) {
 			appendWorkbenchTreeNode(this.tree, null, { ...input.items[index], index, kind: 'property', warning: false, displayLabel: '', displayValue: '' });
 		}
@@ -61,6 +69,7 @@ export class WorkbenchSourceEditReview {
 
 	/** Detach before source edits/navigation; an unrelated control keeps its focus. */
 	public clear(): void {
+		this.actionControl.clearInput();
 		this.input = undefined;
 		this.unbindSource?.();
 		this.unbindSource = undefined;
@@ -69,14 +78,23 @@ export class WorkbenchSourceEditReview {
 		this.tree.descriptionLines.length = 0;
 		this.tree.descriptionElement = undefined;
 		this.pointer.cancel();
-		this.actionBar.hoveredCommand = null;
 		this.focusTarget.release();
 	}
 
-	public dispose(): void { this.clear(); this.unbindKeyboard(); }
+	public dispose(): void { this.clear(); this.actionControl.dispose(); this.unbindKeyboard(); }
 
 	public update(): void {
 		if (this.input !== undefined && this.input.model.readOnly) this.clear();
+		if (this.visible) this.actionControl.update();
+	}
+
+	public execute(command: EditorCommandId): void {
+		switch (command) {
+			case 'sourceEditReview.apply': this.apply(); return;
+			case 'sourceEditReview.discard': this.clear(); return;
+			case 'sourceEditReview.source': this.openSource(); return;
+		}
+		throw new Error(`Not a source review action: ${command}`);
 	}
 
 	public isEnabled(command: EditorCommandId): boolean {
@@ -118,13 +136,9 @@ export class WorkbenchSourceEditReview {
 	}
 
 	public handlePointer(snapshot: PointerSnapshot, justPressed: boolean, now: number): boolean {
+		if (this.actionControl.handlePointer(snapshot)) return true;
 		if (!snapshot.valid || !snapshot.insideViewport || !point_in_rect(snapshot.viewportX, snapshot.viewportY, this.bounds)) return false;
 		if (justPressed) this.focusTarget.focus();
-		const command = updateWorkbenchActionBarPointer(this.actionBar, snapshot);
-		if (command !== null) {
-			if (justPressed) this.focus.executeCommand(command);
-			return true;
-		}
 		if (this.pointer.handle(this.tree, snapshot, justPressed, now) === WorkbenchPropertyPointerResult.Activate) this.openSource();
 		return true;
 	}

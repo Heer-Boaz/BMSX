@@ -1,7 +1,5 @@
 import * as constants from '../../../common/constants';
 import type { PointerSnapshot } from '../../../common/models';
-import type { IdeCommandController } from '../../../commands/controller';
-import { updateWorkbenchActionBarPointer } from '../../input/pointer/action_bar';
 import { workbenchListRowIndexAtPosition } from '../../ui/list_view';
 import {
 	selectScenarioLabResultRow,
@@ -48,7 +46,6 @@ export function handleScenarioLabPointerInput(
 	snapshot: PointerSnapshot,
 	justPressed: boolean,
 	currentTimeMs: number,
-	commands: IdeCommandController,
 ): ScenarioLabPointerResult {
 	const layout = state.layout;
 	const inside = snapshot.valid
@@ -60,11 +57,9 @@ export function handleScenarioLabPointerInput(
 	if (!inside) {
 		state.testPane.hoverIndex = -1;
 		state.resultPane.hoverIndex = -1;
-		state.actionBar.hoveredCommand = null;
 		return ScenarioLabPointerResult.Outside;
 	}
 
-	const action = updateWorkbenchActionBarPointer(state.actionBar, snapshot);
 	const testPane = state.testPane;
 	const resultPane = state.resultPane;
 	testPane.hoverIndex = workbenchListRowIndexAtPosition(
@@ -78,14 +73,6 @@ export function handleScenarioLabPointerInput(
 		snapshot.viewportY,
 	);
 	if (!justPressed) {
-		return ScenarioLabPointerResult.Handled;
-	}
-	if (action !== null) {
-		state.lastPointerClickTimeMs = 0;
-		state.lastPointerClickRowId = null;
-		if (commands.isEnabled(action)) {
-			commands.execute(action);
-		}
 		return ScenarioLabPointerResult.Handled;
 	}
 

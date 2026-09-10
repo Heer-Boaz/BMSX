@@ -1105,7 +1105,7 @@ machine en C++-core zijn ongewijzigd.
 - [React Flow nodes](https://github.com/xyflow/xyflow/blob/0a1f9575b25679f2880175de8d3eae21aedde921/packages/react/src/components/NodeWrapper/index.tsx)
   en [edges](https://github.com/xyflow/xyflow/blob/0a1f9575b25679f2880175de8d3eae21aedde921/packages/react/src/components/EdgeWrapper/index.tsx):
   nodes én verbindingen zijn via keyboard bereikbaar, met reveal. Hier als
-  roving canvasselectie via Tab/Shift+Tab; arrows pannen de read-only diagram.
+  roving canvasselectie via Up/Down; Shift+Up/Down en Left/Right pannen. Tab/Shift+Tab wisselt tussen canvas en toolbar (audit A01).
   Geen DOM per node en geen extra focus-/documentowner.
 - [ELK Node-compositie](https://github.com/kieler/elkjs/blob/ff5771d7165445c42c408bb8a090c8035272218c/src/js/main-node.js),
   [upstream workerendpoint](https://github.com/kieler/elkjs/blob/ff5771d7165445c42c408bb8a090c8035272218c/src/java/org/eclipse/elk/js/ElkJs.java)
@@ -1154,8 +1154,9 @@ bevatten geen ELK-algoritme.
   hergebruikt, niet per toetsaanslag opgebouwd. Alleen de gewone view-update
   publiceert het nieuwste resultaat en revealt een corresponderende selectie.
   Pending/failed/removed hebben zichtbare presentatie, geen stille outlinefallback.
-- Selectie en pan gebruiken bestaande controls. Tab/Shift+Tab doorlopen kaarten
-  en pijlen; pijltjestoetsen pannen, Enter/Source openen de geselecteerde bron.
+- Selectie en pan gebruiken bestaande controls. Up/Down doorlopen kaarten
+  en pijlen; Shift+Up/Down en Left/Right pannen, Enter/Source openen de geselecteerde bron.
+  Tab/Shift+Tab wisselt tussen canvas en toolbar (audit A01).
   Gamepad up/down doorloopt, left/right pant, A opent Source en X Details.
   Geen gameplaybindingen of FSM-collapse die een verborgen target omleidt.
 

@@ -16,13 +16,17 @@ export function renderWorkbenchActionBar(
 		const item = state.items[index];
 		const enabled = commands.isEnabled(item.command);
 		const hovered = state.hoveredCommand === item.command;
+		const pressed = state.pressedCommand === item.command;
+		const focused = state.hasFocus && state.focusedIndex === index;
 		const background = !enabled
 			? constants.COLOR_HEADER_BUTTON_DISABLED_BACKGROUND
+			: pressed ? constants.COLOR_HEADER_BUTTON_PRESSED_BACKGROUND
 			: (hovered
 				? constants.COLOR_HEADER_BUTTON_ACTIVE_BACKGROUND
 				: constants.COLOR_HEADER_BUTTON_BACKGROUND);
 		const textColor = !enabled
 			? constants.COLOR_HEADER_BUTTON_TEXT_DISABLED
+			: pressed ? constants.COLOR_HEADER_BUTTON_PRESSED_TEXT
 			: (hovered
 				? constants.COLOR_HEADER_BUTTON_ACTIVE_TEXT
 				: constants.COLOR_HEADER_BUTTON_TEXT);
@@ -52,5 +56,7 @@ export function renderWorkbenchActionBar(
 			textColor,
 			font,
 		);
+		if (focused) api.fill_rect(item.bounds.left + 2, item.bounds.bottom - 2,
+			item.bounds.right - 2, item.bounds.bottom - 1, 0, textColor);
 	}
 }

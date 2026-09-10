@@ -45,7 +45,7 @@ export async function testStudioFsmBookmarks(test: StudioFixture): Promise<void>
 		const geometry = graph.viewport.model;
 		const edge = geometry.edgesByOutcome.get(transition.outcomes[outcomeIndex])!;
 		await press('Home');
-		for (let index = 0; index < geometry.nodes.length + geometry.edges.indexOf(edge); index += 1) await press('Tab');
+		for (let index = 0; index < geometry.nodes.length + geometry.edges.indexOf(edge); index += 1) await press('ArrowDown');
 		const selection = selectedOutcome(view);
 		check(selection.outcome === transition.outcomes[outcomeIndex], 'FSM bookmark: physical traversal selects the actual proof');
 		const target = new StateMachineRetargetAnalysis(view.document, selection.transition, selection.outcome)

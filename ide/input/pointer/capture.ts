@@ -12,6 +12,8 @@ export class PointerCaptureService {
 	private target: PointerCaptureTarget | null = null;
 	private button = PointerButton.Primary;
 
+	public get active(): boolean { return this.target !== null; }
+
 	public capture(target: PointerCaptureTarget, button = PointerButton.Primary): void {
 		this.cancel();
 		this.target = target;

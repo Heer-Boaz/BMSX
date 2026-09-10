@@ -35,7 +35,7 @@ export async function testStudioStateGraph(test: StudioFixture): Promise<void> {
 		'FSM diagram: parallel source evidence is not merged');
 	// The diagram's traversal includes edges, unlike the BT's tree relationships.
 	await press('Home');
-	for (let index = 0; index < generation.nodes.length + generation.edges.indexOf(parallel[1]); index += 1) await press('Tab');
+	for (let index = 0; index < generation.nodes.length + generation.edges.indexOf(parallel[1]); index += 1) await press('ArrowDown');
 	check(view.selection?.kind === 'state-outcome' && parallel[1].link.reference.kind === 'state-outcome' && view.selection.outcome === parallel[1].link.reference.outcome,
 		'FSM diagram: Tab visits the second exact proof');
 	const focused = inputFocus.target;

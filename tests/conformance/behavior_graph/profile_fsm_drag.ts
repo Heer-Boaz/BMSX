@@ -7,6 +7,7 @@ import { editorViewState } from '../../../ide/editor/ui/view/state';
 import { measureText, measureTextRange } from '../../../ide/editor/common/text/layout';
 import { NodeGraphLayoutEngine } from '../../../ide/node/graph_layout';
 import { InputFocusService } from '../../../ide/input/focus';
+import { PointerCaptureService } from '../../../ide/input/pointer/capture';
 import { WorkbenchSourceEditReview } from '../../../ide/workbench/ui/source_edit_review/control';
 import { drawWorkbenchSourceEditReview } from '../../../ide/workbench/render/source_edit_review';
 import { buildBehaviorSourceDocument } from '../../../ide/workbench/contrib/behavior_lens/recognizer';
@@ -36,7 +37,7 @@ ${Array.from({ length: registrations }, (_, index) => `machines.register('fixtur
 		const graph = view.presentation; assert.ok(graph.kind === 'state-graph');
 		const input = new BehaviorLensInput(model, view, () => new NodeGraphLayoutEngine(new Worker(resolve('ide/node/graph_layout_worker.cjs'))));
 		const focus = new InputFocusService();
-		const review = new WorkbenchSourceEditReview(focus, focus.createTarget());
+		const review = new WorkbenchSourceEditReview(focus, new PointerCaptureService(), focus.createTarget());
 		try {
 			input.updatePresentation(font); await input.graphLayout.settled; input.updatePresentation(font);
 			const viewport = graph.viewport;

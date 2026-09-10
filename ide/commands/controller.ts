@@ -70,7 +70,7 @@ export class IdeCommandController {
 	}
 
 	public execute(command: EditorCommandId): void {
-		const edit = inputFocus.target?.edit;
+		const edit = inputFocus.target?.commandContext.edit;
 		if (SOURCE_COMMANDS.has(command) && edit !== undefined && !edit.commit()) return;
 		switch (command) {
 			case 'behaviorLens.moveChildEarlier':
@@ -210,6 +210,7 @@ export class IdeCommandController {
 	}
 
 	public isEnabled(command: EditorCommandId, focus: InputFocusTarget | null = inputFocus.target): boolean {
+		const context = focus?.commandContext;
 		switch (command) {
 			case 'behaviorLens.moveChildEarlier':
 				return this.editor.behaviorLens.canMoveSelectedChild(-1);
@@ -229,7 +230,7 @@ export class IdeCommandController {
 			case 'behaviorLens.removeChild':
 			case 'behaviorLens.duplicateChild':
 			case 'behaviorLens.setInitialState': {
-				const implementation = focus?.getCommand(command);
+				const implementation = context?.getCommand(command);
 				return implementation !== undefined && implementation.isEnabled();
 			}
 			case 'pause':
@@ -251,7 +252,7 @@ export class IdeCommandController {
 				const activeInput = getActiveTab();
 				return activeInput instanceof WorkingCopyEditorInput
 					&& !activeInput.workingCopy.readOnly
-					&& (activeInput.isDirty() || focus?.edit?.pending === true);
+					&& (activeInput.isDirty() || context?.edit?.pending === true);
 			}
 			case 'symbolSearch':
 			case 'symbolSearchGlobal':

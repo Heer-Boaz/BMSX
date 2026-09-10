@@ -49,7 +49,7 @@ export async function runStudioFsmDragLive(test: StudioFixture) {
 	const begin = async () => {
 		const edge = viewport.model.edges.find(edge => edge.link.reference.kind === 'state-outcome')!;
 		await press('Home');
-		for (let index = 0; index < viewport.model.nodes.length + viewport.model.edges.indexOf(edge); index += 1) await press('Tab');
+		for (let index = 0; index < viewport.model.nodes.length + viewport.model.edges.indexOf(edge); index += 1) await press('ArrowDown');
 		check(viewport.selection === edge && lens.view.selection?.kind === 'state-outcome', 'FSM drag: exact edge selected by keyboard');
 		const points = edge.points;
 		movePointer(point(points[points.length - 2] + viewport.bounds.left - viewport.scrollX,
@@ -74,6 +74,11 @@ export async function runStudioFsmDragLive(test: StudioFixture) {
 	await begin(); await release();
 	check(review.visible && review.tree.rows.length === 2, 'FSM drag: shared callback requires review of both registrations');
 	unchanged(version, 'FSM drag: release opens review without applying it');
+	movePointer(review.actionBar.items[1].bounds); await frame(); setPointerButton('pointer_primary', true); await frame();
+	unchanged(version, 'A01: Apply does not write while its button is held');
+	movePointer(point(review.bounds.left + 10, review.bounds.bottom - 5)); await release();
+	check(review.visible, 'A01: release outside Apply leaves the review open');
+	unchanged(version, 'A01: cancelled Apply has no history element');
 	await click(review.actionBar.items[2].bounds, 5);
 	check(!review.visible, 'FSM drag: actual Discard button closes review');
 	unchanged(version, 'FSM drag: held Discard neither applies nor clicks through to graph');
@@ -115,7 +120,10 @@ export async function runStudioFsmDragLive(test: StudioFixture) {
 	await begin(); await release();
 	await press('ControlLeft', 'ShiftLeft', 'KeyP'); await press('Escape');
 	check(review.visible, 'FSM drag: palette dismissal returns to the pending review');
-	await click(review.actionBar.items[1].bounds, 6); await ready();
+	await press('Tab'); await press('Home'); await press('ArrowRight');
+	check(review.actionBar.hasFocus && review.actionBar.items[review.actionBar.focusedIndex].command === 'sourceEditReview.apply',
+		'A01: review toolbar is accessible through the shared focus route');
+	await press('Space'); await ready();
 	const changed = FSM_RETARGET_CART_SOURCE.replace("--[[chosen path]] 'active'", "--[[chosen path]] 'other'");
 	check(model.buffer.getText() === changed && model.version === version + 1 && !review.visible, 'FSM drag: held Apply commits one exact literal edit');
 	check(cycles() === position && ide.sources.currentBlua32Media === media, 'FSM drag: acceptance still does not install or run the guest');
@@ -165,7 +173,7 @@ export async function runStudioFsmDragLive(test: StudioFixture) {
 	// Keep the review visible in the final backend screenshot, without changing saved source.
 	const oldTarget = viewport.model.nodes.find(node => node.source.label === 'active')!;
 	const edge = viewport.model.edges.find(edge => edge.link.reference.kind === 'state-outcome')!;
-	await press('Home'); for (let index = 0; index < viewport.model.nodes.length + viewport.model.edges.indexOf(edge); index += 1) await press('Tab');
+	await press('Home'); for (let index = 0; index < viewport.model.nodes.length + viewport.model.edges.indexOf(edge); index += 1) await press('ArrowDown');
 	movePointer(point(edge.points[edge.points.length - 2] + viewport.bounds.left - viewport.scrollX, edge.points[edge.points.length - 1] + viewport.bounds.top - viewport.scrollY));
 	await frame(); setPointerButton('pointer_primary', true); await frame();
 	movePointer(point((oldTarget.bounds.left + oldTarget.bounds.right) / 2 + viewport.bounds.left - viewport.scrollX, oldTarget.bounds.top + oldTarget.headerHeight / 2 + viewport.bounds.top - viewport.scrollY));

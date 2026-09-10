@@ -18,7 +18,6 @@ export type ScenarioLabNavigationCommand =
 	| 'end'
 	| 'left'
 	| 'right'
-	| 'focus-next'
 	| 'activate';
 
 export type ScenarioLabNavigationResult =
@@ -312,11 +311,6 @@ export function executeScenarioLabNavigation(
 			return moveScenarioLabRight(state)
 				? NAVIGATION_CHANGED
 				: NAVIGATION_NONE;
-		case 'focus-next':
-			if (state.resultPane.rows.length === 0) return NAVIGATION_NONE;
-			state.focus = state.focus === 'tests' ? 'results' : 'tests';
-			updateScenarioLabStatus(state);
-			return NAVIGATION_CHANGED;
 		case 'activate':
 			return activateScenarioLabSelection(state);
 	}

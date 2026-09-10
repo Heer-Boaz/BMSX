@@ -1062,8 +1062,13 @@ are not reconstructed from list rows. Run, rerun and cancel
 are typed workbench commands. Their labels, keybindings and named view-title
 menu placement are separate declarations; the generic action bar invokes the
 same command ids as keyboard and controller input. A feature does not render
-bespoke command buttons or write shortcut spellings into status text. The
-weighted keybinding resolver chooses the applicable contextual command, so the
+bespoke command buttons or write shortcut spellings into status text. The shared
+action control owns cancelable press/release, keyboard traversal and
+focus presentation. Its explicit command context remains the content control,
+not the toolbar's physical focus or a parent-command fallback. Pointer actions
+keep field drafts until normal command admission; input/capture loss cancels
+the gesture. See the [action-control contract](workbench_action_controls_design.md).
+The weighted keybinding resolver chooses the applicable contextual command, so the
 Scenario Lab F5 binding and debugger F5 binding do not become ordered branches
 inside either feature. Starting a run captures the resolved request and source
 batch, then temporarily leaves the blocking workbench so the guest can execute;

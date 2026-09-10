@@ -4,7 +4,7 @@ import { check, type StudioFixture } from './studio_fixture';
 
 /** Shipped scenario execution through the actual Studio command and host-input routes. */
 export async function testStudioScenarioExecution(test: StudioFixture): Promise<void> {
-	const { ide, runtime, execution, tasks, press, until, cycles, runPaletteCommand, frame, harness, clipboard } = test;
+	const { ide, runtime, execution, tasks, press, until, cycles, runPaletteCommand, frame, harness, clipboard, movePointer, setPointerButton, setKey } = test;
 	check(execution.userPaused && ide.editor.isActive, 'scenario: testing can start from explicitly paused gameplay');
 	await runPaletteCommand('Scenario Lab: Open');
 	const tab = getActiveTab();
@@ -36,7 +36,11 @@ export async function testStudioScenarioExecution(test: StudioFixture): Promise<
 	check(model.buffer.getText() === source, 'scenario: source repair restores the exact original test');
 	await runPaletteCommand('Scenario Lab: Open');
 	execution.setPauseReason(HostPauseReason.Fullscreen, true);
-	await runPaletteCommand('Scenario Lab: Run Scenarios');
+	await press('Tab'); check(view.focus === 'results', 'A01: Scenario Tab focuses the result control');
+	await press('Tab'); check(view.actionBar.hasFocus, 'A01: Scenario Tab reaches the toolbar');
+	await press('Home'); setKey('Enter', true); await frame();
+	check(!view.runActive && execution.userPaused, 'A01: Run is not started on toolbar key down');
+	setKey('Enter', false); await frame();
 	await until(() => !execution.userPaused && tasks.ready, 'scenario: successful preparation starts the explicit Run');
 	check(view.runActive && execution.paused && !ide.editor.isActive,
 		'scenario: explicit Run starts execution from paused gameplay');
@@ -61,7 +65,13 @@ export async function testStudioScenarioExecution(test: StudioFixture): Promise<
 	const pausedAt = cycles();
 	await frame();
 	check(cycles() === pausedAt, 'scenario: workbench focus suspends the test without extra guest calls');
-	await runPaletteCommand('Scenario Lab: Cancel Run');
+	const cancel = view.actionBar.items.find(item => item.command === 'scenarioLab.cancel')!;
+	movePointer(cancel.bounds); await frame(); setPointerButton('pointer_primary', true); await frame();
+	check(view.runActive, 'A01: Cancel Run waits for a physical release');
+	movePointer({ left: view.layout.left, right: view.layout.left + 2, top: view.layout.bottom - 4, bottom: view.layout.bottom - 2 });
+	setPointerButton('pointer_primary', false); await frame();
+	check(view.runActive, 'A01: releasing outside Cancel keeps the scenario suspended for inspection');
+	await test.click(cancel.bounds);
 	await until(() => !view.runActive && tasks.ready, 'scenario: Cancel completes canonical media restoration');
 	check(rerun.state === 'cancelled' && result.state === 'cancelled', 'scenario: Cancel retains its actual terminal result');
 	check(ide.sources.currentBlua32Media === canonicalMedia && ide.sources.cartridgeSlots[0]!.rom.bytes === canonicalRom
