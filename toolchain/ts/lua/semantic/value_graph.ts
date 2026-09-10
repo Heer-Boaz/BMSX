@@ -42,9 +42,11 @@ export type FunctionSemanticValueSource = DeclarationSemanticValueSource | Owned
 export type DeclarationValueRelation = 'value' | 'identity' | 'projection';
 
 export type DeclarationValueEntry = {
-	declId: SymbolID;
-	source: SemanticValueSource;
-	relation: DeclarationValueRelation;
+	readonly declId: SymbolID;
+	readonly source: SemanticValueSource;
+	readonly relation: DeclarationValueRelation;
+	/** Body containing the write; undefined means module evaluation, not declaration scope. */
+	readonly flow: FunctionValueFlowEntry | undefined;
 };
 
 export type ModuleValueEntry = {
@@ -321,6 +323,7 @@ export function semanticValueSourcesEqual(
 export type WorkspaceValueFileFacts = {
 	declarationValues: readonly DeclarationValueEntry[];
 	moduleValues: readonly ModuleValueEntry[];
+	/** Module writes; function writes stay in their function flows. */
 	memberValues: readonly MemberValueEntry[];
 	functionValueFlows: readonly FunctionValueFlowEntry[];
 	callValues: readonly CallValueEntry[];

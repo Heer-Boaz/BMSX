@@ -4400,6 +4400,15 @@ the body, not the shared storage binding. The solver's modeled first-return
 lane is not a completeness proof for source authoring. See
 [function-source ownership and its remaining boundaries](lua_function_source_ownership.md).
 
+Declaration-value facts also retain the function body containing each write,
+independently of the destination declaration's lexical owner. Summaries index
+those facts by body once; module aliases consume only module-owned writes.
+Module member writes and function member writes likewise have separate owners.
+Inferred receiver-shape projection belongs to the summary/demand layer, not a
+duplicate binder projection. Hypothetical composition still is not execution or
+source-completeness evidence. See [write ownership and the open query-context
+boundary](lua_write_ownership.md).
+
 Semantic indexed access keeps object storage and key values distinct. Object
 queries may follow location aliases to find writes; index operands consume
 forward value alternatives, exactly as stored-key comparisons do. Reciprocal

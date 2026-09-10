@@ -95,7 +95,7 @@ export class SemanticDemandIndex {
 			}
 			for (let valueIndex = 0; valueIndex < file.declarationValues.length; valueIndex += 1) {
 				const entry = file.declarationValues[valueIndex];
-				if (summaries.ownerSummaryForDeclaration(entry.declId) !== undefined) {
+				if (entry.flow !== undefined) {
 					continue;
 				}
 				const alias: SummaryAlias = {
@@ -134,9 +134,6 @@ export class SemanticDemandIndex {
 			}
 			for (let memberIndex = 0; memberIndex < file.memberValues.length; memberIndex += 1) {
 				const member = file.memberValues[memberIndex];
-				if (summaries.ownerSummaryForDeclaration(member.declId) !== undefined) {
-					continue;
-				}
 				this.appendStaticWrite({
 					base: summaries.terms.compileSource(member.owner),
 					name: summaries.terms.nameId(member.name),

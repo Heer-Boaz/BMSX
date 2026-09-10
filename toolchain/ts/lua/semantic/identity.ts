@@ -24,23 +24,12 @@ export class WorkspaceValueIdentityIndex {
 	private readonly identitySourceKeys: string[] = [''];
 
 	constructor(input: WorkspaceValueFactsInput) {
-		const functionDeclarations = new Set<string>();
-		for (let fileIndex = 0; fileIndex < input.files.length; fileIndex += 1) {
-			const flows = input.files[fileIndex].functionValueFlows;
-			for (let flowIndex = 0; flowIndex < flows.length; flowIndex += 1) {
-				const declarations = flows[flowIndex].declarationIds;
-				for (let declarationIndex = 0; declarationIndex < declarations.length; declarationIndex += 1) {
-					functionDeclarations.add(declarations[declarationIndex]);
-				}
-			}
-		}
-
 		for (let fileIndex = 0; fileIndex < input.files.length; fileIndex += 1) {
 			const file = input.files[fileIndex];
 			for (let declarationIndex = 0; declarationIndex < file.declarationValues.length; declarationIndex += 1) {
 				const entry = file.declarationValues[declarationIndex];
 				if (entry.relation === 'identity'
-					&& !functionDeclarations.has(entry.declId)
+					&& entry.flow === undefined
 					&& entry.source.steps.length === 0) {
 					this.union(
 						{ kind: 'declaration', declId: entry.declId },

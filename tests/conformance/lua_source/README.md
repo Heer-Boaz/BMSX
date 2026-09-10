@@ -8,7 +8,8 @@ under `cartlib`, `machine/bios` and `carts` without editing those files.
 
 ```sh
 npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
-  tests/lua/semantic_function_sources.test.ts tests/lua/semantic_function_summary.test.ts
+  tests/lua/semantic_function_sources.test.ts tests/lua/semantic_function_summary.test.ts \
+  tests/lua/semantic_write_owners.test.ts
 npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
   tests/conformance/lua_source/profile_function_sources.ts
 ```
@@ -23,6 +24,12 @@ code: retained-parse binding, fresh identities/summaries, fresh workspace plus
 first member query, and retained lookups. Run it without other tests. It does not
 measure parsing, rendering, guest execution, Hot Resume or heap allocations.
 Evidence and remaining boundaries: `docs/lua_function_source_ownership.md`.
+
+`semantic_write_owners.test.ts` separately verifies that the body containing a
+write is not inferred from the destination's declaration scope. It tests
+summary partitioning, module writes, public member resolution and actual
+instantiation plus a compiled BLua oracle. It does not turn hypothetical
+composition into execution evidence; see `docs/lua_write_ownership.md`.
 
 ## Structural transfer
 

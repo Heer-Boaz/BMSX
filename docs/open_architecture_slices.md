@@ -492,6 +492,12 @@ multi-file-lifetime blijven open. Dezelfde proef legde een afzonderlijke
 compiler-prototype-idbotsing bloot; die vereist onderzoek van de compiler/
 Hot Resume-identiteit vóór een compilerwijziging, geen herkenningsuitzondering.
 
+De [tweede B04-producercorrectie](lua_write_ownership.md) legt write-ownership
+per function-body vast en verwijdert de declaratiescope als effect-owner.
+Nog open: hypothetische `compose`-projecties delen hun value-relation met
+instantiated effecten. De sterkere source-query vereist een expliciet
+contextcontract; geen certainty-check om de bestaande mogelijke-symbolen-API.
+
 | ID | Eigenaar / contract | Gate |
 | --- | --- | --- |
 | `STUDIO-BEHAVIOR-UX-B01` | Betekenisvolle BT/FSM-kaarten en leesbare, source-linked inspectie; technische bewijsdetails niet permanent op het canvas. | Eerst details-compositie meten op tiny-resolutie met ander paneel open. Geen verloren informatie of gesuggereerde volledigheid; inspectie/Source/Back blijven non-mutating. |

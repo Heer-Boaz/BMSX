@@ -3,6 +3,7 @@ import { WorkspaceValueIdentityIndex, type SemanticRootID } from './identity';
 import {
 	declarationValueSource,
 	type CallValueEntry,
+	type DeclarationValueEntry,
 	type FunctionValueFlowEntry,
 	type SemanticValueRoot,
 	type SemanticValueSource,
@@ -419,7 +420,6 @@ export class FunctionSummaryStore {
 	private readonly summaryIdByFlow: Map<FunctionValueFlowEntry, FunctionSummaryID> = new Map();
 	private readonly summaryIdsByFunctionTerm: Map<TermID, FunctionSummaryID[]> = new Map();
 	private readonly summaryByDeclaration: Map<SymbolID, FunctionSummaryID[]> = new Map();
-	private readonly ownerSummaryByDeclaration: Map<SymbolID, FunctionSummaryID> = new Map();
 	private readonly receiverProjectionByParameter: Map<TermID, TermID> = new Map();
 
 	constructor(
@@ -427,15 +427,25 @@ export class FunctionSummaryStore {
 		identities: WorkspaceValueIdentityIndex,
 	) {
 		const flows: FunctionValueFlowEntry[] = [];
-		const filesByFlow: FileSemanticData[] = [];
+		const valuesByFlow = new Map<FunctionValueFlowEntry, DeclarationValueEntry[]>();
 		for (let fileIndex = 0; fileIndex < files.length; fileIndex += 1) {
 			const file = files[fileIndex];
 			for (let flowIndex = 0; flowIndex < file.functionValueFlows.length; flowIndex += 1) {
 				const flow = file.functionValueFlows[flowIndex];
 				const id = (flows.length + 1) as FunctionSummaryID;
 				flows.push(flow);
-				filesByFlow.push(file);
+				valuesByFlow.set(flow, []);
 				this.summaryIdByFlow.set(flow, id);
+			}
+		}
+
+		for (let fileIndex = 0; fileIndex < files.length; fileIndex += 1) {
+			const values = files[fileIndex].declarationValues;
+			for (let valueIndex = 0; valueIndex < values.length; valueIndex += 1) {
+				const entry = values[valueIndex];
+				if (entry.flow !== undefined) {
+					valuesByFlow.get(entry.flow)!.push(entry);
+				}
 			}
 		}
 
@@ -458,7 +468,6 @@ export class FunctionSummaryStore {
 			for (let declarationIndex = 0; declarationIndex < flow.declarationIds.length; declarationIndex += 1) {
 				const declId = flow.declarationIds[declarationIndex];
 				const root = identities.rawRootId({ kind: 'declaration', declId });
-				this.ownerSummaryByDeclaration.set(declId, summary);
 				if (!parameterOwnerByRoot.has(root)) {
 					localOwnerByRoot.set(root, { summary, index: localIndex });
 					localIndex += 1;
@@ -482,7 +491,7 @@ export class FunctionSummaryStore {
 		for (let flowIndex = 0; flowIndex < flows.length; flowIndex += 1) {
 			const flow = flows[flowIndex];
 			const id = (flowIndex + 1) as FunctionSummaryID;
-			const summary = this.buildSummary(id, flow, filesByFlow[flowIndex]);
+			const summary = this.buildSummary(id, flow, valuesByFlow.get(flow)!);
 			this.summaries[id] = summary;
 			this.appendSummary(this.summaryIdsByFunctionTerm, summary.functionValue, id);
 			if (flow.declaration !== undefined) {
@@ -520,10 +529,6 @@ export class FunctionSummaryStore {
 
 	public declarationForSummary(summary: FunctionSummaryID): SymbolID | undefined {
 		return this.declarationsBySummary[summary];
-	}
-
-	public ownerSummaryForDeclaration(declId: SymbolID): FunctionSummaryID | undefined {
-		return this.ownerSummaryByDeclaration.get(declId);
 	}
 
 	public projectExternalTerm(term: TermID): TermID {
@@ -565,14 +570,11 @@ export class FunctionSummaryStore {
 	private buildSummary(
 		id: FunctionSummaryID,
 		flow: FunctionValueFlowEntry,
-		file: FileSemanticData,
+		declarationValues: readonly DeclarationValueEntry[],
 	): FunctionSummary {
 		const valuesByDeclaration = new Map<SymbolID, TermID[]>();
-		for (let valueIndex = 0; valueIndex < file.declarationValues.length; valueIndex += 1) {
-			const entry = file.declarationValues[valueIndex];
-			if (this.ownerSummaryByDeclaration.get(entry.declId) !== id) {
-				continue;
-			}
+		for (let valueIndex = 0; valueIndex < declarationValues.length; valueIndex += 1) {
+			const entry = declarationValues[valueIndex];
 			let values = valuesByDeclaration.get(entry.declId);
 			if (!values) {
 				values = [];

@@ -603,8 +603,10 @@ class SemanticBuilder {
 	private readonly methodSelfPathStack: (readonly string[] | undefined)[] = [];
 	private readonly methodSelfScopeStack: (Scope | undefined)[] = [];
 	private readonly methodSelfValueStack: (OwnedSemanticValueSource | undefined)[] = [];
-	private readonly declarationValues: Map<SymbolID, SemanticValueSource[]> = new Map();
-	private readonly projectionValueDeclarations: Set<SymbolID> = new Set();
+	private readonly declarationValues: DeclarationValueEntry[] = [];
+	// Builder-only indices: member declaration lookup and per-body value deduplication.
+	private readonly declarationValuesByDeclaration: Map<SymbolID, DeclarationValueEntry[]> = new Map();
+	private readonly declarationValuesByFlow = new Map<FunctionValueFlowEntry | undefined, Map<SymbolID, DeclarationValueEntry[]>>();
 	private readonly unknownValueDeclarations: Set<SymbolID> = new Set();
 	private readonly memberValues: Map<SymbolID, MemberValueEntry> = new Map();
 	private readonly functionValueFlows: FunctionValueFlowEntry[] = [];
@@ -654,16 +656,7 @@ class SemanticBuilder {
 			referencesByName: this.referencesByName,
 			annotations: this.annotations,
 			callSites: this.callSites,
-			declarationValues: Array.from(this.declarationValues.entries()).flatMap(
-				([declId, sources]) => {
-					const relation = this.declById.get(declId)?.kind === 'constant'
-						? 'identity' as const
-						: this.projectionValueDeclarations.has(declId)
-							? 'projection' as const
-							: 'value' as const;
-					return sources.map(source => ({ declId, source, relation }));
-				},
-			),
+			declarationValues: this.declarationValues,
 			moduleValues: this.moduleValue
 				? [{ module: toLuaModulePath(this.path), source: this.moduleValue }]
 				: [],
@@ -984,7 +977,7 @@ class SemanticBuilder {
 					}
 				}
 				if (tableSource && valueVariable) {
-					this.setDeclarationProjection(valueVariable, appendValueElement(tableSource));
+					this.setDeclarationValue(valueVariable, appendValueElement(tableSource), 'projection');
 				}
 				this.visitBlock(forGeneric.block);
 				this.leaveScope();
@@ -2024,18 +2017,10 @@ class SemanticBuilder {
 
 	private recordMemberValue(entry: MemberValueEntry): void {
 		const flow = this.functionValueFlowStack[this.functionValueFlowStack.length - 1];
-		if (!this.memberValues.has(entry.declId)) {
-			const receiver = flow?.parameters[0];
-			this.memberValues.set(
-				entry.declId,
-				flow?.receiverProjection
-					&& receiver
-					&& semanticValueSourcesEqual(entry.owner, receiver)
-					? { ...entry, owner: flow.receiverProjection }
-					: entry,
-			);
-		}
 		if (!flow) {
+			if (!this.memberValues.has(entry.declId)) {
+				this.memberValues.set(entry.declId, entry);
+			}
 			return;
 		}
 		for (let memberIndex = 0; memberIndex < flow.members.length; memberIndex += 1) {
@@ -2067,12 +2052,12 @@ class SemanticBuilder {
 		if (!binding) {
 			return undefined;
 		}
-		const sources = this.declarationValues.get(binding.id);
+		const sources = this.declarationValuesByDeclaration.get(binding.id);
 		if (!sources) {
 			return undefined;
 		}
 		for (let index = sources.length - 1; index >= 0; index -= 1) {
-			const declaration = this.propertiesByOwner.get(this.memberOwnerKey(sources[index], name));
+			const declaration = this.propertiesByOwner.get(this.memberOwnerKey(sources[index].source, name));
 			if (declaration) {
 				return declaration;
 			}
@@ -2239,6 +2224,7 @@ class SemanticBuilder {
 	private setDeclarationValue(
 		decl: InternalDecl,
 		source: SemanticValueSource | undefined,
+		relation: DeclarationValueEntry['relation'] = decl.kind === 'constant' ? 'identity' : 'value',
 	): void {
 		if (!source
 			|| (source.root.kind === 'declaration'
@@ -2246,22 +2232,32 @@ class SemanticBuilder {
 				&& source.steps.length === 0)) {
 			return;
 		}
-		let sources = this.declarationValues.get(decl.id);
+		const flow = this.functionValueFlowStack[this.functionValueFlowStack.length - 1];
+		let declarations = this.declarationValuesByFlow.get(flow);
+		if (!declarations) {
+			declarations = new Map();
+			this.declarationValuesByFlow.set(flow, declarations);
+		}
+		let sources = declarations.get(decl.id);
 		if (!sources) {
 			sources = [];
-			this.declarationValues.set(decl.id, sources);
+			declarations.set(decl.id, sources);
 		}
 		for (let index = 0; index < sources.length; index += 1) {
-			if (semanticValueSourcesEqual(sources[index], source)) {
+			const entry = sources[index];
+			if (entry.relation === relation && semanticValueSourcesEqual(entry.source, source)) {
 				return;
 			}
 		}
-		sources.push(source);
-	}
-
-	private setDeclarationProjection(decl: InternalDecl, source: SemanticValueSource): void {
-		this.setDeclarationValue(decl, source);
-		this.projectionValueDeclarations.add(decl.id);
+		const entry: DeclarationValueEntry = { declId: decl.id, source, relation, flow };
+		sources.push(entry);
+		let declarationSources = this.declarationValuesByDeclaration.get(decl.id);
+		if (!declarationSources) {
+			declarationSources = [];
+			this.declarationValuesByDeclaration.set(decl.id, declarationSources);
+		}
+		declarationSources.push(entry);
+		this.declarationValues.push(entry);
 	}
 
 	private recordValueFlow(

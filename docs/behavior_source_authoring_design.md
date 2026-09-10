@@ -1,7 +1,7 @@
 # Behavior-authoring: bronherkomst vóór ruimere graphbewerkingen
 
 Datum: 2026-09-10. Onderzocht op `592c86a94`.
-**Status: ontwerp; eerste producergrens geïmplementeerd, B04 nog open.** Dit verdiept B04
+**Status: ontwerp; function- en write-ownership gecorrigeerd, B04 nog open.** Dit verdiept B04
 en scherpt het bewerkingscontract van B03 aan uit de
 [gebruikersreview](behavior_authoring_ux_review.md). De tegenvoorbeelden hieronder
 zijn geen reden om de bronbehoudende edit-, Undo- of Hot Resume-owners weg te gooien.
@@ -11,6 +11,13 @@ opslagbinding en geschreven returns in de generieke binder/summaries. Zij voegt
 nog geen source-originquery of ruimere Lens-herkenning toe. De tijdens de
 CPU-proef gevonden prototype-idbotsing blijft een afzonderlijke compiler/
 Hot Resume-ownergrens; geen suffix-op-botsing of Lens-beperking als omweg.
+
+De [tweede producercorrectie](lua_write_ownership.md) bindt waarde-writes aan hun
+werkelijke function-body, niet aan de declaratiescope van hun bestemming.
+De doorproef toont bovendien dat `compose` hypothetische aliases in dezelfde
+value-relation kan publiceren. Vóór een sterkere source-query moet daarom ook
+de querycontext expliciet zijn; correcte write-feiten alleen zijn nog geen
+uitvoerings-/exclusiviteitsbewijs. De huidige Lens-recognizer is ongewijzigd.
 
 ## 1. Beslissing
 
