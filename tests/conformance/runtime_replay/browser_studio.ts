@@ -1,3 +1,4 @@
+import { runStudioFsmInitialLive } from './studio_fsm_initial_live';
 import { presentBehaviorTreeGraph } from './studio_behavior_graph';
 import { createWebGLBackend, createWebGPUBackend } from '../../../hosts/browser/backend';
 import { HeadlessGPUBackend } from '../../../machine/ts/render/headless/backend';
@@ -15,11 +16,11 @@ import { runStudioPointerNavigation, type NavigationCart } from './studio_pointe
 
 /** Independent renderer projects run the same Studio workflow. */
 export const studioBackends = {
-	software: async (canvas: HTMLCanvasElement, navigation: NavigationCart | null = null) => {
+	software: async (canvas: HTMLCanvasElement, navigation: NavigationCart | null = null, fsmInitial = false) => {
 		const backend = new HeadlessGPUBackend(canvas.width, canvas.height, PSX_MACHINE_SPEC.gxGpuVramBytes);
 		const test = await createStudioFixture(canvas, backend);
-		const result = navigation === null ? await runStudioWorkflows(test) : await runStudioPointerNavigation(test, navigation);
-		if (navigation === null) {
+		const result = fsmInitial ? await runStudioFsmInitialLive(test) : navigation === null ? await runStudioWorkflows(test) : await runStudioPointerNavigation(test, navigation);
+		if (navigation === null && !fsmInitial) {
 			await testCapturedSourceReboot(test);
 			await testSceneSourceAfterReboot(test);
 			await testStudioScenarioExecution(test);
@@ -28,7 +29,7 @@ export const studioBackends = {
 			await presentActionEffects(test);
 			await testStudioPointerCapture(test);
 		}
-		await presentBehaviorTreeGraph(test);
+		if (!fsmInitial) await presentBehaviorTreeGraph(test);
 		// Publish the real software-rendered final framebuffer for the screenshot.
 		// No replacement drawing or per-frame screenshot conversion.
 		canvas.width = backend.framebufferWidth;
@@ -38,11 +39,11 @@ export const studioBackends = {
 		), 0, 0);
 		return result;
 	},
-	webgl2: async (canvas: HTMLCanvasElement, navigation: NavigationCart | null = null) => {
+	webgl2: async (canvas: HTMLCanvasElement, navigation: NavigationCart | null = null, fsmInitial = false) => {
 		const backend = createWebGLBackend(canvas, PSX_MACHINE_SPEC.gxGpuVramBytes);
 		const test = await createStudioFixture(canvas, backend);
-		const result = navigation === null ? await runStudioWorkflows(test) : await runStudioPointerNavigation(test, navigation);
-		if (navigation === null) {
+		const result = fsmInitial ? await runStudioFsmInitialLive(test) : navigation === null ? await runStudioWorkflows(test) : await runStudioPointerNavigation(test, navigation);
+		if (navigation === null && !fsmInitial) {
 			await testCapturedSourceReboot(test);
 			await testSceneSourceAfterReboot(test);
 			await testStudioScenarioExecution(test);
@@ -51,19 +52,19 @@ export const studioBackends = {
 			await presentActionEffects(test);
 			await testStudioPointerCapture(test);
 		}
-		await presentBehaviorTreeGraph(test);
+		if (!fsmInitial) await presentBehaviorTreeGraph(test);
 		check(backend.gl.getError() === backend.gl.NO_ERROR, 'WebGL2 workflow raised a graphics error');
 		return result;
 	},
-	webgpu: async (canvas: HTMLCanvasElement, navigation: NavigationCart | null = null) => {
+	webgpu: async (canvas: HTMLCanvasElement, navigation: NavigationCart | null = null, fsmInitial = false) => {
 		const adapter = await navigator.gpu.requestAdapter();
 		const backend = await createWebGPUBackend(canvas, adapter, PSX_MACHINE_SPEC.gxGpuVramBytes);
 		const errors: string[] = [];
 		backend.device.addEventListener('uncapturederror', event => errors.push(event.error.message));
 		const test = await createStudioFixture(canvas, backend);
-		const result = navigation === null ? await runStudioWorkflows(test) : await runStudioPointerNavigation(test, navigation);
-		const readbacks = navigation === null ? await testStudioWebGpuReadbacks(test, backend) : null;
-		if (navigation === null) {
+		const result = fsmInitial ? await runStudioFsmInitialLive(test) : navigation === null ? await runStudioWorkflows(test) : await runStudioPointerNavigation(test, navigation);
+		const readbacks = navigation === null && !fsmInitial ? await testStudioWebGpuReadbacks(test, backend) : null;
+		if (navigation === null && !fsmInitial) {
 			await testCapturedSourceReboot(test);
 			await testSceneSourceAfterReboot(test);
 			await testStudioScenarioExecution(test);
@@ -72,7 +73,7 @@ export const studioBackends = {
 			await presentActionEffects(test);
 			await testStudioPointerCapture(test);
 		}
-		await presentBehaviorTreeGraph(test);
+		if (!fsmInitial) await presentBehaviorTreeGraph(test);
 		check(errors.length === 0, errors.join('\n'));
 		return { ...result, readbacks };
 	},

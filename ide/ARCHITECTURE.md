@@ -260,6 +260,21 @@ Duplicate is a normal palette/action-bar command; Ctrl/Cmd+D belongs only to
 concrete graph focus and does not repeat. Warm enablement is retained O(1);
 only the explicit edit copies source and invokes the language insertion owner.
 
+FSM Set Initial uses the same Lua document and concrete graph-focus route.
+`state_machine_initial.ts` indexes exact child membership and eligible atomic
+values once per source generation; it does not infer ownership from layout
+ancestry. `toolchain/ts/lua/syntax/string_literal.ts` owns Lua quoting, and the
+shared source-edit/insertion owners preserve exterior syntax in one Undo step.
+The command changes the actual declaring parent, including shared constructors,
+without changing concurrency or interpreting the key as a transition path.
+Normal Save/Hot Resume installs newly published definitions without resetting
+the living FSM. A retained module-local blueprint is not implicitly reconstructed
+or patched: the normal initializer must publish the new definition. No runtime
+or machine changes are introduced. See
+[`../docs/state_machine_authoring_design.md`](../docs/state_machine_authoring_design.md)
+for source admission, real-backend live installation proof and unfinished
+state/transition/drag authoring gates.
+
 FSM source bodies now retain child occurrences, guard fields and
 consumer slots. A cold second pass binds initial/concurrent entries and possible
 returned paths to those occurrence keys within one registration. Inline and

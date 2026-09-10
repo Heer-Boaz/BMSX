@@ -19,6 +19,8 @@ import { acceptStateGraphSelection, stateGraphSelection } from '../../ide/workbe
 import { buildStateMachineDetails } from '../../ide/workbench/contrib/behavior_lens/state_machine_details';
 import { selectStateMachineSource } from '../../ide/workbench/contrib/behavior_lens/state_machine_selection';
 import { FSM_DIAGRAM_SOURCE, FSM_PROOF_SOURCE } from '../helpers/fsm_source_fixture';
+import { FSM_INITIAL_SOURCE } from '../helpers/fsm_initial_fixture';
+import { setStateMachineInitial, stateMachineInitialTarget } from '../../ide/workbench/contrib/behavior_lens/state_machine_initial';
 
 const font = new Font({ variant: 'tiny' });
 function fixture(source = FSM_PROOF_SOURCE, factory: GraphLayoutEngineFactory = () => new NodeGraphLayoutEngine(new Worker(resolve('ide/node/graph_layout_worker.cjs')))) {
@@ -129,6 +131,41 @@ class HeldEngine {
 	}
 	public dispose(): void { this.disposed = true; }
 }
+
+test('FSM initial command updates real graph entry edges and retains selected state through hidden Undo/Redo', async () => {
+	const f = fixture(FSM_INITIAL_SOURCE);
+	try {
+		f.input.updatePresentation(font); await f.settle();
+		assert.equal(stateMachineInitialTarget(f.view), undefined, 'a root or absent selection is not child membership');
+		const node = f.graph.viewport.model.nodes.find(node => node.source.label === 'active')!;
+		f.graph.viewport.selection = node;
+		acceptStateGraphSelection(f.view, f.graph, f.model.buffer);
+		const target = stateMachineInitialTarget(f.view)!;
+		assert.ok(target);
+		const geometry = f.graph.viewport.model;
+		for (let index = 0; index < 1000; index += 1) assert.equal(stateMachineInitialTarget(f.view), target);
+		assert.equal(f.graph.viewport.model, geometry);
+		setStateMachineInitial(f.model, target);
+		assert.equal(f.graph.viewport.model.nodes.length, 0, 'source edit immediately revokes old geometry and hits');
+		assert.equal(stateMachineInitialTarget(f.view), undefined);
+		f.refresh(); await f.settle();
+		assert.equal(f.view.selection?.rowKey, node.source.rowKey);
+		assert.equal(f.graph.viewport.selection?.kind, 'node');
+		assert.equal(stateMachineInitialTarget(f.view), undefined, 'selected state is now initial');
+		const entries = f.graph.viewport.model.edges.filter(edge => edge.link.reference.kind === 'state-entry');
+		assert.equal(entries.filter(edge => edge.link.target.source.label === 'active').length, 2, 'both shared scopes have new entry edges');
+		const retained = f.view.document;
+		f.model.undo();
+		assert.equal(f.view.document, retained, 'hidden input does not reproject from the content event');
+		f.refresh(); await f.settle();
+		assert.equal(stateMachineInitialTarget(f.view)?.name, 'active');
+		f.model.redo(); f.refresh(); await f.settle();
+		assert.equal(stateMachineInitialTarget(f.view), undefined);
+		f.model.pushEditOperations([{ offset: f.model.buffer.length, deleteLength: 0, text: '\n@' }]);
+		f.refresh(); await f.settle();
+		assert.equal(stateMachineInitialTarget(f.view), undefined, 'recovery syntax is not an editable generation');
+	} finally { f.input.dispose(); }
+});
 
 test('concrete input coalesces edits, hides stale geometry, publishes no obsolete proof and disposes its engine', async () => {
 	const held = new HeldEngine();

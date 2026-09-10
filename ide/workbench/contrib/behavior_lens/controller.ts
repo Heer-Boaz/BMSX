@@ -37,6 +37,7 @@ import type { GraphLayoutEngineFactory } from '../../services/graph_layout/engin
 import { acceptStateGraphSelection, stateGraphSelection } from './state_graph_navigation';
 import { buildStateMachineDetails } from './state_machine_details';
 import { behaviorTreeEditTarget, behaviorTreeMoveTarget, duplicateBehaviorTreeChild, moveBehaviorTreeChild, removeBehaviorTreeChild } from './behavior_tree_edit';
+import { setStateMachineInitial, stateMachineInitialTarget } from './state_machine_initial';
 
 const PICKER_TITLES: Readonly<Record<BehaviorKind, string>> = {
 	action_effect: 'ACTIONEFFECTS',
@@ -162,6 +163,23 @@ export class BehaviorLensController {
 		const input = getActiveTab();
 		return input.kind === 'behavior_lens' && !input.workingCopy.readOnly
 			&& input.workingCopy.version === input.view.sourceVersion && behaviorTreeEditTarget(input.view) !== null;
+	}
+
+	public canSetSelectedInitialState(): boolean {
+		const input = getActiveTab();
+		return input.kind === 'behavior_lens' && !input.workingCopy.readOnly
+			&& input.workingCopy.version === input.view.sourceVersion && stateMachineInitialTarget(input.view) !== undefined;
+	}
+
+	public setSelectedInitialState(): void {
+		const input = getActiveTab();
+		if (input.kind !== 'behavior_lens' || input.workingCopy.readOnly) return;
+		this.updateView(input);
+		const target = stateMachineInitialTarget(input.view);
+		if (target === undefined) return;
+		this.editorPanes.activePane.focus();
+		setStateMachineInitial(input.workingCopy, target);
+		this.updateView(input);
 	}
 
 	public duplicateSelectedChild(): void {

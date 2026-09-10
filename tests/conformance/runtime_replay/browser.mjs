@@ -7,10 +7,11 @@ import { join, parse, resolve } from 'node:path';
 // Playwright is a host test tool, not part of the product bundle.
 const { chromium } = await import(process.env.BMSX_PLAYWRIGHT_MODULE || 'playwright');
 const navigation = process.argv[2] === '--studio-navigation' ? process.argv[3] : null;
-const studio = process.argv[2] === '--studio' || navigation !== null;
-const studioLabel = navigation === null ? 'STUDIO-WORKFLOWS' : 'STUDIO-NAVIGATION';
+const fsmInitial = process.argv[2] === '--studio-fsm-initial';
+const studio = process.argv[2] === '--studio' || navigation !== null || fsmInitial;
+const studioLabel = fsmInitial ? 'STUDIO-FSM-INITIAL' : navigation === null ? 'STUDIO-WORKFLOWS' : 'STUDIO-NAVIGATION';
 const [bios, cart, screenshot] = process.argv.slice(navigation !== null ? 4 : studio ? 3 : 2);
-if (!bios || !cart) throw new Error('Usage: browser.mjs [--studio | --studio-navigation CART_FOLDER] SYSTEM_ROM CART_ROM [SCREENSHOT_PNG]');
+if (!bios || !cart) throw new Error('Usage: browser.mjs [--studio | --studio-fsm-initial | --studio-navigation CART_FOLDER] SYSTEM_ROM CART_ROM [SCREENSHOT_PNG]');
 for (const backend of studio ? ['software', 'webgl2', 'webgpu'] : ['webgpu']) {
 	const directory = await mkdtemp(join(tmpdir(), `bmsx-${backend}-rewind-`));
 	let browser;
@@ -51,17 +52,17 @@ for (const backend of studio ? ['software', 'webgl2', 'webgpu'] : ['webgpu']) {
 		page.on('pageerror', error => { pageErrors.push(error); console.error(error); });
 		page.on('console', message => console.log(`[browser:${message.type()}] ${message.text()}`));
 		await page.goto(address);
-		const result = await page.evaluate(async ({ studio, backend, navigation }) => {
+		const result = await page.evaluate(async ({ studio, backend, navigation, fsmInitial }) => {
 			const test = await import('/test.js');
-			return studio ? test.studioBackends[backend](document.querySelector('canvas'), navigation)
+			return studio ? test.studioBackends[backend](document.querySelector('canvas'), navigation, fsmInitial)
 				: test.runBrowserRewindConformance(document.querySelector('canvas'));
-		}, { studio, backend, navigation });
+		}, { studio, backend, navigation, fsmInitial });
 		if (pageErrors.length !== 0) throw new AggregateError(pageErrors, 'Uncaught browser workflow errors');
 		if (screenshot) {
 			const { dir, name, ext } = parse(screenshot);
 			await page.screenshot({ path: studio ? join(dir, `${name}-${backend}${ext}`) : screenshot });
 		}
-		if (studio && navigation === null) {
+		if (studio && navigation === null && !fsmInitial) {
 			const savedSource = await readFile(join(directory, 'carts/nemesis_s/title_screen.lua'), 'utf8');
 			// Save & Reboot follows the extra WebGPU callback-lifetime test, which
 			// applies a further right-key FSM revision while a real readback is held.

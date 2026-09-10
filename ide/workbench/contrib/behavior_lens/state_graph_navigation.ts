@@ -25,7 +25,7 @@ export function acceptStateGraphSelection(view: BehaviorLensViewState, graph: Be
 	updateBehaviorLensStatus(view);
 }
 
-/** Read-only diagram: traversal visits nodes AND relations; arrows pan, never invent tree relatives. */
+/** Traversal visits nodes AND relations; arrows pan, never edit source or invent tree relatives. */
 export function executeStateGraphNavigation(view: BehaviorLensViewState, graph: BehaviorLensStateGraph, command: BehaviorLensNavigationCommand): BehaviorLensNavigationResult {
 	const viewport = graph.viewport;
 	if (command === 'back') return BehaviorLensNavigationResult.Back;

@@ -12,9 +12,10 @@ nu bron-owned, met de bestaande Details/Source-route als concrete consumer.
 De concrete asynchrone FSM-grafiek is nu aangesloten op dezelfde workbench,
 met expliciete browser- en Node-workercompositie. ActionEffect heeft nu een
 [gegroepeerde bronproperty-view](actioneffect_properties_design.md), geen flowchart.
-De eerste afgebakende authoringactie is nu
-[BT-children herordenen via Lua](behavior_tree_authoring_design.md).
-Dit is nog geen complete BT-editor of FSM-/ActionEffect-authoring.
+BT-authoring heeft nu [bronbehoudende childbewerkingen](behavior_tree_authoring_design.md).
+De eerste FSM-authoringactie is nu [een beginstate kiezen op de kaart](state_machine_authoring_design.md),
+met dezelfde Lua-bron, documenthistorie en bewezen Save/Hot Resume-route.
+Dit is nog geen complete BT-/FSM-editor of ActionEffect-authoring.
 
 ## BT-listbewijs versus inhoudsresolutie
 
@@ -595,6 +596,7 @@ alleen een typecheck slaagt. De latere rijen zijn nog te toetsen hypotheses.
 | `STUDIO-GRAPH-LAYOUT-LIFETIME-01` — geïmplementeerd | Inputdispose, lazy native Worker, expliciete fouten en één lopende/nieuwste wachtende layoutgeneratie. De onafhankelijke input/model/pane-proef test hidden edits, Undo/Redo, coalescing en close zonder focusdiefstal. Productasset is upstream-bytegelijk; de buildgate sluit ELK uit de Studio-UI en player. |
 | `STUDIO-FSM-SOURCE-SELECTION-01` — geïmplementeerd | Bronselectie onderscheidt een gewone node, BT-verbinding, FSM-outcome en expliciete entry. De slot-occurrence plus binding/callback/returnanker bepaalt correspondentie, niet het edge-ordinal of target. Details/Source, hidden edits, Undo en popupinvalidatie gebruiken deze echte inputowner. |
 | `STUDIO-FSM-GRAPH-VIEW-01` — geïmplementeerd | Concrete compound FSM-view op de input-owned asyncsession, typed source-index en één edge per bewijs. Bron-/definition-/fontwijziging revoke oude publicatie/hits; browser en Node hebben expliciete native workers. Scopes, concurrent/initial entries, cycli, self-loops en parallelle returns; onbekende/no-path uitkomsten zijn bronbewijs zonder verzonnen endpoint. Details/Source, Tab/Shift+Tab, pan en pane-dispose gebruiken bestaande workbenchowners. Zelfstandige sourcefixtures en echte 384×288-werkbenchproeven; geen authoring of runtimegraph. |
+| `STUDIO-FSM-INITIAL-01` — geïmplementeerd | Set Initial bewerkt de echte parentconstructor via gedeelde Lua-syntax-/texteditowners, niet de runtime-state of een tweede grafiek. Koude source-admission, graphfocus, selectie en Undo/Redo gebruiken bestaande owners. Alle drie browserbackends bewijzen fysieke bediening én drie echte Save/Hot Resume-installs met behoud van levende state; nieuwe entry is apart bewezen. Kosten, bronvoorwaarden en resterende state-/transition-/dragoperaties staan in `state_machine_authoring_design.md`. |
 
 `STUDIO-BT-VISUAL-EDITOR-01` blijft het afzonderlijke **authoring**contract.
 BT Earlier/Later is afzonderlijk gebouwd met het

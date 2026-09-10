@@ -56,6 +56,7 @@ export type EditorCommandId =
 	| 'behaviorLens.moveChildLater'
 	| 'behaviorLens.removeChild'
 	| 'behaviorLens.duplicateChild'
+	| 'behaviorLens.setInitialState'
 	| 'sceneEditor.removeMember'
 	| 'sceneEditor.moveMemberUp'
 	| 'sceneEditor.moveMemberDown'

@@ -41,6 +41,7 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	'behaviorLens.moveChildLater': { category: 'Behavior Lens', title: 'Move BT Child Later', shortTitle: 'Later' },
 	'behaviorLens.removeChild': { category: 'Behavior Lens', title: 'Remove BT Child', shortTitle: 'Remove' },
 	'behaviorLens.duplicateChild': { category: 'Behavior Lens', title: 'Duplicate BT Child', shortTitle: 'Duplicate' },
+	'behaviorLens.setInitialState': { category: 'State Machine', title: 'Set Selected State as Initial', shortTitle: 'Set Initial' },
 	'behaviorLens.source': { category: 'Behavior Lens', title: 'Open Source', shortTitle: 'Source' },
 	'sceneEditor.removeMember': { category: 'Scene Editor', title: 'Remove Member', shortTitle: 'Remove' },
 	'sceneEditor.moveMemberUp': { category: 'Scene Editor', title: 'Move Member Up', shortTitle: 'Up' },

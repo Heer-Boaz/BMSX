@@ -97,7 +97,7 @@ export function createBehaviorLensGraph(): BehaviorLensGraph {
 
 export function createBehaviorLensStateGraph(): BehaviorLensStateGraph {
 	const emptyModel = emptyStateGraph(editorViewState.font.renderFont());
-	return { kind: 'state-graph', actionBar: createWorkbenchActionBar('behaviorLens.title'),
+	return { kind: 'state-graph', actionBar: createWorkbenchActionBar('behaviorLens.stateGraph.title'),
 		viewport: new WorkbenchGraphViewport(emptyModel), emptyModel,
 		layoutState: { kind: 'idle' }, dirty: true, initialPosition: true };
 }
@@ -111,7 +111,7 @@ export function createBehaviorLensViewState(document: BehaviorSourceDocument, mo
 		definitionRowKey: null,
 		selection: null,
 		selectionBookmark: undefined,
-		stateMachines: { bodies: new Map(), references: new Map() },
+		stateMachines: { bodies: new Map(), references: new Map(), initialTargets: new Map() },
 		sourceRanges: new Map(),
 		sourceNodes: [],
 		nodesByRowKey: new Map(),

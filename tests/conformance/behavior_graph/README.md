@@ -122,6 +122,42 @@ a JavaScript zero-allocation proof or a speed guarantee for another host.
 
 ## FSM source contracts
 
+### Initial-state authoring and actual live installation
+
+```sh
+npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
+  tests/lua/lua_string_edits.test.ts tests/lua/state_machine_initial.test.ts \
+  tests/lua/state_graph_view.test.ts tests/lua/fsm_hot_resume.test.ts
+npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+  tests/conformance/behavior_graph/profile_initial.ts
+node tests/conformance/runtime_replay/browser.mjs --studio-fsm-initial \
+  dist/bmsx-bios.debug.rom dist/nemesis_s.debug.rom /tmp/bmsx-bt-graph/initial.png
+```
+
+`fsm_initial_fixture.ts` supplies independent authored Lua, not game FSM golden
+data. `studio_fsm_initial.ts` runs in the full Studio and navigation profiles:
+actual node selection, a held Set Initial click, shared-parent effects, Source
+without content changes, code/graph/palette focus, hidden Undo/Redo, read-only and
+source-generation admission. That route only changes the retained text model.
+
+The separate `--studio-fsm-initial` mode runs `studio_fsm_initial_live.ts` through
+all three backends and the real product source writer/compiler/media owners.
+It saves/reboots a small ordinary Lua entry in the isolated browser workspace,
+edits its initial state and performs three actual Hot Resume installs after
+edit/Undo/Redo. It verifies preserved FSM/current-state/data identities and the
+changed definition, then explicitly reboots and verifies new initial entry.
+The test needs the shipped cart only to boot the normal Studio; no current game
+behavior definition, line number or manually constructed ROM is its contract.
+
+The profiler measures cold indexing, a retained target-map lookup and explicit
+edit+Undo separately. It consumes the results and checks exact source/history
+restoration. It excludes parse, layout, focus routing, GPU, Hot Resume, complete
+frames and heap/GC. See the [initial-state authoring design](../../../docs/state_machine_authoring_design.md)
+for pinned production references, measured costs and the distinction between
+definition installation and entering/resetting a living state machine.
+
+### Existing source and graph contracts
+
 ```sh
 npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
   tests/lua/state_machine_source.test.ts tests/lua/fsm_hot_resume.test.ts

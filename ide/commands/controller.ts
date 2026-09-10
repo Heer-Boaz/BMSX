@@ -44,6 +44,7 @@ const SOURCE_COMMANDS = new Set<EditorCommandId>([
 	'save', 'hot-resume', 'reboot', 'scenarioLab.run', 'scenarioLab.rerun',
 	'sceneEditor.removeMember', 'sceneEditor.moveMemberUp', 'sceneEditor.moveMemberDown',
 	'behaviorLens.moveChildEarlier', 'behaviorLens.moveChildLater', 'behaviorLens.removeChild', 'behaviorLens.duplicateChild',
+	'behaviorLens.setInitialState',
 	'sceneEditor', 'behaviorLens', 'sceneEditor.source', 'behaviorLens.source', 'behaviorLens.details',
 	'behaviorLens.actionEffects', 'behaviorLens.stateMachines', 'behaviorLens.behaviorTrees',
 ]);
@@ -91,6 +92,7 @@ export class IdeCommandController {
 			case 'redo':
 			case 'behaviorLens.removeChild':
 			case 'behaviorLens.duplicateChild':
+			case 'behaviorLens.setInitialState':
 			case 'behaviorLens.toggleBranch':
 				inputFocus.executeCommand(command);
 				return;
@@ -221,6 +223,7 @@ export class IdeCommandController {
 			case 'redo':
 			case 'behaviorLens.removeChild':
 			case 'behaviorLens.duplicateChild':
+			case 'behaviorLens.setInitialState':
 			case 'behaviorLens.toggleBranch': {
 				const implementation = focus?.getCommand(command);
 				return implementation !== undefined && implementation.isEnabled();

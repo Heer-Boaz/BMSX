@@ -25,6 +25,9 @@ import { createLuaTableFieldTransfer } from '../../ide/language/lua/table_field_
 import { buildBehaviorSourceDocument } from '../../ide/workbench/contrib/behavior_lens/recognizer';
 import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
 import { BehaviorTreeTransferAnalysis } from '../../ide/workbench/contrib/behavior_lens/behavior_tree_transfer';
+import { FSM_INITIAL_SOURCE } from '../helpers/fsm_initial_fixture';
+import { indexStateMachineSource } from '../../ide/workbench/contrib/behavior_lens/state_machine_index';
+import { setStateMachineInitial } from '../../ide/workbench/contrib/behavior_lens/state_machine_initial';
 
 const SYSTEM_MODULE_FILES = [
 	['base', 'machine/bios/base.lua'],
@@ -709,6 +712,46 @@ test('cartlib FSM and behaviour-tree instances retain semantic state across prog
 		true,
 		null,
 	]);
+});
+
+test('visual initial edits rebind real cartlib definitions without forcing the living machine to restart', () => {
+	const resource = { domain: 0 as const, path: 'initial.lua', source: { type: 'lua' as const, resid: 'initial' } };
+	const model = new EditorTextModel(resource, 'lua', FSM_INITIAL_SOURCE);
+	const document = buildBehaviorSourceDocument(resource, buildLuaFileSemanticData(FSM_INITIAL_SOURCE, resource.path));
+	const target = [...indexStateMachineSource(document).initialTargets.values()].find(target => target.name === 'active')!;
+	setStateMachineInitial(model, target);
+	const cpu = createCartlibProgramCpu(`
+local registry<const> = require('cartlib/registry')
+local events<const> = require('cartlib/event_emitter')
+local component<const> = require('cartlib/fsm/fsm_component')
+local target<const> = {id='initial-test', active=true, tags={}}
+function target:_retain_tag(tag) self.tags[tag]=true end
+function target:_release_tag(tag) self.tags[tag]=nil end
+target.events = events.events_of(target)
+do ${FSM_INITIAL_SOURCE} end
+local machines<const> = component.factory({'fixture.initial'})({parent=target})
+machines.id='initial-test-fsm'
+machines:on_attach()
+registry:register(machines)
+registry:index(machines, component)
+machines:start()
+local machine<const> = machines:get_machine('fixture.initial')
+local left<const> = machine.states.left
+local idle<const> = left.current_state
+idle.data.retained=73
+assert(machine.current_id=='left' and left.current_id=='idle')
+do ${model.buffer.getText()} end
+assert(machines:get_machine('fixture.initial')==machine and machine.states.left==left and left.current_state==idle)
+assert(left.current_id=='idle' and idle.data.retained==73)
+assert(left.definition.initial=='active' and machine.states.right.definition.initial=='active')
+machine:reset()
+machine:start()
+return machine.current_id=='left', left.current_id=='active', machine.states.right.current_id=='active', left.current_state==left.states.active
+`);
+	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [true, true, true, true]);
+	model.undo(); assert.equal(model.buffer.getText(), FSM_INITIAL_SOURCE);
+	model.dispose();
 });
 
 test('FSM transition recorder publishes ordered fixed-capacity facts without steady-state allocation', () => {

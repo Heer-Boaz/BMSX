@@ -2,11 +2,15 @@ import {
 	LuaSyntaxKind,
 	LuaUnaryOperator,
 	type LuaNumericLiteralExpression,
+	type LuaBooleanLiteralExpression,
+	type LuaNilLiteralExpression,
+	type LuaStringLiteralExpression,
 	type LuaSourcePosition,
 	type LuaSourceRange,
 	type LuaTableField,
 } from '../../../toolchain/ts/lua/syntax/ast';
 import { findLuaTableFieldSeparator } from '../../../toolchain/ts/lua/syntax/table_fields';
+import { quoteLuaString } from '../../../toolchain/ts/lua/syntax/string_literal';
 import type { LuaToken } from '../../../toolchain/ts/lua/syntax/token';
 import type { EditorTextEdit } from '../../editor/model/text_model';
 import type { TextBuffer } from '../../editor/text/text_buffer';
@@ -60,6 +64,17 @@ export function readLuaSourceRange(buffer: TextBuffer, range: LuaSourceRange): s
 		buffer.offsetAt(range.start.line - 1, range.start.column - 1),
 		buffer.offsetAt(range.end.line - 1, range.end.column),
 	);
+}
+
+export type LuaScalarLiteral = LuaStringLiteralExpression | LuaNilLiteralExpression | LuaBooleanLiteralExpression | LuaNumericLiteralExpression;
+
+/** Replace one atomic value, not its grouping/trivia or a referenced initializer. */
+export function createLuaStringValueEdit(buffer: TextBuffer, literal: LuaScalarLiteral, value: string): EditorTextEdit {
+	const start = buffer.offsetAt(literal.range.start.line - 1, literal.range.start.column - 1);
+	const end = buffer.offsetAt(literal.range.end.line - 1, literal.range.end.column);
+	// Retain short-string quote style; long strings become a properly quoted token.
+	const quote = buffer.charCodeAt(start) === 34 ? '"' : "'";
+	return { offset: start, deleteLength: end - start, text: quoteLuaString(value, quote) };
 }
 
 /** A single-line source excerpt, not reprinted Lua. Multiline syntax is explicitly truncated. */
