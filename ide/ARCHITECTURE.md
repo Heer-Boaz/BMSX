@@ -286,8 +286,17 @@ Retarget analysis preserves the chosen absolute/relative anchor, widens it only
 when necessary, binds all recognized uses of the same literal and retains only
 the current candidate's evidence. It does not edit shared aliases, normalize
 unaddressable keys, invent state entry for a zero-step plan or cache a quadratic
-set of candidate-by-consumer plans. Physical retargeting still requires exact
-proof bookmarks and a shared connection-preview/control contract.
+set of candidate-by-consumer plans. `state_machine_edit.ts` applies admitted
+current-source evidence as one literal edit with before/after proof bookmarks
+in the existing document history. The selection owner exposes input-independent
+slot/entry and binding/function/return-start coordinates; history retains no AST
+or graph references. A direct literal replacement explicitly selects its new
+token; ordinary replacement still clears correspondence. Hidden views map a
+deep copy and resolve the exact registration/slot/proof on their next projection.
+Proof matching consumes the current index's per-consumer references directly;
+ordinary correspondence and history restoration do not re-scan all transitions.
+Physical retargeting still requires the shared connection-preview/control and
+shared-consumer acceptance contract, plus the end-to-end installation gate.
 
 FSM source bodies now retain child occurrences, guard fields and
 consumer slots. A cold second pass binds initial/concurrent entries and possible

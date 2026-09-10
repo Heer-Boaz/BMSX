@@ -1,6 +1,7 @@
 import { testStudioSourceRecovery } from './studio_source_recovery';
 import { testStudioStateGraph } from './studio_state_graph';
 import { testStudioFsmInitial } from './studio_fsm_initial';
+import { testStudioFsmBookmarks } from './studio_fsm_bookmarks';
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { queryDefinitionsAt } from '../../../ide/editor/contrib/definitions/query';
 import { editorViewState } from '../../../ide/editor/ui/view/state';
@@ -165,5 +166,6 @@ export async function runStudioPointerNavigation(test: StudioFixture, cart: Navi
 	await testStudioFsmSelection(test);
 	await testStudioStateGraph(test);
 	await testStudioFsmInitial(test);
+	await testStudioFsmBookmarks(test);
 	return { hostFrames: test.observations.hostFrames, selected: test.cycles() };
 }

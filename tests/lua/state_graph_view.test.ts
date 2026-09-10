@@ -21,6 +21,9 @@ import { selectStateMachineSource } from '../../ide/workbench/contrib/behavior_l
 import { FSM_DIAGRAM_SOURCE, FSM_PROOF_SOURCE } from '../helpers/fsm_source_fixture';
 import { FSM_INITIAL_SOURCE } from '../helpers/fsm_initial_fixture';
 import { setStateMachineInitial, stateMachineInitialTarget } from '../../ide/workbench/contrib/behavior_lens/state_machine_initial';
+import { retargetStateMachineTransition } from '../../ide/workbench/contrib/behavior_lens/state_machine_edit';
+import { StateMachineRetargetAnalysis } from '../../ide/workbench/contrib/behavior_lens/state_machine_retarget';
+import { FSM_RETARGET_SOURCE } from '../helpers/fsm_retarget_fixture';
 
 const font = new Font({ variant: 'tiny' });
 function fixture(source = FSM_PROOF_SOURCE, factory: GraphLayoutEngineFactory = () => new NodeGraphLayoutEngine(new Worker(resolve('ide/node/graph_layout_worker.cjs')))) {
@@ -30,7 +33,7 @@ function fixture(source = FSM_PROOF_SOURCE, factory: GraphLayoutEngineFactory = 
 	const document = () => buildBehaviorSourceDocument(resource, buildLuaFileSemanticData(model.buffer.getText(), resource.path));
 	const view = createBehaviorLensViewState(document(), model, 'state-graph');
 	const input = new BehaviorLensInput(model, view, factory);
-	model.onDidChangeContent(event => { mapBehaviorLensSourceRanges(view, event.changes); input.invalidatePresentation(); });
+	model.onDidChangeContent(event => { mapBehaviorLensSourceRanges(view, event.changes, event.editState); input.invalidatePresentation(); });
 	selectBehaviorLensDefinition(view, view.document.definitions[0].rowKey);
 	const graph = view.presentation;
 	if (graph.kind !== 'state-graph') throw new Error('Fixture must open the concrete FSM presentation');
@@ -165,6 +168,47 @@ test('FSM initial command updates real graph entry edges and retains selected st
 		f.refresh(); await f.settle();
 		assert.equal(stateMachineInitialTarget(f.view), undefined, 'recovery syntax is not an editable generation');
 	} finally { f.input.dispose(); }
+});
+
+test('retarget edit history republishes the exact selected graph proof after worker invalidation and hidden Undo/Redo', async () => {
+	for (const slot of ['direct', 'update']) {
+		const f = fixture(FSM_RETARGET_SOURCE);
+		try {
+			f.input.updatePresentation(font); await f.settle();
+			const definition = f.view.document.definitions[0];
+			assert.ok(definition.behaviorKind === 'state_machine');
+			const scope = definition.scopes[0].children.get('right')!;
+			const transition = definition.transitions.find(item => item.origin === scope.children.get('idle')!
+				&& (slot === 'update' ? item.slot.kind === slot : item.slot.source.label === slot))!;
+			const index = slot === 'update' ? 1 : 0;
+			f.graph.viewport.selection = f.graph.viewport.model.edgesByOutcome.get(transition.outcomes[index])!;
+			acceptStateGraphSelection(f.view, f.graph, f.model.buffer);
+			const selection = f.view.selection;
+			assert.ok(selection?.kind === 'state-outcome');
+			const target = new StateMachineRetargetAnalysis(f.view.document, selection.transition, selection.outcome)
+				.checkTarget(scope.children.get('other')!);
+			assert.ok(target.kind === 'available');
+			retargetStateMachineTransition(f.model, f.view, selection, target);
+			assert.equal(f.graph.viewport.model.edges.length, 0, 'no old endpoint or hit region survives the edit');
+			f.refresh(); await f.settle();
+			for (const action of ['edit', 'undo', 'redo']) {
+				const document = f.view.document;
+				if (action === 'undo') f.model.undo();
+				if (action === 'redo') f.model.redo();
+				assert.equal(f.view.document, document, 'hidden events map state without projecting it');
+				f.refresh(); await f.settle();
+				const edge = f.graph.viewport.selection;
+				assert.ok(edge?.kind === 'edge' && edge.link.reference.kind === 'state-outcome');
+				assert.equal(edge.link.target.source.label, action === 'undo' ? 'active' : 'other');
+				assert.equal(edge.link.source.source.label, 'idle');
+				assert.equal(edge.link.reference.outcome, edge.link.reference.transition.outcomes[index]);
+				assert.equal(edge.link.reference.transition.origin.parent!.name, 'right');
+				const geometry = f.graph.viewport.model;
+				for (let frame = 0; frame < 50; frame += 1) f.input.updatePresentation(font);
+				assert.equal(f.graph.viewport.model, geometry, 'no history or layout work on stable frames');
+			}
+		} finally { f.input.dispose(); }
+	}
 });
 
 test('concrete input coalesces edits, hides stale geometry, publishes no obsolete proof and disposes its engine', async () => {

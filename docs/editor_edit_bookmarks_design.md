@@ -54,6 +54,32 @@ correspondence preserves surviving folds; new occurrences use the normal fold
 policy. A reconnect gesture's subtree-fold policy belongs to its still-unbuilt
 command contract, not to a universal history snapshot.
 
+### FSM proof bookmarks
+
+`STUDIO-FSM-RETARGET-HISTORY-01` extends this same typed value, not the text
+history implementation. A FSM outcome bookmark carries the registration-to-slot
+occurrence path, slot kind, expression kind and binding span. A callback outcome
+also carries the bound function span and return-statement start. An explicit
+entry records its declaring field start and entry kind. These are UTF-16
+coordinates and syntax discriminants only: no retained AST, callbacks, graph
+objects, definition names or runtime values.
+
+The normal correspondence owner and bookmark resolution now consume the same
+proof representation and the current source index's per-consumer reference list,
+without re-scanning every transition in the registration. Changing geometry, choosing another registration and
+editing through a hidden code input cannot select an equal-looking return in
+another callback/use. Copies include proof coordinates as well as occurrence
+paths; mapping a pending bookmark never mutates a recorded Undo/Redo value.
+
+The admitted retarget operation supplies before/after bookmarks with the one
+literal edit. Replacing a direct literal deletes its old tracked syntax; this
+operation explicitly records the new token span. Callback binding/function/
+return-start anchors are mapped through the change. Unannotated replacement,
+including replacement by identical bytes followed by hidden Undo, still clears
+correspondence. This follows Godot's explicit selection before/after reconnect,
+but selects Lua proof occurrences rather than endpoint pairs. See the
+[FSM authoring contract](state_machine_authoring_design.md#retarget-edit-and-proof-history).
+
 ## Boundaries and remaining gates
 
 - The new API carries explicit edit intent; it does not infer relocation from

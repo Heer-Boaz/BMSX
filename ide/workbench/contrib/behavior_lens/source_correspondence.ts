@@ -5,16 +5,14 @@ import type { BehaviorSourceDocument, BehaviorSourceNode, BehaviorSourceRowKey }
 import type { BehaviorLensViewState } from './view_model';
 import type { BehaviorSourceSelection } from './source_selection';
 import { mapStateMachineSourceSelection, reconcileStateMachineSourceSelection } from './state_machine_selection';
-import type { StateMachineSourceDefinition } from './state_machine_model';
 import type { EditorEditState } from '../../../editor/model/edit_state';
-import { behaviorSourceEditState, mapBehaviorSourceBookmark } from './source_bookmark';
+import { behaviorSourceEditState, copyBehaviorSourceBookmark, mapBehaviorSourceBookmark } from './source_bookmark';
 
 /** Tracks the existing generation even while another pane edits its document. */
 export function mapBehaviorLensSourceRanges(state: BehaviorLensViewState, changes: readonly EditorTextChange[], editState: EditorEditState | null = null): void {
 	for (const span of state.sourceRanges.values()) mapTrackedTextRange(span, changes);
 	if (editState !== null && editState.is(behaviorSourceEditState)) {
-		const bookmark = editState.value;
-		state.selectionBookmark = { kind: bookmark.kind, path: bookmark.path.map(step => ({ ...step })) };
+		state.selectionBookmark = copyBehaviorSourceBookmark(editState.value);
 	} else if (state.selectionBookmark !== undefined) {
 		mapBehaviorSourceBookmark(state.selectionBookmark, changes);
 	}
@@ -84,12 +82,5 @@ export function reconcileBehaviorLensSource(
 	if (selected === null) return null;
 	const previousSelection = selection!;
 	if (previousSelection.kind === 'node' || previousSelection.kind === 'tree-edge') return { kind: previousSelection.kind, rowKey: selected };
-	let rootKey: BehaviorSourceRowKey = selected;
-	let parent = state.parentRowKeyByRowKey.get(rootKey)!;
-	while (parent !== null) {
-		rootKey = parent;
-		parent = state.parentRowKeyByRowKey.get(rootKey)!;
-	}
-	const definition = document.definitions.find((node): node is StateMachineSourceDefinition => node.behaviorKind === 'state_machine' && node.rowKey === rootKey)!;
-	return reconcileStateMachineSourceSelection(previousSelection, definition, selected, buffer);
+	return reconcileStateMachineSourceSelection(previousSelection, state.stateMachines.references.get(selected), buffer);
 }

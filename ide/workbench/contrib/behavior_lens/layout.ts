@@ -5,6 +5,7 @@ import { updateFullWidthWorkbenchLayout } from '../../common/layout';
 import type { TextBuffer } from '../../../editor/text/text_buffer';
 import { reconcileBehaviorLensSource } from './source_correspondence';
 import { resolveBehaviorSourceBookmark } from './source_bookmark';
+import { reconcileStateMachineSourceSelection } from './state_machine_selection';
 import {
 	clampWorkbenchListScroll,
 	layoutWorkbenchList,
@@ -48,6 +49,7 @@ export function installBehaviorLensDocument(
 	document: BehaviorSourceDocument,
 	buffer: TextBuffer,
 ): void {
+	state.stateMachines = indexStateMachineSource(document);
 	state.selection = reconcileBehaviorLensSource(state, document, buffer);
 	const bookmark = state.selectionBookmark;
 	state.selectionBookmark = undefined;
@@ -56,11 +58,12 @@ export function installBehaviorLensDocument(
 		state.selection = null;
 		if (path !== undefined) {
 			selectBehaviorLensDefinition(state, path[0].rowKey);
-			state.selection = { kind: bookmark.kind, rowKey: path[path.length - 1].rowKey };
+			const rowKey = path[path.length - 1].rowKey;
+			if (bookmark.kind === 'node' || bookmark.kind === 'tree-edge') state.selection = { kind: bookmark.kind, rowKey };
+			else state.selection = reconcileStateMachineSourceSelection(bookmark, state.stateMachines.references.get(rowKey), buffer);
 			for (let index = 0; index < path.length - 1; index += 1) state.collapsedRowKeys.delete(path[index].rowKey);
 		}
 	}
-	state.stateMachines = indexStateMachineSource(document);
 	state.headerDirty = true;
 	if (state.presentation.kind !== 'outline') state.presentation.dirty = true;
 	else {

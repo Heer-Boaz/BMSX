@@ -185,6 +185,35 @@ pointer routing, GPU, guest execution, Hot Resume, complete frames and heap/GC.
 The existing real-browser source/navigation and full Studio suites above remain
 the integration gates for the changed typed source facts and source links.
 
+### Retarget edit / exact proof history
+
+```sh
+npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
+  tests/lua/state_machine_edit.test.ts tests/lua/state_graph_view.test.ts \
+  tests/lua/state_machine_selection.test.ts tests/lua/behavior_source_bookmark.test.ts
+npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+  tests/conformance/behavior_graph/profile_fsm_bookmarks.ts
+```
+
+Independent authored fixtures exercise direct and wrapped literals, identical
+callback returns, shared constructors/registrations, long strings/quote style,
+CRLF/UTF-16, hidden edits, immutable history values, entry bookmarks and deletion
+without namesake recovery. The real Node ELK worker must discard old endpoints
+and publish the exact selected proof after edit, hidden Undo and Redo.
+
+`studio_fsm_bookmarks.ts` is part of both browser workflows above. Physical
+traversal selects the proof; the fixture supplies an admitted target to the real
+source operation. Held Source activation, hidden code Undo and graph palette
+Redo use ordinary controls and the shared working copy. It checks responsiveness,
+source coordinates, generation invalidation and unchanged machine/media. This
+is not an endpoint-drag or new Hot Resume workflow claim.
+
+The bookmark profiler selects the last consumer in 32/1,024 shared branches.
+It separates explicit capture, pending-copy mapping and resolution through the
+retained source index and exact proof matcher. Ordinary source projection,
+model-event delivery, parsing, graph layout and complete edit/frame/heap/GC costs
+are excluded; these are not idle-frame operations.
+
 ```sh
 npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
   tests/lua/state_machine_source.test.ts tests/lua/fsm_hot_resume.test.ts

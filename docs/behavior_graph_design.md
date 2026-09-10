@@ -17,6 +17,8 @@ De eerste FSM-authoringactie is nu [een beginstate kiezen op de kaart](state_mac
 met dezelfde Lua-bron, documenthistorie en bewezen Save/Hot Resume-route.
 Het volgende retarget-broncontract is ook gebouwd: echte scopes, afzonderlijke
 bronwaarde-/targetbewijzen en toetsing van alle herkende gedeelde literaluses.
+De bronbewerking legt nu ook de exacte proofselectie voor en na vast in dezelfde
+documenthistorie, inclusief verborgen Undo/Redo en gedeelde callbacks.
 Dit is een voorwaarde voor endpointdrag, nog geen nieuwe editorbediening.
 Dit is nog geen complete BT-/FSM-editor of ActionEffect-authoring.
 

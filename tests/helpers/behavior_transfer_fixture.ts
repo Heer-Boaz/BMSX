@@ -29,9 +29,9 @@ export function transferBehaviorFixtureSelection(
 		throw new Error('transfer fixture requires a BT selection and complete target list');
 	}
 	const entry = member.branch.entries[member.index];
-	const before = captureBehaviorSourceBookmark(view, selection.rowKey, selection.kind);
-	const moving = captureBehaviorSourceBookmark(view, entry.node.rowKey, selection.kind);
-	const destination = captureBehaviorSourceBookmark(view, target.source.rowKey, selection.kind);
+	const before = captureBehaviorSourceBookmark(view, selection);
+	const moving = captureBehaviorSourceBookmark(view, { kind: selection.kind, rowKey: entry.node.rowKey });
+	const destination = captureBehaviorSourceBookmark(view, { kind: selection.kind, rowKey: target.source.rowKey });
 	const suffix = before.path.slice(moving.path.length - 1).map(step => ({ ...step }));
 	const original = luaSourceRangeToTextRange(model.buffer, entry.field.range);
 	const transfer = createLuaTableFieldTransfer(model.buffer, model.resource.path, entry.field, target.source.table,

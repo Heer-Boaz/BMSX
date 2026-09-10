@@ -23,10 +23,11 @@ trees.register('profile', { root = { type = 'sequence', children = {${'leaf,'.re
 	const branch = root.root.branches[0];
 	assert.ok(branch.role === 'children');
 	const key = branch.entries[children - 1].node.rowKey;
-	const bookmark = captureBehaviorSourceBookmark(view, key, 'node');
+	const selection = { kind: 'node' as const, rowKey: key };
+	const bookmark = captureBehaviorSourceBookmark(view, selection);
 	let observed = 0;
 	const captureMicroseconds = medianMilliseconds(() => {
-		for (let i = 0; i < 1000; i += 1) observed += captureBehaviorSourceBookmark(view, key, 'node').path.length;
+		for (let i = 0; i < 1000; i += 1) observed += captureBehaviorSourceBookmark(view, selection).path.length;
 	});
 	const resolveMicroseconds = medianMilliseconds(() => {
 		for (let i = 0; i < 1000; i += 1) observed += resolveBehaviorSourceBookmark(bookmark, view)!.length;

@@ -131,10 +131,10 @@ decisions but must use `fsm.lua`'s actual path-plan semantics:
   Repeated queries allocate/parse/scan nothing; changing target releases the
   previous evidence. Do not grow a candidates-by-consumers plan cache.
 
-Before exposing this through a gesture, the exact selected transition proof
-must survive its literal replacement and Undo/Redo through document edit
-bookmarks. Connection-preview geometry must also get an explicit shared control
-representation; it is not a fake dragged node or an FSM-specific pointer loop.
+The [proof-history slice below](#retarget-edit-and-proof-history) now preserves
+the exact selected transition through literal replacement and document Undo/Redo.
+Connection-preview geometry still needs an explicit shared control representation;
+it is not a fake dragged node or an FSM-specific pointer loop.
 
 ### Owning representations
 
@@ -254,3 +254,87 @@ Hot Resume, total frame time and heap/GC profiling are outside these measurement
 Commands are in the [conformance README](../tests/conformance/behavior_graph/README.md);
 local comparison harnesses, logs and real-backend captures are under
 `/tmp/bmsx-fsm-retarget/`.
+
+## Retarget edit and proof history
+
+`STUDIO-FSM-RETARGET-HISTORY-01` connects admitted retarget evidence to the
+ordinary document edit/history owner. This is the source operation beneath a
+future gesture, **not** an enabled retarget command or endpoint-drag UI.
+
+The production references remain explicit:
+[Godot reconnect selection](https://github.com/godotengine/godot/blob/4cefd60f5a3d733506cb557d6cd26263b3fbd17f/editor/animation/animation_state_machine_editor.cpp#L139-L163)
+records transition selection on both sides of one Undo action;
+[VS Code edit history](https://github.com/microsoft/vscode/blob/585a254fad3a58b3d454622a9a1cf61358e5fc58/src/vs/editor/common/model/editStack.ts#L395-L407)
+retains computed selection with the actual text edit;
+[ProseMirror bookmarks](https://github.com/ProseMirror/prosemirror-state/blob/ffad5d9450a0b93438be53a801deee1a223a81bf/src/selection.ts#L173-L183)
+separate selection coordinates from the document being resolved. BMSX does not
+copy endpoint-pair identity or nearest-selection recovery.
+
+| Owner | Representation and lifetime |
+| --- | --- |
+| `state_machine_selection.ts` | The same slot/entry and binding/function/return-start proof anchors serve ordinary correspondence and history restoration. A live selection also references current AST evidence; a bookmark does not. |
+| `source_bookmark.ts` | Extends the existing node/BT-edge bookmark union with FSM outcomes/entries. Captures an actual registration-to-consumer occurrence path and deep-copies only selected proof coordinates. No names, ordinals or graph ids. |
+| `state_machine_edit.ts` | Consumes a selected current-source outcome and an available retarget analysis result. One centrally quoted literal replacement, with explicit before/after edit state. No repeated admission scan, callback rewrite, guest mutation or source installation. |
+| Text model | Unchanged. The same edit record publishes after-state on edit/Redo and before-state on Undo, independently of the invoking pane. |
+| Hidden Lens / projection | Maps one pending copy; performs no hidden parse/layout. The next source projection resolves the original occurrence path, then the exact proof, against current syntax. History values remain immutable. |
+
+For a direct transition, the edit replaces the complete binding literal. Normal
+tracking correctly collapses it; this explicit operation records the new token
+range instead. For a callback return, the binding, containing function and
+return-start anchors follow the edit. Two identical return strings remain two
+proofs, and a shared callback remains shared across its actual consumers.
+External comments, parentheses, quote style and additional return values are
+untouched. Whole replacement by equal bytes is still deletion for ordinary
+source correspondence; Undo does not invent an explicit selection for it.
+
+The browser fixture supplies the chosen target directly to this source operation.
+It uses real physical graph traversal, Source, code Undo, graph palette Redo and
+worker publication to test the integration. That is intentionally not a fake
+reconnect command. Current-source/read-only admission, shared connection-preview
+and pointer cancellation, shared-consumer presentation/acceptance and a complete
+retarget Save/Hot Resume workflow still belong to the endpoint-authoring gate.
+
+### History validation and measured costs — 10 September 2026
+
+- Seven independent source/history cases plus the real-worker retarget case:
+  **33 focused tests pass**, including the existing BT bookmark and FSM selection
+  regressions. The full Lua suite reports **1,206 passed, one skipped, zero
+  failed**. No new fixture depends on a game's current definition or line number.
+- Both full Studio and Pietious navigation pass on **software, WebGL2 and
+  WebGPU**, including the new direct/return retarget-history workflow. Accelerated
+  tests use Chromium/SwiftShader, not a physical-GPU performance oracle. The
+  full suite retains its deliberate syntax/init-fault recovery gates; source
+  lookup HTTP 404 messages are present, not uncaught page failures.
+- Browser Studio and node-headless-tooling builds, IDE typecheck and the real
+  headless Behavior Lens (**59 assertions**) pass. Strict architecture boundaries
+  report zero issues; core-parity, indentation and diff checks pass. Tests-project
+  typechecking retains **51 existing diagnostics**, with identical file/code/
+  message counts against `1544f35f3`; it is not a clean tests-project typecheck.
+
+Node 22.23.1, four isolated processes after builds/browser tests completed;
+each samples 1,000 operations, ten warmups and the median of 25 batches. Values
+below are medians of the four process medians, in **µs per operation**:
+
+| Shared sibling branches / proof | Capture | Copy + map prefix insertion/removal | Resolve occurrence path + proof |
+| --- | ---: | ---: | ---: |
+| 32 / direct | 0.164 | 0.197 | 0.355 |
+| 32 / return | 0.164 | 0.181 | 0.436 |
+| 1,024 / direct | 0.189 | 0.166 | 13.064 |
+| 1,024 / return | 0.169 | 0.172 | 13.027 |
+
+Capture/copy retain only the selected path (seven/six steps here) and its proof
+coordinates. Resolution still scans sibling occurrences and is not constant-time
+in the number of siblings. After that correspondence, proof matching consumes
+the **existing per-consumer reference index** instead of scanning every transition
+in the registration. An identical bundled matcher probe, alternating baseline/
+current order against `1544f35f3`, measures that match alone at **0.261 → 0.086 µs**
+for 32 branches and **6.392 → 0.063 µs** for 1,024. Ordinary selected-proof mapping
+measures **0.033 → 0.038 µs** and **0.033 → 0.032 µs**, respectively; this is not
+a universal speedup claim.
+
+These warmed probes exclude parsing, source-index construction, model events,
+layout, pointer dispatch, rendering, guest execution, Hot Resume, complete edit/
+frame cost and heap/GC profiling. Stable browser/Node frames retain the source
+and geometry without replaying history. Reproduction commands are in the
+[conformance README](../tests/conformance/behavior_graph/README.md); baseline
+bundles, raw measurements, logs and captures are in `/tmp/bmsx-fsm-bookmarks/`.

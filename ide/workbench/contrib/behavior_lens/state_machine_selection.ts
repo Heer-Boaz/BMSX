@@ -3,7 +3,7 @@ import type { TextBuffer } from '../../../editor/text/text_buffer';
 import { mapTrackedTextRange, type EditorTextChange, type TrackedTextRange } from '../../../editor/text/text_change';
 import { luaSourcePositionMatchesTextRange, luaSourcePositionToTextRange, luaSourceRangeMatchesTextRange, luaSourceRangeToTextRange } from '../../../language/lua/source_edits';
 import type { BehaviorSourceRowKey } from './model';
-import type { StateMachineSourceDefinition, StateMachineSourceEntry, StateMachineSourceOutcome, StateMachineSourceTransition } from './state_machine_model';
+import type { StateMachineSourceEntry, StateMachineSourceOutcome, StateMachineSourceTransition } from './state_machine_model';
 
 /** A source-generation reference, never an edge ordinal or an endpoint pair. */
 export type StateMachineSourceReference = {
@@ -19,6 +19,7 @@ export type StateMachineSourceReference = {
 };
 
 type TrackedTransitionProof = {
+	readonly slotKind: StateMachineSourceTransition['slot']['kind'];
 	readonly bindingKind: LuaExpression['kind'];
 	readonly binding: TrackedTextRange;
 } & ({ readonly kind: 'direct' } | {
@@ -28,19 +29,26 @@ type TrackedTransitionProof = {
 	readonly statementStart: TrackedTextRange;
 });
 
-export type StateMachineSourceSelection = (Extract<StateMachineSourceReference, { kind: 'state-outcome' }> & {
+/** Input-independent syntax identity; history must not retain a source-generation AST. */
+export type StateMachineSourceBookmark = {
+	readonly kind: 'state-outcome';
 	readonly tracked: TrackedTransitionProof;
-}) | (Extract<StateMachineSourceReference, { kind: 'state-entry' }> & {
-	readonly tracked: TrackedTextRange;
-});
+} | {
+	readonly kind: 'state-entry';
+	readonly tracked: TrackedTextRange & { readonly entryKind: StateMachineSourceEntry['kind'] };
+};
+
+export type StateMachineSourceSelection = StateMachineSourceReference & StateMachineSourceBookmark;
 
 /** Only the selected evidence is tracked, not every possible edge in the document. */
 export function selectStateMachineSource(reference: StateMachineSourceReference, buffer: TextBuffer): StateMachineSourceSelection {
-	if (reference.kind === 'state-entry') return { ...reference, tracked: luaSourcePositionToTextRange(buffer, reference.field.range.start) };
+	if (reference.kind === 'state-entry') return { ...reference,
+		tracked: { ...luaSourcePositionToTextRange(buffer, reference.field.range.start), entryKind: reference.entry.kind } };
 	const proof = reference.outcome.proof;
+	const slotKind = reference.transition.slot.kind;
 	const tracked: TrackedTransitionProof = proof.kind === 'direct'
-		? { kind: 'direct', bindingKind: proof.expression.kind, binding: luaSourceRangeToTextRange(buffer, proof.expression.range) }
-		: { kind: 'return', bindingKind: proof.binding.kind, binding: luaSourceRangeToTextRange(buffer, proof.binding.range),
+		? { kind: 'direct', slotKind, bindingKind: proof.expression.kind, binding: luaSourceRangeToTextRange(buffer, proof.expression.range) }
+		: { kind: 'return', slotKind, bindingKind: proof.binding.kind, binding: luaSourceRangeToTextRange(buffer, proof.binding.range),
 			callback: luaSourceRangeToTextRange(buffer, proof.callback.range), statementStart: luaSourcePositionToTextRange(buffer, proof.statement.range.start) };
 	return { ...reference, tracked };
 }
@@ -51,7 +59,16 @@ export function stateMachineSourceRange(reference: StateMachineSourceReference):
 	return proof.kind === 'direct' ? proof.expression.range : proof.statement.range;
 }
 
-export function mapStateMachineSourceSelection(selection: StateMachineSourceSelection, changes: readonly EditorTextChange[]): void {
+/** Copy coordinates only, never the live reference's transition, outcome or entry. */
+export function copyStateMachineSourceBookmark(selection: StateMachineSourceBookmark): StateMachineSourceBookmark {
+	if (selection.kind === 'state-entry') return { kind: selection.kind, tracked: { ...selection.tracked } };
+	const tracked = selection.tracked;
+	return { kind: selection.kind, tracked: tracked.kind === 'direct'
+		? { ...tracked, binding: { ...tracked.binding } }
+		: { ...tracked, binding: { ...tracked.binding }, callback: { ...tracked.callback }, statementStart: { ...tracked.statementStart } } };
+}
+
+export function mapStateMachineSourceSelection(selection: StateMachineSourceBookmark, changes: readonly EditorTextChange[]): void {
 	if (selection.kind === 'state-entry') mapTrackedTextRange(selection.tracked, changes);
 	else {
 		const tracked = selection.tracked;
@@ -65,30 +82,29 @@ export function mapStateMachineSourceSelection(selection: StateMachineSourceSele
 
 /** The caller has already proved the containing registration/slot occurrence. */
 export function reconcileStateMachineSourceSelection(
-	selection: StateMachineSourceSelection, definition: StateMachineSourceDefinition, rowKey: BehaviorSourceRowKey, buffer: TextBuffer,
+	selection: StateMachineSourceBookmark, references: readonly StateMachineSourceReference[] | undefined, buffer: TextBuffer,
 ): StateMachineSourceSelection | null {
+	if (references === undefined) return null; // The corresponding source node can lose its entry/transition evidence.
 	if (selection.kind === 'state-entry') {
-		for (const entry of definition.entries) {
-			if (entry.owner === rowKey && entry.kind === selection.entry.kind && entry.field !== null
-				&& luaSourcePositionMatchesTextRange(buffer, entry.field.range.start, selection.tracked)) {
-				return { kind: 'state-entry', rowKey, entry, field: entry.field, tracked: selection.tracked };
+		for (const reference of references) {
+			if (reference.kind === 'state-entry' && reference.entry.kind === selection.tracked.entryKind
+				&& luaSourcePositionMatchesTextRange(buffer, reference.field.range.start, selection.tracked)) {
+				return { ...reference, tracked: selection.tracked };
 			}
 		}
 		return null;
 	}
 	const tracked = selection.tracked;
-	const transition = definition.transitions.find(candidate => candidate.slot.source.rowKey === rowKey
-		&& candidate.slot.kind === selection.transition.slot.kind);
-	if (transition === undefined) return null; // The authored consumer can change or disappear.
-	for (const outcome of transition.outcomes) {
-		const proof = outcome.proof;
+	for (const reference of references) {
+		if (reference.kind !== 'state-outcome' || reference.transition.slot.kind !== tracked.slotKind) continue;
+		const proof = reference.outcome.proof;
 		const binding = proof.kind === 'direct' ? proof.expression : proof.binding;
 		if (binding.kind !== tracked.bindingKind || !luaSourceRangeMatchesTextRange(buffer, binding.range, tracked.binding)) continue;
 		if (proof.kind === 'return') {
 			if (tracked.kind !== 'return' || !luaSourceRangeMatchesTextRange(buffer, proof.callback.range, tracked.callback)
 				|| !luaSourcePositionMatchesTextRange(buffer, proof.statement.range.start, tracked.statementStart)) continue;
 		} else if (tracked.kind !== 'direct') continue;
-		return { kind: 'state-outcome', rowKey, transition, outcome, tracked };
+		return { ...reference, tracked };
 	}
 	return null;
 }
