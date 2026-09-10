@@ -82,8 +82,9 @@ export async function testStudioBehaviorSourceGraph(test: StudioFixture): Promis
 	const nextSelected = nextShared.branches[0].entries[0].node;
 	check(viewport.selection?.kind === 'node' && viewport.selection.source === nextSelected && selected.rowKey !== nextSelected.rowKey,
 		'source graph: tab activation follows the second occurrence, not the previous ordinal row key');
-	check(view.collapsedRowKeys.has(nextEntries[1].node.rowKey) && !view.collapsedRowKeys.has(nextEntries[2].node.rowKey),
-		'source graph: occurrences sharing one initializer keep independent expansion');
+	check(viewport.model.nodesBySource.get(nextEntries[1].node.rowKey)!.children.length === 2
+		&& viewport.model.nodesBySource.get(nextEntries[2].node.rowKey)!.children.length === 2,
+		'source graph: all occurrences stay expanded while selection follows its actual source');
 	check(view.definitionRowKey === view.document.definitions[0].rowKey, 'source graph: the chosen registration survives hidden edits');
 	const currentDocument = view.document;
 	const retainedCard = viewport.selection;

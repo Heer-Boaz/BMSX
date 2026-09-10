@@ -9,7 +9,7 @@ export type InputEvt =
 	| { type: 'axis2'; deviceId: string; code: string; x: number; y: number; timestamp: MonoTime }
 	| { type: 'connect'; device: InputDevice; timestamp: MonoTime }
 	| { type: 'disconnect'; deviceId: string; timestamp: MonoTime }
-	| { type: 'reset' };
+	| { type: 'reset'; deviceId?: string };
 
 export interface VibrationInitialization {
 	initialize(): Promise<void>;
@@ -36,7 +36,8 @@ interface NonGamepadDevice extends InputDeviceIdentity {
 export type InputDevice = GamepadDevice | NonGamepadDevice;
 
 export interface InputEventSink {
-	resetInput(): void;
+	/** No device selects the entire host; a device reset cancels only that logical input device. */
+	resetInput(deviceId?: string): void;
 	setSupervisorRequestLine(down: boolean): void;
 	connectInputDevice(device: InputDevice): void;
 	disconnectInputDevice(deviceId: string): void;

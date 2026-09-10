@@ -1,3 +1,4 @@
+import { handleEditorScrollbarPointer } from '../../../input/pointer/scrollbar';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 import type { PointerSnapshot } from '../../../common/models';
 import { closeLineJump } from '../code_editor/find/line_jump';
@@ -17,6 +18,8 @@ import {
 } from '../../input/keyboard/resource_viewer_input';
 import { clampResourceViewerScroll } from './viewer';
 
+const VIEWER_SCROLLBARS = ['viewerVertical'] as const;
+
 export class ResourceViewerEditorPane extends WorkbenchViewEditorPane<ResourceViewerInput> {
 	protected activate(): void {
 		closeSearch(false, true);
@@ -29,6 +32,16 @@ export class ResourceViewerEditorPane extends WorkbenchViewEditorPane<ResourceVi
 			getCodeAreaBounds(),
 			editorViewState.lineHeight,
 		);
+	}
+
+	public override clearInput(): void {
+		editorViewState.scrollbarController.cancel();
+		super.clearInput();
+	}
+
+	protected override handleViewPointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
+		if (justPressed) this.focus();
+		return handleEditorScrollbarPointer(snapshot, justPressed, VIEWER_SCROLLBARS);
 	}
 
 	public draw(): void {

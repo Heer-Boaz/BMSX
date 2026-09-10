@@ -252,7 +252,8 @@ runtime validator is introduced.
 BT duplication uses that same member admission and the existing Lua table-field
 insertion owner. It inserts the complete field before the retained selected
 syntax; ordinary text correspondence therefore selects the second occurrence
-and preserves its folds through Undo/Redo, including while the Lens is hidden.
+through Undo/Redo, including while the Lens is hidden. BT graphs always show
+their recognized children; source-outline folds belong to the outline control.
 Aliases stay aliases, weighted wrappers keep their child and weight, and shared
 constructors are edited once. Exterior documentation is not copied. No new
 selection identity, graph history, runtime clone or Lua evaluator is introduced.
@@ -332,10 +333,12 @@ graph: cartlib's periodic lane bypasses trigger gates/cooldown, and event is
 an output rather than an input trigger. The compiled cartlib oracle and pinned
 property-editor references are documented in the graph design. Retained canvas geometry belongs
 to a shared workbench control, independently of document identity and runtime
-execution slots. Input-owned registration/selection/collapse correspondence
+execution slots. Input-owned registration/selection correspondence
 maps source-use spans through the existing text-change owner, including hidden
 inputs, and matches each use under its corresponding parent. Shared initializer
 ranges or generation-local row keys alone do not identify an occurrence.
+Only source outlines and property trees own/map folds; graph inputs have no
+collapsed-child state or hidden outline.
 Deleting/replacing a use clears affected correspondence; later Undo does not
 guess it back. An explicit command may instead attach before/after selection
 bookmarks to the existing document history. These record the exact occurrence
@@ -369,6 +372,20 @@ pane-owned control for focus and gestures. Clip commands go through the shared
 overlay renderer, not feature-local glyph/line clipping. The graph control has
 no Lua, BT/FSM semantics or document-undo owner. Its input policy can be bound
 by the concrete pane without replacing physical focus or capture.
+
+Graph geometry includes the combined node/container/route/label bounds, computed
+once at publication. `graph/viewport.ts` owns the padded finite range and a single
+position shared by pan, reveal, wheel, edge scrolling and both scrollbars. The
+content clip excludes their gutters. Middle-button drag, Space + primary drag
+and primary drag on blank canvas pan at readable tiny-font scale. Explicit pan
+over an item preserves selection and never starts its source-edit gesture.
+Shift + wheel selects the horizontal axis; Space is not a gameplay binding.
+`workbench/ui/scrollbar.ts` owns retained track/thumb geometry independent of
+editor kinds. Only attached code/resource panes hit their own scrollbar kinds;
+chrome hits the visible resource panel's bars, not inactive pane geometry.
+The editor scrollbar controller retains their application callback; graph bars
+use the same shared pointer capture as other graph gestures. See
+[`graph_navigation_design.md`](../docs/graph_navigation_design.md).
 
 `workbench/ui/graph/compound_layout.ts` is the domain-free ELK Layered adapter
 for binary directed links and nested measured nodes. It retains typed node/link
@@ -462,10 +479,11 @@ The common source correspondence remaps either a node use or a connection use.
 In particular a weighted connection owns its choice occurrence, not the
 shared choice initializer's child field. Details use the existing Quick Pick
 and exact source ranges; they are not editable properties or an inspector DTO.
-Space/Y and the registered Children command fold only the selected occurrence;
-the graph focus target owns that command, with unmodified Space registered in
-the shared keybinding resolver. Text fields above the graph retain Space as
-text input; palette execution uses the invoking control's focus context.
+All statically recognized children are visible from the first generation;
+there is no Children command, card expander or fold shortcut. Large graphs use
+the shared scrollbars/panning, not hidden branches or smaller text. Text fields
+above the graph retain Space as text input; palette execution uses the invoking
+control's focus context.
 Keyboard/controller navigation follows parent, first child and siblings. Source
 and Details commands use the same action bars and Command Palette as other
 contributions. Pan, hover and selection never reparse or relayout the tree.
@@ -476,8 +494,12 @@ FSM relationship proof and cyclic layout remain separate slices.
 ordinary pane/chrome hit testing. Release, invalid/outside-display input,
 exclusive popup/menu input, pane detachment and IDE deactivation end capture;
 they never postpone it until a popup closes. The owner is detached before its
-release/cancel callback. Only the existing unconsumed physical release edge
-authorizes a drop; lost or consumed pressed state cancels instead. Focus and capture are distinct: menus may retain command
+release/cancel callback. The snapshot producer publishes separate held/press/
+release masks for all three buttons; capture latches the initiating button.
+Only that unconsumed physical release edge authorizes a drop; lost or consumed
+pressed state cancels instead. Browser input consumes chorded button edges on
+`pointermove` as well as down/up. Pointer cancellation resets its logical device,
+not keyboard input, and never fabricates a release. Focus and capture are distinct: menus may retain command
 focus while ending a drag. The graph control uses this route without inventing
 button edges; other existing controls have not all been migrated to it.
 

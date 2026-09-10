@@ -103,7 +103,7 @@ function collapseOrSelectParent(
 ): BehaviorLensNavigationResult {
 	const row = outline.rows[selectionIndex];
 	if (row.expandable && row.expanded) {
-		state.collapsedRowKeys.add(row.node.rowKey);
+		outline.collapsedRowKeys.add(row.node.rowKey);
 		outline.rowsDirty = true;
 		rebuildBehaviorLensRows(state, outline);
 		outline.rowsDirty = false;
@@ -126,7 +126,7 @@ function expandOrSelectChild(
 		return BehaviorLensNavigationResult.None;
 	}
 	if (!row.expanded) {
-		state.collapsedRowKeys.delete(row.node.rowKey);
+		outline.collapsedRowKeys.delete(row.node.rowKey);
 		outline.rowsDirty = true;
 		rebuildBehaviorLensRows(state, outline);
 		outline.rowsDirty = false;
@@ -146,9 +146,9 @@ export function selectBehaviorLensRow(state: BehaviorLensViewState, outline: Beh
 export function toggleBehaviorLensRow(state: BehaviorLensViewState, outline: BehaviorLensOutline, rowIndex: number): void {
 	const row = outline.rows[rowIndex];
 	if (row.expanded) {
-		state.collapsedRowKeys.add(row.node.rowKey);
+		outline.collapsedRowKeys.add(row.node.rowKey);
 	} else {
-		state.collapsedRowKeys.delete(row.node.rowKey);
+		outline.collapsedRowKeys.delete(row.node.rowKey);
 	}
 	state.selection = { kind: 'node', rowKey: outline.rows[rowIndex].node.rowKey };
 	outline.selectionIndex = rowIndex;

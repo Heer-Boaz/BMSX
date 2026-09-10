@@ -273,16 +273,7 @@ export class BrowserInputHub implements InputSource {
 		event.stopImmediatePropagation();
 		(event.currentTarget as Element).setPointerCapture(event.pointerId);
 		const now = this.clock.now();
-		const code = pointerButton(event.button);
-		const pressIndex = this.activePointerIndex(event.pointerId, event.button);
-		let pressId = pressIndex >= 0 ? this.activePointerPressIds[pressIndex] : 0;
-		if (!pressId) {
-			pressId = this.nextPressId++;
-			this.activePointerIds.push(event.pointerId);
-			this.activePointerButtons.push(event.button);
-			this.activePointerPressIds.push(pressId);
-		}
-		this.sink.inputButton('pointer:0', code, true, 1, now, pressId);
+		this.updatePointerButton(event, true, now);
 		this.sink.inputAxis2('pointer:0', 'pointer_position', event.clientX, event.clientY, now);
 	};
 
@@ -291,22 +282,7 @@ export class BrowserInputHub implements InputSource {
 		event.stopPropagation();
 		event.stopImmediatePropagation();
 		const now = this.clock.now();
-		const code = pointerButton(event.button);
-		const pressIndex = this.activePointerIndex(event.pointerId, event.button);
-		let pressId = pressIndex >= 0 ? this.activePointerPressIds[pressIndex] : 0;
-		if (!pressId) {
-			pressId = this.nextPressId++;
-		}
-		if (pressIndex >= 0) {
-			const last = this.activePointerIds.length - 1;
-			this.activePointerIds[pressIndex] = this.activePointerIds[last];
-			this.activePointerButtons[pressIndex] = this.activePointerButtons[last];
-			this.activePointerPressIds[pressIndex] = this.activePointerPressIds[last];
-			this.activePointerIds.length = last;
-			this.activePointerButtons.length = last;
-			this.activePointerPressIds.length = last;
-		}
-		this.sink.inputButton('pointer:0', code, false, 0, now, pressId);
+		this.updatePointerButton(event, false, now);
 		this.sink.inputAxis2('pointer:0', 'pointer_position', event.clientX, event.clientY, now);
 	};
 
@@ -314,21 +290,28 @@ export class BrowserInputHub implements InputSource {
 		event.preventDefault();
 		event.stopPropagation();
 		event.stopImmediatePropagation();
-		const now = this.clock.now();
-		let index = 0;
-		while (index < this.activePointerIds.length) {
-			if (this.activePointerIds[index] !== event.pointerId) {
-				index += 1;
-				continue;
-			}
-			this.sink.inputButton(
-				'pointer:0',
-				pointerButton(this.activePointerButtons[index]),
-				false,
-				0,
-				now,
-				this.activePointerPressIds[index],
-			);
+		// Implicit capture loss follows a normal pointerup too; that press is already gone.
+		if (this.activePointerIds.indexOf(event.pointerId) < 0) return;
+		this.activePointerIds.length = 0;
+		this.activePointerButtons.length = 0;
+		this.activePointerPressIds.length = 0;
+		this.sink.resetInput('pointer:0');
+		this.sink.inputAxis2('pointer:0', 'pointer_position', event.clientX, event.clientY, this.clock.now());
+	};
+
+	/** DOM button changes include chord edges delivered as pointermove, not only down/up. */
+	private updatePointerButton(event: PointerEvent, down: boolean, now: number): void {
+		let pressId: number;
+		if (down) {
+			pressId = this.nextPressId++;
+			this.activePointerIds.push(event.pointerId);
+			this.activePointerButtons.push(event.button);
+			this.activePointerPressIds.push(pressId);
+		} else {
+			const index = this.activePointerIndex(event.pointerId, event.button);
+			// A press that started outside our surface has no owned release/gesture.
+			if (index < 0) return;
+			pressId = this.activePointerPressIds[index];
 			const last = this.activePointerIds.length - 1;
 			this.activePointerIds[index] = this.activePointerIds[last];
 			this.activePointerButtons[index] = this.activePointerButtons[last];
@@ -337,8 +320,8 @@ export class BrowserInputHub implements InputSource {
 			this.activePointerButtons.length = last;
 			this.activePointerPressIds.length = last;
 		}
-		this.sink.inputAxis2('pointer:0', 'pointer_position', event.clientX, event.clientY, now);
-	};
+		this.sink.inputButton('pointer:0', pointerButton(event.button), down, down ? 1 : 0, now, pressId);
+	}
 
 	private activePointerIndex(pointerId: number, button: number): number {
 		for (let index = 0; index < this.activePointerIds.length; index += 1) {
@@ -355,6 +338,10 @@ export class BrowserInputHub implements InputSource {
 			event.preventDefault();
 		}
 		const now = this.clock.now();
+		if (event.button !== -1) {
+			const mask = 1 << (event.button === 1 ? 2 : event.button === 2 ? 1 : event.button);
+			this.updatePointerButton(event, (event.buttons & mask) !== 0, now);
+		}
 		this.sink.inputAxis2('pointer:0', 'pointer_position', event.clientX, event.clientY, now);
 	};
 

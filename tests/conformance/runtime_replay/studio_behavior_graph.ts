@@ -1,3 +1,4 @@
+import { testStudioGraphNavigation } from './studio_graph_navigation';
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { editorViewState } from '../../../ide/editor/ui/view/state';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
@@ -34,27 +35,21 @@ export async function testStudioBehaviorGraphControls(test: StudioFixture, view:
 	await press('ArrowDown');
 	const first = viewport.selection;
 	if (first?.kind !== 'node') throw new Error('BT controls: first child not selected');
-	check(first.lines[0] === 'CHILD 1' && view.collapsedRowKeys.has(first.source.rowKey), 'BT controls: down follows the first authored child');
-	const folded = viewport.model;
+	check(first.lines[0] === 'CHILD 1' && first.children.length === 2, 'BT controls: down follows the first authored child');
+	const expanded = viewport.model;
 	await press('ControlLeft', 'Space');
-	check(viewport.model === folded, 'BT controls: Ctrl+Space is not the unmodified fold command');
+	check(viewport.model === expanded, 'BT controls: Ctrl+Space does not change graph membership');
 	await press('ControlLeft', 'ShiftLeft', 'KeyP');
 	await press('Space');
-	check(picker.field.text === ' ' && viewport.model === folded,
+	check(picker.field.text === ' ' && viewport.model === expanded,
 		'BT controls: Space belongs to the palette text field, not the graph behind it');
 	await press('Escape');
-	await runPaletteCommand('Behavior Lens: Toggle BT Children');
-	check(!view.collapsedRowKeys.has(first.source.rowKey), 'BT controls: palette executes the invoking graph focus command');
-	await runPaletteCommand('Behavior Lens: Toggle BT Children');
-	check(view.collapsedRowKeys.has(first.source.rowKey), 'BT controls: palette folding restores the source occurrence');
 	test.setKey('Space', true);
-	await frame();
-	const expanded = viewport.model;
 	for (let index = 0; index < 6; index += 1) await frame();
 	test.setKey('Space', false);
 	await frame();
-	check(!view.collapsedRowKeys.has(first.source.rowKey) && viewport.model === expanded,
-		'BT controls: holding Space toggles once and retains the expanded layout');
+	check(viewport.model === expanded && first.children.length === 2, 'BT controls: Space alone never folds or rebuilds the graph');
+	await testStudioGraphNavigation(test);
 	input.connectInputDevice({ id: 'gamepad:0', kind: 'gamepad', gamepadIndex: 0, label: 'BT CONFORMANCE PAD',
 		vibrationInitialization: null, supportsVibration: false, setVibration() {} });
 	await frame();
@@ -66,10 +61,10 @@ export async function testStudioBehaviorGraphControls(test: StudioFixture, view:
 		await frame();
 	};
 	await pad('y');
-	check(view.collapsedRowKeys.has(first.source.rowKey), 'BT controls: controller Y folds the selected subtree');
+	check(viewport.model === expanded, 'BT controls: controller Y cannot hide part of the diagram');
 	await pad('down');
 	check(viewport.selection?.kind === 'node' && viewport.selection.parent!.source.rowKey === first.source.rowKey,
-		'BT controls: controller down expands and enters the first child');
+		'BT controls: controller down enters the already-visible first child');
 	await pad('up');
 	await pad('right');
 	const second = viewport.selection;
@@ -87,18 +82,16 @@ export async function testStudioBehaviorGraphControls(test: StudioFixture, view:
 	check(activeCodeEditor.view.cursorRow === edge.range.start.line - 1 && activeCodeEditor.view.cursorColumn === edge.range.start.column - 1,
 		'BT controls: connection Source opens this occurrence, not the shared initializer');
 	await click(editorChromeState.tabButtonBounds.get(lens.id)!);
-	// Leave the same default fold state for the independent correspondence test.
+	// Continue through weighted members without a separate expansion gesture.
 	await press('Home');
 	await press('ArrowDown');
 	await press('ArrowDown');
-	await click(graph.actionBar.items.find(item => item.command === 'behaviorLens.toggleBranch')!.bounds);
-	check(view.collapsedRowKeys.has(first.source.rowKey), 'BT controls: visible Children action folds the actual selected node');
 	await press('ArrowRight');
 	await press('ArrowRight');
 	const weightedKey = view.selection!.rowKey;
 	await press('ArrowDown');
 	check(viewport.selection?.kind === 'node' && viewport.selection.lines[0] === 'CHOICE 1  W=2',
-		'BT controls: expanding the weighted branch reveals its first authored choice');
+		'BT controls: entering the weighted branch selects its already-visible first choice');
 	await press('ArrowRight');
 	const choice = viewport.selection;
 	if (choice?.kind !== 'node') throw new Error('BT controls: weighted choice not selected');

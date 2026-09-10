@@ -48,7 +48,7 @@ function childEntries(node: BehaviorTreeSourceNode) {
 }
 
 function select(f: ReturnType<typeof fixture>, node: BehaviorSourceNode) {
-	f.view.collapsedRowKeys.clear();
+	f.outline.collapsedRowKeys.clear();
 	rebuildBehaviorLensRows(f.view, f.outline);
 	selectBehaviorLensRow(f.view, f.outline, findVisibleRowIndex(f.outline, node.rowKey));
 	assert.ok(f.outline.selectionIndex >= 0);
@@ -152,7 +152,7 @@ test('hidden-pane edits preserve selected reused descendants, independent collap
 	const entries = childEntries(definition.root!);
 	const nested = childEntries(entries[1].node)[0].node;
 	select(f, nested);
-	f.view.collapsedRowKeys.add(entries[0].node.rowKey);
+	f.outline.collapsedRowKeys.add(entries[0].node.rowKey);
 	f.view.definitionRowKey = definition.rowKey;
 	f.view.sourceMatchRowKeys.add(definition.rowKey);
 	const oldDocument = f.view.document;
@@ -167,8 +167,8 @@ test('hidden-pane edits preserve selected reused descendants, independent collap
 	const nextSelected = childEntries(nextEntries[2].node)[0].node;
 	assert.notEqual(nextSelected.rowKey, oldSelectedKey, 'the source use survived while its array-derived row key changed');
 	assert.equal(f.outline.rows[f.outline.selectionIndex].node, nextSelected);
-	assert.ok(f.view.collapsedRowKeys.has(nextEntries[1].node.rowKey));
-	assert.ok(!f.view.collapsedRowKeys.has(nextEntries[2].node.rowKey));
+	assert.ok(f.outline.collapsedRowKeys.has(nextEntries[1].node.rowKey));
+	assert.ok(!f.outline.collapsedRowKeys.has(nextEntries[2].node.rowKey));
 	assert.equal(f.view.definitionRowKey, tree(f).rowKey);
 	assert.equal(readLuaSourceRange(f.model.buffer, selectedBehaviorLensSourceRange(f.view)!), 'leaf');
 });
@@ -226,13 +226,13 @@ test('reordering source preserves untouched occurrences but does not infer cut/p
 
 test('an absent selection stays absent until explicit navigation, which starts at the first row', () => {
 	const f = fixture();
-	const collapsed = [...f.view.collapsedRowKeys];
+	const collapsed = [...f.outline.collapsedRowKeys];
 	assert.equal(f.outline.selectionIndex, -1);
 	for (const command of ['activate', 'left', 'right'] as const) {
 		assert.equal(executeBehaviorLensNavigation(f.view, command), BehaviorLensNavigationResult.None);
 		assert.equal(f.outline.selectionIndex, -1);
 	}
-	assert.deepEqual([...f.view.collapsedRowKeys], collapsed);
+	assert.deepEqual([...f.outline.collapsedRowKeys], collapsed);
 	assert.equal(executeBehaviorLensNavigation(f.view, 'down'), BehaviorLensNavigationResult.Changed);
 	assert.equal(f.outline.selectionIndex, 0);
 });
@@ -257,12 +257,12 @@ test('a source replacement cannot reattach selection or collapse to a same-named
 	const definition = tree(f);
 	select(f, definition);
 	f.view.definitionRowKey = definition.rowKey;
-	f.view.collapsedRowKeys.add(definition.rowKey);
+	f.outline.collapsedRowKeys.add(definition.rowKey);
 	f.model.pushEditOperations([{ offset: 0, deleteLength: f.model.buffer.length, text: BEHAVIOR_SOURCE_FIXTURE }]);
 	f.refresh();
 	assert.equal(f.outline.selectionIndex, -1);
 	assert.equal(f.view.definitionRowKey, null);
-	assert.ok(!f.view.collapsedRowKeys.has(tree(f).rowKey));
+	assert.ok(!f.outline.collapsedRowKeys.has(tree(f).rowKey));
 });
 
 test('sibling occurrence spans are unique across BT, FSM and effect source producers', () => {

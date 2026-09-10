@@ -1,17 +1,33 @@
 import type { PlayerInput } from '../../../hosts/common/input/player';
 
-export const POINTER_PRIMARY_JUST_PRESSED = 1;
-export const POINTER_PRIMARY_JUST_RELEASED = 2;
-export const POINTER_SECONDARY_JUST_PRESSED = 4;
-export const POINTER_AUX_JUST_PRESSED = 8;
+/** Host pointer buttons, independent of guest ICU registers or keyboard bindings. */
+export const enum PointerButton { Primary = 1, Secondary = 2, Auxiliary = 4 }
 
-/** Project producer-owned event edges; navigation never changes physical input. */
-export function computeEditorPointerButtonMask(playerInput: PlayerInput): number {
-	const primaryState = playerInput.getRawButtonState('pointer_primary', 'pointer');
-	const secondaryState = playerInput.getRawButtonState('pointer_secondary', 'pointer');
-	const auxState = playerInput.getRawButtonState('pointer_aux', 'pointer');
-	return (!primaryState.consumed && primaryState.justpressed ? POINTER_PRIMARY_JUST_PRESSED : 0)
-		| (!primaryState.consumed && primaryState.justreleased ? POINTER_PRIMARY_JUST_RELEASED : 0)
-		| (!secondaryState.consumed && secondaryState.justpressed ? POINTER_SECONDARY_JUST_PRESSED : 0)
-		| (!auxState.consumed && auxState.justpressed ? POINTER_AUX_JUST_PRESSED : 0);
+export type PointerButtons = {
+	pressedButtons: number;
+	justPressedButtons: number;
+	justReleasedButtons: number;
+};
+
+const BUTTONS = [
+	{ code: 'pointer_primary', bit: PointerButton.Primary },
+	{ code: 'pointer_secondary', bit: PointerButton.Secondary },
+	{ code: 'pointer_aux', bit: PointerButton.Auxiliary },
+] as const;
+
+/** Project each producer-owned level/edge once; navigation never changes physical input. */
+export function readEditorPointerButtons(playerInput: PlayerInput, target: PointerButtons): void {
+	let pressed = 0;
+	let justPressed = 0;
+	let justReleased = 0;
+	for (const button of BUTTONS) {
+		const state = playerInput.getRawButtonState(button.code, 'pointer');
+		if (state.consumed) continue;
+		if (state.pressed) pressed |= button.bit;
+		if (state.justpressed) justPressed |= button.bit;
+		if (state.justreleased) justReleased |= button.bit;
+	}
+	target.pressedButtons = pressed;
+	target.justPressedButtons = justPressed;
+	target.justReleasedButtons = justReleased;
 }

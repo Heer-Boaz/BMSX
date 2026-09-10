@@ -1,3 +1,4 @@
+import { PointerButton } from './buttons';
 import type { PointerSnapshot } from '../../common/models';
 import * as constants from '../../common/constants';
 import { clearGotoHoverHighlight } from '../../editor/contrib/intellisense/engine';
@@ -28,7 +29,7 @@ export function handleResourcePanelResizePointer(resourcePanel: ResourcePanelCon
 }
 
 function updateResourcePanelResize(resourcePanel: ResourcePanelController, snapshot: PointerSnapshot): void {
-	if (!snapshot.valid || !snapshot.primaryPressed) {
+	if (!snapshot.valid || (snapshot.pressedButtons & PointerButton.Primary) === 0) {
 		editorChromeState.resourcePanelResizing = false;
 		clearGotoHoverHighlight();
 		return;

@@ -77,7 +77,6 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 	'behaviorLens.graph.title': [
 		{ type: 'command', command: 'behaviorLens.source' },
 		{ type: 'command', command: 'behaviorLens.details' },
-		{ type: 'command', command: 'behaviorLens.toggleBranch' },
 		{ type: 'command', command: 'behaviorLens.duplicateChild' },
 		{ type: 'command', command: 'behaviorLens.removeChild' },
 	],

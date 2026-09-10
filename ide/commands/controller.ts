@@ -96,7 +96,6 @@ export class IdeCommandController {
 			case 'behaviorLens.removeChild':
 			case 'behaviorLens.duplicateChild':
 			case 'behaviorLens.setInitialState':
-			case 'behaviorLens.toggleBranch':
 				inputFocus.executeCommand(command);
 				return;
 			case 'pause':
@@ -229,8 +228,7 @@ export class IdeCommandController {
 			case 'redo':
 			case 'behaviorLens.removeChild':
 			case 'behaviorLens.duplicateChild':
-			case 'behaviorLens.setInitialState':
-			case 'behaviorLens.toggleBranch': {
+			case 'behaviorLens.setInitialState': {
 				const implementation = focus?.getCommand(command);
 				return implementation !== undefined && implementation.isEnabled();
 			}

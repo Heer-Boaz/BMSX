@@ -32,10 +32,9 @@ export async function testStudioBtMoves(test: StudioFixture): Promise<void> {
 	await press('ArrowDown');
 	await press('ArrowDown');
 	await press('ArrowRight');
-	await click(graph.actionBar.items[2].bounds);
 	const selected = viewport.selection;
 	if (selected?.kind !== 'node') throw new Error('BT moves: selected nested branch missing');
-	check(selected.children.length === 2, 'BT moves: expand the selected branch before reordering');
+	check(selected.children.length === 2, 'BT moves: selected branch is already fully expanded');
 	const version = model.version;
 	await runPaletteCommand('Behavior Lens: Move BT Child Earlier');
 	const moved = model.buffer.getText();

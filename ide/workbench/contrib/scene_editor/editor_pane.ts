@@ -1,3 +1,4 @@
+import { PointerButton } from '../../../input/pointer/buttons';
 import { point_in_rect } from '../../../../machine/ts/common/rect';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 import type { Clipboard } from '../../../common/clipboard';
@@ -121,7 +122,7 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 			const control = this.controls[index];
 			const bounds = this.input.properties[index].bounds;
 			if (!control.field.readOnly && (point_in_rect(snapshot.viewportX, snapshot.viewportY, bounds) || control.field.pointerSelecting)) {
-				control.handlePointer(bounds.left + 3, snapshot.viewportX, justPressed, snapshot.primaryPressed);
+				control.handlePointer(bounds.left + 3, snapshot.viewportX, justPressed, ((snapshot.pressedButtons & PointerButton.Primary) !== 0));
 				return true;
 			}
 		}

@@ -1,3 +1,4 @@
+import { PointerButton } from '../../ide/input/pointer/buttons';
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
 import { configureFontVariant } from '../../ide/editor/ui/view/view';
@@ -256,10 +257,10 @@ test('query pointer hit testing uses the scrolled text origin, not an unrelated 
 	const start = picker.textViewport.start;
 	assert.ok(start > 0);
 	picker.handlePointer({ viewportX: picker.layout.field.left + 3, viewportY: picker.layout.field.top + 3,
-		valid: true, insideViewport: true, primaryPressed: true }, true);
+		valid: true, insideViewport: true, pressedButtons: PointerButton.Primary, justPressedButtons: 0, justReleasedButtons: 0 }, true);
 	assert.equal(picker.field.cursorColumn, start);
 	picker.handlePointer({ viewportX: picker.layout.field.left + 3, viewportY: picker.layout.field.top + 3,
-		valid: true, insideViewport: true, primaryPressed: false }, false);
+		valid: true, insideViewport: true, pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0 }, false);
 	assert.equal(picker.field.pointerSelecting, false);
 });
 

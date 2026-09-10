@@ -1,3 +1,4 @@
+import { PointerButton } from '../buttons';
 import { setCursorPosition } from '../../../editor/ui/view/caret/caret';
 import { setSingleCursorSelectionAnchor } from '../../../editor/editing/cursor/state';
 import { focusPrimaryEditorSurface } from '../../../workbench/ui/focus';
@@ -47,7 +48,7 @@ export function handleCodeAreaPrimaryPressPointer(
 	}
 	setSingleCursorSelectionAnchor(activeCodeEditor.view, targetRow, targetColumn);
 	setCursorPosition(targetRow, targetColumn);
-	editorPointerState.pointerSelecting = snapshot.primaryPressed;
+	editorPointerState.pointerSelecting = ((snapshot.pressedButtons & PointerButton.Primary) !== 0);
 	return false;
 }
 

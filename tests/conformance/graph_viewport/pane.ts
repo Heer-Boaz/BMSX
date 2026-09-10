@@ -35,7 +35,7 @@ class GraphFixturePane extends EditorPane<CodeEditorInput> {
 	}
 	public handleKeyboard(input: PlayerInput): void { inputFocus.handleKeyboard(input); }
 	public handlePointer(snapshot: PointerSnapshot, justPressed: boolean, _secondary: boolean, input: PlayerInput, now: number): void {
-		this.result = this.graph.handlePointer(snapshot, justPressed, now);
+		this.result = this.graph.handlePointer(snapshot, now, input.getRawButtonState('Space', 'keyboard').pressed);
 		if (justPressed && this.result !== WorkbenchGraphPointerResult.Outside) input.inputHandlers.pointer!.consumeButton('pointer_primary');
 	}
 	public handleWheel(direction: number, steps: number, snapshot: PointerSnapshot | null, input: PlayerInput): void {

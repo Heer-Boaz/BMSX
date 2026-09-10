@@ -1,3 +1,4 @@
+import { PointerButton } from './buttons';
 import type { PointerSnapshot } from '../../common/models';
 import { clearGotoHoverHighlight } from '../../editor/contrib/intellisense/engine';
 import { clearHoverTooltip } from '../../editor/contrib/hover/controller';
@@ -9,7 +10,7 @@ export function handleEditorTabDragPointer(snapshot: PointerSnapshot): boolean {
 	if (!editorChromeState.tabDragState) {
 		return false;
 	}
-	if (!snapshot.primaryPressed) {
+	if ((snapshot.pressedButtons & PointerButton.Primary) === 0) {
 		endTabDrag();
 		editorPointerState.pointerSelecting = false;
 		clearGotoHoverHighlight();

@@ -1,3 +1,4 @@
+import { PointerButton } from '../../ide/input/pointer/buttons';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
@@ -144,12 +145,12 @@ test('property selection and fold preferences survive hidden source edits/Undo o
 		assert.deepEqual([...f.properties.collapsedGroups], ['grant']);
 		f.move('down'); f.move('right'); f.move('left');
 		assert.equal(f.properties.tree.rows[f.properties.tree.selectionIndex].element.label, 'REQUIRED TAGS');
-		assert.equal(f.view.collapsedRowKeys.size, 1);
+		assert.equal(f.properties.collapsedRowKeys.size, 1);
 		while (f.properties.tree.rows[f.properties.tree.selectionIndex].element.label !== 'PERIOD') f.move('down');
 		const before = f.view.document;
 		const node = f.properties.tree.rows[f.properties.tree.selectionIndex];
 		const pointer = new WorkbenchPropertyTreePointer();
-		const point = { valid: true, insideViewport: true, primaryPressed: true, viewportX: 200,
+		const point = { valid: true, insideViewport: true, pressedButtons: PointerButton.Primary, justPressedButtons: 0, justReleasedButtons: 0, viewportX: 200,
 			viewportY: f.properties.tree.layout.contentTop + (f.properties.tree.selectionIndex - f.properties.tree.scroll) * f.properties.tree.layout.rowHeight + 3 };
 		assert.equal(pointer.handle(f.properties.tree, point, true, 10), WorkbenchPropertyPointerResult.Selection);
 		f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- 🐉 shifted\n' }]);
@@ -165,7 +166,7 @@ test('property selection and fold preferences survive hidden source edits/Undo o
 		assert.ok(selected.element.kind === 'property');
 		assert.equal(selectedBehaviorLensSourceRange(f.view), selected.element.source.authoredRange);
 		assert.equal(f.properties.tree.roots[0].collapsed, true);
-		assert.equal(f.view.collapsedRowKeys.size, 1);
+		assert.equal(f.properties.collapsedRowKeys.size, 1);
 		assert.equal(pointer.handle(f.properties.tree, point, true, 20), WorkbenchPropertyPointerResult.Selection, 'new generation cannot complete the old double-click');
 		f.model.undo(); f.refresh();
 		assert.equal(f.properties.tree.rows[f.properties.tree.selectionIndex].element.value, '20');
@@ -185,7 +186,7 @@ test('property groups and real source folds remain separate; deletion never swit
 	const f = fixture(ACTIONEFFECT_SOURCE, 1);
 	try {
 		f.move('home'); f.move('left');
-		assert.equal(f.view.collapsedRowKeys.size, 0, 'UI category folds cannot enter source correspondence');
+		assert.equal(f.properties.collapsedRowKeys.size, 0, 'UI category folds cannot enter source correspondence');
 		f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- prefix\n' }]);
 		f.refresh();
 		assert.equal(f.properties.selectedGroup, 'grant');

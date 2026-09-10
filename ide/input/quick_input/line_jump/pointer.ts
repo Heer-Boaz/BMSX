@@ -1,3 +1,4 @@
+import { PointerButton } from '../../pointer/buttons';
 import { point_in_rect } from '../../../../machine/ts/common/rect';
 import { closeSearch, processInlineFieldPointer } from '../../../workbench/contrib/code_editor/find/search';
 import { getLineJumpBarBounds } from '../../../workbench/common/layout';
@@ -23,7 +24,7 @@ export function handleLineJumpPointer(resourcePanel: ResourcePanelController, sn
 		lineJumpState.field.focusTarget.focus();
 		activateQuickInputField(resourcePanel);
 	}
-	processInlineFieldPointer(lineJumpState.field, quickInputTextLeft('LINE #:'), snapshot.viewportX, justPressed, snapshot.primaryPressed);
+	processInlineFieldPointer(lineJumpState.field, quickInputTextLeft('LINE #:'), snapshot.viewportX, justPressed, ((snapshot.pressedButtons & PointerButton.Primary) !== 0));
 	finishQuickInputPointer();
 	return true;
 }

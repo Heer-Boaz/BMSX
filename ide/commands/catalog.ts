@@ -39,7 +39,6 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	sceneEditor: { category: 'Scene Editor', title: 'Open', shortTitle: 'Scene Editor' },
 	'sceneEditor.source': { category: 'Scene Editor', title: 'Open Source', shortTitle: 'Source' },
 	'behaviorLens.details': { category: 'Behavior Lens', title: 'Open Source Details', shortTitle: 'Details' },
-	'behaviorLens.toggleBranch': { category: 'Behavior Lens', title: 'Toggle BT Children', shortTitle: 'Children' },
 	'behaviorLens.moveChildEarlier': { category: 'Behavior Lens', title: 'Move BT Child Earlier', shortTitle: 'Earlier' },
 	'behaviorLens.moveChildLater': { category: 'Behavior Lens', title: 'Move BT Child Later', shortTitle: 'Later' },
 	'behaviorLens.removeChild': { category: 'Behavior Lens', title: 'Remove BT Child', shortTitle: 'Remove' },

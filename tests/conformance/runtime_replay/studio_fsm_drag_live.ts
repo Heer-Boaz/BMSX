@@ -1,3 +1,4 @@
+import { testStudioGraphNavigation } from './studio_graph_navigation';
 import { FSM_RETARGET_CART_SOURCE } from '../../helpers/fsm_retarget_fixture';
 import { actionPromptState } from '../../../ide/workbench/contrib/modal/action_prompt';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
@@ -43,6 +44,7 @@ export async function runStudioFsmDragLive(test: StudioFixture) {
 	const viewport = graph.viewport;
 	const ready = () => until(() => graph.layoutState.kind === 'ready', 'FSM drag: current layout published');
 	await ready();
+	await testStudioGraphNavigation(test);
 	const point = (x: number, y: number) => ({ left: x, top: y, right: x, bottom: y });
 	const begin = async () => {
 		const edge = viewport.model.edges.find(edge => edge.link.reference.kind === 'state-outcome')!;

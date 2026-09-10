@@ -61,7 +61,9 @@ export function installBehaviorLensDocument(
 			const rowKey = path[path.length - 1].rowKey;
 			if (bookmark.kind === 'node' || bookmark.kind === 'tree-edge') state.selection = { kind: bookmark.kind, rowKey };
 			else state.selection = reconcileStateMachineSourceSelection(bookmark, state.stateMachines.references.get(rowKey), buffer);
-			for (let index = 0; index < path.length - 1; index += 1) state.collapsedRowKeys.delete(path[index].rowKey);
+			if (state.presentation.kind === 'outline' || state.presentation.kind === 'properties') {
+				for (let index = 0; index < path.length - 1; index += 1) state.presentation.collapsedRowKeys.delete(path[index].rowKey);
+			}
 		}
 	}
 	state.headerDirty = true;
@@ -161,7 +163,7 @@ function appendVisibleRows(
 	for (let index = 0; index < nodes.length; index += 1) {
 		const node = nodes[index];
 		const expandable = node.children.length > 0;
-		const expanded = expandable && !state.collapsedRowKeys.has(node.rowKey);
+		const expanded = expandable && !outline.collapsedRowKeys.has(node.rowKey);
 		outline.rows.push({
 			node,
 			depth,

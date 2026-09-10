@@ -1,3 +1,4 @@
+import { PointerButton } from '../../pointer/buttons';
 import type { ResourcePanelController } from '../../../workbench/contrib/resources/panel/controller';
 import { point_in_rect } from '../../../../machine/ts/common/rect';
 import * as constants from '../../../common/constants';
@@ -42,7 +43,7 @@ export function handleSymbolSearchPointer(
 			activateQuickInputField(resourcePanel);
 		}
 		const label = symbolSearchFieldLabel();
-		processInlineFieldPointer(symbolSearchState.field, quickInputTextLeft(label), snapshot.viewportX, justPressed, snapshot.primaryPressed);
+		processInlineFieldPointer(symbolSearchState.field, quickInputTextLeft(label), snapshot.viewportX, justPressed, ((snapshot.pressedButtons & PointerButton.Primary) !== 0));
 		finishQuickInputPointer();
 		return true;
 	}

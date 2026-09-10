@@ -1,3 +1,4 @@
+import { PointerButton } from '../../../input/pointer/buttons';
 import { create_rect_bounds, point_in_rect } from '../../../../machine/ts/common/rect';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 import type { Clipboard } from '../../../common/clipboard';
@@ -150,7 +151,7 @@ export class QuickInputController {
 			this.pointer.textLeft = this.layout.field.left + 3 - this.textViewport.offset;
 			this.pointer.pointerX = snapshot.viewportX;
 			this.pointer.justPressed = justPressed;
-			this.pointer.pointerPressed = snapshot.primaryPressed;
+			this.pointer.pointerPressed = ((snapshot.pressedButtons & PointerButton.Primary) !== 0);
 			if (applyInlineFieldPointer(this.field, this.pointer).requestBlinkReset) resetBlink();
 			return;
 		}

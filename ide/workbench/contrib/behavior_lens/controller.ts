@@ -28,7 +28,6 @@ import {
 import { buildBehaviorSourceDocument } from './recognizer';
 import type { BehaviorKind, BehaviorRegistrationSource, BehaviorSourceDocument } from './model';
 import type { BehaviorRegistrationIndex } from './registration_index';
-import { toggleBehaviorGraphBranch } from './graph_navigation';
 import { buildBehaviorQuickPickItems } from './quick_access';
 import { createBehaviorLensViewState, type BehaviorLensViewState } from './view_model';
 import { selectStateMachineSource } from './state_machine_selection';
@@ -157,12 +156,6 @@ export class BehaviorLensController {
 			}));
 	}
 
-	public toggleBranch(): void {
-		const input = getActiveTab();
-		if (input.kind !== 'behavior_lens') return;
-		this.updateView(input);
-		if (input.view.presentation.kind === 'graph') toggleBehaviorGraphBranch(input.view, input.view.presentation);
-	}
 
 	public canMoveSelectedChild(direction: -1 | 1): boolean {
 		const input = getActiveTab();

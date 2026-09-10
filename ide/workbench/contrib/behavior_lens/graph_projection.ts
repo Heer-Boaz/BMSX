@@ -11,7 +11,6 @@ import { describeExpression, SourceTableIssue } from './source';
 /** Cold projection from typed source relationships. No label parsing or execution inference. */
 export function projectBehaviorTreeGraph(
 	definition: BehaviorTreeSourceDefinition | null,
-	collapsed: ReadonlySet<BehaviorSourceRowKey>,
 	font: BFont,
 ): BehaviorGraphProjection {
 	const nodes: BehaviorGraphNode[] = [];
@@ -20,10 +19,10 @@ export function projectBehaviorTreeGraph(
 	const pending: { source: Extract<BehaviorTreeSourceNode, { kind: 'node' }>; node: BehaviorGraphNode }[] = [];
 
 	function card(source: BehaviorSourceNode, text: string, parent: BehaviorGraphNode | null,
-		expandable: boolean, details: BehaviorGraphDetail[], range: LuaSourceRange, connectionSource = source,
+		details: BehaviorGraphDetail[], range: LuaSourceRange, connectionSource = source,
 		member: BehaviorTreeSourceMember | null = null): BehaviorGraphNode {
 		const node: BehaviorGraphNode = { ...createWorkbenchGraphNode(font, uppercaseOutsideStrings(text), 0, 0),
-			source, parent, member, expandable, details, children: [] };
+			source, parent, member, details, children: [] };
 		nodes.push(node);
 		nodesBySource.set(source.rowKey, node);
 		if (parent !== null) {
@@ -36,10 +35,8 @@ export function projectBehaviorTreeGraph(
 	function behavior(source: BehaviorTreeSourceNode, parent: BehaviorGraphNode, role: string, range: LuaSourceRange,
 		details: BehaviorGraphDetail[] = [], connectionSource: BehaviorSourceNode = source,
 		member: BehaviorTreeSourceMember | null = null): void {
-		let expandable = false;
 		let text = role;
 		if (source.kind === 'node') {
-			expandable = source.branches.length > 0;
 			text += `\n${source.nodeType === null ? '<DYNAMIC TYPE>' : source.nodeType}`;
 			if (source.referenceLabel.length > 0) text += `\n${source.referenceLabel}`;
 			const relationships = new Set<LuaTableField>();
@@ -63,16 +60,15 @@ export function projectBehaviorTreeGraph(
 			appendBehaviorGraphSourceDetails(details, source, 'UNRESOLVED');
 		}
 		if (source.resolution !== 'complete') text += '\n? PARTIAL SOURCE';
-		if (expandable) text += collapsed.has(source.rowKey) ? '\n+ CHILDREN' : '\n- CHILDREN';
-		const node = card(source, text, parent, expandable, details, range, connectionSource, member);
-		if (source.kind === 'node' && expandable && !collapsed.has(source.rowKey)) pending.push({ source, node });
+		const node = card(source, text, parent, details, range, connectionSource, member);
+		if (source.kind === 'node' && source.branches.length > 0) pending.push({ source, node });
 	}
 
 	if (definition !== null) {
 		const details: BehaviorGraphDetail[] = [];
 		if (definition.blackboard !== null) appendBehaviorGraphSourceDetails(details, definition.blackboard, 'BLACKBOARD');
 		const root = card(definition, definition.label + (definition.root === null ? '\n? NO STATIC ROOT' : ''), null,
-			false, details, definition.occurrenceRange);
+			details, definition.occurrenceRange);
 		if (definition.root !== null) behavior(definition.root, root, 'ROOT', definition.root.occurrenceRange);
 		while (pending.length > 0) {
 			const { source, node } = pending.pop()!;
@@ -85,7 +81,7 @@ export function projectBehaviorTreeGraph(
 				if (branch.source.kind === 'dynamic' || branch.source.issues !== SourceTableIssue.None) {
 					const details: BehaviorGraphDetail[] = [];
 					appendBehaviorGraphSourceDetails(details, branch.source, branch.role);
-					card(branch.source, `${branch.role}\n? PARTIAL MEMBERSHIP`, node, false, details, branch.field.value.range);
+					card(branch.source, `${branch.role}\n? PARTIAL MEMBERSHIP`, node, details, branch.field.value.range);
 					continue;
 				}
 				if (branch.role === 'children') {

@@ -1,7 +1,7 @@
 # Source-backed behavior graphs
 
 The concrete BT and FSM Behavior Lens graphs consume the typed source projection.
-Lua remains the document; graph cards, links, fold state and geometry are not
+Lua remains the document; graph cards, links and geometry are not
 runtime or authored scene data. See
 [the owner contract and pinned production references](../../../docs/behavior_graph_design.md).
 
@@ -51,14 +51,21 @@ navigation cases are integration smoke; they do not define the graph contract.
 `studio_behavior_source.ts` and `studio_behavior_graph.ts` install the same
 independent Lua fixture into a **text model only**, open registrations through
 the real Command Palette and exercise keyboard, controller and pointer routes.
-They test held Space, modifier/focus scoping, spaces typed in the palette,
-Children/Details/Source actions, weight/decorator field
+They test fully expanded membership, modifier/focus scoping, spaces typed in the palette,
+Details/Source actions, weight/decorator field
 navigation, physical edge selection, pane return, hidden edits and Undo. The
 paused machine's position and installed media do not change. The original
 source is restored before further product workflows; only the final screenshot
 presentation leaves its fixture in the unsaved text model. It never installs a
 fixture cartridge. Captures show the expanded weighted fixture at 384×288 with
 the actual IDE tiny font, not a mock drawing or a screenshot of a game BT.
+
+`studio_graph_navigation.ts` runs from both the BT workflow and the concrete FSM
+retarget workflow: middle/Space-primary pan over selected editable items, both
+scrollbars, Shift-wheel and palette interruption must preserve the selected
+source bookmark, text version, dirty state and shared Undo/Redo stacks. There is
+no Children command or Space/Y folding route. See the [navigation contract](../../../docs/graph_navigation_design.md)
+and the separate [actual DOM pointer probes](../graph_viewport/README.md).
 
 `studio_bt_membership.ts` installs `behavior_membership_fixture.ts` in the same
 paused textmodel and tests known sibling slots around opaque builders, a nested

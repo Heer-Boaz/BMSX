@@ -1,3 +1,4 @@
+import { PointerButton } from './buttons';
 import { point_in_rect } from '../../../machine/ts/common/rect';
 import type { PointerSnapshot } from '../../common/models';
 import { clearGotoHoverHighlight } from '../../editor/contrib/intellisense/engine';
@@ -51,7 +52,7 @@ export function handleProblemsPanelPointer(
 }
 
 function updateProblemsPanelResize(snapshot: PointerSnapshot): void {
-	if (!snapshot.valid || !snapshot.primaryPressed) {
+	if (!snapshot.valid || (snapshot.pressedButtons & PointerButton.Primary) === 0) {
 		editorChromeState.problemsPanelResizing = false;
 		clearGotoHoverHighlight();
 		return;

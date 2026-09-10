@@ -50,10 +50,13 @@ export async function exerciseGraphLayoutLifetime(fixture: Awaited<ReturnType<ty
 		if (ready.kind !== 'ready') throw new Error('expected current compound geometry');
 		group.activate(first); panes.openEditor(first);
 		view.setModel(ready.model, null);
-		view.scrollX = view.scrollY = -1000;
+		view.scrollX = view.scrollBounds.left + 30;
+		view.scrollY = view.scrollBounds.top + 30;
+		const panX = view.scrollX;
+		const panY = view.scrollY;
 		// Begin a physical capture, then detach the pane before closing its input.
 		move(150, 110); step(); button(true); step(); move(160, 115); step();
-		check(view.scrollX === -1010 && view.scrollY === -1005, 'close must exercise a live physical pan capture');
+		check(view.scrollX === panX - 10 && view.scrollY === panY - 5, 'close must exercise a live physical pan capture');
 		request(1003); request(1004);
 		group.activate(second); panes.openEditor(second);
 		group.removeAt(group.indexOf(first));

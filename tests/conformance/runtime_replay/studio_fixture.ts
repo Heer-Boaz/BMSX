@@ -81,7 +81,7 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 	const setKey = (key: string, down: boolean) => {
 		input.inputButton('keyboard:0', key, down, down ? 1 : 0, clock.now(), ++pressId);
 	};
-	const setPointerButton = (button: 'pointer_primary' | 'pointer_secondary', down: boolean) => {
+	const setPointerButton = (button: 'pointer_primary' | 'pointer_secondary' | 'pointer_aux', down: boolean) => {
 		input.inputButton('pointer:0', button, down, down ? 1 : 0, clock.now(), ++pressId);
 	};
 	const press = async (...keys: string[]) => {
@@ -97,7 +97,7 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 			displayRect.left + (bounds.left + bounds.right) * displayRect.width / (viewport.width * 2),
 			displayRect.top + (bounds.top + bounds.bottom) * displayRect.height / (viewport.height * 2), clock.now());
 	};
-	const click = async (bounds: RectBounds, heldFrames = 1, button: 'pointer_primary' | 'pointer_secondary' = 'pointer_primary') => {
+	const click = async (bounds: RectBounds, heldFrames = 1, button: 'pointer_primary' | 'pointer_secondary' | 'pointer_aux' = 'pointer_primary') => {
 		movePointer(bounds);
 		await frame();
 		setPointerButton(button, true);

@@ -1,3 +1,4 @@
+import { PointerButton } from '../../ide/input/pointer/buttons';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Font } from '../../machine/ts/render/shared/bmsx_font';
@@ -24,7 +25,7 @@ function fixture() {
 	return { view, a, b, edge, model };
 }
 function pointer(x: number, y: number, pressed = false): PointerSnapshot {
-	return { viewportX: x, viewportY: y, primaryPressed: pressed, valid: true, insideViewport: true };
+	return { viewportX: x, viewportY: y, pressedButtons: pressed ? PointerButton.Primary : 0, justPressedButtons: 0, justReleasedButtons: 0, valid: true, insideViewport: true };
 }
 
 test('graph layout uses the rendering font and retains route bounds independent of viewport movement', () => {
@@ -141,8 +142,8 @@ test('model publication indexes only actual containers and labelled edges withou
 test('reveal minimally scrolls into view and aligns oversized subjects instead of shrinking the font', () => {
 	const { view, b, edge } = fixture();
 	view.reveal(b);
-	assert.equal(view.scrollX, b.bounds.right - 100 + 6);
-	assert.equal(view.scrollY, b.bounds.bottom - 80 + 6);
+	assert.equal(view.scrollX, b.bounds.right - (view.bounds.right - view.bounds.left) + 6);
+	assert.equal(view.scrollY, b.bounds.bottom - (view.bounds.bottom - view.bounds.top) + 6);
 	const x = view.scrollX;
 	const y = view.scrollY;
 	view.reveal(b);
@@ -181,20 +182,20 @@ test('only a physical press begins a pan; capture can leave the control but cann
 	const capture = new PointerCaptureService();
 	const control = new WorkbenchGraphControl(focus, capture);
 	control.setInput(view);
-	control.handlePointer(pointer(80, 95, true), false, 0);
-	control.handlePointer(pointer(90, 95, true), false, 1);
+	control.handlePointer({ ...pointer(80, 95, true), justPressedButtons: 0 }, 0);
+	control.handlePointer({ ...pointer(90, 95, true), justPressedButtons: 0 }, 1);
 	assert.equal(view.scrollX, 0, 'held pointer entering a pane is not a press');
-	control.handlePointer(pointer(80, 95, true), true, 2);
+	control.handlePointer({ ...pointer(80, 95, true), justPressedButtons: PointerButton.Primary }, 2);
 	assert.equal(focus.target, control.focusTarget);
-	assert.equal(capture.dispatch(pointer(140, 110, true), false, false, 3), true);
+	assert.equal(capture.dispatch(pointer(140, 110, true), false, 3), true);
 	assert.deepEqual([view.scrollX, view.scrollY], [-60, -15]);
 	focus.setTarget(null);
-	control.handlePointer(pointer(90, 90, true), false, 4);
+	control.handlePointer({ ...pointer(90, 90, true), justPressedButtons: 0 }, 4);
 	assert.equal(view.scrollX, -60, 'blur cancels capture');
 	control.clearInput();
 	control.setInput(view);
-	control.handlePointer(pointer(80, 95, true), false, 5);
-	control.handlePointer(pointer(90, 90, true), false, 6);
+	control.handlePointer({ ...pointer(80, 95, true), justPressedButtons: 0 }, 5);
+	control.handlePointer({ ...pointer(90, 90, true), justPressedButtons: 0 }, 6);
 	assert.equal(view.scrollX, -60, 'reattaching retains viewport, not gesture');
 	control.dispose();
 });
@@ -204,16 +205,16 @@ test('selection and activation use retained item identity, never coordinates reu
 	const capture = new PointerCaptureService();
 	const control = new WorkbenchGraphControl(new InputFocusService(), capture);
 	control.setInput(view);
-	assert.equal(control.handlePointer(pointer(22, 22, true), true, 0), Result.Handled);
+	assert.equal(control.handlePointer({ ...pointer(22, 22, true), justPressedButtons: PointerButton.Primary }, 0), Result.Selection);
 	assert.equal(view.selection, a);
-	control.handlePointer(pointer(22, 22), false, 1);
-	assert.equal(control.handlePointer(pointer(22, 22, true), true, 50), Result.Activate);
-	control.handlePointer(pointer(22, 22), false, 51);
-	control.handlePointer(pointer(22, 22, true), true, 100);
+	control.handlePointer({ ...pointer(22, 22), justPressedButtons: 0 }, 1);
+	assert.equal(control.handlePointer({ ...pointer(22, 22, true), justPressedButtons: PointerButton.Primary }, 50), Result.Activate);
+	control.handlePointer({ ...pointer(22, 22), justPressedButtons: 0 }, 51);
+	control.handlePointer({ ...pointer(22, 22, true), justPressedButtons: PointerButton.Primary }, 100);
 	const replacement = createWorkbenchGraphNode(font, 'FIRST\nDETAIL', -10, -4);
 	view.setModel(createWorkbenchGraphModel(model.font, [replacement], model.edges), null);
-	control.handlePointer(pointer(22, 22), false, 101);
-	assert.equal(control.handlePointer(pointer(22, 22, true), true, 150), Result.Handled);
+	control.handlePointer({ ...pointer(22, 22), justPressedButtons: 0 }, 101);
+	assert.equal(control.handlePointer({ ...pointer(22, 22, true), justPressedButtons: PointerButton.Primary }, 150), Result.Selection);
 	assert.equal(view.selection, replacement);
 	control.dispose();
 });
@@ -224,12 +225,12 @@ test('model replacement cancels a pan; empty-space clicks and wheel are bounded 
 	const control = new WorkbenchGraphControl(new InputFocusService(), capture);
 	control.setInput(view);
 	view.selection = a;
-	assert.equal(control.handlePointer(pointer(10, 10, true), true, 0), Result.Outside);
+	assert.equal(control.handlePointer({ ...pointer(10, 10, true), justPressedButtons: PointerButton.Primary }, 0), Result.Outside);
 	assert.equal(view.selection, a);
-	control.handlePointer(pointer(80, 95, true), true, 1);
+	control.handlePointer({ ...pointer(80, 95, true), justPressedButtons: PointerButton.Primary }, 1);
 	assert.equal(view.selection, null);
 	view.setModel({ ...model }, null);
-	assert.equal(capture.dispatch(pointer(100, 95, true), false, false, 2), true);
+	assert.equal(capture.dispatch(pointer(100, 95, true), false, 2), true);
 	assert.equal(view.scrollX, 0);
 	assert.equal(control.handleWheel(pointer(120, 30), 0, 10), false);
 	assert.equal(control.handleWheel(pointer(60, 60), 0, 10), true);
@@ -280,16 +281,16 @@ test('stationary pointer polling reuses the hit result until geometry, viewport 
 	const control = new WorkbenchGraphControl(new InputFocusService(), capture);
 	control.setInput(view);
 	const position = pointer(22, 22);
-	for (let frame = 0; frame < 100; frame += 1) control.handlePointer(position, false, frame);
+	for (let frame = 0; frame < 100; frame += 1) control.handlePointer({ ...position, justPressedButtons: 0 }, frame);
 	assert.equal(view.hitTests, 1);
 	view.pan(2, 0);
-	control.handlePointer(position, false, 101);
+	control.handlePointer({ ...position, justPressedButtons: 0 }, 101);
 	assert.equal(view.hitTests, 2);
 	view.layout(21, 20, 121, 100);
-	control.handlePointer(position, false, 102);
+	control.handlePointer({ ...position, justPressedButtons: 0 }, 102);
 	assert.equal(view.hitTests, 3);
 	view.setModel({ ...model }, null);
-	control.handlePointer(position, false, 103);
+	control.handlePointer({ ...position, justPressedButtons: 0 }, 103);
 	assert.equal(view.hitTests, 4);
 	control.dispose();
 });
@@ -314,18 +315,18 @@ function dragFixture() {
 			},
 		};
 	} });
-	control.handlePointer(pointer(22, 22, true), true, 0);
+	control.handlePointer({ ...pointer(22, 22, true), justPressedButtons: PointerButton.Primary }, 0);
 	return { ...f, control, capture, focus, feedback, counts };
 }
 
 test('a click allocates no drag session and still double-clicks; threshold begins a preview without a drop', () => {
 	const f = dragFixture();
-	f.capture.dispatch(pointer(24, 24, true), false, false, 20);
+	f.capture.dispatch(pointer(24, 24, true), false, 20);
 	assert.equal(f.counts.starts, 0);
-	f.capture.dispatch(pointer(24, 24), false, true, 40);
+	f.capture.dispatch({ ...pointer(24, 24), justReleasedButtons: PointerButton.Primary }, false, 40);
 	assert.equal(f.control.dragFeedback, undefined);
 	assert.equal(f.counts.drops, 0);
-	assert.equal(f.control.handlePointer(pointer(22, 22, true), true, 60), Result.Activate);
+	assert.equal(f.control.handlePointer({ ...pointer(22, 22, true), justPressedButtons: PointerButton.Primary }, 60), Result.Activate);
 	assert.equal(f.counts.starts, 0);
 	f.control.dispose();
 });
@@ -333,17 +334,17 @@ test('a click allocates no drag session and still double-clicks; threshold begin
 test('drag movement retains geometry and feedback; release commits once at the actual release target', () => {
 	const f = dragFixture();
 	const geometry = JSON.stringify(f.model);
-	f.capture.dispatch(pointer(60, 60, true), false, false, 20);
+	f.capture.dispatch(pointer(60, 60, true), false, 20);
 	assert.equal(f.control.dragFeedback, f.feedback);
 	assert.equal(f.counts.drops, 0);
-	for (let frame = 2; frame < 102; frame += 1) f.capture.dispatch(pointer(60, 60, true), false, false, frame * 20);
+	for (let frame = 2; frame < 102; frame += 1) f.capture.dispatch(pointer(60, 60, true), false, frame * 20);
 	assert.equal(f.counts.starts, 1);
 	assert.equal(f.counts.overs, 1, 'stationary warm polling performs no repeated domain hit work');
 	assert.equal(JSON.stringify(f.model), geometry, 'preview does not move retained model nodes');
-	f.capture.dispatch(pointer(70, 60), false, true, 2040);
+	f.capture.dispatch({ ...pointer(70, 60), justReleasedButtons: PointerButton.Primary }, false, 2040);
 	assert.equal(f.counts.drops, 1);
 	assert.equal(f.counts.overs, 2, 'release position supersedes previous hover');
-	f.capture.dispatch(pointer(70, 60), false, true, 2060);
+	f.capture.dispatch({ ...pointer(70, 60), justReleasedButtons: PointerButton.Primary }, false, 2060);
 	assert.equal(f.counts.drops, 1);
 	f.control.dispose();
 });
@@ -351,9 +352,9 @@ test('drag movement retains geometry and feedback; release commits once at the a
 test('release over invalid space, outside the graph, or consumed input cannot commit a previously accepted target', () => {
 	for (const [x, y, released] of [[50, 60, true], [121, 60, true], [60, 60, false]] as const) {
 		const f = dragFixture();
-		f.capture.dispatch(pointer(60, 60, true), false, false, 20);
+		f.capture.dispatch(pointer(60, 60, true), false, 20);
 		assert.equal(f.feedback.accepted, true);
-		f.capture.dispatch(pointer(x, y), false, released, 40);
+		f.capture.dispatch({ ...pointer(x, y), justReleasedButtons: released ? PointerButton.Primary : 0 }, false, 40);
 		assert.equal(f.counts.drops, 0);
 		assert.equal(f.control.dragFeedback, undefined);
 		f.control.dispose();
@@ -362,7 +363,7 @@ test('release over invalid space, outside the graph, or consumed input cannot co
 
 test('coalesced press/move/release uses the same threshold and a single drop', () => {
 	const f = dragFixture();
-	f.capture.dispatch(pointer(60, 60), false, true, 20);
+	f.capture.dispatch({ ...pointer(60, 60), justReleasedButtons: PointerButton.Primary }, false, 20);
 	assert.equal(f.counts.starts, 1);
 	assert.equal(f.counts.overs, 1);
 	assert.equal(f.counts.drops, 1);
@@ -372,7 +373,7 @@ test('coalesced press/move/release uses the same threshold and a single drop', (
 test('blur, detachment, model generation and domain invalidation clear feedback without waiting for pointer motion', () => {
 	for (const interrupt of ['blur', 'detach', 'model', 'domain', 'selection'] as const) {
 		const f = dragFixture();
-		f.capture.dispatch(pointer(60, 60, true), false, false, 20);
+		f.capture.dispatch(pointer(60, 60, true), false, 20);
 		if (interrupt === 'blur') f.focus.setTarget(null);
 		else if (interrupt === 'detach') { f.control.clearInput(); f.control.setInput(f.view); }
 		else if (interrupt === 'model') f.view.setModel({ ...f.model }, null);
@@ -380,7 +381,7 @@ test('blur, detachment, model generation and domain invalidation clear feedback 
 		else f.counts.current = false;
 		f.control.update();
 		assert.equal(f.control.dragFeedback, undefined);
-		assert.equal(f.capture.dispatch(pointer(70, 60), false, true, 40), false);
+		assert.equal(f.capture.dispatch({ ...pointer(70, 60), justReleasedButtons: PointerButton.Primary }, false, 40), false);
 		assert.equal(f.counts.drops, 0);
 		f.control.dispose();
 	}
@@ -389,9 +390,9 @@ test('blur, detachment, model generation and domain invalidation clear feedback 
 test('a pending drag cannot adopt a selection chosen after the physical press', () => {
 	const f = dragFixture();
 	f.view.selection = f.b;
-	f.capture.dispatch(pointer(60, 60, true), false, false, 20);
+	f.capture.dispatch(pointer(60, 60, true), false, 20);
 	assert.equal(f.counts.starts, 0);
-	f.capture.dispatch(pointer(60, 60), false, true, 40);
+	f.capture.dispatch({ ...pointer(60, 60), justReleasedButtons: PointerButton.Primary }, false, 40);
 	assert.equal(f.counts.drops, 0);
 	f.control.dispose();
 });
@@ -400,8 +401,8 @@ test('edge scrolling is host-time based and keeps the payload, not frame-paced o
 	const results: number[] = [];
 	for (const fps of [50, 60, 120]) {
 		const f = dragFixture();
-		f.capture.dispatch(pointer(119, 60, true), false, false, 20);
-		for (let frame = 1; frame <= fps; frame += 1) f.capture.dispatch(pointer(119, 60, true), false, false, 20 + frame * 1000 / fps);
+		f.capture.dispatch(pointer(f.view.bounds.right - 1, 60, true), false, 20);
+		for (let frame = 1; frame <= fps; frame += 1) f.capture.dispatch(pointer(f.view.bounds.right - 1, 60, true), false, 20 + frame * 1000 / fps);
 		results.push(f.view.scrollX);
 		assert.equal(f.counts.starts, 1);
 		assert.equal(f.view.model, f.model);
@@ -412,7 +413,7 @@ test('edge scrolling is host-time based and keeps the payload, not frame-paced o
 
 test('drag preview reuses clipped overlay command and glyph storage without changing the graph', () => {
 	const f = dragFixture();
-	f.capture.dispatch(pointer(60, 60, true), false, false, 20);
+	f.capture.dispatch(pointer(60, 60, true), false, 20);
 	const geometry = JSON.stringify(f.model);
 	const { presenter, renderer, queue } = createHostOverlayFixture(160, 120);
 	const draw = () => {
@@ -441,14 +442,14 @@ test('drag preview reuses clipped overlay command and glyph storage without chan
 test('wheel scrolling during a drag refreshes insertion feedback without replacing its source or committing', () => {
 	const f = dragFixture();
 	const position = pointer(60, 60, true);
-	f.capture.dispatch(position, false, false, 20);
+	f.capture.dispatch(position, false, 20);
 	assert.equal(f.control.handleWheel(position, 10, 4), true);
 	assert.deepEqual([f.view.scrollX, f.view.scrollY], [10, 4]);
 	assert.equal(f.control.dragFeedback, f.feedback);
 	assert.equal(f.counts.overs, 2);
 	assert.equal(f.counts.starts, 1);
 	assert.equal(f.counts.drops, 0);
-	f.capture.dispatch(pointer(60, 60), false, true, 40);
+	f.capture.dispatch({ ...pointer(60, 60), justReleasedButtons: PointerButton.Primary }, false, 40);
 	assert.equal(f.counts.drops, 1);
 	assert.equal(f.counts.overs, 2, 'release at the same world position reuses the wheel-refreshed target');
 	f.control.dispose();

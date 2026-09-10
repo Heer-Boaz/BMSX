@@ -1,3 +1,4 @@
+import { handleEditorScrollbarPointer } from '../../../input/pointer/scrollbar';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import type { CartEditor } from '../../../cart_editor';
@@ -44,6 +45,8 @@ import { getTextFileRuntimeSourceStatus } from '../../services/working_copy/runt
 import { activeCodeEditor } from '../../../editor/ui/code_editor_state';
 import { undo, redo } from '../../../editor/editing/undo_controller';
 import { clearReferenceHighlights, requestSemanticRefresh } from '../../../editor/contrib/intellisense/engine';
+
+const CODE_SCROLLBARS = ['codeVertical', 'codeHorizontal'] as const;
 
 export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 	private unsubscribeContentChange: () => void;
@@ -98,6 +101,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 	}
 
 	public override clearInput(): void {
+		editorViewState.scrollbarController.cancel();
 		this.unsubscribeContentChange();
 		storeCodeTabContext(this.input.context);
 		super.clearInput();
@@ -164,6 +168,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 		if (handleQuickInputPointer(this.microtasks, this.editor, this.sources, snapshot, justPressed)) {
 			return;
 		}
+		if (handleEditorScrollbarPointer(snapshot, justPressed, CODE_SCROLLBARS)) return;
 		handleCodeAreaPointerInput(
 			this.editor,
 			this.luaTooling,

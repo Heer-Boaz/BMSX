@@ -46,7 +46,7 @@ export async function testStudioBtDuplicate(test: StudioFixture): Promise<void> 
 	await click(button.bounds, 6);
 	const duplicated = BT_ORDER_SOURCE.replace('\t-- nested documentation', '\tnested;\n\t-- nested documentation');
 	check(model.version === version + 1 && model.buffer.getText() === duplicated && children().length === 4
-		&& viewport.selection === children()[2] && children()[2].children.length === 2 && children()[1].children.length === 0,
+		&& viewport.selection === children()[2] && children()[2].children.length === 2 && children()[1].children.length === 2,
 		'BT duplicate: held action makes one copy, retains the second occurrence and its expanded subtree');
 	check(lens.view.definitionRowKey === lens.view.document.definitions[0].rowKey,
 		'BT duplicate: the chosen registration remains selected');
@@ -65,7 +65,7 @@ export async function testStudioBtDuplicate(test: StudioFixture): Promise<void> 
 		'BT duplicate: hidden document Undo does not eagerly reproject a graph');
 	await click(editorChromeState.tabButtonBounds.get(lens.id)!);
 	check(viewport.selection === children()[1] && children()[1].children.length === 2,
-		'BT duplicate: Undo follows retained source and folds back to the original occurrence');
+		'BT duplicate: Undo follows retained source back to the original expanded occurrence');
 	await runPaletteCommand('Edit: Redo');
 	check(model.buffer.getText() === duplicated && viewport.selection === children()[2] && children()[2].children.length === 2,
 		'BT duplicate: graph palette Redo uses ordinary document history and source correspondence');

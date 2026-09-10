@@ -1,3 +1,4 @@
+import { isShiftDown } from '../../../input/keyboard/key_input';
 import { inputFocus } from '../../../input/focus';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { WorkbenchGraphControl, WorkbenchGraphPointerResult } from '../../ui/graph/control';
@@ -74,15 +75,6 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 				run: () => { this.input.workingCopy.redo(); },
 			});
 		}
-		this.graph.focusTarget.registerCommand('behaviorLens.toggleBranch', {
-			isEnabled: () => {
-				const presentation = this.input.view.presentation;
-				if (presentation.kind !== 'graph') return false;
-				const item = presentation.viewport.selection;
-				return item !== null && item.kind === 'node' && item.expandable;
-			},
-			run: () => this.controller.toggleBranch(),
-		});
 		this.graph.focusTarget.registerCommand('behaviorLens.duplicateChild', {
 			isEnabled: () => this.controller.canEditSelectedChild(),
 			run: () => this.controller.duplicateSelectedChild(),
@@ -159,6 +151,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		snapshot: PointerSnapshot,
 		justPressed: boolean,
 		now: number,
+		playerInput: PlayerInput,
 	): boolean {
 		if (this.sourceEditReview.visible) {
 			this.sourceEditReview.layout(editorViewState.font.renderFont(), measureTextRange, measureText, prepareBehaviorLensLayout(this.input.view));
@@ -182,8 +175,8 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 			return result !== WorkbenchPropertyPointerResult.Outside;
 		}
 		if (view.presentation.kind !== 'outline') {
-			const result = this.graph.handlePointer(snapshot, justPressed, now);
-			if (justPressed && result !== WorkbenchGraphPointerResult.Outside) {
+			const result = this.graph.handlePointer(snapshot, now, playerInput.getRawButtonState('Space', 'keyboard').pressed);
+			if (result === WorkbenchGraphPointerResult.Selection || result === WorkbenchGraphPointerResult.Activate) {
 				if (view.presentation.kind === 'graph') acceptBehaviorGraphSelection(view, view.presentation);
 				else acceptStateGraphSelection(view, view.presentation, this.input.workingCopy.buffer);
 			}
@@ -209,7 +202,9 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 			scrollWorkbenchList(view.presentation.tree, direction * steps * 3);
 		}
 		else if (view.presentation.kind !== 'outline') {
-			if (activePointer === null || !this.graph.handleWheel(activePointer, 0, direction * steps * 16)) return;
+			const distance = direction * steps * 16;
+			const horizontal = isShiftDown(playerInput);
+			if (activePointer === null || !this.graph.handleWheel(activePointer, horizontal ? distance : 0, horizontal ? 0 : distance)) return;
 		} else scrollWorkbenchList(view.presentation, direction * steps * 3);
 		playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');
 	}

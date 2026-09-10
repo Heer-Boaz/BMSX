@@ -1,3 +1,4 @@
+import { PointerButton } from '../buttons';
 import { setCursorPosition } from '../../../editor/ui/view/caret/caret';
 import { ensureSingleCursorSelectionAnchor } from '../../../editor/editing/cursor/state';
 import { clearGotoHoverHighlight } from '../../../editor/contrib/intellisense/engine';
@@ -8,7 +9,7 @@ import { editorPointerState } from '../state';
 import { activeCodeEditor } from '../../../editor/ui/code_editor_state';
 
 export function handleCodeAreaSelectionPointer(snapshot: PointerSnapshot, bounds: CodeAreaBounds): void {
-	if (!editorPointerState.pointerSelecting || !snapshot.primaryPressed) {
+	if (!editorPointerState.pointerSelecting || (snapshot.pressedButtons & PointerButton.Primary) === 0) {
 		return;
 	}
 	clearGotoHoverHighlight();

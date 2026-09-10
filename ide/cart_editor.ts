@@ -1,3 +1,4 @@
+import { applyScrollbarScroll } from './input/pointer/scrollbar';
 import type { GraphLayoutEngineFactory } from './workbench/services/graph_layout/engine';
 import { SceneEditorController } from './workbench/contrib/scene_editor/controller';
 import { QuickInputController } from './workbench/services/quick_input/controller';
@@ -45,7 +46,8 @@ import { updateBlink } from './editor/ui/inline/text_field';
 import { bindQuickInputFields } from './quick_input/fields';
 import { inputFocus } from './input/focus';
 import { pointerCapture } from './input/pointer/capture';
-import { Scrollbar, ScrollbarController } from './editor/ui/scrollbar';
+import { Scrollbar } from './workbench/ui/scrollbar';
+import { ScrollbarController } from './editor/ui/scrollbar_controller';
 import { clearRuntimeErrorOverlay } from './editor/contrib/runtime_error/navigation';
 import {
 	clearAllRuntimeErrorOverlays,
@@ -716,13 +718,13 @@ export class RuntimeCartEditor implements CartEditor {
 		applyViewportSize(viewport);
 		resetSemanticProjects();
 		editorViewState.scrollbars = {
-			codeVertical: new Scrollbar('codeVertical', 'vertical'),
-			codeHorizontal: new Scrollbar('codeHorizontal', 'horizontal'),
-			resourceVertical: new Scrollbar('resourceVertical', 'vertical'),
-			resourceHorizontal: new Scrollbar('resourceHorizontal', 'horizontal'),
-			viewerVertical: new Scrollbar('viewerVertical', 'vertical'),
+			codeVertical: new Scrollbar('vertical'),
+			codeHorizontal: new Scrollbar('horizontal'),
+			resourceVertical: new Scrollbar('vertical'),
+			resourceHorizontal: new Scrollbar('horizontal'),
+			viewerVertical: new Scrollbar('vertical'),
 		};
-		editorViewState.scrollbarController = new ScrollbarController(editorViewState.scrollbars);
+		editorViewState.scrollbarController = new ScrollbarController(editorViewState.scrollbars, (kind, scroll) => applyScrollbarScroll(this.resourcePanel, kind, scroll));
 		const resourcePanel = new ResourcePanelController(this, this.sources, {
 			resourceVertical: editorViewState.scrollbars.resourceVertical,
 			resourceHorizontal: editorViewState.scrollbars.resourceHorizontal,

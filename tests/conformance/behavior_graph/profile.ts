@@ -26,9 +26,8 @@ trees.register('profile', { root = { type = 'sequence', children = { ${'shared,'
 	const definition = buildBehaviorSourceDocument(resource, semantic).definitions[0];
 	if (definition.behaviorKind !== 'behavior_tree') throw new Error('profile requires the BT fixture');
 	const font = new MeasuredFont({ variant: 'tiny' });
-	const collapsed = new Set<string>();
-	const cardProjectionMs = medianMilliseconds(() => { projectBehaviorTreeGraph(definition, collapsed, font); });
-	const projection = projectBehaviorTreeGraph(definition, collapsed, font);
+	const cardProjectionMs = medianMilliseconds(() => { projectBehaviorTreeGraph(definition, font); });
+	const projection = projectBehaviorTreeGraph(definition, font);
 	const layoutAndRoutesMs = medianMilliseconds(() => { layoutBehaviorTreeGraph(projection); });
 	const view = new WorkbenchGraphViewport(layoutBehaviorTreeGraph(projection));
 	view.layout(0, 24, 384, 276);
@@ -51,6 +50,7 @@ trees.register('profile', { root = { type = 'sequence', children = { ${'shared,'
 	const measurements = font.measurements;
 	const drawAndQuadsMicroseconds = medianMilliseconds(() => { for (let index = 0; index < 1000; index += 1) draw(); });
 	console.log(JSON.stringify({ siblings, opaqueChild, nodes: view.model.nodes.length, sourceProjectionMs, cardProjectionMs, layoutAndRoutesMs,
-		hitMicroseconds, drawAndQuadsMicroseconds, warmFontMeasurements: font.measurements - measurements, retainedQuadStorage: backing === stream.floatData,
+		hitMicroseconds, drawAndQuadsMicroseconds, visibleQuads: stream.count,
+		warmFontMeasurements: font.measurements - measurements, retainedQuadStorage: backing === stream.floatData,
 		boundary: 'cold source/card/layout phases; warm hit and overlay emission plus quad stream; excludes parsing, GPU upload/raster and total Studio frame' }));
 }

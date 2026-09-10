@@ -1,3 +1,4 @@
+import type { PointerButtons } from '../input/pointer/buttons';
 import type {
 	LuaDefinitionLocation,
 	LuaSymbolEntry,
@@ -266,12 +267,11 @@ export type EditorContextMenuState = {
 	itemCount: number;
 };
 
-export type PointerSnapshot = {
+export type PointerSnapshot = PointerButtons & {
 	viewportX: number;
 	viewportY: number;
 	insideViewport: boolean;
 	valid: boolean;
-	primaryPressed: boolean;
 };
 
 export type InlineInputOptions = {

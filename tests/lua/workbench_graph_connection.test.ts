@@ -1,3 +1,4 @@
+import { PointerButton } from '../../ide/input/pointer/buttons';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Font } from '../../machine/ts/render/shared/bmsx_font';
@@ -18,11 +19,11 @@ function fixture() {
 	const control = new WorkbenchGraphControl(focus, capture);
 	f.view.selection = f.edge;
 	control.setInput(f.view, f.interaction);
-	const pointer = (x: number, y: number, pressed = true): PointerSnapshot => ({ valid: true, insideViewport: true, primaryPressed: pressed,
+	const pointer = (x: number, y: number, pressed = true): PointerSnapshot => ({ valid: true, insideViewport: true, pressedButtons: pressed ? PointerButton.Primary : 0, justPressedButtons: 0, justReleasedButtons: 0,
 		viewportX: x + f.view.bounds.left - f.view.scrollX, viewportY: y + f.view.bounds.top - f.view.scrollY });
 	const press = (end: 'source' | 'target', now = 0) => {
 		const i = end === 'source' ? 0 : f.edge.points.length - 2;
-		return control.handlePointer(pointer(f.edge.points[i], f.edge.points[i + 1]), true, now);
+		return control.handlePointer({ ...pointer(f.edge.points[i], f.edge.points[i + 1]), justPressedButtons: PointerButton.Primary }, now);
 	};
 	return { ...f, focus, capture, control, pointer, press };
 }
@@ -30,10 +31,10 @@ function fixture() {
 test('selected endpoint grips win over node headers and coincident parallel routes; press identity is latched', () => {
 	for (const end of ['source', 'target'] as const) {
 		const f = fixture();
-		assert.equal(f.press(end), Result.Handled);
+		assert.equal(f.press(end), Result.Selection);
 		assert.equal(f.view.selection, f.edge);
 		assert.equal(f.interaction.starts.length, 0);
-		f.capture.dispatch(f.pointer(248, 146), false, false, 20);
+		f.capture.dispatch(f.pointer(248, 146), false, 20);
 		assert.deepEqual(f.interaction.starts, [{ kind: 'connection', edge: f.edge, end }]);
 		assert.equal(f.interaction.feedback!.target, f.target);
 		assert.equal(f.interaction.drops.length, 0);
@@ -44,14 +45,14 @@ test('selected endpoint grips win over node headers and coincident parallel rout
 test('endpoint clicks never activate Source; ordinary label double-clicks still do', () => {
 	const f = fixture();
 	for (let click = 0; click < 3; click += 1) {
-		assert.equal(f.press('target', click * 40), Result.Handled);
-		f.capture.dispatch(f.pointer(242, 55, false), false, true, click * 40 + 20);
+		assert.equal(f.press('target', click * 40), Result.Selection);
+		f.capture.dispatch({ ...f.pointer(242, 55, false), justReleasedButtons: PointerButton.Primary }, false, click * 40 + 20);
 	}
 	assert.equal(f.interaction.starts.length, 0);
 	const position = f.pointer(126, 54);
-	assert.equal(f.control.handlePointer(position, true, 150), Result.Handled);
-	f.capture.dispatch({ ...position, primaryPressed: false }, false, true, 170);
-	assert.equal(f.control.handlePointer(position, true, 190), Result.Activate);
+	assert.equal(f.control.handlePointer({ ...position, justPressedButtons: PointerButton.Primary }, 150), Result.Selection);
+	f.capture.dispatch({ ...position, pressedButtons: 0, justReleasedButtons: PointerButton.Primary }, false, 170);
+	assert.equal(f.control.handlePointer({ ...position, justPressedButtons: PointerButton.Primary }, 190), Result.Activate);
 	assert.equal(f.interaction.starts.length, 0);
 	f.control.dispose();
 });
@@ -61,28 +62,28 @@ test('handle capability changes invalidate stationary hits and revoke pending an
 		for (const change of ['none', 'other-end', 'current'] as const) {
 			const f = fixture();
 			f.press('target');
-			if (active) f.capture.dispatch(f.pointer(248, 146), false, false, 20);
+			if (active) f.capture.dispatch(f.pointer(248, 146), false, 20);
 			if (change === 'none') f.interaction.ends = undefined;
 			else if (change === 'other-end') f.interaction.ends = 'source';
 			else f.interaction.current = false;
 			f.control.update();
 			assert.equal(f.control.dragFeedback, undefined);
-			assert.equal(f.capture.dispatch(f.pointer(248, 146, false), false, true, 40), false);
+			assert.equal(f.capture.dispatch({ ...f.pointer(248, 146, false), justReleasedButtons: PointerButton.Primary }, false, 40), false);
 			assert.equal(f.interaction.drops.length, 0);
 			f.interaction.current = true; f.interaction.ends = 'both'; f.control.update();
-			assert.equal(f.capture.dispatch(f.pointer(248, 146), false, false, 60), false, 'restoring capability cannot restore capture');
+			assert.equal(f.capture.dispatch(f.pointer(248, 146), false, 60), false, 'restoring capability cannot restore capture');
 			f.control.dispose();
 		}
 	}
 	const f = fixture();
 	const position = f.pointer(242, 55);
-	f.control.handlePointer(position, false, 0);
+	f.control.handlePointer({ ...position, justPressedButtons: 0 }, 0);
 	assert.equal(f.control.hover, f.edge);
 	f.interaction.ends = 'source';
-	f.control.handlePointer(position, false, 20);
+	f.control.handlePointer({ ...position, justPressedButtons: 0 }, 20);
 	assert.equal(f.control.hover, f.oldTarget, 'disabled endpoint is once again a normal node hit');
 	f.interaction.ends = 'target';
-	f.control.handlePointer(position, false, 40);
+	f.control.handlePointer({ ...position, justPressedButtons: 0 }, 40);
 	assert.equal(f.control.hover, f.edge);
 	f.control.dispose();
 });
@@ -92,20 +93,20 @@ test('source, selection, layout, focus, pane and input interruptions cancel with
 		for (const reason of ['model', 'selection', 'blur', 'detach', 'blocked', 'viewport', 'lost-release'] as const) {
 			const f = fixture();
 			f.press('target');
-			if (active) f.capture.dispatch(f.pointer(248, 146), false, false, 20);
+			if (active) f.capture.dispatch(f.pointer(248, 146), false, 20);
 			const position = f.pointer(248, 146);
 			switch (reason) {
 				case 'model': f.view.setModel({ ...f.model }, f.edge); break;
 				case 'selection': f.view.selection = f.parallel; break;
 				case 'blur': f.focus.setTarget(null); break;
 				case 'detach': f.control.clearInput(); f.control.setInput(f.view, f.interaction); break;
-				case 'blocked': f.capture.dispatch(position, true, false, 40); break;
-				case 'viewport': f.capture.dispatch({ ...position, insideViewport: false }, false, false, 40); break;
-				case 'lost-release': f.capture.dispatch({ ...position, primaryPressed: false }, false, false, 40); break;
+				case 'blocked': f.capture.dispatch(position, true, 40); break;
+				case 'viewport': f.capture.dispatch({ ...position, insideViewport: false }, false, 40); break;
+				case 'lost-release': f.capture.dispatch({ ...position, pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0 }, false, 40); break;
 			}
 			f.control.update();
 			assert.equal(f.control.dragFeedback, undefined);
-			assert.equal(f.capture.dispatch({ ...position, primaryPressed: false }, false, true, 60), false);
+			assert.equal(f.capture.dispatch({ ...position, pressedButtons: 0, justReleasedButtons: PointerButton.Primary }, false, 60), false);
 			assert.equal(f.interaction.drops.length, 0);
 			assert.equal(f.interaction.starts.length, active ? 1 : 0);
 			f.control.dispose();
@@ -117,20 +118,20 @@ test('valid node snaps, invalid node/space stays free; preview buffers and immut
 	const f = fixture();
 	const geometry = JSON.stringify(f.model);
 	f.press('target');
-	f.capture.dispatch(f.pointer(248, 146), false, false, 20);
+	f.capture.dispatch(f.pointer(248, 146), false, 20);
 	const feedback = f.interaction.feedback!;
 	const points = feedback.points; const arrow = feedback.arrow; const handles = f.control.connectionHandles;
 	assert.equal(feedback.accepted, true);
 	assert.equal(feedback.points[0], f.edge.points[0]);
 	assert.equal(feedback.points[1], f.edge.points[1]);
 	assert.equal(feedback.points[3], f.target.bounds.top, 'snap clips to the header boundary, not its text center');
-	for (let index = 0; index < 100; index += 1) f.capture.dispatch(f.pointer(248, 146), false, false, 40 + index * 20);
+	for (let index = 0; index < 100; index += 1) f.capture.dispatch(f.pointer(248, 146), false, 40 + index * 20);
 	assert.equal(f.interaction.overs, 1);
 	assert.equal(f.control.connectionHandles, handles);
-	f.capture.dispatch(f.pointer(146, 100), false, false, 2060);
+	f.capture.dispatch(f.pointer(146, 100), false, 2060);
 	assert.equal(feedback.accepted, false);
 	assert.deepEqual(points.slice(2), [146, 100]);
-	f.capture.dispatch(f.pointer(380, 116), false, false, 2080);
+	f.capture.dispatch(f.pointer(380, 116), false, 2080);
 	assert.equal(feedback.target, undefined);
 	assert.deepEqual(points.slice(2), [380, 116], 'outside the graph tracks the pointer, never an old snap');
 	assert.equal(f.interaction.overs, 2, 'outside the graph performs no contribution hit work');
@@ -143,17 +144,17 @@ test('physical release recomputes the target, detaches first and commits exactly
 	for (const coalesced of [false, true]) {
 		const f = fixture();
 		f.press('source');
-		if (!coalesced) f.capture.dispatch(f.pointer(248, 52), false, false, 20);
+		if (!coalesced) f.capture.dispatch(f.pointer(248, 52), false, 20);
 		f.interaction.onDrop = () => {
 			assert.equal(f.control.dragFeedback, undefined);
-			assert.equal(f.capture.dispatch(f.pointer(200, 100), false, false, 60), false);
+			assert.equal(f.capture.dispatch(f.pointer(200, 100), false, 60), false);
 			f.view.setModel({ ...f.model }, null);
 		};
-		f.capture.dispatch(f.pointer(248, 146, false), false, true, 40);
+		f.capture.dispatch({ ...f.pointer(248, 146, false), justReleasedButtons: PointerButton.Primary }, false, 40);
 		assert.equal(f.interaction.drops.length, 1);
 		assert.equal(f.interaction.drops[0].target, f.target);
 		assert.equal(f.interaction.drops[0].start.end, 'source');
-		f.capture.dispatch(f.pointer(248, 146, false), false, true, 60);
+		f.capture.dispatch({ ...f.pointer(248, 146, false), justReleasedButtons: PointerButton.Primary }, false, 60);
 		assert.equal(f.interaction.drops.length, 1);
 		f.control.dispose();
 	}
@@ -163,9 +164,9 @@ test('releasing over an invalid node, blank canvas or outside graph cannot commi
 	for (const [x, y] of [[146, 100], [180, 190], [380, 116]]) {
 		const f = fixture();
 		f.press('target');
-		f.capture.dispatch(f.pointer(248, 146), false, false, 20);
+		f.capture.dispatch(f.pointer(248, 146), false, 20);
 		assert.equal(f.interaction.feedback!.accepted, true);
-		f.capture.dispatch(f.pointer(x, y, false), false, true, 40);
+		f.capture.dispatch({ ...f.pointer(x, y, false), justReleasedButtons: PointerButton.Primary }, false, 40);
 		assert.equal(f.interaction.drops.length, 0);
 		assert.equal(f.control.dragFeedback, undefined);
 		f.control.dispose();
@@ -176,7 +177,7 @@ test('wheel and host-time edge scrolling refresh canvas position without changin
 	const f = fixture();
 	f.press('source');
 	const position = f.pointer(180, 160);
-	f.capture.dispatch(position, false, false, 20);
+	f.capture.dispatch(position, false, 20);
 	const feedback = f.interaction.feedback!;
 	f.control.handleWheel(position, 14, 6);
 	assert.deepEqual(feedback.points, [194, 166, 242, 55]);
@@ -186,9 +187,9 @@ test('wheel and host-time edge scrolling refresh canvas position without changin
 	for (const fps of [50, 60, 120]) {
 		const f = fixture();
 		f.press('target');
-		const margin = f.pointer(367, 160);
-		f.capture.dispatch(margin, false, false, 20);
-		for (let frame = 1; frame <= fps; frame += 1) f.capture.dispatch(margin, false, false, 20 + frame * 1000 / fps);
+		const margin = { ...f.pointer(0, 160), viewportX: f.view.bounds.right - 1 };
+		f.capture.dispatch(margin, false, 20);
+		for (let frame = 1; frame <= fps; frame += 1) f.capture.dispatch(margin, false, 20 + frame * 1000 / fps);
 		assert.ok(Math.abs(f.view.scrollX - 110) < 1e-9);
 		assert.equal(f.interaction.starts.length, 1);
 		assert.deepEqual(f.interaction.feedback!.points.slice(0, 2), f.edge.points.slice(0, 2));

@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { beginBehaviorTreeDrag } from '../../ide/workbench/contrib/behavior_lens/behavior_tree_drag';
-import { toggleBehaviorGraphBranch } from '../../ide/workbench/contrib/behavior_lens/graph_navigation';
 import type { BehaviorGraphNode } from '../../ide/workbench/contrib/behavior_lens/graph_model';
 import { readLuaSourceRange } from '../../ide/language/lua/source_edits';
 import { BT_ORDER_SOURCE } from '../helpers/behavior_order_fixture';
@@ -66,8 +65,8 @@ test('weighted cards and incoming routes drag the whole choice, not a detached c
 
 test('root, descendants, another occurrence of the same list, empty space and routes are not sibling drop targets', t => {
 	const f = fixture(t, BT_ORDER_SOURCE.replace('make_node(3) -- last inline', 'nested -- last inline'));
-	f.select(1); toggleBehaviorGraphBranch(f.view, f.graph);
-	f.select(2); toggleBehaviorGraphBranch(f.view, f.graph);
+	f.select(1);
+	f.select(2);
 	const children = f.viewport.model.nodes[0].children[0].children;
 	f.viewport.selection = children[1].children[0];
 	const drag = beginBehaviorTreeDrag(f.model, f.view)!;

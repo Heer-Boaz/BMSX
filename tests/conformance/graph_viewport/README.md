@@ -35,6 +35,27 @@ Chromium uses SwiftShader for the accelerated API paths in this headless test.
   `screenshots/`). These deliberately clipped geometry fixtures do not prove
   the readability of a concrete BT/FSM layout; those have separate Studio tests.
 
+### Canvas input and scrollbars
+
+The fixture uses the production `BrowserInputHub`. `pointer.mjs` drives actual
+Chromium DOM mouse/keyboard events before the deterministic geometry probes:
+middle-button and Space-primary pan over cards, chord edges arriving as
+`pointermove`, physical initiating-button release, both scrollbar thumbs and
+`releasePointerCapture` during an admitted connection preview. Pointer reset
+must cancel, never drop, and must leave a held keyboard key intact. Some Chromium
+chords also lose native capture when a different button is released; the probe
+records and honors that external cancellation rather than recapturing or
+pretending the button release itself owns the gesture. Independent capture tests
+prove another button's release alone cannot end it.
+
+Only attached panes hit their own code/resource scrollbars. The concrete FSM
+Studio test covers an overflowing source editor hidden behind the graph: its
+old geometry must not intercept the graph thumb. The shared viewport covers
+negative graph coordinates, edge/label bounds, finite padded limits, inner
+content clipping, release outside the graph, resize and retained geometry.
+The [navigation contract](../../../docs/graph_navigation_design.md) names the
+production references and keeps navigation separate from source authoring.
+
 ## Compound layout prerequisite
 
 The same browser command also runs `compound.ts` with the unmodified **elkjs
@@ -123,7 +144,8 @@ show the actual 384×288 tiny-font raster. Within-backend pixel oracles prove th
 new wire is visible, only the dragged old route disappears (parallel routes stay),
 and opaque header interiors/text stay unchanged even where the wire crosses
 another node. Software/WebGL2/WebGPU use the same control, not backend-specific
-test admission. These controls are not yet enabled on the concrete FSM pane.
+test admission. The concrete FSM pane now consumes these controls; its separate
+source-review/Save/Hot Resume proof is in the behavior-graph suite.
 
 ```sh
 npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
@@ -180,3 +202,18 @@ emission plus quad-stream construction, stationary hit-test count, warm font
 measurement count and retained quad-buffer identity. This excludes Lua
 projection, GPU uploads/rasterization and end-to-end Studio frame time. It is
 not an allocation profiler or a performance guarantee for other machines.
+
+```sh
+npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+  tests/conformance/graph_viewport/profile_navigation.ts
+```
+
+The navigation profile compares 32/1,024 retained nodes and their routes. It
+separates bounds/layer publication from captured pan, stationary capture,
+unchanged layout, resize, thumb drag and draw+quad emission. Ten warmup batches
+precede 25 median samples; warm batches contain 1,000 operations (reported as
+µs/operation). Assertions cover zero pan/thumb hit scans or font measurements,
+unchanged model/selection, retained viewport rectangles and retained quad storage.
+This excludes browser event polling, Lua analysis/layout, GPU, guest execution
+and heap/GC instrumentation. Publication still scales with graph size; drawing
+still visits retained geometry to cull offscreen items.

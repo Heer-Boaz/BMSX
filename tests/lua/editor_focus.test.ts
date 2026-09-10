@@ -55,38 +55,16 @@ test('empty and disabled focused history cannot fall through to document command
 	assert.equal(documentUndos, 1);
 });
 
-test('graph folding binds unmodified Space only to the concrete graph focus', (t) => {
+test('Space is not a graph or gameplay command binding', t => {
 	t.after(() => inputFocus.setTarget(null));
 	const graph = inputFocus.createTarget();
-	let enabled = true;
-	let folds = 0;
-	graph.registerCommand('behaviorLens.toggleBranch', {
-		isEnabled: () => enabled,
-		run: () => { folds += 1; },
-	});
-	const commands = { isEnabled: () => true };
-	graph.focus();
-	const binding = resolveEditorCommandKeybinding('Space', KeyModifier.none, commands)!;
-	assert.equal(binding.command, 'behaviorLens.toggleBranch');
-	assert.notEqual(binding.repeat, true, 'folding uses the existing just-pressed command path');
-	inputFocus.executeCommand(binding.command);
-	assert.equal(folds, 1);
-	for (const modifier of [KeyModifier.ctrl, KeyModifier.meta, KeyModifier.shift, KeyModifier.alt]) {
-		assert.equal(resolveEditorCommandKeybinding('Space', modifier, commands), null);
-	}
-	enabled = false;
-	assert.equal(resolveEditorCommandKeybinding('Space', KeyModifier.none, commands), binding,
-		'a graph without an expandable selection still owns its binding');
-	inputFocus.executeCommand(binding.command);
-	assert.equal(folds, 1);
 	const field = new TextField(graph);
-	field.focusTarget.focus();
-	assert.equal(resolveEditorCommandKeybinding('Space', KeyModifier.none, commands), null,
-		'text input does not inherit the graph shortcut');
-	field.focusTarget.release();
-	assert.equal(inputFocus.target, graph);
-	graph.release();
-	assert.equal(resolveEditorCommandKeybinding('Space', KeyModifier.none, commands), null);
+	for (const target of [graph, field.focusTarget, null]) {
+		inputFocus.setTarget(target);
+		for (const modifier of [KeyModifier.none, KeyModifier.ctrl, KeyModifier.meta, KeyModifier.shift, KeyModifier.alt]) {
+			assert.equal(resolveEditorCommandKeybinding('Space', modifier, { isEnabled: () => true }), null);
+		}
+	}
 });
 
 test('BT Delete belongs to graph focus, does not repeat, and cannot consume text-field or gameplay input', t => {

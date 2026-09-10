@@ -23,8 +23,8 @@ function fixture(source = FSM_PROOF_SOURCE) {
 		view.sourceVersion = model.version;
 	}, choose(reference: StateMachineSourceReference) {
 		view.selection = selectStateMachineSource(reference, model.buffer);
-		view.collapsedRowKeys.clear();
 		assert.ok(view.presentation.kind === 'outline');
+		view.presentation.collapsedRowKeys.clear();
 		rebuildBehaviorLensRows(view, view.presentation);
 	}, replace(range: LuaSourceRange, text: string) {
 		const span = luaSourceRangeToTextRange(model.buffer, range);

@@ -23,7 +23,7 @@ export class HeadlessInputHub implements InputSource, InputEventWriter {
 	public post(event: InputEvt): void {
 		switch (event.type) {
 			case 'reset':
-				this.sink.resetInput();
+				this.sink.resetInput(event.deviceId);
 				return;
 			case 'supervisor-request':
 				this.sink.setSupervisorRequestLine(event.down);

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readLuaSourceRange } from '../../ide/language/lua/source_edits';
 import { behaviorTreeEditTarget, duplicateBehaviorTreeChild } from '../../ide/workbench/contrib/behavior_lens/behavior_tree_edit';
-import { acceptBehaviorGraphSelection, toggleBehaviorGraphBranch } from '../../ide/workbench/contrib/behavior_lens/graph_navigation';
+import { acceptBehaviorGraphSelection } from '../../ide/workbench/contrib/behavior_lens/graph_navigation';
 import { prepareBehaviorLensLayout, selectBehaviorLensDefinition } from '../../ide/workbench/contrib/behavior_lens/layout';
 import { selectedBehaviorLensSourceRange } from '../../ide/workbench/contrib/behavior_lens/navigation';
 import { BT_ORDER_SOURCE } from '../helpers/behavior_order_fixture';
@@ -66,10 +66,9 @@ test('weighted cards and connections duplicate the complete choice and retain th
 	}
 });
 
-test('repeated copies retain only the selected occurrence folds through hidden history, without graph identity overrides', t => {
+test('repeated copies remain fully expanded through hidden history, without graph identity overrides', t => {
 	const f = fixture(t, BT_ORDER_SOURCE, 1);
 	f.select(1);
-	toggleBehaviorGraphBranch(f.view, f.graph);
 	for (let count = 1; count <= 2; count += 1) {
 		duplicateBehaviorTreeChild(f.model, behaviorTreeEditTarget(f.view)!);
 		f.refresh();
@@ -77,7 +76,7 @@ test('repeated copies retain only the selected occurrence folds through hidden h
 		const children = f.viewport.model.nodes[0].children[0].children;
 		assert.equal(f.viewport.selection, children[count + 1]);
 		assert.equal(children[count + 1].children.length, 2, 'retained bytes keep the selected expanded subtree');
-		for (let index = 1; index <= count; index += 1) assert.equal(children[index].children.length, 0, 'inserted namesakes do not inherit folds');
+		for (let index = 1; index <= count; index += 1) assert.equal(children[index].children.length, 2, 'inserted namesakes are fully visible without inheriting selection');
 	}
 	const document = f.view.document;
 	f.model.undo(); f.model.undo();
@@ -99,7 +98,6 @@ test('repeated copies retain only the selected occurrence folds through hidden h
 test('a duplicate inside a shared initializer edits that source once, not a private subtree of a registration', t => {
 	const f = fixture(t);
 	f.select(1);
-	toggleBehaviorGraphBranch(f.view, f.graph);
 	assert.ok(f.viewport.selection?.kind === 'node');
 	f.viewport.selection = f.viewport.selection.children[0];
 	acceptBehaviorGraphSelection(f.view, f.graph);
@@ -112,7 +110,7 @@ test('a duplicate inside a shared initializer edits that source once, not a priv
 		prepareBehaviorLensLayout(f.view);
 		f.select(1);
 		assert.ok(f.viewport.selection?.kind === 'node');
-		if (f.view.collapsedRowKeys.has(f.viewport.selection.source.rowKey)) toggleBehaviorGraphBranch(f.view, f.graph);
+
 		assert.ok(f.viewport.selection?.kind === 'node');
 		assert.equal(f.viewport.selection.children.length, 3);
 	}

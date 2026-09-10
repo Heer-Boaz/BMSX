@@ -1,7 +1,8 @@
 import type { FontVariant } from '../../../../machine/ts/render/shared/bmsx_font';
 import type { ScrollbarKind } from '../../../common/models';
 import type { InlineFieldMetrics } from '../inline/text_field';
-import { Scrollbar, ScrollbarController } from '../scrollbar';
+import type { Scrollbar } from '../../../workbench/ui/scrollbar';
+import type { ScrollbarController } from '../scrollbar_controller';
 import { CodeLayout } from '../code/layout';
 import { EditorFont } from './font';
 

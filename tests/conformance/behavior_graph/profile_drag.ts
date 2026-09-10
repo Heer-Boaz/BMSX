@@ -1,3 +1,4 @@
+import { PointerButton } from '../../../ide/input/pointer/buttons';
 import assert from 'node:assert/strict';
 import { medianMilliseconds } from '../../helpers/performance';
 import { createHostOverlayFixture } from '../../helpers/host_overlay';
@@ -37,26 +38,27 @@ for (const siblings of [24, 1024]) {
 	const capture = new PointerCaptureService();
 	const control = new WorkbenchGraphControl(new InputFocusService(), capture);
 	control.setInput(viewport, { begin: () => { starts += 1; return beginBehaviorTreeDrag(model, state); } });
-	const from = { viewportX: viewport.bounds.left + 20, viewportY: viewport.bounds.top + 34, valid: true, insideViewport: true, primaryPressed: true };
+	const from = { viewportX: viewport.bounds.left + 20, viewportY: viewport.bounds.top + 34, valid: true, insideViewport: true, pressedButtons: PointerButton.Primary, justPressedButtons: 0, justReleasedButtons: 0 };
 	const to = { ...from, viewportX: second.bounds.right - 4 + viewport.bounds.left - viewport.scrollX };
 	const alternate = { ...to, viewportX: to.viewportX - 2 };
-	control.handlePointer(from, false, 0);
+	control.handlePointer(from, 0);
 	const idleHitCount = hits;
 	const stationaryHoverMicroseconds = medianMilliseconds(() => {
-		for (let index = 0; index < 1000; index += 1) control.handlePointer(from, false, 0);
+		for (let index = 0; index < 1000; index += 1) control.handlePointer(from, 0);
 	});
 	assert.equal(hits, idleHitCount);
-	control.handlePointer(from, true, 0);
-	capture.dispatch(to, false, false, 20);
+	from.justPressedButtons = PointerButton.Primary;
+	control.handlePointer(from, 0);
+	capture.dispatch(to, false, 20);
 	assert.ok(control.dragFeedback?.accepted);
 	const dragHitCount = hits;
 	const stationaryDragMicroseconds = medianMilliseconds(() => {
-		for (let index = 0; index < 1000; index += 1) capture.dispatch(to, false, false, 20);
+		for (let index = 0; index < 1000; index += 1) capture.dispatch(to, false, 20);
 	});
 	const stationaryHits = hits - dragHitCount;
 	assert.equal(stationaryHits, 0, 'no stationary target queries');
 	const movingDragMicroseconds = medianMilliseconds(() => {
-		for (let index = 0; index < 1000; index += 1) capture.dispatch(index % 2 === 0 ? alternate : to, false, false, 20);
+		for (let index = 0; index < 1000; index += 1) capture.dispatch(index % 2 === 0 ? alternate : to, false, 20);
 	});
 	const { presenter, queue, renderer } = createHostOverlayFixture(384, 288);
 	const stream = new HostOverlayQuadStream();

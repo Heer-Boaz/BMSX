@@ -26,7 +26,7 @@ function fixture(t: TestContext, weighted = false, edge = false, definition = 1)
 	assert.ok(origin.source.kind === 'section');
 	const entry = origin.entries[1];
 	const node = weighted && !edge ? entry.node.children[0] : entry.node;
-	f.view.collapsedRowKeys.clear(); f.graph.dirty = true; prepareBehaviorLensLayout(f.view);
+	prepareBehaviorLensLayout(f.view);
 	f.viewport.selection = edge ? f.viewport.model.edgesBySource.get(node.rowKey)! : f.viewport.model.nodesBySource.get(node.rowKey)!;
 	acceptBehaviorGraphSelection(f.view, f.graph);
 	const member = { table: origin.source.table, branch: origin, index: 1 };

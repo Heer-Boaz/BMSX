@@ -19,8 +19,21 @@ Het volgende retarget-broncontract is ook gebouwd: echte scopes, afzonderlijke
 bronwaarde-/targetbewijzen en toetsing van alle herkende gedeelde literaluses.
 De bronbewerking legt nu ook de exacte proofselectie voor en na vast in dezelfde
 documenthistorie, inclusief verborgen Undo/Redo en gedeelde callbacks.
-Dit is een voorwaarde voor endpointdrag, nog geen nieuwe editorbediening.
+De [concrete FSM-endpointdrag](state_machine_connection_edit_design.md) is nu
+aangesloten, inclusief review van gedeelde bronuses en gewone Save/Hot Resume.
 Dit is nog geen complete BT-/FSM-editor of ActionEffect-authoring.
+
+## Actuele canvasnavigatie
+
+Het [gedeelde navigatiecontract](graph_navigation_design.md) vervangt de eerdere
+BT-collapsebediening in dit document. Alle statisch herkende branches zijn direct
+zichtbaar, met horizontale/verticale scrollbars, middenknop-pannen en spatie plus
+linkerknop. Geen Children-knop of kleinere tekst om de grafiek passend te maken.
+Alleen source-outlines en property-trees bezitten nog hun eigen folds; een
+graphinput bewaart geen ongebruikte collapseset. Broncorrespondentie, exacte
+selectie en documenthistorie blijven dezelfde owners. Historische bewijssecties
+hieronder beschrijven de destijds getoetste slices; actuele navigatie en de nieuwe
+regressie-/kostenmetingen staan in het navigatiecontract.
 
 ## BT-listbewijs versus inhoudsresolutie
 

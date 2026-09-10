@@ -1,3 +1,4 @@
+import { PointerButton } from '../../../ide/input/pointer/buttons';
 import assert from 'node:assert/strict';
 import { Font } from '../../../machine/ts/render/shared/bmsx_font';
 import { HostOverlayQuadStream } from '../../../machine/ts/render/host_overlay/quad_stream';
@@ -26,20 +27,21 @@ for (const nodeCount of [4, 1024]) {
 	const capture = new PointerCaptureService();
 	const control = new WorkbenchGraphControl(new InputFocusService(), capture);
 	control.setInput(f.view, f.interaction);
-	const from = { valid: true, insideViewport: true, primaryPressed: true, viewportX: 250, viewportY: 79 };
+	const from = { valid: true, insideViewport: true, pressedButtons: PointerButton.Primary, justPressedButtons: 0, justReleasedButtons: 0, viewportX: 250, viewportY: 79 };
 	const to = { ...from, viewportX: 256, viewportY: 170 };
 	const alternate = { ...to, viewportX: to.viewportX + 1 };
-	control.handlePointer(from, false, 0);
+	control.handlePointer(from, 0);
 	const handles = control.connectionHandles;
-	const stationaryHoverMicroseconds = medianMilliseconds(() => { for (let i = 0; i < 1000; i += 1) control.handlePointer(from, false, 0); });
-	control.handlePointer(from, true, 0);
-	capture.dispatch(to, false, false, 20);
+	const stationaryHoverMicroseconds = medianMilliseconds(() => { for (let i = 0; i < 1000; i += 1) control.handlePointer(from, 0); });
+	from.justPressedButtons = PointerButton.Primary;
+	control.handlePointer(from, 0);
+	capture.dispatch(to, false, 20);
 	const feedback = f.interaction.feedback!;
 	const overs = f.interaction.overs;
-	const stationaryDragMicroseconds = medianMilliseconds(() => { for (let i = 0; i < 1000; i += 1) capture.dispatch(to, false, false, 20); });
+	const stationaryDragMicroseconds = medianMilliseconds(() => { for (let i = 0; i < 1000; i += 1) capture.dispatch(to, false, 20); });
 	assert.equal(f.interaction.overs, overs);
 	const movingDragMicroseconds = medianMilliseconds(() => {
-		for (let i = 0; i < 1000; i += 1) capture.dispatch(i % 2 === 0 ? alternate : to, false, false, 20);
+		for (let i = 0; i < 1000; i += 1) capture.dispatch(i % 2 === 0 ? alternate : to, false, 20);
 	});
 	const { presenter, renderer, queue } = createHostOverlayFixture(384, 288);
 	const stream = new HostOverlayQuadStream();

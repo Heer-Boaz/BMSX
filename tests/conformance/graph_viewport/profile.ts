@@ -32,7 +32,7 @@ const view = new MeasuredViewport(createWorkbenchGraphModel(font, nodes, edges))
 view.layout(8, 24, 376, 240);
 const control = new WorkbenchGraphControl(new InputFocusService(), new PointerCaptureService());
 control.setInput(view);
-const snapshot = { valid: true, insideViewport: true, primaryPressed: false, viewportX: 40, viewportY: 50 };
+const snapshot = { valid: true, insideViewport: true, pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0, viewportX: 40, viewportY: 50 };
 const { presenter, queue, renderer } = createHostOverlayFixture(384, 288);
 const stream = new HostOverlayQuadStream();
 const draw = () => {
@@ -49,14 +49,14 @@ const storage = stream.floatData;
 const measures = font.measures;
 const frames = 5000;
 const idleStart = performance.now();
-for (let index = 0; index < frames; index += 1) { control.handlePointer(snapshot, false, index); draw(); }
+for (let index = 0; index < frames; index += 1) { control.handlePointer(snapshot, index); draw(); }
 const idleMicroseconds = (performance.now() - idleStart) * 1000 / frames;
 const stationaryHitTests = view.hitTests;
 const panStart = performance.now();
 for (let index = 0; index < frames; index += 1) {
 	view.scrollX = index % 160;
 	view.scrollY = index % 80;
-	control.handlePointer(snapshot, false, index);
+	control.handlePointer(snapshot, index);
 	draw();
 }
 const panMicroseconds = (performance.now() - panStart) * 1000 / frames;

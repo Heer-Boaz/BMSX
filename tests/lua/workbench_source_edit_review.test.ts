@@ -1,3 +1,4 @@
+import { PointerButton } from '../../ide/input/pointer/buttons';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { HostOverlayQuadStream } from '../../machine/ts/render/host_overlay/quad_stream';
@@ -34,7 +35,7 @@ function fixture(t: TestContext, count = 36) {
 	parent.focus(); show(); layout();
 	t.after(() => { review.dispose(); model.dispose(); });
 	const pointer = (x: number, y: number, pressed: boolean, time = 10) => review.handlePointer({ valid: true, insideViewport: true,
-		viewportX: x, viewportY: y, primaryPressed: pressed }, pressed, time);
+		viewportX: x, viewportY: y, pressedButtons: pressed ? PointerButton.Primary : 0, justPressedButtons: 0, justReleasedButtons: 0 }, pressed, time);
 	return { model, focus, parent, review, font, show, layout, pointer, measurements: () => measurements, applied: () => applied, opened: () => opened };
 }
 

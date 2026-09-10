@@ -1,3 +1,5 @@
+import { PointerButton } from '../../../input/pointer/buttons';
+import type { Scrollbar } from '../scrollbar';
 import { point_in_rect } from '../../../../machine/ts/common/rect';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 import { DOUBLE_CLICK_MAX_INTERVAL_MS, POINTER_DRAG_ACTIVATION_THRESHOLD } from '../../../common/constants';
@@ -10,8 +12,8 @@ import type { WorkbenchGraphViewport } from './viewport';
 import type { WorkbenchGraphConnectionDragStart, WorkbenchGraphDragFeedback, WorkbenchGraphDragSession, WorkbenchGraphDragSource } from './drag';
 import { hitWorkbenchGraphConnectionHandle, type WorkbenchGraphConnectionEnd, type WorkbenchGraphConnectionHandles } from './connection';
 
-export const enum WorkbenchGraphPointerResult { Outside, Handled, Activate }
-const enum Gesture { None, Pan, PendingDrag, Drag }
+export const enum WorkbenchGraphPointerResult { Outside, Handled, Selection, Activate }
+const enum Gesture { None, Pan, Scrollbar, PendingDrag, Drag }
 const DRAG_SCROLL_MARGIN = 12;
 const DRAG_SCROLL_SPEED = 120; // Viewport pixels per host second, not emulated frames.
 
@@ -27,6 +29,8 @@ export class WorkbenchGraphControl implements PointerCaptureTarget {
 	private anchorScrollX = 0;
 	private anchorScrollY = 0;
 	private gesture = Gesture.None;
+	private scrollbar: Scrollbar | undefined;
+	private scrollbarOffset = 0;
 	private pressTarget: WorkbenchGraphItem | null = null;
 	private pressConnection: WorkbenchGraphConnectionDragStart | undefined;
 	private dragSource: WorkbenchGraphDragSource | undefined;
@@ -85,6 +89,7 @@ export class WorkbenchGraphControl implements PointerCaptureTarget {
 	public cancelPointer(): void {
 		this.capture.release(this);
 		this.gesture = Gesture.None;
+		this.scrollbar = undefined;
 		this.pressTarget = null;
 		this.pressConnection = undefined;
 		this.drag = undefined;
@@ -133,6 +138,12 @@ export class WorkbenchGraphControl implements PointerCaptureTarget {
 		this.update();
 		if (this.gesture === Gesture.None) return;
 		const view = this.inputValue!;
+		if (this.gesture === Gesture.Scrollbar) {
+			const scrollbar = this.scrollbar!;
+			if (!scrollbar.isVisible()) this.cancelPointer();
+			else scrollbar.drag(scrollbar.orientation === 'horizontal' ? snapshot.viewportX : snapshot.viewportY, this.scrollbarOffset);
+			return;
+		}
 		if (this.gesture === Gesture.Pan) {
 			view.scrollX = this.anchorScrollX - Math.round(snapshot.viewportX - this.anchorX);
 			view.scrollY = this.anchorScrollY - Math.round(snapshot.viewportY - this.anchorY);
@@ -162,7 +173,7 @@ export class WorkbenchGraphControl implements PointerCaptureTarget {
 
 	public releaseCapturedPointer(snapshot: PointerSnapshot, now: number): void {
 		// A fast press/move/release may be coalesced into one host input interval.
-		if (this.gesture === Gesture.PendingDrag || this.gesture === Gesture.Pan) this.handleCapturedPointer(snapshot, now);
+		if (this.gesture === Gesture.PendingDrag || this.gesture === Gesture.Pan || this.gesture === Gesture.Scrollbar) this.handleCapturedPointer(snapshot, now);
 		else this.update();
 		if (this.gesture === Gesture.Drag) {
 			// Use the release coordinates, not the last accepted hover. No release-time scroll.
@@ -203,49 +214,73 @@ export class WorkbenchGraphControl implements PointerCaptureTarget {
 		}
 	}
 
-	public handlePointer(snapshot: PointerSnapshot, justPressed: boolean, now: number): WorkbenchGraphPointerResult {
+	public handlePointer(snapshot: PointerSnapshot, now: number, panModifier = false): WorkbenchGraphPointerResult {
 		const view = this.inputValue!;
 		this.update();
 		if (!snapshot.valid || !snapshot.insideViewport) {
 			this.cancelPointer();
 			return WorkbenchGraphPointerResult.Outside;
 		}
-		if (!point_in_rect(snapshot.viewportX, snapshot.viewportY, view.bounds)) {
+		if (!point_in_rect(snapshot.viewportX, snapshot.viewportY, view.canvas)) {
 			this.hover = null;
 			this.hoverValid = false;
 			return WorkbenchGraphPointerResult.Outside;
 		}
+		const primary = (snapshot.justPressedButtons & PointerButton.Primary) !== 0;
+		const auxiliary = (snapshot.justPressedButtons & PointerButton.Auxiliary) !== 0;
+		if (!point_in_rect(snapshot.viewportX, snapshot.viewportY, view.bounds)) {
+			this.hover = null;
+			this.hoverValid = false;
+			if (primary) {
+				const scrollbar = point_in_rect(snapshot.viewportX, snapshot.viewportY, view.horizontalScrollbar.getTrack()) ? view.horizontalScrollbar
+					: point_in_rect(snapshot.viewportX, snapshot.viewportY, view.verticalScrollbar.getTrack()) ? view.verticalScrollbar : undefined;
+				if (scrollbar !== undefined && scrollbar.isVisible()) {
+					this.focusTarget.focus();
+					this.pressTarget = view.selection;
+					this.lastClick = null;
+					this.scrollbar = scrollbar;
+					this.scrollbarOffset = scrollbar.beginDrag(scrollbar.orientation === 'horizontal' ? snapshot.viewportX : snapshot.viewportY);
+					this.gesture = Gesture.Scrollbar;
+					this.capture.capture(this);
+				}
+			}
+			return WorkbenchGraphPointerResult.Handled;
+		}
+		const pan = auxiliary || (primary && panModifier);
 		const x = snapshot.viewportX - view.bounds.left + view.scrollX;
 		const y = snapshot.viewportY - view.bounds.top + view.scrollY;
-		if (!this.hoverValid || this.hoverX !== x || this.hoverY !== y) {
+		if (!pan && (!this.hoverValid || this.hoverX !== x || this.hoverY !== y)) {
 			this.hoverEnd = this.connectionHandles === undefined ? undefined : hitWorkbenchGraphConnectionHandle(this.connectionHandles, x, y);
 			this.hover = this.hoverEnd === undefined ? view.hitTest(snapshot.viewportX, snapshot.viewportY) : this.connectionHandles!.edge;
 			this.hoverX = x;
 			this.hoverY = y;
 			this.hoverValid = true;
 		}
-		if (!justPressed) return WorkbenchGraphPointerResult.Handled;
+		if (!primary && !auxiliary) return WorkbenchGraphPointerResult.Handled;
 		this.focusTarget.focus();
-		view.selection = this.hover;
-		this.pressTarget = this.hover;
-		this.pressConnection = this.hoverEnd === undefined ? undefined
-			: { kind: 'connection', edge: this.connectionHandles!.edge, end: this.hoverEnd };
-		this.updateConnectionHandles();
 		this.anchorX = snapshot.viewportX;
 		this.anchorY = snapshot.viewportY;
 		this.anchorScrollX = view.scrollX;
 		this.anchorScrollY = view.scrollY;
-		if (this.hover === null) {
+		if (!pan) view.selection = this.hover;
+		this.pressTarget = view.selection;
+		if (pan || this.hover === null) {
 			this.lastClick = null;
-			this.capture.capture(this);
+			this.hover = null;
+			this.hoverValid = false;
+			this.pressConnection = undefined;
+			this.capture.capture(this, auxiliary ? PointerButton.Auxiliary : PointerButton.Primary);
 			this.gesture = Gesture.Pan;
-			return WorkbenchGraphPointerResult.Handled;
+			return pan ? WorkbenchGraphPointerResult.Handled : WorkbenchGraphPointerResult.Selection;
 		}
+		this.pressConnection = this.hoverEnd === undefined ? undefined
+			: { kind: 'connection', edge: this.connectionHandles!.edge, end: this.hoverEnd };
+		this.updateConnectionHandles();
 		if (this.pressConnection !== undefined) {
 			this.lastClick = null; // Endpoint clicks must never activate Source.
 			this.capture.capture(this);
 			this.gesture = Gesture.PendingDrag;
-			return WorkbenchGraphPointerResult.Handled;
+			return WorkbenchGraphPointerResult.Selection;
 		}
 		const activate = this.lastClick === this.hover && now - this.lastClickTime <= DOUBLE_CLICK_MAX_INTERVAL_MS;
 		this.lastClick = activate ? null : this.hover;
@@ -254,12 +289,12 @@ export class WorkbenchGraphControl implements PointerCaptureTarget {
 			this.capture.capture(this);
 			this.gesture = Gesture.PendingDrag;
 		}
-		return activate ? WorkbenchGraphPointerResult.Activate : WorkbenchGraphPointerResult.Handled;
+		return activate ? WorkbenchGraphPointerResult.Activate : WorkbenchGraphPointerResult.Selection;
 	}
 
 	public handleWheel(snapshot: PointerSnapshot, deltaX: number, deltaY: number): boolean {
 		const view = this.inputValue!;
-		if (!snapshot.valid || !snapshot.insideViewport || !point_in_rect(snapshot.viewportX, snapshot.viewportY, view.bounds)) return false;
+		if (!snapshot.valid || !snapshot.insideViewport || !point_in_rect(snapshot.viewportX, snapshot.viewportY, view.canvas)) return false;
 		this.update();
 		if (this.gesture !== Gesture.Drag && this.gesture !== Gesture.PendingDrag) this.cancelPointer();
 		view.pan(deltaX, deltaY);

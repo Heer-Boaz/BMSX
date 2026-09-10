@@ -173,12 +173,12 @@ t.postInput({
 await t.frames(1);
 await pressGamepad('down', 2);
 t.assert(viewport.selection.parent === viewport.model.nodes[0].children[0], 'gamepad down did not enter the first child');
-const selectedBranch = viewport.model.nodes[0].children[0].children.find(node => node.expandable);
+const selectedBranch = viewport.model.nodes[0].children[0].children.find(node => node.children.length > 0);
 t.assert(selectedBranch, 'the real tree has an expandable branch');
 let siblingPressId = 2000;
 while (viewport.selection !== selectedBranch) await pressKey('ArrowRight', ++siblingPressId);
 
-if (view.collapsedRowKeys.has(selectedBranch.source.rowKey)) await pressKey('Space', 3);
+t.assert(selectedBranch.children.length > 0, 'recognized children are visible without an expand command');
 await pressKey('ArrowDown', 4);
 t.assert(viewport.selection.parent.source.rowKey === selectedBranch.source.rowKey, 'down did not enter an expanded child');
 t.capture('behavior-lens-moon-tiny-384x288');

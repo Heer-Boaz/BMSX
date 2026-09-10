@@ -1,3 +1,4 @@
+import { PointerButton } from '../../../../input/pointer/buttons';
 import type { PointerSnapshot } from '../../../../common/models';
 import type { RectBounds } from '../../../../../machine/ts/common/rect';
 import { clamp } from '../../../../../machine/ts/common/clamp';
@@ -28,7 +29,7 @@ export function handleProblemsPanelPointerInput(
 		if (justPressed) {
 			controller.setFocused(false);
 		}
-		if (!snapshot.primaryPressed) {
+		if ((snapshot.pressedButtons & PointerButton.Primary) === 0) {
 			controller.setHoverIndex(-1);
 		}
 		return false;

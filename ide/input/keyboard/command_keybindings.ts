@@ -52,7 +52,6 @@ const editorContribKeybindings: readonly EditorCommandKeybinding[] = [
 
 const workbenchContribKeybindings: readonly EditorCommandKeybinding[] = [
 	{ code: 'KeyP', command: 'commandPalette', modifiers: { any: PRIMARY_MODIFIER, required: KeyModifier.shift, forbidden: KeyModifier.alt } },
-	{ code: 'Space', command: 'behaviorLens.toggleBranch', modifiers: NO_MODIFIERS, when: () => inputFocus.getCommand('behaviorLens.toggleBranch') !== undefined },
 	{ code: 'KeyD', command: 'behaviorLens.duplicateChild', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS }, when: () => inputFocus.getCommand('behaviorLens.duplicateChild') !== undefined },
 	{ code: 'Delete', command: 'behaviorLens.removeChild', modifiers: NO_MODIFIERS, when: () => inputFocus.getCommand('behaviorLens.removeChild') !== undefined },
 	{ code: 'F5', command: 'debugContinue', modifiers: NO_MODIFIERS },

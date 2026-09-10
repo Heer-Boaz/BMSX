@@ -35,6 +35,7 @@ export type BehaviorLensLayout = FullWidthWorkbenchLayout & {
 
 export type BehaviorLensOutline = WorkbenchListState<BehaviorLensRow> & {
 	readonly kind: 'outline';
+	readonly collapsedRowKeys: Set<BehaviorSourceRowKey>;
 	readonly actionBar: WorkbenchActionBarState;
 	rowsDirty: boolean;
 	textDirty: boolean;
@@ -74,7 +75,6 @@ export type BehaviorLensViewState = {
 	readonly sourceNodes: BehaviorSourceNode[];
 	readonly nodesByRowKey: Map<BehaviorSourceRowKey, BehaviorSourceNode>;
 	readonly parentRowKeyByRowKey: Map<BehaviorSourceRowKey, BehaviorSourceRowKey | null>;
-	readonly collapsedRowKeys: Set<BehaviorSourceRowKey>;
 	readonly sourceMatchRowKeys: Set<BehaviorSourceRowKey>;
 	presentation: BehaviorLensOutline | BehaviorLensGraph | BehaviorLensStateGraph | BehaviorLensEffectProperties;
 	readonly layout: BehaviorLensLayout;
@@ -83,7 +83,7 @@ export type BehaviorLensViewState = {
 };
 
 export function createBehaviorLensOutline(): BehaviorLensOutline {
-	return { kind: 'outline', actionBar: createWorkbenchActionBar('behaviorLens.title'),
+	return { kind: 'outline', collapsedRowKeys: new Set(), actionBar: createWorkbenchActionBar('behaviorLens.title'),
 		rows: [], selectionIndex: -1, scroll: 0, hoverIndex: -1, rowsDirty: true, textDirty: true,
 		layout: { contentLeft: 0, contentTop: 0, contentRight: 0, contentBottom: 0, rowHeight: 0, visibleRowCount: 0 } };
 }
@@ -116,7 +116,6 @@ export function createBehaviorLensViewState(document: BehaviorSourceDocument, mo
 		sourceNodes: [],
 		nodesByRowKey: new Map(),
 		parentRowKeyByRowKey: new Map(),
-		collapsedRowKeys: new Set(),
 		sourceMatchRowKeys: new Set(),
 		presentation: presentation === 'graph' ? createBehaviorLensGraph() : presentation === 'state-graph' ? createBehaviorLensStateGraph()
 			: presentation === 'properties' ? createBehaviorLensEffectProperties() : createBehaviorLensOutline(),

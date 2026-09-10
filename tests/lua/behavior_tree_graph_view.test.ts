@@ -28,7 +28,7 @@ function fixture(source = BEHAVIOR_SOURCE_FIXTURE) {
 
 test('graph projects one registration, original child order, distinct shared uses and typed attachment details', () => {
 	const f = fixture();
-	const graph = layoutBehaviorTreeGraph(projectBehaviorTreeGraph(f.definition, new Set(), font));
+	const graph = layoutBehaviorTreeGraph(projectBehaviorTreeGraph(f.definition, font));
 	const root = graph.nodes[0];
 	assert.equal(root.source, f.definition);
 	assert.equal(root.children.length, 1, 'blackboard is a detail, not a control-flow child');
@@ -59,16 +59,16 @@ test('graph projects one registration, original child order, distinct shared use
 	assert.notDeepEqual(graph.edgesBySource.get(first.source.rowKey)!.range, graph.edgesBySource.get(second.source.rowKey)!.range);
 });
 
-test('collapse hides only one occurrence, and dynamic membership never becomes guessed ordered edges', () => {
+test('shared occurrences are fully expanded, but dynamic membership never becomes guessed ordered edges', () => {
 	const f = fixture();
-	const full = layoutBehaviorTreeGraph(projectBehaviorTreeGraph(f.definition, new Set(), font));
+	const full = layoutBehaviorTreeGraph(projectBehaviorTreeGraph(f.definition, font));
 	const [first, second] = full.nodes[0].children[0].children;
-	const folded = layoutBehaviorTreeGraph(projectBehaviorTreeGraph(f.definition, new Set([first.source.rowKey]), font));
-	assert.equal(folded.nodesBySource.get(first.source.rowKey)!.children.length, 0);
-	assert.equal(folded.nodesBySource.get(second.source.rowKey)!.children.length, 2);
+	assert.equal(first.children.length, 2);
+	assert.equal(second.children.length, 2);
+	assert.ok(full.nodes.every(node => !node.lines.some(line => line.includes('+ CHILDREN') || line.includes('- CHILDREN'))));
 	const dynamic = fixture(`local trees<const> = require('cartlib/behaviour_tree/library')
 trees.register('partial', { root = { type = 'sequence', children = { { type = 'wait' }, [key] = make_node() } } })`);
-	const graph = layoutBehaviorTreeGraph(projectBehaviorTreeGraph(dynamic.definition, new Set(), font));
+	const graph = layoutBehaviorTreeGraph(projectBehaviorTreeGraph(dynamic.definition, font));
 	assert.equal(graph.nodes.length, 3);
 	assert.deepEqual(graph.nodes[0].children[0].children[0].lines, ['CHILDREN', '? PARTIAL MEMBERSHIP']);
 	assert.ok(graph.nodes[2].details.some(detail => readLuaSourceRange(dynamic.model.buffer, detail.range).includes('[key] = make_node()')));
@@ -78,13 +78,13 @@ test('parallel roles stay distinct; incidental fields and an unresolved root do 
 	const f = fixture();
 	const parallel = f.document.definitions[1];
 	assert.ok(parallel.behaviorKind === 'behavior_tree');
-	const graph = layoutBehaviorTreeGraph(projectBehaviorTreeGraph(parallel, new Set(), font));
+	const graph = layoutBehaviorTreeGraph(projectBehaviorTreeGraph(parallel, font));
 	assert.deepEqual(graph.nodes[0].children[0].children.map(child => child.lines[0]), ['MAIN_TASK', 'BACKGROUND_TREE']);
 	const incidental = fixture(`local trees<const> = require('cartlib/behaviour_tree/library')
 trees.register('leaf', { root = { type = 'wait', children = { { type = 'wait' } } } })`);
-	assert.equal(layoutBehaviorTreeGraph(projectBehaviorTreeGraph(incidental.definition, new Set(), font)).nodes.length, 2);
+	assert.equal(layoutBehaviorTreeGraph(projectBehaviorTreeGraph(incidental.definition, font)).nodes.length, 2);
 	const dynamic = fixture(`local trees<const> = require('cartlib/behaviour_tree/library')\ntrees.register('opaque', make_tree())`);
-	const opaque = layoutBehaviorTreeGraph(projectBehaviorTreeGraph(dynamic.definition, new Set(), font));
+	const opaque = layoutBehaviorTreeGraph(projectBehaviorTreeGraph(dynamic.definition, font));
 	assert.equal(opaque.nodes.length, 1);
 	assert.equal(opaque.edges.length, 0);
 	assert.ok(opaque.nodes[0].lines.includes('? NO STATIC ROOT'));
@@ -158,7 +158,7 @@ trees.register('choices', { root = { type = 'weighted_random_selector', choices 
 	assert.ok(root?.kind === 'node');
 	const branch = root.branches[0];
 	assert.ok(branch.role === 'choices');
-	const model = layoutBehaviorTreeGraph(projectBehaviorTreeGraph(f.definition, new Set(), font));
+	const model = layoutBehaviorTreeGraph(projectBehaviorTreeGraph(f.definition, font));
 	const [first, second] = branch.entries;
 	const a = model.edgesBySource.get(first.node.rowKey)!;
 	const b = model.edgesBySource.get(second.node.rowKey)!;

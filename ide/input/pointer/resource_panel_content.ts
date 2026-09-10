@@ -1,3 +1,4 @@
+import { PointerButton } from './buttons';
 import type { ResourcePanelController } from '../../workbench/contrib/resources/panel/controller';
 import { point_in_rect } from '../../../machine/ts/common/rect';
 import type { PointerSnapshot } from '../../common/models';
@@ -18,7 +19,7 @@ export function handleResourcePanelPointer(
 		if (justPressed) {
 			resourcePanel.setFocused(false);
 		}
-		if (resourcePanel.isVisible() && !snapshot.primaryPressed) {
+		if (resourcePanel.isVisible() && (snapshot.pressedButtons & PointerButton.Primary) === 0) {
 			resourcePanel.hoverIndex = -1;
 		}
 		return false;
@@ -42,7 +43,7 @@ export function handleResourcePanelPointer(
 				openResourcePanelSelection(resourcePanel, hoverIndex, snapshot.viewportX);
 			}
 	}
-	if (!snapshot.primaryPressed && hoverIndex === -1) {
+	if ((snapshot.pressedButtons & PointerButton.Primary) === 0 && hoverIndex === -1) {
 		resourcePanel.hoverIndex = -1;
 	}
 	editorPointerState.pointerSelecting = false;

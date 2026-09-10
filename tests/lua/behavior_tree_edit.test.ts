@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readLuaSourceRange } from '../../ide/language/lua/source_edits';
 import { behaviorTreeMoveTarget } from '../../ide/workbench/contrib/behavior_lens/behavior_tree_edit';
-import { toggleBehaviorGraphBranch } from '../../ide/workbench/contrib/behavior_lens/graph_navigation';
 import { prepareBehaviorLensLayout, selectBehaviorLensDefinition } from '../../ide/workbench/contrib/behavior_lens/layout';
 import { selectedBehaviorLensSourceRange } from '../../ide/workbench/contrib/behavior_lens/navigation';
 import { BT_ORDER_SOURCE } from '../helpers/behavior_order_fixture';
@@ -27,13 +26,11 @@ test('BT reorder uses array membership, not lexical indices or descendant warnin
 	assert.equal(behaviorTreeMoveTarget(f.view, -1)!.index, 1);
 });
 
-test('moves preserve the selected occurrence, subtree folds, source links and ordinary document history', t => {
+test('moves preserve the selected occurrence, fully expanded subtrees, source links and ordinary document history', t => {
 	const f = fixture(t, BT_ORDER_SOURCE, 1);
 	f.select(1);
-	toggleBehaviorGraphBranch(f.view, f.graph);
 	const selected = f.viewport.selection!;
-	assert.ok(selected.kind === 'node' && selected.expandable);
-	assert.ok(!f.view.collapsedRowKeys.has(selected.source.rowKey));
+	assert.ok(selected.kind === 'node' && selected.children.length > 0);
 	for (const direction of [-1, 1, 1] as const) f.move(direction);
 	const moved = f.model.buffer.getText();
 	for (const operation of [() => {}, () => f.model.undo(), () => f.model.undo(), () => f.model.undo(),
@@ -41,7 +38,6 @@ test('moves preserve the selected occurrence, subtree folds, source links and or
 		operation(); f.refresh();
 		assert.equal(f.view.definitionRowKey, f.view.document.definitions[1].rowKey, 'shared initializer does not select the first registration');
 		assert.ok(f.viewport.selection?.kind === 'node' && f.viewport.selection.children.length === 2);
-		assert.ok(!f.view.collapsedRowKeys.has(f.viewport.selection.source.rowKey), 'expanded state follows preserved source, not the default collapsed state');
 		assert.equal(readLuaSourceRange(f.model.buffer, selectedBehaviorLensSourceRange(f.view)!), 'nested');
 	}
 	assert.equal(f.model.buffer.getText(), moved);
@@ -71,13 +67,12 @@ test('choice node and edge commands move the complete weighted wrapper and retai
 test('identical subtree uses keep the explicitly moved occurrence, not the first namesake', t => {
 	const f = fixture(t, BT_ORDER_SOURCE.replace('make_node(3) -- last inline', 'nested -- last inline'));
 	f.select(2);
-	toggleBehaviorGraphBranch(f.view, f.graph);
 	f.move(-1);
 	const children = f.viewport.model.nodes[0].children[0].children;
 	assert.equal(children[1].source.authoredRange, children[2].source.authoredRange, 'two uses of the same initializer');
 	assert.equal(f.viewport.selection, children[1]);
 	assert.equal(children[1].children.length, 2);
-	assert.equal(children[2].children.length, 0, 'an identical neighbour does not inherit the selected expansion');
+	assert.equal(children[2].children.length, 2, 'the identical neighbour is fully visible without inheriting selection');
 	f.model.undo(); f.refresh();
 	assert.equal(f.viewport.selection, f.viewport.model.nodes[0].children[0].children[2]);
 	assert.ok(f.viewport.selection?.kind === 'node' && f.viewport.selection.children.length === 2);

@@ -24,7 +24,7 @@ function fixture(source = BT_MEMBERSHIP_SOURCE, index = 0) {
 	const document = project();
 	const definition = document.definitions[index];
 	assert.ok(definition.behaviorKind === 'behavior_tree');
-	const graph = layoutBehaviorTreeGraph(projectBehaviorTreeGraph(definition, new Set(), font));
+	const graph = layoutBehaviorTreeGraph(projectBehaviorTreeGraph(definition, font));
 	return { model, document, definition, graph, project, root: graph.nodes[0].children[0] };
 }
 

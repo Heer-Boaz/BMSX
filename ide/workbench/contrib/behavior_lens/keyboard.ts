@@ -1,5 +1,4 @@
 import type { PlayerInput } from '../../../../hosts/common/input/player';
-import { inputFocus } from '../../../input/focus';
 import { consumeIdeKey, isKeyJustPressed, shouldRepeatKeyFromPlayer, isShiftDown, isCtrlDown, isMetaDown, isAltDown } from '../../../input/keyboard/key_input';
 import type { BehaviorLensController } from './controller';
 import type { BehaviorLensViewState } from './view_model';
@@ -107,14 +106,6 @@ export function handleBehaviorLensGamepadInput(
 		gamepad.consumeButton('x');
 		controller.openDetails();
 		return true;
-	}
-	if (view.presentation.kind === 'graph') {
-		const collapse = gamepad.getButtonState('y');
-		if (collapse.justpressed && !collapse.consumed) {
-			gamepad.consumeButton('y');
-			inputFocus.executeCommand('behaviorLens.toggleBranch');
-			return true;
-		}
 	}
 	const activate = gamepad.getButtonState('a');
 	if (activate.justpressed && !activate.consumed) {

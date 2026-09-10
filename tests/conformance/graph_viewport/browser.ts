@@ -1,7 +1,7 @@
 import { createWebGLBackend, createWebGPUBackend } from '../../../hosts/browser/backend';
 import { BrowserVideoOutput } from '../../../hosts/browser/video_output';
 import { Input } from '../../../hosts/common/input/manager';
-import { HeadlessInputHub } from '../../../hosts/node/headless/input';
+import { BrowserInputHub } from '../../../hosts/browser/input';
 import { VirtualHeadlessClock } from '../../../hosts/node/headless/clock';
 import { Machine } from '../../../machine/ts/machine/machine';
 import { Memory } from '../../../machine/ts/machine/memory/memory';
@@ -18,7 +18,7 @@ import { VideoPresenter } from '../../../machine/ts/render/video_presenter';
 import { OverlayRenderer } from '../../../ide/runtime/overlay_renderer';
 import { api } from '../../../ide/runtime/overlay_api';
 import { editorViewState } from '../../../ide/editor/ui/view/state';
-import { computeEditorPointerButtonMask, POINTER_PRIMARY_JUST_PRESSED, POINTER_PRIMARY_JUST_RELEASED } from '../../../ide/input/pointer/buttons';
+import { PointerButton } from '../../../ide/input/pointer/buttons';
 import { readEditorPointerSnapshot } from '../../../ide/input/pointer/frame';
 import { inputFocus } from '../../../ide/input/focus';
 import { pointerCapture } from '../../../ide/input/pointer/capture';
@@ -72,8 +72,7 @@ export async function createFixture(canvas: HTMLCanvasElement, kind: 'software' 
 	}
 	backend.resizePresentationTarget(WIDTH, HEIGHT);
 	const clock = new VirtualHeadlessClock();
-	const input = new Input(clock, new HeadlessInputHub(), -1);
-	input.connectInputDevice({ id: 'pointer:0', kind: 'pointer' });
+	const input = new Input(clock, new BrowserInputHub(canvas, clock, null, 'F12'), -1);
 	const player = input.getPlayerInput(1);
 	// A reset, non-executing machine supplies real GX output. No ROM packer or cart fixture.
 	const machine = new Machine(new Memory({ systemRom: new Uint8Array(0), cartridgeSlots: [null, null] }, PSX_MACHINE_SPEC.ramBytes), input, PSX_MACHINE_SPEC);
@@ -118,9 +117,11 @@ export async function createFixture(canvas: HTMLCanvasElement, kind: 'software' 
 		clock.advance(20);
 		input.pollInput();
 		panes.activePane.update(0.02);
-		const mask = computeEditorPointerButtonMask(player);
 		const snapshot = readEditorPointerSnapshot(display, player);
-		if (!pointerCapture.dispatch(snapshot, false, (mask & POINTER_PRIMARY_JUST_RELEASED) !== 0, clock.now())) panes.activePane.handlePointer(snapshot, (mask & POINTER_PRIMARY_JUST_PRESSED) !== 0, false, player, clock.now(), false);
+		if (!pointerCapture.dispatch(snapshot, false, clock.now())) {
+			panes.activePane.handlePointer(snapshot, (snapshot.justPressedButtons & PointerButton.Primary) !== 0, false, player, clock.now(), false);
+			if (snapshot.justReleasedButtons !== 0) pointerCapture.dispatch(snapshot, false, clock.now());
+		}
 		inputFocus.handleKeyboard(player);
 		draw();
 	};
@@ -163,7 +164,7 @@ export async function createFixture(canvas: HTMLCanvasElement, kind: 'software' 
 		commandKinds: kinds, commandRefs: refs, commandCount: 3 };
 	return {
 		exercise, draw,
-		view, otherView: second, font, move, button, key, step, panes, pane, inputs, group, connection,
+		view, otherView: second, player, font, move, button, key, step, panes, pane, inputs, group, connection,
 		healthy,
 		resize(width: number, height: number) {
 			// Retain the editor's logical layout choice while the game target changes.

@@ -37,7 +37,9 @@ export function reconcileBehaviorLensSource(
 	const selectedKey = selection?.rowKey;
 	const oldDefinitionKey = state.definitionRowKey;
 	const oldRanges = state.sourceRanges;
-	const oldCollapsed = new Set(state.collapsedRowKeys);
+	const presentation = state.presentation;
+	const collapsed = presentation.kind === 'outline' || presentation.kind === 'properties' ? presentation.collapsedRowKeys : undefined;
+	const oldCollapsed = collapsed === undefined ? undefined : new Set(collapsed);
 	const oldMatches = new Set(state.sourceMatchRowKeys);
 	const oldDefinitions = state.document.definitions;
 	const newRanges = new Map<BehaviorSourceRowKey, TrackedTextRange>();
@@ -46,7 +48,7 @@ export function reconcileBehaviorLensSource(
 	state.sourceNodes.length = 0;
 	state.nodesByRowKey.clear();
 	state.parentRowKeyByRowKey.clear();
-	state.collapsedRowKeys.clear();
+	collapsed?.clear();
 	state.sourceMatchRowKeys.clear();
 
 	function visit(nodes: readonly BehaviorSourceNode[], previous: readonly BehaviorSourceNode[], parent: BehaviorSourceRowKey | null, depth: number): void {
@@ -67,10 +69,10 @@ export function reconcileBehaviorLensSource(
 			if (prior !== undefined) {
 				if (prior.rowKey === selectedKey) selected = node.rowKey;
 				if (prior.rowKey === oldDefinitionKey) state.definitionRowKey = node.rowKey;
-				if (oldCollapsed.has(prior.rowKey)) state.collapsedRowKeys.add(node.rowKey);
+				if (oldCollapsed?.has(prior.rowKey)) collapsed!.add(node.rowKey);
 				if (oldMatches.has(prior.rowKey)) state.sourceMatchRowKeys.add(node.rowKey);
-			} else if (node.children.length > 0 && depth > 1) {
-				state.collapsedRowKeys.add(node.rowKey);
+			} else if (collapsed !== undefined && node.children.length > 0 && depth > 1) {
+				collapsed.add(node.rowKey);
 			}
 			if (node.children.length > 0) visit(node.children, prior === undefined ? [] : prior.children, node.rowKey, depth + 1);
 		}

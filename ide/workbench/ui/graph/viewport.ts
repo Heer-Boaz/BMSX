@@ -1,3 +1,5 @@
+import { SCROLLBAR_WIDTH } from '../../../common/constants';
+import { Scrollbar } from '../scrollbar';
 import { create_rect_bounds, point_in_rect, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import { clamp } from '../../../../machine/ts/common/clamp';
 import type { WorkbenchGraphItem, WorkbenchGraphModel } from './model';
@@ -9,22 +11,53 @@ type GraphItem<Model extends WorkbenchGraphModel> = Model['nodes'][number] | Mod
 
 /** Input-owned view state; no gesture, source recognizer or layout algorithm. */
 export class WorkbenchGraphViewport<Model extends WorkbenchGraphModel = WorkbenchGraphModel> {
+	/** Outer canvas; content bounds exclude the scrollbar gutters. */
+	public readonly canvas = create_rect_bounds();
 	public readonly bounds = create_rect_bounds();
-	public scrollX = 0;
-	public scrollY = 0;
+	/** Legal scroll offsets, including one viewport of padding around the graph. */
+	public readonly scrollBounds = create_rect_bounds();
+	public readonly horizontalScrollbar = new Scrollbar('horizontal');
+	public readonly verticalScrollbar = new Scrollbar('vertical');
+	private readonly horizontalTrack = create_rect_bounds();
+	private readonly verticalTrack = create_rect_bounds();
 	public selection: GraphItem<Model> | null = null;
 
 	public constructor(public model: Model) {
+		this.updateScrollBounds();
 	}
+
+	public get scrollX(): number { return this.horizontalScrollbar.getScroll(); }
+	public set scrollX(value: number) { this.horizontalScrollbar.setScroll(value); }
+	public get scrollY(): number { return this.verticalScrollbar.getScroll(); }
+	public set scrollY(value: number) { this.verticalScrollbar.setScroll(value); }
 
 	/** The domain owner supplies the proven correspondence, or no selection. */
 	public setModel(model: Model, selection: GraphItem<Model> | null): void {
 		this.model = model;
 		this.selection = selection;
+		this.updateScrollBounds();
 	}
 
 	public layout(left: number, top: number, right: number, bottom: number): void {
-		write_rect_bounds(this.bounds, left, top, right, bottom);
+		if (this.canvas.left === left && this.canvas.top === top && this.canvas.right === right && this.canvas.bottom === bottom) return;
+		write_rect_bounds(this.canvas, left, top, right, bottom);
+		const contentRight = Math.max(left, right - SCROLLBAR_WIDTH);
+		const contentBottom = Math.max(top, bottom - SCROLLBAR_WIDTH);
+		write_rect_bounds(this.bounds, left, top, contentRight, contentBottom);
+		write_rect_bounds(this.horizontalTrack, left, contentBottom, contentRight, bottom);
+		write_rect_bounds(this.verticalTrack, contentRight, top, right, contentBottom);
+		this.updateScrollBounds();
+	}
+
+	private updateScrollBounds(): void {
+		const x = this.scrollX;
+		const y = this.scrollY;
+		const width = this.bounds.right - this.bounds.left;
+		const height = this.bounds.bottom - this.bounds.top;
+		const graph = this.model.bounds;
+		write_rect_bounds(this.scrollBounds, graph.left - width, graph.top - height, graph.right, graph.bottom);
+		this.horizontalScrollbar.layout(this.horizontalTrack, graph.right - graph.left + width * 2, width, x, this.scrollBounds.left);
+		this.verticalScrollbar.layout(this.verticalTrack, graph.bottom - graph.top + height * 2, height, y, this.scrollBounds.top);
 	}
 
 	public pan(deltaX: number, deltaY: number): void {
@@ -87,10 +120,12 @@ export class WorkbenchGraphViewport<Model extends WorkbenchGraphModel = Workbenc
 	}
 
 	public intersects(bounds: RectBounds, margin: number): boolean {
-		return bounds.right + margin >= this.scrollX
-			&& bounds.bottom + margin >= this.scrollY
-			&& bounds.left - margin < this.scrollX + this.bounds.right - this.bounds.left
-			&& bounds.top - margin < this.scrollY + this.bounds.bottom - this.bounds.top;
+		const x = this.scrollX;
+		const y = this.scrollY;
+		return bounds.right + margin >= x
+			&& bounds.bottom + margin >= y
+			&& bounds.left - margin < x + this.bounds.right - this.bounds.left
+			&& bounds.top - margin < y + this.bounds.bottom - this.bounds.top;
 	}
 }
 

@@ -1,3 +1,4 @@
+import { PointerButton } from '../../../input/pointer/buttons';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 import type { PointerSnapshot } from '../../../common/models';
 import { clearGotoHoverHighlight } from '../../../editor/contrib/intellisense/engine';
@@ -41,9 +42,10 @@ export abstract class WorkbenchViewEditorPane<
 		now: number,
 		_gotoModifierActive: boolean,
 	): void {
-		const handled = this.handleViewPointer(snapshot, justPressed, now);
-		if (handled && justPressed) {
-			playerInput.inputHandlers.pointer?.consumeButton('pointer_primary');
+		const handled = this.handleViewPointer(snapshot, justPressed, now, playerInput);
+		if (handled) {
+			if (justPressed) playerInput.inputHandlers.pointer?.consumeButton('pointer_primary');
+			if ((snapshot.justPressedButtons & PointerButton.Auxiliary) !== 0) playerInput.inputHandlers.pointer?.consumeButton('pointer_aux');
 		}
 		clearEditorPointerSelectionState();
 		editorPointerState.lastPointerRowResolution = null;
@@ -55,6 +57,7 @@ export abstract class WorkbenchViewEditorPane<
 		_snapshot: PointerSnapshot,
 		justPressed: boolean,
 		_now: number,
+		_playerInput: PlayerInput,
 	): boolean {
 		if (justPressed) this.focus();
 		return false;

@@ -2,7 +2,7 @@ import * as constants from '../../../../common/constants';
 import { clamp } from '../../../../../machine/ts/common/clamp';
 import { create_rect_bounds } from '../../../../../machine/ts/common/rect';
 import { ScratchBuffer } from '../../../../../machine/ts/common/scratchbuffer';
-import type { Scrollbar } from '../../../../editor/ui/scrollbar';
+import type { Scrollbar } from '../../../ui/scrollbar';
 import { renderResourcePanel } from '../../../render/resource_panel';
 import type { ResourceBrowserItem } from '../../../../common/models';
 import type { RectBounds } from '../../../../../machine/ts/common/rect';

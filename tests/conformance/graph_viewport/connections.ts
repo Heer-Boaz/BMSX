@@ -18,13 +18,14 @@ export function exerciseGraphConnections(fixture: Awaited<ReturnType<typeof crea
 	const cancel = () => { key('Escape', true); step(); key('Escape', false); step(); button(false); step(); };
 	const select = () => { f.view.selection = f.edge; step(); };
 	const geometry = JSON.stringify(f.model);
+	const startsBefore = f.interaction.starts.length;
 	select();
 	for (let click = 0; click < 3; click += 1) {
 		press('target');
-		check(f.view.selection === f.edge && pane.result === WorkbenchGraphPointerResult.Handled, 'endpoint click does not activate Source or select the node underneath');
+		check(f.view.selection === f.edge && pane.result === WorkbenchGraphPointerResult.Selection, 'endpoint click does not activate Source or select the node underneath');
 		button(false); step();
 	}
-	check(f.interaction.starts.length === 0, 'clicks do not begin a contribution session');
+	check(f.interaction.starts.length === startsBefore, 'clicks do not begin a contribution session');
 	press('target'); position(248, 146); step();
 	check(f.interaction.feedback!.target === f.target && f.interaction.drops.length === 0, 'physical threshold admits and draws a target without dropping');
 	const preview = pane.graph.dragFeedback;

@@ -9,8 +9,10 @@ import { drawWorkbenchGraphNodeDrag, drawWorkbenchGraphConnectionHandles, drawWo
 /** Draw the retained layout; partial primitives are clipped by the render owner. */
 export function drawWorkbenchGraph(view: WorkbenchGraphViewport, hover: WorkbenchGraphItem | null, focused: boolean, drag?: WorkbenchGraphDragFeedback, handles?: WorkbenchGraphConnectionHandles): void {
 	const bounds = view.bounds;
-	const offsetX = bounds.left - view.scrollX;
-	const offsetY = bounds.top - view.scrollY;
+	const scrollX = view.scrollX;
+	const scrollY = view.scrollY;
+	const offsetX = bounds.left - scrollX;
+	const offsetY = bounds.top - scrollY;
 	const model = view.model;
 	const connection = drag?.kind === 'connection' ? drag : undefined;
 	const replacedEdge = connection?.edge;
@@ -55,7 +57,7 @@ export function drawWorkbenchGraph(view: WorkbenchGraphViewport, hover: Workbenc
 		}
 	}
 	for (const node of model.nodes) {
-		if (node.bounds.top + node.headerHeight < view.scrollY || !view.intersects(node.bounds, 0)) continue;
+		if (node.bounds.top + node.headerHeight < scrollY || !view.intersects(node.bounds, 0)) continue;
 		const area = node.bounds;
 		const left = area.left + offsetX;
 		const top = area.top + offsetY;
@@ -81,4 +83,7 @@ export function drawWorkbenchGraph(view: WorkbenchGraphViewport, hover: Workbenc
 	}
 	if (focused) api.blit_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, colors.COLOR_PROBLEMS_PANEL_SELECTION_BORDER);
 	api.popClipRect();
+	view.horizontalScrollbar.draw(colors.SCROLLBAR_TRACK_COLOR, colors.SCROLLBAR_THUMB_COLOR);
+	view.verticalScrollbar.draw(colors.SCROLLBAR_TRACK_COLOR, colors.SCROLLBAR_THUMB_COLOR);
+	api.fill_rect(bounds.right, bounds.bottom, view.canvas.right, view.canvas.bottom, 0, colors.SCROLLBAR_TRACK_COLOR);
 }

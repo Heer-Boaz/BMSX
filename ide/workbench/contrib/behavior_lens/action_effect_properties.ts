@@ -48,6 +48,7 @@ export type BehaviorLensEffectProperties = {
 	readonly actionBar: WorkbenchActionBarState;
 	readonly tree: WorkbenchPropertyTree<EffectPropertyElement>;
 	readonly nodesBySource: Map<BehaviorSourceRowKey, WorkbenchTreeNode<EffectPropertyElement>>;
+	readonly collapsedRowKeys: Set<BehaviorSourceRowKey>;
 	readonly collapsedGroups: Set<EffectPropertyGroup>;
 	selectedGroup: EffectPropertyGroup | undefined;
 	dirty: boolean;
@@ -57,7 +58,7 @@ export type BehaviorLensEffectProperties = {
 
 export function createBehaviorLensEffectProperties(): BehaviorLensEffectProperties {
 	return { kind: 'properties', actionBar: createWorkbenchActionBar('behaviorLens.properties.title'),
-		tree: createWorkbenchPropertyTree(), nodesBySource: new Map(), collapsedGroups: new Set(), selectedGroup: undefined,
+		tree: createWorkbenchPropertyTree(), nodesBySource: new Map(), collapsedRowKeys: new Set(), collapsedGroups: new Set(), selectedGroup: undefined,
 		dirty: true, summary: '', emptyText: '' };
 }
 
@@ -83,7 +84,7 @@ export function projectActionEffectProperties(
 		const node = appendWorkbenchTreeNode(tree, parent, {
 			kind: 'property', source, label: uppercaseOutsideStrings(label), value, description,
 			warning: source.resolution !== 'complete', displayLabel: '', displayValue: '',
-		}, view.collapsedRowKeys.has(source.rowKey));
+		}, properties.collapsedRowKeys.has(source.rowKey));
 		properties.nodesBySource.set(source.rowKey, node);
 		return node;
 	}
@@ -135,7 +136,7 @@ export function acceptEffectPropertySelection(view: BehaviorLensViewState, prope
 		if (element.kind === 'group') {
 			if (node.collapsed) properties.collapsedGroups.add(element.group);
 			else properties.collapsedGroups.delete(element.group);
-		} else if (node.collapsed) view.collapsedRowKeys.add(element.source.rowKey);
-		else view.collapsedRowKeys.delete(element.source.rowKey);
+		} else if (node.collapsed) properties.collapsedRowKeys.add(element.source.rowKey);
+		else properties.collapsedRowKeys.delete(element.source.rowKey);
 	}
 }

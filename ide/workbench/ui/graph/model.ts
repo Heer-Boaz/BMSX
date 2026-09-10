@@ -34,6 +34,8 @@ export type WorkbenchGraphItem = WorkbenchGraphNode | WorkbenchGraphEdge;
 
 /** One layout generation. Array order within each paint layer is never inferred domain order. */
 export type WorkbenchGraphModel<Node extends WorkbenchGraphNode = WorkbenchGraphNode, Edge extends WorkbenchGraphEdge = WorkbenchGraphEdge> = {
+	/** Complete geometry including origin, container bodies, routed edges and labels. */
+	readonly bounds: RectBounds;
 	readonly font: BFont;
 	readonly nodes: readonly Node[];
 	readonly edges: readonly Edge[];
@@ -45,8 +47,24 @@ export type WorkbenchGraphModel<Node extends WorkbenchGraphNode = WorkbenchGraph
 export function createWorkbenchGraphModel<Node extends WorkbenchGraphNode, Edge extends WorkbenchGraphEdge>(
 	font: BFont, nodes: readonly Node[], edges: readonly Edge[],
 ): WorkbenchGraphModel<Node, Edge> {
-	return { font, nodes, edges, containers: nodes.filter(node => node.bounds.bottom !== node.bounds.top + node.headerHeight),
-		labelledEdges: edges.filter(edge => edge.labels.length > 0) };
+	const bounds = create_rect_bounds();
+	const containers: Node[] = [];
+	const labelledEdges: Edge[] = [];
+	for (const node of nodes) {
+		if (node.bounds.bottom !== node.bounds.top + node.headerHeight) containers.push(node);
+		bounds.left = Math.min(bounds.left, node.bounds.left);
+		bounds.top = Math.min(bounds.top, node.bounds.top);
+		bounds.right = Math.max(bounds.right, node.bounds.right);
+		bounds.bottom = Math.max(bounds.bottom, node.bounds.bottom);
+	}
+	for (const edge of edges) {
+		if (edge.labels.length > 0) labelledEdges.push(edge);
+		bounds.left = Math.min(bounds.left, edge.bounds.left);
+		bounds.top = Math.min(bounds.top, edge.bounds.top);
+		bounds.right = Math.max(bounds.right, edge.bounds.right);
+		bounds.bottom = Math.max(bounds.bottom, edge.bounds.bottom);
+	}
+	return { font, nodes, edges, bounds, containers, labelledEdges };
 }
 
 /** Measure once while building a layout, using the font that will draw it. */

@@ -1,3 +1,4 @@
+import { exerciseGraphPointer } from './pointer.mjs';
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
 import { createServer } from 'node:http';
@@ -46,6 +47,7 @@ try {
 			window.fixture = await createFixture(document.querySelector('canvas'), kind);
 			return { ...window.fixture.exercise(), primitives: window.fixture.primitives, clip: window.fixture.clip };
 		}, backend);
+		await exerciseGraphPointer(page);
 		const target = page.locator('canvas');
 		for (let index = 0; index < info.primitives.length; index += 1) {
 			await page.evaluate(index => window.fixture.renderPrimitive(index, false), index);

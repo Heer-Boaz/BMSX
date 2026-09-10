@@ -1,7 +1,7 @@
 import type { PlayerInput } from '../../../hosts/common/input/player';
 import { clearGotoHoverHighlight } from '../../editor/contrib/intellisense/engine';
 import { clearHoverTooltip } from '../../editor/contrib/hover/controller';
-import { computeEditorPointerButtonMask, POINTER_AUX_JUST_PRESSED, POINTER_PRIMARY_JUST_PRESSED, POINTER_PRIMARY_JUST_RELEASED, POINTER_SECONDARY_JUST_PRESSED } from './buttons';
+import { PointerButton } from './buttons';
 import { prepareEditorPointerFrame, readEditorPointerSnapshot } from './frame';
 import { handleEditorPanelPointer } from './panel';
 import { clearEditorPointerSelectionState } from './state';
@@ -32,16 +32,15 @@ export function handleTextEditorPointerInput(
 	const snapshot = readEditorPointerSnapshot(display, playerInput);
 	const blockingModal = hasBlockingWorkbenchModal();
 	const quickInputVisible = editor.quickInput.visible;
-	const buttonMask = computeEditorPointerButtonMask(playerInput);
-	const justReleased = (buttonMask & POINTER_PRIMARY_JUST_RELEASED) !== 0;
+	const justReleased = (snapshot.justReleasedButtons & PointerButton.Primary) !== 0;
 	if (pointerCapture.dispatch(snapshot, blockingModal || quickInputVisible
-		|| editorChromeState.openMenuId !== null || editorContextMenuState.visible, justReleased, now)) return;
-	if (prepareEditorPointerFrame(editor.resourcePanel, snapshot, gotoModifierActive, blockingModal || quickInputVisible)) {
+		|| editorChromeState.openMenuId !== null || editorContextMenuState.visible, now)) return;
+	if (prepareEditorPointerFrame(snapshot, gotoModifierActive, blockingModal || quickInputVisible)) {
 		return;
 	}
-	const justPressed = (buttonMask & POINTER_PRIMARY_JUST_PRESSED) !== 0;
-	const pointerSecondaryJustPressed = (buttonMask & POINTER_SECONDARY_JUST_PRESSED) !== 0;
-	const pointerAuxJustPressed = (buttonMask & POINTER_AUX_JUST_PRESSED) !== 0;
+	const justPressed = (snapshot.justPressedButtons & PointerButton.Primary) !== 0;
+	const pointerSecondaryJustPressed = (snapshot.justPressedButtons & PointerButton.Secondary) !== 0;
+	const pointerAuxJustPressed = (snapshot.justPressedButtons & PointerButton.Auxiliary) !== 0;
 	if (blockingModal) {
 		if (justPressed) {
 			handleBlockingWorkbenchModalPointer(editor, snapshot);
@@ -86,4 +85,6 @@ export function handleTextEditorPointerInput(
 		now,
 		gotoModifierActive,
 	);
+	// A complete short click may create and release capture in this same host poll.
+	if (snapshot.justReleasedButtons !== 0) pointerCapture.dispatch(snapshot, false, now);
 }

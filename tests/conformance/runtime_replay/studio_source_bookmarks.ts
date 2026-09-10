@@ -29,7 +29,6 @@ export async function testStudioSourceBookmarks(test: StudioFixture): Promise<vo
 	const graph = lens.view.presentation;
 	const viewport = graph.viewport;
 	await press('ArrowDown'); await press('ArrowDown');
-	await click(graph.actionBar.items[2].bounds);
 	await press('ArrowDown'); await press('ArrowRight');
 	const selected = viewport.selection;
 	if (selected?.kind !== 'node' || selected.member === null) throw new Error('bookmark: selected source member required');

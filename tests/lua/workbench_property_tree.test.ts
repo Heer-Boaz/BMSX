@@ -1,3 +1,4 @@
+import { PointerButton } from '../../ide/input/pointer/buttons';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Font } from '../../machine/ts/render/shared/bmsx_font';
@@ -79,7 +80,7 @@ test('property pointer isolates Source activation from folds, held presses, deta
 	const f = fixture(2);
 	const pointer = new WorkbenchPropertyTreePointer();
 	const bounds = f.state.layout;
-	const point = { valid: true, insideViewport: true, primaryPressed: true, viewportX: bounds.valueLeft + 8, viewportY: bounds.contentTop + bounds.rowHeight + 3 };
+	const point = { valid: true, insideViewport: true, pressedButtons: PointerButton.Primary, justPressedButtons: 0, justReleasedButtons: 0, viewportX: bounds.valueLeft + 8, viewportY: bounds.contentTop + bounds.rowHeight + 3 };
 	assert.equal(pointer.handle(f.state, point, true, 10), PointerResult.Selection);
 	assert.equal(pointer.handle(f.state, point, false, 20), PointerResult.Handled);
 	assert.equal(pointer.handle(f.state, point, true, 30), PointerResult.Activate);

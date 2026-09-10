@@ -1440,6 +1440,16 @@ cook a second behavior document, cartlib does not decode an editor resource or
 bind a visual-editor manifest, and machine, TOC, cartridge model and C++ core
 remain unaware of behavior authoring.
 
+BT and FSM diagrams are fully expanded over their recognized source structure.
+The host workbench graph owns finite padded canvas navigation and shared
+horizontal/vertical scrollbars, not guest input or authored geometry. Middle
+drag and Space + primary drag pan without editing or changing source selection;
+ordinary primary gestures retain node/connection editing. Host pointer capture
+latches the initiating button and distinguishes its physical release from device
+cancellation. No gameplay shortcut, ICU word or C++ machine representation is
+changed. The owners, production references and proof boundaries are in
+`graph_navigation_design.md`.
+
 FSM source structure and possible transition-return facts belong to the IDE
 contribution, once per source generation. They refer to those same authored
 occurrences, not a second runtime graph. The cartlib path grammar's tooling

@@ -1,3 +1,4 @@
+import { PointerButton } from '../../pointer/buttons';
 import { point_in_rect } from '../../../../machine/ts/common/rect';
 import { processInlineFieldPointer } from '../../../workbench/contrib/code_editor/find/search';
 import { getCreateResourceBarBounds } from '../../../workbench/common/layout';
@@ -22,7 +23,7 @@ export function handleCreateResourcePointer(resourcePanel: ResourcePanelControll
 		createResourceState.field.focusTarget.focus();
 		activateQuickInputField(resourcePanel);
 	}
-	processInlineFieldPointer(createResourceState.field, quickInputTextLeft('NEW FILE:'), snapshot.viewportX, justPressed, snapshot.primaryPressed);
+	processInlineFieldPointer(createResourceState.field, quickInputTextLeft('NEW FILE:'), snapshot.viewportX, justPressed, ((snapshot.pressedButtons & PointerButton.Primary) !== 0));
 	finishQuickInputPointer();
 	return true;
 }

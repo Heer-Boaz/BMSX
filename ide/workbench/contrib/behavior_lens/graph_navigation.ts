@@ -1,22 +1,11 @@
 import type { BehaviorLensGraph, BehaviorLensViewState } from './view_model';
 import type { BehaviorGraphNode } from './graph_model';
-import { prepareBehaviorLensLayout } from './layout';
 import { BehaviorLensNavigationResult, type BehaviorLensNavigationCommand, updateBehaviorLensStatus } from './navigation';
 
 /** Selection correspondence is a source occurrence plus its presentation role, never a hidden row. */
 export function acceptBehaviorGraphSelection(state: BehaviorLensViewState, graph: BehaviorLensGraph): void {
 	const item = graph.viewport.selection;
 	state.selection = item === null ? null : { kind: item.kind === 'node' ? 'node' : 'tree-edge', rowKey: item.source.rowKey };
-	updateBehaviorLensStatus(state);
-}
-
-export function toggleBehaviorGraphBranch(state: BehaviorLensViewState, graph: BehaviorLensGraph): void {
-	const item = graph.viewport.selection;
-	if (item === null || item.kind !== 'node' || !item.expandable) return;
-	if (state.collapsedRowKeys.has(item.source.rowKey)) state.collapsedRowKeys.delete(item.source.rowKey);
-	else state.collapsedRowKeys.add(item.source.rowKey);
-	graph.dirty = true;
-	prepareBehaviorLensLayout(state);
 	updateBehaviorLensStatus(state);
 }
 
@@ -42,12 +31,7 @@ export function executeBehaviorGraphNavigation(
 				break;
 			case 'up': if (node.parent !== null) node = node.parent; break;
 			case 'down':
-				if (node.expandable && state.collapsedRowKeys.has(node.source.rowKey)) {
-					viewport.selection = node;
-					acceptBehaviorGraphSelection(state, graph);
-					toggleBehaviorGraphBranch(state, graph);
-					node = viewport.model.nodesBySource.get(node.source.rowKey)!;
-				}
+
 				if (node.children.length > 0) node = node.children[0];
 				break;
 			case 'left':

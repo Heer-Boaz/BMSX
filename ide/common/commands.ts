@@ -54,7 +54,6 @@ export type EditorCommandId =
 	| 'sourceEditReview.source'
 	| 'undo'
 	| 'redo'
-	| 'behaviorLens.toggleBranch'
 	| 'behaviorLens.moveChildEarlier'
 	| 'behaviorLens.moveChildLater'
 	| 'behaviorLens.removeChild'

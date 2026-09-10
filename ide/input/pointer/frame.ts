@@ -1,5 +1,5 @@
+import { PointerButton, readEditorPointerButtons } from './buttons';
 import type { PlayerInput } from '../../../hosts/common/input/player';
-import { applyScrollbarScroll } from './scrollbar';
 import { clearGotoHoverHighlight } from '../../editor/contrib/intellisense/engine';
 import { clearHoverTooltip } from '../../editor/contrib/hover/controller';
 import { mapScreenPointToViewport } from '../../editor/ui/view/view';
@@ -12,35 +12,25 @@ import { editorViewState } from '../../editor/ui/view/state';
 import { editorSearchState, lineJumpState } from '../../workbench/contrib/code_editor/find/widget_state';
 import { symbolSearchState } from '../../workbench/contrib/code_editor/symbols/search/state';
 import { createResourceState } from '../../workbench/contrib/resources/widget_state';
-import type { ResourcePanelController } from '../../workbench/contrib/resources/panel/controller';
 import type { EditorDisplay } from '../../common/viewport';
 
 export function readEditorPointerSnapshot(display: EditorDisplay, playerInput: PlayerInput): PointerSnapshot {
-	const primaryState = playerInput.getRawButtonState('pointer_primary', 'pointer');
-	const primaryPressed = primaryState.pressed && !primaryState.consumed;
-	const positionState = playerInput.getRawButtonState('pointer_position', 'pointer');
-	const coords = positionState.value2d;
-	if (!coords) {
-		return {
-			viewportX: 0,
-			viewportY: 0,
-			insideViewport: false,
-			valid: false,
-			primaryPressed,
-		};
-	}
-	const mapped = mapScreenPointToViewport(display, coords[0], coords[1]);
-	return {
-		viewportX: mapped.x,
-		viewportY: mapped.y,
-		insideViewport: mapped.inside,
-		valid: mapped.valid,
-		primaryPressed,
+	const snapshot: PointerSnapshot = {
+		viewportX: 0, viewportY: 0, insideViewport: false, valid: false,
+		pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0,
 	};
+	readEditorPointerButtons(playerInput, snapshot);
+	const coords = playerInput.getRawButtonState('pointer_position', 'pointer').value2d;
+	if (coords === null) return snapshot;
+	const mapped = mapScreenPointToViewport(display, coords[0], coords[1]);
+	snapshot.viewportX = mapped.x;
+	snapshot.viewportY = mapped.y;
+	snapshot.insideViewport = mapped.inside;
+	snapshot.valid = mapped.valid;
+	return snapshot;
 }
 
 export function prepareEditorPointerFrame(
-	resourcePanel: ResourcePanelController,
 	snapshot: PointerSnapshot,
 	gotoModifierActive: boolean,
 	workbenchInputBlocked: boolean,
@@ -62,16 +52,16 @@ export function prepareEditorPointerFrame(
 		editorViewState.scrollbarController.cancel();
 		editorPointerState.lastPointerRowResolution = null;
 		clearGotoHoverHighlight();
-	} else if (editorViewState.scrollbarController.hasActiveDrag() && !snapshot.primaryPressed) {
+	} else if (editorViewState.scrollbarController.hasActiveDrag() && (snapshot.pressedButtons & PointerButton.Primary) === 0) {
 		editorViewState.scrollbarController.cancel();
-	} else if (editorViewState.scrollbarController.hasActiveDrag() && snapshot.primaryPressed) {
-		if (editorViewState.scrollbarController.update(snapshot.viewportX, snapshot.viewportY, snapshot.primaryPressed, (kind, scroll) => applyScrollbarScroll(resourcePanel, kind, scroll))) {
+	} else if (editorViewState.scrollbarController.hasActiveDrag() && ((snapshot.pressedButtons & PointerButton.Primary) !== 0)) {
+		if (editorViewState.scrollbarController.update(snapshot.viewportX, snapshot.viewportY, ((snapshot.pressedButtons & PointerButton.Primary) !== 0))) {
 			editorPointerState.pointerSelecting = false;
 			clearHoverTooltip();
 			return true;
 		}
 	}
-	if (!snapshot.primaryPressed) {
+	if ((snapshot.pressedButtons & PointerButton.Primary) === 0) {
 		editorPointerState.pointerSelecting = false;
 		editorSearchState.field.pointerSelecting = false;
 		symbolSearchState.field.pointerSelecting = false;

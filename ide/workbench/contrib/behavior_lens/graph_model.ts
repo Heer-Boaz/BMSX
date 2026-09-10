@@ -11,7 +11,6 @@ export type BehaviorGraphNode = WorkbenchGraphNode & {
 	readonly member: BehaviorTreeSourceMember | null;
 	readonly parent: BehaviorGraphNode | null;
 	readonly children: BehaviorGraphNode[];
-	readonly expandable: boolean;
 	readonly details: readonly BehaviorGraphDetail[];
 };
 

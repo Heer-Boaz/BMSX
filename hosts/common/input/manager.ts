@@ -145,7 +145,11 @@ export class Input implements InputControllerInputSource, InputEventSink {
 	private readonly unsubscribeHostInput: () => void;
 	private readonly pendingVibrationDevices: GamepadDevice[] = [];
 	private inputControllerPlayback: InputControllerPlayback | null = null;
-	public resetInput(): void {
+	public resetInput(deviceId?: string): void {
+		if (deviceId !== undefined) {
+			this.deviceBindings.get(deviceId)!.handler.reset();
+			return;
+		}
 		this.globalShortcuts.reset();
 		this.hostSupervisorRequestLine = false;
 		this.controlSupervisorRequestLine = false;
