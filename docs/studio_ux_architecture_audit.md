@@ -527,3 +527,20 @@ FSM-resolutie en de dubbele requirementweergave. De generieke Lua-frontend kent
 in de twee-bestandenproef het target al; de behavior-reader consumeert die
 workspace-bronkennis nog niet. **Audit/ontwerp, nog geen
 productiecodecorrectie.** A05–A09 blijven daarnaast open.
+
+### Verdieping: broncontract vóór ruimere authoring (2026-09-10)
+
+De [broncontractanalyse op `592c86a94`](behavior_source_authoring_design.md)
+toetst daarnaast equivalent geschreven Lua, overschreven API-exports, wrappercalls,
+value identity en evaluatievolgorde. Vijf onafhankelijke tegenproeven bevestigen
+dat const-binding geen immutable export bewijst, één bekend callable geen
+completeness garandeert en lexical relocation geen effectbehoud is. De CPU-proef
+verandert een niet-verplaatste siblingwaarde van `2` naar `1`, terwijl gewone
+Undo de bron correct herstelt.
+
+Dit scherpt B04 aan tot een generiek source-query-/resourcecontract vóór ruimere
+structurele authoring in B03; niet alleen vóór multi-file-UX. TypeScript/Roslyn
+leveren het voorbeeld voor brongebonden, operationele refactoranalyse en VS Code
+voor resource-owned edit/Undo. Hun architectuur rechtvaardigt geen tweede Lua-
+solver, universele omkeerbaarheid of workspace-transactionmanager voor één
+imported-field-edit. **Nog steeds analyse/ontwerp, geen productiefix.**

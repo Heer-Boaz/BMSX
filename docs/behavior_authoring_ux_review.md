@@ -9,6 +9,13 @@ Dit document verwerkt de nieuwe BT-, FSM- en ActionEffect-gebruikersproef. Het
 vervangt geen Lua-, editor-, source-edit- of runtime-owner. Onderstaande slices
 zijn opnieuw aan de live code te toetsen contracten, geen bouwrecept.
 
+De [vervolganalyse van het bron-/bewerkingscontract](behavior_source_authoring_design.md)
+verdiept B04 en scherpt B03 aan: API-binding is niet modulepad + const-spelling;
+bronoccurrence is niet value identity; lexical relocation bewijst geen behoud
+van initialisatie-effecten. Daarom gaat het generieke broncontract vóór het
+uitbreiden van structurele authoring, ook binnen één bestand. Niet-mutating
+UX-verbeteringen hoeven daarop niet te wachten.
+
 ## 1. Wat daadwerkelijk ontbreekt
 
 | Gebruikersbevinding | Live oorzaak; behouden fundament |
@@ -171,6 +178,12 @@ depth is het resultaat van topology, geen drag-admissioncategorie.
   lexical binding changes blijven onderdeel van admission. `choices` verplaatst
   de volledige weight/child-entry. Geen stille omzetting van een task naar een
   weighted choice of vervanging van `main_task` als ware dat een lijst.
+- De operatie verplaatst geschreven bron, niet een reeds geïnstantieerde node.
+  Inline initializers kunnen daardoor in een andere volgorde evalueren. Ook
+  same-list reorder/duplicate vereist die eerlijke betekenis; de bestaande
+  bindinganalyse certificeert geen effectbehoud. Volg het operationele contract
+  uit de [vervolganalyse](behavior_source_authoring_design.md#6-een-bewerkingscontract-per-gebruikersintentie),
+  niet een algemene `canEdit`-uitkomst of ongevraagde initializerherschrijving.
 - De huidige consumeranalyse ziet één document met zijn herkende registraties,
   niet alle mogelijke runtimegebruikers. De UI mag dat niet als globale
   exclusiviteit presenteren. Gedeelde bron is op zichzelf geen afwijzing; de
@@ -181,10 +194,12 @@ depth is het resultaat van topology, geen drag-admissioncategorie.
   van deze aanvankelijk same-document-operatie.
 
 **Gate:** omhoog/omlaag, lege destination, enige member, aliased subtree, gedeelde
-lists, commentbehoud, binding conflict, cancel, Undo/Redo en echte Save/Hot Resume.
+lists, commentbehoud, binding conflict, evaluatiegevolgen, cancel, Undo/Redo en
+echte Save/Hot Resume. Het B04-broncontract gaat vóór nieuwe structurele authoring;
+dit is niet uitsluitend een voorwaarde voor cross-filewerk.
 De primaire testoracle is onafhankelijke Lua, niet een huidige gameboom.
 
-### B04 — bronprovenance en invalidatie vóór multi-filebeloften
+### B04 — bronprovenance en invalidatie vóór ruimere authoring
 
 Dit is niet een tweede semantic engine in Behavior Lens:
 
@@ -192,7 +207,9 @@ Dit is niet een tweede semantic engine in Behavior Lens:
    snapshot; cartlib/FSM/BT-kennis blijft buiten parser, binder en query-store.
    Gebruik bestaande frontend/query-owners. Een gevonden functie en een bewezen
    editable table origin zijn verschillende feiten; een Go to definition-hit
-   is geen edit-permissie.
+   is geen edit-permissie. Het generieke resultaat moet geschreven origins,
+   gecorreleerde callcontexten en onopgeloste bijdragen behouden; één gevonden
+   target bewijst niet dat andere uitkomsten uitgesloten zijn.
 2. De behavior-projectie behoudt registration occurrence, gebruikslocatie en
    daadwerkelijke definitie/returnlocatie afzonderlijk. Resource/domain en
    sourcegeneratie horen bij ieder bronfragment. Gedeelde callbacksyntax blijft
@@ -212,8 +229,13 @@ Dit is niet een tweede semantic engine in Behavior Lens:
 **Gate:** minstens twee bestanden met imported state table, membercallback en
 shared callbacks in meerdere FSM-scopes; een unsaved dependencywijziging met
 ongewijzigde registration-bron; meerdere/ontbrekende targets; exacte Source/Back;
-Undo/read-only op de daadwerkelijke edit-owner. Eerst de producer-API en
-dependencycontracten vastleggen, dan de recognizer uitbreiden.
+Undo/read-only op de daadwerkelijke edit-owner. Daarnaast: gewone ongewijzigde
+aliases, overschreven module-export, gelijke waarden met verschillende occurrences
+en afzonderlijke wrappercalls. Eerst de producer-API en snapshot-/dependency-
+contracten vastleggen, dan de recognizer uitbreiden. De
+[broncontractanalyse](behavior_source_authoring_design.md) onderscheidt read-many/
+write-one van echte multi-model-edits; geen workspace-Undo-manager bouwen alleen
+om een imported field in zijn eigen model te wijzigen.
 
 ### B05 — FSM entry-presentatie volgt haar eigen semantiek
 
@@ -280,16 +302,22 @@ Viewnavigatie verandert nooit authored coordinates, Lua of runtimeklokken.
 
 ## 4. Bouwvolgorde en expliciete grenzen
 
-Werk per volledig ownercontract, met productiecode opnieuw naast de live owner:
+Werk per volledig ownercontract, met productiecode opnieuw naast de live owner.
+De vervolganalyse corrigeert de eerdere B01→B07-volgorde; de nummers zijn geen
+afhankelijkhedenketen:
 
-1. B01 meetbare informatiehiërarchie/inspectie; geen labels schrappen zonder hun
-   bruikbare detailroute. De te kiezen details-compositie is nog een ontwerpgate.
-2. B02 gedeeld contextmenu, inclusief A09 waar dat dezelfde pointer-owner raakt.
-3. B03 same-document reparent als complete drag → review → edit → Undo-flow.
-4. B04 multi-fileprovenance vóór claims/edits over meerdere bestanden.
-5. B05 FSM entry-geometrie; B06 ActionEffect-propertybewerking op dezelfde
-   inspectie-, context- en bronowners.
-6. B07 gedeelde zoom; minimap alleen wanneer die daarna aantoonbaar helpt.
+1. B04 generiek bron-/snapshotcontract en resource-eigen projectie, inclusief
+   read-many/write-one. Geen lokale herkenningsuitzonderingen als tussenoplossing.
+2. B03 same-document reparent als complete drag → review → edit → Undo-flow op
+   die bronfeiten, met expliciete betekenis voor verplaatste evaluatie.
+3. Echte cross-filemoves vereisen pas daarna een afzonderlijk multi-model-edit/
+   Undo-contract. Dat is niet hetzelfde als geïmporteerde bron bekijken/bewerken.
+
+Onafhankelijk daarvan kunnen B01 informatiehiërarchie/inspectie, B02 gedeeld
+contextmenu (met A09 bij dezelfde pointer-owner), B05 FSM entry-geometrie en de
+niet-mutating B06-presentatie worden verbeterd. B01 houdt zijn tiny-resolutiegate;
+B06-propertyauthoring gebruikt het broncontract. B07 blijft gedeelde zoom;
+minimap alleen wanneer die daarna aantoonbaar helpt.
 
 A05–A09 uit de algemene UX-audit blijven open waar niet expliciet afgesloten.
 Deze nieuwe review is geen aanleiding om de reeds beproefde sourcebehoudende
