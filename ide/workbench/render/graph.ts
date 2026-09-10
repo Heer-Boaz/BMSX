@@ -3,13 +3,17 @@ import { api } from '../../runtime/overlay_api';
 import { GRAPH_LABEL_PADDING, GRAPH_NODE_PADDING, type WorkbenchGraphItem } from '../ui/graph/model';
 import type { WorkbenchGraphViewport } from '../ui/graph/viewport';
 import type { WorkbenchGraphDragFeedback } from '../ui/graph/drag';
+import type { WorkbenchGraphConnectionHandles } from '../ui/graph/connection';
+import { drawWorkbenchGraphNodeDrag, drawWorkbenchGraphConnectionHandles, drawWorkbenchGraphConnectionTarget } from './graph_feedback';
 
 /** Draw the retained layout; partial primitives are clipped by the render owner. */
-export function drawWorkbenchGraph(view: WorkbenchGraphViewport, hover: WorkbenchGraphItem | null, focused: boolean, drag?: WorkbenchGraphDragFeedback): void {
+export function drawWorkbenchGraph(view: WorkbenchGraphViewport, hover: WorkbenchGraphItem | null, focused: boolean, drag?: WorkbenchGraphDragFeedback, handles?: WorkbenchGraphConnectionHandles): void {
 	const bounds = view.bounds;
 	const offsetX = bounds.left - view.scrollX;
 	const offsetY = bounds.top - view.scrollY;
 	const model = view.model;
+	const connection = drag?.kind === 'connection' ? drag : undefined;
+	const replacedEdge = connection?.edge;
 	api.pushClipRect(bounds.left, bounds.top, bounds.right, bounds.bottom);
 	api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, colors.COLOR_RESOURCE_VIEWER_BACKGROUND);
 	// Parent-before-child bodies must not erase routes inside their containment.
@@ -21,14 +25,20 @@ export function drawWorkbenchGraph(view: WorkbenchGraphViewport, hover: Workbenc
 			view.selection === node ? colors.COLOR_PROBLEMS_PANEL_SELECTION_BORDER : colors.COLOR_TAB_BORDER);
 	}
 	for (const edge of model.edges) {
-		if (!view.intersects(edge.bounds, 1)) continue;
+		if (!view.intersects(edge.bounds, 1) || edge === replacedEdge) continue;
 		const selected = view.selection === edge;
 		const color = selected ? colors.COLOR_PROBLEMS_PANEL_SELECTION_BORDER
 			: edge === hover ? colors.COLOR_RESOURCE_VIEWER_TEXT : colors.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM;
 		api.polyline(edge.points, offsetX, offsetY, 0, selected ? 2 : 1, color);
 		if (edge.arrow.length > 0) api.polyline(edge.arrow, offsetX, offsetY, 0, selected ? 2 : 1, color);
 	}
+	if (connection !== undefined) {
+		const color = connection.accepted ? colors.COLOR_PROBLEMS_PANEL_SELECTION_BORDER : colors.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM;
+		api.polyline(connection.points, offsetX, offsetY, 0, 2, color);
+		if (connection.hasArrow) api.polyline(connection.arrow, offsetX, offsetY, 0, 2, color);
+	}
 	for (const edge of model.labelledEdges) {
+		if (edge === replacedEdge) continue;
 		for (const label of edge.labels) {
 			if (!view.intersects(label.bounds, 0)) continue;
 			const area = label.bounds;
@@ -63,26 +73,11 @@ export function drawWorkbenchGraph(view: WorkbenchGraphViewport, hover: Workbenc
 			y += model.font.lineHeight;
 		}
 	}
-	if (drag !== undefined) {
-		const source = drag.source;
-		const left = Math.round(source.bounds.left + drag.offsetX + offsetX);
-		// Keep the payload above a valid insertion sector, so its marker cannot obscure the label.
-		const top = Math.round((drag.accepted ? drag.marker.top : source.bounds.top + drag.offsetY) + offsetY - source.headerHeight - 6);
-		const right = left + source.bounds.right - source.bounds.left;
-		const color = drag.accepted ? colors.COLOR_PROBLEMS_PANEL_SELECTION_BORDER : colors.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM;
-		api.fill_rect(left, top, right, top + source.headerHeight, 0, colors.COLOR_PROBLEMS_PANEL_HEADER_BACKGROUND);
-		api.blit_rect(left, top, right, top + source.headerHeight, 0, color);
-		let y = top + GRAPH_NODE_PADDING;
-		for (const line of source.lines) {
-			api.blit_text_inline_with_font(line, left + GRAPH_NODE_PADDING, y, 0, color, model.font);
-			y += model.font.lineHeight;
-		}
-		if (drag.accepted) {
-			const marker = drag.marker;
-			api.fill_rect(marker.left + offsetX, marker.top + offsetY, marker.right + offsetX, marker.bottom + offsetY, 0, color);
-			api.fill_rect(marker.left - 2 + offsetX, marker.top + offsetY, marker.right + 2 + offsetX, marker.top + 2 + offsetY, 0, color);
-			api.fill_rect(marker.left - 2 + offsetX, marker.bottom - 2 + offsetY, marker.right + 2 + offsetX, marker.bottom + offsetY, 0, color);
-		}
+	if (drag?.kind === 'node-insertion') drawWorkbenchGraphNodeDrag(drag, model.font, offsetX, offsetY);
+	if (connection !== undefined) {
+		drawWorkbenchGraphConnectionTarget(connection, offsetX, offsetY);
+	} else if (handles !== undefined) {
+		drawWorkbenchGraphConnectionHandles(handles.edge.points, handles.ends, offsetX, offsetY, colors.COLOR_PROBLEMS_PANEL_SELECTION_BORDER);
 	}
 	if (focused) api.blit_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, colors.COLOR_PROBLEMS_PANEL_SELECTION_BORDER);
 	api.popClipRect();

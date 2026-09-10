@@ -1,5 +1,6 @@
 import { create_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { BFont } from '../../../../machine/ts/render/shared/bitmap_font';
+import { writeWorkbenchGraphArrow } from './geometry';
 
 export const GRAPH_NODE_PADDING = 4;
 export const GRAPH_LABEL_PADDING = 2;
@@ -22,6 +23,7 @@ const EMPTY_GRAPH_LABELS: readonly WorkbenchGraphLabel[] = [];
 
 export type WorkbenchGraphEdge = {
 	readonly kind: 'edge';
+	readonly directed: boolean;
 	readonly bounds: RectBounds;
 	readonly points: readonly number[];
 	readonly arrow: readonly number[];
@@ -80,18 +82,9 @@ export function createWorkbenchGraphEdge(points: readonly number[], labels: read
 	}
 	let arrow = EMPTY_GRAPH_POINTS;
 	if (directed) {
-		const x = points[points.length - 2];
-		const y = points[points.length - 1];
-		// Repeated terminal points do not change a route's final direction.
-		for (let offset = points.length - 4; offset >= 0; offset -= 2) {
-			const dx = x - points[offset];
-			const dy = y - points[offset + 1];
-			if (dx === 0 && dy === 0) continue;
-			const scale = 4 / Math.hypot(dx, dy);
-			arrow = [x - dx * scale + dy * scale, y - dy * scale - dx * scale, x, y,
-				x - dx * scale - dy * scale, y - dy * scale + dx * scale];
-			break;
-		}
+		const directedArrow: number[] = [];
+		writeWorkbenchGraphArrow(points, directedArrow);
+		arrow = directedArrow;
 		for (let index = 0; index < arrow.length; index += 2) {
 			bounds.left = Math.min(bounds.left, arrow[index]);
 			bounds.top = Math.min(bounds.top, arrow[index + 1]);
@@ -105,5 +98,5 @@ export function createWorkbenchGraphEdge(points: readonly number[], labels: read
 		bounds.right = Math.max(bounds.right, label.bounds.right);
 		bounds.bottom = Math.max(bounds.bottom, label.bounds.bottom);
 	}
-	return { kind: 'edge', bounds, points, arrow, labels };
+	return { kind: 'edge', directed, bounds, points, arrow, labels };
 }

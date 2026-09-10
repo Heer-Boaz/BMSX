@@ -36,7 +36,7 @@ for (const siblings of [24, 1024]) {
 	viewport.hitTest = (x, y) => { hits += 1; return hitTest(x, y); };
 	const capture = new PointerCaptureService();
 	const control = new WorkbenchGraphControl(new InputFocusService(), capture);
-	control.setInput(viewport, () => { starts += 1; return beginBehaviorTreeDrag(model, state); });
+	control.setInput(viewport, { begin: () => { starts += 1; return beginBehaviorTreeDrag(model, state); } });
 	const from = { viewportX: viewport.bounds.left + 20, viewportY: viewport.bounds.top + 34, valid: true, insideViewport: true, primaryPressed: true };
 	const to = { ...from, viewportX: second.bounds.right - 4 + viewport.bounds.left - viewport.scrollX };
 	const alternate = { ...to, viewportX: to.viewportX - 2 };

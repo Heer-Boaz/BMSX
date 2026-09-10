@@ -2,7 +2,7 @@
 
 This is a domain-free test contribution, not a second Behavior Lens or a
 production graph view. `pane.ts` mounts the shared control in the real
-`EditorPanes` lifecycle. Its two editor inputs carry independent viewport
+`EditorPanes` lifecycle. Its editor inputs carry independent viewport
 state; neither their text nor a Lua recognizer produces the graph. A reset,
 non-executing Machine supplies real GX device output to the presentation
 pipeline. No cart ROM, asset packer or current game-source location is needed.
@@ -106,6 +106,50 @@ not restart a drag:
 node tests/conformance/runtime_replay/browser.mjs --studio \
   dist/bmsx-bios.debug.rom dist/nemesis_s.debug.rom /tmp/studio.png
 ```
+
+## Shared connection control
+
+`connections.ts` mounts an independent third graph input with the same pane,
+control, physical input, capture and renderer. Its contribution advertises
+explicit source/target handles and admits three concrete test nodes, not every
+graph card. It contains no Lua, current cart, recognizer or alternate topology
+editor. Its single accepted drop proves callback delivery, **not FSM editing**.
+
+The browser runner above exercises click versus drag versus Source activation,
+both moving endpoints, stationary preview, Escape, capability revocation before/
+after threshold, input switch while held and actual outside-graph release.
+`connection-handles-*`, `connection-accepted-*` and `connection-free-*` captures
+show the actual 384×288 tiny-font raster. Within-backend pixel oracles prove the
+new wire is visible, only the dragged old route disappears (parallel routes stay),
+and opaque header interiors/text stay unchanged even where the wire crosses
+another node. Software/WebGL2/WebGPU use the same control, not backend-specific
+test admission. These controls are not yet enabled on the concrete FSM pane.
+
+```sh
+npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
+  tests/lua/workbench_graph*.test.ts tests/lua/behavior_tree_drag.test.ts
+npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+  tests/conformance/graph_viewport/profile_connection.ts
+```
+
+The independent Node tests additionally cover coincident endpoints, source-only/
+target-only capability, header-versus-handle hit priority, model/selection/focus/
+input invalidation, coalesced release, invalid targets, actual release coordinates,
+wheel and 50/60/120-Hz host-time scrolling. Geometry tests cover all snapping
+directions, center-coincident/self endpoints, directed/undirected and repeated/
+degenerate terminals. Render tests retain the preview, translated route buffers,
+glyph/command storage and quad buffer while scrolling and changing targets.
+
+The profile compares 4/1,024 retained nodes (the additional cards are offscreen).
+Ten warmup batches precede 25 samples of 1,000 operations; reported medians are
+µs per operation. Stationary capability/drag and moving target hits are separate
+from preview emission + quad construction. It checks zero stationary target
+queries, zero warm font measurements and retained storage. It excludes Lua
+analysis, layout, GPU raster/upload, guest execution and heap/GC instrumentation;
+moving hit cost still depends on the actual viewport node count. The unchanged
+BT drag workload is `../behavior_graph/profile_drag.ts` and is also compared
+against the pre-slice implementation. Results and production references live in
+[`graph_connection_interaction_design.md`](../../../docs/graph_connection_interaction_design.md).
 
 ## Native renderers
 

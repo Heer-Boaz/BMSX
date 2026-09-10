@@ -31,7 +31,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 	private readonly pointer = new BehaviorLensPointer();
 	private readonly properties = new WorkbenchPropertyTreePointer();
 	private readonly graph = new WorkbenchGraphControl(inputFocus, pointerCapture, input => this.handleKeyboard(input), this.focusTarget);
-	private readonly startGraphDrag = () => beginBehaviorTreeDrag(this.input.workingCopy, this.input.view);
+	private readonly graphDragSource = { begin: () => beginBehaviorTreeDrag(this.input.workingCopy, this.input.view) };
 	private readonly unbindPointerBlur = this.focusTarget.onDidBlur(() => {
 		this.pointer.cancel();
 		this.properties.cancel();
@@ -83,7 +83,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		this.graph.clearInput();
 		this.controller.updateView(this.input);
 		const presentation = this.input.view.presentation;
-		if (presentation.kind === 'graph') this.graph.setInput(presentation.viewport, this.startGraphDrag);
+		if (presentation.kind === 'graph') this.graph.setInput(presentation.viewport, this.graphDragSource);
 		else if (presentation.kind === 'state-graph') this.graph.setInput(presentation.viewport);
 	}
 

@@ -8,21 +8,31 @@ import { EditorPane } from '../../../ide/workbench/services/editor/editor_pane';
 import { EditorPanes } from '../../../ide/workbench/services/editor/editor_panes';
 import { WorkbenchGraphControl, WorkbenchGraphPointerResult } from '../../../ide/workbench/ui/graph/control';
 import type { WorkbenchGraphViewport } from '../../../ide/workbench/ui/graph/viewport';
+import type { WorkbenchGraphDragSource } from '../../../ide/workbench/ui/graph/drag';
 import { drawWorkbenchGraph } from '../../../ide/workbench/render/graph';
 import { BrowserGraphLayoutEngine } from '../../../ide/browser/graph_layout';
 import { GraphLayoutTestInput } from '../../helpers/graph_layout_input';
 import { EditorTabGroupModel } from '../../../ide/workbench/ui/tab/group_model';
 
 /** A domain-free test contribution, mounted by the production editor-group owner. */
+type GraphFixtureView = { view: WorkbenchGraphViewport; dragSource?: WorkbenchGraphDragSource };
+
 class GraphFixturePane extends EditorPane<CodeEditorInput> {
 	public readonly graph = new WorkbenchGraphControl(inputFocus, pointerCapture);
 	public result = WorkbenchGraphPointerResult.Outside;
-	public constructor(private readonly views: ReadonlyMap<CodeEditorInput, WorkbenchGraphViewport>) { super(); }
-	protected activate(): void { this.graph.setInput(this.views.get(this.input)!); }
+	public constructor(private readonly views: ReadonlyMap<CodeEditorInput, GraphFixtureView>) { super(); }
+	protected activate(): void {
+		const input = this.views.get(this.input)!;
+		this.graph.setInput(input.view, input.dragSource);
+	}
 	public focus(): void { this.graph.focusTarget.focus(); }
 	public override clearInput(): void { this.graph.clearInput(); super.clearInput(); }
 	public dispose(): void { this.graph.dispose(); }
-	public draw(): void { drawWorkbenchGraph(this.views.get(this.input)!, this.graph.hover, this.graph.focusTarget.hasFocus); }
+	public override update(): void { this.graph.update(); }
+	public draw(): void {
+		drawWorkbenchGraph(this.views.get(this.input)!.view, this.graph.hover, this.graph.focusTarget.hasFocus,
+			this.graph.dragFeedback, this.graph.connectionHandles);
+	}
 	public handleKeyboard(input: PlayerInput): void { inputFocus.handleKeyboard(input); }
 	public handlePointer(snapshot: PointerSnapshot, justPressed: boolean, _secondary: boolean, input: PlayerInput, now: number): void {
 		this.result = this.graph.handlePointer(snapshot, justPressed, now);
@@ -34,7 +44,7 @@ class GraphFixturePane extends EditorPane<CodeEditorInput> {
 	public drawStatusBar(): void {}
 }
 
-export function createGraphFixturePanes(views: readonly WorkbenchGraphViewport[]) {
+export function createGraphFixturePanes(views: readonly GraphFixtureView[]) {
 	// Only use the existing input identity as an editor-group fixture carrier.
 	// Neither the text model nor a Lua recognizer builds this graph.
 	const inputs = views.map((_, index) => {

@@ -133,8 +133,10 @@ decisions but must use `fsm.lua`'s actual path-plan semantics:
 
 The [proof-history slice below](#retarget-edit-and-proof-history) now preserves
 the exact selected transition through literal replacement and document Undo/Redo.
-Connection-preview geometry still needs an explicit shared control representation;
-it is not a fake dragged node or an FSM-specific pointer loop.
+The [shared connection-control slice](graph_connection_interaction_design.md)
+now supplies explicit endpoint press identity and retained preview geometry;
+it is not a fake dragged node or an FSM-specific pointer loop. Concrete FSM
+admission, shared-consumer acceptance and installation remain the next gate.
 
 ### Owning representations
 
@@ -290,9 +292,10 @@ source correspondence; Undo does not invent an explicit selection for it.
 The browser fixture supplies the chosen target directly to this source operation.
 It uses real physical graph traversal, Source, code Undo, graph palette Redo and
 worker publication to test the integration. That is intentionally not a fake
-reconnect command. Current-source/read-only admission, shared connection-preview
-and pointer cancellation, shared-consumer presentation/acceptance and a complete
-retarget Save/Hot Resume workflow still belong to the endpoint-authoring gate.
+reconnect command. Shared connection-preview and pointer cancellation now have
+their own domain-free control proof. Current-source/read-only FSM admission,
+shared-consumer presentation/acceptance and a complete retarget Save/Hot Resume
+workflow still belong to the endpoint-authoring gate.
 
 ### History validation and measured costs — 10 September 2026
 

@@ -295,8 +295,9 @@ token; ordinary replacement still clears correspondence. Hidden views map a
 deep copy and resolve the exact registration/slot/proof on their next projection.
 Proof matching consumes the current index's per-consumer references directly;
 ordinary correspondence and history restoration do not re-scan all transitions.
-Physical retargeting still requires the shared connection-preview/control and
-shared-consumer acceptance contract, plus the end-to-end installation gate.
+The shared connection-preview/control now has its own domain-free conformance
+proof. Physical FSM retargeting still requires current-source endpoint admission,
+shared-consumer presentation/acceptance and the end-to-end installation gate.
 
 FSM source bodies now retain child occurrences, guard fields and
 consumer slots. A cold second pass binds initial/concurrent entries and possible
@@ -474,6 +475,22 @@ It does not move nodes during preview or infer reparenting from diagram position
 The generic control/renderer knows no BT syntax; `behavior_tree_drag.ts` knows
 no new input edges or document history. See
 [`../docs/behavior_tree_authoring_design.md`](../docs/behavior_tree_authoring_design.md).
+
+The same graph gesture lifecycle supports explicit selected-edge source/target
+handles. The contribution publishes current endpoint capability and receives
+the exact press edge/end after the threshold; capability revocation cancels
+even a pending press. Connection feedback has a retained provisional line and
+arrow buffer, with a contribution-admitted target or a free pointer. Generic
+geometry fixes the opposite endpoint and clips an admitted target to its measured
+header; it neither predicts a layout nor knows domain connection rules. Published
+edge directedness survives degenerate geometry. Arrow visibility is separate from
+retained storage, which never shrinks/regrows during directionless motion.
+The renderer replaces only the dragged route, draws the provisional wire below
+headers, and paints/hits explicit handles above them. BT insertion remains its
+own feedback variant, not a disguised connection. See
+[`../docs/graph_connection_interaction_design.md`](../docs/graph_connection_interaction_design.md).
+This shared-control slice deliberately does not expose FSM retarget handles
+before the source/shared-consumer/installation gates are connected.
 
 Scene authoring uses the same document contract, but its runtime object and
 viewport owners are deliberately not inferred from the behavior projection.

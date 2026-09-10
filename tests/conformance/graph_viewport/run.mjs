@@ -105,6 +105,48 @@ try {
 			await target.screenshot({ path: join(artifacts, `compound-${scope.toLowerCase()}-${backend}.png`) });
 		}
 		console.log(JSON.stringify({ backend, compound, visibleRoutes }));
+		const connections = await page.evaluate(async () => {
+			const { exerciseGraphConnections } = await import('/test.js');
+			window.connections = exerciseGraphConnections(window.fixture);
+			return window.connections.info;
+		});
+		await page.evaluate(() => window.connections.present('handles'));
+		const handles = PNG.sync.read(await target.screenshot({ path: join(artifacts, `connection-handles-${backend}.png`) }));
+		const preview = await page.evaluate(() => window.connections.present('accepted'));
+		const accepted = PNG.sync.read(await target.screenshot({ path: join(artifacts, `connection-accepted-${backend}.png`) }));
+		for (const header of preview.headers) {
+			for (let y = header.top + 4; y < header.bottom - 4; y += 1) {
+				for (let x = header.left + 4; x < header.right - 4; x += 1) {
+					const offset = (y * accepted.width + x) * 4;
+					for (let channel = 0; channel < 3; channel += 1) assert.equal(accepted.data[offset + channel], handles.data[offset + channel],
+						`${backend}: provisional wire must not paint across tiny card text at ${x},${y}`);
+				}
+			}
+		}
+		let newWirePixels = 0;
+		for (let y = 104; y <= 106; y += 1) {
+			for (let x = 121; x <= 123; x += 1) {
+				const offset = (y * accepted.width + x) * 4;
+				for (let channel = 0; channel < 3; channel += 1) if (accepted.data[offset + channel] !== handles.data[offset + channel]) newWirePixels += 1;
+			}
+		}
+		assert.ok(newWirePixels > 0, `${backend}: actual connection preview must produce visible pixels`);
+		let oldWirePixels = 0;
+		const background = (200 * accepted.width + 350) * 4;
+		for (let y = 78; y <= 80; y += 1) {
+			for (let x = 107; x <= 109; x += 1) {
+				const offset = (y * accepted.width + x) * 4;
+				for (let channel = 0; channel < 3; channel += 1) {
+					if (handles.data[offset + channel] !== accepted.data[background + channel]) oldWirePixels += 1;
+					assert.equal(accepted.data[offset + channel], accepted.data[background + channel], `${backend}: replaced route must not appear to remain connected`);
+				}
+			}
+		}
+		assert.ok(oldWirePixels > 0, `${backend}: the original selected route was visible before dragging`);
+		await page.evaluate(() => window.connections.present('free'));
+		await target.screenshot({ path: join(artifacts, `connection-free-${backend}.png`) });
+		await page.evaluate(() => window.connections.finish());
+		console.log(JSON.stringify({ backend, connections, newWirePixels, oldWirePixels }));
 		const lifetime = await page.evaluate(async () => {
 			const { exerciseGraphLayoutLifetime, exerciseGraphWorkerFailures } = await import('/test.js');
 			return { ...await exerciseGraphLayoutLifetime(window.fixture), failures: await exerciseGraphWorkerFailures() };

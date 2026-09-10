@@ -1,6 +1,6 @@
 import { create_rect_bounds, write_rect_bounds } from '../../../../machine/ts/common/rect';
 import type { EditorTextModel } from '../../../editor/model/text_model';
-import type { WorkbenchGraphDragFeedback, WorkbenchGraphDragSession } from '../../ui/graph/drag';
+import type { WorkbenchGraphNodeDragFeedback, WorkbenchGraphDragSession } from '../../ui/graph/drag';
 import type { WorkbenchGraphViewport } from '../../ui/graph/viewport';
 import { moveBehaviorTreeChild } from './behavior_tree_edit';
 import type { BehaviorTreeSourceMember } from './behavior_tree_model';
@@ -20,14 +20,14 @@ export function beginBehaviorTreeDrag(model: EditorTextModel, view: BehaviorLens
 
 /** Same-list insertion, not a layout edit or inferred reparent/reconnect operation. */
 class BehaviorTreeDrag implements WorkbenchGraphDragSession {
-	public readonly feedback: WorkbenchGraphDragFeedback;
+	public readonly feedback: WorkbenchGraphNodeDragFeedback;
 	private readonly sourceVersion: number;
 	private destination = -1;
 
 	public constructor(private readonly model: EditorTextModel, private readonly viewport: WorkbenchGraphViewport<BehaviorGraphModel>,
 		private readonly node: BehaviorGraphNode, private readonly member: BehaviorTreeSourceMember) {
 		this.sourceVersion = model.version;
-		this.feedback = { source: node, marker: create_rect_bounds(), offsetX: 0, offsetY: 0, accepted: false };
+		this.feedback = { kind: 'node-insertion', source: node, marker: create_rect_bounds(), offsetX: 0, offsetY: 0, accepted: false };
 	}
 
 	public isCurrent(): boolean {

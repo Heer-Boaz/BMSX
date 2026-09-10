@@ -27,8 +27,10 @@ import { WorkbenchGraphViewport } from '../../../ide/workbench/ui/graph/viewport
 import { WorkbenchGraphPointerResult } from '../../../ide/workbench/ui/graph/control';
 import { createGraphFixturePanes } from './pane';
 import { hostOverlayPrimitives } from '../../helpers/host_overlay_primitives';
+import { graphConnectionFixture } from '../../helpers/graph_connection_fixture';
 export { exerciseCompoundGraph } from './compound';
 export { exerciseGraphLayoutLifetime, exerciseGraphWorkerFailures } from './lifetime';
+export { exerciseGraphConnections } from './connections';
 
 function check(condition: boolean, message: string): void {
 	if (!condition) throw new Error(message);
@@ -96,7 +98,9 @@ export async function createFixture(canvas: HTMLCanvasElement, kind: 'software' 
 	second.layout(8, 24, 376, 240);
 	editorViewState.viewportWidth = WIDTH;
 	editorViewState.viewportHeight = HEIGHT;
-	const { panes, pane, inputs, group } = createGraphFixturePanes([view, second]);
+	const connection = graphConnectionFixture(font);
+	const { panes, pane, inputs, group } = createGraphFixturePanes([{ view }, { view: second },
+		{ view: connection.view, dragSource: connection.interaction }]);
 	panes.openEditor(inputs[0]);
 	let pressId = 0;
 	const draw = () => {
@@ -113,6 +117,7 @@ export async function createFixture(canvas: HTMLCanvasElement, kind: 'software' 
 	const step = () => {
 		clock.advance(20);
 		input.pollInput();
+		panes.activePane.update(0.02);
 		const mask = computeEditorPointerButtonMask(player);
 		const snapshot = readEditorPointerSnapshot(display, player);
 		if (!pointerCapture.dispatch(snapshot, false, (mask & POINTER_PRIMARY_JUST_RELEASED) !== 0, clock.now())) panes.activePane.handlePointer(snapshot, (mask & POINTER_PRIMARY_JUST_PRESSED) !== 0, false, player, clock.now(), false);
@@ -124,6 +129,7 @@ export async function createFixture(canvas: HTMLCanvasElement, kind: 'software' 
 		input.inputAxis2('pointer:0', 'pointer_position', rect.left + x * rect.width / WIDTH, rect.top + y * rect.height / HEIGHT, clock.now());
 	};
 	const button = (down: boolean) => input.inputButton('pointer:0', 'pointer_primary', down, down ? 1 : 0, clock.now(), ++pressId);
+	const key = (code: string, down: boolean) => input.inputButton('keyboard:0', code, down, down ? 1 : 0, clock.now(), ++pressId);
 	const exercise = () => {
 		move(150, 110); step(); button(true); step();
 		check(view.selection === middle, 'physical click selects retained node');
@@ -157,7 +163,7 @@ export async function createFixture(canvas: HTMLCanvasElement, kind: 'software' 
 		commandKinds: kinds, commandRefs: refs, commandCount: 3 };
 	return {
 		exercise, draw,
-		view, otherView: second, font, move, button, step, panes, inputs, group,
+		view, otherView: second, font, move, button, key, step, panes, pane, inputs, group, connection,
 		healthy,
 		resize(width: number, height: number) {
 			// Retain the editor's logical layout choice while the game target changes.

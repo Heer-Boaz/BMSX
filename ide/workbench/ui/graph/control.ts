@@ -7,7 +7,8 @@ import type { PointerCaptureService, PointerCaptureTarget } from '../../../input
 import { consumeIdeKey, isKeyJustPressed, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
 import type { WorkbenchGraphItem, WorkbenchGraphModel } from './model';
 import type { WorkbenchGraphViewport } from './viewport';
-import type { WorkbenchGraphDragFeedback, WorkbenchGraphDragSession, WorkbenchGraphDragSource } from './drag';
+import type { WorkbenchGraphConnectionDragStart, WorkbenchGraphDragFeedback, WorkbenchGraphDragSession, WorkbenchGraphDragSource } from './drag';
+import { hitWorkbenchGraphConnectionHandle, type WorkbenchGraphConnectionEnd, type WorkbenchGraphConnectionHandles } from './connection';
 
 export const enum WorkbenchGraphPointerResult { Outside, Handled, Activate }
 const enum Gesture { None, Pan, PendingDrag, Drag }
@@ -18,6 +19,7 @@ const DRAG_SCROLL_SPEED = 120; // Viewport pixels per host second, not emulated 
 export class WorkbenchGraphControl implements PointerCaptureTarget {
 	public readonly focusTarget: InputFocusTarget;
 	public hover: WorkbenchGraphItem | null = null;
+	public connectionHandles: WorkbenchGraphConnectionHandles | undefined;
 	private inputValue: WorkbenchGraphViewport | null = null;
 	private pointerModel: WorkbenchGraphModel | null = null;
 	private anchorX = 0;
@@ -26,10 +28,12 @@ export class WorkbenchGraphControl implements PointerCaptureTarget {
 	private anchorScrollY = 0;
 	private gesture = Gesture.None;
 	private pressTarget: WorkbenchGraphItem | null = null;
+	private pressConnection: WorkbenchGraphConnectionDragStart | undefined;
 	private dragSource: WorkbenchGraphDragSource | undefined;
 	private drag: WorkbenchGraphDragSession | undefined;
 	private pointerTime = 0;
 	private dragPositionValid = false;
+	private dragInside = false;
 	private dragX = 0;
 	private dragY = 0;
 	private lastClick: WorkbenchGraphItem | null = null;
@@ -37,6 +41,7 @@ export class WorkbenchGraphControl implements PointerCaptureTarget {
 	private hoverValid = false;
 	private hoverX = 0;
 	private hoverY = 0;
+	private hoverEnd: WorkbenchGraphConnectionEnd | undefined;
 	private readonly unbindKeyboard: () => void;
 	private readonly unbindBlur: () => void;
 
@@ -59,6 +64,7 @@ export class WorkbenchGraphControl implements PointerCaptureTarget {
 		this.inputValue = input;
 		this.pointerModel = input.model;
 		this.dragSource = dragSource;
+		this.updateConnectionHandles();
 	}
 
 	public clearInput(): void {
@@ -67,6 +73,7 @@ export class WorkbenchGraphControl implements PointerCaptureTarget {
 		this.inputValue = null;
 		this.pointerModel = null;
 		this.dragSource = undefined;
+		this.connectionHandles = undefined;
 	}
 
 	public dispose(): void {
@@ -79,9 +86,11 @@ export class WorkbenchGraphControl implements PointerCaptureTarget {
 		this.capture.release(this);
 		this.gesture = Gesture.None;
 		this.pressTarget = null;
+		this.pressConnection = undefined;
 		this.drag = undefined;
 		this.lastClick = null;
 		this.hover = null;
+		this.hoverEnd = undefined;
 		this.hoverValid = false;
 	}
 
@@ -98,6 +107,26 @@ export class WorkbenchGraphControl implements PointerCaptureTarget {
 			this.cancelPointer();
 			this.pointerModel = this.inputValue.model;
 		}
+		this.updateConnectionHandles();
+		if (this.pressConnection !== undefined && (this.connectionHandles === undefined
+			|| (this.connectionHandles.ends !== 'both' && this.connectionHandles.ends !== this.pressConnection.end))) this.cancelPointer();
+	}
+
+	private updateConnectionHandles(): void {
+		const selected = this.inputValue!.selection;
+		if (selected?.kind === 'edge') {
+			const ends = this.dragSource?.connectionEnds?.(selected);
+			if (ends !== undefined) {
+				if (this.connectionHandles?.edge === selected && this.connectionHandles.ends === ends) return;
+				this.connectionHandles = { edge: selected, ends };
+				this.hoverValid = false;
+				return;
+			}
+		}
+		if (this.connectionHandles !== undefined) {
+			this.connectionHandles = undefined;
+			this.hoverValid = false;
+		}
 	}
 
 	public handleCapturedPointer(snapshot: PointerSnapshot, now: number): void {
@@ -111,7 +140,8 @@ export class WorkbenchGraphControl implements PointerCaptureTarget {
 		}
 		if (this.gesture === Gesture.PendingDrag) {
 			if (Math.max(Math.abs(snapshot.viewportX - this.anchorX), Math.abs(snapshot.viewportY - this.anchorY)) < POINTER_DRAG_ACTIVATION_THRESHOLD) return;
-			this.drag = this.dragSource!();
+			this.drag = this.dragSource!.begin(this.pressConnection === undefined
+				? { kind: 'item', item: this.pressTarget! } : this.pressConnection);
 			if (this.drag === undefined) {
 				this.cancelPointer();
 				return;
@@ -143,6 +173,7 @@ export class WorkbenchGraphControl implements PointerCaptureTarget {
 		} else if (this.gesture === Gesture.PendingDrag) {
 			this.gesture = Gesture.None; // A click preserves double-click tracking; it never edits.
 			this.pressTarget = null;
+			this.pressConnection = undefined;
 		} else {
 			this.cancelPointer();
 		}
@@ -151,19 +182,22 @@ export class WorkbenchGraphControl implements PointerCaptureTarget {
 	private updateDrag(snapshot: PointerSnapshot): void {
 		const view = this.inputValue!;
 		const drag = this.drag!;
-		drag.feedback.offsetX = snapshot.viewportX - this.anchorX + view.scrollX - this.anchorScrollX;
-		drag.feedback.offsetY = snapshot.viewportY - this.anchorY + view.scrollY - this.anchorScrollY;
-		if (!point_in_rect(snapshot.viewportX, snapshot.viewportY, view.bounds)) {
-			drag.feedback.accepted = false;
-			this.dragPositionValid = false;
-			return;
+		const feedback = drag.feedback;
+		if (feedback.kind === 'node-insertion') {
+			feedback.offsetX = snapshot.viewportX - this.anchorX + view.scrollX - this.anchorScrollX;
+			feedback.offsetY = snapshot.viewportY - this.anchorY + view.scrollY - this.anchorScrollY;
 		}
+		const inside = point_in_rect(snapshot.viewportX, snapshot.viewportY, view.bounds);
 		const x = snapshot.viewportX - view.bounds.left + view.scrollX;
 		const y = snapshot.viewportY - view.bounds.top + view.scrollY;
 		// A stationary drag outside the scroll margins repeats neither hits nor domain work.
-		if (!this.dragPositionValid || this.dragX !== x || this.dragY !== y) {
-			drag.dragOver(snapshot.viewportX, snapshot.viewportY);
+		if (!this.dragPositionValid || this.dragX !== x || this.dragY !== y || this.dragInside !== inside) {
+			if (inside) drag.dragOver(snapshot.viewportX, snapshot.viewportY);
+			else if (feedback.kind === 'connection') feedback.target = undefined;
+			else feedback.accepted = false;
+			if (feedback.kind === 'connection') feedback.moveTo(x, y);
 			this.dragPositionValid = true;
+			this.dragInside = inside;
 			this.dragX = x;
 			this.dragY = y;
 		}
@@ -184,7 +218,8 @@ export class WorkbenchGraphControl implements PointerCaptureTarget {
 		const x = snapshot.viewportX - view.bounds.left + view.scrollX;
 		const y = snapshot.viewportY - view.bounds.top + view.scrollY;
 		if (!this.hoverValid || this.hoverX !== x || this.hoverY !== y) {
-			this.hover = view.hitTest(snapshot.viewportX, snapshot.viewportY);
+			this.hoverEnd = this.connectionHandles === undefined ? undefined : hitWorkbenchGraphConnectionHandle(this.connectionHandles, x, y);
+			this.hover = this.hoverEnd === undefined ? view.hitTest(snapshot.viewportX, snapshot.viewportY) : this.connectionHandles!.edge;
 			this.hoverX = x;
 			this.hoverY = y;
 			this.hoverValid = true;
@@ -193,6 +228,9 @@ export class WorkbenchGraphControl implements PointerCaptureTarget {
 		this.focusTarget.focus();
 		view.selection = this.hover;
 		this.pressTarget = this.hover;
+		this.pressConnection = this.hoverEnd === undefined ? undefined
+			: { kind: 'connection', edge: this.connectionHandles!.edge, end: this.hoverEnd };
+		this.updateConnectionHandles();
 		this.anchorX = snapshot.viewportX;
 		this.anchorY = snapshot.viewportY;
 		this.anchorScrollX = view.scrollX;
@@ -201,6 +239,12 @@ export class WorkbenchGraphControl implements PointerCaptureTarget {
 			this.lastClick = null;
 			this.capture.capture(this);
 			this.gesture = Gesture.Pan;
+			return WorkbenchGraphPointerResult.Handled;
+		}
+		if (this.pressConnection !== undefined) {
+			this.lastClick = null; // Endpoint clicks must never activate Source.
+			this.capture.capture(this);
+			this.gesture = Gesture.PendingDrag;
 			return WorkbenchGraphPointerResult.Handled;
 		}
 		const activate = this.lastClick === this.hover && now - this.lastClickTime <= DOUBLE_CLICK_MAX_INTERVAL_MS;
