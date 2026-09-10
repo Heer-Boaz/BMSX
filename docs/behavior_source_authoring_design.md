@@ -1,10 +1,16 @@
 # Behavior-authoring: bronherkomst vóór ruimere graphbewerkingen
 
 Datum: 2026-09-10. Onderzocht op `592c86a94`.
-**Status: analyse en ontwerp; geen productie-implementatie.** Dit verdiept B04
+**Status: ontwerp; eerste producergrens geïmplementeerd, B04 nog open.** Dit verdiept B04
 en scherpt het bewerkingscontract van B03 aan uit de
 [gebruikersreview](behavior_authoring_ux_review.md). De tegenvoorbeelden hieronder
 zijn geen reden om de bronbehoudende edit-, Undo- of Hot Resume-owners weg te gooien.
+
+De [eerste implementatie](lua_function_source_ownership.md) scheidt function-body,
+opslagbinding en geschreven returns in de generieke binder/summaries. Zij voegt
+nog geen source-originquery of ruimere Lens-herkenning toe. De tijdens de
+CPU-proef gevonden prototype-idbotsing blijft een afzonderlijke compiler/
+Hot Resume-ownergrens; geen suffix-op-botsing of Lens-beperking als omweg.
 
 ## 1. Beslissing
 

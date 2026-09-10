@@ -476,7 +476,7 @@ en een passende productie-implementatie, vóór featurewerk.
 
 De [nieuwe gebruikersreview](behavior_authoring_ux_review.md) onderscheidt
 ontbrekende functionaliteit van presentatieproblemen. Deze contracten zijn
-**nog niet geïmplementeerd**. De review bepaalt hun bouwvolgorde en afhankelijkheden;
+**nog niet afgerond**. De review bepaalt hun bouwvolgorde en afhankelijkheden;
 de algemene A05–A09-contracten worden hierdoor niet als afgerond beschouwd.
 
 De [verdiepte broncontractanalyse](behavior_source_authoring_design.md) zet B04
@@ -484,6 +484,13 @@ vóór ruimere structurele authoring in B03, ook binnen één bestand. Niet-muta
 UX kan onafhankelijk door. Cartlib-kennis blijft bij de domeinbijdrage; de
 generieke taalowner levert origins/callcontexten/onzekerheid. Read-many/write-one
 vereist geen multi-model-Undo; echte cross-filemoves wel een eigen editcontract.
+
+De eerste B04-producergrens is [geïmplementeerd](lua_function_source_ownership.md):
+function-bodies en hun geschreven returns delen geen identiteit met de binding
+waarnaar zij schrijven. Source-originqueries, callcontexten, completeness en
+multi-file-lifetime blijven open. Dezelfde proef legde een afzonderlijke
+compiler-prototype-idbotsing bloot; die vereist onderzoek van de compiler/
+Hot Resume-identiteit vóór een compilerwijziging, geen herkenningsuitzondering.
 
 | ID | Eigenaar / contract | Gate |
 | --- | --- | --- |

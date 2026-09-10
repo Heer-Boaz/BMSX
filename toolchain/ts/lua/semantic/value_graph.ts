@@ -1,4 +1,5 @@
 import type { SymbolID } from './model';
+import type { LuaFunctionExpression, LuaReturnStatement } from '../syntax/ast';
 
 export type SemanticLiteralValue =
 	| { kind: 'string'; value: string }
@@ -58,21 +59,26 @@ export type MemberValueEntry = {
 };
 
 export type FunctionReturnValueEntry = {
-	functionValue: FunctionSemanticValueSource;
-	source: SemanticValueSource;
+	readonly statement: LuaReturnStatement;
+	/** The value solver currently models the first return lane only. */
+	readonly firstValue: SemanticValueSource | undefined;
 };
 
 export type FunctionValueFlowEntry = {
-	functionValue: FunctionSemanticValueSource;
-	lexicalOwner?: FunctionValueFlowEntry;
-	parameters: readonly FunctionSemanticValueSource[];
-	receiverProjection?: SemanticValueSource;
-	implicitReceiver: boolean;
-	declarationIds: readonly SymbolID[];
-	ownedValueKeys: readonly string[];
-	members: readonly MemberValueEntry[];
-	calls: readonly CallValueEntry[];
-	assignments: readonly ValueAssignmentEntry[];
+	readonly expression: LuaFunctionExpression;
+	/** Named destination for hierarchy, not the identity of this function body. */
+	readonly declaration: SymbolID | undefined;
+	readonly functionValue: OwnedSemanticValueSource;
+	readonly lexicalOwner?: FunctionValueFlowEntry;
+	readonly parameters: readonly FunctionSemanticValueSource[];
+	readonly receiverProjection?: SemanticValueSource;
+	readonly implicitReceiver: boolean;
+	readonly declarationIds: readonly SymbolID[];
+	readonly ownedValueKeys: readonly string[];
+	readonly members: readonly MemberValueEntry[];
+	readonly calls: readonly CallValueEntry[];
+	readonly assignments: readonly ValueAssignmentEntry[];
+	readonly returns: readonly FunctionReturnValueEntry[];
 };
 
 export type CallValueEntry = {
@@ -316,7 +322,6 @@ export type WorkspaceValueFileFacts = {
 	declarationValues: readonly DeclarationValueEntry[];
 	moduleValues: readonly ModuleValueEntry[];
 	memberValues: readonly MemberValueEntry[];
-	functionReturnValues: readonly FunctionReturnValueEntry[];
 	functionValueFlows: readonly FunctionValueFlowEntry[];
 	callValues: readonly CallValueEntry[];
 	valueAssignments: readonly ValueAssignmentEntry[];

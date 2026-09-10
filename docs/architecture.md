@@ -4391,6 +4391,15 @@ source ranges, start-position fallbacks, or synthesized references. Source
 ranges remain the correct boundary for cursor- and protocol-originated queries,
 where no syntax node exists at the callsite.
 
+Every function body has its own expression value, distinct from the declaration
+that may store it. Its immutable function-flow facts retain the actual function
+expression, explicit named binding and written return statements. Summaries
+consume only their own flow's returns and deduplicate value terms there, without
+discarding written occurrences from the binder. Implicit receivers belong to
+the body, not the shared storage binding. The solver's modeled first-return
+lane is not a completeness proof for source authoring. See
+[function-source ownership and its remaining boundaries](lua_function_source_ownership.md).
+
 Semantic indexed access keeps object storage and key values distinct. Object
 queries may follow location aliases to find writes; index operands consume
 forward value alternatives, exactly as stored-key comparisons do. Reciprocal

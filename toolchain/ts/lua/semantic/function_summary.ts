@@ -485,9 +485,9 @@ export class FunctionSummaryStore {
 			const summary = this.buildSummary(id, flow, filesByFlow[flowIndex]);
 			this.summaries[id] = summary;
 			this.appendSummary(this.summaryIdsByFunctionTerm, summary.functionValue, id);
-			if (flow.functionValue.root.kind === 'declaration') {
-				this.appendSummary(this.summaryByDeclaration, flow.functionValue.root.declId, id);
-				this.declarationsBySummary[id] = flow.functionValue.root.declId;
+			if (flow.declaration !== undefined) {
+				this.appendSummary(this.summaryByDeclaration, flow.declaration, id);
+				this.declarationsBySummary[id] = flow.declaration;
 			}
 			if (summary.parameters.length > 0 && summary.receiverProjection !== undefined) {
 				this.receiverProjectionByParameter.set(summary.parameters[0], summary.receiverProjection);
@@ -641,16 +641,13 @@ export class FunctionSummaryStore {
 		}
 
 		const returns: TermID[] = [];
-		for (let returnIndex = 0; returnIndex < file.functionReturnValues.length; returnIndex += 1) {
-			const entry = file.functionReturnValues[returnIndex];
-			if ((entry.functionValue.root.kind === flow.functionValue.root.kind
-				&& entry.functionValue.root.kind === 'declaration'
-				&& flow.functionValue.root.kind === 'declaration'
-				&& entry.functionValue.root.declId === flow.functionValue.root.declId)
-				|| entry.functionValue.root.kind === 'owned'
-					&& flow.functionValue.root.kind === 'owned'
-					&& entry.functionValue.root.key === flow.functionValue.root.key) {
-				returns.push(this.terms.compileSource(entry.source));
+		for (let returnIndex = 0; returnIndex < flow.returns.length; returnIndex += 1) {
+			const value = flow.returns[returnIndex].firstValue;
+			if (value !== undefined) {
+				const term = this.terms.compileSource(value);
+				if (!returns.includes(term)) {
+					returns.push(term);
+				}
 			}
 		}
 

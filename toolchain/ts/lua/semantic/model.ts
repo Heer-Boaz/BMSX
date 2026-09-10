@@ -162,7 +162,6 @@ export type FileSemanticData = {
 	readonly declarationValues: readonly DeclarationValueEntry[];
 	readonly moduleValues: readonly ModuleValueEntry[];
 	readonly memberValues: readonly MemberValueEntry[];
-	readonly functionReturnValues: readonly FunctionReturnValueEntry[];
 	readonly functionValueFlows: readonly FunctionValueFlowEntry[];
 	readonly callValues: readonly CallValueEntry[];
 	readonly valueAssignments: readonly ValueAssignmentEntry[];
@@ -286,12 +285,10 @@ type ExpressionContext = {
 	moduleReturn?: boolean;
 };
 
-type FunctionReturnValueState = {
-	sources: SemanticValueSource[];
-};
-
 type FunctionValueFlowState = {
-	functionValue: FunctionSemanticValueSource;
+	expression: LuaFunctionExpression;
+	declaration: SymbolID | undefined;
+	functionValue: OwnedSemanticValueSource;
 	lexicalOwner?: FunctionValueFlowState;
 	parameters: FunctionSemanticValueSource[];
 	receiverProjection?: SemanticValueSource;
@@ -301,6 +298,7 @@ type FunctionValueFlowState = {
 	members: MemberValueEntry[];
 	calls: CallValueEntry[];
 	assignments: ValueAssignmentEntry[];
+	returns: FunctionReturnValueEntry[];
 };
 
 type AssignmentTargetInfo = {
@@ -326,7 +324,6 @@ type SemanticBuildResult = {
 	declarationValues: DeclarationValueEntry[];
 	moduleValues: ModuleValueEntry[];
 	memberValues: MemberValueEntry[];
-	functionReturnValues: FunctionReturnValueEntry[];
 	functionValueFlows: FunctionValueFlowEntry[];
 	callValues: CallValueEntry[];
 	valueAssignments: ValueAssignmentEntry[];
@@ -381,7 +378,6 @@ export function buildLuaFileSemanticData(
 		declarationValues: result.declarationValues,
 		moduleValues: result.moduleValues,
 		memberValues: result.memberValues,
-		functionReturnValues: result.functionReturnValues,
 		functionValueFlows: result.functionValueFlows,
 		callValues: result.callValues,
 		valueAssignments: result.valueAssignments,
@@ -611,14 +607,12 @@ class SemanticBuilder {
 	private readonly projectionValueDeclarations: Set<SymbolID> = new Set();
 	private readonly unknownValueDeclarations: Set<SymbolID> = new Set();
 	private readonly memberValues: Map<SymbolID, MemberValueEntry> = new Map();
-	private readonly functionReturnValues: Map<string, FunctionReturnValueEntry[]> = new Map();
 	private readonly functionValueFlows: FunctionValueFlowEntry[] = [];
 	private readonly callValues: CallValueEntry[] = [];
 	private readonly valueAssignments: ValueAssignmentEntry[] = [];
 	private moduleValue?: SemanticValueSource;
 	private readonly moduleAliasesByDeclId: Map<SymbolID, ModuleAliasTarget> = new Map();
 	private readonly moduleAliasesByName: Map<string, ModuleAliasEntry> = new Map();
-	private readonly functionReturnValueStack: FunctionReturnValueState[] = [];
 	private readonly functionValueFlowStack: FunctionValueFlowState[] = [];
 
 	constructor(options: {
@@ -674,7 +668,6 @@ class SemanticBuilder {
 				? [{ module: toLuaModulePath(this.path), source: this.moduleValue }]
 				: [],
 			memberValues: Array.from(this.memberValues.values()),
-			functionReturnValues: Array.from(this.functionReturnValues.values()).flat(),
 			functionValueFlows: this.functionValueFlows,
 			callValues: this.callValues,
 			valueAssignments: this.valueAssignments,
@@ -708,7 +701,7 @@ class SemanticBuilder {
 				const valueLimit = localAssignment.values.length;
 				for (let index = 0; index < valueLimit; index += 1) {
 					const valueExpression = localAssignment.values[index];
-					const targetDecl = index < pending.length ? pending[index] : pending[pending.length - 1];
+					const targetDecl = pending[index];
 					if (valueExpression.kind === LuaSyntaxKind.FunctionExpression && targetDecl) {
 						this.recordFunctionSignature(targetDecl, targetDecl.name, valueExpression, 'function');
 					}
@@ -742,10 +735,13 @@ class SemanticBuilder {
 				const localFunction = statement;
 				const decl = this.declareLocal(localFunction.name, 'function', true);
 				this.recordFunctionSignature(decl, localFunction.name.name, localFunction.functionExpression, 'function');
+				const functionValue = this.createExpressionValueSource(localFunction.functionExpression);
+				this.setDeclarationValue(decl, functionValue);
 				this.visitFunctionExpression(
 					localFunction.functionExpression,
 					undefined,
-					declarationValueSource(decl.id),
+					functionValue,
+					decl.id,
 					'function',
 				);
 				break;
@@ -758,7 +754,7 @@ class SemanticBuilder {
 				const scope = this.currentScope();
 				let decl = functionOwner
 					? this.propertiesByOwner.get(this.memberOwnerKey(functionOwner, namePath[namePath.length - 1]))
-					: this.properties.get(symbolKey);
+					: this.resolveName(namePath[0]) ?? this.properties.get(symbolKey);
 				if (!decl) {
 					const isGlobal = scope.kind === 'path';
 					const declarationName = functionDeclaration.name.method
@@ -813,10 +809,13 @@ class SemanticBuilder {
 					&& functionDeclaration.functionExpression.parameters[0]?.name === 'self') {
 					methodSelfPath = baseNames.slice(0, -1);
 				}
+				const functionValue = this.createExpressionValueSource(functionDeclaration.functionExpression);
+				this.setDeclarationValue(decl, functionValue);
 				this.visitFunctionExpression(
 					functionDeclaration.functionExpression,
 					methodSelfPath,
-					declarationValueSource(decl.id),
+					functionValue,
+					decl.id,
 					methodName === undefined ? 'function' : 'method',
 					methodReceiverClass,
 				);
@@ -829,7 +828,7 @@ class SemanticBuilder {
 					targets.push(this.handleAssignmentTarget(assignment.left[index]));
 				}
 				for (let index = 0; index < assignment.right.length; index += 1) {
-					const targetInfo = index < targets.length ? targets[index] : targets[targets.length - 1] ;
+					const targetInfo = targets[index];
 					const context: ExpressionContext = targetInfo
 						? {
 							tableBaseDecl: targetInfo.decl,
@@ -856,10 +855,11 @@ class SemanticBuilder {
 							&& valueExpression.parameters[0]?.name === 'self') {
 							selfPath = targetPath.slice(0, -1);
 						}
-						const functionValue = targetInfo?.decl
-							? declarationValueSource(targetInfo.decl.id)
-							: this.createExpressionValueSource(valueExpression);
-						this.visitFunctionExpression(valueExpression, selfPath, functionValue, 'function');
+						const functionValue = this.createExpressionValueSource(valueExpression);
+						this.visitFunctionExpression(valueExpression, selfPath, functionValue, targetInfo?.decl?.id, 'function');
+						if (targetInfo?.decl) {
+							this.setDeclarationValue(targetInfo.decl, functionValue);
+						}
 						if (targetInfo?.valueTarget) {
 							this.recordValueFlow(targetInfo.valueTarget, functionValue, 'value');
 						}
@@ -911,7 +911,10 @@ class SemanticBuilder {
 						returnValue = valueInfo?.valueSource;
 					}
 				}
-				this.recordFunctionReturnValue(returnValue);
+				const flow = this.functionValueFlowStack[this.functionValueFlowStack.length - 1];
+				if (flow) {
+					flow.returns.push({ statement: returnStatement, firstValue: returnValue });
+				}
 				if (moduleReturn) {
 					this.moduleValue = returnValue;
 				}
@@ -1169,10 +1172,8 @@ class SemanticBuilder {
 					: null;
 			}
 			case LuaSyntaxKind.FunctionExpression: {
-				const functionValue = context.tableBaseDecl
-					? declarationValueSource(context.tableBaseDecl.id)
-					: this.createExpressionValueSource(expression);
-				this.visitFunctionExpression(expression, undefined, functionValue, 'function');
+				const functionValue = this.createExpressionValueSource(expression);
+				this.visitFunctionExpression(expression, undefined, functionValue, context.tableBaseDecl?.id, 'function');
 				return { namePath: null, decl: context.tableBaseDecl, valueSource: functionValue };
 			}
 			case LuaSyntaxKind.TableConstructorExpression: {
@@ -1344,7 +1345,8 @@ class SemanticBuilder {
 	private visitFunctionExpression(
 		expression: LuaFunctionExpression,
 		methodSelfPath: readonly string[] | undefined,
-		functionValue: FunctionSemanticValueSource,
+		functionValue: OwnedSemanticValueSource,
+		declaration: SymbolID | undefined,
 		scopeKind: 'function' | 'method',
 		methodReceiverClass?: SemanticValueSource,
 	): void {
@@ -1366,6 +1368,8 @@ class SemanticBuilder {
 			parameters[0] = receiver;
 		}
 		const valueFlow: FunctionValueFlowState = {
+			expression,
+			declaration,
 			functionValue,
 			lexicalOwner: this.functionValueFlowStack[this.functionValueFlowStack.length - 1],
 			parameters,
@@ -1376,6 +1380,7 @@ class SemanticBuilder {
 			members: [],
 			calls: [],
 			assignments: [],
+			returns: [],
 		};
 		this.functionValueFlowStack.push(valueFlow);
 		const block = expression.body;
@@ -1388,30 +1393,17 @@ class SemanticBuilder {
 		const implicitSelfValue = receiver ?? this.currentMethodSelfValue();
 		this.methodSelfValueStack.push(implicitSelfValue);
 		this.currentScope().implicitSelfValue = implicitSelfValue;
-		this.functionReturnValueStack.push({
-			sources: [],
-		});
 		for (let index = 0; index < expression.parameters.length; index += 1) {
 			const parameter = this.declareParameter(expression.parameters[index]);
 			parameters[index + (receiver ? 1 : 0)] = declarationValueSource(parameter.id);
 		}
 		this.visitBlock(block);
-		const returnValue = this.functionReturnValueStack.pop()!;
 		this.methodSelfValueStack.pop();
 		this.methodSelfScopeStack.pop();
 		this.methodSelfPathStack.pop();
 		this.leaveScope();
 		this.functionValueFlowStack.pop();
 		this.functionValueFlows.push(valueFlow);
-		const functionKey = semanticValueSourceKey(functionValue);
-		if (returnValue.sources.length > 0) {
-			this.functionReturnValues.set(
-				functionKey,
-				returnValue.sources.map(source => ({ functionValue, source })),
-			);
-		} else {
-			this.functionReturnValues.delete(functionKey);
-		}
 	}
 
 	private currentMethodSelfPath(): readonly string[] | undefined {
@@ -2163,9 +2155,9 @@ class SemanticBuilder {
 		};
 		if (ref.isCall) {
 			for (let index = this.functionValueFlowStack.length - 1; index >= 0; index -= 1) {
-				const root = this.functionValueFlowStack[index].functionValue.root;
-				if (root.kind === 'declaration') {
-					ref.caller = root.declId;
+				const declaration = this.functionValueFlowStack[index].declaration;
+				if (declaration !== undefined) {
+					ref.caller = declaration;
 					break;
 				}
 			}
@@ -2316,19 +2308,6 @@ class SemanticBuilder {
 		return namePath.length > 1
 			? this.resolveValueSourceFromNamePath(namePath.slice(0, -1))
 			: undefined;
-	}
-
-	private recordFunctionReturnValue(valueSource: SemanticValueSource | undefined): void {
-		if (!valueSource || this.functionReturnValueStack.length === 0) {
-			return;
-		}
-		const state = this.functionReturnValueStack[this.functionReturnValueStack.length - 1];
-		for (let index = 0; index < state.sources.length; index += 1) {
-			if (semanticValueSourcesEqual(state.sources[index], valueSource)) {
-				return;
-			}
-		}
-		state.sources.push(valueSource);
 	}
 
 	private resolveGenericForTableSource(

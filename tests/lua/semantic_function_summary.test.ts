@@ -20,8 +20,7 @@ test('function summaries retain an uncalled receiver write', () => {
 	});
 	const summaries = new FunctionSummaryStore([file], identities);
 	const summary = summaries.list().find(
-		entry => entry.source.functionValue.root.kind === 'declaration'
-			&& entry.source.functionValue.root.declId.includes('attachment.on_attach'),
+		entry => entry.source.declaration?.includes('attachment.on_attach'),
 	);
 
 	assert.ok(summary);

@@ -4,6 +4,28 @@ These gates complement independent unit fixtures; they do not pin behaviour to
 game-specific identifiers or line numbers. The corpus enumerates tracked Lua
 under `cartlib`, `machine/bios` and `carts` without editing those files.
 
+## Function-source production
+
+```sh
+npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
+  tests/lua/semantic_function_sources.test.ts tests/lua/semantic_function_summary.test.ts
+npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+  tests/conformance/lua_source/profile_function_sources.ts
+```
+
+These independent fixtures distinguish each function body and written return
+from its destination binding. They cover real compiled BLua and public workspace
+resolution, not cart-specific registration spellings. Full source provenance,
+all-return-lane modeling and source-edit completeness are separate contracts.
+
+The profiler uses the same pre-existing public owners on baseline and current
+code: retained-parse binding, fresh identities/summaries, fresh workspace plus
+first member query, and retained lookups. Run it without other tests. It does not
+measure parsing, rendering, guest execution, Hot Resume or heap allocations.
+Evidence and remaining boundaries: `docs/lua_function_source_ownership.md`.
+
+## Structural transfer
+
 ```sh
 npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
   tests/lua/lua_table_transfer.test.ts tests/lua/fsm_hot_resume.test.ts
