@@ -4425,6 +4425,14 @@ values, not a binder override to the original class path; candidate-call
 relevance closes transitively without publishing namesake call facts. See
 [receiver binding and remaining query-context boundaries](lua_receiver_binding.md).
 
+The demand index keeps module member writes separate from receiver-writer
+summary selection. Demanding a name materializes module writes and active
+call-frame writes only; source navigation explicitly requests projection.
+Projected bodies retain their lexical owners and demanded member writes,
+including captured local tables. A write's RHS never determines its body
+owner. These projections still belong to the broad may-value query, not an
+execution/completeness proof. See [receiver projection](lua_receiver_projection.md).
+
 Semantic indexed access keeps object storage and key values distinct. Object
 queries may follow location aliases to find writes; index operands consume
 forward value alternatives, exactly as stored-key comparisons do. Reciprocal

@@ -153,6 +153,12 @@ all captured assignments during composition would not establish that contract;
 the latter would also lose useful analysis inside uncalled bodies. Preserve the
 existing navigation query's actual scope while designing the stronger relation.
 
+The subsequent [receiver-projection correction](lua_receiver_projection.md)
+separates projected receiver-writer selection from module writes and makes the
+navigation projection request explicit. It also retains projected lexical table
+writes. That fixes name-demand publication ownership, not the shared-relation
+counterexample above; the stronger analysis-context contract remains open.
+
 This slice also does not retain every written value occurrence, model every
 unknown value or return lane, prove statement ordering, broaden recognition,
 or alter source-edit admission. B03 and the remaining B04 contracts stay open.

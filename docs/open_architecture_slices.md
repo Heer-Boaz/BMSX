@@ -507,6 +507,12 @@ Resume. De oorspronkelijke receiverpath-fallback is verwijderd; demandselectie
 volgt ook transitieve receivercalls zonder namesake-effects te publiceren.
 De hypothetische querycontext en de sterkere B04-bronquery blijven open.
 
+De [receiverprojectie](lua_receiver_projection.md) staat nu los van de module-
+write-index: naam-demand activeert geen ongecallde method, bron-navigatie vraagt
+projectie expliciet aan. Projectie volgt de schrijvende body en lexical-owner,
+niet de eigenaar van de rechterwaarde; lokale table-writes blijven zichtbaar.
+De gedeelde may-value-relation is hiermee nog geen gesloten callcontextbewijs.
+
 | ID | Eigenaar / contract | Gate |
 | --- | --- | --- |
 | `STUDIO-BEHAVIOR-UX-B01` | Betekenisvolle BT/FSM-kaarten en leesbare, source-linked inspectie; technische bewijsdetails niet permanent op het canvas. | Eerst details-compositie meten op tiny-resolutie met ander paneel open. Geen verloren informatie of gesuggereerde volledigheid; inspectie/Source/Back blijven non-mutating. |

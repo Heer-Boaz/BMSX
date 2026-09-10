@@ -53,7 +53,7 @@ export class SemanticMemberQuery {
 		name: SemanticNameID,
 		out: SymbolID[],
 	): void {
-		this.instantiation.demandName(name);
+		this.instantiation.projectName(name);
 		this.collectQueryTerms(this.summaries.terms.compileSource(source));
 		out.length = 0;
 		this.symbolGeneration += 1;
@@ -185,7 +185,7 @@ export class SemanticMemberQuery {
 			switch (terms.kind(current)) {
 				case TermKind.Member: {
 					const name = terms.operand(current) as SemanticNameID;
-					this.instantiation.demandName(name);
+					this.instantiation.projectName(name);
 					const memberValues = this.memberValuesAtDepth(depth);
 					const memberDeclarations = this.memberDeclarationsAtDepth(depth);
 					this.collectMemberValues(

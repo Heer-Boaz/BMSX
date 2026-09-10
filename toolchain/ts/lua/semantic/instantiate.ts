@@ -283,6 +283,9 @@ export class SemanticInstantiationQuery {
 	private readonly instantiatedFrames: boolean[] = [];
 	private readonly activeFrames: number[] = [];
 	private readonly projectedSummaries: boolean[] = [];
+	private readonly projectedSummaryList: FunctionSummaryID[] = [];
+	private readonly projectedNames: boolean[] = [];
+	private readonly projectedNameList: SemanticNameID[] = [];
 	private readonly demandedNames: boolean[] = [];
 	private readonly demandedNameList: SemanticNameID[] = [];
 	private readonly effectNames: boolean[] = [];
@@ -316,17 +319,29 @@ export class SemanticInstantiationQuery {
 		this.demandedNameList.push(name);
 		const staticWrites = this.demand.staticWrites(name);
 		for (let writeIndex = 0; writeIndex < staticWrites.length; writeIndex += 1) {
-			const write = staticWrites[writeIndex];
-			const owner = this.summaries.terms.summaryOwner(write.value);
-			if (owner !== undefined) {
-				this.compose(owner);
-			}
-			this.addWrite(write);
+			this.addWrite(staticWrites[writeIndex]);
 		}
 		for (let frameIndex = 0; frameIndex < this.activeFrames.length; frameIndex += 1) {
 			this.materializeFrameWrites(this.activeFrames[frameIndex], name);
 		}
 		return true;
+	}
+
+	/** Source navigation includes projected bodies, independently of instantiated calls. */
+	public projectName(name: SemanticNameID): void {
+		if (this.projectedNames[name]) {
+			return;
+		}
+		this.demandName(name);
+		this.projectedNames[name] = true;
+		this.projectedNameList.push(name);
+		for (let summaryIndex = 0; summaryIndex < this.projectedSummaryList.length; summaryIndex += 1) {
+			this.materializeProjectedWrites(this.projectedSummaryList[summaryIndex], name);
+		}
+		const writers = this.demand.receiverWriters(name);
+		for (let writerIndex = 0; writerIndex < writers.length; writerIndex += 1) {
+			this.compose(writers[writerIndex]);
+		}
 	}
 
 	public demandEffectName(name: SemanticNameID): void {
@@ -362,7 +377,11 @@ export class SemanticInstantiationQuery {
 			return false;
 		}
 		this.projectedSummaries[summaryId] = true;
+		this.projectedSummaryList.push(summaryId);
 		const summary = this.summaries.get(summaryId);
+		if (summary.lexicalOwner !== undefined) {
+			this.compose(summary.lexicalOwner);
+		}
 		for (let aliasIndex = 0; aliasIndex < summary.aliases.length; aliasIndex += 1) {
 			const alias = summary.aliases[aliasIndex];
 			this.addAlias({
@@ -370,6 +389,9 @@ export class SemanticInstantiationQuery {
 				source: this.summaries.projectExternalTerm(alias.source),
 				relation: alias.relation,
 			});
+		}
+		for (let nameIndex = 0; nameIndex < this.projectedNameList.length; nameIndex += 1) {
+			this.materializeProjectedWrites(summaryId, this.projectedNameList[nameIndex]);
 		}
 		for (
 			let frame = this.frames.first(summaryId);
@@ -538,6 +560,21 @@ export class SemanticInstantiationQuery {
 					base: this.contextualize(write.base, frame),
 					name,
 					value: this.contextualize(write.value, frame),
+					declaration: write.declaration,
+				});
+			}
+		}
+	}
+
+	private materializeProjectedWrites(summaryId: FunctionSummaryID, name: SemanticNameID): void {
+		const writes = this.summaries.get(summaryId).writes;
+		for (let writeIndex = 0; writeIndex < writes.length; writeIndex += 1) {
+			const write = writes[writeIndex];
+			if (write.name === name) {
+				this.addWrite({
+					base: this.summaries.projectExternalTerm(write.base),
+					name,
+					value: this.summaries.projectExternalTerm(write.value),
 					declaration: write.declaration,
 				});
 			}

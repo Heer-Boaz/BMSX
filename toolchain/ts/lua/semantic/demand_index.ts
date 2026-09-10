@@ -36,6 +36,7 @@ export class SemanticDemandIndex {
 	public readonly aliases: readonly SummaryAlias[];
 	public readonly topLevelCalls: readonly IndexedCall[];
 	private readonly staticWritesByName: Map<SemanticNameID, SummaryWrite[]> = new Map();
+	private readonly receiverWritersByName: Map<SemanticNameID, FunctionSummaryID[]> = new Map();
 	private readonly candidateCallsByName: Map<SemanticNameID, IndexedCall[]> = new Map();
 	private readonly directTargetsByCall: Map<CallValueEntry, SymbolID[]> = new Map();
 	private readonly referencesByCall: Map<CallValueEntry, Ref> = new Map();
@@ -218,8 +219,14 @@ export class SemanticDemandIndex {
 		this.topLevelCalls = topLevelCalls;
 	}
 
+	/** Module-owned writes only. Inferred receiver shapes are not module effects. */
 	public staticWrites(name: SemanticNameID): readonly SummaryWrite[] {
 		return this.staticWritesByName.get(name) || EMPTY_WRITES;
+	}
+
+	/** Selects bodies for source projection, without publishing a write or call. */
+	public receiverWriters(name: SemanticNameID): readonly FunctionSummaryID[] {
+		return this.receiverWritersByName.get(name) || EMPTY_SUMMARIES;
 	}
 
 	public candidateCalls(name: SemanticNameID): readonly IndexedCall[] {
@@ -353,11 +360,18 @@ export class SemanticDemandIndex {
 		for (let writeIndex = 0; writeIndex < summary.writes.length; writeIndex += 1) {
 			const write = summary.writes[writeIndex];
 			if (write.base === receiver) {
-				this.appendStaticWrite({
-					...write,
-					base: summary.receiverProjection,
-					value: this.summaries.projectExternalTerm(write.value),
-				});
+				let writers = this.receiverWritersByName.get(write.name);
+				if (!writers) {
+					writers = [];
+					this.receiverWritersByName.set(write.name, writers);
+				}
+				if (writers[writers.length - 1] !== summary.id) {
+					writers.push(summary.id);
+				}
+				this.connectTerms(
+					this.summaries.projectExternalTerm(write.value),
+					this.summaries.terms.member(summary.receiverProjection, write.name),
+				);
 			}
 		}
 	}

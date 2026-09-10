@@ -72,6 +72,7 @@ export class LuaSemanticQueryStore {
 		const term = this.summaries.terms.compileSource(source);
 		const nameId = this.members.nameId(name);
 		this.instantiation.demandTermEffects(term);
+		this.instantiation.projectName(nameId);
 		this.instantiation.demandEffectName(nameId);
 		const owner = this.summaries.terms.summaryOwner(term);
 		if (owner !== undefined) {

@@ -26,6 +26,13 @@ De [receiverbinding](lua_receiver_binding.md) corrigeert vervolgens zowel de
 semantische als de gecompileerde implicit-`self`-writes. Ook methodedispatch
 gebruikt geen naamgebaseerde terugval naar de oorspronkelijke receiver meer.
 
+De [receiverprojectiecorrectie](lua_receiver_projection.md) scheidt vervolgens
+module-writes van de selectie van mogelijke receiver-writers. Navigatie vraagt
+projectie expliciet aan; gewone naam-demand publiceert alleen module- en actieve
+frame-writes. Geprojecteerde bodies behouden ook hun lexical-owner en lokale
+table-writes. Dit voltooit nog niet de scheiding van analysecontexten binnen de
+gedeelde may-value-relation.
+
 ## 1. Beslissing
 
 Behavior Lens wordt geen universele omkeerbare Lua-interpreter. Het is een
