@@ -1449,6 +1449,16 @@ the runtime remains the semantic oracle. Unknown callbacks/targets and implicit
 initialization remain explicit unknowns, not fabricated edges. The supported
 source subset and production references are in `behavior_graph_design.md`.
 
+FSM target-end gestures retain an exact literal/return proof and bind proposed
+paths for all recognized consumers before editing. Shared source changes require
+an editor-local impact review with separate Apply/Discard commands; they are not
+choice-picker entries or per-consumer checkboxes for a single shared literal.
+The review owns source-notification/focus lifetime, not a working copy, runtime
+snapshot or second Undo stack. Source changes cancel it; the accepted operation
+writes one literal through normal source history. Guest state changes only via
+the ordinary Save/Hot Resume and subsequent guest transition paths. See
+`state_machine_connection_edit_design.md`.
+
 Source-edit commands retain the syntax owner of the authored value. The first
 numeric command targets a complete Lua table-field value, not an arbitrary
 literal inside an expression. The language layer returns ordered number/sign

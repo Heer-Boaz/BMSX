@@ -273,10 +273,10 @@ or patched: the normal initializer must publish the new definition. No runtime
 or machine changes are introduced. See
 [`../docs/state_machine_authoring_design.md`](../docs/state_machine_authoring_design.md)
 for source admission, real-backend live installation proof and unfinished
-state/transition/drag authoring gates.
+state construction/removal gates.
 
-`state_machine_retarget.ts` is the next source-operation contract, not an
-enabled gesture. Relation binding retains its existing occurrence scopes and
+`state_machine_retarget.ts` owns source-operation admission for target-end
+gestures. Relation binding retains its existing occurrence scopes and
 the resolved source value for every known direct/return proof, even when target
 membership is incomplete. Transitions refer directly to their origin scope;
 geometry consumes its row key. The cartlib path owner produces parsed segments
@@ -295,9 +295,23 @@ token; ordinary replacement still clears correspondence. Hidden views map a
 deep copy and resolve the exact registration/slot/proof on their next projection.
 Proof matching consumes the current index's per-consumer references directly;
 ordinary correspondence and history restoration do not re-scan all transitions.
-The shared connection-preview/control now has its own domain-free conformance
-proof. Physical FSM retargeting still requires current-source endpoint admission,
-shared-consumer presentation/acceptance and the end-to-end installation gate.
+The cold source index also provides actual scopes and eligible literal proofs.
+Physical target-end dragging consumes this capability, creates one analysis at
+the gesture threshold and retains its current candidate. Initial/concurrent
+edges and aliases do not become writable transition ports.
+
+Shared source uses enter `WorkbenchSourceEditReview`, an editor-local control
+built from the existing property tree, action bar and focus routing. The
+contribution supplies impact text and exact source navigation. Source changes
+synchronously dispose its proposal; readonly revokes Apply; input detachment
+clears it. Palette focus can return to the still-current review. Apply detaches
+listeners before one normal source edit; Source/Discard never apply. The pane
+registers document Undo/Redo on the review focus like its other source controls;
+an external edit invalidates the review instead of rebasing it. Review rows
+cannot opt out individual uses of the same literal. There is no new modal router,
+autosave input, working copy, guest patch or history stack. The complete physical
+and live-install contract is in
+[`../docs/state_machine_connection_edit_design.md`](../docs/state_machine_connection_edit_design.md).
 
 FSM source bodies now retain child occurrences, guard fields and
 consumer slots. A cold second pass binds initial/concurrent entries and possible
@@ -489,8 +503,8 @@ The renderer replaces only the dragged route, draws the provisional wire below
 headers, and paints/hits explicit handles above them. BT insertion remains its
 own feedback variant, not a disguised connection. See
 [`../docs/graph_connection_interaction_design.md`](../docs/graph_connection_interaction_design.md).
-This shared-control slice deliberately does not expose FSM retarget handles
-before the source/shared-consumer/installation gates are connected.
+The FSM contribution now connects target-only capability, exact proof history,
+shared-consumer review and ordinary Save/Hot Resume to this shared control.
 
 Scene authoring uses the same document contract, but its runtime object and
 viewport owners are deliberately not inferred from the behavior projection.

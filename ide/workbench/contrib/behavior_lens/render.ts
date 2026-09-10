@@ -11,10 +11,15 @@ import type { EditorCommandEnablement } from '../../../common/commands';
 import { renderWorkbenchActionBar } from '../../render/action_bar';
 import { drawWorkbenchPropertyTree } from '../../render/property_tree';
 
+import type { WorkbenchGraphConnectionHandles } from '../../ui/graph/connection';
+import type { WorkbenchSourceEditReview } from '../../ui/source_edit_review/control';
+import { drawWorkbenchSourceEditReview } from '../../render/source_edit_review';
+
 const EMPTY_LENS_TEXT = 'NO STATIC BEHAVIOR REGISTRATIONS';
 
 /** Draws the retained presentation; source recognition and layout generation run elsewhere. */
-export function drawBehaviorLens(state: BehaviorLensViewState, commands: EditorCommandEnablement, hover: WorkbenchGraphItem | null, focused: boolean, drag?: WorkbenchGraphDragFeedback): void {
+export function drawBehaviorLens(state: BehaviorLensViewState, commands: EditorCommandEnablement, hover: WorkbenchGraphItem | null, focused: boolean, drag?: WorkbenchGraphDragFeedback, handles?: WorkbenchGraphConnectionHandles, review?: WorkbenchSourceEditReview): void {
+	if (review !== undefined) { drawWorkbenchSourceEditReview(review); return; }
 	const layout = prepareBehaviorLensLayout(state);
 	if (state.presentation.kind === 'outline') api.fill_rect(layout.left, layout.top, layout.right, layout.bottom, 0, constants.COLOR_RESOURCE_VIEWER_BACKGROUND);
 	api.fill_rect(layout.left, layout.top, layout.right, layout.headerBottom, 0, constants.COLOR_PROBLEMS_PANEL_HEADER_BACKGROUND);
@@ -39,7 +44,7 @@ export function drawBehaviorLens(state: BehaviorLensViewState, commands: EditorC
 		return;
 	}
 	if (outline.kind !== 'outline') {
-		drawWorkbenchGraph(outline.viewport, hover, focused, drag);
+		drawWorkbenchGraph(outline.viewport, hover, focused, drag, handles);
 		if (outline.viewport.model.nodes.length === 0) {
 			const message = outline.kind === 'state-graph' && outline.layoutState.kind === 'pending' ? 'LAYING OUT STATE MACHINE...'
 				: outline.kind === 'state-graph' && outline.layoutState.kind === 'failed' ? 'LAYOUT FAILED - SOURCE REMAINS AVAILABLE'

@@ -37,6 +37,7 @@ import type { GraphLayoutEngineFactory } from '../../services/graph_layout/engin
 import { acceptStateGraphSelection, stateGraphSelection } from './state_graph_navigation';
 import { buildStateMachineDetails } from './state_machine_details';
 import { behaviorTreeEditTarget, behaviorTreeMoveTarget, duplicateBehaviorTreeChild, moveBehaviorTreeChild, removeBehaviorTreeChild } from './behavior_tree_edit';
+import type { StateMachinePathUse } from './state_machine_retarget';
 import { setStateMachineInitial, stateMachineInitialTarget } from './state_machine_initial';
 
 const PICKER_TITLES: Readonly<Record<BehaviorKind, string>> = {
@@ -102,6 +103,16 @@ export class BehaviorLensController {
 		prepareBehaviorLensLayout(view);
 		input.updatePresentation(editorViewState.font.renderFont());
 		if (sourceChanged) finishBehaviorLensNavigation(view);
+	}
+
+	/** Review navigation keeps the actual consumer/return, not just the shared literal. */
+	public openStateMachineUseSource(input: BehaviorLensInput, use: StateMachinePathUse): void {
+		const view = input.view;
+		selectBehaviorLensDefinition(view, use.definition.rowKey);
+		view.selection = selectStateMachineSource({ kind: 'state-outcome', rowKey: use.transition.slot.source.rowKey,
+			transition: use.transition, outcome: use.outcome }, input.workingCopy.buffer);
+		finishBehaviorLensNavigation(view);
+		this.openSelectedSource(view);
 	}
 
 	public openSource(): void {

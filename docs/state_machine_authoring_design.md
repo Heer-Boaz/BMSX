@@ -136,7 +136,8 @@ the exact selected transition through literal replacement and document Undo/Redo
 The [shared connection-control slice](graph_connection_interaction_design.md)
 now supplies explicit endpoint press identity and retained preview geometry;
 it is not a fake dragged node or an FSM-specific pointer loop. Concrete FSM
-admission, shared-consumer acceptance and installation remain the next gate.
+admission, shared-consumer acceptance and installation are connected in
+[`state_machine_connection_edit_design.md`](state_machine_connection_edit_design.md).
 
 ### Owning representations
 

@@ -20,7 +20,7 @@ export type StateMachineRetargetCheck = RetargetUnavailable
 	| { readonly kind: 'unchanged' }
 	| { readonly kind: 'unresolved-consumer'; readonly use: StateMachinePathUse; readonly target: StateMachineSourceOutcome['target'] }
 	| { readonly kind: 'available'; readonly literal: LuaStringLiteralExpression; readonly text: string;
-		readonly uses: readonly { readonly use: StateMachinePathUse; readonly plan: StateMachineSourcePath }[] };
+		readonly uses: readonly { readonly use: StateMachinePathUse; readonly original: StateMachineSourcePath; readonly plan: StateMachineSourcePath }[] };
 
 type RetargetSource = {
 	readonly kind: 'source';
@@ -28,6 +28,14 @@ type RetargetSource = {
 	readonly path: StateMachineSourcePath;
 	readonly use: StateMachinePathUse;
 };
+
+/** A proof may resolve to a string without authoring that string at its own binding. */
+export function stateMachineRetargetLiteral(outcome: StateMachineSourceOutcome): LuaStringLiteralExpression | undefined {
+	if (outcome.target.kind !== 'path') return undefined;
+	const proof = outcome.proof;
+	const expression = proof.kind === 'direct' ? proof.expression : proof.statement.expressions[0];
+	return expression.kind === LuaSyntaxKind.StringLiteralExpression ? expression : undefined;
+}
 
 /**
  * One source-operation lifetime, not a per-frame graph query or a Lua evaluator.
@@ -44,9 +52,8 @@ export class StateMachineRetargetAnalysis {
 		this.uses = uses;
 		if (!document.syntaxComplete) { this.source = { kind: 'unavailable', reason: 'syntax-incomplete' }; return; }
 		if (outcome.target.kind !== 'path') { this.source = { kind: 'unavailable', reason: 'source-not-path' }; return; }
-		const proof = outcome.proof;
-		const literal = proof.kind === 'direct' ? proof.expression : proof.statement.expressions[0];
-		if (literal.kind !== LuaSyntaxKind.StringLiteralExpression) {
+		const literal = stateMachineRetargetLiteral(outcome);
+		if (literal === undefined) {
 			this.source = { kind: 'unavailable', reason: 'indirect-literal' }; return;
 		}
 		let selectedUse: StateMachinePathUse | undefined;
@@ -90,12 +97,12 @@ export class StateMachineRetargetAnalysis {
 		keys.reverse();
 		const path = createFsmStatePath(source.path.absolute, source.path.up + anchor.depth - common.depth, keys);
 		if (path === undefined) return { kind: 'unavailable', reason: 'unaddressable-target' };
-		const uses: { use: StateMachinePathUse; plan: StateMachineSourcePath }[] = [];
+		const uses: { use: StateMachinePathUse; original: StateMachineSourcePath; plan: StateMachineSourcePath }[] = [];
 		for (const use of this.uses) {
 			if (use.outcome.target.kind !== 'path') return { kind: 'unresolved-consumer', use, target: use.outcome.target };
 			const plan = bindStateMachineSourcePath(use.definition.scopes[0], use.transition.origin, path);
 			if (plan.kind !== 'path') return { kind: 'unresolved-consumer', use, target: plan };
-			uses.push({ use, plan });
+			uses.push({ use, original: use.outcome.target, plan });
 		}
 		return { kind: 'available', literal: source.literal, text: path.text, uses };
 	}

@@ -111,7 +111,7 @@ export function createBehaviorLensViewState(document: BehaviorSourceDocument, mo
 		definitionRowKey: null,
 		selection: null,
 		selectionBookmark: undefined,
-		stateMachines: { bodies: new Map(), references: new Map(), initialTargets: new Map() },
+		stateMachines: { bodies: new Map(), references: new Map(), initialTargets: new Map(), scopes: new Map(), retargetable: new Set() },
 		sourceRanges: new Map(),
 		sourceNodes: [],
 		nodesByRowKey: new Map(),

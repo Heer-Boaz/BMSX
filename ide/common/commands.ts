@@ -49,6 +49,9 @@ export type EditorScenarioLabCommandId =
 	| 'scenarioLab.cancel';
 
 export type EditorCommandId =
+	| 'sourceEditReview.apply'
+	| 'sourceEditReview.discard'
+	| 'sourceEditReview.source'
 	| 'undo'
 	| 'redo'
 	| 'behaviorLens.toggleBranch'

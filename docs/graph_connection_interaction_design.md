@@ -62,11 +62,11 @@ it does not gain reconnect semantics. A domain-free contribution exercises the
 new connection protocol through the real editor pane, pointer capture and
 384×288 renderer. That is not evidence of an FSM retarget UI or Hot Resume.
 
-The next FSM slice must connect current-source/read-only capability, the proven
-literal/return selection, shared-consumer presentation and acceptance, and the
-existing source edit/history. It must then prove the complete physical drag,
-Source, Undo/Redo, Save and Hot Resume workflow. No endpoint control is exposed
-on the actual FSM until these domain gates are implemented together.
+The concrete FSM slice now connects current-source/read-only capability,
+proven literal/return selection, shared-consumer review and existing edit/history.
+Its physical drag, Source, Undo/Redo and Save/Hot Resume proof is separate from
+this domain-free control proof; see
+[`state_machine_connection_edit_design.md`](state_machine_connection_edit_design.md).
 
 ## Validation — 10 September 2026
 

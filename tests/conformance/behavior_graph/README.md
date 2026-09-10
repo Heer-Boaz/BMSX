@@ -507,3 +507,33 @@ It does not measure pointer interaction, graph layout, complete-frame time or
 heap/GC costs. The design, production references, baseline producer comparison
 and remaining command/fold/live-install gates are in
 `docs/behavior_tree_transfer_admission_design.md`.
+
+## FSM endpoint authoring and impact review
+
+```sh
+npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
+  tests/lua/state_machine_drag.test.ts tests/lua/workbench_source_edit_review.test.ts
+node tests/conformance/runtime_replay/browser.mjs --studio-fsm-retarget \
+  dist/bmsx-bios.debug.rom dist/nemesis_s.debug.rom /tmp/bmsx-fsm-drag/review.png
+npx tsx --tsconfig tsconfig.base.json tests/conformance/behavior_graph/profile_fsm_drag.ts
+```
+
+The live test authors the independent `FSM_RETARGET_CART_SOURCE` through the
+ordinary working-copy Save/Reboot route, not a synthetic ROM or a game-specific
+FSM fixture. It physically selects and drags an exact connection endpoint,
+checks capture/palette/Escape cancellation, separate review rows and buttons,
+readonly/source/pane invalidation, Source, hidden Undo and palette Redo. The
+normal Save/Hot Resume then preserves two live FSM identities and retained data.
+Actual ICU keyboard samples trigger both guest callbacks; guards first refuse,
+then admit normal exit/entry into the edited target. No host Lua calls or guest
+state patches. A separate single-use direct path commits on drop. The final
+capture shows a real, unapplied reverse proposal at the IDE's tiny-font size.
+
+`profile_fsm_drag.ts` uses real source/index owners and native-worker geometry.
+It separates capability (10,000 operations/batch), first candidate (100), repeated
+movement inside the same header (1,000), impact construction/open/layout (10),
+retained review layout (1,000) and review/overlay-quad emission (1,000). Ten warmups
+and median of 25 batches; run in isolation after tests/builds. No parser, layout
+worker timing, full pointer dispatch, GPU raster, guest/Hot Resume, heap/GC or
+complete-frame measurement is claimed. Review rows/text and quad storage are
+retained between unchanged frames. See `docs/state_machine_connection_edit_design.md`.

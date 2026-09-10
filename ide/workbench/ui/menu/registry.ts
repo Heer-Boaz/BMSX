@@ -6,7 +6,7 @@ export type WorkbenchDropdownMenuId =
 	| 'menubar.run'
 	| 'menubar.view';
 
-export type WorkbenchActionMenuId = 'scenarioLab.title' | 'sceneEditor.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
+export type WorkbenchActionMenuId = 'sourceEditReview.title' | 'scenarioLab.title' | 'sceneEditor.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
 
 export type WorkbenchMenuCommandItem = {
 	readonly type: 'command';
@@ -20,6 +20,7 @@ export type WorkbenchMenuSeparator = {
 export type WorkbenchMenuItem = WorkbenchMenuCommandItem | WorkbenchMenuSeparator;
 
 type WorkbenchMenuContributions = {
+	readonly 'sourceEditReview.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'menubar.file': readonly WorkbenchMenuItem[];
 	readonly 'menubar.edit': readonly WorkbenchMenuItem[];
 	readonly 'menubar.run': readonly WorkbenchMenuItem[];
@@ -34,6 +35,11 @@ type WorkbenchMenuContributions = {
 
 /** Immutable built-in menu contributions; renderers only project these items. */
 export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
+	'sourceEditReview.title': [
+		{ type: 'command', command: 'sourceEditReview.source' },
+		{ type: 'command', command: 'sourceEditReview.apply' },
+		{ type: 'command', command: 'sourceEditReview.discard' },
+	],
 	'menubar.file': [
 		{ type: 'command', command: 'save' },
 		{ type: 'command', command: 'resources' },

@@ -11,6 +11,9 @@ export type EditorCommandPresentation = {
 export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	Record<EditorCommandId, EditorCommandPresentation>
 > = {
+	'sourceEditReview.apply': { category: 'Review', title: 'Apply Source Edit', shortTitle: 'Apply' },
+	'sourceEditReview.discard': { category: 'Review', title: 'Discard Source Edit', shortTitle: 'Discard' },
+	'sourceEditReview.source': { category: 'Review', title: 'Open Impact Source', shortTitle: 'Source' },
 	commandPalette: { category: 'View', title: 'Command Palette' },
 	undo: { category: 'Edit', title: 'Undo' },
 	redo: { category: 'Edit', title: 'Redo' },
