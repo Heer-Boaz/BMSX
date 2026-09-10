@@ -31,6 +31,15 @@ summary partitioning, module writes, public member resolution and actual
 instantiation plus a compiled BLua oracle. It does not turn hypothetical
 composition into execution evidence; see `docs/lua_write_ownership.md`.
 
+`semantic_parameter_context.test.ts` verifies entry values versus writable
+formal bindings, captured writes and nested indexed storage. Its fixtures do
+not depend on games. `profile_parameter_context.ts` separately measures fresh
+workspace queries through three forwarding bodies at 32/256 callsites and
+retained lookups, for both read-only and written parameters, using the same
+entrypoints on baseline/current bundles.
+Run it with the same command as the other profilers, without concurrent tests.
+Scope, primary references and remaining gaps: `docs/lua_parameter_context.md`.
+
 ## Structural transfer
 
 ```sh

@@ -22,6 +22,7 @@ export class SemanticMemberQuery {
 	private readonly memberSeen: number[][] = [];
 	private readonly memberGeneration: number[] = [];
 	private readonly locationValues: TermID[][] = [];
+	private readonly locationPaths: TermID[][] = [];
 	private readonly locationSeen: number[][] = [];
 	private readonly locationGeneration: number[] = [];
 	private readonly prototypeOwners: TermID[][] = [];
@@ -528,6 +529,7 @@ export class SemanticMemberQuery {
 		if (!values) {
 			values = [];
 			this.locationValues[depth] = values;
+			this.locationPaths[depth] = [];
 		}
 		let seen = this.locationSeen[depth];
 		if (!seen) {
@@ -546,6 +548,7 @@ export class SemanticMemberQuery {
 			}
 		}
 		const relations = this.instantiation.values;
+		const path = this.locationPaths[depth];
 		let head = 0;
 		while (head < values.length) {
 			const current = values[head];
@@ -562,42 +565,25 @@ export class SemanticMemberQuery {
 				}
 			}
 			const terms = this.summaries.terms;
-			const kind = terms.kind(current);
-			if (kind >= TermKind.Member) {
-				const base = terms.base(current);
+			path.length = 0;
+			let base = current;
+			while (terms.kind(base) >= TermKind.Member) {
+				path.push(base);
+				base = terms.base(base);
 				for (
 					let link = relations.firstReverse(base);
 					link !== 0;
 					link = relations.nextReverse(link)
 				) {
-					const owner = relations.owner(link);
-					if (terms.kind(owner) >= TermKind.Member) {
+					let projected: TermID | undefined = relations.owner(link);
+					// Rebase on value roots; table containment is not a new root alias.
+					if (terms.kind(projected) >= TermKind.Member) {
 						continue;
 					}
-					let projected: TermID;
-					switch (kind) {
-						case TermKind.Member:
-							projected = terms.member(owner, terms.operand(current) as SemanticNameID);
-							break;
-						case TermKind.Index:
-							projected = terms.index(owner, terms.operand(current) as TermID);
-							break;
-						case TermKind.Element:
-							projected = terms.element(owner);
-							break;
-						case TermKind.Call:
-							projected = terms.call(owner);
-							break;
-						case TermKind.Instance:
-							projected = terms.instance(owner);
-							break;
-						case TermKind.Metatable:
-							projected = terms.metatable(owner);
-							break;
-						default:
-							projected = current;
+					for (let pathIndex = path.length - 1; pathIndex >= 0 && projected !== undefined; pathIndex -= 1) {
+						projected = terms.retainedAccessWithBase(path[pathIndex], projected);
 					}
-					if (seen[projected] !== generation) {
+					if (projected !== undefined && seen[projected] !== generation) {
 						seen[projected] = generation;
 						values.push(projected);
 					}

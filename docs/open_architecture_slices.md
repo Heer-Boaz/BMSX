@@ -498,6 +498,12 @@ Nog open: hypothetische `compose`-projecties delen hun value-relation met
 instantiated effecten. De sterkere source-query vereist een expliciet
 contextcontract; geen certainty-check om de bestaande mogelijke-symbolen-API.
 
+Een verdere [parameter-/contextcorrectie](lua_parameter_context.md) scheidt
+immutable ingangswaarden van beschrijfbare formele bindings. Captured writes en
+geneste storagepaden volgen hun echte owners; read-only formals krijgen geen
+extra aliaslaag. De hypothetische querycontext en implicit-`self`-writebinding
+blijven open, evenals de sterkere B04-bronquery.
+
 | ID | Eigenaar / contract | Gate |
 | --- | --- | --- |
 | `STUDIO-BEHAVIOR-UX-B01` | Betekenisvolle BT/FSM-kaarten en leesbare, source-linked inspectie; technische bewijsdetails niet permanent op het canvas. | Eerst details-compositie meten op tiny-resolutie met ander paneel open. Geen verloren informatie of gesuggereerde volledigheid; inspectie/Source/Back blijven non-mutating. |

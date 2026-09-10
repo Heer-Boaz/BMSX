@@ -687,10 +687,10 @@ export class SemanticDemandIndex {
 	private summaryHasQueryIndependentEffects(summary: FunctionSummary): boolean {
 		for (let aliasIndex = 0; aliasIndex < summary.aliases.length; aliasIndex += 1) {
 			const alias = summary.aliases[aliasIndex];
-			const anchorKind = this.summaries.terms.kind(
-				this.summaries.terms.anchor(alias.target),
-			);
-			if (anchorKind === TermKind.Parameter || anchorKind === TermKind.Root) {
+			const anchor = this.summaries.terms.anchor(alias.target);
+			const anchorKind = this.summaries.terms.kind(anchor);
+			if (anchorKind === TermKind.Parameter || anchorKind === TermKind.Root
+				|| anchorKind === TermKind.Local && this.summaries.terms.summaryOwner(anchor) !== summary.id) {
 				return true;
 			}
 		}

@@ -20,6 +20,7 @@ export type FunctionSummaryID = number & { readonly [functionSummaryBrand]: true
 
 export const enum TermKind {
 	Root,
+	/** Immutable value supplied at function entry, not a writable source binding. */
 	Parameter,
 	Local,
 	ContextRoot,
@@ -61,6 +62,7 @@ export type FunctionSummary = {
 	readonly source: FunctionValueFlowEntry;
 	readonly functionValue: TermID;
 	readonly lexicalOwner: FunctionSummaryID | undefined;
+	/** Immutable entry values; written source bindings are initialized Local terms. */
 	readonly parameters: readonly TermID[];
 	readonly receiverProjection: TermID | undefined;
 	readonly writes: readonly SummaryWrite[];
@@ -262,6 +264,39 @@ export class SemanticTermStore {
 		return this.metatableByBase[base];
 	}
 
+	/** Look up an existing access path over another base, without synthesizing paths. */
+	public retainedAccessWithBase(term: TermID, base: TermID): TermID | undefined {
+		switch (this.kinds[term]) {
+			case TermKind.Member:
+			case TermKind.Index: {
+				const entries = this.kinds[term] === TermKind.Member
+					? this.membersByBase.get(base)
+					: this.indicesByBase.get(base);
+				if (entries) {
+					for (let index = 0; index < entries.length; index += 1) {
+						if (this.right[entries[index]] === this.right[term]) {
+							return entries[index];
+						}
+					}
+				}
+				return undefined;
+			}
+			case TermKind.Element:
+				return this.elementByBase[base];
+			case TermKind.Call:
+				return this.callByBase[base];
+			case TermKind.Instance:
+				return this.instanceByBase[base];
+			case TermKind.Metatable:
+				return this.metatableByBase[base];
+			case TermKind.Root:
+			case TermKind.Parameter:
+			case TermKind.Local:
+			case TermKind.ContextRoot:
+				return undefined;
+		}
+	}
+
 	public kind(term: TermID): TermKind {
 		return this.kinds[term];
 	}
@@ -439,16 +474,6 @@ export class FunctionSummaryStore {
 			}
 		}
 
-		for (let fileIndex = 0; fileIndex < files.length; fileIndex += 1) {
-			const values = files[fileIndex].declarationValues;
-			for (let valueIndex = 0; valueIndex < values.length; valueIndex += 1) {
-				const entry = values[valueIndex];
-				if (entry.flow !== undefined) {
-					valuesByFlow.get(entry.flow)!.push(entry);
-				}
-			}
-		}
-
 		const parameterOwnerByRoot = new Map<SemanticRootID, RootOwner>();
 		const localOwnerByRoot = new Map<SemanticRootID, RootOwner>();
 		for (let flowIndex = 0; flowIndex < flows.length; flowIndex += 1) {
@@ -459,6 +484,24 @@ export class FunctionSummaryStore {
 					identities.rawRootId(flow.parameters[parameterIndex].root),
 					{ summary, index: parameterIndex },
 				);
+			}
+		}
+		for (let fileIndex = 0; fileIndex < files.length; fileIndex += 1) {
+			const file = files[fileIndex];
+			const values = file.declarationValues;
+			for (let valueIndex = 0; valueIndex < values.length; valueIndex += 1) {
+				const entry = values[valueIndex];
+				if (entry.flow !== undefined) {
+					valuesByFlow.get(entry.flow)!.push(entry);
+				}
+			}
+			// A binding may be written by a nested closure, or with an RHS that
+			// has no modeled value. Use binding writes, not known-value aliases.
+			for (let referenceIndex = 0; referenceIndex < file.refs.length; referenceIndex += 1) {
+				const reference = file.refs[referenceIndex];
+				if (reference.isWrite && reference.target !== undefined) {
+					parameterOwnerByRoot.delete(identities.rawRootId({ kind: 'declaration', declId: reference.target }));
+				}
 			}
 		}
 		for (let flowIndex = 0; flowIndex < flows.length; flowIndex += 1) {
@@ -607,6 +650,15 @@ export class FunctionSummaryStore {
 		}
 
 		const aliases: SummaryAlias[] = [];
+		const parameters = new Array<TermID>(flow.parameters.length);
+		for (let parameterIndex = 0; parameterIndex < flow.parameters.length; parameterIndex += 1) {
+			const parameter = this.terms.parameter(id, parameterIndex);
+			parameters[parameterIndex] = parameter;
+			const binding = this.terms.compileSource(flow.parameters[parameterIndex]);
+			if (binding !== parameter) {
+				aliases.push({ target: binding, source: parameter, relation: 'value' });
+			}
+		}
 		for (const [declId, values] of valuesByDeclaration) {
 			const target = this.terms.compileSource(declarationValueSource(declId));
 			for (let valueIndex = 0; valueIndex < values.length; valueIndex += 1) {
@@ -653,10 +705,6 @@ export class FunctionSummaryStore {
 			}
 		}
 
-		const parameters = new Array<TermID>(flow.parameters.length);
-		for (let parameterIndex = 0; parameterIndex < flow.parameters.length; parameterIndex += 1) {
-			parameters[parameterIndex] = this.terms.compileSource(flow.parameters[parameterIndex]);
-		}
 		return {
 			id,
 			source: flow,

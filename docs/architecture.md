@@ -4409,6 +4409,14 @@ duplicate binder projection. Hypothetical composition still is not execution or
 source-completeness evidence. See [write ownership and the open query-context
 boundary](lua_write_ownership.md).
 
+Function-summary `Parameter` terms represent immutable entry values, not
+writable source bindings. A named formal with binding writes has a local term
+initialized from its entry value; existing call instantiation contextualizes
+that local independently of the actual argument. Never-written formals need no
+intermediate storage. Binding-write facts include nested closures and writes
+whose RHS is not modeled. See [parameter context and remaining producer
+boundaries](lua_parameter_context.md).
+
 Semantic indexed access keeps object storage and key values distinct. Object
 queries may follow location aliases to find writes; index operands consume
 forward value alternatives, exactly as stored-key comparisons do. Reciprocal

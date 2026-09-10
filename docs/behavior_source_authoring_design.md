@@ -19,6 +19,10 @@ value-relation kan publiceren. Vóór een sterkere source-query moet daarom ook
 de querycontext expliciet zijn; correcte write-feiten alleen zijn nog geen
 uitvoerings-/exclusiviteitsbewijs. De huidige Lens-recognizer is ongewijzigd.
 
+De [parametercorrectie](lua_parameter_context.md) onderscheidt inmiddels
+ingangswaarden van formele bindings die geschreven worden. Zij verhelpt
+argumentvervuiling door reassignments, maar voltooit de querycontext niet.
+
 ## 1. Beslissing
 
 Behavior Lens wordt geen universele omkeerbare Lua-interpreter. Het is een
