@@ -14,6 +14,12 @@ export type EditorPaneFactories = {
 export class EditorPanes {
 	private readonly panes = new Map<EditorInputKind, EditorPane<EditorInput>>();
 	private activePaneValue: EditorPane<EditorInput> | null = null;
+	private readonly clearListeners = new Set<() => void>();
+
+	public onDidClearEditor(listener: () => void): () => void {
+		this.clearListeners.add(listener);
+		return () => this.clearListeners.delete(listener);
+	}
 
 	public constructor(private readonly factories: EditorPaneFactories) {
 		initializeNavigationState(this);
@@ -46,6 +52,7 @@ export class EditorPanes {
 		inputFocus.setTarget(null);
 		activePane.clearInput();
 		this.activePaneValue = null;
+		for (const listener of this.clearListeners) listener();
 	}
 
 	public dispose(): void {
@@ -53,6 +60,7 @@ export class EditorPanes {
 		this.clearEditor();
 		for (const pane of this.panes.values()) pane.dispose();
 		this.panes.clear();
+		this.clearListeners.clear();
 	}
 
 	private getOrCreatePane(input: EditorInput): EditorPane<EditorInput> {

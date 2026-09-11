@@ -117,7 +117,7 @@ test('history capture treats wrapped scroll rows as view coordinates, not text p
 	const input = new CodeEditorInput({ id: 'code:0\0positions.lua', title: 'positions', model, view, runtimeErrorOverlay: null, executionStopRow: null });
 	const selection = new CodeEditorNavigationSelection(input);
 	t.after(() => { selection.dispose(); input.dispose(); model.dispose(); });
-	assert.equal(selection.cursor, 6); assert.equal(selection.scrollRow, 5);
+	assert.equal(selection.snapshot.cursor, 6); assert.equal(selection.snapshot.scrollRow, 5);
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- 🐉\n' }]);
-	assert.equal(selection.cursor, 12); assert.equal(selection.scrollRow, 5);
+	assert.equal(selection.snapshot.cursor, 12); assert.equal(selection.snapshot.scrollRow, 5);
 });

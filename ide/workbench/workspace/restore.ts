@@ -6,28 +6,22 @@ import {
 } from '../../runtime/sources';
 import type { CartEditor } from '../../cart_editor';
 import { restoreBreakpointsFromPayload } from '../contrib/debugger/controller';
-import { initializeTabs } from '../ui/tabs';
 import {
 	clearCodeEditorInputs,
-	resolveCodeEditorInput,
-	retainModelCodeTabContext,
-	retainEntryTabContext,
 } from '../ui/code_tab/contexts';
 import { editorTextModelService } from '../../editor/model/model_service';
 import { buildWorkspaceDirtyEntryPath } from '../../workspace/files';
-import { restoreWorkspaceCodeEditorView } from './context_snapshot';
 import { workspaceDirtyRecords } from './state';
 import { editorTabGroup } from '../ui/tab/group_model';
 import { resolveTextFileModel } from '../services/working_copy/text_file_model';
 import type { KeyValueStorage } from '../../workspace/key_value_storage';
 import {
-	type PersistedCodeEditorView,
 	type PersistedDirtyEntry,
 	type WorkspaceAutosavePayload,
 } from './models';
 
 export async function applyWorkspaceAutosavePayload(
-	editor: CartEditor,
+	editor: Pick<CartEditor, 'editorPanes' | 'editorInputSerializers' | 'setFontVariant'>,
 	sources: RuntimeSourceState,
 	debuggerState: RuntimeBreakpointState,
 	payload: WorkspaceAutosavePayload,
@@ -37,11 +31,12 @@ export async function applyWorkspaceAutosavePayload(
 	editorTabGroup.clear();
 	clearCodeEditorInputs();
 	editorTextModelService.clear();
-	initializeTabs(retainEntryTabContext(sources), editor.editorPanes);
 	editor.setFontVariant(payload.fontVariant);
 	await resolveDirtyFileModels(storage, sources, payload.dirtyFiles);
 	hydrateDirtyFiles(sources, payload.dirtyFiles);
-	restoreCodeEditorViews(payload.codeEditorViews);
+	await editorTabGroup.deserialize(payload.editorGroup, editor.editorInputSerializers);
+	const active = editorTabGroup.activeTab;
+	if (active !== null) editor.editorPanes.openEditor(active);
 	restoreBreakpointsFromPayload(debuggerState, payload.breakpoints);
 }
 
@@ -76,14 +71,5 @@ export function hydrateDirtyFiles(
 			throw new Error(`Persisted dirty file '${dirtyPath}' was not loaded.`);
 		}
 		model.restoreDirtySource(record.contents);
-	}
-}
-
-function restoreCodeEditorViews(views: PersistedCodeEditorView[]): void {
-	for (let index = 0; index < views.length; index += 1) {
-		const view = views[index];
-		const context = retainModelCodeTabContext(editorTextModelService.get(view)!);
-		editorTabGroup.add(resolveCodeEditorInput(context));
-		restoreWorkspaceCodeEditorView(context, view);
 	}
 }

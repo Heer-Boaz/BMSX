@@ -725,3 +725,30 @@ exacte bewijsgrenzen.
 **A07 blijft open:** contribution-owned serialiseerbare viewstate, input/group
 serializers, herstel van clean/visual context en de echte browser-restartgate.
 B03/B04/B06-authoring en A08 worden hiermee niet afgesloten.
+
+
+### A07 — contribution-owned sessions (2026-09-12; afgerond)
+
+`editorGroup` bewaart geordende input-envelopes en active/preview, onafhankelijk
+van dirty bronbackups. Elke bijdrage bezit haar eigen serializer en hergebruikt
+de gewone navigatie-bookmarks. Schone code, scene-selectie, twee BT/FSM-views van
+één working copy, resource-viewers en Scenario Lab-testcontext overleven een echte
+page reload. Pas de actieve pane wordt gekoppeld; grafiekpositie wacht op actuele
+geometrie. Geen runtime-/Undo-/worker- of ongeldige widgetdraft in de sessie.
+
+De reloadproef vond een code-widgetafhankelijkheid van niet-codepanes. Cleanup
+staat nu bij de uitgaande codepane; workbench-bounds hebben geen tekstmodel nodig.
+Pagehide neemt alleen geaccepteerde staat op, shutdown doet normale focus-detach
+vóór de snapshot en dispose pas erna. Een gewijzigd bronfingerprint houdt oude
+posities buiten nieuwe bytes; geen alternatieve definitie of compat-reader.
+
+Bewijs: **1590 Lua-tests, 1589 pass/1 bestaande skip**, dezelfde 51 tests-tsc-
+baseline, IDE-tsc/audits/indent/build/diff groen. Echte reload én volledige Studio/
+Pietious-navigatie groen op software/WebGL2/WebGPU. Een gerichte capture+JSON-proef
+meet circa **0,566 ms warm voor 384 inputs**; geen herlezing van stabiele bron.
+Dit meet geen storage-IO, volledige frames of fysieke SNES Mini. Referenties,
+alle gates en meetgrenzen staan in `workbench_session.md`.
+
+**Open blijven:** resource-viewer content/scroll bij opnieuw resolven,
+B03/B04/B06-authoring en A08. De opgeslagen sessiestructuur is vervangen zonder
+migratie van oude IDE-records, zoals afgesproken.

@@ -17,6 +17,7 @@ export const POSITION_AXES = ['x', 'y', 'z'] as const;
 
 export class SceneEditorInput extends WorkingCopyEditorInput<SceneEditorTabId, 'scene_editor'> {
 	public version = 0;
+	public position: { readonly outlineScroll: number; readonly detailsScroll: number } | undefined;
 	public parsed: ParsedLuaChunk;
 	public sourceText = '';
 	public readonly details = new WorkbenchScrollViewport();

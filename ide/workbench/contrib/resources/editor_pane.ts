@@ -4,14 +4,12 @@ import { ResourceViewerNavigationSelection } from './navigation_selection';
 import { handleEditorScrollbarPointer } from '../../../input/pointer/scrollbar';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 import type { PointerSnapshot } from '../../../common/models';
-import { closeLineJump } from '../code_editor/find/line_jump';
-import { closeSearch } from '../code_editor/find/search';
 import { runtimeErrorState } from '../../../editor/contrib/runtime_error/state';
 import { editorCaretState } from '../../../editor/ui/view/caret/state';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { drawEditorText } from '../../../editor/render/text_renderer';
 import { measureText } from '../../../editor/common/text/layout';
-import { getCodeAreaBounds } from '../../../editor/ui/view/view';
+import { getWorkbenchEditorBounds } from '../../common/layout';
 import { drawResourceViewer } from '../../render/resource_panel';
 import type { ResourceViewerInput } from '../../ui/tab/model';
 import { WorkbenchViewEditorPane } from '../../ui/editor_pane/workbench_view_pane';
@@ -29,15 +27,13 @@ export class ResourceViewerEditorPane extends WorkbenchViewEditorPane<ResourceVi
 	}
 
 	protected activate(_selection?: EditorTextSelection, navigationSelection?: ResourceViewerNavigationSelection): void {
-		closeSearch(false, true);
-		closeLineJump(false);
 		editorCaretState.cursorRevealSuspended = false;
 		clearRuntimeErrorOverlay();
 		runtimeErrorState.executionStopRow = null;
 		navigationSelection?.restore(this.input.resource);
 		clampResourceViewerScroll(
 			this.input.resource,
-			getCodeAreaBounds(),
+			getWorkbenchEditorBounds(),
 			editorViewState.lineHeight,
 		);
 	}

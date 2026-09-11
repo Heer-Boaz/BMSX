@@ -1,7 +1,8 @@
 # Workbench session restoration (A07)
 
-Status: A07 in progress. Source/input/group admission is separated; editor-session
-serializers and clean/visual reload restoration are not implemented yet.
+Status: A07 complete for the contracted workbench session surface.
+Source/input/group admission and contribution-owned session serialization are separate.
+Broader behavior authoring and full-host/physical-target performance remain open.
 
 ## Production references
 
@@ -40,7 +41,7 @@ tabs, tab order or visual inputs. This is separate from the corrected missing-
 metadata crash. `persistWorkspaceSessionLocally` already captures an `All`
 generation synchronously; the missing part is the editor session representation.
 
-There is also a lifecycle dependency: `CartEditor.shutdown` currently disposes
+At the audit there was also a lifecycle dependency: `CartEditor.shutdown` disposed
 Scenario Lab and the panes before its final workspace save. A visual-input
 snapshot must be taken while those owners still exist, after ordinary focus/
 capture detachment has finished accepted edits. Capturing after destruction and
@@ -162,3 +163,99 @@ Artifacts: `/tmp/bmsx-session/`; final admission logs have
 `*-admission-final.log`, with the separate focused old/new browser comparison in
 `baseline-resolution.log` and `smoke-resolution.log`. The earlier
 `studio-admission.log` intentionally records the failed intermediate Back case.
+
+
+## Contribution sessions and detached controls (2026-09-12)
+
+The workspace now stores an `editorGroup` independently of `dirtyFiles`, replacing
+`codeEditorViews` rather than maintaining a second compatibility format. The group
+owns order and active/preview indices, with opaque `{kind, value}` envelopes.
+Each of the five contributions registers its serializer at composition. Plain
+`view_snapshot.ts` values are also used by the existing navigation selections;
+only live navigation subscribes to text changes. Persistent copies never acquire
+model subscriptions or mutate with later Undo.
+
+Code snapshots use UTF-16 cursor/anchor offsets. Scene snapshots use mapped
+root/member ranges. Behavior snapshots identify registration and subtree-use
+occurrences, including pending hidden-edit bookmarks. Two views of the same
+source model remain different inputs. Scroll/zoom restoration waits for the
+actual retained geometry, including the asynchronous FSM worker. A source
+fingerprint (length and existing `hashText`) is cached once per buffer version;
+changed admitted bytes do not receive old source positions. This is a
+non-cryptographic view change detector, not proof of source identity under
+adversarial collisions. No whole source is duplicated in each tab payload.
+
+Scenario Lab persists only its test selection, scope expansion and scroll, not
+its test runtime or results. Resource viewers persist resource identity and
+scroll and resolve content from the correct socket's package. Their existing
+resolve-time content/scroll coupling is a separate remaining contribution issue;
+restoration does not depend on preserving old viewer objects.
+
+The real reload uncovered a missing pane boundary, not an autosave-null case:
+non-code panes closed the old code search and measured their content using the
+old code gutter after the code widget had detached. Cleanup now belongs to
+`CodeEditorPane.clearInput`; the widget explicitly has no model/view while a
+visual pane is active. Workbench content bounds are shared without calculating a
+text gutter. Workbench resize dispatches to the attached pane's layout capability.
+Closing Find preserves the code selection, matching
+[VS Code FindWidget._hide](https://github.com/microsoft/vscode/blob/7f59d5e01a7fafeba8e83cdfd9d8493f2beeeaca/src/vs/editor/contrib/find/browser/findWidget.ts#L625-L647).
+No stale widget is retained to make a visual editor work.
+
+`browser_studio_session.ts` uses the actual Studio composition and product file
+API in an isolated workspace. A genuine page navigation fires the production
+pagehide checkpoint; the subsequent import has fresh models, controls, runtime
+and workers. The independent authored fixture keeps `module<entry>` because
+recovered source overrides participate in the existing cold-boot compiler path.
+This is not a new promise to execute an older ROM while retaining unbuildable
+recovered source. Pause and rewind are deliberately not restored as workspace
+state. Shutdown evidence reads the persisted record after input disposal, rather
+than asserting only that the inputs had once existed.
+
+### Final session validation
+
+- Lua: **1590 tests, 1589 pass, 1 existing skip**. The focused session/storage/
+  bookmark/code-binding set has **71/71** passes. Hidden reparent bookmarks are
+  captured without parsing and survive JSON round-trip without selecting another
+  shared initializer occurrence; later Undo cannot mutate the persisted copy.
+- IDE TypeScript, strict architecture boundaries (**zero issues**), core parity,
+  indentation, debug browser build and diff checks pass. Tests TypeScript retains
+  the same **51 normalized baseline diagnostics**, no additions or removals.
+- The actual page-reload, full Studio, and Pietious source/navigation suites pass
+  on **software, WebGL2 and WebGPU**. Reload additionally checks first activation
+  of both BTs, asynchronous FSM geometry, original code selection, an unchanged
+  focused draft and the actual local session record after shutdown. Tiny-font
+  software output was inspected. No physical device was exercised.
+- `profile_workbench_session.ts` measured actual contribution captures plus JSON
+  encoding with 33,265 source characters per document and three inputs per model:
+
+  | Documents / inputs | First capture | Warm capture + encoding | Serialized characters | Retained probe heap |
+  | --- | --- | --- | --- | --- |
+  | 4 / 12 | 1.499 ms | 0.016 ms | 5,455 | 1,168,528 B |
+  | 32 / 96 | 2.133 ms | 0.105 ms | 43,433 | 2,657,272 B |
+  | 128 / 384 | 5.554 ms | 0.566 ms | 173,789 | 8,100,720 B |
+
+  One initial snapshot read per working copy; zero additional source reads
+  during repeated cursor checkpoints. Warm unchanged captures cost 0.011,
+  0.076 and 0.330 ms respectively and return the preceding group value. The
+  measurements ran without concurrent builds/tests/browser runs. Heap figures
+  include fixture working copies, source projections and inputs after explicit
+  Node GC; they are not just the new mementos' footprint. Timing excludes storage
+  IO, browser frames, GPU work and end-to-end GC latency. Idle autosave absence
+  remains covered by storage tests. These measurements do not close A08.
+
+Artifacts: `/tmp/bmsx-session/{lua,ide,tests,boundaries,parity,indent,build,studio,
+navigation,reload}-session-final.log` and `profile-session-final.jsonl`. Early
+`session-reload-wip*.log` files retain failed lifecycle and invalid-fixture
+attempts; they are not the final pass logs.
+
+Run the probe with:
+
+```sh
+TSX_TSCONFIG_PATH=tsconfig.base.json node --expose-gc --import tsx \
+  --import ./tests/lua/test_setup.ts \
+  tests/conformance/runtime_replay/profile_workbench_session.ts
+```
+
+Resource viewer resolve-time content/scroll coupling remains a separate follow-up;
+B03 cross-parent authoring, B04 source-query/latency, B06 property authoring and
+A08 whole-host/physical-target evidence are not marked complete by this work.

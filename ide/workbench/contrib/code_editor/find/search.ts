@@ -167,7 +167,6 @@ export function closeSearch(clearQuery: boolean, forceHide = false): void {
 		onLocalSearchQueryChanged();
 	}
 
-	clearEditorSearchSelection();
 	resetBlink();
 }
 
@@ -286,6 +285,7 @@ export function cancelSearchJob(): void {
 	editorSearchState.job = null;
 }
 
+/** A new find query replaces its code selection; hiding the widget does not. */
 function clearEditorSearchSelection(): void {
 	if (!activeCodeEditor.view.selectionAnchor) {
 		return;

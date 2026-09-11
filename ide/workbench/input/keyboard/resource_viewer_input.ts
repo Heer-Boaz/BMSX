@@ -1,4 +1,4 @@
-import { getCodeAreaBounds } from '../../../editor/ui/view/view';
+import { getWorkbenchEditorBounds } from '../../common/layout';
 import { consumeIdeKey, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
 import { applyResourceViewerScroll, clampResourceViewerScroll, resourceViewerTextCapacity, setResourceViewerScroll } from '../../contrib/resources/viewer';
 import type { ResourceViewerState } from '../../contrib/resources/model';
@@ -19,14 +19,14 @@ export function handleResourceViewerInput(playerInput: PlayerInput, viewer: Reso
 	}
 	if (shouldRepeatKeyFromPlayer('PageUp', playerInput)) {
 		consumeIdeKey('PageUp', playerInput);
-		const bounds = getCodeAreaBounds();
+		const bounds = getWorkbenchEditorBounds();
 		const capacity = resourceViewerTextCapacity(viewer, bounds, editorViewState.lineHeight);
 		applyResourceViewerScroll(viewer, capacity, viewer.scroll - Math.max(1, capacity));
 		return;
 	}
 	if (shouldRepeatKeyFromPlayer('PageDown', playerInput)) {
 		consumeIdeKey('PageDown', playerInput);
-		const bounds = getCodeAreaBounds();
+		const bounds = getWorkbenchEditorBounds();
 		const capacity = resourceViewerTextCapacity(viewer, bounds, editorViewState.lineHeight);
 		applyResourceViewerScroll(viewer, capacity, viewer.scroll + Math.max(1, capacity));
 		return;
@@ -41,9 +41,9 @@ export function scrollResourceBrowserHorizontal(resourcePanel: ResourcePanelCont
 }
 
 export function scrollResourceViewer(viewer: ResourceViewerState, amount: number): void {
-	setResourceViewerScroll(viewer, getCodeAreaBounds(), editorViewState.lineHeight, viewer.scroll + amount);
+	setResourceViewerScroll(viewer, getWorkbenchEditorBounds(), editorViewState.lineHeight, viewer.scroll + amount);
 }
 
 export function resourceViewerClampScroll(viewer: ResourceViewerState): void {
-	clampResourceViewerScroll(viewer, getCodeAreaBounds(), editorViewState.lineHeight);
+	clampResourceViewerScroll(viewer, getWorkbenchEditorBounds(), editorViewState.lineHeight);
 }

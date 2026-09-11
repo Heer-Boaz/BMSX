@@ -1,3 +1,4 @@
+import { captureBehaviorLensView, restoreBehaviorLensView, type BehaviorLensViewSnapshot } from '../../ide/workbench/contrib/behavior_lens/view_snapshot';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { createBehaviorTreeEditFixture } from '../helpers/behavior_tree_edit_fixture';
@@ -188,4 +189,31 @@ test('a removed history occurrence does not select a surviving namesake, even af
 	f.refresh(); selected.restore(input); prepareBehaviorLensLayout(f.view);
 	assert.equal(f.view.definitionRowKey, null, 'a replaced registration cannot adopt another definition with the same id');
 	assert.equal(f.viewport.model.nodes.length, 0);
+});
+
+
+test('session snapshots retain hidden transfer bookmarks without publishing a graph or persisting live objects', t => {
+	const f = fixture(t);
+	const input = new BehaviorLensInput(f.model, f.view, () => assert.fail('BT never starts an FSM worker'));
+	t.after(() => input.dispose());
+	const document = f.view.document;
+	f.transfer();
+	const transferred = f.model.buffer.getText();
+	const snapshot = captureBehaviorLensView(input);
+	const serialized = JSON.stringify(snapshot);
+	assert.equal(f.view.document, document, 'capture never reparses a hidden input');
+	f.model.undo(); f.refresh();
+	assert.equal(JSON.stringify(snapshot), serialized, 'live Undo cannot mutate the persisted value');
+
+	const restored = createBehaviorTreeEditFixture(t, transferred, 0);
+	const reopened = new BehaviorLensInput(restored.model, restored.view, () => assert.fail('BT never starts an FSM worker'));
+	t.after(() => reopened.dispose());
+	const value: BehaviorLensViewSnapshot = JSON.parse(serialized);
+	restoreBehaviorLensView(reopened, value); prepareBehaviorLensLayout(restored.view);
+	assert.equal(restored.view.definitionRowKey, restored.view.document.definitions[1].rowKey);
+	const selected = restored.viewport.selection;
+	assert.ok(selected?.kind === 'node');
+	assert.equal(readLuaSourceRange(restored.model.buffer, selected.source.occurrenceRange), 'moved');
+	assert.equal(selected.member!.index, 1);
+	assert.equal(selected.parent!.member!.index, 2, 'second use of destination initializer, not the previous parent');
 });

@@ -17,7 +17,7 @@ import {
 } from '../../services/working_copy/lua_sources';
 import type { ScenarioLabTabId } from '../../ui/tab/id';
 import { editorTabGroup } from '../../ui/tab/group_model';
-import { isScenarioLabActive, setActiveTab } from '../../ui/tabs';
+import { isScenarioLabActive, openEditorTab } from '../../ui/tabs';
 import type { EditorNavigationController } from '../resources/navigation';
 import type { EditorPanes } from '../../services/editor/editor_panes';
 import { prepareScenarioLabLayout } from './layout';
@@ -80,7 +80,7 @@ export class ScenarioLabController {
 	}
 
 	public open(): void {
-		this.openView(this.getOrCreateView());
+		openEditorTab(this.editorPanes, this.resolveInput());
 	}
 
 	public updateView(view: ScenarioLabViewState): void {
@@ -158,13 +158,9 @@ export class ScenarioLabController {
 		return view;
 	}
 
-	private openView(view: ScenarioLabViewState): void {
-		let tab = editorTabGroup.findById(SCENARIO_LAB_TAB_ID);
-		if (tab === undefined) {
-			tab = new ScenarioLabInput(view);
-			editorTabGroup.add(tab);
-		}
-		setActiveTab(this.editorPanes, tab.id);
+	public resolveInput(): ScenarioLabInput {
+		const tab = editorTabGroup.findById(SCENARIO_LAB_TAB_ID);
+		return tab === undefined ? new ScenarioLabInput(this.getOrCreateView()) : tab;
 	}
 
 	public openActionEffectSource(view: ScenarioLabViewState, executionDomain: 0 | 1, effectId: string): void {
@@ -262,7 +258,7 @@ export class ScenarioLabController {
 			this.audioOutput,
 		);
 		this.editor.handleRuntimeTaskError(error, 'Scenario run failed');
-		this.openView(view);
+		this.open();
 		refreshScenarioLabProjection(view);
 		updateScenarioLabStatus(view);
 	}
@@ -276,7 +272,7 @@ export class ScenarioLabController {
 			this.runtime,
 			this.audioOutput,
 		);
-		this.openView(view);
+		this.open();
 		refreshScenarioLabProjection(view);
 		updateScenarioLabStatus(view);
 	}

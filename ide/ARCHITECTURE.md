@@ -938,6 +938,31 @@ base. A later editable structured input must first attach the existing working
 copy to the real workspace persistence owner; a read-only input cannot
 accidentally claim save support merely because it has a tab.
 
+### Workbench sessions and input admission
+
+Model resolution and tab admission are separate operations. Source recovery and
+input serializers resolve retained working copies without manufacturing code
+tabs. `EditorTabGroupModel` owns ordered input envelopes and active/preview
+indices; the five concrete contribution serializers own their source identity
+and plain view-state payloads. Navigation reuses the same view-state capture and
+restore functions, adding live subscriptions only for navigation history.
+
+Recovery hydrates accepted dirty working copies first, then reconstructs all
+inputs and attaches only the chosen active pane. Clean tabs and several distinct
+behavior views of one source survive independently of the dirty-file list.
+Changed source fingerprints prevent old positions from targeting unrelated
+occurrences. A source fingerprint is cached once per text-buffer version, not
+recomputed by every view. FSM pan/zoom waits for current asynchronous geometry.
+Scenario Lab execution/results, graph workers, Undo stacks and widget drafts are
+not editor-session data. No legacy payload reader is present.
+
+The code pane owns search cleanup and model/view detachment. A non-code pane has
+no dependency on a previous code model to close its widgets or measure its own
+bounds. Shared workbench geometry excludes the code gutter. Pagehide captures
+accepted state without blurring a draft; normal shutdown detaches focus and then
+checkpoints the still-live inputs before destroying controllers. See
+[`workbench_session.md`](../docs/workbench_session.md) for references and gates.
+
 ### Working-copy save ownership
 
 `workbench/services/working_copy/text_file_save.ts` is the persistence and

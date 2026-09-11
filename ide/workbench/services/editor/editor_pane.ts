@@ -37,6 +37,9 @@ export abstract class EditorPane<TInput extends EditorInput> {
 	public update(_deltaSeconds: number): void {
 	}
 
+	/** Attached controls can react to a workbench size change without a source-less widget. */
+	public layout?(): void;
+
 	public abstract draw(): void;
 
 	public abstract handleKeyboard(playerInput: PlayerInput): void;

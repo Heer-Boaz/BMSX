@@ -15,7 +15,7 @@ import { editorViewState } from '../../../editor/ui/view/state';
 import { createLuaTableFieldIntegerEdits } from '../../../language/lua/source_edits';
 import { getTextFileRuntimeSourceStatus } from '../../services/working_copy/runtime_source_status';
 import { FullWidthWorkbenchEditorPane } from '../../ui/editor_pane/workbench_view_pane';
-import { clampWorkbenchListScroll, revealWorkbenchListSelection, scrollWorkbenchList, workbenchListContainsPosition, workbenchListRowIndexAtPosition } from '../../ui/list_view';
+import { revealWorkbenchListSelection, scrollWorkbenchList, workbenchListContainsPosition, workbenchListRowIndexAtPosition } from '../../ui/list_view';
 import { navigateWorkbenchTree, setWorkbenchTreeCollapsed, workbenchTreeTwistieContainsPosition, WorkbenchTreeNavigationResult } from '../../ui/tree_view';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
 import { WorkbenchScrollControl } from '../../ui/scroll_control';
@@ -75,12 +75,6 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 		navigationSelection?.restore(this.input);
 		this.bindProperties();
 		layoutSceneEditor(this.input, true);
-		if (navigationSelection !== undefined) {
-			this.input.outline.scroll = navigationSelection.outlineScroll;
-			clampWorkbenchListScroll(this.input.outline);
-			this.input.details.scrollbar.setScroll(navigationSelection.detailsScroll);
-			layoutSceneEditor(this.input, false);
-		}
 		this.details.lineStep = this.input.outline.layout.rowHeight;
 	}
 

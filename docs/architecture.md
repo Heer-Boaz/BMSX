@@ -4609,14 +4609,14 @@ See [Behavior Quick Access](behavior_quick_access.md).
 panels consume the same object and read type, asset id, and generated state
 directly from its source record. Source installation and activation publish the
 retained Lua and active-domain catalogs. Listing and lookup code does not copy
-resource metadata into descriptor DTOs. Workspace state persists only
+resource metadata into descriptor DTOs. Workspace resource identity persists only
 `(domain, path)` and resolves it through `RuntimeSourceState`. Local workspace
 files have one owner representation, `{ contents, updatedAt }`; autosave,
 explicit source saves, cold-boot source arbitration, and the local transport
 all consume that same record. Each dirty source record is stored under the
 project root owned by its resource domain at an immutable path derived from its
 record timestamp; the active workbench root owns only the session record. Every
-session entry names that exact dirty-record generation, so the session record
+dirty-file entry names that exact dirty-record generation, so the session record
 is the commit marker: new dirty records are published without overwriting the
 previous generation, then the session record is published, and records no
 longer referenced by it are deleted afterwards.
@@ -4635,14 +4635,39 @@ current session schema has no version field or migration path. Missing storage
 is absence; malformed BMSX-owned records and session entries whose dirty
 timestamp is absent fail without deletion or repair.
 
-Workspace autosave is mutation-driven. Text, dirty cursor/scroll state,
-breakpoints, explicit saves, and font changes advance a retained revision and
-arm one debounce callback with exact change bits. A completely idle workspace
-has no autosave timer, does not enumerate tabs, and allocates nothing. Content
-changes rebuild the dirty-file generation; cursor and scroll changes retain the
-affected context identities and replace only their session metadata. They reuse
-the dirty-record map, unchanged background entries, and serialized breakpoint
-state. A commit writes changed dirty content locally, then the session record,
+The workbench session and dirty working-copy backups are separate. The editor
+group serializes its ordered input envelopes and active/preview indices;
+contributions serialize plain view-state values, using the same source bookmarks
+as navigation. Clean code, resource viewers, scene views, multiple behavior
+occurrences in one file, and Scenario Lab test context can all survive a restart.
+Dirty models are hydrated before inputs resolve; only the chosen active pane is
+attached. Source fingerprints belong to the retained text snapshot and are
+computed once per buffer version, not once per input or cursor movement. Changed
+canonical source retains the group topology without applying stale positions or
+selecting a nearby definition. The fingerprint is a non-cryptographic change
+detector for mementos, not semantic/completeness proof or a security identity.
+There is no session migration reader. Undo history, pending property drafts,
+workers, test executions/results, guest state, rewind and host pause are not
+serialized as editor context. See [workbench sessions](workbench_session.md).
+
+Pane detachment completes ordinary focus/capture cleanup while the input and its
+working copy still live. The code widget detaches its model/view on clear; other
+panes do not depend on a previously attached code document. Content bounds belong
+to the workbench, with the code pane adding its own gutter. Final shutdown takes
+the session checkpoint before disposing inputs/controllers. Browser pagehide
+uses the existing synchronous local checkpoint and never forces a focused draft
+to commit.
+
+Workspace autosave is mutation-driven. Text, code cursor/scroll state, group
+changes, pane detachment, breakpoints, explicit saves, and font changes advance a
+retained revision and arm one debounce callback with exact change bits. A
+completely idle workspace has no autosave timer and does not enumerate inputs.
+At a checkpoint, contribution serializers capture accepted view state. Unchanged
+input envelopes are shared with the preceding generation; metadata-only commits
+reuse the dirty-record map and breakpoint state. The snapshot cache avoids source
+rereads/re-hashing for stable versions. Visual viewport changes are captured on
+pane/group checkpoints and pagehide, not through a per-frame serialization poll.
+A commit writes changed dirty content locally, then the session record,
 then obsolete dirty records. Remote acknowledgement advances only after the
 same record-before-session sequence succeeds; metadata-only replication skips
 dirty-record indexing and transfer when the retained map is already remote.

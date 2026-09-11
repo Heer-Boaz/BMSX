@@ -25,7 +25,6 @@ import {
 import { joinWorkspacePaths } from '../../workspace/path';
 import {
 	workspaceDirtyRecords,
-	workspacePendingCodeEditorViews,
 	workspaceState,
 } from './state';
 import { applyWorkspaceAutosavePayload } from './restore';
@@ -43,7 +42,7 @@ import {
 	WorkspaceAutosaveChange,
 	type WorkspaceAutosavePayload,
 } from './models';
-import type { CodeEditorContext } from '../../editor/ui/code_editor_state';
+import { editorTabGroup } from '../ui/tab/group_model';
 
 const WORKSPACE_AUTOSAVE_DELAY_MS = 2500;
 const WORKSPACE_RECONNECT_DELAY_MS = WORKSPACE_AUTOSAVE_DELAY_MS * 4;
@@ -55,6 +54,8 @@ let sources: RuntimeSourceState = null;
 let debuggerState: RuntimeBreakpointState = null;
 let storage: KeyValueStorage = null;
 let clock: HostClock = null;
+let unsubscribeEditorGroup: (() => void) | undefined;
+let unsubscribeEditorPane: (() => void) | undefined;
 
 function cancelWorkspaceReconnect(): void {
 	reconnectHandle?.cancel();
@@ -62,6 +63,10 @@ function cancelWorkspaceReconnect(): void {
 }
 
 export async function shutdownWorkspaceStorage(): Promise<void> {
+	unsubscribeEditorGroup?.();
+	unsubscribeEditorPane?.();
+	unsubscribeEditorGroup = undefined;
+	unsubscribeEditorPane = undefined;
 	cancelWorkspaceAutosave();
 	cancelWorkspaceReconnect();
 	try {
@@ -94,7 +99,6 @@ export async function shutdownWorkspaceStorage(): Promise<void> {
 			workspaceState.remoteDirtyRecords = null;
 			workspaceState.pendingChanges = WorkspaceAutosaveChange.None;
 			workspaceDirtyRecords.clear();
-			workspacePendingCodeEditorViews.clear();
 			editor = null;
 			sources = null;
 			debuggerState = null;
@@ -250,17 +254,10 @@ export async function restoreWorkspaceStorageSession(
 				dirtyFiles.push(entry);
 			}
 		}
-		const codeEditorViews = [];
-		for (const view of payload.codeEditorViews) {
-			const root = runtimeSourceProjectRootPath(runtimeSources, view.domain);
-			const dirtyPath = buildWorkspaceDirtyEntryPath(root, view.domain, view.path);
-			if (!rejectedDirtyPaths.has(dirtyPath)) {
-				codeEditorViews.push(view);
-			}
-		}
+
 		restorePayload = {
 			dirtyFiles,
-			codeEditorViews,
+			editorGroup: payload.editorGroup,
 			breakpoints: payload.breakpoints,
 			fontVariant: payload.fontVariant,
 		};
@@ -277,6 +274,8 @@ export async function restoreWorkspaceStorageSession(
 	editor = workspaceEditor;
 	sources = runtimeSources;
 	debuggerState = runtimeDebuggerState;
+	unsubscribeEditorGroup = editorTabGroup.onDidChange(() => requestWorkspaceAutosave(WorkspaceAutosaveChange.EditorSession));
+	unsubscribeEditorPane = editor.editorPanes.onDidClearEditor(() => requestWorkspaceAutosave(WorkspaceAutosaveChange.EditorSession));
 	if (restorePayload !== payload) {
 		requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
 	}
@@ -288,15 +287,6 @@ export async function restoreWorkspaceStorageSession(
 	if (!workspaceRecordState.connected) {
 		scheduleWorkspaceReconnect();
 	}
-}
-
-/** Capture the emitting model/view pair, not the tab active at the later autosave tick. */
-export function requestWorkspaceCodeEditorViewAutosave({ model, view }: CodeEditorContext): void {
-	if (!editor || !model.dirty) return;
-	workspacePendingCodeEditorViews.set(model, view);
-	workspaceState.pendingChanges |= WorkspaceAutosaveChange.CodeEditorViews;
-	workspaceState.requestedRevision += 1;
-	scheduleWorkspaceAutosave();
 }
 
 export function requestWorkspaceAutosave(changes: WorkspaceAutosaveChange): void {
@@ -350,12 +340,10 @@ export function runWorkspaceAutosaveTick(): Promise<void> | void {
 			sources,
 			debuggerState,
 			changes,
-			workspacePendingCodeEditorViews,
 		);
 		workspaceState.localGeneration = generation;
 		workspaceState.localRevision = targetRevision;
 		workspaceState.pendingChanges &= ~changes;
-		workspacePendingCodeEditorViews.clear();
 		if (generation === previousGeneration
 			&& workspaceState.remoteRevision === previousLocalRevision) {
 			workspaceState.remoteRevision = targetRevision;
@@ -413,11 +401,9 @@ function commitRequestedWorkspaceSessionLocally(): void {
 		sources,
 		debuggerState,
 		workspaceState.pendingChanges,
-		workspacePendingCodeEditorViews,
 	);
 	workspaceState.localRevision = workspaceState.requestedRevision;
 	workspaceState.pendingChanges = WorkspaceAutosaveChange.None;
-	workspacePendingCodeEditorViews.clear();
 }
 
 function scheduleWorkspaceReconnect(): void {

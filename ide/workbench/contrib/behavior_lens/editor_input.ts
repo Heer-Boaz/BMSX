@@ -20,7 +20,7 @@ let nextInputId = 0;
 /** Retained input for one source-derived behavior view. */
 export class BehaviorLensInput extends WorkingCopyEditorInput<BehaviorLensTabId, 'behavior_lens'> {
 	public readonly graphLayout: AsyncGraphLayout<StateGraphModel>;
-	private definitionTitle = 'BEHAVIOR LENS';
+	private definitionTitle: string | undefined;
 
 	public constructor(public readonly workingCopy: EditorTextModel, public readonly view: BehaviorLensViewState, createEngine: GraphLayoutEngineFactory) {
 		super(
@@ -40,7 +40,7 @@ export class BehaviorLensInput extends WorkingCopyEditorInput<BehaviorLensTabId,
 	public updateLabel(): void {
 		const view = this.view;
 		if (view.definitionRowKey === null) {
-			this.setLabel(`${this.definitionTitle} (removed)`, sourceTabDescription(view.resource));
+			this.setLabel(this.definitionTitle === undefined ? 'BEHAVIOR LENS' : `${this.definitionTitle} (removed)`, sourceTabDescription(view.resource));
 			return;
 		}
 		const definition = view.source.nodesByRowKey.get(view.definitionRowKey)!;

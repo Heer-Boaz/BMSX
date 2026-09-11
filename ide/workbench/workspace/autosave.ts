@@ -3,9 +3,7 @@ import {
 	type RuntimeSourceState,
 } from '../../runtime/sources';
 import type { RuntimeBreakpointState } from '../../runtime/debugger_state';
-import {
-	getCodeTabContexts,
-} from '../ui/code_tab/contexts';
+import { editorTabGroup } from '../ui/tab/group_model';
 import { editorTextModelService } from '../../editor/model/model_service';
 import { getTextSnapshot } from '../../editor/text/source_text';
 import { serializeBreakpoints } from '../contrib/debugger/controller';
@@ -29,10 +27,6 @@ import {
 	workspaceState,
 } from './state';
 import {
-	captureCodeEditorViewMetadata,
-} from './context_snapshot';
-import {
-	type PersistedCodeEditorView,
 	type PersistedDirtyEntry,
 	WorkspaceAutosaveChange,
 	type WorkspaceAutosavePayload,
@@ -41,8 +35,6 @@ import {
 import type { CartEditor } from '../../cart_editor';
 import type { HostClock } from '../../../hosts/common/clock';
 import type { KeyValueStorage } from '../../workspace/key_value_storage';
-import type { EditorTextModel } from '../../editor/model/text_model';
-import type { CodeEditorViewState } from '../../editor/ui/code_editor_state';
 
 export function commitWorkspaceSessionLocally(
 	storage: KeyValueStorage,
@@ -51,7 +43,6 @@ export function commitWorkspaceSessionLocally(
 	sources: RuntimeSourceState,
 	debuggerState: RuntimeBreakpointState,
 	changes: WorkspaceAutosaveChange,
-	metadataViews: ReadonlyMap<EditorTextModel, CodeEditorViewState>,
 ): WorkspaceSessionGeneration {
 	const previousGeneration = workspaceState.localGeneration;
 	const rebuildDirtyFiles = !previousGeneration || (changes & WorkspaceAutosaveChange.DirtyFiles);
@@ -95,17 +86,9 @@ export function commitWorkspaceSessionLocally(
 		dirtyFiles = previousGeneration.payload.dirtyFiles;
 		generationDirtyRecords = previousGeneration.dirtyRecords;
 	}
-	let codeEditorViews: PersistedCodeEditorView[];
-	if (rebuildDirtyFiles) {
-		codeEditorViews = captureDirtyCodeEditorViews();
-	} else if (changes & WorkspaceAutosaveChange.CodeEditorViews) {
-		codeEditorViews = updateCodeEditorViews(
-			previousGeneration.payload.codeEditorViews,
-			metadataViews,
-		);
-	} else {
-		codeEditorViews = previousGeneration.payload.codeEditorViews;
-	}
+	const editorGroup = !previousGeneration || rebuildDirtyFiles || (changes & WorkspaceAutosaveChange.EditorSession)
+		? editorTabGroup.serialize(editor.editorInputSerializers, previousGeneration?.payload.editorGroup)
+		: previousGeneration.payload.editorGroup;
 
 	const breakpoints = !previousGeneration || (changes & WorkspaceAutosaveChange.Breakpoints)
 		? serializeBreakpoints(debuggerState)
@@ -115,14 +98,14 @@ export function commitWorkspaceSessionLocally(
 		: previousGeneration.payload.fontVariant;
 	if (previousGeneration
 		&& dirtyFiles === previousGeneration.payload.dirtyFiles
-		&& codeEditorViews === previousGeneration.payload.codeEditorViews
+		&& editorGroup === previousGeneration.payload.editorGroup
 		&& breakpoints === previousGeneration.payload.breakpoints
 		&& fontVariant === previousGeneration.payload.fontVariant) {
 		return previousGeneration;
 	}
 	const payload: WorkspaceAutosavePayload = {
 		dirtyFiles,
-		codeEditorViews,
+		editorGroup,
 		breakpoints,
 		fontVariant,
 	};
@@ -165,76 +148,6 @@ export function commitWorkspaceSessionLocally(
 		}
 	}
 	return { payload, stateRecord, dirtyRecords: generationDirtyRecords };
-}
-
-function captureDirtyCodeEditorViews(): PersistedCodeEditorView[] {
-	const views: PersistedCodeEditorView[] = [];
-	for (const context of getCodeTabContexts()) {
-		if (!context.model.dirty) {
-			continue;
-		}
-		const metadata = captureCodeEditorViewMetadata(context.view);
-		views.push({
-			domain: context.model.resource.domain,
-			path: context.model.resource.path,
-			...metadata,
-		});
-	}
-	return views;
-}
-
-function updateCodeEditorViews(
-	views: PersistedCodeEditorView[],
-	metadataViews: ReadonlyMap<EditorTextModel, CodeEditorViewState>,
-): PersistedCodeEditorView[] {
-	let updatedViews = views;
-	for (const [model, view] of metadataViews) {
-		// Save/Undo may have completed since this view requested recovery metadata.
-		if (!model.dirty) continue;
-		const metadata = captureCodeEditorViewMetadata(view);
-		let matchingIndex = -1;
-		for (let index = 0; index < views.length; index += 1) {
-			const entry = views[index];
-			if (entry.domain !== model.resource.domain || entry.path !== model.resource.path) {
-				continue;
-			}
-			matchingIndex = index;
-			break;
-		}
-		if (matchingIndex !== -1 && codeEditorViewMetadataEquals(views[matchingIndex], metadata)) {
-			continue;
-		}
-		if (updatedViews === views) {
-			updatedViews = views.slice();
-		}
-		// A visual working copy can acquire its first code view after its backup.
-		updatedViews[matchingIndex === -1 ? updatedViews.length : matchingIndex] = {
-			domain: model.resource.domain,
-			path: model.resource.path,
-			...metadata,
-		};
-	}
-	return updatedViews;
-}
-
-function codeEditorViewMetadataEquals(
-	entry: PersistedCodeEditorView,
-	metadata: ReturnType<typeof captureCodeEditorViewMetadata>,
-): boolean {
-	if (entry.cursorRow !== metadata.cursorRow
-		|| entry.cursorColumn !== metadata.cursorColumn
-		|| entry.scrollRow !== metadata.scrollRow
-		|| entry.scrollColumn !== metadata.scrollColumn) {
-		return false;
-	}
-	if (!entry.selectionAnchor) {
-		return !metadata.selectionAnchor;
-	}
-	if (!metadata.selectionAnchor) {
-		return false;
-	}
-	return entry.selectionAnchor.row === metadata.selectionAnchor.row
-		&& entry.selectionAnchor.column === metadata.selectionAnchor.column;
 }
 
 export async function syncWorkspaceSessionRemotely(

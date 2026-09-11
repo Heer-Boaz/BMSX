@@ -1,18 +1,12 @@
+import type { RectBounds } from '../../../../machine/ts/common/rect';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import { clamp } from '../../../../machine/ts/common/clamp';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
-import type { RuntimeResource } from '../../../common/resource';
+import { SYSTEM_RESOURCE_DOMAIN, type RuntimeResource } from '../../../common/resource';
 import * as constants from '../../../common/constants';
 import { computeResourceTabTitle } from '../../ui/tab/titles';
 import { appendTextLines } from '../../../../machine/ts/common/text_lines';
 import type { ResourceViewerState } from './model';
-
-export type ResourceViewerBounds = {
-	codeTop: number;
-	codeBottom: number;
-	codeLeft: number;
-	codeRight: number;
-};
 
 export type ResourceViewerLayout = {
 	hasImage: boolean;
@@ -54,7 +48,7 @@ export function buildResourceViewerState(sources: RuntimeSourceState, resource: 
 		scroll: 0,
 	};
 	let error: string = null;
-	const activePackage = sources.activePackage;
+	const resourcePackage = resource.domain === SYSTEM_RESOURCE_DOMAIN ? sources.systemPackage : sources.cartridgeSlots[resource.domain]!.package;
 	lines.push('');
 	switch (asset.type) {
 		case 'lua': {
@@ -65,7 +59,7 @@ export function buildResourceViewerState(sources: RuntimeSourceState, resource: 
 			break;
 		}
 		case 'data': {
-			const dataEntry = activePackage.data?.[asset.resid];
+			const dataEntry = resourcePackage.data?.[asset.resid];
 			if (dataEntry !== undefined) {
 				appendResourceViewerLine(lines, '-- Data --');
 				lines.push('');
@@ -77,7 +71,7 @@ export function buildResourceViewerState(sources: RuntimeSourceState, resource: 
 		}
 		case 'image':
 		case 'romlabel': {
-			const image = activePackage.img?.[asset.resid];
+			const image = resourcePackage.img?.[asset.resid];
 			if (!image) {
 				error = `Image asset '${asset.resid}' not found.`;
 				break;
@@ -102,7 +96,7 @@ export function buildResourceViewerState(sources: RuntimeSourceState, resource: 
 			break;
 		}
 		case 'audio': {
-			const audio = activePackage.audio?.[asset.resid];
+			const audio = resourcePackage.audio?.[asset.resid];
 			if (!audio) {
 				error = `Audio asset '${asset.resid}' not found.`;
 				break;
@@ -121,7 +115,7 @@ export function buildResourceViewerState(sources: RuntimeSourceState, resource: 
 			break;
 		}
 		case 'model': {
-			const model = activePackage.model?.[asset.resid];
+			const model = resourcePackage.model?.[asset.resid];
 			if (!model) {
 				error = `Model asset '${asset.resid}' not found.`;
 				break;
@@ -131,7 +125,7 @@ export function buildResourceViewerState(sources: RuntimeSourceState, resource: 
 			break;
 		}
 		case 'aem': {
-			const events = activePackage.audioevents?.[asset.resid];
+			const events = resourcePackage.audioevents?.[asset.resid];
 			if (!events) {
 				error = `Audio event map '${asset.resid}' not found.`;
 				break;
@@ -156,16 +150,16 @@ export function buildResourceViewerState(sources: RuntimeSourceState, resource: 
 
 export function resolveResourceViewerLayout(
 	viewer: ResourceViewerState,
-	bounds: ResourceViewerBounds,
+	bounds: Readonly<RectBounds>,
 	lineHeight: number,
 ): ResourceViewerLayout {
-	const contentTop = bounds.codeTop + 2;
+	const contentTop = bounds.top + 2;
 	resourceViewerLayout.hasImage = false;
 	resourceViewerLayout.textTop = contentTop;
 	resourceViewerLayout.textCapacity = 0;
-	const totalHeight = bounds.codeBottom - bounds.codeTop;
+	const totalHeight = bounds.bottom - bounds.top;
 	const paddingX = constants.RESOURCE_PANEL_PADDING_X;
-	const availableWidth = bounds.codeRight - bounds.codeLeft - paddingX * 2;
+	const availableWidth = bounds.right - bounds.left - paddingX * 2;
 	if (viewer.image && totalHeight > 0 && availableWidth > 0) {
 		const textRows = clamp(viewer.lines.length + (viewer.error ? 1 : 0), 3, 8);
 		const reservedByRatio = totalHeight * 0.45;
@@ -185,7 +179,7 @@ export function resolveResourceViewerLayout(
 		if (height < 1) {
 			height = 1;
 		}
-		const left = bounds.codeLeft + paddingX + (((availableWidth - width) / 2) | 0);
+		const left = bounds.left + paddingX + (((availableWidth - width) / 2) | 0);
 		const top = contentTop;
 		resourceViewerLayout.hasImage = true;
 		resourceViewerLayout.imageLeft = left;
@@ -196,21 +190,21 @@ export function resolveResourceViewerLayout(
 		resourceViewerLayout.imageScale = scale;
 		resourceViewerLayout.textTop = resourceViewerLayout.imageBottom + lineHeight;
 	}
-	if (resourceViewerLayout.textTop < bounds.codeBottom) {
-		resourceViewerLayout.textCapacity = ((bounds.codeBottom - resourceViewerLayout.textTop) / lineHeight) | 0;
+	if (resourceViewerLayout.textTop < bounds.bottom) {
+		resourceViewerLayout.textCapacity = ((bounds.bottom - resourceViewerLayout.textTop) / lineHeight) | 0;
 	}
 	return resourceViewerLayout;
 }
 
-export function resourceViewerTextCapacity(viewer: ResourceViewerState, bounds: ResourceViewerBounds, lineHeight: number): number {
+export function resourceViewerTextCapacity(viewer: ResourceViewerState, bounds: Readonly<RectBounds>, lineHeight: number): number {
 	return resolveResourceViewerLayout(viewer, bounds, lineHeight).textCapacity;
 }
 
-export function clampResourceViewerScroll(viewer: ResourceViewerState, bounds: ResourceViewerBounds, lineHeight: number): void {
+export function clampResourceViewerScroll(viewer: ResourceViewerState, bounds: Readonly<RectBounds>, lineHeight: number): void {
 	setResourceViewerScroll(viewer, bounds, lineHeight, viewer.scroll);
 }
 
-export function setResourceViewerScroll(viewer: ResourceViewerState, bounds: ResourceViewerBounds, lineHeight: number, scroll: number): void {
+export function setResourceViewerScroll(viewer: ResourceViewerState, bounds: Readonly<RectBounds>, lineHeight: number, scroll: number): void {
 	applyResourceViewerScroll(viewer, resourceViewerTextCapacity(viewer, bounds, lineHeight), scroll);
 }
 

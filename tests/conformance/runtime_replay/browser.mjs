@@ -8,16 +8,17 @@ import { join, parse, resolve } from 'node:path';
 const { chromium } = await import(process.env.BMSX_PLAYWRIGHT_MODULE || 'playwright');
 const navigation = process.argv[2] === '--studio-navigation' ? process.argv[3] : null;
 const fsm = process.argv[2] === '--studio-fsm-retarget' ? 'retarget' : process.argv[2] === '--studio-fsm-initial' ? 'initial' : null;
-const studio = process.argv[2] === '--studio' || navigation !== null || fsm !== null;
-const studioLabel = fsm !== null ? `STUDIO-FSM-${fsm.toUpperCase()}` : navigation === null ? 'STUDIO-WORKFLOWS' : 'STUDIO-NAVIGATION';
+const session = process.argv[2] === '--studio-session';
+const studio = session || process.argv[2] === '--studio' || navigation !== null || fsm !== null;
+const studioLabel = session ? 'STUDIO-SESSION' : fsm !== null ? `STUDIO-FSM-${fsm.toUpperCase()}` : navigation === null ? 'STUDIO-WORKFLOWS' : 'STUDIO-NAVIGATION';
 const [bios, cart, screenshot] = process.argv.slice(navigation !== null ? 4 : studio ? 3 : 2);
-if (!bios || !cart) throw new Error('Usage: browser.mjs [--studio | --studio-fsm-initial | --studio-fsm-retarget | --studio-navigation CART_FOLDER] SYSTEM_ROM CART_ROM [SCREENSHOT_PNG]');
+if (!bios || !cart) throw new Error('Usage: browser.mjs [--studio | --studio-session | --studio-fsm-initial | --studio-fsm-retarget | --studio-navigation CART_FOLDER] SYSTEM_ROM CART_ROM [SCREENSHOT_PNG]');
 for (const backend of studio ? ['software', 'webgl2', 'webgpu'] : ['webgpu']) {
 	const directory = await mkdtemp(join(tmpdir(), `bmsx-${backend}-rewind-`));
 	let browser;
 	let server;
 	try {
-		await build({ entryPoints: [resolve(import.meta.dirname, studio ? 'browser_studio.ts' : 'browser_runner.ts')], bundle: true,
+		await build({ entryPoints: [resolve(import.meta.dirname, session ? 'browser_studio_session.ts' : studio ? 'browser_studio.ts' : 'browser_runner.ts')], bundle: true,
 			platform: 'browser', format: 'esm', target: 'es2020', outfile: join(directory, 'test.js'),
 			tsconfig: 'tsconfig.base.json', loader: { '.glsl': 'text', '.wgsl': 'text', '.png': 'dataurl' } });
 		await writeFile(join(directory, 'index.html'), '<!doctype html><link rel="icon" href="data:,"><style>body{margin:0;background:#000}canvas{image-rendering:pixelated}</style><canvas width="256" height="212"></canvas>');
@@ -52,17 +53,26 @@ for (const backend of studio ? ['software', 'webgl2', 'webgpu'] : ['webgpu']) {
 		page.on('pageerror', error => { pageErrors.push(error); console.error(error); });
 		page.on('console', message => console.log(`[browser:${message.type()}] ${message.text()}`));
 		await page.goto(address);
-		const result = await page.evaluate(async ({ studio, backend, navigation, fsm }) => {
+		let result = await page.evaluate(async ({ studio, session, backend, navigation, fsm }) => {
 			const test = await import('/test.js');
-			return studio ? test.studioBackends[backend](document.querySelector('canvas'), navigation, fsm)
+			return session ? test.studioSessionBackends[backend](document.querySelector('canvas')) : studio ? test.studioBackends[backend](document.querySelector('canvas'), navigation, fsm)
 				: test.runBrowserRewindConformance(document.querySelector('canvas'));
-		}, { studio, backend, navigation, fsm });
+		}, { studio, session, backend, navigation, fsm });
+		if (session) {
+			// A real page navigation fires pagehide; the next import has no old JS models,
+			// inputs, subscriptions, semantic cache, run state or layout workers.
+			await page.reload();
+			result = await page.evaluate(async ({ backend, expected }) => {
+				const test = await import('/test.js');
+				return test.studioSessionBackends[backend](document.querySelector('canvas'), expected);
+			}, { backend, expected: result });
+		}
 		if (pageErrors.length !== 0) throw new AggregateError(pageErrors, 'Uncaught browser workflow errors');
 		if (screenshot) {
 			const { dir, name, ext } = parse(screenshot);
 			await page.screenshot({ path: studio ? join(dir, `${name}-${backend}${ext}`) : screenshot });
 		}
-		if (studio && navigation === null && fsm === null) {
+		if (studio && !session && navigation === null && fsm === null) {
 			const savedSource = await readFile(join(directory, 'carts/nemesis_s/title_screen.lua'), 'utf8');
 			// Save & Reboot follows the extra WebGPU callback-lifetime test, which
 			// applies a further right-key FSM revision while a real readback is held.

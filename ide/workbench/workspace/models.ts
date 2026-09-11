@@ -1,16 +1,8 @@
-import type { Position } from '../../common/models';
 import type { FontVariant } from '../../../machine/ts/render/shared/bmsx_font';
 import type { SerializedBreakpoints } from '../contrib/debugger/controller';
 import type { ResourceDomain } from '../../common/resource';
 import type { WorkspaceRecord } from '../../workspace/records';
-
-export type SnapshotMetadata = {
-	cursorRow: number;
-	cursorColumn: number;
-	scrollRow: number;
-	scrollColumn: number;
-	selectionAnchor: Position;
-};
+import type { SerializedEditorGroup } from '../services/editor/editor_serialization';
 
 export type PersistedDirtyEntry = {
 	domain: ResourceDomain;
@@ -18,14 +10,9 @@ export type PersistedDirtyEntry = {
 	updatedAt: number;
 };
 
-export type PersistedCodeEditorView = SnapshotMetadata & {
-	domain: ResourceDomain;
-	path: string;
-};
-
 export type WorkspaceAutosavePayload = {
 	dirtyFiles: PersistedDirtyEntry[];
-	codeEditorViews: PersistedCodeEditorView[];
+	editorGroup: SerializedEditorGroup;
 	breakpoints: SerializedBreakpoints;
 	fontVariant: FontVariant;
 };
@@ -33,10 +20,10 @@ export type WorkspaceAutosavePayload = {
 export const enum WorkspaceAutosaveChange {
 	None = 0,
 	DirtyFiles = 1 << 0,
-	CodeEditorViews = 1 << 1,
+	EditorSession = 1 << 1,
 	Breakpoints = 1 << 2,
 	Font = 1 << 3,
-	All = DirtyFiles | CodeEditorViews | Breakpoints | Font,
+	All = DirtyFiles | EditorSession | Breakpoints | Font,
 }
 
 export type WorkspaceSessionGeneration = {

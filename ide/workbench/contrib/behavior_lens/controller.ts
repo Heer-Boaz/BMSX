@@ -80,18 +80,23 @@ export class BehaviorLensController {
 				}
 			}
 			if (input === undefined) {
-				const view = createBehaviorLensViewState(this.documents.get(model), model,
+				input = this.createInput(model,
 					registration.behaviorKind === 'behavior_tree' ? 'graph'
 						: registration.behaviorKind === 'action_effect' ? 'properties' : 'state-graph');
+				const view = input.view;
 				selectBehaviorLensDefinition(view, registration.rowKey);
 				view.sourceMatchRowKeys.add(registration.rowKey);
-				input = new BehaviorLensInput(model, view, this.createGraphLayoutEngine);
 				input.updateLabel();
 			}
 			// Reopening a surviving occurrence preserves its selection and viewport.
 			openEditorTab(this.editorPanes, input, options);
 			return input;
 		});
+	}
+
+	/** Source-derived input creation is independent of group admission and pane layout. */
+	public createInput(model: EditorTextModel, presentation: BehaviorLensViewState['presentation']['kind']): BehaviorLensInput {
+		return new BehaviorLensInput(model, createBehaviorLensViewState(this.documents.get(model), model, presentation), this.createGraphLayoutEngine);
 	}
 
 	/** Refreshes a visible source lens when its canonical code buffer advances. */

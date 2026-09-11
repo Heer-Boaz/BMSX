@@ -52,8 +52,8 @@ export function applyCodeEditorViewSnapshot(view: CodeEditorViewState, snapshot:
 /** The single code-editor widget and the model/view currently attached to it. */
 export class ActiveCodeEditorState {
 	public readonly focusTarget = inputFocus.createTarget();
-	public model: EditorTextModel;
-	public view: CodeEditorViewState;
+	public model: EditorTextModel | null = null;
+	public view: CodeEditorViewState | null = null;
 	private readonly cursorMovedListeners = new Set<CursorMovedListener>();
 
 	public attach(model: EditorTextModel, view: CodeEditorViewState): void {
@@ -71,6 +71,11 @@ export class ActiveCodeEditorState {
 		}
 		this.model = model;
 		this.view = view;
+	}
+
+	public detach(): void {
+		this.model = null;
+		this.view = null;
 	}
 
 	public onDidMoveCursor(listener: CursorMovedListener): () => void {

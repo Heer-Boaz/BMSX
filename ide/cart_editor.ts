@@ -1,3 +1,9 @@
+import type { EditorInputSerializers } from './workbench/services/editor/editor_serialization';
+import { CodeEditorInputSerializer } from './workbench/contrib/code_editor/editor_serializer';
+import { BehaviorLensInputSerializer } from './workbench/contrib/behavior_lens/editor_serializer';
+import { SceneEditorInputSerializer } from './workbench/contrib/scene_editor/editor_serializer';
+import { ScenarioLabInputSerializer } from './workbench/contrib/scenario_lab/editor_serializer';
+import { ResourceViewerInputSerializer } from './workbench/contrib/resources/editor_serializer';
 import { ContextMenuController } from './workbench/services/context_menu/controller';
 import { drawContextMenu, layoutContextMenu } from './workbench/services/context_menu/render';
 import { applyScrollbarScroll } from './input/pointer/scrollbar';
@@ -37,7 +43,6 @@ import { drawEditorText, setEditorCaseInsensitivity } from './editor/render/text
 import {
 	applyViewportSize,
 	configureFontVariant,
-	refreshViewportLayout,
 	setFontVariant,
 } from './editor/ui/view/view';
 import { editorViewState } from './editor/ui/view/state';
@@ -62,7 +67,6 @@ import { clearGotoHoverHighlight, clearNativeMemberCompletionCache } from './edi
 import { resetSemanticProjects } from './editor/contrib/intellisense/semantic/workspace/state';
 import { activeCodeEditor } from './editor/ui/code_editor_state';
 import { editorTextModelService } from './editor/model/model_service';
-import { clearSingleCursorSelection } from './editor/editing/cursor/state';
 import { editorDiagnosticsState, markDiagnosticsDirty } from './editor/contrib/diagnostics/state';
 import { processDiagnosticsQueue } from './workbench/contrib/code_editor/diagnostics/controller';
 import { applyLineJumpFieldText } from './workbench/contrib/code_editor/find/line_jump';
@@ -85,7 +89,6 @@ import {
 import {
 	cancelWorkspaceAutosave,
 	requestWorkspaceAutosave,
-	requestWorkspaceCodeEditorViewAutosave,
 	runWorkspaceAutosaveTick,
 	shutdownWorkspaceStorage,
 } from './workbench/workspace/storage';
@@ -141,6 +144,7 @@ export type CartEditor = {
 	readonly commands: IdeCommandController;
 	readonly resourceEditors: ResourceEditorResolver;
 	readonly editorPanes: EditorPanes;
+	readonly editorInputSerializers: EditorInputSerializers;
 	readonly navigation: EditorNavigationController;
 	readonly sceneEditor: SceneEditorController;
 	readonly quickInput: QuickInputController;
@@ -187,6 +191,7 @@ export class RuntimeCartEditor implements CartEditor {
 	public readonly behaviorLens: BehaviorLensController;
 	public readonly scenarioLab: ScenarioLabController;
 	public readonly crossFileRename: CrossFileRenameManager;
+	public readonly editorInputSerializers: EditorInputSerializers;
 	public readonly clearRuntimeErrorOverlay = clearRuntimeErrorOverlay;
 	public readonly clearAllRuntimeErrorOverlays = clearAllRuntimeErrorOverlays;
 	public readonly clearNativeMemberCompletionCache: () => void;
@@ -333,6 +338,13 @@ export class RuntimeCartEditor implements CartEditor {
 			this.overlayRenderer,
 			audioOutput,
 		);
+		this.editorInputSerializers = {
+			code_editor: new CodeEditorInputSerializer(storage, sources),
+			behavior_lens: new BehaviorLensInputSerializer(storage, sources, this.behaviorLens),
+			scene_editor: new SceneEditorInputSerializer(storage, sources, this.sceneEditor),
+			scenario_lab: new ScenarioLabInputSerializer(this.scenarioLab),
+			resource_view: new ResourceViewerInputSerializer(sources),
+		};
 		this.crossFileRename = new CrossFileRenameManager(this.sources);
 		this.search = new EditorSearchController(this.sources, renameController);
 		this.unbindQuickInputFields = bindQuickInputFields(
@@ -345,7 +357,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.clearNativeMemberCompletionCache = clearNativeMemberCompletionCache;
 		this.initializeEditorGroup();
 		this.unsubscribeWorkspaceCursorMoved = activeCodeEditor.onDidMoveCursor(() => {
-			requestWorkspaceCodeEditorViewAutosave(activeCodeEditor);
+			requestWorkspaceAutosave(WorkspaceAutosaveChange.EditorSession);
 		});
 		this.unsubscribeTextModelChanged = editorTextModelService.onDidChangeContent((model, event) => {
 			this.sceneEditor.onDidChangeContent(model, event);
@@ -388,7 +400,6 @@ export class RuntimeCartEditor implements CartEditor {
 		editorCaretState.cursorRevealSuspended = false;
 		if (codeTabActive) {
 			updateDesiredColumn();
-			activeCodeEditor.view.selectionAnchor = null;
 		}
 		pointerHover.release(searchHover);
 		editorSearchState.field.focusTarget.release();
@@ -452,7 +463,6 @@ export class RuntimeCartEditor implements CartEditor {
 		this.completion.closeSession();
 		clearHoverTooltip();
 		editorInput.applyOverrides(this.input, false, captureKeys);
-		clearSingleCursorSelection(activeCodeEditor.view);
 		clearEditorPointerSelectionState();
 		clearGotoHoverHighlight();
 		editorViewState.scrollbarController.cancel();
@@ -478,8 +488,9 @@ export class RuntimeCartEditor implements CartEditor {
 	public tickInput(): void {
 		const playerInput = this.input.getPlayerInput(1);
 		editorRuntimeState.currentTimeMs = this.clock.now();
-		const scrollRow = activeCodeEditor.view.scrollRow;
-		const scrollColumn = activeCodeEditor.view.scrollColumn;
+		const codeView = activeCodeEditor.view;
+		const scrollRow = codeView?.scrollRow;
+		const scrollColumn = codeView?.scrollColumn;
 		const breakpointRevision = this.breakpoints.revision;
 		if (!hasBlockingWorkbenchModal()) {
 			handleEditorWheelInput(this, playerInput);
@@ -506,8 +517,8 @@ export class RuntimeCartEditor implements CartEditor {
 		if (this.breakpoints.revision !== breakpointRevision) {
 			requestWorkspaceAutosave(WorkspaceAutosaveChange.Breakpoints);
 		}
-		if (activeCodeEditor.view.scrollRow !== scrollRow || activeCodeEditor.view.scrollColumn !== scrollColumn) {
-			requestWorkspaceCodeEditorViewAutosave(activeCodeEditor);
+		if (codeView !== null && (codeView.scrollRow !== scrollRow || codeView.scrollColumn !== scrollColumn)) {
+			requestWorkspaceAutosave(WorkspaceAutosaveChange.EditorSession);
 		}
 	}
 
@@ -533,7 +544,7 @@ export class RuntimeCartEditor implements CartEditor {
 		applyViewportSize(viewport);
 		refreshWorkbenchLayout();
 		this.syncResourcePanelViewport();
-		refreshViewportLayout();
+		this.editorPanes.activePane?.layout?.();
 	}
 
 	public draw(): void {
@@ -565,10 +576,9 @@ export class RuntimeCartEditor implements CartEditor {
 		this.unbindQuickInputFields();
 		this.unbindProblemsPanel();
 		this.completion.dispose();
-		this.scenarioLab.dispose();
 		clearExecutionStopHighlights();
 		if (this.isAvailable) {
-			this.editorPanes.dispose();
+			this.editorPanes.clearEditor();
 		}
 		editorInput.applyOverrides(this.input, false, captureKeys);
 		if (editorViewState.dimCrtInEditor) {
@@ -584,6 +594,8 @@ export class RuntimeCartEditor implements CartEditor {
 			try {
 				await shutdownWorkspaceStorage();
 			} finally {
+				this.editorPanes.dispose();
+				this.scenarioLab.dispose();
 				this.unsubscribeWorkspaceCursorMoved();
 				this.unsubscribeTextModelChanged();
 				editorTabGroup.clear();
@@ -619,8 +631,8 @@ export class RuntimeCartEditor implements CartEditor {
 			return;
 		}
 		const previousVariant = editorViewState.fontVariant;
-		const activeTab = getActiveTab();
-		if (activeTab.kind === 'code_editor') {
+		const activeTab = this.editorPanes.activePane?.input;
+		if (activeTab?.kind === 'code_editor') {
 			setFontVariant(
 				this.clock,
 				variant,

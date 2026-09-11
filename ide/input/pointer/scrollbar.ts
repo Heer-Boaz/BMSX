@@ -2,13 +2,12 @@ import { PointerButton } from './buttons';
 import { clearGotoHoverHighlight } from '../../editor/contrib/intellisense/engine';
 import { clearHoverTooltip } from '../../editor/contrib/hover/controller';
 import { ensureVisualLines } from '../../editor/common/text/layout';
-import { bottomMargin } from '../../workbench/common/layout';
+import { bottomMargin, getWorkbenchEditorBounds } from '../../workbench/common/layout';
 import type { PointerSnapshot, ScrollbarKind } from '../../common/models';
 import { editorPointerState } from './state';
 import { editorViewState } from '../../editor/ui/view/state';
 import { activeCodeEditor } from '../../editor/ui/code_editor_state';
 import { editorCaretState } from '../../editor/ui/view/caret/state';
-import { getCodeAreaBounds } from '../../editor/ui/view/view';
 import { setResourceViewerScroll } from '../../workbench/contrib/resources/viewer';
 import { getActiveResourceViewer } from '../../workbench/contrib/resources/view_tabs';
 import type { ResourcePanelController } from '../../workbench/contrib/resources/panel/controller';
@@ -58,7 +57,7 @@ export function applyScrollbarScroll(resourcePanel: ResourcePanelController, kin
 			if (!viewer) {
 				break;
 			}
-			setResourceViewerScroll(viewer, getCodeAreaBounds(), editorViewState.lineHeight, scroll);
+			setResourceViewerScroll(viewer, getWorkbenchEditorBounds(), editorViewState.lineHeight, scroll);
 			break;
 		}
 	}

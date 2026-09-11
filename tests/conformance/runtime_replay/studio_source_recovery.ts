@@ -1,3 +1,4 @@
+import type { SerializedCodeEditorInput } from '../../../ide/workbench/contrib/code_editor/editor_serializer';
 import type { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/behavior_lens/editor_pane';
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
@@ -27,7 +28,7 @@ export async function testStudioSourceRecovery(test: StudioFixture): Promise<voi
 	await until(() => workspaceState.localRevision === workspaceState.requestedRevision, 'crossfoe: real autosave timer backs up the visual edit');
 	const backup = workspaceState.localGeneration!;
 	check(backup.payload.dirtyFiles.some(entry => entry.path === model.resource.path)
-		&& !backup.payload.codeEditorViews.some(entry => entry.path === model.resource.path), 'crossfoe: a valid content backup need not have a code view');
+		&& !backup.payload.editorGroup.inputs.some(entry => entry.kind === 'code_editor' && (JSON.parse(entry.value) as SerializedCodeEditorInput).source.resource.path === model.resource.path), 'crossfoe: a valid content backup need not have a code view');
 	const editedVersion = model.version;
 	await click(graph.actionBar.items[0].bounds, 8);
 	check(getActiveTab().kind === 'code_editor' && activeCodeEditor.model === model && model.version === editedVersion && !hasSelection(),
@@ -36,8 +37,11 @@ export async function testStudioSourceRecovery(test: StudioFixture): Promise<voi
 	const sourceGeneration = workspaceState.localGeneration!;
 	check(sourceGeneration.dirtyRecords === backup.dirtyRecords && sourceGeneration.payload.dirtyFiles === backup.payload.dirtyFiles,
 		'crossfoe: navigation does not rewrite the dirty source backup');
-	check(sourceGeneration.payload.codeEditorViews.some(entry => entry.path === model.resource.path
-		&& entry.cursorRow === activeCodeEditor.view.cursorRow && entry.cursorColumn === activeCodeEditor.view.cursorColumn),
+	check(sourceGeneration.payload.editorGroup.inputs.some(entry => {
+		if (entry.kind !== 'code_editor') return false;
+		const state: SerializedCodeEditorInput = JSON.parse(entry.value);
+		return state.source.resource.path === model.resource.path && state.view.cursor === model.buffer.offsetAt(activeCodeEditor.view.cursorRow, activeCodeEditor.view.cursorColumn);
+	}),
 		'crossfoe: recovery now includes the first code view and its exact source selection');
 	await press('ControlLeft', 'KeyZ');
 	check(!model.dirty && model.buffer.getText() === original, 'crossfoe: ordinary document Undo restores the clean source');

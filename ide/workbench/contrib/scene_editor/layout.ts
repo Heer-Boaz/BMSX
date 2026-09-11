@@ -35,6 +35,14 @@ export function layoutSceneEditor(input: SceneEditorInput, contentChanged: boole
 		const height = measureSceneDetails(input, width);
 		input.details.layout(layout.detailsLeft, contentTop, layout.right, layout.bottom, height);
 	}
+	const position = input.position;
+	if (position !== undefined) {
+		input.outline.scroll = position.outlineScroll;
+		clampWorkbenchListScroll(input.outline);
+		input.details.scrollbar.setScroll(position.detailsScroll);
+		input.position = undefined;
+	}
+
 	if (measured || layout.projectedOffsetTop !== input.details.offsetTop) {
 		for (const property of input.properties) input.details.project(property.contentBounds, property.bounds);
 		layout.projectedOffsetTop = input.details.offsetTop;

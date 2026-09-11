@@ -1,3 +1,7 @@
+import { CodeEditorInputSerializer, type SerializedCodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_serializer';
+import { ResourceViewerInputSerializer } from '../../ide/workbench/contrib/resources/editor_serializer';
+import { EditorTextModel } from '../../ide/editor/model/text_model';
+import type { SerializedEditorInput } from '../../ide/workbench/services/editor/editor_serialization';
 import './test_setup';
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
@@ -48,7 +52,7 @@ import {
 } from '../../ide/workbench/ui/code_tab/contexts';
 import { codeEditorInputManager } from '../../ide/workbench/ui/code_tab/input_manager';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
-import { ActiveCodeEditorState, createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
+import { createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
 import { editorTabGroup } from '../../ide/workbench/ui/tab/group_model';
 import {
 	applyWorkspaceAutosavePayload,
@@ -59,7 +63,6 @@ import {
 	initializeWorkspaceStorage,
 	persistWorkspaceSessionLocally,
 	requestWorkspaceAutosave,
-	requestWorkspaceCodeEditorViewAutosave,
 	restoreWorkspaceStorageSession,
 	runWorkspaceAutosaveTick,
 	shutdownWorkspaceStorage,
@@ -378,14 +381,31 @@ function writeRecord(
 
 function payload(
 	dirtyFiles: WorkspaceAutosavePayload['dirtyFiles'] = [],
-	codeEditorViews: WorkspaceAutosavePayload['codeEditorViews'] = [],
+	editorGroup: WorkspaceAutosavePayload['editorGroup'] = { inputs: [], active: null, preview: null },
 ): WorkspaceAutosavePayload {
 	return {
 		dirtyFiles,
-		codeEditorViews,
+		editorGroup,
 		breakpoints: [],
 		fontVariant: DEFAULT_FONT_VARIANT,
 	};
+}
+
+function codeInputSnapshot(path: string, text: string, domain: ResourceDomain, cursor = 0, anchor: number | null = null, scrollColumn = 0): SerializedEditorInput {
+	const model = new EditorTextModel(testResource(path, domain), 'lua', text);
+	const context: CodeTabContext = { id: buildCodeTabId(model.resource), title: path, model, view: createCodeEditorViewState(), runtimeErrorOverlay: null, executionStopRow: null };
+	context.view.cursorColumn = cursor;
+	context.view.selectionAnchor = anchor === null ? null : { row: 0, column: anchor };
+	context.view.scrollColumn = scrollColumn;
+	const input = createCodeEditorInput(context);
+	const value = new CodeEditorInputSerializer(null, null).serialize(input);
+	input.dispose(); model.dispose();
+	return { kind: 'code_editor', value };
+}
+
+function codeInputState(input: SerializedEditorInput): SerializedCodeEditorInput {
+	assert.equal(input.kind, 'code_editor');
+	return JSON.parse(input.value);
 }
 
 function editorStub(
@@ -395,6 +415,7 @@ function editorStub(
 	return {
 		fontVariant: DEFAULT_FONT_VARIANT,
 		resourcePanel: null,
+		editorInputSerializers: { code_editor: new CodeEditorInputSerializer(storage, sources), resource_view: new ResourceViewerInputSerializer(sources) },
 		editorPanes: createTestEditorPanes(),
 		setFontVariant() { /* noop */ },
 		updateViewport() { /* noop */ },
@@ -464,7 +485,7 @@ test('resource identity keeps identical cartridge paths isolated by slot', (t) =
 	assert.equal(slot1Project.getFileData('entry.lua')!.source, 'return "slot 1"');
 });
 
-test('workspace restore keeps dirty system tabs behind the development cartridge entry', async (t) => {
+test('workspace restore preserves explicit tab order and an active dirty system view', async (t) => {
 	const storage = new MockStorage();
 	installOfflineWorkspace(t, storage);
 	const systemRoot = 'machine/bios';
@@ -497,15 +518,10 @@ test('workspace restore keeps dirty system tabs behind the development cartridge
 				path: systemPath,
 				updatedAt: 80,
 			}],
-			[{
-				domain: SYSTEM_RESOURCE_DOMAIN,
-				path: systemPath,
-				cursorRow: 0,
-				cursorColumn: 7,
-				scrollRow: 0,
-				scrollColumn: 3,
-				selectionAnchor: { row: 0, column: 2 },
-			}],
+			{ inputs: [
+				codeInputSnapshot(cartridgePath, '-- cartridge source', 0),
+				codeInputSnapshot(systemPath, '-- dirty system source', SYSTEM_RESOURCE_DOMAIN, 7, 2, 3),
+			], active: 1, preview: null },
 		),
 		storage,
 	);
@@ -513,8 +529,9 @@ test('workspace restore keeps dirty system tabs behind the development cartridge
 	const activeTab = editorTabGroup.activeTab!;
 	assert.equal(activeTab.kind, 'code_editor');
 	const activeContext = activeTab.kind === 'code_editor' ? activeTab.context : null;
-	assert.equal(activeContext.model.resource.domain, 0);
-	assert.equal(activeContext.model.resource.path, cartridgePath);
+	assert.equal(activeContext.model.resource.domain, SYSTEM_RESOURCE_DOMAIN);
+	assert.equal(activeContext.model.resource.path, systemPath);
+	assert.equal(editorTabGroup.tabs.length, 2);
 	assert.equal(activeTab.id, activeContext.id);
 	const systemContext = findCodeTabContext({
 		domain: SYSTEM_RESOURCE_DOMAIN,
@@ -872,9 +889,10 @@ test('cold boot uses one manifest-indexed dirty snapshot for source arbitration 
 		restored,
 		rejected,
 	);
-	const context = findCodeTabContext({ domain: TEST_DOMAIN, path: 'entry.lua' })!;
-	assert.equal(getTextSnapshot(context.model.buffer), '-- dirty edit');
-	assert.equal(context.model.dirty, true);
+	const model = editorTextModelService.get({ domain: TEST_DOMAIN, path: 'entry.lua' })!;
+	assert.equal(getTextSnapshot(model.buffer), '-- dirty edit');
+	assert.equal(model.dirty, true);
+	assert.equal(editorTabGroup.tabs.length, 0);
 });
 
 test('manifest dirty timestamp rejects an uncommitted record generation', async (t) => {
@@ -919,6 +937,7 @@ test('manifest dirty entry rejected by newer ROM is not hydrated', async (t) => 
 		path: 'entry.lua',
 		updatedAt: 50,
 	}]);
+	session.editorGroup = { inputs: [codeInputSnapshot('entry.lua', '-- stale dirty edit', TEST_DOMAIN, 9)], active: 0, preview: null };
 	const dirtyRecordPath = buildWorkspaceDirtyRecordPath(dirtyPath, 50);
 	writeRecord(storage, 'offline-cart', dirtyRecordPath, '-- stale dirty edit', 50);
 	writeRecord(storage, 'offline-cart', workspaceStatePath('offline-cart'), JSON.stringify(session), 60);
@@ -936,6 +955,7 @@ test('manifest dirty entry rejected by newer ROM is not hydrated', async (t) => 
 	);
 	assert.equal(registry.records[0].src, '-- newer rom source');
 	assert.equal(findCodeTabContext({ domain: TEST_DOMAIN, path: 'entry.lua' })!.model.dirty, false);
+	assert.equal(findCodeTabContext({ domain: TEST_DOMAIN, path: 'entry.lua' })!.view.cursorColumn, 0);
 	assert.equal(readLocalWorkspaceRecord(storage, 'offline-cart', dirtyRecordPath)!.contents, '-- stale dirty edit');
 });
 
@@ -1010,7 +1030,7 @@ test('a dirty working copy can acquire its first code view after the content bac
 	await flushRequestedAutosave();
 	const backup = workspaceState.localGeneration!;
 	assert.equal(backup.payload.dirtyFiles.length, 1);
-	assert.equal(backup.payload.codeEditorViews.length, 0);
+	assert.equal(backup.payload.editorGroup.inputs.length, 0);
 	const context: CodeTabContext = {
 		id: buildCodeTabId(resource), title: 'entry.lua', model, view: createCodeEditorViewState(),
 		runtimeErrorOverlay: null, executionStopRow: null,
@@ -1021,12 +1041,11 @@ test('a dirty working copy can acquire its first code view after the content bac
 	context.view.cursorColumn = 3;
 	const version = model.version;
 	const writes = server.requests.filter(request => request.method === 'PUT' && request.path.includes('/.bmsx/dirty/')).length;
-	requestWorkspaceCodeEditorViewAutosave(context);
+	requestWorkspaceAutosave(WorkspaceAutosaveChange.EditorSession);
 	await flushRequestedAutosave();
 	const generation = workspaceState.localGeneration!;
-	assert.equal(generation.payload.codeEditorViews.length, 1);
-	assert.equal(generation.payload.codeEditorViews[0].cursorRow, 1);
-	assert.equal(generation.payload.codeEditorViews[0].cursorColumn, 3);
+	assert.equal(generation.payload.editorGroup.inputs.length, 1);
+	assert.equal(codeInputState(generation.payload.editorGroup.inputs[0]).view.cursor, model.buffer.offsetAt(1, 3));
 	assert.strictEqual(generation.dirtyRecords, backup.dirtyRecords);
 	assert.strictEqual(generation.payload.dirtyFiles, backup.payload.dirtyFiles);
 	assert.equal(model.version, version);
@@ -1056,15 +1075,13 @@ test('cursor-only autosave reuses retained dirty content and background metadata
 	requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
 	await flushRequestedAutosave();
 	const firstGeneration = workspaceState.localGeneration!;
-	const activeIndex = firstGeneration.payload.codeEditorViews.findIndex(entry =>
-		entry.domain === activeContext.model.resource.domain && entry.path === activeContext.model.resource.path);
-	const backgroundIndex = firstGeneration.payload.codeEditorViews.findIndex(entry =>
-		entry.domain === backgroundContext.model.resource.domain && entry.path === backgroundContext.model.resource.path);
+	const activeIndex = firstGeneration.payload.editorGroup.inputs.findIndex(entry => codeInputState(entry).source.resource.path === activeContext.model.resource.path);
+	const backgroundIndex = firstGeneration.payload.editorGroup.inputs.findIndex(entry => codeInputState(entry).source.resource.path === backgroundContext.model.resource.path);
 	const dirtyPutCount = server.requests.filter(request =>
 		request.method === 'PUT' && request.path.includes('/.bmsx/dirty/')).length;
 
 	activeContext.view.cursorColumn = 1;
-	requestWorkspaceCodeEditorViewAutosave(activeContext);
+	requestWorkspaceAutosave(WorkspaceAutosaveChange.EditorSession);
 	editorTabGroup.activate(backgroundTab);
 	await flushRequestedAutosave();
 	const secondGeneration = workspaceState.localGeneration!;
@@ -1072,13 +1089,13 @@ test('cursor-only autosave reuses retained dirty content and background metadata
 	assert.strictEqual(secondGeneration.payload.dirtyFiles, firstGeneration.payload.dirtyFiles);
 	assert.strictEqual(secondGeneration.payload.breakpoints, firstGeneration.payload.breakpoints);
 	assert.notStrictEqual(
-		secondGeneration.payload.codeEditorViews[activeIndex],
-		firstGeneration.payload.codeEditorViews[activeIndex],
+		secondGeneration.payload.editorGroup.inputs[activeIndex],
+		firstGeneration.payload.editorGroup.inputs[activeIndex],
 	);
-	assert.equal(secondGeneration.payload.codeEditorViews[activeIndex].cursorColumn, 1);
+	assert.equal(codeInputState(secondGeneration.payload.editorGroup.inputs[activeIndex]).view.cursor, 1);
 	assert.strictEqual(
-		secondGeneration.payload.codeEditorViews[backgroundIndex],
-		firstGeneration.payload.codeEditorViews[backgroundIndex],
+		secondGeneration.payload.editorGroup.inputs[backgroundIndex],
+		firstGeneration.payload.editorGroup.inputs[backgroundIndex],
 	);
 	assert.equal(
 		server.requests.filter(request =>
@@ -1094,54 +1111,56 @@ test('view metadata belongs to the emitting model even when a different tab is a
 	const first = installCodeContext('same.lua', '-- first', 0);
 	const second = installCodeContext('same.lua', '-- second', -1);
 	editorTabGroup.initialize(createCodeEditorInput(second));
+	editorTabGroup.add(createCodeEditorInput(first));
 	requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
 	await flushRequestedAutosave();
-	const widget = new ActiveCodeEditorState();
-	widget.attach(first.model, first.view);
 	first.view.cursorColumn = 2;
-	requestWorkspaceCodeEditorViewAutosave(widget);
-	widget.attach(second.model, second.view);
+	requestWorkspaceAutosave(WorkspaceAutosaveChange.EditorSession);
 	second.view.cursorColumn = 5;
-	requestWorkspaceCodeEditorViewAutosave(widget);
+	requestWorkspaceAutosave(WorkspaceAutosaveChange.EditorSession);
 	await flushRequestedAutosave();
-	const views = workspaceState.localGeneration!.payload.codeEditorViews;
-	assert.equal(views.find(view => view.domain === 0)!.cursorColumn, 2);
-	assert.equal(views.find(view => view.domain === -1)!.cursorColumn, 5);
+	const views = workspaceState.localGeneration!.payload.editorGroup.inputs.map(codeInputState);
+	assert.equal(views.find(view => view.source.resource.domain === 0)!.view.cursor, 2);
+	assert.equal(views.find(view => view.source.resource.domain === -1)!.view.cursor, 5);
 });
 
-test('clean navigation and unchanged metadata do not schedule or rewrite recovery contents', async (t) => {
+test('clean views persist without source backups and unchanged checkpoints do not write', async (t) => {
 	const storage = new MockStorage();
-	const { clock, server } = installWorkspaceServer(t, storage);
+	const { server } = installWorkspaceServer(t, storage);
 	const sources = await startAutosaveSession(t, storage);
 	const resource = resolveRuntimeResource(sources, { domain: TEST_DOMAIN, path: 'entry.lua' })!;
 	const model = editorTextModelService.retain(resource, 'lua', '-- cart source');
-	const context = { model, view: createCodeEditorViewState() };
+	const context: CodeTabContext = { id: buildCodeTabId(resource), title: 'entry.lua', model, view: createCodeEditorViewState(), runtimeErrorOverlay: null, executionStopRow: null };
+	registerCodeTabContext(context);
+	editorTabGroup.initialize(createCodeEditorInput(context));
 	context.view.cursorColumn = 3;
 	const revision = workspaceState.requestedRevision;
-	requestWorkspaceCodeEditorViewAutosave(context);
-	assert.equal(workspaceState.requestedRevision, revision);
-	assert.equal(clock.activeCount, 0);
+	requestWorkspaceAutosave(WorkspaceAutosaveChange.EditorSession);
+	assert.ok(workspaceState.requestedRevision > revision);
+	await flushRequestedAutosave();
+	assert.equal(workspaceState.localGeneration!.payload.editorGroup.inputs.length, 1);
+	assert.deepEqual(workspaceState.localGeneration!.payload.dirtyFiles, []);
 	assert.equal(model.version, 1);
 	assert.equal(model.canUndo, false);
 	assert.equal(model.dirty, false);
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- edit\n' }]);
 	requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
 	await flushRequestedAutosave();
-	requestWorkspaceCodeEditorViewAutosave(context);
+	requestWorkspaceAutosave(WorkspaceAutosaveChange.EditorSession);
 	await flushRequestedAutosave();
 	const generation = workspaceState.localGeneration!;
 	const requestCount = server.requests.length;
-	requestWorkspaceCodeEditorViewAutosave(context);
+	requestWorkspaceAutosave(WorkspaceAutosaveChange.EditorSession);
 	await flushRequestedAutosave();
 	assert.strictEqual(workspaceState.localGeneration, generation);
 	assert.equal(server.requests.length, requestCount);
 	// Save/Undo can make a queued view clean before the timer captures it.
-	requestWorkspaceCodeEditorViewAutosave(context);
+	requestWorkspaceAutosave(WorkspaceAutosaveChange.EditorSession);
 	model.undo();
 	requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
 	await flushRequestedAutosave();
 	assert.deepEqual(workspaceState.localGeneration!.payload.dirtyFiles, []);
-	assert.deepEqual(workspaceState.localGeneration!.payload.codeEditorViews, []);
+	assert.equal(workspaceState.localGeneration!.payload.editorGroup.inputs.length, 1);
 });
 
 test('record generation stays unique when the host clock does not advance', async (t) => {
@@ -1505,9 +1524,10 @@ test('workspace restore resolves persisted identity to the retained runtime reso
 		restoredPayload,
 		storage,
 	);
-	const context = findCodeTabContext(retained)!;
-	assert.strictEqual(context.model.resource, retained);
-	assert.equal(context.model.buffer.getText(), '-- restored edit');
+	const model = editorTextModelService.get(retained)!;
+	assert.strictEqual(model.resource, retained);
+	assert.equal(model.buffer.getText(), '-- restored edit');
+	assert.equal(findCodeTabContext(retained), null);
 	assert.deepEqual(debuggerState.breakpoints[0].get('base.lua'), new Set([4]));
 	assert.deepEqual(debuggerState.breakpoints[1].get(retained.path), new Set([3, 9]));
 	assert.equal(debuggerState.breakpoints[2].size, 0);
@@ -1544,9 +1564,9 @@ test('workspace recovery hydrates a dirty working copy without creating an edito
 	assert.equal(model.buffer.getText(), '{ "version": 1 }');
 	assert.equal(model.dirty, true);
 	assert.equal(findCodeTabContext(resource), null);
-	assert.equal(editorTabGroup.tabs.length, 1);
-	assert.equal(editorTabGroup.activeTab.kind, 'code_editor');
-	assert.equal([...editorTextModelService.models].length, 2);
+	assert.equal(editorTabGroup.tabs.length, 0);
+	assert.equal(editorTabGroup.activeTab, null);
+	assert.equal([...editorTextModelService.models].length, 1);
 });
 
 test('workspace override arbitration keeps dirty and canonical namespaces separate', async (t) => {

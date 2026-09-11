@@ -1,3 +1,4 @@
+import { getWorkbenchEditorBounds } from '../../../workbench/common/layout';
 import { write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import { EditorFont } from './font';
 import type { FontVariant } from '../../../../machine/ts/render/shared/bmsx_font';
@@ -151,13 +152,13 @@ const codeAreaBounds: CodeAreaBounds = {
 };
 
 export function getCodeAreaBounds(): CodeAreaBounds {
-	const codeLeft = editorViewState.codeAreaLeft;
-	const gutterLeft = codeLeft;
+	const bounds = getWorkbenchEditorBounds();
+	const gutterLeft = bounds.left;
 	const gutterRight = gutterLeft + updateGutterWidth();
-	codeAreaBounds.codeTop = editorViewState.codeAreaTop;
-	codeAreaBounds.codeBottom = editorViewState.codeAreaBottom;
-	codeAreaBounds.codeLeft = codeLeft;
-	codeAreaBounds.codeRight = editorViewState.viewportWidth;
+	codeAreaBounds.codeTop = bounds.top;
+	codeAreaBounds.codeBottom = bounds.bottom;
+	codeAreaBounds.codeLeft = bounds.left;
+	codeAreaBounds.codeRight = bounds.right;
 	codeAreaBounds.gutterLeft = gutterLeft;
 	codeAreaBounds.gutterRight = gutterRight;
 	codeAreaBounds.textLeft = gutterRight + 2;

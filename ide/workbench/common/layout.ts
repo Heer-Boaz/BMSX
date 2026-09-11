@@ -1,3 +1,4 @@
+import { create_rect_bounds, write_rect_bounds, type RectBounds } from '../../../machine/ts/common/rect';
 import { writeWrappedOverlayLine } from '../../editor/common/text/layout';
 import { editorViewState } from '../../editor/ui/view/state';
 import { editorFeedbackState } from '../../common/feedback_state';
@@ -8,6 +9,15 @@ import { editorSearchState, lineJumpState } from '../contrib/code_editor/find/wi
 import { renameController } from '../contrib/code_editor/rename/controller';
 import { createResourceState } from '../contrib/resources/widget_state';
 import type { EditorFont } from '../../editor/ui/view/font';
+
+const editorBounds = create_rect_bounds();
+
+/** Content geometry belongs to the workbench; a text gutter is a code-pane detail. */
+export function getWorkbenchEditorBounds(): RectBounds {
+	write_rect_bounds(editorBounds, editorViewState.codeAreaLeft, editorViewState.codeAreaTop,
+		editorViewState.viewportWidth, editorViewState.codeAreaBottom);
+	return editorBounds;
+}
 
 export type FullWidthWorkbenchLayout = {
 	left: number;

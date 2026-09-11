@@ -6,8 +6,6 @@ import { editorCaretState } from '../../../editor/ui/view/caret/state';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { editorPointerState, clearEditorPointerSelectionState } from '../../../input/pointer/state';
 import { runtimeErrorState } from '../../../editor/contrib/runtime_error/state';
-import { closeLineJump } from '../../contrib/code_editor/find/line_jump';
-import { closeSearch } from '../../contrib/code_editor/find/search';
 import { problemsPanel } from '../../contrib/problems/panel/controller';
 import type { ResourcePanelController } from '../../contrib/resources/panel/controller';
 import { EditorPane } from '../../services/editor/editor_pane';
@@ -70,8 +68,6 @@ export abstract class FullWidthWorkbenchEditorPane<
 	}
 
 	protected activate(): void {
-		closeSearch(false, true);
-		closeLineJump(false);
 		this.resourcePanel.hide();
 		problemsPanel.hide();
 		editorChromeState.resourcePanelResizing = false;

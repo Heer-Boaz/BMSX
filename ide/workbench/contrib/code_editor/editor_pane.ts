@@ -12,7 +12,7 @@ import { showEditorMessage } from '../../../common/feedback_state';
 import { editorRuntimeState } from '../../../editor/common/runtime_state';
 import { editorCaretState } from '../../../editor/ui/view/caret/state';
 import { editorViewState } from '../../../editor/ui/view/state';
-import { getCodeAreaBounds, scrollRows } from '../../../editor/ui/view/view';
+import { getCodeAreaBounds, scrollRows, refreshViewportLayout } from '../../../editor/ui/view/view';
 import { renderCodeArea } from '../../../editor/render/code_area/area';
 import { drawEditorText } from '../../../editor/render/text_renderer';
 import { measureText } from '../../../editor/common/text/layout';
@@ -48,6 +48,8 @@ import { activeCodeEditor } from '../../../editor/ui/code_editor_state';
 import { undo, redo } from '../../../editor/editing/undo_controller';
 import { clearReferenceHighlights, requestSemanticRefresh } from '../../../editor/contrib/intellisense/engine';
 import { CodeEditorNavigationSelection } from './navigation_selection';
+import { closeSearch } from './find/search';
+import { closeLineJump } from './find/line_jump';
 
 const CODE_SCROLLBARS = ['codeVertical', 'codeHorizontal'] as const;
 
@@ -111,12 +113,19 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 	}
 
 	public override clearInput(): void {
+		closeSearch(false, true);
+		closeLineJump(false);
 		pointerHover.release(codeAreaHover);
 		pointerHover.release(runtimeErrorOverlayPointer);
 		editorViewState.scrollbarController.cancel();
 		this.unsubscribeContentChange();
 		storeCodeTabContext(this.input.context);
+		activeCodeEditor.detach();
 		super.clearInput();
+	}
+
+	public override layout(): void {
+		refreshViewportLayout();
 	}
 
 	public override update(deltaSeconds: number): void {

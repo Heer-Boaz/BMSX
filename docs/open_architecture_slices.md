@@ -477,7 +477,7 @@ renderers. Dit sluit B03/B04, propertyauthoring of A08 niet.
 | ID | Eigenaar / contract | Gate |
 | --- | --- | --- |
 | `STUDIO-UX-A06` | Gedeeld keuzecontrol met provider-eigen matching, zichtbare matches en volledige lijstbediening. | Palette, files en symbols delen relevante UI/lifecycle zonder hun verschillende zoeksemantiek samen te drukken. |
-| `STUDIO-UX-A07` | Workbench-sessionserialization staat los van dirty-working-copybackup. | Herstart herstelt visual inputs, actieve tab en bijdrage-eigen viewstate; geen legacy/compatibility readers. Bouw op de vastgelegde A04/A03-contracten. |
+| `STUDIO-UX-A07` | Afgerond: contribution-owned input/viewserializers en group-topologie staan los van dirty-working-copybackup. | Echte browserreload, cold layout en shutdown op drie renderers; schone/visual inputs en gedeelde working copies. Zie `workbench_session.md`. Geen legacy/compatibility readers; geen sluiting van B03/B04/B06 of A08. |
 | `STUDIO-UX-A08` | Onafhankelijke workflowfixtures en gerichte volledige-hostmetingen, naast de bestaande microbenchmarks. | Werkelijke Studio-framekosten en rewind memory/latency per target; fysieke SNES Mini-resultaten niet afleiden uit een PC-run. |
 
 ### Aanvullende behavior-review na A04
