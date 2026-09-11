@@ -1,3 +1,4 @@
+import { PointerHoverService } from '../../ide/input/pointer/hover';
 import { PointerButton } from '../../ide/input/pointer/buttons';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
@@ -15,7 +16,7 @@ function fixture(t: TestContext, count = 36) {
 	const model = new EditorTextModel({ domain: 0, path: 'review.lua', source: { type: 'lua', resid: 'review' } }, 'lua', "return 'before'");
 	const focus = new InputFocusService();
 	const parent = focus.createTarget();
-	const review = new WorkbenchSourceEditReview(focus, new PointerCaptureService(), parent);
+	const review = new WorkbenchSourceEditReview(focus, new PointerCaptureService(), new PointerHoverService(), parent);
 	const font = new Font({ variant: 'tiny' });
 	let measurements = 0;
 	const measure = (text: string, start: number, end: number) => { measurements += 1; return font.measure(text.slice(start, end)); };

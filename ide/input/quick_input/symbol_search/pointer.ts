@@ -1,3 +1,4 @@
+import { pointerHover } from '../../pointer/hover';
 import { PointerButton } from '../../pointer/buttons';
 import type { ResourcePanelController } from '../../../workbench/contrib/resources/panel/controller';
 import { point_in_rect } from '../../../../machine/ts/common/rect';
@@ -7,7 +8,7 @@ import { getSymbolSearchBarBounds, symbolSearchEntryHeight, symbolSearchVisibleR
 import type { PointerSnapshot } from '../../../common/models';
 import { closeLineJump } from '../../../workbench/contrib/code_editor/find/line_jump';
 import { applySymbolSearchSelection } from '../../../workbench/contrib/code_editor/symbols/search/index';
-import { ensureSymbolSearchSelectionVisible, symbolSearchFieldLabel } from '../../../workbench/contrib/code_editor/symbols/shared';
+import { ensureSymbolSearchSelectionVisible, symbolSearchFieldLabel, symbolSearchHover } from '../../../workbench/contrib/code_editor/symbols/shared';
 import { activateQuickInputField, finishQuickInputPointer, quickInputTextLeft } from '../pointer/common';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { symbolSearchState } from '../../../workbench/contrib/code_editor/symbols/search/state';
@@ -25,8 +26,9 @@ export function handleSymbolSearchPointer(
 	if (!symbolSearchState.visible || !bounds) {
 		return false;
 	}
-	const insideBar = point_in_rect(snapshot.viewportX, snapshot.viewportY, bounds);
+	const insideBar = snapshot.valid && snapshot.insideViewport && point_in_rect(snapshot.viewportX, snapshot.viewportY, bounds);
 	if (!insideBar) {
+		pointerHover.release(symbolSearchHover);
 		if (justPressed) {
 			symbolSearchState.field.focusTarget.release();
 		}
@@ -47,6 +49,7 @@ export function handleSymbolSearchPointer(
 		finishQuickInputPointer();
 		return true;
 	}
+	pointerHover.visit(symbolSearchHover);
 	const hoverIndex = resolveSymbolSearchHoverIndex(snapshot.viewportY, fieldBottom);
 	symbolSearchState.hoverIndex = hoverIndex;
 	if (hoverIndex >= 0 && justPressed) {

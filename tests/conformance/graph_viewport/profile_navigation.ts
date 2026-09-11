@@ -1,3 +1,4 @@
+import { PointerHoverService } from '../../../ide/input/pointer/hover';
 import assert from 'node:assert/strict';
 import { Font } from '../../../machine/ts/render/shared/bmsx_font';
 import { HostOverlayQuadStream } from '../../../machine/ts/render/host_overlay/quad_stream';
@@ -40,7 +41,7 @@ for (const nodeCount of [32, 1024]) {
 	const horizontalThumb = view.horizontalScrollbar.getThumb();
 	const verticalThumb = view.verticalScrollbar.getThumb();
 	const capture = new PointerCaptureService();
-	const control = new WorkbenchGraphControl(new InputFocusService(), capture);
+	const control = new WorkbenchGraphControl(new InputFocusService(), capture, new PointerHoverService());
 	control.setInput(view);
 	const measurements = font.measurements;
 	const pointer: PointerSnapshot = { valid: true, insideViewport: true, pressedButtons: PointerButton.Auxiliary,

@@ -47,6 +47,7 @@ import { editorCaretState } from './editor/ui/view/caret/state';
 import { updateBlink } from './editor/ui/inline/text_field';
 import { bindQuickInputFields } from './quick_input/fields';
 import { inputFocus } from './input/focus';
+import { pointerHover } from './input/pointer/hover';
 import { pointerCapture } from './input/pointer/capture';
 import { Scrollbar } from './workbench/ui/scrollbar';
 import { ScrollbarController } from './editor/ui/scrollbar_controller';
@@ -66,7 +67,7 @@ import { clearSingleCursorSelection } from './editor/editing/cursor/state';
 import { editorDiagnosticsState, markDiagnosticsDirty } from './editor/contrib/diagnostics/state';
 import { processDiagnosticsQueue } from './workbench/contrib/code_editor/diagnostics/controller';
 import { applyLineJumpFieldText } from './workbench/contrib/code_editor/find/line_jump';
-import { EditorSearchController, applySearchFieldText, cancelGlobalSearchJob, cancelSearchJob, startSearchJob } from './workbench/contrib/code_editor/find/search';
+import { EditorSearchController, applySearchFieldText, cancelGlobalSearchJob, cancelSearchJob, startSearchJob, searchHover } from './workbench/contrib/code_editor/find/search';
 import { editorSearchState, lineJumpState } from './workbench/contrib/code_editor/find/widget_state';
 import { renameController } from './workbench/contrib/code_editor/rename/controller';
 import { CrossFileRenameManager } from './workbench/contrib/code_editor/rename/operations';
@@ -397,6 +398,7 @@ export class RuntimeCartEditor implements CartEditor {
 			updateDesiredColumn();
 			activeCodeEditor.view.selectionAnchor = null;
 		}
+		pointerHover.release(searchHover);
 		editorSearchState.field.focusTarget.release();
 		editorSearchState.visible = false;
 		lineJumpState.field.focusTarget.release();
@@ -446,6 +448,7 @@ export class RuntimeCartEditor implements CartEditor {
 	}
 
 	public deactivate(): void {
+		pointerHover.clear();
 		pointerCapture.cancel();
 		inputFocus.setTarget(null);
 		const wasActive = this.isActive;
@@ -568,6 +571,8 @@ export class RuntimeCartEditor implements CartEditor {
 	}
 
 	public async shutdown(): Promise<void> {
+		pointerHover.clear();
+		pointerCapture.cancel();
 		this.contextMenu.dispose();
 		this.quickInput.dispose();
 		this.unbindQuickInputFields();

@@ -1,3 +1,4 @@
+import { pointerHover, type PointerHoverTarget } from '../hover';
 import { PointerButton } from '../buttons';
 import { isCodeTabActive } from '../../../workbench/ui/tabs';
 import { clearGotoHoverHighlight, refreshGotoHoverHighlight } from '../../../editor/contrib/intellisense/engine';
@@ -12,6 +13,10 @@ import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import type { RuntimeFaultState } from '../../../runtime/fault_state';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 
+export const codeAreaHover: PointerHoverTarget = {
+	onPointerLeave(): void { clearHoverTooltip(); clearGotoHoverHighlight(); },
+};
+
 export function updateCodeAreaPointerFeedback(
 	playerInput: PlayerInput,
 	bridge: RuntimeLuaTooling,
@@ -24,6 +29,8 @@ export function updateCodeAreaPointerFeedback(
 	activeContext: CodeEditorContext,
 	bounds: CodeAreaBounds
 ): void {
+	if (snapshot.valid && snapshot.insideViewport && insideCodeArea) pointerHover.visit(codeAreaHover);
+	else pointerHover.release(codeAreaHover);
 	if (isCodeTabActive() && (snapshot.pressedButtons & PointerButton.Primary) === 0 && !pointerSelecting && insideCodeArea && gotoModifierActive) {
 		const hover = resolvePointerTextPosition(snapshot.viewportX, snapshot.viewportY, bounds);
 			refreshGotoHoverHighlight(bridge, hover.row, hover.column, activeContext);

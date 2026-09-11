@@ -1,3 +1,5 @@
+import { pointerHover } from '../pointer/hover';
+import { runtimeErrorOverlayPointer } from '../../editor/contrib/runtime_error/pointer';
 import { closeSearch } from '../../workbench/contrib/code_editor/find/search';
 import { editorFeedbackState } from '../../common/feedback_state';
 import { closeBlockingWorkbenchModal, hasBlockingWorkbenchModal } from '../../workbench/contrib/modal/blocking_modal';
@@ -32,6 +34,7 @@ export function handleEscapeKey(): boolean {
 		return true;
 	}
 	if (overlay) {
+		pointerHover.release(runtimeErrorOverlayPointer);
 		overlay.hidden = !overlay.hidden;
 		overlay.hovered = false;
 		overlay.hoverLine = -1;

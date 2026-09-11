@@ -1,9 +1,8 @@
+import { pointerHover } from './hover';
 import { PointerButton } from './buttons';
 import type { ResourcePanelController } from '../../workbench/contrib/resources/panel/controller';
 import { point_in_rect } from '../../../machine/ts/common/rect';
 import type { PointerSnapshot } from '../../common/models';
-import { clearGotoHoverHighlight } from '../../editor/contrib/intellisense/engine';
-import { clearHoverTooltip } from '../../editor/contrib/hover/controller';
 import { editorPointerState, resetPointerClickTracking } from './state';
 
 export function handleResourcePanelPointer(
@@ -12,21 +11,19 @@ export function handleResourcePanelPointer(
 	justPressed: boolean,
 ): boolean {
 	const panelBounds = resourcePanel.getBounds();
-	const pointerInPanel = resourcePanel.isVisible()
+	const pointerInPanel = snapshot.valid && snapshot.insideViewport && resourcePanel.isVisible()
 		&& panelBounds !== null
 		&& point_in_rect(snapshot.viewportX, snapshot.viewportY, panelBounds);
 	if (!pointerInPanel) {
 		if (justPressed) {
 			resourcePanel.setFocused(false);
 		}
-		if (resourcePanel.isVisible() && (snapshot.pressedButtons & PointerButton.Primary) === 0) {
-			resourcePanel.hoverIndex = -1;
-		}
+		pointerHover.release(resourcePanel);
 		return false;
 	}
+	pointerHover.visit(resourcePanel);
 	resourcePanel.setFocused(true);
 	resetPointerClickTracking();
-	clearHoverTooltip();
 	const margin = resourcePanel.lineHeight;
 	if (snapshot.viewportY < panelBounds.top + margin) {
 		resourcePanel.scrollBy(-1);
@@ -47,7 +44,6 @@ export function handleResourcePanelPointer(
 		resourcePanel.hoverIndex = -1;
 	}
 	editorPointerState.pointerSelecting = false;
-	clearGotoHoverHighlight();
 	return true;
 }
 

@@ -576,6 +576,17 @@ not keyboard input, and never fabricates a release. Focus and capture are distin
 focus while ending a drag. The graph control uses this route without inventing
 button edges; other existing controls have not all been migrated to it.
 
+`input/pointer/hover.ts` separately retains the actually routed hover path,
+using a dispatch generation as in Qt Quick's delivery agent. Controls register
+accepted hits on the existing route; the end-of-dispatch sweep delivers leave
+to skipped controls, including exclusive menus/popups. Detach, editor hide and
+shutdown release targets explicitly. Leave revokes only pointer presentation;
+it is neither a focus event nor a capture cancellation. Action bars/graphs, list and
+property controls, source feedback and runtime-error hover share this owner.
+The runtime-error pointer contribution lives beside its editor model; the
+existing active-overlay setter revokes hover before replacing that model.
+See [`editor_pointer_hover.md`](../docs/editor_pointer_hover.md).
+
 For BT sibling reorder, the graph control owns press/threshold, captured source
 selection, retained preview, host-time edge scrolling and interruption. The
 contribution supplies a source-version-owned drag session, decides sibling

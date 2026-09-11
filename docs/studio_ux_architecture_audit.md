@@ -492,7 +492,7 @@ retained labelmetingen, zichtbare-only painting en disposal van tabgeometrie.
 Dit is geen volledige host-/GC-/SNES-Mini-performancemeting. **A05–A09 blijven
 open**, inclusief workbench-sessionserialization los van recovery-backups.
 
-### A09 — aanvullend P2: pointer-leave heeft nog geen gedeelde eigenaar
+### A09 — aanvullend P2: pointer-leave — gecorrigeerd
 
 Bij de A02-review is in de echte software-Studio ook deze tegenproef uitgevoerd:
 Source hoveren en daarna de pointer zonder klikken naar Problems verplaatsen.
@@ -506,10 +506,17 @@ paneel dat hem afhandelt; het vorige control krijgt geen leave-notificatie.
 capture-cancel bijwerken. Een Scene-lokale clear of rondgestuurde nep-snapshot
 zou hier opnieuw om de ontbrekende input-owner heen werken.
 
-**Open correctie/gate:** generieke hover-target/enter/leave-dispatch ontwerpen aan
-de hand van productiecode, los van focus en capture; ook testen bij paneelgrenzen,
-popups, canvas-verlaten en detach. Dit is bewust niet als extra handmatige
-hoverreset in de A02-layoutslice gebouwd.
+**Correctie (2026-09-11):** de gedeelde hover-owner volgt Qt Quick's
+generatiegemarkeerde hitroute; een overgeslagen control ontvangt leave aan het
+eind van de dispatch. Detach/hide/shutdown leveren leave direct. De echte oude
+Studio faalt op Source → Problems; de correctie doorloopt Problems/chrome/menu/
+palette/canvas-verlaten/hide op software, WebGL2 en WebGPU, met beide fonts.
+Leave verandert geen focus, keyboardselectie of capture. Negen nieuwe gerichte
+tests en de volledige Lua-/Studio-proeven toetsen de eigenaren; de absolute
+microbenchmark wordt niet als volledige host-/GC-meting gepresenteerd. Zie
+[`editor_pointer_hover.md`](editor_pointer_hover.md) voor bronreferentie, scope,
+lifetime, kosten en expliciet resterende UX-beperkingen. **A05–A08 en B03/B04/
+B06-authoring blijven open.**
 
 ### Aanvullende behavior-gebruikersreview na A04 (2026-09-10)
 

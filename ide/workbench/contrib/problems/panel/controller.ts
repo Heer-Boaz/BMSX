@@ -1,3 +1,4 @@
+import { pointerHover, type PointerHoverTarget } from '../../../../input/pointer/hover';
 import type { EditorDiagnostic, PointerSnapshot } from '../../../../common/models';
 import type { RectBounds } from '../../../../../machine/ts/common/rect';
 import { ScratchBuffer } from '../../../../../machine/ts/common/scratchbuffer';
@@ -32,7 +33,8 @@ export {
 
 const EMPTY_DIAGNOSTICS: EditorDiagnostic[] = [];
 
-export class ProblemsPanelController {
+export class ProblemsPanelController implements PointerHoverTarget {
+	public onPointerLeave(): void { this.hoverIndex = -1; }
 	private visible = false;
 	public readonly focusTarget = inputFocus.createTarget();
 	private diagnostics: EditorDiagnostic[] = EMPTY_DIAGNOSTICS;
@@ -78,6 +80,7 @@ export class ProblemsPanelController {
 	}
 
 	public hide(): void {
+		pointerHover.release(this);
 		if (!this.visible) {
 			return;
 		}
@@ -90,9 +93,6 @@ export class ProblemsPanelController {
 	public setFocused(focused: boolean): void {
 		if (focused) this.focusTarget.focus();
 		else this.focusTarget.release();
-		if (!focused) {
-			this.hoverIndex = -1;
-		}
 	}
 
 	public setHoverIndex(index: number): void {

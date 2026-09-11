@@ -10,7 +10,7 @@ import {
 	RUNTIME_ERROR_OVERLAY_POINTER_NONE,
 	RUNTIME_ERROR_OVERLAY_POINTER_OUTSIDE,
 	updateRuntimeErrorOverlayPointerHover,
-} from './pointer/hover';
+} from '../../../../../../editor/contrib/runtime_error/pointer';
 import type { CartEditor } from '../../../../../../cart_editor';
 import type { Clipboard } from '../../../../../../common/clipboard';
 

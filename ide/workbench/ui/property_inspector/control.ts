@@ -8,6 +8,7 @@ import { truncateMeasuredText, type TextRangeMeasure } from '../../../common/tex
 import type { InputFocusService, InputFocusTarget } from '../../../input/focus';
 import { consumeIdeKey, isKeyJustPressed, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
 import { PointerButton } from '../../../input/pointer/buttons';
+import type { PointerHoverService, PointerHoverTarget } from '../../../input/pointer/hover';
 import type { PointerCaptureService } from '../../../input/pointer/capture';
 import { createWorkbenchActionBar, layoutWorkbenchActionBar } from '../action_bar';
 import { WorkbenchActionBarControl } from '../action_bar_control';
@@ -22,7 +23,7 @@ export type PropertyInspection<Element> = {
 };
 
 /** A local read-only inspector session; the contribution retains source identity/lifetime. */
-export class WorkbenchPropertyInspector<Element extends InspectedProperty> {
+export class WorkbenchPropertyInspector<Element extends InspectedProperty> implements PointerHoverTarget {
 	public readonly model = new WorkbenchPropertyInspectorModel<Element>();
 	public readonly actionBar = createWorkbenchActionBar('propertyInspector.title');
 	public readonly bounds = create_rect_bounds();
@@ -39,10 +40,10 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> {
 	private padPressed = false;
 	private returnFocus: InputFocusTarget | null = null;
 
-	public constructor(private readonly focus: InputFocusService, capture: PointerCaptureService, parent: InputFocusTarget) {
+	public constructor(private readonly focus: InputFocusService, capture: PointerCaptureService, private readonly hover: PointerHoverService, parent: InputFocusTarget) {
 		this.scroll = new WorkbenchScrollControl(focus, capture, parent, input => this.handleKeyboard(input) || this.handleGamepad(input));
 		this.focusTarget = this.scroll.focusTarget;
-		this.actions = new WorkbenchActionBarControl(focus, capture, this, this.focusTarget);
+		this.actions = new WorkbenchActionBarControl(focus, capture, hover, this, this.focusTarget);
 		this.focusTarget.next = this.actions.focusTarget;
 		this.focusTarget.previous = this.actions.focusTarget;
 		this.actions.focusTarget.next = this.focusTarget;
@@ -70,6 +71,7 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> {
 	}
 
 	public hide(): void {
+		this.hover.release(this);
 		const ownedFocus = this.focusTarget.hasFocus || this.actions.focusTarget.hasFocus;
 		this.actions.clearInput();
 		this.scroll.clearInput();
@@ -126,9 +128,12 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> {
 		input.openSource(item);
 	}
 
+	public onPointerLeave(): void { this.model.hoverIndex = -1; }
+
 	public handlePointer(snapshot: PointerSnapshot): boolean {
 		if (this.actions.handlePointer(snapshot)) return true;
 		if (snapshot.valid && snapshot.insideViewport && point_in_rect(snapshot.viewportX, snapshot.viewportY, this.model.viewport.bounds)) {
+			this.hover.visit(this);
 			const row = this.model.rowAt(snapshot.viewportY);
 			this.model.hoverIndex = row;
 			if ((snapshot.justPressedButtons & PointerButton.Primary) !== 0 && row >= 0) {
@@ -136,7 +141,7 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> {
 				this.triggerKey = undefined;
 				this.padPressed = false;
 			}
-		} else this.model.hoverIndex = -1;
+		} else this.hover.release(this);
 		return this.scroll.handlePointer(snapshot);
 	}
 

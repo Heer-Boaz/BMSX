@@ -1,3 +1,4 @@
+import { pointerHover, type PointerHoverTarget } from '../../../../input/pointer/hover';
 import * as constants from '../../../../common/constants';
 import { clamp } from '../../../../../machine/ts/common/clamp';
 import { create_rect_bounds } from '../../../../../machine/ts/common/rect';
@@ -79,7 +80,8 @@ function createResourcePanelItemMetrics(): ResourcePanelItemMetrics {
 	};
 }
 
-export class ResourcePanelController {
+export class ResourcePanelController implements PointerHoverTarget {
+	public onPointerLeave(): void { this.hoverIndex = -1; }
 	private static readonly EMPTY_ITEMS: ResourceBrowserItem[] = [];
 	public visible = false;
 	public readonly focusTarget = inputFocus.createTarget();
@@ -195,6 +197,7 @@ export class ResourcePanelController {
 	}
 
 	hide(): void {
+		pointerHover.release(this);
 		this.visible = false;
 		this.setFocused(false);
 		this.resetState();

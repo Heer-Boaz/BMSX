@@ -1,8 +1,7 @@
+import { clearRuntimeErrorOverlay } from '../../../editor/contrib/runtime_error/navigation';
 import { PointerButton } from '../../../input/pointer/buttons';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 import type { PointerSnapshot } from '../../../common/models';
-import { clearGotoHoverHighlight } from '../../../editor/contrib/intellisense/engine';
-import { clearHoverTooltip } from '../../../editor/contrib/hover/controller';
 import { editorCaretState } from '../../../editor/ui/view/caret/state';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { editorPointerState, clearEditorPointerSelectionState } from '../../../input/pointer/state';
@@ -49,8 +48,6 @@ export abstract class WorkbenchViewEditorPane<
 		}
 		clearEditorPointerSelectionState();
 		editorPointerState.lastPointerRowResolution = null;
-		clearHoverTooltip();
-		clearGotoHoverHighlight();
 	}
 
 	protected handleViewPointer(
@@ -81,9 +78,7 @@ export abstract class FullWidthWorkbenchEditorPane<
 		editorChromeState.problemsPanelResizing = false;
 		editorViewState.scrollbarController.cancel();
 		editorCaretState.cursorRevealSuspended = false;
-		runtimeErrorState.activeOverlay = null;
+		clearRuntimeErrorOverlay();
 		runtimeErrorState.executionStopRow = null;
-		clearGotoHoverHighlight();
-		clearHoverTooltip();
 	}
 }

@@ -1,15 +1,15 @@
-import { point_in_rect } from '../../../../../../../../machine/ts/common/rect';
-import * as constants from '../../../../../../../common/constants';
-import { computeRuntimeErrorOverlayMaxWidth } from '../../../../../../../editor/common/text/layout';
-import type { PointerSnapshot } from '../../../../../../../common/models';
-import type { RuntimeErrorOverlay } from '../../../../../../../editor/contrib/runtime_error/model';
-import { runtimeErrorState } from '../../../../../../../editor/contrib/runtime_error/state';
+import { pointerHover, type PointerHoverTarget } from '../../../input/pointer/hover';
+import { point_in_rect } from '../../../../machine/ts/common/rect';
+import * as constants from '../../../common/constants';
+import { computeRuntimeErrorOverlayMaxWidth } from '../../common/text/layout';
+import type { PointerSnapshot } from '../../../common/models';
+import { runtimeErrorState } from './state';
 import {
 	computeRuntimeErrorOverlayGeometry,
 	computeRuntimeErrorOverlayLayout,
 	findRuntimeErrorOverlayLineAtPosition,
 	resolveRuntimeErrorOverlayAnchor,
-} from '../../../../../../../editor/render/error_overlay';
+} from '../../render/error_overlay';
 
 export const RUNTIME_ERROR_OVERLAY_POINTER_NONE = 0;
 export const RUNTIME_ERROR_OVERLAY_POINTER_OUTSIDE = 1;
@@ -25,13 +25,14 @@ export function updateRuntimeErrorOverlayPointerHover(
 ): number {
 	const overlay = runtimeErrorState.activeOverlay;
 	if (!overlay || overlay.hidden) {
+		pointerHover.release(runtimeErrorOverlayPointer);
 		return RUNTIME_ERROR_OVERLAY_POINTER_NONE;
 	}
 	const geometry = computeRuntimeErrorOverlayGeometry(codeRight, textLeft, contentBottom);
 	const anchor = resolveRuntimeErrorOverlayAnchor(overlay, codeTop, textLeft, geometry.contentRight, geometry.availableBottom);
 	if (!anchor) {
 		overlay.layout = null;
-		clearRuntimeErrorOverlayPointerHoverState(overlay);
+		pointerHover.release(runtimeErrorOverlayPointer);
 		return RUNTIME_ERROR_OVERLAY_POINTER_NONE;
 	}
 	const layout = computeRuntimeErrorOverlayLayout(
@@ -46,17 +47,18 @@ export function updateRuntimeErrorOverlayPointerHover(
 	);
 	if (!layout) {
 		overlay.layout = null;
-		clearRuntimeErrorOverlayPointerHoverState(overlay);
+		pointerHover.release(runtimeErrorOverlayPointer);
 		return RUNTIME_ERROR_OVERLAY_POINTER_NONE;
 	}
 	if (!snapshot.valid || !snapshot.insideViewport) {
-		clearRuntimeErrorOverlayPointerHoverState(overlay);
+		pointerHover.release(runtimeErrorOverlayPointer);
 		return RUNTIME_ERROR_OVERLAY_POINTER_NONE;
 	}
 	if (!point_in_rect(snapshot.viewportX, snapshot.viewportY, layout.bounds)) {
-		clearRuntimeErrorOverlayPointerHoverState(overlay);
+		pointerHover.release(runtimeErrorOverlayPointer);
 		return RUNTIME_ERROR_OVERLAY_POINTER_OUTSIDE;
 	}
+	pointerHover.visit(runtimeErrorOverlayPointer);
 	overlay.hovered = true;
 	overlay.copyButtonHovered = point_in_rect(snapshot.viewportX, snapshot.viewportY, layout.copyButtonRect);
 	if (overlay.copyButtonHovered) {
@@ -67,8 +69,11 @@ export function updateRuntimeErrorOverlayPointerHover(
 	return RUNTIME_ERROR_OVERLAY_POINTER_BODY;
 }
 
-function clearRuntimeErrorOverlayPointerHoverState(overlay: RuntimeErrorOverlay): void {
-	overlay.hovered = false;
-	overlay.hoverLine = -1;
-	overlay.copyButtonHovered = false;
-}
+export const runtimeErrorOverlayPointer: PointerHoverTarget = {
+	onPointerLeave(): void {
+		const overlay = runtimeErrorState.activeOverlay;
+		overlay.hovered = false;
+		overlay.hoverLine = -1;
+		overlay.copyButtonHovered = false;
+	},
+};

@@ -1,3 +1,4 @@
+import { pointerHover, type PointerHoverTarget } from '../../../../input/pointer/hover';
 import { editorRuntimeState } from '../../../../editor/common/runtime_state';
 import { showEditorMessage } from '../../../../common/feedback_state';
 import * as constants from '../../../../common/constants';
@@ -134,7 +135,10 @@ export class EditorSearchController {
 	}
 }
 
+export const searchHover: PointerHoverTarget = { onPointerLeave: () => { editorSearchState.hoverIndex = -1; } };
+
 export function closeSearch(clearQuery: boolean, forceHide = false): void {
+	pointerHover.release(searchHover);
 	editorSearchState.field.focusTarget.release();
 	editorSearchState.hoverIndex = -1;
 	editorSearchState.displayOffset = 0;
@@ -170,6 +174,7 @@ export function closeSearch(clearQuery: boolean, forceHide = false): void {
 }
 
 export function focusEditorFromSearch(): void {
+	pointerHover.release(searchHover);
 	editorSearchState.field.focusTarget.release();
 	editorSearchState.hoverIndex = -1;
 	editorSearchState.field.selectionAnchor = null;

@@ -1,3 +1,4 @@
+import { PointerHoverService } from '../../ide/input/pointer/hover';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { Input } from '../../hosts/common/input/manager';
@@ -14,9 +15,9 @@ import { api } from '../../ide/runtime/overlay_api';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 
 function fixture(t: TestContext) {
-	const focus = new InputFocusService(), capture = new PointerCaptureService();
+	const focus = new InputFocusService(), capture = new PointerCaptureService(), hover = new PointerHoverService();
 	const parent = focus.createTarget(); parent.bindKeyboard(() => {}); parent.focus();
-	const inspector = new WorkbenchPropertyInspector<InspectedProperty>(focus, capture, parent);
+	const inspector = new WorkbenchPropertyInspector<InspectedProperty>(focus, capture, hover, parent);
 	const font = new Font({ variant: 'tiny' });
 	let measured = 0, opened = -1, disposed = 0;
 	const measure = (s: string, a: number, b: number) => { measured += 1; return font.measure(s.slice(a, b)); };
@@ -45,7 +46,7 @@ function fixture(t: TestContext) {
 	};
 	show(); layout();
 	t.after(() => inspector.dispose());
-	return { inspector, focus, parent, capture, items, font, bounds, show, layout, key, press, pad,
+	return { inspector, focus, parent, capture, hover, items, font, bounds, show, layout, key, press, pad,
 		measured: () => measured, opened: () => opened, disposed: () => disposed };
 }
 
@@ -112,4 +113,22 @@ test('full inspector paints only visible content using retained property text an
 	};
 	const commands = draw(); assert.ok(commands > 0 && commands < 120, 'offscreen source lines do not emit glyph commands');
 	assert.equal(draw(), commands); assert.equal(f.inspector.model.rows, rows); assert.equal(rows[0].value, lines);
+});
+
+
+test('inspector rows and its header actions receive independent leave without clearing keyboard selection', t => {
+	const f = fixture(t), view = f.inspector.model.viewport;
+	const snapshot = { valid: true, insideViewport: true, pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0,
+		viewportX: view.bounds.left + 2, viewportY: view.bounds.top + 2 };
+	f.hover.beginDispatch(); f.inspector.handlePointer(snapshot); f.hover.endDispatch();
+	assert.ok(f.inspector.model.hoverIndex >= 0);
+	const selection = f.inspector.model.selectionIndex;
+	const action = f.inspector.actionBar.items[0];
+	snapshot.viewportX = action.bounds.left + 2; snapshot.viewportY = action.bounds.top + 2;
+	f.hover.beginDispatch(); f.inspector.handlePointer(snapshot); f.hover.endDispatch();
+	assert.equal(f.inspector.model.hoverIndex, -1);
+	assert.equal(f.inspector.actionBar.hoveredCommand, action.command);
+	assert.equal(f.inspector.model.selectionIndex, selection);
+	f.inspector.hide(); f.hover.clear();
+	assert.equal(f.inspector.actionBar.hoveredCommand, null);
 });

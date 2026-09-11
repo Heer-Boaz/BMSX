@@ -1,3 +1,4 @@
+import { PointerHoverService } from '../../ide/input/pointer/hover';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { Input } from '../../hosts/common/input/manager';
@@ -19,6 +20,7 @@ import { renderWorkbenchActionBar } from '../../ide/workbench/render/action_bar'
 function fixture(t: TestContext) {
 	const focus = new InputFocusService();
 	const capture = new PointerCaptureService();
+	const hover = new PointerHoverService();
 	const content = focus.createTarget();
 	content.bindKeyboard(() => {});
 	const state = createWorkbenchActionBar('sourceEditReview.title');
@@ -30,7 +32,7 @@ function fixture(t: TestContext) {
 		isEnabled: command => enabled.has(command),
 		execute: command => { calls.push(command); onExecute(command); },
 	};
-	const bar = new WorkbenchActionBarControl(focus, capture, commands, content);
+	const bar = new WorkbenchActionBarControl(focus, capture, hover, commands, content);
 	bar.setInput(state, content);
 	content.next = bar.focusTarget; content.previous = bar.focusTarget;
 	bar.focusTarget.next = content; bar.focusTarget.previous = content;
@@ -50,10 +52,12 @@ function fixture(t: TestContext) {
 		const snapshot: PointerSnapshot = { valid: true, insideViewport: true,
 			viewportX: (bounds.left + bounds.right) / 2, viewportY: 16,
 			pressedButtons: pressed, justPressedButtons: down, justReleasedButtons: up };
+		hover.beginDispatch();
 		if (!capture.dispatch(snapshot, blocked, clock.now())) bar.handlePointer(snapshot);
+		hover.endDispatch();
 	};
 	t.after(() => { bar.dispose(); focus.setTarget(null); });
-	return { focus, capture, content, state, enabled, calls, commands, bar, input, player, frame, key, press, pointer,
+	return { focus, capture, hover, content, state, enabled, calls, commands, bar, input, player, frame, key, press, pointer,
 		execute: (callback: (command: EditorCommandId) => void) => { onExecute = callback; } };
 }
 
@@ -244,4 +248,25 @@ test('tiny-font rendering distinguishes hover, keyboard focus, pressed and disab
 	assert.equal(stream.floatData, storage);
 	assert.deepEqual(storage, disabled);
 	assert.equal(f.calls.length, 0);
+});
+
+
+test('action hover leaves on an exclusive route or detach, independently of pressed/focused state', t => {
+	const f = fixture(t);
+	f.pointer(0);
+	assert.equal(f.state.hoveredCommand, f.state.items[0].command);
+	f.hover.beginDispatch(); f.hover.endDispatch();
+	assert.equal(f.state.hoveredCommand, null);
+	assert.equal(f.focus.target, f.content);
+	f.pointer(0, PRIMARY, PRIMARY);
+	f.hover.beginDispatch(); f.hover.endDispatch();
+	assert.equal(f.state.hoveredCommand, null);
+	assert.equal(f.state.pressedCommand, f.state.items[0].command);
+	assert.equal(f.capture.active, true, 'leave is not capture cancellation');
+	f.pointer(0, PRIMARY);
+	assert.equal(f.state.hoveredCommand, f.state.items[0].command, 'capture can re-enter the actual button');
+	f.bar.clearInput();
+	assert.equal(f.state.hoveredCommand, null);
+	assert.equal(f.capture.active, false);
+	f.hover.clear(); // The detached target must no longer be called with an absent input.
 });

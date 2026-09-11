@@ -1,3 +1,4 @@
+import { pointerHover } from '../../../input/pointer/hover';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import { SceneEditorNavigationSelection } from './navigation_selection';
 import { PointerButton } from '../../../input/pointer/buttons';
@@ -48,7 +49,7 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 		clipboard: Clipboard,
 	) {
 		super(resourcePanel);
-		this.actionBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, commands, this.focusTarget);
+		this.actionBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget);
 		this.details = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget);
 		this.details.focusTarget.commandContext = this.focusTarget;
 		this.controls = POSITION_AXES.map((_axis, index) => new IntegerInput(this.focusTarget, clipboard, value => {
@@ -160,8 +161,12 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 		}
 	}
 
+	public onPointerLeave(): void {
+		this.input.outline.hoverIndex = -1;
+	}
+
 	protected override handleViewPointer(snapshot: PointerSnapshot, justPressed: boolean): boolean {
-		if (!point_in_rect(snapshot.viewportX, snapshot.viewportY, this.input.layout)) return false;
+		if (!snapshot.valid || !snapshot.insideViewport || !point_in_rect(snapshot.viewportX, snapshot.viewportY, this.input.layout)) return false;
 		if (this.actionBar.handlePointer(snapshot)) return true;
 		for (let index = 0; index < this.controls.length; index += 1) {
 			const control = this.controls[index];
@@ -174,6 +179,8 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 		}
 		if (this.details.handlePointer(snapshot)) return true;
 		const index = workbenchListRowIndexAtPosition(this.input.outline, snapshot.viewportX, snapshot.viewportY);
+		if (index >= 0) pointerHover.visit(this);
+		else pointerHover.release(this);
 		this.input.outline.hoverIndex = index;
 		if (justPressed) {
 			if (index >= 0) this.select(index, workbenchTreeTwistieContainsPosition(this.input.outline, index, snapshot.viewportX));
@@ -198,6 +205,7 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 	}
 
 	public override dispose(): void {
+		pointerHover.release(this);
 		this.actionBar.dispose();
 		this.details.dispose();
 		for (const unbind of this.unbindFieldFocus) unbind();
@@ -206,6 +214,7 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 	}
 
 	public override clearInput(): void {
+		pointerHover.release(this);
 		this.actionBar.clearInput();
 		this.details.clearInput();
 		super.clearInput();

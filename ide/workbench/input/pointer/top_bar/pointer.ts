@@ -11,10 +11,12 @@ import type { PointerSnapshot } from '../../../../common/models';
 import { consumeChromePointerPress } from '../../../../input/pointer/chrome_press';
 import type { IdeCommandController } from '../../../../commands/controller';
 
-export function handleTopBarPointer(commands: IdeCommandController, snapshot: PointerSnapshot): boolean {
+export function handleTopBarPointer(commands: IdeCommandController, snapshot: PointerSnapshot, justPressed: boolean): boolean {
+	if (!snapshot.valid || !snapshot.insideViewport) return false;
 	const x = snapshot.viewportX;
 	const y = snapshot.viewportY;
 	const menuOpen = editorChromeState.openMenuId !== null;
+	if (!justPressed) return menuOpen || point_in_rect(x, y, editorChromeState.topBarBounds);
 	const inHeader = point_in_rect(x, y, editorChromeState.topBarBounds);
 	const inDropdown = menuOpen && point_in_rect(x, y, editorChromeState.menuDropdownBounds);
 	if (!inHeader && !inDropdown) {

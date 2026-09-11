@@ -1,8 +1,9 @@
+import { pointerHover } from '../../pointer/hover';
 import { PointerButton } from '../../pointer/buttons';
 import type { ResourcePanelController } from '../../../workbench/contrib/resources/panel/controller';
 import { point_in_rect } from '../../../../machine/ts/common/rect';
 import * as constants from '../../../common/constants';
-import { applySearchSelection, ensureSearchSelectionVisible, processInlineFieldPointer } from '../../../workbench/contrib/code_editor/find/search';
+import { applySearchSelection, ensureSearchSelectionVisible, processInlineFieldPointer, searchHover } from '../../../workbench/contrib/code_editor/find/search';
 import { closeLineJump } from '../../../workbench/contrib/code_editor/find/line_jump';
 import { getSearchBarBounds, searchResultEntryHeight, searchVisibleResultCount } from '../../../workbench/common/layout';
 import type { PointerSnapshot } from '../../../common/models';
@@ -35,8 +36,9 @@ export function handleSearchPointer(editorPanes: EditorPanes, sources: RuntimeSo
 		editorSearchState.hoverIndex = -1;
 		return false;
 	}
-	const insideBar = point_in_rect(snapshot.viewportX, snapshot.viewportY, bounds);
+	const insideBar = snapshot.valid && snapshot.insideViewport && point_in_rect(snapshot.viewportX, snapshot.viewportY, bounds);
 	if (!insideBar) {
+		pointerHover.release(searchHover);
 		if (justPressed) {
 			editorSearchState.field.focusTarget.release();
 			editorSearchState.hoverIndex = -1;
@@ -57,6 +59,7 @@ export function handleSearchPointer(editorPanes: EditorPanes, sources: RuntimeSo
 		finishQuickInputPointer();
 		return true;
 	}
+	pointerHover.visit(searchHover);
 	const hoverIndex = resolveSearchHoverIndex(snapshot.viewportY, fieldBottom);
 	editorSearchState.hoverIndex = hoverIndex;
 	if (hoverIndex >= 0 && justPressed) {

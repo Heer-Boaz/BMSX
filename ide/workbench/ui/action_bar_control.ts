@@ -6,13 +6,14 @@ import type { InputFocusService, InputFocusTarget } from '../../input/focus';
 import { consumeIdeKey, isKeyJustPressed, shouldRepeatKeyFromPlayer } from '../../input/keyboard/key_input';
 import { PointerButton } from '../../input/pointer/buttons';
 import type { PointerCaptureService, PointerCaptureTarget } from '../../input/pointer/capture';
+import type { PointerHoverService, PointerHoverTarget } from '../../input/pointer/hover';
 import type { WorkbenchActionBarState } from './action_bar';
 
 const TRIGGER_KEYS = ['Enter', 'NumpadEnter', 'Space'] as const;
 const NAVIGATION_KEYS = ['ArrowLeft', 'ArrowRight', 'Home', 'End'] as const;
 
 /** One composite control; input-owned geometry outlives physical gestures. */
-export class WorkbenchActionBarControl implements PointerCaptureTarget {
+export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerHoverTarget {
 	public readonly focusTarget: InputFocusTarget;
 	private input: WorkbenchActionBarState | undefined;
 	private pointerCommand: EditorCommandId | null = null;
@@ -24,7 +25,7 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget {
 	private readonly cancelPress = () => this.cancelPointer();
 
 	public constructor(private readonly focus: InputFocusService, private readonly capture: PointerCaptureService,
-		private readonly commands: EditorCommandRunner, parent: InputFocusTarget) {
+		private readonly hover: PointerHoverService, private readonly commands: EditorCommandRunner, parent: InputFocusTarget) {
 		this.focusTarget = focus.createTarget(parent);
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
 		this.unbindFocus = this.focusTarget.onDidFocus(() => {
@@ -45,6 +46,7 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget {
 	}
 
 	public clearInput(): void {
+		this.hover.release(this);
 		this.cancelPointer();
 		this.focusTarget.release();
 		this.input = undefined;
@@ -79,11 +81,14 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget {
 		}
 	}
 
+	public onPointerLeave(): void { this.input!.hoveredCommand = null; }
+
 	public handlePointer(snapshot: PointerSnapshot): boolean {
 		const state = this.input!;
 		const index = this.hitTest(snapshot);
 		state.hoveredCommand = index < 0 ? null : state.items[index].command;
-		if (index < 0) return false;
+		if (index < 0) { this.hover.release(this); return false; }
+		this.hover.visit(this);
 		const command = state.items[index].command;
 		if ((snapshot.justPressedButtons & PointerButton.Primary) !== 0 && this.commands.isEnabled(command)) {
 			this.cancelPointer();
@@ -105,6 +110,8 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget {
 		const state = this.input!;
 		const index = this.hitTest(snapshot);
 		state.hoveredCommand = index < 0 ? null : state.items[index].command;
+		if (index < 0) this.hover.release(this);
+		else this.hover.visit(this);
 		state.pressedCommand = state.hoveredCommand === this.pointerCommand ? this.pointerCommand : null;
 	}
 

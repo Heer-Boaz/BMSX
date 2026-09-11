@@ -1,3 +1,4 @@
+import { pointerHover } from '../../../ide/input/pointer/hover';
 import type { PlayerInput } from '../../../hosts/common/input/player';
 import type { PointerSnapshot } from '../../../ide/common/models';
 import { inputFocus } from '../../../ide/input/focus';
@@ -18,7 +19,7 @@ import { EditorTabGroupModel } from '../../../ide/workbench/ui/tab/group_model';
 type GraphFixtureView = { view: WorkbenchGraphViewport; dragSource?: WorkbenchGraphDragSource };
 
 class GraphFixturePane extends EditorPane<CodeEditorInput> {
-	public readonly graph = new WorkbenchGraphControl(inputFocus, pointerCapture);
+	public readonly graph = new WorkbenchGraphControl(inputFocus, pointerCapture, pointerHover);
 	public result = WorkbenchGraphPointerResult.Outside;
 	public constructor(private readonly views: ReadonlyMap<CodeEditorInput, GraphFixtureView>) { super(); }
 	protected activate(): void {

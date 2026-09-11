@@ -1,3 +1,4 @@
+import { PointerHoverService } from '../../../ide/input/pointer/hover';
 import { performance } from 'node:perf_hooks';
 import { Font } from '../../../machine/ts/render/shared/bmsx_font';
 import { HostOverlayQuadStream } from '../../../machine/ts/render/host_overlay/quad_stream';
@@ -32,7 +33,7 @@ const view = new MeasuredViewport(createWorkbenchGraphModel(font, nodes, edges))
 view.layout(8, 24, 376, 240);
 const zoom = process.argv.length > 2 ? Number(process.argv[2]) : 1;
 view.setZoom(zoom);
-const control = new WorkbenchGraphControl(new InputFocusService(), new PointerCaptureService());
+const control = new WorkbenchGraphControl(new InputFocusService(), new PointerCaptureService(), new PointerHoverService());
 control.setInput(view);
 const snapshot = { valid: true, insideViewport: true, pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0, viewportX: 40, viewportY: 50 };
 const { presenter, queue, renderer } = createHostOverlayFixture(384, 288);

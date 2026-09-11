@@ -1,5 +1,3 @@
-import { clearGotoHoverHighlight } from '../../../editor/contrib/intellisense/engine';
-import { clearHoverTooltip } from '../../../editor/contrib/hover/controller';
 import { resetBlink } from '../../../editor/render/caret';
 import { measureText } from '../../../editor/common/text/layout';
 import { editorPointerState } from '../../pointer/state';
@@ -14,8 +12,6 @@ export function activateQuickInputField(resourcePanel: ResourcePanelController):
 
 export function finishQuickInputPointer(): void {
 	editorPointerState.pointerSelecting = false;
-	clearHoverTooltip();
-	clearGotoHoverHighlight();
 }
 
 export function quickInputTextLeft(label: string): number {

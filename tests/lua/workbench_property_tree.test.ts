@@ -1,3 +1,4 @@
+import { PointerHoverService } from '../../ide/input/pointer/hover';
 import { PointerButton } from '../../ide/input/pointer/buttons';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -91,7 +92,7 @@ test('property idle, scrolling, hover and fold reuse topology and text without f
 
 test('property pointer isolates Source activation from folds, held presses, detach and source generations', () => {
 	const f = fixture(2);
-	const pointer = new WorkbenchPropertyTreePointer();
+	const pointer = new WorkbenchPropertyTreePointer(new PointerHoverService());
 	const bounds = f.state.layout;
 	const point = { valid: true, insideViewport: true, pressedButtons: PointerButton.Primary, justPressedButtons: 0, justReleasedButtons: 0, viewportX: bounds.valueLeft + 8, viewportY: bounds.contentTop + bounds.rowHeight + 3 };
 	assert.equal(pointer.handle(f.state, point, true, 10), PointerResult.Selection);
@@ -149,4 +150,22 @@ test('property renderer clips list and footer separately and retains actual over
 	for (let index = 0; index < 100; index += 1) draw();
 	assert.equal(stream.floatData, quads);
 	assert.equal(f.measurements(), measurements);
+});
+
+
+test('property tree hover is routed, releases replaced generations and ends at detach', () => {
+	const hover = new PointerHoverService(), pointer = new WorkbenchPropertyTreePointer(hover);
+	const first = fixture(2), second = fixture(2), bounds = first.state.layout;
+	const point = { valid: true, insideViewport: true, pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0,
+		viewportX: bounds.valueLeft + 8, viewportY: bounds.contentTop + bounds.rowHeight + 3 };
+	hover.beginDispatch(); pointer.handle(first.state, point, false, 0); hover.endDispatch();
+	assert.equal(first.state.hoverIndex, 1);
+	hover.beginDispatch(); pointer.handle(second.state, point, false, 20); hover.endDispatch();
+	assert.equal(first.state.hoverIndex, -1); assert.equal(second.state.hoverIndex, 1);
+	const selection = second.state.selectionIndex;
+	hover.beginDispatch(); hover.endDispatch();
+	assert.equal(second.state.hoverIndex, -1); assert.equal(second.state.selectionIndex, selection);
+	hover.beginDispatch(); pointer.handle(second.state, point, false, 40); hover.endDispatch();
+	pointer.clear(); hover.clear();
+	assert.equal(second.state.hoverIndex, -1);
 });

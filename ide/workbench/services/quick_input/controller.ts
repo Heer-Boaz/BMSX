@@ -1,3 +1,4 @@
+import { pointerHover } from '../../../input/pointer/hover';
 import { PointerButton } from '../../../input/pointer/buttons';
 import { create_rect_bounds, point_in_rect } from '../../../../machine/ts/common/rect';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
@@ -83,6 +84,7 @@ export class QuickInputController {
 	}
 
 	public hide(restoreFocus = true): void {
+		pointerHover.release(this);
 		const session = this.session;
 		if (session === null) return;
 		this.session = null;
@@ -144,8 +146,11 @@ export class QuickInputController {
 		applyInlineFieldEditing(input, this.clipboard, this.field, INPUT_OPTIONS);
 	}
 
+	public onPointerLeave(): void { this.model.list.hoverIndex = -1; }
+
 	public handlePointer(snapshot: PointerSnapshot, justPressed: boolean): void {
 		this.update();
+		if (!snapshot.valid || !snapshot.insideViewport) { pointerHover.release(this); return; }
 		this.model.list.hoverIndex = -1;
 		if (this.field.pointerSelecting || point_in_rect(snapshot.viewportX, snapshot.viewportY, this.layout.field)) {
 			this.pointer.textLeft = this.layout.field.left + 3 - this.textViewport.offset;
@@ -156,6 +161,8 @@ export class QuickInputController {
 			return;
 		}
 		const index = workbenchListRowIndexAtPosition(this.model.list, snapshot.viewportX, snapshot.viewportY);
+		if (index >= 0) pointerHover.visit(this);
+		else pointerHover.release(this);
 		this.model.list.hoverIndex = index;
 		if (!justPressed) return;
 		if (index !== -1) {

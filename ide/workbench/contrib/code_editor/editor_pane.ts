@@ -1,3 +1,6 @@
+import { runtimeErrorOverlayPointer } from '../../../editor/contrib/runtime_error/pointer';
+import { pointerHover } from '../../../input/pointer/hover';
+import { codeAreaHover } from '../../../input/pointer/code/feedback';
 import { handleEditorScrollbarPointer } from '../../../input/pointer/scrollbar';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
@@ -110,6 +113,8 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 	}
 
 	public override clearInput(): void {
+		pointerHover.release(codeAreaHover);
+		pointerHover.release(runtimeErrorOverlayPointer);
 		editorViewState.scrollbarController.cancel();
 		this.unsubscribeContentChange();
 		storeCodeTabContext(this.input.context);

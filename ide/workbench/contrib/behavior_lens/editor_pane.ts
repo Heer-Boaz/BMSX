@@ -1,3 +1,4 @@
+import { pointerHover } from '../../../input/pointer/hover';
 import type { ContextMenuController } from '../../services/context_menu/controller';
 import { WORKBENCH_MENUS, type WorkbenchContextMenuId } from '../../ui/menu/registry';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
@@ -46,11 +47,11 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		return new BehaviorLensNavigationSelection(this.input);
 	}
 
-	private readonly pointer = new BehaviorLensPointer();
-	private readonly properties = new WorkbenchPropertyTreePointer();
-	private readonly graph = new WorkbenchGraphControl(inputFocus, pointerCapture, input => this.handleKeyboard(input), this.focusTarget);
-	public readonly sourceEditReview = new WorkbenchSourceEditReview(inputFocus, pointerCapture, this.graph.focusTarget);
-	public readonly inspector = new WorkbenchPropertyInspector<BehaviorInspectionProperty>(inputFocus, pointerCapture, this.focusTarget);
+	private readonly pointer = new BehaviorLensPointer(pointerHover);
+	private readonly properties = new WorkbenchPropertyTreePointer(pointerHover);
+	private readonly graph = new WorkbenchGraphControl(inputFocus, pointerCapture, pointerHover, input => this.handleKeyboard(input), this.focusTarget);
+	public readonly sourceEditReview = new WorkbenchSourceEditReview(inputFocus, pointerCapture, pointerHover, this.graph.focusTarget);
+	public readonly inspector = new WorkbenchPropertyInspector<BehaviorInspectionProperty>(inputFocus, pointerCapture, pointerHover, this.focusTarget);
 	private readonly actionBar: WorkbenchActionBarControl;
 	private readonly stateMachineDrop: StateMachineRetargetDrop = (selection, target) => {
 		const input = this.input;
@@ -80,7 +81,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		private readonly contextMenu: ContextMenuController,
 	) {
 		super(resourcePanel);
-		this.actionBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, commands, this.focusTarget);
+		this.actionBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget);
 		for (const target of [this.focusTarget, this.graph.focusTarget]) target.registerCommand('behaviorLens.details', {
 			isEnabled: () => this.input.view.selection !== null && !this.sourceEditReview.visible && !this.inspector.visible,
 			run: () => this.openDetails(),
@@ -115,8 +116,8 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 
 	protected override activate(_selection?: EditorTextSelection, navigationSelection?: BehaviorLensNavigationSelection): void {
 		super.activate();
-		this.pointer.cancel();
-		this.properties.cancel();
+		this.pointer.clear();
+		this.properties.clear();
 		this.sourceEditReview.clear();
 		this.inspector.hide();
 		this.graph.clearInput();
@@ -141,6 +142,8 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 	}
 
 	public override dispose(): void {
+		this.pointer.clear();
+		this.properties.clear();
 		this.actionBar.dispose();
 		this.sourceEditReview.dispose();
 		this.inspector.dispose();
@@ -161,11 +164,9 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		this.inspector.hide();
 		this.actionBar.clearInput();
 		this.sourceEditReview.clear();
-		this.pointer.cancel();
-		this.properties.cancel();
+		this.pointer.clear();
+		this.properties.clear();
 		this.graph.clearInput();
-		if (this.input.view.presentation.kind === 'outline') this.input.view.presentation.hoverIndex = -1;
-		else if (this.input.view.presentation.kind === 'properties') this.input.view.presentation.tree.hoverIndex = -1;
 		super.clearInput();
 	}
 

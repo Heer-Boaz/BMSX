@@ -1,3 +1,4 @@
+import { pointerHover, type PointerHoverTarget } from '../../../../input/pointer/hover';
 import type { PlayerInput } from '../../../../../hosts/common/input/player';
 import { point_in_rect } from '../../../../../machine/ts/common/rect';
 import { editorChromeState } from '../../../ui/chrome_state';
@@ -88,17 +89,20 @@ export function handleTabBarMiddleClick(
 	return false;
 }
 
-export function updateTabHoverState(snapshot: PointerSnapshot): void {
+const tabBarHover: PointerHoverTarget = { onPointerLeave: () => { editorChromeState.tabHoverId = null; } };
+
+export function updateTabHoverState(snapshot: PointerSnapshot): boolean {
 	if (!snapshot.valid || !snapshot.insideViewport) {
-		editorChromeState.tabHoverId = null;
-		return;
+		pointerHover.release(tabBarHover);
+		return false;
 	}
 	const x = snapshot.viewportX;
 	const y = snapshot.viewportY;
 	if (!point_in_rect(x, y, editorChromeState.tabBarBounds)) {
-		editorChromeState.tabHoverId = null;
-		return;
+		pointerHover.release(tabBarHover);
+		return false;
 	}
+	pointerHover.visit(tabBarHover);
 	let hovered: EditorTabId | null = null;
 	const tabs = editorTabGroup.tabs;
 	for (let index = 0; index < tabs.length; index += 1) {
@@ -110,4 +114,5 @@ export function updateTabHoverState(snapshot: PointerSnapshot): void {
 		}
 	}
 	editorChromeState.tabHoverId = hovered;
+	return true;
 }

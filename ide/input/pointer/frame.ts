@@ -1,9 +1,7 @@
 import { PointerButton, readEditorPointerButtons } from './buttons';
 import type { PlayerInput } from '../../../hosts/common/input/player';
 import { clearGotoHoverHighlight } from '../../editor/contrib/intellisense/engine';
-import { clearHoverTooltip } from '../../editor/contrib/hover/controller';
 import { mapScreenPointToViewport } from '../../editor/ui/view/view';
-import { updateTabHoverState } from '../../workbench/input/pointer/tab_bar/pointer';
 import { editorChromeState } from '../../workbench/ui/chrome_state';
 import { endTabDrag } from '../../workbench/ui/tab/drag';
 import type { PointerSnapshot } from '../../common/models';
@@ -42,22 +40,17 @@ export function prepareEditorPointerFrame(
 		// An exclusive input surface ends lower gestures; it never suspends a
 		// captured drag to resume later with the popup's release/cancel press.
 		endTabDrag();
-		editorChromeState.tabHoverId = null;
 		editorChromeState.resourcePanelResizing = false;
-	} else {
-		updateTabHoverState(snapshot);
 	}
 	editorPointerState.lastPointerSnapshot = snapshot.valid ? snapshot : null;
 	if (!snapshot.valid || workbenchInputBlocked) {
 		editorViewState.scrollbarController.cancel();
 		editorPointerState.lastPointerRowResolution = null;
-		clearGotoHoverHighlight();
 	} else if (editorViewState.scrollbarController.hasActiveDrag() && (snapshot.pressedButtons & PointerButton.Primary) === 0) {
 		editorViewState.scrollbarController.cancel();
 	} else if (editorViewState.scrollbarController.hasActiveDrag() && ((snapshot.pressedButtons & PointerButton.Primary) !== 0)) {
 		if (editorViewState.scrollbarController.update(snapshot.viewportX, snapshot.viewportY, ((snapshot.pressedButtons & PointerButton.Primary) !== 0))) {
 			editorPointerState.pointerSelecting = false;
-			clearHoverTooltip();
 			return true;
 		}
 	}
@@ -67,7 +60,6 @@ export function prepareEditorPointerFrame(
 		symbolSearchState.field.pointerSelecting = false;
 		lineJumpState.field.pointerSelecting = false;
 		createResourceState.field.pointerSelecting = false;
-		symbolSearchState.hoverIndex = -1;
 	}
 	return false;
 }

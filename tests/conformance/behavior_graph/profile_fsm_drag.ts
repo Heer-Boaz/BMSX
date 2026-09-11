@@ -1,3 +1,4 @@
+import { PointerHoverService } from '../../../ide/input/pointer/hover';
 import assert from 'node:assert/strict';
 import { Worker } from 'node:worker_threads';
 import { resolve } from 'node:path';
@@ -37,7 +38,7 @@ ${Array.from({ length: registrations }, (_, index) => `machines.register('fixtur
 		const graph = view.presentation; assert.ok(graph.kind === 'state-graph');
 		const input = new BehaviorLensInput(model, view, () => new NodeGraphLayoutEngine(new Worker(resolve('ide/node/graph_layout_worker.cjs'))));
 		const focus = new InputFocusService();
-		const review = new WorkbenchSourceEditReview(focus, new PointerCaptureService(), focus.createTarget());
+		const review = new WorkbenchSourceEditReview(focus, new PointerCaptureService(), new PointerHoverService(), focus.createTarget());
 		try {
 			input.updatePresentation(font); await input.graphLayout.settled; input.updatePresentation(font);
 			const viewport = graph.viewport;

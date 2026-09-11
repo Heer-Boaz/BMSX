@@ -1,3 +1,4 @@
+import { PointerHoverService } from '../../../ide/input/pointer/hover';
 import { PointerButton } from '../../../ide/input/pointer/buttons';
 import assert from 'node:assert/strict';
 import { medianMilliseconds } from '../../helpers/performance';
@@ -36,7 +37,7 @@ for (const siblings of [24, 1024]) {
 	const hitTest = viewport.hitTest.bind(viewport);
 	viewport.hitTest = (x, y) => { hits += 1; return hitTest(x, y); };
 	const capture = new PointerCaptureService();
-	const control = new WorkbenchGraphControl(new InputFocusService(), capture);
+	const control = new WorkbenchGraphControl(new InputFocusService(), capture, new PointerHoverService());
 	control.setInput(viewport, { begin: () => { starts += 1; return beginBehaviorTreeDrag(model, state); } });
 	const from = { viewportX: viewport.bounds.left + 20, viewportY: viewport.bounds.top + 34, valid: true, insideViewport: true, pressedButtons: PointerButton.Primary, justPressedButtons: 0, justReleasedButtons: 0 };
 	const to = { ...from, viewportX: second.bounds.right - 4 + viewport.bounds.left - viewport.scrollX };

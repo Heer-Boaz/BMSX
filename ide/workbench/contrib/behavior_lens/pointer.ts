@@ -1,3 +1,4 @@
+import type { PointerHoverService, PointerHoverTarget } from '../../../input/pointer/hover';
 import { PointerButton } from '../../../input/pointer/buttons';
 import * as constants from '../../../common/constants';
 import type { PointerSnapshot } from '../../../common/models';
@@ -14,7 +15,17 @@ export const enum BehaviorLensPointerResult {
 }
 
 /** A pane gesture targets one occurrence in one source generation, not a reusable row key. */
-export class BehaviorLensPointer {
+export class BehaviorLensPointer implements PointerHoverTarget {
+	private hoveredOutline: BehaviorLensOutline | undefined;
+
+	public constructor(private readonly hover: PointerHoverService) {}
+
+	public onPointerLeave(): void {
+		this.hoveredOutline!.hoverIndex = -1;
+		this.hoveredOutline = undefined;
+	}
+
+	public clear(): void { this.hover.release(this); this.cancel(); }
 	private lastClickTimeMs = 0;
 	private lastClickNode: BehaviorSourceNode | null = null;
 
@@ -37,9 +48,12 @@ export class BehaviorLensPointer {
 			&& snapshot.viewportY >= layout.top
 			&& snapshot.viewportY < layout.bottom;
 		if (!inside) {
-			outline.hoverIndex = -1;
+			this.hover.release(this);
 			return BehaviorLensPointerResult.Outside;
 		}
+		if (this.hoveredOutline !== outline) this.hover.release(this);
+		this.hoveredOutline = outline;
+		this.hover.visit(this);
 		const rowIndex = workbenchListRowIndexAtPosition(outline, snapshot.viewportX, snapshot.viewportY);
 		outline.hoverIndex = rowIndex;
 		if ((snapshot.justPressedButtons & PointerButton.Secondary) !== 0) {

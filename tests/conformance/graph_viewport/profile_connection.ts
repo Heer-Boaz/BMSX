@@ -1,3 +1,4 @@
+import { PointerHoverService } from '../../../ide/input/pointer/hover';
 import { PointerButton } from '../../../ide/input/pointer/buttons';
 import assert from 'node:assert/strict';
 import { Font } from '../../../machine/ts/render/shared/bmsx_font';
@@ -25,7 +26,7 @@ for (const nodeCount of [4, 1024]) {
 	for (let i = nodes.length; i < nodeCount; i += 1) nodes.push(createWorkbenchGraphNode(font, `OFFSCREEN ${i}`, 400 + i * 50, 40));
 	f.view.setModel(createWorkbenchGraphModel(font, nodes, f.model.edges), f.edge);
 	const capture = new PointerCaptureService();
-	const control = new WorkbenchGraphControl(new InputFocusService(), capture);
+	const control = new WorkbenchGraphControl(new InputFocusService(), capture, new PointerHoverService());
 	control.setInput(f.view, f.interaction);
 	const from = { valid: true, insideViewport: true, pressedButtons: PointerButton.Primary, justPressedButtons: 0, justReleasedButtons: 0, viewportX: 250, viewportY: 79 };
 	const to = { ...from, viewportX: 256, viewportY: 170 };

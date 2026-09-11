@@ -464,13 +464,16 @@ de oorspronkelijke problemen. Haar opvolging houdt afgeronde correcties bij;
 hier staan alleen resterende contracten. Toets per punt opnieuw de live owner
 en een passende productie-implementatie, vóór featurewerk.
 
+A09 is inmiddels [geland als gedeelde hover-owner](editor_pointer_hover.md), met
+een falende oude Studio-tegenproef en de echte drie-renderer-gate. Dit sluit de
+overige onderstaande UX-/broncontracten niet.
+
 | ID | Eigenaar / contract | Gate |
 | --- | --- | --- |
 | `STUDIO-UX-A05` | Scenario-resultaatinspectie onderscheidt volledige output, berichtidentiteit en optionele bronlocatie. | Lange logs zijn volledig leesbaar; meerdere ActionEffect-bronmatches gebruiken de bestaande keuze-owner. Geen verzonnen bron voor onbekende runtimefeiten. |
 | `STUDIO-UX-A06` | Gedeeld keuzecontrol met provider-eigen matching, zichtbare matches en volledige lijstbediening. | Palette, files en symbols delen relevante UI/lifecycle zonder hun verschillende zoeksemantiek samen te drukken. |
 | `STUDIO-UX-A07` | Workbench-sessionserialization staat los van dirty-working-copybackup. | Herstart herstelt visual inputs, actieve tab en bijdrage-eigen viewstate; geen legacy/compatibility readers. Bouw op de vastgelegde A04/A03-contracten. |
 | `STUDIO-UX-A08` | Onafhankelijke workflowfixtures en gerichte volledige-hostmetingen, naast de bestaande microbenchmarks. | Werkelijke Studio-framekosten en rewind memory/latency per target; fysieke SNES Mini-resultaten niet afleiden uit een PC-run. |
-| `STUDIO-UX-A09` | Gedeelde hover-target/enter/leave-owner in pointerdispatch, los van focus en capture. Aanvullend gereproduceerd tijdens A02. | Hover eindigt bij overstap naar Problems/chrome/popup, canvas-verlaten en detach; geen feature-lokale clears of nep-snapshots. |
 
 ### Aanvullende behavior-review na A04
 

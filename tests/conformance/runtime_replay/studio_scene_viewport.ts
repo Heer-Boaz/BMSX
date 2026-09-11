@@ -8,6 +8,7 @@ import { getProblemsPanelBounds, problemsPanel } from '../../../ide/workbench/co
 import { SceneEditorPane } from '../../../ide/workbench/contrib/scene_editor/editor_pane';
 import { openSceneEditor, selectMember } from './studio_scene_source';
 import { check, type StudioFixture } from './studio_fixture';
+import { testStudioPointerHover } from './studio_pointer_hover';
 
 /** Actual font/layout, divider, focus, captured pointer and source edits on independent Lua. */
 export async function testStudioSceneViewport(test: StudioFixture): Promise<void> {
@@ -53,6 +54,8 @@ export async function testStudioSceneViewport(test: StudioFixture): Promise<void
 		ide.editor.setFontVariant(variant); await frame(); await frame();
 		check(editorChromeState.tabScrollbar.isVisible() && editorViewState.tabBarTotalHeight === editorViewState.tabBarHeight + SCROLLBAR_WIDTH,
 			'A02/A04: overflowing tabs remain one bounded row at either font');
+		if (!problemsPanel.isVisible) await runPaletteCommand('View: Problems Panel');
+		await testStudioPointerHover(test, scene);
 		if (!problemsPanel.isVisible) await runPaletteCommand('View: Problems Panel');
 		const bodyTop = scene.layout.top + (editorViewState.lineHeight + 4) * 2;
 		await resize(bodyTop + 52);

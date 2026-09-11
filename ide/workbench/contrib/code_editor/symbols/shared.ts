@@ -1,3 +1,4 @@
+import { pointerHover, type PointerHoverTarget } from '../../../../input/pointer/hover';
 import { clampQuickInputDisplayOffset } from '../../../../editor/navigation/quick_input_navigation';
 import { resetBlink } from '../../../../editor/render/caret';
 import { setFieldText } from '../../../../editor/ui/inline/text_field';
@@ -5,7 +6,10 @@ import { symbolSearchPageSize } from '../../../common/layout';
 import type { SymbolSearchResult } from '../../../../common/models';
 import { symbolSearchState } from './search/state';
 
+export const symbolSearchHover: PointerHoverTarget = { onPointerLeave: () => { symbolSearchState.hoverIndex = -1; } };
+
 export function closeSymbolSearch(clearQuery: boolean): void {
+	pointerHover.release(symbolSearchHover);
 	if (clearQuery) {
 		applySymbolSearchFieldText('', true);
 	}
@@ -29,6 +33,7 @@ export function focusEditorFromSymbolSearch(): void {
 	}
 	symbolSearchState.field.focusTarget.release();
 	if (symbolSearchState.query.length === 0) {
+		pointerHover.release(symbolSearchHover);
 		symbolSearchState.visible = false;
 		symbolSearchState.matches = [];
 		symbolSearchState.selectionIndex = -1;

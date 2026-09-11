@@ -1,3 +1,4 @@
+import { PointerHoverService } from '../../ide/input/pointer/hover';
 import { rects_intersect } from '../../machine/ts/common/rect';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -24,11 +25,12 @@ function fixture() {
 	view.selection = node;
 	const focus = new InputFocusService();
 	const capture = new PointerCaptureService();
-	const control = new WorkbenchGraphControl(focus, capture);
+	const hover = new PointerHoverService();
+	const control = new WorkbenchGraphControl(focus, capture, hover);
 	control.setInput(view, { connectionEnds: () => 'both', begin: () => assert.fail('viewport navigation cannot begin a source edit') });
 	const pointer: PointerSnapshot = { valid: true, insideViewport: true, viewportX: 55, viewportY: 64,
 		pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0 };
-	return { node, other, edge, model, view, focus, capture, control, pointer };
+	return { node, other, edge, model, view, focus, capture, hover, control, pointer };
 }
 
 test('publication bounds include origin, negative labels, routes and nodes; all viewport movement is bounded and synchronized', () => {
@@ -156,4 +158,20 @@ test('scrollbar track clicks and wheel use the same position; resize removing th
 	f.capture.dispatch(f.pointer, false, 60);
 	assert.equal(f.capture.dispatch(f.pointer, false, 80), false, 'ungrabbable track cannot retain capture');
 	f.control.dispose();
+});
+
+
+test('graph hover leaves when routing moves to another control, retaining selection and capture', () => {
+	const f = fixture();
+	f.pointer.viewportX = f.view.graphToViewportX(f.node.bounds.left + 2);
+	f.pointer.viewportY = f.view.graphToViewportY(f.node.bounds.top + 2);
+	f.hover.beginDispatch(); f.control.handlePointer(f.pointer, 0); f.hover.endDispatch();
+	assert.equal(f.control.hover, f.node);
+	f.view.selection = f.node;
+	f.hover.beginDispatch(); f.hover.endDispatch();
+	assert.equal(f.control.hover, null); assert.equal(f.view.selection, f.node);
+	f.hover.beginDispatch(); f.control.handlePointer(f.pointer, 20); f.hover.endDispatch();
+	assert.equal(f.control.hover, f.node, 'same coordinates re-hit after leave, not a stale hit-test cache');
+	f.control.clearInput(); f.hover.clear();
+	assert.equal(f.control.hover, null);
 });

@@ -6,6 +6,7 @@ import type { EditorCommandId } from '../../../common/commands';
 import type { PointerSnapshot } from '../../../common/models';
 import { truncateMeasuredText, type TextRangeMeasure } from '../../../common/text';
 import type { InputFocusService, InputFocusTarget } from '../../../input/focus';
+import type { PointerHoverService } from '../../../input/pointer/hover';
 import type { PointerCaptureService } from '../../../input/pointer/capture';
 import { consumeIdeKey, isKeyJustPressed, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
 import { createWorkbenchActionBar, layoutWorkbenchActionBar } from '../action_bar';
@@ -32,15 +33,16 @@ export class WorkbenchSourceEditReview {
 	public summary = '';
 	public font: BFont | undefined;
 	private input: SourceEditReview | undefined;
-	private readonly pointer = new WorkbenchPropertyTreePointer();
+	private readonly pointer: WorkbenchPropertyTreePointer;
 	private readonly unbindKeyboard: () => void;
 	private readonly actionControl: WorkbenchActionBarControl;
 	private unbindSource: (() => void) | undefined;
 	private layoutDirty = true;
 
-	public constructor(focus: InputFocusService, capture: PointerCaptureService, parent: InputFocusTarget) {
+	public constructor(focus: InputFocusService, capture: PointerCaptureService, hover: PointerHoverService, parent: InputFocusTarget) {
 		this.focusTarget = focus.createTarget(parent);
-		this.actionControl = new WorkbenchActionBarControl(focus, capture, this, this.focusTarget);
+		this.pointer = new WorkbenchPropertyTreePointer(hover);
+		this.actionControl = new WorkbenchActionBarControl(focus, capture, hover, this, this.focusTarget);
 		this.focusTarget.next = this.actionControl.focusTarget;
 		this.focusTarget.previous = this.actionControl.focusTarget;
 		this.actionControl.focusTarget.next = this.focusTarget;
@@ -77,7 +79,7 @@ export class WorkbenchSourceEditReview {
 		rebuildWorkbenchTreeRows(this.tree, null);
 		this.tree.descriptionLines.length = 0;
 		this.tree.descriptionElement = undefined;
-		this.pointer.cancel();
+		this.pointer.clear();
 		this.focusTarget.release();
 	}
 

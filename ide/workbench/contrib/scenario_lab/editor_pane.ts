@@ -1,3 +1,4 @@
+import { pointerHover } from '../../../input/pointer/hover';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import { ScenarioLabNavigationSelection } from './navigation_selection';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
@@ -44,7 +45,7 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 		private readonly commands: IdeCommandController,
 	) {
 		super(resourcePanel);
-		this.actionBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, commands, this.focusTarget);
+		this.actionBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget);
 		this.focusTarget.next = this.resultsFocus;
 		this.resultsFocus.previous = this.focusTarget;
 		this.resultsFocus.next = this.actionBar.focusTarget;
@@ -66,11 +67,13 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 	}
 
 	public override clearInput(): void {
+		pointerHover.release(this);
 		this.actionBar.clearInput();
 		super.clearInput();
 	}
 
 	public override dispose(): void {
+		pointerHover.release(this);
 		this.actionBar.dispose();
 		this.unbindResultsKeyboard();
 		this.unbindTestsFocus();
@@ -100,6 +103,11 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 		}
 	}
 
+	public onPointerLeave(): void {
+		this.input.view.testPane.hoverIndex = -1;
+		this.input.view.resultPane.hoverIndex = -1;
+	}
+
 	protected override handleViewPointer(
 		snapshot: PointerSnapshot,
 		justPressed: boolean,
@@ -111,7 +119,8 @@ export class ScenarioLabEditorPane extends FullWidthWorkbenchEditorPane<Scenario
 			return true;
 		}
 		const result = handleScenarioLabPointerInput(view, snapshot, justPressed, now);
-		if (result === ScenarioLabPointerResult.Outside) return false;
+		if (result === ScenarioLabPointerResult.Outside) { pointerHover.release(this); return false; }
+		pointerHover.visit(this);
 		if (justPressed) this.focus();
 		if (result === ScenarioLabPointerResult.Activate) this.controller.executeNavigation(view, 'activate');
 		return true;

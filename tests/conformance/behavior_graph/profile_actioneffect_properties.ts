@@ -1,3 +1,4 @@
+import { PointerHoverService } from '../../../ide/input/pointer/hover';
 import assert from 'node:assert/strict';
 import { EditorTextModel } from '../../../ide/editor/model/text_model';
 import { EditorFont } from '../../../ide/editor/ui/view/font';
@@ -45,7 +46,7 @@ for (const requirements of [1, 256, 4096]) {
 		input.updatePresentation(font.renderFont());
 		const roots = properties.tree.roots.slice();
 		const rows = properties.tree.rows;
-		const pointer = new WorkbenchPropertyTreePointer();
+		const pointer = new WorkbenchPropertyTreePointer(new PointerHoverService());
 		const snapshot = { valid: true, insideViewport: true, pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0, viewportX: 200, viewportY: 50 };
 		const { presenter, renderer, queue } = createHostOverlayFixture(384, 288);
 		const stream = new HostOverlayQuadStream();

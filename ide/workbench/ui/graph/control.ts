@@ -7,6 +7,7 @@ import { DOUBLE_CLICK_MAX_INTERVAL_MS, POINTER_DRAG_ACTIVATION_THRESHOLD } from 
 import type { PointerSnapshot } from '../../../common/models';
 import type { InputFocusService, InputFocusTarget } from '../../../input/focus';
 import type { PointerCaptureService, PointerCaptureTarget } from '../../../input/pointer/capture';
+import type { PointerHoverService, PointerHoverTarget } from '../../../input/pointer/hover';
 import { consumeIdeKey, isKeyJustPressed, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
 import type { WorkbenchGraphItem, WorkbenchGraphModel } from './model';
 import { GRAPH_ZOOM_MAX, GRAPH_ZOOM_MIN, GRAPH_ZOOM_STEP, type WorkbenchGraphViewport } from './viewport';
@@ -17,7 +18,7 @@ export const enum WorkbenchGraphPointerResult { Outside, Handled, Selection, Act
 const enum Gesture { None, Pan, Scrollbar, PendingDrag, Drag }
 
 /** Pane-owned control. Input/view state survives detachment; physical gestures do not. */
-export class WorkbenchGraphControl implements PointerCaptureTarget {
+export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHoverTarget {
 	public readonly focusTarget: InputFocusTarget;
 	public hover: WorkbenchGraphItem | null = null;
 	public connectionHandles: WorkbenchGraphConnectionHandles | undefined;
@@ -50,7 +51,7 @@ export class WorkbenchGraphControl implements PointerCaptureTarget {
 	private readonly unbindBlur: () => void;
 
 	public constructor(focus: InputFocusService, private readonly capture: PointerCaptureService,
-		keyboard: (input: PlayerInput) => void = input => this.handleKeyboard(input), parent: InputFocusTarget | null = null) {
+		private readonly pointerHover: PointerHoverService, keyboard: (input: PlayerInput) => void = input => this.handleKeyboard(input), parent: InputFocusTarget | null = null) {
 		this.focusTarget = focus.createTarget(parent);
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => {
 			if (this.gesture !== Gesture.None && isKeyJustPressed('Escape', input)) {
@@ -76,6 +77,7 @@ export class WorkbenchGraphControl implements PointerCaptureTarget {
 	}
 
 	public setInput(input: WorkbenchGraphViewport, dragSource?: WorkbenchGraphDragSource): void {
+		this.pointerHover.release(this);
 		this.cancelPointer();
 		this.inputValue = input;
 		this.pointerModel = input.model;
@@ -85,6 +87,7 @@ export class WorkbenchGraphControl implements PointerCaptureTarget {
 	}
 
 	public clearInput(): void {
+		this.pointerHover.release(this);
 		this.cancelPointer();
 		this.focusTarget.release();
 		this.inputValue = null;
@@ -229,23 +232,28 @@ export class WorkbenchGraphControl implements PointerCaptureTarget {
 		}
 	}
 
+	public onPointerLeave(): void {
+		this.hover = null;
+		this.hoverEnd = undefined;
+		this.hoverValid = false;
+	}
+
 	public handlePointer(snapshot: PointerSnapshot, now: number, panModifier = false): WorkbenchGraphPointerResult {
 		const view = this.inputValue!;
 		this.update();
 		if (!snapshot.valid || !snapshot.insideViewport) {
+			this.pointerHover.release(this);
 			this.cancelPointer();
 			return WorkbenchGraphPointerResult.Outside;
 		}
 		if (!point_in_rect(snapshot.viewportX, snapshot.viewportY, view.canvas)) {
-			this.hover = null;
-			this.hoverValid = false;
+			this.pointerHover.release(this);
 			return WorkbenchGraphPointerResult.Outside;
 		}
 		const primary = (snapshot.justPressedButtons & PointerButton.Primary) !== 0;
 		const auxiliary = (snapshot.justPressedButtons & PointerButton.Auxiliary) !== 0;
 		if (!point_in_rect(snapshot.viewportX, snapshot.viewportY, view.bounds)) {
-			this.hover = null;
-			this.hoverValid = false;
+			this.pointerHover.release(this);
 			if (primary) {
 				const scrollbar = point_in_rect(snapshot.viewportX, snapshot.viewportY, view.horizontalScrollbar.getTrack()) ? view.horizontalScrollbar
 					: point_in_rect(snapshot.viewportX, snapshot.viewportY, view.verticalScrollbar.getTrack()) ? view.verticalScrollbar : undefined;
@@ -261,6 +269,7 @@ export class WorkbenchGraphControl implements PointerCaptureTarget {
 			}
 			return WorkbenchGraphPointerResult.Handled;
 		}
+		this.pointerHover.visit(this);
 		if ((snapshot.justPressedButtons & PointerButton.Secondary) !== 0) {
 			this.cancelPointer();
 			this.focusTarget.focus();
@@ -287,8 +296,7 @@ export class WorkbenchGraphControl implements PointerCaptureTarget {
 		this.pressTarget = view.selection;
 		if (pan || this.hover === null) {
 			this.lastClick = null;
-			this.hover = null;
-			this.hoverValid = false;
+			this.pointerHover.release(this);
 			this.pressConnection = undefined;
 			this.capture.capture(this, auxiliary ? PointerButton.Auxiliary : PointerButton.Primary);
 			this.gesture = Gesture.Pan;

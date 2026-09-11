@@ -1,3 +1,4 @@
+import { PointerHoverService } from '../../ide/input/pointer/hover';
 import { PointerButton } from '../../ide/input/pointer/buttons';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -16,7 +17,7 @@ function fixture() {
 	const f = graphConnectionFixture(font);
 	const focus = new InputFocusService();
 	const capture = new PointerCaptureService();
-	const control = new WorkbenchGraphControl(focus, capture);
+	const control = new WorkbenchGraphControl(focus, capture, new PointerHoverService());
 	f.view.selection = f.edge;
 	control.setInput(f.view, f.interaction);
 	const pointer = (x: number, y: number, pressed = true): PointerSnapshot => ({ valid: true, insideViewport: true, pressedButtons: pressed ? PointerButton.Primary : 0, justPressedButtons: 0, justReleasedButtons: 0,

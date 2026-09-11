@@ -1,3 +1,4 @@
+import type { PointerHoverService, PointerHoverTarget } from '../../input/pointer/hover';
 import { PointerButton } from '../../input/pointer/buttons';
 import { DOUBLE_CLICK_MAX_INTERVAL_MS } from '../../common/constants';
 import type { PointerSnapshot } from '../../common/models';
@@ -8,7 +9,17 @@ import { setWorkbenchTreeCollapsed, workbenchTreeTwistieContainsPosition, type W
 export const enum WorkbenchPropertyPointerResult { Outside, Handled, Selection, Collapse, Activate, ContextMenu }
 
 /** A gesture belongs to one retained tree node. Reprojection and detach cannot transfer a double-click. */
-export class WorkbenchPropertyTreePointer {
+export class WorkbenchPropertyTreePointer implements PointerHoverTarget {
+	private hoveredTree: WorkbenchPropertyTree<WorkbenchPropertyElement> | undefined;
+
+	public constructor(private readonly hover: PointerHoverService) {}
+
+	public onPointerLeave(): void {
+		this.hoveredTree!.hoverIndex = -1;
+		this.hoveredTree = undefined;
+	}
+
+	public clear(): void { this.hover.release(this); this.cancel(); }
 	private lastClickNode: WorkbenchTreeNode<WorkbenchPropertyElement> | null = null;
 	private lastClickTime = 0;
 
@@ -21,9 +32,12 @@ export class WorkbenchPropertyTreePointer {
 		if (!snapshot.valid || !snapshot.insideViewport || snapshot.viewportX < layout.contentLeft || snapshot.viewportX >= layout.contentRight
 			|| snapshot.viewportY < layout.contentTop || snapshot.viewportY >= layout.bottom) {
 			if (justPressed || !snapshot.valid || !snapshot.insideViewport) this.cancel();
-			state.hoverIndex = -1;
+			this.hover.release(this);
 			return WorkbenchPropertyPointerResult.Outside;
 		}
+		if (this.hoveredTree !== state) this.hover.release(this);
+		this.hoveredTree = state;
+		this.hover.visit(this);
 		const index = workbenchListRowIndexAtPosition(state, snapshot.viewportX, snapshot.viewportY);
 		state.hoverIndex = index;
 		if ((snapshot.justPressedButtons & PointerButton.Secondary) !== 0) {

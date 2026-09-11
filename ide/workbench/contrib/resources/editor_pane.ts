@@ -1,3 +1,4 @@
+import { clearRuntimeErrorOverlay } from '../../../editor/contrib/runtime_error/navigation';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import { ResourceViewerNavigationSelection } from './navigation_selection';
 import { handleEditorScrollbarPointer } from '../../../input/pointer/scrollbar';
@@ -31,7 +32,7 @@ export class ResourceViewerEditorPane extends WorkbenchViewEditorPane<ResourceVi
 		closeSearch(false, true);
 		closeLineJump(false);
 		editorCaretState.cursorRevealSuspended = false;
-		runtimeErrorState.activeOverlay = null;
+		clearRuntimeErrorOverlay();
 		runtimeErrorState.executionStopRow = null;
 		navigationSelection?.restore(this.input.resource);
 		clampResourceViewerScroll(

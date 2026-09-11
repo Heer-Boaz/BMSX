@@ -1,3 +1,4 @@
+import { PointerHoverService } from '../../ide/input/pointer/hover';
 import { PointerButton } from '../../ide/input/pointer/buttons';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -203,7 +204,7 @@ test('only a physical press begins a pan; capture can leave the control but cann
 	const { view } = fixture();
 	const focus = new InputFocusService();
 	const capture = new PointerCaptureService();
-	const control = new WorkbenchGraphControl(focus, capture);
+	const control = new WorkbenchGraphControl(focus, capture, new PointerHoverService());
 	control.setInput(view);
 	control.handlePointer({ ...pointer(80, 95, true), justPressedButtons: 0 }, 0);
 	control.handlePointer({ ...pointer(90, 95, true), justPressedButtons: 0 }, 1);
@@ -226,7 +227,7 @@ test('only a physical press begins a pan; capture can leave the control but cann
 test('selection and activation use retained item identity, never coordinates reused by a new model', () => {
 	const { view, a, model } = fixture();
 	const capture = new PointerCaptureService();
-	const control = new WorkbenchGraphControl(new InputFocusService(), capture);
+	const control = new WorkbenchGraphControl(new InputFocusService(), capture, new PointerHoverService());
 	control.setInput(view);
 	assert.equal(control.handlePointer({ ...pointer(22, 22, true), justPressedButtons: PointerButton.Primary }, 0), Result.Selection);
 	assert.equal(view.selection, a);
@@ -245,7 +246,7 @@ test('selection and activation use retained item identity, never coordinates reu
 test('model replacement cancels a pan; empty-space clicks and wheel are bounded to the control', () => {
 	const { view, a, model } = fixture();
 	const capture = new PointerCaptureService();
-	const control = new WorkbenchGraphControl(new InputFocusService(), capture);
+	const control = new WorkbenchGraphControl(new InputFocusService(), capture, new PointerHoverService());
 	control.setInput(view);
 	view.selection = a;
 	assert.equal(control.handlePointer({ ...pointer(10, 10, true), justPressedButtons: PointerButton.Primary }, 0), Result.Outside);
@@ -378,7 +379,7 @@ test('stationary pointer polling reuses the hit result until geometry, viewport 
 	const view = new MeasuredViewport(model);
 	view.layout(20, 20, 120, 100);
 	const capture = new PointerCaptureService();
-	const control = new WorkbenchGraphControl(new InputFocusService(), capture);
+	const control = new WorkbenchGraphControl(new InputFocusService(), capture, new PointerHoverService());
 	control.setInput(view);
 	const position = pointer(22, 22);
 	for (let frame = 0; frame < 100; frame += 1) control.handlePointer({ ...position, justPressedButtons: 0 }, frame);
@@ -400,7 +401,7 @@ function dragFixture() {
 	const f = fixture();
 	const focus = new InputFocusService();
 	const capture = new PointerCaptureService();
-	const control = new WorkbenchGraphControl(focus, capture);
+	const control = new WorkbenchGraphControl(focus, capture, new PointerHoverService());
 	const counts = { starts: 0, overs: 0, drops: 0, current: true };
 	const feedback = { kind: 'node-insertion' as const, source: f.a, marker: { left: 40, top: 10, right: 42, bottom: 30 }, offsetX: 0, offsetY: 0, accepted: false };
 	control.setInput(f.view, { begin: () => {
@@ -560,7 +561,7 @@ test('secondary gestures select the exact node, edge or empty canvas without pan
 	const focus = new InputFocusService();
 	const capture = new PointerCaptureService();
 	let dragCalls = 0;
-	const control = new WorkbenchGraphControl(focus, capture);
+	const control = new WorkbenchGraphControl(focus, capture, new PointerHoverService());
 	control.setInput(view, { begin() { dragCalls += 1; return undefined; } });
 	for (const [x, y, target] of [[21, 21, a], [21, 65, edge], [100, 95, null]] as const) {
 		const event = pointer(x, y);

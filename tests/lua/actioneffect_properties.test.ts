@@ -1,3 +1,4 @@
+import { PointerHoverService } from '../../ide/input/pointer/hover';
 import { PointerButton } from '../../ide/input/pointer/buttons';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -173,7 +174,7 @@ test('property selection and fold preferences survive hidden source edits/Undo o
 		while (f.properties.tree.rows[f.properties.tree.selectionIndex].element.label !== 'PERIOD') f.move('down');
 		const before = f.view.document;
 		const node = f.properties.tree.rows[f.properties.tree.selectionIndex];
-		const pointer = new WorkbenchPropertyTreePointer();
+		const pointer = new WorkbenchPropertyTreePointer(new PointerHoverService());
 		const point = { valid: true, insideViewport: true, pressedButtons: PointerButton.Primary, justPressedButtons: 0, justReleasedButtons: 0, viewportX: 200,
 			viewportY: f.properties.tree.layout.contentTop + (f.properties.tree.selectionIndex - f.properties.tree.scroll) * f.properties.tree.layout.rowHeight + 3 };
 		assert.equal(pointer.handle(f.properties.tree, point, true, 10), WorkbenchPropertyPointerResult.Selection);

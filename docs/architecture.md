@@ -1483,6 +1483,16 @@ cancellation. No gameplay shortcut, ICU word or C++ machine representation is
 changed. The owners, production references and proof boundaries are in
 `graph_navigation_design.md`.
 
+Host pointer hover has a separate routed-path owner in
+`ide/input/pointer/hover.ts`. Accepted control hits mark the current dispatch;
+unvisited controls receive leave even when capture, chrome or a popup stops
+ordinary pane dispatch. Controls release before input detach, and IDE hide or
+shutdown clears hover without requiring another frame. This does not clear
+keyboard selection or cancel a drag. Source tooltip/link feedback and error
+overlays obey the same route. See `editor_pointer_hover.md` for the Qt Quick
+reference, lifetimes and actual Studio gates; no guest/runtime representation
+is involved.
+
 FSM source structure and possible transition-return facts belong to the IDE
 contribution, once per source generation. They refer to those same authored
 occurrences, not a second runtime graph. The cartlib path grammar's tooling
