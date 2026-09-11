@@ -27,11 +27,11 @@ void drawVerticesGLES2(HostOverlayGLES2State& pipeline, const float (&vertices)[
 	glDrawArrays(GL_TRIANGLES, 0, 6);
 }
 
-void drawQuadGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& pipeline, TextureHandle texture, i32 x, i32 y, i32 w, i32 h, f32 u0, f32 v0, f32 u1, f32 v1, u32 color) {
-	const float left = static_cast<float>(x);
-	const float top = static_cast<float>(y);
-	const float right = static_cast<float>(x + w);
-	const float bottom = static_cast<float>(y + h);
+void drawQuadGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& pipeline, TextureHandle texture, f32 x, f32 y, f32 w, f32 h, f32 u0, f32 v0, f32 u1, f32 v1, u32 color) {
+	const float left = x;
+	const float top = y;
+	const float right = x + w;
+	const float bottom = y + h;
 	const float vertices[24] = {
 		left, top, u0, v0,
 		left, bottom, u0, v1,
@@ -52,10 +52,11 @@ void drawQuadGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& pipeline, T
 }
 
 void drawRectGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& pipeline, const RectRenderSubmission& command) {
-	const i32 left = static_cast<i32>(command.area.left);
-	const i32 top = static_cast<i32>(command.area.top);
-	const i32 width = static_cast<i32>(command.area.right - command.area.left);
-	const i32 height = static_cast<i32>(command.area.bottom - command.area.top);
+	const auto& transform = pipeline.transform;
+	const f32 left = command.area.left * transform.scale + transform.offsetX;
+	const f32 top = command.area.top * transform.scale + transform.offsetY;
+	const f32 width = (command.area.right - command.area.left) * transform.scale;
+	const f32 height = (command.area.bottom - command.area.top) * transform.scale;
 	if (command.kind == RectRenderKind::Fill) {
 		drawQuadGLES2(backend, pipeline, pipeline.whiteTexture, left, top, width, height, 0.0f, 0.0f, 1.0f, 1.0f, command.color);
 		return;
@@ -97,13 +98,16 @@ void drawLineGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& pipeline, f
 }
 
 void drawPolyGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& pipeline, const PolyRenderSubmission& command) {
+	const auto& transform = pipeline.transform;
 	for (size_t index = 0; index + 3u < command.points.size(); index += 2u) {
-		drawLineGLES2(backend, pipeline, command.points[index], command.points[index + 1u], command.points[index + 2u], command.points[index + 3u], command.color, command.thickness);
+		drawLineGLES2(backend, pipeline, command.points[index] * transform.scale + transform.offsetX, command.points[index + 1u] * transform.scale + transform.offsetY,
+			command.points[index + 2u] * transform.scale + transform.offsetX, command.points[index + 3u] * transform.scale + transform.offsetY, command.color, command.thickness);
 	}
 }
 
 void drawHostAtlasImageGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& pipeline, std::string_view imgid, f32 x, f32 y, f32 scaleX, f32 scaleY, const FlipOptions& flip, u32 color) {
 	const HostSystemAtlasImage& source = hostSystemAtlasImage(imgid);
+	const auto& transform = pipeline.transform;
 	f32 u0 = static_cast<f32>(source.u) / static_cast<f32>(HOST_SYSTEM_ATLAS.width);
 	f32 v0 = static_cast<f32>(source.v) / static_cast<f32>(HOST_SYSTEM_ATLAS.height);
 	f32 u1 = static_cast<f32>(source.u + source.w) / static_cast<f32>(HOST_SYSTEM_ATLAS.width);
@@ -122,10 +126,10 @@ void drawHostAtlasImageGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& p
 		backend,
 		pipeline,
 		pipeline.hostAtlasTexture,
-		static_cast<i32>(x),
-		static_cast<i32>(y),
-		static_cast<i32>(static_cast<f32>(source.width) * scaleX),
-		static_cast<i32>(static_cast<f32>(source.height) * scaleY),
+		x * transform.scale + transform.offsetX,
+		y * transform.scale + transform.offsetY,
+		static_cast<f32>(source.width) * scaleX * transform.scale,
+		static_cast<f32>(source.height) * scaleY * transform.scale,
 		u0,
 		v0,
 		u1,
@@ -136,16 +140,17 @@ void drawHostAtlasImageGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& p
 
 void drawGlyphImageGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& pipeline, const FontGlyph& item, f32 imageX, f32 imageY, u32 color) {
 	const ImageAtlasRect& rect = item.rect;
+	const auto& transform = pipeline.transform;
 	const f32 atlasWidth = static_cast<f32>(HOST_SYSTEM_ATLAS.width);
 	const f32 atlasHeight = static_cast<f32>(HOST_SYSTEM_ATLAS.height);
 	drawQuadGLES2(
 		backend,
 		pipeline,
 		pipeline.hostAtlasTexture,
-		static_cast<i32>(imageX),
-		static_cast<i32>(imageY),
-		static_cast<i32>(rect.w),
-		static_cast<i32>(rect.h),
+		imageX * transform.scale + transform.offsetX,
+		imageY * transform.scale + transform.offsetY,
+		static_cast<f32>(item.width) * transform.scale,
+		static_cast<f32>(item.height) * transform.scale,
 		static_cast<f32>(rect.u) / atlasWidth,
 		static_cast<f32>(rect.v) / atlasHeight,
 		static_cast<f32>(rect.u + rect.w) / atlasWidth,
@@ -167,14 +172,15 @@ void drawGlyphBackgroundGLES2(
 	f32 imageX,
 	f32 imageY
 ) {
+	const auto& transform = context.pipeline.transform;
 	drawQuadGLES2(
 		context.backend,
 		context.pipeline,
 		context.pipeline.whiteTexture,
-		static_cast<i32>(imageX),
-		static_cast<i32>(imageY),
-		item.advance,
-		context.lineHeight,
+		imageX * transform.scale + transform.offsetX,
+		imageY * transform.scale + transform.offsetY,
+		static_cast<f32>(item.advance) * transform.scale,
+		static_cast<f32>(context.lineHeight) * transform.scale,
 		0.0f,
 		0.0f,
 		1.0f,
@@ -236,6 +242,7 @@ void shutdownHostOverlayGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& 
 }
 
 void beginHostOverlayGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& pipeline, const Host2DPipelineState& state) {
+	pipeline.transform = IDENTITY_HOST_OVERLAY_TRANSFORM;
 	backend.setRenderTarget(backend.backbuffer(), state.width, state.height);
 	glViewport(0, 0, state.width, state.height);
 	pipeline.targetHeight = state.height;
@@ -252,6 +259,7 @@ void beginHostOverlayGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& pip
 
 void renderHost2DEntryGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& pipeline, Host2DKind kind, Host2DRef ref) {
 	switch (kind) {
+		case Host2DKind::Transform: pipeline.transform = *ref.transform; return;
 		case Host2DKind::Clip: {
 			auto& clip = pipeline.clip;
 			clip.set(*ref.clip);

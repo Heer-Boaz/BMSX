@@ -30,6 +30,8 @@ for (let index = 1; index < nodes.length; index += 1) {
 const coldMilliseconds = performance.now() - coldStart;
 const view = new MeasuredViewport(createWorkbenchGraphModel(font, nodes, edges));
 view.layout(8, 24, 376, 240);
+const zoom = process.argv.length > 2 ? Number(process.argv[2]) : 1;
+view.setZoom(zoom);
 const control = new WorkbenchGraphControl(new InputFocusService(), new PointerCaptureService());
 control.setInput(view);
 const snapshot = { valid: true, insideViewport: true, pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0, viewportX: 40, viewportY: 50 };
@@ -60,7 +62,7 @@ for (let index = 0; index < frames; index += 1) {
 	draw();
 }
 const panMicroseconds = (performance.now() - panStart) * 1000 / frames;
-console.log(JSON.stringify({ nodes: nodes.length, edges: edges.length, framesPerPhase: frames, coldMilliseconds,
+console.log(JSON.stringify({ nodes: nodes.length, edges: edges.length, zoom, framesPerPhase: frames, coldMilliseconds,
 	idleMicroseconds, panMicroseconds, stationaryHitTests, warmFontMeasurements: font.measures - measures,
 	retainedQuadStorage: stream.floatData === storage, finalVisibleQuads: stream.count,
 	boundary: 'host canvas command emission + quad stream; excludes Lua projection and GPU rasterization' }, null, 2));

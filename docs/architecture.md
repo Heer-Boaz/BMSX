@@ -4620,6 +4620,17 @@ software bounds its fill/atlas loops before rasterization. Scissor does not
 persist into the next pass. Clipping does not change geometry, glyph advances
 or image UVs, and does not add a guest register or GX command.
 
+`Host2DKind.Transform` is an ordered host-only uniform draw transform:
+`scale`, `offsetX`, `offsetY`, mirrored as number/f32 in TypeScript/C++.
+Each pass starts at identity. The producer snapshots composed nested scopes;
+clips are transformed before intersection into final logical viewport bounds.
+Backends transform positions, glyph advances/extents and image dimensions at
+their draw datapaths; atlas UVs and font objects remain unchanged. Stroke widths
+remain logical screen pixels. Geometry stays floating until the software raster
+boundary or GPU rasterizer. Graph zoom therefore uses the same model/view
+conversion for paint, hits and navigation, without a guest opcode, VRAM page,
+scaled-font copy or a second layout. See [the representation and evidence](graph_zoom_design.md).
+
 The platform atlas producer is the sole owner of the host-UI atlas layout. It
 emits the RGBA bytes and the image descriptors as native generated data for
 both runtimes. The shared descriptor order is `width`, `height`, `pixels`,

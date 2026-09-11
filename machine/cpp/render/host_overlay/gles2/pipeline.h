@@ -4,6 +4,7 @@
 #include "render/host_overlay/pipeline.h"
 #include "render/host_overlay/commands.h"
 #include "render/host_overlay/clip.h"
+#include "render/host_overlay/transform.h"
 
 #if BMSX_ENABLE_GLES2
 #include "render/backend/gles2/backend.h"
@@ -14,6 +15,7 @@ namespace bmsx {
 #if BMSX_ENABLE_GLES2
 struct HostOverlayGLES2State {
 	HostOverlayClipState clip;
+	HostOverlayTransform transform;
 	i32 targetHeight = 0;
 	u32 generation = 0u;
 	GLuint program = 0;

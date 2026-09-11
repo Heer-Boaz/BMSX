@@ -1,3 +1,4 @@
+import { rects_intersect } from '../../machine/ts/common/rect';
 import { layoutBehaviorTreeGraph } from '../../ide/workbench/contrib/behavior_lens/graph_geometry';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -146,7 +147,7 @@ test('concrete graph retains layout, source-backed edge selection and its screen
 	viewport.pan(1000, 1000);
 	executeBehaviorLensNavigation(view, 'home');
 	finishBehaviorLensNavigation(view);
-	assert.ok(viewport.intersects(viewport.model.nodes[0].bounds, 0), 'Home reveals an already selected root after panning');
+	assert.ok(rects_intersect(viewport.model.nodes[0].bounds, viewport.visibleBounds), 'Home reveals an already selected root after panning');
 });
 
 test('a weighted connection owns the choice use, not the shared choice initializer or its child use', () => {

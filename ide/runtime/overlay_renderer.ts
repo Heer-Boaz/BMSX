@@ -1,6 +1,7 @@
 import type { BFont } from '../../machine/ts/render/shared/bitmap_font';
 import { Host2DKind, type Host2DRef } from '../../machine/ts/render/host_overlay/commands';
 import type { HostOverlayClipRect } from '../../machine/ts/render/host_overlay/clip';
+import { IDENTITY_HOST_OVERLAY_TRANSFORM, type HostOverlayTransform } from '../../machine/ts/render/host_overlay/transform';
 import {
 	RectRenderKind,
 	type GlyphRenderSubmission,
@@ -26,6 +27,10 @@ type OverlayCommandBuffer = {
 	clipPool: HostOverlayClipRect[];
 	clipStack: HostOverlayClipRect[];
 	fullClip: HostOverlayClipRect;
+	transformPool: HostOverlayTransform[];
+	transformStack: Readonly<HostOverlayTransform>[];
+	transformCount: number;
+	transformDepth: number;
 	rectCount: number;
 	imageCount: number;
 	itemCount: number;
@@ -94,6 +99,10 @@ function createOverlayCommandBuffer(): OverlayCommandBuffer {
 		clipPool: [],
 		clipStack: [fullClip],
 		fullClip,
+		transformPool: [],
+		transformStack: [IDENTITY_HOST_OVERLAY_TRANSFORM],
+		transformCount: 0,
+		transformDepth: 1,
 		rectCount: 0,
 		imageCount: 0,
 		itemCount: 0,
@@ -147,6 +156,8 @@ export class OverlayRenderer {
 		buffer.polyCount = 0;
 		buffer.clipCount = 0;
 		buffer.clipDepth = 1;
+		buffer.transformCount = 0;
+		buffer.transformDepth = 1;
 		const logical = presenter.viewportSize;
 		this.frameLogicalWidth = logical.x;
 		this.frameLogicalHeight = logical.y;
@@ -156,6 +167,11 @@ export class OverlayRenderer {
 
 	public pushClipRect(left: number, top: number, right: number, bottom: number): void {
 		const buffer = this.activeBuffer;
+		const transform = buffer.transformStack[buffer.transformDepth - 1];
+		left = left * transform.scale + transform.offsetX;
+		top = top * transform.scale + transform.offsetY;
+		right = right * transform.scale + transform.offsetX;
+		bottom = bottom * transform.scale + transform.offsetY;
 		const parent = buffer.clipStack[buffer.clipDepth - 1];
 		let clip = buffer.clipPool[buffer.clipCount];
 		if (clip === undefined) {
@@ -175,6 +191,29 @@ export class OverlayRenderer {
 		const buffer = this.activeBuffer;
 		buffer.clipDepth -= 1;
 		this.queueCommand(Host2DKind.Clip, buffer.clipStack[buffer.clipDepth - 1]);
+	}
+
+	/** Snapshot a composed drawing scope; previously submitted commands never alias its next use. */
+	public pushTransform(transform: Readonly<HostOverlayTransform>): void {
+		const buffer = this.activeBuffer;
+		const parent = buffer.transformStack[buffer.transformDepth - 1];
+		let composed = buffer.transformPool[buffer.transformCount];
+		if (composed === undefined) {
+			composed = { scale: 1, offsetX: 0, offsetY: 0 };
+			buffer.transformPool.push(composed);
+		}
+		buffer.transformCount += 1;
+		composed.scale = transform.scale * parent.scale;
+		composed.offsetX = transform.offsetX * parent.scale + parent.offsetX;
+		composed.offsetY = transform.offsetY * parent.scale + parent.offsetY;
+		buffer.transformStack[buffer.transformDepth++] = composed;
+		this.queueCommand(Host2DKind.Transform, composed);
+	}
+
+	public popTransform(): void {
+		const buffer = this.activeBuffer;
+		buffer.transformDepth -= 1;
+		this.queueCommand(Host2DKind.Transform, buffer.transformStack[buffer.transformDepth - 1]);
 	}
 
 	/** Translates a retained route into the published buffer, never mutating the source geometry. */

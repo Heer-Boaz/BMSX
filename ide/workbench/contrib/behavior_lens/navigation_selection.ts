@@ -15,6 +15,7 @@ export class BehaviorLensNavigationSelection extends EditorPaneSelection {
 	public readonly selectedGroup: BehaviorLensEffectProperties['selectedGroup'];
 	public readonly scrollX: number;
 	public readonly scrollY: number;
+	public readonly zoom: number;
 
 	public constructor(input: BehaviorLensInput) {
 		super();
@@ -27,7 +28,9 @@ export class BehaviorLensNavigationSelection extends EditorPaneSelection {
 			const position = presentation.position;
 			this.scrollX = position === 'initial' || position === 'preserve' ? presentation.viewport.scrollX : position.scrollX;
 			this.scrollY = position === 'initial' || position === 'preserve' ? presentation.viewport.scrollY : position.scrollY;
+			this.zoom = position === 'initial' || position === 'preserve' ? presentation.viewport.zoom : position.zoom;
 		} else {
+			this.zoom = 1;
 			this.scrollX = 0;
 			this.scrollY = presentation.kind === 'outline' ? presentation.scroll : presentation.tree.scroll;
 			for (const rowKey of presentation.collapsedRowKeys) this.collapsed.push(captureBehaviorSourceBookmark(view, { kind: 'node', rowKey }));
@@ -75,7 +78,7 @@ export class BehaviorLensNavigationSelection extends EditorPaneSelection {
 				presentation.dirty = true;
 			}
 		} else {
-			presentation.position = { scrollX: this.scrollX, scrollY: this.scrollY };
+			presentation.position = { scrollX: this.scrollX, scrollY: this.scrollY, zoom: this.zoom };
 			const viewport = presentation.viewport;
 			if (presentation.kind === 'state-graph') viewport.selection = stateGraphSelection(presentation.viewport.model, view.selection);
 			else {

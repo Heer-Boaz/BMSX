@@ -11,6 +11,9 @@ export type EditorCommandPresentation = {
 export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	Record<EditorCommandId, EditorCommandPresentation>
 > = {
+	'graph.zoomIn': { category: 'Graph', title: 'Zoom In', shortTitle: '+' },
+	'graph.zoomOut': { category: 'Graph', title: 'Zoom Out', shortTitle: '-' },
+	'graph.resetZoom': { category: 'Graph', title: 'Reset Zoom (100%)', shortTitle: '1:1' },
 	'propertyInspector.source': { category: 'Inspect', title: 'Open Property Source', shortTitle: 'Source' },
 	'propertyInspector.close': { category: 'Inspect', title: 'Close Property Details', shortTitle: 'Back' },
 	'sourceEditReview.apply': { category: 'Review', title: 'Apply Source Edit', shortTitle: 'Apply' },

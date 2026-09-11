@@ -81,7 +81,7 @@ export async function testStudioBtRemove(test: StudioFixture): Promise<void> {
 		check(model.version === version && viewport.selection === children()[1], 'A01: cancelled Remove preserves exact source/selection');
 	}
 	await press('Tab'); await press('End');
-	check(graph.actionBar.items[graph.actionBar.focusedIndex].command === remove, 'A01: End reaches enabled Remove');
+	check(graph.actionBar.items[graph.actionBar.focusedIndex].command === 'graph.zoomIn', 'A01: End reaches the last enabled title action, including graph zoom');
 	await press('ControlLeft', 'ShiftLeft', 'KeyP');
 	check(ide.editor.quickInput.model.list.rows.some(row => row.item.label === 'Behavior Lens: Remove BT Child'),
 		'A01: palette invoked from toolbar resolves the graph owner');

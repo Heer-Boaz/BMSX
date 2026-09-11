@@ -19,7 +19,7 @@ export function prepareBehaviorGraphLayout(state: BehaviorLensViewState, graph: 
 			if (next === undefined) state.selection = null;
 			else {
 				viewport.selection = next;
-				if (selected !== null && graph.position === 'preserve') viewport.pan(next.bounds.left - selected.bounds.left, next.bounds.top - selected.bounds.top);
+				if (selected !== null && graph.position === 'preserve') viewport.pan((next.bounds.left - selected.bounds.left) * viewport.zoom, (next.bounds.top - selected.bounds.top) * viewport.zoom);
 			}
 		}
 		graph.dirty = false;
@@ -28,6 +28,7 @@ export function prepareBehaviorGraphLayout(state: BehaviorLensViewState, graph: 
 		viewport.scrollX = -Math.round((viewport.bounds.right - viewport.bounds.left) / 2);
 		viewport.scrollY = -8;
 	} else if (graph.position !== 'preserve') {
+		viewport.setZoom(graph.position.zoom);
 		viewport.scrollX = graph.position.scrollX;
 		viewport.scrollY = graph.position.scrollY;
 	}

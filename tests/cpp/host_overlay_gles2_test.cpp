@@ -42,28 +42,52 @@ int main() {
 		const HostOverlayClipRect empty{20, 10, 20, 30};
 		std::vector<u32> reference(64 * 48);
 		std::vector<u32> clipped(64 * 48);
-		for (size_t index = 0; index < fixture.kinds.size(); ++index) {
-			for (const HostOverlayClipRect* bounds : {&full, &clip, &empty}) {
-				beginHostOverlayGLES2(backend, pipeline, state);
-				glClearColor(0, 0, 0, 0);
-				glClear(GL_COLOR_BUFFER_BIT);
-				renderHost2DEntryGLES2(backend, pipeline, Host2DKind::Clip, {.clip = bounds});
-				renderHost2DEntryGLES2(backend, pipeline, fixture.kinds[index], fixture.refs[index]);
-				glReadPixels(0, 0, 64, 48, GL_RGBA, GL_UNSIGNED_BYTE, bounds == &full ? reference.data() : clipped.data());
-				endHostOverlayGLES2(backend, pipeline);
-				require(glGetError() == GL_NO_ERROR, "GLES2 host overlay graphics error");
-				require(glIsEnabled(GL_SCISSOR_TEST) == GL_FALSE, "host overlay must release scissor state at pass end");
-				if (bounds == &full) continue;
-				int lit = 0;
-				for (int y = 0; y < 48; ++y) {
-					for (int x = 0; x < 64; ++x) {
-						const bool inside = x >= bounds->left && x < bounds->right && y >= bounds->top && y < bounds->bottom;
-						const size_t offset = static_cast<size_t>((47 - y) * 64 + x);
-						require(clipped[offset] == (inside ? reference[offset] : 0), "GLES2 clipping must crop the original raster");
-						lit += clipped[offset] != 0;
+		for (const HostOverlayTransform transform : {IDENTITY_HOST_OVERLAY_TRANSFORM, HostOverlayTransform{0.5F, 3, 2}, HostOverlayTransform{2, 3, 2}}) {
+			for (size_t index = 0; index < fixture.kinds.size(); ++index) {
+				for (const HostOverlayClipRect* bounds : {&full, &clip, &empty}) {
+					beginHostOverlayGLES2(backend, pipeline, state);
+					renderHost2DEntryGLES2(backend, pipeline, Host2DKind::Transform, {.transform = &transform});
+					glClearColor(0, 0, 0, 0);
+					glClear(GL_COLOR_BUFFER_BIT);
+					renderHost2DEntryGLES2(backend, pipeline, Host2DKind::Clip, {.clip = bounds});
+					renderHost2DEntryGLES2(backend, pipeline, fixture.kinds[index], fixture.refs[index]);
+					glReadPixels(0, 0, 64, 48, GL_RGBA, GL_UNSIGNED_BYTE, bounds == &full ? reference.data() : clipped.data());
+					endHostOverlayGLES2(backend, pipeline);
+					require(glGetError() == GL_NO_ERROR, "GLES2 host overlay graphics error");
+					require(glIsEnabled(GL_SCISSOR_TEST) == GL_FALSE, "host overlay must release scissor state at pass end");
+					if (bounds == &full) continue;
+					int lit = 0;
+					for (int y = 0; y < 48; ++y) {
+						for (int x = 0; x < 64; ++x) {
+							const bool inside = x >= bounds->left && x < bounds->right && y >= bounds->top && y < bounds->bottom;
+							const size_t offset = static_cast<size_t>((47 - y) * 64 + x);
+							require(clipped[offset] == (inside ? reference[offset] : 0), "GLES2 clipping must crop the original raster");
+							lit += clipped[offset] != 0;
+						}
 					}
+					require(bounds == &empty ? lit == 0 : lit > 0, "fixture must test both partial pixels and empty scissor");
 				}
-				require(bounds == &empty ? lit == 0 : lit > 0, "fixture must test both partial pixels and empty scissor");
+			}
+		}
+		fixture.glyphs.x = 2;
+		fixture.glyphs.y = 3;
+		fixture.glyphs.items = {"A\tB\nC"};
+		fixture.glyphs.item_end = 5;
+		const HostOverlayTransform doubled{2, 0, 0};
+		for (const HostOverlayTransform* transform : {&IDENTITY_HOST_OVERLAY_TRANSFORM, &doubled}) {
+			beginHostOverlayGLES2(backend, pipeline, state);
+			require(pipeline.transform.scale == 1 && pipeline.transform.offsetX == 0, "new GLES2 pass resets transform");
+			glClearColor(0, 0, 0, 0);
+			glClear(GL_COLOR_BUFFER_BIT);
+			renderHost2DEntryGLES2(backend, pipeline, Host2DKind::Transform, {.transform = transform});
+			renderHost2DEntryGLES2(backend, pipeline, Host2DKind::Glyphs, {.glyphs = &fixture.glyphs});
+			glReadPixels(0, 0, 64, 48, GL_RGBA, GL_UNSIGNED_BYTE, transform == &doubled ? clipped.data() : reference.data());
+			endHostOverlayGLES2(backend, pipeline);
+			require(glGetError() == GL_NO_ERROR, "GLES2 transformed glyph graphics error");
+		}
+		for (int y = 0; y < 48; ++y) {
+			for (int x = 0; x < 64; ++x) {
+				require(clipped[(47 - y) * 64 + x] == reference[(47 - y / 2) * 64 + x / 2], "GLES2 2x glyphs must reproduce each texel including tabs, newlines and backgrounds");
 			}
 		}
 		// Logical layout does not own the backbuffer dimensions or GL's Y origin.

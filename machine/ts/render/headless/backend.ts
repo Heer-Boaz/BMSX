@@ -20,6 +20,7 @@ import { captureGxGpuVramSnapshot, executeGxGpuSoftwareVramCommands } from '../b
 import { GxGpuSoftwareState } from '../backend/software/gx_gpu_state';
 import type { GxGpu } from '../../machine/devices/gx/gpu';
 import type { HeadlessHost2DContext } from './host_2d';
+import { IDENTITY_HOST_OVERLAY_TRANSFORM } from '../host_overlay/transform';
 import { HostOverlayClipState } from '../host_overlay/clip';
 
 export interface HeadlessPresentedFrame {
@@ -129,6 +130,7 @@ export class HeadlessGPUBackend implements GPUBackend {
 	};
 	private presentedFrameCount = 0;
 	public readonly hostOverlayContext: HeadlessHost2DContext = {
+		transform: IDENTITY_HOST_OVERLAY_TRANSFORM,
 		target: this.framebufferPixels,
 		width: 0,
 		colorValue: 0,

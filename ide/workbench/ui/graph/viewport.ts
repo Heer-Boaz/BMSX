@@ -3,8 +3,12 @@ import { Scrollbar } from '../scrollbar';
 import { create_rect_bounds, point_in_rect, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import { clamp } from '../../../../machine/ts/common/clamp';
 import type { WorkbenchGraphItem, WorkbenchGraphModel } from './model';
+import type { HostOverlayTransform } from '../../../../machine/ts/render/host_overlay/transform';
 
 export const GRAPH_EDGE_HIT_RADIUS = 3;
+export const GRAPH_ZOOM_MIN = 0.25;
+export const GRAPH_ZOOM_MAX = 4;
+export const GRAPH_ZOOM_STEP = 1.2;
 const REVEAL_MARGIN = 6;
 
 type GraphItem<Model extends WorkbenchGraphModel> = Model['nodes'][number] | Model['edges'][number];
@@ -21,6 +25,9 @@ export class WorkbenchGraphViewport<Model extends WorkbenchGraphModel = Workbenc
 	private readonly horizontalTrack = create_rect_bounds();
 	private readonly verticalTrack = create_rect_bounds();
 	public selection: GraphItem<Model> | null = null;
+	private zoomValue = 1;
+	private readonly drawTransform: HostOverlayTransform = { scale: 1, offsetX: 0, offsetY: 0 };
+	private readonly visibleGraphBounds = create_rect_bounds();
 
 	public constructor(public model: Model) {
 		this.updateScrollBounds();
@@ -30,6 +37,41 @@ export class WorkbenchGraphViewport<Model extends WorkbenchGraphModel = Workbenc
 	public set scrollX(value: number) { this.horizontalScrollbar.setScroll(value); }
 	public get scrollY(): number { return this.verticalScrollbar.getScroll(); }
 	public set scrollY(value: number) { this.verticalScrollbar.setScroll(value); }
+	public get zoom(): number { return this.zoomValue; }
+
+	/** Scrollbars own pixel offsets; the graph, its labels and its routes stay in layout coordinates. */
+	public get transform(): Readonly<HostOverlayTransform> {
+		this.drawTransform.scale = this.zoomValue;
+		this.drawTransform.offsetX = this.bounds.left - this.scrollX;
+		this.drawTransform.offsetY = this.bounds.top - this.scrollY;
+		return this.drawTransform;
+	}
+
+	public graphToViewportX(x: number): number { return x * this.zoomValue + this.bounds.left - this.scrollX; }
+	public graphToViewportY(y: number): number { return y * this.zoomValue + this.bounds.top - this.scrollY; }
+	public viewportToGraphX(x: number): number { return (x - this.bounds.left + this.scrollX) / this.zoomValue; }
+	public viewportToGraphY(y: number): number { return (y - this.bounds.top + this.scrollY) / this.zoomValue; }
+
+	/** Capture once for a draw/traversal, rather than repeating inverse transforms for every item. */
+	public get visibleBounds(): RectBounds {
+		const x = this.scrollX / this.zoomValue, y = this.scrollY / this.zoomValue;
+		write_rect_bounds(this.visibleGraphBounds, x, y,
+			x + (this.bounds.right - this.bounds.left) / this.zoomValue,
+			y + (this.bounds.bottom - this.bounds.top) / this.zoomValue);
+		return this.visibleGraphBounds;
+	}
+
+	/** Godot GraphEdit's inverse-anchor -> scale -> scroll sequence; never relayout or auto-fit. */
+	public setZoom(value: number, anchorX = (this.bounds.left + this.bounds.right) / 2, anchorY = (this.bounds.top + this.bounds.bottom) / 2): void {
+		const zoom = clamp(value, GRAPH_ZOOM_MIN, GRAPH_ZOOM_MAX);
+		if (zoom === this.zoomValue) return;
+		const x = this.viewportToGraphX(anchorX);
+		const y = this.viewportToGraphY(anchorY);
+		this.zoomValue = zoom;
+		this.updateScrollBounds();
+		this.scrollX = x * zoom - anchorX + this.bounds.left;
+		this.scrollY = y * zoom - anchorY + this.bounds.top;
+	}
 
 	/** The domain owner supplies the proven correspondence, or no selection. */
 	public setModel(model: Model, selection: GraphItem<Model> | null): void {
@@ -55,9 +97,10 @@ export class WorkbenchGraphViewport<Model extends WorkbenchGraphModel = Workbenc
 		const width = this.bounds.right - this.bounds.left;
 		const height = this.bounds.bottom - this.bounds.top;
 		const graph = this.model.bounds;
-		write_rect_bounds(this.scrollBounds, graph.left - width, graph.top - height, graph.right, graph.bottom);
-		this.horizontalScrollbar.layout(this.horizontalTrack, graph.right - graph.left + width * 2, width, x, this.scrollBounds.left);
-		this.verticalScrollbar.layout(this.verticalTrack, graph.bottom - graph.top + height * 2, height, y, this.scrollBounds.top);
+		const zoom = this.zoomValue;
+		write_rect_bounds(this.scrollBounds, graph.left * zoom - width, graph.top * zoom - height, graph.right * zoom, graph.bottom * zoom);
+		this.horizontalScrollbar.layout(this.horizontalTrack, (graph.right - graph.left) * zoom + width * 2, width, x, this.scrollBounds.left);
+		this.verticalScrollbar.layout(this.verticalTrack, (graph.bottom - graph.top) * zoom + height * 2, height, y, this.scrollBounds.top);
 	}
 
 	public pan(deltaX: number, deltaY: number): void {
@@ -79,15 +122,15 @@ export class WorkbenchGraphViewport<Model extends WorkbenchGraphModel = Workbenc
 
 	public reveal(item: WorkbenchGraphItem): void {
 		const bounds = item.bounds;
-		this.horizontalScrollbar.reveal(bounds.left, bounds.right, REVEAL_MARGIN);
-		this.verticalScrollbar.reveal(bounds.top,
-			item.kind === 'node' ? bounds.top + item.headerHeight : bounds.bottom, REVEAL_MARGIN);
+		this.horizontalScrollbar.reveal(bounds.left * this.zoomValue, bounds.right * this.zoomValue, REVEAL_MARGIN);
+		this.verticalScrollbar.reveal(bounds.top * this.zoomValue,
+			(item.kind === 'node' ? bounds.top + item.headerHeight : bounds.bottom) * this.zoomValue, REVEAL_MARGIN);
 	}
 
 	public hitTest(viewportX: number, viewportY: number): GraphItem<Model> | null {
 		if (!point_in_rect(viewportX, viewportY, this.bounds)) return null;
-		const x = viewportX - this.bounds.left + this.scrollX;
-		const y = viewportY - this.bounds.top + this.scrollY;
+		const x = this.viewportToGraphX(viewportX);
+		const y = this.viewportToGraphY(viewportY);
 		const model = this.model;
 		for (let index = model.nodes.length - 1; index >= 0; index -= 1) {
 			const node = model.nodes[index];
@@ -99,12 +142,13 @@ export class WorkbenchGraphViewport<Model extends WorkbenchGraphModel = Workbenc
 			for (const label of edge.labels) if (point_in_rect(x, y, label.bounds)) return edge;
 		}
 		let closest: GraphItem<Model> | null = null;
-		let distance = GRAPH_EDGE_HIT_RADIUS * GRAPH_EDGE_HIT_RADIUS;
+		const radius = GRAPH_EDGE_HIT_RADIUS / this.zoomValue;
+		let distance = radius * radius;
 		for (let index = model.edges.length - 1; index >= 0; index -= 1) {
 			const edge = model.edges[index];
 			const bounds = edge.bounds;
-			if (x < bounds.left - GRAPH_EDGE_HIT_RADIUS || x > bounds.right + GRAPH_EDGE_HIT_RADIUS
-				|| y < bounds.top - GRAPH_EDGE_HIT_RADIUS || y > bounds.bottom + GRAPH_EDGE_HIT_RADIUS) continue;
+			if (x < bounds.left - radius || x > bounds.right + radius
+				|| y < bounds.top - radius || y > bounds.bottom + radius) continue;
 			for (let path = 0; path < 2; path += 1) {
 				const points = path === 0 ? edge.points : edge.arrow;
 				for (let offset = 0; offset + 3 < points.length; offset += 2) {
@@ -119,14 +163,6 @@ export class WorkbenchGraphViewport<Model extends WorkbenchGraphModel = Workbenc
 		return closest;
 	}
 
-	public intersects(bounds: RectBounds, margin: number): boolean {
-		const x = this.scrollX;
-		const y = this.scrollY;
-		return bounds.right + margin >= x
-			&& bounds.bottom + margin >= y
-			&& bounds.left - margin < x + this.bounds.right - this.bounds.left
-			&& bounds.top - margin < y + this.bounds.bottom - this.bounds.top;
-	}
 }
 
 function segmentDistanceSquared(x: number, y: number, x0: number, y0: number, x1: number, y1: number): number {

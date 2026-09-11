@@ -102,3 +102,9 @@ export function point_in_rect(x: number, y: number, rect: RectBounds): boolean {
 	}
 	return x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom;
 }
+
+/** Half-open intersection, optionally extending the first rectangle for a stroke/hit margin. */
+export function rects_intersect(a: RectBounds, b: RectBounds, margin = 0): boolean {
+	return a.right + margin > b.left && a.bottom + margin > b.top
+		&& a.left - margin < b.right && a.top - margin < b.bottom;
+}

@@ -18,6 +18,7 @@ import { RectRenderKind } from '../shared/submissions';
 import { blendPixel } from './pixel_ops';
 import type { FontGlyph } from '../shared/bitmap_font';
 import type { HostOverlayClipRect, HostOverlayClipState } from '../host_overlay/clip';
+import { IDENTITY_HOST_OVERLAY_TRANSFORM, type HostOverlayTransform } from '../host_overlay/transform';
 
 export type HeadlessHost2DContext = {
 	target: Uint8Array;
@@ -27,16 +28,21 @@ export type HeadlessHost2DContext = {
 	backgroundColor: number;
 	lineHeight: number;
 	clip: HostOverlayClipState;
+	transform: Readonly<HostOverlayTransform>;
 };
 
 export function beginHeadlessHost2D(context: HeadlessHost2DContext, target: Uint8Array, width: number, height: number): void {
 	context.target = target;
 	context.width = width;
+	context.transform = IDENTITY_HOST_OVERLAY_TRANSFORM;
 	context.clip.reset(width, height, width, height);
 }
 
 export function renderHeadlessHost2DEntry(context: HeadlessHost2DContext, kind: Host2DKind, item: Host2DRef): void {
 	switch (kind) {
+		case Host2DKind.Transform:
+			context.transform = item as HostOverlayTransform;
+			return;
 		case Host2DKind.Clip:
 			context.clip.set(item as HostOverlayClipRect);
 			return;
@@ -57,10 +63,11 @@ export function renderHeadlessHost2DEntry(context: HeadlessHost2DContext, kind: 
 
 function drawRect(context: HeadlessHost2DContext, command: RectRenderSubmission): void {
 	const area = command.area;
-	const left = Math.trunc(area.left);
-	const top = Math.trunc(area.top);
-	const right = left + Math.trunc(area.right - area.left);
-	const bottom = top + Math.trunc(area.bottom - area.top);
+	const { scale, offsetX, offsetY } = context.transform;
+	const left = Math.trunc(area.left * scale + offsetX);
+	const top = Math.trunc(area.top * scale + offsetY);
+	const right = Math.trunc(area.right * scale + offsetX);
+	const bottom = Math.trunc(area.bottom * scale + offsetY);
 	const colorValue = command.color;
 	if (command.kind === RectRenderKind.Fill) {
 		fillRect(context, left, top, right, bottom, colorValue);
@@ -74,8 +81,10 @@ function drawRect(context: HeadlessHost2DContext, command: RectRenderSubmission)
 
 function drawPoly(context: HeadlessHost2DContext, command: PolyRenderSubmission): void {
 	const points = command.points;
+	const { scale, offsetX, offsetY } = context.transform;
 	for (let index = 0; index + 3 < points.length; index += 2) {
-		drawLine(context, points[index], points[index + 1], points[index + 2], points[index + 3], command.thickness, command.color);
+		drawLine(context, points[index] * scale + offsetX, points[index + 1] * scale + offsetY,
+			points[index + 2] * scale + offsetX, points[index + 3] * scale + offsetY, command.thickness, command.color);
 	}
 }
 
@@ -114,16 +123,17 @@ function drawImage(context: HeadlessHost2DContext, command: HostImageRenderSubmi
 	const source = hostSystemAtlasImage(command.imgid);
 	const scale = command.scale;
 	const flip = command.flip;
+	const transform = context.transform;
 	drawHostAtlasRect(
 		context,
 		source.u,
 		source.v,
 		source.w,
 		source.h,
-		command.pos.x,
-		command.pos.y,
-		source.w * scale.x,
-		source.h * scale.y,
+		command.pos.x * transform.scale + transform.offsetX,
+		command.pos.y * transform.scale + transform.offsetY,
+		source.width * scale.x * transform.scale,
+		source.height * scale.y * transform.scale,
 		flip.flip_h,
 		flip.flip_v,
 		command.colorize,
@@ -139,10 +149,13 @@ function drawBatchBlit(context: HeadlessHost2DContext, command: GlyphRenderSubmi
 }
 
 function drawHeadlessGlyph(context: HeadlessHost2DContext, item: FontGlyph, x: number, y: number): void {
+	const { scale, offsetX, offsetY } = context.transform;
+	x = x * scale + offsetX;
+	y = y * scale + offsetY;
 	if (context.hasBackgroundColor) {
 		const left = Math.trunc(x);
 		const top = Math.trunc(y);
-		fillRect(context, left, top, left + item.advance, top + context.lineHeight, context.backgroundColor);
+		fillRect(context, left, top, left + Math.trunc(item.advance * scale), top + Math.trunc(context.lineHeight * scale), context.backgroundColor);
 	}
 	const source = hostSystemAtlasImage(item.imgid);
 	drawHostAtlasRect(
@@ -153,8 +166,8 @@ function drawHeadlessGlyph(context: HeadlessHost2DContext, item: FontGlyph, x: n
 		source.h,
 		x,
 		y,
-		item.width,
-		item.height,
+		item.width * scale,
+		item.height * scale,
 		false,
 		false,
 		context.colorValue,

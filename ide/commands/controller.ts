@@ -97,6 +97,9 @@ export class IdeCommandController {
 			case 'sceneEditor.removeMember':
 				this.editor.sceneEditor.removeSelectedMember();
 				return;
+			case 'graph.zoomIn':
+			case 'graph.zoomOut':
+			case 'graph.resetZoom':
 			case 'behaviorLens.details':
 			case 'contextMenu':
 			case 'propertyInspector.source':
@@ -241,6 +244,9 @@ export class IdeCommandController {
 				return this.editor.sceneEditor.canMoveSelectedMember(1);
 			case 'sceneEditor.removeMember':
 				return this.editor.sceneEditor.canRemoveSelectedMember();
+			case 'graph.zoomIn':
+			case 'graph.zoomOut':
+			case 'graph.resetZoom':
 			case 'behaviorLens.details':
 			case 'contextMenu':
 			case 'propertyInspector.source':

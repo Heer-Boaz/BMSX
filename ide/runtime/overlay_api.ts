@@ -3,6 +3,7 @@ import { type color } from '../../machine/ts/render/shared/submissions';
 import { LAYER_2D_IDE } from '../../machine/ts/render/shared/layers';
 import { resolveThemeTokenColor } from '../theme/tokens';
 import { OverlayRenderer } from './overlay_renderer';
+import type { HostOverlayTransform } from '../../machine/ts/render/host_overlay/transform';
 
 export class OverlayApi {
 	private renderer: OverlayRenderer;
@@ -17,6 +18,14 @@ export class OverlayApi {
 
 	public popClipRect(): void {
 		this.renderer.popClipRect();
+	}
+
+	public pushTransform(transform: Readonly<HostOverlayTransform>): void {
+		this.renderer.pushTransform(transform);
+	}
+
+	public popTransform(): void {
+		this.renderer.popTransform();
 	}
 
 	public polyline(points: readonly number[], x: number, y: number, z: number, thickness: number, colorindex: number): void {

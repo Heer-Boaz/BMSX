@@ -104,6 +104,7 @@ export class BehaviorLensInput extends WorkingCopyEditorInput<BehaviorLensTabId,
 				viewport.scrollY = 0;
 				if (viewport.selection !== null) viewport.reveal(viewport.selection);
 			} else {
+				viewport.setZoom(position.zoom);
 				viewport.scrollX = position.scrollX;
 				viewport.scrollY = position.scrollY;
 			}

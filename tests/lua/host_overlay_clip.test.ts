@@ -8,6 +8,7 @@ import { LAYER_2D_IDE } from '../../machine/ts/render/shared/layers';
 import { RectRenderKind } from '../../machine/ts/render/shared/submissions';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { hostOverlayPrimitives } from '../helpers/host_overlay_primitives';
+import { IDENTITY_HOST_OVERLAY_TRANSFORM } from '../../machine/ts/render/host_overlay/transform';
 
 const full = { left: 0, top: 0, right: 64, bottom: 48 };
 const clip = { left: 11, top: 9, right: 43, bottom: 34 };
@@ -76,34 +77,71 @@ test('quad batches split only at a changed clip with preceding geometry and reta
 	for (let index = 0; index < batches.length; index += 1) assert.equal(stream.batches[index], batches[index]);
 });
 
+test('nested transforms snapshot composed geometry and clips without leaking into chrome or the next frame', () => {
+	const { presenter, queue, renderer } = createHostOverlayFixture(64, 48);
+	const child = { scale: 0.5, offsetX: 4, offsetY: 2 };
+	const draw = () => {
+		renderer.beginFrame(presenter);
+		renderer.pushTransform({ scale: 2, offsetX: 10, offsetY: 6 });
+		renderer.pushClipRect(0, 0, 20, 18);
+		renderer.pushTransform(child);
+		renderer.pushClipRect(0, 0, 50, 50);
+		renderer.popClipRect();
+		renderer.popTransform();
+		renderer.pushTransform({ scale: 0.25, offsetX: 1, offsetY: 3 });
+		renderer.popTransform();
+		renderer.popClipRect();
+		renderer.popTransform();
+		renderer.endFrame();
+		return queue.consumeOverlayFrame();
+	};
+	const frame = draw();
+	const refs = frame.commandRefs.slice(0, frame.commandCount);
+	assert.deepEqual(refs, [
+		{ scale: 2, offsetX: 10, offsetY: 6 }, { left: 10, top: 6, right: 50, bottom: 42 },
+		{ scale: 1, offsetX: 18, offsetY: 10 }, { left: 18, top: 10, right: 50, bottom: 42 },
+		{ left: 10, top: 6, right: 50, bottom: 42 }, { scale: 2, offsetX: 10, offsetY: 6 },
+		{ scale: 0.5, offsetX: 12, offsetY: 12 }, { scale: 2, offsetX: 10, offsetY: 6 }, full, IDENTITY_HOST_OVERLAY_TRANSFORM,
+	]);
+	child.offsetX = 9;
+	const next = draw();
+	assert.notEqual(frame.commandRefs, next.commandRefs);
+	assert.equal((refs[2] as typeof child).offsetX, 18, 'published transforms do not alias their producer or the other buffer');
+	const reused = draw();
+	for (let index = 0; index < refs.length; index += 1) assert.equal(reused.commandRefs[index], refs[index]);
+});
 
-for (const [name, kind, command] of hostOverlayPrimitives) {
-	test(`software ${name}: clipping crops the original raster and never repositions geometry or UVs`, () => {
-		const { backend } = createHostOverlayFixture(64, 48);
-		const context = backend.hostOverlayContext;
-		const target = backend.framebufferPixels;
-		const draw = (bounds: HostOverlayClipRect) => {
-			target.fill(0);
-			beginHeadlessHost2D(context, target, 64, 48);
-			renderHeadlessHost2DEntry(context, Host2DKind.Clip, bounds);
-			renderHeadlessHost2DEntry(context, kind, command);
-		};
-		draw(full);
-		const reference = target.slice();
-		draw(clip);
-		let lit = 0;
-		for (let y = 0; y < 48; y += 1) {
-			for (let x = 0; x < 64; x += 1) {
-				const inside = x >= clip.left && x < clip.right && y >= clip.top && y < clip.bottom;
-				for (let channel = 0; channel < 4; channel += 1) {
-					const offset = (y * 64 + x) * 4 + channel;
-					assert.equal(target[offset], inside ? reference[offset] : 0, `${name}: ${x},${y}:${channel}`);
-					lit += target[offset] !== 0 ? 1 : 0;
+for (const transform of [IDENTITY_HOST_OVERLAY_TRANSFORM, { scale: 0.5, offsetX: 3, offsetY: 2 }, { scale: 2, offsetX: 3, offsetY: 2 }]) {
+	for (const [name, kind, command] of hostOverlayPrimitives) {
+		test(`software ${name} at ${transform.scale}x: clipping crops the original raster and never repositions geometry or UVs`, () => {
+			const { backend } = createHostOverlayFixture(64, 48);
+			const context = backend.hostOverlayContext;
+			const target = backend.framebufferPixels;
+			const draw = (bounds: HostOverlayClipRect) => {
+				target.fill(0);
+				beginHeadlessHost2D(context, target, 64, 48);
+				renderHeadlessHost2DEntry(context, Host2DKind.Transform, transform);
+				renderHeadlessHost2DEntry(context, Host2DKind.Clip, bounds);
+				renderHeadlessHost2DEntry(context, kind, command);
+			};
+			draw(full);
+			const reference = target.slice();
+			draw(clip);
+			let lit = 0;
+			for (let y = 0; y < 48; y += 1) {
+				for (let x = 0; x < 64; x += 1) {
+					const inside = x >= clip.left && x < clip.right && y >= clip.top && y < clip.bottom;
+					for (let channel = 0; channel < 4; channel += 1) {
+						const offset = (y * 64 + x) * 4 + channel;
+						assert.equal(target[offset], inside ? reference[offset] : 0, `${name}: ${x},${y}:${channel}`);
+						lit += target[offset] !== 0 ? 1 : 0;
+					}
 				}
 			}
-		}
-		assert.ok(lit > 0, 'fixture must contain partially visible pixels');
-		beginHeadlessHost2D(context, target, 64, 48);
-		assert.equal(context.clip.right, 64, 'a new lane resets its scissor');
-	});
+			assert.ok(lit > 0, 'fixture must contain partially visible pixels');
+			beginHeadlessHost2D(context, target, 64, 48);
+			assert.equal(context.clip.right, 64, 'a new lane resets its scissor');
+			assert.equal(context.transform, IDENTITY_HOST_OVERLAY_TRANSFORM, 'a new lane resets its transform');
+		});
+	}
 }

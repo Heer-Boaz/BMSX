@@ -36,6 +36,12 @@ type WorkbenchMenuContributions = Record<WorkbenchContextMenuId, readonly Workbe
 	readonly 'sceneEditor.title': readonly WorkbenchMenuCommandItem[];
 };
 
+const GRAPH_ZOOM_ACTIONS: readonly WorkbenchMenuCommandItem[] = [
+	{ type: 'command', command: 'graph.zoomOut' },
+	{ type: 'command', command: 'graph.resetZoom' },
+	{ type: 'command', command: 'graph.zoomIn' },
+];
+
 /** Immutable built-in menu contributions; renderers only project these items. */
 export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 	'propertyInspector.title': [{ type: 'command', command: 'propertyInspector.source' }, { type: 'command', command: 'propertyInspector.close' }],
@@ -58,6 +64,8 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'separator' },
 		{ type: 'command', command: 'undo' },
 		{ type: 'command', command: 'redo' },
+		{ type: 'separator' },
+		...GRAPH_ZOOM_ACTIONS,
 	],
 	'behaviorLens.state.context': [
 		{ type: 'command', command: 'behaviorLens.source' },
@@ -67,13 +75,17 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'separator' },
 		{ type: 'command', command: 'undo' },
 		{ type: 'command', command: 'redo' },
+		{ type: 'separator' },
+		...GRAPH_ZOOM_ACTIONS,
 	],
 	'behaviorLens.edge.context': [
 		{ type: 'command', command: 'behaviorLens.source' },
 		{ type: 'command', command: 'behaviorLens.details' },
+		{ type: 'separator' },
+		...GRAPH_ZOOM_ACTIONS,
 	],
 	'behaviorLens.property.context': [{ type: 'command', command: 'behaviorLens.source' }, { type: 'command', command: 'behaviorLens.details' }],
-	'behaviorLens.canvas.context': [{ type: 'command', command: 'undo' }, { type: 'command', command: 'redo' }],
+	'behaviorLens.canvas.context': [...GRAPH_ZOOM_ACTIONS, { type: 'separator' }, { type: 'command', command: 'undo' }, { type: 'command', command: 'redo' }],
 	'sourceEditReview.title': [
 		{ type: 'command', command: 'sourceEditReview.source' },
 		{ type: 'command', command: 'sourceEditReview.apply' },
@@ -119,6 +131,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'behaviorLens.details' },
 		{ type: 'command', command: 'behaviorLens.duplicateChild' },
 		{ type: 'command', command: 'behaviorLens.removeChild' },
+		...GRAPH_ZOOM_ACTIONS,
 	],
 	'behaviorLens.title': [
 		{ type: 'command', command: 'behaviorLens.source' },
@@ -128,6 +141,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'behaviorLens.source' },
 		{ type: 'command', command: 'behaviorLens.details' },
 		{ type: 'command', command: 'behaviorLens.setInitialState' },
+		...GRAPH_ZOOM_ACTIONS,
 	],
 	'behaviorLens.properties.title': [{ type: 'command', command: 'behaviorLens.source' }, { type: 'command', command: 'behaviorLens.details' }],
 	'sceneEditor.title': [

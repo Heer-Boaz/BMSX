@@ -2,7 +2,7 @@ import type { ContextMenuController } from '../../services/context_menu/controll
 import { WORKBENCH_MENUS, type WorkbenchContextMenuId } from '../../ui/menu/registry';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import { BehaviorLensNavigationSelection } from './navigation_selection';
-import { isShiftDown } from '../../../input/keyboard/key_input';
+import { isCtrlDown, isShiftDown } from '../../../input/keyboard/key_input';
 import { inputFocus } from '../../../input/focus';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { WorkbenchGraphControl, WorkbenchGraphPointerResult } from '../../ui/graph/control';
@@ -274,9 +274,8 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 			const selected = viewport.selection;
 			if (selected !== null) {
 				viewport.reveal(selected);
-				this.openContextMenu(viewport.bounds.left + selected.bounds.left - viewport.scrollX,
-					viewport.bounds.top + selected.bounds.top - viewport.scrollY
-						+ (selected.kind === 'node' ? selected.headerHeight : selected.bounds.bottom - selected.bounds.top), true);
+				this.openContextMenu(viewport.graphToViewportX(selected.bounds.left),
+					viewport.graphToViewportY(selected.kind === 'node' ? selected.bounds.top + selected.headerHeight : selected.bounds.bottom), true);
 			} else this.openContextMenu(viewport.bounds.left + 8, viewport.bounds.top + 8, true);
 		} else {
 			const list = presentation.kind === 'properties' ? presentation.tree : presentation;
@@ -303,7 +302,8 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		else if (view.presentation.kind !== 'outline') {
 			const distance = direction * steps * 16;
 			const horizontal = isShiftDown(playerInput);
-			if (activePointer === null || !this.graph.handleWheel(activePointer, horizontal ? distance : 0, horizontal ? 0 : distance)) return;
+			if (activePointer === null || !this.graph.handleWheel(activePointer, horizontal ? distance : 0, horizontal ? 0 : distance,
+				isCtrlDown(playerInput) ? -direction * steps : 0)) return;
 		} else scrollWorkbenchList(view.presentation, direction * steps * 3);
 		playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');
 	}

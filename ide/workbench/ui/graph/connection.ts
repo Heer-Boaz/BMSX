@@ -12,13 +12,14 @@ export const GRAPH_CONNECTION_HANDLE_RADIUS = 3;
 export const GRAPH_CONNECTION_HIT_RADIUS = 5;
 
 /** Target paints last and wins when the selected edge's endpoints coincide. */
-export function hitWorkbenchGraphConnectionHandle(handles: WorkbenchGraphConnectionHandles, x: number, y: number): WorkbenchGraphConnectionEnd | undefined {
+export function hitWorkbenchGraphConnectionHandle(handles: WorkbenchGraphConnectionHandles, x: number, y: number, zoom: number): WorkbenchGraphConnectionEnd | undefined {
 	const points = handles.edge.points;
 	const end = points.length - 2;
-	if (handles.ends !== 'source' && Math.abs(x - Math.round(points[end])) <= GRAPH_CONNECTION_HIT_RADIUS
-		&& Math.abs(y - Math.round(points[end + 1])) <= GRAPH_CONNECTION_HIT_RADIUS) return 'target';
-	if (handles.ends !== 'target' && Math.abs(x - Math.round(points[0])) <= GRAPH_CONNECTION_HIT_RADIUS
-		&& Math.abs(y - Math.round(points[1])) <= GRAPH_CONNECTION_HIT_RADIUS) return 'source';
+	const radius = GRAPH_CONNECTION_HIT_RADIUS / zoom;
+	if (handles.ends !== 'source' && Math.abs(x - points[end]) <= radius
+		&& Math.abs(y - points[end + 1]) <= radius) return 'target';
+	if (handles.ends !== 'target' && Math.abs(x - points[0]) <= radius
+		&& Math.abs(y - points[1]) <= radius) return 'source';
 	return undefined;
 }
 

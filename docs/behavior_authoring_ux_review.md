@@ -380,6 +380,16 @@ een vervanger voor leesbare details of correct zoom/hitgedrag.
 hit/drop/reveal, stabiele selectie/Undo en backendvergelijking op tiny-resolutie.
 Viewnavigatie verandert nooit authored coordinates, Lua of runtimeklokken.
 
+**Uitgewerkt:** gedeelde viewtransformatie, Ctrl-wheel met pointeranker,
+focuscommands via titel/contextmenu/palette, 100%-reset en Source/Back-behoud.
+Screen-space grips en guides behouden hun afmetingen; glyphs en graphgeometrie
+delen de retained hosttransformatie in TS software/WebGL2/WebGPU en C++
+software/GLES2. Geen ELK-relayout of fontkopie per schaal. Zie
+`graph_zoom_design.md` voor de vooraf vastgelegde representation table,
+productiereferentie, echte Studio/Undo/Hot Resume-proeven en gemeten overhead.
+B07-zoom is daarmee afgerond; een minimap is optioneel, B03/B04 en
+B06-propertyauthoring blijven open.
+
 ## 4. Bouwvolgorde en expliciete grenzen
 
 Werk per volledig ownercontract, met productiecode opnieuw naast de live owner.

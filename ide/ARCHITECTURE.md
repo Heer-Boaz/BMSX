@@ -423,6 +423,21 @@ content clip excludes their gutters. Middle-button drag, Space + primary drag
 and primary drag on blank canvas pan at readable tiny-font scale. Explicit pan
 over an item preserves selection and never starts its source-edit gesture.
 Shift + wheel selects the horizontal axis; Space is not a gameplay binding.
+Explicit zoom is another viewport operation: Ctrl + wheel anchors at the mapped
+pointer, while focused Graph commands and the title/context actions anchor at
+the canvas center. `1:1` resets to 100%; the range is 25–400%. Scroll offsets are
+viewport pixels, layout coordinates remain unchanged, and Source/Back carries
+both scroll and scale. Neither zoom nor pan invokes ELK or mutates Lua. Changing
+scale revokes an active edit gesture rather than reinterpreting its press.
+
+The host overlay command stream owns nested uniform drawing transforms, with
+retained frame-local snapshots. Clips are transformed and intersected by the
+producer; software and GPU consumers transform primitive/glyph geometry, not
+atlas UVs or font objects. Strokes, connection grips and insertion guides retain
+screen-pixel affordances. Chrome and scrollbars draw outside the graph transform.
+This is a host presentation command, not a guest GPU opcode or device register.
+See [`../docs/graph_zoom_design.md`](../docs/graph_zoom_design.md) for the mirrored
+representation, production reference and renderer/workflow evidence.
 `workbench/ui/scrollbar.ts` owns retained track/thumb geometry independent of
 editor kinds. Only attached code/resource panes hit their own scrollbar kinds;
 chrome hits the visible resource panel's bars, not inactive pane geometry.

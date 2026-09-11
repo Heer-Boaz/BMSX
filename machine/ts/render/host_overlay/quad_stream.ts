@@ -5,6 +5,7 @@ import {
 import { forEachBatchBlitGlyph } from '../shared/glyph_runs';
 import type { FontGlyph } from '../shared/bitmap_font';
 import type { HostOverlayClipRect } from './clip';
+import { IDENTITY_HOST_OVERLAY_TRANSFORM, type HostOverlayTransform } from './transform';
 import {
 	Host2DKind,
 	type Host2DRef,
@@ -43,9 +44,11 @@ export class HostOverlayQuadStream {
 	private glyphBackgroundLineHeight = 0;
 	private glyphBackgroundColor = 0;
 	private glyphColor = 0;
+	private transform: Readonly<HostOverlayTransform> = IDENTITY_HOST_OVERLAY_TRANSFORM;
 
 	public reset(logicalWidth: number, logicalHeight: number): void {
 		this.count = 0;
+		this.transform = IDENTITY_HOST_OVERLAY_TRANSFORM;
 		this.fullClip.right = logicalWidth;
 		this.fullClip.bottom = logicalHeight;
 		this.batchCount = 1;
@@ -55,6 +58,9 @@ export class HostOverlayQuadStream {
 
 	public appendEntry(kind: Host2DKind, command: Host2DRef): void {
 		switch (kind) {
+			case Host2DKind.Transform:
+				this.transform = command as HostOverlayTransform;
+				return;
 			case Host2DKind.Clip:
 				this.setClip(command as HostOverlayClipRect);
 				return;
@@ -157,18 +163,22 @@ export class HostOverlayQuadStream {
 
 	private appendRect(command: RectRenderSubmission): void {
 		const area = command.area;
+		const { scale, offsetX, offsetY } = this.transform;
+		const left = area.left * scale + offsetX, top = area.top * scale + offsetY;
+		const right = area.right * scale + offsetX, bottom = area.bottom * scale + offsetY;
 		if (command.kind === RectRenderKind.Fill) {
-			this.appendFillRect(area.left, area.top, area.right, area.bottom, command.color);
+			this.appendFillRect(left, top, right, bottom, command.color);
 			return;
 		}
-		this.appendFillRect(area.left, area.top, area.right, area.top + 1, command.color);
-		this.appendFillRect(area.left, area.bottom - 1, area.right, area.bottom, command.color);
-		this.appendFillRect(area.left, area.top, area.left + 1, area.bottom, command.color);
-		this.appendFillRect(area.right - 1, area.top, area.right, area.bottom, command.color);
+		this.appendFillRect(left, top, right, top + 1, command.color);
+		this.appendFillRect(left, bottom - 1, right, bottom, command.color);
+		this.appendFillRect(left, top, left + 1, bottom, command.color);
+		this.appendFillRect(right - 1, top, right, bottom, command.color);
 	}
 
 	private appendImage(command: HostImageRenderSubmission): void {
 		const source = hostSystemAtlasImage(command.imgid);
+		const { scale, offsetX, offsetY } = this.transform;
 		let u0 = source.u * HOST_ATLAS_U_SCALE;
 		let v0 = source.v * HOST_ATLAS_V_SCALE;
 		let u1 = (source.u + source.w) * HOST_ATLAS_U_SCALE;
@@ -183,12 +193,12 @@ export class HostOverlayQuadStream {
 			v0 = v1;
 			v1 = swap;
 		}
-		const width = source.width * command.scale.x;
-		const height = source.height * command.scale.y;
+		const width = source.width * command.scale.x * scale;
+		const height = source.height * command.scale.y * scale;
 		if (width === 0 || height === 0) {
 			return;
 		}
-		this.appendQuad(command.pos.x, command.pos.y, width, 0, 0, height, u0, v0, u1, v1, HOST_OVERLAY_TEXTURE_ATLAS, command.colorize);
+		this.appendQuad(command.pos.x * scale + offsetX, command.pos.y * scale + offsetY, width, 0, 0, height, u0, v0, u1, v1, HOST_OVERLAY_TEXTURE_ATLAS, command.colorize);
 	}
 
 	private appendLine(x0: number, y0: number, x1: number, y1: number, thickness: number, colorValue: color): void {
@@ -207,8 +217,10 @@ export class HostOverlayQuadStream {
 
 	private appendPoly(command: PolyRenderSubmission): void {
 		const points = command.points;
+		const { scale, offsetX, offsetY } = this.transform;
 		for (let index = 0; index + 3 < points.length; index += 2) {
-			this.appendLine(points[index], points[index + 1], points[index + 2], points[index + 3], command.thickness, command.color);
+			this.appendLine(points[index] * scale + offsetX, points[index + 1] * scale + offsetY,
+				points[index + 2] * scale + offsetX, points[index + 3] * scale + offsetY, command.thickness, command.color);
 		}
 	}
 
@@ -223,18 +235,21 @@ export class HostOverlayQuadStream {
 	}
 
 	private static appendGlyphBackground(stream: HostOverlayQuadStream, item: FontGlyph, x: number, y: number): void {
-		stream.appendFillRect(x, y, x + item.advance, y + stream.glyphBackgroundLineHeight, stream.glyphBackgroundColor);
+		const { scale, offsetX, offsetY } = stream.transform;
+		stream.appendFillRect(x * scale + offsetX, y * scale + offsetY,
+			(x + item.advance) * scale + offsetX, (y + stream.glyphBackgroundLineHeight) * scale + offsetY, stream.glyphBackgroundColor);
 	}
 
 	private static appendGlyph(stream: HostOverlayQuadStream, item: FontGlyph, x: number, y: number): void {
 		const rect = item.rect;
+		const { scale, offsetX, offsetY } = stream.transform;
 		stream.appendQuad(
-			x,
-			y,
-			item.width,
+			x * scale + offsetX,
+			y * scale + offsetY,
+			item.width * scale,
 			0,
 			0,
-			item.height,
+			item.height * scale,
 			rect.u * HOST_ATLAS_U_SCALE,
 			rect.v * HOST_ATLAS_V_SCALE,
 			(rect.u + rect.w) * HOST_ATLAS_U_SCALE,

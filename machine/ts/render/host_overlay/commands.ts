@@ -5,6 +5,7 @@ import type {
 	RectRenderSubmission,
 } from '../shared/submissions';
 import type { HostOverlayClipRect } from './clip';
+import type { HostOverlayTransform } from './transform';
 
 export const enum Host2DKind {
 	Img,
@@ -12,6 +13,7 @@ export const enum Host2DKind {
 	Rect,
 	Glyphs,
 	Clip,
+	Transform,
 }
 
 export type Host2DRef =
@@ -19,4 +21,5 @@ export type Host2DRef =
 	| PolyRenderSubmission
 	| RectRenderSubmission
 	| GlyphRenderSubmission
-	| HostOverlayClipRect;
+	| HostOverlayClipRect
+	| HostOverlayTransform;

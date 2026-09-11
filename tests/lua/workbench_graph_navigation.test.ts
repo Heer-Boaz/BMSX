@@ -1,3 +1,4 @@
+import { rects_intersect } from '../../machine/ts/common/rect';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Font } from '../../machine/ts/render/shared/bmsx_font';
@@ -43,7 +44,7 @@ test('publication bounds include origin, negative labels, routes and nodes; all 
 	assert.equal(view.scrollX, view.scrollBounds.right);
 	assert.equal(view.scrollY, view.scrollBounds.bottom);
 	view.reveal(other);
-	assert.ok(view.intersects(other.bounds, 0));
+	assert.ok(rects_intersect(other.bounds, view.visibleBounds));
 	assert.equal(view.scrollX, view.horizontalScrollbar.getScroll());
 	const thumb = view.horizontalScrollbar.getThumb();
 	const geometry = JSON.stringify(model);

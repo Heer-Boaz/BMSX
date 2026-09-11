@@ -9,6 +9,7 @@ struct HostImageRenderSubmission;
 struct PolyRenderSubmission;
 struct RectRenderSubmission;
 struct HostOverlayClipRect;
+struct HostOverlayTransform;
 
 enum class Host2DKind : u8 {
 	Img,
@@ -16,6 +17,7 @@ enum class Host2DKind : u8 {
 	Rect,
 	Glyphs,
 	Clip,
+	Transform,
 };
 
 union Host2DRef {
@@ -24,6 +26,7 @@ union Host2DRef {
 	const RectRenderSubmission* rect;
 	const GlyphRenderSubmission* glyphs;
 	const HostOverlayClipRect* clip;
+	const HostOverlayTransform* transform;
 };
 static_assert(sizeof(Host2DRef) == sizeof(const void*));
 

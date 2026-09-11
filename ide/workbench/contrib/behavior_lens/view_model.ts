@@ -42,7 +42,7 @@ export type BehaviorLensOutline = WorkbenchListState<BehaviorLensRow> & {
 };
 
 /** Placement is consumed once geometry exists, including asynchronous FSM layouts. */
-export type BehaviorGraphPosition = 'initial' | 'preserve' | { readonly scrollX: number; readonly scrollY: number };
+export type BehaviorGraphPosition = 'initial' | 'preserve' | { readonly scrollX: number; readonly scrollY: number; readonly zoom: number };
 
 export type BehaviorLensGraph = {
 	readonly kind: 'graph';

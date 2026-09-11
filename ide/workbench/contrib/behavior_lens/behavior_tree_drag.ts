@@ -40,7 +40,7 @@ class BehaviorTreeDrag implements WorkbenchGraphDragSession {
 		// Cards expose left/right insertion sectors; routes are drag sources, not guessed drop ports.
 		if (target === null || target.kind !== 'node' || target.parent !== this.node.parent || target.member === null
 			|| target.member.table !== this.member.table) return;
-		const x = viewportX - this.viewport.bounds.left + this.viewport.scrollX;
+		const x = this.viewport.viewportToGraphX(viewportX);
 		const before = x < (target.bounds.left + target.bounds.right) / 2;
 		const insertion = target.member.index + (before ? 0 : 1);
 		const destination = insertion > this.member.index ? insertion - 1 : insertion;

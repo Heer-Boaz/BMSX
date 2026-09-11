@@ -1,5 +1,6 @@
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { check, type StudioFixture } from './studio_fixture';
+import { testStudioGraphZoom } from './studio_graph_zoom';
 
 /** Same physical navigation on BT and FSM, in the actual Studio host/focus/input composition. */
 export async function testStudioGraphNavigation(test: StudioFixture): Promise<void> {
@@ -68,4 +69,5 @@ export async function testStudioGraphNavigation(test: StudioFixture): Promise<vo
 		&& lens.workingCopy.canUndo === undo && lens.workingCopy.canRedo === redo, 'graph navigation: no geometry rebuild, dirtying or source history');
 	await frame();
 	console.info(`STUDIO: ${lens.view.presentation.kind} scrollbar/pan navigation passed`);
+	await testStudioGraphZoom(test);
 }

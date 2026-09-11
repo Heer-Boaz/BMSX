@@ -10,7 +10,8 @@ import type { PointerSnapshot } from '../../ide/common/models';
 import { api } from '../../ide/runtime/overlay_api';
 import { drawWorkbenchGraph } from '../../ide/workbench/render/graph';
 import { createWorkbenchGraphDisc, createWorkbenchGraphEdge, createWorkbenchGraphLabel, createWorkbenchGraphModel, createWorkbenchGraphNode, type WorkbenchGraphModel } from '../../ide/workbench/ui/graph/model';
-import { WorkbenchGraphViewport } from '../../ide/workbench/ui/graph/viewport';
+import { GRAPH_ZOOM_MAX, GRAPH_ZOOM_MIN, WorkbenchGraphViewport } from '../../ide/workbench/ui/graph/viewport';
+import type { HostOverlayTransform } from '../../machine/ts/render/host_overlay/transform';
 import { WorkbenchGraphControl, WorkbenchGraphPointerResult as Result } from '../../ide/workbench/ui/graph/control';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 
@@ -285,7 +286,84 @@ test('idle graph drawing retains geometry, glyph strings, clip storage and trans
 	assert.equal(view.model, model);
 	assert.deepEqual(edge.points, sourcePoints);
 	assert.notEqual(points, edge.points, 'published translated points do not alias retained model geometry');
-	assert.deepEqual(points.slice(0, 4), [0, 65, 160, 65]);
+	assert.deepEqual(points, sourcePoints, 'layout coordinates stay local to their published transform');
+	const transform = refs[first.commandKinds.indexOf(Host2DKind.Transform)] as HostOverlayTransform;
+	assert.deepEqual(transform, { scale: 1, offsetX: 20, offsetY: 20 });
+});
+
+test('zoom preserves the inverse pointer anchor, selection and layout while scaling scroll extents and reveal', () => {
+	const { view, model, b } = fixture();
+	view.selection = b;
+	const geometry = JSON.stringify(model);
+	const x = view.viewportToGraphX(71), y = view.viewportToGraphY(53);
+	view.setZoom(2, 71, 53);
+	assert.equal(view.viewportToGraphX(71), x);
+	assert.equal(view.viewportToGraphY(53), y);
+	assert.equal(view.graphToViewportX(x), 71);
+	assert.equal(view.graphToViewportY(y), 53);
+	assert.equal(view.scrollBounds.left, model.bounds.left * 2 - (view.bounds.right - view.bounds.left));
+	assert.equal(view.scrollBounds.bottom, model.bounds.bottom * 2);
+	view.reveal(b);
+	assert.ok(view.hitTest(view.graphToViewportX(b.bounds.left) + 8, view.graphToViewportY(b.bounds.top) + 8) === b);
+	assert.equal(view.selection, b);
+	assert.equal(view.model, model);
+	assert.equal(JSON.stringify(model), geometry);
+	const transform = view.transform;
+	view.pan(2, 3);
+	assert.equal(view.transform, transform, 'draw transforms are retained, including scrollbar-driven pan');
+	assert.equal(transform.offsetX, view.bounds.left - view.scrollX);
+	assert.equal(transform.offsetY, view.bounds.top - view.scrollY);
+	view.setZoom(100);
+	assert.equal(view.zoom, GRAPH_ZOOM_MAX);
+	view.setZoom(0.001);
+	assert.equal(view.zoom, GRAPH_ZOOM_MIN);
+});
+
+test('zoomed route hits keep a three-screen-pixel tolerance and four-sided canvas clipping', () => {
+	for (const zoom of [0.25, 0.5, 1.2, 2, 4]) {
+		const { view, edge } = fixture();
+		view.setZoom(zoom);
+		view.reveal(edge);
+		const x = view.graphToViewportX(-20) + 12;
+		const y = view.graphToViewportY(45);
+		assert.equal(view.hitTest(x, y + 2.9), edge, `hit tolerance at ${zoom}x`);
+		assert.equal(view.hitTest(x, y + 3.1), null, `outside tolerance at ${zoom}x`);
+		assert.equal(view.hitTest(view.bounds.left - 1, y), null);
+		assert.equal(view.hitTest(view.bounds.right, y), null);
+	}
+});
+
+test('zoom commands belong to graph focus; wheel zoom is pointer anchored and revokes pending capture', () => {
+	const f = dragFixture();
+	const x = f.view.viewportToGraphX(60), y = f.view.viewportToGraphY(60);
+	assert.equal(f.control.handleWheel(pointer(60, 60), 0, 0, 1), true);
+	assert.equal(f.view.zoom, 1.2);
+	assert.equal(f.view.viewportToGraphX(60), x);
+	assert.equal(f.view.viewportToGraphY(60), y);
+	assert.equal(f.capture.dispatch(pointer(70, 60, true), false, 20), false, 'zoom revokes the press, even before its drag threshold');
+	assert.equal(f.counts.starts, 0);
+	assert.equal(f.control.handleWheel(pointer(121, 60), 0, 0, 1), false);
+	f.focus.executeCommand('graph.resetZoom');
+	assert.equal(f.view.zoom, 1);
+	assert.equal(f.focus.getCommand('graph.resetZoom')!.isEnabled(), false);
+	f.control.clearInput();
+	assert.equal(f.control.focusTarget.getCommand('graph.zoomIn')!.isEnabled(), false);
+	f.control.dispose();
+});
+
+test('zoom changes cancel an accepted drag without mutating source; a new drag uses inverse-scaled offsets', () => {
+	const f = dragFixture();
+	f.capture.dispatch(pointer(60, 60, true), false, 20);
+	assert.equal(f.feedback.accepted, true);
+	f.view.setZoom(2, 22, 22);
+	f.control.update();
+	assert.equal(f.control.dragFeedback, undefined);
+	f.control.handlePointer({ ...pointer(22, 22, true), justPressedButtons: PointerButton.Primary }, 40);
+	f.capture.dispatch(pointer(62, 62, true), false, 60);
+	assert.equal(f.feedback.offsetX, 20);
+	assert.equal(f.feedback.offsetY, 20);
+	assert.equal(f.counts.drops, 0);
+	f.control.dispose();
 });
 
 test('stationary pointer polling reuses the hit result until geometry, viewport or pointer changes', () => {

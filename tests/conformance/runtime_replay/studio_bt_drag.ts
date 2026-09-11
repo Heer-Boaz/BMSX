@@ -25,11 +25,13 @@ export async function testStudioBtDrag(test: StudioFixture): Promise<void> {
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'graph') throw new Error('BT drag requires the concrete graph');
 	let graph = lens.view.presentation;
 	let viewport = graph.viewport;
+	await runPaletteCommand('Graph: Zoom Out');
+	check(viewport.zoom < 1, 'BT drag: physical editing starts in a zoomed-out canvas');
 	const children = () => viewport.model.nodes[0].children[0].children;
 	const point = (x: number, y: number) => ({ left: x, right: x, top: y, bottom: y });
 	const cardPoint = (node: BehaviorGraphNode, before: boolean) => point(
-		node.bounds.left + (node.bounds.right - node.bounds.left) * (before ? 0.25 : 0.75) + viewport.bounds.left - viewport.scrollX,
-		node.bounds.top + node.headerHeight / 2 + viewport.bounds.top - viewport.scrollY);
+		viewport.graphToViewportX(node.bounds.left + (node.bounds.right - node.bounds.left) * (before ? 0.25 : 0.75)),
+		viewport.graphToViewportY(node.bounds.top + node.headerHeight / 2));
 	const begin = async (source: BehaviorGraphNode, target: BehaviorGraphNode, before: boolean) => {
 		movePointer(cardPoint(source, true));
 		await frame();

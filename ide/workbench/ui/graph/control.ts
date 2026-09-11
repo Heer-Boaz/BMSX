@@ -9,7 +9,7 @@ import type { InputFocusService, InputFocusTarget } from '../../../input/focus';
 import type { PointerCaptureService, PointerCaptureTarget } from '../../../input/pointer/capture';
 import { consumeIdeKey, isKeyJustPressed, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
 import type { WorkbenchGraphItem, WorkbenchGraphModel } from './model';
-import type { WorkbenchGraphViewport } from './viewport';
+import { GRAPH_ZOOM_MAX, GRAPH_ZOOM_MIN, GRAPH_ZOOM_STEP, type WorkbenchGraphViewport } from './viewport';
 import type { WorkbenchGraphConnectionDragStart, WorkbenchGraphDragFeedback, WorkbenchGraphDragSession, WorkbenchGraphDragSource } from './drag';
 import { hitWorkbenchGraphConnectionHandle, type WorkbenchGraphConnectionEnd, type WorkbenchGraphConnectionHandles } from './connection';
 
@@ -23,6 +23,7 @@ export class WorkbenchGraphControl implements PointerCaptureTarget {
 	public connectionHandles: WorkbenchGraphConnectionHandles | undefined;
 	private inputValue: WorkbenchGraphViewport | null = null;
 	private pointerModel: WorkbenchGraphModel | null = null;
+	private pointerZoom = 1;
 	private anchorX = 0;
 	private anchorY = 0;
 	private anchorScrollX = 0;
@@ -60,12 +61,25 @@ export class WorkbenchGraphControl implements PointerCaptureTarget {
 			keyboard(input);
 		});
 		this.unbindBlur = this.focusTarget.onDidBlur(() => this.cancelPointer());
+		this.focusTarget.registerCommand('graph.zoomIn', {
+			isEnabled: () => this.inputValue !== null && this.inputValue.zoom < GRAPH_ZOOM_MAX,
+			run: () => { this.inputValue!.setZoom(this.inputValue!.zoom * GRAPH_ZOOM_STEP); this.update(); },
+		});
+		this.focusTarget.registerCommand('graph.zoomOut', {
+			isEnabled: () => this.inputValue !== null && this.inputValue.zoom > GRAPH_ZOOM_MIN,
+			run: () => { this.inputValue!.setZoom(this.inputValue!.zoom / GRAPH_ZOOM_STEP); this.update(); },
+		});
+		this.focusTarget.registerCommand('graph.resetZoom', {
+			isEnabled: () => this.inputValue !== null && this.inputValue.zoom !== 1,
+			run: () => { this.inputValue!.setZoom(1); this.update(); },
+		});
 	}
 
 	public setInput(input: WorkbenchGraphViewport, dragSource?: WorkbenchGraphDragSource): void {
 		this.cancelPointer();
 		this.inputValue = input;
 		this.pointerModel = input.model;
+		this.pointerZoom = input.zoom;
 		this.dragSource = dragSource;
 		this.updateConnectionHandles();
 	}
@@ -106,10 +120,12 @@ export class WorkbenchGraphControl implements PointerCaptureTarget {
 	public update(): void {
 		if (this.inputValue === null) return;
 		if (this.pointerModel !== this.inputValue.model
+			|| this.pointerZoom !== this.inputValue.zoom
 			|| (this.gesture !== Gesture.None && this.inputValue.selection !== this.pressTarget)
 			|| (this.drag !== undefined && !this.drag.isCurrent())) {
 			this.cancelPointer();
 			this.pointerModel = this.inputValue.model;
+			this.pointerZoom = this.inputValue.zoom;
 		}
 		this.updateConnectionHandles();
 		if (this.pressConnection !== undefined && (this.connectionHandles === undefined
@@ -194,12 +210,12 @@ export class WorkbenchGraphControl implements PointerCaptureTarget {
 		const drag = this.drag!;
 		const feedback = drag.feedback;
 		if (feedback.kind === 'node-insertion') {
-			feedback.offsetX = snapshot.viewportX - this.anchorX + view.scrollX - this.anchorScrollX;
-			feedback.offsetY = snapshot.viewportY - this.anchorY + view.scrollY - this.anchorScrollY;
+			feedback.offsetX = (snapshot.viewportX - this.anchorX + view.scrollX - this.anchorScrollX) / view.zoom;
+			feedback.offsetY = (snapshot.viewportY - this.anchorY + view.scrollY - this.anchorScrollY) / view.zoom;
 		}
 		const inside = point_in_rect(snapshot.viewportX, snapshot.viewportY, view.bounds);
-		const x = snapshot.viewportX - view.bounds.left + view.scrollX;
-		const y = snapshot.viewportY - view.bounds.top + view.scrollY;
+		const x = view.viewportToGraphX(snapshot.viewportX);
+		const y = view.viewportToGraphY(snapshot.viewportY);
 		// A stationary drag outside the scroll margins repeats neither hits nor domain work.
 		if (!this.dragPositionValid || this.dragX !== x || this.dragY !== y || this.dragInside !== inside) {
 			if (inside) drag.dragOver(snapshot.viewportX, snapshot.viewportY);
@@ -252,10 +268,10 @@ export class WorkbenchGraphControl implements PointerCaptureTarget {
 			return WorkbenchGraphPointerResult.ContextMenu;
 		}
 		const pan = auxiliary || (primary && panModifier);
-		const x = snapshot.viewportX - view.bounds.left + view.scrollX;
-		const y = snapshot.viewportY - view.bounds.top + view.scrollY;
+		const x = view.viewportToGraphX(snapshot.viewportX);
+		const y = view.viewportToGraphY(snapshot.viewportY);
 		if (!pan && (!this.hoverValid || this.hoverX !== x || this.hoverY !== y)) {
-			this.hoverEnd = this.connectionHandles === undefined ? undefined : hitWorkbenchGraphConnectionHandle(this.connectionHandles, x, y);
+			this.hoverEnd = this.connectionHandles === undefined ? undefined : hitWorkbenchGraphConnectionHandle(this.connectionHandles, x, y, view.zoom);
 			this.hover = this.hoverEnd === undefined ? view.hitTest(snapshot.viewportX, snapshot.viewportY) : this.connectionHandles!.edge;
 			this.hoverX = x;
 			this.hoverY = y;
@@ -297,10 +313,16 @@ export class WorkbenchGraphControl implements PointerCaptureTarget {
 		return activate ? WorkbenchGraphPointerResult.Activate : WorkbenchGraphPointerResult.Selection;
 	}
 
-	public handleWheel(snapshot: PointerSnapshot, deltaX: number, deltaY: number): boolean {
+	public handleWheel(snapshot: PointerSnapshot, deltaX: number, deltaY: number, zoomSteps = 0): boolean {
 		const view = this.inputValue!;
 		if (!snapshot.valid || !snapshot.insideViewport || !point_in_rect(snapshot.viewportX, snapshot.viewportY, view.canvas)) return false;
 		this.update();
+		if (zoomSteps !== 0) {
+			this.cancelPointer();
+			view.setZoom(view.zoom * Math.pow(GRAPH_ZOOM_STEP, zoomSteps), snapshot.viewportX, snapshot.viewportY);
+			this.update();
+			return true;
+		}
 		if (this.gesture !== Gesture.Drag && this.gesture !== Gesture.PendingDrag) this.cancelPointer();
 		view.pan(deltaX, deltaY);
 		if (this.gesture === Gesture.Drag) this.updateDrag(snapshot);

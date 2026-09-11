@@ -20,7 +20,7 @@ function fixture() {
 	f.view.selection = f.edge;
 	control.setInput(f.view, f.interaction);
 	const pointer = (x: number, y: number, pressed = true): PointerSnapshot => ({ valid: true, insideViewport: true, pressedButtons: pressed ? PointerButton.Primary : 0, justPressedButtons: 0, justReleasedButtons: 0,
-		viewportX: x + f.view.bounds.left - f.view.scrollX, viewportY: y + f.view.bounds.top - f.view.scrollY });
+		viewportX: f.view.graphToViewportX(x), viewportY: f.view.graphToViewportY(y) });
 	const press = (end: 'source' | 'target', now = 0) => {
 		const i = end === 'source' ? 0 : f.edge.points.length - 2;
 		return control.handlePointer({ ...pointer(f.edge.points[i], f.edge.points[i + 1]), justPressedButtons: PointerButton.Primary }, now);
@@ -38,6 +38,25 @@ test('selected endpoint grips win over node headers and coincident parallel rout
 		assert.deepEqual(f.interaction.starts, [{ kind: 'connection', edge: f.edge, end }]);
 		assert.equal(f.interaction.feedback!.target, f.target);
 		assert.equal(f.interaction.drops.length, 0);
+		f.control.dispose();
+	}
+});
+
+test('scaled connection grips keep screen-pixel hit size and retarget to the inverse-transformed card', () => {
+	for (const zoom of [0.5, 1.2, 2]) {
+		const f = fixture();
+		f.view.setZoom(zoom);
+		f.view.reveal(f.oldTarget);
+		const x = f.edge.points[f.edge.points.length - 2], y = f.edge.points[f.edge.points.length - 1];
+		assert.equal(hitWorkbenchGraphConnectionHandle({ edge: f.edge, ends: 'both' }, x + 4.9 / zoom, y, zoom), 'target');
+		assert.equal(hitWorkbenchGraphConnectionHandle({ edge: f.edge, ends: 'both' }, x + 5.1 / zoom, y, zoom), undefined);
+		assert.equal(f.press('target'), Result.Selection);
+		f.view.reveal(f.target);
+		f.capture.dispatch(f.pointer(248, 146), false, 20);
+		assert.equal(f.interaction.feedback!.target, f.target);
+		f.capture.dispatch({ ...f.pointer(248, 146, false), justReleasedButtons: PointerButton.Primary }, false, 40);
+		assert.equal(f.interaction.drops.length, 1);
+		assert.equal(f.interaction.drops[0].target, f.target);
 		f.control.dispose();
 	}
 });
@@ -216,8 +235,8 @@ test('shared arrow writer preserves route direction and handles degenerate/repea
 	assert.equal(preview.arrow, retained); assert.equal(preview.arrow.length, 6);
 	const undirected = new WorkbenchGraphConnectionPreview(createWorkbenchGraphEdge([10, 10, 10, 10]), 'source');
 	undirected.moveTo(30, 10); assert.equal(undirected.hasArrow, false);
-	assert.equal(hitWorkbenchGraphConnectionHandle({ edge, ends: 'both' }, 10, 10), 'target');
-	assert.equal(hitWorkbenchGraphConnectionHandle({ edge, ends: 'source' }, 10, 10), 'source');
+	assert.equal(hitWorkbenchGraphConnectionHandle({ edge, ends: 'both' }, 10, 10, 1), 'target');
+	assert.equal(hitWorkbenchGraphConnectionHandle({ edge, ends: 'source' }, 10, 10, 1), 'source');
 });
 
 test('header snapping is constant-time in all directions and center-coincident/self connections are not forbidden', () => {

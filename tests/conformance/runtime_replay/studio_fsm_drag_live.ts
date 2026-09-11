@@ -39,11 +39,12 @@ export async function runStudioFsmDragLive(test: StudioFixture) {
 	const pane = ide.editor.editorPanes.activePane;
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'state-graph' || !(pane instanceof BehaviorLensEditorPane)) throw new Error('FSM drag: concrete FSM pane required');
 	const review = pane.sourceEditReview;
-	const graph = lens.view.presentation;
-	const viewport = graph.viewport;
+	let graph = lens.view.presentation;
+	let viewport = graph.viewport;
 	const ready = () => until(() => graph.layoutState.kind === 'ready', 'FSM drag: current layout published');
 	await ready();
 	await testStudioGraphNavigation(test);
+	await runPaletteCommand('Graph: Zoom Out');
 	const point = (x: number, y: number) => ({ left: x, top: y, right: x, bottom: y });
 	const begin = async () => {
 		const edge = viewport.model.edges.find(edge => edge.link.reference.kind === 'state-outcome')!;
@@ -51,12 +52,11 @@ export async function runStudioFsmDragLive(test: StudioFixture) {
 		for (let index = 0; index < viewport.model.nodes.length + viewport.model.edges.indexOf(edge); index += 1) await press('ArrowDown');
 		check(viewport.selection === edge && lens.view.selection?.kind === 'state-outcome', 'FSM drag: exact edge selected by keyboard');
 		const points = edge.points;
-		movePointer(point(points[points.length - 2] + viewport.bounds.left - viewport.scrollX,
-			points[points.length - 1] + viewport.bounds.top - viewport.scrollY));
+		movePointer(point(viewport.graphToViewportX(points[points.length - 2]), viewport.graphToViewportY(points[points.length - 1])));
 		await frame(); setPointerButton('pointer_primary', true); await frame();
 		const target = Array.from(viewport.model.nodesBySource.values()).find(node => node.source.label === 'other')!;
-		movePointer(point((target.bounds.left + target.bounds.right) / 2 + viewport.bounds.left - viewport.scrollX,
-			target.bounds.top + target.headerHeight / 2 + viewport.bounds.top - viewport.scrollY));
+		movePointer(point(viewport.graphToViewportX((target.bounds.left + target.bounds.right) / 2),
+			viewport.graphToViewportY(target.bounds.top + target.headerHeight / 2)));
 		await frame();
 	};
 	const release = async () => { setPointerButton('pointer_primary', false); await frame(); };
@@ -160,7 +160,12 @@ export async function runStudioFsmDragLive(test: StudioFixture) {
 	await press('ControlRight', 'ShiftRight'); await runMenuCommand('pause');
 	check(execution.userPaused, 'FSM drag: final view is paused without coupling pause to authoring');
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
-	await chooseBehavior(test, 'FSM fixture.drag.single', 'STATE MACHINES'); await ready();
+	await chooseBehavior(test, 'FSM fixture.drag.single', 'STATE MACHINES');
+	const single = getActiveTab();
+	if (single.kind !== 'behavior_lens' || single.view.presentation.kind !== 'state-graph') throw new Error('FSM drag: chosen direct registration requires its own graph');
+	graph = single.view.presentation; viewport = graph.viewport;
+	await ready();
+	await runPaletteCommand('Graph: Zoom Out');
 	version = model.version;
 	await begin(); await release(); await ready();
 	check(!review.visible && model.version === version + 1 && model.buffer.getText().includes("on = { choose = 'other' }"),
@@ -168,14 +173,17 @@ export async function runStudioFsmDragLive(test: StudioFixture) {
 	await runPaletteCommand('Edit: Undo'); await ready();
 	check(model.buffer.getText() === changed, 'FSM drag: direct drop also has one ordinary Undo');
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
-	await chooseBehavior(test, 'FSM fixture.drag.one', 'STATE MACHINES'); await ready();
+	await chooseBehavior(test, 'FSM fixture.drag.one', 'STATE MACHINES');
+	check(getActiveTab() === lens, 'FSM drag: reopening the shared registration restores its own retained input');
+	graph = lens.view.presentation; viewport = graph.viewport;
+	await ready();
 	// Keep the review visible in the final backend screenshot, without changing saved source.
 	const oldTarget = Array.from(viewport.model.nodesBySource.values()).find(node => node.source.label === 'active')!;
 	const edge = viewport.model.edges.find(edge => edge.link.reference.kind === 'state-outcome')!;
 	await press('Home'); for (let index = 0; index < viewport.model.nodes.length + viewport.model.edges.indexOf(edge); index += 1) await press('ArrowDown');
-	movePointer(point(edge.points[edge.points.length - 2] + viewport.bounds.left - viewport.scrollX, edge.points[edge.points.length - 1] + viewport.bounds.top - viewport.scrollY));
+	movePointer(point(viewport.graphToViewportX(edge.points[edge.points.length - 2]), viewport.graphToViewportY(edge.points[edge.points.length - 1])));
 	await frame(); setPointerButton('pointer_primary', true); await frame();
-	movePointer(point((oldTarget.bounds.left + oldTarget.bounds.right) / 2 + viewport.bounds.left - viewport.scrollX, oldTarget.bounds.top + oldTarget.headerHeight / 2 + viewport.bounds.top - viewport.scrollY));
+	movePointer(point(viewport.graphToViewportX((oldTarget.bounds.left + oldTarget.bounds.right) / 2), viewport.graphToViewportY(oldTarget.bounds.top + oldTarget.headerHeight / 2)));
 	await frame(); await release();
 	check(review.visible && model.buffer.getText() === changed, 'FSM drag: final screenshot is a genuine unapplied impact review');
 	console.info('STUDIO: FSM physical retarget / review / source history / live Hot Resume PASS');
