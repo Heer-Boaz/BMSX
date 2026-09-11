@@ -1,3 +1,7 @@
+import { createBehaviorQuickPickItem } from '../behavior_lens/quick_access';
+import { editorTextModelService } from '../../../editor/model/model_service';
+import type { EditorTextModel } from '../../../editor/model/text_model';
+import { SYSTEM_RESOURCE_DOMAIN } from '../../../common/resource';
 import type { HostAudioOutput } from '../../../../hosts/common/audio_output';
 import type { HostExecutionControl } from '../../../../hosts/common/execution_control';
 import type { PointerSnapshot } from '../../../common/models';
@@ -22,10 +26,7 @@ import {
 	workbenchListContainsPosition,
 } from '../../ui/list_view';
 import {
-	executeScenarioLabNavigation,
 	scenarioLabCommandEnabled,
-	type ScenarioLabNavigationResult,
-	type ScenarioLabNavigationCommand,
 	updateScenarioLabStatus,
 } from './navigation';
 import {
@@ -88,15 +89,6 @@ export class ScenarioLabController {
 			updateScenarioLabStatus(view);
 		}
 		prepareScenarioLabLayout(view);
-	}
-
-	public executeNavigation(
-		view: ScenarioLabViewState,
-		command: ScenarioLabNavigationCommand,
-	): boolean {
-		prepareScenarioLabLayout(view);
-		const result = executeScenarioLabNavigation(view, command);
-		return this.applyNavigationResult(view, result);
 	}
 
 	public executeCommand(command: EditorScenarioLabCommandId): void {
@@ -175,43 +167,34 @@ export class ScenarioLabController {
 		setActiveTab(this.editorPanes, tab.id);
 	}
 
-	private applyNavigationResult(
-		view: ScenarioLabViewState,
-		result: ScenarioLabNavigationResult,
-	): boolean {
-		switch (result.kind) {
-			case 'none':
-				return false;
-			case 'changed':
-				return true;
-			case 'open-source':
-				this.openSource(result.location);
-				return true;
-			case 'actioneffect-source': {
-				const sources = this.behaviorRegistrations.resolve(
-					result.executionDomain,
-					'action_effect',
-					result.effectId,
-				);
-				if (sources.length === 1) {
-					const source = sources[0];
-					this.openSource({
-						resource: source.resource,
-						line: source.range.start.line,
-						column: source.range.start.column,
-					});
-					return true;
-				}
-				view.status.info = sources.length === 0
-					? `ACTIONEFFECT ${result.effectId} / SOURCE UNRESOLVED`
-					: `ACTIONEFFECT ${result.effectId} / ${sources.length} SOURCES`;
-				view.status.dirty = true;
-				return true;
-			}
+	public openActionEffectSource(view: ScenarioLabViewState, executionDomain: 0 | 1, effectId: string): void {
+		const sources = this.behaviorRegistrations.resolve(executionDomain, 'action_effect', effectId);
+		if (sources.length === 1) {
+			const source = sources[0];
+			this.openSource({ resource: source.resource, line: source.range.start.line, column: source.range.start.column });
+			return;
 		}
+		if (sources.length === 0) {
+			view.status.info = `ACTIONEFFECT ${effectId} / SOURCE UNRESOLVED`;
+			view.status.dirty = true;
+			return;
+		}
+		const quickInput = this.editor.quickInput;
+		quickInput.pick('ACTIONEFFECT SOURCES', 'Choose a definition', (_origin, lifetime) => {
+			// The result query belongs to this Lua domain; a changed candidate context
+			// ends the choice rather than applying an old source range on acceptance.
+			const changed = (model: EditorTextModel) => {
+				if (model.mode === 'lua' && (model.resource.domain === executionDomain || model.resource.domain === SYSTEM_RESOURCE_DOMAIN)) quickInput.hide();
+			};
+			lifetime.add({ dispose: editorTextModelService.onDidChangeContent(changed) });
+			lifetime.add({ dispose: editorTextModelService.onDidAddModel(changed) });
+			lifetime.add({ dispose: editorTextModelService.onDidRemoveModel(changed) });
+			return sources.map(createBehaviorQuickPickItem);
+		}, item => this.openSource({ resource: item.registration.resource,
+			line: item.registration.range.start.line, column: item.registration.range.start.column }));
 	}
 
-	private openSource(location: ScenarioSourceLocation): void {
+	public openSource(location: ScenarioSourceLocation): void {
 		this.navigation.focusChunkSourceForContext(
 			location.resource.domain,
 			location.resource.path,

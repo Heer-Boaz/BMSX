@@ -14,6 +14,8 @@ import { refreshScenarioLabProjection } from '../../ide/workbench/contrib/scenar
 import { drawScenarioLab } from '../../ide/workbench/contrib/scenario_lab/render';
 import { prepareScenarioLabLayout } from '../../ide/workbench/contrib/scenario_lab/layout';
 import { ScenarioLabNavigationSelection } from '../../ide/workbench/contrib/scenario_lab/navigation_selection';
+import { describeScenarioMessage } from '../../ide/workbench/contrib/scenario_lab/message_inspection';
+import { WorkbenchPropertyInspectorModel } from '../../ide/workbench/ui/property_inspector/model';
 import {
 	SCENARIO_RESULT_LOG_RETAIN_COUNT,
 	ScenarioResultService,
@@ -156,6 +158,67 @@ test('scenario result projection follows a new run and preserves stable log iden
 	assert.equal(scenarioLabCommandEnabled(view, 'scenarioLab.rerun'), true);
 });
 
+test('scenario messages activate their complete stored text without inventing a source location', t => {
+	const { collection, results, view } = createViewFixture(t);
+	const item = collection.roots[0].children![0];
+	const run = results.beginRun(item.id, [{ test: item, sourceRevision: 1 }]);
+	const result = results.startItem(run, 0, 20);
+	const text = `expected:\n\n${'W'.repeat(300)}\nactual:\nlast actual value`;
+	results.appendLog(result, 21, text);
+	results.fail(result, 22, { message: text }, null);
+	refreshScenarioLabProjection(view);
+	for (let index = 0; index < view.resultPane.rows.length; index += 1) {
+		const row = view.resultPane.rows[index];
+		if (row.kind !== 'log' && row.kind !== 'failure') continue;
+		selectScenarioLabResultRow(view, index);
+		const navigation = executeScenarioLabNavigation(view, 'activate');
+		assert.equal(navigation.kind, 'inspect-message');
+		if (navigation.kind !== 'inspect-message') throw new Error('message inspection expected');
+		assert.equal(navigation.row, row);
+		const property = describeScenarioMessage(navigation.row);
+		assert.equal(property.value, text);
+		assert.equal(property.location, undefined, 'test context is not a message source location');
+		assert.match(property.description, /^TEST: /);
+		const inspector = new WorkbenchPropertyInspectorModel();
+		inspector.setItems([property]);
+		let measures = 0;
+		const measure = (_value: string, start: number, end: number) => {
+			measures += 1;
+			return end - start;
+		};
+		const bounds = { left: 0, right: 80, top: 0, bottom: 80 };
+		const font = editorViewState.font.renderFont();
+		inspector.layout(font, measure, bounds);
+		const lines = inspector.rows[0].value;
+		assert.equal(lines[1], '', 'blank lines remain readable');
+		assert.equal(lines.join('').replaceAll(' ', ''), text.replaceAll('\n', '').replaceAll(' ', ''));
+		assert.equal(lines[lines.length - 1], 'last actual value');
+		assert.ok(inspector.viewport.contentHeight > bounds.bottom);
+		const measured = measures;
+		for (let frame = 0; frame < 100; frame += 1) inspector.layout(font, measure, bounds);
+		assert.equal(measures, measured, 'warmed frames reuse full measured content');
+	}
+});
+
+test('scenario messages retain an actual diagnostic location separately from test context', t => {
+	const { collection, results, view } = createViewFixture(t);
+	const item = collection.roots[0].children![0];
+	const run = results.beginRun(item.id, [{ test: item, sourceRevision: 2 }]);
+	const result = results.startItem(run, 0, 0);
+	const location = { resource: { domain: 0 as const, path: 'actors/independent.lua' }, line: 79, column: 6 };
+	results.appendLog(result, 5, 'actual fault stack', location);
+	results.fail(result, 5, { message: 'actual fault', location }, null);
+	refreshScenarioLabProjection(view);
+	const messages = view.resultPane.rows.filter(row => row.kind === 'log' || row.kind === 'failure');
+	assert.equal(messages.length, 2);
+	for (const row of messages) {
+		assert.equal(describeScenarioMessage(row).location, location);
+		assert.notEqual(location.resource.path, item.resource.path);
+	}
+	results.requestCapture(result, 5, 'frame');
+	assert.equal('location' in result.captures.at(0), false, 'a capture does not fabricate a source site');
+});
+
 test('navigation restores a result by identity after log eviction and keeps the saved collapsed run', t => {
 	const { collection, results, view } = createViewFixture(t);
 	const item = collection.roots[0].children![0];
@@ -192,6 +255,27 @@ test('navigation restores a result by identity after log eviction and keeps the 
 	for (let index = 0; index < SCENARIO_RESULT_LOG_RETAIN_COUNT; index += 1) results.appendLog(result, 1000 + index, `new ${index}`);
 	selected.restore(view); prepareScenarioLabLayout(view);
 	assert.equal(view.resultPane.selectionIndex, -1);
+});
+
+test('live result eviction clears its selection until an actual new run or user selection', t => {
+	const { collection, results, view } = createViewFixture(t);
+	const item = collection.roots[0].children![0];
+	const run = results.beginRun(item.id, [{ test: item, sourceRevision: 1 }]);
+	const result = results.startItem(run, 0, 0);
+	results.appendLog(result, 1, 'selected message');
+	refreshScenarioLabProjection(view);
+	selectScenarioLabResultRow(view, view.resultPane.rows.findIndex(row => row.kind === 'log'));
+	for (let n = 0; n < SCENARIO_RESULT_LOG_RETAIN_COUNT; n += 1) results.appendLog(result, n + 2, `later ${n}`);
+	refreshScenarioLabProjection(view);
+	assert.equal(view.resultPane.selectionIndex, -1);
+	results.appendLog(result, 600, 'another later message');
+	refreshScenarioLabProjection(view);
+	assert.equal(view.resultPane.selectionIndex, -1, 'later refreshes cannot silently select a different subject');
+	results.pass(result, 601);
+	results.completeRun(run);
+	const next = results.beginRun(item.id, [{ test: item, sourceRevision: 2 }]);
+	refreshScenarioLabProjection(view);
+	assert.equal(view.resultPane.rows[view.resultPane.selectionIndex].id, next.id, 'a new run is explicitly selected by its identity');
 });
 
 test('scenario result projection retains FSM facts without inventing source navigation', (t) => {

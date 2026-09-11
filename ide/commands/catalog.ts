@@ -69,6 +69,7 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	debugStepInto: { category: 'Debug', title: 'Step Into' },
 	debugStepOut: { category: 'Debug', title: 'Step Out' },
 	debugStepOver: { category: 'Debug', title: 'Step Over' },
+	'scenarioLab.details': { category: 'Scenario Lab', title: 'Inspect Result Message', shortTitle: 'Details' },
 	'scenarioLab.run': { category: 'Scenario Lab', title: 'Run Scenarios', shortTitle: 'Run' },
 	'scenarioLab.rerun': { category: 'Scenario Lab', title: 'Rerun Scenarios', shortTitle: 'Rerun' },
 	'scenarioLab.cancel': { category: 'Scenario Lab', title: 'Cancel Run', shortTitle: 'Cancel' },

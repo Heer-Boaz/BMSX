@@ -18,14 +18,17 @@ export function buildBehaviorQuickPickItems(
 		if (domain !== SYSTEM_RESOURCE_DOMAIN && sources.cartridgeSlots[domain] === null) continue;
 		for (const registration of index.getRegistrations(domain)) {
 			if (kind !== null && registration.behaviorKind !== kind) continue;
-			items.push({
-				registration,
-				label: registration.label,
-				description: registration.resource.path,
-				detail: `${domain === SYSTEM_RESOURCE_DOMAIN ? 'SYSTEM' : `SLOT ${domain}`} / ${registration.range.start.line}:${registration.range.start.column}`,
-			});
+			items.push(createBehaviorQuickPickItem(registration));
 		}
 	}
 	items.sort((left, right) => left.label.localeCompare(right.label));
 	return items;
+}
+
+/** Definition choice labels keep domain and exact source occurrence distinct from semantic id. */
+export function createBehaviorQuickPickItem(registration: BehaviorRegistrationSource): BehaviorQuickPickItem {
+	const domain = registration.resource.domain;
+	return { registration, label: registration.label, description: registration.resource.path,
+		detail: `${domain === SYSTEM_RESOURCE_DOMAIN ? 'SYSTEM' : `SLOT ${domain}`} / ${registration.range.start.line}:${registration.range.start.column}`,
+	};
 }

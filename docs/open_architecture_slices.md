@@ -468,9 +468,14 @@ A09 is inmiddels [geland als gedeelde hover-owner](editor_pointer_hover.md), met
 een falende oude Studio-tegenproef en de echte drie-renderer-gate. Dit sluit de
 overige onderstaande UX-/broncontracten niet.
 
+A05 is [geland als volledige resultaatinspectie](scenario_result_inspection.md):
+opgeslagen berichten, echte optionele bronlocaties, identity-based lifetime,
+ActionEffect-bronkeuze en generieke pane-detach. De oude live berichtactivatie
+faalt onafhankelijk; de volledige Studio- en Pietious-gates slagen op drie
+renderers. Dit sluit B03/B04, propertyauthoring of A08 niet.
+
 | ID | Eigenaar / contract | Gate |
 | --- | --- | --- |
-| `STUDIO-UX-A05` | Scenario-resultaatinspectie onderscheidt volledige output, berichtidentiteit en optionele bronlocatie. | Lange logs zijn volledig leesbaar; meerdere ActionEffect-bronmatches gebruiken de bestaande keuze-owner. Geen verzonnen bron voor onbekende runtimefeiten. |
 | `STUDIO-UX-A06` | Gedeeld keuzecontrol met provider-eigen matching, zichtbare matches en volledige lijstbediening. | Palette, files en symbols delen relevante UI/lifecycle zonder hun verschillende zoeksemantiek samen te drukken. |
 | `STUDIO-UX-A07` | Workbench-sessionserialization staat los van dirty-working-copybackup. | Herstart herstelt visual inputs, actieve tab en bijdrage-eigen viewstate; geen legacy/compatibility readers. Bouw op de vastgelegde A04/A03-contracten. |
 | `STUDIO-UX-A08` | Onafhankelijke workflowfixtures en gerichte volledige-hostmetingen, naast de bestaande microbenchmarks. | Werkelijke Studio-framekosten en rewind memory/latency per target; fysieke SNES Mini-resultaten niet afleiden uit een PC-run. |

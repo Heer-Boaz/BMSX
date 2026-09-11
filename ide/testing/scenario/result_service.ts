@@ -39,20 +39,19 @@ export type ScenarioResultLog = {
 	readonly id: string;
 	readonly tick: number;
 	readonly text: string;
-	readonly location: ScenarioSourceLocation;
+	readonly location?: ScenarioSourceLocation;
 };
 
 export type ScenarioResultCapture = {
 	readonly id: string;
 	readonly label: string;
 	readonly requestTick: number;
-	readonly location: ScenarioSourceLocation;
 	presentedFrame: number | null;
 };
 
 export type ScenarioRunFailure = {
 	readonly message: string;
-	readonly location: ScenarioSourceLocation;
+	readonly location?: ScenarioSourceLocation;
 };
 
 export type ScenarioFsmTransitionOutcome = 'committed' | 'rejected';
@@ -171,10 +170,6 @@ export class ScenarioRetainedSequence<T> {
 		this.entries[this.startIndex] = value;
 		this.startIndex = (this.startIndex + 1) % this.capacity;
 	}
-}
-
-function sourceStart(test: ScenarioTestItem): ScenarioSourceLocation {
-	return { resource: test.resource, line: 1, column: 1 };
 }
 
 /** Separate, bounded owner for live and completed Scenario Lab results. */
@@ -392,12 +387,12 @@ export class ScenarioResultService {
 		this.revision += 1;
 	}
 
-	public appendLog(result: ScenarioTestResult, tick: number, text: string): void {
+	public appendLog(result: ScenarioTestResult, tick: number, text: string, location?: ScenarioSourceLocation): void {
 		result.logs.push({
 			id: `scenario-log:${this.nextLogSequence}`,
 			tick,
 			text,
-			location: sourceStart(result.test),
+			location,
 		});
 		this.nextLogSequence += 1;
 		this.revision += 1;
@@ -409,7 +404,6 @@ export class ScenarioResultService {
 			label,
 			requestTick: tick,
 			presentedFrame: null,
-			location: sourceStart(result.test),
 		});
 		this.nextCaptureSequence += 1;
 		this.revision += 1;

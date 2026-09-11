@@ -50,6 +50,7 @@ export type EditorScenarioLabCommandId =
 	| 'scenarioLab.cancel';
 
 export type EditorCommandId =
+	| 'scenarioLab.details'
 	| 'graph.zoomIn'
 	| 'graph.zoomOut'
 	| 'graph.resetZoom'

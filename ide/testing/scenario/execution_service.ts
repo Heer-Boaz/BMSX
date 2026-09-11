@@ -263,10 +263,16 @@ export class ScenarioExecutionService {
 			this.runtime,
 			this.suspendedGuest,
 		);
+		const location = {
+			resource: this.fault.faultSnapshot.resource,
+			line: this.fault.faultSnapshot.line,
+			column: this.fault.faultSnapshot.column,
+		};
 		this.results.appendLog(
 			execution.result,
 			this.runtime.frameScheduler.lastTickSequence,
 			stackText,
+			location,
 		);
 		this.results.requestCapture(
 			execution.result,
@@ -278,11 +284,7 @@ export class ScenarioExecutionService {
 			this.runtime.frameScheduler.lastTickSequence,
 			{
 				message: this.fault.faultSnapshot.message,
-				location: {
-					resource: this.fault.faultSnapshot.resource,
-					line: this.fault.faultSnapshot.line,
-					column: this.fault.faultSnapshot.column,
-				},
+				location,
 			},
 			this.fault.faultSnapshot,
 		);
@@ -669,11 +671,6 @@ export class ScenarioExecutionService {
 			this.runtime.frameScheduler.lastTickSequence,
 			{
 				message,
-				location: {
-					resource: execution.result.test.resource,
-					line: 1,
-					column: 1,
-				},
 			},
 			null,
 		);

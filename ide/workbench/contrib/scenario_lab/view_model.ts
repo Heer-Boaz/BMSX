@@ -69,14 +69,13 @@ export type ScenarioLabResultRow = ScenarioLabResultRowBase & ({
 	readonly kind: 'result';
 	readonly run: ScenarioRun;
 	readonly result: ScenarioTestResult;
-	readonly location: ScenarioSourceLocation;
 	readonly expandable: true;
 	expanded: boolean;
 } | {
 	readonly kind: 'failure';
 	readonly run: ScenarioRun;
 	readonly result: ScenarioTestResult;
-	readonly location: ScenarioSourceLocation;
+	readonly location?: ScenarioSourceLocation;
 	readonly failure: ScenarioRunFailure;
 	readonly expandable: false;
 	readonly expanded: false;
@@ -84,7 +83,7 @@ export type ScenarioLabResultRow = ScenarioLabResultRowBase & ({
 	readonly kind: 'log';
 	readonly run: ScenarioRun;
 	readonly result: ScenarioTestResult;
-	readonly location: ScenarioSourceLocation;
+	readonly location?: ScenarioSourceLocation;
 	readonly log: ScenarioResultLog;
 	readonly expandable: false;
 	readonly expanded: false;
@@ -92,7 +91,6 @@ export type ScenarioLabResultRow = ScenarioLabResultRowBase & ({
 	readonly kind: 'capture';
 	readonly run: ScenarioRun;
 	readonly result: ScenarioTestResult;
-	readonly location: ScenarioSourceLocation;
 	readonly capture: ScenarioResultCapture;
 	readonly expandable: false;
 	readonly expanded: false;
@@ -113,6 +111,8 @@ export type ScenarioLabResultRow = ScenarioLabResultRowBase & ({
 	readonly expandable: false;
 	readonly expanded: false;
 });
+
+export type ScenarioLabMessageRow = Extract<ScenarioLabResultRow, { kind: 'log' | 'failure' }>;
 
 export type ScenarioLabPaneLayout = WorkbenchListLayout & {
 	headerTop: number;

@@ -84,6 +84,7 @@ test('named workbench menu materializes one retained generic action bar', () => 
 		{ type: 'command', command: 'scenarioLab.run' },
 		{ type: 'command', command: 'scenarioLab.rerun' },
 		{ type: 'command', command: 'scenarioLab.cancel' },
+		{ type: 'command', command: 'scenarioLab.details' },
 	]);
 	const actionBar = createWorkbenchActionBar('scenarioLab.title');
 	const firstBounds = actionBar.items[0].bounds;
@@ -93,9 +94,10 @@ test('named workbench menu materializes one retained generic action bar', () => 
 		'scenarioLab.run',
 		'scenarioLab.rerun',
 		'scenarioLab.cancel',
+		'scenarioLab.details',
 	]);
 	assert.equal(actionBar.items[0].bounds, firstBounds);
-	assert.equal(actionBar.items[2].bounds.right, 200);
+	assert.equal(actionBar.items[3].bounds.right, 200);
 	assert.equal(actionBar.items[0].bounds.top, 10);
 	assert.equal(actionBar.items[0].bounds.bottom, 20);
 });

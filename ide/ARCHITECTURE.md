@@ -1132,6 +1132,22 @@ Scenario testing keeps four boundaries distinct:
   session and serializes canonical build, per-item derived build/install/cold
   boot, cancellation and final canonical restore through `RuntimeTaskQueue`.
 
+Result activation is pane-owned UI navigation. Logs and failures open the shared
+`WorkbenchPropertyInspector` with their complete original text, not clipped row
+labels. `scenarioLab.details` belongs to the physical result control; the toolbar
+uses that explicit command context, not parent-command inheritance. Message source
+locations are optional and separate from test context. Retained row identity keeps
+inspection stable during new output and closes it on eviction. Multiple recognized
+ActionEffect origins use the existing Quick Input controller; model changes or
+detach close the choice before old source ranges can be accepted. The broader
+semantic origin/authoring contract remains open.
+
+Workbench deactivation detaches the visible editor via `EditorPanes.clearEditor`.
+Pane-owned `clearInput` persists codeview state and ends transient interactions;
+the editor input, document and tab identity remain retained. Activation attaches
+that input again. No feature-specific editor-active cleanup is needed for a local
+inspector. See [the result/visibility contract](../docs/scenario_result_inspection.md).
+
 `scenario_lab/media_build.ts` prepares dirty canonical ROM layers and the first
 derived test cartridge without machine writes. The run service publishes them
 only after both builds succeed and the request remains uncancelled, then opens

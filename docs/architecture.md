@@ -1068,6 +1068,17 @@ focus presentation. Its explicit command context remains the content control,
 not the toolbar's physical focus or a parent-command fallback. Pointer actions
 keep field drafts until normal command admission; input/capture loss cancels
 the gesture. See the [action-control contract](workbench_action_controls_design.md).
+
+Scenario output rows are compact projections, not the message reader or its source.
+Log/failure activation and the result control's `scenarioLab.details` command open
+the shared read-only property inspector on the original retained message. An actual
+diagnostic location is optional; the test resource is context, never a substitute
+message location. New unrelated output preserves inspection and scroll; eviction
+clears the selected message rather than selecting the row at its old ordinal.
+Multiple recognized ActionEffect source occurrences use Quick Input with distinct
+resource/position labels, and model changes expire that source choice. This does
+not establish exhaustive behavior origins or implement property authoring. See
+[Scenario result inspection](scenario_result_inspection.md).
 The weighted keybinding resolver chooses the applicable contextual command, so the
 Scenario Lab F5 binding and debugger F5 binding do not become ordered branches
 inside either feature. Starting a run captures the resolved request and source

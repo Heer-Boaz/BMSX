@@ -1,7 +1,6 @@
 import type {
 	ScenarioRun,
 	ScenarioTestResult,
-	ScenarioSourceLocation,
 } from '../../../testing/scenario/result_service';
 import type {
 	ScenarioTestNode,
@@ -189,7 +188,6 @@ function appendScenarioResultDetails(
 			run,
 			result,
 			capture,
-			location: capture.location,
 			expandable: false,
 			expanded: false,
 			text: '',
@@ -222,17 +220,11 @@ function appendScenarioRunRows(
 	for (let index = 0; index < items.length; index += 1) {
 		const result = items[index];
 		const resultExpanded = pane.expandedResultIds.has(result.id);
-		const sourceLocation: ScenarioSourceLocation = {
-			resource: result.test.resource,
-			line: 1,
-			column: 1,
-		};
 		pane.rows.push({
 			id: result.id,
 			kind: 'result',
 			run,
 			result,
-			location: sourceLocation,
 			expandable: true,
 			expanded: resultExpanded,
 			text: '',
@@ -301,9 +293,6 @@ export function refreshScenarioLabProjection(state: ScenarioLabViewState): void 
 		resultPane.rows,
 		newestRunChanged ? newestRunId : selectedResultRowId,
 	);
-	if (resultPane.selectionIndex < 0 && resultPane.rows.length > 0) {
-		resultPane.selectionIndex = 0;
-	}
 	resultPane.projectedRevision = resultService.revision;
 	resultPane.projectedNodeId = selectedNodeId;
 	resultPane.hoverIndex = -1;

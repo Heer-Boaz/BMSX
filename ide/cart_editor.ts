@@ -85,7 +85,6 @@ import {
 	findCodeTabContext,
 	retainEntryTabContext,
 } from './workbench/ui/code_tab/contexts';
-import { storeCodeTabContext } from './workbench/ui/code_tab/activation';
 import {
 	cancelWorkspaceAutosave,
 	requestWorkspaceAutosave,
@@ -449,13 +448,8 @@ export class RuntimeCartEditor implements CartEditor {
 
 	public deactivate(): void {
 		pointerHover.clear();
-		pointerCapture.cancel();
-		inputFocus.setTarget(null);
 		const wasActive = this.isActive;
-		const activeTab = getActiveTab();
-		if (activeTab.kind === 'code_editor') {
-			storeCodeTabContext(activeTab.context);
-		}
+		this.editorPanes.clearEditor();
 		editorRuntimeState.active = false;
 		this.overlayRenderer.active = false;
 		setEditorFeedbackActive(false);

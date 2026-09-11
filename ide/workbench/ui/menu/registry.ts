@@ -125,6 +125,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'scenarioLab.run' },
 		{ type: 'command', command: 'scenarioLab.rerun' },
 		{ type: 'command', command: 'scenarioLab.cancel' },
+		{ type: 'command', command: 'scenarioLab.details' },
 	],
 	'behaviorLens.graph.title': [
 		{ type: 'command', command: 'behaviorLens.source' },

@@ -188,6 +188,17 @@ geen herberekende boodschap. VS Code heeft daarvoor resultaat-/message-identitei
 en een output/peek-presentatie los van navigatie naar het bronbestand.
 [VS Code test output](https://github.com/microsoft/vscode/blob/7f59d5e01a7fafeba8e83cdfd9d8493f2beeeaca/src/vs/workbench/contrib/testing/browser/testingOutputPeek.ts).
 
+**Opvolging A05 (2026-09-11):** [resultaatinspectie en bronkeuze](scenario_result_inspection.md)
+zijn geïmplementeerd. De pane inspecteert de originele log/failure via het
+gedeelde control; de producer fabriceert geen test-regel-1-locatie meer.
+Berichtidentiteit overleeft nieuwe logs, echte evictie wist de selectie. De
+resultfocus bezit Details en de toolbar gebruikt dit expliciete commandcontext.
+Workbench-deactivatie gebruikt de bestaande pane-detach, niet lokale
+active-hooks. Meerdere effectmatches openen de gedeelde bronkiezer. De oude
+berichtactivatie faalt onafhankelijk in de browser; volledige Studio en
+Pietious-navigatie slagen op alle drie renderers. B04-sourcecertainty,
+propertyauthoring en volledige-host/per-device-metingen zijn hiermee niet gesloten.
+
 ### A06 — P2: gedeelde Quick Pick is nog geen afgeronde zoek-/keuze-UX
 
 **Bewijs:** `ide/workbench/services/quick_input/model.ts:37-66` gebruikt een eigen

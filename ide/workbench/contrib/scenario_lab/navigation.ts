@@ -6,7 +6,7 @@ import {
 } from './projection';
 import type { EditorScenarioLabCommandId } from '../../../common/commands';
 import { revealWorkbenchListSelection } from '../../ui/list_view';
-import type { ScenarioLabViewState } from './view_model';
+import type { ScenarioLabViewState, ScenarioLabMessageRow } from './view_model';
 import type { ScenarioSourceLocation } from '../../../testing/scenario/result_service';
 
 export type ScenarioLabNavigationCommand =
@@ -24,6 +24,7 @@ export type ScenarioLabNavigationResult =
 	| { readonly kind: 'none' }
 	| { readonly kind: 'changed' }
 	| { readonly kind: 'open-source'; readonly location: ScenarioSourceLocation }
+	| { readonly kind: 'inspect-message'; readonly row: ScenarioLabMessageRow }
 	| {
 		readonly kind: 'actioneffect-source';
 		readonly executionDomain: 0 | 1;
@@ -204,7 +205,9 @@ function activateScenarioLabSelection(state: ScenarioLabViewState): ScenarioLabN
 			effectId: row.fact.effectId,
 		};
 	}
-	return { kind: 'open-source', location: row.location };
+	if (row.kind === 'log' || row.kind === 'failure') return { kind: 'inspect-message', row };
+	// A capture has test context, not an invented capture-statement location.
+	return { kind: 'open-source', location: { resource: row.result.test.resource, line: 1, column: 1 } };
 }
 
 function moveScenarioLabLeft(state: ScenarioLabViewState): boolean {

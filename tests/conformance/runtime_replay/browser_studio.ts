@@ -11,6 +11,7 @@ import { testStudioWebGpuReadbacks } from './studio_webgpu_readbacks';
 import { testCapturedSourceReboot } from './studio_source_workflows';
 import { testSceneSourceAfterReboot, presentSceneEditor } from './studio_scene_source';
 import { presentCommandPalette } from './studio_command_palette';
+import { testStudioScenarioOutput } from './studio_scenario_output';
 import { testStudioScenarioExecution } from './studio_scenario_execution';
 import { presentActionEffects } from './studio_behavior_kinds';
 import { testStudioPointerCapture } from './studio_pointer_capture';
@@ -26,6 +27,7 @@ export const studioBackends = {
 			await testCapturedSourceReboot(test);
 			await testSceneSourceAfterReboot(test);
 			await testStudioScenarioExecution(test);
+			await testStudioScenarioOutput(test);
 			await presentSceneEditor(test);
 			await presentCommandPalette(test);
 			await presentActionEffects(test);
@@ -50,6 +52,7 @@ export const studioBackends = {
 			await testCapturedSourceReboot(test);
 			await testSceneSourceAfterReboot(test);
 			await testStudioScenarioExecution(test);
+			await testStudioScenarioOutput(test);
 			await presentSceneEditor(test);
 			await presentCommandPalette(test);
 			await presentActionEffects(test);
@@ -72,6 +75,7 @@ export const studioBackends = {
 			await testCapturedSourceReboot(test);
 			await testSceneSourceAfterReboot(test);
 			await testStudioScenarioExecution(test);
+			await testStudioScenarioOutput(test);
 			await presentSceneEditor(test);
 			await presentCommandPalette(test);
 			await presentActionEffects(test);

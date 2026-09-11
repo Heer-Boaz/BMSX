@@ -7,9 +7,7 @@ import {
 import type { BGamepadButton } from '../../../../hosts/common/input/models';
 import type { EditorScenarioLabCommandId } from '../../../common/commands';
 import type { IdeCommandController } from '../../../commands/controller';
-import type { ScenarioLabController } from './controller';
 import type { ScenarioLabNavigationCommand } from './navigation';
-import type { ScenarioLabViewState } from './view_model';
 
 type ScenarioLabKeyboardNavigationBinding = {
 	readonly code: string;
@@ -52,15 +50,14 @@ const scenarioLabGamepadCommandBindings: readonly {
 ];
 
 export function handleScenarioLabKeyboardInput(
-	view: ScenarioLabViewState,
 	playerInput: PlayerInput,
-	controller: ScenarioLabController,
+	navigate: (command: ScenarioLabNavigationCommand) => void,
 ): boolean {
 	for (let index = 0; index < scenarioLabKeyboardRepeatNavigationBindings.length; index += 1) {
 		const binding = scenarioLabKeyboardRepeatNavigationBindings[index];
 		if (shouldRepeatKeyFromPlayer(binding.code, playerInput)) {
 			consumeIdeKey(binding.code, playerInput);
-			controller.executeNavigation(view, binding.command);
+			navigate(binding.command);
 			return true;
 		}
 	}
@@ -68,7 +65,7 @@ export function handleScenarioLabKeyboardInput(
 		const binding = scenarioLabKeyboardPressNavigationBindings[index];
 		if (isKeyJustPressed(binding.code, playerInput)) {
 			consumeIdeKey(binding.code, playerInput);
-			controller.executeNavigation(view, binding.command);
+			navigate(binding.command);
 			return true;
 		}
 	}
@@ -76,9 +73,8 @@ export function handleScenarioLabKeyboardInput(
 }
 
 export function handleScenarioLabGamepadInput(
-	view: ScenarioLabViewState,
 	playerInput: PlayerInput,
-	controller: ScenarioLabController,
+	navigate: (command: ScenarioLabNavigationCommand) => void,
 	commands: IdeCommandController,
 ): boolean {
 	const gamepad = playerInput.inputHandlers.gamepad;
@@ -89,14 +85,14 @@ export function handleScenarioLabGamepadInput(
 		const binding = scenarioLabGamepadNavigationBindings[index];
 		if (playerInput.controlButtonRepeatEdge(binding.button, 'gamepad')) {
 			gamepad.consumeButton(binding.button);
-			controller.executeNavigation(view, binding.command);
+			navigate(binding.command);
 			return true;
 		}
 	}
 	const activate = gamepad.getButtonState('a');
 	if (activate.justpressed && !activate.consumed) {
 		gamepad.consumeButton('a');
-		controller.executeNavigation(view, 'activate');
+		navigate('activate');
 		return true;
 	}
 	for (let index = 0; index < scenarioLabGamepadCommandBindings.length; index += 1) {
