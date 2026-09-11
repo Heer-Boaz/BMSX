@@ -384,6 +384,12 @@ Click gestures belong to the pane and one source generation;
 cross-file facts also require the existing semantic-generation invalidation.
 A chosen BT or FSM has a concrete graph; a chosen ActionEffect has a grouped
 source-property inspector, not a flowchart.
+Requirement headers keep authored list extent and any reference; individual
+values occupy one full-width indented row, not an ordinal name column and a
+duplicate constructor preview. The property layout owns the value-start used
+by paint. Inline callback previews consume parsed parameters without executing
+Lua; complete source remains in Details. Read-only presentation does not grant
+new mutation authority over shared/indirect definitions.
 Source selection lives outside the discriminated presentation, not
 in an invisible row list. It is now a discriminated source selection: node,
 BT connection, FSM outcome or explicit entry. FSM proof selection additionally

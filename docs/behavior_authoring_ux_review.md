@@ -355,6 +355,14 @@ bewerkingsflows. Begin niet met extra effectmetadata in cartlib.
 long/multiline values volledig inspecteerbaar; callbacks/aliassen/unknown keys;
 selected-entry Source; cancel/read-only en één gewone Undo per echte wijziging.
 
+**Presentatie en inspectie herzien:** requirements staan eenmaal als echte
+waarden zonder ordinalenaam/lege naamkolom; hun kop houdt omvang, alias en
+partialstatus. Inline callbacks tonen parameters in plaats van `<FUNCTION>`.
+De B01-reader levert de volledige bron met Source/Back. Zie
+[het ActionEffect-contract](actioneffect_properties_design.md) voor de herlezen
+productiecode en zelfstandige/werkelijke rendererproeven. **B06 is nog niet
+afgesloten:** propertybewerkingen moeten nog op het B04-broncontract landen.
+
 ### B07 — gedeelde zoom, daarna eventueel minimap
 
 `WorkbenchGraphViewport` wordt eigenaar van één model/viewport-transformatie.

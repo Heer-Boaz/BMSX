@@ -1,4 +1,5 @@
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
+import type { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/behavior_lens/editor_pane';
 import { inputFocus } from '../../../ide/input/focus';
 import { WHEEL_SCROLL_STEP } from '../../../ide/common/constants';
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
@@ -32,6 +33,30 @@ export async function testStudioActionEffectSource(test: StudioFixture): Promise
 	for (let index = 0; index < second.body!.fields.length; index += 1) {
 		check(second.body!.fields[index].source === second.children[index], 'ActionEffect source: typed fields and property inspector share one source occurrence');
 	}
+	const blocked = second.body!.fields.find(field => field.kind === 'list' && field.name === 'blocked_tags')!;
+	if (blocked.kind !== 'list') throw new Error('ActionEffect source: authored blocked-tag list required');
+	const blockedRow = properties.nodesBySource.get(blocked.source.rowKey)!, tag = blocked.entries[0].node;
+	const tagRow = properties.nodesBySource.get(tag.rowKey)!;
+	check(blockedRow.element.value === '1 VALUE' && tagRow.element.label === '' && tagRow.element.value === "'blocked'"
+		&& tagRow.element.displayValueLeft < properties.tree.layout.valueLeft, 'ActionEffect: one full-width tag value, no duplicate constructor or ordinal label');
+	await revealLensOccurrence(test, view, tag.rowKey);
+	const version = model.version;
+	await runPaletteCommand('Behavior Lens: Open Source Details');
+	const inspector = (ide.editor.editorPanes.activePane as BehaviorLensEditorPane).inspector;
+	check(inspector.visible && inspector.model.rows[0].element.label.includes('BLOCKED TAGS') && inspector.model.rows[0].element.value === "'blocked'",
+		'ActionEffect: full requirement inspection retains its field role and exact value');
+	await click(inspector.actionBar.items[0].bounds, 6);
+	check(getActiveTab() === code && activeCodeEditor.view.cursorRow === tag.authoredRange.start.line - 1 && model.version === version,
+		'ActionEffect: held inspector Source opens the individual tag without editing');
+	await press('AltLeft', 'ArrowLeft');
+	check(getActiveTab() === lens, 'ActionEffect: normal Back returns to the same retained properties');
+	const handler = second.body!.fields.find(field => field.kind === 'value' && field.name === 'handler')!;
+	check(properties.nodesBySource.get(handler.source.rowKey)!.element.value === 'function(owner, payload)', 'ActionEffect: inline handler identifies its actual parameters');
+	await revealLensOccurrence(test, view, handler.source.rowKey);
+	await runPaletteCommand('Behavior Lens: Open Source Details');
+	check(inspector.model.rows[0].element.value.includes('OWNER.LAST_PAYLOAD = PAYLOAD'), 'ActionEffect: complete handler body is inspectable, not a function placeholder');
+	await press('Escape');
+	check(model.version === version && cycles() === position, 'ActionEffect: property inspection changes neither source nor paused guest time');
 	await press('Home');
 	const grant = properties.tree.roots[0];
 	test.setKey('Enter', true);

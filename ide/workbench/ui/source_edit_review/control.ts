@@ -58,7 +58,7 @@ export class WorkbenchSourceEditReview {
 		this.input = input;
 		this.actionControl.setInput(this.actionBar, this.focusTarget);
 		for (let index = 0; index < input.items.length; index += 1) {
-			appendWorkbenchTreeNode(this.tree, null, { ...input.items[index], index, kind: 'property', warning: false, displayLabel: '', displayValue: '' });
+			appendWorkbenchTreeNode(this.tree, null, { ...input.items[index], index, kind: 'property', warning: false, displayLabel: '', displayValue: '', displayValueLeft: 0 });
 		}
 		rebuildWorkbenchTreeRows(this.tree, this.tree.roots.length > 0 ? this.tree.roots[0] : null);
 		this.tree.textDirty = true;

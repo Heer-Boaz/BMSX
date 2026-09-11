@@ -1,6 +1,6 @@
-import { LuaSyntaxKind, type LuaExpression } from '../../../../toolchain/ts/lua/syntax/ast';
+import { LuaSyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { TextBuffer } from '../../../editor/text/text_buffer';
-import { readLuaSourceLinePreview } from '../../../language/lua/source_edits';
+import { readLuaExpressionPreview, readLuaSourceLinePreview } from '../../../language/lua/source_edits';
 import { uppercaseOutsideStrings } from '../../../common/text';
 import { appendWorkbenchTreeNode, rebuildWorkbenchTreeRows, type WorkbenchTreeNode } from '../../ui/tree_view';
 import { createWorkbenchPropertyTree, type WorkbenchPropertyElement, type WorkbenchPropertyTree } from '../../ui/property_tree';
@@ -83,24 +83,27 @@ export function projectActionEffectProperties(
 	function add(source: BehaviorSourceNode, parent: WorkbenchTreeNode<EffectPropertyElement>, label: string, value: string, description: string) {
 		const node = appendWorkbenchTreeNode(tree, parent, {
 			kind: 'property', source, label: uppercaseOutsideStrings(label), value, description,
-			warning: source.resolution !== 'complete', displayLabel: '', displayValue: '',
+			warning: source.resolution !== 'complete', displayLabel: '', displayValue: '', displayValueLeft: 0,
 		}, properties.collapsedRowKeys.has(source.rowKey));
 		properties.nodesBySource.set(source.rowKey, node);
 		return node;
-	}
-	function preview(expression: LuaExpression): string {
-		return expression.kind === LuaSyntaxKind.FunctionExpression ? '<FUNCTION>' : readLuaSourceLinePreview(buffer, expression.range);
 	}
 	for (const field of definition.body.fields) {
 		const metadata = field.kind === 'unknown' ? UNKNOWN_FIELD : FIELDS[field.name];
 		let group = groups.get(metadata.group);
 		if (group === undefined) {
 			group = appendWorkbenchTreeNode(tree, null, { kind: 'group', group: metadata.group, ...GROUPS[metadata.group],
-				value: '', warning: false, displayLabel: '', displayValue: '' }, properties.collapsedGroups.has(metadata.group));
+				value: '', warning: false, displayLabel: '', displayValue: '', displayValueLeft: 0 }, properties.collapsedGroups.has(metadata.group));
 			groups.set(metadata.group, group);
 		}
-		const row = add(field.source, group, metadata.label,
-			field.kind === 'unknown' ? readLuaSourceLinePreview(buffer, field.field.range) : preview(field.field.value), metadata.description);
+		let value: string;
+		if (field.kind === 'list' && field.source.kind === 'section') {
+			const count = field.source.resolution === 'complete' ? `${field.entries.length} ${field.entries.length === 1 ? 'VALUE' : 'VALUES'}`
+				: `${field.entries.length} AUTHORED / PARTIAL`;
+			value = field.field.value.kind === LuaSyntaxKind.TableConstructorExpression ? count
+				: `${readLuaExpressionPreview(buffer, field.field.value)} / ${count}`;
+		} else value = field.kind === 'unknown' ? readLuaSourceLinePreview(buffer, field.field.range) : readLuaExpressionPreview(buffer, field.field.value);
+		const row = add(field.source, group, metadata.label, value, metadata.description);
 		if (field.kind !== 'list') continue;
 		const entries = new Map<BehaviorSourceNode, BehaviorSourceArrayEntry<BehaviorSourceNode>>();
 		for (const entry of field.entries) entries.set(entry.node, entry);
@@ -109,7 +112,7 @@ export function projectActionEffectProperties(
 				const entry = entries.get(child);
 				const nested = entry === undefined
 					? add(child, parent, child.label, child.detail, 'PARTIAL REQUIREMENT SOURCE. NO DENSE RUNTIME INDEX IS INFERRED.')
-					: add(child, parent, entry.index === null ? 'VALUE' : String(entry.index), preview(entry.field.value), 'AUTHORED REQUIREMENT VALUE. SOURCE OPENS THIS EXPRESSION, NOT ITS PARENT LIST.');
+					: add(child, parent, '', readLuaExpressionPreview(buffer, entry.field.value), 'AUTHORED REQUIREMENT VALUE. SOURCE OPENS THIS EXPRESSION, NOT ITS PARENT LIST.');
 				children(child, nested);
 			}
 		}

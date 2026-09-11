@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import type { RuntimeResource } from '../../ide/common/resource';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { createLuaTableFieldIntegerEdits, luaSourcePositionMatchesTextRange, luaSourcePositionToTextRange,
-	luaSourceRangeMatchesTextRange, luaSourceRangeToTextRange, readLuaSourceRange, readLuaTableFieldInteger } from '../../ide/language/lua/source_edits';
+	luaSourceRangeMatchesTextRange, luaSourceRangeToTextRange, readLuaSourceRange, readLuaTableFieldInteger, readLuaExpressionPreview } from '../../ide/language/lua/source_edits';
 import { mapTrackedTextRange } from '../../ide/editor/text/text_change';
 import {
 	LuaSyntaxKind,
@@ -25,6 +25,23 @@ const resource: RuntimeResource = {
 		generated: false,
 	},
 };
+
+test('expression previews keep references verbatim and summarize only inline function parameters without evaluating or rewriting source', () => {
+	for (const [expression, expected] of [
+		['function() error("not executed") end', 'function()'],
+		['function( --[[note]]\n owner,\n payload, ...\n)\n return callbacks.other()\nend', 'function(owner, payload, ...)'],
+		['function(...) return ... end', 'function(...)'],
+		['callbacks["Mixed  Case"]', 'callbacks["Mixed  Case"]'],
+		['cadence() * ticks', 'cadence() * ticks'],
+	]) {
+		const source = `local values<const> = { value = ${expression} }`;
+		const model = new EditorTextModel(resource, 'lua', source);
+		const field = parseFields(source).get('value')!;
+		assert.equal(readLuaExpressionPreview(model.buffer, field.value), expected);
+		assert.equal(readLuaSourceRange(model.buffer, field.value.range), expression);
+		assert.equal(model.version, 1); assert.equal(model.canUndo, false); assert.equal(model.dirty, false);
+	}
+});
 
 test('Lua syntax-start anchors survive expression-end growth without changing ordinary tracked-range affinity', () => {
 	const model = new EditorTextModel(resource, 'lua', '-- 🐉\nreturn next_path');

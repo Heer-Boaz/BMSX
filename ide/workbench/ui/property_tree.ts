@@ -12,6 +12,7 @@ export type WorkbenchPropertyElement = {
 	readonly warning: boolean;
 	displayLabel: string;
 	displayValue: string;
+	displayValueLeft: number;
 };
 
 export type WorkbenchPropertyTree<Element extends WorkbenchPropertyElement> = WorkbenchTreeState<Element> & {
@@ -63,9 +64,10 @@ function writePropertyText<Element extends WorkbenchPropertyElement>(
 	for (const node of nodes) {
 		const element = node.element;
 		const labelLeft = layout.contentLeft + node.depth * layout.indentWidth + layout.twistieWidth + 2;
+		element.displayValueLeft = element.label.length === 0 ? labelLeft : layout.valueLeft + 4;
 		element.displayLabel = truncateMeasuredText(element.label,
 			(element.kind === 'group' ? layout.contentRight : layout.valueLeft) - labelLeft - 4, measure);
-		element.displayValue = truncateMeasuredText(element.value, layout.contentRight - layout.valueLeft - 8, measure);
+		element.displayValue = truncateMeasuredText(element.value, layout.contentRight - element.displayValueLeft - 4, measure);
 		writePropertyText(node.children, layout, measure);
 	}
 }

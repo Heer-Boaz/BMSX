@@ -17,10 +17,10 @@ function fixture(count = 40) {
 	let measurements = 0;
 	const measure = (text: string, start: number, end: number) => { measurements += 1; return font.measure(text.slice(start, end)); };
 	const state = createWorkbenchPropertyTree<WorkbenchPropertyElement>();
-	const group = appendWorkbenchTreeNode(state, null, { kind: 'group', label: 'GROUP', value: '', description: 'A GROUP, NOT A PROPERTY.', warning: false, displayLabel: '', displayValue: '' });
+	const group = appendWorkbenchTreeNode(state, null, { kind: 'group', label: 'GROUP', value: '', description: 'A GROUP, NOT A PROPERTY.', warning: false, displayLabel: '', displayValue: '', displayValueLeft: 0 });
 	for (let index = 0; index < count; index += 1) appendWorkbenchTreeNode(state, group, {
 		kind: 'property', label: `A LONG PROPERTY LABEL ${index}`, value: 'a_very_long_source_expression() * cadence() + another_long_source_call()',
-		description: 'AUTHORED SOURCE. '.repeat(40), warning: index === 2, displayLabel: '', displayValue: '',
+		description: 'AUTHORED SOURCE. '.repeat(40), warning: index === 2, displayLabel: '', displayValue: '', displayValueLeft: 0,
 	});
 	rebuildWorkbenchTreeRows(state, group);
 	const layout = (right = 384) => layoutWorkbenchPropertyTree(state, font, measure, 4, 20, right - 4, 268);
@@ -46,6 +46,19 @@ test('property columns, footer and every hittable row share measured tiny-font g
 	const previous = property.element.displayValue;
 	layout(240);
 	assert.ok(property.element.displayValue.length < previous.length);
+});
+
+test('unlabelled property values use the full indented row without a blank name column', () => {
+	const f = fixture(0), { state, group, layout, font } = f;
+	const value = "'a.requirement.with.a.long.and.meaningful.authored.name'";
+	const child = appendWorkbenchTreeNode(state, group, { kind: 'property', label: '', value, description: 'A VALUE, NOT A NUMBERED PROPERTY NAME.',
+		warning: false, displayLabel: '', displayValue: '', displayValueLeft: 0 });
+	rebuildWorkbenchTreeRows(state, child); state.textDirty = true; layout();
+	assert.equal(child.element.displayValueLeft, state.layout.contentLeft + state.layout.indentWidth + state.layout.twistieWidth + 2);
+	assert.equal(child.element.displayValue, value);
+	assert.ok(font.measure(value) > state.layout.contentRight - state.layout.valueLeft - 8, 'the previous fixed value column would truncate it');
+	const measured = f.measurements(); layout(); assert.equal(f.measurements(), measured);
+	layout(240); assert.ok(font.measure(child.element.displayValue) <= state.layout.contentRight - child.element.displayValueLeft - 4);
 });
 
 test('property idle, scrolling, hover and fold reuse topology and text without font measurements', () => {

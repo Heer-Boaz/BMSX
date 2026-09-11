@@ -103,14 +103,38 @@ second]=],
 		assert.equal(rows.get(fields[0].source.rowKey)!.element.value, 'cadence() * 2');
 		assert.equal(rows.get(fields[1].source.rowKey)!.element.value, 'nil');
 		assert.equal(rows.get(fields[2].source.rowKey)!.element.value, "'a  b'");
-		assert.equal(rows.get(fields[3].source.rowKey)!.element.value, '<FUNCTION>');
-		assert.equal(rows.get(fields[4].source.rowKey)!.element.value, '{...');
+		assert.equal(rows.get(fields[3].source.rowKey)!.element.value, 'function()');
+		assert.equal(rows.get(fields[4].source.rowKey)!.element.value, '2 VALUES');
 		const list = fields[4]; assert.ok(list.kind === 'list');
 		assert.equal(rows.get(list.entries[0].node.rowKey)!.element.value, '[[Mixed  Case]]');
 		assert.equal(rows.get(list.entries[1].node.rowKey)!.element.value, '[=[first...');
 		assert.ok(!f.properties.tree.roots.some(root => root.element.kind === 'group' && root.element.group === 'grant'));
 		assert.ok(rows.get(fields[0].source.rowKey)!.element.description.includes('WITHOUT TRIGGER GATES'));
 		assert.ok(rows.get(fields[2].source.rowKey)!.element.description.includes('OUTPUT, NOT AN INPUT'));
+	} finally { f.input.dispose(); }
+});
+
+test('requirements appear once as full-width values while aliases and inline callback roles remain explicit', () => {
+	const f = fixture();
+	try {
+		const definition = f.view.document.definitions[0];
+		assert.ok(definition.behaviorKind === 'action_effect' && definition.body !== null);
+		for (const field of definition.body.fields) {
+			const row = f.properties.nodesBySource.get(field.source.rowKey)!;
+			if (field.kind === 'list') {
+				assert.equal(row.element.value, field.name === 'required_tags' ? 'required / 1 VALUE' : '1 VALUE');
+				for (const entry of field.entries) {
+					const child = f.properties.nodesBySource.get(entry.node.rowKey)!;
+					assert.equal(child.element.label, '');
+					assert.equal(child.element.value, readLuaSourceRange(f.model.buffer, entry.field.value.range));
+					assert.ok(child.element.displayValueLeft < f.properties.tree.layout.valueLeft);
+				}
+			} else if (field.kind === 'value') {
+				if (field.name === 'handler') assert.equal(row.element.value, 'function(owner, payload)');
+				if (field.name === 'can_trigger' || field.name === 'calculate_cooldown_ms') assert.equal(row.element.value, 'function(owner)');
+			}
+		}
+		assert.equal(f.model.version, 1); assert.equal(f.model.canUndo, false);
 	} finally { f.input.dispose(); }
 });
 
@@ -126,8 +150,8 @@ test('partial property presentation retains computed keys, numeric wrappers and 
 		assert.ok(f.properties.nodesBySource.get(fields[1].source.rowKey)!.element.warning);
 		const first = f.properties.nodesBySource.get(list.entries[0].node.rowKey)!;
 		const fourth = f.properties.nodesBySource.get(list.entries[1].node.rowKey)!;
-		assert.equal(first.element.label, 'VALUE');
-		assert.equal(fourth.element.label, 'VALUE');
+		assert.equal(first.element.label, '');
+		assert.equal(fourth.element.label, '');
 		assert.equal(fourth.parent!.element.label, '[4]');
 		assert.equal(fourth.element.value, "'fourth'");
 		assert.ok(f.properties.nodesBySource.has(list.source.children[2].rowKey), 'unresolved entry remains navigable, not lost from the typed-entry list');

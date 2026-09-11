@@ -6,8 +6,42 @@ geïmplementeerd; onderaan staan het uitgevoerde bewijs en de afbakening.
 
 De [gebruikersreview na A04, B06](behavior_authoring_ux_review.md#b06--actioneffect-inspectie-vanuit-functionaliteit)
 vraagt een herontwerp van dubbele lijstpreviews, callbackpresentatie en echte
-propertybewerkingen. Dat vervolg is nog niet gebouwd; de bestaande bron- en
-runtimegrenzen hieronder blijven gelden, niet iedere huidige presentatiedetail.
+propertybewerkingen. De niet-mutating presentatie en volledige inspectie zijn
+nu herzien; propertyauthoring blijft afhankelijk van B04. De bestaande bron- en
+runtimegrenzen hieronder blijven gelden, niet iedere historische presentatiedetail.
+
+### B06-presentatiecontract vóór de wijziging
+
+Opnieuw gelezen: Godot `EditorPropertyArray::update_property` en de
+[array/dictionary-controls](https://github.com/godotengine/godot/blob/cb41ea115914c61a8329087b4cffbad7477b8427/editor/inspector/editor_properties_array_dict.cpp).
+De arraykop kan type/omvang tonen in plaats van een tweede inhoudsrepresentatie;
+elementcontrols kunnen zonder apart label alle beschikbare breedte gebruiken.
+Hier volgen we die presentatiegrens, niet runtime-Variantreflectie, paging of
+Godots disabled `Callable`-placeholder.
+
+- Een bewezen requirementlijst toont een compacte omvang bij zijn veld en
+  eenmaal de individuele authored waarden eronder. Een directe constructor
+  wordt niet nogmaals als `{...}` getoond. Een alias blijft herkenbaar bij de
+  kop; partial en unresolved blijven expliciet en suggereren geen runtime-size.
+- De generieke property-tree ondersteunt een waarde zonder zijlabel. Layout
+  publiceert de concrete value-start; paint consumeert diezelfde geometrie.
+  Zo krijgt een tag geen ordinalenaam en ook geen lege 40%-naamkolom.
+- Inline callbacks tonen de syntactische parameterlijst; referenties en andere
+  expressies blijven originele bronpreviews. Dit is geen call-resolution of
+  evaluatie. Details leest de volledige oorspronkelijke bron, inclusief trivia.
+- De twaalf fieldrollen, Source-occurrences, ordinary source Undo en retained
+  layout blijven gelijk. Propertymutatie volgt pas het sterkere B04-contract;
+  deze presentatiewijziging sluit B06-authoring niet af.
+
+Uitgevoerd bewijs: 1.408 Lua-tests groen en één bestaande skip (1.409 totaal),
+IDE-typecheck groen, dezelfde 51 bestaande tests-projectdiagnostics. De echte
+Pietious-navigationflow slaagt op software, WebGL2 en WebGPU: alle twaalf rollen,
+alias/partial requirements, selectie/Details/held Source/Back, source Undo en
+behoud van machineclock/media. Nieuwe zelfstandige proeven testen full-width
+waarden, cold-only meting, multiline functieparameters, varargs en exacte
+ongewijzigde bron. De complete/partial tiny-font-uitvoer is visueel bekeken.
+Studio-build, strict boundary-audit (0 issues), parity, indentation en diff-check
+slagen. Deze slice wijzigt geen cartlib, compilersemantiek of runtime.
 
 ## Getoetste productiereferenties
 

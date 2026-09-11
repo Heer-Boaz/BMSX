@@ -8,6 +8,7 @@ import {
 	type LuaSourcePosition,
 	type LuaSourceRange,
 	type LuaTableField,
+	type LuaExpression,
 } from '../../../toolchain/ts/lua/syntax/ast';
 import { findLuaTableFieldSeparator } from '../../../toolchain/ts/lua/syntax/table_fields';
 import { quoteLuaString } from '../../../toolchain/ts/lua/syntax/string_literal';
@@ -82,6 +83,18 @@ export function readLuaSourceLinePreview(buffer: TextBuffer, range: LuaSourceRan
 	if (range.start.line === range.end.line) return readLuaSourceRange(buffer, range);
 	const row = range.start.line - 1;
 	return buffer.getTextRange(buffer.offsetAt(row, range.start.column - 1), buffer.getLineEndOffset(row)) + '...';
+}
+
+/** Expression display, not printed replacement source. Function bodies stay in full inspection. */
+export function readLuaExpressionPreview(buffer: TextBuffer, expression: LuaExpression): string {
+	if (expression.kind !== LuaSyntaxKind.FunctionExpression) return readLuaSourceLinePreview(buffer, expression.range);
+	let signature = 'function(';
+	for (let index = 0; index < expression.parameters.length; index += 1) {
+		if (index > 0) signature += ', ';
+		signature += expression.parameters[index].name;
+	}
+	if (expression.hasVararg) signature += expression.parameters.length === 0 ? '...' : ', ...';
+	return signature + ')';
 }
 
 /** Reads an authored literal accepted by the integer control, never evaluates Lua. */

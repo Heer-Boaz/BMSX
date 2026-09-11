@@ -51,7 +51,8 @@ export function buildBehaviorInspection(view: BehaviorLensViewState, model: Edit
 		}
 	} else if (view.presentation.kind === 'properties') {
 		const row = view.presentation.nodesBySource.get(selected.rowKey)!;
-		source(row.element.label, row.element.description, selected.referenceRange !== null ? selected.referenceRange : selected.authoredRange);
+		const label = row.element.label.length === 0 ? `${row.parent!.element.label} / ${selected.label}` : row.element.label;
+		source(label, row.element.description, selected.referenceRange !== null ? selected.referenceRange : selected.authoredRange);
 	}
 	result.push({ label: 'SOURCE ANALYSIS', value: uppercaseOutsideStrings(selected.detail),
 		description: selected.resolution === 'complete' ? 'RECOGNIZED AUTHORED SOURCE. NO RUNTIME EXECUTION IS INFERRED.'
