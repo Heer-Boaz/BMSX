@@ -54,7 +54,7 @@ export async function runStudioFsmDragLive(test: StudioFixture) {
 		movePointer(point(points[points.length - 2] + viewport.bounds.left - viewport.scrollX,
 			points[points.length - 1] + viewport.bounds.top - viewport.scrollY));
 		await frame(); setPointerButton('pointer_primary', true); await frame();
-		const target = viewport.model.nodes.find(node => node.source.label === 'other')!;
+		const target = Array.from(viewport.model.nodesBySource.values()).find(node => node.source.label === 'other')!;
 		movePointer(point((target.bounds.left + target.bounds.right) / 2 + viewport.bounds.left - viewport.scrollX,
 			target.bounds.top + target.headerHeight / 2 + viewport.bounds.top - viewport.scrollY));
 		await frame();
@@ -170,7 +170,7 @@ export async function runStudioFsmDragLive(test: StudioFixture) {
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
 	await chooseBehavior(test, 'FSM fixture.drag.one', 'STATE MACHINES'); await ready();
 	// Keep the review visible in the final backend screenshot, without changing saved source.
-	const oldTarget = viewport.model.nodes.find(node => node.source.label === 'active')!;
+	const oldTarget = Array.from(viewport.model.nodesBySource.values()).find(node => node.source.label === 'active')!;
 	const edge = viewport.model.edges.find(edge => edge.link.reference.kind === 'state-outcome')!;
 	await press('Home'); for (let index = 0; index < viewport.model.nodes.length + viewport.model.edges.indexOf(edge); index += 1) await press('ArrowDown');
 	movePointer(point(edge.points[edge.points.length - 2] + viewport.bounds.left - viewport.scrollX, edge.points[edge.points.length - 1] + viewport.bounds.top - viewport.scrollY));

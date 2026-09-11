@@ -45,7 +45,7 @@ ${Array.from({ length: registrations }, (_, index) => `machines.register('fixtur
 			const edge = viewport.model.edges.find(edge => edge.link.reference.kind === 'state-outcome')!;
 			viewport.selection = edge;
 			view.selection = selectStateMachineSource(edge.link.reference, model.buffer);
-			const node = viewport.model.nodes.find(node => node.source.label === 'active')!;
+			const node = Array.from(viewport.model.nodesBySource.values()).find(node => node.source.label === 'active')!;
 			const x = (node.bounds.left + node.bounds.right) / 2;
 			const y = node.bounds.top + node.headerHeight / 2;
 			const start = { kind: 'connection' as const, edge, end: 'target' as const };

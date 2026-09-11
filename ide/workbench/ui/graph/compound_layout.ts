@@ -5,7 +5,7 @@ import type { BFont } from '../../../../machine/ts/render/shared/bitmap_font';
 import { createWorkbenchGraphEdge, createWorkbenchGraphLabel, createWorkbenchGraphModel, type WorkbenchGraphEdge,
 	type WorkbenchGraphLabel, type WorkbenchGraphModel, type WorkbenchGraphNode } from './model';
 
-export interface WorkbenchCompoundNode<Node> extends WorkbenchGraphNode { readonly children: readonly Node[] }
+export type WorkbenchCompoundNode<Node> = WorkbenchGraphNode & { readonly children: readonly Node[] };
 export type WorkbenchCompoundLink<Node> = {
 	readonly source: Node;
 	readonly target: Node;

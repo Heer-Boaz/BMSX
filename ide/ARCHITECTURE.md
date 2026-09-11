@@ -500,6 +500,14 @@ geometric selection. Details enumerates owned source fields without descending
 into child states. Accepting a source choice selects/reveals the corresponding
 edge immediately, or clears geometric selection for a source-only field; it
 does not wait for an edit or relayout to remove the previous highlight.
+Explicit initial/concurrent fields project to separate entry markers within their
+origin scope. Markers retain the typed `StateMachineSourceEntry` reference, not a
+fake state or Lua range. Initial edges start at the marker without an event label;
+concurrent entry keeps its distinct caption. The shared graph owner retains disc
+geometry whose bounds are also the layout endpoints. Unknown targets have no
+fabricated edge; implicit entry without an authored field has no source marker.
+Set Initial and retarget targets remain real source states.
+
 Graph Up/Down traverses nodes and edges; Shift+Up/Down and Left/Right pan.
 Tab/Shift+Tab moves between the graph control and its title toolbar.
 Gamepad up/down traverses, left/right pans, A opens Source and X opens Details.

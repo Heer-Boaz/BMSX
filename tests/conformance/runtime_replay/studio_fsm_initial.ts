@@ -23,7 +23,7 @@ export async function testStudioFsmInitial(test: StudioFixture): Promise<void> {
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'state-graph') throw new Error('initial: FSM graph required');
 	await lens.graphLayout.settled; await frame();
 	const graph = lens.view.presentation;
-	const node = graph.viewport.model.nodes.find(node => node.source.label === 'active')!;
+	const node = Array.from(graph.viewport.model.nodesBySource.values()).find(node => node.source.label === 'active')!;
 	await revealLensOccurrence(test, lens.view, node.source.rowKey);
 	const bounds = node.bounds;
 	await click({ left: graph.viewport.bounds.left + bounds.left - graph.viewport.scrollX,

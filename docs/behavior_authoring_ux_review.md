@@ -288,6 +288,35 @@ nested/concurrent scopes, self-loops en parenttransities; actuele hit geometry;
 Source, Set Initial en Undo op dezelfde Lua. B01 is de informatiehiërarchie,
 geen excuus om onbekende relaties als entrylijnen te tekenen.
 
+**Uitgewerkt:** expliciet geschreven initial/concurrent-entryvelden hebben nu
+een eigen selecteerbaar startsymbool in de declaring/origin scope. De uitgaande
+initial-pijl heeft geen eventlabel; concurrente entry houdt de eigen rolcaption.
+De marker verwijst rechtstreeks naar de bestaande source-entry en het geschreven
+field. Een onbekend target krijgt geen verzonnen verbinding; impliciete runtime-
+entry zonder geschreven field krijgt geen fictieve bronmarker. Set Initial en
+retarget selecteren uitsluitend echte states, niet de marker.
+
+Referentie: Qt Creator SCXML-editor, commit
+[`17a731d2765a0988ca7b7622dabf03eaff55398f`](https://github.com/qt-creator/qt-creator/blob/17a731d2765a0988ca7b7622dabf03eaff55398f/src/plugins/scxmleditor/plugin_interface/initialstateitem.cpp),
+`InitialStateItem` tegenover `StateItem`: aparte connectable geometrie binnen de
+scope. De gedeelde graph-owner meet/rastert de disc éénmaal; paint en ELK gebruiken
+dezelfde bounds. Geen tekstbullet in een onzichtbare padded kaart, nieuwe guest
+state of extra render-backendopcode.
+
+Bewijs: onafhankelijke nested/concurrent/dynamic/implicit-entryfixtures,
+marker-hit/Source/Back en state-command-admission; 1.398 Lua-tests groen, één
+bestaande skip. IDE-typecheck groen; tests-project houdt dezelfde 51 bestaande
+diagnostieken. Strict boundaries, core-parity, indentation en productbuild groen.
+Werkelijke Studio-navigation en initial-edit/Undo/Redo/Save/Hot Resume/Reboot op
+software, WebGL2 en WebGPU groen; de nieuwe entry-geometrie is visueel bekeken.
+Artifacts: `/tmp/bmsx-state-entry/`.
+
+Een vroege initial-live-run verloor na cold Reboot een Run-menu-click; twee
+geïnstrumenteerde herhalingen en de volledige eindrun slaagden. Dit is geen
+bewijs van reparatie: de input-/rebootinteractie blijft een afzonderlijk te
+onderzoeken observatie, zonder extra wachttijd of retry in de productcode/test.
+De permanent getoonde technische bronregels vallen nog onder B01.
+
 ### B06 — ActionEffect inspectie vanuit functionaliteit
 
 De huidige acht value-velden en vier requirementlijsten dekken de definition-

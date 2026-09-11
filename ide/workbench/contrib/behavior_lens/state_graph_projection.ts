@@ -2,15 +2,15 @@ import type { BFont } from '../../../../machine/ts/render/shared/bitmap_font';
 import { uppercaseOutsideStrings } from '../../../common/text';
 import type { GraphLayoutEngine } from '../../services/graph_layout/engine';
 import { layoutWorkbenchCompoundGraph } from '../../ui/graph/compound_layout';
-import { createWorkbenchGraphModel, createWorkbenchGraphNode } from '../../ui/graph/model';
+import { createWorkbenchGraphDisc, createWorkbenchGraphModel, createWorkbenchGraphNode, GRAPH_NODE_PADDING } from '../../ui/graph/model';
 import type { BehaviorSourceNode, BehaviorSourceRowKey } from './model';
 import type { StateMachineSourceBody, StateMachineSourceDefinition, StateMachineSourceEntry, StateMachineSourceOutcome } from './state_machine_model';
 import { stateMachineSourceRange, type StateMachineSourceReference } from './state_machine_selection';
-import type { StateGraphEdge, StateGraphLink, StateGraphModel, StateGraphNode } from './state_graph_model';
+import type { StateGraphEdge, StateGraphLink, StateGraphModel, StateGraphNode, StateGraphSourceNode, StateGraphEntryNode } from './state_graph_model';
 
 export function emptyStateGraph(font: BFont): StateGraphModel {
 	return { ...createWorkbenchGraphModel<StateGraphNode, StateGraphEdge>(font, [], []),
-		nodesBySource: new Map(), edgesByOutcome: new Map(), edgesByEntry: new Map() };
+		nodesBySource: new Map(), nodesByEntry: new Map(), edgesByOutcome: new Map(), edgesByEntry: new Map() };
 }
 
 /** Only typed containment and proven relations enter layout; source objects stay on this side. */
@@ -38,16 +38,16 @@ export async function layoutStateGraph(definition: StateMachineSourceDefinition,
 			`${transition.slot.kind}: ${unknown} UNKNOWN / ${noPath} NO PATH`);
 		else if (transition.outcomes.length === 0) note(transition.origin.rowKey, `${transition.slot.kind}: NO RETURN EVIDENCE`);
 	}
-	const nodesBySource = new Map<BehaviorSourceRowKey, StateGraphNode>();
-	function node(source: BehaviorSourceNode, body: StateMachineSourceBody | null): StateGraphNode {
+	const nodesBySource = new Map<BehaviorSourceRowKey, StateGraphSourceNode>();
+	function node(source: BehaviorSourceNode, body: StateMachineSourceBody | null): StateGraphSourceNode {
 		const lines = [source.label];
 		if (source.resolution !== 'complete') lines.push(`SOURCE ${source.resolution}`);
 		if (body !== null && body.guards !== null) lines.push('GUARDS (SOURCE ONLY)');
 		if (body !== null && body.states !== null && body.states.source.resolution !== 'complete') lines.push('STATES: PARTIAL SOURCE');
 		const localNotes = notes.get(source.rowKey);
 		if (localNotes !== undefined) lines.push(...localNotes);
-		const result: StateGraphNode = { ...createWorkbenchGraphNode(font, uppercaseOutsideStrings(lines.join('\n')), 0, 0),
-			source, children: [] };
+		const result: StateGraphSourceNode = { ...createWorkbenchGraphNode(font, uppercaseOutsideStrings(lines.join('\n')), 0, 0),
+			role: 'source', source, children: [] };
 		nodesBySource.set(source.rowKey, result);
 		if (body !== null && body.states !== null) {
 			if (body.states.kind === 'dynamic') result.children.push(node(body.states.source, null));
@@ -57,12 +57,21 @@ export async function layoutStateGraph(definition: StateMachineSourceDefinition,
 	}
 	const root = node(definition, definition.body);
 	const links: StateGraphLink[] = [];
-	// Entries and transition proofs are different source roles, even between the same endpoints.
+	const nodesByEntry = new Map<StateMachineSourceEntry, StateGraphEntryNode>();
+	// An entry begins inside its origin scope, not on the enclosing state's event rail.
+	// Implicit runtime entry has no authored field; its existing scope note stays visible.
 	for (const entry of definition.entries) {
-		if (entry.target.kind !== 'state') continue;
-		const reference = references.get(entry.owner)!.find(item => item.kind === 'state-entry' && item.entry === entry)!;
-		links.push({ source: nodesBySource.get(entry.origin)!, target: nodesBySource.get(entry.target.rowKey)!,
-			label: entry.kind.toUpperCase(), reference });
+		if (entry.field === null) continue;
+		const reference = references.get(entry.owner)!.find((item): item is Extract<StateMachineSourceReference, { kind: 'state-entry' }> =>
+			item.kind === 'state-entry' && item.entry === entry)!;
+		const marker: StateGraphEntryNode = {
+			...createWorkbenchGraphDisc(font.lineHeight + GRAPH_NODE_PADDING, 0, 0),
+			role: 'entry', reference, children: [],
+		};
+		nodesByEntry.set(entry, marker);
+		nodesBySource.get(entry.origin)!.children.push(marker);
+		if (entry.target.kind === 'state') links.push({ source: marker, target: nodesBySource.get(entry.target.rowKey)!,
+			label: entry.kind === 'concurrent' ? 'CONCURRENT' : '', reference });
 	}
 	for (const transition of definition.transitions) {
 		for (const reference of references.get(transition.slot.source.rowKey)!) {
@@ -73,7 +82,7 @@ export async function layoutStateGraph(definition: StateMachineSourceDefinition,
 				label: uppercaseOutsideStrings(`${title}\n${reference.outcome.proof.kind} LN ${range.start.line}:${range.start.column}`) });
 		}
 	}
-	const graph = await layoutWorkbenchCompoundGraph(font, [root], links, engine);
+	const graph = await layoutWorkbenchCompoundGraph<StateGraphNode, StateGraphLink>(font, [root], links, engine);
 	const edgesByOutcome = new Map<StateMachineSourceOutcome, StateGraphEdge>();
 	const edgesByEntry = new Map<StateMachineSourceEntry, StateGraphEdge>();
 	for (const edge of graph.edges) {
@@ -81,5 +90,5 @@ export async function layoutStateGraph(definition: StateMachineSourceDefinition,
 		if (reference.kind === 'state-outcome') edgesByOutcome.set(reference.outcome, edge);
 		else edgesByEntry.set(reference.entry, edge);
 	}
-	return { ...graph, nodesBySource, edgesByOutcome, edgesByEntry };
+	return { ...graph, nodesBySource, nodesByEntry, edgesByOutcome, edgesByEntry };
 }

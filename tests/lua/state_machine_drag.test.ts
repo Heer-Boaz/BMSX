@@ -11,7 +11,7 @@ import { selectBehaviorLensDefinition } from '../../ide/workbench/contrib/behavi
 import { beginStateMachineDrag, stateMachineConnectionEnds, type StateMachineRetargetDrop } from '../../ide/workbench/contrib/behavior_lens/state_machine_drag';
 import { stateMachineRetargetImpacts } from '../../ide/workbench/contrib/behavior_lens/state_machine_review';
 import { createWorkbenchGraphEdge, createWorkbenchGraphModel, createWorkbenchGraphNode } from '../../ide/workbench/ui/graph/model';
-import type { StateGraphEdge, StateGraphNode } from '../../ide/workbench/contrib/behavior_lens/state_graph_model';
+import type { StateGraphEdge, StateGraphSourceNode } from '../../ide/workbench/contrib/behavior_lens/state_graph_model';
 import type { StateMachineSourceOutcome } from '../../ide/workbench/contrib/behavior_lens/state_machine_model';
 import { FSM_RETARGET_SOURCE } from '../helpers/fsm_retarget_fixture';
 
@@ -27,11 +27,11 @@ function fixture(t: TestContext, source = FSM_RETARGET_SOURCE) {
 	const graph = view.presentation;
 	assert.ok(graph.kind === 'state-graph');
 	const font = editorViewState.font.renderFont();
-	const nodes: StateGraphNode[] = [];
-	const bySource = new Map<string, StateGraphNode>();
+	const nodes: StateGraphSourceNode[] = [];
+	const bySource = new Map<string, StateGraphSourceNode>();
 	for (const scope of view.stateMachines.scopes.values()) {
-		const node: StateGraphNode = { ...createWorkbenchGraphNode(font, scope.name ?? 'ROOT', nodes.length * 100, 20),
-			source: view.source.nodesByRowKey.get(scope.rowKey)!, children: [] };
+		const node: StateGraphSourceNode = { ...createWorkbenchGraphNode(font, scope.name ?? 'ROOT', nodes.length * 100, 20),
+			role: 'source', source: view.source.nodesByRowKey.get(scope.rowKey)!, children: [] };
 		nodes.push(node); bySource.set(scope.rowKey, node);
 	}
 	const edges: StateGraphEdge[] = [];
@@ -44,7 +44,7 @@ function fixture(t: TestContext, source = FSM_RETARGET_SOURCE) {
 			link: { source: origin, target, label: '', reference } };
 		edges.push(edge); byOutcome.set(reference.outcome, edge);
 	}
-	graph.viewport.setModel({ ...createWorkbenchGraphModel(font, nodes, edges), nodesBySource: bySource, edgesByOutcome: byOutcome, edgesByEntry: new Map() }, null);
+	graph.viewport.setModel({ ...createWorkbenchGraphModel(font, nodes, edges), nodesBySource: bySource, nodesByEntry: new Map(), edgesByOutcome: byOutcome, edgesByEntry: new Map() }, null);
 	graph.viewport.layout(0, 0, 4096, 512);
 	const definition = document.definitions[0]; assert.ok(definition.behaviorKind === 'state_machine');
 	const branch = definition.scopes[0].children.get('left')!;

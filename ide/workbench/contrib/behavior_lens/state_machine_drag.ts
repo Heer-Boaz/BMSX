@@ -53,7 +53,7 @@ class StateMachineDrag implements WorkbenchGraphDragSession {
 
 	public dragOver(viewportX: number, viewportY: number): void {
 		const hit = this.viewport.hitTest(viewportX, viewportY);
-		const scope = hit !== null && hit.kind === 'node' ? this.view.stateMachines.scopes.get(hit.source.rowKey) : undefined;
+		const scope = hit !== null && hit.kind === 'node' && hit.role === 'source' ? this.view.stateMachines.scopes.get(hit.source.rowKey) : undefined;
 		const check = scope === undefined ? undefined : this.analysis.checkTarget(scope);
 		this.target = check?.kind === 'available' ? check : undefined;
 		this.feedback.target = this.target !== undefined && hit !== null && hit.kind === 'node' ? hit : undefined;

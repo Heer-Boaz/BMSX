@@ -11,7 +11,11 @@ export type WorkbenchGraphNode = {
 	readonly lines: readonly string[];
 	/** Measured title area. A compound layout extends the body below it. */
 	readonly headerHeight: number;
-};
+} & ({ readonly appearance: 'card' } | {
+	readonly appearance: 'disc';
+	/** Pixel-row insets, measured once. Layout routes to this shape's actual bounds. */
+	readonly insets: readonly number[];
+});
 
 export type WorkbenchGraphLabel = {
 	readonly bounds: RectBounds;
@@ -20,6 +24,7 @@ export type WorkbenchGraphLabel = {
 
 const EMPTY_GRAPH_POINTS: readonly number[] = [];
 const EMPTY_GRAPH_LABELS: readonly WorkbenchGraphLabel[] = [];
+const EMPTY_GRAPH_LINES: readonly string[] = [];
 
 export type WorkbenchGraphEdge = {
 	readonly kind: 'edge';
@@ -73,10 +78,22 @@ export function createWorkbenchGraphNode(font: BFont, text: string, left: number
 	let width = 0;
 	for (const line of lines) width = Math.max(width, font.measure(line));
 	return {
-		kind: 'node', lines, headerHeight: lines.length * font.lineHeight + GRAPH_NODE_PADDING * 2,
+		kind: 'node', appearance: 'card', lines, headerHeight: lines.length * font.lineHeight + GRAPH_NODE_PADDING * 2,
 		bounds: { left, top, right: left + width + GRAPH_NODE_PADDING * 2,
 			bottom: top + lines.length * font.lineHeight + GRAPH_NODE_PADDING * 2 },
 	};
+}
+
+/** A geometric symbol, not a padded font glyph whose outline disagrees with layout. */
+export function createWorkbenchGraphDisc(diameter: number, left: number, top: number): WorkbenchGraphNode {
+	const radius = diameter / 2;
+	const insets: number[] = [];
+	for (let row = 0; row < diameter; row += 1) {
+		const distance = row + 0.5 - radius;
+		insets.push(Math.round(radius - Math.sqrt(radius * radius - distance * distance)));
+	}
+	return { kind: 'node', appearance: 'disc', insets, lines: EMPTY_GRAPH_LINES, headerHeight: diameter,
+		bounds: { left, top, right: left + diameter, bottom: top + diameter } };
 }
 
 export function createWorkbenchGraphLabel(font: BFont, text: string): WorkbenchGraphLabel {

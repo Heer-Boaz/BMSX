@@ -51,8 +51,8 @@ test('FSM graph retains containment, concurrent entry and separate edges for ide
 		assert.equal(f.graph.viewport.model.nodes.length, 0);
 		await f.settle();
 		const model = f.graph.viewport.model;
-		const root = model.nodes[0];
-		assert.deepEqual(root.children.map(child => child.source.label), ['left', 'right']);
+		const root = model.nodesBySource.get(f.view.definitionRowKey!)!;
+		assert.deepEqual(root.children.filter(child => child.role === 'source').map(child => child.source.label), ['left', 'right']);
 		const updates = model.edges.filter(edge => edge.link.reference.kind === 'state-outcome' && edge.link.reference.transition.slot.kind === 'update');
 		assert.equal(updates.length, 4);
 		assert.equal(new Set(updates.map(edge => edge.link.reference)).size, 4);
@@ -63,6 +63,11 @@ test('FSM graph retains containment, concurrent entry and separate edges for ide
 		for (const edge of model.edges) {
 			assert.equal(edge.arrow.length, 6);
 			f.graph.viewport.reveal(edge);
+			if (edge.labels.length === 0) {
+				assert.equal(edge.link.reference.kind, 'state-entry');
+				assert.equal(edge.link.source.appearance, 'disc');
+				continue;
+			}
 			const label = edge.labels[0].bounds;
 			assert.equal(f.graph.viewport.hitTest(label.left + 2 - f.graph.viewport.scrollX, label.top + 2 - f.graph.viewport.scrollY), edge);
 		}
@@ -106,7 +111,7 @@ fsm.register('cyclic', { initial = 'a', on = { parent = '/a' }, states = {
 	try {
 		f.input.updatePresentation(font); await f.settle();
 		const model = f.graph.viewport.model;
-		const root = model.nodes[0];
+		const root = model.nodesBySource.get(f.view.definitionRowKey!)!;
 		for (const node of model.nodes) for (const coordinate of Object.values(node.bounds)) assert.equal(coordinate, Math.round(coordinate));
 		for (const edge of model.edges) {
 			for (const coordinate of edge.points) assert.equal(coordinate, Math.round(coordinate));
@@ -114,8 +119,10 @@ fsm.register('cyclic', { initial = 'a', on = { parent = '/a' }, states = {
 		}
 		assert.equal(model.edges.length, 5, 'initial, parent handler, self loop and two cycle directions only');
 		assert.ok(model.edges.some(edge => edge.link.source === edge.link.target));
-		assert.equal(model.edges.filter(edge => edge.link.source === root).length, 2, 'parent handler is not cloned onto children');
+		assert.equal(model.edges.filter(edge => edge.link.source === root).length, 1, 'only the parent handler starts at the parent; initial starts inside its scope');
 		const a = root.children[0];
+		assert.equal(a.role, 'source');
+		if (a.role !== 'source') throw new Error('Expected a source state');
 		assert.ok(a.lines.includes('GUARDS (SOURCE ONLY)'));
 		assert.ok(a.lines.some(line => line.includes('1 UNKNOWN')));
 		f.view.selection = { kind: 'node', rowKey: a.source.rowKey };
@@ -140,7 +147,7 @@ test('FSM initial command updates real graph entry edges and retains selected st
 	try {
 		f.input.updatePresentation(font); await f.settle();
 		assert.equal(stateMachineInitialTarget(f.view), undefined, 'a root or absent selection is not child membership');
-		const node = f.graph.viewport.model.nodes.find(node => node.source.label === 'active')!;
+		const node = Array.from(f.graph.viewport.model.nodesBySource.values()).find(node => node.source.label === 'active')!;
 		f.graph.viewport.selection = node;
 		acceptStateGraphSelection(f.view, f.graph, f.model.buffer);
 		const target = stateMachineInitialTarget(f.view)!;
@@ -264,5 +271,62 @@ test('ELK half-pixel labels become one integer canvas generation rather than per
 			assert.equal(f.graph.viewport.scrollX % 1, 0);
 			assert.equal(f.graph.viewport.scrollY % 1, 0);
 		}
+	} finally { f.input.dispose(); }
+});
+
+test('authored initial and concurrent entries have their own in-scope marker and exact source identity', async () => {
+	const f = fixture();
+	try {
+		f.input.updatePresentation(font); await f.settle();
+		const model = f.graph.viewport.model;
+		const definition = f.view.document.definitions[0];
+		assert.ok(definition.behaviorKind === 'state_machine');
+		for (const entry of definition.entries) {
+			if (entry.field === null) {
+				assert.equal(model.nodesByEntry.has(entry), false, 'implicit runtime choice cannot invent an authored initial field');
+				continue;
+			}
+			const marker = model.nodesByEntry.get(entry)!;
+			assert.equal(marker.role, 'entry');
+			assert.equal(marker.appearance, 'disc');
+			assert.equal(marker.reference.entry, entry);
+			assert.equal(marker.reference.field, entry.field);
+			assert.ok(model.nodesBySource.get(entry.origin)!.children.includes(marker), 'entry is inside its origin scope, not a rail from the container header');
+			f.graph.viewport.reveal(marker);
+			assert.equal(f.graph.viewport.hitTest(marker.bounds.left - f.graph.viewport.scrollX + 2,
+				marker.bounds.top - f.graph.viewport.scrollY + 2), marker);
+			f.graph.viewport.selection = marker;
+			acceptStateGraphSelection(f.view, f.graph, f.model.buffer);
+			assert.equal(f.view.selection?.kind, 'state-entry');
+			assert.equal(stateGraphSelection(model, f.view.selection), marker, 'source restoration selects the canonical entry marker');
+			assert.equal(stateMachineInitialTarget(f.view), undefined, 'entry marker is not a candidate child state');
+			const edge = model.edgesByEntry.get(entry);
+			if (entry.target.kind === 'state') {
+				assert.equal(edge!.link.source, marker);
+				assert.equal(edge!.link.target, model.nodesBySource.get(entry.target.rowKey));
+				if (entry.kind === 'initial') assert.equal(edge!.labels.length, 0, 'initial is expressed by the marker, not by an event label');
+			} else assert.equal(edge, undefined, 'unresolved source does not invent a geometric endpoint');
+		}
+	} finally { f.input.dispose(); }
+});
+
+test('unknown explicit initial remains inspectable without a fake target; absent initial has no fake source marker', async () => {
+	const f = fixture(`local machines<const> = require('cartlib/fsm/library')
+machines.register('unknown.initial', { initial = choose_initial(), states = { idle = {}, run = {} } })
+machines.register('implicit.initial', { states = { idle = {}, run = {} } })`);
+	try {
+		f.input.updatePresentation(font); await f.settle();
+		const model = f.graph.viewport.model;
+		assert.equal(model.nodesByEntry.size, 1);
+		const marker = [...model.nodesByEntry.values()][0];
+		assert.equal(marker.reference.entry.target.kind, 'unresolved');
+		assert.ok(model.nodesBySource.get(marker.reference.entry.owner)!.lines.some(line => line.includes('INITIAL: ? DYNAMIC-VALUE')));
+		assert.equal(model.edges.length, 0);
+		f.graph.viewport.selection = marker;
+		acceptStateGraphSelection(f.view, f.graph, f.model.buffer);
+		assert.equal(f.view.selection?.kind, 'state-entry');
+		selectBehaviorLensDefinition(f.view, f.view.document.definitions[1].rowKey);
+		f.input.updatePresentation(font); await f.settle();
+		assert.equal(f.graph.viewport.model.nodesByEntry.size, 0);
 	} finally { f.input.dispose(); }
 });

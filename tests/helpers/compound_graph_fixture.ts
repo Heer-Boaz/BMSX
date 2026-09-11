@@ -1,12 +1,13 @@
 import type { BFont } from '../../machine/ts/render/shared/bitmap_font';
-import { createWorkbenchGraphNode } from '../../ide/workbench/ui/graph/model';
-import type { WorkbenchCompoundLink, WorkbenchCompoundNode } from '../../ide/workbench/ui/graph/compound_layout';
+import { createWorkbenchGraphNode, type WorkbenchGraphNode } from '../../ide/workbench/ui/graph/model';
+import type { WorkbenchCompoundLink } from '../../ide/workbench/ui/graph/compound_layout';
 
-export interface CompoundFixtureNode extends WorkbenchCompoundNode<CompoundFixtureNode> {
+export type CompoundFixtureNode = WorkbenchGraphNode & {
+	readonly children: readonly CompoundFixtureNode[];
 	readonly name: string;
 	/** Main-thread identity, deliberately not structured-cloneable. */
 	readonly action: () => string;
-}
+};
 export type CompoundFixtureLink = WorkbenchCompoundLink<CompoundFixtureNode> & { readonly proof: string };
 
 /** Independent geometry corpus. Names do not imply any cartlib execution semantics. */

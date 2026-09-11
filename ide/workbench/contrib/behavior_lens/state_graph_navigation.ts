@@ -12,7 +12,7 @@ export function stateGraphSelection(model: StateGraphModel, selection: BehaviorS
 	switch (selection.kind) {
 		case 'node': item = model.nodesBySource.get(selection.rowKey); break;
 		case 'state-outcome': item = model.edgesByOutcome.get(selection.outcome); break;
-		case 'state-entry': item = model.edgesByEntry.get(selection.entry); break;
+		case 'state-entry': item = model.nodesByEntry.get(selection.entry); break;
 		case 'tree-edge': return null;
 	}
 	return item === undefined ? null : item;
@@ -20,8 +20,8 @@ export function stateGraphSelection(model: StateGraphModel, selection: BehaviorS
 
 export function acceptStateGraphSelection(view: BehaviorLensViewState, graph: BehaviorLensStateGraph, buffer: TextBuffer): void {
 	const item = graph.viewport.selection;
-	view.selection = item === null ? null : item.kind === 'node' ? { kind: 'node', rowKey: item.source.rowKey }
-		: selectStateMachineSource(item.link.reference, buffer);
+	view.selection = item === null ? null : item.kind === 'node' && item.role === 'source' ? { kind: 'node', rowKey: item.source.rowKey }
+		: selectStateMachineSource(item.kind === 'node' ? item.reference : item.link.reference, buffer);
 	updateBehaviorLensStatus(view);
 }
 

@@ -34,7 +34,7 @@ export async function runStudioFsmInitialLive(test: StudioFixture) {
 	if (lens.kind !== 'behavior_lens' || lens.view.presentation.kind !== 'state-graph') throw new Error('initial live: FSM graph required');
 	await lens.graphLayout.settled; await frame();
 	const graph = lens.view.presentation;
-	const active = graph.viewport.model.nodes.find(node => node.source.label === 'active')!;
+	const active = Array.from(graph.viewport.model.nodesBySource.values()).find(node => node.source.label === 'active')!;
 	await revealLensOccurrence(test, lens.view, active.source.rowKey);
 	const position = cycles();
 	const media = ide.sources.currentBlua32Media;
@@ -95,7 +95,7 @@ export async function runStudioFsmInitialLive(test: StudioFixture) {
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
 	await chooseBehavior(test, 'FSM fixture.initial', 'STATE MACHINES');
 	await lens.graphLayout.settled; await frame();
-	await revealLensOccurrence(test, lens.view, graph.viewport.model.nodes.find(node => node.source.label === 'idle')!.source.rowKey);
+	await revealLensOccurrence(test, lens.view, Array.from(graph.viewport.model.nodesBySource.values()).find(node => node.source.label === 'idle')!.source.rowKey);
 	console.info('STUDIO: FSM initial live edit and three Hot Resume installs PASS');
 	return { hostFrames: test.observations.hostFrames, hotResumeInstalls: 3, coldInitial: 'active' };
 }

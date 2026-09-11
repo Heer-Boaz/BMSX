@@ -64,10 +64,17 @@ export function drawWorkbenchGraph(view: WorkbenchGraphViewport, hover: Workbenc
 		const right = area.right + offsetX;
 		const bottom = top + node.headerHeight;
 		const selected = view.selection === node;
-		api.fill_rect(left, top, right, bottom, 0, colors.COLOR_PROBLEMS_PANEL_HEADER_BACKGROUND);
+		if (node.appearance === 'card') api.fill_rect(left, top, right, bottom, 0, colors.COLOR_PROBLEMS_PANEL_HEADER_BACKGROUND);
 		if (selected) api.fill_rect(left, top, right, bottom, 0, colors.SELECTION_OVERLAY);
 		if (node === hover && !selected) api.fill_rect(left, top, right, bottom, 0, colors.HIGHLIGHT_OVERLAY);
-		api.blit_rect(left, top, right, bottom, 0, selected ? colors.COLOR_PROBLEMS_PANEL_SELECTION_BORDER : colors.COLOR_TAB_BORDER);
+		if (node.appearance === 'card' || selected || node === hover) api.blit_rect(left, top, right, bottom, 0, selected ? colors.COLOR_PROBLEMS_PANEL_SELECTION_BORDER : colors.COLOR_TAB_BORDER);
+		if (node.appearance === 'disc') {
+			for (let row = 0; row < node.insets.length; row += 1) {
+				const inset = node.insets[row];
+				api.fill_rect(left + inset, top + row, right - inset, top + row + 1, 0,
+					selected ? colors.COLOR_SELECTION_TEXT : colors.COLOR_RESOURCE_VIEWER_TEXT);
+			}
+		}
 		let y = top + GRAPH_NODE_PADDING;
 		for (const line of node.lines) {
 			api.blit_text_inline_with_font(line, left + GRAPH_NODE_PADDING, y, 0,

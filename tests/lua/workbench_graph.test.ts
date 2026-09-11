@@ -9,7 +9,7 @@ import { PointerCaptureService } from '../../ide/input/pointer/capture';
 import type { PointerSnapshot } from '../../ide/common/models';
 import { api } from '../../ide/runtime/overlay_api';
 import { drawWorkbenchGraph } from '../../ide/workbench/render/graph';
-import { createWorkbenchGraphEdge, createWorkbenchGraphLabel, createWorkbenchGraphModel, createWorkbenchGraphNode, type WorkbenchGraphModel } from '../../ide/workbench/ui/graph/model';
+import { createWorkbenchGraphDisc, createWorkbenchGraphEdge, createWorkbenchGraphLabel, createWorkbenchGraphModel, createWorkbenchGraphNode, type WorkbenchGraphModel } from '../../ide/workbench/ui/graph/model';
 import { WorkbenchGraphViewport } from '../../ide/workbench/ui/graph/viewport';
 import { WorkbenchGraphControl, WorkbenchGraphPointerResult as Result } from '../../ide/workbench/ui/graph/control';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
@@ -27,6 +27,28 @@ function fixture() {
 function pointer(x: number, y: number, pressed = false): PointerSnapshot {
 	return { viewportX: x, viewportY: y, pressedButtons: pressed ? PointerButton.Primary : 0, justPressedButtons: 0, justReleasedButtons: 0, valid: true, insideViewport: true };
 }
+
+test('disc symbols retain their actual pixel silhouette instead of routing to padded text bounds', () => {
+	const disc = createWorkbenchGraphDisc(11, 20, 20);
+	assert.ok(disc.appearance === 'disc');
+	assert.equal(disc.headerHeight, 11);
+	assert.deepEqual(disc.bounds, { left: 20, top: 20, right: 31, bottom: 31 });
+	assert.deepEqual(disc.lines, []);
+	assert.equal(disc.insets[5], 0, 'the route endpoint meets the disc at its horizontal diameter');
+	assert.ok(disc.insets[0] > 0, 'the disc has curved corners, not a square or font replacement glyph');
+	assert.deepEqual(disc.insets, [...disc.insets].reverse());
+	const view = new WorkbenchGraphViewport(createWorkbenchGraphModel(font, [disc], []));
+	view.layout(0, 0, 100, 100);
+	const { presenter, renderer, queue } = createHostOverlayFixture(100, 100);
+	const insets = disc.insets;
+	for (let index = 0; index < 2; index += 1) {
+		renderer.beginFrame(presenter); api.beginFrame(renderer);
+		drawWorkbenchGraph(view, null, false); renderer.endFrame();
+		const frame = queue.consumeOverlayFrame();
+		assert.ok(!frame.commandKinds.slice(0, frame.commandCount).includes(Host2DKind.Glyphs));
+		assert.equal(disc.insets, insets, 'paint consumes retained geometry without a new raster');
+	}
+});
 
 test('graph layout uses the rendering font and retains route bounds independent of viewport movement', () => {
 	const { view, a, b, edge, model } = fixture();

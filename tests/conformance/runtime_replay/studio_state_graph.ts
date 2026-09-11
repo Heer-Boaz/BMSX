@@ -28,10 +28,26 @@ export async function testStudioStateGraph(test: StudioFixture): Promise<void> {
 	check(graph.layoutState.kind === 'ready', 'FSM diagram: actual browser worker publishes');
 	const viewport = graph.viewport;
 	const generation = viewport.model;
-	check(generation.nodes.length === 3 && generation.edges.length === 5, 'FSM diagram: two states, one root, initial, two returns, loop and reset');
+	check(generation.nodesBySource.size === 3 && generation.nodesByEntry.size === 1 && generation.nodes.length === 4 && generation.edges.length === 5, 'FSM diagram: two states, one root, distinct initial marker, two returns, loop and reset');
 	const parallel = generation.edges.filter(edge => edge.link.reference.kind === 'state-outcome' && edge.link.reference.outcome.proof.kind === 'return');
 	check(parallel.length === 2 && parallel[0].link.source === parallel[1].link.source && parallel[0].link.target === parallel[1].link.target,
 		'FSM diagram: parallel source evidence is not merged');
+	const marker = generation.nodesByEntry.values().next().value!;
+	viewport.reveal(marker); await frame();
+	const version = model.version;
+	await click({ left: viewport.bounds.left + marker.bounds.left - viewport.scrollX,
+		right: viewport.bounds.left + marker.bounds.right - viewport.scrollX,
+		top: viewport.bounds.top + marker.bounds.top - viewport.scrollY,
+		bottom: viewport.bounds.top + marker.bounds.top + marker.headerHeight - viewport.scrollY }, 1, 'pointer_secondary');
+	check(view.selection?.kind === 'state-entry' && ide.editor.contextMenu.visible
+		&& !ide.editor.commands.isEnabled('behaviorLens.setInitialState'),
+		'FSM entry: marker selects authored initial, not a fictitious child state');
+	await press('Home'); await press('Enter');
+	check(getActiveTab() === code && activeCodeEditor.view.cursorRow === marker.reference.field.range.start.line - 1
+		&& model.version === version && !hasSelection(), 'FSM entry: Source opens the exact initial field without editing');
+	await press('AltLeft', 'ArrowLeft');
+	check(getActiveTab() === lens && viewport.selection === marker && model.version === version,
+		'FSM entry: ordinary Back restores the entry marker and unchanged source');
 	await press('Home'); await press('ArrowDown');
 	const selectedState = viewport.selection;
 	if (selectedState === null || selectedState.kind !== 'node') throw new Error('FSM context: state selection required');

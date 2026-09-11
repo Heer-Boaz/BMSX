@@ -224,6 +224,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		const presentation = view.presentation;
 		let menu: WorkbenchContextMenuId;
 		if (view.selection === null) menu = 'behaviorLens.canvas.context';
+		else if (view.selection.kind === 'state-entry') menu = 'behaviorLens.edge.context';
 		else if (presentation.kind === 'graph' || presentation.kind === 'state-graph') {
 			menu = presentation.viewport.selection?.kind === 'edge' ? 'behaviorLens.edge.context'
 				: presentation.kind === 'graph' ? 'behaviorLens.node.context' : 'behaviorLens.state.context';
