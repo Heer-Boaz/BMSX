@@ -24,6 +24,15 @@ recursive implementation.
 
 Source: https://github.com/microsoft/vscode/blob/7f59d5e01a7fafeba8e83cdfd9d8493f2beeeaca/src/vs/base/common/filters.ts
 
+`ide/common/fuzzy_scorer.ts` adapts the non-contiguous `scoreFuzzy` recurrence
+from the same revision's `src/vs/base/common/fuzzyScorer.ts`. The file Quick Pick
+provider applies its path identity, basename prefix/name, and path scoring
+priorities. BMSX retains matrix/position storage and relates case-folded indices
+to original text. `tests/helpers/vscode_fuzzy_scorer.ts` preserves the original
+recurrence as the score-and-position conformance oracle.
+
+Source: https://github.com/microsoft/vscode/blob/7f59d5e01a7fafeba8e83cdfd9d8493f2beeeaca/src/vs/base/common/fuzzyScorer.ts
+
 MIT License
 
 Copyright (c) 2015 - present Microsoft Corporation

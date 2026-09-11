@@ -3,7 +3,7 @@ export class CaseFoldedText {
 	public readonly lower: string;
 	private readonly sourceOffsets: number[] | undefined;
 
-	public constructor(text: string) {
+	public constructor(public readonly text: string) {
 		this.lower = text.toLowerCase();
 		if (this.lower.length !== text.length) {
 			const offsets: number[] = [];

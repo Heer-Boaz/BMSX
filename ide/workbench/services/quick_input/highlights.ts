@@ -5,7 +5,7 @@ import type { QuickPickHighlight, QuickPickItem } from './provider';
 /** Matching positions are converted once, at the search/display representation boundary. */
 export function appendQuickPickHighlights(
 	output: ScratchBuffer<QuickPickHighlight>, item: QuickPickItem,
-	text: CaseFoldedText, positions: readonly number[],
+	text: CaseFoldedText, positions: readonly number[], sourceOffset = 0,
 ): void {
 	let index = 0;
 	while (index < positions.length) {
@@ -16,7 +16,7 @@ export function appendQuickPickHighlights(
 			end = text.sourceEnd(positions[index] + 1);
 			index += 1;
 		}
-		appendQuickPickSourceRange(output, item, start, end);
+		appendQuickPickSourceRange(output, item, start + sourceOffset, end + sourceOffset);
 	}
 }
 

@@ -6,7 +6,7 @@ import { WorkingCopyEditorInput } from '../../common/editor_input';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import { getActiveTab } from '../../ui/tabs';
 import { buildResourceQuickPickItems } from '../resources/quick_access';
-import { TextQuickPickProvider } from '../../services/quick_input/text_provider';
+import { FileQuickPickProvider } from '../resources/quick_pick_provider';
 
 export type SourceViewContribution = {
 	readonly title: string;
@@ -36,7 +36,7 @@ export function openSourceView(
 	for (const resource of sources.luaResources) {
 		if (view.accepts(sourceAnalysis(sources, resource))) resources.push(resource);
 	}
-	picker.pick(view.title, 'Choose a source document', () => new TextQuickPickProvider(buildResourceQuickPickItems(resources)),
+	picker.pick(view.title, 'Choose a source document', () => new FileQuickPickProvider(buildResourceQuickPickItems(resources)),
 		item => view.openResource(item.resource));
 }
 

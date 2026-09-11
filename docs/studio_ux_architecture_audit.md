@@ -645,3 +645,24 @@ voor referenties, exacte grenzen en de gecontroleerde kostenvergelijking.
 
 **A06 blijft open voor file/symbol-fuzzymatching.** B03/B04/B06-authoring, A07
 en het bredere A08-bewijs zijn hiermee niet gesloten.
+
+### A06 — bestandsnamen en paden (2026-09-12; gedeeltelijke uitvoering)
+
+Bestandskeuzes hebben nu een eigen provider met de VS Code `scoreFuzzy`-
+recurrence en identity/basename/path-prioriteiten. De matrix en matchposities
+blijven behouden; het UI-contract, bronresource en domain blijven ongewijzigd.
+Kind/socket-metadata is context, geen tweede filename. Alle querytermen moeten
+matchen; onmogelijke subsequences worden bewezen verworpen vóór de matrix,
+zonder timeout, cap of per-toets-workspacequery.
+
+De oude echte Studio op `a05a3e879` faalt op de afkorting `tscr`. De huidige
+fysieke file/highlight/resource/Back/Undo-proef én de volle Studio- en Pietious-
+navigatiegates slagen op software, WebGL2 en WebGPU. Lua: 1568 pass, één bestaande
+skip; IDE typecheck, audits, indentation en browserbuild slagen. Tests-typecheck:
+dezelfde 51 bestaande diagnostieken. De gemeten breedste query kost 0,143/1,170/
+10,202 ms voor 128/1024/8192 files op de ontwikkel-PC, niet op de SNES Mini.
+Zie [file_quick_access.md](file_quick_access.md) voor eigenaar, referenties,
+querypolicy, oracle en de precieze meetgrenzen.
+
+**A06 blijft open voor symbol-fuzzymatching.** Dit sluit B03/B04/B06-authoring,
+A07 of het bredere A08-bewijs niet.

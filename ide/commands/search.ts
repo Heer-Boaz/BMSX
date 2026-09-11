@@ -1,7 +1,7 @@
 import { showCommandPalette } from '../workbench/contrib/commands/quick_access';
 import { focusRuntimeErrorOverlay } from '../runtime_error/navigation';
 import { buildResourceQuickPickItems } from '../workbench/contrib/resources/quick_access';
-import { TextQuickPickProvider } from '../workbench/services/quick_input/text_provider';
+import { FileQuickPickProvider } from '../workbench/contrib/resources/quick_pick_provider';
 import { openLineJump } from '../workbench/contrib/code_editor/find/line_jump';
 import { openCreateResourcePrompt } from '../workbench/contrib/resources/create/index';
 import { openReferenceSearch } from '../workbench/contrib/code_editor/references/quick_access';
@@ -50,7 +50,7 @@ export function executeEditorSearchCommand(
 			openSymbolSearch(editor, luaTooling, 'workspace');
 			return;
 		case 'resourceSearch':
-			editor.quickInput.pick('GO TO FILE', 'Type to filter files', () => new TextQuickPickProvider(buildResourceQuickPickItems(sources.activeResources)),
+			editor.quickInput.pick('GO TO FILE', 'Type a file name or path', () => new FileQuickPickProvider(buildResourceQuickPickItems(sources.activeResources)),
 				item => { void editor.navigation.openResource(item.resource); });
 			return;
 		case 'runtimeErrorFocus':

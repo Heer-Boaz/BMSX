@@ -1503,7 +1503,7 @@ on release over the pressed row, not on press. Query/geometry/session changes
 cancel that gesture. Its visible labels are prepared lazily per font/width
 generation, without limiting the catalog. These are host interaction owners,
 not guest input or machine state. See `quick_input_interaction.md`; provider
-matching and visible match reasons remain separate open A06 requirements.
+query and match-presentation ownership is described below.
 
 The Quick Input provider, not its control, owns query meaning and ranking.
 Providers retain admitted typed items and publish ordered match records plus a
@@ -1521,6 +1521,14 @@ retains visible glyph/run geometry and keeps truncation markers separate from
 source text. Its overlay submissions reuse original string spans, with no
 per-frame search, measurement or substring copies. `quick_input_highlights.md`
 records this boundary; it does not make all provider families fuzzy matchers.
+File Quick Access owns fuzzy basename/path matching using the retained VS Code
+`scoreFuzzy` recurrence: full path identity, basename prefix/name, then broader
+path matching, with every query term required. Kind/domain labels remain display
+context rather than incidental filename matches. The existing resource catalog
+is admitted once; matching does not issue workspace queries, and duplicate paths
+in different domains retain their original selectable resources. Matrix/position
+storage is reused without a path, query-length or result-count cutoff. See
+`file_quick_access.md`; this file policy is not imposed on commands or symbols.
 Symbol and source-location choices use the same control, with the original symbol,
 definition target or snapshot source range. Each invocation captures its actual
 resource domain; navigation never substitutes a later active tab's domain. Lua
