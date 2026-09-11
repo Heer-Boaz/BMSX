@@ -4512,7 +4512,8 @@ class FunctionBuilder {
 		const base = this.allocTemp();
 		const wantsMulti = expressions.length === 1 && this.isMultiReturnExpression(expressions[0]);
 		if (expressions.length === 1) {
-			if (!wantsMulti && this.moduleCompileInfo !== undefined && expressions[0] === this.moduleCompileInfo.returnExpression) {
+			if (this.moduleCompileInfo !== undefined && expressions[0] === this.moduleCompileInfo.returnExpression) {
+				// A module publishes one root value, including a factory's first result.
 				this.compileExpressionInto(expressions[0], base, 1);
 				const rootSlot = this.moduleCompileInfo.exportSlotsByPathKey.get('');
 				if (rootSlot !== undefined) {

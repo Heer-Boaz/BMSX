@@ -92,6 +92,44 @@ function compileWithConstModule(
 	};
 }
 
+test('module export publication adjusts a factory tail call to its first result', () => {
+	for (const tail of ['return { value = 73 }', 'return { value = 73 }, { ignored = true }', 'return'] as const) {
+		const moduleSource = `factory_calls = 0
+local function make()
+ factory_calls += 1
+ ${tail}
+end
+return make()`;
+		const entrySource = `local first = require('factory')
+local second = require('factory')
+return first == nil, first == second, factory_calls`;
+		for (const optLevel of [0, 3] as const) {
+			const { compiled } = compileWithModule(entrySource, 'factory', moduleSource, [], optLevel);
+			assert.deepEqual(materializeCpuCompletionValues(runCompiledTestSystem(compiled, 100000)),
+				[tail === 'return', true, 1], `${tail}, O${optLevel}`);
+		}
+	}
+});
+
+test('a module factory imported through a runtime API publishes its produced data', () => {
+	const moduleSource = `factory_calls = 0
+local create<const> = require('create')
+return create.make(73)`;
+	const factorySource = `local api = {}
+function api.make(value)
+ factory_calls += 1
+ return { value = value }, 99
+end
+return api`;
+	const entrySource = `local definition = require('definition')
+return definition.value, factory_calls`;
+	for (const optLevel of [0, 3] as const) {
+		const { compiled } = compileWithModule(entrySource, 'definition', moduleSource,
+			[{ path: 'create', source: factorySource }], optLevel);
+		assert.deepEqual(materializeCpuCompletionValues(runCompiledTestSystem(compiled, 100000)), [73, 1]);
+	}
+});
+
 test('dynamic module calls observe replaced direct and method fields at every optimization level', () => {
 	const moduleSource = [
 		'local api = { value = 10 }',

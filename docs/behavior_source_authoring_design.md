@@ -73,6 +73,12 @@ callee-/originverzameling en onderscheidt niet vanzelf hypothetische effecten
 van module-rooted toepassingen. De volgende grens blijft de concrete bronquery
 en haar resource-eigen consumer; B03/B06-authoring en latency blijven open.
 
+De importproef corrigeert ook [module-exportpublicatie](lua_module_export_publication.md):
+een factory-call op de exportplek moet zijn eerste resultaat opslaan, niet een
+nil-slot achterlaten. De compiler doet dat nu via de bestaande export-ABI. Dit
+maakt van module-returns nog geen gewone Lua-runtime-loader en sluit de bronquery
+of de UX-einddoelen niet af.
+
 ## 1. Beslissing
 
 Behavior Lens wordt geen universele omkeerbare Lua-interpreter. Het is een
