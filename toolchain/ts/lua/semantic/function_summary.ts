@@ -82,6 +82,8 @@ export class SemanticTermStore {
 	private readonly left: number[] = [];
 	private readonly right: number[] = [];
 	private readonly rootTerms: TermID[] = [];
+	/** Binding owners and module unions are fixed before this snapshot compiles any terms. */
+	private readonly compiledRoots: TermID[] = [];
 	private readonly indexableRootTerms: boolean[] = [];
 	private readonly moduleRootTerms: boolean[] = [];
 	private readonly nonSelectiveRootTerms: boolean[] = [];
@@ -429,13 +431,15 @@ export class SemanticTermStore {
 
 	private compileRoot(root: SemanticValueRoot): TermID {
 		const rawRoot = this.identities.rawRootId(root);
+		const retained = this.compiledRoots[rawRoot];
+		if (retained !== undefined) return retained;
 		const parameterOwner = this.parameterOwnerByRoot.get(rawRoot);
 		if (parameterOwner) {
-			return this.parameter(parameterOwner.summary, parameterOwner.index);
+			return this.compiledRoots[rawRoot] = this.parameter(parameterOwner.summary, parameterOwner.index);
 		}
 		const localOwner = this.localOwnerByRoot.get(rawRoot);
 		if (localOwner) {
-			return this.local(localOwner.summary, localOwner.index);
+			return this.compiledRoots[rawRoot] = this.local(localOwner.summary, localOwner.index);
 		}
 		const identity = this.identities.canonicalRoot(rawRoot);
 		let term = this.rootTerms[identity];
@@ -448,6 +452,9 @@ export class SemanticTermStore {
 		if (root.kind === 'literal' && root.key.startsWith('s\0')) {
 			this.stringLiteralTerms[term] = true;
 		}
+		if (root.kind === 'literal' && root.key.startsWith('n\0')) {
+			this.numericLiteralTerms[term] = true;
+		}
 		if (root.kind === 'declaration' || root.kind === 'module' || root.kind === 'owned') {
 			this.indexableRootTerms[term] = true;
 		}
@@ -459,7 +466,7 @@ export class SemanticTermStore {
 			|| root.kind === 'literal') {
 			this.nonSelectiveRootTerms[term] = true;
 		}
-		return term;
+		return this.compiledRoots[rawRoot] = term;
 	}
 
 	private unary(kind: TermKind, base: TermID, terms: TermID[]): TermID {
@@ -549,8 +556,8 @@ export class FunctionSummaryStore {
 					localIndex += 1;
 				}
 			}
-			for (let ownedIndex = 0; ownedIndex < flow.ownedValueKeys.length; ownedIndex += 1) {
-				const root = identities.rawRootId({ kind: 'owned', key: flow.ownedValueKeys[ownedIndex] });
+			for (let ownedIndex = 0; ownedIndex < flow.ownedValues.length; ownedIndex += 1) {
+				const root = identities.rawRootId(flow.ownedValues[ownedIndex].root);
 				if (!parameterOwnerByRoot.has(root) && !localOwnerByRoot.has(root)) {
 					localOwnerByRoot.set(root, { summary, index: localIndex });
 					localIndex += 1;

@@ -38,6 +38,13 @@ argumenten meer bij framehergebruik. Read-antwoorden worden doorgepropageerd,
 los van assignment-/storagealiases. Dit corrigeert de bestaande may-query;
 de sterkere gecorreleerde bronquery blijft de volgende architectuurgrens.
 
+De [bound-value-origins](lua_bound_value_origins.md) koppelen vervolgens owned
+waarden direct aan hun werkelijke syntax, met afzonderlijke closure-/receiver-
+identiteit en file-generation lifetime. De query consumeert retained numerieke
+rootidentiteiten in plaats van opnieuw gecodeerde broncoördinaten. Dit is nog
+geen gesloten originverzameling voor literals/writes of gecorreleerde calls;
+de Lens-recognizer mag die sterkere claim hier niet uit afleiden.
+
 ## 1. Beslissing
 
 Behavior Lens wordt geen universele omkeerbare Lua-interpreter. Het is een

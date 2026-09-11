@@ -49,15 +49,12 @@ import {
 	appendValueMember,
 	appendValueMetatable,
 	declarationValueSource,
-	expressionValueSource,
 	globalValueSource,
 	literalValueSource,
-	moduleTableValueSource,
 	moduleValueSource,
 	ownedValueSource,
 	semanticValueSourceKey,
 	semanticValueSourcesEqual,
-	tableValueSource,
 	unknownValueSource,
 	type CallValueEntry,
 	type DeclarationSemanticValueSource,
@@ -164,6 +161,7 @@ export type FileSemanticData = {
 	readonly moduleReferences: readonly LuaStringLiteralExpression[];
 	readonly callSites: readonly LuaCallSite[];
 	readonly declarationValues: readonly DeclarationValueEntry[];
+	readonly ownedValuesBySyntax: ReadonlyMap<LuaExpression, OwnedSemanticValueSource>;
 	readonly moduleValues: readonly ModuleValueEntry[];
 	readonly memberValues: readonly MemberValueEntry[];
 	readonly functionValueFlows: readonly FunctionValueFlowEntry[];
@@ -307,7 +305,7 @@ type FunctionValueFlowState = {
 	receiverProjection?: SemanticValueSource;
 	implicitReceiver: boolean;
 	declarationIds: SymbolID[];
-	ownedValueKeys: string[];
+	ownedValues: OwnedSemanticValueSource[];
 	members: MemberValueEntry[];
 	calls: CallValueEntry[];
 	assignments: ValueAssignmentEntry[];
@@ -335,6 +333,7 @@ type SemanticBuildResult = {
 	annotations: SemanticAnnotations;
 	callSites: LuaCallSite[];
 	declarationValues: DeclarationValueEntry[];
+	ownedValuesBySyntax: Map<LuaExpression, OwnedSemanticValueSource>;
 	moduleValues: ModuleValueEntry[];
 	memberValues: MemberValueEntry[];
 	functionValueFlows: FunctionValueFlowEntry[];
@@ -389,6 +388,7 @@ export function buildLuaFileSemanticData(
 		moduleReferences: result.moduleReferences,
 		callSites: result.callSites,
 		declarationValues: result.declarationValues,
+		ownedValuesBySyntax: result.ownedValuesBySyntax,
 		moduleValues: result.moduleValues,
 		memberValues: result.memberValues,
 		functionValueFlows: result.functionValueFlows,
@@ -613,6 +613,7 @@ class SemanticBuilder {
 	private readonly callSites: LuaCallSite[] = [];
 	private readonly functionSignaturesByPath: Map<string, FunctionSignatureInfo> = new Map();
 	private readonly declarationValues: DeclarationValueEntry[] = [];
+	private readonly ownedValuesBySyntax = new Map<LuaExpression, OwnedSemanticValueSource>();
 	// Builder-only indices: member declaration lookup and per-body value deduplication.
 	private readonly declarationValuesByDeclaration: Map<SymbolID, DeclarationValueEntry[]> = new Map();
 	private readonly declarationValuesByFlow = new Map<FunctionValueFlowEntry | undefined, Map<SymbolID, DeclarationValueEntry[]>>();
@@ -659,6 +660,7 @@ class SemanticBuilder {
 			annotations: this.annotations,
 			callSites: this.callSites,
 			declarationValues: this.declarationValues,
+			ownedValuesBySyntax: this.ownedValuesBySyntax,
 			moduleValues: this.moduleValue
 				? [{ module: toLuaModulePath(this.path), source: this.moduleValue }]
 				: [],
@@ -895,16 +897,12 @@ class SemanticBuilder {
 				let returnValue: SemanticValueSource | undefined;
 				const moduleReturn = this.currentScope().kind === 'path'
 					&& returnStatement.expressions.length === 1;
-				const moduleOwnedValue = moduleReturn
-					? moduleTableValueSource(toLuaModulePath(this.path))
-					: undefined;
 				for (let index = 0; index < returnStatement.expressions.length; index += 1) {
 					const valueInfo = this.visitExpression(
 						returnStatement.expressions[index],
 						{
 							tableBaseDecl: null,
 							tableBasePath: null,
-							tableOwner: moduleOwnedValue,
 							moduleReturn,
 						},
 					);
@@ -1178,9 +1176,7 @@ class SemanticBuilder {
 				return { namePath: null, decl: context.tableBaseDecl, valueSource: functionValue };
 			}
 			case LuaSyntaxKind.TableConstructorExpression: {
-				const tableOwner = context.moduleReturn && context.tableOwner
-					? context.tableOwner
-					: this.createTableValueSource(expression);
+				const tableOwner = this.createExpressionValueSource(expression);
 				this.visitTableConstructorExpression(expression, {
 					...context,
 					tableOwner,
@@ -1363,7 +1359,7 @@ class SemanticBuilder {
 			expression.parameters.length + (methodReceiverClass ? 1 : 0),
 		);
 		const receiver = methodReceiverClass
-			? ownedValueSource(`method-receiver:${semanticValueSourceKey(functionValue)}`)
+			? ownedValueSource(expression, 'receiver')
 			: undefined;
 		if (receiver) {
 			parameters[0] = receiver;
@@ -1377,7 +1373,7 @@ class SemanticBuilder {
 			receiverProjection,
 			implicitReceiver: methodReceiverClass !== undefined,
 			declarationIds: [],
-			ownedValueKeys: [],
+			ownedValues: [],
 			members: [],
 			calls: [],
 			assignments: [],
@@ -2265,30 +2261,19 @@ class SemanticBuilder {
 	}
 
 	private createExpressionValueSource(expression: LuaExpression): OwnedSemanticValueSource {
-		return this.retainOwnedValueSource(expressionValueSource(
-			this.path,
-			expression.range.start.line,
-			expression.range.start.column,
-		));
+		const retained = this.ownedValuesBySyntax.get(expression);
+		if (retained !== undefined) return retained;
+		const source = ownedValueSource(expression, 'expression');
+		this.ownedValuesBySyntax.set(expression, source);
+		this.retainOwnedValueSource(source);
+		return source;
 	}
 
-	private createTableValueSource(expression: LuaExpression): OwnedSemanticValueSource {
-		return this.retainOwnedValueSource(tableValueSource(
-			this.path,
-			expression.range.start.line,
-			expression.range.start.column,
-		));
-	}
-
-	private retainOwnedValueSource(source: OwnedSemanticValueSource): OwnedSemanticValueSource {
+	private retainOwnedValueSource(source: OwnedSemanticValueSource): void {
 		const flow = this.functionValueFlowStack[this.functionValueFlowStack.length - 1];
 		if (flow) {
-			const key = source.root.key;
-			if (!flow.ownedValueKeys.includes(key)) {
-				flow.ownedValueKeys.push(key);
-			}
+			flow.ownedValues.push(source);
 		}
-		return source;
 	}
 
 	private resolveExpressionValueSource(expression: LuaExpression): SemanticValueSource | undefined {

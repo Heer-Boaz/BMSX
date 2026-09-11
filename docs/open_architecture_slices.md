@@ -537,6 +537,12 @@ gepaarde koude query daalt van 334 naar 255 ms bij dezelfde 303 frames; de meest
 kleine workloads verbeteren, maar niet alle. Dit sluit de latencypoort nog niet
 en introduceert geen cross-edit reuse van opgeloste feiten of sterker B04-bewijs.
 
+De [bound-value-origins](lua_bound_value_origins.md) behouden nu echte syntax en
+file-generation-identiteit in de taalproducent, zonder sourcecoördinaten terug te
+decoderen. Raw-root interning blijft snapshot-owned. De gepaarde workspacequery
+blijft circa 230 ms; enkele kleine queries worden duurder. B04's latencypoort,
+onbekende bijdragen en gecorreleerde source-query blijven dus expliciet open.
+
 | ID | Eigenaar / contract | Gate |
 | --- | --- | --- |
 | `STUDIO-BEHAVIOR-UX-B01` | Uitgewerkt: betekenisvolle BT/FSM-kaarten en volledige source-linked property-inspectie; technische bewijsdetails niet permanent op het canvas. Zie `behavior_inspection_design.md` voor de vooraf gemeten compositie en concrete owner-/bewijsgrenzen. | Tiny-resolutie met Problems, lange callbacks, exacte Source/Back, keyboard/controller/scroll/focus en non-mutating inspectie. B04-bronorigins, B06-propertyauthoring en B07-zoom blijven aparte contracten. |

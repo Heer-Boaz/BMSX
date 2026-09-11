@@ -657,6 +657,14 @@ ordinary functions. `LuaRelocationAnalysis` retains one semantic snapshot,
 collects free value-name/vararg bindings and reports exact destination changes;
 it does not infer identity from receiver classes or rewrite captures. See
 [`../docs/lua_relocation_bindings_design.md`](../docs/lua_relocation_bindings_design.md).
+Bound expression values now retain their actual syntax through the file's
+immutable `ownedValuesBySyntax` index; an implicit receiver has its own identity
+and role, not another closure or a source-coordinate string. Unchanged file
+data retains those identities; rebinding does not reuse another generation's
+bound values or solved terms. Query root interning belongs to that semantic
+snapshot. These facts are not editor bookmarks, exclusive source origins or
+permission to edit a possible target. See
+[`../docs/lua_bound_value_origins.md`](../docs/lua_bound_value_origins.md).
 The shared lexer also
 has an opt-in trivia scan, used by Format Document instead of a second comment
 regex; default compiler/analysis scans still allocate only significant tokens.

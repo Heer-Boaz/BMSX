@@ -1,5 +1,17 @@
 import type { SymbolID } from './model';
-import type { LuaFunctionExpression, LuaReturnStatement } from '../syntax/ast';
+import type { LuaExpression, LuaFunctionExpression, LuaReturnStatement } from '../syntax/ast';
+
+declare const ownedValueBrand: unique symbol;
+export type OwnedValueID = number & { readonly [ownedValueBrand]: true };
+
+export type OwnedValueRoot = {
+	readonly kind: 'owned';
+	readonly id: OwnedValueID;
+	readonly syntax: LuaExpression;
+	readonly role: 'expression' | 'receiver';
+};
+
+let nextOwnedValueId = 1;
 
 export type SemanticLiteralValue =
 	| { kind: 'string'; value: string }
@@ -10,7 +22,7 @@ export type SemanticValueRoot =
 	| { kind: 'declaration'; declId: SymbolID }
 	| { kind: 'global'; symbolKey: string }
 	| { kind: 'module'; module: string }
-	| { kind: 'owned'; key: string }
+	| OwnedValueRoot
 	| { kind: 'literal'; key: string }
 	| { kind: 'unknown' };
 
@@ -33,7 +45,7 @@ export type DeclarationSemanticValueSource = {
 };
 
 export type OwnedSemanticValueSource = {
-	root: { kind: 'owned'; key: string };
+	root: OwnedValueRoot;
 	steps: readonly [];
 };
 
@@ -76,7 +88,7 @@ export type FunctionValueFlowEntry = {
 	readonly receiverProjection?: SemanticValueSource;
 	readonly implicitReceiver: boolean;
 	readonly declarationIds: readonly SymbolID[];
-	readonly ownedValueKeys: readonly string[];
+	readonly ownedValues: readonly OwnedSemanticValueSource[];
 	readonly members: readonly MemberValueEntry[];
 	readonly calls: readonly CallValueEntry[];
 	readonly assignments: readonly ValueAssignmentEntry[];
@@ -141,23 +153,12 @@ function semanticLiteralValueKey(literal: SemanticLiteralValue): string {
 	}
 }
 
-export function ownedValueSource(key: string): OwnedSemanticValueSource {
+/** Bound once by the file producer; this is neither a value union nor a persistent editor id. */
+export function ownedValueSource(syntax: LuaExpression, role: OwnedValueRoot['role']): OwnedSemanticValueSource {
 	return {
-		root: { kind: 'owned', key },
+		root: { kind: 'owned', id: nextOwnedValueId++ as OwnedValueID, syntax, role },
 		steps: [],
 	};
-}
-
-export function moduleTableValueSource(module: string): OwnedSemanticValueSource {
-	return ownedValueSource(`module-table:${module}`);
-}
-
-export function tableValueSource(file: string, line: number, column: number): OwnedSemanticValueSource {
-	return ownedValueSource(`table:${file}|${line}|${column}`);
-}
-
-export function expressionValueSource(file: string, line: number, column: number): OwnedSemanticValueSource {
-	return ownedValueSource(`expression:${file}|${line}|${column}`);
 }
 
 export function semanticValueRootKey(root: SemanticValueRoot): string {
@@ -173,7 +174,7 @@ export function semanticValueRootKey(root: SemanticValueRoot): string {
 			key = `m\0${root.module}`;
 			break;
 		case 'owned':
-			key = `o\0${root.key}`;
+			key = `o\0${root.id}`;
 			break;
 		case 'literal':
 			key = root.key;
@@ -288,7 +289,7 @@ export function semanticValueSourcesEqual(
 			}
 			break;
 		case 'owned':
-			if (right.root.kind !== 'owned' || left.root.key !== right.root.key) {
+			if (right.root.kind !== 'owned' || left.root.id !== right.root.id) {
 				return false;
 			}
 			break;
