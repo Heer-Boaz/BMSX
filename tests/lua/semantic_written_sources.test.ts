@@ -17,6 +17,8 @@ function writtenLines(sources: readonly LuaWrittenSource[]): number[] {
 		switch (source.kind) {
 			case 'expression': return source.expression.range.start.line;
 			case 'binding-input': return source.declaration.range.start.line;
+			case 'module-export': return source.export.statement.range.start.line;
+			case 'module-bypass': return source.statement.range.start.line;
 			case 'receiver-input': {
 				assert.ok(source.value.root.kind === 'owned');
 				return source.value.root.syntax.range.start.line;
@@ -283,4 +285,137 @@ test('incomplete member syntax is not a value alias to its receiver', () => {
 	assert.equal(trace.boundaries[0].reason, 'unknown-value');
 	assert.equal(file.memberAccesses.length, 1, 'completion still owns the actual receiver expression');
 	assert.equal(file.memberAccesses[0].receiver.root.kind, 'declaration');
+});
+
+test('imports follow the canonical export and ordinary aliases in their original file', () => {
+	for (const source of ['return { task = "walk" }', 'local first = {}; local second = first; return second',
+		'module<const>\nreturn { task = "walk" }', 'return function(value) return value end']) {
+		const library = buildLuaFileSemanticData(source, 'library/definition.lua');
+		const consumer = buildLuaFileSemanticData('local imported = require("library/definition"); return imported', 'consumer.lua');
+		const workspace = new LuaSemanticWorkspace();
+		workspace.updateFiles([library, consumer]);
+		const query = workspace.getSnapshot().symbolResolver.writtenSources;
+		const result = consumer.chunk.body[1] as LuaReturnStatement;
+		const trace = query.trace(query.expression(consumer, result.expressions[0]));
+		assert.equal(trace.root.file, consumer);
+		assert.equal(trace.terminals.length, 1);
+		assert.equal(trace.terminals[0].file, library);
+		assert.equal(trace.boundaries.length, 0);
+		const exported = trace.sources.find(source => source.kind === 'module-export')!;
+		assert.ok(exported.kind === 'module-export');
+		assert.equal(exported.export, library.moduleValues[0]);
+		assert.equal(exported.export.statement, library.chunk.body[library.chunk.body.length - 1]);
+		assert.equal(exported.export.bypassingReturns.length, 0, 'function-body returns are not module exits');
+		assert.equal(query.trace(trace.root), trace);
+	}
+});
+
+test('reexports retain each written module edge, including cyclic imports', () => {
+	const leaf = buildLuaFileSemanticData('return {}', 'leaf.lua');
+	const middle = buildLuaFileSemanticData('local alias = require("leaf"); return alias', 'middle.lua');
+	const consumer = buildLuaFileSemanticData('return require("middle")', 'consumer.lua');
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFiles([leaf, middle, consumer]);
+	const query = workspace.getSnapshot().symbolResolver.writtenSources;
+	const expression = (consumer.chunk.body[0] as LuaReturnStatement).expressions[0];
+	const trace = query.trace(query.expression(consumer, expression));
+	assert.deepEqual(trace.sources.filter(source => source.kind === 'module-export').map(source => source.file.file), ['middle.lua', 'leaf.lua']);
+	assert.equal(trace.terminals[0].file, leaf);
+	assert.equal(trace.boundaries.length, 0);
+	const cyclicLeaf = buildLuaFileSemanticData('return require("middle")', 'leaf.lua');
+	workspace.updateFiles([cyclicLeaf]);
+	const cyclicQuery = workspace.getSnapshot().symbolResolver.writtenSources;
+	const cyclicTrace = cyclicQuery.trace(cyclicQuery.expression(consumer, expression));
+	assert.equal(cyclicTrace.sources.length, 4);
+	assert.equal(cyclicTrace.terminals.length, 0);
+	const inputs = cyclicQuery.inputs(cyclicTrace.sources[3]);
+	assert.ok(inputs.kind === 'contributions');
+	assert.equal(inputs.sources[0], cyclicTrace.sources[1], 'cycle is retained, not capped or silently expanded');
+	assert.equal(trace.terminals[0].file, leaf, 'old snapshot still owns its original export');
+});
+
+test('factory exports move the unresolved call boundary to the provider, not the importer', () => {
+	const library = buildLuaFileSemanticData('local function create() return {} end; return create()', 'library.lua');
+	const consumer = buildLuaFileSemanticData('return require("library")', 'consumer.lua');
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFiles([library, consumer]);
+	const query = workspace.getSnapshot().symbolResolver.writtenSources;
+	const trace = query.trace(query.expression(consumer, (consumer.chunk.body[0] as LuaReturnStatement).expressions[0]));
+	assert.equal(trace.terminals.length, 0, 'written-source tracking does not manufacture call-return proof');
+	assert.equal(trace.boundaries.length, 1);
+	const boundary = trace.boundaries[0];
+	assert.equal(boundary.reason, 'call-result');
+	assert.equal(boundary.source.file, library);
+	assert.ok(boundary.source.kind === 'module-export');
+	assert.equal(boundary.source.export.statement, library.chunk.body[1]);
+	assert.equal(boundary.source.value.root.kind, 'owned');
+});
+
+test('unshaped and missing modules are boundaries, not invented constructor exports', () => {
+	for (const source of ['', 'do return {} end', 'return {}\nlocal later = 1', 'return {}, {}']) {
+		const library = buildLuaFileSemanticData(source, 'library.lua');
+		assert.equal(library.syntaxError, null);
+		assert.equal(library.moduleValues.length, 0);
+		const consumer = buildLuaFileSemanticData('return require("library"), require("missing")', 'consumer.lua');
+		const workspace = new LuaSemanticWorkspace();
+		workspace.updateFiles([library, consumer]);
+		const query = workspace.getSnapshot().symbolResolver.writtenSources;
+		for (const expression of (consumer.chunk.body[0] as LuaReturnStatement).expressions) {
+			const trace = query.trace(query.expression(consumer, expression));
+			assert.equal(trace.terminals.length, 0);
+			assert.equal(trace.boundaries.length, 1);
+			assert.equal(trace.boundaries[0].reason, 'module');
+		}
+	}
+});
+
+test('earlier module returns are publication boundaries, never additional exports', () => {
+	const library = buildLuaFileSemanticData(`local function make() return { function_body = true } end
+if external_condition then return { early = true } end
+do if other_condition then return end end
+return { canonical = true }`, 'library.lua');
+	const consumer = buildLuaFileSemanticData('return require("library")', 'consumer.lua');
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFiles([library, consumer]);
+	assert.equal(library.moduleValues.length, 1);
+	const entry = library.moduleValues[0];
+	assert.equal(entry.statement, library.chunk.body[3]);
+	assert.deepEqual(entry.bypassingReturns.map(statement => statement.range.start.line), [2, 3]);
+	assert.equal(library.functionValueFlows[0].returns.length, 1);
+	const query = workspace.getSnapshot().symbolResolver.writtenSources;
+	const trace = query.trace(query.expression(consumer, (consumer.chunk.body[0] as LuaReturnStatement).expressions[0]));
+	assert.equal(trace.terminals.length, 1);
+	assert.deepEqual(writtenLines(trace.terminals), [4]);
+	assert.deepEqual(trace.boundaries.map(boundary => boundary.reason), ['module-publication', 'module-publication']);
+	assert.deepEqual(writtenLines(trace.boundaries.map(boundary => boundary.source)), [2, 3]);
+	for (const boundary of trace.boundaries) {
+		assert.equal(boundary.source.file, library);
+		assert.equal(boundary.source.kind, 'module-bypass');
+		assert.equal(boundary.source.value.root.kind, 'unknown');
+	}
+});
+
+test('adding and editing an export replaces module answers without reparsing its importer', () => {
+	const consumer = buildLuaFileSemanticData('return require("library")', 'consumer.lua');
+	const expression = (consumer.chunk.body[0] as LuaReturnStatement).expressions[0];
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFiles([consumer]);
+	const before = workspace.getSnapshot().symbolResolver.writtenSources;
+	const missing = before.trace(before.expression(consumer, expression));
+	assert.equal(missing.boundaries[0].reason, 'module');
+	const library = buildLuaFileSemanticData('return {}', 'library.lua');
+	workspace.updateFiles([library]);
+	const after = workspace.getSnapshot();
+	assert.equal(after.getFileData(consumer.file), consumer);
+	const query = after.symbolResolver.writtenSources;
+	const found = query.trace(query.expression(consumer, expression));
+	assert.equal(found.terminals[0].file, library);
+	assert.equal(found.boundaries.length, 0);
+	workspace.updateFiles([buildLuaFileSemanticData('return external_value', 'library.lua')]);
+	const edited = workspace.getSnapshot().symbolResolver.writtenSources;
+	const changed = edited.trace(edited.expression(consumer, expression));
+	assert.equal(changed.terminals.length, 0);
+	assert.equal(changed.boundaries[0].reason, 'unbound-global');
+	assert.equal(found.terminals[0].file, library);
+	assert.equal(before.trace(before.expression(consumer, expression)), missing);
 });

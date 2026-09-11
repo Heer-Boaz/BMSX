@@ -567,6 +567,12 @@ brongraph. Zij hergebruikt bindingsfeiten en activeert geen may-callsolver.
 Dit is nog niet de gecorreleerde originquery over calls/modules/memberpaden;
 die grenzen blijven expliciet. De hierop wachtende B03- en B06-UX is niet afgevinkt.
 
+De [modulebronquery](lua_module_source_exports.md) volgt nu geschreven exports
+en reexports met de juiste file-owner. De compiler en binder delen de canonieke
+exportselectie; eerdere returns zijn mogelijke publicatie-bypasses, geen extra
+exports. Onbekende imports, factory-calls en memberpaden worden niet gesloten
+verklaard. De bredere B04-broncontext en B03/B06-authoring blijven open.
+
 | ID | Eigenaar / contract | Gate |
 | --- | --- | --- |
 | `STUDIO-BEHAVIOR-UX-B01` | Uitgewerkt: betekenisvolle BT/FSM-kaarten en volledige source-linked property-inspectie; technische bewijsdetails niet permanent op het canvas. Zie `behavior_inspection_design.md` voor de vooraf gemeten compositie en concrete owner-/bewijsgrenzen. | Tiny-resolutie met Problems, lange callbacks, exacte Source/Back, keyboard/controller/scroll/focus en non-mutating inspectie. B04-bronorigins, B06-propertyauthoring en B07-zoom blijven aparte contracten. |

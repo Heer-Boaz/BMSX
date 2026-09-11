@@ -2,9 +2,9 @@ import {
 	LuaSyntaxKind,
 	type LuaChunk,
 	type LuaExpression,
-	type LuaReturnStatement,
 } from '../../syntax/ast';
 import type { LuaSemanticFrontend, LuaSemanticFrontendFile } from '../../semantic/frontend';
+import { findLuaModuleExport } from '../../semantic/module_bindings';
 import {
 	assertConstModuleExportsAreStatic,
 	collectConstModuleExportValues,
@@ -105,17 +105,8 @@ const buildModuleCompileInfo = (
 ): ModuleCompileInfo | null => {
 	const modulePath = module.path;
 	const chunk = module.chunk;
-	if (chunk.body.length === 0) {
-		return null;
-	}
-	const lastStatement = chunk.body[chunk.body.length - 1];
-	if (lastStatement.kind !== LuaSyntaxKind.ReturnStatement) {
-		return null;
-	}
-	const returnStatement = lastStatement as LuaReturnStatement;
-	if (returnStatement.expressions.length !== 1) {
-		return null;
-	}
+	const returnStatement = findLuaModuleExport(chunk);
+	if (returnStatement === undefined) return null;
 	const returnExpression = returnStatement.expressions[0];
 	const staticStorageDeclarations = collectStaticStorageDeclarations(chunk, semantics);
 	let hasStaticStorageDeclaration = false;

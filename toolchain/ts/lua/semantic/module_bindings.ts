@@ -1,9 +1,11 @@
 import {
 	LuaSyntaxKind,
+	type LuaChunk,
 	type LuaCallExpression,
 	type LuaExpression,
 	type LuaIndexExpression,
 	type LuaStringLiteralExpression,
+	type LuaReturnStatement,
 } from '../syntax/ast';
 import type { SemanticValueSource } from './value_graph';
 
@@ -22,6 +24,13 @@ export type ModuleAliasTarget = {
 type ModuleAliasLookup = (name: string) => ModuleAliasTarget | null;
 
 const EMPTY_MEMBER_PATH: readonly string[] = [];
+
+/** BMSX's written export site; nested/earlier returns do not declare module exports. */
+export function findLuaModuleExport(chunk: LuaChunk): LuaReturnStatement | undefined {
+	const statement = chunk.body[chunk.body.length - 1];
+	return statement !== undefined && statement.kind === LuaSyntaxKind.ReturnStatement
+		&& statement.expressions.length === 1 ? statement : undefined;
+}
 
 export function resolveBuiltinRequireArgument(
 	expression: LuaCallExpression,

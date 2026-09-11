@@ -85,8 +85,11 @@ export type DeclarationValueEntry = {
 };
 
 export type ModuleValueEntry = {
-	module: string;
-	source: SemanticValueSource;
+	readonly module: string;
+	readonly source: SemanticValueSource;
+	readonly statement: LuaReturnStatement;
+	/** Written module returns that bypass this export site, not additional exports. */
+	readonly bypassingReturns: readonly LuaReturnStatement[];
 };
 
 export type MemberValueEntry = {

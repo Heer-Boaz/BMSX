@@ -130,6 +130,22 @@ return definition.value, factory_calls`;
 	}
 });
 
+test('only the final single-expression module return publishes a dynamic export', () => {
+	for (const [source, expected] of [
+		['do return { early = true } end', [true, false]],
+		['return { early = true }; local later = 1', [true, false]],
+		['return {}, {}', [true, false]],
+		['if true then return { early = true } end; return { canonical = true }', [false, true]],
+		['local function unrelated() return {} end; return nil', [false, true]],
+	] as const) {
+		for (const optLevel of [0, 3] as const) {
+			const { compiled } = compileWithModule('local value = require("library"); return value == true, value == nil',
+				'library', source, [], optLevel);
+			assert.deepEqual(materializeCpuCompletionValues(runCompiledTestSystem(compiled, 100000)), expected, `${source}, O${optLevel}`);
+		}
+	}
+});
+
 test('dynamic module calls observe replaced direct and method fields at every optimization level', () => {
 	const moduleSource = [
 		'local api = { value = 10 }',

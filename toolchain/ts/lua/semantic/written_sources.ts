@@ -1,6 +1,6 @@
-import { LuaSyntaxKind, type LuaExpression } from '../syntax/ast';
+import { LuaSyntaxKind, type LuaExpression, type LuaReturnStatement } from '../syntax/ast';
 import type { Decl, FileSemanticData, SymbolID } from './model';
-import { declarationValueSource, readLuaExpressionSource, type DeclarationValueEntry, type FunctionValueFlowEntry, type OwnedValueID, type SemanticValueSource, type ValueAssignmentEntry } from './value_graph';
+import { declarationValueSource, readLuaExpressionSource, unknownValueSource, type DeclarationValueEntry, type FunctionValueFlowEntry, type ModuleValueEntry, type OwnedValueID, type SemanticValueSource, type ValueAssignmentEntry } from './value_graph';
 
 /** A source occurrence, not a canonical value, storage location or runtime instance. */
 export type LuaWrittenSource = {
@@ -10,12 +10,14 @@ export type LuaWrittenSource = {
 	| { readonly kind: 'expression'; readonly expression: LuaExpression }
 	| { readonly kind: 'binding-input'; readonly declaration: Decl }
 	| { readonly kind: 'receiver-input' }
+	| { readonly kind: 'module-export'; readonly export: ModuleValueEntry }
+	| { readonly kind: 'module-bypass'; readonly statement: LuaReturnStatement }
 	| { readonly kind: 'declaration-write'; readonly write: DeclarationValueEntry }
 	| { readonly kind: 'value-transfer'; readonly write: ValueAssignmentEntry; readonly flow: FunctionValueFlowEntry | undefined }
 );
 
 export type LuaSourceBoundary = 'unknown-value' | 'unbound-global' | 'unwritten-binding'
-	| 'access-path' | 'module' | 'call-result' | 'receiver' | 'parameter-input';
+	| 'access-path' | 'module' | 'module-publication' | 'call-result' | 'receiver' | 'parameter-input';
 
 type LuaSourceContributions = { readonly kind: 'contributions'; readonly sources: readonly LuaWrittenSource[] };
 
@@ -36,6 +38,7 @@ const TERMINAL: LuaWrittenSourceInputs = { kind: 'terminal' };
 const UNKNOWN: LuaWrittenSourceInputs = { kind: 'boundary', reason: 'unknown-value' };
 const ACCESS: LuaWrittenSourceInputs = { kind: 'boundary', reason: 'access-path' };
 const MODULE: LuaWrittenSourceInputs = { kind: 'boundary', reason: 'module' };
+const MODULE_PUBLICATION: LuaWrittenSourceInputs = { kind: 'boundary', reason: 'module-publication' };
 const CALL: LuaWrittenSourceInputs = { kind: 'boundary', reason: 'call-result' };
 const RECEIVER: LuaWrittenSourceInputs = { kind: 'boundary', reason: 'receiver' };
 const UNBOUND: LuaWrittenSourceInputs = { kind: 'boundary', reason: 'unbound-global' };
@@ -53,6 +56,7 @@ export class LuaWrittenSourceQuery {
 	private readonly declarations = new Map<SymbolID, LuaSourceContributions>();
 	private readonly globals = new Map<string, LuaWrittenSourceInputs>();
 	private globalDeclarations: ReadonlyMap<string, readonly Decl[]> | undefined;
+	private modules: ReadonlyMap<string, LuaSourceContributions> | undefined;
 	private readonly transfers = new Map<OwnedValueID, LuaSourceContributions>();
 	private readonly receivers = new Map<OwnedValueID, LuaSourceContributions>();
 	private readonly indexedFiles = new Set<FileSemanticData>();
@@ -114,6 +118,7 @@ export class LuaWrittenSourceQuery {
 	private readInputs(source: LuaWrittenSource): LuaWrittenSourceInputs {
 		if (source.kind === 'binding-input') return source.declaration.kind === 'parameter' ? PARAMETER : UNWRITTEN;
 		if (source.kind === 'receiver-input') return RECEIVER;
+		if (source.kind === 'module-bypass') return MODULE_PUBLICATION;
 		const value = source.value;
 		if (value.steps.length !== 0) return ACCESS;
 		const root = value.root;
@@ -126,7 +131,7 @@ export class LuaWrittenSourceQuery {
 					? this.globalInputs(declaration.symbolKey) : this.declarationInputs(declaration);
 			}
 			case 'global': return this.globalInputs(root.symbolKey);
-			case 'module': return MODULE;
+			case 'module': return this.moduleInputs(root.module);
 			case 'owned': {
 				if (root.role === 'receiver') {
 					let inputs = this.receivers.get(root.id);
@@ -149,6 +154,27 @@ export class LuaWrittenSourceQuery {
 				return TERMINAL;
 			}
 		}
+	}
+
+	/** Only the canonical export is a value edge; earlier returns are control evidence. */
+	private moduleInputs(name: string): LuaWrittenSourceInputs {
+		if (this.modules === undefined) {
+			const modules = new Map<string, { kind: 'contributions'; sources: LuaWrittenSource[] }>();
+			for (const file of this.filesByPath.values()) for (const entry of file.moduleValues) {
+				let inputs = modules.get(entry.module);
+				if (inputs === undefined) {
+					inputs = { kind: 'contributions', sources: [] };
+					modules.set(entry.module, inputs);
+				}
+				inputs.sources.push({ kind: 'module-export', file, export: entry, value: entry.source });
+				for (const statement of entry.bypassingReturns) {
+					inputs.sources.push({ kind: 'module-bypass', file, statement, value: unknownValueSource() });
+				}
+			}
+			this.modules = modules;
+		}
+		const inputs = this.modules.get(name);
+		return inputs === undefined ? MODULE : inputs;
 	}
 
 	private declarationInputs(declaration: Decl): LuaSourceContributions {

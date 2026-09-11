@@ -27,6 +27,7 @@ import {
 	type LuaFunctionName,
 	type LuaSourceRange,
 	type LuaStringLiteralExpression,
+	type LuaReturnStatement,
 } from '../syntax/ast';
 import type { LuaSymbolEntry } from '../semantic_contracts';
 import type { ParsedLuaChunk } from '../analysis/parse';
@@ -40,6 +41,7 @@ import { methodPathToPropertyPath } from './common';
 import { toLuaModulePath } from '../module_path';
 import { LUA_BUILTIN_TABLE_ITERATOR_ARGUMENTS } from '../builtin_descriptors';
 import {
+	findLuaModuleExport,
 	resolveBuiltinRequireArgument,
 	resolveModuleAliasValueSource,
 	type ModuleAliasEntry,
@@ -306,7 +308,6 @@ type ExpressionContext = {
 	tableBaseDecl: InternalDecl;
 	tableBasePath: readonly string[];
 	tableOwner?: SemanticValueSource;
-	moduleReturn?: boolean;
 };
 
 type FunctionValueFlowState = {
@@ -641,7 +642,9 @@ class SemanticBuilder {
 	private readonly completionAnalysis = new LuaCompletionAnalysis();
 	private readonly callValues: CallValueEntry[] = [];
 	private readonly valueAssignments: ValueAssignmentEntry[] = [];
-	private moduleValue?: SemanticValueSource;
+	private readonly moduleExport: LuaReturnStatement | undefined;
+	private readonly bypassingModuleReturns: LuaReturnStatement[] = [];
+	private moduleValue: ModuleValueEntry | undefined;
 	private readonly moduleAliasesByDeclId: Map<SymbolID, ModuleAliasTarget> = new Map();
 	private readonly moduleAliasesByName: Map<string, ModuleAliasEntry> = new Map();
 	private readonly functionValueFlowStack: FunctionValueFlowState[] = [];
@@ -653,6 +656,7 @@ class SemanticBuilder {
 		documentEndExclusive: SourcePosition;
 	}) {
 		this.chunk = options.chunk;
+		this.moduleExport = findLuaModuleExport(this.chunk);
 		this.path = options.path;
 		this.documentEndExclusive = options.documentEndExclusive;
 		this.annotations = new Array(options.lineCount);
@@ -682,9 +686,7 @@ class SemanticBuilder {
 			declarationValuesByDeclaration: this.declarationValuesByDeclaration,
 			readValuesBySyntax: this.readValuesBySyntax,
 			ownedValuesBySyntax: this.ownedValuesBySyntax,
-			moduleValues: this.moduleValue
-				? [{ module: toLuaModulePath(this.path), source: this.moduleValue }]
-				: [],
+			moduleValues: this.moduleValue === undefined ? [] : [this.moduleValue],
 			memberValues: Array.from(this.memberValues.values()),
 			functionValueFlows: this.functionValueFlows,
 			callValues: this.callValues,
@@ -929,15 +931,12 @@ class SemanticBuilder {
 			case LuaSyntaxKind.ReturnStatement: {
 				const returnStatement = statement;
 				let returnValue: SemanticValueSource = NIL_VALUE_SOURCE;
-				const moduleReturn = this.currentScope().kind === 'path'
-					&& returnStatement.expressions.length === 1;
 				for (let index = 0; index < returnStatement.expressions.length; index += 1) {
 					const valueInfo = this.visitExpression(
 						returnStatement.expressions[index],
 						{
 							tableBaseDecl: null,
 							tableBasePath: null,
-							moduleReturn,
 						},
 					);
 					if (index === 0) {
@@ -950,10 +949,12 @@ class SemanticBuilder {
 						statement: returnStatement,
 						firstValue: returnValue,
 					});
-				}
-				if (moduleReturn) {
-					this.moduleValue = returnValue;
-				}
+				} else if (statement === this.moduleExport) {
+					this.moduleValue = {
+						module: toLuaModulePath(this.path), source: returnValue,
+						statement, bypassingReturns: this.bypassingModuleReturns,
+					};
+				} else this.bypassingModuleReturns.push(statement);
 				break;
 			}
 			case LuaSyntaxKind.IfStatement: {

@@ -87,6 +87,12 @@ afhankelijkhedengraph, geen gesloten runtime-/callee-proof: modules, memberpaden
 en gewone callresultaten blijven expliciete querygrenzen. B03/B06-authoring,
 resource-eigen consumers en de bredere latencyvoorwaarde blijven open.
 
+De [modulebronquery](lua_module_source_exports.md) volgt inmiddels de canonieke
+export en reexports naar hun eigen bestanden. Compiler en binder delen daarvoor
+de syntaxselectie. Eerdere returns blijven publicatie-onzekerheid, geen extra
+exports. Factory-calls en memberpaden zijn hiermee nog niet bewezen en er wordt
+geen runtime-loadercontract verzonnen. B03/B06 blijven de UX-einddoelen.
+
 ## 1. Beslissing
 
 Behavior Lens wordt geen universele omkeerbare Lua-interpreter. Het is een

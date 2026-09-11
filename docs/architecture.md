@@ -4409,6 +4409,16 @@ the body, not the shared storage binding. The solver's modeled first-return
 lane is not a completeness proof for source authoring. See
 [function-source ownership and its remaining boundaries](lua_function_source_ownership.md).
 
+Written-source queries retain use sites and each contributing write separately
+from canonical value identities. They are snapshot-owned and preserve unknown
+inputs; a singleton terminal is not a closed runtime or callee proof. Module
+exports retain the actual final top-level single-expression return, selected by
+the same syntax owner used by the compiler. Earlier module returns are possible
+publication bypasses, not additional exported values. Following an import keeps
+the exporting file and return statement; unresolved imports remain boundaries.
+See [written-source queries](lua_written_source_queries.md) and
+[module source exports](lua_module_source_exports.md).
+
 Declaration-value facts also retain the function body containing each write,
 independently of the destination declaration's lexical owner. Summaries index
 those facts by body once; module aliases consume only module-owned writes.
