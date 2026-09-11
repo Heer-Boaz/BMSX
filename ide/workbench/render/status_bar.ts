@@ -1,14 +1,12 @@
 import type { ResourcePanelController } from '../contrib/resources/panel/controller';
 import * as constants from '../../common/constants';
-import { getActiveSymbolSearchMatch } from '../contrib/code_editor/symbols/shared';
 import { statusAreaHeight, getStatusMessageLines } from '../common/layout';
 import { editorFeedbackState } from '../../common/feedback_state';
 import { drawEditorText } from '../../editor/render/text_renderer';
-import { measureText, truncateTextToWidth } from '../../editor/common/text/layout';
+import { measureText } from '../../editor/common/text/layout';
 import { api } from '../../runtime/overlay_api';
 import { editorViewState } from '../../editor/ui/view/state';
 import { problemsPanel } from '../contrib/problems/panel/controller';
-import { symbolSearchState } from '../contrib/code_editor/symbols/search/state';
 import type { RuntimeFaultState } from '../../runtime/fault_state';
 import type { EditorPane } from '../services/editor/editor_pane';
 import type { EditorInput } from '../ui/tab/model';
@@ -50,25 +48,6 @@ export function renderStatusBar(
 			return;
 		}
 		drawEditorText(editorViewState.font, statusLeftInfo, 4, statusTop + 2, 0, statusTextColor);
-		return;
-	}
-
-	if (symbolSearchState.visible) {
-		const match = getActiveSymbolSearchMatch();
-		if (!match) return;
-		const symbol = match.entry.symbol;
-		const location = symbol.location;
-		let displayPath = location.path ?? symbol.path ?? 'NOTHING!';
-		if (!displayPath || displayPath.length === 0) {
-			displayPath = symbol.name;
-		}
-		const range = location.range;
-		const positionSuffix = range ? `:${range.startLine}:${range.startColumn}` : '';
-		const fullText = `${displayPath}${positionSuffix}`;
-		const maxPathWidthCandidate = editorViewState.viewportWidth - 8;
-		const maxPathWidth = maxPathWidthCandidate > 0 ? maxPathWidthCandidate : 0;
-		const pathText = truncateTextToWidth(fullText, maxPathWidth);
-		drawEditorText(editorViewState.font, pathText, 4, statusTop + 2, 0, statusTextColor);
 		return;
 	}
 

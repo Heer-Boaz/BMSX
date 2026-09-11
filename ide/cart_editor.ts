@@ -14,7 +14,6 @@ import type { Runtime } from '../machine/ts/machine/runtime/runtime';
 import type { Clipboard } from './common/clipboard';
 import type { HostClock } from '../hosts/common/clock';
 import type { LogOutput } from '../hosts/common/log';
-import type { MicrotaskQueue } from './common/microtask_queue';
 import type { KeyValueStorage } from './workspace/key_value_storage';
 import type { VideoPresenter } from '../machine/ts/render/video_presenter';
 import { runtimeSourcesSupportIde, type RuntimeSourceState } from './runtime/sources';
@@ -72,8 +71,6 @@ import { editorSearchState, lineJumpState } from './workbench/contrib/code_edito
 import { renameController } from './workbench/contrib/code_editor/rename/controller';
 import { CrossFileRenameManager } from './workbench/contrib/code_editor/rename/operations';
 import { EditorCompletionController } from './workbench/contrib/code_editor/suggest/completion_controller';
-import { symbolSearchState } from './workbench/contrib/code_editor/symbols/search/state';
-import { applySymbolSearchFieldText } from './workbench/contrib/code_editor/symbols/shared';
 import { handleEditorInput } from './input/keyboard/dispatch';
 import { captureKeys } from './workbench/contrib/code_editor/input/keyboard/capture_keys';
 import { editorInput } from './workbench/contrib/code_editor/input/keyboard/text_input';
@@ -204,7 +201,6 @@ export class RuntimeCartEditor implements CartEditor {
 	private readonly storage: KeyValueStorage;
 	private readonly clock: HostClock;
 	private readonly clipboard: Clipboard;
-	private readonly microtasks: MicrotaskQueue;
 	private readonly sources: RuntimeSourceState;
 	private readonly fault: RuntimeFaultState;
 	private readonly luaTooling: RuntimeLuaTooling;
@@ -235,7 +231,6 @@ export class RuntimeCartEditor implements CartEditor {
 		storage: KeyValueStorage,
 		clock: HostClock,
 		clipboard: Clipboard,
-		microtasks: MicrotaskQueue,
 		logOutput: LogOutput,
 		resourcePanelWidthRatio: number,
 		viewport: Viewport,
@@ -259,7 +254,6 @@ export class RuntimeCartEditor implements CartEditor {
 		this.storage = storage;
 		this.clock = clock;
 		this.clipboard = clipboard;
-		this.microtasks = microtasks;
 		this.sources = sources;
 		this.fault = fault;
 		this.luaTooling = luaTooling;
@@ -295,7 +289,6 @@ export class RuntimeCartEditor implements CartEditor {
 			code_editor: () => new CodeEditorPane(
 				this,
 				this.clipboard,
-				this.microtasks,
 				this.sources,
 				this.luaTooling,
 				this.fault,
@@ -343,7 +336,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.crossFileRename = new CrossFileRenameManager(this.sources);
 		this.search = new EditorSearchController(this.sources, renameController);
 		this.unbindQuickInputFields = bindQuickInputFields(
-			this, this.sources, this.luaTooling, this.clipboard, this.microtasks, this.storage, this.clock,
+			this, this.sources, this.clipboard, this.storage, this.clock,
 		);
 		this.unbindProblemsPanel = problemsPanel.focusTarget.bindKeyboard(
 			input => problemsPanel.handleKeyboard(input, this.editorPanes),
@@ -746,7 +739,6 @@ export class RuntimeCartEditor implements CartEditor {
 		configureFontVariant(this.clock, editorViewState.fontVariant, 'lua');
 		resourcePanel.setFontMetrics(editorViewState.lineHeight, editorViewState.charAdvance);
 		applySearchFieldText(editorSearchState.query, true);
-		applySymbolSearchFieldText(symbolSearchState.query, true);
 		applyLineJumpFieldText(lineJumpState.value, true);
 		applyCreateResourceFieldText(createResourceState.path, true);
 		this.completion.closeSession();

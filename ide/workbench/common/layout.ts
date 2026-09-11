@@ -5,7 +5,6 @@ import { problemsPanel } from '../contrib/problems/panel/controller';
 import * as constants from '../../common/constants';
 import { computeSearchPageStats } from '../contrib/code_editor/find/search';
 import { editorSearchState, lineJumpState } from '../contrib/code_editor/find/widget_state';
-import { symbolSearchState } from '../contrib/code_editor/symbols/search/state';
 import { renameController } from '../contrib/code_editor/rename/controller';
 import { createResourceState } from '../contrib/resources/widget_state';
 import type { EditorFont } from '../../editor/ui/view/font';
@@ -137,47 +136,6 @@ export function searchResultEntryHeight(): number {
 	return editorViewState.lineHeight * 2;
 }
 
-export function isSymbolSearchCompactMode(): boolean {
-	return editorViewState.viewportWidth <= constants.SYMBOL_SEARCH_COMPACT_WIDTH;
-}
-
-export function symbolSearchEntryHeight(): number {
-	switch (symbolSearchState.mode) {
-		case 'references':
-		case 'definitions':
-			return editorViewState.lineHeight * 2;
-		case 'symbols':
-			return symbolSearchState.global && isSymbolSearchCompactMode()
-				? editorViewState.lineHeight * 2
-				: editorViewState.lineHeight;
-	}
-}
-
-export function symbolSearchPageSize(): number {
-	switch (symbolSearchState.mode) {
-		case 'references':
-		case 'definitions':
-			return constants.REFERENCE_SEARCH_MAX_RESULTS;
-		case 'symbols':
-			if (!symbolSearchState.global) {
-				return constants.SYMBOL_SEARCH_MAX_RESULTS;
-			}
-			return isSymbolSearchCompactMode()
-				? constants.SYMBOL_SEARCH_COMPACT_MAX_RESULTS
-				: constants.SYMBOL_SEARCH_MAX_RESULTS;
-	}
-}
-
-export function symbolSearchVisibleResultCount(): number {
-	if (!symbolSearchState.visible) {
-		return 0;
-	}
-	const remainingCandidate = symbolSearchState.matches.length - symbolSearchState.displayOffset;
-	const remaining = remainingCandidate > 0 ? remainingCandidate : 0;
-	const pageSize = symbolSearchPageSize();
-	return remaining < pageSize ? remaining : pageSize;
-}
-
 export function getCreateResourceBarHeight(): number {
 	if (!createResourceState.visible) {
 		return 0;
@@ -195,18 +153,6 @@ export function getSearchBarHeight(): number {
 		return baseHeight;
 	}
 	return baseHeight + constants.SEARCH_RESULT_SPACING + visible * searchResultEntryHeight();
-}
-
-export function getSymbolSearchBarHeight(): number {
-	if (!symbolSearchState.visible) {
-		return 0;
-	}
-	const baseHeight = editorViewState.lineHeight + constants.SYMBOL_SEARCH_BAR_MARGIN_Y * 2;
-	const visible = symbolSearchVisibleResultCount();
-	if (visible <= 0) {
-		return baseHeight;
-	}
-	return baseHeight + constants.SYMBOL_SEARCH_RESULT_SPACING + visible * symbolSearchEntryHeight();
 }
 
 export function getRenameBarHeight(): number {
@@ -238,16 +184,14 @@ function createBarBounds(): BarBounds {
 const barHeightGetters = [
 	getCreateResourceBarHeight,
 	getSearchBarHeight,
-	getSymbolSearchBarHeight,
 	getRenameBarHeight,
 	getLineJumpBarHeight,
 ] as const;
 
 const inlineBarLayout: InlineBarLayout = {
 	codeViewportTop: 0,
-	barHeight: [0, 0, 0, 0, 0],
+	barHeight: [0, 0, 0, 0],
 	barBounds: [
-		createBarBounds(),
 		createBarBounds(),
 		createBarBounds(),
 		createBarBounds(),
@@ -276,21 +220,6 @@ function computeInlineBarLayoutStamp(): number {
 	stamp = addLayoutStamp(stamp, editorSearchState.matches.length);
 	stamp = addLayoutStamp(stamp, editorSearchState.globalMatches.length);
 	stamp = addLayoutStamp(stamp, editorSearchState.displayOffset);
-	stamp = addLayoutStamp(stamp, symbolSearchState.visible ? 1 : 0);
-	stamp = addLayoutStamp(stamp, symbolSearchState.matches.length);
-	stamp = addLayoutStamp(stamp, symbolSearchState.displayOffset);
-	stamp = addLayoutStamp(stamp, symbolSearchState.global ? 1 : 0);
-	switch (symbolSearchState.mode) {
-		case 'symbols':
-			stamp = addLayoutStamp(stamp, 1);
-			break;
-		case 'references':
-			stamp = addLayoutStamp(stamp, 2);
-			break;
-		case 'definitions':
-			stamp = addLayoutStamp(stamp, 3);
-			break;
-	}
 	stamp = addLayoutStamp(stamp, renameController.isVisible() ? 1 : 0);
 	stamp = addLayoutStamp(stamp, lineJumpState.visible ? 1 : 0);
 	return stamp;
@@ -339,6 +268,5 @@ function getInlineBarBounds(barIndex: number): BarBounds | null {
 
 export function getCreateResourceBarBounds(): BarBounds | null { return getInlineBarBounds(0); }
 export function getSearchBarBounds(): BarBounds | null { return getInlineBarBounds(1); }
-export function getSymbolSearchBarBounds(): BarBounds | null { return getInlineBarBounds(2); }
-export function getRenameBarBounds(): BarBounds | null { return getInlineBarBounds(3); }
-export function getLineJumpBarBounds(): BarBounds | null { return getInlineBarBounds(4); }
+export function getRenameBarBounds(): BarBounds | null { return getInlineBarBounds(2); }
+export function getLineJumpBarBounds(): BarBounds | null { return getInlineBarBounds(3); }

@@ -9,13 +9,11 @@ import { beginNavigationCapture, completeNavigation } from '../../../../navigati
 import { setCursorPosition } from '../../../../editor/ui/view/caret/caret';
 import { breakUndoSequence } from '../../../../editor/editing/undo_controller';
 import * as TextEditing from '../../../../editor/editing/text_editing_and_selection';
-import { closeSymbolSearch } from '../symbols/shared';
 import { activeCodeEditor } from '../../../../editor/ui/code_editor_state';
 import { lineJumpState } from './widget_state';
 
 export function openLineJump(): void {
 	clearReferenceHighlights();
-	closeSymbolSearch(false);
 	closeSearch(false, true);
 	renameController.cancel();
 	lineJumpState.visible = true;

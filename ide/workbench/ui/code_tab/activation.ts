@@ -1,4 +1,5 @@
 import type { CodeEditorNavigationSelection } from '../../contrib/code_editor/navigation_selection';
+import type { ResourceDomain } from '../../../common/resource';
 import type { CartEditor } from '../../../cart_editor';
 import type { CodeTabContext } from './model';
 import { activeCodeEditor } from '../../../editor/ui/code_editor_state';
@@ -79,12 +80,12 @@ export function activateCodeEditorTab(tab: CodeEditorInput, selection?: EditorTe
 
 export function navigateToLuaDefinition(
 	editor: CartEditor,
+	domain: ResourceDomain,
 	definition: LuaDefinitionLocation,
 ): void {
 	clearReferenceHighlights();
-	const activeDomain = activeCodeEditor.model.resource.domain;
 	editor.navigation.focusChunkSourceForContext(
-		activeDomain,
+		domain,
 		definition.path,
 		{
 			row: definition.range.startLine - 1,

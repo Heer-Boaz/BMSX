@@ -11,7 +11,6 @@ import { enqueueBackgroundTask } from '../../../../common/background_tasks';
 import { beginNavigationCapture, completeNavigation } from '../../../../navigation/navigation_history';
 import { updateDesiredColumn } from '../../../../editor/ui/view/caret/caret';
 import { closeLineJump } from './line_jump';
-import { closeSymbolSearch } from '../symbols/shared';
 import { clearReferenceHighlights } from '../../../../editor/contrib/intellisense/engine';
 import { revealCursor } from '../../../../editor/ui/view/caret/caret';
 import { resetBlink } from '../../../../editor/render/caret';
@@ -75,7 +74,6 @@ export class EditorSearchController {
 
 	public openSearch(useSelection: boolean, scope: 'local' | 'global' = 'local'): void {
 		clearReferenceHighlights();
-		closeSymbolSearch(false);
 		closeLineJump(false);
 		this.renameController.cancel();
 

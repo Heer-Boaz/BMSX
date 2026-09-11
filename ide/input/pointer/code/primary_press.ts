@@ -4,8 +4,7 @@ import { setSingleCursorSelectionAnchor } from '../../../editor/editing/cursor/s
 import { focusPrimaryEditorSurface } from '../../../workbench/ui/focus';
 import { resolvePointerTextPosition } from '../../../editor/ui/view/view';
 import type { CodeAreaBounds } from '../../../editor/ui/view/view';
-import { openDefinitionSearch } from '../../../workbench/contrib/code_editor/definitions/search/index';
-import { renameController } from '../../../workbench/contrib/code_editor/rename/controller';
+import { openDefinitionSearch } from '../../../workbench/contrib/code_editor/definitions/quick_access';
 import type { PointerSnapshot } from '../../../common/models';
 import * as TextEditing from '../../../editor/editing/text_editing_and_selection';
 import * as constants from '../../../common/constants';
@@ -33,7 +32,6 @@ export function handleCodeAreaPrimaryPressPointer(
 	const targetColumn = target.column;
 	if (gotoModifierActive && openDefinitionSearch(
 		bridge,
-		renameController,
 		editor,
 		targetRow,
 		targetColumn,

@@ -8,7 +8,6 @@ import type { PointerSnapshot } from '../../common/models';
 import { editorPointerState } from './state';
 import { editorViewState } from '../../editor/ui/view/state';
 import { editorSearchState, lineJumpState } from '../../workbench/contrib/code_editor/find/widget_state';
-import { symbolSearchState } from '../../workbench/contrib/code_editor/symbols/search/state';
 import { createResourceState } from '../../workbench/contrib/resources/widget_state';
 import type { EditorDisplay } from '../../common/viewport';
 
@@ -57,7 +56,6 @@ export function prepareEditorPointerFrame(
 	if ((snapshot.pressedButtons & PointerButton.Primary) === 0) {
 		editorPointerState.pointerSelecting = false;
 		editorSearchState.field.pointerSelecting = false;
-		symbolSearchState.field.pointerSelecting = false;
 		lineJumpState.field.pointerSelecting = false;
 		createResourceState.field.pointerSelecting = false;
 	}

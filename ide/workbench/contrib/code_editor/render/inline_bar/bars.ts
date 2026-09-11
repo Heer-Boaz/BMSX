@@ -10,20 +10,13 @@ import {
 	getLineJumpBarBounds,
 	getRenameBarBounds,
 	getSearchBarBounds,
-	getSymbolSearchBarBounds,
-	isSymbolSearchCompactMode,
 	searchResultEntryHeight,
 	searchVisibleResultCount,
-	symbolSearchEntryHeight,
-	symbolSearchVisibleResultCount,
 } from '../../../../common/layout';
 import { measureText } from '../../../../../editor/common/text/layout';
 import { renderInlineBarField, renderInlineBarFrame } from './common';
 import { renameController } from '../../rename/controller';
-import { symbolSearchState } from '../../symbols/search/state';
-import { symbolSearchFieldLabel } from '../../symbols/shared';
 import { createResourceState } from '../../../resources/widget_state';
-import type { SymbolSearchResult } from '../../../../../common/models';
 
 type InlineSearchResultEntry = {
 	primary: string;
@@ -44,45 +37,6 @@ const drawSearchResultRow = (entry: InlineSearchResultEntry, rowTop: number): vo
 	}
 	if (entry.secondary) {
 		drawEditorText(editorViewState.font, entry.secondary, paddingX, secondaryY, 0, constants.COLOR_SEARCH_SECONDARY_TEXT);
-	}
-};
-
-const drawSymbolSearchResultRow = (match: SymbolSearchResult, rowTop: number): void => {
-	const mode = symbolSearchState.mode;
-	const compactMode = mode !== 'symbols'
-		? true
-		: (symbolSearchState.global && isSymbolSearchCompactMode());
-	let textX = constants.SYMBOL_SEARCH_RESULT_PADDING_X;
-	const kindText = match.entry.kindLabel;
-	const referenceColumn = match.entry.symbol.location.range.startColumn;
-	const lineValue = match.entry.line;
-	const lineText = mode !== 'symbols'
-		? `:${lineValue}:${referenceColumn}`
-		: `:${lineValue}`;
-	const lineWidth = measureText(lineText);
-	if (kindText.length > 0) {
-		drawEditorText(editorViewState.font, kindText, textX, rowTop, 0, constants.COLOR_SYMBOL_SEARCH_KIND);
-		textX += measureText(kindText) + editorViewState.spaceAdvance;
-	}
-	drawEditorText(editorViewState.font, match.entry.displayName, textX, rowTop, 0, constants.COLOR_SYMBOL_SEARCH_TEXT);
-	if (compactMode) {
-		const secondaryY = rowTop + editorViewState.lineHeight;
-		const lineX = editorViewState.viewportWidth - lineWidth - constants.SYMBOL_SEARCH_RESULT_PADDING_X;
-		drawEditorText(editorViewState.font, lineText, lineX, secondaryY, 0, constants.COLOR_SYMBOL_SEARCH_TEXT);
-		const sourceLabel = match.entry.sourceLabel;
-		if (sourceLabel) {
-			drawEditorText(editorViewState.font, sourceLabel, constants.SYMBOL_SEARCH_RESULT_PADDING_X, secondaryY, 0, constants.COLOR_SYMBOL_SEARCH_KIND);
-		}
-	} else {
-		const lineX = editorViewState.viewportWidth - lineWidth - constants.SYMBOL_SEARCH_RESULT_PADDING_X;
-		drawEditorText(editorViewState.font, lineText, lineX, rowTop, 0, constants.COLOR_SYMBOL_SEARCH_TEXT);
-		const sourceLabel = match.entry.sourceLabel;
-		if (sourceLabel) {
-			const sourceWidth = measureText(sourceLabel);
-			const sourceXCandidate = lineX - editorViewState.spaceAdvance - sourceWidth;
-			const sourceX = sourceXCandidate > textX ? sourceXCandidate : textX;
-			drawEditorText(editorViewState.font, sourceLabel, sourceX, rowTop, 0, constants.COLOR_SYMBOL_SEARCH_KIND);
-		}
 	}
 };
 
@@ -164,42 +118,6 @@ export function renderSearchBar(): void {
 	const rowHeight = searchResultEntryHeight();
 
 	renderResultList(getVisibleSearchResultEntries(), visible, editorSearchState.displayOffset ?? 0, editorSearchState.displayOffset ?? 0, rowHeight, resultsTop, bounds.right, editorSearchState.currentIndex ?? -1, editorSearchState.hoverIndex ?? -1, drawSearchResultRow);
-}
-
-export function renderSymbolSearchBar(): void {
-	const bounds = getSymbolSearchBarBounds();
-	if (!bounds) return;
-	renderInlineBarFrame(bounds.left, bounds.top, bounds.right, bounds.bottom, constants.COLOR_SYMBOL_SEARCH_BACKGROUND, constants.COLOR_SYMBOL_SEARCH_OUTLINE);
-	const mode = symbolSearchState.mode;
-	const active = symbolSearchState.field.focusTarget.hasFocus;
-	const placeholder = mode === 'references'
-		? 'FILTER REFERENCES'
-		: mode === 'definitions'
-			? 'FILTER DEFINITIONS'
-			: 'TYPE TO FILTER';
-	renderInlineBarField(
-		symbolSearchState.field,
-		symbolSearchFieldLabel(),
-		4,
-		bounds.top + constants.SYMBOL_SEARCH_BAR_MARGIN_Y,
-		active,
-		active,
-		constants.COLOR_SYMBOL_SEARCH_TEXT,
-		placeholder,
-		constants.COLOR_SYMBOL_SEARCH_PLACEHOLDER,
-		editorViewState.charAdvance,
-	);
-
-	const visible = symbolSearchVisibleResultCount();
-	if (visible <= 0) {
-		return;
-	}
-	const baseHeight = editorViewState.lineHeight + constants.SYMBOL_SEARCH_BAR_MARGIN_Y * 2;
-	const separatorTop = bounds.top + baseHeight;
-	api.fill_rect(bounds.left, separatorTop, bounds.right, separatorTop + constants.SYMBOL_SEARCH_RESULT_SPACING, 0, constants.COLOR_SYMBOL_SEARCH_OUTLINE);
-	const resultsTop = separatorTop + constants.SYMBOL_SEARCH_RESULT_SPACING;
-	const entryHeight = symbolSearchEntryHeight();
-	renderResultList(symbolSearchState.matches, visible, symbolSearchState.displayOffset, 0, entryHeight, resultsTop, bounds.right, symbolSearchState.selectionIndex, symbolSearchState.hoverIndex, drawSymbolSearchResultRow);
 }
 
 function renderResultList<T>(

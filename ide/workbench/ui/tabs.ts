@@ -6,7 +6,6 @@ import type { EditorTabId } from './tab/id';
 import type { EditorInput, EditorInputKind } from './tab/model';
 import type { CodeTabContext } from './code_tab/model';
 import { beginNavigationCapture, captureNavigation, completeNavigation } from '../../navigation/navigation_history';
-import { closeSymbolSearch } from '../contrib/code_editor/symbols/shared';
 import {
 	createCodeEditorInput,
 	retainEntryTabContext,
@@ -78,7 +77,6 @@ export function setActiveTab(
 	const navigationCheckpoint = (!isSameTab || selection || navigationSelection)
 		? beginNavigationCapture()
 		: null;
-	closeSymbolSearch(true);
 	if (isSameTab) {
 		editorTabGroup.activate(tab);
 		editorPanes.openEditor(tab, selection, navigationSelection);

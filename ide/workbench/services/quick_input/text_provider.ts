@@ -10,7 +10,7 @@ export class TextQuickPickProvider<T extends QuickPickItem> implements QuickPick
 	private readonly entries: TextQuickPickMatch[];
 	private readonly projection = { matches: [] as TextQuickPickMatch[], selectionIndex: -1 };
 
-	public constructor(public readonly items: readonly T[]) {
+	public constructor(public readonly items: readonly T[], private readonly initialItemIndex = 0) {
 		this.entries = items.map((item, itemIndex) => ({ item, itemIndex,
 			searchKey: `${item.label} ${item.description} ${item.detail}`.toLowerCase(), matchIndex: 0 }));
 	}
@@ -33,7 +33,7 @@ export class TextQuickPickProvider<T extends QuickPickItem> implements QuickPick
 			}
 		}
 		if (tokens.length > 0) matches.sort(compareMatches);
-		this.projection.selectionIndex = matches.length === 0 ? -1 : 0;
+		this.projection.selectionIndex = matches.length === 0 ? -1 : tokens.length === 0 ? this.initialItemIndex : 0;
 		return this.projection;
 	}
 }

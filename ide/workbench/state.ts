@@ -87,7 +87,6 @@ export class RuntimeIdeState {
 			storage,
 			clock,
 			clipboard,
-			microtasks,
 			logOutput,
 			resourcePanelWidthRatio,
 			viewport,

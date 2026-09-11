@@ -597,3 +597,24 @@ en Pietious browsergates slagen op software, WebGL2 en WebGPU; de Lua-suite heef
 meldingen. Zie [quick_input_providers.md](quick_input_providers.md) voor eigenaars,
 referenties en bewijs. **A06 blijft open** voor matchmarkering, file/symbol-
 matching en de symbol-/locationcontrolmigratie; deze querygrens sluit die niet.
+
+### A06 — symbolen en bronlocaties op Quick Input (2026-09-11; gedeeltelijke uitvoering)
+
+De afzonderlijke globale symbolen-/referentie-/definitiepopup is verwijderd,
+inclusief eigen input, pointer/hover, inline-layout, renderer en de uitgestelde
+navigatie-microtask. Providers behouden echte symbolen, definitietargets en
+snapshot-bronranges. Geen kunstmatige `LuaSymbolEntry` voor een referentielocatie.
+De gewone Quick Input-lifetime sluit vóór bronactivatie en bij bronwijzigingen
+in de vastgelegde Lua-domain of SYSTEM. Bestandspaden blijven onderscheidbaar;
+document-symbolen herhalen niet hetzelfde bestand op elke rij.
+
+De oude selectiebug is onafhankelijk op `f1ae09edc` gereproduceerd: de cursor
+stond in de gebruiksbron op regel 6, maar de referentiekeuze selecteerde regel 7
+van het definitiebestand. Een file-local highlightindex werd gebruikt als een
+workspace-catalogusindex. De nieuwe provider kiest op pad en cursor-containment;
+file-local highlights blijven een eigen, tijdelijk zichtbaar resultaat.
+
+Zie [`source_quick_access.md`](source_quick_access.md) voor productievoorbeelden,
+contract en bewijs. **A06 blijft open** voor file/symbol-matching en zichtbare
+matchredenen; deze migratie claimt geen fuzzy- of Peek-editorimplementatie.
+B03/B04/B06-authoring, A07 en het bredere A08-bewijs blijven eveneens open.

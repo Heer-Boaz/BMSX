@@ -1,8 +1,7 @@
+import { subscribeToLuaModelChanges } from '../../../editor/contrib/intellisense/model_lifetime';
 import { createBehaviorQuickPickItem } from '../behavior_lens/quick_access';
 import { TextQuickPickProvider } from '../../services/quick_input/text_provider';
 import { editorTextModelService } from '../../../editor/model/model_service';
-import type { EditorTextModel } from '../../../editor/model/text_model';
-import { SYSTEM_RESOURCE_DOMAIN } from '../../../common/resource';
 import type { HostAudioOutput } from '../../../../hosts/common/audio_output';
 import type { HostExecutionControl } from '../../../../hosts/common/execution_control';
 import type { PointerSnapshot } from '../../../common/models';
@@ -182,14 +181,7 @@ export class ScenarioLabController {
 		}
 		const quickInput = this.editor.quickInput;
 		quickInput.pick('ACTIONEFFECT SOURCES', 'Choose a definition', (_origin, lifetime) => {
-			// The result query belongs to this Lua domain; a changed candidate context
-			// ends the choice rather than applying an old source range on acceptance.
-			const changed = (model: EditorTextModel) => {
-				if (model.mode === 'lua' && (model.resource.domain === executionDomain || model.resource.domain === SYSTEM_RESOURCE_DOMAIN)) quickInput.hide();
-			};
-			lifetime.add({ dispose: editorTextModelService.onDidChangeContent(changed) });
-			lifetime.add({ dispose: editorTextModelService.onDidAddModel(changed) });
-			lifetime.add({ dispose: editorTextModelService.onDidRemoveModel(changed) });
+			lifetime.add(subscribeToLuaModelChanges(editorTextModelService, executionDomain, () => quickInput.hide()));
 			return new TextQuickPickProvider(sources.map(createBehaviorQuickPickItem));
 		}, item => this.openSource({ resource: item.registration.resource,
 			line: item.registration.range.start.line, column: item.registration.range.start.column }));

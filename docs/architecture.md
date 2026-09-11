@@ -1503,7 +1503,7 @@ on release over the pressed row, not on press. Query/geometry/session changes
 cancel that gesture. Its visible labels are prepared lazily per font/width
 generation, without limiting the catalog. These are host interaction owners,
 not guest input or machine state. See `quick_input_interaction.md`; provider
-matching and symbol-choice convergence remain separate open A06 requirements.
+matching and visible match reasons remain separate open A06 requirements.
 
 The Quick Input provider, not its control, owns query meaning and ranking.
 Providers retain admitted typed items and publish ordered match records plus a
@@ -1514,6 +1514,15 @@ session. The command provider owns word-initial matching and exact/substring/wor
 match priority. This is independent of ordinary literal text choices, keyboard
 shortcut metadata and workspace semantic queries. `quick_input_providers.md`
 records the production references, lifecycle and remaining A06 requirements.
+Symbol and source-location choices use the same control, with the original symbol,
+definition target or snapshot source range. Each invocation captures its actual
+resource domain; navigation never substitutes a later active tab's domain. Lua
+model changes/additions/removals in that project or SYSTEM retire those results.
+Reference initial selection uses source path and cursor containment, not a
+file-local highlight index interpreted as a workspace row. The old global symbol
+widget and synthetic semantic rows are removed. `source_quick_access.md` records
+the source-generation contract and scoped validation; this is not a Peek editor
+or a change to compiler/semantic resolution.
 
 Host pointer hover has a separate routed-path owner in
 `ide/input/pointer/hover.ts`. Accepted control hits mark the current dispatch;

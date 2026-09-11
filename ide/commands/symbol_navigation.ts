@@ -1,7 +1,5 @@
 import { resolveCallHierarchyAt } from '../editor/contrib/call_hierarchy/query';
-import { closeSymbolSearch } from '../workbench/contrib/code_editor/symbols/shared';
-import { openDefinitionSearch } from '../workbench/contrib/code_editor/definitions/search/index';
-import { renameController } from '../workbench/contrib/code_editor/rename/controller';
+import { openDefinitionSearch } from '../workbench/contrib/code_editor/definitions/quick_access';
 import { activeCodeEditor } from '../editor/ui/code_editor_state';
 import { showEditorMessage } from '../common/feedback_state';
 import * as constants from '../common/constants';
@@ -23,7 +21,6 @@ export function executeEditorSymbolNavigationCommand(
 		case 'goToDefinition':
 			openDefinitionSearch(
 				luaTooling,
-				renameController,
 				editor,
 				activeCodeEditor.view.cursorRow,
 				activeCodeEditor.view.cursorColumn,
@@ -40,7 +37,6 @@ export function executeEditorSymbolNavigationCommand(
 					showEditorMessage('Definition not found at cursor', constants.COLOR_STATUS_WARNING, 1.8);
 					return;
 				case 'success':
-					closeSymbolSearch(false);
 					editor.resourcePanel.showCallHierarchy(result.model);
 					showEditorMessage(result.model.title, constants.COLOR_STATUS_SUCCESS, 1.6);
 					return;

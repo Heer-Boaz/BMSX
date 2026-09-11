@@ -7,7 +7,6 @@ import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import type { CartEditor } from '../../../cart_editor';
 import type { Clipboard } from '../../../common/clipboard';
 import * as constants from '../../../common/constants';
-import type { MicrotaskQueue } from '../../../common/microtask_queue';
 import type { PointerSnapshot } from '../../../common/models';
 import { showEditorMessage } from '../../../common/feedback_state';
 import { editorRuntimeState } from '../../../editor/common/runtime_state';
@@ -62,7 +61,6 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 	public constructor(
 		private readonly editor: CartEditor,
 		private readonly clipboard: Clipboard,
-		private readonly microtasks: MicrotaskQueue,
 		private readonly sources: RuntimeSourceState,
 		private readonly luaTooling: RuntimeLuaTooling,
 		private readonly fault: RuntimeFaultState,
@@ -178,7 +176,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 		now: number,
 		gotoModifierActive: boolean,
 	): void {
-		if (handleQuickInputPointer(this.microtasks, this.editor, this.sources, snapshot, justPressed)) {
+		if (handleQuickInputPointer(this.editor, this.sources, snapshot, justPressed)) {
 			return;
 		}
 		if (handleEditorScrollbarPointer(snapshot, justPressed, CODE_SCROLLBARS)) return;

@@ -155,13 +155,6 @@ type ThemeOverlays = {
 		buttonBackground: number;
 		buttonText: number;
 	};
-	symbolSearch: {
-		background: number;
-		text: number;
-		placeholder: number;
-		outline: number;
-		kind: number;
-	};
 	quickOpen: {
 		background: number;
 		text: number;
@@ -266,13 +259,6 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 				buttonBackground: THEME_TOKEN_TERMINAL_GREY,
 				buttonText: THEME_TOKEN_BLACK,
 			},
-			symbolSearch: {
-				background: THEME_TOKEN_TERMINAL_CYAN,
-				text: THEME_TOKEN_BLACK,
-				placeholder: THEME_TOKEN_TERMINAL_LIGHT_RED,
-				outline: THEME_TOKEN_BLACK,
-				kind: THEME_TOKEN_TERMINAL_MAGENTA,
-			},
 			quickOpen: {
 				background: THEME_TOKEN_DARK_NAVY,
 				text: THEME_TOKEN_WHITE,
@@ -376,13 +362,6 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 				dialogText: THEME_TOKEN_BLACK,
 				buttonBackground: THEME_TOKEN_TERMINAL_GREY,
 				buttonText: THEME_TOKEN_BLACK,
-			},
-			symbolSearch: {
-				background: THEME_TOKEN_TERMINAL_CYAN,
-				text: THEME_TOKEN_BLACK,
-				placeholder: THEME_TOKEN_TERMINAL_LIGHT_RED,
-				outline: THEME_TOKEN_BLACK,
-				kind: THEME_TOKEN_TERMINAL_MAGENTA,
 			},
 			quickOpen: {
 				background: THEME_TOKEN_PANEL_GREY,
@@ -563,11 +542,6 @@ export let COLOR_GOTO_UNDERLINE: number;
 export let RESOURCE_PANEL_DIVIDER_COLOR: number;
 export let SCROLLBAR_TRACK_COLOR: number;
 export let SCROLLBAR_THUMB_COLOR: number;
-export let COLOR_SYMBOL_SEARCH_BACKGROUND: number;
-export let COLOR_SYMBOL_SEARCH_TEXT: number;
-export let COLOR_SYMBOL_SEARCH_PLACEHOLDER: number;
-export let COLOR_SYMBOL_SEARCH_OUTLINE: number;
-export let COLOR_SYMBOL_SEARCH_KIND: number;
 export let COLOR_QUICK_OPEN_BACKGROUND: number;
 export let COLOR_QUICK_OPEN_TEXT: number;
 export let COLOR_QUICK_OPEN_PLACEHOLDER: number;
@@ -613,7 +587,6 @@ function applyThemeDefinition(theme: ThemeDefinition): void {
 	const search = theme.overlays.search;
 	const completion = theme.overlays.completion;
 	const action = theme.overlays.action;
-	const symbolSearch = theme.overlays.symbolSearch;
 	const quickOpen = theme.overlays.quickOpen;
 	const parameterHint = theme.overlays.parameterHint;
 
@@ -713,11 +686,6 @@ function applyThemeDefinition(theme: ThemeDefinition): void {
 	RESOURCE_PANEL_DIVIDER_COLOR = tab.border;
 	SCROLLBAR_TRACK_COLOR = theme.status.background;
 	SCROLLBAR_THUMB_COLOR = theme.scrollbarThumb ?? theme.status.text;
-	COLOR_SYMBOL_SEARCH_BACKGROUND = symbolSearch.background;
-	COLOR_SYMBOL_SEARCH_TEXT = symbolSearch.text;
-	COLOR_SYMBOL_SEARCH_PLACEHOLDER = symbolSearch.placeholder;
-	COLOR_SYMBOL_SEARCH_OUTLINE = symbolSearch.outline;
-	COLOR_SYMBOL_SEARCH_KIND = symbolSearch.kind;
 	COLOR_QUICK_OPEN_BACKGROUND = quickOpen.background;
 	COLOR_QUICK_OPEN_TEXT = quickOpen.text;
 	COLOR_QUICK_OPEN_PLACEHOLDER = quickOpen.placeholder;
@@ -780,16 +748,9 @@ export const RESOURCE_PANEL_DIVIDER_DRAG_MARGIN = 4;
 export const SCROLLBAR_WIDTH = 3;
 export const CODE_AREA_RIGHT_MARGIN = 6;
 export const SCROLLBAR_MIN_THUMB_HEIGHT = 6;
-export const SYMBOL_SEARCH_BAR_MARGIN_Y = SEARCH_BAR_MARGIN_Y;
-export const SYMBOL_SEARCH_MAX_RESULTS = 8;
-export const SYMBOL_SEARCH_RESULT_PADDING_X = 4;
-export const SYMBOL_SEARCH_RESULT_SPACING = 1;
-export const SEARCH_RESULT_SPACING = SYMBOL_SEARCH_RESULT_SPACING;
-export const SYMBOL_SEARCH_COMPACT_MAX_RESULTS = 4;
-export const SYMBOL_SEARCH_COMPACT_WIDTH = 320;
-export const QUICK_OPEN_RESULT_PADDING_X = SYMBOL_SEARCH_RESULT_PADDING_X;
-export const REFERENCE_SEARCH_MAX_RESULTS = SYMBOL_SEARCH_MAX_RESULTS;
-export const SEARCH_MAX_RESULTS = SYMBOL_SEARCH_MAX_RESULTS;
+export const SEARCH_RESULT_SPACING = 1;
+export const QUICK_OPEN_RESULT_PADDING_X = 4;
+export const SEARCH_MAX_RESULTS = 8;
 export const COMPLETION_POPUP_PADDING_X = 4;
 export const COMPLETION_POPUP_PADDING_Y = 2;
 export const COMPLETION_POPUP_ITEM_SPACING = 1;

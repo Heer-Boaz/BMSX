@@ -1,9 +1,8 @@
 import type { PointerButtons } from '../input/pointer/buttons';
 import type {
 	LuaDefinitionLocation,
-	LuaSymbolEntry,
 } from '../../toolchain/ts/lua/semantic_contracts';
-import type { ResourceDomain, RuntimeResource } from './resource';
+import type { RuntimeResource } from './resource';
 import type { LuaMemberCompletionContext } from '../../toolchain/ts/lua/semantic/completion';
 import type { CodeEditorInputId } from './editor_context';
 import type { TextField } from '../editor/ui/inline/text_field_model';
@@ -58,21 +57,6 @@ export type CodeEditorViewSnapshot = {
 	scrollRow: number;
 	scrollColumn: number;
 	selectionAnchor: Position;
-};
-
-export type SymbolCatalogEntry = {
-	symbol: LuaSymbolEntry;
-	displayName: string;
-	searchKey: string;
-	line: number;
-	kindLabel: string;
-	sourceLabel: string;
-};
-
-export type SymbolSearchResult = {
-	entry: SymbolCatalogEntry;
-	matchIndex: number;
-	catalogIndex: number;
 };
 
 export type LuaCompletionKind =
@@ -199,21 +183,6 @@ export type SearchState = {
 	scope: 'local' | 'global';
 	globalMatches: GlobalSearchMatch[];
 	globalJob: GlobalSearchJob;
-};
-
-export type SymbolSearchState = {
-	field: TextField;
-	visible: boolean;
-	query: string;
-	global: boolean;
-	mode: 'symbols' | 'references' | 'definitions';
-	catalog: SymbolCatalogEntry[];
-	locationCatalog: SymbolCatalogEntry[];
-	catalogContext: { scope: 'local' | 'global'; domain: ResourceDomain; path: string };
-	matches: SymbolSearchResult[];
-	selectionIndex: number;
-	displayOffset: number;
-	hoverIndex: number;
 };
 
 export type LineJumpState = {

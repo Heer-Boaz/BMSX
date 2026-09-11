@@ -3,7 +3,6 @@ import { editorViewState } from '../../../ide/editor/ui/view/state';
 import { getCodeAreaBounds } from '../../../ide/editor/ui/view/view';
 import { inputFocus } from '../../../ide/input/focus';
 import { editorSearchState, lineJumpState } from '../../../ide/workbench/contrib/code_editor/find/widget_state';
-import { symbolSearchState } from '../../../ide/workbench/contrib/code_editor/symbols/search/state';
 import { createResourceState } from '../../../ide/workbench/contrib/resources/widget_state';
 import { renameController } from '../../../ide/workbench/contrib/code_editor/rename/controller';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
@@ -87,7 +86,7 @@ export async function testStudioFocus(test: StudioFixture): Promise<void> {
 	await until(() => !model.dirty, 'focus: restore the original source through physical Save');
 	for (const prompt of [
 		{ keys: ['ControlLeft', 'KeyL'], field: lineJumpState.field, value: () => lineJumpState.value },
-		{ keys: ['ControlLeft', 'ShiftLeft', 'KeyO'], field: symbolSearchState.field, value: () => symbolSearchState.query },
+		{ keys: ['ControlLeft', 'ShiftLeft', 'KeyO'], field: ide.editor.quickInput.field, value: () => ide.editor.quickInput.field.text },
 		{ keys: ['ControlLeft', 'Comma'], field: ide.editor.quickInput.field, value: () => ide.editor.quickInput.field.text },
 		{ keys: ['ControlLeft', 'KeyN'], field: createResourceState.field, value: () => createResourceState.path },
 	]) {

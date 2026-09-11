@@ -1097,15 +1097,18 @@ ids, not incidental shortcut text. Exact matches precede substring matches and
 word-boundary matches, with catalog order retained inside each class. A retained
 iterative matcher follows the production VS Code word-boundary recurrence;
 accent normalization and input-method transliteration are not added. Other text
-choices explicitly select the literal text provider. File/symbol matching,
-visible match reasons and symbol/location chooser convergence remain open A06
-work; shared scrolling and command initials do not complete that search contract.
+choices explicitly select the literal text provider. File/symbol matching
+and visible match reasons remain open A06 work; shared scrolling and command
+initials do not complete that search contract. Symbol, reference and ambiguous
+definition choices now use this same control with source-specific typed items.
+See `docs/source_quick_access.md` for query/snapshot and navigation lifetimes.
 
 `pick` admits a typed item provider once, after focus has left the invoking
 control. Replacing a picker first restores the original control; its ordinary
 blur policy runs before enumeration. The provider receives that control
-explicitly, not the new query field's command context. No provider work runs
-on filtering or presentation frames.
+explicitly, not the new query field's command context. Catalog admission is not
+repeated while filtering or presenting. Providers run
+`getPicks` on query changes, not on unchanged presentation frames.
 
 `contrib/commands/quick_access.ts` projects the existing command catalog,
 categories and keybinding labels into this picker. `IdeCommandController`
@@ -1127,9 +1130,16 @@ independent of query text; no second view or source schema is introduced.
 See [typed behavior entry points and production references](../docs/behavior_quick_access.md#typed-entry-points-and-command-categories).
 
 Command Palette is available through View and Ctrl/Cmd+Shift+P while the IDE
-owns input. Gameplay retains those keys. Shared symbol Quick Access remains
-separate work: the provider must retain semantic-query, source-range preview
-and cancellation ownership before replacing its existing widget.
+owns input. Gameplay retains those keys. Symbol, reference and definition Quick Access captures the invoking resource
+domain and real semantic results. Query typing does not rerun workspace analysis.
+Lua model additions, content changes and removals in that domain or SYSTEM retire
+the source generation. Session disposal precedes navigation; ordinary blur closes
+the picker. A file-local reference highlight index is not a workspace result
+identity: initial choice is resolved by file and cursor containment. Reference
+preview lines come from the same immutable snapshot as the ranges. The old global
+symbol widget, synthetic symbol rows, separate layout/input routes and deferred
+navigation microtask are removed. File-local highlights remain a separate scoped
+view while reference choices are open; this chooser is not a Peek editor.
 
 This takes the current production VS Code Quick Input ownership, not its DOM,
 service registry, animations or compatibility paths:

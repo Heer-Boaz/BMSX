@@ -610,7 +610,7 @@ test('semantic workspace reports references for table fields', async () => {
 // Workspace-driven reference catalog test
 
 test('project reference catalog resolves globals across paths', async () => {
-	const { buildReferenceCatalog } = await referenceSourcesModulePromise;
+	const { buildReferenceSources } = await referenceSourcesModulePromise;
 	const { LuaSemanticWorkspace, createLuaSemanticFrontendFromSnapshot } = await workspaceModulePromise;
 	const usageSource = [
 		'function dummy_handler()',
@@ -666,17 +666,13 @@ test('project reference catalog resolves globals across paths', async () => {
 		snapshot,
 	};
 
-	const catalog = buildReferenceCatalog({
-		info,
-		lines: usageLines,
-		path: 'usage.lua',
-	});
+	const catalog = buildReferenceSources(info);
 
-	assert.ok(catalog.some(entry => entry.symbol.location.path === 'global.lua'), 'global path included in reference catalog');
-	const usageEntries = catalog.filter(entry => entry.symbol.location.path === 'usage.lua');
+	assert.ok(catalog.some(entry => entry.range.path === 'global.lua'), 'global path included in reference catalog');
+	const usageEntries = catalog.filter(entry => entry.range.path === 'usage.lua');
 	assert.equal(usageEntries.length, matches.length, 'usage matches retained');
-	assert.ok(!catalog.some(entry => entry.symbol.location.path === 'parameter.lua'), 'parameter file excluded from references');
-	assert.ok(!catalog.some(entry => entry.symbol.location.path === 'local.lua'), 'local-scoped variable file excluded from references');
+	assert.ok(!catalog.some(entry => entry.range.path === 'parameter.lua'), 'parameter file excluded from references');
+	assert.ok(!catalog.some(entry => entry.range.path === 'local.lua'), 'local-scoped variable file excluded from references');
 });
 
 test('reference lookup resolves global definition across paths', async () => {
@@ -817,59 +813,10 @@ test('reference lookup prefers local parameter over global', async () => {
 
 test('intellisense recognizes global variable from another file', async () => {
 	const { buildLuaSemanticFrontend } = await semanticFrontendModulePromise;
-	const { buildReferenceCatalog } = await referenceSourcesModulePromise;
-	const { LuaSemanticWorkspace, createLuaSemanticFrontendFromSnapshot } = await workspaceModulePromise;
-
-	const usageSource = [
-		'function dummy_handler()',
-		'\tprint(state, 10)',
-		'end',
-	].join('\n');
-
-	const globalSource = [
-		'state = {',
-		'\tvalue = 1',
-		'}',
-		'print(state.value)',
-	].join('\n');
-
-	const workspace = new LuaSemanticWorkspace();
-	workspace.updateFile('usage.lua', usageSource);
-	workspace.updateFile('global.lua', globalSource);
-
-	const usageLines = usageSource.split('\n');
-
-	const stateRow = usageLines.findIndex(line => line.includes('print(state'));
-	const stateColumn = usageLines[stateRow]!.indexOf('state');
-	const snapshot = workspace.getSnapshot();
-	const symbolInfo = createLuaSemanticFrontendFromSnapshot(snapshot).findReferencesByPosition('usage.lua', stateRow + 1, stateColumn + 1);
-	assert.ok(symbolInfo);
-	if (!symbolInfo) {
-		return;
-	}
-
-	const matches = symbolInfo.references
-		.filter(ref => ref.file === 'usage.lua')
-		.map(ref => luaRangeToSearchMatch(ref.range, usageLines))
-		.filter((match): match is { row: number; start: number; end: number } => match !== null);
-
-	const info = {
-		matches,
-		expression: 'state',
-		query: symbolInfo,
-		snapshot,
-	};
-
-	const catalog = buildReferenceCatalog({
-		info,
-		lines: usageLines,
-		path: 'usage.lua',
-	});
-
-	const diagnostics = buildLuaSemanticFrontend(
-		[{ path: 'usage.lua', source: usageSource }],
-		{ builtinDescriptors: [], externalGlobalSymbols: catalog.map(entry => entry.symbol) },
-	).getFile('usage.lua').diagnostics;
-
-	assert.ok(!diagnostics.some(d => /'state' is not defined/.test(d.message)), 'no undefined error for global state');
+	const frontend = buildLuaSemanticFrontend([
+		{ path: 'usage.lua', source: 'function handler() print(state.value) end' },
+		{ path: 'global.lua', source: 'state = { value = 1 }' },
+	], { builtinDescriptors: [], externalGlobalSymbols: [] });
+	assert.ok(!frontend.getFile('usage.lua').diagnostics.some(d => /'state' is not defined/.test(d.message)),
+		'workspace global declarations, not UI reference rows, supply name binding');
 });

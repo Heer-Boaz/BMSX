@@ -1,8 +1,9 @@
 # Quick Input: provider-owned query projections (A06)
 
 Status: queryownership en commandmatching geïmplementeerd; het interactiecontract
-staat afzonderlijk in `quick_input_interaction.md`. A06 is pas af met matching/
-highlights én migratie van symbol-/locationkeuzes, niet met deze providergrens alleen.
+staat afzonderlijk in `quick_input_interaction.md`. Symbol-/locationkeuzes zijn
+gemigreerd volgens `source_quick_access.md`; file/symbol-matching en highlights
+blijven open A06-werk. De providergrens alleen sluit die niet.
 
 ## Productievoorbeelden en live eigenaar
 
@@ -37,9 +38,10 @@ van de gepinde productiecode, inclusief memoization en separator-equivalentie;
 de productiematcher roept die oracle niet aan. Dit vervangt nog niet de aparte
 file/symbol-matching of matchmarkering in de renderer.
 
-De live `QuickPickModel` bezit nog steeds samengestelde lowercase search keys,
-tokenmatching en ranking. De providers leveren alleen display-items. Symbol- en
-locationkeuzes hebben bovendien een eigen globale popup-/query-/scrollstate.
+Bij aanvang van deze provider-slice bezat `QuickPickModel` nog samengestelde
+lowercase search keys, tokenmatching en ranking. De providers leverden alleen
+display-items. Symbol- en locationkeuzes hadden bovendien een eigen globale
+popup-/query-/scrollstate.
 De bestaande substringsemantiek is beperkt maar geen corruptiebug; zij mag als
 expliciete tekstkeuzepolicy bestaan, niet als verborgen zoekpolicy van alle UI.
 
@@ -108,8 +110,10 @@ gate slagen op alle drie renderers. Lua: 1549 tests, 1548 geslaagd, één bestaa
 skip. IDE typecheck, strict architecture (0), core parity, indentation en
 browserproductbuild slagen; de tests-typecheck behoudt de 51 bestaande meldingen.
 
-Deze uitvoering claimt geen matchmarkering, file-fuzzy-ranking of gemigreerde
-symbol-/reference-/definitionpicker. Die onderdelen van A06 blijven open.
+Deze oorspronkelijke provideruitvoering claimde geen matchmarkering,
+file-fuzzy-ranking of gemigreerde symbol-/reference-/definitionpicker. De
+source-controlmigratie volgt in `source_quick_access.md`; matching/highlights
+blijven open.
 
 ### Gerichte kosten, geen workspace- of hardwarebewijs
 

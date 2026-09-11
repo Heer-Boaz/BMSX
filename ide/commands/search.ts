@@ -4,9 +4,9 @@ import { buildResourceQuickPickItems } from '../workbench/contrib/resources/quic
 import { TextQuickPickProvider } from '../workbench/services/quick_input/text_provider';
 import { openLineJump } from '../workbench/contrib/code_editor/find/line_jump';
 import { openCreateResourcePrompt } from '../workbench/contrib/resources/create/index';
-import { openReferenceSearchPopup } from '../workbench/contrib/code_editor/references/search/index';
+import { openReferenceSearch } from '../workbench/contrib/code_editor/references/quick_access';
 import { openRenamePrompt } from '../workbench/contrib/code_editor/rename/prompt';
-import { openGlobalSymbolSearch, openSymbolSearch } from '../workbench/contrib/code_editor/symbols/search/index';
+import { openSymbolSearch } from '../workbench/contrib/code_editor/symbols/quick_access';
 import type { EditorCommandId, EditorSearchCommandId } from '../common/commands';
 import type { RenameController } from '../workbench/contrib/code_editor/rename/controller';
 import type { CartEditor } from '../cart_editor';
@@ -44,10 +44,10 @@ export function executeEditorSearchCommand(
 			showCommandPalette(editor.quickInput, editor.commands);
 			return;
 		case 'symbolSearch':
-			openSymbolSearch(luaTooling, rename);
+			openSymbolSearch(editor, luaTooling, 'file');
 			return;
 		case 'symbolSearchGlobal':
-			openGlobalSymbolSearch(luaTooling, rename);
+			openSymbolSearch(editor, luaTooling, 'workspace');
 			return;
 		case 'resourceSearch':
 			editor.quickInput.pick('GO TO FILE', 'Type to filter files', () => new TextQuickPickProvider(buildResourceQuickPickItems(sources.activeResources)),
@@ -69,7 +69,7 @@ export function executeEditorSearchCommand(
 			openLineJump();
 			return;
 		case 'referenceSearch':
-			openReferenceSearchPopup(luaTooling, rename);
+			openReferenceSearch(editor, luaTooling);
 			return;
 		case 'rename':
 			openRenamePrompt(luaTooling, rename);

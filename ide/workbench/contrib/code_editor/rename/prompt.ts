@@ -5,7 +5,6 @@ import { closeLineJump } from '../find/line_jump';
 import { notifyReadOnlyEdit } from '../../../../editor/ui/view/view';
 import { resetBlink } from '../../../../editor/render/caret';
 import { revealCursor } from '../../../../editor/ui/view/caret/caret';
-import { closeSymbolSearch } from '../symbols/shared';
 import { editorCaretState } from '../../../../editor/ui/view/caret/state';
 import { activeCodeEditor } from '../../../../editor/ui/code_editor_state';
 import { createResourceState } from '../../resources/widget_state';
@@ -18,7 +17,6 @@ export function openRenamePrompt(bridge: RuntimeLuaTooling, rename: RenameContro
 	}
 	closeSearch(false, true);
 	closeLineJump(false);
-	closeSymbolSearch(false);
 	createResourceState.field.focusTarget.release();
 	const context = getActiveCodeTabContext();
 	switch (context.model.mode) {
