@@ -517,7 +517,17 @@ De [recursieve ingangswaarden en read-propagatie](lua_recursive_inputs.md) houde
 nu argumentbijdragen vast bij framehergebruik. Read-antwoorden staan los van
 assignment-/storagealiases; ontbrekende locaties worden niet aangemaakt door
 een lookup. Ook geneste value-producers worden doorgerekend. De bestaande
-contextselectie en globale revision-worklist zijn nog geen volledige B04-owner.
+contextselectie is nog geen volledige B04-owner.
+
+De [gedeelde queryafhankelijkheden](lua_query_dependencies.md) vervangen globale
+revision-invalidatie en de brede call-worklist. Feitindices publiceren hun eigen
+rijwijzigingen; queries behouden ook negatieve en cyclische afhankelijkheden.
+Member-/prototypejoins hebben gedeelde inverse indices in dezelfde taalowner,
+niet een cache per Studio-feature. Cross-edit hergebruik en de sterkere B04-
+broncontext worden hiermee niet voltooid.
+De latencypoort blijft open: de koude workspace-query daalt in de gepaarde proef
+van 646 naar 316 ms, maar kleine workloads worden duurder. Die kosten moeten
+in de gedeelde taalowner worden aangepakt vóór ruimere graph-admission.
 
 | ID | Eigenaar / contract | Gate |
 | --- | --- | --- |

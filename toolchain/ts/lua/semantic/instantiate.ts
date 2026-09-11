@@ -10,10 +10,13 @@ import {
 	TermKind,
 } from './function_summary';
 import type { SymbolID } from './model';
+import { SemanticDependencyIndex, type SemanticQueryDependencies } from './query_dependencies';
 import { BidirectionalTermRelation, TermRelation } from './term_relation';
 import type { CallValueEntry } from './value_graph';
 
 export class WriteSet {
+	private readonly baseDependencies: SemanticDependencyIndex;
+	private readonly nameDependencies: SemanticDependencyIndex;
 	private readonly firstByBase: number[] = [];
 	private readonly lastByBase: number[] = [];
 	private readonly firstByName: number[] = [];
@@ -25,8 +28,13 @@ export class WriteSet {
 	private readonly nextByBase: number[] = [];
 	private readonly nextByName: number[] = [];
 
+	constructor(dependencies: SemanticQueryDependencies) {
+		this.baseDependencies = new SemanticDependencyIndex(dependencies);
+		this.nameDependencies = new SemanticDependencyIndex(dependencies);
+	}
+
 	public add(write: SummaryWrite): boolean {
-		for (let link = this.first(write.base); link !== 0; link = this.next(link)) {
+		for (let link = this.firstByBase[write.base] || 0; link !== 0; link = this.next(link)) {
 			if (this.name(link) === write.name
 				&& this.value(link) === write.value
 				&& this.declaration(link) === write.declaration) {
@@ -54,10 +62,13 @@ export class WriteSet {
 			this.nextByName[nameTail - 1] = index + 1;
 		}
 		this.lastByName[write.name] = index + 1;
+		this.baseDependencies.changed(write.base);
+		this.nameDependencies.changed(write.name);
 		return true;
 	}
 
 	public first(base: TermID): number {
+		this.baseDependencies.read(base);
 		return this.firstByBase[base] || 0;
 	}
 
@@ -66,6 +77,7 @@ export class WriteSet {
 	}
 
 	public firstName(name: SemanticNameID): number {
+		this.nameDependencies.read(name);
 		return this.firstByName[name] || 0;
 	}
 
@@ -91,6 +103,7 @@ export class WriteSet {
 }
 
 export class InstantiationFrames {
+	private readonly summaryDependencies: SemanticDependencyIndex;
 	private readonly summaries: FunctionSummaryID[] = [0 as FunctionSummaryID];
 	private readonly closures: number[] = [0];
 	private readonly callers: number[] = [0];
@@ -101,6 +114,10 @@ export class InstantiationFrames {
 	private readonly firstBySummary: number[] = [];
 	private readonly lastBySummary: number[] = [];
 	private readonly nextBySummary: number[] = [0];
+
+	constructor(dependencies: SemanticQueryDependencies) {
+		this.summaryDependencies = new SemanticDependencyIndex(dependencies);
+	}
 
 	public intern(
 		site: CallValueEntry,
@@ -152,6 +169,7 @@ export class InstantiationFrames {
 			this.nextBySummary[summaryTail] = frame;
 		}
 		this.lastBySummary[summary] = frame;
+		this.summaryDependencies.changed(summary);
 		return frame;
 	}
 
@@ -168,6 +186,7 @@ export class InstantiationFrames {
 	}
 
 	public first(summary: FunctionSummaryID): number {
+		this.summaryDependencies.read(summary);
 		return this.firstBySummary[summary] || 0;
 	}
 
@@ -204,13 +223,13 @@ export type InstantiatedCallSink = (
 ) => void;
 
 export class SemanticInstantiationQuery {
-	public readonly values = new BidirectionalTermRelation();
+	public readonly values: BidirectionalTermRelation;
 	/** Read answers flow forward; they are not assignments or reverse storage aliases. */
-	public readonly readValues = new TermRelation();
-	public readonly metatables = new BidirectionalTermRelation();
-	public readonly prototypes = new BidirectionalTermRelation();
-	public readonly writes = new WriteSet();
-	public readonly frames = new InstantiationFrames();
+	public readonly readValues: TermRelation;
+	public readonly metatables: BidirectionalTermRelation;
+	public readonly prototypes: BidirectionalTermRelation;
+	public readonly writes: WriteSet;
+	public readonly frames: InstantiationFrames;
 	private readonly instantiatedFrames: boolean[] = [];
 	private readonly activeFrames: number[] = [];
 	private readonly projectedSummaries: boolean[] = [];
@@ -227,20 +246,26 @@ export class SemanticInstantiationQuery {
 	private readonly prototypeTargetQueue: TermID[] = [];
 	private prototypeQueueHead = 0;
 	private propagatingPrototypes = false;
-	private revision = 0;
 
 	constructor(
 		private readonly summaries: FunctionSummaryStore,
 		private readonly demand: SemanticDemandIndex,
 		private readonly enqueueCall: InstantiatedCallSink,
 	) {
+		const dependencies = summaries.terms.dependencies;
+		this.values = new BidirectionalTermRelation(dependencies);
+		this.readValues = new TermRelation(dependencies);
+		this.metatables = new BidirectionalTermRelation(dependencies);
+		this.prototypes = new BidirectionalTermRelation(dependencies);
+		this.writes = new WriteSet(dependencies);
+		this.frames = new InstantiationFrames(dependencies);
 		for (let aliasIndex = 0; aliasIndex < demand.aliases.length; aliasIndex += 1) {
 			this.addAlias(demand.aliases[aliasIndex]);
 		}
 	}
 
 	public getRevision(): number {
-		return this.revision;
+		return this.summaries.terms.dependencies.getRevision();
 	}
 
 	public demandName(name: SemanticNameID): boolean {
@@ -331,9 +356,7 @@ export class SemanticInstantiationQuery {
 	}
 
 	public addReadValue(target: TermID, source: TermID): void {
-		if (target !== source && this.readValues.add(target, source)) {
-			this.revision += 1;
-		}
+		if (target !== source) this.readValues.add(target, source);
 	}
 
 	public compose(summaryId: FunctionSummaryID): boolean {
@@ -572,9 +595,7 @@ export class SemanticInstantiationQuery {
 				this.addValue(alias.target, alias.source);
 				break;
 			case 'metatable':
-				if (this.metatables.add(alias.target, alias.source)) {
-					this.revision += 1;
-				}
+				this.metatables.add(alias.target, alias.source);
 				break;
 			case 'prototype':
 				this.addPrototype(alias.target, alias.source);
@@ -586,7 +607,6 @@ export class SemanticInstantiationQuery {
 		if (!this.writes.add(write)) {
 			return;
 		}
-		this.revision += 1;
 		this.addValue(this.summaries.terms.member(write.base, write.name), write.value);
 	}
 
@@ -594,7 +614,6 @@ export class SemanticInstantiationQuery {
 		if (target === source || !this.values.add(target, source)) {
 			return;
 		}
-		this.revision += 1;
 		for (let link = this.prototypes.first(target); link !== 0; link = this.prototypes.next(link)) {
 			this.addPrototype(source, this.prototypes.target(link));
 		}
@@ -621,7 +640,6 @@ export class SemanticInstantiationQuery {
 			if (!this.prototypes.add(retainedOwner, retainedTarget)) {
 				continue;
 			}
-			this.revision += 1;
 			for (let link = this.values.first(retainedOwner); link !== 0; link = this.values.next(link)) {
 				this.prototypeOwnerQueue.push(this.values.target(link));
 				this.prototypeTargetQueue.push(retainedTarget);

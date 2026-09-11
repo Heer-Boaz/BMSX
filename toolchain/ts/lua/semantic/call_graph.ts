@@ -10,6 +10,7 @@ import {
 import { SemanticInstantiationQuery } from './instantiate';
 import { SemanticMemberQuery } from './member_query';
 import type { Ref, SymbolID } from './model';
+import { SemanticQueryEvaluation, type SemanticQueryDependencies } from './query_dependencies';
 import type { BidirectionalTermRelation, TermRelation } from './term_relation';
 import { declarationValueSource, type CallValueEntry } from './value_graph';
 
@@ -22,10 +23,17 @@ export type CallFact = {
 const EMPTY_CALL_FACTS: readonly CallFact[] = [];
 
 export class SemanticCallWorklist {
+	public readonly evaluation: SemanticQueryEvaluation;
 	private readonly calls: SummaryCall[] = [];
 	private readonly ownerFrames: number[] = [];
-	private readonly processedRevisions: number[] = [];
 	private readonly itemsBySite: Map<CallValueEntry, number[]> = new Map();
+	private readonly pending: number[] = [];
+	private readonly queued: boolean[] = [];
+	private head = 0;
+
+	constructor(dependencies: SemanticQueryDependencies) {
+		this.evaluation = new SemanticQueryEvaluation(dependencies, item => this.schedule(item));
+	}
 
 	public enqueue(call: SummaryCall, ownerFrame: number): void {
 		let items = this.itemsBySite.get(call.site);
@@ -41,12 +49,22 @@ export class SemanticCallWorklist {
 		const item = this.calls.length;
 		this.calls.push(call);
 		this.ownerFrames.push(ownerFrame);
-		this.processedRevisions.push(-1);
 		items.push(item);
+		this.schedule(item);
 	}
 
-	public get length(): number {
-		return this.calls.length;
+	public get pendingCount(): number {
+		return this.pending.length - this.head;
+	}
+
+	public take(): number {
+		const item = this.pending[this.head++];
+		this.queued[item] = false;
+		if (this.head === this.pending.length) {
+			this.pending.length = 0;
+			this.head = 0;
+		}
+		return item;
 	}
 
 	public call(item: number): SummaryCall {
@@ -57,12 +75,10 @@ export class SemanticCallWorklist {
 		return this.ownerFrames[item];
 	}
 
-	public processedRevision(item: number): number {
-		return this.processedRevisions[item];
-	}
-
-	public markProcessed(item: number, revision: number): void {
-		this.processedRevisions[item] = revision;
+	private schedule(item: number): void {
+		if (this.queued[item]) return;
+		this.queued[item] = true;
+		this.pending.push(item);
 	}
 }
 
@@ -113,21 +129,18 @@ export class SemanticCallGraph {
 	}
 
 	public solve(): void {
-		for (;;) {
+		while (this.worklist.pendingCount > 0) {
 			let processed = false;
-			for (let item = 0; item < this.worklist.length; item += 1) {
-				const revision = this.instantiation.getRevision();
-				if (this.worklist.processedRevision(item) === revision) {
-					continue;
-				}
+			const count = this.worklist.pendingCount;
+			for (let index = 0; index < count; index += 1) {
+				const item = this.worklist.take();
+				if (this.worklist.evaluation.isCurrent(item)) continue;
+				this.worklist.evaluation.begin(item);
 				this.processCall(this.worklist.call(item), this.worklist.ownerFrame(item));
-				this.worklist.markProcessed(item, this.instantiation.getRevision());
+				this.worklist.evaluation.end(item);
 				processed = true;
 			}
-			if (!processed) {
-				return;
-			}
-			this.solvePasses += 1;
+			if (processed) this.solvePasses += 1;
 		}
 	}
 

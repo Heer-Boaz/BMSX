@@ -4,6 +4,10 @@
 [B04](behavior_source_authoring_design.md), not completion of its stronger
 source-origin or correlated-root-context contract.
 
+Follow-up: [shared query dependencies and indexed joins](lua_query_dependencies.md)
+replace the global-revision reconsideration described below. The paired timings
+in this document remain the historical evidence for this propagation slice.
+
 ## Reproduced failure
 
 ```lua

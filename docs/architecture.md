@@ -1484,6 +1484,15 @@ the runtime remains the semantic oracle. Unknown callbacks/targets and implicit
 initialization remain explicit unknowns, not fabricated edges. The supported
 source subset and production references are in `behavior_graph_design.md`.
 
+The generic Lua query store owns snapshot-local fact/query dependencies.
+Fact-index insertion invalidates registered readers, including negative reads;
+call evaluation uses the dependent worklist rather than a global-revision scan.
+Retained cyclic results publish changes to their readers, while receiver-write
+and prototype joins use shared inverse indices. These are derived language
+facts, not cartlib-aware inference, extra assignments or executable call proof.
+The lifecycle, production references, measurements and remaining cross-snapshot
+boundary are recorded in `lua_query_dependencies.md`.
+
 FSM target-end gestures retain an exact literal/return proof and bind proposed
 paths for all recognized consumers before editing. Shared source changes require
 an editor-local impact review with separate Apply/Discard commands; they are not

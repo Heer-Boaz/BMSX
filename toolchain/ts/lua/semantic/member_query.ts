@@ -7,56 +7,87 @@ import {
 } from './function_summary';
 import { SemanticInstantiationQuery } from './instantiate';
 import type { SymbolID } from './model';
+import { SemanticQueryEvaluation, SemanticQueryResults } from './query_dependencies';
+import { TermRelation } from './term_relation';
 import type { SemanticValueSource } from './value_graph';
 
 export class SemanticMemberQuery {
-	private readonly alternativeCache: TermID[][] = [];
+	private readonly alternatives: SemanticQueryResults<TermID>;
 	/** Forward read dependencies only, excluding location/prototype candidate comparisons. */
 	private readonly alternativeInputs: TermID[][] = [];
-	private readonly alternativeRevision: number[] = [];
-	private readonly alternativeComputing: boolean[] = [];
 	private readonly alternativeQueues: TermID[][] = [];
 	private readonly alternativeSeen: number[][] = [];
 	private readonly alternativeGeneration: number[] = [];
 	private readonly memberValues: TermID[][] = [];
 	private readonly memberDeclarations: SymbolID[][] = [];
 	private readonly pendingMemberBases: TermID[][] = [];
+	private readonly memberWriteMatches: number[][] = [];
+	private readonly memberWriteIndex: SemanticQueryEvaluation;
+	private readonly memberWritesByValue = new Map<SemanticNameID, TermRelation<number>>();
 	private readonly memberSeen: number[][] = [];
 	private readonly memberGeneration: number[] = [];
-	private readonly locationValues: TermID[][] = [];
+	private readonly locations: SemanticQueryResults<TermID>;
 	private readonly locationPaths: TermID[][] = [];
 	private readonly locationSeen: number[][] = [];
 	private readonly locationGeneration: number[] = [];
-	private readonly locationRootAliases: TermID[][] = [];
-	private readonly locationRootAliasRevisions: number[] = [];
+	private readonly rootAliases: SemanticQueryResults<TermID>;
 	private readonly locationRootAliasSeen: number[] = [];
 	private locationRootAliasGeneration = 0;
 	private readonly locationBaseQueue: TermID[] = [];
 	private readonly locationBaseSeen: number[] = [];
 	private locationBaseGeneration = 0;
-	private readonly prototypeOwners: TermID[][] = [];
-	private readonly prototypeOwnerRevision: number[] = [];
-	private readonly prototypeSources: TermID[][] = [];
-	private readonly prototypeSourceRevision: number[] = [];
-	private readonly semanticPrototypeOwners: TermID[][] = [];
-	private readonly semanticPrototypeOwnerRevision: number[] = [];
-	private readonly semanticPrototypeSources: TermID[][] = [];
-	private readonly semanticPrototypeSourceRevision: number[] = [];
+	private readonly prototypeOwners: SemanticQueryResults<TermID>;
+	private readonly prototypeSources: SemanticQueryResults<TermID>;
+	private readonly semanticPrototypeOwners: SemanticQueryResults<TermID>;
+	private readonly semanticPrototypeSources: SemanticQueryResults<TermID>;
+	private readonly prototypeOwnerIndex: SemanticQueryEvaluation;
+	private readonly prototypeSourceIndex: SemanticQueryEvaluation;
+	private readonly prototypeOwnersByValue: TermRelation;
+	private readonly prototypeSourcesByLocation: TermRelation;
 	private readonly queryTerms: TermID[] = [];
+	private readonly functionSummaries: FunctionSummaryID[] = [];
+	private readonly functionDeclarations: (SymbolID | undefined)[] = [];
+	private readonly callableTerms: TermID[] = [];
 	private readonly queryTermSeen: number[] = [];
 	private queryTermGeneration = 0;
-	private readonly valueDemandQueue: TermID[] = [];
-	private readonly valueDemandRevision: number[] = [];
+	private readonly valueDemand: SemanticQueryEvaluation;
+	private readonly valueDemandTerms: TermID[] = [];
+	private readonly valueDemandInputIndices: number[] = [];
 	private readonly symbolSeen: Map<SymbolID, number> = new Map();
 	private symbolGeneration = 0;
 
 	constructor(
 		private readonly summaries: FunctionSummaryStore,
 		private readonly instantiation: SemanticInstantiationQuery,
-	) {}
+	) {
+		const dependencies = summaries.terms.dependencies;
+		this.valueDemand = new SemanticQueryEvaluation(dependencies);
+		this.memberWriteIndex = new SemanticQueryEvaluation(dependencies);
+		this.alternatives = new SemanticQueryResults<TermID>(dependencies);
+		this.locations = new SemanticQueryResults<TermID>(dependencies);
+		this.rootAliases = new SemanticQueryResults<TermID>(dependencies);
+		this.prototypeOwners = new SemanticQueryResults<TermID>(dependencies);
+		this.prototypeSources = new SemanticQueryResults<TermID>(dependencies);
+		this.semanticPrototypeOwners = new SemanticQueryResults<TermID>(dependencies);
+		this.semanticPrototypeSources = new SemanticQueryResults<TermID>(dependencies);
+		this.prototypeOwnerIndex = new SemanticQueryEvaluation(dependencies);
+		this.prototypeSourceIndex = new SemanticQueryEvaluation(dependencies);
+		this.prototypeOwnersByValue = new TermRelation(dependencies);
+		this.prototypeSourcesByLocation = new TermRelation(dependencies);
+	}
 
 	public nameId(name: string): SemanticNameID {
 		return this.summaries.terms.nameId(name);
+	}
+
+	public get valueEvaluations(): number { return this.alternatives.count; }
+	public get locationEvaluations(): number { return this.locations.count; }
+	public get prototypeEvaluations(): number {
+		return this.prototypeOwners.count + this.prototypeSources.count
+			+ this.semanticPrototypeOwners.count + this.semanticPrototypeSources.count;
+	}
+	public get indexEvaluations(): number {
+		return this.memberWriteIndex.count + this.prototypeOwnerIndex.count + this.prototypeSourceIndex.count;
 	}
 
 	public resolveMembers(
@@ -87,9 +118,9 @@ export class SemanticMemberQuery {
 		this.collectQueryTerms(this.summaries.terms.compileSource(source));
 		out.length = 0;
 		this.symbolGeneration += 1;
-		const summaries: FunctionSummaryID[] = [];
-		const declarations: (SymbolID | undefined)[] = [];
-		const callableTerms: TermID[] = [];
+		const summaries = this.functionSummaries;
+		const declarations = this.functionDeclarations;
+		const callableTerms = this.callableTerms;
 		for (let queryIndex = 0; queryIndex < this.queryTerms.length; queryIndex += 1) {
 			this.resolveCallable(this.queryTerms[queryIndex], summaries, declarations, callableTerms);
 			for (let declarationIndex = 0; declarationIndex < declarations.length; declarationIndex += 1) {
@@ -136,26 +167,33 @@ export class SemanticMemberQuery {
 	}
 
 	private demandValue(term: TermID): void {
-		const revision = this.instantiation.getRevision();
-		if (this.valueDemandRevision[term] === revision) {
-			return;
-		}
-		const queue = this.valueDemandQueue;
-		queue.length = 1;
-		queue[0] = term;
-		for (let head = 0; head < queue.length; head += 1) {
-			const current = queue[head];
-			if (this.valueDemandRevision[current] === revision) {
-				continue;
-			}
-			this.valueDemandRevision[current] = revision;
-			const alternatives = this.collectAlternatives(current, 0);
-			for (let index = 0; index < alternatives.length; index += 1) {
-				this.instantiation.demandValue(alternatives[index]);
+		if (this.valueDemand.isCurrent(term) || this.valueDemand.isComputing(term)) return;
+		let depth = 0;
+		this.valueDemandTerms[depth] = term;
+		this.valueDemandInputIndices[depth] = -1;
+		while (depth >= 0) {
+			const current = this.valueDemandTerms[depth];
+			if (this.valueDemandInputIndices[depth] === -1) {
+				this.valueDemand.begin(current);
+				const alternatives = this.collectAlternatives(current, 0);
+				for (let index = 0; index < alternatives.length; index += 1) {
+					this.instantiation.demandValue(alternatives[index]);
+				}
+				this.valueDemandInputIndices[depth] = 0;
 			}
 			const inputs = this.alternativeInputs[current];
-			for (let index = 0; index < inputs.length; index += 1) {
-				queue.push(inputs[index]);
+			const inputIndex = this.valueDemandInputIndices[depth];
+			if (inputIndex === inputs.length) {
+				this.valueDemand.end(current);
+				depth -= 1;
+				continue;
+			}
+			const input = inputs[inputIndex];
+			this.valueDemandInputIndices[depth] += 1;
+			if (!this.valueDemand.isCurrent(input) && !this.valueDemand.isComputing(input)) {
+				depth += 1;
+				this.valueDemandTerms[depth] = input;
+				this.valueDemandInputIndices[depth] = -1;
 			}
 		}
 	}
@@ -187,23 +225,17 @@ export class SemanticMemberQuery {
 	}
 
 	private collectAlternatives(term: TermID, depth: number): readonly TermID[] {
-		const revision = this.instantiation.getRevision();
-		let retained = this.alternativeCache[term];
-		if (this.alternativeRevision[term] === revision) {
-			return retained;
+		if (this.alternatives.isCurrent(term) || this.alternatives.isComputing(term)) {
+			return this.alternatives.values(term);
 		}
-		if (this.alternativeComputing[term]) {
-			return retained || [term];
+		this.alternatives.begin(term);
+		const retained = this.alternatives.buffer(depth);
+		let inputs = this.alternativeInputs[term];
+		if (!inputs) {
+			inputs = [];
+			this.alternativeInputs[term] = inputs;
 		}
-		if (!retained) {
-			retained = [];
-			this.alternativeCache[term] = retained;
-			this.alternativeInputs[term] = [];
-		}
-		retained.length = 0;
-		const inputs = this.alternativeInputs[term];
 		inputs.length = 0;
-		this.alternativeComputing[term] = true;
 		const queue = this.alternativeQueueAtDepth(depth);
 		const seen = this.alternativeSeenAtDepth(depth);
 		const generation = this.nextAlternativeGeneration(depth);
@@ -372,9 +404,7 @@ export class SemanticMemberQuery {
 					break;
 			}
 		}
-		this.alternativeComputing[term] = false;
-		this.alternativeRevision[term] = revision;
-		return retained;
+		return this.alternatives.publish(term, retained);
 	}
 
 	private collectMemberValues(
@@ -458,21 +488,22 @@ export class SemanticMemberQuery {
 		}
 		if (values.length === initialValueCount) {
 			const queryValues = this.collectAlternatives(base, depth + 1);
-			for (let link = writes.firstName(name); link !== 0; link = writes.nextName(link)) {
-				const writeValues = this.collectAlternatives(writes.base(link), depth + 2);
-				let matches = false;
-				for (let writeIndex = 0; writeIndex < writeValues.length && !matches; writeIndex += 1) {
-					for (let queryIndex = 0; queryIndex < queryValues.length; queryIndex += 1) {
-						if (writeValues[writeIndex] === queryValues[queryIndex]) {
-							matches = true;
-							break;
-						}
-					}
+			const index = this.indexMemberWrites(name, depth + 1);
+			let matches = this.memberWriteMatches[depth];
+			if (!matches) {
+				matches = [];
+				this.memberWriteMatches[depth] = matches;
+			}
+			matches.length = 0;
+			for (let queryIndex = 0; queryIndex < queryValues.length; queryIndex += 1) {
+				for (let link = index.first(queryValues[queryIndex]); link !== 0; link = index.next(link)) {
+					const write = index.target(link);
+					if (!matches.includes(write)) matches.push(write);
 				}
-				if (matches) {
-					values.push(writes.value(link));
-					declarations.push(writes.declaration(link));
-				}
+			}
+			for (let match = 0; match < matches.length; match += 1) {
+				values.push(writes.value(matches[match]));
+				declarations.push(writes.declaration(matches[match]));
 			}
 			if (values.length !== initialValueCount) {
 				return;
@@ -496,6 +527,7 @@ export class SemanticMemberQuery {
 				if (values.length !== before) {
 					continue;
 				}
+				if (this.instantiation.prototypes.count === 0) continue;
 				const prototypeOwners = this.collectPrototypeOwners(terms.base(alternative), depth + 1);
 				for (let ownerIndex = 0; ownerIndex < prototypeOwners.length; ownerIndex += 1) {
 					this.collectMemberValuesRecursive(
@@ -529,6 +561,7 @@ export class SemanticMemberQuery {
 				}
 				continue;
 			}
+			if (this.instantiation.prototypes.count === 0) continue;
 			const before = values.length;
 			const prototypeSources = this.collectPrototypeSources(alternative, depth + 1);
 			for (let sourceIndex = 0; sourceIndex < prototypeSources.length; sourceIndex += 1) {
@@ -566,6 +599,27 @@ export class SemanticMemberQuery {
 		}
 	}
 
+	private indexMemberWrites(name: SemanticNameID, depth: number): TermRelation<number> {
+		// Materialize the value/write join once per demanded name. A read consumes
+		// matching fact rows instead of comparing every same-name writer again.
+		let index = this.memberWritesByValue.get(name);
+		if (!index) {
+			index = new TermRelation<number>(this.summaries.terms.dependencies);
+			this.memberWritesByValue.set(name, index);
+		}
+		if (this.memberWriteIndex.isCurrent(name) || this.memberWriteIndex.isComputing(name)) return index;
+		this.memberWriteIndex.begin(name);
+		const writes = this.instantiation.writes;
+		for (let link = writes.firstName(name); link !== 0; link = writes.nextName(link)) {
+			const values = this.collectAlternatives(writes.base(link), depth + 1);
+			for (let valueIndex = 0; valueIndex < values.length; valueIndex += 1) {
+				index.add(values[valueIndex], link);
+			}
+		}
+		this.memberWriteIndex.end(name);
+		return index;
+	}
+
 	private alternativeQueueAtDepth(depth: number): TermID[] {
 		let queue = this.alternativeQueues[depth];
 		if (!queue) {
@@ -585,11 +639,15 @@ export class SemanticMemberQuery {
 	}
 
 	private collectLocationAlternatives(term: TermID, depth: number): readonly TermID[] {
-		let values = this.locationValues[depth];
-		if (!values) {
-			values = [];
-			this.locationValues[depth] = values;
-			this.locationPaths[depth] = [];
+		if (this.locations.isCurrent(term) || this.locations.isComputing(term)) {
+			return this.locations.values(term);
+		}
+		this.locations.begin(term);
+		const values = this.locations.buffer(depth);
+		let path = this.locationPaths[depth];
+		if (!path) {
+			path = [];
+			this.locationPaths[depth] = path;
 		}
 		let seen = this.locationSeen[depth];
 		if (!seen) {
@@ -598,7 +656,6 @@ export class SemanticMemberQuery {
 		}
 		const generation = (this.locationGeneration[depth] || 0) + 1;
 		this.locationGeneration[depth] = generation;
-		values.length = 0;
 		const alternatives = this.collectAlternatives(term, depth + 1);
 		for (let alternativeIndex = 0; alternativeIndex < alternatives.length; alternativeIndex += 1) {
 			const alternative = alternatives[alternativeIndex];
@@ -608,7 +665,6 @@ export class SemanticMemberQuery {
 			}
 		}
 		const relations = this.instantiation.values;
-		const path = this.locationPaths[depth];
 		const valueCount = values.length;
 		let head = 0;
 		while (head < values.length) {
@@ -689,19 +745,13 @@ export class SemanticMemberQuery {
 				}
 			}
 		}
-		return values;
+		return this.locations.publish(term, values);
 	}
 
 	private collectLocationRootAliases(term: TermID): readonly TermID[] {
-		const revision = this.instantiation.values.count;
-		let roots = this.locationRootAliases[term];
-		if (this.locationRootAliasRevisions[term] === revision) {
-			return roots;
-		}
-		if (!roots) {
-			roots = [];
-			this.locationRootAliases[term] = roots;
-		}
+		if (this.rootAliases.isCurrent(term)) return this.rootAliases.values(term);
+		this.rootAliases.begin(term);
+		const roots = this.rootAliases.buffer(0);
 		roots.length = 1;
 		roots[0] = term;
 		const generation = ++this.locationRootAliasGeneration;
@@ -719,21 +769,15 @@ export class SemanticMemberQuery {
 				}
 			}
 		}
-		this.locationRootAliasRevisions[term] = revision;
-		return roots;
+		return this.rootAliases.publish(term, roots);
 	}
 
 	private collectPrototypeOwners(classTerm: TermID, depth: number): readonly TermID[] {
-		const revision = this.instantiation.getRevision();
-		let owners = this.prototypeOwners[classTerm];
-		if (this.prototypeOwnerRevision[classTerm] === revision) {
-			return owners;
+		if (this.prototypeOwners.isCurrent(classTerm) || this.prototypeOwners.isComputing(classTerm)) {
+			return this.prototypeOwners.values(classTerm);
 		}
-		if (!owners) {
-			owners = [];
-			this.prototypeOwners[classTerm] = owners;
-		}
-		owners.length = 0;
+		this.prototypeOwners.begin(classTerm);
+		const owners = this.prototypeOwners.buffer(depth);
 		const classes = this.collectLocationAlternatives(classTerm, depth + 1);
 		const prototypes = this.instantiation.prototypes;
 		for (let classIndex = 0; classIndex < classes.length; classIndex += 1) {
@@ -747,21 +791,15 @@ export class SemanticMemberQuery {
 				}
 			}
 		}
-		this.prototypeOwnerRevision[classTerm] = revision;
-		return owners;
+		return this.prototypeOwners.publish(classTerm, owners);
 	}
 
 	private collectPrototypeSources(objectTerm: TermID, depth: number): readonly TermID[] {
-		const revision = this.instantiation.getRevision();
-		let sources = this.prototypeSources[objectTerm];
-		if (this.prototypeSourceRevision[objectTerm] === revision) {
-			return sources;
+		if (this.prototypeSources.isCurrent(objectTerm) || this.prototypeSources.isComputing(objectTerm)) {
+			return this.prototypeSources.values(objectTerm);
 		}
-		if (!sources) {
-			sources = [];
-			this.prototypeSources[objectTerm] = sources;
-		}
-		sources.length = 0;
+		this.prototypeSources.begin(objectTerm);
+		const sources = this.prototypeSources.buffer(depth);
 		const objects = this.collectLocationAlternatives(objectTerm, depth + 1);
 		const prototypes = this.instantiation.prototypes;
 		for (let objectIndex = 0; objectIndex < objects.length; objectIndex += 1) {
@@ -775,79 +813,75 @@ export class SemanticMemberQuery {
 				}
 			}
 		}
-		this.prototypeSourceRevision[objectTerm] = revision;
-		return sources;
+		return this.prototypeSources.publish(objectTerm, sources);
 	}
 
 	private collectSemanticPrototypeOwners(classTerm: TermID, depth: number): readonly TermID[] {
-		const revision = this.instantiation.getRevision();
-		let owners = this.semanticPrototypeOwners[classTerm];
-		if (this.semanticPrototypeOwnerRevision[classTerm] === revision) {
-			return owners;
+		if (this.semanticPrototypeOwners.isCurrent(classTerm) || this.semanticPrototypeOwners.isComputing(classTerm)) {
+			return this.semanticPrototypeOwners.values(classTerm);
 		}
-		if (!owners) {
-			owners = [];
-			this.semanticPrototypeOwners[classTerm] = owners;
-		}
-		owners.length = 0;
+		this.semanticPrototypeOwners.begin(classTerm);
+		const owners = this.semanticPrototypeOwners.buffer(depth);
 		const classes = this.collectLocationAlternatives(classTerm, depth + 1);
+		this.indexPrototypeOwners(depth + 1);
+		const index = this.prototypeOwnersByValue;
+		for (let classIndex = 0; classIndex < classes.length; classIndex += 1) {
+			for (let link = index.first(classes[classIndex]); link !== 0; link = index.next(link)) {
+				const owner = index.target(link);
+				if (!owners.includes(owner)) owners.push(owner);
+			}
+		}
+		return this.semanticPrototypeOwners.publish(classTerm, owners);
+	}
+
+	private indexPrototypeOwners(depth: number): void {
+		// Values and locations grow monotonically within this term universe. These
+		// derived indices retain joins; they are not additional assignment aliases.
+		if (this.prototypeOwnerIndex.isCurrent(0) || this.prototypeOwnerIndex.isComputing(0)) return;
+		this.prototypeOwnerIndex.begin(0);
 		const prototypes = this.instantiation.prototypes;
 		for (let link = 1; link <= prototypes.count; link += 1) {
-			const targets = this.collectAlternatives(prototypes.target(link), depth + 2);
-			let matches = false;
-			for (let targetIndex = 0; targetIndex < targets.length && !matches; targetIndex += 1) {
-				for (let classIndex = 0; classIndex < classes.length; classIndex += 1) {
-					if (targets[targetIndex] === classes[classIndex]) {
-						matches = true;
-						break;
-					}
-				}
-			}
-			const owner = prototypes.owner(link);
-			if (matches && !owners.includes(owner)) {
-				owners.push(owner);
+			const targets = this.collectAlternatives(prototypes.target(link), depth + 1);
+			for (let targetIndex = 0; targetIndex < targets.length; targetIndex += 1) {
+				this.prototypeOwnersByValue.add(targets[targetIndex], prototypes.owner(link));
 			}
 		}
-		this.semanticPrototypeOwnerRevision[classTerm] = revision;
-		return owners;
+		this.prototypeOwnerIndex.end(0);
 	}
 
 	private collectSemanticPrototypeSources(objectTerm: TermID, depth: number): readonly TermID[] {
-		const revision = this.instantiation.getRevision();
-		let sources = this.semanticPrototypeSources[objectTerm];
-		if (this.semanticPrototypeSourceRevision[objectTerm] === revision) {
-			return sources;
+		if (this.semanticPrototypeSources.isCurrent(objectTerm) || this.semanticPrototypeSources.isComputing(objectTerm)) {
+			return this.semanticPrototypeSources.values(objectTerm);
 		}
-		if (!sources) {
-			sources = [];
-			this.semanticPrototypeSources[objectTerm] = sources;
-		}
-		sources.length = 0;
+		this.semanticPrototypeSources.begin(objectTerm);
+		const sources = this.semanticPrototypeSources.buffer(depth);
 		const objects = this.collectLocationAlternatives(objectTerm, depth + 1);
+		this.indexPrototypeSources(depth + 1);
+		const index = this.prototypeSourcesByLocation;
+		for (let objectIndex = 0; objectIndex < objects.length; objectIndex += 1) {
+			for (let link = index.first(objects[objectIndex]); link !== 0; link = index.next(link)) {
+				const source = index.target(link);
+				if (!sources.includes(source)) sources.push(source);
+			}
+		}
+		return this.semanticPrototypeSources.publish(objectTerm, sources);
+	}
+
+	private indexPrototypeSources(depth: number): void {
+		if (this.prototypeSourceIndex.isCurrent(0) || this.prototypeSourceIndex.isComputing(0)) return;
+		this.prototypeSourceIndex.begin(0);
 		const prototypes = this.instantiation.prototypes;
 		for (let link = 1; link <= prototypes.count; link += 1) {
 			const owner = prototypes.owner(link);
-			// Match each owner once, then consume its existing adjacency list.
 			if (prototypes.first(owner) !== link) continue;
-			const owners = this.collectLocationAlternatives(owner, depth + 2);
-			let matches = false;
-			for (let ownerIndex = 0; ownerIndex < owners.length && !matches; ownerIndex += 1) {
-				for (let objectIndex = 0; objectIndex < objects.length; objectIndex += 1) {
-					if (owners[ownerIndex] === objects[objectIndex]) {
-						matches = true;
-						break;
-					}
-				}
-			}
-			if (matches) {
+			const owners = this.collectLocationAlternatives(owner, depth + 1);
+			for (let ownerIndex = 0; ownerIndex < owners.length; ownerIndex += 1) {
 				for (let target = link; target !== 0; target = prototypes.next(target)) {
-					const source = prototypes.target(target);
-					if (!sources.includes(source)) sources.push(source);
+					this.prototypeSourcesByLocation.add(owners[ownerIndex], prototypes.target(target));
 				}
 			}
 		}
-		this.semanticPrototypeSourceRevision[objectTerm] = revision;
-		return sources;
+		this.prototypeSourceIndex.end(0);
 	}
 
 	private alternativeSeenAtDepth(depth: number): number[] {

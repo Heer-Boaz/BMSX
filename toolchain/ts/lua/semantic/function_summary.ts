@@ -1,5 +1,6 @@
 import type { FileSemanticData, SymbolID } from './model';
 import { WorkspaceValueIdentityIndex, type SemanticRootID } from './identity';
+import { SemanticDependencyIndex, SemanticQueryDependencies } from './query_dependencies';
 import {
 	declarationValueSource,
 	type CallValueEntry,
@@ -75,6 +76,8 @@ const EMPTY_SUMMARY_IDS: readonly FunctionSummaryID[] = [];
 const EMPTY_TERM_IDS: readonly TermID[] = [];
 
 export class SemanticTermStore {
+	public readonly dependencies = new SemanticQueryDependencies();
+	private readonly accessPaths = new SemanticDependencyIndex(this.dependencies);
 	private readonly kinds: TermKind[] = [];
 	private readonly left: number[] = [];
 	private readonly right: number[] = [];
@@ -221,6 +224,7 @@ export class SemanticTermStore {
 		}
 		const term = this.create(TermKind.Member, base, name);
 		terms.push(term);
+		this.accessPaths.changed(base);
 		return term;
 	}
 
@@ -241,6 +245,7 @@ export class SemanticTermStore {
 		}
 		const term = this.create(TermKind.Index, base, key);
 		terms.push(term);
+		this.accessPaths.changed(base);
 		return term;
 	}
 
@@ -261,14 +266,17 @@ export class SemanticTermStore {
 	}
 
 	public retainedMetatable(base: TermID): TermID | undefined {
+		this.accessPaths.read(base);
 		return this.metatableByBase[base];
 	}
 
 	public retainedInstance(base: TermID): TermID | undefined {
+		this.accessPaths.read(base);
 		return this.instanceByBase[base];
 	}
 
 	public retainedMember(base: TermID, name: SemanticNameID): TermID | undefined {
+		this.accessPaths.read(base);
 		const members = this.membersByBase.get(base);
 		if (members) {
 			for (let index = 0; index < members.length; index += 1) {
@@ -279,6 +287,7 @@ export class SemanticTermStore {
 	}
 
 	public retainedElement(base: TermID): TermID | undefined {
+		this.accessPaths.read(base);
 		return this.elementByBase[base];
 	}
 
@@ -290,13 +299,14 @@ export class SemanticTermStore {
 			case TermKind.Index:
 				return this.retainedIndex(base, this.right[term] as TermID);
 			case TermKind.Element:
-				return this.elementByBase[base];
+				return this.retainedElement(base);
 			case TermKind.Call:
+				this.accessPaths.read(base);
 				return this.callByBase[base];
 			case TermKind.Instance:
-				return this.instanceByBase[base];
+				return this.retainedInstance(base);
 			case TermKind.Metatable:
-				return this.metatableByBase[base];
+				return this.retainedMetatable(base);
 			case TermKind.Root:
 			case TermKind.Parameter:
 			case TermKind.Local:
@@ -392,11 +402,13 @@ export class SemanticTermStore {
 	}
 
 	public indices(base: TermID): readonly TermID[] {
+		this.accessPaths.read(base);
 		return this.indicesByBase.get(base) || EMPTY_TERM_IDS;
 	}
 
 	/** Read an existing indexed location without growing symbolic access paths. */
 	public retainedIndex(base: TermID, key: TermID): TermID | undefined {
+		this.accessPaths.read(base);
 		if (this.isUnknown(key)) return this.elementByBase[base];
 		const indices = this.indicesByBase.get(base);
 		if (indices) {
@@ -455,6 +467,7 @@ export class SemanticTermStore {
 		if (term === undefined) {
 			term = this.create(kind, base, 0);
 			terms[base] = term;
+			this.accessPaths.changed(base);
 		}
 		return term;
 	}
