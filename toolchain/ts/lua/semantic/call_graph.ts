@@ -1,5 +1,5 @@
 import { SemanticDemandIndex } from './demand_index';
-import { SemanticCallContext } from './call_context';
+import { SemanticCallContext, type CallApplication, type CallApplicationEdge } from './call_context';
 import {
 	type FunctionSummaryID,
 	FunctionSummaryStore,
@@ -11,7 +11,7 @@ import {
 import { SemanticInstantiationQuery } from './instantiate';
 import { SemanticMemberQuery } from './member_query';
 import type { Ref, SymbolID } from './model';
-import { SemanticQueryResults } from './query_dependencies';
+import { SemanticDependencyIndex, SemanticQueryResults } from './query_dependencies';
 import { SemanticQueryWorklist } from './query_worklist';
 import type { BidirectionalTermRelation, TermRelation } from './term_relation';
 import { declarationValueSource, type CallValueEntry } from './value_graph';
@@ -24,6 +24,7 @@ export type CallFact = {
 
 const EMPTY_CALL_FACTS: readonly CallFact[] = [];
 const EMPTY_CALL_ITEMS: ReadonlyMap<number, number> = new Map();
+const EMPTY_APPLICATION_EDGES: readonly CallApplicationEdge[] = [];
 
 export class SemanticCallWorklist extends SemanticQueryWorklist {
 	private readonly calls: SummaryCall[] = [];
@@ -60,6 +61,10 @@ export class SemanticCallWorklist extends SemanticQueryWorklist {
 
 export class SemanticCallGraph {
 	private readonly contexts: SemanticCallContext[] = [];
+	private incomingApplicationIndex: {
+		readonly byFrame: Map<number, CallApplicationEdge[]>;
+		readonly dependencies: SemanticDependencyIndex;
+	} | undefined;
 	private readonly contextQueries = new Map<CallValueEntry, number>();
 	private readonly contextResults: SemanticQueryResults<SemanticCallContext>;
 	private readonly factsByCall: Map<CallValueEntry, CallFact[]> = new Map();
@@ -79,6 +84,7 @@ export class SemanticCallGraph {
 	private readonly valueProducerSeen: number[] = [];
 	private readonly activatedFrames: boolean[] = [];
 	private readonly queriedCallsBySummary: SummaryCall[][] = [];
+	private readonly queriedSummaryCallers: boolean[] = [];
 	private producerGeneration = 0;
 	private callerActivationGeneration = 0;
 	private identifierGeneration = 0;
@@ -163,10 +169,38 @@ export class SemanticCallGraph {
 		return context;
 	}
 
-	public compose(summary: FunctionSummaryID): void {
-		if (!this.instantiation.compose(summary)) {
-			return;
+	/** Incoming source edges, not the first caller recorded when a frame was interned. */
+	public incomingApplications(frame: number): readonly CallApplicationEdge[] {
+		if (this.incomingApplicationIndex === undefined) {
+			this.incomingApplicationIndex = {
+				byFrame: new Map(), dependencies: new SemanticDependencyIndex(this.summaries.terms.dependencies),
+			};
+			for (const context of this.contexts) {
+				for (const application of context.applications) this.indexIncoming(context, application);
+			}
 		}
+		const { byFrame, dependencies } = this.incomingApplicationIndex;
+		dependencies.read(frame);
+		const edges = byFrame.get(frame);
+		return edges === undefined ? EMPTY_APPLICATION_EDGES : edges;
+	}
+
+	private indexIncoming(context: SemanticCallContext, application: CallApplication): void {
+		const { byFrame, dependencies } = this.incomingApplicationIndex!;
+		const frame = application.targetFrame;
+		let edges = byFrame.get(frame);
+		if (edges === undefined) {
+			edges = [];
+			byFrame.set(frame, edges);
+		}
+		edges.push({ context, application });
+		dependencies.changed(frame);
+	}
+
+	public compose(summary: FunctionSummaryID): void {
+		if (this.queriedSummaryCallers[summary]) return;
+		this.queriedSummaryCallers[summary] = true;
+		this.instantiation.compose(summary);
 		const retained = this.summaries.get(summary);
 		if (retained.receiverProjection !== undefined) {
 			this.queueProducerTerm(retained.receiverProjection);
@@ -321,7 +355,8 @@ export class SemanticCallGraph {
 				inputs.arguments,
 				result,
 			);
-			context.addApplication(summary, this.callableTerms[callableIndex], frame);
+			const application = context.addApplication(summary, this.callableTerms[callableIndex], frame);
+			if (application !== undefined && this.incomingApplicationIndex !== undefined) this.indexIncoming(context, application);
 			this.activateFrameIdentifiers(summary, frame);
 			const queriedCalls = this.queriedCallsBySummary[summary];
 			if (queriedCalls) {

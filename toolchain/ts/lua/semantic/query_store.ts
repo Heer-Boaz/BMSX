@@ -10,6 +10,7 @@ import { SemanticInstantiationQuery } from './instantiate';
 import { SemanticMemberQuery } from './member_query';
 import type { FileSemanticData, SymbolID } from './model';
 import { SemanticQueryResults } from './query_dependencies';
+import { LuaSourceCallQuery, type LuaSourceCallGraph } from './source_call_graph';
 import type {
 	CallValueEntry,
 	SemanticValueSource,
@@ -44,6 +45,7 @@ export class LuaSemanticQueryStore {
 	private readonly instantiation: SemanticInstantiationQuery;
 	private readonly members: SemanticMemberQuery;
 	private readonly calls: SemanticCallGraph;
+	private sourceCalls: LuaSourceCallQuery | undefined;
 	private readonly memberEntries: MemberQueryEntry[][] = [];
 	private readonly memberResults: SemanticQueryResults<SymbolID>;
 	private readonly allMemberResults: SemanticQueryResults<SymbolID>;
@@ -158,6 +160,11 @@ export class LuaSemanticQueryStore {
 
 	public callContexts(call: CallValueEntry): readonly SemanticCallContext[] {
 		return this.calls.callContexts(call);
+	}
+
+	public callSources(call: CallValueEntry): LuaSourceCallGraph {
+		if (this.sourceCalls === undefined) this.sourceCalls = new LuaSourceCallQuery(this.summaries, this.instantiation, this.calls);
+		return this.sourceCalls.ancestry(call);
 	}
 
 	public incoming(symbol: SymbolID, name: string): readonly CallFact[] {

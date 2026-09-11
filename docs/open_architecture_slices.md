@@ -573,6 +573,12 @@ exportselectie; eerdere returns zijn mogelijke publicatie-bypasses, geen extra
 exports. Onbekende imports, factory-calls en memberpaden worden niet gesloten
 verklaard. De bredere B04-broncontext en B03/B06-authoring blijven open.
 
+De [source-callgraph](lua_source_call_graph.md) houdt calltuples en alle gevonden
+incoming applicaties naar gedeelde frames bijeen, inclusief recursie, lexical
+closures en projectieherkomst. De queryvolgorde mag caller-contexten niet langer
+onderdrukken doordat bodyprojectie al bestond. Dit is nog geen volledige
+closure-use-discovery of bron-substitutie; B03/B06 blijven te leveren UX.
+
 | ID | Eigenaar / contract | Gate |
 | --- | --- | --- |
 | `STUDIO-BEHAVIOR-UX-B01` | Uitgewerkt: betekenisvolle BT/FSM-kaarten en volledige source-linked property-inspectie; technische bewijsdetails niet permanent op het canvas. Zie `behavior_inspection_design.md` voor de vooraf gemeten compositie en concrete owner-/bewijsgrenzen. | Tiny-resolutie met Problems, lange callbacks, exacte Source/Back, keyboard/controller/scroll/focus en non-mutating inspectie. B04-bronorigins, B06-propertyauthoring en B07-zoom blijven aparte contracten. |

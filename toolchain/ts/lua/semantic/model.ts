@@ -136,6 +136,7 @@ export type Ref = {
 
 export type LuaCallSite = {
 	readonly expression: LuaCallExpression;
+	readonly call: CallValueEntry;
 	readonly calleeValue: SemanticValueSource | undefined;
 	readonly moduleTarget: ModuleAliasTarget | null;
 	readonly moduleTargetBinding: 'immutable' | 'mutable' | null;
@@ -1180,13 +1181,16 @@ class SemanticBuilder {
 					}
 					argumentValues[index + argumentOffset] = argumentInfo.valueSource;
 				}
-				this.recordCallValue({
+				const call: CallValueEntry = {
+					expression: callExpression,
 					callee: calledValue,
 					arguments: argumentValues,
 					result: callResult,
-				}, callReference);
+				};
+				this.recordCallValue(call, callReference);
 				this.callSites.push({
 					expression: callExpression,
+					call,
 					calleeValue: calledValue,
 					moduleTarget,
 					moduleTargetBinding,

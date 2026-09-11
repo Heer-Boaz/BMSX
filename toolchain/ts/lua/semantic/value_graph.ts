@@ -4,6 +4,7 @@ import {
 	LuaSyntaxKind,
 	type LuaAssignmentStatement,
 	type LuaBooleanLiteralExpression,
+	type LuaCallExpression,
 	type LuaExpression,
 	type LuaForGenericStatement,
 	type LuaForNumericStatement,
@@ -123,6 +124,7 @@ export type FunctionValueFlowEntry = {
 };
 
 export type CallValueEntry = {
+	readonly expression: LuaCallExpression;
 	callee: SemanticValueSource;
 	arguments: readonly SemanticValueSource[];
 	result?: OwnedSemanticValueSource;

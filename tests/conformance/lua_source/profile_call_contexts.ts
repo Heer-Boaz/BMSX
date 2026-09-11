@@ -28,3 +28,30 @@ for (const callers of [1, 64, 256, 1024]) {
 		retainedQueryMicroseconds, metrics: before,
 		boundary: 'retained binder facts; fresh query store+first contextual call query; 10000 retained lookups per sample; no guest execution or rendering' }));
 }
+
+for (const callers of [1, 64, 256, 1024]) {
+	const lines = ['local function consume(id, definition) end',
+		'local function wrap(id, definition) consume(id, definition) end'];
+	for (let index = 0; index < callers; index += 1) lines.push(`wrap('id_${index}', { task = 'task_${index}' })`);
+	const file = buildLuaFileSemanticData(lines.join('\n'), 'source_calls.lua');
+	const call = file.functionValueFlows.find(flow => flow.calls.length === 1)!.calls[0];
+	const coldQueryMilliseconds = medianMilliseconds(() => {
+		const queries = new LuaSemanticQueryStore([file], new Map());
+		const graph = queries.callSources(call);
+		assert.equal(graph.heads.filter(call => call.caller.kind === 'invocation').length, callers);
+		assert.equal(graph.calls.filter(call => call.caller.kind === 'module').length, callers);
+	});
+	const queries = new LuaSemanticQueryStore([file], new Map());
+	const retained = queries.callSources(call);
+	const before = queries.metrics();
+	let count = 0;
+	const retainedQueryMicroseconds = medianMilliseconds(() => {
+		for (let index = 0; index < 10000; index += 1) count += queries.callSources(call).calls.length;
+	}) / 10;
+	assert.ok(count > 0);
+	assert.equal(queries.callSources(call), retained);
+	assert.deepEqual(queries.metrics(), before);
+	console.log(JSON.stringify({ sourceCallers: callers, coldQueryMilliseconds, retainedQueryMicroseconds,
+		calls: retained.calls.length, applications: retained.applications.length,
+		boundary: 'retained binder facts; fresh query store+source ancestry; 10000 retained lookups per sample; no guest execution or rendering' }));
+}

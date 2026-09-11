@@ -6,22 +6,41 @@ import { FunctionSummaryStore, TermKind } from '../../toolchain/ts/lua/semantic/
 import { WorkspaceValueIdentityIndex } from '../../toolchain/ts/lua/semantic/identity';
 import { SemanticInstantiationQuery } from '../../toolchain/ts/lua/semantic/instantiate';
 import { SemanticMemberQuery } from '../../toolchain/ts/lua/semantic/member_query';
-import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
+import { buildLuaFileSemanticData, LuaSemanticWorkspace, type FileSemanticData } from '../../toolchain/ts/lua/semantic/model';
 import { LuaSemanticQueryStore } from '../../toolchain/ts/lua/semantic/query_store';
 import { SemanticQueryEvaluation } from '../../toolchain/ts/lua/semantic/query_dependencies';
 import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
 import { runCompiledLua } from './cpu_test_harness';
+import { LuaSourceCallQuery } from '../../toolchain/ts/lua/semantic/source_call_graph';
 
-function callQueries(source: string) {
+function callQueries(source: string, extraFiles: readonly FileSemanticData[] = []) {
 	const file = buildLuaFileSemanticData(source, 'applications.lua');
-	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
-	const demand = new SemanticDemandIndex([file], summaries);
+	const files = [file, ...extraFiles];
+	const summaries = new FunctionSummaryStore(files, new WorkspaceValueIdentityIndex({ files, globalValues: new Map() }));
+	const demand = new SemanticDemandIndex(files, summaries);
 	const worklist = new SemanticCallWorklist(summaries.terms.dependencies);
 	const instantiation = new SemanticInstantiationQuery(summaries, demand, (call, frame) => worklist.enqueue(call, frame));
 	const members = new SemanticMemberQuery(summaries, instantiation);
 	const graph = new SemanticCallGraph(summaries, demand, instantiation, members, worklist);
 	return { file, summaries, demand, worklist, instantiation, graph };
 }
+
+test('every navigation callsite retains its original binder call, including anonymous and computed callees', () => {
+	const { file } = callQueries(`local function consume(value) return value end
+local api = { run = consume }
+api:run(1)
+api[key](2);
+(function(value) return value end)(3)
+require('library')`);
+	assert.equal(file.syntaxError, null);
+	assert.equal(file.callSites.length, 4);
+	assert.deepEqual(new Set(file.callSites.map(site => site.call)), new Set(file.callValues));
+	for (const site of file.callSites) {
+		assert.equal(site.call.expression, site.expression);
+		assert.equal(site.call.result!.root.syntax, site.expression);
+		if (site.reference !== undefined) assert.equal(site.reference.call, site.call);
+	}
+});
 
 test('demand indices select the owner-bearing summary call without copying its identity', () => {
 	const { summaries, demand } = callQueries(`
@@ -162,6 +181,220 @@ absent(1)`);
 	assert.equal(context.applications[0].callee, target.id);
 });
 
+test('source ancestry retains complete wrapper tuples instead of crossing independently resolved arguments', () => {
+	const source = `local seen = {}
+local function register(id, definition) seen[id] = definition.task end
+local function wrap(id, definition) register(id, definition) end
+wrap('left', { task = 'walk' })
+wrap('right', { task = 'run' })
+return seen.left == 'walk', seen.right == 'run'`;
+	const { file, summaries, instantiation, graph } = callQueries(source);
+	const sources = new LuaSourceCallQuery(summaries, instantiation, graph);
+	const wrap = file.functionValueFlows.find(flow => flow.calls.length === 1)!;
+	const ancestry = sources.ancestry(wrap.calls[0]);
+	const heads = ancestry.heads.filter(head => head.caller.kind === 'invocation');
+	assert.equal(heads.length, 2);
+	assert.equal(heads[0].site, heads[1].site, 'one written wrapper call, separate source contexts');
+	assert.notEqual(heads[0].caller, heads[1].caller);
+	const incoming = heads.map(head => ancestry.applications.filter(edge => edge.target === head.caller));
+	assert.deepEqual(incoming.map(edges => edges.length), [1, 1]);
+	const argumentsByCaller = incoming.map(([edge]) => edge.call.site.expression.arguments);
+	assert.deepEqual(argumentsByCaller.map(args => args[0].range.start.line), [4, 5]);
+	assert.deepEqual(argumentsByCaller.map(args => args[1].range.start.line), [4, 5]);
+	assert.equal(ancestry.calls.filter(call => call.caller.kind === 'module').length, 2);
+	assert.equal(sources.ancestry(wrap.calls[0]), ancestry);
+	for (const optimization of [0, 3] as const) assert.deepEqual(runCompiledLua(source, file.file, optimization), [true, true]);
+});
+
+test('source ancestry retains all incoming applications to a shared target frame', () => {
+	const { file, summaries, instantiation, graph } = callQueries(`local function observe(id, definition) end
+local function consume(id, definition) observe(id, definition) end
+local definition = { task = 'walk' }
+local function relay() consume('same', definition) end
+relay()
+relay()`);
+	const sources = new LuaSourceCallQuery(summaries, instantiation, graph);
+	const consume = file.functionValueFlows[1];
+	const ancestry = sources.ancestry(consume.calls[0]);
+	const heads = ancestry.heads.filter(head => head.caller.kind === 'invocation');
+	assert.equal(heads.length, 1, 'the value solver shared the consume frame');
+	const incoming = ancestry.applications.filter(edge => edge.target === heads[0].caller);
+	assert.equal(incoming.length, 3, 'the projected application is retained alongside both actual analysis callers');
+	const callers = incoming.filter(edge => edge.call.caller.kind === 'invocation');
+	assert.equal(callers.length, 2);
+	assert.equal(callers[0].call.site, callers[1].call.site);
+	assert.notEqual(callers[0].call.caller, callers[1].call.caller);
+	const roots = ancestry.calls.filter(call => call.caller.kind === 'module');
+	assert.deepEqual(roots.map(call => call.site.expression.range.start.line).sort(), [5, 6]);
+});
+
+test('recursive source ancestry remains a finite graph with a real back edge', () => {
+	const { file, summaries, instantiation, graph } = callQueries(`local function walk(value, next)
+if next then return walk(next) end
+return value
+end
+walk({}, {})`);
+	const sources = new LuaSourceCallQuery(summaries, instantiation, graph);
+	const ancestry = sources.ancestry(file.functionValueFlows[0].calls[0]);
+	assert.ok(ancestry.applications.some(edge => edge.call.caller === edge.target));
+	assert.equal(new Set(ancestry.calls).size, ancestry.calls.length);
+	assert.equal(new Set(ancestry.applications).size, ancestry.applications.length);
+	assert.equal(ancestry.calls.filter(call => call.caller.kind === 'module').length, 1);
+	assert.equal(sources.ancestry(file.functionValueFlows[0].calls[0]), ancestry);
+});
+
+test('positive source activations can descend entirely from hypothetical projection', () => {
+	const { file, summaries, instantiation, graph } = callQueries(`local function consume(value) end
+local function unused()
+ local function relay(value) consume(value) end
+ relay({})
+end`);
+	const sources = new LuaSourceCallQuery(summaries, instantiation, graph);
+	const relay = file.functionValueFlows.find(flow => flow.calls.some(call => call.expression.range.start.line === 3))!;
+	const ancestry = sources.ancestry(relay.calls[0]);
+	assert.ok(ancestry.applications.some(edge => edge.target.kind === 'invocation'));
+	assert.ok(ancestry.calls.some(call => call.caller.kind === 'projection'));
+	assert.equal(ancestry.calls.filter(call => call.caller.kind === 'module').length, 0);
+	const projected = ancestry.heads.find(head => head.caller.kind === 'projection')!;
+	assert.ok(projected.caller.kind === 'projection');
+	assert.equal(projected.caller.lexicalOwner.kind, 'projection');
+});
+
+test('source activations retain captured lexical owners separately from their callers', () => {
+	const { file, summaries, instantiation, graph } = callQueries(`local function consume(value) return value end
+local function make(value)
+ return function() return consume(value) end
+end
+local left = make(7)
+local right = make(8)
+left()
+right()`);
+	const sources = new LuaSourceCallQuery(summaries, instantiation, graph);
+	const closure = file.functionValueFlows.find(flow => flow.calls.some(call => call.expression.range.start.line === 3))!;
+	// Establish the two actual callable applications. This tests source ancestry,
+	// not the separate open problem of finding every use of a returned closure.
+	graph.callContexts(file.callValues[2]);
+	graph.callContexts(file.callValues[3]);
+	const ancestry = sources.ancestry(closure.calls[0]);
+	const heads = ancestry.heads.filter(head => head.caller.kind === 'invocation');
+	assert.equal(heads.length, 2);
+	for (const head of heads) {
+		assert.ok(head.caller.kind === 'invocation');
+		const lexicalOwner = head.caller.lexicalOwner;
+		assert.equal(lexicalOwner.kind, 'invocation');
+		const creation = ancestry.applications.filter(edge => edge.target === lexicalOwner);
+		assert.equal(creation.length, 1);
+		assert.ok([5, 6].includes(creation[0].call.site.expression.range.start.line));
+		const invocation = ancestry.applications.filter(edge => edge.target === head.caller);
+		assert.equal(invocation.length, 1);
+		assert.ok([7, 8].includes(invocation[0].call.site.expression.range.start.line));
+	}
+	const [left, right] = heads;
+	assert.ok(left.caller.kind === 'invocation' && right.caller.kind === 'invocation');
+	assert.notEqual(left.caller.lexicalOwner, right.caller.lexicalOwner);
+});
+
+test('unresolved source calls retain arguments and method receivers without inventing applications', () => {
+	const { file, summaries, instantiation, graph } = callQueries('absent(1 + 2, {}); object:missing({}); unknown[index](7)');
+	const sources = new LuaSourceCallQuery(summaries, instantiation, graph);
+	for (const call of file.callValues) {
+		const ancestry = sources.ancestry(call);
+		assert.equal(ancestry.heads.length, 1);
+		assert.equal(ancestry.heads[0].site, call);
+		assert.equal(ancestry.calls.length, 1);
+		assert.equal(ancestry.applications.length, 0);
+	}
+	const [plain, method] = file.callValues;
+	assert.equal(plain.arguments[0].root.kind, 'unknown');
+	assert.equal(method.arguments.length, 2, 'the bound tuple includes the implicit receiver');
+	assert.equal(method.expression.arguments.length, 1, 'written syntax is not normalized into synthetic arguments');
+});
+
+test('source calls without symbol references still reach their original anonymous function body', () => {
+	const { file, summaries, instantiation, graph } = callQueries('(function(value) return value end)({})');
+	const sources = new LuaSourceCallQuery(summaries, instantiation, graph);
+	const ancestry = sources.ancestry(file.callValues[0]);
+	assert.equal(ancestry.applications.length, 1);
+	const target = ancestry.applications[0].target;
+	assert.ok(target.kind === 'invocation');
+	assert.equal(target.body, file.functionValueFlows[0]);
+	assert.equal(target.body.declaration, undefined);
+});
+
+test('an imported factory application keeps the provider body and consumer call source', () => {
+	const library = buildLuaFileSemanticData('local api = {}; function api.make(value) return { value = value } end; return api', 'library.lua');
+	const { file, summaries, instantiation, graph } = callQueries('local api = require("library"); return api.make(7)', [library]);
+	const sources = new LuaSourceCallQuery(summaries, instantiation, graph);
+	const ancestry = sources.ancestry(file.callValues[1]);
+	assert.equal(ancestry.applications.length, 1);
+	assert.equal(ancestry.heads[0].site.expression.range.path, file.file);
+	const target = ancestry.applications[0].target;
+	assert.ok(target.kind === 'invocation');
+	assert.equal(target.body, library.functionValueFlows[0]);
+	assert.equal(target.body.returns[0].statement.range.path, library.file);
+});
+
+test('incoming application index retains negative dependencies and updates after its first read', () => {
+	const { summaries, graph, demand } = callQueries('local function called() end; called()');
+	const subscriber = new SemanticQueryEvaluation(summaries.terms.dependencies);
+	subscriber.begin(0);
+	assert.equal(graph.incomingApplications(1).length, 0);
+	subscriber.end(0);
+	assert.equal(subscriber.isCurrent(0), true);
+	const [context] = graph.callContexts(demand.topLevelCalls[0].site);
+	const application = context.applications[0];
+	assert.equal(application.targetFrame, 1);
+	assert.equal(subscriber.isCurrent(0), false);
+	const incoming = graph.incomingApplications(1);
+	assert.equal(incoming.length, 1);
+	assert.equal(incoming[0].context, context);
+	assert.equal(incoming[0].application, application);
+	assert.equal(graph.incomingApplications(1), incoming);
+});
+
+test('source ancestry refreshes when a reused frame gains a caller without changing the head contexts', () => {
+	const { file, summaries, instantiation, graph, demand } = callQueries(`local function observe(id) end
+local function consume(id) observe(id) end
+local function relay() consume('same') end
+relay()
+absent()`);
+	const sources = new LuaSourceCallQuery(summaries, instantiation, graph);
+	const headSite = file.functionValueFlows[1].calls[0];
+	const before = sources.ancestry(headSite);
+	const retainedHead = before.heads.find(head => head.caller.kind === 'invocation')!;
+	assert.equal(before.applications.filter(edge => edge.target === retainedHead.caller).length, 2);
+	const missing = demand.topLevelCalls[1];
+	const relay = summaries.list().find(summary => summary.source === file.functionValueFlows[2])!;
+	instantiation.values.add(missing.callee, relay.functionValue);
+	graph.callContexts(missing.site);
+	const after = sources.ancestry(headSite);
+	assert.notEqual(after, before);
+	assert.ok(after.heads.includes(retainedHead));
+	assert.equal(after.applications.filter(edge => edge.target === retainedHead.caller).length, 3);
+	assert.deepEqual(after.calls.filter(call => call.caller.kind === 'module').map(call => call.site.expression.range.start.line).sort(), [4, 5]);
+	assert.equal(before.applications.filter(edge => edge.target === retainedHead.caller).length, 2, 'published source graphs are not mutated');
+	assert.equal(sources.ancestry(headSite), after);
+});
+
+test('source ancestry answers belong to one immutable workspace, including imported changes', () => {
+	const file = buildLuaFileSemanticData('local api = require("library"); api.make(7)', 'consumer.lua');
+	const library = buildLuaFileSemanticData('return {}', 'library.lua');
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFiles([file, library]);
+	const first = workspace.getSnapshot().symbolResolver.callSources(file.callSites[1]);
+	assert.equal(first.applications.length, 0);
+	const edited = buildLuaFileSemanticData('local api = {}; function api.make(value) return {} end; return api', 'library.lua');
+	workspace.updateFiles([edited]);
+	const snapshot = workspace.getSnapshot();
+	assert.equal(snapshot.getFileData(file.file), file);
+	const second = snapshot.symbolResolver.callSources(file.callSites[1]);
+	assert.equal(second.applications.length, 1);
+	assert.equal(first.applications.length, 0);
+	assert.notEqual(second.heads[0], first.heads[0]);
+	assert.equal(second.heads[0].site, first.heads[0].site);
+	assert.equal(snapshot.symbolResolver.callSources(file.callSites[1]), second);
+});
+
 test('a new owner frame invalidates an already retained site context collection', () => {
 	const { summaries, demand, graph, instantiation } = callQueries(`
 local function consume(value) end
@@ -187,6 +420,19 @@ local function uncalled(value) return consume(value) end`);
 	assert.equal(context.inputs.arguments[0], summaries.projectExternalTerm(body.calls[0].arguments[0]));
 	assert.equal(context.applications.length, 1);
 	assert.ok(context.applications[0].targetFrame > 0, 'an instantiated analysis target is not proof of runtime execution');
+});
+
+test('projecting a caller body does not suppress a later request for its call contexts', () => {
+	const { file, graph } = callQueries(`local function observe(value) end
+local function consume(value) observe(value) end
+local function relay() consume('same') end
+relay()
+relay()`);
+	graph.callContexts(file.functionValueFlows[1].calls[0]);
+	const caller = file.functionValueFlows[2].calls[0];
+	const contexts = graph.callContexts(caller);
+	assert.equal(contexts.filter(context => context.ownerFrame > 0).length, 2);
+	assert.equal(contexts.filter(context => context.ownerFrame < 0).length, 1);
 });
 
 test('method receiver and explicit arguments stay in their original input lanes', () => {

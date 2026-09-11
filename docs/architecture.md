@@ -4419,6 +4419,16 @@ the exporting file and return statement; unresolved imports remain boundaries.
 See [written-source queries](lua_written_source_queries.md) and
 [module source exports](lua_module_source_exports.md).
 
+Source-call ancestry consumes the existing call solver's application edges,
+keeping each call's written AST and ordered bound input tuple together. Incoming
+edges belong to the call graph and have tracked per-target dependencies, even
+before the first predecessor exists. Body projection and caller-query completion
+are different states. Source activation nodes distinguish module, hypothetical
+projection and instantiated analysis contexts; lexical closure ownership is
+separate from caller ancestry. Known applications and positive frames are not
+an exhaustive caller set or execution proof. See [source call graph and open
+closure-use discovery](lua_source_call_graph.md).
+
 Declaration-value facts also retain the function body containing each write,
 independently of the destination declaration's lexical owner. Summaries index
 those facts by body once; module aliases consume only module-owned writes.

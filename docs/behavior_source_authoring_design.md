@@ -93,6 +93,13 @@ de syntaxselectie. Eerdere returns blijven publicatie-onzekerheid, geen extra
 exports. Factory-calls en memberpaden zijn hiermee nog niet bewezen en er wordt
 geen runtime-loadercontract verzonnen. B03/B06 blijven de UX-einddoelen.
 
+De [source-callgraph](lua_source_call_graph.md) verbindt die geschreven tuples
+nu aan de bestaande applicatie-edges en hun ancestry. Gedeelde analyseframes
+vervangen niet hun verschillende callerplekken; projection en lexical closures
+blijven zichtbaar. Een queryvolgorde-bug tussen bodyprojectie en caller-vragen is
+gecorrigeerd. Volledige discovery van returned-closure-users, argument-substitutie
+en de resource-eigen editorconsument zijn hiermee nog niet af.
+
 ## 1. Beslissing
 
 Behavior Lens wordt geen universele omkeerbare Lua-interpreter. Het is een

@@ -7,6 +7,7 @@ import {
 import { sourceRangesEqual } from '../source_range';
 import { compareSourcePosition } from './source_range';
 import { LuaWrittenSourceQuery } from './written_sources';
+import type { LuaSourceCallGraph } from './source_call_graph';
 
 const EMPTY_SYMBOLS: readonly SymbolID[] = [];
 
@@ -56,6 +57,10 @@ export class WorkspaceSymbolResolver {
 	public get writtenSources(): LuaWrittenSourceQuery {
 		if (this.sourceQuery === undefined) this.sourceQuery = new LuaWrittenSourceQuery(this.files, this.declarations);
 		return this.sourceQuery;
+	}
+
+	public callSources(callSite: LuaCallSite): LuaSourceCallGraph {
+		return this.getQueryStore().callSources(callSite.call);
 	}
 
 	public resolveReference(ref: Ref): SymbolID | undefined {

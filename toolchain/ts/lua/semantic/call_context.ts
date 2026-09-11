@@ -7,6 +7,11 @@ export type CallApplication = {
 	readonly targetFrame: number;
 };
 
+export type CallApplicationEdge = {
+	readonly context: SemanticCallContext;
+	readonly application: CallApplication;
+};
+
 /** One site in one analysis context, independent of target-frame interning. */
 export class SemanticCallContext {
 	private readonly targets: CallApplication[] = [];
@@ -20,10 +25,12 @@ export class SemanticCallContext {
 
 	public get applications(): readonly CallApplication[] { return this.targets; }
 
-	public addApplication(callee: FunctionSummaryID, callable: TermID, targetFrame: number): void {
+	public addApplication(callee: FunctionSummaryID, callable: TermID, targetFrame: number): CallApplication | undefined {
 		for (const target of this.targets) {
 			if (target.callee === callee && target.callable === callable && target.targetFrame === targetFrame) return;
 		}
-		this.targets.push({ callee, callable, targetFrame });
+		const application = { callee, callable, targetFrame };
+		this.targets.push(application);
+		return application;
 	}
 }
