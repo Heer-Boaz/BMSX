@@ -6,6 +6,7 @@ import { inputFocus } from '../../../ide/input/focus';
 import { SceneEditorPane } from '../../../ide/workbench/contrib/scene_editor/editor_pane';
 import { check, type StudioFixture } from './studio_fixture';
 import { openSceneEditor, selectMember } from './studio_scene_source';
+import { testStudioQuickPickHighlights } from './studio_quick_pick_highlights';
 
 export async function testStudioCommandPalette(test: StudioFixture): Promise<void> {
 	const { ide, harness, cycles, press, click, until, clipboard, tasks, frame, execution, runPaletteCommand } = test;
@@ -13,6 +14,7 @@ export async function testStudioCommandPalette(test: StudioFixture): Promise<voi
 	const position = cycles();
 	console.info('STUDIO: Command Palette uses invoking control context and ordinary command execution');
 	harness.openLuaSource('title_screen.lua');
+	await testStudioQuickPickHighlights(test);
 	const model = harness.getActiveEditorDocument().model;
 	const original = model.buffer.getText();
 	await press('ControlLeft', 'End');

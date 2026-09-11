@@ -2,8 +2,9 @@
 
 Status: queryownership en commandmatching geïmplementeerd; het interactiecontract
 staat afzonderlijk in `quick_input_interaction.md`. Symbol-/locationkeuzes zijn
-gemigreerd volgens `source_quick_access.md`; file/symbol-matching en highlights
-blijven open A06-werk. De providergrens alleen sluit die niet.
+gemigreerd volgens `source_quick_access.md`; matchpresentatie volgt
+`quick_input_highlights.md`. File/symbol-fuzzymatching blijft open A06-werk.
+De providergrens alleen sluit die niet.
 
 ## Productievoorbeelden en live eigenaar
 
@@ -36,7 +37,8 @@ catalogus. Accentnormalisatie en input-method-transliteratie uit VS Code worden
 niet geclaimd of gebruikt. De testoracle bewaart de bijbehorende ASCII-branches
 van de gepinde productiecode, inclusief memoization en separator-equivalentie;
 de productiematcher roept die oracle niet aan. Dit vervangt nog niet de aparte
-file/symbol-matching of matchmarkering in de renderer.
+file/symbol-matching. De latere matchpresentatie gebruikt dezelfde recurrence
+om ook de gematchte posities te publiceren, niet een tweede zoekpass in de UI.
 
 Bij aanvang van deze provider-slice bezat `QuickPickModel` nog samengestelde
 lowercase search keys, tokenmatching en ranking. De providers leverden alleen

@@ -1514,6 +1514,13 @@ session. The command provider owns word-initial matching and exact/substring/wor
 match priority. This is independent of ordinary literal text choices, keyboard
 shortcut metadata and workspace semantic queries. `quick_input_providers.md`
 records the production references, lifecycle and remaining A06 requirements.
+Query projections also own ordered display-field match spans. A shared retained
+span buffer serves the matches; normalized search offsets are converted by the
+search-text owner, not guessed by the renderer. The shared highlighted label
+retains visible glyph/run geometry and keeps truncation markers separate from
+source text. Its overlay submissions reuse original string spans, with no
+per-frame search, measurement or substring copies. `quick_input_highlights.md`
+records this boundary; it does not make all provider families fuzzy matchers.
 Symbol and source-location choices use the same control, with the original symbol,
 definition target or snapshot source range. Each invocation captures its actual
 resource domain; navigation never substitutes a later active tab's domain. Lua

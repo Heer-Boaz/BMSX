@@ -35,7 +35,7 @@ export async function testStudioQuickInputInteraction(test: StudioFixture): Prom
 		check(model.list.selectionIndex === rows.length - 1
 			&& model.rowTop(rows.length - 1) + model.rowHeight <= view.bounds.bottom,
 			'A06: Ctrl+End reveals the final admitted choice');
-		check(picker.layout.renderRows[picker.layout.renderRows.length - 1].labelText.length > 0, 'A06: newly visible choices have prepared text after keyboard reveal');
+		check(picker.layout.renderRows[picker.layout.renderRows.length - 1].label.visibleEnd > 0, 'A06: newly visible choices have prepared text after keyboard reveal');
 		await press('ControlLeft', 'Home');
 		check(model.list.selectionIndex === 0 && view.scrollTop === 0, 'A06: Ctrl+Home reveals the first choice');
 		for (let n = 0; n < 10; n += 1) await frame();

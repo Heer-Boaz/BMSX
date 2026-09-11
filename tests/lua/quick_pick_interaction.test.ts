@@ -117,7 +117,7 @@ test('picker prepares visible rows lazily across scrolling, query replacement an
 	assert.equal(presented.has(50), false); assert.equal(presented.has(99), false);
 	key('ControlLeft', true); press('End'); key('ControlLeft', false); picker.update();
 	const last = picker.layout.renderRows[picker.layout.renderRows.length - 1];
-	assert.equal(last.labelText, last.item.label);
+	assert.equal(last.label.text, last.item.label);
 	assert.equal(presented.has(99), true);
 	assert.equal(presented.has(50), false, 'scrolling does not prepare the invisible catalog between endpoints');
 	const oldRevision = first.textRevision;
@@ -130,7 +130,7 @@ test('picker prepares visible rows lazily across scrolling, query replacement an
 	const hidden = picker.layout.renderRows[0];
 	assert.equal(model.list.rows[0].itemIndex, 50);
 	assert.equal(presented.has(50), true);
-	assert.equal(hidden.labelText, hidden.item.label, 'a new query at the same scroll position prepares its actual result');
+	assert.equal(hidden.label.text, hidden.item.label, 'a new query at the same scroll position prepares its actual result');
 	const widthRevision = hidden.textRevision;
 	editorViewState.viewportWidth = 256; picker.update();
 	assert.notEqual(hidden.textRevision, widthRevision);

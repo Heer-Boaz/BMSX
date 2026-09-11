@@ -5,6 +5,7 @@ import { editorTextModelService } from '../../../ide/editor/model/model_service'
 import { inputFocus } from '../../../ide/input/focus';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { check, type StudioFixture } from './studio_fixture';
+import { checkQuickPickHighlightRuns } from './studio_quick_pick_highlights';
 
 /** Independent Lua source, real file Save and shared physical popup/navigation routes. */
 export async function testStudioSourceChoices(test: StudioFixture): Promise<void> {
@@ -34,6 +35,7 @@ export async function testStudioSourceChoices(test: StudioFixture): Promise<void
 	test.clipboard.text = 'SHADOW'; await press('ControlLeft', 'KeyV');
 	check(picker.model.list.rows.length === 1 && picker.model.list.rows[0].item.label === 'shadow',
 		'A06: document symbol matching folds the user query without changing Lua identifiers');
+	await checkQuickPickHighlightRuns(test, 'shadow', [[0, 6]]);
 	await press('Enter');
 	check(activeCodeEditor.model === usage && activeCodeEditor.view.cursorRow === 1 && activeCodeEditor.view.cursorColumn === 15,
 		'A06: accepting a symbol synchronously reveals its actual declaration');
@@ -60,6 +62,9 @@ export async function testStudioSourceChoices(test: StudioFixture): Promise<void
 		'A06: workspace reference selection uses path and cursor, not the current-file index');
 	check(referenceState.getMatches().length === 2 && referenceState.getActiveIndex() === 1,
 		'A06: file-local highlight state remains separate from workspace selection');
+	test.clipboard.text = 'beacon'; await press('ControlLeft', 'KeyV');
+	await checkQuickPickHighlightRuns(test, 'return source_choice_beacon', [[21, 27]]);
+	await press('ControlLeft', 'KeyZ');
 	await press('ControlLeft', 'Home'); await press('Enter');
 	check(activeCodeEditor.model === definitions && activeCodeEditor.view.cursorRow === 0 && referenceState.getMatches().length === 0,
 		'A06: reference accept reveals the chosen declaration and ends temporary highlights');

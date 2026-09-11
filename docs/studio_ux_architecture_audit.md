@@ -618,3 +618,30 @@ Zie [`source_quick_access.md`](source_quick_access.md) voor productievoorbeelden
 contract en bewijs. **A06 blijft open** voor file/symbol-matching en zichtbare
 matchredenen; deze migratie claimt geen fuzzy- of Peek-editorimplementatie.
 B03/B04/B06-authoring, A07 en het bredere A08-bewijs blijven eveneens open.
+
+### A06 — query-eigen matchmarkering (2026-09-11; gedeeltelijke uitvoering)
+
+Providers publiceren nu de echte gematchte tekstbereiken in hun displayvelden.
+Woordmatching herstelt de matchposities uit dezelfde retained recurrence;
+letterlijke matching behoudt bereiken en materialiseert alleen toegelaten
+resultaten. De gedeelde spanopslag houdt queryresultaten los van de gesorteerde
+rijpositie. Case-folding bezit haar terugvertaling naar oorspronkelijke UTF-16-
+posities. Geen zoekpass of lowercase-offsetinterpretatie in de renderer.
+
+De gedeelde highlighted label behoudt zichtbare glyphadvances en tekst-runs;
+querywijziging vervangt de markering zonder tekst opnieuw te meten. Ellipsis
+is geen brontekst. De kleurparen voor geselecteerde/niet-geselecteerde matches
+komen van de theme-owner. Tekst wordt met de bestaande overlay-span-API getekend,
+zonder per-frame substrings. Er is geen tweede picker- of matchingframework.
+
+De echte oude Studio op `1eef4a5bc` faalt op de ontbrekende `H`/`R`-markering
+voor `hr`; de huidige fysieke proef slaagt met beide fonts en alle drie renderers.
+De volledige Studio- en Pietious source/graph/Undo-gates slagen na de laatste
+rangecorrectie op software, WebGL2 en WebGPU; Lua: 1560 pass, één bestaande skip.
+Tests-typecheck behoudt de 51 bestaande diagnostieken. De gemeten onnodige
+tekenexpansie is vóór landing bij de matcher weggehaald, niet gemaskeerd met een
+cache of querylimiet. Zie [quick_input_highlights.md](quick_input_highlights.md)
+voor referenties, exacte grenzen en de gecontroleerde kostenvergelijking.
+
+**A06 blijft open voor file/symbol-fuzzymatching.** B03/B04/B06-authoring, A07
+en het bredere A08-bewijs zijn hiermee niet gesloten.

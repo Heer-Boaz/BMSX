@@ -1,17 +1,21 @@
 import { point_in_rect } from '../../../../machine/ts/common/rect';
+import { ScratchBuffer } from '../../../../machine/ts/common/scratchbuffer';
+import { HighlightedLabel } from '../../../editor/ui/highlighted_label';
 import { WorkbenchScrollViewport } from '../../ui/scroll_viewport';
-import type { QuickPickItem, QuickPickMatch, QuickPickProvider } from './provider';
+import type { QuickPickHighlight, QuickPickItem, QuickPickMatch, QuickPickProvider } from './provider';
 
 export type QuickPickRenderRow = {
 	readonly item: QuickPickItem;
 	textRevision: number;
-	labelText: string;
-	descriptionText: string;
-	detailText: string;
+	highlightRevision: number;
+	readonly label: HighlightedLabel;
+	readonly description: HighlightedLabel;
+	readonly detail: HighlightedLabel;
 };
 
 const EMPTY_ITEMS: readonly QuickPickItem[] = [];
 const EMPTY_MATCHES: readonly QuickPickMatch[] = [];
+const EMPTY_HIGHLIGHTS = new ScratchBuffer<QuickPickHighlight>(() => ({ field: 'label', start: 0, end: 0 }));
 
 /** Provider results are consumed directly; only presented items acquire render data. */
 export class QuickPickModel {
@@ -19,6 +23,7 @@ export class QuickPickModel {
 	public readonly viewport = new WorkbenchScrollViewport();
 	public rowHeight = 0;
 	public revision = 0;
+	public highlights = EMPTY_HIGHLIGHTS;
 	public readonly list = {
 		rows: EMPTY_MATCHES, selectionIndex: -1, hoverIndex: -1,
 	};
@@ -55,6 +60,7 @@ export class QuickPickModel {
 		this.input = undefined;
 		this.items = EMPTY_ITEMS;
 		this.list.rows = EMPTY_MATCHES;
+		this.highlights = EMPTY_HIGHLIGHTS;
 		this.renderRows.clear();
 		this.list.selectionIndex = -1;
 		this.list.hoverIndex = -1;
@@ -65,6 +71,7 @@ export class QuickPickModel {
 		const projection = this.input!.getPicks(value);
 		const list = this.list;
 		list.rows = projection.matches;
+		this.highlights = projection.highlights;
 		list.selectionIndex = projection.selectionIndex;
 		this.viewport.scrollbar.setScroll(0);
 		list.hoverIndex = -1;
@@ -74,7 +81,8 @@ export class QuickPickModel {
 	public getRenderRow(match: QuickPickMatch): QuickPickRenderRow {
 		let row = this.renderRows.get(match.itemIndex);
 		if (row === undefined) {
-			row = { item: match.item, textRevision: -1, labelText: '', descriptionText: '', detailText: '' };
+			row = { item: match.item, textRevision: -1, highlightRevision: -1,
+				label: new HighlightedLabel(), description: new HighlightedLabel(), detail: new HighlightedLabel() };
 			this.renderRows.set(match.itemIndex, row);
 		}
 		return row;

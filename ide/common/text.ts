@@ -127,7 +127,7 @@ function findMeasuredWrapEnd(text: string, start: number, end: number, maxWidth:
 	return end;
 }
 
-function findMeasuredPrefixEnd(text: string, maxWidth: number, measureRange: TextRangeMeasure): number {
+export function findMeasuredPrefixEnd(text: string, maxWidth: number, measureRange: TextRangeMeasure): number {
 	let low = 0;
 	let high = text.length;
 	let best = 0;

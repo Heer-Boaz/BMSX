@@ -1,8 +1,9 @@
 # Source choices on shared Quick Input (A06)
 
 Status: implemented and validated (2026-09-11). This slice replaces the old
-symbol/reference/definition popup; fuzzy symbol matching and match highlighting
-remain separate A06 work. It does not change semantic resolution or graph edits.
+symbol/reference/definition popup. Fuzzy symbol matching remains separate A06
+work; match presentation follows `quick_input_highlights.md`. Neither changes
+semantic resolution or graph edits.
 
 ## Production references
 

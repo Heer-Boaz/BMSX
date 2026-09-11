@@ -21,8 +21,14 @@ test('retained iterative word matching agrees with the production VS Code ASCII 
 	queries.push('hr', 'rhr', 'hot r', 'gp', 'g p', 'pull', 'editor action', 'a'.repeat(16), `${'a-'.repeat(12)}c`);
 	for (const target of targets) {
 		for (const query of queries) {
-			assert.equal(matcher.test(query, target), matchesWords(query, target) !== null,
-				JSON.stringify({ query, target }));
+			const expected = matchesWords(query, target);
+			const label = JSON.stringify({ query, target });
+			assert.equal(matcher.test(query, target), expected !== null, label);
+			const positions: number[] = [];
+			if (expected !== null) {
+				for (const range of expected) for (let index = range.start; index < range.end; index += 1) positions.push(index);
+			}
+			assert.deepEqual(matcher.positions, positions, label);
 		}
 	}
 });

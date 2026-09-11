@@ -1060,7 +1060,7 @@ targets the input field's history. Property drafts continue to use their own
 ordinary blur policy; the chooser neither commits nor validates scene data.
 
 `QuickPickProvider<T>` owns its admitted typed catalog and query projection:
-ordered matches and the selected result index. `QuickPickModel` consumes that
+ordered matches, selected result index and display-field match spans. `QuickPickModel` consumes that
 projection directly; it neither filters nor ranks a second time. Provider match
 records and result storage are retained across query edits. The model creates
 render data only for items actually presented and retains it for that admission
@@ -1080,7 +1080,17 @@ single-line query, without a query-length cap or substring drawing. The picker
 uses the active IDE font and does not modify code-area geometry.
 Its normal surface follows the workbench theme. The theme owner supplies a
 paired selected foreground/background for all row text, including descriptions;
-normal black text is never reused over the blue selection fill.
+normal black text is never reused over the blue selection fill. The same theme
+owner supplies distinct matched foregrounds for normal and selected rows.
+Provider spans refer to original UTF-16 display fields, not lowercased keys.
+`CaseFoldedText` owns that representation conversion when folding changes text
+length. One retained `ScratchBuffer` in each query projection holds its spans;
+each match names its own interval, independently of sorted result position.
+`editor/ui/highlighted_label.ts` prepares original-text runs and a separate,
+unmarked ellipsis. Visible rows cache glyph advances by font/width and run
+geometry by query generation. Drawing submits those string spans through the
+existing overlay API, without substring allocation or a second query/matching
+pass. See `docs/quick_input_highlights.md` for evidence and limits.
 
 `contrib/resources/quick_access.ts` produces display items referencing the
 source owner's exact `RuntimeResource` objects. The path is displayed once,
@@ -1097,8 +1107,8 @@ ids, not incidental shortcut text. Exact matches precede substring matches and
 word-boundary matches, with catalog order retained inside each class. A retained
 iterative matcher follows the production VS Code word-boundary recurrence;
 accent normalization and input-method transliteration are not added. Other text
-choices explicitly select the literal text provider. File/symbol matching
-and visible match reasons remain open A06 work; shared scrolling and command
+choices explicitly select the literal text provider. File/symbol fuzzy matching
+remains open A06 work; shared scrolling, match presentation and command
 initials do not complete that search contract. Symbol, reference and ambiguous
 definition choices now use this same control with source-specific typed items.
 See `docs/source_quick_access.md` for query/snapshot and navigation lifetimes.

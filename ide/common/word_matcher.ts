@@ -10,8 +10,10 @@ const WORD_SEPARATORS = ' \t\n\r()[]{}<>`\'"-/;:,.?!';
 export class WordMatcher {
 	private readonly matches: number[] = [];
 	private readonly boundaries: boolean[] = [];
+	public readonly positions: number[] = [];
 
 	public test(query: string, target: string): boolean {
+		this.positions.length = 0;
 		const width = target.length, height = query.length;
 		if (width === 0 || height > width) return false;
 		if (height === 0) return true;
@@ -37,7 +39,19 @@ export class WordMatcher {
 			}
 		}
 		for (let index = 0; index < width; index += 1) {
-			if ((index === 0 || boundaries[index]) && cells[index] !== 0) return true;
+			if ((index === 0 || boundaries[index]) && cells[index] !== 0) {
+				// Restore the same adjacent-first path as matchesWords. Equivalent
+				// separators may match, but only equal characters are highlighted.
+				let column = index;
+				for (let row = 0; row < height; row += 1) {
+					if (query[row] === target[column]) this.positions.push(column);
+					column += 1;
+					if (row + 1 < height && cells[(row + 1) * width + column] === 0) {
+						while (!boundaries[column] || cells[(row + 1) * width + column] === 0) column += 1;
+					}
+				}
+				return true;
+			}
 		}
 		return false;
 	}

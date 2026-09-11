@@ -1,4 +1,6 @@
 import { TextQuickPickProvider } from '../../ide/workbench/services/quick_input/text_provider';
+import { ScratchBuffer } from '../../machine/ts/common/scratchbuffer';
+import type { QuickPickHighlight } from '../../ide/workbench/services/quick_input/provider';
 import { PointerButton } from '../../ide/input/pointer/buttons';
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
@@ -116,8 +118,9 @@ test('quick pick ranks query matches deterministically without excluding later c
 
 test('query providers own result order and selection; the control never filters or sorts their projection again', t => {
 	const picker = createPicker(t);
-	const matches = [2, 0, 1].map(itemIndex => ({ itemIndex, item: items[itemIndex] }));
-	const projection = { matches, selectionIndex: 2 };
+	const matches = [2, 0, 1].map(itemIndex => ({ itemIndex, item: items[itemIndex], highlightStart: 0, highlightEnd: 0 }));
+	const projection = { matches, selectionIndex: 2,
+		highlights: new ScratchBuffer<QuickPickHighlight>(() => ({ field: 'label', start: 0, end: 0 })) };
 	const queries: string[] = [];
 	const provider = { items, getPicks(query: string) {
 		queries.push(query);

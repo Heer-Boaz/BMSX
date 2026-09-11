@@ -17,7 +17,8 @@ ELK engine. Node worker bundling changes packaging, not the upstream code.
 `ide/common/word_matcher.ts` adapts the word-boundary recurrence from VS Code
 `src/vs/base/common/filters.ts` (`matchesWords`), revision
 7f59d5e01a7fafeba8e83cdfd9d8493f2beeeaca. BMSX uses retained iterative storage
-and does not include VS Code accent normalization or input-method transliteration.
+and restores matching character positions from that retained matrix. It does not
+include VS Code accent normalization or input-method transliteration.
 The matching conformance oracle retains the ASCII branches of the original
 recursive implementation.
 

@@ -161,6 +161,8 @@ type ThemeOverlays = {
 		placeholder: number;
 		outline: number;
 		kind: number;
+		match: number;
+		selectionMatch: number;
 	};
 };
 
@@ -265,6 +267,8 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 				placeholder: THEME_TOKEN_HINT_GREY,
 				outline: THEME_TOKEN_MID_GREY,
 				kind: THEME_TOKEN_GENTLE_WHITE,
+				match: THEME_TOKEN_TERMINAL_CYAN,
+				selectionMatch: THEME_TOKEN_TERMINAL_LIGHT_YELLOW,
 			},
 		},
 	},
@@ -369,6 +373,8 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 				placeholder: THEME_TOKEN_STATUS_TEXT_GREY,
 				outline: THEME_TOKEN_MID_GREY,
 				kind: THEME_TOKEN_STATUS_TEXT_GREY,
+				match: THEME_TOKEN_ACCENT_BLUE,
+				selectionMatch: THEME_TOKEN_TERMINAL_LIGHT_YELLOW,
 			},
 		},
 	},
@@ -547,6 +553,8 @@ export let COLOR_QUICK_OPEN_TEXT: number;
 export let COLOR_QUICK_OPEN_PLACEHOLDER: number;
 export let COLOR_QUICK_OPEN_OUTLINE: number;
 export let COLOR_QUICK_OPEN_KIND: number;
+export let COLOR_QUICK_OPEN_MATCH: number;
+export let COLOR_QUICK_OPEN_SELECTION_MATCH: number;
 export let COLOR_QUICK_OPEN_SELECTION_BACKGROUND: number;
 export let COLOR_QUICK_OPEN_SELECTION_TEXT: number;
 export let COLOR_QUICK_OPEN_HOVER_BACKGROUND: number;
@@ -691,6 +699,8 @@ function applyThemeDefinition(theme: ThemeDefinition): void {
 	COLOR_QUICK_OPEN_PLACEHOLDER = quickOpen.placeholder;
 	COLOR_QUICK_OPEN_OUTLINE = quickOpen.outline;
 	COLOR_QUICK_OPEN_KIND = quickOpen.kind;
+	COLOR_QUICK_OPEN_MATCH = quickOpen.match;
+	COLOR_QUICK_OPEN_SELECTION_MATCH = quickOpen.selectionMatch;
 	COLOR_QUICK_OPEN_SELECTION_BACKGROUND = theme.text.selection;
 	COLOR_QUICK_OPEN_SELECTION_TEXT = theme.text.selectionText;
 	COLOR_QUICK_OPEN_HOVER_BACKGROUND = theme.surfaces.resourcePanelHighlight;
