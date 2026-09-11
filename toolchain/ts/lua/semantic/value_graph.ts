@@ -1,5 +1,6 @@
 import type { SymbolID } from './model';
 import type { LuaExpression, LuaFunctionExpression, LuaReturnStatement } from '../syntax/ast';
+import type { LuaCompletion } from '../analysis/completion';
 
 declare const ownedValueBrand: unique symbol;
 export type OwnedValueID = number & { readonly [ownedValueBrand]: true };
@@ -16,7 +17,8 @@ let nextOwnedValueId = 1;
 export type SemanticLiteralValue =
 	| { kind: 'string'; value: string }
 	| { kind: 'number'; value: number }
-	| { kind: 'boolean'; value: boolean };
+	| { kind: 'boolean'; value: boolean }
+	| { kind: 'nil'; value: null };
 
 export type SemanticValueRoot =
 	| { kind: 'declaration'; declId: SymbolID }
@@ -75,7 +77,7 @@ export type MemberValueEntry = {
 export type FunctionReturnValueEntry = {
 	readonly statement: LuaReturnStatement;
 	/** The value solver currently models the first return lane only. */
-	readonly firstValue: SemanticValueSource | undefined;
+	readonly firstValue: SemanticValueSource;
 };
 
 export type FunctionValueFlowEntry = {
@@ -87,6 +89,7 @@ export type FunctionValueFlowEntry = {
 	readonly parameters: readonly FunctionSemanticValueSource[];
 	readonly receiverProjection?: SemanticValueSource;
 	readonly implicitReceiver: boolean;
+	readonly completion: LuaCompletion;
 	readonly declarationIds: readonly SymbolID[];
 	readonly ownedValues: readonly OwnedSemanticValueSource[];
 	readonly members: readonly MemberValueEntry[];
@@ -135,6 +138,8 @@ export function literalValueSource(literal: SemanticLiteralValue): SemanticValue
 	};
 }
 
+export const NIL_VALUE_SOURCE: SemanticValueSource = literalValueSource({ kind: 'nil', value: null });
+
 export function unknownValueSource(): SemanticValueSource {
 	return {
 		root: { kind: 'unknown' },
@@ -150,6 +155,8 @@ function semanticLiteralValueKey(literal: SemanticLiteralValue): string {
 			return `n\0${literal.value}`;
 		case 'boolean':
 			return literal.value ? 'b:true' : 'b:false';
+		case 'nil':
+			return 'nil';
 	}
 }
 

@@ -86,8 +86,8 @@ export class WorkspaceValueIdentityIndex {
 			}
 			return this.unknownIdentityId;
 		}
-		let identities: Map<string | number | boolean, number>;
-		let key: string | number | boolean;
+		let identities: Map<string | number | boolean | null, number>;
+		let key: string | number | boolean | null;
 		switch (root.kind) {
 			case 'declaration':
 				identities = this.declarationIdentityIds;

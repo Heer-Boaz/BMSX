@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { FunctionSummaryStore } from '../../toolchain/ts/lua/semantic/function_summary';
 import { WorkspaceValueIdentityIndex } from '../../toolchain/ts/lua/semantic/identity';
 import { buildLuaFileSemanticData, LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
-import { declarationValueSource, literalValueSource, semanticValueSourcesEqual } from '../../toolchain/ts/lua/semantic/value_graph';
+import { declarationValueSource, literalValueSource, NIL_VALUE_SOURCE, semanticValueSourcesEqual, unknownValueSource } from '../../toolchain/ts/lua/semantic/value_graph';
 import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
 import { semanticSymbolAt } from './semantic_test_harness';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
@@ -43,7 +43,7 @@ test('a later body without a return does not erase the earlier body return', () 
 	assert.equal(first.source.returns.length, 1);
 	assert.equal(first.returns.length, 1);
 	assert.equal(second.source.returns.length, 0);
-	assert.equal(second.returns.length, 0);
+	assert.deepEqual(second.returns, [summaries.terms.compileSource(NIL_VALUE_SOURCE)]);
 });
 
 test('each method body owns its implicit receiver even when both write one member', () => {
@@ -96,7 +96,7 @@ test('bare, nil and unmodelled returns remain separate source facts, not absent 
 	assert.equal(returns[1].statement.expressions[0].kind, LuaSyntaxKind.NilLiteralExpression);
 	assert.equal(returns[2].statement.expressions[0].kind, LuaSyntaxKind.BinaryExpression);
 	assert.equal(returns[2].statement.expressions.length, 2);
-	assert.deepEqual(returns.map(entry => entry.firstValue), [undefined, undefined, undefined]);
+	assert.deepEqual(returns.map(entry => entry.firstValue), [NIL_VALUE_SOURCE, NIL_VALUE_SOURCE, unknownValueSource()]);
 });
 
 test('nested closures retain their own returns and the enclosing binding for call hierarchy', () => {

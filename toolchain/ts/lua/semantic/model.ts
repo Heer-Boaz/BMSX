@@ -28,6 +28,7 @@ import {
 } from '../syntax/ast';
 import type { LuaSymbolEntry } from '../semantic_contracts';
 import type { ParsedLuaChunk } from '../analysis/parse';
+import { LuaCompletionAnalysis, type LuaCompletion } from '../analysis/completion';
 import type { LuaSyntaxError } from '../errors';
 import { getCachedLuaParse } from '../analysis/cache';
 import type { SourcePosition } from '../source_range';
@@ -51,6 +52,7 @@ import {
 	declarationValueSource,
 	globalValueSource,
 	literalValueSource,
+	NIL_VALUE_SOURCE,
 	moduleValueSource,
 	ownedValueSource,
 	semanticValueSourceKey,
@@ -304,6 +306,7 @@ type FunctionValueFlowState = {
 	parameters: FunctionSemanticValueSource[];
 	receiverProjection?: SemanticValueSource;
 	implicitReceiver: boolean;
+	completion: LuaCompletion;
 	declarationIds: SymbolID[];
 	ownedValues: OwnedSemanticValueSource[];
 	members: MemberValueEntry[];
@@ -620,6 +623,7 @@ class SemanticBuilder {
 	private readonly unknownValueDeclarations: Set<SymbolID> = new Set();
 	private readonly memberValues: Map<SymbolID, MemberValueEntry> = new Map();
 	private readonly functionValueFlows: FunctionValueFlowEntry[] = [];
+	private readonly completionAnalysis = new LuaCompletionAnalysis();
 	private readonly callValues: CallValueEntry[] = [];
 	private readonly valueAssignments: ValueAssignmentEntry[] = [];
 	private moduleValue?: SemanticValueSource;
@@ -912,7 +916,12 @@ class SemanticBuilder {
 				}
 				const flow = this.functionValueFlowStack[this.functionValueFlowStack.length - 1];
 				if (flow) {
-					flow.returns.push({ statement: returnStatement, firstValue: returnValue });
+					flow.returns.push({
+						statement: returnStatement,
+						firstValue: returnStatement.expressions.length === 0
+							? NIL_VALUE_SOURCE
+							: returnValue === undefined ? unknownValueSource() : returnValue,
+					});
 				}
 				if (moduleReturn) {
 					this.moduleValue = returnValue;
@@ -1220,8 +1229,9 @@ class SemanticBuilder {
 			case LuaSyntaxKind.OffsetOfExpression:
 				return null;
 			case LuaSyntaxKind.VarargExpression:
-			case LuaSyntaxKind.NilLiteralExpression:
 				return null;
+			case LuaSyntaxKind.NilLiteralExpression:
+				return { namePath: null, decl: null, valueSource: NIL_VALUE_SOURCE };
 			case LuaSyntaxKind.StringLiteralExpression:
 				return {
 					namePath: null,
@@ -1372,6 +1382,7 @@ class SemanticBuilder {
 			parameters,
 			receiverProjection,
 			implicitReceiver: methodReceiverClass !== undefined,
+			completion: this.completionAnalysis.analyze(expression.body.body),
 			declarationIds: [],
 			ownedValues: [],
 			members: [],

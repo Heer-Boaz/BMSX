@@ -45,6 +45,14 @@ rootidentiteiten in plaats van opnieuw gecodeerde broncoördinaten. Dit is nog
 geen gesloten originverzameling voor literals/writes of gecorreleerde calls;
 de Lens-recognizer mag die sterkere claim hier niet uit afleiden.
 
+De [completion-/returnwaarden](lua_completion_values.md) behouden vervolgens
+expliciete nil/lege returns, onbekende returnexpressies en mogelijke impliciete
+nil bij het bereiken van het functie-einde. De binder deelt die completionfeiten
+met volgende snapshots; summaries lopen niet opnieuw door de syntax. Dit sluit
+nog niet alle onbekende writes, callcontexten of bronorigins. De gepaarde koude
+query wordt circa 7 ms duurder; de latencypoort blijft open, zonder informatie
+weg te filteren om de oude meting terug te krijgen.
+
 ## 1. Beslissing
 
 Behavior Lens wordt geen universele omkeerbare Lua-interpreter. Het is een

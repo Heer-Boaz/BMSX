@@ -543,6 +543,12 @@ decoderen. Raw-root interning blijft snapshot-owned. De gepaarde workspacequery
 blijft circa 230 ms; enkele kleine queries worden duurder. B04's latencypoort,
 onbekende bijdragen en gecorreleerde source-query blijven dus expliciet open.
 
+De [completion-/returnproducercorrectie](lua_completion_values.md) bewaart nu
+nil, lege en onbekende returnbijdragen plus function-body-fallthrough. Zij is
+geen singleton-/callee-proof en sluit B04 niet. De gepaarde koude query kost nu
+circa 236 ms: bronquery-/context- en latencywerk blijven voorwaarden voor B03 en
+B06-authoring, niet hun vervanging.
+
 | ID | Eigenaar / contract | Gate |
 | --- | --- | --- |
 | `STUDIO-BEHAVIOR-UX-B01` | Uitgewerkt: betekenisvolle BT/FSM-kaarten en volledige source-linked property-inspectie; technische bewijsdetails niet permanent op het canvas. Zie `behavior_inspection_design.md` voor de vooraf gemeten compositie en concrete owner-/bewijsgrenzen. | Tiny-resolutie met Problems, lange callbacks, exacte Source/Back, keyboard/controller/scroll/focus en non-mutating inspectie. B04-bronorigins, B06-propertyauthoring en B07-zoom blijven aparte contracten. |

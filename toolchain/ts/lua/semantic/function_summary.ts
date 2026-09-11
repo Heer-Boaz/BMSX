@@ -1,8 +1,10 @@
 import type { FileSemanticData, SymbolID } from './model';
+import { LuaCompletion } from '../analysis/completion';
 import { WorkspaceValueIdentityIndex, type SemanticRootID } from './identity';
 import { SemanticDependencyIndex, SemanticQueryDependencies } from './query_dependencies';
 import {
 	declarationValueSource,
+	NIL_VALUE_SOURCE,
 	type CallValueEntry,
 	type DeclarationValueEntry,
 	type FunctionValueFlowEntry,
@@ -737,12 +739,16 @@ export class FunctionSummaryStore {
 		const returns: TermID[] = [];
 		for (let returnIndex = 0; returnIndex < flow.returns.length; returnIndex += 1) {
 			const value = flow.returns[returnIndex].firstValue;
-			if (value !== undefined) {
-				const term = this.terms.compileSource(value);
-				if (!returns.includes(term)) {
-					returns.push(term);
-				}
-			}
+			const term = this.terms.compileSource(value);
+			if (!returns.includes(term)) returns.push(term);
+		}
+		if (flow.completion & LuaCompletion.Fallthrough) {
+			const nil = this.terms.compileSource(NIL_VALUE_SOURCE);
+			if (!returns.includes(nil)) returns.push(nil);
+		}
+		if (flow.completion & LuaCompletion.Unresolved) {
+			const unknown = this.terms.unknown();
+			if (!returns.includes(unknown)) returns.push(unknown);
 		}
 
 		return {
