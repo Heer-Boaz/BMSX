@@ -1,4 +1,3 @@
-import type { EditorCommandId } from '../../../common/commands';
 import { COLOR_STATUS_WARNING } from '../../../common/constants';
 import { showEditorMessage } from '../../../common/feedback_state';
 import type { IdeCommandController } from '../../../commands/controller';
@@ -6,9 +5,7 @@ import { EDITOR_COMMAND_IDS, EDITOR_COMMAND_PRESENTATION, editorCommandTitle } f
 import type { InputFocusTarget } from '../../../input/focus';
 import { EDITOR_COMMAND_KEYBINDING_LABELS } from '../../../input/keyboard/command_keybindings';
 import type { QuickInputController } from '../../services/quick_input/controller';
-import type { QuickPickItem } from '../../services/quick_input/model';
-
-export type CommandQuickPickItem = QuickPickItem & { readonly command: EditorCommandId };
+import { CommandQuickPickProvider, type CommandQuickPickItem } from './quick_pick_provider';
 
 /** Menu, keybinding and Palette actions share one command catalog and controller. */
 export function buildCommandQuickPickItems(commands: IdeCommandController, origin: InputFocusTarget | null): CommandQuickPickItem[] {
@@ -29,7 +26,7 @@ export function buildCommandQuickPickItems(commands: IdeCommandController, origi
 }
 
 export function showCommandPalette(picker: QuickInputController, commands: IdeCommandController): void {
-	picker.pick('COMMAND PALETTE', 'Type a command', origin => buildCommandQuickPickItems(commands, origin), item => {
+	picker.pick('COMMAND PALETTE', 'Type a command', origin => new CommandQuickPickProvider(buildCommandQuickPickItems(commands, origin)), item => {
 		// Selection is new user input. An asynchronous operation may have ended
 		// since the available actions were enumerated; never execute a stale Cancel.
 		if (!commands.isEnabled(item.command)) {

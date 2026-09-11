@@ -1505,6 +1505,16 @@ generation, without limiting the catalog. These are host interaction owners,
 not guest input or machine state. See `quick_input_interaction.md`; provider
 matching and symbol-choice convergence remain separate open A06 requirements.
 
+The Quick Input provider, not its control, owns query meaning and ranking.
+Providers retain admitted typed items and publish ordered match records plus a
+selected result index. The UI consumes that projection without re-filtering,
+validating or repairing provider results; only actually presented items acquire
+render data. Acceptance returns the original typed item after closing the
+session. The command provider owns word-initial matching and exact/substring/word
+match priority. This is independent of ordinary literal text choices, keyboard
+shortcut metadata and workspace semantic queries. `quick_input_providers.md`
+records the production references, lifecycle and remaining A06 requirements.
+
 Host pointer hover has a separate routed-path owner in
 `ide/input/pointer/hover.ts`. Accepted control hits mark the current dispatch;
 unvisited controls receive leave even when capture, chrome or a popup stops

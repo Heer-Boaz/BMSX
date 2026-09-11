@@ -1,3 +1,4 @@
+import { TextQuickPickProvider } from '../../ide/workbench/services/quick_input/text_provider';
 import { PointerButton } from '../../ide/input/pointer/buttons';
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
@@ -45,13 +46,13 @@ test('source-bound quick input cancels its snapshot on content change and releas
 	let invalidations = 0;
 	picker.pick('Source', 'Filter', (_focus, disposables) => {
 		disposables.add({ dispose: model.onDidChangeContent(() => { invalidations += 1; picker.hide(); }) });
-		return items;
+		return new TextQuickPickProvider(items);
 	}, () => assert.fail('invalidated source accepted'));
 	model.pushEditOperations([{ offset: 7, deleteLength: 1, text: '2' }]);
 	assert.equal(picker.visible, false);
 	assert.equal(inputFocus.target, origin);
 	assert.equal(invalidations, 1);
-	picker.pick('Files', 'Filter', () => items, () => {});
+	picker.pick('Files', 'Filter', () => new TextQuickPickProvider(items), () => {});
 	model.undo();
 	assert.equal(picker.visible, true, 'the expired source session cannot hide a newer unrelated picker');
 	assert.equal(invalidations, 1);
@@ -65,11 +66,11 @@ test('quick input session resources end before accept, replacement, blur, cancel
 		let disposals = 0;
 		picker.pick('Scoped', 'Filter', (_focus, disposables) => {
 			disposables.add({ dispose: () => { disposals += 1; } });
-			return items;
+			return new TextQuickPickProvider(items);
 		}, () => { assert.equal(route, 'accept'); assert.equal(disposals, 1, 'cleanup precedes source navigation'); });
 		if (route === 'accept') picker.accept();
 		else if (route === 'replacement') {
-			picker.pick('New', 'Filter', () => { assert.equal(disposals, 1); return items; }, () => {});
+			picker.pick('New', 'Filter', () => { assert.equal(disposals, 1); return new TextQuickPickProvider(items); }, () => {});
 			picker.hide();
 		} else if (route === 'blur') inputFocus.createTarget().focus();
 		else if (route === 'cancel') picker.hide();
@@ -80,10 +81,10 @@ test('quick input session resources end before accept, replacement, blur, cancel
 
 test('quick pick filtering retains caller items, rows and result storage across queries', () => {
 	const model = new QuickPickModel();
-	model.setItems(items);
-	const retained = model.entries.slice();
-	const rows = model.list.rows;
+	model.setInput(new TextQuickPickProvider(items));
 	model.filter('');
+	const retained = [...model.list.rows];
+	const rows = model.list.rows;
 	assert.deepEqual(rows, retained);
 	assert.equal(model.list.selectionIndex, 0);
 	model.filter(' ROOT  slot 1 ');
@@ -104,7 +105,7 @@ test('quick pick filtering retains caller items, rows and result storage across 
 test('quick pick ranks query matches deterministically without excluding later catalog items', () => {
 	const model = new QuickPickModel();
 	const catalog = Array.from({ length: 600 }, (_, index) => ({ label: `module_${index}.lua`, description: 'LUA', detail: '' }));
-	model.setItems(catalog);
+	model.setInput(new TextQuickPickProvider(catalog));
 	model.filter('module_599');
 	assert.equal(model.list.rows[0].item, catalog[599]);
 	model.filter('module_5');
@@ -113,18 +114,46 @@ test('quick pick ranks query matches deterministically without excluding later c
 	assert.equal(model.list.rows.length, 600, 'viewport capacity is not a query/catalog limit');
 });
 
+test('query providers own result order and selection; the control never filters or sorts their projection again', t => {
+	const picker = createPicker(t);
+	const matches = [2, 0, 1].map(itemIndex => ({ itemIndex, item: items[itemIndex] }));
+	const projection = { matches, selectionIndex: 2 };
+	const queries: string[] = [];
+	const provider = { items, getPicks(query: string) {
+		queries.push(query);
+		projection.selectionIndex = query.length === 0 ? 2 : 0;
+		return projection;
+	} };
+	let accepted = false;
+	picker.pick('Provider', 'Query', () => provider, item => {
+		assert.equal(item, items[2]); assert.equal(picker.visible, false); accepted = true;
+	});
+	assert.deepEqual(picker.model.list.rows.map(row => row.item), [items[2], items[0], items[1]]);
+	assert.equal(picker.model.list.selectionIndex, 2);
+	insertValue(picker.field, 'not a substring of any item'); picker.update();
+	assert.equal(picker.model.list.rows.length, 3, 'a provider may resolve aliases, not just visible text');
+	assert.equal(picker.model.list.selectionIndex, 0);
+	assert.deepEqual(queries, ['', 'not a substring of any item']);
+	for (let frame = 0; frame < 1000; frame += 1) picker.update();
+	assert.equal(queries.length, 2, 'idle does not ask the query owner again');
+	picker.accept();
+	assert.equal(accepted, true);
+	assert.equal(picker.model.items.length, 0);
+	picker.update(); assert.equal(queries.length, 2, 'an ended session no longer retains or queries its catalog');
+});
+
 test('quick input owns root focus; cancellation returns to the actual invoking control', t => {
 	const picker = createPicker(t);
 	const pane = inputFocus.createTarget();
 	const property = new TextField(pane);
 	property.focusTarget.focus();
-	picker.pick('Files', 'Filter', () => items, () => assert.fail('cancel accepted an item'));
+	picker.pick('Files', 'Filter', () => new TextQuickPickProvider(items), () => assert.fail('cancel accepted an item'));
 	assert.equal(picker.field.focusTarget.parent, null);
 	assert.equal(inputFocus.target, picker.field.focusTarget);
 	picker.hide();
 	assert.equal(inputFocus.target, property.focusTarget);
 	assert.equal(picker.visible, false);
-	assert.equal(picker.model.entries.length, 0);
+	assert.equal(picker.model.items.length, 0);
 });
 
 test('quick input blur does not restore a departing pane over the new focus owner', t => {
@@ -132,7 +161,7 @@ test('quick input blur does not restore a departing pane over the new focus owne
 	const first = inputFocus.createTarget();
 	const next = inputFocus.createTarget();
 	first.focus();
-	picker.pick('Files', 'Filter', () => items, () => assert.fail('blur accepted an item'));
+	picker.pick('Files', 'Filter', () => new TextQuickPickProvider(items), () => assert.fail('blur accepted an item'));
 	next.focus();
 	assert.equal(picker.visible, false);
 	assert.equal(inputFocus.target, next);
@@ -145,14 +174,14 @@ test('item providers observe the invoking control after blur, not the replaced q
 	let provisions = 0;
 	origin.onDidBlur(() => { blurs += 1; });
 	origin.focus();
-	picker.pick('Old', 'Filter', () => items, () => assert.fail('old picker accepted'));
+	picker.pick('Old', 'Filter', () => new TextQuickPickProvider(items), () => assert.fail('old picker accepted'));
 	insertValue(picker.field, 'old query');
 	picker.pick('Commands', 'Filter', focus => {
 		provisions += 1;
 		assert.equal(focus, origin);
 		assert.equal(blurs, 2, 'replace restores origin, then its new blur precedes admission');
 		assert.equal(inputFocus.target, picker.field.focusTarget, 'provider receives context explicitly without focus swapping');
-		return items;
+		return new TextQuickPickProvider(items);
 	}, item => {
 		assert.equal(item, items[0]);
 		assert.equal(inputFocus.target, origin, 'execution happens in the restored invoking context');
@@ -170,9 +199,9 @@ test('quick input replacement and acceptance hide before handing the exact typed
 	const original = inputFocus.createTarget();
 	const destination = inputFocus.createTarget();
 	original.focus();
-	picker.pick('Old', 'Filter', () => items, () => assert.fail('replaced picker accepted'));
+	picker.pick('Old', 'Filter', () => new TextQuickPickProvider(items), () => assert.fail('replaced picker accepted'));
 	let accepted = 0;
-	picker.pick('New', 'Filter', () => items, item => {
+	picker.pick('New', 'Filter', () => new TextQuickPickProvider(items), item => {
 		assert.equal(item, items[1]);
 		assert.equal(item.resourceId, 20);
 		assert.equal(picker.visible, false);
@@ -196,7 +225,7 @@ test('quick input Undo/Redo refilters only its field and never the invoking docu
 	const document = inputFocus.createTarget();
 	document.registerCommand('undo', { isEnabled: () => true, run: () => assert.fail('document Undo') });
 	document.focus();
-	picker.pick('Files', 'Filter', () => items, () => {});
+	picker.pick('Files', 'Filter', () => new TextQuickPickProvider(items), () => {});
 	insertValue(picker.field, 'slot 1');
 	assert.equal(picker.model.list.rows.length, 1);
 	inputFocus.executeCommand('undo');
@@ -210,11 +239,11 @@ test('quick input Undo/Redo refilters only its field and never the invoking docu
 
 test('retained picker frames do not refilter, rebuild labels or measure the query again', t => {
 	const picker = createPicker(t);
-	picker.pick('Files', 'Filter', () => items, () => {});
+	picker.pick('Files', 'Filter', () => new TextQuickPickProvider(items), () => {});
 	insertValue(picker.field, 'root');
 	picker.update();
 	const advances = picker.textViewport.advances;
-	const row = picker.model.entries[0];
+	const row = picker.model.list.rows[0];
 	t.mock.method(picker.model, 'filter', () => assert.fail('idle filter'));
 	t.mock.method(editorViewState.font, 'advance', () => assert.fail('idle text measurement'));
 	for (let index = 0; index < 1000; index += 1) picker.update();
@@ -251,7 +280,7 @@ test('single-line viewport reveals the caret using whole proportional glyphs and
 
 test('query pointer hit testing uses the scrolled text origin, not an unrelated code column', t => {
 	const picker = createPicker(t);
-	picker.pick('Files', 'Filter', () => items, () => {});
+	picker.pick('Files', 'Filter', () => new TextQuickPickProvider(items), () => {});
 	insertValue(picker.field, 'scenes/root.lua '.repeat(30));
 	picker.update();
 	const start = picker.textViewport.start;
@@ -266,7 +295,7 @@ test('query pointer hit testing uses the scrolled text origin, not an unrelated 
 
 test('picker uses the actual tiny font and draws only a bounded span of an unbounded query', t => {
 	const picker = createPicker(t);
-	picker.pick('GO TO FILE', 'Type to filter files', () => items, () => {});
+	picker.pick('GO TO FILE', 'Type to filter files', () => new TextQuickPickProvider(items), () => {});
 	insertValue(picker.field, 'very_long_query_'.repeat(50));
 	picker.update();
 	assert.equal(picker.field.text.length, 800);

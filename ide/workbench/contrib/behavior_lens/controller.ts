@@ -28,6 +28,7 @@ import { luaSourceRangeToTextRange } from '../../../language/lua/source_edits';
 import type { BehaviorKind, BehaviorRegistrationSource } from './model';
 import type { BehaviorRegistrationIndex } from './registration_index';
 import { buildBehaviorQuickPickItems } from './quick_access';
+import { TextQuickPickProvider } from '../../services/quick_input/text_provider';
 import { createBehaviorLensViewState, type BehaviorLensViewState } from './view_model';
 import { selectStateMachineSource } from './state_machine_selection';
 import { editorViewState } from '../../../editor/ui/view/state';
@@ -58,7 +59,7 @@ export class BehaviorLensController {
 
 	public open(kind: BehaviorKind | null = null, options: EditorOpenOptions = {}): void {
 		this.quickInput.pick(kind === null ? 'BEHAVIOR LENS' : PICKER_TITLES[kind], 'Choose a definition',
-			() => buildBehaviorQuickPickItems(this.sources, this.registrations, kind),
+			() => new TextQuickPickProvider(buildBehaviorQuickPickItems(this.sources, this.registrations, kind)),
 			item => this.openDefinition(item.registration, options));
 	}
 

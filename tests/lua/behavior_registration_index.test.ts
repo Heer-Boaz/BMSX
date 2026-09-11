@@ -1,3 +1,4 @@
+import { TextQuickPickProvider } from '../../ide/workbench/services/quick_input/text_provider';
 import { BehaviorSourceIndex } from '../../ide/workbench/contrib/behavior_lens/source_index';
 import { BehaviorSourceDocuments } from '../../ide/workbench/contrib/behavior_lens/source_documents';
 import { indexStateMachineSource } from '../../ide/workbench/contrib/behavior_lens/state_machine_index';
@@ -104,7 +105,7 @@ test('behavior picks preserve registration occurrences, kinds, domains and unres
 	assert.notEqual(firstFsm.detail, secondFsm.detail);
 	assert.notEqual(firstFsm.detail, slot1Fsm.detail);
 	const picker = new QuickPickModel();
-	picker.setItems(items);
+	picker.setInput(new TextQuickPickProvider(items));
 	picker.filter('FSM shared');
 	assert.equal(picker.list.rows.length, 3);
 	picker.filter('BT shared');
@@ -192,7 +193,7 @@ test('kind-specific behavior picks select producer kinds, not names, files or qu
 			all.filter(pick => pick.registration.behaviorKind === kind).map(pick => pick.registration));
 		assert.equal(picks.length, kind === 'action_effect' ? 3 : 1);
 		const query = new QuickPickModel();
-		query.setItems(picks);
+		query.setInput(new TextQuickPickProvider(picks));
 		query.filter('EFFECT shared');
 		assert.equal(query.list.rows.length, kind === 'action_effect' ? 2 : 1);
 		query.filter('');

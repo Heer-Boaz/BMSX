@@ -1,6 +1,6 @@
 import { CARTRIDGE_RESOURCE_DOMAINS, SYSTEM_RESOURCE_DOMAIN } from '../../../common/resource';
 import type { RuntimeSourceState } from '../../../runtime/sources';
-import type { QuickPickItem } from '../../services/quick_input/model';
+import type { QuickPickItem } from '../../services/quick_input/provider';
 import type { BehaviorKind, BehaviorRegistrationSource } from './model';
 import type { BehaviorRegistrationIndex } from './registration_index';
 

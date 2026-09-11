@@ -1,33 +1,29 @@
 import { point_in_rect } from '../../../../machine/ts/common/rect';
 import { WorkbenchScrollViewport } from '../../ui/scroll_viewport';
+import type { QuickPickItem, QuickPickMatch, QuickPickProvider } from './provider';
 
-/** Display data only. The caller retains the actual resource/symbol/other item. */
-export type QuickPickItem = {
-	readonly label: string;
-	readonly description: string;
-	readonly detail: string;
-};
-
-export type QuickPickRow = {
+export type QuickPickRenderRow = {
 	readonly item: QuickPickItem;
-	readonly itemIndex: number;
-	readonly searchKey: string;
-	matchIndex: number;
 	textRevision: number;
 	labelText: string;
 	descriptionText: string;
 	detailText: string;
 };
 
-/** One row allocation per admitted item, not per filter or rendered frame. */
+const EMPTY_ITEMS: readonly QuickPickItem[] = [];
+const EMPTY_MATCHES: readonly QuickPickMatch[] = [];
+
+/** Provider results are consumed directly; only presented items acquire render data. */
 export class QuickPickModel {
-	public readonly entries: QuickPickRow[] = [];
+	public items = EMPTY_ITEMS;
 	public readonly viewport = new WorkbenchScrollViewport();
 	public rowHeight = 0;
 	public revision = 0;
 	public readonly list = {
-		rows: [] as QuickPickRow[], selectionIndex: -1, hoverIndex: -1,
+		rows: EMPTY_MATCHES, selectionIndex: -1, hoverIndex: -1,
 	};
+	private input: QuickPickProvider | undefined;
+	private readonly renderRows = new Map<number, QuickPickRenderRow>();
 
 	public get visibleRowCount(): number { return Math.trunc(this.viewport.height / this.rowHeight); }
 	public get firstVisibleIndex(): number { return Math.trunc((this.viewport.bounds.top - this.viewport.offsetTop) / this.rowHeight); }
@@ -49,42 +45,38 @@ export class QuickPickModel {
 		this.viewport.scrollbar.reveal(top, top + this.rowHeight);
 	}
 
-	public setItems(items: readonly QuickPickItem[]): void {
-		this.entries.length = 0;
-		for (let index = 0; index < items.length; index += 1) {
-			const item = items[index];
-			this.entries.push({ item, itemIndex: index,
-				searchKey: `${item.label} ${item.description} ${item.detail}`.toLowerCase(),
-				matchIndex: 0, textRevision: -1, labelText: '', descriptionText: '', detailText: '' });
-		}
+	public setInput(input: QuickPickProvider): void {
+		this.clearInput();
+		this.input = input;
+		this.items = input.items;
+	}
+
+	public clearInput(): void {
+		this.input = undefined;
+		this.items = EMPTY_ITEMS;
+		this.list.rows = EMPTY_MATCHES;
+		this.renderRows.clear();
+		this.list.selectionIndex = -1;
+		this.list.hoverIndex = -1;
+		this.viewport.scrollbar.setScroll(0);
 	}
 
 	public filter(value: string): void {
-		const query = value.trim().toLowerCase();
-		const tokens = query.length === 0 ? [] : query.split(/\s+/);
+		const projection = this.input!.getPicks(value);
 		const list = this.list;
-		list.rows.length = 0;
-		for (const row of this.entries) {
-			let score = row.searchKey.length;
-			for (const token of tokens) {
-				const index = row.searchKey.indexOf(token);
-				if (index === -1) { score = -1; break; }
-				if (index < score) score = index;
-			}
-			if (score !== -1) {
-				row.matchIndex = score;
-				list.rows.push(row);
-			}
-		}
-		if (tokens.length > 0) list.rows.sort(compareMatches);
-		list.selectionIndex = list.rows.length === 0 ? -1 : 0;
+		list.rows = projection.matches;
+		list.selectionIndex = projection.selectionIndex;
 		this.viewport.scrollbar.setScroll(0);
 		list.hoverIndex = -1;
 		this.revision += 1;
 	}
-}
 
-function compareMatches(left: QuickPickRow, right: QuickPickRow): number {
-	return left.matchIndex - right.matchIndex || left.item.label.length - right.item.label.length
-		|| left.item.label.localeCompare(right.item.label) || left.itemIndex - right.itemIndex;
+	public getRenderRow(match: QuickPickMatch): QuickPickRenderRow {
+		let row = this.renderRows.get(match.itemIndex);
+		if (row === undefined) {
+			row = { item: match.item, textRevision: -1, labelText: '', descriptionText: '', detailText: '' };
+			this.renderRows.set(match.itemIndex, row);
+		}
+		return row;
+	}
 }

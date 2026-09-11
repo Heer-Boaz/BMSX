@@ -580,3 +580,20 @@ en Pietious source/graph/Undo-browsergates slagen op alle drie renderers, naast
 bewijsgrenzen staan in [quick_input_interaction.md](quick_input_interaction.md).
 **A06 blijft open:** provider-eigen matching/highlights en symbol-/locationkeuzes
 zijn hiermee niet gemigreerd of gerepareerd.
+
+### A06 — providerqueries en commandwoorden (2026-09-11; gedeeltelijke uitvoering)
+
+Providers publiceren nu een eigen getypeerde catalogus, geordende matches en
+actieve resultaatindex. De control filtert of sorteert niet opnieuw. Het model
+consumeert de projection direct en maakt alleen renderdata voor werkelijk
+gepresenteerde keuzes, niet voor een tweede volledige catalogus. Commandmatching
+volgt de VS Code-woordrecurrence en geeft volledige/substringmatches prioriteit
+boven losse woordinitialen; files en behavior-keuzes houden een expliciete
+letterlijke tekstpolicy. `hr` vindt Hot Resume zonder een commanduitzondering.
+
+De oude owners op `82cdf14ed` falen de echte `hr`-tegenproef. De volledige Studio-
+en Pietious browsergates slagen op software, WebGL2 en WebGPU; de Lua-suite heeft
+1548 geslaagde tests en één bestaande skip. Tests-typecheck: dezelfde 51 bestaande
+meldingen. Zie [quick_input_providers.md](quick_input_providers.md) voor eigenaars,
+referenties en bewijs. **A06 blijft open** voor matchmarkering, file/symbol-
+matching en de symbol-/locationcontrolmigratie; deze querygrens sluit die niet.

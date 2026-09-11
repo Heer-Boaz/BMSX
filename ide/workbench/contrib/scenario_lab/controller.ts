@@ -1,4 +1,5 @@
 import { createBehaviorQuickPickItem } from '../behavior_lens/quick_access';
+import { TextQuickPickProvider } from '../../services/quick_input/text_provider';
 import { editorTextModelService } from '../../../editor/model/model_service';
 import type { EditorTextModel } from '../../../editor/model/text_model';
 import { SYSTEM_RESOURCE_DOMAIN } from '../../../common/resource';
@@ -189,7 +190,7 @@ export class ScenarioLabController {
 			lifetime.add({ dispose: editorTextModelService.onDidChangeContent(changed) });
 			lifetime.add({ dispose: editorTextModelService.onDidAddModel(changed) });
 			lifetime.add({ dispose: editorTextModelService.onDidRemoveModel(changed) });
-			return sources.map(createBehaviorQuickPickItem);
+			return new TextQuickPickProvider(sources.map(createBehaviorQuickPickItem));
 		}, item => this.openSource({ resource: item.registration.resource,
 			line: item.registration.range.start.line, column: item.registration.range.start.column }));
 	}

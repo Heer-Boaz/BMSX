@@ -45,10 +45,12 @@ export function layoutQuickPick(input: QuickInputController): void {
 	if (!layoutChanged && first === layout.preparedStart && end === layout.preparedEnd) return;
 	layout.preparedStart = first;
 	layout.preparedEnd = end;
+	layout.renderRows.length = end - first;
 	const bounds = model.viewport.bounds;
 	const textWidth = bounds.right - bounds.left - 6;
 	for (let index = first; index < end; index += 1) {
-		const row = model.list.rows[index];
+		const row = model.getRenderRow(model.list.rows[index]);
+		layout.renderRows[index - first] = row;
 		if (row.textRevision === layout.textRevision) continue;
 		row.labelText = truncateTextToWidth(row.item.label, textWidth);
 		row.descriptionText = truncateTextToWidth(row.item.description, row.item.detail.length === 0 ? textWidth : textWidth / 2 - 3);
@@ -78,7 +80,7 @@ export function drawQuickPick(input: QuickInputController): void {
 		content.top + 2, 0, constants.COLOR_STATUS_WARNING, font);
 	const end = input.model.endVisibleIndex;
 	for (let index = input.model.firstVisibleIndex; index < end; index += 1) {
-		const row = list.rows[index];
+		const row = input.layout.renderRows[index - input.layout.preparedStart];
 		const y = input.model.rowTop(index);
 		const selected = index === list.selectionIndex;
 		const rowColor = selected ? constants.COLOR_QUICK_OPEN_SELECTION_TEXT : color;

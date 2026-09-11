@@ -11,3 +11,36 @@ https://registry.npmjs.org/elkjs/-/elkjs-0.12.0.tgz
 
 The browser Studio UI, Node main thread and BMSX machine do not contain the
 ELK engine. Node worker bundling changes packaging, not the upstream code.
+
+---
+
+`ide/common/word_matcher.ts` adapts the word-boundary recurrence from VS Code
+`src/vs/base/common/filters.ts` (`matchesWords`), revision
+7f59d5e01a7fafeba8e83cdfd9d8493f2beeeaca. BMSX uses retained iterative storage
+and does not include VS Code accent normalization or input-method transliteration.
+The matching conformance oracle retains the ASCII branches of the original
+recursive implementation.
+
+Source: https://github.com/microsoft/vscode/blob/7f59d5e01a7fafeba8e83cdfd9d8493f2beeeaca/src/vs/base/common/filters.ts
+
+MIT License
+
+Copyright (c) 2015 - present Microsoft Corporation
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

@@ -19,14 +19,21 @@ export async function testStudioCommandPalette(test: StudioFixture): Promise<voi
 	await press('KeyQ');
 	check(model.buffer.getText() !== original, 'palette: real source edit precedes command selection');
 	await press('ControlLeft', 'ShiftLeft', 'KeyP');
+	await press('KeyH'); await press('KeyR');
+	check(picker.model.list.rows.some(row => row.item.label === 'Run: Hot Resume'),
+		'palette: command word initials resolve Hot Resume without literal hr in its label');
+	await press('Escape');
+	check(model.buffer.getText() !== original && cycles() === position,
+		'palette: searching commands never executes one or changes the invoking source');
+	await press('ControlLeft', 'ShiftLeft', 'KeyP');
 	for (const label of ['Behavior Lens: Open', 'Behavior Lens: Open ActionEffect', 'Behavior Lens: Open State Machine (FSM)',
 		'Behavior Lens: Open Behavior Tree (BT)', 'Scene Editor: Open', 'Scenario Lab: Open', 'Preferences: Toggle Theme',
 		'Search: Find', 'Edit: Rename Symbol', 'View: Problems Panel']) {
-		check(picker.model.entries.some(row => row.item.label === label), `palette: ${label} is categorized by task, not menu location`);
+		check(picker.model.items.some(row => row.label === label), `palette: ${label} is categorized by task, not menu location`);
 	}
-	check(!picker.model.entries.some(row => /^View: (Behavior|Scenario|Scene)/.test(row.item.label)),
+	check(!picker.model.items.some(row => /^View: (Behavior|Scenario|Scene)/.test(row.label)),
 		'palette: opening a tool belongs with its own actions rather than the View catch-all');
-	check(picker.model.entries.some(row => row.item.label === 'Edit: Undo'),
+	check(picker.model.items.some(row => row.label === 'Edit: Undo'),
 		'palette: editor Undo is admitted in the source context despite empty query history');
 	await press('KeyU');
 	await press('KeyN');
@@ -56,7 +63,7 @@ export async function testStudioCommandPalette(test: StudioFixture): Promise<voi
 	await press('ControlLeft', 'Comma');
 	await press('KeyQ');
 	await press('ControlLeft', 'ShiftLeft', 'KeyP');
-	check(!picker.model.entries.some(row => row.item.label === 'Edit: Undo' || row.item.label === 'Go: Go to Symbol'),
+	check(!picker.model.items.some(row => row.label === 'Edit: Undo' || row.label === 'Go: Go to Symbol'),
 		'palette: replacing file search does not inherit its query history or the last code pane');
 	clipboard.text = 'not_a_command';
 	await press('ControlLeft', 'KeyV');
@@ -81,8 +88,8 @@ export async function testStudioCommandPalette(test: StudioFixture): Promise<voi
 	await press('ControlLeft', 'ShiftLeft', 'KeyP');
 	check(!pane.controls[0].pending && scene.properties[0].value === 5,
 		'palette: property blur accepts before command enumeration');
-	check(!picker.model.entries.some(row => row.item.label === 'Edit: Undo')
-		&& picker.model.entries.some(row => row.item.label === 'File: Save'),
+	check(!picker.model.items.some(row => row.label === 'Edit: Undo')
+		&& picker.model.items.some(row => row.label === 'File: Save'),
 		'palette: empty property history does not fall through to document Undo; accepted source enables Save');
 	clipboard.text = 'File: Save';
 	await press('ControlLeft', 'KeyV');

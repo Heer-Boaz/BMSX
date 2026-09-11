@@ -52,7 +52,7 @@ export async function testStudioNavigation(test: StudioFixture): Promise<void> {
 	await frame();
 	await openView(test, 'sceneEditor');
 	check(getActiveTab().kind === 'code_editor', 'navigation: entry file is not silently installed as an empty scene');
-	check(!ide.editor.quickInput.model.entries.some(row => row.item.label === 'cart.lua'),
+	check(!ide.editor.quickInput.model.items.some(row => row.label === 'cart.lua'),
 		'navigation: the catalog contains scene registrations, not every Lua file');
 	await chooseSource(test, 'scenes/root.lua');
 	const scene = getActiveTab();

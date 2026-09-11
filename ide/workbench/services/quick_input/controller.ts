@@ -16,7 +16,8 @@ import { TextField } from '../../../editor/ui/inline/text_field_model';
 import { SingleLineFieldViewport } from '../../../editor/ui/inline/single_line_viewport';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { ScrollbarPointerControl } from '../../ui/scrollbar_pointer';
-import { QuickPickModel, type QuickPickItem, type QuickPickRow } from './model';
+import { QuickPickModel, type QuickPickRenderRow } from './model';
+import type { QuickPickItem, QuickPickMatch, QuickPickProvider } from './provider';
 import { drawQuickPick, layoutQuickPick } from './render';
 
 type QuickPickSession = {
@@ -35,6 +36,7 @@ export class QuickInputController implements PointerCaptureTarget {
 		bounds: create_rect_bounds(), field: create_rect_bounds(),
 		width: -1, height: -1, headerHeight: -1, font: null as object | null,
 		projectionRevision: -1, textRevision: 0, preparedStart: -1, preparedEnd: -1,
+		renderRows: [] as QuickPickRenderRow[],
 	};
 	public title = '';
 	public placeholder = '';
@@ -43,7 +45,7 @@ export class QuickInputController implements PointerCaptureTarget {
 	public labelsDirty = true;
 	private session: QuickPickSession | null = null;
 	private readonly scrollbarPointer = new ScrollbarPointerControl(pointerCapture, this.pointerScope);
-	private pressedRow: QuickPickRow | undefined;
+	private pressedRow: QuickPickMatch | undefined;
 	private pointerRevision = 0;
 	private readonly unbindKeyboard: () => void;
 	private readonly pointer = {
@@ -67,7 +69,7 @@ export class QuickInputController implements PointerCaptureTarget {
 	public pick<T extends QuickPickItem>(
 		title: string,
 		placeholder: string,
-		provideItems: (origin: InputFocusTarget | null, disposables: DisposableStore) => readonly T[],
+		provide: (origin: InputFocusTarget | null, disposables: DisposableStore) => QuickPickProvider<T>,
 		accept: (item: T) => void,
 	): void {
 		this.hide();
@@ -77,11 +79,11 @@ export class QuickInputController implements PointerCaptureTarget {
 		// never the previous popup's query or an unaccepted property draft.
 		this.field.focusTarget.focus();
 		const disposables = new DisposableStore();
-		const items = provideItems(returnFocus, disposables);
-		this.session = { returnFocus, disposables, accept: index => accept(items[index]) };
+		const provider = provide(returnFocus, disposables);
+		this.session = { returnFocus, disposables, accept: index => accept(provider.items[index]) };
 		this.title = title;
 		this.placeholder = placeholder;
-		this.model.setItems(items);
+		this.model.setInput(provider);
 		this.labelsDirty = true;
 		setFieldText(this.field, '', true);
 		this.model.filter('');
@@ -98,11 +100,8 @@ export class QuickInputController implements PointerCaptureTarget {
 		if (session === null) return;
 		this.session = null;
 		session.disposables.dispose();
-		this.model.entries.length = 0;
-		this.model.list.rows.length = 0;
-		this.model.list.selectionIndex = -1;
-		this.model.viewport.scrollbar.setScroll(0);
-		this.model.list.hoverIndex = -1;
+		this.model.clearInput();
+		this.layout.renderRows.length = 0;
 		this.field.pointerSelecting = false;
 		if (restoreFocus) inputFocus.setTarget(session.returnFocus);
 		else this.field.focusTarget.release();

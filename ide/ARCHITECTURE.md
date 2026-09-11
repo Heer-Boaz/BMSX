@@ -1059,8 +1059,13 @@ The popup owns Escape before a lower code widget. Shared command routing still
 targets the input field's history. Property drafts continue to use their own
 ordinary blur policy; the chooser neither commits nor validates scene data.
 
-`QuickPickModel` retains rows, search keys, filtered row storage and its projection
-revision. Filtering runs on field changes, not frames. Its pixel viewport uses
+`QuickPickProvider<T>` owns its admitted typed catalog and query projection:
+ordered matches and the selected result index. `QuickPickModel` consumes that
+projection directly; it neither filters nor ranks a second time. Provider match
+records and result storage are retained across query edits. The model creates
+render data only for items actually presented and retains it for that admission
+lifetime. Closing releases both catalog and render data, rather than retaining a
+second complete UI catalog. Queries run on field changes, not frames. Its pixel viewport uses
 the existing `WorkbenchScrollViewport` and `Scrollbar` as the sole range owner.
 The axis-only `ScrollbarPointerControl` is shared with focusable workbench scroll
 views; dragging the picker thumb retains query focus. A row press selects and
@@ -1085,9 +1090,16 @@ same-named resources from different domains. There is no second resource
 catalog owner, code-tab activation prerequisite, or generic prefab/scene schema.
 The removed `@`/`#`/`:` redirection to code-only widgets is not emulated;
 explicit symbol and line commands retain their own contexts.
-The interaction contract and references are in `docs/quick_input_interaction.md`.
-Provider-specific matching/highlights and symbol/location chooser convergence
-remain open A06 work; shared scrolling does not complete that search contract.
+The interaction contract and references are in `docs/quick_input_interaction.md`;
+query ownership is specified in `docs/quick_input_providers.md`. Command choices
+use their own provider: word initials, contiguous label text and exact command
+ids, not incidental shortcut text. Exact matches precede substring matches and
+word-boundary matches, with catalog order retained inside each class. A retained
+iterative matcher follows the production VS Code word-boundary recurrence;
+accent normalization and input-method transliteration are not added. Other text
+choices explicitly select the literal text provider. File/symbol matching,
+visible match reasons and symbol/location chooser convergence remain open A06
+work; shared scrolling and command initials do not complete that search contract.
 
 `pick` admits a typed item provider once, after focus has left the invoking
 control. Replacing a picker first restores the original control; its ordinary
