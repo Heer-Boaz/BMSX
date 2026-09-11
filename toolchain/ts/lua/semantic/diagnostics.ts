@@ -1,6 +1,7 @@
 import {
 	LuaSyntaxKind,
 	LuaTableFieldKind,
+	isMultiReturnExpression,
 	type LuaCallExpression,
 	type LuaChunk,
 	type LuaExpression,
@@ -422,10 +423,6 @@ function validateCallArity(diagnostics: LuaStaticDiagnostic[], call: LuaCallExpr
 		`${metadata.label} expects ${required} ${expectedLabel}, but ${actualCount} ${providedLabel} provided.`,
 		'error',
 	);
-}
-
-function isMultiReturnExpression(expression: LuaExpression): boolean {
-	return expression.kind === LuaSyntaxKind.CallExpression || expression.kind === LuaSyntaxKind.VarargExpression;
 }
 
 function collectAllowedReservedMemoryRanges(chunk: LuaChunk): Set<string> {

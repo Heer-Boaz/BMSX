@@ -549,6 +549,13 @@ geen singleton-/callee-proof en sluit B04 niet. De gepaarde koude query kost nu
 circa 236 ms: bronquery-/context- en latencywerk blijven voorwaarden voor B03 en
 B06-authoring, niet hun vervanging.
 
+De [assignment-/waarde-identiteitscorrectie](lua_assignment_contributions.md)
+behoudt nu geschreven, onbekende en impliciete waardebijdragen met hun echte
+syntax. Scalar-/unknown-waarden blijven waardeafhankelijkheden, geen gedeelde
+opslagaliases. De CPU-oracle legt daarnaast de initializerregistervolgorde goed
+vast. Dit vervangt niet B03's reparent-gesture of B06's bewerkbare properties;
+gecorreleerde bronquery, resource-ownership en latency blijven hun voorwaarden.
+
 | ID | Eigenaar / contract | Gate |
 | --- | --- | --- |
 | `STUDIO-BEHAVIOR-UX-B01` | Uitgewerkt: betekenisvolle BT/FSM-kaarten en volledige source-linked property-inspectie; technische bewijsdetails niet permanent op het canvas. Zie `behavior_inspection_design.md` voor de vooraf gemeten compositie en concrete owner-/bewijsgrenzen. | Tiny-resolutie met Problems, lange callbacks, exacte Source/Back, keyboard/controller/scroll/focus en non-mutating inspectie. B04-bronorigins, B06-propertyauthoring en B07-zoom blijven aparte contracten. |

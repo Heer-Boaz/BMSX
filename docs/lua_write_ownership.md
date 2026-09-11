@@ -56,7 +56,7 @@ Lua, and this slice does not introduce a complete control-flow analysis.
 | --- | --- |
 | `SemanticBuilder` | Each `DeclarationValueEntry` retains its destination, modeled source, relation and containing `flow`. `undefined` flow means module evaluation. Equal values deduplicate only within that body and relation. |
 | File facts | The flat declaration-value facts include all bodies with explicit ownership. Module member writes are separate from each function flow's `members`; a declaration's first mention cannot steal a later write. |
-| Builder indices | Per-body deduplication does not scan other bodies writing the same binding. A separate declaration index supports existing member-declaration lookup. Both indices die with the builder; published facts are shared, not copied. |
+| Builder indices | The declaration index supports member-declaration lookup and dies with the builder. The later [written-contribution correction](lua_assignment_contributions.md) removes per-body value deduplication: actual written occurrences survive; summaries deduplicate term values. |
 | `FunctionSummaryStore` | Partition value facts by their actual flow once, then compile each summary's own values. No per-function whole-file value scan or declaration-scope assignment filter. |
 | `WorkspaceValueIdentityIndex` | Only module-owned constant-value facts may establish context-independent unions. No scan of every function's declarations to guess assignment ownership. |
 | `SemanticDemandIndex` | Module aliases select module-owned writes. Module member facts need no declaration-scope filter. Existing inferred receiver-shape projection remains here, not duplicated in the binder. |

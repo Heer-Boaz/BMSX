@@ -4,6 +4,7 @@ import {
 	LuaSyntaxKind,
 	LuaTableFieldKind,
 	LuaUnaryOperator,
+	isMultiReturnExpression,
 	type LuaAssignableExpression,
 	type LuaAssignmentStatement,
 	type LuaBinaryExpression,
@@ -697,11 +698,6 @@ function computeClosureWrittenSymbols(
 // ---------------------------------------------------------------------------
 //  Multi-return detection (lightweight, only for flow analysis)
 // ---------------------------------------------------------------------------
-
-function isMultiReturnExpression(expression: LuaExpression): boolean {
-	return expression.kind === LuaSyntaxKind.CallExpression
-		|| expression.kind === LuaSyntaxKind.VarargExpression;
-}
 
 const LOOP_FIXPOINT_SAFETY_LIMIT = 1024;
 

@@ -1,10 +1,12 @@
 import {
+	LuaAssignmentOperator,
 	LuaBinaryOperator,
 	LuaMemberOperator,
 	LuaSyntaxKind,
 	LuaTableFieldKind,
 	LuaUnaryOperator,
 	isRecursiveConstClosureDeclaration,
+	isMultiReturnExpression,
 	type LuaChunk,
 	type LuaBlock,
 	type LuaStatement,
@@ -286,9 +288,15 @@ type ImplicitReceiverBinding = {
 type InternalBinding = InternalDecl | ImplicitReceiverBinding;
 
 type ResolvedNamePath = {
-	namePath: string[] | null;
-	decl: InternalDecl | null;
-	valueSource?: SemanticValueSource;
+	readonly namePath: string[] | null;
+	readonly decl: InternalDecl | null;
+	readonly valueSource: SemanticValueSource;
+};
+
+const UNKNOWN_EXPRESSION_VALUE: ResolvedNamePath = {
+	namePath: null,
+	decl: null,
+	valueSource: unknownValueSource(),
 };
 
 type ExpressionContext = {
@@ -617,9 +625,8 @@ class SemanticBuilder {
 	private readonly functionSignaturesByPath: Map<string, FunctionSignatureInfo> = new Map();
 	private readonly declarationValues: DeclarationValueEntry[] = [];
 	private readonly ownedValuesBySyntax = new Map<LuaExpression, OwnedSemanticValueSource>();
-	// Builder-only indices: member declaration lookup and per-body value deduplication.
+	// Builder-only member lookup; published contributions retain every written occurrence.
 	private readonly declarationValuesByDeclaration: Map<SymbolID, DeclarationValueEntry[]> = new Map();
-	private readonly declarationValuesByFlow = new Map<FunctionValueFlowEntry | undefined, Map<SymbolID, DeclarationValueEntry[]>>();
 	private readonly unknownValueDeclarations: Set<SymbolID> = new Set();
 	private readonly memberValues: Map<SymbolID, MemberValueEntry> = new Map();
 	private readonly functionValueFlows: FunctionValueFlowEntry[] = [];
@@ -715,17 +722,20 @@ class SemanticBuilder {
 					}
 					const valueInfo = this.visitExpression(valueExpression, context);
 					if (targetDecl) {
-						this.setDeclarationValue(targetDecl, valueInfo?.valueSource);
+						this.setDeclarationValue(targetDecl, valueInfo.valueSource, statement, index);
 					}
 					if (index < pending.length) {
 						this.setModuleAlias(
 							pending[index],
-							resolveModuleAliasValueSource(valueInfo?.valueSource, this.moduleAliasesByDeclId),
+							resolveModuleAliasValueSource(valueInfo.valueSource, this.moduleAliasesByDeclId),
 						);
 					}
 				}
 				for (let index = 0; index < pending.length; index += 1) {
 					if (index >= localAssignment.values.length) {
+						const source = valueLimit > 0 && isMultiReturnExpression(localAssignment.values[valueLimit - 1])
+							? unknownValueSource() : NIL_VALUE_SOURCE;
+						this.setDeclarationValue(pending[index], source, statement, index);
 						this.setModuleAlias(pending[index], null);
 					}
 					this.activateDecl(pending[index], localAssignment.range.end);
@@ -737,7 +747,7 @@ class SemanticBuilder {
 				const decl = this.declareLocal(localFunction.name, 'function', true);
 				this.recordFunctionSignature(decl, localFunction.name.name, localFunction.functionExpression, 'function');
 				const functionValue = this.createExpressionValueSource(localFunction.functionExpression);
-				this.setDeclarationValue(decl, functionValue);
+				this.setDeclarationValue(decl, functionValue, statement, 0);
 				this.visitFunctionExpression(
 					localFunction.functionExpression,
 					undefined,
@@ -816,8 +826,8 @@ class SemanticBuilder {
 					methodSelfPath = baseNames.slice(0, -1);
 				}
 				const functionValue = this.createExpressionValueSource(functionDeclaration.functionExpression);
-				if (decl) this.setDeclarationValue(decl, functionValue);
-				else this.recordValueFlow(identifierTarget.valueSource, functionValue, 'value');
+				if (decl) this.setDeclarationValue(decl, functionValue, statement, 0);
+				else this.recordValueFlow(identifierTarget.valueSource, functionValue, 'value', statement, 0);
 				this.visitFunctionExpression(
 					functionDeclaration.functionExpression,
 					methodSelfPath,
@@ -830,23 +840,24 @@ class SemanticBuilder {
 			}
 			case LuaSyntaxKind.AssignmentStatement: {
 				const assignment = statement;
+				const isAssignment = assignment.operator === LuaAssignmentOperator.Assign;
 				const targets: AssignmentTargetInfo[] = [];
 				for (let index = 0; index < assignment.left.length; index += 1) {
 					targets.push(this.handleAssignmentTarget(assignment.left[index]));
 				}
 				for (let index = 0; index < assignment.right.length; index += 1) {
 					const targetInfo = targets[index];
-					const context: ExpressionContext = targetInfo
+					const context: ExpressionContext = targetInfo && isAssignment
 						? {
 							tableBaseDecl: targetInfo.decl,
 							tableBasePath: targetInfo.decl ? targetInfo.decl.namePath : targetInfo.namePath,
 						}
 						: { tableBaseDecl: null, tableBasePath: null };
-					if (targetInfo?.decl) {
+					if (targetInfo?.decl && isAssignment) {
 						context.tableOwner = targetInfo.decl.valueSource;
 					}
 					const valueExpression = assignment.right[index];
-					if (valueExpression.kind === LuaSyntaxKind.FunctionExpression) {
+					if (valueExpression.kind === LuaSyntaxKind.FunctionExpression && isAssignment) {
 						if (targetInfo?.decl) {
 							this.recordFunctionSignature(
 								targetInfo.decl,
@@ -865,29 +876,38 @@ class SemanticBuilder {
 						const functionValue = this.createExpressionValueSource(valueExpression);
 						this.visitFunctionExpression(valueExpression, selfPath, functionValue, targetInfo?.decl?.id, 'function');
 						if (targetInfo?.decl) {
-							this.setDeclarationValue(targetInfo.decl, functionValue);
+							this.setDeclarationValue(targetInfo.decl, functionValue, statement, index);
 						}
 						if (targetInfo?.valueTarget) {
-							this.recordValueFlow(targetInfo.valueTarget, functionValue, 'value');
+							this.recordValueFlow(targetInfo.valueTarget, functionValue, 'value', statement, index);
 						}
 						continue;
 					}
 					const valueInfo = this.visitExpression(valueExpression, context);
+					const source = isAssignment ? valueInfo.valueSource : unknownValueSource();
 					if (targetInfo?.decl) {
-						this.setDeclarationValue(targetInfo.decl, valueInfo?.valueSource);
+						this.setDeclarationValue(targetInfo.decl, source, statement, index);
 					}
 					if (index < assignment.left.length
 						&& assignment.left[index].kind === LuaSyntaxKind.IdentifierExpression) {
 						targetInfo.moduleAlias = resolveModuleAliasValueSource(
-							valueInfo?.valueSource,
+							source,
 							this.moduleAliasesByDeclId,
 						);
 					}
-					if (targetInfo?.valueTarget && valueInfo?.valueSource) {
-						this.recordValueFlow(targetInfo.valueTarget, valueInfo.valueSource, 'value');
+					if (targetInfo?.valueTarget) {
+						this.recordValueFlow(targetInfo.valueTarget, source, 'value', statement, index);
 					}
 				}
 				for (let index = 0; index < assignment.left.length; index += 1) {
+					if (index >= assignment.right.length) {
+						const source = assignment.right.length > 0
+							&& isMultiReturnExpression(assignment.right[assignment.right.length - 1])
+							? unknownValueSource() : NIL_VALUE_SOURCE;
+						const targetInfo = targets[index];
+						if (targetInfo.decl) this.setDeclarationValue(targetInfo.decl, source, statement, index);
+						if (targetInfo.valueTarget) this.recordValueFlow(targetInfo.valueTarget, source, 'value', statement, index);
+					}
 					const target = assignment.left[index];
 					if (target.kind !== LuaSyntaxKind.IdentifierExpression || !targets[index].decl) {
 						continue;
@@ -898,7 +918,7 @@ class SemanticBuilder {
 			}
 			case LuaSyntaxKind.ReturnStatement: {
 				const returnStatement = statement;
-				let returnValue: SemanticValueSource | undefined;
+				let returnValue: SemanticValueSource = NIL_VALUE_SOURCE;
 				const moduleReturn = this.currentScope().kind === 'path'
 					&& returnStatement.expressions.length === 1;
 				for (let index = 0; index < returnStatement.expressions.length; index += 1) {
@@ -911,16 +931,14 @@ class SemanticBuilder {
 						},
 					);
 					if (index === 0) {
-						returnValue = valueInfo?.valueSource;
+						returnValue = valueInfo.valueSource;
 					}
 				}
 				const flow = this.functionValueFlowStack[this.functionValueFlowStack.length - 1];
 				if (flow) {
 					flow.returns.push({
 						statement: returnStatement,
-						firstValue: returnStatement.expressions.length === 0
-							? NIL_VALUE_SOURCE
-							: returnValue === undefined ? unknownValueSource() : returnValue,
+						firstValue: returnValue,
 					});
 				}
 				if (moduleReturn) {
@@ -971,6 +989,7 @@ class SemanticBuilder {
 				this.enterScope(forNumeric.block.startInclusive, forNumeric.block.endExclusive, 'loop');
 				const variable = this.declareLocal(forNumeric.variable, 'local', true);
 				this.unknownValueDeclarations.add(variable.id);
+				this.setDeclarationValue(variable, unknownValueSource(), statement, 0);
 				this.visitBlock(forNumeric.block);
 				this.leaveScope();
 				break;
@@ -982,17 +1001,16 @@ class SemanticBuilder {
 				}
 				const tableSource = this.resolveGenericForTableSource(forGeneric);
 				this.enterScope(forGeneric.block.startInclusive, forGeneric.block.endExclusive, 'loop');
-				let valueVariable: InternalDecl | undefined;
 				for (let index = 0; index < forGeneric.variables.length; index += 1) {
 					const variable = this.declareLocal(forGeneric.variables[index], 'local', true);
 					if (index === 0) {
 						this.unknownValueDeclarations.add(variable.id);
-					} else if (index === 1) {
-						valueVariable = variable;
 					}
-				}
-				if (tableSource && valueVariable) {
-					this.setDeclarationValue(valueVariable, appendValueElement(tableSource), 'projection');
+					if (tableSource && index === 1) {
+						this.setDeclarationValue(variable, appendValueElement(tableSource), statement, index, 'projection');
+					} else {
+						this.setDeclarationValue(variable, unknownValueSource(), statement, index);
+					}
 				}
 				this.visitBlock(forGeneric.block);
 				this.leaveScope();
@@ -1098,7 +1116,7 @@ class SemanticBuilder {
 					: this.visitCallTarget(callExpression.callee, context);
 				const requireArgument = resolveBuiltinRequireArgument(
 					callExpression,
-					calleeInfo?.valueSource?.root.kind === 'global',
+					calleeInfo.valueSource.root.kind === 'global',
 				);
 				if (requireArgument) {
 					this.moduleReferences.push(requireArgument);
@@ -1112,14 +1130,14 @@ class SemanticBuilder {
 					&& callExpression.callee.member.kind === LuaSyntaxKind.IdentifierExpression) {
 					callReference = this.referencesBySyntax.get(callExpression.callee.member);
 				}
-				const calledValue = methodName && calleeInfo?.valueSource
+				const calledValue = methodName
 					? appendValueMember(calleeInfo.valueSource, methodName)
-					: calleeInfo?.valueSource;
+					: calleeInfo.valueSource;
 				const moduleTarget = resolveModuleAliasValueSource(
 					calledValue,
 					this.moduleAliasesByDeclId,
 				);
-				const moduleTargetBinding = moduleTarget && calledValue
+				const moduleTargetBinding = moduleTarget
 					? (calledValue.root.kind === 'module'
 						|| (calledValue.root.kind === 'declaration'
 							&& this.declById.get(calledValue.root.declId)?.kind === 'constant')
@@ -1129,11 +1147,11 @@ class SemanticBuilder {
 				let firstArgumentInfo: ResolvedNamePath = null;
 				let secondArgumentInfo: ResolvedNamePath = null;
 				const argumentOffset = methodName ? 1 : 0;
-				const argumentValues = new Array<SemanticValueSource | undefined>(
+				const argumentValues = new Array<SemanticValueSource>(
 					callExpression.arguments.length + argumentOffset,
 				);
 				if (methodName) {
-					argumentValues[0] = calleeInfo?.valueSource;
+					argumentValues[0] = calleeInfo.valueSource;
 				}
 				for (let index = 0; index < callExpression.arguments.length; index += 1) {
 					const argumentInfo = this.visitExpression(
@@ -1146,15 +1164,13 @@ class SemanticBuilder {
 					if (index === 1) {
 						secondArgumentInfo = argumentInfo;
 					}
-					argumentValues[index + argumentOffset] = argumentInfo?.valueSource;
+					argumentValues[index + argumentOffset] = argumentInfo.valueSource;
 				}
-				if (calledValue) {
-					this.recordCallValue({
-						callee: calledValue,
-						arguments: argumentValues,
-						result: callResult,
-					}, callReference);
-				}
+				this.recordCallValue({
+					callee: calledValue,
+					arguments: argumentValues,
+					result: callResult,
+				}, callReference);
 				this.callSites.push({
 					expression: callExpression,
 					calleeValue: calledValue,
@@ -1162,7 +1178,6 @@ class SemanticBuilder {
 					moduleTargetBinding,
 					reference: callReference,
 					directTarget: callReference === undefined
-						&& calleeInfo !== null
 						&& calleeInfo.namePath !== null
 						? calleeInfo.decl?.id
 						: undefined,
@@ -1175,9 +1190,7 @@ class SemanticBuilder {
 					secondArgumentInfo,
 					callResult,
 				);
-				return valueSource
-					? { namePath: null, decl: null, valueSource }
-					: null;
+				return { namePath: null, decl: null, valueSource };
 			}
 			case LuaSyntaxKind.FunctionExpression: {
 				const functionValue = this.createExpressionValueSource(expression);
@@ -1204,19 +1217,15 @@ class SemanticBuilder {
 				if (expression.operator === LuaBinaryOperator.And
 					|| expression.operator === LuaBinaryOperator.Or) {
 					const valueSource = this.createExpressionValueSource(expression);
-					if (left?.valueSource) {
-						this.recordValueFlow(valueSource, left.valueSource, 'value');
-					}
-					if (right?.valueSource) {
-						this.recordValueFlow(valueSource, right.valueSource, 'value');
-					}
+					this.recordValueFlow(valueSource, left.valueSource, 'value', expression, 0);
+					this.recordValueFlow(valueSource, right.valueSource, 'value', expression, 1);
 					return { namePath: null, decl: null, valueSource };
 				}
-				return null;
+				return UNKNOWN_EXPRESSION_VALUE;
 			}
 			case LuaSyntaxKind.UnaryExpression: {
 				this.visitExpression(expression.operand, context);
-				return null;
+				return UNKNOWN_EXPRESSION_VALUE;
 			}
 			case LuaSyntaxKind.SizeOfExpression: {
 				for (const lengthExpression of expression.typeRef.arrayLengths) {
@@ -1224,12 +1233,12 @@ class SemanticBuilder {
 						this.visitExpression(lengthExpression, { tableBaseDecl: null, tableBasePath: null });
 					}
 				}
-				return null;
+				return UNKNOWN_EXPRESSION_VALUE;
 			}
 			case LuaSyntaxKind.OffsetOfExpression:
-				return null;
+				return UNKNOWN_EXPRESSION_VALUE;
 			case LuaSyntaxKind.VarargExpression:
-				return null;
+				return UNKNOWN_EXPRESSION_VALUE;
 			case LuaSyntaxKind.NilLiteralExpression:
 				return { namePath: null, decl: null, valueSource: NIL_VALUE_SOURCE };
 			case LuaSyntaxKind.StringLiteralExpression:
@@ -1251,7 +1260,7 @@ class SemanticBuilder {
 					valueSource: literalValueSource({ kind: 'boolean', value: expression.value }),
 				};
 			default:
-				return null;
+				return UNKNOWN_EXPRESSION_VALUE;
 		}
 	}
 
@@ -1271,11 +1280,13 @@ class SemanticBuilder {
 			switch (field.kind) {
 				case LuaTableFieldKind.Array: {
 					const valueInfo = this.visitExpression(field.value, { tableBaseDecl: null, tableBasePath: null });
-					if (context.tableOwner && valueInfo?.valueSource) {
+					if (context.tableOwner) {
 						this.recordValueFlow(
 							appendValueElement(context.tableOwner),
 							valueInfo.valueSource,
 							'value',
+							expression,
+							index,
 						);
 					}
 					break;
@@ -1300,7 +1311,7 @@ class SemanticBuilder {
 						this.recordFunctionSignature(decl, joinNamePath(decl.namePath), field.value, 'function');
 					}
 					const valueInfo = this.visitExpression(field.value, valueContext);
-					this.setDeclarationValue(decl, valueInfo?.valueSource);
+					this.setDeclarationValue(decl, valueInfo.valueSource, expression, index);
 					break;
 				}
 				case LuaTableFieldKind.ExpressionKey: {
@@ -1328,17 +1339,17 @@ class SemanticBuilder {
 							tableBasePath: decl.namePath,
 							tableOwner: decl.valueSource,
 						});
-						this.setDeclarationValue(decl, valueInfo?.valueSource);
+						this.setDeclarationValue(decl, valueInfo.valueSource, expression, index);
 						break;
 					}
 					const valueInfo = this.visitExpression(field.value, { tableBaseDecl: null, tableBasePath: null });
-					if (context.tableOwner && valueInfo?.valueSource) {
+					if (context.tableOwner) {
 						this.recordValueFlow(
-							keyInfo?.valueSource
-								? appendValueIndex(context.tableOwner, keyInfo.valueSource)
-								: appendValueElement(context.tableOwner),
+							appendValueIndex(context.tableOwner, keyInfo.valueSource),
 							valueInfo.valueSource,
 							'value',
+							expression,
+							index,
 						);
 					}
 					break;
@@ -1438,15 +1449,15 @@ class SemanticBuilder {
 		const baseInfo = this.visitExpression(member.base, { tableBaseDecl: null, tableBasePath: null });
 		this.recordMemberAccess(
 			member.member.range,
-			baseInfo?.valueSource,
+			baseInfo.valueSource,
 			member.operator,
-			baseInfo?.namePath,
+			baseInfo.namePath,
 		);
 		if (member.member.kind === LuaSyntaxKind.MissingIdentifier) {
 			return { decl: null, namePath: null, path: null };
 		}
 		const basePath = resolveReferencedBasePath(baseInfo, member.base);
-		const baseDecl = baseInfo?.decl;
+		const baseDecl = baseInfo.decl;
 		const memberName = member.member.name;
 		const namePath = basePath ? appendToNamePath(basePath, memberName) : [memberName];
 		const range = member.member.range;
@@ -1455,7 +1466,7 @@ class SemanticBuilder {
 			range.start,
 			memberName.length,
 			baseDecl,
-			baseInfo?.valueSource,
+			baseInfo.valueSource,
 			member.member,
 		);
 		this.recordReference({
@@ -1467,15 +1478,15 @@ class SemanticBuilder {
 			isWrite: true,
 			referenceKind: 'member',
 			staticExpressionPath: resolveStaticLuaExpressionPath(member),
-			receiverSymbolKey: baseDecl?.symbolKey || (baseInfo?.namePath && joinNamePath(baseInfo.namePath)),
-			receiverValue: baseInfo?.valueSource,
+			receiverSymbolKey: baseDecl?.symbolKey || (baseInfo.namePath && joinNamePath(baseInfo.namePath)),
+			receiverValue: baseInfo.valueSource,
 		});
 		return {
 			decl,
 			namePath,
 			path: joinNamePath(namePath),
 			memberBaseDecl: baseDecl,
-			memberOwner: baseInfo?.valueSource,
+			memberOwner: baseInfo.valueSource,
 		};
 	}
 
@@ -1490,8 +1501,8 @@ class SemanticBuilder {
 				fieldPath,
 				indexExpression.index.range.start,
 				fieldName.length,
-				baseInfo?.decl,
-				baseInfo?.valueSource,
+				baseInfo.decl,
+				baseInfo.valueSource,
 			);
 			this.recordReference({
 				namePath: fieldPath,
@@ -1501,49 +1512,43 @@ class SemanticBuilder {
 				isWrite: true,
 				referenceKind: 'member',
 				staticExpressionPath: resolveStaticLuaExpressionPath(indexExpression),
-				receiverSymbolKey: baseInfo?.decl?.symbolKey || (baseInfo?.namePath && joinNamePath(baseInfo.namePath)),
-				receiverValue: baseInfo?.valueSource,
+				receiverSymbolKey: baseInfo.decl?.symbolKey || (baseInfo.namePath && joinNamePath(baseInfo.namePath)),
+				receiverValue: baseInfo.valueSource,
 			});
 			return {
 				decl,
 				namePath: fieldPath,
 				path: joinNamePath(fieldPath),
-				memberBaseDecl: baseInfo?.decl,
-				memberOwner: baseInfo?.valueSource,
+				memberBaseDecl: baseInfo.decl,
+				memberOwner: baseInfo.valueSource,
 			};
 		}
 		return {
 			decl: null,
 			namePath,
 			path: namePath && joinNamePath(namePath),
-			valueTarget: baseInfo?.valueSource
-				? indexInfo?.valueSource
-					? appendValueIndex(baseInfo.valueSource, indexInfo.valueSource)
-					: appendValueElement(baseInfo.valueSource)
-				: undefined,
+			valueTarget: appendValueIndex(baseInfo.valueSource, indexInfo.valueSource),
 		};
 	}
 
 	private recordMethodReference(callExpression: LuaCallExpression, calleeInfo: ResolvedNamePath): Ref {
 		const basePath = resolveReferencedBasePath(calleeInfo, callExpression.callee);
-		const receiverSymbolKey = calleeInfo?.decl?.symbolKey || (calleeInfo?.namePath && joinNamePath(calleeInfo.namePath));
+		const receiverSymbolKey = calleeInfo.decl?.symbolKey || (calleeInfo.namePath && joinNamePath(calleeInfo.namePath));
 		const method = callExpression.method;
 		this.recordMemberAccess(
 			method.range,
-			calleeInfo?.valueSource,
+			calleeInfo.valueSource,
 			LuaMemberOperator.Colon,
-			calleeInfo?.namePath,
+			calleeInfo.namePath,
 		);
 		const methodName = method.name;
 		const namePath = basePath ? appendToNamePath(basePath, methodName) : [methodName];
 		const range = method.range;
 		const decl = this.resolveMemberDeclaration(
-			calleeInfo?.valueSource,
+			calleeInfo.valueSource,
 			methodName,
-			calleeInfo?.decl,
-		) ?? (!calleeInfo?.valueSource
-			? this.properties.get(joinNamePath(namePath))
-			: undefined);
+			calleeInfo.decl,
+		);
 		const targetId = decl?.id;
 		const receiverExpressionPath = resolveStaticLuaExpressionPath(callExpression.callee);
 		const reference = this.recordReference({
@@ -1558,7 +1563,7 @@ class SemanticBuilder {
 				? null
 				: `${receiverExpressionPath}.${methodName}`,
 			receiverSymbolKey,
-			receiverValue: calleeInfo?.valueSource,
+			receiverValue: calleeInfo.valueSource,
 			isCall: true,
 		});
 		return reference;
@@ -1615,9 +1620,9 @@ class SemanticBuilder {
 		const baseInfo = this.visitExpression(member.base, context);
 		this.recordMemberAccess(
 			member.member.range,
-			baseInfo?.valueSource,
+			baseInfo.valueSource,
 			member.operator,
-			baseInfo?.namePath,
+			baseInfo.namePath,
 		);
 		if (member.member.kind === LuaSyntaxKind.MissingIdentifier) {
 			return baseInfo;
@@ -1627,10 +1632,10 @@ class SemanticBuilder {
 		const namePath = basePath ? appendToNamePath(basePath, memberName) : [memberName];
 		const range = member.member.range;
 		const decl = this.resolveMemberDeclaration(
-			baseInfo?.valueSource,
+			baseInfo.valueSource,
 			memberName,
-			baseInfo?.decl,
-		) ?? (baseInfo?.valueSource ? undefined : this.properties.get(joinNamePath(namePath)));
+			baseInfo.decl,
+		);
 		const targetId = decl?.id;
 		this.recordReference({
 			syntax: member.member,
@@ -1641,28 +1646,23 @@ class SemanticBuilder {
 			isWrite,
 			referenceKind: 'member',
 			staticExpressionPath: resolveStaticLuaExpressionPath(member),
-			receiverSymbolKey: baseInfo?.decl?.symbolKey || (baseInfo?.namePath && joinNamePath(baseInfo.namePath)),
-			receiverValue: baseInfo?.valueSource,
+			receiverSymbolKey: baseInfo.decl?.symbolKey || (baseInfo.namePath && joinNamePath(baseInfo.namePath)),
+			receiverValue: baseInfo.valueSource,
 			isCall,
 		});
 		return {
 			namePath,
 			decl,
-			valueSource: baseInfo?.valueSource
-				? appendValueMember(baseInfo.valueSource, memberName)
-				: undefined,
+			valueSource: appendValueMember(baseInfo.valueSource, memberName),
 		};
 	}
 
 	private recordMemberAccess(
 		range: LuaSourceRange,
-		receiver: SemanticValueSource | undefined,
+		receiver: SemanticValueSource,
 		operator: LuaMemberOperator,
 		namePath: readonly string[] | null | undefined,
 	): void {
-		if (receiver === undefined) {
-			return;
-		}
 		if (namePath != null) {
 			this.memberAccesses.push({ range, receiver, operator, namePath });
 			return;
@@ -1673,9 +1673,6 @@ class SemanticBuilder {
 	private handleIndexExpression(indexExpression: LuaIndexExpression, context: ExpressionContext): ResolvedNamePath {
 		const baseInfo = this.visitExpression(indexExpression.base, context);
 		const indexInfo = this.visitExpression(indexExpression.index, { tableBaseDecl: null, tableBasePath: null });
-		if (!baseInfo?.valueSource) {
-			return null;
-		}
 		if (indexExpression.index.kind === LuaSyntaxKind.StringLiteralExpression) {
 			const name = indexExpression.index.value;
 			const basePath = resolveReferencedBasePath(baseInfo, indexExpression.base);
@@ -1694,9 +1691,7 @@ class SemanticBuilder {
 		return {
 			namePath: null,
 			decl: null,
-			valueSource: indexInfo?.valueSource
-				? appendValueIndex(baseInfo.valueSource, indexInfo.valueSource)
-				: appendValueElement(baseInfo.valueSource),
+			valueSource: appendValueIndex(baseInfo.valueSource, indexInfo.valueSource),
 		};
 	}
 
@@ -2110,34 +2105,14 @@ class SemanticBuilder {
 
 	private setDeclarationValue(
 		decl: InternalDecl,
-		source: SemanticValueSource | undefined,
-		relation: DeclarationValueEntry['relation'] = decl.kind === 'constant' ? 'identity' : 'value',
+		source: SemanticValueSource,
+		syntax: DeclarationValueEntry['syntax'],
+		index: number,
+		relation: DeclarationValueEntry['relation'] = decl.kind === 'constant' && source.root.kind !== 'unknown'
+			? 'identity' : 'value',
 	): void {
-		if (!source
-			|| (source.root.kind === 'declaration'
-				&& source.root.declId === decl.id
-				&& source.steps.length === 0)) {
-			return;
-		}
 		const flow = this.functionValueFlowStack[this.functionValueFlowStack.length - 1];
-		let declarations = this.declarationValuesByFlow.get(flow);
-		if (!declarations) {
-			declarations = new Map();
-			this.declarationValuesByFlow.set(flow, declarations);
-		}
-		let sources = declarations.get(decl.id);
-		if (!sources) {
-			sources = [];
-			declarations.set(decl.id, sources);
-		}
-		for (let index = 0; index < sources.length; index += 1) {
-			const entry = sources[index];
-			if (entry.relation === relation && semanticValueSourcesEqual(entry.source, source)) {
-				return;
-			}
-		}
-		const entry: DeclarationValueEntry = { declId: decl.id, source, relation, flow };
-		sources.push(entry);
+		const entry: DeclarationValueEntry = { declId: decl.id, source, relation, syntax, index, flow };
 		let declarationSources = this.declarationValuesByDeclaration.get(decl.id);
 		if (!declarationSources) {
 			declarationSources = [];
@@ -2151,8 +2126,10 @@ class SemanticBuilder {
 		target: SemanticValueSource,
 		source: SemanticValueSource,
 		relation: ValueAssignmentEntry['relation'],
+		syntax: ValueAssignmentEntry['syntax'],
+		index: number,
 	): void {
-		const assignment = { target, source, relation };
+		const assignment: ValueAssignmentEntry = { target, source, relation, syntax, index };
 		const flow = this.functionValueFlowStack[this.functionValueFlowStack.length - 1];
 		if (flow) {
 			flow.assignments.push(assignment);
@@ -2219,7 +2196,7 @@ class SemanticBuilder {
 		firstArgument: ResolvedNamePath,
 		secondArgument: ResolvedNamePath,
 		callResult: SemanticValueSource,
-	): SemanticValueSource | undefined {
+	): SemanticValueSource {
 		if (requireArgument) {
 			return moduleValueSource(requireArgument.value);
 		}
@@ -2230,15 +2207,17 @@ class SemanticBuilder {
 				&& !callee?.decl
 				&& callExpression.arguments.length === 2) {
 				if (firstArgumentValue) {
-					this.recordValueFlow(callResult, firstArgumentValue, 'value');
+					this.recordValueFlow(callResult, firstArgumentValue, 'value', callExpression, 0);
 				}
 				const metatableValue = secondArgument?.valueSource;
 				if (firstArgumentValue && metatableValue) {
-					this.recordValueFlow(firstArgumentValue, metatableValue, 'metatable');
+					this.recordValueFlow(firstArgumentValue, metatableValue, 'metatable', callExpression, 1);
 					this.recordValueFlow(
 						firstArgumentValue,
 						appendValueMember(metatableValue, '__index'),
 						'prototype',
+						callExpression,
+						1,
 					);
 				}
 				return callResult;
@@ -2249,9 +2228,6 @@ class SemanticBuilder {
 				&& firstArgumentValue) {
 				return appendValueMetatable(firstArgumentValue);
 			}
-		}
-		if (!callee?.valueSource) {
-			return undefined;
 		}
 		return callResult;
 	}
@@ -2288,10 +2264,9 @@ class SemanticBuilder {
 	}
 
 	private resolveExpressionValueSource(expression: LuaExpression): SemanticValueSource | undefined {
-		if (expression.kind === LuaSyntaxKind.CallExpression) {
-			return this.createExpressionValueSource(expression);
-		}
-		if (expression.kind === LuaSyntaxKind.FunctionExpression
+		if (expression.kind === LuaSyntaxKind.CallExpression
+			|| expression.kind === LuaSyntaxKind.TableConstructorExpression
+			|| expression.kind === LuaSyntaxKind.FunctionExpression
 			|| (expression.kind === LuaSyntaxKind.BinaryExpression
 				&& (expression.operator === LuaBinaryOperator.And || expression.operator === LuaBinaryOperator.Or))) {
 			return this.createExpressionValueSource(expression);

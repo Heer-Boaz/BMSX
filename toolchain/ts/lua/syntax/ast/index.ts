@@ -442,6 +442,11 @@ export type LuaOffsetOfExpression = LuaNode & {
 
 export type LuaAssignableExpression = LuaIdentifierExpression | LuaMemberExpression | LuaIndexExpression | LuaUnaryExpression;
 
+/** Syntactic result expansion; compiler binding/prototype knowledge can refine calls. */
+export function isMultiReturnExpression(expression: LuaExpression): boolean {
+	return expression.kind === LuaSyntaxKind.CallExpression || expression.kind === LuaSyntaxKind.VarargExpression;
+}
+
 // A lone const closure is bound before its body is compiled so it can recurse
 // without the mutable predeclaration required by ordinary Lua locals.
 export function isRecursiveConstClosureDeclaration(statement: LuaLocalAssignmentStatement): boolean {

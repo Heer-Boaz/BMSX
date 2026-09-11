@@ -485,6 +485,10 @@ export class SemanticMemberQuery {
 				continue;
 			}
 			seen[alternative] = generation;
+			if (terms.isUnknown(alternative)) {
+				values.push(terms.unknown());
+				continue;
+			}
 			let direct = false;
 			for (let link = writes.first(alternative); link !== 0; link = writes.next(link)) {
 				if (writes.name(link) === name) {
@@ -651,7 +655,8 @@ export class SemanticMemberQuery {
 		for (let link = writes.firstName(name); link !== 0; link = writes.nextName(link)) {
 			const values = this.collectAlternatives(writes.base(link), depth + 1);
 			for (let valueIndex = 0; valueIndex < values.length; valueIndex += 1) {
-				index.add(values[valueIndex], link);
+				const value = values[valueIndex];
+				if (this.summaries.terms.hasLocationIdentity(value)) index.add(value, link);
 			}
 		}
 		this.memberWriteIndex.end(name);
@@ -697,7 +702,7 @@ export class SemanticMemberQuery {
 		const alternatives = this.collectAlternatives(term, depth + 1);
 		for (let alternativeIndex = 0; alternativeIndex < alternatives.length; alternativeIndex += 1) {
 			const alternative = alternatives[alternativeIndex];
-			if (seen[alternative] !== generation) {
+			if (this.summaries.terms.hasLocationIdentity(alternative) && seen[alternative] !== generation) {
 				seen[alternative] = generation;
 				values.push(alternative);
 			}
@@ -790,6 +795,10 @@ export class SemanticMemberQuery {
 		if (this.rootAliases.isCurrent(term)) return this.rootAliases.values(term);
 		this.rootAliases.begin(term);
 		const roots = this.rootAliases.buffer(0);
+		if (!this.summaries.terms.hasLocationIdentity(term)) {
+			roots.length = 0;
+			return this.rootAliases.publish(term, roots);
+		}
 		roots.length = 1;
 		roots[0] = term;
 		const generation = ++this.locationRootAliasGeneration;
@@ -888,7 +897,10 @@ export class SemanticMemberQuery {
 			work.evaluation.begin(link);
 			const targets = this.collectAlternatives(prototypes.target(link), depth + 1);
 			for (let targetIndex = 0; targetIndex < targets.length; targetIndex += 1) {
-				this.prototypeOwnersByValue.add(targets[targetIndex], prototypes.owner(link));
+				const target = targets[targetIndex];
+				if (this.summaries.terms.hasLocationIdentity(target)) {
+					this.prototypeOwnersByValue.add(target, prototypes.owner(link));
+				}
 			}
 			work.evaluation.end(link);
 		}

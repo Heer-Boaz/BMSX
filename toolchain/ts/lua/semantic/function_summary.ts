@@ -35,6 +35,12 @@ export const enum TermKind {
 	Metatable,
 }
 
+const enum TermIdentityKind {
+	Unknown,
+	Literal,
+	Location,
+}
+
 type RootOwner = {
 	readonly summary: FunctionSummaryID;
 	readonly index: number;
@@ -91,6 +97,7 @@ export class SemanticTermStore {
 	private readonly nonSelectiveRootTerms: boolean[] = [];
 	private readonly stringLiteralTerms: boolean[] = [];
 	private readonly numericLiteralTerms: boolean[] = [];
+	private readonly identityKinds: TermIdentityKind[] = [];
 	private readonly parameterTerms: TermID[][] = [];
 	private readonly localTerms: TermID[][] = [];
 	private readonly contextTermsByRoot: Map<TermID, TermID[]> = new Map();
@@ -424,7 +431,11 @@ export class SemanticTermStore {
 	}
 
 	public isUnknown(term: TermID): boolean {
-		return this.kinds[term] === TermKind.Root && this.left[term] === this.unknownRoot;
+		return this.identityKinds[term] === TermIdentityKind.Unknown;
+	}
+
+	public hasLocationIdentity(term: TermID): boolean {
+		return this.identityKinds[term] === TermIdentityKind.Location;
 	}
 
 	public isNumericLiteral(term: TermID): boolean {
@@ -483,6 +494,10 @@ export class SemanticTermStore {
 
 	private create(kind: TermKind, left: number, right: number): TermID {
 		const term = this.kinds.length as TermID;
+		this.identityKinds.push(kind === TermKind.Root
+			? left === this.unknownRoot ? TermIdentityKind.Unknown
+				: this.identities.isLiteralRoot(left as SemanticRootID) ? TermIdentityKind.Literal : TermIdentityKind.Location
+			: kind >= TermKind.ContextRoot ? this.identityKinds[left] : TermIdentityKind.Location);
 		this.kinds.push(kind);
 		this.left.push(left);
 		this.right.push(right);
@@ -665,7 +680,8 @@ export class FunctionSummaryStore {
 				values = [];
 				valuesByDeclaration.set(entry.declId, values);
 			}
-			values.push(this.terms.compileSource(entry.source));
+			const value = this.terms.compileSource(entry.source);
+			if (!values.includes(value)) values.push(value);
 		}
 
 		const writes: SummaryWrite[] = [];
@@ -721,10 +737,7 @@ export class FunctionSummaryStore {
 			const call = flow.calls[callIndex];
 			const args = new Array<TermID>(call.arguments.length);
 			for (let argumentIndex = 0; argumentIndex < call.arguments.length; argumentIndex += 1) {
-				const argument = call.arguments[argumentIndex];
-				args[argumentIndex] = argument === undefined
-					? this.terms.unknown()
-					: this.terms.compileSource(argument);
+				args[argumentIndex] = this.terms.compileSource(call.arguments[argumentIndex]);
 			}
 			calls[callIndex] = {
 				site: call,

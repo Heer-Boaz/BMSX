@@ -125,7 +125,8 @@ test('function statement assigns an existing local rather than declaring a names
 	assert.equal(file.decls.filter(decl => decl.name === 'create').length, 1);
 	assert.equal(declaration.isGlobal, false);
 	assert.deepEqual(file.functionValueFlows.map(flow => flow.declaration), [declaration.id, declaration.id]);
-	assert.equal(file.declarationValues.filter(entry => entry.declId === declaration.id).length, 2);
+	const values = file.declarationValues.filter(entry => entry.declId === declaration.id);
+	assert.deepEqual(values.map(entry => entry.source), [NIL_VALUE_SOURCE, ...file.functionValueFlows.map(flow => flow.functionValue)]);
 	assert.equal(file.callSites[0].reference!.target, declaration.id);
 });
 
@@ -153,7 +154,8 @@ test('surplus right-hand functions are bound without attaching them to the last 
 		assert.notEqual(bound.declaration, undefined);
 		assert.equal(discarded.declaration, undefined);
 		const values = file.declarationValues.filter(entry => entry.declId === bound.declaration);
-		assert.deepEqual(values.map(entry => entry.source), [bound.functionValue]);
+		assert.deepEqual(values.map(entry => entry.source), file.chunk.body[0].kind === LuaSyntaxKind.LocalAssignmentStatement
+			&& file.chunk.body[0].values.length === 0 ? [NIL_VALUE_SOURCE, bound.functionValue] : [bound.functionValue]);
 		assert.equal(discarded.calls.length, 1, 'the discarded expression body is still bound');
 		assert.equal(discarded.returns.length, 1);
 	}

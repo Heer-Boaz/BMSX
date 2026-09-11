@@ -3976,6 +3976,9 @@ class FunctionBuilder {
 		if (values.length > 0) {
 			const lastIndex = values.length - 1;
 			for (let i = 0; i < lastIndex; i += 1) {
+				// Folded initializers still occupy result positions. Later RHS
+				// temporaries must not overlap an earlier local's publication slot.
+				this.reserveTempRange(this.localCount, Math.min(i, names.length));
 				const expr = values[i];
 				if (i < names.length && attributes[i] === 'const') {
 					const moduleBinding = this.resolveConstLocalModuleBinding(expr);
@@ -4018,6 +4021,7 @@ class FunctionBuilder {
 					}
 				}
 			}
+			this.reserveTempRange(this.localCount, Math.min(lastIndex, names.length));
 			const lastExpr = values[lastIndex];
 			const remaining = names.length - lastIndex;
 			const wantsMulti = remaining > 1 && this.isMultiReturnExpression(lastExpr);

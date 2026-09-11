@@ -359,10 +359,7 @@ export class SemanticDemandIndex {
 	private compileTopLevelCall(call: CallValueEntry): IndexedCall {
 		const args = new Array<TermID>(call.arguments.length);
 		for (let argumentIndex = 0; argumentIndex < call.arguments.length; argumentIndex += 1) {
-			const argument = call.arguments[argumentIndex];
-			args[argumentIndex] = argument === undefined
-				? this.summaries.terms.unknown()
-				: this.summaries.terms.compileSource(argument);
+			args[argumentIndex] = this.summaries.terms.compileSource(call.arguments[argumentIndex]);
 		}
 		return {
 			owner: undefined,
@@ -414,7 +411,9 @@ export class SemanticDemandIndex {
 	}
 
 	private connectTerms(left: TermID, right: TermID, bidirectional = true): void {
-		if (left === right) {
+		// Unknown has no producer; concrete scalar values can select keyed calls
+		// in the forward direction, but do not make their storage owners aliases.
+		if (left === right || this.summaries.terms.isUnknown(left) || this.summaries.terms.isUnknown(right)) {
 			return;
 		}
 		let leftTerms = this.relatedTermsByTerm[left];
@@ -425,7 +424,7 @@ export class SemanticDemandIndex {
 		if (!leftTerms.includes(right)) {
 			leftTerms.push(right);
 		}
-		if (bidirectional) {
+		if (bidirectional && this.summaries.terms.hasLocationIdentity(right)) {
 			let rightTerms = this.relatedTermsByTerm[right];
 			if (!rightTerms) {
 				rightTerms = [];

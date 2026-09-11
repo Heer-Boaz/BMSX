@@ -53,6 +53,17 @@ nog niet alle onbekende writes, callcontexten of bronorigins. De gepaarde koude
 query wordt circa 7 ms duurder; de latencypoort blijft open, zonder informatie
 weg te filteren om de oude meting terug te krijgen.
 
+De [assignment-bijdragen](lua_assignment_contributions.md) behouden ook elke
+geschreven toekenning, onbekende berekening en ontbrekende initializer/resultlane,
+met de echte syntax en slotindex. Waardegelijkheid dedupliceert geen schrijfplekken
+meer. De werkelijke workspaceproef legde daarbij een onjuiste scalar-/unknown-
+opslagalias aan het licht: die waarden blijven bijdragen, maar vormen geen
+gedeelde opslaglocatie. Concrete waardeafhankelijkheden blijven voorwaarts
+beschikbaar voor keyed-callselectie. De onafhankelijke CPU-proef corrigeert ook
+vroegtijdig overschreven local-initializerregisters in de compiler. Dit zijn
+producer-/solvercorrecties, niet de nog ontbrekende gecorreleerde bronquery,
+resource-eigen documentconsumers of B03/B06-authoring.
+
 ## 1. Beslissing
 
 Behavior Lens wordt geen universele omkeerbare Lua-interpreter. Het is een

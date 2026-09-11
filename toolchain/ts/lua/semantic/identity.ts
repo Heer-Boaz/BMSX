@@ -21,6 +21,7 @@ export class WorkspaceValueIdentityIndex {
 	private unknownIdentityId = 0;
 	private readonly identityParents: number[] = [0];
 	private readonly identityRanks: number[] = [0];
+	private readonly literalRoots: boolean[] = [false];
 
 	constructor(input: WorkspaceValueFactsInput) {
 		for (let fileIndex = 0; fileIndex < input.files.length; fileIndex += 1) {
@@ -38,7 +39,7 @@ export class WorkspaceValueIdentityIndex {
 			}
 			for (let moduleIndex = 0; moduleIndex < file.moduleValues.length; moduleIndex += 1) {
 				const entry = file.moduleValues[moduleIndex];
-				if (entry.source.steps.length === 0) {
+				if (entry.source.steps.length === 0 && entry.source.root.kind !== 'unknown') {
 					this.union({ kind: 'module', module: entry.module }, entry.source.root);
 				}
 			}
@@ -60,6 +61,11 @@ export class WorkspaceValueIdentityIndex {
 		return this.identityId(root) as SemanticRootID;
 	}
 
+	/** Value classification of a canonical root, fixed before access paths are compiled. */
+	public isLiteralRoot(root: SemanticRootID): boolean {
+		return this.literalRoots[root];
+	}
+
 	private union(left: SemanticValueRoot, right: SemanticValueRoot): void {
 		let leftId = this.find(this.identityId(left));
 		let rightId = this.find(this.identityId(right));
@@ -74,6 +80,7 @@ export class WorkspaceValueIdentityIndex {
 			rightId = swap;
 		}
 		this.identityParents[rightId] = leftId;
+		this.literalRoots[leftId] = this.literalRoots[leftId] || this.literalRoots[rightId];
 		if (leftRank === rightRank) {
 			this.identityRanks[leftId] = leftRank + 1;
 		}
@@ -115,6 +122,7 @@ export class WorkspaceValueIdentityIndex {
 			return existing;
 		}
 		const identity = this.createIdentity();
+		this.literalRoots[identity] = root.kind === 'literal';
 		identities.set(key, identity);
 		return identity;
 	}
@@ -123,6 +131,7 @@ export class WorkspaceValueIdentityIndex {
 		const identity = this.identityParents.length;
 		this.identityParents.push(identity);
 		this.identityRanks.push(0);
+		this.literalRoots.push(false);
 		return identity;
 	}
 

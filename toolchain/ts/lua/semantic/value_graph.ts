@@ -1,5 +1,16 @@
 import type { SymbolID } from './model';
-import type { LuaExpression, LuaFunctionExpression, LuaReturnStatement } from '../syntax/ast';
+import type {
+	LuaAssignmentStatement,
+	LuaExpression,
+	LuaForGenericStatement,
+	LuaForNumericStatement,
+	LuaFunctionDeclarationStatement,
+	LuaFunctionExpression,
+	LuaLocalAssignmentStatement,
+	LuaLocalFunctionStatement,
+	LuaReturnStatement,
+	LuaTableConstructorExpression,
+} from '../syntax/ast';
 import type { LuaCompletion } from '../analysis/completion';
 
 declare const ownedValueBrand: unique symbol;
@@ -59,6 +70,10 @@ export type DeclarationValueEntry = {
 	readonly declId: SymbolID;
 	readonly source: SemanticValueSource;
 	readonly relation: DeclarationValueRelation;
+	readonly syntax: LuaLocalAssignmentStatement | LuaAssignmentStatement | LuaLocalFunctionStatement
+		| LuaFunctionDeclarationStatement | LuaTableConstructorExpression | LuaForGenericStatement | LuaForNumericStatement;
+	/** Target/field/iteration-variable index in the actual syntax, including implicit result lanes. */
+	readonly index: number;
 	/** Body containing the write; undefined means module evaluation, not declaration scope. */
 	readonly flow: FunctionValueFlowEntry | undefined;
 };
@@ -100,14 +115,18 @@ export type FunctionValueFlowEntry = {
 
 export type CallValueEntry = {
 	callee: SemanticValueSource;
-	arguments: readonly (SemanticValueSource | undefined)[];
+	arguments: readonly SemanticValueSource[];
 	result?: OwnedSemanticValueSource;
 };
 
 export type ValueAssignmentEntry = {
-	target: SemanticValueSource;
-	source: SemanticValueSource;
-	relation: 'value' | 'metatable' | 'prototype';
+	readonly target: SemanticValueSource;
+	readonly source: SemanticValueSource;
+	readonly relation: 'value' | 'metatable' | 'prototype';
+	/** Actual source of the transfer; expression transfers are not storage writes. */
+	readonly syntax: LuaAssignmentStatement | LuaFunctionDeclarationStatement | LuaExpression;
+	/** Assignment target, constructor field, logical operand or builtin argument index. */
+	readonly index: number;
 };
 
 export function declarationValueSource(declId: SymbolID): DeclarationSemanticValueSource {
@@ -140,11 +159,10 @@ export function literalValueSource(literal: SemanticLiteralValue): SemanticValue
 
 export const NIL_VALUE_SOURCE: SemanticValueSource = literalValueSource({ kind: 'nil', value: null });
 
+const UNKNOWN_VALUE_SOURCE: SemanticValueSource = { root: { kind: 'unknown' }, steps: [] };
+
 export function unknownValueSource(): SemanticValueSource {
-	return {
-		root: { kind: 'unknown' },
-		steps: [],
-	};
+	return UNKNOWN_VALUE_SOURCE;
 }
 
 function semanticLiteralValueKey(literal: SemanticLiteralValue): string {

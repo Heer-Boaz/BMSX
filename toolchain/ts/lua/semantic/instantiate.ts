@@ -611,7 +611,7 @@ export class SemanticInstantiationQuery {
 	}
 
 	private addValue(target: TermID, source: TermID): void {
-		if (target === source || !this.values.add(target, source)) {
+		if (!this.summaries.terms.hasLocationIdentity(target) || target === source || !this.values.add(target, source)) {
 			return;
 		}
 		for (let link = this.prototypes.first(target); link !== 0; link = this.prototypes.next(link)) {
@@ -637,7 +637,7 @@ export class SemanticInstantiationQuery {
 			const retainedOwner = this.prototypeOwnerQueue[this.prototypeQueueHead];
 			const retainedTarget = this.prototypeTargetQueue[this.prototypeQueueHead];
 			this.prototypeQueueHead += 1;
-			if (!this.prototypes.add(retainedOwner, retainedTarget)) {
+			if (!this.summaries.terms.hasLocationIdentity(retainedOwner) || !this.prototypes.add(retainedOwner, retainedTarget)) {
 				continue;
 			}
 			for (let link = this.values.first(retainedOwner); link !== 0; link = this.values.next(link)) {
