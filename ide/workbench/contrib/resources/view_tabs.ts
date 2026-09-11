@@ -11,19 +11,17 @@ export function getActiveResourceViewer(): ResourceViewerState | null {
 	return tab.kind === 'resource_view' ? tab.resource : null;
 }
 
-export function retainResourceViewerInput(
+export function resolveResourceViewerInput(
 	sources: RuntimeSourceState,
 	resource: RuntimeResource,
 ): ResourceViewerInput {
 	const tabId: ResourceViewerTabId = `resource:${resourceIdentityKey(resource)}`;
-	let tab = editorTabGroup.findById(tabId);
+	const tab = editorTabGroup.findById(tabId);
 	const state = buildResourceViewerState(sources, resource);
-	if (tab) {
+	if (tab !== undefined) {
 		tab.title = state.title;
 		tab.resource = state;
 		return tab;
 	}
-	tab = new ResourceViewerInput(state);
-	editorTabGroup.add(tab);
-	return tab;
+	return new ResourceViewerInput(state);
 }

@@ -54,14 +54,19 @@ export function isScenarioLabActive(): boolean {
 }
 
 /** Opening is distinct from activation: only an explicit preview can replace a tab. */
-export function openEditorTab(editorPanes: EditorPanes, input: EditorInput, options: EditorOpenOptions = {}): void {
+export type EditorTabOpenOptions = EditorOpenOptions & {
+	readonly selection?: EditorTextSelection;
+	readonly navigationSelection?: EditorPaneSelection;
+};
+
+export function openEditorTab(editorPanes: EditorPanes, input: EditorInput, options: EditorTabOpenOptions = {}): void {
 	captureNavigation(() => {
-		if (editorTabGroup.indexOf(input) === -1) {
+		if (editorTabGroup.findById(input.id) === undefined) {
 			// Focus/capture must end while the previous input is still alive.
 			editorPanes.clearEditor();
-			editorTabGroup.add(input, options);
-		} else if (options.pinned !== false) editorTabGroup.pin(input);
-		setActiveTab(editorPanes, input.id);
+		}
+		const admitted = editorTabGroup.add(input, options);
+		setActiveTab(editorPanes, admitted.id, options.selection, options.navigationSelection);
 	});
 }
 

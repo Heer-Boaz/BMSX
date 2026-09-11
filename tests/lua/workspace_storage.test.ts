@@ -96,9 +96,12 @@ import {
 	type WorkspaceAutosavePayload,
 } from '../../ide/workbench/workspace/models';
 import { createTestRuntimeSourceState } from '../helpers/runtime_sources';
+import { initializeTabs, openEditorTab } from '../../ide/workbench/ui/tabs';
+import { retainEntryTabContext } from '../../ide/workbench/ui/code_tab/contexts';
+import { resolveTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
+import { WORKBENCH_RESOURCE_VIEWER_ID } from '../../ide/workbench/contrib/resources/editor_input';
 import { createResourceEditorResolver } from '../../ide/workbench/contrib/resources/editor_contributions';
 import type { RuntimeSourceState } from '../../ide/runtime/sources';
-import { ResourceEditorResolver } from '../../ide/workbench/services/editor/resource_editor_resolver';
 import { createTestEditorPanes } from '../helpers/editor_panes';
 
 class MockStorage implements KeyValueStorage {
@@ -388,12 +391,10 @@ function payload(
 function editorStub(
 	storage: KeyValueStorage,
 	sources: RuntimeSourceState,
-	resourceEditors = createResourceEditorResolver(storage, sources),
 ) {
 	return {
 		fontVariant: DEFAULT_FONT_VARIANT,
 		resourcePanel: null,
-		resourceEditors,
 		editorPanes: createTestEditorPanes(),
 		setFontVariant() { /* noop */ },
 		updateViewport() { /* noop */ },
@@ -506,6 +507,7 @@ test('workspace restore keeps dirty system tabs behind the development cartridge
 				selectionAnchor: { row: 0, column: 2 },
 			}],
 		),
+		storage,
 	);
 
 	const activeTab = editorTabGroup.activeTab!;
@@ -1501,6 +1503,7 @@ test('workspace restore resolves persisted identity to the retained runtime reso
 		sources,
 		debuggerState,
 		restoredPayload,
+		storage,
 	);
 	const context = findCodeTabContext(retained)!;
 	assert.strictEqual(context.model.resource, retained);
@@ -1510,7 +1513,7 @@ test('workspace restore resolves persisted identity to the retained runtime reso
 	assert.equal(debuggerState.breakpoints[2].size, 0);
 });
 
-test('workspace recovery hydrates a dirty model retained by a non-code editor input', async (t) => {
+test('workspace recovery hydrates a dirty working copy without creating an editor input', async (t) => {
 	const storage = new MockStorage();
 	installOfflineWorkspace(t, storage);
 	const sources = createTestRuntimeSourceState(
@@ -1522,25 +1525,10 @@ test('workspace recovery hydrates a dirty model retained by a non-code editor in
 	sources.resourceByIdentity.set(resourceIdentityKey(resource), resource);
 	const dirtyPath = buildWorkspaceDirtyEntryPath('offline-cart', resource.domain, resource.path);
 	workspaceDirtyRecords.set(dirtyPath, { contents: '{ "version": 1 }', updatedAt: 1 });
-	const resourceInput = new ResourceViewerInput({
-			resource,
-			lines: [],
-			error: '',
-		title: 'test_scene.aem',
-			scroll: 0,
-	});
-	const resourceEditors = new ResourceEditorResolver([{
-		id: 'test.scene',
-		selector: { kind: 'filename_suffix', suffix: '.aem' },
-		createEditorInput: (target) => {
-			editorTextModelService.retain(target, 'aem', '{ "events": {} }');
-			editorTabGroup.add(resourceInput);
-			return resourceInput;
-		},
-	}]);
+	workspaceCanonicalSourceCache.set('offline-cart/res/test_scene.aem', '{ "events": {} }');
 	installWorkspaceRestoreView();
 	await applyWorkspaceAutosavePayload(
-		editorStub(storage, sources, resourceEditors) as any,
+		editorStub(storage, sources) as any,
 		sources,
 		{ breakpoints: [new Map(), new Map(), new Map()] },
 		payload([{
@@ -1548,6 +1536,7 @@ test('workspace recovery hydrates a dirty model retained by a non-code editor in
 			path: resource.path,
 			updatedAt: 1,
 		}]),
+		storage,
 	);
 
 	const model = editorTextModelService.get(resource)!;
@@ -1555,7 +1544,9 @@ test('workspace recovery hydrates a dirty model retained by a non-code editor in
 	assert.equal(model.buffer.getText(), '{ "version": 1 }');
 	assert.equal(model.dirty, true);
 	assert.equal(findCodeTabContext(resource), null);
-	assert.strictEqual(editorTabGroup.findById(resourceInput.id), resourceInput);
+	assert.equal(editorTabGroup.tabs.length, 1);
+	assert.equal(editorTabGroup.activeTab.kind, 'code_editor');
+	assert.equal([...editorTextModelService.models].length, 2);
 });
 
 test('workspace override arbitration keeps dirty and canonical namespaces separate', async (t) => {
@@ -1837,4 +1828,46 @@ test('explicit Lua save promotes one exact canonical record without deleting man
 	assert.equal(readLocalWorkspaceRecord(storage, 'offline-cart', dirtyRecordPath)!.contents, '-- dirty source');
 	assert.equal(server.files.get(canonicalPath)!.contents, '-- saved source');
 	assert.deepEqual(server.requests.at(-1), { method: 'PUT', path: canonicalPath });
+});
+
+
+test('built-in resolution admits source without opening tabs or stealing the preview', async t => {
+	const storage = new MockStorage(); installOfflineWorkspace(t, storage); installWorkspaceRestoreView();
+	const sources = createTestRuntimeSourceState(sourceRegistry('-- system'), [sourceRegistry('-- cart'), null], 0);
+	const panes = createTestEditorPanes(); t.after(() => panes.dispose());
+	initializeTabs(retainEntryTabContext(sources), panes);
+	const entry = editorTabGroup.activeTab;
+	const aem = testResource('res/cue.aem.yaml', 0, 'aem');
+	workspaceCanonicalSourceCache.set('offline-cart/res/cue.aem.yaml', 'events: {}');
+	const resolver = createResourceEditorResolver(storage, sources);
+	const revision = editorTabGroup.revision;
+	const [first, second] = await Promise.all([resolver.resolveEditorInput(aem), resolver.resolveEditorInput(aem)]);
+	assert.equal(editorTabGroup.revision, revision);
+	assert.equal(editorTabGroup.activeTab, entry);
+	assert.equal(panes.activePane!.input, entry);
+	assert.equal(editorTabGroup.tabs.length, 1);
+	assert.equal(first.kind, 'code_editor'); assert.equal(second.kind, 'code_editor');
+	if (first.kind !== 'code_editor' || second.kind !== 'code_editor') throw new Error('text contribution');
+	assert.equal(first.context, second.context, 'one code view binds the one admitted working copy');
+	openEditorTab(panes, first, { pinned: false });
+	assert.equal(editorTabGroup.previewTab, first);
+	let discarded = 0; second.onWillDispose(() => { discarded += 1; });
+	openEditorTab(panes, second, { pinned: false });
+	assert.equal(editorTabGroup.activeTab, first);
+	assert.equal(editorTabGroup.previewTab, first);
+	assert.equal(discarded, 1, 'group admission releases the unused candidate');
+	assert.equal(editorTabGroup.tabs.length, 2);
+	const system = resolveRuntimeResource(sources, { domain: -1, path: 'entry.lua' })!;
+	const previewRevision = editorTabGroup.revision;
+	const viewer = await resolver.resolveEditorInput(system, WORKBENCH_RESOURCE_VIEWER_ID);
+	assert.equal(editorTabGroup.revision, previewRevision);
+	assert.equal(editorTabGroup.previewTab, first);
+	assert.equal(viewer.kind, 'resource_view');
+	if (viewer.kind !== 'resource_view') throw new Error('resource contribution');
+	openEditorTab(panes, viewer);
+	viewer.resource.scroll = 3;
+	assert.equal(await resolver.resolveEditorInput(system, WORKBENCH_RESOURCE_VIEWER_ID), viewer);
+	assert.equal(editorTabGroup.activeTab, viewer);
+	assert.equal(editorTabGroup.tabs.length, 3);
+	assert.equal(await resolveTextFileModel(storage, sources, aem), first.workingCopy);
 });

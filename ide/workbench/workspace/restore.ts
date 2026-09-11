@@ -9,13 +9,17 @@ import { restoreBreakpointsFromPayload } from '../contrib/debugger/controller';
 import { initializeTabs } from '../ui/tabs';
 import {
 	clearCodeEditorInputs,
-	findCodeTabContext,
+	resolveCodeEditorInput,
+	retainModelCodeTabContext,
 	retainEntryTabContext,
 } from '../ui/code_tab/contexts';
 import { editorTextModelService } from '../../editor/model/model_service';
 import { buildWorkspaceDirtyEntryPath } from '../../workspace/files';
 import { restoreWorkspaceCodeEditorView } from './context_snapshot';
 import { workspaceDirtyRecords } from './state';
+import { editorTabGroup } from '../ui/tab/group_model';
+import { resolveTextFileModel } from '../services/working_copy/text_file_model';
+import type { KeyValueStorage } from '../../workspace/key_value_storage';
 import {
 	type PersistedCodeEditorView,
 	type PersistedDirtyEntry,
@@ -27,20 +31,22 @@ export async function applyWorkspaceAutosavePayload(
 	sources: RuntimeSourceState,
 	debuggerState: RuntimeBreakpointState,
 	payload: WorkspaceAutosavePayload,
+	storage: KeyValueStorage,
 ): Promise<void> {
 	editor.editorPanes.clearEditor();
+	editorTabGroup.clear();
 	clearCodeEditorInputs();
 	editorTextModelService.clear();
 	initializeTabs(retainEntryTabContext(sources), editor.editorPanes);
 	editor.setFontVariant(payload.fontVariant);
-	await retainDirtyFileInputs(editor, sources, payload.dirtyFiles);
+	await resolveDirtyFileModels(storage, sources, payload.dirtyFiles);
 	hydrateDirtyFiles(sources, payload.dirtyFiles);
 	restoreCodeEditorViews(payload.codeEditorViews);
 	restoreBreakpointsFromPayload(debuggerState, payload.breakpoints);
 }
 
-async function retainDirtyFileInputs(
-	editor: CartEditor,
+async function resolveDirtyFileModels(
+	storage: KeyValueStorage,
 	sources: RuntimeSourceState,
 	entries: PersistedDirtyEntry[],
 ): Promise<void> {
@@ -49,7 +55,7 @@ async function retainDirtyFileInputs(
 		if (!resource) {
 			throw new Error(`Workspace resource '${entry.path}' is not installed for domain '${entry.domain}'.`);
 		}
-		await editor.resourceEditors.resolveEditorInput(resource);
+		await resolveTextFileModel(storage, sources, resource);
 	}
 }
 
@@ -76,7 +82,8 @@ export function hydrateDirtyFiles(
 function restoreCodeEditorViews(views: PersistedCodeEditorView[]): void {
 	for (let index = 0; index < views.length; index += 1) {
 		const view = views[index];
-		const context = findCodeTabContext(view)!;
+		const context = retainModelCodeTabContext(editorTextModelService.get(view)!);
+		editorTabGroup.add(resolveCodeEditorInput(context));
 		restoreWorkspaceCodeEditorView(context, view);
 	}
 }

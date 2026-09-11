@@ -115,7 +115,7 @@ test('history awaits the registered resource opener and restores a closed text i
 		{ isFocused: () => false } as ResourcePanelController,
 		new ResourceEditorResolver([{
 			id: WORKBENCH_TEXT_EDITOR_ID, selector: { kind: 'all' }, createEditorInput: async actual => {
-				assert.equal(actual, resource); await openGate; editorTabGroup.add(reopened); return reopened;
+				assert.equal(actual, resource); await openGate; return reopened;
 			},
 		}]), panes,
 	);
@@ -130,5 +130,26 @@ test('history awaits the registered resource opener and restores a closed text i
 	assert.equal(reopened.context.view.cursorRow, 2); assert.equal(reopened.context.view.cursorColumn, 6);
 	assert.equal(reopened.workingCopy.version, version);
 	assert.equal(selection.isDisposed, true);
+	assert.equal(navigationState.forward.length, 1);
+});
+
+test('Back activates a surviving visual preview without turning navigation into Keep Open', async t => {
+	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	const panes = createTestEditorPanes();
+	const origin = code('origin.lua'); editorTabGroup.initialize(origin); panes.openEditor(origin);
+	const visual = new SceneEditorInput(origin.workingCopy);
+	editorTabGroup.add(visual, { pinned: false });
+	const target = new NavigationHistoryEntry({ kind: 'input', input: visual }, new Location(1));
+	navigationState.back.push(target);
+	const navigation = new EditorNavigationController(
+		{} as RuntimeSourceState, { isFocused: () => false } as ResourcePanelController,
+		new ResourceEditorResolver([]), panes,
+	);
+	t.after(() => { panes.dispose(); editorTabGroup.clear(); origin.workingCopy.dispose(); });
+	await navigation.goBackward();
+	assert.equal(editorTabGroup.activeTab, visual);
+	assert.equal(editorTabGroup.previewTab, visual);
+	assert.equal(editorTabGroup.tabs.length, 2);
+	assert.equal(origin.workingCopy.dirty, false);
 	assert.equal(navigationState.forward.length, 1);
 });

@@ -1,3 +1,4 @@
+import { testStudioInputResolution } from './studio_input_resolution';
 import { testStudioSourceChoices } from './studio_source_choices';
 import { testStudioFileChoices } from './studio_file_choices';
 import { testStudioBehaviorInspector } from './studio_behavior_inspector';
@@ -101,6 +102,7 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	check(observations.suspended, 'paused Studio suppresses audio transport');
 	// Source-only typing preserves both machine state and rewind history.
 	await testStudioFocus(test);
+	await testStudioInputResolution(test);
 	await testStudioSourceChoices(test);
 	await testStudioFileChoices(test);
 	await testStudioNavigationHistory(test);

@@ -1465,6 +1465,19 @@ subscription lifetimes, registered source reopening and asynchronous viewport
 restoration are specified in `workbench_navigation_history_design.md`. This is
 distinct from document Undo, workspace-session persistence and machine rewind.
 
+Resource editor resolution is separate from tab admission and pane activation.
+Built-in resolvers return an existing input or an unattached candidate; only
+`openEditorTab`/`EditorTabGroupModel` admits it, preserves preview identity and
+ends the old pane's focus/capture before replacement. Concurrent candidates with
+the same input id do not duplicate the group or replace a retained view. Source
+reopening and Back/Forward use that same admission route.
+Working-copy recovery resolves Lua/AEM text models without opening an editor.
+The model service coalesces asynchronous source reads by full resource identity;
+a workspace teardown retires pending admissions before clearing models. Recovery
+only creates code views explicitly represented in its current metadata, not a
+synthetic code tab for every dirty visual document. Complete clean/visual session
+restoration remains A07 in `workbench_session.md`.
+
 Live source-range collections belong to their `EditorTextModel`. The model maps
 them through the existing UTF-16 edit representation before notifying content
 observers. Behavior inputs acquire the shared index for their model/document

@@ -17,6 +17,8 @@ export class EditorTextModelService {
 	private readonly contentChangeListeners = new Set<ModelContentChangeListener>();
 	private readonly modelAddedListeners = new Set<ModelListener>();
 	private readonly modelRemovedListeners = new Set<ModelListener>();
+	private readonly pendingResolutions = new Map<string, Promise<EditorTextModel>>();
+	private generation = 0;
 
 	public get models(): IterableIterator<EditorTextModel> {
 		return this.modelsByResource.values();
@@ -48,6 +50,28 @@ export class EditorTextModelService {
 		return model;
 	}
 
+	/** Coalesce asynchronous source reads without creating an editor input or tab. */
+	public resolve(resource: RuntimeResource, mode: EditorDocumentMode, readSource: () => Promise<string>): Promise<EditorTextModel> {
+		const model = this.get(resource);
+		if (model !== undefined) {
+			model.refreshResource(resource);
+			return Promise.resolve(model);
+		}
+		const key = resourceIdentityKey(resource);
+		let pending = this.pendingResolutions.get(key);
+		if (pending === undefined) {
+			const generation = this.generation;
+			pending = readSource().then(source => {
+				if (generation !== this.generation) throw new Error(`Model resolution for '${resource.path}' was cancelled by workspace teardown.`);
+				return this.retain(resource, mode, source);
+			}).finally(() => {
+				if (this.pendingResolutions.get(key) === pending) this.pendingResolutions.delete(key);
+			});
+			this.pendingResolutions.set(key, pending);
+		}
+		return pending;
+	}
+
 	private register(model: EditorTextModel): void {
 		const key = resourceIdentityKey(model.resource);
 		this.modelsByResource.set(key, model);
@@ -75,6 +99,8 @@ export class EditorTextModelService {
 	}
 
 	public clear(): void {
+		this.generation += 1;
+		this.pendingResolutions.clear();
 		for (const [key, model] of this.modelsByResource) {
 			this.modelsByResource.delete(key);
 			model.dispose();

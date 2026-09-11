@@ -16,7 +16,7 @@ import {
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import type { ResourcePanelController } from './panel/controller';
 import type { ResourceEditorResolver } from '../../services/editor/resource_editor_resolver';
-import { setActiveTab } from '../../ui/tabs';
+import { openEditorTab, setActiveTab } from '../../ui/tabs';
 import type { EditorPanes } from '../../services/editor/editor_panes';
 
 export class EditorNavigationController {
@@ -34,7 +34,7 @@ export class EditorNavigationController {
 			this.resourcePanel.applyPendingSelection();
 		}
 		const input = await this.editorResolver.resolveEditorInput(resource);
-		setActiveTab(this.editorPanes, input.id, selection);
+		openEditorTab(this.editorPanes, input, { selection });
 		releaseResourcePanelFocus(this.resourcePanel);
 	}
 
@@ -80,9 +80,14 @@ export class EditorNavigationController {
 		try {
 			await withNavigationCaptureSuspended(async () => {
 				const destination = target.target;
-				const input = destination.kind === 'input' ? destination.input
-					: await this.editorResolver.resolveEditorInput(resolveRuntimeResource(this.sources, destination.resource)!, destination.editorId);
-				setActiveTab(this.editorPanes, input.id, undefined, target.selection);
+				if (destination.kind === 'input') {
+					// This live destination already belongs to the group. History does
+					// not turn a surviving preview into an explicit Keep Open request.
+					setActiveTab(this.editorPanes, destination.input.id, undefined, target.selection);
+				} else {
+					const input = await this.editorResolver.resolveEditorInput(resolveRuntimeResource(this.sources, destination.resource)!, destination.editorId);
+					openEditorTab(this.editorPanes, input, { pinned: false, navigationSelection: target.selection });
+				}
 				releaseResourcePanelFocus(this.resourcePanel);
 			});
 		} finally {

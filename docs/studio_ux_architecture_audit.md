@@ -695,3 +695,33 @@ geen low-end-hardwarebewijs.
 focus/scroll/capture, provider-owned ranking, zichtbare matches en gemigreerde
 symbol-/locationkeuzes. MRU, typo-correctie of een volledige VS Code-clone zijn
 geen stilzwijgende beloften. **B03/B04/B06-authoring, A07 en A08 blijven open.**
+
+### A07 — source/input/group admission (2026-09-12; gedeeltelijke uitvoering)
+
+De live owner-pass vond een ontbrekende grens vóór serialisatie: de ingebouwde
+`ResourceEditorResolver`-factories voegden tijdens resolve al tabs toe; recovery
+gebruikte zo een editor-input om alleen een working copy te laden. Dat is nu bij
+de owners gescheiden, naar de text-model-manager en editor-group opening van
+VS Code, niet met een serializer die die bijwerking verbergt.
+
+- Recovery resolve/hydrate van Lua/AEM-modellen maakt geen verborgen code-input.
+  Alleen expliciete code-viewmetadata maakt in het huidige formaat zo'n view.
+- Ingebouwde editor-resolve verandert de tab-membership niet; toelating en
+  pane-activatie verlopen via de tabgroep. Gelijktijdige kandidaten met dezelfde
+  inputidentiteit houden één view over en geven de ongebruikte input vrij.
+- Bron-openen en history gebruiken deze grens. Back activeert een bestaande
+  visual preview zonder haar impliciet permanent te maken.
+- De modelservice deelt een lopende AEM-source-read per volledige resource-id;
+  een mislukte read blijft een fout en een oude workspace-generatie kan na
+  teardown geen model in de nieuwe generatie publiceren.
+
+Bewijs: de oude echte Studio faalt op de nieuwe no-membership-mutation-proef;
+nieuwe gerichte én volledige Studio/Pietious-proeven slagen op alle drie
+renderers. Lua **1582 totaal / 1581 pass / 1 bestaande skip**, IDE-tsc, audits,
+indent en browserbuild slagen; tests-tsc behoudt dezelfde 51 baseline-diagnostieken.
+Zie `workbench_session.md` voor owners, referenties, gevonden tussenregressie en
+exacte bewijsgrenzen.
+
+**A07 blijft open:** contribution-owned serialiseerbare viewstate, input/group
+serializers, herstel van clean/visual context en de echte browser-restartgate.
+B03/B04/B06-authoring en A08 worden hiermee niet afgesloten.

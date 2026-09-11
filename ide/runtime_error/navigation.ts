@@ -1,10 +1,10 @@
 import { centerCursorVertically, ensureCursorVisible, setCursorPosition } from '../editor/ui/view/caret/caret';
 import { beginNavigationCapture, completeNavigation } from '../navigation/navigation_history';
-import { isTabActive, setActiveTab } from '../workbench/ui/tabs';
+import { isTabActive, openEditorTab } from '../workbench/ui/tabs';
 import {
 	getActiveCodeTabContext,
 	getCodeTabContexts,
-	upsertCodeEditorTab,
+	resolveCodeEditorInput,
 } from '../workbench/ui/code_tab/contexts';
 import { showEditorMessage } from '../common/feedback_state';
 import type { RuntimeErrorOverlay } from '../editor/contrib/runtime_error/model';
@@ -49,9 +49,9 @@ function resolveRuntimeErrorOverlayTarget(): RuntimeErrorOverlayTarget | null {
 }
 
 function activateRuntimeErrorContext(editorPanes: EditorPanes, target: CodeTabContext): void {
-	upsertCodeEditorTab(target);
+	const input = resolveCodeEditorInput(target);
 	if (!isTabActive(target.id)) {
-		setActiveTab(editorPanes, target.id);
+		openEditorTab(editorPanes, input);
 		return;
 	}
 	syncRuntimeErrorOverlayFromContext(target);

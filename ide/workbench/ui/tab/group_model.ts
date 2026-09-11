@@ -57,7 +57,15 @@ export class EditorTabGroupModel {
 	}
 
 	/** The workbench detaches a replaced pane before changing group membership. */
-	public add(tab: EditorInput, options: EditorOpenOptions = {}): void {
+	public add(tab: EditorInput, options: EditorOpenOptions = {}): EditorInput {
+		const existing = this.findById(tab.id);
+		if (existing !== undefined) {
+			// Concurrent resolvers may offer two inputs for the same resource view.
+			// Admission owns the candidate; the group keeps its existing view alive.
+			if (tab !== existing) tab.dispose();
+			if (options.pinned !== false) this.pin(existing);
+			return existing;
+		}
 		const preview = options.pinned === false && tab.closable && !tab.isDirty();
 		let index = this.editorTabs.length;
 		if (preview && this.previewEditor !== null) {
@@ -73,6 +81,7 @@ export class EditorTabGroupModel {
 		}) });
 		this.listeners.set(tab, listeners);
 		this.updateLabels();
+		return tab;
 	}
 
 	public pin(tab: EditorInput): void {

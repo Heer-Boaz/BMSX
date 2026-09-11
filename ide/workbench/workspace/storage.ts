@@ -271,6 +271,7 @@ export async function restoreWorkspaceStorageSession(
 			runtimeSources,
 			runtimeDebuggerState,
 			restorePayload,
+			storage,
 		);
 	}
 	editor = workspaceEditor;

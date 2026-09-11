@@ -1,0 +1,164 @@
+# Workbench session restoration (A07)
+
+Status: A07 in progress. Source/input/group admission is separated; editor-session
+serializers and clean/visual reload restoration are not implemented yet.
+
+## Production references
+
+VS Code at `7f59d5e01a7fafeba8e83cdfd9d8493f2beeeaca`:
+
+- [`EditorGroupModel.serialize/deserialize`](https://github.com/microsoft/vscode/blob/7f59d5e01a7fafeba8e83cdfd9d8493f2beeeaca/src/vs/workbench/common/editor/editorGroupModel.ts#L1163-L1280):
+  the group owns ordered inputs and active/preview topology; concrete editor
+  serializers own each input's representation.
+- [`IEditorSerializer`](https://github.com/microsoft/vscode/blob/7f59d5e01a7fafeba8e83cdfd9d8493f2beeeaca/src/vs/workbench/common/editor.ts#L460-L478):
+  a contribution reconstructs its editor, rather than a workspace storage layer
+  classifying editor implementation fields.
+- [`AbstractEditorWithViewState`](https://github.com/microsoft/vscode/blob/7f59d5e01a7fafeba8e83cdfd9d8493f2beeeaca/src/vs/workbench/browser/parts/editor/editorWithViewState.ts):
+  capture the current view at clear/close/save while the input still lives.
+  A view-state value is not the editor widget, its disposable subscriptions, or
+  an executable document. No polling/serialization of every input on each frame.
+
+The compatibility readers, optional third-party extension recovery and fixed
+memento capacity in that application are not BMSX requirements.
+
+## Verified live boundaries
+
+| State | Current owner | Consequence |
+| --- | --- | --- |
+| Accepted source text, dirty baseline and Undo | `EditorTextModelService` / `EditorTextModel` | One working copy may have code, scene and several behavior inputs. Backups stay per resource, not per tab. |
+| Input identity / label / disposal | `AbstractEditorInput` and contribution input classes | A resource path alone cannot identify two FSM views in one file. Do not merge those inputs. |
+| Tab order, active and preview | `EditorTabGroupModel` | These must be restored as group state, not inferred from dirty files or the first code tab. |
+| Control attachment / focus | `EditorPanes` | Resolve inputs and their source models before attaching the chosen active pane. No host Lua calls or runtime replacement. |
+| Source selection and viewport | Existing contribution navigation selections | Their source bookmarks and view coordinates are useful, but the disposable navigation objects are not a storage format. |
+| Dirty record generation / local-remote publication | `workspace/storage.ts`, `autosave.ts`, source override owners | Preserve the existing generation/record arbitration; session metadata does not make stale source authoritative. |
+| Browser final local checkpoint | `ide/browser/studio.ts` `pagehide` → `persistWorkspaceSessionLocally` | This path already exists. Do not invent another browser unload pipeline. |
+
+At the A07 audit, `WorkspaceAutosavePayload.codeEditorViews` only contained views of dirty
+models. `applyWorkspaceAutosavePayload` clears the models and initializes the
+entry tab, then restores dirty files/code coordinates. That cannot restore clean
+tabs, tab order or visual inputs. This is separate from the corrected missing-
+metadata crash. `persistWorkspaceSessionLocally` already captures an `All`
+generation synchronously; the missing part is the editor session representation.
+
+There is also a lifecycle dependency: `CartEditor.shutdown` currently disposes
+Scenario Lab and the panes before its final workspace save. A visual-input
+snapshot must be taken while those owners still exist, after ordinary focus/
+capture detachment has finished accepted edits. Capturing after destruction and
+reconstructing missing values would be the wrong boundary.
+
+## Implementation contract
+
+1. **Contribution-owned view-state values.** Separate the existing plain source
+   bookmarks/viewport values from the navigation selection's live subscriptions.
+   Navigation and persistence consume the same capture/restore implementation.
+   Do not stringify an `EditorPaneSelection`, AST, graph layout, input or model.
+2. **Registered input serializers.** Use the same typed contribution/factory
+   structure already used by `EditorPanes`. Each of the five current input kinds
+   owns its identity and view payload; the group owns only ordered envelopes and
+   active/preview selection. No `instanceof` cascade in autosave and no fake code
+   tab created merely to represent a visual input.
+3. **Independent group and backup state.** Replace dirty-only code-view metadata
+   with editor-session state while retaining resource-owned dirty records.
+   Hydrate admitted working copies before deriving visual inputs, then restore
+   the group and attach its actual active pane. Multiple behavior inputs sharing
+   one working copy remain distinct. The source stays canonical Lua.
+4. **Existing checkpoint/lifetime owners.** Group changes and normal workspace
+   saves publish metadata; the existing pagehide checkpoint captures the current
+   accepted state. Shutdown captures before disposing contribution owners.
+   Pending widget drafts, captures, popups and worker tasks are not workspace
+   state. Autosave must not force an in-progress property draft to commit.
+5. **Source-generation admission.** A newer ROM/canonical source can legitimately
+   reject an older dirty record: `workspace_storage.test.ts` already proves this.
+   Keep that source-owner decision. Source-dependent positions must not be applied
+   as if they belonged to the rejected bytes. Preserve editor topology separately
+   from whether its old source selection can be restored; never choose a nearby
+   FSM/BT as a substitute. This is current record arbitration, not old-format
+   support. No compatibility reader or fallback payload is authorized.
+
+Persistent scope is workbench context: code/resource views, scene selection and
+scroll, distinct behavior occurrences with selection/pan/zoom, and Scenario Lab's
+test-side context. A Scenario Lab input is not its runtime task/result history.
+Guest state, active tests, recorded runs, rewind history, playback and host pause
+are not recreated by workspace restoration.
+
+## Required evidence before marking A07 complete
+
+- Independent source fixtures, not game-specific line/definition assertions.
+- Round-trip clean and dirty models, code + scene + two behaviors in one file,
+  active visual input, tab order, preview, source selection and pan/zoom.
+- One restored working copy shared by its views; source navigation stays clean;
+  accepted dirty text is restored exactly. No promise to serialize Undo history.
+- Newer-source rejection, deleted selected occurrences, and exact domain identity;
+  no foreign AST ranges interpreted against another buffer.
+- Real browser reload using the existing local-storage/pagehide path, not merely
+  calling the deserializer against the same live input objects. Test cold source
+  derivation and asynchronous graph layout before asserting restored geometry.
+- Snapshot before shutdown disposal and after valid focus-detachment semantics;
+  invalid/uncommitted widget text must not become canonical source accidentally.
+- Measure idle/checkpoint work and retained state with increasing tab counts.
+  No per-frame source scan, serialization or semantic analysis.
+- Existing full Studio/source/Undo gates on software, WebGL2 and WebGPU, ordinary
+  type/audit/build gates, and an honest record of remaining A08 hardware limits.
+
+
+## Landable prerequisite: admission, not persistence (2026-09-12)
+
+The owner pass found that `ResourceEditorResolver` selected a contribution without
+activating it, but the built-in factories still inserted tabs. Backup loading
+therefore required a code/editor input merely to acquire its working copy. This
+was not a serializer problem and could not be hidden behind a serializer API.
+
+- Lua/AEM source admission is now `working_copy/text_file_model.ts`. AEM loading
+  uses `EditorTextModelService.resolve`: one in-flight read per full identity,
+  existing dirty model preserved, read errors forwarded, pending generation
+  retired on workspace clear. No empty intermediate source or hidden code view.
+- Code/viewer factories return inputs without group membership changes.
+  Separating the resource viewer's content refresh from its scroll state still
+  belongs to the subsequent contribution view-state work.
+- `openEditorTab` owns admission before activation. The group deduplicates input
+  identity and releases unused candidates; a surviving input's view is retained.
+  This covers source/Back reopening and runtime-error source navigation too.
+- Recovery loads admitted source models first. Its current code-view metadata
+  explicitly creates those views afterward. This is not yet the new session
+  format and does not claim to restore clean tabs or visual selections.
+
+References beyond the serializer work:
+[VS Code text model manager](https://github.com/microsoft/vscode/blob/7f59d5e01a7fafeba8e83cdfd9d8493f2beeeaca/src/vs/workbench/services/textfile/common/textFileEditorModelManager.ts#L337-L460)
+separates model resolution and in-flight reads from editor views;
+[editor group opening](https://github.com/microsoft/vscode/blob/7f59d5e01a7fafeba8e83cdfd9d8493f2beeeaca/src/vs/workbench/common/editor/editorGroupModel.ts#L290-L436)
+resolves an offered input against existing group membership. BMSX does not copy
+its third-party extension recovery or legacy format branches.
+
+Evidence is recorded after the full gate below. The focused real Studio gate
+already fails against `0d3ee8355` at the no-group-mutation assertion, and passes
+on software/WebGL2/WebGPU with the new owners. It also verifies concurrent input
+admission, preview retention, clean source and unchanged paused-machine cycles.
+Independent model tests cover coalesced reads, errors and teardown during a
+pending read, including the successor generation. No per-frame callback, scan,
+serialization or semantic query is introduced by this prerequisite.
+
+### Admission prerequisite validation
+
+- Full Lua suite: **1582 tests, 1581 pass, 1 existing skip**. Targeted workspace
+  tests also pass after removing the now-unused editor resolver from the restore
+  fixture, proving that backup hydration has no editor-factory dependency.
+- IDE TypeScript passes; tests TypeScript has the same **51** normalized baseline
+  diagnostics, with no additions/removals. Architecture boundaries reports zero
+  issues; core parity, indentation, browser build and `git diff --check` pass.
+- Full Studio and Pietious source/navigation workflows pass on **software,
+  WebGL2 and WebGPU**, with actual isolated source transport and fault gates.
+  The tiny-font software output was inspected. These are browser conformance
+  results, not a claim about every physical device or manual UX use case.
+- The first broad run caught an introduced preview-pinning regression in Back.
+  It was corrected at navigation: live destinations activate without pinning;
+  resource history can reopen a preview and does not unpin an existing pinned
+  input. A dedicated history test and all final browser runs cover this case.
+- The added source-resolution work runs on explicit load/restore, not the frame
+  path. Deterministic tests count source reads and retained models. No checkpoint
+  latency, end-to-end GC or SNES Mini performance claim follows from those counts.
+  The actual A07 session capture/restore performance gate is still open.
+
+Artifacts: `/tmp/bmsx-session/`; final admission logs have
+`*-admission-final.log`, with the separate focused old/new browser comparison in
+`baseline-resolution.log` and `smoke-resolution.log`. The earlier
+`studio-admission.log` intentionally records the failed intermediate Back case.

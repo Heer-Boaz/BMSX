@@ -5,7 +5,7 @@ import {
 import { activeCodeEditor, createCodeEditorViewState } from '../../../editor/ui/code_editor_state';
 import type { CodeEditorTabId } from '../tab/id';
 import { CodeEditorInput } from '../../contrib/code_editor/editor_input';
-import type { EditorDocumentMode } from '../../../editor/model/text_model';
+import type { EditorTextModel } from '../../../editor/model/text_model';
 import type { CodeEditorInputId } from '../../../common/editor_context';
 import * as luaPipeline from '../../../runtime/lua_pipeline';
 import { computeResourceTabTitle } from '../tab/titles';
@@ -21,16 +21,10 @@ import type { CodeTabContext } from './model';
 import { codeEditorInputManager } from './input_manager';
 import { editorTextModelService } from '../../../editor/model/model_service';
 
-function resolveLuaSource(sources: RuntimeSourceState, resource: RuntimeResource): string {
-	return luaPipeline.resourceSourceForChunk(sources, resource);
-}
-
-function createCodeTabContext(resource: RuntimeResource, initialSource: string, mode: EditorDocumentMode): CodeTabContext {
-	const title = computeResourceTabTitle(resource);
-	const model = editorTextModelService.retain(resource, mode, initialSource);
+function createModelCodeTabContext(model: EditorTextModel): CodeTabContext {
 	return {
-		id: buildCodeTabId(resource),
-		title,
+		id: buildCodeTabId(model.resource),
+		title: computeResourceTabTitle(model.resource),
 		model,
 		view: createCodeEditorViewState(),
 		runtimeErrorOverlay: null,
@@ -46,15 +40,24 @@ export function createCodeEditorInput(context: CodeTabContext): CodeEditorInput 
 	return new CodeEditorInput(context);
 }
 
-export function upsertCodeEditorTab(context: CodeTabContext): CodeEditorInput {
-	let tab = editorTabGroup.findById(context.id);
-	if (!tab) {
-		tab = createCodeEditorInput(context);
-		editorTabGroup.add(tab);
-	}
+export function resolveCodeEditorInput(context: CodeTabContext): CodeEditorInput {
+	const tab = editorTabGroup.findById(context.id);
+	if (tab === undefined) return createCodeEditorInput(context);
 	tab.title = context.title;
 	tab.context = context;
 	return tab;
+}
+
+/** Attach a code view to an already admitted working copy, including recovery. */
+export function retainModelCodeTabContext(model: EditorTextModel): CodeTabContext {
+	const id = buildCodeTabId(model.resource);
+	let context = codeEditorInputManager.get(id);
+	if (context === undefined) {
+		context = createModelCodeTabContext(model);
+		codeEditorInputManager.register(context);
+	}
+	context.title = computeResourceTabTitle(model.resource);
+	return context;
 }
 
 function entryTabResource(sources: RuntimeSourceState): RuntimeResource {
@@ -68,7 +71,7 @@ function entryTabResource(sources: RuntimeSourceState): RuntimeResource {
 }
 
 export function createLuaCodeTabContext(sources: RuntimeSourceState, resource: RuntimeResource): CodeTabContext {
-	return createCodeTabContext(resource, resolveLuaSource(sources, resource), 'lua');
+	return createModelCodeTabContext(editorTextModelService.retain(resource, 'lua', luaPipeline.resourceSourceForChunk(sources, resource)));
 }
 
 export function retainLuaCodeTabContext(
@@ -91,7 +94,7 @@ export function retainEntryTabContext(sources: RuntimeSourceState): CodeTabConte
 }
 
 export function createAemCodeTabContext(resource: RuntimeResource, source: string): CodeTabContext {
-	return createCodeTabContext(resource, source, 'aem');
+	return createModelCodeTabContext(editorTextModelService.retain(resource, 'aem', source));
 }
 
 export function getActiveCodeTabContext(): CodeTabContext | null {
