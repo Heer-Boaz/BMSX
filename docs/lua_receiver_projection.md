@@ -4,6 +4,10 @@
 [B04](behavior_source_authoring_design.md). This does **not** complete the
 separation of hypothetical analysis from call-instantiated value relations.
 
+Historical slice record: the subsequent [recursive-input correction](lua_recursive_inputs.md)
+introduces retained formal entry points and separate read-answer propagation.
+The module-versus-projection ownership described here remains unchanged.
+
 ## Reproduced failures
 
 ```lua

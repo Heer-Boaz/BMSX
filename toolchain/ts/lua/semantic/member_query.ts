@@ -11,6 +11,8 @@ import type { SemanticValueSource } from './value_graph';
 
 export class SemanticMemberQuery {
 	private readonly alternativeCache: TermID[][] = [];
+	/** Forward read dependencies only, excluding location/prototype candidate comparisons. */
+	private readonly alternativeInputs: TermID[][] = [];
 	private readonly alternativeRevision: number[] = [];
 	private readonly alternativeComputing: boolean[] = [];
 	private readonly alternativeQueues: TermID[][] = [];
@@ -25,6 +27,13 @@ export class SemanticMemberQuery {
 	private readonly locationPaths: TermID[][] = [];
 	private readonly locationSeen: number[][] = [];
 	private readonly locationGeneration: number[] = [];
+	private readonly locationRootAliases: TermID[][] = [];
+	private readonly locationRootAliasRevisions: number[] = [];
+	private readonly locationRootAliasSeen: number[] = [];
+	private locationRootAliasGeneration = 0;
+	private readonly locationBaseQueue: TermID[] = [];
+	private readonly locationBaseSeen: number[] = [];
+	private locationBaseGeneration = 0;
 	private readonly prototypeOwners: TermID[][] = [];
 	private readonly prototypeOwnerRevision: number[] = [];
 	private readonly prototypeSources: TermID[][] = [];
@@ -36,6 +45,8 @@ export class SemanticMemberQuery {
 	private readonly queryTerms: TermID[] = [];
 	private readonly queryTermSeen: number[] = [];
 	private queryTermGeneration = 0;
+	private readonly valueDemandQueue: TermID[] = [];
+	private readonly valueDemandRevision: number[] = [];
 	private readonly symbolSeen: Map<SymbolID, number> = new Map();
 	private symbolGeneration = 0;
 
@@ -58,6 +69,7 @@ export class SemanticMemberQuery {
 		out.length = 0;
 		this.symbolGeneration += 1;
 		for (let queryIndex = 0; queryIndex < this.queryTerms.length; queryIndex += 1) {
+			this.demandValue(this.queryTerms[queryIndex]);
 			const values = this.memberValuesAtDepth(0);
 			const declarations = this.memberDeclarationsAtDepth(0);
 			this.collectMemberValues(this.queryTerms[queryIndex], name, values, declarations, 0);
@@ -100,6 +112,7 @@ export class SemanticMemberQuery {
 		summaryOut.length = 0;
 		declarationOut.length = 0;
 		termOut.length = 0;
+		this.demandValue(term);
 		const alternatives = this.collectAlternatives(term, 0);
 		for (let alternativeIndex = 0; alternativeIndex < alternatives.length; alternativeIndex += 1) {
 			const alternative = alternatives[alternativeIndex];
@@ -118,6 +131,31 @@ export class SemanticMemberQuery {
 					declarationOut.push(this.summaries.declarationForSummary(summary));
 					termOut.push(alternative);
 				}
+			}
+		}
+	}
+
+	private demandValue(term: TermID): void {
+		const revision = this.instantiation.getRevision();
+		if (this.valueDemandRevision[term] === revision) {
+			return;
+		}
+		const queue = this.valueDemandQueue;
+		queue.length = 1;
+		queue[0] = term;
+		for (let head = 0; head < queue.length; head += 1) {
+			const current = queue[head];
+			if (this.valueDemandRevision[current] === revision) {
+				continue;
+			}
+			this.valueDemandRevision[current] = revision;
+			const alternatives = this.collectAlternatives(current, 0);
+			for (let index = 0; index < alternatives.length; index += 1) {
+				this.instantiation.demandValue(alternatives[index]);
+			}
+			const inputs = this.alternativeInputs[current];
+			for (let index = 0; index < inputs.length; index += 1) {
+				queue.push(inputs[index]);
 			}
 		}
 	}
@@ -160,8 +198,11 @@ export class SemanticMemberQuery {
 		if (!retained) {
 			retained = [];
 			this.alternativeCache[term] = retained;
+			this.alternativeInputs[term] = [];
 		}
 		retained.length = 0;
+		const inputs = this.alternativeInputs[term];
+		inputs.length = 0;
 		this.alternativeComputing[term] = true;
 		const queue = this.alternativeQueueAtDepth(depth);
 		const seen = this.alternativeSeenAtDepth(depth);
@@ -181,7 +222,15 @@ export class SemanticMemberQuery {
 			for (let link = values.first(current); link !== 0; link = values.next(link)) {
 				queue.push(values.target(link));
 			}
+			const reads = this.instantiation.readValues;
+			for (let link = reads.first(current); link !== 0; link = reads.next(link)) {
+				queue.push(reads.target(link));
+			}
 			const terms = this.summaries.terms;
+			if (terms.kind(current) >= TermKind.Member) {
+				inputs.push(terms.base(current));
+				if (terms.kind(current) === TermKind.Index) inputs.push(terms.operand(current) as TermID);
+			}
 			switch (terms.kind(current)) {
 				case TermKind.Member: {
 					const name = terms.operand(current) as SemanticNameID;
@@ -196,6 +245,7 @@ export class SemanticMemberQuery {
 						depth,
 					);
 					for (let valueIndex = 0; valueIndex < memberValues.length; valueIndex += 1) {
+						this.instantiation.addReadValue(current, memberValues[valueIndex]);
 						queue.push(memberValues[valueIndex]);
 					}
 					break;
@@ -215,11 +265,18 @@ export class SemanticMemberQuery {
 							if (terms.isBasedOn(keys[keyIndex], current)) {
 								continue;
 							}
-							const indexed = terms.index(bases[baseIndex], keys[keyIndex]);
-							queue.push(indexed);
+							const indexed = terms.retainedIndex(bases[baseIndex], keys[keyIndex]);
+							if (indexed !== undefined) {
+								this.instantiation.addReadValue(current, indexed);
+								queue.push(indexed);
+							}
 							if (terms.isNumericLiteral(keys[keyIndex])
-								&& this.instantiation.values.first(indexed) === 0) {
-								queue.push(terms.element(bases[baseIndex]));
+								&& (indexed === undefined || this.instantiation.values.first(indexed) === 0)) {
+								const element = terms.retainedElement(bases[baseIndex]);
+								if (element !== undefined) {
+									this.instantiation.addReadValue(current, element);
+									queue.push(element);
+								}
 							}
 						}
 						const retainedIndices = terms.indices(bases[baseIndex]);
@@ -254,6 +311,7 @@ export class SemanticMemberQuery {
 								}
 							}
 							if (matches) {
+								this.instantiation.addReadValue(current, candidate);
 								queue.push(candidate);
 							}
 						}
@@ -263,8 +321,10 @@ export class SemanticMemberQuery {
 				case TermKind.Element: {
 					const bases = this.collectAlternatives(terms.base(current), depth + 1);
 					for (let baseIndex = 0; baseIndex < bases.length; baseIndex += 1) {
-						if (!terms.isBasedOn(bases[baseIndex], current)) {
-							queue.push(terms.element(bases[baseIndex]));
+						const element = terms.retainedElement(bases[baseIndex]);
+						if (element !== undefined) {
+							this.instantiation.addReadValue(current, element);
+							queue.push(element);
 						}
 					}
 					break;
@@ -365,13 +425,15 @@ export class SemanticMemberQuery {
 					declarations.push(writes.declaration(link));
 				}
 			}
-			const member = terms.member(alternative, name);
-			for (let link = relations.first(member); link !== 0; link = relations.next(link)) {
-				direct = true;
-				values.push(relations.target(link));
+			const member = terms.retainedMember(alternative, name);
+			if (member !== undefined) {
+				for (let link = relations.first(member); link !== 0; link = relations.next(link)) {
+					direct = true;
+					values.push(relations.target(link));
+				}
 			}
-			if (!direct && instanceShape && terms.kind(alternative) !== TermKind.Instance) {
-				const instance = terms.instance(alternative);
+			const instance = instanceShape ? terms.retainedInstance(alternative) : undefined;
+			if (!direct && instance !== undefined && terms.kind(alternative) !== TermKind.Instance) {
 				for (let link = writes.first(instance); link !== 0; link = writes.next(link)) {
 					if (writes.name(link) === name) {
 						direct = true;
@@ -379,14 +441,12 @@ export class SemanticMemberQuery {
 						declarations.push(writes.declaration(link));
 					}
 				}
-				const instanceMember = terms.member(instance, name);
-				for (
-					let link = relations.first(instanceMember);
-					link !== 0;
-					link = relations.next(link)
-				) {
-					direct = true;
-					values.push(relations.target(link));
+				const instanceMember = terms.retainedMember(instance, name);
+				if (instanceMember !== undefined) {
+					for (let link = relations.first(instanceMember); link !== 0; link = relations.next(link)) {
+						direct = true;
+						values.push(relations.target(link));
+					}
 				}
 			}
 			if (direct) {
@@ -549,9 +609,11 @@ export class SemanticMemberQuery {
 		}
 		const relations = this.instantiation.values;
 		const path = this.locationPaths[depth];
+		const valueCount = values.length;
 		let head = 0;
 		while (head < values.length) {
 			const current = values[head];
+			const queryValue = head < valueCount;
 			head += 1;
 			for (
 				let link = relations.firstReverse(current);
@@ -570,22 +632,43 @@ export class SemanticMemberQuery {
 			while (terms.kind(base) >= TermKind.Member) {
 				path.push(base);
 				base = terms.base(base);
-				for (
-					let link = relations.firstReverse(base);
-					link !== 0;
-					link = relations.nextReverse(link)
-				) {
-					let projected: TermID | undefined = relations.owner(link);
-					// Rebase on value roots; table containment is not a new root alias.
-					if (terms.kind(projected) >= TermKind.Member) {
-						continue;
+				const bases = this.locationBaseQueue;
+				bases.length = 1;
+				bases[0] = base;
+				if (queryValue) {
+					// Resolve the read's base before looking for storage aliases. Once
+					// walking back to aliases, do not follow their other possible values.
+					const baseGeneration = ++this.locationBaseGeneration;
+					this.locationBaseSeen[base] = baseGeneration;
+					for (let baseIndex = 0; baseIndex < bases.length; baseIndex += 1) {
+						for (let link = relations.first(bases[baseIndex]); link !== 0; link = relations.next(link)) {
+							const value = relations.target(link);
+							if (this.locationBaseSeen[value] !== baseGeneration) {
+								this.locationBaseSeen[value] = baseGeneration;
+								bases.push(value);
+							}
+						}
+						const reads = this.instantiation.readValues;
+						for (let link = reads.first(bases[baseIndex]); link !== 0; link = reads.next(link)) {
+							const value = reads.target(link);
+							if (this.locationBaseSeen[value] !== baseGeneration) {
+								this.locationBaseSeen[value] = baseGeneration;
+								bases.push(value);
+							}
+						}
 					}
-					for (let pathIndex = path.length - 1; pathIndex >= 0 && projected !== undefined; pathIndex -= 1) {
-						projected = terms.retainedAccessWithBase(path[pathIndex], projected);
-					}
-					if (projected !== undefined && seen[projected] !== generation) {
-						seen[projected] = generation;
-						values.push(projected);
+				}
+				for (let baseIndex = 0; baseIndex < bases.length; baseIndex += 1) {
+					const roots = this.collectLocationRootAliases(bases[baseIndex]);
+					for (let rootIndex = 0; rootIndex < roots.length; rootIndex += 1) {
+						let projected: TermID | undefined = roots[rootIndex];
+						for (let pathIndex = path.length - 1; pathIndex >= 0 && projected !== undefined; pathIndex -= 1) {
+							projected = terms.retainedAccessWithBase(path[pathIndex], projected);
+						}
+						if (projected !== undefined && seen[projected] !== generation) {
+							seen[projected] = generation;
+							values.push(projected);
+						}
 					}
 				}
 			}
@@ -607,6 +690,37 @@ export class SemanticMemberQuery {
 			}
 		}
 		return values;
+	}
+
+	private collectLocationRootAliases(term: TermID): readonly TermID[] {
+		const revision = this.instantiation.values.count;
+		let roots = this.locationRootAliases[term];
+		if (this.locationRootAliasRevisions[term] === revision) {
+			return roots;
+		}
+		if (!roots) {
+			roots = [];
+			this.locationRootAliases[term] = roots;
+		}
+		roots.length = 1;
+		roots[0] = term;
+		const generation = ++this.locationRootAliasGeneration;
+		this.locationRootAliasSeen[term] = generation;
+		const relations = this.instantiation.values;
+		for (let head = 0; head < roots.length; head += 1) {
+			for (let link = relations.firstReverse(roots[head]); link !== 0; link = relations.nextReverse(link)) {
+				const owner = relations.owner(link);
+				// Root aliases are transitive even when an intermediate root has no
+				// retained access path. A table containing the value is not a root alias.
+				if (this.summaries.terms.kind(owner) < TermKind.Member
+					&& this.locationRootAliasSeen[owner] !== generation) {
+					this.locationRootAliasSeen[owner] = generation;
+					roots.push(owner);
+				}
+			}
+		}
+		this.locationRootAliasRevisions[term] = revision;
+		return roots;
 	}
 
 	private collectPrototypeOwners(classTerm: TermID, depth: number): readonly TermID[] {

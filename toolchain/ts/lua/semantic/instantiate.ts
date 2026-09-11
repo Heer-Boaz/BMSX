@@ -10,75 +10,8 @@ import {
 	TermKind,
 } from './function_summary';
 import type { SymbolID } from './model';
+import { BidirectionalTermRelation, TermRelation } from './term_relation';
 import type { CallValueEntry } from './value_graph';
-
-export class TermRelation {
-	private readonly firstByOwner: number[] = [];
-	private readonly lastByOwner: number[] = [];
-	private readonly firstByTarget: number[] = [];
-	private readonly lastByTarget: number[] = [];
-	private readonly owners: TermID[] = [];
-	private readonly targets: TermID[] = [];
-	private readonly nextByOwner: number[] = [];
-	private readonly nextByTarget: number[] = [];
-
-	public add(owner: TermID, target: TermID): boolean {
-		for (let link = this.first(owner); link !== 0; link = this.next(link)) {
-			if (this.target(link) === target) {
-				return false;
-			}
-		}
-		const index = this.targets.length;
-		this.owners.push(owner);
-		this.targets.push(target);
-		this.nextByOwner.push(0);
-		this.nextByTarget.push(0);
-		const ownerTail = this.lastByOwner[owner] || 0;
-		if (ownerTail === 0) {
-			this.firstByOwner[owner] = index + 1;
-		} else {
-			this.nextByOwner[ownerTail - 1] = index + 1;
-		}
-		this.lastByOwner[owner] = index + 1;
-		const targetTail = this.lastByTarget[target] || 0;
-		if (targetTail === 0) {
-			this.firstByTarget[target] = index + 1;
-		} else {
-			this.nextByTarget[targetTail - 1] = index + 1;
-		}
-		this.lastByTarget[target] = index + 1;
-		return true;
-	}
-
-	public first(owner: TermID): number {
-		return this.firstByOwner[owner] || 0;
-	}
-
-	public next(link: number): number {
-		return this.nextByOwner[link - 1];
-	}
-
-	public target(link: number): TermID {
-		return this.targets[link - 1];
-	}
-
-	public firstReverse(target: TermID): number {
-		return this.firstByTarget[target] || 0;
-	}
-
-	public nextReverse(link: number): number {
-		return this.nextByTarget[link - 1];
-	}
-
-	public owner(link: number): TermID {
-		return this.owners[link - 1];
-	}
-
-	public get count(): number {
-		return this.targets.length;
-	}
-
-}
 
 export class WriteSet {
 	private readonly firstByBase: number[] = [];
@@ -234,10 +167,6 @@ export class InstantiationFrames {
 		return this.closures[frame];
 	}
 
-	public argument(frame: number, index: number): TermID {
-		return this.arguments[this.argumentOffsets[frame] + index];
-	}
-
 	public first(summary: FunctionSummaryID): number {
 		return this.firstBySummary[summary] || 0;
 	}
@@ -275,9 +204,11 @@ export type InstantiatedCallSink = (
 ) => void;
 
 export class SemanticInstantiationQuery {
-	public readonly values = new TermRelation();
-	public readonly metatables = new TermRelation();
-	public readonly prototypes = new TermRelation();
+	public readonly values = new BidirectionalTermRelation();
+	/** Read answers flow forward; they are not assignments or reverse storage aliases. */
+	public readonly readValues = new TermRelation();
+	public readonly metatables = new BidirectionalTermRelation();
+	public readonly prototypes = new BidirectionalTermRelation();
 	public readonly writes = new WriteSet();
 	public readonly frames = new InstantiationFrames();
 	private readonly instantiatedFrames: boolean[] = [];
@@ -290,6 +221,7 @@ export class SemanticInstantiationQuery {
 	private readonly demandedNameList: SemanticNameID[] = [];
 	private readonly effectNames: boolean[] = [];
 	private readonly effectNameList: SemanticNameID[] = [];
+	private readonly demandedValues: boolean[] = [];
 	private readonly frameArguments: TermID[] = [];
 	private readonly prototypeOwnerQueue: TermID[] = [];
 	private readonly prototypeTargetQueue: TermID[] = [];
@@ -372,6 +304,38 @@ export class SemanticInstantiationQuery {
 		}
 	}
 
+	/** A read retains the call producing that value, not every call with a matching name. */
+	public demandValue(term: TermID): void {
+		if (this.demandedValues[term]) {
+			return;
+		}
+		this.demandedValues[term] = true;
+		const topLevelCalls = this.demand.topLevelResultCallsForTerm(term);
+		for (let callIndex = 0; callIndex < topLevelCalls.length; callIndex += 1) {
+			this.enqueueCall(topLevelCalls[callIndex], 0);
+		}
+		const terms = this.summaries.terms;
+		if (terms.kind(term) === TermKind.ContextRoot) {
+			const calls = this.demand.resultCallsForTerm(terms.base(term));
+			const frame = terms.operand(term);
+			for (let callIndex = 0; callIndex < calls.length; callIndex += 1) {
+				this.enqueueCall(calls[callIndex], frame);
+			}
+		} else {
+			const calls = this.demand.resultCallsForTerm(term);
+			for (let callIndex = 0; callIndex < calls.length; callIndex += 1) {
+				this.compose(calls[callIndex].owner);
+				this.enqueueCall(calls[callIndex], -calls[callIndex].owner);
+			}
+		}
+	}
+
+	public addReadValue(target: TermID, source: TermID): void {
+		if (target !== source && this.readValues.add(target, source)) {
+			this.revision += 1;
+		}
+	}
+
 	public compose(summaryId: FunctionSummaryID): boolean {
 		if (this.projectedSummaries[summaryId]) {
 			return false;
@@ -425,21 +389,25 @@ export class SemanticInstantiationQuery {
 		result: TermID | undefined,
 	): number {
 		const summary = this.summaries.get(summaryId);
-		const cycleFrame = this.frames.findCycleFrame(callerFrame, summaryId);
-		if (cycleFrame !== 0) {
-			this.publishReturns(summary.returns, cycleFrame, result);
-			return cycleFrame;
-		}
 		this.frameArguments.length = summary.parameters.length;
 		for (let parameterIndex = 0; parameterIndex < summary.parameters.length; parameterIndex += 1) {
 			this.frameArguments[parameterIndex] = parameterIndex < args.length
 				? args[parameterIndex]
 				: this.summaries.terms.unknown();
 		}
+		const cycleFrame = this.frames.findCycleFrame(callerFrame, summaryId);
+		if (cycleFrame !== 0) {
+			// Reuse the context point, not its first argument. Cyclic reads must
+			// still receive the values supplied by the recursive call edge.
+			this.publishArguments(summary.parameters, cycleFrame);
+			this.publishReturns(summary.returns, cycleFrame, result);
+			return cycleFrame;
+		}
 		const frame = this.frames.intern(site, summaryId, closure, callerFrame, this.frameArguments);
 		if (!this.instantiatedFrames[frame]) {
 			this.instantiatedFrames[frame] = true;
 			this.activeFrames.push(frame);
+			this.publishArguments(summary.parameters, frame);
 			for (let aliasIndex = 0; aliasIndex < summary.aliases.length; aliasIndex += 1) {
 				this.addAlias(this.contextualizeAlias(summary.aliases[aliasIndex], frame));
 			}
@@ -468,13 +436,7 @@ export class SemanticInstantiationQuery {
 			case TermKind.Root:
 			case TermKind.ContextRoot:
 				return term;
-			case TermKind.Parameter: {
-				const owner = terms.summaryOwner(term) as FunctionSummaryID;
-				const ownerFrame = this.frames.findOwnerFrame(frame, owner);
-				return ownerFrame === 0
-					? term
-					: this.frames.argument(ownerFrame, terms.operand(term));
-			}
+			case TermKind.Parameter:
 			case TermKind.Local: {
 				const owner = terms.summaryOwner(term) as FunctionSummaryID;
 				const ownerFrame = this.frames.findOwnerFrame(frame, owner);
@@ -548,6 +510,15 @@ export class SemanticInstantiationQuery {
 		}
 		for (let returnIndex = 0; returnIndex < returns.length; returnIndex += 1) {
 			this.addValue(result, this.contextualize(returns[returnIndex], frame));
+		}
+	}
+
+	private publishArguments(parameters: readonly TermID[], frame: number): void {
+		for (let parameterIndex = 0; parameterIndex < parameters.length; parameterIndex += 1) {
+			this.addValue(
+				this.summaries.terms.contextRoot(parameters[parameterIndex], frame),
+				this.frameArguments[parameterIndex],
+			);
 		}
 	}
 

@@ -4410,12 +4410,17 @@ source-completeness evidence. See [write ownership and the open query-context
 boundary](lua_write_ownership.md).
 
 Function-summary `Parameter` terms represent immutable entry values, not
-writable source bindings. A named formal with binding writes has a local term
-initialized from its entry value; existing call instantiation contextualizes
-that local independently of the actual argument. Never-written formals need no
-intermediate storage. Binding-write facts include nested closures and writes
-whose RHS is not modeled. See [parameter context and remaining producer
-boundaries](lua_parameter_context.md).
+writable source bindings. Each instantiated input has a stable
+`ContextRoot(Parameter, frame)` point; recursive edges contribute their actuals
+to that point instead of discarding them when reusing the frame. Written formals
+have separate locals initialized from their entry values; never-written formals
+need no extra writable binding. Binding-write facts include nested closures and
+writes whose RHS is not modeled. Read answers propagate through a separate
+monotone relation, not assignment edges or reverse storage aliases. Member and
+function queries finish required producer/read propagation before caching.
+Reading absent member/index/element locations does not manufacture storage paths.
+See [parameter binding ownership](lua_parameter_context.md) and
+[recursive inputs and remaining boundaries](lua_recursive_inputs.md).
 
 Implicit method receivers enter the ordinary lexical binding map before explicit
 parameters. Identifier reads and writes retain the same storage source, separate

@@ -501,7 +501,7 @@ contextcontract; geen certainty-check om de bestaande mogelijke-symbolen-API.
 Een verdere [parameter-/contextcorrectie](lua_parameter_context.md) scheidt
 immutable ingangswaarden van beschrijfbare formele bindings. Captured writes en
 geneste storagepaden volgen hun echte owners; read-only formals krijgen geen
-extra aliaslaag. De [implicit-receiverbinding](lua_receiver_binding.md) gebruikt
+extra beschrijfbare binding. De [implicit-receiverbinding](lua_receiver_binding.md) gebruikt
 inmiddels dezelfde lexical read/write-route, inclusief captured writes en Hot
 Resume. De oorspronkelijke receiverpath-fallback is verwijderd; demandselectie
 volgt ook transitieve receivercalls zonder namesake-effects te publiceren.
@@ -512,6 +512,12 @@ write-index: naam-demand activeert geen ongecallde method, bron-navigatie vraagt
 projectie expliciet aan. Projectie volgt de schrijvende body en lexical-owner,
 niet de eigenaar van de rechterwaarde; lokale table-writes blijven zichtbaar.
 De gedeelde may-value-relation is hiermee nog geen gesloten callcontextbewijs.
+
+De [recursieve ingangswaarden en read-propagatie](lua_recursive_inputs.md) houden
+nu argumentbijdragen vast bij framehergebruik. Read-antwoorden staan los van
+assignment-/storagealiases; ontbrekende locaties worden niet aangemaakt door
+een lookup. Ook geneste value-producers worden doorgerekend. De bestaande
+contextselectie en globale revision-worklist zijn nog geen volledige B04-owner.
 
 | ID | Eigenaar / contract | Gate |
 | --- | --- | --- |

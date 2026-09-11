@@ -7,9 +7,10 @@ import {
 	type TermID,
 	TermKind,
 } from './function_summary';
-import { SemanticInstantiationQuery, type TermRelation } from './instantiate';
+import { SemanticInstantiationQuery } from './instantiate';
 import { SemanticMemberQuery } from './member_query';
 import type { Ref, SymbolID } from './model';
+import type { BidirectionalTermRelation, TermRelation } from './term_relation';
 import { declarationValueSource, type CallValueEntry } from './value_graph';
 
 export type CallFact = {
@@ -496,23 +497,7 @@ export class SemanticCallGraph {
 			if (kind >= TermKind.Member) {
 				this.valueProducerTerms.push(this.summaries.terms.base(current));
 			}
-			const calls = this.demand.topLevelResultCallsForTerm(current);
-			for (let callIndex = 0; callIndex < calls.length; callIndex += 1) {
-				this.worklist.enqueue(calls[callIndex], 0);
-			}
-			if (kind === TermKind.ContextRoot) {
-				const retained = this.demand.resultCallsForTerm(this.summaries.terms.base(current));
-				const frame = this.summaries.terms.operand(current);
-				for (let callIndex = 0; callIndex < retained.length; callIndex += 1) {
-					this.worklist.enqueue(retained[callIndex], frame);
-				}
-			} else {
-				const retained = this.demand.resultCallsForTerm(current);
-				for (let callIndex = 0; callIndex < retained.length; callIndex += 1) {
-					this.instantiation.compose(retained[callIndex].owner);
-					this.worklist.enqueue(retained[callIndex], -retained[callIndex].owner);
-				}
-			}
+			this.instantiation.demandValue(current);
 			const related = this.demand.relatedTerms(current);
 			for (let relatedIndex = 0; relatedIndex < related.length; relatedIndex += 1) {
 				this.valueProducerTerms.push(related[relatedIndex]);
@@ -529,7 +514,7 @@ export class SemanticCallGraph {
 	}
 
 	private queueReverseProducerTerms(
-		relation: TermRelation,
+		relation: BidirectionalTermRelation,
 		term: TermID,
 	): void {
 		for (

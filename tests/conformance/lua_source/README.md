@@ -110,6 +110,16 @@ with a bundle using the previous binder owner. Use identical bundling/settings
 and run without other tests. No result is a guest, renderer, Hot Resume or
 complete-frame performance claim; see `docs/lua_relocation_bindings_design.md`.
 
+## Recursive value propagation
+
+`profile_recursive_inputs.ts` builds independent linked-object fixtures and
+queries both final leaf members through one recursive body. At both 8 and 64
+links it requires the two correct source declarations and two retained root
+frames. It measures a fresh query store over retained file facts, not parsing
+or guest execution. `profile_parameter_context.ts` remains the acyclic
+forwarding comparison. Run these without concurrent builds/browser tests;
+owner contracts and validation: `docs/lua_recursive_inputs.md`.
+
 ## Edit-associated selection
 
 The independent `editor_edit_state.test.ts` and `behavior_source_bookmark.test.ts`

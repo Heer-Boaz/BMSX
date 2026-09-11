@@ -1,7 +1,7 @@
 # Behavior-authoring: bronherkomst vóór ruimere graphbewerkingen
 
 Datum: 2026-09-10. Onderzocht op `592c86a94`.
-**Status: ontwerp; function- en write-ownership gecorrigeerd, B04 nog open.** Dit verdiept B04
+**Status: ontwerp; producer- en querycorrecties geland, B04 nog open.** Dit verdiept B04
 en scherpt het bewerkingscontract van B03 aan uit de
 [gebruikersreview](behavior_authoring_ux_review.md). De tegenvoorbeelden hieronder
 zijn geen reden om de bronbehoudende edit-, Undo- of Hot Resume-owners weg te gooien.
@@ -32,6 +32,11 @@ projectie expliciet aan; gewone naam-demand publiceert alleen module- en actieve
 frame-writes. Geprojecteerde bodies behouden ook hun lexical-owner en lokale
 table-writes. Dit voltooit nog niet de scheiding van analysecontexten binnen de
 gedeelde may-value-relation.
+
+De [recursieve ingangswaarden](lua_recursive_inputs.md) verliezen geen nieuwe
+argumenten meer bij framehergebruik. Read-antwoorden worden doorgepropageerd,
+los van assignment-/storagealiases. Dit corrigeert de bestaande may-query;
+de sterkere gecorreleerde bronquery blijft de volgende architectuurgrens.
 
 ## 1. Beslissing
 

@@ -86,7 +86,7 @@ export class SemanticTermStore {
 	private readonly numericLiteralTerms: boolean[] = [];
 	private readonly parameterTerms: TermID[][] = [];
 	private readonly localTerms: TermID[][] = [];
-	private readonly contextTermsByLocal: Map<TermID, TermID[]> = new Map();
+	private readonly contextTermsByRoot: Map<TermID, TermID[]> = new Map();
 	private readonly membersByBase: Map<TermID, TermID[]> = new Map();
 	private readonly indicesByBase: Map<TermID, TermID[]> = new Map();
 	private readonly elementByBase: TermID[] = [];
@@ -190,11 +190,11 @@ export class SemanticTermStore {
 		return term;
 	}
 
-	public contextRoot(local: TermID, frame: number): TermID {
-		let terms = this.contextTermsByLocal.get(local);
+	public contextRoot(root: TermID, frame: number): TermID {
+		let terms = this.contextTermsByRoot.get(root);
 		if (!terms) {
 			terms = [];
-			this.contextTermsByLocal.set(local, terms);
+			this.contextTermsByRoot.set(root, terms);
 		}
 		for (let index = 0; index < terms.length; index += 1) {
 			const term = terms[index];
@@ -202,7 +202,7 @@ export class SemanticTermStore {
 				return term;
 			}
 		}
-		const term = this.create(TermKind.ContextRoot, local, frame);
+		const term = this.create(TermKind.ContextRoot, root, frame);
 		terms.push(term);
 		return term;
 	}
@@ -264,23 +264,31 @@ export class SemanticTermStore {
 		return this.metatableByBase[base];
 	}
 
+	public retainedInstance(base: TermID): TermID | undefined {
+		return this.instanceByBase[base];
+	}
+
+	public retainedMember(base: TermID, name: SemanticNameID): TermID | undefined {
+		const members = this.membersByBase.get(base);
+		if (members) {
+			for (let index = 0; index < members.length; index += 1) {
+				if (this.right[members[index]] === name) return members[index];
+			}
+		}
+		return undefined;
+	}
+
+	public retainedElement(base: TermID): TermID | undefined {
+		return this.elementByBase[base];
+	}
+
 	/** Look up an existing access path over another base, without synthesizing paths. */
 	public retainedAccessWithBase(term: TermID, base: TermID): TermID | undefined {
 		switch (this.kinds[term]) {
 			case TermKind.Member:
-			case TermKind.Index: {
-				const entries = this.kinds[term] === TermKind.Member
-					? this.membersByBase.get(base)
-					: this.indicesByBase.get(base);
-				if (entries) {
-					for (let index = 0; index < entries.length; index += 1) {
-						if (this.right[entries[index]] === this.right[term]) {
-							return entries[index];
-						}
-					}
-				}
-				return undefined;
-			}
+				return this.retainedMember(base, this.right[term] as SemanticNameID);
+			case TermKind.Index:
+				return this.retainedIndex(base, this.right[term] as TermID);
 			case TermKind.Element:
 				return this.elementByBase[base];
 			case TermKind.Call:
@@ -385,6 +393,18 @@ export class SemanticTermStore {
 
 	public indices(base: TermID): readonly TermID[] {
 		return this.indicesByBase.get(base) || EMPTY_TERM_IDS;
+	}
+
+	/** Read an existing indexed location without growing symbolic access paths. */
+	public retainedIndex(base: TermID, key: TermID): TermID | undefined {
+		if (this.isUnknown(key)) return this.elementByBase[base];
+		const indices = this.indicesByBase.get(base);
+		if (indices) {
+			for (let index = 0; index < indices.length; index += 1) {
+				if (this.right[indices[index]] === key) return indices[index];
+			}
+		}
+		return undefined;
 	}
 
 	public isUnknown(term: TermID): boolean {

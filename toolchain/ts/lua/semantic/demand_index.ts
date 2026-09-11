@@ -200,7 +200,7 @@ export class SemanticDemandIndex {
 			for (let callIndex = 0; callIndex < summary.calls.length; callIndex += 1) {
 				const call = summary.calls[callIndex];
 				if (!this.isReceiverCall(call)
-					&& this.calleeDependsOnParameter(summary, call.callee)) {
+					&& this.dependsOnParameter(summary, call.callee)) {
 					this.parameterForwardingSummaries[summary.id] = true;
 					break;
 				}
@@ -318,7 +318,7 @@ export class SemanticDemandIndex {
 		return this.queryIndependentSummaries[callee]
 			|| this.parameterForwardingSummaries[callee]
 			|| !this.isReceiverCall(call)
-				&& this.calleeDependsOnParameter(this.summaries.get(owner), call.callee);
+				&& this.dependsOnParameter(this.summaries.get(owner), call.callee);
 	}
 
 	public callsForEffect(
@@ -570,7 +570,7 @@ export class SemanticDemandIndex {
 				for (let callIndex = 0; callIndex < summary.calls.length; callIndex += 1) {
 					const call = summary.calls[callIndex];
 					const direct = this.callTargetsRelevantSummary(call, relevantSummaries);
-					const parameterDependent = this.calleeDependsOnParameter(summary, call.callee);
+					const parameterDependent = this.dependsOnParameter(summary, call.callee);
 					const candidateName = this.summaries.terms.kind(call.callee) === TermKind.Member
 						? this.summaries.terms.operand(call.callee) as SemanticNameID
 						: undefined;
@@ -650,10 +650,10 @@ export class SemanticDemandIndex {
 			&& this.summaries.summaryIdsForTerm(call.callee).length === 0;
 	}
 
-	private calleeDependsOnParameter(summary: FunctionSummary, callee: TermID): boolean {
+	private dependsOnParameter(summary: FunctionSummary, value: TermID): boolean {
 		this.parameterDependencyGeneration += 1;
 		this.parameterDependencyTerms.length = 1;
-		this.parameterDependencyTerms[0] = callee;
+		this.parameterDependencyTerms[0] = value;
 		let head = 0;
 		while (head < this.parameterDependencyTerms.length) {
 			const term = this.parameterDependencyTerms[head];
@@ -696,6 +696,12 @@ export class SemanticDemandIndex {
 			const anchorKind = this.summaries.terms.kind(anchor);
 			if (anchorKind === TermKind.Parameter || anchorKind === TermKind.Root
 				|| anchorKind === TermKind.Local && this.summaries.terms.summaryOwner(anchor) !== summary.id) {
+				return true;
+			}
+			const targetKind = this.summaries.terms.kind(alias.target);
+			const object = targetKind >= TermKind.Member ? this.summaries.terms.base(alias.target) : alias.target;
+			if ((alias.relation !== 'value' || targetKind >= TermKind.Member)
+				&& this.dependsOnParameter(summary, object)) {
 				return true;
 			}
 		}
@@ -769,7 +775,7 @@ export class SemanticDemandIndex {
 							&& this.queryIndependentFunctionNames[candidateName]
 						|| this.callTargetsParameterForwardingSummary(call)
 						|| !this.isReceiverCall(call)
-							&& this.calleeDependsOnParameter(summary, call.callee));
+							&& this.dependsOnParameter(summary, call.callee));
 				if (queryRelevant || escaping) {
 					this.selectCallDependencies(call, callIndex);
 				}

@@ -3,6 +3,10 @@
 2026-09-10, baseline `065c67047`. A prerequisite correction within
 [B04](behavior_source_authoring_design.md), not a completed source-origin API.
 
+Historical slice record: [recursive inputs and read propagation](lua_recursive_inputs.md)
+subsequently replace the direct substitution described here with stable frame
+entry points. The separate writable-binding contract remains.
+
 ## Reproduced error
 
 ```lua

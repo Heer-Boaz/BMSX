@@ -136,7 +136,14 @@ export class LuaSemanticQueryStore {
 		if (cached && cached.revision === this.instantiation.getRevision()) {
 			return cached.result;
 		}
-		this.members.resolveFunctionDeclarations(source, this.functionScratch);
+		for (;;) {
+			this.calls.activate(term);
+			this.calls.solve();
+			const revision = this.instantiation.getRevision();
+			this.members.resolveFunctionDeclarations(source, this.functionScratch);
+			this.calls.solve();
+			if (revision === this.instantiation.getRevision()) break;
+		}
 		const result = this.functionScratch.slice();
 		this.functionCache[term] = {
 			revision: this.instantiation.getRevision(),
