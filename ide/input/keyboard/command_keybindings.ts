@@ -51,6 +51,8 @@ const editorContribKeybindings: readonly EditorCommandKeybinding[] = [
 ];
 
 const workbenchContribKeybindings: readonly EditorCommandKeybinding[] = [
+	{ code: 'ContextMenu', command: 'contextMenu', modifiers: NO_MODIFIERS, when: () => inputFocus.getCommand('contextMenu') !== undefined },
+	{ code: 'F10', command: 'contextMenu', modifiers: { required: KeyModifier.shift, forbidden: PRIMARY_ALT_MODIFIERS }, when: () => inputFocus.getCommand('contextMenu') !== undefined },
 	{ code: 'ArrowLeft', command: 'navigateBack', modifiers: { required: KeyModifier.alt, forbidden: PRIMARY_MODIFIER | KeyModifier.shift } },
 	{ code: 'ArrowRight', command: 'navigateForward', modifiers: { required: KeyModifier.alt, forbidden: PRIMARY_MODIFIER | KeyModifier.shift } },
 	{ code: 'KeyP', command: 'commandPalette', modifiers: { any: PRIMARY_MODIFIER, required: KeyModifier.shift, forbidden: KeyModifier.alt } },

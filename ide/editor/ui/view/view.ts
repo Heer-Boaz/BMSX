@@ -1,3 +1,4 @@
+import { write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import { EditorFont } from './font';
 import type { FontVariant } from '../../../../machine/ts/render/shared/bmsx_font';
 import type { HostClock } from '../../../../hosts/common/clock';
@@ -246,6 +247,21 @@ export function resolvePointerColumn(row: number, viewportX: number, bounds: Cod
 		column = segmentStart;
 	}
 	return editorViewState.layout.clampLineLength(line.length, column);
+}
+
+/** Source-position geometry uses the same retained glyph advances and wrapped rows as rendering. */
+export function resolveTextPositionBounds(row: number, column: number, out: RectBounds): void {
+	ensureVisualLines();
+	const layout = editorViewState.layout;
+	const bounds = getCodeAreaBounds();
+	const visual = layout.positionToVisualIndex(row, column);
+	const segment = layout.visualIndexToSegment(visual)!;
+	const entry = layout.getCachedHighlight(activeCodeEditor.model.buffer, row);
+	const start = editorViewState.wordWrapEnabled ? segment.startColumn : activeCodeEditor.view.scrollColumn;
+	const x = bounds.textLeft + entry.advancePrefix[layout.columnToDisplay(entry.hi, column)]
+		- entry.advancePrefix[layout.columnToDisplay(entry.hi, start)];
+	const y = bounds.codeTop + (visual - activeCodeEditor.view.scrollRow) * editorViewState.lineHeight;
+	write_rect_bounds(out, x, y, x + editorViewState.charAdvance, y + editorViewState.lineHeight);
 }
 
 export function resolvePointerTextPosition(viewportX: number, viewportY: number, bounds: CodeAreaBounds = getCodeAreaBounds()): PointerTextPosition {

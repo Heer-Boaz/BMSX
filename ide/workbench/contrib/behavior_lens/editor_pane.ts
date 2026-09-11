@@ -1,3 +1,5 @@
+import type { ContextMenuController } from '../../services/context_menu/controller';
+import { WORKBENCH_MENUS, type WorkbenchContextMenuId } from '../../ui/menu/registry';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import { BehaviorLensNavigationSelection } from './navigation_selection';
 import { isShiftDown } from '../../../input/keyboard/key_input';
@@ -71,9 +73,14 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		resourcePanel: ResourcePanelController,
 		private readonly controller: BehaviorLensController,
 		private readonly commands: IdeCommandController,
+		private readonly contextMenu: ContextMenuController,
 	) {
 		super(resourcePanel);
 		this.actionBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, commands, this.focusTarget);
+		for (const target of [this.focusTarget, this.graph.focusTarget]) target.registerCommand('contextMenu', {
+			isEnabled: () => !this.sourceEditReview.visible,
+			run: () => this.openKeyboardContextMenu(),
+		});
 		for (const target of [this.focusTarget, this.graph.focusTarget, this.sourceEditReview.focusTarget]) {
 			target.registerCommand('undo', {
 				isEnabled: () => !this.input.workingCopy.readOnly && this.input.workingCopy.canUndo,
@@ -181,6 +188,13 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		prepareBehaviorLensLayout(view);
 		if (view.presentation.kind === 'properties') {
 			const result = this.properties.handle(view.presentation.tree, snapshot, justPressed, now);
+			if (result === WorkbenchPropertyPointerResult.ContextMenu) {
+				if (view.presentation.tree.selectionIndex >= 0) acceptEffectPropertySelection(view, view.presentation, false);
+				else view.selection = null;
+				finishBehaviorLensNavigation(view);
+				this.openContextMenu(snapshot.viewportX, snapshot.viewportY);
+				return true;
+			}
 			if (result === WorkbenchPropertyPointerResult.Selection || result === WorkbenchPropertyPointerResult.Collapse || result === WorkbenchPropertyPointerResult.Activate) {
 				acceptEffectPropertySelection(view, view.presentation, result === WorkbenchPropertyPointerResult.Collapse);
 				finishBehaviorLensNavigation(view);
@@ -190,16 +204,52 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		}
 		if (view.presentation.kind !== 'outline') {
 			const result = this.graph.handlePointer(snapshot, now, playerInput.getRawButtonState('Space', 'keyboard').pressed);
-			if (result === WorkbenchGraphPointerResult.Selection || result === WorkbenchGraphPointerResult.Activate) {
+			if (result === WorkbenchGraphPointerResult.Selection || result === WorkbenchGraphPointerResult.Activate || result === WorkbenchGraphPointerResult.ContextMenu) {
 				if (view.presentation.kind === 'graph') acceptBehaviorGraphSelection(view, view.presentation);
 				else acceptStateGraphSelection(view, view.presentation, this.input.workingCopy.buffer);
 			}
+			if (result === WorkbenchGraphPointerResult.ContextMenu) this.openContextMenu(snapshot.viewportX, snapshot.viewportY);
 			if (result === WorkbenchGraphPointerResult.Activate) this.controller.openSource();
 			return result !== WorkbenchGraphPointerResult.Outside;
 		}
 		const result = this.pointer.handle(view, view.presentation, snapshot, justPressed, now);
+		if (result === BehaviorLensPointerResult.ContextMenu) this.openContextMenu(snapshot.viewportX, snapshot.viewportY);
 		if (result === BehaviorLensPointerResult.Activate) this.controller.openSource();
 		return result !== BehaviorLensPointerResult.Outside;
+	}
+
+	private openContextMenu(x: number, y: number, keyboard = false): void {
+		this.focus();
+		const view = this.input.view;
+		const presentation = view.presentation;
+		let menu: WorkbenchContextMenuId;
+		if (view.selection === null) menu = 'behaviorLens.canvas.context';
+		else if (presentation.kind === 'graph' || presentation.kind === 'state-graph') {
+			menu = presentation.viewport.selection?.kind === 'edge' ? 'behaviorLens.edge.context'
+				: presentation.kind === 'graph' ? 'behaviorLens.node.context' : 'behaviorLens.state.context';
+		} else menu = 'behaviorLens.property.context';
+		const lifetime = this.contextMenu.show(x, y, WORKBENCH_MENUS[menu], this.commands, keyboard);
+		lifetime.add({ dispose: this.input.workingCopy.onDidChangeContent(() => this.contextMenu.hide()) });
+	}
+
+	private openKeyboardContextMenu(): void {
+		const view = this.input.view;
+		prepareBehaviorLensLayout(view);
+		const presentation = view.presentation;
+		if (presentation.kind === 'graph' || presentation.kind === 'state-graph') {
+			const viewport = presentation.viewport;
+			const selected = viewport.selection;
+			if (selected !== null) {
+				viewport.reveal(selected);
+				this.openContextMenu(viewport.bounds.left + selected.bounds.left - viewport.scrollX,
+					viewport.bounds.top + selected.bounds.top - viewport.scrollY
+						+ (selected.kind === 'node' ? selected.headerHeight : selected.bounds.bottom - selected.bounds.top), true);
+			} else this.openContextMenu(viewport.bounds.left + 8, viewport.bounds.top + 8, true);
+		} else {
+			const list = presentation.kind === 'properties' ? presentation.tree : presentation;
+			this.openContextMenu(list.layout.contentLeft + 8, list.layout.contentTop
+				+ (Math.max(0, list.selectionIndex - list.scroll) + 1) * list.layout.rowHeight, true);
+		}
 	}
 
 	public handleWheel(

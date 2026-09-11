@@ -4,8 +4,6 @@ import type {
 	LuaSymbolEntry,
 } from '../../toolchain/ts/lua/semantic_contracts';
 import type { ResourceDomain, RuntimeResource } from './resource';
-import type { EditorCommandId } from './commands';
-import type { RectBounds } from '../../machine/ts/common/rect';
 import type { LuaMemberCompletionContext } from '../../toolchain/ts/lua/semantic/completion';
 import type { CodeEditorInputId } from './editor_context';
 import type { TextField } from '../editor/ui/inline/text_field_model';
@@ -237,8 +235,6 @@ export type ActionPromptAction = 'hot-resume' | 'reboot' | 'close' | 'theme-togg
 
 export type EditorContextTokenKind = 'identifier' | 'keyword' | 'number' | 'string' | 'operator';
 
-export type EditorContextMenuAction = Extract<EditorCommandId, 'goToDefinition' | 'referenceSearch' | 'callHierarchy' | 'rename'> | 'copy_token';
-
 export type EditorContextToken = {
 	kind: EditorContextTokenKind;
 	text: string;
@@ -247,24 +243,6 @@ export type EditorContextToken = {
 	column: number;
 	startColumn: number;
 	endColumn: number;
-};
-
-export type EditorContextMenuEntry = {
-	action: EditorContextMenuAction;
-	label: string;
-	enabled: boolean;
-};
-
-export type EditorContextMenuState = {
-	visible: boolean;
-	anchorX: number;
-	anchorY: number;
-	token: EditorContextToken | null;
-	entries: readonly EditorContextMenuEntry[];
-	hoverIndex: number;
-	bounds: RectBounds;
-	itemBounds: RectBounds[];
-	itemCount: number;
 };
 
 export type PointerSnapshot = PointerButtons & {

@@ -31,6 +31,11 @@ export function handleEditorWheelInput(editor: CartEditor, playerInput: PlayerIn
 		playerInput.inputHandlers.pointer.consumeButton('pointer_wheel');
 		return;
 	}
+	if (editor.contextMenu.visible) {
+		editor.contextMenu.handleWheel(direction * steps);
+		playerInput.inputHandlers.pointer.consumeButton('pointer_wheel');
+		return;
+	}
 	const pointer = editorPointerState.lastPointerSnapshot;
 	const activePointer = pointer !== null && pointer.valid && pointer.insideViewport ? pointer : null;
 	if (handleHoverTooltipWheel(direction, steps, activePointer, playerInput)) {

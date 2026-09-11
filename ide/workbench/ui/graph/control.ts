@@ -13,7 +13,7 @@ import type { WorkbenchGraphViewport } from './viewport';
 import type { WorkbenchGraphConnectionDragStart, WorkbenchGraphDragFeedback, WorkbenchGraphDragSession, WorkbenchGraphDragSource } from './drag';
 import { hitWorkbenchGraphConnectionHandle, type WorkbenchGraphConnectionEnd, type WorkbenchGraphConnectionHandles } from './connection';
 
-export const enum WorkbenchGraphPointerResult { Outside, Handled, Selection, Activate }
+export const enum WorkbenchGraphPointerResult { Outside, Handled, Selection, Activate, ContextMenu }
 const enum Gesture { None, Pan, Scrollbar, PendingDrag, Drag }
 
 /** Pane-owned control. Input/view state survives detachment; physical gestures do not. */
@@ -244,6 +244,12 @@ export class WorkbenchGraphControl implements PointerCaptureTarget {
 				}
 			}
 			return WorkbenchGraphPointerResult.Handled;
+		}
+		if ((snapshot.justPressedButtons & PointerButton.Secondary) !== 0) {
+			this.cancelPointer();
+			this.focusTarget.focus();
+			view.selection = view.hitTest(snapshot.viewportX, snapshot.viewportY);
+			return WorkbenchGraphPointerResult.ContextMenu;
 		}
 		const pan = auxiliary || (primary && panModifier);
 		const x = snapshot.viewportX - view.bounds.left + view.scrollX;

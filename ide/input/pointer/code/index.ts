@@ -53,7 +53,7 @@ export function handleCodeAreaPointerInput(
 	const inGutter = insideCodeArea
 		&& snapshot.viewportX >= bounds.gutterLeft
 		&& snapshot.viewportX < bounds.gutterRight;
-	if (handleCodeAreaSecondaryPointer(snapshot, insideCodeArea, inGutter, pointerSecondaryJustPressed, playerInput)) {
+	if (handleCodeAreaSecondaryPointer(editor, snapshot, insideCodeArea, inGutter, pointerSecondaryJustPressed, playerInput)) {
 		return;
 	}
 	if (handleCodeAreaGutterPointer(editor.breakpoints, snapshot, justPressed, inGutter, bounds)) {

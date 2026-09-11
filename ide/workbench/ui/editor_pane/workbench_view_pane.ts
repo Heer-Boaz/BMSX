@@ -7,7 +7,6 @@ import { editorCaretState } from '../../../editor/ui/view/caret/state';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { editorPointerState, clearEditorPointerSelectionState } from '../../../input/pointer/state';
 import { runtimeErrorState } from '../../../editor/contrib/runtime_error/state';
-import { closeEditorContextMenu } from '../../contrib/context_menu/widget';
 import { closeLineJump } from '../../contrib/code_editor/find/line_jump';
 import { closeSearch } from '../../contrib/code_editor/find/search';
 import { problemsPanel } from '../../contrib/problems/panel/controller';
@@ -45,6 +44,7 @@ export abstract class WorkbenchViewEditorPane<
 		const handled = this.handleViewPointer(snapshot, justPressed, now, playerInput);
 		if (handled) {
 			if (justPressed) playerInput.inputHandlers.pointer?.consumeButton('pointer_primary');
+			if ((snapshot.justPressedButtons & PointerButton.Secondary) !== 0) playerInput.inputHandlers.pointer?.consumeButton('pointer_secondary');
 			if ((snapshot.justPressedButtons & PointerButton.Auxiliary) !== 0) playerInput.inputHandlers.pointer?.consumeButton('pointer_aux');
 		}
 		clearEditorPointerSelectionState();
@@ -75,7 +75,6 @@ export abstract class FullWidthWorkbenchEditorPane<
 	protected activate(): void {
 		closeSearch(false, true);
 		closeLineJump(false);
-		closeEditorContextMenu();
 		this.resourcePanel.hide();
 		problemsPanel.hide();
 		editorChromeState.resourcePanelResizing = false;

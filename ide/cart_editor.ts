@@ -1,3 +1,5 @@
+import { ContextMenuController } from './workbench/services/context_menu/controller';
+import { drawContextMenu, layoutContextMenu } from './workbench/services/context_menu/render';
 import { applyScrollbarScroll } from './input/pointer/scrollbar';
 import type { GraphLayoutEngineFactory } from './workbench/services/graph_layout/engine';
 import { SceneEditorController } from './workbench/contrib/scene_editor/controller';
@@ -145,6 +147,7 @@ export type CartEditor = {
 	readonly navigation: EditorNavigationController;
 	readonly sceneEditor: SceneEditorController;
 	readonly quickInput: QuickInputController;
+	readonly contextMenu: ContextMenuController;
 	readonly behaviorLens: BehaviorLensController;
 	readonly scenarioLab: ScenarioLabController;
 	readonly crossFileRename: CrossFileRenameManager;
@@ -183,6 +186,7 @@ export class RuntimeCartEditor implements CartEditor {
 	public readonly navigation: EditorNavigationController;
 	public readonly sceneEditor: SceneEditorController;
 	public readonly quickInput: QuickInputController;
+	public readonly contextMenu: ContextMenuController;
 	public readonly behaviorLens: BehaviorLensController;
 	public readonly scenarioLab: ScenarioLabController;
 	public readonly crossFileRename: CrossFileRenameManager;
@@ -282,6 +286,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.completion = new EditorCompletionController(luaTooling, fault, runtime);
 		this.resourcePanel = this.initialize(resourcePanelWidthRatio, viewport, fontVariant);
 		this.quickInput = new QuickInputController(clipboard);
+		this.contextMenu = new ContextMenuController(inputFocus, pointerCapture);
 		this.resourceEditors = createResourceEditorResolver(
 			storage,
 			this.sources,
@@ -298,7 +303,7 @@ export class RuntimeCartEditor implements CartEditor {
 				this.debuggerState,
 			),
 			resource_view: () => new ResourceViewerEditorPane(),
-			behavior_lens: () => new BehaviorLensEditorPane(this.resourcePanel, this.behaviorLens, this.commands),
+			behavior_lens: () => new BehaviorLensEditorPane(this.resourcePanel, this.behaviorLens, this.commands, this.contextMenu),
 			scene_editor: () => new SceneEditorPane(this.resourcePanel, this.sceneEditor, this.commands, this.sources, this.clipboard),
 			scenario_lab: () => new ScenarioLabEditorPane(
 				this.resourcePanel,
@@ -493,7 +498,6 @@ export class RuntimeCartEditor implements CartEditor {
 			this.display,
 			playerInput,
 			editorRuntimeState.currentTimeMs,
-			this.clipboard,
 			this,
 			this.sources,
 		);
@@ -524,6 +528,8 @@ export class RuntimeCartEditor implements CartEditor {
 		updateEditorMessage(deltaSeconds);
 		this.editorPanes.activePane.update(deltaSeconds);
 		this.quickInput.update();
+		layoutContextMenu(this.contextMenu);
+		this.contextMenu.update();
 		if (editorDiagnosticsState.diagnosticsDirty) {
 			processDiagnosticsQueue(
 				this.luaTooling,
@@ -554,6 +560,7 @@ export class RuntimeCartEditor implements CartEditor {
 		drawProblemsPanel();
 		renderStatusBar(this.resourcePanel, this.fault, this.editorPanes.activePane);
 		renderTopBarDropdown(this.chromeRenderContext);
+		drawContextMenu(this.contextMenu);
 		this.quickInput.draw();
 		if (hasBlockingWorkbenchModal()) {
 			drawBlockingWorkbenchModal();
@@ -561,6 +568,7 @@ export class RuntimeCartEditor implements CartEditor {
 	}
 
 	public async shutdown(): Promise<void> {
+		this.contextMenu.dispose();
 		this.quickInput.dispose();
 		this.unbindQuickInputFields();
 		this.unbindProblemsPanel();

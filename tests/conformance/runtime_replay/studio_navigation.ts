@@ -1,7 +1,6 @@
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { editorViewState } from '../../../ide/editor/ui/view/state';
 import { getCodeAreaBounds } from '../../../ide/editor/ui/view/view';
-import { editorContextMenuState } from '../../../ide/workbench/contrib/context_menu/state';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { getActiveTab, closeTab } from '../../../ide/workbench/ui/tabs';
 import { TOP_BAR_MENUS, type TopBarMenuItem } from '../../../ide/workbench/ui/top_bar/menu';
@@ -41,10 +40,12 @@ export async function testStudioNavigation(test: StudioFixture): Promise<void> {
 	const x = bounds.textLeft + editorViewState.font.advance('o') / 2;
 	const y = bounds.codeTop + (row + 0.5) * editorViewState.lineHeight;
 	await click({ left: x, right: x + 1, top: y, bottom: y + 1 }, 1, 'pointer_secondary');
-	check(editorContextMenuState.visible && editorContextMenuState.token!.expression === 'os',
+	check(ide.editor.contextMenu.visible,
 		'navigation: actual secondary click on global os opens the source menu');
-	check(editorContextMenuState.entries.some(entry => entry.action === 'goToDefinition'),
+	check(ide.editor.contextMenu.model.rows.some(entry => entry.command === 'goToDefinition'),
 		'navigation: builtin spelling does not hide source navigation');
+	check(ide.editor.contextMenu.model.rows.find(entry => entry.command === 'rename')!.enabled === !activeCodeEditor.model.readOnly,
+		'navigation: Rename follows the actual source model admission, not BIOS/cart classification');
 	await press('Escape');
 
 	harness.openLuaSource('cart.lua');

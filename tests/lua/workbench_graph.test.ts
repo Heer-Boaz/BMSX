@@ -454,3 +454,23 @@ test('wheel scrolling during a drag refreshes insertion feedback without replaci
 	assert.equal(f.counts.overs, 2, 'release at the same world position reuses the wheel-refreshed target');
 	f.control.dispose();
 });
+
+test('secondary gestures select the exact node, edge or empty canvas without pan, drag or activation', () => {
+	const { view, a, edge } = fixture();
+	const focus = new InputFocusService();
+	const capture = new PointerCaptureService();
+	let dragCalls = 0;
+	const control = new WorkbenchGraphControl(focus, capture);
+	control.setInput(view, { begin() { dragCalls += 1; return undefined; } });
+	for (const [x, y, target] of [[21, 21, a], [21, 65, edge], [100, 95, null]] as const) {
+		const event = pointer(x, y);
+		event.pressedButtons = PointerButton.Secondary;
+		event.justPressedButtons = PointerButton.Secondary;
+		assert.equal(control.handlePointer(event, 0), Result.ContextMenu);
+		assert.equal(view.selection, target);
+		assert.equal(focus.target, control.focusTarget);
+		assert.equal(capture.active, false);
+	}
+	assert.equal(dragCalls, 0);
+	control.dispose();
+});

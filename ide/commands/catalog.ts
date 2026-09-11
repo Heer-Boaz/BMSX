@@ -16,6 +16,7 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	'sourceEditReview.source': { category: 'Review', title: 'Open Impact Source', shortTitle: 'Source' },
 	navigateBack: { category: 'Go', title: 'Back' },
 	navigateForward: { category: 'Go', title: 'Forward' },
+	contextMenu: { category: 'View', title: 'Show Context Menu' },
 	commandPalette: { category: 'View', title: 'Command Palette' },
 	undo: { category: 'Edit', title: 'Undo' },
 	redo: { category: 'Edit', title: 'Redo' },

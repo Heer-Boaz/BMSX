@@ -161,6 +161,40 @@ keyboard, release buiten target, Escape, readonly, detach en bronwijziging tijde
 het menu zijn beproefd. Focus keert terug naar de juiste input, niet een verborgen
 code-tab. Los A09 hover/leave op bij de gedeelde pointer-owner, niet per menu.
 
+**Uitgewerkt in `workbench/services/context_menu`:** de workbench bezit één
+`ContextMenuController` met eigen retained model, focus en popup-lifetime.
+Code, BT/FSM-node/edge, property en canvas leveren bijdragen uit de bestaande
+commandregistry; het menu kent geen Lua-token of behavior-sourceobject. Het oude
+globale code-tokenmenu en zijn aparte pointer/render-routes zijn verwijderd.
+
+Het ontwerp volgt VS Code's pinned
+[`ContextMenuHandler`](https://github.com/microsoft/vscode/blob/7f59d5e01a7fafeba8e83cdfd9d8493f2beeeaca/src/vs/platform/contextview/browser/contextMenuHandler.ts):
+contribution-owned actions/context, focus naar de aanroeper terug, hide vóór
+uitvoering, blur/outside-cancel en een popup-eigen disposable lifetime. Het
+canvas gebruikt de bestaande `InputFocusService`, `PointerCaptureService` en
+scrollbar, niet een DOM-emulatie. Sourcewijziging en detach trekken het target
+in; ongewijzigde layout hergebruikt tekstmeting en rowgeometry. Menu's delen
+workbench-menu-themetokens, niet de completion-popupkleuren.
+
+Rechtsklik kiest het getroffen doel; Shift+F10/ContextMenu gebruiken de huidige
+selectie. Pijlen/Home/End slaan separators en disabled commands over; Escape/Tab
+sluiten. Activatie gebeurt bij fysieke release over hetzelfde command; een
+vastgehouden Source-toets kan dus niet gaan typen in de geopende code. De
+commandpalette kan het menu via de gewone focusroute vervangen. Lange menu's
+hebben een begrensde viewport en scrollbar. Creation is hiermee **niet**
+geleverd: daarvoor blijft het hierboven beschreven authored insertion-contract
+vereist. De B01-inspector wordt evenmin vervangen door dit menu.
+
+Validatie: 1.395 Lua-tests groen, één bestaande skip; IDE-typecheck en browser-
+Studio-build groen; tests-project behoudt dezelfde 51 bestaande diagnostics.
+De echte Studio- en Pietious-navigationflows slagen op software, WebGL2 en
+WebGPU, inclusief node/edge/property/keyboard-context, held Source, Remove/Undo,
+source-invalidatie, focus en de bestaande Save/Hot Resume/Reboot-keten. Tiny-
+menu-output is visueel bekeken; onveranderde menu-layout hermeet niet in de
+onafhankelijke controlproef. Architecture-boundaries strict: 0 issues;
+core-parity, indentation en diff-check groen. Dit bewijst de menuroute, niet
+B01-details, bredere source-origins, creation of complete Studio-UX.
+
 ### B03 — BT verplaatsen betekent parent/list/insertion veranderen
 
 Gebruik het bestaande [transfercontract](behavior_tree_transfer_admission_design.md)

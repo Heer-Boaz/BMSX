@@ -98,6 +98,7 @@ export class IdeCommandController {
 			case 'sceneEditor.removeMember':
 				this.editor.sceneEditor.removeSelectedMember();
 				return;
+			case 'contextMenu':
 			case 'sourceEditReview.apply':
 			case 'sourceEditReview.discard':
 			case 'sourceEditReview.source':
@@ -238,6 +239,7 @@ export class IdeCommandController {
 				return this.editor.sceneEditor.canMoveSelectedMember(1);
 			case 'sceneEditor.removeMember':
 				return this.editor.sceneEditor.canRemoveSelectedMember();
+			case 'contextMenu':
 			case 'sourceEditReview.apply':
 			case 'sourceEditReview.discard':
 			case 'sourceEditReview.source':

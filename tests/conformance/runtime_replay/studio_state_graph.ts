@@ -32,6 +32,17 @@ export async function testStudioStateGraph(test: StudioFixture): Promise<void> {
 	const parallel = generation.edges.filter(edge => edge.link.reference.kind === 'state-outcome' && edge.link.reference.outcome.proof.kind === 'return');
 	check(parallel.length === 2 && parallel[0].link.source === parallel[1].link.source && parallel[0].link.target === parallel[1].link.target,
 		'FSM diagram: parallel source evidence is not merged');
+	await press('Home'); await press('ArrowDown');
+	const selectedState = viewport.selection;
+	if (selectedState === null || selectedState.kind !== 'node') throw new Error('FSM context: state selection required');
+	await click({ left: viewport.bounds.left + selectedState.bounds.left - viewport.scrollX,
+		right: viewport.bounds.left + selectedState.bounds.right - viewport.scrollX,
+		top: viewport.bounds.top + selectedState.bounds.top - viewport.scrollY,
+		bottom: viewport.bounds.top + selectedState.bounds.top + selectedState.headerHeight - viewport.scrollY }, 1, 'pointer_secondary');
+	check(ide.editor.contextMenu.visible && viewport.selection === selectedState
+		&& ide.editor.contextMenu.model.rows.some(row => row.command === 'behaviorLens.setInitialState'),
+		'FSM context: right click selects the actual state and contributes its existing Set Initial command');
+	await press('Escape');
 	// The diagram's traversal includes edges, unlike the BT's tree relationships.
 	await press('Home');
 	for (let index = 0; index < generation.nodes.length + generation.edges.indexOf(parallel[1]); index += 1) await press('ArrowDown');
@@ -46,6 +57,14 @@ export async function testStudioStateGraph(test: StudioFixture): Promise<void> {
 		right: viewport.bounds.left + label.right - viewport.scrollX,
 		top: viewport.bounds.top + label.top - viewport.scrollY,
 		bottom: viewport.bounds.top + label.bottom - viewport.scrollY };
+	await click(bounds, 1, 'pointer_secondary');
+	check(ide.editor.contextMenu.visible && viewport.selection === parallel[1]
+		&& !ide.editor.contextMenu.model.rows.some(row => row.command === 'behaviorLens.setInitialState'),
+		'FSM context: right click on a proof label targets that edge, not a state or Lua token');
+	await press('Home'); await press('Enter');
+	check(getActiveTab() === code && activeCodeEditor.view.cursorRow === 3 && !hasSelection(),
+		'FSM context: edge Source opens its own return without dirtying source');
+	await test.clickTab(lens.id);
 	await click(bounds);
 	await click(bounds, 6);
 	check(getActiveTab() === code && activeCodeEditor.view.cursorRow === 3 && !hasSelection(), 'FSM diagram: held edge double-click opens its own return without drag');

@@ -26,7 +26,7 @@ import { renameController } from './rename/controller';
 import { referenceState } from '../../../editor/contrib/references/state';
 import { editorSearchState } from './find/widget_state';
 import { getBreakpointsForChunk } from '../debugger/controller';
-import { renderEditorContextMenu } from '../../render/context_menu';
+import { openCodeContextMenuAtCursor } from './context_menu';
 import { editorChromeState } from '../../ui/chrome_state';
 import {
 	activateCodeEditorTab,
@@ -67,6 +67,10 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 		private readonly debuggerState: RuntimeDebuggerState,
 	) {
 		super();
+		activeCodeEditor.focusTarget.registerCommand('contextMenu', {
+			isEnabled: () => true,
+			run: () => openCodeContextMenuAtCursor(this.editor),
+		});
 		activeCodeEditor.focusTarget.registerCommand('undo', {
 			isEnabled: () => !activeCodeEditor.model.readOnly && activeCodeEditor.model.canUndo,
 			run: undo,
@@ -126,7 +130,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 	public draw(): void {
 		renderInlineWidgets();
 		const renameActive = renameController.isActive();
-		const codeAreaViewport = renderCodeArea(
+		renderCodeArea(
 			this.editor.completion,
 			this.editor.completion.getInlineCompletionPreview(),
 			activeCodeEditor.focusTarget.hasFocus,
@@ -140,7 +144,6 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 			editorSearchState.currentIndex,
 			editorSearchState.scope === 'local' && editorSearchState.query.length > 0,
 		);
-		renderEditorContextMenu(codeAreaViewport);
 	}
 
 	public handleKeyboard(playerInput: PlayerInput): void {

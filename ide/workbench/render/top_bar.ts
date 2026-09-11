@@ -98,11 +98,11 @@ function renderMenuDropdown(menu: TopBarMenuEntry, anchor: RectBounds, itemHeigh
 	const totalHeight = computeDropdownHeight(menu, itemHeight, separatorHeight);
 	const dropdownBottom = dropdownTop + totalHeight;
 	const shadowOffset = 2;
-	const borderColor = constants.COLOR_HEADER_BUTTON_BORDER;
-	const disabledBackground = constants.COLOR_HEADER_BUTTON_DISABLED_BACKGROUND;
+	const borderColor = constants.COLOR_MENU_BORDER;
+	const shadowColor = constants.COLOR_MENU_SHADOW;
 
-	api.fill_rect(dropdownLeft + shadowOffset, dropdownTop + shadowOffset, dropdownRight + shadowOffset, dropdownBottom + shadowOffset, Z_MENU_SHADOW, disabledBackground);
-	api.fill_rect(dropdownLeft, dropdownTop, dropdownRight, dropdownBottom, Z_MENU_DROPDOWN, constants.COLOR_HEADER_BUTTON_BACKGROUND);
+	api.fill_rect(dropdownLeft + shadowOffset, dropdownTop + shadowOffset, dropdownRight + shadowOffset, dropdownBottom + shadowOffset, Z_MENU_SHADOW, shadowColor);
+	api.fill_rect(dropdownLeft, dropdownTop, dropdownRight, dropdownBottom, Z_MENU_DROPDOWN, constants.COLOR_MENU_BACKGROUND);
 	api.blit_rect(dropdownLeft, dropdownTop, dropdownRight, dropdownBottom, Z_MENU_DROPDOWN, borderColor);
 
 	let currentTop = dropdownTop;
@@ -118,11 +118,11 @@ function renderMenuDropdown(menu: TopBarMenuEntry, anchor: RectBounds, itemHeigh
 		const bounds = item.bounds;
 		write_rect_bounds(bounds, dropdownLeft, currentTop, dropdownRight, currentTop + itemHeight);
 		const fillColor = item.active
-			? constants.COLOR_HEADER_BUTTON_ACTIVE_BACKGROUND
-			: (item.disabled ? disabledBackground : constants.COLOR_HEADER_BUTTON_BACKGROUND);
+			? constants.COLOR_MENU_SELECTION_BACKGROUND
+			: constants.COLOR_MENU_BACKGROUND;
 		const textColor = item.disabled
-			? constants.COLOR_HEADER_BUTTON_TEXT_DISABLED
-			: (item.active ? constants.COLOR_HEADER_BUTTON_ACTIVE_TEXT : constants.COLOR_HEADER_BUTTON_TEXT);
+			? constants.COLOR_MENU_DISABLED_TEXT
+			: (item.active ? constants.COLOR_MENU_SELECTION_TEXT : constants.COLOR_MENU_TEXT);
 		api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, Z_MENU_DROPDOWN, fillColor);
 		api.blit_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, Z_MENU_DROPDOWN, borderColor);
 		if (item.active) {

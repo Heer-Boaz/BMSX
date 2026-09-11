@@ -1,10 +1,11 @@
+import { PointerButton } from '../../input/pointer/buttons';
 import { DOUBLE_CLICK_MAX_INTERVAL_MS } from '../../common/constants';
 import type { PointerSnapshot } from '../../common/models';
 import { workbenchListRowIndexAtPosition } from './list_view';
 import type { WorkbenchPropertyElement, WorkbenchPropertyTree } from './property_tree';
 import { setWorkbenchTreeCollapsed, workbenchTreeTwistieContainsPosition, type WorkbenchTreeNode } from './tree_view';
 
-export const enum WorkbenchPropertyPointerResult { Outside, Handled, Selection, Collapse, Activate }
+export const enum WorkbenchPropertyPointerResult { Outside, Handled, Selection, Collapse, Activate, ContextMenu }
 
 /** A gesture belongs to one retained tree node. Reprojection and detach cannot transfer a double-click. */
 export class WorkbenchPropertyTreePointer {
@@ -25,6 +26,11 @@ export class WorkbenchPropertyTreePointer {
 		}
 		const index = workbenchListRowIndexAtPosition(state, snapshot.viewportX, snapshot.viewportY);
 		state.hoverIndex = index;
+		if ((snapshot.justPressedButtons & PointerButton.Secondary) !== 0) {
+			this.cancel();
+			state.selectionIndex = index;
+			return WorkbenchPropertyPointerResult.ContextMenu;
+		}
 		if (!justPressed) return WorkbenchPropertyPointerResult.Handled;
 		if (index < 0) {
 			this.cancel();

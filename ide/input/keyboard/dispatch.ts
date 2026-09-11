@@ -12,12 +12,15 @@ export function handleEditorInput(
 	editor: CartEditor,
 	sources: RuntimeSourceState,
 ): void {
+	if (editor.contextMenu.visible && editor.contextMenu.handleKeyboard(playerInput)) {
+		return;
+	}
 	if (pointerCapture.active && isKeyJustPressed('Escape', playerInput)) {
 		consumeIdeKey('Escape', playerInput);
 		pointerCapture.cancel();
 		return;
 	}
-	if (!editor.quickInput.visible && handleEscapeBinding(playerInput)) {
+	if (!editor.quickInput.visible && !editor.contextMenu.visible && handleEscapeBinding(playerInput)) {
 		return;
 	}
 	if (handleEditorCommandBindings(playerInput, editor.commands)) {
@@ -31,5 +34,5 @@ export function handleEditorInput(
 		consumeIdeKey('Tab', playerInput);
 		return;
 	}
-	inputFocus.handleKeyboard(playerInput);
+	if (!editor.contextMenu.visible) inputFocus.handleKeyboard(playerInput);
 }

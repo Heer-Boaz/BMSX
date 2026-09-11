@@ -77,6 +77,23 @@ the live hover query. Machine snapshots contain none of this IDE state.
 The production examples, combined browser-Studio proof and remaining authoring
 scope are in [`docs/studio_development_workflows.md`](../docs/studio_development_workflows.md).
 
+## Workbench context menus
+
+`workbench/services/context_menu` owns one transient popup per workbench, with
+retained layout, scroll range, command selection, pointer capture and focus
+return. `ui/menu/registry.ts` contributes existing commands; each editor
+contribution owns its target and the popup's source-invalidation subscription.
+The popup contains neither a code token nor a behavior node. Its command
+context is the invoking control, so admission matches toolbar and palette.
+Code-token positioning occurs only in the code contribution when an action is
+accepted. Graph right-click selects the hit occurrence without starting a drag;
+empty canvas is a separate context. Source change, focus loss and pane detach
+close the popup. Accept hides before execution. Both pointer and keyboard
+activation wait for physical release so Source cannot turn into a held gesture
+in its destination. Menu colors are shared with the workbench menubar, not
+borrowed from completion. The same controller handles keyboard opening,
+scrolling and all viewport bounds on software, WebGL2 and WebGPU.
+
 ## Text models, working copies, and editor inputs
 
 Editable text is retained by resource identity, not by the currently visible

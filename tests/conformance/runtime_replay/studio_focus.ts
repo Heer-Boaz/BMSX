@@ -6,7 +6,6 @@ import { editorSearchState, lineJumpState } from '../../../ide/workbench/contrib
 import { symbolSearchState } from '../../../ide/workbench/contrib/code_editor/symbols/search/state';
 import { createResourceState } from '../../../ide/workbench/contrib/resources/widget_state';
 import { renameController } from '../../../ide/workbench/contrib/code_editor/rename/controller';
-import { editorContextMenuState } from '../../../ide/workbench/contrib/context_menu/state';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { TOP_BAR_MENUS, type TopBarMenuItem } from '../../../ide/workbench/ui/top_bar/menu';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
@@ -111,10 +110,13 @@ export async function testStudioFocus(test: StudioFixture): Promise<void> {
 	const x = bounds.textLeft + editorViewState.font.measure('local c');
 	const y = bounds.codeTop + editorViewState.lineHeight / 2;
 	await click({ left: x, right: x + 1, top: y, bottom: y + 1 }, 1, 'pointer_secondary');
-	check(editorContextMenuState.visible, 'focus: secondary pointer opens the actual source context menu');
-	const renameIndex = editorContextMenuState.entries.findIndex(entry => entry.action === 'rename');
+	check(ide.editor.contextMenu.visible, 'focus: secondary pointer opens the actual source context menu');
+	const renameIndex = ide.editor.contextMenu.model.rows.findIndex(entry => entry.command === 'rename');
 	check(renameIndex >= 0, 'focus: Rename is contributed for the actual local identifier');
-	await click(editorContextMenuState.itemBounds[renameIndex]);
+	const menu = ide.editor.contextMenu.model;
+	const renameRow = menu.rows[renameIndex];
+	await click({ left: menu.viewport.bounds.left, right: menu.viewport.bounds.right,
+		top: menu.viewport.offsetTop + renameRow.top, bottom: menu.viewport.offsetTop + renameRow.bottom });
 	check(renameController.isActive(), 'focus: Rename control receives focus from the real context command');
 	const renameField = renameController.getField();
 	const originalName = renameField.text;

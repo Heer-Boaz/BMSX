@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildEditorContextMenuEntries } from '../../ide/workbench/contrib/context_menu/entries';
+import { codeContextMenuItems } from '../../ide/workbench/contrib/code_editor/context_menu';
 import type { EditorContextToken } from '../../ide/common/models';
 
 test('source context menu does not classify identifiers by builtin spelling', () => {
@@ -9,9 +9,7 @@ test('source context menu does not classify identifiers by builtin spelling', ()
 			kind: 'identifier', text: expression, expression,
 			row: 0, column: 0, startColumn: 0, endColumn: expression.length,
 		};
-		assert.deepEqual(buildEditorContextMenuEntries(token, true).map(entry => entry.action),
+		assert.deepEqual(codeContextMenuItems(token).slice(0, 4).map(entry => entry.type === 'command' ? entry.command : ''),
 			['goToDefinition', 'referenceSearch', 'callHierarchy', 'rename'], expression);
-		assert.deepEqual(buildEditorContextMenuEntries(token, false).map(entry => entry.action),
-			['goToDefinition', 'referenceSearch', 'callHierarchy'], `readonly ${expression}`);
 	}
 });

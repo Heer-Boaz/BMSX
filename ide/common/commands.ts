@@ -51,6 +51,7 @@ export type EditorScenarioLabCommandId =
 	| 'scenarioLab.cancel';
 
 export type EditorCommandId =
+	| 'contextMenu'
 	| 'navigateBack'
 	| 'navigateForward'
 	| 'sourceEditReview.apply'

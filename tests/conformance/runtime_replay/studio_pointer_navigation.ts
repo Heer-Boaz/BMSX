@@ -1,3 +1,4 @@
+import { testStudioContextMenu } from './studio_context_menu';
 import { testStudioSourceRecovery } from './studio_source_recovery';
 import { testStudioStateGraph } from './studio_state_graph';
 import { testStudioFsmInitial } from './studio_fsm_initial';
@@ -6,7 +7,6 @@ import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { queryDefinitionsAt } from '../../../ide/editor/contrib/definitions/query';
 import { editorViewState } from '../../../ide/editor/ui/view/state';
 import { getCodeAreaBounds } from '../../../ide/editor/ui/view/view';
-import { editorContextMenuState } from '../../../ide/workbench/contrib/context_menu/state';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { resolveRuntimeResource } from '../../../ide/runtime/sources';
 import { chooseBehavior, revealLensOccurrence } from './studio_behavior_picker';
@@ -90,10 +90,13 @@ export async function testStudioPointerNavigation(test: StudioFixture, cart: Nav
 			setKey('ControlLeft', false);
 		} else {
 			await click(codePositionBounds(useRow, useColumn), 4, 'pointer_secondary');
-			check(editorContextMenuState.visible && editorContextMenuState.token!.text === spec.identifier,
+			check(ide.editor.contextMenu.visible,
 				`${cart}: actual right click captures the intended identifier`);
-			const index = editorContextMenuState.entries.findIndex(entry => entry.action === 'goToDefinition');
-			await click(editorContextMenuState.itemBounds[index], 6);
+			const index = ide.editor.contextMenu.model.rows.findIndex(entry => entry.command === 'goToDefinition');
+			const menu = ide.editor.contextMenu.model;
+			const row = menu.rows[index];
+			await click({ left: menu.viewport.bounds.left, right: menu.viewport.bounds.right,
+				top: menu.viewport.offsetTop + row.top, bottom: menu.viewport.offsetTop + row.bottom }, 6);
 		}
 		for (let index = 0; index < 3; index += 1) await frame();
 		assertSourcePosition(spec.path, spec.declarationLine, spec.declarationColumn, `${cart} ${route}`);
@@ -158,6 +161,7 @@ export async function runStudioPointerNavigation(test: StudioFixture, cart: Navi
 	await testStudioBtMoves(test);
 	await testStudioBtDrag(test);
 	await testStudioBtRemove(test);
+	await testStudioContextMenu(test);
 	await testStudioBtDuplicate(test);
 	await testStudioTableTransfer(test);
 	await testStudioSourceBookmarks(test);

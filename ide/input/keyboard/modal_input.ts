@@ -4,8 +4,6 @@ import { closeBlockingWorkbenchModal, hasBlockingWorkbenchModal } from '../../wo
 import { closeCreateResourcePrompt } from '../../workbench/contrib/resources/create/index';
 import { closeLineJump } from '../../workbench/contrib/code_editor/find/line_jump';
 import { closeSymbolSearch } from '../../workbench/contrib/code_editor/symbols/shared';
-import { closeEditorContextMenu } from '../../workbench/contrib/context_menu/widget';
-import { editorContextMenuState } from '../../workbench/contrib/context_menu/state';
 import { runtimeErrorState } from '../../editor/contrib/runtime_error/state';
 import { editorSearchState, lineJumpState } from '../../workbench/contrib/code_editor/find/widget_state';
 import { symbolSearchState } from '../../workbench/contrib/code_editor/symbols/search/state';
@@ -14,10 +12,6 @@ import { createResourceState } from '../../workbench/contrib/resources/widget_st
 export function handleEscapeKey(): boolean {
 	if (hasBlockingWorkbenchModal()) {
 		closeBlockingWorkbenchModal();
-		return true;
-	}
-	if (editorContextMenuState.visible) {
-		closeEditorContextMenu();
 		return true;
 	}
 	const overlay = runtimeErrorState.activeOverlay;

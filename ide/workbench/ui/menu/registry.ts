@@ -6,6 +6,8 @@ export type WorkbenchDropdownMenuId =
 	| 'menubar.run'
 	| 'menubar.view';
 
+export type WorkbenchContextMenuId = 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context';
+
 export type WorkbenchActionMenuId = 'sourceEditReview.title' | 'scenarioLab.title' | 'sceneEditor.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
 
 export type WorkbenchMenuCommandItem = {
@@ -19,7 +21,7 @@ export type WorkbenchMenuSeparator = {
 
 export type WorkbenchMenuItem = WorkbenchMenuCommandItem | WorkbenchMenuSeparator;
 
-type WorkbenchMenuContributions = {
+type WorkbenchMenuContributions = Record<WorkbenchContextMenuId, readonly WorkbenchMenuItem[]> & {
 	readonly 'sourceEditReview.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'menubar.file': readonly WorkbenchMenuItem[];
 	readonly 'menubar.edit': readonly WorkbenchMenuItem[];
@@ -35,6 +37,41 @@ type WorkbenchMenuContributions = {
 
 /** Immutable built-in menu contributions; renderers only project these items. */
 export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
+	'code.context': [{ type: 'command', command: 'undo' }, { type: 'command', command: 'redo' }],
+	'code.symbol.context': [
+		{ type: 'command', command: 'goToDefinition' },
+		{ type: 'command', command: 'referenceSearch' },
+		{ type: 'command', command: 'callHierarchy' },
+		{ type: 'command', command: 'rename' },
+		{ type: 'separator' },
+		{ type: 'command', command: 'undo' },
+		{ type: 'command', command: 'redo' },
+	],
+	'behaviorLens.node.context': [
+		{ type: 'command', command: 'behaviorLens.source' },
+		{ type: 'command', command: 'behaviorLens.details' },
+		{ type: 'separator' },
+		{ type: 'command', command: 'behaviorLens.duplicateChild' },
+		{ type: 'command', command: 'behaviorLens.removeChild' },
+		{ type: 'separator' },
+		{ type: 'command', command: 'undo' },
+		{ type: 'command', command: 'redo' },
+	],
+	'behaviorLens.state.context': [
+		{ type: 'command', command: 'behaviorLens.source' },
+		{ type: 'command', command: 'behaviorLens.details' },
+		{ type: 'separator' },
+		{ type: 'command', command: 'behaviorLens.setInitialState' },
+		{ type: 'separator' },
+		{ type: 'command', command: 'undo' },
+		{ type: 'command', command: 'redo' },
+	],
+	'behaviorLens.edge.context': [
+		{ type: 'command', command: 'behaviorLens.source' },
+		{ type: 'command', command: 'behaviorLens.details' },
+	],
+	'behaviorLens.property.context': [{ type: 'command', command: 'behaviorLens.source' }],
+	'behaviorLens.canvas.context': [{ type: 'command', command: 'undo' }, { type: 'command', command: 'redo' }],
 	'sourceEditReview.title': [
 		{ type: 'command', command: 'sourceEditReview.source' },
 		{ type: 'command', command: 'sourceEditReview.apply' },

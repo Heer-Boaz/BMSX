@@ -6,23 +6,18 @@ import { prepareEditorPointerFrame, readEditorPointerSnapshot } from './frame';
 import { handleEditorPanelPointer } from './panel';
 import { clearEditorPointerSelectionState } from './state';
 import { isCtrlDown, isMetaDown } from '../keyboard/key_input';
-import { handleEditorContextMenuPointer } from './context_menu/input';
 import { handleEditorChromePointerDispatch } from './chrome_dispatch';
 import type { CartEditor } from '../../cart_editor';
 import type { RuntimeSourceState } from '../../runtime/sources';
-import type { Clipboard } from '../../common/clipboard';
 import type { EditorDisplay } from '../../common/viewport';
-import { getActiveTab } from '../../workbench/ui/tabs';
 import { handleBlockingWorkbenchModalPointer, hasBlockingWorkbenchModal } from '../../workbench/contrib/modal/blocking_modal';
 import { pointerCapture } from './capture';
 import { editorChromeState } from '../../workbench/ui/chrome_state';
-import { editorContextMenuState } from '../../workbench/contrib/context_menu/state';
 
 export function handleTextEditorPointerInput(
 	display: EditorDisplay,
 	playerInput: PlayerInput,
 	now: number,
-	clipboard: Clipboard,
 	editor: CartEditor,
 	sources: RuntimeSourceState,
 ): void {
@@ -34,7 +29,7 @@ export function handleTextEditorPointerInput(
 	const quickInputVisible = editor.quickInput.visible;
 	const justReleased = (snapshot.justReleasedButtons & PointerButton.Primary) !== 0;
 	if (pointerCapture.dispatch(snapshot, blockingModal || quickInputVisible
-		|| editorChromeState.openMenuId !== null || editorContextMenuState.visible, now)) return;
+		|| editorChromeState.openMenuId !== null, now)) return;
 	if (prepareEditorPointerFrame(snapshot, gotoModifierActive, blockingModal || quickInputVisible)) {
 		return;
 	}
@@ -57,15 +52,8 @@ export function handleTextEditorPointerInput(
 		clearGotoHoverHighlight();
 		return;
 	}
-	const activeTab = getActiveTab();
-	if (activeTab.kind === 'code_editor' && handleEditorContextMenuPointer(
-		clipboard,
-		editor,
-		snapshot,
-		justPressed,
-		pointerSecondaryJustPressed,
-		playerInput,
-	)) {
+	if (editor.contextMenu.visible && editor.contextMenu.handlePointer(snapshot)) {
+		clearEditorPointerSelectionState();
 		clearHoverTooltip();
 		clearGotoHoverHighlight();
 		return;

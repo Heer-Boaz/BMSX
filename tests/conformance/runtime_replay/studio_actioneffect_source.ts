@@ -84,6 +84,13 @@ export async function testStudioActionEffectSource(test: StudioFixture): Promise
 	await click(properties.actionBar.items[0].bounds, 6);
 	check(getActiveTab() === code && activeCodeEditor.view.cursorRow === row && !hasSelection(),
 		'ActionEffect source: held Source click opens the selected field without dragging code');
+	await test.clickTab(lens.id);
+	await click(propertyBounds, 1, 'pointer_secondary');
+	check(ide.editor.contextMenu.visible && view.selection?.rowKey === period.source.rowKey,
+		'ActionEffect context: right click targets the property without expanding or activating it');
+	await press('Home'); await press('Enter');
+	check(getActiveTab() === code && activeCodeEditor.view.cursorRow === row && !hasSelection(),
+		'ActionEffect context: shared menu opens exact field source without editing');
 	const oldDocument = view.document;
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- 🐉 effect source\n' }]);
 	const offset = model.buffer.getText().indexOf('period_ms = 20') + 'period_ms = '.length;

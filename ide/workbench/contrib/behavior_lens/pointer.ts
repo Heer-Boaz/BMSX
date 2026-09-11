@@ -1,3 +1,4 @@
+import { PointerButton } from '../../../input/pointer/buttons';
 import * as constants from '../../../common/constants';
 import type { PointerSnapshot } from '../../../common/models';
 import { workbenchListRowIndexAtPosition } from '../../ui/list_view';
@@ -9,6 +10,7 @@ export const enum BehaviorLensPointerResult {
 	Outside,
 	Handled,
 	Activate,
+	ContextMenu,
 }
 
 /** A pane gesture targets one occurrence in one source generation, not a reusable row key. */
@@ -40,6 +42,12 @@ export class BehaviorLensPointer {
 		}
 		const rowIndex = workbenchListRowIndexAtPosition(outline, snapshot.viewportX, snapshot.viewportY);
 		outline.hoverIndex = rowIndex;
+		if ((snapshot.justPressedButtons & PointerButton.Secondary) !== 0) {
+			this.cancel();
+			if (rowIndex >= 0) selectBehaviorLensRow(state, outline, rowIndex);
+			else state.selection = null;
+			return BehaviorLensPointerResult.ContextMenu;
+		}
 		if (!justPressed || rowIndex < 0) {
 			return BehaviorLensPointerResult.Handled;
 		}
