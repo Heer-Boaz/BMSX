@@ -28,8 +28,9 @@ export async function testStudioPointerHover(test: StudioFixture, scene: SceneEd
 	const quickInput = ide.editor.quickInput;
 	check(quickInput.visible && scene.actionBar.hoveredCommand === null, 'A09: palette revokes the previous routed hover');
 	const list = quickInput.model.list;
-	movePointer({ left: list.layout.contentLeft + 2, right: list.layout.contentLeft + 2,
-		top: list.layout.contentTop + 2, bottom: list.layout.contentTop + 2 });
+	const bounds = quickInput.model.viewport.bounds;
+	movePointer({ left: bounds.left + 2, right: bounds.left + 2,
+		top: bounds.top + 2, bottom: bounds.top + 2 });
 	await frame();
 	check(list.hoverIndex >= 0, 'A09: actual palette result row is hovered');
 	const selection = list.selectionIndex;

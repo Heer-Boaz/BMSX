@@ -43,7 +43,7 @@ function fixture(t: TestContext) {
 		viewportX: x, viewportY: y, pressedButtons: held, justPressedButtons: down, justReleasedButtons: up,
 		valid: true, insideViewport: true,
 	});
-	const pointer = (e: PointerSnapshot) => { if (!capture.dispatch(e, false, 0) && menu.visible) menu.handlePointer(e); };
+	const pointer = (e: PointerSnapshot) => { if (!capture.dispatch(e, false, 0, menu.pointerScope) && menu.visible) menu.handlePointer(e); };
 	const row = (index: number, held = 0, down = 0, up = 0) => event(menu.model.viewport.bounds.left + 8,
 		menu.model.viewport.offsetTop + menu.model.rows[index].top + 2, held, down, up);
 	const clock = new VirtualHeadlessClock(); const input = new Input(clock, new HeadlessInputHub(), -1);

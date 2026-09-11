@@ -562,3 +562,21 @@ leveren het voorbeeld voor brongebonden, operationele refactoranalyse en VS Code
 voor resource-owned edit/Undo. Hun architectuur rechtvaardigt geen tweede Lua-
 solver, universele omkeerbaarheid of workspace-transactionmanager voor één
 imported-field-edit. **Nog steeds analyse/ontwerp, geen productiefix.**
+
+### A06 — lijstinteractie en popup-capture (2026-09-11; gedeeltelijke uitvoering)
+
+De gedeelde picker gebruikt nu de bestaande pixel-scrollviewport en dezelfde
+axis-only scrollbar-gesture als andere scrollviews. Haar thumb behoudt queryfocus;
+rijactivatie gebeurt op release over de werkelijk ingedrukte rij. Querywijziging,
+nieuwe geometrie, buitenrelease en sessie-einde annuleren. Ctrl+Home/End bedient
+lijstgrenzen zonder gewone Home/End-tekstediting over te nemen. Capture heeft een
+surface-scope: een popup blokkeert achtergrondgestures, niet zijn eigen scrollbar.
+Tekstvoorbereiding is zichtbaar-bereikgebonden en blijft gecachet per font/breedte.
+
+De oude press-time-route faalt onafhankelijk op `f853f9681`. De volledige Studio-
+en Pietious source/graph/Undo-browsergates slagen op alle drie renderers, naast
+1544 geslaagde Lua-tests en één bestaande skip. De tests-typecheck behoudt zijn
+51 bestaande diagnostieken. Owners, productievoorbeelden, profiler en exacte
+bewijsgrenzen staan in [quick_input_interaction.md](quick_input_interaction.md).
+**A06 blijft open:** provider-eigen matching/highlights en symbol-/locationkeuzes
+zijn hiermee niet gemigreerd of gerepareerd.

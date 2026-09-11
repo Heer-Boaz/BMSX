@@ -1,4 +1,5 @@
-import type { WorkbenchListState } from '../../ui/list_view';
+import { point_in_rect } from '../../../../machine/ts/common/rect';
+import { WorkbenchScrollViewport } from '../../ui/scroll_viewport';
 
 /** Display data only. The caller retains the actual resource/symbol/other item. */
 export type QuickPickItem = {
@@ -12,6 +13,7 @@ export type QuickPickRow = {
 	readonly itemIndex: number;
 	readonly searchKey: string;
 	matchIndex: number;
+	textRevision: number;
 	labelText: string;
 	descriptionText: string;
 	detailText: string;
@@ -20,10 +22,32 @@ export type QuickPickRow = {
 /** One row allocation per admitted item, not per filter or rendered frame. */
 export class QuickPickModel {
 	public readonly entries: QuickPickRow[] = [];
-	public readonly list: WorkbenchListState<QuickPickRow> = {
-		rows: [], selectionIndex: -1, scroll: 0, hoverIndex: -1,
-		layout: { contentLeft: 0, contentTop: 0, contentRight: 0, contentBottom: 0, rowHeight: 0, visibleRowCount: 0 },
+	public readonly viewport = new WorkbenchScrollViewport();
+	public rowHeight = 0;
+	public revision = 0;
+	public readonly list = {
+		rows: [] as QuickPickRow[], selectionIndex: -1, hoverIndex: -1,
 	};
+
+	public get visibleRowCount(): number { return Math.trunc(this.viewport.height / this.rowHeight); }
+	public get firstVisibleIndex(): number { return Math.trunc((this.viewport.bounds.top - this.viewport.offsetTop) / this.rowHeight); }
+	public get endVisibleIndex(): number {
+		return Math.min(this.list.rows.length, Math.trunc((this.viewport.bounds.bottom - this.viewport.offsetTop + this.rowHeight - 1) / this.rowHeight));
+	}
+
+	public rowTop(index: number): number { return this.viewport.offsetTop + index * this.rowHeight; }
+
+	public rowIndexAtPosition(x: number, y: number): number {
+		if (!point_in_rect(x, y, this.viewport.bounds)) return -1;
+		const index = Math.trunc((y - this.viewport.offsetTop) / this.rowHeight);
+		return index < this.list.rows.length ? index : -1;
+	}
+
+	public revealSelection(): void {
+		if (this.list.selectionIndex < 0) return;
+		const top = this.list.selectionIndex * this.rowHeight;
+		this.viewport.scrollbar.reveal(top, top + this.rowHeight);
+	}
 
 	public setItems(items: readonly QuickPickItem[]): void {
 		this.entries.length = 0;
@@ -31,7 +55,7 @@ export class QuickPickModel {
 			const item = items[index];
 			this.entries.push({ item, itemIndex: index,
 				searchKey: `${item.label} ${item.description} ${item.detail}`.toLowerCase(),
-				matchIndex: 0, labelText: '', descriptionText: '', detailText: '' });
+				matchIndex: 0, textRevision: -1, labelText: '', descriptionText: '', detailText: '' });
 		}
 	}
 
@@ -54,8 +78,9 @@ export class QuickPickModel {
 		}
 		if (tokens.length > 0) list.rows.sort(compareMatches);
 		list.selectionIndex = list.rows.length === 0 ? -1 : 0;
-		list.scroll = 0;
+		this.viewport.scrollbar.setScroll(0);
 		list.hoverIndex = -1;
+		this.revision += 1;
 	}
 }
 

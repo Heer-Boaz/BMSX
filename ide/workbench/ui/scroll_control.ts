@@ -4,21 +4,21 @@ import type { PointerSnapshot } from '../../common/models';
 import type { InputFocusService, InputFocusTarget } from '../../input/focus';
 import { consumeIdeKey, shouldRepeatKeyFromPlayer } from '../../input/keyboard/key_input';
 import { PointerButton } from '../../input/pointer/buttons';
-import type { PointerCaptureService, PointerCaptureTarget } from '../../input/pointer/capture';
+import { WORKBENCH_POINTER_SCOPE, type PointerCaptureScope, type PointerCaptureService } from '../../input/pointer/capture';
 import type { WorkbenchScrollViewport } from './scroll_viewport';
+import { ScrollbarPointerControl } from './scrollbar_pointer';
 
 /** Pane-owned gestures for a retained scroll view, independent of its child controls. */
-export class WorkbenchScrollControl implements PointerCaptureTarget {
+export class WorkbenchScrollControl {
 	public readonly focusTarget: InputFocusTarget;
 	public lineStep = 0;
 	private input: WorkbenchScrollViewport | null = null;
-	private revision = 0;
-	private dragging = false;
-	private pointerOffset = 0;
+	private readonly pointer: ScrollbarPointerControl;
 	private readonly unbindKeyboard: () => void;
 
-	public constructor(focus: InputFocusService, private readonly capture: PointerCaptureService, parent: InputFocusTarget,
-		keyboard?: (input: PlayerInput) => boolean) {
+	public constructor(focus: InputFocusService, capture: PointerCaptureService, parent: InputFocusTarget,
+		keyboard?: (input: PlayerInput) => boolean, scope: PointerCaptureScope = WORKBENCH_POINTER_SCOPE) {
+		this.pointer = new ScrollbarPointerControl(capture, scope);
 		this.focusTarget = focus.createTarget(parent);
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => {
 			if (keyboard?.(input)) return;
@@ -27,13 +27,12 @@ export class WorkbenchScrollControl implements PointerCaptureTarget {
 	}
 
 	public setInput(input: WorkbenchScrollViewport): void {
-		this.cancelPointer();
 		this.input = input;
-		this.revision = input.revision;
+		this.pointer.setInput(input.scrollbar);
 	}
 
 	public clearInput(): void {
-		this.cancelPointer();
+		this.pointer.clearInput();
 		this.focusTarget.release();
 		this.input = null;
 	}
@@ -41,44 +40,20 @@ export class WorkbenchScrollControl implements PointerCaptureTarget {
 	public dispose(): void { this.clearInput(); this.unbindKeyboard(); }
 
 	public cancelPointer(): void {
-		this.capture.release(this);
-		this.dragging = false;
+		this.pointer.cancelPointer();
 	}
 
 	public update(): void {
-		if (this.input !== null && this.revision !== this.input.revision) {
-			this.cancelPointer();
-			this.revision = this.input.revision;
-		}
+		this.pointer.update();
 	}
 
 	/** Child hits run first. Background focus is distinct from non-focusing scrollbar capture. */
 	public handlePointer(snapshot: PointerSnapshot): boolean {
 		const view = this.input!;
-		this.update();
-		const content = point_in_rect(snapshot.viewportX, snapshot.viewportY, view.bounds);
-		const track = point_in_rect(snapshot.viewportX, snapshot.viewportY, view.scrollbar.getTrack());
-		if (!snapshot.valid || !snapshot.insideViewport || (!content && !track)) return false;
-		if ((snapshot.justPressedButtons & PointerButton.Primary) !== 0) {
-			if (content) this.focusTarget.focus();
-			else if (view.scrollbar.isVisible()) {
-				this.pointerOffset = view.scrollbar.beginDrag(snapshot.viewportY);
-				this.capture.capture(this);
-				this.dragging = true;
-				if ((snapshot.justReleasedButtons & PointerButton.Primary) !== 0) this.releaseCapturedPointer(snapshot);
-			}
-		}
+		if (this.pointer.handlePointer(snapshot)) return true;
+		if (!snapshot.valid || !snapshot.insideViewport || !point_in_rect(snapshot.viewportX, snapshot.viewportY, view.bounds)) return false;
+		if ((snapshot.justPressedButtons & PointerButton.Primary) !== 0) this.focusTarget.focus();
 		return true;
-	}
-
-	public handleCapturedPointer(snapshot: PointerSnapshot): void {
-		this.update();
-		if (this.dragging) this.input!.scrollbar.drag(snapshot.viewportY, this.pointerOffset);
-	}
-
-	public releaseCapturedPointer(snapshot: PointerSnapshot): void {
-		this.handleCapturedPointer(snapshot);
-		this.cancelPointer();
 	}
 
 	public handleWheel(snapshot: PointerSnapshot, delta: number): boolean {

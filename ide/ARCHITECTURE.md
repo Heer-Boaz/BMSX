@@ -1050,13 +1050,26 @@ click-through; a held press does not activate an underlying control afterward.
 The pointer-frame owner keeps sampling snapshots/releases but ends lower
 scrollbar, tab and panel-resize gestures while an exclusive input surface is
 active. A gesture is cancelled, not suspended for the popup's later dismissal.
+Capture retains the admitting surface scope, independently of keyboard focus
+and hover. The router admits the topmost existing interactive surface (Quick
+Input, context menu, then workbench); a different scope or blocking modal cancels
+the old grab. Thus a popup can drag its own scrollbar without admitting a
+background gesture. Both popups cancel the previous grab on opening.
 The popup owns Escape before a lower code widget. Shared command routing still
 targets the input field's history. Property drafts continue to use their own
 ordinary blur policy; the chooser neither commits nor validates scene data.
 
-`QuickPickModel` retains rows, search keys and filtered row storage. Filtering
-runs on field changes, not frames. Labels are measured only when items,
-viewport width or font change. `editor/ui/inline/single_line_viewport.ts`
+`QuickPickModel` retains rows, search keys, filtered row storage and its projection
+revision. Filtering runs on field changes, not frames. Its pixel viewport uses
+the existing `WorkbenchScrollViewport` and `Scrollbar` as the sole range owner.
+The axis-only `ScrollbarPointerControl` is shared with focusable workbench scroll
+views; dragging the picker thumb retains query focus. A row press selects and
+captures the admitted row; only release on that same row accepts. Query changes,
+new geometry, outside release and session end cancel, rather than accepting a
+replacement ordinal. Ctrl+Home/End navigate list boundaries; plain Home/End edit
+the query. Labels are prepared only for visible rows, retained per font/width
+generation. Idle frames neither filter nor measure the catalog.
+`editor/ui/inline/single_line_viewport.ts`
 retains glyph advances and reveals a bounded whole-glyph span of the complete
 single-line query, without a query-length cap or substring drawing. The picker
 uses the active IDE font and does not modify code-area geometry.
@@ -1072,6 +1085,9 @@ same-named resources from different domains. There is no second resource
 catalog owner, code-tab activation prerequisite, or generic prefab/scene schema.
 The removed `@`/`#`/`:` redirection to code-only widgets is not emulated;
 explicit symbol and line commands retain their own contexts.
+The interaction contract and references are in `docs/quick_input_interaction.md`.
+Provider-specific matching/highlights and symbol/location chooser convergence
+remain open A06 work; shared scrolling does not complete that search contract.
 
 `pick` admits a typed item provider once, after focus has left the invoking
 control. Replacing a picker first restores the original control; its ordinary

@@ -9,7 +9,7 @@ import type { CartEditor } from '../../cart_editor';
 import type { RuntimeSourceState } from '../../runtime/sources';
 import type { EditorDisplay } from '../../common/viewport';
 import { handleBlockingWorkbenchModalPointer, hasBlockingWorkbenchModal } from '../../workbench/contrib/modal/blocking_modal';
-import { pointerCapture } from './capture';
+import { pointerCapture, WORKBENCH_POINTER_SCOPE } from './capture';
 import { pointerHover } from './hover';
 import { editorChromeState } from '../../workbench/ui/chrome_state';
 
@@ -28,9 +28,11 @@ export function handleTextEditorPointerInput(
 		const snapshot = readEditorPointerSnapshot(display, playerInput);
 		const blockingModal = hasBlockingWorkbenchModal();
 		const quickInputVisible = editor.quickInput.visible;
+		const captureScope = quickInputVisible ? editor.quickInput.pointerScope
+			: editor.contextMenu.visible ? editor.contextMenu.pointerScope : WORKBENCH_POINTER_SCOPE;
 		const justReleased = (snapshot.justReleasedButtons & PointerButton.Primary) !== 0;
-		if (pointerCapture.dispatch(snapshot, blockingModal || quickInputVisible
-			|| editorChromeState.openMenuId !== null, now)) return;
+		if (pointerCapture.dispatch(snapshot, blockingModal
+			|| (captureScope === WORKBENCH_POINTER_SCOPE && editorChromeState.openMenuId !== null), now, captureScope)) return;
 		if (prepareEditorPointerFrame(snapshot, gotoModifierActive, blockingModal || quickInputVisible
 			|| editor.contextMenu.visible || editorChromeState.openMenuId !== null)) {
 			return;

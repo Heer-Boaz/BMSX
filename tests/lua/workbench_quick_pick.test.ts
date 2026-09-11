@@ -316,7 +316,7 @@ test('picker uses the actual tiny font and draws only a bounded span of an unbou
 		for (let index = 0; index < frame.commandCount; index += 1) {
 			if (frame.commandKinds[index] !== Host2DKind.Glyphs) continue;
 			const glyphs = frame.commandRefs[index] as GlyphRenderSubmission;
-			if (glyphs.y < picker.model.list.layout.contentTop || glyphs.y >= picker.model.list.layout.contentTop + picker.model.list.layout.rowHeight) continue;
+			if (glyphs.y < picker.model.viewport.bounds.top || glyphs.y >= picker.model.viewport.bounds.top + picker.model.rowHeight) continue;
 			assert.equal(glyphs.color, resolveThemeTokenColor(constants.COLOR_QUICK_OPEN_SELECTION_TEXT));
 			assert.notEqual(glyphs.color, resolveThemeTokenColor(constants.COLOR_QUICK_OPEN_SELECTION_BACKGROUND));
 			selectedLabels += 1;

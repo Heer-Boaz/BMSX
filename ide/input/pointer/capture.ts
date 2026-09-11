@@ -1,6 +1,9 @@
 import { PointerButton } from './buttons';
 import type { PointerSnapshot } from '../../common/models';
 
+export type PointerCaptureScope = symbol;
+export const WORKBENCH_POINTER_SCOPE: PointerCaptureScope = Symbol('workbench');
+
 export interface PointerCaptureTarget {
 	handleCapturedPointer(snapshot: PointerSnapshot, now: number): void;
 	releaseCapturedPointer(snapshot: PointerSnapshot, now: number): void;
@@ -11,13 +14,15 @@ export interface PointerCaptureTarget {
 export class PointerCaptureService {
 	private target: PointerCaptureTarget | null = null;
 	private button = PointerButton.Primary;
+	private scope = WORKBENCH_POINTER_SCOPE;
 
 	public get active(): boolean { return this.target !== null; }
 
-	public capture(target: PointerCaptureTarget, button = PointerButton.Primary): void {
+	public capture(target: PointerCaptureTarget, button = PointerButton.Primary, scope = WORKBENCH_POINTER_SCOPE): void {
 		this.cancel();
 		this.target = target;
 		this.button = button;
+		this.scope = scope;
 	}
 
 	public release(target: PointerCaptureTarget): void {
@@ -31,10 +36,10 @@ export class PointerCaptureService {
 	}
 
 	/** Blocking ends capture; it never postpones a drag until the popup closes. */
-	public dispatch(snapshot: PointerSnapshot, blocked: boolean, now: number): boolean {
+	public dispatch(snapshot: PointerSnapshot, blocked: boolean, now: number, scope = WORKBENCH_POINTER_SCOPE): boolean {
 		const target = this.target;
 		if (target === null) return false;
-		if (blocked || !snapshot.valid || !snapshot.insideViewport) {
+		if (blocked || this.scope !== scope || !snapshot.valid || !snapshot.insideViewport) {
 			this.cancel();
 			return false;
 		}

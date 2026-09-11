@@ -145,9 +145,9 @@ export async function testStudioBehaviorPicker(test: StudioFixture): Promise<voi
 		&& picker.model.list.rows[0].item.description === 'title_screen.lua'
 		&& picker.model.list.rows[0].item.detail !== picker.model.list.rows[1].item.detail,
 		'behavior picker: duplicate ids remain two source-located choices from a non-code pane');
-	const layout = picker.model.list.layout;
-	await click({ left: layout.contentLeft, right: layout.contentRight,
-		top: layout.contentTop + layout.rowHeight, bottom: layout.contentTop + layout.rowHeight * 2 }, 3);
+	const bounds = picker.model.viewport.bounds;
+	await click({ left: bounds.left, right: bounds.right,
+		top: bounds.top + picker.model.rowHeight, bottom: bounds.top + picker.model.rowHeight * 2 }, 3);
 	const duplicate = getActiveTab();
 	if (duplicate.kind !== 'behavior_lens') throw new Error('behavior picker: duplicate input missing');
 	check(duplicate !== lens && duplicate.workingCopy === model, 'behavior picker: pointer selection opens a distinct definition view');

@@ -1494,6 +1494,17 @@ cancellation. No gameplay shortcut, ICU word or C++ machine representation is
 changed. The owners, production references and proof boundaries are in
 `graph_navigation_design.md`.
 
+Workbench Quick Input and context menus retain their own pointer-capture scopes.
+The pointer router admits the same topmost surface for capture and ordinary
+hits; opening a popup cancels background gestures without blocking its own thumb.
+The shared axis-only scrollbar control does not change keyboard focus. Quick
+Input uses the existing pixel scroll viewport, retains admitted rows and accepts
+on release over the pressed row, not on press. Query/geometry/session changes
+cancel that gesture. Its visible labels are prepared lazily per font/width
+generation, without limiting the catalog. These are host interaction owners,
+not guest input or machine state. See `quick_input_interaction.md`; provider
+matching and symbol-choice convergence remain separate open A06 requirements.
+
 Host pointer hover has a separate routed-path owner in
 `ide/input/pointer/hover.ts`. Accepted control hits mark the current dispatch;
 unvisited controls receive leave even when capture, chrome or a popup stops

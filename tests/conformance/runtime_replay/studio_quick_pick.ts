@@ -9,6 +9,7 @@ import { SceneEditorPane } from '../../../ide/workbench/contrib/scene_editor/edi
 import { WHEEL_SCROLL_STEP } from '../../../ide/common/constants';
 import { check, type StudioFixture } from './studio_fixture';
 import { openSceneEditor, selectMember } from './studio_scene_source';
+import { testStudioQuickInputInteraction } from './studio_quick_input_interaction';
 
 /** No direct picker calls: physical workbench shortcut, pointer, clipboard and navigation. */
 export async function testStudioQuickPick(test: StudioFixture): Promise<void> {
@@ -31,6 +32,7 @@ export async function testStudioQuickPick(test: StudioFixture): Promise<void> {
 		'quick pick: workbench search does not activate a hidden code editor');
 	check(editorViewState.codeAreaTop === codeTop && picker.layout.bounds.right === editorViewState.viewportWidth - 8,
 		'quick pick: overlay has its own viewport, not a code inline bar');
+	await testStudioQuickInputInteraction(test);
 	for (const code of ['KeyR', 'KeyO', 'KeyO', 'KeyT']) await press(code);
 	await press('ControlLeft', 'KeyZ');
 	check(picker.field.text === 'roo' && model.buffer.getText() === original, 'quick pick: query Undo does not reach scene history');
@@ -73,9 +75,9 @@ export async function testStudioQuickPick(test: StudioFixture): Promise<void> {
 	input.inputAxis1('pointer:0', 'pointer_wheel', WHEEL_SCROLL_STEP * 3, clock.now());
 	await frame();
 	await frame();
-	check(picker.model.list.scroll > 0 && scene.outline.scroll === outlineScroll, 'quick pick: wheel scrolls only the popup list');
+	check(picker.model.viewport.scrollTop > 0 && scene.outline.scroll === outlineScroll, 'quick pick: wheel scrolls only the popup list');
 	await press('PageDown');
-	check(picker.model.list.selectionIndex >= picker.model.list.scroll, 'quick pick: keyboard selection is revealed after wheel scrolling');
+	check(picker.model.list.selectionIndex >= picker.model.firstVisibleIndex, 'quick pick: keyboard selection is revealed after wheel scrolling');
 	await click(editorChromeState.menuEntryBounds.view, 8);
 	check(!picker.visible && editorChromeState.openMenuId === null && inputFocus.target === x.field.focusTarget,
 		'quick pick: one outside held click cancels without clicking through into the View menu');
@@ -111,9 +113,9 @@ export async function testStudioQuickPick(test: StudioFixture): Promise<void> {
 	check(ide.editor.isActive && getActiveTab() === scene && !picker.visible, 'quick pick: IDE reopen restores the scene, not an orphaned popup');
 	await press('ControlLeft', 'Comma');
 	for (const code of ['KeyR', 'KeyO', 'KeyO', 'KeyT']) await press(code);
-	const layout = picker.model.list.layout;
-	await click({ left: layout.contentLeft, right: layout.contentRight,
-		top: layout.contentTop, bottom: layout.contentTop + layout.rowHeight }, 8);
+	const bounds = picker.model.viewport.bounds;
+	await click({ left: bounds.left, right: bounds.right,
+		top: bounds.top, bottom: bounds.top + picker.model.rowHeight }, 8);
 	await until(() => getActiveTab().kind === 'code_editor' && activeCodeEditor.model === model,
 		'quick pick: held pointer acceptance opens once through the resource owner');
 	check(!picker.visible && model.buffer.getText() === original && cycles() === position,

@@ -19,6 +19,7 @@ type ContextMenuSession = {
 
 /** One workbench popup lifetime. Contributions own targets and command admission. */
 export class ContextMenuController implements PointerCaptureTarget {
+	public readonly pointerScope = Symbol('context menu');
 	public readonly model = new ContextMenuModel();
 	public readonly focusTarget: InputFocusTarget;
 	private readonly scroll: WorkbenchScrollControl;
@@ -34,7 +35,7 @@ export class ContextMenuController implements PointerCaptureTarget {
 
 	public constructor(private readonly focus: InputFocusService, private readonly capture: PointerCaptureService) {
 		this.focusTarget = focus.createTarget();
-		this.scroll = new WorkbenchScrollControl(focus, capture, this.focusTarget);
+		this.scroll = new WorkbenchScrollControl(focus, capture, this.focusTarget, undefined, this.pointerScope);
 		this.scroll.setInput(this.model.viewport);
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
 		this.unbindBlur = this.focusTarget.onDidBlur(() => this.hide(false));
@@ -122,7 +123,7 @@ export class ContextMenuController implements PointerCaptureTarget {
 			this.model.selectedIndex = index >= 0 && this.model.rows[index].enabled ? index : -1;
 		}
 		if ((snapshot.justPressedButtons & PointerButton.Primary) !== 0 && this.model.selectedIndex >= 0) {
-			this.capture.capture(this);
+			this.capture.capture(this, PointerButton.Primary, this.pointerScope);
 			this.pressedIndex = this.model.selectedIndex;
 			if ((snapshot.justReleasedButtons & PointerButton.Primary) !== 0) this.releaseCapturedPointer(snapshot);
 		}
