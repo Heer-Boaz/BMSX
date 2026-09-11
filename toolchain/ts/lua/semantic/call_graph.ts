@@ -1,4 +1,5 @@
 import { SemanticDemandIndex } from './demand_index';
+import { SemanticCallContext } from './call_context';
 import {
 	type FunctionSummaryID,
 	FunctionSummaryStore,
@@ -10,6 +11,7 @@ import {
 import { SemanticInstantiationQuery } from './instantiate';
 import { SemanticMemberQuery } from './member_query';
 import type { Ref, SymbolID } from './model';
+import { SemanticQueryResults } from './query_dependencies';
 import { SemanticQueryWorklist } from './query_worklist';
 import type { BidirectionalTermRelation, TermRelation } from './term_relation';
 import { declarationValueSource, type CallValueEntry } from './value_graph';
@@ -21,27 +23,24 @@ export type CallFact = {
 };
 
 const EMPTY_CALL_FACTS: readonly CallFact[] = [];
+const EMPTY_CALL_ITEMS: ReadonlyMap<number, number> = new Map();
 
 export class SemanticCallWorklist extends SemanticQueryWorklist {
 	private readonly calls: SummaryCall[] = [];
 	private readonly ownerFrames: number[] = [];
-	private readonly itemsBySite: Map<CallValueEntry, number[]> = new Map();
+	private readonly itemsBySite = new Map<CallValueEntry, Map<number, number>>();
 
 	public enqueue(call: SummaryCall, ownerFrame: number): void {
 		let items = this.itemsBySite.get(call.site);
 		if (!items) {
-			items = [];
+			items = new Map();
 			this.itemsBySite.set(call.site, items);
 		}
-		for (let itemIndex = 0; itemIndex < items.length; itemIndex += 1) {
-			if (this.ownerFrames[items[itemIndex]] === ownerFrame) {
-				return;
-			}
-		}
+		if (items.has(ownerFrame)) return;
 		const item = this.calls.length;
 		this.calls.push(call);
 		this.ownerFrames.push(ownerFrame);
-		items.push(item);
+		items.set(ownerFrame, item);
 		this.add(item);
 	}
 
@@ -53,13 +52,19 @@ export class SemanticCallWorklist extends SemanticQueryWorklist {
 		return this.ownerFrames[item];
 	}
 
+	public callItems(site: CallValueEntry): ReadonlyMap<number, number> {
+		return this.itemsBySite.get(site) || EMPTY_CALL_ITEMS;
+	}
+
 }
 
 export class SemanticCallGraph {
+	private readonly contexts: SemanticCallContext[] = [];
+	private readonly contextQueries = new Map<CallValueEntry, number>();
+	private readonly contextResults: SemanticQueryResults<SemanticCallContext>;
 	private readonly factsByCall: Map<CallValueEntry, CallFact[]> = new Map();
 	private readonly incomingByFunction: Map<SymbolID, CallFact[]> = new Map();
 	private readonly outgoingByFunction: Map<SymbolID, CallFact[]> = new Map();
-	private readonly callArguments: TermID[] = [];
 	private readonly callableSummaries: FunctionSummaryID[] = [];
 	private readonly callableDeclarations: (SymbolID | undefined)[] = [];
 	private readonly callableTerms: TermID[] = [];
@@ -89,6 +94,7 @@ export class SemanticCallGraph {
 		private readonly members: SemanticMemberQuery,
 		private readonly worklist: SemanticCallWorklist,
 	) {
+		this.contextResults = new SemanticQueryResults(summaries.terms.dependencies);
 		for (let callIndex = 0; callIndex < demand.topLevelCalls.length; callIndex += 1) {
 			this.retainDirectFacts(demand.topLevelCalls[callIndex]);
 		}
@@ -109,8 +115,10 @@ export class SemanticCallGraph {
 				const item = this.worklist.take();
 				if (this.worklist.evaluation.isCurrent(item)) continue;
 				this.worklist.evaluation.begin(item);
-				this.processCall(this.worklist.call(item), this.worklist.ownerFrame(item));
-				this.worklist.evaluation.end(item);
+				const context = this.context(item);
+				const targetsBefore = context.applications.length;
+				this.processCall(context);
+				this.worklist.evaluation.end(item, context.applications.length !== targetsBefore);
 				processed = true;
 			}
 			if (processed) this.solvePasses += 1;
@@ -119,6 +127,40 @@ export class SemanticCallGraph {
 
 	public getSolvePasses(): number {
 		return this.solvePasses;
+	}
+
+	/** Retained site/owner inputs; these are may-analysis applications, not execution evidence. */
+	public callContexts(call: CallValueEntry): readonly SemanticCallContext[] {
+		let query = this.contextQueries.get(call);
+		if (query === undefined) {
+			query = this.contextQueries.size;
+			this.contextQueries.set(call, query);
+		}
+		if (this.contextResults.isCurrent(query)) return this.contextResults.values(query);
+		for (;;) {
+			this.contextResults.begin(query);
+			this.callee(call);
+			const contexts = this.contextResults.buffer(0);
+			for (const item of this.worklist.callItems(call).values()) {
+				// Read solved work even if this invocation did not have to evaluate it.
+				this.worklist.evaluation.isCurrent(item);
+				contexts.push(this.contexts[item]);
+			}
+			const result = this.contextResults.publish(query, contexts);
+			this.solve();
+			if (this.contextResults.isCurrent(query)) return result;
+		}
+	}
+
+	private context(item: number): SemanticCallContext {
+		let context = this.contexts[item];
+		if (context === undefined) {
+			const call = this.worklist.call(item);
+			const ownerFrame = this.worklist.ownerFrame(item);
+			context = new SemanticCallContext(call, this.instantiation.bindCall(call, ownerFrame), ownerFrame);
+			this.contexts[item] = context;
+		}
+		return context;
 	}
 
 	public compose(summary: FunctionSummaryID): void {
@@ -206,28 +248,14 @@ export class SemanticCallGraph {
 		return this.outgoingByFunction.get(symbol) || EMPTY_CALL_FACTS;
 	}
 
-	private processCall(call: SummaryCall, ownerFrame: number): void {
+	private processCall(context: SemanticCallContext): void {
+		const { call, inputs, ownerFrame } = context;
 		const callerFrame = ownerFrame > 0 ? ownerFrame : 0;
 		const compositionOwner = callerFrame === 0
 			? undefined
 			: this.instantiation.frames.summary(callerFrame);
 		const compositionCall = compositionOwner !== undefined
 			&& this.demand.compositionCalls(compositionOwner).includes(call);
-		let result: TermID | undefined;
-		if (ownerFrame < 0) {
-			this.callArguments.length = call.arguments.length;
-			for (let argumentIndex = 0; argumentIndex < call.arguments.length; argumentIndex += 1) {
-				this.callArguments[argumentIndex] = this.summaries.projectExternalTerm(
-					call.arguments[argumentIndex],
-				);
-			}
-			result = call.result === undefined
-				? undefined
-				: this.summaries.projectExternalTerm(call.result);
-		} else {
-			this.instantiation.contextualizeCallArguments(call, ownerFrame, this.callArguments);
-			result = this.instantiation.contextualizeCallResult(call, ownerFrame);
-		}
 		const targets = this.demand.directTargets(call.site);
 		if (targets.length > 0) {
 			for (let targetIndex = 0; targetIndex < targets.length; targetIndex += 1) {
@@ -240,24 +268,20 @@ export class SemanticCallGraph {
 				this.activateValueProducers(target);
 				this.processCallable(
 					target,
-					call,
+					context,
 					callerFrame,
-					result,
 					compositionCall ? compositionOwner : undefined,
 					ownerFrame === 0,
 				);
 			}
 			return;
 		}
-		const callee = ownerFrame < 0
-			? this.summaries.projectExternalTerm(call.callee)
-			: this.instantiation.contextualizeCallCallee(call, ownerFrame);
+		const callee = inputs.callee;
 		this.activateValueProducers(callee);
 		this.processCallable(
 			callee,
-			call,
+			context,
 			callerFrame,
-			result,
 			compositionCall ? compositionOwner : undefined,
 			ownerFrame === 0,
 		);
@@ -265,12 +289,13 @@ export class SemanticCallGraph {
 
 	private processCallable(
 		callee: TermID,
-		call: SummaryCall,
+		context: SemanticCallContext,
 		callerFrame: number,
-		result: TermID | undefined,
 		compositionOwner: FunctionSummaryID | undefined,
 		propagateResult: boolean,
 	): void {
+		const { call, inputs } = context;
+		const { result } = inputs;
 		this.members.resolveCallable(
 			callee,
 			this.callableSummaries,
@@ -293,9 +318,10 @@ export class SemanticCallGraph {
 				summary,
 				this.instantiation.closureForCallable(this.callableTerms[callableIndex]),
 				callerFrame,
-				this.callArguments,
+				inputs.arguments,
 				result,
 			);
+			context.addApplication(summary, this.callableTerms[callableIndex], frame);
 			this.activateFrameIdentifiers(summary, frame);
 			const queriedCalls = this.queriedCallsBySummary[summary];
 			if (queriedCalls) {

@@ -222,6 +222,9 @@ export type InstantiatedCallSink = (
 	ownerFrame: number,
 ) => void;
 
+/** Contextual value terms; deliberately not a static SummaryCall selection key. */
+export type CallInputs = Pick<SummaryCall, 'callee' | 'arguments' | 'result'>;
+
 export class SemanticInstantiationQuery {
 	public readonly values: BidirectionalTermRelation;
 	/** Read answers flow forward; they are not assignments or reverse storage aliases. */
@@ -486,27 +489,24 @@ export class SemanticInstantiationQuery {
 		}
 	}
 
-	public contextualizeCallArguments(
-		call: SummaryCall,
-		ownerFrame: number,
-		out: TermID[],
-	): void {
-		out.length = call.arguments.length;
-		for (let argumentIndex = 0; argumentIndex < call.arguments.length; argumentIndex += 1) {
-			out[argumentIndex] = ownerFrame === 0
-				? call.arguments[argumentIndex]
-				: this.contextualize(call.arguments[argumentIndex], ownerFrame);
+	/** Immutable input tuple, retained by the site/owner-frame work item. */
+	public bindCall(call: SummaryCall, ownerFrame: number): CallInputs {
+		if (ownerFrame === 0) return call;
+		const args: TermID[] = [];
+		if (ownerFrame < 0) {
+			for (const argument of call.arguments) args.push(this.summaries.projectExternalTerm(argument));
+			return {
+				callee: this.summaries.projectExternalTerm(call.callee),
+				arguments: args,
+				result: call.result === undefined ? undefined : this.summaries.projectExternalTerm(call.result),
+			};
 		}
-	}
-
-	public contextualizeCallCallee(call: SummaryCall, ownerFrame: number): TermID {
-		return ownerFrame === 0 ? call.callee : this.contextualize(call.callee, ownerFrame);
-	}
-
-	public contextualizeCallResult(call: SummaryCall, ownerFrame: number): TermID | undefined {
-		return call.result === undefined || ownerFrame === 0
-			? call.result
-			: this.contextualize(call.result, ownerFrame);
+		for (const argument of call.arguments) args.push(this.contextualize(argument, ownerFrame));
+		return {
+			callee: this.contextualize(call.callee, ownerFrame),
+			arguments: args,
+			result: call.result === undefined ? undefined : this.contextualize(call.result, ownerFrame),
+		};
 	}
 
 	public closureForCallable(term: TermID): number {

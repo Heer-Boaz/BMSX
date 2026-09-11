@@ -1,6 +1,7 @@
 import type { FileSemanticData, Ref, SymbolID } from './model';
 import { SemanticEffectIndex, type EffectRelevance } from './effect_index';
 import {
+	type FunctionCall,
 	type FunctionSummary,
 	type FunctionSummaryID,
 	FunctionSummaryStore,
@@ -17,21 +18,13 @@ import {
 	type CallValueEntry,
 } from './value_graph';
 
-export type IndexedCall = SummaryCall & {
-	readonly owner: FunctionSummaryID | undefined;
-};
-
-export type OwnedIndexedCall = SummaryCall & {
-	readonly owner: FunctionSummaryID;
-};
-
 type EffectCallSelection = EffectRelevance & {
 	readonly calls: (readonly SummaryCall[] | undefined)[];
 };
 
 const EMPTY_WRITES: readonly SummaryWrite[] = [];
 const EMPTY_SYMBOLS: readonly SymbolID[] = [];
-const EMPTY_CALLS: readonly IndexedCall[] = [];
+const EMPTY_CALLS: readonly SummaryCall[] = [];
 const EMPTY_SUMMARIES: readonly FunctionSummaryID[] = [];
 const EMPTY_TERMS: readonly TermID[] = [];
 
@@ -39,19 +32,19 @@ const EMPTY_TERMS: readonly TermID[] = [];
 // publishes a function effect; those transitions belong to the query engine.
 export class SemanticDemandIndex {
 	public readonly aliases: readonly SummaryAlias[];
-	public readonly topLevelCalls: readonly IndexedCall[];
+	public readonly topLevelCalls: readonly SummaryCall[];
 	private readonly staticWritesByName: Map<SemanticNameID, SummaryWrite[]> = new Map();
 	private readonly receiverWritersByName: Map<SemanticNameID, FunctionSummaryID[]> = new Map();
-	private readonly candidateCallsByName: Map<SemanticNameID, IndexedCall[]> = new Map();
+	private readonly candidateCallsByName: Map<SemanticNameID, SummaryCall[]> = new Map();
 	private readonly directTargetsByCall: Map<CallValueEntry, SymbolID[]> = new Map();
 	private readonly referencesByCall: Map<CallValueEntry, Ref> = new Map();
-	private readonly callsBySite: Map<CallValueEntry, IndexedCall> = new Map();
+	private readonly callsBySite: Map<CallValueEntry, SummaryCall> = new Map();
 	private readonly dependentSummariesByTerm: FunctionSummaryID[][] = [];
-	private readonly dependentCallsByTerm: OwnedIndexedCall[][] = [];
-	private readonly callerCallsByTerm: OwnedIndexedCall[][] = [];
-	private readonly topLevelCallsByAnchor: IndexedCall[][] = [];
-	private readonly topLevelResultCallsByTerm: IndexedCall[][] = [];
-	private readonly resultCallsByTerm: OwnedIndexedCall[][] = [];
+	private readonly dependentCallsByTerm: FunctionCall[][] = [];
+	private readonly callerCallsByTerm: FunctionCall[][] = [];
+	private readonly topLevelCallsByAnchor: SummaryCall[][] = [];
+	private readonly topLevelResultCallsByTerm: SummaryCall[][] = [];
+	private readonly resultCallsByTerm: FunctionCall[][] = [];
 	private readonly relatedTermsByTerm: TermID[][] = [];
 	private readonly indexedSummaryTerms: number[] = [];
 	private readonly indexedDependentCallTerms: number[] = [];
@@ -93,7 +86,7 @@ export class SemanticDemandIndex {
 		private readonly summaries: FunctionSummaryStore,
 	) {
 		const aliases: SummaryAlias[] = [];
-		const topLevelCalls: IndexedCall[] = [];
+		const topLevelCalls: SummaryCall[] = [];
 		const functionNamesByDeclaration = new Map<SymbolID, SemanticNameID>();
 		for (let fileIndex = 0; fileIndex < files.length; fileIndex += 1) {
 			const file = files[fileIndex];
@@ -193,7 +186,7 @@ export class SemanticDemandIndex {
 				this.retainMemberName(summary.writes[writeIndex].name);
 			}
 			for (let callIndex = 0; callIndex < summary.calls.length; callIndex += 1) {
-					const call: OwnedIndexedCall = { ...summary.calls[callIndex], owner: summary.id };
+				const call = summary.calls[callIndex];
 				this.callsBySite.set(call.site, call);
 				this.indexCandidateCall(call);
 				this.indexCallerCall(call);
@@ -241,7 +234,7 @@ export class SemanticDemandIndex {
 		return this.receiverWritersByName.get(name) || EMPTY_SUMMARIES;
 	}
 
-	public candidateCalls(name: SemanticNameID): readonly IndexedCall[] {
+	public candidateCalls(name: SemanticNameID): readonly SummaryCall[] {
 		return this.candidateCallsByName.get(name) || EMPTY_CALLS;
 	}
 
@@ -253,15 +246,15 @@ export class SemanticDemandIndex {
 		return this.referencesByCall.get(call);
 	}
 
-	public call(site: CallValueEntry): IndexedCall {
-		return this.callsBySite.get(site) as IndexedCall;
+	public call(site: CallValueEntry): SummaryCall {
+		return this.callsBySite.get(site) as SummaryCall;
 	}
 
 	public names(): readonly SemanticNameID[] {
 		return this.memberNames;
 	}
 
-	public callerCallsForTerm(term: TermID): readonly OwnedIndexedCall[] {
+	public callerCallsForTerm(term: TermID): readonly FunctionCall[] {
 		return this.callerCallsByTerm[term] || EMPTY_CALLS;
 	}
 
@@ -269,20 +262,20 @@ export class SemanticDemandIndex {
 		return this.dependentSummariesByTerm[term] || EMPTY_SUMMARIES;
 	}
 
-	public dependentCallsForTerm(term: TermID): readonly OwnedIndexedCall[] {
+	public dependentCallsForTerm(term: TermID): readonly FunctionCall[] {
 		return this.dependentCallsByTerm[term] || EMPTY_CALLS;
 	}
 
-	public topLevelCallsForTerm(term: TermID): readonly IndexedCall[] {
+	public topLevelCallsForTerm(term: TermID): readonly SummaryCall[] {
 		const anchor = this.summaries.terms.anchor(term);
 		return this.topLevelCallsByAnchor[anchor] || EMPTY_CALLS;
 	}
 
-	public topLevelResultCallsForTerm(term: TermID): readonly IndexedCall[] {
+	public topLevelResultCallsForTerm(term: TermID): readonly SummaryCall[] {
 		return this.topLevelResultCallsByTerm[term] || EMPTY_CALLS;
 	}
 
-	public resultCallsForTerm(term: TermID): readonly OwnedIndexedCall[] {
+	public resultCallsForTerm(term: TermID): readonly FunctionCall[] {
 		return this.resultCallsByTerm[term] || EMPTY_CALLS;
 	}
 
@@ -356,7 +349,7 @@ export class SemanticDemandIndex {
 	public get staticCalleeEvaluations(): number { return this.staticCalleeQueries; }
 	public get effectBodyEvaluations(): number { return this.selectedEffectBodies; }
 
-	private compileTopLevelCall(call: CallValueEntry): IndexedCall {
+	private compileTopLevelCall(call: CallValueEntry): SummaryCall {
 		const args = new Array<TermID>(call.arguments.length);
 		for (let argumentIndex = 0; argumentIndex < call.arguments.length; argumentIndex += 1) {
 			args[argumentIndex] = this.summaries.terms.compileSource(call.arguments[argumentIndex]);
@@ -444,7 +437,7 @@ export class SemanticDemandIndex {
 		this.memberNames.push(name);
 	}
 
-	private indexCandidateCall(call: IndexedCall): void {
+	private indexCandidateCall(call: SummaryCall): void {
 		if (this.summaries.terms.kind(call.callee) !== TermKind.Member) {
 			return;
 		}
@@ -457,7 +450,7 @@ export class SemanticDemandIndex {
 		calls.push(call);
 	}
 
-	private indexCallerCall(call: OwnedIndexedCall): void {
+	private indexCallerCall(call: FunctionCall): void {
 		const anchor = this.summaries.terms.anchor(call.callee);
 		const anchorKind = this.summaries.terms.kind(anchor);
 		if (!this.summaries.terms.isIndexableAnchor(anchor)
@@ -504,7 +497,7 @@ export class SemanticDemandIndex {
 		summaries.push(summary);
 	}
 
-	private indexDependentCall(call: OwnedIndexedCall): void {
+	private indexDependentCall(call: FunctionCall): void {
 		if (call.result !== undefined) {
 			let calls = this.resultCallsByTerm[call.result];
 			if (!calls) {
@@ -533,7 +526,7 @@ export class SemanticDemandIndex {
 		}
 	}
 
-	private indexTopLevelCall(call: IndexedCall): void {
+	private indexTopLevelCall(call: SummaryCall): void {
 		this.callAnchorGeneration += 1;
 		this.indexTopLevelCallTerm(call, call.callee);
 		for (let argumentIndex = 0; argumentIndex < call.arguments.length; argumentIndex += 1) {
@@ -550,7 +543,7 @@ export class SemanticDemandIndex {
 		}
 	}
 
-	private indexTopLevelCallTerm(call: IndexedCall, term: TermID): void {
+	private indexTopLevelCallTerm(call: SummaryCall, term: TermID): void {
 		const anchor = this.summaries.terms.anchor(term);
 		if ((!this.summaries.terms.isIndexableAnchor(anchor)
 				&& !this.summaries.terms.isStringLiteralAnchor(anchor))

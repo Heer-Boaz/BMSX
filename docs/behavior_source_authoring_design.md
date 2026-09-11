@@ -64,6 +64,15 @@ vroegtijdig overschreven local-initializerregisters in de compiler. Dit zijn
 producer-/solvercorrecties, niet de nog ontbrekende gecorreleerde bronquery,
 resource-eigen documentconsumers of B03/B06-authoring.
 
+De [callcontexten en applicatie-edges](lua_call_applications.md) bewaren nu
+gekoppelde inputs per callsite/owner, ook bij gedeelde of recursief hergebruikte
+analyseframes. Dezelfde statische call blijft de identiteit in summary en
+demand-index; contextuele inputs vervangen die bronidentiteit niet. Herhaalde
+queries gebruiken de gedeelde dependency-cache. Dit maakt nog geen gesloten
+callee-/originverzameling en onderscheidt niet vanzelf hypothetische effecten
+van module-rooted toepassingen. De volgende grens blijft de concrete bronquery
+en haar resource-eigen consumer; B03/B06-authoring en latency blijven open.
+
 ## 1. Beslissing
 
 Behavior Lens wordt geen universele omkeerbare Lua-interpreter. Het is een

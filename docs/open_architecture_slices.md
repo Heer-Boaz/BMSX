@@ -556,6 +556,11 @@ opslagaliases. De CPU-oracle legt daarnaast de initializerregistervolgorde goed
 vast. Dit vervangt niet B03's reparent-gesture of B06's bewerkbare properties;
 gecorreleerde bronquery, resource-ownership en latency blijven hun voorwaarden.
 
+De [call-applicaties](lua_call_applications.md) behouden nu site/owner-contexten
+met hun gekoppelde inputs en afzonderlijke edges naar hergebruikte frames.
+De collection-query gebruikt de bestaande dependency-cache, niet een Lens-cache.
+Dit is geen gesloten source-/callee-proof: B03/B04/B06-authoring blijven open.
+
 | ID | Eigenaar / contract | Gate |
 | --- | --- | --- |
 | `STUDIO-BEHAVIOR-UX-B01` | Uitgewerkt: betekenisvolle BT/FSM-kaarten en volledige source-linked property-inspectie; technische bewijsdetails niet permanent op het canvas. Zie `behavior_inspection_design.md` voor de vooraf gemeten compositie en concrete owner-/bewijsgrenzen. | Tiny-resolutie met Problems, lange callbacks, exacte Source/Back, keyboard/controller/scroll/focus en non-mutating inspectie. B04-bronorigins, B06-propertyauthoring en B07-zoom blijven aparte contracten. |

@@ -60,11 +60,14 @@ export type SummaryAlias = {
 };
 
 export type SummaryCall = {
+	readonly owner: FunctionSummaryID | undefined;
 	readonly site: CallValueEntry;
 	readonly callee: TermID;
 	readonly arguments: readonly TermID[];
 	readonly result: TermID | undefined;
 };
+
+export type FunctionCall = SummaryCall & { readonly owner: FunctionSummaryID };
 
 export type FunctionSummary = {
 	readonly id: FunctionSummaryID;
@@ -75,7 +78,7 @@ export type FunctionSummary = {
 	readonly parameters: readonly TermID[];
 	readonly receiverProjection: TermID | undefined;
 	readonly writes: readonly SummaryWrite[];
-	readonly calls: readonly SummaryCall[];
+	readonly calls: readonly FunctionCall[];
 	readonly returns: readonly TermID[];
 	readonly aliases: readonly SummaryAlias[];
 };
@@ -732,7 +735,7 @@ export class FunctionSummaryStore {
 			});
 		}
 
-		const calls = new Array<SummaryCall>(flow.calls.length);
+		const calls = new Array<FunctionCall>(flow.calls.length);
 		for (let callIndex = 0; callIndex < flow.calls.length; callIndex += 1) {
 			const call = flow.calls[callIndex];
 			const args = new Array<TermID>(call.arguments.length);
@@ -740,6 +743,7 @@ export class FunctionSummaryStore {
 				args[argumentIndex] = this.terms.compileSource(call.arguments[argumentIndex]);
 			}
 			calls[callIndex] = {
+				owner: id,
 				site: call,
 				callee: this.terms.compileSource(call.callee),
 				arguments: args,

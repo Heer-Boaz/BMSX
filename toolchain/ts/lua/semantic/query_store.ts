@@ -1,4 +1,5 @@
 import { SemanticCallGraph, SemanticCallWorklist, type CallFact } from './call_graph';
+import type { SemanticCallContext } from './call_context';
 import { SemanticDemandIndex } from './demand_index';
 import {
 	FunctionSummaryStore,
@@ -153,6 +154,10 @@ export class LuaSemanticQueryStore {
 
 	public callee(call: CallValueEntry): readonly CallFact[] {
 		return this.calls.callee(call);
+	}
+
+	public callContexts(call: CallValueEntry): readonly SemanticCallContext[] {
+		return this.calls.callContexts(call);
 	}
 
 	public incoming(symbol: SymbolID, name: string): readonly CallFact[] {
