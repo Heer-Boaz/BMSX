@@ -7,9 +7,17 @@ import {
 } from './function_summary';
 import { SemanticInstantiationQuery } from './instantiate';
 import type { SymbolID } from './model';
-import { SemanticQueryEvaluation, SemanticQueryResults } from './query_dependencies';
+import { SemanticQueryEvaluation, SemanticQueryResults, updateQueryResult } from './query_dependencies';
+import { SemanticQueryWorklist } from './query_worklist';
 import { TermRelation } from './term_relation';
 import type { SemanticValueSource } from './value_graph';
+
+type MemberRead = {
+	readonly id: number;
+	readonly name: SemanticNameID;
+	readonly values: TermID[];
+	readonly declarations: SymbolID[];
+};
 
 export class SemanticMemberQuery {
 	private readonly alternatives: SemanticQueryResults<TermID>;
@@ -20,6 +28,9 @@ export class SemanticMemberQuery {
 	private readonly alternativeGeneration: number[] = [];
 	private readonly memberValues: TermID[][] = [];
 	private readonly memberDeclarations: SymbolID[][] = [];
+	private readonly memberReads: MemberRead[][] = [];
+	private readonly memberReadEvaluation: SemanticQueryEvaluation;
+	private memberReadCount = 0;
 	private readonly pendingMemberBases: TermID[][] = [];
 	private readonly memberWriteMatches: number[][] = [];
 	private readonly memberWriteIndex: SemanticQueryEvaluation;
@@ -42,6 +53,10 @@ export class SemanticMemberQuery {
 	private readonly semanticPrototypeSources: SemanticQueryResults<TermID>;
 	private readonly prototypeOwnerIndex: SemanticQueryEvaluation;
 	private readonly prototypeSourceIndex: SemanticQueryEvaluation;
+	private readonly prototypeOwnerWork: SemanticQueryWorklist;
+	private readonly prototypeSourceWork: SemanticQueryWorklist;
+	private indexedPrototypeOwners = 0;
+	private indexedPrototypeSources = 0;
 	private readonly prototypeOwnersByValue: TermRelation;
 	private readonly prototypeSourcesByLocation: TermRelation;
 	private readonly queryTerms: TermID[] = [];
@@ -62,6 +77,7 @@ export class SemanticMemberQuery {
 	) {
 		const dependencies = summaries.terms.dependencies;
 		this.valueDemand = new SemanticQueryEvaluation(dependencies);
+		this.memberReadEvaluation = new SemanticQueryEvaluation(dependencies);
 		this.memberWriteIndex = new SemanticQueryEvaluation(dependencies);
 		this.alternatives = new SemanticQueryResults<TermID>(dependencies);
 		this.locations = new SemanticQueryResults<TermID>(dependencies);
@@ -72,6 +88,8 @@ export class SemanticMemberQuery {
 		this.semanticPrototypeSources = new SemanticQueryResults<TermID>(dependencies);
 		this.prototypeOwnerIndex = new SemanticQueryEvaluation(dependencies);
 		this.prototypeSourceIndex = new SemanticQueryEvaluation(dependencies);
+		this.prototypeOwnerWork = new SemanticQueryWorklist(dependencies);
+		this.prototypeSourceWork = new SemanticQueryWorklist(dependencies);
 		this.prototypeOwnersByValue = new TermRelation(dependencies);
 		this.prototypeSourcesByLocation = new TermRelation(dependencies);
 	}
@@ -81,6 +99,7 @@ export class SemanticMemberQuery {
 	}
 
 	public get valueEvaluations(): number { return this.alternatives.count; }
+	public get memberEvaluations(): number { return this.memberReadEvaluation.count; }
 	public get locationEvaluations(): number { return this.locations.count; }
 	public get prototypeEvaluations(): number {
 		return this.prototypeOwners.count + this.prototypeSources.count
@@ -88,6 +107,9 @@ export class SemanticMemberQuery {
 	}
 	public get indexEvaluations(): number {
 		return this.memberWriteIndex.count + this.prototypeOwnerIndex.count + this.prototypeSourceIndex.count;
+	}
+	public get prototypeJoinEvaluations(): number {
+		return this.prototypeOwnerWork.evaluation.count + this.prototypeSourceWork.evaluation.count;
 	}
 
 	public resolveMembers(
@@ -101,9 +123,7 @@ export class SemanticMemberQuery {
 		this.symbolGeneration += 1;
 		for (let queryIndex = 0; queryIndex < this.queryTerms.length; queryIndex += 1) {
 			this.demandValue(this.queryTerms[queryIndex]);
-			const values = this.memberValuesAtDepth(0);
-			const declarations = this.memberDeclarationsAtDepth(0);
-			this.collectMemberValues(this.queryTerms[queryIndex], name, values, declarations, 0);
+			const declarations = this.collectMemberValues(this.queryTerms[queryIndex], name, 0).declarations;
 			for (let declarationIndex = 0; declarationIndex < declarations.length; declarationIndex += 1) {
 				const declaration = declarations[declarationIndex];
 				if (this.symbolSeen.get(declaration) !== this.symbolGeneration) {
@@ -267,15 +287,11 @@ export class SemanticMemberQuery {
 				case TermKind.Member: {
 					const name = terms.operand(current) as SemanticNameID;
 					this.instantiation.projectName(name);
-					const memberValues = this.memberValuesAtDepth(depth);
-					const memberDeclarations = this.memberDeclarationsAtDepth(depth);
-					this.collectMemberValues(
+					const memberValues = this.collectMemberValues(
 						terms.base(current),
 						name,
-						memberValues,
-						memberDeclarations,
 						depth,
-					);
+					).values;
 					for (let valueIndex = 0; valueIndex < memberValues.length; valueIndex += 1) {
 						this.instantiation.addReadValue(current, memberValues[valueIndex]);
 						queue.push(memberValues[valueIndex]);
@@ -410,15 +426,37 @@ export class SemanticMemberQuery {
 	private collectMemberValues(
 		base: TermID,
 		name: SemanticNameID,
-		values: TermID[],
-		declarations: SymbolID[],
 		depth: number,
-	): void {
+	): MemberRead {
+		let reads = this.memberReads[base];
+		if (!reads) {
+			reads = [];
+			this.memberReads[base] = reads;
+		}
+		let read: MemberRead | undefined;
+		for (let index = 0; index < reads.length; index += 1) {
+			if (reads[index].name === name) {
+				read = reads[index];
+				break;
+			}
+		}
+		if (!read) {
+			read = { id: this.memberReadCount++, name, values: [], declarations: [] };
+			reads.push(read);
+		}
+		if (this.memberReadEvaluation.isCurrent(read.id) || this.memberReadEvaluation.isComputing(read.id)) return read;
+		this.memberReadEvaluation.begin(read.id);
+		const values = this.memberValuesAtDepth(depth);
+		const declarations = this.memberDeclarationsAtDepth(depth);
 		values.length = 0;
 		declarations.length = 0;
 		const seen = this.memberSeenAtDepth(depth);
 		const generation = this.nextMemberGeneration(depth);
 		this.collectMemberValuesRecursive(base, name, values, declarations, seen, generation, depth, false, true);
+		const valuesChanged = updateQueryResult(read.values, values);
+		const declarationsChanged = updateQueryResult(read.declarations, declarations);
+		this.memberReadEvaluation.end(read.id, valuesChanged || declarationsChanged);
+		return read;
 	}
 
 	private collectMemberValuesRecursive(
@@ -840,11 +878,19 @@ export class SemanticMemberQuery {
 		if (this.prototypeOwnerIndex.isCurrent(0) || this.prototypeOwnerIndex.isComputing(0)) return;
 		this.prototypeOwnerIndex.begin(0);
 		const prototypes = this.instantiation.prototypes;
-		for (let link = 1; link <= prototypes.count; link += 1) {
+		const count = prototypes.count;
+		const work = this.prototypeOwnerWork;
+		while (this.indexedPrototypeOwners < count) work.add(++this.indexedPrototypeOwners);
+		const pending = work.pendingCount;
+		for (let item = 0; item < pending; item += 1) {
+			const link = work.take();
+			if (work.evaluation.isCurrent(link)) continue;
+			work.evaluation.begin(link);
 			const targets = this.collectAlternatives(prototypes.target(link), depth + 1);
 			for (let targetIndex = 0; targetIndex < targets.length; targetIndex += 1) {
 				this.prototypeOwnersByValue.add(targets[targetIndex], prototypes.owner(link));
 			}
+			work.evaluation.end(link);
 		}
 		this.prototypeOwnerIndex.end(0);
 	}
@@ -871,15 +917,26 @@ export class SemanticMemberQuery {
 		if (this.prototypeSourceIndex.isCurrent(0) || this.prototypeSourceIndex.isComputing(0)) return;
 		this.prototypeSourceIndex.begin(0);
 		const prototypes = this.instantiation.prototypes;
-		for (let link = 1; link <= prototypes.count; link += 1) {
+		const count = prototypes.count;
+		const work = this.prototypeSourceWork;
+		while (this.indexedPrototypeSources < count) {
+			const link = ++this.indexedPrototypeSources;
+			if (prototypes.first(prototypes.owner(link)) === link) work.add(link);
+		}
+		const pending = work.pendingCount;
+		for (let item = 0; item < pending; item += 1) {
+			const link = work.take();
+			if (work.evaluation.isCurrent(link)) continue;
+			work.evaluation.begin(link);
 			const owner = prototypes.owner(link);
-			if (prototypes.first(owner) !== link) continue;
+			const first = prototypes.first(owner);
 			const owners = this.collectLocationAlternatives(owner, depth + 1);
 			for (let ownerIndex = 0; ownerIndex < owners.length; ownerIndex += 1) {
-				for (let target = link; target !== 0; target = prototypes.next(target)) {
+				for (let target = first; target !== 0; target = prototypes.next(target)) {
 					this.prototypeSourcesByLocation.add(owners[ownerIndex], prototypes.target(target));
 				}
 			}
+			work.evaluation.end(link);
 		}
 		this.prototypeSourceIndex.end(0);
 	}

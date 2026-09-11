@@ -92,6 +92,16 @@ test('changed output wakes a late cyclic reader even when the producer is alread
 	queries.begin(1);
 	assert.equal(queries.isCurrent(0), true);
 	queries.publish(1, queries.values(0));
+	// Nested result consumption also records 0 -> 1. Settle that retained
+	// cycle after 1 publishes the value that it previously read too early.
+	while (!queries.isCurrent(0) || !queries.isCurrent(1)) {
+		queries.begin(0);
+		facts.read(4);
+		queries.publish(0, [11]);
+		queries.begin(1);
+		queries.isCurrent(0);
+		queries.publish(1, queries.values(0));
+	}
 	assert.equal(queries.isCurrent(1), true);
 	assert.deepEqual(queries.values(1), [11]);
 });
@@ -316,4 +326,136 @@ test('an empty prototype join wakes when the first prototype fact arrives', () =
 		queries.publish(0, result);
 	}
 	assert.deepEqual(queries.values(0), [file.decls.find(entry => entry.name === 'marker')!.id]);
+});
+
+test('repeated dependency reads preserve every parent after nested evaluations and later writes', () => {
+	const dependencies = new SemanticQueryDependencies();
+	const facts = new SemanticDependencyIndex(dependencies);
+	const queries = new SemanticQueryEvaluation(dependencies);
+	queries.begin(0);
+	for (let index = 0; index < 20; index += 1) facts.read(7);
+	queries.begin(1);
+	for (let index = 0; index < 20; index += 1) facts.read(7);
+	queries.end(1);
+	for (let index = 0; index < 20; index += 1) facts.read(7);
+	queries.end(0);
+	facts.changed(7);
+	assert.equal(queries.isCurrent(0), false);
+	assert.equal(queries.isCurrent(1), false);
+	queries.begin(1);
+	facts.read(7);
+	queries.end(1);
+	facts.changed(7);
+	assert.equal(queries.isCurrent(1), false);
+});
+
+test('complete member reads share their negative result without manufacturing a member path', () => {
+	const file = buildLuaFileSemanticData('local object = {}\nlocal other = { added = true }', 'read.lua');
+	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
+	const demand = new SemanticDemandIndex([file], summaries);
+	const instantiation = new SemanticInstantiationQuery(summaries, demand, () => assert.fail('no call in this fixture'));
+	const members = new SemanticMemberQuery(summaries, instantiation);
+	const source = declarationValueSource(file.decls.find(entry => entry.name === 'object')!.id);
+	const object = summaries.terms.compileSource(source);
+	const name = summaries.terms.nameId('added');
+	const output: SymbolID[] = [];
+	members.resolveMembers(source, name, output);
+	assert.deepEqual(output, []);
+	const evaluations = members.memberEvaluations;
+	members.resolveMembers(declarationValueSource(source.root.declId), name, output);
+	assert.equal(members.memberEvaluations, evaluations);
+	assert.equal(summaries.terms.retainedMember(object, name), undefined);
+	const write = demand.staticWrites(name)[0];
+	instantiation.writes.add({ ...write, base: object });
+	members.resolveMembers(source, name, output);
+	assert.deepEqual(output, [write.declaration]);
+	assert.equal(members.memberEvaluations, evaluations + 1);
+});
+
+test('prototype join refinement revisits changed owners instead of the complete relation', () => {
+	const lines = ['local unrelated = {}'];
+	for (let index = 0; index < 32; index += 1) lines.push(`local object_${index} = {}\nlocal prototype_${index} = {}`);
+	const file = buildLuaFileSemanticData(lines.join('\n'), 'joins.lua');
+	const summaries = new FunctionSummaryStore([file], new WorkspaceValueIdentityIndex({ files: [file], globalValues: new Map() }));
+	const demand = new SemanticDemandIndex([file], summaries);
+	const instantiation = new SemanticInstantiationQuery(summaries, demand, () => assert.fail('no call in this fixture'));
+	const members = new SemanticMemberQuery(summaries, instantiation);
+	const terms = summaries.terms;
+	const objects: TermID[] = [];
+	for (let index = 0; index < 32; index += 1) {
+		const object = terms.compileSource(declarationValueSource(file.decls.find(entry => entry.name === `object_${index}`)!.id));
+		const prototype = terms.compileSource(declarationValueSource(file.decls.find(entry => entry.name === `prototype_${index}`)!.id));
+		objects.push(object);
+		instantiation.prototypes.add(object, prototype);
+	}
+	const source = declarationValueSource(file.decls.find(entry => entry.name === 'object_0')!.id);
+	const name = terms.nameId('missing');
+	const query = new SemanticQueryResults<SymbolID>(terms.dependencies);
+	function resolve(): void {
+		while (!query.isCurrent(0)) {
+			query.begin(0);
+			const output = query.buffer(0);
+			members.resolveMembers(source, name, output);
+			query.publish(0, output);
+		}
+	}
+	resolve();
+	const before = members.prototypeJoinEvaluations;
+	assert.ok(before >= 32, 'the initial negative query joined the retained prototype owners');
+	const unrelated = terms.compileSource(declarationValueSource(file.decls.find(entry => entry.name === 'unrelated')!.id));
+	instantiation.values.add(objects[31], unrelated);
+	resolve();
+	assert.equal(members.prototypeJoinEvaluations, before + 1);
+	assert.deepEqual(query.values(0), []);
+	instantiation.prototypes.add(objects[31], objects[30]);
+	resolve();
+	assert.equal(members.prototypeJoinEvaluations, before + 2, 'a new source for an indexed owner reschedules that row');
+	instantiation.prototypes.add(unrelated, objects[29]);
+	resolve();
+	assert.equal(members.prototypeJoinEvaluations, before + 3, 'only the new owner needs an initial join');
+});
+
+test('a parent records the refreshed child result, not the pre-evaluation cache miss', () => {
+	const dependencies = new SemanticQueryDependencies();
+	const facts = new SemanticDependencyIndex(dependencies);
+	const queries = new SemanticQueryResults<number>(dependencies);
+	queries.begin(0);
+	assert.equal(queries.isCurrent(1), false);
+	queries.begin(1);
+	facts.read(7);
+	const child = queries.publish(1, [11]);
+	queries.publish(0, child);
+	assert.equal(queries.isCurrent(0), true);
+	assert.equal(queries.isCurrent(1), true);
+	assert.equal(queries.count, 2, 'an acyclic cold fetch needs one evaluation per query');
+	facts.changed(7);
+	queries.begin(0);
+	assert.equal(queries.isCurrent(1), false);
+	queries.begin(1);
+	facts.read(7);
+	const changed = queries.publish(1, [22]);
+	queries.publish(0, changed);
+	assert.equal(queries.isCurrent(0), true, 'the old edge did not invalidate a parent before it consumed the new child');
+	assert.equal(queries.count, 4);
+});
+
+test('a parent reading a just-evaluated but unsettled child cannot retain a current answer', () => {
+	const dependencies = new SemanticQueryDependencies();
+	const facts = new SemanticDependencyIndex(dependencies);
+	const queries = new SemanticQueryResults<number>(dependencies);
+	queries.begin(0);
+	assert.equal(queries.isCurrent(1), false);
+	queries.begin(1);
+	facts.read(7);
+	facts.changed(7);
+	const child = queries.publish(1, []);
+	queries.publish(0, child);
+	assert.equal(queries.isCurrent(1), false);
+	assert.equal(queries.isCurrent(0), false, 'subscription after publication did not hide pending child inputs');
+	queries.begin(0);
+	queries.begin(1);
+	facts.read(7);
+	queries.publish(0, queries.publish(1, [11]));
+	assert.equal(queries.isCurrent(0), true);
+	assert.deepEqual(queries.values(0), [11]);
 });

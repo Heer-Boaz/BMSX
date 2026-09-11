@@ -529,6 +529,14 @@ De latencypoort blijft open: de koude workspace-query daalt in de gepaarde proef
 van 646 naar 316 ms, maar kleine workloads worden duurder. Die kosten moeten
 in de gedeelde taalowner worden aangepakt vóór ruimere graph-admission.
 
+De [vervolgslice voor queryconsumptie en demandindices](lua_query_evaluation.md)
+registreert een vers child-antwoord na evaluatie, behoudt complete member- en
+aggregate-antwoorden en verfijnt alleen gewijzigde prototyperijen. Statische
+callee-selectie en effect-bodyslices delen hun indices in de taalowner. De nieuwe
+gepaarde koude query daalt van 334 naar 255 ms bij dezelfde 303 frames; de meeste
+kleine workloads verbeteren, maar niet alle. Dit sluit de latencypoort nog niet
+en introduceert geen cross-edit reuse van opgeloste feiten of sterker B04-bewijs.
+
 | ID | Eigenaar / contract | Gate |
 | --- | --- | --- |
 | `STUDIO-BEHAVIOR-UX-B01` | Betekenisvolle BT/FSM-kaarten en leesbare, source-linked inspectie; technische bewijsdetails niet permanent op het canvas. | Eerst details-compositie meten op tiny-resolutie met ander paneel open. Geen verloren informatie of gesuggereerde volledigheid; inspectie/Source/Back blijven non-mutating. |

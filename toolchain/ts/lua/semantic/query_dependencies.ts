@@ -5,10 +5,15 @@ type DependencyNodeID = number & { readonly [dependencyNodeBrand]: true };
 export class SemanticQueryDependencies {
 	private readonly revisions: number[] = [0];
 	private readonly dirty: boolean[] = [false];
-	private readonly inputs: Set<DependencyNodeID>[] = [];
-	private readonly users: DependencyNodeID[][] = [];
-	private readonly invalidated: (((key: number) => void) | undefined)[] = [];
-	private readonly invalidatedKeys: number[] = [];
+	private readonly factInputs: (Set<DependencyNodeID> | undefined)[] = [undefined];
+	private readonly users: (DependencyNodeID[] | undefined)[] = [undefined];
+	private readonly queryReads: (Map<DependencyNodeID, number> | undefined)[] = [undefined];
+	private readonly captures: number[] = [0];
+	private readonly lastReaders: DependencyNodeID[] = [0 as DependencyNodeID];
+	private readonly lastQueryReadCaptures: number[] = [0];
+	private capture = 0;
+	private readonly invalidated: (((key: number) => void) | undefined)[] = [undefined];
+	private readonly invalidatedKeys: number[] = [0];
 	private readonly parents: DependencyNodeID[] = [];
 	private readonly pending: DependencyNodeID[] = [];
 	private active = 0 as DependencyNodeID;
@@ -18,8 +23,14 @@ export class SemanticQueryDependencies {
 		const node = this.revisions.length as DependencyNodeID;
 		this.revisions.push(0);
 		this.dirty.push(false);
-		this.invalidated[node] = invalidated;
-		this.invalidatedKeys[node] = key;
+		this.captures.push(0);
+		this.factInputs.push(undefined);
+		this.users.push(undefined);
+		this.queryReads.push(undefined);
+		this.lastReaders.push(0 as DependencyNodeID);
+		this.lastQueryReadCaptures.push(0);
+		this.invalidated.push(invalidated);
+		this.invalidatedKeys.push(key);
 		return node;
 	}
 
@@ -31,12 +42,17 @@ export class SemanticQueryDependencies {
 		return this.revision;
 	}
 
+	public isCurrent(node: DependencyNodeID, revision: number): boolean {
+		return this.revisions[node] === revision;
+	}
+
 	public read(node: DependencyNodeID): number {
-		if (this.active !== 0) {
-			let inputs = this.inputs[this.active];
+		if (this.active !== 0 && this.lastReaders[node] !== this.active) {
+			this.lastReaders[node] = this.active;
+			let inputs = this.factInputs[this.active];
 			if (!inputs) {
 				inputs = new Set();
-				this.inputs[this.active] = inputs;
+				this.factInputs[this.active] = inputs;
 			}
 			if (!inputs.has(node)) {
 				inputs.add(node);
@@ -51,14 +67,46 @@ export class SemanticQueryDependencies {
 		return this.revisions[node];
 	}
 
+	public readQuery(node: DependencyNodeID): void {
+		if (this.active !== 0) {
+			const capture = this.captures[this.active];
+			if (this.lastQueryReadCaptures[node] !== capture) {
+				this.lastQueryReadCaptures[node] = capture;
+				let reads = this.queryReads[this.active];
+				if (!reads) {
+					reads = new Map();
+					this.queryReads[this.active] = reads;
+				}
+				if (!reads.has(node)) {
+					let users = this.users[node];
+					if (!users) {
+						users = [];
+						this.users[node] = users;
+					}
+					users.push(this.active);
+				}
+				reads.set(node, capture);
+			}
+		}
+	}
+
+	public readResult(node: DependencyNodeID, evaluatedRevision: number): void {
+		this.readQuery(node);
+		// A parent consuming an approximation with pending inputs must also
+		// remain unsettled, even if it subscribed after the original write.
+		if (this.revisions[node] !== evaluatedRevision) this.invalidateUsers(node, ++this.revision);
+	}
+
 	public begin(node: DependencyNodeID): number {
 		this.parents.push(this.active);
 		this.active = node;
+		this.captures[node] = ++this.capture;
 		this.dirty[node] = false;
 		return this.revisions[node];
 	}
 
 	public end(): void {
+		this.captures[this.active] = 0;
 		this.active = this.parents.pop()!;
 	}
 
@@ -86,6 +134,13 @@ export class SemanticQueryDependencies {
 			if (!users) continue;
 			for (let index = 0; index < users.length; index += 1) {
 				const user = users[index];
+				// A refreshed query result is consumed after evaluation. Its old
+				// read must not invalidate a parent before that parent reads it again.
+				// Direct fact reads remain conservatively dependent on their rows.
+				if (this.captures[user] !== 0) {
+					const readCapture = this.queryReads[user]?.get(current);
+					if (readCapture !== undefined && readCapture !== this.captures[user]) continue;
+				}
 				if (this.dirty[user]) continue;
 				this.dirty[user] = true;
 				this.revisions[user] = revision;
@@ -143,7 +198,9 @@ export class SemanticQueryEvaluation {
 
 	public isCurrent(key: number): boolean {
 		const entry = this.entry(key);
-		return entry.evaluatedRevision === this.dependencies.read(entry.node);
+		const current = this.dependencies.isCurrent(entry.node, entry.evaluatedRevision);
+		if (current || entry.computing) this.dependencies.readQuery(entry.node);
+		return current;
 	}
 
 	public isComputing(key: number): boolean {
@@ -163,6 +220,7 @@ export class SemanticQueryEvaluation {
 		entry.computing = false;
 		entry.evaluatedRevision = entry.startedRevision;
 		if (changed) this.dependencies.published(entry.node);
+		this.dependencies.readResult(entry.node, entry.evaluatedRevision);
 	}
 
 	public get count(): number {
@@ -209,13 +267,18 @@ export class SemanticQueryResults<T> extends SemanticQueryEvaluation {
 			retained = [];
 			this.results.set(key, retained);
 		}
-		let changed = retained.length !== values.length;
-		for (let index = 0; index < values.length; index += 1) {
-			if (retained[index] !== values[index]) changed = true;
-			retained[index] = values[index];
-		}
-		retained.length = values.length;
-		this.end(key, changed);
+		this.end(key, updateQueryResult(retained, values));
 		return retained;
 	}
+}
+
+/** Replace a complete approximation; the owner publishes all changed columns together. */
+export function updateQueryResult<T>(retained: T[], values: readonly T[]): boolean {
+	let changed = retained.length !== values.length;
+	for (let index = 0; index < values.length; index += 1) {
+		if (retained[index] !== values[index]) changed = true;
+		retained[index] = values[index];
+	}
+	retained.length = values.length;
+	return changed;
 }

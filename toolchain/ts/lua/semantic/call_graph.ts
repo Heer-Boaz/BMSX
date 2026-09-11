@@ -10,7 +10,7 @@ import {
 import { SemanticInstantiationQuery } from './instantiate';
 import { SemanticMemberQuery } from './member_query';
 import type { Ref, SymbolID } from './model';
-import { SemanticQueryEvaluation, type SemanticQueryDependencies } from './query_dependencies';
+import { SemanticQueryWorklist } from './query_worklist';
 import type { BidirectionalTermRelation, TermRelation } from './term_relation';
 import { declarationValueSource, type CallValueEntry } from './value_graph';
 
@@ -22,18 +22,10 @@ export type CallFact = {
 
 const EMPTY_CALL_FACTS: readonly CallFact[] = [];
 
-export class SemanticCallWorklist {
-	public readonly evaluation: SemanticQueryEvaluation;
+export class SemanticCallWorklist extends SemanticQueryWorklist {
 	private readonly calls: SummaryCall[] = [];
 	private readonly ownerFrames: number[] = [];
 	private readonly itemsBySite: Map<CallValueEntry, number[]> = new Map();
-	private readonly pending: number[] = [];
-	private readonly queued: boolean[] = [];
-	private head = 0;
-
-	constructor(dependencies: SemanticQueryDependencies) {
-		this.evaluation = new SemanticQueryEvaluation(dependencies, item => this.schedule(item));
-	}
 
 	public enqueue(call: SummaryCall, ownerFrame: number): void {
 		let items = this.itemsBySite.get(call.site);
@@ -50,21 +42,7 @@ export class SemanticCallWorklist {
 		this.calls.push(call);
 		this.ownerFrames.push(ownerFrame);
 		items.push(item);
-		this.schedule(item);
-	}
-
-	public get pendingCount(): number {
-		return this.pending.length - this.head;
-	}
-
-	public take(): number {
-		const item = this.pending[this.head++];
-		this.queued[item] = false;
-		if (this.head === this.pending.length) {
-			this.pending.length = 0;
-			this.head = 0;
-		}
-		return item;
+		this.add(item);
 	}
 
 	public call(item: number): SummaryCall {
@@ -75,11 +53,6 @@ export class SemanticCallWorklist {
 		return this.ownerFrames[item];
 	}
 
-	private schedule(item: number): void {
-		if (this.queued[item]) return;
-		this.queued[item] = true;
-		this.pending.push(item);
-	}
 }
 
 export class SemanticCallGraph {

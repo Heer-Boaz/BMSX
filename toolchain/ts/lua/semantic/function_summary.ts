@@ -111,7 +111,7 @@ export class SemanticTermStore {
 		this.identities = identities;
 		this.parameterOwnerByRoot = parameterOwnerByRoot;
 		this.localOwnerByRoot = localOwnerByRoot;
-		this.unknownRoot = identities.rootId({ kind: 'unknown' });
+		this.unknownRoot = identities.canonicalRoot(identities.rawRootId({ kind: 'unknown' }));
 	}
 
 	public nameId(name: string): SemanticNameID {
@@ -437,7 +437,7 @@ export class SemanticTermStore {
 		if (localOwner) {
 			return this.local(localOwner.summary, localOwner.index);
 		}
-		const identity = this.identities.rootId(root);
+		const identity = this.identities.canonicalRoot(rawRoot);
 		let term = this.rootTerms[identity];
 		if (term === undefined) {
 			term = this.create(TermKind.Root, identity, 0);

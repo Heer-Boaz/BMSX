@@ -1,6 +1,5 @@
 import type {
 	SemanticValueRoot,
-	SemanticValueSource,
 	WorkspaceValueFactsInput,
 } from './value_graph';
 
@@ -20,8 +19,6 @@ export class WorkspaceValueIdentityIndex {
 	private unknownIdentityId = 0;
 	private readonly identityParents: number[] = [0];
 	private readonly identityRanks: number[] = [0];
-	private readonly unknownIdentities: boolean[] = [false];
-	private readonly identitySourceKeys: string[] = [''];
 
 	constructor(input: WorkspaceValueFactsInput) {
 		for (let fileIndex = 0; fileIndex < input.files.length; fileIndex += 1) {
@@ -53,44 +50,12 @@ export class WorkspaceValueIdentityIndex {
 		}
 	}
 
-	public rootId(root: SemanticValueRoot): SemanticRootID {
-		return this.find(this.identityId(root)) as SemanticRootID;
+	public canonicalRoot(root: SemanticRootID): SemanticRootID {
+		return this.find(root) as SemanticRootID;
 	}
 
 	public rawRootId(root: SemanticValueRoot): SemanticRootID {
 		return this.identityId(root) as SemanticRootID;
-	}
-
-	public hasUnknownIdentity(root: SemanticValueRoot): boolean {
-		return this.unknownIdentities[this.find(this.identityId(root))];
-	}
-
-	public sourceKey(source: SemanticValueSource, stepCount = source.steps.length): string {
-		let key = this.identitySourceKeys[this.rootId(source.root)];
-		for (let index = 0; index < stepCount; index += 1) {
-			const step = source.steps[index];
-			switch (step.kind) {
-				case 'member':
-					key += `\0m\0${step.name}`;
-					break;
-				case 'index':
-					key += `\0k\0${this.sourceKey(step.key)}`;
-					break;
-				case 'element':
-					key += '\0e';
-					break;
-				case 'call':
-					key += '\0c';
-					break;
-				case 'instance':
-					key += '\0i';
-					break;
-				case 'metatable':
-					key += '\0t';
-					break;
-			}
-		}
-		return key;
 	}
 
 	private union(left: SemanticValueRoot, right: SemanticValueRoot): void {
@@ -107,8 +72,6 @@ export class WorkspaceValueIdentityIndex {
 			rightId = swap;
 		}
 		this.identityParents[rightId] = leftId;
-		this.unknownIdentities[leftId] = this.unknownIdentities[leftId]
-			|| this.unknownIdentities[rightId];
 		if (leftRank === rightRank) {
 			this.identityRanks[leftId] = leftRank + 1;
 		}
@@ -117,7 +80,7 @@ export class WorkspaceValueIdentityIndex {
 	private identityId(root: SemanticValueRoot): number {
 		if (root.kind === 'unknown') {
 			if (this.unknownIdentityId === 0) {
-				this.unknownIdentityId = this.createIdentity(true);
+				this.unknownIdentityId = this.createIdentity();
 			}
 			return this.unknownIdentityId;
 		}
@@ -149,17 +112,15 @@ export class WorkspaceValueIdentityIndex {
 		if (existing !== undefined) {
 			return existing;
 		}
-		const identity = this.createIdentity(false);
+		const identity = this.createIdentity();
 		identities.set(key, identity);
 		return identity;
 	}
 
-	private createIdentity(unknown: boolean): number {
+	private createIdentity(): number {
 		const identity = this.identityParents.length;
 		this.identityParents.push(identity);
 		this.identityRanks.push(0);
-		this.unknownIdentities.push(unknown);
-		this.identitySourceKeys.push(String(identity));
 		return identity;
 	}
 

@@ -1,4 +1,5 @@
 import type { FileSemanticData, Ref, SymbolID } from './model';
+import { SemanticEffectIndex, type EffectRelevance } from './effect_index';
 import {
 	type FunctionSummary,
 	type FunctionSummaryID,
@@ -22,6 +23,10 @@ export type IndexedCall = SummaryCall & {
 
 export type OwnedIndexedCall = SummaryCall & {
 	readonly owner: FunctionSummaryID;
+};
+
+type EffectCallSelection = EffectRelevance & {
+	readonly calls: (readonly SummaryCall[] | undefined)[];
 };
 
 const EMPTY_WRITES: readonly SummaryWrite[] = [];
@@ -60,7 +65,8 @@ export class SemanticDemandIndex {
 	private readonly parameterForwardingSummaries: boolean[] = [];
 	private readonly queryIndependentSummaries: boolean[] = [];
 	private readonly queryIndependentFunctionNames: boolean[] = [];
-	private readonly callsByEffectName: (readonly (readonly SummaryCall[])[] | undefined)[] = [];
+	private readonly callsByEffectName: (EffectCallSelection | undefined)[] = [];
+	private effectIndex: SemanticEffectIndex | undefined;
 	private readonly returnCallsBySummary: (readonly SummaryCall[] | undefined)[] = [];
 	private readonly compositionCallsBySummary: (readonly SummaryCall[] | undefined)[] = [];
 	private readonly dependencyTerms: TermID[] = [];
@@ -72,6 +78,12 @@ export class SemanticDemandIndex {
 	private readonly parameterDependencySeen: number[] = [];
 	private readonly staticCalleeTerms: TermID[] = [];
 	private readonly staticCalleeSeen: number[] = [];
+	private readonly staticReceiverTerms: TermID[] = [];
+	private readonly staticReceiverSeen: number[] = [];
+	private staticReceiverGeneration = 0;
+	private readonly staticTargetsByTerm: (readonly SymbolID[] | undefined)[] = [];
+	private staticCalleeQueries = 0;
+	private selectedEffectBodies = 0;
 	private dependencyGeneration = 0;
 	private parameterDependencyGeneration = 0;
 	private staticCalleeGeneration = 0;
@@ -325,13 +337,24 @@ export class SemanticDemandIndex {
 		summary: FunctionSummaryID,
 		name: SemanticNameID,
 	): readonly SummaryCall[] {
-		let callsBySummary = this.callsByEffectName[name];
-		if (callsBySummary === undefined) {
-			callsBySummary = this.buildEffectCallSelection(name);
-			this.callsByEffectName[name] = callsBySummary;
+		let selection = this.callsByEffectName[name];
+		if (selection === undefined) {
+			if (!this.effectIndex) this.effectIndex = this.buildEffectIndex();
+			const relevance = this.effectIndex.select(name);
+			selection = { ...relevance, calls: [] };
+			this.callsByEffectName[name] = selection;
 		}
-		return callsBySummary[summary] || EMPTY_CALLS;
+		let calls = selection.calls[summary];
+		if (calls === undefined) {
+			this.selectedEffectBodies += 1;
+			calls = this.selectDependencyCalls(this.summaries.get(summary), selection.summaries, selection.names, name);
+			selection.calls[summary] = calls;
+		}
+		return calls;
 	}
+
+	public get staticCalleeEvaluations(): number { return this.staticCalleeQueries; }
+	public get effectBodyEvaluations(): number { return this.selectedEffectBodies; }
 
 	private compileTopLevelCall(call: CallValueEntry): IndexedCall {
 		const args = new Array<TermID>(call.arguments.length);
@@ -544,83 +567,27 @@ export class SemanticDemandIndex {
 		calls.push(call);
 	}
 
-	private buildEffectCallSelection(name: SemanticNameID): readonly (readonly SummaryCall[])[] {
+	private buildEffectIndex(): SemanticEffectIndex {
+		const index = new SemanticEffectIndex(this.functionNameBySummary);
 		const summaries = this.summaries.list();
-		const relevantSummaries: boolean[] = [];
-		const relevantFunctionNames: boolean[] = [];
 		for (let summaryIndex = 0; summaryIndex < summaries.length; summaryIndex += 1) {
 			const summary = summaries[summaryIndex];
-			for (let writeIndex = 0; writeIndex < summary.writes.length; writeIndex += 1) {
-				if (summary.writes[writeIndex].name === name) {
-					this.markRelevantSummary(
-						summary.id,
-						relevantSummaries,
-						relevantFunctionNames,
-					);
-					break;
+			for (const write of summary.writes) index.addWriter(write.name, summary.id);
+			for (const call of summary.calls) {
+				const direct = this.directTargets(call.site);
+				for (const target of direct) {
+					for (const callee of this.summaries.summaryIdsForDeclaration(target)) index.addCaller(callee, summary.id);
+				}
+				const exact = this.summaries.summaryIdsForTerm(call.callee);
+				for (const callee of exact) index.addCaller(callee, summary.id);
+				if (direct.length === 0 && exact.length === 0
+					&& this.summaries.terms.kind(call.callee) === TermKind.Member
+					&& this.dependsOnParameter(summary, call.callee)) {
+					index.addNamedCaller(this.summaries.terms.operand(call.callee) as SemanticNameID, summary.id);
 				}
 			}
 		}
-		// Candidate relevance is transitive, including receiver-dependent hops.
-		// This selects calls to solve; only callable resolution publishes callees.
-		for (;;) {
-			let changed = false;
-			for (let summaryIndex = 0; summaryIndex < summaries.length; summaryIndex += 1) {
-				const summary = summaries[summaryIndex];
-				for (let callIndex = 0; callIndex < summary.calls.length; callIndex += 1) {
-					const call = summary.calls[callIndex];
-					const direct = this.callTargetsRelevantSummary(call, relevantSummaries);
-					const parameterDependent = this.dependsOnParameter(summary, call.callee);
-					const candidateName = this.summaries.terms.kind(call.callee) === TermKind.Member
-						? this.summaries.terms.operand(call.callee) as SemanticNameID
-						: undefined;
-					const contextual = parameterDependent
-						&& candidateName !== undefined
-						&& this.callRequiresCandidateSelection(call)
-						&& relevantFunctionNames[candidateName];
-					if (direct || contextual) {
-						if (this.markRelevantSummary(
-							summary.id,
-							relevantSummaries,
-							relevantFunctionNames,
-						)) {
-							changed = true;
-						}
-						break;
-					}
-				}
-			}
-			if (!changed) {
-				break;
-			}
-		}
-		const selected: (readonly SummaryCall[])[] = [];
-		for (let summaryIndex = 0; summaryIndex < summaries.length; summaryIndex += 1) {
-			const summary = summaries[summaryIndex];
-			selected[summary.id] = this.selectDependencyCalls(
-				summary,
-				relevantSummaries,
-				relevantFunctionNames,
-				name,
-				false,
-				false,
-			);
-		}
-		return selected;
-	}
-
-	private markRelevantSummary(
-		summary: FunctionSummaryID,
-		relevantSummaries: boolean[],
-		relevantFunctionNames: boolean[],
-	): boolean {
-		if (relevantSummaries[summary]) return false;
-		relevantSummaries[summary] = true;
-		const functionName = this.functionNameBySummary[summary];
-		if (functionName !== undefined) {
-			relevantFunctionNames[functionName] = true;
-		}
-		return true;
+		return index;
 	}
 
 	private callTargetsRelevantSummary(
@@ -859,9 +826,20 @@ export class SemanticDemandIndex {
 	}
 
 	private retainStaticCallTargets(call: SummaryCall): void {
+		let targets = this.staticTargetsByTerm[call.callee];
+		if (targets === undefined) {
+			targets = this.collectStaticCallTargets(call.callee);
+			this.staticTargetsByTerm[call.callee] = targets;
+		}
+		for (let index = 0; index < targets.length; index += 1) this.appendDirectTarget(call.site, targets[index]);
+	}
+
+	private collectStaticCallTargets(callee: TermID): readonly SymbolID[] {
+		this.staticCalleeQueries += 1;
+		const targets: SymbolID[] = [];
 		this.staticCalleeGeneration += 1;
 		this.staticCalleeTerms.length = 1;
-		this.staticCalleeTerms[0] = call.callee;
+		this.staticCalleeTerms[0] = callee;
 		let head = 0;
 		while (head < this.staticCalleeTerms.length) {
 			const term = this.staticCalleeTerms[head];
@@ -873,8 +851,8 @@ export class SemanticDemandIndex {
 			const summaryIds = this.summaries.summaryIdsForTerm(term);
 			for (let summaryIndex = 0; summaryIndex < summaryIds.length; summaryIndex += 1) {
 				const declaration = this.summaries.declarationForSummary(summaryIds[summaryIndex]);
-				if (declaration !== undefined) {
-					this.appendDirectTarget(call.site, declaration);
+				if (declaration !== undefined && !targets.includes(declaration)) {
+					targets.push(declaration);
 				}
 			}
 			const related = this.relatedTerms(term);
@@ -882,16 +860,29 @@ export class SemanticDemandIndex {
 				this.staticCalleeTerms.push(related[relatedIndex]);
 			}
 			if (this.summaries.terms.kind(term) === TermKind.Member) {
-				const base = this.summaries.terms.base(term);
-				const relatedBases = this.relatedTerms(base);
-				for (let relatedIndex = 0; relatedIndex < relatedBases.length; relatedIndex += 1) {
-					this.staticCalleeTerms.push(this.summaries.terms.member(
-						relatedBases[relatedIndex],
-						this.summaries.terms.operand(term) as SemanticNameID,
-					));
+				// A missing intermediate member is not storage. Walk the base aliases
+				// independently, then consume only member paths retained by producers.
+				const terms = this.summaries.terms;
+				const name = terms.operand(term) as SemanticNameID;
+				const bases = this.staticReceiverTerms;
+				const generation = ++this.staticReceiverGeneration;
+				bases.length = 1;
+				bases[0] = terms.base(term);
+				this.staticReceiverSeen[bases[0]] = generation;
+				for (let baseIndex = 0; baseIndex < bases.length; baseIndex += 1) {
+					const relatedBases = this.relatedTerms(bases[baseIndex]);
+					for (let index = 0; index < relatedBases.length; index += 1) {
+						const base = relatedBases[index];
+						if (this.staticReceiverSeen[base] === generation) continue;
+						this.staticReceiverSeen[base] = generation;
+						bases.push(base);
+						const member = terms.retainedMember(base, name);
+						if (member !== undefined) this.staticCalleeTerms.push(member);
+					}
 				}
 			}
 		}
 		this.staticCalleeTerms.length = 0;
+		return targets;
 	}
 }

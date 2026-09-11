@@ -5,6 +5,11 @@ owner, not Behavior Lens, the binder's language rules or the guest runtime.
 The stronger correlated source query in [B04](behavior_source_authoring_design.md)
 remains open.
 
+Follow-up: [query consumption and demand-index maintenance](lua_query_evaluation.md)
+refines the evaluation boundary, tracks complete member/aggregate answers and
+updates dirty prototype rows instead of rescanning the relation. Measurements
+below describe this foundation's original baseline, not the follow-up.
+
 ## Problem and production references
 
 A global revision invalidated unrelated answers and repeatedly scanned every

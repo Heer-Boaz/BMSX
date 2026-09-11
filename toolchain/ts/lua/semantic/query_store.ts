@@ -27,9 +27,13 @@ export type LuaSemanticQueryMetrics = {
 	readonly callFactPasses: number;
 	readonly callEvaluations: number;
 	readonly valueEvaluations: number;
+	readonly memberEvaluations: number;
 	readonly locationEvaluations: number;
 	readonly prototypeEvaluations: number;
 	readonly indexEvaluations: number;
+	readonly prototypeJoinEvaluations: number;
+	readonly staticCalleeEvaluations: number;
+	readonly effectBodyEvaluations: number;
 };
 
 export class LuaSemanticQueryStore {
@@ -41,9 +45,9 @@ export class LuaSemanticQueryStore {
 	private readonly calls: SemanticCallGraph;
 	private readonly memberEntries: MemberQueryEntry[][] = [];
 	private readonly memberResults: SemanticQueryResults<SymbolID>;
+	private readonly allMemberResults: SemanticQueryResults<SymbolID>;
 	private readonly functionResults: SemanticQueryResults<SymbolID>;
 	private memberQueryCount = 0;
-	private readonly allMemberScratch: SymbolID[] = [];
 
 	constructor(
 		files: readonly FileSemanticData[],
@@ -53,6 +57,7 @@ export class LuaSemanticQueryStore {
 		const identities = new WorkspaceValueIdentityIndex(input);
 		this.summaries = new FunctionSummaryStore(files, identities);
 		this.memberResults = new SemanticQueryResults<SymbolID>(this.summaries.terms.dependencies);
+		this.allMemberResults = new SemanticQueryResults<SymbolID>(this.summaries.terms.dependencies);
 		this.functionResults = new SemanticQueryResults<SymbolID>(this.summaries.terms.dependencies);
 		this.worklist = new SemanticCallWorklist(this.summaries.terms.dependencies);
 		this.demand = new SemanticDemandIndex(files, this.summaries);
@@ -110,17 +115,22 @@ export class LuaSemanticQueryStore {
 	}
 
 	public allMembers(source: SemanticValueSource): readonly SymbolID[] {
-		this.allMemberScratch.length = 0;
+		const term = this.summaries.terms.compileSource(source);
+		if (this.allMemberResults.isCurrent(term)) return this.allMemberResults.values(term);
 		const names = this.demand.names();
-		for (let nameIndex = 0; nameIndex < names.length; nameIndex += 1) {
-			const members = this.member(source, this.summaries.terms.name(names[nameIndex]));
-			for (let memberIndex = 0; memberIndex < members.length; memberIndex += 1) {
-				if (!this.allMemberScratch.includes(members[memberIndex])) {
-					this.allMemberScratch.push(members[memberIndex]);
+		for (;;) {
+			this.allMemberResults.begin(term);
+			const values = this.allMemberResults.buffer(0);
+			for (let nameIndex = 0; nameIndex < names.length; nameIndex += 1) {
+				const members = this.member(source, this.summaries.terms.name(names[nameIndex]));
+				for (let memberIndex = 0; memberIndex < members.length; memberIndex += 1) {
+					if (!values.includes(members[memberIndex])) values.push(members[memberIndex]);
 				}
 			}
+			const result = this.allMemberResults.publish(term, values);
+			this.calls.solve();
+			if (this.allMemberResults.isCurrent(term)) return result;
 		}
-		return this.allMemberScratch.slice();
 	}
 
 	public functions(source: SemanticValueSource): readonly SymbolID[] {
@@ -161,9 +171,13 @@ export class LuaSemanticQueryStore {
 			callFactPasses: this.calls.getSolvePasses(),
 			callEvaluations: this.worklist.evaluation.count,
 			valueEvaluations: this.members.valueEvaluations,
+			memberEvaluations: this.members.memberEvaluations,
 			locationEvaluations: this.members.locationEvaluations,
 			prototypeEvaluations: this.members.prototypeEvaluations,
 			indexEvaluations: this.members.indexEvaluations,
+			prototypeJoinEvaluations: this.members.prototypeJoinEvaluations,
+			staticCalleeEvaluations: this.demand.staticCalleeEvaluations,
+			effectBodyEvaluations: this.demand.effectBodyEvaluations,
 		};
 	}
 

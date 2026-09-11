@@ -4454,6 +4454,18 @@ table references do not authorize reverse-storage expansion of a key into
 unbounded equivalent access paths. See [indexed-access ownership and its
 Studio regression](lua_index_key_resolution.md).
 
+Snapshot-local queries share one dependency/evaluation owner. Fact indices
+publish their own row changes; consumers retain empty and cyclic answers with
+their dependencies. A refreshed child result is consumed after evaluation,
+and an unfinished child cannot make its parent current. Complete member reads
+and all-member aggregates use that same lifecycle. Changed inputs schedule
+call or prototype-row work rather than rescanning all retained rows. Static
+callee/effect indices select candidates only; they do not publish execution
+effects. Source edits retain unchanged binder records, not solved facts from
+the old term universe. See [query dependencies](lua_query_dependencies.md) and
+[query consumption and demand maintenance](lua_query_evaluation.md), including
+the still-open cold-latency and cross-edit boundaries.
+
 Behavior navigation is a workbench contribution over those retained source
 facts, not framework knowledge in the language service. Its Quick Input
 results are individual FSM/BT/ActionEffect registration occurrences; a Lua
