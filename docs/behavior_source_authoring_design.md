@@ -79,6 +79,14 @@ nil-slot achterlaten. De compiler doet dat nu via de bestaande export-ABI. Dit
 maakt van module-returns nog geen gewone Lua-runtime-loader en sluit de bronquery
 of de UX-einddoelen niet af.
 
+De [written-sourcequery](lua_written_source_queries.md) volgt nu echte geschreven
+bijdragen bovenop die binderfeiten. Zij behoudt gelijke literals als afzonderlijke
+plekken, alle global-writers, formal/receiver-inputs, onbekende berekeningen en
+snapshotgeldigheid zonder de may-callsolver te activeren. Zij geeft een bron-
+afhankelijkhedengraph, geen gesloten runtime-/callee-proof: modules, memberpaden
+en gewone callresultaten blijven expliciete querygrenzen. B03/B06-authoring,
+resource-eigen consumers en de bredere latencyvoorwaarde blijven open.
+
 ## 1. Beslissing
 
 Behavior Lens wordt geen universele omkeerbare Lua-interpreter. Het is een

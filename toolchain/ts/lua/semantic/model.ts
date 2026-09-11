@@ -53,7 +53,7 @@ import {
 	appendValueMetatable,
 	declarationValueSource,
 	globalValueSource,
-	literalValueSource,
+	literalExpressionValueSource,
 	NIL_VALUE_SOURCE,
 	moduleValueSource,
 	ownedValueSource,
@@ -165,6 +165,9 @@ export type FileSemanticData = {
 	readonly moduleReferences: readonly LuaStringLiteralExpression[];
 	readonly callSites: readonly LuaCallSite[];
 	readonly declarationValues: readonly DeclarationValueEntry[];
+	readonly declarationValuesByDeclaration: ReadonlyMap<SymbolID, readonly DeclarationValueEntry[]>;
+	/** Calls/indexers without a reference record; other expressions reuse their existing facts. */
+	readonly readValuesBySyntax: ReadonlyMap<LuaExpression, SemanticValueSource>;
 	readonly ownedValuesBySyntax: ReadonlyMap<LuaExpression, OwnedSemanticValueSource>;
 	readonly moduleValues: readonly ModuleValueEntry[];
 	readonly memberValues: readonly MemberValueEntry[];
@@ -344,6 +347,8 @@ type SemanticBuildResult = {
 	annotations: SemanticAnnotations;
 	callSites: LuaCallSite[];
 	declarationValues: DeclarationValueEntry[];
+	declarationValuesByDeclaration: Map<SymbolID, DeclarationValueEntry[]>;
+	readValuesBySyntax: Map<LuaExpression, SemanticValueSource>;
 	ownedValuesBySyntax: Map<LuaExpression, OwnedSemanticValueSource>;
 	moduleValues: ModuleValueEntry[];
 	memberValues: MemberValueEntry[];
@@ -399,6 +404,8 @@ export function buildLuaFileSemanticData(
 		moduleReferences: result.moduleReferences,
 		callSites: result.callSites,
 		declarationValues: result.declarationValues,
+		declarationValuesByDeclaration: result.declarationValuesByDeclaration,
+		readValuesBySyntax: result.readValuesBySyntax,
 		ownedValuesBySyntax: result.ownedValuesBySyntax,
 		moduleValues: result.moduleValues,
 		memberValues: result.memberValues,
@@ -624,8 +631,9 @@ class SemanticBuilder {
 	private readonly callSites: LuaCallSite[] = [];
 	private readonly functionSignaturesByPath: Map<string, FunctionSignatureInfo> = new Map();
 	private readonly declarationValues: DeclarationValueEntry[] = [];
+	private readonly readValuesBySyntax = new Map<LuaExpression, SemanticValueSource>();
 	private readonly ownedValuesBySyntax = new Map<LuaExpression, OwnedSemanticValueSource>();
-	// Builder-only member lookup; published contributions retain every written occurrence.
+	// Shared immutable write index after binding; no query rebuilds or value deduplication.
 	private readonly declarationValuesByDeclaration: Map<SymbolID, DeclarationValueEntry[]> = new Map();
 	private readonly unknownValueDeclarations: Set<SymbolID> = new Set();
 	private readonly memberValues: Map<SymbolID, MemberValueEntry> = new Map();
@@ -671,6 +679,8 @@ class SemanticBuilder {
 			annotations: this.annotations,
 			callSites: this.callSites,
 			declarationValues: this.declarationValues,
+			declarationValuesByDeclaration: this.declarationValuesByDeclaration,
+			readValuesBySyntax: this.readValuesBySyntax,
 			ownedValuesBySyntax: this.ownedValuesBySyntax,
 			moduleValues: this.moduleValue
 				? [{ module: toLuaModulePath(this.path), source: this.moduleValue }]
@@ -1105,8 +1115,11 @@ class SemanticBuilder {
 				return this.handleIdentifierExpression(expression, false);
 			case LuaSyntaxKind.MemberExpression:
 				return this.handleMemberExpression(expression, context, false);
-			case LuaSyntaxKind.IndexExpression:
-				return this.handleIndexExpression(expression, context);
+			case LuaSyntaxKind.IndexExpression: {
+				const value = this.handleIndexExpression(expression, context);
+				this.readValuesBySyntax.set(expression, value.valueSource);
+				return value;
+			}
 			case LuaSyntaxKind.CallExpression: {
 				const callExpression = expression;
 				const methodName = callExpression.method?.name;
@@ -1190,6 +1203,7 @@ class SemanticBuilder {
 					secondArgumentInfo,
 					callResult,
 				);
+				this.readValuesBySyntax.set(expression, valueSource);
 				return { namePath: null, decl: null, valueSource };
 			}
 			case LuaSyntaxKind.FunctionExpression: {
@@ -1240,25 +1254,10 @@ class SemanticBuilder {
 			case LuaSyntaxKind.VarargExpression:
 				return UNKNOWN_EXPRESSION_VALUE;
 			case LuaSyntaxKind.NilLiteralExpression:
-				return { namePath: null, decl: null, valueSource: NIL_VALUE_SOURCE };
 			case LuaSyntaxKind.StringLiteralExpression:
-				return {
-					namePath: null,
-					decl: null,
-					valueSource: literalValueSource({ kind: 'string', value: expression.value }),
-				};
 			case LuaSyntaxKind.NumericLiteralExpression:
-				return {
-					namePath: null,
-					decl: null,
-					valueSource: literalValueSource({ kind: 'number', value: expression.value }),
-				};
 			case LuaSyntaxKind.BooleanLiteralExpression:
-				return {
-					namePath: null,
-					decl: null,
-					valueSource: literalValueSource({ kind: 'boolean', value: expression.value }),
-				};
+				return { namePath: null, decl: null, valueSource: literalExpressionValueSource(expression) };
 			default:
 				return UNKNOWN_EXPRESSION_VALUE;
 		}
@@ -1625,7 +1624,7 @@ class SemanticBuilder {
 			baseInfo.namePath,
 		);
 		if (member.member.kind === LuaSyntaxKind.MissingIdentifier) {
-			return baseInfo;
+			return UNKNOWN_EXPRESSION_VALUE;
 		}
 		const basePath = resolveReferencedBasePath(baseInfo, member.base);
 		const memberName = member.member.name;

@@ -1,15 +1,21 @@
-import type { SymbolID } from './model';
-import type {
-	LuaAssignmentStatement,
-	LuaExpression,
-	LuaForGenericStatement,
-	LuaForNumericStatement,
-	LuaFunctionDeclarationStatement,
-	LuaFunctionExpression,
-	LuaLocalAssignmentStatement,
-	LuaLocalFunctionStatement,
-	LuaReturnStatement,
-	LuaTableConstructorExpression,
+import type { FileSemanticData, SymbolID } from './model';
+import {
+	LuaBinaryOperator,
+	LuaSyntaxKind,
+	type LuaAssignmentStatement,
+	type LuaBooleanLiteralExpression,
+	type LuaExpression,
+	type LuaForGenericStatement,
+	type LuaForNumericStatement,
+	type LuaFunctionDeclarationStatement,
+	type LuaFunctionExpression,
+	type LuaLocalAssignmentStatement,
+	type LuaLocalFunctionStatement,
+	type LuaNilLiteralExpression,
+	type LuaNumericLiteralExpression,
+	type LuaReturnStatement,
+	type LuaStringLiteralExpression,
+	type LuaTableConstructorExpression,
 } from '../syntax/ast';
 import type { LuaCompletion } from '../analysis/completion';
 
@@ -158,6 +164,54 @@ export function literalValueSource(literal: SemanticLiteralValue): SemanticValue
 }
 
 export const NIL_VALUE_SOURCE: SemanticValueSource = literalValueSource({ kind: 'nil', value: null });
+
+/** Context-free AST literal conversion shared by binding and demand-only source reads. */
+export function literalExpressionValueSource(expression: LuaNumericLiteralExpression | LuaStringLiteralExpression
+	| LuaBooleanLiteralExpression | LuaNilLiteralExpression): SemanticValueSource {
+	switch (expression.kind) {
+		case LuaSyntaxKind.NumericLiteralExpression: return literalValueSource({ kind: 'number', value: expression.value });
+		case LuaSyntaxKind.StringLiteralExpression: return literalValueSource({ kind: 'string', value: expression.value });
+		case LuaSyntaxKind.BooleanLiteralExpression: return literalValueSource({ kind: 'boolean', value: expression.value });
+		case LuaSyntaxKind.NilLiteralExpression: return NIL_VALUE_SOURCE;
+	}
+}
+
+/** Written read identity, before may-value simplification; never rebind a name or evaluate a call. */
+export function readLuaExpressionSource(file: FileSemanticData, expression: LuaExpression): SemanticValueSource {
+	switch (expression.kind) {
+		case LuaSyntaxKind.IdentifierExpression: {
+			const reference = file.referencesBySyntax.get(expression)!;
+			if (reference.referenceKind === 'member' || reference.referenceKind === 'method') {
+				return appendValueMember(reference.receiverValue!, reference.name);
+			}
+			return reference.binding === undefined ? globalValueSource(reference.symbolKey) : reference.binding;
+		}
+		case LuaSyntaxKind.MemberExpression: {
+			if (expression.member.kind === LuaSyntaxKind.MissingIdentifier) return unknownValueSource();
+			const reference = file.referencesBySyntax.get(expression.member)!;
+			return appendValueMember(reference.receiverValue!, reference.name);
+		}
+		case LuaSyntaxKind.IndexExpression:
+		case LuaSyntaxKind.CallExpression:
+			return file.readValuesBySyntax.get(expression)!;
+		case LuaSyntaxKind.FunctionExpression:
+		case LuaSyntaxKind.TableConstructorExpression:
+			return file.ownedValuesBySyntax.get(expression)!;
+		case LuaSyntaxKind.BinaryExpression:
+			return expression.operator === LuaBinaryOperator.And || expression.operator === LuaBinaryOperator.Or
+				? file.ownedValuesBySyntax.get(expression)! : unknownValueSource();
+		case LuaSyntaxKind.NilLiteralExpression:
+		case LuaSyntaxKind.NumericLiteralExpression:
+		case LuaSyntaxKind.BooleanLiteralExpression:
+		case LuaSyntaxKind.StringLiteralExpression:
+			return literalExpressionValueSource(expression);
+		case LuaSyntaxKind.UnaryExpression:
+		case LuaSyntaxKind.VarargExpression:
+		case LuaSyntaxKind.SizeOfExpression:
+		case LuaSyntaxKind.OffsetOfExpression:
+			return unknownValueSource();
+	}
+}
 
 const UNKNOWN_VALUE_SOURCE: SemanticValueSource = { root: { kind: 'unknown' }, steps: [] };
 

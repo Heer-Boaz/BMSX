@@ -561,6 +561,12 @@ met hun gekoppelde inputs en afzonderlijke edges naar hergebruikte frames.
 De collection-query gebruikt de bestaande dependency-cache, niet een Lens-cache.
 Dit is geen gesloten source-/callee-proof: B03/B04/B06-authoring blijven open.
 
+De [written-sourcequery](lua_written_source_queries.md) bewaart nu de use-site,
+geschreven inputs, onbekende bijdragen en file-/snapshotowner in een demand-only
+brongraph. Zij hergebruikt bindingsfeiten en activeert geen may-callsolver.
+Dit is nog niet de gecorreleerde originquery over calls/modules/memberpaden;
+die grenzen blijven expliciet. De hierop wachtende B03- en B06-UX is niet afgevinkt.
+
 | ID | Eigenaar / contract | Gate |
 | --- | --- | --- |
 | `STUDIO-BEHAVIOR-UX-B01` | Uitgewerkt: betekenisvolle BT/FSM-kaarten en volledige source-linked property-inspectie; technische bewijsdetails niet permanent op het canvas. Zie `behavior_inspection_design.md` voor de vooraf gemeten compositie en concrete owner-/bewijsgrenzen. | Tiny-resolutie met Problems, lange callbacks, exacte Source/Back, keyboard/controller/scroll/focus en non-mutating inspectie. B04-bronorigins, B06-propertyauthoring en B07-zoom blijven aparte contracten. |

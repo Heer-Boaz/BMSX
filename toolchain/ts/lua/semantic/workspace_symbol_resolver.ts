@@ -6,6 +6,7 @@ import {
 } from './value_graph';
 import { sourceRangesEqual } from '../source_range';
 import { compareSourcePosition } from './source_range';
+import { LuaWrittenSourceQuery } from './written_sources';
 
 const EMPTY_SYMBOLS: readonly SymbolID[] = [];
 
@@ -26,6 +27,7 @@ export class WorkspaceSymbolResolver {
 	private readonly declarations: ReadonlyMap<SymbolID, Decl>;
 	private readonly globals: ReadonlyMap<string, SymbolID>;
 	private queryStore?: LuaSemanticQueryStore;
+	private sourceQuery?: LuaWrittenSourceQuery;
 	private readonly referenceTargets: Map<Ref, readonly SymbolID[]> = new Map();
 	private readonly referenceFunctionTargets: Map<Ref, readonly SymbolID[]> = new Map();
 	private readonly callableTargets: Map<LuaCallSite, readonly SymbolID[]> = new Map();
@@ -48,6 +50,12 @@ export class WorkspaceSymbolResolver {
 	// disable-next-line single_line_method_pattern -- declaration lookup remains owned by the immutable workspace resolver.
 	public getDeclaration(symbolId: SymbolID): Decl {
 		return this.declarations.get(symbolId);
+	}
+
+	/** Source tracking consumes binder facts without activating the may-call solver. */
+	public get writtenSources(): LuaWrittenSourceQuery {
+		if (this.sourceQuery === undefined) this.sourceQuery = new LuaWrittenSourceQuery(this.files, this.declarations);
+		return this.sourceQuery;
 	}
 
 	public resolveReference(ref: Ref): SymbolID | undefined {
