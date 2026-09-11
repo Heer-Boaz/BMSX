@@ -5,7 +5,7 @@ import {
 	type FileSemanticData,
 	type LuaSemanticWorkspaceSnapshot,
 } from '../../../../../../toolchain/ts/lua/semantic/model';
-import type { LuaSourceRegistry } from '../../../../../runtime/source_registry';
+import type { LuaSourceRecord, LuaSourceRegistry } from '../../../../../runtime/source_registry';
 import {
 	runtimeLuaSourceRegistry,
 	type RuntimeSourceState,
@@ -15,6 +15,9 @@ import {
 	type ResourceDomain,
 } from '../../../../../common/resource';
 import { readWorkspaceLuaSourceText } from '../../../../../workspace/files';
+import type { EditorTextModelService } from '../../../../model/model_service';
+import type { EditorTextModel } from '../../../../model/text_model';
+import { getTextSnapshot } from '../../../../text/source_text';
 
 export type SemanticDocumentInput = {
 	path: string;
@@ -22,20 +25,52 @@ export type SemanticDocumentInput = {
 	parsed?: ParsedLuaChunk;
 };
 
+type ProjectBaseSource = {
+	readonly domain: ResourceDomain;
+	readonly registry: LuaSourceRegistry;
+	readonly record: LuaSourceRecord;
+};
+
 // The editor project is the single mutable owner above immutable semantic
-// workspace snapshots. Runtime registries provide the project base while open
-// editor documents retain their newer source until the editor session releases
-// the entire project.
+// workspace snapshots. Model events queue source changes, not analysis work.
+// Runtime registries provide the base; retained models and explicit document
+// inputs own the newer source regardless of which view happens to be active.
 export class EditorLuaSemanticProject {
 	private readonly workspace = new LuaSemanticWorkspace();
 	private readonly documentPaths = new Set<string>();
-	private basePaths: ReadonlySet<string> = new Set();
+	private readonly pendingPaths = new Set<string>();
+	private baseSources: ReadonlyMap<string, ProjectBaseSource> = new Map();
+	private readonly modelSubscriptions: readonly (() => void)[];
 	private primaryRegistry: LuaSourceRegistry | undefined;
 	private primaryRevision = -1;
 	private systemRegistry: LuaSourceRegistry | null = null;
 	private systemRevision = -1;
 
-	public constructor(private readonly domain: ResourceDomain) {}
+	public constructor(
+		private readonly domain: ResourceDomain,
+		private readonly models: EditorTextModelService,
+	) {
+		const queueModel = (model: EditorTextModel): void => {
+			if (model.mode === 'lua'
+				&& (model.resource.domain === domain || model.resource.domain === SYSTEM_RESOURCE_DOMAIN)) {
+				this.pendingPaths.add(model.resource.path);
+			}
+		};
+		this.modelSubscriptions = [
+			models.onDidAddModel(queueModel),
+			models.onDidChangeContent(queueModel),
+			models.onDidRemoveModel(model => {
+				if (model.mode === 'lua' && model.resource.domain === domain) this.documentPaths.delete(model.resource.path);
+				queueModel(model);
+			}),
+		];
+		for (const model of models.models) queueModel(model);
+	}
+
+	public dispose(): void {
+		for (const unsubscribe of this.modelSubscriptions) unsubscribe();
+		this.pendingPaths.clear();
+	}
 
 	public synchronizeRuntimeSources(sources: RuntimeSourceState): void {
 		const primaryRegistry = runtimeLuaSourceRegistry(sources, this.domain);
@@ -47,45 +82,62 @@ export class EditorLuaSemanticProject {
 			return;
 		}
 
-		const registries: LuaSourceRegistry[] = [];
+		const registries: { domain: ResourceDomain; registry: LuaSourceRegistry }[] = [];
 		if (this.domain !== SYSTEM_RESOURCE_DOMAIN && primaryRegistry !== undefined) {
-			registries.push(primaryRegistry);
+			registries.push({ domain: this.domain, registry: primaryRegistry });
 		}
-		registries.push(systemRegistry);
-		const nextBasePaths = new Set<string>();
-		const changedAnalyses: FileSemanticData[] = [];
+		registries.push({ domain: SYSTEM_RESOURCE_DOMAIN, registry: systemRegistry });
+		const nextBaseSources = new Map<string, ProjectBaseSource>();
 		for (let registryIndex = 0; registryIndex < registries.length; registryIndex += 1) {
-			const registry = registries[registryIndex];
+			const { domain, registry } = registries[registryIndex];
 			for (let recordIndex = 0; recordIndex < registry.records.length; recordIndex += 1) {
 				const record = registry.records[recordIndex];
 				const path = record.source_path;
-				if (nextBasePaths.has(path)) {
+				if (nextBaseSources.has(path)) {
 					continue;
 				}
-				nextBasePaths.add(path);
-				if (this.documentPaths.has(path)) {
-					continue;
-				}
-				const source = readWorkspaceLuaSourceText(registry, record);
-				const existing = this.workspace.getFileData(path);
-				if (!existing || existing.source !== source) {
-					changedAnalyses.push(buildLuaFileSemanticData(source, path));
-				}
+				nextBaseSources.set(path, { domain, registry, record });
+				this.pendingPaths.add(path);
 			}
 		}
 
-		const removedPaths: string[] = [];
-		for (const path of this.basePaths) {
-			if (!nextBasePaths.has(path) && !this.documentPaths.has(path)) {
-				removedPaths.push(path);
-			}
+		for (const path of this.baseSources.keys()) {
+			if (!nextBaseSources.has(path)) this.pendingPaths.add(path);
 		}
-		this.workspace.updateFiles(changedAnalyses, removedPaths);
-		this.basePaths = nextBasePaths;
+		this.baseSources = nextBaseSources;
 		this.primaryRegistry = primaryRegistry;
 		this.primaryRevision = primaryRegistry === undefined ? -1 : primaryRegistry.revision;
 		this.systemRegistry = systemRegistry;
 		this.systemRevision = systemRegistry.revision;
+	}
+
+	private synchronizeDocuments(): void {
+		if (this.pendingPaths.size === 0) return;
+		const changedAnalyses: FileSemanticData[] = [];
+		const removedPaths: string[] = [];
+		for (const path of this.pendingPaths) {
+			const base = this.baseSources.get(path);
+			let model = this.models.get({ domain: this.domain, path });
+			if (model === undefined) {
+				if (this.documentPaths.has(path)) continue;
+				if (this.domain !== SYSTEM_RESOURCE_DOMAIN && base?.domain !== this.domain) {
+					model = this.models.get({ domain: SYSTEM_RESOURCE_DOMAIN, path });
+				}
+			}
+			if (model === undefined && base === undefined) {
+				removedPaths.push(path);
+				continue;
+			}
+			const source = model === undefined
+				? readWorkspaceLuaSourceText(base!.registry, base!.record)
+				: getTextSnapshot(model.buffer);
+			const existing = this.workspace.getFileData(path);
+			if (existing === undefined || existing.source !== source) {
+				changedAnalyses.push(buildLuaFileSemanticData(source, path));
+			}
+		}
+		this.pendingPaths.clear();
+		this.workspace.updateFiles(changedAnalyses, removedPaths);
 	}
 
 	public updateDocument(path: string, source: string, parsed?: ParsedLuaChunk): FileSemanticData {
@@ -110,13 +162,13 @@ export class EditorLuaSemanticProject {
 		this.workspace.updateFiles(changedAnalyses);
 	}
 
-	// disable-next-line single_line_method_pattern -- The project exposes retained analysis without leaking its mutable workspace owner.
 	public getFileData(path: string): FileSemanticData | undefined {
+		this.synchronizeDocuments();
 		return this.workspace.getFileData(path);
 	}
 
-	// disable-next-line single_line_method_pattern -- Providers consume immutable generations while the mutable workspace remains project-owned.
 	public getSnapshot(): LuaSemanticWorkspaceSnapshot {
+		this.synchronizeDocuments();
 		return this.workspace.getSnapshot();
 	}
 }

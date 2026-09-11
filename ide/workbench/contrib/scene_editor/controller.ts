@@ -1,5 +1,4 @@
 import { getOrCreateSemanticProject } from '../../../editor/contrib/intellisense/semantic/workspace/state';
-import { getTextSnapshot } from '../../../editor/text/source_text';
 import type { EditorTextModel, EditorTextModelContentChangeEvent } from '../../../editor/model/text_model';
 import { mapTrackedTextRange } from '../../../editor/text/text_change';
 import { createLuaTableFieldRemovalEdits } from '../../../language/lua/source_edits';
@@ -108,9 +107,9 @@ export class SceneEditorController {
 		if (input.version === model.version) return;
 		const project = getOrCreateSemanticProject(model.resource.domain);
 		project.synchronizeRuntimeSources(this.sources);
-		const source = getTextSnapshot(model.buffer);
-		input.parsed = getCachedLuaParse({ path: model.resource.path, source }).parsed;
-		const document = buildSceneSourceDocument(model.resource, project.updateDocument(model.resource.path, source, input.parsed));
+		const analysis = project.getFileData(model.resource.path)!;
+		input.parsed = getCachedLuaParse({ path: model.resource.path, source: analysis.source }).parsed;
+		const document = buildSceneSourceDocument(model.resource, analysis);
 		installSceneOutline(input, document);
 		input.version = model.version;
 	}

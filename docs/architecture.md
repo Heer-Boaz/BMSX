@@ -4388,6 +4388,14 @@ project publishes immutable program snapshots that retain unchanged file
 records. Definition, references, rename, diagnostics, completion, and call
 hierarchy consume the same snapshot and workspace resolver; feature providers
 do not parse, bind, or infer framework-specific meaning independently.
+The project subscribes to resource-model add/change/remove events and batches
+affected paths at semantic reads, including hidden SYSTEM dependencies unless a
+cart supplies that path. Model content observers only queue changes; query and
+presentation work follows the completed edit notification. Runtime refresh
+cannot overwrite retained models; removal releases their override to the current
+base. Reset disposes subscriptions. Registration views do not poll all models or
+own a second document-version cache. See `editor_semantic_model_sync.md` for the
+source precedence, lifetime and measurement contract.
 Identifier-bearing syntax retains its identifier child nodes and exact authored
 source ranges in the parser-owned AST. File semantics consumes those nodes
 directly; it does not rebuild token maps or rescan the token stream for function

@@ -5,8 +5,6 @@ import { clamp } from '../../../../../machine/ts/common/clamp';
 import { getActiveCodeTabContext } from '../../../ui/code_tab/contexts';
 import { resolveRuntimeResourceForContext } from '../../../../runtime/sources';
 import * as luaPipeline from '../../../../runtime/lua_pipeline';
-import { getTextSnapshot } from '../../../../editor/text/source_text';
-import { getOrCreateSemanticProject } from '../../../../editor/contrib/intellisense/semantic/workspace/state';
 import { markTextMutated } from '../../../../editor/common/text/runtime';
 import { prepareUndo, applyUndoableReplace, recordEditContext } from '../../../../editor/editing/undo_controller';
 import { setSingleCursorSelectionAnchor } from '../../../../editor/editing/cursor/state';
@@ -134,7 +132,6 @@ export class CrossFileRenameManager {
 			};
 		}
 		model.pushEditOperations(edits);
-		getOrCreateSemanticProject(domain).updateDocument(path, getTextSnapshot(model.buffer));
 		return matches.length;
 	}
 }

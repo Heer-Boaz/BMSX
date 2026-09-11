@@ -9,11 +9,14 @@ type ModelContentChangeListener = (
 	model: EditorTextModel,
 	event: EditorTextModelContentChangeEvent,
 ) => void;
+type ModelListener = (model: EditorTextModel) => void;
 
 /** Resource-keyed lifetime owner for editable text models. */
 export class EditorTextModelService {
 	private readonly modelsByResource = new Map<string, EditorTextModel>();
 	private readonly contentChangeListeners = new Set<ModelContentChangeListener>();
+	private readonly modelAddedListeners = new Set<ModelListener>();
+	private readonly modelRemovedListeners = new Set<ModelListener>();
 
 	public get models(): IterableIterator<EditorTextModel> {
 		return this.modelsByResource.values();
@@ -53,6 +56,17 @@ export class EditorTextModelService {
 				listener(model, event);
 			}
 		});
+		for (const listener of this.modelAddedListeners) listener(model);
+	}
+
+	public onDidAddModel(listener: ModelListener): () => void {
+		this.modelAddedListeners.add(listener);
+		return () => this.modelAddedListeners.delete(listener);
+	}
+
+	public onDidRemoveModel(listener: ModelListener): () => void {
+		this.modelRemovedListeners.add(listener);
+		return () => this.modelRemovedListeners.delete(listener);
 	}
 
 	public onDidChangeContent(listener: ModelContentChangeListener): () => void {
@@ -61,10 +75,11 @@ export class EditorTextModelService {
 	}
 
 	public clear(): void {
-		for (const model of this.modelsByResource.values()) {
+		for (const [key, model] of this.modelsByResource) {
+			this.modelsByResource.delete(key);
 			model.dispose();
+			for (const listener of this.modelRemovedListeners) listener(model);
 		}
-		this.modelsByResource.clear();
 	}
 }
 

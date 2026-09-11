@@ -1,8 +1,6 @@
 import type { FileSemanticData } from '../../../../toolchain/ts/lua/semantic/model';
 import type { RuntimeResource } from '../../../common/resource';
-import { editorTextModelService } from '../../../editor/model/model_service';
 import { getOrCreateSemanticProject } from '../../../editor/contrib/intellisense/semantic/workspace/state';
-import { getTextSnapshot } from '../../../editor/text/source_text';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import { WorkingCopyEditorInput } from '../../common/editor_input';
 import type { QuickInputController } from '../../services/quick_input/controller';
@@ -44,8 +42,5 @@ export function openSourceView(
 function sourceAnalysis(sources: RuntimeSourceState, resource: RuntimeResource): FileSemanticData {
 	const project = getOrCreateSemanticProject(resource.domain);
 	project.synchronizeRuntimeSources(sources);
-	const model = editorTextModelService.get(resource);
-	return model === undefined
-		? project.getFileData(resource.path)!
-		: project.updateDocument(resource.path, getTextSnapshot(model.buffer));
+	return project.getFileData(resource.path)!;
 }

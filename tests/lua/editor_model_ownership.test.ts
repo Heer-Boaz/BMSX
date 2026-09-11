@@ -57,6 +57,30 @@ function luaResource(path: string): RuntimeResource {
 	};
 }
 
+test('model service publishes one addition per lifetime and removal after releasing the resource', () => {
+	const service = new EditorTextModelService();
+	const added: EditorTextModel[] = [];
+	const removed: EditorTextModel[] = [];
+	const unsubscribeAdded = service.onDidAddModel(model => {
+		assert.equal(service.get(model.resource), model);
+		added.push(model);
+	});
+	const unsubscribeRemoved = service.onDidRemoveModel(model => {
+		assert.equal(service.get(model.resource), undefined);
+		removed.push(model);
+	});
+	const resource = luaResource('model.lua');
+	const model = service.retain(resource, 'lua', 'return true');
+	assert.equal(service.retain(resource, 'lua', 'return false'), model);
+	assert.deepEqual(added, [model]);
+	service.clear();
+	assert.deepEqual(removed, [model]);
+	unsubscribeAdded(); unsubscribeRemoved();
+	service.retain(resource, 'lua', 'return false');
+	service.clear();
+	assert.deepEqual(added, [model]); assert.deepEqual(removed, [model]);
+});
+
 function viewSnapshot(view: CodeEditorViewState) {
 	return codeEditorEditState.of({
 		cursorRow: view.cursorRow,
