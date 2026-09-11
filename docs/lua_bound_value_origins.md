@@ -120,3 +120,54 @@ complete host frame, GPU, gameplay or an SNES-mini.
 
 The stronger source query and B03/B06 authoring remain open. This slice removes
 encoded owned-source identity, not the remaining value/source/context distinction.
+
+## Follow-through: literal payloads, before implementation
+
+The next producer boundary is the literal root. It currently discards the typed
+`SemanticLiteralValue` and consumers identify its kind by inspecting the encoded
+key prefix. TypeScript's
+[`createLiteralType`, `getStringLiteralType`, `getNumberLiteralType`](https://github.com/microsoft/TypeScript/blob/c63de15a992d37f0d6cec03ac7631872838602cb/src/compiler/checker.ts#L20211-L20251)
+instead retain kind/value and intern the primitive value in the checker.
+
+BMSX will retain that existing discriminated payload directly. The identity
+index can key literals by their string/number/boolean values without converting
+them to strings; the term owner consumes `literal.kind`. The existing central
+source-key encoding remains only where a binder path key is requested,
+not as the stored literal representation and never with a Lens-local decoder.
+Source equality compares typed scalar payloads with the same value identity as
+the map (including equal NaNs and sign-insensitive zero), without allocating keys.
+This still describes a value, not the written occurrence of every equal literal.
+
+### Literal follow-through evidence
+
+Four alternating isolated process pairs against `52037b2cf`, with the same
+Node/hardware/harnesses as above. Medians in milliseconds:
+
+| Surface | Before | After |
+| --- | ---: | ---: |
+| Real workspace cold symbol query | 227.124 | 230.087 |
+| Real workspace initial parse + binding | 261.773 | 260.736 |
+| Edited-file binding | 5.282 | 4.145 |
+| Bind 1,024 ordinary functions | 4.934 | 4.829 |
+| Bind 1,024 methods | 3.574 | 3.423 |
+| Summaries, 1,024 ordinary functions | 0.572 | 0.544 |
+| First query, 1,024 methods | 2.689 | 2.641 |
+| All 256 uncalled receiver queries | 8.100 | 7.727 |
+| 256 callsites, unwritten / written parameter | 7.129 / 8.326 | 7.146 / 8.410 |
+| Recursive inputs, 64 links | 12.085 | 11.772 |
+
+The real query ranges overlap (226.132–232.918 / 226.167–232.983 ms).
+Every reported query-work count and target is unchanged; peak process RSS
+medians are 296.3 / 294.6 MiB. This is a representation correction, **not** a
+claimed workspace latency win. The remaining cold-query cost and the small
+parameter-workload regressions are not hidden by a timeout or feature cache.
+
+The sixth independent test exercises typed literal payload retention, distinct
+primitive identities, signed zero and representable non-finite constants.
+Full Lua suite: 1,435 passed, one existing skip. IDE typecheck, debug Studio
+build, strict architecture audit, core parity, indentation and diff checks pass;
+the tests-project typecheck retains exactly the same 51 baseline diagnostics.
+Actual full Studio workflows and Pietious source/navigation workflows pass on
+software, WebGL2 and WebGPU separately. This guards the current UI; it does not
+claim the still-open B04 query or B03/B06 authoring has been delivered.
+Artifacts: `/tmp/bmsx-literal-values/`.

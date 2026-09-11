@@ -446,13 +446,13 @@ export class SemanticTermStore {
 		if (term === undefined) {
 			term = this.create(TermKind.Root, identity, 0);
 			this.rootTerms[identity] = term;
-			this.stringLiteralTerms[term] = root.kind === 'literal' && root.key.startsWith('s\0');
-			this.numericLiteralTerms[term] = root.kind === 'literal' && root.key.startsWith('n\0');
+			this.stringLiteralTerms[term] = false;
+			this.numericLiteralTerms[term] = false;
 		}
-		if (root.kind === 'literal' && root.key.startsWith('s\0')) {
+		if (root.kind === 'literal' && root.literal.kind === 'string') {
 			this.stringLiteralTerms[term] = true;
 		}
-		if (root.kind === 'literal' && root.key.startsWith('n\0')) {
+		if (root.kind === 'literal' && root.literal.kind === 'number') {
 			this.numericLiteralTerms[term] = true;
 		}
 		if (root.kind === 'declaration' || root.kind === 'module' || root.kind === 'owned') {

@@ -1,6 +1,7 @@
 import type {
 	SemanticValueRoot,
 	OwnedValueID,
+	SemanticLiteralValue,
 	WorkspaceValueFactsInput,
 } from './value_graph';
 
@@ -16,7 +17,7 @@ export class WorkspaceValueIdentityIndex {
 	private readonly globalIdentityIds: Map<string, number> = new Map();
 	private readonly moduleIdentityIds: Map<string, number> = new Map();
 	private readonly ownedIdentityIds: Map<OwnedValueID, number> = new Map();
-	private readonly literalIdentityIds: Map<string, number> = new Map();
+	private readonly literalIdentityIds: Map<SemanticLiteralValue['value'], number> = new Map();
 	private unknownIdentityId = 0;
 	private readonly identityParents: number[] = [0];
 	private readonly identityRanks: number[] = [0];
@@ -79,21 +80,14 @@ export class WorkspaceValueIdentityIndex {
 	}
 
 	private identityId(root: SemanticValueRoot): number {
-		if (root.kind === 'owned') {
-			const existing = this.ownedIdentityIds.get(root.id);
-			if (existing !== undefined) return existing;
-			const identity = this.createIdentity();
-			this.ownedIdentityIds.set(root.id, identity);
-			return identity;
-		}
 		if (root.kind === 'unknown') {
 			if (this.unknownIdentityId === 0) {
 				this.unknownIdentityId = this.createIdentity();
 			}
 			return this.unknownIdentityId;
 		}
-		let identities: Map<string, number>;
-		let key: string;
+		let identities: Map<string | number | boolean, number>;
+		let key: string | number | boolean;
 		switch (root.kind) {
 			case 'declaration':
 				identities = this.declarationIdentityIds;
@@ -109,7 +103,11 @@ export class WorkspaceValueIdentityIndex {
 				break;
 			case 'literal':
 				identities = this.literalIdentityIds;
-				key = root.key;
+				key = root.literal.value;
+				break;
+			case 'owned':
+				identities = this.ownedIdentityIds;
+				key = root.id;
 				break;
 		}
 		const existing = identities.get(key);

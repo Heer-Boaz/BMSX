@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { FunctionSummaryStore } from '../../toolchain/ts/lua/semantic/function_summary';
 import { WorkspaceValueIdentityIndex } from '../../toolchain/ts/lua/semantic/identity';
 import { buildLuaFileSemanticData, LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
-import { declarationValueSource, literalValueSource, semanticValueSourceKey, semanticValueSourcesEqual } from '../../toolchain/ts/lua/semantic/value_graph';
+import { declarationValueSource, literalValueSource, semanticValueSourceKey, semanticValueSourcesEqual, type SemanticLiteralValue } from '../../toolchain/ts/lua/semantic/value_graph';
 import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
 import { semanticSymbolAt } from './semantic_test_harness';
 
@@ -106,4 +106,31 @@ test('a retained canonical root still receives classification from later compile
 	assert.equal(terms.isNumericLiteral(declaredTerm), true);
 	assert.equal(terms.compileSource(declaration), declaredTerm);
 	assert.equal(terms.compileSource(literal), declaredTerm);
+});
+
+test('literal roots retain typed payloads and primitive identities without encoded-kind probes', () => {
+	const identities = new WorkspaceValueIdentityIndex({ files: [], globalValues: new Map() });
+	const literals: SemanticLiteralValue[] = [
+		{ kind: 'string', value: '1' }, { kind: 'number', value: 1 },
+		{ kind: 'boolean', value: true }, { kind: 'string', value: 'true' },
+		{ kind: 'boolean', value: false }, { kind: 'string', value: 'false' },
+		{ kind: 'number', value: 0 }, { kind: 'string', value: 'n\0NaN' },
+		{ kind: 'number', value: Number.NaN }, { kind: 'number', value: Infinity },
+	];
+	const roots = literals.map(literal => {
+		const source = literalValueSource(literal);
+		assert.ok(source.root.kind === 'literal');
+		assert.equal(source.root.literal, literal);
+		return identities.rawRootId(source.root);
+	});
+	assert.equal(new Set(roots).size, literals.length);
+	for (let index = 0; index < literals.length; index += 1) {
+		assert.equal(identities.rawRootId(literalValueSource(literals[index]).root), roots[index]);
+		assert.ok(semanticValueSourcesEqual(literalValueSource(literals[index]), literalValueSource(literals[index])));
+	}
+	const zero = literalValueSource({ kind: 'number', value: 0 });
+	const negativeZero = literalValueSource({ kind: 'number', value: -0 });
+	assert.equal(identities.rawRootId(zero.root), identities.rawRootId(negativeZero.root));
+	assert.ok(semanticValueSourcesEqual(zero, negativeZero));
+	assert.equal(semanticValueSourceKey(zero), semanticValueSourceKey(negativeZero));
 });

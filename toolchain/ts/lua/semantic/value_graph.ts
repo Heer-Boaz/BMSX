@@ -23,7 +23,7 @@ export type SemanticValueRoot =
 	| { kind: 'global'; symbolKey: string }
 	| { kind: 'module'; module: string }
 	| OwnedValueRoot
-	| { kind: 'literal'; key: string }
+	| { kind: 'literal'; literal: SemanticLiteralValue }
 	| { kind: 'unknown' };
 
 export type SemanticValueStep =
@@ -130,7 +130,7 @@ export function globalValueSource(symbolKey: string): SemanticValueSource {
 
 export function literalValueSource(literal: SemanticLiteralValue): SemanticValueSource {
 	return {
-		root: { kind: 'literal', key: semanticLiteralValueKey(literal) },
+		root: { kind: 'literal', literal },
 		steps: [],
 	};
 }
@@ -177,7 +177,7 @@ export function semanticValueRootKey(root: SemanticValueRoot): string {
 			key = `o\0${root.id}`;
 			break;
 		case 'literal':
-			key = root.key;
+			key = semanticLiteralValueKey(root.literal);
 			break;
 		case 'unknown':
 			key = 'u';
@@ -294,7 +294,10 @@ export function semanticValueSourcesEqual(
 			}
 			break;
 		case 'literal':
-			if (right.root.kind !== 'literal' || left.root.key !== right.root.key) {
+			if (right.root.kind !== 'literal'
+				|| left.root.literal.kind !== right.root.literal.kind
+				|| (left.root.literal.value !== right.root.literal.value
+					&& !Object.is(left.root.literal.value, right.root.literal.value))) {
 				return false;
 			}
 			break;
