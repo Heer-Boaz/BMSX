@@ -8,7 +8,7 @@ export type WorkbenchDropdownMenuId =
 
 export type WorkbenchContextMenuId = 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context';
 
-export type WorkbenchActionMenuId = 'sourceEditReview.title' | 'scenarioLab.title' | 'sceneEditor.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
+export type WorkbenchActionMenuId = 'propertyInspector.title' | 'sourceEditReview.title' | 'scenarioLab.title' | 'sceneEditor.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
 
 export type WorkbenchMenuCommandItem = {
 	readonly type: 'command';
@@ -22,6 +22,7 @@ export type WorkbenchMenuSeparator = {
 export type WorkbenchMenuItem = WorkbenchMenuCommandItem | WorkbenchMenuSeparator;
 
 type WorkbenchMenuContributions = Record<WorkbenchContextMenuId, readonly WorkbenchMenuItem[]> & {
+	readonly 'propertyInspector.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'sourceEditReview.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'menubar.file': readonly WorkbenchMenuItem[];
 	readonly 'menubar.edit': readonly WorkbenchMenuItem[];
@@ -37,6 +38,7 @@ type WorkbenchMenuContributions = Record<WorkbenchContextMenuId, readonly Workbe
 
 /** Immutable built-in menu contributions; renderers only project these items. */
 export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
+	'propertyInspector.title': [{ type: 'command', command: 'propertyInspector.source' }, { type: 'command', command: 'propertyInspector.close' }],
 	'code.context': [{ type: 'command', command: 'undo' }, { type: 'command', command: 'redo' }],
 	'code.symbol.context': [
 		{ type: 'command', command: 'goToDefinition' },
@@ -70,7 +72,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'behaviorLens.source' },
 		{ type: 'command', command: 'behaviorLens.details' },
 	],
-	'behaviorLens.property.context': [{ type: 'command', command: 'behaviorLens.source' }],
+	'behaviorLens.property.context': [{ type: 'command', command: 'behaviorLens.source' }, { type: 'command', command: 'behaviorLens.details' }],
 	'behaviorLens.canvas.context': [{ type: 'command', command: 'undo' }, { type: 'command', command: 'redo' }],
 	'sourceEditReview.title': [
 		{ type: 'command', command: 'sourceEditReview.source' },
@@ -127,7 +129,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'behaviorLens.details' },
 		{ type: 'command', command: 'behaviorLens.setInitialState' },
 	],
-	'behaviorLens.properties.title': [{ type: 'command', command: 'behaviorLens.source' }],
+	'behaviorLens.properties.title': [{ type: 'command', command: 'behaviorLens.source' }, { type: 'command', command: 'behaviorLens.details' }],
 	'sceneEditor.title': [
 		{ type: 'command', command: 'sceneEditor.source' },
 		{ type: 'command', command: 'sceneEditor.moveMemberUp' },

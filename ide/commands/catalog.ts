@@ -11,6 +11,8 @@ export type EditorCommandPresentation = {
 export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	Record<EditorCommandId, EditorCommandPresentation>
 > = {
+	'propertyInspector.source': { category: 'Inspect', title: 'Open Property Source', shortTitle: 'Source' },
+	'propertyInspector.close': { category: 'Inspect', title: 'Close Property Details', shortTitle: 'Back' },
 	'sourceEditReview.apply': { category: 'Review', title: 'Apply Source Edit', shortTitle: 'Apply' },
 	'sourceEditReview.discard': { category: 'Review', title: 'Discard Source Edit', shortTitle: 'Discard' },
 	'sourceEditReview.source': { category: 'Review', title: 'Open Impact Source', shortTitle: 'Source' },

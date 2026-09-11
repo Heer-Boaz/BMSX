@@ -138,7 +138,7 @@ export async function testStudioBtDuplicate(test: StudioFixture): Promise<void> 
 			check(model.buffer.getText() === BT_ORDER_SOURCE.replace(field, `${field}\n${field}`) && viewport.selection === children()[1],
 				'BT duplicate: source edit cancels capture; release does not apply the stale reorder preview');
 		} else {
-			check(children()[2].lines[0] === 'CHOICE 3  W=1', 'BT duplicate: the identical uninterrupted gesture really performs a reorder');
+			check(children()[2].lines.find(line => line.startsWith('CHOICE')) === 'CHOICE  W=1', 'BT duplicate: the identical uninterrupted gesture really performs a reorder');
 		}
 		await press('ControlLeft', 'KeyZ');
 		check(model.buffer.getText() === BT_ORDER_SOURCE, 'BT duplicate: no extra gesture history');

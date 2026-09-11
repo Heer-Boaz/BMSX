@@ -2,6 +2,7 @@ import type { PlayerInput } from '../../../../hosts/common/input/player';
 import { consumeIdeKey, isKeyJustPressed, shouldRepeatKeyFromPlayer, isShiftDown } from '../../../input/keyboard/key_input';
 import type { BehaviorLensController } from './controller';
 import type { BehaviorLensViewState } from './view_model';
+import { inputFocus } from '../../../input/focus';
 
 export function handleBehaviorLensKeyboardInput(
 	view: BehaviorLensViewState,
@@ -98,7 +99,7 @@ export function handleBehaviorLensGamepadInput(
 	const details = gamepad.getButtonState('x');
 	if (details.justpressed && !details.consumed) {
 		gamepad.consumeButton('x');
-		controller.openDetails();
+		inputFocus.executeCommand('behaviorLens.details');
 		return true;
 	}
 	const activate = gamepad.getButtonState('a');

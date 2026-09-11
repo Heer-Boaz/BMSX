@@ -37,13 +37,13 @@ export async function testStudioBtMoves(test: StudioFixture): Promise<void> {
 	const version = model.version;
 	await runPaletteCommand('Behavior Lens: Move BT Child Earlier');
 	const moved = model.buffer.getText();
-	check(model.version === version + 1 && viewport.selection?.kind === 'node' && viewport.selection.lines[0] === 'CHILD 1'
+	check(model.version === version + 1 && viewport.selection?.kind === 'node' && viewport.selection.member?.index === 0
 		&& viewport.selection.children.length === 2 && readLuaSourceRange(model.buffer, viewport.selection.source.occurrenceRange) === 'nested',
 		'BT moves: the explicit command moves once across metadata and preserves selected subtree expansion');
 	check(!ide.editor.commands.isEnabled(earlier) && ide.editor.commands.isEnabled(later), 'BT moves: source index owns endpoint admission');
 	console.info('STUDIO: BT reordered children ready for visual inspection');
 	await press('ControlLeft', 'KeyZ');
-	check(model.buffer.getText() === BT_ORDER_SOURCE && viewport.selection?.kind === 'node' && viewport.selection.lines[0] === 'CHILD 2',
+	check(model.buffer.getText() === BT_ORDER_SOURCE && viewport.selection?.kind === 'node' && viewport.selection.member?.index === 1,
 		'BT moves: graph focus routes Ctrl-Z to the resource-owned document');
 	await runPaletteCommand('Edit: Redo');
 	check(model.buffer.getText() === moved, 'BT moves: palette Redo routes back to the originating graph focus');
@@ -57,7 +57,7 @@ export async function testStudioBtMoves(test: StudioFixture): Promise<void> {
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === BT_ORDER_SOURCE && view.document === document, 'BT moves: hidden code Undo maps source without rebuilding the lens');
 	await test.clickTab(lens.id);
-	check(viewport.selection?.kind === 'node' && viewport.selection.lines[0] === 'CHILD 2' && viewport.selection.children.length === 2,
+	check(viewport.selection?.kind === 'node' && viewport.selection.member?.index === 1 && viewport.selection.children.length === 2,
 		'BT moves: returning to the lens preserves the same nested occurrence and expansion');
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
 	await chooseBehavior(test, 'BT fixture.shared-order', 'BEHAVIOR TREES');
@@ -97,12 +97,12 @@ export async function testStudioBtMoves(test: StudioFixture): Promise<void> {
 	await click({ left: x, right: x + 1, top: y, bottom: y + 1 });
 	check(viewport.selection === edge, 'BT moves: pointer selects the actual weighted connection');
 	await runPaletteCommand('Behavior Lens: Move BT Child Earlier');
-	check(viewport.selection?.kind === 'edge' && viewport.selection.child.lines[0] === 'CHOICE 2  W=3'
+	check(viewport.selection?.kind === 'edge' && viewport.selection.child.lines.find(line => line.startsWith('CHOICE')) === 'CHOICE  W=3'
 		&& readLuaSourceRange(model.buffer, viewport.selection.range) === '{ weight = 3, child = make_node(3) }',
 		'BT moves: complete weighted wrapper moves, not just its child expression');
 	console.info('STUDIO: BT reordered choices ready for visual inspection');
 	await press('ControlLeft', 'KeyZ');
-	check(model.buffer.getText() === BT_ORDER_SOURCE && viewport.selection?.kind === 'edge' && viewport.selection.child.lines[0] === 'CHOICE 3  W=3',
+	check(model.buffer.getText() === BT_ORDER_SOURCE && viewport.selection?.kind === 'edge' && viewport.selection.child.lines.find(line => line.startsWith('CHOICE')) === 'CHOICE  W=3',
 		'BT moves: Undo restores missing punctuation and the selected edge without changing source role');
 	const resource = model.resource;
 	model.refreshResource({ ...resource, source: { ...resource.source, generated: true } });

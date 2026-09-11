@@ -393,12 +393,15 @@ targets and identical return text never identify an edge. Entry owner and
 transition origin are separate: a concurrent declaration belongs to its own
 state while entry originates at the parent. Only selected proof anchors are
 mapped on content changes, including while the pane is hidden. Geometry does
-not supply source coordinates. The shared Details command now exposes these
-FSM references through Quick Input without executing Lua or authoring a second
-graph. A picker session owns its provider subscriptions; content invalidation
-closes a source snapshot, and accept/cancel/blur/replacement dispose those
-subscriptions before returning focus or navigating. See the pinned VS Code and
-CodeMirror references and edit-affinity decision in the graph design.
+not supply source coordinates. Details exposes these FSM references through a
+local full-width property inspector, not a Quick Pick. The contribution owns
+source excerpts, proof identity and source-generation invalidation. The shared
+inspector owns wrapped variable-height blocks, scrolling, focus and Source/Back;
+source changes and detach end its subscriptions before returning focus. The
+diagram model, selection and pan remain retained while inspecting. No Lua is
+executed and no second graph is authored. See the measured tiny-resolution
+composition and pinned editor references in
+[`../docs/behavior_inspection_design.md`](../docs/behavior_inspection_design.md).
 `workbench/ui/graph` and
 `workbench/render/graph.ts` now own a shared retained canvas: one measured
 geometry generation for draw and hit testing, input-owned pan/selection and a
@@ -520,8 +523,14 @@ tree using the shared D3-derived tidy-tree layout and routes through level
 gaps; `graph_layout.ts` owns invalidation and selected-item screen anchoring.
 The common source correspondence remaps either a node use or a connection use.
 In particular a weighted connection owns its choice occurrence, not the
-shared choice initializer's child field. Details use the existing Quick Pick
-and exact source ranges; they are not editable properties or an inspector DTO.
+shared choice initializer's child field. Cards show the authored task, timeline
+or duration instead of CHILD ordinals; main/background roles and choice weights
+remain explicit. Details uses the full property reader and exact source ranges,
+not Quick Pick preview lines. FSM cards and edges keep names/roles rather than
+permanent proof statistics; partial source has a compact indication, with full
+callback/return/entry/guard evidence in Details. A callback that returns no path
+does not itself imply a warning. Inspector rows are presentation, not a runtime
+DTO or editable second source.
 All statically recognized children are visible from the first generation;
 there is no Children command, card expander or fold shortcut. Large graphs use
 the shared scrollbars/panning, not hidden branches or smaller text. Text fields

@@ -1,10 +1,14 @@
 import type { LuaSourceRange } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { WorkbenchGraphEdge, WorkbenchGraphModel, WorkbenchGraphNode } from '../../ui/graph/model';
-import type { QuickPickItem } from '../../services/quick_input/model';
 import type { BehaviorSourceNode, BehaviorSourceRowKey } from './model';
 import type { BehaviorTreeSourceMember } from './behavior_tree_model';
 
-export type BehaviorGraphDetail = QuickPickItem & { readonly range: LuaSourceRange };
+export type BehaviorGraphDetail = {
+	readonly label: string;
+	readonly description: string;
+	readonly detail: string;
+	readonly range: LuaSourceRange;
+};
 
 export type BehaviorGraphNode = WorkbenchGraphNode & {
 	readonly source: BehaviorSourceNode;

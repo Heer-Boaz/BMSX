@@ -1,3 +1,4 @@
+import type { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/behavior_lens/editor_pane';
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
 import { findCodeTabContext } from '../../../ide/workbench/ui/code_tab/contexts';
@@ -59,11 +60,9 @@ export async function testStudioSourceRecovery(test: StudioFixture): Promise<voi
 			await click(bounds, 8);
 		} else {
 			await click(graph.actionBar.items[1].bounds);
-			const picker = ide.editor.quickInput;
-			check(picker.visible && picker.title === 'BT SOURCE DETAILS', 'crossfoe: Details uses the shared picker');
-			const layout = picker.model.list.layout;
-			await click({ left: layout.contentLeft, right: layout.contentRight,
-				top: layout.contentTop, bottom: layout.contentTop + layout.rowHeight }, 8);
+			const inspector = (ide.editor.editorPanes.activePane as BehaviorLensEditorPane).inspector;
+			check(inspector.visible && !ide.editor.quickInput.visible, 'crossfoe: Details opens full source content');
+			await click(inspector.actionBar.items[0].bounds, 8);
 		}
 		check(getActiveTab().kind === 'code_editor' && activeCodeEditor.model === model && !hasSelection(), `${route}: Source focuses code without a held selection`);
 		for (let index = 0; index < 140; index += 1) await frame();

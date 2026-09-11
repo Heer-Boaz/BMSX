@@ -1,3 +1,4 @@
+import { testStudioBehaviorInspector } from './studio_behavior_inspector';
 import { testStudioContextMenu } from './studio_context_menu';
 import { testStudioSourceRecovery } from './studio_source_recovery';
 import { testStudioStateGraph } from './studio_state_graph';
@@ -157,6 +158,7 @@ export async function runStudioPointerNavigation(test: StudioFixture, cart: Navi
 	if (cart === 'pietious') await testStudioSourceRecovery(test);
 	await testStudioPointerNavigation(test, cart);
 	await testStudioBehaviorSourceGraph(test);
+	await testStudioBehaviorInspector(test);
 	await testStudioBtMembership(test);
 	await testStudioBtMoves(test);
 	await testStudioBtDrag(test);

@@ -56,7 +56,7 @@ test('weighted cards and incoming routes drag the whole choice, not a detached c
 		drag.dragOver(...over(f, f.viewport.model.nodes[0].children[0].children[0], true));
 		assert.equal(drag.feedback.accepted, true);
 		drag.drop(); f.refresh();
-		assert.deepEqual(f.viewport.model.nodes[0].children[0].children.map(node => node.lines[0]), ['CHOICE 1  W=3', 'CHOICE 2  W=1', 'CHOICE 3  W=9']);
+		assert.deepEqual(f.viewport.model.nodes[0].children[0].children.map(node => node.lines.find(line => line.startsWith('CHOICE'))), ['CHOICE  W=3', 'CHOICE  W=1', 'CHOICE  W=9']);
 		assert.equal(f.viewport.selection!.kind, edge ? 'edge' : 'node');
 		f.model.undo(); f.refresh();
 		assert.equal(f.model.buffer.getText(), BT_ORDER_SOURCE);

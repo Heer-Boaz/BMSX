@@ -1,6 +1,5 @@
 import { navigationState } from '../navigation/navigation_history';
 import { editorTabGroup } from '../workbench/ui/tab/group_model';
-import { hasStateMachineDetails } from '../workbench/contrib/behavior_lens/state_machine_details';
 import type { HostRewind } from '../../hosts/common/rewind';
 import { HostPauseReason, type HostExecutionControl } from '../../hosts/common/execution_control';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
@@ -98,7 +97,10 @@ export class IdeCommandController {
 			case 'sceneEditor.removeMember':
 				this.editor.sceneEditor.removeSelectedMember();
 				return;
+			case 'behaviorLens.details':
 			case 'contextMenu':
+			case 'propertyInspector.source':
+			case 'propertyInspector.close':
 			case 'sourceEditReview.apply':
 			case 'sourceEditReview.discard':
 			case 'sourceEditReview.source':
@@ -239,7 +241,10 @@ export class IdeCommandController {
 				return this.editor.sceneEditor.canMoveSelectedMember(1);
 			case 'sceneEditor.removeMember':
 				return this.editor.sceneEditor.canRemoveSelectedMember();
+			case 'behaviorLens.details':
 			case 'contextMenu':
+			case 'propertyInspector.source':
+			case 'propertyInspector.close':
 			case 'sourceEditReview.apply':
 			case 'sourceEditReview.discard':
 			case 'sourceEditReview.source':
@@ -288,15 +293,6 @@ export class IdeCommandController {
 				return true;
 			case 'sceneEditor.source':
 				return getActiveTab().kind === 'scene_editor';
-			case 'behaviorLens.details': {
-				const input = getActiveTab();
-				if (input.kind !== 'behavior_lens' || input.view.selection === null) return false;
-				if (input.view.source.nodesByRowKey.get(input.view.selection.rowKey)!.behaviorKind === 'state_machine') return hasStateMachineDetails(input.view);
-				if (input.view.presentation.kind !== 'graph') return false;
-				const item = input.view.presentation.viewport.selection;
-				if (item === null) return false;
-				return (item.kind === 'node' ? item : item.child).details.length > 0;
-			}
 			case 'behaviorLens.source':
 				return getActiveTab().kind === 'behavior_lens';
 			case 'rename':

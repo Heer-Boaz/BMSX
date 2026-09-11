@@ -87,6 +87,7 @@ function buildBehaviorTreeNode(
 		issues: resolved.issues,
 		nodeType,
 		referenceLabel: resolved.referenceLabel,
+		summary: primaryDetail,
 		branches,
 		attachments,
 		label: typeLabel,

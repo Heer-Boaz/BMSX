@@ -33,7 +33,7 @@ import { selectStateMachineSource } from './state_machine_selection';
 import { editorViewState } from '../../../editor/ui/view/state';
 import type { GraphLayoutEngineFactory } from '../../services/graph_layout/engine';
 import { acceptStateGraphSelection, stateGraphSelection } from './state_graph_navigation';
-import { buildStateMachineDetails } from './state_machine_details';
+import type { BehaviorInspectionProperty } from './inspection';
 import { behaviorTreeEditTarget, behaviorTreeMoveTarget, duplicateBehaviorTreeChild, moveBehaviorTreeChild, removeBehaviorTreeChild } from './behavior_tree_edit';
 import type { StateMachinePathUse } from './state_machine_retarget';
 import { setStateMachineInitial, stateMachineInitialTarget } from './state_machine_initial';
@@ -128,40 +128,22 @@ export class BehaviorLensController {
 		else this.openSelectedSource(input.view);
 	}
 
-	public openDetails(): void {
-		const input = getActiveTab();
-		if (input.kind !== 'behavior_lens') return;
-		this.updateView(input);
+	public openInspectionSource(input: BehaviorLensInput, detail: BehaviorInspectionProperty): void {
 		const view = input.view;
-		if (view.selection === null) return;
-		if (view.source.nodesByRowKey.get(view.selection.rowKey)!.behaviorKind === 'state_machine') {
-			this.quickInput.pick('FSM SOURCE EVIDENCE', 'Choose a field, return or entry source', (_origin, disposables) => {
-				disposables.add({ dispose: input.workingCopy.onDidChangeContent(() => this.quickInput.hide()) });
-				return buildStateMachineDetails(view);
-			}, detail => {
-				view.selection = detail.source.kind === 'node' ? detail.source : selectStateMachineSource(detail.source, input.workingCopy.buffer);
-				if (view.presentation.kind === 'state-graph') {
-					const viewport = view.presentation.viewport;
-					viewport.selection = stateGraphSelection(viewport.model, view.selection);
-				}
-				finishBehaviorLensNavigation(view);
-				this.openSelectedSource(view);
-			});
-			return;
+		if (detail.stateSelection !== undefined) {
+			view.selection = detail.stateSelection.kind === 'node' ? detail.stateSelection
+				: selectStateMachineSource(detail.stateSelection, input.workingCopy.buffer);
+			if (view.presentation.kind === 'state-graph') {
+				const viewport = view.presentation.viewport;
+				viewport.selection = stateGraphSelection(viewport.model, view.selection);
+			}
+			finishBehaviorLensNavigation(view);
 		}
-		if (view.presentation.kind !== 'graph') return;
-		const item = view.presentation.viewport.selection;
-		if (item === null) return;
-		const node = item.kind === 'node' ? item : item.child;
-		this.quickInput.pick('BT SOURCE DETAILS', 'Choose a field to open its source', (_origin, disposables) => {
-			disposables.add({ dispose: input.workingCopy.onDidChangeContent(() => this.quickInput.hide()) });
-			return node.details;
-		},
-			detail => this.navigation.focusChunkSourceForContext(view.resource.domain, detail.range.path, {
-				row: detail.range.start.line - 1, startColumn: detail.range.start.column - 1, endColumn: detail.range.start.column - 1,
-			}));
+		const range = detail.range!;
+		this.navigation.focusChunkSourceForContext(view.resource.domain, range.path, {
+			row: range.start.line - 1, startColumn: range.start.column - 1, endColumn: range.start.column - 1,
+		});
 	}
-
 
 	public canMoveSelectedChild(direction: -1 | 1): boolean {
 		const input = getActiveTab();

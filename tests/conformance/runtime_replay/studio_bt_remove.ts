@@ -160,7 +160,7 @@ export async function testStudioBtRemove(test: StudioFixture): Promise<void> {
 	version = model.version;
 	await press('Delete');
 	check(model.version === version + 1 && model.buffer.getText() === BT_ORDER_SOURCE.replace('\t{ weight = 9, child = nested },', '\t')
-		&& children()[0].lines[0] === 'CHOICE 1  W=1' && children()[1].lines[0] === 'CHOICE 2  W=3' && viewport.selection === null,
+		&& children()[0].lines.find(line => line.startsWith('CHOICE')) === 'CHOICE  W=1' && children()[1].lines.find(line => line.startsWith('CHOICE')) === 'CHOICE  W=3' && viewport.selection === null,
 		'BT removal: Delete removes a complete weighted choice, preserving survivor weights and clearing the edge');
 	await press('ControlLeft', 'KeyZ');
 	// A source command invalidates a captured preview. Releasing afterwards must
@@ -184,7 +184,7 @@ export async function testStudioBtRemove(test: StudioFixture): Promise<void> {
 			check(model.buffer.getText() === BT_ORDER_SOURCE.replace('\t{ weight = 1, child = leaf },', '\t'),
 				'BT removal: source edit cancels capture; release does not commit the previous reorder preview');
 		} else {
-			check(children()[2].lines[0] === 'CHOICE 3  W=1',
+			check(children()[2].lines.find(line => line.startsWith('CHOICE')) === 'CHOICE  W=1',
 				'BT removal: the same press/move/release really admits a reorder before testing its cancellation');
 		}
 		await press('ControlLeft', 'KeyZ');

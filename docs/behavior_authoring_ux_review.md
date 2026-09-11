@@ -140,6 +140,15 @@ blijft een typed source occurrence/relatie, nooit de tekst van een kaart.
 een aantoonbare plek; inspectie/source/Back/pan verandert geen sourceversie,
 dirty-state of undo. Tekst meten/projecteren alleen bij relevante invalidatie.
 
+**Uitgewerkt:** [het inspectiecontract](behavior_inspection_design.md) beschrijft
+de vóór implementatie gemeten 384×288-compositie, de gedeelde volledige reader
+en de compactere kaarten. Details vervangt tijdelijk het canvas, niet zijn model
+of bronselectie; Source en Back behouden de gewone navigatie-/documentowners.
+BT-taak/timeline/duur vervangt CHILD n; FSM-proofregels staan bij de betreffende
+bronvelden en returns. De reader houdt ook lange callbackinhoud geheel vast,
+met eigen scrollruimte naast Problems. B04-herkomst/invalidation over resources,
+B06-bewerking en B07-zoom worden hiermee niet als afgerond beschouwd.
+
 ### B02 — contextmenu is een workbench-control, geen Lua-tokencontrol
 
 De bijdrage levert het geraakte doel en toepasselijke bestaande commands; het

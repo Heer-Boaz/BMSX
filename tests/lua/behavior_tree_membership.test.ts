@@ -31,7 +31,7 @@ function fixture(source = BT_MEMBERSHIP_SOURCE, index = 0) {
 test('opaque child values do not erase the proven surrounding child-list order', () => {
 	const { model, definition, graph, root } = fixture();
 	assert.equal(definition.resolution, 'partial', 'the complete subtree is not statically known');
-	assert.deepEqual(root.children.map(child => child.lines[0]), ['CHILD 1', 'CHILD 2', 'CHILD 3', 'CHILD 4']);
+	assert.deepEqual(root.children.map(child => child.member!.index), [0, 1, 2, 3]);
 	assert.deepEqual(root.children.map(child => child.source.kind), ['node', 'dynamic', 'node', 'dynamic']);
 	assert.equal(root.children[1].children.length, 0, 'the builder is not evaluated in the host');
 	assert.deepEqual(root.children[2].children[0].lines, ['CHILDREN', '? PARTIAL MEMBERSHIP'], 'uncertainty belongs to the nested list, not its parent');
@@ -46,7 +46,7 @@ test('opaque child values do not erase the proven surrounding child-list order',
 test('opaque choices and choice-child values retain their ordered slots and independent source roles', () => {
 	const { model, definition, graph, root } = fixture(BT_MEMBERSHIP_SOURCE, 2);
 	assert.equal(definition.resolution, 'partial');
-	assert.deepEqual(root.children.map(child => child.lines[0]), ['CHOICE 1  W=2', 'CHOICE 2', 'CHOICE 3  W=4', 'CHOICE 4  W=5']);
+	assert.deepEqual(root.children.map(child => child.lines.find(line => line.startsWith('CHOICE'))), ['CHOICE  W=2', 'CHOICE', 'CHOICE  W=4', 'CHOICE  W=5']);
 	assert.deepEqual(root.children.map(child => child.source.kind), ['node', 'dynamic', 'dynamic', 'node']);
 	const branch = definition.root;
 	assert.ok(branch?.kind === 'node' && branch.branches[0].role === 'choices');
@@ -167,7 +167,7 @@ test('nested membership warnings, shared occurrences, hidden edits and Undo use 
 	refresh();
 	assert.equal(view.definitionRowKey, view.document.definitions[1].rowKey);
 	assert.ok(viewport.selection?.kind === 'edge');
-	assert.equal(viewport.selection.child.lines[0], 'CHILD 3');
+	assert.equal(viewport.selection.child.member?.index, 2);
 	assert.equal(readLuaSourceRange(f.model.buffer, selectedBehaviorLensSourceRange(view)!), 'nested');
 	const retained = viewport.model;
 	for (let index = 0; index < 100; index += 1) prepareBehaviorLensLayout(view);

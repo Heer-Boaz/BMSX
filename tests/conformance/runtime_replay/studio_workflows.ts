@@ -1,3 +1,4 @@
+import { testStudioBehaviorInspector } from './studio_behavior_inspector';
 import { testStudioDefinitionInputs } from './studio_definition_inputs';
 import { testStudioNavigationHistory } from './studio_navigation_history';
 import { testStudioStateGraph } from './studio_state_graph';
@@ -333,6 +334,7 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	await testStudioBehaviorPicker(test);
 	await testStudioBehaviorKinds(test);
 	await testStudioBehaviorSourceGraph(test);
+	await testStudioBehaviorInspector(test);
 	await testStudioBtMembership(test);
 	await testStudioBtMoves(test);
 	await testStudioBtDrag(test);

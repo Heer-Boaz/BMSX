@@ -1,3 +1,4 @@
+import type { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/behavior_lens/editor_pane';
 import { testStudioGraphNavigation } from './studio_graph_navigation';
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { editorViewState } from '../../../ide/editor/ui/view/state';
@@ -8,7 +9,7 @@ import { check, type StudioFixture } from './studio_fixture';
 
 /** Physical controls on the independent Lua fixture, in the real Studio composition. */
 export async function testStudioBehaviorGraphControls(test: StudioFixture, view: BehaviorLensViewState): Promise<void> {
-	const { press, frame, click, input, clock, ide, clipboard, runPaletteCommand } = test;
+	const { press, frame, click, input, clock, ide, runPaletteCommand } = test;
 	if (view.presentation.kind !== 'graph') throw new Error('BT controls require the concrete graph');
 	const graph = view.presentation;
 	const viewport = graph.viewport;
@@ -21,12 +22,12 @@ export async function testStudioBehaviorGraphControls(test: StudioFixture, view:
 	if (sequence?.kind !== 'node') throw new Error('BT controls: root node not selected');
 	await runPaletteCommand('Behavior Lens: Open Source Details');
 	const picker = ide.editor.quickInput;
-	check(picker.title === 'BT SOURCE DETAILS' && picker.model.entries.some(row => row.item.label === 'num_loops'),
-		'BT controls: real source details include decorator policy, not execution children');
-	clipboard.text = 'num_loops';
-	await press('ControlLeft', 'KeyV');
-	check(picker.model.list.rows.length === 1, 'BT controls: focused source detail is independently selectable');
+	const inspector = (ide.editor.editorPanes.activePane as BehaviorLensEditorPane).inspector;
 	const detail = sequence.details.find(item => item.label === 'num_loops')!;
+	const detailIndex = inspector.model.rows.findIndex(row => row.element.range === detail.range);
+	check(inspector.visible && !picker.visible && detailIndex >= 0,
+		'BT controls: full inspector includes decorator policy without a source-choice popup');
+	for (let index = 0; index < detailIndex; index += 1) await press('ArrowDown');
 	await press('Enter');
 	check(getActiveTab().kind === 'code_editor' && activeCodeEditor.view.cursorRow === detail.range.start.line - 1
 		&& activeCodeEditor.view.cursorColumn === detail.range.start.column - 1, 'BT controls: detail activation opens its exact Lua value');
@@ -34,7 +35,7 @@ export async function testStudioBehaviorGraphControls(test: StudioFixture, view:
 	await press('ArrowDown');
 	const first = viewport.selection;
 	if (first?.kind !== 'node') throw new Error('BT controls: first child not selected');
-	check(first.lines[0] === 'CHILD 1' && first.children.length === 2, 'BT controls: down follows the first authored child');
+	check(first.member?.index === 0 && first.children.length === 2, 'BT controls: down follows the first authored child');
 	const expanded = viewport.model;
 	await press('ControlLeft', 'Space');
 	check(viewport.model === expanded, 'BT controls: Ctrl+Space does not change graph membership');
@@ -68,10 +69,11 @@ export async function testStudioBehaviorGraphControls(test: StudioFixture, view:
 	await pad('right');
 	const second = viewport.selection;
 	if (second?.kind !== 'node') throw new Error('BT controls: second child not selected');
-	check(second.lines[0] === 'CHILD 2', 'BT controls: controller right follows siblings, not screen proximity');
+	check(second.member?.index === 1, 'BT controls: controller right follows siblings, not screen proximity');
 	await pad('x');
-	check(picker.visible && picker.title === 'BT SOURCE DETAILS', 'BT controls: controller X opens source details');
-	await press('Escape');
+	check(inspector.visible && !picker.visible, 'BT controls: controller X opens the same full source inspector');
+	await pad('down'); check(inspector.model.selectionIndex === 1, 'BT controls: controller selects an inspected property');
+	await pad('b'); check(!inspector.visible && viewport.selection === second, 'BT controls: controller Back preserves the graph selection');
 	const edge = viewport.model.edgesBySource.get(second.source.rowKey)!;
 	const x = edge.points[edge.points.length - 2] + viewport.bounds.left - viewport.scrollX;
 	const y = edge.points[edge.points.length - 1] - 6 + viewport.bounds.top - viewport.scrollY;
@@ -89,17 +91,18 @@ export async function testStudioBehaviorGraphControls(test: StudioFixture, view:
 	await press('ArrowRight');
 	const weightedKey = view.selection!.rowKey;
 	await press('ArrowDown');
-	check(viewport.selection?.kind === 'node' && viewport.selection.lines[0] === 'CHOICE 1  W=2',
+	check(viewport.selection?.kind === 'node' && viewport.selection.lines.find(line => line.startsWith('CHOICE')) === 'CHOICE  W=2',
 		'BT controls: entering the weighted branch selects its already-visible first choice');
 	await press('ArrowRight');
 	const choice = viewport.selection;
 	if (choice?.kind !== 'node') throw new Error('BT controls: weighted choice not selected');
-	check(choice.lines[0] === 'CHOICE 2  W=WEIGHTS.RETREAT', 'BT controls: the second choice keeps its authored weight expression');
+	check(choice.lines.find(line => line.startsWith('CHOICE')) === 'CHOICE  W=WEIGHTS.RETREAT', 'BT controls: the second choice keeps its authored weight expression');
 	await click(graph.actionBar.items.find(item => item.command === 'behaviorLens.details')!.bounds);
-	clipboard.text = 'weight';
-	await press('ControlLeft', 'KeyV');
-	check(picker.model.list.rows.length === 1, 'BT controls: choice weight has one source detail, no duplicated summary');
 	const weight = choice.details.find(item => item.label === 'weight')!;
+	check(inspector.model.rows.filter(row => row.element.range === weight.range).length === 1,
+		'BT controls: choice weight has one source property, not a duplicated summary');
+	const weightIndex = inspector.model.rows.findIndex(row => row.element.range === weight.range);
+	for (let index = 0; index < weightIndex; index += 1) await press('ArrowDown');
 	await press('Enter');
 	check(activeCodeEditor.view.cursorRow === weight.range.start.line - 1 && activeCodeEditor.view.cursorColumn === weight.range.start.column - 1,
 		'BT controls: choice detail opens the actual weight expression');

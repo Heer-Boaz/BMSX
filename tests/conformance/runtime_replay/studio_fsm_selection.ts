@@ -1,3 +1,4 @@
+import type { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/behavior_lens/editor_pane';
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { inputFocus } from '../../../ide/input/focus';
@@ -18,7 +19,7 @@ function selectedProof(view: BehaviorLensViewState) {
 /** Source Details and Source use the same evidence before and after hidden edits. */
 export async function testStudioFsmSelection(test: StudioFixture): Promise<void> {
 	const { ide, harness, click, frame, press, runPaletteCommand, cycles, clipboard } = test;
-	console.info('STUDIO: FSM proof picker, identical returns, hidden edits/Undo and source snapshot cancellation');
+	console.info('STUDIO: FSM proof inspector, identical returns, hidden edits/Undo and source snapshot cancellation');
 	const position = cycles();
 	const media = ide.sources.currentBlua32Media;
 	harness.openLuaSource('cart.lua');
@@ -42,18 +43,16 @@ export async function testStudioFsmSelection(test: StudioFixture): Promise<void>
 	const right = definition.transitions.filter(transition => transition.slot.kind === 'update')[1];
 	await revealLensOccurrence(test, view, right.slot.source.rowKey);
 	await click(graph.actionBar.items[1].bounds);
-	check(picker.visible && picker.title === 'FSM SOURCE EVIDENCE', 'FSM proof: shared Details action opens its own source choices');
-	clipboard.text = 'return next_path';
-	await press('ControlLeft', 'KeyV');
-	const rows = picker.model.list.rows;
-	check(rows.length === 2 && rows[0].item.label === rows[1].item.label && rows[0].item.description !== rows[1].item.description,
-		'FSM proof: identical returns display their distinct line/column evidence');
-	const retainedRows = rows.slice();
+	const inspector = (ide.editor.editorPanes.activePane as BehaviorLensEditorPane).inspector;
+	check(inspector.visible && !picker.visible, 'FSM proof: shared Details action opens readable source evidence');
+	const rows = inspector.model.rows;
+	const first = rows[0], second = rows[1];
+	check(first.element.label === second.element.label && first.element.description !== second.element.description,
+		'FSM proof: identical returns retain distinct paths and line/column evidence');
 	for (let index = 0; index < 30; index += 1) await frame();
-	check(rows[0] === retainedRows[0] && rows[1] === retainedRows[1], 'FSM proof: picker frames retain their measured source items');
-	const layout = picker.model.list.layout;
-	await click({ left: layout.contentLeft, right: layout.contentRight,
-		top: layout.contentTop + layout.rowHeight, bottom: layout.contentTop + layout.rowHeight * 2 }, 6);
+	check(rows[0] === first && rows[1] === second, 'FSM proof: unchanged inspector frames retain measured content');
+	await press('ArrowDown');
+	await click(inspector.actionBar.items[0].bounds, 6);
 	check(getActiveTab() === code && activeCodeEditor.view.cursorRow === 4
 		&& activeCodeEditor.view.cursorColumn === FSM_PROOF_SOURCE.split('\n')[4].indexOf('return') && !hasSelection(),
 		'FSM proof: held picker acceptance opens the second return, not the binding, initializer or a dragged code selection');
@@ -83,9 +82,9 @@ export async function testStudioFsmSelection(test: StudioFixture): Promise<void>
 	check(selectedProof(view).outcome === selectedProof(view).transition.outcomes[1], 'FSM proof: ordinary Undo restores the selected occurrence, not an ordinal');
 	const focus = inputFocus.target;
 	await runPaletteCommand('Behavior Lens: Open Source Details');
-	check(picker.visible && picker.title === 'FSM SOURCE EVIDENCE', 'FSM proof: the palette and action bar share one command');
+	check(inspector.visible && !picker.visible, 'FSM proof: the palette and action bar share one inspector command');
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- invalidate open source snapshot\n' }]);
-	check(!picker.visible && inputFocus.target === focus, 'FSM proof: source changes close the obsolete snapshot and restore invoking focus');
+	check(!inspector.visible && inputFocus.target === focus, 'FSM proof: source changes close the obsolete snapshot and restore invoking focus');
 	await frame();
 	model.undo();
 	await frame();

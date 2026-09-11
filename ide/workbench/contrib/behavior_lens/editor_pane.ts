@@ -36,6 +36,9 @@ import { retargetStateMachineTransition } from './state_machine_edit';
 import { stateMachineRetargetImpacts } from './state_machine_review';
 import { WorkbenchSourceEditReview } from '../../ui/source_edit_review/control';
 import type { WorkbenchGraphDragSource } from '../../ui/graph/drag';
+import { WorkbenchPropertyInspector } from '../../ui/property_inspector/control';
+import { drawWorkbenchPropertyInspector } from '../../render/property_inspector';
+import { buildBehaviorInspection, type BehaviorInspectionProperty } from './inspection';
 
 export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<BehaviorLensInput> {
 	public override getSelection(): BehaviorLensNavigationSelection {
@@ -47,6 +50,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 	private readonly properties = new WorkbenchPropertyTreePointer();
 	private readonly graph = new WorkbenchGraphControl(inputFocus, pointerCapture, input => this.handleKeyboard(input), this.focusTarget);
 	public readonly sourceEditReview = new WorkbenchSourceEditReview(inputFocus, pointerCapture, this.graph.focusTarget);
+	public readonly inspector = new WorkbenchPropertyInspector<BehaviorInspectionProperty>(inputFocus, pointerCapture, this.focusTarget);
 	private readonly actionBar: WorkbenchActionBarControl;
 	private readonly stateMachineDrop: StateMachineRetargetDrop = (selection, target) => {
 		const input = this.input;
@@ -77,11 +81,15 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 	) {
 		super(resourcePanel);
 		this.actionBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, commands, this.focusTarget);
+		for (const target of [this.focusTarget, this.graph.focusTarget]) target.registerCommand('behaviorLens.details', {
+			isEnabled: () => this.input.view.selection !== null && !this.sourceEditReview.visible && !this.inspector.visible,
+			run: () => this.openDetails(),
+		});
 		for (const target of [this.focusTarget, this.graph.focusTarget]) target.registerCommand('contextMenu', {
-			isEnabled: () => !this.sourceEditReview.visible,
+			isEnabled: () => !this.sourceEditReview.visible && !this.inspector.visible,
 			run: () => this.openKeyboardContextMenu(),
 		});
-		for (const target of [this.focusTarget, this.graph.focusTarget, this.sourceEditReview.focusTarget]) {
+		for (const target of [this.focusTarget, this.graph.focusTarget, this.sourceEditReview.focusTarget, this.inspector.focusTarget]) {
 			target.registerCommand('undo', {
 				isEnabled: () => !this.input.workingCopy.readOnly && this.input.workingCopy.canUndo,
 				run: () => { this.input.workingCopy.undo(); },
@@ -110,6 +118,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		this.pointer.cancel();
 		this.properties.cancel();
 		this.sourceEditReview.clear();
+		this.inspector.hide();
 		this.graph.clearInput();
 		this.controller.updateView(this.input, navigationSelection);
 		const presentation = this.input.view.presentation;
@@ -124,6 +133,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 	}
 
 	public override focus(): void {
+		if (this.inspector.visible) { this.inspector.focusTarget.focus(); return; }
 		if (this.sourceEditReview.visible) { this.sourceEditReview.focusTarget.focus(); return; }
 		const kind = this.input.view.presentation.kind;
 		if (kind === 'graph' || kind === 'state-graph') this.graph.focusTarget.focus();
@@ -133,6 +143,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 	public override dispose(): void {
 		this.actionBar.dispose();
 		this.sourceEditReview.dispose();
+		this.inspector.dispose();
 		this.graph.dispose();
 		this.unbindPointerBlur();
 		super.dispose();
@@ -141,11 +152,13 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 	public override update(): void {
 		this.controller.updateView(this.input);
 		this.sourceEditReview.update();
+		this.inspector.update();
 		this.graph.update();
 		this.actionBar.update();
 	}
 
 	public override clearInput(): void {
+		this.inspector.hide();
 		this.actionBar.clearInput();
 		this.sourceEditReview.clear();
 		this.pointer.cancel();
@@ -158,6 +171,11 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 
 	public draw(): void {
 		const view = this.input.view;
+		if (this.inspector.visible) {
+			this.inspector.layout(editorViewState.font.renderFont(), measureTextRange, measureText, prepareBehaviorLensLayout(view));
+			drawWorkbenchPropertyInspector(this.inspector);
+			return;
+		}
 		if (this.sourceEditReview.visible) this.sourceEditReview.layout(editorViewState.font.renderFont(), measureTextRange, measureText, prepareBehaviorLensLayout(view));
 		drawBehaviorLens(view, this.commands, this.graph.hover, this.graph.focusTarget.hasFocus, this.graph.dragFeedback,
 			this.graph.connectionHandles, this.sourceEditReview.visible ? this.sourceEditReview : undefined);
@@ -178,6 +196,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		now: number,
 		playerInput: PlayerInput,
 	): boolean {
+		if (this.inspector.visible) return this.inspector.handlePointer(snapshot);
 		if (this.sourceEditReview.visible) {
 			this.sourceEditReview.layout(editorViewState.font.renderFont(), measureTextRange, measureText, prepareBehaviorLensLayout(this.input.view));
 			return this.sourceEditReview.handlePointer(snapshot, justPressed, now);
@@ -233,6 +252,19 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		lifetime.add({ dispose: this.input.workingCopy.onDidChangeContent(() => this.contextMenu.hide()) });
 	}
 
+	private openDetails(): void {
+		this.controller.updateView(this.input);
+		this.focus();
+		const input = this.input;
+		const selected = input.view.source.nodesByRowKey.get(input.view.selection!.rowKey)!;
+		const lifetime = this.inspector.show({ title: selected.label,
+			items: buildBehaviorInspection(input.view, input.workingCopy),
+			canOpenSource: item => item.range !== undefined,
+			openSource: item => this.controller.openInspectionSource(input, item),
+		});
+		lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => this.inspector.hide()) });
+	}
+
 	private openKeyboardContextMenu(): void {
 		const view = this.input.view;
 		prepareBehaviorLensLayout(view);
@@ -261,7 +293,9 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 	): void {
 		const view = this.input.view;
 		prepareBehaviorLensLayout(view);
-		if (this.sourceEditReview.visible) this.sourceEditReview.handleWheel(direction * steps * 3);
+		if (this.inspector.visible) {
+			if (activePointer === null || !this.inspector.handleWheel(activePointer, direction * steps * editorViewState.font.lineHeight * 3)) return;
+		} else if (this.sourceEditReview.visible) this.sourceEditReview.handleWheel(direction * steps * 3);
 		else if (view.presentation.kind === 'properties') {
 			this.properties.cancel();
 			scrollWorkbenchList(view.presentation.tree, direction * steps * 3);

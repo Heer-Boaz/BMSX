@@ -21,7 +21,6 @@ export function isEditorViewCommand(command: EditorCommandId): command is Editor
 		case 'sceneEditor':
 		case 'sceneEditor.source':
 		case 'behaviorLens.source':
-		case 'behaviorLens.details':
 		case 'filter':
 		case 'wrap':
 			return true;
@@ -67,9 +66,6 @@ export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSou
 			return;
 		case 'sceneEditor.source':
 			editor.sceneEditor.openSource();
-			return;
-		case 'behaviorLens.details':
-			editor.behaviorLens.openDetails();
 			return;
 		case 'behaviorLens.source':
 			editor.behaviorLens.openSource();

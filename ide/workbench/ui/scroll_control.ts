@@ -17,9 +17,13 @@ export class WorkbenchScrollControl implements PointerCaptureTarget {
 	private pointerOffset = 0;
 	private readonly unbindKeyboard: () => void;
 
-	public constructor(focus: InputFocusService, private readonly capture: PointerCaptureService, parent: InputFocusTarget) {
+	public constructor(focus: InputFocusService, private readonly capture: PointerCaptureService, parent: InputFocusTarget,
+		keyboard?: (input: PlayerInput) => boolean) {
 		this.focusTarget = focus.createTarget(parent);
-		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
+		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => {
+			if (keyboard?.(input)) return;
+			this.handleKeyboard(input);
+		});
 	}
 
 	public setInput(input: WorkbenchScrollViewport): void {

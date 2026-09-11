@@ -95,7 +95,7 @@ test('FSM graph shows unknown/no-path evidence without endpoints and preserves s
 		if (f.view.selection?.kind !== 'state-outcome') throw new Error('Selected proof missing');
 		assert.equal(f.view.selection.outcome.target.kind, 'no-path');
 		assert.equal(f.graph.viewport.selection, null, 'no invented self-loop or parent edge for return nil');
-		assert.ok(f.graph.viewport.model.nodes.some(node => node.lines.some(line => line.includes('NO PATH'))));
+		assert.ok(!f.graph.viewport.model.nodes.some(node => node.lines.some(line => line.includes('NO PATH'))), 'no returned path is inspector evidence, not a permanent card warning');
 		assert.ok(buildStateMachineDetails(f.view).some(detail => detail.detail.includes('NO RETURNED PATH')));
 		f.model.undo(); f.refresh(); await f.settle();
 		assert.equal(f.graph.viewport.selection?.kind, 'edge');
@@ -123,8 +123,8 @@ fsm.register('cyclic', { initial = 'a', on = { parent = '/a' }, states = {
 		const a = root.children[0];
 		assert.equal(a.role, 'source');
 		if (a.role !== 'source') throw new Error('Expected a source state');
-		assert.ok(a.lines.includes('GUARDS (SOURCE ONLY)'));
-		assert.ok(a.lines.some(line => line.includes('1 UNKNOWN')));
+		assert.ok(!a.lines.some(line => line.includes('GUARDS')), 'guards are inspectable fields, not a permanent card slogan');
+		assert.ok(a.lines[0].endsWith(' ?'), 'unresolved evidence keeps a compact visible indication');
 		f.view.selection = { kind: 'node', rowKey: a.source.rowKey };
 		const details = buildStateMachineDetails(f.view);
 		assert.ok(details.some(detail => detail.label.startsWith('update = callbacks.dynamic')));
@@ -320,7 +320,7 @@ machines.register('implicit.initial', { states = { idle = {}, run = {} } })`);
 		assert.equal(model.nodesByEntry.size, 1);
 		const marker = [...model.nodesByEntry.values()][0];
 		assert.equal(marker.reference.entry.target.kind, 'unresolved');
-		assert.ok(model.nodesBySource.get(marker.reference.entry.owner)!.lines.some(line => line.includes('INITIAL: ? DYNAMIC-VALUE')));
+		assert.ok(model.nodesBySource.get(marker.reference.entry.owner)!.lines.some(line => line.endsWith(' ?')));
 		assert.equal(model.edges.length, 0);
 		f.graph.viewport.selection = marker;
 		acceptStateGraphSelection(f.view, f.graph, f.model.buffer);

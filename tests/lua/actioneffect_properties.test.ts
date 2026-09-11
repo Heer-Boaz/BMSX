@@ -61,7 +61,7 @@ test('ActionEffect property groups project one chosen registration and retain ea
 		}
 		for (const field of view.document.definitions[0].children) assert.equal(properties.nodesBySource.has(field.rowKey), false);
 		assert.equal(properties.tree.rows.length, 21);
-		assert.deepEqual(properties.actionBar.items.map(item => item.command), ['behaviorLens.source']);
+		assert.deepEqual(properties.actionBar.items.map(item => item.command), ['behaviorLens.source', 'behaviorLens.details']);
 		assert.equal(f.move('home'), BehaviorLensNavigationResult.Changed);
 		assert.equal(view.selection, null, 'a category is not a Lua node');
 		assert.equal(selectedBehaviorLensSourceRange(view), null, 'Source must use the chosen registration, not a fake category range');

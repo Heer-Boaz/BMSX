@@ -1,3 +1,4 @@
+import type { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/behavior_lens/editor_pane';
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
 import { luaSourceRangeToTextRange, readLuaSourceRange } from '../../../ide/language/lua/source_edits';
@@ -31,7 +32,7 @@ export async function testStudioBtMembership(test: StudioFixture): Promise<void>
 	await press('ArrowRight');
 	const opaque = viewport.selection;
 	if (opaque?.kind !== 'node') throw new Error('BT membership: opaque child not selected');
-	check(opaque.lines[0] === 'CHILD 2' && opaque.source.kind === 'dynamic' && opaque.children.length === 0,
+	check(opaque.member?.index === 1 && opaque.source.kind === 'dynamic' && opaque.children.length === 0,
 		'BT membership: physical navigation enters the opaque slot without inventing its result');
 	await click(graph.actionBar.items[0].bounds, 6);
 	check(getActiveTab() === code && activeCodeEditor.view.cursorRow === opaque.source.occurrenceRange.start.line - 1
@@ -41,7 +42,7 @@ export async function testStudioBtMembership(test: StudioFixture): Promise<void>
 	await press('ArrowRight');
 	const nested = viewport.selection;
 	if (nested?.kind !== 'node') throw new Error('BT membership: nested sibling not selected');
-	check(nested.lines[0] === 'CHILD 3', 'BT membership: later known child remains independently reachable');
+	check(nested.member?.index === 2, 'BT membership: later known child remains independently reachable');
 	await click(graph.actionBar.items[0].bounds);
 	const oldDocument = view.document;
 	const span = luaSourceRangeToTextRange(model.buffer, opaque.source.occurrenceRange);
@@ -50,7 +51,7 @@ export async function testStudioBtMembership(test: StudioFixture): Promise<void>
 	await frame();
 	check(view.document === oldDocument, 'BT membership: hidden changes only map source correspondence');
 	await test.clickTab(lens.id);
-	check(viewport.selection?.kind === 'node' && viewport.selection.lines[0] === 'CHILD 3'
+	check(viewport.selection?.kind === 'node' && viewport.selection.member?.index === 2
 		&& readLuaSourceRange(model.buffer, viewport.selection.source.occurrenceRange) === 'nested',
 		'BT membership: changing one opaque sibling preserves the later selected source occurrence');
 	await press('ArrowDown');
@@ -80,11 +81,11 @@ export async function testStudioBtMembership(test: StudioFixture): Promise<void>
 	await press('ArrowDown');
 	await press('ArrowDown');
 	await press('ArrowRight');
-	check(viewport.selection?.kind === 'node' && viewport.selection.lines[0] === 'CHOICE 2', 'BT membership: opaque choice has its own selectable slot');
+	check(viewport.selection?.kind === 'node' && viewport.selection.member?.index === 1, 'BT membership: opaque choice has its own selectable slot');
 	await press('ArrowRight');
 	const choice = viewport.selection;
 	if (choice?.kind !== 'node') throw new Error('BT membership: weighted child missing');
-	check(choice.lines[0] === 'CHOICE 3  W=4' && choice.source.kind === 'dynamic', 'BT membership: known weight and unknown child are separate evidence');
+	check(choice.lines.find(line => line.startsWith('CHOICE')) === 'CHOICE  W=4' && choice.source.kind === 'dynamic', 'BT membership: known weight and unknown child are separate evidence');
 	const edge = viewport.model.edges.find(edge => edge.child === choice)!;
 	const x = edge.points[edge.points.length - 2] + viewport.bounds.left - viewport.scrollX;
 	const y = edge.points[edge.points.length - 1] - 6 + viewport.bounds.top - viewport.scrollY;
@@ -97,11 +98,12 @@ export async function testStudioBtMembership(test: StudioFixture): Promise<void>
 		'BT membership: choice Source uses the full choice occurrence, not its opaque child');
 	await test.clickTab(lens.id);
 	await runPaletteCommand('Behavior Lens: Open Source Details');
-	test.clipboard.text = 'weight';
-	await press('ControlLeft', 'KeyV');
-	check(ide.editor.quickInput.model.list.rows.length === 1, 'BT membership: known weight remains inspectable');
-	await press('Enter');
+	const inspector = (ide.editor.editorPanes.activePane as BehaviorLensEditorPane).inspector;
 	const weight = choice.details.find(detail => detail.label === 'weight')!;
+	const detailIndex = inspector.model.rows.findIndex(row => row.element.range === weight.range);
+	check(inspector.visible && detailIndex >= 0, 'BT membership: known weight remains inspectable');
+	for (let index = 0; index < detailIndex; index += 1) await press('ArrowDown');
+	await press('Enter');
 	check(activeCodeEditor.view.cursorRow === weight.range.start.line - 1 && activeCodeEditor.view.cursorColumn === weight.range.start.column - 1,
 		'BT membership: Details opens the exact weight, not the source of another choice');
 	await test.clickTab(lens.id);

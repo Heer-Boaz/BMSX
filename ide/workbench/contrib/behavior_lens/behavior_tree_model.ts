@@ -55,6 +55,8 @@ export type BehaviorTreeSourceNode = BehaviorDynamicSourceNode | (BehaviorSource
 	readonly issues: SourceTableIssue;
 	readonly nodeType: string | null;
 	readonly referenceLabel: string;
+	/** Authored primary fields, not an evaluated runtime value. */
+	readonly summary: string;
 	readonly branches: readonly BehaviorTreeSourceBranch[];
 	readonly attachments: readonly BehaviorTreeSourceAttachmentGroup[];
 });

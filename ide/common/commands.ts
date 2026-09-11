@@ -28,7 +28,6 @@ export type EditorViewCommandId =
 	| 'sceneEditor'
 	| 'sceneEditor.source'
 	| 'behaviorLens.source'
-	| 'behaviorLens.details'
 	| 'filter'
 	| 'wrap';
 
@@ -51,6 +50,9 @@ export type EditorScenarioLabCommandId =
 	| 'scenarioLab.cancel';
 
 export type EditorCommandId =
+	| 'behaviorLens.details'
+	| 'propertyInspector.source'
+	| 'propertyInspector.close'
 	| 'contextMenu'
 	| 'navigateBack'
 	| 'navigateForward'

@@ -51,8 +51,8 @@ test('weighted cards and connections duplicate the complete choice and retain th
 		f.refresh();
 		const field = '\t{ weight = 9, child = nested },';
 		assert.equal(f.model.buffer.getText(), BT_ORDER_SOURCE.replace(field, `${field}\n${field}`));
-		assert.deepEqual(f.viewport.model.nodes[0].children[0].children.map(node => node.lines[0]),
-			['CHOICE 1  W=1', 'CHOICE 2  W=9', 'CHOICE 3  W=9', 'CHOICE 4  W=3']);
+		assert.deepEqual(f.viewport.model.nodes[0].children[0].children.map(node => node.lines.find(line => line.startsWith('CHOICE'))),
+			['CHOICE  W=1', 'CHOICE  W=9', 'CHOICE  W=9', 'CHOICE  W=3']);
 		assert.equal(behaviorTreeEditTarget(f.view)!.index, 2);
 		assert.equal(f.viewport.selection!.kind, edge ? 'edge' : 'node');
 		assert.equal(readLuaSourceRange(f.model.buffer, selectedBehaviorLensSourceRange(f.view)!), selectedSource);

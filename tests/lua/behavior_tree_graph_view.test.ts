@@ -35,7 +35,7 @@ test('graph projects one registration, original child order, distinct shared use
 	const sequence = root.children[0];
 	assert.equal(graph.edgesBySource.get(sequence.source.rowKey)!.points.length, 4, 'a straight connection has no degenerate bends');
 	assert.equal(sequence.children.length, 3);
-	assert.deepEqual(sequence.children.map(child => child.lines[0]), ['CHILD 1', 'CHILD 2', 'CHILD 3']);
+	assert.deepEqual(sequence.children.map(child => child.member!.index), [0, 1, 2]);
 	const [first, second, weighted] = sequence.children;
 	assert.equal(first.source.authoredRange, second.source.authoredRange);
 	assert.notEqual(first.source.rowKey, second.source.rowKey);
@@ -45,8 +45,8 @@ test('graph projects one registration, original child order, distinct shared use
 	assert.ok(sequence.details.some(detail => detail.description === 'services.scan'));
 	assert.ok(sequence.details.some(detail => detail.label === 'num_loops' && detail.description === '2'));
 	assert.ok(root.details.some(detail => detail.label.startsWith('seen =')));
-	assert.equal(weighted.children[0].lines[0], 'CHOICE 1  W=2');
-	assert.equal(weighted.children[1].lines[0], 'CHOICE 2  W=WEIGHTS.RETREAT');
+	assert.equal(weighted.children[0].lines.find(line => line.startsWith('CHOICE')), 'CHOICE  W=2');
+	assert.equal(weighted.children[1].lines.find(line => line.startsWith('CHOICE')), 'CHOICE  W=WEIGHTS.RETREAT');
 	const weight = weighted.children[1].details.find(detail => detail.label === 'weight')!;
 	assert.equal(readLuaSourceRange(f.model.buffer, weight.range), 'weights.retreat');
 	for (const child of sequence.children) {
@@ -79,7 +79,7 @@ test('parallel roles stay distinct; incidental fields and an unresolved root do 
 	const parallel = f.document.definitions[1];
 	assert.ok(parallel.behaviorKind === 'behavior_tree');
 	const graph = layoutBehaviorTreeGraph(projectBehaviorTreeGraph(parallel, font));
-	assert.deepEqual(graph.nodes[0].children[0].children.map(child => child.lines[0]), ['MAIN_TASK', 'BACKGROUND_TREE']);
+	assert.deepEqual(graph.nodes[0].children[0].children.map(child => child.lines[1]), ['MAIN_TASK', 'BACKGROUND_TREE']);
 	const incidental = fixture(`local trees<const> = require('cartlib/behaviour_tree/library')
 trees.register('leaf', { root = { type = 'wait', children = { { type = 'wait' } } } })`);
 	assert.equal(layoutBehaviorTreeGraph(projectBehaviorTreeGraph(incidental.definition, font)).nodes.length, 2);
@@ -113,7 +113,7 @@ test('concrete graph retains layout, source-backed edge selection and its screen
 	executeBehaviorLensNavigation(view, 'right');
 	finishBehaviorLensNavigation(view);
 	const selected = viewport.selection;
-	assert.ok(selected?.kind === 'node' && selected.lines[0] === 'CHILD 2');
+	assert.ok(selected?.kind === 'node' && selected.member?.index === 1);
 	const edge = viewport.model.edgesBySource.get(selected.source.rowKey)!;
 	viewport.selection = edge;
 	acceptBehaviorGraphSelection(view, graph);
@@ -126,7 +126,7 @@ test('concrete graph retains layout, source-backed edge selection and its screen
 	prepareBehaviorLensLayout(view);
 	assert.ok(viewport.selection?.kind === 'edge');
 	assert.notEqual(viewport.selection, edge);
-	assert.equal(viewport.selection.child.lines[0], 'CHILD 3');
+	assert.equal(viewport.selection.child.member?.index, 2);
 	assert.equal(viewport.selection.bounds.left - viewport.scrollX, screenX);
 	assert.equal(viewport.selection.bounds.top - viewport.scrollY, screenY);
 	assert.equal(readLuaSourceRange(f.model.buffer, selectedBehaviorLensSourceRange(view)!), 'shared');

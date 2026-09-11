@@ -54,7 +54,7 @@ test('weighted node and edge removal delete the complete choice, never just the 
 		removeBehaviorTreeChild(f.model, behaviorTreeEditTarget(f.view)!);
 		f.refresh();
 		assert.equal(f.model.buffer.getText(), BT_ORDER_SOURCE.replace('\t{ weight = 9, child = nested },', '\t'));
-		assert.deepEqual(f.viewport.model.nodes[0].children[0].children.map(node => node.lines[0]), ['CHOICE 1  W=1', 'CHOICE 2  W=3']);
+		assert.deepEqual(f.viewport.model.nodes[0].children[0].children.map(node => node.lines.find(line => line.startsWith('CHOICE'))), ['CHOICE  W=1', 'CHOICE  W=3']);
 		assert.equal(f.viewport.selection, null);
 		f.model.undo(); f.refresh();
 		assert.equal(f.model.buffer.getText(), BT_ORDER_SOURCE);

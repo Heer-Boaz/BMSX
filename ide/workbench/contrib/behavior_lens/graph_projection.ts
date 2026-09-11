@@ -37,7 +37,9 @@ export function projectBehaviorTreeGraph(
 		member: BehaviorTreeSourceMember | null = null): void {
 		let text = role;
 		if (source.kind === 'node') {
-			text += `\n${source.nodeType === null ? '<DYNAMIC TYPE>' : source.nodeType}`;
+			text = source.nodeType === null ? '<DYNAMIC TYPE>' : source.nodeType;
+			if (role.length > 0) text += `\n${role}`;
+			if (source.summary.length > 0) text += `\n${source.summary}`;
 			if (source.referenceLabel.length > 0) text += `\n${source.referenceLabel}`;
 			const relationships = new Set<LuaTableField>();
 			for (const branch of source.branches) relationships.add(branch.field);
@@ -56,10 +58,10 @@ export function projectBehaviorTreeGraph(
 				}
 			}
 		} else {
-			text += `\n${source.label}`;
+			text = role.length === 0 ? source.label : `${role}\n${source.label}`;
 			appendBehaviorGraphSourceDetails(details, source, 'UNRESOLVED');
 		}
-		if (source.resolution !== 'complete') text += '\n? PARTIAL SOURCE';
+		if (source.resolution !== 'complete') text += '\n?';
 		const node = card(source, text, parent, details, range, connectionSource, member);
 		if (source.kind === 'node' && source.branches.length > 0) pending.push({ source, node });
 	}
@@ -69,7 +71,7 @@ export function projectBehaviorTreeGraph(
 		if (definition.blackboard !== null) appendBehaviorGraphSourceDetails(details, definition.blackboard, 'BLACKBOARD');
 		const root = card(definition, definition.label + (definition.root === null ? '\n? NO STATIC ROOT' : ''), null,
 			details, definition.occurrenceRange);
-		if (definition.root !== null) behavior(definition.root, root, 'ROOT', definition.root.occurrenceRange);
+		if (definition.root !== null) behavior(definition.root, root, '', definition.root.occurrenceRange);
 		while (pending.length > 0) {
 			const { source, node } = pending.pop()!;
 			for (const branch of source.branches) {
@@ -87,7 +89,7 @@ export function projectBehaviorTreeGraph(
 				if (branch.role === 'children') {
 					for (let index = 0; index < branch.entries.length; index += 1) {
 						const entry = branch.entries[index];
-						behavior(entry.node, node, `CHILD ${entry.index}`, entry.field.value.range, [], entry.node,
+						behavior(entry.node, node, '', entry.field.value.range, [], entry.node,
 							{ table: branch.source.table, branch, index });
 					}
 				} else {
@@ -96,11 +98,11 @@ export function projectBehaviorTreeGraph(
 						const member = { table: branch.source.table, branch, index };
 						const choice = entry.node;
 						if (choice.kind === 'dynamic') {
-							behavior(choice, node, `CHOICE ${entry.index}`, entry.field.value.range, [], choice, member);
+							behavior(choice, node, 'CHOICE', entry.field.value.range, [], choice, member);
 							continue;
 						}
 						const details: BehaviorGraphDetail[] = [];
-						let label = `CHOICE ${entry.index}`;
+						let label = 'CHOICE';
 						if (choice.weight !== null) {
 							const weight = describeExpression(choice.weight.value);
 							label += `  W=${weight}`;

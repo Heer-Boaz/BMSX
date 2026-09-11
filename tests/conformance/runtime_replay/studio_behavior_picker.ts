@@ -1,4 +1,4 @@
-import type { StateMachineDetail } from '../../../ide/workbench/contrib/behavior_lens/state_machine_details';
+import type { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/behavior_lens/editor_pane';
 import type { BehaviorLensViewState } from '../../../ide/workbench/contrib/behavior_lens/view_model';
 import type { EffectPropertyElement } from '../../../ide/workbench/contrib/behavior_lens/action_effect_properties';
 import type { WorkbenchTreeNode } from '../../../ide/workbench/ui/tree_view';
@@ -54,12 +54,12 @@ export async function revealLensOccurrence(test: StudioFixture, view: BehaviorLe
 		check(view.selection!.rowKey === owner, 'FSM navigation: traversal reaches the owning state');
 		if (owner === key) return;
 		await test.click(graph.actionBar.items[1].bounds);
-		const picker = test.ide.editor.quickInput;
-		const index = picker.model.list.rows.findIndex(row => {
-			const source = (row.item as StateMachineDetail).source;
-			return source.kind === 'node' && source.rowKey === key;
+		const inspector = (test.ide.editor.editorPanes.activePane as BehaviorLensEditorPane).inspector;
+		const index = inspector.model.rows.findIndex(row => {
+			const source = row.element.stateSelection;
+			return source !== undefined && source.kind === 'node' && source.rowKey === key;
 		});
-		check(picker.visible && index >= 0, 'FSM navigation: owning state exposes the exact authored field');
+		check(inspector.visible && index >= 0, 'FSM navigation: owning state exposes the exact authored field');
 		for (let step = 0; step < index; step += 1) await test.press('ArrowDown');
 		await test.press('Enter');
 		await test.clickTab(lens.id);
