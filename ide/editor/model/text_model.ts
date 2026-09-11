@@ -5,7 +5,7 @@ import { PieceTreeBuffer } from '../text/piece_tree_buffer';
 import { getTextSnapshot } from '../text/source_text';
 import type { TextBuffer } from '../text/text_buffer';
 import { EditorUndoRecord, TextUndoOp } from '../text/undo';
-import type { EditorTextChange } from '../text/text_change';
+import { mapTrackedTextRange, type EditorTextChange, type TrackedTextRange } from '../text/text_change';
 import type { EditorEditState } from './edit_state';
 
 export type EditorDocumentMode = 'lua' | 'aem';
@@ -52,6 +52,7 @@ export class EditorTextModel {
 	private readonly dirtyChangeListeners = new Set<WorkingCopyListener>();
 	private readonly saveListeners = new Set<WorkingCopyListener>();
 	private readonly revertListeners = new Set<WorkingCopyListener>();
+	private readonly trackedRangeSets = new Set<ReadonlyMap<unknown, TrackedTextRange>>();
 	private versionValue = 1;
 	private nextStateId = 1;
 	private currentStateId = 0;
@@ -131,6 +132,12 @@ export class EditorTextModel {
 	public onDidChangeContent(listener: ContentChangeListener): () => void {
 		this.contentChangeListeners.add(listener);
 		return () => this.contentChangeListeners.delete(listener);
+	}
+
+	/** The collection owner releases tracking when its source generation is no longer used. */
+	public trackRanges<Key>(ranges: ReadonlyMap<Key, TrackedTextRange>): () => void {
+		this.trackedRangeSets.add(ranges);
+		return () => this.trackedRangeSets.delete(ranges);
 	}
 
 	public onDidChangeDirty(listener: WorkingCopyListener): () => void {
@@ -403,6 +410,7 @@ export class EditorTextModel {
 		this.dirtyChangeListeners.clear();
 		this.saveListeners.clear();
 		this.revertListeners.clear();
+		this.trackedRangeSets.clear();
 	}
 
 	private applyEditToRecord(record: EditorUndoRecord, offset: number, deleteLength: number, text: string): void {
@@ -485,6 +493,9 @@ export class EditorTextModel {
 	}
 
 	private emitContentChange(kind: EditorTextModelChangeKind, startRow: number, editContext: EditContext | null, changes: readonly EditorTextChange[], editState: EditorEditState | null = null): void {
+		for (const ranges of this.trackedRangeSets) {
+			for (const range of ranges.values()) mapTrackedTextRange(range, changes);
+		}
 		const event: EditorTextModelContentChangeEvent = {
 			kind,
 			version: this.versionValue,

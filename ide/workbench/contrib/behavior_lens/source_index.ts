@@ -1,25 +1,40 @@
-import type { EditorTextModelContentChangeEvent } from '../../../editor/model/text_model';
+import type { EditorTextModel } from '../../../editor/model/text_model';
 import type { TextBuffer } from '../../../editor/text/text_buffer';
-import { mapTrackedTextRange, type TrackedTextRange } from '../../../editor/text/text_change';
+import type { TrackedTextRange } from '../../../editor/text/text_change';
 import { luaSourceRangeToTextRange } from '../../../language/lua/source_edits';
 import type { BehaviorSourceDocument, BehaviorSourceNode, BehaviorSourceRowKey } from './model';
 
 /** Shared indices and mapped occurrences of one document generation, not view selection. */
 export class BehaviorSourceIndex {
+	private static readonly indices = new WeakMap<EditorTextModel, Map<BehaviorSourceDocument, BehaviorSourceIndex>>();
 	public readonly ranges = new Map<BehaviorSourceRowKey, TrackedTextRange>();
 	public readonly nodes: BehaviorSourceNode[] = [];
 	public readonly nodesByRowKey = new Map<BehaviorSourceRowKey, BehaviorSourceNode>();
 	public readonly parentByRowKey = new Map<BehaviorSourceRowKey, BehaviorSourceRowKey | null>();
-	private mappedVersion = 0;
+	private references = 0;
+	private readonly releaseRanges: () => void;
 
-	public constructor(document: BehaviorSourceDocument, buffer: TextBuffer) {
-		this.index(document.definitions, null, buffer);
+	private constructor(private readonly document: BehaviorSourceDocument, public readonly model: EditorTextModel) {
+		this.index(document.definitions, null, model.buffer);
+		this.releaseRanges = model.trackRanges(this.ranges);
 	}
 
-	public acceptChange(event: EditorTextModelContentChangeEvent): void {
-		if (this.mappedVersion === event.version) return; // Other views of this generation already consumed this edit.
-		for (const span of this.ranges.values()) mapTrackedTextRange(span, event.changes);
-		this.mappedVersion = event.version;
+	/** One acquisition per retained view, not per lookup or pane attachment. */
+	public static acquire(document: BehaviorSourceDocument, model: EditorTextModel): BehaviorSourceIndex {
+		let generations = this.indices.get(model);
+		if (generations === undefined) { generations = new Map(); this.indices.set(model, generations); }
+		let index = generations.get(document);
+		if (index === undefined) { index = new BehaviorSourceIndex(document, model); generations.set(document, index); }
+		index.references += 1;
+		return index;
+	}
+
+	public release(): void {
+		this.references -= 1;
+		if (this.references === 0) {
+			this.releaseRanges();
+			BehaviorSourceIndex.indices.get(this.model)!.delete(this.document);
+		}
 	}
 
 	private index(nodes: readonly BehaviorSourceNode[], parent: BehaviorSourceRowKey | null, buffer: TextBuffer): void {
@@ -31,14 +46,4 @@ export class BehaviorSourceIndex {
 			this.index(node.children, node.rowKey, buffer);
 		}
 	}
-}
-
-const indices = new WeakMap<TextBuffer, WeakMap<BehaviorSourceDocument, BehaviorSourceIndex>>();
-
-export function getBehaviorSourceIndex(document: BehaviorSourceDocument, buffer: TextBuffer): BehaviorSourceIndex {
-	let generations = indices.get(buffer);
-	if (generations === undefined) { generations = new WeakMap(); indices.set(buffer, generations); }
-	let index = generations.get(document);
-	if (index === undefined) { index = new BehaviorSourceIndex(document, buffer); generations.set(document, index); }
-	return index;
 }

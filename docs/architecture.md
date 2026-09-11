@@ -1454,6 +1454,14 @@ subscription lifetimes, registered source reopening and asynchronous viewport
 restoration are specified in `workbench_navigation_history_design.md`. This is
 distinct from document Undo, workspace-session persistence and machine rewind.
 
+Live source-range collections belong to their `EditorTextModel`. The model maps
+them through the existing UTF-16 edit representation before notifying content
+observers. Behavior inputs acquire the shared index for their model/document
+generation and release it on replacement or close; the last release removes its
+tracking and cache entry. Feature callbacks map only their own selection state,
+not shared source ranges guarded by a per-view event version. Undo records stay
+immutable. See `editor_model_source_ranges.md` for lifetime and measured costs.
+
 Behavior editor inputs address individual Lua registration occurrences, not
 entire source files. Multiple definitions share one resource-owned text model,
 undo history and source-generation indices, while each input retains its own

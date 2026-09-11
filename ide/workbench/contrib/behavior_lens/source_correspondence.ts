@@ -1,6 +1,6 @@
 import type { TextBuffer } from '../../../editor/text/text_buffer';
 import type { EditorTextModelContentChangeEvent } from '../../../editor/model/text_model';
-import { getBehaviorSourceIndex } from './source_index';
+import { BehaviorSourceIndex } from './source_index';
 import type { BehaviorSourceDocument, BehaviorSourceNode, BehaviorSourceRowKey } from './model';
 import type { BehaviorLensViewState } from './view_model';
 import type { BehaviorSourceSelection } from './source_selection';
@@ -10,7 +10,6 @@ import { behaviorSourceEditState, copyBehaviorSourceBookmark, mapBehaviorSourceB
 /** Tracks the existing generation even while another pane edits its document. */
 export function mapBehaviorLensSourceRanges(state: BehaviorLensViewState, event: EditorTextModelContentChangeEvent): void {
 	const { changes, editState } = event;
-	state.source.acceptChange(event);
 	const definition = state.definitionRowKey === null ? undefined : state.source.ranges.get(state.definitionRowKey);
 	// A document's undo state belongs to the edited registration, not all its views.
 	if (editState !== null && editState.is(behaviorSourceEditState) && definition !== undefined
@@ -46,7 +45,8 @@ export function reconcileBehaviorLensSource(
 	const oldCollapsed = collapsed === undefined ? undefined : new Set(collapsed);
 	const oldMatches = new Set(state.sourceMatchRowKeys);
 	const oldDefinitions = state.document.definitions;
-	const source = getBehaviorSourceIndex(document, buffer);
+	const previousSource = state.source;
+	const source = BehaviorSourceIndex.acquire(document, previousSource.model);
 	let selected: BehaviorSourceRowKey | null = null;
 	state.definitionRowKey = null;
 	collapsed?.clear();
@@ -78,6 +78,7 @@ export function reconcileBehaviorLensSource(
 	visit(document.definitions, oldDefinitions, 0);
 	state.document = document;
 	state.source = source;
+	previousSource.release();
 	if (selected === null) return null;
 	const previousSelection = selection!;
 	if (previousSelection.kind === 'node' || previousSelection.kind === 'tree-edge') return { kind: previousSelection.kind, rowKey: selected };

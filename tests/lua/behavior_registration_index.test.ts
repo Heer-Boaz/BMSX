@@ -1,4 +1,4 @@
-import { getBehaviorSourceIndex } from '../../ide/workbench/contrib/behavior_lens/source_index';
+import { BehaviorSourceIndex } from '../../ide/workbench/contrib/behavior_lens/source_index';
 import { BehaviorSourceDocuments } from '../../ide/workbench/contrib/behavior_lens/source_documents';
 import { indexStateMachineSource } from '../../ide/workbench/contrib/behavior_lens/state_machine_index';
 import assert from 'node:assert/strict';
@@ -283,18 +283,18 @@ test('definition views share one lazy source generation and immutable FSM index 
 	const documents = new BehaviorSourceDocuments(sources);
 	const first = documents.get(model);
 	const fsm = indexStateMachineSource(first);
-	const positions = getBehaviorSourceIndex(first, model.buffer);
+	const positions = BehaviorSourceIndex.acquire(first, model);
+	t.after(() => positions.release());
 	const originalStart = positions.ranges.get(first.definitions[1].rowKey)!.start;
-	model.onDidChangeContent(event => {
-		for (let view = 0; view < 10; view += 1) positions.acceptChange(event);
-	});
 	for (let request = 0; request < 1000; request += 1) {
 		assert.equal(documents.get(model), first);
 		assert.equal(indexStateMachineSource(first), fsm);
-		assert.equal(getBehaviorSourceIndex(first, model.buffer), positions);
+		const acquired = BehaviorSourceIndex.acquire(first, model);
+		assert.equal(acquired, positions);
+		acquired.release();
 	}
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- moved\n' }]);
-	assert.equal(positions.ranges.get(first.definitions[1].rowKey)!.start, originalStart + '-- moved\n'.length, 'ten views consume one mapped offset change, not ten copies of it');
+	assert.equal(positions.ranges.get(first.definitions[1].rowKey)!.start, originalStart + '-- moved\n'.length, 'the model maps shared ranges without a view forwarding its content event');
 	const second = documents.get(model);
 	assert.notEqual(second, first); assert.equal(documents.get(model), second);
 	assert.notEqual(indexStateMachineSource(second), fsm);

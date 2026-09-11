@@ -584,6 +584,11 @@ het semantische project verwerkt model-add/change/remove, ook voor verborgen
 dependencies, zonder feature-eigen modelscan. Resource-eigen projectiegeldigheid
 en de B03/B06-authoring gebruiken die basis maar zijn daarmee niet afgevinkt.
 
+`editor_model_source_ranges.md` legt de gedeelde bronmarkeringen vervolgens bij
+het tekstmodel, vóór content-notificaties. Open inputs behouden de generatie;
+vervanging/laatste sluiting geeft tracking en cache vrij. Dit verwijdert de
+view-eigen mapped-versionroute, niet de nog open multi-fileherkomstgrens.
+
 | ID | Eigenaar / contract | Gate |
 | --- | --- | --- |
 | `STUDIO-BEHAVIOR-UX-B01` | Uitgewerkt: betekenisvolle BT/FSM-kaarten en volledige source-linked property-inspectie; technische bewijsdetails niet permanent op het canvas. Zie `behavior_inspection_design.md` voor de vooraf gemeten compositie en concrete owner-/bewijsgrenzen. | Tiny-resolutie met Problems, lange callbacks, exacte Source/Back, keyboard/controller/scroll/focus en non-mutating inspectie. B04-bronorigins, B06-propertyauthoring en B07-zoom blijven aparte contracten. |

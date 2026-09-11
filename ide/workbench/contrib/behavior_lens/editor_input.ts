@@ -32,6 +32,11 @@ export class BehaviorLensInput extends WorkingCopyEditorInput<BehaviorLensTabId,
 		this.graphLayout = this.disposables.add(new AsyncGraphLayout(createEngine));
 	}
 
+	public override dispose(): void {
+		super.dispose();
+		this.view.source.release();
+	}
+
 	public updateLabel(): void {
 		const view = this.view;
 		if (view.definitionRowKey === null) {
