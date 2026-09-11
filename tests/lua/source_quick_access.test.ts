@@ -8,6 +8,7 @@ import { ReferenceState } from '../../ide/editor/contrib/references/state';
 import { createReferenceQuickPickProvider } from '../../ide/workbench/contrib/code_editor/references/quick_access';
 import { buildDefinitionQuickPickItems } from '../../ide/workbench/contrib/code_editor/definitions/quick_access';
 import { buildSymbolQuickPickItems } from '../../ide/workbench/contrib/code_editor/symbols/quick_access';
+import { SymbolQuickPickProvider } from '../../ide/workbench/contrib/code_editor/symbols/quick_pick_provider';
 import { TextQuickPickProvider } from '../../ide/workbench/services/quick_input/text_provider';
 import { QuickInputController } from '../../ide/workbench/services/quick_input/controller';
 import { configureFontVariant } from '../../ide/editor/ui/view/view';
@@ -88,7 +89,7 @@ test('symbol choices retain same-name declarations and match case-insensitively'
 	];
 	const items = buildSymbolQuickPickItems(symbols, 'workspace');
 	assert.equal(items[0].symbol, symbols[0]); assert.equal(items[1].symbol, symbols[1]);
-	const provider = new TextQuickPickProvider(items);
+	const provider = new SymbolQuickPickProvider(items, 'workspace');
 	assert.deepEqual(provider.getPicks('mixed_case').matches.map(match => match.item), items);
 	assert.equal(provider.getPicks('MIXED_CASE SECOND/SHARED.LUA').matches[0].item, items[1]);
 	assert.equal(items[1].detail, 'FUNC 7:4');

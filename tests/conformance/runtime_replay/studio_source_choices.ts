@@ -32,16 +32,16 @@ export async function testStudioSourceChoices(test: StudioFixture): Promise<void
 	const usageVersion = usage.version, definitionVersion = definitions.version;
 
 	await press('ControlLeft', 'ShiftLeft', 'KeyO');
-	test.clipboard.text = 'SHADOW'; await press('ControlLeft', 'KeyV');
+	test.clipboard.text = 'SHDW'; await press('ControlLeft', 'KeyV');
 	check(picker.model.list.rows.length === 1 && picker.model.list.rows[0].item.label === 'shadow',
-		'A06: document symbol matching folds the user query without changing Lua identifiers');
-	await checkQuickPickHighlightRuns(test, 'shadow', [[0, 6]]);
+		'A06: document symbol matching admits an abbreviation without changing Lua identifiers');
+	await checkQuickPickHighlightRuns(test, 'shadow', [[0, 2], [3, 4], [5, 6]]);
 	await press('Enter');
 	check(activeCodeEditor.model === usage && activeCodeEditor.view.cursorRow === 1 && activeCodeEditor.view.cursorColumn === 15,
 		'A06: accepting a symbol synchronously reveals its actual declaration');
 
 	await press('AltLeft', 'Comma');
-	test.clipboard.text = 'SOURCE_CHOICE_BEACON'; await press('ControlLeft', 'KeyV');
+	test.clipboard.text = 'SOURCECHOICEBEACON cart.lua'; await press('ControlLeft', 'KeyV');
 	check(picker.visible && picker.model.list.rows.length === 1 && picker.model.list.rows[0].item.description === 'cart.lua',
 		'A06: workspace symbols distinguish the global declaration from same-named local parameters');
 	const row = picker.model.viewport.bounds;

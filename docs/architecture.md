@@ -1538,6 +1538,15 @@ file-local highlight index interpreted as a workspace row. The old global symbol
 widget and synthetic semantic rows are removed. `source_quick_access.md` records
 the source-generation contract and scoped validation; this is not a Peek editor
 or a change to compiler/semantic resolution.
+Symbol providers use VS Code's separate `fuzzyScore`/`scoreFuzzy2` matching policy
+on the qualified symbol label; workspace queries may then qualify by source path.
+They do not search incidental kind/line metadata or substitute filename matching
+for a symbol match. Zero/negative scores remain valid matches; only `undefined`
+means no match. Retained minimum/maximum match bounds replace fixed-size table
+truncation, not the underlying score/alignment recurrence. File and symbol
+providers share candidate highlight-range normalization at the Quick Input
+owner, without sharing their distinct query/ranking policies. See
+`symbol_quick_access.md` for the contract and evidence limits.
 
 Host pointer hover has a separate routed-path owner in
 `ide/input/pointer/hover.ts`. Accepted control hits mark the current dispatch;

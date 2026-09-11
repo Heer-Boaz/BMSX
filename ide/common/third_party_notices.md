@@ -33,6 +33,15 @@ recurrence as the score-and-position conformance oracle.
 
 Source: https://github.com/microsoft/vscode/blob/7f59d5e01a7fafeba8e83cdfd9d8493f2beeeaca/src/vs/base/common/fuzzyScorer.ts
 
+`ide/common/fuzzy_symbol_scorer.ts` adapts the same revision's `fuzzyScore`
+recurrence in `filters.ts`, using the weak-first/full-match policy of
+`scoreFuzzy2`. Its minimum/maximum bounds, gap penalties and alignment restoration
+are retained; BMSX replaces the fixed 128-character tables with retained dynamic
+storage. The separator predicate includes the same `strings.ts` imprecise emoji
+classification. `tests/helpers/vscode_fuzzy_symbol_scorer.ts` retains the original
+recurrence and bound as the score/position oracle. Quick Input's retained
+field-local highlight union follows `fuzzyScorer.ts`'s `normalizeMatches` sweep.
+
 MIT License
 
 Copyright (c) 2015 - present Microsoft Corporation

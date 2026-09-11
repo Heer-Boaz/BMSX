@@ -7,7 +7,7 @@ import { subscribeToLuaModelChanges } from '../../../../editor/contrib/intellise
 import { editorTextModelService } from '../../../../editor/model/model_service';
 import { navigateToLuaDefinition } from '../../../ui/code_tab/activation';
 import { getActiveCodeTabContext } from '../../../ui/code_tab/contexts';
-import { TextQuickPickProvider } from '../../../services/quick_input/text_provider';
+import { SymbolQuickPickProvider } from './quick_pick_provider';
 import type { QuickPickItem } from '../../../services/quick_input/provider';
 
 export type SymbolQuickPickItem = QuickPickItem & { readonly symbol: LuaSymbolEntry };
@@ -24,11 +24,12 @@ export function buildSymbolQuickPickItems(symbols: readonly LuaSymbolEntry[], sc
 export function openSymbolSearch(editor: CartEditor, bridge: RuntimeLuaTooling, scope: 'file' | 'workspace'): void {
 	const resource = getActiveCodeTabContext().model.resource;
 	clearReferenceHighlights();
-	editor.quickInput.pick(scope === 'file' ? `SYMBOLS: ${resource.path}` : 'GO TO WORKSPACE SYMBOL', 'Type to filter symbols', (_origin, lifetime) => {
-		const symbols = scope === 'file'
-			? listLuaSymbols(bridge, resource.domain, resource.path)
-			: listGlobalLuaSymbols(bridge, resource.domain);
-		lifetime.add(subscribeToLuaModelChanges(editorTextModelService, resource.domain, () => editor.quickInput.hide()));
-		return new TextQuickPickProvider(buildSymbolQuickPickItems(symbols, scope));
-	}, item => navigateToLuaDefinition(editor, resource.domain, item.symbol.location));
+	editor.quickInput.pick(scope === 'file' ? `SYMBOLS: ${resource.path}` : 'GO TO WORKSPACE SYMBOL',
+		scope === 'file' ? 'Type a symbol name' : 'Symbol name, then source path', (_origin, lifetime) => {
+			const symbols = scope === 'file'
+				? listLuaSymbols(bridge, resource.domain, resource.path)
+				: listGlobalLuaSymbols(bridge, resource.domain);
+			lifetime.add(subscribeToLuaModelChanges(editorTextModelService, resource.domain, () => editor.quickInput.hide()));
+			return new SymbolQuickPickProvider(buildSymbolQuickPickItems(symbols, scope), scope);
+		}, item => navigateToLuaDefinition(editor, resource.domain, item.symbol.location));
 }

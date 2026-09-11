@@ -666,3 +666,32 @@ querypolicy, oracle en de precieze meetgrenzen.
 
 **A06 blijft open voor symbol-fuzzymatching.** Dit sluit B03/B04/B06-authoring,
 A07 of het bredere A08-bewijs niet.
+
+### A06 — symbolquerypolicy en afsluiting (2026-09-12)
+
+Document- en workspace-symbolen hebben nu de aparte VS Code
+`fuzzyScore`/`scoreFuzzy2`-policy. Gekwalificeerde symbolen blijven naamdata;
+workspacevragen kunnen daarna het bronpad kwalificeren. Kind/regelmetadata wordt
+niet per ongeluk als symboolnaam gezocht. Nul en negatieve scores zijn gewone
+matches. Source-discovery, echte declarations, domaincapturing en invalidering
+blijven bij de bestaande owners; typen maakt geen nieuwe workspacequery.
+
+De matrix gebruikt bewezen minimale/maximale matchposities en retained opslag,
+zonder de upstream 128-character truncatie. De onafhankelijke oracle toetst
+scores en alignments. Bestands- en symbolproviders delen nu de veldlokale
+range-union bij Quick Input, niet hun verschillende zoek-/sorteersemantiek.
+De gemeten overbodige singleton-mergepass is daar vóór landing verwijderd.
+
+De oude echte Studio op `3c016ae3a` faalt op de onafhankelijke `SHDW`-proef.
+De nieuwe symbol/source/Back/Undo-smoke, de volledige Studio-workflow en de
+Pietious source/graph/Undo-gate slagen op software, WebGL2 en WebGPU. Lua: 1576
+pass, één bestaande skip. IDE/audits/indent/browserbuild slagen; tests-typecheck
+behoudt dezelfde 51 bestaande diagnostieken. Zie
+[symbol_quick_access.md](symbol_quick_access.md) voor kosten, referenties en
+expliciete grenzen; de 8192-symbolen-brede query kost hier circa 7,7 ms en is
+geen low-end-hardwarebewijs.
+
+**A06 is voor zijn beschreven correctie/gate uitgevoerd:** gedeelde control,
+focus/scroll/capture, provider-owned ranking, zichtbare matches en gemigreerde
+symbol-/locationkeuzes. MRU, typo-correctie of een volledige VS Code-clone zijn
+geen stilzwijgende beloften. **B03/B04/B06-authoring, A07 en A08 blijven open.**

@@ -3,6 +3,7 @@ import { computeSourceLabel } from '../../../common/paths';
 import { CaseFoldedText } from '../../../common/search_text';
 import { FuzzyScorer } from '../../../common/fuzzy_scorer';
 import { appendQuickPickHighlights, appendQuickPickSourceRange } from '../../services/quick_input/highlights';
+import { QuickPickHighlightSet } from '../../services/quick_input/highlight_set';
 import type { QuickPickHighlight, QuickPickProjection, QuickPickProvider } from '../../services/quick_input/provider';
 import type { ResourceQuickPickItem } from './quick_access';
 
@@ -29,9 +30,7 @@ type FileMatch = {
 export class FileQuickPickProvider implements QuickPickProvider<ResourceQuickPickItem> {
 	private readonly entries: FileMatch[];
 	private readonly scorer = new FuzzyScorer();
-	private readonly candidateRanges = new ScratchBuffer<QuickPickHighlight>(() => ({ field: 'label', start: 0, end: 0 }));
-	private readonly rangeOrder: number[] = [];
-	private readonly compareRanges = (left: number, right: number): number => this.candidateRanges.peek(left).start - this.candidateRanges.peek(right).start;
+	private readonly candidateRanges = new QuickPickHighlightSet();
 	private readonly projection = { matches: [] as FileMatch[], selectionIndex: -1,
 		highlights: new ScratchBuffer<QuickPickHighlight>(() => ({ field: 'label', start: 0, end: 0 })) };
 
@@ -58,7 +57,7 @@ export class FileQuickPickProvider implements QuickPickProvider<ResourceQuickPic
 		const pieces = query.split(/\s+/).map(piece => new CaseFoldedText(piece));
 		const queryLower = pieces.length === 1 ? pieces[0].lower : query.toLowerCase();
 		const preferNames = !query.includes('/') && !query.includes('\\');
-		const candidate = this.candidateRanges, order = this.rangeOrder;
+		const candidate = this.candidateRanges.ranges;
 		for (const entry of this.entries) {
 			entry.highlightStart = highlights.length;
 			entry.pathIdentity = queryLower === entry.path.lower;
@@ -93,23 +92,14 @@ export class FileQuickPickProvider implements QuickPickProvider<ResourceQuickPic
 				}
 				if (entry.score === 0) continue;
 
-				order.length = candidate.length;
-				for (let index = 0; index < order.length; index += 1) order[index] = index;
-				if (order.length > 1) order.sort(this.compareRanges);
-				const first = candidate.peek(order[0]);
-				let start = first.start, end = first.end;
-				const matchStart = start;
-				let nameStart = end > entry.nameStart ? Math.max(start, entry.nameStart) : -1;
-				for (let index = 1; index < order.length; index += 1) {
-					const range = candidate.peek(order[index]);
+				const ranges = this.candidateRanges.normalize(), end = ranges[ranges.length - 1].end;
+				let nameStart = -1;
+				for (const range of ranges) {
+					const span = highlights.get(highlights.length);
+					span.field = range.field; span.start = range.start; span.end = range.end;
 					if (range.end > entry.nameStart && nameStart === -1) nameStart = Math.max(range.start, entry.nameStart);
-					if (range.start > end) {
-						appendQuickPickSourceRange(highlights, entry.item, start, end);
-						start = range.start; end = range.end;
-					} else end = Math.max(end, range.end);
 				}
-				appendQuickPickSourceRange(highlights, entry.item, start, end);
-				entry.matchLength = end - matchStart;
+				entry.matchLength = end - ranges[0].start;
 				entry.nameMatchLength = nameStart === -1 ? 0 : end - nameStart;
 			}
 			entry.highlightEnd = highlights.length;
