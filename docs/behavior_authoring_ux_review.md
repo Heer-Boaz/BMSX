@@ -437,8 +437,11 @@ waarden zonder ordinalenaam/lege naamkolom; hun kop houdt omvang, alias en
 partialstatus. Inline callbacks tonen parameters in plaats van `<FUNCTION>`.
 De B01-reader levert de volledige bron met Source/Back. Zie
 [het ActionEffect-contract](actioneffect_properties_design.md) voor de herlezen
-productiecode en zelfstandige/werkelijke rendererproeven. **B06 is nog niet
-afgesloten:** propertybewerkingen moeten nog op het B04-broncontract landen.
+productiecode en zelfstandige/werkelijke rendererproeven. De
+[B06-propertybewerkingen](actioneffect_authoring.md) zijn inmiddels gebouwd:
+een echte expression-cell met draft/cancel/Save en gewone bron-Undo, plus de
+broneditor voor multiline en buitenlandse write resources. Dit voegt geen
+defaults, cartlib-schema of claim over afgesloten B04-callcontexten toe.
 
 ### B07 — gedeelde zoom, daarna eventueel minimap
 

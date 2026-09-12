@@ -18,6 +18,10 @@ import { acceptEffectPropertySelection } from '../../ide/workbench/contrib/behav
 import { setWorkbenchTreeCollapsed } from '../../ide/workbench/ui/tree_view';
 import { WorkbenchPropertyTreePointer, WorkbenchPropertyPointerResult } from '../../ide/workbench/ui/property_tree_pointer';
 import { ACTIONEFFECT_PARTIAL_SOURCE, ACTIONEFFECT_SOURCE } from '../helpers/actioneffect_source_fixture';
+import { ActionEffectPropertyEdit, selectedActionEffectProperty } from '../../ide/workbench/contrib/behavior_lens/action_effect_edit';
+import { inputFocus } from '../../ide/input/focus';
+import { insertValue, selectAll } from '../../ide/editor/ui/inline/text_field';
+import { HeadlessClipboard } from '../../ide/testing/clipboard';
 
 function fixture(source = ACTIONEFFECT_SOURCE, chosen = 0) {
 	editorViewState.font = new EditorFont('tiny');
@@ -42,6 +46,66 @@ function fixture(source = ACTIONEFFECT_SOURCE, chosen = 0) {
 	return { model, view, input, properties, update, refresh, move };
 }
 
+test('property drafts edit written expressions and retain ordinary source history in the chosen effect', t => {
+	const f = fixture(ACTIONEFFECT_SOURCE, 1);
+	const parent = inputFocus.createTarget();
+	const edit = new ActionEffectPropertyEdit(parent, new HeadlessClipboard());
+	t.after(() => { edit.dispose(); inputFocus.setTarget(null); f.input.dispose(); });
+	for (const [name, value] of [['period_ms', '25 * 2 --[[kept]] '], ['event', " 'Different Event' "], ['defer_cooldown_commit', '(false)'], ['required_tags', "{ 'one', 'two' }"]]) {
+		const row = f.properties.tree.rows.find(row => row.element.kind === 'property' && (row.element.source.label === name || row.element.source.label.startsWith(name)))!;
+		f.properties.tree.selectionIndex = f.properties.tree.rows.indexOf(row);
+		acceptEffectPropertySelection(f.view, f.properties, false);
+		const property = selectedActionEffectProperty(f.view)!;
+		const field = property.field;
+		const originalValue = readLuaSourceRange(f.model.buffer, field.value.range);
+		edit.open(f.input, f.properties, property);
+		insertValue(edit.control.field, value);
+		assert.equal(f.model.buffer.getText(), ACTIONEFFECT_SOURCE);
+		inputFocus.executeCommand('undo'); assert.equal(edit.control.field.text, originalValue);
+		inputFocus.executeCommand('redo'); assert.equal(edit.control.field.text, value);
+		assert.equal(edit.control.commit(), true);
+		assert.equal(edit.active, false);
+		assert.equal(f.model.buffer.getText(), ACTIONEFFECT_SOURCE.replace(name + ' = ' + originalValue, name + ' = ' + value));
+		f.refresh();
+		assert.equal(f.view.definitionRowKey, f.view.document.definitions[1].rowKey);
+		assert.ok(f.view.selection, `selection after editing ${name}`);
+		assert.ok(f.view.source.nodesByRowKey.get(f.view.selection!.rowKey)!.label.startsWith(name));
+		f.model.undo(); f.refresh();
+		assert.equal(f.model.buffer.getText(), ACTIONEFFECT_SOURCE);
+		assert.equal(f.model.canUndo, false);
+		assert.ok(f.view.source.nodesByRowKey.get(f.view.selection!.rowKey)!.label.startsWith(name));
+	}
+});
+
+test('property drafts cancel on invalidation and read-only; invalid Enter retains text and blur discards it', t => {
+	const f = fixture();
+	const parent = inputFocus.createTarget();
+	const edit = new ActionEffectPropertyEdit(parent, new HeadlessClipboard());
+	t.after(() => { edit.dispose(); inputFocus.setTarget(null); f.input.dispose(); });
+	const open = () => {
+		f.properties.tree.selectionIndex = 1; acceptEffectPropertySelection(f.view, f.properties, false);
+		edit.open(f.input, f.properties, selectedActionEffectProperty(f.view)!);
+	};
+	open(); insertValue(edit.control.field, '2 -- invalid');
+	assert.equal(edit.control.commit(), false);
+	assert.equal(edit.control.field.focusTarget.hasFocus, true);
+	assert.equal(f.model.buffer.getText(), ACTIONEFFECT_SOURCE);
+	selectAll(edit.control.field); insertValue(edit.control.field, 'bad(');
+	parent.focus();
+	assert.equal(edit.active, false);
+	assert.equal(f.model.buffer.getText(), ACTIONEFFECT_SOURCE);
+	open(); insertValue(edit.control.field, '2');
+	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- invalidated\n' }]);
+	assert.equal(edit.active, false);
+	assert.equal(edit.control.pending, false);
+	assert.equal(f.model.buffer.getText(), '-- invalidated\n' + ACTIONEFFECT_SOURCE);
+	f.model.undo(); f.refresh();
+	open(); insertValue(edit.control.field, '3');
+	f.model.refreshResource({ ...f.model.resource, source: { ...f.model.resource.source, generated: true } }); edit.update();
+	assert.equal(edit.active, false);
+	assert.equal(f.model.buffer.getText(), ACTIONEFFECT_SOURCE);
+});
+
 test('ActionEffect property groups project one chosen registration and retain each typed source node exactly once', () => {
 	const f = fixture(ACTIONEFFECT_SOURCE, 1);
 	try {
@@ -63,7 +127,7 @@ test('ActionEffect property groups project one chosen registration and retain ea
 		}
 		for (const field of view.document.definitions[0].children) assert.equal(properties.nodesBySource.has(field.rowKey), false);
 		assert.equal(properties.tree.rows.length, 21);
-		assert.deepEqual(properties.actionBar.items.map(item => item.command), ['behaviorLens.source', 'behaviorLens.details']);
+		assert.deepEqual(properties.actionBar.items.map(item => item.command), ['behaviorLens.source', 'behaviorLens.details', 'behaviorLens.editProperty']);
 		assert.equal(f.move('home'), BehaviorLensNavigationResult.Changed);
 		assert.equal(view.selection, null, 'a category is not a Lua node');
 		assert.equal(selectedBehaviorLensSourceRange(view), null, 'Source must use the chosen registration, not a fake category range');

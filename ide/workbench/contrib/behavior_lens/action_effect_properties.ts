@@ -1,4 +1,4 @@
-import { LuaSyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
+import { LuaSyntaxKind, type LuaTableField } from '../../../../toolchain/ts/lua/syntax/ast';
 import { readLuaExpressionPreview, readLuaSourceLinePreview } from '../../../language/lua/source_edits';
 import { uppercaseOutsideStrings } from '../../../common/text';
 import { appendWorkbenchTreeNode, rebuildWorkbenchTreeRows, type WorkbenchTreeNode } from '../../ui/tree_view';
@@ -37,9 +37,10 @@ const FIELDS: Readonly<Record<ActionEffectSourceValueName | ActionEffectSourceRe
 	event: { group: 'execution', label: 'OUTPUT EVENT', description: 'event: AN OUTPUT, NOT AN INPUT TRIGGER. THE HANDLER MAY REPLACE OR SUPPRESS IT.' },
 };
 
+export type EffectPropertyWrite = { readonly field: LuaTableField; readonly sourceSelection: 'field' | 'value' };
 export type EffectPropertyElement = WorkbenchPropertyElement & (
 	{ readonly kind: 'group'; readonly group: EffectPropertyGroup }
-	| { readonly kind: 'property'; readonly source: BehaviorSourceNode }
+	| { readonly kind: 'property'; readonly source: BehaviorSourceNode; readonly write: EffectPropertyWrite | undefined }
 );
 
 export type BehaviorLensEffectProperties = {
@@ -79,9 +80,9 @@ export function projectActionEffectProperties(
 		return;
 	}
 	const groups = new Map<EffectPropertyGroup, WorkbenchTreeNode<EffectPropertyElement>>();
-	function add(source: BehaviorSourceNode, parent: WorkbenchTreeNode<EffectPropertyElement>, label: string, value: string, description: string) {
+	function add(source: BehaviorSourceNode, parent: WorkbenchTreeNode<EffectPropertyElement>, label: string, value: string, description: string, field?: LuaTableField, sourceSelection: 'field' | 'value' = 'value') {
 		const node = appendWorkbenchTreeNode(tree, parent, {
-			kind: 'property', source, label: uppercaseOutsideStrings(label), value, description,
+			kind: 'property', source, write: field === undefined ? undefined : { field, sourceSelection }, label: uppercaseOutsideStrings(label), value, description,
 			warning: source.resolution !== 'complete', displayLabel: '', displayValue: '', displayValueLeft: 0,
 		}, properties.collapsedRowKeys.has(source.rowKey));
 		properties.nodesBySource.set(source.rowKey, node);
@@ -102,7 +103,7 @@ export function projectActionEffectProperties(
 			value = field.field.value.kind === LuaSyntaxKind.TableConstructorExpression ? count
 				: `${readLuaExpressionPreview(view.source.models.get(field.field.value.range.path)!.buffer, field.field.value)} / ${count}`;
 		} else value = field.kind === 'unknown' ? readLuaSourceLinePreview(view.source.models.get(field.field.range.path)!.buffer, field.field.range) : readLuaExpressionPreview(view.source.models.get(field.field.value.range.path)!.buffer, field.field.value);
-		const row = add(field.source, group, metadata.label, value, metadata.description);
+		const row = add(field.source, group, metadata.label, value, metadata.description, field.kind === 'unknown' ? undefined : field.field, field.kind === 'value' ? 'field' : 'value');
 		if (field.kind !== 'list') continue;
 		const entries = new Map<BehaviorSourceNode, BehaviorSourceArrayEntry<BehaviorSourceNode>>();
 		for (const entry of field.entries) entries.set(entry.node, entry);
@@ -111,7 +112,7 @@ export function projectActionEffectProperties(
 				const entry = entries.get(child);
 				const nested = entry === undefined
 					? add(child, parent, child.label, child.detail, 'PARTIAL REQUIREMENT SOURCE. NO DENSE RUNTIME INDEX IS INFERRED.')
-					: add(child, parent, '', readLuaExpressionPreview(view.source.models.get(entry.field.value.range.path)!.buffer, entry.field.value), 'AUTHORED REQUIREMENT VALUE. SOURCE OPENS THIS EXPRESSION, NOT ITS PARENT LIST.');
+					: add(child, parent, '', readLuaExpressionPreview(view.source.models.get(entry.field.value.range.path)!.buffer, entry.field.value), 'AUTHORED REQUIREMENT VALUE. SOURCE OPENS THIS EXPRESSION, NOT ITS PARENT LIST.', entry.field);
 				children(child, nested);
 			}
 		}

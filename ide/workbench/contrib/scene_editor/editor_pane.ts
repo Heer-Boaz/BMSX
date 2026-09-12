@@ -9,7 +9,8 @@ import type { PointerSnapshot } from '../../../common/models';
 import type { IdeCommandController } from '../../../commands/controller';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import { consumeIdeKey, isKeyJustPressed, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
-import { IntegerInput } from '../../../editor/ui/inline/integer_input';
+import { INTEGER_INPUT_FORMAT } from '../../../editor/ui/inline/integer_input';
+import { ValueInput } from '../../../editor/ui/inline/value_input';
 import { api } from '../../../runtime/overlay_api';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { createLuaTableFieldIntegerEdits } from '../../../language/lua/source_edits';
@@ -35,7 +36,7 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 		return new SceneEditorNavigationSelection(this.input);
 	}
 
-	public readonly controls: readonly IntegerInput[];
+	public readonly controls: readonly ValueInput<number>[];
 	private status = '';
 	private boundVersion = 0;
 	private readonly actionBar: WorkbenchActionBarControl;
@@ -52,7 +53,7 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 		this.actionBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget);
 		this.details = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget);
 		this.details.focusTarget.commandContext = this.focusTarget;
-		this.controls = POSITION_AXES.map((_axis, index) => new IntegerInput(this.focusTarget, clipboard, value => {
+		this.controls = POSITION_AXES.map((_axis, index) => new ValueInput(this.focusTarget, clipboard, INTEGER_INPUT_FORMAT, value => {
 			const property = this.input.properties[index];
 			this.input.workingCopy.pushEditOperations(createLuaTableFieldIntegerEdits(this.input.workingCopy.buffer, property.field!, value)!);
 		}));

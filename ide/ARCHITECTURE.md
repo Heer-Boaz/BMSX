@@ -795,7 +795,7 @@ definition span across source generations, including hidden-source edits.
 Complete replacement/deletion clears correspondence; no name/id fallback or
 separate undo history resurrects it. A member move selects its known
 parent/child destination, never an assumed adjacent visible list index.
-The pane owns document commands, and its three `IntegerInput` controls own
+The pane owns document commands, and its three integer-formatted `ValueInput` controls own
 unsubmitted position text. Layout, rows,
 source labels, field geometry and focus order are retained. Visible tree rows
 are rebuilt only on source/topology or collapse changes. Rendering uses the
@@ -1351,13 +1351,22 @@ and the optional OS write. Input controls publish clipboard feedback through
 Save and Hot Resume remain document/source operations, not an implicit acceptance
 of every open input. Find text is a query, not source. Rename is an explicit
 refactor: Enter accepts, Escape or loss of editor-control focus dismisses its
-unsubmitted draft. The concrete `IntegerInput` instead contributes an `InputEdit`
+unsubmitted draft. The concrete `ValueInput` instead contributes an `InputEdit`
 to its focus target. Decimal signed-integer text is human input, not a runtime
 DTO: Enter or valid focus loss accepts one value change; Escape cancels it.
 Invalid Enter or a source command leaves the draft focused with an error.
 Invalid focus loss rejects and resets the draft with a visible warning, not a
 silent source mutation. A successful acceptance resets only the field history;
 the document batch remains undoable from either source view.
+
+ActionEffect properties use that same control with the Lua expression parser,
+not an integer-only workaround or a second document history. Explicit Edit
+opens a generation-bound value cell for a single-line field in the current
+working copy; multiline and foreign-resource fields open their actual source
+editor. The language edit owns complete-expression admission, lexical boundary
+checks and replacement field/value ranges, including comments and grouping.
+This is human text validation, not a cartlib/runtime schema. See
+`docs/actioneffect_authoring.md` for source ownership, focus and executed proof.
 
 The command controller accepts a contributed edit once before a source-consuming
 command chooses dirty models, opens a prompt or captures asynchronous build

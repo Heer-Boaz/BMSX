@@ -46,7 +46,7 @@ const SOURCE_COMMANDS = new Set<EditorCommandId>([
 	'save', 'hot-resume', 'reboot', 'scenarioLab.run', 'scenarioLab.rerun',
 	'sceneEditor.removeMember', 'sceneEditor.moveMemberUp', 'sceneEditor.moveMemberDown',
 	'behaviorLens.moveChildEarlier', 'behaviorLens.moveChildLater', 'behaviorLens.removeChild', 'behaviorLens.duplicateChild',
-	'behaviorLens.setInitialState',
+	'behaviorLens.setInitialState', 'behaviorLens.editProperty',
 	'sceneEditor', 'behaviorLens', 'sceneEditor.source', 'behaviorLens.source', 'behaviorLens.details',
 	'behaviorLens.preview',
 	'behaviorLens.actionEffects', 'behaviorLens.stateMachines', 'behaviorLens.behaviorTrees',
@@ -101,6 +101,7 @@ export class IdeCommandController {
 			case 'graph.zoomOut':
 			case 'graph.resetZoom':
 			case 'behaviorLens.details':
+			case 'behaviorLens.editProperty':
 			case 'scenarioLab.details':
 			case 'contextMenu':
 			case 'propertyInspector.source':
@@ -249,6 +250,7 @@ export class IdeCommandController {
 			case 'graph.zoomOut':
 			case 'graph.resetZoom':
 			case 'behaviorLens.details':
+			case 'behaviorLens.editProperty':
 			case 'scenarioLab.details':
 			case 'contextMenu':
 			case 'propertyInspector.source':

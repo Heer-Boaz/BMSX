@@ -55,6 +55,7 @@ export type EditorCommandId =
 	| 'graph.zoomOut'
 	| 'graph.resetZoom'
 	| 'behaviorLens.details'
+	| 'behaviorLens.editProperty'
 	| 'propertyInspector.source'
 	| 'propertyInspector.close'
 	| 'contextMenu'

@@ -42,6 +42,8 @@ import type { WorkbenchGraphDragSource } from '../../ui/graph/drag';
 import { WorkbenchPropertyInspector } from '../../ui/property_inspector/control';
 import { drawWorkbenchPropertyInspector } from '../../render/property_inspector';
 import { buildBehaviorInspection, type BehaviorInspectionProperty } from './inspection';
+import type { Clipboard } from '../../../common/clipboard';
+import { ActionEffectPropertyEdit, selectedActionEffectProperty } from './action_effect_edit';
 
 export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<BehaviorLensInput> {
 	public override getSelection(): BehaviorLensNavigationSelection {
@@ -55,6 +57,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 	public readonly sourceEditReview = new WorkbenchSourceEditReview(inputFocus, pointerCapture, pointerHover, this.graph.focusTarget);
 	public readonly inspector = new WorkbenchPropertyInspector<BehaviorInspectionProperty>(inputFocus, pointerCapture, pointerHover, this.focusTarget);
 	private readonly actionBar: WorkbenchActionBarControl;
+	public readonly propertyEdit: ActionEffectPropertyEdit;
 	private readonly stateMachineDrop: StateMachineRetargetDrop = (selection, target) => {
 		const input = this.input;
 		if (target.uses.length === 1) retargetStateMachineTransition(input.workingCopy, input.view, selection, target);
@@ -95,9 +98,19 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		private readonly controller: BehaviorLensController,
 		private readonly commands: IdeCommandController,
 		private readonly contextMenu: ContextMenuController,
+		clipboard: Clipboard,
 	) {
 		super(resourcePanel);
 		this.actionBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget);
+		this.propertyEdit = new ActionEffectPropertyEdit(this.focusTarget, clipboard);
+		this.focusTarget.registerCommand('behaviorLens.editProperty', {
+			isEnabled: () => {
+				if (this.sourceEditReview.visible || this.inspector.visible) return false;
+				const property = selectedActionEffectProperty(this.input.view);
+				return property !== undefined && !this.input.view.source.models.get(property.field.range.path)!.readOnly;
+			},
+			run: () => this.editProperty(),
+		});
 		for (const target of [this.focusTarget, this.graph.focusTarget]) target.registerCommand('behaviorLens.details', {
 			isEnabled: () => this.input.view.selection !== null && !this.sourceEditReview.visible && !this.inspector.visible,
 			run: () => this.openDetails(),
@@ -132,6 +145,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 
 	protected override activate(_selection?: EditorTextSelection, navigationSelection?: BehaviorLensNavigationSelection): void {
 		super.activate();
+		this.propertyEdit.close();
 		this.pointer.clear();
 		this.properties.clear();
 		this.sourceEditReview.clear();
@@ -158,6 +172,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 	}
 
 	public override dispose(): void {
+		this.propertyEdit.dispose();
 		this.pointer.clear();
 		this.properties.clear();
 		this.actionBar.dispose();
@@ -170,6 +185,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 
 	public override update(): void {
 		this.controller.updateView(this.input);
+		this.propertyEdit.update();
 		this.sourceEditReview.update();
 		this.inspector.update();
 		this.graph.update();
@@ -177,6 +193,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 	}
 
 	public override clearInput(): void {
+		this.propertyEdit.close();
 		this.inspector.hide();
 		this.actionBar.clearInput();
 		this.sourceEditReview.clear();
@@ -196,6 +213,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		if (this.sourceEditReview.visible) this.sourceEditReview.layout(editorViewState.font.renderFont(), measureTextRange, measureText, prepareBehaviorLensLayout(view));
 		drawBehaviorLens(view, this.commands, this.graph.hover, this.graph.focusTarget.hasFocus, this.graph.dragFeedback,
 			this.graph.connectionHandles, this.sourceEditReview.visible ? this.sourceEditReview : undefined);
+		if (this.propertyEdit.active) this.propertyEdit.draw();
 	}
 
 	public handleKeyboard(playerInput: PlayerInput): void {
@@ -214,6 +232,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		playerInput: PlayerInput,
 	): boolean {
 		if (this.inspector.visible) return this.inspector.handlePointer(snapshot);
+		if (this.propertyEdit.handlePointer(snapshot)) return true;
 		if (this.sourceEditReview.visible) {
 			this.sourceEditReview.layout(editorViewState.font.renderFont(), measureTextRange, measureText, prepareBehaviorLensLayout(this.input.view));
 			return this.sourceEditReview.handlePointer(snapshot, justPressed, now);
@@ -282,6 +301,18 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		lifetime.add({ dispose: input.view.source.onDidInvalidate(() => this.inspector.hide()) });
 	}
 
+	private editProperty(): void {
+		this.controller.updateView(this.input);
+		const properties = this.input.view.presentation;
+		if (properties.kind === 'properties') {
+			const property = selectedActionEffectProperty(this.input.view)!;
+			const range = property.field.value.range;
+			if (range.path !== this.input.workingCopy.resource.path || range.start.line !== range.end.line) {
+				this.controller.openWrittenSource(this.input, range);
+			} else this.propertyEdit.open(this.input, properties, property);
+		}
+	}
+
 	private openKeyboardContextMenu(): void {
 		const view = this.input.view;
 		prepareBehaviorLensLayout(view);
@@ -313,6 +344,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 			if (activePointer === null || !this.inspector.handleWheel(activePointer, direction * steps * editorViewState.font.lineHeight * 3)) return;
 		} else if (this.sourceEditReview.visible) this.sourceEditReview.handleWheel(direction * steps * 3);
 		else if (view.presentation.kind === 'properties') {
+			if (this.propertyEdit.active) this.focus();
 			this.properties.cancel();
 			scrollWorkbenchList(view.presentation.tree, direction * steps * 3);
 		}

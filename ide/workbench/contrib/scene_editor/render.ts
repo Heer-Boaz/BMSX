@@ -1,13 +1,13 @@
 import type { EditorCommandEnablement } from '../../../common/commands';
 import * as constants from '../../../common/constants';
 import { editorViewState } from '../../../editor/ui/view/state';
-import type { IntegerInput } from '../../../editor/ui/inline/integer_input';
-import { drawIntegerInput } from '../../../editor/ui/inline/integer_input_render';
+import type { ValueInput } from '../../../editor/ui/inline/value_input';
+import { drawValueInput } from '../../../editor/ui/inline/value_input_render';
 import { api } from '../../../runtime/overlay_api';
 import { renderWorkbenchActionBar } from '../../render/action_bar';
 import type { SceneEditorInput } from './editor_input';
 
-export function drawSceneEditor(input: SceneEditorInput, controls: readonly IntegerInput[], commands: EditorCommandEnablement, detailsFocused: boolean): void {
+export function drawSceneEditor(input: SceneEditorInput, controls: readonly ValueInput<number>[], commands: EditorCommandEnablement, detailsFocused: boolean): void {
 	const { layout, outline } = input;
 	const font = editorViewState.font.renderFont();
 	const color = constants.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT;
@@ -45,7 +45,7 @@ export function drawSceneEditor(input: SceneEditorInput, controls: readonly Inte
 			const property = input.properties[index];
 			if (property.bounds.bottom <= bounds.top || property.bounds.top >= bounds.bottom) continue;
 			api.blit_text_inline_with_font(property.label, bounds.left + 4, property.bounds.top + 2, 0, color, font);
-			if (property.value !== null && !input.workingCopy.readOnly) drawIntegerInput(controls[index], property.bounds);
+			if (property.value !== null && !input.workingCopy.readOnly) drawValueInput(controls[index], property.bounds);
 			else api.blit_text_inline_with_font(property.text, property.bounds.left + 3, property.bounds.top + 2, 0, constants.COLOR_STATUS_TEXT, font);
 		}
 	}

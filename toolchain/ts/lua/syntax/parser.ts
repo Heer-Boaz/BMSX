@@ -141,6 +141,13 @@ export class LuaParser {
 		};
 	}
 
+	/** A complete expression fragment; no fabricated statement or coordinate prefix. */
+	public parseExpressionOnly(): LuaExpression {
+		const expression = this.parseExpression();
+		this.consume(LuaTokenType.Eof, 'Expected end of expression.');
+		return expression;
+	}
+
 	public parseChunkWithRecovery(): { path: LuaChunk; syntaxError: LuaSyntaxError | null } {
 		this.recoverStatements = true;
 		const moduleAttribute = this.parseModuleAttribute();

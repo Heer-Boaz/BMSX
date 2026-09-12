@@ -46,6 +46,35 @@ return { root = { type = kind, children = { leaf, leaf } } }`;
 	await press('ControlLeft', 'KeyZ');
 	await test.clickTab(lens.id);
 	check(leaves().every(node => node.detail.includes('duration_ticks=2')), 'imports: provider Undo refreshes the existing Lens input');
+	// A foreign property remains editable through its actual code editor. The
+	// registration input must never write it while claiming the wrong Undo owner.
+	const effectSource = "return { period_ms = 40, blocked_tags = { 'busy' } }";
+	provider.pushEditOperations([{ offset: 0, deleteLength: provider.buffer.length, text: effectSource }]);
+	main.pushEditOperations([{ offset: 0, deleteLength: main.buffer.length,
+		text: `local effects<const> = require('cartlib/actioneffects')\neffects.register_effect('fixture.imported-effect', require('${record.module_path}'))` }]);
+	await runPaletteCommand('Behavior Lens: Open ActionEffect');
+	await chooseBehavior(test, 'EFFECT fixture.imported-effect', 'ACTIONEFFECTS');
+	const effectLens = getActiveTab();
+	if (effectLens.kind !== 'behavior_lens') throw new Error('imports: effect input required');
+	const effect = effectLens.view.document.definitions[0];
+	if (effect.behaviorKind !== 'action_effect') throw new Error('imports: effect definition required');
+	const period = effect.body!.fields[0];
+	await revealLensOccurrence(test, effectLens.view, period.source.rowKey);
+	const registrationVersion = main.version;
+	await runPaletteCommand('Behavior Lens: Edit Authored Property');
+	const valueEditor = harness.getActiveEditorDocument();
+	check(valueEditor.model === provider && valueEditor.view.cursorRow === period.field.value.range.start.line - 1
+		&& valueEditor.view.cursorColumn === period.field.value.range.start.column - 1,
+		'imports: Edit opens the provider expression, not a registration-owned draft');
+	await press('ShiftLeft', 'ArrowRight'); await press('ShiftLeft', 'ArrowRight');
+	test.clipboard.text = '80'; await press('ControlLeft', 'KeyV');
+	check(provider.buffer.getText() === effectSource.replace('40', '80') && main.version === registrationVersion,
+		'imports: physical source typing changes only the provider');
+	await press('ControlLeft', 'KeyZ'); await press('AltLeft', 'ArrowLeft');
+	check(getActiveTab() === effectLens && provider.buffer.getText() === effectSource && main.version === registrationVersion,
+		'imports: provider Undo and Back retain independent source ownership');
+	harness.openLuaSource(main.resource.path); await press('ControlLeft', 'KeyZ');
+	await test.clickTab(providerTab.id); await press('ControlLeft', 'KeyZ');
 	await test.clickTab(providerTab.id);
 	await press('ControlLeft', 'KeyZ');
 	check(provider.buffer.getText() === originalProvider, 'imports: Undo removes the independent provider fixture');

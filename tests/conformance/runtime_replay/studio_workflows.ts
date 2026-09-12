@@ -23,6 +23,7 @@ import { testStudioTableTransfer } from './studio_table_transfer';
 import { testStudioSourceBookmarks } from './studio_source_bookmarks';
 import { testStudioFsmSource } from './studio_fsm_source';
 import { testStudioActionEffectSource } from './studio_actioneffect_source';
+import { testStudioActionEffectEdit } from './studio_actioneffect_edit';
 import { testStudioFsmSelection } from './studio_fsm_selection';
 import { testStudioNavigation } from './studio_navigation';
 import { testSceneMemberRemoval } from './studio_scene_removal';
@@ -356,6 +357,7 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	await testStudioSourceBookmarks(test);
 	await testStudioFsmSource(test);
 	await testStudioActionEffectSource(test);
+	await testStudioActionEffectEdit(test);
 	await testStudioFsmSelection(test);
 	await testStudioStateGraph(test);
 	await testStudioFsmInitial(test);

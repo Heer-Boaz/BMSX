@@ -20,6 +20,7 @@ import { editorRuntimeState } from '../../common/runtime_state';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 import type { Clipboard } from '../../../common/clipboard';
 import { writeClipboard } from '../../../input/clipboard';
+import { showEditorMessage } from '../../../common/feedback_state';
 
 export type InlineFieldMetrics = {
 	advanceChar: (ch: string) => number;
@@ -447,6 +448,11 @@ export function applyInlineFieldEditing(
 
 	if (useCtrl && isKeyJustPressed('KeyV', playerInput)) {
 		const payload = clipboard.text;
+		if (options.singleLine && /[\r\n]/.test(payload)) {
+			consumeIdeKey('KeyV', playerInput);
+			showEditorMessage('This input accepts one line; multiline paste was not applied.', constants.COLOR_STATUS_WARNING, 4);
+			return textChanged;
+		}
 		if (payload.length > 0) {
 			let insertion = payload;
 			if (characterFilter) {

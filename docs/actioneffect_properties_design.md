@@ -7,7 +7,9 @@ geïmplementeerd; onderaan staan het uitgevoerde bewijs en de afbakening.
 De [gebruikersreview na A04, B06](behavior_authoring_ux_review.md#b06--actioneffect-inspectie-vanuit-functionaliteit)
 vraagt een herontwerp van dubbele lijstpreviews, callbackpresentatie en echte
 propertybewerkingen. De niet-mutating presentatie en volledige inspectie zijn
-nu herzien; propertyauthoring blijft afhankelijk van B04. De bestaande bron- en
+nu herzien; de [B06-authoringroute](actioneffect_authoring.md) voor bestaande
+authored velden is inmiddels gebouwd op de written-source-consumer. B04's
+verdere API-/callcontextcontract blijft afzonderlijk open. De bestaande bron- en
 runtimegrenzen hieronder blijven gelden, niet iedere historische presentatiedetail.
 
 ### B06-presentatiecontract vóór de wijziging

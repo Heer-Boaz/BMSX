@@ -223,6 +223,8 @@ export type PointerSnapshot = PointerButtons & {
 
 export type InlineInputOptions = {
 	allowSpace: boolean;
+	/** Reject an entire multiline paste instead of silently changing its contents. */
+	singleLine?: boolean;
 	characterFilter?: (value: string) => boolean;
 	maxLength?: number;
 };

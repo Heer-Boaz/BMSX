@@ -84,7 +84,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'separator' },
 		...GRAPH_ZOOM_ACTIONS,
 	],
-	'behaviorLens.property.context': [{ type: 'command', command: 'behaviorLens.source' }, { type: 'command', command: 'behaviorLens.details' }],
+	'behaviorLens.property.context': [{ type: 'command', command: 'behaviorLens.editProperty' }, { type: 'command', command: 'behaviorLens.source' }, { type: 'command', command: 'behaviorLens.details' }],
 	'behaviorLens.canvas.context': [...GRAPH_ZOOM_ACTIONS, { type: 'separator' }, { type: 'command', command: 'undo' }, { type: 'command', command: 'redo' }],
 	'sourceEditReview.title': [
 		{ type: 'command', command: 'sourceEditReview.source' },
@@ -144,7 +144,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'behaviorLens.setInitialState' },
 		...GRAPH_ZOOM_ACTIONS,
 	],
-	'behaviorLens.properties.title': [{ type: 'command', command: 'behaviorLens.source' }, { type: 'command', command: 'behaviorLens.details' }],
+	'behaviorLens.properties.title': [{ type: 'command', command: 'behaviorLens.source' }, { type: 'command', command: 'behaviorLens.details' }, { type: 'command', command: 'behaviorLens.editProperty' }],
 	'sceneEditor.title': [
 		{ type: 'command', command: 'sceneEditor.source' },
 		{ type: 'command', command: 'sceneEditor.moveMemberUp' },

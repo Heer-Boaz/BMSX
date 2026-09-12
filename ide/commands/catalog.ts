@@ -49,6 +49,7 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	sceneEditor: { category: 'Scene Editor', title: 'Open', shortTitle: 'Scene Editor' },
 	'sceneEditor.source': { category: 'Scene Editor', title: 'Open Source', shortTitle: 'Source' },
 	'behaviorLens.details': { category: 'Behavior Lens', title: 'Open Source Details', shortTitle: 'Details' },
+	'behaviorLens.editProperty': { category: 'Behavior Lens', title: 'Edit Authored Property', shortTitle: 'Edit' },
 	'behaviorLens.moveChildEarlier': { category: 'Behavior Lens', title: 'Move BT Child Earlier', shortTitle: 'Earlier' },
 	'behaviorLens.moveChildLater': { category: 'Behavior Lens', title: 'Move BT Child Later', shortTitle: 'Later' },
 	'behaviorLens.removeChild': { category: 'Behavior Lens', title: 'Remove BT Child', shortTitle: 'Remove' },

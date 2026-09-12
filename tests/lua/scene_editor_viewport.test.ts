@@ -15,7 +15,8 @@ import { workbenchListRowIndexAtPosition } from '../../ide/workbench/ui/list_vie
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { api } from '../../ide/runtime/overlay_api';
 import { HostOverlayQuadStream } from '../../machine/ts/render/host_overlay/quad_stream';
-import { IntegerInput } from '../../ide/editor/ui/inline/integer_input';
+import { INTEGER_INPUT_FORMAT } from '../../ide/editor/ui/inline/integer_input';
+import { ValueInput } from '../../ide/editor/ui/inline/value_input';
 import { inputFocus } from '../../ide/input/focus';
 import * as colors from '../../ide/common/constants';
 import { resolveThemeTokenColor } from '../../ide/theme/tokens';
@@ -84,7 +85,7 @@ test('scene painting publishes nested content clips and reuses quad storage on s
 	const input = scene(); layoutSceneEditor(input, true);
 	const parent = inputFocus.createTarget();
 	const controls = input.properties.map(property => {
-		const field = new IntegerInput(parent, { text: '', isSupported: () => false, writeText: async () => {} }, () => assert.fail('paint accepted a value'));
+		const field = new ValueInput(parent, { text: '', isSupported: () => false, writeText: async () => {} }, INTEGER_INPUT_FORMAT, () => assert.fail('paint accepted a value'));
 		field.setValue(property.value!); return field;
 	});
 	t.after(() => { for (const control of controls) control.dispose(); });
