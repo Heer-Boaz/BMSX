@@ -587,6 +587,14 @@ closures en projectieherkomst. De queryvolgorde mag caller-contexten niet langer
 onderdrukken doordat bodyprojectie al bestond. Dit is nog geen volledige
 closure-use-discovery of bron-substitutie; B03/B06 blijven te leveren UX.
 
+De [closure-caller-contexten](lua_closure_caller_contexts.md) verwijderen daarna
+de vooraf ingezaaide aanroepqueries uit de module-factoryproef. De taalowner
+vraagt lexical creators en bekende incoming sites op via een eigen tracked
+contextvraag, niet via brede aliasexpansie bij gewone memberqueries. Imported,
+nested, opgeslagen en doorgestuurde closures hebben gerichte proeven; factory-
+en callbackgebruik via body-lokale aliases blijft expliciet open. Dit is nog
+geen gesloten B04-bronbewijs of toelating van B03/B06-bewerkingen.
+
 De document-lifetimegrens van B04 staat in `editor_semantic_model_sync.md`:
 het semantische project verwerkt model-add/change/remove, ook voor verborgen
 dependencies, zonder feature-eigen modelscan. Resource-eigen projectiegeldigheid

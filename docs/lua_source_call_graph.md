@@ -65,12 +65,14 @@ The correction gives the call graph its own caller-query state; the instantiatio
 owner still controls body projection. Source ancestry requests the predecessor
 sites it follows through the existing call query, not a second callee selector.
 
-An explicit remaining boundary: discovering **every use of a returned closure**
-is not solved by an incoming index. The closure ancestry test first establishes
-the two callable applications through the existing call query, then checks that
-source ancestry keeps the two lexical creation contexts separate from the two
-invoking callsites. This is not an end-to-end closure-use discovery claim and
-must not be used as one by the future source-editor consumer.
+At this slice's baseline, the closure ancestry test first established the two
+callable applications through another query. The later
+[closure-caller-context slice](lua_closure_caller_contexts.md) removes that
+prerequisite for its tested module-rooted factories, including imports and
+nested/stored/forwarded closures. **Discovering every closure use remains open**:
+factory and callback uses through aliases local to another function are not
+solved by an incoming index. Neither slice is a completeness certificate for
+the future source-editor consumer.
 
 ## Evidence
 

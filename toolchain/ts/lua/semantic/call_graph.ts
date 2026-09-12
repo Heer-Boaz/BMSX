@@ -11,7 +11,7 @@ import {
 import { SemanticInstantiationQuery } from './instantiate';
 import { SemanticMemberQuery } from './member_query';
 import type { Ref, SymbolID } from './model';
-import { SemanticDependencyIndex, SemanticQueryResults } from './query_dependencies';
+import { SemanticDependencyIndex, SemanticQueryEvaluation, SemanticQueryResults } from './query_dependencies';
 import { SemanticQueryWorklist } from './query_worklist';
 import type { BidirectionalTermRelation, TermRelation } from './term_relation';
 import { declarationValueSource, type CallValueEntry } from './value_graph';
@@ -67,6 +67,8 @@ export class SemanticCallGraph {
 	} | undefined;
 	private readonly contextQueries = new Map<CallValueEntry, number>();
 	private readonly contextResults: SemanticQueryResults<SemanticCallContext>;
+	private readonly callerContextQueries: SemanticQueryEvaluation;
+	private readonly incomingFactDependencies: SemanticDependencyIndex;
 	private readonly factsByCall: Map<CallValueEntry, CallFact[]> = new Map();
 	private readonly incomingByFunction: Map<SymbolID, CallFact[]> = new Map();
 	private readonly outgoingByFunction: Map<SymbolID, CallFact[]> = new Map();
@@ -101,6 +103,8 @@ export class SemanticCallGraph {
 		private readonly worklist: SemanticCallWorklist,
 	) {
 		this.contextResults = new SemanticQueryResults(summaries.terms.dependencies);
+		this.callerContextQueries = new SemanticQueryEvaluation(summaries.terms.dependencies);
+		this.incomingFactDependencies = new SemanticDependencyIndex(summaries.terms.dependencies);
 		for (let callIndex = 0; callIndex < demand.topLevelCalls.length; callIndex += 1) {
 			this.retainDirectFacts(demand.topLevelCalls[callIndex]);
 		}
@@ -135,6 +139,10 @@ export class SemanticCallGraph {
 		return this.solvePasses;
 	}
 
+	public getCallerContextEvaluations(): number {
+		return this.callerContextQueries.count;
+	}
+
 	/** Retained site/owner inputs; these are may-analysis applications, not execution evidence. */
 	public callContexts(call: CallValueEntry): readonly SemanticCallContext[] {
 		let query = this.contextQueries.get(call);
@@ -145,6 +153,8 @@ export class SemanticCallGraph {
 		if (this.contextResults.isCurrent(query)) return this.contextResults.values(query);
 		for (;;) {
 			this.contextResults.begin(query);
+			const owner = this.demand.call(call).owner;
+			if (owner !== undefined) this.queryCallerContexts(owner);
 			this.callee(call);
 			const contexts = this.contextResults.buffer(0);
 			for (const item of this.worklist.callItems(call).values()) {
@@ -156,6 +166,28 @@ export class SemanticCallGraph {
 			this.solve();
 			if (this.contextResults.isCurrent(query)) return result;
 		}
+	}
+
+	private queryCallerContexts(summary: FunctionSummaryID): void {
+		const queries = this.callerContextQueries;
+		if (queries.isCurrent(summary) || queries.isComputing(summary)) return;
+		queries.begin(summary);
+		this.compose(summary);
+		const retained = this.summaries.get(summary);
+		if (retained.lexicalOwner !== undefined) this.queryCallerContexts(retained.lexicalOwner);
+		const declaration = this.summaries.declarationForSummary(summary);
+		if (declaration !== undefined) {
+			this.incomingFactDependencies.read(summary);
+			const incoming = this.incomingByFunction.get(declaration);
+			if (incoming !== undefined) {
+				for (const fact of incoming) {
+					const call = this.demand.call(fact.site);
+					if (call.owner !== undefined) this.queryCallerContexts(call.owner);
+					this.queryCall(call);
+				}
+			}
+		}
+		queries.end(summary);
 	}
 
 	private context(item: number): SemanticCallContext {
@@ -202,6 +234,9 @@ export class SemanticCallGraph {
 		this.queriedSummaryCallers[summary] = true;
 		this.instantiation.compose(summary);
 		const retained = this.summaries.get(summary);
+		// Projecting captured bindings does not query the creator's callers.
+		// A nested body also needs its lexical owner's incoming contexts.
+		if (retained.lexicalOwner !== undefined) this.compose(retained.lexicalOwner);
 		if (retained.receiverProjection !== undefined) {
 			this.queueProducerTerm(retained.receiverProjection);
 		} else {
@@ -231,7 +266,13 @@ export class SemanticCallGraph {
 	}
 
 	public callee(call: CallValueEntry): readonly CallFact[] {
-		const indexed = this.demand.call(call);
+		this.queryCall(this.demand.call(call));
+		this.solve();
+		return this.factsByCall.get(call) || EMPTY_CALL_FACTS;
+	}
+
+	/** Register a site's demand in existing and subsequently discovered caller frames. */
+	private queryCall(indexed: SummaryCall): void {
 		if (indexed.owner !== undefined) {
 			let queriedCalls = this.queriedCallsBySummary[indexed.owner];
 			if (!queriedCalls) {
@@ -253,8 +294,6 @@ export class SemanticCallGraph {
 		} else {
 			this.enqueueContextCall(indexed);
 		}
-		this.solve();
-		return this.factsByCall.get(call) || EMPTY_CALL_FACTS;
 	}
 
 	public incoming(symbol: SymbolID, name: SemanticNameID): readonly CallFact[] {
@@ -605,6 +644,9 @@ export class SemanticCallGraph {
 			this.incomingByFunction.set(calleeFn, incoming);
 		}
 		incoming.push(fact);
+		for (const summary of this.summaries.summaryIdsForDeclaration(calleeFn)) {
+			this.incomingFactDependencies.changed(summary);
+		}
 		if (reference.caller !== undefined) {
 			let outgoing = this.outgoingByFunction.get(reference.caller);
 			if (!outgoing) {

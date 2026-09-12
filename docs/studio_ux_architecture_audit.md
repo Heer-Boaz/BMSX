@@ -784,3 +784,23 @@ kleine queries worden duurder. Dit is dus geen algemene latency-overwinning.
 negen backend-workflow/reloadgates zijn groen binnen hun beschreven scope.
 Zie `lua_interned_dependency_lifetime.md` voor referenties, kosten, de herhaalde
 recoverygate en meetgrenzen. **B03/B04/B06-authoring en A08 blijven open.**
+
+### B04 — closure-creators en gevraagde callercontexten (2026-09-12)
+
+Een koude bronquery naar een teruggegeven closure hoeft de aanroepen niet meer
+vooraf apart te laten oplossen. Lexical creator, bodyprojectie en caller-demand
+zijn afzonderlijke owners. De callgraph volgt bestaande incoming CallFacts via
+de gedeelde dependency-query, inclusief aanvankelijk lege rijen en late feiten.
+Gewone veldqueries enumereren daardoor niet ineens alle callercontexten.
+
+De onafhankelijke directe/nested/stored/forwarded/imported proeven behouden
+hun aanroep- en creatorplekken; de vier uitvoerbare vormen hebben O0/O3-bewijs.
+**1605 Lua-tests / 1604 pass / 1 bestaande skip** en de zes echte Studio- en
+Pietious-navigatiegates slagen. In de echte workspace blijven de 319 frames en
+955 callevaluaties gelijk; de nieuwe caller-query doet daar nul evaluaties.
+De koude query blijft circa 254 ms; dit sluit de latencypoort niet.
+
+Een factory en returned callback die beide via body-lokale aliases worden
+gebruikt blijven een expliciete discoverygrens. Zie
+`lua_closure_caller_contexts.md` voor de WALA-referenties, verworpen brede
+expansie, metingen en bewijsgrenzen. **B03/B04/B06-authoring en A08 blijven open.**

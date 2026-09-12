@@ -4598,6 +4598,14 @@ because their term identities are known. Relation emptiness has a separate
 one-shot dependency from its exact count. See
 [interned dependency lifetime](lua_interned_dependency_lifetime.md).
 
+Enumerating caller contexts is a separate tracked demand from projecting body
+values. It follows lexical creators and the call graph's known incoming sites;
+ordinary member queries do not enumerate all callers. Empty incoming fact rows
+remain dependencies. Site demand schedules both existing and later owner
+frames, while source ancestry only consumes those contexts. See
+[closure caller contexts](lua_closure_caller_contexts.md) for the cold-query
+probes and the still-open discovery of body-local callable uses.
+
 Behavior navigation is a workbench contribution over those retained source
 facts, not framework knowledge in the language service. Its Quick Input
 results are individual FSM/BT/ActionEffect registration occurrences; a Lua

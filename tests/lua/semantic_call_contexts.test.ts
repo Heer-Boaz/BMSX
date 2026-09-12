@@ -261,20 +261,18 @@ end`);
 });
 
 test('source activations retain captured lexical owners separately from their callers', () => {
-	const { file, summaries, instantiation, graph } = callQueries(`local function consume(value) return value end
+	const source = `local function consume(value) return value end
 local function make(value)
  return function() return consume(value) end
 end
 local left = make(7)
 local right = make(8)
-left()
-right()`);
+local left_value = left()
+local right_value = right()
+return left_value == 7, right_value == 8`;
+	const { file, summaries, instantiation, graph } = callQueries(source);
 	const sources = new LuaSourceCallQuery(summaries, instantiation, graph);
 	const closure = file.functionValueFlows.find(flow => flow.calls.some(call => call.expression.range.start.line === 3))!;
-	// Establish the two actual callable applications. This tests source ancestry,
-	// not the separate open problem of finding every use of a returned closure.
-	graph.callContexts(file.callValues[2]);
-	graph.callContexts(file.callValues[3]);
 	const ancestry = sources.ancestry(closure.calls[0]);
 	const heads = ancestry.heads.filter(head => head.caller.kind === 'invocation');
 	assert.equal(heads.length, 2);
@@ -292,6 +290,80 @@ right()`);
 	const [left, right] = heads;
 	assert.ok(left.caller.kind === 'invocation' && right.caller.kind === 'invocation');
 	assert.notEqual(left.caller.lexicalOwner, right.caller.lexicalOwner);
+	for (const optimization of [0, 3] as const) assert.deepEqual(runCompiledLua(source, file.file, optimization), [true, true]);
+});
+
+for (const [name, factory, calls, expected] of [
+	['nested closures', 'return function(extra) return function() return consume(value + extra) end end',
+		'local left_inner = left(70); local right_inner = right(80); return left_inner(), right_inner()', [77, 88]],
+	['stored closures', 'return { run = function() return consume(value) end }',
+		'return left.run(), right.run()', [7, 8]],
+	['forwarded closures', 'return function() return consume(value) end',
+		'local function forward(callback) return callback() end; return forward(left), forward(right)', [7, 8]],
+] as const) {
+	test(`a cold source query discovers creator contexts for ${name}`, () => {
+		const source = `local function consume(value) return value end
+local function make(value) ${factory} end
+local left = make(7)
+local right = make(8)
+${calls}`;
+		const file = buildLuaFileSemanticData(source, 'closures.lua');
+		const queries = new LuaSemanticQueryStore([file], new Map());
+		const call = file.refs.find(ref => ref.name === 'consume' && ref.call !== undefined)!.call!;
+		const ancestry = queries.callSources(call);
+		const heads = ancestry.heads.filter(head => head.caller.kind === 'invocation');
+		assert.equal(heads.length, 2);
+		for (const head of heads) {
+			assert.ok(head.caller.kind === 'invocation');
+			assert.equal(head.caller.lexicalOwner.kind, 'invocation');
+			assert.equal(ancestry.applications.filter(edge => edge.target === head.caller).length, 1);
+		}
+		const metrics = queries.metrics();
+		assert.equal(queries.callSources(call), ancestry);
+		assert.deepEqual(queries.metrics(), metrics, 'warm reads do not repeat creator demand');
+		for (const optimization of [0, 3] as const) assert.deepEqual(runCompiledLua(source, file.file, optimization), expected);
+	});
+}
+
+test('querying a returned but uninvoked closure does not fabricate its invocation', () => {
+	const file = buildLuaFileSemanticData(`local function consume(value) return value end
+local function make(value) return function() return consume(value) end end
+local left = make(7)
+local right = make(8)`, 'uninvoked.lua');
+	const queries = new LuaSemanticQueryStore([file], new Map());
+	const call = file.refs.find(ref => ref.name === 'consume' && ref.call !== undefined)!.call!;
+	const ancestry = queries.callSources(call);
+	assert.equal(ancestry.heads.length, 1);
+	assert.equal(ancestry.heads[0].caller.kind, 'projection');
+	assert.equal(ancestry.calls.filter(call => call.caller.kind === 'module').length, 0);
+});
+
+test('a cold closure-source query preserves imported creator and caller resources', () => {
+	const library = buildLuaFileSemanticData(`local function consume(value) return value end
+local function make(value) return function() return consume(value) end end
+return make`, 'library.lua');
+	const { file, summaries, instantiation, graph } = callQueries(`local make = require('library')
+local left = make(7)
+local right = make(8)
+left()
+right()`, [library]);
+	const sources = new LuaSourceCallQuery(summaries, instantiation, graph);
+	const call = library.refs.find(ref => ref.name === 'consume' && ref.call !== undefined)!.call!;
+	const ancestry = sources.ancestry(call);
+	const heads = ancestry.heads.filter(head => head.caller.kind === 'invocation');
+	assert.equal(heads.length, 2);
+	for (const head of heads) {
+		assert.equal(head.site.expression.range.path, library.file);
+		assert.ok(head.caller.kind === 'invocation');
+		const creator = head.caller.lexicalOwner;
+		assert.equal(creator.kind, 'invocation');
+		const creation = ancestry.applications.filter(edge => edge.target === creator);
+		assert.equal(creation.length, 1);
+		assert.equal(creation[0].call.site.expression.range.path, file.file);
+		const invocation = ancestry.applications.filter(edge => edge.target === head.caller);
+		assert.equal(invocation.length, 1);
+		assert.equal(invocation[0].call.site.expression.range.path, file.file);
+	}
 });
 
 test('unresolved source calls retain arguments and method receivers without inventing applications', () => {
@@ -350,6 +422,45 @@ test('incoming application index retains negative dependencies and updates after
 	assert.equal(incoming[0].context, context);
 	assert.equal(incoming[0].application, application);
 	assert.equal(graph.incomingApplications(1), incoming);
+});
+
+test('caller-context demand observes a later incoming fact even without a new closure invocation', () => {
+	const { file, summaries, demand, instantiation, graph } = callQueries(`local function consume(value) return value end
+local function make(value) return function() return consume(value) end end
+local pending
+local unused = pending(7)`);
+	const sources = new LuaSourceCallQuery(summaries, instantiation, graph);
+	const site = file.refs.find(ref => ref.name === 'consume' && ref.call !== undefined)!.call!;
+	assert.equal(sources.ancestry(site).heads.filter(head => head.caller.kind === 'invocation').length, 0);
+	const before = graph.getCallerContextEvaluations();
+	const factory = summaries.list().find(summary => summary.source.declaration === file.decls.find(decl => decl.name === 'make')!.id)!;
+	instantiation.values.add(demand.topLevelCalls[0].callee, factory.functionValue);
+	graph.callee(demand.topLevelCalls[0].site);
+	assert.equal(graph.getCallerContextEvaluations(), before, 'ordinary callee solving does not enumerate caller contexts');
+	assert.equal(sources.ancestry(site).heads.filter(head => head.caller.kind === 'invocation').length, 0);
+	assert.ok(graph.getCallerContextEvaluations() > before, 'the previously empty creator-caller row was invalidated');
+});
+
+test('one closure query does not enumerate unrelated creators using the same callee', () => {
+	const counts: number[] = [];
+	for (const creators of [1, 128]) {
+		const lines = ['local function consume(value) return value end'];
+		for (let index = 0; index < creators; index += 1) {
+			lines.push(`local function make_${index}(value) return function() return consume(value) end end`,
+				`local callback_${index} = make_${index}(${index + 1})`, `callback_${index}()`);
+		}
+		const file = buildLuaFileSemanticData(lines.join('\n'), 'creators.lua');
+		const queries = new LuaSemanticQueryStore([file], new Map());
+		const call = file.refs.find(ref => ref.name === 'consume' && ref.call !== undefined)!.call!;
+		const graph = queries.callSources(call);
+		assert.equal(graph.heads.filter(head => head.caller.kind === 'invocation').length, 1);
+		assert.equal(graph.calls.filter(call => call.caller.kind === 'module').length, 2);
+		counts.push(queries.metrics().instantiatedCalls);
+		const before = queries.metrics();
+		assert.equal(queries.callSources(call), graph);
+		assert.deepEqual(queries.metrics(), before);
+	}
+	assert.equal(counts[1], counts[0], 'unrelated creator bodies do not add instantiated frames');
 });
 
 test('source ancestry refreshes when a reused frame gains a caller without changing the head contexts', () => {
