@@ -1,4 +1,5 @@
 import { SemanticDemandIndex } from './demand_index';
+import { SemanticCallableUseQuery } from './callable_use_query';
 import { SemanticCallContext, type CallApplication, type CallApplicationEdge } from './call_context';
 import {
 	type FunctionSummaryID,
@@ -68,6 +69,7 @@ export class SemanticCallGraph {
 	private readonly contextQueries = new Map<CallValueEntry, number>();
 	private readonly contextResults: SemanticQueryResults<SemanticCallContext>;
 	private readonly callerContextQueries: SemanticQueryEvaluation;
+	private readonly callableUses: SemanticCallableUseQuery;
 	private readonly incomingFactDependencies: SemanticDependencyIndex;
 	private readonly factsByCall: Map<CallValueEntry, CallFact[]> = new Map();
 	private readonly incomingByFunction: Map<SymbolID, CallFact[]> = new Map();
@@ -104,6 +106,7 @@ export class SemanticCallGraph {
 	) {
 		this.contextResults = new SemanticQueryResults(summaries.terms.dependencies);
 		this.callerContextQueries = new SemanticQueryEvaluation(summaries.terms.dependencies);
+		this.callableUses = new SemanticCallableUseQuery(summaries, demand, instantiation);
 		this.incomingFactDependencies = new SemanticDependencyIndex(summaries.terms.dependencies);
 		for (let callIndex = 0; callIndex < demand.topLevelCalls.length; callIndex += 1) {
 			this.retainDirectFacts(demand.topLevelCalls[callIndex]);
@@ -142,6 +145,8 @@ export class SemanticCallGraph {
 	public getCallerContextEvaluations(): number {
 		return this.callerContextQueries.count;
 	}
+
+	public getCallableUseEvaluations(): number { return this.callableUses.evaluations; }
 
 	/** Retained site/owner inputs; these are may-analysis applications, not execution evidence. */
 	public callContexts(call: CallValueEntry): readonly SemanticCallContext[] {
@@ -186,6 +191,10 @@ export class SemanticCallGraph {
 					this.queryCall(call);
 				}
 			}
+		}
+		for (const call of this.callableUses.calls(summary)) {
+			if (call.owner !== undefined) this.queryCallerContexts(call.owner);
+			this.queryCall(call);
 		}
 		queries.end(summary);
 	}
@@ -470,15 +479,17 @@ export class SemanticCallGraph {
 			if (anchor !== current) {
 				this.callerActivationTerms.push(anchor);
 			}
-			const calls = this.demand.callerCallsForTerm(current);
-			for (let callIndex = 0; callIndex < calls.length; callIndex += 1) {
-				const call = calls[callIndex];
-				this.instantiation.compose(call.owner);
-				this.worklist.enqueue(call, -call.owner);
-				for (let argumentIndex = 0; argumentIndex < call.arguments.length; argumentIndex += 1) {
-					this.queueProducerTerm(
-						this.summaries.projectExternalTerm(call.arguments[argumentIndex]),
-					);
+			// Projection demand follows externally selectable or direct local callees;
+			// source-context enumeration consumes the complete exact-use index instead.
+			if (this.summaries.terms.isIndexableAnchor(anchor)
+				&& (this.summaries.terms.kind(anchor) === TermKind.Root || this.summaries.terms.kind(current) === TermKind.Local)) {
+				for (const call of this.demand.calleeCallsForTerm(current)) {
+					if (call.owner === undefined) continue;
+					this.instantiation.compose(call.owner);
+					this.worklist.enqueue(call, -call.owner);
+					for (const argument of call.arguments) {
+						this.queueProducerTerm(this.summaries.projectExternalTerm(argument));
+					}
 				}
 			}
 			const topLevelCalls = this.demand.topLevelCallsForTerm(current);

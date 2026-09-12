@@ -29,6 +29,7 @@ export type LuaSemanticQueryMetrics = {
 	readonly callFactPasses: number;
 	readonly callEvaluations: number;
 	readonly callerContextEvaluations: number;
+	readonly callableUseEvaluations: number;
 	readonly valueEvaluations: number;
 	readonly memberEvaluations: number;
 	readonly locationEvaluations: number;
@@ -184,6 +185,7 @@ export class LuaSemanticQueryStore {
 			callFactPasses: this.calls.getSolvePasses(),
 			callEvaluations: this.worklist.evaluation.count,
 			callerContextEvaluations: this.calls.getCallerContextEvaluations(),
+			callableUseEvaluations: this.calls.getCallableUseEvaluations(),
 			valueEvaluations: this.members.valueEvaluations,
 			memberEvaluations: this.members.memberEvaluations,
 			locationEvaluations: this.members.locationEvaluations,

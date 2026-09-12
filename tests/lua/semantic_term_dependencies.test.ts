@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { SemanticTermStore, type TermID } from '../../toolchain/ts/lua/semantic/function_summary';
+import { SemanticTermStore, type FunctionSummaryID, type TermID } from '../../toolchain/ts/lua/semantic/function_summary';
 import { WorkspaceValueIdentityIndex } from '../../toolchain/ts/lua/semantic/identity';
 import { SemanticDependencyPairIndex, SemanticQueryDependencies, SemanticQueryEvaluation } from '../../toolchain/ts/lua/semantic/query_dependencies';
 import { TermRelation } from '../../toolchain/ts/lua/semantic/term_relation';
@@ -10,6 +10,41 @@ function createTerms(): SemanticTermStore {
 		new WorkspaceValueIdentityIndex({ files: [], globalValues: new Map() }), new Map(), new Map(),
 	);
 }
+
+test('contextual templates retain the complete access path and both indexed operands', () => {
+	const terms = createTerms();
+	const owner = terms.local(1 as FunctionSummaryID, 0);
+	const key = terms.parameter(1 as FunctionSummaryID, 0);
+	const boundOwner = terms.contextRoot(owner, 7);
+	const boundKey = terms.contextRoot(key, 9);
+	const name = terms.nameId('run');
+	const templates = [terms.member(owner, name), terms.index(owner, key), terms.element(owner),
+		terms.call(owner), terms.instance(owner), terms.metatable(owner)];
+	const bound = [terms.member(boundOwner, name), terms.index(boundOwner, boundKey), terms.element(boundOwner),
+		terms.call(boundOwner), terms.instance(boundOwner), terms.metatable(boundOwner)];
+	for (let index = 0; index < templates.length; index += 1) assert.equal(terms.retainedTemplate(bound[index]), templates[index]);
+	assert.equal(terms.retainedTemplate(owner), owner);
+	assert.equal(terms.retainedTemplate(boundOwner), owner);
+	const nested = terms.member(terms.index(owner, key), name);
+	assert.equal(terms.retainedTemplate(terms.member(terms.index(boundOwner, boundKey), name)), nested);
+});
+
+test('template lookup does not create unwritten paths and observes their subsequent creation', () => {
+	const terms = createTerms();
+	const owner = terms.local(1 as FunctionSummaryID, 0);
+	const name = terms.nameId('not_written');
+	const bound = terms.member(terms.contextRoot(owner, 7), name);
+	const queries = new SemanticQueryEvaluation(terms.dependencies);
+	queries.begin(0);
+	assert.equal(terms.retainedTemplate(bound), undefined);
+	assert.equal(terms.retainedMember(owner, name), undefined);
+	queries.end(0);
+	terms.member(owner, terms.nameId('different'));
+	assert.ok(queries.isCurrent(0));
+	const written = terms.member(owner, name);
+	assert.equal(queries.isCurrent(0), false);
+	assert.equal(terms.retainedTemplate(bound), written);
+});
 
 test('pair-index reads depend on both coordinates, including an absent row', () => {
 	const dependencies = new SemanticQueryDependencies();

@@ -591,8 +591,12 @@ De [closure-caller-contexten](lua_closure_caller_contexts.md) verwijderen daarna
 de vooraf ingezaaide aanroepqueries uit de module-factoryproef. De taalowner
 vraagt lexical creators en bekende incoming sites op via een eigen tracked
 contextvraag, niet via brede aliasexpansie bij gewone memberqueries. Imported,
-nested, opgeslagen en doorgestuurde closures hebben gerichte proeven; factory-
-en callbackgebruik via body-lokale aliases blijft expliciet open. Dit is nog
+nested, opgeslagen en doorgestuurde closures hebben gerichte proeven. De
+[callable-usequery](lua_callable_use_demand.md) volgt daarna bestaande bindings
+naar de exacte callee-uses, ook bij body-lokale factories en callbacks. Alleen
+de bestaande callsolver mag daar applicaties uit afleiden; een template selecteert
+bronplekken, niet argumentwaarden. Niet-gematerialiseerde/unknown bijdragen,
+gecorreleerde bron-substitutie en de resourceconsumer blijven open. Dit is nog
 geen gesloten B04-bronbewijs of toelating van B03/B06-bewerkingen.
 
 De document-lifetimegrens van B04 staat in `editor_semantic_model_sync.md`:

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { SemanticCallGraph, SemanticCallWorklist } from '../../toolchain/ts/lua/semantic/call_graph';
+import { SemanticCallableUseQuery } from '../../toolchain/ts/lua/semantic/callable_use_query';
 import { SemanticDemandIndex } from '../../toolchain/ts/lua/semantic/demand_index';
 import { FunctionSummaryStore, TermKind } from '../../toolchain/ts/lua/semantic/function_summary';
 import { WorkspaceValueIdentityIndex } from '../../toolchain/ts/lua/semantic/identity';
@@ -364,6 +365,93 @@ right()`, [library]);
 		assert.equal(invocation.length, 1);
 		assert.equal(invocation[0].call.site.expression.range.path, file.file);
 	}
+});
+
+for (const [name, body, moduleCalls] of [
+	['nested factory', `local function make(value) return function() return consume(value) end end
+ local left = make(7); local right = make(8)
+ local a = left(); local b = right(); return a == 7 and b == 8`, 'return entry()'],
+	['anonymous alias cycle', `local callback = function() return consume(value) end
+ local alias = callback; callback = alias
+ local result = alias(); return result == value`, 'return entry(7), entry(8)'],
+	['indexed callback', `local callback = function() return consume(value) end
+ local holder = {}; holder[1] = callback
+ local result = holder[1](); return result == value`, 'return entry(7), entry(8)'],
+	['member callback', `local holder = { run = function() return consume(value) end }
+ local result = holder.run(); return result == value`, 'return entry(7), entry(8)'],
+] as const) {
+	test(`cold callable-use demand discovers module-rooted applications through a ${name}`, () => {
+		const source = `local function consume(value) return value end
+local function entry(value)
+ ${body}
+end
+${moduleCalls}`;
+		const file = buildLuaFileSemanticData(source, 'uses.lua');
+		const queries = new LuaSemanticQueryStore([file], new Map());
+		const call = file.refs.find(ref => ref.name === 'consume' && ref.call !== undefined)!.call!;
+		const graph = queries.callSources(call);
+		const reached = new Set(graph.calls.filter(call => call.caller.kind === 'module').map(call => call.caller));
+		let changed = true;
+		while (changed) {
+			changed = false;
+			for (const edge of graph.applications) {
+				if (reached.has(edge.call.caller) && !reached.has(edge.target)) {
+					reached.add(edge.target);
+					changed = true;
+				}
+			}
+		}
+		const heads = graph.heads.filter(head => reached.has(head.caller));
+		assert.equal(heads.length, 2, 'a positive analysis frame without module ancestry is not sufficient');
+		for (const head of heads) {
+			assert.ok(head.caller.kind === 'invocation');
+			assert.ok(reached.has(head.caller.lexicalOwner));
+			assert.ok(graph.applications.some(edge => edge.target === head.caller && reached.has(edge.call.caller)));
+		}
+		assert.notEqual(heads[0].caller, heads[1].caller);
+		const metrics = queries.metrics();
+		assert.equal(queries.callSources(call), graph);
+		assert.deepEqual(queries.metrics(), metrics);
+		for (const optimization of [0, 3] as const) {
+			assert.deepEqual(runCompiledLua(source, file.file, optimization), name === 'nested factory' ? [true] : [true, true]);
+		}
+	});
+}
+
+test('exact callee-use index retains all static sites without publishing applications', () => {
+	const { summaries, demand, instantiation } = callQueries(`local function entry(callback, key)
+ callback()
+ local holder = { run = callback }
+ holder.run()
+ holder[key]()
+end
+entry(function() end, 'run')`);
+	for (const summary of summaries.list()) {
+		for (const call of summary.calls) assert.ok(demand.calleeCallsForTerm(call.callee).includes(call));
+	}
+	for (const call of demand.topLevelCalls) assert.ok(demand.calleeCallsForTerm(call.callee).includes(call));
+	assert.equal(instantiation.frames.count, 0, 'a use is a selection fact, not a resolved function call');
+});
+
+test('callable-use reads track empty reverse rows and cycles, not unrelated assignment growth', () => {
+	const { summaries, demand, instantiation } = callQueries(`local function run() end
+local function other() end
+local pending
+local alias = pending
+pending = alias
+pending()`);
+	const uses = new SemanticCallableUseQuery(summaries, demand, instantiation);
+	const [run, other] = summaries.list();
+	const call = demand.topLevelCalls[0];
+	assert.deepEqual(uses.calls(run.id), []);
+	const before = uses.evaluations;
+	instantiation.values.add(call.callee, other.functionValue);
+	assert.deepEqual(uses.calls(run.id), []);
+	assert.equal(uses.evaluations, before);
+	instantiation.values.add(call.callee, run.functionValue);
+	assert.deepEqual(uses.calls(run.id), [call]);
+	assert.equal(uses.evaluations, before + 1);
+	assert.equal(instantiation.frames.count, 0, 'reverse use selection never solves callees itself');
 });
 
 test('unresolved source calls retain arguments and method receivers without inventing applications', () => {

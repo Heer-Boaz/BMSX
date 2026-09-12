@@ -71,8 +71,10 @@ callable applications through another query. The later
 prerequisite for its tested module-rooted factories, including imports and
 nested/stored/forwarded closures. **Discovering every closure use remains open**:
 factory and callback uses through aliases local to another function are not
-solved by an incoming index. Neither slice is a completeness certificate for
-the future source-editor consumer.
+solved by an incoming index alone. The subsequent
+[callable-use query](lua_callable_use_demand.md) follows those existing bindings
+to their exact callee sites. None of these slices is a completeness certificate
+for the future source-editor consumer.
 
 ## Evidence
 

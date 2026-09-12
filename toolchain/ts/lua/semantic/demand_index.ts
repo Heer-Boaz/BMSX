@@ -41,7 +41,7 @@ export class SemanticDemandIndex {
 	private readonly callsBySite: Map<CallValueEntry, SummaryCall> = new Map();
 	private readonly dependentSummariesByTerm: FunctionSummaryID[][] = [];
 	private readonly dependentCallsByTerm: FunctionCall[][] = [];
-	private readonly callerCallsByTerm: FunctionCall[][] = [];
+	private readonly calleeCallsByTerm: SummaryCall[][] = [];
 	private readonly topLevelCallsByAnchor: SummaryCall[][] = [];
 	private readonly topLevelResultCallsByTerm: SummaryCall[][] = [];
 	private readonly resultCallsByTerm: FunctionCall[][] = [];
@@ -150,8 +150,7 @@ export class SemanticDemandIndex {
 			for (let callIndex = 0; callIndex < file.callValues.length; callIndex += 1) {
 				const call = this.compileTopLevelCall(file.callValues[callIndex]);
 				topLevelCalls.push(call);
-				this.callsBySite.set(call.site, call);
-				this.indexCandidateCall(call);
+				this.indexCall(call);
 				this.indexTopLevelCall(call);
 			}
 			for (let referenceIndex = 0; referenceIndex < file.refs.length; referenceIndex += 1) {
@@ -187,9 +186,7 @@ export class SemanticDemandIndex {
 			}
 			for (let callIndex = 0; callIndex < summary.calls.length; callIndex += 1) {
 				const call = summary.calls[callIndex];
-				this.callsBySite.set(call.site, call);
-				this.indexCandidateCall(call);
-				this.indexCallerCall(call);
+				this.indexCall(call);
 				this.indexDependentCall(call);
 			}
 		}
@@ -254,8 +251,8 @@ export class SemanticDemandIndex {
 		return this.memberNames;
 	}
 
-	public callerCallsForTerm(term: TermID): readonly FunctionCall[] {
-		return this.callerCallsByTerm[term] || EMPTY_CALLS;
+	public calleeCallsForTerm(term: TermID): readonly SummaryCall[] {
+		return this.calleeCallsByTerm[term] || EMPTY_CALLS;
 	}
 
 	public dependentSummariesForTerm(term: TermID): readonly FunctionSummaryID[] {
@@ -437,7 +434,14 @@ export class SemanticDemandIndex {
 		this.memberNames.push(name);
 	}
 
-	private indexCandidateCall(call: SummaryCall): void {
+	private indexCall(call: SummaryCall): void {
+		this.callsBySite.set(call.site, call);
+		let uses = this.calleeCallsByTerm[call.callee];
+		if (uses === undefined) {
+			uses = [];
+			this.calleeCallsByTerm[call.callee] = uses;
+		}
+		uses.push(call);
 		if (this.summaries.terms.kind(call.callee) !== TermKind.Member) {
 			return;
 		}
@@ -446,22 +450,6 @@ export class SemanticDemandIndex {
 		if (!calls) {
 			calls = [];
 			this.candidateCallsByName.set(name, calls);
-		}
-		calls.push(call);
-	}
-
-	private indexCallerCall(call: FunctionCall): void {
-		const anchor = this.summaries.terms.anchor(call.callee);
-		const anchorKind = this.summaries.terms.kind(anchor);
-		if (!this.summaries.terms.isIndexableAnchor(anchor)
-			|| (anchorKind !== TermKind.Root
-				&& this.summaries.terms.kind(call.callee) !== TermKind.Local)) {
-			return;
-		}
-		let calls = this.callerCallsByTerm[call.callee];
-		if (!calls) {
-			calls = [];
-			this.callerCallsByTerm[call.callee] = calls;
 		}
 		calls.push(call);
 	}

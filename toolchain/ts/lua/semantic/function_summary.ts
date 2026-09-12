@@ -347,6 +347,20 @@ export class SemanticTermStore {
 		return this.kinds[term];
 	}
 
+	/** Existing source template of a contextual path; selection only, not a value alias. */
+	public retainedTemplate(term: TermID): TermID | undefined {
+		const kind = this.kinds[term];
+		if (kind < TermKind.ContextRoot) return term;
+		if (kind === TermKind.ContextRoot) return this.left[term] as TermID;
+		const base = this.retainedTemplate(this.left[term] as TermID);
+		if (base === undefined) return undefined;
+		if (kind === TermKind.Index) {
+			const key = this.retainedTemplate(this.right[term] as TermID);
+			return key === undefined ? undefined : this.retainedIndex(base, key);
+		}
+		return base === this.left[term] ? term : this.retainedAccessWithBase(term, base);
+	}
+
 	public base(term: TermID): TermID {
 		return this.left[term] as TermID;
 	}

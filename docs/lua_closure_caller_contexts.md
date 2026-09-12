@@ -52,6 +52,10 @@ a test that enshrines the missing answer, or a module/cart-specific path.
 The generic consumer must retain that uncertainty until the corresponding
 use/dependency owner is implemented. B03/B06 authoring stays gated.
 
+The subsequent [callable-use slice](lua_callable_use_demand.md) addresses these
+body-local binding uses through retained assignments and exact callee sites.
+It does not turn the original caller-query slice into a complete use/source proof.
+
 Required evidence includes cold/warm queries, two captured environments,
 nested/stored/forwarded/imported closures, uninvoked closures, cycles and late
 incoming edges; the complete language suite and actual Studio flows; and

@@ -804,3 +804,24 @@ Een factory en returned callback die beide via body-lokale aliases worden
 gebruikt blijven een expliciete discoverygrens. Zie
 `lua_closure_caller_contexts.md` voor de WALA-referenties, verworpen brede
 expansie, metingen en bewijsgrenzen. **B03/B04/B06-authoring en A08 blijven open.**
+
+### B04 — exacte callee-uses van bestaande bindings (2026-09-12)
+
+De volgende taalowner volgt de al aanwezige assignments van een function value
+naar haar callee-uses. De index bewaart alle statische calls; de contextquery
+selecteert, en alleen de bestaande callee-solver maakt applicaties. Contextuele
+templates blijven bij de termowner en behouden member/indexpaden. Er komt geen
+aliasengine of cache in Lens bij. Dit volgt WALA's scheiding tussen use-index,
+demand en callinterpretatie; zie `lua_callable_use_demand.md`.
+
+Drie onafhankelijke koude proeven gingen van nul naar twee module-rooted heads:
+body-lokale factory, anonieme aliascyclus en indexed callback. Een reeds werkende
+membercallback blijft de controle; alle vier draaien ook op O0/O3. **1613
+Lua-tests / 1612 pass / 1 bestaande skip** en zes backend-workflowgates slagen.
+De echte veldquery houdt hetzelfde analysewerk; de nieuwe use-query doet daar
+nul evaluaties. Extra source-querykosten en het verworpen one-shot-admissionpad
+zijn expliciet gemeten/gedocumenteerd, niet achter een timeout verborgen.
+
+Dit sluit binding-use-discovery, niet alle mogelijke callable uses of het
+source-originbewijs. Resource-eigen consumers, gecorreleerde substitutie,
+unknown bijdragen en latency blijven open; **B03/B04/B06 en A08 zijn niet af.**

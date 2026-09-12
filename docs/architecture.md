@@ -4604,7 +4604,12 @@ ordinary member queries do not enumerate all callers. Empty incoming fact rows
 remain dependencies. Site demand schedules both existing and later owner
 frames, while source ancestry only consumes those contexts. See
 [closure caller contexts](lua_closure_caller_contexts.md) for the cold-query
-probes and the still-open discovery of body-local callable uses.
+probes. [Callable-use demand](lua_callable_use_demand.md) follows retained
+assignments from a function value and its lexical contexts to exact callee
+uses, including body-local aliases. The demand index preserves every static
+callee use; each consumer owns its selection policy. Context-free templates
+select source sites, not bound arguments or function targets. Unknown and
+not-yet-materialized contributions still prevent an exhaustive source proof.
 
 Behavior navigation is a workbench contribution over those retained source
 facts, not framework knowledge in the language service. Its Quick Input
