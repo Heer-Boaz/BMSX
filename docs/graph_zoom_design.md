@@ -1,5 +1,11 @@
 # Graph zoom: one view transform, no second layout
 
+The later user review is addressed in [`graph_zoom_review.md`](graph_zoom_review.md):
+the original geometric step policy and context-menu zoom below are superseded
+by canonical pixel scales and target-owned menus. The transform/renderer
+representation remains unchanged. Earlier measurements describe that earlier
+implementation, not the corrected interaction policy.
+
 ## Production reference and live boundary
 
 Read before implementation: Godot
@@ -44,8 +50,8 @@ mutation of submitted graph points, font clone or matrix opcode in the machine.
   guides use its inverse. No feature-local scale factors.
 - Zoom is explicit, anchored at the pointer for wheel zoom and at the canvas
   center for commands. There is a reset-to-100% action, not auto-fit.
-- Ctrl + wheel and the focused Graph commands use Godot's 1.2 zoom step,
-  bounded to 25–400%. Title/context actions expose `-`, `1:1`, `+`; the reset
+- Ctrl + wheel and the focused Graph commands now share Aseprite/Godot's pixel
+  scales `1/4, 1/3, 1/2, 1, 2, 3, 4`. View-title actions expose `-`, `1:1`, `+`; the reset
   label is an action, not a claim about the current percentage. Keyboard
   gameplay bindings and the code editor's font scale are unchanged.
 - Toolbar/menu/palette use focus-owned graph commands. Zoom/pan do not mutate
@@ -110,6 +116,8 @@ zero warm font measurements and one stationary hit test. The small 100% overhead
 is measured, not described as free; zooming out draws more geometry. Capturing
 the inverse visible bounds once removed repeated divisions from node/edge loops.
 
-B07's explicit shared zoom contract is complete. A minimap remains optional;
+B07's shared transform contract is implemented. Its subsequently reported
+step/context-menu defects and their correction are tracked in `graph_zoom_review.md`.
+A minimap remains optional;
 resource provenance, cross-parent authoring and ActionEffect property mutation
 are not closed by this view-only slice.

@@ -338,7 +338,7 @@ test('zoom commands belong to graph focus; wheel zoom is pointer anchored and re
 	const f = dragFixture();
 	const x = f.view.viewportToGraphX(60), y = f.view.viewportToGraphY(60);
 	assert.equal(f.control.handleWheel(pointer(60, 60), 0, 0, 1), true);
-	assert.equal(f.view.zoom, 1.2);
+	assert.equal(f.view.zoom, 2);
 	assert.equal(f.view.viewportToGraphX(60), x);
 	assert.equal(f.view.viewportToGraphY(60), y);
 	assert.equal(f.capture.dispatch(pointer(70, 60, true), false, 20), false, 'zoom revokes the press, even before its drag threshold');
@@ -349,6 +349,53 @@ test('zoom commands belong to graph focus; wheel zoom is pointer anchored and re
 	assert.equal(f.focus.getCommand('graph.resetZoom')!.isEnabled(), false);
 	f.control.clearInput();
 	assert.equal(f.control.focusTarget.getCommand('graph.zoomIn')!.isEnabled(), false);
+	f.control.dispose();
+});
+
+test('zoom commands traverse identical pixel levels in both directions, including 100% after either limit', () => {
+	const f = dragFixture();
+	const levels = [1 / 4, 1 / 3, 1 / 2, 1, 2, 3, 4];
+	f.view.setZoom(GRAPH_ZOOM_MIN);
+	for (let index = 1; index < levels.length; index += 1) {
+		f.focus.executeCommand('graph.zoomIn');
+		assert.equal(f.view.zoom, levels[index]);
+	}
+	assert.equal(f.focus.getCommand('graph.zoomIn')!.isEnabled(), false);
+	f.view.zoomBySteps(50);
+	assert.equal(f.view.zoom, GRAPH_ZOOM_MAX);
+	for (let index = levels.length - 2; index >= 0; index -= 1) {
+		f.focus.executeCommand('graph.zoomOut');
+		assert.equal(f.view.zoom, levels[index]);
+	}
+	assert.equal(f.focus.getCommand('graph.zoomOut')!.isEnabled(), false);
+	f.view.zoomBySteps(-50);
+	assert.equal(f.view.zoom, GRAPH_ZOOM_MIN);
+	for (const level of levels.slice(1, -1)) {
+		f.view.setZoom(level);
+		for (let repeat = 0; repeat < 20; repeat += 1) {
+			f.focus.executeCommand('graph.zoomIn'); f.focus.executeCommand('graph.zoomOut');
+			assert.equal(f.view.zoom, level, 'opposite steps do not accumulate drift');
+		}
+	}
+	f.control.dispose();
+});
+
+test('pixel steps consume arbitrary view scales directionally and multi-notch wheel input keeps its inverse anchor', () => {
+	const f = dragFixture();
+	for (const [start, lower, higher] of [[0.28, 1 / 4, 1 / 3], [0.75, 1 / 2, 1], [1.9, 1, 2], [3.8, 3, 4]]) {
+		f.view.setZoom(start); f.view.zoomBySteps(0);
+		assert.equal(f.view.zoom, start, 'a zero step does not quantize restored view state');
+		f.view.zoomBySteps(-1); assert.equal(f.view.zoom, lower);
+		f.view.setZoom(start); f.view.zoomBySteps(1); assert.equal(f.view.zoom, higher);
+	}
+	f.view.setZoom(1);
+	const x = f.view.viewportToGraphX(60), y = f.view.viewportToGraphY(60);
+	f.control.handleWheel(pointer(60, 60), 0, 0, 3);
+	assert.equal(f.view.zoom, 4);
+	f.control.handleWheel(pointer(60, 60), 0, 0, -3);
+	assert.equal(f.view.zoom, 1);
+	assert.equal(f.view.viewportToGraphX(60), x);
+	assert.equal(f.view.viewportToGraphY(60), y);
 	f.control.dispose();
 });
 

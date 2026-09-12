@@ -21,14 +21,17 @@ export async function testStudioGraphZoom(test: StudioFixture): Promise<void> {
 	const anchorX = viewport.viewportToGraphX(centerX), anchorY = viewport.viewportToGraphY(centerY);
 	await runPaletteCommand('Graph: Zoom Out');
 	await click(graph.actionBar.items.find(item => item.command === 'graph.zoomOut')!.bounds);
-	check(viewport.zoom < 0.7 && Math.abs(viewport.viewportToGraphX(centerX) - anchorX) < 1e-7
+	check(viewport.zoom === 1 / 3 && Math.abs(viewport.viewportToGraphX(centerX) - anchorX) < 1e-7
 		&& Math.abs(viewport.viewportToGraphY(centerY) - anchorY) < 1e-7, 'zoom: toolbar/palette preserve the canvas-center anchor');
 	console.info(`STUDIO: ${graph.kind} zoomed-out canvas ready for visual inspection`);
 	await click(graph.actionBar.items.find(item => item.command === 'graph.resetZoom')!.bounds);
 	check(viewport.zoom === 1, 'zoom: explicit 1:1 control restores font/layout scale');
+	console.info(`STUDIO: ${graph.kind} 100-percent canvas ready for visual inspection`);
 	await click(graph.actionBar.items.find(item => item.command === 'graph.zoomIn')!.bounds);
 	await runPaletteCommand('Graph: Zoom In');
-	check(Math.abs(viewport.zoom - 1.44) < 1e-7 && viewport.model === model, 'zoom: magnification uses the same retained diagram');
+	check(viewport.zoom === 3 && viewport.model === model, 'zoom: integer magnification uses the same retained diagram');
+	// Center-anchored zoom can move a left-aligned graph offscreen; reveal before inspecting its actual texels.
+	viewport.reveal(selected); await frame();
 	console.info(`STUDIO: ${graph.kind} zoomed-in canvas ready for visual inspection`);
 	movePointer({ left: centerX - 10, right: centerX - 10, top: centerY + 8, bottom: centerY + 8 }); await frame();
 	// The display owner publishes integer logical pointer coordinates, not the fractional requested center.
@@ -37,7 +40,7 @@ export async function testStudioGraphZoom(test: StudioFixture): Promise<void> {
 	setKey('ControlLeft', true);
 	input.inputAxis1('pointer:0', 'pointer_wheel', WHEEL_SCROLL_STEP, clock.now()); await frame();
 	setKey('ControlLeft', false); await frame();
-	check(viewport.zoom < 1.44 && Math.abs(viewport.viewportToGraphX(pointer.viewportX) - pointerX) < 1e-7
+	check(viewport.zoom === 2 && Math.abs(viewport.viewportToGraphX(pointer.viewportX) - pointerX) < 1e-7
 		&& Math.abs(viewport.viewportToGraphY(pointer.viewportY) - pointerY) < 1e-7, 'zoom: Ctrl-wheel uses the actual pointer, not the canvas center');
 	const zoom = viewport.zoom, x = viewport.scrollX, y = viewport.scrollY;
 	await runPaletteCommand('Behavior Lens: Open Source');
@@ -49,13 +52,25 @@ export async function testStudioGraphZoom(test: StudioFixture): Promise<void> {
 		'zoom: navigation preserves selection and does not run layout');
 	await press('ShiftLeft', 'F10');
 	const menu = ide.editor.contextMenu;
-	check(menu.visible && menu.model.rows.some(row => row.command === 'graph.resetZoom' && row.enabled), 'zoom: selected-node keyboard menu offers the same focused graph commands');
-	const reset = menu.model.rows.find(row => row.command === 'graph.resetZoom')!;
-	menu.model.viewport.scrollbar.reveal(reset.top, reset.bottom);
-	await frame();
-	await click({ left: menu.model.viewport.bounds.left, right: menu.model.viewport.bounds.right,
-		top: menu.model.viewport.offsetTop + reset.top, bottom: menu.model.viewport.offsetTop + reset.bottom });
-	check(!menu.visible && viewport.zoom === 1, 'zoom: context-menu activation resets scale and restores graph focus');
+	check(menu.visible && menu.model.rows.some(row => row.command === 'behaviorLens.source' && row.enabled)
+		&& menu.model.rows.every(row => row.command === undefined || !row.command.startsWith('graph.')), 'zoom: selected-node menu contains target actions, not viewport zoom');
+	await press('Escape');
+	await runPaletteCommand('Graph: Reset Zoom (100%)');
+	check(!menu.visible && viewport.zoom === 1, 'zoom: dismissing the context menu restores the focused palette route');
+	for (const expected of [2, 3, 4]) {
+		await click(graph.actionBar.items.find(item => item.command === 'graph.zoomIn')!.bounds);
+		check(viewport.zoom === expected, 'zoom: plus visits each canonical magnification');
+	}
+	check(!ide.editor.commands.isEnabled('graph.zoomIn'), 'zoom: upper endpoint disables plus');
+	for (const expected of [3, 2, 1, 1 / 2, 1 / 3, 1 / 4]) {
+		await click(graph.actionBar.items.find(item => item.command === 'graph.zoomOut')!.bounds);
+		check(viewport.zoom === expected, 'zoom: minus retraces the same levels and visits exactly 100%');
+	}
+	check(!ide.editor.commands.isEnabled('graph.zoomOut'), 'zoom: lower endpoint disables minus');
+	for (const expected of [1 / 3, 1 / 2, 1]) {
+		await click(graph.actionBar.items.find(item => item.command === 'graph.zoomIn')!.bounds);
+		check(viewport.zoom === expected, 'zoom: plus returns from the lower endpoint through exactly 100%');
+	}
 	check(lens.workingCopy.version === version && lens.workingCopy.dirty === dirty && test.cycles() === cycles,
 		'zoom: all gestures preserve source, history and suspended machine state');
 	viewport.setZoom(originalZoom); viewport.scrollX = scrollX; viewport.scrollY = scrollY;

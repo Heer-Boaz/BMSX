@@ -436,8 +436,12 @@ and primary drag on blank canvas pan at readable tiny-font scale. Explicit pan
 over an item preserves selection and never starts its source-edit gesture.
 Shift + wheel selects the horizontal axis; Space is not a gameplay binding.
 Explicit zoom is another viewport operation: Ctrl + wheel anchors at the mapped
-pointer, while focused Graph commands and the title/context actions anchor at
-the canvas center. `1:1` resets to 100%; the range is 25–400%. Scroll offsets are
+pointer, while focused Graph commands and view-title actions anchor at the
+canvas center. They share the viewport's canonical pixel scales
+`1/4, 1/3, 1/2, 1, 2, 3, 4`, following Aseprite and Godot's pixel-art zoom;
+opposite steps revisit exactly the same levels, including 100% after a limit.
+`1:1` resets to 100%; the range is 25–400%. Target context menus contain source/
+details/edit/history operations, not view zoom. Scroll offsets are
 viewport pixels, layout coordinates remain unchanged, and Source/Back carries
 both scroll and scale. Neither zoom nor pan invokes ELK or mutates Lua. Changing
 scale revokes an active edit gesture rather than reinterpreting its press.
@@ -450,6 +454,8 @@ screen-pixel affordances. Chrome and scrollbars draw outside the graph transform
 This is a host presentation command, not a guest GPU opcode or device register.
 See [`../docs/graph_zoom_design.md`](../docs/graph_zoom_design.md) for the mirrored
 representation, production reference and renderer/workflow evidence.
+The interaction correction and bitmap limits are documented in
+[`../docs/graph_zoom_review.md`](../docs/graph_zoom_review.md).
 `workbench/ui/scrollbar.ts` owns retained track/thumb geometry independent of
 editor kinds. Only attached code/resource panes hit their own scrollbar kinds;
 chrome hits the visible resource panel's bars, not inactive pane geometry.

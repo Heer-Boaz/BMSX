@@ -64,8 +64,6 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'separator' },
 		{ type: 'command', command: 'undo' },
 		{ type: 'command', command: 'redo' },
-		{ type: 'separator' },
-		...GRAPH_ZOOM_ACTIONS,
 	],
 	'behaviorLens.state.context': [
 		{ type: 'command', command: 'behaviorLens.source' },
@@ -75,17 +73,13 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'separator' },
 		{ type: 'command', command: 'undo' },
 		{ type: 'command', command: 'redo' },
-		{ type: 'separator' },
-		...GRAPH_ZOOM_ACTIONS,
 	],
 	'behaviorLens.edge.context': [
 		{ type: 'command', command: 'behaviorLens.source' },
 		{ type: 'command', command: 'behaviorLens.details' },
-		{ type: 'separator' },
-		...GRAPH_ZOOM_ACTIONS,
 	],
 	'behaviorLens.property.context': [{ type: 'command', command: 'behaviorLens.editProperty' }, { type: 'command', command: 'behaviorLens.source' }, { type: 'command', command: 'behaviorLens.details' }],
-	'behaviorLens.canvas.context': [...GRAPH_ZOOM_ACTIONS, { type: 'separator' }, { type: 'command', command: 'undo' }, { type: 'command', command: 'redo' }],
+	'behaviorLens.canvas.context': [{ type: 'command', command: 'undo' }, { type: 'command', command: 'redo' }],
 	'sourceEditReview.title': [
 		{ type: 'command', command: 'sourceEditReview.source' },
 		{ type: 'command', command: 'sourceEditReview.apply' },

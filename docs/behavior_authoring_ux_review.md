@@ -29,6 +29,11 @@ UX-verbeteringen hoeven daarop niet te wachten.
   verschillend in breedte en hoogte. Onderzoek de zoomreeks én de graph/viewport/
   renderertransformatie, inclusief presentatie-aspectratio, voordat een oorzaak
   wordt aangewezen. Dit is nog geen bevestigde rendererdiagnose.
+  De [vervolgreview en correctie](graph_zoom_review.md) bevestigen de
+  vermenigvuldigingsreeks vanaf geclampte eindpunten als oorzaak van het
+  overslaan van 100%. De viewport krijgt één pixelgerichte stapreeks; zoom
+  verdwijnt uit targetcontextmenu's. Er is geen aparte x/y-factor gevonden:
+  fractionele nearest-bitmapvergroting wordt niet als pixelzuivere UX verkocht.
 - Na iedere implementatieslice ook de aangrenzende, eerder geleverde werking
   reviewen tegen passende productiecode en de echte gebruikersflow. Geslaagde
   regressietests alleen bewijzen geen goede UX of architectuur.

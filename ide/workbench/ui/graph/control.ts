@@ -10,7 +10,7 @@ import type { PointerCaptureService, PointerCaptureTarget } from '../../../input
 import type { PointerHoverService, PointerHoverTarget } from '../../../input/pointer/hover';
 import { consumeIdeKey, isKeyJustPressed, shouldRepeatKeyFromPlayer } from '../../../input/keyboard/key_input';
 import type { WorkbenchGraphItem, WorkbenchGraphModel } from './model';
-import { GRAPH_ZOOM_MAX, GRAPH_ZOOM_MIN, GRAPH_ZOOM_STEP, type WorkbenchGraphViewport } from './viewport';
+import { GRAPH_ZOOM_MAX, GRAPH_ZOOM_MIN, type WorkbenchGraphViewport } from './viewport';
 import type { WorkbenchGraphConnectionDragStart, WorkbenchGraphDragFeedback, WorkbenchGraphDragSession, WorkbenchGraphDragSource } from './drag';
 import { hitWorkbenchGraphConnectionHandle, type WorkbenchGraphConnectionEnd, type WorkbenchGraphConnectionHandles } from './connection';
 
@@ -64,11 +64,11 @@ export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHover
 		this.unbindBlur = this.focusTarget.onDidBlur(() => this.cancelPointer());
 		this.focusTarget.registerCommand('graph.zoomIn', {
 			isEnabled: () => this.inputValue !== null && this.inputValue.zoom < GRAPH_ZOOM_MAX,
-			run: () => { this.inputValue!.setZoom(this.inputValue!.zoom * GRAPH_ZOOM_STEP); this.update(); },
+			run: () => { this.inputValue!.zoomBySteps(1); this.update(); },
 		});
 		this.focusTarget.registerCommand('graph.zoomOut', {
 			isEnabled: () => this.inputValue !== null && this.inputValue.zoom > GRAPH_ZOOM_MIN,
-			run: () => { this.inputValue!.setZoom(this.inputValue!.zoom / GRAPH_ZOOM_STEP); this.update(); },
+			run: () => { this.inputValue!.zoomBySteps(-1); this.update(); },
 		});
 		this.focusTarget.registerCommand('graph.resetZoom', {
 			isEnabled: () => this.inputValue !== null && this.inputValue.zoom !== 1,
@@ -327,7 +327,7 @@ export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHover
 		this.update();
 		if (zoomSteps !== 0) {
 			this.cancelPointer();
-			view.setZoom(view.zoom * Math.pow(GRAPH_ZOOM_STEP, zoomSteps), snapshot.viewportX, snapshot.viewportY);
+			view.zoomBySteps(zoomSteps, snapshot.viewportX, snapshot.viewportY);
 			this.update();
 			return true;
 		}

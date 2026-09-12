@@ -6,9 +6,10 @@ import type { WorkbenchGraphItem, WorkbenchGraphModel } from './model';
 import type { HostOverlayTransform } from '../../../../machine/ts/render/host_overlay/transform';
 
 export const GRAPH_EDGE_HIT_RADIUS = 3;
-export const GRAPH_ZOOM_MIN = 0.25;
-export const GRAPH_ZOOM_MAX = 4;
-export const GRAPH_ZOOM_STEP = 1.2;
+// Aseprite/Godot pixel-art scales: exact integer magnification and reciprocal overviews.
+const GRAPH_ZOOM_LEVELS = [1 / 4, 1 / 3, 1 / 2, 1, 2, 3, 4] as const;
+export const GRAPH_ZOOM_MIN = GRAPH_ZOOM_LEVELS[0];
+export const GRAPH_ZOOM_MAX = GRAPH_ZOOM_LEVELS[GRAPH_ZOOM_LEVELS.length - 1];
 const REVEAL_MARGIN = 6;
 
 type GraphItem<Model extends WorkbenchGraphModel> = Model['nodes'][number] | Model['edges'][number];
@@ -71,6 +72,23 @@ export class WorkbenchGraphViewport<Model extends WorkbenchGraphModel = Workbenc
 		this.updateScrollBounds();
 		this.scrollX = x * zoom - anchorX + this.bounds.left;
 		this.scrollY = y * zoom - anchorY + this.bounds.top;
+	}
+
+	/** Signed wheel/command steps share one sequence, including after endpoint saturation. */
+	public zoomBySteps(steps: number, anchorX?: number, anchorY?: number): void {
+		if (steps === 0) return;
+		const last = GRAPH_ZOOM_LEVELS.length - 1;
+		let index: number;
+		if (steps > 0) {
+			index = 0;
+			while (index < last && GRAPH_ZOOM_LEVELS[index] <= this.zoomValue) index += 1;
+			index += steps - 1;
+		} else {
+			index = last;
+			while (index > 0 && GRAPH_ZOOM_LEVELS[index] >= this.zoomValue) index -= 1;
+			index += steps + 1;
+		}
+		this.setZoom(GRAPH_ZOOM_LEVELS[clamp(index, 0, last)], anchorX, anchorY);
 	}
 
 	/** The domain owner supplies the proven correspondence, or no selection. */

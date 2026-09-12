@@ -138,7 +138,10 @@ test('context menus contribute existing admitted commands, never invented mutati
 	for (const [menu, items] of Object.entries(WORKBENCH_MENUS)) {
 		if (!menu.endsWith('.context')) continue;
 		assert.ok(items.length > 0);
-		for (const item of items) if (item.type === 'command') assert.notEqual(item.command, 'contextMenu');
+		for (const item of items) if (item.type === 'command') {
+			assert.notEqual(item.command, 'contextMenu');
+			assert.ok(!item.command.startsWith('graph.'), 'view zoom belongs to the toolbar/palette, not a target context menu');
+		}
 	}
 });
 

@@ -113,7 +113,7 @@ test('host transforms scale glyph geometry and advances, not atlas coordinates o
 	assert.equal(stream.batchCount, 1, 'transform changes bake geometry without breaking batches');
 });
 
-test('software transformed tiny glyphs reproduce each original texel at 2x, including tabs, newlines and backgrounds', () => {
+test('software integer magnification reproduces square tiny-glyph texel blocks, including tabs, newlines and backgrounds', () => {
 	const { backend } = createHostOverlayFixture(64, 48);
 	const context = backend.hostOverlayContext;
 	const target = backend.framebufferPixels;
@@ -123,13 +123,16 @@ test('software transformed tiny glyphs reproduce each original texel at 2x, incl
 	beginHeadlessHost2D(context, target, 64, 48);
 	renderHeadlessHost2DEntry(context, Host2DKind.Glyphs, text);
 	const original = target.slice();
-	target.fill(0);
-	renderHeadlessHost2DEntry(context, Host2DKind.Transform, { scale: 2, offsetX: 0, offsetY: 0 });
-	renderHeadlessHost2DEntry(context, Host2DKind.Glyphs, text);
-	for (let y = 0; y < 48; y += 1) {
-		for (let x = 0; x < 64; x += 1) {
-			for (let channel = 0; channel < 4; channel += 1) {
-				assert.equal(target[(y * 64 + x) * 4 + channel], original[((y >>> 1) * 64 + (x >>> 1)) * 4 + channel], `${x},${y}:${channel}`);
+	for (const scale of [1, 2, 3, 4]) {
+		target.fill(0);
+		renderHeadlessHost2DEntry(context, Host2DKind.Transform, { scale, offsetX: 0, offsetY: 0 });
+		renderHeadlessHost2DEntry(context, Host2DKind.Glyphs, text);
+		for (let y = 0; y < 48; y += 1) {
+			for (let x = 0; x < 64; x += 1) {
+				for (let channel = 0; channel < 4; channel += 1) {
+					const source = (Math.trunc(y / scale) * 64 + Math.trunc(x / scale)) * 4 + channel;
+					assert.equal(target[(y * 64 + x) * 4 + channel], original[source], `${scale}x: ${x},${y}:${channel}`);
+				}
 			}
 		}
 	}

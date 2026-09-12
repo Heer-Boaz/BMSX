@@ -73,8 +73,8 @@ export async function testStudioContextMenu(test: StudioFixture): Promise<void> 
 	// Empty canvas must not keep the previous node as an edit target.
 	view.pan(-1000, -1000); await frame();
 	await click({ left: view.bounds.left + 2, right: view.bounds.left + 3, top: view.bounds.top + 2, bottom: view.bounds.top + 3 }, 1, 'pointer_secondary');
-	check(menu.visible && view.selection === null && menu.model.rows.some(row => row.command === 'graph.zoomIn' && row.enabled)
-		&& menu.model.rows.every(row => row.command === undefined || !row.command.startsWith('behaviorLens.')),
+	check(menu.visible && view.selection === null && menu.model.rows.some(row => row.command === 'undo' && row.enabled)
+		&& menu.model.rows.every(row => row.command === 'undo' || row.command === 'redo'),
 		'context menu: canvas is its own target, not the previously selected node');
 	await press('ControlLeft', 'ShiftLeft', 'KeyP');
 	check(!menu.visible && ide.editor.quickInput.visible, 'context menu: command palette replaces popup through normal focus ownership');
