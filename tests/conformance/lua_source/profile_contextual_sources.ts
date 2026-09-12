@@ -4,10 +4,15 @@ import type { LuaSourceCall } from '../../../toolchain/ts/lua/semantic/source_ca
 import type { LuaSourceValueQuery } from '../../../toolchain/ts/lua/semantic/source_value_query';
 import { medianMilliseconds } from '../../helpers/performance';
 
+const members = process.argv.includes('--members');
 for (const callers of [1, 64, 256, 1024]) {
-	const lines = ['local function observe(id, definition) end', 'local function identity(value) return value end',
+	const lines = members ? ['local function observe(id, definition) end',
+		'local function make(id, task) return { id = id, definition = { task = task } } end',
+		'local function relay(object) observe(object.id, object.definition.task) end']
+		: ['local function observe(id, definition) end', 'local function identity(value) return value end',
 		'local function relay(id, definition) local alias = definition; observe(id, identity(alias)) end'];
-	for (let index = 0; index < callers; index += 1) lines.push(`relay('id-${index}', 'definition-${index}')`);
+	for (let index = 0; index < callers; index += 1) lines.push(members
+		? `relay(make('id-${index}', 'definition-${index}'))` : `relay('id-${index}', 'definition-${index}')`);
 	const file = buildLuaFileSemanticData(lines.join('\n'), 'source-tuples.lua');
 	const site = file.callSites.find(site => site.reference?.name === 'observe')!;
 	function create() {
@@ -23,9 +28,13 @@ for (const callers of [1, 64, 256, 1024]) {
 	}
 	const coldQueryMilliseconds = medianMilliseconds(() => {
 		const { heads, query } = create();
+		// Admit every requested field before capturing answers: discovering a
+		// nested field can invalidate an earlier read of that same factory base.
+		read(query, heads);
 		read(query, heads);
 	});
 	const { resolver, heads, query } = create();
+	read(query, heads);
 	read(query, heads);
 	const before = resolver.getSemanticQueryMetrics();
 	const evaluations = query.evaluations;
@@ -38,6 +47,7 @@ for (const callers of [1, 64, 256, 1024]) {
 	assert.ok(resultCount > 0);
 	assert.equal(query.evaluations, evaluations);
 	assert.deepEqual(resolver.getSemanticQueryMetrics(), before);
-	console.log(JSON.stringify({ callers, coldQueryMilliseconds, retainedQueryMicroseconds, sourceEvaluations: evaluations, metrics: before,
-		boundary: 'retained file facts; fresh workspace/query store, discovery and both argument traces through aliases and a return call; no parse, guest execution or rendering' }));
+	console.log(JSON.stringify({ kind: members ? 'factory-fields' : 'call-aliases', callers, coldQueryMilliseconds,
+		retainedQueryMicroseconds, sourceEvaluations: evaluations, metrics: before,
+		boundary: 'retained file facts; fresh workspace/query store, all argument demands then answer capture; no parse, guest execution or rendering' }));
 }

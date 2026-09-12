@@ -42,6 +42,17 @@ entrypoints on baseline/current bundles.
 Run it with the same command as the other profilers, without concurrent tests.
 Scope, primary references and remaining gaps: `docs/lua_parameter_context.md`.
 
+Named field provenance additionally runs through the existing contextual-source
+and call-context fixtures: factory instances, captured storage, equal RHS write
+occurrences, imports, unresolved bases and later admitted writers. The shared
+`profile_contextual_sources.ts --members` fixture traces both argument lanes
+through nested factory fields; without the flag it retains the call/alias
+comparison. It admits the requested field facts before capturing the retained
+answers, and includes both passes in its cold measurement. A newly discovered
+field can invalidate an earlier read of the same factory base. These source
+answers are may-provenance, not authoring completeness certificates; see
+`docs/lua_member_source_provenance.md`.
+
 `semantic_receiver_binding.test.ts` extends the binding contract to implicit
 parameters, including O0/O3 compiled execution and receiver-dependent forwarding
 chains. `capture_retention.test.ts` exercises rebinding a real captured receiver

@@ -1,9 +1,9 @@
 import type { CallApplication, SemanticCallContext } from './call_context';
 import type { SemanticCallGraph } from './call_graph';
-import type { FunctionSummaryID, FunctionSummaryStore } from './function_summary';
+import type { FunctionSummaryID, FunctionSummaryStore, TermID } from './function_summary';
 import type { SemanticInstantiationQuery } from './instantiate';
 import { SemanticQueryEvaluation } from './query_dependencies';
-import type { CallValueEntry, FunctionValueFlowEntry } from './value_graph';
+import type { CallValueEntry, FunctionValueFlowEntry, SemanticValueSource } from './value_graph';
 
 /** Analysis/source contexts, not runtime activations or serialized frame identifiers. */
 export type LuaSourceActivation =
@@ -75,6 +75,13 @@ export class LuaSourceCallQuery {
 	public inActivation(site: CallValueEntry, activation: LuaSourceActivation): LuaSourceCall {
 		const frame = this.framesByActivation.get(activation)!;
 		return this.sourceCall(this.calls.callContext(site, frame));
+	}
+
+	/** Source analysis scopes use the same term projection as bound call inputs. */
+	public contextualize(source: SemanticValueSource, activation: LuaSourceActivation): TermID {
+		const term = this.summaries.terms.compileSource(source);
+		const frame = this.framesByActivation.get(activation)!;
+		return frame < 0 ? this.summaries.projectExternalTerm(term) : this.instantiation.contextualize(term, frame);
 	}
 
 	public applications(call: LuaSourceCall): readonly LuaSourceCallApplication[] {
@@ -184,7 +191,7 @@ export class LuaSourceCallQuery {
 	}
 
 	/** Closure ancestry is lexical, independent of the incoming caller edges. */
-	private activation(frame: number): LuaSourceActivation {
+	public activation(frame: number): LuaSourceActivation {
 		return frame === 0 ? this.module : this.functionActivation(frame);
 	}
 

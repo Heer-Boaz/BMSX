@@ -4533,6 +4533,17 @@ separate from caller ancestry. Known applications and positive frames are not
 an exhaustive caller set or execution proof. See [source call graph and open
 closure-use discovery](lua_source_call_graph.md).
 
+Named-member source reads consume the member solver's matched write rows, not
+a declaration's display location or a second alias traversal in Studio. Each
+summary write retains its original binder write; instantiation retains the
+writer's module, projected-body or call frame beside it. Equal RHS values do
+not collapse distinct source occurrences or writer contexts. Navigation still
+projects declaration ids at its own result boundary. A source read retains its
+base and known origins even when unresolved contributions remain; neither a
+nonempty witness set nor a single terminal establishes completeness. Numeric
+and dynamic index sources remain explicit boundaries. See
+[named-member provenance and its validation](lua_member_source_provenance.md).
+
 Declaration-value facts also retain the function body containing each write,
 independently of the destination declaration's lexical owner. Summaries index
 those facts by body once; module aliases consume only module-owned writes.

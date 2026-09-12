@@ -25,7 +25,7 @@ function callQueries(source: string, extraFiles: readonly FileSemanticData[] = [
 	const instantiation = new SemanticInstantiationQuery(summaries, demand, (call, frame) => worklist.enqueue(call, frame));
 	const members = new SemanticMemberQuery(summaries, instantiation);
 	const graph = new SemanticCallGraph(summaries, demand, instantiation, members, worklist);
-	return { file, summaries, demand, worklist, instantiation, graph };
+	return { file, summaries, demand, worklist, instantiation, graph, members };
 }
 
 test('every navigation callsite retains its original binder call, including anonymous and computed callees', () => {
@@ -185,12 +185,12 @@ absent(1)`);
 });
 
 test('a contextual return trace tracks a negative callee row and preserves earlier graph consistency', () => {
-	const { file, summaries, demand, instantiation, graph } = callQueries(`local function record(value) end
+	const { file, summaries, demand, instantiation, graph, members } = callQueries(`local function record(value) end
 local function target() return 7 end
 record(absent())`);
 	const calls = new LuaSourceCallQuery(summaries, instantiation, graph);
 	const written = new LuaWrittenSourceQuery([file], new Map(file.decls.map(declaration => [declaration.id, declaration])));
-	const values = new LuaSourceValueQuery(written, calls, summaries);
+	const values = new LuaSourceValueQuery(written, calls, summaries, instantiation, members, graph);
 	const record = file.callSites.find(site => site.reference?.name === 'record')!.call;
 	const root = values.argument(calls.ancestry(record).heads[0], 0);
 	const before = values.trace(root);
@@ -210,14 +210,14 @@ record(absent())`);
 });
 
 test('a contextual input trace observes later callers of a shared frame without losing the old edge labels', () => {
-	const { file, summaries, demand, instantiation, graph } = callQueries(`local function record(value) end
+	const { file, summaries, demand, instantiation, graph, members } = callQueries(`local function record(value) end
 local function consume(value) record(value) end
 local function relay() consume('same') end
 relay()
 absent()`);
 	const calls = new LuaSourceCallQuery(summaries, instantiation, graph);
 	const written = new LuaWrittenSourceQuery([file], new Map(file.decls.map(declaration => [declaration.id, declaration])));
-	const values = new LuaSourceValueQuery(written, calls, summaries);
+	const values = new LuaSourceValueQuery(written, calls, summaries, instantiation, members, graph);
 	const record = file.functionValueFlows[1].calls[0];
 	const head = calls.ancestry(record).heads.find(call => call.caller.kind === 'invocation')!;
 	const root = values.argument(head, 0);
@@ -233,6 +233,39 @@ absent()`);
 	const oldApplications = before.edges.filter(edge => edge.kind === 'argument').map(edge => edge.application);
 	assert.ok(oldApplications.every(application => after.edges.some(edge => edge.kind === 'argument' && edge.application === application)));
 	assert.equal(before.edges.filter(edge => edge.kind === 'argument').length, 2);
+	assert.equal(values.trace(root), after);
+});
+
+test('a field source trace observes a later admitted writer without rewriting the earlier trace', () => {
+	const { file, summaries, demand, instantiation, graph, members } = callQueries(`local function record(value) end
+local object = { task = 'initial' }
+local function install(value) object.task = value end
+record(object.task)
+absent('later')`);
+	const calls = new LuaSourceCallQuery(summaries, instantiation, graph);
+	const written = new LuaWrittenSourceQuery([file], new Map(file.decls.map(declaration => [declaration.id, declaration])));
+	const values = new LuaSourceValueQuery(written, calls, summaries, instantiation, members, graph);
+	const record = file.callSites.find(site => site.reference?.name === 'record')!.call;
+	const root = values.argument(calls.ancestry(record).heads[0], 0);
+	const before = values.trace(root);
+	assert.equal(before.memberReads[0].origins.length, 2);
+	assert.deepEqual(new Set(before.memberReads[0].origins.map(origin => origin.activation.kind)), new Set(['module', 'projection']));
+	assert.equal(before.terminals.length, 1);
+	assert.deepEqual(before.boundaries.map(boundary => boundary.reason), ['parameter-input']);
+	const absent = demand.topLevelCalls.find(call => call.site.expression.callee.kind === LuaSyntaxKind.IdentifierExpression
+		&& call.site.expression.callee.name === 'absent')!;
+	const install = summaries.list().find(summary => summary.writes.length > 0)!;
+	instantiation.values.add(absent.callee, install.functionValue);
+	graph.callContexts(absent.site);
+	const after = values.trace(root);
+	assert.notEqual(after, before);
+	assert.equal(after.memberReads[0].origins.length, 3);
+	assert.equal(before.memberReads[0].origins.length, 2);
+	assert.equal(after.terminals.length, 2);
+	assert.ok(after.terminals.some(source => source.source.value.root.kind === 'literal'
+		&& source.source.value.root.literal.value === 'later'));
+	assert.ok(before.memberReads[0].origins.every(origin => after.memberReads[0].origins.includes(origin)));
+	assert.equal(after.memberReads[0].origins.filter(origin => origin.activation.kind === 'invocation').length, 1);
 	assert.equal(values.trace(root), after);
 });
 

@@ -174,7 +174,9 @@ export class LuaSemanticQueryStore {
 
 	public contextualSources(written: LuaWrittenSourceQuery): LuaSourceValueQuery {
 		if (this.sourceCalls === undefined) this.sourceCalls = new LuaSourceCallQuery(this.summaries, this.instantiation, this.calls);
-		if (this.sourceValues === undefined) this.sourceValues = new LuaSourceValueQuery(written, this.sourceCalls, this.summaries);
+		if (this.sourceValues === undefined) {
+			this.sourceValues = new LuaSourceValueQuery(written, this.sourceCalls, this.summaries, this.instantiation, this.members, this.calls);
+		}
 		return this.sourceValues;
 	}
 

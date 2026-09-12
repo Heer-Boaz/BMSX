@@ -140,12 +140,17 @@ export class SemanticDemandIndex {
 			}
 			for (let memberIndex = 0; memberIndex < file.memberValues.length; memberIndex += 1) {
 				const member = file.memberValues[memberIndex];
-				this.appendStaticWrite({
-					base: summaries.terms.compileSource(member.owner),
-					name: summaries.terms.nameId(member.name),
-					value: summaries.terms.compileSource(declarationValueSource(member.declId)),
-					declaration: member.declId,
-				});
+				const base = summaries.terms.compileSource(member.owner);
+				const name = summaries.terms.nameId(member.name);
+				const value = summaries.terms.compileSource(declarationValueSource(member.declId));
+				const sources = file.declarationValuesByDeclaration.get(member.declId);
+				let authored = false;
+				if (sources !== undefined) for (const source of sources) {
+					if (source.flow !== undefined) continue;
+					authored = true;
+					this.appendStaticWrite({ base, name, value, declaration: member.declId, source });
+				}
+				if (!authored) this.appendStaticWrite({ base, name, value, declaration: member.declId, source: undefined });
 			}
 			for (let callIndex = 0; callIndex < file.callValues.length; callIndex += 1) {
 				const call = this.compileTopLevelCall(file.callValues[callIndex]);

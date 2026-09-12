@@ -16,7 +16,7 @@ type MemberRead = {
 	readonly id: number;
 	readonly name: SemanticNameID;
 	readonly values: TermID[];
-	readonly declarations: SymbolID[];
+	readonly writes: number[];
 };
 
 export class SemanticMemberQuery {
@@ -27,7 +27,7 @@ export class SemanticMemberQuery {
 	private readonly alternativeSeen: number[][] = [];
 	private readonly alternativeGeneration: number[] = [];
 	private readonly memberValues: TermID[][] = [];
-	private readonly memberDeclarations: SymbolID[][] = [];
+	private readonly matchedMemberWrites: number[][] = [];
 	private readonly memberReads: MemberRead[][] = [];
 	private readonly memberReadEvaluation: SemanticQueryEvaluation;
 	private memberReadCount = 0;
@@ -123,9 +123,9 @@ export class SemanticMemberQuery {
 		this.symbolGeneration += 1;
 		for (let queryIndex = 0; queryIndex < this.queryTerms.length; queryIndex += 1) {
 			this.demandValue(this.queryTerms[queryIndex]);
-			const declarations = this.collectMemberValues(this.queryTerms[queryIndex], name, 0).declarations;
-			for (let declarationIndex = 0; declarationIndex < declarations.length; declarationIndex += 1) {
-				const declaration = declarations[declarationIndex];
+			const writes = this.collectMemberValues(this.queryTerms[queryIndex], name, 0).writes;
+			for (let index = 0; index < writes.length; index += 1) {
+				const declaration = this.instantiation.writes.declaration(writes[index]);
 				if (this.symbolSeen.get(declaration) !== this.symbolGeneration) {
 					this.symbolSeen.set(declaration, this.symbolGeneration);
 					out.push(declaration);
@@ -152,6 +152,13 @@ export class SemanticMemberQuery {
 				}
 			}
 		}
+	}
+
+	/** Exact join witnesses in this context, not declarations rediscovered by name. */
+	public writes(base: TermID, name: SemanticNameID): readonly number[] {
+		this.instantiation.demandName(name);
+		this.demandValue(base);
+		return this.collectMemberValues(base, name, 0).writes;
 	}
 
 	public resolveCallable(
@@ -441,21 +448,21 @@ export class SemanticMemberQuery {
 			}
 		}
 		if (!read) {
-			read = { id: this.memberReadCount++, name, values: [], declarations: [] };
+			read = { id: this.memberReadCount++, name, values: [], writes: [] };
 			reads.push(read);
 		}
 		if (this.memberReadEvaluation.isCurrent(read.id) || this.memberReadEvaluation.isComputing(read.id)) return read;
 		this.memberReadEvaluation.begin(read.id);
 		const values = this.memberValuesAtDepth(depth);
-		const declarations = this.memberDeclarationsAtDepth(depth);
+		const matchedWrites = this.matchedMemberWritesAtDepth(depth);
 		values.length = 0;
-		declarations.length = 0;
+		matchedWrites.length = 0;
 		const seen = this.memberSeenAtDepth(depth);
 		const generation = this.nextMemberGeneration(depth);
-		this.collectMemberValuesRecursive(base, name, values, declarations, seen, generation, depth, false, true);
+		this.collectMemberValuesRecursive(base, name, values, matchedWrites, seen, generation, depth, false, true);
 		const valuesChanged = updateQueryResult(read.values, values);
-		const declarationsChanged = updateQueryResult(read.declarations, declarations);
-		this.memberReadEvaluation.end(read.id, valuesChanged || declarationsChanged);
+		const matchedWritesChanged = updateQueryResult(read.writes, matchedWrites);
+		this.memberReadEvaluation.end(read.id, valuesChanged || matchedWritesChanged);
 		return read;
 	}
 
@@ -463,7 +470,7 @@ export class SemanticMemberQuery {
 		base: TermID,
 		name: SemanticNameID,
 		values: TermID[],
-		declarations: SymbolID[],
+		matchedWrites: number[],
 		seen: number[],
 		generation: number,
 		depth: number,
@@ -494,7 +501,7 @@ export class SemanticMemberQuery {
 				if (writes.name(link) === name) {
 					direct = true;
 					values.push(writes.value(link));
-					declarations.push(writes.declaration(link));
+					matchedWrites.push(link);
 				}
 			}
 			const member = terms.retainedMember(alternative, name);
@@ -510,7 +517,7 @@ export class SemanticMemberQuery {
 					if (writes.name(link) === name) {
 						direct = true;
 						values.push(writes.value(link));
-						declarations.push(writes.declaration(link));
+						matchedWrites.push(link);
 					}
 				}
 				const instanceMember = terms.retainedMember(instance, name);
@@ -545,7 +552,7 @@ export class SemanticMemberQuery {
 			}
 			for (let match = 0; match < matches.length; match += 1) {
 				values.push(writes.value(matches[match]));
-				declarations.push(writes.declaration(matches[match]));
+				matchedWrites.push(matches[match]);
 			}
 			if (values.length !== initialValueCount) {
 				return;
@@ -559,7 +566,7 @@ export class SemanticMemberQuery {
 					terms.base(alternative),
 					name,
 					values,
-					declarations,
+					matchedWrites,
 					seen,
 					generation,
 					depth + 1,
@@ -576,7 +583,7 @@ export class SemanticMemberQuery {
 						prototypeOwners[ownerIndex],
 						name,
 						values,
-						declarations,
+						matchedWrites,
 						seen,
 						generation,
 						depth + 1,
@@ -593,7 +600,7 @@ export class SemanticMemberQuery {
 						semanticOwners[ownerIndex],
 						name,
 						values,
-						declarations,
+						matchedWrites,
 						seen,
 						generation,
 						depth + 1,
@@ -611,7 +618,7 @@ export class SemanticMemberQuery {
 					prototypeSources[sourceIndex],
 					name,
 					values,
-					declarations,
+					matchedWrites,
 					seen,
 					generation,
 					depth + 1,
@@ -629,7 +636,7 @@ export class SemanticMemberQuery {
 						semanticSources[sourceIndex],
 						name,
 						values,
-						declarations,
+						matchedWrites,
 						seen,
 						generation,
 						depth + 1,
@@ -977,13 +984,13 @@ export class SemanticMemberQuery {
 		return values;
 	}
 
-	private memberDeclarationsAtDepth(depth: number): SymbolID[] {
-		let declarations = this.memberDeclarations[depth];
-		if (!declarations) {
-			declarations = [];
-			this.memberDeclarations[depth] = declarations;
+	private matchedMemberWritesAtDepth(depth: number): number[] {
+		let writes = this.matchedMemberWrites[depth];
+		if (!writes) {
+			writes = [];
+			this.matchedMemberWrites[depth] = writes;
 		}
-		return declarations;
+		return writes;
 	}
 
 	private memberSeenAtDepth(depth: number): number[] {

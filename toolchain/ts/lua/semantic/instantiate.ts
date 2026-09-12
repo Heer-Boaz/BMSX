@@ -12,7 +12,7 @@ import {
 import type { SymbolID } from './model';
 import { SemanticDependencyIndex, type SemanticQueryDependencies } from './query_dependencies';
 import { BidirectionalTermRelation, TermRelation } from './term_relation';
-import type { CallValueEntry } from './value_graph';
+import type { CallValueEntry, DeclarationValueEntry } from './value_graph';
 
 export class WriteSet {
 	private readonly baseDependencies: SemanticDependencyIndex;
@@ -25,6 +25,8 @@ export class WriteSet {
 	private readonly names: SemanticNameID[] = [];
 	private readonly values: TermID[] = [];
 	private readonly declarations: SymbolID[] = [];
+	private readonly sources: (DeclarationValueEntry | undefined)[] = [];
+	private readonly frames: number[] = [];
 	private readonly nextByBase: number[] = [];
 	private readonly nextByName: number[] = [];
 
@@ -33,11 +35,12 @@ export class WriteSet {
 		this.nameDependencies = new SemanticDependencyIndex(dependencies);
 	}
 
-	public add(write: SummaryWrite): boolean {
+	public add(write: SummaryWrite, frame: number): boolean {
 		for (let link = this.firstByBase[write.base] || 0; link !== 0; link = this.next(link)) {
 			if (this.name(link) === write.name
 				&& this.value(link) === write.value
-				&& this.declaration(link) === write.declaration) {
+				&& this.declaration(link) === write.declaration
+				&& this.source(link) === write.source && this.frame(link) === frame) {
 				return false;
 			}
 		}
@@ -46,6 +49,8 @@ export class WriteSet {
 		this.names.push(write.name);
 		this.values.push(write.value);
 		this.declarations.push(write.declaration);
+		this.sources.push(write.source);
+		this.frames.push(frame);
 		this.nextByBase.push(0);
 		this.nextByName.push(0);
 		const tail = this.lastByBase[write.base] || 0;
@@ -99,6 +104,15 @@ export class WriteSet {
 
 	public declaration(link: number): SymbolID {
 		return this.declarations[link - 1];
+	}
+
+	public source(link: number): DeclarationValueEntry | undefined {
+		return this.sources[link - 1];
+	}
+
+	/** Module 0, projected body -summary, or an admitted positive invocation frame. */
+	public frame(link: number): number {
+		return this.frames[link - 1];
 	}
 }
 
@@ -279,7 +293,7 @@ export class SemanticInstantiationQuery {
 		this.demandedNameList.push(name);
 		const staticWrites = this.demand.staticWrites(name);
 		for (let writeIndex = 0; writeIndex < staticWrites.length; writeIndex += 1) {
-			this.addWrite(staticWrites[writeIndex]);
+			this.addWrite(staticWrites[writeIndex], 0);
 		}
 		for (let frameIndex = 0; frameIndex < this.activeFrames.length; frameIndex += 1) {
 			this.materializeFrameWrites(this.activeFrames[frameIndex], name);
@@ -555,7 +569,8 @@ export class SemanticInstantiationQuery {
 					name,
 					value: this.contextualize(write.value, frame),
 					declaration: write.declaration,
-				});
+					source: write.source,
+				}, frame);
 			}
 		}
 	}
@@ -570,7 +585,8 @@ export class SemanticInstantiationQuery {
 					name,
 					value: this.summaries.projectExternalTerm(write.value),
 					declaration: write.declaration,
-				});
+					source: write.source,
+				}, -summaryId);
 			}
 		}
 	}
@@ -603,8 +619,8 @@ export class SemanticInstantiationQuery {
 		}
 	}
 
-	private addWrite(write: SummaryWrite): void {
-		if (!this.writes.add(write)) {
+	private addWrite(write: SummaryWrite, frame: number): void {
+		if (!this.writes.add(write, frame)) {
 			return;
 		}
 		this.addValue(this.summaries.terms.member(write.base, write.name), write.value);

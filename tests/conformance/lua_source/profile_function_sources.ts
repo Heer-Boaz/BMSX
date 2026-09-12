@@ -6,12 +6,13 @@ import { WorkspaceValueIdentityIndex } from '../../../toolchain/ts/lua/semantic/
 import { buildLuaFileSemanticData, buildLuaSemanticWorkspaceSnapshot } from '../../../toolchain/ts/lua/semantic/model';
 
 // Uses the pre-existing public owners so the same harness can bundle a baseline.
+const sharedField = process.argv.includes('--shared-field');
 for (const [declarationStyle, functions] of [['function', 32], ['function', 1024], ['method', 32], ['method', 1024]] as const) {
 	const declarations = ['local api<const> = {}'];
 	for (let index = 0; index < functions; index += 1) {
 		declarations.push(declarationStyle === 'method'
-			? `function api:create_${index}() return self end`
-			: `function api.create_${index}(value) return value end`);
+			? `function api:create_${index}() ${sharedField ? 'api.selected = self;' : ''} return self end`
+			: `function api.create_${index}(value) ${sharedField ? 'api.selected = value;' : ''} return value end`);
 	}
 	declarations.push('local result<const> = api.create_0({ token = true })', 'return result.token');
 	const source = declarations.join('\n');
@@ -42,7 +43,7 @@ for (const [declarationStyle, functions] of [['function', 32], ['function', 1024
 		for (let index = 0; index < 10000; index += 1) retainedCount += snapshot.symbolResolver.resolveReferenceTargets(reference).length;
 	}) / 10;
 	assert.ok(retainedCount > 0);
-	console.log(JSON.stringify({ declarationStyle, functions, sourceUtf16: source.length, binderMilliseconds, summaryMilliseconds,
+	console.log(JSON.stringify({ declarationStyle, functions, sharedField, sourceUtf16: source.length, binderMilliseconds, summaryMilliseconds,
 		queryMilliseconds, retainedQueryMicroseconds, metrics: snapshot.symbolResolver.getSemanticQueryMetrics(),
 		boundary: 'retained parse; ten binds per sample; fresh identities+summaries or fresh workspace+first member query per sample; 10000 retained lookups per sample; no parsing, rendering, guest execution or Hot Resume' }));
 }

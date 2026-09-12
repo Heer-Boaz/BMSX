@@ -51,6 +51,8 @@ export type SummaryWrite = {
 	readonly name: SemanticNameID;
 	readonly value: TermID;
 	readonly declaration: SymbolID;
+	/** Exact authored RHS; inferred shape members have no source write. */
+	readonly source: DeclarationValueEntry | undefined;
 };
 
 export type SummaryAlias = {
@@ -714,37 +716,38 @@ export class FunctionSummaryStore {
 		flow: FunctionValueFlowEntry,
 		declarationValues: readonly DeclarationValueEntry[],
 	): FunctionSummary {
-		const valuesByDeclaration = new Map<SymbolID, TermID[]>();
+		const writesByDeclaration = new Map<SymbolID, DeclarationValueEntry[]>();
 		for (let valueIndex = 0; valueIndex < declarationValues.length; valueIndex += 1) {
 			const entry = declarationValues[valueIndex];
-			let values = valuesByDeclaration.get(entry.declId);
-			if (!values) {
-				values = [];
-				valuesByDeclaration.set(entry.declId, values);
+			let writes = writesByDeclaration.get(entry.declId);
+			if (!writes) {
+				writes = [];
+				writesByDeclaration.set(entry.declId, writes);
 			}
-			const value = this.terms.compileSource(entry.source);
-			if (!values.includes(value)) values.push(value);
+			writes.push(entry);
 		}
 
 		const writes: SummaryWrite[] = [];
 		for (let memberIndex = 0; memberIndex < flow.members.length; memberIndex += 1) {
 			const member = flow.members[memberIndex];
-			const values = valuesByDeclaration.get(member.declId);
-			if (values === undefined) {
+			const sources = writesByDeclaration.get(member.declId);
+			if (sources === undefined) {
 				writes.push({
 					base: this.terms.compileSource(member.owner),
 					name: this.terms.nameId(member.name),
 					value: this.terms.compileSource(declarationValueSource(member.declId)),
 					declaration: member.declId,
+					source: undefined,
 				});
 				continue;
 			}
-			for (let valueIndex = 0; valueIndex < values.length; valueIndex += 1) {
+			for (const source of sources) {
 				writes.push({
 					base: this.terms.compileSource(member.owner),
 					name: this.terms.nameId(member.name),
-					value: values[valueIndex],
+					value: this.terms.compileSource(source.source),
 					declaration: member.declId,
+					source,
 				});
 			}
 		}
@@ -759,10 +762,16 @@ export class FunctionSummaryStore {
 				aliases.push({ target: binding, source: parameter, relation: 'value' });
 			}
 		}
-		for (const [declId, values] of valuesByDeclaration) {
+		for (const [declId, sources] of writesByDeclaration) {
 			const target = this.terms.compileSource(declarationValueSource(declId));
-			for (let valueIndex = 0; valueIndex < values.length; valueIndex += 1) {
-				aliases.push({ target, source: values[valueIndex], relation: 'value' });
+			const firstAlias = aliases.length;
+			for (const source of sources) {
+				const value = this.terms.compileSource(source.source);
+				let retained = false;
+				for (let index = firstAlias; index < aliases.length; index += 1) {
+					if (aliases[index].source === value) { retained = true; break; }
+				}
+				if (!retained) aliases.push({ target, source: value, relation: 'value' });
 			}
 		}
 		for (let assignmentIndex = 0; assignmentIndex < flow.assignments.length; assignmentIndex += 1) {

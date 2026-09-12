@@ -16,6 +16,7 @@ function writtenLines(sources: readonly LuaWrittenSource[]): number[] {
 	return sources.map(source => {
 		switch (source.kind) {
 			case 'expression': return source.expression.range.start.line;
+			case 'member-base': return writtenLines([source.read])[0];
 			case 'binding-input': return source.declaration.range.start.line;
 			case 'module-export': return source.export.statement.range.start.line;
 			case 'module-bypass': return source.statement.range.start.line;
@@ -150,7 +151,7 @@ local function forward(value) return value end
 return imported, imported.item, imported[computed_key], forward({})`);
 	const result = file.chunk.body[2] as LuaReturnStatement;
 	const traces = result.expressions.map(expression => query.trace(query.expression(file, expression)));
-	assert.deepEqual(traces.map(trace => trace.boundaries[0].reason), ['module', 'access-path', 'access-path', 'call-result']);
+	assert.deepEqual(traces.map(trace => trace.boundaries[0].reason), ['module', 'member-read', 'access-path', 'call-result']);
 	assert.equal(traces[1].boundaries[0].source.value.steps[0].kind, 'member');
 	assert.equal(traces[2].boundaries[0].source.value.steps[0].kind, 'index');
 	const returned = file.functionValueFlows[0].returns[0].statement.expressions[0];

@@ -162,9 +162,10 @@ Known factory returns can now lead back through arguments into a different
 file. The result also retains a **call-result boundary** with its callee source
 point and known applications, including an empty application set. One known
 function is not an exhaustive-callee certificate: a conditional unknown
-replacement remains reachable by tracing that callee source. Member/index
-paths remain explicit boundaries of the written-source owner, not a hidden
-second field evaluator in this query or a Lens-specific exception.
+replacement remains reachable by tracing that callee source. Named member
+paths are now handled by the subsequent [member-source boundary](lua_member_source_provenance.md),
+using the existing contextual write joins. Numeric/dynamic indices remain
+explicit boundaries, not a hidden second evaluator or Lens-specific exception.
 
 ### Review and validation obligations
 

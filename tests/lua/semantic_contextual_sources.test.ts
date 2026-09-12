@@ -49,6 +49,172 @@ function moduleRootedHeads(graph: LuaSourceCallGraph): readonly LuaSourceCall[] 
 	return graph.heads.filter(head => reached.has(head.caller));
 }
 
+test('named reads retain the writer context of separate factory results and nested fields', () => {
+	const source = `local seen = {}
+local function record(id, definition) seen[id] = definition.task end
+local function make(id, task)
+ return { id = id, definition = { task = task } }
+end
+local left = make('left', 'walk')
+local right = make('right', 'run')
+record(left.id, left.definition, left.definition.task)
+record(right.id, right.definition, right.definition.task)
+return seen.left == 'walk', seen.right == 'run'`;
+	const f = queries(source);
+	const calls = f.file.callSites.filter(site => site.reference?.name === 'record');
+	for (const [index, site] of calls.entries()) {
+		const call = f.resolver.callSources(site).heads[0];
+		const id = f.values.trace(f.values.argument(call, 0));
+		assert.deepEqual(literals(id), [index === 0 ? 'left' : 'right']);
+		const definition = f.values.trace(f.values.argument(call, 1));
+		assert.equal(definition.terminals.length, 1);
+		assert.equal(definition.terminals[0].source.value.root.kind, 'owned');
+		assert.equal(definition.terminals[0].activation.kind, 'invocation');
+		const task = f.values.trace(f.values.argument(call, 2));
+		assert.deepEqual(literals(task), [index === 0 ? 'walk' : 'run']);
+		assert.equal(task.memberReads.length, 1);
+		assert.equal(task.memberReads[0].name, 'task');
+		assert.equal(f.values.trace(task.memberReads[0].base).terminals[0], definition.terminals[0]);
+		assert.equal(id.memberReads[0].origins[0].activation, task.memberReads[0].origins[0].activation);
+		assert.equal(f.values.trace(definition.root), definition);
+	}
+	for (const optimization of [0, 3] as const) assert.deepEqual(runCompiledLua(source, f.file.file, optimization), [true, true]);
+});
+
+test('same-name tables and equal field values retain separate authored write occurrences', () => {
+	const source = `local function record(value) return value end
+local left = { task = 'same' }
+local right = { task = 'unrelated' }
+left.task = 'same'
+return record(left['task']) == 'same'`;
+	const f = queries(source);
+	const trace = f.values.trace(f.values.argument(f.calls('record').heads[0], 0));
+	assert.deepEqual(literals(trace), ['same', 'same']);
+	const origins = trace.memberReads[0].origins;
+	assert.equal(origins.length, 2);
+	assert.notEqual(origins[0], origins[1]);
+	for (const origin of origins) {
+		assert.equal(origin.activation.kind, 'module');
+		assert.ok(origin.source.kind === 'declaration-write');
+		assert.equal(f.resolver.writtenSources.write(origin.source.write), origin.source);
+	}
+	assert.equal(trace.edges.filter(edge => edge.kind === 'member' && edge.read === trace.memberReads[0]).length, 2);
+	for (const optimization of [0, 3] as const) assert.deepEqual(runCompiledLua(source, f.file.file, optimization), [true]);
+});
+
+test('imported factory fields carry their provider resource and actual argument context', () => {
+	const f = queries(`local function record(value) end
+local make = require('factory')
+local result = make('caller')
+record(result.definition.task)`, { 'factory.lua': `local function make(task)
+ return { definition = { task = task } }
+end
+return make` });
+	const trace = f.values.trace(f.values.argument(f.calls('record').heads[0], 0));
+	assert.deepEqual(literals(trace), ['caller']);
+	const read = trace.memberReads[0];
+	assert.equal(read.origins[0].source.file, f.files[1]);
+	assert.equal(read.origins[0].activation.kind, 'invocation');
+	assert.equal(trace.terminals[0].source.file, f.file);
+	assert.equal(f.values.trace(read.base).memberReads[0].origins[0].source.file, f.files[1]);
+});
+
+test('writes through captured storage retain their own writer frame, not the storage owner', () => {
+	const source = `local function record(value) return value end
+local function create(value)
+ local result = {}
+ local function install() result.task = value end
+ install()
+ return result
+end
+local first = create('walk')
+local second = create('run')
+return record(first.task) == 'walk', record(second.task) == 'run'`;
+	const f = queries(source);
+	const sites = f.file.callSites.filter(site => site.reference?.name === 'record');
+	for (const [index, site] of sites.entries()) {
+		const trace = f.values.trace(f.values.argument(f.resolver.callSources(site).heads[0], 0));
+		assert.deepEqual(literals(trace), [index === 0 ? 'walk' : 'run']);
+		const writer = trace.memberReads[0].origins[0].activation;
+		assert.ok(writer.kind === 'invocation');
+		assert.equal(writer.body, f.file.functionValueFlows.find(flow => flow.members.length === 1));
+		assert.equal(writer.lexicalOwner.kind, 'invocation');
+	}
+	for (const optimization of [0, 3] as const) assert.deepEqual(runCompiledLua(source, f.file.file, optimization), [true, true]);
+});
+
+test('known field writes do not erase unknown bases, unknown replacements or unwritten fields', () => {
+	const f = queries(`local function record(...) end
+local object = { task = 'walk' }
+if condition then object = external_factory() end
+object.task = another_factory()
+record(object.task, object.missing, object[1], object[key])`);
+	const call = f.calls('record').heads[0];
+	const task = f.values.trace(f.values.argument(call, 0));
+	assert.deepEqual(literals(task), ['walk']);
+	assert.equal(task.callResults.length, 1, 'the unknown RHS remains a call boundary beside the known write');
+	assert.equal(task.callResults[0].applications.length, 0);
+	const base = f.values.trace(task.memberReads[0].base);
+	assert.equal(base.callResults.length, 1, 'a known member does not close its storage origins');
+	assert.equal(base.callResults[0].applications.length, 0);
+	const missing = f.values.trace(f.values.argument(call, 1));
+	assert.equal(missing.memberReads.length, 1);
+	assert.equal(missing.memberReads[0].origins.length, 0);
+	assert.deepEqual(missing.boundaries.map(boundary => boundary.reason), ['unwritten-member']);
+	for (const lane of [2, 3]) {
+		const indexed = f.values.trace(f.values.argument(call, lane));
+		assert.equal(indexed.memberReads.length, 0);
+		assert.deepEqual(indexed.boundaries.map(boundary => boundary.reason), ['access-path']);
+	}
+});
+
+test('warm named-field traces retain their joins and do not re-evaluate unrelated fields', () => {
+	const f = queries(`local function record(value) end
+local function make(task) return { task = task } end
+local unrelated = { note = 'other' }
+record(make('retained').task, unrelated.note)`);
+	const call = f.calls('record').heads[0];
+	const root = f.values.argument(call, 0);
+	const trace = f.values.trace(root);
+	assert.deepEqual(literals(trace), ['retained']);
+	f.values.trace(f.values.argument(call, 1));
+	const before = f.resolver.getSemanticQueryMetrics();
+	const evaluated = f.values.evaluations;
+	for (let index = 0; index < 1000; index += 1) assert.equal(f.values.trace(root), trace);
+	assert.deepEqual(f.resolver.getSemanticQueryMetrics(), before);
+	assert.equal(f.values.evaluations, evaluated);
+});
+
+test('a field written in an uncalled body remains projected with an unresolved formal input', () => {
+	const f = queries(`local function record(value) end
+local function unused(value)
+ local object = { task = value }
+ record(object.task)
+end`);
+	const call = f.calls('record').heads.find(head => head.caller.kind === 'projection')!;
+	const trace = f.values.trace(f.values.argument(call, 0));
+	assert.equal(trace.memberReads[0].origins[0].activation, call.caller);
+	assert.equal(trace.terminals.length, 0);
+	assert.deepEqual(trace.boundaries.map(boundary => boundary.reason), ['parameter-input']);
+});
+
+test('a method callee retains the original named write through the existing prototype join', () => {
+	const source = `local function record(value) return value end
+local prototype = {}
+function prototype:run(value) return value end
+local object = setmetatable({}, { __index = prototype })
+return record(object:run('result')) == 'result'`;
+	const f = queries(source);
+	const trace = f.values.trace(f.values.argument(f.calls('record').heads[0], 0));
+	assert.deepEqual(literals(trace), ['result']);
+	const callee = f.values.trace(trace.callResults[0].callee);
+	assert.equal(callee.memberReads.length, 1);
+	assert.equal(callee.memberReads[0].name, 'run');
+	assert.equal(callee.terminals.length, 1);
+	assert.ok(callee.terminals[0].source.kind === 'declaration-write');
+	assert.equal(callee.terminals[0].source.write.syntax, f.file.chunk.body[2]);
+});
+
 test('written arguments follow ordinary aliases in the selected wrapper context, not a cross product', () => {
 	const source = `local seen = {}
 local function record(id, definition) seen[id] = definition end

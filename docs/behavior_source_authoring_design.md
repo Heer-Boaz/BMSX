@@ -105,6 +105,14 @@ blijven zichtbaar. Een queryvolgorde-bug tussen bodyprojectie en caller-vragen i
 gecorrigeerd. Volledige discovery van returned-closure-users, argument-substitutie
 en de resource-eigen editorconsument zijn hiermee nog niet af.
 
+De [contextuele bronwaarden](lua_source_call_graph.md#contextual-written-values-2026-09-12)
+volgen inmiddels geschreven argumenten en returnwaarden via die callcontexten.
+De [named-memberquery](lua_member_source_provenance.md) behoudt daarnaast de
+daadwerkelijke veldwrites met hun writercontext en bronbestand, ook bij nested
+factories en captured storage. Dit zijn mogelijke herkomsten, geen gesloten
+API-/runtimebewijs; de recognizer mag bekende kandidaten niet zonder meer als
+zekere registratie toelaten. B04-consumptie en B03/B06 blijven open.
+
 ## 1. Beslissing
 
 Behavior Lens wordt geen universele omkeerbare Lua-interpreter. Het is een

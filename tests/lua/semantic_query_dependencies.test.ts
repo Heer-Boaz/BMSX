@@ -271,10 +271,10 @@ test('write-index dependencies follow both the base and the requested member nam
 	queries.begin(1);
 	assert.equal(writes.firstName(first.name), 0);
 	queries.end(1);
-	writes.add(second);
+	writes.add(second, 0);
 	assert.equal(queries.isCurrent(0), true);
 	assert.equal(queries.isCurrent(1), true);
-	writes.add(first);
+	writes.add(first, 0);
 	assert.equal(queries.isCurrent(0), false);
 	assert.equal(queries.isCurrent(1), false);
 });
@@ -366,7 +366,7 @@ test('complete member reads share their negative result without manufacturing a 
 	assert.equal(members.memberEvaluations, evaluations);
 	assert.equal(summaries.terms.retainedMember(object, name), undefined);
 	const write = demand.staticWrites(name)[0];
-	instantiation.writes.add({ ...write, base: object });
+	instantiation.writes.add({ ...write, base: object }, 0);
 	members.resolveMembers(source, name, output);
 	assert.deepEqual(output, [write.declaration]);
 	assert.equal(members.memberEvaluations, evaluations + 1);

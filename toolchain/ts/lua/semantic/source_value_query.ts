@@ -1,4 +1,7 @@
 import type { FunctionSummaryStore } from './function_summary';
+import type { SemanticCallGraph } from './call_graph';
+import type { SemanticInstantiationQuery } from './instantiate';
+import type { SemanticMemberQuery } from './member_query';
 import { SemanticQueryEvaluation } from './query_dependencies';
 import type { LuaSourceActivation, LuaSourceCall, LuaSourceCallApplication, LuaSourceCallQuery } from './source_call_graph';
 import type { LuaSourceBoundary, LuaWrittenSource, LuaWrittenSourceQuery } from './written_sources';
@@ -16,7 +19,16 @@ export type LuaSourceValueEdge = {
 	| { readonly kind: 'written' }
 	| { readonly kind: 'argument'; readonly application: LuaSourceCallApplication }
 	| { readonly kind: 'return'; readonly application: LuaSourceCallApplication }
+	| { readonly kind: 'member'; readonly read: LuaSourceMemberRead }
 );
+
+/** A may-read keeps its base even when some named writes are known. */
+export type LuaSourceMemberRead = {
+	readonly source: LuaContextualSource;
+	readonly base: LuaContextualSource;
+	readonly name: string;
+	readonly origins: readonly LuaContextualSource[];
+};
 
 /** Known return contributions do not close the callee set of a dynamic call. */
 export type LuaSourceCallResult = {
@@ -34,6 +46,8 @@ export type LuaSourceValueTrace = {
 	readonly boundaries: readonly { readonly source: LuaContextualSource; readonly reason: LuaSourceBoundary }[];
 	/** Retained even with no known application. Not a singleton/exhaustiveness certificate. */
 	readonly callResults: readonly LuaSourceCallResult[];
+	/** Not an exhaustive field-value proof; consumers can trace the retained base. */
+	readonly memberReads: readonly LuaSourceMemberRead[];
 };
 
 /**
@@ -48,7 +62,8 @@ export class LuaSourceValueQuery {
 	private readonly evaluation: SemanticQueryEvaluation;
 
 	public constructor(private readonly written: LuaWrittenSourceQuery, private readonly calls: LuaSourceCallQuery,
-		private readonly summaries: FunctionSummaryStore) {
+		private readonly summaries: FunctionSummaryStore, private readonly instantiation: SemanticInstantiationQuery,
+		private readonly members: SemanticMemberQuery, private readonly callGraph: SemanticCallGraph) {
 		this.evaluation = new SemanticQueryEvaluation(summaries.terms.dependencies);
 	}
 
@@ -85,6 +100,7 @@ export class LuaSourceValueQuery {
 		const terminals: LuaContextualSource[] = [];
 		const boundaries: { source: LuaContextualSource; reason: LuaSourceBoundary }[] = [];
 		const callResults: LuaSourceCallResult[] = [];
+		const memberReads: LuaSourceMemberRead[] = [];
 		const seen = new Set<LuaContextualSource>(sources);
 		const add = (edge: LuaSourceValueEdge): void => {
 			edges.push(edge);
@@ -119,9 +135,35 @@ export class LuaSourceValueQuery {
 						add({ kind: 'return', from: current, to: this.source(returned, application.target), application });
 					}
 				}
+			} else if (inputs.reason === 'member-read') {
+				const base = this.calls.contextualize(inputs.base.value, current.activation);
+				const name = this.members.nameId(inputs.name);
+				this.instantiation.demandTermEffects(base);
+				this.instantiation.projectName(name);
+				this.instantiation.demandEffectName(name);
+				const owner = this.summaries.terms.summaryOwner(base);
+				if (owner !== undefined) this.callGraph.querySummary(owner);
+				this.callGraph.activate(base);
+				this.callGraph.solve();
+				const writes = this.members.writes(base, name);
+				const origins: LuaContextualSource[] = [];
+				const read: LuaSourceMemberRead = { source: current, base: this.source(inputs.base, current.activation), name: inputs.name, origins };
+				memberReads.push(read);
+				let unwritten = writes.length === 0;
+				for (const link of writes) {
+					const write = this.instantiation.writes.source(link);
+					if (write === undefined) { unwritten = true; continue; }
+					const origin = this.source(this.written.write(write), this.calls.activation(this.instantiation.writes.frame(link)));
+					if (!origins.includes(origin)) {
+						origins.push(origin);
+						add({ kind: 'member', from: current, to: origin, read });
+					}
+				}
+				if (unwritten) boundaries.push({ source: current, reason: 'unwritten-member' });
+				this.callGraph.solve();
 			} else boundaries.push({ source: current, reason: inputs.reason });
 		}
-		return { root, sources, edges, terminals, boundaries, callResults };
+		return { root, sources, edges, terminals, boundaries, callResults, memberReads };
 	}
 
 	private writeScope(source: LuaWrittenSource, activation: LuaSourceActivation): LuaSourceActivation {

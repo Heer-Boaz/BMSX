@@ -9,6 +9,7 @@ export type LuaWrittenSource = {
 	readonly value: SemanticValueSource;
 } & (
 	| { readonly kind: 'expression'; readonly expression: LuaExpression }
+	| { readonly kind: 'member-base'; readonly read: LuaWrittenSource }
 	| { readonly kind: 'binding-input'; readonly declaration: Decl }
 	| { readonly kind: 'receiver-input' }
 	| { readonly kind: 'module-export'; readonly export: ModuleValueEntry }
@@ -22,14 +23,15 @@ export type LuaWrittenSource = {
 );
 
 export type LuaSourceBoundary = 'unknown-value' | 'unbound-global' | 'unwritten-binding'
-	| 'access-path' | 'module' | 'module-publication' | 'call-result' | 'receiver' | 'parameter-input';
+	| 'access-path' | 'member-read' | 'unwritten-member' | 'module' | 'module-publication' | 'call-result' | 'receiver' | 'parameter-input';
 
 type LuaSourceContributions = { readonly kind: 'contributions'; readonly sources: readonly LuaWrittenSource[] };
 
 export type LuaWrittenSourceInputs =
 	| { readonly kind: 'terminal' }
 	| LuaSourceContributions
-	| { readonly kind: 'boundary'; readonly reason: Exclude<LuaSourceBoundary, 'call-result'> }
+	| { readonly kind: 'boundary'; readonly reason: Exclude<LuaSourceBoundary, 'call-result' | 'member-read'> }
+	| { readonly kind: 'boundary'; readonly reason: 'member-read'; readonly name: string; readonly base: LuaWrittenSource }
 	| { readonly kind: 'boundary'; readonly reason: 'call-result'; readonly call: CallValueEntry };
 
 /** A retained reachable source graph. Boundaries are not silently discarded origins. */
@@ -59,6 +61,7 @@ export class LuaWrittenSourceQuery {
 	private readonly filesByPath = new Map<string, FileSemanticData>();
 	private readonly expressions = new Map<FileSemanticData, Map<LuaExpression, LuaWrittenSource>>();
 	private readonly declarations = new Map<SymbolID, LuaSourceContributions>();
+	private readonly writes = new Map<DeclarationValueEntry, LuaWrittenSource>();
 	private readonly globals = new Map<string, LuaWrittenSourceInputs>();
 	private globalDeclarations: ReadonlyMap<string, readonly Decl[]> | undefined;
 	private modules: ReadonlyMap<string, LuaSourceContributions> | undefined;
@@ -86,6 +89,16 @@ export class LuaWrittenSourceQuery {
 		if (source === undefined) {
 			source = { kind: 'expression', file, expression, value: readLuaExpressionSource(file, expression) };
 			expressions.set(expression, source);
+		}
+		return source;
+	}
+
+	/** A binding read and a field witness share the very same authored occurrence. */
+	public write(write: DeclarationValueEntry): LuaWrittenSource {
+		let source = this.writes.get(write);
+		if (source === undefined) {
+			source = { kind: 'declaration-write', file: this.filesByPath.get(write.syntax.range.path)!, write, value: write.source };
+			this.writes.set(write, source);
 		}
 		return source;
 	}
@@ -189,7 +202,13 @@ export class LuaWrittenSourceQuery {
 		if (source.kind === 'receiver-input') return RECEIVER;
 		if (source.kind === 'module-bypass') return MODULE_PUBLICATION;
 		const value = source.value;
-		if (value.steps.length !== 0) return ACCESS;
+		if (value.steps.length !== 0) {
+			const step = value.steps[value.steps.length - 1];
+			if (step.kind !== 'member') return ACCESS;
+			const base: LuaWrittenSource = { kind: 'member-base', read: source, file: source.file,
+				value: { root: value.root, steps: value.steps.slice(0, -1) } };
+			return { kind: 'boundary', reason: 'member-read', name: step.name, base };
+		}
 		const root = value.root;
 		switch (root.kind) {
 			case 'unknown': return UNKNOWN;
@@ -257,7 +276,7 @@ export class LuaWrittenSourceQuery {
 		const sources: LuaWrittenSource[] = [];
 		if (parameter || writes === undefined) sources.push({ kind: 'binding-input', file, declaration, value: declarationValueSource(symbol) });
 		if (writes !== undefined) for (const write of writes) {
-			sources.push({ kind: 'declaration-write', file, write, value: write.source });
+			sources.push(this.write(write));
 		}
 		inputs = { kind: 'contributions', sources };
 		this.declarations.set(symbol, inputs);
