@@ -179,6 +179,32 @@ export class SemanticDependencyIndex {
 	}
 }
 
+/** Sparse two-key fact rows, without encoding pairs into strings or term IDs. */
+export class SemanticDependencyPairIndex {
+	private readonly rows = new Map<number, Map<number, DependencyNodeID>>();
+
+	constructor(private readonly dependencies: SemanticQueryDependencies) {}
+
+	public read(first: number, second: number): void {
+		if (!this.dependencies.tracking) return;
+		let row = this.rows.get(first);
+		if (row === undefined) {
+			row = new Map();
+			this.rows.set(first, row);
+		}
+		let node = row.get(second);
+		if (node === undefined) {
+			node = this.dependencies.create(undefined, second);
+			row.set(second, node);
+		}
+		this.dependencies.read(node);
+	}
+
+	public changed(first: number, second: number): void {
+		this.dependencies.changed(this.rows.get(first)?.get(second));
+	}
+}
+
 /** Query evaluation state; values and cycle semantics stay with the query owner. */
 type QueryEvaluation = {
 	readonly node: DependencyNodeID;

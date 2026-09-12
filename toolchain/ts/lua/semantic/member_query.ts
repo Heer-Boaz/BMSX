@@ -569,7 +569,7 @@ export class SemanticMemberQuery {
 				if (values.length !== before) {
 					continue;
 				}
-				if (this.instantiation.prototypes.count === 0) continue;
+				if (this.instantiation.prototypes.empty) continue;
 				const prototypeOwners = this.collectPrototypeOwners(terms.base(alternative), depth + 1);
 				for (let ownerIndex = 0; ownerIndex < prototypeOwners.length; ownerIndex += 1) {
 					this.collectMemberValuesRecursive(
@@ -603,7 +603,7 @@ export class SemanticMemberQuery {
 				}
 				continue;
 			}
-			if (this.instantiation.prototypes.count === 0) continue;
+			if (this.instantiation.prototypes.empty) continue;
 			const before = values.length;
 			const prototypeSources = this.collectPrototypeSources(alternative, depth + 1);
 			for (let sourceIndex = 0; sourceIndex < prototypeSources.length; sourceIndex += 1) {

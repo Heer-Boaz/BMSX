@@ -767,3 +767,20 @@ backend-reloadproeven en normale type/audit/build-gates bewijzen deze grens.
 De resource-viewer content/scroll-koppeling is hiermee gesloten. De pre-existente
 metadataformatting/uitgeschakelde image-preview is niet herontworpen;
 B03/B04/B06-authoring en A08 blijven open.
+
+### B04 — vaste toegangspaden versus groeiende feiten (2026-09-12)
+
+De gedeelde taalowner onderscheidt nu geinternde padidentiteit, ontbrekend pad
+en groeiende waarde-/prototyperelatie. Een positieve padlookup krijgt geen
+afhankelijkheid van andere paden; een negatieve lookup volgt precies haar
+kind/base/operand. Indexcollecties en feitrijen blijven wijzigingen volgen.
+De leegte van een monotone relatie is geen abonnement op iedere latere rij.
+Dit volgt de lifetimegrens van Salsa's interned slots, zonder een Lens-cache.
+
+De onafhankelijke groeiproef gaat van 5120 naar 768 evaluaties bij 256 bases.
+De echte koude workspace-query blijft in de gepaarde proef circa 257 ms; sommige
+kleine queries worden duurder. Dit is dus geen algemene latency-overwinning.
+**1598 Lua-tests / 1597 pass / 1 bestaande skip**, type/audit/build-gates en alle
+negen backend-workflow/reloadgates zijn groen binnen hun beschreven scope.
+Zie `lua_interned_dependency_lifetime.md` voor referenties, kosten, de herhaalde
+recoverygate en meetgrenzen. **B03/B04/B06-authoring en A08 blijven open.**

@@ -597,6 +597,13 @@ het tekstmodel, vóór content-notificaties. Open inputs behouden de generatie;
 vervanging/laatste sluiting geeft tracking en cache vrij. Dit verwijdert de
 view-eigen mapped-versionroute, niet de nog open multi-fileherkomstgrens.
 
+De [lifetime van geinternde query-identiteiten](lua_interned_dependency_lifetime.md)
+scheidt vaste toegangspaden van groeiende waarde-/prototyperelaties. Negatieve
+lookup volgt het exacte pad; collecties volgen hun extent. Dit vermindert
+onnodige herberekening, maar de gepaarde koude query blijft circa 257 ms en
+enkele kleine workloads worden duurder. B04, B03/B06-authoring en de latency-
+en cross-editpoorten blijven daarom open.
+
 | ID | Eigenaar / contract | Gate |
 | --- | --- | --- |
 | `STUDIO-BEHAVIOR-UX-B01` | Uitgewerkt: betekenisvolle BT/FSM-kaarten en volledige source-linked property-inspectie; technische bewijsdetails niet permanent op het canvas. Zie `behavior_inspection_design.md` voor de vooraf gemeten compositie en concrete owner-/bewijsgrenzen. | Tiny-resolutie met Problems, lange callbacks, exacte Source/Back, keyboard/controller/scroll/focus en non-mutating inspectie. B04-bronorigins, B06-propertyauthoring en B07-zoom blijven aparte contracten. |

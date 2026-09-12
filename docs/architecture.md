@@ -4590,6 +4590,14 @@ the old term universe. See [query dependencies](lua_query_dependencies.md) and
 [query consumption and demand maintenance](lua_query_evaluation.md), including
 the still-open cold-latency and cross-edit boundaries.
 
+Interned access-path identities are fixed within that snapshot. Positive path
+lookups do not subscribe to unrelated path creation; negative lookups track the
+exact kind/base/operand, while collection reads retain their growing extent.
+Value/prototype relations remain mutable tracked facts, not immutable just
+because their term identities are known. Relation emptiness has a separate
+one-shot dependency from its exact count. See
+[interned dependency lifetime](lua_interned_dependency_lifetime.md).
+
 Behavior navigation is a workbench contribution over those retained source
 facts, not framework knowledge in the language service. Its Quick Input
 results are individual FSM/BT/ActionEffect registration occurrences; a Lua

@@ -1,7 +1,7 @@
 import type { FileSemanticData, SymbolID } from './model';
 import { LuaCompletion } from '../analysis/completion';
 import { WorkspaceValueIdentityIndex, type SemanticRootID } from './identity';
-import { SemanticDependencyIndex, SemanticQueryDependencies } from './query_dependencies';
+import { SemanticDependencyIndex, SemanticDependencyPairIndex, SemanticQueryDependencies } from './query_dependencies';
 import {
 	declarationValueSource,
 	NIL_VALUE_SOURCE,
@@ -88,7 +88,13 @@ const EMPTY_TERM_IDS: readonly TermID[] = [];
 
 export class SemanticTermStore {
 	public readonly dependencies = new SemanticQueryDependencies();
-	private readonly accessPaths = new SemanticDependencyIndex(this.dependencies);
+	private readonly memberPaths = new SemanticDependencyPairIndex(this.dependencies);
+	private readonly indexPaths = new SemanticDependencyPairIndex(this.dependencies);
+	private readonly indexExtents = new SemanticDependencyIndex(this.dependencies);
+	private readonly elementPaths = new SemanticDependencyIndex(this.dependencies);
+	private readonly callPaths = new SemanticDependencyIndex(this.dependencies);
+	private readonly instancePaths = new SemanticDependencyIndex(this.dependencies);
+	private readonly metatablePaths = new SemanticDependencyIndex(this.dependencies);
 	private readonly kinds: TermKind[] = [];
 	private readonly left: number[] = [];
 	private readonly right: number[] = [];
@@ -238,7 +244,7 @@ export class SemanticTermStore {
 		}
 		const term = this.create(TermKind.Member, base, name);
 		terms.push(term);
-		this.accessPaths.changed(base);
+		this.memberPaths.changed(name, base);
 		return term;
 	}
 
@@ -259,50 +265,56 @@ export class SemanticTermStore {
 		}
 		const term = this.create(TermKind.Index, base, key);
 		terms.push(term);
-		this.accessPaths.changed(base);
+		this.indexPaths.changed(key, base);
+		this.indexExtents.changed(base);
 		return term;
 	}
 
 	public element(base: TermID): TermID {
-		return this.unary(TermKind.Element, base, this.elementByBase);
+		return this.unary(TermKind.Element, base, this.elementByBase, this.elementPaths);
 	}
 
 	public call(base: TermID): TermID {
-		return this.unary(TermKind.Call, base, this.callByBase);
+		return this.unary(TermKind.Call, base, this.callByBase, this.callPaths);
 	}
 
 	public instance(base: TermID): TermID {
-		return this.unary(TermKind.Instance, base, this.instanceByBase);
+		return this.unary(TermKind.Instance, base, this.instanceByBase, this.instancePaths);
 	}
 
 	public metatable(base: TermID): TermID {
-		return this.unary(TermKind.Metatable, base, this.metatableByBase);
+		return this.unary(TermKind.Metatable, base, this.metatableByBase, this.metatablePaths);
 	}
 
 	public retainedMetatable(base: TermID): TermID | undefined {
-		this.accessPaths.read(base);
-		return this.metatableByBase[base];
+		const term = this.metatableByBase[base];
+		if (term === undefined) this.metatablePaths.read(base);
+		return term;
 	}
 
 	public retainedInstance(base: TermID): TermID | undefined {
-		this.accessPaths.read(base);
-		return this.instanceByBase[base];
+		const term = this.instanceByBase[base];
+		if (term === undefined) this.instancePaths.read(base);
+		return term;
 	}
 
+	// Interned access identities never change within this snapshot. Only an
+	// absent path can acquire a different answer; its value relations still grow.
 	public retainedMember(base: TermID, name: SemanticNameID): TermID | undefined {
-		this.accessPaths.read(base);
 		const members = this.membersByBase.get(base);
 		if (members) {
 			for (let index = 0; index < members.length; index += 1) {
 				if (this.right[members[index]] === name) return members[index];
 			}
 		}
+		this.memberPaths.read(name, base);
 		return undefined;
 	}
 
 	public retainedElement(base: TermID): TermID | undefined {
-		this.accessPaths.read(base);
-		return this.elementByBase[base];
+		const term = this.elementByBase[base];
+		if (term === undefined) this.elementPaths.read(base);
+		return term;
 	}
 
 	/** Look up an existing access path over another base, without synthesizing paths. */
@@ -314,9 +326,11 @@ export class SemanticTermStore {
 				return this.retainedIndex(base, this.right[term] as TermID);
 			case TermKind.Element:
 				return this.retainedElement(base);
-			case TermKind.Call:
-				this.accessPaths.read(base);
-				return this.callByBase[base];
+			case TermKind.Call: {
+				const call = this.callByBase[base];
+				if (call === undefined) this.callPaths.read(base);
+				return call;
+			}
 			case TermKind.Instance:
 				return this.retainedInstance(base);
 			case TermKind.Metatable:
@@ -416,20 +430,20 @@ export class SemanticTermStore {
 	}
 
 	public indices(base: TermID): readonly TermID[] {
-		this.accessPaths.read(base);
+		this.indexExtents.read(base);
 		return this.indicesByBase.get(base) || EMPTY_TERM_IDS;
 	}
 
 	/** Read an existing indexed location without growing symbolic access paths. */
 	public retainedIndex(base: TermID, key: TermID): TermID | undefined {
-		this.accessPaths.read(base);
-		if (this.isUnknown(key)) return this.elementByBase[base];
+		if (this.isUnknown(key)) return this.retainedElement(base);
 		const indices = this.indicesByBase.get(base);
 		if (indices) {
 			for (let index = 0; index < indices.length; index += 1) {
 				if (this.right[indices[index]] === key) return indices[index];
 			}
 		}
+		this.indexPaths.read(key, base);
 		return undefined;
 	}
 
@@ -485,12 +499,12 @@ export class SemanticTermStore {
 		return this.compiledRoots[rawRoot] = term;
 	}
 
-	private unary(kind: TermKind, base: TermID, terms: TermID[]): TermID {
+	private unary(kind: TermKind, base: TermID, terms: TermID[], paths: SemanticDependencyIndex): TermID {
 		let term = terms[base];
 		if (term === undefined) {
 			term = this.create(kind, base, 0);
 			terms[base] = term;
-			this.accessPaths.changed(base);
+			paths.changed(base);
 		}
 		return term;
 	}

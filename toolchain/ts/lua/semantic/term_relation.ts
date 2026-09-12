@@ -5,12 +5,13 @@ import { SemanticDependencyIndex, type SemanticQueryDependencies } from './query
 export class TermRelation<Target extends number = TermID> {
 	private readonly forwardDependencies: SemanticDependencyIndex;
 	private readonly extentDependency: SemanticDependencyIndex;
+	private emptyDependency: SemanticDependencyIndex | undefined;
 	private readonly firstByOwner: number[] = [];
 	private readonly lastByOwner: number[] = [];
 	private readonly targets: Target[] = [];
 	private readonly nextByOwner: number[] = [];
 
-	constructor(dependencies: SemanticQueryDependencies) {
+	constructor(private readonly dependencies: SemanticQueryDependencies) {
 		this.forwardDependencies = new SemanticDependencyIndex(dependencies);
 		this.extentDependency = new SemanticDependencyIndex(dependencies);
 	}
@@ -31,6 +32,7 @@ export class TermRelation<Target extends number = TermID> {
 		this.lastByOwner[owner] = index + 1;
 		this.forwardDependencies.changed(owner);
 		this.extentDependency.changed(0);
+		if (index === 0) this.emptyDependency?.changed(0);
 		return true;
 	}
 
@@ -50,6 +52,14 @@ export class TermRelation<Target extends number = TermID> {
 	public get count(): number {
 		this.extentDependency.read(0);
 		return this.targets.length;
+	}
+
+	/** A monotone relation stops being empty once; its extent can keep growing. */
+	public get empty(): boolean {
+		if (this.targets.length !== 0) return false;
+		if (this.emptyDependency === undefined) this.emptyDependency = new SemanticDependencyIndex(this.dependencies);
+		this.emptyDependency.read(0);
+		return true;
 	}
 }
 
