@@ -37,7 +37,8 @@ export function handleProblemsPanelPointerInput(
 	if (justPressed) {
 		controller.setFocused(true);
 	}
-	if (snapshot.viewportY < layout.headerBottom) {
+	if (snapshot.viewportY < layout.contentTop || snapshot.viewportY >= layout.contentBottom) {
+		controller.setHoverIndex(-1);
 		return true;
 	}
 	const diagnostics = controller.getDiagnostics();

@@ -42,6 +42,7 @@ export function drawProblemsPanelSurface(
 	const hoverIndex = controller.getHoverIndex();
 	const focused = controller.isFocused;
 	const scrollIndex = controller.getScrollIndex();
+	api.pushClipRect(bounds.left, bounds.top, bounds.right, bounds.bottom);
 	api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, constants.COLOR_PROBLEMS_PANEL_BACKGROUND);
 	api.fill_rect(bounds.left, layout.headerTop, bounds.right, layout.headerBottom, 0, constants.COLOR_PROBLEMS_PANEL_HEADER_BACKGROUND);
 	api.fill_rect(bounds.left, layout.headerBottom - 1, bounds.right, layout.headerBottom, 0, constants.COLOR_PROBLEMS_PANEL_BORDER);
@@ -54,9 +55,9 @@ export function drawProblemsPanelSurface(
 	const contentRight = bounds.right - constants.PROBLEMS_PANEL_CONTENT_PADDING_X;
 	const availableWidth = contentRight - contentLeft;
 
+	api.pushClipRect(bounds.left, layout.contentTop, bounds.right, layout.contentBottom);
 	if (diagnostics.length === 0) {
 		drawEditorText(editorViewState.font, getEmptyProblemsMessage(availableWidth), contentLeft, layout.contentTop, 0, constants.COLOR_PROBLEMS_PANEL_TEXT);
-		return;
 	}
 
 	let cursorY = layout.contentTop;
@@ -72,11 +73,8 @@ export function drawProblemsPanelSurface(
 		const isHovered = diagnosticIndex === hoverIndex;
 
 		if (isSelected) {
-			if (focused) {
-				api.fill_rect(bounds.left, rowTop, bounds.right, rowBottom, 0, constants.SELECTION_OVERLAY);
-			} else {
-				api.blit_rect(bounds.left, rowTop, bounds.right, rowBottom, 0, constants.COLOR_PROBLEMS_PANEL_SELECTION_BORDER);
-			}
+			api.fill_rect(bounds.left, rowTop, bounds.right, rowBottom, 0,
+				focused ? constants.SELECTION_OVERLAY : constants.INACTIVE_SELECTION_OVERLAY);
 		}
 
 		let textCursorX = contentLeft;
@@ -84,8 +82,8 @@ export function drawProblemsPanelSurface(
 		drawEditorText(editorViewState.font, itemLayout.severityLabel, textCursorX, rowTop, 0, color);
 		textCursorX += itemLayout.severityWidth;
 
-		const messageColor = isSelected && focused
-			? constants.COLOR_COMPLETION_HIGHLIGHT_TEXT
+		const messageColor = isSelected
+			? (focused ? constants.COLOR_SELECTION_TEXT : constants.COLOR_INACTIVE_SELECTION_TEXT)
 			: (isHovered ? constants.COLOR_PROBLEMS_PANEL_HOVER_TEXT : constants.COLOR_PROBLEMS_PANEL_TEXT);
 		for (let lineIndex = 0; lineIndex < wrapped.length; lineIndex += 1) {
 			const x = lineIndex === 0 ? textCursorX : contentLeft;
@@ -95,6 +93,8 @@ export function drawProblemsPanelSurface(
 
 		cursorY = rowBottom;
 	}
+	api.popClipRect();
 
 	api.fill_rect(bounds.left, bounds.bottom - 1, bounds.right, bounds.bottom, 0, constants.COLOR_PROBLEMS_PANEL_BORDER);
+	api.popClipRect();
 }

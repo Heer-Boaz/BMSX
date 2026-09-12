@@ -108,6 +108,16 @@ export async function testStudioSceneViewport(test: StudioFixture): Promise<void
 		check(scene.details.height === 0 && !scene.details.scrollbar.isVisible(), 'A02: a fully collapsed editor has no fabricated content viewport or thumb');
 		await resize(bodyTop + 38);
 		check(z.field.focusTarget.hasFocus, 'A02: expanding a collapsed viewport retains the actual focused field'); visible(2);
+		const selectedProblem = problemsPanel.selectedDiagnostic;
+		const panel = getProblemsPanelBounds()!;
+		await test.click(point(panel.left + 4, panel.bottom - 1));
+		check(problemsPanel.isFocused && problemsPanel.getHoverIndex() === -1 && ide.editor.editorPanes.activePane === pane,
+			'A02: Problems padding focuses the panel without activating a clipped diagnostic');
+		check(problemsPanel.selectedDiagnostic === selectedProblem && model.buffer.getText() === authored,
+			'A02: panel focus does not change diagnostic selection or authored source');
+		pane.focus(); await frame();
+		check(!problemsPanel.isFocused && problemsPanel.selectedDiagnostic === selectedProblem,
+			'A02: returning to Scene retains an inactive Problems selection');
 		console.log(`STUDIO-SCENE-VIEWPORT:${variant}:PASS`);
 	}
 	// Keep the final renderer screenshot on a short viewport with Z and the last notes visible.

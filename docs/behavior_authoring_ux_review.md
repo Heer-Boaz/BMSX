@@ -32,11 +32,29 @@ UX-verbeteringen hoeven daarop niet te wachten.
 - Na iedere implementatieslice ook de aangrenzende, eerder geleverde werking
   reviewen tegen passende productiecode en de echte gebruikersflow. Geslaagde
   regressietests alleen bewijzen geen goede UX of architectuur.
+- Testharnas-review (gebruikersfeedback 2026-09-12): inventariseer herhaalde
+  fixture-opbouw, controller-/overlay-framebediening en baseline/performance-
+  orchestration. Breid de bestaande gedeelde harnesses uit waar dat herhaling
+  en onderhoud aantoonbaar vermindert; houd scenario's, onafhankelijke Lua-
+  bronnen en assertions expliciet. Geen tweede generiek testframework, productie-
+  logica kopiëren als oracle of wrappers voor uitsluitend kortere callsites.
+  Meet ook de ontwikkel-/validatiedoorlooptijd. Dit is een apart vervolgpunt,
+  geen tussentijdse herbouw die de lopende Studio-slice onderbreekt.
+- Syntaxkleur/casing (gebruikersfeedback 2026-09-12): stringwaarden, onder meer
+  FSM-keys, hebben een verkeerd gekleurde/gecasede prefix; de laatste letter en
+  sluitende quote worden juist wel correct weergegeven. Nog niet bevestigd of
+  de actuele versie dit oplost. Reproduceer met een onafhankelijke Lua-fixture
+  en toets token-/semantic ranges, tekstkleur-runs en casing aan dezelfde bron-
+  offsets, ook na edits/Undo. Geen renderer- of semantic-root-cause aannemen en
+  niet als opgelost afboeken op basis van alleen andere navigatieproeven.
 - Capture-review van de bronherkomstslice: in de bestaande Scene/Problems-
   eindcapture lopen scheidingslijnen door de diagnosticregels. De capture is
   ongewijzigd ten opzichte van de vorige slice; de groene workflowtest bewijst
-  dus niet dat die compositie goed is. Opnemen bij de aangrenzende pane-/clip-
-  review, niet maskeren door de snapshot of testverwachting aan te passen.
+  dus niet dat die compositie goed is. Inmiddels bij de
+  [Problems-selectie-/clipowner](problems_selection_review.md) opgelost en op
+  alle drie renderers bekeken: inactieve selectie is een achtergrond, content
+  blijft geclipt en pane-padding activeert geen verborgen diagnostic. De bron-
+  of Scene-layout is hiervoor niet aangepast.
 
 Deze vervolgpunten onderbreken het lopende bronherkomstwerk niet.
 
