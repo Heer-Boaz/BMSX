@@ -85,7 +85,11 @@ async function prepare(test: StudioFixture): Promise<SessionExpectation> {
 	const viewer = await ide.editor.resourceEditors.resolveEditorInput(resource, WORKBENCH_RESOURCE_VIEWER_ID);
 	openEditorTab(ide.editor.editorPanes, viewer); await test.frame();
 	if (viewer.kind !== 'resource_view') throw new Error('session: source viewer required');
-	viewer.resource.scroll = 2;
+	viewer.view.scroll = 2;
+	const viewerState = viewer.view, oldContent = viewerState.content;
+	check(await ide.editor.resourceEditors.resolveEditorInput(resource, WORKBENCH_RESOURCE_VIEWER_ID) === viewer, 'session: repeated resource resolution returns its retained input');
+	check(viewer.view === viewerState && viewer.view.scroll === 2 && viewer.view.content !== oldContent,
+		'session: refreshed resource content does not reset the viewer position');
 	const code = await ide.editor.resourceEditors.resolveEditorInput(resource, WORKBENCH_TEXT_EDITOR_ID);
 	openEditorTab(ide.editor.editorPanes, code, { pinned: false }); await test.frame();
 	if (code.kind !== 'code_editor') throw new Error('session: clean source preview required');

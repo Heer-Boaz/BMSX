@@ -907,6 +907,9 @@ navigation. Tab
 layout and rendering invoke `input.isDirty()` polymorphically and never infer a
 working copy from the input kind or from the active code widget. Input objects
 are allocated only when retained and are reused across pane activation.
+Resource-viewer content refresh replaces only `view.content` and the input label;
+its retained scroll state belongs to the input, not to a source-content factory.
+Re-resolving that resource neither resets the viewport nor freezes stale content.
 
 `EditorTabGroupModel` owns one explicit clean preview slot. Normal Open keeps an
 input; Preview may replace the previous preview only after its pane detaches.

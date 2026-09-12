@@ -23,16 +23,16 @@ const VIEWER_SCROLLBARS = ['viewerVertical'] as const;
 
 export class ResourceViewerEditorPane extends WorkbenchViewEditorPane<ResourceViewerInput> {
 	public override getSelection(): ResourceViewerNavigationSelection {
-		return new ResourceViewerNavigationSelection(this.input.resource.scroll);
+		return new ResourceViewerNavigationSelection(this.input.view.scroll);
 	}
 
 	protected activate(_selection?: EditorTextSelection, navigationSelection?: ResourceViewerNavigationSelection): void {
 		editorCaretState.cursorRevealSuspended = false;
 		clearRuntimeErrorOverlay();
 		runtimeErrorState.executionStopRow = null;
-		navigationSelection?.restore(this.input.resource);
+		navigationSelection?.restore(this.input.view);
 		clampResourceViewerScroll(
-			this.input.resource,
+			this.input.view,
 			getWorkbenchEditorBounds(),
 			editorViewState.lineHeight,
 		);
@@ -49,12 +49,12 @@ export class ResourceViewerEditorPane extends WorkbenchViewEditorPane<ResourceVi
 	}
 
 	public draw(): void {
-		const resource = this.input.resource;
+		const resource = this.input.view;
 		drawResourceViewer(resource);
 	}
 
 	public handleKeyboard(playerInput: PlayerInput): void {
-		const resource = this.input.resource;
+		const resource = this.input.view;
 		handleResourceViewerInput(playerInput, resource);
 	}
 
@@ -64,14 +64,14 @@ export class ResourceViewerEditorPane extends WorkbenchViewEditorPane<ResourceVi
 		_activePointer: PointerSnapshot | null,
 		playerInput: PlayerInput,
 	): void {
-		scrollResourceViewer(this.input.resource, direction * steps);
+		scrollResourceViewer(this.input.view, direction * steps);
 		playerInput.inputHandlers.pointer?.consumeButton('pointer_wheel');
 	}
 
 	public drawStatusBar(statusTop: number, textColor: number): void {
-		const viewer = this.input.resource;
-		const info = `${viewer.resource.source.type.toUpperCase()} ${viewer.resource.source.resid}`;
-		const detail = viewer.resource.path;
+		const viewer = this.input.view;
+		const info = `${viewer.content.resource.source.type.toUpperCase()} ${viewer.content.resource.source.resid}`;
+		const detail = viewer.content.resource.path;
 		drawEditorText(editorViewState.font, info, 4, statusTop + 2, 0, textColor);
 		if (detail.length > 0) {
 			drawEditorText(

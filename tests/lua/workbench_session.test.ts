@@ -1,3 +1,4 @@
+import { resolveResourceViewerInput } from '../../ide/workbench/contrib/resources/view_tabs';
 import { scenarioTestAssetId } from '../../toolchain/ts/rompack/scenario_test';
 import './test_setup';
 import assert from 'node:assert/strict';
@@ -23,7 +24,7 @@ import { BehaviorLensController } from '../../ide/workbench/contrib/behavior_len
 import { SceneEditorController } from '../../ide/workbench/contrib/scene_editor/controller';
 import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import { ResourceViewerInput } from '../../ide/workbench/contrib/resources/editor_input';
-import { buildResourceViewerState } from '../../ide/workbench/contrib/resources/viewer';
+import { buildResourceViewerContent } from '../../ide/workbench/contrib/resources/viewer';
 import { selectBehaviorLensDefinition, prepareBehaviorLensLayout } from '../../ide/workbench/contrib/behavior_lens/layout';
 import { captureBehaviorLensView, restoreBehaviorLensView } from '../../ide/workbench/contrib/behavior_lens/view_snapshot';
 import { captureCodeEditorView } from '../../ide/workbench/contrib/code_editor/view_snapshot';
@@ -179,11 +180,11 @@ test('resource viewer restoration uses the resource socket, not the active cart 
 	f.sources.resourceByIdentity.set('1\0values.data', resource);
 	f.sources.cartridgeSlots[0]!.package.data.values = { owner: 'game' };
 	f.sources.cartridgeSlots[1]!.package.data.values = { owner: 'extension' };
-	const input = new ResourceViewerInput(buildResourceViewerState(f.sources, resource)); input.resource.scroll = 3;
+	const input = new ResourceViewerInput(buildResourceViewerContent(f.sources, resource)); input.view.scroll = 3;
 	const restored = f.serializers.resource_view.deserialize(f.serializers.resource_view.serialize(input));
 	assert.ok(restored instanceof ResourceViewerInput);
-	assert.equal(restored.resource.resource, resource); assert.equal(restored.resource.scroll, 3);
-	assert.match(restored.resource.lines.join('\n'), /extension/); assert.doesNotMatch(restored.resource.lines.join('\n'), /game/);
+	assert.equal(restored.view.content.resource, resource); assert.equal(restored.view.scroll, 3);
+	assert.match(restored.view.content.lines.join('\n'), /extension/); assert.doesNotMatch(restored.view.content.lines.join('\n'), /game/);
 	input.dispose(); restored.dispose();
 });
 
@@ -216,4 +217,27 @@ test('a persisted behavior snapshot is immutable across later model edits', t =>
 	f.behavior.updateView(input);
 	restoreBehaviorLensView(input, now);
 	assert.equal(input.view.definitionRowKey, input.view.document.definitions[1].rowKey);
+});
+
+
+test('resource refresh replaces content, not the retained viewport or group membership', t => {
+	const f = fixture(t);
+	const resource = { domain: 1 as const, path: 'refresh.data', source: { resid: 'refresh', type: 'data' as const } };
+	const data = f.sources.cartridgeSlots[1]!.package.data;
+	data.refresh = { revision: 'before' };
+	const input = resolveResourceViewerInput(f.sources, resource);
+	editorTabGroup.initialize(input);
+	const view = input.view, content = view.content;
+	view.scroll = 3;
+	const revision = editorTabGroup.revision;
+	data.refresh = { revision: 'after' };
+	const reopened = resolveResourceViewerInput(f.sources, resource);
+	assert.equal(reopened, input);
+	assert.equal(reopened.view, view, 'content resolution cannot replace view state');
+	assert.equal(view.scroll, 3, 'no resetting then restoring the cursor at a callsite');
+	assert.notEqual(view.content, content, 'resolution still refreshes content');
+	assert.match(view.content.lines.join('\n'), /after/);
+	assert.doesNotMatch(view.content.lines.join('\n'), /before/);
+	assert.equal(editorTabGroup.revision, revision, 'unchanged labels and membership emit no group change');
+	assert.equal(input.toResourceEditor().resource, resource);
 });

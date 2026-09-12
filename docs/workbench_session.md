@@ -187,9 +187,8 @@ adversarial collisions. No whole source is duplicated in each tab payload.
 
 Scenario Lab persists only its test selection, scope expansion and scroll, not
 its test runtime or results. Resource viewers persist resource identity and
-scroll and resolve content from the correct socket's package. Their existing
-resolve-time content/scroll coupling is a separate remaining contribution issue;
-restoration does not depend on preserving old viewer objects.
+scroll and resolve content from the correct socket's package. Restoration does not depend on preserving old viewer objects. The separate
+resolve-time content/scroll coupling found in this pass is addressed below.
 
 The real reload uncovered a missing pane boundary, not an autosave-null case:
 non-code panes closed the old code search and measured their content using the
@@ -256,6 +255,44 @@ TSX_TSCONFIG_PATH=tsconfig.base.json node --expose-gc --import tsx \
   tests/conformance/runtime_replay/profile_workbench_session.ts
 ```
 
-Resource viewer resolve-time content/scroll coupling remains a separate follow-up;
+The resource viewer follow-up below closes resolve-time content/scroll coupling.
 B03 cross-parent authoring, B04 source-query/latency, B06 property authoring and
 A08 whole-host/physical-target evidence are not marked complete by this work.
+
+
+## Resource-viewer content refresh follow-up
+
+The session gate exposed a second, independent issue: `resolveResourceViewerInput`
+rebuilt an entire viewer state and replaced the input's previous scroll position
+with the content factory's zero. Keeping the old input without refreshing its
+content would hide that bug behind stale data. Capturing/restoring the old scroll
+around the replacement would preserve the wrong producer boundary.
+
+The input now owns one retained `view`, while `buildResourceViewerContent` only
+produces replaceable content. `updateContent` publishes the new content and label;
+it does not replace or write the viewport. Input identity, resource navigation,
+normal layout clamping and the persisted `{resource, scroll}` representation are
+unchanged. There is no extra frame callback, cache, fallback or per-frame
+allocation. One view object is retained per input.
+
+Production reference: VS Code's
+[media preview refresh](https://github.com/microsoft/vscode/blob/7f59d5e01a7fafeba8e83cdfd9d8493f2beeeaca/extensions/media-preview/src/mediaPreview.ts#L75-L112)
+updates resource content independently of its
+[view coordinates](https://github.com/microsoft/vscode/blob/7f59d5e01a7fafeba8e83cdfd9d8493f2beeeaca/extensions/media-preview/media/imagePreview.js#L288-L323).
+BMSX already retains its viewport directly, so no webview recreation or
+capture/reapply workaround is copied.
+
+This follow-up is specifically the content/view lifetime boundary. It does not
+claim a redesign of the pre-existing asset metadata formatting or completion of
+the disabled image preview renderer. Those implementations are not moved into a
+new service or presented as a validated generic asset inspector.
+
+Validation: **78/78** focused tests and **1591 Lua tests / 1590 pass / 1 existing
+skip**. IDE typecheck, strict boundaries, parity, indentation, browser build and
+diff checks pass; tests TypeScript retains the same 51 baseline diagnostics.
+The actual reload workflow passes on all three backends, including repeated
+resource resolution before reload. Independent data fixtures prove that content
+really changes while input/view identity and scroll remain stable; unchanged
+labels emit no new group event. Artifacts: `/tmp/bmsx-session/*-viewer-final.log`
+and `viewer-targeted.log`. The preceding full Studio/Pietious matrix belongs to
+the main A07 commit; this follow-up reruns the targeted real browser workflow.

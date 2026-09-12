@@ -121,9 +121,10 @@ function codeInput(id: 'code:0\0a.lua' | 'code:0\0b.lua'): CodeEditorInput {
 
 function resourceInput(): ResourceViewerInput {
 	return new ResourceViewerInput({
-		resource: { domain: 0, path: 'image.png' },
+		resource: { domain: 0, path: 'image.png', source: { type: 'image', resid: 'image' } },
 		title: 'image.png',
-	} as ResourceViewerInput['resource']);
+		lines: [], error: null,
+	});
 }
 
 function createEditorPanes() {

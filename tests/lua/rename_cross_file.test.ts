@@ -69,7 +69,6 @@ test('cross file rename updates a retained background model without opening an e
 			lines: [],
 			error: '',
 			title: 'usage.lua',
-			scroll: 0,
 	});
 	editorTabGroup.initialize(resourceTab);
 	t.after(() => {

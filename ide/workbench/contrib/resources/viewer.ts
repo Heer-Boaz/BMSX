@@ -6,7 +6,7 @@ import { SYSTEM_RESOURCE_DOMAIN, type RuntimeResource } from '../../../common/re
 import * as constants from '../../../common/constants';
 import { computeResourceTabTitle } from '../../ui/tab/titles';
 import { appendTextLines } from '../../../../machine/ts/common/text_lines';
-import type { ResourceViewerState } from './model';
+import type { ResourceViewerContent, ResourceViewerState } from './model';
 
 export type ResourceViewerLayout = {
 	hasImage: boolean;
@@ -32,7 +32,7 @@ const resourceViewerLayout: ResourceViewerLayout = {
 	textCapacity: 0,
 };
 
-export function buildResourceViewerState(sources: RuntimeSourceState, resource: RuntimeResource): ResourceViewerState {
+export function buildResourceViewerContent(sources: RuntimeSourceState, resource: RuntimeResource): ResourceViewerContent {
 	const asset = resource.source;
 	const title = computeResourceTabTitle(resource);
 	const lines: string[] = [
@@ -40,12 +40,11 @@ export function buildResourceViewerState(sources: RuntimeSourceState, resource: 
 		`Type: ${asset.type}`,
 		`Asset ID: ${asset.resid || '<none>'}`,
 	];
-	const state: ResourceViewerState = {
+	const state: ResourceViewerContent = {
 		resource,
 		lines,
 		error: null,
 		title,
-		scroll: 0,
 	};
 	let error: string = null;
 	const resourcePackage = resource.domain === SYSTEM_RESOURCE_DOMAIN ? sources.systemPackage : sources.cartridgeSlots[resource.domain]!.package;
@@ -160,19 +159,19 @@ export function resolveResourceViewerLayout(
 	const totalHeight = bounds.bottom - bounds.top;
 	const paddingX = constants.RESOURCE_PANEL_PADDING_X;
 	const availableWidth = bounds.right - bounds.left - paddingX * 2;
-	if (viewer.image && totalHeight > 0 && availableWidth > 0) {
-		const textRows = clamp(viewer.lines.length + (viewer.error ? 1 : 0), 3, 8);
+	if (viewer.content.image && totalHeight > 0 && availableWidth > 0) {
+		const textRows = clamp(viewer.content.lines.length + (viewer.content.error ? 1 : 0), 3, 8);
 		const reservedByRatio = totalHeight * 0.45;
 		const reservedByRows = lineHeight * textRows;
 		const reservedTextHeight = reservedByRatio < reservedByRows ? reservedByRatio : reservedByRows;
 		const minImageHeight = lineHeight * 2;
 		const remainingImageHeight = totalHeight - reservedTextHeight;
 		const maxImageHeight = remainingImageHeight > minImageHeight ? remainingImageHeight : minImageHeight;
-		const widthScale = availableWidth / viewer.image.width;
-		const heightScale = maxImageHeight / viewer.image.height;
+		const widthScale = availableWidth / viewer.content.image.width;
+		const heightScale = maxImageHeight / viewer.content.image.height;
 		const scale = widthScale < heightScale ? widthScale : heightScale;
-		let width = (viewer.image.width * scale) | 0;
-		let height = (viewer.image.height * scale) | 0;
+		let width = (viewer.content.image.width * scale) | 0;
+		let height = (viewer.content.image.height * scale) | 0;
 		if (width < 1) {
 			width = 1;
 		}
@@ -213,7 +212,7 @@ export function applyResourceViewerScroll(viewer: ResourceViewerState, capacity:
 		viewer.scroll = 0;
 		return;
 	}
-	const scrollLimit = viewer.lines.length - capacity;
+	const scrollLimit = viewer.content.lines.length - capacity;
 	const maxScroll = scrollLimit > 0 ? scrollLimit : 0;
 	viewer.scroll = clamp((scroll + 0.5) | 0, 0, maxScroll);
 }

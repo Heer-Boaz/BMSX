@@ -4639,7 +4639,8 @@ The workbench session and dirty working-copy backups are separate. The editor
 group serializes its ordered input envelopes and active/preview indices;
 contributions serialize plain view-state values, using the same source bookmarks
 as navigation. Clean code, resource viewers, scene views, multiple behavior
-occurrences in one file, and Scenario Lab test context can all survive a restart.
+occurrences in one file, and Scenario Lab test context can all survive a restart. Resource-viewer content
+refresh replaces content without resetting its input-owned viewport.
 Dirty models are hydrated before inputs resolve; only the chosen active pane is
 attached. Source fingerprints belong to the retained text snapshot and are
 computed once per buffer version, not once per input or cursor movement. Changed

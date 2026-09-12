@@ -418,7 +418,6 @@ test('diagnostics select a retained dirty input while a non-code input is active
 			lines: [],
 			error: '',
 			title: 'image.png',
-			scroll: 0,
 	});
 	assert.equal(resourceTab.isDirty(), false);
 	codeEditorInputManager.register(context);

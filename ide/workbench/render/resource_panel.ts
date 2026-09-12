@@ -152,7 +152,7 @@ export function drawResourceViewer(viewer: ResourceViewerState): void {
 	const layout = resolveResourceViewerLayout(viewer, bounds, editorViewState.lineHeight);
 	const capacity = layout.textCapacity;
 	applyResourceViewerScroll(viewer, capacity, viewer.scroll);
-	const totalLines = viewer.lines.length;
+	const totalLines = viewer.content.lines.length;
 	const verticalScrollbar = editorViewState.scrollbars.viewerVertical;
 	const verticalTrack = resourceViewerVerticalTrack;
 	verticalTrack.left = bounds.right - constants.SCROLLBAR_WIDTH;
@@ -166,15 +166,15 @@ export function drawResourceViewer(viewer: ResourceViewerState): void {
 	api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, constants.COLOR_RESOURCE_VIEWER_BACKGROUND);
 
 	const textTop = layout.textTop;
-	if (layout.hasImage && viewer.image) {
-		// ensureResourceViewerSprite(viewer.image.asset_id, { left: layout.imageLeft, top: layout.imageTop, scale: layout.imageScale });
+	if (layout.hasImage && viewer.content.image) {
+		// ensureResourceViewerSprite(viewer.content.image.asset_id, { left: layout.imageLeft, top: layout.imageTop, scale: layout.imageScale });
 	} else {
 		// hideResourceViewerSprite();
 	}
 	if (capacity <= 0) {
-		if (viewer.lines.length > 0) {
-			const lineIndex = viewer.scroll < viewer.lines.length ? viewer.scroll : viewer.lines.length - 1;
-			const line = viewer.lines[lineIndex] ?? '';
+		if (viewer.content.lines.length > 0) {
+			const lineIndex = viewer.scroll < viewer.content.lines.length ? viewer.scroll : viewer.content.lines.length - 1;
+			const line = viewer.content.lines[lineIndex] ?? '';
 			const bottomLineY = bounds.bottom - editorViewState.lineHeight;
 			const fallbackY = textTop < bottomLineY ? textTop : bottomLineY;
 			drawEditorText(editorViewState.font, line, contentLeft, fallbackY, 0, constants.COLOR_RESOURCE_VIEWER_TEXT);
@@ -189,11 +189,11 @@ export function drawResourceViewer(viewer: ResourceViewerState): void {
 	const start = viewer.scroll;
 	const endCandidate = start + capacity;
 	const end = endCandidate < totalLines ? endCandidate : totalLines;
-	if (viewer.lines.length === 0) {
+	if (viewer.content.lines.length === 0) {
 		drawEditorText(editorViewState.font, '<empty>', contentLeft, textTop, 0, constants.COLOR_RESOURCE_VIEWER_TEXT);
 	} else {
 		for (let lineIndex = start, drawIndex = 0; lineIndex < end; lineIndex += 1, drawIndex += 1) {
-			const line = viewer.lines[lineIndex] ?? '';
+			const line = viewer.content.lines[lineIndex] ?? '';
 			const y = textTop + drawIndex * editorViewState.lineHeight;
 			if (y >= bounds.bottom) {
 				break;

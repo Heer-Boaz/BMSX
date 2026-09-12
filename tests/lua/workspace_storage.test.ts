@@ -1640,7 +1640,6 @@ test('runtime source capture reads the resource model independently of the activ
 			lines: [],
 			error: '',
 			title: 'image.png',
-			scroll: 0,
 	});
 	editorTabGroup.add(resourceTab);
 	editorTabGroup.activate(resourceTab);
@@ -1885,8 +1884,9 @@ test('built-in resolution admits source without opening tabs or stealing the pre
 	assert.equal(viewer.kind, 'resource_view');
 	if (viewer.kind !== 'resource_view') throw new Error('resource contribution');
 	openEditorTab(panes, viewer);
-	viewer.resource.scroll = 3;
+	viewer.view.scroll = 3;
 	assert.equal(await resolver.resolveEditorInput(system, WORKBENCH_RESOURCE_VIEWER_ID), viewer);
+	assert.equal(viewer.view.scroll, 3, 'resolving an existing preview preserves its view state');
 	assert.equal(editorTabGroup.activeTab, viewer);
 	assert.equal(editorTabGroup.tabs.length, 3);
 	assert.equal(await resolveTextFileModel(storage, sources, aem), first.workingCopy);

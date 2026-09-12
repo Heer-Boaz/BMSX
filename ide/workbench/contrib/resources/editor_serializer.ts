@@ -2,7 +2,7 @@ import type { EditorInputSerializer } from '../../services/editor/editor_seriali
 import { resolveRuntimeResource, type RuntimeSourceState } from '../../../runtime/sources';
 import type { ResourceIdentity } from '../../../common/resource';
 import { ResourceViewerInput } from './editor_input';
-import { buildResourceViewerState } from './viewer';
+import { buildResourceViewerContent } from './viewer';
 
 export type SerializedResourceViewerInput = { readonly resource: ResourceIdentity; readonly scroll: number };
 
@@ -10,7 +10,8 @@ export class ResourceViewerInputSerializer implements EditorInputSerializer<Reso
 	public constructor(private readonly sources: RuntimeSourceState) {}
 
 	public serialize(input: ResourceViewerInput): string {
-		const { resource, scroll } = input.resource;
+		const { content, scroll } = input.view;
+		const resource = content.resource;
 		const state: SerializedResourceViewerInput = { resource: { domain: resource.domain, path: resource.path }, scroll };
 		return JSON.stringify(state);
 	}
@@ -18,8 +19,8 @@ export class ResourceViewerInputSerializer implements EditorInputSerializer<Reso
 	public deserialize(value: string): ResourceViewerInput {
 		const state: SerializedResourceViewerInput = JSON.parse(value);
 		const resource = resolveRuntimeResource(this.sources, state.resource)!;
-		const view = buildResourceViewerState(this.sources, resource);
-		view.scroll = state.scroll;
-		return new ResourceViewerInput(view);
+		const input = new ResourceViewerInput(buildResourceViewerContent(this.sources, resource));
+		input.view.scroll = state.scroll;
+		return input;
 	}
 }

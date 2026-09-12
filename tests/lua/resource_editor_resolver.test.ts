@@ -31,7 +31,6 @@ function registration(id: string, selector: ResourceEditorSelector): ResourceEdi
 				lines: [],
 				error: '',
 				title: resource.path,
-				scroll: 0,
 			});
 			input.title = id;
 			return input;

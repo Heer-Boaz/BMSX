@@ -752,3 +752,18 @@ alle gates en meetgrenzen staan in `workbench_session.md`.
 **Open blijven:** resource-viewer content/scroll bij opnieuw resolven,
 B03/B04/B06-authoring en A08. De opgeslagen sessiestructuur is vervangen zonder
 migratie van oude IDE-records, zoals afgesproken.
+
+
+### A07 follow-up — resourcecontent vervangt geen viewstaat
+
+De bij A07 gevonden reset bij opnieuw resolven is opgelost bij de producent:
+`buildResourceViewerContent` maakt alleen vernieuwbare inhoud. `ResourceViewerInput`
+behoudt één view en werkt content/label bij zonder scroll te schrijven. Geen
+capture/restore om de oude verkeerde statevervanging heen en geen stale-content
+shortcut. VS Code-mediarefs en scope staan in `workbench_session.md`.
+
+**78/78** gerichte tests, **1591 Lua-tests / 1590 pass / 1 bestaande skip**, drie
+backend-reloadproeven en normale type/audit/build-gates bewijzen deze grens.
+De resource-viewer content/scroll-koppeling is hiermee gesloten. De pre-existente
+metadataformatting/uitgeschakelde image-preview is niet herontworpen;
+B03/B04/B06-authoring en A08 blijven open.
