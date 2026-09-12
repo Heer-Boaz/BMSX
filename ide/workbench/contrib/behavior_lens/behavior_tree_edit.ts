@@ -12,7 +12,9 @@ export function behaviorTreeEditTarget(view: BehaviorLensViewState): BehaviorTre
 	if (!view.document.syntaxComplete || view.presentation.kind !== 'graph') return null;
 	const selection = view.presentation.viewport.selection;
 	if (selection === null) return null;
-	return (selection.kind === 'node' ? selection : selection.child).member;
+	const member = (selection.kind === 'node' ? selection : selection.child).member;
+	// The current editor input owns one write resource; a foreign source use is inspectable, not a workspace edit.
+	return member !== null && member.table.range.path === view.resource.path ? member : null;
 }
 
 export function behaviorTreeMoveTarget(view: BehaviorLensViewState, direction: -1 | 1): BehaviorTreeSourceMember | undefined {

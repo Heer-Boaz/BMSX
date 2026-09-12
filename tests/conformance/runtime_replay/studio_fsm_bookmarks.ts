@@ -70,6 +70,21 @@ export async function testStudioFsmBookmarks(test: StudioFixture): Promise<void>
 			'FSM bookmark: held Source activation navigates without dirtying or selecting code');
 		await press('ArrowRight');
 		check(activeCodeEditor.view.cursorColumn === range.start.column, 'FSM bookmark: code input remains responsive');
+		await press('AltLeft', 'ArrowLeft'); await ready();
+		check(getActiveTab() === lens && selectedBehaviorLensSourceRange(view)!.start.line === range.start.line,
+			'FSM bookmark: actual Back restores the same source proof');
+		model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- after navigation restore\n' }]);
+		await ready();
+		check(selectedBehaviorLensSourceRange(view)?.start.line === range.start.line + 1,
+			'FSM bookmark: an edit after Back maps active selection once, independently of navigation history');
+		await click(graph.actionBar.items[0].bounds);
+		check(getActiveTab() === code && activeCodeEditor.view.cursorRow === range.start.line && !hasSelection(),
+			'FSM bookmark: the restored and edited proof still opens the exact source line');
+		await press('ControlLeft', 'KeyZ');
+		await test.clickTab(lens.id); await ready();
+		check(model.buffer.getText() === changed && selectedBehaviorLensSourceRange(view)!.start.line === range.start.line,
+			'FSM bookmark: Undo after Back preserves the proof without sharing history markers');
+		await click(graph.actionBar.items[0].bounds);
 		const hidden = view.document;
 		await press('ControlLeft', 'KeyZ');
 		check(model.buffer.getText() === FSM_RETARGET_SOURCE && view.document === hidden,

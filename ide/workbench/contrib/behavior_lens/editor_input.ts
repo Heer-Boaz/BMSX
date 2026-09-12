@@ -76,7 +76,7 @@ export class BehaviorLensInput extends WorkingCopyEditorInput<BehaviorLensTabId,
 			if (presentation.dirty) {
 				const definition = view.document.definitions.find((node): node is ActionEffectSourceDefinition =>
 					node.behaviorKind === 'action_effect' && node.rowKey === view.definitionRowKey);
-				projectActionEffectProperties(view, presentation, definition, this.workingCopy.buffer);
+				projectActionEffectProperties(view, presentation, definition);
 				presentation.dirty = false;
 			}
 			layoutWorkbenchPropertyTree(presentation.tree, font, measureTextRange, view.layout.left, view.layout.headerBottom + 1, view.layout.right, view.layout.bottom);

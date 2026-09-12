@@ -23,12 +23,11 @@ function fixture(source = BEHAVIOR_SOURCE_FIXTURE) {
 		source: { resid: 'behavior_fixture', type: 'lua', source_path: 'behavior_fixture.lua', generated: false },
 	}, 'lua', source);
 	const project = () => buildBehaviorSourceDocument(model.resource, buildLuaFileSemanticData(model.buffer.getText(), model.resource.path));
-	const input = new BehaviorLensInput(model, createBehaviorLensViewState(project(), model, 'outline'), () => new NodeGraphLayoutEngine(new Worker(resolve('ide/node/graph_layout_worker.cjs'))));
-	model.onDidChangeContent(event => mapBehaviorLensSourceRanges(input.view, event));
+	const input = new BehaviorLensInput(model, createBehaviorLensViewState(project(), model, 'outline', assert.fail), () => new NodeGraphLayoutEngine(new Worker(resolve('ide/node/graph_layout_worker.cjs'))));
+	model.onDidChangeContent(event => mapBehaviorLensSourceRanges(input.view, model.resource, event));
 	assert.ok(input.view.presentation.kind === 'outline');
 	return { model, input, view: input.view, outline: input.view.presentation, refresh() {
-		installBehaviorLensDocument(input.view, project(), model.buffer);
-		input.view.sourceVersion = model.version;
+		installBehaviorLensDocument(input.view, project());
 	} };
 }
 

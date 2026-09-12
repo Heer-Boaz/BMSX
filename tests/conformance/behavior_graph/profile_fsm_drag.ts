@@ -33,7 +33,7 @@ ${Array.from({ length: registrations }, (_, index) => `machines.register('fixtur
 		const document = buildBehaviorSourceDocument(model.resource, buildLuaFileSemanticData(source, model.resource.path));
 		editorViewState.font = new EditorFont('tiny');
 		const font = editorViewState.font.renderFont();
-		const view = createBehaviorLensViewState(document, model, 'state-graph');
+		const view = createBehaviorLensViewState(document, model, 'state-graph', assert.fail);
 		selectBehaviorLensDefinition(view, document.definitions[0].rowKey);
 		const graph = view.presentation; assert.ok(graph.kind === 'state-graph');
 		const input = new BehaviorLensInput(model, view, () => new NodeGraphLayoutEngine(new Worker(resolve('ide/node/graph_layout_worker.cjs'))));
@@ -45,7 +45,7 @@ ${Array.from({ length: registrations }, (_, index) => `machines.register('fixtur
 			viewport.layout(0, 0, 384, 288);
 			const edge = viewport.model.edges.find(edge => edge.link.reference.kind === 'state-outcome')!;
 			viewport.selection = edge;
-			view.selection = selectStateMachineSource(edge.link.reference, model.buffer);
+			view.selection = selectStateMachineSource(edge.link.reference, view.source.models);
 			const node = Array.from(viewport.model.nodesBySource.values()).find(node => node.source.label === 'active')!;
 			const x = (node.bounds.left + node.bounds.right) / 2;
 			const y = node.bounds.top + node.headerHeight / 2;

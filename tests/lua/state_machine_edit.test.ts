@@ -23,8 +23,8 @@ function fixture(t: TestContext, source = FSM_RETARGET_SOURCE, definitionIndex =
 	const model = new EditorTextModel({ domain: 0, path: 'retarget.lua', source: { resid: 'retarget', type: 'lua' } }, 'lua', source);
 	t.after(() => model.dispose());
 	const project = () => buildBehaviorSourceDocument(model.resource, buildLuaFileSemanticData(model.buffer.getText(), model.resource.path));
-	const view = createBehaviorLensViewState(project(), model, 'outline');
-	model.onDidChangeContent(event => mapBehaviorLensSourceRanges(view, event));
+	const view = createBehaviorLensViewState(project(), model, 'outline', assert.fail);
+	model.onDidChangeContent(event => mapBehaviorLensSourceRanges(view, model.resource, event));
 	const definition = view.document.definitions[definitionIndex];
 	assert.ok(definition.behaviorKind === 'state_machine');
 	const scope = definition.scopes[0].children.get(branch)!;
@@ -32,14 +32,14 @@ function fixture(t: TestContext, source = FSM_RETARGET_SOURCE, definitionIndex =
 	const transition = definition.transitions.find(item => item.origin === origin
 		&& (slot === 'update' ? item.slot.kind === slot : item.slot.source.label === slot))!;
 	const selection = selectStateMachineSource({ kind: 'state-outcome', rowKey: transition.slot.source.rowKey,
-		transition, outcome: transition.outcomes[outcomeIndex] }, model.buffer);
+		transition, outcome: transition.outcomes[outcomeIndex] }, view.source.models);
 	assert.ok(selection.kind === 'state-outcome');
 	selectBehaviorLensDefinition(view, definition.rowKey);
 	view.selection = selection;
 	const target = new StateMachineRetargetAnalysis(view.document, selection.transition, selection.outcome)
 		.checkTarget(scope.children.get('other')!);
 	assert.ok(target.kind === 'available');
-	const refresh = () => { installBehaviorLensDocument(view, project(), model.buffer); view.sourceVersion = model.version; };
+	const refresh = () => { installBehaviorLensDocument(view, project()); };
 	const checkSelection = (text: string, outcome = outcomeIndex) => {
 		const selected = view.selection;
 		assert.ok(selected?.kind === 'state-outcome');
@@ -156,12 +156,12 @@ test('entry bookmarks use the same typed history and distinguish shared initial 
 	const refs = [...f.view.stateMachines.references.values()].flat();
 	const reference = refs.filter(item => item.kind === 'state-entry' && item.entry.kind === 'initial')[2];
 	assert.ok(reference.kind === 'state-entry');
-	f.view.selection = selectStateMachineSource(reference, f.model.buffer);
+	f.view.selection = selectStateMachineSource(reference, f.view.source.models);
 	const before = captureBehaviorSourceBookmark(f.view, f.view.selection);
 	const after = copyBehaviorSourceBookmark(before);
 	const prefix = '-- history probe\n';
 	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: prefix }], behaviorSourceEditState.of(before), changes => {
-		mapBehaviorSourceBookmark(after, changes);
+		mapBehaviorSourceBookmark(after, f.model.resource, changes);
 		return behaviorSourceEditState.of(after);
 	});
 	for (const action of ['edit', 'undo', 'redo']) {

@@ -147,8 +147,8 @@ test('nested membership warnings, shared occurrences, hidden edits and Undo use 
 	t.after(() => Object.assign(editorViewState, previous));
 	Object.assign(editorViewState, { font: new EditorFont('tiny'), viewportWidth: 384, viewportHeight: 288, lineHeight: 6, codeAreaTop: 24, codeAreaBottom: 276 });
 	const f = fixture();
-	const view = createBehaviorLensViewState(f.document, f.model, 'graph');
-	f.model.onDidChangeContent(event => mapBehaviorLensSourceRanges(view, event));
+	const view = createBehaviorLensViewState(f.document, f.model, 'graph', assert.fail);
+	f.model.onDidChangeContent(event => mapBehaviorLensSourceRanges(view, f.model.resource, event));
 	selectBehaviorLensDefinition(view, f.document.definitions[1].rowKey);
 	prepareBehaviorLensLayout(view);
 	assert.ok(view.presentation.kind === 'graph');
@@ -163,7 +163,7 @@ test('nested membership warnings, shared occurrences, hidden edits and Undo use 
 	f.model.pushEditOperations([{ offset: span.start, deleteLength: span.end - span.start, text: 'leaf' }]);
 	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- 🐉 shifted source\n' }]);
 	assert.equal(view.document, hidden);
-	const refresh = () => { installBehaviorLensDocument(view, f.project(), f.model.buffer); prepareBehaviorLensLayout(view); };
+	const refresh = () => { installBehaviorLensDocument(view, f.project()); prepareBehaviorLensLayout(view); };
 	refresh();
 	assert.equal(view.definitionRowKey, view.document.definitions[1].rowKey);
 	assert.ok(viewport.selection?.kind === 'edge');

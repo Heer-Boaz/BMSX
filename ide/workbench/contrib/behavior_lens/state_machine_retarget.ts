@@ -13,7 +13,7 @@ export type StateMachinePathUse = {
 
 type RetargetUnavailable = {
 	readonly kind: 'unavailable';
-	readonly reason: 'syntax-incomplete' | 'source-not-path' | 'indirect-literal' | 'different-registration' | 'unaddressable-target';
+	readonly reason: 'syntax-incomplete' | 'source-not-path' | 'indirect-literal' | 'different-registration' | 'different-write-resource' | 'unaddressable-target';
 };
 
 export type StateMachineRetargetCheck = RetargetUnavailable
@@ -55,6 +55,9 @@ export class StateMachineRetargetAnalysis {
 		const literal = stateMachineRetargetLiteral(outcome);
 		if (literal === undefined) {
 			this.source = { kind: 'unavailable', reason: 'indirect-literal' }; return;
+		}
+		if (literal.range.path !== document.resource.path) {
+			this.source = { kind: 'unavailable', reason: 'different-write-resource' }; return;
 		}
 		let selectedUse: StateMachinePathUse | undefined;
 		for (const definition of document.definitions) {

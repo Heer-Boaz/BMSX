@@ -23,15 +23,15 @@ function fixture(source = ACTIONEFFECT_SOURCE, chosen = 0) {
 	const resource = { domain: 0 as const, path: 'effects.lua', source: { resid: 'effects', type: 'lua' as const } };
 	const model = new EditorTextModel(resource, 'lua', source);
 	const document = () => buildBehaviorSourceDocument(resource, buildLuaFileSemanticData(model.buffer.getText(), resource.path));
-	const view = createBehaviorLensViewState(document(), model, 'properties');
+	const view = createBehaviorLensViewState(document(), model, 'properties', assert.fail);
 	const input = new BehaviorLensInput(model, view, () => assert.fail('property inputs must not construct a graph-layout engine'));
-	model.onDidChangeContent(event => { mapBehaviorLensSourceRanges(view, event); input.invalidatePresentation(); });
+	model.onDidChangeContent(event => { mapBehaviorLensSourceRanges(view, model.resource, event); input.invalidatePresentation(); });
 	selectBehaviorLensDefinition(view, view.document.definitions[chosen].rowKey);
 	const properties = view.presentation;
 	assert.ok(properties.kind === 'properties');
 	Object.assign(view.layout, { left: 0, right: 384, headerBottom: 12, bottom: 268 });
 	const update = () => input.updatePresentation(editorViewState.font.renderFont());
-	const refresh = () => { installBehaviorLensDocument(view, document(), model.buffer); view.sourceVersion = model.version; update(); };
+	const refresh = () => { installBehaviorLensDocument(view, document()); update(); };
 	const move = (command: Parameters<typeof executeBehaviorLensNavigation>[1]) => {
 		const result = executeBehaviorLensNavigation(view, command);
 		finishBehaviorLensNavigation(view); update();

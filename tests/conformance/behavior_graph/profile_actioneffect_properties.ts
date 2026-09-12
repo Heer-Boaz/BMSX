@@ -30,7 +30,7 @@ for (const requirements of [1, 256, 4096]) {
 	const document = buildBehaviorSourceDocument(model.resource, buildLuaFileSemanticData(source, model.resource.path));
 	const font = new MeasuredEditorFont('tiny');
 	editorViewState.font = font;
-	const view = createBehaviorLensViewState(document, model, 'properties');
+	const view = createBehaviorLensViewState(document, model, 'properties', assert.fail);
 	selectBehaviorLensDefinition(view, document.definitions[1].rowKey);
 	Object.assign(view.layout, { left: 0, right: 384, headerBottom: 12, bottom: 268 });
 	const properties = view.presentation;
@@ -38,7 +38,7 @@ for (const requirements of [1, 256, 4096]) {
 	assert.ok(properties.kind === 'properties' && definition.behaviorKind === 'action_effect');
 	const input = new BehaviorLensInput(model, view, () => assert.fail('a property projection must not construct a graph engine'));
 	try {
-		const projectMs = medianMilliseconds(() => projectActionEffectProperties(view, properties, definition, model.buffer));
+		const projectMs = medianMilliseconds(() => projectActionEffectProperties(view, properties, definition));
 		const layoutMs = medianMilliseconds(() => {
 			properties.tree.textDirty = true;
 			layoutWorkbenchPropertyTree(properties.tree, font.renderFont(), measureTextRange, 0, 13, 384, 268);

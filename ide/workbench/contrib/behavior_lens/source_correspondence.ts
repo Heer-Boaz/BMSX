@@ -1,4 +1,5 @@
-import type { TextBuffer } from '../../../editor/text/text_buffer';
+import type { ResourceIdentity } from '../../../common/resource';
+import { trackedTextLocationsEqual } from '../../../editor/text/text_location';
 import type { EditorTextModelContentChangeEvent } from '../../../editor/model/text_model';
 import { BehaviorSourceIndex } from './source_index';
 import type { BehaviorSourceDocument, BehaviorSourceNode, BehaviorSourceRowKey } from './model';
@@ -8,20 +9,19 @@ import { mapStateMachineSourceSelection, reconcileStateMachineSourceSelection } 
 import { behaviorSourceEditState, copyBehaviorSourceBookmark, mapBehaviorSourceBookmark } from './source_bookmark';
 
 /** Tracks the existing generation even while another pane edits its document. */
-export function mapBehaviorLensSourceRanges(state: BehaviorLensViewState, event: EditorTextModelContentChangeEvent): void {
+export function mapBehaviorLensSourceRanges(state: BehaviorLensViewState, resource: ResourceIdentity, event: EditorTextModelContentChangeEvent): void {
 	const { changes, editState } = event;
 	const definition = state.definitionRowKey === null ? undefined : state.source.ranges.get(state.definitionRowKey);
 	// A document's undo state belongs to the edited registration, not all its views.
 	if (editState !== null && editState.is(behaviorSourceEditState) && definition !== undefined
-		&& definition.start !== definition.end && definition.start === editState.value.path[0].start
-		&& definition.end === editState.value.path[0].end) {
+		&& definition.start !== definition.end && trackedTextLocationsEqual(definition, editState.value.path[0])) {
 		state.selectionBookmark = copyBehaviorSourceBookmark(editState.value);
 	} else if (state.selectionBookmark !== undefined) {
-		mapBehaviorSourceBookmark(state.selectionBookmark, changes);
+		mapBehaviorSourceBookmark(state.selectionBookmark, resource, changes);
 	}
 	const selection = state.selection;
 	if (selection !== null && (selection.kind === 'state-outcome' || selection.kind === 'state-entry')) {
-		mapStateMachineSourceSelection(selection, changes);
+		mapStateMachineSourceSelection(selection, resource, changes);
 	}
 	if (state.presentation.kind === 'outline') state.presentation.hoverIndex = -1;
 	else if (state.presentation.kind === 'properties') state.presentation.tree.hoverIndex = -1;
@@ -34,7 +34,6 @@ export function mapBehaviorLensSourceRanges(state: BehaviorLensViewState, event:
 export function reconcileBehaviorLensSource(
 	state: BehaviorLensViewState,
 	document: BehaviorSourceDocument,
-	buffer: TextBuffer,
 ): BehaviorSourceSelection | null {
 	const selection = state.selection;
 	const selectedKey = selection?.rowKey;
@@ -46,22 +45,26 @@ export function reconcileBehaviorLensSource(
 	const oldMatches = new Set(state.sourceMatchRowKeys);
 	const oldDefinitions = state.document.definitions;
 	const previousSource = state.source;
-	const source = BehaviorSourceIndex.acquire(document, previousSource.model);
+	const source = BehaviorSourceIndex.acquire(document, previousSource.model, previousSource.resolveModel);
 	let selected: BehaviorSourceRowKey | null = null;
 	state.definitionRowKey = null;
 	collapsed?.clear();
 	state.sourceMatchRowKeys.clear();
 
 	function visit(nodes: readonly BehaviorSourceNode[], previous: readonly BehaviorSourceNode[], depth: number): void {
-		const previousByStart = new Map<number, BehaviorSourceNode>();
+		const previousByResource = new Map<string, Map<number, BehaviorSourceNode>>();
 		for (const node of previous) {
 			const span = oldRanges.get(node.rowKey)!;
-			if (span.start !== span.end) previousByStart.set(span.start, node);
+			if (span.start === span.end) continue;
+			const resource = span.resource.path;
+			let previousByStart = previousByResource.get(resource);
+			if (previousByStart === undefined) { previousByStart = new Map(); previousByResource.set(resource, previousByStart); }
+			previousByStart.set(span.start, node);
 		}
 		for (const node of nodes) {
 			const span = source.ranges.get(node.rowKey)!;
-			const candidate = previousByStart.get(span.start);
-			const prior = candidate !== undefined && oldRanges.get(candidate.rowKey)!.end === span.end
+			const candidate = previousByResource.get(span.resource.path)?.get(span.start);
+			const prior = candidate !== undefined && trackedTextLocationsEqual(oldRanges.get(candidate.rowKey)!, span)
 				&& candidate.kind === node.kind && candidate.behaviorKind === node.behaviorKind ? candidate : undefined;
 			if (prior !== undefined) {
 				if (prior.rowKey === selectedKey) selected = node.rowKey;
@@ -82,5 +85,5 @@ export function reconcileBehaviorLensSource(
 	if (selected === null) return null;
 	const previousSelection = selection!;
 	if (previousSelection.kind === 'node' || previousSelection.kind === 'tree-edge') return { kind: previousSelection.kind, rowKey: selected };
-	return reconcileStateMachineSourceSelection(previousSelection, state.stateMachines.references.get(selected), buffer);
+	return reconcileStateMachineSourceSelection(previousSelection, state.stateMachines.references.get(selected), source.models);
 }

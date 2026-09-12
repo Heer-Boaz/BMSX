@@ -47,7 +47,7 @@ for (const documents of [4, 32, 128]) {
 		codeInputs.push(code); group.add(code);
 		const document = buildBehaviorSourceDocument(resource, buildLuaFileSemanticData(source, resource.path));
 		for (const definition of document.definitions) {
-			const view = createBehaviorLensViewState(document, model, 'graph');
+			const view = createBehaviorLensViewState(document, model, 'graph', assert.fail);
 			selectBehaviorLensDefinition(view, definition.rowKey);
 			group.add(new BehaviorLensInput(model, view, () => assert.fail('capture must not create a graph worker')));
 		}

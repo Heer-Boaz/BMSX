@@ -26,7 +26,7 @@ function fixture() {
 	editorViewState.font = new EditorFont('tiny');
 	const model = new EditorTextModel({ domain: 0, path: 'source_owned.lua', source: { type: 'lua', resid: 'independent', generated: true } }, 'lua', SOURCE);
 	const document = buildBehaviorSourceDocument(model.resource, buildLuaFileSemanticData(SOURCE, model.resource.path));
-	const view = createBehaviorLensViewState(document, model, 'state-graph');
+	const view = createBehaviorLensViewState(document, model, 'state-graph', assert.fail);
 	view.definitionRowKey = document.definitions[0].rowKey;
 	return { model, view };
 }
@@ -35,7 +35,7 @@ test('FSM inspection keeps guards, full callback/return evidence and actual file
 	const { model, view } = fixture();
 	const idle = view.source.nodes.find(node => node.kind === 'state' && node.label === 'idle')!;
 	view.selection = { kind: 'node', rowKey: idle.rowKey };
-	const items = buildBehaviorInspection(view, model);
+	const items = buildBehaviorInspection(view);
 	assert.ok(items.some(item => item.label.includes('CAN_ENTER') && item.value.includes('OWNER.ENABLED')));
 	assert.ok(items.some(item => item.description.includes('NO RETURNED PATH') && item.value === 'RETURN NIL'));
 	assert.ok(items.some(item => item.description.includes('POSSIBLE PATH') && item.value.includes("RETURN '../active'")));
@@ -51,12 +51,12 @@ test('FSM inspection keeps guards, full callback/return evidence and actual file
 test('implicit entry and unresolved callback keep honest, inspectable evidence without inventing source targets', () => {
 	const { model, view } = fixture();
 	view.selection = { kind: 'node', rowKey: view.definitionRowKey! };
-	const implicit = buildBehaviorInspection(view, model).find(item => item.label === 'INITIAL ENTRY')!;
+	const implicit = buildBehaviorInspection(view).find(item => item.label === 'INITIAL ENTRY')!;
 	assert.equal(implicit.range, undefined); assert.equal(implicit.warning, false);
 	assert.ok(implicit.description.includes('RUNTIME CHOOSES'));
 	const active = view.source.nodes.find(node => node.kind === 'state' && node.label === 'active')!;
 	view.selection = { kind: 'node', rowKey: active.rowKey };
-	const items = buildBehaviorInspection(view, model);
+	const items = buildBehaviorInspection(view);
 	assert.ok(items.some(item => item.value === 'CALLBACKS.DYNAMIC' && item.description.includes('UNRESOLVED: UNKNOWN-CALLBACK')));
 	assert.equal(model.version, 1);
 });

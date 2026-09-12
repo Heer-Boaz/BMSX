@@ -17,13 +17,12 @@ import { behaviorSourceBookmarksEqual, captureBehaviorSourceBookmark } from '../
 function fixture(source = FSM_PROOF_SOURCE) {
 	const model = new EditorTextModel({ domain: 0, path: 'fsm_proofs.lua', source: { resid: 'fsm_proofs', type: 'lua' } }, 'lua', source);
 	const project = () => buildBehaviorSourceDocument(model.resource, buildLuaFileSemanticData(model.buffer.getText(), model.resource.path));
-	const view = createBehaviorLensViewState(project(), model, 'outline');
-	model.onDidChangeContent(event => mapBehaviorLensSourceRanges(view, event));
+	const view = createBehaviorLensViewState(project(), model, 'outline', assert.fail);
+	model.onDidChangeContent(event => mapBehaviorLensSourceRanges(view, model.resource, event));
 	return { model, view, refresh() {
-		installBehaviorLensDocument(view, project(), model.buffer);
-		view.sourceVersion = model.version;
+		installBehaviorLensDocument(view, project());
 	}, choose(reference: StateMachineSourceReference) {
-		view.selection = selectStateMachineSource(reference, model.buffer);
+		view.selection = selectStateMachineSource(reference, view.source.models);
 		assert.ok(view.presentation.kind === 'outline');
 		view.presentation.collapsedRowKeys.clear();
 		rebuildBehaviorLensRows(view, view.presentation);

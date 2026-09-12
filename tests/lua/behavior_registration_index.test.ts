@@ -5,7 +5,7 @@ import { indexStateMachineSource } from '../../ide/workbench/contrib/behavior_le
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { resetSemanticProjects } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
+import { getOrCreateSemanticProject, resetSemanticProjects } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
 import {
 	registerLuaSourceRecord,
 	type LuaSourceRecord,
@@ -284,13 +284,13 @@ test('definition views share one lazy source generation and immutable FSM index 
 	const documents = new BehaviorSourceDocuments(sources);
 	const first = documents.get(model);
 	const fsm = indexStateMachineSource(first);
-	const positions = BehaviorSourceIndex.acquire(first, model);
+	const positions = BehaviorSourceIndex.acquire(first, model, assert.fail);
 	t.after(() => positions.release());
 	const originalStart = positions.ranges.get(first.definitions[1].rowKey)!.start;
 	for (let request = 0; request < 1000; request += 1) {
 		assert.equal(documents.get(model), first);
 		assert.equal(indexStateMachineSource(first), fsm);
-		const acquired = BehaviorSourceIndex.acquire(first, model);
+		const acquired = BehaviorSourceIndex.acquire(first, model, assert.fail);
 		assert.equal(acquired, positions);
 		acquired.release();
 	}
@@ -300,4 +300,12 @@ test('definition views share one lazy source generation and immutable FSM index 
 	assert.notEqual(second, first); assert.equal(documents.get(model), second);
 	assert.notEqual(indexStateMachineSource(second), fsm);
 	assert.equal(second.definitions[1].occurrenceRange.start.line, first.definitions[1].occurrenceRange.start.line + 1);
+	assert.deepEqual(Object.keys(second.files[0]).sort(), ['file', 'revision'], 'source proofs do not pin complete binder tables');
+	resetSemanticProjects();
+	const replacement = documents.get(model);
+	assert.notEqual(replacement.files[0].revision, second.files[0].revision, 'binder revisions do not collide after resetting the project');
+	const generation = getOrCreateSemanticProject(0).getSnapshot();
+	resetSemanticProjects();
+	assert.notEqual(documents.get(model), replacement, 'equal workspace version numbers cannot reuse another project generation');
+	assert.equal(getOrCreateSemanticProject(0).getSnapshot().version, generation.version);
 });

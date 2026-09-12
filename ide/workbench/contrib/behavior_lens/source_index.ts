@@ -1,30 +1,43 @@
 import type { EditorTextModel } from '../../../editor/model/text_model';
-import type { TextBuffer } from '../../../editor/text/text_buffer';
-import type { TrackedTextRange } from '../../../editor/text/text_change';
-import { luaSourceRangeToTextRange } from '../../../language/lua/source_edits';
+import type { TrackedTextLocation } from '../../../editor/text/text_location';
+import { luaSourceRangeToTextLocation } from '../../../language/lua/source_location';
 import type { BehaviorSourceDocument, BehaviorSourceNode, BehaviorSourceRowKey } from './model';
 
 /** Shared indices and mapped occurrences of one document generation, not view selection. */
 export class BehaviorSourceIndex {
 	private static readonly indices = new WeakMap<EditorTextModel, Map<BehaviorSourceDocument, BehaviorSourceIndex>>();
-	public readonly ranges = new Map<BehaviorSourceRowKey, TrackedTextRange>();
+	public readonly ranges = new Map<BehaviorSourceRowKey, TrackedTextLocation>();
+	public readonly models: ReadonlyMap<string, EditorTextModel>;
 	public readonly nodes: BehaviorSourceNode[] = [];
 	public readonly nodesByRowKey = new Map<BehaviorSourceRowKey, BehaviorSourceNode>();
 	public readonly parentByRowKey = new Map<BehaviorSourceRowKey, BehaviorSourceRowKey | null>();
 	private references = 0;
-	private readonly releaseRanges: () => void;
+	private readonly subscriptions: (() => void)[] = [];
+	private current = true;
 
-	private constructor(private readonly document: BehaviorSourceDocument, public readonly model: EditorTextModel) {
-		this.index(document.definitions, null, model.buffer);
-		this.releaseRanges = model.trackRanges(this.ranges);
+	private constructor(private readonly document: BehaviorSourceDocument, public readonly model: EditorTextModel,
+		public readonly resolveModel: (path: string) => EditorTextModel) {
+		const models = new Map<string, EditorTextModel>();
+		const rangesByModel = new Map<EditorTextModel, Map<BehaviorSourceRowKey, TrackedTextLocation>>();
+		for (const file of document.files) {
+			const owner = file.file === model.resource.path ? model : resolveModel(file.file);
+			models.set(file.file, owner);
+			rangesByModel.set(owner, new Map());
+			this.subscriptions.push(owner.onWillChangeContent(() => { this.current = false; }));
+		}
+		this.models = models;
+		this.index(document.definitions, null, rangesByModel);
+		for (const [owner, ranges] of rangesByModel) this.subscriptions.push(owner.trackRanges(ranges));
 	}
 
+	public get isCurrent(): boolean { return this.current; }
+
 	/** One acquisition per retained view, not per lookup or pane attachment. */
-	public static acquire(document: BehaviorSourceDocument, model: EditorTextModel): BehaviorSourceIndex {
+	public static acquire(document: BehaviorSourceDocument, model: EditorTextModel, resolveModel: (path: string) => EditorTextModel): BehaviorSourceIndex {
 		let generations = this.indices.get(model);
 		if (generations === undefined) { generations = new Map(); this.indices.set(model, generations); }
 		let index = generations.get(document);
-		if (index === undefined) { index = new BehaviorSourceIndex(document, model); generations.set(document, index); }
+		if (index === undefined || !index.isCurrent) { index = new BehaviorSourceIndex(document, model, resolveModel); generations.set(document, index); }
 		index.references += 1;
 		return index;
 	}
@@ -32,18 +45,22 @@ export class BehaviorSourceIndex {
 	public release(): void {
 		this.references -= 1;
 		if (this.references === 0) {
-			this.releaseRanges();
-			BehaviorSourceIndex.indices.get(this.model)!.delete(this.document);
+			for (const unsubscribe of this.subscriptions) unsubscribe();
+			const generations = BehaviorSourceIndex.indices.get(this.model)!;
+			if (generations.get(this.document) === this) generations.delete(this.document);
 		}
 	}
 
-	private index(nodes: readonly BehaviorSourceNode[], parent: BehaviorSourceRowKey | null, buffer: TextBuffer): void {
+	private index(nodes: readonly BehaviorSourceNode[], parent: BehaviorSourceRowKey | null,
+		rangesByModel: ReadonlyMap<EditorTextModel, Map<BehaviorSourceRowKey, TrackedTextLocation>>): void {
 		for (const node of nodes) {
-			this.ranges.set(node.rowKey, luaSourceRangeToTextRange(buffer, node.occurrenceRange));
+			const range = luaSourceRangeToTextLocation(this.models, node.occurrenceRange);
+			this.ranges.set(node.rowKey, range);
+			rangesByModel.get(this.models.get(node.occurrenceRange.path)!)!.set(node.rowKey, range);
 			this.nodes.push(node);
 			this.nodesByRowKey.set(node.rowKey, node);
 			this.parentByRowKey.set(node.rowKey, parent);
-			this.index(node.children, node.rowKey, buffer);
+			this.index(node.children, node.rowKey, rangesByModel);
 		}
 	}
 }

@@ -1,6 +1,5 @@
 import type { LuaSourceRange } from '../../../../toolchain/ts/lua/syntax/ast';
 import { uppercaseOutsideStrings } from '../../../common/text';
-import type { EditorTextModel } from '../../../editor/model/text_model';
 import { readLuaSourceRange } from '../../../language/lua/source_edits';
 import type { InspectedProperty } from '../../ui/property_inspector/model';
 import type { BehaviorLensViewState } from './view_model';
@@ -13,12 +12,12 @@ export type BehaviorInspectionProperty = InspectedProperty & {
 };
 
 /** Source-owned excerpts of this document generation, not the active code tab or a runtime DTO. */
-export function buildBehaviorInspection(view: BehaviorLensViewState, model: EditorTextModel): readonly BehaviorInspectionProperty[] {
+export function buildBehaviorInspection(view: BehaviorLensViewState): readonly BehaviorInspectionProperty[] {
 	const result: BehaviorInspectionProperty[] = [];
 	const selected = view.source.nodesByRowKey.get(view.selection!.rowKey)!;
 	function source(label: string, description: string, range: LuaSourceRange, stateSelection?: StateMachineDetail['source']): void {
 		const location = `${range.path}:${range.start.line}:${range.start.column}`;
-		result.push({ label: uppercaseOutsideStrings(label), value: uppercaseOutsideStrings(readLuaSourceRange(model.buffer, range)),
+		result.push({ label: uppercaseOutsideStrings(label), value: uppercaseOutsideStrings(readLuaSourceRange(view.source.models.get(range.path)!.buffer, range)),
 			description: description.length === 0 ? location : `${location}\n${uppercaseOutsideStrings(description)}`,
 			warning: false, range, stateSelection });
 	}

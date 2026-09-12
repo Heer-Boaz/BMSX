@@ -9,6 +9,7 @@ import { captureBehaviorLensView, restoreBehaviorLensView, type BehaviorLensView
 
 export type SerializedBehaviorLensInput = {
 	readonly source: TextFileModelSnapshot;
+	readonly dependencies: readonly TextFileModelSnapshot[];
 	readonly presentation: BehaviorLensViewState['presentation']['kind'];
 	readonly view: BehaviorLensViewSnapshot;
 };
@@ -18,16 +19,25 @@ export class BehaviorLensInputSerializer implements EditorInputSerializer<Behavi
 		private readonly controller: BehaviorLensController) {}
 
 	public serialize(input: BehaviorLensInput): string {
+		const dependencies: TextFileModelSnapshot[] = [];
+		for (const model of input.view.source.models.values()) {
+			if (model !== input.workingCopy) dependencies.push(captureTextFileModel(model));
+		}
 		const state: SerializedBehaviorLensInput = { source: captureTextFileModel(input.workingCopy),
-			presentation: input.view.presentation.kind, view: captureBehaviorLensView(input) };
+			dependencies, presentation: input.view.presentation.kind, view: captureBehaviorLensView(input) };
 		return JSON.stringify(state);
 	}
 
 	public async deserialize(value: string): Promise<BehaviorLensInput> {
 		const state: SerializedBehaviorLensInput = JSON.parse(value);
 		const { model, sameSource } = await resolveTextFileModelSnapshot(this.storage, this.sources, state.source);
+		let sameDependencies = true;
+		for (const dependency of state.dependencies) {
+			const resolved = await resolveTextFileModelSnapshot(this.storage, this.sources, dependency);
+			if (!resolved.sameSource) sameDependencies = false;
+		}
 		const input = this.controller.createInput(model, state.presentation);
-		if (sameSource) restoreBehaviorLensView(input, state.view);
+		if (sameSource && sameDependencies) restoreBehaviorLensView(input, state.view);
 		input.updateLabel();
 		return input;
 	}

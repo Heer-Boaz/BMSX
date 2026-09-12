@@ -1,5 +1,4 @@
 import { LuaSyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
-import type { TextBuffer } from '../../../editor/text/text_buffer';
 import { readLuaExpressionPreview, readLuaSourceLinePreview } from '../../../language/lua/source_edits';
 import { uppercaseOutsideStrings } from '../../../common/text';
 import { appendWorkbenchTreeNode, rebuildWorkbenchTreeRows, type WorkbenchTreeNode } from '../../ui/tree_view';
@@ -64,7 +63,7 @@ export function createBehaviorLensEffectProperties(): BehaviorLensEffectProperti
 
 /** One selected definition, projected once per source generation. Groups never acquire fake Lua ranges. */
 export function projectActionEffectProperties(
-	view: BehaviorLensViewState, properties: BehaviorLensEffectProperties, definition: ActionEffectSourceDefinition | undefined, buffer: TextBuffer,
+	view: BehaviorLensViewState, properties: BehaviorLensEffectProperties, definition: ActionEffectSourceDefinition | undefined,
 ): void {
 	const tree = properties.tree;
 	tree.roots.length = 0;
@@ -101,8 +100,8 @@ export function projectActionEffectProperties(
 			const count = field.source.resolution === 'complete' ? `${field.entries.length} ${field.entries.length === 1 ? 'VALUE' : 'VALUES'}`
 				: `${field.entries.length} AUTHORED / PARTIAL`;
 			value = field.field.value.kind === LuaSyntaxKind.TableConstructorExpression ? count
-				: `${readLuaExpressionPreview(buffer, field.field.value)} / ${count}`;
-		} else value = field.kind === 'unknown' ? readLuaSourceLinePreview(buffer, field.field.range) : readLuaExpressionPreview(buffer, field.field.value);
+				: `${readLuaExpressionPreview(view.source.models.get(field.field.value.range.path)!.buffer, field.field.value)} / ${count}`;
+		} else value = field.kind === 'unknown' ? readLuaSourceLinePreview(view.source.models.get(field.field.range.path)!.buffer, field.field.range) : readLuaExpressionPreview(view.source.models.get(field.field.value.range.path)!.buffer, field.field.value);
 		const row = add(field.source, group, metadata.label, value, metadata.description);
 		if (field.kind !== 'list') continue;
 		const entries = new Map<BehaviorSourceNode, BehaviorSourceArrayEntry<BehaviorSourceNode>>();
@@ -112,7 +111,7 @@ export function projectActionEffectProperties(
 				const entry = entries.get(child);
 				const nested = entry === undefined
 					? add(child, parent, child.label, child.detail, 'PARTIAL REQUIREMENT SOURCE. NO DENSE RUNTIME INDEX IS INFERRED.')
-					: add(child, parent, '', readLuaExpressionPreview(buffer, entry.field.value), 'AUTHORED REQUIREMENT VALUE. SOURCE OPENS THIS EXPRESSION, NOT ITS PARENT LIST.');
+					: add(child, parent, '', readLuaExpressionPreview(view.source.models.get(entry.field.value.range.path)!.buffer, entry.field.value), 'AUTHORED REQUIREMENT VALUE. SOURCE OPENS THIS EXPRESSION, NOT ITS PARENT LIST.');
 				children(child, nested);
 			}
 		}

@@ -43,7 +43,8 @@ export function indexStateMachineSource(document: BehaviorSourceDocument): State
 			const rowKey = transition.slot.source.rowKey;
 			references.set(rowKey, transition.outcomes.map(outcome => ({ kind: 'state-outcome', rowKey, transition, outcome })));
 			if (document.syntaxComplete) for (const outcome of transition.outcomes) {
-				if (stateMachineRetargetLiteral(outcome) !== undefined) retargetable.add(outcome);
+				const literal = stateMachineRetargetLiteral(outcome);
+				if (literal !== undefined && literal.range.path === document.resource.path) retargetable.add(outcome);
 			}
 		}
 	}

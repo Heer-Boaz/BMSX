@@ -226,7 +226,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 			const result = this.graph.handlePointer(snapshot, now, playerInput.getRawButtonState('Space', 'keyboard').pressed);
 			if (result === WorkbenchGraphPointerResult.Selection || result === WorkbenchGraphPointerResult.Activate || result === WorkbenchGraphPointerResult.ContextMenu) {
 				if (view.presentation.kind === 'graph') acceptBehaviorGraphSelection(view, view.presentation);
-				else acceptStateGraphSelection(view, view.presentation, this.input.workingCopy.buffer);
+				else acceptStateGraphSelection(view, view.presentation);
 			}
 			if (result === WorkbenchGraphPointerResult.ContextMenu) this.openContextMenu(snapshot.viewportX, snapshot.viewportY);
 			if (result === WorkbenchGraphPointerResult.Activate) this.controller.openSource();
@@ -250,7 +250,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 				: presentation.kind === 'graph' ? 'behaviorLens.node.context' : 'behaviorLens.state.context';
 		} else menu = 'behaviorLens.property.context';
 		const lifetime = this.contextMenu.show(x, y, WORKBENCH_MENUS[menu], this.commands, keyboard);
-		lifetime.add({ dispose: this.input.workingCopy.onDidChangeContent(() => this.contextMenu.hide()) });
+		for (const model of view.source.models.values()) lifetime.add({ dispose: model.onDidChangeContent(() => this.contextMenu.hide()) });
 	}
 
 	private openDetails(): void {
@@ -259,11 +259,11 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		const input = this.input;
 		const selected = input.view.source.nodesByRowKey.get(input.view.selection!.rowKey)!;
 		const lifetime = this.inspector.show({ title: selected.label,
-			items: buildBehaviorInspection(input.view, input.workingCopy),
+			items: buildBehaviorInspection(input.view),
 			canOpenSource: item => item.range !== undefined,
 			openSource: item => this.controller.openInspectionSource(input, item),
 		});
-		lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => this.inspector.hide()) });
+		for (const model of input.view.source.models.values()) lifetime.add({ dispose: model.onDidChangeContent(() => this.inspector.hide()) });
 	}
 
 	private openKeyboardContextMenu(): void {

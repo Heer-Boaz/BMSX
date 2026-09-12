@@ -1,5 +1,6 @@
 import type { LuaSourceRange } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { ResourceIdentity } from '../../../common/resource';
+import type { LuaFileSemanticRevision } from '../../../../toolchain/ts/lua/semantic/model';
 import type { BehaviorTreeSourceDefinition } from './behavior_tree_model';
 import type { StateMachineSourceDefinition } from './state_machine_model';
 import type { ActionEffectSourceDefinition } from './action_effect_model';
@@ -59,6 +60,8 @@ export type BehaviorSourceDefinition = BehaviorTreeSourceDefinition | StateMachi
 /** Immutable source topology for one authored Lua document generation. */
 export type BehaviorSourceDocument = {
 	readonly resource: ResourceIdentity;
+	/** Exact binder-file inputs for the source topology, including its registration. */
+	readonly files: readonly LuaFileSemanticRevision[];
 	readonly syntaxComplete: boolean;
 	readonly definitions: readonly BehaviorSourceDefinition[];
 };

@@ -15,7 +15,7 @@ export function retargetStateMachineTransition(
 	const after = copyBehaviorSourceBookmark(before);
 	const edit = createLuaStringValueEdit(model.buffer, target.literal, target.text);
 	model.pushEditOperations([edit], behaviorSourceEditState.of(before), changes => {
-		mapBehaviorSourceBookmark(after, changes);
+		mapBehaviorSourceBookmark(after, model.resource, changes);
 		if (after.tracked.kind === 'direct') {
 			// This command replaces precisely the selected binding token. Ordinary
 			// deletion tracking must still collapse it, so publish explicit new syntax.

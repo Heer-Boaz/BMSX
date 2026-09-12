@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict';
 import { indexStateMachineSource } from '../../../ide/workbench/contrib/behavior_lens/state_machine_index';
 import { medianMilliseconds } from '../../helpers/performance';
 import { buildLuaFileSemanticData, type SymbolID } from '../../../toolchain/ts/lua/semantic/model';
@@ -25,14 +26,14 @@ machines.register('profile', { initial = 'lane0', states = { ${Array.from({ leng
 	const document = buildBehaviorSourceDocument(resource, semantic);
 	const referenceIndexMs = medianMilliseconds(() => { indexStateMachineSource(document); });
 	const model = new EditorTextModel({ ...resource, source: { resid: 'fsm_profile', type: 'lua' } }, 'lua', source);
-	const view = createBehaviorLensViewState(document, model, 'outline');
+	const view = createBehaviorLensViewState(document, model, 'outline', assert.fail);
 	const references = [...view.stateMachines.references.values()];
-	const selected = selectStateMachineSource(references.findLast(items => items[0].kind === 'state-outcome' && items[0].outcome.proof.kind === 'return')![0], model.buffer);
+	const selected = selectStateMachineSource(references.findLast(items => items[0].kind === 'state-outcome' && items[0].outcome.proof.kind === 'return')![0], view.source.models);
 	view.selection = selected;
-	const inputRefreshMs = medianMilliseconds(() => { installBehaviorLensDocument(view, document, model.buffer); });
+	const inputRefreshMs = medianMilliseconds(() => { installBehaviorLensDocument(view, document); });
 	const roundtrip = [{ offset: 0, deletedLength: 0, insertedLength: 1 }, { offset: 0, deletedLength: 1, insertedLength: 0 }];
 	const selectedProofMapMs = medianMilliseconds(() => {
-		for (let index = 0; index < 1000; index += 1) mapStateMachineSourceSelection(selected, roundtrip);
+		for (let index = 0; index < 1000; index += 1) mapStateMachineSourceSelection(selected, model.resource, roundtrip);
 	}) / 1000;
 	const registrationSet = collectBehaviorRegistrations(resource, semantic);
 	const registration = registrationSet.registrations[0];

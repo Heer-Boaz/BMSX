@@ -10,7 +10,9 @@ export class BehaviorLensNavigationSelection extends EditorPaneSelection {
 	public constructor(input: BehaviorLensInput) {
 		super();
 		this.snapshot = captureBehaviorLensView(input);
-		this.add({ dispose: input.workingCopy.onDidChangeContent(event => mapBehaviorLensView(this.snapshot, event.changes)) });
+		for (const model of input.view.source.models.values()) {
+			this.add({ dispose: model.onDidChangeContent(event => mapBehaviorLensView(this.snapshot, model.resource, event.changes)) });
+		}
 	}
 
 	public matches(other: BehaviorLensNavigationSelection): boolean {

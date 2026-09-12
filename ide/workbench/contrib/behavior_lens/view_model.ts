@@ -68,7 +68,6 @@ export type BehaviorLensStateGraph = {
 export type BehaviorLensViewState = {
 	readonly resource: BehaviorSourceDocument['resource'];
 	document: BehaviorSourceDocument;
-	sourceVersion: number;
 	definitionRowKey: BehaviorSourceRowKey | null;
 	selection: BehaviorSourceSelection | null;
 	/** One edit-associated selection waiting for the next source projection, not history. */
@@ -103,16 +102,16 @@ export function createBehaviorLensStateGraph(): BehaviorLensStateGraph {
 }
 
 /** Input-owned source/view state; pixel layout is prepared only by the active pane. */
-export function createBehaviorLensViewState(document: BehaviorSourceDocument, model: EditorTextModel, presentation: BehaviorLensViewState['presentation']['kind']): BehaviorLensViewState {
+export function createBehaviorLensViewState(document: BehaviorSourceDocument, model: EditorTextModel, presentation: BehaviorLensViewState['presentation']['kind'],
+	resolveModel: (path: string) => EditorTextModel): BehaviorLensViewState {
 	const view: BehaviorLensViewState = {
 		resource: document.resource,
-		document: { resource: document.resource, syntaxComplete: document.syntaxComplete, definitions: [] },
-		sourceVersion: model.version,
+		document: { ...document, definitions: [] },
 		definitionRowKey: null,
 		selection: null,
 		selectionBookmark: undefined,
 		stateMachines: { bodies: new Map(), references: new Map(), initialTargets: new Map(), scopes: new Map(), retargetable: new Set() },
-		source: BehaviorSourceIndex.acquire({ resource: document.resource, syntaxComplete: true, definitions: [] }, model),
+		source: BehaviorSourceIndex.acquire({ ...document, definitions: [] }, model, resolveModel),
 		sourceMatchRowKeys: new Set(),
 		presentation: presentation === 'graph' ? createBehaviorLensGraph() : presentation === 'state-graph' ? createBehaviorLensStateGraph()
 			: presentation === 'properties' ? createBehaviorLensEffectProperties() : createBehaviorLensOutline(),
@@ -120,6 +119,6 @@ export function createBehaviorLensViewState(document: BehaviorSourceDocument, mo
 		headerDirty: true,
 		status: { info: '', detail: '' },
 	};
-	installBehaviorLensDocument(view, document, model.buffer);
+	installBehaviorLensDocument(view, document);
 	return view;
 }

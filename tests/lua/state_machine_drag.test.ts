@@ -22,7 +22,7 @@ function fixture(t: TestContext, source = FSM_RETARGET_SOURCE) {
 	const model = new EditorTextModel({ domain: 0, path: 'drag.lua', source: { type: 'lua', resid: 'drag' } }, 'lua', source);
 	t.after(() => { model.dispose(); editorViewState.font = oldFont; });
 	const document = buildBehaviorSourceDocument(model.resource, buildLuaFileSemanticData(source, 'drag.lua'));
-	const view = createBehaviorLensViewState(document, model, 'state-graph');
+	const view = createBehaviorLensViewState(document, model, 'state-graph', assert.fail);
 	selectBehaviorLensDefinition(view, document.definitions[0].rowKey);
 	const graph = view.presentation;
 	assert.ok(graph.kind === 'state-graph');
@@ -51,7 +51,7 @@ function fixture(t: TestContext, source = FSM_RETARGET_SOURCE) {
 	const transition = definition.transitions.find(item => item.origin === branch.children.get('idle')! && item.slot.kind === 'update')!;
 	const edge = byOutcome.get(transition.outcomes[1])!;
 	graph.viewport.selection = edge;
-	view.selection = selectStateMachineSource(edge.link.reference, model.buffer);
+	view.selection = selectStateMachineSource(edge.link.reference, view.source.models);
 	const drops: Parameters<StateMachineRetargetDrop>[] = [];
 	const begin = () => beginStateMachineDrag(model, view, { kind: 'connection', edge, end: 'target' }, (...drop) => drops.push(drop))!;
 	const hover = (session: ReturnType<typeof begin>, name: string) => {

@@ -1,7 +1,8 @@
 import type { LuaExpression, LuaSourceRange, LuaTableField } from '../../../../toolchain/ts/lua/syntax/ast';
-import type { TextBuffer } from '../../../editor/text/text_buffer';
-import { mapTrackedTextRange, type EditorTextChange, type TrackedTextRange } from '../../../editor/text/text_change';
-import { luaSourcePositionMatchesTextRange, luaSourcePositionToTextRange, luaSourceRangeMatchesTextRange, luaSourceRangeToTextRange } from '../../../language/lua/source_edits';
+import type { ResourceIdentity } from '../../../common/resource';
+import type { EditorTextChange } from '../../../editor/text/text_change';
+import { mapTrackedTextLocation, trackedTextLocationsEqual, type TrackedTextLocation } from '../../../editor/text/text_location';
+import { luaSourceStartMatchesTextLocation, luaSourceStartToTextLocation, luaSourceRangeMatchesTextLocation, luaSourceRangeToTextLocation, type LuaSourceModels } from '../../../language/lua/source_location';
 import type { BehaviorSourceRowKey } from './model';
 import type { StateMachineSourceEntry, StateMachineSourceOutcome, StateMachineSourceTransition } from './state_machine_model';
 
@@ -21,12 +22,12 @@ export type StateMachineSourceReference = {
 type TrackedTransitionProof = {
 	readonly slotKind: StateMachineSourceTransition['slot']['kind'];
 	readonly bindingKind: LuaExpression['kind'];
-	readonly binding: TrackedTextRange;
+	readonly binding: TrackedTextLocation;
 } & ({ readonly kind: 'direct' } | {
 	readonly kind: 'return';
-	readonly callback: TrackedTextRange;
+	readonly callback: TrackedTextLocation;
 	/** Return syntax identity, independent of edits to the expression's trailing boundary. */
-	readonly statementStart: TrackedTextRange;
+	readonly statementStart: TrackedTextLocation;
 });
 
 /** Input-independent syntax identity; history must not retain a source-generation AST. */
@@ -35,21 +36,21 @@ export type StateMachineSourceBookmark = {
 	readonly tracked: TrackedTransitionProof;
 } | {
 	readonly kind: 'state-entry';
-	readonly tracked: TrackedTextRange & { readonly entryKind: StateMachineSourceEntry['kind'] };
+	readonly tracked: TrackedTextLocation & { readonly entryKind: StateMachineSourceEntry['kind'] };
 };
 
 export type StateMachineSourceSelection = StateMachineSourceReference & StateMachineSourceBookmark;
 
 /** Only the selected evidence is tracked, not every possible edge in the document. */
-export function selectStateMachineSource(reference: StateMachineSourceReference, buffer: TextBuffer): StateMachineSourceSelection {
+export function selectStateMachineSource(reference: StateMachineSourceReference, models: LuaSourceModels): StateMachineSourceSelection {
 	if (reference.kind === 'state-entry') return { ...reference,
-		tracked: { ...luaSourcePositionToTextRange(buffer, reference.field.range.start), entryKind: reference.entry.kind } };
+		tracked: { ...luaSourceStartToTextLocation(models, reference.field.range), entryKind: reference.entry.kind } };
 	const proof = reference.outcome.proof;
 	const slotKind = reference.transition.slot.kind;
 	const tracked: TrackedTransitionProof = proof.kind === 'direct'
-		? { kind: 'direct', slotKind, bindingKind: proof.expression.kind, binding: luaSourceRangeToTextRange(buffer, proof.expression.range) }
-		: { kind: 'return', slotKind, bindingKind: proof.binding.kind, binding: luaSourceRangeToTextRange(buffer, proof.binding.range),
-			callback: luaSourceRangeToTextRange(buffer, proof.callback.range), statementStart: luaSourcePositionToTextRange(buffer, proof.statement.range.start) };
+		? { kind: 'direct', slotKind, bindingKind: proof.expression.kind, binding: luaSourceRangeToTextLocation(models, proof.expression.range) }
+		: { kind: 'return', slotKind, bindingKind: proof.binding.kind, binding: luaSourceRangeToTextLocation(models, proof.binding.range),
+			callback: luaSourceRangeToTextLocation(models, proof.callback.range), statementStart: luaSourceStartToTextLocation(models, proof.statement.range) };
 	return { ...reference, tracked };
 }
 
@@ -68,14 +69,14 @@ export function copyStateMachineSourceBookmark(selection: StateMachineSourceBook
 		: { ...tracked, binding: { ...tracked.binding }, callback: { ...tracked.callback }, statementStart: { ...tracked.statementStart } } };
 }
 
-export function mapStateMachineSourceSelection(selection: StateMachineSourceBookmark, changes: readonly EditorTextChange[]): void {
-	if (selection.kind === 'state-entry') mapTrackedTextRange(selection.tracked, changes);
+export function mapStateMachineSourceSelection(selection: StateMachineSourceBookmark, resource: ResourceIdentity, changes: readonly EditorTextChange[]): void {
+	if (selection.kind === 'state-entry') mapTrackedTextLocation(selection.tracked, resource, changes);
 	else {
 		const tracked = selection.tracked;
-		mapTrackedTextRange(tracked.binding, changes);
+		mapTrackedTextLocation(tracked.binding, resource, changes);
 		if (tracked.kind === 'return') {
-			mapTrackedTextRange(tracked.callback, changes);
-			mapTrackedTextRange(tracked.statementStart, changes);
+			mapTrackedTextLocation(tracked.callback, resource, changes);
+			mapTrackedTextLocation(tracked.statementStart, resource, changes);
 		}
 	}
 }
@@ -83,26 +84,26 @@ export function mapStateMachineSourceSelection(selection: StateMachineSourceBook
 /** Compare the evidence itself; two returns to the same state are distinct locations. */
 export function stateMachineSourceBookmarksEqual(a: StateMachineSourceBookmark, b: StateMachineSourceBookmark): boolean {
 	if (a.kind === 'state-entry') return b.kind === 'state-entry' && a.tracked.entryKind === b.tracked.entryKind
-		&& a.tracked.start === b.tracked.start && a.tracked.end === b.tracked.end;
+		&& trackedTextLocationsEqual(a.tracked, b.tracked);
 	if (b.kind !== 'state-outcome') return false;
 	const left = a.tracked;
 	const right = b.tracked;
 	if (left.slotKind !== right.slotKind || left.bindingKind !== right.bindingKind
-		|| left.binding.start !== right.binding.start || left.binding.end !== right.binding.end) return false;
+		|| !trackedTextLocationsEqual(left.binding, right.binding)) return false;
 	return left.kind === 'direct' ? right.kind === 'direct' : right.kind === 'return'
-		&& left.callback.start === right.callback.start && left.callback.end === right.callback.end
-		&& left.statementStart.start === right.statementStart.start && left.statementStart.end === right.statementStart.end;
+		&& trackedTextLocationsEqual(left.callback, right.callback)
+		&& trackedTextLocationsEqual(left.statementStart, right.statementStart);
 }
 
 /** The caller has already proved the containing registration/slot occurrence. */
 export function reconcileStateMachineSourceSelection(
-	selection: StateMachineSourceBookmark, references: readonly StateMachineSourceReference[] | undefined, buffer: TextBuffer,
+	selection: StateMachineSourceBookmark, references: readonly StateMachineSourceReference[] | undefined, models: LuaSourceModels,
 ): StateMachineSourceSelection | null {
 	if (references === undefined) return null; // The corresponding source node can lose its entry/transition evidence.
 	if (selection.kind === 'state-entry') {
 		for (const reference of references) {
 			if (reference.kind === 'state-entry' && reference.entry.kind === selection.tracked.entryKind
-				&& luaSourcePositionMatchesTextRange(buffer, reference.field.range.start, selection.tracked)) {
+				&& luaSourceStartMatchesTextLocation(models, reference.field.range, selection.tracked)) {
 				return { ...reference, tracked: selection.tracked };
 			}
 		}
@@ -113,10 +114,10 @@ export function reconcileStateMachineSourceSelection(
 		if (reference.kind !== 'state-outcome' || reference.transition.slot.kind !== tracked.slotKind) continue;
 		const proof = reference.outcome.proof;
 		const binding = proof.kind === 'direct' ? proof.expression : proof.binding;
-		if (binding.kind !== tracked.bindingKind || !luaSourceRangeMatchesTextRange(buffer, binding.range, tracked.binding)) continue;
+		if (binding.kind !== tracked.bindingKind || !luaSourceRangeMatchesTextLocation(models, binding.range, tracked.binding)) continue;
 		if (proof.kind === 'return') {
-			if (tracked.kind !== 'return' || !luaSourceRangeMatchesTextRange(buffer, proof.callback.range, tracked.callback)
-				|| !luaSourcePositionMatchesTextRange(buffer, proof.statement.range.start, tracked.statementStart)) continue;
+			if (tracked.kind !== 'return' || !luaSourceRangeMatchesTextLocation(models, proof.callback.range, tracked.callback)
+				|| !luaSourceStartMatchesTextLocation(models, proof.statement.range, tracked.statementStart)) continue;
 		} else if (tracked.kind !== 'direct') continue;
 		return { ...reference, tracked };
 	}

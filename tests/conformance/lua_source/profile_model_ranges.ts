@@ -19,11 +19,11 @@ trees.register('profile', { root = { type = 'sequence', children = {${'leaf,'.re
 	const document = buildBehaviorSourceDocument(model.resource, buildLuaFileSemanticData(source, model.resource.path));
 	const inputs: BehaviorLensInput[] = [];
 	for (let index = 0; index < viewCount; index += 1) {
-		inputs.push(new BehaviorLensInput(model, createBehaviorLensViewState(document, model, 'graph'),
+		inputs.push(new BehaviorLensInput(model, createBehaviorLensViewState(document, model, 'graph', assert.fail),
 			() => assert.fail('range tracking does not start an FSM layout engine')));
 	}
 	model.onDidChangeContent(event => {
-		for (const input of inputs) mapBehaviorLensSourceRanges(input.view, event);
+		for (const input of inputs) mapBehaviorLensSourceRanges(input.view, model.resource, event);
 	});
 	const editAndUndoMicroseconds = medianMilliseconds(() => {
 		for (let index = 0; index < 100; index += 1) {

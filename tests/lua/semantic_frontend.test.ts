@@ -12,6 +12,23 @@ import { buildLuaFileSemanticData, LuaSemanticWorkspace } from '../../toolchain/
 import { parseLuaChunk, parseLuaChunkWithRecovery } from '../../toolchain/ts/lua/analysis/parse';
 import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
 
+test('semantic revisions identify immutable binder facts independently of shared syntax and workspace version numbers', () => {
+	const source = 'return { answer = 42 }';
+	const first = buildLuaFileSemanticData(source, 'revision.lua');
+	const second = buildLuaFileSemanticData(source, 'revision.lua');
+	assert.equal(first.chunk, second.chunk, 'the parse cache shares unchanged syntax');
+	assert.notEqual(first.revision, second.revision, 'a distinct bind has its own fact revision');
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFiles([first]);
+	const initial = workspace.getSnapshot();
+	workspace.updateFiles([second]);
+	assert.equal(workspace.getSnapshot(), initial, 'no published source change retains the current generation');
+	const another = new LuaSemanticWorkspace();
+	another.updateFiles([first]);
+	assert.equal(another.getSnapshot().version, initial.version);
+	assert.notEqual(another.getSnapshot().revision, initial.revision, 'workspace reset cannot collide with a dependent cache');
+});
+
 test('LuaSemanticFrontend rejects host-published machine word globals', () => {
 	const source = 'return sys_boot_cart, sys_vdp_stream_base, cart_manifest';
 	const frontend = buildLuaSemanticFrontend([{ path: 'globals.lua', source }]);

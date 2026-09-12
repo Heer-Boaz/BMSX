@@ -17,7 +17,7 @@ local leaf<const> = { type = 'wait', duration_ticks = 1 }
 trees.register('profile', { root = { type = 'sequence', children = {${'leaf,'.repeat(children)}} } })`;
 	const model = new EditorTextModel({ domain: 0, path: 'profile.lua', source: { type: 'lua', resid: 'profile' } }, 'lua', source);
 	const document = buildBehaviorSourceDocument(model.resource, buildLuaFileSemanticData(source, model.resource.path));
-	const view = createBehaviorLensViewState(document, model, 'graph');
+	const view = createBehaviorLensViewState(document, model, 'graph', assert.fail);
 	const root = document.definitions[0];
 	assert.ok(root.behaviorKind === 'behavior_tree' && root.root?.kind === 'node');
 	const branch = root.root.branches[0];

@@ -5,6 +5,7 @@ import { closeTab, getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { editorFeedbackState } from '../../../ide/common/feedback_state';
 import { check, type StudioFixture } from './studio_fixture';
 import { chooseBehavior } from './studio_behavior_picker';
+import { getOrCreateSemanticProject } from '../../../ide/editor/contrib/intellisense/semantic/workspace/state';
 
 /** W04 uses actual text commands and the existing read-only source lens, not a second authored format. */
 export async function testSourceViewsBeforeApply(
@@ -29,7 +30,8 @@ export async function testSourceViewsBeforeApply(
 	await frame();
 	const lens = getActiveTab();
 	if (lens.kind !== 'behavior_lens') throw new Error('W04: source lens command must open a visual view');
-	check(lens.view.sourceVersion === model.version, 'W04: source lens projects the edited document version');
+	check(lens.view.source.isCurrent && lens.view.document.files[0].revision === getOrCreateSemanticProject(model.identity.domain).getSnapshot().getFileData(model.identity.path)!.revision,
+		'W04: source lens projects the edited working-copy generation');
 	check(lens.view.document.definitions.length > 0, 'W04: actual title FSM registration is visible');
 	harness.openLuaSource(model.resource.path);
 	check(harness.getActiveEditorDocument().model === model, 'W04: returning to text attaches the same document');
@@ -43,7 +45,8 @@ export async function testSourceViewsBeforeApply(
 	harness.executeCommand('behaviorLens');
 	await chooseBehavior(test, 'FSM nemesis_s.title_screen.fsm');
 	await frame();
-	check(getActiveTab() === lens && lens.view.sourceVersion === model.version, 'W04: the retained source lens refreshes after undo and redo');
+	check(getActiveTab() === lens && lens.view.source.isCurrent && lens.view.document.files[0].revision === getOrCreateSemanticProject(model.identity.domain).getSnapshot().getFileData(model.identity.path)!.revision,
+		'W04: the retained source lens refreshes after undo and redo');
 	closeTab(ide.editor.editorPanes, ide.sources, sourceTab.id);
 	await frame();
 	check(getActiveTab() === lens, 'W04: closing the code tab does not close its source view');

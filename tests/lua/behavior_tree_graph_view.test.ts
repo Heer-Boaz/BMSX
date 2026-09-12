@@ -97,8 +97,8 @@ test('concrete graph retains layout, source-backed edge selection and its screen
 	t.after(() => Object.assign(editorViewState, previous));
 	Object.assign(editorViewState, { font: new EditorFont('tiny'), viewportWidth: 384, viewportHeight: 288, lineHeight: 6, codeAreaTop: 24, codeAreaBottom: 276 });
 	const f = fixture();
-	const view = createBehaviorLensViewState(f.document, f.model, 'graph');
-	f.model.onDidChangeContent(event => mapBehaviorLensSourceRanges(view, event));
+	const view = createBehaviorLensViewState(f.document, f.model, 'graph', assert.fail);
+	f.model.onDidChangeContent(event => mapBehaviorLensSourceRanges(view, f.model.resource, event));
 	selectBehaviorLensDefinition(view, f.definition.rowKey);
 	prepareBehaviorLensLayout(view);
 	assert.equal(view.presentation.kind, 'graph');
@@ -123,7 +123,7 @@ test('concrete graph retains layout, source-backed edge selection and its screen
 	const screenY = edge.bounds.top - viewport.scrollY;
 	const insertion = luaSourceRangeToTextRange(f.model.buffer, initial.nodes[0].children[0].children[0].source.occurrenceRange);
 	f.model.pushEditOperations([{ offset: insertion.start, deleteLength: 0, text: "{ type = 'wait' }, " }]);
-	installBehaviorLensDocument(view, f.project(), f.model.buffer);
+	installBehaviorLensDocument(view, f.project());
 	prepareBehaviorLensLayout(view);
 	assert.ok(viewport.selection?.kind === 'edge');
 	assert.notEqual(viewport.selection, edge);
@@ -133,7 +133,7 @@ test('concrete graph retains layout, source-backed edge selection and its screen
 	assert.equal(readLuaSourceRange(f.model.buffer, selectedBehaviorLensSourceRange(view)!), 'shared');
 	const span = luaSourceRangeToTextRange(f.model.buffer, viewport.selection.range);
 	f.model.pushEditOperations([{ offset: span.start, deleteLength: span.end - span.start, text: 'leaf' }]);
-	installBehaviorLensDocument(view, f.project(), f.model.buffer);
+	installBehaviorLensDocument(view, f.project());
 	prepareBehaviorLensLayout(view);
 	assert.equal(view.selection, null);
 	assert.equal(viewport.selection, null);

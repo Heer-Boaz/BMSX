@@ -41,7 +41,8 @@ export function indexStateMachineInitialTargets(body: StateMachineSourceBody, ta
 export function stateMachineInitialTarget(view: BehaviorLensViewState): StateMachineInitialTarget | undefined {
 	if (!view.document.syntaxComplete || view.presentation.kind !== 'state-graph') return undefined;
 	const selected = view.presentation.viewport.selection;
-	return selected?.kind === 'node' && selected.role === 'source' ? view.stateMachines.initialTargets.get(selected.source.rowKey) : undefined;
+	const target = selected?.kind === 'node' && selected.role === 'source' ? view.stateMachines.initialTargets.get(selected.source.rowKey) : undefined;
+	return target !== undefined && target.owner.table.range.path === view.resource.path ? target : undefined;
 }
 
 export function setStateMachineInitial(model: EditorTextModel, target: StateMachineInitialTarget): void {

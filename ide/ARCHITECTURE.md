@@ -137,6 +137,18 @@ from every editor kind. Source edits remap locations without restoring old text,
 adopting a same-named deleted occurrence or changing the paused machine.
 See [navigation design and proof](../docs/workbench_navigation_history_design.md).
 
+Behavior-source locations carry the owning resource alongside half-open UTF-16
+offsets. The shared source index resolves each contributing model once, tracks
+its ranges there, and releases those registrations with its last input lease.
+Lua range conversion, FSM evidence and inspection read the model named by the
+range, not the registration's buffer. Navigation/history coordinates are copied
+when restored into a live selection, so a later edit cannot mutate another
+owner's bookmark. Reused syntax after Undo does not revive already-collapsed
+markers: a stale index is replaced. Lightweight producer-owned binder/workspace
+revisions establish source-generation identity without retaining old full
+workspace analyses. See [source resources](../docs/behavior_source_resources.md).
+This is not broader API recognition or permission for multi-resource edits.
+
 Workspace recovery persists dirty model contents separately from code-editor
 view metadata. A working copy can acquire its first code view after its content
 backup. Metadata requests retain the emitting model/view pair; the next

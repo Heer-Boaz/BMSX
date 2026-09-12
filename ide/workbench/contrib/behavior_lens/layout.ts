@@ -2,10 +2,9 @@ import { uppercaseOutsideStrings } from '../../../common/text';
 import { measureText, truncateTextToWidth } from '../../../editor/common/text/layout';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { updateFullWidthWorkbenchLayout } from '../../common/layout';
-import type { TextBuffer } from '../../../editor/text/text_buffer';
 import { reconcileBehaviorLensSource } from './source_correspondence';
 import { resolveBehaviorSourceBookmark, type BehaviorSourceBookmark } from './source_bookmark';
-import { reconcileStateMachineSourceSelection } from './state_machine_selection';
+import { copyStateMachineSourceBookmark, reconcileStateMachineSourceSelection } from './state_machine_selection';
 import {
 	clampWorkbenchListScroll,
 	layoutWorkbenchList,
@@ -47,13 +46,12 @@ export function createBehaviorLensLayout(): BehaviorLensLayout {
 export function installBehaviorLensDocument(
 	state: BehaviorLensViewState,
 	document: BehaviorSourceDocument,
-	buffer: TextBuffer,
 ): void {
 	state.stateMachines = indexStateMachineSource(document);
-	state.selection = reconcileBehaviorLensSource(state, document, buffer);
+	state.selection = reconcileBehaviorLensSource(state, document);
 	const bookmark = state.selectionBookmark;
 	state.selectionBookmark = undefined;
-	if (bookmark !== undefined) restoreBehaviorSourceBookmark(state, bookmark, buffer);
+	if (bookmark !== undefined) restoreBehaviorSourceBookmark(state, bookmark);
 	state.headerDirty = true;
 	if (state.presentation.kind !== 'outline') state.presentation.dirty = true;
 	else {
@@ -64,14 +62,15 @@ export function installBehaviorLensDocument(
 }
 
 /** Both edit-associated selection and navigation restore use the same source proof. */
-export function restoreBehaviorSourceBookmark(state: BehaviorLensViewState, bookmark: BehaviorSourceBookmark, buffer: TextBuffer): void {
+export function restoreBehaviorSourceBookmark(state: BehaviorLensViewState, bookmark: BehaviorSourceBookmark): void {
 	const path = resolveBehaviorSourceBookmark(bookmark, state);
 	state.selection = null;
 	if (path === undefined) return; // The authored occurrence was removed.
 	selectBehaviorLensDefinition(state, path[0].rowKey);
 	const rowKey = path[path.length - 1].rowKey;
 	if (bookmark.kind === 'node' || bookmark.kind === 'tree-edge') state.selection = { kind: bookmark.kind, rowKey };
-	else state.selection = reconcileStateMachineSourceSelection(bookmark, state.stateMachines.references.get(rowKey), buffer);
+	// History and Undo own their marker values. The active selection receives its own mapped copy.
+	else state.selection = reconcileStateMachineSourceSelection(copyStateMachineSourceBookmark(bookmark), state.stateMachines.references.get(rowKey), state.source.models);
 	if (state.presentation.kind === 'outline' || state.presentation.kind === 'properties') {
 		for (let index = 0; index < path.length - 1; index += 1) state.presentation.collapsedRowKeys.delete(path[index].rowKey);
 	}

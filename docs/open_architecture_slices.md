@@ -609,6 +609,14 @@ editorconsumptie en B03/B06-authoring blijven open, niet vervangen door deze
 call/aliasvoorwaarde. De aanvullende contextmenu-/zoombevindingen staan in de
 UX-review en worden niet als reeds opgeloste werking afgevinkt.
 
+De [resource-eigen bronposities](behavior_source_resources.md) leggen index,
+FSM-bewijs, previews, navigation en mementos bij de werkelijk geraadpleegde
+modellen. De review verhelpt daarbij gedeelde mutable Back-bookmarks en het
+hergebruiken van ingestorte markers na Undo. Kleine producer-eigen revisions
+vervangen het onnodig vasthouden van complete binder-/workspacesnapshots.
+Dit voltooit niet de imported recognizer of diens semantische dependencies;
+read-many is niet automatisch write-many. B03/B04/B06 blijven open.
+
 De document-lifetimegrens van B04 staat in `editor_semantic_model_sync.md`:
 het semantische project verwerkt model-add/change/remove, ook voor verborgen
 dependencies, zonder feature-eigen modelscan. Resource-eigen projectiegeldigheid

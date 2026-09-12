@@ -4,6 +4,7 @@ import { restoreBehaviorSourceBookmark, selectBehaviorLensDefinition } from './l
 import { stateGraphSelection } from './state_graph_navigation';
 import { updateBehaviorLensStatus } from './navigation';
 import type { BehaviorLensEffectProperties } from './action_effect_properties';
+import type { ResourceIdentity } from '../../../common/resource';
 import type { EditorTextChange } from '../../../editor/text/text_change';
 
 /** Plain source occurrences and viewport values, independent of navigation lifetime. */
@@ -43,10 +44,10 @@ export function captureBehaviorLensView(input: BehaviorLensInput): BehaviorLensV
 }
 
 /** Only live navigation owns a mapped copy; persisted snapshots remain immutable. */
-export function mapBehaviorLensView(snapshot: BehaviorLensViewSnapshot, changes: readonly EditorTextChange[]): void {
-	if (snapshot.definition !== undefined) mapBehaviorSourceBookmark(snapshot.definition, changes);
-	if (snapshot.selected !== undefined) mapBehaviorSourceBookmark(snapshot.selected, changes);
-	for (const bookmark of snapshot.collapsed) mapBehaviorSourceBookmark(bookmark, changes);
+export function mapBehaviorLensView(snapshot: BehaviorLensViewSnapshot, resource: ResourceIdentity, changes: readonly EditorTextChange[]): void {
+	if (snapshot.definition !== undefined) mapBehaviorSourceBookmark(snapshot.definition, resource, changes);
+	if (snapshot.selected !== undefined) mapBehaviorSourceBookmark(snapshot.selected, resource, changes);
+	for (const bookmark of snapshot.collapsed) mapBehaviorSourceBookmark(bookmark, resource, changes);
 }
 
 export function restoreBehaviorLensView(input: BehaviorLensInput, snapshot: BehaviorLensViewSnapshot): void {
@@ -60,7 +61,7 @@ export function restoreBehaviorLensView(input: BehaviorLensInput, snapshot: Beha
 		if (view.definitionRowKey !== definition[0].rowKey) input.invalidatePresentation();
 		selectBehaviorLensDefinition(view, definition[0].rowKey);
 		if (snapshot.selected === undefined) view.selection = null;
-		else restoreBehaviorSourceBookmark(view, snapshot.selected, input.workingCopy.buffer);
+		else restoreBehaviorSourceBookmark(view, snapshot.selected);
 	}
 	view.headerDirty = true;
 	const presentation = view.presentation;

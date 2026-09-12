@@ -15,7 +15,7 @@ export type StateMachineRetargetDrop = (
 
 /** Selected-proof capability consumes the cold source index; no consumer scan on hover. */
 export function stateMachineConnectionEnds(model: EditorTextModel, view: BehaviorLensViewState, edge: WorkbenchGraphEdge): 'target' | undefined {
-	if (model.readOnly || model.version !== view.sourceVersion || view.presentation.kind !== 'state-graph') return undefined;
+	if (model.readOnly || !view.source.isCurrent || view.presentation.kind !== 'state-graph') return undefined;
 	const selected = view.presentation.viewport.selection;
 	if (selected === null || selected.kind !== 'edge' || selected !== edge) return undefined;
 	const reference = selected.link.reference;
@@ -24,7 +24,7 @@ export function stateMachineConnectionEnds(model: EditorTextModel, view: Behavio
 
 export function beginStateMachineDrag(model: EditorTextModel, view: BehaviorLensViewState,
 	start: WorkbenchGraphDragStart, accept: StateMachineRetargetDrop): WorkbenchGraphDragSession | undefined {
-	if (start.kind !== 'connection' || start.end !== 'target' || model.readOnly || model.version !== view.sourceVersion) return undefined;
+	if (start.kind !== 'connection' || start.end !== 'target' || model.readOnly || !view.source.isCurrent) return undefined;
 	const presentation = view.presentation;
 	const selection = view.selection;
 	if (presentation.kind !== 'state-graph' || selection?.kind !== 'state-outcome') return undefined;
@@ -36,7 +36,7 @@ export function beginStateMachineDrag(model: EditorTextModel, view: BehaviorLens
 
 class StateMachineDrag implements WorkbenchGraphDragSession {
 	public readonly feedback: WorkbenchGraphConnectionPreview;
-	private readonly sourceVersion: number;
+	private readonly source: BehaviorLensViewState['source'];
 	private readonly analysis: StateMachineRetargetAnalysis;
 	private target: Extract<StateMachineRetargetCheck, { kind: 'available' }> | undefined;
 
@@ -44,12 +44,12 @@ class StateMachineDrag implements WorkbenchGraphDragSession {
 		private readonly viewport: WorkbenchGraphViewport<StateGraphModel>, edge: StateGraphEdge,
 		private readonly selection: Extract<StateMachineSourceSelection, { kind: 'state-outcome' }>,
 		private readonly accept: StateMachineRetargetDrop) {
-		this.sourceVersion = model.version;
+		this.source = view.source;
 		this.analysis = new StateMachineRetargetAnalysis(view.document, selection.transition, selection.outcome);
 		this.feedback = new WorkbenchGraphConnectionPreview(edge, 'target');
 	}
 
-	public isCurrent(): boolean { return !this.model.readOnly && this.model.version === this.sourceVersion; }
+	public isCurrent(): boolean { return !this.model.readOnly && this.source === this.view.source && this.source.isCurrent; }
 
 	public dragOver(viewportX: number, viewportY: number): void {
 		const hit = this.viewport.hitTest(viewportX, viewportY);

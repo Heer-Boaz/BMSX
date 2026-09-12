@@ -16,14 +16,14 @@ local branch<const> = { states = { idle = { update = callback, on = { go = '../a
 machines.register('profile', { states = {${Array.from({ length: siblings }, (_, index) => `lane${index}=branch`).join(',')}} })`;
 	const model = new EditorTextModel({ domain: 0, path: 'profile.lua', source: { type: 'lua', resid: 'profile' } }, 'lua', source);
 	const document = buildBehaviorSourceDocument(model.resource, buildLuaFileSemanticData(source, model.resource.path));
-	const view = createBehaviorLensViewState(document, model, 'outline');
+	const view = createBehaviorLensViewState(document, model, 'outline', assert.fail);
 	const definition = document.definitions[0];
 	assert.ok(definition.behaviorKind === 'state_machine');
 	const origin = definition.scopes[0].children.get(`lane${siblings - 1}`)!.children.get('idle')!;
 	for (const slot of ['event', 'update']) {
 		const transition = definition.transitions.find(item => item.origin === origin && item.slot.kind === slot)!;
 		const selection = selectStateMachineSource({ kind: 'state-outcome', rowKey: transition.slot.source.rowKey,
-			transition, outcome: transition.outcomes[transition.outcomes.length - 1] }, model.buffer);
+			transition, outcome: transition.outcomes[transition.outcomes.length - 1] }, view.source.models);
 		assert.ok(selection.kind === 'state-outcome');
 		const bookmark = captureBehaviorSourceBookmark(view, selection);
 		const roundtrip = [{ offset: 0, deletedLength: 0, insertedLength: 10 }, { offset: 0, deletedLength: 10, insertedLength: 0 }];
@@ -34,14 +34,14 @@ machines.register('profile', { states = {${Array.from({ length: siblings }, (_, 
 		const copyAndMapMicroseconds = medianMilliseconds(() => {
 			for (let index = 0; index < 1000; index += 1) {
 				const pending = copyBehaviorSourceBookmark(bookmark);
-				mapBehaviorSourceBookmark(pending, roundtrip);
+				mapBehaviorSourceBookmark(pending, model.resource, roundtrip);
 				observed += pending.tracked.binding.start;
 			}
 		});
 		const resolveMicroseconds = medianMilliseconds(() => {
 			for (let index = 0; index < 1000; index += 1) {
 				const path = resolveBehaviorSourceBookmark(bookmark, view)!;
-				const resolved = reconcileStateMachineSourceSelection(bookmark, view.stateMachines.references.get(path[path.length - 1].rowKey), model.buffer)!;
+				const resolved = reconcileStateMachineSourceSelection(bookmark, view.stateMachines.references.get(path[path.length - 1].rowKey), view.source.models)!;
 				observed += resolved.rowKey.length;
 			}
 		});

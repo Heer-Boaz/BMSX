@@ -31,7 +31,7 @@ fsm.register('profile', { initial = 'lane0', states = { ${Array.from({ length: c
 		const model = new EditorTextModel({ domain: 0, path: 'profile.lua', source: { resid: 'profile', type: 'lua' } }, 'lua', source);
 		const document = buildBehaviorSourceDocument(model.resource, buildLuaFileSemanticData(source, model.resource.path));
 		editorViewState.font = new EditorFont('tiny');
-		const view = createBehaviorLensViewState(document, model, 'state-graph');
+		const view = createBehaviorLensViewState(document, model, 'state-graph', assert.fail);
 		selectBehaviorLensDefinition(view, document.definitions[0].rowKey);
 		const graph = view.presentation;
 		assert.ok(graph.kind === 'state-graph');

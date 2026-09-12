@@ -15,7 +15,7 @@ export type TextFileModelSnapshot = {
 
 /** Persist identity/provenance, not a copy of source bytes in every editor input. */
 export function captureTextFileModel(model: EditorTextModel): TextFileModelSnapshot {
-	return { resource: { domain: model.resource.domain, path: model.resource.path }, fingerprint: getTextSnapshotFingerprint(model.buffer) };
+	return { resource: model.identity, fingerprint: getTextSnapshotFingerprint(model.buffer) };
 }
 
 /** Working copies have already admitted any recovered dirty record before views resolve. */

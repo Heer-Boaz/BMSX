@@ -6,6 +6,11 @@ en scherpt het bewerkingscontract van B03 aan uit de
 [gebruikersreview](behavior_authoring_ux_review.md). De tegenvoorbeelden hieronder
 zijn geen reden om de bronbehoudende edit-, Undo- of Hot Resume-owners weg te gooien.
 
+De [resourceconsumer](behavior_source_resources.md) gebruikt inmiddels per-resource
+models/ranges voor index, FSM-bewijs, inspectie, history en mementos. Dit verhelpt
+de één-buffer-aanname maar is nog geen bredere recognizer: memberorigins,
+API-zekerheid, querydependencies en concrete write-targets blijven voorwaarden.
+
 De [eerste implementatie](lua_function_source_ownership.md) scheidt function-body,
 opslagbinding en geschreven returns in de generieke binder/summaries. Zij voegt
 nog geen source-originquery of ruimere Lens-herkenning toe. De tijdens de

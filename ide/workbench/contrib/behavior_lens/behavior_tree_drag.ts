@@ -2,36 +2,37 @@ import { create_rect_bounds, write_rect_bounds } from '../../../../machine/ts/co
 import type { EditorTextModel } from '../../../editor/model/text_model';
 import type { WorkbenchGraphNodeDragFeedback, WorkbenchGraphDragSession } from '../../ui/graph/drag';
 import type { WorkbenchGraphViewport } from '../../ui/graph/viewport';
-import { moveBehaviorTreeChild } from './behavior_tree_edit';
+import { behaviorTreeEditTarget, moveBehaviorTreeChild } from './behavior_tree_edit';
 import type { BehaviorTreeSourceMember } from './behavior_tree_model';
 import type { BehaviorGraphModel, BehaviorGraphNode } from './graph_model';
 import type { BehaviorLensViewState } from './view_model';
 
 /** Freeze the proven source occurrence only when a physical press becomes a drag. */
 export function beginBehaviorTreeDrag(model: EditorTextModel, view: BehaviorLensViewState): WorkbenchGraphDragSession | undefined {
-	if (model.readOnly || model.version !== view.sourceVersion || !view.document.syntaxComplete || view.presentation.kind !== 'graph') return undefined;
+	if (model.readOnly || !view.source.isCurrent || !view.document.syntaxComplete || view.presentation.kind !== 'graph') return undefined;
 	const viewport = view.presentation.viewport;
 	const selected = viewport.selection;
 	if (selected === null) return undefined;
 	const node = selected.kind === 'node' ? selected : selected.child;
-	if (node.member === null || node.member.branch.entries.length < 2) return undefined;
-	return new BehaviorTreeDrag(model, viewport, node, node.member);
+	const member = behaviorTreeEditTarget(view);
+	if (member === null || member.branch.entries.length < 2) return undefined;
+	return new BehaviorTreeDrag(model, view, viewport, node, member);
 }
 
 /** Same-list insertion, not a layout edit or inferred reparent/reconnect operation. */
 class BehaviorTreeDrag implements WorkbenchGraphDragSession {
 	public readonly feedback: WorkbenchGraphNodeDragFeedback;
-	private readonly sourceVersion: number;
+	private readonly source: BehaviorLensViewState['source'];
 	private destination = -1;
 
-	public constructor(private readonly model: EditorTextModel, private readonly viewport: WorkbenchGraphViewport<BehaviorGraphModel>,
+	public constructor(private readonly model: EditorTextModel, private readonly view: BehaviorLensViewState, private readonly viewport: WorkbenchGraphViewport<BehaviorGraphModel>,
 		private readonly node: BehaviorGraphNode, private readonly member: BehaviorTreeSourceMember) {
-		this.sourceVersion = model.version;
+		this.source = view.source;
 		this.feedback = { kind: 'node-insertion', source: node, marker: create_rect_bounds(), offsetX: 0, offsetY: 0, accepted: false };
 	}
 
 	public isCurrent(): boolean {
-		return !this.model.readOnly && this.model.version === this.sourceVersion;
+		return !this.model.readOnly && this.source === this.view.source && this.source.isCurrent;
 	}
 
 	public dragOver(viewportX: number, viewportY: number): void {

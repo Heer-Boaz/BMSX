@@ -31,14 +31,14 @@ function fixture(source = FSM_PROOF_SOURCE, factory: GraphLayoutEngineFactory = 
 	const resource = { domain: 0 as const, path: 'graph.lua', source: { resid: 'graph', type: 'lua' as const } };
 	const model = new EditorTextModel(resource, 'lua', source);
 	const document = () => buildBehaviorSourceDocument(resource, buildLuaFileSemanticData(model.buffer.getText(), resource.path));
-	const view = createBehaviorLensViewState(document(), model, 'state-graph');
+	const view = createBehaviorLensViewState(document(), model, 'state-graph', assert.fail);
 	const input = new BehaviorLensInput(model, view, factory);
-	model.onDidChangeContent(event => { mapBehaviorLensSourceRanges(view, event); input.invalidatePresentation(); });
+	model.onDidChangeContent(event => { mapBehaviorLensSourceRanges(view, model.resource, event); input.invalidatePresentation(); });
 	selectBehaviorLensDefinition(view, view.document.definitions[0].rowKey);
 	const graph = view.presentation;
 	if (graph.kind !== 'state-graph') throw new Error('Fixture must open the concrete FSM presentation');
 	graph.viewport.layout(0, 0, 384, 288);
-	const refresh = () => { installBehaviorLensDocument(view, document(), model.buffer); view.sourceVersion = model.version; input.updatePresentation(font); };
+	const refresh = () => { installBehaviorLensDocument(view, document()); input.updatePresentation(font); };
 	const settle = async () => { await input.graphLayout.settled; input.updatePresentation(font); assert.equal(graph.layoutState.kind, 'ready'); };
 	return { input, model, view, graph, refresh, settle };
 }
@@ -72,7 +72,7 @@ test('FSM graph retains containment, concurrent entry and separate edges for ide
 			assert.equal(f.graph.viewport.hitTest(label.left + 2 - f.graph.viewport.scrollX, label.top + 2 - f.graph.viewport.scrollY), edge);
 		}
 		f.graph.viewport.selection = updates[3];
-		acceptStateGraphSelection(f.view, f.graph, f.model.buffer);
+		acceptStateGraphSelection(f.view, f.graph);
 		assert.equal(stateGraphSelection(model, f.view.selection), updates[3]);
 		const retained = f.graph.viewport.model;
 		for (let index = 0; index < 100; index += 1) f.input.updatePresentation(font);
@@ -86,7 +86,7 @@ test('FSM graph shows unknown/no-path evidence without endpoints and preserves s
 		f.input.updatePresentation(font); await f.settle();
 		const edge = f.graph.viewport.model.edges.find(edge => edge.link.reference.kind === 'state-outcome' && edge.link.reference.transition.slot.kind === 'update')!;
 		f.graph.viewport.selection = edge;
-		acceptStateGraphSelection(f.view, f.graph, f.model.buffer);
+		acceptStateGraphSelection(f.view, f.graph);
 		const at = f.model.buffer.getText().indexOf("'../active'");
 		f.model.pushEditOperations([{ offset: at, deleteLength: "'../active'".length, text: 'nil' }]);
 		assert.equal(f.graph.viewport.model.nodes.length, 0, 'source edit immediately revokes old hit geometry, even while hidden');
@@ -149,7 +149,7 @@ test('FSM initial command updates real graph entry edges and retains selected st
 		assert.equal(stateMachineInitialTarget(f.view), undefined, 'a root or absent selection is not child membership');
 		const node = Array.from(f.graph.viewport.model.nodesBySource.values()).find(node => node.source.label === 'active')!;
 		f.graph.viewport.selection = node;
-		acceptStateGraphSelection(f.view, f.graph, f.model.buffer);
+		acceptStateGraphSelection(f.view, f.graph);
 		const target = stateMachineInitialTarget(f.view)!;
 		assert.ok(target);
 		const geometry = f.graph.viewport.model;
@@ -189,7 +189,7 @@ test('retarget edit history republishes the exact selected graph proof after wor
 				&& (slot === 'update' ? item.slot.kind === slot : item.slot.source.label === slot))!;
 			const index = slot === 'update' ? 1 : 0;
 			f.graph.viewport.selection = f.graph.viewport.model.edgesByOutcome.get(transition.outcomes[index])!;
-			acceptStateGraphSelection(f.view, f.graph, f.model.buffer);
+			acceptStateGraphSelection(f.view, f.graph);
 			const selection = f.view.selection;
 			assert.ok(selection?.kind === 'state-outcome');
 			const target = new StateMachineRetargetAnalysis(f.view.document, selection.transition, selection.outcome)
@@ -240,7 +240,7 @@ test('concrete input coalesces edits, hides stale geometry, publishes no obsolet
 		latest.resolve(await real.layout(latest.graph));
 		await f.settle();
 		const reference = f.graph.viewport.model.edges.find(edge => edge.link.reference.kind === 'state-outcome')!.link.reference;
-		f.view.selection = selectStateMachineSource(reference, f.model.buffer);
+		f.view.selection = selectStateMachineSource(reference, f.view.source.models);
 		assert.ok(reference.kind === 'state-outcome' && reference.outcome.proof.kind === 'return' && reference.outcome.proof.statement.range.start.line >= 6);
 		f.input.updatePresentation(new Font({ variant: 'msx' }));
 		assert.equal(f.graph.layoutState.kind, 'pending', 'font measurement starts a new unpublished generation');
@@ -296,7 +296,7 @@ test('authored initial and concurrent entries have their own in-scope marker and
 			assert.equal(f.graph.viewport.hitTest(marker.bounds.left - f.graph.viewport.scrollX + 2,
 				marker.bounds.top - f.graph.viewport.scrollY + 2), marker);
 			f.graph.viewport.selection = marker;
-			acceptStateGraphSelection(f.view, f.graph, f.model.buffer);
+			acceptStateGraphSelection(f.view, f.graph);
 			assert.equal(f.view.selection?.kind, 'state-entry');
 			assert.equal(stateGraphSelection(model, f.view.selection), marker, 'source restoration selects the canonical entry marker');
 			assert.equal(stateMachineInitialTarget(f.view), undefined, 'entry marker is not a candidate child state');
@@ -323,7 +323,7 @@ machines.register('implicit.initial', { states = { idle = {}, run = {} } })`);
 		assert.ok(model.nodesBySource.get(marker.reference.entry.owner)!.lines.some(line => line.endsWith(' ?')));
 		assert.equal(model.edges.length, 0);
 		f.graph.viewport.selection = marker;
-		acceptStateGraphSelection(f.view, f.graph, f.model.buffer);
+		acceptStateGraphSelection(f.view, f.graph);
 		assert.equal(f.view.selection?.kind, 'state-entry');
 		selectBehaviorLensDefinition(f.view, f.view.document.definitions[1].rowKey);
 		f.input.updatePresentation(font); await f.settle();

@@ -1,6 +1,6 @@
 import * as constants from '../../common/constants';
 import type { EditContext } from '../../common/models';
-import type { RuntimeResource } from '../../common/resource';
+import type { ResourceIdentity, RuntimeResource } from '../../common/resource';
 import { PieceTreeBuffer } from '../text/piece_tree_buffer';
 import { getTextSnapshot } from '../text/source_text';
 import type { TextBuffer } from '../text/text_buffer';
@@ -71,9 +71,12 @@ export class EditorTextModel {
 	private pendingStartRow = 0;
 
 	public readonly mode: EditorDocumentMode;
+	/** Stable source identity for markers/history, without ROM asset metadata. */
+	public readonly identity: ResourceIdentity;
 
 	public constructor(resource: RuntimeResource, mode: EditorDocumentMode, source: string) {
 		this.resourceValue = resource;
+		this.identity = { domain: resource.domain, path: resource.path };
 		this.mode = mode;
 		this.pieceTree = new PieceTreeBuffer(source);
 		this.lastSavedSourceValue = source;

@@ -151,8 +151,13 @@ export type MemberAccessEntry = {
 	readonly namePath?: readonly string[];
 };
 
-export type FileSemanticData = {
+/** Identity of immutable binder facts, without retaining their syntax or lookup tables. */
+export type LuaFileSemanticRevision = {
 	readonly file: string;
+	readonly revision: symbol;
+};
+
+export type FileSemanticData = LuaFileSemanticRevision & {
 	readonly source: string;
 	readonly syntaxError: LuaSyntaxError | null;
 	readonly chunk: LuaChunk;
@@ -188,6 +193,8 @@ export type LuaSemanticWorkspaceSnapshotInput = {
 };
 
 export class LuaSemanticWorkspaceSnapshot {
+	/** Unique across workspace lifetimes; a dependent cache need not retain this snapshot. */
+	public readonly revision = Symbol();
 	public readonly version: number;
 	public readonly files: readonly FileSemanticData[];
 	public readonly symbolResolver: WorkspaceSymbolResolver;
@@ -391,6 +398,7 @@ export function buildLuaFileSemanticData(
 	const annotations = finalizeAnnotations(result.annotations);
 	return {
 		file: path,
+		revision: Symbol(),
 		source,
 		syntaxError: parseEntry.syntaxError,
 		chunk: retainedChunk,

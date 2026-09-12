@@ -20,16 +20,15 @@ export function createBehaviorTreeEditFixture(t: TestContext, source = BT_ORDER_
 	const model = new EditorTextModel({ domain: 0, path: 'order.lua', source: { type: 'lua', resid: 'order' } }, 'lua', source);
 	const project = () => buildBehaviorSourceDocument(model.resource, buildLuaFileSemanticData(model.buffer.getText(), model.resource.path));
 	const document = project();
-	const view = createBehaviorLensViewState(document, model, 'graph');
-	model.onDidChangeContent(event => mapBehaviorLensSourceRanges(view, event));
+	const view = createBehaviorLensViewState(document, model, 'graph', assert.fail);
+	model.onDidChangeContent(event => mapBehaviorLensSourceRanges(view, model.resource, event));
 	selectBehaviorLensDefinition(view, document.definitions[definition].rowKey);
 	prepareBehaviorLensLayout(view);
 	assert.ok(view.presentation.kind === 'graph');
 	const graph = view.presentation;
 	const viewport = graph.viewport;
 	const refresh = () => {
-		installBehaviorLensDocument(view, project(), model.buffer);
-		view.sourceVersion = model.version;
+		installBehaviorLensDocument(view, project());
 		prepareBehaviorLensLayout(view);
 	};
 	const select = (index: number, edge = false) => {

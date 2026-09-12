@@ -21,6 +21,10 @@ import { BehaviorLensInputSerializer } from '../../ide/workbench/contrib/behavio
 import { SceneEditorInputSerializer } from '../../ide/workbench/contrib/scene_editor/editor_serializer';
 import { ResourceViewerInputSerializer } from '../../ide/workbench/contrib/resources/editor_serializer';
 import { BehaviorLensController } from '../../ide/workbench/contrib/behavior_lens/controller';
+import { BehaviorLensInput } from '../../ide/workbench/contrib/behavior_lens/editor_input';
+import { createBehaviorLensViewState } from '../../ide/workbench/contrib/behavior_lens/view_model';
+import { buildBehaviorSourceDocument } from '../../ide/workbench/contrib/behavior_lens/recognizer';
+import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
 import { SceneEditorController } from '../../ide/workbench/contrib/scene_editor/controller';
 import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import { ResourceViewerInput } from '../../ide/workbench/contrib/resources/editor_input';
@@ -142,6 +146,42 @@ test('changed canonical bytes retain topology but cannot adopt a same-length nam
 	assert.equal(restored.view.definitionRowKey, null); assert.equal(restored.view.selection, null);
 	assert.equal(restored.workingCopy.dirty, false); assert.equal(editorTabGroup.tabs.length, 1);
 	assert.ok(!restored.title.includes('removed'), 'a fresh unresolved view never claimed to select the old definition');
+});
+
+for (const changeProvider of [false, true]) test(`behavior mementos fingerprint every source resource (provider changed: ${changeProvider})`, async t => {
+	const f = fixture(t);
+	const dependencyResource = resolveRuntimeResource(f.sources, { domain: 0, path: 'tests/first_assert.lua' })!;
+	const provider = editorTextModelService.retain(dependencyResource, 'lua', '-- test one');
+	const document = buildBehaviorSourceDocument(f.model.identity, buildLuaFileSemanticData(SOURCE, f.model.resource.path));
+	// Exercise the serializer's read-many contract independently of recognizer coverage.
+	const dependency = buildLuaFileSemanticData(provider.buffer.getText(), provider.resource.path);
+	const files = [...document.files, { file: dependency.file, revision: dependency.revision }];
+	const view = createBehaviorLensViewState({ ...document, files }, f.model, 'graph', path => {
+		assert.equal(path, provider.resource.path); return provider;
+	});
+	const input = new BehaviorLensInput(f.model, view, assert.fail);
+	selectBehaviorLensDefinition(view, document.definitions[1].rowKey);
+	editorTabGroup.initialize(input);
+	const serialized = f.serializers.behavior_lens.serialize(input);
+	const state = JSON.parse(serialized);
+	assert.equal(state.dependencies.length, 1);
+	assert.deepEqual(state.dependencies[0].resource, provider.identity);
+	assert.deepEqual(Object.keys(state.view.definition.path[0].resource).sort(), ['domain', 'path']);
+	if (changeProvider) {
+		const record = f.sources.cartridgeSlots[0]!.luaSources.records.find(record => record.source_path === provider.resource.path)!;
+		record.src = record.base_src = '-- test two';
+		f.sources.cartridgeSlots[0]!.luaSources.revision += 1;
+	}
+	editorTabGroup.clear(); editorTextModelService.clear(); resetSemanticProjects();
+	const restored = await f.serializers.behavior_lens.deserialize(serialized);
+	t.after(() => restored.dispose());
+	assert.equal(restored.workingCopy.buffer.getText(), SOURCE);
+	assert.equal(restored.workingCopy.dirty, false);
+	if (changeProvider) {
+		assert.equal(restored.view.definitionRowKey, null);
+		assert.equal(restored.view.selection, null, 'equal primary bytes cannot authenticate a foreign source bookmark');
+	} else assert.equal(restored.view.definitionRowKey, document.definitions[1].rowKey);
+	assert.equal(editorTextModelService.get(provider.identity)!.buffer.getText(), changeProvider ? '-- test two' : '-- test one');
 });
 
 test('source fingerprint is retained by buffer version and shared by views, not recomputed on cursor movement', t => {

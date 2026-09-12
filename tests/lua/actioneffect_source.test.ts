@@ -107,8 +107,8 @@ fx.register_effect('empty', {})`).definitions;
 
 test('effect fields in a reused initializer follow their own registration through hidden edits and Undo', () => {
 	const model = new EditorTextModel(resource, 'lua', ACTIONEFFECT_SOURCE);
-	const view = createBehaviorLensViewState(document(ACTIONEFFECT_SOURCE), model, 'outline');
-	model.onDidChangeContent(event => mapBehaviorLensSourceRanges(view, event));
+	const view = createBehaviorLensViewState(document(ACTIONEFFECT_SOURCE), model, 'outline', assert.fail);
+	model.onDidChangeContent(event => mapBehaviorLensSourceRanges(view, model.resource, event));
 	selectBehaviorLensDefinition(view, view.document.definitions[1].rowKey);
 	const second = view.document.definitions[1];
 	assert.ok(second.behaviorKind === 'action_effect' && second.body !== null);
@@ -119,13 +119,13 @@ test('effect fields in a reused initializer follow their own registration throug
 	const offset = model.buffer.getText().indexOf('period_ms = 20') + 'period_ms = '.length;
 	model.pushEditOperations([{ offset, deleteLength: 2, text: '35' }]);
 	assert.equal(view.document, previous, 'hidden mapping does not parse or project');
-	installBehaviorLensDocument(view, document(model.buffer.getText()), model.buffer);
+	installBehaviorLensDocument(view, document(model.buffer.getText()));
 	assert.equal(view.definitionRowKey, view.document.definitions[1].rowKey);
 	const selected = view.source.nodesByRowKey.get(view.selection!.rowKey)!;
 	assert.equal(selected.label, 'period_ms = 35');
 	assert.equal(selected.authoredRange.start.line, period.source.authoredRange.start.line + 1);
 	model.undo();
-	installBehaviorLensDocument(view, document(model.buffer.getText()), model.buffer);
+	installBehaviorLensDocument(view, document(model.buffer.getText()));
 	assert.equal(view.source.nodesByRowKey.get(view.selection!.rowKey)!.label, 'period_ms = 20');
 	assert.equal(view.definitionRowKey, view.document.definitions[1].rowKey);
 });

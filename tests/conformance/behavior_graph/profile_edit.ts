@@ -17,7 +17,7 @@ for (const siblings of [24, 1024]) {
 	const source = `local trees<const> = require('cartlib/behaviour_tree/library')\nlocal child<const> = { type = 'wait', duration_ticks = 2 }\ntrees.register('profile', { root = { type = 'sequence', children = {\n${'child, -- independent source occurrence\n'.repeat(siblings)} } } })`;
 	const model = new EditorTextModel({ domain: 0, path: 'edit.lua', source: { type: 'lua', resid: 'edit' } }, 'lua', source);
 	const document = buildBehaviorSourceDocument(model.resource, buildLuaFileSemanticData(source, model.resource.path));
-	const state = createBehaviorLensViewState(document, model, 'graph');
+	const state = createBehaviorLensViewState(document, model, 'graph', assert.fail);
 	selectBehaviorLensDefinition(state, document.definitions[0].rowKey);
 	prepareBehaviorLensLayout(state);
 	assert.ok(state.presentation.kind === 'graph');
@@ -28,7 +28,7 @@ for (const siblings of [24, 1024]) {
 	let admitted = 0;
 	const admissionMicroseconds = medianMilliseconds(() => {
 		for (let index = 0; index < 1000; index += 1) {
-			if (!model.readOnly && model.version === state.sourceVersion && behaviorTreeEditTarget(state) === member) admitted += 1;
+			if (!model.readOnly && state.source.isCurrent && behaviorTreeEditTarget(state) === member) admitted += 1;
 		}
 	});
 	assert.ok(admitted > 0);

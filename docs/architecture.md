@@ -4682,6 +4682,15 @@ computed once per buffer version, not once per input or cursor movement. Changed
 canonical source retains the group topology without applying stale positions or
 selecting a nearby definition. The fingerprint is a non-cryptographic change
 detector for mementos, not semantic/completeness proof or a security identity.
+Behavior source mementos fingerprint every contributing model before restoring
+resource-qualified positions, not just the registration's source. A source
+index owns model-local tracking and plain `(domain, path)` identities; foreign
+edits do not map offsets in the registration's buffer. Restored navigation
+selections receive their own mutable marker copy. Binder/workspace revisions
+are process-local tooling identities, not runtime words or serialized semantic
+models. See [behavior source resources](behavior_source_resources.md); imported
+recognition, semantic-query dependencies and write-target admission remain
+separate contracts.
 There is no session migration reader. Undo history, pending property drafts,
 workers, test executions/results, guest state, rewind and host pause are not
 serialized as editor context. See [workbench sessions](workbench_session.md).

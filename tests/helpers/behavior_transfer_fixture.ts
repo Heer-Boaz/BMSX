@@ -37,7 +37,7 @@ export function transferBehaviorFixtureSelection(
 	const transfer = createLuaTableFieldTransfer(model.buffer, model.resource.path, entry.field, target.source.table,
 		target.source.table.fields.length);
 	model.pushEditOperations(transfer.edits, behaviorSourceEditState.of(before), changes => {
-		mapBehaviorSourceBookmark(destination, changes);
+		mapBehaviorSourceBookmark(destination, model.resource, changes);
 		for (const step of suffix) {
 			if (step.start >= original.start && step.end <= original.end) {
 				step.start += transfer.fieldRange.start - original.start;

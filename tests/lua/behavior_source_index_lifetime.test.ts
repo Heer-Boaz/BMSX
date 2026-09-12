@@ -26,21 +26,21 @@ class CountingModel extends EditorTextModel {
 test('multiple source-index users share model tracking until the last release', () => {
 	const model = new CountingModel();
 	const document = buildBehaviorSourceDocument(model.resource, buildLuaFileSemanticData(SOURCE, model.resource.path));
-	const first = BehaviorSourceIndex.acquire(document, model);
-	const second = BehaviorSourceIndex.acquire(document, model);
+	const first = BehaviorSourceIndex.acquire(document, model, assert.fail);
+	const second = BehaviorSourceIndex.acquire(document, model, assert.fail);
 	assert.equal(first, second); assert.equal(first.model, model);
 	assert.equal(model.activeRangeSets, 1);
 	const span = first.ranges.get(document.definitions[0].rowKey)!;
 	const initial = { ...span };
 	first.release();
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- moved\n' }]);
-	assert.deepEqual(span, { start: initial.start + 9, end: initial.end + 9 });
+	assert.deepEqual(span, { resource: model.identity, start: initial.start + 9, end: initial.end + 9 });
 	assert.equal(model.activeRangeSets, 1);
 	second.release();
 	assert.equal(model.activeRangeSets, 0);
 	model.undo();
-	assert.deepEqual(span, { start: initial.start + 9, end: initial.end + 9 }, 'retired ranges are no longer mutated');
-	const reopened = BehaviorSourceIndex.acquire(document, model);
+	assert.deepEqual(span, { resource: model.identity, start: initial.start + 9, end: initial.end + 9 }, 'retired ranges are no longer mutated');
+	const reopened = BehaviorSourceIndex.acquire(document, model, assert.fail);
 	assert.notEqual(reopened, first, 'last release removes the cache entry, not just its tracking callback');
 	assert.deepEqual(reopened.ranges.get(document.definitions[0].rowKey), initial);
 	reopened.release(); model.dispose();
@@ -53,19 +53,19 @@ test('retained behavior inputs release retired generations and retain hidden-vie
 	const model = new CountingModel();
 	const project = () => buildBehaviorSourceDocument(model.resource, buildLuaFileSemanticData(model.buffer.getText(), model.resource.path));
 	const document = project();
-	const first = new BehaviorLensInput(model, createBehaviorLensViewState(document, model, 'graph'), () => assert.fail('BT does not create an FSM layout engine'));
-	const hidden = new BehaviorLensInput(model, createBehaviorLensViewState(document, model, 'graph'), () => assert.fail('BT does not create an FSM layout engine'));
+	const first = new BehaviorLensInput(model, createBehaviorLensViewState(document, model, 'graph', assert.fail), () => assert.fail('BT does not create an FSM layout engine'));
+	const hidden = new BehaviorLensInput(model, createBehaviorLensViewState(document, model, 'graph', assert.fail), () => assert.fail('BT does not create an FSM layout engine'));
 	assert.equal(model.activeRangeSets, 1);
 	const original = hidden.view.source.ranges.get(document.definitions[0].rowKey)!.start;
 	for (let edit = 0; edit < 20; edit += 1) {
 		model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- x\n' }]);
 		const next = project();
-		installBehaviorLensDocument(first.view, next, model.buffer);
+		installBehaviorLensDocument(first.view, next);
 		assert.equal(model.activeRangeSets, 2, 'only the visible and hidden generations remain alive');
 	}
 	assert.equal(hidden.view.source.ranges.get(document.definitions[0].rowKey)!.start, original + 100);
 	const current = first.view.document;
-	installBehaviorLensDocument(hidden.view, current, model.buffer);
+	installBehaviorLensDocument(hidden.view, current);
 	assert.equal(first.view.source, hidden.view.source);
 	assert.equal(model.activeRangeSets, 1);
 	first.dispose(); assert.equal(model.activeRangeSets, 1);
@@ -79,7 +79,7 @@ test('source positions are updated before any feature forwards the edit notifica
 	t.after(() => { editorViewState.font = font; });
 	const model = new CountingModel();
 	const document = buildBehaviorSourceDocument(model.resource, buildLuaFileSemanticData(SOURCE, model.resource.path));
-	const view = createBehaviorLensViewState(document, model, 'graph');
+	const view = createBehaviorLensViewState(document, model, 'graph', assert.fail);
 	const span = view.source.ranges.get(document.definitions[0].rowKey)!;
 	const start = span.start;
 	let notifications = 0;
@@ -87,4 +87,28 @@ test('source positions are updated before any feature forwards the edit notifica
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- moved\n' }]);
 	assert.equal(notifications, 1);
 	view.source.release(); model.dispose();
+});
+
+test('a text roundtrip can reuse binder facts without reviving collapsed markers or deleting a newer lease', () => {
+	const model = new CountingModel();
+	const document = buildBehaviorSourceDocument(model.identity, buildLuaFileSemanticData(SOURCE, model.resource.path));
+	const hidden = BehaviorSourceIndex.acquire(document, model, assert.fail);
+	const key = document.definitions[0].rowKey;
+	const original = { ...hidden.ranges.get(key)! };
+	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: '' }]);
+	model.undo();
+	assert.equal(model.buffer.getText(), SOURCE);
+	assert.equal(hidden.isCurrent, false);
+	assert.equal(hidden.ranges.get(key)!.start, hidden.ranges.get(key)!.end);
+	const current = BehaviorSourceIndex.acquire(document, model, assert.fail);
+	assert.notEqual(current, hidden);
+	assert.deepEqual(current.ranges.get(key), original);
+	assert.equal(model.activeRangeSets, 2);
+	hidden.release();
+	const shared = BehaviorSourceIndex.acquire(document, model, assert.fail);
+	assert.equal(shared, current, 'releasing a stale generation must not remove the replacement cache entry');
+	assert.equal(model.activeRangeSets, 1);
+	current.release(); shared.release();
+	assert.equal(model.activeRangeSets, 0);
+	model.dispose();
 });

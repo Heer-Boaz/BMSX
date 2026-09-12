@@ -1,4 +1,3 @@
-import type { TextBuffer } from '../../../editor/text/text_buffer';
 import type { BehaviorSourceSelection } from './source_selection';
 import type { StateGraphEdge, StateGraphModel, StateGraphNode } from './state_graph_model';
 import { selectStateMachineSource } from './state_machine_selection';
@@ -18,10 +17,10 @@ export function stateGraphSelection(model: StateGraphModel, selection: BehaviorS
 	return item === undefined ? null : item;
 }
 
-export function acceptStateGraphSelection(view: BehaviorLensViewState, graph: BehaviorLensStateGraph, buffer: TextBuffer): void {
+export function acceptStateGraphSelection(view: BehaviorLensViewState, graph: BehaviorLensStateGraph): void {
 	const item = graph.viewport.selection;
 	view.selection = item === null ? null : item.kind === 'node' && item.role === 'source' ? { kind: 'node', rowKey: item.source.rowKey }
-		: selectStateMachineSource(item.kind === 'node' ? item.reference : item.link.reference, buffer);
+		: selectStateMachineSource(item.kind === 'node' ? item.reference : item.link.reference, view.source.models);
 	updateBehaviorLensStatus(view);
 }
 

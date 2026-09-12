@@ -4,7 +4,7 @@ import type { EditorTextModel, EditorTextModelContentChangeEvent } from '../../.
 import { mapBehaviorLensSourceRanges } from './source_correspondence';
 import { editorTextModelService } from '../../../editor/model/model_service';
 import { resourceSourceForChunk } from '../../../runtime/lua_pipeline';
-import { resolveRuntimeResource, type RuntimeSourceState } from '../../../runtime/sources';
+import { resolveRuntimeResource, resolveRuntimeResourceForContext, type RuntimeSourceState } from '../../../runtime/sources';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import { editorTabGroup, type EditorOpenOptions } from '../../ui/tab/group_model';
 import { getActiveTab, openEditorTab } from '../../ui/tabs';
@@ -96,16 +96,19 @@ export class BehaviorLensController {
 
 	/** Source-derived input creation is independent of group admission and pane layout. */
 	public createInput(model: EditorTextModel, presentation: BehaviorLensViewState['presentation']['kind']): BehaviorLensInput {
-		return new BehaviorLensInput(model, createBehaviorLensViewState(this.documents.get(model), model, presentation), this.createGraphLayoutEngine);
+		return new BehaviorLensInput(model, createBehaviorLensViewState(this.documents.get(model), model, presentation, path => {
+			const resource = resolveRuntimeResourceForContext(this.sources, model.resource.domain, path)!;
+			return editorTextModelService.retain(resource, 'lua', resourceSourceForChunk(this.sources, resource));
+		}), this.createGraphLayoutEngine);
 	}
 
 	/** Refreshes a visible source lens when its canonical code buffer advances. */
 	public updateView(input: BehaviorLensInput, navigationSelection?: BehaviorLensNavigationSelection): void {
 		const { view, workingCopy } = input;
-		const sourceChanged = workingCopy.version !== view.sourceVersion;
+		const document = this.documents.get(workingCopy);
+		const sourceChanged = document !== view.document || !view.source.isCurrent;
 		if (sourceChanged) {
-			installBehaviorLensDocument(view, this.documents.get(workingCopy), workingCopy.buffer);
-			view.sourceVersion = workingCopy.version;
+			installBehaviorLensDocument(view, document);
 		}
 		navigationSelection?.restore(input);
 		if (sourceChanged || navigationSelection !== undefined) input.updateLabel();
@@ -121,7 +124,7 @@ export class BehaviorLensController {
 				.find(candidate => candidate.rowKey === use.definition.rowKey)!);
 		const view = target.view;
 		view.selection = selectStateMachineSource({ kind: 'state-outcome', rowKey: use.transition.slot.source.rowKey,
-			transition: use.transition, outcome: use.outcome }, input.workingCopy.buffer);
+			transition: use.transition, outcome: use.outcome }, view.source.models);
 		finishBehaviorLensNavigation(view);
 		this.openSelectedSource(view);
 	}
@@ -138,7 +141,7 @@ export class BehaviorLensController {
 		const view = input.view;
 		if (detail.stateSelection !== undefined) {
 			view.selection = detail.stateSelection.kind === 'node' ? detail.stateSelection
-				: selectStateMachineSource(detail.stateSelection, input.workingCopy.buffer);
+				: selectStateMachineSource(detail.stateSelection, view.source.models);
 			if (view.presentation.kind === 'state-graph') {
 				const viewport = view.presentation.viewport;
 				viewport.selection = stateGraphSelection(viewport.model, view.selection);
@@ -154,19 +157,19 @@ export class BehaviorLensController {
 	public canMoveSelectedChild(direction: -1 | 1): boolean {
 		const input = getActiveTab();
 		return input.kind === 'behavior_lens' && !input.workingCopy.readOnly
-			&& input.workingCopy.version === input.view.sourceVersion && behaviorTreeMoveTarget(input.view, direction) !== undefined;
+			&& input.view.source.isCurrent && behaviorTreeMoveTarget(input.view, direction) !== undefined;
 	}
 
 	public canEditSelectedChild(): boolean {
 		const input = getActiveTab();
 		return input.kind === 'behavior_lens' && !input.workingCopy.readOnly
-			&& input.workingCopy.version === input.view.sourceVersion && behaviorTreeEditTarget(input.view) !== null;
+			&& input.view.source.isCurrent && behaviorTreeEditTarget(input.view) !== null;
 	}
 
 	public canSetSelectedInitialState(): boolean {
 		const input = getActiveTab();
 		return input.kind === 'behavior_lens' && !input.workingCopy.readOnly
-			&& input.workingCopy.version === input.view.sourceVersion && stateMachineInitialTarget(input.view) !== undefined;
+			&& input.view.source.isCurrent && stateMachineInitialTarget(input.view) !== undefined;
 	}
 
 	public setSelectedInitialState(): void {
@@ -232,7 +235,7 @@ export class BehaviorLensController {
 		if (result === BehaviorLensNavigationResult.Changed) {
 			if (view.presentation.kind === 'state-graph') {
 				const input = getActiveTab();
-				if (input.kind === 'behavior_lens') acceptStateGraphSelection(view, view.presentation, input.workingCopy.buffer);
+				if (input.kind === 'behavior_lens') acceptStateGraphSelection(view, view.presentation);
 			}
 			finishBehaviorLensNavigation(view);
 			return true;
@@ -242,8 +245,8 @@ export class BehaviorLensController {
 
 	public onDidChangeContent(model: EditorTextModel, event: EditorTextModelContentChangeEvent): void {
 		for (const input of editorTabGroup.tabs) {
-			if (input.kind === 'behavior_lens' && input.workingCopy === model) {
-				mapBehaviorLensSourceRanges(input.view, event);
+			if (input.kind === 'behavior_lens' && input.view.source.models.get(model.resource.path) === model) {
+				mapBehaviorLensSourceRanges(input.view, model.resource, event);
 				input.invalidatePresentation();
 			}
 		}

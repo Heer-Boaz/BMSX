@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict';
 import { buildLuaFileSemanticData, type SymbolID } from '../../../toolchain/ts/lua/semantic/model';
 import { EditorTextModel } from '../../../ide/editor/model/text_model';
 import { buildActionEffectBody } from '../../../ide/workbench/contrib/behavior_lens/action_effect';
@@ -17,8 +18,8 @@ for (const registrations of [24, 1024]) {
 	const sourceProjectionMs = medianMilliseconds(() => { buildBehaviorSourceDocument(resource, semantic); });
 	const document = buildBehaviorSourceDocument(resource, semantic);
 	const model = new EditorTextModel(resource, 'lua', source);
-	const view = createBehaviorLensViewState(document, model, 'outline');
-	const inputRefreshMs = medianMilliseconds(() => { installBehaviorLensDocument(view, document, model.buffer); });
+	const view = createBehaviorLensViewState(document, model, 'outline', assert.fail);
+	const inputRefreshMs = medianMilliseconds(() => { installBehaviorLensDocument(view, document); });
 	const registrationSet = collectBehaviorRegistrations(resource, semantic);
 	const registration = registrationSet.registrations[0];
 	const context: BehaviorRecognizerContext = {

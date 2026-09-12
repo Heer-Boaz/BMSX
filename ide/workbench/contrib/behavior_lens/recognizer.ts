@@ -37,6 +37,7 @@ export function buildBehaviorSourceDocument(
 	}
 	return {
 		resource,
+		files: [{ file: analysis.file, revision: analysis.revision }],
 		syntaxComplete: analysis.syntaxError === null,
 		definitions,
 	};
