@@ -544,3 +544,26 @@ and median of 25 batches; run in isolation after tests/builds. No parser, layout
 worker timing, full pointer dispatch, GPU raster, guest/Hot Resume, heap/GC or
 complete-frame measurement is claimed. Review rows/text and quad storage are
 retained between unchanged frames. See `docs/state_machine_connection_edit_design.md`.
+
+## BT reparent: dedicated live installation flow
+
+```sh
+node tests/conformance/runtime_replay/browser.mjs --studio-bt-reparent \
+  dist/bmsx-bios.debug.rom dist/nemesis_s.debug.rom /tmp/bt-live.png
+```
+
+`studio_bt_reparent_live.ts` uses the existing renderer projects, isolated real
+workspace server and command/pointer harness. Its executable source is
+`tests/helpers/behavior_reparent_live_fixture.ts`, not a game's BT definition.
+After ordinary Save/Reboot it runs a real indexed cartlib BT through ICU input,
+then drags a task into a nested sequence and accepts the actual source review.
+Save alone leaves installed media and the paused guest unchanged. Hot Resume
+changes the task order from `123` to `213`; one source Undo, Save and a second
+Hot Resume restore `123`. The same actor, BT and blackboard remain, retaining
+semantic value `73`. There are no host Lua calls or host writes to guest tables.
+
+The browser scenario owner is shared across software/WebGL2/WebGPU. Its initial
+workflow and post-installation phase surround backend-specific readback checks;
+the full existing workflow's reboot/readback order is unchanged. Final software
+captures use its real published framebuffer. This test does not claim that old
+compiler-owned task execution slots survive rebind, or close cross-file edits.

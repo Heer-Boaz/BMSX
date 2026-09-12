@@ -70,10 +70,29 @@ feedback; measure gesture setup separately from retained motion.
   cancellation tests now aim at the side sector rather than an ambiguous card
   centre. The review and moved graph were inspected in real tiny-font WebGL2
   captures, not a mock renderer.
-- The suite's existing Save/Hot Resume workflows pass. A dedicated end-to-end
-  *this reparent gesture -> Save -> Hot Resume of a living BT* proof is not
-  claimed by the independent paused-source fixture. B04's broader API/context
-  ownership and foreign-resource authoring also remain open.
+- The separate `--studio-bt-reparent` flow now boots independent executable Lua
+  through ordinary Save/Reboot. It physically moves a task into a nested
+  sequence, accepts the source review, saves through the real workspace API,
+  and Hot Resumes the living component. Guest ICU input executes task order
+  `123 -> 213`; one Undo, Save and second Hot Resume restores `123`. Actor,
+  component and blackboard identity remain unchanged, including the retained
+  semantic blackboard value `73`. All three renderers pass. The test never calls
+  guest closures or writes guest tables from the host; it does not claim to
+  preserve old compiler-owned task memory across program replacement.
+- The browser harness now owns scenario composition once, not in three copied
+  backend branches. Backend construction, real WebGPU callback/readback checks
+  and final software framebuffer publication stay with their renderer project;
+  the existing pre-/post-reboot ordering is preserved. This follows the existing
+  FSM live fixture and [VS Code's debugger automation](https://github.com/microsoft/vscode/blob/a8f49160195d9e967d2d51e8544dc895207518e7/test/automation/src/debug.ts):
+  drive actual commands/input and wait for their observable state, rather than
+  simulate the implementation under test. Artifacts: `/tmp/bmsx-bt-live/`.
+- After this harness change the complete existing Studio workflow also passes
+  on software, WebGL2 and WebGPU, including its intentional fault/recovery and
+  real WebGPU readback lifetime cases. The tests-project typecheck has exactly
+  the same 51 diagnostics as `04913678b`; strict boundary, core parity,
+  indentation and diff checks pass. There are no product/runtime changes in
+  this dedicated proof slice.
+- B04's broader API/context ownership and foreign-resource authoring remain open.
 
 ### Isolated pointer cost
 

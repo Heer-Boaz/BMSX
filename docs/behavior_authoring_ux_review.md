@@ -317,9 +317,10 @@ De primaire testoracle is onafhankelijke Lua, niet een huidige gameboom.
 De [same-document B03-dragroute](behavior_tree_reparenting.md) is inmiddels
 gebouwd: vóór/na/in, lege parent, enige child, expliciete bronreview en één
 Undo/Redo met occurrence-selectie. De drie echte rendererflows slagen. Dit is
-geen sluiting van de bredere B04-API-/callcontextgrens of cross-file authoring;
-de nog niet afzonderlijk bewezen reparent-plus-live-Hot-Resume-flow staat bij
-het bewijs, niet verstopt onder de algemene Studio-gate.
+geen sluiting van de bredere B04-API-/callcontextgrens of cross-file authoring.
+De afzonderlijke reparent → Save → live-Hot-Resume → Undo-proef slaagt nu op
+alle drie renderers: echte ICU-input bewijst de gewijzigde taakvolgorde van
+dezelfde BT-component, met behoud van zijn blackboard en semantische waarde.
 
 Dit is niet een tweede semantic engine in Behavior Lens:
 
