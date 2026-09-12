@@ -8,6 +8,7 @@ import { sourceRangesEqual } from '../source_range';
 import { compareSourcePosition } from './source_range';
 import { LuaWrittenSourceQuery } from './written_sources';
 import type { LuaSourceCallGraph } from './source_call_graph';
+import type { LuaSourceValueQuery } from './source_value_query';
 
 const EMPTY_SYMBOLS: readonly SymbolID[] = [];
 
@@ -61,6 +62,10 @@ export class WorkspaceSymbolResolver {
 
 	public callSources(callSite: LuaCallSite): LuaSourceCallGraph {
 		return this.getQueryStore().callSources(callSite.call);
+	}
+
+	public get contextualSources(): LuaSourceValueQuery {
+		return this.getQueryStore().contextualSources(this.writtenSources);
 	}
 
 	public resolveReference(ref: Ref): SymbolID | undefined {

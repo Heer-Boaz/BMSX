@@ -11,6 +11,8 @@ import { SemanticMemberQuery } from './member_query';
 import type { FileSemanticData, SymbolID } from './model';
 import { SemanticQueryResults } from './query_dependencies';
 import { LuaSourceCallQuery, type LuaSourceCallGraph } from './source_call_graph';
+import { LuaSourceValueQuery } from './source_value_query';
+import type { LuaWrittenSourceQuery } from './written_sources';
 import type {
 	CallValueEntry,
 	SemanticValueSource,
@@ -48,6 +50,7 @@ export class LuaSemanticQueryStore {
 	private readonly members: SemanticMemberQuery;
 	private readonly calls: SemanticCallGraph;
 	private sourceCalls: LuaSourceCallQuery | undefined;
+	private sourceValues: LuaSourceValueQuery | undefined;
 	private readonly memberEntries: MemberQueryEntry[][] = [];
 	private readonly memberResults: SemanticQueryResults<SymbolID>;
 	private readonly allMemberResults: SemanticQueryResults<SymbolID>;
@@ -167,6 +170,12 @@ export class LuaSemanticQueryStore {
 	public callSources(call: CallValueEntry): LuaSourceCallGraph {
 		if (this.sourceCalls === undefined) this.sourceCalls = new LuaSourceCallQuery(this.summaries, this.instantiation, this.calls);
 		return this.sourceCalls.ancestry(call);
+	}
+
+	public contextualSources(written: LuaWrittenSourceQuery): LuaSourceValueQuery {
+		if (this.sourceCalls === undefined) this.sourceCalls = new LuaSourceCallQuery(this.summaries, this.instantiation, this.calls);
+		if (this.sourceValues === undefined) this.sourceValues = new LuaSourceValueQuery(written, this.sourceCalls, this.summaries);
+		return this.sourceValues;
 	}
 
 	public incoming(symbol: SymbolID, name: string): readonly CallFact[] {

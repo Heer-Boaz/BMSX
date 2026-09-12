@@ -111,3 +111,123 @@ for the future source-editor consumer.
 Artifacts: `/tmp/bmsx-source-call-graph/`. An earlier paired run is retained in
 its `initial/` directory; the final run also avoids redundantly asking the
 instantiation owner to compose an already queried body.
+
+## Contextual written values (2026-09-12)
+
+Follow-up starting at `1fda33ae3`. The call graph now feeds a demand-only
+`LuaSourceValueQuery` through `WorkspaceSymbolResolver.contextualSources`.
+This is the call/alias part of B04, **not** completion of its member-origin,
+resource-model or authoring contracts.
+
+### Production references and representation
+
+WALA's
+[parameter/return transitions](https://github.com/wala/WALA/blob/f58f4d0893a9a022c4aa4f980b751e3159c42c13/core/src/main/java/com/ibm/wala/demandpa/alg/DemandRefinementPointsTo.java#L1227-L1345)
+label interprocedural edges with their caller and callsite, using its existing
+target solver. Roslyn's
+[operation/argument collector](https://github.com/dotnet/roslyn/blob/0c14b7cb5e382318c4322e29e045f48b11c641ca/src/Features/Core/Portable/ValueTracking/ValueTracker.OperationCollector.cs#L106-L218)
+retains actual operations and groups argument contributions. Both were read
+before implementation. BMSX applies these ownership distinctions; it does not
+copy WALA's fallback branches, optimistic assumptions or refinement framework,
+nor Roslyn's task/threading infrastructure.
+
+| Owner | Representation and lifetime |
+| --- | --- |
+| Written-source query | Original argument expressions, bound callee facts, first-result return statements and body completion. Every occurrence owns its original `FileSemanticData`; equal literals are not source identities. |
+| Function summaries / term store | Parameter ordinal and body remain known after assignment makes the binding writable. The entry-owner map no longer destroys that fact to choose storage. A separate local-storage owner still produces `Local` for written formals, `Parameter` for read-only formals. No extra alias for read-only inputs. |
+| Call graph | Exact `(site, owner frame)` lookup uses the existing work-item index, not a linear search of all contexts or a second index in Lens. Only this solver creates call applications. |
+| Source-call query | Module/function activation objects, lexical scope, retained incoming/application rows. Function application targets are represented as function activations, not cast from the module/function union. Row replacement preserves consistency of earlier trace snapshots. |
+| Source-value query | A point is `(written occurrence, activation)`. Written edges preserve writer scope; argument and return edges retain the original application object. Queries and negative/late dependencies use `SemanticQueryEvaluation`. |
+
+Consumers choose a source-call context **before** tracing its argument lanes.
+Different calls therefore do not cross id/definition origins. A shared analysis
+frame still has several incoming applications; the returned graph preserves
+their labels. A consumer must not turn independently flattened terminal lists
+into a Cartesian product, or mistake module connectivity for runtime execution.
+
+Captured parameters follow the lexical creator, not the caller of a returned
+closure. A write in another body remains a projected contribution with its
+own owner; it is not labelled as an executed write in the requesting activation.
+Projection inputs remain visible boundaries. Recursion and alias cycles remain
+finite graph edges rather than repeated stack expansion or capped queries.
+
+The source argument owner uses semantic ordinals, including a colon receiver.
+An omitted fixed argument is an actual implicit nil occurrence at its callsite;
+an additional lane of a tail call/vararg remains unknown with that same site
+and ordinal. The existing first-result solver does not suddenly claim full
+multi-result analysis. Empty return and reachable fallthrough keep distinct
+nil occurrences; unresolved completion is not discarded.
+
+Known factory returns can now lead back through arguments into a different
+file. The result also retains a **call-result boundary** with its callee source
+point and known applications, including an empty application set. One known
+function is not an exhaustive-callee certificate: a conditional unknown
+replacement remains reachable by tracing that callee source. Member/index
+paths remain explicit boundaries of the written-source owner, not a hidden
+second field evaluator in this query or a Lens-specific exception.
+
+### Review and validation obligations
+
+- Independent fixtures cover ordinary aliases, paired wrapper inputs, lexical
+  factories, imported providers/module factories, reassigned and captured
+  formals, receiver lanes, nil versus expanded arguments, empty returns,
+  recursion, shared frames, unknown callees and source generations.
+- Late application and predecessor publication must invalidate an already
+  retained trace; its old result must not gain applications without matching
+  return edges. Warm reads must preserve both result identity and evaluation
+  counts.
+- Review found that the term store's existing parameter-owner map discarded
+  writable formals. Exposing that map as complete source-entry metadata was
+  wrong. The correction keeps entry identity and storage classification
+  separate in the producer, rather than adding a guard or reconstructing an
+  ordinal at the feature callsite.
+- Contextual discovery and full traces need their own cold measurements, in
+  addition to paired real-workspace and ordinary-query regression measurements.
+  Existing browser Source/Back routes are regression coverage only until the
+  multi-resource Lens consumer is connected.
+
+### Validation of contextual written values
+
+Artifacts: `/tmp/bmsx-source-bindings/`. The independent fixtures also execute
+the relevant Lua on the CPU at O0/O3. The editor-model test changes only an
+imported factory, retains the importing file's binder facts, and checks the new
+provider range, non-mutating reads and Undo; it does not substitute for the
+not-yet-connected multi-resource Lens consumer.
+
+- Full Lua suite: **1,631 passed, one existing skip, zero failures**.
+- Toolchain and IDE TypeScript pass. The tests project still reports the same
+  **51 baseline diagnostics**, comparing complete diagnostic blocks after
+  normalizing locations; it is not a clean typecheck.
+- Strict architecture audit, core parity, indentation and `git diff --check`
+  pass. This slice changes no guest/runtime representation or C++ code.
+- Fresh browser Studio build; Studio workflows and source navigation pass on
+  software, WebGL2 and WebGPU. All six end captures are byte-identical to the
+  previous slice. Captures were inspected, not treated as proof of new Lens
+  authoring or correct UX everywhere in the pre-existing screens.
+
+Four alternating isolated process pairs against `1fda33ae3`, Node 22.23.1,
+Core Ultra 7 265KF/WSL, unpinned hybrid cores. Numbers are medians, not budgets:
+
+| Cold query boundary | Before | After |
+| --- | ---: | ---: |
+| Real Nemesis workspace, `player.lua:1179:9` | 253.061 ms | 251.045 ms |
+| 1,024 retained call contexts | 17.797 ms | 17.641 ms |
+| 1,024 source ancestries | 21.337 ms | 20.848 ms |
+| Closure-source lookup, 1,024 unrelated bodies | 17.250 ms | 16.551 ms |
+| 32 ordinary parameter/member queries | 1.055 ms | 1.190 ms |
+| 256 written parameter/member queries | 8.864 ms | 8.989 ms |
+
+Real-workspace ranges overlap (241.580–255.543 versus 250.055–255.309 ms);
+some synthetic cases are slower. Real-workspace solver work is unchanged:
+1,690 summaries, 319 frames, 955 call / 2,719 value / 1,339 member evaluations.
+Median process wall time is 0.71 s on both versions; peak RSS is 320,834 versus
+321,266 KiB. These are not heap-allocation or whole-IDE latency measurements,
+and roughly 250 ms is still too slow for the interactive latency gate.
+
+The new `profile_contextual_sources.ts` traces both argument lanes for every
+caller through aliases and factory returns: 1 / 64 / 256 / 1,024 callers take
+0.225 / 1.464 / 4.649 / 33.247 ms cold. Warm point-plus-trace lookups take
+0.023–0.050 microseconds in 10,000-read batches, with no additional query
+evaluations. Cold includes fresh query owners and call discovery, but excludes
+parsing, rendering and guest execution. No previous implementation exists for
+this complete trace workload, so those figures are not a speedup claim.

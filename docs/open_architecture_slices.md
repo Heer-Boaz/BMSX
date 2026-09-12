@@ -599,6 +599,16 @@ bronplekken, niet argumentwaarden. Niet-gematerialiseerde/unknown bijdragen,
 gecorreleerde bron-substitutie en de resourceconsumer blijven open. Dit is nog
 geen gesloten B04-bronbewijs of toelating van B03/B06-bewerkingen.
 
+De [contextuele written-valuequery](lua_source_call_graph.md#contextual-written-values-2026-09-12)
+volgt vervolgens bestaande argument-/returnapplicaties, gewone aliases en
+lexical creators met de echte file-owner. Zij houdt gedeelde callcontexten
+en onbekende callee-/resultaatbijdragen zichtbaar; geen onafhankelijk gekruiste
+argumentlijsten of nieuwe Lens-evaluator. Parameter-entry-identiteit blijft ook
+bij een beschrijfbare binding behouden. Member-/indexherkomst, resource-eigen
+editorconsumptie en B03/B06-authoring blijven open, niet vervangen door deze
+call/aliasvoorwaarde. De aanvullende contextmenu-/zoombevindingen staan in de
+UX-review en worden niet als reeds opgeloste werking afgevinkt.
+
 De document-lifetimegrens van B04 staat in `editor_semantic_model_sync.md`:
 het semantische project verwerkt model-add/change/remove, ook voor verborgen
 dependencies, zonder feature-eigen modelscan. Resource-eigen projectiegeldigheid

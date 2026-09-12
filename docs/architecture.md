@@ -4611,6 +4611,20 @@ callee use; each consumer owns its selection policy. Context-free templates
 select source sites, not bound arguments or function targets. Unknown and
 not-yet-materialized contributions still prevent an exhaustive source proof.
 
+Contextual written-value queries retain a source occurrence and its analysis
+activation. Argument and return edges keep the call application's identity;
+they do not independently flatten argument lanes into cross-products. Captured
+inputs follow lexical creators, while writes outside that scope remain explicit
+projected contributions. Source-entry parameter metadata survives writable
+binding classification. First-return and missing fixed-argument nil occurrences
+retain their own syntax/file owners; unmodeled expanded lanes stay unknown.
+Call results retain a callee source boundary and their known applications,
+not a singleton/exhaustiveness claim. Exact context lookup and late dependencies
+belong to the shared call/query owners. See the
+[contextual source contract](lua_source_call_graph.md#contextual-written-values-2026-09-12).
+Member origins and the multi-resource editor consumer remain separate gates;
+this query does not authorize broader behavior authoring by itself.
+
 Behavior navigation is a workbench contribution over those retained source
 facts, not framework knowledge in the language service. Its Quick Input
 results are individual FSM/BT/ActionEffect registration occurrences; a Lua

@@ -16,6 +16,30 @@ van initialisatie-effecten. Daarom gaat het generieke broncontract vóór het
 uitbreiden van structurele authoring, ook binnen één bestand. Niet-mutating
 UX-verbeteringen hoeven daarop niet te wachten.
 
+### Vervolgbevindingen uit de gebruikersproef (2026-09-12)
+
+- De eigen FSM-initialpresentatie, contextmenu-owner en zoom zijn al geleverd;
+  niet opnieuw als ontbrekende features tellen. De resterende eindcontracten
+  hieronder blijven afzonderlijk te volgen.
+- Contextmenu: opnieuw toetsen welke acties werkelijk bij het geraakte doel
+  horen. Zoom In/Out worden als nutteloze contextitems ervaren; de aanwezigheid
+  van een generieke command is geen reden haar in elk contextmenu te zetten.
+- Zoom: In/Out gebruiken volgens de proef verschillende, niet-omkeerbare
+  stappen; terug naar 100% vereist daardoor 1:1. Bovendien vervormen pixels
+  verschillend in breedte en hoogte. Onderzoek de zoomreeks én de graph/viewport/
+  renderertransformatie, inclusief presentatie-aspectratio, voordat een oorzaak
+  wordt aangewezen. Dit is nog geen bevestigde rendererdiagnose.
+- Na iedere implementatieslice ook de aangrenzende, eerder geleverde werking
+  reviewen tegen passende productiecode en de echte gebruikersflow. Geslaagde
+  regressietests alleen bewijzen geen goede UX of architectuur.
+- Capture-review van de bronherkomstslice: in de bestaande Scene/Problems-
+  eindcapture lopen scheidingslijnen door de diagnosticregels. De capture is
+  ongewijzigd ten opzichte van de vorige slice; de groene workflowtest bewijst
+  dus niet dat die compositie goed is. Opnemen bij de aangrenzende pane-/clip-
+  review, niet maskeren door de snapshot of testverwachting aan te passen.
+
+Deze vervolgpunten onderbreken het lopende bronherkomstwerk niet.
+
 ## 1. Wat daadwerkelijk ontbreekt
 
 | Gebruikersbevinding | Live oorzaak; behouden fundament |

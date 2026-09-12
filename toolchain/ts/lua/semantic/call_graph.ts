@@ -173,6 +173,12 @@ export class SemanticCallGraph {
 		}
 	}
 
+	/** Exact context selection uses the work item's existing site/frame index. */
+	public callContext(call: CallValueEntry, ownerFrame: number): SemanticCallContext {
+		this.callContexts(call);
+		return this.contexts[this.worklist.callItems(call).get(ownerFrame)!];
+	}
+
 	private queryCallerContexts(summary: FunctionSummaryID): void {
 		const queries = this.callerContextQueries;
 		if (queries.isCurrent(summary) || queries.isComputing(summary)) return;

@@ -19,6 +19,9 @@ function writtenLines(sources: readonly LuaWrittenSource[]): number[] {
 			case 'binding-input': return source.declaration.range.start.line;
 			case 'module-export': return source.export.statement.range.start.line;
 			case 'module-bypass': return source.statement.range.start.line;
+			case 'call-input': case 'call-callee': return source.call.expression.range.start.line;
+			case 'function-return': return source.entry.statement.range.start.line;
+			case 'function-completion': return source.body.expression.range.start.line;
 			case 'receiver-input': {
 				assert.ok(source.value.root.kind === 'owned');
 				return source.value.root.syntax.range.start.line;

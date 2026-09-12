@@ -6,6 +6,7 @@ import type { ResourceDomain, RuntimeResource } from '../../ide/common/resource'
 import type { LuaSourceRecord, LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import type { RuntimeSourceState } from '../../ide/runtime/sources';
 import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
+import { readLuaSourceRange } from '../../ide/language/lua/source_edits';
 
 function sourceRecord(path: string, source: string): LuaSourceRecord {
 	return {
@@ -154,6 +155,46 @@ test('model addition and hidden dependency edits are visible at the next semanti
 	assert.equal(oldTrace.terminals[0].file.source, 'return {}');
 	model.undo();
 	assert.equal(project.getFileData('dependency.lua')!.source, 'return {}');
+});
+
+test('factory source origins follow a hidden working copy through edit and Undo without touching the importer', t => {
+	const provider = 'local function make()\n return 1\nend\nreturn make()';
+	const models = new EditorTextModelService();
+	const project = new EditorLuaSemanticProject(0, models);
+	t.after(() => { project.dispose(); models.clear(); });
+	project.synchronizeRuntimeSources(runtimeSources(sourceRegistry([['system.lua', 'return true']]),
+		sourceRegistry([['main.lua', "local function consume(value) end; consume(require('dependency'))"], ['dependency.lua', provider]])));
+	const initial = project.getSnapshot();
+	const importer = initial.getFileData('main.lua')!;
+	const site = importer.callSites.find(site => site.reference?.name === 'consume')!;
+	const model = models.retain(resource(0, 'dependency.lua'), 'lua', provider);
+	const version = model.version;
+	function read() {
+		const snapshot = project.getSnapshot();
+		assert.equal(snapshot.getFileData('main.lua'), importer);
+		const resolver = snapshot.symbolResolver;
+		const query = resolver.contextualSources;
+		const head = resolver.callSources(site).heads[0];
+		const trace = query.trace(query.argument(head, 0));
+		assert.equal(trace.terminals.length, 1);
+		const source = trace.terminals[0].source;
+		assert.ok(source.kind === 'function-return');
+		assert.equal(source.file, snapshot.getFileData(model.resource.path));
+		return { source, text: readLuaSourceRange(model.buffer, source.entry.statement.range) };
+	}
+	const first = read();
+	assert.equal(first.text, 'return 1');
+	assert.equal(model.version, version);
+	assert.equal(model.dirty, false);
+	model.pushEditOperations([{ offset: provider.indexOf('1'), deleteLength: 1, text: '2' }]);
+	const second = read();
+	assert.equal(second.text, 'return 2');
+	assert.equal(first.source.file.source, provider);
+	assert.equal(model.version, version + 1);
+	assert.equal(model.dirty, true);
+	model.undo();
+	assert.equal(read().text, 'return 1');
+	assert.equal(model.dirty, false);
 });
 
 test('queued model changes do not enumerate retained models on content changes or warm reads', () => {

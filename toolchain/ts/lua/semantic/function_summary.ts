@@ -153,6 +153,11 @@ export class SemanticTermStore {
 		return this.compileRoot({ kind: 'unknown' });
 	}
 
+	/** Source entry bindings keep their parameter ordinal even when their storage is writable. */
+	public parameterOwner(root: SemanticValueRoot): RootOwner | undefined {
+		return this.parameterOwnerByRoot.get(this.identities.rawRootId(root));
+	}
+
 	public compileSource(source: SemanticValueSource): TermID {
 		let term = this.compileRoot(source.root);
 		for (let stepIndex = 0; stepIndex < source.steps.length; stepIndex += 1) {
@@ -477,13 +482,13 @@ export class SemanticTermStore {
 		const rawRoot = this.identities.rawRootId(root);
 		const retained = this.compiledRoots[rawRoot];
 		if (retained !== undefined) return retained;
-		const parameterOwner = this.parameterOwnerByRoot.get(rawRoot);
-		if (parameterOwner) {
-			return this.compiledRoots[rawRoot] = this.parameter(parameterOwner.summary, parameterOwner.index);
-		}
 		const localOwner = this.localOwnerByRoot.get(rawRoot);
 		if (localOwner) {
 			return this.compiledRoots[rawRoot] = this.local(localOwner.summary, localOwner.index);
+		}
+		const parameterOwner = this.parameterOwnerByRoot.get(rawRoot);
+		if (parameterOwner) {
+			return this.compiledRoots[rawRoot] = this.parameter(parameterOwner.summary, parameterOwner.index);
 		}
 		const identity = this.identities.canonicalRoot(rawRoot);
 		let term = this.rootTerms[identity];
@@ -564,6 +569,7 @@ export class FunctionSummaryStore {
 
 		const parameterOwnerByRoot = new Map<SemanticRootID, RootOwner>();
 		const localOwnerByRoot = new Map<SemanticRootID, RootOwner>();
+		const writtenParameters = new Set<SemanticRootID>();
 		for (let flowIndex = 0; flowIndex < flows.length; flowIndex += 1) {
 			const flow = flows[flowIndex];
 			const summary = (flowIndex + 1) as FunctionSummaryID;
@@ -588,7 +594,8 @@ export class FunctionSummaryStore {
 			for (let referenceIndex = 0; referenceIndex < file.refs.length; referenceIndex += 1) {
 				const reference = file.refs[referenceIndex];
 				if (reference.isWrite && reference.binding !== undefined) {
-					parameterOwnerByRoot.delete(identities.rawRootId(reference.binding.root));
+					const root = identities.rawRootId(reference.binding.root);
+					if (parameterOwnerByRoot.has(root)) writtenParameters.add(root);
 				}
 			}
 		}
@@ -599,14 +606,14 @@ export class FunctionSummaryStore {
 			for (let declarationIndex = 0; declarationIndex < flow.declarationIds.length; declarationIndex += 1) {
 				const declId = flow.declarationIds[declarationIndex];
 				const root = identities.rawRootId({ kind: 'declaration', declId });
-				if (!parameterOwnerByRoot.has(root)) {
+				if (!parameterOwnerByRoot.has(root) || writtenParameters.has(root)) {
 					localOwnerByRoot.set(root, { summary, index: localIndex });
 					localIndex += 1;
 				}
 			}
 			for (let ownedIndex = 0; ownedIndex < flow.ownedValues.length; ownedIndex += 1) {
 				const root = identities.rawRootId(flow.ownedValues[ownedIndex].root);
-				if (!parameterOwnerByRoot.has(root) && !localOwnerByRoot.has(root)) {
+				if ((!parameterOwnerByRoot.has(root) || writtenParameters.has(root)) && !localOwnerByRoot.has(root)) {
 					localOwnerByRoot.set(root, { summary, index: localIndex });
 					localIndex += 1;
 				}
@@ -645,6 +652,10 @@ export class FunctionSummaryStore {
 
 	public get count(): number {
 		return this.summaries.length - 1;
+	}
+
+	public idForFlow(flow: FunctionValueFlowEntry): FunctionSummaryID {
+		return this.summaryIdByFlow.get(flow)!;
 	}
 
 	public summaryIdsForTerm(term: TermID): readonly FunctionSummaryID[] {

@@ -13,6 +13,8 @@ import { SemanticQueryEvaluation } from '../../toolchain/ts/lua/semantic/query_d
 import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
 import { runCompiledLua } from './cpu_test_harness';
 import { LuaSourceCallQuery } from '../../toolchain/ts/lua/semantic/source_call_graph';
+import { LuaSourceValueQuery } from '../../toolchain/ts/lua/semantic/source_value_query';
+import { LuaWrittenSourceQuery } from '../../toolchain/ts/lua/semantic/written_sources';
 
 function callQueries(source: string, extraFiles: readonly FileSemanticData[] = []) {
 	const file = buildLuaFileSemanticData(source, 'applications.lua');
@@ -180,6 +182,58 @@ absent(1)`);
 	assert.equal(graph.callContexts(call.site), contexts);
 	assert.equal(context.applications.length, 1);
 	assert.equal(context.applications[0].callee, target.id);
+});
+
+test('a contextual return trace tracks a negative callee row and preserves earlier graph consistency', () => {
+	const { file, summaries, demand, instantiation, graph } = callQueries(`local function record(value) end
+local function target() return 7 end
+record(absent())`);
+	const calls = new LuaSourceCallQuery(summaries, instantiation, graph);
+	const written = new LuaWrittenSourceQuery([file], new Map(file.decls.map(declaration => [declaration.id, declaration])));
+	const values = new LuaSourceValueQuery(written, calls, summaries);
+	const record = file.callSites.find(site => site.reference?.name === 'record')!.call;
+	const root = values.argument(calls.ancestry(record).heads[0], 0);
+	const before = values.trace(root);
+	assert.equal(before.terminals.length, 0);
+	assert.equal(before.callResults[0].applications.length, 0);
+	const unknown = file.callSites.find(site => site.reference?.name === 'absent')!.call;
+	const target = summaries.list().find(summary => summary.source.returns.length > 0)!;
+	instantiation.values.add(demand.call(unknown).callee, target.functionValue);
+	const after = values.trace(root);
+	assert.notEqual(after, before);
+	assert.equal(after.callResults[0].applications.length, 1);
+	assert.equal(after.terminals.length, 1);
+	assert.equal(after.terminals[0].source.kind, 'function-return');
+	assert.deepEqual(after.terminals[0].source.value.root, { kind: 'literal', literal: { kind: 'number', value: 7 } });
+	assert.equal(before.callResults[0].applications.length, 0, 'old source graph must not acquire applications without their return edges');
+	assert.equal(values.trace(root), after);
+});
+
+test('a contextual input trace observes later callers of a shared frame without losing the old edge labels', () => {
+	const { file, summaries, demand, instantiation, graph } = callQueries(`local function record(value) end
+local function consume(value) record(value) end
+local function relay() consume('same') end
+relay()
+absent()`);
+	const calls = new LuaSourceCallQuery(summaries, instantiation, graph);
+	const written = new LuaWrittenSourceQuery([file], new Map(file.decls.map(declaration => [declaration.id, declaration])));
+	const values = new LuaSourceValueQuery(written, calls, summaries);
+	const record = file.functionValueFlows[1].calls[0];
+	const head = calls.ancestry(record).heads.find(call => call.caller.kind === 'invocation')!;
+	const root = values.argument(head, 0);
+	const before = values.trace(root);
+	assert.equal(before.edges.filter(edge => edge.kind === 'argument').length, 2);
+	const absent = demand.topLevelCalls[1];
+	const relay = summaries.list().find(summary => summary.source === file.functionValueFlows[2])!;
+	instantiation.values.add(absent.callee, relay.functionValue);
+	graph.callContexts(absent.site);
+	const after = values.trace(root);
+	assert.notEqual(after, before);
+	assert.equal(after.edges.filter(edge => edge.kind === 'argument').length, 3);
+	const oldApplications = before.edges.filter(edge => edge.kind === 'argument').map(edge => edge.application);
+	assert.ok(oldApplications.every(application => after.edges.some(edge => edge.kind === 'argument' && edge.application === application)));
+	assert.equal(before.edges.filter(edge => edge.kind === 'argument').length, 2);
+	assert.equal(values.trace(root), after);
 });
 
 test('source ancestry retains complete wrapper tuples instead of crossing independently resolved arguments', () => {
