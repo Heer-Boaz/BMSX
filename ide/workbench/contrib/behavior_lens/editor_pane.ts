@@ -56,13 +56,16 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 	private readonly stateMachineDrop: StateMachineRetargetDrop = (selection, target) => {
 		const input = this.input;
 		if (target.uses.length === 1) retargetStateMachineTransition(input.workingCopy, input.view, selection, target);
-		else this.sourceEditReview.show({
-			model: input.workingCopy, title: 'RETARGET FSM',
-			summary: `${target.uses.length} RECOGNIZED USES: ${target.literal.value} -> ${target.text}`,
-			items: stateMachineRetargetImpacts(input.view, target),
-			apply: () => retargetStateMachineTransition(input.workingCopy, input.view, selection, target),
-			openSource: index => this.controller.openStateMachineUseSource(input, target.uses[index].use),
-		});
+		else {
+			const lifetime = this.sourceEditReview.show({
+				model: input.workingCopy, title: 'RETARGET FSM',
+				summary: `${target.uses.length} RECOGNIZED USES: ${target.literal.value} -> ${target.text}`,
+				items: stateMachineRetargetImpacts(input.view, target),
+				apply: () => retargetStateMachineTransition(input.workingCopy, input.view, selection, target),
+				openSource: index => this.controller.openStateMachineUseSource(input, target.uses[index].use),
+			});
+			lifetime.add({ dispose: input.view.source.onDidInvalidate(() => this.sourceEditReview.clear()) });
+		}
 	};
 	private readonly stateMachineDragSource: WorkbenchGraphDragSource = {
 		connectionEnds: edge => stateMachineConnectionEnds(this.input.workingCopy, this.input.view, edge),
@@ -250,7 +253,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 				: presentation.kind === 'graph' ? 'behaviorLens.node.context' : 'behaviorLens.state.context';
 		} else menu = 'behaviorLens.property.context';
 		const lifetime = this.contextMenu.show(x, y, WORKBENCH_MENUS[menu], this.commands, keyboard);
-		for (const model of view.source.models.values()) lifetime.add({ dispose: model.onDidChangeContent(() => this.contextMenu.hide()) });
+		lifetime.add({ dispose: view.source.onDidInvalidate(() => this.contextMenu.hide()) });
 	}
 
 	private openDetails(): void {
@@ -263,7 +266,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 			canOpenSource: item => item.range !== undefined,
 			openSource: item => this.controller.openInspectionSource(input, item),
 		});
-		for (const model of input.view.source.models.values()) lifetime.add({ dispose: model.onDidChangeContent(() => this.inspector.hide()) });
+		lifetime.add({ dispose: input.view.source.onDidInvalidate(() => this.inspector.hide()) });
 	}
 
 	private openKeyboardContextMenu(): void {

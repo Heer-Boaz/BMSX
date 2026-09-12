@@ -1,8 +1,9 @@
-import { LuaSyntaxKind, type LuaExpression } from '../../../../toolchain/ts/lua/syntax/ast';
-import type { FileSemanticData, LuaCallSite, SymbolID } from '../../../../toolchain/ts/lua/semantic/model';
+import { LuaSyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
+import type { LuaCallSite } from '../../../../toolchain/ts/lua/semantic/model';
+import type { BehaviorSourceReader } from './source_reader';
 import type { ResourceIdentity } from '../../../common/resource';
 import type { BehaviorKind, BehaviorRegistrationSource } from './model';
-import { appendBehaviorSourcePath, collectConstInitializers, createBehaviorSourceAnchor, describeExpression, resolveConstSourceExpression } from './source';
+import { appendBehaviorSourcePath, createBehaviorSourceAnchor, describeExpression } from './source';
 
 type BehaviorRegistrationKind = {
 	readonly behaviorKind: BehaviorKind;
@@ -41,13 +42,11 @@ export type BehaviorRegistration = BehaviorRegistrationSource & {
 };
 
 export type BehaviorRegistrationSet = {
-	readonly constInitializers: ReadonlyMap<SymbolID, LuaExpression>;
 	readonly registrations: readonly BehaviorRegistration[];
 };
 
-export function collectBehaviorRegistrations(resource: ResourceIdentity, analysis: FileSemanticData): BehaviorRegistrationSet {
-	const constInitializers = collectConstInitializers(analysis);
-	const activeDeclarations = new Set<SymbolID>();
+export function collectBehaviorRegistrations(resource: ResourceIdentity, reader: BehaviorSourceReader): BehaviorRegistrationSet {
+	const analysis = reader.snapshot.getFileData(resource.path)!;
 	const occurrences = new Map<string, number>();
 	const registrations: BehaviorRegistration[] = [];
 	for (const callSite of analysis.callSites) {
@@ -55,7 +54,7 @@ export function collectBehaviorRegistrations(resource: ResourceIdentity, analysi
 		if (registration === null) continue;
 		const idExpression = callSite.expression.arguments[0];
 		const idLabel = idExpression ? describeExpression(idExpression) : '<unresolved id>';
-		const idValue = idExpression && resolveConstSourceExpression(analysis, constInitializers, idExpression, activeDeclarations);
+		const idValue = idExpression && reader.expression(idExpression);
 		const semanticId = idValue?.kind === LuaSyntaxKind.StringLiteralExpression ? idValue.value : null;
 		const occurrenceKey = `${registration.behaviorKind}\0${idLabel}`;
 		const occurrence = occurrences.get(occurrenceKey) || 0;
@@ -75,7 +74,7 @@ export function collectBehaviorRegistrations(resource: ResourceIdentity, analysi
 			idLabel,
 		});
 	}
-	return { constInitializers, registrations };
+	return { registrations };
 }
 
 function resolveRegistration(

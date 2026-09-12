@@ -1,11 +1,14 @@
+import type { LuaTableConstructorExpression } from '../../../toolchain/ts/lua/syntax/ast';
+import { BehaviorSourceReader } from '../../../ide/workbench/contrib/behavior_lens/source_reader';
+import { semanticSnapshot } from '../../lua/semantic_test_harness';
 import assert from 'node:assert/strict';
-import { buildLuaFileSemanticData, type SymbolID } from '../../../toolchain/ts/lua/semantic/model';
+import { buildLuaFileSemanticData } from '../../../toolchain/ts/lua/semantic/model';
 import { EditorTextModel } from '../../../ide/editor/model/text_model';
 import { buildActionEffectBody } from '../../../ide/workbench/contrib/behavior_lens/action_effect';
 import { installBehaviorLensDocument } from '../../../ide/workbench/contrib/behavior_lens/layout';
 import { buildBehaviorSourceDocument } from '../../../ide/workbench/contrib/behavior_lens/recognizer';
 import { collectBehaviorRegistrations } from '../../../ide/workbench/contrib/behavior_lens/registrations';
-import { collectMutatedDeclarations, resolveSourceTable, type BehaviorRecognizerContext } from '../../../ide/workbench/contrib/behavior_lens/source';
+import { resolveSourceTable, type BehaviorRecognizerContext } from '../../../ide/workbench/contrib/behavior_lens/source';
 import { createBehaviorLensViewState } from '../../../ide/workbench/contrib/behavior_lens/view_model';
 import { ACTIONEFFECT_SOURCE } from '../../helpers/actioneffect_source_fixture';
 import { medianMilliseconds } from '../../helpers/performance';
@@ -15,18 +18,19 @@ for (const registrations of [24, 1024]) {
 		+ Array.from({ length: registrations }, (_, index) => `effects.register_effect('profile.${index}', blueprint)`).join('\n');
 	const resource = { domain: 0 as const, path: 'effect_profile.lua', source: { resid: 'effect_profile', type: 'lua' as const } };
 	const semantic = buildLuaFileSemanticData(source, resource.path);
-	const sourceProjectionMs = medianMilliseconds(() => { buildBehaviorSourceDocument(resource, semantic); });
-	const document = buildBehaviorSourceDocument(resource, semantic);
+	const snapshot = semanticSnapshot(semantic);
+	const sourceProjectionMs = medianMilliseconds(() => { buildBehaviorSourceDocument(resource, snapshot); });
+	const document = buildBehaviorSourceDocument(resource, snapshot);
 	const model = new EditorTextModel(resource, 'lua', source);
 	const view = createBehaviorLensViewState(document, model, 'outline', assert.fail);
 	const inputRefreshMs = medianMilliseconds(() => { installBehaviorLensDocument(view, document); });
-	const registrationSet = collectBehaviorRegistrations(resource, semantic);
+	const registrationSet = collectBehaviorRegistrations(resource, new BehaviorSourceReader(snapshot));
 	const registration = registrationSet.registrations[0];
 	const context: BehaviorRecognizerContext = {
-		analysis: semantic, constInitializers: registrationSet.constInitializers, mutatedDeclarations: collectMutatedDeclarations(semantic),
+		reader: new BehaviorSourceReader(snapshot),
 		anchor: registration.anchor, registrationRange: registration.callSite.expression.range, sourceIncomplete: false, behaviorKind: 'action_effect',
 	};
-	const active = new Set<SymbolID>();
+	const active = new Set<LuaTableConstructorExpression>();
 	const table = resolveSourceTable(context, registration.callSite.expression.arguments[1], active)!;
 	const singleBodyMs = medianMilliseconds(() => {
 		for (let index = 0; index < 1000; index += 1) buildActionEffectBody(context, table, active);

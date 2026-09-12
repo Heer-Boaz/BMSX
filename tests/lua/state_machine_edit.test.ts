@@ -1,3 +1,4 @@
+import { semanticSnapshot } from './semantic_test_harness';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
@@ -22,7 +23,7 @@ function fixture(t: TestContext, source = FSM_RETARGET_SOURCE, definitionIndex =
 	t.after(() => { editorViewState.font = oldFont; });
 	const model = new EditorTextModel({ domain: 0, path: 'retarget.lua', source: { resid: 'retarget', type: 'lua' } }, 'lua', source);
 	t.after(() => model.dispose());
-	const project = () => buildBehaviorSourceDocument(model.resource, buildLuaFileSemanticData(model.buffer.getText(), model.resource.path));
+	const project = () => buildBehaviorSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(model.buffer.getText(), model.resource.path)));
 	const view = createBehaviorLensViewState(project(), model, 'outline', assert.fail);
 	model.onDidChangeContent(event => mapBehaviorLensSourceRanges(view, model.resource, event));
 	const definition = view.document.definitions[definitionIndex];

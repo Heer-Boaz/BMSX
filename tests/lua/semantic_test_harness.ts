@@ -2,7 +2,14 @@ import {
 	buildLuaSemanticFrontendFromSnapshot,
 	type LuaSemanticPositionTarget,
 } from '../../toolchain/ts/lua/semantic/frontend';
-import type { LuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
+import { LuaSemanticWorkspace, type FileSemanticData, type LuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
+
+/** Retain the fixture's binder identities, including recovered syntax, in a real workspace. */
+export function semanticSnapshot(...files: readonly FileSemanticData[]): LuaSemanticWorkspaceSnapshot {
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFiles(files);
+	return workspace.getSnapshot();
+}
 
 const frontends = new WeakMap<
 	LuaSemanticWorkspaceSnapshot,

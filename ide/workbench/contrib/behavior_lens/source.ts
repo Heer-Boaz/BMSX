@@ -2,16 +2,13 @@ import {
 	LuaSyntaxKind,
 	LuaTableFieldKind,
 	type LuaExpression,
-	type LuaLocalAssignmentStatement,
 	type LuaSourceRange,
 	type LuaTableConstructorExpression,
 	type LuaTableField,
 } from '../../../../toolchain/ts/lua/syntax/ast';
-import { walkLuaAst } from '../../../../toolchain/ts/lua/syntax/ast/traversal';
 import { staticLuaTableFieldName } from '../../../../toolchain/ts/lua/syntax/table_fields';
 import { resolveStaticLuaExpressionPath } from '../../../../toolchain/ts/lua/semantic/expression_path';
-import type { FileSemanticData, SymbolID } from '../../../../toolchain/ts/lua/semantic/model';
-import type { SemanticValueSource, ValueAssignmentEntry } from '../../../../toolchain/ts/lua/semantic/value_graph';
+import type { BehaviorSourceReader } from './source_reader';
 import { resourceIdentityKey, type ResourceIdentity } from '../../../common/resource';
 import type {
 	BehaviorKind,
@@ -29,9 +26,7 @@ export const enum SourceTableIssue {
 }
 
 export type BehaviorRecognizerContext = {
-	readonly analysis: FileSemanticData;
-	readonly constInitializers: ReadonlyMap<SymbolID, LuaExpression>;
-	readonly mutatedDeclarations: ReadonlySet<SymbolID>;
+	readonly reader: BehaviorSourceReader;
 	readonly anchor: string;
 	readonly registrationRange: LuaSourceRange;
 	readonly sourceIncomplete: boolean;
@@ -79,7 +74,7 @@ export type SourceNodeBuilder = (
 	context: BehaviorRecognizerContext,
 	path: string,
 	expression: LuaExpression,
-	activeDeclarations: Set<SymbolID>,
+	activeTables: Set<LuaTableConstructorExpression>,
 	field: LuaTableField,
 	index: number | null,
 ) => BehaviorSourceNode;
@@ -107,161 +102,19 @@ export function createBehaviorSourceAnchor(
 	return appendBehaviorSourcePath(anchor, String(occurrence));
 }
 
-export function collectConstInitializers(analysis: FileSemanticData): ReadonlyMap<SymbolID, LuaExpression> {
-	const initializers = new Map<SymbolID, LuaExpression>();
-	walkLuaAst(analysis.chunk, node => {
-		if (node.kind !== LuaSyntaxKind.LocalAssignmentStatement) {
-			return;
-		}
-		const statement = node as LuaLocalAssignmentStatement;
-		const count = statement.names.length < statement.values.length
-			? statement.names.length
-			: statement.values.length;
-		for (let index = 0; index < count; index += 1) {
-			if (statement.attributes[index] !== 'const') {
-				continue;
-			}
-			const declarationId = analysis.declarationIdsBySyntax.get(statement.names[index]);
-			if (declarationId !== undefined) {
-				initializers.set(declarationId, statement.values[index]);
-			}
-		}
-	});
-	return initializers;
-}
-
-/** Follow only binder-proven local const aliases; leave unresolved syntax intact. */
-export function resolveConstSourceExpression(
-	analysis: FileSemanticData, initializers: ReadonlyMap<SymbolID, LuaExpression>,
-	expression: LuaExpression, active: Set<SymbolID>,
-): LuaExpression {
-	if (expression.kind !== LuaSyntaxKind.IdentifierExpression) return expression;
-	const declaration = analysis.referencesBySyntax.get(expression)?.target;
-	if (declaration === undefined || active.has(declaration)) return expression;
-	const initializer = initializers.get(declaration);
-	if (initializer === undefined) return expression;
-	active.add(declaration);
-	const resolved = resolveConstSourceExpression(analysis, initializers, initializer, active);
-	active.delete(declaration);
-	return resolved;
-}
-
-/** Finds declarations whose table identity has a syntactically known write. */
-export function collectMutatedDeclarations(analysis: FileSemanticData): ReadonlySet<SymbolID> {
-	const mutated = new Set<SymbolID>();
-	const pending: SymbolID[] = [];
-	for (let index = 0; index < analysis.refs.length; index += 1) {
-		const reference = analysis.refs[index];
-		if (!reference.isWrite) {
-			continue;
-		}
-		if (reference.receiverValue !== undefined) {
-			addDeclarationRoot(reference.receiverValue, mutated, pending);
-		} else if (reference.referenceKind === 'identifier' && reference.target !== undefined) {
-			addMutatedDeclaration(reference.target, mutated, pending);
-		}
-	}
-	collectAssignmentRoots(analysis.valueAssignments, mutated, pending);
-	for (let index = 0; index < analysis.functionValueFlows.length; index += 1) {
-		collectAssignmentRoots(analysis.functionValueFlows[index].assignments, mutated, pending);
-	}
-
-	const sourcesByDeclaration = new Map<SymbolID, SymbolID[]>();
-	for (let index = 0; index < analysis.declarationValues.length; index += 1) {
-		const entry = analysis.declarationValues[index];
-		if (entry.source.root.kind !== 'declaration') {
-			continue;
-		}
-		let sources = sourcesByDeclaration.get(entry.declId);
-		if (sources === undefined) {
-			sources = [];
-			sourcesByDeclaration.set(entry.declId, sources);
-		}
-		sources.push(entry.source.root.declId);
-	}
-	for (let cursor = 0; cursor < pending.length; cursor += 1) {
-		const sources = sourcesByDeclaration.get(pending[cursor]);
-		if (sources === undefined) {
-			continue;
-		}
-		for (let index = 0; index < sources.length; index += 1) {
-			addMutatedDeclaration(sources[index], mutated, pending);
-		}
-	}
-	return mutated;
-}
-
-function collectAssignmentRoots(
-	assignments: readonly ValueAssignmentEntry[],
-	mutated: Set<SymbolID>,
-	pending: SymbolID[],
-): void {
-	for (let index = 0; index < assignments.length; index += 1) {
-		addDeclarationRoot(assignments[index].target, mutated, pending);
-	}
-}
-
-function addDeclarationRoot(
-	source: SemanticValueSource,
-	mutated: Set<SymbolID>,
-	pending: SymbolID[],
-): void {
-	if (source.root.kind === 'declaration') {
-		addMutatedDeclaration(source.root.declId, mutated, pending);
-	}
-}
-
-function addMutatedDeclaration(
-	declarationId: SymbolID,
-	mutated: Set<SymbolID>,
-	pending: SymbolID[],
-): void {
-	if (!mutated.has(declarationId)) {
-		mutated.add(declarationId);
-		pending.push(declarationId);
-	}
-}
-
 export function resolveSourceTable(
 	context: BehaviorRecognizerContext,
 	expression: LuaExpression,
-	activeDeclarations: Set<SymbolID>,
+	activeTables: Set<LuaTableConstructorExpression>,
 ): ResolvedSourceTable | null {
-	if (expression.kind === LuaSyntaxKind.TableConstructorExpression) {
-		const issues = sourceTableIssues(expression);
-		return {
-			table: expression,
-			referenceRange: null,
-			referenceLabel: '',
-			issues,
-			resolution: issues === SourceTableIssue.None ? 'complete' : 'partial',
-		};
-	}
-	if (expression.kind !== LuaSyntaxKind.IdentifierExpression) {
-		return null;
-	}
-	const reference = context.analysis.referencesBySyntax.get(expression);
-	const declarationId = reference?.target;
-	if (!declarationId || activeDeclarations.has(declarationId)) {
-		return null;
-	}
-	const initializer = context.constInitializers.get(declarationId);
-	if (!initializer) {
-		return null;
-	}
-	activeDeclarations.add(declarationId);
-	const resolved = resolveSourceTable(context, initializer, activeDeclarations);
-	activeDeclarations.delete(declarationId);
-	if (!resolved) {
-		return null;
-	}
-	const issues = context.mutatedDeclarations.has(declarationId)
-		? resolved.issues | SourceTableIssue.KnownMutation
-		: resolved.issues;
+	const table = context.reader.expression(expression);
+	if (table?.kind !== LuaSyntaxKind.TableConstructorExpression || activeTables.has(table)) return null;
+	let issues = sourceTableIssues(table);
+	if (context.reader.snapshot.symbolResolver.writtenSources.tableMutations().has(table)) issues |= SourceTableIssue.KnownMutation;
 	return {
-		table: resolved.table,
-		referenceRange: expression.range,
-		referenceLabel: expression.name,
+		table,
+		referenceRange: table === expression ? null : expression.range,
+		referenceLabel: table === expression ? '' : describeExpression(expression),
 		issues,
 		resolution: issues === SourceTableIssue.None ? 'complete' : 'partial',
 	};
@@ -378,6 +231,7 @@ export function createSourceNode<C extends BehaviorRecognizerContext, T extends 
 	readonly resolution: BehaviorSourceResolution;
 } {
 	let resolution = input.resolution;
+	let detail = input.detail;
 	if (resolution !== 'unresolved') {
 		for (let index = 0; index < input.children.length; index += 1) {
 			if (input.children[index].resolution !== 'complete') {
@@ -385,12 +239,14 @@ export function createSourceNode<C extends BehaviorRecognizerContext, T extends 
 				break;
 			}
 		}
-		if (input.kind === 'definition' && context.sourceIncomplete) {
+		if (input.kind === 'definition' && (context.sourceIncomplete || !context.reader.syntaxComplete)) {
 			resolution = 'partial';
+			detail = appendDetail(detail, 'syntax recovery');
 		}
 	}
 	return {
 		...input,
+		detail,
 		rowKey: `${context.anchor}${path}`,
 		behaviorKind: context.behaviorKind,
 		occurrenceRange: input.kind === 'definition' ? context.registrationRange
@@ -404,9 +260,9 @@ export function buildNamedTableSection(
 	path: string,
 	label: string,
 	expression: LuaExpression,
-	activeDeclarations: Set<SymbolID>,
+	activeTables: Set<LuaTableConstructorExpression>,
 ): BehaviorSourceTableSection {
-	const resolved = resolveSourceTable(context, expression, activeDeclarations);
+	const resolved = resolveSourceTable(context, expression, activeTables);
 	if (!resolved) {
 		return createDynamicNode(context, path, `unresolved ${label}`, expression);
 	}
@@ -469,10 +325,10 @@ export function buildTableArraySection(
 	path: string,
 	label: string,
 	expression: LuaExpression,
-	activeDeclarations: Set<SymbolID>,
+	activeTables: Set<LuaTableConstructorExpression>,
 	buildChild: SourceNodeBuilder,
 ): BehaviorSourceTableSection {
-	const resolved = resolveSourceTable(context, expression, activeDeclarations);
+	const resolved = resolveSourceTable(context, expression, activeTables);
 	if (!resolved) {
 		return createDynamicNode(context, path, `unresolved ${label}`, expression);
 	}
@@ -484,7 +340,7 @@ export function buildTableArraySection(
 			context,
 			appendBehaviorSourcePath(path, `array:${index + 1}`),
 			entries[index].value,
-			activeDeclarations,
+			activeTables,
 			entries[index],
 			resolved.resolution === 'complete' ? index + 1 : null,
 		));
@@ -500,7 +356,7 @@ export function buildTableArraySection(
 				context,
 				appendBehaviorSourcePath(entryPath, 'value'),
 				entry.field.value,
-				activeDeclarations,
+				activeTables,
 				entry.field,
 				null,
 			);
@@ -544,7 +400,7 @@ export function buildExpressionProperty(
 	context: BehaviorRecognizerContext,
 	path: string,
 	expression: LuaExpression,
-	_activeDeclarations: Set<SymbolID>,
+	_activeTables: Set<LuaTableConstructorExpression>,
 ): BehaviorSourceNode {
 	return createSourceNode(context, path, {
 		kind: 'property',

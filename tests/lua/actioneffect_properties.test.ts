@@ -1,3 +1,4 @@
+import { semanticSnapshot } from './semantic_test_harness';
 import { PointerHoverService } from '../../ide/input/pointer/hover';
 import { PointerButton } from '../../ide/input/pointer/buttons';
 import assert from 'node:assert/strict';
@@ -22,7 +23,7 @@ function fixture(source = ACTIONEFFECT_SOURCE, chosen = 0) {
 	editorViewState.font = new EditorFont('tiny');
 	const resource = { domain: 0 as const, path: 'effects.lua', source: { resid: 'effects', type: 'lua' as const } };
 	const model = new EditorTextModel(resource, 'lua', source);
-	const document = () => buildBehaviorSourceDocument(resource, buildLuaFileSemanticData(model.buffer.getText(), resource.path));
+	const document = () => buildBehaviorSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(model.buffer.getText(), resource.path)));
 	const view = createBehaviorLensViewState(document(), model, 'properties', assert.fail);
 	const input = new BehaviorLensInput(model, view, () => assert.fail('property inputs must not construct a graph-layout engine'));
 	model.onDidChangeContent(event => { mapBehaviorLensSourceRanges(view, model.resource, event); input.invalidatePresentation(); });

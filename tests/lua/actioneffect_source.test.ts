@@ -1,3 +1,4 @@
+import { semanticSnapshot } from './semantic_test_harness';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { LuaSyntaxKind, LuaTableFieldKind } from '../../toolchain/ts/lua/syntax/ast';
@@ -12,7 +13,7 @@ import { ACTIONEFFECT_PARTIAL_SOURCE, ACTIONEFFECT_SOURCE } from '../helpers/act
 
 const resource = { domain: 0 as const, path: 'effects.lua', source: { resid: 'effects', type: 'lua' as const } };
 function document(source: string) {
-	return buildBehaviorSourceDocument(resource, buildLuaFileSemanticData(source, resource.path));
+	return buildBehaviorSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)));
 }
 
 test('ActionEffect fields retain typed source properties and requirement entries on the same outline occurrences', () => {

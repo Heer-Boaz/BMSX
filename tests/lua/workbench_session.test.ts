@@ -1,3 +1,4 @@
+import { semanticSnapshot } from './semantic_test_harness';
 import { resolveResourceViewerInput } from '../../ide/workbench/contrib/resources/view_tabs';
 import { scenarioTestAssetId } from '../../toolchain/ts/rompack/scenario_test';
 import './test_setup';
@@ -152,7 +153,7 @@ for (const changeProvider of [false, true]) test(`behavior mementos fingerprint 
 	const f = fixture(t);
 	const dependencyResource = resolveRuntimeResource(f.sources, { domain: 0, path: 'tests/first_assert.lua' })!;
 	const provider = editorTextModelService.retain(dependencyResource, 'lua', '-- test one');
-	const document = buildBehaviorSourceDocument(f.model.identity, buildLuaFileSemanticData(SOURCE, f.model.resource.path));
+	const document = buildBehaviorSourceDocument(f.model.identity, semanticSnapshot(buildLuaFileSemanticData(SOURCE, f.model.resource.path)));
 	// Exercise the serializer's read-many contract independently of recognizer coverage.
 	const dependency = buildLuaFileSemanticData(provider.buffer.getText(), provider.resource.path);
 	const files = [...document.files, { file: dependency.file, revision: dependency.revision }];

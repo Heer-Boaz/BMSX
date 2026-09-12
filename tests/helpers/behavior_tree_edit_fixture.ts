@@ -1,3 +1,4 @@
+import { semanticSnapshot } from '../lua/semantic_test_harness';
 import assert from 'node:assert/strict';
 import type { TestContext } from 'node:test';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
@@ -18,7 +19,7 @@ export function createBehaviorTreeEditFixture(t: TestContext, source = BT_ORDER_
 	t.after(() => Object.assign(editorViewState, previous));
 	Object.assign(editorViewState, { font: new EditorFont('tiny'), viewportWidth: 384, viewportHeight: 288, lineHeight: 6, codeAreaTop: 24, codeAreaBottom: 276 });
 	const model = new EditorTextModel({ domain: 0, path: 'order.lua', source: { type: 'lua', resid: 'order' } }, 'lua', source);
-	const project = () => buildBehaviorSourceDocument(model.resource, buildLuaFileSemanticData(model.buffer.getText(), model.resource.path));
+	const project = () => buildBehaviorSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(model.buffer.getText(), model.resource.path)));
 	const document = project();
 	const view = createBehaviorLensViewState(document, model, 'graph', assert.fail);
 	model.onDidChangeContent(event => mapBehaviorLensSourceRanges(view, model.resource, event));

@@ -2,15 +2,15 @@ import type { FsmStatePath } from '../../../../toolchain/ts/cartlib/fsm/state_pa
 import { LuaSyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { BehaviorSourceRowKey } from './model';
 import type { StateMachineScope, StateMachineSourceBody, StateMachineSourcePath, StateMachineSourceUnknown } from './state_machine_model';
-import { resolveConstSourceExpression, SourceTableIssue, type BehaviorRecognizerContext } from './source';
+import { SourceTableIssue, type BehaviorRecognizerContext } from './source';
 
 /** Lua truth, not JavaScript truth: zero and empty strings are both true. */
 function sourceConcurrency(context: BehaviorRecognizerContext, body: StateMachineSourceBody): boolean | undefined {
 	if (body.issues !== SourceTableIssue.None) return undefined;
 	const field = body.concurrent;
 	if (field === null) return false;
-	const value = resolveConstSourceExpression(context.analysis, context.constInitializers, field.value, new Set());
-	switch (value.kind) {
+	const value = context.reader.expression(field.value);
+	switch (value?.kind) {
 		case LuaSyntaxKind.NilLiteralExpression: return false;
 		case LuaSyntaxKind.BooleanLiteralExpression: return value.value;
 		case LuaSyntaxKind.StringLiteralExpression:

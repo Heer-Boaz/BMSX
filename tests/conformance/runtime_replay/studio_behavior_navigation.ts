@@ -33,7 +33,7 @@ export async function testStudioBehaviorNavigation(test: StudioFixture): Promise
 	await press('ArrowDown');
 	check(document.view.cursorRow === 79, 'behavior navigation: keyboard remains responsive after the idle semantic query');
 	await runPaletteCommand('Behavior Lens: Open');
-	await chooseBehavior(test, 'FSM ids_moon_death_ray_fsm');
+	await chooseBehavior(test, lens.title);
 	check(getActiveTab() === lens, 'behavior navigation: palette can reopen the retained view after parameter help');
 	check(cycles() === position, 'behavior navigation: source navigation does not run or mutate the paused machine');
 	harness.openLuaSource('scenes/root.lua');

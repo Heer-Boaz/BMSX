@@ -1,3 +1,4 @@
+import { semanticSnapshot } from '../../lua/semantic_test_harness';
 import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
 import { medianMilliseconds } from '../../helpers/performance';
@@ -45,7 +46,7 @@ for (const documents of [4, 32, 128]) {
 		const code = new CodeEditorInput({ id: `code:0\0${resource.path}`, title: resource.path, model,
 			view: createCodeEditorViewState(), runtimeErrorOverlay: null, executionStopRow: null });
 		codeInputs.push(code); group.add(code);
-		const document = buildBehaviorSourceDocument(resource, buildLuaFileSemanticData(source, resource.path));
+		const document = buildBehaviorSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)));
 		for (const definition of document.definitions) {
 			const view = createBehaviorLensViewState(document, model, 'graph', assert.fail);
 			selectBehaviorLensDefinition(view, definition.rowKey);

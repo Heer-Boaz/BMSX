@@ -16,15 +16,10 @@ export class BehaviorSourceDocuments {
 		project.synchronizeRuntimeSources(this.sources);
 		const snapshot = project.getSnapshot();
 		let generation = this.generations.get(model);
-		if (generation !== undefined && generation.revision === snapshot.revision) return generation.document;
-		let changed = generation === undefined;
-		if (generation !== undefined) for (const file of generation.document.files) {
-			if (snapshot.getFileData(file.file)?.revision !== file.revision) { changed = true; break; }
-		}
-		if (changed) {
-			generation = { revision: snapshot.revision, document: buildBehaviorSourceDocument(resource, snapshot.getFileData(resource.path)!) };
+		if (generation === undefined || generation.revision !== snapshot.revision) {
+			generation = { revision: snapshot.revision, document: buildBehaviorSourceDocument(resource, snapshot) };
 			this.generations.set(model, generation);
-		} else generation!.revision = snapshot.revision;
-		return generation!.document;
+		}
+		return generation.document;
 	}
 }

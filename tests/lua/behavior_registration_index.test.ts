@@ -1,3 +1,4 @@
+import { semanticSnapshot } from './semantic_test_harness';
 import { TextQuickPickProvider } from '../../ide/workbench/services/quick_input/text_provider';
 import { BehaviorSourceIndex } from '../../ide/workbench/contrib/behavior_lens/source_index';
 import { BehaviorSourceDocuments } from '../../ide/workbench/contrib/behavior_lens/source_documents';
@@ -86,7 +87,7 @@ test('behavior picks preserve registration occurrences, kinds, domains and unres
 	});
 	const index = new BehaviorRegistrationIndex(sources);
 	const registrations = index.getRegistrations(0);
-	const definitionKeys = buildBehaviorSourceDocument({ domain: 0, path }, buildLuaFileSemanticData(source, path))
+	const definitionKeys = buildBehaviorSourceDocument({ domain: 0, path }, semanticSnapshot(buildLuaFileSemanticData(source, path)))
 		.definitions.map(node => node.rowKey);
 	assert.deepEqual(registrations.map(registration => registration.rowKey), definitionKeys);
 	assert.equal(new Set(definitionKeys).size, 5);
@@ -121,7 +122,7 @@ test('behavior picks preserve registration occurrences, kinds, domains and unres
 	const other = editorTextModelService.retain(resolveRuntimeResource(sources, { domain: 0, path: 'other.lua' })!, 'lua', 'return true');
 	other.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- unrelated\n' }]);
 	assert.notStrictEqual(index.getRegistrations(0), registrations);
-	assert.strictEqual(index.getRegistrations(0)[0], registrations[0], 'unchanged file retains its shallow registration objects');
+	assert.notStrictEqual(index.getRegistrations(0)[0], registrations[0], 'workspace source queries include dependencies outside the registering file');
 	const model = editorTextModelService.retain(resolveRuntimeResource(sources, { domain: 0, path })!, 'lua', source);
 	model.pushEditOperations([{ offset: source.indexOf("'shared'"), deleteLength: 8, text: "'renamed'" }]);
 	assert.equal(index.getRegistrations(0)[0].label, 'FSM renamed');
@@ -308,4 +309,31 @@ test('definition views share one lazy source generation and immutable FSM index 
 	resetSemanticProjects();
 	assert.notEqual(documents.get(model), replacement, 'equal workspace version numbers cannot reuse another project generation');
 	assert.equal(getOrCreateSemanticProject(0).getSnapshot().version, generation.version);
+});
+
+test('an added module export refreshes cached behavior ids and topology without editing the registration', t => {
+	const path = 'main.lua';
+	const source = "local fsm<const> = require('cartlib/fsm/library'); fsm.register(require('id'), require('definition'))";
+	const initial = 'local unpublished = {}';
+	const sources = createTestRuntimeSourceState(sourceRegistry('machine/bios', [luaSource('system.lua', 'return true')]),
+		[sourceRegistry('carts/fixture', [luaSource(path, source), luaSource('id.lua', initial), luaSource('definition.lua', initial)]), null], 0);
+	t.after(() => { editorTextModelService.clear(); resetSemanticProjects(); });
+	const main = editorTextModelService.retain(resolveRuntimeResource(sources, { domain: 0, path })!, 'lua', source);
+	const id = editorTextModelService.retain(resolveRuntimeResource(sources, { domain: 0, path: 'id.lua' })!, 'lua', initial);
+	const provider = editorTextModelService.retain(resolveRuntimeResource(sources, { domain: 0, path: 'definition.lua' })!, 'lua', initial);
+	const documents = new BehaviorSourceDocuments(sources), index = new BehaviorRegistrationIndex(sources);
+	const before = documents.get(main);
+	assert.equal(before.definitions[0].resolution, 'unresolved');
+	assert.equal(index.getRegistrations(0)[0].semanticId, null);
+	id.pushEditOperations([{ offset: id.buffer.length, deleteLength: 0, text: "\nreturn 'new.export'" }]);
+	provider.pushEditOperations([{ offset: provider.buffer.length, deleteLength: 0, text: "\nreturn { initial = 'idle', states = { idle = {} } }" }]);
+	const after = documents.get(main);
+	assert.notEqual(after, before);
+	assert.equal(after.definitions[0].resolution, 'complete');
+	assert.equal(after.definitions[0].authoredRange.path, 'definition.lua');
+	assert.equal(index.getRegistrations(0)[0].semanticId, 'new.export');
+	assert.equal(main.version, 1);
+	id.undo(); provider.undo();
+	assert.equal(index.getRegistrations(0)[0].semanticId, null);
+	assert.equal(documents.get(main).definitions[0].resolution, 'unresolved');
 });

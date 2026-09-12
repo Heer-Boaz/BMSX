@@ -3,6 +3,7 @@ import {
 	LuaBinaryOperator,
 	LuaSyntaxKind,
 	type LuaAssignmentStatement,
+	type LuaBinaryExpression,
 	type LuaBooleanLiteralExpression,
 	type LuaCallExpression,
 	type LuaExpression,
@@ -135,7 +136,8 @@ export type ValueAssignmentEntry = {
 	readonly source: SemanticValueSource;
 	readonly relation: 'value' | 'metatable' | 'prototype';
 	/** Actual source of the transfer; expression transfers are not storage writes. */
-	readonly syntax: LuaAssignmentStatement | LuaFunctionDeclarationStatement | LuaExpression;
+	readonly syntax: LuaAssignmentStatement | LuaFunctionDeclarationStatement | LuaTableConstructorExpression
+		| LuaBinaryExpression | LuaCallExpression;
 	/** Assignment target, constructor field, logical operand or builtin argument index. */
 	readonly index: number;
 };

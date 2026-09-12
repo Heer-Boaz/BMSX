@@ -1,3 +1,4 @@
+import { semanticSnapshot } from '../../lua/semantic_test_harness';
 import assert from 'node:assert/strict';
 import { medianMilliseconds } from '../../helpers/performance';
 import { buildLuaFileSemanticData } from '../../../toolchain/ts/lua/semantic/model';
@@ -10,7 +11,7 @@ local shared<const> = { on={go=function() return 'idle' end}, initial='idle', st
 ${Array.from({ length: registrations }, (_, index) => `machines.register('fixture.${index}',shared)`).join('\n')}`;
 	const resource = { domain: 0 as const, path: 'profile.lua' };
 	const semantic = buildLuaFileSemanticData(source, resource.path);
-	const document = buildBehaviorSourceDocument(resource, semantic);
+	const document = buildBehaviorSourceDocument(resource, semanticSnapshot(semantic));
 	const definition = document.definitions[0];
 	assert.ok(definition.behaviorKind === 'state_machine');
 	const transition = definition.transitions[0];
@@ -30,7 +31,7 @@ ${Array.from({ length: registrations }, (_, index) => `machines.register('fixtur
 		for (let index = 0; index < 10000; index += 1) if (analysis.checkTarget(target) === result) observed += 1;
 	}) / 10;
 	const projectionMilliseconds = medianMilliseconds(() => {
-		for (let index = 0; index < 10; index += 1) observed += buildBehaviorSourceDocument(resource, semantic).definitions.length;
+		for (let index = 0; index < 10; index += 1) observed += buildBehaviorSourceDocument(resource, semanticSnapshot(semantic)).definitions.length;
 	}) / 10;
 	assert.ok(observed > 0);
 	console.log(JSON.stringify({ registrations, sourceUtf16: source.length, uses: result.uses.length,

@@ -1,3 +1,4 @@
+import { semanticSnapshot } from './semantic_test_harness';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Font } from '../../machine/ts/render/shared/bmsx_font';
@@ -20,7 +21,7 @@ import { BT_MEMBERSHIP_SOURCE } from '../helpers/behavior_membership_fixture';
 const font = new Font({ variant: 'tiny' });
 function fixture(source = BT_MEMBERSHIP_SOURCE, index = 0) {
 	const model = new EditorTextModel({ domain: 0, path: 'membership.lua', source: { type: 'lua', resid: 'membership' } }, 'lua', source);
-	const project = () => buildBehaviorSourceDocument(model.resource, buildLuaFileSemanticData(model.buffer.getText(), model.resource.path));
+	const project = () => buildBehaviorSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(model.buffer.getText(), model.resource.path)));
 	const document = project();
 	const definition = document.definitions[index];
 	assert.ok(definition.behaviorKind === 'behavior_tree');

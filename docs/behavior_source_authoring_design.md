@@ -113,6 +113,13 @@ factories en captured storage. Dit zijn mogelijke herkomsten, geen gesloten
 API-/runtimebewijs; de recognizer mag bekende kandidaten niet zonder meer als
 zekere registratie toelaten. B04-consumptie en B03/B06 blijven open.
 
+De [eerste workspaceconsumer](behavior_written_sources.md) vervangt nu de lokale
+const-/aliaswalker door de written-sourcequery. Directe imports/reexports,
+gewone aliases en callbacks behouden hun eigen bestand en consumer-scope;
+Source/Edit/Undo gebruikt de gewone provider-editor. Negatieve lookups en
+popups volgen de workspace/source-index-lifetime. De bredere API-binding,
+contextuele members/factories en graph-write-owners zijn hiermee niet voltooid.
+
 ## 1. Beslissing
 
 Behavior Lens wordt geen universele omkeerbare Lua-interpreter. Het is een

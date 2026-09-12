@@ -1,3 +1,4 @@
+import { semanticSnapshot } from '../../lua/semantic_test_harness';
 import { PointerHoverService } from '../../../ide/input/pointer/hover';
 import assert from 'node:assert/strict';
 import { Worker } from 'node:worker_threads';
@@ -30,7 +31,7 @@ async function main() {
 local shared<const> = { on={go=function() return 'idle' end}, initial='idle', states={idle={},active={}} }
 ${Array.from({ length: registrations }, (_, index) => `machines.register('fixture.${index}',shared)`).join('\n')}`;
 		const model = new EditorTextModel({ domain: 0, path: 'profile.lua', source: { type: 'lua', resid: 'profile' } }, 'lua', source);
-		const document = buildBehaviorSourceDocument(model.resource, buildLuaFileSemanticData(source, model.resource.path));
+		const document = buildBehaviorSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(source, model.resource.path)));
 		editorViewState.font = new EditorFont('tiny');
 		const font = editorViewState.font.renderFont();
 		const view = createBehaviorLensViewState(document, model, 'state-graph', assert.fail);

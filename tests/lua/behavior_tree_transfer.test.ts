@@ -1,3 +1,4 @@
+import { semanticSnapshot } from './semantic_test_harness';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
@@ -32,7 +33,7 @@ function fixture(t: TestContext, source = ordinary, index = 0, origin = 0) {
 	const model = new EditorTextModel({ domain: 0, path: 'transfer.lua', source: { type: 'lua', resid: 'transfer' } }, 'lua', source);
 	t.after(() => model.dispose());
 	const analysis = buildLuaFileSemanticData(source, model.resource.path);
-	const document = buildBehaviorSourceDocument(model.resource, analysis);
+	const document = buildBehaviorSourceDocument(model.resource, semanticSnapshot(analysis));
 	const branch = rootList(document, origin);
 	assert.ok(branch.source.kind === 'section');
 	const member = { table: branch.source.table, branch, index };

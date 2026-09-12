@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { buildLuaFileSemanticData, buildLuaSemanticWorkspaceSnapshot, LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
-import type { LuaWrittenSource } from '../../toolchain/ts/lua/semantic/written_sources';
+import { writtenSourceExpression, type LuaWrittenSource } from '../../toolchain/ts/lua/semantic/written_sources';
 import { NIL_VALUE_SOURCE, readLuaExpressionSource } from '../../toolchain/ts/lua/semantic/value_graph';
 import { LuaSyntaxKind, type LuaReturnStatement } from '../../toolchain/ts/lua/syntax/ast';
 import { runCompiledLua } from './cpu_test_harness';
@@ -23,6 +23,7 @@ function writtenLines(sources: readonly LuaWrittenSource[]): number[] {
 			case 'call-input': case 'call-callee': return source.call.expression.range.start.line;
 			case 'function-return': return source.entry.statement.range.start.line;
 			case 'function-completion': return source.body.expression.range.start.line;
+			case 'write-receiver': return source.reference.range.start.line;
 			case 'receiver-input': {
 				assert.ok(source.value.root.kind === 'owned');
 				return source.value.root.syntax.range.start.line;
@@ -31,6 +32,40 @@ function writtenLines(sources: readonly LuaWrittenSource[]): number[] {
 		}
 	});
 }
+
+test('written lane syntax keeps missing results absent and member reads separate from their base', () => {
+	const { file, query } = sourceQuery(`local first, absent = 'same'
+first = 'changed'
+return first, absent, ({ key = 'member' }).key`);
+	const local = file.chunk.body[0], assignment = file.chunk.body[1], returned = file.chunk.body[2];
+	assert.ok(local.kind === LuaSyntaxKind.LocalAssignmentStatement && assignment.kind === LuaSyntaxKind.AssignmentStatement
+		&& returned.kind === LuaSyntaxKind.ReturnStatement);
+	const writes = file.declarationValues.filter(write => write.syntax === local || write.syntax === assignment);
+	assert.equal(writtenSourceExpression(query.write(writes[0])), local.values[0]);
+	assert.equal(writtenSourceExpression(query.write(writes[1])), undefined);
+	assert.equal(writtenSourceExpression(query.write(writes[2])), assignment.right[0]);
+	const absent = query.trace(query.expression(file, returned.expressions[1]));
+	assert.deepEqual(absent.terminals[0].value, NIL_VALUE_SOURCE);
+	assert.equal(writtenSourceExpression(absent.terminals[0]), undefined, 'implicit nil is not a manufactured source token');
+	const member = returned.expressions[2];
+	assert.ok(member.kind === LuaSyntaxKind.MemberExpression);
+	assert.equal(writtenSourceExpression(query.expression(file, member)), member);
+});
+
+test('written storage mutations distinguish constructor initialization from later aliased writes', () => {
+	const { file, query } = sourceQuery(`local untouched = { field = 1, 2 }
+local changed = { nested = {} }
+local alias = changed
+alias.nested[slot] = 3
+return untouched, changed`);
+	const first = file.chunk.body[0], second = file.chunk.body[1];
+	assert.ok(first.kind === LuaSyntaxKind.LocalAssignmentStatement && second.kind === LuaSyntaxKind.LocalAssignmentStatement);
+	assert.ok(first.values[0].kind === LuaSyntaxKind.TableConstructorExpression && second.values[0].kind === LuaSyntaxKind.TableConstructorExpression);
+	const mutations = query.tableMutations();
+	assert.equal(mutations.has(first.values[0]), false);
+	assert.equal(mutations.has(second.values[0]), true, 'a written descendant mutation makes its ancestor source partial');
+	assert.equal(query.tableMutations(), mutations, 'unchanged queries retain the same set without scanning the workspace again');
+});
 
 test('bound read values include callees, arguments, literal occurrences and unmodeled computations', () => {
 	const { file, query } = sourceQuery(`local function identity(value) return value end

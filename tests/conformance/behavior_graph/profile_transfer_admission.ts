@@ -1,3 +1,4 @@
+import { semanticSnapshot } from '../../lua/semantic_test_harness';
 import assert from 'node:assert/strict';
 import { medianMilliseconds } from '../../helpers/performance';
 import { buildLuaFileSemanticData } from '../../../toolchain/ts/lua/semantic/model';
@@ -12,7 +13,7 @@ trees.register('origin',{root={type='sequence',children={leaf}}})
 ${Array.from({ length: registrations }, (_, i) => `trees.register('target.${i}',{root=destination})`).join('\n')}`;
 	const resource = { domain: 0 as const, path: 'profile.lua' };
 	const semantic = buildLuaFileSemanticData(source, resource.path);
-	const document = buildBehaviorSourceDocument(resource, semantic);
+	const document = buildBehaviorSourceDocument(resource, semanticSnapshot(semantic));
 	const origin = document.definitions[0];
 	const target = document.definitions[registrations];
 	assert.ok(origin.behaviorKind === 'behavior_tree' && origin.root?.kind === 'node');
@@ -35,7 +36,7 @@ ${Array.from({ length: registrations }, (_, i) => `trees.register('target.${i}',
 		for (let i = 0; i < 10000; i += 1) if (analysis.checkTarget(destination) === check) observed += 1;
 	}) / 10;
 	const projectionMilliseconds = medianMilliseconds(() => {
-		for (let i = 0; i < 10; i += 1) observed += buildBehaviorSourceDocument(resource, semantic).definitions.length;
+		for (let i = 0; i < 10; i += 1) observed += buildBehaviorSourceDocument(resource, semanticSnapshot(semantic)).definitions.length;
 	}) / 10;
 	assert.ok(observed > 0);
 	console.log(JSON.stringify({ registrations, sourceUtf16: source.length, listUses: analysis.listUses.length,

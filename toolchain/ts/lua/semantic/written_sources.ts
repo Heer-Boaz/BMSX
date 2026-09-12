@@ -1,6 +1,6 @@
-import { isMultiReturnExpression, LuaSyntaxKind, type LuaCallExpression, type LuaExpression, type LuaReturnStatement } from '../syntax/ast';
+import { isMultiReturnExpression, LuaSyntaxKind, type LuaCallExpression, type LuaExpression, type LuaReturnStatement, type LuaTableConstructorExpression } from '../syntax/ast';
 import { LuaCompletion } from '../analysis/completion';
-import type { Decl, FileSemanticData, SymbolID } from './model';
+import type { Decl, FileSemanticData, Ref, SymbolID } from './model';
 import { declarationValueSource, NIL_VALUE_SOURCE, readLuaExpressionSource, unknownValueSource, type CallValueEntry, type DeclarationValueEntry, type FunctionReturnValueEntry, type FunctionValueFlowEntry, type ModuleValueEntry, type OwnedValueID, type SemanticValueSource, type ValueAssignmentEntry } from './value_graph';
 
 /** A source occurrence, not a canonical value, storage location or runtime instance. */
@@ -20,7 +20,41 @@ export type LuaWrittenSource = {
 	| { readonly kind: 'call-callee'; readonly call: CallValueEntry }
 	| { readonly kind: 'function-return'; readonly entry: FunctionReturnValueEntry }
 	| { readonly kind: 'function-completion'; readonly body: FunctionValueFlowEntry }
+	| { readonly kind: 'write-receiver'; readonly reference: Ref }
+	| { readonly kind: 'transfer-target'; readonly write: ValueAssignmentEntry; readonly flow: FunctionValueFlowEntry | undefined }
 );
+
+/** The actual expression in this written lane; implicit nil/result lanes have no expression. */
+export function writtenSourceExpression(source: LuaWrittenSource): LuaExpression | undefined {
+	switch (source.kind) {
+		case 'expression': return source.expression;
+		case 'module-export': return source.export.statement.expressions[0];
+		case 'function-return': return source.entry.statement.expressions[0];
+		case 'declaration-write': {
+			const { syntax, index } = source.write;
+			switch (syntax.kind) {
+				case LuaSyntaxKind.LocalAssignmentStatement: return syntax.values[index];
+				case LuaSyntaxKind.AssignmentStatement: return syntax.right[index];
+				case LuaSyntaxKind.TableConstructorExpression: return syntax.fields[index].value;
+				case LuaSyntaxKind.LocalFunctionStatement:
+				case LuaSyntaxKind.FunctionDeclarationStatement: return syntax.functionExpression;
+				case LuaSyntaxKind.ForNumericStatement:
+				case LuaSyntaxKind.ForGenericStatement: return undefined;
+			}
+		}
+		case 'value-transfer': {
+			const { syntax, index } = source.write;
+			switch (syntax.kind) {
+				case LuaSyntaxKind.AssignmentStatement: return syntax.right[index];
+				case LuaSyntaxKind.FunctionDeclarationStatement: return syntax.functionExpression;
+				case LuaSyntaxKind.TableConstructorExpression: return syntax.fields[index].value;
+				case LuaSyntaxKind.BinaryExpression: return index === 0 ? syntax.left : syntax.right;
+				case LuaSyntaxKind.CallExpression: return syntax.arguments[index];
+			}
+		}
+		default: return undefined;
+	}
+}
 
 export type LuaSourceBoundary = 'unknown-value' | 'unbound-global' | 'unwritten-binding'
 	| 'access-path' | 'member-read' | 'unwritten-member' | 'module' | 'module-publication' | 'call-result' | 'receiver' | 'parameter-input';
@@ -74,6 +108,7 @@ export class LuaWrittenSourceQuery {
 	private readonly callees = new Map<CallValueEntry, LuaWrittenSource>();
 	private readonly returnInputs = new Map<FunctionValueFlowEntry, readonly LuaWrittenSource[]>();
 	private readonly callsByFile = new Map<FileSemanticData, ReadonlyMap<LuaCallExpression, CallValueEntry>>();
+	private mutatedTables: ReadonlySet<LuaTableConstructorExpression> | undefined;
 
 	public constructor(files: readonly FileSemanticData[], private readonly symbols: ReadonlyMap<SymbolID, Decl>) {
 		for (const file of files) this.filesByPath.set(file.file, file);
@@ -195,6 +230,52 @@ export class LuaWrittenSourceQuery {
 		trace = { root, sources, terminals, boundaries };
 		this.traces.set(root, trace);
 		return trace;
+	}
+
+	/**
+	 * Constructors reached by written storage mutations, including ancestor tables.
+	 * This is source evidence, not a claim that the writes run or that unknown calls are pure.
+	 * Binding/module traversal shares inputs with ordinary written queries; no alias evaluator.
+	 */
+	public tableMutations(): ReadonlySet<LuaTableConstructorExpression> {
+		if (this.mutatedTables !== undefined) return this.mutatedTables;
+		const tables = new Set<LuaTableConstructorExpression>();
+		const pending: LuaWrittenSource[] = [];
+		for (const file of this.filesByPath.values()) {
+			for (const reference of file.refs) if (reference.isWrite && reference.receiverValue !== undefined) {
+				pending.push({ kind: 'write-receiver', file, reference, value: reference.receiverValue });
+			}
+			this.collectMutationTargets(file, file.valueAssignments, undefined, pending);
+			for (const flow of file.functionValueFlows) this.collectMutationTargets(file, flow.assignments, flow, pending);
+		}
+		const seen = new Set<LuaWrittenSource>();
+		for (let cursor = 0; cursor < pending.length; cursor += 1) {
+			const source = pending[cursor];
+			if (seen.has(source)) continue;
+			seen.add(source);
+			// Mutating a descendant also makes the containing constructor's topology partial.
+			if (source.value.steps.length !== 0) {
+				pending.push({ kind: 'member-base', file: source.file, read: source,
+					value: { root: source.value.root, steps: [] } });
+				continue;
+			}
+			const inputs = this.inputs(source);
+			if (inputs.kind === 'contributions') for (const input of inputs.sources) pending.push(input);
+			else if (inputs.kind === 'terminal' && source.value.root.kind === 'owned'
+				&& source.value.root.syntax.kind === LuaSyntaxKind.TableConstructorExpression) tables.add(source.value.root.syntax);
+		}
+		this.mutatedTables = tables;
+		return tables;
+	}
+
+	private collectMutationTargets(file: FileSemanticData, writes: readonly ValueAssignmentEntry[],
+		flow: FunctionValueFlowEntry | undefined, pending: LuaWrittenSource[]): void {
+		for (const write of writes) {
+			if (write.syntax.kind === LuaSyntaxKind.TableConstructorExpression) continue;
+			if (write.relation !== 'value' || write.target.steps.length !== 0) {
+				pending.push({ kind: 'transfer-target', file, write, flow, value: write.target });
+			}
+		}
 	}
 
 	private readInputs(source: LuaWrittenSource): LuaWrittenSourceInputs {

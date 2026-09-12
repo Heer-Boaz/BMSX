@@ -9,6 +9,23 @@ import { createBehaviorLensOutline } from '../../ide/workbench/contrib/behavior_
 import { BT_ORDER_SOURCE } from '../helpers/behavior_order_fixture';
 import { createBehaviorTreeEditFixture as fixture } from '../helpers/behavior_tree_edit_fixture';
 
+test('syntax recovery blocks deletion without discarding recognized weighted topology or its selection', t => {
+	const f = fixture(t, BT_ORDER_SOURCE, 2);
+	f.select(1, true);
+	const selected = f.view.selection!.rowKey;
+	f.model.pushEditOperations([{ offset: f.model.buffer.length, deleteLength: 0, text: '\n@' }]);
+	f.refresh();
+	assert.equal(f.view.document.syntaxComplete, false);
+	assert.equal(behaviorTreeEditTarget(f.view), null);
+	assert.equal(f.view.selection?.rowKey, selected);
+	assert.equal(f.viewport.selection?.kind, 'edge');
+	f.model.undo(); f.refresh();
+	assert.equal(f.view.selection?.rowKey, selected);
+	assert.equal(f.viewport.selection?.kind, 'edge');
+	const member = behaviorTreeEditTarget(f.view)!;
+	assert.equal(readLuaSourceRange(f.model.buffer, member.branch.entries[member.index].field.range), '{ weight = 9, child = nested }');
+});
+
 test('BT removal deletes the selected source field, preserving initializers, metadata and exterior trivia', t => {
 	for (const [index, field, expected] of [
 		[0, 'leaf', BT_ORDER_SOURCE.replace('\tleaf, -- first inline', '\t -- first inline')],

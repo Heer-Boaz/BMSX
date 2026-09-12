@@ -28,7 +28,7 @@ export type NavigationCart = 'nemesis_s' | 'pietious';
 const CASES = {
 	nemesis_s: {
 		path: 'player/actioneffects.lua', identifier: 'fire_salvo_effect_id', useLine: 16, declarationLine: 7, declarationColumn: 7,
-		behavior: 'FSM ids_sneeuwpop_fsm', sourcePath: 'enemies/sneeuwpop.lua', sourceLine: 76, sourceColumn: 5,
+		behavior: 'FSM nemesis_s.enemy.sneeuwpop.fsm', sourcePath: 'enemies/sneeuwpop.lua', sourceLine: 76, sourceColumn: 5,
 	},
 	pietious: {
 		path: 'boss/world1_daemon_tree.lua', identifier: 'move_out_backward', useLine: 190, declarationLine: 21, declarationColumn: 8,

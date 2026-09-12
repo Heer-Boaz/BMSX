@@ -1,3 +1,4 @@
+import { semanticSnapshot } from './semantic_test_harness';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
@@ -21,7 +22,7 @@ function fixture(t: TestContext, source = FSM_RETARGET_SOURCE) {
 	editorViewState.font = new EditorFont('tiny');
 	const model = new EditorTextModel({ domain: 0, path: 'drag.lua', source: { type: 'lua', resid: 'drag' } }, 'lua', source);
 	t.after(() => { model.dispose(); editorViewState.font = oldFont; });
-	const document = buildBehaviorSourceDocument(model.resource, buildLuaFileSemanticData(source, 'drag.lua'));
+	const document = buildBehaviorSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(source, 'drag.lua')));
 	const view = createBehaviorLensViewState(document, model, 'state-graph', assert.fail);
 	selectBehaviorLensDefinition(view, document.definitions[0].rowKey);
 	const graph = view.presentation;

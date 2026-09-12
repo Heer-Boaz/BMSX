@@ -13,6 +13,7 @@ export class BehaviorSourceIndex {
 	public readonly parentByRowKey = new Map<BehaviorSourceRowKey, BehaviorSourceRowKey | null>();
 	private references = 0;
 	private readonly subscriptions: (() => void)[] = [];
+	private readonly invalidationListeners = new Set<() => void>();
 	private current = true;
 
 	private constructor(private readonly document: BehaviorSourceDocument, public readonly model: EditorTextModel,
@@ -23,7 +24,7 @@ export class BehaviorSourceIndex {
 			const owner = file.file === model.resource.path ? model : resolveModel(file.file);
 			models.set(file.file, owner);
 			rangesByModel.set(owner, new Map());
-			this.subscriptions.push(owner.onWillChangeContent(() => { this.current = false; }));
+			this.subscriptions.push(owner.onWillChangeContent(() => this.invalidate()));
 		}
 		this.models = models;
 		this.index(document.definitions, null, rangesByModel);
@@ -31,6 +32,19 @@ export class BehaviorSourceIndex {
 	}
 
 	public get isCurrent(): boolean { return this.current; }
+
+	public onDidInvalidate(listener: () => void): () => void {
+		this.invalidationListeners.add(listener);
+		return () => this.invalidationListeners.delete(listener);
+	}
+
+	/** A workspace dependency can change without modifying any of the displayed source ranges. */
+	public invalidate(): void {
+		if (!this.current) return;
+		this.current = false;
+		for (const listener of this.invalidationListeners) listener();
+		this.invalidationListeners.clear();
+	}
 
 	/** One acquisition per retained view, not per lookup or pane attachment. */
 	public static acquire(document: BehaviorSourceDocument, model: EditorTextModel, resolveModel: (path: string) => EditorTextModel): BehaviorSourceIndex {
@@ -45,6 +59,7 @@ export class BehaviorSourceIndex {
 	public release(): void {
 		this.references -= 1;
 		if (this.references === 0) {
+			this.invalidationListeners.clear();
 			for (const unsubscribe of this.subscriptions) unsubscribe();
 			const generations = BehaviorSourceIndex.indices.get(this.model)!;
 			if (generations.get(this.document) === this) generations.delete(this.document);

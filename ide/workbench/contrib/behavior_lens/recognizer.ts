@@ -1,5 +1,5 @@
-import type { LuaExpression } from '../../../../toolchain/ts/lua/syntax/ast';
-import type { FileSemanticData, SymbolID } from '../../../../toolchain/ts/lua/semantic/model';
+import type { LuaTableConstructorExpression } from '../../../../toolchain/ts/lua/syntax/ast';
+import type { LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
 import type { ResourceIdentity } from '../../../common/resource';
 import { collectBehaviorRegistrations, type BehaviorRegistration } from './registrations';
 import { buildActionEffectBody } from './action_effect';
@@ -10,7 +10,6 @@ import type {
 } from './model';
 import {
 	appendBehaviorSourcePath,
-	collectMutatedDeclarations,
 	createDynamicNode,
 	createSourceNode,
 	describeResolvedSourceTable,
@@ -18,6 +17,7 @@ import {
 	type BehaviorRecognizerContext,
 	type SourceNodeInput,
 } from './source';
+import { BehaviorSourceReader } from './source_reader';
 import { buildStateMachineBody } from './state_machine';
 import { buildStateMachineRelations } from './state_machine_relations';
 
@@ -27,43 +27,41 @@ import { buildStateMachineRelations } from './state_machine_relations';
  */
 export function buildBehaviorSourceDocument(
 	resource: ResourceIdentity,
-	analysis: FileSemanticData,
+	snapshot: LuaSemanticWorkspaceSnapshot,
 ): BehaviorSourceDocument {
-	const { constInitializers, registrations } = collectBehaviorRegistrations(resource, analysis);
-	const mutatedDeclarations = collectMutatedDeclarations(analysis);
+	const analysis = snapshot.getFileData(resource.path)!;
+	const reader = new BehaviorSourceReader(snapshot);
+	reader.files.add(analysis);
+	const { registrations } = collectBehaviorRegistrations(resource, reader);
 	const definitions: BehaviorSourceDefinition[] = [];
 	for (const registration of registrations) {
-		definitions.push(buildDefinition(analysis, constInitializers, mutatedDeclarations, registration));
+		definitions.push(buildDefinition(reader, registration));
 	}
 	return {
 		resource,
-		files: [{ file: analysis.file, revision: analysis.revision }],
-		syntaxComplete: analysis.syntaxError === null,
+		files: Array.from(reader.files, file => ({ file: file.file, revision: file.revision })),
+		syntaxComplete: [...reader.files].every(file => file.syntaxError === null),
 		definitions,
 	};
 }
 
 function buildDefinition(
-	analysis: FileSemanticData,
-	constInitializers: ReadonlyMap<SymbolID, LuaExpression>,
-	mutatedDeclarations: ReadonlySet<SymbolID>,
+	reader: BehaviorSourceReader,
 	registration: BehaviorRegistration,
 ): BehaviorSourceDefinition {
 	const call = registration.callSite.expression;
 	const definitionExpression = call.arguments[registration.definitionArgument];
 	const context: BehaviorRecognizerContext = {
-		analysis,
-		constInitializers,
-		mutatedDeclarations,
+		reader,
 		anchor: registration.anchor,
 		behaviorKind: registration.behaviorKind,
 		registrationRange: call.range,
-		sourceIncomplete: analysis.syntaxError !== null,
+		sourceIncomplete: reader.snapshot.getFileData(call.range.path)!.syntaxError !== null,
 	};
 	const definitionPath = appendBehaviorSourcePath('', 'definition');
-	const activeDeclarations = new Set<SymbolID>();
+	const activeTables = new Set<LuaTableConstructorExpression>();
 	const resolved = definitionExpression
-		? resolveSourceTable(context, definitionExpression, activeDeclarations) : null;
+		? resolveSourceTable(context, definitionExpression, activeTables) : null;
 	let input: SourceNodeInput & { kind: 'definition' };
 	if (!definitionExpression) {
 		input = {
@@ -87,8 +85,7 @@ function buildDefinition(
 		};
 	} else {
 		const resolvedDetail = describeResolvedSourceTable(resolved);
-		let detail = resolvedDetail.length > 0 ? `source initializer ${resolvedDetail}` : 'source initializer';
-		if (context.sourceIncomplete) detail += ' | syntax recovery';
+		const detail = resolvedDetail.length > 0 ? `source initializer ${resolvedDetail}` : 'source initializer';
 		input = {
 			kind: 'definition',
 			label: registration.label,
@@ -102,17 +99,17 @@ function buildDefinition(
 	if (context.behaviorKind === 'behavior_tree') {
 		const body = resolved === null
 			? { root: null, blackboard: null, children: input.children }
-			: buildBehaviorTreeDefinition(context, resolved.table, activeDeclarations);
+			: buildBehaviorTreeDefinition(context, resolved.table, activeTables);
 		return createSourceNode(context, definitionPath, { ...input, ...body });
 	}
 	if (context.behaviorKind === 'state_machine') {
 		const source = resolved === null ? { body: null, children: input.children }
-			: buildStateMachineBody(context, '', resolved, activeDeclarations);
+			: buildStateMachineBody(context, '', resolved, activeTables);
 		const relations = source.body === null ? { scopes: [], entries: [], transitions: [] }
 			: buildStateMachineRelations(context, context.anchor + definitionPath, source.body);
 		return createSourceNode(context, definitionPath, { ...input, ...source, ...relations });
 	}
 	const source = resolved === null ? { body: null, children: input.children }
-		: buildActionEffectBody(context, resolved, activeDeclarations);
+		: buildActionEffectBody(context, resolved, activeTables);
 	return createSourceNode(context, definitionPath, { ...input, ...source });
 }

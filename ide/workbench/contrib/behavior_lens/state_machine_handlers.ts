@@ -1,6 +1,5 @@
 import type { LuaExpression, LuaTableConstructorExpression } from '../../../../toolchain/ts/lua/syntax/ast';
 import { findNamedLuaTableField } from '../../../../toolchain/ts/lua/syntax/table_fields';
-import type { SymbolID } from '../../../../toolchain/ts/lua/semantic/model';
 import type { BehaviorSourceNode } from './model';
 import type { StateMachineSourceSlot } from './state_machine_model';
 import { appendBehaviorSourcePath, behaviorSourceFieldSegment, buildResolvedTableSection, buildTableArraySection,
@@ -11,7 +10,7 @@ export function appendFsmEventSection(
 	context: BehaviorRecognizerContext,
 	path: string,
 	owner: LuaTableConstructorExpression,
-	activeDeclarations: Set<SymbolID>,
+	activeTables: Set<LuaTableConstructorExpression>,
 	children: BehaviorSourceNode[],
 	slots: StateMachineSourceSlot[],
 ): void {
@@ -20,7 +19,7 @@ export function appendFsmEventSection(
 	if (!field) {
 		return;
 	}
-	const resolved = resolveSourceTable(context, field.value, activeDeclarations);
+	const resolved = resolveSourceTable(context, field.value, activeTables);
 	if (!resolved) {
 		children.push(createDynamicNode(context, path, `dynamic ${fieldName}`, field.value));
 		return;
@@ -33,7 +32,7 @@ export function appendFsmEventSection(
 			context,
 			appendBehaviorSourcePath(path, behaviorSourceFieldSegment(event, index)),
 			event,
-			activeDeclarations,
+			activeTables,
 		);
 		eventNodes.push(source);
 		slots.push({ kind: 'event', source, spec, field: event.field, value: event.field.value,
@@ -56,13 +55,13 @@ function buildFsmEvent(
 	context: BehaviorRecognizerContext,
 	path: string,
 	event: NamedSourceField,
-	activeDeclarations: Set<SymbolID>,
+	activeTables: Set<LuaTableConstructorExpression>,
 ): { source: BehaviorSourceNode; spec: ResolvedSourceTable | null } {
 	const eventName = event.name !== null ? event.name : `[${event.authoredKeyLabel}]`;
 	const keyResolution = event.keyKind === 'named'
 		? 'complete'
 		: (event.keyKind === 'numeric' ? 'partial' : 'unresolved');
-	const handler = resolveSourceTable(context, event.field.value, activeDeclarations);
+	const handler = resolveSourceTable(context, event.field.value, activeTables);
 	if (handler) {
 		const go = findNamedLuaTableField(handler.table, 'go');
 		const emitter = findNamedLuaTableField(handler.table, 'emitter');
@@ -100,7 +99,7 @@ export function appendInputHandlers(
 	context: BehaviorRecognizerContext,
 	path: string,
 	owner: LuaTableConstructorExpression,
-	activeDeclarations: Set<SymbolID>,
+	activeTables: Set<LuaTableConstructorExpression>,
 	children: BehaviorSourceNode[],
 	slots: StateMachineSourceSlot[],
 ): void {
@@ -113,7 +112,7 @@ export function appendInputHandlers(
 		path,
 		'input handlers',
 		field.value,
-		activeDeclarations,
+		activeTables,
 		(entryContext, entryPath, expression, active, entryField, index) => {
 			const { source, spec } = buildInputHandler(entryContext, entryPath, expression, active);
 			slots.push({ kind: 'input', source, spec, field: entryField, value: expression, bindingComplete: index !== null });
@@ -126,9 +125,9 @@ function buildInputHandler(
 	context: BehaviorRecognizerContext,
 	path: string,
 	expression: LuaExpression,
-	activeDeclarations: Set<SymbolID>,
+	activeTables: Set<LuaTableConstructorExpression>,
 ): { source: BehaviorSourceNode; spec: ResolvedSourceTable | null } {
-	const resolved = resolveSourceTable(context, expression, activeDeclarations);
+	const resolved = resolveSourceTable(context, expression, activeTables);
 	if (!resolved) {
 		return { spec: null, source: createDynamicNode(context, path, 'dynamic input handler', expression) };
 	}
@@ -158,7 +157,7 @@ function buildInputHandler(
 
 /** Timeline identity may be computed; its completion slot still has authored source. */
 export function appendFsmTimelines(context: BehaviorRecognizerContext, path: string, owner: LuaTableConstructorExpression,
-	active: Set<SymbolID>, children: BehaviorSourceNode[], slots: StateMachineSourceSlot[]): void {
+	active: Set<LuaTableConstructorExpression>, children: BehaviorSourceNode[], slots: StateMachineSourceSlot[]): void {
 	const field = findNamedLuaTableField(owner, 'timelines');
 	if (field === null) return;
 	const resolved = resolveSourceTable(context, field.value, active);

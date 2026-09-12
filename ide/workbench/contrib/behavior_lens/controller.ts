@@ -244,9 +244,11 @@ export class BehaviorLensController {
 	}
 
 	public onDidChangeContent(model: EditorTextModel, event: EditorTextModelContentChangeEvent): void {
+		if (model.mode !== 'lua') return;
 		for (const input of editorTabGroup.tabs) {
-			if (input.kind === 'behavior_lens' && input.view.source.models.get(model.resource.path) === model) {
-				mapBehaviorLensSourceRanges(input.view, model.resource, event);
+			if (input.kind === 'behavior_lens' && (model.resource.domain === input.view.resource.domain || model.resource.domain === -1)) {
+				input.view.source.invalidate();
+				if (input.view.source.models.get(model.resource.path) === model) mapBehaviorLensSourceRanges(input.view, model.resource, event);
 				input.invalidatePresentation();
 			}
 		}

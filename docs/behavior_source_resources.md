@@ -32,10 +32,10 @@ Those contracts must change before broader origin recognition is connected.
   source range. A callback's binding and body may use different models. The
   existing text-change mapper still owns coordinate movement.
 - Source documents retain lightweight binder-file revisions used to build their topology, not full binder lookup tables. The semantic producer assigns the revision; the Lens never invents a parallel version counter. The cache records a workspace revision rather than pinning an entire old workspace snapshot for every hidden input.
-  A newer workspace snapshot checks those inputs once; an unchanged importer
-  is not sufficient to keep a document whose provider changed. This does not
-  yet solve the separate dependency contract of future cross-file semantic
-  recognition queries.
+  With [written-source recognition](behavior_written_sources.md), a new workspace
+  snapshot invalidates the document: checking only previously found providers
+  misses negative lookups and writers elsewhere. The retained file list names
+  displayed source owners, not a complete query-dependency certificate.
 - This read-many contract does not silently broaden a source edit into a
   workspace edit. Existing graph authoring remains a primary-document operation
   until the operation-specific B03/B06 contract supplies its write target.

@@ -1,3 +1,4 @@
+import { semanticSnapshot } from './semantic_test_harness';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
@@ -11,7 +12,7 @@ function fixture(t: TestContext, source = FSM_INITIAL_SOURCE) {
 	const resource = { domain: 0 as const, path: 'initial.lua', source: { type: 'lua' as const, resid: 'initial' } };
 	const model = new EditorTextModel(resource, 'lua', source);
 	t.after(() => model.dispose());
-	const document = buildBehaviorSourceDocument(resource, buildLuaFileSemanticData(source, resource.path));
+	const document = buildBehaviorSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)));
 	const index = indexStateMachineSource(document);
 	return { model, document, index };
 }
@@ -27,7 +28,7 @@ test('initial editing changes the real parent constructor, including all its sha
 	setStateMachineInitial(f.model, active[0]);
 	assert.equal(events, 1);
 	assert.equal(f.model.buffer.getText(), FSM_INITIAL_SOURCE.replace("'idle'),", "'active'),"));
-	const changed = buildBehaviorSourceDocument(f.model.resource, buildLuaFileSemanticData(f.model.buffer.getText(), 'initial.lua'));
+	const changed = buildBehaviorSourceDocument(f.model.resource, semanticSnapshot(buildLuaFileSemanticData(f.model.buffer.getText(), 'initial.lua')));
 	const updated = indexStateMachineSource(changed);
 	assert.equal([...updated.initialTargets.values()].filter(target => target.name === 'idle').length, 3);
 	assert.equal([...updated.initialTargets.values()].filter(target => target.name === 'active').length, 0, 'already explicit initial is no-op');
@@ -43,7 +44,7 @@ test('missing and scalar initial values are explicitly authored without inventin
 		const f = fixture(t, source);
 		assert.equal(f.index.initialTargets.size, 2);
 		setStateMachineInitial(f.model, [...f.index.initialTargets.values()].find(target => target.name === 'b')!);
-		const result = buildBehaviorSourceDocument(f.model.resource, buildLuaFileSemanticData(f.model.buffer.getText(), 'initial.lua'));
+		const result = buildBehaviorSourceDocument(f.model.resource, semanticSnapshot(buildLuaFileSemanticData(f.model.buffer.getText(), 'initial.lua')));
 		const definition = result.definitions[0];
 		assert.ok(definition.behaviorKind === 'state_machine');
 		assert.equal(definition.entries[0].target.kind, 'state');
@@ -61,7 +62,7 @@ test('initial uses exact arbitrary string keys rather than transition path synta
 		const target = [...f.index.initialTargets.values()].find(target => target.name === key)!;
 		assert.ok(target, JSON.stringify(key));
 		setStateMachineInitial(f.model, target);
-		const result = buildBehaviorSourceDocument(f.model.resource, buildLuaFileSemanticData(f.model.buffer.getText(), 'initial.lua'));
+		const result = buildBehaviorSourceDocument(f.model.resource, semanticSnapshot(buildLuaFileSemanticData(f.model.buffer.getText(), 'initial.lua')));
 		const definition = result.definitions[0];
 		assert.ok(definition.behaviorKind === 'state_machine' && definition.entries[0].target.kind === 'state');
 		assert.equal(indexStateMachineSource(result).initialTargets.size, 1);

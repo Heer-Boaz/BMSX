@@ -1,4 +1,5 @@
 import type { BFont } from '../../../../machine/ts/render/shared/bitmap_font';
+import { DisposableStore } from '../../../common/lifecycle';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import { create_rect_bounds, point_in_rect, write_rect_bounds } from '../../../../machine/ts/common/rect';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
@@ -36,7 +37,7 @@ export class WorkbenchSourceEditReview {
 	private readonly pointer: WorkbenchPropertyTreePointer;
 	private readonly unbindKeyboard: () => void;
 	private readonly actionControl: WorkbenchActionBarControl;
-	private unbindSource: (() => void) | undefined;
+	private lifetime: DisposableStore | undefined;
 	private layoutDirty = true;
 
 	public constructor(focus: InputFocusService, capture: PointerCaptureService, hover: PointerHoverService, parent: InputFocusTarget) {
@@ -55,8 +56,10 @@ export class WorkbenchSourceEditReview {
 
 	public get visible(): boolean { return this.input !== undefined; }
 
-	public show(input: SourceEditReview): void {
+	public show(input: SourceEditReview): DisposableStore {
 		this.clear();
+		const lifetime = new DisposableStore();
+		this.lifetime = lifetime;
 		this.input = input;
 		this.actionControl.setInput(this.actionBar, this.focusTarget);
 		for (let index = 0; index < input.items.length; index += 1) {
@@ -65,16 +68,17 @@ export class WorkbenchSourceEditReview {
 		rebuildWorkbenchTreeRows(this.tree, this.tree.roots.length > 0 ? this.tree.roots[0] : null);
 		this.tree.textDirty = true;
 		this.layoutDirty = true;
-		this.unbindSource = input.model.onDidChangeContent(() => this.clear());
+		lifetime.add({ dispose: input.model.onDidChangeContent(() => this.clear()) });
 		this.focusTarget.focus();
+		return lifetime;
 	}
 
 	/** Detach before source edits/navigation; an unrelated control keeps its focus. */
 	public clear(): void {
 		this.actionControl.clearInput();
 		this.input = undefined;
-		this.unbindSource?.();
-		this.unbindSource = undefined;
+		this.lifetime?.dispose();
+		this.lifetime = undefined;
 		this.tree.roots.length = 0;
 		rebuildWorkbenchTreeRows(this.tree, null);
 		this.tree.descriptionLines.length = 0;

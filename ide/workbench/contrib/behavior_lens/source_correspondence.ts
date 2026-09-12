@@ -80,6 +80,7 @@ export function reconcileBehaviorLensSource(
 
 	visit(document.definitions, oldDefinitions, 0);
 	state.document = document;
+	if (previousSource !== source) previousSource.invalidate();
 	state.source = source;
 	previousSource.release();
 	if (selected === null) return null;

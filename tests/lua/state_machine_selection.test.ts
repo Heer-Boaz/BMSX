@@ -1,3 +1,4 @@
+import { semanticSnapshot } from './semantic_test_harness';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
@@ -16,7 +17,7 @@ import { behaviorSourceBookmarksEqual, captureBehaviorSourceBookmark } from '../
 
 function fixture(source = FSM_PROOF_SOURCE) {
 	const model = new EditorTextModel({ domain: 0, path: 'fsm_proofs.lua', source: { resid: 'fsm_proofs', type: 'lua' } }, 'lua', source);
-	const project = () => buildBehaviorSourceDocument(model.resource, buildLuaFileSemanticData(model.buffer.getText(), model.resource.path));
+	const project = () => buildBehaviorSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(model.buffer.getText(), model.resource.path)));
 	const view = createBehaviorLensViewState(project(), model, 'outline', assert.fail);
 	model.onDidChangeContent(event => mapBehaviorLensSourceRanges(view, model.resource, event));
 	return { model, view, refresh() {

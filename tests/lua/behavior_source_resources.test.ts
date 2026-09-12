@@ -1,3 +1,4 @@
+import { semanticSnapshot } from './semantic_test_harness';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
@@ -33,7 +34,7 @@ function fixture() {
 	function project(): BehaviorSourceDocument {
 		const analysis = buildLuaFileSemanticData(main.buffer.getText(), main.resource.path);
 		const dependency = buildLuaFileSemanticData(provider.buffer.getText(), provider.resource.path);
-		const document = buildBehaviorSourceDocument(main.identity, analysis);
+		const document = buildBehaviorSourceDocument(main.identity, semanticSnapshot(analysis));
 		const definition = document.definitions[0];
 		assert.ok(definition.behaviorKind === 'state_machine');
 		const original = definition.transitions[0];

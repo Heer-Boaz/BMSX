@@ -1,3 +1,4 @@
+import { semanticSnapshot } from './semantic_test_harness';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
@@ -13,7 +14,7 @@ function fixture(t: TestContext, source = FSM_RETARGET_SOURCE) {
 	const resource = { domain: 0 as const, path: 'retarget.lua', source: { type: 'lua' as const, resid: 'retarget' } };
 	const model = new EditorTextModel(resource, 'lua', source);
 	t.after(() => model.dispose());
-	const document = buildBehaviorSourceDocument(resource, buildLuaFileSemanticData(source, resource.path));
+	const document = buildBehaviorSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)));
 	const definition = document.definitions[0];
 	assert.ok(definition.behaviorKind === 'state_machine');
 	return { model, document, definition, root: definition.scopes[0] };

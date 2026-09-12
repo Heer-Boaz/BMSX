@@ -4530,6 +4530,18 @@ the exporting file and return statement; unresolved imports remain boundaries.
 See [written-source queries](lua_written_source_queries.md) and
 [module source exports](lua_module_source_exports.md).
 
+Behavior Lens consumes these written queries from the workspace snapshot, not
+a contribution-local const/alias evaluator. Direct imported constructors and
+callbacks retain their original source resources; repeated graph uses do not
+become new source definitions. Explicit storage mutations are indexed once per
+snapshot by the written-source owner, without claiming unknown calls pure.
+Catalog/document validity follows the snapshot, including negative lookups;
+displayed file revisions are not a complete query-dependency certificate.
+Source-index invalidation also owns menu/inspection/review lifetime. Syntax
+recovery revokes edit admission without discarding otherwise known topology.
+This does not close API-export certainty, contextual member/factory recognition
+or imported graph-edit ownership. See [written-source consumption](behavior_written_sources.md).
+
 Source-call ancestry consumes the existing call solver's application edges,
 keeping each call's written AST and ordered bound input tuple together. Incoming
 edges belong to the call graph and have tracked per-target dependencies, even

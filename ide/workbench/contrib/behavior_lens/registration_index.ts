@@ -1,4 +1,4 @@
-import type { FileSemanticData, LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
+import type { LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
 import type { ResourceDomain } from '../../../common/resource';
 import { getOrCreateSemanticProject } from '../../../editor/contrib/intellisense/semantic/workspace/state';
 import type { RuntimeSourceState } from '../../../runtime/sources';
@@ -6,6 +6,7 @@ import type {
 	BehaviorKind,
 	BehaviorRegistrationSource,
 } from './model';
+import { BehaviorSourceReader } from './source_reader';
 import { collectBehaviorRegistrations } from './registrations';
 
 const EMPTY_REGISTRATION_SOURCES: readonly BehaviorRegistrationSource[] = [];
@@ -22,7 +23,6 @@ type BehaviorRegistrationGeneration = {
 /** Workspace-generation index for source-owned behavior registrations. */
 export class BehaviorRegistrationIndex {
 	private readonly generations = new Map<ResourceDomain, BehaviorRegistrationGeneration>();
-	private readonly files = new Map<ResourceDomain, WeakMap<FileSemanticData, readonly BehaviorRegistrationSource[]>>();
 
 	public constructor(private readonly sources: RuntimeSourceState) {}
 
@@ -55,11 +55,7 @@ export class BehaviorRegistrationIndex {
 		executionDomain: ResourceDomain,
 		snapshot: LuaSemanticWorkspaceSnapshot,
 	): BehaviorRegistrationGeneration {
-		let files = this.files.get(executionDomain);
-		if (files === undefined) {
-			files = new WeakMap();
-			this.files.set(executionDomain, files);
-		}
+		const reader = new BehaviorSourceReader(snapshot);
 		const allRegistrations: BehaviorRegistrationSource[] = [];
 		const sourcesByKind = new Map<
 			BehaviorKind,
@@ -67,12 +63,7 @@ export class BehaviorRegistrationIndex {
 		>();
 		for (const resource of this.sources.luaResources) {
 			if (resource.domain !== executionDomain) continue;
-			const analysis = snapshot.getFileData(resource.path)!;
-			let registrations = files.get(analysis);
-			if (registrations === undefined) {
-				registrations = collectBehaviorRegistrations(resource, analysis).registrations;
-				files.set(analysis, registrations);
-			}
+			const { registrations } = collectBehaviorRegistrations(resource, reader);
 			for (let registrationIndex = 0;
 				registrationIndex < registrations.length;
 				registrationIndex += 1) {

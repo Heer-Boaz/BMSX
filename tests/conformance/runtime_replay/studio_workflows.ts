@@ -12,6 +12,7 @@ import { testStudioBehaviorNavigation } from './studio_behavior_navigation';
 import { testStudioBehaviorPicker } from './studio_behavior_picker';
 import { testStudioBehaviorKinds } from './studio_behavior_kinds';
 import { testStudioBehaviorSourceGraph } from './studio_behavior_source';
+import { testStudioBehaviorImports } from './studio_behavior_imports';
 import { testStudioBtMembership } from './studio_bt_membership';
 import { testStudioBtMoves } from './studio_bt_moves';
 import { testStudioBtDrag } from './studio_bt_drag';
@@ -342,6 +343,7 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	await testStudioBehaviorPicker(test);
 	await testStudioBehaviorKinds(test);
 	await testStudioBehaviorSourceGraph(test);
+	await testStudioBehaviorImports(test);
 	await testStudioBehaviorInspector(test);
 	await testStudioBtMembership(test);
 	await testStudioBtMoves(test);

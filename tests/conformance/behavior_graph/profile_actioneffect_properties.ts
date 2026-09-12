@@ -1,3 +1,4 @@
+import { semanticSnapshot } from '../../lua/semantic_test_harness';
 import { PointerHoverService } from '../../../ide/input/pointer/hover';
 import assert from 'node:assert/strict';
 import { EditorTextModel } from '../../../ide/editor/model/text_model';
@@ -27,7 +28,7 @@ class MeasuredEditorFont extends EditorFont {
 for (const requirements of [1, 256, 4096]) {
 	const source = ACTIONEFFECT_SOURCE.replace("{ 'ready' }", `{ ${Array.from({ length: requirements }, (_, index) => `'tag.${index}'`).join(', ')} }`);
 	const model = new EditorTextModel({ domain: 0, path: 'effects.lua', source: { resid: 'effects', type: 'lua' } }, 'lua', source);
-	const document = buildBehaviorSourceDocument(model.resource, buildLuaFileSemanticData(source, model.resource.path));
+	const document = buildBehaviorSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(source, model.resource.path)));
 	const font = new MeasuredEditorFont('tiny');
 	editorViewState.font = font;
 	const view = createBehaviorLensViewState(document, model, 'properties', assert.fail);

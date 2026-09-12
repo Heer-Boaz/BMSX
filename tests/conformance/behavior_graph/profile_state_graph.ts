@@ -1,3 +1,4 @@
+import { semanticSnapshot } from '../../lua/semantic_test_harness';
 import assert from 'node:assert/strict';
 import { Worker } from 'node:worker_threads';
 import { resolve } from 'node:path';
@@ -29,7 +30,7 @@ local step<const> = function(actor) if actor.a then return '../active' end if ac
 local shared<const> = { initial = 'idle', states = { idle = { update = step }, active = { on = { reset = '../idle' } } } }
 fsm.register('profile', { initial = 'lane0', states = { ${Array.from({ length: copies }, (_, index) => `lane${index} = shared`).join(',')} } })`;
 		const model = new EditorTextModel({ domain: 0, path: 'profile.lua', source: { resid: 'profile', type: 'lua' } }, 'lua', source);
-		const document = buildBehaviorSourceDocument(model.resource, buildLuaFileSemanticData(source, model.resource.path));
+		const document = buildBehaviorSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(source, model.resource.path)));
 		editorViewState.font = new EditorFont('tiny');
 		const view = createBehaviorLensViewState(document, model, 'state-graph', assert.fail);
 		selectBehaviorLensDefinition(view, document.definitions[0].rowKey);

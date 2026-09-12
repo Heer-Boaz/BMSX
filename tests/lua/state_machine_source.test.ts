@@ -1,10 +1,12 @@
+import { semanticSnapshot } from './semantic_test_harness';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { readLuaSourceRange } from '../../ide/language/lua/source_edits';
 import type { BehaviorSourceNode } from '../../ide/workbench/contrib/behavior_lens/model';
 import { buildBehaviorSourceDocument } from '../../ide/workbench/contrib/behavior_lens/recognizer';
-import { collectConstInitializers, collectMutatedDeclarations, type BehaviorRecognizerContext } from '../../ide/workbench/contrib/behavior_lens/source';
+import { BehaviorSourceReader } from '../../ide/workbench/contrib/behavior_lens/source_reader';
+import type { BehaviorRecognizerContext } from '../../ide/workbench/contrib/behavior_lens/source';
 import type { StateMachineSourceDefinition, StateMachineSourceState } from '../../ide/workbench/contrib/behavior_lens/state_machine_model';
 import { bindStateMachineSourcePath, indexStateMachineScopes } from '../../ide/workbench/contrib/behavior_lens/state_machine_scope';
 import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
@@ -17,7 +19,7 @@ function fixture(source = FSM_BEHAVIOR_SOURCE) {
 		source: { resid: 'fsm_fixture', type: 'lua' as const, source_path: 'fsm_fixture.lua', generated: false } };
 	const model = new EditorTextModel(resource, 'lua', source);
 	const analysis = buildLuaFileSemanticData(source, resource.path);
-	const document = buildBehaviorSourceDocument(resource, analysis);
+	const document = buildBehaviorSourceDocument(resource, semanticSnapshot(analysis));
 	const definition = document.definitions[0];
 	assert.ok(definition.behaviorKind === 'state_machine');
 	return { model, analysis, document, definition, read: (node: { range: LuaStringLiteralExpression['range'] }) => readLuaSourceRange(model.buffer, node.range) };
@@ -36,7 +38,7 @@ function stateAt(root: StateMachineSourceDefinition | StateMachineSourceState, .
 }
 
 function context(f: ReturnType<typeof fixture>): BehaviorRecognizerContext {
-	return { analysis: f.analysis, constInitializers: collectConstInitializers(f.analysis), mutatedDeclarations: collectMutatedDeclarations(f.analysis),
+	return { reader: new BehaviorSourceReader(semanticSnapshot(f.analysis)),
 		anchor: '', registrationRange: f.definition.occurrenceRange, sourceIncomplete: f.analysis.syntaxError !== null, behaviorKind: 'state_machine' };
 }
 
@@ -121,7 +123,7 @@ test('FSM source binding follows cartlib path plans, including relative origins,
 	}
 });
 
-test('FSM callback results are analyzed only at consumer slots and binder-proven local const functions', () => {
+test('FSM callback results are analyzed only at consumer slots and written function sources', () => {
 	const f = fixture(`local machines<const> = require('cartlib/fsm/library')
 local callable<const> = function() return '/active' end
 local alias<const> = callable
@@ -140,7 +142,8 @@ machines.register('callbacks', { states = { idle = { on = {
 	const transitions = f.definition.transitions;
 	const event = (name: string) => transitions.find(item => item.slot.kind === 'event' && item.slot.source.label === name)!;
 	assert.equal(event('const_alias').outcomes[0].target.kind, 'path');
-	for (const name of ['member', 'mutable']) assert.deepEqual(event(name).outcomes[0].target, { kind: 'unresolved', reason: 'unknown-callback' });
+	assert.deepEqual(event('member').outcomes[0].target, { kind: 'unresolved', reason: 'unknown-callback' });
+	assert.equal(event('mutable').outcomes[0].target.kind, 'path');
 	for (const name of ['invalid_false', 'nested_table', 'missing_go']) assert.deepEqual(event(name).outcomes[0].target, { kind: 'unresolved', reason: 'invalid-value' });
 	assert.deepEqual(event('empty').outcomes[0].target, { kind: 'no-path', reason: 'no-return' });
 	assert.deepEqual(event('no_op').outcomes[0].target, { kind: 'no-path', reason: 'no-op' });

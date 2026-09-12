@@ -1,3 +1,4 @@
+import { semanticSnapshot } from '../../lua/semantic_test_harness';
 import assert from 'node:assert/strict';
 import { medianMilliseconds } from '../../helpers/performance';
 import { EditorTextModel } from '../../../ide/editor/model/text_model';
@@ -15,7 +16,7 @@ local callback<const> = function(owner) if owner.done then return '../active' en
 local branch<const> = { states = { idle = { update = callback, on = { go = '../active' } }, active = {} } }
 machines.register('profile', { states = {${Array.from({ length: siblings }, (_, index) => `lane${index}=branch`).join(',')}} })`;
 	const model = new EditorTextModel({ domain: 0, path: 'profile.lua', source: { type: 'lua', resid: 'profile' } }, 'lua', source);
-	const document = buildBehaviorSourceDocument(model.resource, buildLuaFileSemanticData(source, model.resource.path));
+	const document = buildBehaviorSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(source, model.resource.path)));
 	const view = createBehaviorLensViewState(document, model, 'outline', assert.fail);
 	const definition = document.definitions[0];
 	assert.ok(definition.behaviorKind === 'state_machine');

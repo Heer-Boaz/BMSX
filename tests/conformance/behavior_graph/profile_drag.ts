@@ -1,3 +1,4 @@
+import { semanticSnapshot } from '../../lua/semantic_test_harness';
 import { PointerHoverService } from '../../../ide/input/pointer/hover';
 import { PointerButton } from '../../../ide/input/pointer/buttons';
 import assert from 'node:assert/strict';
@@ -22,7 +23,7 @@ Object.assign(editorViewState, { font: new EditorFont('tiny'), viewportWidth: 38
 for (const siblings of [24, 1024]) {
 	const source = `local trees<const> = require('cartlib/behaviour_tree/library')\nlocal child<const> = { type = 'wait', duration_ticks = 2 }\ntrees.register('profile', { root = { type = 'sequence', children = { ${'child,'.repeat(siblings)} } } })`;
 	const model = new EditorTextModel({ domain: 0, path: 'drag.lua', source: { type: 'lua', resid: 'drag' } }, 'lua', source);
-	const document = buildBehaviorSourceDocument(model.resource, buildLuaFileSemanticData(source, model.resource.path));
+	const document = buildBehaviorSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(source, model.resource.path)));
 	const state = createBehaviorLensViewState(document, model, 'graph', assert.fail);
 	selectBehaviorLensDefinition(state, document.definitions[0].rowKey);
 	prepareBehaviorLensLayout(state);

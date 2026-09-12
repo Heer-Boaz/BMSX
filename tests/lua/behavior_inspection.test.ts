@@ -1,3 +1,4 @@
+import { semanticSnapshot } from './semantic_test_harness';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
@@ -25,7 +26,7 @@ machines.register('fixture.inspect', {
 function fixture() {
 	editorViewState.font = new EditorFont('tiny');
 	const model = new EditorTextModel({ domain: 0, path: 'source_owned.lua', source: { type: 'lua', resid: 'independent', generated: true } }, 'lua', SOURCE);
-	const document = buildBehaviorSourceDocument(model.resource, buildLuaFileSemanticData(SOURCE, model.resource.path));
+	const document = buildBehaviorSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(SOURCE, model.resource.path)));
 	const view = createBehaviorLensViewState(document, model, 'state-graph', assert.fail);
 	view.definitionRowKey = document.definitions[0].rowKey;
 	return { model, view };

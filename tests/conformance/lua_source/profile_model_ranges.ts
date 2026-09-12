@@ -1,3 +1,4 @@
+import { semanticSnapshot } from '../../lua/semantic_test_harness';
 import assert from 'node:assert/strict';
 import { medianMilliseconds } from '../../helpers/performance';
 import { EditorTextModel } from '../../../ide/editor/model/text_model';
@@ -16,7 +17,7 @@ for (const [children, viewCount] of [[0, 0], [32, 1], [32, 16], [1024, 1], [1024
 local leaf<const> = { type = 'wait', duration_ticks = 1 }
 trees.register('profile', { root = { type = 'sequence', children = {${'leaf,'.repeat(children)}} } })`;
 	const model = new EditorTextModel({ domain: 0, path: 'profile.lua', source: { type: 'lua', resid: 'profile' } }, 'lua', source);
-	const document = buildBehaviorSourceDocument(model.resource, buildLuaFileSemanticData(source, model.resource.path));
+	const document = buildBehaviorSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(source, model.resource.path)));
 	const inputs: BehaviorLensInput[] = [];
 	for (let index = 0; index < viewCount; index += 1) {
 		inputs.push(new BehaviorLensInput(model, createBehaviorLensViewState(document, model, 'graph', assert.fail),

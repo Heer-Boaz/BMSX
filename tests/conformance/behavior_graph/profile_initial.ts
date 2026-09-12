@@ -1,3 +1,4 @@
+import { semanticSnapshot } from '../../lua/semantic_test_harness';
 import assert from 'node:assert/strict';
 import { medianMilliseconds } from '../../helpers/performance';
 import { EditorTextModel } from '../../../ide/editor/model/text_model';
@@ -12,7 +13,7 @@ for (const states of [32, 1024]) {
 machines.register('profile',{${initial}states={${Array.from({ length: states }, (_, index) => `state${index}={}`).join(',')}}})`;
 		const resource = { domain: 0 as const, path: 'profile.lua', source: { type: 'lua' as const, resid: 'profile' } };
 		const model = new EditorTextModel(resource, 'lua', source);
-		const document = buildBehaviorSourceDocument(resource, buildLuaFileSemanticData(source, resource.path));
+		const document = buildBehaviorSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(source, resource.path)));
 		const index = indexStateMachineSource(document);
 		const [key, target] = [...index.initialTargets.entries()].at(-1)!;
 		assert.equal(target.name, `state${states - 1}`);

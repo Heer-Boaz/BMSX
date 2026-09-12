@@ -1,3 +1,4 @@
+import { semanticSnapshot } from './semantic_test_harness';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
@@ -25,7 +26,7 @@ class CountingModel extends EditorTextModel {
 
 test('multiple source-index users share model tracking until the last release', () => {
 	const model = new CountingModel();
-	const document = buildBehaviorSourceDocument(model.resource, buildLuaFileSemanticData(SOURCE, model.resource.path));
+	const document = buildBehaviorSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(SOURCE, model.resource.path)));
 	const first = BehaviorSourceIndex.acquire(document, model, assert.fail);
 	const second = BehaviorSourceIndex.acquire(document, model, assert.fail);
 	assert.equal(first, second); assert.equal(first.model, model);
@@ -51,7 +52,7 @@ test('retained behavior inputs release retired generations and retain hidden-vie
 	editorViewState.font = new EditorFont('tiny');
 	t.after(() => { editorViewState.font = font; });
 	const model = new CountingModel();
-	const project = () => buildBehaviorSourceDocument(model.resource, buildLuaFileSemanticData(model.buffer.getText(), model.resource.path));
+	const project = () => buildBehaviorSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(model.buffer.getText(), model.resource.path)));
 	const document = project();
 	const first = new BehaviorLensInput(model, createBehaviorLensViewState(document, model, 'graph', assert.fail), () => assert.fail('BT does not create an FSM layout engine'));
 	const hidden = new BehaviorLensInput(model, createBehaviorLensViewState(document, model, 'graph', assert.fail), () => assert.fail('BT does not create an FSM layout engine'));
@@ -78,7 +79,7 @@ test('source positions are updated before any feature forwards the edit notifica
 	editorViewState.font = new EditorFont('tiny');
 	t.after(() => { editorViewState.font = font; });
 	const model = new CountingModel();
-	const document = buildBehaviorSourceDocument(model.resource, buildLuaFileSemanticData(SOURCE, model.resource.path));
+	const document = buildBehaviorSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(SOURCE, model.resource.path)));
 	const view = createBehaviorLensViewState(document, model, 'graph', assert.fail);
 	const span = view.source.ranges.get(document.definitions[0].rowKey)!;
 	const start = span.start;
@@ -91,7 +92,7 @@ test('source positions are updated before any feature forwards the edit notifica
 
 test('a text roundtrip can reuse binder facts without reviving collapsed markers or deleting a newer lease', () => {
 	const model = new CountingModel();
-	const document = buildBehaviorSourceDocument(model.identity, buildLuaFileSemanticData(SOURCE, model.resource.path));
+	const document = buildBehaviorSourceDocument(model.identity, semanticSnapshot(buildLuaFileSemanticData(SOURCE, model.resource.path)));
 	const hidden = BehaviorSourceIndex.acquire(document, model, assert.fail);
 	const key = document.definitions[0].rowKey;
 	const original = { ...hidden.ranges.get(key)! };

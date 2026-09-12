@@ -1,4 +1,4 @@
-import type { SymbolID } from '../../../../toolchain/ts/lua/semantic/model';
+import type { LuaTableConstructorExpression } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { BehaviorSourceNode } from './model';
 import type { ActionEffectSourceBody, ActionEffectSourceField } from './action_effect_model';
 import {
@@ -16,7 +16,7 @@ import {
 
 /** One cold source generation. Display nodes are also the typed fields' source occurrences. */
 export function buildActionEffectBody(
-	context: BehaviorRecognizerContext, resolved: ResolvedSourceTable, activeDeclarations: Set<SymbolID>,
+	context: BehaviorRecognizerContext, resolved: ResolvedSourceTable, activeTables: Set<LuaTableConstructorExpression>,
 ): { body: ActionEffectSourceBody; children: readonly BehaviorSourceNode[] } {
 	const children: BehaviorSourceNode[] = [];
 	const fields: ActionEffectSourceField[] = [];
@@ -27,7 +27,7 @@ export function buildActionEffectBody(
 		switch (entry.name) {
 			case 'required_tags': case 'blocked_tags': case 'required_state_paths': case 'blocked_state_paths': {
 				const entries: BehaviorSourceArrayEntry<BehaviorSourceNode>[] = [];
-				const source = buildTableArraySection(context, appendBehaviorSourcePath('', entry.name), entry.name, field.value, activeDeclarations,
+				const source = buildTableArraySection(context, appendBehaviorSourcePath('', entry.name), entry.name, field.value, activeTables,
 					(childContext, path, expression, active, field, index) => {
 						const node = buildExpressionProperty(childContext, path, expression, active);
 						entries.push({ field, index, node });

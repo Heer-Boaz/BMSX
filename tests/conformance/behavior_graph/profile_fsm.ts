@@ -1,12 +1,15 @@
+import type { LuaTableConstructorExpression } from '../../../toolchain/ts/lua/syntax/ast';
+import { BehaviorSourceReader } from '../../../ide/workbench/contrib/behavior_lens/source_reader';
+import { semanticSnapshot } from '../../lua/semantic_test_harness';
 import assert from 'node:assert/strict';
 import { indexStateMachineSource } from '../../../ide/workbench/contrib/behavior_lens/state_machine_index';
 import { medianMilliseconds } from '../../helpers/performance';
-import { buildLuaFileSemanticData, type SymbolID } from '../../../toolchain/ts/lua/semantic/model';
+import { buildLuaFileSemanticData } from '../../../toolchain/ts/lua/semantic/model';
 import { buildBehaviorSourceDocument } from '../../../ide/workbench/contrib/behavior_lens/recognizer';
 import { collectBehaviorRegistrations } from '../../../ide/workbench/contrib/behavior_lens/registrations';
 import { buildStateMachineBody } from '../../../ide/workbench/contrib/behavior_lens/state_machine';
 import { buildStateMachineRelations } from '../../../ide/workbench/contrib/behavior_lens/state_machine_relations';
-import { collectMutatedDeclarations, resolveSourceTable, type BehaviorRecognizerContext } from '../../../ide/workbench/contrib/behavior_lens/source';
+import { resolveSourceTable, type BehaviorRecognizerContext } from '../../../ide/workbench/contrib/behavior_lens/source';
 import { EditorTextModel } from '../../../ide/editor/model/text_model';
 import { createBehaviorLensViewState } from '../../../ide/workbench/contrib/behavior_lens/view_model';
 import { installBehaviorLensDocument } from '../../../ide/workbench/contrib/behavior_lens/layout';
@@ -22,8 +25,9 @@ local shared<const> = { initial = 'idle', on = { reset = 'idle' }, states = {
 machines.register('profile', { initial = 'lane0', states = { ${Array.from({ length: siblings }, (_, index) => `lane${index} = shared`).join(',')} } })`;
 	const resource = { domain: 0 as const, path: 'fsm_profile.lua' };
 	const semantic = buildLuaFileSemanticData(source, resource.path);
-	const sourceProjectionMs = medianMilliseconds(() => { buildBehaviorSourceDocument(resource, semantic); });
-	const document = buildBehaviorSourceDocument(resource, semantic);
+	const snapshot = semanticSnapshot(semantic);
+	const sourceProjectionMs = medianMilliseconds(() => { buildBehaviorSourceDocument(resource, snapshot); });
+	const document = buildBehaviorSourceDocument(resource, snapshot);
 	const referenceIndexMs = medianMilliseconds(() => { indexStateMachineSource(document); });
 	const model = new EditorTextModel({ ...resource, source: { resid: 'fsm_profile', type: 'lua' } }, 'lua', source);
 	const view = createBehaviorLensViewState(document, model, 'outline', assert.fail);
@@ -35,13 +39,13 @@ machines.register('profile', { initial = 'lane0', states = { ${Array.from({ leng
 	const selectedProofMapMs = medianMilliseconds(() => {
 		for (let index = 0; index < 1000; index += 1) mapStateMachineSourceSelection(selected, model.resource, roundtrip);
 	}) / 1000;
-	const registrationSet = collectBehaviorRegistrations(resource, semantic);
+	const registrationSet = collectBehaviorRegistrations(resource, new BehaviorSourceReader(snapshot));
 	const registration = registrationSet.registrations[0];
 	const context: BehaviorRecognizerContext = {
-		analysis: semantic, constInitializers: registrationSet.constInitializers, mutatedDeclarations: collectMutatedDeclarations(semantic),
+		reader: new BehaviorSourceReader(snapshot),
 		anchor: registration.anchor, registrationRange: registration.callSite.expression.range, sourceIncomplete: false, behaviorKind: 'state_machine',
 	};
-	const active = new Set<SymbolID>();
+	const active = new Set<LuaTableConstructorExpression>();
 	const table = resolveSourceTable(context, registration.callSite.expression.arguments[1], active)!;
 	const structureMs = medianMilliseconds(() => { buildStateMachineBody(context, '', table, active); });
 	const { body } = buildStateMachineBody(context, '', table, active);

@@ -1,3 +1,4 @@
+import { semanticSnapshot } from './semantic_test_harness';
 import { Worker } from 'node:worker_threads';
 import { resolve } from 'node:path';
 import { EditorFont } from '../../ide/editor/ui/view/font';
@@ -30,7 +31,7 @@ function fixture(source = FSM_PROOF_SOURCE, factory: GraphLayoutEngineFactory = 
 	Object.assign(editorViewState, { font: new EditorFont('tiny') });
 	const resource = { domain: 0 as const, path: 'graph.lua', source: { resid: 'graph', type: 'lua' as const } };
 	const model = new EditorTextModel(resource, 'lua', source);
-	const document = () => buildBehaviorSourceDocument(resource, buildLuaFileSemanticData(model.buffer.getText(), resource.path));
+	const document = () => buildBehaviorSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(model.buffer.getText(), resource.path)));
 	const view = createBehaviorLensViewState(document(), model, 'state-graph', assert.fail);
 	const input = new BehaviorLensInput(model, view, factory);
 	model.onDidChangeContent(event => { mapBehaviorLensSourceRanges(view, model.resource, event); input.invalidatePresentation(); });

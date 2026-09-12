@@ -87,6 +87,22 @@ test('palette focus can return to the review, but source changes and writability
 	f.review.update(); assert.equal(f.review.visible, false);
 });
 
+test('review lifetime owns external dependency cancellation and releases it before apply', t => {
+	const f = fixture(t);
+	const dependency = new EditorTextModel({ domain: 0, path: 'dependency.lua', source: { type: 'lua', resid: 'dependency' } }, 'lua', 'return true');
+	t.after(() => dependency.dispose());
+	const lifetime = f.show();
+	lifetime.add({ dispose: dependency.onDidChangeContent(() => f.review.clear()) });
+	dependency.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- dependency changed\n' }]);
+	assert.equal(f.review.visible, false);
+	f.review.apply();
+	assert.equal(f.applied(), 0); assert.equal(f.model.canUndo, false);
+	let disposed = 0;
+	f.show().add({ dispose: () => { disposed += 1; } });
+	f.review.apply();
+	assert.equal(disposed, 1); assert.equal(f.applied(), 1);
+});
+
 test('source review keeps tiny-font rows, toolbar and overlay storage retained on unchanged frames', t => {
 	const f = fixture(t);
 	const rows = f.review.tree.rows;

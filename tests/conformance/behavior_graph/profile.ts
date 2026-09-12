@@ -1,3 +1,4 @@
+import { semanticSnapshot } from '../../lua/semantic_test_harness';
 import { medianMilliseconds } from '../../helpers/performance';
 import { Font } from '../../../machine/ts/render/shared/bmsx_font';
 import { HostOverlayQuadStream } from '../../../machine/ts/render/host_overlay/quad_stream';
@@ -22,8 +23,8 @@ local shared<const> = { type = 'sequence', children = { { type = 'wait', duratio
 trees.register('profile', { root = { type = 'sequence', children = { ${'shared,'.repeat(siblings)} } } })`;
 	const resource = { domain: 0 as const, path: 'profile.lua' };
 	const semantic = buildLuaFileSemanticData(source, resource.path);
-	const sourceProjectionMs = medianMilliseconds(() => { buildBehaviorSourceDocument(resource, semantic); });
-	const definition = buildBehaviorSourceDocument(resource, semantic).definitions[0];
+	const sourceProjectionMs = medianMilliseconds(() => { buildBehaviorSourceDocument(resource, semanticSnapshot(semantic)); });
+	const definition = buildBehaviorSourceDocument(resource, semanticSnapshot(semantic)).definitions[0];
 	if (definition.behaviorKind !== 'behavior_tree') throw new Error('profile requires the BT fixture');
 	const font = new MeasuredFont({ variant: 'tiny' });
 	const cardProjectionMs = medianMilliseconds(() => { projectBehaviorTreeGraph(definition, font); });

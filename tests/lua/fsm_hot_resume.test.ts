@@ -1,3 +1,4 @@
+import { semanticSnapshot } from './semantic_test_harness';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -533,7 +534,7 @@ test('source-owned BT moves change actual compiled task order and keep choice we
 	for (const [destination, expected] of [[0, 1213], [3, 1312]] as const) {
 		const resource = { domain: 0 as const, path: 'order.lua', source: { type: 'lua' as const, resid: 'order' } };
 		const model = new EditorTextModel(resource, 'lua', BT_ORDER_SOURCE);
-		const definition = buildBehaviorSourceDocument(resource, buildLuaFileSemanticData(BT_ORDER_SOURCE, resource.path)).definitions[0];
+		const definition = buildBehaviorSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(BT_ORDER_SOURCE, resource.path))).definitions[0];
 		assert.ok(definition.behaviorKind === 'behavior_tree' && definition.root?.kind === 'node');
 		const branch = definition.root.branches[0];
 		assert.ok(branch.role === 'children' && branch.source.kind === 'section');
@@ -549,7 +550,7 @@ return status == result.success, target.order, #children, children.note == 'meta
 		assert.deepEqual(materializeCpuCompletionValues(cpu), [true, expected, 3, true]);
 		model.undo();
 		assert.equal(model.buffer.getText(), BT_ORDER_SOURCE);
-		const weighted = buildBehaviorSourceDocument(resource, buildLuaFileSemanticData(BT_ORDER_SOURCE, resource.path)).definitions[2];
+		const weighted = buildBehaviorSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(BT_ORDER_SOURCE, resource.path))).definitions[2];
 		assert.ok(weighted.behaviorKind === 'behavior_tree' && weighted.root?.kind === 'node');
 		const choices = weighted.root.branches[0];
 		assert.ok(choices.role === 'choices' && choices.source.kind === 'section');
@@ -572,7 +573,7 @@ test('BT source removal changes actual compiled task order without deleting refe
 	const resource = { domain: 0 as const, path: 'remove.lua', source: { type: 'lua' as const, resid: 'remove' } };
 	for (const [definitionIndex, index, expected] of [[0, 0, 123], [0, 1, 13], [0, 2, 112], [2, 1, 13]] as const) {
 		const model = new EditorTextModel(resource, 'lua', BT_ORDER_SOURCE);
-		const definition = buildBehaviorSourceDocument(resource, buildLuaFileSemanticData(BT_ORDER_SOURCE, resource.path)).definitions[definitionIndex];
+		const definition = buildBehaviorSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(BT_ORDER_SOURCE, resource.path))).definitions[definitionIndex];
 		assert.ok(definition.behaviorKind === 'behavior_tree' && definition.root?.kind === 'node');
 		const branch = definition.root.branches[0];
 		assert.ok((branch.role === 'children' || branch.role === 'choices') && branch.source.kind === 'section');
@@ -605,7 +606,7 @@ test('BT source duplication executes the copied Lua uses and keeps choice weight
 	const resource = { domain: 0 as const, path: 'duplicate.lua', source: { type: 'lua' as const, resid: 'duplicate' } };
 	for (const [definitionIndex, index, expected, sameValue] of [[0, 0, 11123, true], [0, 1, 112123, true], [0, 2, 11233, false], [2, 1, 112123, false]] as const) {
 		const model = new EditorTextModel(resource, 'lua', BT_ORDER_SOURCE);
-		const definition = buildBehaviorSourceDocument(resource, buildLuaFileSemanticData(BT_ORDER_SOURCE, resource.path)).definitions[definitionIndex];
+		const definition = buildBehaviorSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(BT_ORDER_SOURCE, resource.path))).definitions[definitionIndex];
 		assert.ok(definition.behaviorKind === 'behavior_tree' && definition.root?.kind === 'node');
 		const branch = definition.root.branches[0];
 		assert.ok((branch.role === 'children' || branch.role === 'choices') && branch.source.kind === 'section');
@@ -642,7 +643,7 @@ test('language-owned field transfer changes actual compiled BT composition witho
 	const resource = { domain: 0 as const, path: 'transfer.lua', source: { type: 'lua' as const, resid: 'transfer' } };
 	for (const inward of [false, true]) {
 		const model = new EditorTextModel(resource, 'lua', BT_ORDER_SOURCE);
-		const definition = buildBehaviorSourceDocument(resource, buildLuaFileSemanticData(BT_ORDER_SOURCE, resource.path)).definitions[0];
+		const definition = buildBehaviorSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(BT_ORDER_SOURCE, resource.path))).definitions[0];
 		assert.ok(definition.behaviorKind === 'behavior_tree' && definition.root?.kind === 'node');
 		const outer = definition.root.branches[0];
 		assert.ok(outer.role === 'children' && outer.source.kind === 'section');
@@ -673,7 +674,7 @@ test('admitted BT transfers compile with actual source sharing and cartlib task 
 	for (const inward of [false, true]) {
 		const model = new EditorTextModel(resource, 'lua', BT_ORDER_SOURCE);
 		const semantic = buildLuaFileSemanticData(BT_ORDER_SOURCE, resource.path);
-		const document = buildBehaviorSourceDocument(resource, semantic);
+		const document = buildBehaviorSourceDocument(resource, semanticSnapshot(semantic));
 		const definition = document.definitions[0];
 		assert.ok(definition.behaviorKind === 'behavior_tree' && definition.root?.kind === 'node');
 		const outer = definition.root.branches[0];
@@ -721,7 +722,7 @@ test('cartlib FSM and behaviour-tree instances retain semantic state across prog
 test('visual initial edits rebind real cartlib definitions without forcing the living machine to restart', () => {
 	const resource = { domain: 0 as const, path: 'initial.lua', source: { type: 'lua' as const, resid: 'initial' } };
 	const model = new EditorTextModel(resource, 'lua', FSM_INITIAL_SOURCE);
-	const document = buildBehaviorSourceDocument(resource, buildLuaFileSemanticData(FSM_INITIAL_SOURCE, resource.path));
+	const document = buildBehaviorSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(FSM_INITIAL_SOURCE, resource.path)));
 	const target = [...indexStateMachineSource(document).initialTargets.values()].find(target => target.name === 'active')!;
 	setStateMachineInitial(model, target);
 	const cpu = createCartlibProgramCpu(`
@@ -833,7 +834,7 @@ return ${FSM_PATH_CASES.length}
 
 test('retarget descriptors compile to the exact cartlib anchor and guarded/concurrent step plan', () => {
 	const resource = { domain: 0 as const, path: 'retarget.lua' };
-	const document = buildBehaviorSourceDocument(resource, buildLuaFileSemanticData(FSM_RETARGET_PATH_SOURCE, resource.path));
+	const document = buildBehaviorSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(FSM_RETARGET_PATH_SOURCE, resource.path)));
 	const definition = document.definitions[0];
 	assert.ok(definition.behaviorKind === 'state_machine');
 	const checks = FSM_RETARGET_PATH_CASES.map((entry, index) => {
@@ -868,7 +869,7 @@ return ${FSM_RETARGET_PATH_CASES.length}
 test('a retargeted callback preserves live rebind identity, dispatch effects, guards and exit/entry ordering', () => {
 	const resource = { domain: 0 as const, path: 'execution.lua', source: { type: 'lua' as const, resid: 'execution' } };
 	const model = new EditorTextModel(resource, 'lua', FSM_RETARGET_EXECUTION_SOURCE);
-	const document = buildBehaviorSourceDocument(resource, buildLuaFileSemanticData(FSM_RETARGET_EXECUTION_SOURCE, resource.path));
+	const document = buildBehaviorSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(FSM_RETARGET_EXECUTION_SOURCE, resource.path)));
 	const definition = document.definitions[0];
 	assert.ok(definition.behaviorKind === 'state_machine');
 	const transition = definition.transitions[0];

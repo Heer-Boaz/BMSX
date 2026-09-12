@@ -60,7 +60,7 @@ export type BehaviorSourceDefinition = BehaviorTreeSourceDefinition | StateMachi
 /** Immutable source topology for one authored Lua document generation. */
 export type BehaviorSourceDocument = {
 	readonly resource: ResourceIdentity;
-	/** Exact binder-file inputs for the source topology, including its registration. */
+	/** Displayed source owners, not a complete cross-generation query-dependency certificate. */
 	readonly files: readonly LuaFileSemanticRevision[];
 	readonly syntaxComplete: boolean;
 	readonly definitions: readonly BehaviorSourceDefinition[];
