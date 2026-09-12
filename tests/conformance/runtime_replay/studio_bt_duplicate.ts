@@ -121,7 +121,8 @@ export async function testStudioBtDuplicate(test: StudioFixture): Promise<void> 
 	await press('ControlLeft', 'KeyZ');
 	const cardPoint = (index: number) => {
 		const node = children()[index];
-		const x = (node.bounds.left + node.bounds.right) / 2 + viewport.bounds.left - viewport.scrollX;
+		// The middle is the new into-parent sector; this test exercises sibling reorder cancellation.
+		const x = node.bounds.left + (node.bounds.right - node.bounds.left) * 0.8 + viewport.bounds.left - viewport.scrollX;
 		const y = node.bounds.top + node.headerHeight / 2 + viewport.bounds.top - viewport.scrollY;
 		return { left: x, right: x, top: y, bottom: y };
 	};

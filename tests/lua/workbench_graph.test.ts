@@ -403,7 +403,7 @@ function dragFixture() {
 	const capture = new PointerCaptureService();
 	const control = new WorkbenchGraphControl(focus, capture, new PointerHoverService());
 	const counts = { starts: 0, overs: 0, drops: 0, current: true };
-	const feedback = { kind: 'node-insertion' as const, source: f.a, marker: { left: 40, top: 10, right: 42, bottom: 30 }, offsetX: 0, offsetY: 0, accepted: false };
+	const feedback = { kind: 'node-insertion' as const, source: f.a, marker: { left: 40, top: 10, right: 42, bottom: 30 }, placement: 'between' as const, offsetX: 0, offsetY: 0, accepted: false };
 	control.setInput(f.view, { begin: () => {
 		counts.starts += 1;
 		return {

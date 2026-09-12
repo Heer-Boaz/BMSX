@@ -314,6 +314,13 @@ De primaire testoracle is onafhankelijke Lua, niet een huidige gameboom.
 
 ### B04 — bronprovenance en invalidatie vóór ruimere authoring
 
+De [same-document B03-dragroute](behavior_tree_reparenting.md) is inmiddels
+gebouwd: vóór/na/in, lege parent, enige child, expliciete bronreview en één
+Undo/Redo met occurrence-selectie. De drie echte rendererflows slagen. Dit is
+geen sluiting van de bredere B04-API-/callcontextgrens of cross-file authoring;
+de nog niet afzonderlijk bewezen reparent-plus-live-Hot-Resume-flow staat bij
+het bewijs, niet verstopt onder de algemene Studio-gate.
+
 Dit is niet een tweede semantic engine in Behavior Lens:
 
 1. Generieke Lua-semantiek levert bron-/bindingfeiten uit het actuele workspace-

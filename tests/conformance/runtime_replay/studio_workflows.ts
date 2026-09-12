@@ -16,6 +16,7 @@ import { testStudioBehaviorImports } from './studio_behavior_imports';
 import { testStudioBtMembership } from './studio_bt_membership';
 import { testStudioBtMoves } from './studio_bt_moves';
 import { testStudioBtDrag } from './studio_bt_drag';
+import { testStudioBtReparent } from './studio_bt_reparent';
 import { testStudioBtRemove } from './studio_bt_remove';
 import { testStudioBtDuplicate } from './studio_bt_duplicate';
 import { testStudioTableTransfer } from './studio_table_transfer';
@@ -348,6 +349,7 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	await testStudioBtMembership(test);
 	await testStudioBtMoves(test);
 	await testStudioBtDrag(test);
+	await testStudioBtReparent(test);
 	await testStudioBtRemove(test);
 	await testStudioBtDuplicate(test);
 	await testStudioTableTransfer(test);

@@ -10,7 +10,7 @@ import { installBehaviorLensDocument, prepareBehaviorLensLayout, selectBehaviorL
 import { buildBehaviorSourceDocument } from '../../ide/workbench/contrib/behavior_lens/recognizer';
 import { mapBehaviorLensSourceRanges } from '../../ide/workbench/contrib/behavior_lens/source_correspondence';
 import { createBehaviorLensViewState } from '../../ide/workbench/contrib/behavior_lens/view_model';
-import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
+import { buildLuaFileSemanticData, type FileSemanticData } from '../../toolchain/ts/lua/semantic/model';
 import { BT_ORDER_SOURCE } from './behavior_order_fixture';
 
 export function createBehaviorTreeEditFixture(t: TestContext, source = BT_ORDER_SOURCE, definition = 0) {
@@ -19,7 +19,11 @@ export function createBehaviorTreeEditFixture(t: TestContext, source = BT_ORDER_
 	t.after(() => Object.assign(editorViewState, previous));
 	Object.assign(editorViewState, { font: new EditorFont('tiny'), viewportWidth: 384, viewportHeight: 288, lineHeight: 6, codeAreaTop: 24, codeAreaBottom: 276 });
 	const model = new EditorTextModel({ domain: 0, path: 'order.lua', source: { type: 'lua', resid: 'order' } }, 'lua', source);
-	const project = () => buildBehaviorSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(model.buffer.getText(), model.resource.path)));
+	let analysis: FileSemanticData;
+	const project = () => {
+		analysis = buildLuaFileSemanticData(model.buffer.getText(), model.resource.path);
+		return buildBehaviorSourceDocument(model.resource, semanticSnapshot(analysis));
+	};
 	const document = project();
 	const view = createBehaviorLensViewState(document, model, 'graph', assert.fail);
 	model.onDidChangeContent(event => mapBehaviorLensSourceRanges(view, model.resource, event));
@@ -42,5 +46,6 @@ export function createBehaviorTreeEditFixture(t: TestContext, source = BT_ORDER_
 		moveBehaviorTreeChild(model, member, member.index + direction);
 		refresh();
 	};
-	return { model, view, graph, viewport, refresh, select, move };
+	t.after(() => { view.source.release(); model.dispose(); });
+	return { model, view, graph, viewport, refresh, select, move, get analysis() { return analysis; } };
 }

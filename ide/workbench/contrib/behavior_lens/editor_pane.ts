@@ -31,7 +31,9 @@ import { BehaviorLensPointer, BehaviorLensPointerResult } from './pointer';
 import { WorkbenchPropertyTreePointer, WorkbenchPropertyPointerResult } from '../../ui/property_tree_pointer';
 import { acceptEffectPropertySelection } from './action_effect_properties';
 import { finishBehaviorLensNavigation } from './navigation';
-import { beginBehaviorTreeDrag } from './behavior_tree_drag';
+import type { BehaviorTreeTransferDrop } from './behavior_tree_drag';
+import { behaviorTreeTransferImpacts } from './behavior_tree_review';
+import { transferBehaviorTreeChild } from './behavior_tree_edit';
 import { beginStateMachineDrag, stateMachineConnectionEnds, type StateMachineRetargetDrop } from './state_machine_drag';
 import { retargetStateMachineTransition } from './state_machine_edit';
 import { stateMachineRetargetImpacts } from './state_machine_review';
@@ -71,7 +73,18 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		connectionEnds: edge => stateMachineConnectionEnds(this.input.workingCopy, this.input.view, edge),
 		begin: start => beginStateMachineDrag(this.input.workingCopy, this.input.view, start, this.stateMachineDrop),
 	};
-	private readonly graphDragSource = { begin: () => beginBehaviorTreeDrag(this.input.workingCopy, this.input.view) };
+	private readonly treeDrop: BehaviorTreeTransferDrop = (analysis, insertion, check) => {
+		const input = this.input;
+		const items = behaviorTreeTransferImpacts(input.view, analysis, insertion, check);
+		const lifetime = this.sourceEditReview.show({
+			model: input.workingCopy, title: 'MOVE BT SOURCE', summary: `${analysis.member.branch.role} -> ${check.target.role} POSITION ${insertion + 1}`,
+			items,
+			apply: () => transferBehaviorTreeChild(input.workingCopy, input.view, analysis.member, check, insertion),
+			openSource: index => this.controller.openWrittenSource(input, items[index].range),
+		});
+		lifetime.add({ dispose: input.view.source.onDidInvalidate(() => this.sourceEditReview.clear()) });
+	};
+	private readonly graphDragSource = { begin: () => this.controller.beginTreeDrag(this.input, this.treeDrop) };
 	private readonly unbindPointerBlur = this.focusTarget.onDidBlur(() => {
 		this.pointer.cancel();
 		this.properties.cancel();

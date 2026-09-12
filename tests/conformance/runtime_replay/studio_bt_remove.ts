@@ -167,9 +167,10 @@ export async function testStudioBtRemove(test: StudioFixture): Promise<void> {
 	// not reapply the old drag payload to the changed list.
 	const cardPoint = (index: number) => {
 		const node = children()[index];
-		const x = node.bounds.left + node.bounds.right;
+		// Use the after-member sector; the middle now means inside a parent.
+		const x = node.bounds.left + (node.bounds.right - node.bounds.left) * 0.8;
 		const y = node.bounds.top + node.headerHeight / 2;
-		return { left: x / 2 + viewport.bounds.left - viewport.scrollX, right: x / 2 + viewport.bounds.left - viewport.scrollX,
+		return { left: x + viewport.bounds.left - viewport.scrollX, right: x + viewport.bounds.left - viewport.scrollX,
 			top: y + viewport.bounds.top - viewport.scrollY, bottom: y + viewport.bounds.top - viewport.scrollY };
 	};
 	for (const removeWhileHeld of [false, true]) {

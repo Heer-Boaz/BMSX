@@ -38,6 +38,10 @@ import type { BehaviorInspectionProperty } from './inspection';
 import { behaviorTreeEditTarget, behaviorTreeMoveTarget, duplicateBehaviorTreeChild, moveBehaviorTreeChild, removeBehaviorTreeChild } from './behavior_tree_edit';
 import type { StateMachinePathUse } from './state_machine_retarget';
 import { setStateMachineInitial, stateMachineInitialTarget } from './state_machine_initial';
+import { getOrCreateSemanticProject } from '../../../editor/contrib/intellisense/semantic/workspace/state';
+import { beginBehaviorTreeDrag, type BehaviorTreeTransferDrop } from './behavior_tree_drag';
+import type { WorkbenchGraphDragSession } from '../../ui/graph/drag';
+import type { LuaSourceRange } from '../../../../toolchain/ts/lua/syntax/ast';
 
 const PICKER_TITLES: Readonly<Record<BehaviorKind, string>> = {
 	action_effect: 'ACTIONEFFECTS',
@@ -148,10 +152,20 @@ export class BehaviorLensController {
 			}
 			finishBehaviorLensNavigation(view);
 		}
-		const range = detail.range!;
+		this.openWrittenSource(input, detail.range!);
+	}
+
+	public openWrittenSource(input: BehaviorLensInput, range: LuaSourceRange): void {
+		const view = input.view;
 		this.navigation.focusChunkSourceForContext(view.resource.domain, range.path, {
 			row: range.start.line - 1, startColumn: range.start.column - 1, endColumn: range.start.column - 1,
 		});
+	}
+
+	/** Gesture activation takes current language facts; hover never asks the workspace. */
+	public beginTreeDrag(input: BehaviorLensInput, transfer: BehaviorTreeTransferDrop): WorkbenchGraphDragSession | undefined {
+		const file = getOrCreateSemanticProject(input.view.resource.domain).getSnapshot().getFileData(input.workingCopy.resource.path)!;
+		return beginBehaviorTreeDrag(input.workingCopy, input.view, file, transfer);
 	}
 
 	public canMoveSelectedChild(direction: -1 | 1): boolean {

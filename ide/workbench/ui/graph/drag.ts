@@ -7,6 +7,7 @@ export type WorkbenchGraphNodeDragFeedback = {
 	readonly kind: 'node-insertion';
 	readonly source: WorkbenchGraphNode;
 	readonly marker: RectBounds;
+	placement: 'between' | 'inside';
 	offsetX: number;
 	offsetY: number;
 	accepted: boolean;

@@ -27,9 +27,12 @@ export function drawWorkbenchGraphNodeDrag(drag: WorkbenchGraphNodeDragFeedback,
 		const marker = drag.marker;
 		const x = view.graphToViewportX(marker.left);
 		const top = view.graphToViewportY(marker.top), bottom = view.graphToViewportY(marker.bottom);
-		api.fill_rect(x, top, x + 2, bottom, 0, color);
-		api.fill_rect(x - 2, top, x + 4, top + 2, 0, color);
-		api.fill_rect(x - 2, bottom - 2, x + 4, bottom, 0, color);
+		if (drag.placement === 'inside') api.blit_rect(x, top, view.graphToViewportX(marker.right), bottom, 0, color);
+		else {
+			api.fill_rect(x, top, x + 2, bottom, 0, color);
+			api.fill_rect(x - 2, top, x + 4, top + 2, 0, color);
+			api.fill_rect(x - 2, bottom - 2, x + 4, bottom, 0, color);
+		}
 	}
 }
 

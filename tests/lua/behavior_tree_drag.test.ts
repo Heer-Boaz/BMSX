@@ -20,7 +20,7 @@ test('every sibling insertion sector normalizes once, with no preview edit and o
 				const originalGraph = f.viewport.model;
 				const children = originalGraph.nodes[0].children[0].children;
 				const originalEntries = children.map(node => readLuaSourceRange(f.model.buffer, node.source.occurrenceRange));
-				const drag = beginBehaviorTreeDrag(f.model, f.view)!;
+				const drag = beginBehaviorTreeDrag(f.model, f.view, f.analysis, () => assert.fail('unexpected list transfer'))!;
 				let changes = 0;
 				f.model.onDidChangeContent(() => { changes += 1; });
 				const insertion = target + (before ? 0 : 1);
@@ -52,7 +52,7 @@ test('weighted cards and incoming routes drag the whole choice, not a detached c
 	for (const edge of [false, true]) {
 		const f = fixture(t, BT_ORDER_SOURCE, 2);
 		f.select(2, edge);
-		const drag = beginBehaviorTreeDrag(f.model, f.view)!;
+		const drag = beginBehaviorTreeDrag(f.model, f.view, f.analysis, () => assert.fail('unexpected list transfer'))!;
 		drag.dragOver(...over(f, f.viewport.model.nodes[0].children[0].children[0], true));
 		assert.equal(drag.feedback.accepted, true);
 		drag.drop(); f.refresh();
@@ -63,17 +63,17 @@ test('weighted cards and incoming routes drag the whole choice, not a detached c
 	}
 });
 
-test('root, descendants, another occurrence of the same list, empty space and routes are not sibling drop targets', t => {
+test('different parents use real source lists; unchanged shared positions, definition cards and routes are not targets', t => {
 	const f = fixture(t, BT_ORDER_SOURCE.replace('make_node(3) -- last inline', 'nested -- last inline'));
 	f.select(1);
 	f.select(2);
 	const children = f.viewport.model.nodes[0].children[0].children;
 	f.viewport.selection = children[1].children[0];
-	const drag = beginBehaviorTreeDrag(f.model, f.view)!;
-	for (const node of [f.viewport.model.nodes[0], children[0], children[1], children[2].children[1]]) {
+	const drag = beginBehaviorTreeDrag(f.model, f.view, f.analysis, () => assert.fail('unexpected list transfer'))!;
+	for (const [node, accepted] of [[f.viewport.model.nodes[0], false], [children[0], true], [children[1], true], [children[2].children[1], false]] as const) {
 		f.viewport.reveal(node);
 		drag.dragOver(...over(f, node, true));
-		assert.equal(drag.feedback.accepted, false);
+		assert.equal(drag.feedback.accepted, accepted);
 	}
 	const sibling = children[1].children[1];
 	f.viewport.reveal(sibling);
@@ -91,18 +91,18 @@ test('root, descendants, another occurrence of the same list, empty space and ro
 test('source generation and readonly invalidate an in-flight source payload independently of layout refresh', t => {
 	const f = fixture(t);
 	f.select(0);
-	const drag = beginBehaviorTreeDrag(f.model, f.view)!;
+	const drag = beginBehaviorTreeDrag(f.model, f.view, f.analysis, () => assert.fail('unexpected list transfer'))!;
 	assert.ok(drag.isCurrent());
 	const resource = f.model.resource;
 	f.model.refreshResource({ ...resource, source: { ...resource.source, generated: true } });
 	assert.equal(drag.isCurrent(), false);
-	assert.equal(beginBehaviorTreeDrag(f.model, f.view), undefined);
+	assert.equal(beginBehaviorTreeDrag(f.model, f.view, f.analysis, () => assert.fail('unexpected list transfer')), undefined);
 	f.model.refreshResource(resource);
 	f.model.pushEditOperations([{ offset: f.model.buffer.length, deleteLength: 0, text: '\n@' }]);
 	assert.equal(drag.isCurrent(), false);
-	assert.equal(beginBehaviorTreeDrag(f.model, f.view), undefined, 'old syntax does not admit a new drag');
+	assert.equal(beginBehaviorTreeDrag(f.model, f.view, f.analysis, () => assert.fail('unexpected list transfer')), undefined, 'old syntax does not admit a new drag');
 	f.refresh(); f.select(0);
-	assert.equal(beginBehaviorTreeDrag(f.model, f.view), undefined, 'recovered syntax is not an editable complete constructor');
+	assert.equal(beginBehaviorTreeDrag(f.model, f.view, f.analysis, () => assert.fail('unexpected list transfer')), undefined, 'recovered syntax is not an editable complete constructor');
 });
 
 test('unknown, keyed, mutated lists and parallel roles expose navigation but no drag source', t => {
@@ -116,7 +116,7 @@ test('unknown, keyed, mutated lists and parallel roles expose navigation but no 
 		const f = fixture(t, source);
 		for (const node of f.viewport.model.nodes) {
 			f.viewport.selection = node;
-			assert.equal(beginBehaviorTreeDrag(f.model, f.view), undefined);
+			assert.equal(beginBehaviorTreeDrag(f.model, f.view, f.analysis, () => assert.fail('unexpected list transfer')), undefined);
 		}
 	}
 });

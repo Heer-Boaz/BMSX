@@ -204,3 +204,15 @@ test('syntax recovery is not admission and a new source generation gets a new op
 	assert.deepEqual(recovered.transfer.checkTarget(rootList(recovered.document, 1)), { kind: 'unavailable', reason: 'syntax-incomplete' });
 	assert.equal(first.model.dirty, false);
 });
+
+test('an imported destination requires a real multi-resource operation rather than writing it through the current buffer', () => {
+	const file = buildLuaFileSemanticData(`${prelude}
+trees.register('from', {root={type='sequence',children={leaf}}})
+trees.register('to', require('target'))`, 'from.lua');
+	const provider = buildLuaFileSemanticData("return {root={type='sequence',children={}}}", 'target.lua');
+	const document = buildBehaviorSourceDocument({domain:0,path:file.file}, semanticSnapshot(file, provider));
+	const branch = rootList(document, 0);
+	assert.ok(branch.source.kind === 'section');
+	const analysis = new BehaviorTreeTransferAnalysis(document, file, { table: branch.source.table, branch, index: 0 });
+	assert.deepEqual(analysis.checkTarget(rootList(document, 1)), { kind: 'unavailable', reason: 'different-write-resource' });
+});

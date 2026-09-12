@@ -12,10 +12,11 @@ export type BehaviorTreeSourceListUse = {
 };
 
 export type BehaviorTreeTransferRejection = 'syntax-incomplete' | 'list-incomplete' | 'owner-incomplete'
-	| 'shared-role-conflict' | 'different-list-role' | 'same-list' | 'target-inside-source' | 'cycle' | 'subtree-incomplete';
+	| 'shared-role-conflict' | 'different-list-role' | 'different-write-resource' | 'same-list' | 'target-inside-source' | 'cycle' | 'subtree-incomplete';
 
 export type BehaviorTreeTransferCheck =
-	| { readonly kind: 'available'; readonly targetUses: readonly BehaviorTreeSourceListUse[] }
+	| { readonly kind: 'available'; readonly target: BehaviorTreeSourceList; readonly table: LuaTableConstructorExpression;
+		readonly targetUses: readonly BehaviorTreeSourceListUse[] }
 	| { readonly kind: 'unavailable'; readonly reason: BehaviorTreeTransferRejection }
 	| { readonly kind: 'binding-change'; readonly changes: readonly LuaRelocationBindingChange[] };
 
@@ -43,7 +44,7 @@ export class BehaviorTreeTransferAnalysis {
 	private readonly subtreeComplete: boolean;
 	private readonly bindings: LuaRelocationAnalysis;
 
-	public constructor(private readonly document: BehaviorSourceDocument, analysis: FileSemanticData,
+	public constructor(private readonly document: BehaviorSourceDocument, public readonly file: FileSemanticData,
 		public readonly member: BehaviorTreeSourceMember) {
 		const uses: BehaviorTreeSourceListUse[] = [];
 		for (const definition of document.definitions) {
@@ -65,7 +66,7 @@ export class BehaviorTreeTransferAnalysis {
 		}
 		this.sourceUses = this.consumers.get(member.table)!.uses;
 		const entry = member.branch.entries[member.index];
-		this.bindings = new LuaRelocationAnalysis(analysis, entry.field.range);
+		this.bindings = new LuaRelocationAnalysis(file, entry.field.range);
 		const node = entry.node;
 		this.subtreeComplete = node.kind === 'section'
 			? (node.issues & ambiguousTopology) === 0 && collectSubtreeLists(node.child, this.subtreeLists, new Set())
@@ -85,6 +86,7 @@ export class BehaviorTreeTransferAnalysis {
 	private computeTarget(target: BehaviorTreeSourceList): BehaviorTreeTransferCheck {
 		if (!this.document.syntaxComplete) return { kind: 'unavailable', reason: 'syntax-incomplete' };
 		if (target.source.kind === 'dynamic') return { kind: 'unavailable', reason: 'list-incomplete' };
+		if (target.source.table.range.path !== this.member.table.range.path) return { kind: 'unavailable', reason: 'different-write-resource' };
 		const targetConsumers = this.consumers.get(target.source.table)!;
 		const sourceIssue = this.consumers.get(this.member.table)!.issue;
 		if (sourceIssue !== undefined) return { kind: 'unavailable', reason: sourceIssue };
@@ -99,7 +101,7 @@ export class BehaviorTreeTransferAnalysis {
 		if (!this.subtreeComplete) return { kind: 'unavailable', reason: 'subtree-incomplete' };
 		const changes = this.bindings.getBindingChangesAt(target.source.table.range.end);
 		if (changes.length !== 0) return { kind: 'binding-change', changes };
-		return { kind: 'available', targetUses: targetConsumers.uses };
+		return { kind: 'available', target, table: target.source.table, targetUses: targetConsumers.uses };
 	}
 }
 

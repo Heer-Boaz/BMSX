@@ -23,7 +23,8 @@ Object.assign(editorViewState, { font: new EditorFont('tiny'), viewportWidth: 38
 for (const siblings of [24, 1024]) {
 	const source = `local trees<const> = require('cartlib/behaviour_tree/library')\nlocal child<const> = { type = 'wait', duration_ticks = 2 }\ntrees.register('profile', { root = { type = 'sequence', children = { ${'child,'.repeat(siblings)} } } })`;
 	const model = new EditorTextModel({ domain: 0, path: 'drag.lua', source: { type: 'lua', resid: 'drag' } }, 'lua', source);
-	const document = buildBehaviorSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(source, model.resource.path)));
+	const analysis = buildLuaFileSemanticData(source, model.resource.path);
+	const document = buildBehaviorSourceDocument(model.resource, semanticSnapshot(analysis));
 	const state = createBehaviorLensViewState(document, model, 'graph', assert.fail);
 	selectBehaviorLensDefinition(state, document.definitions[0].rowKey);
 	prepareBehaviorLensLayout(state);
@@ -39,7 +40,7 @@ for (const siblings of [24, 1024]) {
 	viewport.hitTest = (x, y) => { hits += 1; return hitTest(x, y); };
 	const capture = new PointerCaptureService();
 	const control = new WorkbenchGraphControl(new InputFocusService(), capture, new PointerHoverService());
-	control.setInput(viewport, { begin: () => { starts += 1; return beginBehaviorTreeDrag(model, state); } });
+	control.setInput(viewport, { begin: () => { starts += 1; return beginBehaviorTreeDrag(model, state, analysis, () => assert.fail('unexpected list transfer')); } });
 	const from = { viewportX: viewport.bounds.left + 20, viewportY: viewport.bounds.top + 34, valid: true, insideViewport: true, pressedButtons: PointerButton.Primary, justPressedButtons: 0, justReleasedButtons: 0 };
 	const to = { ...from, viewportX: second.bounds.right - 4 + viewport.bounds.left - viewport.scrollX };
 	const alternate = { ...to, viewportX: to.viewportX - 2 };
