@@ -19,6 +19,7 @@ import {
 	type LuaFunctionExpression,
 	type LuaForGenericStatement,
 	type LuaTableConstructorExpression,
+	type LuaTableIdentifierField,
 	type LuaStructDeclarationStatement,
 	type LuaBssDeclarationStatement,
 	type LuaDataDeclarationStatement,
@@ -1309,8 +1310,7 @@ class SemanticBuilder {
 					const namePath = basePath ? appendToNamePath(basePath, field.name) : [field.name];
 					const decl = this.ensureTableField(
 						namePath,
-						field.range.start,
-						field.name.length,
+						field,
 						baseDecl,
 						context.tableOwner,
 					);
@@ -1338,8 +1338,7 @@ class SemanticBuilder {
 							: [field.key.value];
 						const decl = this.ensureTableField(
 							namePath,
-							field.key.range.start,
-							field.key.value.length,
+							field.key,
 							context.tableBaseDecl,
 							context.tableOwner,
 						);
@@ -1472,20 +1471,16 @@ class SemanticBuilder {
 		const baseDecl = baseInfo.decl;
 		const memberName = member.member.name;
 		const namePath = basePath ? appendToNamePath(basePath, memberName) : [memberName];
-		const range = member.member.range;
 		const decl = this.ensureTableField(
 			namePath,
-			range.start,
-			memberName.length,
+			member.member,
 			baseDecl,
 			baseInfo.valueSource,
-			member.member,
 		);
 		this.recordReference({
 			syntax: member.member,
 			namePath,
 			name: memberName,
-			range,
 			target: decl.id,
 			isWrite: true,
 			referenceKind: 'member',
@@ -1511,15 +1506,14 @@ class SemanticBuilder {
 			const fieldPath = namePath ? appendToNamePath(namePath, fieldName) : [fieldName];
 			const decl = this.ensureTableField(
 				fieldPath,
-				indexExpression.index.range.start,
-				fieldName.length,
+				indexExpression.index,
 				baseInfo.decl,
 				baseInfo.valueSource,
 			);
 			this.recordReference({
+				syntax: indexExpression.index,
 				namePath: fieldPath,
 				name: fieldName,
-				range: indexExpression.index.range,
 				target: decl.id,
 				isWrite: true,
 				referenceKind: 'member',
@@ -1555,7 +1549,6 @@ class SemanticBuilder {
 		);
 		const methodName = method.name;
 		const namePath = basePath ? appendToNamePath(basePath, methodName) : [methodName];
-		const range = method.range;
 		const decl = this.resolveMemberDeclaration(
 			calleeInfo.valueSource,
 			methodName,
@@ -1567,7 +1560,6 @@ class SemanticBuilder {
 			syntax: method,
 			namePath,
 			name: methodName,
-			range,
 			target: targetId,
 			isWrite: false,
 			referenceKind: 'method',
@@ -1611,7 +1603,6 @@ class SemanticBuilder {
 			syntax: identifier,
 			namePath,
 			name: identifier.name,
-			range,
 			target: decl?.id,
 			isWrite,
 			referenceKind: binding?.kind === 'receiver' ? 'self' : 'identifier',
@@ -1642,7 +1633,6 @@ class SemanticBuilder {
 		const basePath = resolveReferencedBasePath(baseInfo, member.base);
 		const memberName = member.member.name;
 		const namePath = basePath ? appendToNamePath(basePath, memberName) : [memberName];
-		const range = member.member.range;
 		const decl = this.resolveMemberDeclaration(
 			baseInfo.valueSource,
 			memberName,
@@ -1653,7 +1643,6 @@ class SemanticBuilder {
 			syntax: member.member,
 			namePath,
 			name: memberName,
-			range,
 			target: targetId,
 			isWrite,
 			referenceKind: 'member',
@@ -1856,11 +1845,9 @@ class SemanticBuilder {
 
 	private ensureTableField(
 		namePath: readonly string[],
-		start: SourcePosition,
-		length: number,
+		syntax: LuaIdentifierExpression | LuaStringLiteralExpression | LuaTableIdentifierField,
 		baseDecl: InternalDecl,
 		owner: SemanticValueSource,
-		syntax?: LuaIdentifierExpression,
 	): InternalDecl {
 		const key = joinNamePath(namePath);
 		const name = namePath[namePath.length - 1];
@@ -1881,10 +1868,12 @@ class SemanticBuilder {
 			return existing;
 		}
 		const scope = baseDecl ? baseDecl.scopeRef : this.currentScope();
-		const range = buildRangeFromPosition(start, length, this.path);
+		const range = syntax.kind === LuaTableFieldKind.IdentifierKey
+			? buildRangeFromPosition(syntax.range.start, syntax.name.length, this.path)
+			: syntax.range;
 		const isGlobal = baseDecl ? baseDecl.isGlobal : scope.kind === 'path' && namePath.length > 1;
 		const decl = this.createDecl({
-			syntax,
+			syntax: syntax.kind === LuaSyntaxKind.IdentifierExpression ? syntax : undefined,
 			namePath: namePath,
 			name,
 			kind: 'property',
@@ -1901,7 +1890,10 @@ class SemanticBuilder {
 		if (isGlobal) {
 			this.globalsByKey.set(key, decl);
 		}
-		this.recordDefinitionAnnotation(decl);
+		// A quoted key binds a property but is still a string token in source.
+		if (syntax.kind !== LuaSyntaxKind.StringLiteralExpression) {
+			this.recordDefinitionAnnotation(decl);
+		}
 		if (owner) {
 			this.recordMemberValue({
 				declId: decl.id,
@@ -2010,10 +2002,9 @@ class SemanticBuilder {
 	}
 
 	private recordReference(options: {
-		syntax?: LuaIdentifierExpression;
+		syntax: LuaIdentifierExpression | LuaStringLiteralExpression;
 		namePath: readonly string[];
 		name: string;
-		range: LuaSourceRange;
 		target?: SymbolID;
 		isWrite: boolean;
 		referenceKind: 'identifier' | 'self' | 'member' | 'method';
@@ -2023,13 +2014,12 @@ class SemanticBuilder {
 		receiverValue?: SemanticValueSource;
 		isCall?: boolean;
 	}): Ref {
-		const targetDecl = options.target ? this.declById.get(options.target) : null;
 		const ref: Ref = {
 			file: this.path,
 			name: options.name,
 			namePath: options.namePath.slice(),
 			symbolKey: joinNamePath(options.namePath),
-			range: options.range,
+			range: options.syntax.range,
 			isWrite: options.isWrite,
 			isCall: !!options.isCall,
 			referenceKind: options.referenceKind,
@@ -2051,8 +2041,11 @@ class SemanticBuilder {
 			ref.target = options.target;
 		}
 		this.refs.push(ref);
-		if (options.syntax !== undefined) {
+		if (options.syntax.kind === LuaSyntaxKind.IdentifierExpression) {
 			this.referencesBySyntax.set(options.syntax, ref);
+			const targetDecl = options.target ? this.declById.get(options.target) : null;
+			const kind = targetDecl ? targetDecl.kind : inferReferenceKind(ref);
+			this.annotate(ref.range, options.syntax.name.length, kind, 'usage');
 		}
 		let references = this.referencesByName.get(ref.name);
 		if (!references) {
@@ -2060,8 +2053,6 @@ class SemanticBuilder {
 			this.referencesByName.set(ref.name, references);
 		}
 		references.push(ref);
-		const kind = targetDecl ? targetDecl.kind : inferReferenceKind(ref);
-		this.annotate(ref.range, ref.name.length, kind, 'usage');
 		return ref;
 	}
 
@@ -2090,7 +2081,6 @@ class SemanticBuilder {
 				syntax: identifier,
 				namePath,
 				name,
-				range: identifier.range,
 				target: targetDecl?.id,
 				isWrite: false,
 				referenceKind: index === 0 ? 'identifier' : 'member',
@@ -2107,7 +2097,6 @@ class SemanticBuilder {
 			syntax: declarationName,
 			namePath: decl.namePath,
 			name: decl.name,
-			range: declarationName.range,
 			target: decl.id,
 			isWrite: true,
 			referenceKind: method ? 'method' : 'member',

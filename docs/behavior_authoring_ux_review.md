@@ -42,11 +42,27 @@ UX-verbeteringen hoeven daarop niet te wachten.
   geen tussentijdse herbouw die de lopende Studio-slice onderbreekt.
 - Syntaxkleur/casing (gebruikersfeedback 2026-09-12): stringwaarden, onder meer
   FSM-keys, hebben een verkeerd gekleurde/gecasede prefix; de laatste letter en
-  sluitende quote worden juist wel correct weergegeven. Nog niet bevestigd of
-  de actuele versie dit oplost. Reproduceer met een onafhankelijke Lua-fixture
-  en toets token-/semantic ranges, tekstkleur-runs en casing aan dezelfde bron-
-  offsets, ook na edits/Undo. Geen renderer- of semantic-root-cause aannemen en
-  niet als opgelost afboeken op basis van alleen andere navigatieproeven.
+  sluitende quote worden juist wel correct weergegeven. **Bevestigd en bij de
+  binder hersteld:** `'idle'` werd `'IDLe'` doordat een property-annotatie vanaf
+  de openingsquote de lengte van de gedecodeerde waarde gebruikte. De binder
+  consumeert nu de daadwerkelijke key-syntax: een string bindt een property,
+  maar wordt geen identifier-token; declaratie-/referentiebereiken behouden de
+  volledige raw spelling. Geen rendererfilter of extra syntaxscan. Dit volgt
+  het onderscheid tussen `field` en `string` in
+  [LuaLS semantic tokens](https://github.com/LuaLS/lua-language-server/blob/7a73c7889c1ec981dfd76fba38f5096379f62f99/script/core/semantic-tokens.lua).
+  Negen onafhankelijke proeven in `tests/lua/syntax_highlight.test.ts` dekken
+  constructor/write/read, escapes, lege/lange keys, multiline bronbereiken en
+  dot-member-navigatie. Acht daarvan falen op `c7e05bc88`; alle negen slagen na
+  de fix. `studio_syntax_highlight.ts` gebruikt het bestaande browserharnas
+  voor echte semantische publicatie, Paste/Edit/Undo en retained highlightdata.
+- Rename-broncontract (**open**, aansluitende ownerreview): `commitRename` en
+  `CrossFileRenameManager` gebruiken navigatiebereiken als kale naamvervanging.
+  Een tijdelijke variant van de bestaande cross-file-proef reproduceert
+  `state['value']` → `state[worldState]`, zowel vóór als na de kleurfix. Dit is
+  geen reden om string-bereiken fout of onvolledig te houden. Herontwerp de
+  rename-editproducer rond syntactische occurrences, inclusief quoted keys,
+  escapes, multiline ranges en samenlopende declaration/reference-ranges;
+  de renderer en generieke documenthistorie zijn hiervoor niet de owner.
 - Capture-review van de bronherkomstslice: in de bestaande Scene/Problems-
   eindcapture lopen scheidingslijnen door de diagnosticregels. De capture is
   ongewijzigd ten opzichte van de vorige slice; de groene workflowtest bewijst
@@ -57,6 +73,18 @@ UX-verbeteringen hoeven daarop niet te wachten.
   of Scene-layout is hiervoor niet aangepast.
 
 Deze vervolgpunten onderbreken het lopende bronherkomstwerk niet.
+
+Kleurfix-validatie: volledige Lua-suite **1.668 geslaagd / 1 bestaande skip**;
+toolchain- en IDE-typechecks geslaagd; de tests-typecheck heeft dezelfde 51
+bestaande diagnosticblokken. Strict boundaries, core parity en indent geslaagd.
+De volledige browserworkflow slaagt op software, WebGL2 en WebGPU, inclusief
+de nieuwe string-key-/Edit-/Undo-proef; de productbuild is opnieuw gemaakt.
+Drie afwisselende, geïsoleerde baseline/current-metingen op dezelfde 191
+workspacebestanden: binding-mediaan 259,913 → 263,763 ms (ranges overlappen),
+koude symbolquery 248,599 → 249,242 ms; alle query-werkaantallen gelijk. Dit is
+geen latencyverbetering of sluiting van B04. De fix voegt geen per-framepass toe
+en hergebruikt parserranges in plaats van nieuwe ranges voor member-/stringkeys.
+Reproducties, metingen en validatielogs: `/tmp/bmsx-string-keys/`.
 
 ## 1. Wat daadwerkelijk ontbreekt
 

@@ -43,6 +43,7 @@ import { hidKeyUsageForCode } from '../../../hosts/common/input/hid_keys';
 import { check, type StudioFixture } from './studio_fixture';
 import { testSceneSourceEdits } from './studio_scene_source';
 import { testSourceFormatting } from './studio_source_formatting';
+import { testStudioSyntaxHighlight } from './studio_syntax_highlight';
 import { testStudioFocus } from './studio_focus';
 import { testStudioQuickPick } from './studio_quick_pick';
 import { editorSearchState } from '../../../ide/workbench/contrib/code_editor/find/widget_state';
@@ -333,6 +334,7 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	await testCapturedSourceApply(test);
 	await testAemSourceApplication(test);
 	await testSourceFormatting(test);
+	await testStudioSyntaxHighlight(test);
 	await testSceneSourceTree(test);
 	await testStudioQuickPick(test);
 	await testStudioNavigation(test);

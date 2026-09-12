@@ -4504,6 +4504,13 @@ source ranges, start-position fallbacks, or synthesized references. Source
 ranges remain the correct boundary for cursor- and protocol-originated queries,
 where no syntax node exists at the callsite.
 
+A property's binding kind does not change the lexical kind of its written key.
+Quoted and long-string keys retain their full parser-owned source range for
+declarations and references, but emit no identifier-color annotation. Decoded
+string length is never a source span. The IDE's lexical string coloring and
+casing therefore remain intact without a renderer override or a second syntax
+scan to repair binder output.
+
 Every function body has its own expression value, distinct from the declaration
 that may store it. Its immutable function-flow facts retain the actual function
 expression, explicit named binding and written return statements. Summaries
