@@ -106,6 +106,15 @@ Event/input plans are inspected as compiled values, never decompiled into
 authored paths. Both picker scopes use the same suspended lifetime; no guest
 storage or execution change. See [FSM runtime inspection](../docs/state_machine_runtime_inspection.md).
 
+`Behavior Lens: Inspect Registered Definitions` separately reads the existing
+FSM/ActionEffect definition registries, including entries with no instances.
+The contribution knows the library storage; the generic Lua inspection owner
+resolves module-qualified captures using installed symbols and the current
+instruction bus. The mirrored CPU debugger read consumes an actual open/closed
+cell without invoking the setter. The catalog reuses the instance inspector's
+definition-property projection and suspended lifetime, not a second data model.
+See [registered definitions](../docs/behavior_definition_catalog.md).
+
 Callback source uses the actual closure address and CPU instruction-bus mapping;
 the two sockets can contain different functions at the same address. It describes
 the current call target, not allocation origin. The current text must match the

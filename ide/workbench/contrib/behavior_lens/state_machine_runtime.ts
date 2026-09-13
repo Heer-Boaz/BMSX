@@ -6,6 +6,7 @@ import type { QuickPickItem } from '../../services/quick_input/provider';
 import type { BehaviorInspectionProperty } from './inspection';
 import { visitRuntimeComponents } from './runtime_components';
 import { inspectBehaviorRuntimeValue } from './runtime_properties';
+import type { BehaviorDefinitionChoice } from './runtime_definitions';
 
 /** Both choices borrow actual instances, never inferred source/definition ids. */
 export type StateMachineInstanceChoice = QuickPickItem & { readonly component: Table; readonly machine: Table };
@@ -26,16 +27,28 @@ export function readStateMachineInstances(sources: RuntimeSourceState, guest: Su
 /** Only the chosen machine's retained hierarchy. No traversal of other actors' states or parent/root links. */
 export function readStateMachineStates(guest: SuspendedGuestSession, machine: Table): StateMachineStateChoice[] {
 	const items: StateMachineStateChoice[] = [];
-	function visit(state: Table): void {
+	visitStateMachineHierarchy(guest, machine, state => {
 		const current = guest.readStringMember(state, 'current_id');
 		items.push({ label: guest.formatValue(guest.readStringMember(state, 'id')),
 			description: current === null ? '' : `CURRENT CHILD: ${guest.formatValue(current)}`, detail: '', state });
-		const states = guest.readStringMember(state, 'states') as Table;
-		const ids = guest.readStringMember(state, 'state_ids') as Table;
-		for (let i = 1; i <= ids.arrayLength; i += 1) visit(states.get(ids.getInteger(i)) as Table);
-	}
-	visit(machine);
+	});
 	return items;
+}
+
+export function readStateMachineDefinitionStates(guest: SuspendedGuestSession, root: Table): BehaviorDefinitionChoice[] {
+	const items: BehaviorDefinitionChoice[] = [];
+	visitStateMachineHierarchy(guest, root, definition => {
+		items.push({ label: guest.formatValue(guest.readStringMember(definition, 'def_id')), description: '', detail: '', definition });
+	});
+	return items;
+}
+
+/** Both retained cartlib hierarchies use explicit child ids; never follow their parent/root backlinks. */
+function visitStateMachineHierarchy(guest: SuspendedGuestSession, state: Table, visit: (state: Table) => void): void {
+	visit(state);
+	const states = guest.readStringMember(state, 'states') as Table;
+	const ids = guest.readStringMember(state, 'state_ids') as Table;
+	for (let i = 1; i <= ids.arrayLength; i += 1) visitStateMachineHierarchy(guest, states.get(ids.getInteger(i)) as Table, visit);
 }
 
 const DEFINITION_FIELDS = [
@@ -61,9 +74,14 @@ export function inspectStateMachineState(
 	items.push(inspectBehaviorRuntimeValue(sources, guest, 'INSTANCE DATA', guest.readStringMember(state, 'data'), ''));
 	items.push(inspectBehaviorRuntimeValue(sources, guest, 'CHILD INSTANCES', guest.readStringMember(state, 'state_ids'), ''));
 	// Rebind can be stopped between two nodes. Read this node's definition, not the root's replacement tree.
-	const definition = guest.readStringMember(state, 'definition');
+	return inspectStateMachineDefinition(sources, guest, guest.readStringMember(state, 'definition') as Table, items);
+}
+
+export function inspectStateMachineDefinition(
+	sources: RuntimeSourceState, guest: SuspendedGuestSession, definition: Table, items: BehaviorInspectionProperty[] = [],
+): BehaviorInspectionProperty[] {
 	items.push({ label: 'LOADED DEFINITION', value: guest.formatValue(guest.readStringMember(definition, 'def_id')),
-		description: 'THIS STATE\'S CURRENT DEFINITION. NOT A MATCH TO THE OPEN AUTHORED REGISTRATION.', warning: false });
+		description: 'THE SELECTED RETAINED DEFINITION. NOT A MATCH TO THE OPEN AUTHORED REGISTRATION.', warning: false });
 	for (const [field, label] of DEFINITION_FIELDS) {
 		const value = guest.readStringMember(definition, field);
 		if (value !== null) items.push(inspectBehaviorRuntimeValue(sources, guest, label, value, ''));

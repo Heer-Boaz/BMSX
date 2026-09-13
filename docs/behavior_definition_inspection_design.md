@@ -2,7 +2,8 @@
 
 Datum: 2026-09-13. Live baseline: `c30009e07`.
 **Status: D1-history/composite broninputs, de generieke D2-leesbasis en gerichte
-ActionEffect-/FSM-instance-inspectie gebouwd; geen volledige definitiecatalogus.**
+ActionEffect-/FSM-instance-inspectie en hun geladen catalogi gebouwd; BT-
+definitieopname en allocation-/broncorrespondentie blijven open.**
 
 Dit document verwerkt de bijgestelde productgrens: cartlib ondersteunt al een
 declaratieve manier van programmeren; die is de norm voor visuele authoring.
@@ -101,7 +102,7 @@ tekstmodellen, semantische snapshots en gerichte Lua-editowners.
 | BT-instantie | [bt_component.lua](../cartlib/behaviour_tree/bt_component.lua) en [execution_layout.lua](../cartlib/behaviour_tree/execution_layout.lua): gedeeld programma, eigen slots/blackboard/services. Rebind vervangt uitvoeringsgeheugen; blackboardwaarden worden per semantische sleutel behouden. Slotnummer is geen blijvende auteursidentiteit. |
 | FSM | [library.lua](../cartlib/fsm/library.lua), [fsm.lua](../cartlib/fsm/fsm.lua) en [fsm_component.lua](../cartlib/fsm/fsm_component.lua): de geladen state-definitiehiërarchie blijft bestaan; handlers, paden en evaluatie worden afgeleid/gecompileerd. De oorspronkelijke blueprint en geladen definitie zijn niet identiek. |
 | ActionEffect | [actioneffects.lua](../cartlib/actioneffects.lua) en [actioneffect_component.lua](../cartlib/actioneffects/actioneffect_component.lua): de aangeleverde definitie blijft bewaard. Een gegund effect verwijst naar zijn definitie en heeft eigen cooldown-/periodieke state. |
-| Componentcatalogus | [registry.lua](../cartlib/registry.lua) indexeert bestaande entries. Dit is niet tevens een catalogus van alle geregistreerde maar ongebruikte behavior-definities. De afzonderlijke definitieregisters zijn lokale tabellen. |
+| Componentcatalogus | [registry.lua](../cartlib/registry.lua) indexeert bestaande entries. Dit is niet tevens een catalogus van alle geregistreerde maar ongebruikte behavior-definities. De afzonderlijke definitieregisters zijn lokale tabellen; de [catalogusreader](behavior_definition_catalog.md) leest die voor FSM/ActionEffect via bestaande capturesymbolen, zonder extra publicatie. |
 | Broninterpretatie | [source_reader.ts](../ide/workbench/contrib/behavior_lens/source_reader.ts) consumeert geschreven workspacefeiten. [API-herkenning](lua_source_api_bindings.md) consumeert generieke importpaden via ongewijzigde locals; die bewijzen geen uitvoering of exclusieve runtime-API-herkomst. |
 | Bestaande inspectie | [suspended_guest.ts](../ide/runtime/suspended_guest.ts) leest de echte VM-representatie; de bestaande Scenario-observers lezen geselecteerde guestkanalen. Geen van beide is al een algemene geladen-definitiecatalogus. |
 | Bron versus installatie | [sources.ts](../ide/runtime/sources.ts) en [runtime_source_status.ts](../ide/workbench/services/working_copy/runtime_source_status.ts) kennen werkbron en geïnstalleerde bron. Dat is niet automatisch de herkomst van iedere huidige heapdefinitie. |
@@ -168,11 +169,12 @@ live-only catalogus mag die huidige authoringmogelijkheid niet vervangen.
 debuggerrepresentatie; verkrijg ontbrekende topologie bij de cartlib-owner die
 de definitie interpreteert, niet door de host diens evaluators te laten raden.
 
-Bij ActionEffects kan eerst één bestaande effectinstantie worden geïnspecteerd.
-Die bezit al een definitiereferentie. Een volledige catalogus, óók zonder
-actorinstanties, is een afzonderlijke ontdekking-/publicatieverantwoordelijkheid.
-FSM-definities zijn eveneens aanwezig, maar hun gecompileerde handlers en
-actieve instances mogen niet als de oorspronkelijke bron worden voorgesteld.
+Bij ActionEffects kan één bestaande effectinstantie worden geïnspecteerd.
+Die bezit al een definitiereferentie. De [FSM-/ActionEffect-catalogus](behavior_definition_catalog.md)
+leest inmiddels ook ongebruikte definities uit hun eigen bestaande registries.
+Hij koppelt geen bronkandidaten aan runtimepublicatie. FSM-definities zijn
+eveneens aanwezig, maar hun gecompileerde handlers en actieve instances mogen
+niet als de oorspronkelijke bron worden voorgesteld.
 
 Voor BT's moet vóór implementatie een concrete ownerproef de keuze vastleggen:
 
@@ -312,10 +314,14 @@ Een onafhankelijke Studio-proef bedient de echte UI tijdens midden-in-rebind,
 no-change `<init>`, gewijzigde installatie, compilefout en rewind. De compiler
 en TS/C++-symbolowners leveren geldige debuglocaties; callback-Source volgt het
 actuele instruction-bus-calltarget en vereist overeenkomende bronbytes.
-Geen interpreterfallback, extra cartlib-state of bronwriteclaim. D2 blijft open
-voor een catalogus inclusief ongebruikte definities, algemene actorselectie en
-definitie-allocation-/registratiecorrespondentie. Een callbackbron bewijst niet
-waar de omvattende definitietabel is gemaakt.
+De [catalogusvervolgslice](behavior_definition_catalog.md) leest nu ook lege en
+ongebruikte FSM-/ActionEffect-definities, zelfs vóór er actors bestaan. De
+bestaande setterclosure houdt de registry al vast; module-gekwalificeerde
+capturesymbolen en de gespiegelde `CPU.readClosureUpvalue` leveren de read zonder
+guestcall of extra opslag. Publicatie vóór rebind wordt apart getoond van de
+definities die instances nog vasthouden. D2 blijft open voor algemene
+actorselectie en definitie-allocation-/registratiecorrespondentie. Een
+callbackbron bewijst niet waar de omvattende definitietabel is gemaakt.
 
 **Gate:** read-only inspectie zonder callbacks/guestmutatie; registratie zonder
 actor niet verwarren met een lege definitie; no-change `<init>`, compilefout,

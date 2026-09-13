@@ -47,7 +47,12 @@ local function configure<init>()
 	fsm_library.register('companion', { states = { resting = {} } })
 end
 configure()
-effects.register_effect('ungranted', { period_ms = 777 })
+local ungranted<const> = { period_ms = 777, handler = callbacks.update }
+effects.register_effect('ungranted', ungranted)
+effects.register_effect('shared_alias', ungranted)
+effects.register_effect('empty', {})
+fsm_library.register('unattached', { states = { hidden = {} } })
+fsm_library.register('empty', { states = {} })
 inspection_first = component.new({ parent = { id = 'first_actor', world = { gameplay_time_ms = 100 } } })
 inspection_first.id = 'inspection.first'
 registry:register(inspection_first)
@@ -81,7 +86,6 @@ registry:register(inspection_fsm_second)
 registry:index(inspection_fsm_second, fsm_component)
 inspection_fsm_second:start()
 inspection_fsm_second:get_machine('walker').states.nest.data.revision = 222
-fsm_library.register('unattached', { states = { hidden = {} } })
 inspection_fsm_ready = true
 
 -- Written registration candidates are not a loaded-definition catalog.

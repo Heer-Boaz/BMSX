@@ -6,7 +6,7 @@ import type { BehaviorQuickPickItem } from '../../../ide/workbench/contrib/behav
 import { check, type StudioFixture } from './studio_fixture';
 
 /** Deliberately open the never-executed same-id registration, not the actual definition producer. */
-export async function openRuntimeEffectPicker(test: StudioFixture): Promise<void> {
+export async function openRuntimeEffectLens(test: StudioFixture) {
 	const { ide, press, runPaletteCommand } = test;
 	await runPaletteCommand('Behavior Lens: Open ActionEffect');
 	const picker = ide.editor.quickInput;
@@ -21,6 +21,12 @@ export async function openRuntimeEffectPicker(test: StudioFixture): Promise<void
 	await press('Enter');
 	const input = getActiveTab();
 	if (input.kind !== 'behavior_lens' || input.view.presentation.kind !== 'properties') throw new Error('runtime effect: actual ActionEffect lens required');
+	return input;
+}
+
+export async function openRuntimeEffectPicker(test: StudioFixture): Promise<void> {
+	const input = await openRuntimeEffectLens(test);
+	const picker = test.ide.editor.quickInput;
 	const live = input.view.presentation.actionBar.items.find(item => item.command === 'behaviorLens.inspectRuntimeEffect')!;
 	await test.click(live.bounds);
 	check(picker.visible && picker.title === 'GRANTED ACTIONEFFECTS', 'runtime effect: real Live action opens the shared picker');

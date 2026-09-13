@@ -1996,7 +1996,12 @@ export class CPU implements MappedPageInvalidator {
 	}
 
 	public readFrameUpvalue(frameIndex: number, upvalueIndex: number): Value {
-		const upvalue = this.frames[frameIndex].closure.upvalues[upvalueIndex];
+		return this.readClosureUpvalue(this.frames[frameIndex].closure, upvalueIndex);
+	}
+
+	/** Read a retained closure without calling it or requiring an active frame. */
+	public readClosureUpvalue(closure: Closure, upvalueIndex: number): Value {
+		const upvalue = closure.upvalues[upvalueIndex];
 		if (upvalue.open) {
 			return upvalue.frame!.registers.get(upvalue.index);
 		}

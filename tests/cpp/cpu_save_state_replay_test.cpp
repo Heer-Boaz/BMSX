@@ -100,6 +100,38 @@ void mirroredAllocationOrder() {
 	require(closure->upvalues[0]->hashId == closure->hashId + 1u, "closure allocation precedes its new upvalue");
 }
 
+void inspectOpenAndClosedClosure() {
+	auto image = allocationImage();
+	image.functions[1].staticClosure = false;
+	image.functions[1].upvalues = {{true, 0u}};
+	SnapshotMachine machine(image);
+	auto& cpu = machine.runtime.machine.cpu;
+	auto stopPc = machine.rom.textAddress + 5u * bmsx::INSTRUCTION_BYTES;
+	cpu.setExecutionHook({
+		.hook = [](void* context, bmsx::ExecutionDomainId, bmsx::u32 pc) { return pc == *static_cast<bmsx::u32*>(context); },
+		.context = &stopPc,
+		.domainMask = bmsx::SYSTEM_EXECUTION_DOMAIN_MASK,
+		.preMaskableInterruptDomainMask = 0u,
+	});
+	require(cpu.runUntilDepth(0, 1000) == bmsx::RunResult::ExecutionStopped, "stop after capture, before the defining frame returns");
+	const auto open = cpu.captureRuntimeState();
+	const auto* closure = bmsx::asClosure(cpu.readFrameRegister(0, 1));
+	require(closure->upvalues[0]->open, "fixture capture is open");
+	const auto table = cpu.readFrameRegister(0, 0);
+	require(cpu.readClosureUpvalue(closure, 0) == table, "read the live defining register without calling the closure");
+	const auto afterRead = cpu.captureRuntimeState();
+	require(std::ranges::equal(afterRead.snapshot.words(), open.snapshot.words()), "inspection does not change the open cell or heap");
+	cpu.setExecutionHook({});
+	require(cpu.runUntilDepth(0, 1000) == bmsx::RunResult::Halted, "defining frame returns normally");
+	closure = bmsx::asClosure(cpu.readCompletionValues()[1]);
+	require(!closure->upvalues[0]->open, "fixture capture is closed");
+	require(cpu.readClosureUpvalue(closure, 0) == table, "closed cell keeps the same value");
+	cpu.restoreRuntimeState(open);
+	closure = bmsx::asClosure(cpu.readFrameRegister(0, 1));
+	require(closure->upvalues[0]->open, "restore replaces the closure with its open capture");
+	require(cpu.readClosureUpvalue(closure, 0) == cpu.readFrameRegister(0, 0), "restored read follows the restored frame");
+}
+
 void restoreAllocationWordWrap() {
 	SnapshotMachine machine(allocationImage());
 	auto& cpu = machine.runtime.machine.cpu;
@@ -319,6 +351,7 @@ int main() {
 	try {
 		replayAllocationIdentities();
 		mirroredAllocationOrder();
+		inspectOpenAndClosedClosure();
 		restoreAllocationWordWrap();
 		replayWeakCollectionSchedule();
 		restoreUnrootedCanonicalClosure();

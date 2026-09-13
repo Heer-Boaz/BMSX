@@ -300,6 +300,7 @@ public:
 	Value readFrameRegister(int frameIndex, int registerIndex) const;
 	int getFrameUpvalueCount(int frameIndex) const;
 	Value readFrameUpvalue(int frameIndex, int upvalueIndex) const;
+	Value readClosureUpvalue(const Closure* closure, int upvalueIndex) const;
 	u32 readEpcWord() const;
 	u32 readCauseWord() const;
 	u32 readBadAddressWord() const;
@@ -406,7 +407,7 @@ private:
 	void closeUpvalues(CallFrame& frame);
 	Upvalue* findOpenUpvalue(const CallFrame& frame, int index) const;
 	void linkOpenUpvalue(CallFrame& frame, Upvalue* upvalue);
-	const Value& readUpvalue(Upvalue* upvalue);
+	const Value& readUpvalue(Upvalue* upvalue) const;
 	void writeUpvalue(Upvalue* upvalue, const Value& value);
 	void writeReturnValues(CallFrame& frame, int base, int count, const Value* values, int valueCount);
 	void setRegister(CallFrame& frame, int index, Value value);

@@ -41,6 +41,35 @@ export type RuntimeLuaFunctionSource = {
 	readonly installedSource: string;
 };
 
+/** Read a module-scoped local retained by this closure, not a same-name local in a factory. */
+export function readRuntimeLuaModuleCapture(
+	sources: RuntimeSourceState, guest: SuspendedGuestSession, domain: ResourceDomain,
+	modulePath: string, closure: SuspendedGuestValue, name: string,
+): RuntimeLuaInspectionValue {
+	const location = guest.linkedFunctionLocation(closure);
+	if (location === undefined || location.domain !== domain) return NOT_IN_SCOPE;
+	const image = blua32ToolingImageForDomain(sources.currentBlua32Media, domain);
+	if (image === null || image.symbols === null) return NOT_LOADED;
+	const symbols = image.symbols;
+	const module = symbols.moduleFunctions.find(entry => entry.path === modulePath);
+	if (module === undefined) return NOT_LOADED;
+	const functionIndex = blua32FunctionIndexAtAddress(image.layout, location.address);
+	if (functionIndex < 0) return NOT_IN_SCOPE;
+	const moduleIndex = blua32FunctionIndexAtAddress(image.layout, module.address);
+	const moduleId = symbols.metadata.functionIds[moduleIndex];
+	const bindings = symbols.metadata.upvalueBindingsByFunction[functionIndex];
+	let captureIndex = -1;
+	for (let index = 0; index < bindings.length; index += 1) {
+		const local = symbols.metadata.capturedLocals[bindings[index]];
+		if (local.functionId !== moduleId || local.name !== name || local.definition === null) continue;
+		// Preserved capture slots can outlive their use after Hot Resume. A name
+		// query cannot choose between distinct bindings in the defining function.
+		if (captureIndex !== -1) return NOT_IN_SCOPE;
+		captureIndex = index;
+	}
+	return captureIndex === -1 ? NOT_IN_SCOPE : { kind: 'value', value: guest.readClosureUpvalue(closure, captureIndex) };
+}
+
 /** A closure's current mapped call target, never its presumed allocation/registration site. */
 export function runtimeLuaFunctionSource(sources: RuntimeSourceState, guest: SuspendedGuestSession, value: SuspendedGuestValue): RuntimeLuaFunctionSource | undefined {
 	const location = guest.linkedFunctionLocation(value);

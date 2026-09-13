@@ -4,8 +4,9 @@ Datum: 2026-09-13. Vergelijkingsbasis: `36e9a1ca2`.
 **Gebouwd:** de bestaande hover en runtime-memberaanvulling lezen geschreven
 bindings uit de werkelijke guest. Dit is de leesbasis voor D2. De afzonderlijke
 [ActionEffect-instance-inspectie](actioneffect_runtime_inspection.md) consumeert
-nu dezelfde guest-owner in de Behavior Lens; een volledige definitiecatalogus
-blijft open.
+dezelfde guest-owner in de Behavior Lens. De [FSM-/ActionEffect-catalogus](behavior_definition_catalog.md)
+leest inmiddels ook bestaande modulecaptures via de gespiegelde read-only
+`CPU.readClosureUpvalue`, zonder dat de closure op de stack hoeft te staan.
 
 ## Professionele referenties en afbakening
 
@@ -181,8 +182,9 @@ guest-objectvelden toevoegt. Debug-ROMretentie op de host groeit wel.
 
 ## Open, niet als voltooid claimen
 
-- D2's gerichte selectie/presentatie van geladen definitie en actor, een
-  actorloze definitiecatalogus en bewezen Source-/write-targetcorrespondentie.
+- Algemene actorselectie en bewezen definitie-Source-/write-targetcorrespondentie.
+  Gerichte FSM-/ActionEffect-instances en actorloze catalogi zijn inmiddels
+  afzonderlijk gebouwd; zie de gelinkte vervolgslices.
 - D3's BT-topologiecorrespondentie door lowering, met afzonderlijke opslag-/GC-
   metingen; geen closure-decompilatie of extra boom per actor.
 - Volledige optimized-variable recovery (constants, verhuisde locaties) is

@@ -10,6 +10,7 @@ import { resolveThemeTokenColor } from '../../../ide/theme/tokens';
 import { openRuntimeEffectInspector, openRuntimeEffectPicker, testRuntimeEffectSource } from './studio_actioneffect_runtime';
 import { openRuntimeStateInspector, openRuntimeStatePicker, testRuntimeStateSource } from './studio_fsm_runtime';
 import { createResourceState } from '../../../ide/workbench/contrib/resources/widget_state';
+import { openRegisteredDefinition, openRegisteredDefinitionPicker, testActorlessDefinitionCatalog, testEmptyDefinitionCatalog } from './studio_definition_catalog';
 
 /** Borrowed values are consumed by the existing hover, not a parallel test inspector. */
 export async function runStudioRuntimeInspection(test: StudioFixture) {
@@ -30,10 +31,23 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	const model = harness.getActiveEditorDocument().model;
 	const source = RUNTIME_INSPECTION_CART_SOURCE;
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: source }]);
+	const beforeInstances = source.split('\n').findIndex(line => line.startsWith('inspection_first =')) + 1;
+	const beforeRegistration = source.split('\n').findIndex(line => line === 'configure()') + 1;
+	harness.toggleLuaBreakpoint(model.resource.path, beforeRegistration);
+	harness.toggleLuaBreakpoint(model.resource.path, beforeInstances);
 	await runPaletteCommand('Run: Reboot');
 	check(actionPromptState.prompt?.action === 'reboot', 'inspection: independent fixture uses actual Save/Reboot');
 	await press('Enter');
-	await until(() => tasks.ready && guest.global('inspection_init_count') === 1 && !runtime.completionCallPending(), 'inspection: actual registration and grants');
+	await until(() => tasks.ready && ide.debugger.stopped && ide.editor.isActive && guest.global('inspection_init_count') === 0,
+		'inspection: initialized libraries before the first registration');
+	await testEmptyDefinitionCatalog(test);
+	harness.toggleLuaBreakpoint(model.resource.path, beforeRegistration);
+	await press('F5');
+	await until(() => tasks.ready && ide.debugger.stopped && ide.editor.isActive && guest.global('inspection_init_count') === 1,
+		'inspection: actual registrations before creating instances');
+	await testActorlessDefinitionCatalog(test);
+	harness.toggleLuaBreakpoint(model.resource.path, beforeInstances);
+	await press('F5');
 	await until(() => guest.global('inspection_fsm_ready') === true, 'inspection: effect and FSM instances are attached');
 	await press('ControlRight', 'ShiftRight');
 	await runMenuCommand('pause');
@@ -83,6 +97,9 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 		'inspection: debugger awaits source attachment before placing the stop marker, even when a lens was active');
 	inspect('inspection_effect.definition.period_ms', 20);
 	inspect('inspection_other.definition.period_ms', 20);
+	const publishedEffect = await openRegisteredDefinition(test, 'effect', 'pulse');
+	check(publishedEffect.model.rows.find(row => row.element.label === 'PERIOD')!.element.value === '30',
+		'catalog: no-change init published 30 before either old instance has rebound');
 	await openRuntimeEffectInspector(test, 'first', 20);
 	await press('F5');
 	await until(() => ide.debugger.stopped && ide.editor.isActive, 'inspection: second component rebind stops');
@@ -96,6 +113,9 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	await openRuntimeStateInspector(test, 'first', 20, '');
 	await openRuntimeStateInspector(test, 'first', 10);
 	await openRuntimeStateInspector(test, 'second', 10);
+	const publishedState = await openRegisteredDefinition(test, 'fsm', 'walker', 'walker:/nest');
+	check(publishedState.model.rows.find(row => row.element.label === 'LOADED DEFAULTS')!.element.value === 'revision: 20',
+		'catalog: published child differs from the old child still retained by both actors');
 	harness.toggleLuaBreakpoint(fsmLibrary.source_path, fsmRebindStop);
 	await press('F5');
 	await until(() => !runtime.completionCallPending() && !ide.debugger.plans.controlActive, 'inspection: rebind completes');
@@ -139,6 +159,8 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	inspect('inspection_effect.active_count', 1);
 	await openRuntimeEffectInspector(test, 'first', 48);
 	await openRuntimeStateInspector(test, 'first', 30);
+	const installedCatalog = await openRegisteredDefinition(test, 'effect', 'pulse');
+	check(installedCatalog.model.rows.find(row => row.element.label === 'PERIOD')!.element.value === '48', 'catalog: new code installation reads its live registry capture');
 
 	await runMenuCommand('pause');
 	await until(() => history.latestCycles > history.earliestCycles + runtime.timing.cpuHz * 2 && tasks.ready, 'inspection: continuous history contains multiple checkpoints');
@@ -166,6 +188,13 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	const restoredFsm = await openRuntimeStateInspector(test, 'first', 30);
 	rewind.seekTo(history.latestCycles); await settle();
 	check(!restoredFsm.visible, 'inspection: restore invalidates the FSM property projection');
+	await openRegisteredDefinitionPicker(test, 'fsm');
+	rewind.seekTo(history.earliestCycles); await settle();
+	check(!ide.editor.quickInput.visible, 'catalog: restore releases the borrowed registry choices');
+	const restoredCatalog = await openRegisteredDefinition(test, 'effect', 'pulse');
+	check(restoredCatalog.model.rows.find(row => row.element.label === 'PERIOD')!.element.value === '48', 'catalog: reselect reads the restored registry');
+	rewind.seekTo(history.latestCycles); await settle();
+	check(!restoredCatalog.visible, 'catalog: restore releases the retained property projection');
 	inspect('inspection_effect.definition.period_ms', 48);
 	await frame();
 	const expression = 'inspection_effect.definition.period_ms';

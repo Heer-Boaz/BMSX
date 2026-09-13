@@ -126,6 +126,11 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 			isEnabled: () => this.input.view.presentation.kind === 'state-graph' && !this.sourceEditReview.visible,
 			run: () => { this.focus(); this.controller.inspectRuntimeStateMachine(this.input, this.inspector); },
 		});
+		for (const target of [this.focusTarget, this.graph.focusTarget]) target.registerCommand('behaviorLens.inspectRegisteredDefinitions', {
+			isEnabled: () => (this.input.view.presentation.kind === 'state-graph' || this.input.view.presentation.kind === 'properties')
+				&& !this.sourceEditReview.visible,
+			run: () => { this.focus(); this.controller.inspectRegisteredDefinitions(this.input, this.inspector); },
+		});
 		for (const target of [this.focusTarget, this.graph.focusTarget]) target.registerCommand('contextMenu', {
 			isEnabled: () => !this.sourceEditReview.visible && !this.inspector.visible,
 			run: () => this.openKeyboardContextMenu(),

@@ -1461,8 +1461,8 @@ promise to reverse arbitrary programs into uniquely editable graphs. Authored
 source, an actually loaded definition and an executing instance are distinct
 inspection subjects. The [definition-inspection design](behavior_definition_inspection_design.md)
 keeps the latter two separate without replacing Lua persistence or exposing
-evaluator internals as an authoring format. The full definition catalog and BT
-debug correspondence remain open.
+evaluator internals as an authoring format. BT definition/debug correspondence
+and definition-allocation/source correspondence remain open.
 
 The existing hover/member inspection now uses [written bindings and installed
 debug locations](lua_runtime_inspection.md), not same-name guesses or a second
@@ -1489,6 +1489,14 @@ is not an active-state proof; compiled event/input targets are not authored
 transition expressions. Only actual closures acquire callback-Source through
 the existing mapping. No additional cartlib state, evaluator, registry or
 execution hook is introduced.
+
+The [registered-definition catalog](behavior_definition_catalog.md) reads the
+existing FSM/ActionEffect registries through the installed setter closures'
+module-qualified capture locations. `CPU.readClosureUpvalue()` has the same
+read-only open/closed-cell contract in TS and C++; neither a setter call nor a
+cartlib debug registry is added. Published definitions, including unused/empty
+ones, remain distinct from definitions still retained by old instances during
+rebind. Catalog lookup does not establish an authored write target.
 
 Multi-resource source operations use the shared resource history described in
 [`editor_workspace_history.md`](editor_workspace_history.md). Rename is its

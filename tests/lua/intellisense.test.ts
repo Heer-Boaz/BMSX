@@ -30,7 +30,7 @@ import {
 	type RuntimeResource,
 } from '../../ide/common/resource';
 import { RuntimeLuaTooling } from '../../ide/runtime/lua_tooling';
-import { readRuntimeLuaValue, readRuntimeLuaModuleExport, runtimeLuaFunctionSource } from '../../ide/runtime/lua_inspection';
+import { readRuntimeLuaValue, readRuntimeLuaModuleExport, readRuntimeLuaModuleCapture, runtimeLuaFunctionSource } from '../../ide/runtime/lua_inspection';
 import { buildLuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
 import { SuspendedGuestSession, SuspendedGuestValueKind } from '../../ide/runtime/suspended_guest';
 import {
@@ -123,10 +123,12 @@ function parseLuaChunk(source: string, path: string) {
 	return parser.parseChunk();
 }
 
-function createIntellisenseRuntime(source: string, optLevel: 0 | 3 = 0) {
+function createIntellisenseRuntime(source: string, optLevel: 0 | 3 = 0, modules: Record<string, string> = {}) {
 	const sourcePath = 'cart.lua';
 	const modulePath = 'cart';
-	const compiled = compileLuaChunkToProgram(parseLuaChunk(source, modulePath), [], {
+	const compiled = compileLuaChunkToProgram(parseLuaChunk(source, modulePath), Object.entries(modules).map(([path, text]) => ({
+		path, source: text, chunk: parseLuaChunk(text, path),
+	})), {
 		entrySource: source,
 		optLevel,
 		programDomain: 'system',
@@ -156,6 +158,9 @@ function createIntellisenseRuntime(source: string, optLevel: 0 | 3 = 0) {
 		revision: 0,
 	};
 	registerLuaSourceRecord(systemLuaSources, record);
+	for (const [path, text] of Object.entries(modules)) registerLuaSourceRecord(systemLuaSources, {
+		...record, src: text, base_src: text, resid: `${path}.lua`, source_path: `${path}.lua`, normalized_source_path: `${path}.lua`, module_path: path,
+	});
 	const sources = createTestSystemImageRuntimeSourceState(image.romBytes, systemLuaSources);
 	sources.currentBlua32Media = {
 		system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports),
@@ -511,6 +516,38 @@ return read_shadow()
 });
 
 for (const optLevel of [0, 3] as const) {
+	for (const closed of [false, true]) test(`module capture inspection reads ${closed ? 'closed' : 'open'} cells without execution at O${optLevel}`, () => {
+		const source = `local registry = { value = 17 }
+local absent
+read_module = function() return registry, absent end
+local function factory()
+	local registry = { value = 99 }
+	return function() return registry end
+end
+read_shadow = factory()
+${closed ? '' : 'halt_until_irq'}
+return {}`;
+		const { runtime, bridge } = createIntellisenseRuntime("require('captured')\nhalt_until_irq", optLevel, { captured: source });
+		const cpu = runtime.machine.cpu, guest = bridge.suspendedGuest;
+		cpu.reset();
+		assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
+		const before = cpu.captureRuntimeState();
+		const result = readRuntimeLuaModuleCapture(bridge.sources, guest, SYSTEM_RESOURCE_DOMAIN, 'captured', guest.global('read_module'), 'registry');
+		assert.equal(result.kind, 'value');
+		if (result.kind !== 'value') throw new Error('actual module capture is required');
+		assert.equal(guest.readStringMember(result.value, 'value'), 17);
+		assert.deepEqual(readRuntimeLuaModuleCapture(bridge.sources, guest, SYSTEM_RESOURCE_DOMAIN, 'captured', guest.global('read_module'), 'absent'),
+			{ kind: 'value', value: null }, 'nil is a captured value, not a missing debug location');
+		for (const [domain, path, closure, name] of [
+			[SYSTEM_RESOURCE_DOMAIN, 'captured', guest.global('read_shadow'), 'registry'],
+			[SYSTEM_RESOURCE_DOMAIN, 'captured', guest.global('read_module'), 'unknown'],
+			[0, 'captured', guest.global('read_module'), 'registry'],
+			[SYSTEM_RESOURCE_DOMAIN, 'captured', null, 'registry'],
+		] as const) assert.deepEqual(readRuntimeLuaModuleCapture(bridge.sources, guest, domain, path, closure, name),
+			{ kind: 'unavailable', reason: 'not_in_scope' }, 'a shadowed binding, wrong bus or missing capture is not a module registry');
+		assert.deepEqual(cpu.captureRuntimeState(), before, 'readback changes no register, cell, heap or CPU state');
+	});
+
 	test(`suspended inspection reads stored key kinds and actual callback source at O${optLevel}`, () => {
 		const source = `callback = function() return 7 end
 entries = { [1] = 'numeric', ['1'] = 'string', [true] = 'boolean', [callback] = 'function' }

@@ -8,7 +8,7 @@ import { medianMilliseconds } from '../../helpers/performance';
 import { check, type StudioFixture } from './studio_fixture';
 
 /** Source discovery is deliberately the unexecuted, structurally different same-id registration. */
-export async function openRuntimeStateMachinePicker(test: StudioFixture): Promise<void> {
+export async function openRuntimeStateMachineLens(test: StudioFixture) {
 	const { ide, press } = test;
 	await test.runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
 	const picker = ide.editor.quickInput;
@@ -23,6 +23,12 @@ export async function openRuntimeStateMachinePicker(test: StudioFixture): Promis
 	await press('Enter');
 	const input = getActiveTab();
 	if (input.kind !== 'behavior_lens' || input.view.presentation.kind !== 'state-graph') throw new Error('runtime FSM: real source graph required');
+	return input;
+}
+
+export async function openRuntimeStateMachinePicker(test: StudioFixture): Promise<void> {
+	const input = await openRuntimeStateMachineLens(test);
+	const picker = test.ide.editor.quickInput;
 	const live = input.view.presentation.actionBar.items.find(item => item.command === 'behaviorLens.inspectRuntimeStateMachine')!;
 	await test.click(live.bounds);
 	check(picker.visible && picker.title === 'FSM INSTANCES', 'runtime FSM: Live opens the shared instance picker');

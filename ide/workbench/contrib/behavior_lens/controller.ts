@@ -45,8 +45,9 @@ import type { LuaSourceRange } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import { getTextFileRuntimeSourceStatus } from '../../services/working_copy/runtime_source_status';
 import type { WorkbenchPropertyInspector } from '../../ui/property_inspector/control';
-import { inspectActionEffectInstance, readActionEffectInstances } from './action_effect_runtime';
-import { inspectStateMachineState, readStateMachineInstances, readStateMachineStates } from './state_machine_runtime';
+import { inspectActionEffectDefinition, inspectActionEffectInstance, readActionEffectInstances } from './action_effect_runtime';
+import { inspectStateMachineDefinition, inspectStateMachineState, readStateMachineDefinitionStates, readStateMachineInstances, readStateMachineStates } from './state_machine_runtime';
+import { readBehaviorDefinitions, type BehaviorDefinitionChoice } from './runtime_definitions';
 
 const PICKER_TITLES: Readonly<Record<BehaviorKind, string>> = {
 	action_effect: 'ACTIONEFFECTS',
@@ -181,6 +182,34 @@ export class BehaviorLensController {
 					});
 					lifetime.add({ dispose: this.guest.onDidInvalidate(() => inspector.hide()) });
 				}));
+	}
+
+	public inspectRegisteredDefinitions(input: BehaviorLensInput, inspector: WorkbenchPropertyInspector<BehaviorInspectionProperty>): void {
+		const isStateMachine = input.view.presentation.kind === 'state-graph';
+		const choices = readBehaviorDefinitions(this.sources, this.guest, input.view.resource.domain,
+			isStateMachine ? 'cartlib/fsm/fsm_component' : 'cartlib/actioneffects/actioneffect_component');
+		const inspect = (choice: BehaviorDefinitionChoice): void => {
+			const lifetime = inspector.show({ title: `REGISTERED ${isStateMachine ? 'FSM' : 'EFFECT'} / ${choice.label}`,
+				items: isStateMachine ? inspectStateMachineDefinition(this.sources, this.guest, choice.definition)
+					: inspectActionEffectDefinition(this.sources, this.guest, choice.definition, choice.label),
+				canOpenSource: item => this.canOpenInspectionSource(item),
+				openSource: item => this.openInspectionSource(input, item),
+			});
+			lifetime.add({ dispose: this.guest.onDidInvalidate(() => inspector.hide()) });
+		};
+		this.quickInput.pick(isStateMachine ? 'REGISTERED FSMS' : 'REGISTERED ACTIONEFFECTS',
+			choices.available ? 'Published definitions, including those without instances' : 'Registry export or capture symbols unavailable',
+			(_origin, lifetime) => {
+				lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
+				return new TextQuickPickProvider(choices.items);
+			}, choice => {
+				if (!isStateMachine) { inspect(choice); return; }
+				this.quickInput.pick(`LOADED STATES / ${choice.label}`, 'Definition hierarchy, not an actor instance',
+					(_origin, lifetime) => {
+						lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
+						return new TextQuickPickProvider(readStateMachineDefinitionStates(this.guest, choice.definition));
+					}, inspect);
+			});
 	}
 
 	public canOpenInspectionSource(detail: BehaviorInspectionProperty): boolean {

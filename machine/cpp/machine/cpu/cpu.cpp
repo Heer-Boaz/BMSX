@@ -2485,7 +2485,11 @@ int CPU::getFrameUpvalueCount(int frameIndex) const {
 
 Value CPU::readFrameUpvalue(int frameIndex, int upvalueIndex) const {
 	const CallFrame& frame = *m_frames[static_cast<size_t>(frameIndex)];
-	return const_cast<CPU*>(this)->readUpvalue(frame.closure->upvalues[static_cast<size_t>(upvalueIndex)]);
+	return readClosureUpvalue(frame.closure, upvalueIndex);
+}
+
+Value CPU::readClosureUpvalue(const Closure* closure, int upvalueIndex) const {
+	return readUpvalue(closure->upvalues[static_cast<size_t>(upvalueIndex)]);
 }
 
 u32 CPU::readEpcWord() const {
@@ -2647,7 +2651,7 @@ void CPU::closeUpvalues(CallFrame& frame) {
 	}
 }
 
-const Value& CPU::readUpvalue(Upvalue* upvalue) {
+const Value& CPU::readUpvalue(Upvalue* upvalue) const {
 	if (upvalue->open) {
 		return upvalue->frame->registers[upvalue->index];
 	}

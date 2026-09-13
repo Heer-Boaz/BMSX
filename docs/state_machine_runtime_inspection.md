@@ -2,6 +2,10 @@
 
 Datum: 2026-09-13. D2-vervolg op `ddf3fe2f5`.
 
+Vervolg: de [geladen catalogus](behavior_definition_catalog.md) leest inmiddels
+ook gepubliceerde FSM-definities zonder machines/actors. Dezelfde property-
+en hiërarchieowners bedienen beide doelen; instancestate blijft afzonderlijk.
+
 ## Vooraf getoetste productievoorbeelden
 
 - [Godot AnimationNodeStateMachinePlayback][playback] bezit `current`, `playing`

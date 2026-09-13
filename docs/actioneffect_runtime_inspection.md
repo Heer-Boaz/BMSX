@@ -2,6 +2,10 @@
 
 Datum: 2026-09-13. D2-vervolg op `2df0a5162`.
 
+Vervolg: de [geladen catalogus](behavior_definition_catalog.md) gebruikt nu
+dezelfde propertypresentatie voor gepubliceerde definities zonder grants.
+De hieronder beschreven instance-inspectie blijft een afzonderlijk doel.
+
 ## Referenties en afleiding
 
 - [LimboAI debugger][limbo] scheidt instancekeuze, getrackte instance en

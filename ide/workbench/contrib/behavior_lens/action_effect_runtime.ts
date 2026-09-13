@@ -47,9 +47,15 @@ export function inspectActionEffectInstance(
 		if (value !== null) state.push(`${label}: ${guest.formatValue(value)}`);
 	}
 	items.push({ label: `INSTANCE / ${choice.description}`, value: state.join('\n'), description: '', warning: false });
-	const definition = guest.readStringMember(choice.effect, 'definition');
-	items.push({ label: 'LOADED DEFINITION', value: choice.label,
-		description: 'THIS INSTANCE\'S CURRENT DEFINITION. NOT A MATCH TO THE OPEN AUTHORED REGISTRATION.', warning: false });
+	return inspectActionEffectDefinition(sources, guest, guest.readStringMember(choice.effect, 'definition') as Table, choice.label, items);
+}
+
+/** Shared property projection for a registry entry or an instance's own retained definition. */
+export function inspectActionEffectDefinition(
+	sources: RuntimeSourceState, guest: SuspendedGuestSession, definition: Table, id: string, items: BehaviorInspectionProperty[] = [],
+): BehaviorInspectionProperty[] {
+	items.push({ label: 'LOADED DEFINITION', value: id,
+		description: 'THE SELECTED RETAINED DEFINITION. NOT A MATCH TO THE OPEN AUTHORED REGISTRATION.', warning: false });
 	guest.visitTableEntries(definition, (key, value) => {
 		const name = guest.formatValue(key);
 		const metadata = valueIsString(key) ? ACTION_EFFECT_FIELDS.get(name) : undefined;

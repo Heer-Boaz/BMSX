@@ -124,6 +124,11 @@ export class SuspendedGuestSession {
 		return { domain, address };
 	}
 
+	/** The symbol reader supplies an actual closure and its installed capture index. */
+	public readClosureUpvalue(value: SuspendedGuestValue, index: number): SuspendedGuestValue {
+		return this.cpu.readClosureUpvalue(value as Closure, index);
+	}
+
 	public readStringMember(
 		value: SuspendedGuestValue,
 		name: string,

@@ -69,6 +69,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'behaviorLens.source' },
 		{ type: 'command', command: 'behaviorLens.details' },
 		{ type: 'command', command: 'behaviorLens.inspectRuntimeStateMachine' },
+		{ type: 'command', command: 'behaviorLens.inspectRegisteredDefinitions' },
 		{ type: 'separator' },
 		{ type: 'command', command: 'behaviorLens.setInitialState' },
 		{ type: 'separator' },
@@ -79,7 +80,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'behaviorLens.source' },
 		{ type: 'command', command: 'behaviorLens.details' },
 	],
-	'behaviorLens.property.context': [{ type: 'command', command: 'behaviorLens.editProperty' }, { type: 'command', command: 'behaviorLens.source' }, { type: 'command', command: 'behaviorLens.details' }, { type: 'command', command: 'behaviorLens.inspectRuntimeEffect' }],
+	'behaviorLens.property.context': [{ type: 'command', command: 'behaviorLens.editProperty' }, { type: 'command', command: 'behaviorLens.source' }, { type: 'command', command: 'behaviorLens.details' }, { type: 'command', command: 'behaviorLens.inspectRuntimeEffect' }, { type: 'command', command: 'behaviorLens.inspectRegisteredDefinitions' }],
 	'behaviorLens.canvas.context': [{ type: 'command', command: 'undo' }, { type: 'command', command: 'redo' }],
 	'sourceEditReview.title': [
 		{ type: 'command', command: 'sourceEditReview.source' },
