@@ -171,7 +171,7 @@ static void sync_current_av_info(int64_t ufps_scaled) {
 	g_cached_av_info_valid = true;
 	g_current_ufps_scaled = ufps_scaled;
 	g_frame_time_sec = 1.0 / g_cached_av_info.timing.fps;
-	g_video_presenter->setRenderTargetSize(
+	g_video_presenter->setScanoutSize(
 		static_cast<bmsx::i32>(g_cached_av_info.geometry.base_width),
 		static_cast<bmsx::i32>(g_cached_av_info.geometry.base_height));
 	g_audio_output->setSampleRate(g_cached_av_info.timing.sample_rate);

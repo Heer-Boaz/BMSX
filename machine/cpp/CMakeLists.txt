@@ -644,6 +644,12 @@ if(BMSX_BUILD_TESTS)
 	target_link_libraries(bmsx_host_overlay_clip_tests PRIVATE bmsx_host_support)
 	add_test(NAME bmsx_host_overlay_clip_tests COMMAND bmsx_host_overlay_clip_tests)
 
+	add_executable(bmsx_video_presenter_tests
+		${CMAKE_CURRENT_SOURCE_DIR}/../../tests/cpp/video_presenter_test.cpp
+	)
+	target_link_libraries(bmsx_video_presenter_tests PRIVATE bmsx_host_support)
+	add_test(NAME bmsx_video_presenter_tests COMMAND bmsx_video_presenter_tests)
+
 	if(BMSX_BUILD_EGL_TESTS)
 		if(NOT BMSX_ENABLE_GLES2)
 			message(FATAL_ERROR "BMSX_BUILD_EGL_TESTS requires BMSX_ENABLE_GLES2")

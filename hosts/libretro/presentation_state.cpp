@@ -115,7 +115,7 @@ void RenderPresentationState::reset(VideoPresenter& presenter, Runtime& runtime)
 	clearPresentation();
 	m_pcrtcScanoutRevision = 0u;
 	const GxGpuDeviceOutput& output = runtime.machine.gxGpu.readDeviceOutput();
-	presenter.setRenderTargetSize(
+	presenter.setScanoutSize(
 		static_cast<i32>(gxGpuDisplayModeScreenWidth(output.displayModeWord)),
 		gxGpuVerticalVisibleLines(output.verticalDisplayRangeWord, output.displayModeWord)
 	);
@@ -200,7 +200,7 @@ bool RenderPresentationState::render(
 	const bool displayConfigurationChanged = m_pcrtcScanoutRevision != output.pcrtcScanout.revision;
 	m_pcrtcScanoutRevision = output.pcrtcScanout.revision;
 	if (displayConfigurationChanged && output.pcrtcScanout.outputActive) {
-		presenter.setRenderTargetSize(width, height);
+		presenter.setScanoutSize(width, height);
 	}
 	presenter.configurePresentation(presentMode, commitFrame);
 	presenter.present(output, currentTime, deltaTime);

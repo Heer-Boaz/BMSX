@@ -3,6 +3,7 @@ import { actionPromptState } from '../../../ide/workbench/contrib/modal/action_p
 import { hoverState } from '../../../ide/editor/contrib/hover/state';
 import { getTextFileRuntimeSourceStatus } from '../../../ide/workbench/services/working_copy/runtime_source_status';
 import { runtimeLuaSourceRegistry } from '../../../ide/runtime/sources';
+import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { check, type StudioFixture } from './studio_fixture';
 
 /** Borrowed values are consumed by the existing hover, not a parallel test inspector. */
@@ -113,5 +114,6 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	check(guest.global('inspection_callback_count') === 0, 'inspection: readback never invoked a callback');
 	await frame();
 	console.info('STUDIO: actual ActionEffect definition/instance, rebind stops, no-change init, source divergence, compile failure and rewind inspection PASS');
-	return { hostFrames: test.observations.hostFrames, initCount: 3, restoredTick, latestTick };
+	return { hostFrames: test.observations.hostFrames, initCount: 3, restoredTick, latestTick,
+		renderProof: { ...ide.overlayRenderer.viewportSize, topBarBottom: editorChromeState.topBarBounds.bottom } };
 }

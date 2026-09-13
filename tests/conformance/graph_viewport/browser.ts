@@ -171,7 +171,7 @@ export async function createFixture(canvas: HTMLCanvasElement, kind: 'software' 
 			renderer.setViewportSize({ width: WIDTH, height: HEIGHT });
 			canvas.width = width;
 			canvas.height = height;
-			presenter.setRenderTargetSize(width, height);
+			presenter.setScanoutSize(width, height);
 			renderer.beginFrame(presenter);
 			renderer.fillRect(0, 0, width, height, 0, 0xff000000, LAYER_2D_IDE);
 			renderer.pushClipRect(width / 4, height / 4, width * 3 / 4, height * 3 / 4);

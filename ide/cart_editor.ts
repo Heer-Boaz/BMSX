@@ -194,9 +194,6 @@ export class RuntimeCartEditor implements CartEditor {
 	public readonly clearRuntimeErrorOverlay = clearRuntimeErrorOverlay;
 	public readonly clearAllRuntimeErrorOverlays = clearAllRuntimeErrorOverlays;
 	private crtPostprocessingEnabledBeforeEditor: boolean | null = null;
-	private editorRenderTargetBaselineActive = false;
-	private editorRenderTargetBaselineWidth = 0;
-	private editorRenderTargetBaselineHeight = 0;
 	private readonly runtime: Runtime;
 	private readonly presenter: VideoPresenter;
 	private readonly display: EditorDisplay;
@@ -389,7 +386,7 @@ export class RuntimeCartEditor implements CartEditor {
 		const codeTabActive = activeTab.kind === 'code_editor';
 		editorCaretState.cursorVisible = codeTabActive;
 		editorCaretState.blinkTimer = 0;
-		this.enterRenderTargets();
+		if (!wasActive) this.enterRenderTargets();
 		editorRuntimeState.active = true;
 		this.overlayRenderer.active = true;
 		setEditorFeedbackActive(true);
@@ -478,7 +475,7 @@ export class RuntimeCartEditor implements CartEditor {
 		clearBackgroundTasks();
 		editorDiagnosticsState.diagnosticsTaskPending = false;
 		editorRuntimeState.lastReportedSemanticError = null;
-		this.leaveRenderTargets();
+		if (wasActive) this.leaveRenderTargets();
 		if (wasActive) for (const listener of this.activeListeners) listener(false);
 	}
 
@@ -807,29 +804,16 @@ export class RuntimeCartEditor implements CartEditor {
 	}
 
 	private enterRenderTargets(): void {
-		if (this.editorRenderTargetBaselineActive) {
-			return;
-		}
 		const presenter = this.presenter;
-		this.editorRenderTargetBaselineWidth = presenter.viewportSize.x;
-		this.editorRenderTargetBaselineHeight = presenter.viewportSize.y;
-		this.editorRenderTargetBaselineActive = true;
-		presenter.setRenderTargetSize(EDITOR_TARGET_WIDTH, EDITOR_TARGET_HEIGHT);
+		presenter.setFixedRenderTargetSize(EDITOR_TARGET_WIDTH, EDITOR_TARGET_HEIGHT);
 		this.overlayRenderer.setRenderingViewportType(presenter, 'viewport');
 		this.updateViewport(this.overlayRenderer.viewportSize);
 	}
 
 	private leaveRenderTargets(): void {
-		if (!this.editorRenderTargetBaselineActive) {
-			return;
-		}
 		const presenter = this.presenter;
-		presenter.setRenderTargetSize(
-			this.editorRenderTargetBaselineWidth,
-			this.editorRenderTargetBaselineHeight,
-		);
+		presenter.useScanoutRenderTargetSize();
 		this.overlayRenderer.setRenderingViewportType(presenter, 'viewport');
 		this.updateViewport(this.overlayRenderer.viewportSize);
-		this.editorRenderTargetBaselineActive = false;
 	}
 }

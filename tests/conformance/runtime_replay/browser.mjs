@@ -1,4 +1,6 @@
 import { build } from 'esbuild';
+import assert from 'node:assert/strict';
+import { PNG } from 'pngjs';
 import { spawn } from 'node:child_process';
 import { copyFile, cp, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -16,6 +18,7 @@ const studio = inspection || session || process.argv[2] === '--studio' || naviga
 const studioLabel = inspection ? 'STUDIO-RUNTIME-INSPECTION' : session ? 'STUDIO-SESSION' : reparent ? 'STUDIO-BT-REPARENT' : fsm !== null ? `STUDIO-FSM-${fsm.toUpperCase()}` : navigation === null ? 'STUDIO-WORKFLOWS' : 'STUDIO-NAVIGATION';
 const [bios, cart, screenshot] = process.argv.slice(navigation !== null ? 4 : studio ? 3 : 2);
 if (!bios || !cart) throw new Error('Usage: browser.mjs [--studio | --studio-runtime-inspection | --studio-session | --studio-fsm-initial | --studio-fsm-retarget | --studio-fsm-retarget-imported | --studio-bt-reparent | --studio-navigation CART_FOLDER] SYSTEM_ROM CART_ROM [SCREENSHOT_PNG]');
+let inspectionPixels;
 for (const backend of studio ? ['software', 'webgl2', 'webgpu'] : ['webgpu']) {
 	const directory = await mkdtemp(join(tmpdir(), `bmsx-${backend}-rewind-`));
 	let browser;
@@ -71,6 +74,25 @@ for (const backend of studio ? ['software', 'webgl2', 'webgpu'] : ['webgpu']) {
 			}, { backend, expected: result });
 		}
 		if (pageErrors.length !== 0) throw new AggregateError(pageErrors, 'Uncaught browser workflow errors');
+		if (inspection) {
+			const pixels = PNG.sync.read(await page.locator('canvas').screenshot());
+			const { width, height, topBarBottom } = result.renderProof;
+			assert.ok(topBarBottom > 0 && topBarBottom < height, 'pixel proof includes the actual menu bar');
+			assert.equal(pixels.width / width, pixels.height / height, 'Studio pixels keep their aspect ratio');
+			if (inspectionPixels) {
+				assert.equal(pixels.width, inspectionPixels.width);
+				assert.equal(pixels.height, inspectionPixels.height);
+				// Actual menu glyphs after Reboot/Hot Resume/rewind, not replacement text.
+				// Ignore caret/guest-time differences outside this retained chrome.
+				const end = pixels.width * (topBarBottom * pixels.height / height) * 4;
+				for (let offset = 0; offset < end; offset += 1) {
+					assert.ok(Math.abs(pixels.data[offset] - inspectionPixels.data[offset]) <= 1,
+						`${backend}: restored Studio chrome differs from software at byte ${offset}`);
+				}
+			} else {
+				inspectionPixels = pixels;
+			}
+		}
 		if (screenshot) {
 			const { dir, name, ext } = parse(screenshot);
 			await page.screenshot({ path: studio ? join(dir, `${name}-${backend}${ext}`) : screenshot });

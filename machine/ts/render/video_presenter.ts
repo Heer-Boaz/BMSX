@@ -46,6 +46,9 @@ export class VideoPresenter {
 	private readonly frame: FrameData = { frameIndex: 0, time: 0, delta: 0 };
 	private _deviceQuantizeMode = DeviceQuantizeMode.None;
 	private _deviceQuantizeConfigurationRevision = 0;
+	private scanoutWidth: number;
+	private scanoutHeight: number;
+	private fixedRenderTargetSize = false;
 
 	constructor(private readonly output: VideoOutput, backend: GPUBackend, viewportWidth: number, viewportHeight: number) {
 		this.backend = backend;
@@ -53,6 +56,8 @@ export class VideoPresenter {
 		this.viewportSize = { x: viewportWidth, y: viewportHeight };
 		this.canvasSize = { x: viewportWidth, y: viewportHeight };
 		this.offscreenCanvasSize = { x: viewportWidth, y: viewportHeight };
+		this.scanoutWidth = viewportWidth;
+		this.scanoutHeight = viewportHeight;
 	}
 
 	public get deviceQuantizeMode(): DeviceQuantizeMode {
@@ -90,7 +95,24 @@ export class VideoPresenter {
 		this.clearTextures();
 	}
 
-	public setRenderTargetSize(width: number, height: number): void {
+	/** Machine output can change while a host surface owns the presentation size. */
+	public setScanoutSize(width: number, height: number): void {
+		this.scanoutWidth = width;
+		this.scanoutHeight = height;
+		if (!this.fixedRenderTargetSize) this.setRenderTargetSize(width, height);
+	}
+
+	public setFixedRenderTargetSize(width: number, height: number): void {
+		this.fixedRenderTargetSize = true;
+		this.setRenderTargetSize(width, height);
+	}
+
+	public useScanoutRenderTargetSize(): void {
+		this.fixedRenderTargetSize = false;
+		this.setRenderTargetSize(this.scanoutWidth, this.scanoutHeight);
+	}
+
+	private setRenderTargetSize(width: number, height: number): void {
 		if (this.viewportSize.x === width && this.viewportSize.y === height) {
 			return;
 		}

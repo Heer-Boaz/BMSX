@@ -22,6 +22,8 @@ VideoPresenter::VideoPresenter(VideoOutput& output, std::unique_ptr<GPUBackend> 
 	, offscreenCanvasSize{static_cast<f32>(viewportWidth), static_cast<f32>(viewportHeight)}
 	, m_output(output)
 	, m_backend(std::move(backend))
+	, scanoutWidth(viewportWidth)
+	, scanoutHeight(viewportHeight)
 {
 }
 
@@ -29,6 +31,22 @@ VideoPresenter::~VideoPresenter() {
 	m_renderGraph.reset();
 	m_pipelineRegistry.reset();
 	clearTextures();
+}
+
+void VideoPresenter::setScanoutSize(i32 width, i32 height) {
+	scanoutWidth = width;
+	scanoutHeight = height;
+	if (!fixedRenderTargetSize) setRenderTargetSize(width, height);
+}
+
+void VideoPresenter::setFixedRenderTargetSize(i32 width, i32 height) {
+	fixedRenderTargetSize = true;
+	setRenderTargetSize(width, height);
+}
+
+void VideoPresenter::useScanoutRenderTargetSize() {
+	fixedRenderTargetSize = false;
+	setRenderTargetSize(scanoutWidth, scanoutHeight);
 }
 
 void VideoPresenter::setRenderTargetSize(i32 width, i32 height) {

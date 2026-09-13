@@ -48,11 +48,13 @@ public:
 	// ─────────────────────────────────────────────────────────────────────────
 	// Viewport and canvas sizes
 	// ─────────────────────────────────────────────────────────────────────────
-	Vec2 viewportSize;       // Native machine scanout size.
+	Vec2 viewportSize;       // Host presentation size, independent of machine scanout.
 	Vec2 canvasSize;         // The backing buffer size
 	Vec2 offscreenCanvasSize;// Offscreen render target size
 
-	void setRenderTargetSize(i32 width, i32 height);
+	void setScanoutSize(i32 width, i32 height);
+	void setFixedRenderTargetSize(i32 width, i32 height);
+	void useScanoutRenderTargetSize();
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// Frame rendering
@@ -115,6 +117,7 @@ public:
 	void rebuildGraph();
 
 private:
+	void setRenderTargetSize(i32 width, i32 height);
 	void finalizePresentation();
 	void resetPresentationHistory();
 
@@ -124,6 +127,9 @@ private:
 	std::unique_ptr<RenderGraphRuntime> m_renderGraph;
 	DeviceQuantizeMode m_deviceQuantizeMode = DeviceQuantizeMode::None;
 	u64 m_deviceQuantizeConfigurationRevision = 0u;
+	i32 scanoutWidth;
+	i32 scanoutHeight;
+	bool fixedRenderTargetSize = false;
 
 	// Frame timing
 	u32 m_renderFrameIndex = 0u;

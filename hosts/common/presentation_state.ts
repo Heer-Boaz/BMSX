@@ -47,7 +47,7 @@ export class RenderPresentationState {
 		const displayConfigurationChanged = this.pcrtcScanoutRevision !== output.pcrtcScanout.revision;
 		this.pcrtcScanoutRevision = output.pcrtcScanout.revision;
 		if (displayConfigurationChanged && output.pcrtcScanout.outputActive) {
-			presenter.setRenderTargetSize(width, height);
+			presenter.setScanoutSize(width, height);
 		}
 		presenter.configurePresentation(mode, commitFrame);
 		presenter.present(output, currentTimeMs / 1000, hostDeltaMs / 1000);
@@ -96,7 +96,7 @@ export class RenderPresentationState {
 		this.clearPresentation();
 		this.pcrtcScanoutRevision = 0;
 		const output = runtime.machine.gxGpu.readDeviceOutput();
-		presenter.setRenderTargetSize(
+		presenter.setScanoutSize(
 			gxGpuDisplayModeScreenWidth(output.displayModeWord),
 			gxGpuVerticalVisibleLines(
 				output.verticalDisplayRangeWord,

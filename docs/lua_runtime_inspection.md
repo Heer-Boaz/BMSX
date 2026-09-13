@@ -177,12 +177,13 @@ guest-objectvelden toevoegt. Debug-ROMretentie op de host groeit wel.
   metingen; geen closure-decompilatie of extra boom per actor.
 - Volledige optimized-variable recovery (constants, verhuisde locaties) is
   niet door alleen named-register-liveness opgelost.
-- De afsluitende inspectiescreenshots tonen bij WebGL2/WebGPU beschadigd
-  glyphbeeld na de reboot/rewind-flow. De softwareopname is leesbaar. Dit is
-  ook gereproduceerd met de ongewijzigde productiecode en versie-6-ROMs van
-  `36e9a1ca2` (dezelfde lifecycle, zonder de nieuwe runtimewaarde-asserties).
-  Het is dus geen nieuw inspectie-/symbolenregressie, maar blijft een afzonderlijke
-  render-/viewportfout. Functionele asserties zijn geen zichtbare rendererparity.
+
+De afzonderlijke glyph-/viewportfout uit deze proef is daarna hersteld bij de
+[presentatiemaat-owner](host_presentation_sizing.md). Rewind wijzigde het doel
+naar de scanoutmaat terwijl de IDE haar vaste layout behield; ook software kapte
+het werkvlak af. De gedeelde fixture bewaakt nu de maatgrens en de inspectiedriver
+vergelijkt de echte menubalkpixels op de drie renderers. Dit was geen inspectie-
+of symbolenregressie en is niet met een fontcorrectie opgelost.
 
 [lldb]: https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/lldb/source/Target/StackFrame.cpp
 [locations]: https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/llvm/lib/CodeGen/AsmPrinter/DebugLocStream.h

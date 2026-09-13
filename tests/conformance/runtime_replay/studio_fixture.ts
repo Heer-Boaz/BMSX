@@ -70,6 +70,11 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 	const frame = async () => {
 		clock.advance(runtime.timing.frameDurationMs);
 		runWorkbenchHostFrame(session, runtime, presenter, input, audio, output, log, ide, screen, menu, clock.now());
+		if (ide.editor.isActive) {
+			const viewport = ide.overlayRenderer.viewportSize;
+			check(presenter.viewportSize.x === viewport.width && presenter.viewportSize.y === viewport.height,
+				'Studio layout and presentation target must agree, including frames that restore machine state');
+		}
 		observations.hostFrames += 1;
 		await new Promise<void>(resolve => setTimeout(resolve, 0));
 		check(!ide.fault.hostFrameFailed, 'workbench host frame failed');

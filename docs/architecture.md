@@ -4887,7 +4887,15 @@ presentation facade.
 
 Host-overlay coordinates belong to the publication's logical pixel space;
 the presenter owns the current target dimensions at pass execution. A saved
-IDE layout size does not program a game/rewind framebuffer. `Host2DKind.Clip`
+IDE layout size does not program a game/rewind framebuffer. `VideoPresenter`
+retains the latest scanout size separately from its host sizing policy:
+`setScanoutSize` updates machine output dimensions; `setFixedRenderTargetSize`
+selects a host surface; `useScanoutRenderTargetSize` follows the latest output
+again. IDE activation requests its fixed 384x288 target. Restore/reset cannot
+resize that surface behind the layout, and deactivation does not restore a stale
+captured size. Only the presenter changes backend targets, video-output size and
+the rendergraph. See [ownership and renderer evidence](host_presentation_sizing.md).
+`Host2DKind.Clip`
 is an ordered half-open, top-left-origin logical-pixel rectangle in that same
 lane. The producer intersects nested clips and retains each published rect
 until consumption. Each pass starts with the full target clip. WebGL2/WebGPU
