@@ -469,7 +469,7 @@ end
 return run, detach, recorder
 `;
 
-function createCartlibProgramCpu(cartEntrySource: string, traceStatements: 'erase' | 'emit' = 'erase'): CPU {
+function createCartlibProgramCpu(cartEntrySource: string, traceStatements: 'erase' | 'emit' = 'erase', optLevel: 0 | 3 = 3): CPU {
 	const systemModules = SYSTEM_MODULE_FILES.map(([path, file]) => {
 		const source = readFileSync(file, 'utf8');
 		return { path, chunk: parseLuaChunk(source, `${path}.lua`), source };
@@ -494,12 +494,12 @@ function createCartlibProgramCpu(cartEntrySource: string, traceStatements: 'eras
 	}
 	const systemCompiled = compileLuaChunkToProgram(parseLuaChunk(SYSTEM_ENTRY_SOURCE, 'boot.lua'), systemModules, {
 		entrySource: SYSTEM_ENTRY_SOURCE,
-		optLevel: 3,
+		optLevel,
 		programDomain: 'system',
 	});
 	const cartCompiled = compileLuaChunkToProgram(parseLuaChunk(cartEntrySource, 'entry.lua'), cartModules, {
 		entrySource: cartEntrySource,
-		optLevel: 3,
+		optLevel,
 		programDomain: 'cart',
 		traceStatements,
 	});
@@ -515,6 +515,47 @@ function runCompletionClosure(cpu: CPU, closure: Closure, args: number[]): numbe
 	assert.equal(cpu.runUntilDepth(0, budget), RunResult.Halted);
 	return budget - cpu.instructionBudgetRemaining;
 }
+
+for (const optLevel of [0, 3] as const) test(`BT empty/single-child lowering preserves optional reset through component rebind (O${optLevel})`, () => {
+	const cpu = createCartlibProgramCpu(`
+local compiler<const> = require('cartlib/behaviour_tree/program')
+local library<const> = require('cartlib/behaviour_tree/library')
+local component<const> = require('cartlib/behaviour_tree/bt_component')
+local registry<const> = require('cartlib/registry')
+local result<const> = require('cartlib/behaviour_tree/result')
+local aborts = 0
+local callback<const> = function() return result.running end
+for _, kind in ipairs({ 'sequence', 'selector' }) do
+	local empty<const> = compiler.compile(kind, { root = { type = kind, children = {} } })
+	assert(empty.reset == nil and empty.create_execution_state() == nil)
+	assert(empty.evaluate() == (kind == 'sequence' and result.success or result.failure))
+	local definition<const> = { root = { type = kind, children = {
+		{ type = kind, children = { { type = 'task', task = { execute = callback } } } },
+	} } }
+	local program<const> = compiler.compile(kind, definition)
+	assert(program.evaluate == callback and program.reset == nil and program.create_execution_state() == nil)
+	library.register(kind, definition)
+	local instance<const> = component.new({ parent = {} }, kind)
+	instance.id = kind
+	registry:register(instance)
+	registry:index(instance, component)
+	instance:stop()
+	instance:start()
+	library.register(kind, definition)
+	assert(instance.evaluate == callback and instance.reset == nil)
+	local stateful<const> = { root = { type = kind, children = {
+		{ type = 'task', task = { tick = callback, abort = function() aborts = aborts + 1 end } },
+	} } }
+	library.register(kind, stateful)
+	instance.evaluate(instance.parent, instance, instance.operand)
+	library.register(kind, definition)
+	assert(instance.reset == nil)
+end
+return aborts
+`, 'erase', optLevel);
+	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [2]);
+});
 
 test('BT source membership fixture executes its opaque builders and ordered children only in compiled cartlib', () => {
 	const cpu = createCartlibProgramCpu(BT_MEMBERSHIP_SOURCE + `

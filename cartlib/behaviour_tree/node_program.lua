@@ -50,15 +50,18 @@ local compile_children<const> = function(children, layout)
 	return evaluators, operands, resetters, child_count, branches
 end
 
+-- Collapse before constructing dense child lists: their false reset marker is
+-- storage-only, not the optional callback returned by compile_node.
 compile_by_type.sequence = function(node, layout)
-	local evaluators<const>, operands<const>, resetters<const>, child_count<const> =
-		compile_children(node.children, layout)
+	local children<const> = node.children
+	local child_count<const> = #children
 	if child_count == 0 then
 		return return_success
 	end
 	if child_count == 1 then
-		return evaluators[1], operands[1], resetters[1]
+		return compile_node(children[1], layout)
 	end
+	local evaluators<const>, operands<const>, resetters<const> = compile_children(children, layout)
 	local state_slot<const> = allocate_state_slot(layout)
 	local reset<const> = function(target, execution, execution_state)
 		local child_index<const> = execution_state[state_slot]
@@ -91,14 +94,15 @@ compile_by_type.sequence = function(node, layout)
 end
 
 compile_by_type.selector = function(node, layout, execution_index)
-	local evaluators<const>, operands<const>, resetters<const>, child_count<const>, branches<const> =
-		compile_children(node.children, layout)
+	local children<const> = node.children
+	local child_count<const> = #children
 	if child_count == 0 then
 		return return_failure
 	end
 	if child_count == 1 then
-		return evaluators[1], operands[1], resetters[1]
+		return compile_node(children[1], layout)
 	end
+	local evaluators<const>, operands<const>, resetters<const>, _<const>, branches<const> = compile_children(children, layout)
 	local state_slot<const> = allocate_state_slot(layout)
 	local observes_lower_priority = false
 	for child_index = 1, child_count do
