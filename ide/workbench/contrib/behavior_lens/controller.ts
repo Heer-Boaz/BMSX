@@ -46,6 +46,7 @@ import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import { getTextFileRuntimeSourceStatus } from '../../services/working_copy/runtime_source_status';
 import type { WorkbenchPropertyInspector } from '../../ui/property_inspector/control';
 import { inspectActionEffectInstance, readActionEffectInstances } from './action_effect_runtime';
+import { inspectStateMachineState, readStateMachineInstances, readStateMachineStates } from './state_machine_runtime';
 
 const PICKER_TITLES: Readonly<Record<BehaviorKind, string>> = {
 	action_effect: 'ACTIONEFFECTS',
@@ -160,6 +161,26 @@ export class BehaviorLensController {
 				});
 				lifetime.add({ dispose: this.guest.onDidInvalidate(() => inspector.hide()) });
 			});
+	}
+
+	public inspectRuntimeStateMachine(input: BehaviorLensInput, inspector: WorkbenchPropertyInspector<BehaviorInspectionProperty>): void {
+		const choices = readStateMachineInstances(this.sources, this.guest, input.view.resource.domain);
+		this.quickInput.pick('FSM INSTANCES', choices.available ? 'Choose a runtime instance, not a source registration' : 'Runtime exports unavailable or not initialized',
+			(_origin, lifetime) => {
+				lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
+				return new TextQuickPickProvider(choices.items);
+			}, machine => this.quickInput.pick(`STATES / ${machine.label}`, machine.detail,
+				(_origin, lifetime) => {
+					lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
+					return new TextQuickPickProvider(readStateMachineStates(this.guest, machine.machine));
+				}, state => {
+					const lifetime = inspector.show({ title: `LIVE FSM / ${state.label}`,
+						items: inspectStateMachineState(this.sources, this.guest, machine, state),
+						canOpenSource: item => this.canOpenInspectionSource(item),
+						openSource: item => this.openInspectionSource(input, item),
+					});
+					lifetime.add({ dispose: this.guest.onDidInvalidate(() => inspector.hide()) });
+				}));
 	}
 
 	public canOpenInspectionSource(detail: BehaviorInspectionProperty): boolean {

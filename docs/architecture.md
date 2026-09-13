@@ -1481,6 +1481,15 @@ bus and requires matching installed source bytes. The mirrored read-only
 gain socket ownership. Callback identity is not definition allocation origin,
 and scalar values acquire no inferred authoring target.
 
+The [FSM Live picker](state_machine_runtime_inspection.md) uses the same type
+index to select a concrete machine and then one of its retained states. The
+inspector separates instance data from loaded defaults and reads that node's
+own definition even during a partially completed rebind. A stored `current_id`
+is not an active-state proof; compiled event/input targets are not authored
+transition expressions. Only actual closures acquire callback-Source through
+the existing mapping. No additional cartlib state, evaluator, registry or
+execution hook is introduced.
+
 Multi-resource source operations use the shared resource history described in
 [`editor_workspace_history.md`](editor_workspace_history.md). Rename is its
 first consumer: a single admitted workspace edit, not separate per-file Undo

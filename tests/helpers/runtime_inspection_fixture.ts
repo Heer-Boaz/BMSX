@@ -6,10 +6,17 @@ local clock<const> = require('cartlib/clock')
 local registry<const> = require('cartlib/registry')
 local effects<const> = require('cartlib/actioneffects')
 local component<const> = require('cartlib/actioneffects/actioneffect_component')
+local fsm_library<const> = require('cartlib/fsm/library')
+local fsm_component<const> = require('cartlib/fsm/fsm_component')
+local world_object<const> = require('cartlib/world/world_object')
+local input<const> = require('cartlib/input/input')
+local callbacks<const> = require('inspection_callbacks')
 display.reset_256x192()
 clock.configure_tick_intervals(1, 1)
+input.add_player(1)
 inspection_init_count = 0
 inspection_callback_count = 0
+inspection_fsm_callback_count = 0
 inspection_tick = 0
 local function configure<init>()
 	inspection_init_count = inspection_init_count + 1
@@ -18,6 +25,26 @@ local function configure<init>()
 		initial_cooldown_ms = 7,
 		handler = function() inspection_callback_count = inspection_callback_count + 1 end,
 	})
+	fsm_library.register('walker', {
+		initial = 'nest',
+		data = { revision = inspection_init_count * 10 },
+		states = {
+			nest = {
+				initial = 'wait',
+				data = { revision = inspection_init_count * 10 },
+				update = callbacks.update,
+				on = { advance = '/parked', redirect = callbacks.redirect },
+				input_event_handlers = { { pattern = 'a[jp]', go = callbacks.redirect } },
+				states = {
+					wait = {},
+					move = {},
+					listener = { is_concurrent = true, initial = 'listening', states = { listening = {} } },
+				},
+			},
+			parked = {},
+		},
+	})
+	fsm_library.register('companion', { states = { resting = {} } })
 end
 configure()
 effects.register_effect('ungranted', { period_ms = 777 })
@@ -34,10 +61,33 @@ registry:index(inspection_second, component)
 inspection_second:grant_effect('pulse')
 inspection_effect = inspection_first.effects.pulse
 inspection_other = inspection_second.effects.pulse
+for _, effect_component in ipairs({ inspection_first, inspection_second }) do
+	local parent<const> = effect_component.parent
+	setmetatable(parent, world_object)
+	world_object.initialize(parent)
+	parent.active = true
+	parent.player_index = 1
+end
+inspection_fsm_first = fsm_component.new({ parent = inspection_first.parent }, { 'walker' })
+inspection_fsm_first.id = 'inspection.fsm.first'
+registry:register(inspection_fsm_first)
+registry:index(inspection_fsm_first, fsm_component)
+inspection_fsm_first:start()
+inspection_fsm_first:get_machine('walker'):transition_to('/parked')
+inspection_fsm_first:get_machine('walker').states.nest.data.revision = 111
+inspection_fsm_second = fsm_component.new({ parent = inspection_second.parent }, { 'walker', 'companion' })
+inspection_fsm_second.id = 'inspection.fsm.second'
+registry:register(inspection_fsm_second)
+registry:index(inspection_fsm_second, fsm_component)
+inspection_fsm_second:start()
+inspection_fsm_second:get_machine('walker').states.nest.data.revision = 222
+fsm_library.register('unattached', { states = { hidden = {} } })
+inspection_fsm_ready = true
 
 -- Written registration candidates are not a loaded-definition catalog.
 function inspection_never_registered()
 	effects.register_effect('pulse', { period_ms = 999 })
+	fsm_library.register('walker', { data = { revision = 999 }, states = { not_loaded = {} } })
 end
 -- A source inspection reads paths, never runs this function or its callbacks.
 function inspection_values()
@@ -52,4 +102,16 @@ while true do
 	inspection_tick = inspection_tick + 1
 	vblank.wait()
 end
+`;
+
+/** A second real module; navigation must not reuse the source registration's cart.lua coordinates. */
+export const RUNTIME_INSPECTION_CALLBACKS_SOURCE = `local callbacks<const> = {}
+function callbacks.update()
+	inspection_fsm_callback_count = inspection_fsm_callback_count + 1
+end
+function callbacks.redirect()
+	inspection_fsm_callback_count = inspection_fsm_callback_count + 1
+	return '/parked'
+end
+return callbacks
 `;

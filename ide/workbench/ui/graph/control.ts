@@ -1,6 +1,6 @@
 import { PointerButton } from '../../../input/pointer/buttons';
 import { dragScrollSpeed } from '../drag_scroll';
-import type { Scrollbar } from '../scrollbar';
+import type { Scrollbar, ScrollbarDragStart } from '../scrollbar';
 import { point_in_rect } from '../../../../machine/ts/common/rect';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 import { DOUBLE_CLICK_MAX_INTERVAL_MS, POINTER_DRAG_ACTIVATION_THRESHOLD } from '../../../common/constants';
@@ -31,7 +31,7 @@ export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHover
 	private anchorScrollY = 0;
 	private gesture = Gesture.None;
 	private scrollbar: Scrollbar | undefined;
-	private scrollbarOffset = 0;
+	private scrollbarDragStart!: ScrollbarDragStart;
 	private pressTarget: WorkbenchGraphItem | null = null;
 	private pressConnection: WorkbenchGraphConnectionDragStart | undefined;
 	private dragSource: WorkbenchGraphDragSource | undefined;
@@ -159,7 +159,7 @@ export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHover
 		if (this.gesture === Gesture.Scrollbar) {
 			const scrollbar = this.scrollbar!;
 			if (!scrollbar.isVisible()) this.cancelPointer();
-			else scrollbar.drag(scrollbar.orientation === 'horizontal' ? snapshot.viewportX : snapshot.viewportY, this.scrollbarOffset);
+			else scrollbar.drag(scrollbar.orientation === 'horizontal' ? snapshot.viewportX : snapshot.viewportY, this.scrollbarDragStart);
 			return;
 		}
 		if (this.gesture === Gesture.Pan) {
@@ -262,7 +262,7 @@ export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHover
 					this.pressTarget = view.selection;
 					this.lastClick = null;
 					this.scrollbar = scrollbar;
-					this.scrollbarOffset = scrollbar.beginDrag(scrollbar.orientation === 'horizontal' ? snapshot.viewportX : snapshot.viewportY);
+					this.scrollbarDragStart = scrollbar.beginDrag(scrollbar.orientation === 'horizontal' ? snapshot.viewportX : snapshot.viewportY);
 					this.gesture = Gesture.Scrollbar;
 					this.capture.capture(this);
 				}

@@ -1,11 +1,11 @@
 import type { ScrollbarKind } from '../../common/models';
 import { point_in_rect } from '../../../machine/ts/common/rect';
-import type { Scrollbar } from '../../workbench/ui/scrollbar';
+import type { Scrollbar, ScrollbarDragStart } from '../../workbench/ui/scrollbar';
 
 export type ScrollbarMap = Record<ScrollbarKind, Scrollbar>;
 
 export class ScrollbarController {
-	private active: { kind: ScrollbarKind; pointerOffset: number } | null = null;
+	private active: { kind: ScrollbarKind; dragStart: ScrollbarDragStart } | null = null;
 
 	constructor(private readonly scrollbars: ScrollbarMap, private readonly apply: (kind: ScrollbarKind, scroll: number) => void) { }
 
@@ -35,11 +35,11 @@ export class ScrollbarController {
 				&& pointerY >= track.top && pointerY < track.top + bottomMargin;
 			if (!hitsTrack && !extendedHorizontalHit) continue;
 			const hitsThumb = point_in_rect(pointerX, pointerY, scrollbar.getThumb()!);
-			const pointerOffset = scrollbar.beginDrag(pointerCoord);
+			const dragStart = scrollbar.beginDrag(pointerCoord);
 			if (!hitsThumb) {
 				this.apply(kind, scrollbar.getScroll());
 			}
-			this.active = { kind, pointerOffset };
+			this.active = { kind, dragStart };
 			return true;
 		}
 		return false;
@@ -60,7 +60,7 @@ export class ScrollbarController {
 			return false;
 		}
 		const pointerCoord = scrollbar.orientation === 'vertical' ? pointerY : pointerX;
-		const newScroll = scrollbar.drag(pointerCoord, this.active.pointerOffset);
+		const newScroll = scrollbar.drag(pointerCoord, this.active.dragStart);
 		this.apply(this.active.kind, newScroll);
 		return true;
 	}

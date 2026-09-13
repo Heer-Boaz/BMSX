@@ -56,6 +56,7 @@ export type EditorCommandId =
 	| 'graph.resetZoom'
 	| 'behaviorLens.details'
 	| 'behaviorLens.inspectRuntimeEffect'
+	| 'behaviorLens.inspectRuntimeStateMachine'
 	| 'behaviorLens.editProperty'
 	| 'propertyInspector.source'
 	| 'propertyInspector.close'

@@ -2,7 +2,7 @@
 
 Datum: 2026-09-13. Live baseline: `c30009e07`.
 **Status: D1-history/composite broninputs, de generieke D2-leesbasis en gerichte
-ActionEffect-instance-inspectie gebouwd; geen volledige definitiecatalogus.**
+ActionEffect-/FSM-instance-inspectie gebouwd; geen volledige definitiecatalogus.**
 
 Dit document verwerkt de bijgestelde productgrens: cartlib ondersteunt al een
 declaratieve manier van programmeren; die is de norm voor visuele authoring.
@@ -302,8 +302,11 @@ werken. Pas daarna de geladen FSM-hiërarchie en catalogusownership uitbreiden.
 
 **Implementatiestatus:** [de generieke Lua-inspectiegrens](lua_runtime_inspection.md)
 en [gerichte ActionEffect-instance-inspectie](actioneffect_runtime_inspection.md)
-zijn gebouwd. `Live` gebruikt de bestaande registry-type-index en gedeelde
-kiezer/property inspector. De geselecteerde instance en haar geladen definitie
+zijn gebouwd. De [FSM-vervolgslice](state_machine_runtime_inspection.md) kiest
+een echte machine en daarna een state uit zijn behouden hiërarchie; zij leest
+de eigen definitie en data van die state, ook midden in rebind. `Live` gebruikt
+de bestaande registry-type-index en gedeelde kiezer/property inspector.
+De geselecteerde instance en haar geladen definitie
 blijven gescheiden van de open authored registratie, ook bij dezelfde effect-id.
 Een onafhankelijke Studio-proef bedient de echte UI tijdens midden-in-rebind,
 no-change `<init>`, gewijzigde installatie, compilefout en rewind. De compiler

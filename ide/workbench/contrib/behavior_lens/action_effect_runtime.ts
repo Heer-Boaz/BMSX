@@ -1,12 +1,13 @@
 import type { Table } from '../../../../machine/ts/machine/cpu/table';
-import { valueIsString, valueIsTable } from '../../../../machine/ts/machine/cpu/value';
+import { valueIsString } from '../../../../machine/ts/machine/cpu/value';
 import type { ResourceDomain } from '../../../common/resource';
-import { readRuntimeLuaModuleExport, runtimeLuaFunctionSource } from '../../../runtime/lua_inspection';
 import type { RuntimeSourceState } from '../../../runtime/sources';
-import type { SuspendedGuestSession, SuspendedGuestValue } from '../../../runtime/suspended_guest';
+import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import type { QuickPickItem } from '../../services/quick_input/provider';
 import { ACTION_EFFECT_FIELDS } from './action_effect_fields';
 import type { BehaviorInspectionProperty } from './inspection';
+import { visitRuntimeComponents } from './runtime_components';
+import { inspectBehaviorRuntimeValue } from './runtime_properties';
 
 /** Borrowed only while the picker owns the suspended read. Never saved in an editor input. */
 export type ActionEffectInstanceChoice = QuickPickItem & {
@@ -16,25 +17,15 @@ export type ActionEffectInstanceChoice = QuickPickItem & {
 
 /** The actual type index, not a source registration scan or a heap-wide discovery walk. */
 export function readActionEffectInstances(sources: RuntimeSourceState, guest: SuspendedGuestSession, domain: ResourceDomain) {
-	const registry = readRuntimeLuaModuleExport(sources, guest, domain, 'cartlib/registry');
-	const type = readRuntimeLuaModuleExport(sources, guest, domain, 'cartlib/actioneffects/actioneffect_component');
 	const items: ActionEffectInstanceChoice[] = [];
-	if (registry.kind === 'unavailable' || type.kind === 'unavailable' || registry.value === null || type.value === null)
-		return { available: false, items };
-	const index = guest.readStringMember(registry.value, '_entries_by_key') as Table;
-	const bucket = index.get(type.value);
-	if (bucket !== null) {
-		const components = guest.readStringMember(bucket, 'items') as Table;
-		for (let i = 1; i <= components.arrayLength; i += 1) {
-			const component = components.getInteger(i) as Table;
-			const id = guest.formatValue(guest.readStringMember(component, 'id'));
-			const ownerId = guest.formatValue(guest.readStringMember(guest.readStringMember(component, 'parent'), 'id'));
-			guest.visitTableEntries(guest.readStringMember(component, 'effects'), (key, effect) => {
-				items.push({ label: guest.formatValue(key), description: `COMPONENT ${id}`, detail: `OWNER ${ownerId}`, component, effect: effect as Table });
-			});
-		}
-	}
-	return { available: true, items };
+	const available = visitRuntimeComponents(sources, guest, domain, 'cartlib/actioneffects/actioneffect_component', component => {
+		const id = guest.formatValue(guest.readStringMember(component, 'id'));
+		const ownerId = guest.formatValue(guest.readStringMember(guest.readStringMember(component, 'parent'), 'id'));
+		guest.visitTableEntries(guest.readStringMember(component, 'effects'), (key, effect) => {
+			items.push({ label: guest.formatValue(key), description: `COMPONENT ${id}`, detail: `OWNER ${ownerId}`, component, effect: effect as Table });
+		});
+	});
+	return { available, items };
 }
 
 const INSTANCE_FIELDS = [
@@ -62,19 +53,8 @@ export function inspectActionEffectInstance(
 	guest.visitTableEntries(definition, (key, value) => {
 		const name = guest.formatValue(key);
 		const metadata = valueIsString(key) ? ACTION_EFFECT_FIELDS.get(name) : undefined;
-		const source = runtimeLuaFunctionSource(sources, guest, value);
-		items.push({ label: metadata === undefined ? name : metadata.label,
-			value: source === undefined ? formatLoadedValue(guest, value)
-				: `CALL TARGET / ${source.resource.domain === -1 ? 'SYSTEM' : `CART ${source.resource.domain}`}\n${source.resource.path}:${source.range.start.line}:${source.range.start.column}`,
-			description: metadata === undefined ? '' : metadata.description, warning: false, source });
+		items.push(inspectBehaviorRuntimeValue(sources, guest, metadata === undefined ? name : metadata.label, value,
+			metadata === undefined ? '' : metadata.description));
 	});
 	return items;
-}
-
-/** Lists retain their actual keys, including holes; no second dense table or evaluated requirements. */
-function formatLoadedValue(guest: SuspendedGuestSession, value: SuspendedGuestValue): string {
-	if (!valueIsTable(value)) return guest.formatValue(value);
-	const lines: string[] = [];
-	guest.visitTableEntries(value, (key, entry) => lines.push(`${guest.formatValue(key)}: ${guest.previewValue(entry, 1, 8)}`));
-	return lines.length === 0 ? '{}' : lines.join('\n');
 }

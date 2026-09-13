@@ -68,6 +68,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 	'behaviorLens.state.context': [
 		{ type: 'command', command: 'behaviorLens.source' },
 		{ type: 'command', command: 'behaviorLens.details' },
+		{ type: 'command', command: 'behaviorLens.inspectRuntimeStateMachine' },
 		{ type: 'separator' },
 		{ type: 'command', command: 'behaviorLens.setInitialState' },
 		{ type: 'separator' },
@@ -136,6 +137,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'behaviorLens.source' },
 		{ type: 'command', command: 'behaviorLens.details' },
 		{ type: 'command', command: 'behaviorLens.setInitialState' },
+		{ type: 'command', command: 'behaviorLens.inspectRuntimeStateMachine' },
 		...GRAPH_ZOOM_ACTIONS,
 	],
 	'behaviorLens.properties.title': [{ type: 'command', command: 'behaviorLens.source' }, { type: 'command', command: 'behaviorLens.details' }, { type: 'command', command: 'behaviorLens.editProperty' }, { type: 'command', command: 'behaviorLens.inspectRuntimeEffect' }],

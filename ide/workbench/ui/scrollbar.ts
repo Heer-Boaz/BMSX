@@ -3,6 +3,8 @@ import { create_rect_bounds, write_rect_bounds, type RectBounds } from '../../..
 import { SCROLLBAR_MIN_THUMB_HEIGHT } from '../../common/constants';
 import { api } from '../../runtime/overlay_api';
 
+export type ScrollbarDragStart = { readonly pointer: number; readonly scroll: number };
+
 /** Retained thumb geometry. Content coordinates need not be pixels (code uses rows/columns). */
 export class Scrollbar {
 	public revision = 0;
@@ -38,7 +40,7 @@ export class Scrollbar {
 			// An empty viewport or a track too short for a grabbable thumb has no drag affordance.
 			this.visible = this.scrollTravel > 0 && viewportSize > 0 && trackLength > SCROLLBAR_MIN_THUMB_HEIGHT;
 			if (this.visible) {
-				this.thumbLength = Math.max(SCROLLBAR_MIN_THUMB_HEIGHT, trackLength * viewportSize / contentSize);
+				this.thumbLength = Math.max(SCROLLBAR_MIN_THUMB_HEIGHT, Math.trunc(trackLength * viewportSize / contentSize));
 				this.thumbTravel = trackLength - this.thumbLength;
 			}
 			this.scrollValue = clamp(scroll, minimum, this.maxScrollValue);
@@ -55,7 +57,7 @@ export class Scrollbar {
 
 	private updateThumb(): void {
 		if (!this.visible) return;
-		const start = this.trackStart + (this.scrollValue - this.minScrollValue) * this.thumbTravel / this.scrollTravel;
+		const start = Math.round(this.trackStart + (this.scrollValue - this.minScrollValue) * this.thumbTravel / this.scrollTravel);
 		if (this.orientation === 'vertical') write_rect_bounds(this.thumb, this.track.left, start, this.track.right, start + this.thumbLength);
 		else write_rect_bounds(this.thumb, start, this.track.top, start + this.thumbLength, this.track.bottom);
 	}
@@ -77,16 +79,18 @@ export class Scrollbar {
 	}
 
 	/** The control has hit a visible track. Track clicks center the thumb before capture. */
-	public beginDrag(pointer: number): number {
+	public beginDrag(pointer: number): ScrollbarDragStart {
 		const start = this.orientation === 'vertical' ? this.thumb.top : this.thumb.left;
-		if (pointer < start || pointer > start + this.thumbLength) this.drag(pointer, this.thumbLength / 2);
-		const currentStart = this.orientation === 'vertical' ? this.thumb.top : this.thumb.left;
-		return clamp(pointer - currentStart, 0, this.thumbLength);
+		if (pointer < start || pointer > start + this.thumbLength) {
+			this.setScroll(this.minScrollValue + (pointer - this.trackStart - this.thumbLength / 2) * this.scrollTravel / this.thumbTravel);
+		}
+		// Capture the content position, not an inverse of the rounded display thumb.
+		return { pointer, scroll: this.scrollValue };
 	}
 
 	/** Capture owns the visible-track lifetime; this is the thumb/content datapath. */
-	public drag(pointer: number, pointerOffset: number): number {
-		this.setScroll(this.minScrollValue + (pointer - pointerOffset - this.trackStart) * this.scrollTravel / this.thumbTravel);
+	public drag(pointer: number, start: ScrollbarDragStart): number {
+		this.setScroll(start.scroll + (pointer - start.pointer) * this.scrollTravel / this.thumbTravel);
 		return this.scrollValue;
 	}
 }

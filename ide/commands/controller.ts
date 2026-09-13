@@ -102,6 +102,7 @@ export class IdeCommandController {
 			case 'graph.resetZoom':
 			case 'behaviorLens.details':
 			case 'behaviorLens.inspectRuntimeEffect':
+			case 'behaviorLens.inspectRuntimeStateMachine':
 			case 'behaviorLens.editProperty':
 			case 'scenarioLab.details':
 			case 'contextMenu':
@@ -252,6 +253,7 @@ export class IdeCommandController {
 			case 'graph.resetZoom':
 			case 'behaviorLens.details':
 			case 'behaviorLens.inspectRuntimeEffect':
+			case 'behaviorLens.inspectRuntimeStateMachine':
 			case 'behaviorLens.editProperty':
 			case 'scenarioLab.details':
 			case 'contextMenu':

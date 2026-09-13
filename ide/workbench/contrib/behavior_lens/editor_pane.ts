@@ -122,6 +122,10 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 			isEnabled: () => this.input.view.presentation.kind === 'properties' && !this.sourceEditReview.visible,
 			run: () => { this.focus(); this.controller.inspectRuntimeEffect(this.input, this.inspector); },
 		});
+		for (const target of [this.focusTarget, this.graph.focusTarget]) target.registerCommand('behaviorLens.inspectRuntimeStateMachine', {
+			isEnabled: () => this.input.view.presentation.kind === 'state-graph' && !this.sourceEditReview.visible,
+			run: () => { this.focus(); this.controller.inspectRuntimeStateMachine(this.input, this.inspector); },
+		});
 		for (const target of [this.focusTarget, this.graph.focusTarget]) target.registerCommand('contextMenu', {
 			isEnabled: () => !this.sourceEditReview.visible && !this.inspector.visible,
 			run: () => this.openKeyboardContextMenu(),
@@ -367,6 +371,8 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 	}
 
 	public drawStatusBar(statusTop: number, textColor: number): void {
+		// These controls replace the source graph; its selection is not their source target.
+		if (this.inspector.visible || this.sourceEditReview.visible) return;
 		const status = this.input.view.status;
 		drawEditorText(editorViewState.font, status.info, 4, statusTop + 2, 0, textColor);
 		if (status.detail.length > 0) {

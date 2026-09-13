@@ -1,5 +1,3 @@
-import { performance } from 'node:perf_hooks';
-
 /** Warmup plus median host time for cold projection and batched warm operations. */
 export function medianMilliseconds(run: () => void): number {
 	for (let index = 0; index < 10; index += 1) run();

@@ -96,6 +96,16 @@ rows retain strings and navigation metadata. `SuspendedGuestSession` ends these
 lifetimes on deactivation, an explicit guest call or restore. It adds no guest
 registry, tick hook, per-frame query or runtime mutation.
 
+The FSM lens uses that same cartlib type-index reader. Its `Live` action first
+chooses an actual machine root, then a state from that instance's retained
+hierarchy. Only that state's properties are formatted. `state.data` remains
+distinct from `state.definition.data`; even mid-rebind the inspector reads the
+selected node's definition, not the replacement reachable through its root.
+`current_id` is a retained selection, not proof that its ancestors are running.
+Event/input plans are inspected as compiled values, never decompiled into
+authored paths. Both picker scopes use the same suspended lifetime; no guest
+storage or execution change. See [FSM runtime inspection](../docs/state_machine_runtime_inspection.md).
+
 Callback source uses the actual closure address and CPU instruction-bus mapping;
 the two sockets can contain different functions at the same address. It describes
 the current call target, not allocation origin. The current text must match the

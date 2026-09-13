@@ -58,6 +58,11 @@ test('inspector retains complete multiline text and exact pixel-row hit/reveal a
 	assert.equal(model.rowAt(view.bounds.top + 2), 0, 'long property remains selectable inside its body');
 	f.press('ArrowDown'); assert.equal(model.selectionIndex, 1);
 	assert.equal(model.rowAt(view.offsetTop + model.rows[1].top + 2), 1);
+	assert.ok(view.offsetTop + model.rows[1].top >= view.bounds.top
+		&& view.offsetTop + model.rows[1].bottom <= view.bounds.bottom, 'selection reveals the complete property value, not only its label');
+	f.press('ArrowUp');
+	assert.equal(view.scrollTop, 0, 'an oversized property starts at its first line instead of revealing its tail');
+	f.press('ArrowDown');
 	const measured = f.measured();
 	for (let n = 0; n < 100; n += 1) { f.inspector.update(); f.layout(); }
 	assert.equal(f.measured(), measured, 'unchanged frames and scrolling do not wrap/measure source again');

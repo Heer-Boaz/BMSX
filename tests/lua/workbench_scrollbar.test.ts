@@ -48,16 +48,17 @@ for (const orientation of ['horizontal', 'vertical'] as const) {
 		const start = () => orientation === 'horizontal' ? thumb.left : thumb.top;
 		const end = () => orientation === 'horizontal' ? thumb.right : thumb.bottom;
 		assert.equal(end() - start(), 25);
-		assert.equal(start(), 47.5);
+		assert.equal(start(), 48);
 		const offset = bar.beginDrag(start() + 4);
-		assert.equal(offset, 4);
+		assert.deepEqual(offset, { pointer: 52, scroll: 150 });
+		assert.equal(bar.drag(start() + 4, offset), 150, 'pixel rounding does not move content when grabbing a thumb');
 		assert.equal(bar.drag(14, offset), 0);
-		assert.equal(bar.drag(89, offset), 300);
+		assert.equal(bar.drag(90, offset), 300);
 		assert.equal(bar.drag(999, offset), 300);
 		assert.equal(bar.drag(-100, offset), 0);
 		const middleOffset = bar.beginDrag(60);
 		assert.equal(bar.getScroll(), 150);
-		assert.equal(middleOffset, 12.5);
+		assert.deepEqual(middleOffset, { pointer: 60, scroll: 150 });
 		for (let index = 0; index < 100; index += 1) bar.layout(track, 400, 100, 150);
 		assert.equal(bar.getThumb(), thumb);
 		track[orientation === 'horizontal' ? 'top' : 'left'] += 10;
@@ -67,6 +68,16 @@ for (const orientation of ['horizontal', 'vertical'] as const) {
 		bar.layout(track, 100000, 100, 99900);
 		assert.equal(end() - start(), 6, 'large content keeps a grabbable tiny-viewport thumb');
 		assert.equal(end(), 110);
+		bar.layout(track, 317, 100, 83.125);
+		assert.equal(start(), Math.round(start()));
+		assert.equal(end(), Math.round(end()), 'both ends have exact pixel geometry, including a nonintegral size ratio');
+		const stationary = start() + 3;
+		const stationaryOffset = bar.beginDrag(stationary);
+		assert.equal(bar.drag(stationary, stationaryOffset), 83.125, 'fractional content units survive pixel-aligned capture exactly');
+		bar.layout(track, 100.125, 100, 0);
+		assert.equal(end() - start(), 99, 'a small positive scroll range still has one pixel of thumb travel');
+		const tinyRangeOffset = bar.beginDrag(start() + 4);
+		assert.equal(bar.drag(15, tinyRangeOffset), 0.125);
 	});
 }
 
@@ -91,10 +102,11 @@ test('signed content coordinates stay at the range owner, including a changed mi
 	bar.layout(track, 400, 100, -50, -200);
 	assert.equal(bar.getScroll(), -50);
 	const thumb = bar.getThumb()!;
-	assert.equal(thumb.left, 47.5);
+	assert.equal(thumb.left, 48);
 	const offset = bar.beginDrag(thumb.left + 4);
+	assert.equal(bar.drag(thumb.left + 4, offset), -50, 'signed content does not jump at pointer capture');
 	assert.equal(bar.drag(14, offset), -200);
-	assert.equal(bar.drag(89, offset), 100);
+	assert.equal(bar.drag(90, offset), 100);
 	bar.layout(track, 400, 100, 100, -500);
 	assert.equal(bar.getScroll(), -200, 'a new range clamps the existing logical coordinate');
 	assert.equal(bar.getThumb(), thumb);

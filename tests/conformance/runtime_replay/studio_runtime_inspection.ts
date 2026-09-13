@@ -1,4 +1,4 @@
-import { RUNTIME_INSPECTION_CART_SOURCE } from '../../helpers/runtime_inspection_fixture';
+import { RUNTIME_INSPECTION_CALLBACKS_SOURCE, RUNTIME_INSPECTION_CART_SOURCE } from '../../helpers/runtime_inspection_fixture';
 import { actionPromptState } from '../../../ide/workbench/contrib/modal/action_prompt';
 import { hoverState } from '../../../ide/editor/contrib/hover/state';
 import { getTextFileRuntimeSourceStatus } from '../../../ide/workbench/services/working_copy/runtime_source_status';
@@ -8,6 +8,8 @@ import { check, codePositionBounds, type StudioFixture } from './studio_fixture'
 import * as constants from '../../../ide/common/constants';
 import { resolveThemeTokenColor } from '../../../ide/theme/tokens';
 import { openRuntimeEffectInspector, openRuntimeEffectPicker, testRuntimeEffectSource } from './studio_actioneffect_runtime';
+import { openRuntimeStateInspector, openRuntimeStatePicker, testRuntimeStateSource } from './studio_fsm_runtime';
+import { createResourceState } from '../../../ide/workbench/contrib/resources/widget_state';
 
 /** Borrowed values are consumed by the existing hover, not a parallel test inspector. */
 export async function runStudioRuntimeInspection(test: StudioFixture) {
@@ -15,6 +17,15 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	await until(() => cycles() > runtime.timing.cpuHz * 13, 'inspection: normal boot');
 	await press('ControlRight', 'ShiftRight');
 	await runMenuCommand('pause');
+	await press('ControlLeft', 'KeyN');
+	await press('ControlLeft', 'KeyA');
+	test.clipboard.text = 'inspection_callbacks.lua';
+	await press('ControlLeft', 'KeyV');
+	await press('Enter');
+	await until(() => !createResourceState.visible, 'inspection: real New File creates the callback source');
+	const callbackModel = harness.getActiveEditorDocument().model;
+	check(callbackModel.resource.path === 'inspection_callbacks.lua', 'inspection: callback fixture has its own normal working copy');
+	callbackModel.pushEditOperations([{ offset: 0, deleteLength: callbackModel.buffer.length, text: RUNTIME_INSPECTION_CALLBACKS_SOURCE }]);
 	harness.openLuaSource('cart.lua');
 	const model = harness.getActiveEditorDocument().model;
 	const source = RUNTIME_INSPECTION_CART_SOURCE;
@@ -23,7 +34,7 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	check(actionPromptState.prompt?.action === 'reboot', 'inspection: independent fixture uses actual Save/Reboot');
 	await press('Enter');
 	await until(() => tasks.ready && guest.global('inspection_init_count') === 1 && !runtime.completionCallPending(), 'inspection: actual registration and grants');
-	await until(() => guest.global('inspection_effect') !== null, 'inspection: effect instance is granted');
+	await until(() => guest.global('inspection_fsm_ready') === true, 'inspection: effect and FSM instances are attached');
 	await press('ControlRight', 'ShiftRight');
 	await runMenuCommand('pause');
 
@@ -49,11 +60,19 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	check(guest.readStringMember(guest.global('inspection_effect'), 'definition')
 		=== guest.readStringMember(guest.global('inspection_other'), 'definition'), 'inspection: two instances share the actual definition');
 	await testRuntimeEffectSource(test);
+	await testRuntimeStateSource(test);
 	const initialInspector = await openRuntimeEffectInspector(test, 'second', 20);
 
 	const library = runtimeLuaSourceRegistry(ide.sources, 0)!.module2lua['cartlib/actioneffects/actioneffect_component'];
 	const rebindLine = library.src.split('\n').findIndex(line => line.includes('effect.definition = definition')) + 1;
 	harness.toggleLuaBreakpoint(library.source_path, rebindLine);
+	const fsmLibrary = runtimeLuaSourceRegistry(ide.sources, 0)!.module2lua['cartlib/fsm/fsm'];
+	// The constructor uses the same assignment; select the one after the actual rebind owner.
+	const fsmLines = fsmLibrary.src.split('\n');
+	const fsmRebindStart = fsmLines.findIndex(line => line.startsWith('rebind_definition_tree = function'));
+	const fsmRebindStop = fsmLines.findIndex((line, index) => index > fsmRebindStart && line.includes('self.frame_evaluator = definition.frame_evaluator')) + 1;
+	check(fsmRebindStop > fsmRebindStart, 'inspection: actual FSM rebind assignment exists');
+	harness.toggleLuaBreakpoint(fsmLibrary.source_path, fsmRebindStop);
 	const media = ide.sources.currentBlua32Media;
 	await runPaletteCommand('Run: Hot Resume');
 	await until(() => ide.debugger.stopped && ide.editor.isActive && guest.global('inspection_init_count') === 2, 'inspection: unchanged init stops inside first component rebind');
@@ -73,11 +92,19 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	await openRuntimeEffectInspector(test, 'second', 20);
 	harness.toggleLuaBreakpoint(library.source_path, rebindLine);
 	await press('F5');
+	await until(() => ide.debugger.stopped && ide.editor.isActive, 'inspection: FSM rebind stops after the first root definition write');
+	await openRuntimeStateInspector(test, 'first', 20, '');
+	await openRuntimeStateInspector(test, 'first', 10);
+	await openRuntimeStateInspector(test, 'second', 10);
+	harness.toggleLuaBreakpoint(fsmLibrary.source_path, fsmRebindStop);
+	await press('F5');
 	await until(() => !runtime.completionCallPending() && !ide.debugger.plans.controlActive, 'inspection: rebind completes');
 	await press('ControlRight', 'ShiftRight');
 	await runMenuCommand('pause');
 	inspect('inspection_other.definition.period_ms', 30);
 	inspect('inspection_effect.cooldown_until_ms', 107);
+	await openRuntimeStateInspector(test, 'first', 20);
+	await openRuntimeStateInspector(test, 'second', 20);
 
 	const period = source.indexOf('* 10');
 	model.pushEditOperations([{ offset: period + 2, deleteLength: 2, text: '12' }]);
@@ -111,6 +138,7 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	inspect('inspection_effect.cooldown_until_ms', 107);
 	inspect('inspection_effect.active_count', 1);
 	await openRuntimeEffectInspector(test, 'first', 48);
+	await openRuntimeStateInspector(test, 'first', 30);
 
 	await runMenuCommand('pause');
 	await until(() => history.latestCycles > history.earliestCycles + runtime.timing.cpuHz * 2 && tasks.ready, 'inspection: continuous history contains multiple checkpoints');
@@ -132,7 +160,12 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	await openRuntimeEffectPicker(test);
 	rewind.seekTo(history.latestCycles); await settle();
 	check(!ide.editor.quickInput.visible, 'inspection: restore invalidates the borrowed instance choices');
+	await openRuntimeStatePicker(test, 'first');
 	rewind.seekTo(history.earliestCycles); await settle();
+	check(!ide.editor.quickInput.visible, 'inspection: restore also invalidates the borrowed FSM state scope');
+	const restoredFsm = await openRuntimeStateInspector(test, 'first', 30);
+	rewind.seekTo(history.latestCycles); await settle();
+	check(!restoredFsm.visible, 'inspection: restore invalidates the FSM property projection');
 	inspect('inspection_effect.definition.period_ms', 48);
 	await frame();
 	const expression = 'inspection_effect.definition.period_ms';
@@ -155,7 +188,7 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	}
 	check(cycles() === position && model.version === version && guest.global('inspection_callback_count') === 0,
 		'inspection: theme and pointer do not mutate guest or source');
-	console.info('STUDIO: actual ActionEffect definition/instance, rebind stops, no-change init, source divergence, compile failure and rewind inspection PASS');
+	console.info('STUDIO: actual ActionEffect/FSM instance and definition, nested/concurrent state scope, rebind stops, imported callbacks, no-change init, source divergence, compile failure and rewind inspection PASS');
 	return { hostFrames: test.observations.hostFrames, initCount: 3, restoredTick, latestTick,
 		renderProof: { ...ide.overlayRenderer.viewportSize, topBarBottom: editorChromeState.topBarBounds.bottom,
 			hover: { ...hoverState.tooltip!.bubbleBounds, text: resolveThemeTokenColor(constants.HOVER_TOOLTIP_TEXT),

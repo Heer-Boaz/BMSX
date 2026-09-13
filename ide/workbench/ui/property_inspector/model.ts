@@ -67,8 +67,9 @@ export class WorkbenchPropertyInspectorModel<Element extends InspectedProperty> 
 		this.selectionIndex = clamp(index, 0, this.rows.length - 1);
 		this.hoverIndex = -1;
 		const row = this.rows[this.selectionIndex];
-		// A long value is read with page/wheel scrolling, not skipped to its last line.
-		this.viewport.scrollbar.reveal(row.top, row.top + this.font!.lineHeight + INSPECTOR_PADDING * 2, INSPECTOR_PADDING);
+		// Reveal the value as well as its label. The scrollbar lead-aligns oversized
+		// rows, so a long callback is still read from its beginning, not its last line.
+		this.viewport.scrollbar.reveal(row.top, row.bottom, INSPECTOR_PADDING);
 	}
 
 	public rowAt(y: number): number {
