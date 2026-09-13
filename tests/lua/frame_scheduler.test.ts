@@ -297,7 +297,6 @@ test('paced history playback resumes the same machine and journal at 50/60/144 H
 		assert.equal(history.checkpointCount, 1);
 		assert.equal(input.sampleCount, sampleCount, 'live input is not consumed');
 		const actual = captureRuntimeSaveState(runtime);
-		actual.cpuState.instructionBudgetRemaining = expected.cpuState.instructionBudgetRemaining;
 		actual.machineState.frameScheduler = expected.machineState.frameScheduler;
 		actual.machineState.frameLoop = expected.machineState.frameLoop;
 		assert.equal(actual.machineState.machine.gxGpu.vramPresentationPending, true, 'restore requests a host redraw');

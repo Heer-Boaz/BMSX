@@ -4928,6 +4928,14 @@ device events observe the same frame state as an uninterrupted run; that
 transient executor latch is reset at boot and state-restore boundaries and is
 not serialized.
 
+The CPU's `instructionBudgetRemaining` is likewise a call-local execution
+countdown, not saved CPU state. Each `runUntilDepth` call assigns its caller's
+grant before dispatch; the scheduler/executor accounts its consumption before
+leaving that execution boundary. Checkpoints retain actual machine time,
+registers, stack/heap and interrupt latches, never the expired grant from a
+previous host invocation. The [rewind owner contract](rewind_architecture.md#cpu-execution-grants-are-not-checkpoint-state)
+records the MAME reference and mirrored representation/callsite audit.
+
 ## Host presentation and frontend lifecycle
 
 `overlay_queue` is the retained publication boundary between host-UI producers

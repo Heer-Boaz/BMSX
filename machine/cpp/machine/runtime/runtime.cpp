@@ -33,16 +33,9 @@ auto Runtime::callClosure(Closure& fn, BuiltinArgsView args) -> std::span<const 
 		throw std::runtime_error("External Lua closure execution requires a suspended CPU.");
 	}
 	history.stop();
-	const int depthBefore = cpu.getFrameDepth();
-	const int previousBudget = cpu.instructionBudgetRemaining;
-	try {
-		cpu.beginCompletionCall(fn, args);
-		cpuExecution.runSuspendedUntilDepth(*this, depthBefore);
-	} catch (...) {
-		cpu.instructionBudgetRemaining = previousBudget;
-		throw;
-	}
-	cpu.instructionBudgetRemaining = previousBudget;
+	const int depth = cpu.getFrameDepth();
+	cpu.beginCompletionCall(fn, args);
+	cpuExecution.runSuspendedUntilDepth(*this, depth);
 	return readCompletionValues();
 }
 

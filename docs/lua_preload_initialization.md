@@ -87,11 +87,12 @@ een geslaagde compiler- of workflowproef.
   bij compilerconstructie gemaakt. De eerdere recorderretentie is niet verlaagd.
 
 De aanvullende volledige replayproef op deze nieuwe fixture vond een aparte
-save-stategrens: alleen `cpuState.instructionBudgetRemaining` verschilt na
-restore (7344 versus 9673). Bestaande historytests normaliseren dit veld al.
-Deze slice claimt daarom geen geslaagde volledige native replay. Het
-call-local uitvoeringsbudget moet bij zijn eigen CPU/scheduler-stateowner
-worden onderzocht, niet weggefilterd in een extra testpad.
+save-stategrens: alleen `cpuState.instructionBudgetRemaining` verschilde na
+restore (7344 versus 9673). Die fout is vervolgens bij de
+[CPU/scheduler-stateowner](rewind_architecture.md#cpu-execution-grants-are-not-checkpoint-state)
+hersteld, inclusief verwijdering van de bestaande historytestfilters.
+Dezelfde fixture doorloopt nu de normale TS- en C++-replayrunners en volledige
+cross-core vergelijking, inclusief codec, checkpointreuse en historybranch.
 
 Reproduceren:
 

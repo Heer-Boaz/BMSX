@@ -579,7 +579,6 @@ void testHistoryUnarmedSupervisorEdge() {
 	auto actual = bmsx::captureRuntimeSaveState(runtime);
 	require(actual.machineState.schedulerNowCycles == expected.machineState.schedulerNowCycles, "request edge has the same machine time");
 	require(actual.machineState.frameScheduler.lastTickSequence == expected.machineState.frameScheduler.lastTickSequence, "request edge has the same PCRTC tick");
-	actual.cpuState.instructionBudgetRemaining = expected.cpuState.instructionBudgetRemaining;
 	actual.machineState.frameScheduler = expected.machineState.frameScheduler;
 	actual.machineState.frameLoop = expected.machineState.frameLoop;
 	require(bmsx::encodeRuntimeSaveState(actual) == bmsx::encodeRuntimeSaveState(expected), "unarmed supervisor edge reproduces complete guest state");
@@ -623,7 +622,6 @@ void testPacedHistoryPlayback() {
 		require(history.latestCycles() == end && history.inputJournal.endSequence == sequence && history.inputJournal.replaySequence == sequence, "playback preserves future input");
 		require(fixture.input.sampleCount == sampleCount, "playback does not consume live input");
 		auto actual = bmsx::captureRuntimeSaveState(runtime);
-		actual.cpuState.instructionBudgetRemaining = expected.cpuState.instructionBudgetRemaining;
 		actual.machineState.frameScheduler = expected.machineState.frameScheduler;
 		actual.machineState.frameLoop = expected.machineState.frameLoop;
 		require(actual.machineState.machine.gxGpu.vramPresentationPending, "restore requests a host redraw");

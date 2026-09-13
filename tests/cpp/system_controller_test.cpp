@@ -888,12 +888,10 @@ void testExternalClosureAdvancesToGteInterlockDeadline() {
 		+ static_cast<int>(bmsx::GX_GTE_PLUS_CYCLES_VMAD3)
 		+ bmsx::BASE_CYCLES[static_cast<size_t>(bmsx::OpCode::STORE_MEM)]
 		+ bmsx::BASE_CYCLES[static_cast<size_t>(bmsx::OpCode::RET)];
-	fixture.cpu.instructionBudgetRemaining = 100;
 
 	const std::span<const bmsx::Value> out = fixture.runtime.callClosure(*fixture.closures[0]);
 
 	require(fixture.runtime.machine.scheduler.nowCycles() == cycleBefore + expectedCycles, "external closure advances through the scheduled GTE completion deadline");
-	require(fixture.cpu.instructionBudgetRemaining == 100, "external closure restores the suspended CPU budget after the GTE wait");
 	require(!fixture.cpu.isMemoryWriteBlocked(), "GTE completion releases the blocked external-closure store");
 	require(fixture.cpu.getFrameDepth() == 1, "external closure preserves the suspended firmware frame after the GTE write interlock");
 	require(!fixture.runtime.machine.scheduler.isCpuSliceActive(), "external closure completion ends its CPU scheduler slice");

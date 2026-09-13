@@ -29,7 +29,7 @@ return function() return root end
 	assert.equal(graph.word(upvalue + 1), graph.word(closure + CpuSnapshotClosure.HashId) + 1);
 });
 
-test('repeated restore replays table and cold canonical/dynamic closure identities', () => {
+test('repeated restore replays the full CPU state independently of fresh execution grants', () => {
 	const image = linkTestSystemBlua32(compileLuaSource(`
 local cached<const> = function() return 1 end
 local dynamic = function() return 2 end
@@ -40,11 +40,12 @@ return {}, cached, dynamic
 	const strings = cpu.stringPool.captureState();
 	assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
 	const expected = cpu.captureRuntimeState();
-	for (let pass = 0; pass < 4; pass += 1) {
+	for (const budget of [1001, 2001, 4001, 8001]) {
 		cpu.stringPool.restoreState(strings);
 		cpu.restoreRuntimeState(anchor);
 		assert.deepEqual(cpu.captureRuntimeState(), anchor);
-		assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
+		assert.equal(cpu.runUntilDepth(0, 1), RunResult.Yielded, 'the next call consumes only its newly supplied grant');
+		assert.equal(cpu.runUntilDepth(0, budget), RunResult.Halted);
 		assert.deepEqual(cpu.captureRuntimeState(), expected);
 	}
 });

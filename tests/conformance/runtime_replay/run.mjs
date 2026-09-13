@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../../..');
-// Fixed real-cart regression; the underlying runners also accept explicit ROM paths.
+// Real-cart regression plus an independent source fixture, using the same runners.
 const cart = 'nemesis_s';
 
 function run(command, args) {
@@ -19,12 +19,18 @@ run('cmake', ['-S', 'machine/cpp', '-B', 'build-cpp-tests', '-G', 'Ninja', '-DBM
 run('cmake', ['--build', 'build-cpp-tests', '--target', 'bmsx_runtime_replay_conformance_runner', 'bmsx_host_rewind_conformance_runner', 'bmsx_libretro_rewind_conformance_runner', '--parallel', '4']);
 const media = ['dist/bmsx-bios.debug.rom', `dist/${cart}.debug.rom`];
 const directory = mkdtempSync(join(tmpdir(), 'bmsx-runtime-replay-'));
-const tsPrefix = join(directory, 'ts');
-const cppPrefix = join(directory, 'cpp');
 try {
-	run('npx', ['tsx', '--tsconfig', 'tsconfig.base.json', 'tests/conformance/runtime_replay/ts_runner.ts', ...media, tsPrefix]);
-	run('build-cpp-tests/bmsx_runtime_replay_conformance_runner', [...media, cppPrefix]);
-	run('npx', ['tsx', '--tsconfig', 'tsconfig.base.json', 'tests/conformance/runtime_replay/compare.ts', tsPrefix, cppPrefix]);
+	run('npx', ['tsx', 'tests/conformance/runtime_replay/preload_cartridge.ts', directory, media[0]]);
+	for (const [name, cartridge, assertions] of [
+		[cart, media[1], ['--require-badp-playback']],
+		['preload', join(directory, 'cart.rom'), []],
+	]) {
+		const tsPrefix = join(directory, `${name}-ts`);
+		const cppPrefix = join(directory, `${name}-cpp`);
+		run('npx', ['tsx', '--tsconfig', 'tsconfig.base.json', 'tests/conformance/runtime_replay/ts_runner.ts', media[0], cartridge, tsPrefix]);
+		run('build-cpp-tests/bmsx_runtime_replay_conformance_runner', [media[0], cartridge, cppPrefix]);
+		run('npx', ['tsx', '--tsconfig', 'tsconfig.base.json', 'tests/conformance/runtime_replay/compare.ts', tsPrefix, cppPrefix, ...assertions]);
+	}
 	run('npx', ['tsx', '--tsconfig', 'tsconfig.base.json', 'tests/conformance/runtime_replay/host_ts_runner.ts', ...media]);
 	copyFileSync(media[0], join(directory, 'bmsx-bios.rom'));
 	run('build-cpp-tests/bmsx_host_rewind_conformance_runner', [directory, media[1]]);

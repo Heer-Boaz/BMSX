@@ -95,15 +95,10 @@ export class Runtime {
 		}
 		this.history.stop();
 		const depth = cpu.getFrameDepth();
-		const previousBudget = cpu.instructionBudgetRemaining;
-		try {
-			this.completionValues.length = 0;
-			cpu.beginCompletionCall(fn, args);
-			this.cpuExecution.runSuspendedUntilDepth(depth);
-			return this.readCompletionValues();
-		} finally {
-			cpu.instructionBudgetRemaining = previousBudget;
-		}
+		this.completionValues.length = 0;
+		cpu.beginCompletionCall(fn, args);
+		this.cpuExecution.runSuspendedUntilDepth(depth);
+		return this.readCompletionValues();
 	}
 
 	/** The borrowed result view is invalidated by subsequent result reads. */

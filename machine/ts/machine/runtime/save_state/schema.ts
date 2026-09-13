@@ -44,7 +44,6 @@ export const RUNTIME_SAVE_STATE_PROP_NAMES = [
 	'handlerRegister',
 	'id',
 	'input',
-	'instructionBudgetRemaining',
 	'irq',
 	'isExceptionFrame',
 	'isNonMaskableExceptionFrame',

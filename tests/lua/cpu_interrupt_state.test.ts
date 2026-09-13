@@ -793,7 +793,6 @@ test('CPU closure calls that execute HALT without a scheduled interrupt park wit
 	assert.equal(cpu.runUntilDepth(0, 5), RunResult.Yielded);
 	const haltClosure = cpu.readFrameRegister(0, 0) as Closure;
 	const runtime = makeRuntime(cpu, irqController);
-	cpu.instructionBudgetRemaining = 73;
 
 	const out = runtime.callClosure(haltClosure, EMPTY_CALL_ARGS);
 
@@ -942,10 +941,11 @@ test('Runtime callClosure leaves its completion frame pending when the shared ex
 		SYSTEM_EXECUTION_DOMAIN_MASK,
 		0,
 	);
-	cpu.instructionBudgetRemaining = 73;
+	const before = runtime.machine.scheduler.nowCycles;
 
 	assert.deepEqual(runtime.callClosure(closure), []);
-	assert.equal(cpu.instructionBudgetRemaining, 73);
+	assert.equal(runtime.machine.scheduler.nowCycles, before, 'the breakpoint stops before the first instruction');
+	assert.equal(runtime.machine.scheduler.isCpuSliceActive(), false);
 	assert.equal(runtime.completionCallPending(), true);
 	assert.equal(cpu.readFramePc(0), closurePc);
 

@@ -187,7 +187,6 @@ int main(int argc, char** argv) {
 			require(actual.machineState.frameScheduler.lastTickSequence == expected.machineState.frameScheduler.lastTickSequence, "seek reproduces PCRTC ticks");
 			// Exclude host grants/telemetry only. Guest state and identities remain
 			// untouched; the complete remaining state uses the existing codec comparison.
-			actual.cpuState.instructionBudgetRemaining = expected.cpuState.instructionBudgetRemaining;
 			actual.machineState.frameScheduler = expected.machineState.frameScheduler;
 			actual.machineState.frameLoop = expected.machineState.frameLoop;
 			require(bmsx::encodeRuntimeSaveState(actual) == bmsx::encodeRuntimeSaveState(expected), "history reproduces complete guest state");

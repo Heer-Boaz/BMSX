@@ -1573,7 +1573,6 @@ BinValue encodeCpuRuntimeState(const CpuRuntimeState& state) {
 	luaHeap["nextCollectionBytes"] = static_cast<i64>(state.luaHeap.nextCollectionBytes);
 	object["luaHeap"] = BinValue(std::move(luaHeap));
 	object["lastPc"] = static_cast<i64>(state.lastPc);
-	object["instructionBudgetRemaining"] = static_cast<i64>(state.instructionBudgetRemaining);
 	object["haltedUntilIrqFrameDepth"] = static_cast<i64>(state.haltedUntilIrqFrameDepth);
 	object["interruptEventPending"] = state.interruptEventPending;
 	object["memoryWriteBlocked"] = state.memoryWriteBlocked;
@@ -1645,7 +1644,6 @@ CpuRuntimeState decodeCpuRuntimeState(const BinValue& value, const char* label) 
 	state.luaHeap.trackedBytes = static_cast<size_t>(requireI64(requireField(luaHeap, "trackedBytes", label), "cpuState.luaHeap.trackedBytes"));
 	state.luaHeap.nextCollectionBytes = static_cast<size_t>(requireI64(requireField(luaHeap, "nextCollectionBytes", label), "cpuState.luaHeap.nextCollectionBytes"));
 	state.lastPc = requireU32(requireField(object, "lastPc", label), "cpuState.lastPc");
-	state.instructionBudgetRemaining = requireI32(requireField(object, "instructionBudgetRemaining", label), "cpuState.instructionBudgetRemaining");
 	state.haltedUntilIrqFrameDepth = requireI32(
 		requireField(object, "haltedUntilIrqFrameDepth", label),
 		"cpuState.haltedUntilIrqFrameDepth"

@@ -61,6 +61,64 @@ Studio or cartlib service. Physical SNES Mini performance remains unmeasured.
    shortcut is reserved. Collection/seek state and retained range must be
    visible; a seek must not freeze host event processing.
 
+## CPU execution grants are not checkpoint state
+
+Owner decision, 2026-09-13, before the mirrored implementation change.
+The standalone preload cart exposes a full replay mismatch at checkpoint 400:
+only `cpuState.instructionBudgetRemaining` differs (7344 versus 9673).
+History and playback tests already filtered that field. This is a snapshot
+ownership error, not a guest nondeterminism exception.
+
+In [MAME mame0280 `device_execute_interface`][mame-execution-state], save-state
+registration retains device time, total cycles, suspension and interrupt
+inputs, not the current execution countdown. Its [scheduler][mame-execution-grant]
+assigns the countdown immediately before running a CPU and accounts the
+consumed cycles immediately afterwards. BMSX already follows the same execution
+lifetime but incorrectly included its expired countdown in `CpuRuntimeState`.
+
+| Owner / representation | TypeScript | C++ | Change |
+| --- | --- | --- | --- |
+| Current run grant | `CPU.instructionBudgetRemaining: number` | `CPU::instructionBudgetRemaining: int` | Keep the existing live countdown and name. |
+| Actual emulated time | `DeviceScheduler.schedulerNowCycles` | `DeviceScheduler::m_schedulerNowCycles` | Keep the current machine-time snapshot. |
+| Retained guest state | `CpuRuntimeState` | `CpuRuntimeState` | Remove only the call-local countdown, including capture and restore. |
+| Disk format | Save-state property table and CPU decoder | Same property table and CPU encoder/decoder | Remove the field, without a legacy reader or normalization. |
+| Host pacing | Existing frame scheduler / executor state | Same owners | No change to pacing, replay grants, instruction stepping or clock domains. |
+
+Hot-path callsites reviewed: TS `runUntilDepthNormal`/`runUntilDepthInstrumented`
+and native `runLoop` assign each fresh grant before dispatch;
+opcode/fused handlers, builtin charging and TS `charge` debit that grant.
+`DeviceScheduler.currentNowCycles` reads it only during an active CPU slice;
+`runCpuSlice` brackets that lifetime. `CpuExecutionState.runSlice` and
+`runSuspendedUntilDepth` account the result immediately after the call.
+`Runtime.callClosure` already requires a suspended CPU. Its capture/restore of
+the preceding expired countdown is therefore removed as well: there is no
+active caller slice to preserve. Real consumed time and completion frames stay
+owned by the shared executor. Dispatch paths gain no checks or allocations.
+
+Capture and load happen at suspended execution boundaries. The next CPU call
+gets its budget from its caller, never from the preceding call's remainder.
+Tests must compare the complete CPU snapshot; do not replace the removed field
+with a zero, exclude another guest field, or make checkpoint state restore a
+host invocation. Current host pacing/delivery metadata comparisons remain
+separate from guest state.
+
+Validation: the full Lua suite passes (1789 tests, one existing skip), all
+31 native CTest targets pass, and `npm run test:runtime-replay` exercises both
+Nemesis and the independent preloaded BT cart through the same runners.
+Trusted-state replay, disk codec, checkpoint reuse, sparse seeks and history
+branching compare complete CPU state without grant filters, including TS/C++
+cross-core equality. The Nemesis case still explicitly requires active BADP
+playback; the independent cart has no audio workload. Existing host transport
+and actual libretro serialize/unserialize/playback coverage also pass.
+Both the full Studio workflow and the preload/Hot Resume/Reboot/rewind case
+pass on software, WebGL2 and WebGPU. Machine, toolchain and IDE typechecks,
+core-parity, architecture boundaries, indentation and `git diff --check` pass;
+the test-project typecheck retains its same 46 pre-existing diagnostics.
+Browser Studio, Node headless tooling and native libretro products are rebuilt.
+
+[mame-execution-state]: https://github.com/mamedev/mame/blob/mame0280/src/emu/diexec.cpp#L382-L401
+[mame-execution-grant]: https://github.com/mamedev/mame/blob/mame0280/src/emu/schedule.cpp#L431-L477
+
 ## Paced review playback: REWIND-PLAYBACK-01
 
 The original transport implements seeking and live takeover, not playback of
@@ -498,10 +556,11 @@ the three seek endpoints is a stored checkpoint. The live input provider
 fails the test if replay reads it or sends vibration.
 
 Every seek compares the full CPU and device state with the recorded endpoint,
-including machine cycles and PCRTC tick count. Only host scheduling quotas,
-frame bookkeeping and CPU execution budget are excluded from the comparison
-between paced recording and quantum replay. Guest identities and registerfiles
-are not normalized. After live takeover, the **complete** final state compares
+including machine cycles and PCRTC tick count. Only host scheduling quotas and
+frame bookkeeping differ between paced recording and quantum replay. The
+original CPU-budget exclusion was removed on 2026-09-13: that call-local grant
+no longer belongs to the CPU snapshot. Guest identities and registerfiles are
+not normalized. After live takeover, the **complete** final state compares
 equal between TS and C++, including their host scheduling state.
 
 Additional mirrored regressions cover raw high-bit input words and times above

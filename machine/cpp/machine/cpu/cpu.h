@@ -117,7 +117,6 @@ struct CpuRuntimeState {
 	std::vector<int> openUpvalues;
 	ExecutionDomainId lastExecutionDomainId = SYSTEM_EXECUTION_DOMAIN_ID;
 	u32 lastPc = 0;
-	int instructionBudgetRemaining = 0;
 	int haltedUntilIrqFrameDepth = -1;
 	bool interruptEventPending = false;
 	bool memoryWriteBlocked = false;
@@ -317,6 +316,7 @@ public:
 	);
 	void writeFrameCallSitePc(int childFrameIndex, u32 pc);
 
+	// Current runUntilDepth grant; consumed by the caller, not checkpoint state.
 	int instructionBudgetRemaining = 0;
 	u32 lastPc = 0;
 	Table* globals = nullptr;

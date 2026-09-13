@@ -1,4 +1,6 @@
 #include "machine/runtime/runtime.h"
+#include "machine/runtime/save_state.h"
+#include "machine/runtime/save_state/codec.h"
 #include "spec/blua32/instruction_format.h"
 #include "spec/blua32/opcode.h"
 #include "spec/bmsx/model.h"
@@ -64,6 +66,7 @@ void replayAllocationIdentities() {
 	auto& cpu = machine.runtime.machine.cpu;
 	const auto anchor = cpu.captureRuntimeState();
 	const auto strings = cpu.stringPool().captureState();
+	const auto anchorBytes = bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(machine.runtime));
 	require(cpu.runUntilDepth(0, 1000) == bmsx::RunResult::Halted, "program completes");
 	const auto values = cpu.readCompletionValues();
 	const std::array expectedIds{
@@ -71,19 +74,18 @@ void replayAllocationIdentities() {
 		bmsx::asClosure(values[1])->hashId,
 		bmsx::asClosure(values[2])->hashId,
 	};
-	const auto expected = cpu.captureRuntimeState();
-	for (int pass = 0; pass < 4; ++pass) {
+	const auto expected = bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(machine.runtime));
+	for (const int budget : {1001, 2001, 4001, 8001}) {
 		cpu.stringPool().restoreState(strings);
 		cpu.restoreRuntimeState(anchor);
-		require(cpu.captureRuntimeState().nextObjectHashId == anchor.nextObjectHashId, "allocator sequence is restored");
-		require(cpu.runUntilDepth(0, 1000) == bmsx::RunResult::Halted, "replay completes");
+		require(bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(machine.runtime)) == anchorBytes, "full CPU state is restored independently of the previous grant");
+		require(cpu.runUntilDepth(0, 1) == bmsx::RunResult::Yielded, "the next call consumes only its newly supplied grant");
+		require(cpu.runUntilDepth(0, budget) == bmsx::RunResult::Halted, "replay completes with a fresh grant");
 		const auto replay = cpu.readCompletionValues();
 		require(bmsx::asTable(replay[0])->hashId == expectedIds[0], "table identity must replay");
 		require(bmsx::asClosure(replay[1])->hashId == expectedIds[1], "cold canonical closure identity must replay");
 		require(bmsx::asClosure(replay[2])->hashId == expectedIds[2], "dynamic closure identity must replay");
-		const auto actual = cpu.captureRuntimeState();
-		require(actual.nextObjectHashId == expected.nextObjectHashId, "next allocation matches");
-		require(actual.luaHeap.trackedBytes == expected.luaHeap.trackedBytes, "replay heap accounting matches");
+		require(bmsx::encodeRuntimeSaveState(bmsx::captureRuntimeSaveState(machine.runtime)) == expected, "replay reproduces every state field without normalizing a grant");
 	}
 }
 

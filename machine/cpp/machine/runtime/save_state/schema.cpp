@@ -53,7 +53,6 @@ const auto RUNTIME_SAVE_STATE_PROP_NAME_STORAGE = std::to_array<std::string>({
 	"handlerRegister",
 	"id",
 	"input",
-	"instructionBudgetRemaining",
 	"irq",
 	"isExceptionFrame",
 	"isNonMaskableExceptionFrame",

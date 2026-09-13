@@ -189,7 +189,6 @@ export type CpuRuntimeState = {
 	openUpvalues: number[];
 	lastExecutionDomainId: ExecutionDomainId;
 	lastPc: number;
-	instructionBudgetRemaining: number;
 	haltedUntilIrqFrameDepth: number;
 	interruptEventPending: boolean;
 	memoryWriteBlocked: boolean;
@@ -234,6 +233,7 @@ const TABLE_WEAK_VALUE_CODE_UNIT = 0x76;
 // Pool constant for frame reuse
 const MAX_POOLED_FRAMES = 32;
 export class CPU implements MappedPageInvalidator {
+	/** Current runUntilDepth grant; consumed by the caller, not checkpoint state. */
 	public instructionBudgetRemaining: number = 0;
 	public lastPc: number = 0;
 	public readonly globals: Table;
@@ -4306,7 +4306,6 @@ export class CPU implements MappedPageInvalidator {
 			openUpvalues,
 			lastExecutionDomainId: this.lastExecutionDomainId,
 			lastPc: this.lastPc,
-			instructionBudgetRemaining: this.instructionBudgetRemaining,
 			haltedUntilIrqFrameDepth: this.haltedUntilIrqFrameDepth,
 			interruptEventPending: this.interruptEventPending,
 			memoryWriteBlocked: this.memoryWriteBlocked,
@@ -4536,7 +4535,6 @@ export class CPU implements MappedPageInvalidator {
 		this.completionValueCount = state.completionValues.length;
 		this.lastExecutionDomainId = state.lastExecutionDomainId;
 		this.lastPc = state.lastPc;
-		this.instructionBudgetRemaining = state.instructionBudgetRemaining;
 		this.haltedUntilIrqFrameDepth = state.haltedUntilIrqFrameDepth;
 		this.interruptEventPending = state.interruptEventPending;
 		this.memoryWriteBlocked = state.memoryWriteBlocked;

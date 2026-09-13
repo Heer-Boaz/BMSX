@@ -167,11 +167,7 @@ async function main(): Promise<void> {
 		assert.equal(actual.machineState.schedulerNowCycles, expected.machineState.schedulerNowCycles);
 		assert.equal(actual.machineState.frameScheduler.lastTickSequence, expected.machineState.frameScheduler.lastTickSequence);
 		assert.ok(isDeepStrictEqual(actual.machineState.machine, expected.machineState.machine), `history device state at ${index}`);
-		// Host cycle grants/telemetry are not guest state. No guest values or
-		// identities are translated when comparing paced and quantum replay.
-		const { instructionBudgetRemaining: _actualGrant, ...actualCpu } = actual.cpuState;
-		const { instructionBudgetRemaining: _expectedGrant, ...expectedCpu } = expected.cpuState;
-		assert.ok(isDeepStrictEqual(actualCpu, expectedCpu), `history CPU state at ${index}`);
+		assert.ok(isDeepStrictEqual(actual.cpuState, expected.cpuState), `history CPU state at ${index}`);
 		assert.equal(actual.pendingEntryCall, expected.pendingEntryCall);
 	}
 	const reviewCycles = runtime.machine.scheduler.nowCycles;

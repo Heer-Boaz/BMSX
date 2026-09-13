@@ -1297,7 +1297,6 @@ CpuRuntimeState CPU::captureRuntimeState(CpuSnapshot snapshot) const {
 	state.snapshot = std::move(snapshot);
 	state.lastExecutionDomainId = m_lastExecutionDomainId;
 	state.lastPc = lastPc;
-	state.instructionBudgetRemaining = instructionBudgetRemaining;
 	state.haltedUntilIrqFrameDepth = m_haltedUntilIrqFrameDepth;
 	state.interruptEventPending = m_interruptEventPending;
 	state.memoryWriteBlocked = m_memoryWriteBlocked;
@@ -1501,7 +1500,6 @@ void CPU::restoreRuntimeState(const CpuRuntimeState& state) {
 	}
 	m_lastExecutionDomainId = state.lastExecutionDomainId;
 	lastPc = state.lastPc;
-	instructionBudgetRemaining = state.instructionBudgetRemaining;
 	m_haltedUntilIrqFrameDepth = state.haltedUntilIrqFrameDepth;
 	m_interruptEventPending = state.interruptEventPending;
 	m_memoryWriteBlocked = state.memoryWriteBlocked;
