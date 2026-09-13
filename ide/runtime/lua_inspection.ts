@@ -144,19 +144,20 @@ export function readRuntimeLuaValue(
 			: frameIndex + 1 < depth ? cpu.readFrameCallSitePc(frameIndex + 1) : cpu.readFramePc(frameIndex);
 		const symbols = image.symbols;
 		const range = blua32SourceRangeAtPc(symbols, image.layout.header.textAddress, pc);
-		if (range !== null) {
-			const inlineSites = blua32InlineCallSitesAtPc(symbols, image.layout.header.textAddress, pc);
-			for (const slot of symbols.metadata.localSlotsByFunction[functionIndex]) {
-				if (!sourceRangesEqual(slot.definition, definition)
-					|| !blua32LocalSlotLiveAtPc(slot, image.layout.functions[functionIndex].codeAddress, pc)) continue;
-				const context = resolveInlineLocalContextRange(slot, range, inlineSites);
-				if (context === null || context.path !== definition.path
-					|| !sourcePositionInRange(context.start.line, context.start.column, slot.scope)) continue;
-				if (binding.kind === 'declaration' && compareSourcePosition(context.start.line, context.start.column,
-					binding.declaration.visibleFrom.line, binding.declaration.visibleFrom.column) <= 0) continue;
-				const value = captured === undefined ? cpu.readFrameRegister(frameIndex, slot.registerIndex) : captured.registers[slot.registerIndex];
-				return guest.readStringPath(value, parts, 1);
-			}
+		const inlineSites = blua32InlineCallSitesAtPc(symbols, image.layout.header.textAddress, pc);
+		for (const slot of symbols.metadata.localSlotsByFunction[functionIndex]) {
+			if (!sourceRangesEqual(slot.definition, definition)) continue;
+			const context = range === null ? null : resolveInlineLocalContextRange(slot, range, inlineSites);
+			if (context === null && slot.inlineCallSites.length !== 0) continue;
+			// This invocation owns the binding. An unavailable location must not
+			// redirect the read to an older recursive call with the same declaration.
+			if (context === null || context.path !== definition.path
+				|| !sourcePositionInRange(context.start.line, context.start.column, slot.scope)
+				|| !blua32LocalSlotLiveAtPc(slot, image.layout.functions[functionIndex].codeAddress, pc)) return NOT_IN_SCOPE;
+			if (binding.kind === 'declaration' && compareSourcePosition(context.start.line, context.start.column,
+				binding.declaration.visibleFrom.line, binding.declaration.visibleFrom.column) <= 0) return NOT_IN_SCOPE;
+			const value = captured === undefined ? cpu.readFrameRegister(frameIndex, slot.registerIndex) : captured.registers[slot.registerIndex];
+			return guest.readStringPath(value, parts, 1);
 		}
 		const captures = symbols.metadata.upvalueBindingsByFunction[functionIndex];
 		for (let index = 0; index < captures.length; index += 1) {

@@ -19,6 +19,7 @@ inspection_init_count = 0
 inspection_callback_count = 0
 inspection_fsm_callback_count = 0
 inspection_tick = 0
+inspection_recursion = callbacks.descend(1)
 local function configure<init>()
 	inspection_init_count = inspection_init_count + 1
 	effects.register_effect('pulse', {
@@ -114,6 +115,14 @@ end
 
 /** A second real module; navigation must not reuse the source registration's cart.lua coordinates. */
 export const RUNTIME_INSPECTION_CALLBACKS_SOURCE = `local callbacks<const> = {}
+function callbacks.descend(depth)
+	local value = depth * 11
+	if depth == 0 then
+		return 0
+	end
+	local nested = callbacks.descend(depth - 1)
+	return value + nested
+end
 function callbacks.update()
 	inspection_fsm_callback_count = inspection_fsm_callback_count + 1
 end

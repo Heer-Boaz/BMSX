@@ -58,8 +58,12 @@ runtime-reader vraagt geen workspace-value/factory-expansie op.
 - Een local/parameter/receiver wordt gekozen op zijn exacte geschreven
   declaratie, niet op de naam van de binnenste toevallige CPU-local. De reader
   consumeert de bestaande modulepath-conversie, lexical scope, inline-callsite
-  context en capture-origins. Een initializer die nog in zijn callee staat
-  heeft nog geen beschikbaar resultaat in de nieuwe local.
+  context en capture-origins. Eerst wordt de binnenste actieve invocation van
+  die binding gekozen, pas daarna haar waardelocatie. Een niet-beschikbare local
+  mag niet de waarde uit een oudere recursieve aanroep opleveren. Een initializer
+  die nog in zijn callee staat heeft nog geen beschikbaar resultaat in de nieuwe
+  local. De [herreview en recursieproef](studio_owner_review_2026_09_13.md#a01--waardebeschikbaarheid-koos-onbedoeld-de-functieaanroep)
+  leggen de gevonden verborgen fallback en correctie vast.
 - Globals volgen de werkelijke system-/ordinary-registerfile. De twee carts
   krijgen geen verzonnen afzonderlijke global heaps. Fysieke stackframes
   worden wel per execution-domain geselecteerd.

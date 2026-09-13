@@ -1867,7 +1867,10 @@ TS and C++ tooling share version-7 symbols and the numeric capture-kind enum.
 Local slots also carry finalized, half-open live word ranges, separate from
 their lexical/inline scopes. The compiler produces those locations from the
 existing liveness analysis; missing optimized locations are unavailable rather
-than stale register values. Debug ROMs and sidecars must be rebuilt for this
+than stale register values. Source inspection chooses the innermost active
+invocation owning the written binding before testing location availability;
+an unavailable local never redirects to an older recursive invocation. Captured
+fault frames follow the same rule. Debug ROMs and sidecars must be rebuilt for this
 format; there is no older-format reader.
 Physical upvalue descriptors, closure cells and instructions are unchanged.
 

@@ -20,6 +20,10 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	await press('ControlRight', 'ShiftRight');
 	await runMenuCommand('pause');
 	await createStudioLuaSource(test, 'inspection_callbacks.lua', RUNTIME_INSPECTION_CALLBACKS_SOURCE);
+	const callbacks = harness.getActiveEditorDocument().model;
+	const callbackLines = RUNTIME_INSPECTION_CALLBACKS_SOURCE.split('\n');
+	const recursiveStop = callbackLines.findIndex(line => line.includes('return 0')) + 1;
+	harness.toggleLuaBreakpoint(callbacks.resource.path, recursiveStop);
 	await createStudioLuaSource(test, 'inspection_trees.lua', RUNTIME_INSPECTION_TREES_SOURCE);
 	harness.openLuaSource('cart.lua');
 	const model = harness.getActiveEditorDocument().model;
@@ -32,6 +36,18 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	await runPaletteCommand('Run: Reboot');
 	check(actionPromptState.prompt?.action === 'reboot', 'inspection: independent fixture uses actual Save/Reboot');
 	await press('Enter');
+	await until(() => tasks.ready && ide.debugger.stopped && ide.editor.isActive, 'inspection: recursive callback stops before its inner return');
+	check(harness.getActiveCodeContext()!.model === callbacks
+		&& harness.getActiveCodeContext()!.executionStopRow === recursiveStop - 1, 'inspection: stop belongs to the imported recursive callback');
+	const valueRow = callbackLines.findIndex(line => line.includes('return value + nested'));
+	const valueColumn = callbackLines[valueRow].indexOf('value');
+	const recursiveCycles = cycles(), recursiveVersion = callbacks.version, recursiveHeap = runtime.machine.cpu.luaHeap.usedBytes();
+	check(harness.getHover(valueRow, valueColumn)!.contentLines.includes('value: unavailable in the suspended stack'),
+		'inspection: a dead inner local must not display the outer invocation value 11');
+	check(cycles() === recursiveCycles && callbacks.version === recursiveVersion && runtime.machine.cpu.luaHeap.usedBytes() === recursiveHeap,
+		'inspection: recursive hover does not execute guest code or write source');
+	harness.toggleLuaBreakpoint(callbacks.resource.path, recursiveStop);
+	await press('F5');
 	await until(() => tasks.ready && ide.debugger.stopped && ide.editor.isActive && guest.global('inspection_init_count') === 0,
 		'inspection: initialized libraries before the first registration');
 	await testEmptyDefinitionCatalog(test);

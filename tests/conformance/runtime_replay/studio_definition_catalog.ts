@@ -5,6 +5,7 @@ import { readBehaviorDefinitions } from '../../../ide/workbench/contrib/behavior
 import { readActionEffectInstances } from '../../../ide/workbench/contrib/behavior_lens/action_effect_runtime';
 import { readStateMachineInstances } from '../../../ide/workbench/contrib/behavior_lens/state_machine_runtime';
 import { medianMilliseconds } from '../../helpers/performance';
+import { RUNTIME_INSPECTION_CALLBACKS_SOURCE } from '../../helpers/runtime_inspection_fixture';
 import { openRuntimeEffectLens } from './studio_actioneffect_runtime';
 import { openRuntimeStateMachineLens } from './studio_fsm_runtime';
 import { check, type StudioFixture } from './studio_fixture';
@@ -76,7 +77,7 @@ export async function testActorlessDefinitionCatalog(test: StudioFixture): Promi
 	for (let n = 0; n < handler; n += 1) await press('ArrowDown');
 	check(unused.isEnabled('propertyInspector.source'), 'catalog: retained callback has Source without an instance');
 	await test.click(unused.actionBar.items[0].bounds, 6);
-	check(activeCodeEditor.model.resource.path === 'inspection_callbacks.lua' && activeCodeEditor.view.cursorRow === 1,
+	check(activeCodeEditor.model.resource.path === 'inspection_callbacks.lua' && activeCodeEditor.view.cursorRow === RUNTIME_INSPECTION_CALLBACKS_SOURCE.split('\n').findIndex(line => line.startsWith('function callbacks.update')),
 		'catalog: unused callback opens its actual imported source');
 	const registry = readBehaviorDefinitions(ide.sources, guest, 0, 'cartlib/actioneffects/actioneffect_component');
 	check(registry.items.find(item => item.label === 'ungranted')!.definition === registry.items.find(item => item.label === 'shared_alias')!.definition,

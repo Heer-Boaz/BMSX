@@ -632,6 +632,78 @@ halt_until_irq`;
 		} else assert.deepEqual(result, { kind: 'unavailable', reason: 'not_in_scope' });
 	});
 
+	for (const scenario of [
+		{
+			name: 'dead location', line: 8, expected: { kind: 'unavailable', reason: 'not_in_scope' },
+			source: `local function descend(depth)
+	local value = depth * 11
+	if depth == 0 then
+		halt_until_irq
+		return 0
+	end
+	local nested = descend(depth - 1)
+	return value + nested
+end
+return descend(1)`,
+		},
+		{
+			name: 'pending initialization', line: 8, expected: { kind: 'unavailable', reason: 'not_in_scope' },
+			source: `local function descend(depth)
+	if depth == 0 then
+		halt_until_irq
+		return 0
+	end
+	local value = depth * 11
+	local nested = descend(depth - 1)
+	return value + nested
+end
+return descend(1)`,
+		},
+		{
+			name: 'inactive block', line: 5, expected: { kind: 'unavailable', reason: 'not_in_scope' },
+			source: `local function descend(depth)
+	if depth > 0 then
+		local value = depth * 11
+		local nested = descend(depth - 1)
+		return value + nested
+	end
+	halt_until_irq
+	return 0
+end
+return descend(1)`,
+		},
+		{
+			name: 'live inner location', line: 8, expected: { kind: 'value', value: 0 },
+			source: `local function descend(depth)
+	local value = depth * 11
+	if depth == 0 then
+		halt_until_irq
+		return value
+	end
+	local nested = descend(depth - 1)
+	return value + nested
+end
+return descend(1)`,
+		},
+	]) {
+		test(`suspended inspection keeps the inner recursive invocation with ${scenario.name} at O${optLevel}`, () => {
+			const { runtime, bridge, analysis } = createIntellisenseRuntime(scenario.source, optLevel);
+			const cpu = runtime.machine.cpu;
+			cpu.reset();
+			assert.equal(cpu.runUntilDepth(0, 1000), RunResult.Halted);
+			const fault = createRuntimeFaultState();
+			const column = scenario.source.split('\n')[scenario.line - 1].indexOf('value') + 1;
+			assert.deepEqual(readRuntimeLuaValue(runtime, bridge.sources, fault, bridge.suspendedGuest,
+				analysis, SYSTEM_RESOURCE_DOMAIN, ['value'], scenario.line, column), scenario.expected);
+
+			recordLuaError(fault, bridge.sources, runtime, new Error('recursive stop'));
+			cpu.reset();
+			assert.deepEqual(readRuntimeLuaValue(runtime, bridge.sources, fault, bridge.suspendedGuest,
+				analysis, SYSTEM_RESOURCE_DOMAIN, ['value'], scenario.line, column), scenario.expected,
+				'captured fault frames retain the same invocation after the physical stack is replaced');
+		});
+	}
+
 	test(`suspended inspection does not replace an inactive local with a same-named global at O${optLevel}`, () => {
 		const source = `target = { value = 999 }
 local function dormant()
