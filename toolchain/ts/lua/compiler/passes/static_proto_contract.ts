@@ -59,7 +59,7 @@ export const assertStaticFunctionInstructionSet = (
 		const instruction = instructions[index];
 		const reason = staticLaneForbiddenOpcodeReason(instruction.op) ?? instructionLoadKReason(instruction, constPool);
 		if (reason !== null) {
-			throw new Error(`Module function export '${modulePath}:${symbolHandle}' emits forbidden static opcode ${OPCODE_NAMES[instruction.op]} (${reason}). Const-module function exports and static-compatible bare-function modules must compile to scalar/static code using numeric and boolean constants, parameters, function-local words, static calls, branches, and memory loads/stores only.`);
+			throw new Error(`Module function export '${modulePath}:${symbolHandle}' emits forbidden static opcode ${OPCODE_NAMES[instruction.op]} (${reason}). Const-module function exports must compile to scalar/static code using numeric and boolean constants, parameters, function-local words, static calls, branches, and memory loads/stores only.`);
 		}
 	}
 };

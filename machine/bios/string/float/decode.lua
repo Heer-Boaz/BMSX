@@ -1,3 +1,4 @@
+module<const>
 local f32_mantissa_bits<const> = 23
 local f32_exponent_bits<const> = 8
 local f32_byte_count<const> = 4

@@ -1,3 +1,4 @@
+module<const>
 return function(value, divisor)
 	if value >= 0 then
 		return value // divisor

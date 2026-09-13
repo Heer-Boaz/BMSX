@@ -1,3 +1,4 @@
+module<const>
 local positive_infinity<const> = 1 / 0
 local negative_infinity<const> = -1 / 0
 local f32_mantissa_bits<const> = 23

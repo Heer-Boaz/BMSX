@@ -198,7 +198,7 @@ test('compile-time modules cannot declare init functions', () => {
 	assert.throws(
 		() => compileSystem('local run<const> = require("worker")\nreturn run()', [{
 			path: 'worker',
-			source: 'local function refresh<init>() end\nreturn function() return 1 end',
+			source: 'module<const>\nlocal function refresh<init>() end\nreturn function() return 1 end',
 		}]),
 		/Compile-time module 'worker\.lua' cannot declare an <init> function\./,
 	);

@@ -1,3 +1,4 @@
+module<const>
 return function(value, min_value, max_value)
 	local clamped = value
 	if clamped < min_value then

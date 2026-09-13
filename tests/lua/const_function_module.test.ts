@@ -22,7 +22,8 @@ const CLAMP_PATH = 'cartlib/util/clamp';
 const RECT_OVERLAPS_PATH = 'cartlib/util/rect_overlaps';
 const SIN_TURN32_PATH = 'math/sin';
 const STATIC_FORBIDDEN_OPCODE_PATTERN = /\b(?:GETSYS|SETSYS|GETGL|SETGL|NEWT|GETT|SETT|GETI|SETI|GETFIELD|SETFIELD|SELF|LEN|CLOSURE|VARARG|CONCAT|CONCATN)\b/;
-const ROUND_TO_NEAREST_SOURCE = `return function(value)
+const ROUND_TO_NEAREST_SOURCE = `module<const>
+return function(value)
 	if value >= 0 then
 		return (value + 0.5) // 1
 	end
@@ -324,6 +325,7 @@ return {
 
 test('const function modules reject dynamic opcodes across their protos', () => {
 	const moduleSource = `
+module<const>
 return function()
 	local t = {}
 	return t

@@ -1,3 +1,4 @@
+module<const>
 local assets<const> = require('bmsx/system_assets')
 local terminal_layout<const> = require('tty/layout')
 

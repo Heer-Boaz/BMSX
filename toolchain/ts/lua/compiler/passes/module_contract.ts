@@ -1,8 +1,4 @@
-import {
-	LuaSyntaxKind,
-	type LuaChunk,
-	type LuaExpression,
-} from '../../syntax/ast';
+import type { LuaChunk, LuaExpression } from '../../syntax/ast';
 import type { LuaSemanticFrontend, LuaSemanticFrontendFile } from '../../semantic/frontend';
 import { findLuaModuleExport } from '../../semantic/module_bindings';
 import {
@@ -117,19 +113,18 @@ const buildModuleCompileInfo = (
 		}
 	}
 	const moduleOwnsStaticStorage = staticStorage || hasStaticStorageDeclaration;
-	const staticFunctionExportByPathKey = constModule || returnExpression.kind === LuaSyntaxKind.FunctionExpression
-		? collectStaticFunctionExportSymbolsByPathKey(modulePath, chunk, returnExpression, semantics, constModule)
+	const staticFunctionExportByPathKey = constModule
+		? collectStaticFunctionExportSymbolsByPathKey(modulePath, chunk, returnExpression, semantics)
 		: new Map<string, StaticFunctionExportSymbol>();
 	const rootStaticFunctionExport = staticFunctionExportByPathKey.has('');
-	const compileTimeModule = constModule || rootStaticFunctionExport;
 	let exportRoot: ModuleExportShape | undefined;
-	if (compileTimeModule) {
+	if (constModule) {
 		exportRoot = buildModuleShapeFromExpression(returnExpression, buildTopLevelLocalModuleShapes(chunk)) ?? new Map<string, ModuleExportShape>();
 		if (!rootStaticFunctionExport && exportRoot.size === 0) {
 			return null;
 		}
 	}
-	const exportConstValueByPathKey = compileTimeModule
+	const exportConstValueByPathKey = constModule
 		? buildConstModuleExportValues(chunk, returnExpression, moduleOwnsStaticStorage, semantics)
 		: new Map<string, ConstExportValue>();
 	if (module.linkValues) {
@@ -153,7 +148,7 @@ const buildModuleCompileInfo = (
 		: new Map<string, string>([['', buildModuleExportSlotName(modulePath, [])]]);
 	return {
 		path: modulePath,
-		constModule: compileTimeModule,
+		constModule,
 		returnExpression,
 		exportSlotsByPathKey,
 		exportConstValueByPathKey,

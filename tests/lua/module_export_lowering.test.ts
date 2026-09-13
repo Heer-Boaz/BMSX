@@ -202,7 +202,8 @@ test('explicit const-module functions call sibling exports through link symbols'
 });
 
 test('O3 inlines a known single-result static call target without retaining its closure relocation', () => {
-	const moduleSource = `return function(value)
+	const moduleSource = `module<const>
+return function(value)
 	return value + 1
 end`;
 	const result = compileWithModule('return require("increment")(6)', 'increment', moduleSource, [], 3);
@@ -211,6 +212,29 @@ end`;
 	assert.doesNotMatch(result.disasm, /\bCALL\b|\bCLOSURE\b/);
 	const cpu = runCompiledTestSystem(result.compiled, 100000);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [7]);
+});
+
+test('bare function modules publish ordinary runtime callbacks with captures, table operations and multiple results', () => {
+	for (const optLevel of [0, 3] as const) {
+		const moduleSource = `module_loads = (module_loads or 0) + 1
+local count = 0
+return function(owner, delta, ...)
+ count = count + 1
+ owner.value = owner.value + delta
+ return owner.value, count, ...
+end`;
+		const result = compileWithModule(`local callback<const> = require('callback')
+local handlers = { update = callback }
+local owner = { value = 10 }
+local value, count, marker = handlers.update(owner, 3, 'first')
+local next_value, next_count, next_marker = require('callback')(owner, 4, 'next')
+return value, count, marker == 'first', next_value, next_count, next_marker == 'next', callback == require('callback'), module_loads`,
+		'callback', moduleSource, [], optLevel);
+		assert.equal(result.compiled.moduleProtoMap.has('callback'), true, 'a statically required runtime module still has an initializer');
+		assert.equal(result.constRelocs.some(reloc => reloc.kind === 'export_proto' && reloc.path === 'callback'), false);
+		assert.deepEqual(materializeCpuCompletionValues(runCompiledTestSystem(result.compiled, 100000)),
+			[13, 1, true, 17, 2, true, true, 1], `O${optLevel}`);
+	}
 });
 
 test('cartlib easing calls through its live runtime table', () => {

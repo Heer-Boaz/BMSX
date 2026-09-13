@@ -74,7 +74,6 @@ const collectStaticFunctionExportSymbols = (
 	expression: LuaExpression,
 	functions: ReadonlyMap<string, TopLevelFunction>,
 	semantics: LuaSemanticFrontendFile,
-	includeLocalBindingExports: boolean,
 	out: Map<string, StaticFunctionExportSymbol>,
 	path: string[],
 ): void => {
@@ -82,15 +81,12 @@ const collectStaticFunctionExportSymbols = (
 		const table = expression as LuaTableConstructorExpression;
 		visitNamedTableFields(table, (key, value) => {
 			path.push(key);
-			collectStaticFunctionExportSymbols(modulePath, value, functions, semantics, includeLocalBindingExports, out, path);
+			collectStaticFunctionExportSymbols(modulePath, value, functions, semantics, out, path);
 			path.pop();
 		});
 		return;
 	}
 	if (expression.kind === LuaSyntaxKind.FunctionExpression) {
-		if (path.length !== 0 && !includeLocalBindingExports) {
-			return;
-		}
 		const slotName = buildModuleExportSlotName(modulePath, path);
 		out.set(buildModuleExportPathKey(path), {
 			symbolHandle: slotName,
@@ -101,9 +97,6 @@ const collectStaticFunctionExportSymbols = (
 		return;
 	}
 	if (expression.kind !== LuaSyntaxKind.IdentifierExpression) {
-		return;
-	}
-	if (!includeLocalBindingExports) {
 		return;
 	}
 	const reference = getResolvedIdentifierReference(semantics, expression as LuaIdentifierExpression);
@@ -122,10 +115,9 @@ export const collectStaticFunctionExportSymbolsByPathKey = (
 	chunk: LuaChunk,
 	returnExpression: LuaExpression,
 	semantics: LuaSemanticFrontendFile,
-	includeLocalBindingExports: boolean,
 ): Map<string, StaticFunctionExportSymbol> => {
 	const out = new Map<string, StaticFunctionExportSymbol>();
-	collectStaticFunctionExportSymbols(modulePath, returnExpression, collectTopLevelFunctionExpressions(chunk, semantics), semantics, includeLocalBindingExports, out, []);
+	collectStaticFunctionExportSymbols(modulePath, returnExpression, collectTopLevelFunctionExpressions(chunk, semantics), semantics, out, []);
 	return out;
 };
 

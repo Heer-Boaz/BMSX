@@ -2082,6 +2082,14 @@ hold module roots, not initialization-time copies of mutable fields. This keeps
 ordinary Lua table and function semantics where gameplay deliberately chooses
 the dynamic lane. A `<const>` local fixes only that local binding; it does not
 turn the required module or any of its fields into a static ABI.
+An ordinary module may directly return a runtime closure, including captured
+locals, table access and multiple call results. The return-expression syntax does
+not promote that module to the static ABI. Scalar-only BIOS/cartlib function
+modules declare that ABI explicitly; they retain static calls and O3 inlining.
+This follows Lua's [closure construction](https://github.com/lua/lua/blob/v5.4.8/lparser.c#L715-L726)
+and [returned-module-value ownership](https://github.com/lua/lua/blob/v5.4.8/loadlib.c#L648-L674),
+not Lua's entire package-loader policy: BLua still owns its existing packed module
+admission and initialization schedule.
 Every const module declares `module<const>` in its own BLua source. Generated
 packer modules emit the same declaration at their producer. Packed builds and
 debug source recompilation therefore consume one source-owned contract; the

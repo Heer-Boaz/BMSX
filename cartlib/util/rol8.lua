@@ -1,3 +1,4 @@
+module<const>
 return function(value)
 	local rotated = value + value
 	if rotated >= 256 then

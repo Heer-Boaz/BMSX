@@ -1,3 +1,4 @@
+module<const>
 return function(value)
 	if value then
 		return 1
