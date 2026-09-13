@@ -1501,9 +1501,12 @@ hook; the separate optimized-node/topology correspondence gate remains open.
 The [BT compilation observation probe](behavior_tree_compilation_observation.md)
 records actual lowering occurrences through existing erased trace statements,
 not through evaluator decompilation or an instruction hook. Its explicit
-testlib consumer owns the latest completed compilation, not a catalog of
-successfully rebound actors. Ordinary debug-ROMs and Hot Resume still erase
-these traces. This measures the storage/lifetime alternatives; it does not
+testlib consumer now associates one capture with each reachable program and
+records the last completed program binding per observed component through
+[ordinary weak-key tables](behavior_tree_observation_lifetime.md). That
+completion fact does not assert field coherence during or after a failed
+later rebind. Ordinary debug-ROMs and Hot Resume still erase these traces.
+This measures the storage/lifetime alternatives; it does not
 introduce a Studio debug database, authored-source mapping or guest tick work.
 
 The [registered-definition catalog](behavior_definition_catalog.md) reads the

@@ -50,6 +50,7 @@ function bt_component:rebind_program(program)
 	-- to the installed program and never become cart-visible state keys.
 	self._execution_state, self._active_services = program.create_execution_state()
 	self._active_service_count = 0
+	blua32.trace(bt_component, 'bt.bind.complete', self, program)
 end
 
 -- Aborting a tree clears compiler-owned execution paths and halts every

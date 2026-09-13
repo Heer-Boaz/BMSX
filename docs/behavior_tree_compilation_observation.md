@@ -3,6 +3,11 @@
 Datum: 2026-09-13. Live owners vergeleken met `265f29364`.
 Onderdeel van D3 in [het definitie-inspectieontwerp](behavior_definition_inspection_design.md).
 
+De kosten in dit document horen bij de eerste opnameproef (`d1c576710`). De
+[lifetimevervolgslice](behavior_tree_observation_lifetime.md) vervangt inmiddels
+de sterke `latest`-latch door zwakke programma-/completionassociaties en
+rapporteert haar eigen bijgewerkte kosten; beide metingen niet verwarren.
+
 ## Productievoorbeelden en afbakening
 
 De volgende implementaties zijn daadwerkelijk gelezen, niet alleen hun API-namen:
@@ -44,8 +49,9 @@ gemeld. Er is geen rollback of vervangende definitie.
 
 `testlib/behaviour_tree/compile_recorder.lua` is de expliciete proefconsument.
 Hij wordt niet automatisch in gewone cartridges, Studio of Hot Resume geladen.
-Hij bewaart uitsluitend de laatste voltooide opname; loskoppelen stopt nieuwe
-opnames, maar wist niet de opname die de proef nog inspecteert.
+De eerste versie bewaart uitsluitend de laatste voltooide opname; loskoppelen
+stopt nieuwe opnames, maar wist niet de opname die de proef nog inspecteert.
+De actuele lifetimeversie bewaart geen sterke `latest`-latch meer; zie hierboven.
 
 ## Identiteiten en gegevensduur
 

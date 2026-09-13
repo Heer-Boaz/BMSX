@@ -1,4 +1,5 @@
 local program<const> = require('cartlib/behaviour_tree/program')
+local bt_component<const> = require('cartlib/behaviour_tree/bt_component')
 
 local compile_recorder<const> = {}
 compile_recorder.__index = compile_recorder
@@ -8,6 +9,11 @@ node_recorder.__index = node_recorder
 
 local completion_recorder<const> = {}
 completion_recorder.__index = completion_recorder
+
+local binding_recorder<const> = {}
+binding_recorder.__index = binding_recorder
+
+local weak_keys<const> = { __mode = 'k' }
 
 -- This is a compilation probe, not a source graph or a per-actor runtime
 -- tracer. A declaration may be shared by several lowering occurrences.
@@ -42,10 +48,7 @@ end
 function completion_recorder:record(compiled)
 	local layout<const> = self.layout
 	local capture<const> = self.capture
-	-- Keep only the latest completed program. No failed compilation is
-	-- published and no list of displaced programs keeps old heaps alive.
-	self.owner.latest = {
-		program = compiled,
+	self.owner.programs[compiled] = {
 		nodes = capture.nodes,
 		declaration_count = capture.declaration_count,
 		slot_count = layout.state_slot_count,
@@ -55,9 +58,22 @@ function completion_recorder:record(compiled)
 	}
 end
 
+-- This is the last completed bind, not a claim about the coherence of fields
+-- while a later rebind is writing them or has failed part way through.
+function binding_recorder:record(component, compiled)
+	self.completed_bindings[component] = compiled
+end
+
 function compile_recorder.new()
-	local self<const> = setmetatable({}, compile_recorder)
+	local completed_bindings<const> = setmetatable({}, weak_keys)
+	local self<const> = setmetatable({
+		programs = setmetatable({}, weak_keys),
+		completed_bindings = completed_bindings,
+	}, compile_recorder)
 	blua32.trace_sink(program, 'bt.compile.begin', self)
+	blua32.trace_sink(bt_component, 'bt.bind.complete', setmetatable({
+		completed_bindings = completed_bindings,
+	}, binding_recorder))
 	return self
 end
 
@@ -78,6 +94,7 @@ end
 
 function compile_recorder:dispose()
 	blua32.trace_sink(program, 'bt.compile.begin', nil)
+	blua32.trace_sink(bt_component, 'bt.bind.complete', nil)
 end
 
 return compile_recorder

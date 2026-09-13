@@ -369,6 +369,13 @@ resterende productopslag-, admission- en sourcegates blijven open.
 De compiler kan inmiddels uitsluitend koude compilekanalen emitteren en alle
 andere traces vóór argumentcodegeneratie wissen. Dat verwijdert de noodzaak
 voor globale runtime-instrumentatie, niet de opname-/admissiongates.
+De [lifetimevervolgslice](behavior_tree_observation_lifetime.md) vervangt de
+sterke `latest`-opname door zwakke programma-associaties en één referentie per
+geobserveerde voltooide componentbinding. Gelijke callbacks, ongebruikte
+registraties, geneste/afgebroken rebinds, wegvallende actors en referentiecycli
+worden onderscheiden. Een completionfeit wordt niet als atomair huidig
+execution-memorymodel gepresenteerd; compacte opslag en graphcoherentie
+tijdens rebind blijven open.
 
 De volledige gates van deze slices zijn nog niet gesloten. De bredere UX-lijst blijft
 bestaan, maar wordt niet langer gegijzeld door volledige analyse van alle

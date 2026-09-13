@@ -60,9 +60,11 @@ function probe.run(count)
 	end
 end
 function probe.check()
-	local capture<const> = probe.recorder.latest
+	local compiled<const> = probe.recorder.completed_bindings[probe.first]
+	local capture<const> = probe.recorder.programs[compiled]
 	local nodes<const> = capture.nodes
-	assert(capture.program.evaluate == probe.first.evaluate and capture.program.reset == probe.first.reset)
+	assert(compiled.evaluate == probe.first.evaluate and compiled.reset == probe.first.reset)
+	assert(probe.recorder.completed_bindings[probe.second] == compiled)
 	assert(#nodes == 5 and capture.declaration_count == 4)
 	assert(nodes[1].type == 'sequence' and nodes[1].parent == 0 and nodes[1].subtree_end == 5)
 	assert(nodes[2].type == 'sequence' and nodes[2].parent == 1 and nodes[2].subtree_end == 3)
@@ -95,11 +97,14 @@ function probe.drop_definition()
 	probe.definition = nil
 end
 function probe.check_replaced()
-	local previous<const> = probe.recorder.latest
-	local weak<const> = setmetatable({ previous, previous.program, previous.nodes }, { __mode = 'v' })
+	local previous_program<const> = probe.recorder.completed_bindings[probe.first]
+	local previous<const> = probe.recorder.programs[previous_program]
+	local weak<const> = setmetatable({ previous, previous_program, previous.nodes }, { __mode = 'v' })
 	probe.compile(2, false)
-	assert(probe.recorder.latest ~= previous and probe.recorder.latest.program ~= previous.program)
-	assert(probe.recorder.latest.nodes[1] ~= previous.nodes[1])
+	local current_program<const> = probe.recorder.completed_bindings[probe.first]
+	local current<const> = probe.recorder.programs[current_program]
+	assert(current ~= previous and current_program ~= previous_program)
+	assert(current.nodes[1] ~= previous.nodes[1])
 	probe.displaced = weak
 end
 function probe.check_unobserved()

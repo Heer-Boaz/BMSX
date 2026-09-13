@@ -46,6 +46,9 @@ host-setlookup tijdens codegeneratie van een tracestatement.
 
 ## Gerichte proeven
 
+Onderstaande BT-getallen horen bij `23a6bcbe0`, vóór de afzonderlijke
+[opnamelifetimeslice](behavior_tree_observation_lifetime.md).
+
 - O0/O3: exacte instructies, constants en closure-layout tegenover dezelfde
   bron zonder de uitgesloten statements. Subject-, sink- en payloadexpressies
   worden niet geëvalueerd; een prefixkanaal wordt niet impliciet geselecteerd.
