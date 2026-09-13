@@ -387,6 +387,14 @@ geen listener na de registratie toe en reset geen recorder bij Hot Resume.
 De bestaande instance-inspector kan later aansluiten; live topologie en
 authored-sourcecorrespondentie worden daarmee niet alsnog geclaimd.
 
+De [kolomopslagslice](behavior_tree_observation_storage.md) vervangt nu de
+per-occurrence recordtabellen door direct beschreven, benoemde kolommen.
+Zij halveert bijna de extra retentie van de 65-occurrenceproef, met expliciet
+gemeten kleine-boom- en koude-writekosten. Sparse nil-kolommen veranderen de
+occurrence-aantallen niet. Programma-/completionlifetime en de ongewijzigde
+tickroute blijven staan; automatische producttoelating, broncorrespondentie
+en coherente live-graphstate worden hiermee niet opgelost.
+
 De volledige gates van deze slices zijn nog niet gesloten. De bredere UX-lijst blijft
 bestaan, maar wordt niet langer gegijzeld door volledige analyse van alle
 denkbare factories. Correctheidsfouten in gedeelde taalowners blijven echte

@@ -77,7 +77,7 @@ for (const optLevel of [0, 3] as const) test(`preload observes the first real mo
 local observation<const> = require('fixture/observation')
 local compiled<const> = observation.completed_bindings[actor]
 local capture<const> = observation.programs[compiled]
-return #capture.nodes, capture.nodes[1].type == 'sequence', capture.nodes[2].type == 'task'
+return capture.node_count, capture.nodes.type[1] == 'sequence', capture.nodes.type[2] == 'task'
 `, {
 		optLevel,
 		preloadModules: ['fixture/observation'],

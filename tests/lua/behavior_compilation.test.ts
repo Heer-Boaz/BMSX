@@ -72,8 +72,8 @@ local second_capture<const> = recorder.programs[second]
 assert(first ~= second and first_capture ~= second_capture)
 assert(first.evaluate == callback and second.evaluate == callback)
 assert(first.operand == second.operand and first.reset == second.reset)
-assert(first_capture.nodes[1].type == 'sequence' and second_capture.nodes[1].type == 'selector')
-assert(first_capture.nodes[1].evaluate == first_capture.nodes[2].evaluate)
+assert(first_capture.nodes.type[1] == 'sequence' and second_capture.nodes.type[1] == 'selector')
+assert(first_capture.nodes.evaluate[1] == first_capture.nodes.evaluate[2])
 local accepted<const> = pcall(compiler.compile, 'failed', { root = { type = 'no_such_node' } })
 assert(not accepted and recorder.programs[first] == first_capture and recorder.programs[second] == second_capture)
 recorder:dispose()
@@ -95,10 +95,72 @@ local node<const> = setmetatable({}, { __index = prototype })
 local compiled<const> = compiler.compile('computed', { root = node })
 prototype.type = 'wait'
 assert(calls == 0)
-${tracing ? "assert(recorder.programs[compiled].nodes[1].type == 'task')" : ''}
+${tracing ? "assert(recorder.programs[compiled].nodes.type[1] == 'task')" : ''}
 `, { traceStatements: tracing ? 'emit' : 'erase', modules: [recorderModule] });
 		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 	}
+});
+
+for (const optLevel of [0, 3] as const) test(`BT columns preserve sparse values and broad/deep occurrence indices (O${optLevel})`, () => {
+	const { cpu } = createCartlibProgramHarness(`
+local compiler<const> = require('cartlib/behaviour_tree/program')
+local recorder<const> = require('testlib/behaviour_tree/compile_recorder').new()
+local result<const> = require('cartlib/behaviour_tree/result')
+local callback<const> = function() return result.success end
+local task<const> = { type = 'task', task = { execute = callback } }
+local wait<const> = { type = 'wait', duration_ticks = 2 }
+
+for _, root in ipairs({ task, { type = 'sequence', children = {} } }) do
+	local compiled<const> = compiler.compile('single', { root = root })
+	local capture<const> = recorder.programs[compiled]
+	local nodes<const> = capture.nodes
+	assert(capture.node_count == 1 and capture.declaration_count == 1)
+	assert(nodes.parent[1] == 0 and nodes.subtree_end[1] == 1)
+	assert(nodes.first_slot[1] == 1 and nodes.last_slot[1] == 0 and capture.slot_count == 0)
+	assert(nodes.evaluate[1] == compiled.evaluate)
+	assert(next(nodes.operand) == nil and next(nodes.reset) == nil)
+end
+
+for _, width in ipairs({ 1, 2, 31, 32, 33, 65, 129 }) do
+	local children<const> = {}
+	for index = 1, width do children[index] = index % 2 == 0 and wait or task end
+	local compiled<const> = compiler.compile('wide', { root = { type = 'sequence', children = children } })
+	local capture<const> = recorder.programs[compiled]
+	local nodes<const> = capture.nodes
+	assert(capture.node_count == width + 1 and #nodes.parent == capture.node_count)
+	assert(nodes.parent[1] == 0 and nodes.subtree_end[1] == capture.node_count)
+	assert(nodes.last_slot[1] == capture.slot_count and next(nodes.operand) == nil)
+	for child = 1, width do
+		local occurrence<const> = child + 1
+		assert(nodes.parent[occurrence] == 1 and nodes.subtree_end[occurrence] == occurrence)
+		if child % 2 == 0 then
+			assert(nodes.type[occurrence] == 'wait' and nodes.declaration[occurrence] == 3)
+			assert(nodes.first_slot[occurrence] == nodes.last_slot[occurrence])
+			assert(nodes.reset[occurrence] ~= nil)
+		else
+			assert(nodes.type[occurrence] == 'task' and nodes.declaration[occurrence] == 2)
+			assert(nodes.first_slot[occurrence] == nodes.last_slot[occurrence] + 1)
+			assert(nodes.evaluate[occurrence] == callback and nodes.reset[occurrence] == nil)
+		end
+	end
+end
+
+for _, depth in ipairs({ 1, 32, 129 }) do
+	local root = task
+	for level = 1, depth do root = { type = 'sequence', children = { root } } end
+	local compiled<const> = compiler.compile('deep', { root = root })
+	local capture<const> = recorder.programs[compiled]
+	local nodes<const> = capture.nodes
+	assert(capture.node_count == depth + 1 and capture.declaration_count == depth + 1)
+	assert(next(nodes.operand) == nil and next(nodes.reset) == nil)
+	for occurrence = 1, capture.node_count do
+		assert(nodes.parent[occurrence] == occurrence - 1 and nodes.subtree_end[occurrence] == capture.node_count)
+		assert(nodes.declaration[occurrence] == occurrence and nodes.evaluate[occurrence] == callback)
+		assert(nodes.first_slot[occurrence] == 1 and nodes.last_slot[occurrence] == 0)
+	end
+end
+`, { optLevel, traceStatements: observationChannels, modules: [recorderModule] });
+	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 });
 
 for (const optLevel of [0, 3] as const) test(`BT records follow program/actor reachability, including ephemeron cycles (O${optLevel})`, () => {
@@ -213,7 +275,7 @@ assert(recorder.completed_bindings[actor] == outer)
 });
 
 test('BT capture costs are cold; retained aliases are not a compiled definition snapshot', t => {
-	const measurements: { mode: string; code: number; setup: number; allocation: number; retained: number; compileCycles: number; tickCycles: number }[] = [];
+	const measurements: { mode: string; code: number; setup: number; allocation: number; retained: number; objects: number; compileCycles: number; tickCycles: number }[] = [];
 	for (const mode of ['erased', 'retained', 'unselected', 'captured', 'cold-only'] as const) {
 		const { cpu, images } = createCartlibProgramHarness(BT_COMPILATION_PROBE_SOURCE, {
 			traceStatements: mode === 'cold-only' ? observationChannels
@@ -227,9 +289,11 @@ test('BT capture costs are cold; retained aliases are not a compiled definition 
 			runCompletionClosure(cpu, probe.getStringKey(cpu.stringPool.find('observe')!) as Closure, []);
 		}
 		const before = cpu.collectTrackedHeapBytes();
+		const beforeObjects = cpu.captureRuntimeState().snapshot.objectCount;
 		const compileCycles = runCompletionClosure(cpu, probe.getStringKey(cpu.stringPool.find('compile')!) as Closure, [32, mode === 'retained']);
 		const allocation = cpu.luaHeap.usedBytes() - before;
 		const retained = cpu.collectTrackedHeapBytes() - before;
+		const objects = cpu.captureRuntimeState().snapshot.objectCount - beforeObjects;
 		const weak = probe.getStringKey(cpu.stringPool.find('weak_inputs')!) as Table;
 		assert.equal(weak.getInteger(1) === null, mode !== 'retained');
 		const run = probe.getStringKey(cpu.stringPool.find('run')!) as Closure;
@@ -237,7 +301,7 @@ test('BT capture costs are cold; retained aliases are not a compiled definition 
 		const warmBytes = cpu.luaHeap.usedBytes();
 		const tickCycles = runCompletionClosure(cpu, run, [9984]);
 		assert.equal(cpu.luaHeap.usedBytes(), warmBytes, `${mode}: evaluator must not allocate per tick`);
-		measurements.push({ mode, code: images.cartImage.textBytes.byteLength, setup: before - ready, allocation, retained, compileCycles, tickCycles });
+		measurements.push({ mode, code: images.cartImage.textBytes.byteLength, setup: before - ready, allocation, retained, objects, compileCycles, tickCycles });
 	}
 	for (const row of measurements) {
 		assert.equal(row.tickCycles, measurements[0].tickCycles, `${row.mode}: tracing must not change the execution path`);
@@ -245,8 +309,10 @@ test('BT capture costs are cold; retained aliases are not a compiled definition 
 	}
 	assert.ok(measurements[1].retained > measurements[0].retained);
 	assert.ok(measurements[3].retained > measurements[0].retained);
+	assert.equal(measurements[3].objects - measurements[0].objects, 11, 'capture and nodes containers plus nine columns, not 65 node objects');
 	assert.ok(measurements[3].compileCycles > measurements[2].compileCycles);
 	assert.ok(measurements[4].code < measurements[3].code, 'cold-only capture must erase unrelated runtime channels');
 	assert.equal(measurements[4].compileCycles, measurements[3].compileCycles);
 	assert.equal(measurements[4].retained, measurements[3].retained);
+	assert.equal(measurements[4].objects, measurements[3].objects);
 });

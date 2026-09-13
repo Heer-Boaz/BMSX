@@ -1513,8 +1513,13 @@ ordered preload roots, mirrored by the C++ symbols codec. IDE source rebuilds
 and Hot Resume consume that installed configuration per image; module
 constructors are not rerun by Hot Resume to reset observers. The compiler
 knows no behavior/Studio module names, and machine headers remain unchanged.
-This measures the storage/lifetime alternatives; it does not
-introduce a Studio debug database, authored-source mapping or guest tick work.
+The explicit recorder stores occurrence facts in [named columns](behavior_tree_observation_storage.md),
+not per-occurrence objects. The compiler layout supplies `node_count`; optional
+nil operands/resetters do not determine length. Existing guest tables, weak
+associations and save-state carry the columns without a second decoder or
+runtime representation. The measured storage reduction for larger trees has
+fixed small-tree and cold-write costs. This does not introduce automatic
+Studio admission, authored-source mapping or guest tick work.
 
 The [registered-definition catalog](behavior_definition_catalog.md) reads the
 existing FSM/ActionEffect registries through the installed setter closures'

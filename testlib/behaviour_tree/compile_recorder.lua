@@ -27,21 +27,19 @@ function node_recorder:record(node, execution_index, entering, slot_count, node_
 			self.declaration_count = declaration
 			self.declarations[node] = declaration
 		end
-		nodes[execution_index] = {
-			declaration = declaration,
-			parent = self.parent,
-			type = node_type,
-			first_slot = slot_count + 1,
-		}
+		nodes.declaration[execution_index] = declaration
+		nodes.parent[execution_index] = self.parent
+		nodes.type[execution_index] = node_type
+		nodes.first_slot[execution_index] = slot_count + 1
 		self.parent = execution_index
 	else
-		local occurrence<const> = nodes[execution_index]
-		occurrence.last_slot = slot_count
-		occurrence.subtree_end = #nodes
-		occurrence.evaluate = evaluate
-		occurrence.operand = operand
-		occurrence.reset = reset
-		self.parent = occurrence.parent
+		nodes.last_slot[execution_index] = slot_count
+		-- Enter events keep parents dense, even when result columns contain nil.
+		nodes.subtree_end[execution_index] = #nodes.parent
+		nodes.evaluate[execution_index] = evaluate
+		nodes.operand[execution_index] = operand
+		nodes.reset[execution_index] = reset
+		self.parent = nodes.parent[execution_index]
 	end
 end
 
@@ -50,6 +48,7 @@ function completion_recorder:record(compiled)
 	local capture<const> = self.capture
 	self.owner.programs[compiled] = {
 		nodes = capture.nodes,
+		node_count = layout.execution_index_count,
 		declaration_count = capture.declaration_count,
 		slot_count = layout.state_slot_count,
 		flag_slots = layout.flag_slots,
@@ -79,7 +78,17 @@ end
 
 function compile_recorder:record(layout)
 	local capture<const> = setmetatable({
-		nodes = {},
+		nodes = {
+			declaration = {},
+			parent = {},
+			type = {},
+			first_slot = {},
+			last_slot = {},
+			subtree_end = {},
+			evaluate = {},
+			operand = {},
+			reset = {},
+		},
 		declarations = {},
 		declaration_count = 0,
 		parent = 0,

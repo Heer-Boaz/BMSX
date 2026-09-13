@@ -7,6 +7,8 @@ De kosten in dit document horen bij de eerste opnameproef (`d1c576710`). De
 [lifetimevervolgslice](behavior_tree_observation_lifetime.md) vervangt inmiddels
 de sterke `latest`-latch door zwakke programma-/completionassociaties en
 rapporteert haar eigen bijgewerkte kosten; beide metingen niet verwarren.
+De daaropvolgende [kolomopslagslice](behavior_tree_observation_storage.md)
+vervangt de rijtabellen hieronder; zij meet de nieuwe opslag afzonderlijk.
 
 ## Productievoorbeelden en afbakening
 
@@ -55,7 +57,7 @@ De actuele lifetimeversie bewaart geen sterke `latest`-latch meer; zie hierboven
 
 ## Identiteiten en gegevensduur
 
-- `nodes[execution_index]` is een **lowering-occurrence**, niet een source-id,
+- `execution_index` identificeert een **lowering-occurrence**, niet een source-id,
   taaktype, actorslot of bewezen locatie in een bestand.
 - Een tijdelijke map onderscheidt originele tabelidentiteiten binnen één
   compilatie. Twee placements van dezelfde tabel delen daarin één declaratie,
