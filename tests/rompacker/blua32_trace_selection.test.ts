@@ -26,7 +26,7 @@ cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRES
 		loadAddress: SYSTEM_ROM_BASE + 0x100,
 		ramByteCount: PSX_MACHINE_SPEC.ramBytes,
 		optLevel: 3,
-		traceStatements: new Set(['boot']),
+		traceStatements: ['boot'],
 		domain: 'system',
 		biosExports: [],
 	});
@@ -56,7 +56,7 @@ return producer
 		loadAddress: CART_ROM_BASE + 0x100,
 		ramByteCount: PSX_MACHINE_SPEC.ramBytes,
 		optLevel: 3,
-		traceStatements: new Set(['compile']),
+		traceStatements: ['compile'],
 		domain: 'cart',
 		biosImports: system.linked.biosImports,
 	});

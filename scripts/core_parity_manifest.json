@@ -1268,6 +1268,11 @@
 			"reason": "compiler_capture_classification_tooling_filename_parity"
 		},
 		{
+			"ts": "toolchain/ts/lua/compiler/trace_statement.ts",
+			"cpp": ["machine/cpp/rompack/tooling/trace_statement.h"],
+			"reason": "compiler_trace_selection_tooling_filename_parity"
+		},
+		{
 			"ts": "toolchain/ts/lua/compiler/word_range.ts",
 			"cpp": ["machine/cpp/rompack/tooling/word_range.h"],
 			"reason": "compiler_finalized_word_locations_tooling_filename_parity"

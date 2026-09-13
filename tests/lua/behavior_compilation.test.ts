@@ -13,7 +13,7 @@ const recorderModule = {
 	source: readFileSync('testlib/behaviour_tree/compile_recorder.lua', 'utf8'),
 };
 
-const observationChannels = new Set(['bt.compile.begin', 'bt.compile.node', 'bt.compile.end', 'bt.bind.complete']);
+const observationChannels = ['bt.compile.begin', 'bt.compile.node', 'bt.compile.end', 'bt.bind.complete'];
 
 for (const optLevel of [0, 3] as const) test(`BT compilation observes occurrences, not evaluator or actor identity (O${optLevel})`, () => {
 	const { cpu } = createCartlibProgramHarness(BT_COMPILATION_PROBE_SOURCE + `

@@ -642,7 +642,7 @@ test('cold BT channel selection leaves actual FSM transition work identical to e
 	for (const mode of ['erase', 'compile-only', 'emit'] as const) {
 		const { cpu } = createCartlibProgramHarness(TRANSITION_RECORDER_ENTRY_SOURCE, {
 			traceStatements: mode === 'compile-only'
-				? new Set(['bt.compile.begin', 'bt.compile.node', 'bt.compile.end']) : mode,
+				? ['bt.compile.begin', 'bt.compile.node', 'bt.compile.end'] : mode,
 		});
 		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 		const [run, , recorder] = materializeCpuCompletionValues(cpu) as [Closure, Closure, Table];

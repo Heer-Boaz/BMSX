@@ -36,6 +36,8 @@ int main() {
 	bmsx::Blua32SymbolsImage symbols;
 	symbols.version = bmsx::BLUA32_SYMBOLS_VERSION;
 	symbols.metadata.functionIds = {"entry"};
+	symbols.metadata.traceStatements = std::vector<std::string>{"fixture.compile", "fixture.bind"};
+	symbols.metadata.preloadModules = {"fixture/observer"};
 	symbols.metadata.functionDisplayNames = {"entryDisplay"};
 	symbols.metadata.debugRanges = {outerCallRange, std::nullopt};
 	symbols.metadata.debugInlineCallSiteChains = {{}, inlineCallSites};
@@ -57,6 +59,18 @@ int main() {
 
 	const std::vector<bmsx::u8> encodedSymbols = bmsx::encodeBlua32SymbolsImage(symbols);
 	const bmsx::Blua32SymbolsImage decodedSymbols = bmsx::decodeBlua32SymbolsImage(encodedSymbols);
+	if (decodedSymbols.metadata.traceStatements != symbols.metadata.traceStatements
+		|| decodedSymbols.metadata.preloadModules != symbols.metadata.preloadModules) {
+		throw std::runtime_error("BLua32 compilation configuration did not round-trip");
+	}
+	for (const bmsx::TraceStatementSelection& selection : std::array<bmsx::TraceStatementSelection, 3>{
+		std::string("erase"), std::string("emit"), std::vector<std::string>{},
+	}) {
+		symbols.metadata.traceStatements = selection;
+		if (bmsx::decodeBlua32SymbolsImage(bmsx::encodeBlua32SymbolsImage(symbols)).metadata.traceStatements != selection) {
+			throw std::runtime_error("BLua32 explicit erasure/emission/empty selection did not round-trip");
+		}
+	}
 	const auto& slot = decodedSymbols.metadata.localSlotsByFunction[0][0];
 	if (slot.liveWordRanges.size() != 2 || slot.liveWordRanges[0].start != 2 || slot.liveWordRanges[1].end != 8) {
 		throw std::runtime_error("BLua32 local word locations did not round-trip");

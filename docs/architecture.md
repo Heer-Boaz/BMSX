@@ -1505,7 +1505,14 @@ testlib consumer now associates one capture with each reachable program and
 records the last completed program binding per observed component through
 [ordinary weak-key tables](behavior_tree_observation_lifetime.md). That
 completion fact does not assert field coherence during or after a failed
-later rebind. Ordinary debug-ROMs and Hot Resume still erase these traces.
+later rebind. Ordinary debug-ROMs still erase these traces. Explicit
+[compiler preloads](lua_preload_initialization.md) initialize their existing
+dependency closure before entry dependencies; no BIOS hook or host guest-call
+installs them. Linked tooling metadata retains the exact trace selection and
+ordered preload roots, mirrored by the C++ symbols codec. IDE source rebuilds
+and Hot Resume consume that installed configuration per image; module
+constructors are not rerun by Hot Resume to reset observers. The compiler
+knows no behavior/Studio module names, and machine headers remain unchanged.
 This measures the storage/lifetime alternatives; it does not
 introduce a Studio debug database, authored-source mapping or guest tick work.
 

@@ -101,6 +101,8 @@ function makeMetadata(
 	exportProtoIdBySlot: Record<string, string> = {},
 ): ProgramMetadata {
 	return {
+		traceStatements: 'erase',
+		preloadModules: [],
 		debugRanges: new Array(instructionCount).fill(null),
 		debugInlineCallSites: new Array(instructionCount).fill([]),
 		protoIds,

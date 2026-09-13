@@ -1,7 +1,7 @@
 import { build } from 'esbuild';
 import assert from 'node:assert/strict';
 import { PNG } from 'pngjs';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { copyFile, cp, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, parse, resolve } from 'node:path';
@@ -10,14 +10,15 @@ import { join, parse, resolve } from 'node:path';
 const { chromium } = await import(process.env.BMSX_PLAYWRIGHT_MODULE || 'playwright');
 const navigation = process.argv[2] === '--studio-navigation' ? process.argv[3] : null;
 const fsm = process.argv[2] === '--studio-fsm-retarget-imported' ? 'retarget-imported' : process.argv[2] === '--studio-fsm-retarget' ? 'retarget' : process.argv[2] === '--studio-fsm-initial' ? 'initial' : null;
+const preload = process.argv[2] === '--studio-preload';
 const inspection = process.argv[2] === '--studio-runtime-inspection';
 const reparent = process.argv[2] === '--studio-bt-reparent';
 const session = process.argv[2] === '--studio-session';
-const scenario = inspection ? { kind: 'runtime-inspection' } : navigation !== null ? { kind: 'navigation', cart: navigation } : fsm !== null ? { kind: `fsm-${fsm}` } : reparent ? { kind: 'bt-reparent' } : { kind: 'workflows' };
-const studio = inspection || session || process.argv[2] === '--studio' || navigation !== null || fsm !== null || reparent;
-const studioLabel = inspection ? 'STUDIO-RUNTIME-INSPECTION' : session ? 'STUDIO-SESSION' : reparent ? 'STUDIO-BT-REPARENT' : fsm !== null ? `STUDIO-FSM-${fsm.toUpperCase()}` : navigation === null ? 'STUDIO-WORKFLOWS' : 'STUDIO-NAVIGATION';
+const scenario = preload ? { kind: 'preload' } : inspection ? { kind: 'runtime-inspection' } : navigation !== null ? { kind: 'navigation', cart: navigation } : fsm !== null ? { kind: `fsm-${fsm}` } : reparent ? { kind: 'bt-reparent' } : { kind: 'workflows' };
+const studio = preload || inspection || session || process.argv[2] === '--studio' || navigation !== null || fsm !== null || reparent;
+const studioLabel = preload ? 'STUDIO-PRELOAD' : inspection ? 'STUDIO-RUNTIME-INSPECTION' : session ? 'STUDIO-SESSION' : reparent ? 'STUDIO-BT-REPARENT' : fsm !== null ? `STUDIO-FSM-${fsm.toUpperCase()}` : navigation === null ? 'STUDIO-WORKFLOWS' : 'STUDIO-NAVIGATION';
 const [bios, cart, screenshot] = process.argv.slice(navigation !== null ? 4 : studio ? 3 : 2);
-if (!bios || !cart) throw new Error('Usage: browser.mjs [--studio | --studio-runtime-inspection | --studio-session | --studio-fsm-initial | --studio-fsm-retarget | --studio-fsm-retarget-imported | --studio-bt-reparent | --studio-navigation CART_FOLDER] SYSTEM_ROM CART_ROM [SCREENSHOT_PNG]');
+if (!bios || !cart) throw new Error('Usage: browser.mjs [--studio | --studio-preload | --studio-runtime-inspection | --studio-session | --studio-fsm-initial | --studio-fsm-retarget | --studio-fsm-retarget-imported | --studio-bt-reparent | --studio-navigation CART_FOLDER] SYSTEM_ROM CART_ROM [SCREENSHOT_PNG]');
 let inspectionPixels;
 for (const backend of studio ? ['software', 'webgl2', 'webgpu'] : ['webgpu']) {
 	const directory = await mkdtemp(join(tmpdir(), `bmsx-${backend}-rewind-`));
@@ -29,10 +30,18 @@ for (const backend of studio ? ['software', 'webgl2', 'webgpu'] : ['webgpu']) {
 			tsconfig: 'tsconfig.base.json', loader: { '.glsl': 'text', '.wgsl': 'text', '.png': 'dataurl' } });
 		await writeFile(join(directory, 'index.html'), '<!doctype html><link rel="icon" href="data:,"><style>body{margin:0;background:#000}canvas{image-rendering:pixelated}</style><canvas width="256" height="212"></canvas>');
 		await copyFile(bios, join(directory, 'bios.rom'));
-		await copyFile(cart, join(directory, 'cart.rom'));
+		if (preload) {
+			const built = spawnSync('npx', ['tsx', resolve(import.meta.dirname, 'preload_cartridge.ts'), directory, resolve(bios)], { stdio: 'inherit' });
+			if (built.error) throw built.error;
+			assert.equal(built.status, 0, 'preload fixture uses the production ROM builder');
+		} else {
+			await copyFile(cart, join(directory, 'cart.rom'));
+		}
 		if (studio) {
 			await copyFile('dist/graph-layout.worker.js', join(directory, 'graph-layout.worker.js'));
-			for (const root of [`carts/${navigation === null ? 'nemesis_s' : navigation}`, 'cartlib', 'machine/bios']) {
+			const sourceRoots = preload ? ['cartlib', 'testlib', 'machine/bios']
+				: [`carts/${navigation === null ? 'nemesis_s' : navigation}`, 'cartlib', 'machine/bios'];
+			for (const root of sourceRoots) {
 				await cp(root, join(directory, root), { recursive: true,
 					filter: async path => (await stat(path)).isDirectory() || path.endsWith('.lua') || path.endsWith('.aem.yaml') });
 			}

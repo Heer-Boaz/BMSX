@@ -36,6 +36,8 @@ test('BLua32 function names and inline call-site chains round-trip through the s
 		initParticipants: [],
 		staticLayoutToken: { lo: 0, hi: 0 },
 		metadata: {
+			traceStatements: ['fixture.compile', 'fixture.bind'],
+			preloadModules: ['fixture/observer'],
 			functionIds: ['module:cart/module/anon:4:2:4:14'],
 			functionDisplayNames: ['invoke'],
 			functionDefinitions: [innerCallRange],
@@ -59,6 +61,12 @@ test('BLua32 function names and inline call-site chains round-trip through the s
 	};
 
 	const decoded = decodeBlua32SymbolsImage(encodeBlua32SymbolsImage(symbols));
+	assert.deepEqual(decoded.metadata.traceStatements, ['fixture.compile', 'fixture.bind']);
+	assert.deepEqual(decoded.metadata.preloadModules, ['fixture/observer']);
+	for (const traceStatements of ['erase', 'emit', []] as const) {
+		const metadata = { ...symbols.metadata, traceStatements };
+		assert.deepEqual(decodeBlua32SymbolsImage(encodeBlua32SymbolsImage({ ...symbols, metadata })).metadata, metadata);
+	}
 	assert.deepEqual(decoded.metadata.localSlotsByFunction, symbols.metadata.localSlotsByFunction);
 	const slot = decoded.metadata.localSlotsByFunction[0][0];
 	for (let word = 0; word <= 9; word += 1) {

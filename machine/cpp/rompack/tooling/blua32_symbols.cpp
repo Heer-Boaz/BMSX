@@ -199,6 +199,13 @@ auto encodeResumePoint(const Blua32ResumePoint& point) -> BinValue {
 
 auto decodeMetadata(const BinValue& value) -> Blua32DebugMetadata {
 	Blua32DebugMetadata metadata;
+	const BinValue& traceStatements = value.require("traceStatements");
+	if (traceStatements.isString()) {
+		metadata.traceStatements = traceStatements.asString();
+	} else {
+		metadata.traceStatements = decodeStringArray(traceStatements);
+	}
+	metadata.preloadModules = decodeStringArray(value.require("preloadModules"));
 	metadata.functionIds = decodeStringArray(value.require("functionIds"));
 	metadata.functionDisplayNames = decodeStringArray(value.require("functionDisplayNames"));
 	metadata.globalNames = decodeStringArray(value.require("globalNames"));
@@ -285,6 +292,12 @@ auto decodeMetadata(const BinValue& value) -> Blua32DebugMetadata {
 
 auto encodeMetadata(const Blua32DebugMetadata& metadata) -> BinValue {
 	BinObject value;
+	if (const auto* mode = std::get_if<std::string>(&metadata.traceStatements)) {
+		value["traceStatements"] = BinValue(*mode);
+	} else {
+		value["traceStatements"] = encodeStringArray(std::get<std::vector<std::string>>(metadata.traceStatements));
+	}
+	value["preloadModules"] = encodeStringArray(metadata.preloadModules);
 	value["functionIds"] = encodeStringArray(metadata.functionIds);
 	value["functionDisplayNames"] = encodeStringArray(metadata.functionDisplayNames);
 	value["globalNames"] = encodeStringArray(metadata.globalNames);

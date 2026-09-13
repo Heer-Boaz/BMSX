@@ -52,6 +52,7 @@ import {
 	decodeBlua32SourceModules,
 	type GeneratedLuaModule,
 } from '../../toolchain/ts/rompack/blua32_image_builder';
+import type { TraceStatementSelection } from '../../toolchain/ts/lua/compiler/trace_statement';
 import { createTextureAtlas, resolveTextureAtlasName } from './atlasbuilder';
 import {
 	GX_SYSTEM_TEXTURE_ATLAS_NAME,
@@ -1183,6 +1184,8 @@ export async function generateRomAssets(
 
 type BuildRomBlua32TailOptions = {
 	generatedLuaModules: GeneratedLuaModule[];
+	traceStatements?: TraceStatementSelection;
+	preloadModules?: readonly string[];
 	includeSymbols: boolean;
 	optLevel: 0 | 1 | 2 | 3;
 	ramByteCount: number;
@@ -1248,7 +1251,8 @@ export function buildRomBlua32Tail(
 			loadAddress: SYSTEM_ROM_BASE + imageOffset,
 			ramByteCount: options.ramByteCount,
 			optLevel: options.optLevel,
-			traceStatements: 'erase',
+			traceStatements: options.traceStatements ?? 'erase',
+			preloadModules: options.preloadModules,
 			domain: 'system',
 			biosExports: options.biosExports,
 		});
@@ -1327,7 +1331,8 @@ export function buildRomBlua32Tail(
 		loadAddress: CART_ROM_BASE + options.imageOffset,
 		ramByteCount: options.ramByteCount,
 		optLevel: options.optLevel,
-		traceStatements: 'erase',
+		traceStatements: options.traceStatements ?? 'erase',
+		preloadModules: options.preloadModules,
 		domain: 'cart',
 		biosImports: options.biosImports,
 	});

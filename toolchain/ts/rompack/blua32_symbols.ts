@@ -4,9 +4,10 @@ import { decodeBinary, encodeBinary } from '../../../machine/ts/common/serialize
 import { INSTRUCTION_BYTES } from '../../../machine/ts/spec/blua32/instruction_format';
 import type { OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import type { SourceRange } from '../lua/source_range';
+import type { TraceStatementSelection } from '../lua/compiler/trace_statement';
 
 export const BLUA32_SYMBOLS_IMAGE_ID = '__blua32_symbols__';
-export const BLUA32_SYMBOLS_VERSION = 7;
+export const BLUA32_SYMBOLS_VERSION = 8;
 
 export type Blua32StaticLayoutToken = {
 	lo: number;
@@ -63,6 +64,8 @@ export type Blua32StatementPoint = {
 };
 
 export type Blua32DebugMetadata = {
+	traceStatements: TraceStatementSelection;
+	preloadModules: readonly string[];
 	functionIds: string[];
 	functionDisplayNames: string[];
 	functionDefinitions: ReadonlyArray<SourceRange | null>;

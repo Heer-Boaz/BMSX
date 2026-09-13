@@ -18,12 +18,15 @@ selectie voor een compilatie bepaalt nu welke **exacte** kanalen code krijgen:
 - `'erase'`: alle tracestatements wissen; blijft de normale compilerdefault.
 - `'emit'`: alle tracestatements emitteren; blijft het expliciete Scenario-
   cartridgecontract, ook voor door een game geschreven tracekanalen.
-- `ReadonlySet<string>`: uitsluitend deze kanalen emitteren. Een lege set
-  selecteert niets. Geen prefix-, wildcard- of impliciete dependenciesemantiek.
+- `readonly string[]`: uitsluitend deze kanalen emitteren. Een lege lijst
+  selecteert niets. De compiler maakt één lookup-set; de instellingen blijven
+  direct serialiseerbaar. Geen prefix-, wildcard- of impliciete dependenciesemantiek.
 
 De keuze geldt voor producer én sink, in entry en modules. De compiler kent
 geen BT-, FSM-, ActionEffect- of Studio-kanalen. De bestaande rom-imagebuilder
-geeft dezelfde selectie door; er komt geen selectieveld in de ROM/hardware.
+geeft dezelfde selectie door; er komt geen selectieveld in de machine/header.
+De latere [preloadslice](lua_preload_initialization.md) bewaart deze instelling
+in tooling-debugmetadata, zodat bronherbouw haar niet verliest.
 
 ## Kosten- en levensduurgrens
 
@@ -35,9 +38,10 @@ zet dus niet stilzwijgend de runtime-traces van andere subsystemen aan.
 
 Dit installeert **geen** recorder. De producer van een instrumenteerde build
 kiest expliciet de benodigde kanalen en koppelt hun consumenten. Gewone
-debug-ROMs en Hot Resume blijven wissen. Een latere Studio-buildpolicy moet
-ook opname vanaf de eerste compilatie, module-initialisatie, Hot Resume en
-late attach samen dragen; deze compileroptie vervangt dat contract niet.
+debug-ROMs blijven wissen. Hot Resume neemt inmiddels de geïnstalleerde keuze
+over; expliciete preloads kunnen vóór de eerste game-module-initialisatie een
+recorder koppelen. De automatische Studio-buildpolicy en productopslag blijven
+open; deze compileroptie vervangt dat contract niet.
 
 De compiler en rom-imagebuilder zijn TypeScript-tooling; beide machineruntimes
 voeren dezelfde reeds bestaande guestinstructies uit. Er wijzigt geen native

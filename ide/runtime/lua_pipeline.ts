@@ -296,6 +296,8 @@ export function buildBlua32Media(
 				optLevel: sources.realtimeCompileOptLevel,
 				entrySource: programSources.entry.source,
 				programDomain: 'system',
+				traceStatements: installedSystem.symbols!.metadata.traceStatements,
+				preloadModules: installedSystem.symbols!.metadata.preloadModules,
 				captureLayout: mode === 'live' ? new LuaCaptureLayout(installedSystem.symbols!.metadata, sourceCorrespondence) : undefined,
 			},
 		);
@@ -355,6 +357,8 @@ export function buildBlua32Media(
 				entrySource: programSources.entry.source,
 				biosFunctions: biosImports.functions,
 				programDomain: 'cart',
+				traceStatements: installed.symbols!.metadata.traceStatements,
+				preloadModules: installed.symbols!.metadata.preloadModules,
 				captureLayout: mode === 'live' ? new LuaCaptureLayout(installed.symbols!.metadata, sourceCorrespondence) : undefined,
 			},
 		);

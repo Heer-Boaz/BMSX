@@ -4,6 +4,7 @@
 
 #include "common/primitives.h"
 #include "rompack/tooling/source_range.h"
+#include "rompack/tooling/trace_statement.h"
 #include "rompack/tooling/word_range.h"
 #include "spec/blua32/opcode.h"
 
@@ -16,7 +17,7 @@
 namespace bmsx {
 
 constexpr const char* BLUA32_SYMBOLS_IMAGE_ID = "__blua32_symbols__";
-constexpr u32 BLUA32_SYMBOLS_VERSION = 7u;
+constexpr u32 BLUA32_SYMBOLS_VERSION = 8u;
 
 struct Blua32InlineCallSite {
 	std::string calleeFunctionId;
@@ -56,6 +57,8 @@ struct Blua32StatementPoint {
 };
 
 struct Blua32DebugMetadata {
+	TraceStatementSelection traceStatements = std::string("erase");
+	std::vector<std::string> preloadModules;
 	std::vector<std::string> functionIds;
 	std::vector<std::string> functionDisplayNames;
 	std::vector<std::optional<SourceRange>> functionDefinitions;

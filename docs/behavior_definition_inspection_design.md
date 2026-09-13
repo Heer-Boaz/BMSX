@@ -190,14 +190,17 @@ voor een 33 MHz-emulator. De [uitvoerbare opnameproef](behavior_tree_compilation
 legt inmiddels de echte lowering-grens bloot via bestaande gewiste traces.
 Zij verwerpt het bewaren van een mutable alias als compilatiesnapshot en meet
 de kosten van een daadwerkelijke opname. **Een compacte productopslag,
-late-attachlifetime en authored-sourcecorrespondentie zijn nog niet gekozen.**
+automatische producttoelating en authored-sourcecorrespondentie zijn nog niet gekozen.**
 De meetrecorder wordt niet impliciet een Studio-database of Resource-framework.
 
 De bestaande `blua32.trace` is geen kant-en-klare oplossing: de compiler kan
 haar wissen, volledig emitteren of [exacte kanalen selecteren](lua_trace_selection.md),
 maar [scenario_cartridge.ts](../toolchain/ts/rompack/scenario_cartridge.ts)
-is nu de uitvoerproducer die haar aanzet. Gewone debug-ROMs en Hot Resume wissen
-de statements. Bovendien koppelt een sink aan een concrete subjecttabel; hij
+blijft de expliciete uitvoerproducer die alle kanalen aanzet. Gewone debug-ROMs
+wissen de statements. [Vooraf geladen modules](lua_preload_initialization.md)
+kunnen inmiddels vóór de game-initialisatie een geselecteerde opname toelaten;
+Hot Resume behoudt nu de geïnstalleerde trace-/preloadinstellingen. Dit is nog
+geen automatisch Studio-buildbeleid. Een sink koppelt aan een concrete subjecttabel; hij
 maakt niet vanzelf een late-attachbare definitiecatalogus of bronmapping.
 Dat contract veranderen vereist een eigen onderbouwde toolingwijziging.
 
@@ -376,6 +379,13 @@ registraties, geneste/afgebroken rebinds, wegvallende actors en referentiecycli
 worden onderscheiden. Een completionfeit wordt niet als atomair huidig
 execution-memorymodel gepresenteerd; compacte opslag en graphcoherentie
 tijdens rebind blijven open.
+
+De [preload-/herbouwslice](lua_preload_initialization.md) bewijst opname van de
+eerste module-scope compilatie en behoud tijdens echte Studio Save/Hot Resume,
+no-change init, compilefout en gewijzigde Reboot op drie renderers. Zij voegt
+geen listener na de registratie toe en reset geen recorder bij Hot Resume.
+De bestaande instance-inspector kan later aansluiten; live topologie en
+authored-sourcecorrespondentie worden daarmee niet alsnog geclaimd.
 
 De volledige gates van deze slices zijn nog niet gesloten. De bredere UX-lijst blijft
 bestaan, maar wordt niet langer gegijzeld door volledige analyse van alle

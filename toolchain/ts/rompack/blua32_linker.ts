@@ -1057,6 +1057,8 @@ function buildImage(input: ImageBuildInput): LinkedBlua32Image {
 		input.metadata.debugInlineCallSites,
 	);
 	const metadata: Blua32DebugMetadata = {
+		traceStatements: input.metadata.traceStatements,
+		preloadModules: input.metadata.preloadModules,
 		functionIds: functionLayout.functionIds,
 		functionDisplayNames,
 		functionDefinitions,

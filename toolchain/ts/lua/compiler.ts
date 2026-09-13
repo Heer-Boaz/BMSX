@@ -267,6 +267,8 @@ type CompileOptionsBase = {
 	entrySource?: string;
 	entrySourceMap?: LuaSourceMap;
 	traceStatements?: TraceStatementSelection;
+	/** Initialize these source modules and their dependencies before entry dependencies. */
+	preloadModules?: readonly string[];
 	captureLayout?: LuaCaptureLayout;
 };
 
@@ -553,16 +555,19 @@ class ProgramBuilder {
 	private readonly staticModulePathSet: Set<string> = new Set();
 	private readonly initParticipantsByModule = new Map<string, InitParticipantBinding[]>();
 	private readonly programDomain: ProgramCompileDomain;
+	public readonly traceChannels: ReadonlySet<string> | undefined;
 
 	public constructor(
 		optLevel: OptimizationLevel,
 		programDomain: ProgramCompileDomain,
 		public readonly traceStatements: TraceStatementSelection,
+		public readonly preloadModules: readonly string[],
 		public readonly captureLayout?: LuaCaptureLayout,
 	) {
 		this.constPool = [];
 		this.optLevel = optLevel;
 		this.programDomain = programDomain;
+		this.traceChannels = typeof traceStatements === 'string' ? undefined : new Set(traceStatements);
 		this.constSlotByValue = new Map<ProgramConstant, number>();
 		this.systemGlobalNameSet = new Set(SYSTEM_ROM_BOOT_SYMBOL_NAME_SET);
 		if (programDomain === 'system') {
@@ -1123,6 +1128,8 @@ class ProgramBuilder {
 			appendOffsetBytes += chunk.length;
 		}
 		const metadata: ProgramMetadata = {
+			traceStatements: this.traceStatements,
+			preloadModules: this.preloadModules,
 			functionDefinitionsByProto: this.functionDefinitions,
 			debugRanges: fullRanges,
 			debugInlineCallSites: fullInlineCallSites,
@@ -4472,7 +4479,7 @@ class FunctionBuilder {
 		}
 		const channel = (channelExpression as LuaStringLiteralExpression).value;
 		const selection = this.program.traceStatements;
-		if (selection === 'erase' || (selection !== 'emit' && !selection.has(channel))) {
+		if (selection === 'erase' || (selection !== 'emit' && !this.program.traceChannels!.has(channel))) {
 			return true;
 		}
 		const sinkField = this.program.constIndex(traceSinkFieldName(channel));
@@ -6342,6 +6349,7 @@ export function compileLuaChunkToProgram(
 		optLevel,
 		programDomain,
 		options.traceStatements ?? 'erase',
+		options.preloadModules ?? [],
 		options.captureLayout,
 	);
 	if (programDomain === 'cart') {
@@ -6438,6 +6446,9 @@ export function compileLuaChunkToProgram(
 		moduleCompileContext,
 	});
 	try {
+		for (const path of programBuilder.preloadModules) {
+			entryBuilder.markStaticModulePath(path);
+		}
 		entryBuilder.compileChunk(chunk);
 		const entryCode = entryBuilder.getCode();
 		const entryRanges = entryBuilder.getRanges();

@@ -50,7 +50,7 @@ return function()
 end
 `;
 	const baselineProgram = compileTraceSource(baseline, 'erase', optLevel).program;
-	for (const selection of ['erase', new Set<string>(), new Set(['sample.child'])] as const) {
+	for (const selection of ['erase', [], ['sample.child']] as const) {
 		const tracedProgram = compileTraceSource(traced, selection, optLevel).program;
 		assert.deepEqual(tracedProgram.code, baselineProgram.code);
 		assert.deepEqual(tracedProgram.constPool, baselineProgram.constPool);
@@ -79,7 +79,7 @@ blua32.trace_sink(subject, 'compile', nil)
 blua32.trace(subject, 'compile', evaluated(100))
 return sink.count, evaluations
 `;
-	const selected = compileTraceSource(setup + excluded + end, new Set(['compile']), optLevel);
+	const selected = compileTraceSource(setup + excluded + end, ['compile'], optLevel);
 	const baseline = compileTraceSource(setup + end, 'emit', optLevel).program;
 	assert.deepEqual(selected.program.code, baseline.code);
 	assert.deepEqual(selected.program.constPool, baseline.constPool);
@@ -146,7 +146,7 @@ local channel<const> = 'sample'
 blua32.trace(subject, channel, 1)
 return true
 `;
-	for (const selection of ['emit', new Set<string>()] as const) {
+	for (const selection of ['emit', []] as const) {
 		assert.throws(
 			() => compileTraceSource(source, selection),
 			/trace channel must be a string literal/,

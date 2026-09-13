@@ -2,6 +2,7 @@ import type { CapturedLocalKind } from './capture_kind';
 import type { ProgramWordRange } from './word_range';
 import type { SourceRange } from '../source_range';
 import type { OpCode } from '../../../../machine/ts/spec/blua32/opcode';
+import type { TraceStatementSelection } from './trace_statement';
 
 export type ProgramConstant = null | boolean | number | string;
 
@@ -65,6 +66,8 @@ export type CapturedLocalDebug = {
 };
 
 export type ProgramMetadata = ProgramRuntimeSymbols & {
+	traceStatements: TraceStatementSelection;
+	preloadModules: readonly string[];
 	functionDefinitionsByProto: ReadonlyArray<SourceRange | null>;
 	protoDisplayNames: string[];
 	debugRanges: ReadonlyArray<SourceRange | null>;
