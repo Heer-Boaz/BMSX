@@ -4,6 +4,7 @@
 
 #include "common/primitives.h"
 #include "rompack/tooling/source_range.h"
+#include "rompack/tooling/word_range.h"
 #include "spec/blua32/opcode.h"
 
 #include <optional>
@@ -15,7 +16,7 @@
 namespace bmsx {
 
 constexpr const char* BLUA32_SYMBOLS_IMAGE_ID = "__blua32_symbols__";
-constexpr u32 BLUA32_SYMBOLS_VERSION = 6u;
+constexpr u32 BLUA32_SYMBOLS_VERSION = 7u;
 
 struct Blua32InlineCallSite {
 	std::string calleeFunctionId;
@@ -28,6 +29,7 @@ struct Blua32LocalSlotDebug {
 	SourceRange definition;
 	SourceRange scope;
 	std::vector<Blua32InlineCallSite> inlineCallSites;
+	std::vector<ProgramWordRange> liveWordRanges;
 };
 
 struct Blua32CapturedLocalDebug {
@@ -99,6 +101,7 @@ struct Blua32SymbolsImage {
 
 auto decodeBlua32SymbolsImage(std::span<const u8> bytes) -> Blua32SymbolsImage;
 auto encodeBlua32SymbolsImage(const Blua32SymbolsImage& symbols) -> std::vector<u8>;
+auto blua32LocalSlotLiveAtPc(const Blua32LocalSlotDebug& slot, u32 codeAddress, u32 pc) -> bool;
 auto blua32SourceRangeAtPc(
 	const Blua32SymbolsImage& symbols,
 	u32 textAddress,

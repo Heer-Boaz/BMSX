@@ -21,6 +21,17 @@ import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 
 export type SuspendedGuestValue = Value;
 
+export type SuspendedGuestRead = {
+	readonly kind: 'value';
+	/** Borrowed for this read, not retained across execution or restore. */
+	readonly value: SuspendedGuestValue;
+} | {
+	readonly kind: 'unavailable';
+	readonly reason: 'not_a_table';
+};
+
+const NOT_A_TABLE: SuspendedGuestRead = { kind: 'unavailable', reason: 'not_a_table' };
+
 export const enum SuspendedGuestValueKind {
 	Nil,
 	Boolean,
@@ -117,18 +128,15 @@ export class SuspendedGuestSession {
 		value: SuspendedGuestValue,
 		parts: ReadonlyArray<string>,
 		startIndex: number,
-	): SuspendedGuestValue {
+	): SuspendedGuestRead {
 		let current = value;
 		for (let index = startIndex; index < parts.length; index += 1) {
 			if (!valueIsTable(current)) {
-				return null;
+				return NOT_A_TABLE;
 			}
 			current = this.readStringMember(current, parts[index]);
-			if (current == null) {
-				return null;
-			}
 		}
-		return current;
+		return { kind: 'value', value: current };
 	}
 
 	public visitTableStringMembers(

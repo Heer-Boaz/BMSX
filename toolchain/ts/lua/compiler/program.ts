@@ -1,4 +1,5 @@
 import type { CapturedLocalKind } from './capture_kind';
+import type { ProgramWordRange } from './word_range';
 import type { SourceRange } from '../source_range';
 import type { OpCode } from '../../../../machine/ts/spec/blua32/opcode';
 
@@ -50,6 +51,10 @@ export type LocalSlotDebug = {
 	inlineCallSites: ReadonlyArray<InlineCallSite>;
 };
 
+export type LocatedLocalSlotDebug = LocalSlotDebug & {
+	readonly liveWordRanges: readonly ProgramWordRange[];
+};
+
 /** Lexical origin of a captured cell, independent of its creation route. */
 
 export type CapturedLocalDebug = {
@@ -66,7 +71,7 @@ export type ProgramMetadata = ProgramRuntimeSymbols & {
 	debugInlineCallSites: ReadonlyArray<ReadonlyArray<InlineCallSite>>;
 	statementPointsByProto: ReadonlyArray<ReadonlyArray<ProgramStatementPoint>>;
 	resumePointsByProto: ReadonlyArray<ReadonlyArray<ProgramResumePoint>>;
-	localSlotsByProto: ReadonlyArray<ReadonlyArray<LocalSlotDebug>>;
+	localSlotsByProto: ReadonlyArray<ReadonlyArray<LocatedLocalSlotDebug>>;
 	capturedLocals: ReadonlyArray<CapturedLocalDebug>;
 	upvalueBindingsByProto: ReadonlyArray<ReadonlyArray<number>>;
 };

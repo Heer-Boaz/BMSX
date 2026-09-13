@@ -39,7 +39,6 @@ import {
 	type RuntimeDebuggerControlPlan,
 } from './debugger_plans';
 import type { RuntimeFaultState } from './fault_state';
-import type { CartEditor } from '../cart_editor';
 import {
 	applyHotResumeRelocation,
 	buildHotResumeRelocation,
@@ -225,7 +224,6 @@ export function buildBlua32Revision(
 
 export function installBlua32Revision(
 	sources: RuntimeSourceState,
-	editor: CartEditor,
 	runtime: Runtime,
 	built: BuiltBlua32Revision,
 	relocation: Uint32Array,
@@ -248,7 +246,6 @@ export function installBlua32Revision(
 		}
 	}
 	applyHotResumeRelocation(cpu, relocation);
-	editor.clearNativeMemberCompletionCache();
 }
 
 export function hotResume(
@@ -258,7 +255,6 @@ export function hotResume(
 	debuggerState: RuntimeDebuggerState,
 	input: Input,
 	runtimeTasks: RuntimeTaskQueue,
-	editor: CartEditor,
 	runtime: Runtime,
 	built: BuiltBlua32Revision | null,
 	onDeferredError: (error: unknown) => void,
@@ -361,7 +357,6 @@ export function hotResume(
 				luaTooling,
 				fault,
 				debuggerState,
-				editor,
 				runtime,
 				prepared,
 			);
@@ -401,7 +396,6 @@ function applyPreparedHotResume(
 	luaTooling: RuntimeLuaTooling,
 	fault: RuntimeFaultState,
 	debuggerState: RuntimeDebuggerState,
-	editor: CartEditor,
 	runtime: Runtime,
 	prepared: PreparedHotResume,
 ): void {
@@ -428,7 +422,6 @@ function applyPreparedHotResume(
 	if (prepared.built !== null) {
 		installBlua32Revision(
 			sources,
-			editor,
 			runtime,
 			prepared.built,
 			relocation!,

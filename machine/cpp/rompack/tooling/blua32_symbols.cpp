@@ -122,13 +122,20 @@ auto encodeInlineCallSites(const std::vector<Blua32InlineCallSite>& callSites) -
 }
 
 auto decodeLocalSlot(const BinValue& value) -> Blua32LocalSlotDebug {
-	return Blua32LocalSlotDebug{
+	Blua32LocalSlotDebug slot{
 		value.require("name").asString(),
 		value.require("registerIndex").toI32(),
 		decodeSourceRange(value.require("definition")),
 		decodeSourceRange(value.require("scope")),
 		decodeInlineCallSites(value.require("inlineCallSites")),
+		{},
 	};
+	const BinArray& ranges = value.require("liveWordRanges").asArray();
+	slot.liveWordRanges.reserve(ranges.size());
+	for (const BinValue& range : ranges) {
+		slot.liveWordRanges.push_back({range.require("start").toI32(), range.require("end").toI32()});
+	}
+	return slot;
 }
 
 auto encodeLocalSlot(const Blua32LocalSlotDebug& slot) -> BinValue {
@@ -138,6 +145,15 @@ auto encodeLocalSlot(const Blua32LocalSlotDebug& slot) -> BinValue {
 	value["definition"] = encodeSourceRange(slot.definition);
 	value["scope"] = encodeSourceRange(slot.scope);
 	value["inlineCallSites"] = encodeInlineCallSites(slot.inlineCallSites);
+	BinArray ranges;
+	ranges.reserve(slot.liveWordRanges.size());
+	for (const ProgramWordRange& range : slot.liveWordRanges) {
+		BinObject entry;
+		entry["start"] = BinValue(range.start);
+		entry["end"] = BinValue(range.end);
+		ranges.emplace_back(std::move(entry));
+	}
+	value["liveWordRanges"] = BinValue(std::move(ranges));
 	return BinValue(std::move(value));
 }
 
@@ -424,6 +440,18 @@ auto encodeBlua32SymbolsImage(const Blua32SymbolsImage& symbols) -> std::vector<
 	root["staticLayoutToken"] = BinValue(std::move(staticLayoutToken));
 	root["metadata"] = encodeMetadata(symbols.metadata);
 	return encodeBinary(BinValue(std::move(root)));
+}
+
+auto blua32LocalSlotLiveAtPc(const Blua32LocalSlotDebug& slot, u32 codeAddress, u32 pc) -> bool {
+	const i32 word = static_cast<i32>((pc - codeAddress) / INSTRUCTION_BYTES);
+	const auto& ranges = slot.liveWordRanges;
+	size_t low = 0, high = ranges.size();
+	while (low < high) {
+		const size_t middle = (low + high) >> 1;
+		if (ranges[middle].end <= word) low = middle + 1;
+		else high = middle;
+	}
+	return low < ranges.size() && ranges[low].start <= word;
 }
 
 auto blua32SourceRangeAtPc(

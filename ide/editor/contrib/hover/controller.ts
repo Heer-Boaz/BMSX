@@ -5,6 +5,8 @@ import type { RuntimeLuaTooling } from '../../../runtime/lua_tooling';
 import type { LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
 import type { LuaHover } from '../../../../toolchain/ts/lua/semantic/hover';
 import type { CodeEditorContext } from '../../ui/code_editor_state';
+import type { ResourceDomain } from '../../../common/resource';
+import type { Blua32SourceMedia } from '../../../runtime/sources';
 import { writeWrappedOverlayLine } from '../../common/text/layout';
 import { editorViewState } from '../../ui/view/state';
 import {
@@ -21,6 +23,7 @@ import { hoverState } from './state';
 type HoverQueryState = {
 	valid: boolean;
 	path: string;
+	domain: ResourceDomain;
 	row: number;
 	column: number;
 	textVersion: number;
@@ -28,13 +31,16 @@ type HoverQueryState = {
 	evaluatesRuntime: boolean;
 	executionPc: number;
 	executionFrameDepth: number;
-	faultSequence: number;
+	executionCycles: number;
+	media: Blua32SourceMedia | undefined;
+	faultSnapshot: RuntimeFaultState['faultSnapshot'];
 	semanticSnapshot: LuaSemanticWorkspaceSnapshot;
 };
 
 const queryState: HoverQueryState = {
 	valid: false,
 	path: '',
+	domain: -1,
 	row: 0,
 	column: 0,
 	textVersion: 0,
@@ -42,7 +48,9 @@ const queryState: HoverQueryState = {
 	evaluatesRuntime: false,
 	executionPc: 0,
 	executionFrameDepth: 0,
-	faultSequence: 0,
+	executionCycles: 0,
+	media: undefined,
+	faultSnapshot: null,
 	semanticSnapshot: null,
 };
 
@@ -67,6 +75,8 @@ export function updateHoverTooltip(
 			- editorViewState.spaceAdvance * 2,
 	);
 	const cpu = runtime.machine.cpu;
+	const executionCycles = runtime.machine.scheduler.currentNowCycles();
+	const media = bridge.sources.currentBlua32Media;
 	const executionPc = fault.faultSnapshot === null ? cpu.lastPc : fault.lastCpuFaultPc;
 	const executionFrameDepth = fault.faultSnapshot === null
 		? cpu.getFrameDepth()
@@ -76,6 +86,7 @@ export function updateHoverTooltip(
 	const semanticSnapshot = semanticProject.getSnapshot();
 	if (queryState.valid
 		&& queryState.path === path
+		&& queryState.domain === context.model.resource.domain
 		&& queryState.row === row
 		&& queryState.column === column
 		&& queryState.textVersion === textVersion
@@ -84,7 +95,9 @@ export function updateHoverTooltip(
 		&& (!queryState.evaluatesRuntime
 			|| (queryState.executionPc === executionPc
 				&& queryState.executionFrameDepth === executionFrameDepth
-				&& queryState.faultSequence === fault.supervisorFaultSequence))) {
+				&& queryState.executionCycles === executionCycles
+				&& queryState.media === media
+				&& queryState.faultSnapshot === fault.faultSnapshot))) {
 		return;
 	}
 
@@ -104,13 +117,14 @@ export function updateHoverTooltip(
 			runtime,
 			evaluatableExpression.expression,
 			context.model.resource.domain,
-			path,
+			snapshot.getFileData(path)!,
 			evaluatableExpression.range.start.line,
 			evaluatableExpression.range.start.column,
 		);
 
 	queryState.valid = true;
 	queryState.path = path;
+	queryState.domain = context.model.resource.domain;
 	queryState.row = row;
 	queryState.column = column;
 	queryState.textVersion = textVersion;
@@ -118,7 +132,9 @@ export function updateHoverTooltip(
 	queryState.evaluatesRuntime = evaluatableExpression !== null;
 	queryState.executionPc = executionPc;
 	queryState.executionFrameDepth = executionFrameDepth;
-	queryState.faultSequence = fault.supervisorFaultSequence;
+	queryState.executionCycles = executionCycles;
+	queryState.media = media;
+	queryState.faultSnapshot = fault.faultSnapshot;
 	queryState.semanticSnapshot = snapshot;
 
 	let range;
@@ -160,6 +176,8 @@ export function updateHoverTooltip(
 export function clearHoverTooltip(): void {
 	hoverState.tooltip = null;
 	queryState.valid = false;
+	queryState.media = undefined;
+	queryState.faultSnapshot = null;
 }
 
 function appendSemanticHover(lines: string[], hover: LuaHover): void {
@@ -187,8 +205,8 @@ function appendTextLines(lines: string[], text: string): void {
 }
 
 function appendRuntimeInspection(lines: string[], inspection: LuaRuntimeInspection): void {
-	if (inspection.state === 'not_defined') {
-		lines.push(`${inspection.expression} = not defined`);
+	if (inspection.state === 'unavailable') {
+		lines.push(`${inspection.expression}: ${inspection.lines[0]}`);
 		return;
 	}
 	const suffix = inspection.valueType === 'unknown' ? '' : ` (${inspection.valueType})`;

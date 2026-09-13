@@ -1464,6 +1464,12 @@ studies the latter two without replacing Lua persistence or exposing evaluator
 internals as an authoring format. This is a design boundary, not a claim that
 loaded-definition discovery or BT debug correspondence is implemented.
 
+The existing hover/member inspection now uses [written bindings and installed
+debug locations](lua_runtime_inspection.md), not same-name guesses or a second
+Lua interpreter. It reads actual ActionEffect instance/definition values through
+the generic guest representation. This is a read path, not an actor catalog or
+a claim that a heap value uniquely identifies its authored source.
+
 Multi-resource source operations use the shared resource history described in
 [`editor_workspace_history.md`](editor_workspace_history.md). Rename is its
 first consumer: a single admitted workspace edit, not separate per-file Undo
@@ -1794,7 +1800,12 @@ receiver kind and current declaration; each function's
 `upvalueBindingsByFunction` references that table by index. Nested captures
 retain the ultimate defining local. `functionDefinitions` associates emitted
 functions with their current syntax, independently of their durable function id.
-TS and C++ tooling share version-6 symbols and the numeric capture-kind enum.
+TS and C++ tooling share version-7 symbols and the numeric capture-kind enum.
+Local slots also carry finalized, half-open live word ranges, separate from
+their lexical/inline scopes. The compiler produces those locations from the
+existing liveness analysis; missing optimized locations are unavailable rather
+than stale register values. Debug ROMs and sidecars must be rebuilt for this
+format; there is no older-format reader.
 Physical upvalue descriptors, closure cells and instructions are unchanged.
 
 Explicit live compilation matches lexical tokens and binder-scope ancestry,

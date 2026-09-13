@@ -1268,6 +1268,11 @@
 			"reason": "compiler_capture_classification_tooling_filename_parity"
 		},
 		{
+			"ts": "toolchain/ts/lua/compiler/word_range.ts",
+			"cpp": ["machine/cpp/rompack/tooling/word_range.h"],
+			"reason": "compiler_finalized_word_locations_tooling_filename_parity"
+		},
+		{
 			"ts": "toolchain/ts/rompack/blua32_symbols.ts",
 			"cpp": [
 				"machine/cpp/rompack/tooling/blua32_symbols.h",
@@ -1371,6 +1376,11 @@
 			"ts": "toolchain/ts/lua/compiler/capture_kind.ts",
 			"cpp_headers": ["machine/cpp/rompack/tooling/capture_kind.h"],
 			"reason": "compiler_capture_classification_is_shared_by_tooling_symbols"
+		},
+		{
+			"ts": "toolchain/ts/lua/compiler/word_range.ts",
+			"cpp_headers": ["machine/cpp/rompack/tooling/word_range.h"],
+			"reason": "finalized_function_word_locations_are_shared_by_tooling_symbols"
 		},
 		{
 			"ts": "toolchain/ts/rompack/blua32_symbols.ts",

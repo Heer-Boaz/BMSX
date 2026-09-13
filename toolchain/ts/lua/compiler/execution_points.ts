@@ -2,9 +2,11 @@ import type { SourceRange } from '../source_range';
 import type {
 	InlineCallSite,
 	LocalSlotDebug,
+	LocatedLocalSlotDebug,
 	ProgramResumePoint,
 	ProgramStatementPoint,
 } from './program';
+import type { ProgramWordRange } from './word_range';
 import { resolveInlineLocalContextRange, ROOT_INLINE_CALL_SITES } from './inline_debug';
 import { sourcePositionInRange } from '../semantic/source_range';
 import type { Instruction } from './optimizer';
@@ -71,13 +73,22 @@ export function buildProgramStatementPoints(
 	return points;
 }
 
-export function buildProgramResumePoints(
+export function buildProgramDebugPoints(
 	instructions: Instruction[],
 	instructionWordOffsets: number[],
+	wordCount: number,
 	localSlots: ReadonlyArray<LocalSlotDebug>,
 	maxStack: number,
 	resolveClosureUpvalues: ClosureUpvalueResolver,
-): ProgramResumePoint[] {
+): { resumePoints: ProgramResumePoint[]; localSlots: LocatedLocalSlotDebug[] } {
+	// Named registers are not recycled within a function; inlining remaps its
+	// slots before this final pass. Dead/folded values have no readable location.
+	// Reuse the resume-point liveness pass, retaining intervals, not a bitmap
+	// for every instruction. Lexical/inline scope is a separate debugger gate.
+	const rangesByRegister = new Map<number, ProgramWordRange[]>();
+	for (const slot of localSlots) if (!rangesByRegister.has(slot.registerIndex)) rangesByRegister.set(slot.registerIndex, []);
+	const registers = Array.from(rangesByRegister.keys());
+	const locations = Array.from(rangesByRegister.values());
 	const emittedRanges = new Set<SourceRange>();
 	const candidateIndices: number[] = [];
 	for (let index = 0; index < instructions.length; index += 1) {
@@ -91,10 +102,6 @@ export function buildProgramResumePoints(
 		emittedRanges.add(range);
 		candidateIndices.push(index);
 	}
-	if (candidateIndices.length === 0) {
-		return [];
-	}
-
 	const maxRegister = maxStack - 1;
 	const liveByCandidate = computeInstructionLivenessAt(
 		instructions,
@@ -102,6 +109,17 @@ export function buildProgramResumePoints(
 		candidateIndices,
 		resolveClosureUpvalues,
 		'in',
+		registers.length === 0 ? undefined : (instructionIndex, live) => {
+			const start = instructionWordOffsets[instructionIndex];
+			const end = instructionIndex + 1 < instructions.length ? instructionWordOffsets[instructionIndex + 1] : wordCount;
+			for (let index = 0; index < registers.length; index += 1) {
+				if (live[registers[index]] === 0) continue;
+				const ranges = locations[index];
+				const previous = ranges[ranges.length - 1];
+				if (previous !== undefined && previous.start === end) previous.start = start;
+				else ranges.push({ start, end });
+			}
+		},
 	);
 	const named = new Uint8Array(maxStack);
 	const points: ProgramResumePoint[] = [];
@@ -130,5 +148,6 @@ export function buildProgramResumePoints(
 			inlineCallSites,
 		});
 	}
-	return points;
+	for (const ranges of locations) ranges.reverse();
+	return { resumePoints: points, localSlots: localSlots.map(slot => ({ ...slot, liveWordRanges: rangesByRegister.get(slot.registerIndex)! })) };
 }

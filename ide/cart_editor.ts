@@ -63,7 +63,7 @@ import {
 	setExecutionStopHighlightForCurrentContext,
 	syncRuntimeErrorOverlayFromContext,
 } from './runtime_error/navigation';
-import { clearGotoHoverHighlight, clearNativeMemberCompletionCache } from './editor/contrib/intellisense/engine';
+import { clearGotoHoverHighlight } from './editor/contrib/intellisense/engine';
 import { resetSemanticProjects } from './editor/contrib/intellisense/semantic/workspace/state';
 import { activeCodeEditor } from './editor/ui/code_editor_state';
 import { editorTextModelService } from './editor/model/model_service';
@@ -169,7 +169,6 @@ export type CartEditor = {
 	clearAllRuntimeErrorOverlays: typeof clearAllRuntimeErrorOverlays;
 	renderFaultOverlay: () => void;
 	renderRuntimeFaultOverlay: (options: RenderRuntimeFaultOverlayOptions) => boolean;
-	clearNativeMemberCompletionCache: () => void;
 	handleRuntimeTaskError: (error: unknown, fallbackMessage: string) => void;
 };
 
@@ -194,7 +193,6 @@ export class RuntimeCartEditor implements CartEditor {
 	public readonly editorInputSerializers: EditorInputSerializers;
 	public readonly clearRuntimeErrorOverlay = clearRuntimeErrorOverlay;
 	public readonly clearAllRuntimeErrorOverlays = clearAllRuntimeErrorOverlays;
-	public readonly clearNativeMemberCompletionCache: () => void;
 	private crtPostprocessingEnabledBeforeEditor: boolean | null = null;
 	private editorRenderTargetBaselineActive = false;
 	private editorRenderTargetBaselineWidth = 0;
@@ -354,7 +352,6 @@ export class RuntimeCartEditor implements CartEditor {
 			input => problemsPanel.handleKeyboard(input, this.editorPanes),
 		);
 		this.breakpoints = new BreakpointController(debuggerState);
-		this.clearNativeMemberCompletionCache = clearNativeMemberCompletionCache;
 		this.initializeEditorGroup();
 		this.unsubscribeWorkspaceCursorMoved = activeCodeEditor.onDidMoveCursor(() => {
 			requestWorkspaceAutosave(WorkspaceAutosaveChange.EditorSession);

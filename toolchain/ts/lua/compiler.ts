@@ -50,6 +50,7 @@ import type {
 	CapturedLocalDebug,
 	InlineCallSite,
 	LocalSlotDebug,
+	LocatedLocalSlotDebug,
 	Program,
 	ProgramConstant,
 	ProgramFunctionSymbol,
@@ -131,7 +132,7 @@ import {
 import { IO_IRQ_FLAGS } from '../../../machine/ts/spec/bmsx/io';
 import { COP0_BAD_ADDRESS, COP0_CAUSE, COP0_EPC, COP0_EXEC, COP0_LUA_FAULT_REASON, COP0_STATUS } from '../../../machine/ts/spec/blua32/cop0';
 import {
-	buildProgramResumePoints,
+	buildProgramDebugPoints,
 	buildProgramStatementPoints,
 } from './compiler/execution_points';
 import {
@@ -516,7 +517,7 @@ class ProgramBuilder {
 	public readonly protoConstRelocs: ReadonlyArray<ProgramCompilerConstReloc>[] = [];
 	public readonly protoStatementPoints: ReadonlyArray<ProgramStatementPoint>[] = [];
 	public readonly protoResumePoints: ReadonlyArray<ProgramResumePoint>[] = [];
-	public readonly protoLocalSlots: ReadonlyArray<LocalSlotDebug>[] = [];
+	public readonly protoLocalSlots: ReadonlyArray<LocatedLocalSlotDebug>[] = [];
 	public readonly capturedLocals: CapturedLocalDebug[] = [];
 	public readonly protoUpvalueBindings: ReadonlyArray<number>[] = [];
 	public readonly protoInstructionSets: InstructionSet[] = [];
@@ -844,7 +845,7 @@ class ProgramBuilder {
 		constRelocs: ReadonlyArray<ProgramCompilerConstReloc>,
 		statementPoints: ReadonlyArray<ProgramStatementPoint>,
 		resumePoints: ReadonlyArray<ProgramResumePoint>,
-		localSlots: ReadonlyArray<LocalSlotDebug>,
+		localSlots: ReadonlyArray<LocatedLocalSlotDebug>,
 		upvalueBindings: ReadonlyArray<number>,
 		protoId: string,
 		displayName: string,
@@ -1289,6 +1290,7 @@ class FunctionBuilder {
 	private finalizedConstRelocs: ProgramCompilerConstReloc[] | null = null;
 	private finalizedStatementPoints: ProgramStatementPoint[] | null = null;
 	private finalizedResumePoints: ProgramResumePoint[] | null = null;
+	private finalizedLocalSlots: LocatedLocalSlotDebug[] | null = null;
 	private readonly localBindings = new Map<string, LocalBinding>();
 	// Nested closures, including IRQ handlers, alias their owner's open-upvalue registers.
 	private readonly closureWrittenRegisters = new Set<number>();
@@ -2192,13 +2194,16 @@ class FunctionBuilder {
 			instructions,
 			instrStartIndex,
 		);
-		this.finalizedResumePoints = buildProgramResumePoints(
+		const debugPoints = buildProgramDebugPoints(
 			instructions,
 			instrStartIndex,
+			code.length / INSTRUCTION_BYTES,
 			this.localDebugSlots,
 			this.maxStack,
 			(protoIndex: number) => this.program.protos[protoIndex].upvalueDescs,
 		);
+		this.finalizedResumePoints = debugPoints.resumePoints;
+		this.finalizedLocalSlots = debugPoints.localSlots;
 	}
 
 	public getUpvalueDescs(): UpvalueDesc[] {
@@ -2209,9 +2214,9 @@ class FunctionBuilder {
 		return this.upvalueBindings;
 	}
 
-	public getLocalDebugSlots(): ReadonlyArray<LocalSlotDebug> {
+	public getLocalDebugSlots(): ReadonlyArray<LocatedLocalSlotDebug> {
 		this.finalizeCode();
-		return this.localDebugSlots;
+		return this.finalizedLocalSlots!;
 	}
 
 	public getMaxStack(): number {

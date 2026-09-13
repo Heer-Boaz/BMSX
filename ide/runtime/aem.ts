@@ -15,7 +15,6 @@ import {
 	type ResourceDomain,
 	type RuntimeResource,
 } from '../common/resource';
-import type { CartEditor } from '../cart_editor';
 import type { RuntimeSourceState } from './sources';
 import type { RuntimeLuaTooling } from './lua_tooling';
 import {
@@ -80,13 +79,12 @@ export function buildAemSourceRevision(
 export function installAemSourceRevision(
 	sources: RuntimeSourceState,
 	luaTooling: RuntimeLuaTooling,
-	editor: CartEditor,
 	runtime: Runtime,
 	built: BuiltAemSourceRevision,
 ): void {
 	const { resource, source, eventMap } = built;
 	const assetId = resource.source.resid;
-	installBlua32Revision(sources, editor, runtime, built.revision, built.relocation);
+	installBlua32Revision(sources, runtime, built.revision, built.relocation);
 	const runtimePackage = resource.domain === SYSTEM_RESOURCE_DOMAIN
 		? sources.systemPackage
 		: sources.cartridgeSlots[resource.domain]!.package;

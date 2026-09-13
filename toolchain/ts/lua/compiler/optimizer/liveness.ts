@@ -416,14 +416,16 @@ export function computeBlockOpenUpvaluesIn(
 	return openIn;
 }
 
+/** The optional visitor borrows each live set in descending instruction order. */
 export function computeInstructionLivenessAt(
 	instructions: Instruction[],
 	maxRegister: number,
 	instructionIndices: ReadonlyArray<number>,
 	resolveClosureUpvalues: ClosureUpvalueResolver,
 	position: 'in' | 'out',
+	visit?: (instructionIndex: number, live: Uint8Array) => void,
 ): Uint8Array[] {
-	if (instructionIndices.length === 0) {
+	if (instructionIndices.length === 0 && visit === undefined) {
 		return [];
 	}
 	const blocks = buildBasicBlocks(instructions);
@@ -437,17 +439,13 @@ export function computeInstructionLivenessAt(
 	);
 	const result: Uint8Array[] = new Array(instructionIndices.length);
 	const captureBeforeTransfer = position === 'out';
-	let candidateStart = 0;
-	for (let blockIndex = 0; blockIndex < blocks.length; blockIndex += 1) {
+	let candidateIndex = instructionIndices.length - 1;
+	for (let blockIndex = blocks.length - 1; blockIndex >= 0; blockIndex -= 1) {
 		const block = blocks[blockIndex];
-		let candidateEnd = candidateStart;
-		while (candidateEnd < instructionIndices.length && instructionIndices[candidateEnd] < block.end) {
-			candidateEnd += 1;
-		}
-		let candidateIndex = candidateEnd - 1;
 		const live = blockLiveOut[blockIndex].slice();
 		for (let index = block.end - 1; index >= block.start; index -= 1) {
-			const capture = candidateIndex >= candidateStart && instructionIndices[candidateIndex] === index;
+			const capture = candidateIndex >= 0 && instructionIndices[candidateIndex] === index;
+			if (captureBeforeTransfer) visit?.(index, live);
 			if (capture && captureBeforeTransfer) {
 				result[candidateIndex] = live.slice();
 			}
@@ -460,6 +458,7 @@ export function computeInstructionLivenessAt(
 				live,
 				markLiveRegister,
 			);
+			if (!captureBeforeTransfer) visit?.(index, live);
 			if (capture) {
 				if (!captureBeforeTransfer) {
 					result[candidateIndex] = live.slice();
@@ -467,7 +466,6 @@ export function computeInstructionLivenessAt(
 				candidateIndex -= 1;
 			}
 		}
-		candidateStart = candidateEnd;
 	}
 	return result;
 }

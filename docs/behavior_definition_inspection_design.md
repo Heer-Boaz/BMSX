@@ -1,7 +1,8 @@
 # Declaratieve behavior-authoring en inspectie van geladen definities
 
 Datum: 2026-09-13. Live baseline: `c30009e07`.
-**Status: ontwerp, gedeelde D1-history en composite broninputs gebouwd; geen runtime-inspectie geïmplementeerd.**
+**Status: D1-history/composite broninputs en de generieke D2-leesbasis gebouwd;
+geen geladen-definitiecatalogus of runtimeweergave in Behavior Lens.**
 
 Dit document verwerkt de bijgestelde productgrens: cartlib ondersteunt al een
 declaratieve manier van programmeren; die is de norm voor visuele authoring.
@@ -161,7 +162,7 @@ transitie is een observatie, geen bewijs dat de andere paden niet bestaan.
 Ook een niet-geregistreerde definitie blijft vanuit haar bron bewerkbaar; een
 live-only catalogus mag die huidige authoringmogelijkheid niet vervangen.
 
-## 6. Inspectiegrens: wel onderbouwd, nog niet geïmplementeerd
+## 6. Inspectiegrens: leesbasis gebouwd, catalogus/topologie nog open
 
 **Voorkeursrichting:** lees behouden definities/instancegegevens via de bestaande
 debuggerrepresentatie; verkrijg ontbrekende topologie bij de cartlib-owner die
@@ -221,8 +222,9 @@ Dat contract veranderen vereist een eigen onderbouwde toolingwijziging.
 
 ### Representatie en TS/C++
 
-Er zijn in deze ontwerpslice geen gespiegelde codewijzigingen. De live grens
-voor een latere implementatie is:
+De oorspronkelijke ontwerpslice wijzigde geen gespiegelde code. De D2-leesbasis
+werkt inmiddels de TS/C++-debugsymbolen bij; zie `lua_runtime_inspection.md`.
+De live representatiegrens voor verdere runtime-uitbreiding is:
 
 | Gegeven | TypeScript | C++ | Owner / regel |
 | --- | --- | --- | --- |
@@ -297,6 +299,15 @@ catalogus-/protocolframework. Bewijs via normale guestregistratie en de echte
 debugger dat bronexpressie, geladen waarde en instancewaarde onderscheiden zijn.
 Dezelfde levensduur moet bij selectie, pause/continue, Hot Resume en restore
 werken. Pas daarna de geladen FSM-hiërarchie en catalogusownership uitbreiden.
+
+**Implementatiestatus:** [de generieke Lua-inspectiegrens](lua_runtime_inspection.md)
+is gebouwd in de bestaande hover/memberreader. Een onafhankelijke Studio-proef
+leest echte ActionEffect-definities en instancevelden, inclusief midden-in-rebind,
+no-change `<init>`, gewijzigde installatie, compilefout en rewind. De compiler
+en TS/C++-symbolowners leveren daarvoor geldige lokale debuglocaties; geen
+interpreterfallback of extra cartlib-state. D2 blijft open voor de gerichte
+selectie/presentatie en bewezen definitie-sourcecorrespondentie. Een gewone
+hover is geen algemene actor-/definitiecatalogus.
 
 **Gate:** read-only inspectie zonder callbacks/guestmutatie; registratie zonder
 actor niet verwarren met een lege definitie; no-change `<init>`, compilefout,

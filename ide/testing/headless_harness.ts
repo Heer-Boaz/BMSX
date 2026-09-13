@@ -136,7 +136,6 @@ export function createHeadlessIdeHarness(
 				ide.debugger,
 				input,
 				ide.runtimeTasks,
-				ide.editor,
 				runtime,
 				blua32MediaRequiresRebuild(ide.sources)
 					? buildBlua32Revision(ide.sources, ide.luaTooling, runtime,

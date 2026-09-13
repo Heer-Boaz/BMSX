@@ -47,7 +47,7 @@ int main() {
 		{3, innerCallRange, bmsx::OpCode::MOV, {0, 1}, {0}, {1}, inlineCallSites},
 	}};
 	symbols.metadata.localSlotsByFunction = {{
-		{"value", 1, innerCallRange, outerCallRange, inlineCallSites},
+		{"value", 1, innerCallRange, outerCallRange, inlineCallSites, {{2, 4}, {6, 8}}},
 	}};
 	symbols.metadata.functionDefinitions = {innerCallRange};
 	symbols.metadata.capturedLocals = {
@@ -57,6 +57,20 @@ int main() {
 
 	const std::vector<bmsx::u8> encodedSymbols = bmsx::encodeBlua32SymbolsImage(symbols);
 	const bmsx::Blua32SymbolsImage decodedSymbols = bmsx::decodeBlua32SymbolsImage(encodedSymbols);
+	const auto& slot = decodedSymbols.metadata.localSlotsByFunction[0][0];
+	if (slot.liveWordRanges.size() != 2 || slot.liveWordRanges[0].start != 2 || slot.liveWordRanges[1].end != 8) {
+		throw std::runtime_error("BLua32 local word locations did not round-trip");
+	}
+	for (bmsx::u32 word = 0; word <= 9; ++word) {
+		const bool expected = (word >= 2 && word < 4) || (word >= 6 && word < 8);
+		if (bmsx::blua32LocalSlotLiveAtPc(slot, 0x2000, 0x2000 + word * bmsx::INSTRUCTION_BYTES) != expected) {
+			throw std::runtime_error("BLua32 local word locations must be half-open with explicit gaps");
+		}
+	}
+	bmsx::Blua32LocalSlotDebug foldedSlot;
+	if (bmsx::blua32LocalSlotLiveAtPc(foldedSlot, 0x2000, 0x2000)) {
+		throw std::runtime_error("BLua32 folded local must not invent a debug location");
+	}
 	if (decodedSymbols.metadata.functionDefinitions.size() != 1u
 		|| decodedSymbols.metadata.functionDefinitions[0]->start.line != 11
 		|| decodedSymbols.metadata.capturedLocals.size() != 1u

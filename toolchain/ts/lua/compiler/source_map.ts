@@ -2,7 +2,7 @@ import type { SourcePosition, SourceRange } from '../source_range';
 import type {
 	CapturedLocalDebug,
 	InlineCallSite,
-	LocalSlotDebug,
+	LocatedLocalSlotDebug,
 	ProgramMetadata,
 	ProgramResumePoint,
 	ProgramStatementPoint,
@@ -253,12 +253,12 @@ export function mapProgramMetadataSourceRanges(
 		resumePointsByProto[protoIndex] = mapped;
 	}
 
-	const localSlotsByProto = new Array<ReadonlyArray<LocalSlotDebug>>(
+	const localSlotsByProto = new Array<ReadonlyArray<LocatedLocalSlotDebug>>(
 		metadata.localSlotsByProto.length,
 	);
 	for (let protoIndex = 0; protoIndex < metadata.localSlotsByProto.length; protoIndex += 1) {
 		const slots = metadata.localSlotsByProto[protoIndex];
-		const mapped = new Array<LocalSlotDebug>(slots.length);
+		const mapped = new Array<LocatedLocalSlotDebug>(slots.length);
 		for (let slotIndex = 0; slotIndex < slots.length; slotIndex += 1) {
 			const slot = slots[slotIndex];
 			mapped[slotIndex] = {

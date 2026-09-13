@@ -1,3 +1,4 @@
+import type { ProgramWordRange } from '../lua/compiler/word_range';
 import type { CapturedLocalKind } from '../lua/compiler/capture_kind';
 import { decodeBinary, encodeBinary } from '../../../machine/ts/common/serializer/binencoder';
 import { INSTRUCTION_BYTES } from '../../../machine/ts/spec/blua32/instruction_format';
@@ -5,7 +6,7 @@ import type { OpCode } from '../../../machine/ts/spec/blua32/opcode';
 import type { SourceRange } from '../lua/source_range';
 
 export const BLUA32_SYMBOLS_IMAGE_ID = '__blua32_symbols__';
-export const BLUA32_SYMBOLS_VERSION = 6;
+export const BLUA32_SYMBOLS_VERSION = 7;
 
 export type Blua32StaticLayoutToken = {
 	lo: number;
@@ -29,6 +30,7 @@ export type Blua32InlineCallSite = {
 };
 
 export type Blua32LocalSlotDebug = {
+	readonly liveWordRanges: readonly ProgramWordRange[];
 	name: string;
 	registerIndex: number;
 	definition: SourceRange;
@@ -106,6 +108,18 @@ export function blua32SourceRangeAtPc(
 	pc: number,
 ): SourceRange | null {
 	return symbols.metadata.debugRanges[(pc - textAddress) / INSTRUCTION_BYTES];
+}
+
+export function blua32LocalSlotLiveAtPc(slot: Blua32LocalSlotDebug, codeAddress: number, pc: number): boolean {
+	const word = (pc - codeAddress) / INSTRUCTION_BYTES;
+	const ranges = slot.liveWordRanges;
+	let low = 0, high = ranges.length;
+	while (low < high) {
+		const middle = (low + high) >>> 1;
+		if (ranges[middle].end <= word) low = middle + 1;
+		else high = middle;
+	}
+	return low < ranges.length && ranges[low].start <= word;
 }
 
 export function blua32InlineCallSitesAtPc(

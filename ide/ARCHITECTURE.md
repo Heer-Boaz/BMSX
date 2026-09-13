@@ -74,6 +74,14 @@ reacquires restored guest tables via `SuspendedGuestSession`, never a retained
 host projection of the pre-restore heap. Deactivating the code view also ends
 the live hover query. Machine snapshots contain none of this IDE state.
 
+Hover and runtime member completion resolve the written binding through
+`runtime/lua_inspection.ts`: installed source bytes, exact lexical identity,
+current domain/frame and compiler-owned live word locations. `nil` is a value;
+unavailable locals never fall through to globals, a tooling interpreter or JS
+reflection. Formatted hover lifetime also includes cycles and installed media,
+not just a possibly repeated PC. See [Lua runtime inspection](../docs/lua_runtime_inspection.md)
+for the compiler/C++ symbol contract, actual ActionEffect readback and limits.
+
 The production examples, combined browser-Studio proof and remaining authoring
 scope are in [`docs/studio_development_workflows.md`](../docs/studio_development_workflows.md).
 

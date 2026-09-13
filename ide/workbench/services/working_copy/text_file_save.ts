@@ -93,7 +93,7 @@ export async function saveTextFileWorkingCopy(
 						reportApplyError(error);
 						return;
 					}
-					installAemSourceRevision(sources, luaTooling, editor, runtime, built);
+					installAemSourceRevision(sources, luaTooling, runtime, built);
 					showEditorMessage(`${title} saved`, constants.COLOR_STATUS_SUCCESS, 2.5);
 				}, reportApplyError);
 				return;

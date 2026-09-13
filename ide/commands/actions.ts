@@ -132,7 +132,6 @@ export function performHotResume(
 			debuggerState,
 			input,
 			runtimeTasks,
-			editor,
 			runtime,
 			built,
 			handleHotResumeError,

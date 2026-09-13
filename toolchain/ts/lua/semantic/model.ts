@@ -113,7 +113,7 @@ export type SemanticScope = {
 	readonly parentIndex: number;
 	readonly declarationIndices: readonly number[];
 	/** The parameter declared by this method scope, not an inherited visible value. */
-	readonly implicitSelfValue?: SemanticValueSource;
+	readonly implicitSelfValue?: OwnedSemanticValueSource;
 };
 
 export type Ref = {
@@ -283,7 +283,7 @@ type Scope = {
 	parent: Scope;
 	bindings: Map<string, InternalBinding>;
 	declarationIndices: number[];
-	implicitSelfValue?: SemanticValueSource;
+	implicitSelfValue?: OwnedSemanticValueSource;
 };
 
 type InternalDecl = Decl & {

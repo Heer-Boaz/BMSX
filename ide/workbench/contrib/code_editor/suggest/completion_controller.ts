@@ -33,7 +33,7 @@ import { isActiveLuaCodeTab, isReadOnlyCodeTab } from '../../../ui/code_tab/cont
 import { prepareUndo } from '../../../../editor/editing/undo_controller';
 import { updateDesiredColumn, revealCursor } from '../../../../editor/ui/view/caret/caret';
 import { resetBlink } from '../../../../editor/render/caret';
-import type { Decl } from '../../../../../toolchain/ts/lua/semantic/model';
+import type { Decl, FileSemanticData } from '../../../../../toolchain/ts/lua/semantic/model';
 import type { LuaSemanticFrontendFile } from '../../../../../toolchain/ts/lua/semantic/frontend';
 import type { LuaSignatureHelp } from '../../../../../toolchain/ts/lua/semantic/signature_help';
 import { clearSingleCursorSelection, setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../../../editor/editing/cursor/state';
@@ -47,6 +47,7 @@ type LocalCompletionCacheEntry = {
 	parsedVersion: number;
 	path: string;
 	file: LuaSemanticFrontendFile;
+	analysis: FileSemanticData;
 };
 
 const KEYWORD_COMPLETION_ITEMS: LuaCompletionItem[] = getKeywordCompletions();
@@ -528,7 +529,9 @@ export class CompletionController {
 				namePath,
 				context.member.operator,
 				activeCodeEditor.model.resource.domain,
-				this.getActivePath(),
+				this.ensureLocalCompletionCache().analysis,
+				context.row + 1,
+				context.replaceToColumn + 1,
 			);
 			if (semanticItems.length === 0) {
 				return runtimeItems;
@@ -603,6 +606,7 @@ export class CompletionController {
 			parsedVersion: currentVersion,
 			path,
 			file,
+			analysis: frontend.snapshot.getFileData(path)!,
 		};
 		this.localCompletionCache.set(key, updated);
 		return updated;

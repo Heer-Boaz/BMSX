@@ -113,7 +113,6 @@ export class RuntimeIdeState {
 			this.luaTooling.luaInterpreter.clearLastFaultEnvironment();
 			clearAllRuntimeErrorOverlays();
 			clearHoverTooltip();
-			this.editor.clearNativeMemberCompletionCache();
 			syncRuntimeSourceActivity(this.sources, runtime.machine.cpu.activeCartridgeSlot());
 		};
 	}

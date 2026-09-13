@@ -6,6 +6,7 @@ import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_form
 import {
 	BLUA32_SYMBOLS_VERSION,
 	blua32InlineCallSitesAtPc,
+	blua32LocalSlotLiveAtPc,
 	decodeBlua32SymbolsImage,
 	encodeBlua32SymbolsImage,
 	type Blua32SymbolsImage,
@@ -46,7 +47,8 @@ test('BLua32 function names and inline call-site chains round-trip through the s
 			debugInlineCallSiteChainIds: [1, 0],
 			statementPointsByFunction: [],
 			resumePointsByFunction: [],
-			localSlotsByFunction: [],
+			localSlotsByFunction: [[{ name: 'value', registerIndex: 1, definition: innerCallRange,
+				scope: outerCallRange, inlineCallSites, liveWordRanges: [{ start: 2, end: 4 }, { start: 6, end: 8 }] }]],
 			capturedLocals: [{
 				kind: CapturedLocalKind.Local,
 				functionId: 'module:cart/module', name: 'value',
@@ -57,6 +59,13 @@ test('BLua32 function names and inline call-site chains round-trip through the s
 	};
 
 	const decoded = decodeBlua32SymbolsImage(encodeBlua32SymbolsImage(symbols));
+	assert.deepEqual(decoded.metadata.localSlotsByFunction, symbols.metadata.localSlotsByFunction);
+	const slot = decoded.metadata.localSlotsByFunction[0][0];
+	for (let word = 0; word <= 9; word += 1) {
+		assert.equal(blua32LocalSlotLiveAtPc(slot, 0x2000, 0x2000 + word * INSTRUCTION_BYTES),
+			word >= 2 && word < 4 || word >= 6 && word < 8, 'word intervals are half-open with explicit gaps');
+	}
+	assert.equal(blua32LocalSlotLiveAtPc({ ...slot, liveWordRanges: [] }, 0x2000, 0x2000), false);
 	assert.deepEqual(decoded.metadata.capturedLocals, symbols.metadata.capturedLocals);
 	assert.deepEqual(decoded.metadata.upvalueBindingsByFunction, [[0]]);
 	assert.deepEqual(decoded.metadata.functionDisplayNames, ['invoke']);

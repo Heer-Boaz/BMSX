@@ -11,7 +11,10 @@ import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
 import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { SYSTEM_EXECUTION_DOMAIN_MASK } from '../../machine/ts/spec/blua32/execution_domain';
-import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
+import { INSTRUCTION_BYTES, readInstructionWord } from '../../machine/ts/spec/blua32/instruction_format';
+import { OpCode } from '../../machine/ts/spec/blua32/opcode';
+import { blua32LocalSlotLiveAtPc } from '../../toolchain/ts/rompack/blua32_symbols';
+import { blua32FunctionIndexAtAddress } from '../../toolchain/ts/rompack/blua32_image';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import {
 	registerLuaSourceRecord,
@@ -27,6 +30,8 @@ import {
 	type RuntimeResource,
 } from '../../ide/common/resource';
 import { RuntimeLuaTooling } from '../../ide/runtime/lua_tooling';
+import { readRuntimeLuaValue } from '../../ide/runtime/lua_inspection';
+import { buildLuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
 import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import {
 	createBlua32SystemSourceImage,
@@ -163,6 +168,7 @@ function createIntellisenseRuntime(source: string, optLevel: 0 | 3 = 0) {
 		image,
 		runtime,
 		sourcePath,
+		analysis: buildLuaSemanticWorkspaceSnapshot([{ path: sourcePath, source }]).getFileData(sourcePath)!,
 	};
 }
 
@@ -361,22 +367,22 @@ test('static definition lookup preserves one-based source coordinates at an iden
 });
 
 test('intellisense live locals resolve editor source paths against CPU module paths', async () => {
-	const { resolveLuaChainValue, resolveLuaDefinitionMetadata } = await intellisenseEngineModulePromise;
 	const source = [
 		'local counter = 42',
 		'halt_until_irq',
 		'return counter',
 	].join('\n');
-	const { bridge, fault, runtime, sourcePath } = runtimeWithPausedCpuLocal(source);
+	const { bridge, fault, runtime, analysis } = runtimeWithPausedCpuLocal(source);
 	const counterColumn = source.indexOf('counter') + 1;
 
-	const resolved = resolveLuaChainValue(
-		bridge,
-		fault,
+	const resolved = readRuntimeLuaValue(
 		runtime,
-		['counter'],
+		bridge.sources,
+		fault,
+		bridge.suspendedGuest,
+		analysis,
 		SYSTEM_RESOURCE_DOMAIN,
-		sourcePath,
+		['counter'],
 		1,
 		counterColumn,
 	);
@@ -386,16 +392,9 @@ test('intellisense live locals resolve editor source paths against CPU module pa
 		return;
 	}
 	assert.equal(resolved.value, 42);
-
-	const definition = resolveLuaDefinitionMetadata(bridge, resolved.definitionRange);
-	assert.ok(definition);
-	assert.equal(definition.path, sourcePath);
-	assert.equal(definition.range.startLine, 1);
-	assert.equal(definition.range.startColumn, counterColumn);
 });
 
 test('inline debugger exposes virtual frames and physical caller locals', async () => {
-	const { resolveLuaChainValue } = await intellisenseEngineModulePromise;
 	const source = [
 		'local inspect<const> = function(value)',
 		'\tlocal copy<const> = value + 1',
@@ -408,7 +407,7 @@ test('inline debugger exposes virtual frames and physical caller locals', async 
 		'end',
 		'return run(41)',
 	].join('\n');
-	const { bridge, image, runtime, sourcePath } = createIntellisenseRuntime(source, 3);
+	const { bridge, image, runtime, analysis } = createIntellisenseRuntime(source, 3);
 	const runFunctionIndex = image.symbols.metadata.functionIds.findIndex(id => id.endsWith('/local:run'));
 	const runPoints = image.symbols.metadata.statementPointsByFunction[runFunctionIndex];
 	const inlinePoint = runPoints.find(point => point.inlineCallSites.length === 1)!;
@@ -435,13 +434,14 @@ test('inline debugger exposes virtual frames and physical caller locals', async 
 	assert.equal(fault.lastLuaCallStack[1].line, 7);
 
 	const callerLine = source.split('\n')[7];
-	const resolved = resolveLuaChainValue(
-		bridge,
-		fault,
+	const resolved = readRuntimeLuaValue(
 		runtime,
-		['seed'],
+		bridge.sources,
+		fault,
+		bridge.suspendedGuest,
+		analysis,
 		SYSTEM_RESOURCE_DOMAIN,
-		sourcePath,
+		['seed'],
 		8,
 		callerLine.indexOf('seed') + 1,
 	);
@@ -453,7 +453,6 @@ test('inline debugger exposes virtual frames and physical caller locals', async 
 });
 
 test('intellisense resolves captured fault upvalues after the CPU stack is replaced', async () => {
-	const { resolveLuaChainValue } = await intellisenseEngineModulePromise;
 	const source = [
 		'local captured = { value = 42 }',
 		'return function()',
@@ -461,7 +460,7 @@ test('intellisense resolves captured fault upvalues after the CPU stack is repla
 		'\treturn captured',
 		'end',
 	].join('\n');
-	const { bridge, runtime, sourcePath } = createIntellisenseRuntime(source);
+	const { bridge, runtime, analysis } = createIntellisenseRuntime(source);
 	const cpu = runtime.machine.cpu;
 	cpu.reset();
 	assert.equal(cpu.runUntilDepth(0, 100), RunResult.Halted);
@@ -480,13 +479,14 @@ test('intellisense resolves captured fault upvalues after the CPU stack is repla
 	assert.equal(cpu.getFrameDepth(), 0);
 
 	const usageColumn = source.split('\n')[3].indexOf('captured') + 1;
-	const resolved = resolveLuaChainValue(
-		bridge,
-		fault,
+	const resolved = readRuntimeLuaValue(
 		runtime,
-		['captured', 'value'],
+		bridge.sources,
+		fault,
+		bridge.suspendedGuest,
+		analysis,
 		SYSTEM_RESOURCE_DOMAIN,
-		sourcePath,
+		['captured', 'value'],
 		4,
 		usageColumn,
 	);
@@ -508,6 +508,164 @@ end
 return read_shadow()
 `);
 	assert.equal(diagnostics.length, 0);
+});
+
+for (const optLevel of [0, 3] as const) {
+	test(`suspended inspection distinguishes a nil member from an unreadable path at O${optLevel}`, () => {
+		const source = 'input_value = {}\nlocal target = input_value\nhalt_until_irq\nreturn target.missing.value';
+		const { runtime, bridge, analysis } = createIntellisenseRuntime(source, optLevel);
+		runtime.machine.cpu.reset();
+		assert.equal(runtime.machine.cpu.runUntilDepth(0, 100), RunResult.Halted);
+		const fault = createRuntimeFaultState();
+		assert.deepEqual(readRuntimeLuaValue(runtime, bridge.sources, fault, bridge.suspendedGuest,
+			analysis, SYSTEM_RESOURCE_DOMAIN, ['target', 'missing'], 4, 8), { kind: 'value', value: null });
+		assert.deepEqual(readRuntimeLuaValue(runtime, bridge.sources, fault, bridge.suspendedGuest,
+			analysis, SYSTEM_RESOURCE_DOMAIN, ['target', 'missing', 'value'], 4, 8), { kind: 'unavailable', reason: 'not_a_table' });
+	});
+
+	test(`suspended inspection consumes final word locations across WIDE instructions at O${optLevel}`, () => {
+		const declarations = Array.from({ length: 260 }, (_, index) => `local unused_${index} = 0`);
+		const source = ['input_value = 42', ...declarations, 'local target = input_value', 'halt_until_irq', 'return target'].join('\n');
+		const { runtime, bridge, analysis, image } = createIntellisenseRuntime(source, optLevel);
+		const cpu = runtime.machine.cpu;
+		cpu.reset();
+		assert.equal(cpu.runUntilDepth(0, 10000), RunResult.Halted);
+		const frameIndex = cpu.getFrameDepth() - 1;
+		const pc = cpu.readFramePc(frameIndex);
+		const layout = image.image;
+		const functionIndex = blua32FunctionIndexAtAddress(layout, cpu.readFrameFunctionAddress(frameIndex));
+		const codeAddress = layout.functions[functionIndex].codeAddress;
+		const slot = image.symbols.metadata.localSlotsByFunction[functionIndex].find(local => local.name === 'target')!;
+		assert.equal((readInstructionWord(layout.textBytes, (pc - layout.header.textAddress) / INSTRUCTION_BYTES) >>> 18) & 0x3f, OpCode.WIDE);
+		assert.equal(blua32LocalSlotLiveAtPc(slot, codeAddress, pc), true);
+		assert.equal(blua32LocalSlotLiveAtPc(slot, codeAddress, pc + INSTRUCTION_BYTES), true, 'prefix and following opcode describe the same live-in value');
+		for (const range of slot.liveWordRanges) {
+			assert.equal(blua32LocalSlotLiveAtPc(slot, codeAddress, codeAddress + range.start * INSTRUCTION_BYTES), true);
+			assert.equal(blua32LocalSlotLiveAtPc(slot, codeAddress, codeAddress + range.end * INSTRUCTION_BYTES), false, 'interval end is exclusive');
+		}
+		const result = readRuntimeLuaValue(runtime, bridge.sources, createRuntimeFaultState(), bridge.suspendedGuest,
+			analysis, SYSTEM_RESOURCE_DOMAIN, ['target'], declarations.length + 4, 8);
+		assert.equal(result.kind, 'value');
+		if (result.kind === 'value') assert.equal(result.value, 42);
+	});
+
+	test(`suspended inspection does not invent a location for a folded local at O${optLevel}`, () => {
+		const source = 'local value = 11\nhalt_until_irq\nreturn value';
+		const { runtime, bridge, analysis } = createIntellisenseRuntime(source, optLevel);
+		runtime.machine.cpu.reset();
+		assert.equal(runtime.machine.cpu.runUntilDepth(0, 100), RunResult.Halted);
+		const result = readRuntimeLuaValue(runtime, bridge.sources, createRuntimeFaultState(), bridge.suspendedGuest,
+			analysis, SYSTEM_RESOURCE_DOMAIN, ['value'], 3, 8);
+		if (optLevel === 0) {
+			assert.equal(result.kind, 'value');
+			if (result.kind === 'value') assert.equal(result.value, 11);
+		} else assert.deepEqual(result, { kind: 'unavailable', reason: 'not_in_scope' });
+	});
+
+	test(`suspended inspection does not replace an inactive local with a same-named global at O${optLevel}`, () => {
+		const source = `target = { value = 999 }
+local function dormant()
+	local target = { value = 17 }
+	return target.value
+end
+halt_until_irq
+return dormant
+`;
+		const { runtime, bridge, analysis } = createIntellisenseRuntime(source, optLevel);
+		runtime.machine.cpu.reset();
+		assert.equal(runtime.machine.cpu.runUntilDepth(0, 1000), RunResult.Halted);
+		const result = readRuntimeLuaValue(runtime, bridge.sources, createRuntimeFaultState(), bridge.suspendedGuest,
+			analysis, SYSTEM_RESOURCE_DOMAIN, ['target', 'value'], 4, 9);
+		assert.deepEqual(result, { kind: 'unavailable', reason: 'not_in_scope' });
+	});
+
+	test(`suspended inspection distinguishes a nil local from interpreter state at O${optLevel}`, () => {
+		const source = `input_value = nil
+local table = input_value
+halt_until_irq
+return table
+`;
+		const { runtime, bridge, analysis } = createIntellisenseRuntime(source, optLevel);
+		bridge.luaInterpreter.globalEnvironment.set('table', 99);
+		runtime.machine.cpu.reset();
+		assert.equal(runtime.machine.cpu.runUntilDepth(0, 1000), RunResult.Halted);
+		const result = readRuntimeLuaValue(runtime, bridge.sources, createRuntimeFaultState(), bridge.suspendedGuest,
+			analysis, SYSTEM_RESOURCE_DOMAIN, ['table'], 4, 8);
+		assert.equal(result.kind, 'value');
+		if (result.kind === 'value') assert.equal(result.value, null);
+	});
+
+	test(`suspended inspection selects the written local rather than the innermost same name at O${optLevel}`, () => {
+		const source = `local value = { number = 11 }
+do
+	local value = { number = 22 }
+	halt_until_irq
+	output = value
+end
+return value
+`;
+		const { runtime, bridge, analysis } = createIntellisenseRuntime(source, optLevel);
+		runtime.machine.cpu.reset();
+		assert.equal(runtime.machine.cpu.runUntilDepth(0, 1000), RunResult.Halted);
+		const fault = createRuntimeFaultState();
+		for (const [line, column, expected] of [[7, 8, 11], [5, 11, 22]]) {
+			const result = readRuntimeLuaValue(runtime, bridge.sources, fault, bridge.suspendedGuest,
+				analysis, SYSTEM_RESOURCE_DOMAIN, ['value', 'number'], line, column);
+			assert.equal(result.kind, 'value');
+			if (result.kind === 'value') assert.equal(result.value, expected);
+		}
+	});
+
+	test(`suspended inspection resolves the method receiver without a global self at O${optLevel}`, () => {
+		const source = `self = { value = 999 }
+local actor = { value = 42 }
+function actor:run()
+	halt_until_irq
+	return self.value
+end
+return actor:run()
+`;
+		const { runtime, bridge, analysis } = createIntellisenseRuntime(source, optLevel);
+		runtime.machine.cpu.reset();
+		assert.equal(runtime.machine.cpu.runUntilDepth(0, 1000), RunResult.Halted);
+		const result = readRuntimeLuaValue(runtime, bridge.sources, createRuntimeFaultState(), bridge.suspendedGuest,
+			analysis, SYSTEM_RESOURCE_DOMAIN, ['self', 'value'], 5, 9);
+		assert.equal(result.kind, 'value');
+		if (result.kind === 'value') assert.equal(result.value, 42);
+	});
+
+	test(`suspended inspection does not read a caller local before its initializer returns at O${optLevel}`, () => {
+		const source = `local function make()
+	halt_until_irq
+	return 42
+end
+local pending = make()
+return pending
+`;
+		const { runtime, bridge, analysis } = createIntellisenseRuntime(source, optLevel);
+		runtime.machine.cpu.reset();
+		assert.equal(runtime.machine.cpu.runUntilDepth(0, 1000), RunResult.Halted);
+		const result = readRuntimeLuaValue(runtime, bridge.sources, createRuntimeFaultState(), bridge.suspendedGuest,
+			analysis, SYSTEM_RESOURCE_DOMAIN, ['pending'], 6, 8);
+		assert.deepEqual(result, { kind: 'unavailable', reason: 'not_in_scope' });
+	});
+}
+
+test('suspended inspection requires installed source correspondence, and regains it after Undo', async () => {
+	const source = 'local target = 42\nhalt_until_irq\nreturn target';
+	const { runtime, bridge, analysis, sourcePath } = createIntellisenseRuntime(source);
+	runtime.machine.cpu.reset();
+	assert.equal(runtime.machine.cpu.runUntilDepth(0, 100), RunResult.Halted);
+	const fault = createRuntimeFaultState();
+	const changed = buildLuaSemanticWorkspaceSnapshot([{ path: sourcePath, source: source.replace('target', 'edited') }]).getFileData(sourcePath)!;
+	assert.deepEqual(readRuntimeLuaValue(runtime, bridge.sources, fault, bridge.suspendedGuest,
+		changed, SYSTEM_RESOURCE_DOMAIN, ['target'], 3, 8), { kind: 'unavailable', reason: 'source_changed' });
+	const result = readRuntimeLuaValue(runtime, bridge.sources, fault, bridge.suspendedGuest, analysis, SYSTEM_RESOURCE_DOMAIN, ['target'], 3, 8);
+	assert.equal(result.kind, 'value');
+	if (result.kind === 'value') assert.equal(result.value, 42);
+	const { inspectLuaRuntimeExpression } = await intellisenseEngineModulePromise;
+	assert.equal(inspectLuaRuntimeExpression(bridge, fault, runtime, 'target()', SYSTEM_RESOURCE_DOMAIN, analysis, 3, 8), null,
+		'only read-only identifier paths enter runtime inspection');
 });
 
 // Semantic workspace behavior tests
