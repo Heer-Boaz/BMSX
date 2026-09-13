@@ -1,3 +1,4 @@
+import { executeTextHistoryCommand } from '../../../editor/editing/history_commands';
 import { pointerHover } from '../../../input/pointer/hover';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import { SceneEditorNavigationSelection } from './navigation_selection';
@@ -60,11 +61,11 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 		this.unbindFieldFocus = this.controls.map((control, index) => control.field.focusTarget.onDidFocus(() => this.revealProperty(index)));
 		this.focusTarget.registerCommand('undo', {
 			isEnabled: () => !this.input.workingCopy.readOnly && this.input.workingCopy.canUndo,
-			run: () => { this.input.workingCopy.undo(); },
+			run: () => { executeTextHistoryCommand(this.input.workingCopy, 'undo'); },
 		});
 		this.focusTarget.registerCommand('redo', {
 			isEnabled: () => !this.input.workingCopy.readOnly && this.input.workingCopy.canRedo,
-			run: () => { this.input.workingCopy.redo(); },
+			run: () => { executeTextHistoryCommand(this.input.workingCopy, 'redo'); },
 		});
 	}
 

@@ -99,10 +99,15 @@ scrolling and all viewport bounds on software, WebGL2 and WebGPU.
 Editable text is retained by resource identity, not by the currently visible
 tab. `editor/model/model_service.ts` owns exactly one `EditorTextModel` for each
 `(domain,path)`. That model owns the PieceTree buffer, monotone content version,
-saved-state identity, dirty state, undo/redo history,
+saved-state identity, dirty state, inverse text operations,
 and content/save/revert events. Its public buffer is read-only; typing and
 programmatic changes both enter through model edit operations. A multi-edit is
-one undo element and publishes one content event.
+one undo element and publishes one content event. `EditorTextModelService.history`
+owns resource stacks and shared workspace elements. Multi-model proposals admit
+all revisions before writes and publish content after all buffers advance.
+Undo/Redo from either participating source replays the whole element; a newer
+edit in another participant produces an explicit history conflict, never a
+partial refactor. See [workspace edit/history ownership](../docs/editor_workspace_history.md).
 
 A code-editor input owns only its resource model reference and its independent
 cursor, selection, desired-column, and scroll state. The active code editor is

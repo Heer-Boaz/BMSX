@@ -1,6 +1,7 @@
 import type { PieceTreeNode } from './piece_tree_buffer';
 import type { EditorEditState } from '../model/edit_state';
 import type { EditorTextChange } from './text_change';
+import type { EditorTextModel } from '../model/text_model';
 
 export type TextUndoKind = 'insert' | 'delete' | 'replace';
 
@@ -43,11 +44,14 @@ export class TextUndoOp {
 }
 
 export class EditorUndoRecord {
+	public readonly kind = 'resource';
 	public readonly ops: TextUndoOp[] = [];
 	public beforeEditState: EditorEditState | null = null;
 	public afterEditState: EditorEditState | null = null;
 	public beforeStateId = 0;
 	public afterStateId = 0;
+
+	public constructor(public readonly model: EditorTextModel) {}
 
 	/** Immutable, forward-oriented changes; never expose mutable undo subtrees to views. */
 	public getTextChanges(startIndex = 0, inverse = false): EditorTextChange[] {

@@ -1,7 +1,7 @@
 # Declaratieve behavior-authoring en inspectie van geladen definities
 
 Datum: 2026-09-13. Live baseline: `c30009e07`.
-**Status: architectuuronderzoek en ontwerp; geen runtime-inspectie geïmplementeerd.**
+**Status: ontwerp en eerste D1-history-implementatie; geen runtime-inspectie geïmplementeerd.**
 
 Dit document verwerkt de bijgestelde productgrens: cartlib ondersteunt al een
 declaratieve manier van programmeren; die is de norm voor visuele authoring.
@@ -274,6 +274,14 @@ in één bestand. Dezelfde bronoperatie behoudt echte write-targets, trivia en
 Undo; verplaatste bindings blijven correct. Variaties buiten het contract
 mogen geen verkeerde bron bewerken of de bestaande editor laten vastlopen.
 
+**Implementatiestatus:** de gedeelde [workspace-edit/history-owner](editor_workspace_history.md)
+is gebouwd, met de bestaande cross-file Rename als eerste productconsument.
+Een gezamenlijke edit wordt vanuit beide bestanden als geheel ge-Undo'd;
+tussenliggende edits, vertakkingen en resourcelevensduur hebben expliciete
+historysemantiek. Dit sluit de historyvoorwaarde, niet de hele D1-gate:
+graph-input/Save/focus en cross-resource binding-admission blijven afzonderlijk
+nodig vóór imported graphmutaties worden aangezet.
+
 ### D2 — Eén behouden definitie en één geselecteerde runtime-instantie
 
 Begin bij de bestaande ActionEffect-definitiereferentie, niet bij een nieuw
@@ -304,7 +312,7 @@ uitvoeringsslot worden aantoonbaar niet gelijkgesteld. Meet codebytes, heap-
 retentie, opnamekosten en ongeobserveerde tickkosten vóór de productkeuze.
 Daarna pas live BT-status op de graph aansluiten.
 
-Deze slices zijn nog geen implementatieclaims. De bredere UX-lijst blijft
+De volledige gates van deze slices zijn nog niet gesloten. De bredere UX-lijst blijft
 bestaan, maar wordt niet langer gegijzeld door volledige analyse van alle
 denkbare factories. Correctheidsfouten in gedeelde taalowners blijven echte
 bugs; dit scopebesluit rechtvaardigt geen naamheuristiek of bekende verkeerde

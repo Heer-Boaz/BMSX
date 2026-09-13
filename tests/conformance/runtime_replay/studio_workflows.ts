@@ -1,3 +1,4 @@
+import { testStudioWorkspaceRename } from './studio_workspace_rename';
 import { testStudioInputResolution } from './studio_input_resolution';
 import { testStudioSourceChoices } from './studio_source_choices';
 import { testStudioFileChoices } from './studio_file_choices';
@@ -106,6 +107,7 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	check(observations.suspended, 'paused Studio suppresses audio transport');
 	// Source-only typing preserves both machine state and rewind history.
 	await testStudioFocus(test);
+	await testStudioWorkspaceRename(test);
 	await testStudioInputResolution(test);
 	await testStudioSourceChoices(test);
 	await testStudioFileChoices(test);

@@ -8,6 +8,7 @@ import type { CodeEditorViewSnapshot, Position } from '../../common/models';
 import { editorCaretState } from '../ui/view/caret/state';
 import { activeCodeEditor, applyCodeEditorViewSnapshot, codeEditorEditState } from '../ui/code_editor_state';
 import { editorViewState } from '../ui/view/state';
+import { executeTextHistoryCommand } from './history_commands';
 
 export function prepareUndo(key: string, allowMerge: boolean): void {
 	const model = activeCodeEditor.model;
@@ -27,8 +28,7 @@ export function undo(): void {
 		notifyReadOnlyEdit();
 		return;
 	}
-	const record = model.undo();
-	if (record === null) {
+	if (!executeTextHistoryCommand(model, 'undo')) {
 		return;
 	}
 	refreshAfterHistoryChange();
@@ -40,8 +40,7 @@ export function redo(): void {
 		notifyReadOnlyEdit();
 		return;
 	}
-	const record = model.redo();
-	if (record === null) {
+	if (!executeTextHistoryCommand(model, 'redo')) {
 		return;
 	}
 	refreshAfterHistoryChange();

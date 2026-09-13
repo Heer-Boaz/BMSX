@@ -10,6 +10,8 @@ import { focusEditorFromRename } from './prompt';
 import { showEditorMessage } from '../../../../common/feedback_state';
 import { setSingleCursorSelectionAnchor } from '../../../../editor/editing/cursor/state';
 import { commitRename } from './operations';
+import { editorTextModelService } from '../../../../editor/model/model_service';
+import { EditorWorkspaceEditConflict } from '../../../../editor/model/undo_redo_service';
 import { handleRenameControllerInput } from './input';
 import { validateRenameIdentifier } from './validation';
 import type { RuntimeLuaTooling } from '../../../../runtime/lua_tooling';
@@ -27,6 +29,7 @@ export class RenameController {
 	private visible = false;
 	private matches: SearchMatch[] = EMPTY_RENAME_MATCHES;
 	private info: ReferenceMatchInfo = null;
+	private unbindSourceChanges: () => void;
 	private originalName = '';
 	private activeIndex = -1;
 	private expressionLabel: string = null;
@@ -42,8 +45,16 @@ export class RenameController {
 	};
 
 	public constructor() {
-		this.field.focusTarget.onDidFocus(() => setSingleCursorSelectionAnchor(this.field, 0, 0));
-		this.field.focusTarget.onDidBlur(() => this.dismiss());
+		this.field.focusTarget.onDidFocus(() => {
+			setSingleCursorSelectionAnchor(this.field, 0, 0);
+			// The reference proposal belongs to this workspace generation, not just
+			// the active file. A new reference in another model also invalidates it.
+			this.unbindSourceChanges = editorTextModelService.onDidChangeContent(() => this.field.focusTarget.release());
+		});
+		this.field.focusTarget.onDidBlur(() => {
+			this.unbindSourceChanges();
+			this.dismiss();
+		});
 	}
 
 	public begin(bridge: RuntimeLuaTooling, options: RenameStartOptions): boolean {
@@ -144,7 +155,15 @@ export class RenameController {
 				this.field.focusTarget.release();
 				return;
 		}
-		const updatedMatches = commitRename(crossFileRename, this.matches, nextName, this.activeIndex, this.info);
+		let updatedMatches: number;
+		try {
+			updatedMatches = commitRename(crossFileRename, this.matches, nextName, this.activeIndex, this.info);
+		} catch (error) {
+			if (!(error instanceof EditorWorkspaceEditConflict)) throw error;
+			showEditorMessage(error.message, constants.COLOR_STATUS_WARNING, 4);
+			this.field.focusTarget.release();
+			return;
+		}
 		showEditorMessage(`Renamed ${updatedMatches} reference${updatedMatches === 1 ? '' : 's'} to ${nextName}`, constants.COLOR_STATUS_SUCCESS, 1.6);
 		this.field.focusTarget.release();
 	}

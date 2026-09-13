@@ -3,21 +3,21 @@ import type { ReferenceMatchInfo } from '../../../../editor/contrib/references/s
 import type { LuaSourceRange } from '../../../../../toolchain/ts/lua/syntax/ast/index';
 import { clamp } from '../../../../../machine/ts/common/clamp';
 import { getActiveCodeTabContext } from '../../../ui/code_tab/contexts';
-import { resolveRuntimeResourceForContext } from '../../../../runtime/sources';
-import * as luaPipeline from '../../../../runtime/lua_pipeline';
-import { markTextMutated } from '../../../../editor/common/text/runtime';
-import { prepareUndo, applyUndoableReplace, recordEditContext } from '../../../../editor/editing/undo_controller';
-import { setSingleCursorSelectionAnchor } from '../../../../editor/editing/cursor/state';
+import { resolveRuntimeResourceForContext, type RuntimeSourceState } from '../../../../runtime/sources';
+import { resourceSourceForChunk } from '../../../../runtime/lua_pipeline';
+import { captureCodeEditorViewSnapshot } from '../../../../editor/editing/undo_controller';
 import { updateDesiredColumn, ensureCursorVisible } from '../../../../editor/ui/view/caret/caret';
 import { resetBlink } from '../../../../editor/render/caret';
 import { editorCaretState } from '../../../../editor/ui/view/caret/state';
-import { activeCodeEditor } from '../../../../editor/ui/code_editor_state';
-import { editorViewState } from '../../../../editor/ui/view/state';
+import { activeCodeEditor, codeEditorEditState } from '../../../../editor/ui/code_editor_state';
 import type { ResourceDomain } from '../../../../common/resource';
-import type { RuntimeSourceState } from '../../../../runtime/sources';
-import { searchMatchFromSourceRange } from '../../../../editor/navigation/source_range';
-import type { EditorTextEdit } from '../../../../editor/model/text_model';
+import type { EditorModelEdit, EditorTextModel } from '../../../../editor/model/text_model';
 import { editorTextModelService } from '../../../../editor/model/model_service';
+import { EditorWorkspaceEditConflict } from '../../../../editor/model/undo_redo_service';
+import { getTextSnapshot } from '../../../../editor/text/source_text';
+import { mapTextOffset } from '../../../../editor/text/text_change';
+import { luaSourceRangeToTextRange } from '../../../../language/lua/source_edits';
+import { clearForwardNavigationHistory } from '../../../../navigation/navigation_history';
 
 export function commitRename(
 	crossFileRename: CrossFileRenameManager,
@@ -26,112 +26,57 @@ export function commitRename(
 	activeIndex: number,
 	info: ReferenceMatchInfo,
 ): number {
-	const activeContext = getActiveCodeTabContext();
-	const activePath = activeContext.model.resource.path;
-	const activeDomain = activeContext.model.resource.domain;
-	const sortedMatches = matches.slice();
-	sortedMatches.sort((a, b) => a.row !== b.row ? a.row - b.row : a.start - b.start);
+	const model = getActiveCodeTabContext().model;
+	const edits = crossFileRename.prepareRename(model.resource.domain, info, newName);
+	const focused = matches[clamp(activeIndex, 0, matches.length - 1)];
+	const focusedOffset = model.buffer.offsetAt(focused.row, focused.start);
+	const before = captureCodeEditorViewSnapshot();
+	const edit = edits.get(model)!;
+	edits.set(model, { ...edit, beforeEditState: codeEditorEditState.of(before), computeAfterEditState: changes => {
+		const position = { row: 0, column: 0 };
+		model.buffer.positionAt(mapTextOffset(focusedOffset, changes, -1), position);
+		return codeEditorEditState.of({ ...before, cursorRow: position.row, cursorColumn: position.column,
+			selectionAnchor: { row: position.row, column: position.column + newName.length } });
+	} });
+	editorTextModelService.history.applyEdits(edits);
+	clearForwardNavigationHistory();
+	updateDesiredColumn();
+	resetBlink();
+	editorCaretState.cursorRevealSuspended = false;
+	ensureCursorVisible();
+	activeCodeEditor.emitCursorMoved();
 	let updatedTotal = 0;
-
-	type RangeBucket = { path: string; ranges: LuaSourceRange[] };
-	const rangeMap = new Map<string, RangeBucket>();
-	const addRange = (range: LuaSourceRange): void => {
-		const path = range.path;
-		let bucket = rangeMap.get(path);
-		if (!bucket) {
-			bucket = { path, ranges: [] };
-			rangeMap.set(path, bucket);
-		}
-		bucket.ranges.push(range);
-	};
-	for (let index = 0; index < info.query.targets.length; index += 1) {
-		addRange(info.query.targets[index].declaration.range);
-	}
-	for (let index = 0; index < info.query.references.length; index += 1) {
-		addRange(info.query.references[index].range);
-	}
-	rangeMap.delete(activePath);
-
-	if (sortedMatches.length > 0) {
-		prepareUndo('rename', false);
-		recordEditContext('replace', newName);
-		for (let index = sortedMatches.length - 1; index >= 0; index -= 1) {
-			const match = sortedMatches[index];
-			const startOffset = activeCodeEditor.model.buffer.offsetAt(match.row, match.start);
-			const endOffset = activeCodeEditor.model.buffer.offsetAt(match.row, match.end);
-			applyUndoableReplace(startOffset, endOffset - startOffset, newName);
-			editorViewState.layout.invalidateLine(match.row);
-		}
-		markTextMutated();
-
-		const clampedIndex = clamp(activeIndex, 0, sortedMatches.length - 1);
-		const focused = sortedMatches[clampedIndex];
-		activeCodeEditor.view.cursorRow = focused.row;
-		activeCodeEditor.view.cursorColumn = focused.start;
-		setSingleCursorSelectionAnchor(activeCodeEditor.view, focused.row, focused.start + newName.length);
-		updateDesiredColumn();
-		resetBlink();
-		editorCaretState.cursorRevealSuspended = false;
-		ensureCursorVisible();
-		activeCodeEditor.emitCursorMoved();
-		updatedTotal += sortedMatches.length;
-	}
-
-	for (const bucket of rangeMap.values()) {
-		const replacements = crossFileRename.applyRenameToChunk(
-			activeDomain,
-			bucket.path,
-			bucket.ranges,
-			newName,
-			activePath,
-		);
-		updatedTotal += replacements;
-	}
+	for (const edit of edits.values()) updatedTotal += edit.edits.length;
 	return updatedTotal;
 }
 
+/** Resolve all authored references first; one shared workspace history owns the mutation. */
 export class CrossFileRenameManager {
 	public constructor(private readonly sources: RuntimeSourceState) {}
 
-	public applyRenameToChunk(
-		domain: ResourceDomain,
-		path: string,
-		ranges: readonly LuaSourceRange[],
-		newName: string,
-		activePath: string,
-	): number {
-		if (path === activePath) {
-			return 0;
+	public prepareRename(domain: ResourceDomain, info: ReferenceMatchInfo, newName: string): Map<EditorTextModel, EditorModelEdit> {
+		const ranges = new Map<string, LuaSourceRange[]>();
+		const add = (range: LuaSourceRange): void => {
+			const bucket = ranges.get(range.path);
+			if (bucket === undefined) ranges.set(range.path, [range]);
+			else bucket.push(range);
+		};
+		for (const target of info.query.targets) add(target.declaration.range);
+		for (const reference of info.query.references) add(reference.range);
+		const result = new Map<EditorTextModel, EditorModelEdit>();
+		for (const [path, locations] of ranges) {
+			const resource = resolveRuntimeResourceForContext(this.sources, domain, path)!;
+			const model = editorTextModelService.retain(resource, 'lua', resourceSourceForChunk(this.sources, resource));
+			if (getTextSnapshot(model.buffer) !== info.snapshot.getFileData(path)!.source) {
+				throw new EditorWorkspaceEditConflict(model);
+			}
+			const edits = locations.map(range => {
+				const span = luaSourceRangeToTextRange(model.buffer, range);
+				return { offset: span.start, deleteLength: span.end - span.start, text: newName };
+			});
+			edits.sort((left, right) => left.offset - right.offset);
+			result.set(model, { version: model.version, edits });
 		}
-		const resource = resolveRuntimeResourceForContext(this.sources, domain, path)!;
-		const model = editorTextModelService.retain(
-			resource,
-			'lua',
-			luaPipeline.resourceSourceForChunk(this.sources, resource),
-		);
-		if (model.resource.source.generated) {
-			return 0;
-		}
-		const matches = new Array<SearchMatch>(ranges.length);
-		for (let index = 0; index < ranges.length; index += 1) {
-			matches[index] = searchMatchFromSourceRange(ranges[index]);
-		}
-		if (matches.length === 0) {
-			return 0;
-		}
-		matches.sort((a, b) => a.row !== b.row ? a.row - b.row : a.start - b.start);
-		const edits = new Array<EditorTextEdit>(matches.length);
-		for (let index = 0; index < matches.length; index += 1) {
-			const match = matches[index];
-			const startOffset = model.buffer.offsetAt(match.row, match.start);
-			const endOffset = model.buffer.offsetAt(match.row, match.end);
-			edits[index] = {
-				offset: startOffset,
-				deleteLength: endOffset - startOffset,
-				text: newName,
-			};
-		}
-		model.pushEditOperations(edits);
-		return matches.length;
+		return result;
 	}
 }

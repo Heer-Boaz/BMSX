@@ -5,6 +5,8 @@ import {
 	type EditorTextModelContentChangeEvent,
 } from './text_model';
 
+import { EditorUndoRedoService } from './undo_redo_service';
+
 type ModelContentChangeListener = (
 	model: EditorTextModel,
 	event: EditorTextModelContentChangeEvent,
@@ -13,6 +15,7 @@ type ModelListener = (model: EditorTextModel) => void;
 
 /** Resource-keyed lifetime owner for editable text models. */
 export class EditorTextModelService {
+	public readonly history = new EditorUndoRedoService();
 	private readonly modelsByResource = new Map<string, EditorTextModel>();
 	private readonly contentChangeListeners = new Set<ModelContentChangeListener>();
 	private readonly modelAddedListeners = new Set<ModelListener>();
@@ -42,7 +45,7 @@ export class EditorTextModelService {
 		const key = resourceIdentityKey(resource);
 		let model = this.modelsByResource.get(key);
 		if (model === undefined) {
-			model = new EditorTextModel(resource, mode, source);
+			model = new EditorTextModel(resource, mode, source, this.history);
 			this.register(model);
 		} else {
 			model.refreshResource(resource);

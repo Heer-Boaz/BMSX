@@ -1,3 +1,4 @@
+import { executeTextHistoryCommand } from '../../../editor/editing/history_commands';
 import { pointerHover } from '../../../input/pointer/hover';
 import type { ContextMenuController } from '../../services/context_menu/controller';
 import { WORKBENCH_MENUS, type WorkbenchContextMenuId } from '../../ui/menu/registry';
@@ -122,11 +123,11 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		for (const target of [this.focusTarget, this.graph.focusTarget, this.sourceEditReview.focusTarget, this.inspector.focusTarget]) {
 			target.registerCommand('undo', {
 				isEnabled: () => !this.input.workingCopy.readOnly && this.input.workingCopy.canUndo,
-				run: () => { this.input.workingCopy.undo(); },
+				run: () => { executeTextHistoryCommand(this.input.workingCopy, 'undo'); },
 			});
 			target.registerCommand('redo', {
 				isEnabled: () => !this.input.workingCopy.readOnly && this.input.workingCopy.canRedo,
-				run: () => { this.input.workingCopy.redo(); },
+				run: () => { executeTextHistoryCommand(this.input.workingCopy, 'redo'); },
 			});
 		}
 		this.graph.focusTarget.registerCommand('behaviorLens.duplicateChild', {

@@ -36,14 +36,14 @@ test('cross file rename updates a retained background model without opening an e
 		can_boot_from_source: true,
 		revision: 0,
 	};
-	registerLuaSourceRecord(registry, {
-		resid: 'usage.lua',
+	for (const [path, source] of files) registerLuaSourceRecord(registry, {
+		resid: path,
 		type: 'lua',
-		source_path: 'usage.lua',
-		normalized_source_path: 'usage.lua',
-		module_path: 'usage',
-		src: usageSource,
-		base_src: usageSource,
+		source_path: path,
+		normalized_source_path: path,
+		module_path: path.slice(0, -4),
+		src: source,
+		base_src: source,
 		base_update_timestamp: 0,
 		update_timestamp: 0,
 		generated: false,
@@ -87,14 +87,11 @@ test('cross file rename updates a retained background model without opening an e
 	assert.ok(otherRanges.length > 0);
 
 	const manager = new CrossFileRenameManager(sources);
-	const replacements = manager.applyRenameToChunk(
-		SYSTEM_RESOURCE_DOMAIN,
-		'usage.lua',
-		otherRanges,
-		'worldState',
-		'main.lua',
-	);
-	assert.equal(replacements, otherRanges.length);
+	const plan = manager.prepareRename(SYSTEM_RESOURCE_DOMAIN,
+		{ query: resolution!, snapshot: workspace.getSnapshot(), matches: [], expression: 'state' }, 'worldState');
+	editorTextModelService.history.applyEdits(plan);
+	const mainModel = editorTextModelService.get({ domain: SYSTEM_RESOURCE_DOMAIN, path: 'main.lua' })!;
+	assert.equal(mainModel.buffer.getText(), mainSource.replaceAll('state', 'worldState'));
 
 	const usageModel = editorTextModelService.get(usageResource)!;
 	assert.equal(usageModel.dirty, true);
@@ -109,5 +106,9 @@ test('cross file rename updates a retained background model without opening an e
 
 	usageModel.undo();
 	assert.equal(usageModel.buffer.getText(), usageSource);
+	assert.equal(mainModel.buffer.getText(), mainSource);
+	mainModel.redo();
+	assert.equal(usageModel.buffer.getText(), 'print(worldState.value)');
+	assert.equal(mainModel.buffer.getText(), mainSource.replaceAll('state', 'worldState'));
 
 });

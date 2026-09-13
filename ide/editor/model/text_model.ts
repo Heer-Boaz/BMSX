@@ -7,6 +7,7 @@ import type { TextBuffer } from '../text/text_buffer';
 import { EditorUndoRecord, TextUndoOp } from '../text/undo';
 import { mapTrackedTextRange, type EditorTextChange, type TrackedTextRange } from '../text/text_change';
 import type { EditorEditState } from './edit_state';
+import { EditorUndoRedoService, type EditorHistoryDirection } from './undo_redo_service';
 
 export type EditorDocumentMode = 'lua' | 'aem';
 
@@ -14,6 +15,13 @@ export type EditorTextEdit = {
 	offset: number;
 	deleteLength: number;
 	text: string;
+};
+
+export type EditorModelEdit = {
+	readonly version: number;
+	readonly edits: readonly EditorTextEdit[];
+	readonly beforeEditState?: EditorEditState;
+	readonly computeAfterEditState?: (changes: readonly EditorTextChange[]) => EditorEditState;
 };
 
 export type EditorTextModelChangeKind = 'edit' | 'undo' | 'redo' | 'restore' | 'revert';
@@ -45,8 +53,6 @@ const editStartPosition = { row: 0, column: 0 };
  */
 export class EditorTextModel {
 	private readonly pieceTree: PieceTreeBuffer;
-	private readonly undoStack: EditorUndoRecord[] = [];
-	private readonly redoStack: EditorUndoRecord[] = [];
 	private readonly contentChangeListeners = new Set<ContentChangeListener>();
 	private readonly beforeContentChangeListeners = new Set<WorkingCopyListener>();
 	private readonly dirtyChangeListeners = new Set<WorkingCopyListener>();
@@ -74,7 +80,8 @@ export class EditorTextModel {
 	/** Stable source identity for markers/history, without ROM asset metadata. */
 	public readonly identity: ResourceIdentity;
 
-	public constructor(resource: RuntimeResource, mode: EditorDocumentMode, source: string) {
+	public constructor(resource: RuntimeResource, mode: EditorDocumentMode, source: string, public readonly history = new EditorUndoRedoService()) {
+		this.history.register(this);
 		this.resourceValue = resource;
 		this.identity = { domain: resource.domain, path: resource.path };
 		this.mode = mode;
@@ -103,11 +110,11 @@ export class EditorTextModel {
 	}
 
 	public get canUndo(): boolean {
-		return this.undoStack.length > 0;
+		return this.history.canUndo(this);
 	}
 
 	public get canRedo(): boolean {
-		return this.redoStack.length > 0;
+		return this.history.canRedo(this);
 	}
 
 	public get lastSavedSource(): string {
@@ -165,8 +172,9 @@ export class EditorTextModel {
 		beforeEditState: EditorEditState,
 	): void {
 		this.clearPreparedEdit();
-		const lastRecord = this.undoStack[this.undoStack.length - 1];
+		const lastRecord = this.history.lastRecord(this);
 		const shouldMerge = allowMerge
+			&& lastRecord !== undefined
 			&& this.lastHistoryKey === key
 			&& timestamp - this.lastHistoryTimestamp <= constants.UNDO_COALESCE_INTERVAL_MS
 			&& lastRecord.afterEditState!.type === beforeEditState.type;
@@ -174,7 +182,7 @@ export class EditorTextModel {
 			this.pendingRecord = lastRecord;
 			this.pendingRecordIsNew = false;
 		} else {
-			const record = new EditorUndoRecord();
+			const record = new EditorUndoRecord(this);
 			record.beforeEditState = beforeEditState;
 			record.afterEditState = beforeEditState;
 			record.beforeStateId = this.currentStateId;
@@ -222,8 +230,7 @@ export class EditorTextModel {
 		}
 		const wasDirty = this.dirty;
 		if (this.pendingRecordIsNew) {
-			this.pushUndoRecord(record);
-			this.clearRedoStack();
+			this.history.push(record);
 			this.pendingRecordIsNew = false;
 		}
 		record.afterEditState = afterEditState;
@@ -251,104 +258,101 @@ export class EditorTextModel {
 		beforeEditState: EditorEditState | null = null,
 		computeAfterEditState: ((changes: readonly EditorTextChange[]) => EditorEditState) | null = null,
 	): void {
-		if (edits.length === 0) {
-			return;
-		}
-		this.emitBeforeContentChange();
+		if (edits.length === 0) return;
+		const record = this.beginEditOperations(beforeEditState);
 		const wasDirty = this.dirty;
+		this.history.push(record);
+		const startRow = this.applyEditOperations(record, edits);
+		this.endEditOperations(record, startRow, wasDirty, computeAfterEditState);
+	}
+
+	/** History-owner phases also let a workspace edit publish only complete buffers. */
+	public beginEditOperations(beforeEditState: EditorEditState | null = null): EditorUndoRecord {
+		this.emitBeforeContentChange();
 		this.breakUndoSequence();
-		const record = new EditorUndoRecord();
+		const record = new EditorUndoRecord(this);
 		record.beforeEditState = beforeEditState;
 		record.beforeStateId = this.currentStateId;
-		this.pushUndoRecord(record);
-		this.clearRedoStack();
+		return record;
+	}
+
+	public applyEditOperations(record: EditorUndoRecord, edits: readonly EditorTextEdit[]): number {
 		let startRow = this.pieceTree.getLineCount() - 1;
 		for (let index = edits.length - 1; index >= 0; index -= 1) {
 			const edit = edits[index];
 			this.pieceTree.positionAt(edit.offset, editStartPosition);
-			if (editStartPosition.row < startRow) {
-				startRow = editStartPosition.row;
-			}
+			if (editStartPosition.row < startRow) startRow = editStartPosition.row;
 			this.applyEditToRecord(record, edit.offset, edit.deleteLength, edit.text);
 		}
-		this.currentStateId = this.nextStateId;
-		this.nextStateId += 1;
+		this.currentStateId = this.nextStateId++;
 		record.afterStateId = this.currentStateId;
 		this.versionValue += 1;
+		return startRow;
+	}
+
+	public endEditOperations(record: EditorUndoRecord, startRow: number, wasDirty: boolean,
+		computeAfterEditState: ((changes: readonly EditorTextChange[]) => EditorEditState) | null = null): void {
 		const changes = record.getTextChanges();
 		if (computeAfterEditState !== null) record.afterEditState = computeAfterEditState(changes);
 		this.emitContentChange('edit', startRow, null, changes, record.afterEditState);
 		this.emitDirtyChange(wasDirty);
 	}
 
-	public undo(): EditorUndoRecord | null {
-		this.clearPreparedEdit();
-		if (this.undoStack.length === 0) {
-			return null;
-		}
-		this.emitBeforeContentChange();
-		const wasDirty = this.dirty;
-		const record = this.undoStack.pop()!;
-		const ops = record.ops;
-		for (let index = ops.length - 1; index >= 0; index -= 1) {
-			const op = ops[index];
-			switch (op.kind) {
-				case 'insert':
-					op.insertedRoot = this.pieceTree.deleteToSubtree(op.offset, op.insertedLen);
-					break;
-				case 'delete':
-					this.pieceTree.insertSubtree(op.offset, op.deletedRoot);
-					op.deletedRoot = null;
-					break;
-				case 'replace':
-					op.insertedRoot = this.pieceTree.deleteToSubtree(op.offset, op.insertedLen);
-					this.pieceTree.insertSubtree(op.offset, op.deletedRoot);
-					op.deletedRoot = null;
-					break;
-			}
-		}
-		this.pushRedoRecord(record);
-		this.currentStateId = record.beforeStateId;
-		this.versionValue += 1;
+	public undo(): EditorUndoRecord | null { return this.history.undo(this); }
+	public redo(): EditorUndoRecord | null { return this.history.redo(this); }
+
+	public beginHistoryReplay(): void {
 		this.breakUndoSequence();
-		this.emitContentChange('undo', 0, null, record.getTextChanges(0, true), record.beforeEditState);
-		this.emitDirtyChange(wasDirty);
-		return record;
+		this.emitBeforeContentChange();
 	}
 
-	public redo(): EditorUndoRecord | null {
-		this.clearPreparedEdit();
-		if (this.redoStack.length === 0) {
-			return null;
-		}
-		this.emitBeforeContentChange();
-		const wasDirty = this.dirty;
-		const record = this.redoStack.pop()!;
+	public applyHistoryRecord(record: EditorUndoRecord, direction: EditorHistoryDirection): void {
 		const ops = record.ops;
-		for (let index = 0; index < ops.length; index += 1) {
-			const op = ops[index];
-			switch (op.kind) {
-				case 'insert':
-					this.pieceTree.insertSubtree(op.offset, op.insertedRoot);
-					op.insertedRoot = null;
-					break;
-				case 'delete':
-					op.deletedRoot = this.pieceTree.deleteToSubtree(op.offset, op.deletedLen);
-					break;
-				case 'replace':
-					op.deletedRoot = this.pieceTree.deleteToSubtree(op.offset, op.deletedLen);
-					this.pieceTree.insertSubtree(op.offset, op.insertedRoot);
-					op.insertedRoot = null;
-					break;
+		if (direction === 'undo') {
+			for (let index = ops.length - 1; index >= 0; index -= 1) {
+				const op = ops[index];
+				switch (op.kind) {
+					case 'insert':
+						op.insertedRoot = this.pieceTree.deleteToSubtree(op.offset, op.insertedLen);
+						break;
+					case 'delete':
+						this.pieceTree.insertSubtree(op.offset, op.deletedRoot);
+						op.deletedRoot = null;
+						break;
+					case 'replace':
+						op.insertedRoot = this.pieceTree.deleteToSubtree(op.offset, op.insertedLen);
+						this.pieceTree.insertSubtree(op.offset, op.deletedRoot);
+						op.deletedRoot = null;
+						break;
+				}
 			}
+			this.currentStateId = record.beforeStateId;
+		} else {
+			for (const op of ops) {
+				switch (op.kind) {
+					case 'insert':
+						this.pieceTree.insertSubtree(op.offset, op.insertedRoot);
+						op.insertedRoot = null;
+						break;
+					case 'delete':
+						op.deletedRoot = this.pieceTree.deleteToSubtree(op.offset, op.deletedLen);
+						break;
+					case 'replace':
+						op.deletedRoot = this.pieceTree.deleteToSubtree(op.offset, op.deletedLen);
+						this.pieceTree.insertSubtree(op.offset, op.insertedRoot);
+						op.insertedRoot = null;
+						break;
+				}
+			}
+			this.currentStateId = record.afterStateId;
 		}
-		this.pushUndoRecord(record);
-		this.currentStateId = record.afterStateId;
 		this.versionValue += 1;
-		this.breakUndoSequence();
-		this.emitContentChange('redo', 0, null, record.getTextChanges(), record.afterEditState);
+	}
+
+	public endHistoryReplay(record: EditorUndoRecord, direction: EditorHistoryDirection, wasDirty: boolean): void {
+		const undo = direction === 'undo';
+		this.emitContentChange(direction, 0, null, record.getTextChanges(0, undo), undo ? record.beforeEditState : record.afterEditState);
 		this.emitDirtyChange(wasDirty);
-		return record;
 	}
 
 	public breakUndoSequence(): void {
@@ -407,7 +411,7 @@ export class EditorTextModel {
 	}
 
 	public dispose(): void {
-		this.clearHistory();
+		this.history.remove(this);
 		this.contentChangeListeners.clear();
 		this.beforeContentChangeListeners.clear();
 		this.dirtyChangeListeners.clear();
@@ -432,46 +436,13 @@ export class EditorTextModel {
 	}
 
 	private replaceContents(source: string): void {
-		this.clearHistory();
+		this.history.clear(this);
 		this.pieceTree.replace(0, this.pieceTree.length, source);
 		this.versionValue += 1;
 		this.breakUndoSequence();
 	}
 
-	private pushUndoRecord(record: EditorUndoRecord): void {
-		if (this.undoStack.length >= constants.UNDO_HISTORY_LIMIT) {
-			this.releaseUndoRecord(this.undoStack.shift()!);
-		}
-		this.undoStack.push(record);
-	}
-
-	private pushRedoRecord(record: EditorUndoRecord): void {
-		if (this.redoStack.length >= constants.UNDO_HISTORY_LIMIT) {
-			this.releaseUndoRecord(this.redoStack.shift()!);
-		}
-		this.redoStack.push(record);
-	}
-
-	private clearHistory(): void {
-		for (let index = 0; index < this.undoStack.length; index += 1) {
-			this.releaseUndoRecord(this.undoStack[index]);
-		}
-		for (let index = 0; index < this.redoStack.length; index += 1) {
-			this.releaseUndoRecord(this.redoStack[index]);
-		}
-		this.undoStack.length = 0;
-		this.redoStack.length = 0;
-		this.breakUndoSequence();
-	}
-
-	private clearRedoStack(): void {
-		for (let index = 0; index < this.redoStack.length; index += 1) {
-			this.releaseUndoRecord(this.redoStack[index]);
-		}
-		this.redoStack.length = 0;
-	}
-
-	private releaseUndoRecord(record: EditorUndoRecord): void {
+	public releaseUndoRecord(record: EditorUndoRecord): void {
 		const ops = record.ops;
 		for (let index = 0; index < ops.length; index += 1) {
 			const op = ops[index];
