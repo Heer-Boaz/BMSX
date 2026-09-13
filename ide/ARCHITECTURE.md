@@ -74,6 +74,12 @@ reacquires restored guest tables via `SuspendedGuestSession`, never a retained
 host projection of the pre-restore heap. Deactivating the code view also ends
 the live hover query. Machine snapshots contain none of this IDE state.
 
+The theme owner supplies hover background, foreground and border together,
+separate from status-bar colors. Both built-in themes use an opaque surface;
+source underneath cannot change text contrast. The hover painter consumes those
+roles directly, without per-frame color inference. This follows VS Code's
+[`editorHoverWidget` color roles](https://github.com/microsoft/vscode/blob/1.104.0/src/vs/platform/theme/common/colors/editorColors.ts#L187-L197).
+
 Hover and runtime member completion resolve the written binding through
 `runtime/lua_inspection.ts`: installed source bytes, exact lexical identity,
 current domain/frame and compiler-owned live word locations. `nil` is a value;

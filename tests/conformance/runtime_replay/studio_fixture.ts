@@ -1,3 +1,4 @@
+import { getCodeAreaBounds, resolveTextPositionBounds } from '../../../ide/editor/ui/view/view';
 import { BrowserGraphLayoutEngine } from '../../../ide/browser/graph_layout';
 import type { RectBounds } from '../../../machine/ts/common/rect';
 import { HostExecutionControl } from '../../../hosts/common/execution_control';
@@ -33,6 +34,19 @@ import { TOP_BAR_MENUS, type TopBarMenuItem } from '../../../ide/workbench/ui/to
 
 export function check(condition: boolean, message: string): void {
 	if (!condition) throw new Error(message);
+}
+
+/** Pointer actionability consumes production text geometry rather than duplicating its projection. */
+export function codePositionBounds(row: number, column: number) {
+	const target = { left: 0, top: 0, right: 0, bottom: 0 };
+	resolveTextPositionBounds(row, column, target);
+	target.top = (target.top + target.bottom) / 2;
+	target.right = target.left + 1;
+	target.bottom = target.top + 1;
+	const bounds = getCodeAreaBounds();
+	check(target.left >= bounds.textLeft && target.right < bounds.codeRight
+		&& target.top >= bounds.codeTop && target.bottom < bounds.codeBottom, 'navigation pointer target must be visible');
+	return target;
 }
 
 /** Actual Studio composition; backend selection belongs to the test project. */

@@ -76,7 +76,7 @@ for (const backend of studio ? ['software', 'webgl2', 'webgpu'] : ['webgpu']) {
 		if (pageErrors.length !== 0) throw new AggregateError(pageErrors, 'Uncaught browser workflow errors');
 		if (inspection) {
 			const pixels = PNG.sync.read(await page.locator('canvas').screenshot());
-			const { width, height, topBarBottom } = result.renderProof;
+			const { width, height, topBarBottom, hover } = result.renderProof;
 			assert.ok(topBarBottom > 0 && topBarBottom < height, 'pixel proof includes the actual menu bar');
 			assert.equal(pixels.width / width, pixels.height / height, 'Studio pixels keep their aspect ratio');
 			if (inspectionPixels) {
@@ -92,6 +92,19 @@ for (const backend of studio ? ['software', 'webgl2', 'webgpu'] : ['webgpu']) {
 			} else {
 				inspectionPixels = pixels;
 			}
+			let textPixels = 0, backgroundPixels = 0;
+			assert.ok(hover.left >= 0 && hover.top >= 0 && hover.right <= width && hover.bottom <= height,
+				`${backend}: physical runtime hover is fully on screen`);
+			const scale = pixels.width / width;
+			for (let y = (hover.top + 1) * scale; y < (hover.bottom - 1) * scale; y += 1) {
+				for (let x = (hover.left + 1) * scale; x < (hover.right - 1) * scale; x += 1) {
+					const offset = (y * pixels.width + x) * 4;
+					const rgb = (pixels.data[offset] << 16) | (pixels.data[offset + 1] << 8) | pixels.data[offset + 2];
+					if (rgb === (hover.text & 0xffffff)) textPixels += 1;
+					if (rgb === (hover.background & 0xffffff)) backgroundPixels += 1;
+				}
+			}
+			assert.ok(textPixels > 0 && backgroundPixels > textPixels, `${backend}: physical runtime hover paints its theme text and opaque surface`);
 		}
 		if (screenshot) {
 			const { dir, name, ext } = parse(screenshot);

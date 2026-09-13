@@ -185,9 +185,30 @@ het werkvlak af. De gedeelde fixture bewaakt nu de maatgrens en de inspectiedriv
 vergelijkt de echte menubalkpixels op de drie renderers. Dit was geen inspectie-
 of symbolenregressie en is niet met een fontcorrectie opgelost.
 
+De zichtbaar geworden donkere tekst op een donkere hoverachtergrond is daarna
+bij de bestaande theme-owner hersteld. Zoals [VS Code's hoverrollen][hover-colors]
+behoren foreground, background en border bij dezelfde widget, niet bij een
+statusbalk. Beide BMSX-thema's gebruiken daarvoor bestaande palettekleuren en
+een opaque achtergrond; de oude vaste translucent hoverkleur vervalt. Geen
+contrastberekening in draw of nieuw kleur-/widgetframework. De kleurproef toetst
+de [7:1-contrastgrens][contrast] zonder daarmee volledige WCAG-conformiteit te
+claimen. De live inspectieproef bedient ook de gewone thema-shortcut en **Alt-
+hover**, niet alleen de provider, en controleert de werkelijk getekende
+foreground-/backgroundpixels op de drie renderers. De gedeelde pointerproef
+consumeert nu `resolveTextPositionBounds` in plaats van diens glyphprojectie
+nogmaals in het harnas te implementeren.
+
+De hoververvolgslice doorstaat de inspectie- en volledige Nemesis-navigatieproef
+op software, WebGL2 en WebGPU, 1762 Lua-tests (1 bestaande skip), IDE-typecheck,
+browser-productbuild, beide architecture/core-parity-audits en indentationcheck.
+De tests-projecttypecheck blijft op dezelfde 48 bestaande diagnostics als na
+de presentatiemaatfix; de hoverwijziging voegt er geen toe.
+
 [lldb]: https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/lldb/source/Target/StackFrame.cpp
 [locations]: https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/llvm/lib/CodeGen/AsmPrinter/DebugLocStream.h
 [live-values]: https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/llvm/lib/CodeGen/LiveDebugValues/VarLocBasedImpl.cpp
 [vscode-model]: https://github.com/microsoft/vscode/blob/1.104.0/src/vs/workbench/contrib/debug/common/debugModel.ts
 [vscode-session]: https://github.com/microsoft/vscode/blob/1.104.0/src/vs/workbench/contrib/debug/browser/debugSession.ts
 [dap]: https://github.com/microsoft/debug-adapter-protocol/blob/main/specification.md
+[hover-colors]: https://github.com/microsoft/vscode/blob/1.104.0/src/vs/platform/theme/common/colors/editorColors.ts#L187-L197
+[contrast]: https://www.w3.org/WAI/WCAG22/Understanding/contrast-enhanced.html

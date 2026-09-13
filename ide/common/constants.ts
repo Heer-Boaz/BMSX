@@ -16,7 +16,6 @@ import {
 	THEME_TOKEN_FUNCTION_BLUE,
 	THEME_TOKEN_GENTLE_WHITE,
 	THEME_TOKEN_HINT_GREY,
-	THEME_TOKEN_HOVER_TOOLTIP_BACKGROUND,
 	THEME_TOKEN_KEYWORD_MAGENTA,
 	THEME_TOKEN_LINE_HIGHLIGHT_OVERLAY,
 	THEME_TOKEN_LIST_TEXT_GREY,
@@ -128,6 +127,11 @@ type ThemeDefinition = {
 };
 
 type ThemeOverlays = {
+	hover: {
+		background: number;
+		border: number;
+		text: number;
+	};
 	search: {
 		background: number;
 		text: number;
@@ -236,6 +240,11 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 			inline: THEME_TOKEN_BLACK,
 		},
 		overlays: {
+			hover: {
+				background: THEME_TOKEN_DARK_NAVY,
+				border: THEME_TOKEN_MID_GREY,
+				text: THEME_TOKEN_WHITE,
+			},
 			search: {
 				background: THEME_TOKEN_TERMINAL_CYAN,
 				text: THEME_TOKEN_BLACK,
@@ -344,6 +353,11 @@ const THEME_DEFINITIONS: Record<string, ThemeDefinition> = {
 			inline: THEME_TOKEN_DEEP_GREY,
 		},
 		overlays: {
+			hover: {
+				background: THEME_TOKEN_PANEL_GREY,
+				border: THEME_TOKEN_MID_GREY,
+				text: THEME_TOKEN_DEEP_GREY,
+			},
 			search: {
 				background: THEME_TOKEN_TERMINAL_CYAN,
 				text: THEME_TOKEN_BLACK,
@@ -520,8 +534,9 @@ export let ERROR_OVERLAY_TEXT_COLOR: number;
 export const EXECUTION_STOP_OVERLAY = THEME_TOKEN_EXECUTION_STOP_OVERLAY;
 export const HOVER_TOOLTIP_PADDING_X = 4;
 export const HOVER_TOOLTIP_PADDING_Y = 2;
-export const HOVER_TOOLTIP_BACKGROUND = THEME_TOKEN_HOVER_TOOLTIP_BACKGROUND;
+export let HOVER_TOOLTIP_BACKGROUND: number;
 export let HOVER_TOOLTIP_BORDER: number;
+export let HOVER_TOOLTIP_TEXT: number;
 export const HOVER_TOOLTIP_MAX_VISIBLE_LINES = 10;
 export const LINE_JUMP_BAR_MARGIN_Y = SEARCH_BAR_MARGIN_Y;
 export let COLOR_CREATE_RESOURCE_BACKGROUND: number;
@@ -671,7 +686,9 @@ function applyThemeDefinition(theme: ThemeDefinition): void {
 	COLOR_LINE_JUMP_PLACEHOLDER = search.placeholder;
 	COLOR_LINE_JUMP_OUTLINE = search.outline;
 	ERROR_OVERLAY_TEXT_COLOR = theme.text.errorOverlayText;
-	HOVER_TOOLTIP_BORDER = theme.text.topBar;
+	HOVER_TOOLTIP_BACKGROUND = theme.overlays.hover.background;
+	HOVER_TOOLTIP_BORDER = theme.overlays.hover.border;
+	HOVER_TOOLTIP_TEXT = theme.overlays.hover.text;
 	COLOR_CREATE_RESOURCE_BACKGROUND = search.background;
 	COLOR_CREATE_RESOURCE_TEXT = search.text;
 	COLOR_CREATE_RESOURCE_PLACEHOLDER = search.placeholder;

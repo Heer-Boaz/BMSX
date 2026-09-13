@@ -6,12 +6,10 @@ import { testStudioFsmInitial } from './studio_fsm_initial';
 import { testStudioFsmBookmarks } from './studio_fsm_bookmarks';
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { queryDefinitionsAt } from '../../../ide/editor/contrib/definitions/query';
-import { editorViewState } from '../../../ide/editor/ui/view/state';
-import { getCodeAreaBounds } from '../../../ide/editor/ui/view/view';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { resolveRuntimeResource } from '../../../ide/runtime/sources';
 import { chooseBehavior, revealLensOccurrence } from './studio_behavior_picker';
-import { check, type StudioFixture } from './studio_fixture';
+import { check, codePositionBounds, type StudioFixture } from './studio_fixture';
 import { testStudioBehaviorSourceGraph } from './studio_behavior_source';
 import { testStudioBtMembership } from './studio_bt_membership';
 import { testStudioBtMoves } from './studio_bt_moves';
@@ -37,22 +35,6 @@ const CASES = {
 		behavior: 'BT world1_daemon_tree.id', sourcePath: 'boss/world1_daemon_tree.lua', sourceLine: 190, sourceColumn: 14,
 	},
 } as const;
-
-/** Pixel targets use retained glyph/visual-line geometry, including tabs, wrapping and horizontal scroll. */
-function codePositionBounds(row: number, column: number) {
-	const view = activeCodeEditor.view;
-	const layout = editorViewState.layout;
-	const bounds = getCodeAreaBounds();
-	const visualIndex = layout.positionToVisualIndex(row, column);
-	const segment = layout.visualIndexToSegment(visualIndex)!;
-	const entry = layout.getCachedHighlight(activeCodeEditor.model.buffer, row);
-	const start = editorViewState.wordWrapEnabled ? segment.startColumn : view.scrollColumn;
-	const x = bounds.textLeft + entry.advancePrefix[layout.columnToDisplay(entry.hi, column)]
-		- entry.advancePrefix[layout.columnToDisplay(entry.hi, start)];
-	const y = bounds.codeTop + (visualIndex - view.scrollRow + 0.5) * editorViewState.lineHeight;
-	check(x >= bounds.textLeft && x < bounds.codeRight && y >= bounds.codeTop && y < bounds.codeBottom, 'navigation pointer target must be visible');
-	return { left: x, right: x + 1, top: y, bottom: y + 1 };
-}
 
 function assertSourcePosition(path: string, line: number, column: number, route: string): void {
 	const { model, view } = activeCodeEditor;

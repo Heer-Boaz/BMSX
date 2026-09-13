@@ -4,7 +4,9 @@ import { hoverState } from '../../../ide/editor/contrib/hover/state';
 import { getTextFileRuntimeSourceStatus } from '../../../ide/workbench/services/working_copy/runtime_source_status';
 import { runtimeLuaSourceRegistry } from '../../../ide/runtime/sources';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
-import { check, type StudioFixture } from './studio_fixture';
+import { check, codePositionBounds, type StudioFixture } from './studio_fixture';
+import * as constants from '../../../ide/common/constants';
+import { resolveThemeTokenColor } from '../../../ide/theme/tokens';
 
 /** Borrowed values are consumed by the existing hover, not a parallel test inspector. */
 export async function runStudioRuntimeInspection(test: StudioFixture) {
@@ -113,7 +115,27 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	inspect('inspection_effect.definition.period_ms', 48);
 	check(guest.global('inspection_callback_count') === 0, 'inspection: readback never invoked a callback');
 	await frame();
+	const expression = 'inspection_effect.definition.period_ms';
+	const lines = model.buffer.getText().split('\n');
+	const row = lines.findIndex(line => line.includes(expression));
+	const column = lines[row].indexOf(expression) + expression.length - 1;
+	const position = cycles(), version = model.version;
+	for (const theme of ['dark', 'light']) {
+		test.setKey('AltLeft', false);
+		test.movePointer({ left: -10, top: -10, right: -10, bottom: -10 });
+		await frame();
+		await press('ControlLeft', 'AltLeft', 'KeyT');
+		check(constants.getActiveIdeThemeVariant() === theme, 'inspection: real theme shortcut');
+		test.setKey('AltLeft', true);
+		test.movePointer(codePositionBounds(row, column));
+		await until(() => hoverState.tooltip !== null && hoverState.tooltip.bubbleBounds !== null, 'inspection: physical Alt-hover paints the current runtime value');
+		check(hoverState.tooltip!.contentLines.join('\n').includes(`${expression} = 48 (number)`), 'inspection: pointer reaches the same runtime reader');
+	}
+	check(cycles() === position && model.version === version && guest.global('inspection_callback_count') === 0,
+		'inspection: theme and pointer do not mutate guest or source');
 	console.info('STUDIO: actual ActionEffect definition/instance, rebind stops, no-change init, source divergence, compile failure and rewind inspection PASS');
 	return { hostFrames: test.observations.hostFrames, initCount: 3, restoredTick, latestTick,
-		renderProof: { ...ide.overlayRenderer.viewportSize, topBarBottom: editorChromeState.topBarBounds.bottom } };
+		renderProof: { ...ide.overlayRenderer.viewportSize, topBarBottom: editorChromeState.topBarBounds.bottom,
+			hover: { ...hoverState.tooltip!.bubbleBounds, text: resolveThemeTokenColor(constants.HOVER_TOOLTIP_TEXT),
+				background: resolveThemeTokenColor(constants.HOVER_TOOLTIP_BACKGROUND) } } };
 }

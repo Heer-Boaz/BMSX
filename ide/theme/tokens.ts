@@ -55,8 +55,7 @@ export const THEME_TOKEN_ERROR_OVERLAY_BACKGROUND = 53;
 export const THEME_TOKEN_ERROR_OVERLAY_BACKGROUND_HOVER = 54;
 export const THEME_TOKEN_ERROR_OVERLAY_LINE_HOVER = 55;
 export const THEME_TOKEN_EXECUTION_STOP_OVERLAY = 56;
-export const THEME_TOKEN_HOVER_TOOLTIP_BACKGROUND = 57;
-export const THEME_TOKEN_ACTION_OVERLAY = 58;
+export const THEME_TOKEN_ACTION_OVERLAY = 57;
 
 export const THEME_TOKEN_COLORS: readonly number[] = [
 	0x00000000,
@@ -116,7 +115,6 @@ export const THEME_TOKEN_COLORS: readonly number[] = [
 	0xffbf1919,
 	0x2dffffff,
 	0x72f27219,
-	0xe5191919,
 	0xa5000000,
 ];
 
