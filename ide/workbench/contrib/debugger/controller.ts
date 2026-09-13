@@ -158,10 +158,11 @@ export async function presentRuntimeDebuggerStop(
 		domain: state.stopDomain,
 		path: range.path,
 	})!;
-	await focusExecutionStop(editor, {
+	const generation = await focusExecutionStop(editor, {
 		domain: source.domain,
 		path: source.record.source_path,
 	}, range.start.line, range.start.column);
+	if (generation !== editor.editorPanes.openGeneration) return;
 	showEditorMessage(
 		state.stopReason === RuntimeDebuggerStopReason.Breakpoint
 			? 'Paused on breakpoint'

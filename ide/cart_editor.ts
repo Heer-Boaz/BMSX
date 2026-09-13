@@ -649,7 +649,9 @@ export class RuntimeCartEditor implements CartEditor {
 			this.activate();
 		}
 		void this.navigation.focusChunkSource(resource)
-			.then(() => this.showRuntimeError(line, column, message, details, resource.path))
+			.then(generation => {
+				if (generation === this.editorPanes.openGeneration) this.showRuntimeError(line, column, message, details, resource.path);
+			})
 			.catch(error => showEditorMessage(`Failed to open runtime source: ${String(error)}`, constants.COLOR_STATUS_ERROR, 4.0));
 	}
 

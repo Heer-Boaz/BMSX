@@ -15,6 +15,11 @@ export class EditorPanes {
 	private readonly panes = new Map<EditorInputKind, EditorPane<EditorInput>>();
 	private activePaneValue: EditorPane<EditorInput> | null = null;
 	private readonly clearListeners = new Set<() => void>();
+	private openGenerationValue = 0;
+
+	/** Resolution can await storage; only the latest opening may attach its input. */
+	public beginOpen(): number { return ++this.openGenerationValue; }
+	public get openGeneration(): number { return this.openGenerationValue; }
 
 	public onDidClearEditor(listener: () => void): () => void {
 		this.clearListeners.add(listener);
@@ -30,6 +35,7 @@ export class EditorPanes {
 	}
 
 	public openEditor(input: EditorInput, selection?: EditorTextSelection, navigationSelection?: EditorPaneSelection): void {
+		this.openGenerationValue += 1;
 		const activePane = this.activePaneValue;
 		if (activePane !== null && activePane.input === input) {
 			activePane.setOptions(selection, navigationSelection);
@@ -44,6 +50,7 @@ export class EditorPanes {
 	}
 
 	public clearEditor(): void {
+		this.openGenerationValue += 1;
 		const activePane = this.activePaneValue;
 		if (activePane === null) {
 			return;

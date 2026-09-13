@@ -115,10 +115,10 @@ export function createNavigationEntry(): NavigationHistoryEntry | null {
 		? { kind: 'input', input: pane.input } : { kind: 'resource', ...resourceEditor }, pane.getSelection?.());
 }
 
-export async function withNavigationCaptureSuspended<T>(operation: () => Promise<T>): Promise<T> {
+export function withNavigationCaptureSuspended<T>(operation: () => T): T {
 	navigationState.captureSuspendDepth += 1;
 	try {
-		return await operation();
+		return operation();
 	} finally {
 		navigationState.captureSuspendDepth -= 1;
 	}

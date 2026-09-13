@@ -1,6 +1,6 @@
 # Herreview van de recente Studio-/inspectieslices
 
-Reviewbasis: de 21 lokale slices `ff4874936..1d43d4b1b`, tegen de live owners.
+Reviewbasis: de 21 lokale slices `c30009e07..1d43d4b1b`, tegen de live owners.
 Dit is een review met herstelwerk, geen verklaring dat de hele Studio af is.
 
 ## A01 — Waardebeschikbaarheid koos onbedoeld de functieaanroep
@@ -87,3 +87,68 @@ catalogus of succesvolle runtime-read bewijst die functionaliteit niet.
   `git diff --check` geslaagd.
 - Geen nieuwe C++-/machinecode in A01; deze browserproef wordt niet als een
   nieuwe native runtime- of SNES-mini-performanceproef gepresenteerd.
+
+## A02 — Een afgeronde Promise was nog geen geldige navigatie
+
+**Aangetoond:** de geregistreerde opener voor `older.lua` wordt vertraagd; een
+nieuw verzoek opent `newer.lua`; afronden van het oude verzoek activeert alsnog
+`older.lua`. De test gebruikt de bestaande `ResourceEditorResolver`- en pane-
+owners. In het product kan AEM-source-admission daadwerkelijk op storage wachten.
+De recente `await`-correctie voor debuggernavigation loste attachmentvolgorde op,
+maar niet de levensduur van een opening. Dit is een algemenere workbenchfout,
+niet een cartlib- of Behavior Lens-regel.
+
+[VS Code `EditorPanes.doSetInput`](https://github.com/microsoft/vscode/blob/1.104.0/src/vs/workbench/browser/parts/editor/editorPanes.ts#L425-L484)
+start een opening-operation, laat een nieuw verzoek de oude beëindigen en
+rapporteert cancellation vóór focus/volgacties. De daadwerkelijke productiecode
+is gelezen, niet alleen de publieke API.
+
+**Ownerbesluit vóór de fix:** de pane-owner bezit de open-generation. Een nieuw
+async verzoek, directe pane-opening of pane-teardown beëindigt het recht van
+oudere verzoeken om te activeren. Resource-admission blijft bij de resolver/model-
+service; een geannuleerde opening wist geen bronmodel en breekt gedeelde I/O niet
+af. De navigatiecaller krijgt expliciet te horen of attachment doorging, zodat
+bijbehorende debugger/fault-effecten niet alsnog op de huidige tab landen.
+Back/Forward onderdrukken history-capture alleen tijdens hun synchrone commit,
+niet tijdens bestands-I/O; andere gebruikersnavigatie blijft haar eigen history
+houden. Geen timeout, Promise-queue die achter trage I/O blijft wachten, fallback-
+tab of per-feature requestcounter.
+
+**Hersteld:** `EditorPanes` bezit één generation, ook bij opnieuw kiezen van de
+al actieve tab en bij `clearEditor` zonder actieve pane. De bestaande IDE-
+deactivation gebruikt die teardown al; er is geen extra featurehook nodig.
+Navigation geeft de **attachment-generation** terug, niet slechts `true`:
+tussen attachment en de debuggercontinuation kan alweer een andere tab gekozen
+zijn. Ook die ingeplande continuation mag geen stopmarker/cursor plaatsen.
+Geannuleerde inputkandidaten worden vrijgegeven tenzij dezelfde input al in de
+groep zit. Workspace-modellen en gedeelde reads blijven van hun eigen service.
+De resourcepanel-selectie wordt pas na admission gepubliceerd.
+
+De onafhankelijke navigatieproef dekt resource-opening én Back/Forward, onderbroken
+door nieuwe navigation, een directe tabkeuze, herselectie van dezelfde tab of
+teardown. Zij controleert ook candidate-disposal, behoud van een reeds groeps-
+owned input, vrije history-capture tijdens I/O en de microtask tussen source-
+attachment en debuggerdecoratie. De echte Studio-proef opent daarnaast AEM en
+Lua achter elkaar via de normale bijdragen en verlaat/heropent de IDE tijdens
+een pending source-opening. Geen gesimuleerde resolver in die browserproef.
+
+## Validatie A02 en afsluitende herproef
+
+- Gerichte navigatie-/historysuite: **16/16 geslaagd**.
+- Volledige `test:lua`: **1809 geslaagd, 1 bestaande skip**, 1810 tests.
+- `--studio`: **software / WebGL2 / WebGPU PASS**, met de nieuwe echte
+  AEM/Lua-openingrace en IDE-deactivation, naast de bestaande graphbewerkingen,
+  Undo/Redo, focus/pointer, source navigation, Scenario Lab, pause/rewind,
+  Hot Resume en source-failureproeven.
+- `--studio-runtime-inspection` opnieuw op de uiteindelijke patch:
+  **software / WebGL2 / WebGPU PASS**. A01 blijft werken met de nieuwe
+  opening-lifetime; debugger/rebind/fault-continuations hebben geen parallel pad.
+- Browser-Studio-product opnieuw gebouwd; IDE-typecheck geslaagd. Het tests-
+  project houdt exact dezelfde **46 bestaande diagnostics** als de baseline.
+- Core-parityaudit, strikte architectuurboundaries (**0 issues**), gerichte
+  code-qualityscan van de navigation-/pane-owners, indentation en diffcheck
+  geslaagd. De code-quality-uitzonderingsledger is daarmee niet verdwenen.
+
+Er is geen nieuwe guest-tick-instrumentatie, rendererimplementatie of C++-
+machinewijziging toegevoegd om deze twee IDE-fouten te herstellen. Deze review
+is geen universele foutloosheidsgarantie of vervanging van de nog open productgates.

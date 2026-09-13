@@ -18,6 +18,7 @@ import type { ResourcePanelController } from './panel/controller';
 import type { ResourceEditorResolver } from '../../services/editor/resource_editor_resolver';
 import { openEditorTab, setActiveTab } from '../../ui/tabs';
 import type { EditorPanes } from '../../services/editor/editor_panes';
+import { editorTabGroup } from '../../ui/tab/group_model';
 
 export class EditorNavigationController {
 	public constructor(
@@ -28,17 +29,24 @@ export class EditorNavigationController {
 	) {
 	}
 
-	public async openResource(resource: RuntimeResource, selection?: EditorTextSelection): Promise<void> {
+	/** The attached generation, or undefined when another opening superseded this request. */
+	public async openResource(resource: RuntimeResource, selection?: EditorTextSelection): Promise<number | undefined> {
+		const generation = this.editorPanes.beginOpen();
+		const input = await this.editorResolver.resolveEditorInput(resource);
+		if (generation !== this.editorPanes.openGeneration) {
+			if (editorTabGroup.findById(input.id) !== input) input.dispose();
+			return undefined;
+		}
 		this.resourcePanel.queuePendingSelection(resource);
 		if (this.resourcePanel.isVisible()) {
 			this.resourcePanel.applyPendingSelection();
 		}
-		const input = await this.editorResolver.resolveEditorInput(resource);
 		openEditorTab(this.editorPanes, input, { selection });
 		releaseResourcePanelFocus(this.resourcePanel);
+		return this.editorPanes.openGeneration;
 	}
 
-	public focusChunkSource(identity: ResourceIdentity, selection?: EditorTextSelection): Promise<void> {
+	public focusChunkSource(identity: ResourceIdentity, selection?: EditorTextSelection): Promise<number | undefined> {
 		prepareEditorForSourceFocus();
 		return this.openResource(resolveRuntimeResource(this.sources, identity)!, selection);
 	}
@@ -70,19 +78,26 @@ export class EditorNavigationController {
 	}
 
 	private async openHistoryEntry(target: NavigationHistoryEntry): Promise<void> {
+		const generation = this.editorPanes.beginOpen();
 		try {
-			await withNavigationCaptureSuspended(async () => {
-				const destination = target.target;
-				if (destination.kind === 'input') {
+			const destination = target.target;
+			if (destination.kind === 'input') {
+				withNavigationCaptureSuspended(() => {
 					// This live destination already belongs to the group. History does
 					// not turn a surviving preview into an explicit Keep Open request.
 					setActiveTab(this.editorPanes, destination.input.id, undefined, target.selection);
-				} else {
-					const input = await this.editorResolver.resolveEditorInput(resolveRuntimeResource(this.sources, destination.resource)!, destination.editorId);
-					openEditorTab(this.editorPanes, input, { pinned: false, navigationSelection: target.selection });
+				});
+			} else {
+				const input = await this.editorResolver.resolveEditorInput(resolveRuntimeResource(this.sources, destination.resource)!, destination.editorId);
+				if (generation !== this.editorPanes.openGeneration) {
+					if (editorTabGroup.findById(input.id) !== input) input.dispose();
+					return;
 				}
-				releaseResourcePanelFocus(this.resourcePanel);
-			});
+				withNavigationCaptureSuspended(() => {
+					openEditorTab(this.editorPanes, input, { pinned: false, navigationSelection: target.selection });
+				});
+			}
+			releaseResourcePanelFocus(this.resourcePanel);
 		} finally {
 			target.dispose();
 		}

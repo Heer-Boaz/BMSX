@@ -1556,6 +1556,14 @@ Built-in resolvers return an existing input or an unattached candidate; only
 ends the old pane's focus/capture before replacement. Concurrent candidates with
 the same input id do not duplicate the group or replace a retained view. Source
 reopening and Back/Forward use that same admission route.
+`EditorPanes` owns the opening generation: a later asynchronous request, direct
+pane activation or pane teardown supersedes older resolution work. Navigation
+admits only the current request and releases unused candidate inputs, not shared
+working copies. Its returned attachment generation also governs debugger/fault
+continuations after their await; a completed Promise is not a lease on whichever
+tab is active later. Back/Forward suppress history capture only during their
+synchronous attachment, never across source I/O. See the
+[opening-lifetime review](studio_owner_review_2026_09_13.md#a02--een-afgeronde-promise-was-nog-geen-geldige-navigatie).
 Working-copy recovery resolves Lua/AEM text models without opening an editor.
 The model service coalesces asynchronous source reads by full resource identity;
 a workspace teardown retires pending admissions before clearing models. Recovery

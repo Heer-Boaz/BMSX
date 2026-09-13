@@ -9,7 +9,9 @@ import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { CodeEditorInput, WORKBENCH_TEXT_EDITOR_ID } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import { editorTabGroup } from '../../ide/workbench/ui/tab/group_model';
-import { setActiveTab } from '../../ide/workbench/ui/tabs';
+import { setActiveTab, openEditorTab } from '../../ide/workbench/ui/tabs';
+import { focusExecutionStop } from '../../ide/runtime_error/navigation';
+import type { CartEditor } from '../../ide/cart_editor';
 import { createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
 import { CodeEditorNavigationSelection } from '../../ide/workbench/contrib/code_editor/navigation_selection';
 import type { RuntimeSourceState } from '../../ide/runtime/sources';
@@ -122,7 +124,7 @@ test('history awaits the registered resource opener and restores a closed text i
 	t.after(() => { panes.dispose(); editorTabGroup.clear(); });
 	const version = reopened.workingCopy.version;
 	const pending = navigation.goBackward();
-	assert.equal(navigationState.captureSuspendDepth, 1);
+	assert.equal(navigationState.captureSuspendDepth, 0, 'I/O must not suspend unrelated user navigation');
 	assert.equal(editorTabGroup.activeTab, origin);
 	finishOpen(); await pending;
 	assert.equal(navigationState.captureSuspendDepth, 0);
@@ -152,4 +154,90 @@ test('Back activates a surviving visual preview without turning navigation into 
 	assert.equal(editorTabGroup.tabs.length, 2);
 	assert.equal(origin.workingCopy.dirty, false);
 	assert.equal(navigationState.forward.length, 1);
+});
+
+for (const route of ['resource', 'history'] as const) for (const interruption of ['new navigation', 'direct tab', 'same tab', 'teardown'] as const) {
+	test(`slow ${route} resolution cannot reactivate after ${interruption}`, async t => {
+		configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+		const panes = createTestEditorPanes();
+		const origin = code('origin.lua'); editorTabGroup.initialize(origin); panes.openEditor(origin);
+		const older = code('older.lua'), newer = code('newer.lua');
+		let discarded = 0; older.onWillDispose(() => { discarded += 1; });
+		let finishOpen!: () => void;
+		const openGate = new Promise<void>(resolve => { finishOpen = resolve; });
+		const navigation = new EditorNavigationController(
+			{ resourceByIdentity: new Map([[`0\0${older.workingCopy.resource.path}`, older.workingCopy.resource]]) } as RuntimeSourceState,
+			{ queuePendingSelection() {}, isVisible: () => false, isFocused: () => false } as unknown as ResourcePanelController,
+			new ResourceEditorResolver([{
+				id: WORKBENCH_TEXT_EDITOR_ID, selector: { kind: 'all' }, createEditorInput: async resource => {
+					if (resource === older.workingCopy.resource) { await openGate; return older; }
+					return newer;
+				},
+			}]), panes,
+		);
+		t.after(() => { panes.dispose(); editorTabGroup.clear(); });
+		const target = new NavigationHistoryEntry({ kind: 'resource', ...older.toResourceEditor() }, new CodeEditorNavigationSelection(older));
+		if (route === 'history') navigationState.back.push(target);
+		const pending = route === 'history' ? navigation.goBackward() : navigation.openResource(older.workingCopy.resource);
+		assert.equal(navigationState.captureSuspendDepth, 0);
+		if (interruption === 'new navigation') await navigation.openResource(newer.workingCopy.resource);
+		else if (interruption === 'direct tab') openEditorTab(panes, newer);
+		else if (interruption === 'same tab') setActiveTab(panes, origin.id);
+		else { panes.clearEditor(); editorTabGroup.clear(); }
+		const active = editorTabGroup.activeTab;
+		const history = [...navigationState.back];
+		if (interruption === 'new navigation' || interruption === 'direct tab') {
+			assert.equal(active, newer);
+			assert.equal(history.length, 1, 'pending history I/O must not suppress the new departure');
+			assert.equal(navigationState.forward.length, 0);
+		}
+		finishOpen();
+		assert.equal(await pending, undefined);
+		assert.equal(editorTabGroup.activeTab, active, 'request order, not I/O completion order, owns navigation');
+		assert.deepEqual(navigationState.back, history, 'cancelled completion does not capture another navigation');
+		assert.equal(discarded, 1, 'release the unadmitted input, not the workspace text model');
+		assert.equal(older.workingCopy.buffer.getText().includes('local target'), true);
+		if (route === 'history') assert.equal(target.selection!.isDisposed, true);
+		else target.dispose();
+	});
+}
+
+test('a debugger continuation cannot decorate a tab chosen after its source attached', async t => {
+	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	const panes = createTestEditorPanes();
+	const origin = code('origin.lua'); editorTabGroup.initialize(origin); panes.openEditor(origin);
+	const stopped = code('stopped.lua'), chosen = code('chosen.lua');
+	const resource = stopped.workingCopy.resource;
+	const navigation = new EditorNavigationController(
+		{ resourceByIdentity: new Map([[`0\0${resource.path}`, resource]]) } as RuntimeSourceState,
+		{ queuePendingSelection() {}, isVisible: () => false, isFocused: () => false } as unknown as ResourcePanelController,
+		new ResourceEditorResolver([{ id: WORKBENCH_TEXT_EDITOR_ID, selector: { kind: 'all' }, createEditorInput: () => stopped }]), panes,
+	);
+	t.after(() => { panes.dispose(); editorTabGroup.clear(); });
+	const pending = focusExecutionStop({ navigation, editorPanes: panes } as CartEditor, resource, 2, 7);
+	await Promise.resolve(); // Source attached; the debugger's continuation is still queued.
+	assert.equal(editorTabGroup.activeTab, stopped);
+	openEditorTab(panes, chosen);
+	assert.equal(await pending, undefined);
+	assert.equal(editorTabGroup.activeTab, chosen);
+	assert.equal(chosen.context.executionStopRow, null);
+	assert.equal(chosen.context.view.cursorRow, 0);
+});
+
+test('cancelled resolution does not dispose an input already owned by the group', async t => {
+	configureFontVariant(new VirtualHeadlessClock(), 'tiny', null);
+	const panes = createTestEditorPanes();
+	const input = code('retained.lua'); editorTabGroup.initialize(input); panes.openEditor(input);
+	let disposed = 0; input.onWillDispose(() => { disposed += 1; });
+	const navigation = new EditorNavigationController(
+		{} as RuntimeSourceState,
+		{ queuePendingSelection() {}, isVisible: () => false, isFocused: () => false } as unknown as ResourcePanelController,
+		new ResourceEditorResolver([{ id: WORKBENCH_TEXT_EDITOR_ID, selector: { kind: 'all' }, createEditorInput: () => input }]), panes,
+	);
+	t.after(() => { panes.dispose(); editorTabGroup.clear(); });
+	const pending = navigation.openResource(input.workingCopy.resource);
+	setActiveTab(panes, input.id);
+	assert.equal(await pending, undefined);
+	assert.equal(disposed, 0);
+	assert.equal(editorTabGroup.activeTab, input);
 });

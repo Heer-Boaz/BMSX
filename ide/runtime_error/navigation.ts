@@ -140,11 +140,13 @@ export async function focusExecutionStop(
 	resource: ResourceIdentity,
 	line: number,
 	column: number,
-): Promise<void> {
+): Promise<number | undefined> {
 	const row = line - 1;
-	await editor.navigation.focusChunkSource(resource, { row, startColumn: column - 1, endColumn: column - 1 });
+	const generation = await editor.navigation.focusChunkSource(resource, { row, startColumn: column - 1, endColumn: column - 1 });
+	if (generation !== editor.editorPanes.openGeneration) return undefined;
 	setExecutionStopHighlightForCurrentContext(row);
 	centerCursorVertically();
+	return generation;
 }
 
 export function syncRuntimeErrorOverlayFromContext(context: CodeTabContext): void {
@@ -178,7 +180,8 @@ export async function navigateToRuntimeErrorFrameTarget(
 	frame: SourceStackTraceFrame,
 ): Promise<void> {
 	try {
-		await editor.navigation.focusChunkSource(frame.resource);
+		const generation = await editor.navigation.focusChunkSource(frame.resource);
+		if (generation !== editor.editorPanes.openGeneration) return;
 	} catch (error) {
 		showEditorMessage(
 			`Failed to open runtime path: ${extractErrorMessage(error)}`,
