@@ -30,7 +30,7 @@ import {
 	type LuaSourceMap,
 } from '../lua/compiler/source_map';
 import { LuaSyntaxError } from '../lua/errors';
-import type { TraceStatementMode } from '../lua/compiler/trace_statement';
+import type { TraceStatementSelection } from '../lua/compiler/trace_statement';
 
 export type GeneratedLuaModule = {
 	path: string;
@@ -55,7 +55,7 @@ type Blua32ImageBuildOptionsBase = {
 	loadAddress: number;
 	ramByteCount: number;
 	optLevel: 0 | 1 | 2 | 3;
-	traceStatements: TraceStatementMode;
+	traceStatements: TraceStatementSelection;
 };
 
 type SystemBlua32ImageBuildOptions = Blua32ImageBuildOptionsBase & {

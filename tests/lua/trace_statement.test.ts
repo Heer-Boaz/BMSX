@@ -3,11 +3,11 @@ import { test } from 'node:test';
 
 import { asStringId, type StringValue } from '../../machine/ts/machine/cpu/value';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
-import type { TraceStatementMode } from '../../toolchain/ts/lua/compiler/trace_statement';
+import type { TraceStatementSelection } from '../../toolchain/ts/lua/compiler/trace_statement';
 import { runCompiledTestSystem } from '../helpers/blua32';
 import { materializeCpuCompletionValues, parseLuaChunk } from './cpu_test_harness';
 
-function compileTraceSource(source: string, traceStatements: TraceStatementMode, optLevel: 0 | 3 = 3) {
+function compileTraceSource(source: string, traceStatements: TraceStatementSelection, optLevel: 0 | 3 = 3) {
 	return compileLuaChunkToProgram(parseLuaChunk(source, 'trace_statement.lua'), [], {
 		entrySource: source,
 		optLevel,
@@ -37,7 +37,7 @@ return value
 	assert.deepEqual(tracedProgram.protos, baselineProgram.protos);
 });
 
-for (const optLevel of [0, 3] as const) test(`erased traces do not turn an otherwise static function into a captured closure (O${optLevel})`, () => {
+for (const optLevel of [0, 3] as const) test(`unselected traces do not turn an otherwise static function into a captured closure (O${optLevel})`, () => {
 	const baseline = `
 local subject<const> = {}
 return function() return 7 end
@@ -50,10 +50,42 @@ return function()
 end
 `;
 	const baselineProgram = compileTraceSource(baseline, 'erase', optLevel).program;
-	const tracedProgram = compileTraceSource(traced, 'erase', optLevel).program;
-	assert.deepEqual(tracedProgram.code, baselineProgram.code);
-	assert.deepEqual(tracedProgram.constPool, baselineProgram.constPool);
-	assert.deepEqual(tracedProgram.protos, baselineProgram.protos);
+	for (const selection of ['erase', new Set<string>(), new Set(['sample.child'])] as const) {
+		const tracedProgram = compileTraceSource(traced, selection, optLevel).program;
+		assert.deepEqual(tracedProgram.code, baselineProgram.code);
+		assert.deepEqual(tracedProgram.constPool, baselineProgram.constPool);
+		assert.deepEqual(tracedProgram.protos, baselineProgram.protos);
+	}
+});
+
+for (const optLevel of [0, 3] as const) test(`channel selection erases the entire excluded statement, not just its call (O${optLevel})`, () => {
+	const setup = `
+local subject<const> = {}
+local sink<const> = { count = 0 }
+function sink:record(value) self.count = self.count + value end
+local evaluations = 0
+local evaluated<const> = function(value) evaluations = evaluations + 1; return value end
+blua32.trace_sink(subject, 'compile', sink)
+blua32.trace(subject, 'compile', 3)
+`;
+	const excluded = `
+blua32.trace_sink(evaluated(subject), 'compile.node', evaluated(sink))
+blua32.trace(evaluated(subject), 'compile.node', evaluated(100))
+blua32.trace_sink(evaluated(subject), 'tick', evaluated(sink))
+blua32.trace(evaluated(subject), 'tick', evaluated(100))
+`;
+	const end = `
+blua32.trace_sink(subject, 'compile', nil)
+blua32.trace(subject, 'compile', evaluated(100))
+return sink.count, evaluations
+`;
+	const selected = compileTraceSource(setup + excluded + end, new Set(['compile']), optLevel);
+	const baseline = compileTraceSource(setup + end, 'emit', optLevel).program;
+	assert.deepEqual(selected.program.code, baseline.code);
+	assert.deepEqual(selected.program.constPool, baseline.constPool);
+	assert.deepEqual(selected.program.protos, baseline.protos);
+	const cpu = runCompiledTestSystem(selected, 100_000);
+	assert.deepEqual(materializeCpuCompletionValues(cpu), [3, 0]);
 });
 
 test('emitted trace statements bind one subject channel and preserve static string values', () => {
@@ -114,10 +146,12 @@ local channel<const> = 'sample'
 blua32.trace(subject, channel, 1)
 return true
 `;
-	assert.throws(
-		() => compileTraceSource(source, 'emit'),
-		/trace channel must be a string literal/,
-	);
+	for (const selection of ['emit', new Set<string>()] as const) {
+		assert.throws(
+			() => compileTraceSource(source, selection),
+			/trace channel must be a string literal/,
+		);
+	}
 });
 
 test('trace intrinsics cannot become runtime Lua values', () => {

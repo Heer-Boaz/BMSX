@@ -2,14 +2,14 @@ import { readFileSync } from 'node:fs';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
-import type { TraceStatementMode } from '../../toolchain/ts/lua/compiler/trace_statement';
+import type { TraceStatementSelection } from '../../toolchain/ts/lua/compiler/trace_statement';
 import { BLUA32_FIRMWARE_MODULE_SOURCE } from '../../toolchain/ts/rompack/blua32_firmware_module';
 import { createTestBlua32PairCpu, linkTestBlua32Pair } from './blua32';
 import { parseLuaChunk } from '../lua/cpu_test_harness';
 
 /** Real cartlib/compiler/CPU; no host, ICU, world scheduler or trigonometry proof. */
 type CartlibProgramOptions = {
-	traceStatements?: TraceStatementMode;
+	traceStatements?: TraceStatementSelection;
 	optLevel?: 0 | 3;
 	/** Additional or replacement cart modules, compiled normally by path. */
 	modules?: readonly { path: string; source: string }[];

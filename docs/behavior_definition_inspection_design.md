@@ -194,7 +194,8 @@ late-attachlifetime en authored-sourcecorrespondentie zijn nog niet gekozen.**
 De meetrecorder wordt niet impliciet een Studio-database of Resource-framework.
 
 De bestaande `blua32.trace` is geen kant-en-klare oplossing: de compiler kan
-haar wissen of emitteren, maar [scenario_cartridge.ts](../toolchain/ts/rompack/scenario_cartridge.ts)
+haar wissen, volledig emitteren of [exacte kanalen selecteren](lua_trace_selection.md),
+maar [scenario_cartridge.ts](../toolchain/ts/rompack/scenario_cartridge.ts)
 is nu de uitvoerproducer die haar aanzet. Gewone debug-ROMs en Hot Resume wissen
 de statements. Bovendien koppelt een sink aan een concrete subjecttabel; hij
 maakt niet vanzelf een late-attachbare definitiecatalogus of bronmapping.
@@ -365,6 +366,9 @@ verandert geen tickcycli of tickallocaties in de fixture, maar haar extra
 retentie is niet nul en de gewone compiler houdt trace-erasure. Geen koppeling
 aan de Studio-graph of automatische source-node-/actorslotidentiteit; de
 resterende productopslag-, admission- en sourcegates blijven open.
+De compiler kan inmiddels uitsluitend koude compilekanalen emitteren en alle
+andere traces vóór argumentcodegeneratie wissen. Dat verwijdert de noodzaak
+voor globale runtime-instrumentatie, niet de opname-/admissiongates.
 
 De volledige gates van deze slices zijn nog niet gesloten. De bredere UX-lijst blijft
 bestaan, maar wordt niet langer gegijzeld door volledige analyse van alle

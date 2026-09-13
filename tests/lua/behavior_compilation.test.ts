@@ -13,6 +13,8 @@ const recorderModule = {
 	source: readFileSync('testlib/behaviour_tree/compile_recorder.lua', 'utf8'),
 };
 
+const compilationChannels = new Set(['bt.compile.begin', 'bt.compile.node', 'bt.compile.end']);
+
 for (const optLevel of [0, 3] as const) test(`BT compilation observes occurrences, not evaluator or actor identity (O${optLevel})`, () => {
 	const { cpu } = createCartlibProgramHarness(BT_COMPILATION_PROBE_SOURCE + `
 probe.observe()
@@ -24,7 +26,7 @@ probe.check()
 probe.run(32)
 probe.check()
 probe.drop_definition()
-`, { optLevel, traceStatements: 'emit', modules: [recorderModule] });
+`, { optLevel, traceStatements: compilationChannels, modules: [recorderModule] });
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 	cpu.collectTrackedHeapBytes();
 	const probe = cpu.getGlobalByKey(cpu.stringPool.find('probe')!) as Table;
@@ -96,15 +98,18 @@ ${tracing ? "assert(recorder.latest.nodes[1].type == 'task')" : ''}
 
 test('BT capture costs are cold; retained aliases are not a compiled definition snapshot', t => {
 	const measurements: { mode: string; code: number; setup: number; allocation: number; retained: number; compileCycles: number; tickCycles: number }[] = [];
-	for (const mode of ['erased', 'retained', 'unselected', 'captured'] as const) {
+	for (const mode of ['erased', 'retained', 'unselected', 'captured', 'compile-only'] as const) {
 		const { cpu, images } = createCartlibProgramHarness(BT_COMPILATION_PROBE_SOURCE, {
-			traceStatements: mode === 'erased' || mode === 'retained' ? 'erase' : 'emit',
+			traceStatements: mode === 'compile-only' ? compilationChannels
+				: mode === 'erased' || mode === 'retained' ? 'erase' : 'emit',
 			modules: [recorderModule],
 		});
 		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 		const probe = cpu.getGlobalByKey(cpu.stringPool.find('probe')!) as Table;
 		const ready = cpu.collectTrackedHeapBytes();
-		if (mode === 'captured') runCompletionClosure(cpu, probe.getStringKey(cpu.stringPool.find('observe')!) as Closure, []);
+		if (mode === 'captured' || mode === 'compile-only') {
+			runCompletionClosure(cpu, probe.getStringKey(cpu.stringPool.find('observe')!) as Closure, []);
+		}
 		const before = cpu.collectTrackedHeapBytes();
 		const compileCycles = runCompletionClosure(cpu, probe.getStringKey(cpu.stringPool.find('compile')!) as Closure, [32, mode === 'retained']);
 		const allocation = cpu.luaHeap.usedBytes() - before;
@@ -125,4 +130,7 @@ test('BT capture costs are cold; retained aliases are not a compiled definition 
 	assert.ok(measurements[1].retained > measurements[0].retained);
 	assert.ok(measurements[3].retained > measurements[0].retained);
 	assert.ok(measurements[3].compileCycles > measurements[2].compileCycles);
+	assert.ok(measurements[4].code < measurements[3].code, 'compile-only capture must erase unrelated runtime channels');
+	assert.equal(measurements[4].compileCycles, measurements[3].compileCycles);
+	assert.equal(measurements[4].retained, measurements[3].retained);
 });

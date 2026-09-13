@@ -637,6 +637,27 @@ return machine.current_id=='left', left.current_id=='active', machine.states.rig
 	model.dispose();
 });
 
+test('cold BT channel selection leaves actual FSM transition work identical to erased traces', t => {
+	const measurements: { mode: string; cycles: number }[] = [];
+	for (const mode of ['erase', 'compile-only', 'emit'] as const) {
+		const { cpu } = createCartlibProgramHarness(TRANSITION_RECORDER_ENTRY_SOURCE, {
+			traceStatements: mode === 'compile-only'
+				? new Set(['bt.compile.begin', 'bt.compile.node', 'bt.compile.end']) : mode,
+		});
+		assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+		const [run, , recorder] = materializeCpuCompletionValues(cpu) as [Closure, Closure, Table];
+		runCompletionClosure(cpu, run, [20]);
+		const warmBytes = cpu.luaHeap.usedBytes();
+		const cycles = runCompletionClosure(cpu, run, [10_000]);
+		assert.equal(cpu.luaHeap.usedBytes(), warmBytes);
+		assert.equal(recorder.getInteger(4), mode === 'emit' ? 10_023 : 0);
+		measurements.push({ mode, cycles });
+	}
+	assert.equal(measurements[1].cycles, measurements[0].cycles);
+	assert.ok(measurements[2].cycles > measurements[0].cycles);
+	for (const row of measurements) t.diagnostic(JSON.stringify(row));
+});
+
 test('FSM transition recorder publishes ordered fixed-capacity facts without steady-state allocation', () => {
 	const { cpu } = createCartlibProgramHarness(TRANSITION_RECORDER_ENTRY_SOURCE, { traceStatements: 'emit' });
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);

@@ -12,7 +12,7 @@ import {
 import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
 import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
-import type { TraceStatementMode } from '../../toolchain/ts/lua/compiler/trace_statement';
+import type { TraceStatementSelection } from '../../toolchain/ts/lua/compiler/trace_statement';
 import {
 	createTestBlua32PairCpu,
 	linkTestBlua32Pair,
@@ -233,7 +233,7 @@ function sourceModule(path: string, source: string) {
 }
 
 function compileActionEffectProgram(
-	traceStatements: TraceStatementMode,
+	traceStatements: TraceStatementSelection,
 	entrySource = TRACE_ENTRY_SOURCE,
 ) {
 	const systemModules = SYSTEM_MODULE_FILES.map(([path, file]) =>
@@ -267,7 +267,7 @@ function compileActionEffectProgram(
 	return { system, cart };
 }
 
-function createActionEffectCpu(traceStatements: TraceStatementMode): {
+function createActionEffectCpu(traceStatements: TraceStatementSelection): {
 	readonly cpu: CPU;
 	readonly cart: ReturnType<typeof compileLuaChunkToProgram>;
 } {

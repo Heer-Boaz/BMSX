@@ -479,7 +479,7 @@ export function linkTestBlua32Pair(
 }
 
 export function createTestSystemCpu(
-	finalized: TestBlua32Image,
+	finalized: Pick<TestBlua32Image, 'romBytes'>,
 ): { cpu: CPU; memory: Memory; irqController: IrqController; executionAddressSpace: ExecutionAddressSpace } {
 	const memory = new Memory({ systemRom: finalized.romBytes, cartridgeSlots: cartridgeSlots() }, PSX_MACHINE_SPEC.ramBytes);
 	const irqController = new IrqController(memory);
@@ -490,7 +490,7 @@ export function createTestSystemCpu(
 }
 
 export function createTestBlua32PairCpu(
-	finalized: TestBlua32ImagePair,
+	finalized: Pick<TestBlua32ImagePair, 'systemRomBytes' | 'cartRomBytes'>,
 ): { cpu: CPU; memory: Memory; irqController: IrqController; executionAddressSpace: ExecutionAddressSpace } {
 	const memory = new Memory({
 		systemRom: finalized.systemRomBytes,

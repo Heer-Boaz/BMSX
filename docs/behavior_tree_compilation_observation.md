@@ -157,7 +157,10 @@ compilatie zonder Studio-eenmalige boottruc, late attach, precieze program-/
 actorbinding tijdens rebind en allocation-/authored-sourcecorrespondentie.
 Gewone debug-ROMs en Hot Resume blijven traces wissen; globaal `emit` aanzetten
 zou óók de bestaande FSM/ActionEffect-runtime-events aanzetten en is geen
-aanvaardbare shortcut. Er zijn geen gewijzigde TS/C++-runtimefiles of nieuwe
+aanvaardbare shortcut. De [compilervervolgslice](lua_trace_selection.md) biedt
+nu exacte kanaalselectie; de opnameproef kan daarmee alleen de drie koude
+BT-compilekanalen aanzetten. Dat installeert geen Studio-recorder.
+Er zijn geen gewijzigde TS/C++-runtimefiles of nieuwe
 hardwarevelden. Deze slice claimt geen nieuwe native recorder-/libretroproef.
 
 [jit-attach]: https://github.com/LuaJIT/LuaJIT/blob/c6ffc141a8762b41703f9287d63d93622a13dd8f/src/lib_jit.c#L123-L148

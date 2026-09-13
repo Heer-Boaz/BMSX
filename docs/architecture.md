@@ -1766,9 +1766,13 @@ separate physical domains.
 intrinsics for that build-time instrumentation boundary. Channel names are
 static literals. The compiler owns their private guest-table sink slot; a
 producer and a scenario-only recorder therefore do not duplicate an encoded
-field name. Erase mode emits nothing and does not evaluate any argument. Emit
-mode evaluates the subject once, tests the selected sink before evaluating
-record payloads, and invokes its `record` method. These statements add no
+field name. Erase mode emits nothing and does not evaluate any argument. An
+explicit compiler-owned channel set applies the same erasure to every channel
+outside that set; neither prefixes nor cartlib-specific names are interpreted.
+Emit mode, or a selected channel, evaluates the subject once, tests the sink
+before evaluating record payloads, and invokes its `record` method. Both the
+producer and sink statement use the same build selection; see
+[selective trace code generation](lua_trace_selection.md). These statements add no
 opcode, machine register, ROM wire record, firmware API or native-runtime path.
 
 Ordinary Lua globals are not merged by the linker. Each physical image carries

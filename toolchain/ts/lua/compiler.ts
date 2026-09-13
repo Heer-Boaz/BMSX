@@ -127,7 +127,7 @@ import { utf8CodepointCount } from '../../../machine/ts/common/utf8';
 import { isReservedIntrinsicName } from './semantic/common';
 import {
 	traceSinkFieldName,
-	type TraceStatementMode,
+	type TraceStatementSelection,
 } from './compiler/trace_statement';
 import { IO_IRQ_FLAGS } from '../../../machine/ts/spec/bmsx/io';
 import { COP0_BAD_ADDRESS, COP0_CAUSE, COP0_EPC, COP0_EXEC, COP0_LUA_FAULT_REASON, COP0_STATUS } from '../../../machine/ts/spec/blua32/cop0';
@@ -266,7 +266,7 @@ type CompileOptionsBase = {
 	optLevel?: OptimizationLevel;
 	entrySource?: string;
 	entrySourceMap?: LuaSourceMap;
-	traceStatements?: TraceStatementMode;
+	traceStatements?: TraceStatementSelection;
 	captureLayout?: LuaCaptureLayout;
 };
 
@@ -502,7 +502,6 @@ const isSmallSignedImmediate = (value: number): boolean =>
 class ProgramBuilder {
 	public readonly constPool: ProgramConstant[];
 	public readonly optLevel: OptimizationLevel;
-	public readonly emitTraceStatements: boolean;
 	private readonly constSlotByValue: Map<ProgramConstant, number>;
 	private readonly systemGlobalNameSet: Set<string>;
 	private readonly systemGlobalNames: string[] = [];
@@ -558,12 +557,11 @@ class ProgramBuilder {
 	public constructor(
 		optLevel: OptimizationLevel,
 		programDomain: ProgramCompileDomain,
-		traceStatements: TraceStatementMode,
+		public readonly traceStatements: TraceStatementSelection,
 		public readonly captureLayout?: LuaCaptureLayout,
 	) {
 		this.constPool = [];
 		this.optLevel = optLevel;
-		this.emitTraceStatements = traceStatements === 'emit';
 		this.programDomain = programDomain;
 		this.constSlotByValue = new Map<ProgramConstant, number>();
 		this.systemGlobalNameSet = new Set(SYSTEM_ROM_BOOT_SYMBOL_NAME_SET);
@@ -4472,10 +4470,11 @@ class FunctionBuilder {
 		if (channelExpression.kind !== LuaSyntaxKind.StringLiteralExpression) {
 			throw new Error(`${callee.member.name} channel must be a string literal.`);
 		}
-		if (!this.program.emitTraceStatements) {
+		const channel = (channelExpression as LuaStringLiteralExpression).value;
+		const selection = this.program.traceStatements;
+		if (selection === 'erase' || (selection !== 'emit' && !selection.has(channel))) {
 			return true;
 		}
-		const channel = (channelExpression as LuaStringLiteralExpression).value;
 		const sinkField = this.program.constIndex(traceSinkFieldName(channel));
 		if (!trace) {
 			const subject = this.allocTemp();

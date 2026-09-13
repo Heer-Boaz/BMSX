@@ -1,4 +1,5 @@
-export type TraceStatementMode = 'erase' | 'emit';
+/** Exact channel selection at code generation, not a guest runtime filter. */
+export type TraceStatementSelection = 'erase' | 'emit' | ReadonlySet<string>;
 
 const TRACE_SINK_FIELD_PREFIX = '@bmsx.trace/';
 
