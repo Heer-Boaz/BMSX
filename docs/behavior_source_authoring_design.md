@@ -6,6 +6,14 @@ en scherpt het bewerkingscontract van B03 aan uit de
 [gebruikersreview](behavior_authoring_ux_review.md). De tegenvoorbeelden hieronder
 zijn geen reden om de bronbehoudende edit-, Undo- of Hot Resume-owners weg te gooien.
 
+**Scopecorrectie 2026-09-13:** de bestaande declaratieve cartlib-schrijfwijze is
+de authoringnorm. Het [definitie-/inspectieontwerp](behavior_definition_inspection_design.md)
+begrenst verdere B04-expansie en onderzoekt daarnaast werkelijk geladen
+definities. De onderstaande solverbevindingen blijven geldig; volledige
+factory-/wrapperreconstructie is niet langer een voorwaarde voor iedere
+behaviorfeature. Bronbewerkingen blijven bronbewerkingen, ook als een aparte
+live-inspectie later guestgegevens leest. Geen migratie naar een nieuw resource-type.
+
 De [resourceconsumer](behavior_source_resources.md) gebruikt inmiddels per-resource
 models/ranges voor index, FSM-bewijs, inspectie, history en mementos. Dit verhelpt
 de één-buffer-aanname maar is nog geen bredere recognizer: memberorigins,

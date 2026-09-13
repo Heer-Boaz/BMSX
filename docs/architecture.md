@@ -1456,6 +1456,14 @@ cook a second behavior document, cartlib does not decode an editor resource or
 bind a visual-editor manifest, and machine, TOC, cartridge model and C++ core
 remain unaware of behavior authoring.
 
+The supported authoring norm is cartlib's existing declarative Lua, not a
+promise to reverse arbitrary programs into uniquely editable graphs. Authored
+source, an actually loaded definition and an executing instance are distinct
+inspection subjects. The [definition-inspection design](behavior_definition_inspection_design.md)
+studies the latter two without replacing Lua persistence or exposing evaluator
+internals as an authoring format. This is a design boundary, not a claim that
+loaded-definition discovery or BT debug correspondence is implemented.
+
 Workbench navigation retains the concrete editor identity and a contribution-owned
 selection/viewstate, not just a code position. Source, definition and Back/Forward
 share that single host navigation history across Behavior Lens, Scene, Scenario

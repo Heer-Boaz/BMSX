@@ -258,6 +258,13 @@ The normal Lua save and Hot Resume owners consume that same model. A visual
 editor adds no ROM-packer cooker, cartlib admission decoder, callback manifest,
 second graph database or behavior-specific machine representation.
 
+The [declarative definition/inspection design](../docs/behavior_definition_inspection_design.md)
+now bounds broader source inference by cartlib's existing authoring contract.
+It distinguishes source editing from inspection of loaded definitions and
+selected instances; the latter is not yet implemented as a Behavior Lens
+data path. It neither replaces authored Lua with assets nor permits runtime
+values to overwrite source expressions through this edit path.
+
 The graphical Behavior Lens contracts are specified in
 [`../docs/behavior_graph_design.md`](../docs/behavior_graph_design.md).
 The implemented BT prerequisite exposes typed root, branch and attachment

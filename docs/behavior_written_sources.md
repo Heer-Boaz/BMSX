@@ -108,7 +108,12 @@ those source phases were timed separately. Temporary scripts and logs live in
 
 The shallow API candidate test still uses `moduleTargetBinding`. It is **not**
 the frozen-export proof required by the design; this slice does not broaden or
-declare it correct. API replacement/unknown writes, contextual member/factory
-consumption, paired wrapper applications, richer origin inspection, imported
-graph write owners, cross-depth BT drag and ActionEffect authoring remain the
-main route. No guest/cartlib/BIOS/machine representation was added.
+declare it correct. The [2026-09-13 scope decision](behavior_definition_inspection_design.md)
+sets the existing declarative cartlib method as the authoring norm. Broader
+contextual factory/API proofs are not a prerequisite for every graph feature;
+authored discovery must not be confused with actual loaded registration.
+Imported graph write ownership and broader source correspondence remain open.
+Same-document [BT reparenting](behavior_tree_reparenting.md) and
+[ActionEffect property authoring](actioneffect_authoring.md) have since landed.
+Loaded-definition inspection is a separate design, not an implemented heap
+fallback in this reader. No guest/cartlib/BIOS/machine representation was added.

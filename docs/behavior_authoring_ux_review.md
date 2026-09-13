@@ -9,6 +9,11 @@ Dit document verwerkt de nieuwe BT-, FSM- en ActionEffect-gebruikersproef. Het
 vervangt geen Lua-, editor-, source-edit- of runtime-owner. Onderstaande slices
 zijn opnieuw aan de live code te toetsen contracten, geen bouwrecept.
 
+**Bijgestelde norm, 2026-09-13:** [declaratieve authoring en geladen-definitieinspectie](behavior_definition_inspection_design.md)
+begrenzen de bredere B04-voorwaarde hieronder. Bestaande source-/Undo-eisen en
+de UX-lijst blijven staan; onbeperkte factoryreconstructie is geen voorwaarde
+voor al die features. Runtime-inspectie is nog ontwerp, geen nieuwe auteursbron.
+
 De [vervolganalyse van het bron-/bewerkingscontract](behavior_source_authoring_design.md)
 verdiept B04 en scherpt B03 aan: API-binding is niet modulepad + const-spelling;
 bronoccurrence is niet value identity; lexical relocation bewijst geen behoud
