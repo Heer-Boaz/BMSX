@@ -73,12 +73,27 @@ export abstract class ReadonlyEditorInput<
 	}
 }
 
-/** Input class shared by views of a retained resource-owned text model. */
+/** Persistence capability of a text view, independent of how many sources it presents. */
+export abstract class TextEditorInput<TId extends string, TKind extends string> extends AbstractEditorInput<TId, TKind> {
+	/** Primary source identity for opening other views; not every command's write target. */
+	public abstract get workingCopy(): EditorTextModel;
+	public abstract get readOnly(): boolean;
+	/** Invoked by resource commands, not by rendering or source discovery. */
+	public abstract getWorkingCopies(): readonly EditorTextModel[];
+	public canSave(): boolean {
+		for (const model of this.getWorkingCopies()) if (model.dirty && !model.readOnly) return true;
+		return false;
+	}
+}
+
+/** Input class shared by views of one retained resource-owned text model. */
 export abstract class WorkingCopyEditorInput<
 	TId extends string,
 	TKind extends string,
-> extends AbstractEditorInput<TId, TKind> {
-	public abstract get workingCopy(): EditorTextModel;
+> extends TextEditorInput<TId, TKind> {
+	public get readOnly(): boolean { return this.workingCopy.readOnly; }
+	public getWorkingCopies(): readonly EditorTextModel[] { return [this.workingCopy]; }
+	public override canSave(): boolean { return this.workingCopy.dirty && !this.workingCopy.readOnly; }
 
 	public override onDidChangeDirty(listener: () => void): () => void {
 		return this.workingCopy.onDidChangeDirty(listener);

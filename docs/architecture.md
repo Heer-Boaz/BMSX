@@ -1467,8 +1467,12 @@ loaded-definition discovery or BT debug correspondence is implemented.
 Multi-resource source operations use the shared resource history described in
 [`editor_workspace_history.md`](editor_workspace_history.md). Rename is its
 first consumer: a single admitted workspace edit, not separate per-file Undo
-stacks. This does not yet enable cross-file graph mutation; graph write-targets,
-binding preservation and input/Save/focus ownership remain required.
+stacks. The [composite input contract](editor_composite_sources.md) now separates
+the registration anchor from its presented authored sources, including Save,
+dirty state and focused source history. Imported ActionEffect fields and BT
+edits within one provider use the actual written model. Relocation between
+different files and imported FSM mutation still require their own admission;
+shared history alone does not establish preserved bindings.
 
 Workbench navigation retains the concrete editor identity and a contribution-owned
 selection/viewstate, not just a code position. Source, definition and Back/Forward

@@ -45,6 +45,11 @@ factory-instance editing or completion of B04's API-identity work.
 
 ## Proof required
 
+The later [composite source-input slice](editor_composite_sources.md) also
+admits these operations inside an imported provider. Drag/review/history use
+that provider, not the registering file. Moves **between** different source
+files remain rejected pending cross-resource binding admission.
+
 Independent fixtures: deeper/shallower moves; only child into empty parent;
 weighted choice retained whole; shared-list occurrences; cycle, shadow and
 foreign-resource refusal; evaluation phase; source invalidation during review;

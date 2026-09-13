@@ -1,7 +1,7 @@
 import type { HostExecutionControl } from '../../hosts/common/execution_control';
 import { getActiveTab } from '../workbench/ui/tabs';
 import { showActionPrompt } from '../workbench/contrib/modal/action_prompt';
-import { WorkingCopyEditorInput } from '../workbench/common/editor_input';
+import { TextEditorInput } from '../workbench/common/editor_input';
 import { saveTextFileWorkingCopy } from '../workbench/services/working_copy/text_file_save';
 import { editorTextModelService } from '../editor/model/model_service';
 import { performEditorAction } from './actions';
@@ -52,9 +52,10 @@ export function executeEditorWorkspaceCommand(
 	switch (command) {
 		case 'save': {
 			const activeInput = getActiveTab();
-			if (activeInput instanceof WorkingCopyEditorInput && activeInput.isDirty()) {
+			if (activeInput instanceof TextEditorInput) for (const model of activeInput.getWorkingCopies()) {
+				if (!model.dirty || model.readOnly) continue;
 				void saveTextFileWorkingCopy(
-					activeInput.workingCopy,
+					model,
 					storage,
 					clock,
 					editor,

@@ -1008,8 +1008,15 @@ and therefore uses the existing Lua Hot Resume path rather than a separate
 asset revision.
 
 The ordinary Save command resolves the active `EditorInput` and participates
-only when that input is a `WorkingCopyEditorInput`; it never reads the detached
-code-editor widget. Workbench actions that can replace executable media are
+only when that input is a `TextEditorInput`; it never reads the detached
+code-editor widget. Single-source inputs retain `WorkingCopyEditorInput`.
+`CompositeTextEditorInput` aggregates the explicitly presented source models,
+not all language dependencies. Behavior Lens keeps its registration anchor
+separate from the actual property/list write targets, saves its dirty writable
+members, and uses ordered heads in shared resource history. See
+[`editor_composite_sources.md`](../docs/editor_composite_sources.md) for
+membership, focus and imported-source mutation boundaries.
+Workbench actions that can replace executable media are
 different: Hot Resume and Reboot capture one stable batch of every dirty model
 retained by `EditorTextModelService`, and the prompt keeps that exact batch
 while the user decides. Save-and-continue writes the batch sequentially and

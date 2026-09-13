@@ -21,6 +21,38 @@ function append(model: EditorTextModel, text: string): void {
 	model.pushEditOperations([{ offset: model.buffer.length, deleteLength: 0, text }]);
 }
 
+test('composite history follows ordered source heads without skipping a blocked shared edit', t => {
+	const f = fixture(t), [a, b, c] = f.models;
+	append(a, 'a'); append(b, 'b'); append(c, 'unrelated');
+	assert.equal(f.service.history.findModel([a, b], 'undo'), b);
+	b.undo();
+	assert.equal(f.service.history.findModel([a, b], 'undo'), a);
+	a.undo();
+	assert.equal(f.service.history.findModel([a, b], 'undo'), undefined);
+	assert.equal(f.service.history.findModel([a, b], 'redo'), a);
+	a.redo(); b.redo();
+	f.service.history.applyEdits(f.plan([b, c])); append(c, 'later');
+	assert.equal(f.service.history.findModel([a, b], 'undo'), b);
+	assert.throws(() => b.undo(), EditorHistoryConflict);
+	c.undo(); b.undo();
+	assert.deepEqual(f.text(), ['0a', '1b', '2unrelated']);
+});
+
+test('interleaved typing does not coalesce across another resource history element', t => {
+	const f = fixture(t), [a, b] = f.models;
+	const state = new EditorEditStateType<string>();
+	for (const [index, model] of [a, a, b, a].entries()) {
+		model.prepareUndo('type', true, index, state.of('cursor'));
+		model.applyUndoableReplace(model.buffer.length, 0, 'x');
+		model.commitEdit(state.of('cursor'), null);
+	}
+	assert.equal(f.service.history.findModel([a, b], 'undo'), a); a.undo();
+	assert.deepEqual(f.text(), ['0xx', '1x', '2']);
+	assert.equal(f.service.history.findModel([a, b], 'undo'), b); b.undo();
+	a.undo();
+	assert.deepEqual(f.text(), ['0', '1', '2']);
+});
+
 test('workspace edit, Undo and Redo publish complete buffers and one shared element from either source', t => {
 	const f = fixture(t);
 	const [a, b] = f.models;

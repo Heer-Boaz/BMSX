@@ -4,6 +4,7 @@ import type { EditorTextModel, EditorModelEdit } from './text_model';
 
 type WorkspaceUndoRecord = {
 	readonly kind: 'workspace';
+	order: number;
 	readonly records: readonly EditorUndoRecord[];
 };
 type HistoryElement = EditorUndoRecord | WorkspaceUndoRecord;
@@ -31,6 +32,7 @@ export class EditorHistoryConflict extends Error {
  */
 export class EditorUndoRedoService {
 	private readonly stacks = new Map<EditorTextModel, HistoryStack>();
+	private order = 0;
 
 	public register(model: EditorTextModel): void {
 		this.stacks.set(model, { undo: [], redo: [] });
@@ -39,10 +41,25 @@ export class EditorUndoRedoService {
 	public canUndo(model: EditorTextModel): boolean { return this.stacks.get(model)!.undo.length > 0; }
 	public canRedo(model: EditorTextModel): boolean { return this.stacks.get(model)!.redo.length > 0; }
 
+	/** A composite source view uses the nearest stack head, never a private history. */
+	public findModel(models: readonly EditorTextModel[], direction: EditorHistoryDirection): EditorTextModel | undefined {
+		let selected: EditorTextModel | undefined;
+		let nearest: HistoryElement | undefined;
+		for (const model of models) {
+			const element = this.stacks.get(model)![direction].at(-1);
+			if (element !== undefined && (nearest === undefined
+				|| (direction === 'undo' ? element.order > nearest.order : element.order < nearest.order))) {
+				selected = model;
+				nearest = element;
+			}
+		}
+		return selected;
+	}
+
 	/** Only a single-resource element can accept more typing. */
 	public lastRecord(model: EditorTextModel): EditorUndoRecord | undefined {
 		const last = this.stacks.get(model)!.undo.at(-1);
-		return last?.kind === 'resource' ? last : undefined;
+		return last?.kind === 'resource' && last.order === this.order ? last : undefined;
 	}
 
 	/** All target models/revisions are admitted before the first source write. */
@@ -55,7 +72,7 @@ export class EditorUndoRedoService {
 		// Invalidate every pre-edit source projection before changing any buffer.
 		const records = participants.map(([model, edit]) => model.beginEditOperations(edit.beforeEditState));
 		const dirtyBefore = records.map(record => record.model.dirty);
-		this.push(records.length === 1 ? records[0] : { kind: 'workspace', records });
+		this.push(records.length === 1 ? records[0] : { kind: 'workspace', order: 0, records });
 		const startRows = records.map((record, index) => record.model.applyEditOperations(record, participants[index][1].edits));
 		for (let index = 0; index < records.length; index += 1) {
 			records[index].model.endEditOperations(records[index], startRows[index], dirtyBefore[index], participants[index][1].computeAfterEditState);
@@ -100,6 +117,7 @@ export class EditorUndoRedoService {
 	}
 
 	public push(element: HistoryElement): void {
+		element.order = ++this.order;
 		if (element.kind === 'resource') {
 			this.prepareStack(element.model);
 			this.stacks.get(element.model)!.undo.push(element);

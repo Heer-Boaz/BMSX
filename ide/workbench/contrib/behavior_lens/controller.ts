@@ -90,7 +90,7 @@ export class BehaviorLensController {
 				const view = input.view;
 				selectBehaviorLensDefinition(view, registration.rowKey);
 				view.sourceMatchRowKeys.add(registration.rowKey);
-				input.updateLabel();
+				input.updateDefinition();
 			}
 			// Reopening a surviving occurrence preserves its selection and viewport.
 			openEditorTab(this.editorPanes, input, options);
@@ -115,7 +115,7 @@ export class BehaviorLensController {
 			installBehaviorLensDocument(view, document);
 		}
 		navigationSelection?.restore(input);
-		if (sourceChanged || navigationSelection !== undefined) input.updateLabel();
+		if (sourceChanged || navigationSelection !== undefined) input.updateDefinition();
 		prepareBehaviorLensLayout(view);
 		input.updatePresentation(editorViewState.font.renderFont());
 		if (sourceChanged && navigationSelection === undefined) finishBehaviorLensNavigation(view);
@@ -164,20 +164,25 @@ export class BehaviorLensController {
 
 	/** Gesture activation takes current language facts; hover never asks the workspace. */
 	public beginTreeDrag(input: BehaviorLensInput, transfer: BehaviorTreeTransferDrop): WorkbenchGraphDragSession | undefined {
-		const file = getOrCreateSemanticProject(input.view.resource.domain).getSnapshot().getFileData(input.workingCopy.resource.path)!;
-		return beginBehaviorTreeDrag(input.workingCopy, input.view, file, transfer);
+		const member = behaviorTreeEditTarget(input.view);
+		if (member === null) return undefined;
+		const model = input.view.source.models.get(member.table.range.path)!;
+		const file = getOrCreateSemanticProject(input.view.resource.domain).getSnapshot().getFileData(model.resource.path)!;
+		return beginBehaviorTreeDrag(model, input.view, file, transfer);
 	}
 
 	public canMoveSelectedChild(direction: -1 | 1): boolean {
 		const input = getActiveTab();
-		return input.kind === 'behavior_lens' && !input.workingCopy.readOnly
-			&& input.view.source.isCurrent && behaviorTreeMoveTarget(input.view, direction) !== undefined;
+		if (input.kind !== 'behavior_lens' || !input.view.source.isCurrent) return false;
+		const member = behaviorTreeMoveTarget(input.view, direction);
+		return member !== undefined && !input.view.source.models.get(member.table.range.path)!.readOnly;
 	}
 
 	public canEditSelectedChild(): boolean {
 		const input = getActiveTab();
-		return input.kind === 'behavior_lens' && !input.workingCopy.readOnly
-			&& input.view.source.isCurrent && behaviorTreeEditTarget(input.view) !== null;
+		if (input.kind !== 'behavior_lens' || !input.view.source.isCurrent) return false;
+		const member = behaviorTreeEditTarget(input.view);
+		return member !== null && !input.view.source.models.get(member.table.range.path)!.readOnly;
 	}
 
 	public canSetSelectedInitialState(): boolean {
@@ -199,23 +204,27 @@ export class BehaviorLensController {
 
 	public duplicateSelectedChild(): void {
 		const input = getActiveTab();
-		if (input.kind !== 'behavior_lens' || input.workingCopy.readOnly) return;
+		if (input.kind !== 'behavior_lens') return;
 		this.updateView(input);
 		const member = behaviorTreeEditTarget(input.view);
 		if (member === null) return;
+		const model = input.view.source.models.get(member.table.range.path)!;
+		if (model.readOnly) return;
 		this.editorPanes.activePane.focus();
-		duplicateBehaviorTreeChild(input.workingCopy, member);
+		duplicateBehaviorTreeChild(model, member);
 		this.updateView(input);
 	}
 
 	public removeSelectedChild(): void {
 		const input = getActiveTab();
-		if (input.kind !== 'behavior_lens' || input.workingCopy.readOnly) return;
+		if (input.kind !== 'behavior_lens') return;
 		this.updateView(input);
 		const member = behaviorTreeEditTarget(input.view);
 		if (member === null) return;
+		const model = input.view.source.models.get(member.table.range.path)!;
+		if (model.readOnly) return;
 		this.editorPanes.activePane.focus();
-		removeBehaviorTreeChild(input.workingCopy, member);
+		removeBehaviorTreeChild(model, member);
 		// Ordinary source correspondence clears the deleted occurrence, including
 		// shared/identical uses. It must not select its former index or a namesake.
 		this.updateView(input);
@@ -223,12 +232,14 @@ export class BehaviorLensController {
 
 	public moveSelectedChild(direction: -1 | 1): void {
 		const input = getActiveTab();
-		if (input.kind !== 'behavior_lens' || input.workingCopy.readOnly) return;
+		if (input.kind !== 'behavior_lens') return;
 		this.updateView(input);
 		const member = behaviorTreeMoveTarget(input.view, direction);
 		if (member === undefined) return;
+		const model = input.view.source.models.get(member.table.range.path)!;
+		if (model.readOnly) return;
 		this.editorPanes.activePane.focus();
-		moveBehaviorTreeChild(input.workingCopy, member, member.index + direction);
+		moveBehaviorTreeChild(model, member, member.index + direction);
 		this.updateView(input);
 	}
 

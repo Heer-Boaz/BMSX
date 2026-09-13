@@ -3,19 +3,34 @@ import { readLuaSourceRange } from '../../../ide/language/lua/source_edits';
 import { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/behavior_lens/editor_pane';
 import type { BehaviorGraphNode } from '../../../ide/workbench/contrib/behavior_lens/graph_model';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
-import { BT_REPARENT_SOURCE } from '../../helpers/behavior_reparent_fixture';
+import { BT_REPARENT_SOURCE, BT_REPARENT_MODULE_SOURCE } from '../../helpers/behavior_reparent_fixture';
+import { runtimeLuaSourceRegistry } from '../../../ide/runtime/sources';
 import { chooseBehavior } from './studio_behavior_picker';
 import { check, type StudioFixture } from './studio_fixture';
 
 /** Actual capture, review, source history and selection; independent of a game's tree definitions. */
 export async function testStudioBtReparent(test: StudioFixture): Promise<void> {
+	for (const imported of [false, true]) await runReparent(test, imported);
+}
+
+async function runReparent(test: StudioFixture, imported: boolean): Promise<void> {
 	const { ide, harness, frame, press, click, movePointer, setPointerButton, runPaletteCommand, cycles } = test;
-	console.info('STUDIO: BT cross-depth drag / review / source / Undo');
+	console.info(`STUDIO: BT ${imported ? 'imported' : 'local'} cross-depth drag / review / source / Undo`);
 	harness.openLuaSource('cart.lua');
+	const main = activeCodeEditor.model, originalMain = main.buffer.getText();
+	if (imported) {
+		const record = runtimeLuaSourceRegistry(ide.sources, main.resource.domain)!.records.find(record =>
+			record.program_module && !record.generated && record.source_path !== main.resource.path && !record.module_path.startsWith('cartlib/'))!;
+		main.pushEditOperations([{ offset: 0, deleteLength: main.buffer.length,
+			text: `local trees<const> = require('cartlib/behaviour_tree/library')\ntrees.register('fixture.reparent', require('${record.module_path}'))` }]);
+		harness.openLuaSource(record.source_path);
+	}
 	const model = activeCodeEditor.model;
 	const original = model.buffer.getText();
+	const source = imported ? BT_REPARENT_MODULE_SOURCE : BT_REPARENT_SOURCE;
 	const position = cycles(), media = ide.sources.currentBlua32Media;
-	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: BT_REPARENT_SOURCE }]);
+	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: source }]);
+	const mainVersion = main.version;
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
 	await chooseBehavior(test, 'BT fixture.reparent', 'BEHAVIOR TREES');
 	const lens = getActiveTab();
@@ -63,7 +78,7 @@ export async function testStudioBtReparent(test: StudioFixture): Promise<void> {
 	check(activeCodeEditor.model === model && activeCodeEditor.view.cursorRow === moved.source.occurrenceRange.start.line - 1,
 		'reparent: Source navigates to the new occurrence');
 	await press('ControlLeft', 'KeyZ');
-	check(model.buffer.getText() === BT_REPARENT_SOURCE, 'reparent: one code Undo restores all source bytes');
+	check(model.buffer.getText() === source, 'reparent: one code Undo restores all source bytes');
 	await test.clickTab(lens.id);
 	check(viewport.selection === root().children[0], 'reparent: hidden Undo restores the old graph occurrence');
 	await press('ControlLeft', 'ShiftLeft', 'KeyZ');
@@ -75,17 +90,22 @@ export async function testStudioBtReparent(test: StudioFixture): Promise<void> {
 	check(root().children.length === 4 && root().children[1].children[0].children.length === 0
 		&& viewport.selection === root().children[3], 'reparent: an only child moves upward, leaving its authored list empty');
 	await press('ControlLeft', 'KeyZ');
-	check(model.buffer.getText() === BT_REPARENT_SOURCE, 'reparent: upward source move is also one Undo');
+	check(model.buffer.getText() === source, 'reparent: upward source move is also one Undo');
 	version = model.version;
 	await drop(root().children[0], root().children[2], 0.5);
 	model.pushEditOperations([{ offset: model.buffer.length, deleteLength: 0, text: '\n-- new generation' }]);
 	await frame();
 	check(!review.visible && model.version === version + 1, 'reparent: changed source revokes the pending proposal');
 	await press('ControlLeft', 'KeyZ');
-	check(model.buffer.getText() === BT_REPARENT_SOURCE, 'reparent: Undo restores the fixture, not the expired proposal');
+	check(model.buffer.getText() === source, 'reparent: Undo restores the fixture, not the expired proposal');
 	harness.openLuaSource(model.resource.path);
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === original && cycles() === position && ide.sources.currentBlua32Media === media,
 		'reparent: fixture cleanup leaves installed media and the paused machine unchanged');
+	if (imported) {
+		check(main.version === mainVersion, 'reparent: imported drag/review/Undo never writes the registration source');
+		harness.openLuaSource(main.resource.path); await press('ControlLeft', 'KeyZ');
+		check(main.buffer.getText() === originalMain, 'reparent: registration fixture has its own history');
+	}
 	console.info('STUDIO: BT cross-depth drag / review / source / Undo PASS');
 }

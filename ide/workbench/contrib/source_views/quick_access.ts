@@ -2,7 +2,7 @@ import type { FileSemanticData } from '../../../../toolchain/ts/lua/semantic/mod
 import type { RuntimeResource } from '../../../common/resource';
 import { getOrCreateSemanticProject } from '../../../editor/contrib/intellisense/semantic/workspace/state';
 import type { RuntimeSourceState } from '../../../runtime/sources';
-import { WorkingCopyEditorInput } from '../../common/editor_input';
+import { TextEditorInput } from '../../common/editor_input';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import { getActiveTab } from '../../ui/tabs';
 import { buildResourceQuickPickItems } from '../resources/quick_access';
@@ -25,7 +25,7 @@ export function openSourceView(
 	view: SourceViewContribution,
 ): void {
 	const active = getActiveTab();
-	if (active instanceof WorkingCopyEditorInput && active.workingCopy.mode === 'lua') {
+	if (active instanceof TextEditorInput && active.workingCopy.mode === 'lua') {
 		const resource = active.workingCopy.resource;
 		if (view.accepts(sourceAnalysis(sources, resource))) {
 			view.openResource(resource);

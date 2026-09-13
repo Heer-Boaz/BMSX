@@ -22,10 +22,11 @@ API/call-context work.
 
 An explicit **Edit Property** action edits an existing authored value expression
 or requirement entry. Selection, Details and Source never write. Single-line
-expressions in the input's actual working copy use an in-place value cell;
-multiline expressions and foreign write resources open their real source editor.
-That source route is an explicit capability, not editing a provider's bytes while
-Undo still targets the registration's file. No missing defaults/fields are
+expressions use an in-place value cell bound to their actual written model;
+multiline expressions open their real source editor. The follow-through
+[composite input contract](editor_composite_sources.md) now supplies Save/dirty
+and source history for imported property cells too, without making the
+registration file their write target. No missing defaults/fields are
 fabricated. Aliases remain references unless the user explicitly replaces them.
 
 The language layer parses a submitted expression with an end-of-input contract

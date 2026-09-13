@@ -84,9 +84,10 @@ the new name. There is no inactive-prompt listener on ordinary typing.
 
 No cartlib, compiler, machine or C++ change. There is no guest-tick work,
 behavior resource, source evaluator, new Save format or second graph database.
-The graph contribution still needs its own multi-resource input/save/focus
-contract and cross-resource binding admission before cross-file drag is enabled.
-Adding this history owner does not make every imported graph operation safe.
+The follow-through [composite input/save/focus contract](editor_composite_sources.md)
+now admits edits within an imported provider. Cross-resource binding admission
+is still required before a move between different files is enabled. Adding
+this history owner does not make every imported graph operation safe.
 
 - `workspace_text_history.test.ts`: complete-buffer notifications, typed state,
   both replay directions, intervening edits, read-only/stale admission, redo

@@ -6,7 +6,7 @@ import test from 'node:test';
 import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
 import { EditorFont } from '../../ide/editor/ui/view/font';
 import { editorViewState } from '../../ide/editor/ui/view/state';
-import { EditorTextModel } from '../../ide/editor/model/text_model';
+import { EditorTextModelService } from '../../ide/editor/model/model_service';
 import { readLuaSourceRange } from '../../ide/language/lua/source_edits';
 import { BehaviorLensInput } from '../../ide/workbench/contrib/behavior_lens/editor_input';
 import { createBehaviorLensViewState } from '../../ide/workbench/contrib/behavior_lens/view_model';
@@ -23,19 +23,25 @@ import { inputFocus } from '../../ide/input/focus';
 import { insertValue, selectAll } from '../../ide/editor/ui/inline/text_field';
 import { HeadlessClipboard } from '../../ide/testing/clipboard';
 
-function fixture(source = ACTIONEFFECT_SOURCE, chosen = 0) {
+function fixture(source = ACTIONEFFECT_SOURCE, chosen = 0, imports: Readonly<Record<string, string>> = {}) {
 	editorViewState.font = new EditorFont('tiny');
 	const resource = { domain: 0 as const, path: 'effects.lua', source: { resid: 'effects', type: 'lua' as const } };
-	const model = new EditorTextModel(resource, 'lua', source);
-	const document = () => buildBehaviorSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(model.buffer.getText(), resource.path)));
-	const view = createBehaviorLensViewState(document(), model, 'properties', assert.fail);
+	const service = new EditorTextModelService();
+	const model = service.retain(resource, 'lua', source);
+	const models = new Map([[resource.path, model]]);
+	for (const [path, text] of Object.entries(imports)) models.set(path, service.retain({ domain: 0, path,
+		source: { type: 'lua', resid: path } }, 'lua', text));
+	const document = () => buildBehaviorSourceDocument(resource, semanticSnapshot(...[...models.values()]
+		.map(model => buildLuaFileSemanticData(model.buffer.getText(), model.resource.path))));
+	const view = createBehaviorLensViewState(document(), model, 'properties', path => models.get(path)!);
 	const input = new BehaviorLensInput(model, view, () => assert.fail('property inputs must not construct a graph-layout engine'));
-	model.onDidChangeContent(event => { mapBehaviorLensSourceRanges(view, model.resource, event); input.invalidatePresentation(); });
+	input.onWillDispose(() => service.clear());
+	service.onDidChangeContent((model, event) => { mapBehaviorLensSourceRanges(view, model.resource, event); input.invalidatePresentation(); });
 	selectBehaviorLensDefinition(view, view.document.definitions[chosen].rowKey);
 	const properties = view.presentation;
 	assert.ok(properties.kind === 'properties');
 	Object.assign(view.layout, { left: 0, right: 384, headerBottom: 12, bottom: 268 });
-	const update = () => input.updatePresentation(editorViewState.font.renderFont());
+	const update = () => { input.updateDefinition(); input.updatePresentation(editorViewState.font.renderFont()); };
 	const refresh = () => { installBehaviorLensDocument(view, document()); update(); };
 	const move = (command: Parameters<typeof executeBehaviorLensNavigation>[1]) => {
 		const result = executeBehaviorLensNavigation(view, command);
@@ -43,8 +49,76 @@ function fixture(source = ACTIONEFFECT_SOURCE, chosen = 0) {
 		return result;
 	};
 	update();
-	return { model, view, input, properties, update, refresh, move };
+	return { model, models, service, view, input, properties, update, refresh, move };
 }
+
+test('imported property cells use their written models; Save/dirty and nearest source history cover only this definition', t => {
+	const root = `local fx<const> = require('cartlib/actioneffects')
+fx.register_effect('imported', require('blueprint'))
+fx.register_effect('other', require('other'))`;
+	const blueprint = "return { period_ms = 40, blocked_tags = require('tags'), handler = require('callback') }";
+	const f = fixture(root, 0, { 'blueprint.lua': blueprint, 'tags.lua': "return { 'busy' }",
+		'other.lua': 'return { period_ms = 99 }', 'callback.lua': 'return function() error("not evaluated") end' });
+	const parent = inputFocus.createTarget();
+	const edit = new ActionEffectPropertyEdit(parent, new HeadlessClipboard());
+	t.after(() => { edit.dispose(); inputFocus.setTarget(null); f.input.dispose(); });
+	const provider = f.models.get('blueprint.lua')!, tags = f.models.get('tags.lua')!, other = f.models.get('other.lua')!;
+	f.model.refreshResource({ ...f.model.resource, source: { ...f.model.resource.source, generated: true } });
+	assert.equal(f.input.readOnly, false, 'a read-only registration does not make a writable provider read-only');
+	assert.deepEqual(new Set(f.input.getWorkingCopies()), new Set([f.model, provider, tags]));
+	const dirty: boolean[] = [];
+	f.input.onDidChangeDirty(() => dirty.push(f.input.isDirty()));
+	const change = (label: string, value: string) => {
+		const row = f.properties.tree.rows.find(row => row.element.kind === 'property' && row.element.source.label.startsWith(label))!;
+		f.properties.tree.selectionIndex = f.properties.tree.rows.indexOf(row);
+		acceptEffectPropertySelection(f.view, f.properties, false);
+		edit.open(f.input, f.properties, selectedActionEffectProperty(f.view)!);
+		insertValue(edit.control.field, value);
+		assert.equal(edit.control.commit(), true);
+		f.refresh();
+	};
+	change('period_ms', '40 * 2');
+	assert.equal(provider.buffer.getText(), blueprint.replace('40', '40 * 2'));
+	assert.equal(f.model.buffer.getText(), root);
+	assert.equal(f.model.version, 1);
+	assert.equal(f.input.isDirty(), true);
+	change("'busy'", "'Busy Changed'");
+	assert.equal(tags.buffer.getText(), "return { 'Busy Changed' }");
+	assert.equal(f.view.source.nodesByRowKey.get(f.view.selection!.rowKey)!.label, "'Busy Changed'");
+	other.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- unrelated\n' }]);
+	for (const expected of [tags, provider]) {
+		const owner = f.service.history.findModel(f.input.getWorkingCopies(), 'undo')!;
+		assert.equal(owner, expected); owner.undo(); f.refresh();
+	}
+	assert.deepEqual(dirty, [true, false]);
+	assert.equal(f.service.history.findModel(f.input.getWorkingCopies(), 'undo'), undefined);
+	for (const expected of [provider, tags]) {
+		const owner = f.service.history.findModel(f.input.getWorkingCopies(), 'redo')!;
+		assert.equal(owner, expected); owner.redo(); f.refresh();
+	}
+	for (const model of f.input.getWorkingCopies()) if (model.dirty) model.completeSave(model.createSnapshot());
+	assert.equal(f.input.isDirty(), false);
+	assert.equal(other.dirty, true, 'saving an effect does not save another definition or callback dependency');
+	assert.equal(provider.lastSavedSource, blueprint.replace('40', '40 * 2'));
+	assert.equal(tags.lastSavedSource, "return { 'Busy Changed' }");
+	// Removing a written import must not forget edits made to that source in this input.
+	change('blocked_tags', "{ 'local' }");
+	assert.deepEqual(new Set(f.input.getWorkingCopies()), new Set([f.model, provider, tags]));
+	provider.undo(); f.refresh();
+	assert.deepEqual(new Set(f.input.getWorkingCopies()), new Set([f.model, provider, tags]));
+	assert.equal(f.view.source.nodesByRowKey.get(f.view.selection!.rowKey)!.label, 'blocked_tags (1)');
+	const valid = provider.buffer.getText();
+	provider.pushEditOperations([{ offset: 0, deleteLength: provider.buffer.length, text: 'return {' }]);
+	f.refresh();
+	assert.equal(f.input.isDirty(), true);
+	const undo = f.service.history.findModel(f.input.getWorkingCopies(), 'undo')!;
+	assert.equal(undo, provider, 'failed source projection cannot remove the document needed to Undo it');
+	undo.undo(); f.refresh();
+	assert.equal(provider.buffer.getText(), valid);
+	const stableCopies = f.input.getWorkingCopies();
+	for (let index = 0; index < 100; index += 1) f.update();
+	assert.equal(f.input.getWorkingCopies(), stableCopies, 'stable navigation/presentation does not rebuild source membership');
+});
 
 test('property drafts edit written expressions and retain ordinary source history in the chosen effect', t => {
 	const f = fixture(ACTIONEFFECT_SOURCE, 1);

@@ -38,7 +38,7 @@ export class BehaviorLensInputSerializer implements EditorInputSerializer<Behavi
 		}
 		const input = this.controller.createInput(model, state.presentation);
 		if (sameSource && sameDependencies) restoreBehaviorLensView(input, state.view);
-		input.updateLabel();
+		input.updateDefinition();
 		return input;
 	}
 }

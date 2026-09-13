@@ -96,7 +96,7 @@ test('group round-trip restores ordered clean/dirty views, preview and distinct 
 	const lenses = [0, 1].map(index => {
 		const input = f.behavior.createInput(f.model, 'graph');
 		selectBehaviorLensDefinition(input.view, input.view.document.definitions[index].rowKey);
-		input.updateLabel(); prepareBehaviorLensLayout(input.view);
+		input.updateDefinition(); prepareBehaviorLensLayout(input.view);
 		assert.ok(input.view.presentation.kind === 'graph');
 		input.view.presentation.position = { scrollX: 37 + index, scrollY: 25 + index, zoom: 0.75 };
 		editorTabGroup.add(input); return input;
@@ -134,7 +134,7 @@ test('group round-trip restores ordered clean/dirty views, preview and distinct 
 test('changed canonical bytes retain topology but cannot adopt a same-length namesake source occurrence', async t => {
 	const f = fixture(t);
 	const input = f.behavior.createInput(f.model, 'graph');
-	selectBehaviorLensDefinition(input.view, input.view.document.definitions[1].rowKey); input.updateLabel();
+	selectBehaviorLensDefinition(input.view, input.view.document.definitions[1].rowKey); input.updateDefinition();
 	editorTabGroup.initialize(input);
 	const value = editorTabGroup.serialize(f.serializers);
 	const record = f.sources.cartridgeSlots[0]!.luaSources.records[0];

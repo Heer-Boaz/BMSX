@@ -1,7 +1,7 @@
 # Declaratieve behavior-authoring en inspectie van geladen definities
 
 Datum: 2026-09-13. Live baseline: `c30009e07`.
-**Status: ontwerp en eerste D1-history-implementatie; geen runtime-inspectie geïmplementeerd.**
+**Status: ontwerp, gedeelde D1-history en composite broninputs gebouwd; geen runtime-inspectie geïmplementeerd.**
 
 Dit document verwerkt de bijgestelde productgrens: cartlib ondersteunt al een
 declaratieve manier van programmeren; die is de norm voor visuele authoring.
@@ -278,9 +278,12 @@ mogen geen verkeerde bron bewerken of de bestaande editor laten vastlopen.
 is gebouwd, met de bestaande cross-file Rename als eerste productconsument.
 Een gezamenlijke edit wordt vanuit beide bestanden als geheel ge-Undo'd;
 tussenliggende edits, vertakkingen en resourcelevensduur hebben expliciete
-historysemantiek. Dit sluit de historyvoorwaarde, niet de hele D1-gate:
-graph-input/Save/focus en cross-resource binding-admission blijven afzonderlijk
-nodig vóór imported graphmutaties worden aangezet.
+historysemantiek. Het [composite broninputcontract](editor_composite_sources.md)
+sluit inmiddels ook Save/dirty/focus voor geïmporteerde ActionEffect-velden en
+BT-bewerkingen binnen een providerbestand. De registratiebron krijgt geen
+dummy-edit. Dit sluit niet de hele D1-gate: relocatie tussen verschillende
+bestanden, imported FSM-admission en de beperkte API-bindingherkenning blijven
+open. Ook runtime-inspectie is hiermee niet geïmplementeerd.
 
 ### D2 — Eén behouden definitie en één geselecteerde runtime-instantie
 

@@ -1,4 +1,4 @@
-import { WorkingCopyEditorInput } from '../../common/editor_input';
+import { CompositeTextEditorInput } from '../../common/composite_text_editor_input';
 import type { EditorTextModel } from '../../../editor/model/text_model';
 import type { BehaviorLensTabId } from '../../ui/tab/id';
 import type { BehaviorLensViewState } from './view_model';
@@ -14,14 +14,17 @@ import type { ActionEffectSourceDefinition } from './action_effect_model';
 import { layoutWorkbenchPropertyTree } from '../../ui/property_tree';
 import { measureTextRange } from '../../../editor/common/text/layout';
 import { sourceTabDescription } from '../../ui/tab/titles';
+import type { BehaviorSourceNode } from './model';
 
 let nextInputId = 0;
 
 /** Retained input for one source-derived behavior view. */
-export class BehaviorLensInput extends WorkingCopyEditorInput<BehaviorLensTabId, 'behavior_lens'> {
+export class BehaviorLensInput extends CompositeTextEditorInput<BehaviorLensTabId, 'behavior_lens'> {
 	public readonly graphLayout: AsyncGraphLayout<StateGraphModel>;
 	private definitionTitle: string | undefined;
+	private ownedDefinition: BehaviorSourceNode | undefined;
 
+	/** workingCopy anchors the registration; it is not necessarily an edit target. */
 	public constructor(public readonly workingCopy: EditorTextModel, public readonly view: BehaviorLensViewState, createEngine: GraphLayoutEngineFactory) {
 		super(
 			`behavior:${nextInputId++}`,
@@ -30,6 +33,8 @@ export class BehaviorLensInput extends WorkingCopyEditorInput<BehaviorLensTabId,
 			true,
 		);
 		this.graphLayout = this.disposables.add(new AsyncGraphLayout(createEngine));
+		this.setWorkingCopies(new Set([workingCopy]));
+		this.updateDefinition();
 	}
 
 	public override dispose(): void {
@@ -37,13 +42,30 @@ export class BehaviorLensInput extends WorkingCopyEditorInput<BehaviorLensTabId,
 		this.view.source.release();
 	}
 
-	public updateLabel(): void {
+	/** Publish this source generation's represented documents and input label together. */
+	public updateDefinition(): void {
 		const view = this.view;
-		if (view.definitionRowKey === null) {
+		const definition = view.definitionRowKey === null ? undefined : view.source.nodesByRowKey.get(view.definitionRowKey)!;
+		if (definition !== this.ownedDefinition) {
+			this.ownedDefinition = definition;
+			// Source participation has input lifetime, not syntax-node lifetime:
+			// removing an import or breaking its syntax must not remove its Undo/Save.
+			const models = new Set(this.getWorkingCopies());
+			if (definition !== undefined) {
+				const pending = [definition];
+				while (pending.length > 0) {
+					const node = pending.pop()!;
+					models.add(view.source.models.get(node.authoredRange.path)!);
+					models.add(view.source.models.get(node.occurrenceRange.path)!);
+					for (const child of node.children) pending.push(child);
+				}
+			}
+			this.setWorkingCopies(models);
+		}
+		if (definition === undefined) {
 			this.setLabel(this.definitionTitle === undefined ? 'BEHAVIOR LENS' : `${this.definitionTitle} (removed)`, sourceTabDescription(view.resource));
 			return;
 		}
-		const definition = view.source.nodesByRowKey.get(view.definitionRowKey)!;
 		this.definitionTitle = definition.label;
 		this.setLabel(this.definitionTitle, sourceTabDescription(view.resource, definition.occurrenceRange.start.line));
 	}

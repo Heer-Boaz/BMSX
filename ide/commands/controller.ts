@@ -22,7 +22,7 @@ import { isActiveLuaCodeTab } from '../workbench/ui/code_tab/contexts';
 import { getActiveTab, isBehaviorLensActive, isCodeTabActive, isScenarioLabActive } from '../workbench/ui/tabs';
 import { executeEditorWorkspaceCommand, isEditorWorkspaceCommand } from './workspace';
 import { performEditorAction } from './actions';
-import { WorkingCopyEditorInput } from '../workbench/common/editor_input';
+import { TextEditorInput } from '../workbench/common/editor_input';
 import { saveTextFileWorkingCopy } from '../workbench/services/working_copy/text_file_save';
 import type { EditorTextModel } from '../editor/model/text_model';
 import type { RuntimeSourceState } from '../runtime/sources';
@@ -283,9 +283,8 @@ export class IdeCommandController {
 						|| this.runtime.machine.cpu.getFrameDepth() > 1);
 			case 'save': {
 				const activeInput = getActiveTab();
-				return activeInput instanceof WorkingCopyEditorInput
-					&& !activeInput.workingCopy.readOnly
-					&& (activeInput.isDirty() || context?.edit?.pending === true);
+				return activeInput instanceof TextEditorInput
+					&& (activeInput.canSave() || !activeInput.readOnly && context?.edit?.pending === true);
 			}
 			case 'symbolSearch':
 			case 'symbolSearchGlobal':

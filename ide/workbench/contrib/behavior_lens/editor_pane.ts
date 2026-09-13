@@ -79,11 +79,12 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 	};
 	private readonly treeDrop: BehaviorTreeTransferDrop = (analysis, insertion, check) => {
 		const input = this.input;
+		const model = input.view.source.models.get(analysis.member.table.range.path)!;
 		const items = behaviorTreeTransferImpacts(input.view, analysis, insertion, check);
 		const lifetime = this.sourceEditReview.show({
-			model: input.workingCopy, title: 'MOVE BT SOURCE', summary: `${analysis.member.branch.role} -> ${check.target.role} POSITION ${insertion + 1}`,
+			model, title: 'MOVE BT SOURCE', summary: `${analysis.member.branch.role} -> ${check.target.role} POSITION ${insertion + 1}`,
 			items,
-			apply: () => transferBehaviorTreeChild(input.workingCopy, input.view, analysis.member, check, insertion),
+			apply: () => transferBehaviorTreeChild(model, input.view, analysis.member, check, insertion),
 			openSource: index => this.controller.openWrittenSource(input, items[index].range),
 		});
 		lifetime.add({ dispose: input.view.source.onDidInvalidate(() => this.sourceEditReview.clear()) });
@@ -121,13 +122,15 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 			run: () => this.openKeyboardContextMenu(),
 		});
 		for (const target of [this.focusTarget, this.graph.focusTarget, this.sourceEditReview.focusTarget, this.inspector.focusTarget]) {
-			target.registerCommand('undo', {
-				isEnabled: () => !this.input.workingCopy.readOnly && this.input.workingCopy.canUndo,
-				run: () => { executeTextHistoryCommand(this.input.workingCopy, 'undo'); },
-			});
-			target.registerCommand('redo', {
-				isEnabled: () => !this.input.workingCopy.readOnly && this.input.workingCopy.canRedo,
-				run: () => { executeTextHistoryCommand(this.input.workingCopy, 'redo'); },
+			for (const direction of ['undo', 'redo'] as const) target.registerCommand(direction, {
+				isEnabled: () => {
+					const model = this.input.workingCopy.history.findModel(this.input.getWorkingCopies(), direction);
+					return model !== undefined && !model.readOnly;
+				},
+				run: () => {
+					const model = this.input.workingCopy.history.findModel(this.input.getWorkingCopies(), direction)!;
+					executeTextHistoryCommand(model, direction);
+				},
 			});
 		}
 		this.graph.focusTarget.registerCommand('behaviorLens.duplicateChild', {
@@ -308,7 +311,7 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 		if (properties.kind === 'properties') {
 			const property = selectedActionEffectProperty(this.input.view)!;
 			const range = property.field.value.range;
-			if (range.path !== this.input.workingCopy.resource.path || range.start.line !== range.end.line) {
+			if (range.start.line !== range.end.line) {
 				this.controller.openWrittenSource(this.input, range);
 			} else this.propertyEdit.open(this.input, properties, property);
 		}

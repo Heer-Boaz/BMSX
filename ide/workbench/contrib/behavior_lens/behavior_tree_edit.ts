@@ -16,8 +16,7 @@ export function behaviorTreeEditTarget(view: BehaviorLensViewState): BehaviorTre
 	const selection = view.presentation.viewport.selection;
 	if (selection === null) return null;
 	const member = (selection.kind === 'node' ? selection : selection.child).member;
-	// The current editor input owns one write resource; a foreign source use is inspectable, not a workspace edit.
-	return member !== null && member.table.range.path === view.resource.path ? member : null;
+	return member;
 }
 
 export function behaviorTreeMoveTarget(view: BehaviorLensViewState, direction: -1 | 1): BehaviorTreeSourceMember | undefined {

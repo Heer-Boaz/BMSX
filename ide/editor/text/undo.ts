@@ -45,6 +45,8 @@ export class TextUndoOp {
 
 export class EditorUndoRecord {
 	public readonly kind = 'resource';
+	/** Ordering in the shared history service, not a model version or saved state. */
+	public order = 0;
 	public readonly ops: TextUndoOp[] = [];
 	public beforeEditState: EditorEditState | null = null;
 	public afterEditState: EditorEditState | null = null;

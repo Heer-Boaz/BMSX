@@ -37,8 +37,10 @@ Those contracts must change before broader origin recognition is connected.
   misses negative lookups and writers elsewhere. The retained file list names
   displayed source owners, not a complete query-dependency certificate.
 - This read-many contract does not silently broaden a source edit into a
-  workspace edit. Existing graph authoring remains a primary-document operation
-  until the operation-specific B03/B06 contract supplies its write target.
+  workspace edit. The follow-through [composite source contract](editor_composite_sources.md)
+  supplies B03/B06 write-targets for imported ActionEffect fields and BT edits
+  within one provider. Moves between files and imported FSM mutation remain
+  separately gated.
 
 ## Proof required
 

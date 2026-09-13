@@ -65,7 +65,7 @@ async function prepare(test: StudioFixture): Promise<SessionExpectation> {
 	openEditorTab(ide.editor.editorPanes, scene); await test.frame();
 	for (const [index, presentation] of [[0, 'graph'], [1, 'graph'], [2, 'state-graph']] as const) {
 		const input = ide.editor.behaviorLens.createInput(model, presentation);
-		selectBehaviorLensDefinition(input.view, input.view.document.definitions[index].rowKey); input.updateLabel();
+		selectBehaviorLensDefinition(input.view, input.view.document.definitions[index].rowKey); input.updateDefinition();
 		openEditorTab(ide.editor.editorPanes, input); await test.frame();
 		const graph = input.view.presentation;
 		if (graph.kind !== 'graph' && graph.kind !== 'state-graph') throw new Error('session: graph input required');

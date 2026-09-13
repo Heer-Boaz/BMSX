@@ -16,6 +16,7 @@ import { revealWorkbenchListSelection } from '../../ui/list_view';
 import { api } from '../../../runtime/overlay_api';
 import { behaviorSourceEditState, captureBehaviorSourceBookmark, copyBehaviorSourceBookmark } from './source_bookmark';
 import { mapTextOffset } from '../../../editor/text/text_change';
+import type { EditorTextModel } from '../../../editor/model/text_model';
 
 /** Retained source field, not a resolved runtime value or a referenced initializer. */
 export function selectedActionEffectProperty(view: BehaviorLensViewState): EffectPropertyWrite | undefined {
@@ -25,11 +26,11 @@ export function selectedActionEffectProperty(view: BehaviorLensViewState): Effec
 	return selected.element.write;
 }
 
-/** One generation-bound property cell; foreign/multiline values use the source editor. */
+/** One generation-bound property cell editing its actual written source owner. */
 export class ActionEffectPropertyEdit {
 	public readonly control: ValueInput<LuaFieldValueEdit>;
 	public readonly bounds = create_rect_bounds();
-	private binding: { input: BehaviorLensInput; properties: BehaviorLensEffectProperties; write: EffectPropertyWrite; row: WorkbenchTreeNode<EffectPropertyElement>; index: number } | undefined;
+	private binding: { input: BehaviorLensInput; model: EditorTextModel; properties: BehaviorLensEffectProperties; write: EffectPropertyWrite; row: WorkbenchTreeNode<EffectPropertyElement>; index: number } | undefined;
 	private lifetime: DisposableStore | undefined;
 	private readonly unbindBlur: () => void;
 
@@ -38,21 +39,21 @@ export class ActionEffectPropertyEdit {
 			options: { allowSpace: true, singleLine: true },
 			invalidBlurMessage: 'Invalid expression edit cancelled; source unchanged.',
 			format: value => value.edit.text,
-			parse: text => parseLuaFieldValueEdit(this.binding!.input.workingCopy.buffer, this.binding!.write.field, text),
+			parse: text => parseLuaFieldValueEdit(this.binding!.model.buffer, this.binding!.write.field, text),
 		}, value => {
-			const input = this.binding!.input;
+			const { input, model } = this.binding!;
 			const selectedRange = this.binding!.write.sourceSelection === 'field' ? value.fieldRange : value.expressionRange;
 			const before = captureBehaviorSourceBookmark(input.view, input.view.selection!);
 			const after = copyBehaviorSourceBookmark(before);
 			this.close();
-			input.workingCopy.pushEditOperations([value.edit], behaviorSourceEditState.of(before), changes => {
+			model.pushEditOperations([value.edit], behaviorSourceEditState.of(before), changes => {
 				// This command replaces a selected expression, unlike ordinary text
 				// markers which deliberately collapse when their source is replaced.
-				for (const step of after.path) if (step.resource.path === input.workingCopy.resource.path) {
+				for (const step of after.path) if (step.resource.path === model.resource.path) {
 					step.start = mapTextOffset(step.start, changes, 1);
 					step.end = mapTextOffset(step.end, changes, -1);
 				}
-				Object.assign(after.path[after.path.length - 1], luaSourceRangeToTextRange(input.workingCopy.buffer, selectedRange));
+				Object.assign(after.path[after.path.length - 1], luaSourceRangeToTextRange(model.buffer, selectedRange));
 				return behaviorSourceEditState.of(after);
 			});
 		});
@@ -68,11 +69,12 @@ export class ActionEffectPropertyEdit {
 		this.close();
 		const tree = properties.tree;
 		const field = write.field;
+		const model = input.view.source.models.get(field.range.path)!;
 		revealWorkbenchListSelection(tree);
-		this.binding = { input, properties, write, row: tree.rows[tree.selectionIndex], index: tree.selectionIndex };
-		const span = luaSourceRangeToTextRange(input.workingCopy.buffer, field.value.range);
+		this.binding = { input, model, properties, write, row: tree.rows[tree.selectionIndex], index: tree.selectionIndex };
+		const span = luaSourceRangeToTextRange(model.buffer, field.value.range);
 		this.control.setValue({ edit: { offset: span.start, deleteLength: span.end - span.start,
-			text: readLuaSourceRange(input.workingCopy.buffer, field.value.range) }, fieldRange: field.range, expressionRange: field.value.range });
+			text: readLuaSourceRange(model.buffer, field.value.range) }, fieldRange: field.range, expressionRange: field.value.range });
 		this.lifetime = new DisposableStore();
 		this.lifetime.add({ dispose: input.view.source.onDidInvalidate(() => this.close()) });
 		this.control.field.focusTarget.focus();
@@ -87,7 +89,7 @@ export class ActionEffectPropertyEdit {
 	}
 
 	public update(): void {
-		if (this.binding !== undefined && this.binding.input.workingCopy.readOnly) this.close();
+		if (this.binding !== undefined && this.binding.model.readOnly) this.close();
 	}
 
 	public layout(): void {

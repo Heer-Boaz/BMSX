@@ -1,5 +1,6 @@
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { runtimeLuaSourceRegistry } from '../../../ide/runtime/sources';
+import { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/behavior_lens/editor_pane';
 import { chooseBehavior, revealLensOccurrence } from './studio_behavior_picker';
 import { check, type StudioFixture } from './studio_fixture';
 
@@ -32,13 +33,24 @@ return { root = { type = kind, children = { leaf, leaf } } }`;
 	check(leaves().length === 2 && leaves()[0].authoredRange === leaves()[1].authoredRange,
 		'imports: two graph uses share the real imported constructor');
 	await revealLensOccurrence(test, lens.view, leaves()[1].rowKey);
+	await runPaletteCommand('Behavior Lens: Duplicate BT Child');
+	check(leaves().length === 3 && main.version === mainVersion, 'imports: Duplicate changes the provider list, not the registration');
+	await press('ControlLeft', 'KeyZ');
+	check(provider.buffer.getText() === source, 'imports: Lens Undo restores the provider list');
+	await revealLensOccurrence(test, lens.view, leaves()[1].rowKey);
+	await runPaletteCommand('Behavior Lens: Remove BT Child');
+	check(leaves().length === 1 && main.version === mainVersion, 'imports: Remove changes only the provider list');
+	await press('ControlLeft', 'KeyZ');
+	check(provider.buffer.getText() === source, 'imports: removed child remains in shared source history');
+	await revealLensOccurrence(test, lens.view, leaves()[1].rowKey);
 	const target = leaves()[1].referenceRange!;
+	const navigationVersion = provider.version;
 	await press('Enter');
 	const editor = harness.getActiveEditorDocument();
 	check(editor.model === provider && editor.view.cursorRow === target.start.line - 1
 		&& editor.view.cursorColumn === target.start.column - 1,
 		'imports: Source opens the provider at its own written occurrence');
-	check(provider.version === providerVersion && main.version === mainVersion, 'imports: navigation writes neither buffer');
+	check(provider.version === navigationVersion && providerVersion < navigationVersion && main.version === mainVersion, 'imports: navigation writes neither buffer');
 	provider.pushEditOperations([{ offset: source.indexOf('2'), deleteLength: 1, text: '4' }]);
 	await test.clickTab(lens.id);
 	check(leaves().every(node => node.detail.includes('duration_ticks=4')), 'imports: dependency edit refreshes both graph occurrences');
@@ -46,8 +58,8 @@ return { root = { type = kind, children = { leaf, leaf } } }`;
 	await press('ControlLeft', 'KeyZ');
 	await test.clickTab(lens.id);
 	check(leaves().every(node => node.detail.includes('duration_ticks=2')), 'imports: provider Undo refreshes the existing Lens input');
-	// A foreign property remains editable through its actual code editor. The
-	// registration input must never write it while claiming the wrong Undo owner.
+	// A composite input presents imported authored sources without taking ownership
+	// of their buffers, persistence or history away from the workspace.
 	const effectSource = "return { period_ms = 40, blocked_tags = { 'busy' } }";
 	provider.pushEditOperations([{ offset: 0, deleteLength: provider.buffer.length, text: effectSource }]);
 	main.pushEditOperations([{ offset: 0, deleteLength: main.buffer.length,
@@ -60,19 +72,38 @@ return { root = { type = kind, children = { leaf, leaf } } }`;
 	if (effect.behaviorKind !== 'action_effect') throw new Error('imports: effect definition required');
 	const period = effect.body!.fields[0];
 	await revealLensOccurrence(test, effectLens.view, period.source.rowKey);
+	await runPaletteCommand('File: Save');
+	await test.until(() => !main.dirty && !provider.dirty, 'imports: composite Save persists both authored resources');
 	const registrationVersion = main.version;
 	await runPaletteCommand('Behavior Lens: Edit Authored Property');
-	const valueEditor = harness.getActiveEditorDocument();
-	check(valueEditor.model === provider && valueEditor.view.cursorRow === period.field.value.range.start.line - 1
-		&& valueEditor.view.cursorColumn === period.field.value.range.start.column - 1,
-		'imports: Edit opens the provider expression, not a registration-owned draft');
-	await press('ShiftLeft', 'ArrowRight'); await press('ShiftLeft', 'ArrowRight');
-	test.clipboard.text = '80'; await press('ControlLeft', 'KeyV');
+	const pane = ide.editor.editorPanes.activePane;
+	if (!(pane instanceof BehaviorLensEditorPane)) throw new Error('imports: effect property pane required');
+	check(getActiveTab() === effectLens && pane.propertyEdit.active && pane.propertyEdit.control.field.focusTarget.hasFocus,
+		'imports: Edit stays in the Lens with a real provider-owned value draft');
+	await press('ControlLeft', 'KeyA'); test.clipboard.text = '80'; await press('ControlLeft', 'KeyV');
+	check(provider.buffer.getText() === effectSource && !effectLens.isDirty(), 'imports: a focused draft does not dirty either source');
+	await press('Enter');
 	check(provider.buffer.getText() === effectSource.replace('40', '80') && main.version === registrationVersion,
-		'imports: physical source typing changes only the provider');
-	await press('ControlLeft', 'KeyZ'); await press('AltLeft', 'ArrowLeft');
+		'imports: accepting the cell changes only the provider');
+	check(effectLens.isDirty() && !main.dirty && !pane.propertyEdit.active, 'imports: the Lens dirty marker follows its provider, not the registration file');
+	await press('ControlLeft', 'KeyZ');
 	check(getActiveTab() === effectLens && provider.buffer.getText() === effectSource && main.version === registrationVersion,
-		'imports: provider Undo and Back retain independent source ownership');
+		'imports: Lens Undo targets the provider and retains registration identity');
+	await test.clickTab(providerTab.id); await press('ControlLeft', 'ShiftLeft', 'KeyZ');
+	check(provider.buffer.getText() === effectSource.replace('40', '80'), 'imports: code Redo shares the same source history');
+	await test.clickTab(effectLens.id); await press('ControlLeft', 'KeyS');
+	await test.until(() => !effectLens.isDirty(), 'imports: Save persists the imported edit from the Lens');
+	check(provider.lastSavedSource === effectSource.replace('40', '80') && main.version === registrationVersion,
+		'imports: provider persistence does not rewrite the registration source');
+	await press('ControlLeft', 'KeyZ');
+	check(provider.buffer.getText() === effectSource && effectLens.isDirty(), 'imports: Undo across Save restores real dirty state');
+	await test.clickTab(providerTab.id);
+	await press('ControlLeft', 'KeyA'); test.clipboard.text = 'return {'; await press('ControlLeft', 'KeyV');
+	await test.clickTab(effectLens.id);
+	check(effectLens.isDirty() && provider.buffer.getText() === 'return {', 'imports: incomplete provider still belongs to the Lens editing scope');
+	await press('ControlLeft', 'KeyZ');
+	check(provider.buffer.getText() === effectSource && main.version === registrationVersion,
+		'imports: Lens Undo recovers a provider even when its graph could not be projected');
 	harness.openLuaSource(main.resource.path); await press('ControlLeft', 'KeyZ');
 	await test.clickTab(providerTab.id); await press('ControlLeft', 'KeyZ');
 	await test.clickTab(providerTab.id);
@@ -81,6 +112,9 @@ return { root = { type = kind, children = { leaf, leaf } } }`;
 	harness.openLuaSource(main.resource.path);
 	await press('ControlLeft', 'KeyZ');
 	check(main.buffer.getText() === originalMain, 'imports: the registering document retains its own independent history');
+	await press('ControlLeft', 'KeyS');
+	await test.clickTab(providerTab.id); await press('ControlLeft', 'KeyS');
+	await test.until(() => !main.dirty && !provider.dirty, 'imports: restore the fixture sources through ordinary Save');
 	await frame();
 	check(cycles() === position && ide.sources.currentBlua32Media === media, 'imports: source editing never executes or reinstalls the paused guest');
 }
