@@ -2,6 +2,7 @@ import { FSM_INITIAL_CART_SOURCE } from '../../helpers/fsm_initial_fixture';
 import { actionPromptState } from '../../../ide/workbench/contrib/modal/action_prompt';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { getTextFileRuntimeSourceStatus } from '../../../ide/workbench/services/working_copy/runtime_source_status';
+import { runtimeLuaSourceRegistry } from '../../../ide/runtime/sources';
 import { chooseBehavior, revealLensOccurrence } from './studio_behavior_picker';
 import { check, type StudioFixture } from './studio_fixture';
 
@@ -13,11 +14,20 @@ export async function runStudioFsmInitialLive(test: StudioFixture) {
 	await runMenuCommand('pause');
 	harness.openLuaSource('cart.lua');
 	const model = harness.getActiveEditorDocument().model;
-	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: FSM_INITIAL_CART_SOURCE }]);
+	const record = runtimeLuaSourceRegistry(ide.sources, model.resource.domain)!.records.find(record =>
+		record.program_module && !record.generated && record.source_path !== model.resource.path && !record.module_path.startsWith('cartlib/'))!;
+	harness.openLuaSource(record.source_path);
+	const bridge = harness.getActiveEditorDocument().model;
+	bridge.pushEditOperations([{ offset: 0, deleteLength: bridge.buffer.length, text: "return require('cartlib/fsm/library')" }]);
+	await press('ControlLeft', 'KeyS');
+	await until(() => !bridge.dirty, 'initial live: API reexport is saved through the normal source provider');
+	harness.openLuaSource(model.resource.path);
+	const source = FSM_INITIAL_CART_SOURCE.replace("require('cartlib/fsm/library')", `require('${record.module_path}')`);
+	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: source }]);
 	await runPaletteCommand('Run: Reboot');
 	check(actionPromptState.prompt?.action === 'reboot', 'initial live: fixture is authored through the ordinary Save/Reboot prompt');
 	await press('Enter');
-	await until(() => tasks.ready && ide.sources.cartridgeSlots[0]!.installedBlua32Sources.get('cart') === FSM_INITIAL_CART_SOURCE,
+	await until(() => tasks.ready && ide.sources.cartridgeSlots[0]!.installedBlua32Sources.get('cart') === source,
 		'initial live: compiler and media owner install the authored source');
 	await until(() => guest.global('fsm_initial_init_count') === 1 && !runtime.completionCallPending(), 'initial live: cold fixture executes its explicit registration');
 	await press('ControlRight', 'ShiftRight');
@@ -40,7 +50,7 @@ export async function runStudioFsmInitialLive(test: StudioFixture) {
 	const media = ide.sources.currentBlua32Media;
 	await click(graph.actionBar.items[2].bounds, 6);
 	await lens.graphLayout.settled; await frame();
-	const changed = FSM_INITIAL_CART_SOURCE.replace("'idle'),", "'active'),");
+	const changed = source.replace("'idle'),", "'active'),");
 	check(model.buffer.getText() === changed && cycles() === position && ide.sources.currentBlua32Media === media,
 		'initial live: visible Set Initial writes source without executing or patching the guest');
 	check(guest.readStringMember(machine, 'current_state') === idle && getTextFileRuntimeSourceStatus(ide.sources, model) === 'pending',
@@ -59,7 +69,7 @@ export async function runStudioFsmInitialLive(test: StudioFixture) {
 	await press('ControlRight', 'ShiftRight'); await runMenuCommand('pause');
 	await runPaletteCommand('Edit: Undo');
 	await lens.graphLayout.settled; await frame();
-	check(model.buffer.getText() === FSM_INITIAL_CART_SOURCE, 'initial live: ordinary graph Undo restores source');
+	check(model.buffer.getText() === source, 'initial live: ordinary graph Undo restores source');
 	await runPaletteCommand('Run: Hot Resume');
 	check(actionPromptState.prompt?.action === 'hot-resume', 'initial live: undone source has the same installation gate');
 	await press('Enter');
@@ -68,7 +78,7 @@ export async function runStudioFsmInitialLive(test: StudioFixture) {
 		&& guest.formatValue(guest.readStringMember(guest.readStringMember(machine, 'definition'), 'initial')) === 'idle', 'initial live: Undo rebind retains identity');
 	check(guest.readStringMember(machine, 'current_state') === idle && guest.readStringMember(idle, 'data') === data
 		&& guest.readStringMember(data, 'retained') === 73, 'initial live: Undo installation preserves the current state and data');
-	check(model.lastSavedSource === FSM_INITIAL_CART_SOURCE && getTextFileRuntimeSourceStatus(ide.sources, model) === 'applied',
+	check(model.lastSavedSource === source && getTextFileRuntimeSourceStatus(ide.sources, model) === 'applied',
 		'initial live: undone source is both saved and installed');
 	await press('ControlRight', 'ShiftRight'); await runMenuCommand('pause');
 	await runPaletteCommand('Edit: Redo');

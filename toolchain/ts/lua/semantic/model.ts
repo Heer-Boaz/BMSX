@@ -650,7 +650,7 @@ class SemanticBuilder {
 	private readonly valueAssignments: ValueAssignmentEntry[] = [];
 	private readonly moduleExport: LuaReturnStatement | undefined;
 	private readonly bypassingModuleReturns: LuaReturnStatement[] = [];
-	private moduleValue: ModuleValueEntry | undefined;
+	private moduleValue: (Omit<ModuleValueEntry, 'moduleTarget'> & { moduleTarget: ModuleAliasTarget | null }) | undefined;
 	private readonly functionValueFlowStack: FunctionValueFlowState[] = [];
 
 	constructor(options: {
@@ -679,6 +679,9 @@ class SemanticBuilder {
 		const moduleAliases = collectStableModuleAliases(this.decls, this.declarationValuesByDeclaration);
 		for (const site of this.callSites) {
 			site.moduleTarget = resolveModuleAliasValueSource(site.call.callee, moduleAliases);
+		}
+		if (this.moduleValue !== undefined) {
+			this.moduleValue.moduleTarget = resolveModuleAliasValueSource(this.moduleValue.source, moduleAliases);
 		}
 		return {
 			decls: this.decls,
@@ -940,6 +943,7 @@ class SemanticBuilder {
 				} else if (statement === this.moduleExport) {
 					this.moduleValue = {
 						module: toLuaModulePath(this.path), source: returnValue,
+						moduleTarget: null,
 						statement, bypassingReturns: this.bypassingModuleReturns,
 					};
 				} else this.bypassingModuleReturns.push(statement);

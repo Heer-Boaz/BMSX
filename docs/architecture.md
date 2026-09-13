@@ -4570,10 +4570,15 @@ recovery revokes edit admission without discarding otherwise known topology.
 Authored API paths are bound after all writes are known: direct requires and
 unchanged local import/member aliases work with or without `<const>`. The
 generic module-binding owner uses the existing written-input index; the Lens
-and Scene Editor consume the call fact without their own alias walkers.
+and Scene Editor consume those facts through the snapshot-owned module-import
+query, without their own alias walkers. Explicit whole-module/member reexports
+are matched up to the public API anchor, not normalized past it into private
+implementation modules. Scene workspace invalidation is distinct from its
+retained projection version: unrelated edits preserve drafts; revoked fields
+cancel their drafts before focus release can commit them.
 This describes source paths, not frozen module contents or runtime publication.
 See [API binding ownership and scope](lua_source_api_bindings.md).
-It does not close contextual member/factory recognition, API reexports or
+It does not close contextual member/factory recognition, aggregate API exports or
 cross-file relocation. Imported one-owner edits use the
 [composite source input](editor_composite_sources.md). See also
 [written-source consumption](behavior_written_sources.md).

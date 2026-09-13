@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { semanticSnapshot } from './semantic_test_harness';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
@@ -27,7 +28,7 @@ function scene() {
 	const path = 'viewport.lua';
 	const model = new EditorTextModel({ domain: 0, path, source: { resid: 'viewport', type: 'lua' } }, 'lua', SCENE_VIEWPORT_SOURCE);
 	const input = new SceneEditorInput(model);
-	installSceneOutline(input, buildSceneSourceDocument(model.resource, buildLuaFileSemanticData(SCENE_VIEWPORT_SOURCE, path)));
+	installSceneOutline(input, buildSceneSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(SCENE_VIEWPORT_SOURCE, path))));
 	selectSceneOutlineRow(input, 1);
 	return input;
 }

@@ -5,6 +5,7 @@ import type {
 	LuaTableField,
 } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { ResourceIdentity } from '../../../common/resource';
+import type { FileSemanticData } from '../../../../toolchain/ts/lua/semantic/model';
 
 export type SceneSourcePosition = {
 	readonly x: LuaTableField;
@@ -38,5 +39,6 @@ export type SceneSourceDefinition = {
 /** Immutable source projection for one retained Lua document generation. */
 export type SceneSourceDocument = {
 	readonly resource: ResourceIdentity;
+	readonly analysis: FileSemanticData;
 	readonly scenes: readonly SceneSourceDefinition[];
 };

@@ -1,5 +1,5 @@
-import type { FileSemanticData } from '../../../../toolchain/ts/lua/semantic/model';
-import type { RuntimeResource } from '../../../common/resource';
+import type { LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
+import type { ResourceDomain, ResourceIdentity, RuntimeResource } from '../../../common/resource';
 import { getOrCreateSemanticProject } from '../../../editor/contrib/intellisense/semantic/workspace/state';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import { TextEditorInput } from '../../common/editor_input';
@@ -10,7 +10,7 @@ import { FileQuickPickProvider } from '../resources/quick_pick_provider';
 
 export type SourceViewContribution = {
 	readonly title: string;
-	readonly accepts: (analysis: FileSemanticData) => boolean;
+	readonly accepts: (resource: ResourceIdentity, snapshot: LuaSemanticWorkspaceSnapshot) => boolean;
 	readonly openResource: (resource: RuntimeResource) => void;
 };
 
@@ -24,24 +24,29 @@ export function openSourceView(
 	picker: QuickInputController,
 	view: SourceViewContribution,
 ): void {
+	const snapshots = new Map<ResourceDomain, LuaSemanticWorkspaceSnapshot>();
+	const snapshotFor = (domain: ResourceDomain): LuaSemanticWorkspaceSnapshot => {
+		let snapshot = snapshots.get(domain);
+		if (snapshot === undefined) {
+			const project = getOrCreateSemanticProject(domain);
+			project.synchronizeRuntimeSources(sources);
+			snapshot = project.getSnapshot();
+			snapshots.set(domain, snapshot);
+		}
+		return snapshot;
+	};
 	const active = getActiveTab();
 	if (active instanceof TextEditorInput && active.workingCopy.mode === 'lua') {
 		const resource = active.workingCopy.resource;
-		if (view.accepts(sourceAnalysis(sources, resource))) {
+		if (view.accepts(resource, snapshotFor(resource.domain))) {
 			view.openResource(resource);
 			return;
 		}
 	}
 	const resources: RuntimeResource[] = [];
 	for (const resource of sources.luaResources) {
-		if (view.accepts(sourceAnalysis(sources, resource))) resources.push(resource);
+		if (view.accepts(resource, snapshotFor(resource.domain))) resources.push(resource);
 	}
 	picker.pick(view.title, 'Choose a source document', () => new FileQuickPickProvider(buildResourceQuickPickItems(resources)),
 		item => view.openResource(item.resource));
-}
-
-function sourceAnalysis(sources: RuntimeSourceState, resource: RuntimeResource): FileSemanticData {
-	const project = getOrCreateSemanticProject(resource.domain);
-	project.synchronizeRuntimeSources(sources);
-	return project.getFileData(resource.path)!;
 }

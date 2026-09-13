@@ -32,7 +32,8 @@ export class ValueInput<Value> implements InputEdit {
 	};
 
 	public constructor(parent: InputFocusTarget, private readonly clipboard: Clipboard,
-		private readonly format: ValueInputFormat<Value>, private readonly accept: (value: Value) => void) {
+		private readonly format: ValueInputFormat<Value>, private readonly accept: (value: Value) => void,
+		private readonly beforeCommit?: () => void) {
 		this.field = new TextField(parent);
 		this.field.focusTarget.edit = this;
 		this.unbindKeyboard = this.field.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
@@ -55,6 +56,10 @@ export class ValueInput<Value> implements InputEdit {
 	}
 
 	public commit(): boolean {
+		if (!this.pending) return true;
+		// A source-backed control can rebind or revoke its target before parsing
+		// and publishing a draft, even when commit precedes the next paint/update.
+		this.beforeCommit?.();
 		if (!this.pending) return true;
 		const result = this.format.parse(this.field.text);
 		if ('error' in result) {

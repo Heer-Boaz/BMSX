@@ -57,7 +57,7 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 		this.controls = POSITION_AXES.map((_axis, index) => new ValueInput(this.focusTarget, clipboard, INTEGER_INPUT_FORMAT, value => {
 			const property = this.input.properties[index];
 			this.input.workingCopy.pushEditOperations(createLuaTableFieldIntegerEdits(this.input.workingCopy.buffer, property.field!, value)!);
-		}));
+		}, () => this.update()));
 		this.unbindFieldFocus = this.controls.map((control, index) => control.field.focusTarget.onDidFocus(() => this.revealProperty(index)));
 		this.focusTarget.registerCommand('undo', {
 			isEnabled: () => !this.input.workingCopy.readOnly && this.input.workingCopy.canUndo,
@@ -118,8 +118,14 @@ export class SceneEditorPane extends FullWidthWorkbenchEditorPane<SceneEditorInp
 			const property = this.input.properties[index];
 			const control = this.controls[index];
 			control.field.readOnly = this.input.workingCopy.readOnly || property.value === null;
-			if (property.value !== null) control.setValue(property.value);
-			if (!control.field.readOnly) {
+			if (control.field.readOnly) {
+				// Revoked source targets cannot retain a draft that blur would publish.
+				control.cancel();
+				control.field.focusTarget.release();
+				control.field.focusTarget.previous = null;
+				control.field.focusTarget.next = null;
+			} else {
+				control.setValue(property.value!);
 				previous.next = control.field.focusTarget;
 				control.field.focusTarget.previous = previous;
 				previous = control.field.focusTarget;

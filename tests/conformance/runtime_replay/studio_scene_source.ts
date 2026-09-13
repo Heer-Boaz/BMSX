@@ -46,8 +46,7 @@ export async function testSceneSourceEdits(test: StudioFixture): Promise<void> {
 	const project = getOrCreateSemanticProject(model.resource.domain);
 	project.synchronizeRuntimeSources(ide.sources);
 	const titlePositionField = () => {
-		const document = buildSceneSourceDocument(model.resource,
-			project.updateDocument(model.resource.path, model.buffer.getText()));
+		const document = buildSceneSourceDocument(model.resource, project.getSnapshot());
 		check(document.scenes.length === 1 && document.scenes[0].objects.length === 4, 'scene: actual Nemesis root assembly');
 		const member = document.scenes[0].objects[2];
 		if (member.kind !== 'object' || member.position === null) throw new Error('scene: actual title position field missing');

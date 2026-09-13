@@ -67,3 +67,36 @@ test('invalid submission retains focused draft; leaving visibly cancels, never p
 	assert.equal(input.field.canUndo, false);
 	assert.equal(editorFeedbackState.message.text, 'Invalid integer edit cancelled; source unchanged.');
 });
+
+test('a source binding can revoke a pending draft before commit, including reentrant blur', t => {
+	const parent = inputFocus.createTarget();
+	const accepted: number[] = [];
+	let revoked = true;
+	let preparations = 0;
+	const input = new ValueInput(parent, new HeadlessClipboard(), INTEGER_INPUT_FORMAT, value => accepted.push(value), () => {
+		preparations += 1;
+		if (revoked) {
+			input.cancel();
+			input.field.focusTarget.release();
+		}
+	});
+	t.after(() => { inputFocus.setTarget(null); input.dispose(); });
+	input.setValue(17);
+	for (const text of ['9', '-']) {
+		input.field.focusTarget.focus();
+		insertValue(input.field, text);
+		assert.equal(input.commit(), true);
+		assert.equal(input.pending, false);
+		assert.equal(input.field.focusTarget.hasFocus, false);
+		assert.equal(input.error, '', 'revocation precedes parsing, not just acceptance');
+	}
+	assert.equal(preparations, 2, 'blur does not prepare or publish an already cancelled draft');
+	assert.deepEqual(accepted, []);
+	revoked = false;
+	input.field.focusTarget.focus();
+	insertValue(input.field, '23');
+	assert.equal(input.commit(), true);
+	input.field.focusTarget.release();
+	assert.equal(preparations, 3);
+	assert.deepEqual(accepted, [23]);
+});

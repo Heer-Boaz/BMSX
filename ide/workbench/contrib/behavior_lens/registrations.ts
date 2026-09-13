@@ -1,14 +1,14 @@
 import { LuaSyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { LuaCallSite } from '../../../../toolchain/ts/lua/semantic/model';
+import type { ModuleAliasTarget } from '../../../../toolchain/ts/lua/semantic/module_bindings';
+import type { LuaModuleImportQuery } from '../../../../toolchain/ts/lua/semantic/module_import_query';
 import type { BehaviorSourceReader } from './source_reader';
 import type { ResourceIdentity } from '../../../common/resource';
 import type { BehaviorKind, BehaviorRegistrationSource } from './model';
 import { appendBehaviorSourcePath, createBehaviorSourceAnchor, describeExpression } from './source';
 
-type BehaviorRegistrationKind = {
+type BehaviorRegistrationKind = ModuleAliasTarget & {
 	readonly behaviorKind: BehaviorKind;
-	readonly module: string;
-	readonly member: string;
 	readonly definitionArgument: number;
 };
 
@@ -16,19 +16,19 @@ const REGISTRATIONS: readonly BehaviorRegistrationKind[] = [
 	{
 		behaviorKind: 'behavior_tree',
 		module: 'cartlib/behaviour_tree/library',
-		member: 'register',
+		memberPath: ['register'],
 		definitionArgument: 1,
 	},
 	{
 		behaviorKind: 'state_machine',
 		module: 'cartlib/fsm/library',
-		member: 'register',
+		memberPath: ['register'],
 		definitionArgument: 1,
 	},
 	{
 		behaviorKind: 'action_effect',
 		module: 'cartlib/actioneffects',
-		member: 'register_effect',
+		memberPath: ['register_effect'],
 		definitionArgument: 1,
 	},
 ];
@@ -50,7 +50,7 @@ export function collectBehaviorRegistrations(resource: ResourceIdentity, reader:
 	const occurrences = new Map<string, number>();
 	const registrations: BehaviorRegistration[] = [];
 	for (const callSite of analysis.callSites) {
-		const registration = resolveRegistration(callSite);
+		const registration = resolveRegistration(callSite, reader.snapshot.symbolResolver.moduleImports);
 		if (registration === null) continue;
 		const idExpression = callSite.expression.arguments[0];
 		const idLabel = idExpression ? describeExpression(idExpression) : '<unresolved id>';
@@ -79,16 +79,16 @@ export function collectBehaviorRegistrations(resource: ResourceIdentity, reader:
 
 function resolveRegistration(
 	callSite: LuaCallSite,
+	imports: LuaModuleImportQuery,
 ): BehaviorRegistrationKind | null {
 	const target = callSite.moduleTarget;
 	if (callSite.expression.method !== null
-		|| !target
-		|| target.memberPath.length !== 1) {
+		|| !target) {
 		return null;
 	}
 	for (let index = 0; index < REGISTRATIONS.length; index += 1) {
 		const registration = REGISTRATIONS[index];
-		if (target.module === registration.module && target.memberPath[0] === registration.member) {
+		if (imports.matchesImport(target, registration)) {
 			return registration;
 		}
 	}

@@ -28,6 +28,31 @@ function flatten(nodes: readonly BehaviorSourceNode[]): BehaviorSourceNode[] {
 	return result;
 }
 
+test('reexported registration APIs preserve kinds, source occurrences and source-only dependencies', () => {
+	const main = buildLuaFileSemanticData(`local fsm = require('fsm_bridge')
+local tree = require('tree_bridge')
+local effect = require('effect_bridge')
+fsm('one', { initial = 'idle', states = { idle = {} } })
+fsm('two', { states = { active = {} } })
+tree.register('three', { root = { type = 'wait', duration_ticks = 2 } })
+effect('four', { period_ms = 40, handler = function(owner) owner:run() end })
+tree:register('colon', {})`, 'actors.lua');
+	const snapshot = semanticSnapshot(main,
+		buildLuaFileSemanticData("return require('cartlib/fsm/library').register", 'fsm_bridge.lua'),
+		buildLuaFileSemanticData("return require('tree_middle')", 'tree_bridge.lua'),
+		buildLuaFileSemanticData("return require('cartlib/behaviour_tree/library')", 'tree_middle.lua'),
+		buildLuaFileSemanticData("local effects = require('cartlib/actioneffects'); return effects.register_effect", 'effect_bridge.lua'));
+	const resource = { domain: 0, path: main.file } as const;
+	const reader = new BehaviorSourceReader(snapshot);
+	const registrations = collectBehaviorRegistrations(resource, reader).registrations;
+	assert.deepEqual(registrations.map(entry => entry.label), ['FSM one', 'FSM two', 'BT three', 'EFFECT four']);
+	assert.ok(registrations.every(entry => entry.resource === resource && entry.range.path === main.file));
+	assert.deepEqual([...reader.files].map(file => file.file), [main.file], 'an API dependency is not an edited definition source');
+	const document = buildBehaviorSourceDocument(resource, snapshot);
+	assert.deepEqual(document.definitions.map(definition => definition.rowKey), registrations.map(entry => entry.rowKey));
+	assert.ok(flatten(document.definitions).some(node => node.kind === 'state' && node.label === 'idle'));
+});
+
 test('behavior lens gives reused Moon behavior-tree initializers distinct view occurrences', () => {
 	const path = 'carts/nemesis_s/enemies/moon_tree.lua';
 	const document = buildDocument(path, readFileSync(path, 'utf8'));

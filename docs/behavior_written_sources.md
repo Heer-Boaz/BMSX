@@ -115,8 +115,9 @@ sets the existing declarative cartlib method as the authoring norm. Broader
 contextual factory/API proofs are not a prerequisite for every graph feature;
 authored discovery must not be confused with actual loaded registration.
 Imported one-owner graph edits now use the [composite source input](editor_composite_sources.md)
-and [FSM source ownership](state_machine_source_ownership.md). API reexports
-and relocation between source files remain open.
+and [FSM source ownership](state_machine_source_ownership.md). Explicit API
+return-aliases now use the [snapshot module-import query](lua_source_api_bindings.md#explicit-api-reexports-follow-through-from-2737af288).
+Aggregate API export tables, wrappers and relocation between source files remain open.
 Same-document [BT reparenting](behavior_tree_reparenting.md) and
 [ActionEffect property authoring](actioneffect_authoring.md) have since landed.
 Loaded-definition inspection is a separate design, not an implemented heap

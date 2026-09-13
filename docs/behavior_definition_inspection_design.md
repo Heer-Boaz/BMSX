@@ -285,7 +285,9 @@ gebruiken nu hun echte bronmodel, inclusief een literal in een apart callbackbes
 De registratiebron krijgt geen dummy-edit. Dit sluit niet de hele D1-gate:
 de [API-bindingcorrectie](lua_source_api_bindings.md) ondersteunt gewone
 ongewijzigde importlocals en member-aliases zonder `<const>`-vereiste.
-Relocatie tussen verschillende bestanden en API-reexports/wrappers blijven
+Expliciete module/member-reexports gebruiken dezelfde snapshot-query tot aan
+de publieke API-grens. Relocatie tussen verschillende bestanden, aggregate
+API-exporttabellen en wrappers blijven
 open. Ook runtime-inspectie is hiermee niet geïmplementeerd.
 
 ### D2 — Eén behouden definitie en één geselecteerde runtime-instantie

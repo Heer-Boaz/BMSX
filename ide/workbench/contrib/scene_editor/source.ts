@@ -5,7 +5,9 @@ import {
 	type LuaTableField,
 } from '../../../../toolchain/ts/lua/syntax/ast';
 import { findNamedLuaTableField } from '../../../../toolchain/ts/lua/syntax/table_fields';
-import type { FileSemanticData, LuaCallSite } from '../../../../toolchain/ts/lua/semantic/model';
+import type { LuaCallSite, LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
+import type { ModuleAliasTarget } from '../../../../toolchain/ts/lua/semantic/module_bindings';
+import type { LuaModuleImportQuery } from '../../../../toolchain/ts/lua/semantic/module_import_query';
 import type { ResourceIdentity } from '../../../common/resource';
 import type {
 	SceneSourceDefinition,
@@ -15,7 +17,7 @@ import type {
 	SceneSourcePosition,
 } from './model';
 
-const SCENE_LIBRARY_MODULE = 'cartlib/world/scene_library';
+const SCENE_REGISTRATION: ModuleAliasTarget = { module: 'cartlib/world/scene_library', memberPath: ['register'] };
 
 /**
  * Projects direct scene-library definitions from retained syntax and semantic
@@ -23,12 +25,16 @@ const SCENE_LIBRARY_MODULE = 'cartlib/world/scene_library';
  */
 export function buildSceneSourceDocument(
 	resource: ResourceIdentity,
-	analysis: FileSemanticData,
+	snapshot: LuaSemanticWorkspaceSnapshot,
+	previous?: SceneSourceDocument,
 ): SceneSourceDocument {
+	const analysis = snapshot.getFileData(resource.path)!;
+	const imports = snapshot.symbolResolver.moduleImports;
+	let unchanged = previous !== undefined && previous.analysis === analysis;
 	const scenes: SceneSourceDefinition[] = [];
 	for (let index = 0; index < analysis.callSites.length; index += 1) {
 		const callSite = analysis.callSites[index];
-		if (!isSceneRegistration(callSite)) {
+		if (!isSceneRegistration(callSite, imports)) {
 			continue;
 		}
 		const id = callSite.expression.arguments[0];
@@ -43,30 +49,37 @@ export function buildSceneSourceDocument(
 			|| objectsField.value.kind !== LuaSyntaxKind.TableConstructorExpression) {
 			continue;
 		}
-		const objects = collectSceneObjects(objectsField.value);
-		scenes.push({
-			range: definition.range,
-			id,
-			objectsTable: objectsField.value,
-			objects: objects.entries,
-			resolution: objects.complete ? 'complete' : 'partial',
-		});
+		const prior = previous?.scenes[scenes.length];
+		if (unchanged && prior?.range === definition.range) {
+			scenes.push(prior);
+		} else {
+			unchanged = false;
+			const objects = collectSceneObjects(objectsField.value);
+			scenes.push({
+				range: definition.range,
+				id,
+				objectsTable: objectsField.value,
+				objects: objects.entries,
+				resolution: objects.complete ? 'complete' : 'partial',
+			});
+		}
 	}
-	return { resource, scenes };
+	// An unrelated dependency edit must not reset selection, layout or field drafts.
+	if (unchanged && scenes.length === previous.scenes.length) return previous;
+	return { resource, analysis, scenes };
 }
 
 /** Recognized registrations remain discoverable while their authored arguments are incomplete. */
-export function hasSceneSourceDefinitions(analysis: FileSemanticData): boolean {
-	return analysis.callSites.some(isSceneRegistration);
+export function hasSceneSourceDefinitions(resource: ResourceIdentity, snapshot: LuaSemanticWorkspaceSnapshot): boolean {
+	const imports = snapshot.symbolResolver.moduleImports;
+	return snapshot.getFileData(resource.path)!.callSites.some(call => isSceneRegistration(call, imports));
 }
 
-function isSceneRegistration(callSite: LuaCallSite): boolean {
+function isSceneRegistration(callSite: LuaCallSite, imports: LuaModuleImportQuery): boolean {
 	const target = callSite.moduleTarget;
 	return callSite.expression.method === null
 		&& target !== null
-		&& target.module === SCENE_LIBRARY_MODULE
-		&& target.memberPath.length === 1
-		&& target.memberPath[0] === 'register';
+		&& imports.matchesImport(target, SCENE_REGISTRATION);
 }
 
 function collectSceneObjects(objects: LuaTableConstructorExpression): {

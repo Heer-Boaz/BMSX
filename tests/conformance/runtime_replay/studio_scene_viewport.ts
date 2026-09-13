@@ -9,6 +9,7 @@ import { SceneEditorPane } from '../../../ide/workbench/contrib/scene_editor/edi
 import { openSceneEditor, selectMember } from './studio_scene_source';
 import { check, type StudioFixture } from './studio_fixture';
 import { testStudioPointerHover } from './studio_pointer_hover';
+import { runtimeLuaSourceRegistry } from '../../../ide/runtime/sources';
 
 /** Actual font/layout, divider, focus, captured pointer and source edits on independent Lua. */
 export async function testStudioSceneViewport(test: StudioFixture): Promise<void> {
@@ -32,6 +33,40 @@ export async function testStudioSceneViewport(test: StudioFixture): Promise<void
 	if (!(pane instanceof SceneEditorPane)) throw new Error('A02: actual Scene pane required');
 	const [x, y, z] = pane.controls;
 	check(scene.properties[0].value === 11 && scene.properties[2].value === 33, 'A02: independent fixture is selected');
+	// Reuse a real workspace input as transport, not its game implementation.
+	const record = runtimeLuaSourceRegistry(ide.sources, model.resource.domain)!.records.find(record =>
+		record.program_module && !record.generated && record.source_path !== model.resource.path && !record.module_path.startsWith('cartlib/'))!;
+	harness.openLuaSource(record.source_path);
+	const provider = harness.getActiveEditorDocument().model;
+	const originalProvider = provider.buffer.getText();
+	provider.pushEditOperations([{ offset: 0, deleteLength: provider.buffer.length, text: "return require('cartlib/world/scene_library')" }]);
+	const apiOffset = authored.indexOf('cartlib/world/scene_library');
+	model.pushEditOperations([{ offset: apiOffset, deleteLength: 'cartlib/world/scene_library'.length, text: record.module_path }]);
+	harness.openLuaSource(model.resource.path);
+	check(await openSceneEditor(test) === scene, 'scene imports: the actual menu reopens the same scene through a reexport');
+	await selectMember(test, scene, 0);
+	await test.click(scene.properties[0].bounds);
+	await press('Digit9');
+	check(x.pending && x.field.focusTarget.hasFocus, 'scene imports: a real property draft is focused');
+	const document = scene.document, version = scene.version, sourceVersion = model.version;
+	provider.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- unchanged API\n' }]);
+	await frame();
+	check(scene.document === document && scene.version === version && x.pending && x.field.focusTarget.hasFocus,
+		'scene imports: an equivalent dependency edit retains projection, focus and draft');
+	provider.pushEditOperations([{ offset: 0, deleteLength: provider.buffer.length, text: 'return replacement' }]);
+	check(x.commit() && model.version === sourceVersion,
+		'scene imports: even commit before the next frame cannot publish the valid draft to a revoked source target');
+	await frame();
+	check(scene.properties[0].value === null && x.field.readOnly && !x.pending && !x.field.focusTarget.hasFocus,
+		'scene imports: revocation detaches and cancels the old field rather than committing it on blur');
+	check(model.version === sourceVersion, 'scene imports: revocation never writes the consumer');
+	provider.undo(); await frame();
+	await selectMember(test, scene, 0);
+	check(scene.properties[0].value === 11 && !x.field.readOnly, 'scene imports: provider Undo restores editing admission');
+	provider.undo(); model.undo(); provider.undo(); await frame();
+	check(model.buffer.getText() === authored && provider.buffer.getText() === originalProvider,
+		'scene imports: ordinary Undo restores both independent source histories');
+	await selectMember(test, scene, 0);
 	const point = (x: number, y: number) => ({ left: x, right: x, top: y, bottom: y });
 	const resize = async (y: number) => {
 		const panel = getProblemsPanelBounds()!;

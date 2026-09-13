@@ -58,6 +58,33 @@ function sourceRegistry(projectRootPath: string, records: readonly LuaSourceReco
 	return registry;
 }
 
+test('API-provider edits and Undo update the catalogue and open documents without rebinding their consumer', t => {
+	const source = "local publish = require('bridge'); publish('one', { states = { idle = {} } }); publish('two', { states = {} })";
+	const bridge = "return require('cartlib/fsm/library').register";
+	const sources = createTestRuntimeSourceState(sourceRegistry('machine/bios', [luaSource('system.lua', '')]),
+		[sourceRegistry('carts/fixture', [luaSource('actors.lua', source), luaSource('bridge.lua', bridge)]), null], 0);
+	t.after(() => { clearCodeEditorInputs(); editorTextModelService.clear(); resetSemanticProjects(); });
+	const main = editorTextModelService.retain(resolveRuntimeResource(sources, { domain: 0, path: 'actors.lua' })!, 'lua', source);
+	const provider = editorTextModelService.retain(resolveRuntimeResource(sources, { domain: 0, path: 'bridge.lua' })!, 'lua', bridge);
+	const index = new BehaviorRegistrationIndex(sources);
+	const documents = new BehaviorSourceDocuments(sources);
+	assert.deepEqual(index.getRegistrations(0).map(entry => entry.label), ['FSM one', 'FSM two']);
+	const document = documents.get(main);
+	assert.equal(document.definitions.length, 2);
+	const project = getOrCreateSemanticProject(0);
+	const analysis = project.getFileData(main.resource.path);
+	provider.pushEditOperations([{ offset: 0, deleteLength: provider.buffer.length, text: 'return replacement' }]);
+	assert.deepEqual(index.getRegistrations(0), []);
+	assert.equal(documents.get(main).definitions.length, 0);
+	assert.equal(project.getFileData(main.resource.path), analysis);
+	assert.equal(main.dirty, false);
+	provider.undo();
+	assert.deepEqual(index.getRegistrations(0).map(entry => entry.label), ['FSM one', 'FSM two']);
+	assert.deepEqual(documents.get(main).definitions.map(entry => entry.rowKey), document.definitions.map(entry => entry.rowKey));
+	assert.equal(project.getFileData(main.resource.path), analysis);
+	assert.equal(provider.dirty, false);
+});
+
 test('behavior picks preserve registration occurrences, kinds, domains and unresolved authored ids', (t) => {
 	const path = 'actors.lua';
 	const source = [

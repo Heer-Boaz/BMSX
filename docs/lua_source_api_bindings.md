@@ -1,4 +1,4 @@
-# Authored API paths through ordinary Lua locals
+# Authored Lua API paths
 
 2026-09-13; baseline `a9abbf521`. D1 follow-through for the existing
 [declarative authoring norm](behavior_definition_inspection_design.md#4-declaratieve-authoringnorm).
@@ -89,8 +89,9 @@ retained-parse binding, fresh snapshot plus catalog, and retained-snapshot catal
 rebuilding. It prints the discovered registrations so equal timings cannot hide
 lost results. Validation results are recorded below.
 
-**Still open:** API reexports through another module's implementation, wrappers
-and runtime-replaced exports are not newly resolved here. Existing imported
+**Still open after the local-binding slice:** API reexports through another
+module's implementation. The follow-through below now covers explicit return
+aliases, not wrappers or runtime-replaced exports. Existing imported
 *definition data* support is separate. Cross-file BT relocation and loaded
 definition/instance inspection remain their own gates; this does not close D1,
 D2 or D3 as a whole.
@@ -147,3 +148,138 @@ Run evidence: `/tmp/bmsx-module-bindings-{lua,workflows,initial-live}.log`,
 `/tmp/bmsx-module-bindings-retained-{before,after}-{1,2,3}.json`, plus the
 typecheck/build/audit logs with the same prefix. No additional browser test
 driver, generated game ROM fixture or runtime validation layer was introduced.
+
+## Explicit API reexports (follow-through from `2737af288`)
+
+The binder now publishes an immediate `ModuleValueEntry.moduleTarget` using the
+same completed local-write index as callsites. `LuaModuleImportQuery`, owned by
+the immutable workspace resolver, consumes that fact. Contributions provide
+their retained public module/member descriptors; no cartlib names or argument
+roles enter the language layer.
+
+The production reference is TypeScript's
+[`getImmediateAliasedSymbol`](https://github.com/microsoft/TypeScript/blob/v5.9.3/src/compiler/checker.ts#L33403-L33414)
+and the cycle-aware, symbol-owned `resolveAlias` cache linked above. BMSX does
+not copy CommonJS export merging or equate Lua import spelling with execution.
+It matches against a requested **public anchor**: a bridge can lead to
+`cartlib/fsm/library.register`, but moving that library's private implementation
+must not normalize the public name away and break recognition.
+
+Supported forms include `return require('api')`, `return api.member`, local
+copies, literal-key members, and chains of these across files. A reexported
+function can be called directly; it need not acquire a fictional `.register`
+at the callsite. A colon call still has a different argument ABI.
+
+Each snapshot indexes normalized module names once. Missing, ambiguous,
+syntax-incomplete, bypassed or non-alias exports do not produce a forwarding
+edge. Ordinary source editing and compilation remain available. Direct public
+imports remain the written contract even without the library's implementation
+source. These are source facts, **not frozen module values or runtime callees**.
+
+`matchesImport` caches success/failure for each retained target descriptor and
+`(module, remaining member-prefix length)`. Reexport members prepend to the
+caller's path; the query matches those suffixes backwards instead of allocating
+an expanded member path at every link. The traversal is iterative. Resolving
+states terminate zero-member cycles; member-growing cycles consume the finite
+requested path. There is no recursion limit, workspace solver, factory
+execution, arbitrary cap, or expanded-path storage quadratic in chain depth.
+Terminal modules already have their answer in the export index and do not get
+an additional negative cache under each API. The binder finalizes its existing
+export fact in place before publishing readonly file data, rather than copying
+that fact into a second object.
+
+### Scene projection and field lifetime
+
+Behavior registration discovery and the Scene source chooser use this same
+snapshot query. The chooser acquires one snapshot per execution domain per
+invocation, not a fresh source context for each candidate.
+
+Scene Editor now separates workspace revision from projection version. It
+rechecks admission on a new workspace revision, but reuses the actual immutable
+scene document when the consumer AST and accepted definitions are unchanged.
+An unrelated edit or an equivalent reexport edit therefore does not reset
+selection, layout or a focused value draft. Revocation changes the projection
+even when the consumer text is untouched. Removed fields cancel their drafts
+before releasing focus, so ordinary blur cannot publish an edit to a revoked
+target. Command admission refreshes source targets as well.
+The typed input's optional pre-commit lifecycle lets the source owner synchronize
+that binding before parsing/publishing a pending draft, independently of the next
+render update. Revocation cancels before releasing focus, so its reentrant blur
+also cannot publish. Unchanged fields keep ordinary Enter/blur/Save behavior.
+
+The matching view-lifetime reference is Qt's
+[`QAbstractItemView::dataChanged`](https://github.com/qt/qtbase/blob/v6.9.0/src/widgets/itemviews/qabstractitemview.cpp#L3417-L3438),
+[`updateEditorData`](https://github.com/qt/qtbase/blob/v6.9.0/src/widgets/itemviews/qabstractitemview.cpp#L4515-L4542)
+and removal of affected editors in
+[`rowsAboutToBeRemoved`](https://github.com/qt/qtbase/blob/v6.9.0/src/widgets/itemviews/qabstractitemview.cpp#L3556-L3579).
+The borrowed principle is model-owned invalidation and editor lifetime, not
+Qt's index representation or defensive widget checks.
+
+API bridge files are query dependencies, not automatically composite editable
+definition members. Save/Undo remain with the actual written source models.
+No guest/cartlib, machine, C++ or runtime ABI changes are involved.
+
+### Scope and evidence
+
+This does **not** resolve table-aggregate exports such as
+`return { register = api.register }`, wrapper functions, arbitrary factories,
+runtime API replacement, or cross-file BT relocation. It does not implement
+loaded-definition or live-instance inspection. Existing imported *definition
+data* support remains separate from recognition of the registering API.
+
+Independent probes cover all four contribution APIs, member order, direct
+function reexports, private refactors behind the public anchor, ambiguous
+normalized modules, bypasses, source-only cases, snapshot replacement and
+provider-only Undo. A 10,000-module chain and member-growing cycles exercise
+stack independence without query caps. The existing physical Studio workflows
+are extended for scene draft revocation and an actually compiled FSM API bridge,
+including normal Save/Reboot and Hot Resume; no new browser driver or fake ROM
+is introduced.
+
+### Reexport query measurements
+
+Three alternating `2737af288`/current process pairs, the same retained-parse
+profiler, 10 warmups and median of 25 samples. No concurrent validation or
+browser process during profiling. All six runs have the same 191 files,
+1,217,338 UTF-16 units and **32 identical registration resource/label/line
+tuples**. Values below are medians of the three process medians.
+
+| Host operation | Baseline | Reexports |
+| --- | ---: | ---: |
+| Bind retained parses | 80.750 ms | 80.227 ms |
+| New snapshot and catalog | 4.191 ms | 4.510 ms |
+| Rebuild catalog on retained snapshot | 0.162 ms | 0.201 ms |
+
+This is not a speedup or zero-cost claim: cross-module admission adds about
+0.32 ms to the fresh snapshot/catalog and 0.04 ms to catalog rebuilding in this
+workspace. These are invocation/generation operations, not per-frame topology
+or guest work. It does not measure total UI latency, peak memory or the separate
+contextual factory/call queries. Artifacts:
+`/tmp/bmsx-module-reexports-verified-{before,after}-{1,2,3}.json`.
+
+### Reexport validation
+
+- The independent reexported-registration regression fails on unchanged
+  `2737af288` (no registrations) and passes with the language query.
+- Full `test:lua`: **1,743 passed, one existing skip**, zero failures.
+- Toolchain build, IDE typecheck and browser Studio build pass. Tests typecheck
+  has exactly the same **51 pre-existing diagnostics**, compared by full text.
+- Full physical Studio workflows pass on **software, WebGL2 and WebGPU**. The
+  scene probe opens through a real reexport, preserves a valid focused draft
+  across an equivalent provider edit, revokes it safely even when commit occurs
+  before the next frame, and restores admission through provider Undo. It then
+  exercises the existing tiny/MSX font, focus, scroll and ordinary source edits.
+- The separate compiled FSM workflow passes on all three renderers. Its bridge
+  is an ordinary saved Lua module, compiled by the normal toolchain. Set Initial,
+  Undo and Redo each go through actual Hot Resume, retaining the live FSM/state
+  and its mutable data. Cold reboot instantiates the changed initial state.
+- Strict architecture boundaries report zero issues. Core-parity audit,
+  indentation and diff checks pass. Software Scene and FSM captures were
+  inspected. Intentional guest/compile-fault probes and fixture HTTP 404s remain
+  in the browser log; workflow fault gates pass.
+
+Final evidence is under `/tmp/bmsx-module-reexports-verified-*`, including
+`workflows.log`, `initial-live.log`, `lua.log`, typechecks, build/audit logs and
+per-backend screenshots. The user's browser server and IDE storage were not
+modified. These are browser-host and tooling proofs, not a claim of native UI,
+unrestricted Lua reflection or completion of D1/D2/D3 as a whole.

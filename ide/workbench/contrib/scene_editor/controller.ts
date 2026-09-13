@@ -53,7 +53,9 @@ export class SceneEditorController {
 	/** Current source-command target; definition roots and source-only rows are not members. */
 	private editableMember(): SceneMemberElement | undefined {
 		const input = getActiveTab();
-		if (input.kind !== 'scene_editor' || input.workingCopy.readOnly || input.parsed.syntaxError !== null) return undefined;
+		if (input.kind !== 'scene_editor') return undefined;
+		this.refresh(input);
+		if (input.workingCopy.readOnly || input.parsed.syntaxError !== null) return undefined;
 		const row = input.outline.rows[input.outline.selectionIndex]?.element;
 		return row?.kind === 'member' && row.entry.kind === 'object' ? row : undefined;
 	}
@@ -104,13 +106,16 @@ export class SceneEditorController {
 
 	public refresh(input: SceneEditorInput): void {
 		const model = input.workingCopy;
-		if (input.version === model.version) return;
 		const project = getOrCreateSemanticProject(model.resource.domain);
 		project.synchronizeRuntimeSources(this.sources);
-		const analysis = project.getFileData(model.resource.path)!;
-		input.parsed = getCachedLuaParse({ path: model.resource.path, source: analysis.source }).parsed;
-		const document = buildSceneSourceDocument(model.resource, analysis);
+		const snapshot = project.getSnapshot();
+		if (input.sourceRevision === snapshot.revision) return;
+		const document = buildSceneSourceDocument(model.resource, snapshot, input.document);
+		input.sourceRevision = snapshot.revision;
+		if (document === input.document) return;
+		input.parsed = getCachedLuaParse({ path: model.resource.path, source: document.analysis.source }).parsed;
 		installSceneOutline(input, document);
-		input.version = model.version;
+		input.document = document;
+		input.version += 1;
 	}
 }

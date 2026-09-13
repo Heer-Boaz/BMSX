@@ -7,6 +7,7 @@ import {
 import { sourceRangesEqual } from '../source_range';
 import { compareSourcePosition } from './source_range';
 import { LuaWrittenSourceQuery } from './written_sources';
+import { LuaModuleImportQuery } from './module_import_query';
 import type { LuaSourceCallGraph } from './source_call_graph';
 import type { LuaSourceValueQuery } from './source_value_query';
 
@@ -30,6 +31,7 @@ export class WorkspaceSymbolResolver {
 	private readonly globals: ReadonlyMap<string, SymbolID>;
 	private queryStore?: LuaSemanticQueryStore;
 	private sourceQuery?: LuaWrittenSourceQuery;
+	private moduleImportQuery?: LuaModuleImportQuery;
 	private readonly referenceTargets: Map<Ref, readonly SymbolID[]> = new Map();
 	private readonly referenceFunctionTargets: Map<Ref, readonly SymbolID[]> = new Map();
 	private readonly callableTargets: Map<LuaCallSite, readonly SymbolID[]> = new Map();
@@ -58,6 +60,11 @@ export class WorkspaceSymbolResolver {
 	public get writtenSources(): LuaWrittenSourceQuery {
 		if (this.sourceQuery === undefined) this.sourceQuery = new LuaWrittenSourceQuery(this.files, this.declarations);
 		return this.sourceQuery;
+	}
+
+	public get moduleImports(): LuaModuleImportQuery {
+		if (this.moduleImportQuery === undefined) this.moduleImportQuery = new LuaModuleImportQuery(this.files);
+		return this.moduleImportQuery;
 	}
 
 	public callSources(callSite: LuaCallSite): LuaSourceCallGraph {

@@ -12,11 +12,14 @@ import type { SceneOutlineElement } from './outline';
 import type { FullWidthWorkbenchLayout } from '../../common/layout';
 import { WorkbenchScrollViewport } from '../../ui/scroll_viewport';
 import { sourceTabDescription } from '../../ui/tab/titles';
+import type { SceneSourceDocument } from './model';
 
 export const POSITION_AXES = ['x', 'y', 'z'] as const;
 
 export class SceneEditorInput extends WorkingCopyEditorInput<SceneEditorTabId, 'scene_editor'> {
 	public version = 0;
+	public sourceRevision: symbol | undefined;
+	public document: SceneSourceDocument | undefined;
 	public position: { readonly outlineScroll: number; readonly detailsScroll: number } | undefined;
 	public parsed: ParsedLuaChunk;
 	public sourceText = '';

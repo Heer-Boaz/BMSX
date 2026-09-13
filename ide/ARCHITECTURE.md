@@ -229,16 +229,18 @@ contracts, not implied features of this source revision owner.
 A visual scene or behavior editor is another view on the resource-owned Lua
 `EditorTextModel`, not another working copy and not a generated behavior or
 scene resource. The Lua parser and each workbench-owned domain recognizer
-derive its retained BT-, FSM-, ActionEffect- or sceneprojection once per text-
-model content version. Render and hit testing consume that projection; they do
+derive its retained BT-, FSM-, ActionEffect- or sceneprojection from a current
+source-workspace snapshot. Render and hit testing consume that projection; they do
 not parse or rebuild topology per frame.
 
 API discovery consumes the language owner's written module/member call paths.
 That owner processes the complete binding-write index once: ordinary unchanged
 locals and member aliases are admitted without a `<const>` requirement; a
 reassigned binding does not become stable merely because another const local
-copies it. Contributions own their public API names and argument roles, not an
-alias evaluator. This is authored-source admission within the declarative API
+copies it. The snapshot-owned `moduleImports` query follows immediate written
+module reexports to the requested public API anchor, without normalizing it away
+to a private implementation. Contributions own API names and argument roles,
+not alias evaluators. This is authored-source admission within the declarative API
 norm, never proof of loaded registrations or frozen module contents. See
 [`lua_source_api_bindings.md`](../docs/lua_source_api_bindings.md).
 
@@ -783,8 +785,12 @@ See [Behavior Quick Access](../docs/behavior_quick_access.md) and
 
 `SceneEditorInput` attaches the resource-owned `EditorTextModel` directly,
 without creating or requiring a code tab.
-The controller projects direct `scene_library.register` definitions at a new
-source version using the shared text snapshot. The retained source outline has
+The controller projects inline `scene_library.register` definitions, including
+explicit API reexports, against the current workspace snapshot. Its projection
+version changes only when consumer syntax or admitted definitions change; an
+unrelated workspace edit must not reset a focused draft. Revoked fields cancel
+their draft before releasing focus, rather than publishing it during blur.
+The retained source outline has
 one root per direct definition, including empty or keyed-only definitions, and
 ordered member children. `workbench/ui/tree_view.ts` owns parent/children/depth,
 collapse, the visible node list and tree navigation, reusing the existing list

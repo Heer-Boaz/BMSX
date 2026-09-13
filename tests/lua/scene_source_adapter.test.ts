@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { semanticSnapshot } from './semantic_test_harness';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
@@ -8,7 +9,7 @@ import { createLuaTableFieldIntegerEdits, createLuaTableFieldRemovalEdits, readL
 import { createLuaTableFieldMoveEdits } from '../../ide/language/lua/table_field_moves';
 import { buildSceneSourceDocument, hasSceneSourceDefinitions } from '../../ide/workbench/contrib/scene_editor/source';
 import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
-import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
+import { buildLuaFileSemanticData, LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
 import { getCachedLuaParse } from '../../toolchain/ts/lua/analysis/cache';
 
 function luaResource(path: string): RuntimeResource {
@@ -31,12 +32,46 @@ publish('room', { objects = {} })
 `;
 	const path = 'room.lua';
 	const analysis = buildLuaFileSemanticData(source, path);
-	assert.equal(hasSceneSourceDefinitions(analysis), true);
-	const document = buildSceneSourceDocument({ domain: 0, path }, analysis);
+	assert.equal(hasSceneSourceDefinitions({ domain: 0, path }, semanticSnapshot(analysis)), true);
+	const document = buildSceneSourceDocument({ domain: 0, path }, semanticSnapshot(analysis));
 	assert.deepEqual(document.scenes.map(scene => scene.id.kind), [LuaSyntaxKind.StringLiteralExpression]);
 	const changed = buildLuaFileSemanticData(source + '\nlocal function replace() scenes = replacement end', path);
-	assert.equal(hasSceneSourceDefinitions(changed), false);
-	assert.equal(buildSceneSourceDocument({ domain: 0, path }, changed).scenes.length, 0);
+	assert.equal(hasSceneSourceDefinitions({ domain: 0, path }, semanticSnapshot(changed)), false);
+	assert.equal(buildSceneSourceDocument({ domain: 0, path }, semanticSnapshot(changed)).scenes.length, 0);
+});
+
+test('scene projection follows API providers but retains unchanged content across workspace generations', () => {
+	const resource = { domain: 0, path: 'room.lua' } as const;
+	const source = `local publish = require('bridge')
+publish('room', { objects = { { member_id = 'hero', definition_id = 'player' } } })
+publish('other', { objects = {} })`;
+	const main = buildLuaFileSemanticData(source, resource.path);
+	const bridge = "return require('cartlib/world/scene_library').register";
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFiles([main, buildLuaFileSemanticData(bridge, 'bridge.lua')]);
+	let snapshot = workspace.getSnapshot();
+	assert.equal(hasSceneSourceDefinitions(resource, snapshot), true);
+	const document = buildSceneSourceDocument(resource, snapshot);
+	assert.equal(document.scenes.length, 2);
+	workspace.updateFiles([buildLuaFileSemanticData('return {}', 'unrelated.lua')]);
+	snapshot = workspace.getSnapshot();
+	assert.equal(buildSceneSourceDocument(resource, snapshot, document), document, 'no false projection change to reset an active draft');
+	workspace.updateFiles([buildLuaFileSemanticData('-- annotation\n' + bridge, 'bridge.lua')]);
+	assert.equal(buildSceneSourceDocument(resource, workspace.getSnapshot(), document), document, 'equivalent provider edit retains projection');
+	workspace.updateFiles([buildLuaFileSemanticData('return replacement', 'bridge.lua')]);
+	snapshot = workspace.getSnapshot();
+	assert.equal(hasSceneSourceDefinitions(resource, snapshot), false);
+	const revoked = buildSceneSourceDocument(resource, snapshot, document);
+	assert.equal(revoked.scenes.length, 0);
+	assert.equal(revoked.analysis, main, 'revocation does not require rebinding the consumer');
+	workspace.updateFiles([buildLuaFileSemanticData(bridge, 'bridge.lua')]);
+	const restored = buildSceneSourceDocument(resource, workspace.getSnapshot(), revoked);
+	assert.equal(restored.scenes.length, 2);
+	assert.equal(restored.scenes[0].range, document.scenes[0].range);
+	workspace.updateFiles([buildLuaFileSemanticData('-- moved\n' + source, resource.path)]);
+	const moved = buildSceneSourceDocument(resource, workspace.getSnapshot(), restored);
+	assert.notEqual(moved, restored);
+	assert.equal(moved.scenes[0].range.start.line, restored.scenes[0].range.start.line + 1);
 });
 
 test('scene source adapter projects the real Nemesis root without executing Lua', () => {
@@ -44,7 +79,7 @@ test('scene source adapter projects the real Nemesis root without executing Lua'
 	const source = readFileSync(path, 'utf8');
 	const document = buildSceneSourceDocument(
 		{ domain: 0, path },
-		buildLuaFileSemanticData(source, path),
+		semanticSnapshot(buildLuaFileSemanticData(source, path)),
 	);
 
 	assert.equal(document.scenes.length, 1);
@@ -73,7 +108,7 @@ test('scene projection retains empty and keyed-only definitions as distinct sour
 		+ "scenes.register('same', { objects = {} })\n"
 		+ "scenes.register('same', { objects = { [1] = make_member() } })\n"
 		+ "scenes.register('same', { objects = { make_member() } })";
-	const document = buildSceneSourceDocument({ domain: 0, path: 'scene.lua' }, buildLuaFileSemanticData(source, 'scene.lua'));
+	const document = buildSceneSourceDocument({ domain: 0, path: 'scene.lua' }, semanticSnapshot(buildLuaFileSemanticData(source, 'scene.lua')));
 	assert.equal(document.scenes.length, 3);
 	assert.deepEqual(document.scenes.map(scene => scene.objects.length), [0, 0, 1]);
 	assert.deepEqual(document.scenes.map(scene => scene.resolution), ['complete', 'partial', 'partial']);
@@ -89,13 +124,13 @@ test('scene member moves use the retained parent table and preserve neighbouring
 	const footer = "} })\nscenes.register('other', { objects = { { member_id = 'same', definition_id = 'three' } } })";
 	const source = header + first + second + footer;
 	const model = new EditorTextModel(luaResource(path), 'lua', source);
-	const document = buildSceneSourceDocument(model.resource, buildLuaFileSemanticData(source, path));
+	const document = buildSceneSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(source, path)));
 	assert.equal(document.scenes.length, 2);
 	assert.equal(document.scenes[0].resolution, 'complete');
 	assert.equal(document.scenes[1].objects.length, 1);
 	model.pushEditOperations(createLuaTableFieldMoveEdits(model.buffer, path, document.scenes[0].objectsTable, 1, 0));
 	assert.equal(model.buffer.getText(), header + second + first + footer);
-	const moved = buildSceneSourceDocument(model.resource, buildLuaFileSemanticData(model.buffer.getText(), path));
+	const moved = buildSceneSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(model.buffer.getText(), path)));
 	assert.deepEqual(moved.scenes.map(scene => scene.objects.map(object =>
 		object.kind === 'object' ? readLuaSourceRange(model.buffer, object.definitionId.range) : 'dynamic',
 	)), [["'two'", "'one'"], ["'three'"]]);
@@ -109,7 +144,7 @@ test('scene position edit changes the canonical Nemesis source through its text 
 	const model = new EditorTextModel(luaResource(path), 'lua', source);
 	const document = buildSceneSourceDocument(
 		{ domain: 0, path },
-		buildLuaFileSemanticData(source, path),
+		semanticSnapshot(buildLuaFileSemanticData(source, path)),
 	);
 	const object = document.scenes[0].objects[0];
 	assert.equal(object.kind, 'object');
@@ -123,7 +158,7 @@ test('scene position edit changes the canonical Nemesis source through its text 
 	assert.equal(model.buffer.getText(), changed);
 	const reparsed = buildSceneSourceDocument(
 		{ domain: 0, path },
-		buildLuaFileSemanticData(changed, path),
+		semanticSnapshot(buildLuaFileSemanticData(changed, path)),
 	);
 	const reparsedObject = reparsed.scenes[0].objects[0];
 	assert.equal(reparsedObject.kind, 'object');
@@ -155,7 +190,7 @@ test('scene source adapter accepts direct definitions through unchanged local mo
 	].join('\n');
 	const document = buildSceneSourceDocument(
 		{ domain: 1, path: 'scene.lua' },
-		buildLuaFileSemanticData(source, 'scene.lua'),
+		semanticSnapshot(buildLuaFileSemanticData(source, 'scene.lua')),
 	);
 
 	assert.equal(document.scenes.length, 2);
@@ -179,7 +214,7 @@ test('scene members retain complete parser fields for source-only removal and do
 		+ " -- exterior , ;\n\t; -- after\n\tbuild_object(),\n} })";
 	const model = new EditorTextModel(luaResource(path), 'lua', source);
 	const parsed = getCachedLuaParse({ path, source }).parsed;
-	const document = buildSceneSourceDocument(model.resource, buildLuaFileSemanticData(source, path, parsed));
+	const document = buildSceneSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(source, path, parsed)));
 	const [direct, dynamic] = document.scenes[0].objects;
 	assert.equal(direct.kind, 'object');
 	assert.equal(readLuaSourceRange(model.buffer, direct.field.range), member);
