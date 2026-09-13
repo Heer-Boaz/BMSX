@@ -110,7 +110,7 @@ export function createBehaviorLensViewState(document: BehaviorSourceDocument, mo
 		definitionRowKey: null,
 		selection: null,
 		selectionBookmark: undefined,
-		stateMachines: { bodies: new Map(), references: new Map(), initialTargets: new Map(), scopes: new Map(), retargetable: new Set() },
+		stateMachines: { bodies: new Map(), references: new Map(), initialTargets: new Map(), scopes: new Map(), retargetLiterals: new Map() },
 		source: BehaviorSourceIndex.acquire({ ...document, definitions: [] }, model, resolveModel),
 		sourceMatchRowKeys: new Set(),
 		presentation: presentation === 'graph' ? createBehaviorLensGraph() : presentation === 'state-graph' ? createBehaviorLensStateGraph()

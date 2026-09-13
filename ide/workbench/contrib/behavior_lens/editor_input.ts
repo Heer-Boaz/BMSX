@@ -57,6 +57,14 @@ export class BehaviorLensInput extends CompositeTextEditorInput<BehaviorLensTabI
 					const node = pending.pop()!;
 					models.add(view.source.models.get(node.authoredRange.path)!);
 					models.add(view.source.models.get(node.occurrenceRange.path)!);
+					// A proven returned path can be written in an imported callback,
+					// outside the declaration's displayed source-tree nodes.
+					const references = view.stateMachines.references.get(node.rowKey);
+					if (references !== undefined) for (const reference of references) {
+						if (reference.kind !== 'state-outcome') continue;
+						const literal = view.stateMachines.retargetLiterals.get(reference.outcome);
+						if (literal !== undefined) models.add(view.source.models.get(literal.range.path)!);
+					}
 					for (const child of node.children) pending.push(child);
 				}
 			}

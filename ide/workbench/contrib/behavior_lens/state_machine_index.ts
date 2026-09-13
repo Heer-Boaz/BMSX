@@ -1,3 +1,4 @@
+import type { LuaStringLiteralExpression } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { BehaviorSourceDocument, BehaviorSourceRowKey } from './model';
 import type { StateMachineScope, StateMachineSourceBody, StateMachineSourceOutcome } from './state_machine_model';
 import type { StateMachineSourceReference } from './state_machine_selection';
@@ -9,7 +10,7 @@ export type StateMachineSourceIndex = {
 	readonly references: ReadonlyMap<BehaviorSourceRowKey, readonly StateMachineSourceReference[]>;
 	readonly initialTargets: ReadonlyMap<BehaviorSourceRowKey, StateMachineInitialTarget>;
 	readonly scopes: ReadonlyMap<BehaviorSourceRowKey, StateMachineScope>;
-	readonly retargetable: ReadonlySet<StateMachineSourceOutcome>;
+	readonly retargetLiterals: ReadonlyMap<StateMachineSourceOutcome, LuaStringLiteralExpression>;
 };
 
 const indices = new WeakMap<BehaviorSourceDocument, StateMachineSourceIndex>();
@@ -22,7 +23,7 @@ export function indexStateMachineSource(document: BehaviorSourceDocument): State
 	const references = new Map<BehaviorSourceRowKey, StateMachineSourceReference[]>();
 	const initialTargets = new Map<BehaviorSourceRowKey, StateMachineInitialTarget>();
 	const scopes = new Map<BehaviorSourceRowKey, StateMachineScope>();
-	const retargetable = new Set<StateMachineSourceOutcome>();
+	const retargetLiterals = new Map<StateMachineSourceOutcome, LuaStringLiteralExpression>();
 	function addBody(key: BehaviorSourceRowKey, body: StateMachineSourceBody | null): void {
 		bodies.set(key, body);
 		if (body === null || body.states === null || body.states.kind === 'dynamic') return;
@@ -44,11 +45,11 @@ export function indexStateMachineSource(document: BehaviorSourceDocument): State
 			references.set(rowKey, transition.outcomes.map(outcome => ({ kind: 'state-outcome', rowKey, transition, outcome })));
 			if (document.syntaxComplete) for (const outcome of transition.outcomes) {
 				const literal = stateMachineRetargetLiteral(outcome);
-				if (literal !== undefined && literal.range.path === document.resource.path) retargetable.add(outcome);
+				if (literal !== undefined) retargetLiterals.set(outcome, literal);
 			}
 		}
 	}
-	const index = { bodies, references, initialTargets, scopes, retargetable };
+	const index = { bodies, references, initialTargets, scopes, retargetLiterals };
 	indices.set(document, index);
 	return index;
 }

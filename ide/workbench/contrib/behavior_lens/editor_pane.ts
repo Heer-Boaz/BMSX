@@ -61,21 +61,22 @@ export class BehaviorLensEditorPane extends FullWidthWorkbenchEditorPane<Behavio
 	public readonly propertyEdit: ActionEffectPropertyEdit;
 	private readonly stateMachineDrop: StateMachineRetargetDrop = (selection, target) => {
 		const input = this.input;
-		if (target.uses.length === 1) retargetStateMachineTransition(input.workingCopy, input.view, selection, target);
+		const model = input.view.source.models.get(target.literal.range.path)!;
+		if (target.uses.length === 1) retargetStateMachineTransition(model, input.view, selection, target);
 		else {
 			const lifetime = this.sourceEditReview.show({
-				model: input.workingCopy, title: 'RETARGET FSM',
+				model, title: 'RETARGET FSM',
 				summary: `${target.uses.length} RECOGNIZED USES: ${target.literal.value} -> ${target.text}`,
 				items: stateMachineRetargetImpacts(input.view, target),
-				apply: () => retargetStateMachineTransition(input.workingCopy, input.view, selection, target),
+				apply: () => retargetStateMachineTransition(model, input.view, selection, target),
 				openSource: index => this.controller.openStateMachineUseSource(input, target.uses[index].use),
 			});
 			lifetime.add({ dispose: input.view.source.onDidInvalidate(() => this.sourceEditReview.clear()) });
 		}
 	};
 	private readonly stateMachineDragSource: WorkbenchGraphDragSource = {
-		connectionEnds: edge => stateMachineConnectionEnds(this.input.workingCopy, this.input.view, edge),
-		begin: start => beginStateMachineDrag(this.input.workingCopy, this.input.view, start, this.stateMachineDrop),
+		connectionEnds: edge => stateMachineConnectionEnds(this.input.view, edge),
+		begin: start => beginStateMachineDrag(this.input.view, start, this.stateMachineDrop),
 	};
 	private readonly treeDrop: BehaviorTreeTransferDrop = (analysis, insertion, check) => {
 		const input = this.input;

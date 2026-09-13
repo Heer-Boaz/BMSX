@@ -1,31 +1,19 @@
-import { semanticSnapshot } from './semantic_test_harness';
+import { createBehaviorEditFixture } from '../helpers/behavior_edit_fixture';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
-import { EditorTextModel } from '../../ide/editor/model/text_model';
-import { EditorFont } from '../../ide/editor/ui/view/font';
-import { editorViewState } from '../../ide/editor/ui/view/state';
 import { createLuaStringValueEdit, luaSourceRangeToTextRange, readLuaSourceRange } from '../../ide/language/lua/source_edits';
-import { installBehaviorLensDocument, selectBehaviorLensDefinition } from '../../ide/workbench/contrib/behavior_lens/layout';
+import { selectBehaviorLensDefinition } from '../../ide/workbench/contrib/behavior_lens/layout';
 import { selectedBehaviorLensSourceRange } from '../../ide/workbench/contrib/behavior_lens/navigation';
-import { buildBehaviorSourceDocument } from '../../ide/workbench/contrib/behavior_lens/recognizer';
 import { behaviorSourceEditState, captureBehaviorSourceBookmark, copyBehaviorSourceBookmark, mapBehaviorSourceBookmark } from '../../ide/workbench/contrib/behavior_lens/source_bookmark';
-import { mapBehaviorLensSourceRanges } from '../../ide/workbench/contrib/behavior_lens/source_correspondence';
 import { retargetStateMachineTransition } from '../../ide/workbench/contrib/behavior_lens/state_machine_edit';
 import { StateMachineRetargetAnalysis } from '../../ide/workbench/contrib/behavior_lens/state_machine_retarget';
 import { selectStateMachineSource } from '../../ide/workbench/contrib/behavior_lens/state_machine_selection';
-import { createBehaviorLensViewState } from '../../ide/workbench/contrib/behavior_lens/view_model';
-import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
-import { FSM_RETARGET_SOURCE } from '../helpers/fsm_retarget_fixture';
+import { FSM_RETARGET_SOURCE, FSM_RETARGET_IMPORTED_SOURCE, FSM_RETARGET_BRANCH_SOURCE, FSM_RETARGET_CALLBACK_SOURCE } from '../helpers/fsm_retarget_fixture';
 
-function fixture(t: TestContext, source = FSM_RETARGET_SOURCE, definitionIndex = 0, branch = 'right', slot = 'direct', outcomeIndex = 0) {
-	const oldFont = editorViewState.font;
-	editorViewState.font = new EditorFont('tiny');
-	t.after(() => { editorViewState.font = oldFont; });
-	const model = new EditorTextModel({ domain: 0, path: 'retarget.lua', source: { resid: 'retarget', type: 'lua' } }, 'lua', source);
-	t.after(() => model.dispose());
-	const project = () => buildBehaviorSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(model.buffer.getText(), model.resource.path)));
-	const view = createBehaviorLensViewState(project(), model, 'outline', assert.fail);
-	model.onDidChangeContent(event => mapBehaviorLensSourceRanges(view, model.resource, event));
+function fixture(t: TestContext, source = FSM_RETARGET_SOURCE, definitionIndex = 0, branch = 'right', slot = 'direct', outcomeIndex = 0,
+	imports: Readonly<Record<string, string>> = {}) {
+	const f = createBehaviorEditFixture(t, 'retarget.lua', source, 'outline', definitionIndex, imports);
+	const { view, refresh } = f;
 	const definition = view.document.definitions[definitionIndex];
 	assert.ok(definition.behaviorKind === 'state_machine');
 	const scope = definition.scopes[0].children.get(branch)!;
@@ -40,7 +28,6 @@ function fixture(t: TestContext, source = FSM_RETARGET_SOURCE, definitionIndex =
 	const target = new StateMachineRetargetAnalysis(view.document, selection.transition, selection.outcome)
 		.checkTarget(scope.children.get('other')!);
 	assert.ok(target.kind === 'available');
-	const refresh = () => { installBehaviorLensDocument(view, project()); };
 	const checkSelection = (text: string, outcome = outcomeIndex) => {
 		const selected = view.selection;
 		assert.ok(selected?.kind === 'state-outcome');
@@ -55,9 +42,47 @@ function fixture(t: TestContext, source = FSM_RETARGET_SOURCE, definitionIndex =
 		assert.equal(view.selectionBookmark, undefined);
 		return selected;
 	};
-	return { model, view, selection, target, refresh, checkSelection,
+	const model = view.source.models.get(target.literal.range.path)!;
+	return { ...f, anchor: f.model, model, selection, target, refresh, checkSelection,
 		edit: () => retargetStateMachineTransition(model, view, selection, target) };
 }
+
+test('imported transition edits and source bookmarks belong to the literal, not the registration or callback binding', t => {
+	for (const [slot, outcome] of [['direct', 0], ['wrapped', 0], ['update', 0], ['update', 1]] as const) {
+		const branch = FSM_RETARGET_BRANCH_SOURCE.replace("update = callback,", "update = callback, entering_state = require('observer'),");
+		const f = fixture(t, FSM_RETARGET_IMPORTED_SOURCE, 1, 'left', slot, outcome, {
+			'branch.lua': branch, 'callback.lua': FSM_RETARGET_CALLBACK_SOURCE, 'observer.lua': 'return function() return nil end',
+		});
+		const provider = f.models.get('branch.lua')!, callback = f.models.get('callback.lua')!;
+		assert.deepEqual(new Set(f.input.getWorkingCopies()), new Set([f.anchor, provider, callback]),
+			'only represented declarations and editable return evidence join Save/Undo, not every callback dependency');
+		assert.equal(f.model, slot === 'update' ? callback : provider);
+		const original = f.model.buffer.getText();
+		const untouched = slot === 'update' ? provider : callback;
+		const otherSource = untouched.buffer.getText();
+		f.anchor.refreshResource({ ...f.anchor.resource, source: { ...f.anchor.resource.source, generated: true } });
+		const edit = createLuaStringValueEdit(f.model.buffer, f.target.literal, f.target.text);
+		f.edit(); f.refresh(); f.checkSelection('../other');
+		assert.equal(f.model.buffer.getText(), original.slice(0, edit.offset) + edit.text + original.slice(edit.offset + edit.deleteLength));
+		assert.equal(untouched.buffer.getText(), otherSource);
+		assert.equal(f.anchor.version, 1); assert.equal(f.input.isDirty(), true);
+		assert.equal(selectedBehaviorLensSourceRange(f.view)!.path, f.model.resource.path);
+		const changed = f.model.buffer.getText();
+		f.model.completeSave(f.model.createSnapshot());
+		assert.equal(f.input.isDirty(), false);
+		for (const direction of ['undo', 'redo', 'undo', 'redo'] as const) {
+			const owner = f.service.history.findModel(f.input.getWorkingCopies(), direction)!;
+			assert.equal(owner, f.model); owner[direction](); f.refresh();
+			f.checkSelection(direction === 'undo' ? '../active' : '../other');
+			assert.equal(f.model.buffer.getText(), direction === 'undo' ? original : changed);
+		}
+		// Losing return evidence must not lose the very resource needed to Undo it.
+		f.model.pushEditOperations([{ offset: 0, deleteLength: f.model.buffer.length, text: 'return function(' }]);
+		f.refresh();
+		assert.equal(f.service.history.findModel(f.input.getWorkingCopies(), 'undo'), f.model);
+		f.model.undo(); f.refresh(); assert.equal(f.model.buffer.getText(), changed);
+	}
+});
 
 test('retarget history restores exact direct, wrapped and callback evidence in each shared source occurrence', t => {
 	for (const [definition, branch] of [[0, 'left'], [0, 'right'], [1, 'left']] as const) {

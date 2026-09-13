@@ -20,6 +20,6 @@ export function stateMachineRetargetImpacts(view: BehaviorLensViewState,
 		const source = proof.kind === 'direct' ? proof.expression.range : proof.statement.range;
 		const label = `${use.definition.label} ${origin}`;
 		return { label, value: `${before} -> ${after}`,
-			description: `${label}: ${use.transition.slot.source.label}, ${proof.kind} LN ${source.start.line}:${source.start.column}. ${before} -> ${after}. RECOGNIZED SOURCE USE; DYNAMIC CALLS ARE NOT ENUMERATED.` };
+			description: `${label}: ${use.transition.slot.source.label}, ${proof.kind} ${source.path}:${source.start.line}:${source.start.column}. ${before} -> ${after}. RECOGNIZED IN ${view.resource.path}; OTHER REGISTRATION FILES AND DYNAMIC CALLS ARE NOT ENUMERATED.` };
 	});
 }

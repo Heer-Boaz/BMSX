@@ -14,23 +14,28 @@ export type StateMachineRetargetDrop = (
 ) => void;
 
 /** Selected-proof capability consumes the cold source index; no consumer scan on hover. */
-export function stateMachineConnectionEnds(model: EditorTextModel, view: BehaviorLensViewState, edge: WorkbenchGraphEdge): 'target' | undefined {
-	if (model.readOnly || !view.source.isCurrent || view.presentation.kind !== 'state-graph') return undefined;
+export function stateMachineConnectionEnds(view: BehaviorLensViewState, edge: WorkbenchGraphEdge): 'target' | undefined {
+	if (!view.source.isCurrent || view.presentation.kind !== 'state-graph') return undefined;
 	const selected = view.presentation.viewport.selection;
 	if (selected === null || selected.kind !== 'edge' || selected !== edge) return undefined;
 	const reference = selected.link.reference;
-	return reference.kind === 'state-outcome' && view.stateMachines.retargetable.has(reference.outcome) ? 'target' : undefined;
+	const literal = reference.kind === 'state-outcome' ? view.stateMachines.retargetLiterals.get(reference.outcome) : undefined;
+	return literal !== undefined && !view.source.models.get(literal.range.path)!.readOnly ? 'target' : undefined;
 }
 
-export function beginStateMachineDrag(model: EditorTextModel, view: BehaviorLensViewState,
+export function beginStateMachineDrag(view: BehaviorLensViewState,
 	start: WorkbenchGraphDragStart, accept: StateMachineRetargetDrop): WorkbenchGraphDragSession | undefined {
-	if (start.kind !== 'connection' || start.end !== 'target' || model.readOnly || !view.source.isCurrent) return undefined;
+	if (start.kind !== 'connection' || start.end !== 'target' || !view.source.isCurrent) return undefined;
 	const presentation = view.presentation;
 	const selection = view.selection;
 	if (presentation.kind !== 'state-graph' || selection?.kind !== 'state-outcome') return undefined;
 	const selected = presentation.viewport.selection;
 	if (selected === null || selected.kind !== 'edge' || selected !== start.edge || selected.link.reference.kind !== 'state-outcome'
-		|| selected.link.reference.outcome !== selection.outcome || !view.stateMachines.retargetable.has(selection.outcome)) return undefined;
+		|| selected.link.reference.outcome !== selection.outcome) return undefined;
+	const literal = view.stateMachines.retargetLiterals.get(selection.outcome);
+	if (literal === undefined) return undefined;
+	const model = view.source.models.get(literal.range.path)!;
+	if (model.readOnly) return undefined;
 	return new StateMachineDrag(model, view, presentation.viewport, selected, selection, accept);
 }
 

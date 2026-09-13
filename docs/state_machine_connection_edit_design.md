@@ -51,8 +51,9 @@ operation. It does not run Save, install media or call guest Lua. Save/Hot Resum
 uses the ordinary compiler and `<init>` path: definition rebind preserves live
 state, and subsequent guest transitions consume the changed definition.
 
-The impact list covers recognized source consumers, not arbitrary dynamic Lua
-calls or escaped tables. It explicitly says so; no claim of exhaustive runtime
+The impact list covers recognized consumers in the current registration source
+document (including its imports), not other registration files, arbitrary
+dynamic Lua calls or escaped tables. It explicitly says so; no claim of exhaustive runtime
 reference analysis is made. No machine, cartlib or mirrored-runtime ABI changes.
 
 ## Required evidence
@@ -117,3 +118,13 @@ about **0.0013–0.0016 µs**, below a useful cross-process performance claim. T
 is a bounded comparison, not a universal speedup or zero-overhead guarantee.
 Commands are in the conformance README; logs, baseline bundles, raw measurements
 and captures are under `/tmp/bmsx-fsm-drag/`.
+
+### Imported transition sources
+
+The [source-owner follow-through](state_machine_source_ownership.md) admits
+literal edits in imported declarations or callback files. The retained cold
+index supplies the actual literal; its source model owns write access, review,
+Save and Undo. Review descriptions identify both the proof file and the
+registration source covered by the known-use list. The independent live workflow
+also runs with a bare-function callback module, without changing its authored
+syntax to work around the compiler's former implicit-static classification.

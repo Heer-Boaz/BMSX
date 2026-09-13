@@ -14,7 +14,7 @@ import { testStudioPointerCapture } from './studio_pointer_capture';
 import { testStudioSceneViewport } from './studio_scene_viewport';
 import type { StudioFixture } from './studio_fixture';
 
-export type StudioScenario = { kind: 'workflows' | 'fsm-initial' | 'fsm-retarget' | 'bt-reparent' }
+export type StudioScenario = { kind: 'workflows' | 'fsm-initial' | 'fsm-retarget' | 'fsm-retarget-imported' | 'bt-reparent' }
 	| { kind: 'navigation'; cart: NavigationCart };
 
 /** One scenario composition for every renderer project; backend checks remain in their project. */
@@ -24,6 +24,7 @@ export function runStudioScenario(test: StudioFixture, scenario: StudioScenario)
 		case 'navigation': return runStudioPointerNavigation(test, scenario.cart);
 		case 'fsm-initial': return runStudioFsmInitialLive(test);
 		case 'fsm-retarget': return runStudioFsmDragLive(test);
+		case 'fsm-retarget-imported': return runStudioFsmDragLive(test, true);
 		case 'bt-reparent': return runStudioBtReparentLive(test);
 	}
 }

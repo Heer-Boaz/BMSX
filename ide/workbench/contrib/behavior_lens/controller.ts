@@ -187,18 +187,21 @@ export class BehaviorLensController {
 
 	public canSetSelectedInitialState(): boolean {
 		const input = getActiveTab();
-		return input.kind === 'behavior_lens' && !input.workingCopy.readOnly
-			&& input.view.source.isCurrent && stateMachineInitialTarget(input.view) !== undefined;
+		if (input.kind !== 'behavior_lens' || !input.view.source.isCurrent) return false;
+		const target = stateMachineInitialTarget(input.view);
+		return target !== undefined && !input.view.source.models.get(target.owner.table.range.path)!.readOnly;
 	}
 
 	public setSelectedInitialState(): void {
 		const input = getActiveTab();
-		if (input.kind !== 'behavior_lens' || input.workingCopy.readOnly) return;
+		if (input.kind !== 'behavior_lens') return;
 		this.updateView(input);
 		const target = stateMachineInitialTarget(input.view);
 		if (target === undefined) return;
+		const model = input.view.source.models.get(target.owner.table.range.path)!;
+		if (model.readOnly) return;
 		this.editorPanes.activePane.focus();
-		setStateMachineInitial(input.workingCopy, target);
+		setStateMachineInitial(model, target);
 		this.updateView(input);
 	}
 

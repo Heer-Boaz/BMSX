@@ -1,3 +1,4 @@
+import { runtimeLuaSourceRegistry } from '../../../ide/runtime/sources';
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { selectedBehaviorLensSourceRange } from '../../../ide/workbench/contrib/behavior_lens/navigation';
@@ -5,7 +6,7 @@ import { retargetStateMachineTransition } from '../../../ide/workbench/contrib/b
 import { StateMachineRetargetAnalysis } from '../../../ide/workbench/contrib/behavior_lens/state_machine_retarget';
 import type { BehaviorLensViewState } from '../../../ide/workbench/contrib/behavior_lens/view_model';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
-import { FSM_RETARGET_SOURCE } from '../../helpers/fsm_retarget_fixture';
+import { FSM_RETARGET_SOURCE, FSM_RETARGET_MODULE_SOURCE, FSM_RETARGET_IMPORTED_SOURCE } from '../../helpers/fsm_retarget_fixture';
 import { chooseBehavior } from './studio_behavior_picker';
 import { check, type StudioFixture } from './studio_fixture';
 
@@ -17,15 +18,29 @@ function selectedOutcome(view: BehaviorLensViewState) {
 
 /** Production edit/history route; the fixture supplies a target, not an invented reconnect control. */
 export async function testStudioFsmBookmarks(test: StudioFixture): Promise<void> {
+	for (const imported of [false, true]) await runBookmarks(test, imported);
+}
+
+async function runBookmarks(test: StudioFixture, imported: boolean): Promise<void> {
 	const { ide, harness, press, click, frame, until, runPaletteCommand, cycles } = test;
-	console.info('STUDIO: FSM retarget source bookmarks, physical edge selection, Source and hidden document history');
+	console.info(`STUDIO: FSM ${imported ? 'imported' : 'local'} retarget source bookmarks, physical edge selection, Source and hidden document history`);
 	const position = cycles();
 	const media = ide.sources.currentBlua32Media;
 	harness.openLuaSource('cart.lua');
+	const main = activeCodeEditor.model, originalMain = main.buffer.getText();
+	if (imported) {
+		const record = runtimeLuaSourceRegistry(ide.sources, main.resource.domain)!.records.find(record =>
+			record.program_module && !record.generated && record.source_path !== main.resource.path && !record.module_path.startsWith('cartlib/'))!;
+		main.pushEditOperations([{ offset: 0, deleteLength: main.buffer.length,
+			text: FSM_RETARGET_IMPORTED_SOURCE.replace("require('branch')", `require('${record.module_path}')`) }]);
+		harness.openLuaSource(record.source_path);
+	}
+	const source = imported ? FSM_RETARGET_MODULE_SOURCE : FSM_RETARGET_SOURCE;
+	const mainVersion = main.version;
 	const code = getActiveTab();
 	const model = activeCodeEditor.model;
 	const original = model.buffer.getText();
-	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: FSM_RETARGET_SOURCE }]);
+	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: source }]);
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
 	await chooseBehavior(test, 'FSM fixture.two', 'STATE MACHINES');
 	const lens = getActiveTab();
@@ -52,7 +67,7 @@ export async function testStudioFsmBookmarks(test: StudioFixture): Promise<void>
 		if (target.kind !== 'available') throw new Error('FSM bookmark: fixture target must be admitted');
 		let version = model.version;
 		retargetStateMachineTransition(model, view, selection, target);
-		check(model.version === version + 1 && graph.viewport.model.edges.length === 0, 'FSM bookmark: one edit immediately revokes obsolete endpoints');
+		check(model.version === version + 1 && graph.viewport.model.edges.length === 0 && (!imported || main.version === mainVersion), 'FSM bookmark: one edit immediately revokes obsolete endpoints');
 		await ready();
 		const changed = model.buffer.getText();
 		const restored = selectedOutcome(view);
@@ -87,7 +102,7 @@ export async function testStudioFsmBookmarks(test: StudioFixture): Promise<void>
 		await click(graph.actionBar.items[0].bounds);
 		const hidden = view.document;
 		await press('ControlLeft', 'KeyZ');
-		check(model.buffer.getText() === FSM_RETARGET_SOURCE && view.document === hidden,
+		check(model.buffer.getText() === source && view.document === hidden,
 			'FSM bookmark: code Undo restores text and leaves one pending selection, without parsing a hidden Lens');
 		await test.clickTab(lens.id); await ready();
 		const before = selectedOutcome(view);
@@ -103,6 +118,10 @@ export async function testStudioFsmBookmarks(test: StudioFixture): Promise<void>
 	}
 	await test.clickTab(code.id);
 	await press('ControlLeft', 'KeyZ');
+	if (imported) {
+		harness.openLuaSource(main.resource.path); await press('ControlLeft', 'KeyZ');
+		check(main.buffer.getText() === originalMain, 'FSM bookmark: authoring never rewrites the registration anchor');
+	}
 	check(model.buffer.getText() === original && cycles() === position && ide.sources.currentBlua32Media === media,
 		'FSM bookmark: ordinary Undo removes the fixture, without guest execution or source installation');
 }

@@ -342,3 +342,12 @@ frame cost and heap/GC profiling. Stable browser/Node frames retain the source
 and geometry without replaying history. Reproduction commands are in the
 [conformance README](../tests/conformance/behavior_graph/README.md); baseline
 bundles, raw measurements, logs and captures are in `/tmp/bmsx-fsm-bookmarks/`.
+
+### Imported write-owner follow-through
+
+[The source-owner slice](state_machine_source_ownership.md) admits Set Initial
+and literal retargeting in imported files. Admission, review, edits and composite
+Save/history resolve the actual parent-table or return-literal model, not the
+registration anchor. Existing path binding and selected-proof tracking remain
+in force; this does not turn recognized source consumers into a complete
+workspace/runtime reference inventory.

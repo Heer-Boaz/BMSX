@@ -1469,10 +1469,12 @@ Multi-resource source operations use the shared resource history described in
 first consumer: a single admitted workspace edit, not separate per-file Undo
 stacks. The [composite input contract](editor_composite_sources.md) now separates
 the registration anchor from its presented authored sources, including Save,
-dirty state and focused source history. Imported ActionEffect fields and BT
-edits within one provider use the actual written model. Relocation between
-different files and imported FSM mutation still require their own admission;
-shared history alone does not establish preserved bindings.
+dirty state and focused source history. Imported ActionEffect fields, BT edits
+within one provider, and [FSM initial/path edits](state_machine_source_ownership.md)
+use the actual written model. A proven imported callback return joins the
+composite input without admitting every callback dependency. Relocation between
+different files still requires its own admission; shared history alone does not
+establish preserved bindings.
 
 Workbench navigation retains the concrete editor identity and a contribution-owned
 selection/viewstate, not just a code position. Source, definition and Back/Forward

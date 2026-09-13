@@ -6,7 +6,8 @@ import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model'
 import { buildBehaviorSourceDocument } from '../../ide/workbench/contrib/behavior_lens/recognizer';
 import { indexStateMachineSource } from '../../ide/workbench/contrib/behavior_lens/state_machine_index';
 import { setStateMachineInitial } from '../../ide/workbench/contrib/behavior_lens/state_machine_initial';
-import { FSM_INITIAL_SOURCE } from '../helpers/fsm_initial_fixture';
+import { FSM_INITIAL_SOURCE, FSM_INITIAL_MODULE_SOURCE, fsmInitialImportedSource } from '../helpers/fsm_initial_fixture';
+import { createBehaviorEditFixture } from '../helpers/behavior_edit_fixture';
 
 function fixture(t: TestContext, source = FSM_INITIAL_SOURCE) {
 	const resource = { domain: 0 as const, path: 'initial.lua', source: { type: 'lua' as const, resid: 'initial' } };
@@ -16,6 +17,24 @@ function fixture(t: TestContext, source = FSM_INITIAL_SOURCE) {
 	const index = indexStateMachineSource(document);
 	return { model, document, index };
 }
+
+test('imported parent initial edits insert or replace in the provider and participate in the same Lens history', t => {
+	for (const source of [FSM_INITIAL_MODULE_SOURCE, FSM_INITIAL_MODULE_SOURCE.replace("\tinitial = ( --[[initial intent]] 'idle'),\n", '')]) {
+		const f = createBehaviorEditFixture(t, 'initial.lua', fsmInitialImportedSource('branch'), 'outline', 0, { 'branch.lua': source });
+		const targets = f.view.stateMachines.initialTargets;
+		const target = [...targets.values()].find(target => target.name === 'active')!;
+		const owner = f.view.source.models.get(target.owner.table.range.path)!;
+		assert.equal(owner, f.models.get('branch.lua'));
+		assert.deepEqual(new Set(f.input.getWorkingCopies()), new Set([f.model, owner]));
+		setStateMachineInitial(owner, target); f.refresh();
+		assert.equal(f.model.version, 1); assert.equal(f.input.isDirty(), true);
+		assert.equal([...f.view.stateMachines.initialTargets.values()].filter(target => target.name === 'active').length, 0);
+		assert.equal(f.service.history.findModel(f.input.getWorkingCopies(), 'undo'), owner);
+		owner.undo(); f.refresh(); assert.equal(owner.buffer.getText(), source);
+		owner.redo(); f.refresh();
+		assert.equal([...f.view.stateMachines.initialTargets.values()].filter(target => target.name === 'idle').length, 3);
+	}
+});
 
 test('initial editing changes the real parent constructor, including all its shared occurrences', t => {
 	const f = fixture(t);

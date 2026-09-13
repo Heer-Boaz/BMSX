@@ -1,5 +1,6 @@
+import { runtimeLuaSourceRegistry } from '../../../ide/runtime/sources';
 import { testStudioGraphNavigation } from './studio_graph_navigation';
-import { FSM_RETARGET_CART_SOURCE } from '../../helpers/fsm_retarget_fixture';
+import { FSM_RETARGET_CART_SOURCE, FSM_RETARGET_CART_CALLBACK_SOURCE, fsmRetargetImportedCartSource } from '../../helpers/fsm_retarget_fixture';
 import { actionPromptState } from '../../../ide/workbench/contrib/modal/action_prompt';
 import { getActiveTab } from '../../../ide/workbench/ui/tabs';
 import { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/behavior_lens/editor_pane';
@@ -11,26 +12,37 @@ import { chooseBehavior } from './studio_behavior_picker';
 import { check, type StudioFixture } from './studio_fixture';
 
 /** Physical authoring, review and real source installation. No host Lua calls or patched guest tables. */
-export async function runStudioFsmDragLive(test: StudioFixture) {
+export async function runStudioFsmDragLive(test: StudioFixture, imported = false) {
 	const { runtime, ide, execution, tasks, harness, guest, press, click, until, frame, cycles, runMenuCommand, runPaletteCommand,
 		movePointer, setPointerButton, setKey } = test;
 	await until(() => cycles() > runtime.timing.cpuHz * 13, 'FSM drag: normal cart boot');
 	await press('ControlRight', 'ShiftRight'); await runMenuCommand('pause');
 	harness.openLuaSource('cart.lua');
+	const main = harness.getActiveEditorDocument().model;
+	let cartSource = FSM_RETARGET_CART_SOURCE;
+	if (imported) {
+		const record = runtimeLuaSourceRegistry(ide.sources, main.resource.domain)!.records.find(record =>
+			record.program_module && !record.generated && record.source_path !== main.resource.path && !record.module_path.startsWith('cartlib/'))!;
+		cartSource = fsmRetargetImportedCartSource(record.module_path);
+		harness.openLuaSource(record.source_path);
+	}
 	const code = getActiveTab();
 	const model = harness.getActiveEditorDocument().model;
-	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: FSM_RETARGET_CART_SOURCE }]);
+	const source = imported ? FSM_RETARGET_CART_CALLBACK_SOURCE : cartSource;
+	main.pushEditOperations([{ offset: 0, deleteLength: main.buffer.length, text: cartSource }]);
+	if (imported) model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: source }]);
 	await runPaletteCommand('Run: Reboot');
 	check(actionPromptState.prompt?.action === 'reboot', 'FSM drag: ordinary source Save/Reboot admission');
 	await press('Enter');
 	await until(() => tasks.ready && guest.global('fsm_drag_init_count') === 1 && !runtime.completionCallPending(), 'FSM drag: authored fixture boots normally');
 	await press('ControlRight', 'ShiftRight'); await runMenuCommand('pause');
-	check(ide.sources.cartridgeSlots[0]!.installedBlua32Sources.get('cart') === FSM_RETARGET_CART_SOURCE, 'FSM drag: actual source/media installed');
+	check(ide.sources.cartridgeSlots[0]!.installedBlua32Sources.get('cart') === cartSource, 'FSM drag: actual source/media installed');
 	const machine = guest.global('fsm_drag_machine');
 	const second = guest.global('fsm_drag_second');
 	const idle = guest.readStringMember(machine, 'current_state');
 	const data = guest.readStringMember(machine, 'data');
 	const actor = guest.global('fsm_drag_target');
+	const mainVersion = main.version;
 	const position = cycles();
 	const media = ide.sources.currentBlua32Media;
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
@@ -50,7 +62,8 @@ export async function runStudioFsmDragLive(test: StudioFixture) {
 		const edge = viewport.model.edges.find(edge => edge.link.reference.kind === 'state-outcome')!;
 		await press('Home');
 		for (let index = 0; index < viewport.model.nodes.length + viewport.model.edges.indexOf(edge); index += 1) await press('ArrowDown');
-		check(viewport.selection === edge && lens.view.selection?.kind === 'state-outcome', 'FSM drag: exact edge selected by keyboard');
+		const input = getActiveTab();
+		check(input.kind === 'behavior_lens' && viewport.selection === edge && input.view.selection?.kind === 'state-outcome', 'FSM drag: exact edge selected by keyboard');
 		const points = edge.points;
 		movePointer(point(viewport.graphToViewportX(points[points.length - 2]), viewport.graphToViewportY(points[points.length - 1])));
 		await frame(); setPointerButton('pointer_primary', true); await frame();
@@ -60,7 +73,8 @@ export async function runStudioFsmDragLive(test: StudioFixture) {
 		await frame();
 	};
 	const release = async () => { setPointerButton('pointer_primary', false); await frame(); };
-	const unchanged = (version: number, label: string) => check(model.version === version && cycles() === position && ide.sources.currentBlua32Media === media, label);
+	const unchanged = (version: number, label: string) => check(model.version === version && (!imported || main.version === mainVersion)
+		&& cycles() === position && ide.sources.currentBlua32Media === media, label);
 	let version = model.version;
 	await begin();
 	for (let index = 0; index < 8; index += 1) await frame();
@@ -98,7 +112,7 @@ export async function runStudioFsmDragLive(test: StudioFixture) {
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- review invalidation\n' }]);
 	check(!review.visible, 'FSM drag: a source edit immediately disposes pending proposal');
 	await press('ControlLeft', 'KeyZ'); await ready();
-	check(model.buffer.getText() === FSM_RETARGET_CART_SOURCE, 'FSM drag: ordinary Undo of external edit restores source, not review');
+	check(model.buffer.getText() === source, 'FSM drag: ordinary Undo of external edit restores source, not review');
 	version = model.version;
 	await begin(); await release(); await press('ArrowDown');
 	const selectedRow = review.tree.rows[review.tree.selectionIndex].element;
@@ -114,7 +128,7 @@ export async function runStudioFsmDragLive(test: StudioFixture) {
 	await runPaletteCommand('Review: Apply Source Edit'); await ready();
 	check(!review.visible && model.version === version + 1, 'FSM drag: palette restores review focus before applying');
 	await runPaletteCommand('Edit: Undo'); await ready();
-	check(model.buffer.getText() === FSM_RETARGET_CART_SOURCE, 'FSM drag: palette Apply uses the same one-edit history');
+	check(model.buffer.getText() === source, 'FSM drag: palette Apply uses the same one-edit history');
 	version = model.version;
 	await begin(); await release();
 	await press('ControlLeft', 'ShiftLeft', 'KeyP'); await press('Escape');
@@ -123,14 +137,14 @@ export async function runStudioFsmDragLive(test: StudioFixture) {
 	check(review.actionBar.hasFocus && review.actionBar.items[review.actionBar.focusedIndex].command === 'sourceEditReview.apply',
 		'A01: review toolbar is accessible through the shared focus route');
 	await press('Space'); await ready();
-	const changed = FSM_RETARGET_CART_SOURCE.replace("--[[chosen path]] 'active'", "--[[chosen path]] 'other'");
-	check(model.buffer.getText() === changed && model.version === version + 1 && !review.visible, 'FSM drag: held Apply commits one exact literal edit');
+	const changed = source.replace("--[[chosen path]] 'active'", "--[[chosen path]] 'other'");
+	check(model.buffer.getText() === changed && model.version === version + 1 && !review.visible && (!imported || main.version === mainVersion), 'FSM drag: held Apply commits one exact literal edit');
 	check(cycles() === position && ide.sources.currentBlua32Media === media, 'FSM drag: acceptance still does not install or run the guest');
 	check(viewport.selection?.kind === 'edge' && viewport.selection.link.target.source.label === 'other', 'FSM drag: new layout selects the exact changed proof');
 	await click(graph.actionBar.items[0].bounds, 6);
 	check(getActiveTab() === code && model.version === version + 1 && !hasSelection(), 'FSM drag: post-edit Source is read-only navigation');
 	await press('ControlLeft', 'KeyZ');
-	check(model.buffer.getText() === FSM_RETARGET_CART_SOURCE, 'FSM drag: one hidden code Undo restores source');
+	check(model.buffer.getText() === source, 'FSM drag: one hidden code Undo restores source');
 	await test.clickTab(lens.id); await ready();
 	await runPaletteCommand('Edit: Redo'); await ready();
 	check(model.buffer.getText() === changed && viewport.selection?.kind === 'edge' && viewport.selection.link.target.source.label === 'other',
@@ -166,12 +180,13 @@ export async function runStudioFsmDragLive(test: StudioFixture) {
 	graph = single.view.presentation; viewport = graph.viewport;
 	await ready();
 	await runPaletteCommand('Graph: Zoom Out');
-	version = model.version;
+	version = main.version;
+	const beforeSingle = main.buffer.getText();
 	await begin(); await release(); await ready();
-	check(!review.visible && model.version === version + 1 && model.buffer.getText().includes("on = { choose = 'other' }"),
+	check(!review.visible && main.version === version + 1 && main.buffer.getText().includes("on = { choose = 'other' }"),
 		'FSM drag: one recognized direct use commits on physical drop without a review');
 	await runPaletteCommand('Edit: Undo'); await ready();
-	check(model.buffer.getText() === changed, 'FSM drag: direct drop also has one ordinary Undo');
+	check(main.buffer.getText() === beforeSingle && model.buffer.getText() === changed, 'FSM drag: direct drop also has one ordinary Undo');
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
 	await chooseBehavior(test, 'FSM fixture.drag.one', 'STATE MACHINES');
 	check(getActiveTab() === lens, 'FSM drag: reopening the shared registration restores its own retained input');
@@ -187,5 +202,5 @@ export async function runStudioFsmDragLive(test: StudioFixture) {
 	await frame(); await release();
 	check(review.visible && model.buffer.getText() === changed, 'FSM drag: final screenshot is a genuine unapplied impact review');
 	console.info('STUDIO: FSM physical retarget / review / source history / live Hot Resume PASS');
-	return { hostFrames: test.observations.hostFrames, hotResumeInstalls: 1, sharedMachines: 2, target: 'other' };
+	return { imported, hostFrames: test.observations.hostFrames, hotResumeInstalls: 1, sharedMachines: 2, target: 'other' };
 }

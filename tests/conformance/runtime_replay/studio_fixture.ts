@@ -101,6 +101,17 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 			displayRect.top + (bounds.top + bounds.bottom) * displayRect.height / (viewport.height * 2), clock.now());
 	};
 	const click = async (bounds: RectBounds, heldFrames = 1, button: 'pointer_primary' | 'pointer_secondary' | 'pointer_aux' = 'pointer_primary') => {
+		// Like Playwright's stable-position actionability check, resolve pointer
+		// coordinates after browser layout, not just our accelerated machine tick.
+		// BrowserVideoOutput can still have a canvas resize queued on rAF.
+		let previous = display.measureDisplay();
+		for (;;) {
+			await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+			const current = display.measureDisplay();
+			if (current.x === previous.x && current.y === previous.y && current.width === previous.width && current.height === previous.height) break;
+			console.info(`STUDIO: pointer waits for canvas layout ${previous.x},${previous.y} ${previous.width}x${previous.height} -> ${current.x},${current.y} ${current.width}x${current.height}`);
+			previous = current;
+		}
 		movePointer(bounds);
 		await frame();
 		setPointerButton(button, true);

@@ -1,11 +1,10 @@
-/** Authored Lua: identical return text is not shared syntax; shared callbacks are. */
-export const FSM_RETARGET_SOURCE = `local machines<const> = require('cartlib/fsm/library')
-local alias<const> = '../active'
-local callback<const> = function(actor)
+/** One authored declaration family, whether inline or spread across module owners. */
+const CALLBACK = `function(actor)
 	if actor.first then return '../active', 'ignored result' end
 	return ( --[[selected return]] '../active')
 end
-local branch<const> = {
+`;
+const BRANCH = `local branch<const> = {
 	initial = 'idle',
 	states = {
 		idle = {
@@ -19,9 +18,18 @@ local branch<const> = {
 		active = {}, other = {},
 	},
 }
-machines.register('fixture.one', { initial = 'left', states = { left = branch, right = branch, outside = {} } })
+`;
+const REGISTRATIONS = `machines.register('fixture.one', { initial = 'left', states = { left = branch, right = branch, outside = {} } })
 machines.register('fixture.two', { initial = 'left', states = { left = branch } })
 `;
+const API = "local machines<const> = require('cartlib/fsm/library')\n";
+const ALIAS = "local alias<const> = '../active'\n";
+
+export const FSM_RETARGET_SOURCE = API + ALIAS + 'local callback<const> = ' + CALLBACK + BRANCH + REGISTRATIONS;
+export const FSM_RETARGET_MODULE_SOURCE = ALIAS + 'local callback<const> = ' + CALLBACK + BRANCH + 'return branch\n';
+export const FSM_RETARGET_CALLBACK_SOURCE = 'return ' + CALLBACK;
+export const FSM_RETARGET_BRANCH_SOURCE = ALIAS + "local callback<const> = require('callback')\n" + BRANCH + 'return branch\n';
+export const FSM_RETARGET_IMPORTED_SOURCE = API + "local branch<const> = require('branch')\n" + REGISTRATIONS;
 
 export const FSM_RETARGET_EXECUTION_SOURCE = `local machines<const> = require('cartlib/fsm/library')
 local choose<const> = function(owner)
@@ -82,6 +90,13 @@ export const FSM_RETARGET_PATH_CASES = [
 	{ origin: [], event: 'relative', target: ["quote'\\"], text: String.raw`['quote\'\\']`, absolute: false, up: 0, steps: [["quote'\\", false]] },
 ] as const;
 
+/** Same callback bytes in a registration function or its own imported module. */
+const CART_CALLBACK = `function(owner)
+		owner.calls = owner.calls + 1
+		return ( --[[chosen path]] 'active')
+	end`;
+export const FSM_RETARGET_CART_CALLBACK_SOURCE = 'return ' + CART_CALLBACK + '\n';
+
 /** Ordinary entry source, installed by the product Save/Reboot flow. ICU drives real guest events. */
 export const FSM_RETARGET_CART_SOURCE = `module<entry>
 local display<const> = require('cartlib/gx/display')
@@ -96,10 +111,7 @@ display.reset_256x192()
 clock.configure_tick_intervals(1, 1)
 fsm_drag_init_count = 0
 local function register_machines<init>()
-	local choose<const> = function(owner)
-		owner.calls = owner.calls + 1
-		return ( --[[chosen path]] 'active')
-	end
+	local choose<const> = ${CART_CALLBACK}
 	local blueprint<const> = {
 		initial = 'idle', data = { retained = 73 },
 		on = { choose = { emitter = false, go = choose } },
@@ -145,3 +157,7 @@ while true do
 	previous = held
 end
 `;
+
+export function fsmRetargetImportedCartSource(modulePath: string): string {
+	return FSM_RETARGET_CART_SOURCE.replace(CART_CALLBACK, `require('${modulePath}')`);
+}

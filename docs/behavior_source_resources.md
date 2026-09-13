@@ -39,8 +39,9 @@ Those contracts must change before broader origin recognition is connected.
 - This read-many contract does not silently broaden a source edit into a
   workspace edit. The follow-through [composite source contract](editor_composite_sources.md)
   supplies B03/B06 write-targets for imported ActionEffect fields and BT edits
-  within one provider. Moves between files and imported FSM mutation remain
-  separately gated.
+  within one provider. [FSM initial/path edits](state_machine_source_ownership.md)
+  now use their actual provider models too, including editable callback returns.
+  Moves between files remain separately gated.
 
 ## Proof required
 

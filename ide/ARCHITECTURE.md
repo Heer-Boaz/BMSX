@@ -1011,9 +1011,12 @@ The ordinary Save command resolves the active `EditorInput` and participates
 only when that input is a `TextEditorInput`; it never reads the detached
 code-editor widget. Single-source inputs retain `WorkingCopyEditorInput`.
 `CompositeTextEditorInput` aggregates the explicitly presented source models,
-not all language dependencies. Behavior Lens keeps its registration anchor
-separate from the actual property/list write targets, saves its dirty writable
-members, and uses ordered heads in shared resource history. See
+not all language dependencies. A proven FSM path literal in an imported callback
+is editable source evidence and participates too; unrelated callbacks do not.
+See [FSM source ownership](../docs/state_machine_source_ownership.md). Behavior
+Lens keeps its registration anchor separate from the actual property/list/initial/path
+write targets, saves its dirty writable members, and uses ordered heads in shared
+resource history. See
 [`editor_composite_sources.md`](../docs/editor_composite_sources.md) for
 membership, focus and imported-source mutation boundaries.
 Workbench actions that can replace executable media are

@@ -280,10 +280,11 @@ Een gezamenlijke edit wordt vanuit beide bestanden als geheel ge-Undo'd;
 tussenliggende edits, vertakkingen en resourcelevensduur hebben expliciete
 historysemantiek. Het [composite broninputcontract](editor_composite_sources.md)
 sluit inmiddels ook Save/dirty/focus voor geïmporteerde ActionEffect-velden en
-BT-bewerkingen binnen een providerbestand. De registratiebron krijgt geen
-dummy-edit. Dit sluit niet de hele D1-gate: relocatie tussen verschillende
-bestanden, imported FSM-admission en de beperkte API-bindingherkenning blijven
-open. Ook runtime-inspectie is hiermee niet geïmplementeerd.
+BT-bewerkingen binnen een providerbestand. Ook [FSM initial/path-edits](state_machine_source_ownership.md)
+gebruiken nu hun echte bronmodel, inclusief een literal in een apart callbackbestand.
+De registratiebron krijgt geen dummy-edit. Dit sluit niet de hele D1-gate:
+relocatie tussen verschillende bestanden en de beperkte API-bindingherkenning
+blijven open. Ook runtime-inspectie is hiermee niet geïmplementeerd.
 
 ### D2 — Eén behouden definitie en één geselecteerde runtime-instantie
 

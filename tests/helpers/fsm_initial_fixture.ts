@@ -1,6 +1,5 @@
 /** Canonical authored Lua, independent of game definitions, paths and line numbers. */
-export const FSM_INITIAL_SOURCE = `local machines<const> = require('cartlib/fsm/library')
-local shared<const> = {
+const SHARED = `local shared<const> = {
 	initial = ( --[[initial intent]] 'idle'),
 	on = { reset = '/' },
 	states = {
@@ -8,9 +7,16 @@ local shared<const> = {
 		active = { on = { back = '../idle' } },
 	},
 }
-machines.register('fixture.initial', { initial = 'left', states = { left = shared, right = shared } })
+`;
+const REGISTRATIONS = `machines.register('fixture.initial', { initial = 'left', states = { left = shared, right = shared } })
 machines.register('fixture.other', { initial = 'left', states = { left = shared } })
 `;
+const API = "local machines<const> = require('cartlib/fsm/library')\n";
+export const FSM_INITIAL_SOURCE = API + SHARED + REGISTRATIONS;
+export const FSM_INITIAL_MODULE_SOURCE = SHARED + 'return shared\n';
+export function fsmInitialImportedSource(modulePath: string): string {
+	return API + `local shared<const> = require('${modulePath}')\n` + REGISTRATIONS;
+}
 
 /** A small authored entry used through ordinary Save/Reboot and Hot Resume, not a synthetic ROM. */
 export const FSM_INITIAL_CART_SOURCE = `module<entry>

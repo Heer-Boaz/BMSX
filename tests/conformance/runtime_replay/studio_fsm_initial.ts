@@ -1,4 +1,5 @@
-import { FSM_INITIAL_SOURCE } from '../../helpers/fsm_initial_fixture';
+import { runtimeLuaSourceRegistry } from '../../../ide/runtime/sources';
+import { FSM_INITIAL_SOURCE, FSM_INITIAL_MODULE_SOURCE, fsmInitialImportedSource } from '../../helpers/fsm_initial_fixture';
 import { activeCodeEditor } from '../../../ide/editor/ui/code_editor_state';
 import { hasSelection } from '../../../ide/editor/editing/text_editing_and_selection';
 import { inputFocus } from '../../../ide/input/focus';
@@ -8,15 +9,27 @@ import { check, type StudioFixture } from './studio_fixture';
 
 /** Physical source-authoring controls; no fixture state is installed into the guest. */
 export async function testStudioFsmInitial(test: StudioFixture): Promise<void> {
+	for (const imported of [false, true]) await runInitial(test, imported);
+}
+
+async function runInitial(test: StudioFixture, imported: boolean): Promise<void> {
 	const { ide, harness, press, click, frame, runPaletteCommand, cycles } = test;
-	console.info('STUDIO: FSM Set Initial source, graph, focus and hidden history');
+	console.info(`STUDIO: FSM ${imported ? 'imported' : 'local'} Set Initial source, graph, focus and hidden history`);
 	const position = cycles();
 	const media = ide.sources.currentBlua32Media;
 	harness.openLuaSource('cart.lua');
+	const main = activeCodeEditor.model, originalMain = main.buffer.getText(), mainResource = main.resource;
+	if (imported) {
+		const record = runtimeLuaSourceRegistry(ide.sources, main.resource.domain)!.records.find(record =>
+			record.program_module && !record.generated && record.source_path !== main.resource.path && !record.module_path.startsWith('cartlib/'))!;
+		main.pushEditOperations([{ offset: 0, deleteLength: main.buffer.length, text: fsmInitialImportedSource(record.module_path) }]);
+		harness.openLuaSource(record.source_path);
+	}
+	const source = imported ? FSM_INITIAL_MODULE_SOURCE : FSM_INITIAL_SOURCE;
 	const code = getActiveTab();
 	const model = activeCodeEditor.model;
 	const original = model.buffer.getText();
-	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: FSM_INITIAL_SOURCE }]);
+	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: source }]);
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
 	await chooseBehavior(test, 'FSM fixture.other', 'STATE MACHINES');
 	const lens = getActiveTab();
@@ -30,12 +43,14 @@ export async function testStudioFsmInitial(test: StudioFixture): Promise<void> {
 		right: graph.viewport.bounds.left + bounds.right - graph.viewport.scrollX,
 		top: graph.viewport.bounds.top + bounds.top - graph.viewport.scrollY,
 		bottom: graph.viewport.bounds.top + bounds.bottom - graph.viewport.scrollY });
-	check(ide.editor.commands.isEnabled('behaviorLens.setInitialState'), 'initial: an actual state card enables the shared command');
+	const mainVersion = main.version;
+	if (imported) main.refreshResource({ ...mainResource, source: { ...mainResource.source, generated: true } });
+	check(ide.editor.commands.isEnabled('behaviorLens.setInitialState'), 'initial: an actual state enables its command even with a read-only registration');
 	const version = model.version;
 	await click(graph.actionBar.items[2].bounds, 8);
 	await lens.graphLayout.settled; await frame();
-	const changed = FSM_INITIAL_SOURCE.replace("'idle'),", "'active'),");
-	check(model.version === version + 1 && model.buffer.getText() === changed, 'initial: held action-bar press is exactly one token edit');
+	const changed = source.replace("'idle'),", "'active'),");
+	check(model.version === version + 1 && model.buffer.getText() === changed && (!imported || main.version === mainVersion), 'initial: held action-bar press is exactly one token edit');
 	check(lens.view.selection?.rowKey === node.source.rowKey && !ide.editor.commands.isEnabled('behaviorLens.setInitialState'),
 		'initial: selected card survives and now-explicit initial cannot create empty history');
 	check(graph.viewport.model.edges.some(edge => edge.link.reference.kind === 'state-entry' && edge.link.target.source.label === 'active'),
@@ -45,7 +60,7 @@ export async function testStudioFsmInitial(test: StudioFixture): Promise<void> {
 	check(getActiveTab() === code && model.buffer.getText() === changed && !hasSelection(), 'initial: held Source action is navigation only');
 	check(inputFocus.getCommand('behaviorLens.setInitialState') === undefined, 'initial: code focus has no graph-authoring command');
 	await press('ControlLeft', 'KeyZ');
-	check(model.buffer.getText() === FSM_INITIAL_SOURCE, 'initial: code Undo restores the token while the graph is hidden');
+	check(model.buffer.getText() === source, 'initial: code Undo restores the token while the graph is hidden');
 	await test.clickTab(lens.id);
 	await lens.graphLayout.settled; await frame();
 	check(ide.editor.commands.isEnabled('behaviorLens.setInitialState'), 'initial: hidden Undo preserves the selected state');
@@ -57,7 +72,7 @@ export async function testStudioFsmInitial(test: StudioFixture): Promise<void> {
 	model.refreshResource({ ...resource, source: { ...resource.source, generated: true } });
 	check(!ide.editor.commands.isEnabled('behaviorLens.setInitialState'), 'initial: read-only source cannot be edited through the graph');
 	ide.editor.behaviorLens.setSelectedInitialState();
-	check(model.buffer.getText() === FSM_INITIAL_SOURCE, 'initial: the command consumer also obeys source read-only ownership');
+	check(model.buffer.getText() === source, 'initial: the command consumer also obeys source read-only ownership');
 	model.refreshResource(resource);
 	const ready = graph.viewport.model;
 	model.pushEditOperations([{ offset: model.buffer.length, deleteLength: 0, text: '\n@' }]);
@@ -68,8 +83,13 @@ export async function testStudioFsmInitial(test: StudioFixture): Promise<void> {
 	await runPaletteCommand('Edit: Undo'); await lens.graphLayout.settled; await frame();
 	await runPaletteCommand('Edit: Redo'); await lens.graphLayout.settled; await frame();
 	await runPaletteCommand('Edit: Undo'); await lens.graphLayout.settled; await frame();
-	harness.openLuaSource('cart.lua');
+	await test.clickTab(code.id);
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === original, 'initial: ordinary history removes the authored fixture');
+	if (imported) {
+		main.refreshResource(mainResource);
+		harness.openLuaSource(main.resource.path); await press('ControlLeft', 'KeyZ');
+		check(main.buffer.getText() === originalMain, 'initial: only the original fixture installation changed the registration');
+	}
 	check(cycles() === position && ide.sources.currentBlua32Media === media, 'initial: source authoring never runs or installs the guest');
 }

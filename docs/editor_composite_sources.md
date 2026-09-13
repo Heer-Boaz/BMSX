@@ -77,9 +77,12 @@ review and application use the same model. The registering file receives no
 dummy edit. Lexical binding, shared-list and initialization reviews remain in
 force. **A move between two different source files is still rejected.** The
 cross-resource relocation contract is not provided by this input change.
-Imported FSM mutation admission and the recognizer's limited API-binding rule
-also remain open. D1 as a whole, and loaded-definition/instance inspection D2/D3,
-are not declared complete by this slice.
+The follow-through [FSM source-owner slice](state_machine_source_ownership.md)
+now admits imported initial/path mutations, including a literal in a separate
+callback file. Its actual editable evidence joins the composite input; unrelated
+callback implementations still do not. The recognizer's limited API-binding rule
+remains open. D1 as a whole, and loaded-definition/instance inspection D2/D3,
+are not declared complete by these slices.
 
 ## Proof
 

@@ -26,15 +26,19 @@ import { createHostOverlayFixture } from '../../helpers/host_overlay';
 import { medianMilliseconds } from '../../helpers/performance';
 
 async function main() {
+	const imported = process.argv.includes('--imported');
 	for (const registrations of [32, 1024]) {
 		const source = `local machines<const> = require('cartlib/fsm/library')
-local shared<const> = { on={go=function() return 'idle' end}, initial='idle', states={idle={},active={}} }
+local shared<const> = ${imported ? "require('provider')" : "{ on={go=function() return 'idle' end}, initial='idle', states={idle={},active={}} }"}
 ${Array.from({ length: registrations }, (_, index) => `machines.register('fixture.${index}',shared)`).join('\n')}`;
 		const model = new EditorTextModel({ domain: 0, path: 'profile.lua', source: { type: 'lua', resid: 'profile' } }, 'lua', source);
-		const document = buildBehaviorSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(source, model.resource.path)));
+		const provider = new EditorTextModel({ domain: 0, path: 'provider.lua', source: { type: 'lua', resid: 'provider' } }, 'lua',
+			"return { on={go=function() return 'idle' end}, initial='idle', states={idle={},active={}} }");
+		const document = buildBehaviorSourceDocument(model.resource, semanticSnapshot(buildLuaFileSemanticData(source, model.resource.path),
+			buildLuaFileSemanticData(provider.buffer.getText(), provider.resource.path)));
 		editorViewState.font = new EditorFont('tiny');
 		const font = editorViewState.font.renderFont();
-		const view = createBehaviorLensViewState(document, model, 'state-graph', assert.fail);
+		const view = createBehaviorLensViewState(document, model, 'state-graph', path => { assert.equal(path, provider.resource.path); return provider; });
 		selectBehaviorLensDefinition(view, document.definitions[0].rowKey);
 		const graph = view.presentation; assert.ok(graph.kind === 'state-graph');
 		const input = new BehaviorLensInput(model, view, () => new NodeGraphLayoutEngine(new Worker(resolve('ide/node/graph_layout_worker.cjs'))));
@@ -55,15 +59,15 @@ ${Array.from({ length: registrations }, (_, index) => `machines.register('fixtur
 			const accept: StateMachineRetargetDrop = (...result) => { dropped = result; };
 			let observed = 0;
 			const capabilityMicroseconds = medianMilliseconds(() => {
-				for (let i = 0; i < 10000; i += 1) if (stateMachineConnectionEnds(model, view, edge) === 'target') observed += 1;
+				for (let i = 0; i < 10000; i += 1) if (stateMachineConnectionEnds(view, edge) === 'target') observed += 1;
 			}) / 10;
 			const firstCandidateMicroseconds = medianMilliseconds(() => {
 				for (let i = 0; i < 100; i += 1) {
-					const gesture = beginStateMachineDrag(model, view, start, accept)!;
+					const gesture = beginStateMachineDrag(view, start, accept)!;
 					gesture.dragOver(x, y); if (gesture.feedback.accepted) observed += 1;
 				}
 			}) * 10;
-			const gesture = beginStateMachineDrag(model, view, start, accept)!;
+			const gesture = beginStateMachineDrag(view, start, accept)!;
 			gesture.dragOver(x, y); assert.equal(gesture.feedback.accepted, true);
 			const movingInsideTargetMicroseconds = medianMilliseconds(() => {
 				for (let i = 0; i < 1000; i += 1) gesture.dragOver(x + (i & 1), y);
@@ -74,7 +78,7 @@ ${Array.from({ length: registrations }, (_, index) => `machines.register('fixtur
 			let measurements = 0;
 			const measure = (text: string, start: number, end: number) => { measurements += 1; return measureTextRange(text, start, end); };
 			const layout = () => review.layout(font, measure, measureText, viewport.bounds);
-			const open = () => review.show({ model, title: 'RETARGET FSM', summary: `${registrations} RECOGNIZED USES: idle -> active`,
+			const open = () => review.show({ model: view.source.models.get(proposal.literal.range.path)!, title: 'RETARGET FSM', summary: `${registrations} RECOGNIZED USES: idle -> active`,
 				items: stateMachineRetargetImpacts(view, proposal), apply() { throw new Error('Profile must not edit source.'); }, openSource() {} });
 			const impactOpenLayoutMicroseconds = medianMilliseconds(() => {
 				for (let i = 0; i < 10; i += 1) { open(); layout(); review.clear(); }
@@ -94,10 +98,10 @@ ${Array.from({ length: registrations }, (_, index) => `machines.register('fixtur
 			const reviewAndQuadsMicroseconds = medianMilliseconds(() => { for (let i = 0; i < 1000; i += 1) draw(); });
 			assert.equal(measurements, formatted); assert.equal(review.tree.rows, rows); assert.equal(stream.floatData, storage);
 			assert.equal(model.version, 1); assert.ok(observed > 0);
-			console.log(JSON.stringify({ registrations, capabilityMicroseconds, firstCandidateMicroseconds, movingInsideTargetMicroseconds,
+			console.log(JSON.stringify({ imported, registrations, capabilityMicroseconds, firstCandidateMicroseconds, movingInsideTargetMicroseconds,
 				impactOpenLayoutMicroseconds, retainedReviewLayoutMicroseconds, reviewAndQuadsMicroseconds,
 				boundary: 'Actual source index and native-worker geometry retained before timing. 10 warmups / median of 25 batches. No parser, layout-worker timing, complete pointer dispatch, GPU raster, guest, Hot Resume, heap/GC or complete Studio frame.' }));
-		} finally { review.dispose(); input.dispose(); model.dispose(); }
+		} finally { review.dispose(); input.dispose(); model.dispose(); provider.dispose(); }
 	}
 }
 void main().catch(error => { console.error(error); process.exitCode = 1; });

@@ -7,14 +7,14 @@ import { join, parse, resolve } from 'node:path';
 // Playwright is a host test tool, not part of the product bundle.
 const { chromium } = await import(process.env.BMSX_PLAYWRIGHT_MODULE || 'playwright');
 const navigation = process.argv[2] === '--studio-navigation' ? process.argv[3] : null;
-const fsm = process.argv[2] === '--studio-fsm-retarget' ? 'retarget' : process.argv[2] === '--studio-fsm-initial' ? 'initial' : null;
+const fsm = process.argv[2] === '--studio-fsm-retarget-imported' ? 'retarget-imported' : process.argv[2] === '--studio-fsm-retarget' ? 'retarget' : process.argv[2] === '--studio-fsm-initial' ? 'initial' : null;
 const reparent = process.argv[2] === '--studio-bt-reparent';
 const session = process.argv[2] === '--studio-session';
 const scenario = navigation !== null ? { kind: 'navigation', cart: navigation } : fsm !== null ? { kind: `fsm-${fsm}` } : reparent ? { kind: 'bt-reparent' } : { kind: 'workflows' };
 const studio = session || process.argv[2] === '--studio' || navigation !== null || fsm !== null || reparent;
 const studioLabel = session ? 'STUDIO-SESSION' : reparent ? 'STUDIO-BT-REPARENT' : fsm !== null ? `STUDIO-FSM-${fsm.toUpperCase()}` : navigation === null ? 'STUDIO-WORKFLOWS' : 'STUDIO-NAVIGATION';
 const [bios, cart, screenshot] = process.argv.slice(navigation !== null ? 4 : studio ? 3 : 2);
-if (!bios || !cart) throw new Error('Usage: browser.mjs [--studio | --studio-session | --studio-fsm-initial | --studio-fsm-retarget | --studio-bt-reparent | --studio-navigation CART_FOLDER] SYSTEM_ROM CART_ROM [SCREENSHOT_PNG]');
+if (!bios || !cart) throw new Error('Usage: browser.mjs [--studio | --studio-session | --studio-fsm-initial | --studio-fsm-retarget | --studio-fsm-retarget-imported | --studio-bt-reparent | --studio-navigation CART_FOLDER] SYSTEM_ROM CART_ROM [SCREENSHOT_PNG]');
 for (const backend of studio ? ['software', 'webgl2', 'webgpu'] : ['webgpu']) {
 	const directory = await mkdtemp(join(tmpdir(), `bmsx-${backend}-rewind-`));
 	let browser;
