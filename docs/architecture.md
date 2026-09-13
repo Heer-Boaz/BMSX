@@ -1490,6 +1490,14 @@ transition expressions. Only actual closures acquire callback-Source through
 the existing mapping. No additional cartlib state, evaluator, registry or
 execution hook is introduced.
 
+The [BT Live picker](behavior_tree_runtime_inspection.md) reads a selected
+component's own blackboard layout/values and execution storage, not the latest
+program with a matching id. A named nil slot differs from no blackboard or an
+empty schema. Mid-binding stops show actual nil layout/storage rather than
+substituting defaults. Raw execution slots and compiled call targets acquire
+no inferred source-node identity. The reader adds no guest metadata or tick
+hook; the separate optimized-node/topology correspondence gate remains open.
+
 The [registered-definition catalog](behavior_definition_catalog.md) reads the
 existing FSM/ActionEffect registries through the installed setter closures'
 module-qualified capture locations. `CPU.readClosureUpvalue()` has the same

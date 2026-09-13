@@ -2,8 +2,9 @@
 
 Datum: 2026-09-13. Live baseline: `c30009e07`.
 **Status: D1-history/composite broninputs, de generieke D2-leesbasis en gerichte
-ActionEffect-/FSM-instance-inspectie en hun geladen catalogi gebouwd; BT-
-definitieopname en allocation-/broncorrespondentie blijven open.**
+ActionEffect-/FSM-instance-inspectie en hun geladen catalogi gebouwd; ook
+BT-instance/blackboard-inspectie is aangesloten. BT-definitieopname en
+allocation-/broncorrespondentie blijven open.**
 
 Dit document verwerkt de bijgestelde productgrens: cartlib ondersteunt al een
 declaratieve manier van programmeren; die is de norm voor visuele authoring.
@@ -322,6 +323,14 @@ guestcall of extra opslag. Publicatie vóór rebind wordt apart getoond van de
 definities die instances nog vasthouden. D2 blijft open voor algemene
 actorselectie en definitie-allocation-/registratiecorrespondentie. Een
 callbackbron bewijst niet waar de omvattende definitietabel is gemaakt.
+
+De [BT-instance-inspectie](behavior_tree_runtime_inspection.md) breidt deze
+leesbasis uit met bestaande blackboards en execution memory. Zij gebruikt de
+layout van de gekozen component, ook als de gepubliceerde definitie al nieuwer
+is, en houdt benoemde nil-slots zichtbaar. Dit is geen D3-topologiereconstructie.
+De rebindproef vond tevens een bestaande single-child-compilerfout: een interne
+`false`-resetmarker ontsnapte als callback. De fold retourneert nu direct de
+child-compilatie, zonder de runtimeconsumers te verbreden of te bewaken.
 
 **Gate:** read-only inspectie zonder callbacks/guestmutatie; registratie zonder
 actor niet verwarren met een lege definitie; no-change `<init>`, compilefout,

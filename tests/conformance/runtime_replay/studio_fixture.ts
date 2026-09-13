@@ -31,6 +31,7 @@ import { editorViewState } from '../../../ide/editor/ui/view/state';
 import type { EditorTabId } from '../../../ide/workbench/ui/tab/id';
 import { WHEEL_SCROLL_STEP } from '../../../ide/common/constants';
 import { TOP_BAR_MENUS, type TopBarMenuItem } from '../../../ide/workbench/ui/top_bar/menu';
+import { createResourceState } from '../../../ide/workbench/contrib/resources/widget_state';
 
 export function check(condition: boolean, message: string): void {
 	if (!condition) throw new Error(message);
@@ -193,3 +194,17 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 }
 
 export type StudioFixture = Awaited<ReturnType<typeof createStudioFixture>>;
+
+/** Shared product file-creation flow; callers author bytes and choose Save/Reboot themselves. */
+export async function createStudioLuaSource(test: StudioFixture, path: string, source: string) {
+	await test.press('ControlLeft', 'KeyN');
+	await test.press('ControlLeft', 'KeyA');
+	test.clipboard.text = path;
+	await test.press('ControlLeft', 'KeyV');
+	await test.press('Enter');
+	await test.until(() => !createResourceState.visible, `New File creates ${path}`);
+	const model = test.harness.getActiveEditorDocument().model;
+	check(model.resource.path === path, 'New File opens its actual working copy');
+	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: source }]);
+	return model;
+}

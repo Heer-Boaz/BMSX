@@ -1,16 +1,17 @@
 import { RUNTIME_INSPECTION_CALLBACKS_SOURCE, RUNTIME_INSPECTION_CART_SOURCE } from '../../helpers/runtime_inspection_fixture';
+import { RUNTIME_INSPECTION_TREES_SOURCE } from '../../helpers/runtime_inspection_bt_fixture';
 import { actionPromptState } from '../../../ide/workbench/contrib/modal/action_prompt';
 import { hoverState } from '../../../ide/editor/contrib/hover/state';
 import { getTextFileRuntimeSourceStatus } from '../../../ide/workbench/services/working_copy/runtime_source_status';
 import { runtimeLuaSourceRegistry } from '../../../ide/runtime/sources';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
-import { check, codePositionBounds, type StudioFixture } from './studio_fixture';
+import { check, codePositionBounds, createStudioLuaSource, type StudioFixture } from './studio_fixture';
 import * as constants from '../../../ide/common/constants';
 import { resolveThemeTokenColor } from '../../../ide/theme/tokens';
 import { openRuntimeEffectInspector, openRuntimeEffectPicker, testRuntimeEffectSource } from './studio_actioneffect_runtime';
 import { openRuntimeStateInspector, openRuntimeStatePicker, testRuntimeStateSource } from './studio_fsm_runtime';
-import { createResourceState } from '../../../ide/workbench/contrib/resources/widget_state';
 import { openRegisteredDefinition, openRegisteredDefinitionPicker, testActorlessDefinitionCatalog, testEmptyDefinitionCatalog } from './studio_definition_catalog';
+import { inspectRuntimeTreeBlackboard, openRuntimeTreeInspector, openRuntimeTreePicker, testRuntimeTreeSource } from './studio_bt_runtime';
 
 /** Borrowed values are consumed by the existing hover, not a parallel test inspector. */
 export async function runStudioRuntimeInspection(test: StudioFixture) {
@@ -18,15 +19,8 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	await until(() => cycles() > runtime.timing.cpuHz * 13, 'inspection: normal boot');
 	await press('ControlRight', 'ShiftRight');
 	await runMenuCommand('pause');
-	await press('ControlLeft', 'KeyN');
-	await press('ControlLeft', 'KeyA');
-	test.clipboard.text = 'inspection_callbacks.lua';
-	await press('ControlLeft', 'KeyV');
-	await press('Enter');
-	await until(() => !createResourceState.visible, 'inspection: real New File creates the callback source');
-	const callbackModel = harness.getActiveEditorDocument().model;
-	check(callbackModel.resource.path === 'inspection_callbacks.lua', 'inspection: callback fixture has its own normal working copy');
-	callbackModel.pushEditOperations([{ offset: 0, deleteLength: callbackModel.buffer.length, text: RUNTIME_INSPECTION_CALLBACKS_SOURCE }]);
+	await createStudioLuaSource(test, 'inspection_callbacks.lua', RUNTIME_INSPECTION_CALLBACKS_SOURCE);
+	await createStudioLuaSource(test, 'inspection_trees.lua', RUNTIME_INSPECTION_TREES_SOURCE);
 	harness.openLuaSource('cart.lua');
 	const model = harness.getActiveEditorDocument().model;
 	const source = RUNTIME_INSPECTION_CART_SOURCE;
@@ -41,11 +35,15 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	await until(() => tasks.ready && ide.debugger.stopped && ide.editor.isActive && guest.global('inspection_init_count') === 0,
 		'inspection: initialized libraries before the first registration');
 	await testEmptyDefinitionCatalog(test);
+	await openRuntimeTreePicker(test, 0);
+	await press('Escape');
 	harness.toggleLuaBreakpoint(model.resource.path, beforeRegistration);
 	await press('F5');
 	await until(() => tasks.ready && ide.debugger.stopped && ide.editor.isActive && guest.global('inspection_init_count') === 1,
 		'inspection: actual registrations before creating instances');
 	await testActorlessDefinitionCatalog(test);
+	await openRuntimeTreePicker(test, 0);
+	await press('Escape');
 	harness.toggleLuaBreakpoint(model.resource.path, beforeInstances);
 	await press('F5');
 	await until(() => guest.global('inspection_fsm_ready') === true, 'inspection: effect and FSM instances are attached');
@@ -75,6 +73,7 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 		=== guest.readStringMember(guest.global('inspection_other'), 'definition'), 'inspection: two instances share the actual definition');
 	await testRuntimeEffectSource(test);
 	await testRuntimeStateSource(test);
+	await testRuntimeTreeSource(test);
 	const initialInspector = await openRuntimeEffectInspector(test, 'second', 20);
 
 	const library = runtimeLuaSourceRegistry(ide.sources, 0)!.module2lua['cartlib/actioneffects/actioneffect_component'];
@@ -87,6 +86,9 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	const fsmRebindStop = fsmLines.findIndex((line, index) => index > fsmRebindStart && line.includes('self.frame_evaluator = definition.frame_evaluator')) + 1;
 	check(fsmRebindStop > fsmRebindStart, 'inspection: actual FSM rebind assignment exists');
 	harness.toggleLuaBreakpoint(fsmLibrary.source_path, fsmRebindStop);
+	const btLibrary = runtimeLuaSourceRegistry(ide.sources, 0)!.module2lua['cartlib/behaviour_tree/bt_component'];
+	const btRebindStop = btLibrary.src.split('\n').findIndex(line => line.includes('self.evaluate = program.evaluate')) + 1;
+	harness.toggleLuaBreakpoint(btLibrary.source_path, btRebindStop);
 	const media = ide.sources.currentBlua32Media;
 	await runPaletteCommand('Run: Hot Resume');
 	await until(() => ide.debugger.stopped && ide.editor.isActive && guest.global('inspection_init_count') === 2, 'inspection: unchanged init stops inside first component rebind');
@@ -118,6 +120,35 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 		'catalog: published child differs from the old child still retained by both actors');
 	harness.toggleLuaBreakpoint(fsmLibrary.source_path, fsmRebindStop);
 	await press('F5');
+	await until(() => ide.debugger.stopped && ide.editor.isActive, 'inspection: first BT blackboard rebound, second retains its old layout');
+	await inspectRuntimeTreeBlackboard(test, 'first', 2);
+	await inspectRuntimeTreeBlackboard(test, 'second', 1);
+	harness.toggleLuaBreakpoint(btLibrary.source_path, btRebindStop);
+	const blackboard = runtimeLuaSourceRegistry(ide.sources, 0)!.module2lua['cartlib/behaviour_tree/blackboard'];
+	const layoutWrite = blackboard.src.split('\n').findIndex(line => line.includes('self._layout = layout')) + 1;
+	const valuesWrite = blackboard.src.split('\n').findIndex(line => line.includes('self._values = values')) + 1;
+	harness.toggleLuaBreakpoint(blackboard.source_path, layoutWrite);
+	await press('F5');
+	await until(() => ide.debugger.stopped && ide.editor.isActive, 'inspection: second BT before its layout publication');
+	await inspectRuntimeTreeBlackboard(test, 'second', 1);
+	await press('F5');
+	await until(() => ide.debugger.stopped && ide.editor.isActive, 'inspection: first binding of a previously absent blackboard');
+	const unbound = await openRuntimeTreeInspector(test, 'bare');
+	check(unbound.model.rows.find(row => row.element.label === 'BLACKBOARD LAYOUT')!.element.value === 'nil'
+		&& unbound.model.rows.find(row => row.element.label === 'BLACKBOARD STORAGE')!.element.value === 'nil',
+		'runtime BT: a real mid-binding stop shows unbound storage, not fabricated values');
+	harness.toggleLuaBreakpoint(blackboard.source_path, layoutWrite);
+	harness.toggleLuaBreakpoint(blackboard.source_path, valuesWrite);
+	await press('F5');
+	await until(() => ide.debugger.stopped && ide.editor.isActive, 'inspection: blackboard layout exists before its values write');
+	const partial = await openRuntimeTreeInspector(test, 'bare');
+	check(partial.model.rows.find(row => row.element.label === 'BLACKBOARD LAYOUT')!.element.value.includes('bound_later')
+		&& partial.model.rows.find(row => row.element.label === 'BLACKBOARD STORAGE')!.element.value === 'nil'
+		&& !partial.model.rows.some(row => row.element.label === 'BLACKBOARD / bound_later'),
+		'runtime BT: named initial values are not substituted for missing stored values');
+	await test.capture?.('bt-binding');
+	harness.toggleLuaBreakpoint(blackboard.source_path, valuesWrite);
+	await press('F5');
 	await until(() => !runtime.completionCallPending() && !ide.debugger.plans.controlActive, 'inspection: rebind completes');
 	await press('ControlRight', 'ShiftRight');
 	await runMenuCommand('pause');
@@ -125,6 +156,7 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	inspect('inspection_effect.cooldown_until_ms', 107);
 	await openRuntimeStateInspector(test, 'first', 20);
 	await openRuntimeStateInspector(test, 'second', 20);
+	await inspectRuntimeTreeBlackboard(test, 'second', 2);
 
 	const period = source.indexOf('* 10');
 	model.pushEditOperations([{ offset: period + 2, deleteLength: 2, text: '12' }]);
@@ -143,6 +175,7 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	model.undo();
 	inspect('inspection_effect.definition.period_ms', 30);
 	await openRuntimeEffectInspector(test, 'first', 30);
+	await inspectRuntimeTreeBlackboard(test, 'first', 2);
 
 	model.pushEditOperations([{ offset: period + 2, deleteLength: 2, text: '12' }]);
 	await runPaletteCommand('Run: Hot Resume');
@@ -159,6 +192,7 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	inspect('inspection_effect.active_count', 1);
 	await openRuntimeEffectInspector(test, 'first', 48);
 	await openRuntimeStateInspector(test, 'first', 30);
+	await inspectRuntimeTreeBlackboard(test, 'first', 3);
 	const installedCatalog = await openRegisteredDefinition(test, 'effect', 'pulse');
 	check(installedCatalog.model.rows.find(row => row.element.label === 'PERIOD')!.element.value === '48', 'catalog: new code installation reads its live registry capture');
 
@@ -195,6 +229,13 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	check(restoredCatalog.model.rows.find(row => row.element.label === 'PERIOD')!.element.value === '48', 'catalog: reselect reads the restored registry');
 	rewind.seekTo(history.latestCycles); await settle();
 	check(!restoredCatalog.visible, 'catalog: restore releases the retained property projection');
+	const btBeforeRestore = await inspectRuntimeTreeBlackboard(test, 'first', 3);
+	rewind.seekTo(history.earliestCycles); await settle();
+	check(!btBeforeRestore.visible, 'runtime BT: restore releases the retained property projection');
+	await inspectRuntimeTreeBlackboard(test, 'second', 3);
+	await openRuntimeTreePicker(test);
+	rewind.seekTo(history.latestCycles); await settle();
+	check(!ide.editor.quickInput.visible, 'runtime BT: restore releases the borrowed component choices');
 	inspect('inspection_effect.definition.period_ms', 48);
 	await frame();
 	const expression = 'inspection_effect.definition.period_ms';
@@ -217,7 +258,7 @@ export async function runStudioRuntimeInspection(test: StudioFixture) {
 	}
 	check(cycles() === position && model.version === version && guest.global('inspection_callback_count') === 0,
 		'inspection: theme and pointer do not mutate guest or source');
-	console.info('STUDIO: actual ActionEffect/FSM instance and definition, nested/concurrent state scope, rebind stops, imported callbacks, no-change init, source divergence, compile failure and rewind inspection PASS');
+	console.info('STUDIO: actual ActionEffect/FSM/BT instances, retained definitions and blackboards, rebind/binding stops, imported callbacks, no-change init, source divergence, compile failure and rewind inspection PASS');
 	return { hostFrames: test.observations.hostFrames, initCount: 3, restoredTick, latestTick,
 		renderProof: { ...ide.overlayRenderer.viewportSize, topBarBottom: editorChromeState.topBarBounds.bottom,
 			hover: { ...hoverState.tooltip!.bubbleBounds, text: resolveThemeTokenColor(constants.HOVER_TOOLTIP_TEXT),

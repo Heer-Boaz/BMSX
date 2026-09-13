@@ -11,6 +11,7 @@ local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local world_object<const> = require('cartlib/world/world_object')
 local input<const> = require('cartlib/input/input')
 local callbacks<const> = require('inspection_callbacks')
+local trees<const> = require('inspection_trees')
 display.reset_256x192()
 clock.configure_tick_intervals(1, 1)
 input.add_player(1)
@@ -45,6 +46,7 @@ local function configure<init>()
 		},
 	})
 	fsm_library.register('companion', { states = { resting = {} } })
+	trees.configure(inspection_init_count)
 end
 configure()
 local ungranted<const> = { period_ms = 777, handler = callbacks.update }
@@ -86,6 +88,7 @@ registry:register(inspection_fsm_second)
 registry:index(inspection_fsm_second, fsm_component)
 inspection_fsm_second:start()
 inspection_fsm_second:get_machine('walker').states.nest.data.revision = 222
+trees.attach(inspection_first.parent, inspection_second.parent)
 inspection_fsm_ready = true
 
 -- Written registration candidates are not a loaded-definition catalog.
@@ -104,6 +107,7 @@ function inspection_values()
 end
 while true do
 	inspection_tick = inspection_tick + 1
+	trees.tick()
 	vblank.wait()
 end
 `;
@@ -116,6 +120,24 @@ end
 function callbacks.redirect()
 	inspection_fsm_callback_count = inspection_fsm_callback_count + 1
 	return '/parked'
+end
+local result<const> = require('cartlib/behaviour_tree/result')
+function callbacks.tree_start(_target, memory)
+	inspection_bt_callback_count = inspection_bt_callback_count + 1
+	memory.ticks = 0
+	return result.running
+end
+function callbacks.tree_tick(_target, memory)
+	inspection_bt_callback_count = inspection_bt_callback_count + 1
+	memory.ticks = memory.ticks + 1
+	return result.running
+end
+function callbacks.tree_service()
+	inspection_bt_callback_count = inspection_bt_callback_count + 1
+end
+function callbacks.tree_execute()
+	inspection_bt_callback_count = inspection_bt_callback_count + 1
+	return result.success
 end
 return callbacks
 `;

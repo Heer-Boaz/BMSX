@@ -57,6 +57,7 @@ export type EditorCommandId =
 	| 'behaviorLens.details'
 	| 'behaviorLens.inspectRuntimeEffect'
 	| 'behaviorLens.inspectRuntimeStateMachine'
+	| 'behaviorLens.inspectRuntimeTree'
 	| 'behaviorLens.inspectRegisteredDefinitions'
 	| 'behaviorLens.editProperty'
 	| 'propertyInspector.source'

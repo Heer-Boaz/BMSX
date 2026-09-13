@@ -51,6 +51,7 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	'behaviorLens.details': { category: 'Behavior Lens', title: 'Open Source Details', shortTitle: 'Details' },
 	'behaviorLens.inspectRuntimeEffect': { category: 'Behavior Lens', title: 'Inspect Granted ActionEffect', shortTitle: 'Live' },
 	'behaviorLens.inspectRuntimeStateMachine': { category: 'State Machine', title: 'Inspect Runtime Instance', shortTitle: 'Live' },
+	'behaviorLens.inspectRuntimeTree': { category: 'Behavior Tree', title: 'Inspect Runtime Instance', shortTitle: 'Live' },
 	'behaviorLens.inspectRegisteredDefinitions': { category: 'Behavior Lens', title: 'Inspect Registered Definitions', shortTitle: 'Registered Definitions' },
 	'behaviorLens.editProperty': { category: 'Behavior Lens', title: 'Edit Authored Property', shortTitle: 'Edit' },
 	'behaviorLens.moveChildEarlier': { category: 'Behavior Lens', title: 'Move BT Child Earlier', shortTitle: 'Earlier' },

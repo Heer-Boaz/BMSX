@@ -58,6 +58,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 	'behaviorLens.node.context': [
 		{ type: 'command', command: 'behaviorLens.source' },
 		{ type: 'command', command: 'behaviorLens.details' },
+		{ type: 'command', command: 'behaviorLens.inspectRuntimeTree' },
 		{ type: 'separator' },
 		{ type: 'command', command: 'behaviorLens.duplicateChild' },
 		{ type: 'command', command: 'behaviorLens.removeChild' },
@@ -128,6 +129,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'behaviorLens.details' },
 		{ type: 'command', command: 'behaviorLens.duplicateChild' },
 		{ type: 'command', command: 'behaviorLens.removeChild' },
+		{ type: 'command', command: 'behaviorLens.inspectRuntimeTree' },
 		...GRAPH_ZOOM_ACTIONS,
 	],
 	'behaviorLens.title': [

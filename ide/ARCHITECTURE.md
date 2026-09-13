@@ -106,6 +106,14 @@ Event/input plans are inspected as compiled values, never decompiled into
 authored paths. Both picker scopes use the same suspended lifetime; no guest
 storage or execution change. See [FSM runtime inspection](../docs/state_machine_runtime_inspection.md).
 
+The BT lens also selects actual indexed components through `Live`. Blackboard
+keys, defaults and slot values come from that component's retained storage,
+including changed slot order during rebind. It does not look up the newest
+program by tree id. Nil binding fields remain visible as stored; raw execution
+slots are not source nodes. The shared inspector/focus/suspended lifetime and
+callback-Source rules are unchanged. No guest topology, trace or runtime graph
+is added. See [BT runtime inspection](../docs/behavior_tree_runtime_inspection.md).
+
 `Behavior Lens: Inspect Registered Definitions` separately reads the existing
 FSM/ActionEffect definition registries, including entries with no instances.
 The contribution knows the library storage; the generic Lua inspection owner

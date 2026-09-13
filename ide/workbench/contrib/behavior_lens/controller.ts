@@ -48,6 +48,7 @@ import type { WorkbenchPropertyInspector } from '../../ui/property_inspector/con
 import { inspectActionEffectDefinition, inspectActionEffectInstance, readActionEffectInstances } from './action_effect_runtime';
 import { inspectStateMachineDefinition, inspectStateMachineState, readStateMachineDefinitionStates, readStateMachineInstances, readStateMachineStates } from './state_machine_runtime';
 import { readBehaviorDefinitions, type BehaviorDefinitionChoice } from './runtime_definitions';
+import { inspectBehaviorTreeInstance, readBehaviorTreeInstances } from './behavior_tree_runtime';
 
 const PICKER_TITLES: Readonly<Record<BehaviorKind, string>> = {
 	action_effect: 'ACTIONEFFECTS',
@@ -182,6 +183,22 @@ export class BehaviorLensController {
 					});
 					lifetime.add({ dispose: this.guest.onDidInvalidate(() => inspector.hide()) });
 				}));
+	}
+
+	public inspectRuntimeTree(input: BehaviorLensInput, inspector: WorkbenchPropertyInspector<BehaviorInspectionProperty>): void {
+		const choices = readBehaviorTreeInstances(this.sources, this.guest, input.view.resource.domain);
+		this.quickInput.pick('BT INSTANCES', choices.available ? 'Choose a runtime instance, not a source registration' : 'Runtime exports unavailable or not initialized',
+			(_origin, lifetime) => {
+				lifetime.add({ dispose: this.guest.onDidInvalidate(() => this.quickInput.hide()) });
+				return new TextQuickPickProvider(choices.items);
+			}, choice => {
+				const lifetime = inspector.show({ title: `LIVE BT / ${choice.label}`,
+					items: inspectBehaviorTreeInstance(this.sources, this.guest, choice),
+					canOpenSource: item => this.canOpenInspectionSource(item),
+					openSource: item => this.openInspectionSource(input, item),
+				});
+				lifetime.add({ dispose: this.guest.onDidInvalidate(() => inspector.hide()) });
+			});
 	}
 
 	public inspectRegisteredDefinitions(input: BehaviorLensInput, inspector: WorkbenchPropertyInspector<BehaviorInspectionProperty>): void {

@@ -103,6 +103,7 @@ export class IdeCommandController {
 			case 'behaviorLens.details':
 			case 'behaviorLens.inspectRuntimeEffect':
 			case 'behaviorLens.inspectRuntimeStateMachine':
+			case 'behaviorLens.inspectRuntimeTree':
 			case 'behaviorLens.inspectRegisteredDefinitions':
 			case 'behaviorLens.editProperty':
 			case 'scenarioLab.details':
@@ -255,6 +256,7 @@ export class IdeCommandController {
 			case 'behaviorLens.details':
 			case 'behaviorLens.inspectRuntimeEffect':
 			case 'behaviorLens.inspectRuntimeStateMachine':
+			case 'behaviorLens.inspectRuntimeTree':
 			case 'behaviorLens.inspectRegisteredDefinitions':
 			case 'behaviorLens.editProperty':
 			case 'scenarioLab.details':
