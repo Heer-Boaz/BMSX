@@ -1,21 +1,16 @@
 import { semanticSnapshot } from './semantic_test_harness';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
-import { CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { Table } from '../../machine/ts/machine/cpu/table';
 import {
 	asStringId,
 	type StringValue,
 } from '../../machine/ts/machine/cpu/value';
-import { BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET } from '../../machine/ts/spec/bmsx/rom_header';
-import { CART_ROM_BASE } from '../../machine/ts/spec/bmsx/memory_map';
-import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
-import { BLUA32_FIRMWARE_MODULE_SOURCE } from '../../toolchain/ts/rompack/blua32_firmware_module';
-import { createTestBlua32PairCpu, linkTestBlua32Pair } from '../helpers/blua32';
-import { materializeCpuCompletionValues, parseLuaChunk } from './cpu_test_harness';
+import { materializeCpuCompletionValues, runCompletionClosure } from './cpu_test_harness';
+import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { FSM_PATH_CASES, FSM_SCOPE_SOURCE } from '../helpers/fsm_source_fixture';
 import { BT_MEMBERSHIP_SOURCE } from '../helpers/behavior_membership_fixture';
 import { BT_ORDER_SOURCE } from '../helpers/behavior_order_fixture';
@@ -33,117 +28,6 @@ import { FSM_RETARGET_EXECUTION_SOURCE, FSM_RETARGET_PATH_CASES, FSM_RETARGET_PA
 import { StateMachineRetargetAnalysis } from '../../ide/workbench/contrib/behavior_lens/state_machine_retarget';
 import { quoteLuaString } from '../../toolchain/ts/lua/syntax/string_literal';
 import { createLuaStringValueEdit } from '../../ide/language/lua/source_edits';
-
-const SYSTEM_MODULE_FILES = [
-	['base', 'machine/bios/base.lua'],
-	['table', 'machine/bios/table.lua'],
-	['string/base', 'machine/bios/string/base.lua'],
-	['string/utf8', 'machine/bios/string/utf8.lua'],
-	['string/pattern', 'machine/bios/string/pattern.lua'],
-	['compiler/api', 'machine/bios/compiler/api.lua'],
-	['compiler/arena', 'machine/bios/compiler/arena.lua'],
-	['compiler/bytecode', 'machine/bios/compiler/bytecode.lua'],
-	['compiler/compiler', 'machine/bios/compiler/compiler.lua'],
-	['compiler/lexer', 'machine/bios/compiler/lexer.lua'],
-	['compiler/linker', 'machine/bios/compiler/linker.lua'],
-	['compiler/load', 'machine/bios/compiler/load.lua'],
-	['compiler/parser', 'machine/bios/compiler/parser.lua'],
-	['compiler/semantic', 'machine/bios/compiler/semantic.lua'],
-	['compiler/syntax', 'machine/bios/compiler/syntax.lua'],
-	['compiler/syntax_factory', 'machine/bios/compiler/syntax_factory.lua'],
-	['compiler/token', 'machine/bios/compiler/token.lua'],
-] as const;
-
-const CART_MODULE_FILES = [
-	['cartlib/util/dense_set', 'cartlib/util/dense_set.lua'],
-	['cartlib/component/component_class', 'cartlib/component/component_class.lua'],
-	['cartlib/registry', 'cartlib/registry.lua'],
-	['cartlib/event_emitter', 'cartlib/event_emitter.lua'],
-	['cartlib/component/base_component', 'cartlib/component/base_component.lua'],
-	['cartlib/clock', 'cartlib/clock.lua'],
-	['cartlib/timeline/clock_source', 'cartlib/timeline/clock_source.lua'],
-	['cartlib/easing', 'cartlib/easing.lua'],
-	['cartlib/timeline/playback', 'cartlib/timeline/playback.lua'],
-	['cartlib/timeline/apply_syntax', 'cartlib/timeline/apply_syntax.lua'],
-	['cartlib/timeline/apply', 'cartlib/timeline/apply.lua'],
-	['cartlib/timeline/scalar_channel_syntax', 'cartlib/timeline/scalar_channel_syntax.lua'],
-	['cartlib/timeline/scalar_channel', 'cartlib/timeline/scalar_channel.lua'],
-	['cartlib/timeline/event_lane_shape', 'cartlib/timeline/event_lane_shape.lua'],
-	['cartlib/timeline/track_program', 'cartlib/timeline/track_program.lua'],
-	['cartlib/timeline/sequence_program', 'cartlib/timeline/sequence_program.lua'],
-	['cartlib/timeline/step_track_syntax', 'cartlib/timeline/step_track_syntax.lua'],
-	['cartlib/timeline/value_runner_signature', 'cartlib/timeline/value_runner_signature.lua'],
-	['cartlib/timeline/track_evaluator_syntax', 'cartlib/timeline/track_evaluator_syntax.lua'],
-	['cartlib/timeline/track_evaluator', 'cartlib/timeline/track_evaluator.lua'],
-	['cartlib/timeline/evaluation_context', 'cartlib/timeline/evaluation_context.lua'],
-	['cartlib/timeline/event_evaluator_syntax', 'cartlib/timeline/event_evaluator_syntax.lua'],
-	['cartlib/timeline/evaluation_program_syntax', 'cartlib/timeline/evaluation_program_syntax.lua'],
-	['cartlib/timeline/evaluation_program', 'cartlib/timeline/evaluation_program.lua'],
-	['cartlib/timeline/frame_program', 'cartlib/timeline/frame_program.lua'],
-	['cartlib/timeline/program', 'cartlib/timeline/program.lua'],
-	['cartlib/timeline/child_transport_syntax', 'cartlib/timeline/child_transport_syntax.lua'],
-	['cartlib/timeline/sequence_evaluator_syntax', 'cartlib/timeline/sequence_evaluator_syntax.lua'],
-	['cartlib/timeline/time_transform_syntax', 'cartlib/timeline/time_transform_syntax.lua'],
-	['cartlib/timeline/time_transform', 'cartlib/timeline/time_transform.lua'],
-	['cartlib/timeline/timeline', 'cartlib/timeline/timeline.lua'],
-	['cartlib/timeline/sequence_evaluator', 'cartlib/timeline/sequence_evaluator.lua'],
-	['cartlib/timeline/timeline_component', 'cartlib/timeline/timeline_component.lua'],
-	['cartlib/util/clamp', 'cartlib/util/clamp.lua'],
-	['cartlib/util/clear_map', 'cartlib/util/clear_map.lua'],
-	['cartlib/fsm/frame_evaluator_syntax', 'cartlib/fsm/frame_evaluator_syntax.lua'],
-	['cartlib/fsm/frame_program', 'cartlib/fsm/frame_program.lua'],
-	['cartlib/fsm/fsm', 'cartlib/fsm/fsm.lua'],
-	['testlib/fsm/transition_recorder', 'testlib/fsm/transition_recorder.lua'],
-	['cartlib/fsm/library', 'cartlib/fsm/library.lua'],
-	['cartlib/fsm/fsm_component', 'cartlib/fsm/fsm_component.lua'],
-	['cartlib/behaviour_tree/result', 'cartlib/behaviour_tree/result.lua'],
-	['cartlib/behaviour_tree/blackboard', 'cartlib/behaviour_tree/blackboard.lua'],
-	['cartlib/behaviour_tree/execution_layout', 'cartlib/behaviour_tree/execution_layout.lua'],
-	['cartlib/behaviour_tree/timeline_task', 'cartlib/behaviour_tree/timeline_task.lua'],
-	['cartlib/behaviour_tree/task_program', 'cartlib/behaviour_tree/task_program.lua'],
-	['cartlib/behaviour_tree/blackboard_program', 'cartlib/behaviour_tree/blackboard_program.lua'],
-	['cartlib/behaviour_tree/observer_program', 'cartlib/behaviour_tree/observer_program.lua'],
-	['cartlib/behaviour_tree/decorator_program', 'cartlib/behaviour_tree/decorator_program.lua'],
-	['cartlib/behaviour_tree/service_program', 'cartlib/behaviour_tree/service_program.lua'],
-	['cartlib/behaviour_tree/wait_task', 'cartlib/behaviour_tree/wait_task.lua'],
-	['cartlib/behaviour_tree/node_program', 'cartlib/behaviour_tree/node_program.lua'],
-	['cartlib/behaviour_tree/program', 'cartlib/behaviour_tree/program.lua'],
-	['cartlib/behaviour_tree/bt_component', 'cartlib/behaviour_tree/bt_component.lua'],
-	['cartlib/behaviour_tree/library', 'cartlib/behaviour_tree/library.lua'],
-] as const;
-
-const SYSTEM_STUB_MODULES = [
-	{
-		path: 'bmsx/blua32',
-		source: BLUA32_FIRMWARE_MODULE_SOURCE,
-	},
-	{
-		path: 'tty/console',
-		source: 'return { write = function() end, end_line = function() end }',
-	},
-] as const;
-
-const CART_STUB_MODULES = [
-	{
-		path: 'cartlib/input/input',
-		source: `return {
-			bind = function(_, pattern) return pattern end,
-			is_active = function() return false end,
-		}`,
-	},
-] as const;
-
-const SYSTEM_ENTRY_SOURCE = `
-require('base')
-table = require('table')
-string = require('string/base')
-string.find = require('string/pattern').find
-lua_compiler = require('compiler/api')
-load = lua_compiler.load
-math = { sin = function(value) return value end, pi = 3.141592653589793 }
-assert(setmetatable ~= nil)
-cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]
-`;
 
 const CART_ENTRY_SOURCE = `
 local registry<const> = require('cartlib/registry')
@@ -469,55 +353,8 @@ end
 return run, detach, recorder
 `;
 
-function createCartlibProgramCpu(cartEntrySource: string, traceStatements: 'erase' | 'emit' = 'erase', optLevel: 0 | 3 = 3): CPU {
-	const systemModules = SYSTEM_MODULE_FILES.map(([path, file]) => {
-		const source = readFileSync(file, 'utf8');
-		return { path, chunk: parseLuaChunk(source, `${path}.lua`), source };
-	});
-	for (const module of SYSTEM_STUB_MODULES) {
-		systemModules.push({
-			path: module.path,
-			chunk: parseLuaChunk(module.source, `${module.path}.lua`),
-			source: module.source,
-		});
-	}
-	const cartModules = CART_MODULE_FILES.map(([path, file]) => {
-		const source = readFileSync(file, 'utf8');
-		return { path, chunk: parseLuaChunk(source, `${path}.lua`), source };
-	});
-	for (const module of CART_STUB_MODULES) {
-		cartModules.push({
-			path: module.path,
-			chunk: parseLuaChunk(module.source, `${module.path}.lua`),
-			source: module.source,
-		});
-	}
-	const systemCompiled = compileLuaChunkToProgram(parseLuaChunk(SYSTEM_ENTRY_SOURCE, 'boot.lua'), systemModules, {
-		entrySource: SYSTEM_ENTRY_SOURCE,
-		optLevel,
-		programDomain: 'system',
-	});
-	const cartCompiled = compileLuaChunkToProgram(parseLuaChunk(cartEntrySource, 'entry.lua'), cartModules, {
-		entrySource: cartEntrySource,
-		optLevel,
-		programDomain: 'cart',
-		traceStatements,
-	});
-	const images = linkTestBlua32Pair(systemCompiled, cartCompiled);
-	const cpu: CPU = createTestBlua32PairCpu(images).cpu;
-	cpu.installBootPrimitives();
-	return cpu;
-}
-
-function runCompletionClosure(cpu: CPU, closure: Closure, args: number[]): number {
-	const budget = 10_000_000;
-	cpu.beginCompletionCall(closure, args);
-	assert.equal(cpu.runUntilDepth(0, budget), RunResult.Halted);
-	return budget - cpu.instructionBudgetRemaining;
-}
-
 for (const optLevel of [0, 3] as const) test(`BT empty/single-child lowering preserves optional reset through component rebind (O${optLevel})`, () => {
-	const cpu = createCartlibProgramCpu(`
+	const { cpu } = createCartlibProgramHarness(`
 local compiler<const> = require('cartlib/behaviour_tree/program')
 local library<const> = require('cartlib/behaviour_tree/library')
 local component<const> = require('cartlib/behaviour_tree/bt_component')
@@ -552,13 +389,13 @@ for _, kind in ipairs({ 'sequence', 'selector' }) do
 	assert(instance.reset == nil)
 end
 return aborts
-`, 'erase', optLevel);
+`, { optLevel });
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [2]);
 });
 
 test('BT source membership fixture executes its opaque builders and ordered children only in compiled cartlib', () => {
-	const cpu = createCartlibProgramCpu(BT_MEMBERSHIP_SOURCE + `
+	const { cpu } = createCartlibProgramHarness(BT_MEMBERSHIP_SOURCE + `
 local program<const> = require('cartlib/behaviour_tree/program').compile('oracle', { root = sequence })
 local target<const> = { order = 0 }
 local execution<const> = { _execution_state = program.create_execution_state() }
@@ -580,7 +417,7 @@ test('source-owned BT moves change actual compiled task order and keep choice we
 		const branch = definition.root.branches[0];
 		assert.ok(branch.role === 'children' && branch.source.kind === 'section');
 		model.pushEditOperations(createLuaTableFieldMoveEdits(model.buffer, resource.path, branch.source.table, 2, destination));
-		const cpu = createCartlibProgramCpu(model.buffer.getText() + `
+		const { cpu } = createCartlibProgramHarness(model.buffer.getText() + `
 local program<const> = require('cartlib/behaviour_tree/program').compile('oracle', { root = root })
 local target<const> = { order = 0 }
 local execution<const> = { _execution_state = program.create_execution_state() }
@@ -596,7 +433,7 @@ return status == result.success, target.order, #children, children.note == 'meta
 		const choices = weighted.root.branches[0];
 		assert.ok(choices.role === 'choices' && choices.source.kind === 'section');
 		model.pushEditOperations(createLuaTableFieldMoveEdits(model.buffer, resource.path, choices.source.table, 2, destination));
-		const choiceCpu = createCartlibProgramCpu(model.buffer.getText() + `
+		const { cpu: choiceCpu } = createCartlibProgramHarness(model.buffer.getText() + `
 local target<const> = { order = 0 }
 for index = 1, #weighted.choices do
 	local choice<const> = weighted.choices[index]
@@ -631,7 +468,7 @@ for index = 1, #weighted.choices do
 	assert(program.evaluate(target, { _execution_state = program.create_execution_state() }, program.operand) == result.success)
 end
 `;
-		const cpu = createCartlibProgramCpu(model.buffer.getText() + `
+		const { cpu } = createCartlibProgramHarness(model.buffer.getText() + `
 local target<const> = { order = 0 }
 ${execution}
 return target.order, #nested.children, nested.children[1] == leaf
@@ -668,7 +505,7 @@ for index = 1, #weighted.choices do
 end
 local same_value<const> = weighted.choices[2] == weighted.choices[3]
 `;
-		const cpu = createCartlibProgramCpu(model.buffer.getText() + `
+		const { cpu } = createCartlibProgramHarness(model.buffer.getText() + `
 local target<const> = { order = 0 }
 ${execution}
 return target.order, #nested.children, same_value
@@ -696,7 +533,7 @@ test('language-owned field transfer changes actual compiled BT composition witho
 			? createLuaTableFieldTransfer(model.buffer, resource.path, outer.entries[2].field, inner.source.table, 0)
 			: createLuaTableFieldTransfer(model.buffer, resource.path, inner.entries[1].field, outer.source.table, outer.source.table.fields.length);
 		model.pushEditOperations(transfer.edits);
-		const cpu = createCartlibProgramCpu(model.buffer.getText() + `
+		const { cpu } = createCartlibProgramHarness(model.buffer.getText() + `
 local target<const> = { order = 0 }
 local program<const> = require('cartlib/behaviour_tree/program').compile('oracle', { root = root })
 assert(program.evaluate(target, { _execution_state = program.create_execution_state() }, program.operand) == result.success)
@@ -732,7 +569,7 @@ test('admitted BT transfers compile with actual source sharing and cartlib task 
 		assert.equal(admission.checkTarget(target).kind, 'available');
 		model.pushEditOperations(createLuaTableFieldTransfer(model.buffer, resource.path, origin.entries[0].field,
 			target.source.table, target.source.table.fields.length).edits);
-		const cpu = createCartlibProgramCpu(model.buffer.getText() + `
+		const { cpu } = createCartlibProgramHarness(model.buffer.getText() + `
 local target<const> = {order=0}
 local program<const> = require('cartlib/behaviour_tree/program').compile('oracle', {root=root})
 assert(program.evaluate(target, {_execution_state=program.create_execution_state()}, program.operand) == result.success)
@@ -747,7 +584,7 @@ return target.order, #children, #nested.children, children.note == 'metadata is 
 });
 
 test('cartlib FSM and behaviour-tree instances retain semantic state across program replacement', () => {
-	const cpu = createCartlibProgramCpu(CART_ENTRY_SOURCE);
+	const { cpu } = createCartlibProgramHarness(CART_ENTRY_SOURCE);
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [
 		1021,
@@ -766,7 +603,7 @@ test('visual initial edits rebind real cartlib definitions without forcing the l
 	const document = buildBehaviorSourceDocument(resource, semanticSnapshot(buildLuaFileSemanticData(FSM_INITIAL_SOURCE, resource.path)));
 	const target = [...indexStateMachineSource(document).initialTargets.values()].find(target => target.name === 'active')!;
 	setStateMachineInitial(model, target);
-	const cpu = createCartlibProgramCpu(`
+	const { cpu } = createCartlibProgramHarness(`
 local registry<const> = require('cartlib/registry')
 local events<const> = require('cartlib/event_emitter')
 local component<const> = require('cartlib/fsm/fsm_component')
@@ -801,7 +638,7 @@ return machine.current_id=='left', left.current_id=='active', machine.states.rig
 });
 
 test('FSM transition recorder publishes ordered fixed-capacity facts without steady-state allocation', () => {
-	const cpu = createCartlibProgramCpu(TRANSITION_RECORDER_ENTRY_SOURCE, 'emit');
+	const { cpu } = createCartlibProgramHarness(TRANSITION_RECORDER_ENTRY_SOURCE, { traceStatements: 'emit' });
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 	const [run, detach, channel] = materializeCpuCompletionValues(cpu) as [
 		Closure,
@@ -863,7 +700,7 @@ test('FSM source path fixture agrees with real compiled cartlib plans, not a moc
 		assert(plan.count == ${entry.steps.length}, 'count ${index}')${steps}
 	end`;
 	}).join('\n');
-	const cpu = createCartlibProgramCpu(FSM_SCOPE_SOURCE + `
+	const { cpu } = createCartlibProgramHarness(FSM_SCOPE_SOURCE + `
 local fsm<const> = require('cartlib/fsm/fsm')
 local definition<const> = fsm.state_definition.new('fixture.paths', blueprint)
 ${checks}
@@ -897,7 +734,7 @@ test('retarget descriptors compile to the exact cartlib anchor and guarded/concu
 		assert(plan.count == ${entry.steps.length}, 'count ${index}')${steps}
 	end`;
 	}).join('\n');
-	const cpu = createCartlibProgramCpu(FSM_RETARGET_PATH_SOURCE + `
+	const { cpu } = createCartlibProgramHarness(FSM_RETARGET_PATH_SOURCE + `
 local fsm<const> = require('cartlib/fsm/fsm')
 local definition<const> = fsm.state_definition.new('retarget.oracle', blueprint)
 ${checks}
@@ -919,7 +756,7 @@ test('a retargeted callback preserves live rebind identity, dispatch effects, gu
 	assert.ok(check.kind === 'available');
 	model.pushEditOperations([createLuaStringValueEdit(model.buffer, check.literal, check.text)]);
 	assert.equal(model.buffer.getText(), FSM_RETARGET_EXECUTION_SOURCE.replace("--[[chosen path]] 'active'", "--[[chosen path]] 'other'"));
-	const cpu = createCartlibProgramCpu(`
+	const { cpu } = createCartlibProgramHarness(`
 local registry<const> = require('cartlib/registry')
 local events<const> = require('cartlib/event_emitter')
 local component<const> = require('cartlib/fsm/fsm_component')

@@ -1498,6 +1498,14 @@ substituting defaults. Raw execution slots and compiled call targets acquire
 no inferred source-node identity. The reader adds no guest metadata or tick
 hook; the separate optimized-node/topology correspondence gate remains open.
 
+The [BT compilation observation probe](behavior_tree_compilation_observation.md)
+records actual lowering occurrences through existing erased trace statements,
+not through evaluator decompilation or an instruction hook. Its explicit
+testlib consumer owns the latest completed compilation, not a catalog of
+successfully rebound actors. Ordinary debug-ROMs and Hot Resume still erase
+these traces. This measures the storage/lifetime alternatives; it does not
+introduce a Studio debug database, authored-source mapping or guest tick work.
+
 The [registered-definition catalog](behavior_definition_catalog.md) reads the
 existing FSM/ActionEffect registries through the installed setter closures'
 module-qualified capture locations. `CPU.readClosureUpvalue()` has the same

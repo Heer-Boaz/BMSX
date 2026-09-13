@@ -486,7 +486,9 @@ compile_by_type.add_blackboard = blackboard_program.compile_add
 
 compile_node = function(node, layout)
 	local execution_index<const> = execution_layout.allocate_execution_index(layout)
-	local evaluate, operand, reset = compile_by_type[node.type](node, layout, execution_index)
+	local node_type<const> = node.type
+	blua32.trace(layout, 'bt.compile.node', node, execution_index, true, layout.state_slot_count, node_type)
+	local evaluate, operand, reset = compile_by_type[node_type](node, layout, execution_index)
 	local services<const> = node.services
 	if services ~= nil then
 		evaluate, operand, reset = service_program.compile(services, layout, evaluate, operand, reset)
@@ -503,6 +505,7 @@ compile_node = function(node, layout)
 			reset
 		)
 	end
+	blua32.trace(layout, 'bt.compile.node', node, execution_index, false, layout.state_slot_count, node_type, evaluate, operand, reset)
 	return evaluate, operand, reset, branch
 end
 

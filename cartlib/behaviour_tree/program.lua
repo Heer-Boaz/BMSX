@@ -20,6 +20,7 @@ function program.compile(tree_id, definition)
 	local blackboard_definition<const> = definition.blackboard
 	local blackboard_layout<const> = blackboard_definition and blackboard.compile(blackboard_definition)
 	local layout<const> = execution_layout.new(blackboard_layout)
+	blua32.trace(program, 'bt.compile.begin', layout)
 	local evaluate, operand, reset<const> = node_program.compile(definition.root, layout)
 	local notifications<const>, process_execution_requests<const> = observer_program.compile_runtime(layout)
 	local tick_active_services<const> = service_program.compile_runtime(layout)
@@ -134,7 +135,7 @@ function program.compile(tree_id, definition)
 		evaluate = evaluate_with_requests
 		operand = nil
 	end
-	return {
+	local compiled<const> = {
 		id = tree_id,
 		blackboard_layout = blackboard_layout,
 		evaluate = evaluate,
@@ -142,6 +143,8 @@ function program.compile(tree_id, definition)
 		reset = reset,
 		create_execution_state = execution_layout.compile_state_factory(layout),
 	}
+	blua32.trace(layout, 'bt.compile.end', compiled)
+	return compiled
 end
 
 return program

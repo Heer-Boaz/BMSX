@@ -7,10 +7,10 @@ import type { TraceStatementMode } from '../../toolchain/ts/lua/compiler/trace_s
 import { runCompiledTestSystem } from '../helpers/blua32';
 import { materializeCpuCompletionValues, parseLuaChunk } from './cpu_test_harness';
 
-function compileTraceSource(source: string, traceStatements: TraceStatementMode) {
+function compileTraceSource(source: string, traceStatements: TraceStatementMode, optLevel: 0 | 3 = 3) {
 	return compileLuaChunkToProgram(parseLuaChunk(source, 'trace_statement.lua'), [], {
 		entrySource: source,
-		optLevel: 3,
+		optLevel,
 		programDomain: 'system',
 		traceStatements,
 	});
@@ -32,6 +32,25 @@ return value
 	const baselineProgram = compileTraceSource(baseline, 'erase').program;
 	const tracedProgram = compileTraceSource(traced, 'erase').program;
 
+	assert.deepEqual(tracedProgram.code, baselineProgram.code);
+	assert.deepEqual(tracedProgram.constPool, baselineProgram.constPool);
+	assert.deepEqual(tracedProgram.protos, baselineProgram.protos);
+});
+
+for (const optLevel of [0, 3] as const) test(`erased traces do not turn an otherwise static function into a captured closure (O${optLevel})`, () => {
+	const baseline = `
+local subject<const> = {}
+return function() return 7 end
+`;
+	const traced = `
+local subject<const> = {}
+return function()
+	blua32.trace(subject, 'sample', 7)
+	return 7
+end
+`;
+	const baselineProgram = compileTraceSource(baseline, 'erase', optLevel).program;
+	const tracedProgram = compileTraceSource(traced, 'erase', optLevel).program;
 	assert.deepEqual(tracedProgram.code, baselineProgram.code);
 	assert.deepEqual(tracedProgram.constPool, baselineProgram.constPool);
 	assert.deepEqual(tracedProgram.protos, baselineProgram.protos);

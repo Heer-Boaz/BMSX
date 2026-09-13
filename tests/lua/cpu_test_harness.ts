@@ -1,6 +1,8 @@
 import { LuaLexer } from '../../toolchain/ts/lua/syntax/lexer';
 import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
-import type { CPU } from '../../machine/ts/machine/cpu/cpu';
+import assert from 'node:assert/strict';
+import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
+import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import type { Value } from '../../machine/ts/machine/cpu/value';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import type { OptimizationLevel } from '../../toolchain/ts/lua/compiler/optimizer';
@@ -30,4 +32,12 @@ export function materializeCpuCompletionValues(cpu: CPU): Value[] {
 	const values: Value[] = [];
 	cpu.readCompletionValues(values);
 	return values;
+}
+
+/** Complete one actual guest call and report its machine-cycle charge. */
+export function runCompletionClosure(cpu: CPU, closure: Closure, args: Value[]): number {
+	const budget = 10_000_000;
+	cpu.beginCompletionCall(closure, args);
+	assert.equal(cpu.runUntilDepth(0, budget), RunResult.Halted);
+	return budget - cpu.instructionBudgetRemaining;
 }

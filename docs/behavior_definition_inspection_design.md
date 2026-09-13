@@ -177,18 +177,21 @@ Hij koppelt geen bronkandidaten aan runtimepublicatie. FSM-definities zijn
 eveneens aanwezig, maar hun gecompileerde handlers en actieve instances mogen
 niet als de oorspronkelijke bron worden voorgesteld.
 
-Voor BT's moet vóór implementatie een concrete ownerproef de keuze vastleggen:
+Voor BT's moet vóór productintegratie een concrete ownerproef de keuze dragen:
 
 | Route | Wat zij oplost | Nog te bewijzen / oordeel |
 | --- | --- | --- |
 | Alleen bestaande evaluator-/closurestructuren lezen | Kan actuele uitvoeringsgegevens blootleggen. | **Geen auteurstopologie.** Afgewezen als algemene definitiereconstructie; single-child lowering is al een tegenvoorbeeld. |
-| De bestaande declaratie éénmaal per geïnstalleerd programma behouden | Houdt ingeladen topologie beschikbaar zonder een boom per actor. Sluit conceptueel aan op behouden engine-definities. | Extra retained guestgeheugen en GC-live-set; publicatie, sharing en mutable aliases moeten expliciet worden gemeten/ontworpen. Niet alvast overal `program.definition` toevoegen. |
-| Ontwikkelinformatie bij interpretatie/compilatie vastleggen | Scheidt auteursrelaties van de geoptimaliseerde uitvoer, zoals engines editor-/debuggegevens scheiden. | De feitelijke opname, nodecorrespondentie, attach-na-boot en rewind moeten via bestaande tooling-/debuggerowners bewezen worden. Geen ontworpen-op-papier debug-ABI als voldongen feit. |
+| De bestaande declaratie éénmaal per geïnstalleerd programma behouden | Houdt de oorspronkelijke input beschikbaar zonder een boom per actor. | De ownerproef toont nu dat een mutable alias geen compilatiesnapshot is. Extra retentie is gemeten; niet alsnog overal `program.definition` toevoegen of ongemeten een deep copy maken. |
+| Ontwikkelinformatie bij interpretatie/compilatie vastleggen | Scheidt auteursrelaties van de geoptimaliseerde uitvoer, zoals engines editor-/debuggegevens scheiden. | Echte lowering-observatie, kosten en CPU-restore zijn nu beproefd. Compacte productopslag, late attach, source-/actorbinding en native bewijs blijven open. Geen meetrecorder als voltooid productprotocol presenteren. |
 
 De voorbeelden schrijven de keuze tussen de laatste twee routes niet voor
-voor een 33 MHz-emulator. **Dit ontwerp kiest dus nog geen extra opslagveld,
-tracekanaal, persistent id of protocol op gevoel.** Dat is de resterende
-technische proef, niet een aanleiding voor een generiek Resource-framework.
+voor een 33 MHz-emulator. De [uitvoerbare opnameproef](behavior_tree_compilation_observation.md)
+legt inmiddels de echte lowering-grens bloot via bestaande gewiste traces.
+Zij verwerpt het bewaren van een mutable alias als compilatiesnapshot en meet
+de kosten van een daadwerkelijke opname. **Een compacte productopslag,
+late-attachlifetime en authored-sourcecorrespondentie zijn nog niet gekozen.**
+De meetrecorder wordt niet impliciet een Studio-database of Resource-framework.
 
 De bestaande `blua32.trace` is geen kant-en-klare oplossing: de compiler kan
 haar wissen of emitteren, maar [scenario_cartridge.ts](../toolchain/ts/rompack/scenario_cartridge.ts)
@@ -353,6 +356,15 @@ callback, twee actors, herregistratie en restore. Auteursnode, geladen node en
 uitvoeringsslot worden aantoonbaar niet gelijkgesteld. Meet codebytes, heap-
 retentie, opnamekosten en ongeobserveerde tickkosten vóór de productkeuze.
 Daarna pas live BT-status op de graph aansluiten.
+
+**Uitgevoerde ownerproef:** [compilerobservatie](behavior_tree_compilation_observation.md)
+volgt nu echte compilebezoeken, ook door collapse heen. Gedeelde tabellen,
+gelijke callbacks bij verschillende programma's, echte registry/rebind,
+inputmutatie, GC en CPU-restore worden afzonderlijk bewezen. De meetopname
+verandert geen tickcycli of tickallocaties in de fixture, maar haar extra
+retentie is niet nul en de gewone compiler houdt trace-erasure. Geen koppeling
+aan de Studio-graph of automatische source-node-/actorslotidentiteit; de
+resterende productopslag-, admission- en sourcegates blijven open.
 
 De volledige gates van deze slices zijn nog niet gesloten. De bredere UX-lijst blijft
 bestaan, maar wordt niet langer gegijzeld door volledige analyse van alle
