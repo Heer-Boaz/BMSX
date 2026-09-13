@@ -1,5 +1,5 @@
 /** Authored test source shared by model tests and the real Studio workflow. No game-specific rows. */
-export const BEHAVIOR_SOURCE_FIXTURE = `local trees<const> = require('cartlib/behaviour_tree/library')
+export const BEHAVIOR_SOURCE_FIXTURE = `local trees = require('cartlib/behaviour_tree/library')
 local leaf<const> = { type = 'wait', duration_ticks = 2 }
 local shared<const> = {
 	type = 'sequence',

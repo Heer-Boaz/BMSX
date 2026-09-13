@@ -82,7 +82,6 @@ function resolveRegistration(
 ): BehaviorRegistrationKind | null {
 	const target = callSite.moduleTarget;
 	if (callSite.expression.method !== null
-		|| callSite.moduleTargetBinding !== 'immutable'
 		|| !target
 		|| target.memberPath.length !== 1) {
 		return null;

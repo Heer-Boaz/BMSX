@@ -158,6 +158,13 @@ constructor voor veel aanroepen gebruiken. Die bron blijft bewerkbaar, maar
 
 ## 2. Wat de live owners en tegenproeven aantonen
 
+Onderstaande tabel bewaart de oorspronkelijke audit. De opvolgende
+[written-sourcequeries](behavior_written_sources.md),
+[resource-eigen bronmodellen](behavior_source_resources.md) en
+[API-bindingcorrectie](lua_source_api_bindings.md) werken de relevante owners
+bij. `moduleTargetBinding` is inmiddels verwijderd; een gewone ongewijzigde
+importlocal verdwijnt niet meer alleen wegens het ontbreken van `<const>`.
+
 | Bevinding | Live owner en consequentie |
 | --- | --- |
 | Equivalente eenvoudige schrijfwijzen geven verschillende Lens-resultaten. | `registrations.ts` eist `moduleTargetBinding === 'immutable'`; `source.ts` volgt lokale const-initializers; `behavior_tree.ts` leest het type uit een direct stringliteral. Een gewone ongewijzigde module-local verdwijnt uit discovery; een const type-alias wordt geen bekend nodetype. Dit zijn readerbeperkingen, niet cartlib-requirements. |

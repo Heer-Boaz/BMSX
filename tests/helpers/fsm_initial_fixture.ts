@@ -11,11 +11,11 @@ const SHARED = `local shared<const> = {
 const REGISTRATIONS = `machines.register('fixture.initial', { initial = 'left', states = { left = shared, right = shared } })
 machines.register('fixture.other', { initial = 'left', states = { left = shared } })
 `;
-const API = "local machines<const> = require('cartlib/fsm/library')\n";
-export const FSM_INITIAL_SOURCE = API + SHARED + REGISTRATIONS;
+const API = "require('cartlib/fsm/library')\n";
+export const FSM_INITIAL_SOURCE = 'local machines<const> = ' + API + SHARED + REGISTRATIONS;
 export const FSM_INITIAL_MODULE_SOURCE = SHARED + 'return shared\n';
 export function fsmInitialImportedSource(modulePath: string): string {
-	return API + `local shared<const> = require('${modulePath}')\n` + REGISTRATIONS;
+	return 'local machines = ' + API + `local shared<const> = require('${modulePath}')\n` + REGISTRATIONS;
 }
 
 /** A small authored entry used through ordinary Save/Reboot and Hot Resume, not a synthetic ROM. */
@@ -25,7 +25,7 @@ local vblank<const> = require('cartlib/gx/vblank')
 local clock<const> = require('cartlib/clock')
 local registry<const> = require('cartlib/registry')
 local events<const> = require('cartlib/event_emitter')
-local machines<const> = require('cartlib/fsm/library')
+local machines = require('cartlib/fsm/library')
 local component<const> = require('cartlib/fsm/fsm_component')
 display.reset_256x192()
 clock.configure_tick_intervals(1, 1)

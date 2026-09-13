@@ -7,14 +7,8 @@ import {
 	type LuaStringLiteralExpression,
 	type LuaReturnStatement,
 } from '../syntax/ast';
-import type { SemanticValueSource } from './value_graph';
-
-export type ModuleAliasEntry = {
-	readonly declId: string;
-	readonly alias: string;
-	readonly module: string;
-	readonly memberPath: readonly string[];
-};
+import type { Decl, SymbolID } from './model';
+import type { DeclarationValueEntry, SemanticValueSource } from './value_graph';
 
 export type ModuleAliasTarget = {
 	readonly module: string;
@@ -145,4 +139,26 @@ export function resolveModuleAliasValueSource(
 		memberPath[basePath.length + index] = step.name;
 	}
 	return { module, memberPath };
+}
+
+/**
+ * Written import paths through locals initialized once, not frozen module exports.
+ * All writes (including nested bodies) are bound before this pass. A local's
+ * initializer can only read earlier lexical bindings, so declaration order is
+ * dependency order: no recursion, per-call alias walk or fixed-point expansion.
+ */
+export function collectStableModuleAliases(
+	declarations: readonly Decl[],
+	writesByDeclaration: ReadonlyMap<SymbolID, readonly DeclarationValueEntry[]>,
+): ReadonlyMap<SymbolID, ModuleAliasTarget> {
+	const aliases = new Map<SymbolID, ModuleAliasTarget>();
+	for (const declaration of declarations) {
+		if (declaration.isGlobal) continue;
+		const writes = writesByDeclaration.get(declaration.id);
+		if (writes === undefined || writes.length !== 1
+			|| writes[0].syntax.kind !== LuaSyntaxKind.LocalAssignmentStatement) continue;
+		const target = resolveModuleAliasValueSource(writes[0].source, aliases);
+		if (target !== null) aliases.set(declaration.id, target);
+	}
+	return aliases;
 }

@@ -132,18 +132,42 @@ test('behavior lens distinguishes multiple FSMs and same-named states in one Lua
 	);
 });
 
-test('behavior lens accepts only immutable module bindings and dot-call registration ABI', () => {
+test('behavior lens accepts unchanged local imports and retains the dot-call registration ABI', () => {
 	const mutable = buildDocument('mutable_alias.lua', [
 		"local trees = require('cartlib/behaviour_tree/library')",
 		"trees.register('mutable', { root = { type = 'task' } })",
 	].join('\n'));
-	assert.deepEqual(mutable.definitions, []);
+	assert.deepEqual(mutable.definitions.map(definition => definition.label), ['BT mutable']);
+	const reassigned = buildDocument('reassigned_alias.lua', [
+		"local trees = require('cartlib/behaviour_tree/library')",
+		'local retained<const> = trees',
+		"trees = require('other_library')",
+		"retained.register('unproven', { root = { type = 'task' } })",
+	].join('\n'));
+	assert.deepEqual(reassigned.definitions, []);
 
 	const colon = buildDocument('colon_registration.lua', [
 		"local trees<const> = require('cartlib/behaviour_tree/library')",
 		"trees:register('wrong-abi', { root = { type = 'task' } })",
 	].join('\n'));
 	assert.deepEqual(colon.definitions, []);
+});
+
+test('behavior discovery uses bound API paths for local member aliases, never their spelling', () => {
+	const document = buildDocument('apis.lua', `local trees = require('cartlib/behaviour_tree/library')
+local register_fsm = trees['register']
+register_fsm('tree', { root = { type = 'wait' } })
+local machines = require('cartlib/fsm/library')
+local register_effect = (machines.register)
+register_effect('machine', { states = { idle = {} } })
+local register_tree = require('cartlib/actioneffects').register_effect
+register_tree('effect', { handler = function(owner) owner:fire() end })
+local function hidden(register_tree) register_tree('not_an_api', {}) end
+`);
+	assert.deepEqual(document.definitions.map(definition => [definition.behaviorKind, definition.label]), [
+		['behavior_tree', 'BT tree'], ['state_machine', 'FSM machine'], ['action_effect', 'EFFECT effect'],
+	]);
+	assert.deepEqual(document.definitions.map(definition => definition.occurrenceRange.start.line), [3, 6, 8]);
 });
 
 test('behavior lens exposes the authored ActionEffect gates and execution fields', () => {

@@ -61,7 +61,7 @@ function sourceRegistry(projectRootPath: string, records: readonly LuaSourceReco
 test('behavior picks preserve registration occurrences, kinds, domains and unresolved authored ids', (t) => {
 	const path = 'actors.lua';
 	const source = [
-		"local fsm<const> = require('cartlib/fsm/library')",
+		"local fsm = require('cartlib/fsm/library')",
 		"local bt<const> = require('cartlib/behaviour_tree/library')",
 		"local id<const> = 'shared'",
 		'local blueprint<const> = { states = { idle = {} } }',
@@ -132,6 +132,11 @@ test('behavior picks preserve registration occurrences, kinds, domains and unres
 	assert.equal(index.getRegistrations(0)[0].label, 'FSM renamed', 'a new semantic project still consumes dirty retained models');
 	model.undo();
 	assert.equal(index.getRegistrations(0)[0].label, 'FSM shared');
+	// Finish the deliberately incomplete call, then introduce a real binding write.
+	model.pushEditOperations([{ offset: model.buffer.length, deleteLength: 0, text: ")\nfsm = replacement\n" }]);
+	assert.deepEqual(index.getRegistrations(0).map(registration => registration.behaviorKind), ['behavior_tree']);
+	model.undo();
+	assert.deepEqual(index.getRegistrations(0).map(registration => registration.semanticId), ['shared', 'shared', 'shared', null, null]);
 });
 
 test('behavior registration index resolves separate FSM ids in the same Lua document', (t) => {

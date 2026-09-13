@@ -233,6 +233,15 @@ derive its retained BT-, FSM-, ActionEffect- or sceneprojection once per text-
 model content version. Render and hit testing consume that projection; they do
 not parse or rebuild topology per frame.
 
+API discovery consumes the language owner's written module/member call paths.
+That owner processes the complete binding-write index once: ordinary unchanged
+locals and member aliases are admitted without a `<const>` requirement; a
+reassigned binding does not become stable merely because another const local
+copies it. Contributions own their public API names and argument roles, not an
+alias evaluator. This is authored-source admission within the declarative API
+norm, never proof of loaded registrations or frozen module contents. See
+[`lua_source_api_bindings.md`](../docs/lua_source_api_bindings.md).
+
 Visual commands address syntax whose provenance is known in the current Lua
 source and submit the smallest required `EditorTextEdit` batch through
 `EditorTextModel.pushEditOperations`. That gives text and visual views one undo

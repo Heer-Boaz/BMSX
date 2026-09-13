@@ -6,7 +6,7 @@ import type { RuntimeResource } from '../../ide/common/resource';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { createLuaTableFieldIntegerEdits, createLuaTableFieldRemovalEdits, readLuaSourceRange } from '../../ide/language/lua/source_edits';
 import { createLuaTableFieldMoveEdits } from '../../ide/language/lua/table_field_moves';
-import { buildSceneSourceDocument } from '../../ide/workbench/contrib/scene_editor/source';
+import { buildSceneSourceDocument, hasSceneSourceDefinitions } from '../../ide/workbench/contrib/scene_editor/source';
 import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
 import { buildLuaFileSemanticData } from '../../toolchain/ts/lua/semantic/model';
 import { getCachedLuaParse } from '../../toolchain/ts/lua/analysis/cache';
@@ -23,6 +23,21 @@ function luaResource(path: string): RuntimeResource {
 		},
 	};
 }
+
+test('scene discovery and projection share unchanged member-alias admission', () => {
+	const source = `local scenes = require('cartlib/world/scene_library')
+local publish = scenes['register']
+publish('room', { objects = {} })
+`;
+	const path = 'room.lua';
+	const analysis = buildLuaFileSemanticData(source, path);
+	assert.equal(hasSceneSourceDefinitions(analysis), true);
+	const document = buildSceneSourceDocument({ domain: 0, path }, analysis);
+	assert.deepEqual(document.scenes.map(scene => scene.id.kind), [LuaSyntaxKind.StringLiteralExpression]);
+	const changed = buildLuaFileSemanticData(source + '\nlocal function replace() scenes = replacement end', path);
+	assert.equal(hasSceneSourceDefinitions(changed), false);
+	assert.equal(buildSceneSourceDocument({ domain: 0, path }, changed).scenes.length, 0);
+});
 
 test('scene source adapter projects the real Nemesis root without executing Lua', () => {
 	const path = 'carts/nemesis_s/scenes/root.lua';
@@ -122,7 +137,7 @@ test('scene position edit changes the canonical Nemesis source through its text 
 	assert.equal(model.buffer.getText(), source);
 });
 
-test('scene source adapter accepts only direct definitions through immutable module bindings', () => {
+test('scene source adapter accepts direct definitions through unchanged local module bindings', () => {
 	const source = [
 		"local scenes<const> = require('cartlib/world/scene_library')",
 		"local mutable = require('cartlib/world/scene_library')",
@@ -143,7 +158,7 @@ test('scene source adapter accepts only direct definitions through immutable mod
 		buildLuaFileSemanticData(source, 'scene.lua'),
 	);
 
-	assert.equal(document.scenes.length, 1);
+	assert.equal(document.scenes.length, 2);
 	assert.equal(document.scenes[0].resolution, 'partial');
 	assert.equal(document.scenes[0].objects.length, 2);
 	const object = document.scenes[0].objects[0];

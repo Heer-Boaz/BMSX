@@ -101,7 +101,7 @@ tekstmodellen, semantische snapshots en gerichte Lua-editowners.
 | FSM | [library.lua](../cartlib/fsm/library.lua), [fsm.lua](../cartlib/fsm/fsm.lua) en [fsm_component.lua](../cartlib/fsm/fsm_component.lua): de geladen state-definitiehiërarchie blijft bestaan; handlers, paden en evaluatie worden afgeleid/gecompileerd. De oorspronkelijke blueprint en geladen definitie zijn niet identiek. |
 | ActionEffect | [actioneffects.lua](../cartlib/actioneffects.lua) en [actioneffect_component.lua](../cartlib/actioneffects/actioneffect_component.lua): de aangeleverde definitie blijft bewaard. Een gegund effect verwijst naar zijn definitie en heeft eigen cooldown-/periodieke state. |
 | Componentcatalogus | [registry.lua](../cartlib/registry.lua) indexeert bestaande entries. Dit is niet tevens een catalogus van alle geregistreerde maar ongebruikte behavior-definities. De afzonderlijke definitieregisters zijn lokale tabellen. |
-| Broninterpretatie | [source_reader.ts](../ide/workbench/contrib/behavior_lens/source_reader.ts) consumeert geschreven workspacefeiten. [registrations.ts](../ide/workbench/contrib/behavior_lens/registrations.ts) heeft nog een beperkte module-/bindingherkenning; die bewijst geen uitvoering of exclusieve API-herkomst. |
+| Broninterpretatie | [source_reader.ts](../ide/workbench/contrib/behavior_lens/source_reader.ts) consumeert geschreven workspacefeiten. [API-herkenning](lua_source_api_bindings.md) consumeert generieke importpaden via ongewijzigde locals; die bewijzen geen uitvoering of exclusieve runtime-API-herkomst. |
 | Bestaande inspectie | [suspended_guest.ts](../ide/runtime/suspended_guest.ts) leest de echte VM-representatie; de bestaande Scenario-observers lezen geselecteerde guestkanalen. Geen van beide is al een algemene geladen-definitiecatalogus. |
 | Bron versus installatie | [sources.ts](../ide/runtime/sources.ts) en [runtime_source_status.ts](../ide/workbench/services/working_copy/runtime_source_status.ts) kennen werkbron en geïnstalleerde bron. Dat is niet automatisch de herkomst van iedere huidige heapdefinitie. |
 
@@ -283,8 +283,10 @@ sluit inmiddels ook Save/dirty/focus voor geïmporteerde ActionEffect-velden en
 BT-bewerkingen binnen een providerbestand. Ook [FSM initial/path-edits](state_machine_source_ownership.md)
 gebruiken nu hun echte bronmodel, inclusief een literal in een apart callbackbestand.
 De registratiebron krijgt geen dummy-edit. Dit sluit niet de hele D1-gate:
-relocatie tussen verschillende bestanden en de beperkte API-bindingherkenning
-blijven open. Ook runtime-inspectie is hiermee niet geïmplementeerd.
+de [API-bindingcorrectie](lua_source_api_bindings.md) ondersteunt gewone
+ongewijzigde importlocals en member-aliases zonder `<const>`-vereiste.
+Relocatie tussen verschillende bestanden en API-reexports/wrappers blijven
+open. Ook runtime-inspectie is hiermee niet geïmplementeerd.
 
 ### D2 — Eén behouden definitie en één geselecteerde runtime-instantie
 

@@ -7,6 +7,17 @@ runtime or authored scene data. See
 
 ## Independent contracts
 
+Workspace registration admission and binding can be measured independently of
+layout/rendering with the shared warmup/median harness:
+
+```sh
+npx tsx --tsconfig tsconfig.base.json --import ./tests/lua/test_setup.ts \
+  tests/conformance/behavior_graph/profile_registrations.ts cartlib carts/nemesis_s
+```
+
+The output includes every discovered registration for before/after comparison.
+These are source-query measurements, not total frame or guest performance.
+
 ```sh
 npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts \
   tests/lua/behavior_source_graph.test.ts tests/lua/behavior_tree_graph_view.test.ts tests/lua/behavior_tree_membership.test.ts \

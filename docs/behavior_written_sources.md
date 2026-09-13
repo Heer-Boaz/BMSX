@@ -106,13 +106,17 @@ those source phases were timed separately. Temporary scripts and logs live in
 
 ## Still open
 
-The shallow API candidate test still uses `moduleTargetBinding`. It is **not**
-the frozen-export proof required by the design; this slice does not broaden or
-declare it correct. The [2026-09-13 scope decision](behavior_definition_inspection_design.md)
+The follow-through [API-binding correction](lua_source_api_bindings.md) removes
+`moduleTargetBinding` and the transient alias maps. Written module/member paths
+now consume the complete binder write index and admit unchanged ordinary
+locals. They are **not** frozen-export or runtime-publication proof. The
+[2026-09-13 scope decision](behavior_definition_inspection_design.md)
 sets the existing declarative cartlib method as the authoring norm. Broader
 contextual factory/API proofs are not a prerequisite for every graph feature;
 authored discovery must not be confused with actual loaded registration.
-Imported graph write ownership and broader source correspondence remain open.
+Imported one-owner graph edits now use the [composite source input](editor_composite_sources.md)
+and [FSM source ownership](state_machine_source_ownership.md). API reexports
+and relocation between source files remain open.
 Same-document [BT reparenting](behavior_tree_reparenting.md) and
 [ActionEffect property authoring](actioneffect_authoring.md) have since landed.
 Loaded-definition inspection is a separate design, not an implemented heap

@@ -4567,8 +4567,16 @@ Catalog/document validity follows the snapshot, including negative lookups;
 displayed file revisions are not a complete query-dependency certificate.
 Source-index invalidation also owns menu/inspection/review lifetime. Syntax
 recovery revokes edit admission without discarding otherwise known topology.
-This does not close API-export certainty, contextual member/factory recognition
-or imported graph-edit ownership. See [written-source consumption](behavior_written_sources.md).
+Authored API paths are bound after all writes are known: direct requires and
+unchanged local import/member aliases work with or without `<const>`. The
+generic module-binding owner uses the existing written-input index; the Lens
+and Scene Editor consume the call fact without their own alias walkers.
+This describes source paths, not frozen module contents or runtime publication.
+See [API binding ownership and scope](lua_source_api_bindings.md).
+It does not close contextual member/factory recognition, API reexports or
+cross-file relocation. Imported one-owner edits use the
+[composite source input](editor_composite_sources.md). See also
+[written-source consumption](behavior_written_sources.md).
 
 Source-call ancestry consumes the existing call solver's application edges,
 keeping each call's written AST and ordered bound input tuple together. Incoming

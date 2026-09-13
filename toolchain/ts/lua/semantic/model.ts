@@ -42,10 +42,10 @@ import { methodPathToPropertyPath } from './common';
 import { toLuaModulePath } from '../module_path';
 import { LUA_BUILTIN_TABLE_ITERATOR_ARGUMENTS } from '../builtin_descriptors';
 import {
+	collectStableModuleAliases,
 	findLuaModuleExport,
 	resolveBuiltinRequireArgument,
 	resolveModuleAliasValueSource,
-	type ModuleAliasEntry,
 	type ModuleAliasTarget,
 } from './module_bindings';
 import {
@@ -139,8 +139,8 @@ export type LuaCallSite = {
 	readonly expression: LuaCallExpression;
 	readonly call: CallValueEntry;
 	readonly calleeValue: SemanticValueSource | undefined;
+	/** Written import path through unchanged locals; not runtime callable identity. */
 	readonly moduleTarget: ModuleAliasTarget | null;
-	readonly moduleTargetBinding: 'immutable' | 'mutable' | null;
 	readonly reference: Ref | undefined;
 	readonly directTarget: SymbolID | undefined;
 };
@@ -170,7 +170,6 @@ export type FileSemanticData = LuaFileSemanticRevision & {
 	readonly declarationIdsBySyntax: ReadonlyMap<LuaIdentifierExpression, SymbolID>;
 	readonly referencesBySyntax: ReadonlyMap<LuaIdentifierExpression, Ref>;
 	readonly referencesByName: ReadonlyMap<string, readonly Ref[]>;
-	readonly moduleAliases: readonly ModuleAliasEntry[];
 	readonly moduleReferences: readonly LuaStringLiteralExpression[];
 	readonly callSites: readonly LuaCallSite[];
 	readonly declarationValues: readonly DeclarationValueEntry[];
@@ -341,7 +340,6 @@ type AssignmentTargetInfo = {
 	namePath: readonly string[];
 	path: string | null;
 	valueTarget?: SemanticValueSource;
-	moduleAlias?: ModuleAliasTarget | null;
 	memberBaseDecl?: InternalDecl;
 	memberOwner?: SemanticValueSource;
 };
@@ -365,7 +363,6 @@ type SemanticBuildResult = {
 	functionValueFlows: FunctionValueFlowEntry[];
 	callValues: CallValueEntry[];
 	valueAssignments: ValueAssignmentEntry[];
-	moduleAliases: ModuleAliasEntry[];
 	moduleReferences: LuaStringLiteralExpression[];
 };
 
@@ -411,7 +408,6 @@ export function buildLuaFileSemanticData(
 		declarationIdsBySyntax: result.declarationIdsBySyntax,
 		referencesBySyntax: result.referencesBySyntax,
 		referencesByName: result.referencesByName,
-		moduleAliases: result.moduleAliases,
 		moduleReferences: result.moduleReferences,
 		callSites: result.callSites,
 		declarationValues: result.declarationValues,
@@ -639,7 +635,7 @@ class SemanticBuilder {
 	private readonly referencesBySyntax: Map<LuaIdentifierExpression, Ref> = new Map();
 	private readonly referencesByName: Map<string, Ref[]> = new Map();
 	private readonly moduleReferences: LuaStringLiteralExpression[] = [];
-	private readonly callSites: LuaCallSite[] = [];
+	private readonly callSites: (Omit<LuaCallSite, 'moduleTarget'> & { moduleTarget: ModuleAliasTarget | null })[] = [];
 	private readonly functionSignaturesByPath: Map<string, FunctionSignatureInfo> = new Map();
 	private readonly declarationValues: DeclarationValueEntry[] = [];
 	private readonly readValuesBySyntax = new Map<LuaExpression, SemanticValueSource>();
@@ -655,8 +651,6 @@ class SemanticBuilder {
 	private readonly moduleExport: LuaReturnStatement | undefined;
 	private readonly bypassingModuleReturns: LuaReturnStatement[] = [];
 	private moduleValue: ModuleValueEntry | undefined;
-	private readonly moduleAliasesByDeclId: Map<SymbolID, ModuleAliasTarget> = new Map();
-	private readonly moduleAliasesByName: Map<string, ModuleAliasEntry> = new Map();
 	private readonly functionValueFlowStack: FunctionValueFlowState[] = [];
 
 	constructor(options: {
@@ -682,6 +676,10 @@ class SemanticBuilder {
 			this.visitStatement(this.chunk.body[index]);
 		}
 		this.leaveScope();
+		const moduleAliases = collectStableModuleAliases(this.decls, this.declarationValuesByDeclaration);
+		for (const site of this.callSites) {
+			site.moduleTarget = resolveModuleAliasValueSource(site.call.callee, moduleAliases);
+		}
 		return {
 			decls: this.decls,
 			scopes: this.scopes,
@@ -701,7 +699,6 @@ class SemanticBuilder {
 			functionValueFlows: this.functionValueFlows,
 			callValues: this.callValues,
 			valueAssignments: this.valueAssignments,
-			moduleAliases: Array.from(this.moduleAliasesByName.values()),
 			moduleReferences: this.moduleReferences,
 		};
 	}
@@ -746,19 +743,12 @@ class SemanticBuilder {
 					if (targetDecl) {
 						this.setDeclarationValue(targetDecl, valueInfo.valueSource, statement, index);
 					}
-					if (index < pending.length) {
-						this.setModuleAlias(
-							pending[index],
-							resolveModuleAliasValueSource(valueInfo.valueSource, this.moduleAliasesByDeclId),
-						);
-					}
 				}
 				for (let index = 0; index < pending.length; index += 1) {
 					if (index >= localAssignment.values.length) {
 						const source = valueLimit > 0 && isMultiReturnExpression(localAssignment.values[valueLimit - 1])
 							? unknownValueSource() : NIL_VALUE_SOURCE;
 						this.setDeclarationValue(pending[index], source, statement, index);
-						this.setModuleAlias(pending[index], null);
 					}
 					this.activateDecl(pending[index], localAssignment.range.end);
 				}
@@ -910,13 +900,6 @@ class SemanticBuilder {
 					if (targetInfo?.decl) {
 						this.setDeclarationValue(targetInfo.decl, source, statement, index);
 					}
-					if (index < assignment.left.length
-						&& assignment.left[index].kind === LuaSyntaxKind.IdentifierExpression) {
-						targetInfo.moduleAlias = resolveModuleAliasValueSource(
-							source,
-							this.moduleAliasesByDeclId,
-						);
-					}
 					if (targetInfo?.valueTarget) {
 						this.recordValueFlow(targetInfo.valueTarget, source, 'value', statement, index);
 					}
@@ -930,11 +913,6 @@ class SemanticBuilder {
 						if (targetInfo.decl) this.setDeclarationValue(targetInfo.decl, source, statement, index);
 						if (targetInfo.valueTarget) this.recordValueFlow(targetInfo.valueTarget, source, 'value', statement, index);
 					}
-					const target = assignment.left[index];
-					if (target.kind !== LuaSyntaxKind.IdentifierExpression || !targets[index].decl) {
-						continue;
-					}
-					this.setModuleAlias(targets[index].decl, targets[index].moduleAlias);
 				}
 				break;
 			}
@@ -1157,17 +1135,6 @@ class SemanticBuilder {
 				const calledValue = methodName
 					? appendValueMember(calleeInfo.valueSource, methodName)
 					: calleeInfo.valueSource;
-				const moduleTarget = resolveModuleAliasValueSource(
-					calledValue,
-					this.moduleAliasesByDeclId,
-				);
-				const moduleTargetBinding = moduleTarget
-					? (calledValue.root.kind === 'module'
-						|| (calledValue.root.kind === 'declaration'
-							&& this.declById.get(calledValue.root.declId)?.kind === 'constant')
-						? 'immutable'
-						: 'mutable')
-					: null;
 				let firstArgumentInfo: ResolvedNamePath = null;
 				let secondArgumentInfo: ResolvedNamePath = null;
 				const argumentOffset = methodName ? 1 : 0;
@@ -1201,8 +1168,7 @@ class SemanticBuilder {
 					expression: callExpression,
 					call,
 					calleeValue: calledValue,
-					moduleTarget,
-					moduleTargetBinding,
+					moduleTarget: null,
 					reference: callReference,
 					directTarget: callReference === undefined
 						&& calleeInfo.namePath !== null
@@ -2274,27 +2240,6 @@ class SemanticBuilder {
 		}
 		const path = extractStaticMemberPath(expression);
 		return path ? this.resolveValueSourceFromNamePath(path) : undefined;
-	}
-
-	private setModuleAlias(decl: InternalDecl, target: ModuleAliasTarget | null): void {
-		if (target) {
-			this.moduleAliasesByDeclId.set(decl.id, target);
-		} else {
-			this.moduleAliasesByDeclId.delete(decl.id);
-		}
-		if (decl.scopeRef.kind !== 'path') {
-			return;
-		}
-		if (target) {
-			this.moduleAliasesByName.set(decl.name, {
-				declId: decl.id,
-				alias: decl.name,
-				module: target.module,
-				memberPath: target.memberPath,
-			});
-		} else {
-			this.moduleAliasesByName.delete(decl.name);
-		}
 	}
 
 	private annotate(range: LuaSourceRange, length: number, kind: SemanticSymbolKind, role: SemanticRole): void {

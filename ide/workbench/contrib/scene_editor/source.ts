@@ -63,7 +63,6 @@ export function hasSceneSourceDefinitions(analysis: FileSemanticData): boolean {
 function isSceneRegistration(callSite: LuaCallSite): boolean {
 	const target = callSite.moduleTarget;
 	return callSite.expression.method === null
-		&& callSite.moduleTargetBinding === 'immutable'
 		&& target !== null
 		&& target.module === SCENE_LIBRARY_MODULE
 		&& target.memberPath.length === 1

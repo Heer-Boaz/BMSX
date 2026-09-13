@@ -1,5 +1,5 @@
 /** Canonical Lua consumed by the source recognizer and the real compiled cartlib phase oracle. */
-export const ACTIONEFFECT_SOURCE = `local effects<const> = require('cartlib/actioneffects')
+export const ACTIONEFFECT_SOURCE = `local effects = require('cartlib/actioneffects')
 local required<const> = { 'ready' }
 local blueprint<const> = {
 	required_tags = required,
